@@ -194,3 +194,57 @@ export function buildProfile(
     triggers7d: triggerLists(sumDays(counts, dayOf(now), 7), index),
   }
 }
+
+// Error text may carry paths; keep none of them, and no more than 300 characters.
+export function scrub(message: string) {
+  return message.replace(/(?<![\w.])(?:[A-Za-z]:\\[^\s'"():;,]*|~?\/[^\s'"():;,]*)/g, '<path>').slice(0, 300)
+}
+
+export const POSTHOG_URL = 'https://us.i.posthog.com/batch/'
+// Write-only project token: public by design.
+export const POSTHOG_KEY = 'phc_r4NATbMFBZvmQYiJ8MPMJSWHprgbsTkbCddtc6aYAoUg'
+
+export type BatchStore = {
+  installId: string
+  sentThrough?: string
+  uses: readonly Use[]
+  triggers: DayCounts
+  unlocked: Record<string, string>
+  errors: readonly { day: string; message: string }[]
+  plugins: Record<string, string[]>
+}
+
+// The events of every day after `sentThrough` up to `through`. Only skill names, plugin names, days and counts.
+export function buildBatch(store: BatchStore, through: string) {
+  const inRange = (day: string) => day > (store.sentThrough ?? '') && day <= through
+  const event = (name: string, day: string, properties: Record<string, unknown>) => ({
+    event: name,
+    distinct_id: store.installId,
+    timestamp: `${day}T12:00:00Z`,
+    properties: { ...properties, $process_person_profile: false },
+  })
+  const batch: ReturnType<typeof event>[] = []
+
+  const used = new Map<string, { day: string; skill: string; plugin: string; count: number }>()
+  const pluginsByDay: Record<string, Set<string>> = {}
+  for (const [day, list] of Object.entries(store.plugins)) pluginsByDay[day] = new Set(list)
+  for (const u of store.uses.filter(u => inRange(u.day))) {
+    const row = used.get(`${u.day} ${u.skill}`) ?? { day: u.day, skill: u.skill, plugin: u.plugin, count: 0 }
+    used.set(`${u.day} ${u.skill}`, { ...row, count: row.count + 1 })
+    if (u.plugin) (pluginsByDay[u.day] ??= new Set()).add(u.plugin)
+  }
+  for (const { day, ...rest } of used.values()) batch.push(event('skill_used', day, { ...rest, day }))
+  for (const [day, skills] of Object.entries(store.triggers).filter(([d]) => inRange(d))) {
+    for (const [skill, c] of Object.entries(skills)) batch.push(event('trigger_result', day, { skill, day, ...c }))
+  }
+  for (const [id, day] of Object.entries(store.unlocked).filter(([, d]) => inRange(d))) {
+    batch.push(event('achievement_unlocked', day, { id }))
+  }
+  for (const [day, set] of Object.entries(pluginsByDay).filter(([d]) => inRange(d))) {
+    for (const plugin of [...set].sort()) batch.push(event('plugins_installed', day, { plugin, day }))
+  }
+  for (const e of store.errors.filter(e => e.day <= through)) {
+    batch.push(event('$exception', e.day, { $exception_message: e.message }))
+  }
+  return { api_key: POSTHOG_KEY, batch }
+}
