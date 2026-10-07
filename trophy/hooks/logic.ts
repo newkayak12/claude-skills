@@ -36,6 +36,11 @@ export function resolveSkill(name: string, index: readonly TriggerEntry[]): { sk
 }
 
 // The Skill tool, skill.prompt and the typed command all report one use: same skill, same session, within 5 s is one.
+// The command a prompt typed, raw (`/think:grill …`) or as the engine expands it (`<command-name>/think:grill</command-name>`).
+export function typedCommand(text: string): string | undefined {
+  return (/^\s*\/(\S+)/.exec(text) ?? /<command-name>\/([^<\s]+)<\/command-name>/.exec(text))?.[1]
+}
+
 export function recordUse(uses: readonly Use[], skill: string, now: number, session: string): Use[] {
   const last = uses[uses.length - 1]
   if (last && last.skill === skill && last.session === session && now - last.ts < DUPLICATE_MS) return [...uses]

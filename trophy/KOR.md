@@ -74,4 +74,6 @@ Claude Code 훅 모듈(`hooks/mod.tsx`)입니다. Claude Code 2.1.292 이상, �
 
 ## 상태 로그
 
+- 0.1.1 — 직접 입력한 `/스킬` 명령도 기록됩니다. 팀 조직 계정에서는 사용자 플러그인의 `skill.prompt`·
+  `UserPromptExpansion` hook이 건너뛰어지므로, 이제 `prompt.submit`에서 입력한 명령을 읽습니다(원문·확장형 모두).
 - 0.1.0 — 첫 릴리스.
