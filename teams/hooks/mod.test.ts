@@ -162,3 +162,127 @@ test('team_status full:true with node_id, and {} pass', async ($, on) => {
   const b = await call($, 'mcp__teams__team_status', {})
   expect((b as { deny?: string }).deny).toBeUndefined()
 })
+
+// ---- pane and band ----
+const SURFACES = ['terminal', 'desktop'] as const
+const TICKETS = 'TICKETS-TEXT P1 implement'
+
+// Engine beneath: a Map-backed $.state, process.run for view.mjs, ui.open recorded.
+function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly ('terminal' | 'desktop')[] = ['terminal']) {
+  const store = new Map<string, unknown>(Object.entries(init))
+  const seen = { argv: [] as (readonly string[])[], opened: [] as string[] }
+  on('session.surfaces', () => ({ value: surfaces }))
+  on('state.get', (_$, e) => ({ value: { value: store.get(e.key), version: 0 } }) as never)
+  on('state.set', (_$, e) => {
+    store.set(e.key, e.value)
+    return { value: { isSet: true, version: 1 } } as never
+  })
+  on('process.run', (_$, e) => {
+    seen.argv.push(e.argv)
+    return { value: ok(e.argv.includes('status') ? '{"line":"","waiting":0}' : e.argv.includes('events') ? '' : TICKETS) }
+  })
+  on('ui.open', (_$, e) => {
+    seen.opened.push(e.id)
+    return { value: { isPlaced: true } } as never
+  })
+  return seen
+}
+const pane = ($: Engine, surface: (typeof SURFACES)[number]) =>
+  $.ui.mount({ plugin: 'teams', surface, component: 'Pane', requestId: 'teams-live', props: { title: 'Teams', isFocused: false, bodyColumns: 80, placement: 'dock' } } as never)
+const band = ($: Engine, surface: (typeof SURFACES)[number], hasSurvey = false) =>
+  $.ui.mount({ plugin: 'teams', surface, component: 'AbovePrompt', props: { hasSurvey, isWorking: false, maxRows: 5, bodyColumns: 80 } } as never)
+
+for (const surface of SURFACES) {
+  test(`${surface}: pane with one watched task draws the board text from state; render runs no process`, async ($, on) => {
+    const seen = uiWorld(on, { watch: ['abc'], board: TICKETS })
+    const ui = await pane($, surface)
+    expect(await ui.find({ type: 'Text', text: TICKETS })).toBeDefined()
+    await ui.redraw()
+    expect(seen.argv).toHaveLength(0)
+  })
+
+  test(`${surface}: session start alone opens no pane`, async ($, on) => {
+    const seen = uiWorld(on, {}, [surface])
+    on('session.start', (_$, e) => ({ cwd: e.cwd }))
+    on('session.cwd', () => ({ value: '/proj' }))
+    on('command.register', (_$, e) => ({ value: { command: e.name } }))
+    await start($)
+    expect(seen.opened).toEqual([])
+  })
+
+  test(`${surface}: [events] draws the last events of the task`, async ($, on) => {
+    uiWorld(on, { watch: ['abc'], events: [{ ts: 1, task_id: 'abc', kind: 'k', text: 'abc needs you' }, { ts: 2, task_id: 'zzz', kind: 'k', text: 'other task' }] })
+    const ui = await pane($, surface)
+    await ui.press({ key: 'events' })
+    await ui.redraw() // the stubbed $.state does not notify readers
+    expect(await ui.find({ type: 'Text', text: 'abc needs you' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'other task' })).toBeUndefined()
+  })
+
+  test(`${surface}: no watched task draws the no-run text`, async ($, on) => {
+    const seen = uiWorld(on)
+    const ui = await pane($, surface)
+    expect(await ui.find({ type: 'Text', text: 'No teams run in this session.' })).toBeDefined()
+    expect(seen.argv).toHaveLength(0)
+  })
+
+  for (const [why, init, hasSurvey] of [['empty status', {}, false], ['a survey', { status: 'teams: abc 1/4' }, true]] as const) {
+    test(`${surface}: band yields with ${why}`, async ($, on) => {
+      on('ui.render', (_$, e) => (e.component === 'AbovePrompt' ? { type: 'Text', children: ['engine band'] } : undefined) as never)
+      uiWorld(on, init)
+      const ui = await band($, surface, hasSurvey)
+      expect(await ui.find({ text: 'engine band' })).toBeDefined()
+      expect(await ui.find({ type: 'Button' })).toBeUndefined()
+    })
+  }
+
+  test(`${surface}: band draws status, [board], [inbox n]; [board] opens teams-live`, async ($, on) => {
+    const seen = uiWorld(on, { status: 'teams: abc 1/4', waiting: 2 })
+    const ui = await band($, surface)
+    expect(await ui.find({ type: 'Text', text: 'teams: abc 1/4' })).toBeDefined()
+    expect(await ui.find({ key: 'inbox', text: '[inbox 2]' })).toBeDefined()
+    await ui.press({ key: 'board' })
+    expect(seen.opened).toEqual(['teams-live'])
+  })
+
+  test(`${surface}: band shows no [inbox] when nothing waits`, async ($, on) => {
+    uiWorld(on, { status: 'teams: abc 1/4', waiting: 0 })
+    const ui = await band($, surface)
+    expect(await ui.find({ key: 'board' })).toBeDefined()
+    expect(await ui.find({ key: 'inbox' })).toBeUndefined()
+  })
+}
+
+test('tick writes the board text only while the pane is open', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const seen = uiWorld(on, { watch: ['abc'] })
+  let isOpen = false
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('session.cwd', () => ({ value: '/proj' }))
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('ui.panes', () => ({ value: isOpen ? [{ id: 'teams-live', title: 'Teams', isPlaced: true }] : [] }) as never)
+  await start($)
+  await clock.advance(3000)
+  expect(seen.argv.some(a => a.includes('--view'))).toBe(false)
+  isOpen = true
+  await clock.advance(3000)
+  const argv = seen.argv.find(a => a.includes('--view'))!
+  expect(argv.includes('abc') && argv[argv.indexOf('--view') + 1] === 'tickets').toBe(true)
+  const n = seen.argv.length
+  const ui = await pane($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: TICKETS })).toBeDefined()
+  await ui.redraw()
+  expect(seen.argv).toHaveLength(n)
+})
+
+test('/teams-live answers and opens the pane; session start alone opens nothing', async ($, on) => {
+  const seen = uiWorld(on)
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('session.cwd', () => ({ value: '/proj' }))
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  await start($)
+  expect(seen.opened).toEqual([])
+  const r = await $.command.run({ command: 'teams-live', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
+  expect(seen.opened).toEqual(['teams-live'])
+  expect(JSON.stringify(r)).toContain('pane opened')
+})
