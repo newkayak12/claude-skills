@@ -77,4 +77,7 @@ view (most hit, most missed, never fired).
 
 ## Status log
 
+- 0.1.1 — typed `/skill` commands are recorded: under a team organization `skill.prompt` and
+  `UserPromptExpansion` are skipped for user-tier hooks, so the typed command is now read from
+  `prompt.submit` (raw or expanded form).
 - 0.1.0 — first release.
