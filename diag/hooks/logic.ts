@@ -39,13 +39,18 @@ export function marketplaceCandidates(root: string, marketplace?: string): strin
   return out
 }
 
-// `plugin:skill` only; a bare name or a plugin outside this marketplace is not ours.
-export function ownedSkill(name: unknown, plugins: readonly string[]): { plugin: string; skill: string } | undefined {
+// `plugin:skill` only, and the skill must be one this marketplace ships (`skills` maps each plugin to
+// its skill dir names): a bare name, a foreign plugin or typed free text after the colon is not ours.
+export function ownedSkill(
+  name: unknown,
+  skills: Readonly<Record<string, readonly string[]>>,
+): { plugin: string; skill: string } | undefined {
   if (typeof name !== 'string') return undefined
   const i = name.indexOf(':')
   if (i <= 0 || i === name.length - 1) return undefined
   const plugin = name.slice(0, i)
-  return plugins.includes(plugin) ? { plugin, skill: name.slice(i + 1) } : undefined
+  const skill = name.slice(i + 1)
+  return Object.hasOwn(skills, plugin) && skills[plugin].includes(skill) ? { plugin, skill } : undefined
 }
 
 const norm = (s: string) => s.replace(/[^a-zA-Z0-9_]/g, '_')

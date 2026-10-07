@@ -8,13 +8,18 @@ const entry = (o: Partial<Entry>): Entry => ({
   session: 's1', local: {}, ...o,
 })
 
-test('ownedSkill rejects bare and foreign names', () => {
-  const plugins = ['develop', 'trophy']
-  expect(ownedSkill('develop:clean-code', plugins)).toEqual({ plugin: 'develop', skill: 'clean-code' })
-  expect(ownedSkill('clean-code', plugins)).toBeUndefined()
-  expect(ownedSkill('superpowers:brainstorming', plugins)).toBeUndefined()
-  expect(ownedSkill('develop:', plugins)).toBeUndefined()
-  expect(ownedSkill(undefined, plugins)).toBeUndefined()
+test('ownedSkill rejects bare, foreign and free-text names', () => {
+  const skills = { develop: ['clean-code', 'sql-pro'], trophy: ['list'] }
+  expect(ownedSkill('develop:clean-code', skills)).toEqual({ plugin: 'develop', skill: 'clean-code' })
+  expect(ownedSkill('clean-code', skills)).toBeUndefined()
+  expect(ownedSkill('superpowers:brainstorming', skills)).toBeUndefined()
+  expect(ownedSkill('develop:', skills)).toBeUndefined()
+  expect(ownedSkill(undefined, skills)).toBeUndefined()
+  // typed free text after a real plugin prefix never becomes a skill name
+  expect(ownedSkill('develop:my secret password', skills)).toBeUndefined()
+  expect(ownedSkill('develop:clean-code extra', skills)).toBeUndefined()
+  expect(ownedSkill('trophy:clean-code', skills)).toBeUndefined()
+  expect(ownedSkill('constructor:x', skills)).toBeUndefined()
 })
 
 test('ownedMcpTool rejects a foreign marketplace server', () => {
@@ -23,6 +28,11 @@ test('ownedMcpTool rejects a foreign marketplace server', () => {
   expect(ownedMcpTool('mcp__plugin_knowledge_knowledge-local__knowledge_get', plugin, servers))
     .toEqual({ plugin: 'knowledge', server: 'knowledge-local', tool: 'knowledge_get' })
   expect(ownedMcpTool('mcp__plugin_teams_x__y', plugin, servers)).toBeUndefined()
+  const hyphen = { 'context-mode': ['context-mode'] }
+  expect(ownedMcpTool('mcp__plugin_context-mode_context-mode__ctx_search', plugin, hyphen))
+    .toEqual({ plugin: 'context-mode', server: 'context-mode', tool: 'ctx_search' })
+  expect(ownedMcpTool('mcp__plugin_context_mode_context_mode__ctx_search', plugin, hyphen))
+    .toEqual({ plugin: 'context-mode', server: 'context-mode', tool: 'ctx_search' })
   expect(ownedMcpTool('mcp__plugin_knowledge_other__y', plugin, servers)).toBeUndefined()
   expect(ownedMcpTool('mcp__plugin_knowledge_knowledge-local__knowledge_get', { source: 'user' }, servers)).toBeUndefined()
   expect(ownedMcpTool('mcp__plugin_knowledge_knowledge-local__knowledge_get', undefined, servers)).toBeUndefined()
