@@ -53,7 +53,7 @@ test('statusLine: empty and two tasks', () => {
 
 // ---------- CLI: view.mjs --once --format status|events ----------
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -115,14 +115,14 @@ test('--format status: another cwd gives an empty line', () => {
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 
-test('--format events --since 0: notable lines of running tasks only', () => {
+test('--format events --since 0: ledgers of every listed task, running or finished; task.json-less dir skipped', () => {
   const f = fixture();
   try {
     const r = cli(f, '--format', 'events', '--since', '0');
     assert.equal(r.status, 0, r.stderr);
     const evs = r.stdout.trim().split('\n').map((l) => JSON.parse(l));
-    assert.deepEqual(evs.map((e) => e.kind), ['daemon_exhausted', 'child_driver_capacity']);
-    assert.ok(evs.every((e) => e.task_id === RUN_ID));
+    assert.deepEqual(evs.map((e) => e.kind), ['daemon_exhausted', 'child_driver_capacity', 'daemon_exhausted']);
+    assert.deepEqual(evs.map((e) => e.task_id), [RUN_ID, RUN_ID, DONE_ID]);
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 
@@ -143,6 +143,21 @@ test('--format events reads only the ledger tail', () => {
     const small = cli(f, '--format', 'events', '--since', '0');
     assert.ok(head.length > 4.5e6);
     assert.equal(big.stdout, small.stdout);
-    assert.deepEqual(big.stdout.trim().split('\n').map((l) => JSON.parse(l).ts), [20, 22]);
+    assert.deepEqual(big.stdout.trim().split('\n').map((l) => JSON.parse(l).ts), [9, 20, 22]);
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('--format events: a just-finished task (no longer running) still delivers its finished event; an unchanged ledger does not', () => {
+  const f = fixture();
+  try {
+    writeFileSync(join(f.tasks, DONE_ID, 'ledger.jsonl'), JSON.stringify({ ts: 50, event: 'daemon_done', task_id: DONE_ID, state: 'done' }) + '\n');
+    const r = cli(f, '--format', 'events', '--since', '10');
+    const evs = r.stdout.trim().split('\n').map((l) => JSON.parse(l));
+    assert.deepEqual(evs.map((e) => [e.task_id, e.kind]), [[DONE_ID, 'daemon_done']]);
+    assert.ok(evs[0].text.includes('finished'));
+    // ledger untouched since before --since: not read at all
+    utimesSync(join(f.tasks, DONE_ID, 'ledger.jsonl'), 0, 0);
+    utimesSync(join(f.tasks, RUN_ID, 'ledger.jsonl'), 0, 0);
+    assert.equal(cli(f, '--format', 'events', '--since', '10').stdout, '');
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
