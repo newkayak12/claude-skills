@@ -6,6 +6,7 @@ import { triggers } from '../data/triggers.ts'
 import {
   achievementRow,
   addTurn,
+  buildProfile,
   closeTurn,
   dayOf,
   evaluate,
@@ -25,6 +26,24 @@ const tab = atom({ plugin: 'trophy', key: 'tab' } as const, 'trophies' as 'troph
 
 const PANE = 'trophy'
 
+// The file trophy:list reads. Written after every store change; a failed write never blocks the prompt.
+async function mirror($: EngineInterface) {
+  try {
+    const get = async (key: string, empty: unknown) => (await $.store.get(key)) ?? empty
+    const profile = buildProfile(
+      (await get('trophy.uses', [])) as Use[],
+      (await get('trophy.unlocked', {})) as Record<string, string>,
+      (await get('trophy.triggers', {})) as DayCounts,
+      achievements,
+      triggers,
+      await $.clock.now(),
+    )
+    await $.fs.write(`${await $.env.get('HOME')}/.claude/trophy/profile.json`, JSON.stringify(profile, null, 2))
+  } catch {
+    // the mirror is a convenience
+  }
+}
+
 // Records one skill use; always called before `next`, so a throw here falls to the hook's `.catch`.
 async function note($: EngineInterface, name: string) {
   if (!(await read($, active))) return
@@ -38,9 +57,11 @@ async function note($: EngineInterface, name: string) {
 
   const unlocked = ((await $.store.get('trophy.unlocked')) ?? {}) as Record<string, string>
   const fresh = evaluate(recorded, achievements, unlocked)
-  if (fresh.length === 0) return
-  await $.store.set('trophy.unlocked', { ...unlocked, ...Object.fromEntries(fresh.map(id => [id, dayOf(now)])) })
-  for (const a of achievements.filter(a => fresh.includes(a.id))) $.ui.toast(`🏆 ${a.title} — ${a.description}`)
+  if (fresh.length > 0) {
+    await $.store.set('trophy.unlocked', { ...unlocked, ...Object.fromEntries(fresh.map(id => [id, dayOf(now)])) })
+    for (const a of achievements.filter(a => fresh.includes(a.id))) $.ui.toast(`🏆 ${a.title} — ${a.description}`)
+  }
+  await mirror($)
 }
 
 export const register: Register = on => {
@@ -100,6 +121,7 @@ export const register: Register = on => {
       if (turn.hit.length + turn.miss.length + turn.unmatched.length > 0) {
         const counts = ((await $.store.get('trophy.triggers')) ?? {}) as DayCounts
         await $.store.set('trophy.triggers', addTurn(counts, dayOf(await $.clock.now()), turn))
+        await mirror($)
       }
     }
     return next(e)
