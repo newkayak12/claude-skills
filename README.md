@@ -18,6 +18,7 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 /plugin install graph@newkayak12-claude-skills
 /plugin install harness@newkayak12-claude-skills
 /plugin install knowledge@newkayak12-claude-skills
+/plugin install mods@newkayak12-claude-skills
 /plugin install planning@newkayak12-claude-skills
 /plugin install portfolio@newkayak12-claude-skills
 /plugin install skill@newkayak12-claude-skills
@@ -37,6 +38,7 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 | [graph](./graph/README.md) | Graph-owned harness orchestration, MCP installation, routing, and adjudication |
 | [harness](./harness/README.md) · [한국어](./harness/KOR.md) | Six-stage planning, implementation, verification, quality gate, and reporting |
 | [knowledge](./knowledge/README.md) · [한국어](./knowledge/KOR.md) | Knowledge bases, ontologies, graphs, RAG corpora, and querying |
+| [mods](./mods/README.md) · [한국어](./mods/KOR.md) | Beta Claude Code mods: harness run band, skill toasts, and safety guards (Claude Code 2.1.292+) |
 | [planning](./planning/README.md) · [한국어](./planning/KOR.md) | Executing plans and roadmap planning |
 | [portfolio](./portfolio/README.md) · [한국어](./portfolio/KOR.md) | Portfolio and career: feedback, JD analysis, interview prep |
 | [skill](./skill/README.md) · [한국어](./skill/KOR.md) | Skill creation, improvement, and validation |
