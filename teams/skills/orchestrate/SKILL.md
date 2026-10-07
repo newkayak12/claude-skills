@@ -58,6 +58,7 @@ time afterward to add these — it never has to precede a run.
 ## Standing Mandates
 
 - NEVER call `team_status({full: true})` on a run. One node at a time: `detail_path`, or `team_status({full: true, node_id})`.
+- With the teams mod loaded (Claude Code 2.1.292+, interactive), do not poll `team_status` for progress: the status line and toasts report it, and `/teams-live` opens the pane. The rule above holds without the mod.
 - ALWAYS read `state`. A judging node can return `stage_ok: true` and still be `failed` — that is the gate working, not an error to route around.
 - A blocked run is a result — report what failed and stop there. NEVER do a node's work yourself to force completion, NEVER reopen a run to get past a gate that rejected the work, and NEVER end the report by offering the user a way around it: no raised retry budget, no relaxed acceptance criteria, no override outside the harness. `reset_capacity` is for spent quota, not a retry-budget reset.
 - `isolated: true` only when you created or were handed a private worktree holding this run alone. A user asking to keep work off main is a request, not evidence — with no worktree, pass `isolated: false` and say in the report that attribution comes back `null` because of it.

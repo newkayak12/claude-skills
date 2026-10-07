@@ -1,0 +1,19 @@
+{
+  "name": "mods",
+  "version": "0.1.0-beta.1",
+  "description": "Beta Claude Code mods for the claude-skills workflow: skill toasts, harness run band, safety guards for worktrees, running scripts, push/bump and subagent models.",
+  "author": { "name": "newkayak12" },
+  "category": "productivity",
+  "repository": "https://github.com/newkayak12/claude-skills",
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "agent_model_guard": {
+      "type": "string",
+      "title": "Agent model guard",
+      "description": "What to do when an Agent call names no model: toast (warn, call proceeds), deny (block the call), off.",
+      "default": "toast",
+      "options": ["toast", "deny", "off"]
+    }
+  }
+}

@@ -321,6 +321,35 @@ node teams/scripts/run.mjs --resume <task_id>
 Node 24+가 필요합니다(또는 SQLite에 FTS5가 들어 있는 Node 22/23 빌드). 그 밖의 Node에서는 `wiki_*`
 도구가 명확한 오류 하나를 돌려주고, teams의 나머지는 영향이 없습니다.
 
+## Mod (Claude Code 라이브 UI)
+
+teams는 작은 mod를 함께 제공합니다. 현재 세션의 실행을 보여 주는 상태 줄, 토스트, 패널입니다. 얼리 액세스이며 선택 사항입니다. teams의 어떤 동작도 이 mod에 의존하지 않습니다.
+
+**버전.** 모듈은 Claude Code 2.1.292 이상에서 로드됩니다. 모듈 API는 얼리 액세스라 릴리스 사이에 바뀔 수 있습니다. 더 오래된 빌드는 모듈을 건너뜁니다. 2.1.284에서 확인했고, stderr에 한 줄(`hooks module not loaded: …`)만 찍힐 뿐 커맨드 훅, MCP 서버, CLI는 그대로 동작합니다. 설치된 플러그인에 모듈이 켜져 있지 않다는 메시지가 나오면 `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`을 설정하세요.
+
+| 실행 환경 | Mod |
+|---|---|
+| 대화형 터미널 | 켜짐 |
+| 데스크톱 앱, Code 탭 | 켜짐 |
+| `claude -p`와 헤드리스 어댑터 | 꺼짐(UI 표면 없음). 아래 `team_status` 가드만 헤드리스에서도 동작 |
+| Codex, 또는 플러그인 없음 | 해당 없음, 잃는 것 없음 |
+
+**기능**
+
+- **상태 줄.** `teams: <id> <done>/<total> <current> · …`, 이 세션의 실행마다 한 항목. 실행이 없으면 비어 있습니다.
+- 프롬프트 위의 **`[board]` / `[inbox <n>]`**이 패널을 엽니다. 사용자를 기다리는 노드가 `<n>`개일 때 inbox 버튼이 보입니다.
+- **`/teams-live`**가 패널을 엽니다. `[tickets]`, `[pipeline]`, `[events]` 탭은 `tm_open`이나 `tm_run`으로 마지막에 시작한 실행을 따라갑니다. 그 전에는 `No teams run in this session.`이 표시됩니다.
+- **토스트**는 세션 시작 이후의 이벤트에 뜹니다(`<id8>`은 태스크 id 앞 8자):
+  - `E-<id8> <node_id> failed`
+  - `E-<id8> needs you: <node_id>`
+  - `E-<id8> paused: provider limit`
+  - `E-<id8> finished: <state>`
+  - `E-<id8> stopped: daemon restarts used up`
+  - `E-<id8> <package>: fix rounds used up`
+- **`team_status` 가드.** `full: true`이면서 `node_id`가 없는 `team_status`는 `team_status full:true dumps every node; pass node_id or read detail_path (teams:orchestrate NEVER rule)` 메시지로 거부됩니다. 헤드리스 세션에서도 동작합니다.
+
+알려진 제약: UI 표면 없이(헤드리스 또는 SDK 호스팅) 시작한 세션은 나중에 클라이언트가 붙어도 mod가 꺼진 채로 남습니다. 새 세션을 시작해야 켜집니다(바뀌지 않은 mod를 다시 로드해도 session.start는 다시 발생하지 않습니다).
+
 ## 더 보기
 
 - [CHANGELOG.KOR.md](CHANGELOG.KOR.md): 모든 릴리스, 최신순.
