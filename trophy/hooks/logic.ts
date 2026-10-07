@@ -96,3 +96,35 @@ export function evaluate(uses: readonly Use[], catalog: readonly Achievement[], 
     })
     .map(a => a.id)
 }
+
+// Skills whose trigger phrase appears in a prompt. A typed `/command` is not natural language.
+export function matchTriggers(text: string, index: readonly TriggerEntry[]): string[] {
+  if (text.trimStart().startsWith('/')) return []
+  const lower = text.toLowerCase()
+  return index.filter(t => t.phrases.some(p => lower.includes(p))).map(t => t.skill)
+}
+
+export type TurnResult = { hit: string[]; miss: string[]; unmatched: string[] }
+
+// hit: matched and fired; miss: matched, not fired; unmatched: fired, not matched.
+export function closeTurn(matched: readonly string[], fired: readonly string[]): TurnResult {
+  return {
+    hit: matched.filter(s => fired.includes(s)),
+    miss: matched.filter(s => !fired.includes(s)),
+    unmatched: [...new Set(fired)].filter(s => !matched.includes(s)),
+  }
+}
+
+export type Counts = { hit: number; miss: number; unmatched: number }
+export type DayCounts = Record<string, Record<string, Counts>>
+
+export function addTurn(counts: DayCounts, day: string, turn: TurnResult): DayCounts {
+  const today = { ...counts[day] }
+  for (const kind of ['hit', 'miss', 'unmatched'] as const) {
+    for (const skill of turn[kind]) {
+      today[skill] = { hit: 0, miss: 0, unmatched: 0, ...today[skill] }
+      today[skill]![kind] += 1
+    }
+  }
+  return { ...counts, [day]: today }
+}

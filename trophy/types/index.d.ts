@@ -4,6 +4,7 @@ declare module 'claude-code' {
       active: boolean
       turnMatched: string[]
       turnFired: string[]
+      turnTyped: boolean
       tab: 'trophies' | 'triggers'
     }
   }
