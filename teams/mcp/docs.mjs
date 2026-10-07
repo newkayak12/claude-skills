@@ -551,6 +551,13 @@ export function renderReport(task) {
   L.push(bullets(retro.next_backlog.unaccepted_packages.map((p) => `${p.id} (${p.title}): ${p.reason}`)));
   L.push('', 'Unresolved defects:', bullets(retro.next_backlog.unresolved_defects.map((d) => d.title)));
   L.push('', 'Open questions:', bullets(retro.next_backlog.open_questions.map(questionLine)));
+  // Wiki 변경: rendered from task.wiki alone (set by the wiki bridge); absent -> no section.
+  if (task.wiki) {
+    const w = task.wiki;
+    L.push('', '## Wiki 변경', '', `mode: ${w.mode || 'unknown'}`);
+    if ((w.resumed || []).length) L.push('', 'Resumed into context:', bullets(w.resumed));
+    L.push('', 'Proposals:', bullets((w.proposals || []).map((p) => `${p.id} (${p.status}) ${p.path || '(no path)'}${p.reason || p.error ? ` - ${p.reason || p.error}` : ''}${p.decided_by ? ` [decided by ${p.decided_by}]` : ''}`)));
+  }
   return L.join('\n') + '\n';
 }
 
