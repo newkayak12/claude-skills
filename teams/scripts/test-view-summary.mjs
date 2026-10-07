@@ -53,7 +53,7 @@ test('demo model: counts, stages, now, you', () => {
   assert.equal(s.total, 5);
   assert.deepEqual(s.stages.map((x) => `${x.key}:${x.state}`),
     ['plan:done', 'build:done', 'integrate:done', 'qa:running', 'gate:pending', 'report:pending']);
-  assert.equal(s.now.kind, 'fix');
+  assert.equal(s.now.kind, 'fixnext'); // the defect is still pending: next, not being fixed
   assert.equal(s.now.subject, 'US-2 -> b.txt was never wired');
   assert.equal(s.you.count, 0);
   const d1 = s.work.find((w) => w.id === 'D1');
@@ -145,4 +145,18 @@ test('running: first non-done stage is promoted to the single current stage', ()
   assert.equal(running[0].key, s.stages.find((x) => x.state !== 'done').key);
   assert.equal(running[0].key, 'qa');
   clean(m);
+});
+
+test('now: a pending defect is next; a running defect is being fixed', () => {
+  assert.equal(summarize(demo(), { now: NOW }).now.kind, 'fixnext');
+  const m = demo();
+  m.packages[3] = card('D1', 'US-2 -> b.txt was never wired', 'running', { reporter: 'audit', origin: 'planning-audit' });
+  assert.equal(summarize(m, { now: NOW }).now.kind, 'fix');
+});
+
+test('work is in run order: plan, build cards, then defects', () => {
+  const m = demo();
+  m.packages = [m.packages[3], m.packages[1], m.packages[0], m.packages[2]]; // D1, P1, PLAN, P2
+  assert.deepEqual(summarize(m, { now: NOW }).work.map((w) => w.kind), ['plan', 'package', 'package', 'audit', 'defect']);
+  assert.deepEqual(summarize(m, { now: NOW }).work.map((w) => w.title).slice(0, 3), ['Plan (PRD)', 'module a', 'module b']);
 });
