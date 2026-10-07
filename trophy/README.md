@@ -36,7 +36,9 @@ Sessions that are not interactive (`claude -p`, so every teams/graph adapter ses
 
 **Nothing is sent unless you opt in.** The first interactive session shows one line above the prompt
 asking; `[내용 보기]` shows the exact JSON of the next send before you decide. Until you answer, nothing
-leaves your machine. Declining is remembered; it is never asked again.
+leaves your machine. Declining is remembered; it is never asked again. The answer is saved with the
+version of the question (v2 names error codes): a yes given to the older question (v1) is asked once more,
+and trophy sends nothing until you answer. A no is never re-asked.
 
 Once a day (at the start of the first interactive session after midnight UTC) the plugin sends the
 previous days' events to PostHog (`https://us.i.posthog.com/batch/`, the maintainer's project). Per day:
@@ -47,6 +49,7 @@ previous days' events to PostHog (`https://us.i.posthog.com/batch/`, the maintai
 | `trigger_result` | skill name, day, counts of: prompt had its trigger phrase and the skill ran / did not run / ran without a phrase |
 | `achievement_unlocked` | achievement id |
 | `plugins_installed` | plugin name, day — one per plugin of this marketplace whose skills the session lists |
+| `diag_*` | error codes and counts, only with the `diag` plugin installed (fixed codes; no messages, paths or prompts) |
 | `$exception` | the message of a failure inside this module, with every file path replaced by `<path>`, 300 characters at most |
 
 Every event also carries a random install id (made on first run, not derived from you or your
