@@ -94,3 +94,71 @@ test('a non-zero exit: no throw, no toast, status unchanged', async ($, on) => {
   expect(seen.toasts).toEqual([])
   expect(seen.statuses).toEqual([])
 })
+
+// ---- tool.call: watch hook and team_status guard ----
+// Engine beneath: surfaces, a tool that answers `result`, and a state store the test reads back.
+function toolWorld(on: On, result: unknown, surfaces: readonly ('terminal' | 'desktop')[] = ['terminal'], isBroken = false) {
+  const store = new Map<string, unknown>()
+  on('session.surfaces', () => ({ value: surfaces }))
+  on('tool.call', () => ({ result, text: '' }) as never)
+  on('state.get', (_$, e) => ({ value: { value: store.get(e.key), version: 0 } }) as never)
+  on('state.set', (_$, e) => {
+    if (isBroken) throw new Error('boom')
+    store.set(e.key, e.value)
+    return { value: { isSet: true, version: 1 } } as never
+  })
+  return { watched: () => (store.get('watch') as string[] | undefined) ?? [] }
+}
+const call = ($: Engine, tool: string, args: Record<string, unknown>) => $.tool.call({ tool, ...args } as never)
+
+test('tm_run result with task_id adds it to watch; result unchanged', async ($, on) => {
+  const result = { content: [{ type: 'text', text: 'x' }], structuredContent: { task_id: 'abc' } }
+  const w = toolWorld(on, result)
+  const r = await call($, 'mcp__teams__tm_run', {})
+  expect(r).toEqual({ result, text: '' })
+  expect(w.watched()).toContain('abc')
+})
+
+test('task_id read from JSON in content[0].text', async ($, on) => {
+  const result = { content: [{ type: 'text', text: '{"task_id":"zed"}' }] }
+  const w = toolWorld(on, result)
+  await call($, 'mcp__teams__tm_open', {})
+  expect(w.watched()).toContain('zed')
+})
+
+test('no task_id: watch unchanged', async ($, on) => {
+  const result = { content: [{ type: 'text', text: 'hello' }] }
+  const w = toolWorld(on, result)
+  const r = await call($, 'mcp__teams__tm_run', {})
+  expect(r).toEqual({ result, text: '' })
+  expect(w.watched()).toEqual([])
+})
+
+test('headless: watch hook leaves watch alone', async ($, on) => {
+  const w = toolWorld(on, { structuredContent: { task_id: 'abc' } }, [])
+  await call($, 'mcp__teams__tm_run', {})
+  expect(w.watched()).toEqual([])
+})
+
+test('throwing watch: the result is still returned', async ($, on) => {
+  const result = { structuredContent: { task_id: 'abc' } }
+  toolWorld(on, result, ['terminal'], true)
+  const r = await call($, 'mcp__teams__tm_run', {})
+  expect(r).toEqual({ result, text: '' })
+})
+
+const DENY = 'team_status full:true dumps every node; pass node_id or read detail_path (teams:orchestrate NEVER rule)'
+
+test('team_status full:true is denied, with and without a surface', async ($, on) => {
+  toolWorld(on, { ok: 1 }, [])
+  const r = await call($, 'mcp__teams__team_status', { full: true })
+  expect(r).toEqual({ deny: DENY })
+})
+
+test('team_status full:true with node_id, and {} pass', async ($, on) => {
+  toolWorld(on, { ok: 1 })
+  const a = await call($, 'mcp__teams__team_status', { full: true, node_id: 'x' })
+  expect((a as { deny?: string }).deny).toBeUndefined()
+  const b = await call($, 'mcp__teams__team_status', {})
+  expect((b as { deny?: string }).deny).toBeUndefined()
+})

@@ -7,6 +7,26 @@ const cursor = atom({ plugin: 'teams', key: 'cursor' } as const, 0)
 const status = atom({ plugin: 'teams', key: 'status' } as const, '')
 const waiting = atom({ plugin: 'teams', key: 'waiting' } as const, 0)
 const events = atom({ plugin: 'teams', key: 'events' } as const, [] as TeamsEvent[])
+const watch = atom({ plugin: 'teams', key: 'watch' } as const, [] as string[])
+
+const asRecord = (v: unknown): Record<string, unknown> | undefined =>
+  typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : undefined
+
+// task_id of a tm_open/tm_run result: structuredContent first, then JSON in content[0].text
+function taskIdOf(r: { result?: unknown; text?: unknown }): string | undefined {
+  const res = asRecord(r.result)
+  const fromStructured = asRecord(res?.structuredContent)?.task_id
+  if (typeof fromStructured === 'string' && fromStructured !== '') return fromStructured
+  const content = res?.content
+  const first = Array.isArray(content) ? asRecord(content[0])?.text : r.text
+  if (typeof first !== 'string') return undefined
+  try {
+    const id = asRecord(JSON.parse(first))?.task_id
+    return typeof id === 'string' && id !== '' ? id : undefined
+  } catch {
+    return undefined
+  }
+}
 
 const TICK_MS = 3000
 const MAX_EVENTS = 200
@@ -77,4 +97,23 @@ export const register: Register = on => {
   on('command.run', { command: 'teams-live' }, async () => ({
     text: 'teams-live: the status line and toasts report teams runs of this session.',
   }))
+
+  // react only: the result goes back unchanged; interactive sessions only
+  on('tool.call', { tool: /__(tm_open|tm_run)$/ }, async ($, e, next) => {
+    const r = await next(e)
+    if ((await $.session.surfaces()).length === 0) return r
+    if (r.deny !== undefined) return r
+    const id = taskIdOf(r)
+    if (id !== undefined) await update($, watch, list => (list.includes(id) ? list : [...list, id]))
+    return r
+  }).catch(($, e, next) => next(e))
+
+  // guard: runs headless too
+  on('tool.call', { tool: /__team_status$/ }, ($, e, next) => {
+    const args = e as unknown as { full?: unknown; node_id?: unknown }
+    if (args.full === true && !args.node_id) {
+      return { deny: 'team_status full:true dumps every node; pass node_id or read detail_path (teams:orchestrate NEVER rule)' }
+    }
+    return next(e)
+  }).catch(($, e, next) => next(e))
 }
