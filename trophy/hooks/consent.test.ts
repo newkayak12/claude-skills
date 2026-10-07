@@ -1,6 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
+import { CONSENT_VERSION, effectiveConsent } from './logic.ts'
 import { memoryStore, sessionAt } from './testkit.ts'
 
 const BAND = { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: 100 } as any
@@ -67,4 +68,104 @@ test('[보내기] sets yes', async ($, on) => {
   await ui.press({ key: 'send' })
 
   expect(store.get('trophy.consent')).toBe('yes')
+})
+
+// One seed for every fetch case: due days, sentThrough unset, so the batch is never empty.
+const SEED = {
+  'trophy.installId': 'install-1',
+  'trophy.uses': [{ skill: 'think:grill', plugin: 'think', day: '2026-10-06', session: 's', ts: 1 }],
+}
+const fetching = (on: On, consent: Record<string, unknown>) => {
+  const store = memoryStore(on, { ...SEED, ...consent })
+  sessionAt(on)
+  const fetches: string[] = []
+  on('http.fetch', (_$, e) => {
+    fetches.push(String(e.init?.body))
+    return { value: { status: 200, ok: true, headers: {}, text: '{}' } }
+  })
+  on('fs.write', () => ({ value: undefined }))
+  on('session.usage', () => ({ value: { startedAt: 0, rateLimits: [], context: {} } as any }))
+  bottom(on)
+  return { store, fetches }
+}
+
+test('effectiveConsent maps stored answer and version', () => {
+  expect(CONSENT_VERSION).toBe(2)
+  expect(effectiveConsent('yes', 2)).toBe('yes')
+  expect(effectiveConsent('yes', undefined)).toBe('unasked')
+  expect(effectiveConsent('yes', 1)).toBe('unasked')
+  expect(effectiveConsent('no', undefined)).toBe('no')
+  expect(effectiveConsent('no', 2)).toBe('no')
+  expect(effectiveConsent('unasked', 2)).toBe('unasked')
+  expect(effectiveConsent(undefined, undefined)).toBe('unasked')
+})
+
+test('a stored v1 yes shows the band again and sends nothing', async ($, on) => {
+  const f = fetching(on, { 'trophy.consent': 'yes' })
+  await $.session.start(start)
+  const ui = await $.ui.mount({ plugin: 'trophy', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+
+  expect(await ui.find({ key: 'send' })).toBeDefined()
+  expect(await ui.find({ text: /오류 코드만/ })).toBeDefined()
+  expect(f.fetches).toHaveLength(0)
+  expect(f.store.get('trophy.consent')).toBe('yes')
+  expect(f.store.get('trophy.consentVersion')).toBeUndefined()
+  expect((await run($, 'status')).text).toContain('unasked (v1 yes — 재동의 필요)')
+})
+
+test('answering the band writes yes and version 2', async ($, on) => {
+  const f = fetching(on, { 'trophy.consent': 'yes' })
+  await $.session.start(start)
+  const ui = await $.ui.mount({ plugin: 'trophy', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+
+  await ui.press({ key: 'send' })
+
+  expect(f.store.get('trophy.consent')).toBe('yes')
+  expect(f.store.get('trophy.consentVersion')).toBe(2)
+  expect(await ui.find({ key: 'send' })).toBeUndefined()
+  expect((await run($, 'status')).text).toContain('yes (v2)')
+})
+
+test('a stored no is never re-asked and sends nothing', async ($, on) => {
+  const f = fetching(on, { 'trophy.consent': 'no' })
+  await $.session.start(start)
+  const ui = await $.ui.mount({ plugin: 'trophy', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+
+  expect(await ui.find({ key: 'send' })).toBeUndefined()
+  expect(f.fetches).toHaveLength(0)
+})
+
+test('trophy-telemetry on writes version 2', async ($, on) => {
+  const f = fetching(on, {})
+  await $.session.start(start)
+
+  await run($, 'on')
+  expect(f.store.get('trophy.consentVersion')).toBe(2)
+  await run($, 'off')
+  expect(f.store.get('trophy.consent')).toBe('no')
+  expect(f.store.get('trophy.consentVersion')).toBe(2)
+})
+
+test('control: yes at version 2 on the shared seed fetches once', async ($, on) => {
+  const f = fetching(on, { 'trophy.consent': 'yes', 'trophy.consentVersion': 2 })
+  await $.session.start(start)
+  expect(f.fetches).toHaveLength(1)
+})
+
+test('yes with no version on the shared seed fetches nothing', async ($, on) => {
+  const f = fetching(on, { 'trophy.consent': 'yes' })
+  await $.session.start(start)
+  expect(f.fetches).toHaveLength(0)
+})
+
+test('yes at version 1 on the shared seed fetches nothing', async ($, on) => {
+  const f = fetching(on, { 'trophy.consent': 'yes', 'trophy.consentVersion': 1 })
+  await $.session.start(start)
+  expect(f.fetches).toHaveLength(0)
+})
+
+test('no on the shared seed fetches nothing', async ($, on) => {
+  const f = fetching(on, { 'trophy.consent': 'no', 'trophy.consentVersion': 2 })
+  await $.session.start(start)
+  expect(f.fetches).toHaveLength(0)
 })

@@ -20,7 +20,7 @@ const SEED = {
 }
 
 const fixture = (on: On, consent: string | undefined, status = 200) => {
-  const store = memoryStore(on, { ...SEED, ...(consent ? { 'trophy.consent': consent } : {}) })
+  const store = memoryStore(on, { ...SEED, ...(consent ? { 'trophy.consent': consent, 'trophy.consentVersion': 2 } : {}) })
   const clock = sessionAt(on, TODAY)
   const fetches: { url: string; body: string }[] = []
   const answer = { status }

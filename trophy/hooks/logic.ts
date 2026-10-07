@@ -205,6 +205,17 @@ export function scrub(message: string) {
   return message.replace(/(?<![\w.])(?:[A-Za-z]:\\[^\s'"():;,]*|~?\/[^\s'"():;,]*)/g, '<path>').slice(0, 300)
 }
 
+// v1 = the first band text (no version stored); v2 names error codes.
+export const CONSENT_VERSION = 2
+export type ConsentAnswer = 'unasked' | 'yes' | 'no'
+
+// A yes counts only for the text version it answered; an older yes reads as unasked, a no stays no.
+export function effectiveConsent(stored: ConsentAnswer | undefined, version: number | undefined): ConsentAnswer {
+  if (stored === 'no') return 'no'
+  if (stored === 'yes' && version === CONSENT_VERSION) return 'yes'
+  return 'unasked'
+}
+
 export const POSTHOG_URL = 'https://us.i.posthog.com/batch/'
 // Write-only project token: public by design.
 export const POSTHOG_KEY = 'phc_r4NATbMFBZvmQYiJ8MPMJSWHprgbsTkbCddtc6aYAoUg'
