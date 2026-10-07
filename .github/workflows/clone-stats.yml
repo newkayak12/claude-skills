@@ -1,0 +1,49 @@
+name: Clone Stats
+
+# GitHub keeps traffic for 14 days only; this copies each finished day's clone counts
+# to PostHog (event `repo_clones`). Needs secret TRAFFIC_TOKEN: a fine-grained PAT on this
+# repo with Administration: Read-only (the traffic API requires it; GITHUB_TOKEN cannot).
+
+on:
+  schedule:
+    - cron: '17 1 * * *'   # 01:17 UTC daily, after the previous UTC day closed
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Finished days to send, counting back from yesterday (1-13; >1 is a backfill)'
+        default: '1'
+
+jobs:
+  clones:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send finished days to PostHog
+        env:
+          GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
+          REPO: ${{ github.repository }}
+          DAYS: ${{ inputs.days || '1' }}
+          POSTHOG_TOKEN: phc_r4NATbMFBZvmQYiJ8MPMJSWHprgbsTkbCddtc6aYAoUg
+        run: |
+          gh api "repos/$REPO/traffic/clones?per=day" > clones.json
+          node - <<'EOF'
+          const { clones } = require('./clones.json');
+          const days = Math.min(13, Math.max(1, Number(process.env.DAYS) || 1));
+          const today = new Date().toISOString().slice(0, 10);
+          const wanted = new Set(Array.from({ length: days }, (_, i) =>
+            new Date(Date.parse(today) - (i + 1) * 864e5).toISOString().slice(0, 10)));
+          const batch = clones
+            .filter(c => wanted.has(c.timestamp.slice(0, 10)))
+            .map(c => ({
+              event: 'repo_clones',
+              distinct_id: 'github-traffic',
+              timestamp: c.timestamp,
+              properties: { day: c.timestamp.slice(0, 10), count: c.count, uniques: c.uniques,
+                            repo: process.env.REPO, $process_person_profile: false },
+            }));
+          console.log(`sending ${batch.length} day(s):`, batch.map(e => `${e.properties.day} ${e.properties.count}/${e.properties.uniques}`).join(', ') || '-');
+          if (!batch.length) process.exit(0);
+          fetch('https://us.i.posthog.com/batch/', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key: process.env.POSTHOG_TOKEN, batch }),
+          }).then(async r => { console.log(r.status, await r.text()); if (!r.ok) process.exit(1); });
+          EOF
