@@ -40,8 +40,8 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url)); // <plugin>/skills/install
 const PLUGIN_ROOT = resolve(HERE, '..', '..'); // <plugin> (harness/)
 // What a gated project must not commit: session markers, harness run directories (plan/spec/
-// critique scratch that engages the gate), and per-user settings.
-const GITIGNORE_LINES = ['.claude/.harness-markers/', '.harness-run/', '.claude/settings.local.json'];
+// critique scratch that engages the gate), the gate's last-decision file, and per-user settings.
+const GITIGNORE_LINES = ['.claude/.harness-markers/', '.harness-run/', '.claude/.harness-last-decision.json', '.claude/settings.local.json'];
 
 function parseArgs() {
   const raw = process.argv[2];

@@ -140,7 +140,7 @@ function removeClaudeBlock(claudeMdPath, notes) {
 }
 
 // The lines install.mjs adds (its GITIGNORE_LINES).
-const GITIGNORE_LINES = ['.claude/.harness-markers/', '.harness-run/', '.claude/settings.local.json'];
+const GITIGNORE_LINES = ['.claude/.harness-markers/', '.harness-run/', '.claude/.harness-last-decision.json', '.claude/settings.local.json'];
 
 function removeGitignoreLine(gitignorePath) {
   if (!existsSync(gitignorePath)) return 'absent';
@@ -184,6 +184,7 @@ function main() {
   actions.gate = removeKnownPath(join(claudeDir, 'harness-gate.json'));
   actions.embeddedRuntime = removeKnownPath(join(claudeDir, 'harness'));
   actions.markers = removeKnownPath(join(claudeDir, '.harness-markers'));
+  actions.decision = removeKnownPath(join(claudeDir, '.harness-last-decision.json'));
   actions.claudeMd = removeClaudeBlock(join(projectDir, 'CLAUDE.md'), notes);
   actions.gitignore = removeGitignoreLine(join(projectDir, '.gitignore'));
 

@@ -106,8 +106,8 @@ node "<plugin>/skills/install/install.mjs" '{
 ### `remove`
 
 프로젝트에 설치된 하네스 거버넌스를 걷어냅니다: 훅, `settings.json` 등록,
-`.claude/harness-gate.json`, `.claude/harness/`, `.claude/.harness-markers/`, CLAUDE.md의 펜스
-블록, `.gitignore` 한 줄. `.claude/conventions/`는 프로젝트 소유라 **기본적으로 보존**되고, 지우려면
+`.claude/harness-gate.json`, `.claude/.harness-last-decision.json`, `.claude/harness/`,
+`.claude/.harness-markers/`, CLAUDE.md의 펜스 블록, `.gitignore` 한 줄. `.claude/conventions/`는 프로젝트 소유라 **기본적으로 보존**되고, 지우려면
 명시적 확인이 필요합니다. 깨진 `settings.json`이나 짝이 안 맞는 CLAUDE 마커는 완료를 억지로
 만들려고 통째로 지우지 않고, 그대로 두고 수동 정리 대상으로 보고합니다.
 
@@ -231,6 +231,29 @@ plan·goal-spec·sound critique가 디스크에 있는 fallback run). 대화 속
   gitignore 항목을 제거합니다. 프로젝트 소유 컨벤션은 명시적으로 요청하지 않는 한 보존됩니다.
 - **`harness:update`** — 플러그인 버전을 올린 뒤 `install.mjs`를 `"refresh": true`로 실행해
   설치된 복사본을 갱신합니다. 사용자 소유 파일은 건드리지 않습니다.
+
+## Mod (Claude Code 라이브 UI)
+
+harness는 작은 mod를 함께 제공합니다. 게이트 상태 줄과, 마지막 게이트 판정을 설명하는 패널입니다. 얼리 액세스이며 선택 사항입니다. 게이트 자체는 커맨드 훅이며 mod 없이도 동작합니다.
+
+**버전.** 모듈은 Claude Code 2.1.292 이상에서 로드됩니다. 모듈 API는 얼리 액세스라 릴리스 사이에 바뀔 수 있습니다. 더 오래된 빌드는 모듈을 건너뜁니다. 2.1.284에서 확인했고, stderr에 한 줄(`hooks module not loaded: …`)만 찍힐 뿐 커맨드 훅, MCP, CLI는 그대로 동작합니다. 설치된 플러그인에 모듈이 켜져 있지 않다는 메시지가 나오면 `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`을 설정하세요.
+
+| 실행 환경 | Mod |
+|---|---|
+| 대화형 터미널 | 켜짐 |
+| 데스크톱 앱, Code 탭 | 켜짐 |
+| `claude -p`와 헤드리스 어댑터 | 꺼짐(UI 표면 없음) |
+| Codex, 또는 플러그인 없음 | 해당 없음, 잃는 것 없음 |
+
+**기능**
+
+- **상태 줄**, 프로젝트에 게이트 설정이 있을 때만:
+  - `gate: armed (<n> patterns)`
+  - `gate: denied <target> — /harness-gate`, 거부 후 10분 동안.
+- **`/harness-gate`**가 패널을 엽니다. 게이트 패턴, 인게이지 윈도우, 마지막 판정(allow/deny, 도구, 대상, 경과 시간, 사유), 하네스를 인게이지하는 방법을 보여 줍니다. 게이트 설정이 없으면 그렇다고 알려 줍니다.
+- 마지막 판정은 게이트 훅이 쓰는 `.claude/.harness-last-decision.json`에서 읽습니다. 로컬 런타임 파일이며 `install`이 gitignore에 넣고 `remove`가 지웁니다.
+
+알려진 제약: 상태 줄은 게이트 설정을 세션의 작업 디렉터리 기준으로 읽습니다. UI 표면 없이(헤드리스 또는 SDK 호스팅) 시작한 세션은 나중에 클라이언트가 붙어도 mod가 꺼진 채로 남습니다. 새 세션을 시작해야 켜집니다(바뀌지 않은 mod를 다시 로드해도 session.start는 다시 발생하지 않습니다).
 
 ## 상태
 - v1.23.0 — `harness:patch`가 사용자 스킬에서 빠짐(메인테이너 스크립트는 `_repo/scripts/patch-harness.mjs`로 이동); 새 `harness:update`가 `install.mjs` `"refresh": true`로 설치된 복사본을 갱신

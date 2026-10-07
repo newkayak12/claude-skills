@@ -84,3 +84,16 @@ Value H/M, kept out of this round to stay small; revisit after 2 and 3 ship.
    reload may lose.
 5. **Release with the plugin.** A mod change bumps that plugin's version and its
    README/KOR (or CHANGELOG/CHANGELOG.KOR for teams) like any other change.
+6. **Plugin files via `$.plugin.root`.** `CLAUDE_PLUGIN_ROOT` is not set in a
+   `$.process.run` child (00-spike-findings §4).
+
+## Next round (user-picked 2026-10-07)
+
+- **skill-notify:** toast + status line `skill: <name>` when the model invokes a skill from this
+  marketplace (plugin list read from the installed `marketplace.json`). Prototype runs as a
+  dev mod (`~/.claude/dev-mods/<session>/skill-notify/`); fold into the skill-routing item above.
+- **like-me voice profile:** save the analysed voice profile in `$.store` so later `write:like-me`
+  runs reuse it instead of re-reading samples.
+- **portfolio/write/develop extras (all six, from Backlog):** deck-builder preview pane,
+  mock-interview ledger in `$.store`, flaky-test-analyzer `run_n` tool, scenario-director actor
+  pane + director request guard, writer-verification ask before `gh pr create`.

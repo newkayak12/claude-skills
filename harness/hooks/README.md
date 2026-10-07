@@ -56,5 +56,5 @@ Known holes (this is a guard rail against skipping the process, not security):
   (`f=a.mjs; echo > $f`), `git merge`/`pull`/`rebase`, and any tool other than the ones above;
 - any live marker passes every session in the window (parallel subagents need it).
 
-Add `.claude/.harness-markers/`, `.harness-run/` and `.claude/settings.local.json` to the
+Add `.claude/.harness-markers/`, `.harness-run/`, `.claude/.harness-last-decision.json` and `.claude/settings.local.json` to the
 project's `.gitignore` (`install` does).

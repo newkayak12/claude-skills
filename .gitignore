@@ -21,3 +21,4 @@ INSTRUCT.md
 .claude/.harness-markers/
 .harness-run/
 .claude/settings.local.json
+.claude/.harness-last-decision.json

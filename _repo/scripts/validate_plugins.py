@@ -5,7 +5,7 @@ Validates that all plugins in this repo are installable by Claude Code.
 Checks:
   1. marketplace.json — valid JSON, required fields present
   2. Per plugin — source dir exists, plugin.json exists and is valid
-  3. Per plugin — skills/ directory exists with at least one skill
+  3. Per plugin — skills/ directory exists with at least one skill (or hooks/hooks.json lists modules)
   4. Per skill  — SKILL.md exists
   5. Per skill  — SKILL.md has valid YAML frontmatter with name + description
   6. Per skill  — description contains "Use when" (authoring rule)
@@ -144,6 +144,15 @@ def check_plugin(plugin_entry):
     # 4. skills/ directory
     skills_dir = os.path.join(plugin_dir, "skills")
     if not os.path.isdir(skills_dir):
+        hooks_json = os.path.join(plugin_dir, "hooks", "hooks.json")
+        try:
+            with open(hooks_json) as f:
+                modules = json.load(f).get("modules")
+        except (OSError, ValueError, AttributeError):
+            modules = None
+        if isinstance(modules, list) and modules:
+            print(f"  OK    {prefix} hooks module, no skills")
+            return
         err(f"{prefix} missing skills/ directory")
         return
 
