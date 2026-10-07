@@ -18,6 +18,7 @@ import {
   scrub,
   sumDays,
   triggerLists,
+  typedCommand,
 } from './logic.ts'
 import type { BatchStore, DayCounts, Use } from './logic.ts'
 
@@ -186,7 +187,10 @@ export const register: Register = on => {
     if (await read($, active)) {
       await update($, turnMatched, () => matchTriggers(e.text, triggers))
       await update($, turnFired, () => [])
-      await update($, turnTyped, () => e.text.trimStart().startsWith('/'))
+      const typed = typedCommand(e.text)
+      await update($, turnTyped, () => typed !== undefined)
+      // The one path that still sees a typed skill when skill.prompt and UserPromptExpansion are skipped.
+      if (typed) await note($, typed)
     }
     return next(e)
   }).catch(failOpen)
