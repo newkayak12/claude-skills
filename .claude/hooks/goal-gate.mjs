@@ -371,33 +371,34 @@ export function splitHeredocs(cmd) {
 }
 
 // Whether a heredoc's paths count as written, by what consumes it: a shell always; an
-// interpreter when its body can write; anything else (data) when its body holds a write verb,
-// or - when the file it writes is code, or is run later on the same command line - a
-// write-capable call. Plain prose (a commit message saying "remove") is data.
-function heredocWrites(d, head) {
+// interpreter when its body can write; anything else (data) only when the file it writes is
+// code, and its body can write. Plain prose (a commit message saying "remove") is data. A data
+// heredoc run later on the same line is handled by the caller (executes()).
+function heredocWrites(d) {
   const ws = simpleCommands(d.line).flatMap(words);
   if (ws.some((w) => SHELLS.test(w))) return true;
   if (ws.some((w) => INTERP.test(w))) return SCRIPT_WRITE.test(d.body) || WRITE_CMD.test(d.body);
-  if (WRITE_CMD.test(d.body)) return true;
   const targets = redirectTargets(d.line);
-  const code = targets.some((t) => SCRIPT_EXT.test(t) || head.split(t).length > 2);
-  return code && SCRIPT_WRITE.test(d.body);
+  return targets.some((t) => SCRIPT_EXT.test(t)) && (SCRIPT_WRITE.test(d.body) || WRITE_CMD.test(d.body));
 }
 
-// Whether the paths a command names count as written: a write verb outside a read-only
-// command, a shell given a script, an interpreter's inline script with anything write-capable
-// in it, or a heredoc that writes (heredocWrites).
-function writesNamedPaths(head, docs) {
-  if (docs.some((d) => heredocWrites(d, head))) return true;
-  for (const seg of simpleCommands(head)) {
-    if (readOnly(seg)) continue;
-    if (WRITE_CMD.test(seg) || runsOrWrites(seg)) return true;
-    if (!INLINE_FLAG.test(seg)) continue;
-    const ws = words(seg);
-    if (ws.some((w) => SHELLS.test(w))) return true;
-    if (ws.some((w) => INTERP.test(w)) && SCRIPT_WRITE.test(seg)) return true;
-  }
-  return false;
+// Whether a simple command runs a shell, an interpreter or a script (bash p.txt, node x, ./x, . x,
+// eval, sh -c): what a data heredoc wrote could be its input, under any spelling of the name.
+function executes(seg) {
+  const raw = seg.split(/\s+/).find((w) => !/^\w+=/.test(w)) || '';
+  return words(seg).some((w) => SHELLS.test(w) || INTERP.test(w) || w === '.') || /^['"]?\.{0,2}\//.test(raw);
+}
+
+// Whether one simple command writes the paths it names: a write verb outside a read-only
+// command, a shell given an inline script, an interpreter's inline script with anything
+// write-capable in it.
+function segmentWrites(seg) {
+  if (readOnly(seg)) return false;
+  if (WRITE_CMD.test(seg) || runsOrWrites(seg)) return true;
+  if (!INLINE_FLAG.test(seg)) return false;
+  const ws = words(seg);
+  if (ws.some((w) => SHELLS.test(w))) return true;
+  return ws.some((w) => INTERP.test(w)) && SCRIPT_WRITE.test(seg);
 }
 
 // The directories a command's paths are relative to: its cwd, and every `cd X` it runs.
@@ -412,16 +413,29 @@ function bases(cmd, cwd) {
 }
 
 // Paths the command writes: every redirect target and git --output file outside a heredoc body,
-// and - when writesNamedPaths - every path-like word in it, quoted or not, bodies included (a
-// script names its target inside a string: writeFileSync('x.mjs')). Each is resolved against
-// every base it could be relative to.
+// and every path-like word of a writing segment, quoted or not (a script names its target inside
+// a string: writeFileSync('x.mjs')). A writing heredoc takes its target from anywhere in the
+// command (variable, argv, env or for-loop list set on an earlier line), so the whole command is
+// collected. Words of a segment that writes nothing (pgrep -f 'a/b.mjs') are not collected. Each
+// is resolved against every base it could be relative to.
 export function bashWriteTargets(command, cwd) {
   const cmd = String(command || '');
   const { head, docs } = splitHeredocs(cmd);
   const found = new Set(redirectTargets(head));
   for (const m of head.matchAll(GIT_OUTPUT)) found.add(m[2] ?? m[3] ?? m[1]);
-  if (writesNamedPaths(head, docs)) {
-    for (const t of cmd.match(PATHLIKE) || []) {
+  const segs = simpleCommands(head);
+  const texts = segs.filter(segmentWrites);
+  // A path can reach a writing segment from outside its argv: an expansion, an input redirect or
+  // heredoc, a list-file flag or --stdin, xargs/parallel (F=P; rm "$F", xargs rm < list): then every word of
+  // the command, heredoc bodies included, may be the target.
+  if (texts.some((t) => /[$`<]|--pathspec-from-file|--stdin\b|\b(xargs|parallel)\b/.test(t))) texts.push(cmd);
+  if (docs.some(heredocWrites)) texts.push(cmd);
+  // A data heredoc plus a later shell/interpreter run: the file's name cannot be matched (cd, glob,
+  // relative spelling), so the whole command, heredoc bodies included, may name the target. The
+  // heredoc's own consumer (python3 - <<EOF) is judged by heredocWrites, not here.
+  if (docs.some((d) => !simpleCommands(d.line).some(executes)) && segs.some(executes)) texts.push(cmd);
+  for (const text of texts) {
+    for (const t of text.match(PATHLIKE) || []) {
       if (t.startsWith('-') || !/[./]/.test(t) || /^\.+$/.test(t)) continue;
       found.add(t);
     }
@@ -493,15 +507,34 @@ function main() {
   if (engaged) refreshMarker(markerDir, sid);
 
   const gated = [...new Set(judged.filter((j) => isGated(j.rel, cfg.patterns)).map((j) => j.rel))];
-  if (!gated.length || engaged) process.exit(0);
-  if (anyRecentMarker(markerDir, now, cfg.windowMs)) process.exit(0);
+  const record = (decision, reason) => recordDecision(root, { ts: now, session_id: sid, tool, target: gated[0], decision, reason });
+  if (!gated.length) process.exit(0);
+  if (engaged) {
+    record('allow', 'harness engaged');
+    process.exit(0);
+  }
+  if (anyRecentMarker(markerDir, now, cfg.windowMs)) {
+    record('allow', 'engagement marker');
+    process.exit(0);
+  }
 
-  deny(
+  const reason =
     `${gated.slice(0, 3).join(', ')} is gated by the harness (.claude/harness-gate.json). ` +
-      'Engage the harness before editing it: invoke the harness skill and follow its Process - ' +
-      'the graph MCP, the Workflow engine, or an Agent Team fallback run whose plan, goal-spec and ' +
-      'sound critique are on disk. A mention in text does not engage it.',
-  );
+    'Engage the harness before editing it: invoke the harness skill and follow its Process - ' +
+    'the graph MCP, the Workflow engine, or an Agent Team fallback run whose plan, goal-spec and ' +
+    'sound critique are on disk. A mention in text does not engage it.';
+  record('deny', reason);
+  deny(reason);
+}
+
+// The last gated decision, for the mod's status line. Outside .harness-markers (anyRecentMarker
+// reads every file there as a timestamp). Best-effort: never throws, never changes the verdict.
+function recordDecision(root, d) {
+  try {
+    writeFileSync(join(root, '.claude', '.harness-last-decision.json'), JSON.stringify(d));
+  } catch {
+    /* best-effort */
+  }
 }
 
 function gitTop(dir) {
