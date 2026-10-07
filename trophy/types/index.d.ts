@@ -5,6 +5,7 @@ declare module 'claude-code' {
       turnMatched: string[]
       turnFired: string[]
       turnTyped: boolean
+      consent: 'unasked' | 'yes' | 'no'
       tab: 'trophies' | 'triggers'
     }
   }

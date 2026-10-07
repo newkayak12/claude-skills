@@ -23,8 +23,16 @@ const turnMatched = atom({ plugin: 'trophy', key: 'turnMatched' } as const, [] a
 const turnFired = atom({ plugin: 'trophy', key: 'turnFired' } as const, [] as string[])
 const turnTyped = atom({ plugin: 'trophy', key: 'turnTyped' } as const, false)
 const tab = atom({ plugin: 'trophy', key: 'tab' } as const, 'trophies' as 'trophies' | 'triggers')
+const consent = atom({ plugin: 'trophy', key: 'consent' } as const, 'unasked' as 'unasked' | 'yes' | 'no')
 
 const PANE = 'trophy'
+type Consent = 'unasked' | 'yes' | 'no'
+
+// The one place consent changes: the store keeps it, the state redraws the band.
+async function setConsent($: EngineInterface, value: Consent) {
+  await $.store.set('trophy.consent', value)
+  await update($, consent, () => value)
+}
 
 // The file trophy:list reads. Written after every store change; a failed write never blocks the prompt.
 async function mirror($: EngineInterface) {
@@ -70,6 +78,8 @@ export const register: Register = on => {
     if (!e.isInteractive) return next(e)
 
     await update($, active, () => true)
+    const saved = ((await $.store.get('trophy.consent')) as Consent | undefined) ?? 'unasked'
+    await update($, consent, () => saved)
     if ((await $.store.get('trophy.installId')) === undefined) {
       await $.store.set('trophy.installId', crypto.randomUUID())
     }
@@ -175,6 +185,29 @@ export const register: Register = on => {
         {achievements.map(a => (
           <Text key={`row-${a.id}`}>{achievementRow(a, uses, unlocked[a.id])}</Text>
         ))}
+      </Box>
+    )
+  }).catch(($, e, next) => next(e))
+
+  on('command.run', { command: 'trophy-telemetry' }, async ($, e) => {
+    const arg = e.args.trim()
+    if (arg === 'on' || arg === 'off') {
+      await setConsent($, arg === 'on' ? 'yes' : 'no')
+      return { text: `trophy telemetry: ${arg === 'on' ? 'yes' : 'no'}` }
+    }
+    if (arg === 'status') return { text: `trophy telemetry: ${await read($, consent)}` }
+    return { text: 'usage: /trophy-telemetry on|off|status' }
+  }).catch(($, e, next) => next(e))
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.props.hasSurvey || !(await read($, active)) || (await read($, consent)) !== 'unasked') return next(e)
+
+    const { Box, Button, Text } = $.ui.resolve(e)
+    return (
+      <Box>
+        <Text>trophy: 익명 사용 통계를 보낼까요? (스킬명·일별 횟수만, 프롬프트·경로 없음) </Text>
+        <Button key="send" label="보내기" onPress={() => setConsent($, 'yes')} />
+        <Button key="decline" label="안 보내기" onPress={() => setConsent($, 'no')} />
       </Box>
     )
   }).catch(($, e, next) => next(e))
