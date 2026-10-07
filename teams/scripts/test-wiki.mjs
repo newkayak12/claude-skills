@@ -4,8 +4,9 @@
 // Every test name starts with the Done-when 1단계 bullet it proves (DW1..DW10, design doc
 // _repo/docs/plans/2026-10-07-teams-wiki-memory.md section 3); the tests after DW10 pin the
 // contract details (freshness, lock steal/timeout, reject). DW7 (no network/model) is a source
-// scan here and a grep in the harness gate. FTS tests need node:sqlite + FTS5 (Node 24+) and skip
-// elsewhere; the stdio smoke (DW9) and the runtime guard (DW10) always run.
+// scan here and a grep in the harness gate. Every test runs in the live mode: fts5 where node:sqlite +
+// FTS5 exist (Node 24+), md scan elsewhere. On fts5 one test re-runs this file under WIKI_FORCE_SCAN=1
+// and a parity test compares both modes on a fixed battery.
 //
 //   node --test teams/scripts/test-wiki.mjs
 
@@ -22,7 +23,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WIKI = join(HERE, '..', 'mcp', 'wiki.mjs');
 const wiki = await import(WIKI);
-const FTS5 = (await wiki.sqliteSupport()).ok;
+const MODE = (await wiki.sqliteSupport()).mode;
 const TMP = mkdtempSync(join(tmpdir(), 'wiki-test-'));
 process.on('exit', () => { try { rmSync(TMP, { recursive: true, force: true }); } catch { /* best-effort */ } });
 
@@ -53,11 +54,44 @@ async function seed() {
   return target;
 }
 
+// Both modes must see these pages alike; each query's expected hit set is fixed by the FTS5 rules
+// (unicode61: underscore separates, case + diacritics folded, 'x*' prefix; trigram: substring).
+async function battery() {
+  fresh();
+  await seed();
+  await accept('x', 'b', 'Page B', 'target page');
+  await accept('x', 'a', 'Page A', 'see [[x/b]] and [[x/missing]]');
+  await accept('decisions', 'pay', '결제 결정', '게이트웨이를 쓴다.');
+  await accept('log', '2026-10-06-e1', 'EPIC 1 log', '첫 세션. [[decisions/pay]] 결정.');
+  sleepMs(5);
+  await accept('log', '2026-10-07-e2', 'EPIC 2 log', '둘째 세션. [[decisions/pay]] 이어받음.');
+  await accept('doc', 'ident', 'Identifiers', 'maps user_id to Account. Prefixed 결제승인정책 문서. Café menu. userid alone.');
+  for (const [slug, body] of [['g1', 'gateway gateway'], ['g2', 'gateway'], ['g3', 'gateway'], ['g4', 'gateway'], ['r', 'zzrare']]) await accept('idf', slug, `T ${slug}`, body);
+  const top = async (q) => (await ids(q))[0];
+  const bare = await call('wiki_propose', { space: 'payments', slug: 'overview', title: '결제 승인 흐름 개요', body: '개요.', source: 't' });
+  return {
+    mode: (await call('wiki_status', {})).mode,
+    top: [await top('결제를'), await top('idempotency charges'), await top('tracking')],
+    underscore: [await ids('user_id'), await ids('USER ID'), await ids('userid')],
+    prefix: await ids('결제승'),
+    diacritic: [await ids('cafe'), await ids('CAFÉ')],
+    trigram: await ids('ccount'),
+    short: [await ids('id'), await ids('결제'), await ids('acco'), await ids('maps account menu')],
+    idf: await ids('gateway zzrare'),
+    links: [(await call('wiki_get', { id: 'x/a' })).links_out.map((l) => l.id), (await call('wiki_get', { id: 'x/b' })).backlinks.map((l) => l.id)],
+    resume: (await call('wiki_resume', {})).pages.map((p) => [p.id, p.links.map((l) => l.id)]),
+    warn: bare.warnings.map((w) => [w.type, w.similar]),
+    broken: (await call('wiki_status', {})).broken_links,
+  };
+}
+
+if (process.env.WIKI_PARITY_CHILD) { console.log(JSON.stringify(await battery())); process.exit(0); }
+
 test.after(() => wiki.close());
 
 // ---------- DW1 ----------
 
-test('DW1 ko and en keyword queries rank the target first; a distractor-only query does not', { skip: !FTS5 }, async () => {
+test('DW1 ko and en keyword queries rank the target first; a distractor-only query does not', async () => {
   fresh();
   const target = await seed();
   assert.equal((await ids('결제를'))[0], target);
@@ -69,7 +103,7 @@ test('DW1 ko and en keyword queries rank the target first; a distractor-only que
 
 // ---------- DW2 ----------
 
-test('DW2 superseded page leaves default search, points at the new page, INDEX.md lists only the new', { skip: !FTS5 }, async () => {
+test('DW2 superseded page leaves default search, points at the new page, INDEX.md lists only the new', async () => {
   const root = fresh();
   const old = await accept('payments', 'v1', '결제 v1', '구버전 결제 절차 legacyterm');
   const next = await accept('payments', 'v2', '결제 v2', '신버전 결제 절차 modernterm', { supersedes: old });
@@ -85,7 +119,7 @@ test('DW2 superseded page leaves default search, points at the new page, INDEX.m
 
 // ---------- DW3 ----------
 
-test('DW3 deleting .index.sqlite rebuilds the same ordered results', { skip: !FTS5 }, async () => {
+test('DW3 deleting .index.sqlite rebuilds the same ordered results', async () => {
   const root = fresh();
   await seed();
   // equal-score pair inserted b-then-a: only the id tie-break keeps a before b after a sorted rebuild
@@ -100,7 +134,7 @@ test('DW3 deleting .index.sqlite rebuilds the same ordered results', { skip: !FT
   assert.ok(!existsSync(join(wd(root), '.index.sqlite')));
   const after = [];
   after.push(await ids(queries[0]));
-  assert.ok(existsSync(join(wd(root), '.index.sqlite')));
+  assert.equal(existsSync(join(wd(root), '.index.sqlite')), MODE === 'fts5');
   for (const q of queries.slice(1)) after.push(await ids(q));
   assert.deepEqual(before[4], ['tie/a', 'tie/b']);
   assert.deepEqual(after, before);
@@ -108,14 +142,16 @@ test('DW3 deleting .index.sqlite rebuilds the same ordered results', { skip: !FT
 
 // ---------- DW4 ----------
 
-test('DW4 [[links]] fill the links table, backlinks come back from wiki_get, broken links show in wiki_status', { skip: !FTS5 }, async () => {
+test('DW4 [[links]] fill the links table, backlinks come back from wiki_get, broken links show in wiki_status', async () => {
   const root = fresh();
   await accept('x', 'b', 'Page B', 'target page');
   await accept('x', 'a', 'Page A', 'see [[x/b]] and [[x/missing]]');
-  const { DatabaseSync } = await import('node:sqlite');
-  const raw = new DatabaseSync(join(wd(root), '.index.sqlite'));
-  assert.ok(raw.prepare("SELECT 1 FROM links WHERE from_id = 'x/a' AND to_id = 'x/b'").get());
-  raw.close();
+  if (MODE === 'fts5') {
+    const { DatabaseSync } = await import('node:sqlite');
+    const raw = new DatabaseSync(join(wd(root), '.index.sqlite'));
+    assert.ok(raw.prepare("SELECT 1 FROM links WHERE from_id = 'x/a' AND to_id = 'x/b'").get());
+    raw.close();
+  }
   assert.deepEqual((await call('wiki_get', { id: 'x/b' })).backlinks.map((l) => l.id), ['x/a']);
   assert.deepEqual((await call('wiki_get', { id: 'x/a' })).links_out.map((l) => l.id), ['x/b', 'x/missing']);
   assert.deepEqual((await call('wiki_status', {})).broken_links, [{ from: 'x/a', to: 'x/missing' }]);
@@ -123,7 +159,7 @@ test('DW4 [[links]] fill the links table, backlinks come back from wiki_get, bro
 
 // ---------- DW5 ----------
 
-test('DW5 wiki_resume returns the newest log pages with their 1-hop linked pages', { skip: !FTS5 }, async () => {
+test('DW5 wiki_resume returns the newest log pages with their 1-hop linked pages', async () => {
   fresh();
   await accept('decisions', 'pay', '결제 결정', '게이트웨이를 쓴다.');
   await accept('log', '2026-10-06-e1', 'EPIC 1 log', '첫 세션. [[decisions/pay]] 결정.');
@@ -137,7 +173,7 @@ test('DW5 wiki_resume returns the newest log pages with their 1-hop linked pages
 
 // ---------- DW6 ----------
 
-test('DW6 a linkless proposal similar to an existing page gets an isolated warning', { skip: !FTS5 }, async () => {
+test('DW6 a linkless proposal similar to an existing page gets an isolated warning', async () => {
   fresh();
   const target = await seed();
   const isolated = (r) => r.warnings.filter((w) => w.type === 'isolated');
@@ -191,7 +227,7 @@ function runChild(root, go, name, mine, shared, hold = 0) {
   return { ready, done };
 }
 
-test('DW8 two processes accepting concurrently leave md and index intact; a shared proposal is accepted once', { skip: !FTS5 }, async () => {
+test('DW8 two processes accepting concurrently leave md and index intact; a shared proposal is accepted once', async () => {
   const root = fresh();
   const mk = async (i) => (await call('wiki_propose', { space: 'c', slug: `p${i}`, title: `Page ${i}`, body: `body of uniqterm${i}x`, source: 't' })).proposal_id;
   // c1 gets one proposal and a long read-to-write window on INDEX.md; c2 accepts the other nine meanwhile.
@@ -241,21 +277,18 @@ test('DW9 stdio: initialize + tools/list returns exactly the 8 tools', () => {
   ]);
 });
 
-test('DW10 runtime guard: wiki_status is a clear Node 24 error without FTS5, a normal result with it', () => {
+test('DW10 wiki_status works on every runtime and reports the live mode', () => {
   const out = rpc(fresh(), [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'wiki_status', arguments: {} } }]);
   const res = out[0].result;
-  if (FTS5) {
-    assert.equal(res.isError, false);
-    assert.equal(res.structuredContent.pages, 0);
-  } else {
-    assert.equal(res.isError, true);
-    assert.match(res.content[0].text, /Node 24\+ \(or a Node 22\/23 build whose SQLite includes FTS5\)/);
-  }
+  assert.equal(res.isError, false);
+  assert.equal(res.structuredContent.pages, 0);
+  assert.equal(res.structuredContent.mode, MODE);
+  assert.equal(res.structuredContent.index === null, MODE === 'scan');
 });
 
 // ---------- contract details ----------
 
-test('freshness: a direct md edit with a later mtime is re-indexed', { skip: !FTS5 }, async () => {
+test('freshness: a direct md edit with a later mtime is re-indexed', async () => {
   const root = fresh();
   const id = await accept('n', 'edit', 'Editable', 'contains alphaterm here');
   assert.deepEqual(await ids('alphaterm'), [id]);
@@ -270,7 +303,7 @@ test('freshness: a direct md edit with a later mtime is re-indexed', { skip: !FT
   assert.equal((await call('wiki_list', {})).n, undefined);
 });
 
-test('lock: a lock owned by a dead pid is stolen', { skip: !FTS5 }, async () => {
+test('lock: a lock owned by a dead pid is stolen', async () => {
   const root = fresh();
   const p = await call('wiki_propose', { space: 'l', slug: 's', title: 'Steal', body: 'text', source: 't' });
   const child = spawn(process.execPath, ['-e', '']);
@@ -283,7 +316,7 @@ test('lock: a lock owned by a dead pid is stolen', { skip: !FTS5 }, async () => 
   assert.ok(!existsSync(join(wd(root), '.lock')));
 });
 
-test('lock: a live owner makes accept time out without touching page, INDEX.md or the proposal', { skip: !FTS5 }, async () => {
+test('lock: a live owner makes accept time out without touching page, INDEX.md or the proposal', async () => {
   const root = fresh();
   await accept('k', 'first', 'First', 'first page');
   const indexBefore = readFileSync(join(wd(root), 'INDEX.md'), 'utf8');
@@ -299,7 +332,7 @@ test('lock: a live owner makes accept time out without touching page, INDEX.md o
   assert.ok(existsSync(join(wd(root), '_proposed', `${p.proposal_id}.md`)));
 });
 
-test('wiki_reject moves the proposal to _rejected/ with the reason', { skip: !FTS5 }, async () => {
+test('wiki_reject moves the proposal to _rejected/ with the reason', async () => {
   const root = fresh();
   const p = await call('wiki_propose', { space: 'r', slug: 'no', title: 'Nope', body: 'text', source: 't' });
   await call('wiki_reject', { proposal_id: p.proposal_id, reason: 'duplicates r/yes' });
@@ -309,7 +342,7 @@ test('wiki_reject moves the proposal to _rejected/ with the reason', { skip: !FT
   assert.match(readFileSync(join(wd(root), '.gitignore'), 'utf8'), /\.index\.sqlite\*[\s\S]*\.lock\*/);
 });
 
-test('accept: an index failure after the md write is a warning, not an error', { skip: !FTS5 }, async () => {
+test('accept: an index failure after the md write is a warning, not an error', async () => {
   const root = fresh();
   const p = await call('wiki_propose', { space: 'w', slug: 'p', title: 'Warn', body: 'text', source: 't' });
   mkdirSync(join(wd(root), 'INDEX.md')); // a directory where the file goes: renderIndex's rename fails
@@ -321,8 +354,78 @@ test('accept: an index failure after the md write is a warning, not an error', {
   assert.deepEqual(await ids('text'), ['w/p']);
 });
 
-test('slug and space ending in .md are rejected', { skip: !FTS5 }, async () => {
+test('slug and space ending in .md are rejected', async () => {
   fresh();
   await assert.rejects(call('wiki_propose', { space: 's', slug: 'x.md', title: 'T', body: 'b', source: 't' }), /not end in \.md/);
   await assert.rejects(call('wiki_propose', { space: 's.md', slug: 'x', title: 'T', body: 'b', source: 't' }), /not end in \.md/);
+});
+
+// ---------- 1b: scan mode ----------
+
+test('scan mode: WIKI_FORCE_SCAN=1 reports mode scan and never creates .index.sqlite', async () => {
+  const root = fresh();
+  process.env.WIKI_FORCE_SCAN = '1';
+  try {
+    await accept('s', 'one', 'One', 'scanterm [[s/two]]');
+    await accept('s', 'two', 'Two', 'other');
+    assert.deepEqual(await ids('scanterm'), ['s/one']);
+    assert.equal((await call('wiki_status', {})).mode, 'scan');
+  } finally { delete process.env.WIKI_FORCE_SCAN; }
+  assert.ok(existsSync(join(wd(root), 'INDEX.md')));
+  assert.ok(!readdirSync(wd(root)).some((n) => n.startsWith('.index.sqlite')));
+});
+
+test('scan mode: callToolSync is synchronous and callTool resolves the same result', async () => {
+  fresh();
+  const sync = wiki.callToolSync('wiki_status', {});
+  assert.equal(typeof sync.mode, 'string');
+  assert.deepEqual(await call('wiki_status', {}), sync);
+});
+
+test('scan mode: whole file passes under WIKI_FORCE_SCAN=1', { skip: MODE === 'scan' }, () => {
+  const env = { ...process.env, WIKI_FORCE_SCAN: '1' };
+  delete env.NODE_TEST_CONTEXT; // else the child runs as a worker of this run and prints nothing
+  const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', fileURLToPath(import.meta.url)], {
+    env, encoding: 'utf8', timeout: 120000,
+  });
+  assert.equal(r.status, 0, r.stdout.slice(-2000));
+  assert.match(r.stdout, /# fail 0/);
+  assert.match(r.stdout, /# skipped 2/); // this test and parity: nothing else skips
+});
+
+test('fts5 runtime: wiki_status.mode is fts5 whenever the runtime can create an FTS5 trigram table', async () => {
+  let capable = false;
+  try {
+    const db = new (process.getBuiltinModule?.('node:sqlite').DatabaseSync)(':memory:');
+    db.exec("CREATE VIRTUAL TABLE t USING fts5(a, tokenize='trigram')");
+    db.close();
+    capable = true;
+  } catch { /* no FTS5 here */ }
+  fresh();
+  const mode = (await call('wiki_status', {})).mode;
+  assert.equal(mode, capable && process.env.WIKI_FORCE_SCAN !== '1' ? 'fts5' : 'scan');
+});
+
+test('parity: fts5 and a WIKI_FORCE_SCAN=1 child answer the fixed battery identically', { skip: MODE !== 'fts5' }, async () => {
+  const live = await battery();
+  const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], {
+    env: { ...process.env, WIKI_FORCE_SCAN: '1', WIKI_PARITY_CHILD: '1' }, encoding: 'utf8', timeout: 60000,
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const scan = JSON.parse(r.stdout.trim().split('\n').pop());
+  assert.equal(live.mode, 'fts5');
+  assert.equal(scan.mode, 'scan');
+  assert.deepEqual({ ...scan, mode: null }, { ...live, mode: null });
+  assert.deepEqual(live.underscore[0], ['doc/ident']);
+  assert.deepEqual(live.underscore[2], ['doc/ident']);
+  assert.deepEqual(live.prefix, ['doc/ident']);
+  assert.deepEqual(live.diacritic, [['doc/ident'], ['doc/ident']]);
+});
+
+test('Node 18: the scan path uses no ES2023+ APIs and getBuiltinModule only through ?.()', () => {
+  const src = readFileSync(WIKI, 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+  assert.doesNotMatch(src, /\.(toSorted|toReversed|toSpliced|findLast|findLastIndex)\(|Object\.groupBy|Array\.fromAsync|Promise\.withResolvers|import\.meta\.(dirname|filename)|\.(union|intersection|difference|isSubsetOf)\(/);
+  assert.doesNotMatch(src, /getBuiltinModule\(/);
+  assert.match(src, /getBuiltinModule\?\.\(/);
+  assert.doesNotMatch(src, /import\(['"]node:sqlite|from ['"]node:sqlite/);
 });
