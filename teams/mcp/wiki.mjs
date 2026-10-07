@@ -68,6 +68,9 @@ function support() {
   return sqlite;
 }
 
+// Sync view of the probe, for callers that cannot await (the task engine's bridge).
+export function wikiMode() { return support().mode; }
+
 export async function sqliteSupport() {
   const s = support();
   return s.mode === 'fts5' ? { ok: true, mode: 'fts5' } : { ok: false, mode: 'scan', ...(s.error ? { error: s.error } : {}) };

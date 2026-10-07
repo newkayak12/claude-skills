@@ -301,12 +301,14 @@ explanation of every key is in [docs/configuration.md](docs/configuration.md#con
 
 ## Wiki memory (teams-wiki)
 
-`teams-wiki` is a third MCP server in this plugin: project memory that outlives a session. It is
-independent of the task engine, so a task does not need it and it does not need a task.
+`teams-wiki` is a third MCP server in this plugin: project memory that outlives a session. The
+server works without the task engine; the engine uses it as described under "In the task engine".
 
 Pages are markdown under `.teams_wiki/<space>/<slug>.md`, git-tracked and hand-editable; that is the
 source. `.teams_wiki/.index.sqlite` (FTS5 search plus the `[[link]]` graph) is disposable: delete it
-and the next call rebuilds it from the md files.
+and the next call rebuilds it from the md files. Search has two modes: `fts5` when `node:sqlite` with
+FTS5 exists, otherwise `scan` (it reads the md files directly; no index file). Same results either
+way. Node 18+ is enough; `wiki_status`, `tm_status` and the report show the mode.
 
 | Tool | What it does |
 |---|---|
@@ -321,8 +323,12 @@ and the next call rebuilds it from the md files.
 
 Nothing writes a page directly: a model proposes, and only `wiki_accept` publishes.
 
-Needs Node 24+, or a Node 22/23 build whose SQLite includes FTS5. On any other Node the `wiki_*`
-tools return one clear error and the rest of teams is unaffected.
+**In the task engine.** `createTask` adds the latest `log/*` pages (`wiki_resume`) to the task context.
+Before the manager's `gate:goal`, the engine proposes one `log/<date>-<EPIC>` page built from
+`task.json`, no model involved. `gate:goal` accepts or rejects it with `wiki_decisions`; the report
+gets a "Wiki 변경" section. Nothing auto-accepts: a proposal the gate left alone stays in
+`_proposed/`, and `_proposed/` and `_rejected/` files are for a person to review and commit (or accept
+later with `wiki_accept`). If the wiki fails, the task runs as before.
 
 ## Mod (Claude Code live UI)
 

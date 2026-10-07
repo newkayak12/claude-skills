@@ -299,11 +299,13 @@ node teams/scripts/run.mjs --resume <task_id>
 ## 위키 메모리 (teams-wiki)
 
 `teams-wiki`는 이 플러그인의 세 번째 MCP 서버로, 세션보다 오래 가는 프로젝트 메모리입니다. 태스크
-엔진과 독립이라 태스크가 위키를 필요로 하지 않고, 위키도 태스크 없이 동작합니다.
+엔진 없이도 서버는 동작하며, 엔진은 아래 "태스크 엔진에서"처럼 위키를 씁니다.
 
 페이지는 `.teams_wiki/<space>/<slug>.md`의 마크다운이며 git으로 추적하고 직접 고칠 수 있습니다. 이
 파일이 원본입니다. `.teams_wiki/.index.sqlite`(FTS5 검색과 `[[link]]` 그래프)는 버려도 되는 산출물이라,
-지우면 다음 호출에서 md 파일로 다시 만듭니다.
+지우면 다음 호출에서 md 파일로 다시 만듭니다. 검색은 두 모드입니다. FTS5가 있는 `node:sqlite`가 있으면
+`fts5`, 없으면 `scan`(md 파일을 직접 읽고 인덱스 파일은 없음). 결과는 같습니다. Node 18+이면 되고,
+`wiki_status`, `tm_status`, report가 모드를 보여줍니다.
 
 | 도구 | 하는 일 |
 |---|---|
@@ -318,8 +320,12 @@ node teams/scripts/run.mjs --resume <task_id>
 
 페이지를 직접 쓰는 도구는 없습니다. 모델은 제안만 하고, `wiki_accept`만 게시합니다.
 
-Node 24+가 필요합니다(또는 SQLite에 FTS5가 들어 있는 Node 22/23 빌드). 그 밖의 Node에서는 `wiki_*`
-도구가 명확한 오류 하나를 돌려주고, teams의 나머지는 영향이 없습니다.
+**태스크 엔진에서.** `createTask`는 최근 `log/*` 페이지(`wiki_resume`)를 태스크 context에 넣습니다.
+매니저의 `gate:goal` 전에 엔진이 `task.json`으로 `log/<날짜>-<EPIC>` 제안 하나를 만듭니다(모델 없음).
+`gate:goal`이 `wiki_decisions`로 수락하거나 거절하고, report에 "Wiki 변경" 절이 붙습니다. 자동
+수락은 없습니다. gate가 건드리지 않은 제안은 `_proposed/`에 남고, `_proposed/`와 `_rejected/` 파일은
+사람이 검토해 커밋하는 대상입니다(나중에 `wiki_accept`로 수락해도 됩니다). 위키가 실패해도 태스크는
+이전처럼 돕니다.
 
 ## Mod (Claude Code 라이브 UI)
 
