@@ -1,11 +1,20 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import { appendEntry, goalFailed, harnessResult, marketplaceCandidates, ownedMcpTool, ownedSkill } from './logic.ts'
+import {
+  appendEntry, batchBody, buildBatch, copyBody, goalFailed, harnessResult, marketplaceCandidates, newest,
+  ownedMcpTool, ownedSkill, rowDetail, rowTitle, sendsOn,
+} from './logic.ts'
 import type { Entry } from './logic.ts'
 
 const active = atom({ plugin: 'diag', key: 'active' } as const, false)
 const lastSkill = atom({ plugin: 'diag', key: 'lastSkill' } as const, '')
+
+const PANE = 'diag'
+const DAY_MS = 86_400_000
+// trophy's consent, read only; trophy alone writes it.
+const trophyConsent = atom({ plugin: 'trophy', key: 'consent' } as const, 'unasked' as 'unasked' | 'yes' | 'no')
+const trophyVersion = atom({ plugin: 'trophy', key: 'consentVersion' } as const, 0)
 
 const TEXT_MAX = 2000
 const USAGE = 'usage: /diag bug <note>'
@@ -175,14 +184,58 @@ export const register: Register = on => {
     if (!m) return next(e)
     const note = (m[1] ?? '').trim()
     if (!note) return { text: USAGE }
-    const last = await read($, lastSkill)
-    const hit = ownedSkill(last, owned.skills)
-    await record($, {
-      kind: 'report',
-      reason: 'user_report',
-      ...(hit ? { plugin: hit.plugin, skill: hit.skill } : {}),
-      local: { note: cut(note) },
-    })
-    return { text: 'Recorded.' }
+    try {
+      const last = await read($, lastSkill)
+      const hit = ownedSkill(last, owned.skills)
+      await record($, {
+        kind: 'report',
+        reason: 'user_report',
+        ...(hit ? { plugin: hit.plugin, skill: hit.skill } : {}),
+        local: { note: cut(note) },
+      })
+      return { text: 'Recorded.' }
+    } catch {
+      return { text: 'Could not record the report.' }
+    }
+  }).catch(($, e, next) => next(e))
+
+  // `/diag` opens the pane; `/diag bug <note>` is handled above.
+  on('command.run', { command: 'diag' }, async ($, e, next) => {
+    if (/^\s*bug(?:\s|$)/.test(e.args)) return next(e)
+    await $.ui.open({ id: PANE, title: 'Diag' })
+    return { text: 'Diag pane opened.' }
+  }).catch(($, e, next) => next(e))
+
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const { Box, Button, Text } = $.ui.resolve(e)
+    const log = ((await $.store.get('diag.log')) ?? []) as Entry[]
+    const sending = sendsOn(await read($, trophyConsent), await read($, trophyVersion))
+    const through = new Date(((await $.clock.now()) as number) - DAY_MS).toISOString().slice(0, 10)
+    const events = buildBatch(log, (await $.store.get('diag.sentThrough')) as string | undefined, through)
+    const installId = String((await $.store.get('diag.installId')) ?? '')
+    const rows = newest(log)
+    return (
+      <Box flexDirection="column">
+        <Text bold>{sending ? '전송: trophy 동의 yes → 켜짐' : '전송: 꺼짐 (로컬만)'}</Text>
+        {rows.length === 0 && <Text dimColor>No failures recorded.</Text>}
+        {rows.map((r, i) => (
+          <Box key={`row-${i}`} flexDirection="column">
+            <Box>
+              <Text>{rowTitle(r)} </Text>
+              <Button
+                key={`copy-${i}`}
+                label="복사"
+                onPress={press => {
+                  void $.ui.copy({ text: copyBody(r), surface: press.surface }).catch(() => {})
+                }}
+              />
+            </Box>
+            {rowDetail(r).map((line, j) => <Text key={`d-${i}-${j}`} dimColor>{line}</Text>)}
+          </Box>
+        ))}
+        <Text bold>다음 전송 미리보기 ({events.length} events)</Text>
+        <Text>{batchBody(events, installId)}</Text>
+      </Box>
+    )
   }).catch(($, e, next) => next(e))
 }
