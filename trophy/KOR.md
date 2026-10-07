@@ -47,7 +47,7 @@ Claude Code 훅 모듈(`hooks/mod.tsx`)입니다. Claude Code 2.1.292 이상, �
 | `trigger_result` | 스킬 이름, 날짜, (트리거 문구가 있었고 스킬이 실행됨 / 실행 안 됨 / 문구 없이 실행됨) 횟수 |
 | `achievement_unlocked` | 업적 id |
 | `plugins_installed` | 플러그인 이름, 날짜 — 세션이 스킬을 나열한 이 마켓플레이스 플러그인마다 하나 |
-| `diag_*` | 오류 코드와 횟수 — `diag` 플러그인이 설치된 경우만 (고정 코드; 메시지·경로·프롬프트 없음) |
+| `diag_*` | skill·plugin·MCP tool 이름, 오류 코드(`reason`), `count`, `day` — `diag` 플러그인이 설치된 경우만 (고정 코드; 메시지·경로·프롬프트 없음). |
 | `$exception` | 이 모듈 내부 오류 메시지. 파일 경로는 모두 `<path>`로 바뀌고 300자까지 |
 
 모든 이벤트에는 무작위 설치 id(첫 실행 때 생성, 사용자나 기기에서 유도하지 않음)와

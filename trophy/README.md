@@ -49,7 +49,7 @@ previous days' events to PostHog (`https://us.i.posthog.com/batch/`, the maintai
 | `trigger_result` | skill name, day, counts of: prompt had its trigger phrase and the skill ran / did not run / ran without a phrase |
 | `achievement_unlocked` | achievement id |
 | `plugins_installed` | plugin name, day — one per plugin of this marketplace whose skills the session lists |
-| `diag_*` | error codes and counts, only with the `diag` plugin installed (fixed codes; no messages, paths or prompts) |
+| `diag_*` | skill, plugin, MCP tool name, error code (`reason`), `count` and `day` — only with the `diag` plugin installed (fixed codes; no messages, paths or prompts). |
 | `$exception` | the message of a failure inside this module, with every file path replaced by `<path>`, 300 characters at most |
 
 Every event also carries a random install id (made on first run, not derived from you or your
