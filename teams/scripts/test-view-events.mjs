@@ -53,7 +53,7 @@ test('statusLine: empty and two tasks', () => {
 
 // ---------- CLI: view.mjs --once --format status|events ----------
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -111,7 +111,34 @@ test('--format status: another cwd gives an empty line', () => {
   const f = fixture();
   try {
     const r = spawnSync(process.execPath, [VIEW, '--once', '--tasks-dir', f.tasks, '--cwd', join(f.root, 'elsewhere'), '--format', 'status'], { encoding: 'utf8' });
-    assert.deepEqual(JSON.parse(r.stdout), { line: '', waiting: 0 });
+    assert.deepEqual(JSON.parse(r.stdout), { line: '', waiting: 0, latest: null });
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('--format status: latest is the newest running task id, null for another cwd', () => {
+  const f = fixture();
+  try {
+    assert.equal(JSON.parse(cli(f, '--format', 'status').stdout).latest, RUN_ID);
+    const r = spawnSync(process.execPath, [VIEW, '--once', '--tasks-dir', f.tasks, '--cwd', join(f.root, 'elsewhere'), '--format', 'status'], { encoding: 'utf8' });
+    assert.equal(JSON.parse(r.stdout).latest, null);
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('--format status|events: a symlinked --cwd matches the real task cwd', () => {
+  const f = fixture();
+  try {
+    const link = join(f.root, 'link');
+    symlinkSync(f.cwd, link);
+    const run = (...a) => spawnSync(process.execPath, [VIEW, '--once', '--tasks-dir', f.tasks, '--cwd', link, ...a], { encoding: 'utf8' });
+    const s = run('--format', 'status');
+    assert.equal(s.status, 0, s.stderr);
+    const o = JSON.parse(s.stdout);
+    assert.ok(o.line.includes('E-aaaaaaaa'));
+    assert.equal(o.waiting, 1);
+    const e = run('--format', 'events', '--since', '0');
+    assert.equal(e.status, 0, e.stderr);
+    const evs = e.stdout.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    assert.deepEqual(evs.map((x) => x.task_id), [RUN_ID, RUN_ID, DONE_ID]);
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 
