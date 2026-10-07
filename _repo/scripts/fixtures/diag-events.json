@@ -1,0 +1,11 @@
+{
+  "columns": ["event", "skill", "tool", "plugin", "reason", "n", "days", "installs"],
+  "results": [
+    ["diag_skill_error", "harness", null, "harness", "forked_unsuccessful", 4, 2, 1],
+    ["diag_mcp_error", null, "mcp__plugin_knowledge_knowledge-local__knowledge_search", "knowledge", "mcp_error", 9, 3, 3],
+    ["diag_skill_error", "trophy:list", null, "trophy", "is_error", 5, 2, 3],
+    ["diag_skill_error", "develop:sql-pro", null, "develop", "unsuccessful", 2, 1, 2],
+    ["diag_user_report", "think:mentor", null, "think", "user_report", 1, 1, 2],
+    ["diag_hook_error", null, null, null, "timeout", 3, 2, 1]
+  ]
+}
