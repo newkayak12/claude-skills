@@ -28,6 +28,7 @@ stays, so a user on an older build, without plugins, or on Codex loses nothing.
 | 1 | `01-gate-heredoc-fix.md` | Fix the harness gate's false positives on Bash (not a mod) | Blocked this session repeatedly; affects every client |
 | 2 | `02-teams-live.md` | teams mod: live board pane, ledger status line + toasts, band above the prompt, two NEVER-rule guards | Replaces the Monitor+grep loop the lead ran for every real run, and token-costing `tm_board` calls |
 | 3 | `03-harness-gate-status.md` | harness mod: gate status line + `/harness-gate` explain pane | The gate's only signal today is a deny message |
+| 4 | `04-trophy.md` | new `trophy` plugin: Steam-style achievements for skill use, trigger hit/miss pane, opt-in anonymous PostHog counts | User request 2026-10-07 (brainstorming); its Task 0 extends the spike |
 
 Each file is one subsystem with its own tasks and pass bars. 1 can run in parallel with 0.
 2 and 3 start only after 0 passes.
@@ -49,6 +50,9 @@ Value H/M, kept out of this round to stay small; revisit after 2 and 3 ship.
   the CLAUDE.md block teams:install writes; inbox `[take]`/`[submit]` buttons; graph run pane.
 - **harness:** session-start toast when the project's gate copy differs from the plugin's;
   `fallback-check.mjs` run on a done-claim during an open fallback run.
+- **think debate pane** (devils-advocate and mentor side by side) and **session retro card**
+  (files, commits, denied calls, longest step at session end) — kept from the 2026-10-07
+  brainstorming, next cycle after trophy.
 - **portfolio/write/develop extras:** deck-builder preview pane, mock-interview ledger in
   `$.store`, like-me saved voice profile, flaky-test-analyzer `run_n` tool,
   scenario-director actor pane + director request guard, writer-verification ask before
