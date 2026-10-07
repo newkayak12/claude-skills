@@ -5,17 +5,24 @@
 // <root>/.teams_wiki/<space>/<slug>.md are the source of truth - git-tracked, human-editable.
 // .index.sqlite (FTS5 word + trigram index, [[link]] graph) is a disposable by-product: every tool
 // call re-indexes md files whose (mtimeMs, size) changed, so deleting it just means a rebuild.
-// Search is FTS5 only - no vectors, no model, no network. Korean follows knowledge's approach
+// Search is keyword only - no vectors, no model, no network. Korean follows knowledge's approach
 // (2-syllable prefix, particle strip, trigram), copied here, never imported across plugins.
+// Two stores behind one interface: fts5 (node:sqlite + FTS5, the index above) and scan (no sqlite:
+// every call reads the md files and ranks in JS, never creating .index.sqlite). The query tokenizers,
+// the RRF fuse and its id tie-break are shared; scan mirrors FTS5's document-side rules (unicode61:
+// underscore separates, case + diacritics folded, 'x*' prefix; trigram: case-folded substring) with a
+// JS bm25 (k1 1.2, b 0.75, title 8 / tags 3 / body 1). Known difference: scan's fold strips only
+// U+0300-036F marks and lower-cases with JS rules, SQLite's folding tables are wider.
 //
 // No tool writes a page: wiki_propose drops a file in _proposed/, only wiki_accept turns it into a
 // page (and wiki_reject files it under _rejected/ with the reason). Accept/reject run under a lock
 // dir (.teams_wiki/.lock, owner.json {pid, at}) like store.mjs: stolen only from a dead owner,
 // a timeout throws - there is never an unlocked write. md files are written tmp + rename.
 //
-// node:sqlite is loaded lazily (guarded dynamic import) so initialize/tools/list work on any Node.
-// A runtime without node:sqlite + FTS5 (22.12's SQLite has no FTS5) answers every wiki_* call with
-// one clear error. The stdio loop runs only when this file is the entry point; tests import it.
+// node:sqlite is probed synchronously with process.getBuiltinModule?.() plus an in-memory FTS5 +
+// trigram create; undefined, any throw, or no FTS5 (22.12's SQLite has none) selects scan mode.
+// WIKI_FORCE_SCAN=1 forces scan (tests). Node 18 syntax and APIs only. callToolSync is the core;
+// callTool is its async wrapper. The stdio loop runs only when this file is the entry point.
 
 import {
   existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync,
@@ -26,7 +33,6 @@ import { isEntryPoint } from './pluginroots.mjs';
 
 const SERVER = { name: 'teams-wiki', version: '0.1.0' };
 const DEFAULT_PROTOCOL = '2024-11-05';
-const RUNTIME_HINT = 'teams-wiki needs node:sqlite with FTS5: Node 24+ (or a Node 22/23 build whose SQLite includes FTS5).';
 const RRF_K = 60;
 const HOLD_MS = Number(process.env.WIKI_TEST_HOLD_MS) || 0; // tests only: widens the INDEX.md read-to-write window
 const NAME = /^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u;
@@ -34,7 +40,7 @@ const NAME = /^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u;
 let root = process.cwd();
 let lockTimeoutMs = Number(process.env.WIKI_LOCK_TIMEOUT_MS) || 10000;
 let db = null;
-let sqlite; // undefined = not probed yet; then { DatabaseSync } or { error }
+let sqlite; // undefined = not probed yet; then { mode: 'fts5', DatabaseSync } or { mode: 'scan', error? }
 
 export function setRoot(dir) { close(); root = resolve(dir); }
 export function setLockTimeout(ms) { lockTimeoutMs = ms; }
@@ -45,20 +51,26 @@ const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 
 
 // ---------- runtime ----------
 
-export async function sqliteSupport() {
-  if (sqlite) return sqlite.error ? { ok: false, error: sqlite.error } : { ok: true };
+function support() {
+  if (process.env.WIKI_FORCE_SCAN === '1') return { mode: 'scan' };
+  if (sqlite) return sqlite;
+  sqlite = { mode: 'scan' };
   try {
-    const { DatabaseSync } = await import('node:sqlite');
-    const probe = new DatabaseSync(':memory:');
-    try {
-      probe.exec("CREATE VIRTUAL TABLE t USING fts5(x); CREATE VIRTUAL TABLE u USING fts5(x, tokenize='trigram')");
-    } finally { probe.close(); }
-    sqlite = { DatabaseSync };
-    return { ok: true };
-  } catch (e) {
-    sqlite = { error: `${RUNTIME_HINT} Running ${process.version}: ${(e && e.message) || e}` };
-    return { ok: false, error: sqlite.error };
-  }
+    const m = process.getBuiltinModule?.('node:sqlite');
+    if (m && m.DatabaseSync) {
+      const probe = new m.DatabaseSync(':memory:');
+      try {
+        probe.exec("CREATE VIRTUAL TABLE t USING fts5(x); CREATE VIRTUAL TABLE u USING fts5(x, tokenize='trigram')");
+      } finally { probe.close(); }
+      sqlite = { mode: 'fts5', DatabaseSync: m.DatabaseSync };
+    }
+  } catch (e) { sqlite = { mode: 'scan', error: String((e && e.message) || e) }; }
+  return sqlite;
+}
+
+export async function sqliteSupport() {
+  const s = support();
+  return s.mode === 'fts5' ? { ok: true, mode: 'fts5' } : { ok: false, mode: 'scan', ...(s.error ? { error: s.error } : {}) };
 }
 
 // ---------- md files ----------
@@ -187,12 +199,10 @@ function withLock(fn) {
 
 // ---------- index ----------
 
-async function openDb() {
+function openDb() {
   if (db) return db;
-  const sup = await sqliteSupport();
-  if (!sup.ok) throw new Error(sup.error);
   ensureWiki();
-  const d = new sqlite.DatabaseSync(join(wikiDir(), '.index.sqlite'));
+  const d = new (support().DatabaseSync)(join(wikiDir(), '.index.sqlite'));
   d.exec('PRAGMA busy_timeout = 10000');
   d.exec('PRAGMA journal_mode = WAL');
   d.exec(`
@@ -214,16 +224,23 @@ function dropPage(d, id) {
   d.prepare('DELETE FROM pages_trgm WHERE id = ?').run(id);
 }
 
-function indexPage(d, f) {
+// One page row, from the md file; both stores hold exactly this shape.
+function rowOf(f) {
   const { fm, body } = readMd(f.path);
-  const title = fm.title || f.id.split('/')[1];
   const tags = Array.isArray(fm.tags) ? fm.tags.join(' ') : String(fm.tags || '');
+  return {
+    id: f.id, space: f.space, title: fm.title || f.id.split('/')[1], tags, status: fm.status || 'accepted',
+    superseded_by: fm.superseded_by || null, updated: fm.updated || '', mtime: f.mtime, size: f.size, summary: summaryOf(body), body,
+  };
+}
+
+function indexPage(d, f) {
+  const r = rowOf(f);
   dropPage(d, f.id);
   d.prepare('INSERT INTO pages VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(
-    f.id, f.space, title, tags, fm.status || 'accepted', fm.superseded_by || null, fm.updated || '',
-    f.mtime, f.size, summaryOf(body), body);
-  for (const t of ['pages_fts', 'pages_trgm']) d.prepare(`INSERT INTO ${t} (id, title, tags, body) VALUES (?,?,?,?)`).run(f.id, title, tags, body);
-  for (const to of linksOf(body)) d.prepare('INSERT OR IGNORE INTO links VALUES (?,?)').run(f.id, to);
+    r.id, r.space, r.title, r.tags, r.status, r.superseded_by, r.updated, r.mtime, r.size, r.summary, r.body);
+  for (const t of ['pages_fts', 'pages_trgm']) d.prepare(`INSERT INTO ${t} (id, title, tags, body) VALUES (?,?,?,?)`).run(r.id, r.title, r.tags, r.body);
+  for (const to of linksOf(r.body)) d.prepare('INSERT OR IGNORE INTO links VALUES (?,?)').run(r.id, to);
 }
 
 // Re-index what changed since the last call; returns how many pages were touched.
@@ -274,13 +291,96 @@ function ftsIds(d, table, tokens, space, includeSuperseded) {
   return d.prepare(sql).all(...[matchExpr(tokens), ...(space ? [space] : [])]).map((r) => r.id);
 }
 
+// ---------- stores: { mode, sync, indexedAt, page, pages, links, rank } ----------
+
+function ftsStore(d) {
+  const all = (sql) => d.prepare(sql).all().map((r) => ({ ...r }));
+  return {
+    mode: 'fts5',
+    sync: () => sync(d),
+    indexedAt: () => { const r = d.prepare("SELECT v FROM meta WHERE k = 'indexed_at'").get(); return r ? r.v : null; },
+    page: (id) => d.prepare('SELECT * FROM pages WHERE id = ?').get(id),
+    pages: () => all('SELECT * FROM pages ORDER BY id'),
+    links: (f = {}) => {
+      const col = f.from !== undefined ? 'from_id' : f.to !== undefined ? 'to_id' : null;
+      return d.prepare(`SELECT from_id AS "from", to_id AS "to" FROM links${col ? ` WHERE ${col} = ?` : ''} ORDER BY from_id, to_id`)
+        .all(...(col ? [f.from !== undefined ? f.from : f.to] : [])).map((r) => ({ ...r }));
+    },
+    rank: (kind, tokens, space, includeSuperseded) => ftsIds(d, kind === 'word' ? 'pages_fts' : 'pages_trgm', tokens, space, includeSuperseded),
+  };
+}
+
+// FTS5 document side, in JS: case + diacritic fold, tokens = runs of letters/digits (underscore splits).
+const fold = (s) => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').normalize('NFC');
+const docTokens = (s) => fold(s).match(/[\p{L}\p{N}]+/gu) || [];
+const K1 = 1.2, B = 0.75, WEIGHTS = [8, 3, 1]; // title, tags, body: bm25(t, 0, 8, 3, 1)
+const SCAN_KINDS = {
+  word: { // a query token is a phrase of doc tokens; 'x*' makes the last one a prefix
+    prep: docTokens, len: (toks) => toks.length,
+    phrase: (t) => ({ parts: docTokens(t.endsWith('*') ? t.slice(0, -1) : t), star: t.endsWith('*') }),
+    count: (toks, { parts, star }) => {
+      let n = 0;
+      for (let i = 0; parts.length && i + parts.length <= toks.length; i++) {
+        if (parts.every((p, j) => (star && j === parts.length - 1 ? toks[i + j].startsWith(p) : toks[i + j] === p))) n++;
+      }
+      return n;
+    },
+  },
+  trgm: { // case-folded substring
+    prep: (s) => String(s).toLowerCase(), len: (s) => Math.max(0, [...s].length - 2),
+    phrase: (t) => t.toLowerCase(), count: (s, p) => s.split(p).length - 1,
+  },
+};
+
+function scanRank(rows, kind, tokens, space, includeSuperseded) {
+  const k = SCAN_KINDS[kind];
+  const phrases = tokens.map(k.phrase);
+  if (!phrases.length || !rows.length) return [];
+  const docs = rows.map((r) => {
+    const cols = [r.title, r.tags, r.body].map(k.prep);
+    return { r, cols, dl: cols.reduce((n, c) => n + k.len(c), 0) };
+  });
+  const avg = docs.reduce((n, d) => n + d.dl, 0) / docs.length || 1;
+  const scores = new Map();
+  for (const p of phrases) {
+    const tf = docs.map((d) => d.cols.map((c) => k.count(c, p)));
+    const n = tf.filter((cs) => cs.some(Boolean)).length;
+    const idf = Math.max(Math.log((docs.length - n + 0.5) / (n + 0.5)), 1e-6);
+    docs.forEach((d, i) => tf[i].forEach((f, c) => {
+      if (f) scores.set(d.r.id, (scores.get(d.r.id) || 0) + WEIGHTS[c] * idf * (f * (K1 + 1)) / (f + K1 * (1 - B + B * d.dl / avg)));
+    }));
+  }
+  return docs.filter((d) => scores.has(d.r.id) && (!space || d.r.space === space) && (includeSuperseded || d.r.status === 'accepted'))
+    .sort((a, b) => scores.get(b.r.id) - scores.get(a.r.id) || (a.r.id < b.r.id ? -1 : 1)).slice(0, 50).map((d) => d.r.id);
+}
+
+function scanStore() {
+  const rows = walkPages().map(rowOf).sort((a, b) => (a.id < b.id ? -1 : 1));
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const links = rows.flatMap((r) => linksOf(r.body).map((to) => ({ from: r.id, to })))
+    .sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : a.to < b.to ? -1 : 1));
+  return {
+    mode: 'scan', sync: () => 0, indexedAt: () => null,
+    page: (id) => byId.get(id), pages: () => rows,
+    links: (f = {}) => links.filter((l) => (f.from === undefined || l.from === f.from) && (f.to === undefined || l.to === f.to)),
+    rank: (kind, tokens, space, includeSuperseded) => scanRank(rows, kind, tokens, space, includeSuperseded),
+  };
+}
+
+const openStore = () => (support().mode === 'fts5' ? ftsStore(openDb()) : scanStore());
+
 // Word and trigram rank lists fused by RRF; ties break on id so a rebuilt index orders identically.
-function searchIds(d, query, { space, includeSuperseded = false } = {}) {
+function fuse(lists) {
   const score = new Map();
-  const add = (ids, w) => ids.forEach((id, i) => score.set(id, (score.get(id) || 0) + w / (RRF_K + i + 1)));
-  add(ftsIds(d, 'pages_fts', wordTokens(query), space, includeSuperseded), 0.7);
-  add(ftsIds(d, 'pages_trgm', trigramTokens(query), space, includeSuperseded), 0.3);
+  for (const [ids, w] of lists) ids.forEach((id, i) => score.set(id, (score.get(id) || 0) + w / (RRF_K + i + 1)));
   return [...score].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([id]) => id);
+}
+
+function searchIds(store, query, { space, includeSuperseded = false } = {}) {
+  return fuse([
+    [store.rank('word', wordTokens(query), space, includeSuperseded), 0.7],
+    [store.rank('trgm', trigramTokens(query), space, includeSuperseded), 0.3],
+  ]);
 }
 
 function snippet(body, query) {
@@ -293,8 +393,8 @@ function snippet(body, query) {
 
 // ---------- tools ----------
 
-const page = (d, id) => d.prepare('SELECT * FROM pages WHERE id = ?').get(id);
-const titled = (d, id) => { const p = page(d, id); return p ? { id, title: p.title } : { id, title: null, missing: true }; };
+const titled = (store, id) => { const p = store.page(id); return p ? { id, title: p.title } : { id, title: null, missing: true }; };
+const linksFrom = (store, id) => store.links({ from: id }).map((l) => l.to);
 
 function checkName(label, v) {
   if (typeof v !== 'string' || !NAME.test(v) || /\.md$/i.test(v)) throw new Error(`${label} must be letters/digits/._- , start with a letter or digit, and not end in .md`);
@@ -326,63 +426,61 @@ function lineDiff(oldBody, newBody) {
 }
 
 // Linkless + a similar accepted page (title tokens mostly shared with a top-5 hit) = an orphan in the making.
-function isolated(d, { id, title, body }) {
+function isolated(store, { id, title, body }) {
   if (linksOf(body).length) return [];
   const qt = words(title).filter((t) => [...t].length >= 2);
   if (!qt.length) return [];
-  return searchIds(d, title).slice(0, 5).filter((other) => {
+  return searchIds(store, title).slice(0, 5).filter((other) => {
     if (other === id) return false;
-    const t = page(d, other).title.toLowerCase();
+    const t = store.page(other).title.toLowerCase();
     return qt.filter((q) => koreanForms(q).some((f) => t.includes(f))).length / qt.length >= 0.5;
   });
 }
 
 const TOOL_IMPL = {
-  wiki_search(d, a) {
-    const ids = searchIds(d, String(a.query || ''), { space: a.space, includeSuperseded: !!a.include_superseded });
+  wiki_search(store, a) {
+    const ids = searchIds(store, String(a.query || ''), { space: a.space, includeSuperseded: !!a.include_superseded });
     return {
       results: ids.slice(0, a.k > 0 ? a.k : 5).map((id) => {
-        const p = page(d, id);
+        const p = store.page(id);
         return { id, title: p.title, snippet: snippet(p.body, a.query), status: p.status };
       }),
     };
   },
-  wiki_get(d, a) {
-    const p = page(d, checkId(a.id));
-    if (!p) throw new Error(`no such page: ${a.id}`);
+  wiki_get(store, a) {
+    if (!store.page(checkId(a.id))) throw new Error(`no such page: ${a.id}`);
     const { fm, body } = readMd(pagePath(a.id));
     return {
       id: a.id, frontmatter: fm, body,
-      links_out: d.prepare('SELECT to_id FROM links WHERE from_id = ? ORDER BY to_id').all(a.id).map((r) => titled(d, r.to_id)),
-      backlinks: d.prepare('SELECT from_id FROM links WHERE to_id = ? ORDER BY from_id').all(a.id).map((r) => titled(d, r.from_id)),
+      links_out: linksFrom(store, a.id).map((to) => titled(store, to)),
+      backlinks: store.links({ to: a.id }).map((l) => titled(store, l.from)),
     };
   },
-  wiki_resume(d, a) {
-    const logs = d.prepare("SELECT id, title, updated, body FROM pages WHERE space = 'log' AND status = 'accepted' ORDER BY updated DESC, id DESC LIMIT ?")
-      .all(a.k > 0 ? a.k : 3);
+  wiki_resume(store, a) {
+    const logs = store.pages().filter((p) => p.space === 'log' && p.status === 'accepted')
+      .sort((x, y) => (x.updated < y.updated ? 1 : x.updated > y.updated ? -1 : x.id < y.id ? 1 : -1))
+      .slice(0, a.k > 0 ? a.k : 3);
     return {
       pages: logs.map((l) => ({
-        ...l,
-        links: d.prepare('SELECT to_id FROM links WHERE from_id = ? ORDER BY to_id').all(l.id).map((r) => {
-          const p = page(d, r.to_id);
-          return p ? { id: p.id, title: p.title, summary: p.summary } : { id: r.to_id, missing: true };
+        id: l.id, title: l.title, updated: l.updated, body: l.body,
+        links: linksFrom(store, l.id).map((to) => {
+          const p = store.page(to);
+          return p ? { id: p.id, title: p.title, summary: p.summary } : { id: to, missing: true };
         }),
       })),
     };
   },
-  wiki_list(d, a) {
-    const rows = d.prepare(`SELECT id, space, title, status FROM pages ${a.space ? 'WHERE space = ?' : ''} ORDER BY id`)
-      .all(...(a.space ? [a.space] : []));
+  wiki_list(store, a) {
     const out = {};
-    for (const r of rows) (out[r.space] ||= []).push({ id: r.id, title: r.title, status: r.status });
+    for (const r of store.pages().filter((p) => !a.space || p.space === a.space)) (out[r.space] ||= []).push({ id: r.id, title: r.title, status: r.status });
     return out;
   },
-  wiki_propose(d, a) {
+  wiki_propose(store, a) {
     const space = checkName('space', a.space), slug = checkName('slug', a.slug);
     for (const k of ['title', 'body', 'source']) if (typeof a[k] !== 'string' || !a[k].trim()) throw new Error(`${k} is required`);
     const id = `${space}/${slug}`;
     if (a.supersedes) {
-      const old = page(d, checkId(a.supersedes));
+      const old = store.page(checkId(a.supersedes));
       if (!old || old.status !== 'accepted') throw new Error(`supersedes: no accepted page ${a.supersedes}`);
     }
     const pid = `p-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`;
@@ -391,15 +489,15 @@ const TOOL_IMPL = {
       title: a.title, space, slug, tags: a.tags || [], source: a.source, supersedes: a.supersedes || null,
       proposed_at: new Date().toISOString(),
     }, a.body));
-    const existing = page(d, id);
-    const similar = isolated(d, { id, title: a.title, body: a.body });
+    const existing = store.page(id);
+    const similar = isolated(store, { id, title: a.title, body: a.body });
     return {
       proposal_id: pid, path, id,
       diff: existing ? lineDiff(existing.body, a.body) : null,
       warnings: similar.length ? [{ type: 'isolated', similar, message: 'no [[links]] in the body but similar pages exist' }] : [],
     };
   },
-  wiki_accept(d, a) {
+  wiki_accept(store, a) {
     const pid = checkPid(a.proposal_id);
     return withLock(() => {
       const src = join(wikiDir(), '_proposed', `${pid}.md`);
@@ -418,14 +516,14 @@ const TOOL_IMPL = {
       }
       rmSync(src);
       const out = { accepted: pid, id, superseded: oldPath ? fm.supersedes : null };
-      try { renderIndex(); sync(d); } catch (e) {
+      try { renderIndex(); store.sync(); } catch (e) {
         // the md files are the source; INDEX.md and the index rebuild on the next call
         out.warnings = [{ type: 'index', message: `page written, index update failed (rebuilds next call): ${(e && e.message) || e}` }];
       }
       return out;
     });
   },
-  wiki_reject(d, a) {
+  wiki_reject(store, a) {
     const pid = checkPid(a.proposal_id);
     if (typeof a.reason !== 'string' || !a.reason.trim()) throw new Error('reason is required');
     withLock(() => {
@@ -437,15 +535,17 @@ const TOOL_IMPL = {
     });
     return { rejected: pid, reason: a.reason };
   },
-  wiki_status(d, a, reindexed) {
+  wiki_status(store, a, reindexed) {
     const proposals = existsSync(join(wikiDir(), '_proposed'))
       ? readdirSync(join(wikiDir(), '_proposed')).filter((f) => f.endsWith('.md')).length : 0;
-    const at = d.prepare("SELECT v FROM meta WHERE k = 'indexed_at'").get();
+    const pages = store.pages();
+    const have = new Set(pages.map((p) => p.id));
     return {
-      pages: d.prepare('SELECT COUNT(*) AS n FROM pages').get().n,
+      mode: store.mode,
+      pages: pages.length,
       proposals,
-      index: { indexed_at: at ? at.v : null, reindexed },
-      broken_links: d.prepare('SELECT from_id AS "from", to_id AS "to" FROM links WHERE to_id NOT IN (SELECT id FROM pages) ORDER BY from_id, to_id').all().map((r) => ({ ...r })),
+      index: store.mode === 'fts5' ? { indexed_at: store.indexedAt(), reindexed } : null,
+      broken_links: store.links().filter((l) => !have.has(l.to)),
     };
   },
 };
@@ -453,7 +553,7 @@ const TOOL_IMPL = {
 const str = (description) => ({ type: 'string', description });
 const obj = (properties, required = []) => ({ type: 'object', properties, required });
 export const TOOLS = [
-  ['wiki_search', 'FTS5 search (Korean + English). Returns id, title, snippet, status. Superseded pages are excluded unless include_superseded.',
+  ['wiki_search', 'Keyword search (FTS5, or an md scan without it; Korean + English). Returns id, title, snippet, status. Superseded pages are excluded unless include_superseded.',
     obj({ query: str('search text'), space: str('limit to a space'), k: { type: 'number' }, include_superseded: { type: 'boolean' } }, ['query'])],
   ['wiki_get', 'Full page plus outgoing links and backlinks (id + title).', obj({ id: str('<space>/<slug>') }, ['id'])],
   ['wiki_resume', 'Session start: the k most recent log/* pages with their 1-hop linked pages.', obj({ k: { type: 'number' } })],
@@ -466,13 +566,15 @@ export const TOOLS = [
   ['wiki_status', 'Page count, pending proposals, index freshness, broken [[links]].', obj({})],
 ].map(([name, description, inputSchema]) => ({ name, description, inputSchema }));
 
-export async function callTool(name, args) {
+export function callToolSync(name, args) {
   const fn = TOOL_IMPL[name];
   if (!fn) throw new Error(`unknown tool: ${name}`);
-  const d = await openDb();
-  const reindexed = sync(d);
-  return fn(d, args || {}, reindexed);
+  const store = openStore();
+  const reindexed = store.sync();
+  return fn(store, args || {}, reindexed);
 }
+
+export async function callTool(name, args) { return callToolSync(name, args); }
 
 // ---------- stdio JSON-RPC (pattern of taskmanager.mjs) ----------
 
