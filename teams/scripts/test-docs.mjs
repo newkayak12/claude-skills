@@ -313,3 +313,22 @@ test('slack-list: a size-S task reports from its run, not BLOCKED off the skippe
     assert.deepEqual(refused.next_backlog.unfinished_stories.map((u) => u.id), ['F1-US-1']);
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
+
+test('Wiki 변경: renderReport lists mode, proposals and resumed ids from task.wiki; absent task.wiki leaves the report unchanged', () => {
+  const base = fixtureTask('/proj');
+  const without = renderAll(base)[docPaths(base).report];
+  assert.ok(!without.includes('Wiki 변경'));
+  const task = { ...fixtureTask('/proj'), wiki: {
+    mode: 'scan',
+    resumed: ['log/2026-10-06-E-aa11'],
+    proposals: [
+      { proposal_id: 'p1', id: 'log/2026-10-07-E-ab12', node_id: 'gate:goal:1', status: 'accepted', path: '.teams_wiki/log/2026-10-07-E-ab12.md', reason: 'good log', decided_by: 'gate:goal:1' },
+      { proposal_id: 'p2', id: 'log/2026-10-07-E-cd34', node_id: 'gate:goal:1', status: 'error', path: '.teams_wiki/_proposed/x.md', error: 'disk full' },
+    ],
+    errors: [],
+  } };
+  const out = renderAll(task)[docPaths(task).report];
+  assert.ok(out.startsWith(without.slice(0, without.indexOf('## Next backlog'))));
+  const sec = out.slice(out.indexOf('## Wiki 변경'));
+  for (const s of ['scan', 'log/2026-10-06-E-aa11', 'log/2026-10-07-E-ab12', 'accepted', '.teams_wiki/log/2026-10-07-E-ab12.md', 'good log', 'gate:goal:1', 'log/2026-10-07-E-cd34', 'error', 'disk full']) assert.ok(sec.includes(s), s);
+});

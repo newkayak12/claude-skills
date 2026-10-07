@@ -1,6 +1,6 @@
 # teams wiki — 세션을 넘는 장기 메모리 (2026-10-07)
 
-> 상태: 1단계 출시(v0.42.0). 1b·2단계 사용자 승인(2026-10-07), 구현 중.
+> 상태: 1단계 출시(v0.42.0). 1b·2단계 출시(v0.44.0). 실측 bench만 남음(별도 승인).
 > 근거 문서: `2026-09-28-teams-cards-everywhere.md` (Principles 1–5), `2026-09-17-teams-team.md` §6b
 > ("새 층이 메모리 상태를 만든다" 금지).
 > 선례: `knowledge/scripts/sqlite-knowledge.mjs` (node:sqlite + FTS5 + BLOB 벡터 + JS cosine).
@@ -89,30 +89,30 @@ report 노드는 `gate:goal` **뒤에** 돈다(`taskmanager.mjs:1142`). daemon�
 ## 3. Done when (setgoal)
 
 1단계
-- [ ] `node --test`: propose → accept → search가 한국어·영어 키워드로 해당 페이지를 1위로 찾는다.
-- [ ] supersede된 페이지는 기본 검색에서 빠지고 `superseded_by`로 새 페이지를 가리킨다.
-- [ ] `.index.sqlite`를 지우고 재색인해도 같은 검색 결과.
-- [ ] `[[링크]]`가 links 테이블에 들어가고 `wiki_get`이 백링크를 돌려준다. 깨진 링크는 `wiki_status`에 나온다.
-- [ ] `wiki_resume`이 최근 log 페이지와 그 링크 1-hop을 돌려준다.
-- [ ] 링크 없는 제안이 비슷한 기존 페이지가 있을 때 고립 경고를 받는다.
-- [ ] 외부 모델·네트워크 호출 0 (임베딩 없음).
-- [ ] 두 프로세스가 동시에 accept해도 md·인덱스가 깨지지 않는다.
-- [ ] stdio 스모크: `tools/list`가 도구 8개를 돌려준다.
+- [x] `node --test`: propose → accept → search가 한국어·영어 키워드로 해당 페이지를 1위로 찾는다.
+- [x] supersede된 페이지는 기본 검색에서 빠지고 `superseded_by`로 새 페이지를 가리킨다.
+- [x] `.index.sqlite`를 지우고 재색인해도 같은 검색 결과.
+- [x] `[[링크]]`가 links 테이블에 들어가고 `wiki_get`이 백링크를 돌려준다. 깨진 링크는 `wiki_status`에 나온다.
+- [x] `wiki_resume`이 최근 log 페이지와 그 링크 1-hop을 돌려준다.
+- [x] 링크 없는 제안이 비슷한 기존 페이지가 있을 때 고립 경고를 받는다.
+- [x] 외부 모델·네트워크 호출 0 (임베딩 없음).
+- [x] 두 프로세스가 동시에 accept해도 md·인덱스가 깨지지 않는다.
+- [x] stdio 스모크: `tools/list`가 도구 8개를 돌려준다.
 - [x] (1단계 출시 v0.42.0 — 1b로 대체됨) Node 24에서 전 기능, Node 22.12에서 기동 + 명확한 오류.
 
 1b단계
-- [ ] test-wiki 전체를 fts5·scan 두 모드로 돈다(scan은 강제 env로); DW1 검색 1위, 링크·백링크, resume, 고립 경고가 두 모드에서 같다.
-- [ ] Node 22.12에서 `wiki_*`가 오류 없이 scan 모드로 동작, `wiki_status.mode === "scan"`.
-- [ ] Node 18 문법만 사용(scan 경로에 node:sqlite import 없음).
+- [x] test-wiki 전체를 fts5·scan 두 모드로 돈다(scan은 강제 env로); DW1 검색 1위, 링크·백링크, resume, 고립 경고가 두 모드에서 같다.
+- [x] Node 22.12에서 `wiki_*`가 오류 없이 scan 모드로 동작, `wiki_status.mode === "scan"`.
+- [x] Node 18 문법만 사용(scan 경로에 node:sqlite import 없음).
 
 2단계
-- [ ] `createTask`가 wiki에 log 페이지가 있을 때 그 요약을 task context에 넣고, 없거나 wiki가 실패하면 context가 이전과 바이트 동일.
-- [ ] `gate:goal` ready 시 log 제안이 정확히 1번 생긴다(재시도·daemon/tm_next 경합에도 1번) — 제안 id가 task.json에.
-- [ ] gate 결과의 `wiki_decisions` accept → 페이지가 `.teams_wiki/log/`에, reject → `_rejected/`에. 필드 없음 → `_proposed/`에 남음.
-- [ ] wikibridge가 `task.cwd`를 root로 쓴다 — worktree 경로로 호출해도 메인 프로젝트에 쓴다.
-- [ ] wiki 호출이 throw/isError여도 EPIC 테스트 흐름이 끝까지 간다.
-- [ ] report md "Wiki 변경" 절, `tm_status`에 모드.
-- [ ] 기존 teams 테스트 전체 green.
+- [x] `createTask`가 wiki에 log 페이지가 있을 때 그 요약을 task context에 넣고, 없거나 wiki가 실패하면 context가 이전과 바이트 동일.
+- [x] `gate:goal` ready 시 log 제안이 정확히 1번 생긴다(재시도·daemon/tm_next 경합에도 1번) — 제안 id가 task.json에.
+- [x] gate 결과의 `wiki_decisions` accept → 페이지가 `.teams_wiki/log/`에, reject → `_rejected/`에. 필드 없음 → `_proposed/`에 남음.
+- [x] wikibridge가 `task.cwd`를 root로 쓴다 — worktree 경로로 호출해도 메인 프로젝트에 쓴다.
+- [x] wiki 호출이 throw/isError여도 EPIC 테스트 흐름이 끝까지 간다.
+- [x] report md "Wiki 변경" 절, `tm_status`에 모드.
+- [x] 기존 teams 테스트 전체 green.
 - 실측(별도 승인 후, 비용 발생): bench fixture EPIC 1 → EPIC 2가 log를 이어받아 이미 결정된 질문을 다시 묻지 않는다.
 
 ## 4. Critique (원칙 대조)
