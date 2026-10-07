@@ -1,22 +1,59 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { TeamsEvent } from '../types'
+import type { Mark, StatusInfo, SummaryTask, TeamsEvent } from '../types'
 
 const cursor = atom({ plugin: 'teams', key: 'cursor' } as const, 0)
-const status = atom({ plugin: 'teams', key: 'status' } as const, '')
-const waiting = atom({ plugin: 'teams', key: 'waiting' } as const, 0)
-const events = atom({ plugin: 'teams', key: 'events' } as const, [] as TeamsEvent[])
+const status = atom({ plugin: 'teams', key: 'status' } as const, null as StatusInfo | null)
+const summary = atom({ plugin: 'teams', key: 'summary' } as const, null as SummaryTask | null)
 const watch = atom({ plugin: 'teams', key: 'watch' } as const, [] as string[])
-const view = atom({ plugin: 'teams', key: 'view' } as const, 'tickets' as 'tickets' | 'pipeline' | 'events')
-
-// full id of the newest running task of this cwd (from the tick's status call); the pane's fallback
-const cwdTask = atom({ plugin: 'teams', key: 'cwdTask' } as const, null as string | null)
-
-const board = atom({ plugin: 'teams', key: 'board' } as const, '')
+const view = atom({ plugin: 'teams', key: 'view' } as const, 'summary' as 'summary' | 'work' | 'log')
+const lang = atom({ plugin: 'teams', key: 'lang' } as const, 'en' as 'en' | 'ko')
 
 const PANE = 'teams-live'
-const NO_RUN = 'No teams run in this session.'
+
+const en = {
+  tabSummary: 'Summary', tabWork: 'Work', tabLog: 'Log',
+  now: 'Now', you: 'You', stages: 'Stages', work: 'Work', cost: 'Cost',
+  youNone: 'Nothing needed', youOthers: '{n} more in other runs', costLine: '{usd} · {turns} turns',
+  headLine: '{state} · day {day} · {done}/{total}', bandDone: '{done}/{total} done',
+  stateRunning: 'running', stateStalled: 'stalled', stateComplete: 'finished', stateFailed: 'failed',
+  stagePlan: 'Plan', stageBuild: 'Build', stageIntegrate: 'Integrate', stageQa: 'QA', stageGate: 'Final gate', stageReport: 'Report',
+  nowFix: 'Fixing defect', nowFixnext: 'Waiting to fix defect', nowBuild: 'Building', nowPlan: 'Planning', nowQa: 'QA', nowAnswer: 'Waiting for your answer',
+  nowIntegrate: 'Integrating', nowGate: 'Final gate', nowReport: 'Writing the report', nowDone: 'All done', nowIdle: 'Idle',
+  logPassed: '{s} passed', logFailed: '{s} failed', logFiled: '{s} filed', logIntegrated: '{s} integrated',
+  logDispatched: '{s} started', logWaiting: '{s} waiting for you', logFinished: '{s} finished',
+  noRun: 'No teams run in this session.', loading: 'Loading...', noLog: 'Nothing logged yet.',
+  workMore: '+{n} more', cmdDesc: 'Open the teams live pane', paneOpened: 'pane opened',
+  board: 'board', inbox: 'needs you {n}', statusWaiting: 'needs you: {n} waiting - open /teams-live',
+}
+
+// one table, two languages; the type keeps the keys identical
+export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
+  en,
+  ko: {
+    tabSummary: '요약', tabWork: '작업', tabLog: '기록',
+    now: '지금', you: '확인', stages: '단계', work: '작업', cost: '비용',
+    youNone: '필요한 조치 없음', youOthers: '다른 실행에 {n}건 더', costLine: '{usd} · {turns}턴',
+    headLine: '{state} · {day}일째 · {done}/{total}', bandDone: '{done}/{total} 완료',
+    stateRunning: '진행 중', stateStalled: '멈춤', stateComplete: '완료', stateFailed: '실패',
+    stagePlan: '계획', stageBuild: '구현', stageIntegrate: '통합', stageQa: 'QA', stageGate: '최종 관문', stageReport: '보고',
+    nowFix: '결함 수정 중', nowFixnext: '결함 수정 대기', nowBuild: '구현 중', nowPlan: '계획 중', nowQa: 'QA 중', nowAnswer: '답변 대기 중',
+    nowIntegrate: '통합 중', nowGate: '최종 관문', nowReport: '보고서 작성 중', nowDone: '모두 끝남', nowIdle: '대기 중',
+    logPassed: '{s} 통과', logFailed: '{s} 실패', logFiled: '{s} 등록', logIntegrated: '{s} 반영',
+    logDispatched: '{s} 시작', logWaiting: '{s} 답변 대기', logFinished: '{s} 끝남',
+    noRun: '이 세션에 팀 실행이 없습니다.', loading: '불러오는 중...', noLog: '아직 기록이 없습니다.',
+    workMore: '+{n}건 더', cmdDesc: '팀 실행 현황 창 열기', paneOpened: '창을 열었습니다',
+    board: '보드', inbox: '확인 필요 {n}', statusWaiting: '확인 필요: {n}건 대기 - /teams-live 열기',
+  },
+}
+
+// a key the table lacks (a state or kind this mod does not know) formats to ''
+const fmt = (text: string | undefined, vars: Record<string, string | number> = {}) =>
+  (text ?? '').replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ''))
+
+const MARK: Record<Mark, string> = { done: '✔', running: '●', pending: '○', failed: '✘' }
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 const asRecord = (v: unknown): Record<string, unknown> | undefined =>
   typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : undefined
@@ -37,26 +74,19 @@ function taskIdOf(r: { result?: unknown; text?: unknown }): string | undefined {
   }
 }
 
-// the pane's task: the last watched one, else this cwd's newest running one
+// the pane's task: the last watched one, else this cwd's newest running one (from the tick's status)
 async function paneTask($: EngineInterface): Promise<string | undefined> {
-  return (await read($, watch)).at(-1) ?? (await read($, cwdTask)) ?? undefined
+  return (await read($, watch)).at(-1) ?? (await read($, status))?.latest ?? undefined
 }
 
-// the pane text for the pane's task; the tick and a pane button write it, the render only reads it
-async function refreshBoard($: EngineInterface) {
-  const kind = await read($, view)
-  const id = await paneTask($)
-  if (id === undefined || kind === 'events') return
-  try {
-    const out = await $.process.run(['node', `${$.plugin.root}/scripts/view.mjs`, '--once', '--task', id, '--view', kind])
-    await update($, board, () => (out.exitCode === 0 ? out.stdout : `teams view failed (exit ${out.exitCode})`))
-  } catch {
-    await update($, board, () => 'teams view failed')
-  }
+// a person's words for the card the task is on now
+function nowSentence(s: (key: keyof typeof en) => string, task: SummaryTask): string {
+  const label = s(`now${cap(task.now.kind)}` as keyof typeof en) || s('nowIdle')
+  return task.now.subject ? `${label}: ${task.now.subject}` : label
 }
 
 const TICK_MS = 3000
-const MAX_EVENTS = 200
+const WORK_MAX = 6
 
 export const register: Register = on => {
   let isRunning = false
@@ -91,21 +121,25 @@ export const register: Register = on => {
             for (const one of fresh) $.ui.toast(one.text)
             const latest = Math.max(...fresh.map(one => one.ts))
             await update($, cursor, () => latest)
-            await update($, events, list => [...list, ...fresh].slice(-MAX_EVENTS))
           }
         }
 
-        const st = await $.process.run(['node', VIEW, '--once', '--format', 'status', '--cwd', cwd])
-        if (st.exitCode === 0) {
-          const parsed = JSON.parse(st.stdout) as { line: string; waiting: number; latest?: string | null }
-          $.ui.status(parsed.line === '' ? undefined : parsed.line)
-          await update($, status, () => parsed.line)
-          await update($, waiting, () => parsed.waiting)
-          await update($, cwdTask, () => parsed.latest ?? null)
+        // one data call: the summary while the pane is open or a task of this cwd is running, else the status
+        const isOpen = (await $.ui.panes()).some(p => p.id === PANE)
+        const isSummary = isOpen || (await read($, status))?.latest != null
+        const id = isOpen ? await paneTask($) : undefined
+        const data = await $.process.run([
+          'node', VIEW, '--once', '--format', isSummary ? 'summary' : 'status', '--cwd', cwd,
+          ...(id === undefined ? [] : ['--task', id]),
+        ])
+        if (data.exitCode === 0) {
+          const parsed = JSON.parse(data.stdout) as { status: StatusInfo; task: SummaryTask | null } & StatusInfo
+          const info: StatusInfo = isSummary ? parsed.status : parsed
+          await update($, status, () => info)
+          await update($, summary, () => (isSummary ? parsed.task ?? null : null))
+          // pinned only while a person must act (the engine draws it as a warning)
+          $.ui.status(info.waiting > 0 ? fmt(STRINGS[await read($, lang)].statusWaiting, { n: info.waiting }) : undefined)
         }
-
-        // the pane text is produced here, only while the pane is open
-        if ((await $.ui.panes()).some(p => p.id === PANE)) await refreshBoard($)
       } catch {
         // a failed run or unreadable output leaves the last status as it was
       } finally {
@@ -113,10 +147,14 @@ export const register: Register = on => {
       }
     }
 
-    await $.command.register({
-      name: 'teams-live',
-      description: 'Teams runs of this session: status line and toasts are on',
-    })
+    // Claude Code's own language setting, read once per session
+    try {
+      const language = (await $.settings.read()).language
+      await update($, lang, () => (typeof language === 'string' && /^(ko|korean|한국어)/i.test(language) ? 'ko' : 'en'))
+    } catch {
+      // unreadable settings: English
+    }
+    await $.command.register({ name: 'teams-live', description: STRINGS[await read($, lang)].cmdDesc })
     // events older than this session's start are not toasted
     const now = await $.clock.now()
     await update($, cursor, since => (since === 0 ? now : since))
@@ -128,48 +166,95 @@ export const register: Register = on => {
   // asked for by the person: the pane seats at any width
   on('command.run', { command: 'teams-live' }, async $ => {
     await $.ui.open({ id: PANE, title: 'Teams' })
-    return { text: 'teams-live: pane opened; the status line and toasts report teams runs of this session.' }
+    return { text: STRINGS[await read($, lang)].paneOpened }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const kind = await read($, view)
+    const lang$ = await read($, lang)
+    const s = (key: keyof typeof en, vars?: Record<string, string | number>) => fmt(STRINGS[lang$][key], vars)
     const id = await paneTask($)
-    let body = NO_RUN
-    if (id !== undefined) {
-      if (kind === 'events') {
-        const lines = (await read($, events)).filter(one => one.task_id === id).slice(-20).map(one => one.text)
-        body = lines.length > 0 ? lines.join('\n') : 'No events yet.'
-      } else {
-        body = (await read($, board)) || 'Loading...'
+    const task = await read($, summary)
+    const info = await read($, status)
+
+    const tabs = (
+      <Box>
+        {(['summary', 'work', 'log'] as const).map(one => (
+          <Button key={one} label={s(`tab${cap(one)}` as keyof typeof en)} variant={kind === one ? 'primary' : undefined}
+            onPress={() => update($, view, () => one)} />
+        ))}
+      </Box>
+    )
+    if (id === undefined || task === null) {
+      return (
+        <Box flexDirection="column">
+          <Text>{id === undefined ? s('noRun') : s('loading')}</Text>
+        </Box>
+      )
+    }
+
+    const stateWord = s(`state${cap(task.state)}` as keyof typeof en) || task.state
+    const lines: string[] = []
+    const cut = new Set<number>() // lines that truncate instead of wrapping
+    if (kind === 'summary') {
+      const you = task.you.items.length > 0 ? task.you.items.join('; ') : task.you.count > 0 ? String(task.you.count) : s('youNone')
+      cut.add(lines.push(`▶ ${s('now')}   ${nowSentence(s, task)}`) - 1)
+      lines.push(`⚑ ${s('you')}   ${you}`)
+      const others = (info?.waiting ?? 0) - task.you.count
+      if (others > 0) lines.push(`         ${s('youOthers', { n: others })}`)
+      lines.push('')
+      cut.add(lines.push(
+        `${s('stages')}  ${task.stages.map(g => `${s(`stage${cap(g.key)}` as keyof typeof en)} ${MARK[g.state]}`).join(' › ')}`,
+      ) - 1)
+      lines.push(s('work'))
+      for (const c of task.work.slice(0, WORK_MAX)) cut.add(lines.push(`  ${MARK[c.state]} ${c.title}`) - 1)
+      if (task.work.length > WORK_MAX) lines.push(`  ${s('workMore', { n: task.work.length - WORK_MAX })}`)
+      for (const c of task.work.filter(c => c.state === 'failed')) cut.add(lines.push(`  ✘ ${c.title} — ${c.reason}`) - 1)
+      lines.push(
+        `${s('cost')}   ${s('costLine', { usd: `$${task.cost.usd.toFixed(2)}`, turns: task.cost.turns })}`,
+      )
+    } else if (kind === 'work') {
+      for (const c of task.work) {
+        lines.push(`${MARK[c.state]} ${c.title}`)
+        if (c.state === 'failed') lines.push(`    ${c.reason}`)
       }
+    } else {
+      for (const one of task.log) lines.push(`${one.time} ${s(`log${cap(one.kind)}` as keyof typeof en, { s: one.subject ?? '' }).trim()}`)
+      if (lines.length === 0) lines.push(s('noLog'))
     }
     return (
       <Box flexDirection="column">
         <Box>
-          {(['tickets', 'pipeline', 'events'] as const).map(one => (
-            <Button key={one} label={`[${one}]`} onPress={async () => {
-              await update($, view, () => one)
-              await refreshBoard($)
-            }} />
-          ))}
+          <Text bold wrap="truncate-end">{`${task.title} (${task.key})`}</Text>
+          <Box flexShrink={0} marginLeft={3}>
+            <Text bold>{s('headLine', { state: stateWord, day: task.day, done: task.done, total: task.total })}</Text>
+          </Box>
         </Box>
-        <Text>{body}</Text>
+        {lines.map((line, i) => <Text key={`l${i}`} wrap={cut.has(i) ? 'truncate-end' : undefined}>{line}</Text>)}
+        {tabs}
       </Box>
     )
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const line = await read($, status)
-    if (line === '' || e.props.hasSurvey) return next(e)
-    const n = await read($, waiting)
+    const info = await read($, status)
+    const task = await read($, summary)
+    if (e.props.hasSurvey || info?.latest == null || task?.state !== 'running') return next(e)
+    const lang$ = await read($, lang)
+    const s = (key: keyof typeof en, vars?: Record<string, string | number>) => fmt(STRINGS[lang$][key], vars)
     const { Box, Button, Text } = $.ui.resolve(e)
     const open = () => $.ui.open({ id: PANE, title: 'Teams' })
     return (
-      <Box>
-        <Text dimColor wrap="truncate-end">{line} </Text>
-        <Button key="board" label="[board]" onPress={open} />
-        {n > 0 && <Button key="inbox" label={`[inbox ${n}]`} onPress={open} />}
+      <Box flexDirection="column">
+        <Box>
+          <Box flexShrink={1}><Text dimColor wrap="truncate-end">{`teams · ${task.title}`}</Text></Box>
+          <Box flexShrink={1}><Text dimColor wrap="truncate-end">{` — ${nowSentence(s, task)}`}</Text></Box>
+          <Box flexShrink={0}><Text dimColor>{` · ${s('bandDone', { done: task.done, total: task.total })}`}</Text></Box>
+          <Box flexShrink={0} marginLeft={1}><Button key="board" label={s('board')} onPress={open} /></Box>
+          {info.waiting > 0 && <Box flexShrink={0} marginLeft={1}><Button key="inbox" label={s('inbox', { n: info.waiting })} onPress={open} /></Box>}
+        </Box>
+        {await next(e)}
       </Box>
     )
   })

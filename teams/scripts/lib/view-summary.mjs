@@ -41,7 +41,9 @@ function cardsOf(m) {
   }
   for (const r of (m.qa && m.qa.rounds) || []) add(r, 'qa', 'qa');
   for (const r of (m.audit && m.audit.rounds) || []) add(r, 'audit', 'qa');
-  return out;
+  // run order: plan, build cards, QA/audit rounds, then the defects they filed
+  const RANK = { plan: 0, package: 1, qa: 2, audit: 2, defect: 3 };
+  return out.map((x, i) => [x, i]).sort((a, b) => RANK[a[0].kind] - RANK[b[0].kind] || a[1] - b[1]).map(([x]) => x);
 }
 
 const mergeStates = (states) => {
@@ -136,7 +138,8 @@ export function summarize(model, { now = Date.now() } = {}) {
   else if (pick) {
     const w = work[cards.indexOf(pick)];
     nowStep = {
-      kind: { defect: 'fix', plan: 'plan', package: 'build', qa: 'qa', audit: 'qa' }[pick.kind],
+      // a card not yet dispatched is next, not being worked
+      kind: pick.state === 'pending' ? 'fixnext' : { defect: 'fix', plan: 'plan', package: 'build', qa: 'qa', audit: 'qa' }[pick.kind],
       subject: w.title || null, detail: w.reason || (w.filed_by ? `filed by ${w.filed_by}` : null),
     };
   } else {
