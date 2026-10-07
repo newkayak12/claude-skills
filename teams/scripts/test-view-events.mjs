@@ -111,7 +111,16 @@ test('--format status: another cwd gives an empty line', () => {
   const f = fixture();
   try {
     const r = spawnSync(process.execPath, [VIEW, '--once', '--tasks-dir', f.tasks, '--cwd', join(f.root, 'elsewhere'), '--format', 'status'], { encoding: 'utf8' });
-    assert.deepEqual(JSON.parse(r.stdout), { line: '', waiting: 0 });
+    assert.deepEqual(JSON.parse(r.stdout), { line: '', waiting: 0, latest: null });
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('--format status: latest is the newest running task id, null for another cwd', () => {
+  const f = fixture();
+  try {
+    assert.equal(JSON.parse(cli(f, '--format', 'status').stdout).latest, RUN_ID);
+    const r = spawnSync(process.execPath, [VIEW, '--once', '--tasks-dir', f.tasks, '--cwd', join(f.root, 'elsewhere'), '--format', 'status'], { encoding: 'utf8' });
+    assert.equal(JSON.parse(r.stdout).latest, null);
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 
