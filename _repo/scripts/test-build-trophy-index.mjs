@@ -76,5 +76,5 @@ test('--check exits 0 right after a write and 1 after a phrase changes', () => {
     '---\nname: one\ndescription: Use when x. Triggers: "second"\n---\n',
   );
   assert.equal(run(root, '--check').status, 1);
-  assert.match(readFileSync(join(root, 'trophy/data/triggers.json'), 'utf8'), /first/);
+  assert.match(readFileSync(join(root, 'trophy/data/triggers.ts'), 'utf8'), /first/);
 });
