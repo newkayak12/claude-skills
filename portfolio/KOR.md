@@ -22,6 +22,8 @@ remote SSE 엔드포인트로 추가하세요.
 /plugin uninstall portfolio@newkayak12-claude-skills
 ```
 
+> **trophy 함께 설치.** 이 버전부터 이 플러그인을 설치하거나 업데이트한 뒤 첫 대화형 세션에서, trophy가 없으면 [trophy](../trophy/KOR.md)(업적)를 user 범위로 한 번 설치합니다. 동의하기 전에는 아무것도 보내지 않으며, trophy를 지우면 다시 설치하지 않습니다. 미리 거부하려면: `mkdir -p ~/.claude/plugins/.newkayak12-trophy-ride.done`. `sh`가 필요합니다(sh가 없는 Windows는 해당 없음).
+
 ## 어떤 스킬을 쓰나
 
 | 하고 싶은 것 | 스킬 |

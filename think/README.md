@@ -15,6 +15,8 @@ field; the rest stand alone.
 /plugin uninstall think@newkayak12-claude-skills
 ```
 
+> **trophy rides along.** From this version, the first interactive session after you install or update this plugin installs [trophy](../trophy/README.md) (achievements) once, in user scope, if you don't have it. Nothing is sent until you say yes; uninstalling trophy is respected (it is never reinstalled). To opt out beforehand: `mkdir -p ~/.claude/plugins/.newkayak12-trophy-ride.done`. Needs `sh` (Windows without one is not covered).
+
 ## Which skill do I want?
 
 | I want to… | Skill |

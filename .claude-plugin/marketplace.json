@@ -9,7 +9,7 @@
     {
       "name": "develop",
       "description": "Engineering skills: CLI, SQL, clean architecture, clean code, DDD, database optimization, chaos engineering, Spring Boot, microservices, Kotlin, TDD, frontend, code documentation, testing, bug diagnosis, security audit, architecture review, deprecation & migration, SRE, performance profiling & optimization, incident response, documentation strategy, and dev-quality-workflow (full dev cycle entry point). ADR drafting moved to write:plans (ADR format).",
-      "version": "1.10.3",
+      "version": "1.10.4",
       "author": {
         "name": "newkayak12"
       },
@@ -22,7 +22,7 @@
     {
       "name": "think",
       "description": "Thinking and ideation skills: mentor (any-field mentoring — takes a position, tests yours, hands over the judgment rule), brainstorming (≥3 options before judgment, kill-criteria convergence, hands off to write:plans), grill (a held plan interrogated: repo read first, one numbered round with recommended answers), devils-advocate (steel-man first, core vulnerability + reversibility), redefine-problem, back-to-basics, untangle-thoughts, and negotiate (counsel on your side).",
-      "version": "1.5.1",
+      "version": "1.5.2",
       "author": {
         "name": "newkayak12"
       },
@@ -35,7 +35,7 @@
     {
       "name": "write",
       "description": "Writing skills: plans (one entry, purpose chosen at step 0 — gate-ready implementation plans with production-time gap/ambiguity checks + per-step pass bars and dual-mode; reader documents co-written section by section with reader testing; fixed-template design reviews and ADRs; technical blog posts; SBI feedback), spec (a settled conversation synthesised into a spec, open points marked, no re-interview), skill writing, and writer verification (v2 — five passes incl. a humanizer for machine tells, draft loop that rewrites until 🔴🟡 = 0, PR descriptions from a diff as first-class input), and tech-book (staged technical-book writing in tmp/books/: brief → approved TOC → concepts → parallel chapter drafts → review↔revise loop → house-style copyedit → PDF in bundled NanumGothic, routed to repo skills per stage). Knowledge-base, graph, RAG, and query skills moved to the knowledge plugin.",
-      "version": "1.8.0",
+      "version": "1.8.1",
       "author": {
         "name": "newkayak12"
       },
@@ -48,7 +48,7 @@
     {
       "name": "knowledge",
       "description": "Answerability-gated knowledge skills and local MCP: linked Markdown, relation-aware graph extraction, graph visualization, RAG preparation, SQLite index building, and source-grounded retrieval.",
-      "version": "1.21.1",
+      "version": "1.21.2",
       "author": {
         "name": "newkayak12"
       },
@@ -61,7 +61,7 @@
     {
       "name": "agents",
       "description": "Agent orchestration skills: dispatching parallel agents as a persona allocator (fan out independent jobs, match each to a best-fit specialist), subagent-driven development, and task decomposition.",
-      "version": "1.2.2",
+      "version": "1.2.3",
       "author": {
         "name": "newkayak12"
       },
@@ -74,7 +74,7 @@
     {
       "name": "planning",
       "description": "Planning skills: executing-plans (pre-flight plan gate — critically review a plan, set a QualityGate pass-bar per step, then route to the right executor) and roadmap planning.",
-      "version": "1.3.2",
+      "version": "1.3.3",
       "author": {
         "name": "newkayak12"
       },
@@ -87,7 +87,7 @@
     {
       "name": "skill",
       "description": "Skill management: create skills in the repo's house identity, quality-assure them (6-dimension QA), audit trigger coverage, audit a workspace for what it already has before installing, and retro (a session's repeated mistakes turned into checks).",
-      "version": "1.5.0",
+      "version": "1.5.1",
       "author": {
         "name": "newkayak12"
       },
@@ -100,7 +100,7 @@
     {
       "name": "completion",
       "description": "Verification before completion: stand up a verify-level (pass bar), then confirm it with an isolated subagent so the check is independent of the context that did the work.",
-      "version": "1.1.5",
+      "version": "1.1.6",
       "author": {
         "name": "newkayak12"
       },
@@ -113,7 +113,7 @@
     {
       "name": "portfolio",
       "description": "Portfolio and career skills: fit (JD or company type), portfolio feedback, rewriting and JD tailoring, pattern analysis, mock interview, interview plan, job-application-workflow (through a 자기소개서 step via write:writer-verification), and deck-builder (reference template.pptx + deck.mdx → pptx; recolors a pptx to a brand palette).",
-      "version": "2.4.1",
+      "version": "2.4.2",
       "author": {
         "name": "newkayak12"
       },
@@ -126,7 +126,7 @@
     {
       "name": "cognition",
       "description": "Thinking quality skills: assumption extraction, bias auditing (v2 — context probe, per-bias remedies, calibration check), fallacy detection, mental models, epistemic reasoning, tradeoff articulation, question upgrading, and second-order thinking.",
-      "version": "1.1.7",
+      "version": "1.1.8",
       "author": {
         "name": "newkayak12"
       },
@@ -139,7 +139,7 @@
     {
       "name": "harness",
       "description": "Harness — a lightweight reasoning floor. Pass a raw request; a fixed six-stage engine runs Plan(opus) → SetGoal(opus, adversarial critic) → Implement(provider-routed, Codex when enabled) → Test(provider-routed, Codex when enabled) → QualityGate(opus, bounded loop + goal-level gate) → Report(sonnet). Filters repetition and below-threshold answers regardless of main-session model. B (request + engine) default; A (bespoke Workflow) for custom control flow. Enforcement: opt-in PreToolUse gate — projects list gated paths in .claude/harness-gate.json; edits there require harness engagement (fail-open). The install skill scaffolds a project: it embeds the self-contained gate hook (copies goal-gate.mjs into .claude/hooks/ and merges a PreToolUse entry into committed .claude/settings.json), plus gate config, default conventions (coding/verification/boundaries), and an ambient CLAUDE.md section — project-owned copies, never overwritten. It also optionally embeds the engine + Codex CLI adapter/runner + statically-referenced skills into .claude/harness/ for plugin-less environments (opt-in; dynamic subgoal skills[] cannot be pre-enumerated). Mode M: for control flow the fixed stages cannot express, the harness generates a bespoke Workflow from templates/meta-skeleton.js (contract preserved: judge≠actor, provider routing, bounded loops, deterministic Test, goal-level gate). Workflow path: when codex_provider is auto or required, every Implement/Test stage uses a minimal Sonnet controller to resolve engine/codex-exec-adapter.mjs and delegate to a separate local codex exec --json process; implement_provider/test_provider codex are optional trace hints, not routing prerequisites. On Codex success the controller only converts Codex output into the normal HANDOFF/evidence shape; it does not redo implementation or verification. codex_provider=auto allows explicit degraded Sonnet fallback; codex_provider=required reports provider failure instead of silently falling back. DW-off/Workflow-less fallback (engine/fallback.md): when Dynamic Workflow is disabled or the Workflow tool is absent, the orchestrator first forms a role-isolated Agent Team; the thin team lead coordinates Plan, SetGoal/Critic, Implement, Test, QualityGate, and Report teammates through files in a run directory, closed by fallback-check.mjs. Provider delegation is off by default (codex_provider defaults to off): both the Workflow and fallback paths run Implement/Test on Claude unless a run opts in with codex_provider auto or required. Active Codex sessions should follow AGENTS.md and run the harness contract directly with native tools, not recurse through codex, codex-exec-adapter.mjs, or codex-runner.mjs. SetGoal may also optionally map the repo harness-aware dual-mode skills (plans, executing-plans, subagent-driven-development, test-driven-development, etc.) as subgoal executors; none is required.",
-      "version": "1.26.1",
+      "version": "1.26.2",
       "author": {
         "name": "newkayak12"
       },
@@ -152,7 +152,7 @@
     {
       "name": "graph",
       "description": "Graph engineering for the harness flow: a local MCP server owns graph state, routes nodes to vendor CLIs or the session, adjudicates results against the worktree, and keeps payloads on disk. Includes graph:install and graph:orchestrate.",
-      "version": "1.9.0",
+      "version": "1.9.1",
       "author": {
         "name": "newkayak12"
       },
@@ -165,7 +165,7 @@
     {
       "name": "teams",
       "description": "A sibling of graph for requests too big for one pass: a TaskManager MCP (task-manager) sizes the request; size L is planned into a PRD and user stories, split into packages that each run the full harness in their own worktree, integrated, QA'd and gated by a background daemon; size S is handed to the development harness. Entry skills teams:orchestrate/develop/document/plan/qa/sprint, board and ticket views (tm_board, teams:board). Runs are kept under .teams_output/ and ~/.harness/tasks/. Zero runtime dependencies beyond Node 18+.",
-      "version": "0.50.0",
+      "version": "0.50.1",
       "author": {
         "name": "newkayak12"
       },
@@ -188,7 +188,7 @@
     {
       "name": "mods",
       "description": "Beta Claude Code mods for the claude-skills workflow: skill toasts, safety guards for worktrees, running scripts, push/bump and subagent models.",
-      "version": "0.1.0-beta.5",
+      "version": "0.1.0-beta.6",
       "author": {
         "name": "newkayak12"
       },
@@ -201,7 +201,7 @@
     {
       "name": "session",
       "description": "What a session left behind and a safety net: a /session pane with files changed, commits, denied calls and the longest gap, a retro band on the next start, a safe stop for stray claude -p children, guards that confirm destructive commands and secret-file writes, and /memo notes pinned to the model's context.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "newkayak12"
       },

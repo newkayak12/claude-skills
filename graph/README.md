@@ -33,6 +33,8 @@ Install the marketplace plugin and use `graph:install` to verify the connection:
 /plugin install graph@newkayak12-claude-skills
 ```
 
+> **trophy rides along.** From this version, the first interactive session after you install or update this plugin installs [trophy](../trophy/README.md) (achievements) once, in user scope, if you don't have it. Nothing is sent until you say yes; uninstalling trophy is respected (it is never reinstalled). To opt out beforehand: `mkdir -p ~/.claude/plugins/.newkayak12-trophy-ride.done`. Needs `sh` (Windows without one is not covered).
+
 For a source checkout, `graph:install` can instead merge this direct registration:
 
 ```json
@@ -46,6 +48,7 @@ For a source checkout, `graph:install` can instead merge this direct registratio
 Zero runtime dependencies, Node 18+.
 
 ## Status
+- v1.9.1 — trophy rides along: the first interactive session after this update installs trophy once if missing (uninstall respected)
 
 - **v1.9.0 — Mod: `/graph-live` pane** (Claude Code 2.1.292+, early access, interactive sessions): a read-only view of this folder's newest graph run in the teams 0.46.0 style. Tabs Flow / Nodes (keys `1`-`2`), a stage rail, the Next / Now / Blocked line, one row per subgoal (impl → test → gate) and a gates bar; Nodes is a To do / Doing / Done board. The mod only reads the run files; files over 4 MiB are skipped. No band of its own: graph runs already show in the harness pipeline band. English by default, Korean with Claude Code's `language`. Mod tests 20; real Claude Code captures EN/KO.
 - **v1.8.2 — the lock wait deadline is monotonic**: `acquireLock` set its deadline from
