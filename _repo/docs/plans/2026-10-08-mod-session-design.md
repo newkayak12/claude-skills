@@ -5,7 +5,7 @@ Governing docs: `plan/mod/README.md` (shared rules; backlog "session retro card"
 
 ## Context
 
-`mods` (feature 9) counts `claude -p` descendants at turn end and shows one status string. The backlog
+`mods` (feature 8) counts `claude -p` descendants at turn end and shows one status string. The backlog
 holds a "session retro card". The user chose a NEW standalone plugin, installable in any repo, with no
 dependency on this repo's skills: one pane, three tabs, plus an end-of-session card. Dev time is spent
 on the mod API as of build 2.1.293 (types in the `plugin-authoring` skill).
@@ -93,13 +93,13 @@ Diff stats: one `git diff --numstat -- <paths>` per pane open and per turn end, 
 6. Manual, interactive: pane opens at < 144 cols via `/session`; band shows after restart; `[stop]` on a
    real `sleep 300` started with `run_in_background` and on a real `claude -p` child.
 
-## What moves out of `mods` (feature 9) and migration
+## What moves out of `mods` (feature 8) and migration
 
 Moves: the `turn.complete` hook, `countClaudeP`, `CLAUDE_P`, and their tests in `mods/hooks/mod.test.ts`;
 the "claude -p child(ren) running" status. Everything else in `mods` stays.
 
 1. `session` ships first with the same count as a status line entry (feature parity before removal).
-2. Then `mods` is cut by a version bump (`0.1.0-beta.3`) that deletes feature 9; both READMEs and KORs note
+2. Then `mods` is cut by a version bump (`0.1.0-beta.4`) that deletes feature 8; both READMEs and KORs note
    "moved to `session`". Users of `mods` who do not install `session` lose the status: say so in the notes.
 3. Both installed at once would double-write the status line; the order above avoids it.
 4. New marketplace entry for `session` in `.claude-plugin/marketplace.json`; README + KOR together.
@@ -114,7 +114,7 @@ the "claude -p child(ren) running" status. Everything else in `mods` stays.
       a pid whose command changed is NOT signalled (test 3).
 - [ ] A `-p` run leaves a `$.store` summary; the next interactive start shows the band once.
 - [ ] No file of `session/` imports or names any other plugin or skill of this repo.
-- [ ] `mods` no longer contains feature 9; its tests pass without it; READMEs and KORs match.
+- [ ] `mods` no longer contains feature 8; its tests pass without it; READMEs and KORs match.
 - [ ] No function in `session` takes longer than a tick on the main hook path (`ps`/`git` only in timers,
       turn end and pane open).
 
