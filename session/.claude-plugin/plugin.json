@@ -1,0 +1,12 @@
+{
+  "name": "session",
+  "description": "Beta. What a session left behind: a /session pane with files changed, commits, denied calls and the longest step, a retro band on the next start, and a safe stop for stray claude -p children.",
+  "version": "0.1.0-beta.1",
+  "author": {
+    "name": "newkayak12"
+  },
+  "category": "productivity",
+  "repository": "https://github.com/newkayak12/claude-skills",
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}
