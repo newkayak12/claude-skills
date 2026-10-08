@@ -26,6 +26,7 @@ const en = {
   noRun: 'No teams run in this session.', loading: 'Loading...', noLog: 'Nothing logged yet.',
   workMore: '+{n} more', cmdDesc: 'Open the teams live pane', paneOpened: 'pane opened',
   board: 'board', inbox: 'needs you {n}', statusWaiting: 'needs you: {n} waiting - open /teams-live',
+  colTodo: 'To do', colDoing: 'Doing', colDone: 'Done',
 }
 
 // one table, two languages; the type keeps the keys identical
@@ -45,6 +46,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     noRun: '이 세션에 팀 실행이 없습니다.', loading: '불러오는 중...', noLog: '아직 기록이 없습니다.',
     workMore: '+{n}건 더', cmdDesc: '팀 실행 현황 창 열기', paneOpened: '창을 열었습니다',
     board: '보드', inbox: '확인 필요 {n}', statusWaiting: '확인 필요: {n}건 대기 - /teams-live 열기',
+    colTodo: '대기', colDoing: '진행', colDone: '완료',
   },
 }
 
@@ -53,6 +55,10 @@ const fmt = (text: string | undefined, vars: Record<string, string | number> = {
   (text ?? '').replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ''))
 
 const MARK: Record<Mark, string> = { done: '✔', running: '●', pending: '○', failed: '✘' }
+// the stage rail: a dot per stage, a solid rail up to where the run is, dotted after
+const DOT: Record<Mark, string> = { done: '●', running: '◉', pending: '○', failed: '✘' }
+const TINT: Record<Mark, string> = { done: 'success', running: 'claude', pending: 'inactive', failed: 'error' }
+const BAR = 24
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 const asRecord = (v: unknown): Record<string, unknown> | undefined =>
@@ -178,10 +184,12 @@ export const register: Register = on => {
     const task = await read($, summary)
     const info = await read($, status)
 
+    // plain tabs with hotkeys 1-3: the selected one in full strength with a dot, the rest dim
     const tabs = (
-      <Box>
-        {(['summary', 'work', 'log'] as const).map(one => (
-          <Button key={one} label={s(`tab${cap(one)}` as keyof typeof en)} variant={kind === one ? 'primary' : undefined}
+      <Box columnGap={3}>
+        {(['summary', 'work', 'log'] as const).map((one, i) => (
+          <Button key={one} plain hotkey={String(i + 1)} dimColor={kind !== one}
+            label={`${kind === one ? '● ' : ''}${s(`tab${cap(one)}` as keyof typeof en)}`}
             onPress={() => update($, view, () => one)} />
         ))}
       </Box>
@@ -195,44 +203,91 @@ export const register: Register = on => {
     }
 
     const stateWord = s(`state${cap(task.state)}` as keyof typeof en) || task.state
-    const lines: string[] = []
-    const cut = new Set<number>() // lines that truncate instead of wrapping
+    const filled = task.total > 0 ? Math.round((BAR * task.done) / task.total) : 0
+    const bar = (
+      <Box>
+        <Text color="success">{'━'.repeat(filled)}</Text>
+        <Text color="inactive">{'─'.repeat(BAR - filled)}</Text>
+        <Text bold>{`  ${task.done}/${task.total}`}</Text>
+      </Box>
+    )
+    const card = (c: SummaryTask['work'][number], i: number) => (
+      <Box key={`c${i}`} flexDirection="column">
+        <Text wrap="truncate-end"><Text color={TINT[c.state]}>{MARK[c.state]}</Text>{` ${c.title}`}</Text>
+        {c.state === 'failed' && c.reason && <Text color="error" wrap="truncate-end">{`  ${c.reason}`}</Text>}
+      </Box>
+    )
+
+    let body
     if (kind === 'summary') {
       const you = task.you.items.length > 0 ? task.you.items.join('; ') : task.you.count > 0 ? String(task.you.count) : s('youNone')
-      cut.add(lines.push(`▶ ${s('now')}   ${nowSentence(s, task)}`) - 1)
-      lines.push(`⚑ ${s('you')}   ${you}`)
       const others = (info?.waiting ?? 0) - task.you.count
-      if (others > 0) lines.push(`         ${s('youOthers', { n: others })}`)
-      lines.push('')
-      cut.add(lines.push(
-        `${s('stages')}  ${task.stages.map(g => `${s(`stage${cap(g.key)}` as keyof typeof en)} ${MARK[g.state]}`).join(' › ')}`,
-      ) - 1)
-      lines.push(s('work'))
-      for (const c of task.work.slice(0, WORK_MAX)) cut.add(lines.push(`  ${MARK[c.state]} ${c.title}`) - 1)
-      if (task.work.length > WORK_MAX) lines.push(`  ${s('workMore', { n: task.work.length - WORK_MAX })}`)
-      for (const c of task.work.filter(c => c.state === 'failed')) cut.add(lines.push(`  ✘ ${c.title} — ${c.reason}`) - 1)
-      lines.push(
-        `${s('cost')}   ${s('costLine', { usd: `$${task.cost.usd.toFixed(2)}`, turns: task.cost.turns })}`,
+      body = (
+        <Box flexDirection="column">
+          <Box flexWrap="wrap">
+            {task.stages.map((g, i) => {
+              const next = task.stages[i + 1]
+              const solid = next !== undefined && next.state !== 'pending'
+              return (
+                <Box key={g.key}>
+                  <Text color={TINT[g.state]} bold={g.state === 'running'}>{`${DOT[g.state]} ${s(`stage${cap(g.key)}` as keyof typeof en)}`}</Text>
+                  {next !== undefined && <Text color={solid ? 'success' : 'inactive'}>{solid ? ' ━━ ' : ' ┄┄ '}</Text>}
+                </Box>
+              )
+            })}
+          </Box>
+          <Box flexDirection="column" marginTop={1}>
+            <Text color="claude" bold wrap="truncate-end">{`▶ ${s('now')} · ${nowSentence(s, task)}`}</Text>
+            <Text color={task.you.count > 0 ? 'warning' : 'inactive'} wrap="truncate-end">{`⚑ ${s('you')} · ${you}`}</Text>
+            {others > 0 && <Text color="warning">{`  ${s('youOthers', { n: others })}`}</Text>}
+          </Box>
+          <Box flexDirection="column" marginY={1}>
+            {task.work.slice(0, WORK_MAX).map(card)}
+            {task.work.length > WORK_MAX && <Text dimColor>{`  ${s('workMore', { n: task.work.length - WORK_MAX })}`}</Text>}
+          </Box>
+          {bar}
+        </Box>
       )
     } else if (kind === 'work') {
-      for (const c of task.work) {
-        lines.push(`${MARK[c.state]} ${c.title}`)
-        if (c.state === 'failed') lines.push(`    ${c.reason}`)
-      }
+      const cols = [
+        { key: 'colTodo', tint: 'inactive', cards: task.work.filter(c => c.state === 'pending' || c.state === 'failed') },
+        { key: 'colDoing', tint: 'claude', cards: task.work.filter(c => c.state === 'running') },
+        { key: 'colDone', tint: 'success', cards: task.work.filter(c => c.state === 'done') },
+      ] as const
+      body = (
+        <Box flexDirection="column">
+          <Box>
+            {cols.map(col => (
+              <Box key={col.key} flexDirection="column" width="33%" borderStyle="round" borderColor={col.tint} paddingX={1}>
+                <Text bold color={col.tint}>{`${s(col.key)} ${col.cards.length}`}</Text>
+                {col.cards.map(card)}
+              </Box>
+            ))}
+          </Box>
+          {bar}
+        </Box>
+      )
     } else {
-      for (const one of task.log) lines.push(`${one.time} ${s(`log${cap(one.kind)}` as keyof typeof en, { s: one.subject ?? '' }).trim()}`)
-      if (lines.length === 0) lines.push(s('noLog'))
+      const lines = task.log.map(one => `${one.time} ${s(`log${cap(one.kind)}` as keyof typeof en, { s: one.subject ?? '' }).trim()}`)
+      body = (
+        <Box flexDirection="column">
+          {lines.length === 0 ? <Text dimColor>{s('noLog')}</Text> : lines.map((line, i) => <Text key={`l${i}`}>{line}</Text>)}
+        </Box>
+      )
     }
     return (
-      <Box flexDirection="column">
+      <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
         <Box>
-          <Text bold wrap="truncate-end">{`${task.title} (${task.key})`}</Text>
-          <Box flexShrink={0} marginLeft={3}>
-            <Text bold>{s('headLine', { state: stateWord, day: task.day, done: task.done, total: task.total })}</Text>
+          <Box flexShrink={1}><Text bold wrap="truncate-end">{task.title}</Text></Box>
+          <Box flexShrink={0} marginLeft={2}>
+            <Text color="claude">{s('headLine', { state: stateWord, day: task.day, done: task.done, total: task.total })}</Text>
           </Box>
         </Box>
-        {lines.map((line, i) => <Text key={`l${i}`} wrap={cut.has(i) ? 'truncate-end' : undefined}>{line}</Text>)}
-        {tabs}
+        <Box marginY={1} justifyContent="space-between">
+          {tabs}
+          <Text dimColor>{`${task.key} · ${s('costLine', { usd: `$${task.cost.usd.toFixed(2)}`, turns: task.cost.turns })}`}</Text>
+        </Box>
+        {body}
       </Box>
     )
   })
@@ -250,7 +305,11 @@ export const register: Register = on => {
         <Box>
           <Box flexShrink={1}><Text dimColor wrap="truncate-end">{`teams · ${task.title}`}</Text></Box>
           <Box flexShrink={1}><Text dimColor wrap="truncate-end">{` — ${nowSentence(s, task)}`}</Text></Box>
-          <Box flexShrink={0}><Text dimColor>{` · ${s('bandDone', { done: task.done, total: task.total })}`}</Text></Box>
+          <Box flexShrink={0} marginLeft={1}>
+            <Text color="success">{'━'.repeat(task.total > 0 ? Math.round((10 * task.done) / task.total) : 0)}</Text>
+            <Text color="inactive">{'─'.repeat(10 - (task.total > 0 ? Math.round((10 * task.done) / task.total) : 0))}</Text>
+            <Text dimColor>{` ${s('bandDone', { done: task.done, total: task.total })}`}</Text>
+          </Box>
           <Box flexShrink={0} marginLeft={1}><Button key="board" label={s('board')} onPress={open} /></Box>
           {info.waiting > 0 && <Box flexShrink={0} marginLeft={1}><Button key="inbox" label={s('inbox', { n: info.waiting })} onPress={open} /></Box>}
         </Box>
