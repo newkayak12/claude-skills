@@ -14,6 +14,10 @@ declare module 'claude-code' {
       // failures recorded since the failures tab was last shown, and the newest one's title
       unseen: number
       lastTitle: string
+      // any achievement unlocked yet (stored or this session): the consent question waits for it
+      anyUnlocked: boolean
+      // UI language, from Claude Code's `language` setting
+      lang: 'en' | 'ko'
     }
   }
 }
