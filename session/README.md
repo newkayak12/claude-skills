@@ -1,6 +1,6 @@
 # session
 
-Shows what a Claude Code session left behind (files changed, commits, denied calls, longest gap between tool calls), shows it again as a band on your next start, lists stray `claude -p` children and stops one safely, guards dangerous commands and secret writes, and keeps `/memo` notes. Version `0.1.1`. Requires Claude Code 2.1.292+ (hooks module). It needs nothing else from this marketplace.
+Shows what a Claude Code session left behind (files changed, commits, denied calls, longest gap between tool calls), shows it again as a band on your next start, lists stray `claude -p` children and stops one safely, guards dangerous commands and secret writes, keeps `/memo` notes, and recaps before compacting at a % you set. Version `0.2.0`. Requires Claude Code 2.1.292+ (hooks module). It needs nothing else from this marketplace.
 
 ## Install
 ```
@@ -78,6 +78,16 @@ Not a sandbox. `python -c`, `find -delete`, `dd`, shell aliases and scripts that
 Two scopes: project (keyed by the repo root) and global. Caps count both together: 8 notes, 280 characters each, 1200 in total; an add past a cap is refused with the reason. The injected block is a fixed header plus `[global]` notes then `[project]` notes. It is sent once per conversation and again after `/compact` or `/clear`, or after any change, from the next prompt.
 
 Not CLAUDE.md, not auto-memory: notes are not files, are never written to your repository, and are not shared. Put lasting rules in `CLAUDE.md`; use a memo for something you want pinned for now.
+
+## Smart compact
+At a context % you choose, the session is first asked for a recap (goal, decisions, state, open items, next direction), then compacted with that recap as the summary instructions, so the compacted context keeps where you were heading.
+
+| Command | What it does |
+| --- | --- |
+| `/smart-compact` | print the current threshold (default 70%) |
+| `/smart-compact <10-95>` | set it; `60` and `60%` both work |
+
+The same value is the **Smart compact threshold (%)** row in `/config`. It runs after a main-loop turn that ended with an answer, in interactive sessions only; never for subagents. If the recap fails it does nothing and the built-in auto-compact takes over. Set it below the auto-compact point, or auto-compact fires first.
 
 ## Limits
 - "Longest gap" is the largest time between two tool calls in one turn, not a measured step.

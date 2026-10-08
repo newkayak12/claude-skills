@@ -1,7 +1,7 @@
 {
   "name": "session",
-  "description": "What a session left behind and a safety net: a /session pane with files changed, commits, denied calls and the longest gap, a retro band on the next start, a safe stop for stray claude -p children, guards that confirm destructive commands and secret-file writes, and /memo notes pinned to the model's context.",
-  "version": "0.1.1",
+  "description": "What a session left behind and a safety net: a /session pane with files changed, commits, denied calls and the longest gap, a retro band on the next start, a safe stop for stray claude -p children, guards that confirm destructive commands and secret-file writes, /memo notes pinned to the model's context, and /smart-compact: recap the session at a set context %, then compact with that recap.",
+  "version": "0.2.0",
   "author": {
     "name": "newkayak12"
   },
@@ -38,6 +38,14 @@
       "title": "Denial log",
       "description": "Keep a redacted log of denied calls for /session-denials.",
       "default": true
+    },
+    "smart_compact_threshold": {
+      "type": "number",
+      "title": "Smart compact threshold (%)",
+      "description": "Context usage % at which the session is recapped and then compacted with that recap (10-95). Also set with /smart-compact <n>.",
+      "default": 70,
+      "min": 10,
+      "max": 95
     }
   }
 }

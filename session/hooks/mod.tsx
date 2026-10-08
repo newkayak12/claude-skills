@@ -12,6 +12,7 @@ import type { Row } from './procs.ts'
 import { statusLine } from './status.ts'
 import { DENIALS_KEY, register as registerGuard } from './guard.tsx'
 import { register as registerMemo } from './memo.tsx'
+import { register as registerCompact } from './compact.ts'
 
 const tab = atom({ plugin: 'session', key: 'tab' } as const, 'retro' as 'retro' | 'orphans')
 const band = atom({ plugin: 'session', key: 'band' } as const, false)
@@ -129,6 +130,7 @@ export const register: Register = (on, options) => {
     } catch {}
     await $.command.register({ name: 'memo', description: 'Pin notes the model reads in every conversation of this project' })
     await $.command.register({ name: 'session-denials', description: 'Calls the guard or the permission rules denied this session' })
+    await $.command.register({ name: 'smart-compact', description: 'Set the context % at which the session is recapped and compacted (/smart-compact 60)' })
     // First start of the session: defaults. A later start (hot reload) keeps what is there.
     await update($, tab, t => t ?? 'retro')
     await update($, band, b => b ?? false)
@@ -174,6 +176,7 @@ export const register: Register = (on, options) => {
   // Registered after the ledger, so the ledger wraps the guard and counts its denials too.
   registerGuard(on, options)
   registerMemo(on, options)
+  registerCompact(on, options)
 
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) {
