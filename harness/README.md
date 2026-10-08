@@ -243,7 +243,7 @@ are always gated. Fail-open everywhere (v0 lesson).
 
 ## Mod (Claude Code live UI)
 
-harness ships a small mod: a gate status line and a pane that explains the last gate decision. It is early access and optional. The gate itself is the command hook and works without it.
+harness ships a small mod: a band above the prompt while a run is live, a pane with the run, its units and the gate, and the gate status line. It is early access and optional. The gate itself is the command hook and works without it, and the mod does not change how it decides.
 
 **Version.** Modules load on Claude Code 2.1.292 and newer. The module API is early access and may change between releases. An older build skips the module: 2.1.284 was checked, it prints one stderr line (`hooks module not loaded: …`) and the command hooks, MCP and CLIs work unchanged. If a build says modules are not turned on for installed plugins, set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`.
 
@@ -256,11 +256,16 @@ harness ships a small mod: a gate status line and a pane that explains the last 
 
 **Features**
 
-- **Status line**, only when the gate config exists in the project:
+- **Band.** One row above the prompt, shown only while a run in this folder is unfinished (no `05-report.md`) and live (its files changed in the last 2 hours): title, what it is doing now, a short progress bar with `<done>/<total>` and a `run` button that opens the pane. Other mods' bands stay visible below it.
+- **`/harness-gate`** opens the pane on the Gate tab. The band button opens it on Run. The tabs are Run, Units and Gate (keys `1`-`3`; the selected one is bright with a dot).
+  - **Run** draws the six stages as a rail (`● Plan ━━ ● SetGoal ━━ ● Critique ━━ ◉ Implement/Test ┄┄ ○ Gate ┄┄ ○ Report`: solid up to where the run is, dotted after), what it is doing now, one line per subgoal and a progress bar.
+  - **Units** is a board with To do, Doing and Done columns for the subgoals, with tries and the goal-gate match as a `%` bar against the pass bar.
+  - **Gate** is the existing view: the gated patterns, the engagement window, the last decision (allow or deny, tool, target, age, reason) and how to engage the harness. Without a gate config it says so.
+- **Status line**, unchanged, only when the gate config exists in the project:
   - `gate: armed (<n> patterns)`
   - `gate: denied <target> — /harness-gate`, for 10 minutes after a deny.
-- **`/harness-gate`** opens a pane: the gated patterns, the engagement window, the last decision (allow or deny, tool, target, age, reason) and how to engage the harness. Without a gate config it says so.
-- The last decision comes from `.claude/.harness-last-decision.json`, written by the gate hook. It is a local runtime file, gitignored by `install`, and removed by `remove`.
+- **Where the data comes from.** The run view reads `.harness-run/<run>/` in the session folder (plan, goal spec, critique, gate files and the subgoal folders) read-only, and follows the newest live run, else the newest run. The last decision comes from `.claude/.harness-last-decision.json`, written by the gate hook. It is a local runtime file, gitignored by `install`, and removed by `remove`. A gate config that cannot be read shows an invalid-config notice instead of a status.
+- **Language.** English by default; Korean when Claude Code's `language` setting is Korean.
 
 Known limitations: the status reads the gate config relative to the session's working directory. A session that started with no UI surface (headless or SDK-hosted) keeps the mod off even if a client attaches later; start a new session to get it (a reload of an unchanged mod does not re-fire session.start).
 

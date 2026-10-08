@@ -411,6 +411,26 @@ The harness gate treats an open node within its window as engagement. The ledger
 evidence, not a dependency: a write failure never fails a node, and a missing, stale, or
 corrupt ledger is simply not engagement.
 
+## Mod (Claude Code live UI)
+
+graph ships a small mod: a band above the prompt and a pane that show the live run of the graph engine. It is early access and optional. The broker works without it. The mod is read-only: it never writes the run file.
+
+**Version.** Modules load on Claude Code 2.1.292 and newer. The module API is early access and may change between releases. An older build skips the module and the broker, hooks and CLIs work unchanged. If a build says modules are not turned on for installed plugins, set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`.
+
+| Where it runs | Mod |
+|---|---|
+| Interactive terminal | on |
+| Desktop app, Code tab | on |
+| `claude -p` and headless adapters | off (no UI surface) |
+| Codex, or no plugin | not applicable, nothing is lost |
+
+**Features**
+
+- **Band.** One row above the prompt, shown only while a run is live (running or blocked, file changed in the last 2 hours): title, the next step, `<done>/<total> gates` and a `flow` button that opens the pane. Other mods' bands stay visible below it.
+- **`/graph-live`** opens the pane. Tabs are Flow and Nodes (keys `1`-`2`; the selected one is bright with a dot). Flow draws the stages as a rail (`● Plan ━━ ● SetGoal ━━ ● Critique ━━ ◉ Build ┄┄ ○ Goal gate ┄┄ ○ Report`), a Next, Now or Blocked line (what runs next, what runs now, or where the run is stuck), one line per subgoal with its impl, test and gate steps, a gates bar and the goal-gate `%`. Nodes lists every node with its state and attempt.
+- **Where the data comes from.** The newest run file in `.harness-run/broker/runs/` under the session folder. graph writes a run file under the folder the run was started in, so only runs started in this folder show; a run started from another folder (another worktree included) does not. If none is live, the pane says there is no run.
+- **Language.** English by default; Korean when Claude Code's `language` setting is Korean.
+
 ## Skills
 
 - `install` — connect or verify the existing graph engine without copying it
