@@ -84,7 +84,9 @@ async function countStages($: EngineInterface, cwd: string, now: number): Promis
           const nodes = (Array.isArray(g?.nodes) ? g.nodes : []) as { stage?: string; state?: string }[]
           if (nodes.some(n => n.stage === 'report' && n.state === 'done')) continue
           const stage = STAGES.find(s => nodes.some(n => n.stage === s && !FINISHED.has(String(n.state))))
-          if (stage) add('graph', stage, { slug: f.name.replace(/\.json$/, ''), passed: 0, failed: 0, total: 0 })
+          // the request's first line names the run for a person; the run id when there is none
+          const request = typeof g?.request === 'string' ? g.request.trim().split('\n')[0].slice(0, 60) : ''
+          if (stage) add('graph', stage, { slug: request || f.name.replace(/\.json$/, ''), passed: 0, failed: 0, total: 0 })
         }
         continue
       }
@@ -191,43 +193,12 @@ export const register: Register = on => {
               {stages.map((s, i) => {
                 const rows = open[kind].filter(r => r.stage === s)
                 return (
-                  <Box key={s} flexShrink={1}>
+                  <Box key={s} flexShrink={1} hover={rows.length > 0 ? { scope: `${kind}-${s}` } : undefined}>
                     {i > 0 && <Text dimColor>{' ━ '}</Text>}
                     {rows.length === 0 ? (
                       <Text dimColor color="inactive" wrap="truncate-end">{name(s)}</Text>
                     ) : (
                       <Text bold color="claude" wrap="truncate-end">{`${name(s)} ${rows.length}`}</Text>
-                    )}
-                    {rows.length > 0 && (
-                      <Box
-                        position="absolute"
-                        top={-(rows.length + 2)}
-                        left={0}
-                        display="none"
-                        hover={{ display: 'flex' }}
-                        flexDirection="column"
-                        borderStyle="round"
-                        borderColor="claude"
-                        paddingX={1}
-                      >
-                        {rows.map(r => {
-                          const b = barCells(r)
-                          return (
-                            <Box key={r.slug} gap={1}>
-                              <Text wrap="truncate-end">{r.slug}</Text>
-                              {kind === 'harness' && (
-                                <Text>
-                                  <Text color="success">{'▰'.repeat(b.ok)}</Text>
-                                  <Text color="error">{'▰'.repeat(b.bad)}</Text>
-                                  <Text dimColor>{'▱'.repeat(b.rest)}</Text>
-                                  {` ${r.passed}/${r.total}`}
-                                </Text>
-                              )}
-                              {r.failed > 0 && <Text color="error">{`${r.failed} failed`}</Text>}
-                            </Box>
-                          )
-                        })}
-                      </Box>
                     )}
                   </Box>
                 )
@@ -235,6 +206,41 @@ export const register: Register = on => {
             </Box>
           )
         })}
+        {/* one hidden card per lit chip, in the flow under the rows: the band's region holds it */}
+        {kinds.flatMap(kind =>
+          STAGES.map(s => ({ s, rows: open[kind].filter(r => r.stage === s) }))
+            .filter(c => c.rows.length > 0)
+            .map(({ s, rows }) => (
+              <Box
+                key={`card-${kind}-${s}`}
+                display="none"
+                hover={{ scope: `${kind}-${s}`, display: 'flex' }}
+                flexDirection="column"
+                borderStyle="round"
+                borderColor="claude"
+                paddingX={1}
+              >
+                <Text dimColor>{`${kind} · ${label(s)}`}</Text>
+                {rows.map(r => {
+                  const b = barCells(r)
+                  return (
+                    <Box key={r.slug} gap={1}>
+                      <Text wrap="truncate-end">{r.slug}</Text>
+                      {kind === 'harness' && (
+                        <Text>
+                          <Text color="success">{'▰'.repeat(b.ok)}</Text>
+                          <Text color="error">{'▰'.repeat(b.bad)}</Text>
+                          <Text dimColor>{'▱'.repeat(b.rest)}</Text>
+                          {` ${r.passed}/${r.total}`}
+                        </Text>
+                      )}
+                      {r.failed > 0 && <Text color="error">{`${r.failed} failed`}</Text>}
+                    </Box>
+                  )
+                })}
+              </Box>
+            )),
+        )}
         {await next(e)}
       </Box>
     )
