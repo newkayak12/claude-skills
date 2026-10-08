@@ -294,6 +294,12 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     if (!e.isInteractive) return next(e)
 
+    // The stored answer first: until then the band stays hidden, so a yes never flashes the question.
+    const savedVersion = (await $.store.get('trophy.consentVersion')) as number | undefined
+    // An older yes reads as unasked (the band asks once more); the stored value stays until answered.
+    const saved = effectiveConsent((await $.store.get('trophy.consent')) as Consent | undefined, savedVersion)
+    await update($, consent, () => saved)
+    await update($, consentVersion, () => savedVersion ?? 0)
     await update($, active, () => true)
     await update($, lastSkill, () => '')
     await update($, unseen, () => 0)
@@ -303,11 +309,6 @@ export const register: Register = on => {
     await update($, lang, () => (typeof language === 'string' && /^(ko|korean|한국어)/i.test(language) ? 'ko' : 'en'))
     owned = await loadOwned($).catch(() => ({ skills: {}, servers: {}, versions: {} }))
     cc = (await $.session.version().catch(() => undefined))?.base ?? ''
-    const savedVersion = (await $.store.get('trophy.consentVersion')) as number | undefined
-    // An older yes reads as unasked (the band asks once more); the stored value stays until answered.
-    const saved = effectiveConsent((await $.store.get('trophy.consent')) as Consent | undefined, savedVersion)
-    await update($, consent, () => saved)
-    await update($, consentVersion, () => savedVersion ?? 0)
     if ((await $.store.get('trophy.installId')) === undefined) {
       await $.store.set('trophy.installId', crypto.randomUUID())
     }
