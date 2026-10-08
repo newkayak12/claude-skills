@@ -18,6 +18,8 @@ Claude Code 훅 모듈(`hooks/mod.tsx`)입니다. Claude Code 2.1.292 이상, �
 /plugin uninstall trophy@newkayak12-claude-skills
 ```
 
+UI는 기본적으로 영어이고, Claude Code의 `language` 설정이 한국어이면 한국어로 바뀝니다. 동의 질문이 알리는 데이터는 두 언어가 같습니다. 이 파일과 [README.md](README.md)는 함께 갱신합니다.
+
 ## 사용법
 
 | 하고 싶은 일 | 방법 |
