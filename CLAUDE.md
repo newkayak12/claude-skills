@@ -88,7 +88,7 @@ Maintainer bump tools (not user skills): `node _repo/scripts/patch-harness.mjs` 
 The repo (marketplace) version is `metadata.version` in `.claude-plugin/marketplace.json`; each release is the annotated tag `v<metadata.version>`, message `marketplace <version>`.
 
 - **When:** only when the user asks for a release or tag. A plugin bump alone does not move the repo version.
-- **Level, from the largest change since the last tag:** patch = plugin fixes and patch bumps only; minor = a new plugin, or any plugin minor/major bump; major = a plugin removed or renamed, or a change to the marketplace layout that breaks existing installs.
+- **Level, from the largest change since the last tag:** patch = any plugin bump (patch, minor or major) or doc change; minor = a new plugin added; major = a plugin removed or renamed, or a change to the marketplace layout that breaks existing installs.
 - **Steps:** `git fetch` → bump `metadata.version` → commit `marketplace <version>: <what moved>` → `git push origin main` → `git tag -a v<version> -m "marketplace <version>"` on that commit → `git push origin v<version>`. Tag only commits that are on origin/main.
 - **Never** move, delete, or re-point a pushed tag unless the user asks.
 
