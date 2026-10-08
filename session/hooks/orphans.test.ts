@@ -59,7 +59,7 @@ const statusAfterTurn = async ($: any, on: any, ps: string, surfaces: string[] =
   return { seen, w }
 }
 
-test('status: 2 claude -p jobs (wrapper once) -> the mods line, 0 -> cleared, headless -> no call', async ($, on) => {
+test('status: 2 claude -p jobs (wrapper once) -> one status line', async ($, on) => {
   expect((await statusAfterTurn($, on, PS)).seen).toEqual(['⧗ 2 claude -p child(ren) running'])
 })
 

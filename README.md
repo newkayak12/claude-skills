@@ -22,6 +22,7 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 /plugin install mods@newkayak12-claude-skills
 /plugin install planning@newkayak12-claude-skills
 /plugin install portfolio@newkayak12-claude-skills
+/plugin install session@newkayak12-claude-skills
 /plugin install skill@newkayak12-claude-skills
 /plugin install teams@newkayak12-claude-skills
 /plugin install think@newkayak12-claude-skills
@@ -44,6 +45,7 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 | [planning](./planning/README.md) · [한국어](./planning/KOR.md) | Executing plans and roadmap planning |
 | [portfolio](./portfolio/README.md) · [한국어](./portfolio/KOR.md) | Portfolio and career: feedback, JD analysis, interview prep |
 | [skill](./skill/README.md) · [한국어](./skill/KOR.md) | Skill creation, improvement, and validation |
+| [session](./session/README.md) · [한국어](./session/KOR.md) | Beta: `/session` retro pane (files, commits, denied calls), next-start retro band, safe stop for stray `claude -p` children |
 | [teams](./teams/README.md) · [한국어](./teams/KOR.md) | TaskManager MCP and per-flow teams (develop, document, plan, qa) with an EPIC/STORY board |
 | [think](./think/README.md) · [한국어](./think/KOR.md) | Brainstorming, devil's advocate, problem reframing, and more |
 | [trophy](./trophy/README.md) · [한국어](./trophy/KOR.md) | Steam-style achievements for skill use; opt-in anonymous counts |
