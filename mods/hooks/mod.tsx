@@ -62,7 +62,11 @@ function countClaudeP(ps: string, engine: number): number {
   return rows.filter(r => hits.has(r.pid) && !hits.has(r.ppid)).length
 }
 
-const isClaude = (cmd: string) => (words(cmd)[0] ?? '').split('/').pop() === 'claude'
+// the claude binary: `claude` on PATH, or an installed build that runs as .../claude/versions/<v>
+const isClaude = (cmd: string) => {
+  const bin = words(cmd)[0] ?? ''
+  return bin.split('/').pop() === 'claude' || /\/claude\/versions\/[^/]+$/.test(bin)
+}
 
 // what /reap kills: the claude binary itself run with -p/--print below `engine`, never a wrapper
 // shell (it exits with its child). undefined when `engine` is not this session's claude: pid 1 or
@@ -80,6 +84,16 @@ const ALIVE = new Set(['pending', 'running', 'waiting', 'idle'])
 async function enginePid($: EngineInterface): Promise<number> {
   const me = await $.process.run(['sh', '-c', 'echo $PPID'])
   return Number(me.stdout.trim())
+}
+
+// status line: this session's unfinished agents and headless claude -p children (D2)
+async function aliveStatus($: EngineInterface): Promise<void> {
+  const engine = await enginePid($)
+  const ps = await $.process.run(['ps', '-A', '-o', 'pid=,ppid=,command='])
+  const n = Number.isInteger(engine) && engine > 0 ? countClaudeP(ps.stdout, engine) : 0
+  const a = (await $.agent.list()).filter(x => ALIVE.has(x.status)).length
+  const parts = [...(a > 0 ? [`${a} agent(s)`] : []), ...(n > 0 ? [`${n} claude -p child(ren)`] : [])]
+  $.ui.status(parts.length ? `⧗ ${parts.join(' · ')} running · /reap` : undefined)
 }
 
 export const register: Register = (on, options) => {
@@ -190,19 +204,14 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     const r = await next(e)
     if ((await $.session.surfaces()).length === 0) return r
-    const engine = await enginePid($)
-    const ps = await $.process.run(['ps', '-A', '-o', 'pid=,ppid=,command='])
-    const n = Number.isInteger(engine) && engine > 0 ? countClaudeP(ps.stdout, engine) : 0
-    const a = (await $.agent.list()).filter(x => ALIVE.has(x.status)).length
-    const parts = [...(a > 0 ? [`${a} agent(s)`] : []), ...(n > 0 ? [`${n} claude -p child(ren)`] : [])]
-    $.ui.status(parts.length ? `⧗ ${parts.join(' · ')} running · /reap` : undefined)
+    await aliveStatus($)
     return r
   }).catch(($, e, next) => next(e))
 
   // /reap: stop unfinished agents (TaskStop) and kill claude -p children, after the person confirms.
   // Answers its own command: neither the hook nor its .catch reads next.
   on('command.run', { command: 'reap' }, async $ => {
-    if ((await $.session.surfaces()).length === 0) return { text: 'mods: /reap runs in interactive sessions only.' }
+    if ((await $.session.surfaces()).length === 0) return { text: '/reap runs in interactive sessions only.' }
     const alive = (await $.agent.list()).filter(x => ALIVE.has(x.status))
     const ids = new Set(alive.map(x => x.id))
     // a parent's stop ends its children: stopping them too would only report false failures
@@ -215,9 +224,9 @@ export const register: Register = (on, options) => {
       ...agents.map(x => `agent: ${x.description} (${x.status})`),
       ...(procs ?? []).map(p => `pid ${p.pid}: ${p.cmd.slice(0, 80)}`),
     ]
-    if (!targets.length) return { text: ['mods: nothing to reap.', ...unknown].join('\n') }
+    if (!targets.length) return { text: ['nothing to reap.', ...unknown].join('\n') }
     const answer = await $.ui.ask(`Reap these?\n${targets.join('\n')}`, ['Reap', 'Cancel']).catch(() => undefined)
-    if (answer !== 'Reap') return { text: 'mods: reap cancelled; nothing stopped.' }
+    if (answer !== 'Reap') return { text: 'reap cancelled; nothing stopped.' }
     const lines: string[] = []
     for (const x of agents) {
       try {
@@ -235,7 +244,8 @@ export const register: Register = (on, options) => {
       lines.push(k.exitCode === 0 ? `killed: claude -p ${pids.join(' ')}` : `failed: kill ${pids.join(' ')} (${k.stderr.trim()})`)
     }
     lines.push(...unknown)
+    await aliveStatus($)
     $.ui.toast(`⧗ reap: ${lines.filter(l => /^(stopped|killed):/.test(l)).length} done, ${lines.filter(l => l.startsWith('failed')).length} failed`, { timeoutMs: 6000 })
-    return { text: ['mods /reap', ...lines].join('\n') }
-  }).catch(() => ({ text: 'mods: /reap failed; nothing more was stopped.' }))
+    return { text: ['/reap', ...lines].join('\n') }
+  }).catch(() => ({ text: '/reap failed; nothing more was stopped.' }))
 }
