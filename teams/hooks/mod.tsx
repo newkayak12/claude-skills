@@ -223,7 +223,7 @@ export const register: Register = on => {
       const you = task.you.items.length > 0 ? task.you.items.join('; ') : task.you.count > 0 ? String(task.you.count) : s('youNone')
       const others = (info?.waiting ?? 0) - task.you.count
       body = (
-        <Box flexDirection="column" gap={1}>
+        <Box flexDirection="column">
           <Box flexWrap="wrap">
             {task.stages.map((g, i) => {
               const next = task.stages[i + 1]
@@ -236,12 +236,12 @@ export const register: Register = on => {
               )
             })}
           </Box>
-          <Box flexDirection="column">
+          <Box flexDirection="column" marginTop={1}>
             <Text color="claude" bold wrap="truncate-end">{`▶ ${s('now')} · ${nowSentence(s, task)}`}</Text>
             <Text color={task.you.count > 0 ? 'warning' : 'inactive'} wrap="truncate-end">{`⚑ ${s('you')} · ${you}`}</Text>
             {others > 0 && <Text color="warning">{`  ${s('youOthers', { n: others })}`}</Text>}
           </Box>
-          <Box flexDirection="column">
+          <Box flexDirection="column" marginY={1}>
             {task.work.slice(0, WORK_MAX).map(card)}
             {task.work.length > WORK_MAX && <Text dimColor>{`  ${s('workMore', { n: task.work.length - WORK_MAX })}`}</Text>}
           </Box>
@@ -285,7 +285,7 @@ export const register: Register = on => {
         </Box>
         <Box marginY={1} justifyContent="space-between">
           {tabs}
-          <Text dimColor>{s('costLine', { usd: `$${task.cost.usd.toFixed(2)}`, turns: task.cost.turns })}</Text>
+          <Text dimColor>{`${task.key} · ${s('costLine', { usd: `$${task.cost.usd.toFixed(2)}`, turns: task.cost.turns })}`}</Text>
         </Box>
         {body}
       </Box>
