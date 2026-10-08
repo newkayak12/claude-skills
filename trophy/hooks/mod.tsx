@@ -24,15 +24,24 @@ import {
   typedCommand,
 } from './logic.ts'
 import type { BatchStore, DayCounts, Use } from './logic.ts'
+import {
+  appendEntry, copyBody, goalFailed, harnessResult, marketplaceCandidates, newest, ownedMcpTool, ownedSkill,
+  rowDetail, rowTitle,
+} from './failures.ts'
+import type { Entry } from './failures.ts'
 
 const active = atom({ plugin: 'trophy', key: 'active' } as const, false)
 const turnMatched = atom({ plugin: 'trophy', key: 'turnMatched' } as const, [] as string[])
 const turnFired = atom({ plugin: 'trophy', key: 'turnFired' } as const, [] as string[])
 const turnTyped = atom({ plugin: 'trophy', key: 'turnTyped' } as const, false)
-const tab = atom({ plugin: 'trophy', key: 'tab' } as const, 'trophies' as 'trophies' | 'triggers')
+const tab = atom({ plugin: 'trophy', key: 'tab' } as const, 'trophies' as 'trophies' | 'triggers' | 'failures')
 const consent = atom({ plugin: 'trophy', key: 'consent' } as const, 'unasked' as 'unasked' | 'yes' | 'no')
 const celebrate = atom({ plugin: 'trophy', key: 'celebrate' } as const, null as { ids: string[]; until: number } | null)
 const consentVersion = atom({ plugin: 'trophy', key: 'consentVersion' } as const, 0)
+// The last `plugin:skill` of this marketplace used or typed; failures recorded since the pane last showed them.
+const lastSkill = atom({ plugin: 'trophy', key: 'lastSkill' } as const, '')
+const unseen = atom({ plugin: 'trophy', key: 'unseen' } as const, 0)
+const lastTitle = atom({ plugin: 'trophy', key: 'lastTitle' } as const, '')
 
 const CARD_MS = 8000
 const BAR = 10
@@ -50,6 +59,75 @@ async function setConsent($: EngineInterface, value: Consent) {
 
 const DAY_MS = 86_400_000
 const MARKETPLACE_PLUGINS = new Set(triggers.map(t => t.plugin))
+const TEXT_MAX = 2000
+const BUG_USAGE = 'usage: /trophy-bug <note>'
+
+type Owned = { skills: Record<string, string[]>; servers: Record<string, string[]>; versions: Record<string, string> }
+
+// What this marketplace ships and at which version, read once per session from $.plugin.root; empty when
+// unreadable, so no failure is recorded (fails toward privacy). `cc` is Claude Code's release.
+let owned: Owned = { skills: {}, servers: {}, versions: {} }
+let cc = ''
+
+const readJson = async ($: EngineInterface, path: string) => JSON.parse(await $.fs.read(path))
+
+async function loadOwned($: EngineInterface): Promise<Owned> {
+  const out: Owned = { skills: {}, servers: {}, versions: {} }
+  const parts = String($.plugin.root).replace(/\/+$/, '').split('/')
+  for (const path of marketplaceCandidates($.plugin.root, parts[parts.length - 3])) {
+    let plugins: { name: string; version?: unknown; source?: unknown }[]
+    try {
+      plugins = (await readJson($, path)).plugins
+    } catch {
+      continue // try the next candidate
+    }
+    const base = path.slice(0, -'/.claude-plugin/marketplace.json'.length)
+    for (const p of plugins) {
+      out.skills[p.name] = []
+      out.servers[p.name] = []
+      if (typeof p.version === 'string') out.versions[p.name] = p.version
+      if (typeof p.source !== 'string' || !p.source.startsWith('./')) continue
+      const dir = `${base}/${p.source.slice(2)}`
+      try {
+        const entries = (await $.fs.list(`${dir}/skills`)) as { name: string; kind: string }[]
+        out.skills[p.name] = entries.filter(x => x.kind === 'dir').map(x => x.name)
+      } catch {}
+      try {
+        out.servers[p.name] = Object.keys((await readJson($, `${dir}/.mcp.json`)).mcpServers ?? {})
+      } catch {}
+    }
+    break
+  }
+  return out
+}
+
+async function record($: EngineInterface, entry: Omit<Entry, 'ts' | 'day' | 'session' | 'version' | 'cc'>) {
+  const ts = await $.clock.now()
+  const session = await $.session.id()
+  const log = ((await $.store.get('trophy.failures')) ?? []) as Entry[]
+  const version = entry.plugin ? owned.versions[entry.plugin] : undefined
+  const full: Entry = { ...entry, ts, day: dayOf(ts), session, ...(version ? { version } : {}), ...(cc ? { cc } : {}) }
+  await $.store.set('trophy.failures', appendEntry(log, full))
+  if (entry.kind === 'bug' || entry.kind === 'outcome') {
+    await update($, unseen, n => n + 1)
+    await update($, lastTitle, () => rowTitle(full))
+  }
+}
+
+// Recording a failure never changes what the engine returns: any failure here is swallowed.
+const safe = async (work: () => Promise<unknown>) => {
+  try {
+    await work()
+  } catch {}
+}
+
+const cut = (v: unknown) => String(v ?? '').slice(0, TEXT_MAX)
+
+const showFailures = async ($: EngineInterface) => {
+  await update($, unseen, () => 0)
+  await update($, tab, () => 'failures')
+  await $.ui.open({ id: PANE, title: 'Achievements' })
+}
 
 // Every hook fails open: the event goes on, and the failure is kept (scrubbed) for the next send.
 async function failOpen($: EngineInterface, e: unknown, next: any) {
@@ -73,6 +151,7 @@ async function readBatchStore($: EngineInterface): Promise<BatchStore> {
     unlocked: (await get('trophy.unlocked', {})) as Record<string, string>,
     errors: (await get('trophy.errors', [])) as BatchStore['errors'],
     plugins: (await get('trophy.plugins', {})) as Record<string, string[]>,
+    failures: (await get('trophy.failures', [])) as Entry[],
   }
 }
 
@@ -164,6 +243,11 @@ export const register: Register = on => {
     if (!e.isInteractive) return next(e)
 
     await update($, active, () => true)
+    await update($, lastSkill, () => '')
+    await update($, unseen, () => 0)
+    await update($, lastTitle, () => '')
+    owned = await loadOwned($).catch(() => ({ skills: {}, servers: {}, versions: {} }))
+    cc = (await $.session.version().catch(() => undefined))?.base ?? ''
     const savedVersion = (await $.store.get('trophy.consentVersion')) as number | undefined
     // An older yes reads as unasked (the band asks once more); the stored value stays until answered.
     const saved = effectiveConsent((await $.store.get('trophy.consent')) as Consent | undefined, savedVersion)
@@ -181,6 +265,11 @@ export const register: Register = on => {
       description: 'Anonymous usage counts: on, off or status',
       argumentHint: 'on|off|status',
     })
+    await $.command.register({
+      name: 'trophy-bug',
+      description: 'Report a problem with this marketplace\'s last skill; the note stays local',
+      argumentHint: '<note>',
+    })
     await recordPlugins($).catch(() => {})
     await sendIfDue($).catch(() => {})
 
@@ -194,9 +283,91 @@ export const register: Register = on => {
     return next(e)
   }).catch(failOpen)
 
+  // Also: the Skill tool answered but the skill did not succeed; remembers the last owned skill.
   on('tool.call', { tool: 'Skill' }, async ($, e, next) => {
     await note($, e.skill)
+    const result = await next(e)
+    if (e.tool !== 'Skill' || !(await read($, active))) return result
+    await safe(async () => {
+      const hit = ownedSkill(e.skill, owned.skills)
+      if (!hit) return
+      await update($, lastSkill, () => `${hit.plugin}:${hit.skill}`)
+      const r = result as { deny?: string; isError?: boolean; result?: any }
+      if (r.deny !== undefined || r.isError || !r.result || r.result.success !== false) return
+      const forked = r.result.status === 'forked'
+      await record($, {
+        kind: 'bug',
+        reason: forked ? 'forked_unsuccessful' : 'unsuccessful',
+        plugin: hit.plugin,
+        skill: hit.skill,
+        local: forked ? { text: cut(r.result.result) } : {},
+      })
+    })
+    return result
+  }).catch(failOpen)
+
+  // An owned skill failed to load, or an owned MCP tool failed. An interrupt is the person's, not a bug.
+  on('classic.PostToolUseFailure', async ($, e, next) => {
+    if (!(await read($, active)) || e.is_interrupt === true) return next(e)
+    await safe(async () => {
+      const text = cut(e.error)
+      if (e.tool_name === 'Skill') {
+        const hit = ownedSkill((e.tool_input as { skill?: unknown } | undefined)?.skill, owned.skills)
+        if (hit) await record($, { kind: 'bug', reason: 'is_error', plugin: hit.plugin, skill: hit.skill, local: { text } })
+        return
+      }
+      const mcp = ownedMcpTool(e.tool_name, e.mcp_server, owned.servers)
+      if (mcp) await record($, { kind: 'bug', reason: 'mcp_error', plugin: mcp.plugin, tool: mcp.tool, local: { text } })
+    })
     return next(e)
+  }).catch(failOpen)
+
+  // The harness engine wrote a final failed subgoal result (local only, never sent).
+  on('tool.call', { tool: 'Write' }, async ($, e, next) => {
+    const result = await next(e)
+    if (e.tool !== 'Write' || !(await read($, active))) return result
+    await safe(async () => {
+      const r = result as { deny?: string; isError?: boolean }
+      if (r.deny !== undefined || r.isError) return
+      const hit = harnessResult(e.file_path, e.content)
+      if (hit) {
+        await record($, { kind: 'outcome', reason: 'subgoal_failed', local: { slug: hit.slug, subgoal: hit.subgoal, path: e.file_path } })
+      }
+    })
+    return result
+  }).catch(failOpen)
+
+  // fallback-check.mjs printed the final `COMPLETE <slug> goal-gate FAIL` (local only, never sent).
+  on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+    const result = await next(e)
+    if (e.tool !== 'Bash' || !(await read($, active))) return result
+    await safe(async () => {
+      const r = result as { deny?: string; isError?: boolean; result?: { stdout?: string } }
+      if (r.deny !== undefined || r.isError || !e.command.includes('fallback-check.mjs')) return
+      const stdout = r.result?.stdout ?? ''
+      if (!goalFailed(stdout)) return
+      const slug = /^COMPLETE\s+(\S+)/m.exec(stdout)?.[1]
+      await record($, { kind: 'outcome', reason: 'goal_failed', local: slug ? { slug } : {} })
+    })
+    return result
+  }).catch(failOpen)
+
+  // `/trophy-bug <note>`: the note stays local; only the code `user_report` can be sent.
+  on('command.run', { command: 'trophy-bug' }, async ($, e) => {
+    const note = e.args.trim()
+    if (!note) return { text: BUG_USAGE }
+    try {
+      const hit = ownedSkill(await read($, lastSkill), owned.skills)
+      await record($, {
+        kind: 'report',
+        reason: 'user_report',
+        ...(hit ? { plugin: hit.plugin, skill: hit.skill } : {}),
+        local: { note: cut(note) },
+      })
+      return { text: 'Recorded.' }
+    } catch {
+      return { text: 'Could not record the report.' }
+    }
   }).catch(failOpen)
 
   on('classic.UserPromptExpansion', async ($, e, next) => {
@@ -213,6 +384,9 @@ export const register: Register = on => {
       await update($, turnTyped, () => typed !== undefined)
       // The one path that still sees a typed skill when skill.prompt and UserPromptExpansion are skipped.
       if (typed) await note($, typed)
+      // Only a name this marketplace ships becomes the last skill; whatever else was typed is never stored.
+      const hit = ownedSkill(typed, owned.skills)
+      if (hit) await update($, lastSkill, () => `${hit.plugin}:${hit.skill}`)
     }
     return next(e)
   }).catch(failOpen)
@@ -233,6 +407,7 @@ export const register: Register = on => {
 
   // The pane opens only from its command.
   on('command.run', { command: 'achievements' }, async $ => {
+    if ((await read($, tab)) === 'failures') await update($, unseen, () => 0)
     await $.ui.open({ id: PANE, title: 'Achievements' })
     return { text: 'Achievements pane opened.' }
   }).catch(failOpen)
@@ -261,8 +436,44 @@ export const register: Register = on => {
           variant={current === 'triggers' ? 'primary' : undefined}
           onPress={() => update($, tab, () => 'triggers')}
         />
+        <Button
+          key="tab-failures"
+          label="실패"
+          variant={current === 'failures' ? 'primary' : undefined}
+          onPress={() => showFailures($)}
+        />
       </Box>
     )
+
+    if (current === 'failures') {
+      const rows = newest(((await $.store.get('trophy.failures')) ?? []) as Entry[])
+      return (
+        <Box flexDirection="column">
+          {header}
+          {rows.length === 0 && <Text dimColor>No failures recorded.</Text>}
+          {rows.map((r, i) => (
+            <Box key={`fail-${i}`} flexDirection="column" borderStyle="round" borderColor="error" borderDimColor paddingX={1}>
+              <Box justifyContent="space-between" gap={1}>
+                <Box flexShrink={1}>
+                  <Text color="error">✘ </Text>
+                  <Text wrap="truncate-end">{rowTitle(r)}</Text>
+                </Box>
+                <Box flexShrink={0}>
+                  <Button
+                    key={`copy-${i}`}
+                    label="복사"
+                    onPress={press => {
+                      void $.ui.copy({ text: copyBody(r), surface: press.surface }).catch(() => {})
+                    }}
+                  />
+                </Box>
+              </Box>
+              {rowDetail(r).map((line, j) => <Text key={`d-${i}-${j}`} dimColor>{line}</Text>)}
+            </Box>
+          ))}
+        </Box>
+      )
+    }
 
     if (current === 'triggers') {
       const counts = ((await $.store.get('trophy.triggers')) ?? {}) as DayCounts
@@ -327,7 +538,8 @@ export const register: Register = on => {
     const asking = (await read($, consent)) === 'unasked'
     const card = await read($, celebrate)
     const shown = card && card.until > (await $.clock.now()) ? achievements.filter(a => card.ids.includes(a.id)) : []
-    if (!asking && shown.length === 0) return next(e)
+    const failed = await read($, unseen)
+    if (!asking && shown.length === 0 && failed === 0) return next(e)
 
     const mine = (
       <Box flexDirection="column">
@@ -347,6 +559,14 @@ export const register: Register = on => {
                 <Text bold>{a.title}</Text> — {a.description}
               </Text>
             ))}
+          </Box>
+        ) : null}
+        {failed > 0 ? (
+          <Box key="failed" gap={1}>
+            <Box flexShrink={0}><Text color="error" bold>{`✘ ${failed}`}</Text></Box>
+            <Box flexShrink={0}><Text dimColor>trophy</Text></Box>
+            <Box flexShrink={1}><Text wrap="truncate-end">{await read($, lastTitle)}</Text></Box>
+            <Box flexShrink={0}><Button key="see" label="보기" onPress={() => showFailures($)} /></Box>
           </Box>
         ) : null}
       </Box>
