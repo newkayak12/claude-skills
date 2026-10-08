@@ -89,6 +89,7 @@ the specialist skills in a fixed order and let you join mid-process.
 | I want to… | Skill |
 |---|---|
 | Get a review or gate verdict on a change, or implement one test-first | `clean-code` |
+| Turn a repo's own code style into harness conventions, with sources | `like-my-code` |
 | Audit a feature or service for exploitable flaws in auth, input, secrets, payments | `security-auditor` |
 | Generate docstrings, JSDoc, or an OpenAPI spec for existing code | `code-documenter` |
 | Plan which docs should exist, for whom, and who keeps them current | `documentation-strategy` |
@@ -667,6 +668,19 @@ domain modeling (use `domain-driven-design`), or performance work (profile first
 ```
 Review this 300-line service class for readability. Give me the score, the specific
 smells, and the refactor in priority order — I only have an afternoon.
+```
+
+### `like-my-code`
+
+Turns a repo's own code style into written policy. It samples recent hand-written files, counts what
+they do per dimension (naming, functions, errors, comments, structure, dependencies, boundaries), and
+writes only rules the repo shows: at least 2 `file:line` examples from 2 files and a consistency ratio
+of 70% or more. Each rule cites `references/sources.md` or is marked `repo-only`; habits that contradict
+a source go under *Conflicts* for you to decide. You see the draft before `coding.md` and
+`boundaries.md` are filled; existing lines are never overwritten.
+
+```
+Extract coding conventions from ~/work/api and write them as harness conventions, with a source for each rule.
 ```
 
 ### `security-auditor`
