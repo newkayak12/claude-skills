@@ -729,7 +729,7 @@ for (const surface of SURFACES) {
     const data = { status: stat(), task: demo(), events: [END('tee')], reports: { abc: payload({ path: '/proj/E-abc/80-report.md', report: { text: 'U report', truncated: false, more_lines: 0, mtime: 1 } }), tee: T_PAYLOAD() } }
     const { seen, tick } = await seeded($, on, data, surface)
     expect(reportArgv(seen).map(taskOf)).toEqual(['tee'])
-    expect(seen.store.get('report')).toMatchObject({ task_id: 'tee' })
+    expect(seen.store.get('cardReport')).toMatchObject({ task_id: 'tee' })
     expect(seen.store.get('ended')).toEqual({ tee: 'card' })
     const b = await band($, surface)
     const text = await shown(b)
@@ -836,5 +836,22 @@ for (const surface of SURFACES) {
     const body = text.indexOf('line\\nline')
     expect(path > 0 && notice > path && body > notice).toBe(true)
     expect(seen.store.get('view')).toBe('report')
+  })
+}
+
+for (const surface of SURFACES) {
+  test(`${surface}: Report tab open on U, T ends: T's card shows and stays; the tab keeps drawing U`, async ($, on) => {
+    const reports = { abc: payload({ report: { text: 'U report', truncated: false, more_lines: 0, mtime: 1 } }), tee: T_PAYLOAD() }
+    const { seen, tick } = await seeded($, on, { status: stat(), task: demo(), events: [END('tee')], reports }, surface, undefined, { view: 'report' })
+    await tick()
+    await tick()
+    const b = await band($, surface)
+    expect(await shown(b)).toContain('finished')
+    expect(await labels(b)).toEqual(['report', '×'])
+    expect(seen.store.get('ended')).toEqual({ tee: 'card' })
+    const ui = await pane($, surface)
+    expect(await shown(ui)).toContain('E-abc/80-report.md')
+    expect((await ui.find({ type: 'Markdown' }))?.props.text).toBe('U report')
+    expect(await shown(ui)).not.toContain('E-tee')
   })
 }
