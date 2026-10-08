@@ -14,10 +14,19 @@ type Files = Record<string, string | Error>
 const key = (files: Files, path: string) => Object.keys(files).find(k => path.endsWith(`/${k}`))
 
 // The engine beneath: surfaces, fs.exists/read over a file map, status, command.register, $.state, ui.open.
-function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], files: Files) {
+// dirs: a directory path suffix to its entries ([name, kind, mtimeMs]); no git, so the cwd is the one tree
+type Dirs = Record<string, [string, 'dir' | 'file', number?][]>
+function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], files: Files, dirs: Dirs = {}) {
   const seen = { statuses: [] as (string | undefined)[], commands: [] as string[], opened: [] as string[], reads: 0 }
   const store = new Map<string, unknown>()
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('session.cwd', () => ({ value: '/proj' }) as never)
+  on('process.run', () => ({ value: { exitCode: 128, stdout: '', stderr: 'not a repo' } }) as never)
+  on('fs.list', (_$, e) => {
+    const k = Object.keys(dirs).find(d => e.path.endsWith(`/${d}`))
+    if (k === undefined) throw new Error('ENOENT')
+    return { value: dirs[k].map(([name, kind, mtimeMs]) => ({ name, kind, size: 0, mtimeMs: mtimeMs ?? NOW, isLink: false })) } as never
+  })
   on('session.surfaces', () => ({ value: surfaces }))
   on('command.register', (_$, e) => {
     seen.commands.push(e.name)
@@ -38,6 +47,11 @@ function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], files: Fil
   on('state.set', (_$, e) => {
     store.set(e.key, e.value)
     return { value: { isSet: true, version: 1 } } as never
+  })
+  // the prompt area beneath the band
+  on('ui.render', { component: 'AbovePrompt' }, ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return Text({ children: 'prompt' } as never) as never
   })
   on('ui.open', (_$, e) => {
     seen.opened.push(e.id)
@@ -67,57 +81,84 @@ test('no config: status is undefined', async ($, on) => {
   expect(seen.commands).toEqual(['harness-gate'])
 })
 
-test('armed: gate: armed (3 patterns); a decision file that is not JSON changes nothing', async ($, on) => {
+const STALE = NOW - 13 * 60 * 60 * 1000
+const spec = JSON.stringify({ subgoals: [{ id: 's1' }, { id: 's2' }] })
+const sound = JSON.stringify({ sound: true })
+const runFiles: Files = {
+  'b/02-goal-spec.json': spec, 'b/02-critique.json': sound, 'b/subgoals/s1/result.json': JSON.stringify({ passed: true }),
+  'c/02-goal-spec.json': spec, 'c/02-critique.json': sound,
+  'c/subgoals/s1/result.json': JSON.stringify({ passed: true }), 'c/subgoals/s2/result.json': JSON.stringify({ passed: false }),
+  'g1.json': JSON.stringify({ nodes: [{ stage: 'plan', state: 'done' }, { stage: 'implement', state: 'running' }, { stage: 'report', state: 'pending' }] }),
+  'g2.json': JSON.stringify({ nodes: [{ stage: 'implement', state: 'done' }, { stage: 'report', state: 'done' }] }),
+}
+const planned: Dirs[string] = [['manifest.json', 'file'], ['01-plan.md', 'file'], ['02-goal-spec.json', 'file'], ['02-critique.json', 'file']]
+const runDirs: Dirs = {
+  '.harness-run': [['a', 'dir'], ['b', 'dir'], ['c', 'dir'], ['old', 'dir'], ['done', 'dir'], ['broker', 'dir'], ['note.md', 'file']],
+  '.harness-run/a': [['manifest.json', 'file']],
+  '.harness-run/b': planned,
+  '.harness-run/c': planned,
+  '.harness-run/old': [['manifest.json', 'file', STALE]],
+  '.harness-run/done': [['manifest.json', 'file'], ['05-report.md', 'file']],
+  '.harness-run/broker/runs': [['g1.json', 'file'], ['g2.json', 'file'], ['g3.json', 'file', STALE]],
+}
+
+test('open runs per stage: fallback and graph; stale, reported and finished runs left out', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const seen = world(on, ['terminal'], { [CONFIG]: cfg, [DECISION]: '{"ts": 1, "tool"' })
+  const seen = world(on, ['terminal'], { ...runFiles }, runDirs)
   await start($)
-  expect(lastStatus(seen)).toBe('gate: armed (3 patterns)')
+  expect(lastStatus(seen)).toBe('Plan(1) / Implement(1) / Gate(1) · graph Implement(1)')
 })
 
-test('a partial decision (no decision field) is ignored', async ($, on) => {
+test('graph runs alone', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const seen = world(on, ['terminal'], { [CONFIG]: cfg, [DECISION]: JSON.stringify({ ts: NOW, tool: 'Write', target: 'a/x.md' }) })
+  const seen = world(on, ['terminal'], { ...runFiles }, { '.harness-run': [['broker', 'dir']], '.harness-run/broker/runs': [['g1.json', 'file']] })
   await start($)
-  expect(lastStatus(seen)).toBe('gate: armed (3 patterns)')
+  expect(lastStatus(seen)).toBe('graph Implement(1)')
 })
 
-test('deny within 10 min: denied <target> and /harness-gate', async ($, on) => {
+test('a gate decision no longer reaches the status line', async ($, on) => {
   mock.clock(on, { now: NOW })
   const seen = world(on, ['terminal'], { [CONFIG]: cfg, [DECISION]: deny(NOW - 60_000) })
   await start($)
-  expect(lastStatus(seen)).toBe('gate: denied a/x.md — /harness-gate')
+  expect(seen.statuses).toEqual([undefined])
 })
 
-test('deny older than 10 min: back to armed', async ($, on) => {
-  mock.clock(on, { now: NOW })
-  const seen = world(on, ['terminal'], { [CONFIG]: cfg, [DECISION]: deny(NOW - 11 * 60_000) })
-  await start($)
-  expect(lastStatus(seen)).toBe('gate: armed (3 patterns)')
-})
-
-test('polls every 5 s and picks up a new deny', async ($, on) => {
+test('polls every 5 s and picks up a new run', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const files: Files = { [CONFIG]: cfg }
-  const seen = world(on, ['terminal'], files)
+  const dirs: Dirs = {}
+  const seen = world(on, ['terminal'], { [CONFIG]: cfg }, dirs)
   await start($)
-  expect(lastStatus(seen)).toBe('gate: armed (3 patterns)')
-  files[DECISION] = deny(NOW)
+  expect(lastStatus(seen)).toBe(undefined)
+  dirs['.harness-run'] = [['a', 'dir']]
+  dirs['.harness-run/a'] = [['manifest.json', 'file']]
   await clock.advance(5000)
-  expect(lastStatus(seen)).toBe('gate: denied a/x.md — /harness-gate')
+  expect(lastStatus(seen)).toBe('Plan(1)')
 })
 
-test('read error: no throw, status unchanged', async ($, on) => {
+for (const [name, text] of [
+  ['not JSON', '{"ts": 1, "tool"'],
+  ['partial (no decision field)', JSON.stringify({ ts: NOW, tool: 'Write', target: 'a/x.md' })],
+] as const) {
+  test(`a decision file that is ${name} is no decision`, async ($, on) => {
+    mock.clock(on, { now: NOW })
+    world(on, ['terminal'], { [CONFIG]: cfg, [DECISION]: text })
+    await start($)
+    const ui = await pane($, 'terminal')
+    expect(await ui.find({ type: 'Text', text: 'No gated call decided yet.' })).toBeDefined()
+  })
+}
+
+test('read error: no throw, the gate state stays', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const files: Files = { [CONFIG]: cfg }
-  const seen = world(on, ['terminal'], files)
+  const files: Files = { [CONFIG]: cfg, [DECISION]: deny(NOW) }
+  world(on, ['terminal'], files)
   await start($)
-  const n = seen.statuses.length
   files[CONFIG] = new Error('EACCES')
   await clock.advance(5000)
-  expect(seen.statuses).toHaveLength(n)
   files[CONFIG] = '{not json'
   await clock.advance(5000)
-  expect(seen.statuses).toHaveLength(n)
+  const ui = await pane($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: 'Last decision: deny (Write a/x.md, 0 min ago)' })).toBeDefined()
 })
 
 const pane = ($: Engine, surface: 'terminal' | 'desktop') =>
@@ -136,8 +177,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
     world(on, [surface], { [CONFIG]: cfg })
     await start($)
     const ui = await pane($, surface)
-    expect(await ui.find({ type: 'Text', text: 'Gated patterns (3): ^a/, ^b/, ^c/' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: 'Engagement window: 3 h' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Gated patterns (3):' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '3 h' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'No gated call decided yet.' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'A mention in text does not engage it.' })).toBeDefined()
   })
@@ -179,39 +220,32 @@ const demoRun = (over: Files = {}): Files => ({
   ...over,
 })
 
-// fs.list over the file map; `ages` is how long ago a file changed (ms)
-function listWorld(on: On, files: Files, ages: Record<string, number> = {}) {
-  on('fs.list', (_$, e) => {
-    const at = e.path.indexOf('.harness-run')
-    const dir = at < 0 ? '' : e.path.slice(at).replace(/\/$/, '')
-    const seen = new Map<string, { name: string; kind: string; size: number; mtimeMs: number; isLink: boolean }>()
-    for (const k of Object.keys(files)) {
-      if (!k.startsWith(`${dir}/`)) continue
-      const rest = k.slice(dir.length + 1)
-      const name = rest.split('/')[0]!
-      if (seen.has(name)) continue
-      const isDir = rest.includes('/')
-      seen.set(name, { name, kind: isDir ? 'dir' : 'file', size: 100, mtimeMs: isDir ? 0 : NOW - (ages[k] ?? 60_000), isLink: false })
+// the directory table of `world` from the file map; `ages` is how long ago a file changed (ms)
+function dirsOf(files: Files, ages: Record<string, number> = {}): Dirs {
+  const dirs: Dirs = {}
+  for (const k of Object.keys(files)) {
+    if (!k.startsWith('.harness-run/')) continue
+    const parts = k.split('/')
+    for (let i = 1; i < parts.length; i++) {
+      const dir = parts.slice(0, i).join('/')
+      const name = parts[i]!
+      const entries = (dirs[dir] ??= [])
+      if (entries.some(e => e[0] === name)) continue
+      entries.push([name, i < parts.length - 1 ? 'dir' : 'file', i < parts.length - 1 ? 0 : NOW - (ages[k] ?? 60_000)])
     }
-    return { value: [...seen.values()] } as never
-  })
+  }
+  return dirs
 }
-const engineBand = (on: On) =>
-  on('ui.render', (_$, e) => (e.component === 'AbovePrompt' ? { type: 'Text', children: ['engine band'] } : undefined) as never)
 
 type Ui = Awaited<ReturnType<typeof pane>>
-const band = ($: Engine) =>
-  $.ui.mount({ plugin: 'harness', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: 80 } } as never)
 const shown = async (ui: Ui) => JSON.stringify(await ui.drawn())
 const buttons = async (ui: Ui) => (await ui.findAll({ type: 'Button' })).map(b => b.props as { label: string; hotkey?: string })
 const oldAges = (files: Files, ms: number) => Object.fromEntries(Object.keys(files).map(k => [k, ms]))
 
 async function seeded($: Engine, on: On, files: Files, opts: { language?: string; ages?: Record<string, number>; surfaces?: readonly ('terminal' | 'desktop')[] } = {}) {
   mock.clock(on, { now: NOW })
-  const seen = world(on, opts.surfaces ?? ['terminal'], files)
-  listWorld(on, files, opts.ages)
+  const seen = world(on, opts.surfaces ?? ['terminal'], files, dirsOf(files, opts.ages))
   on('settings.read', () => ({ value: opts.language === undefined ? {} : { language: opts.language } }) as never)
-  engineBand(on)
   await start($)
   return seen
 }
@@ -280,38 +314,13 @@ test("graph's broker dir is not a harness run", async ($, on) => {
   await ui.press({ key: 'run' })
   await ui.redraw()
   expect(await ui.find({ type: 'Text', text: 'No harness run in this folder.' })).toBeDefined()
-  expect(await shown(await band($))).not.toContain('harness ·')
-})
-
-test('a live run draws the band beside the engine band; the Button opens the pane on Run', async ($, on) => {
-  const seen = await seeded($, on, demoRun({ [CONFIG]: cfg }))
-  const ui = await band($)
-  const text = await shown(ui)
-  for (const word of ['harness ·', 'Gating S2', '1/3', 'engine band']) expect(text).toContain(word)
-  expect((await ui.find({ key: 'run' }))?.props.label).toBe('run')
-  await ui.press({ key: 'run' })
-  expect(seen.opened).toEqual(['harness-gate'])
-})
-
-test('a finished run draws only the engine band', async ($, on) => {
-  await seeded($, on, demoRun({ [`${RUN}/05-report.md`]: '# report' }))
-  const ui = await band($)
-  expect(await ui.find({ text: 'engine band' })).toBeDefined()
-  expect(await ui.find({ type: 'Button' })).toBeUndefined()
-})
-
-test('a stale run (all files over 2 h old) draws only the engine band', async ($, on) => {
-  await seeded($, on, demoRun(), { ages: oldAges(demoRun(), 3 * 3600_000) })
-  const ui = await band($)
-  expect(await ui.find({ text: 'engine band' })).toBeDefined()
-  expect(await ui.find({ type: 'Button' })).toBeUndefined()
 })
 
 test('subgoal files count for liveness: old top-level files, a 5 min old test file', async ($, on) => {
   const ages = oldAges(demoRun(), 3 * 3600_000)
   ages[`${RUN}/subgoals/S2/test-1.json`] = 5 * 60_000
   await seeded($, on, demoRun(), { ages })
-  expect(await shown(await band($))).toContain('harness ·')
+  expect(await shown(await pane($, 'terminal'))).toContain('running')
 })
 
 test('an old unfinished run does not outrank a run finished 10 min ago', async ($, on) => {
@@ -326,7 +335,6 @@ test('an old unfinished run does not outrank a run finished 10 min ago', async (
   const text = await shown(await pane($, 'terminal'))
   expect(text).toContain('Build demo')
   expect(text).not.toContain('Old work')
-  expect(await shown(await band($))).not.toContain('harness ·')
 })
 
 test('korean: tab and rail labels come from the ko table, no English tab label', async ($, on) => {
@@ -336,13 +344,6 @@ test('korean: tab and rail labels come from the ko table, no English tab label',
   const text = await shown(ui)
   for (const word of ['계획', '비평', '구현/테스트']) expect(text).toContain(word)
   for (const word of ['Plan', 'SetGoal', 'Critique', 'Units']) expect(text).not.toContain(word)
-  expect(await shown(await band($))).toContain('1/3 완료')
-})
-
-test('the run scan never touches the status line', async ($, on) => {
-  const seen = await seeded($, on, demoRun())
-  expect(seen.statuses).toEqual([undefined])
-  expect(seen.commands).toEqual(['harness-gate'])
 })
 
 test('/harness-gate opens the pane on the Gate tab even when a run exists', async ($, on) => {
@@ -356,11 +357,51 @@ test('/harness-gate opens the pane on the Gate tab even when a run exists', asyn
 
 test('an invalid gate config says it could not be read, not that it is missing; the reply is just the opened text', async ($, on) => {
   const seen = await seeded($, on, { [CONFIG]: '{not json' })
-  expect(seen.statuses).toEqual([])
   const ui = await pane($, 'terminal')
   expect(await ui.find({ type: 'Text', text: 'Gate config .claude/harness-gate.json could not be read (invalid JSON).' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /is not in this project/ })).toBeUndefined()
   const r = await $.command.run({ command: 'harness-gate', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
   expect(JSON.stringify(r)).toContain('"pane opened"')
   expect(JSON.stringify(r)).not.toContain('harness-gate:')
+})
+
+const band = ($: Engine, on: On, hasSurvey = false) => {
+  return $.ui.mount({ plugin: 'harness', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey } } as never)
+}
+
+test('band: hidden with no open runs', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  world(on, ['terminal'], {})
+  await start($)
+  const ui = await band($, on)
+  expect(await ui.find({ type: 'Text', text: 'harness' })).toBeUndefined()
+})
+
+test('band: hidden while a survey shows', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  world(on, ['terminal'], { ...runFiles }, runDirs)
+  await start($)
+  const ui = await band($, on, true)
+  expect(await ui.find({ type: 'Text', text: 'Implement 1' })).toBeUndefined()
+})
+
+test('band: chips with counts, harness row then graph row, Test only for harness', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  world(on, ['terminal'], { ...runFiles }, runDirs)
+  await start($)
+  const ui = await band($, on)
+  expect(await ui.find({ type: 'Text', text: 'Plan 1' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Gate 1' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Implement 1' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Critique' })).toBeDefined()
+})
+
+test('band: hover card lists the run slug, bar and failed count', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  world(on, ['terminal'], { ...runFiles }, runDirs)
+  await start($)
+  const ui = await band($, on)
+  expect(await ui.find({ type: 'Text', text: 'c' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '1 failed' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '▰▰▰▰▰' })).toBeDefined()
 })
