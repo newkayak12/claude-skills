@@ -5,8 +5,11 @@ import { mock } from 'claude-code/testing'
 // An in-memory $.store the test can read: a test's `$` has no `store` of its own.
 // `broken = true` makes every set fail, as a full or locked store would.
 export const memoryStore = (on: On, initial: Record<string, unknown> = {}) => {
-  const map = Object.assign(new Map<string, unknown>(Object.entries(initial)), { broken: false })
-  on('store.get', (_$, e) => ({ value: map.get(e.key) }))
+  const map = Object.assign(new Map<string, unknown>(Object.entries(initial)), { broken: false, getBroken: false })
+  on('store.get', (_$, e) => {
+    if (map.getBroken) throw new Error('store is gone')
+    return { value: map.get(e.key) }
+  })
   on('store.set', (_$, e) => {
     if (map.broken) return { deny: 'store is broken' }
     map.set(e.key, JSON.parse(JSON.stringify(e.value)))
