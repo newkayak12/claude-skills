@@ -159,6 +159,9 @@ export const register: Register = on => {
       if ((await $.session.surfaces()).length > 0) {
         await refreshStats($)
         await pollOrphans($)
+        // Same line `mods` wrote (feature 8) so the move is invisible; 7b removes the mods side.
+        const n = (await read($, orphansAtom)).length
+        $.ui.status(n > 0 ? `⧗ ${n} claude -p child(ren) running` : undefined)
       }
     }
     return next(e)

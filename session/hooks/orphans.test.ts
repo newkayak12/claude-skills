@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 
-import { mount, T, world } from './orphankit.ts'
+import { mount, PS, T, world } from './orphankit.ts'
 import { texts } from './testkit.ts'
 
 const orphansView = async ($: any) => {
@@ -43,6 +43,35 @@ test('turn end polls ps for an interactive session', async ($, on) => {
   await $.turn.complete({ reason: 'answer', answer: 'ok', durationMs: 1, isAborted: false, turnId: 't' } as never)
 
   expect(procs.some(p => p[0] === 'ps')).toBe(true)
+})
+
+const TURN = { reason: 'answer', answer: 'ok', durationMs: 1, isAborted: false, turnId: 't' } as never
+
+const statusAfterTurn = async ($: any, on: any, ps: string, surfaces: string[] = ['terminal']) => {
+  const w = world(on, { ps, surfaces })
+  on('turn.complete', (_$: any, e: any) => ({ text: e.answer }))
+  const seen: (string | undefined)[] = []
+  on('ui.status', (_$: any, e: any) => {
+    seen.push(e.text)
+    return { value: undefined }
+  })
+  await $.turn.complete(TURN)
+  return { seen, w }
+}
+
+test('status: 2 claude -p jobs (wrapper once) -> the mods line, 0 -> cleared, headless -> no call', async ($, on) => {
+  expect((await statusAfterTurn($, on, PS)).seen).toEqual(['⧗ 2 claude -p child(ren) running'])
+})
+
+test('status: none running clears it', async ($, on) => {
+  const none = PS.split('\n').filter(l => /^\s*(1|4242|4320|9000)\s/.test(l)).join('\n')
+  expect((await statusAfterTurn($, on, none)).seen).toEqual([undefined])
+})
+
+test('status: headless sets none', async ($, on) => {
+  const { seen, w } = await statusAfterTurn($, on, PS, [])
+  expect(seen).toEqual([])
+  expect(w.procs.filter(p => p[0] === 'ps')).toEqual([])
 })
 
 test('Windows: no ps and no sh, no orphan rows, the /tasks pointer stays', async ($, on) => {
