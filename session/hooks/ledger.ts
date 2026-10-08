@@ -15,6 +15,9 @@ const LIST_MAX = 500
 
 export const emptyLedger = (): Ledger => ({ files: [], commits: [], denied: [], steps: [] })
 
+// Worth storing for the next start: steps alone (only reads) are not.
+export const leftSomething = (l: Ledger) => l.files.length + l.commits.length + l.denied.length > 0
+
 export const isEmpty = (l: Ledger) => l.files.length + l.commits.length + l.denied.length + l.steps.length === 0
 
 export const addFile = (l: Ledger, path: string): Ledger =>
