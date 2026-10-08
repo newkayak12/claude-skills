@@ -20,8 +20,8 @@ import { viewRecordPath, readViewRecord } from '../mcp/viewserver.mjs';
 import { docPaths } from '../mcp/tickets.mjs';
 import { collectDriverCosts } from './bench/lib/drivercost.mjs';
 import { hasDeclaredAcceptance, detectDeclaredAcceptance, resolvePlanningMode, renderAcceptanceTemplate } from '../mcp/acceptance.mjs';
-import { hasDeclaredAcceptance as tmHasDeclaredAcceptance, prepareReadyIntegrations, readyToJudge, composeTaskPrompt, __storeHooks } from '../mcp/taskmanager.mjs';
-import { proposeLog as wikiProposeLog, applyDecision as wikiApplyDecision } from '../mcp/wikibridge.mjs';
+import { hasDeclaredAcceptance as tmHasDeclaredAcceptance, prepareReadyIntegrations, readyToJudge, composeTaskPrompt, writeWikiLog, __storeHooks } from '../mcp/taskmanager.mjs';
+import { writeLog as wikiWriteLog } from '../mcp/wikibridge.mjs';
 import { afterTmCall, beforeTmCall, drivePlanning, completePlanningChild } from './lib/planning-drive.mjs';
 import { mutateTask } from '../mcp/store.mjs';
 
@@ -2774,7 +2774,7 @@ test('tm_open({context_from}) folds the prior task\'s retro into the new task\'s
     // A ref that resolves to nothing (no report/retro yet) is best-effort, not fatal.
     const third = await tm.call('tm_open', { request: 'no prior retro yet', cwd, vendor: 'self', roles: { qa: false }, brainstorm: false, context_from: 'not-a-real-task-id' });
     const task3 = await tm.call('tm_status', { task_id: third.task_id, full: true });
-    assert.equal(task3.context, '');
+    assert.doesNotMatch(task3.context, /Retrospective/, 'no retro folded (the prior task\'s wiki log page may be resumed, which is not a retro)');
     assert.match(third.context_from_unresolved, /no task not-a-real-task-id/, 'best-effort, but the caller is told it came up empty');
     // A real task whose report has not run yet: named as such, not as a missing task.
     const fourth = await tm.call('tm_open', { request: 'too early', cwd, vendor: 'self', roles: { qa: false }, brainstorm: false, context_from: third.task_id });
@@ -3815,6 +3815,7 @@ if (out) {
     cwd: process.cwd(),
     claudecode: process.env.CLAUDECODE === undefined ? null : process.env.CLAUDECODE,
     tasks_dir: process.env.HARNESS_TASKS_DIR || null,
+    wiki_root: process.env.TEAMS_WIKI_ROOT || null,
     stdin_fifo,
   }));
 }
@@ -3843,7 +3844,7 @@ if (counterFile) {
   writeFileSync(counterFile, String(n));
 }
 const out = process.env.FAKE_DRIVER_OUT;
-if (out) writeFileSync(\`\${out}.\${n}\`, JSON.stringify({ n, pid: process.pid, argv: process.argv.slice(2) }));
+if (out) writeFileSync(\`\${out}.\${n}\`, JSON.stringify({ n, pid: process.pid, argv: process.argv.slice(2), wiki_root: process.env.TEAMS_WIKI_ROOT || null }));
 console.log(JSON.stringify({ type: 'fake-driver', attempt: n }));
 console.error(\`fake driver attempt \${n} drove nothing\`);
 if (n < 2) { process.exit(0); } else { setTimeout(() => process.exit(0), 5000); }
@@ -3929,6 +3930,8 @@ test('a ready dispatch spawns a driver process in the package worktree, with the
     assert.equal(ran.tasks_dir, f.root, 'the tasks dir travels to the child session');
     assert.equal(ran.claudecode, null, 'CLAUDECODE is deleted: a nested claude refuses to start with it');
     assert.equal(ran.stdin_fifo, false, "stdin is ignored, not the manager's pipe");
+    assert.equal(realpathSync(ran.wiki_root), realpathSync(f.cwd), 'TEAMS_WIKI_ROOT is the main project, not the package worktree');
+    assert.notEqual(realpathSync(ran.wiki_root), realpathSync(ran.cwd));
 
     const prompt = ran.argv[ran.argv.length - 1];
     assert.match(prompt, new RegExp(`run_id ${c.run_id}`), prompt);
@@ -3988,6 +3991,7 @@ test('a driver that dies mid-run is respawned on the SAME run_id with a resume p
     assert.match(prompt, new RegExp(`run_id ${firstChild.run_id}`), prompt);
     assert.match(prompt, /A previous driver for this exact run died before it finished/);
     assert.match(prompt, /team_status\(\{run_id, cwd\}\) first/);
+    assert.equal(realpathSync(second.wiki_root), realpathSync(f.cwd), 'a resumed driver gets TEAMS_WIKI_ROOT too');
     assert.match(resumed.driver.log, /\.restart1\.stream\.jsonl$/, 'a distinct log per generation, not overwritten');
 
     const ledger = readFileSync(join(f.root, task_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
@@ -4523,6 +4527,7 @@ test('tm_open spawns a daemon process whose argv names --task, and records it', 
 
     const ran = await waitFor(() => (existsSync(out) ? JSON.parse(readFileSync(out, 'utf8')) : null), 'the fake daemon to run');
     assert.deepEqual(ran.argv, ['--task', open.task_id], 'the daemon is told only which task to drive');
+    assert.equal(realpathSync(ran.wiki_root), realpathSync(cwd), 'the daemon carries TEAMS_WIKI_ROOT = task.cwd');
 
     const ledger = readFileSync(join(root, open.task_id, 'ledger.jsonl'), 'utf8');
     assert.match(ledger, /"event":"daemon_spawned"/);
@@ -4731,6 +4736,43 @@ test('a judge call leaves its stream under drivers/, so budget and the report co
   } finally {
     tm.close();
     // The daemon goes on to judge shape with the same fake; stop it before removing its cwd.
+    try {
+      for (const line of readFileSync(join(root, readdirSync(root)[0], 'ledger.jsonl'), 'utf8').split('\n')) {
+        const e = line.trim() ? JSON.parse(line) : null;
+        if (e && e.event === 'daemon_spawned') { try { process.kill(e.pid, 'SIGKILL'); } catch { /* gone */ } }
+      }
+    } catch { /* no ledger */ }
+    killDriversIn(drv);
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    rmSync(drv, { recursive: true, force: true });
+  }
+});
+
+test('a manager judge spawn gets TEAMS_WIKI_OFF=1 so it never sees the project wiki', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const drv = mkdtempSync(join(tmpdir(), 'tm-drv-'));
+  const seen = join(drv, 'judge-env.txt');
+  const judgeJs = join(drv, 'judge.mjs');
+  writeFileSync(judgeJs, `import { writeFileSync } from 'node:fs';
+writeFileSync(${JSON.stringify(seen)}, String(process.env.TEAMS_WIKI_OFF));
+process.stdout.write(JSON.stringify({ type: 'result', result: JSON.stringify({ stage_ok: true, size: 'S', reason: 'small' }) }) + '\\n');
+`);
+  const hang = join(drv, 'hanging-driver.mjs');
+  writeFileSync(hang, 'setInterval(() => {}, 1000);\n');
+  const tm = await new Client(TM, {
+    HARNESS_TASKS_DIR: root,
+    HARNESS_JUDGE_DRIVER: `node ${judgeJs}`,
+    HARNESS_CHILD_DRIVER: `node ${hang}`,
+    CLAUDECODE: '1',
+  }).init();
+  try {
+    await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'a request whose size must be judged', cwd, vendor: 'self' });
+    await waitFor(() => existsSync(seen), 'the size judge to run', 30000);
+    assert.equal(readFileSync(seen, 'utf8'), '1');
+  } finally {
+    tm.close();
     try {
       for (const line of readFileSync(join(root, readdirSync(root)[0], 'ledger.jsonl'), 'utf8').split('\n')) {
         const e = line.trim() ? JSON.parse(line) : null;
@@ -8331,12 +8373,6 @@ const wikiDir = (cwd) => join(cwd, '.teams_wiki');
 const proposedFiles = (cwd) => (existsSync(join(wikiDir(cwd), '_proposed')) ? readdirSync(join(wikiDir(cwd), '_proposed')).filter((f) => f.endsWith('.md')) : []);
 const fullTask = (tm, task_id) => tm.call('tm_status', { task_id, full: true });
 
-// Up to the manager's goal gate, then tm_next: the claim that proposes the log page runs here.
-async function toPreparedGoalGate(tm, g, task_id) {
-  await toManagerGoalGate(tm, g, task_id);
-  return tm.call('tm_next', { task_id });
-}
-
 test('W2 context: no wiki, or a wiki without a log page, leaves task.context byte-identical and task.wiki unset; a log page is resumed into the context', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
@@ -8350,8 +8386,13 @@ test('W2 context: no wiki, or a wiki without a log page, leaves task.context byt
     t = await fullTask(tm, (await open({ context: 'mine' })).task_id);
     assert.equal(t.context, 'mine', 'a wiki with no accepted log page adds nothing');
     assert.equal('wiki' in t, false);
-    const seed = { run_id: '0123456789abcdef', cwd, request: 'earlier EPIC shipped the cache', created_at: Date.UTC(2026, 0, 2), decisions: [], nodes: [] };
-    assert.equal(wikiApplyDecision(seed, wikiProposeLog(seed).proposal_id, true).status, 'accepted');
+    const seed = {
+      run_id: '0123456789abcdef', cwd, request: 'earlier EPIC shipped the cache', created_at: Date.UTC(2026, 0, 2), decisions: [],
+      spec: { packages: [{ id: 'P1', title: 'cache' }] },
+      nodes: [{ node_id: 'integrate:1', stage: 'integrate', state: 'done', deps: [], integration: { merged: [{ package: 'P1' }] } },
+        { node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', state: 'done', deps: [], result: { accept: true } }],
+    };
+    assert.equal(wikiWriteLog(seed).status, 'written');
     t = await fullTask(tm, (await open({ context: 'mine' })).task_id);
     assert.match(t.context, /log\/2026-01-02-E-01234567/);
     assert.match(t.context, /earlier EPIC shipped the cache/);
@@ -8365,202 +8406,133 @@ test('W2 context: no wiki, or a wiki without a log page, leaves task.context byt
   }
 });
 
-test('W2 one proposal: tm_next at the goal gate proposes the log page once, shows it in the gate prompt, and a second tm_next adds nothing', async () => {
+const logFiles = (cwd) => (existsSync(join(wikiDir(cwd), 'log')) ? readdirSync(join(wikiDir(cwd), 'log')).filter((f) => f.endsWith('.md')) : []);
+const taskFile = (root, task_id) => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+// Through the goal gate; the report node is submitted by the caller.
+async function toWikiReport(tm, g, task_id) {
+  await toManagerGoalGate(tm, g, task_id);
+  assert.equal((await tm.call('tm_submit', { task_id, node_id: 'gate:goal:1', payload: ok({ accept: true, match_pct: 95 }) })).state, 'done');
+}
+const submitReport = (tm, task_id) => tm.call('tm_submit', { task_id, node_id: 'report', payload: ok({ handoff: 'done' }) });
+const withEnvRoot = async (root, fn) => {
+  const was = process.env.HARNESS_TASKS_DIR;
+  process.env.HARNESS_TASKS_DIR = root;
+  try { await fn(); } finally { if (was === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = was; }
+};
+
+test('W2 goal gate: tm_next claims nothing for the wiki - the gate is offered at once, its prompt has no wiki block, and no wiki file is made', async () => {
   await withTask(async ({ tm, g, cwd, task_id }) => {
-    const nx = await toPreparedGoalGate(tm, g, task_id);
+    await toManagerGoalGate(tm, g, task_id);
+    const nx = await tm.call('tm_next', { task_id });
     const gate = nx.ready.find((n) => n.node_id === 'gate:goal:1');
-    assert.ok(gate, 'the goal gate is offered once its wiki step is prepared');
+    assert.ok(gate, 'gate:goal never waits on the wiki');
     const t = await fullTask(tm, task_id);
-    assert.equal(proposedFiles(cwd).length, 1);
-    assert.equal(t.wiki.proposals.length, 1);
-    const p = t.wiki.proposals[0];
-    assert.equal(p.status, 'proposed');
-    assert.equal(p.node_id, 'gate:goal:1');
-    assert.match(p.id, /^log\/\d{4}-\d{2}-\d{2}-E-/);
-    assert.deepEqual(t.nodes.find((n) => n.node_id === 'gate:goal:1').wiki, { prepared: true, proposal_id: p.proposal_id });
-    const prompt = readFileSync(gate.briefing_path, 'utf8');
-    assert.match(prompt, /## Wiki log proposal/);
-    assert.ok(prompt.includes(p.proposal_id));
-    assert.match(prompt, /wiki_decisions/);
-    await tm.call('tm_next', { task_id });
-    assert.equal(proposedFiles(cwd).length, 1);
-    assert.equal((await fullTask(tm, task_id)).wiki.proposals.length, 1);
+    assert.equal('wiki' in t.nodes.find((n) => n.node_id === 'gate:goal:1'), false);
+    assert.equal(existsSync(wikiDir(cwd)), false);
+    assert.doesNotMatch(readFileSync(gate.briefing_path, 'utf8'), /[Ww]iki|wiki_decisions/);
   });
 });
 
-test('W2 prompt: the judge is shown the body of the _proposed file it would accept, also when a gate:goal:N reuses an older file', async () => {
-  await withTask(async ({ tm, g, cwd, root, task_id }) => {
-    const nx = await toPreparedGoalGate(tm, g, task_id);
-    const gate = nx.ready.find((n) => n.node_id === 'gate:goal:1');
-    const t = await fullTask(tm, task_id);
-    const onDisk = readFileSync(join(wikiDir(cwd), '_proposed', `${t.wiki.proposals[0].proposal_id}.md`), 'utf8');
-    const body = onDisk.slice(onDisk.indexOf('\n---\n') + 5);
-    assert.ok(body.length > 20);
-    assert.ok(readFileSync(gate.briefing_path, 'utf8').includes(body), 'the shown body is the file\'s body, uncut');
-    // the task moved on since the proposal (a later round): the shown page is still the file's
-    const later = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
-    later.decisions = [...(later.decisions || []), { question: 'NEWQ', chose: 'NEWCHOICE', owner: 'x' }];
-    const shown = composeTaskPrompt(later, later.nodes.find((n) => n.node_id === 'gate:goal:1'));
-    assert.ok(shown.includes(body));
-    assert.ok(!shown.includes('NEWCHOICE'));
-    // the file is gone: no block at all rather than a page the judge could not get
-    rmSync(join(wikiDir(cwd), '_proposed'), { recursive: true, force: true });
-    assert.doesNotMatch(composeTaskPrompt(later, later.nodes.find((n) => n.node_id === 'gate:goal:1')), /Wiki log proposal/);
-  });
-});
-
-test('W2 prompt: with no proposal the goal-gate prompt is byte-identical with and without a wiki record', async () => {
+test('W2 goal gate: the prompt is byte-identical with and without a wiki record on the task, and a wiki that is a regular file does not hold the gate', async () => {
   await withTask(async ({ tm, g, root, task_id }) => {
     await toManagerGoalGate(tm, g, task_id);
     writeFileSync(wikiDir((await fullTask(tm, task_id)).cwd), 'x');
-    await tm.call('tm_next', { task_id });
-    const t = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
-    assert.ok(t.wiki && t.wiki.errors.length, 'the wiki record exists (a failed proposal)');
-    const n = t.nodes.find((x) => x.node_id === 'gate:goal:1');
-    const withRec = composeTaskPrompt(t, n);
-    const { wiki, ...bare } = t;
-    assert.equal(composeTaskPrompt(bare, { ...n, wiki: undefined }), withRec);
-  });
-});
-
-test('W2 prompt: without a proposal the goal-gate prompt carries no wiki block', async () => {
-  await withTask(async ({ tm, g, task_id }) => {
-    await toManagerGoalGate(tm, g, task_id);
-    // the cwd's wiki is a regular file: the proposal fails, the gate is still offered
-    const t0 = await fullTask(tm, task_id);
-    writeFileSync(wikiDir(t0.cwd), 'x');
-    const nx = await tm.call('tm_next', { task_id });
-    const gate = nx.ready.find((n) => n.node_id === 'gate:goal:1');
-    assert.ok(gate);
-    assert.doesNotMatch(readFileSync(gate.briefing_path, 'utf8'), /Wiki log proposal|wiki_decisions/);
-  });
-});
-
-// In-process, deterministic: the second caller is placed in the claim -> effect window with the
-// __storeHooks.afterClaim seam (the way test-store-interleave.mjs does), a lost apply is simulated
-// by erasing what the apply wrote, and a later round is a second gate:goal node.
-test('W2 exactly once: a preparer inside the claim window, a crash after the propose, and a later gate:goal:N all leave one proposal file and one entry', async () => {
-  await withTask(async ({ tm, g, cwd, root, task_id }) => {
-    await toManagerGoalGate(tm, g, task_id);
-    const was = process.env.HARNESS_TASKS_DIR;
-    process.env.HARNESS_TASKS_DIR = root;
-    try {
-      const file = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
-      assert.ok(!readyToJudge(file()).some((n) => n.node_id === 'gate:goal:1'), 'unprepared: hidden from judges');
-      let inner = null;
-      __storeHooks.afterClaim = () => { inner = { applied: prepareReadyIntegrations(task_id), ready: readyToJudge(file()).map((n) => n.node_id) }; };
-      assert.equal(prepareReadyIntegrations(task_id), 1);
-      assert.deepEqual(inner, { applied: 0, ready: [] }, 'the second caller claims nothing and nothing is offered mid-claim');
-      assert.equal(proposedFiles(cwd).length, 1);
-      assert.equal(file().wiki.proposals.length, 1);
-      assert.ok(readyToJudge(file()).some((n) => n.node_id === 'gate:goal:1'), 'prepared: offered');
-      const pid = file().wiki.proposals[0].proposal_id;
-      // a crash between the propose and the apply: the file exists, the task has no record of it
-      mutateTask(task_id, (t) => { delete t.wiki; delete t.nodes.find((n) => n.node_id === 'gate:goal:1').wiki; });
-      assert.equal(prepareReadyIntegrations(task_id), 1);
-      assert.equal(proposedFiles(cwd).length, 1, 'the bridge reused the pending file');
-      assert.equal(file().wiki.proposals.length, 1);
-      assert.equal(file().wiki.proposals[0].proposal_id, pid);
-      // a later round: another goal gate node must not propose again
-      mutateTask(task_id, (t) => {
-        const first = t.nodes.find((n) => n.node_id === 'gate:goal:1');
-        const { wiki, claim, result, ...rest } = first;
-        t.nodes.push({ ...rest, node_id: 'gate:goal:2', state: 'pending', result: null, deps: [first.node_id] });
-        first.state = 'done'; first.result = { stage_ok: true, accept: true };
-      });
-      assert.equal(prepareReadyIntegrations(task_id), 1);
-      const t = file();
-      assert.equal(proposedFiles(cwd).length, 1);
-      assert.equal(t.wiki.proposals.length, 1);
-      assert.equal(t.nodes.find((n) => n.node_id === 'gate:goal:2').wiki.proposal_id, pid);
-    } finally {
-      __storeHooks.afterClaim = null;
-      if (was === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = was;
-    }
-  });
-});
-
-async function goalDecision(payload) {
-  const out = {};
-  await withTask(async ({ tm, g, cwd, task_id }) => {
-    await toPreparedGoalGate(tm, g, task_id);
-    const p = (await fullTask(tm, task_id)).wiki.proposals[0];
-    out.cwd = cwd; out.first = p;
-    out.verdict = await tm.call('tm_submit', { task_id, node_id: 'gate:goal:1', payload: ok(typeof payload === 'function' ? payload(p) : payload) });
-    out.task = await fullTask(tm, task_id);
-    out.proposed = proposedFiles(cwd);
-    out.page = existsSync(join(wikiDir(cwd), `${p.id}.md`));
-    out.rejected = existsSync(join(wikiDir(cwd), '_rejected', `${p.proposal_id}.md`));
-  });
-  return out;
-}
-
-test('W2 decision: a goal gate that accepts with wiki_decisions accept makes the page; the proposal reads accepted with its path', async () => {
-  const r = await goalDecision((p) => ({ accept: true, match_pct: 95, wiki_decisions: [{ proposal_id: p.proposal_id, accept: true, reason: 'faithful' }] }));
-  assert.equal(r.verdict.state, 'done');
-  assert.equal(r.page, true);
-  assert.deepEqual(r.proposed, []);
-  const p = r.task.wiki.proposals[0];
-  assert.equal(p.status, 'accepted');
-  assert.equal(p.decided_by, 'gate:goal:1');
-  assert.equal(p.path, join('.teams_wiki', `${p.id}.md`));
-  assert.equal('decision' in p, false);
-});
-
-test('W2 decision: wiki_decisions reject files the proposal under _rejected with the gate\'s reason', async () => {
-  const r = await goalDecision((p) => ({ accept: true, match_pct: 95, wiki_decisions: [{ proposal_id: p.proposal_id, accept: false, reason: 'invents a decision' }] }));
-  assert.equal(r.verdict.state, 'done');
-  assert.equal(r.page, false);
-  assert.equal(r.rejected, true);
-  const p = r.task.wiki.proposals[0];
-  assert.equal(p.status, 'rejected');
-  assert.equal(p.reason, 'invents a decision');
-});
-
-test('W2 decision: no wiki_decisions, an unknown proposal_id, or a goal gate that fails changes nothing - the file stays proposed', async () => {
-  const none = await goalDecision({ accept: true, match_pct: 95 });
-  assert.equal(none.verdict.state, 'done');
-  assert.equal(none.proposed.length, 1);
-  assert.equal(none.task.wiki.proposals[0].status, 'proposed');
-  const unknown = await goalDecision({ accept: true, match_pct: 95, wiki_decisions: [{ proposal_id: 'p-nope', accept: true }] });
-  assert.equal(unknown.verdict.state, 'done');
-  assert.equal(unknown.proposed.length, 1);
-  assert.equal(unknown.task.wiki.proposals[0].status, 'proposed');
-  const failed = await goalDecision((p) => ({ accept: true, match_pct: 85, wiki_decisions: [{ proposal_id: p.proposal_id, accept: true }] }));
-  assert.equal(failed.verdict.state, 'failed');
-  assert.equal(failed.page, false);
-  assert.equal(failed.proposed.length, 1);
-  assert.equal(failed.task.wiki.proposals[0].status, 'proposed');
-});
-
-test('W2 decision: a malformed wiki_decision (accept not a boolean, no proposal_id) is ignored - the file stays proposed, not rejected', async () => {
-  for (const bad of [(p) => ({ proposal_id: p.proposal_id, accept: 'true' }), (p) => ({ proposal_id: p.proposal_id }), () => ({ accept: false, reason: 'x' })]) {
-    const r = await goalDecision((p) => ({ accept: true, match_pct: 95, wiki_decisions: [bad(p)] }));
-    assert.equal(r.verdict.state, 'done');
-    assert.equal(r.proposed.length, 1);
-    assert.equal(r.rejected, false);
-    assert.equal(r.page, false);
-    assert.equal(r.task.wiki.proposals[0].status, 'proposed');
-  }
-});
-
-test('W2 failure: a wiki that throws on every call (.teams_wiki is a file) never stalls the EPIC - it reaches report done and complete, the error is recorded', async () => {
-  await withTask(async ({ tm, g, cwd, task_id }) => {
-    await toManagerGoalGate(tm, g, task_id);
-    writeFileSync(wikiDir(cwd), 'not a directory');
     const nx = await tm.call('tm_next', { task_id });
     assert.ok(nx.ready.some((n) => n.node_id === 'gate:goal:1'));
-    let t = await fullTask(tm, task_id);
-    const gate = t.nodes.find((n) => n.node_id === 'gate:goal:1');
-    assert.equal(gate.wiki.prepared, true);
-    assert.ok(gate.wiki.error);
-    assert.ok(t.wiki.errors.length >= 1);
-    assert.equal((t.wiki.proposals || []).length, 0);
-    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'gate:goal:1', payload: ok({ accept: true, match_pct: 95 }) })).state, 'done');
-    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'report', payload: ok({ handoff: 'done' }) })).state, 'done');
-    t = await fullTask(tm, task_id);
+    const t = taskFile(root, task_id);
+    const n = t.nodes.find((x) => x.node_id === 'gate:goal:1');
+    const withRec = composeTaskPrompt({ ...t, wiki: { mode: 'scan', resumed: ['log/x'], log: { id: 'log/y', status: 'written', shipped: ['P1'] } } }, n);
+    const { wiki, ...bare } = t;
+    assert.equal(composeTaskPrompt(bare, n), withRec);
+  });
+});
+
+test('W2 log: report done writes the log page directly (no _proposed): shipped packages only, task.wiki.log records id, path, status, shipped', async () => {
+  await withTask(async ({ tm, g, cwd, task_id }) => {
+    await toWikiReport(tm, g, task_id);
+    assert.equal(existsSync(wikiDir(cwd)), false, 'nothing is written before the report node finishes');
+    assert.equal((await submitReport(tm, task_id)).state, 'done');
+    const t = await fullTask(tm, task_id);
+    const log = t.wiki.log;
+    assert.equal(log.status, 'written');
+    assert.ok(log.shipped.length >= 1);
+    assert.match(log.id, /^log\/\d{4}-\d{2}-\d{2}-E-/);
+    assert.equal(log.path, join('.teams_wiki', `${log.id}.md`));
+    assert.equal(proposedFiles(cwd).length, 0);
+    assert.equal(logFiles(cwd).length, 1);
+    const page = readFileSync(join(cwd, log.path), 'utf8');
+    assert.match(page, /## Shipped/);
+    for (const id of log.shipped) assert.match(page, new RegExp(`- ${id}: `));
+    assert.doesNotMatch(page, /## Decisions|## Open questions/);
+    assert.ok(['fts5', 'scan'].includes(t.wiki.mode));
     assert.equal((await tm.call('tm_status', { task_id })).state, 'complete');
   });
+});
+
+test('W2 log: rewritten only when the shipped set differs from task.wiki.log.shipped - a repeat of the named point leaves the page alone', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    await toWikiReport(tm, g, task_id);
+    await submitReport(tm, task_id);
+    const log = taskFile(root, task_id).wiki.log;
+    const file = join(cwd, log.path);
+    await withEnvRoot(root, async () => {
+      rmSync(file);
+      writeWikiLog(task_id);
+      await tm.call('tm_status', { task_id });
+      assert.equal(existsSync(file), false, 'same shipped set: no rewrite (re-renders and polls never write)');
+      mutateTask(task_id, (t) => { t.wiki.log.shipped = []; });
+      writeWikiLog(task_id);
+      assert.equal(existsSync(file), true, 'a different shipped set rewrites');
+      assert.deepEqual(taskFile(root, task_id).wiki.log.shipped, log.shipped);
+      assert.equal(logFiles(cwd).length, 1, 'same id: an update, not a second page');
+    });
+  });
+});
+
+test('W2 log: nothing shipped writes nothing and records nothing', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    await toWikiReport(tm, g, task_id);
+    await submitReport(tm, task_id);
+    await withEnvRoot(root, async () => {
+      mutateTask(task_id, (t) => { delete t.wiki; t.nodes.filter((n) => n.stage === 'integrate').forEach((n) => { n.state = 'failed'; }); });
+      rmSync(wikiDir(cwd), { recursive: true, force: true });
+      writeWikiLog(task_id);
+      assert.equal(existsSync(wikiDir(cwd)), false);
+      assert.equal('log' in (taskFile(root, task_id).wiki || {}), false);
+    });
+  });
+});
+
+test('W2 log: a size-S task writes no log page', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    await toWikiReport(tm, g, task_id);
+    await submitReport(tm, task_id);
+    await withEnvRoot(root, async () => {
+      mutateTask(task_id, (t) => { delete t.wiki; t.size = 'S'; });
+      rmSync(wikiDir(cwd), { recursive: true, force: true });
+      writeWikiLog(task_id);
+      assert.equal(existsSync(wikiDir(cwd)), false);
+      assert.equal('wiki' in taskFile(root, task_id), false);
+    });
+  });
+});
+
+test('W2 failure: a wiki that throws on every call (.teams_wiki is a file) never fails a node - report done and complete, the error is recorded on task.wiki.log', async () => {
+  await withTask(async ({ tm, g, cwd, task_id }) => {
+    await toWikiReport(tm, g, task_id);
+    writeFileSync(wikiDir(cwd), 'not a directory');
+    assert.equal((await submitReport(tm, task_id)).state, 'done');
+    const t = await fullTask(tm, task_id);
+    assert.equal(t.wiki.log.status, 'error');
+    assert.ok(t.wiki.log.error);
+    assert.equal((await tm.call('tm_status', { task_id })).state, 'complete');
+  });
+});
+
+test('W2 no judging: wiki_decisions appears nowhere in teams/mcp', () => {
+  for (const f of readdirSync(join(HERE, '..', 'mcp')).filter((x) => x.endsWith('.mjs'))) {
+    assert.doesNotMatch(readFileSync(join(HERE, '..', 'mcp', f), 'utf8'), /wiki_decisions/, f);
+  }
 });
 
 // the server child runs under PATH `node`, which may differ from this process's node

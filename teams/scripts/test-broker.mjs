@@ -4009,3 +4009,86 @@ test('runit-u10b: a committed file on a node with no checkpoint is still contrad
     assert.equal(node.result.change_base ?? null, null, 'no base recorded, none used');
   }, { isolated: true });
 });
+
+// ---------- the project wiki (.teams_wiki) ----------
+
+// Judging stages never get the wiki from the adapter, and reasoning stages carry no --stage, so
+// the broker says it with an explicit --no-wiki; plan (a worker) must not carry it.
+test('critique dispatch gets --no-wiki; plan does not', async () => {
+  const cwd = repoWithFakeVendor();
+  const logDir = mkdtempSync(join(tmpdir(), 'wiki-log-'));
+  const log = join(logDir, 'args.jsonl');
+  process.env.FAKE_ARGS_LOG = log;
+  process.env.FAKE_REPLY = JSON.stringify(ok({ handoff: 'p', sound: true }));
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'fake' });
+    const planRun = await c.call('team_run', { run_id, cwd, node_id: 'plan' });
+    assert.equal(planRun.state, 'done', JSON.stringify(planRun));
+    await c.call('team_submit', { run_id, cwd, node_id: 'setgoal', payload: ok({ spec: SPEC, handoff: 's' }) });
+    const critiqueRun = await c.call('team_run', { run_id, cwd, node_id: 'critique' });
+    assert.equal(critiqueRun.state, 'done', JSON.stringify(critiqueRun));
+    const byNode = {};
+    for (const call of readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse).filter((x) => !x.includes('--detect'))) {
+      const head = readFileSync(call[call.indexOf('--prompt-file') + 1], 'utf8').match(/^# (\S+) node (\S+)/);
+      if (head) byNode[head[2]] = call;
+    }
+    assert.equal(byNode.plan.includes('--no-wiki'), false, 'plan writes to the wiki');
+    assert.equal(byNode.critique.includes('--no-wiki'), true, 'critique judges; the wiki is not evidence');
+  } finally {
+    c.close();
+    delete process.env.FAKE_ARGS_LOG;
+    delete process.env.FAKE_REPLY;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(logDir, { recursive: true, force: true });
+  }
+});
+
+test('a node writing .teams_wiki/x.md keeps it and it is absent from changed_files; a verify-mode gate does not revert it', async () => {
+  const cwd = repoWithMutatingVendor();
+  // Replace the mutator with one that writes a wiki page and a real file and claims both.
+  const adapter = join(cwd, 'wiki-adapter.mjs');
+  writeFileSync(adapter, `#!/usr/bin/env node
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+const a = process.argv.slice(2), get = k => a[a.indexOf(k) + 1];
+const out = get('--output'); mkdirSync(dirname(out), { recursive: true });
+if (a.includes('--detect')) { writeFileSync(out, JSON.stringify({ vendor: { ready: true, reachable: true } })); process.exit(0); }
+const cwd = get('--cwd');
+mkdirSync(join(cwd, '.teams_wiki', 'findings'), { recursive: true });
+writeFileSync(join(cwd, '.teams_wiki', 'findings', 'x.md'), 'page\\n');
+if (a.includes('--stage')) {
+  writeFileSync(join(cwd, 'real.txt'), 'r\\n');
+  writeFileSync(out, JSON.stringify({ stage_ok: true, result: { stage_ok: true, changed_files: ['real.txt', '.teams_wiki/findings/x.md', join(cwd, '.teams_wiki/findings/x.md')], checks: ['c -> passed'], handoff: 'h' } }));
+} else {
+  writeFileSync(out, JSON.stringify({ stage_ok: true, result: { stage_ok: true, accept: true, match_pct: 95, checks: ['ok -> fine'], attacks: ['ok -> fine'], evidence: 'e' } }));
+}
+`);
+  writeFileSync(join(cwd, '.claude', 'broker-vendors.json'), JSON.stringify({
+    mutator: { command: 'node', args: [adapter], requires_binary: null, sandboxes: ['read-only', 'workspace-write'], default_sandbox: 'workspace-write' },
+  }));
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'mutator' });
+    await c.call('team_submit', { run_id, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('team_submit', {
+      run_id, cwd, node_id: 'setgoal',
+      payload: ok({ spec: { goal: 'G', acceptance: ['A'], subgoals: [{ id: 'U1', title: 'code', acceptance: ['a'], test: ['t'], files: ['real.txt'], deps: [] }] } }),
+    });
+    await c.call('team_submit', { run_id, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    const impl = await c.call('team_run', { run_id, cwd, node_id: 'implement:U1:1' });
+    assert.equal(impl.state, 'done', JSON.stringify(impl));
+    const { node } = await c.call('team_status', { run_id, cwd, full: true, node_id: 'implement:U1:1' });
+    assert.deepEqual(node.result.changed_files, ['real.txt'], 'the wiki page is not a changed file');
+    assert.deepEqual(node.result.contradicted_files, []);
+    assert.equal(readFileSync(join(cwd, '.teams_wiki', 'findings', 'x.md'), 'utf8'), 'page\n');
+    await c.call('team_submit', { run_id, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    rmSync(join(cwd, '.teams_wiki'), { recursive: true, force: true });
+    const gate = await c.call('team_run', { run_id, cwd, node_id: 'gate:U1:1' });
+    assert.equal(gate.state, 'done', `a wiki write is not a --verify violation: ${JSON.stringify(gate)}`);
+    assert.equal(readFileSync(join(cwd, '.teams_wiki', 'findings', 'x.md'), 'utf8'), 'page\n', 'verifyRestore never reverts the wiki');
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});

@@ -37,6 +37,11 @@ export function selectModel(run, node, vendor, explicit) {
   return DEFAULT_MODELS[vendor] || null;
 }
 
+// The stages that judge work (qa's judging stage is named execute). One set: the broker tells the
+// adapter --no-wiki for these, composePrompt tells them the project wiki is not evidence, and
+// the wiki is never an input to a verdict.
+export const JUDGING_STAGES = new Set(['review', 'gate', 'accept', 'critique', 'test', 'audit', 'execute']);
+
 // implement and test hand the work to the other vendor. report joins them so a run's
 // account of itself is not written by the vendor that drove it - the same independence
 // the same-actor penalty buys gate and critique. Model defaults stay tied to execution:

@@ -25,7 +25,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, rmS
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
-import { capacityFailure, capacityNotice, selectModel, rankCandidates, authorIdentities, demoteAuthors } from './routing.mjs';
+import { capacityFailure, capacityNotice, selectModel, rankCandidates, authorIdentities, demoteAuthors, JUDGING_STAGES } from './routing.mjs';
 import {
   STAGES,
   REASONING_STAGES,
@@ -345,7 +345,7 @@ function gitChanged(cwd) {
   for (let i = 0; i < parts.length; i++) {
     const e = parts[i];
     if (e.length < 4) continue;
-    out.push(e.slice(3));
+    if (!isWikiPath(e.slice(3))) out.push(e.slice(3));
     if (e[0] === 'R' || e[0] === 'C') i++;
   }
   return out;
@@ -364,7 +364,7 @@ function gitChangedSince(cwd, base) {
     maxBuffer: 16 * 1024 * 1024,
   });
   if (r.status !== 0) return null;
-  return r.stdout.split('\0').filter(Boolean);
+  return r.stdout.split('\0').filter((p) => p && !isWikiPath(p));
 }
 
 // ---------- checkpoint / rollback (_repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §5) ----------
@@ -459,7 +459,7 @@ function crossCheck(cwd, claimed, isolated, kind, sinceBase = null) {
   const globRe = (g) => new RegExp('(^|/)' + g.split('*').map((x) => x.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*') + '$');
   const seenIn = (list, r) => (r.includes('*') ? list.some((o) => globRe(r).test(o)) : list.some((o) => o === r || o.endsWith('/' + r)));
   const seen = (r) => seenIn(observed, r);
-  const list = Array.isArray(claimed) ? claimed.map(String) : [];
+  const list = Array.isArray(claimed) ? claimed.map(String).filter((f) => !isWikiClaim(f)) : [];
   const unseen = list.filter((f) => {
     const r = toRel(f);
     return !r || !seen(r);
@@ -519,6 +519,14 @@ function crossCheck(cwd, claimed, isolated, kind, sinceBase = null) {
 //     such cover; a change to its file is attributed to this node like any other.
 // Everything else that changes - including this node's own subgoal's files, the original
 // scope, still covered - is a violation.
+// .teams_wiki/ is the project wiki claude workers write through wiki_write: engine-owned
+// documents, never a node's changed file, never reverted, never blamed on a verifier.
+const WIKI_ROOT = '.teams_wiki';
+function isWikiPath(rel) {
+  return rel === WIKI_ROOT || rel.startsWith(WIKI_ROOT + '/');
+}
+// A claim may be absolute or carry a note after the path; either way it names a wiki page.
+const isWikiClaim = (f) => /(^|[\\/])\.teams_wiki([\\/]|\s|$)/.test(String(f));
 function isHarnessPath(rel) {
   return rel === HARNESS_ROOT || rel.startsWith(HARNESS_ROOT + '/');
 }
@@ -1912,6 +1920,8 @@ async function toolGraphRun(a) {
     '--sandbox', r.sandbox,
   ];
   if (verifies) args.push('--verify');
+  // Judging stages (reasoning ones carry no --stage, so the adapter cannot tell) never get the wiki.
+  if (JUDGING_STAGES.has(n.stage)) args.push('--no-wiki');
   if (run.isolated && !REASONING_STAGES.has(n.stage)) args.push('--isolated');
   for (const d of Array.isArray(a.add_dirs) ? a.add_dirs : []) args.push('--add-dir', String(d));
   if (chosenModel) args.push('--model', String(chosenModel));
@@ -2010,6 +2020,7 @@ async function toolGraphRun(a) {
     const contradicted = check.contradicted_files.length > 0;
     result = {
       ...payload,
+      ...(Array.isArray(payload.changed_files) ? { changed_files: payload.changed_files.filter((f) => !isWikiClaim(f)) } : {}),
       stage_ok: report.stage_ok === true && !contradicted,
       ...check,
       verification_error: contradicted

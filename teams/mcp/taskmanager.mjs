@@ -58,7 +58,7 @@ import {
   planningPkgs, livePlanningPkgs, qaPkgs, phaseOfId, planningStories, storyId, storyLabel,
 } from './tickets.mjs';
 import { writeDocs, renderPrd, cardDocuments, questionLine } from './docs.mjs';
-import { mode as wikiMode, resumeContext, proposeLog, proposalBody, applyDecision } from './wikibridge.mjs';
+import { mode as wikiMode, resumeContext, writeLog, shippedIds } from './wikibridge.mjs';
 import { harnessVerdict, taskTag } from './harnessrun.mjs';
 import { logReply, renderStreamLine, renderLedgerLine } from './tasklog.mjs';
 import { validate as validateDiagram, renderToFile as renderDiagram } from './diagram.mjs';
@@ -2718,6 +2718,8 @@ function spawnChildDriver(task, nodeIdLabel, child, opts = {}) {
     // keeps a relative HARNESS_TASKS_DIR pointing at the same place from the child's cwd.
     delete env.CLAUDECODE;
     if (process.env.HARNESS_TASKS_DIR) env.HARNESS_TASKS_DIR = tasksRoot();
+    // The project wiki lives in the main project, never in a worktree a child may run in.
+    env.TEAMS_WIKI_ROOT = task.cwd;
     if (opts.env) Object.assign(env, opts.env);
     const prompt = opts.prompt || driverPrompt(task, child, opts);
     const proc = spawn(argv[0], [...argv.slice(1), prompt], {
@@ -3028,6 +3030,7 @@ function spawnDaemonProcess(task, attempt) {
     const env = { ...process.env };
     delete env.CLAUDECODE; // a nested claude -p (the daemon's own judge calls) refuses to start with it set
     if (process.env.HARNESS_TASKS_DIR) env.HARNESS_TASKS_DIR = tasksRoot();
+    env.TEAMS_WIKI_ROOT = task.cwd;
     const proc = spawn(argv[0], [...argv.slice(1)], { cwd: task.cwd, env, detached: true, stdio: ['ignore', out, err] });
     try {
       proc.on('exit', (code, signal) => {
@@ -4155,16 +4158,6 @@ export function composeTaskPrompt(task, n) {
   L.push('');
   L.push(`## Required output`);
   L.push(n.node_id.startsWith('gate:goal') ? CONTRACT['gate:goal'] : CONTRACT[n.stage]);
-  const wikiProposal = isManagerGoal(n) && ((task.wiki && task.wiki.proposals) || []).find((p) => p.status === 'proposed');
-  // The judge sees the bytes of the _proposed file it would accept (a gate:goal:N reuses the round-1 file).
-  const wikiBody = wikiProposal ? proposalBody(task, wikiProposal.path) : null;
-  if (wikiBody != null) {
-    L.push('');
-    L.push(`## Wiki log proposal`);
-    L.push(`Proposal ${wikiProposal.proposal_id} (page ${wikiProposal.id}) records this EPIC in the project wiki. Nothing is accepted unless you say so. Add to your JSON the optional field "wiki_decisions": [{"proposal_id": "${wikiProposal.proposal_id}", "accept": true|false, "reason": "..."}]; it takes effect only if this gate accepts. Accept it when the page states what was decided and shipped without inventing anything; reject it (with a reason) otherwise.`);
-    L.push('');
-    L.push(wikiBody);
-  }
   if (n.stage === 'brainstorm' && n.brainstorm_mode === 'light') L.push(BRAINSTORM_LIGHT);
   if (n.stage === 'accept') {
     const judged = packageOf(task, n.subgoal_id);
@@ -4291,48 +4284,6 @@ function managerReviewerIndependence(task, n) {
   return null;
 }
 
-// A goal gate that settled done decides the log proposal(s) it was shown. In the transaction
-// only the decision is written down; the wiki IO runs after the commit and records its outcome in
-// a transaction of its own. A decision that never reached the wiki (crash) leaves the proposal
-// 'proposed' (and carries p.decision, so no later fold re-applies it; nothing reconciles it).
-// A malformed decision (no known proposal_id, accept not a boolean) is ignored, never a reject.
-function foldWikiDecisions(task, n, decisions) {
-  const todo = [];
-  for (const d of decisions) {
-    const p = d && ((task.wiki && task.wiki.proposals) || []).find((x) => x.proposal_id === d.proposal_id);
-    if (!p || p.status !== 'proposed' || p.decision || typeof d.accept !== 'boolean') {
-      record(task, { event: 'wiki_decision_ignored', task_id: task.run_id, node_id: n.node_id, proposal_id: d && d.proposal_id });
-      continue;
-    }
-    p.decision = { accept: d.accept, reason: d.reason ? String(d.reason) : '', by: n.node_id };
-    todo.push({ proposal_id: p.proposal_id, ...p.decision });
-  }
-  if (!todo.length) return;
-  const ref = { run_id: task.run_id, cwd: task.cwd };
-  afterCommit(() => {
-    for (const t of todo) {
-      const out = applyDecision(ref, t.proposal_id, t.accept, t.reason, t.by);
-      try {
-        mutateTask(ref.run_id, (fresh) => {
-          const p = ((fresh.wiki && fresh.wiki.proposals) || []).find((x) => x.proposal_id === t.proposal_id);
-          if (!p) return;
-          delete p.decision;
-          p.decided_by = t.by;
-          if (out.error) {
-            p.status = 'error';
-            p.error = out.error;
-            (fresh.wiki.errors || (fresh.wiki.errors = [])).push({ op: t.accept ? 'accept' : 'reject', error: out.error, at: Date.now() });
-          } else {
-            p.status = out.status;
-            p.path = out.path;
-            if (out.reason) p.reason = out.reason;
-          }
-        });
-      } catch { /* the outcome stays unrecorded; the proposal reads 'proposed' */ }
-    }
-  });
-}
-
 export function finish(task, n, result) {
   // A node settling is what moves a ticket, and it is the one place both callers pass through -
   // tm_submit and the daemon alike. Hooking the caller instead left the whole surface stale
@@ -4372,7 +4323,6 @@ export function finish(task, n, result) {
   }
   n.result = result;
   n.finished_at = Date.now();
-  if (isManagerGoal(n) && n.state === 'done' && Array.isArray(result.wiki_decisions)) foldWikiDecisions(task, n, result.wiki_decisions);
 
   // Manager-level reduce (item 4): every package's declared fold - who changed what, its
   // verdicts across attempts, defects, cost if a dispatch ever reports one - carried through
@@ -4605,7 +4555,25 @@ export function finish(task, n, result) {
   saveRun(task);
   record(task, { event: 'node_finish', task_id: task.run_id, node_id: n.node_id, stage: n.stage, stage_ok: n.result.stage_ok === true, state: n.state });
   try { syncTickets(task, ticketsBefore, n.node_id); } catch { /* evidence, not a dependency */ }
+  if (n.stage === 'report' && n.state === 'done') afterCommit(() => writeWikiLog(task.run_id));
   return verdict(task, n);
+}
+
+// The report node's named point: after its commit, outside any task.json transaction, an L task
+// writes its log page of shipped work (wiki_write, no judging) - only when the shipped set differs
+// from the one already written. A wiki failure is recorded on task.wiki.log, never thrown.
+export function writeWikiLog(taskId) {
+  try {
+    const snap = loadRunAt(taskPath(taskId));
+    if (!snap || snap.size === 'S') return;
+    const ids = shippedIds(snap);
+    const had = snap.wiki && snap.wiki.log && snap.wiki.log.shipped;
+    if (had ? ids.join('\n') === had.join('\n') : !ids.length) return;
+    const out = writeLog(snap);
+    if (out.status === 'skipped') return;
+    const log = { ...(out.id ? { id: out.id, path: out.path } : {}), status: out.status, shipped: ids, ...(out.error ? { error: out.error } : {}) };
+    mutateTask(taskId, (fresh) => { (fresh.wiki || (fresh.wiki = { mode: wikiMode() })).log = log; });
+  } catch { /* the log is a record, not a dependency */ }
 }
 
 // ---------- tools ----------
@@ -6550,34 +6518,7 @@ const CLAIM_EFFECTS = {
   open: { state: 'running', fields: ['state', 'result', 'started_at', 'child', 'base_commit'], run: (task, n, progress) => openChild(task, n, progress) },
   integrate: { state: 'pending', fields: ['state', 'result', 'integration'], run: (task, n) => prepareIntegration(task, n) },
   'plan-integrate': { state: 'pending', fields: ['prd', 'state', 'result'], run: (task, n) => preparePlanIntegration(task, n) },
-  // The EPIC's one wiki log proposal, made before the manager's goal gate is judged. `after` also
-  // writes the task-level record (task.wiki) on the fresh copy, in the same apply.
-  wiki: { state: 'pending', fields: ['wiki'], run: (task, n) => prepareGoalWiki(task, n), after: (fresh, n) => recordWikiProposal(fresh, n) },
 };
-
-const isManagerGoal = (n) => n.stage === 'gate' && n.subgoal_id == null && String(n.node_id).startsWith('gate:goal');
-const logProposal = (task) => ((task.wiki && task.wiki.proposals) || []).find((p) => String(p.id).startsWith('log/'));
-
-// Outside the lock, on a snapshot: one log proposal per task. A proposal the task already holds
-// is reused (a later gate:goal:N); a crash between the propose and the apply is caught by the
-// bridge, which reuses the pending _proposed file of the same source and slug. Never throws.
-function prepareGoalWiki(task, n) {
-  const have = logProposal(task);
-  if (have) { n.wiki = { prepared: true, proposal_id: have.proposal_id }; return; }
-  const r = proposeLog(task);
-  n.wiki = r.error ? { prepared: true, proposal_id: null, error: r.error }
-    : { prepared: true, proposal_id: r.proposal_id, entry: { proposal_id: r.proposal_id, id: r.id, node_id: n.node_id, status: 'proposed', path: r.path } };
-}
-
-function recordWikiProposal(fresh, n) {
-  const w = n.wiki;
-  const entry = w && w.entry;
-  if (w) delete w.entry;
-  if (!w || (!entry && !w.error)) return;
-  const rec = fresh.wiki || (fresh.wiki = { mode: wikiMode() });
-  if (entry && !(rec.proposals || []).some((p) => p.proposal_id === entry.proposal_id)) (rec.proposals || (rec.proposals = [])).push(entry);
-  if (w.error) (rec.errors || (rec.errors = [])).push({ op: 'propose', error: w.error, at: Date.now() });
-}
 
 // claims: [{node_id, claim}] from one claim transaction. Effects run one by one, each on a fresh
 // read of task.json (so a later one sees what an earlier apply wrote), outside the lock. Returns
@@ -6627,7 +6568,6 @@ function runClaimed(taskId, claims) {
           if (k in n) f[k] = n[k];
           else delete f[k];
         }
-        if (eff.after) eff.after(fresh, f);
         for (const l of held) record(fresh, l);
       });
       if (isOpen) {
@@ -6686,7 +6626,6 @@ export function readyToJudge(task) {
     if (n.claim && liveClaim(n.claim)) return false;
     if (n.stage === 'integrate' && !n.integration) return false;
     if (n.stage === 'plan-integrate' && !n.prd) return false;
-    if (isManagerGoal(n) && !n.wiki) return false;
     return true;
   });
 }
@@ -6792,7 +6731,7 @@ export function prepareReadyIntegrations(taskRef) {
       // before its judge is called, so the judge reads a 10-prd.md that exists.
       const op = n.stage === 'plan-integrate' && !n.prd ? 'plan-integrate'
         : n.stage === 'integrate' && !n.integration ? 'integrate'
-          : isManagerGoal(n) && !n.wiki ? 'wiki' : null;
+          : null;
       if (!op) continue;
       const claim = claimNode(task, n, op);
       if (claim) out.push({ node_id: n.node_id, claim });
