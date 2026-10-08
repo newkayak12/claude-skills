@@ -181,3 +181,14 @@ export const passes = (id: string, call: Call, w: GuardWorld = {}) =>
     expect(seen.asks).toEqual([])
     expect(seen.store.writes).toBe(0)
   })
+
+// guardWorld plus the bottom of prompt.submit, for the note tests. `root` and the store seed come from `w`.
+export const memoWorld = (on: On, w: GuardWorld = {}) => {
+  const seen = guardWorld(on, w)
+  on('prompt.submit', (_$, e) => ({ text: e.text, context: e.context }))
+  return seen
+}
+
+export const memo = ($: Engine, args: string) => $.command.run({ command: 'memo', args } as never) as Promise<{ text?: string }>
+export const submit = ($: Engine, text = 'hi') =>
+  $.prompt.submit({ text } as never) as unknown as Promise<{ text: string; context?: readonly string[] }>

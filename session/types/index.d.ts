@@ -28,6 +28,8 @@ declare module 'claude-code' {
       }
       // id of the denial whose rule text the pane shows, '' when none
       guardCopy: string
+      // the pinned-notes block has not yet gone to the model in this conversation
+      memo: { armed: boolean }
       last: { day: string; files: number; commits: number; denied: number; longestMs: number; fileList: string[] } | null
     }
   }
