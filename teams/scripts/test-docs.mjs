@@ -314,18 +314,53 @@ test('slack-list: a size-S task reports from its run, not BLOCKED off the skippe
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
-test('Wiki 변경: renderReport lists mode, resumed ids and the log outcome from task.wiki; absent task.wiki leaves the report unchanged', () => {
-  const base = fixtureTask('/proj');
-  const without = renderAll(base)[docPaths(base).report];
-  assert.ok(!without.includes('Wiki 변경'));
-  const wiki = (log) => ({ ...fixtureTask('/proj'), wiki: { mode: 'scan', resumed: ['log/2026-10-06-E-aa11'], ...(log ? { log } : {}) } });
-  const written = wiki({ id: 'log/2026-10-07-E-ab12', path: '.teams_wiki/log/2026-10-07-E-ab12.md', status: 'written', shipped: ['P1'] });
-  const out = renderAll(written)[docPaths(written).report];
-  assert.ok(out.startsWith(without.slice(0, without.indexOf('## Next backlog'))));
-  const sec = out.slice(out.indexOf('## Wiki 변경'));
-  for (const s of ['scan', 'log/2026-10-06-E-aa11', 'log/2026-10-07-E-ab12', 'written', '.teams_wiki/log/2026-10-07-E-ab12.md']) assert.ok(sec.includes(s), s);
-  assert.ok(!sec.includes('Proposals'));
-  const failed = wiki({ status: 'error', shipped: ['P1'], error: 'disk full' });
-  assert.match(renderAll(failed)[docPaths(failed).report], /Log page: \(error\) - disk full/);
-  assert.ok(!renderAll(wiki(null))[docPaths(base).report].includes('Log page'));
+test('Wiki 변경: every report variant lists the pages modified inside [created_at, end]; before/after pages, INDEX, _proposed and _rejected are left out; no .teams_wiki -> no section and none created', async () => {
+  const { createRun, saveRun } = await import('../mcp/graph.mjs');
+  const { mkdirSync, utimesSync, existsSync } = await import('node:fs');
+  const { renderReport, renderBlockedReport, renderSReport, renderHarnessReport } = await import('../mcp/docs.mjs');
+  const cwd = mkdtempSync(join(tmpdir(), 'docs-wiki-'));
+  const T0 = Date.UTC(2026, 9, 7, 10, 0, 0), END = T0 + 60000;
+  const page = (rel, title, source, at) => {
+    const p = join(cwd, '.teams_wiki', rel);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, `---\ntitle: ${JSON.stringify(title)}\nsource: ${JSON.stringify(source)}\n---\nbody\n`);
+    utimesSync(p, at / 1000, at / 1000);
+  };
+  try {
+    const base = fixtureTask(cwd);
+    const timed = (over = {}) => ({ ...base, created_at: T0, ...over, nodes: base.nodes.map((n) => (n.stage === 'report' ? { ...n, finished_at: END } : n)) });
+    // no .teams_wiki: no section, and rendering creates nothing
+    for (const out of [renderReport(timed())]) assert.ok(!out.includes('Wiki 변경'));
+    assert.equal(existsSync(join(cwd, '.teams_wiki')), false);
+    page('spec/before.md', 'Before', 'old', T0 - 5000);
+    page('spec/inside.md', 'Inside', 'implement:P1:1', T0 + 1000);
+    page('arch/deep/nested.md', 'Nested', 'implement:P2:1', END);
+    page('spec/after.md', 'After', 'later', END + 5000);
+    page('INDEX.md', 'Index', 'x', T0 + 1000);
+    page('_proposed/p.md', 'Proposed', 'x', T0 + 1000);
+    page('_rejected/r.md', 'Rejected', 'x', T0 + 1000);
+    const check = (out, label) => {
+      const sec = out.slice(out.indexOf('## Wiki 변경'));
+      assert.ok(out.includes('## Wiki 변경'), label);
+      assert.match(sec, /modified while this task ran/, label);
+      assert.ok(sec.includes('- spec/inside — Inside (implement:P1:1)'), label);
+      assert.ok(sec.includes('- arch/deep/nested — Nested (implement:P2:1)'), label);
+      for (const x of ['Before', 'After', 'Index', 'Proposed', 'Rejected']) assert.ok(!sec.includes(x), `${label}: ${x}`);
+    };
+    const L = renderReport(timed());
+    check(L, 'L');
+    assert.equal(renderReport(timed()), L, 're-render is byte-identical (no render clock)');
+    // a page touched after the report finished is not listed on re-render
+    page('spec/late.md', 'Late', 'x', END + 1000);
+    assert.ok(!renderReport(timed()).includes('Late'));
+    check(renderBlockedReport({ ...timed(), nodes: base.nodes.filter((n) => n.stage !== 'report').map((n, i) => ({ ...n, finished_at: i === 0 ? END : n.finished_at })) }), 'blocked');
+    check(renderHarnessReport({ ...base, created_at: T0, harness_run: { cwd, exhausted: true, finished_at: END } }), 'harness');
+    const run = createRun({ cwd, request: 'r' });
+    run.nodes = [node('report:2', 'report', [], { state: 'done', result: { handoff: 'x' } })];
+    saveRun(run);
+    check(renderSReport({ run_id: 'de907a66-0000', cwd, request: 'r', created_at: T0, size: 'S', s_run: { cwd, run_id: run.run_id }, team: { opts: { roles: {} } }, nodes: [node('size', 'size', [], { state: 'done', finished_at: END, result: { size: 'S' } })] }), 'S');
+    // an empty window says (none)
+    const empty = renderReport(timed({ created_at: END + 100000 }));
+    assert.match(empty.slice(empty.indexOf('## Wiki 변경')), /modified while this task ran:\n- \(none\)/);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
