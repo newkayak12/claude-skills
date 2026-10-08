@@ -54,6 +54,8 @@ precede a run; add it whenever the project is ready to commit to it.
    through integration (capped by `qa_rounds`, which caps audit rounds as well).
    If harness is already installed in this project, say so: `.claude/conventions/` and the
    session-marker directory are shared between the two plugins.
+   Ask whether a reference project exists (a codebase whose style the team should follow;
+   a path or repo). Default **No**.
 2. Run:
    ```sh
    node "<plugin>/skills/install/install.mjs" '{
@@ -68,6 +70,15 @@ precede a run; add it whenever the project is ready to commit to it.
    whether `team.json`, the dispatch file, each convention file, the CLAUDE.md block, and
    `.gitignore` came back `created`, `kept`, `present`, `appended`, `refreshed`, `unchanged`, or
    `skipped`.
+   - If the user named a reference project in step 1 and the report confirms conventions were
+     created or kept: when the `develop` plugin is available, run `develop:like-my-code` on it,
+     writing into `.claude/conventions/`. Tell it the cap covers the whole conventions block:
+     teams folds `.claude/conventions/**` into plan/setgoal/implement prompts capped at 4000
+     chars per block, so the total of all convention files a worker reads (template text plus
+     its rules) must stay ≤ 4000 chars. Have it check the length after writing and trim the
+     lowest-ratio rules first; evidence stays in the chat report. If `develop` is not installed,
+     skip and print `/plugin install develop@newkayak12-claude-skills`; never fail the install.
+     Report the outcome: ran / declined / skipped: develop absent.
 4. **Tool discovery** — confirm all sixteen tools are visible: six `team_*` tools (`team_open`,
    `team_next`, `team_run`, `team_submit`, `team_retry`, `team_status`) and ten `tm_*`
    tools (`tm_open`, `tm_next`, `tm_submit`, `tm_retry`, `tm_status`, `tm_events`, `tm_board`,
@@ -146,7 +157,7 @@ means no gate, and the hook fails open on any error.
 
 | Claude | You |
 |--------|-----|
-| Proposes dispatch patterns and role toggles | Confirm the dispatch patterns and roles |
+| Proposes dispatch patterns and role toggles; optionally runs `develop:like-my-code` for a reference project | Confirm the dispatch patterns and roles; say whether a reference project exists |
 | Runs `install.mjs` for every deterministic file op, confirms tool discovery | Commit `.claude/team.json`, `.claude/teams-dispatch.json`, `.claude/conventions/`, and the CLAUDE.md block so the gate applies team-wide |
 | Reports honestly from the script's JSON | After a plugin version bump, re-run with `"refresh": true` to backfill new `team.json` keys |
 
@@ -155,4 +166,5 @@ means no gate, and the hook fails open on any error.
 - `orchestrate` — drive a request through the connected graph
 - `remove` — uninstall what this skill wrote
 - `patch` — prepare a teams plugin source release
+- `develop:like-my-code` — optional: derive conventions from a reference project
 - `harness:install` — the harness's own project installer (shares conventions and marker dir)

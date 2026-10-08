@@ -213,8 +213,9 @@ stateDiagram-v2
 
 **Install.** Install `teams@newkayak12-claude-skills`; that registers its three MCP servers (reload
 Claude Code if the `tm_*`/`team_*`/`wiki_*` tools do not show). `teams:install` is optional. It pins
-project defaults in `.claude/team.json`, adds a dispatch gate, and adds `.claude/conventions/`.
-Without it, the built-in defaults apply. Details:
+project defaults in `.claude/team.json`, adds a dispatch gate, and adds `.claude/conventions/`
+(optionally filled from a reference project via `develop:like-my-code`). Without it, the built-in
+defaults apply. Details:
 [docs/configuration.md#install](docs/configuration.md#install).
 
 **Run.** Pick the entry skill that matches the work. All of them open the same kind of task.
