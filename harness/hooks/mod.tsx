@@ -33,8 +33,9 @@ function parseDecision(text: string): Decision | null {
   }
 }
 
-// Open runs per stage, in flow order: fallback runs (.harness-run/<slug>/, the stage rule of
-// mods/hooks/runs.mjs) and graph runs (.harness-run/broker/runs/<id>.json), every worktree.
+// Open runs per stage, in flow order, every worktree: fallback runs (.harness-run/<slug>/, staged by
+// the first missing file: 01-plan.md, 02-goal-spec.json, a sound 02-critique.json, every subgoal's
+// result.json, 04-goal-gate.json) and graph runs (.harness-run/broker/runs/<id>.json).
 const STAGES = ['plan', 'setgoal', 'critique', 'implement', 'test', 'gate', 'report'] as const
 type Stage = (typeof STAGES)[number]
 // A run untouched for 12 h is abandoned, not open.
