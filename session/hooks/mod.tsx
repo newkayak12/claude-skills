@@ -5,6 +5,8 @@ import {
   addCommit, addDeny, addFile, addStep, emptyLedger, endTurn, fmtMs, parseNumstat, statOf, stepSpan,
 } from './ledger.ts'
 import type { Ledger } from './ledger.ts'
+import { fmtAge, matchOrphans, parsePs, PS_ARGV } from './procs.ts'
+import type { Row } from './procs.ts'
 
 const tab = atom({ plugin: 'session', key: 'tab' } as const, 'retro' as 'retro' | 'orphans')
 const band = atom({ plugin: 'session', key: 'band' } as const, false)
@@ -23,6 +25,44 @@ async function refreshStats($: any) {
     if (r.exitCode === 0) await update($, statsAtom, () => parseNumstat(r.stdout))
   } catch {}
 }
+
+const orphansAtom = atom({ plugin: 'session', key: 'orphans' } as const, [] as Row[])
+const engineAtom = atom({ plugin: 'session', key: 'engine' } as const, 0)
+
+// Windows has no `ps -o lstart`: the OS-process section is hidden and no process is run for it.
+const isWindows = async ($: any) => {
+  try {
+    return (await $.env.get('OS')) === 'Windows_NT'
+  } catch {
+    return false
+  }
+}
+
+// The engine pid is the parent of `sh -c 'echo $PPID'`; asked once, kept in state.
+async function engineOf($: any): Promise<number> {
+  let pid = await read($, engineAtom)
+  if (pid > 0) return pid
+  const r = await $.process.run(['sh', '-c', 'echo $PPID'], { timeoutMs: 3000 })
+  pid = Number(String(r.stdout).trim())
+  if (!Number.isInteger(pid) || pid <= 0) return 0
+  await update($, engineAtom, () => pid)
+  return pid
+}
+
+// One ps pass at turn end and pane open, never in a draw. Failure keeps the previous list.
+async function pollOrphans($: any) {
+  try {
+    if (await isWindows($)) return await update($, orphansAtom, () => [])
+    const engine = await engineOf($)
+    if (engine === 0) return
+    const ps = await $.process.run([...PS_ARGV], { timeoutMs: 5000 })
+    if (ps.exitCode !== 0) return
+    await update($, orphansAtom, () => matchOrphans(parsePs(ps.stdout), engine))
+  } catch {}
+}
+
+// Task 5 fills this in; until then a press does nothing.
+async function stopOrphan(_$: any, _row: Row) {}
 
 // The ledger never changes what the engine returns: any failure while recording is swallowed.
 const track = async ($: any, change: (l: Ledger) => Ledger) => {
@@ -67,7 +107,10 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) {
       await track($, endTurn)
-      if ((await $.session.surfaces()).length > 0) await refreshStats($)
+      if ((await $.session.surfaces()).length > 0) {
+        await refreshStats($)
+        await pollOrphans($)
+      }
     }
     return next(e)
   }).catch(($, e, next) => next(e))
@@ -75,6 +118,7 @@ export const register: Register = on => {
   // The pane opens only from its command.
   on('command.run', { command: 'session' }, async $ => {
     await refreshStats($)
+    await pollOrphans($)
     await $.ui.open({ id: PANE, title: 'Session' })
     return { text: 'Session pane opened.' }
   }).catch(($, e, next) => next(e))
@@ -102,10 +146,23 @@ export const register: Register = on => {
       </Box>
     )
     if (current === 'orphans') {
+      const rows = (await isWindows($)) ? [] : await read($, orphansAtom)
+      const now = (await $.clock.now()) as number
       return (
         <Box flexDirection="column">
           {header}
-          <Text dimColor>○ none</Text>
+          <Text bold color="claude">{`claude -p children (${rows.length})`}</Text>
+          {rows.length === 0 && <Text dimColor>○ none</Text>}
+          {rows.map(r => (
+            <Box key={`o-${r.pid}`} gap={1}>
+              <Text color="warning">●</Text>
+              <Text>{String(r.pid)}</Text>
+              <Box flexShrink={1}><Text wrap="truncate-end">{r.cmd}</Text></Box>
+              <Text dimColor>{fmtAge(r.start, now)}</Text>
+              <Button key={`stop-${r.pid}`} label="[stop]" onPress={() => stopOrphan($, r)} />
+            </Box>
+          ))}
+          <Text dimColor>background shells and subagents: see /tasks</Text>
         </Box>
       )
     }
