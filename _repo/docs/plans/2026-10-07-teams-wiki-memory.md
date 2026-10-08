@@ -1,6 +1,6 @@
 # teams wiki — 세션을 넘는 장기 메모리 (2026-10-07)
 
-> 상태: 1단계 v0.42.0, 1b·2단계 v0.44.0, 3단계 v0.47.0, 4단계(§7) v0.48.0 출시. codex 실측 스모크는 로그인 후.
+> 상태: 1단계 v0.42.0, 1b·2단계 v0.44.0, 3단계 v0.47.0, 4단계(§7) v0.49.0 출시. codex 실측 스모크는 로그인 후.
 > 근거 문서: `2026-09-28-teams-cards-everywhere.md` (Principles 1–5), `2026-09-17-teams-team.md` §6b
 > ("새 층이 메모리 상태를 만든다" 금지).
 > 선례: `knowledge/scripts/sqlite-knowledge.mjs` (node:sqlite + FTS5 + BLOB 벡터 + JS cosine).
