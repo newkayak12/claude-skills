@@ -9,6 +9,7 @@ import { checkKill } from './kill.ts'
 import type { Verdict } from './kill.ts'
 import { ancestorsOf, fmtAge, matchOrphans, parsePs, PS_ARGV } from './procs.ts'
 import type { Row } from './procs.ts'
+import { DENIALS_KEY, register as registerGuard } from './guard.tsx'
 
 const tab = atom({ plugin: 'session', key: 'tab' } as const, 'retro' as 'retro' | 'orphans')
 const band = atom({ plugin: 'session', key: 'band' } as const, false)
@@ -113,10 +114,19 @@ const track = async ($: any, change: (l: Ledger) => Ledger) => {
   } catch {}
 }
 
-export const register: Register = on => {
+// One hooks module per plugin on this build: the guard registers its hooks from here.
+export const register: Register = (on, options) => {
+  registerGuard(on, options)
+
   // Non-interactive sessions (every `claude -p`) get no command and no UI; the ledger still runs below.
   on('session.start', async ($, e, next) => {
     if (!e.isInteractive) return next(e)
+    // The guard's log comes back from the store; its command is registered here, as a module may hook an event once.
+    try {
+      const kept = ((await $.store.get(DENIALS_KEY)) as never[] | undefined) ?? []
+      await update($, { plugin: 'session', key: 'guard' } as const, () => ({ denials: kept }))
+    } catch {}
+    await $.command.register({ name: 'session-denials', description: 'Calls the guard or the permission rules denied this session' })
     // First start of the session: defaults. A later start (hot reload) keeps what is there.
     await update($, tab, t => t ?? 'retro')
     await update($, band, b => b ?? false)
