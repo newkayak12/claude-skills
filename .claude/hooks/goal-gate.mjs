@@ -35,8 +35,9 @@ import {
   rmSync,
   statSync,
   existsSync,
+  realpathSync,
 } from 'node:fs';
-import { join, resolve, dirname, relative, isAbsolute, sep } from 'node:path';
+import { join, resolve, dirname, relative, isAbsolute, sep, basename } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
@@ -95,6 +96,21 @@ function inside(root, p) {
 export function gatedRel(root, p) {
   const rel = inside(root, p);
   return rel == null ? null : '/' + rel.split(sep).join('/');
+}
+
+// p with its nearest existing ancestor realpathed (macOS /tmp -> /private/tmp); p itself if none resolves.
+function real(p) {
+  let head = p;
+  const tail = [];
+  while (!existsSync(head) && dirname(head) !== head) {
+    tail.unshift(basename(head));
+    head = dirname(head);
+  }
+  try {
+    return join(realpathSync(head), ...tail);
+  } catch {
+    return p;
+  }
 }
 
 function loadConfig(root) {
@@ -481,7 +497,7 @@ function main() {
     if (!f) continue;
     const root = typeof f === 'string' ? f : f.root;
     const base = typeof f === 'string' ? f : (gitTop(f.worktree) || f.root);
-    judged.push({ root, rel: gatedRel(base, t) });
+    judged.push({ root, rel: gatedRel(base, t) ?? gatedRel(base, real(t)) });
   }
   // Task/Agent (and a Bash that writes nothing gated) still refresh markers when engaged.
   const rootF = judged.length ? judged[0].root : findRoot(join(cwd, '_'));
