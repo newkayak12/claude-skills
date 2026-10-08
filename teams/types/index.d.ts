@@ -40,6 +40,7 @@ declare module 'claude-code' {
       summary: SummaryTask | null
       view: 'summary' | 'work' | 'log' | 'report'
       report: { task_id: string; payload: ReportPayload } | null
+      ended: Record<string, 'card' | 'seen' | 'dismissed'>
       lang: 'en' | 'ko'
     }
   }
