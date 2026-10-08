@@ -1,6 +1,6 @@
-# mods (베타)
+# mods
 
-claude-skills 워크플로를 위한 Claude Code 모드(function hook): 스킬 토스트, 안전 가드.
+claude-skills 워크플로를 위한 Claude Code 모드(function hook): 스킬 토스트, 안전 가드, 고아 정리.
 
 ## 설치 & 제거
 
@@ -26,7 +26,8 @@ Claude Code 2.1.292 이상. 이전 빌드는 stderr에 한 줄을 출력하고 �
 | 5 | fetch 알림 | 세션 시작 시(인터랙티브 세션에서만) fetch 후 `origin/main`이 앞서 있으면 토스트 | claude-skills 저장소 전용 |
 | 6 | push / bump 확인 | `git push`와 `patch-harness` / `teams/skills/patch/patch.mjs` 버전 범프 스크립트 실행 전 확인. Run을 선택하지 않으면 명령이 거부됨(프롬프트를 닫아도 거부). 헤드리스 세션은 묻지 않고 통과 | claude-skills 저장소 전용 |
 | 7 | KOR 없는 README | `git commit` 시 스테이징된 `README.md`에 `KOR.md`가 없으면 토스트 | claude-skills 저장소 전용 |
-| 8 | `claude -p` 개수 | 턴 종료 시 이 세션의 헤드리스 자식 수를 `n claude -p child(ren) running`으로 상태줄 표시. 0이면 해제 | 인터랙티브 |
+| 8 | 살아 있는 수 | 턴 종료 시 이 세션의 끝나지 않은 에이전트와 헤드리스 자식 수를 `⧗ n agent(s) · m claude -p child(ren) running · /reap`로 상태줄 표시. 0이면 해제. 아무것도 멈추지 않음 | 인터랙티브 |
+| 9 | `/reap` | 이 세션의 끝나지 않은 에이전트(pending/running/waiting/idle)와 `claude -p` 프로세스를 보여주고 Reap/Cancel을 물은 뒤, 에이전트는 TaskStop으로 멈추고 `claude -p`에는 TERM을 보냄(감싸는 셸은 건드리지 않음). 이 세션의 엔진 pid를 확인하지 못하면 프로세스는 종료하지 않음 | 인터랙티브 |
 
 "claude-skills 저장소 전용"은 세션 저장소의 remote가 `/claude-skills(\.git)?$/`와 일치할 때만 동작한다는 뜻입니다. 다른 저장소에서는 세 기능 모두 아무것도 하지 않습니다. 인터랙티브 전용 기능은 헤드리스(`claude -p`) 세션에서 동작하지 않습니다.
 
@@ -42,7 +43,7 @@ Claude Code 2.1.292 이상. 이전 빌드는 stderr에 한 줄을 출력하고 �
 
 ## 상태와 알려진 한계
 
-- 베타(`0.1.0-beta.6`): trophy 함께 설치(업데이트 후 첫 대화형 세션에서 trophy가 없으면 한 번 설치).
+- `0.1.0`(베타 종료): `/reap`이 확인 후 이 세션의 고아 에이전트와 `claude -p` 자식을 멈추고, 턴 종료 상태줄이 끝나지 않은 에이전트도 셉니다. trophy 함께 설치(업데이트 후 첫 대화형 세션에서 trophy가 없으면 한 번 설치).
 - 베타(`0.1.0-beta.5`): push/bump 확인이 teams 패치 도구(`teams/skills/patch/patch.mjs`)까지 다룹니다.
 - 베타(`0.1.0-beta.4`): 실행 밴드와 스캐너 제거(harness가 그림); 알림에 아이콘(◆ ⚠ ↓ ⧗).
 - 스킬 토스트는 플러그인 위치에서 마켓플레이스 파일을 읽을 수 있어야 하며, 읽지 못하면 토스트가 없습니다.

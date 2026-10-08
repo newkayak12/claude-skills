@@ -45,7 +45,7 @@ Opt out beforehand: `mkdir -p ~/.claude/plugins/.newkayak12-trophy-ride.done`.
 | [graph](./graph/README.md) | Graph-owned harness orchestration, MCP installation, routing, and adjudication |
 | [harness](./harness/README.md) · [한국어](./harness/KOR.md) | Six-stage planning, implementation, verification, quality gate, and reporting |
 | [knowledge](./knowledge/README.md) · [한국어](./knowledge/KOR.md) | Knowledge bases, ontologies, graphs, RAG corpora, and querying |
-| [mods](./mods/README.md) · [한국어](./mods/KOR.md) | Beta Claude Code mods: harness run band, skill toasts, and safety guards (Claude Code 2.1.292+) |
+| [mods](./mods/README.md) · [한국어](./mods/KOR.md) | Claude Code mods: skill toasts, safety guards, and `/reap` for orphan agents (Claude Code 2.1.292+) |
 | [planning](./planning/README.md) · [한국어](./planning/KOR.md) | Executing plans and roadmap planning |
 | [portfolio](./portfolio/README.md) · [한국어](./portfolio/KOR.md) | Portfolio and career: feedback, JD analysis, interview prep |
 | [skill](./skill/README.md) · [한국어](./skill/KOR.md) | Skill creation, improvement, and validation |
