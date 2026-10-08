@@ -71,6 +71,14 @@ export function composePrompt(run, n, briefing) {
     lines.push('');
   }
 
+  // Project conventions (written by develop:like-my-code) reach every vendor through the
+  // broker prompt, since a non-Claude node would never load a CLAUDE.md pointer.
+  if (['plan', 'setgoal', 'implement', 'test'].includes(n.stage)) {
+    lines.push(`If the project defines .claude/conventions/**, read the ones relevant to your files and follow them (read only; do not edit them).`);
+    if (n.stage === 'setgoal') lines.push(`Fold those .claude/conventions rules into each subgoal's acceptance[] as checkable criteria.`);
+    lines.push('');
+  }
+
   if (!scopedExecution) {
     lines.push(`## Request`);
     lines.push(run.request);

@@ -47,6 +47,8 @@ For a source checkout, `graph:install` can instead merge this direct registratio
 
 Zero runtime dependencies, Node 18+.
 
+Optional: `graph:install` can run `develop:like-my-code` to write `.claude/conventions/`; the broker then tells every plan, setgoal, implement, and test node, on any vendor, to read and follow the relevant files.
+
 ## Status
 - v1.9.1 — trophy rides along: the first interactive session after this update installs trophy once if missing (uninstall respected)
 
