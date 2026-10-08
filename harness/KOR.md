@@ -260,6 +260,7 @@ harness는 작은 mod를 함께 제공합니다. 열린 실행을 단계별로 �
 
 ## 상태
 - v1.26.0 — Mod: `/harness-gate` 패널이 teams 0.46.0 스타일의 실행 화면이 됨: 실행 / 단위 / 게이트 탭(키 `1`-`3`), 6단계 진행선, 단위별 상태, goal gate 일치율 막대, 지금 하는 일. `/harness-gate`는 게이트 탭으로 열림(게이트 정보는 그대로, 게이트 설정을 읽을 수 없을 때의 안내 추가). 1.25.0의 상태 줄과 파이프라인 밴드는 유지. 기본 영어, Claude Code `language`가 한국어면 한국어. mod 테스트 38개, 실제 Claude Code 영어·한국어 캡처로 확인
+- v1.25.1 — Mod: 밴드 호버 카드가 단계 줄 아래에 펼쳐짐(밴드 위로 띄운 카드는 잘렸음; 실제 화면에서 확인); graph 실행은 요청 문장으로 표시
 - v1.25.0 — Mod: 상태 줄이 열린 실행을 단계별로 셈(fallback + graph, 모든 worktree: `Plan(6) / Implement(11) · graph Implement(3)`); 프롬프트 위 파이프라인 밴드(단계 칩, 호버 시 실행별 진행 카드); Ink 스타일 `/harness-gate` 패널. 게이트 판정은 이제 패널에만 표시
 - v1.24.0 — Mod(Claude Code 2.1.292+, 얼리 액세스): 게이트 상태 줄과 `/harness-gate` 패널; goal gate가 마지막 판정을 `.claude/.harness-last-decision.json`에 기록(install/remove가 이 파일을 관리)하고 간접 경로로 쓰는 대상도 판정
 - v1.23.0 — `harness:patch`가 사용자 스킬에서 빠짐(메인테이너 스크립트는 `_repo/scripts/patch-harness.mjs`로 이동); 새 `harness:update`가 `install.mjs` `"refresh": true`로 설치된 복사본을 갱신

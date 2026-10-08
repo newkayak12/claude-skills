@@ -149,7 +149,7 @@
     {
       "name": "mods",
       "description": "Beta Claude Code mods for the claude-skills workflow: skill toasts, safety guards for worktrees, running scripts, push/bump and subagent models.",
-      "version": "0.1.0-beta.3",
+      "version": "0.1.0-beta.4",
       "author": {
         "name": "newkayak12"
       },
