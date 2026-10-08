@@ -20,6 +20,9 @@ export const memoryStore = (on: On, initial: Record<string, unknown> = {}) => {
   return map
 }
 
+// Claude Code's `language` setting, as `$.settings.read()` returns it.
+export const language = (on: On, value: string) => on('settings.read', () => ({ value: { language: value } }))
+
 // Session id and clock, which every recording hook reads. Set `.denyId` to make the id lookup fail.
 export const sessionAt = (on: On, now = Date.parse('2026-10-07T09:00:00Z'), id = 'session-1') => {
   const clock = mock.clock(on, { now })
