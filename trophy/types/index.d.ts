@@ -7,6 +7,7 @@ declare module 'claude-code' {
       turnTyped: boolean
       consent: 'unasked' | 'yes' | 'no'
       consentVersion: number
+      celebrate: { ids: string[]; until: number } | null
       tab: 'trophies' | 'triggers'
     }
   }
