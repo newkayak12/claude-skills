@@ -7,6 +7,7 @@ import { cpSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, symlinkSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { reportPayload } from './lib/view-report.mjs';
 import { docPaths } from '../mcp/tickets.mjs';
 
@@ -132,4 +133,49 @@ test('retro with fewer fields yields fewer items, none invented', () => {
   const { task } = load('done');
   writeFileSync(docPaths(task).retro, JSON.stringify({ next_backlog: { unresolved_defects: [{ title: 'only one' }] } }));
   assert.deepEqual(reportPayload(task).needs, { items: ['only one'], more: 0 });
+});
+
+// ---- view.mjs --once --format report ----
+const VIEW = join(HERE, 'view.mjs');
+function cli(args) {
+  const r = spawnSync('node', [VIEW, '--once', '--format', 'report', ...args], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const out = r.stdout.trim().split('\n');
+  assert.equal(out.length, 1);
+  return JSON.parse(out[0]);
+}
+// a tasks dir holding one fixture task
+function tasksDirWith(name) {
+  const { task } = load(name);
+  const tasksDir = realpathSync(mkdtempSync(join(tmpdir(), 'view-report-tasks-')));
+  mkdirSync(join(tasksDir, task.run_id));
+  writeFileSync(join(tasksDir, task.run_id, 'task.json'), JSON.stringify(task));
+  return { tasksDir, task };
+}
+
+test('CLI: --format report prints the builder payload for the task', () => {
+  const { tasksDir, task } = tasksDirWith('done');
+  const p = cli(['--tasks-dir', tasksDir, '--task', task.run_id, '--cwd', task.cwd]);
+  assert.deepEqual(p, JSON.parse(JSON.stringify(reportPayload(task))));
+  assert.equal(p.verdict, 'finished');
+});
+
+test('CLI: blocked task reads blocked', () => {
+  const { tasksDir, task } = tasksDirWith('blocked');
+  const p = cli(['--tasks-dir', tasksDir, '--task', task.run_id]);
+  assert.equal(p.verdict, 'blocked');
+  assert.equal(p.needs.items.length, 2);
+});
+
+test('CLI: unknown task prints report null and retro null, exit 0', () => {
+  const { tasksDir } = tasksDirWith('done');
+  const p = cli(['--tasks-dir', tasksDir, '--task', 'no-such-task']);
+  assert.equal(p.task_id, 'no-such-task');
+  assert.equal(p.report, null);
+  assert.equal(p.retro, null);
+});
+
+test('CLI: usage lists the report format', () => {
+  const r = spawnSync('node', [VIEW, '--help'], { encoding: 'utf8' });
+  assert.match(r.stdout, /--format report/);
 });
