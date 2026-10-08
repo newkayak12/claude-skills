@@ -48,6 +48,8 @@ idempotent and non-destructive: existing files are never overwritten.
        SetGoal from the whole catalogue** and can't be pre-enumerated; embedding guarantees
        only what you pass. MCP tools (sequential-thinking, think-tool, mcp-reasoner) can't be
        embedded at all.
+   - **Reference project — ASK:** "코딩 스타일을 참고할 기존 프로젝트가 있나요?" Default **No**. If
+     yes, get its path (used in step 3).
 
 2. **Run `install.mjs` with the confirmed values** (gate + hook + embedding + gitignore — all
    deterministic, idempotent, non-destructive):
@@ -70,6 +72,12 @@ idempotent and non-destructive: existing files are never overwritten.
 3. **Conventions — `.claude/conventions/`** (judgment, agent-run):
    - Copy each `templates/conventions/{coding,verification,boundaries}.md` **only if missing**
      (do not dedupe topics the user already covers under other names).
+   - **Reference project (step 1 = yes):** once the templates are copied, if
+     `develop:like-my-code` is available, run it with source = the reference project and
+     target = this project's `.claude/conventions/` (`coding.md` + `boundaries.md`); it fills
+     placeholders, never overwrites filled lines, and shows the draft first. If `develop` is
+     absent (not installed), skip, keep the templates, print
+     `/plugin install develop@newkayak12-claude-skills`, and never fail the install.
    - **Optional rulesets** (`templates/conventions/optional/`): copy only when the project
      matches the trigger at the top of each — `security.md`, `data.md`, `operations.md`. Ask
      when unsure; skip silently when irrelevant.
@@ -86,7 +94,8 @@ idempotent and non-destructive: existing files are never overwritten.
      whose `scriptPath` ends in `harness/engine/pipeline.js`, so the embedded path counts).
 
 5. **Report** — from `install.mjs`'s JSON plus the convention/CLAUDE.md steps: list created /
-   kept / needs-user-input. Remind: the gate blocks `Write|Edit|MultiEdit|NotebookEdit` and
+   kept / needs-user-input, plus the like-my-code outcome:
+   ran / declined / skipped: develop absent. Remind: the gate blocks `Write|Edit|MultiEdit|NotebookEdit` and
    `Bash` writes on the listed patterns (and on its own config/hook/settings) and is fail-open. If embedding was declined and the plugin is
    absent, flag the engine gap; if accepted, list what was embedded and the dynamic-`skills[]`
    boundary.
@@ -101,8 +110,8 @@ pull a newer engine/hook. After a plugin bump use the `update` skill (`install.m
 
 | Claude | You |
 |--------|-----|
-| Proposes gate patterns; asks about embedding and resolves skill sources | Confirms gate patterns and the embedding choice |
-| Runs the install script for deterministic file ops, then conventions and the CLAUDE.md block | Fills remaining placeholders |
+| Proposes gate patterns; asks about embedding and a reference project; resolves skill sources | Confirms gate patterns, the embedding choice, and any reference project |
+| Runs the install script for deterministic file ops, then conventions (via `develop:like-my-code` when a reference project is given) and the CLAUDE.md block | Fills remaining placeholders |
 | Reports honestly from the script's JSON (plugin-engine gap, dynamic-skill boundary) | Commits settings, hook, `.claude/harness/` copies, conventions; re-runs with `"refresh": true` after a plugin bump |
 
 ## Related
@@ -110,4 +119,5 @@ pull a newer engine/hook. After a plugin bump use the `update` skill (`install.m
 - `harness` skill — running the six-stage engine
 - `remove` skill — uninstalling project-local harness governance
 - `update` skill — refreshing installed copies after a plugin version bump
+- `develop:like-my-code` — optional; derives conventions from a reference project
 - `hooks/README.md` — gate semantics and accepted holes
