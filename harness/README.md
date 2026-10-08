@@ -46,7 +46,7 @@ Measured on one real run the transport layer cost more than the reasoning layer
 |---|---|
 | Get a substantial request planned, executed, verified, and gated before it comes back | `harness` |
 | Connect or verify the graph-owned default orchestration path | `graph:install` |
-| Make the harness ambient in a project — gate, hook, conventions, CLAUDE.md block | `install` |
+| Make the harness ambient in a project — gate, hook, conventions, CLAUDE.md block; optionally derive conventions from a reference project via `develop:like-my-code` | `install` |
 | Take harness governance back out of a project | `remove` |
 | Refresh this project's installed harness copies after a plugin version bump | `update` |
 | Delegate an Implement/Test stage to the local Codex CLI from any install layout | `codex-control` |
@@ -221,6 +221,7 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
   the plugin install (engine still lives in the plugin — see the install skill's gap note)
 - `.claude/conventions/{coding,verification,boundaries}.md` — default ruleset the engine
   reads (SetGoal → acceptance/test, Implement → follows)
+  If you have a reference project, install can fill `coding.md`/`boundaries.md` from it via `develop:like-my-code` (skipped when develop is absent)
 - a fenced `## Harness` section appended to the project's `CLAUDE.md`
 - `.claude/.harness-markers/` in `.gitignore`
 
