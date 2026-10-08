@@ -271,6 +271,7 @@ harness ships a small mod: a status line and a pipeline band above the prompt wi
 Known limitations: the status reads the gate config relative to the session's working directory. A session that started with no UI surface (headless or SDK-hosted) keeps the mod off even if a client attaches later; start a new session to get it (a reload of an unchanged mod does not re-fire session.start).
 
 ## Status
+- v1.27.0 — install asks whether a reference project exists (default No); if yes, `develop:like-my-code` fills `.claude/conventions/coding.md` and `boundaries.md` from its style, each rule with repo evidence and a cited source; skipped when develop is absent
 - v1.26.2 — trophy rides along: the first interactive session after this update installs trophy once if missing (uninstall respected)
 - v1.26.1 — Mod: the band and status line count only this worktree's runs (other worktrees belong to other sessions)
 - v1.26.0 — Mod: the `/harness-gate` pane becomes a run view in the teams 0.46.0 style: tabs Run / Units / Gate (keys `1`-`3`), a six-stage rail, per-unit state, a goal-gate match bar and what runs now; `/harness-gate` opens on Gate (gate info unchanged, plus a line for an unreadable gate config). The 1.25.0 status line and pipeline band are kept. English by default, Korean with Claude Code's `language`. Mod tests 38; real Claude Code captures EN/KO
