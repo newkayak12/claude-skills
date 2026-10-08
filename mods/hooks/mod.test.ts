@@ -9,7 +9,6 @@ type Remote = string | null
 
 const SKILLS_REMOTE = 'git@github.com:newkayak12/claude-skills.git'
 const MARKETPLACE = JSON.stringify({ plugins: [{ name: 'think' }, { name: 'develop' }] })
-const RUN = { dir: '/wt/.harness-run/mods-beta', slug: 'mods-beta', stage: 'implement', total: 2, passed: 1, failed: 0 }
 
 // The engine beneath the plugin. Everything is stubbed: no real user config is read and no real process runs.
 type World = {
@@ -80,7 +79,7 @@ const bash = ($: Engine, command: string) => call($, 'Bash', { command })
 const passed = (r: unknown) => (r as { deny?: string }).deny === undefined
 const denied = (r: unknown) => (r as { deny?: string }).deny ?? ''
 
-// ---- session.start: headless, polling ----
+// ---- session.start: headless ----
 test('headless: no poll, no toast, no status after session.start + 10 s; git push passes without ask', async ($, on) => {
   const clock = mock.clock(on, { now: 1000 })
   const seen = world(on, { surfaces: [], remote: SKILLS_REMOTE })
@@ -93,66 +92,6 @@ test('headless: no poll, no toast, no status after session.start + 10 s; git pus
   expect(seen.asks).toEqual([])
 })
 
-test('terminal: poll argv is node <abs>/hooks/runs.mjs <root>; session.end stops the polls', async ($, on) => {
-  const clock = mock.clock(on, { now: 1000 })
-  const seen = world(on, { remote: null })
-  await start($)
-  await clock.advance(5000)
-  const polls = seen.argv.filter(a => a[0] === 'node')
-  expect(polls.length > 0).toBe(true)
-  for (const a of polls) {
-    expect(a).toHaveLength(3)
-    expect(a[1].startsWith('/')).toBe(true)
-    expect(a[1].endsWith('/hooks/runs.mjs')).toBe(true)
-    expect(a.some(x => x.includes('${'))).toBe(false)
-    expect(a[2]).toBe('/proj')
-  }
-  await $.session.end({ reason: 'other', sessionId: 's1', resume: 'none' } as never)
-  const n = seen.argv.length
-  await clock.advance(20000)
-  expect(seen.argv).toHaveLength(n)
-})
-
-// ---- band ----
-for (const surface of ['terminal', 'desktop'] as const) {
-  const band = ($: Engine, hasSurvey = false) =>
-    $.ui.mount({ plugin: 'mods', surface, component: 'AbovePrompt', props: { hasSurvey, isWorking: false, maxRows: 5, bodyColumns: 80 } } as never)
-
-  test(`${surface}: band shows one open run`, async ($, on) => {
-    on('ui.render', (_$, e) => (e.component === 'AbovePrompt' ? { type: 'Text', children: ['engine band'] } : undefined) as never)
-    world(on, { surfaces: [surface], state: { runs: [RUN] } })
-    const ui = await band($)
-    expect(await ui.find({ type: 'Text', text: /harness mods-beta: implement/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /1\/2 passed/ })).toBeDefined()
-  })
-
-  test(`${surface}: band shows the open run and the engine band beneath it`, async ($, on) => {
-    on('ui.render', (_$, e) => (e.component === 'AbovePrompt' ? { type: 'Text', children: ['engine band'] } : undefined) as never)
-    world(on, { surfaces: [surface], state: { runs: [RUN] } })
-    const ui = await band($)
-    expect(await ui.find({ type: 'Text', text: /harness mods-beta: implement/ })).toBeDefined()
-    expect(await ui.find({ text: 'engine band' })).toBeDefined()
-  })
-
-  test(`${surface}: no open run yields to the engine band`, async ($, on) => {
-    on('ui.render', (_$, e) => (e.component === 'AbovePrompt' ? { type: 'Text', children: ['engine band'] } : undefined) as never)
-    world(on, { surfaces: [surface], state: { runs: [] } })
-    const ui = await band($)
-    expect(await ui.find({ text: 'engine band' })).toBeDefined()
-    expect(await ui.find({ text: /harness mods-beta/ })).toBeUndefined()
-  })
-
-  test(`${surface}: a survey yields to the engine band; render runs no process`, async ($, on) => {
-    on('ui.render', (_$, e) => (e.component === 'AbovePrompt' ? { type: 'Text', children: ['engine band'] } : undefined) as never)
-    const seen = world(on, { surfaces: [surface], state: { runs: [RUN] } })
-    const ui = await band($, true)
-    expect(await ui.find({ text: 'engine band' })).toBeDefined()
-    expect(await ui.find({ text: /harness mods-beta/ })).toBeUndefined()
-    await ui.redraw()
-    expect(seen.argv).toHaveLength(0)
-  })
-}
-
 // ---- skill toast ----
 const skill = ($: Engine, name: string) => call($, 'Skill', { skill: name })
 
@@ -160,8 +99,8 @@ test('skill toast: a plugin of this marketplace toasts and sets the status', asy
   const seen = world(on, { marketplace: MARKETPLACE })
   const r = await skill($, 'think:grill')
   expect(r).toEqual({ result: 'done', text: '' })
-  expect(seen.toasts).toEqual(['skill: think:grill'])
-  expect(seen.statuses).toEqual(['skill: think:grill'])
+  expect(seen.toasts).toEqual(['◆ skill: think:grill'])
+  expect(seen.statuses).toEqual(['◆ skill: think:grill'])
 })
 
 test('skill toast: a foreign plugin shows nothing', async ($, on) => {
@@ -333,7 +272,7 @@ const staged = (files: string) => (argv: readonly string[]) => (argv.includes('-
 test('README/KOR: README.md staged alone toasts', async ($, on) => {
   const seen = world(on, { remote: SKILLS_REMOTE, proc: staged('x/README.md\n') })
   expect(passed(await bash($, 'git commit -m x'))).toBe(true)
-  expect(seen.toasts).toEqual(['README without KOR: x/README.md'])
+  expect(seen.toasts).toEqual(['⚠ README without KOR: x/README.md'])
 })
 
 test('README/KOR: README.md with KOR.md shows nothing', async ($, on) => {
@@ -368,7 +307,7 @@ test('fetch reminder: behind 3 toasts; session.start resolves before the fetch c
   release()
   await Promise.resolve()
   await new Promise(res => setTimeout(res, 0))
-  expect(seen.toasts).toEqual(['origin/main is 3 commit(s) ahead — pull before editing'])
+  expect(seen.toasts).toEqual(['↓ origin/main is 3 commit(s) ahead — pull before editing'])
   const fetch = seen.argv.find(a => a[1] === 'fetch')!
   expect(fetch).toEqual(['git', 'fetch', '-q', 'origin'])
   const rev = seen.argv.find(a => a[1] === 'rev-list')!
@@ -408,13 +347,13 @@ const procFor = (ps: string) => (argv: readonly string[]) => (argv[0] === 'sh' ?
 test('turn end: 2 descendant claude -p (wrapper shell counted once) + 1 unrelated -> status "2 ..."', async ($, on) => {
   const seen = world(on, { proc: procFor(PS) })
   await $.turn.complete(TURN)
-  expect(seen.statuses).toEqual(['2 claude -p child(ren) running'])
+  expect(seen.statuses).toEqual(['⧗ 2 claude -p child(ren) running'])
 })
 
 test('turn end: only a wrapper shell + its child counts 1', async ($, on) => {
   const seen = world(on, { proc: procFor(PS.split('\n').filter(l => !l.startsWith('4310')).join('\n')) })
   await $.turn.complete(TURN)
-  expect(seen.statuses).toEqual(['1 claude -p child(ren) running'])
+  expect(seen.statuses).toEqual(['⧗ 1 claude -p child(ren) running'])
 })
 
 test('turn end: 0 descendants clears the status (undefined)', async ($, on) => {

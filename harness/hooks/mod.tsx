@@ -1,8 +1,8 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Decision, RunInfo, RunSub, StageKey } from '../types'
-import { MARK, TINT, bar, board, cap, cells, fmt, isKorean, rail, tabs } from './draw'
+import type { Decision, OpenRun, OpenRuns, RunInfo, RunSub, StageKey } from '../types'
+import { MARK, TINT, bar, board, cap, fmt, isKorean, rail, tabs } from './draw'
 import type { Mark } from './draw'
 
 const last = atom({ plugin: 'harness', key: 'last' } as const, null as Decision | null)
@@ -11,6 +11,7 @@ const patterns = atom({ plugin: 'harness', key: 'patterns' } as const, [] as str
 const windowHours = atom({ plugin: 'harness', key: 'windowHours' } as const, 2)
 // the config file exists but is not JSON
 const broken = atom({ plugin: 'harness', key: 'broken' } as const, false)
+const runs = atom({ plugin: 'harness', key: 'runs' } as const, { harness: [], graph: [] } as OpenRuns)
 const run = atom({ plugin: 'harness', key: 'run' } as const, null as RunInfo | null)
 // 'auto' opens on Run when a run is found, else on Gate
 const view = atom({ plugin: 'harness', key: 'view' } as const, 'auto' as 'auto' | 'run' | 'units' | 'gate')
@@ -20,14 +21,13 @@ const PANE = 'harness-gate'
 const CONFIG = '.claude/harness-gate.json'
 const DECISION = '.claude/.harness-last-decision.json'
 const TICK_MS = 5000
-const RECENT_MS = 10 * 60 * 1000
 const RUNS = '.harness-run'
 const LIVE_MS = 2 * 60 * 60 * 1000
 const MAX_READ = 4 * 1024 * 1024
 const PASS_PCT = 90 // the pass bar of the run checker (engine fallback check)
 const BAR = 24
 const WORK_MAX = 6
-const STAGES: StageKey[] = ['plan', 'setgoal', 'critique', 'implement', 'gate', 'report']
+const RUN_STAGES: StageKey[] = ['plan', 'setgoal', 'critique', 'implement', 'gate', 'report']
 
 const en = {
   paneTitle: 'Harness gate', tabRun: 'Run', tabUnits: 'Units', tabGate: 'Gate',
@@ -37,7 +37,7 @@ const en = {
   stateRunning: 'running', stateStalled: 'stalled', stateComplete: 'finished', headLine: '{state} · {done}/{total}',
   tries: '{n} tries', goalGate: 'Goal gate', passBar: '{pct}% (pass ≥ {bar})', more: '+{n} more',
   colTodo: 'To do', colDoing: 'Doing', colDone: 'Done',
-  noRun: 'No harness run in this folder.', bandDone: '{done}/{total} done', bandRun: 'run',
+  noRun: 'No harness run in this folder.',
   cmdDesc: 'Why the harness gate denied the last call, and how to engage it', paneOpened: 'pane opened',
   noGate: 'No gate configured: .claude/harness-gate.json is not in this project.',
   badGate: 'Gate config .claude/harness-gate.json could not be read (invalid JSON).',
@@ -62,7 +62,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     stateRunning: '진행 중', stateStalled: '멈춤', stateComplete: '완료', headLine: '{state} · {done}/{total}',
     tries: '{n}회 시도', goalGate: '목표 게이트', passBar: '{pct}% (통과 ≥ {bar})', more: '+{n}건 더',
     colTodo: '대기', colDoing: '진행', colDone: '완료',
-    noRun: '이 폴더에 하네스 실행이 없습니다.', bandDone: '{done}/{total} 완료', bandRun: '보기',
+    noRun: '이 폴더에 하네스 실행이 없습니다.',
     cmdDesc: '하네스 게이트가 마지막 호출을 막은 이유와 개입 방법', paneOpened: '창을 열었습니다',
     noGate: '게이트 설정 없음: 이 프로젝트에 .claude/harness-gate.json 이 없습니다.',
     badGate: '게이트 설정 .claude/harness-gate.json 을 읽을 수 없습니다 (JSON 오류).',
@@ -213,7 +213,7 @@ async function scanRun($: EngineInterface): Promise<RunInfo | null> {
   ]
   // done up to the first stage that is not; that one runs (or has failed), the rest wait
   let reached = false
-  const stages = STAGES.map((key, i) => {
+  const stages = RUN_STAGES.map((key, i) => {
     const r = raw[i]!
     let state: Mark = 'pending'
     if (r.failed) state = 'failed'
@@ -239,6 +239,99 @@ async function scanRun($: EngineInterface): Promise<RunInfo | null> {
   }
 }
 
+// Open runs per stage, in flow order: fallback runs (.harness-run/<slug>/, the stage rule of
+// mods/hooks/runs.mjs) and graph runs (.harness-run/broker/runs/<id>.json), every worktree.
+const STAGES = ['plan', 'setgoal', 'critique', 'implement', 'test', 'gate', 'report'] as const
+type Stage = (typeof STAGES)[number]
+// A run untouched for 12 h is abandoned, not open.
+const STALE_MS = 12 * 60 * 60 * 1000
+const FINISHED = new Set(['done', 'skipped', 'unreachable'])
+
+export type StageCounts = { harness: Partial<Record<Stage, number>>; graph: Partial<Record<Stage, number>> }
+
+export type { OpenRuns }
+
+const label = (s: Stage) => s.charAt(0).toUpperCase() + s.slice(1)
+const counted = (c: Partial<Record<Stage, number>>) =>
+  STAGES.filter(s => (c[s] ?? 0) > 0).map(s => `${label(s)}(${c[s]})`).join(' / ')
+
+// `Plan(6) / Implement(11) · graph Implement(3)`; nothing open is no status
+export function stageStatus(c: StageCounts): string | undefined {
+  const parts = [counted(c.harness), counted(c.graph) ? `graph ${counted(c.graph)}` : ''].filter(Boolean)
+  return parts.length > 0 ? parts.join(' · ') : undefined
+}
+
+async function countStages($: EngineInterface, cwd: string, now: number): Promise<{ counts: StageCounts; runs: OpenRuns }> {
+  const out: StageCounts = { harness: {}, graph: {} }
+  const detail: OpenRuns = { harness: [], graph: [] }
+  const add = (kind: 'harness' | 'graph', s: Stage, r: Omit<OpenRun, 'stage'>) => {
+    out[kind][s] = (out[kind][s] ?? 0) + 1
+    detail[kind].push({ ...r, stage: s })
+  }
+  const json = async (p: string) => { try { return JSON.parse(await $.fs.read(p)) } catch { return null } }
+  const list = async (p: string) => { try { return await $.fs.list(p) } catch { return [] } }
+  let trees = [cwd]
+  try {
+    const wt = await $.process.run(['git', '-C', cwd, 'worktree', 'list', '--porcelain'])
+    const found = wt.stdout.split('\n').filter(l => l.startsWith('worktree ')).map(l => l.slice(9))
+    if (wt.exitCode === 0 && found.length > 0) trees = found
+  } catch {
+    // not a repo: this cwd alone
+  }
+  for (const tree of trees) {
+    const base = `${tree}/.harness-run`
+    for (const run of await list(base)) {
+      if (run.kind !== 'dir') continue
+      const dir = `${base}/${run.name}`
+      if (run.name === 'broker') {
+        for (const f of await list(`${dir}/runs`)) {
+          if (!f.name.endsWith('.json') || now - f.mtimeMs > STALE_MS) continue
+          const g = await json(`${dir}/runs/${f.name}`)
+          const nodes = (Array.isArray(g?.nodes) ? g.nodes : []) as { stage?: string; state?: string }[]
+          if (nodes.some(n => n.stage === 'report' && n.state === 'done')) continue
+          const stage = STAGES.find(s => nodes.some(n => n.stage === s && !FINISHED.has(String(n.state))))
+          if (stage) add('graph', stage, { slug: f.name.replace(/\.json$/, ''), passed: 0, failed: 0, total: 0 })
+        }
+        continue
+      }
+      const files = await list(dir)
+      const has = (name: string) => files.some(f => f.name === name)
+      if (!has('manifest.json') || has('05-report.md')) continue
+      const subs = await list(`${dir}/subgoals`)
+      if (now - Math.max(0, ...files.map(f => f.mtimeMs), ...subs.map(f => f.mtimeMs)) > STALE_MS) continue
+      const spec = await json(`${dir}/02-goal-spec.json`)
+      const crit = await json(`${dir}/02-critique.json`)
+      const ids = (Array.isArray(spec?.subgoals) ? spec.subgoals : []).map((s: { id?: unknown }) => String(s.id))
+      let passed = 0
+      let failed = 0
+      for (const id of ids) {
+        const r = await json(`${dir}/subgoals/${id}/result.json`)
+        if (r?.passed === true) passed++
+        else if (r?.passed === false) failed++
+      }
+      const judged = passed + failed
+      add('harness', !has('01-plan.md') ? 'plan'
+        : !spec ? 'setgoal'
+        : crit?.sound !== true ? 'critique'
+        : judged < ids.length ? 'implement'
+        : !has('04-goal-gate.json') ? 'gate'
+        : 'report', { slug: run.name, passed, failed, total: ids.length })
+    }
+  }
+  return { counts: out, runs: detail }
+}
+
+const SHORT: Record<Stage, string> = { plan: 'Plan', setgoal: 'Goal', critique: 'Crit', implement: 'Impl', test: 'Test', gate: 'Gate', report: 'Rpt' }
+const CELLS = 10
+
+// passed ▰ in success, failed ▰ in error, the rest ▱ dim; at least one cell for any run judged
+export function barCells(r: OpenRun): { ok: number; bad: number; rest: number } {
+  if (r.total === 0) return { ok: 0, bad: 0, rest: CELLS }
+  const ok = Math.min(CELLS, Math.round((r.passed / r.total) * BAR))
+  const bad = Math.min(CELLS - ok, Math.round((r.failed / r.total) * BAR))
+  return { ok, bad, rest: CELLS - ok - bad }
+}
+
 // a person's words for what the run is on now
 function nowSentence(s: S, r: RunInfo): string {
   const n = r.now
@@ -260,13 +353,22 @@ export const register: Register = on => {
         // an unreadable run dir leaves the last run as it was
       }
     }
+    async function tickStatus() {
+      try {
+        // the status line: open runs per stage; the gate's decisions live in /harness-gate
+        const open = await countStages($, await $.session.cwd(), await $.clock.now())
+        $.ui.status(stageStatus(open.counts))
+        await update($, runs, () => open.runs)
+      } catch {
+        // a read error leaves the status as it was
+      }
+    }
     async function tickGate() {
       try {
         if (!(await $.fs.exists(CONFIG))) {
           await update($, armed, () => false)
           await update($, last, () => null)
           await update($, broken, () => false)
-          $.ui.status(undefined)
           return
         }
         let cfg: { patterns?: unknown; window_hours?: unknown }
@@ -285,17 +387,12 @@ export const register: Register = on => {
         await update($, windowHours, () => hours)
         await update($, armed, () => true)
         await update($, last, () => decision)
-        const now = await $.clock.now()
-        if (decision !== null && decision.decision === 'deny' && now - decision.ts < RECENT_MS) {
-          $.ui.status(`gate: denied ${decision.target} — /harness-gate`)
-        } else {
-          $.ui.status(`gate: armed (${list.length} patterns)`)
-        }
       } catch {
-        // a read error leaves the status as it was
+        // a read error leaves the gate state as it was
       }
     }
     const tickAll = async () => {
+      await tickStatus()
       await tickRun()
       await tickGate()
     }
@@ -430,29 +527,71 @@ export const register: Register = on => {
     )
   })
 
-  // a band only while a run is live; the engine's own band is chained beneath
+  // the band: one pipeline row per kind with open runs; a stage with runs is a chip with a hover card
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const r = await read($, run)
-    if (e.props.hasSurvey || r === null || !r.live) return next(e)
-    const s = strings(await read($, lang))
-    const { Box, Button, Text } = $.ui.resolve(e)
-    const open = async () => {
-      await update($, view, () => 'run' as const)
-      await $.ui.open({ id: PANE, title: 'Harness' })
-    }
-    const filled = cells(r.done, r.total, 10)
+    const open = await read($, runs)
+    const kinds = (['harness', 'graph'] as const).filter(k => open[k].length > 0)
+    if (e.props.hasSurvey || kinds.length === 0) return next(e)
+    const { Box, Text } = $.ui.resolve(e)
     return (
       <Box flexDirection="column">
-        <Box>
-          <Box flexShrink={1}><Text dimColor wrap="truncate-end">{`harness · ${r.title}`}</Text></Box>
-          <Box flexShrink={1}><Text dimColor wrap="truncate-end">{` — ${nowSentence(s, r)}`}</Text></Box>
-          <Box flexShrink={0} marginLeft={1}>
-            <Text color="success">{'━'.repeat(filled)}</Text>
-            <Text color="inactive">{'─'.repeat(10 - filled)}</Text>
-            <Text dimColor>{` ${s('bandDone', { done: r.done, total: r.total })}`}</Text>
-          </Box>
-          <Box flexShrink={0} marginLeft={1}><Button key="run" label={s('bandRun')} onPress={open} /></Box>
-        </Box>
+        {kinds.map(kind => {
+          const stages = STAGES.filter(s => kind === 'graph' || s !== 'test')
+          const count = (s: Stage) => open[kind].filter(r => r.stage === s).length
+          // full labels while the row fits 80 columns, short ones past that
+          const width = (names: (s: Stage) => string) =>
+            9 + stages.reduce((n, s) => n + names(s).length + (count(s) > 0 ? String(count(s)).length + 1 : 0), 0) + 3 * (stages.length - 1)
+          const name = width(label) <= 76 ? label : (s: Stage) => SHORT[s]
+          return (
+            <Box key={kind} flexShrink={1}>
+              <Text dimColor>{kind.padEnd(8)} </Text>
+              {stages.map((s, i) => {
+                const rows = open[kind].filter(r => r.stage === s)
+                return (
+                  <Box key={s} flexShrink={1}>
+                    {i > 0 && <Text dimColor>{' ━ '}</Text>}
+                    {rows.length === 0 ? (
+                      <Text dimColor color="inactive" wrap="truncate-end">{name(s)}</Text>
+                    ) : (
+                      <Text bold color="claude" wrap="truncate-end">{`${name(s)} ${rows.length}`}</Text>
+                    )}
+                    {rows.length > 0 && (
+                      <Box
+                        position="absolute"
+                        top={-(rows.length + 2)}
+                        left={0}
+                        display="none"
+                        hover={{ display: 'flex' }}
+                        flexDirection="column"
+                        borderStyle="round"
+                        borderColor="claude"
+                        paddingX={1}
+                      >
+                        {rows.map(r => {
+                          const b = barCells(r)
+                          return (
+                            <Box key={r.slug} gap={1}>
+                              <Text wrap="truncate-end">{r.slug}</Text>
+                              {kind === 'harness' && (
+                                <Text>
+                                  <Text color="success">{'▰'.repeat(b.ok)}</Text>
+                                  <Text color="error">{'▰'.repeat(b.bad)}</Text>
+                                  <Text dimColor>{'▱'.repeat(b.rest)}</Text>
+                                  {` ${r.passed}/${r.total}`}
+                                </Text>
+                              )}
+                              {r.failed > 0 && <Text color="error">{`${r.failed} failed`}</Text>}
+                            </Box>
+                          )
+                        })}
+                      </Box>
+                    )}
+                  </Box>
+                )
+              })}
+            </Box>
+          )
+        })}
         {await next(e)}
       </Box>
     )

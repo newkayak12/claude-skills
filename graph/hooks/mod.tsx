@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import type { GraphNode, GraphRun, Snap } from '../types'
-import { MARK, TINT, board, bar, cap, cells, fmt, isKorean, rail, tabs } from './draw'
+import { MARK, TINT, board, bar, cap, fmt, isKorean, rail, tabs } from './draw'
 import type { Mark } from './draw'
 
 // Read only: the mod lists and reads the broker's run files and writes nothing.
@@ -17,7 +17,6 @@ const MAX_BYTES = 4 * 1024 * 1024 // $.fs.read rejects more
 const LIVE_MS = 2 * 60 * 60 * 1000
 const TICK_MS = 3000
 const BAR = 24
-const BAND_BAR = 10
 const COL_MAX = 6
 
 const en = {
@@ -29,7 +28,7 @@ const en = {
   nodeImplement: 'impl', nodeTest: 'test', nodeGate: 'gate',
   attempt: '(attempt {n})', again: '#{n}',
   noRun: 'No graph run in this folder.', tooBig: 'This run file is too large to show.',
-  more: '+{n} more', cmdDesc: 'Open the graph live pane', paneOpened: 'pane opened', flowButton: 'flow',
+  more: '+{n} more', cmdDesc: 'Open the graph live pane', paneOpened: 'pane opened',
   colTodo: 'To do', colDoing: 'Doing', colDone: 'Done',
 }
 
@@ -45,7 +44,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     nodeImplement: '구현', nodeTest: '테스트', nodeGate: '관문',
     attempt: '({n}번째 시도)', again: '#{n}',
     noRun: '이 폴더에 그래프 실행이 없습니다.', tooBig: '실행 파일이 너무 커서 보여줄 수 없습니다.',
-    more: '+{n}건 더', cmdDesc: '그래프 실행 현황 창 열기', paneOpened: '창을 열었습니다', flowButton: '흐름',
+    more: '+{n}건 더', cmdDesc: '그래프 실행 현황 창 열기', paneOpened: '창을 열었습니다',
     colTodo: '대기', colDoing: '진행', colDone: '완료',
   },
 }
@@ -141,7 +140,7 @@ function model(run: GraphRun) {
 }
 type Model = ReturnType<typeof model>
 
-// the sentence the band and the pane lead with
+// the sentence the pane leads with
 function focus(s: (k: Key, v?: Record<string, string | number>) => string, m: Model) {
   if (m.state === 'complete') return { kind: 'done', head: s('now'), text: s('allDone'), color: 'success' }
   if (m.state === 'blocked') {
@@ -314,34 +313,6 @@ export const register: Register = on => {
           {m.rail.length > 0 && rail(ui, m.rail.map(g => ({ label: s(`stage${g.key}` as Key), state: g.state })))}
         </Box>
         {body}
-      </Box>
-    )
-  })
-
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const sn = await read($, snap)
-    if (e.props.hasSurvey || sn === null || sn.run === null || !sn.live) return next(e)
-    const lang$ = await read($, lang)
-    const s = (key: Key, vars?: Record<string, string | number>) => fmt(STRINGS[lang$][key], vars)
-    const { Box, Button, Text } = $.ui.resolve(e)
-    const m = model(sn.run)
-    const f = focus(s, m)
-    const filled = cells(m.done, m.total, BAND_BAR)
-    return (
-      <Box flexDirection="column">
-        <Box>
-          <Box flexShrink={1}><Text dimColor wrap="truncate-end">{`graph · ${titleOf(sn.run)}`}</Text></Box>
-          <Box flexShrink={1}><Text dimColor wrap="truncate-end">{` — ${f.head}: ${f.text}`}</Text></Box>
-          <Box flexShrink={0} marginLeft={1}>
-            <Text color="success">{'━'.repeat(filled)}</Text>
-            <Text color="inactive">{'─'.repeat(BAND_BAR - filled)}</Text>
-            <Text dimColor>{` ${s('gates', { done: m.done, total: m.total })}`}</Text>
-          </Box>
-          <Box flexShrink={0} marginLeft={1}>
-            <Button key="flow" label={s('flowButton')} onPress={() => $.ui.open({ id: PANE, title: 'Graph' })} />
-          </Box>
-        </Box>
-        {await next(e)}
       </Box>
     )
   })

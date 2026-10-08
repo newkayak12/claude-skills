@@ -79,3 +79,26 @@ test('each new unlock stores its date and raises one toast; none the second time
   expect(toasts[0]).toMatch(/^🏆 /)
   expect(Object.keys(store.get('trophy.unlocked') as object).sort()).toEqual(['first-blood', 'first-think'])
 })
+
+test('an unlock draws a celebration card above the prompt that the timer clears', async ($, on) => {
+  memoryStore(on)
+  const clock = sessionAt(on)
+  bottom(on)
+  on('ui.toast', () => ({ value: undefined }))
+  on('ui.render', () => ({ type: 'Box', props: {}, children: [] }) as any)
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({
+    plugin: 'trophy',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: 80 } as any,
+  })
+  expect(await ui.find({ text: /업적 해금/ })).toBeUndefined()
+
+  await $.skill.prompt({ skill: 'think:grill', text: 'x' })
+
+  expect(await ui.find({ text: /업적 해금/ })).toBeDefined()
+  expect(await ui.find({ text: /First Blood/ })).toBeDefined()
+  await clock.advance(8001)
+  expect(await ui.find({ text: /업적 해금/ })).toBeUndefined()
+})
