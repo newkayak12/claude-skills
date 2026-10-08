@@ -90,6 +90,7 @@ view (most hit, most missed, never fired).
 
 ## Status log
 
+- 0.6.0 — The consent question waits for your first achievement: starting Claude Code with nothing unlocked shows no box. An earlier answer no longer flashes the question for a moment at start. What is sent and the consent version are unchanged.
 - 0.5.0 — English by default, Korean when Claude Code's `language` is Korean: every pane, band and command reply, and all 80 achievements (the Korean text kept as it was). The consent question now stands out: a double-framed box with what is sent and what is never sent on their own lines and three buttons drawn alike; what is sent, when it is asked and the consent version are unchanged. Real Claude Code captures EN/KO.
 
 - 0.4.0 — the diag plugin is folded in and removed: trophy records failures itself (**실패** tab, `✘` row,

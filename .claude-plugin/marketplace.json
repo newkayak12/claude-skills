@@ -178,7 +178,7 @@
     {
       "name": "trophy",
       "description": "Steam-style achievements for using this marketplace's skills: a toast on unlock, an /achievements pane, trophy:list in conversation, and a view of which skills your prompts should have triggered, and a local record of skill failures. Opt-in anonymous daily counts and error codes (off by default).",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "author": {
         "name": "newkayak12"
       },
