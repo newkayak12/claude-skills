@@ -33,5 +33,15 @@ export const memoryState = (on: On) => {
   return cells
 }
 
+// The text of every Text in a drawn tree, in order.
+export const texts = (node: any): string[] =>
+  Array.isArray(node)
+    ? node.flatMap(texts)
+    : node?.type === 'Text'
+      ? [(node.children ?? []).join('')]
+      : node?.children
+        ? texts(node.children)
+        : []
+
 // Clock for the hooks that read $.clock.now().
 export const clockAt = (on: On, now = Date.parse('2026-10-08T09:00:00Z')) => mock.clock(on, { now })
