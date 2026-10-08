@@ -442,6 +442,19 @@ test('reap: kills the claude binary run with -p below this engine, never a wrapp
   expect(r.text).toMatch(/killed: claude -p 4301 4310/)
 })
 
+test('reap: an installed build (.../claude/versions/<v>) counts as this session\'s engine', async ($, on) => {
+  const seen = world(on, { answer: 'Reap', proc: procFor(PS.replace('4242     1 /usr/local/bin/claude', '4242     1 /Users/u/.local/share/claude/versions/2.1.292')) })
+  const r = await reap($)
+  expect(kills(seen)).toEqual([['kill', '-TERM', '4301', '4310']])
+  expect(r.text ?? '').not.toMatch(/engine pid unknown/)
+})
+
+test('reap: the status line is refreshed after reaping', async ($, on) => {
+  const seen = world(on, { agents: AGENTS.slice(0, 1), answer: 'Reap', proc: procFor(NO_CLAUDE_P) })
+  await reap($)
+  expect(seen.statuses).toEqual(['⧗ 1 agent(s) running · /reap'])
+})
+
 test('reap: engine pid 1 (reparented helper) kills nothing and says so', async ($, on) => {
   const seen = world(on, { answer: 'Reap', agents: AGENTS.slice(0, 1), proc: argv => (argv[0] === 'sh' ? ok('1\n') : argv[0] === 'ps' ? ok(PS) : ok('')) })
   const r = await reap($)
