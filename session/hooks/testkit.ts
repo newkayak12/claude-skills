@@ -186,6 +186,7 @@ export const passes = (id: string, call: Call, w: GuardWorld = {}) =>
 export const memoWorld = (on: On, w: GuardWorld = {}) => {
   const seen = guardWorld(on, w)
   on('prompt.submit', (_$, e) => ({ text: e.text, context: e.context }))
+  on('classic.SessionStart', () => ({}))
   return seen
 }
 
