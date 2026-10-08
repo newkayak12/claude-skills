@@ -16,15 +16,22 @@ type Files = Record<string, string | Error>
 const key = (files: Files, path: string) => Object.keys(files).find(k => path.endsWith(`/${k}`))
 
 // The engine beneath: surfaces, fs.exists/read over a file map, status, command.register, $.state, ui.open.
-// dirs: a directory path suffix to its entries ([name, kind, mtimeMs]); no git, so the cwd is the one tree
+// dirs: a directory path suffix to its entries ([name, kind, mtimeMs]); top: git's top-level for the
+// cwd (none: not a repo, so the cwd is the one tree)
 type Dirs = Record<string, [string, 'dir' | 'file', number?][]>
-function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], files: Files, dirs: Dirs = {}) {
-  const seen = { statuses: [] as (string | undefined)[], commands: [] as string[], opened: [] as string[], reads: 0 }
+function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], files: Files, dirs: Dirs = {}, top?: string) {
+  const seen = { statuses: [] as (string | undefined)[], commands: [] as string[], opened: [] as string[], reads: 0, argv: [] as string[][], listed: [] as string[] }
   const store = new Map<string, unknown>()
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: '/proj' }) as never)
-  on('process.run', () => ({ value: { exitCode: 128, stdout: '', stderr: 'not a repo' } }) as never)
+  on('process.run', (_$, e) => {
+    seen.argv.push(e.argv)
+    return { value: top !== undefined && e.argv.includes('--show-toplevel')
+      ? { exitCode: 0, stdout: `${top}\n`, stderr: '' }
+      : { exitCode: 128, stdout: '', stderr: 'not a repo' } } as never
+  })
   on('fs.list', (_$, e) => {
+    seen.listed.push(e.path)
     const k = Object.keys(dirs).find(d => e.path.endsWith(`/${d}`))
     if (k === undefined) throw new Error('ENOENT')
     return { value: dirs[k].map(([name, kind, mtimeMs]) => ({ name, kind, size: 0, mtimeMs: mtimeMs ?? NOW, isLink: false })) } as never
@@ -114,6 +121,15 @@ test('open runs per stage: fallback and graph; stale, reported and finished runs
 test('band bar: 1 of 4 passed fills 3 of 10 cells', () => {
   expect(barCells({ slug: 'x', stage: 'implement', passed: 1, failed: 0, total: 4 })).toEqual({ ok: 3, bad: 0, rest: 7 })
   expect(barCells({ slug: 'x', stage: 'implement', passed: 1, failed: 1, total: 4 })).toEqual({ ok: 3, bad: 3, rest: 4 })
+})
+
+test("in a repo: only this worktree's runs, never other worktrees", async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const seen = world(on, ['terminal'], { ...runFiles }, { '.harness-run': [['a', 'dir']], '.harness-run/a': [['manifest.json', 'file']] }, '/wt/mine')
+  await start($)
+  expect(lastStatus(seen)).toBe('Plan(1)')
+  expect(seen.argv.some(a => a.includes('worktree'))).toBe(false)
+  expect(seen.listed.includes('/wt/mine/.harness-run')).toBe(true)
 })
 
 test('graph runs alone', async ($, on) => {

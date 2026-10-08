@@ -256,7 +256,7 @@ harness ships a small mod: a status line and a pipeline band above the prompt wi
 
 **Features**
 
-- **Status line**: open runs per stage across every worktree, fallback runs first, then graph runs — `Plan(6) / Implement(11) · graph Implement(3)`. A run untouched for 12 h is left out; with nothing open the line is empty. Gate decisions are not shown here; open `/harness-gate`.
+- **Status line**: open runs per stage in this worktree (other worktrees belong to other sessions), fallback runs first, then graph runs — `Plan(6) / Implement(11) · graph Implement(3)`. A run untouched for 12 h is left out; with nothing open the line is empty. Gate decisions are not shown here; open `/harness-gate`.
 - **Band** above the prompt: one pipeline row per kind with open runs (`harness`, then `graph`), `Plan ━ Setgoal ━ Critique ━ Implement ━ Test ━ Gate ━ Report` (Test for harness only). A stage with open runs is a bold chip with its count (`Implement 11`), empty stages are dim; labels shorten to fit 80 columns. Hover a chip for a card listing its runs: slug, a ▰▱ passed/total bar and `N failed`. Hidden when nothing is open.
 - **`/harness-gate`** opens the pane on the Gate tab. The tabs are Run, Units and Gate (keys `1`-`3`; the selected one is bright with a dot).
   - **Run** draws the six stages as a rail (`● Plan ━━ ● SetGoal ━━ ● Critique ━━ ◉ Implement/Test ┄┄ ○ Gate ┄┄ ○ Report`: solid up to where the run is, dotted after), what it is doing now, one line per subgoal and a progress bar.
@@ -268,6 +268,7 @@ harness ships a small mod: a status line and a pipeline band above the prompt wi
 Known limitations: the status reads the gate config relative to the session's working directory. A session that started with no UI surface (headless or SDK-hosted) keeps the mod off even if a client attaches later; start a new session to get it (a reload of an unchanged mod does not re-fire session.start).
 
 ## Status
+- v1.26.1 — Mod: the band and status line count only this worktree's runs (other worktrees belong to other sessions)
 - v1.26.0 — Mod: the `/harness-gate` pane becomes a run view in the teams 0.46.0 style: tabs Run / Units / Gate (keys `1`-`3`), a six-stage rail, per-unit state, a goal-gate match bar and what runs now; `/harness-gate` opens on Gate (gate info unchanged, plus a line for an unreadable gate config). The 1.25.0 status line and pipeline band are kept. English by default, Korean with Claude Code's `language`. Mod tests 38; real Claude Code captures EN/KO
 - v1.25.1 — Mod: the band hover card opens in the flow under the stage rows (an absolute card above the band was clipped; checked live); graph runs are named by their request
 - v1.25.0 — Mod: status line counts open runs per stage (fallback + graph, every worktree: `Plan(6) / Implement(11) · graph Implement(3)`); pipeline band above the prompt with stage chips and a hover card of per-run progress; Ink-style `/harness-gate` pane. Gate decisions now live only in the pane
