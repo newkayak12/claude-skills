@@ -38,6 +38,8 @@ const tab = atom({ plugin: 'trophy', key: 'tab' } as const, 'trophies' as 'troph
 const consent = atom({ plugin: 'trophy', key: 'consent' } as const, 'unasked' as 'unasked' | 'yes' | 'no')
 const celebrate = atom({ plugin: 'trophy', key: 'celebrate' } as const, null as { ids: string[]; until: number } | null)
 const consentVersion = atom({ plugin: 'trophy', key: 'consentVersion' } as const, 0)
+// The consent question waits for the first unlock: nothing is asked at a bare start.
+const anyUnlocked = atom({ plugin: 'trophy', key: 'anyUnlocked' } as const, false)
 // The last `plugin:skill` of this marketplace used or typed; failures recorded since the pane last showed them.
 const lastSkill = atom({ plugin: 'trophy', key: 'lastSkill' } as const, '')
 const unseen = atom({ plugin: 'trophy', key: 'unseen' } as const, 0)
@@ -275,6 +277,7 @@ async function note($: EngineInterface, name: string) {
   const fresh = evaluate(recorded, achievements, unlocked)
   if (fresh.length > 0) {
     await $.store.set('trophy.unlocked', { ...unlocked, ...Object.fromEntries(fresh.map(id => [id, dayOf(now)])) })
+    await update($, anyUnlocked, () => true)
     const l = await read($, lang)
     for (const a of achievements.filter(a => fresh.includes(a.id)).map(a => localize(a, l))) {
       $.ui.toast(`🏆 ${a.title} — ${a.description}`)
@@ -300,6 +303,8 @@ export const register: Register = on => {
     const saved = effectiveConsent((await $.store.get('trophy.consent')) as Consent | undefined, savedVersion)
     await update($, consent, () => saved)
     await update($, consentVersion, () => savedVersion ?? 0)
+    const unlocked = ((await $.store.get('trophy.unlocked')) ?? {}) as Record<string, string>
+    await update($, anyUnlocked, () => Object.keys(unlocked).length > 0)
     await update($, active, () => true)
     await update($, lastSkill, () => '')
     await update($, unseen, () => 0)
@@ -595,7 +600,7 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const lang$ = await read($, lang)
     const t = (key: keyof typeof en) => STRINGS[lang$][key]
-    const asking = (await read($, consent)) === 'unasked'
+    const asking = (await read($, consent)) === 'unasked' && (await read($, anyUnlocked))
     const card = await read($, celebrate)
     const shown = card && card.until > (await $.clock.now()) ? achievements.filter(a => card.ids.includes(a.id)).map(a => localize(a, lang$)) : []
     const failed = await read($, unseen)
