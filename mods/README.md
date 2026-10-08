@@ -40,6 +40,7 @@ The `claude -p` count is per session: only processes started below this session'
 
 ## Status and known limits
 
+- Beta (`0.1.0-beta.5`): the bump ask now covers the teams patch tool (`teams/skills/patch/patch.mjs`).
 - Beta (`0.1.0-beta.4`): run band and its scanner removed (harness draws it); notices carry an icon (◆ ⚠ ↓ ⧗).
 - The skill toast needs the marketplace file to be readable from the plugin location; if not, no toast is shown.
 - The Agent guard also flags subagent types whose definition already pins a model, because it only sees the call's own `model` argument.
