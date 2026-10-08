@@ -303,10 +303,32 @@ explanation of every key is in [docs/configuration.md](docs/configuration.md#con
 
 ## Wiki memory (teams-wiki)
 
-`teams-wiki` is a third MCP server in this plugin: the place where subagents (claude node
+`teams-wiki` is a third MCP server in this plugin: the place where subagents (claude and codex node
 workers and drivers) communicate through documents in the main project's `.teams_wiki`, and project memory that
 outlives a session. The server works without the task engine; the engine uses it as described under
 "In the task engine".
+
+```mermaid
+flowchart LR
+  subgraph PRJ["Main project (task.cwd)"]
+    W[(".teams_wiki/&lt;space&gt;/&lt;slug&gt;.md")]
+  end
+  subgraph WORK["Workers: investigate, plan, implement, draft ... (claude and codex)"]
+    N1["node in package worktree P1"]
+    N2["node in package worktree P2"]
+    N3["node of a later task"]
+  end
+  N1 -->|"wiki_write: findings, decisions, contracts, pitfalls"| W
+  N2 -->|"wiki_search / wiki_get when it needs context"| W
+  W -->|"read on their own"| N3
+  subgraph JUDGE["Judging: review, gate, accept, critique, test, audit, qa execute, manager judges"]
+    G["no wiki tools, prompt: the wiki is not evidence"]
+  end
+  JUDGE -.-x W
+  W -->|"pages modified while the task ran"| RP["Report: Wiki 변경"]
+```
+
+**What goes in.** Only what someone will need later and cannot get from the code or git: a fact with its source, a decision with its reason, an interface or contract another package relies on, a pitfall. Pages link with `[[space/slug]]`, so one page leads to the next. Progress logs, task status and verdicts do not go in; the report and the ledger already hold those.
 
 Pages are markdown under `.teams_wiki/<space>/<slug>.md`, git-tracked and hand-editable; that is the
 source. `.teams_wiki/.index.sqlite` (FTS5 search plus the `[[link]]` graph) is disposable: delete it

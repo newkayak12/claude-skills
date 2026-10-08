@@ -257,3 +257,26 @@ Critique: P2 — 엔진 쓰기·판정 경로가 더 줄어 판정자와 wiki의
 실측(0.50.0, 2026-10-08, ledger ws에 EPIC 2 integration을 merge한 뒤 EPIC 3, $17.02, partial): 엔진이 아무것도 넣지 않았는데 worker가
 스스로 `wiki_search` 1회, `wiki_get` 3회(`plan/f1-total-by-merchant`, `plan/f2-invalid-input-prd-section`, `log/2026-10-08-E-7d818242`)로
 이전 기록을 읽었고, 새 `plan/f2-invalid-input-prd-section`을 썼다. report "Wiki 변경"에 그 페이지가 나왔다. codex 실측은 보류(사용자).
+
+## 9. 현재 구조 (0.50.0)
+
+```mermaid
+flowchart TB
+  subgraph ENG["teams 엔진"]
+    TM["taskmanager: spawnChildDriver / daemon spawn"] -->|"env TEAMS_WIKI_ROOT=task.cwd"| DRV["driver (claude -p --plugin-dir teams)"]
+    DM["daemon judge spawn"] -->|"env TEAMS_WIKI_OFF=1"| JG["manager judge: wiki 도구 0개"]
+    DRV --> BR["broker"]
+    BR -->|"비판정 stage"| AD["claude-exec-adapter / codex-exec-adapter: teams-wiki MCP 하나"]
+    BR -->|"판정 stage: --no-wiki"| AJ["adapter: 빈 MCP 설정"]
+  end
+  AD -->|"wiki_search / wiki_get / wiki_write"| WS["wiki.mjs (root = TEAMS_WIKI_ROOT)"]
+  DRV -->|"self node: 같은 도구 (plugin MCP)"| WS
+  WS --> MD[("메인 프로젝트 .teams_wiki/*.md (원본)")]
+  WS -.-> IX[(".index.sqlite (fts5) 또는 scan")]
+  MD -->|"task 기간에 수정된 페이지"| RP["docs.mjs report: Wiki 변경"]
+  BR -.->|".teams_wiki/는 changed_files·verifyRestore 제외"| MD
+```
+
+- 엔진은 wiki에 쓰지 않고 context에 넣지도 않는다. 쓰기는 worker가 일하다 기억할 것만(`wiki_write`, 승인 없음).
+- 판정 stage와 judge는 wiki를 보지 않는다(adapter `--no-wiki`, judge `TEAMS_WIKI_OFF`, self 판정 node는 프롬프트 문구).
+- propose/accept/reject는 사람이 검토 단계를 원할 때만.
