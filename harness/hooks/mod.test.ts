@@ -2,6 +2,8 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
+import { barCells } from './mod'
+
 const CONFIG = '.claude/harness-gate.json'
 const DECISION = '.claude/.harness-last-decision.json'
 const NOW = 1_000_000_000
@@ -109,6 +111,11 @@ test('open runs per stage: fallback and graph; stale, reported and finished runs
   expect(lastStatus(seen)).toBe('Plan(1) / Implement(1) / Gate(1) · graph Implement(1)')
 })
 
+test('band bar: 1 of 4 passed fills 3 of 10 cells', () => {
+  expect(barCells({ slug: 'x', stage: 'implement', passed: 1, failed: 0, total: 4 })).toEqual({ ok: 3, bad: 0, rest: 7 })
+  expect(barCells({ slug: 'x', stage: 'implement', passed: 1, failed: 1, total: 4 })).toEqual({ ok: 3, bad: 3, rest: 4 })
+})
+
 test('graph runs alone', async ($, on) => {
   mock.clock(on, { now: NOW })
   const seen = world(on, ['terminal'], { ...runFiles }, { '.harness-run': [['broker', 'dir']], '.harness-run/broker/runs': [['g1.json', 'file']] })
@@ -158,7 +165,7 @@ test('read error: no throw, the gate state stays', async ($, on) => {
   files[CONFIG] = '{not json'
   await clock.advance(5000)
   const ui = await pane($, 'terminal')
-  expect(await ui.find({ type: 'Text', text: '✘ deny' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Last decision: deny (Write a/x.md, 0 min ago)' })).toBeDefined()
 })
 
 const pane = ($: Engine, surface: 'terminal' | 'desktop') =>
@@ -188,7 +195,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     world(on, [surface], { [CONFIG]: cfg, [DECISION]: deny(NOW - 120_000) })
     await start($)
     const ui = await pane($, surface)
-    expect(await ui.find({ type: 'Text', text: '✘ deny' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Last decision: deny (Write a/x.md, 2 min ago)' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Reason: gated' })).toBeDefined()
   })
 }
@@ -201,6 +208,168 @@ test('/harness-gate answers and opens the pane; session start alone opens nothin
   const r = await $.command.run({ command: 'harness-gate', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
   expect(seen.opened).toEqual(['harness-gate'])
   expect(JSON.stringify(r)).toContain('pane opened')
+})
+
+// ---- run view: Run / Units / Gate tabs and the band ----
+const RUN = '.harness-run/demo'
+const specJson = JSON.stringify({ goal: 'Build demo', subgoals: [{ id: 'S1', title: 'first' }, { id: 'S2', title: 'second' }, { id: 'S3', title: 'third' }] })
+const manifestJson = JSON.stringify({ request: 'Build demo\nmore lines', subgoals: [{ id: 'S1', order: 1 }, { id: 'S2', order: 2 }, { id: 'S3', order: 3 }] })
+// S1 passed, S2 implemented and tested (not gated yet), S3 untouched
+const demoRun = (over: Files = {}): Files => ({
+  [`${RUN}/manifest.json`]: manifestJson,
+  [`${RUN}/01-plan.md`]: '# plan',
+  [`${RUN}/02-goal-spec.json`]: specJson,
+  [`${RUN}/02-critique.json`]: JSON.stringify({ sound: true, problems: [] }),
+  [`${RUN}/subgoals/S1/impl-1.md`]: 'x',
+  [`${RUN}/subgoals/S1/result.json`]: JSON.stringify({ id: 'S1', passed: true, attempts: 1 }),
+  [`${RUN}/subgoals/S2/impl-1.md`]: 'x',
+  [`${RUN}/subgoals/S2/test-1.json`]: JSON.stringify({ verified: true }),
+  ...over,
+})
+
+// the directory table of `world` from the file map; `ages` is how long ago a file changed (ms)
+function dirsOf(files: Files, ages: Record<string, number> = {}): Dirs {
+  const dirs: Dirs = {}
+  for (const k of Object.keys(files)) {
+    if (!k.startsWith('.harness-run/')) continue
+    const parts = k.split('/')
+    for (let i = 1; i < parts.length; i++) {
+      const dir = parts.slice(0, i).join('/')
+      const name = parts[i]!
+      const entries = (dirs[dir] ??= [])
+      if (entries.some(e => e[0] === name)) continue
+      entries.push([name, i < parts.length - 1 ? 'dir' : 'file', i < parts.length - 1 ? 0 : NOW - (ages[k] ?? 60_000)])
+    }
+  }
+  return dirs
+}
+
+type Ui = Awaited<ReturnType<typeof pane>>
+const shown = async (ui: Ui) => JSON.stringify(await ui.drawn())
+const buttons = async (ui: Ui) => (await ui.findAll({ type: 'Button' })).map(b => b.props as { label: string; hotkey?: string })
+const oldAges = (files: Files, ms: number) => Object.fromEntries(Object.keys(files).map(k => [k, ms]))
+
+async function seeded($: Engine, on: On, files: Files, opts: { language?: string; ages?: Record<string, number>; surfaces?: readonly ('terminal' | 'desktop')[] } = {}) {
+  mock.clock(on, { now: NOW })
+  const seen = world(on, opts.surfaces ?? ['terminal'], files, dirsOf(files, opts.ages))
+  on('settings.read', () => ({ value: opts.language === undefined ? {} : { language: opts.language } }) as never)
+  await start($)
+  return seen
+}
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`${surface}: Run tab: tabs with hotkeys, rail, Now, a line per subgoal and the 1/3 bar`, async ($, on) => {
+    await seeded($, on, demoRun(), { surfaces: [surface] })
+    const ui = await pane($, surface)
+    expect(await buttons(ui)).toMatchObject([
+      { label: '● Run', hotkey: '1' },
+      { label: 'Units', hotkey: '2' },
+      { label: 'Gate', hotkey: '3' },
+    ])
+    for (const word of ['● Plan', '● SetGoal', '● Critique', '◉ Implement/Test', '○ Gate', '○ Report']) {
+      expect(await ui.find({ type: 'Text', text: word })).toBeDefined()
+    }
+    expect(await ui.find({ type: 'Text', text: /Now.*Gating S2/ })).toBeDefined()
+    const text = await shown(ui)
+    expect(text).toContain('Build demo')
+    for (const mark of ['"✔"', '"●"', '"○"', ' S1 first', ' S2 second', ' S3 third']) expect(text).toContain(mark)
+    expect(text.indexOf(' S1 first')).toBeLessThan(text.indexOf(' S2 second'))
+    expect(text.indexOf(' S2 second')).toBeLessThan(text.indexOf(' S3 third'))
+    expect(await ui.find({ type: 'Text', text: /1\/3/ })).toBeDefined()
+  })
+}
+
+test('goal gate result shows the percentage bar', async ($, on) => {
+  await seeded($, on, demoRun({ [`${RUN}/04-goal-gate.json`]: JSON.stringify({ match_pct: 92, pass: true }) }))
+  expect(await (await pane($, 'terminal')).find({ type: 'Text', text: /92%/ })).toBeDefined()
+})
+
+test('a failed subgoal sits under To do on Units with its gate reason', async ($, on) => {
+  await seeded($, on, demoRun({
+    [`${RUN}/subgoals/S2/gate-1.json`]: JSON.stringify({ pass: false, reason: 'tests red' }),
+    [`${RUN}/subgoals/S2/result.json`]: JSON.stringify({ id: 'S2', passed: false, attempts: 1 }),
+  }))
+  const ui = await pane($, 'terminal')
+  await ui.press({ key: 'units' })
+  await ui.redraw() // the stubbed $.state does not notify readers
+  const text = await shown(ui)
+  for (const word of ['To do 2', 'Doing 0', 'Done 1', '✘', 'tests red']) expect(text).toContain(word)
+  expect(text.indexOf('To do')).toBeLessThan(text.indexOf('tests red'))
+})
+
+test('hotkey 3 (the Gate tab) shows the gate texts', async ($, on) => {
+  await seeded($, on, demoRun({ [CONFIG]: cfg }))
+  const ui = await pane($, 'terminal')
+  await ui.press({ key: 'gate' })
+  await ui.redraw()
+  expect(await ui.find({ type: 'Text', text: 'Gated patterns (3): ^a/, ^b/, ^c/' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Engagement window: 3 h' })).toBeDefined()
+})
+
+test('no run folder: the Gate tab by default, the no-run sentence on Run', async ($, on) => {
+  await seeded($, on, { [CONFIG]: cfg })
+  const ui = await pane($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: 'Gated patterns (3): ^a/, ^b/, ^c/' })).toBeDefined()
+  await ui.press({ key: 'run' })
+  await ui.redraw()
+  expect(await ui.find({ type: 'Text', text: 'No harness run in this folder.' })).toBeDefined()
+})
+
+test("graph's broker dir is not a harness run", async ($, on) => {
+  await seeded($, on, { '.harness-run/broker/runs/x.json': '{}', [CONFIG]: cfg })
+  const ui = await pane($, 'terminal')
+  await ui.press({ key: 'run' })
+  await ui.redraw()
+  expect(await ui.find({ type: 'Text', text: 'No harness run in this folder.' })).toBeDefined()
+})
+
+test('subgoal files count for liveness: old top-level files, a 5 min old test file', async ($, on) => {
+  const ages = oldAges(demoRun(), 3 * 3600_000)
+  ages[`${RUN}/subgoals/S2/test-1.json`] = 5 * 60_000
+  await seeded($, on, demoRun(), { ages })
+  expect(await shown(await pane($, 'terminal'))).toContain('running')
+})
+
+test('an old unfinished run does not outrank a run finished 10 min ago', async ($, on) => {
+  const old = '.harness-run/old'
+  const files = demoRun({
+    [`${old}/manifest.json`]: JSON.stringify({ request: 'Old work', subgoals: [{ id: 'S1', order: 1 }] }),
+    [`${old}/01-plan.md`]: '# plan',
+    [`${RUN}/05-report.md`]: '# report',
+  })
+  const ages = Object.fromEntries(Object.keys(files).map(k => [k, k.startsWith(old) ? 3 * 24 * 3600_000 : 10 * 60_000]))
+  await seeded($, on, files, { ages })
+  const text = await shown(await pane($, 'terminal'))
+  expect(text).toContain('Build demo')
+  expect(text).not.toContain('Old work')
+})
+
+test('korean: tab and rail labels come from the ko table, no English tab label', async ($, on) => {
+  await seeded($, on, demoRun({ [CONFIG]: cfg }), { language: 'Korean' })
+  const ui = await pane($, 'terminal')
+  expect((await buttons(ui)).map(b => b.label)).toEqual(['● 실행', '단위', '게이트'])
+  const text = await shown(ui)
+  for (const word of ['계획', '비평', '구현/테스트']) expect(text).toContain(word)
+  for (const word of ['Plan', 'SetGoal', 'Critique', 'Units']) expect(text).not.toContain(word)
+})
+
+test('/harness-gate opens the pane on the Gate tab even when a run exists', async ($, on) => {
+  const seen = await seeded($, on, demoRun({ [CONFIG]: cfg }))
+  await $.command.run({ command: 'harness-gate', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
+  expect(seen.opened).toEqual(['harness-gate'])
+  const ui = await pane($, 'terminal')
+  expect(await buttons(ui)).toMatchObject([{ label: 'Run' }, { label: 'Units' }, { label: '● Gate' }])
+  expect(await ui.find({ type: 'Text', text: 'Gated patterns (3): ^a/, ^b/, ^c/' })).toBeDefined()
+})
+
+test('an invalid gate config says it could not be read, not that it is missing; the reply is just the opened text', async ($, on) => {
+  const seen = await seeded($, on, { [CONFIG]: '{not json' })
+  const ui = await pane($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: 'Gate config .claude/harness-gate.json could not be read (invalid JSON).' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /is not in this project/ })).toBeUndefined()
+  const r = await $.command.run({ command: 'harness-gate', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
+  expect(JSON.stringify(r)).toContain('"pane opened"')
+  expect(JSON.stringify(r)).not.toContain('harness-gate:')
 })
 
 const band = ($: Engine, on: On, hasSurvey = false) => {
