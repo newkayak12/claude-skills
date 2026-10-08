@@ -327,8 +327,8 @@ const CELLS = 10
 // passed ▰ in success, failed ▰ in error, the rest ▱ dim; at least one cell for any run judged
 export function barCells(r: OpenRun): { ok: number; bad: number; rest: number } {
   if (r.total === 0) return { ok: 0, bad: 0, rest: CELLS }
-  const ok = Math.min(CELLS, Math.round((r.passed / r.total) * BAR))
-  const bad = Math.min(CELLS - ok, Math.round((r.failed / r.total) * BAR))
+  const ok = Math.min(CELLS, Math.round((r.passed / r.total) * CELLS))
+  const bad = Math.min(CELLS - ok, Math.round((r.failed / r.total) * CELLS))
   return { ok, bad, rest: CELLS - ok - bad }
 }
 
@@ -345,26 +345,18 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     if ((await $.session.surfaces()).length === 0) return next(e)
 
-    async function tickRun() {
-      try {
-        const found = await scanRun($)
-        await update($, run, () => found)
-      } catch {
-        // an unreadable run dir leaves the last run as it was
-      }
-    }
-    async function tickStatus() {
+    async function tick() {
       try {
         // the status line: open runs per stage; the gate's decisions live in /harness-gate
         const open = await countStages($, await $.session.cwd(), await $.clock.now())
         $.ui.status(stageStatus(open.counts))
         await update($, runs, () => open.runs)
-      } catch {
-        // a read error leaves the status as it was
-      }
-    }
-    async function tickGate() {
-      try {
+        try {
+          const found = await scanRun($)
+          await update($, run, () => found)
+        } catch {
+          // an unreadable run dir leaves the last run as it was
+        }
         if (!(await $.fs.exists(CONFIG))) {
           await update($, armed, () => false)
           await update($, last, () => null)
@@ -391,11 +383,6 @@ export const register: Register = on => {
         // a read error leaves the gate state as it was
       }
     }
-    const tickAll = async () => {
-      await tickStatus()
-      await tickRun()
-      await tickGate()
-    }
 
     // Claude Code's own language setting, read once per session
     try {
@@ -405,8 +392,8 @@ export const register: Register = on => {
       // unreadable settings: English
     }
     await $.command.register({ name: 'harness-gate', description: STRINGS[await read($, lang)].cmdDesc })
-    await tickAll()
-    $.clock.every(TICK_MS, tickAll)
+    await tick()
+    $.clock.every(TICK_MS, tick)
 
     return next(e)
   })
