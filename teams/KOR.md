@@ -210,7 +210,8 @@ stateDiagram-v2
 
 **설치.** `teams@newkayak12-claude-skills`를 설치하면 세 MCP 서버가 등록됩니다(`tm_*`/`team_*`/`wiki_*`
 도구가 안 보이면 Claude Code를 다시 불러오세요). `teams:install`은 선택입니다. 프로젝트 기본값을
-`.claude/team.json`에 고정하고, 디스패치 게이트와 `.claude/conventions/`를 추가합니다. 설치하지
+`.claude/team.json`에 고정하고, 디스패치 게이트와 `.claude/conventions/`를 추가합니다(참고할 프로젝트가 있으면
+`develop:like-my-code`로 채울 수 있음). 설치하지
 않으면 내장 기본값으로 돕니다. 자세한 내용:
 [docs/configuration.KOR.md#설치](docs/configuration.KOR.md#설치).
 
