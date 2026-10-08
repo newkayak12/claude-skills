@@ -18,6 +18,8 @@ type World = {
   proc?: (argv: readonly string[]) => Run | Promise<Run>
   marketplace?: string | Error
   answer?: string | Error // what the person answers a $.ui.ask
+  agents?: readonly { id: string; description: string; status: string; parentId?: string }[]
+  stop?: (taskId: string) => unknown // TaskStop's answer for a task id; throw to fail
 }
 
 function world(on: On, w: World = {}) {
@@ -29,6 +31,8 @@ function world(on: On, w: World = {}) {
     asks: [] as string[],
     tools: [] as string[],
     reads: [] as string[],
+    commands: [] as string[],
+    stops: [] as string[],
   }
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
@@ -36,6 +40,11 @@ function world(on: On, w: World = {}) {
   on('session.surfaces', () => ({ value: w.surfaces ?? ['terminal'] }))
   on('session.cwd', () => ({ value: '/proj' }))
   on('session.root', () => ({ value: '/proj' }))
+  on('agent.list', () => ({ value: (w.agents ?? []).map(a => ({ type: 'general-purpose', ...a })) }) as never)
+  on('command.register', (_$, e) => {
+    seen.commands.push(e.name)
+    return { value: { command: e.name } }
+  })
   on('session.repo', () => ({ value: w.remote === undefined ? null : { root: '/repo', remote: w.remote, internal: false, name: 'claude-skills' } }) as never)
   on('state.get', (_$, e) => ({ value: { value: cells.get(e.key), version: 0 } }) as never)
   on('state.set', (_$, e) => {
@@ -67,6 +76,11 @@ function world(on: On, w: World = {}) {
       seen.asks.push(q)
       if (w.answer instanceof Error) throw w.answer
       return { result: { questions: [], answers: { [q]: w.answer ?? 'Run' } }, text: '' } as never
+    }
+    if (e.tool === 'TaskStop') {
+      const id = (e as unknown as { task_id: string }).task_id
+      seen.stops.push(id)
+      return (w.stop ? w.stop(id) : { result: { message: 'stopped', task_id: id, task_type: 'local_agent' }, text: '' }) as never
     }
     return { result: 'done', text: '' } as never
   })
@@ -361,13 +375,13 @@ const procFor = (ps: string) => (argv: readonly string[]) => (argv[0] === 'sh' ?
 test('turn end: 2 descendant claude -p (wrapper shell counted once) + 1 unrelated -> status "2 ..."', async ($, on) => {
   const seen = world(on, { proc: procFor(PS) })
   await $.turn.complete(TURN)
-  expect(seen.statuses).toEqual(['⧗ 2 claude -p child(ren) running'])
+  expect(seen.statuses).toEqual(['⧗ 2 claude -p child(ren) running · /reap'])
 })
 
 test('turn end: only a wrapper shell + its child counts 1', async ($, on) => {
   const seen = world(on, { proc: procFor(PS.split('\n').filter(l => !l.startsWith('4310')).join('\n')) })
   await $.turn.complete(TURN)
-  expect(seen.statuses).toEqual(['⧗ 1 claude -p child(ren) running'])
+  expect(seen.statuses).toEqual(['⧗ 1 claude -p child(ren) running · /reap'])
 })
 
 test('turn end: 0 descendants clears the status (undefined)', async ($, on) => {
@@ -380,4 +394,152 @@ test('turn end: headless sets no status', async ($, on) => {
   const seen = world(on, { surfaces: [], proc: procFor(PS) })
   await $.turn.complete(TURN)
   expect(seen.statuses).toEqual([])
+})
+
+// ---- /reap (feature 9): unfinished agents + claude -p children, after the person confirms ----
+const AGENTS = [
+  { id: 'a1', description: 'build thing', status: 'running' },
+  { id: 'a2', description: 'idle mate', status: 'idle' },
+  { id: 'a3', description: 'waits', status: 'waiting' },
+  { id: 'a4', description: 'queued', status: 'pending' },
+  { id: 'a5', description: 'done', status: 'completed' },
+  { id: 'a6', description: 'broke', status: 'failed' },
+  { id: 'a7', description: 'gone', status: 'killed' },
+]
+const reap = ($: Engine) => $.command.run({ command: 'reap', args: '' } as never) as Promise<{ text?: string }>
+const kills = (seen: { argv: (readonly string[])[] }) => seen.argv.filter(a => a[0] === 'kill')
+const NO_CLAUDE_P = PS.split('\n').filter(l => !/claude -p/.test(l)).join('\n')
+
+test('reap: interactive session.start registers /reap; headless registers nothing', async ($, on) => {
+  const seen = world(on)
+  await start($)
+  expect(seen.commands).toEqual(['reap'])
+})
+
+test('reap: headless session.start registers no command', async ($, on) => {
+  const seen = world(on, { surfaces: [] })
+  await start($)
+  expect(seen.commands).toEqual([])
+})
+
+test('reap: stops only pending/running/waiting/idle agents, in list order, after Reap', async ($, on) => {
+  const seen = world(on, { agents: AGENTS, answer: 'Reap', proc: procFor(NO_CLAUDE_P) })
+  const r = await reap($)
+  expect(seen.stops).toEqual(['a1', 'a2', 'a3', 'a4'])
+  expect(seen.asks).toHaveLength(1)
+  expect(seen.asks[0]).toMatch(/agent: build thing \(running\)/)
+  expect(r.text).toMatch(/stopped: build thing/)
+  expect(r.text).toMatch(/stopped: queued/)
+  expect(r.text ?? '').not.toMatch(/done|broke|gone/)
+  expect(seen.toasts).toEqual(['⧗ reap: 4 done, 0 failed'])
+  expect(kills(seen)).toEqual([])
+})
+
+test('reap: kills the claude binary run with -p below this engine, never a wrapper shell or an unrelated one', async ($, on) => {
+  const seen = world(on, { answer: 'Reap', proc: procFor(PS) })
+  const r = await reap($)
+  expect(kills(seen)).toEqual([['kill', '-TERM', '4301', '4310']])
+  expect(r.text).toMatch(/killed: claude -p 4301 4310/)
+})
+
+test('reap: an installed build (.../claude/versions/<v>) counts as this session\'s engine', async ($, on) => {
+  const seen = world(on, { answer: 'Reap', proc: procFor(PS.replace('4242     1 /usr/local/bin/claude', '4242     1 /Users/u/.local/share/claude/versions/2.1.292')) })
+  const r = await reap($)
+  expect(kills(seen)).toEqual([['kill', '-TERM', '4301', '4310']])
+  expect(r.text ?? '').not.toMatch(/engine pid unknown/)
+})
+
+test('reap: the status line is refreshed after reaping', async ($, on) => {
+  const seen = world(on, { agents: AGENTS.slice(0, 1), answer: 'Reap', proc: procFor(NO_CLAUDE_P) })
+  await reap($)
+  expect(seen.statuses).toEqual(['⧗ 1 agent(s) running · /reap'])
+})
+
+test('reap: engine pid 1 (reparented helper) kills nothing and says so', async ($, on) => {
+  const seen = world(on, { answer: 'Reap', agents: AGENTS.slice(0, 1), proc: argv => (argv[0] === 'sh' ? ok('1\n') : argv[0] === 'ps' ? ok(PS) : ok('')) })
+  const r = await reap($)
+  expect(kills(seen)).toEqual([])
+  expect(seen.stops).toEqual(['a1'])
+  expect(r.text).toMatch(/engine pid unknown/)
+})
+
+test('reap: an engine row that is not claude kills nothing', async ($, on) => {
+  const seen = world(on, { answer: 'Reap', proc: procFor(PS.replace('4242     1 /usr/local/bin/claude', '4242     1 /bin/zsh')) })
+  const r = await reap($)
+  expect(kills(seen)).toEqual([])
+  expect(r.text).toMatch(/engine pid unknown/)
+})
+
+test('reap: Cancel stops and kills nothing', async ($, on) => {
+  const seen = world(on, { agents: AGENTS, answer: 'Cancel', proc: procFor(PS) })
+  const r = await reap($)
+  expect(seen.stops).toEqual([])
+  expect(kills(seen)).toEqual([])
+  expect(r.text).toMatch(/cancelled/)
+})
+
+test('reap: a dismissed ask stops nothing', async ($, on) => {
+  const seen = world(on, { agents: AGENTS, answer: new Error('dismissed'), proc: procFor(PS) })
+  const r = await reap($)
+  expect(seen.stops).toEqual([])
+  expect(kills(seen)).toEqual([])
+  expect(r.text).toMatch(/cancelled/)
+})
+
+test('reap: nothing alive asks nothing and says nothing to reap', async ($, on) => {
+  const seen = world(on, { agents: AGENTS.slice(4), proc: procFor(NO_CLAUDE_P) })
+  const r = await reap($)
+  expect(seen.asks).toEqual([])
+  expect(seen.stops).toEqual([])
+  expect(r.text).toMatch(/nothing to reap/)
+})
+
+test('reap: a child of a stopped parent is not stopped again', async ($, on) => {
+  const agents = [{ id: 'p', description: 'parent', status: 'running' }, { id: 'c', description: 'child', status: 'running', parentId: 'p' }]
+  const seen = world(on, { agents, answer: 'Reap', proc: procFor(NO_CLAUDE_P) })
+  await reap($)
+  expect(seen.stops).toEqual(['p'])
+})
+
+test('reap: one failing TaskStop (throw or deny) is reported; the others still stop', async ($, on) => {
+  const seen = world(on, {
+    agents: AGENTS.slice(0, 3),
+    answer: 'Reap',
+    proc: procFor(NO_CLAUDE_P),
+    stop: id => {
+      if (id === 'a1') throw new Error('no such task')
+      if (id === 'a2') return { deny: 'not allowed' }
+      return { result: { message: 'ok', task_id: id, task_type: 'local_agent' }, text: '' }
+    },
+  })
+  const r = await reap($)
+  expect(seen.stops).toEqual(['a1', 'a2', 'a3'])
+  // the test engine skips a throwing hook and the call rejects with its own message
+  expect(r.text).toMatch(/failed: build thing \(.+\)/)
+  expect(r.text).toMatch(/failed: idle mate \(not allowed\)/)
+  expect(r.text).toMatch(/stopped: waits/)
+  expect(seen.toasts).toEqual(['⧗ reap: 1 done, 2 failed'])
+})
+
+test('reap: headless /reap asks, stops and kills nothing', async ($, on) => {
+  const seen = world(on, { surfaces: [], agents: AGENTS, proc: procFor(PS) })
+  const r = await reap($)
+  expect(seen.asks).toEqual([])
+  expect(seen.stops).toEqual([])
+  expect(kills(seen)).toEqual([])
+  expect(r.text).toMatch(/interactive sessions only/)
+})
+
+test('turn end: 2 alive agents and no claude -p -> "2 agent(s) running · /reap", nothing stopped', async ($, on) => {
+  const seen = world(on, { agents: AGENTS.slice(0, 2).concat(AGENTS.slice(4)), proc: procFor(NO_CLAUDE_P) })
+  await $.turn.complete(TURN)
+  expect(seen.statuses).toEqual(['⧗ 2 agent(s) running · /reap'])
+  expect(seen.stops).toEqual([])
+  expect(kills(seen)).toEqual([])
+})
+
+test('turn end: 1 agent + 2 claude -p -> both counted', async ($, on) => {
+  const seen = world(on, { agents: AGENTS.slice(0, 1), proc: procFor(PS) })
+  await $.turn.complete(TURN)
+  expect(seen.statuses).toEqual(['⧗ 1 agent(s) · 2 claude -p child(ren) running · /reap'])
 })

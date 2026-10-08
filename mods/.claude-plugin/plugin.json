@@ -1,7 +1,7 @@
 {
   "name": "mods",
-  "version": "0.1.0-beta.6",
-  "description": "Beta Claude Code mods for the claude-skills workflow: skill toasts, safety guards for worktrees, running scripts, push/bump and subagent models.",
+  "version": "0.1.0",
+  "description": "Claude Code mods for the claude-skills workflow: skill toasts, safety guards for worktrees, running scripts, push/bump and subagent models, and /reap for orphan agents and claude -p children.",
   "author": { "name": "newkayak12" },
   "category": "productivity",
   "repository": "https://github.com/newkayak12/claude-skills",
