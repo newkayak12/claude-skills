@@ -4,7 +4,7 @@ import type { On } from 'claude-code'
 import { achievements } from '../data/achievements.ts'
 import { evaluate } from './logic.ts'
 import type { Use } from './logic.ts'
-import { memoryStore, sessionAt } from './testkit.ts'
+import { language, memoryStore, sessionAt } from './testkit.ts'
 
 const DAY = 86_400_000
 const T0 = Date.parse('2026-10-01T09:00:00Z')
@@ -83,6 +83,7 @@ test('each new unlock stores its date and raises one toast; none the second time
 test('an unlock draws a celebration card above the prompt that the timer clears', async ($, on) => {
   memoryStore(on)
   const clock = sessionAt(on)
+  language(on, 'Korean')
   bottom(on)
   on('ui.toast', () => ({ value: undefined }))
   on('ui.render', () => ({ type: 'Box', props: {}, children: [] }) as any)
@@ -100,5 +101,26 @@ test('an unlock draws a celebration card above the prompt that the timer clears'
   expect(await ui.find({ text: /업적 해금/ })).toBeDefined()
   expect(await ui.find({ text: /First Blood/ })).toBeDefined()
   await clock.advance(8001)
+  expect(await ui.find({ text: /업적 해금/ })).toBeUndefined()
+})
+
+test('by default the celebration card is in English', async ($, on) => {
+  memoryStore(on)
+  sessionAt(on)
+  bottom(on)
+  on('ui.toast', () => ({ value: undefined }))
+  on('ui.render', () => ({ type: 'Box', props: {}, children: [] }) as any)
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({
+    plugin: 'trophy',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: 80 } as any,
+  })
+
+  await $.skill.prompt({ skill: 'think:grill', text: 'x' })
+
+  expect(await ui.find({ text: /Achievement unlocked/ })).toBeDefined()
+  expect(await ui.find({ text: /First Blood/ })).toBeDefined()
   expect(await ui.find({ text: /업적 해금/ })).toBeUndefined()
 })
