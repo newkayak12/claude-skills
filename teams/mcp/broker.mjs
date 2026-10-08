@@ -519,8 +519,8 @@ function crossCheck(cwd, claimed, isolated, kind, sinceBase = null) {
 //     such cover; a change to its file is attributed to this node like any other.
 // Everything else that changes - including this node's own subgoal's files, the original
 // scope, still covered - is a violation.
-// .teams_wiki/ is the project wiki claude workers write through wiki_write: engine-owned
-// documents, never a node's changed file, never reverted, never blamed on a verifier.
+// .teams_wiki/ is the project wiki claude and codex workers write through wiki_write: shared
+// notes, never a node's changed file, never reverted, never blamed on a verifier.
 const WIKI_ROOT = '.teams_wiki';
 function isWikiPath(rel) {
   return rel === WIKI_ROOT || rel.startsWith(WIKI_ROOT + '/');

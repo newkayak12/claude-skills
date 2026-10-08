@@ -58,7 +58,7 @@ import {
   planningPkgs, livePlanningPkgs, qaPkgs, phaseOfId, planningStories, storyId, storyLabel,
 } from './tickets.mjs';
 import { writeDocs, renderPrd, cardDocuments, questionLine } from './docs.mjs';
-import { mode as wikiMode, resumeContext, writeLog, shippedIds } from './wikibridge.mjs';
+import { mode as wikiMode } from './wikibridge.mjs';
 import { harnessVerdict, taskTag } from './harnessrun.mjs';
 import { logReply, renderStreamLine, renderLedgerLine } from './tasklog.mjs';
 import { validate as validateDiagram, renderToFile as renderDiagram } from './diagram.mjs';
@@ -399,8 +399,6 @@ function createTask(a) {
   const T = team.opts;
   const taskId = randomUUID();
   const priorRetro = priorRetroContext(a.context_from);
-  // Project memory from an earlier EPIC's accepted log page, if the project has a wiki (wikibridge.mjs).
-  const wiki = resumeContext(cwd);
   // A backlog held to a box is only boxable as packages: enforceBudget stops by leaving the
   // lowest-priority PACKAGES undispatched, and a size-S task has none, so an S backlog ran past
   // its budget to the end (code-sprint-S1, 2026-09-26: the ledger backlog measured S, as the
@@ -424,8 +422,7 @@ function createTask(a) {
     initiative: T.initiative,
     request: withSharedAcceptance(requests ? composeBacklogRequest(requests) : String(a.request), a.shared_acceptance),
     requests, // null for the ordinary single-request task - the byte-for-byte compat case.
-    context: [priorRetro.text, wiki.text, a.context || ''].filter(Boolean).join('\n\n'),
-    ...(wiki.ids.length ? { wiki: { mode: wikiMode(), resumed: wiki.ids } } : {}),
+    context: [priorRetro.text, a.context || ''].filter(Boolean).join('\n\n'),
     ...(priorRetro.unresolved ? { context_from_unresolved: priorRetro.unresolved } : {}),
     ...(priorRetro.carryover && priorRetro.carryover.length ? { carryover_candidates: priorRetro.carryover } : {}),
     // Where package and integration worktrees branch from (see priorRetroContext). null = HEAD.
@@ -4555,25 +4552,7 @@ export function finish(task, n, result) {
   saveRun(task);
   record(task, { event: 'node_finish', task_id: task.run_id, node_id: n.node_id, stage: n.stage, stage_ok: n.result.stage_ok === true, state: n.state });
   try { syncTickets(task, ticketsBefore, n.node_id); } catch { /* evidence, not a dependency */ }
-  if (n.stage === 'report' && n.state === 'done') afterCommit(() => writeWikiLog(task.run_id));
   return verdict(task, n);
-}
-
-// The report node's named point: after its commit, outside any task.json transaction, an L task
-// writes its log page of shipped work (wiki_write, no judging) - only when the shipped set differs
-// from the one already written. A wiki failure is recorded on task.wiki.log, never thrown.
-export function writeWikiLog(taskId) {
-  try {
-    const snap = loadRunAt(taskPath(taskId));
-    if (!snap || snap.size === 'S') return;
-    const ids = shippedIds(snap);
-    const had = snap.wiki && snap.wiki.log && snap.wiki.log.shipped;
-    if (had ? ids.join('\n') === had.join('\n') : !ids.length) return;
-    const out = writeLog(snap);
-    if (out.status === 'skipped') return;
-    const log = { ...(out.id ? { id: out.id, path: out.path } : {}), status: out.status, shipped: ids, ...(out.error ? { error: out.error } : {}) };
-    mutateTask(taskId, (fresh) => { (fresh.wiki || (fresh.wiki = { mode: wikiMode() })).log = log; });
-  } catch { /* the log is a record, not a dependency */ }
 }
 
 // ---------- tools ----------

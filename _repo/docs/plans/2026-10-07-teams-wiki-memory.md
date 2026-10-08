@@ -1,6 +1,6 @@
 # teams wiki — 세션을 넘는 장기 메모리 (2026-10-07)
 
-> 상태: 1단계 v0.42.0, 1b·2단계 v0.44.0, 3단계 v0.47.0, 4단계(§7) v0.49.0 출시. codex 실측 스모크는 로그인 후.
+> 상태: 1단계 v0.42.0, 1b·2단계 v0.44.0, 3단계 v0.47.0, 4단계 v0.49.0, 5단계(§8) v0.50.0 출시. codex 실측 스모크는 로그인 후.
 > 근거 문서: `2026-09-28-teams-cards-everywhere.md` (Principles 1–5), `2026-09-17-teams-team.md` §6b
 > ("새 층이 메모리 상태를 만든다" 금지).
 > 선례: `knowledge/scripts/sqlite-knowledge.mjs` (node:sqlite + FTS5 + BLOB 벡터 + JS cosine).
@@ -227,3 +227,29 @@ Done when
 
 Critique: P2 — 판정 stage는 vendor와 무관하게 wiki 없음 유지 ✓. 단순성 — 새 개념 없음, 기존 플래그·함수 재사용 ✓.
 위험 — 실제 codex 스모크(로그인 필요) 전에는 미확인: codex가 `-c` override를 읽는지, wiki 서버가 sandbox 밖에서 쓰는지, 비대화 승인 정책이 `wiki_write`를 허용하는지, MCP 서버가 받는 env. 막히면 codex wiki는 문서화된 한계로 남긴다. 부수 수정: `wiki.mjs` openDb의 WAL 전환을 locked/busy에서 재시도(동시 첫 open 시 `database is locked`).
+
+## 8. 5단계 — wiki를 EPIC에서 떼어 낸다 (2026-10-08)
+
+사용자: "기억할 이력만 쓰는거잖아", "EPIC이랑 종속될 일이 아닌거 같은데... 그냥 일하다 위키쓰는거니까", 제안에 "고".
+bench(0.47.0, EPIC 1→2→3): 엔진 log는 배달 package 목록뿐(report·git에 이미 있음), createTask resume 요약은 요청 한 줄뿐이었다.
+worker가 쓴 `plan/...` 페이지(출처 달린 조사·계약·미정 사항)가 "기억할 이력"에 해당했다.
+
+Plan
+1. **엔진은 wiki에 쓰지 않는다:** `writeWikiLog`(report 노드·`daemon_done` 호출 포함), wikibridge `logPage`/`writeLog`/`shippedIds` 제거.
+2. **엔진은 wiki를 context에 넣지 않는다:** `createTask`의 `resumeContext` 제거 — context는 wiki 이전과 바이트 동일.
+3. **worker 안내:** 필요할 때 `wiki_search`로 찾아 읽고, 일하다 나중에 기억할 것(출처 달린 사실, 이유 달린 결정, 계약, 함정)이 생길 때만 `wiki_write`. EPIC·log 언급 제거.
+   판정 stage 금지 문구는 그대로.
+4. **보이기:** report "Wiki 변경" = 이 task가 도는 동안(created_at ~ report 노드의 finished_at, 없으면 마지막 노드의 finished_at) 수정된
+   `.teams_wiki` 페이지 목록(id, 제목, source). render 시각은 쓰지 않는다(writeDocs는 시계 없음). `task.wiki`는 두지 않고, `tm_status`가 모드를 보여 준다.
+5. 유지: `wiki_write`, `TEAMS_WIKI_ROOT`/`OFF`, adapter·broker·judge 배선, `wiki_resume` 도구(사람·worker가 쓸 수 있음).
+6. README/KOR: "엔진이 log를 쓴다/이어받는다" 문장 제거, 위 용도로.
+
+Done when
+- [x] taskmanager·daemon·wikibridge에 log 쓰기 코드 없음(`writeWikiLog`, `writeLog`, `logPage` grep 0). 엔진이 `wiki_write`를 부르지 않는다.
+- [x] createTask context에 wiki 블록 없음 — wiki 페이지가 있는 프로젝트에서도 context가 이전과 같다(테스트).
+- [x] worker 프롬프트 단락이 새 문구, 판정 stage 문구 유지(테스트).
+- [x] report "Wiki 변경"이 task 기간에 수정된 페이지를 보여 주고, 없으면 "없음"(테스트).
+- [x] README/KOR 갱신. 기존 teams 테스트 전체 green (Node 22.12, 24).
+
+Critique: P2 — 엔진 쓰기·판정 경로가 더 줄어 판정자와 wiki의 접점 없음 ✓. 단순성 — 코드 삭제 위주 ✓.
+위험 — 동시에 도는 다른 task가 같은 기간에 쓴 페이지도 report에 섞인다(기간 기준이라). 문구로 "이 task가 도는 동안 수정된"이라고 밝힌다.
