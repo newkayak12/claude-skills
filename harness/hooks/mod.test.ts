@@ -14,10 +14,19 @@ type Files = Record<string, string | Error>
 const key = (files: Files, path: string) => Object.keys(files).find(k => path.endsWith(`/${k}`))
 
 // The engine beneath: surfaces, fs.exists/read over a file map, status, command.register, $.state, ui.open.
-function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], files: Files) {
+// dirs: a directory path suffix to its entries ([name, kind, mtimeMs]); no git, so the cwd is the one tree
+type Dirs = Record<string, [string, 'dir' | 'file', number?][]>
+function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], files: Files, dirs: Dirs = {}) {
   const seen = { statuses: [] as (string | undefined)[], commands: [] as string[], opened: [] as string[], reads: 0 }
   const store = new Map<string, unknown>()
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('session.cwd', () => ({ value: '/proj' }) as never)
+  on('process.run', () => ({ value: { exitCode: 128, stdout: '', stderr: 'not a repo' } }) as never)
+  on('fs.list', (_$, e) => {
+    const k = Object.keys(dirs).find(d => e.path.endsWith(`/${d}`))
+    if (k === undefined) throw new Error('ENOENT')
+    return { value: dirs[k].map(([name, kind, mtimeMs]) => ({ name, kind, size: 0, mtimeMs: mtimeMs ?? NOW, isLink: false })) } as never
+  })
   on('session.surfaces', () => ({ value: surfaces }))
   on('command.register', (_$, e) => {
     seen.commands.push(e.name)
@@ -67,57 +76,84 @@ test('no config: status is undefined', async ($, on) => {
   expect(seen.commands).toEqual(['harness-gate'])
 })
 
-test('armed: gate: armed (3 patterns); a decision file that is not JSON changes nothing', async ($, on) => {
+const STALE = NOW - 13 * 60 * 60 * 1000
+const spec = JSON.stringify({ subgoals: [{ id: 's1' }, { id: 's2' }] })
+const sound = JSON.stringify({ sound: true })
+const runFiles: Files = {
+  'b/02-goal-spec.json': spec, 'b/02-critique.json': sound, 'b/subgoals/s1/result.json': JSON.stringify({ passed: true }),
+  'c/02-goal-spec.json': spec, 'c/02-critique.json': sound,
+  'c/subgoals/s1/result.json': JSON.stringify({ passed: true }), 'c/subgoals/s2/result.json': JSON.stringify({ passed: false }),
+  'g1.json': JSON.stringify({ nodes: [{ stage: 'plan', state: 'done' }, { stage: 'implement', state: 'running' }, { stage: 'report', state: 'pending' }] }),
+  'g2.json': JSON.stringify({ nodes: [{ stage: 'implement', state: 'done' }, { stage: 'report', state: 'done' }] }),
+}
+const planned: Dirs[string] = [['manifest.json', 'file'], ['01-plan.md', 'file'], ['02-goal-spec.json', 'file'], ['02-critique.json', 'file']]
+const runDirs: Dirs = {
+  '.harness-run': [['a', 'dir'], ['b', 'dir'], ['c', 'dir'], ['old', 'dir'], ['done', 'dir'], ['broker', 'dir'], ['note.md', 'file']],
+  '.harness-run/a': [['manifest.json', 'file']],
+  '.harness-run/b': planned,
+  '.harness-run/c': planned,
+  '.harness-run/old': [['manifest.json', 'file', STALE]],
+  '.harness-run/done': [['manifest.json', 'file'], ['05-report.md', 'file']],
+  '.harness-run/broker/runs': [['g1.json', 'file'], ['g2.json', 'file'], ['g3.json', 'file', STALE]],
+}
+
+test('open runs per stage: fallback and graph; stale, reported and finished runs left out', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const seen = world(on, ['terminal'], { [CONFIG]: cfg, [DECISION]: '{"ts": 1, "tool"' })
+  const seen = world(on, ['terminal'], { ...runFiles }, runDirs)
   await start($)
-  expect(lastStatus(seen)).toBe('gate: armed (3 patterns)')
+  expect(lastStatus(seen)).toBe('Plan(1) / Implement(1) / Gate(1) · graph Implement(1)')
 })
 
-test('a partial decision (no decision field) is ignored', async ($, on) => {
+test('graph runs alone', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const seen = world(on, ['terminal'], { [CONFIG]: cfg, [DECISION]: JSON.stringify({ ts: NOW, tool: 'Write', target: 'a/x.md' }) })
+  const seen = world(on, ['terminal'], { ...runFiles }, { '.harness-run': [['broker', 'dir']], '.harness-run/broker/runs': [['g1.json', 'file']] })
   await start($)
-  expect(lastStatus(seen)).toBe('gate: armed (3 patterns)')
+  expect(lastStatus(seen)).toBe('graph Implement(1)')
 })
 
-test('deny within 10 min: denied <target> and /harness-gate', async ($, on) => {
+test('a gate decision no longer reaches the status line', async ($, on) => {
   mock.clock(on, { now: NOW })
   const seen = world(on, ['terminal'], { [CONFIG]: cfg, [DECISION]: deny(NOW - 60_000) })
   await start($)
-  expect(lastStatus(seen)).toBe('gate: denied a/x.md — /harness-gate')
+  expect(seen.statuses).toEqual([undefined])
 })
 
-test('deny older than 10 min: back to armed', async ($, on) => {
-  mock.clock(on, { now: NOW })
-  const seen = world(on, ['terminal'], { [CONFIG]: cfg, [DECISION]: deny(NOW - 11 * 60_000) })
-  await start($)
-  expect(lastStatus(seen)).toBe('gate: armed (3 patterns)')
-})
-
-test('polls every 5 s and picks up a new deny', async ($, on) => {
+test('polls every 5 s and picks up a new run', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const files: Files = { [CONFIG]: cfg }
-  const seen = world(on, ['terminal'], files)
+  const dirs: Dirs = {}
+  const seen = world(on, ['terminal'], { [CONFIG]: cfg }, dirs)
   await start($)
-  expect(lastStatus(seen)).toBe('gate: armed (3 patterns)')
-  files[DECISION] = deny(NOW)
+  expect(lastStatus(seen)).toBe(undefined)
+  dirs['.harness-run'] = [['a', 'dir']]
+  dirs['.harness-run/a'] = [['manifest.json', 'file']]
   await clock.advance(5000)
-  expect(lastStatus(seen)).toBe('gate: denied a/x.md — /harness-gate')
+  expect(lastStatus(seen)).toBe('Plan(1)')
 })
 
-test('read error: no throw, status unchanged', async ($, on) => {
+for (const [name, text] of [
+  ['not JSON', '{"ts": 1, "tool"'],
+  ['partial (no decision field)', JSON.stringify({ ts: NOW, tool: 'Write', target: 'a/x.md' })],
+] as const) {
+  test(`a decision file that is ${name} is no decision`, async ($, on) => {
+    mock.clock(on, { now: NOW })
+    world(on, ['terminal'], { [CONFIG]: cfg, [DECISION]: text })
+    await start($)
+    const ui = await pane($, 'terminal')
+    expect(await ui.find({ type: 'Text', text: 'No gated call decided yet.' })).toBeDefined()
+  })
+}
+
+test('read error: no throw, the gate state stays', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const files: Files = { [CONFIG]: cfg }
-  const seen = world(on, ['terminal'], files)
+  const files: Files = { [CONFIG]: cfg, [DECISION]: deny(NOW) }
+  world(on, ['terminal'], files)
   await start($)
-  const n = seen.statuses.length
   files[CONFIG] = new Error('EACCES')
   await clock.advance(5000)
-  expect(seen.statuses).toHaveLength(n)
   files[CONFIG] = '{not json'
   await clock.advance(5000)
-  expect(seen.statuses).toHaveLength(n)
+  const ui = await pane($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: '✘ deny' })).toBeDefined()
 })
 
 const pane = ($: Engine, surface: 'terminal' | 'desktop') =>
