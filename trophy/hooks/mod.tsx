@@ -23,7 +23,7 @@ import {
   triggerLists,
   typedCommand,
 } from './logic.ts'
-import type { BatchStore, DayCounts, Use } from './logic.ts'
+import type { Achievement, BatchStore, DayCounts, Use } from './logic.ts'
 import {
   appendEntry, copyBody, goalFailed, harnessResult, marketplaceCandidates, newest, ownedMcpTool, ownedSkill,
   rowDetail, rowTitle,
@@ -104,6 +104,8 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
 
 const fmt = (text: string | undefined, vars: Record<string, string | number> = {}) =>
   (text ?? '').replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ''))
+// An achievement's title and description in the session's language (the top-level fields are English).
+const localize = (a: Achievement, l: 'en' | 'ko'): Achievement => (l === 'ko' ? { ...a, ...a.ko } : a)
 const str = async ($: EngineInterface, key: keyof typeof en, vars?: Record<string, string | number>) =>
   fmt(STRINGS[await read($, lang)][key], vars)
 
@@ -271,7 +273,10 @@ async function note($: EngineInterface, name: string) {
   const fresh = evaluate(recorded, achievements, unlocked)
   if (fresh.length > 0) {
     await $.store.set('trophy.unlocked', { ...unlocked, ...Object.fromEntries(fresh.map(id => [id, dayOf(now)])) })
-    for (const a of achievements.filter(a => fresh.includes(a.id))) $.ui.toast(`🏆 ${a.title} — ${a.description}`)
+    const l = await read($, lang)
+    for (const a of achievements.filter(a => fresh.includes(a.id)).map(a => localize(a, l))) {
+      $.ui.toast(`🏆 ${a.title} — ${a.description}`)
+    }
     // The card lists every unlock of the last few seconds; the timer clears it and redraws the band.
     const until = now + CARD_MS
     await update($, celebrate, card => ({ ids: [...(card && card.until > now ? card.ids : []), ...fresh], until }))
@@ -557,7 +562,7 @@ export const register: Register = on => {
             ) : (
               <Text key="mark" dimColor>○</Text>
             )}
-            <Text key="row" wrap="truncate-end">{achievementRow(a, uses, unlocked[a.id], false)}</Text>
+            <Text key="row" wrap="truncate-end">{achievementRow(localize(a, lang$), uses, unlocked[a.id], false)}</Text>
             {unlocked[a.id] || a.hidden ? null : (
               <Text key="bar" color="claude" wrap="truncate-end">{cells(a, uses)}</Text>
             )}
@@ -589,7 +594,7 @@ export const register: Register = on => {
     const t = (key: keyof typeof en) => STRINGS[lang$][key]
     const asking = (await read($, consent)) === 'unasked'
     const card = await read($, celebrate)
-    const shown = card && card.until > (await $.clock.now()) ? achievements.filter(a => card.ids.includes(a.id)) : []
+    const shown = card && card.until > (await $.clock.now()) ? achievements.filter(a => card.ids.includes(a.id)).map(a => localize(a, lang$)) : []
     const failed = await read($, unseen)
     if (!asking && shown.length === 0 && failed === 0) return next(e)
 
