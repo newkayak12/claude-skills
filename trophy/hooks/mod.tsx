@@ -42,6 +42,7 @@ const consentVersion = atom({ plugin: 'trophy', key: 'consentVersion' } as const
 const lastSkill = atom({ plugin: 'trophy', key: 'lastSkill' } as const, '')
 const unseen = atom({ plugin: 'trophy', key: 'unseen' } as const, 0)
 const lastTitle = atom({ plugin: 'trophy', key: 'lastTitle' } as const, '')
+const lang = atom({ plugin: 'trophy', key: 'lang' } as const, 'en' as 'en' | 'ko')
 
 const CARD_MS = 8000
 const BAR = 10
@@ -60,7 +61,51 @@ async function setConsent($: EngineInterface, value: Consent) {
 const DAY_MS = 86_400_000
 const MARKETPLACE_PLUGINS = new Set(triggers.map(t => t.plugin))
 const TEXT_MAX = 2000
-const BUG_USAGE = 'usage: /trophy-bug <note>'
+
+const en = {
+  paneTitle: 'Achievements', previewTitle: 'Telemetry preview',
+  cmdAchievements: 'Show your skill achievements',
+  cmdTelemetry: 'Anonymous usage counts: on, off or status',
+  cmdBug: "Report a problem with this marketplace's last skill; the note stays local",
+  bugUsage: 'usage: /trophy-bug <note>', bugRecorded: 'Recorded.', bugFailed: 'Could not record the report.',
+  paneOpened: 'Achievements pane opened.', unlockedCount: '{done} / {n} unlocked',
+  tabTrophies: 'Achievements', tabTriggers: 'Triggers', tabFailures: 'Failures',
+  copy: 'Copy', noFailures: 'No failures recorded.',
+  headHit: 'Most-hit skills (7 days)', headMiss: 'Most-missed skills (had a trigger phrase, not used)',
+  headNever: 'Never-used skills ({n})',
+  telemetryUsage: 'usage: /trophy-telemetry on|off|status',
+  telemetryReconsent: 'unasked (v1 yes — needs re-consent)',
+  consentAsk: 'trophy: Send anonymous usage stats? (skill names, daily counts, error codes only — no prompts or paths)',
+  send: 'Send', decline: "Don't send", show: 'Show contents',
+  unlockHead: '🏆 Achievement unlocked!', see: 'View',
+}
+
+// one table, two languages; the type keeps the keys identical
+export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
+  en,
+  ko: {
+    paneTitle: '업적', previewTitle: '전송 내용 미리보기',
+    cmdAchievements: '스킬 업적 보기',
+    cmdTelemetry: '익명 사용 통계: on, off, status',
+    cmdBug: '이 마켓플레이스의 마지막 스킬 문제 신고 (메모는 로컬에만 저장)',
+    bugUsage: '사용법: /trophy-bug <메모>', bugRecorded: '기록했습니다.', bugFailed: '신고를 기록하지 못했습니다.',
+    paneOpened: '업적 창을 열었습니다.', unlockedCount: '{done} / {n} 해금',
+    tabTrophies: '업적', tabTriggers: '트리거', tabFailures: '실패',
+    copy: '복사', noFailures: '기록된 실패가 없습니다.',
+    headHit: '가장 많이 맞은 스킬 (7일)', headMiss: '가장 많이 놓친 스킬 (트리거 문구는 있었는데 안 쓴)',
+    headNever: '한 번도 안 쓴 스킬 ({n})',
+    telemetryUsage: '사용법: /trophy-telemetry on|off|status',
+    telemetryReconsent: 'unasked (v1 yes — 재동의 필요)',
+    consentAsk: 'trophy: 익명 사용 통계를 보낼까요? (스킬명·일별 횟수·오류 코드만, 프롬프트·경로 없음)',
+    send: '보내기', decline: '안 보내기', show: '내용 보기',
+    unlockHead: '🏆 업적 해금!', see: '보기',
+  },
+}
+
+const fmt = (text: string | undefined, vars: Record<string, string | number> = {}) =>
+  (text ?? '').replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ''))
+const str = async ($: EngineInterface, key: keyof typeof en, vars?: Record<string, string | number>) =>
+  fmt(STRINGS[await read($, lang)][key], vars)
 
 type Owned = { skills: Record<string, string[]>; servers: Record<string, string[]>; versions: Record<string, string> }
 
@@ -126,7 +171,7 @@ const cut = (v: unknown) => String(v ?? '').slice(0, TEXT_MAX)
 const showFailures = async ($: EngineInterface) => {
   await update($, unseen, () => 0)
   await update($, tab, () => 'failures')
-  await $.ui.open({ id: PANE, title: 'Achievements' })
+  await $.ui.open({ id: PANE, title: await str($, 'paneTitle') })
 }
 
 // Every hook fails open: the event goes on, and the failure is kept (scrubbed) for the next send.
@@ -246,6 +291,9 @@ export const register: Register = on => {
     await update($, lastSkill, () => '')
     await update($, unseen, () => 0)
     await update($, lastTitle, () => '')
+    // Claude Code's own language setting, read once per session, before the commands are described
+    const language = ((await $.settings.read().catch(() => ({}))) as { language?: unknown }).language
+    await update($, lang, () => (typeof language === 'string' && /^(ko|korean|한국어)/i.test(language) ? 'ko' : 'en'))
     owned = await loadOwned($).catch(() => ({ skills: {}, servers: {}, versions: {} }))
     cc = (await $.session.version().catch(() => undefined))?.base ?? ''
     const savedVersion = (await $.store.get('trophy.consentVersion')) as number | undefined
@@ -258,16 +306,16 @@ export const register: Register = on => {
     }
     await $.command.register({
       name: 'achievements',
-      description: 'Show your skill achievements',
+      description: await str($, 'cmdAchievements'),
     })
     await $.command.register({
       name: 'trophy-telemetry',
-      description: 'Anonymous usage counts: on, off or status',
+      description: await str($, 'cmdTelemetry'),
       argumentHint: 'on|off|status',
     })
     await $.command.register({
       name: 'trophy-bug',
-      description: 'Report a problem with this marketplace\'s last skill; the note stays local',
+      description: await str($, 'cmdBug'),
       argumentHint: '<note>',
     })
     await recordPlugins($).catch(() => {})
@@ -355,7 +403,7 @@ export const register: Register = on => {
   // `/trophy-bug <note>`: the note stays local; only the code `user_report` can be sent.
   on('command.run', { command: 'trophy-bug' }, async ($, e) => {
     const note = e.args.trim()
-    if (!note) return { text: BUG_USAGE }
+    if (!note) return { text: await str($, 'bugUsage') }
     try {
       const hit = ownedSkill(await read($, lastSkill), owned.skills)
       await record($, {
@@ -364,9 +412,9 @@ export const register: Register = on => {
         ...(hit ? { plugin: hit.plugin, skill: hit.skill } : {}),
         local: { note: cut(note) },
       })
-      return { text: 'Recorded.' }
+      return { text: await str($, 'bugRecorded') }
     } catch {
-      return { text: 'Could not record the report.' }
+      return { text: await str($, 'bugFailed') }
     }
   }).catch(failOpen)
 
@@ -408,13 +456,15 @@ export const register: Register = on => {
   // The pane opens only from its command.
   on('command.run', { command: 'achievements' }, async $ => {
     if ((await read($, tab)) === 'failures') await update($, unseen, () => 0)
-    await $.ui.open({ id: PANE, title: 'Achievements' })
-    return { text: 'Achievements pane opened.' }
+    await $.ui.open({ id: PANE, title: await str($, 'paneTitle') })
+    return { text: await str($, 'paneOpened') }
   }).catch(failOpen)
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
+    const lang$ = await read($, lang)
     const current = await read($, tab)
+    const t = (key: keyof typeof en, vars?: Record<string, string | number>) => fmt(STRINGS[lang$][key], vars)
     const unlocked = ((await $.store.get('trophy.unlocked')) ?? {}) as Record<string, string>
     const done = Object.keys(unlocked).length
     const filled = achievements.length === 0 ? 0 : Math.round((done / achievements.length) * BAR)
@@ -422,23 +472,23 @@ export const register: Register = on => {
       <Box borderStyle="round" borderColor="claude">
         <Text key="count" bold>
           {'▰'.repeat(filled)}
-          {'▱'.repeat(BAR - filled)} {done} / {achievements.length} 해금{' '}
+          {'▱'.repeat(BAR - filled)} {t('unlockedCount', { done, n: achievements.length })}{' '}
         </Text>
         <Button
           key="tab-trophies"
-          label="업적"
+          label={t('tabTrophies')}
           variant={current === 'trophies' ? 'primary' : undefined}
           onPress={() => update($, tab, () => 'trophies')}
         />
         <Button
           key="tab-triggers"
-          label="트리거"
+          label={t('tabTriggers')}
           variant={current === 'triggers' ? 'primary' : undefined}
           onPress={() => update($, tab, () => 'triggers')}
         />
         <Button
           key="tab-failures"
-          label="실패"
+          label={t('tabFailures')}
           variant={current === 'failures' ? 'primary' : undefined}
           onPress={() => showFailures($)}
         />
@@ -450,7 +500,7 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column">
           {header}
-          {rows.length === 0 && <Text dimColor>No failures recorded.</Text>}
+          {rows.length === 0 && <Text dimColor>{t('noFailures')}</Text>}
           {rows.map((r, i) => (
             <Box key={`fail-${i}`} flexDirection="column" borderStyle="round" borderColor="error" borderDimColor paddingX={1}>
               <Box justifyContent="space-between" gap={1}>
@@ -461,7 +511,7 @@ export const register: Register = on => {
                 <Box flexShrink={0}>
                   <Button
                     key={`copy-${i}`}
-                    label="복사"
+                    label={t('copy')}
                     onPress={press => {
                       void $.ui.copy({ text: copyBody(r), surface: press.surface }).catch(() => {})
                     }}
@@ -482,15 +532,15 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column">
           {header}
-          <Text bold color="success">가장 많이 맞은 스킬 (7일)</Text>
+          <Text bold color="success">{t('headHit')}</Text>
           {lists.hit.map(([skill, n]) => (
             <Text key={`hit-${skill}`}>{skill} · {n}</Text>
           ))}
-          <Text bold color="warning">가장 많이 놓친 스킬 (트리거 문구는 있었는데 안 쓴)</Text>
+          <Text bold color="warning">{t('headMiss')}</Text>
           {lists.miss.map(([skill, n]) => (
             <Text key={`miss-${skill}`}>{skill} · {n}</Text>
           ))}
-          <Text bold color="subtle">한 번도 안 쓴 스킬 ({lists.never.length})</Text>
+          <Text bold color="subtle">{t('headNever', { n: lists.never.length })}</Text>
           <Text dimColor wrap="truncate-end">{never}</Text>
         </Box>
       )
@@ -526,15 +576,17 @@ export const register: Register = on => {
     if (arg === 'status') {
       const now = await read($, consent)
       const old = now === 'unasked' && (await $.store.get('trophy.consent')) === 'yes'
-      return { text: `trophy telemetry: ${old ? 'unasked (v1 yes — 재동의 필요)' : now === 'yes' ? `yes (v${CONSENT_VERSION})` : now}` }
+      return { text: `trophy telemetry: ${old ? await str($, 'telemetryReconsent') : now === 'yes' ? `yes (v${CONSENT_VERSION})` : now}` }
     }
-    return { text: 'usage: /trophy-telemetry on|off|status' }
+    return { text: await str($, 'telemetryUsage') }
   }).catch(failOpen)
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey || !(await read($, active))) return next(e)
 
     const { Box, Button, Text } = $.ui.resolve(e)
+    const lang$ = await read($, lang)
+    const t = (key: keyof typeof en) => STRINGS[lang$][key]
     const asking = (await read($, consent)) === 'unasked'
     const card = await read($, celebrate)
     const shown = card && card.until > (await $.clock.now()) ? achievements.filter(a => card.ids.includes(a.id)) : []
@@ -545,15 +597,15 @@ export const register: Register = on => {
       <Box flexDirection="column">
         {asking ? (
           <Box key="consent" borderStyle="round" borderColor="warning" gap={1}>
-            <Text wrap="truncate-end">trophy: 익명 사용 통계를 보낼까요? (스킬명·일별 횟수·오류 코드만, 프롬프트·경로 없음)</Text>
-            <Button key="send" label="보내기" onPress={() => setConsent($, 'yes')} />
-            <Button key="decline" label="안 보내기" onPress={() => setConsent($, 'no')} />
-            <Button key="show" label="내용 보기" onPress={() => $.ui.open({ id: BATCH_PANE, title: 'Telemetry preview' })} />
+            <Text wrap="truncate-end">{t('consentAsk')}</Text>
+            <Button key="send" label={t('send')} onPress={() => setConsent($, 'yes')} />
+            <Button key="decline" label={t('decline')} onPress={() => setConsent($, 'no')} />
+            <Button key="show" label={t('show')} onPress={() => $.ui.open({ id: BATCH_PANE, title: t('previewTitle') })} />
           </Box>
         ) : null}
         {shown.length > 0 ? (
           <Box key="celebrate" borderStyle="round" borderColor="#d4a017" flexDirection="column" paddingX={1}>
-            <Text key="head" bold color="#d4a017">🏆 업적 해금!</Text>
+            <Text key="head" bold color="#d4a017">{t('unlockHead')}</Text>
             {shown.map(a => (
               <Text key={`card-${a.id}`} wrap="truncate-end">
                 <Text bold>{a.title}</Text> — {a.description}
@@ -566,7 +618,7 @@ export const register: Register = on => {
             <Box flexShrink={0}><Text color="error" bold>{`✘ ${failed}`}</Text></Box>
             <Box flexShrink={0}><Text dimColor>trophy</Text></Box>
             <Box flexShrink={1}><Text wrap="truncate-end">{await read($, lastTitle)}</Text></Box>
-            <Box flexShrink={0}><Button key="see" label="보기" onPress={() => showFailures($)} /></Box>
+            <Box flexShrink={0}><Button key="see" label={t('see')} onPress={() => showFailures($)} /></Box>
           </Box>
         ) : null}
       </Box>
