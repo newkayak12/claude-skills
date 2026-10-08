@@ -24,6 +24,7 @@ harness-aware입니다 — 혼자 돌리면 문서를 내고, `harness:harness` 
 | SKILL.md 쓰거나 고치기 | `writing-skills` |
 | 글 검토, 또는 사람이 쓴 것처럼 읽히는 PR 설명·글 초안 | `writer-verification` |
 | 내 글 샘플로 배운 *내* 말투로 다시 쓰기 | `like-me` |
+| 기술서적을 단계별로 쓰기 — 목차 먼저, 장마다 검수 루프, 마지막에 PDF | `tech-book` |
 
 knowledge-base, knowledge-graph, RAG corpus, query 스킬은 이제 `knowledge` 플러그인에
 있습니다.
@@ -293,6 +294,21 @@ draft 루프의 설명, 스킬 없는 초안, 사람 원본을 섞어 diff와 �
 내가 평소 슬랙에 쓴 메시지 3개 줄게. 이 공지 내 말투로 바꿔줘.
 ```
 
+### `tech-book`
+
+기술서적을 `tmp/books/<slug>/` 아래 파일로 한 단계씩 씁니다: 기획, 목차, 개념, 장별 초고, 검수, 퇴고, 교열, PDF.
+`toc.md`를 승인하기 전에는 목차 다음 단계를 쓰지 않습니다. 단계마다 이 레포의 스킬로 넘깁니다 — 기획과 목차 질문은
+`think:grill`, 장마다 주제에 맞는 `develop:*` 스킬(Postgres 책이면 `database-optimizer`, `sql-pro` 등), 비유 검증은
+`cognition:epistemic-reasoner`, 검수는 `writer-verification`과 맥락 없는 독자 — 장을 쓴 에이전트는 그 장을 검수하지
+않습니다. 독자가 이미 아는 것에 빗댄 비유("MySQL에서는…")는 어디서 깨지는지 꼭 적고, 출처 없는 버전·기본값은
+`[확인 필요]`로 표시합니다. 검수↔퇴고 루프는 🔴🟡 = 0이거나 3라운드에서 멈춥니다. 마지막은 `book.pdf`이고, 본문은
+나눔고딕, 코드는 나눔고딕코딩으로 조판합니다. 두 폰트는 SIL OFL 1.1로 스킬 안에 들어 있고, Chrome 계열 브라우저로
+인쇄합니다(`CHROME=<경로>`로 지정 가능). `like-me`는 글 샘플을 줄 때만 씁니다.
+
+```
+비전공자용으로 Postgres 개념부터 심화까지 책 써줘. 나는 MySQL을 쓰니까 MySQL에 빗대서.
+```
+
 ## MCP
 
 이 플러그인의 스킬은 모두 MCP 도구를 optional 또는 recommended로 둡니다. 필수는 없습니다:
@@ -303,6 +319,7 @@ draft 루프의 설명, 스킬 없는 초안, 사람 원본을 섞어 diff와 �
 | `writing-skills` | think-tool | RED 단계 압박 시나리오 설계 |
 | `writer-verification` | think-tool, sequential-thinking, mcp-reasoner | 패스 구조화, 상충하는 지적 조정, Summary 선두 고르기 |
 | `like-me` | think-tool | 샘플에서 반복 습관과 일회성 노이즈 구분 |
+| `tech-book` | think-tool, sequential-thinking | 목차의 선행 순서와 비유 고르기, 개념을 장으로 묶기 |
 
 Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 
