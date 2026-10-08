@@ -162,6 +162,6 @@ release (shared rule 5: bump version, README + KOR both).
 - Ships as a module inside the `session` plugin.
 - v1 has `Copy rule` only; the mod-private allowlist (`Allow`) is deferred.
 - v1 secret detection is path-only (`.env*`, key files); content scanning is deferred.
-- Headless: confirm-class rules deny with a reason, as designed.
+- Headless (no surface): **every rule passes and nothing is logged** — nobody can see a prompt or the log, and a deny would stall teams/harness `claude -p` agents. Supersedes the headless rows above (2026-10-08). This includes the two guards moved from `mods`, which used to apply in all sessions.
 - `$.ui.ask` under bypass-permissions is verified in the shared Task 0 spike before any rule ships.
 - Build order: 3rd of four.

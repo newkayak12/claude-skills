@@ -22,7 +22,7 @@ hook, a `tool.check` observer, the denial pane and `/session-denials`. Confirm-c
 - v1 has **Copy rule only**: no mod allowlist, no Allow button; the mod writes no settings file.
 - v1 secret detection is **path-only** (`.env*` minus `.example/.sample/.template`, private key /
   keystore files, credentials/token files under known dot-dirs). No content scanning.
-- Headless (`surfaces()` empty): confirm-class rules **deny with a reason** naming `guard_mode`.
+- Headless (`surfaces()` empty): **every rule passes and nothing is logged** (user decision 2026-10-08: nobody can see it, and a deny would stall teams/harness `claude -p` agents). Includes the two guards moved from `mods`.
 - Deny-class: running-script, worktree-dirty-remove. Confirm-class: recursive-delete,
   force-push-protected, hard-reset, secret-write. `guard_mode`: `confirm` (default) | `deny` | `off`.
 - Every hook ends `.catch(($, e, next) => next(e))`: a broken guard fails OPEN. Unparseable input passes.
@@ -73,30 +73,30 @@ type Denial = { id: string; ts: number; tool: string; call: string /* redacted; 
 
 ### Task 2: Decision flow + first rule end to end — recursive-delete
 **Files:** modify `guard.tsx`, `guard-logic.ts`; create `guard-rm.test.ts`.
-**Interfaces:** `askOrDeny($, v, e)`: `guard_mode=off` -> `next(e)`; deny-class -> `{ deny: reason }`; confirm-class + surfaces -> `$.ui.ask('Run `<cmd, 120>`?', ['Run','Cancel'])` (rejection = Cancel); Run -> `next(e)`; else `{ deny: 'session: the person declined (<rule>).' }`; no surfaces or `guard_mode=deny` -> `{ deny: '<reason> Set guard_mode=off in /config to allow.' }`. Rule `recursive-delete`: `rm` with recursive+force (`-rf`, `-fr`, `-r -f`, `--recursive --force`, after `sudo`) whose target resolves to `/`, `~`, `$HOME`, the repo root, a parent of cwd, or a glob at those (`/*`, `~/*`).
+**Interfaces:** `askOrDeny($, v, e)`: `guard_mode=off` -> `next(e)`; deny-class -> `{ deny: reason }`; no surfaces -> `next(e)` (checked first, before any rule); confirm-class -> `$.ui.ask('Run `<cmd, 120>`?', ['Run','Cancel'])` (rejection = Cancel); Run -> `next(e)`; else `{ deny: 'session: the person declined (<rule>).' }`; `guard_mode=deny` -> `{ deny: '<reason> Set guard_mode=off in /config to allow.' }`. Rule `recursive-delete`: `rm` with recursive+force (`-rf`, `-fr`, `-r -f`, `--recursive --force`, after `sudo`) whose target resolves to `/`, `~`, `$HOME`, the repo root, a parent of cwd, or a glob at those (`/*`, `~/*`).
 **Blocked by:** Task 1; **05-spike-2 Task 3 (S3)** — apply the fallback above if NO.
-**Pass bar:** positives (named `RM-1..`): `rm -rf /`, `rm -rf ~`, `rm -fr $HOME/`, `sudo rm -r -f ..`, `rm --recursive --force "$PWD/.."`, `cd x && rm -rf /*`. Matrix per positive: default and bypass -> ask shown, Run passes, Cancel denies; headless -> deny with the `guard_mode` hint and 0 asks; `guard_mode=deny` -> deny; `off` -> passes. Negatives live in Task 9's file but these three run here: `rm -rf node_modules build dist .next target`, `rm -rf ./tmp/x`, `grep -r "rm -rf" .` all pass.
+**Pass bar:** positives (named `RM-1..`): `rm -rf /`, `rm -rf ~`, `rm -fr $HOME/`, `sudo rm -r -f ..`, `rm --recursive --force "$PWD/.."`, `cd x && rm -rf /*`. Matrix per positive: default and bypass -> ask shown, Run passes, Cancel denies; headless -> passes with 0 asks and 0 log entries; `guard_mode=deny` -> deny; `off` -> passes. Negatives live in Task 9's file but these three run here: `rm -rf node_modules build dist .next target`, `rm -rf ./tmp/x`, `grep -r "rm -rf" .` all pass.
 - [ ] 1: tests (red) -> 2: implement -> 3: green -> 4: commit
 
 ### Task 3: force-push-protected
 **Files:** modify `guard-logic.ts`; create `guard-push.test.ts`.
 **Interfaces:** rule on `git push` with `-f`, `--force`, `--force-with-lease[=…]`, `+branch` refspec; protected = main, master, trunk, the remote default branch (`git symbolic-ref refs/remotes/origin/HEAD`, failure = ignore), plus `guard_extra_protected_branches`. A bare force push counts when `git branch --show-current` is protected. Handles `git -C dir`.
 **Blocked by:** Task 2.
-**Pass bar:** positives `FP-1..` (`git push -f origin main`, `git push --force-with-lease origin HEAD:master`, `git push origin +main`, bare `git push -f` on main, `git -C ../r push --force origin trunk`, extra branch `release` from config) stop in default+bypass and deny headless. Passes: `git push`, `git push origin feature:feature`, `git push --force origin feature`, bare `git push -f` on a feature branch; helper `git` failure passes.
+**Pass bar:** positives `FP-1..` (`git push -f origin main`, `git push --force-with-lease origin HEAD:master`, `git push origin +main`, bare `git push -f` on main, `git -C ../r push --force origin trunk`, extra branch `release` from config) stop in default+bypass and pass headless. Passes: `git push`, `git push origin feature:feature`, `git push --force origin feature`, bare `git push -f` on a feature branch; helper `git` failure passes.
 - [ ] 1: tests (red) -> 2: implement -> 3: green -> 4: commit
 
 ### Task 4: hard-reset (+ git clean -fd)
 **Files:** modify `guard-logic.ts`; create `guard-reset.test.ts`.
 **Interfaces:** rule on `git reset --hard [any]` and `git clean` with force and directories (`-fd`, `-df`, `-f -d`, `-fdx`); `-n`/`--dry-run` passes.
 **Blocked by:** Task 2.
-**Pass bar:** positives `RS-1..` (`git reset --hard`, `git reset --hard HEAD~3`, `git -C x reset --hard origin/main && make`, `git clean -fdx`) stop in default+bypass, deny headless. Passes: `git reset --soft HEAD~1`, `--mixed`, `git reset HEAD file`, `git clean -n`, `git clean -f` (files only), `echo "git reset --hard"`, `git commit -m "reset --hard"`, a `cat <<'EOF'` body containing it.
+**Pass bar:** positives `RS-1..` (`git reset --hard`, `git reset --hard HEAD~3`, `git -C x reset --hard origin/main && make`, `git clean -fdx`) stop in default+bypass, pass headless. Passes: `git reset --soft HEAD~1`, `--mixed`, `git reset HEAD file`, `git clean -n`, `git clean -f` (files only), `echo "git reset --hard"`, `git commit -m "reset --hard"`, a `cat <<'EOF'` body containing it.
 - [ ] 1: tests (red) -> 2: implement -> 3: green -> 4: commit
 
 ### Task 5: secret-write (path-only)
 **Files:** modify `guard.tsx`, `guard-logic.ts`; create `guard-secret.test.ts`.
 **Interfaces:** `secretPath(path, extra[]) → boolean` for Write/Edit `file_path`: basename `.env`, `.env.*` except `.example|.sample|.template`; `*.pem|*.key|*.p12|*.pfx|*.jks|*.keystore|id_rsa|id_ed25519`; `credentials|token(s)(.json)?` under `.aws .ssh .gnupg .config/gcloud .kube .docker`; plus `guard_secret_paths` globs. Content is never read. Reads are out of scope (hook is Write/Edit only).
 **Blocked by:** Task 2.
-**Pass bar:** positives `SC-1..` (`.env`, `app/.env.production`, `~/.aws/credentials`, `deploy.pem`, `.ssh/id_ed25519`, extra glob `secrets/**`) stop in default+bypass, deny headless, and a Write whose content holds `-----BEGIN PRIVATE KEY-----` to `docs/x.md` PASSES (path-only). Passes: `.env.example`, `.env.sample`, `.env.template`, `docs/env.md`, `src/environment.ts`, `notes.md` Edit.
+**Pass bar:** positives `SC-1..` (`.env`, `app/.env.production`, `~/.aws/credentials`, `deploy.pem`, `.ssh/id_ed25519`, extra glob `secrets/**`) stop in default+bypass, pass headless, and a Write whose content holds `-----BEGIN PRIVATE KEY-----` to `docs/x.md` PASSES (path-only). Passes: `.env.example`, `.env.sample`, `.env.template`, `docs/env.md`, `src/environment.ts`, `notes.md` Edit.
 - [ ] 1: tests (red) -> 2: implement -> 3: green -> 4: commit
 
 ### Task 6: Moved guards (copy into session; mods untouched)
@@ -108,8 +108,8 @@ type Denial = { id: string; ts: number; tool: string; call: string /* redacted; 
 
 ### Task 7: Denial log (ring buffer, redaction, observer)
 **Files:** modify `guard.tsx`, `guard-logic.ts`, `types/index.d.ts`; create `guard-log.test.ts`.
-**Interfaces:** `redact(call)` masks token-shaped strings (`ghp_`, `sk-`, `AKIA`, `xox`, `Bearer …`), `KEY=value` pairs and URL userinfo; Write/Edit records the path only. `pushRing(list, d, 200)`. Every guard deny/decline calls `record(source:'guard'|'declined')`; a `tool.check` hook that only `return next(e)` (never alters the verdict) records `deny` verdicts as `source:'native'` with `reason` and `rule`. `session.start` hydrates `$.state` from `$.store`; `log_enabled=false` records nothing. Store write failure drops the entry, never the decision. Observer in headless depends on 05-spike-2's "tool.check fires in headless" finding; if NO it runs interactive-only and the README says so.
-**Blocked by:** Tasks 2, 6; 05-spike-2 (tool.check in headless).
+**Interfaces:** `redact(call)` masks token-shaped strings (`ghp_`, `sk-`, `AKIA`, `xox`, `Bearer …`), `KEY=value` pairs and URL userinfo; Write/Edit records the path only. `pushRing(list, d, 200)`. Every guard deny/decline calls `record(source:'guard'|'declined')`; a `tool.check` hook that only `return next(e)` (never alters the verdict) records `deny` verdicts as `source:'native'` with `reason` and `rule`. `session.start` hydrates `$.state` from `$.store`; `log_enabled=false` records nothing. Store write failure drops the entry, never the decision. Observer and log run interactive-only (`surfaces()` non-empty); headless records nothing.
+**Blocked by:** Tasks 2, 6.
 **Pass bar:** a guard deny stores one entry (id, ts, tool, redacted call, reason, source, agentId); a native deny verdict stores `nativeRule`; fixture calls with `ghp_abc123…` and `API_KEY=hunter2` leave neither string in `$.store` JSON; Write content never appears; 201st entry evicts the oldest; reload re-hydrates; broken store -> verdict unchanged; observer returns exactly `next(e)`'s value.
 - [ ] 1: tests (red) -> 2: implement -> 3: green -> 4: commit
 
@@ -135,7 +135,7 @@ type Denial = { id: string; ts: number; tool: string; call: string /* redacted; 
 - [ ] 1: delete code and tests -> 2: checks -> 3: two-plugin manual check -> 4: commit
 
 ### Task 11: Docs (bump and push ON HOLD)
-**Files:** modify `session/README.md`, `session/KOR.md` (guard section: rule table, modes, bypass behaviour "bypass means no native prompts, not no safety net; `guard_mode=off` is the escape hatch", headless deny, path-only secrets, **not a sandbox**: `python -c`, `find -delete`, `dd`, aliases and scripts are not covered, denial log scope: a person's "No" in a native dialog is not logged, privacy: log in `$.store`, redacted), `mods/README.md`, `mods/KOR.md` (the two guards moved to session), `plan/mod/README.md` (row 8). English and Korean change together.
+**Files:** modify `session/README.md`, `session/KOR.md` (guard section: rule table, modes, bypass behaviour "bypass means no native prompts, not no safety net; `guard_mode=off` is the escape hatch", headless: every rule passes and nothing is logged (the two moved guards no longer block `claude -p`), path-only secrets, **not a sandbox**: `python -c`, `find -delete`, `dd`, aliases and scripts are not covered, denial log scope: a person's "No" in a native dialog is not logged, privacy: log in `$.store`, redacted), `mods/README.md`, `mods/KOR.md` (the two guards moved to session), `plan/mod/README.md` (row 8). English and Korean change together.
 **Blocked by:** Tasks 1-10.
 **Pass bar:** both README/KOR pairs mention the same rules; `python3 _repo/scripts/validate_plugins.py` PASSED; `claude plugin validate|test session mods`, `tsc -p session` clean. Version bump in `marketplace.json` for session/mods and `git push` wait for the user (hold); commit only.
 - [ ] 1: docs -> 2: all checks -> 3: commit (no push, no bump)
@@ -146,11 +146,11 @@ type Denial = { id: string; ts: number; tool: string; call: string /* redacted; 
 
 | Done-criterion | Covered by |
 |---|---|
-| 1 every positive stopped default+bypass, headless denies with reason | 2-5 matrices |
+| 1 every positive stopped default+bypass, headless passes with no log | 2-5 matrices |
 | 2 zero FP hits, unparseable passes | 9 (+1 splitter) |
 | 3 pane shows guard + native denies, no secret text | 7, 8 |
 | 4 no settings write | 8 grep; Decisions (no allowlist) |
 | 5 mods lost the two guards; docs + versions together | 10, 11 (bump held) |
-| 6 spike results | S3 + tool.check-headless in 05-spike-2; `tool.check ask` under bypass is unused by design |
+| 6 spike results | S3 in 05-spike-2 (headless no longer needs a probe); `tool.check ask` under bypass is unused by design |
 
-Open gaps: (1) `05-spike-2.md` is written in parallel; Task numbering "Task 3 = S3" is assumed and the tool.check-in-headless question must exist there. (2) 07's exact `modules` file and pane id naming are assumed. (3) Open question 1 (headless deny may stall teams/harness agents) is accepted per Decisions but untested against a real teams run. (4) Subagent scope (design Q4) defaults to all loops, recorded via `agentId`; not separately decided.
+Open gaps: (1) `05-spike-2.md` is written in parallel; Task 3 = S3 confirmed. (2) 07's exact `modules` file and pane id naming are assumed. (3) Resolved 2026-10-08: headless passes everything (no stall risk). (4) Subagent scope (design Q4) defaults to all loops, recorded via `agentId`; not separately decided.
