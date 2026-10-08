@@ -264,6 +264,7 @@ harness ships a small mod: a gate status line and a pane that explains the last 
 Known limitations: the status reads the gate config relative to the session's working directory. A session that started with no UI surface (headless or SDK-hosted) keeps the mod off even if a client attaches later; start a new session to get it (a reload of an unchanged mod does not re-fire session.start).
 
 ## Status
+- v1.25.0 — Mod: status line counts open runs per stage (fallback + graph, every worktree: `Plan(6) / Implement(11) · graph Implement(3)`); pipeline band above the prompt with stage chips and a hover card of per-run progress; Ink-style `/harness-gate` pane. Gate decisions now live only in the pane
 - v1.24.0 — Mod (Claude Code 2.1.292+, early access): gate status line and `/harness-gate` pane; the goal gate records its last decision to `.claude/.harness-last-decision.json` (install/remove manage the file) and resolves write targets through indirection
 - v1.23.0 — `harness:patch` leaves the user surface (maintainer script moved to `_repo/scripts/patch-harness.mjs`); new `harness:update` refreshes installed copies via `install.mjs` `"refresh": true`
 - v1.22.8 — codex-control gains a Related Skills section and Korean scenarios (repo audit)

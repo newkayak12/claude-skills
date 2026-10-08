@@ -80,6 +80,7 @@ view (most hit, most missed, never fired).
 
 ## Status log
 
+- 0.3.0 — gold unlock card in the band for 8 s; ▰▱ progress bars on locked achievements; Ink-style panes and consent band.
 - 0.2.1 — the consent band no longer hides the bands beneath it.
 - 0.2.0 — consent text v2 names error codes; the answer is stored with its version, a v1 yes is
   asked once more and nothing is sent until answered. `diag_*` rows listed in the telemetry table.
