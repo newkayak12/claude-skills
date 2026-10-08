@@ -12,8 +12,9 @@
 // acted on: the unmet user stories it named, and the STORYs those became. 15-spec-gate.md
 // (v0.13.0's human gate) is the one file of §7c's 13 still without data behind it, and is not
 // rendered - an empty file would claim a feature that does not exist.
-import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { mkdirSync, writeFileSync, rmSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { dirname, resolve, join } from 'node:path';
+import { mode as wikiMode } from './wikibridge.mjs';
 import { unfinishedWork } from './taskstate.mjs';
 import { loadRun, runState } from './graph.mjs';
 import { harnessVerdict } from './harnessrun.mjs';
@@ -533,6 +534,41 @@ export function renderRetro(task) {
   return `${JSON.stringify(buildRetro(task), null, 2)}\n`;
 }
 
+// Wiki 변경: the pages under the task's cwd .teams_wiki written while the task ran - a plain file
+// walk (never wiki.mjs, never creates .teams_wiki). The window is [created_at, end]; end is the
+// report node's finished_at, else the harness run's, else the last node's - never the render
+// clock, so a re-render of a finished task is byte-identical. No .teams_wiki -> no section.
+function wikiSection(task) {
+  const root = join(task.cwd || '', '.teams_wiki');
+  const isDir = (p) => { try { return statSync(p).isDirectory(); } catch { return false; } };
+  if (!task.cwd || !isDir(root)) return [];
+  const done = (task.nodes || []).filter((n) => n.stage === 'report' && n.state === 'done' && n.finished_at).pop();
+  const fins = (task.nodes || []).map((n) => n.finished_at).filter(Number.isFinite);
+  const end = done ? done.finished_at : (task.harness_run && task.harness_run.finished_at) || (fins.length ? Math.max(...fins) : Infinity);
+  const from = Number.isFinite(task.created_at) ? task.created_at : 0;
+  const val = (fm, k) => { const m = new RegExp(`^${k}:\\s*(.*)$`, 'm').exec(fm); if (!m) return ''; try { return String(JSON.parse(m[1])); } catch { return m[1].trim(); } };
+  const rows = [];
+  const walk = (dir, rel) => {
+    let ents = [];
+    try { ents = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      if (e.isDirectory()) { if (!rel && (e.name === '_proposed' || e.name === '_rejected')) continue; walk(join(dir, e.name), `${rel}${e.name}/`); continue; }
+      if (!e.isFile() || !e.name.endsWith('.md') || (!rel && e.name === 'INDEX.md')) continue;
+      try {
+        const p = join(dir, e.name);
+        const m = statSync(p).mtimeMs;
+        if (m < from || m > end) continue;
+        const fm = (/^---\r?\n([\s\S]*?)\r?\n---/.exec(readFileSync(p, 'utf8')) || [, ''])[1];
+        const id = `${rel}${e.name.slice(0, -3)}`;
+        rows.push(`${id} — ${val(fm, 'title') || id.split('/').pop()} (${val(fm, 'source') || 'no source'})`);
+      } catch { /* a page that vanished mid-walk */ }
+    }
+  };
+  walk(root, '');
+  rows.sort();
+  return ['', '## Wiki 변경', '', `mode: ${wikiMode()}`, '', 'Pages modified while this task ran:', bullets(rows)];
+}
+
 export function renderReport(task) {
   const n = task.nodes.find((x) => x.stage === 'report' && x.state === 'done');
   const key = epicKey(task.run_id);
@@ -551,13 +587,7 @@ export function renderReport(task) {
   L.push(bullets(retro.next_backlog.unaccepted_packages.map((p) => `${p.id} (${p.title}): ${p.reason}`)));
   L.push('', 'Unresolved defects:', bullets(retro.next_backlog.unresolved_defects.map((d) => d.title)));
   L.push('', 'Open questions:', bullets(retro.next_backlog.open_questions.map(questionLine)));
-  // Wiki 변경: rendered from task.wiki alone (set by the wiki bridge); absent -> no section.
-  if (task.wiki) {
-    const w = task.wiki;
-    L.push('', '## Wiki 변경', '', `mode: ${w.mode || 'unknown'}`);
-    if ((w.resumed || []).length) L.push('', 'Resumed into context:', bullets(w.resumed));
-    if (w.log) L.push('', `Log page: ${w.log.id ? `${w.log.id} ` : ''}(${w.log.status})${w.log.path ? ` ${w.log.path}` : ''}${w.log.error ? ` - ${w.log.error}` : ''}`);
-  }
+  L.push(...wikiSection(task));
   return L.join('\n') + '\n';
 }
 
@@ -587,6 +617,7 @@ export function renderBlockedReport(task) {
   if (retro.next_backlog.unshipped_requests) L.push('Backlog items not shipped:', bullets(retro.next_backlog.unshipped_requests.map((r) => `[${r.priority}] ${r.request}`)), '');
   L.push('User stories not shipped (carry into the next Sprint):', bullets(retro.next_backlog.unfinished_stories.map((u) => `${u.id}${u.title ? ` ${u.title}` : ''}`)), '');
   L.push('Unaccepted packages:', bullets(retro.next_backlog.unaccepted_packages.map((p) => `${p.id} (${p.title}): ${p.reason}`)));
+  L.push(...wikiSection(task));
   return L.join('\n') + '\n';
 }
 
@@ -642,6 +673,7 @@ export function renderSReport(task) {
   if (roles.qa !== true) notes.push('roles.qa is off, so no QA card ran.');
   notes.push(`the run wrote straight into ${task.s_run.cwd}: no worktree, no branch, nothing committed - review and commit it yourself.`);
   L.push(bullets(notes));
+  L.push(...wikiSection(task));
   return L.join('\n') + '\n';
 }
 
@@ -670,6 +702,7 @@ export function renderHarnessReport(task) {
     run ? (run.route === 'graph' ? `graph run ${run.run_id} at ${run.cwd}` : `Agent Team fallback run at ${run.run_dir}`) : 'no run was recorded',
     `the run wrote straight into ${h.cwd}: no worktree, no branch, nothing committed - review and commit it yourself.`,
   ]));
+  L.push(...wikiSection(task));
   return L.join('\n') + '\n';
 }
 

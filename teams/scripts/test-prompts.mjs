@@ -766,10 +766,11 @@ test('wiki paragraph: a claude or codex executor (adapter, self on its host, nul
     const p = wikiPrompt(node, run);
     assert.ok(p.includes(WIKI_HEAD), label);
     assert.ok(p.includes('source = "implement:U1:1"'), `${label}: the literal node id`);
-    assert.match(p, /wiki_search \/ wiki_resume/);
+    assert.match(p, /wiki_search \(and wiki_get\)/);
+    assert.match(p, /worth remembering later/);
+    assert.doesNotMatch(p, /EPIC|wiki_resume|space log/);
     assert.match(p, /wiki_write/);
     assert.match(p, /\[\[space\/slug\]\]/);
-    assert.match(p, /Do not write in space log/);
     assert.ok(!p.includes(NO_WIKI_LINE), label);
   }
 });
