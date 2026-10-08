@@ -247,9 +247,7 @@ harness는 작은 mod를 함께 제공합니다. 게이트 상태 줄과, 마지
 
 **기능**
 
-- **상태 줄**, 프로젝트에 게이트 설정이 있을 때만:
-  - `gate: armed (<n> patterns)`
-  - `gate: denied <target> — /harness-gate`, 거부 후 10분 동안.
+- **상태 줄**: 모든 worktree에서 열려 있는 실행을 단계별로 셉니다. fallback 실행이 먼저, graph 실행이 뒤에 옵니다 — `Plan(6) / Implement(11) · graph Implement(3)`. 12시간 동안 손대지 않은 실행은 빠지고, 열린 실행이 없으면 줄이 비어 있습니다. 게이트 판정은 여기 나오지 않으니 `/harness-gate`를 여세요.
 - **`/harness-gate`**가 패널을 엽니다. 게이트 패턴, 인게이지 윈도우, 마지막 판정(allow/deny, 도구, 대상, 경과 시간, 사유), 하네스를 인게이지하는 방법을 보여 줍니다. 게이트 설정이 없으면 그렇다고 알려 줍니다.
 - 마지막 판정은 게이트 훅이 쓰는 `.claude/.harness-last-decision.json`에서 읽습니다. 로컬 런타임 파일이며 `install`이 gitignore에 넣고 `remove`가 지웁니다.
 
