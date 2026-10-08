@@ -28,8 +28,9 @@ compatibility:
 - NEVER adopt a habit that contradicts a cited source silently — it goes under *Conflicts*; the user decides keep or drop.
 - NEVER sample generated, vendored, or fixture code. Formatter/linter configs in the repo outrank counted habits.
 - NEVER overwrite a filled line in an existing convention file. Fill `<!-- fill -->` placeholders and append; show the diff.
-- Cite a section only when its title in `sources.md` names the rule's topic (naming → `CC ch.2`, function size → `CC ch.3` / `RF Long Function`, layer imports → `CA ch.22`). A stretched fit is `repo-only` — never launder a habit through a loosely related source.
+- Cite a section only when its title in `sources.md` names the rule's topic (naming → `CC ch.2`, function size → `CC ch.3` / `RF Long Function`, layer imports → `CA ch.22`, indent/line length/spacing → `CC ch.5`, comments → `CC ch.4`, errors → `CC ch.7`, class size → `CC ch.10`; semicolons, quotes and other syntax → the language guide). Language-bound sources (EJ and every guide row) cite only for code in that language. A stretched fit is `repo-only` — never launder a habit through a loosely related source.
 - Rules are checkable: "functions ≤ 30 lines (91% of 212)", not "functions are short".
+- Every count comes from a command you ran (grep, a script), never an estimate; a rule whose topic no section title names (e.g. guard clauses) is `repo-only`.
 
 # Like My Code
 

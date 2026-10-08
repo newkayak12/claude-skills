@@ -19,6 +19,7 @@ No match here → write `repo-only`. Never cite from memory outside this list.
 | KT | Kotlin coding conventions | https://kotlinlang.org/docs/coding-conventions.html |
 | JV | Google Java Style Guide | https://google.github.io/styleguide/javaguide.html |
 | TS | Google TypeScript Style Guide | https://google.github.io/styleguide/tsguide.html |
+| JS | Google JavaScript Style Guide | https://google.github.io/styleguide/jsguide.html |
 | PY | PEP 8 | https://peps.python.org/pep-0008/ |
 | GO | Effective Go | https://go.dev/doc/effective_go |
 | RS | Rust API Guidelines | https://rust-lang.github.io/api-guidelines/naming.html |
