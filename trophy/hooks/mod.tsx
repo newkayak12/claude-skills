@@ -75,7 +75,8 @@ const en = {
   headNever: 'Never-used skills ({n})',
   telemetryUsage: 'usage: /trophy-telemetry on|off|status',
   telemetryReconsent: 'unasked (v1 yes — needs re-consent)',
-  consentAsk: 'trophy: Send anonymous usage stats? (skill names, daily counts, error codes only — no prompts or paths)',
+  consentAsk: '📊 trophy · Send anonymous usage stats?', consentSent: 'Sent: skill names · daily counts · error codes',
+  consentNotSent: 'Never sent: prompts · file paths',
   send: 'Send', decline: "Don't send", show: 'Show contents',
   unlockHead: '🏆 Achievement unlocked!', see: 'View',
 }
@@ -96,7 +97,8 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     headNever: '한 번도 안 쓴 스킬 ({n})',
     telemetryUsage: '사용법: /trophy-telemetry on|off|status',
     telemetryReconsent: 'unasked (v1 yes — 재동의 필요)',
-    consentAsk: 'trophy: 익명 사용 통계를 보낼까요? (스킬명·일별 횟수·오류 코드만, 프롬프트·경로 없음)',
+    consentAsk: '📊 trophy · 익명 사용 통계를 보낼까요?', consentSent: '보내는 것: 스킬명 · 일별 횟수 · 오류 코드',
+    consentNotSent: '보내지 않는 것: 프롬프트 · 파일 경로',
     send: '보내기', decline: '안 보내기', show: '내용 보기',
     unlockHead: '🏆 업적 해금!', see: '보기',
   },
@@ -601,11 +603,16 @@ export const register: Register = on => {
     const mine = (
       <Box flexDirection="column">
         {asking ? (
-          <Box key="consent" borderStyle="round" borderColor="warning" gap={1}>
-            <Text wrap="truncate-end">{t('consentAsk')}</Text>
-            <Button key="send" label={t('send')} onPress={() => setConsent($, 'yes')} />
-            <Button key="decline" label={t('decline')} onPress={() => setConsent($, 'no')} />
-            <Button key="show" label={t('show')} onPress={() => $.ui.open({ id: BATCH_PANE, title: t('previewTitle') })} />
+          // a question, not a notice: a double frame, every line in full, three buttons drawn alike (no nudge to yes)
+          <Box key="consent" flexDirection="column" borderStyle="double" borderColor="warning" paddingX={1}>
+            <Text bold color="warning">{t('consentAsk')}</Text>
+            <Text>{`   ${t('consentSent')}`}</Text>
+            <Text>{`   ${t('consentNotSent')}`}</Text>
+            <Box marginTop={1} marginLeft={3} columnGap={3}>
+              <Button key="send" label={t('send')} onPress={() => setConsent($, 'yes')} />
+              <Button key="decline" label={t('decline')} onPress={() => setConsent($, 'no')} />
+              <Button key="show" label={t('show')} onPress={() => $.ui.open({ id: BATCH_PANE, title: t('previewTitle') })} />
+            </Box>
           </Box>
         ) : null}
         {shown.length > 0 ? (
