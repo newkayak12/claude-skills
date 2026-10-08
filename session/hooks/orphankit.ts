@@ -21,8 +21,8 @@ export const PS = [
 ].join('\n')
 
 // Every process call is answered from memory and recorded in `procs`: no real signal is ever sent.
-export const world = (on: On, opts: { ps?: string; os?: string; surfaces?: string[] } = {}) => {
-  memoryStore(on)
+export const world = (on: On, opts: { ps?: string; os?: string; surfaces?: string[]; store?: Record<string, unknown> } = {}) => {
+  memoryStore(on, opts.store)
   const cells = memoryState(on)
   clockAt(on, Date.parse('Oct 8 2026 10:14:00'))
   const procs: string[][] = []
