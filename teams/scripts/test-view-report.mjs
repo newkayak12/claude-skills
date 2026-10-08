@@ -175,6 +175,18 @@ test('CLI: unknown task prints report null and retro null, exit 0', () => {
   assert.equal(p.retro, null);
 });
 
+test('CLI: a stalled task labelled blocked takes its items from "What would move it"', () => {
+  const { tasksDir, task } = tasksDirWith('blocked');
+  // a running node under a dead daemon: runState says running, collectTask says stalled
+  task.nodes = [{ node_id: 'dispatch:P1:3', stage: 'dispatch', state: 'running', subgoal_id: 'P1', deps: [] }];
+  task.daemon = { pid: 999999 };
+  writeFileSync(join(tasksDir, task.run_id, 'task.json'), JSON.stringify(task));
+  const p = cli(['--tasks-dir', tasksDir, '--task', task.run_id]);
+  assert.equal(p.verdict, 'blocked');
+  assert.equal(p.needs.items.length, 2);
+  assert.equal(p.needs.items[1], 'a person decides the split');
+});
+
 test('CLI: usage lists the report format', () => {
   const r = spawnSync('node', [VIEW, '--help'], { encoding: 'utf8' });
   assert.match(r.stdout, /--format report/);
