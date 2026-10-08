@@ -24,6 +24,7 @@ run it alone, and a machine-readable spec when a `harness:harness` run is drivin
 | Write or fix a SKILL.md | `writing-skills` |
 | Review text, or draft a PR description / post that reads as human-written | `writer-verification` |
 | Rewrite text so it sounds like *me*, learned from my own samples | `like-me` |
+| Write a technical book in stages — TOC first, review loop per chapter, PDF at the end | `tech-book` |
 
 Knowledge-base, knowledge-graph, RAG corpus, and query skills now live in the `knowledge`
 plugin.
@@ -304,6 +305,22 @@ AI-assisted text, and never imports typos as style.
 내가 평소 슬랙에 쓴 메시지 3개 줄게. 이 공지 내 말투로 바꿔줘.
 ```
 
+### `tech-book`
+
+Writes a technical book as files under `tmp/books/<slug>/`, one stage at a time: brief, TOC, concepts, chapter
+drafts, review, revision, copyedit, PDF. Nothing past the TOC is written until you approve `toc.md`. Each stage is
+routed to a skill in this repo — `think:grill` for the brief and the TOC questions, a `develop:*` subject skill per
+chapter (e.g. `database-optimizer` and `sql-pro` for a Postgres book), `cognition:epistemic-reasoner` to test every
+analogy, `writer-verification` and a no-context reader for review — and a chapter's drafter never reviews it.
+Every analogy to what the reader already knows ("MySQL에서는…") states where it breaks; every version or default
+without a source is marked `[확인 필요]`. The review↔revise loop stops at 🔴🟡 = 0 or three rounds. The book ends in
+`book.pdf`, typeset in NanumGothic (text) and NanumGothicCoding (code), bundled in the skill under SIL OFL 1.1 and
+printed by any Chrome-family browser (`CHROME=<path>` to choose one). `like-me` is used only if you give writing samples.
+
+```
+비전공자용으로 Postgres 개념부터 심화까지 책 써줘. 나는 MySQL을 쓰니까 MySQL에 빗대서.
+```
+
 ## MCP
 
 Every skill in this plugin lists MCP tools as optional or recommended, not required:
@@ -314,6 +331,7 @@ Every skill in this plugin lists MCP tools as optional or recommended, not requi
 | `writing-skills` | think-tool | Framing the RED-phase pressure scenario |
 | `writer-verification` | think-tool, sequential-thinking, mcp-reasoner | Pass structuring; resolving conflicting findings; picking the summary lead |
 | `like-me` | think-tool | Separating recurring habits from one-off noise in samples |
+| `tech-book` | think-tool, sequential-thinking | Prerequisite order in the TOC and choosing analogies; clustering concepts into chapters |
 
 Add the remote SSE endpoints in Claude settings → MCP Servers.
 
