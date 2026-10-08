@@ -2,7 +2,7 @@
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "newkayak12-claude-skills",
   "description": "Claude Code skills organized by topic: engineering, thinking, knowledge, writing, agents, and more.",
-  "metadata": { "version": "1.0.1" },
+  "metadata": { "version": "1.0.2" },
   "owner": {
     "name": "newkayak12"
   },
@@ -201,8 +201,8 @@
     },
     {
       "name": "session",
-      "description": "What a session left behind and a safety net: a /session pane with files changed, commits, denied calls and the longest gap, a retro band on the next start, a safe stop for stray claude -p children, guards that confirm destructive commands and secret-file writes, and /memo notes pinned to the model's context.",
-      "version": "0.1.1",
+      "description": "What a session left behind and a safety net: a /session pane with files changed, commits, denied calls and the longest gap, a retro band on the next start, a safe stop for stray claude -p children, guards that confirm destructive commands and secret-file writes, /memo notes pinned to the model's context, and /smart-compact: recap the session at a set context %, then compact with that recap.",
+      "version": "0.2.0",
       "author": {
         "name": "newkayak12"
       },
