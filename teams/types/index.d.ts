@@ -20,6 +20,17 @@ export type SummaryTask = {
   log: { time: string; kind: string; subject: string | null }[]
 }
 
+// `view.mjs --once --format report --task <id>` (teams/scripts/lib/view-report.mjs)
+export type ReportPayload = {
+  task_id: string
+  verdict: 'finished' | 'blocked' | 'running'
+  failed: number
+  needs: { items: string[]; more: number }
+  path: string
+  report: { text: string; truncated: boolean; more_lines: number; mtime: number } | null
+  retro: object | null
+}
+
 declare module 'claude-code' {
   interface PluginState {
     teams: {
@@ -27,7 +38,8 @@ declare module 'claude-code' {
       watch: string[]
       status: StatusInfo | null
       summary: SummaryTask | null
-      view: 'summary' | 'work' | 'log'
+      view: 'summary' | 'work' | 'log' | 'report'
+      report: { task_id: string; payload: ReportPayload } | null
       lang: 'en' | 'ko'
     }
   }

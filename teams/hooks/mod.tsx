@@ -1,19 +1,22 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Mark, StatusInfo, SummaryTask, TeamsEvent } from '../types'
+import type { Mark, ReportPayload, StatusInfo, SummaryTask, TeamsEvent } from '../types'
 
 const cursor = atom({ plugin: 'teams', key: 'cursor' } as const, 0)
 const status = atom({ plugin: 'teams', key: 'status' } as const, null as StatusInfo | null)
 const summary = atom({ plugin: 'teams', key: 'summary' } as const, null as SummaryTask | null)
 const watch = atom({ plugin: 'teams', key: 'watch' } as const, [] as string[])
-const view = atom({ plugin: 'teams', key: 'view' } as const, 'summary' as 'summary' | 'work' | 'log')
+const view = atom({ plugin: 'teams', key: 'view' } as const, 'summary' as 'summary' | 'work' | 'log' | 'report')
+// the report of one task: keyed to the task it was fetched for, so a card or tab never draws another's
+const report = atom({ plugin: 'teams', key: 'report' } as const, null as { task_id: string; payload: ReportPayload } | null)
 const lang = atom({ plugin: 'teams', key: 'lang' } as const, 'en' as 'en' | 'ko')
 
 const PANE = 'teams-live'
 
 const en = {
-  tabSummary: 'Summary', tabWork: 'Work', tabLog: 'Log',
+  tabSummary: 'Summary', tabWork: 'Work', tabLog: 'Log', tabReport: 'Report',
+  reportMissing: 'No report yet: {path}', reportTruncated: 'Shortened: {n} more lines in the file.',
   now: 'Now', you: 'You', stages: 'Stages', work: 'Work', cost: 'Cost',
   youNone: 'Nothing needed', youOthers: '{n} more in other runs', costLine: '{usd} · {turns} turns',
   headLine: '{state} · day {day} · {done}/{total}', bandDone: '{done}/{total} done',
@@ -33,7 +36,8 @@ const en = {
 export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
   en,
   ko: {
-    tabSummary: '요약', tabWork: '작업', tabLog: '기록',
+    tabSummary: '요약', tabWork: '작업', tabLog: '기록', tabReport: '보고서',
+    reportMissing: '아직 보고서가 없습니다: {path}', reportTruncated: '일부만 표시: 파일에 {n}줄 더 있습니다.',
     now: '지금', you: '확인', stages: '단계', work: '작업', cost: '비용',
     youNone: '필요한 조치 없음', youOthers: '다른 실행에 {n}건 더', costLine: '{usd} · {turns}턴',
     headLine: '{state} · {day}일째 · {done}/{total}', bandDone: '{done}/{total} 완료',
@@ -91,6 +95,20 @@ function nowSentence(s: (key: keyof typeof en) => string, task: SummaryTask): st
   return task.now.subject ? `${label}: ${task.now.subject}` : label
 }
 
+// One report call for a task: the payload is stored under that task's id. A failed call or
+// unreadable output leaves what was stored.
+async function fetchReport($: EngineInterface, taskId: string): Promise<void> {
+  try {
+    const cwd = await $.session.cwd()
+    const r = await $.process.run(['node', `${$.plugin.root}/scripts/view.mjs`, '--once', '--format', 'report', '--task', taskId, '--cwd', cwd])
+    if (r.exitCode !== 0) return
+    const payload = JSON.parse(r.stdout.trim().split('\n').pop() ?? '') as ReportPayload
+    await update($, report, () => ({ task_id: taskId, payload }))
+  } catch {
+    // a failed call keeps the last payload
+  }
+}
+
 const TICK_MS = 3000
 const WORK_MAX = 6
 
@@ -146,6 +164,8 @@ export const register: Register = on => {
           // pinned only while a person must act (the engine draws it as a warning)
           $.ui.status(info.waiting > 0 ? fmt(STRINGS[await read($, lang)].statusWaiting, { n: info.waiting }) : undefined)
         }
+        // the Report tab refetches only while it is open, for the pane's task
+        if (id !== undefined && (await read($, view)) === 'report') await fetchReport($, id)
       } catch {
         // a failed run or unreadable output leaves the last status as it was
       } finally {
@@ -176,7 +196,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Button, Markdown, Text } = $.ui.resolve(e)
     const kind = await read($, view)
     const lang$ = await read($, lang)
     const s = (key: keyof typeof en, vars?: Record<string, string | number>) => fmt(STRINGS[lang$][key], vars)
@@ -187,17 +207,41 @@ export const register: Register = on => {
     // plain tabs with hotkeys 1-3: the selected one in full strength with a dot, the rest dim
     const tabs = (
       <Box columnGap={3}>
-        {(['summary', 'work', 'log'] as const).map((one, i) => (
+        {(['summary', 'work', 'log', 'report'] as const).map((one, i) => (
           <Button key={one} plain hotkey={String(i + 1)} dimColor={kind !== one}
             label={`${kind === one ? '● ' : ''}${s(`tab${cap(one)}` as keyof typeof en)}`}
-            onPress={() => update($, view, () => one)} />
+            onPress={async () => {
+              await update($, view, () => one)
+              if (one === 'report' && id !== undefined) await fetchReport($, id)
+            }} />
         ))}
       </Box>
     )
-    if (id === undefined || task === null) {
+    if (id === undefined || (task === null && kind !== 'report')) {
       return (
         <Box flexDirection="column">
           <Text>{id === undefined ? s('noRun') : s('loading')}</Text>
+        </Box>
+      )
+    }
+    // the task's report, drawn only when it was fetched for the pane's task: its path first, then
+    // (when capped) the truncated notice, then the text
+    const rp = await read($, report)
+    const mine = rp !== null && rp.task_id === id ? rp.payload : null
+    const reportBody = mine === null ? <Text dimColor>{s('loading')}</Text>
+      : mine.report === null ? <Text>{s('reportMissing', { path: mine.path })}</Text>
+      : (
+        <Box flexDirection="column">
+          <Text>{mine.path}</Text>
+          {mine.report.truncated && <Text color="warning">{s('reportTruncated', { n: mine.report.more_lines })}</Text>}
+          <Markdown text={mine.report.text} />
+        </Box>
+      )
+    if (task === null) {
+      return (
+        <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
+          <Box marginY={1}>{tabs}</Box>
+          {reportBody}
         </Box>
       )
     }
@@ -267,13 +311,15 @@ export const register: Register = on => {
           {bar}
         </Box>
       )
-    } else {
+    } else if (kind === 'log') {
       const lines = task.log.map(one => `${one.time} ${s(`log${cap(one.kind)}` as keyof typeof en, { s: one.subject ?? '' }).trim()}`)
       body = (
         <Box flexDirection="column">
           {lines.length === 0 ? <Text dimColor>{s('noLog')}</Text> : lines.map((line, i) => <Text key={`l${i}`}>{line}</Text>)}
         </Box>
       )
+    } else {
+      body = reportBody
     }
     return (
       <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
