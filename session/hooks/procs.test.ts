@@ -28,8 +28,8 @@ test('descendants are below the engine only', () => {
   expect(descendants(parsePs(PS), 4242).map(r => r.pid)).toEqual([4300, 4301, 4310, 4320])
 })
 
-test('a wrapper shell and its child are one row; a sibling outside the tree is absent', () => {
-  expect(matchOrphans(parsePs(PS), 4242).map(r => r.pid)).toEqual([4300, 4310])
+test('a wrapper shell and its child are one row (the inner claude -p); a sibling outside the tree is absent', () => {
+  expect(matchOrphans(parsePs(PS), 4242).map(r => r.pid)).toEqual([4301, 4310])
 })
 
 test('ancestors run from the engine to the root', () => {
