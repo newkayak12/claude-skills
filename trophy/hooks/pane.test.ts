@@ -1,7 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { memoryStore, sessionAt } from './testkit.ts'
+import { language, memoryStore, sessionAt } from './testkit.ts'
 
 const NOW = Date.parse('2026-10-07T09:00:00Z')
 const PANE = {
@@ -30,11 +30,25 @@ const bottom = (on: On) => {
   on('ui.toast', () => ({ value: undefined }))
 }
 
+test('by default the pane counts and labels in English', async ($, on) => {
+  memoryStore(on)
+  sessionAt(on, NOW)
+  bottom(on)
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'trophy', surface: 'terminal', component: 'Pane', requestId: 'trophy', props: PANE })
+
+  expect(texts(await ui.drawn()).some(l => l.includes('0 / 80 unlocked'))).toBe(true)
+  await ui.press({ key: 'tab-triggers' })
+  expect(texts(await ui.drawn()).some(l => l.includes('Most-missed skills'))).toBe(true)
+})
+
 for (const surface of ['terminal', 'desktop'] as const) {
   test(`${surface}: an empty profile draws 0 / 80 and 80 locked rows with five ???`, async ($, on) => {
     memoryStore(on)
     sessionAt(on, NOW)
+    language(on, 'Korean')
     bottom(on)
+    await $.session.start({ cwd: '/w', surface, isInteractive: true })
     const ui = await $.ui.mount({ plugin: 'trophy', surface, component: 'Pane', requestId: 'trophy', props: PANE })
 
     const lines = texts(await ui.drawn())
@@ -50,7 +64,9 @@ for (const surface of ['terminal', 'desktop'] as const) {
       'trophy.triggers': { '2026-10-06': { 'think:brainstorming': { hit: 2, miss: 4, unmatched: 0 } } },
     })
     sessionAt(on, NOW)
+    language(on, 'Korean')
     bottom(on)
+    await $.session.start({ cwd: '/w', surface, isInteractive: true })
     const ui = await $.ui.mount({ plugin: 'trophy', surface, component: 'Pane', requestId: 'trophy', props: PANE })
 
     expect(texts(await ui.drawn()).some(l => l.includes('🏆 First Blood · 2026-10-06'))).toBe(true)
