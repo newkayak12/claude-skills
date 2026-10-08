@@ -40,7 +40,7 @@ The `claude -p` count is per session: only processes started below this session'
 
 ## Status and known limits
 
-- Beta (`0.1.0-beta.2`).
+- Beta (`0.1.0-beta.3`): run band removed (harness draws it); notices carry an icon (◆ ⚠ ↓ ⧗).
 - The skill toast needs the marketplace file to be readable from the plugin location; if not, no toast is shown.
 - The Agent guard also flags subagent types whose definition already pins a model, because it only sees the call's own `model` argument.
 - The worktree guard ignores a leading `cd <dir> &&` in the same command; only `-C <dir>` or the session directory is used to resolve the path.
