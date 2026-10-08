@@ -42,6 +42,9 @@ The break line is required; a box without it fails review.
 - Numbered per chapter: `그림 N-M`, `표 N-M`, `코드 N-M` — a caption is its own paragraph starting with that label
   (the PDF styles it as a caption); above a table or code block, below a figure.
 - Default figure is a markdown table or ASCII; a system diagram goes through `develop:architecture-designer`.
+- A figure image is a file in `final/` named `fig-N-M.svg` or `.png`, referenced `![설명](fig-N-M.svg)` on its own
+  line, with the `그림 N-M …` caption paragraph below. SVG text in ASCII/Latin only — an SVG loaded as an image
+  cannot use the page's Nanum fonts — so Korean goes in the caption. A missing image makes render exit 3.
 - Every code block's caption names what it shows and the runtime/version it was written for, or `[확인 필요: 버전]`.
 
 ## Page and type (book.pdf, `scripts/render-pdf.mjs`)
@@ -51,7 +54,7 @@ The break line is required; a box without it fails review.
 - Page B5 182×257mm, body 10.5pt, line-height 1.7, left-aligned (`word-break: keep-all`), page number bottom centre.
 - Each chapter starts a new page; the cover shows brief.md's first `#` heading.
 - The converter reads only what this file defines: headings, paragraphs, lists (one nesting level), pipe tables,
-  `>` boxes (one item per line), fenced code, inline code/bold/italic/links. Anything else renders as plain text.
+  `>` boxes (one item per line), fenced code, inline code/bold/italic/links, images on their own line. Anything else renders as plain text.
 
 ## Register and terms
 

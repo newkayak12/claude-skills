@@ -334,7 +334,8 @@ users, Postgres has max_connections 200. Size HikariCP properly and check for le
 Reviews isolation levels, atomicity gaps, and overly wide transactions when data goes inconsistent
 after a partial failure or when locks and timeouts appear under load. Identifies which ACID
 property is at risk first, then maps what actually runs inside `@Transactional` — external I/O
-inside a transaction, N+1 queries, missing `rollbackFor`, lost updates. Not for slow queries (use
+inside a transaction, N+1 queries, missing `rollbackFor`, lost updates. Its isolation table notes where PostgreSQL
+and InnoDB REPEATABLE READ go beyond the SQL standard (no phantoms for snapshot reads). Not for slow queries (use
 `sql-pro`) or pool exhaustion (use `connection-pool-tuner`).
 
 ```

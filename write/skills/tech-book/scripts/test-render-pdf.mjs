@@ -90,7 +90,36 @@ test('CHROME set to a missing path: exit 1 naming CHROME=, book.html still writt
   assert.ok(!existsSync(join(dir, 'book.pdf')));
 });
 
+test('image line → figure resolved against final/, caption paragraph follows; missing image named', () => {
+  const dir = fixture();
+  const finalDir = join(dir, 'final');
+  writeFileSync(join(finalDir, 'fig-1-1.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>');
+  const missing = [];
+  const h = mdToHtml('![heap page](fig-1-1.svg)\n그림 1-1 힙 페이지\n\n![x](fig-9-9.svg)', finalDir, missing);
+  assert.match(h, /<figure><img src="file:\/\/[^"]*\/final\/fig-1-1\.svg" alt="heap page"><figcaption class="caption">그림 1-1 힙 페이지<\/figcaption><\/figure>/);
+  assert.doesNotMatch(mdToHtml('![a](x.svg)\n\n| t |\n|---|\n| 1 |', finalDir), /<figcaption/);
+  assert.deepEqual(missing, ['fig-9-9.svg']);
+});
+
+test('missing image → code 3 naming it (or 1 without a browser), book.html written', () => {
+  const dir = fixture();
+  writeFileSync(join(dir, 'final', '02.md'), CH2 + '\n![x](fig-9-9.svg)\n');
+  const r = render(dir);
+  assert.equal(r.code, findBrowser() ? 3 : 1, r.msg);
+  assert.match(r.msg, /missing images: fig-9-9\.svg/);
+  assert.ok(existsSync(join(dir, 'book.html')));
+});
+
 const browser = findBrowser();
+test('toc chapter without final/ file → code 3, book.pdf still written, chapter named', { skip: browser ? false : 'no Chrome-family browser on this host' }, () => {
+  const dir = fixture();
+  writeFileSync(join(dir, 'toc.md'), '## 1장 a\n## 2장 b\n## 3장 c\n');
+  const r = render(dir);
+  assert.equal(r.code, 3, r.msg);
+  assert.ok(existsSync(join(dir, 'book.pdf')));
+  assert.match(r.msg, /missing final\/ for chapters: 3/);
+});
+
 test('renders a PDF with NanumGothic and NanumGothicCoding embedded', { skip: browser ? false : 'no Chrome-family browser on this host' }, () => {
   const dir = fixture();
   const r = render(dir);
