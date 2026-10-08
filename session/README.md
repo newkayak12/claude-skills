@@ -1,6 +1,6 @@
-# session (beta)
+# session
 
-Shows what a Claude Code session left behind (files changed, commits, denied calls, longest gap between tool calls), shows it again as a band on your next start, lists stray `claude -p` children and stops one safely, guards dangerous commands and secret writes, and keeps `/memo` notes. Beta: version `0.1.0-beta.1`. Requires Claude Code 2.1.292+ (hooks module). It needs nothing else from this marketplace.
+Shows what a Claude Code session left behind (files changed, commits, denied calls, longest gap between tool calls), shows it again as a band on your next start, lists stray `claude -p` children and stops one safely, guards dangerous commands and secret writes, and keeps `/memo` notes. Version `0.1.0`. Requires Claude Code 2.1.292+ (hooks module). It needs nothing else from this marketplace.
 
 ## Install
 ```
@@ -83,4 +83,4 @@ Not CLAUDE.md, not auto-memory: notes are not files, are never written to your r
 - Paths are plain text (no clickable links).
 - Windows: the orphan section is hidden and stopping is off; the Retro view and band work.
 - Interactive sessions only for UI; headless runs record the ledger and save the summary, nothing is drawn.
-- The status line and pane need a live session to confirm: `[stop]` on a real `claude -p` child (a plain `sleep` is never listed), and the pane at under 144 columns via `/session`.
+- Checked in a live terminal session (2.1.294): panes, `[stop]`, the retro band, guard asks in auto and bypass mode, and `/memo` after `/clear`. The desktop Code tab is not checked yet.
