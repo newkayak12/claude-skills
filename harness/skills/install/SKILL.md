@@ -48,7 +48,7 @@ idempotent and non-destructive: existing files are never overwritten.
        SetGoal from the whole catalogue** and can't be pre-enumerated; embedding guarantees
        only what you pass. MCP tools (sequential-thinking, think-tool, mcp-reasoner) can't be
        embedded at all.
-   - **Reference project — ASK:** "코딩 스타일을 참고할 기존 프로젝트가 있나요?" Default **No**. If
+   - **Reference project — ASK:** "Do you have a reference project whose code style should be followed?" Default **No**. If
      yes, get its path (used in step 3).
 
 2. **Run `install.mjs` with the confirmed values** (gate + hook + embedding + gitignore — all

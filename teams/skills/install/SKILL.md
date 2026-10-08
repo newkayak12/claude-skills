@@ -72,13 +72,18 @@ precede a run; add it whenever the project is ready to commit to it.
    `skipped`.
    - If the user named a reference project in step 1 and the report confirms conventions were
      created or kept: when the `develop` plugin is available, run `develop:like-my-code` on it,
-     writing into `.claude/conventions/`. Tell it the cap covers the whole conventions block:
-     teams folds `.claude/conventions/**` into plan/setgoal/implement prompts capped at 4000
-     chars per block, so the total of all convention files a worker reads (template text plus
-     its rules) must stay ≤ 4000 chars. Have it check the length after writing and trim the
-     lowest-ratio rules first; evidence stays in the chat report. If `develop` is not installed,
-     skip and print `/plugin install develop@newkayak12-claude-skills`; never fail the install.
-     Report the outcome: ran / declined / skipped: develop absent.
+     writing into `.claude/conventions/`. If a convention file came back `missing-src` (the
+     plugin lacks its template), skip like-my-code and report it; never fail the install.
+     Tell it how teams folds `.claude/conventions/**`: plan/setgoal see each file's path and
+     first heading only; implement/draft get a file's full text only when its path or first
+     heading names an extension or directory of the subgoal's target files; planning/manager
+     get all full text. The whole block is cut at 4000 chars (truncated with a marker, not
+     dropped), so the total of all convention files must stay <= 4000 chars. Have it put the
+     language extensions and source dirs in the `coding.md` first heading, so implement
+     matches it, check the length after writing, and trim the lowest-ratio rules first;
+     evidence stays in the chat report. If `develop` is not installed, skip and print
+     `/plugin install develop@newkayak12-claude-skills`; never fail the install.
+     Report the outcome: ran / declined / skipped: develop absent / skipped: missing-src.
 4. **Tool discovery** — confirm all sixteen tools are visible: six `team_*` tools (`team_open`,
    `team_next`, `team_run`, `team_submit`, `team_retry`, `team_status`) and ten `tm_*`
    tools (`tm_open`, `tm_next`, `tm_submit`, `tm_retry`, `tm_status`, `tm_events`, `tm_board`,

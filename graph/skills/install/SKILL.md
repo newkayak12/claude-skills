@@ -53,9 +53,10 @@ because two servers exposing the same `graph_*` tools make routing ambiguous.
 
 Ask: "Do you have a reference project whose code style graph nodes should follow?"
 Default **No**. If yes and `develop:like-my-code` is available, run it with target
-`.claude/conventions/` (creating `coding.md` / `boundaries.md` from the template
-headings when missing). If the `develop` plugin is absent, skip this step and print
-`/plugin install develop@newkayak12-claude-skills`; never fail the install over it.
+`.claude/conventions/` (creating `coding.md` / `boundaries.md` when missing, with headings
+from the harness templates at `harness/skills/install/templates/conventions/` if present,
+else from the heading lists in `develop:like-my-code`; graph ships no templates).
+If the `develop` plugin is absent, skip this step and print `/plugin install develop@newkayak12-claude-skills`; never fail the install over it.
 
 The graph broker injects one instruction into every plan, setgoal, implement, and test
 node prompt, regardless of vendor: read the relevant `.claude/conventions/**` files and
