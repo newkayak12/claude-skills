@@ -253,10 +253,10 @@ function packageBlock(run, n) {
   return L;
 }
 
-// The project wiki (.teams_wiki in the main project) is how claude workers leave documents for
+// The project wiki (.teams_wiki in the main project) is how claude and codex workers leave documents for
 // other stages and the next EPIC. It is never evidence: judging stages are told to stay out, and
-// only a claude executor that is not judging (and not a person) is told to use it. A node with no
-// recorded executor runs on the host.
+// only a claude or codex executor that is not judging (and not a person) is told to use it. A node
+// with no recorded executor runs on the host.
 const WIKI_PARAGRAPH = [
   '## Project wiki',
   'Read first: wiki_search / wiki_resume. Write what other stages or the next EPIC need - findings with sources, decisions with reasons, interfaces and contracts, pitfalls - with wiki_write, source = "%NODE%". Link pages with [[space/slug]]. Do not write in space log. The wiki is not judged - gates judge the work.',
@@ -267,7 +267,7 @@ function wikiBlock(run, n) {
   if (n.executor === 'human' || asg.executor === 'human' || (run.human_gates || []).includes(n.stage)) return null;
   if (JUDGING_STAGES.has(n.stage)) return [WIKI_JUDGE_LINE];
   const ex = [n.executor, n.vendor].find((x) => x && x !== 'self') || run.host_vendor;
-  return ex === 'claude' ? WIKI_PARAGRAPH.map((l) => l.replace('%NODE%', n.node_id)) : null;
+  return ex === 'claude' || ex === 'codex' ? WIKI_PARAGRAPH.map((l) => l.replace('%NODE%', n.node_id)) : null;
 }
 
 export function composePrompt(run, n, briefing) {

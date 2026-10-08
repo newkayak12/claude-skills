@@ -9,6 +9,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, symlinkSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   parseArgs, exitCodeForState, runHeadless, EXIT, keepAwakeArgv,
   isLimitNotice, limitResumeAt, findLimitNotices, sleepUntil, RESET_GRACE_MS,
@@ -496,4 +501,20 @@ test('resume-on-limit: SIGINT during the reset wait detaches with 130 and says t
 test('keepAwakeArgv: caffeinate waits on this pid on darwin, nothing elsewhere', () => {
   assert.deepEqual(keepAwakeArgv('darwin', 123), ['caffeinate', ['-i', '-w', '123']]);
   assert.equal(keepAwakeArgv('linux', 123), null);
+});
+
+// run.mjs is the entry point through a symlinked plugin dir (a marketplace install): its main guard
+// compared unresolved paths and exited 0 without running. isEntryPoint realpaths both sides.
+test('run.mjs runs as the entry point through a symlinked directory: bad args exit 64, --help prints usage and exits 0', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'run-link-'));
+  try {
+    const link = join(dir, 'scripts-link');
+    symlinkSync(realpathSync(dirname(fileURLToPath(import.meta.url))), link);
+    const bad = spawnSync('node', [join(link, 'run.mjs'), '--no-such-flag'], { encoding: 'utf8' });
+    assert.equal(bad.status, EXIT.ARG_ERROR, bad.stderr);
+    assert.match(bad.stderr, /usage:/);
+    const help = spawnSync('node', [join(link, 'run.mjs'), '--help'], { encoding: 'utf8' });
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /usage:/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
