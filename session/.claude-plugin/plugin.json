@@ -1,0 +1,43 @@
+{
+  "name": "session",
+  "description": "Beta. What a session left behind: a /session pane with files changed, commits, denied calls and the longest gap, a retro band on the next start, and a safe stop for stray claude -p children.",
+  "version": "0.1.0-beta.1",
+  "author": {
+    "name": "newkayak12"
+  },
+  "category": "productivity",
+  "repository": "https://github.com/newkayak12/claude-skills",
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "guard_mode": {
+      "type": "string",
+      "title": "Guard mode",
+      "description": "What to do when a command or write hits a guard rule: confirm (ask the person), deny (block, no ask), off.",
+      "default": "confirm",
+      "options": [
+        "confirm",
+        "deny",
+        "off"
+      ]
+    },
+    "guard_extra_protected_branches": {
+      "type": "string",
+      "title": "Extra protected branches",
+      "description": "Comma-separated branch names a force push is stopped on, besides main, master, trunk and the remote default.",
+      "default": ""
+    },
+    "guard_secret_paths": {
+      "type": "string",
+      "title": "Extra secret paths",
+      "description": "Comma-separated globs (for example secrets/**) a write is stopped on, besides .env files, keys and credential files.",
+      "default": ""
+    },
+    "log_enabled": {
+      "type": "boolean",
+      "title": "Denial log",
+      "description": "Keep a redacted log of denied calls for /session-denials.",
+      "default": true
+    }
+  }
+}
