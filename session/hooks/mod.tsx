@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import {
-  addCommit, addDeny, addFile, addStep, emptyLedger, endTurn, fmtMs, isEmpty, parseNumstat, statOf, stepSpan, summarize,
+  addCommit, addDeny, addFile, addStep, emptyLedger, endTurn, fmtMs, isEmpty, leftSomething, parseNumstat, statOf, stepSpan, summarize,
 } from './ledger.ts'
 import type { Ledger, Summary } from './ledger.ts'
 import { checkKill } from './kill.ts'
@@ -132,8 +132,14 @@ export const register: Register = (on, options) => {
     await update($, band, b => b ?? false)
     try {
       const stored = (await $.store.get(LAST_KEY)) as Summary | undefined
-      await update($, lastAtom, () => stored ?? null)
-      await update($, band, () => stored !== undefined)
+      // Shown once: the key goes as soon as it is read; lastAtom keeps it for /session retro.
+      if (stored !== undefined) {
+        await update($, lastAtom, () => stored)
+        await update($, band, () => true)
+        await $.store.delete(LAST_KEY)
+      } else {
+        await update($, band, () => false)
+      }
     } catch {
       await update($, band, () => false)
     }
@@ -190,8 +196,10 @@ export const register: Register = (on, options) => {
     try {
       const l = await read($, ledger)
       if (!isEmpty(l)) {
-        const day = new Date((await $.clock.now()) as number).toISOString().slice(0, 10)
-        await $.store.set(LAST_KEY, summarize(l, day))
+        if (leftSomething(l)) {
+          const day = new Date((await $.clock.now()) as number).toISOString().slice(0, 10)
+          await $.store.set(LAST_KEY, summarize(l, day))
+        }
         await update($, ledger, () => emptyLedger())
         await update($, statsAtom, () => ({}))
       }
@@ -263,7 +271,16 @@ export const register: Register = (on, options) => {
       </Box>
     )
     if (current === 'orphans') {
-      const rows = (await isWindows($)) ? [] : await read($, orphansAtom)
+      if (await isWindows($)) {
+        return (
+          <Box flexDirection="column">
+            {header}
+            <Text dimColor>process list is off on Windows</Text>
+            <Text dimColor>background shells and subagents: see /tasks</Text>
+          </Box>
+        )
+      }
+      const rows = await read($, orphansAtom)
       const now = (await $.clock.now()) as number
       return (
         <Box flexDirection="column">
