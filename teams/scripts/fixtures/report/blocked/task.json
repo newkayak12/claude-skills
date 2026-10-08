@@ -1,0 +1,27 @@
+{
+  "run_id": "bbbbbbbb2222",
+  "cwd": "__CWD__",
+  "nodes": [
+    {
+      "node_id": "dispatch:P1:3",
+      "stage": "dispatch",
+      "state": "failed",
+      "subgoal_id": "P1",
+      "deps": [],
+      "result": {
+        "reason": "tests red"
+      }
+    },
+    {
+      "node_id": "report",
+      "stage": "report",
+      "state": "unreachable",
+      "deps": []
+    }
+  ],
+  "team": {
+    "opts": {
+      "docs_dir": "docs"
+    }
+  }
+}
