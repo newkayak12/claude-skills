@@ -72,12 +72,12 @@ for (const [name, trophy, count] of CASES) {
       expect(mem.get('diag.sentThrough')).toBeUndefined()
       return
     }
-    const body = JSON.parse(fetches[0].body)
-    expect(fetches[0].url).toBe(URL)
+    const body = JSON.parse(fetches[0]!.body)
+    expect(fetches[0]!.url).toBe(URL)
     expect(body.batch.map((b: any) => b.event).sort()).toEqual(['diag_mcp_error', 'diag_skill_error', 'diag_user_report'])
     expect(body.batch.every((b: any) => b.distinct_id === 'iid-1' && b.properties.$process_person_profile === false)).toBe(true)
     expect(body.batch.map((b: any) => b.timestamp).sort()).toEqual(['2026-10-05T12:00:00Z', '2026-10-06T12:00:00Z', '2026-10-06T12:00:00Z'])
-    expect(fetches[0].body).not.toContain('2026-10-07')
+    expect(fetches[0]!.body).not.toContain('2026-10-07')
     expect(mem.get('diag.sentThrough')).toBe('2026-10-06')
   })
 }
@@ -132,10 +132,10 @@ test('pane preview equals the POSTed body for the same store, installId created 
   await $.turn.complete(TURN)
 
   expect(fetches).toHaveLength(1)
-  const id = JSON.parse(fetches[0].body).batch[0].distinct_id
+  const id = JSON.parse(fetches[0]!.body).batch[0].distinct_id
   expect(id).not.toBe('')
   const preview = batchBody(buildBatch(LOG as any, undefined, '2026-10-06'), id)
-  expect(fetches[0].body).toBe(preview)
+  expect(fetches[0]!.body).toBe(preview)
   expect(shown).toContain(JSON.stringify(preview).slice(1, -1))
 })
 
@@ -174,13 +174,13 @@ test('end-to-end batch from real hooks carries no sentinel, path, slug, note, se
     tool: 'Write', file_path: '/Users/kimsecret/.harness-run/slug-sentinel/subgoals/a/result.json', content: '{"passed":false}',
   })
   await $.tool.call({ tool: 'Bash', command: 'node .harness/fallback-check.mjs slug-sentinel' })
-  await $.command.run({ command: 'diag', args: 'bug NOTE-RAW-SENTINEL src/secret-file.ts secret.ts' })
+  await $.command.run({ command: 'diag', args: 'bug NOTE-RAW-SENTINEL src/secret-file.ts secret.ts' } as never)
 
   await clock.advance(DAY) // what was recorded today is due tomorrow
   await $.turn.complete(TURN)
 
   expect(fetches).toHaveLength(1)
-  const body = fetches[0].body
+  const body = fetches[0]!.body
   const events = JSON.parse(body).batch.map((b: any) => b.event)
   for (const ev of ['diag_skill_error', 'diag_mcp_error', 'diag_user_report']) expect(events).toContain(ev)
   for (const bad of [
