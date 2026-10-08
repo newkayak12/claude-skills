@@ -37,7 +37,7 @@ import {
   dispatchSettled, foldDispatch, readyToJudge, serviceSRun, delegateIfSmall,
   finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages, autoRejudge, autoResumeCapacity, pendingRejudgeAt,
   STAGE_SKILLS, syncTickets, autoReshape, closeFailedPlanning, promoteManagerHumanGates, enforceBudget,
-  expireAsks, nextAskDeadline,
+  expireAsks, nextAskDeadline, writeWikiLog,
 } from './taskmanager.mjs';
 import { ticketSnapshot } from './tickets.mjs';
 import { harvestTask } from './runlog.mjs';
@@ -612,6 +612,9 @@ async function main() {
       const doneState = taskState(fresh);
       record(fresh, { event: 'daemon_done', task_id: TASK_ID, state: doneState.state,
         ...(doneState.partial ? { partial: true, partial_reasons: doneState.partial_reasons } : {}) });
+      // An L task that ends blocked never reaches the report node's own call: log what shipped here,
+      // before harvestTask so the run record carries task.wiki.log. Same-set repeats are no-ops.
+      try { writeWikiLog(TASK_ID); } catch { /* a record, not a dependency */ }
       // Every task leaves a record past its project's .teams_output and /tmp (mcp/runlog.mjs,
       // read across runs by scripts/bench/triage.mjs). A failure to keep it never fails the task.
       if (!noDriver() || process.env.TEAMS_RUNS_DIR) {

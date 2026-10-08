@@ -7,9 +7,11 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, chmodSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const CLAUDE_ADAPTER = join(dirname(fileURLToPath(import.meta.url)), '..', 'adapters', 'claude-exec-adapter.mjs');
+const BROKER_SRC = join(dirname(fileURLToPath(import.meta.url)), '..', 'mcp', 'broker.mjs');
 const ADAPTER = join(dirname(fileURLToPath(import.meta.url)), '..', 'adapters', 'codex-exec-adapter.mjs');
 
 // Every object node strict: additionalProperties false, required === every property key.
@@ -112,5 +114,100 @@ test('code-beta-X4: a retry claiming the file its earlier attempt left dirty is 
     const ghost = run(['b.mjs', 'ghost.mjs']);
     assert.equal(ghost.ok, false);
     assert.match(ghost.result.verification_error, /ghost\.mjs/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ---------- flags broker.mjs passes, and the project wiki config ----------
+
+// A fake codex that records its argv and answers a valid implement reply; a fake claude likewise.
+function recordingCodex(dir) {
+  const bin = join(dir, 'bin');
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, 'codex'), `#!/usr/bin/env node
+const fs = require('node:fs');
+const a = process.argv.slice(2);
+if (a.includes('--version')) { console.log('codex 0.0.0'); process.exit(0); }
+fs.writeFileSync(${JSON.stringify(join(dir, 'argv.json'))}, JSON.stringify(a));
+fs.writeFileSync(a[a.indexOf('-o') + 1], ${JSON.stringify(JSON.stringify({ stage_ok: true, handoff: 'h', changed_files: [], checks: ['c -> ok'], evidence: 'e', upstream_defects: null }))});
+`);
+  writeFileSync(join(bin, 'claude'), `#!/usr/bin/env node
+console.log(JSON.stringify({ result: '{}' }));
+`);
+  chmodSync(join(bin, 'codex'), 0o755);
+  chmodSync(join(bin, 'claude'), 0o755);
+  return bin;
+}
+
+// Every flag the adapter-args block of broker.mjs can pass, with whether it takes a value. The test
+// below reads the block's own source, so a flag added there without being added here fails it -
+// the way 0.47.0 broke (--no-wiki reached codex, which exited 2).
+const BROKER_FLAGS = { '--stage': 'implement', '--cwd': 'CWD', '--prompt-file': 'PROMPT', '--events-output': 'EVENTS', '--output': 'OUT',
+  '--sandbox': 'read-only', '--verify': null, '--no-wiki': null, '--isolated': null, '--add-dir': 'ADD', '--model': 'm' };
+
+test('every flag the broker adapter-args block can pass is accepted by both adapters (no usage exit, no unknown argument)', () => {
+  const src = readFileSync(BROKER_SRC, 'utf8');
+  const start = src.indexOf("...(reasoning ? [] : ['--stage'");
+  const end = src.indexOf('\n', src.indexOf("if (chosenModel) args.push('--model'", start));
+  assert.ok(start > 0 && end > start, 'the broker adapter-args block moved: update this test');
+  const seen = new Set(src.slice(start, end).match(/'--[a-z-]+'/g).map((x) => x.slice(1, -1)));
+  assert.deepEqual([...seen].filter((f) => !(f in BROKER_FLAGS)), [], 'broker passes a flag this test does not know');
+  assert.deepEqual(Object.keys(BROKER_FLAGS).filter((f) => !seen.has(f)), [], 'this test lists a flag the broker no longer passes');
+
+  const dir = mkdtempSync(join(tmpdir(), 'adapter-flags-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: dir });
+    const bin = recordingCodex(dir);
+    writeFileSync(join(dir, 'prompt.md'), 'do it');
+    const val = (v) => ({ CWD: dir, PROMPT: join(dir, 'prompt.md'), EVENTS: join(dir, 'events.jsonl'), OUT: join(dir, 'out.json'), ADD: dir }[v] || v);
+    const full = Object.entries(BROKER_FLAGS).flatMap(([f, v]) => (v === null ? [f] : [f, val(v)]));
+    const noStage = full.filter((x, i) => x !== '--stage' && full[i - 1] !== '--stage'); // a reasoning node
+    for (const [label, argv] of [['judging staged (test)', full], ['judging reasoning', noStage], ['non-judging', full.filter((x) => !['--no-wiki', '--verify'].includes(x))]]) {
+      for (const adapter of [ADAPTER, CLAUDE_ADAPTER]) {
+        const r = spawnSync('node', [adapter, ...argv], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, TEAMS_WIKI_ROOT: '' } });
+        assert.notEqual(r.status, 2, `${label} ${adapter}: ${r.stderr}`);
+        assert.doesNotMatch(r.stderr, /usage:|unknown argument/, `${label} ${adapter}`);
+      }
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+const WIKI_SERVER = join(dirname(fileURLToPath(import.meta.url)), '..', 'mcp', 'wiki.mjs');
+function codexArgv(extra, env, root = 'x') {
+  const dir = mkdtempSync(join(tmpdir(), 'codex-wiki-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: dir });
+    const bin = recordingCodex(dir);
+    writeFileSync(join(dir, 'prompt.md'), 'do it');
+    spawnSync('node', [ADAPTER, '--stage', 'implement', '--cwd', dir, '--prompt-file', join(dir, 'prompt.md'), '--output', join(dir, 'out.json'), '--sandbox', 'danger-full-access', ...extra],
+      { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, TEAMS_WIKI_ROOT: '', ...env } });
+    return JSON.parse(readFileSync(join(dir, 'argv.json'), 'utf8'));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+const cOverrides = (argv) => argv.flatMap((x, i) => (argv[i - 1] === '-c' ? [x] : []));
+
+test('TEAMS_WIKI_ROOT set: codex exec gets exactly two -c pairs (command, args) that parse back to the exact values, awkward root included', () => {
+  const root = '/proj/my "quoted" dir\\back';
+  const argv = codexArgv([], { TEAMS_WIKI_ROOT: root });
+  assert.equal(argv.filter((x) => x === '-c').length, 2);
+  const [cmd, args] = cOverrides(argv);
+  assert.equal(cmd.slice(0, cmd.indexOf('=')), 'mcp_servers.teams-wiki.command');
+  assert.equal(JSON.parse(cmd.slice(cmd.indexOf('=') + 1)), process.execPath);
+  assert.equal(args.slice(0, args.indexOf('=')), 'mcp_servers.teams-wiki.args');
+  assert.deepEqual(JSON.parse(args.slice(args.indexOf('=') + 1)), [WIKI_SERVER, '--root', root]);
+  assert.ok(isAbsolute(WIKI_SERVER));
+  assert.equal(argv[argv.length - 1], 'do it', 'the prompt stays last');
+});
+
+test('codex exec argv is unchanged without TEAMS_WIKI_ROOT or with --no-wiki; the write/smoke probes (--detect) never get it', () => {
+  assert.equal(codexArgv([], {}).includes('-c'), false);
+  assert.equal(codexArgv(['--no-wiki'], { TEAMS_WIKI_ROOT: '/proj/main' }).includes('-c'), false);
+  const dir = mkdtempSync(join(tmpdir(), 'codex-detect-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: dir });
+    const bin = recordingCodex(dir);
+    spawnSync('node', [ADAPTER, '--detect', '--cwd', dir, '--output', join(dir, 'out.json'), '--sandbox', 'danger-full-access'],
+      { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, TEAMS_WIKI_ROOT: '/proj/main' } });
+    const seen = (() => { try { return readFileSync(join(dir, 'argv.json'), 'utf8'); } catch { return '[]'; } })();
+    assert.equal(JSON.parse(seen).includes('-c'), false);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

@@ -754,11 +754,14 @@ const WIKI_CWD = '/tmp/wiki-prompt-cwd'; // never touched: composePrompt only pr
 const wikiPrompt = (nodeOver, runOver = {}, stage = 'implement') =>
   composePrompt(baseRun(WIKI_CWD, runOver), baseNode({ stage, node_id: 'implement:U1:1', ...nodeOver }), baseBriefing());
 
-test('wiki paragraph: adapter claude, self on claude, and null executor on a claude host get it; codex does not', () => {
+test('wiki paragraph: a claude or codex executor (adapter, self on its host, null on its host) gets it', () => {
   for (const [label, node, run] of [
     ['adapter claude', { executor: 'claude', vendor: 'claude' }, {}],
     ['self claude', { executor: 'claude', vendor: 'self' }, { host_vendor: 'codex' }],
     ['null executor, host claude', {}, { host_vendor: 'claude' }],
+    ['codex adapter', { executor: 'codex', vendor: 'codex' }, { host_vendor: 'claude' }],
+    ['self codex', { executor: 'codex', vendor: 'self' }, { host_vendor: 'claude' }],
+    ['null executor, host codex', {}, { host_vendor: 'codex' }],
   ]) {
     const p = wikiPrompt(node, run);
     assert.ok(p.includes(WIKI_HEAD), label);
@@ -769,19 +772,11 @@ test('wiki paragraph: adapter claude, self on claude, and null executor on a cla
     assert.match(p, /Do not write in space log/);
     assert.ok(!p.includes(NO_WIKI_LINE), label);
   }
-  for (const [label, node, run] of [
-    ['codex adapter', { executor: 'codex', vendor: 'codex' }, { host_vendor: 'claude' }],
-    ['self codex', { executor: 'codex', vendor: 'self' }, { host_vendor: 'claude' }],
-    ['null executor, host codex', {}, { host_vendor: 'codex' }],
-  ]) {
-    const p = wikiPrompt(node, run);
-    assert.ok(!p.includes(WIKI_HEAD) && !p.includes(NO_WIKI_LINE), label);
-  }
 });
 
 test('wiki paragraph: a prompt that gets neither block is the claude prompt minus exactly that paragraph', () => {
   const withWiki = wikiPrompt({ executor: 'claude', vendor: 'claude' });
-  const without = wikiPrompt({ executor: 'codex', vendor: 'codex' });
+  const without = wikiPrompt({ executor: 'human', vendor: 'human', assignment: { executor: 'human' } });
   const start = withWiki.indexOf(WIKI_HEAD);
   const end = withWiki.indexOf('\n\n', start) + 2;
   assert.equal(withWiki.slice(0, start) + withWiki.slice(end), without);

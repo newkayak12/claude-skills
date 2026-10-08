@@ -8517,6 +8517,56 @@ test('W2 log: a size-S task writes no log page', async () => {
   });
 });
 
+// The daemon's own daemon_done point: an L task that ends blocked never reaches the report node's
+// call, so the log of what shipped is written there. Real daemon process, no model (no judging node is ready).
+const daemonRun = (root, task_id) => spawnSync('node', [join(HERE, '..', 'mcp', 'daemon.mjs'), '--task', task_id],
+  { encoding: 'utf8', timeout: 60000, env: { ...process.env, HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', HARNESS_JUDGE_DRIVER: 'false', TEAMS_VIEW: '0' } });
+const blockWithoutReport = (root, task_id, over = () => {}) => mutateTaskIn(root, task_id, (t) => {
+  delete t.wiki;
+  t.nodes.filter((n) => n.stage === 'report').forEach((n) => { n.state = 'failed'; });
+  over(t);
+});
+const mutateTaskIn = (root, task_id, fn) => {
+  const was = process.env.HARNESS_TASKS_DIR;
+  process.env.HARNESS_TASKS_DIR = root;
+  try { mutateTask(task_id, fn); } finally { if (was === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = was; }
+};
+
+test('W2 daemon_done: an L task ending blocked without a report but with a shipped package gets its log page; a repeat adds none', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    await toWikiReport(tm, g, task_id);
+    blockWithoutReport(root, task_id);
+    rmSync(wikiDir(cwd), { recursive: true, force: true });
+    const r = daemonRun(root, task_id);
+    assert.equal(r.status, 0, r.stderr + r.stdout + String(r.error));
+    assert.match(readFileSync(join(root, task_id, 'ledger.jsonl'), 'utf8'), /"event":"daemon_done","task_id":"[^"]+","state":"blocked"/);
+    const log = taskFile(root, task_id).wiki.log;
+    assert.equal(log.status, 'written');
+    assert.ok(log.shipped.length >= 1);
+    assert.equal(logFiles(cwd).length, 1);
+    const stat = readFileSync(join(cwd, log.path), 'utf8');
+    assert.equal(daemonRun(root, task_id).status, 0);
+    assert.equal(readFileSync(join(cwd, log.path), 'utf8'), stat);
+    assert.equal(logFiles(cwd).length, 1, 'same shipped set: no second page');
+  });
+});
+
+test('W2 daemon_done: nothing shipped, or a size-S task, writes no log page', async () => {
+  for (const [label, over] of [
+    ['nothing shipped', (t) => { t.nodes.filter((n) => n.stage === 'integrate').forEach((n) => { n.state = 'failed'; }); }],
+    ['size S', (t) => { t.size = 'S'; }],
+  ]) {
+    await withTask(async ({ tm, g, cwd, root, task_id }) => {
+      await toWikiReport(tm, g, task_id);
+      blockWithoutReport(root, task_id, over);
+      rmSync(wikiDir(cwd), { recursive: true, force: true });
+      daemonRun(root, task_id);
+      assert.equal(existsSync(wikiDir(cwd)), false, label);
+      assert.equal('log' in (taskFile(root, task_id).wiki || {}), false, label);
+    });
+  }
+});
+
 test('W2 failure: a wiki that throws on every call (.teams_wiki is a file) never fails a node - report done and complete, the error is recorded on task.wiki.log', async () => {
   await withTask(async ({ tm, g, cwd, task_id }) => {
     await toWikiReport(tm, g, task_id);

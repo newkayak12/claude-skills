@@ -9,12 +9,13 @@ import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 function usage() {
   process.stderr.write(
     'usage: node harness/engine/codex-exec-adapter.mjs ' +
       '[--detect] --cwd DIR --output FILE [--prompt-file FILE] [--events-output FILE] ' +
-      '[--stage implement|test] [--add-dir DIR] [--isolated] ' +
+      '[--stage implement|test] [--add-dir DIR] [--isolated] [--verify] [--no-wiki] ' +
       '[--sandbox read-only|workspace-write|danger-full-access] [--model MODEL]\n',
   );
   process.exit(2);
@@ -39,6 +40,9 @@ for (let i = 0; i < args.length; i++) {
     // review or gate node here could already run `wc -w` or a validator with no code
     // change. Recognized so broker.mjs can pass it to either vendor uniformly; no-op here.
     opts.verify = true;
+  } else if (key === '--no-wiki') {
+    // Judging stages never get the project wiki (broker.mjs passes this for every vendor).
+    opts.noWiki = true;
   } else if (key === '--cwd') {
     opts.cwd = val;
     i++;
@@ -73,6 +77,20 @@ if (!['read-only', 'workspace-write', 'danger-full-access'].includes(opts.sandbo
 if (opts.stage && !['implement', 'test'].includes(opts.stage)) usage();
 
 const cwd = resolve(opts.cwd);
+
+// The project wiki: when the engine sets TEAMS_WIKI_ROOT (task.cwd, never a worktree) a worker gets
+// exactly one MCP server, teams-wiki, rooted there, through two -c overrides (value parsed as TOML;
+// JSON.stringify gives valid TOML basic strings and a valid inline array). Judging stages arrive
+// with --no-wiki and the write/smoke probes are separate argv lists: neither gets it.
+function wikiConfigArgs() {
+  const root = process.env.TEAMS_WIKI_ROOT;
+  if (!root || opts.noWiki || opts.detect) return [];
+  const server = fileURLToPath(new URL('../mcp/wiki.mjs', import.meta.url));
+  return [
+    '-c', `mcp_servers.teams-wiki.command=${JSON.stringify(process.execPath)}`,
+    '-c', `mcp_servers.teams-wiki.args=${JSON.stringify([server, '--root', root])}`,
+  ];
+}
 const outputPath = resolve(opts.output);
 const eventsPath = opts.eventsOutput ? resolve(opts.eventsOutput) : null;
 
@@ -443,6 +461,7 @@ function runCodex() {
   if (schemaPath) codexArgs.push('--output-schema', schemaPath);
   if (eventsPath) codexArgs.push('--json');
   if (opts.model) codexArgs.push('-m', opts.model);
+  codexArgs.push(...wikiConfigArgs());
   codexArgs.push(prompt);
 
   const beforeSnapshot = gitSnapshot();
