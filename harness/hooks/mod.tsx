@@ -91,7 +91,9 @@ export const register: Register = on => {
     if (!(await read($, armed))) {
       return (
         <Box flexDirection="column">
-          <Text>No gate configured: .claude/harness-gate.json is not in this project.</Text>
+          <Text dimColor wrap="truncate-end">
+            {'○ No gate configured: .claude/harness-gate.json is not in this project.'}
+          </Text>
         </Box>
       )
     }
@@ -100,18 +102,46 @@ export const register: Register = on => {
     const d = await read($, last)
     const now = await $.clock.now()
     return (
-      <Box flexDirection="column">
-        <Text>{`Gated patterns (${list.length}): ${list.join(', ')}`}</Text>
-        <Text>{`Engagement window: ${hours} h`}</Text>
+      <Box flexDirection="column" gap={1}>
+        <Box flexDirection="column">
+          <Text bold wrap="truncate-end">
+            <Text color="claude">●</Text> Gate armed
+          </Text>
+          <Text>{`Gated patterns (${list.length}):`}</Text>
+          {list.map(p => (
+            <Text key={p} wrap="truncate-end">
+              <Text dimColor>· </Text>
+              {p}
+            </Text>
+          ))}
+          <Text>
+            <Text dimColor>Engagement window:</Text> {`${hours} h`}
+          </Text>
+        </Box>
         {d === null ? (
-          <Text>No gated call decided yet.</Text>
+          <Text dimColor>No gated call decided yet.</Text>
         ) : (
           <Box flexDirection="column">
-            <Text>{`Last decision: ${d.decision} (${d.tool} ${d.target}, ${ago(now - d.ts)})`}</Text>
-            <Text>{`Reason: ${d.reason}`}</Text>
+            <Text dimColor>Last decision:</Text>
+            <Box
+              flexDirection="column"
+              borderStyle="round"
+              borderColor={d.decision === 'deny' ? 'error' : 'success'}
+              paddingX={1}
+            >
+              <Text wrap="truncate-end">
+                <Text bold color={d.decision === 'deny' ? 'error' : 'success'}>
+                  {`${d.decision === 'deny' ? '✘' : '✔'} ${d.decision}`}
+                </Text>
+                {` ${d.tool} ${d.target}, ${ago(now - d.ts)}`}
+              </Text>
+              <Text>{`Reason: ${d.reason}`}</Text>
+            </Box>
           </Box>
         )}
-        <Text>{ENGAGE}</Text>
+        <Box borderStyle="round" borderDimColor paddingX={1}>
+          <Text dimColor>{ENGAGE}</Text>
+        </Box>
       </Box>
     )
   })

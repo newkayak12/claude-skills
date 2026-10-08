@@ -32,6 +32,7 @@ const tab = atom({ plugin: 'trophy', key: 'tab' } as const, 'trophies' as 'troph
 const consent = atom({ plugin: 'trophy', key: 'consent' } as const, 'unasked' as 'unasked' | 'yes' | 'no')
 const consentVersion = atom({ plugin: 'trophy', key: 'consentVersion' } as const, 0)
 
+const BAR = 10
 const PANE = 'trophy'
 const BATCH_PANE = 'trophy-batch'
 type Consent = 'unasked' | 'yes' | 'no'
@@ -231,13 +232,26 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const current = await read($, tab)
     const unlocked = ((await $.store.get('trophy.unlocked')) ?? {}) as Record<string, string>
+    const done = Object.keys(unlocked).length
+    const filled = achievements.length === 0 ? 0 : Math.round((done / achievements.length) * BAR)
     const header = (
-      <Box>
+      <Box borderStyle="round" borderColor="claude">
         <Text key="count" bold>
-          {Object.keys(unlocked).length} / {achievements.length} 해금{' '}
+          {'▰'.repeat(filled)}
+          {'▱'.repeat(BAR - filled)} {done} / {achievements.length} 해금{' '}
         </Text>
-        <Button key="tab-trophies" label="업적" onPress={() => update($, tab, () => 'trophies')} />
-        <Button key="tab-triggers" label="트리거" onPress={() => update($, tab, () => 'triggers')} />
+        <Button
+          key="tab-trophies"
+          label="업적"
+          variant={current === 'trophies' ? 'primary' : undefined}
+          onPress={() => update($, tab, () => 'trophies')}
+        />
+        <Button
+          key="tab-triggers"
+          label="트리거"
+          variant={current === 'triggers' ? 'primary' : undefined}
+          onPress={() => update($, tab, () => 'triggers')}
+        />
       </Box>
     )
 
@@ -248,16 +262,16 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column">
           {header}
-          <Text bold>가장 많이 맞은 스킬 (7일)</Text>
+          <Text bold color="success">가장 많이 맞은 스킬 (7일)</Text>
           {lists.hit.map(([skill, n]) => (
-            <Text>{skill} · {n}</Text>
+            <Text key={`hit-${skill}`}>{skill} · {n}</Text>
           ))}
-          <Text bold>가장 많이 놓친 스킬 (트리거 문구는 있었는데 안 쓴)</Text>
+          <Text bold color="warning">가장 많이 놓친 스킬 (트리거 문구는 있었는데 안 쓴)</Text>
           {lists.miss.map(([skill, n]) => (
-            <Text>{skill} · {n}</Text>
+            <Text key={`miss-${skill}`}>{skill} · {n}</Text>
           ))}
-          <Text bold>한 번도 안 쓴 스킬 ({lists.never.length})</Text>
-          <Text dimColor>{never}</Text>
+          <Text bold color="subtle">한 번도 안 쓴 스킬 ({lists.never.length})</Text>
+          <Text dimColor wrap="truncate-end">{never}</Text>
         </Box>
       )
     }
@@ -267,7 +281,14 @@ export const register: Register = on => {
       <Box flexDirection="column">
         {header}
         {achievements.map(a => (
-          <Text key={`row-${a.id}`}>{achievementRow(a, uses, unlocked[a.id])}</Text>
+          <Box key={`row-${a.id}`}>
+            {unlocked[a.id] ? (
+              <Text key="mark" color="success">✔ </Text>
+            ) : (
+              <Text key="mark" dimColor>○ </Text>
+            )}
+            <Text key="row" wrap="truncate-end">{achievementRow(a, uses, unlocked[a.id])}</Text>
+          </Box>
         ))}
       </Box>
     )
@@ -293,7 +314,7 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e)
     return (
       <Box flexDirection="column">
-        <Box>
+        <Box borderStyle="round" borderColor="warning">
           <Text>trophy: 익명 사용 통계를 보낼까요? (스킬명·일별 횟수·오류 코드만, 프롬프트·경로 없음) </Text>
           <Button key="send" label="보내기" onPress={() => setConsent($, 'yes')} />
           <Button key="decline" label="안 보내기" onPress={() => setConsent($, 'no')} />
@@ -311,7 +332,9 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         <Text dimColor>POST {POSTHOG_URL} — {body.batch.length} events</Text>
-        <Text>{JSON.stringify(body, null, 2)}</Text>
+        <Box borderStyle="round" borderDimColor>
+          <Text>{JSON.stringify(body, null, 2)}</Text>
+        </Box>
       </Box>
     )
   }).catch(failOpen)

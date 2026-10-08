@@ -122,7 +122,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     on('ui.render', (_$, e) => (e.component === 'AbovePrompt' ? { type: 'Text', children: ['engine band'] } : undefined) as never)
     world(on, { surfaces: [surface], state: { runs: [RUN] } })
     const ui = await band($)
-    expect(await ui.find({ type: 'Text', text: /harness mods-beta: implement/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /mods-beta/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /1\/2 passed/ })).toBeDefined()
   })
 

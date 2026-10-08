@@ -248,12 +248,19 @@ export const register: Register = on => {
     const rows = newest(log)
     return (
       <Box flexDirection="column">
-        <Text bold>{sending ? '전송: trophy 동의 yes → 켜짐' : '전송: 꺼짐 (로컬만)'}</Text>
+        <Box gap={1}>
+          {sending ? <Text color="success">●</Text> : <Text dimColor>○</Text>}
+          <Text bold>{sending ? '전송: trophy 동의 yes → 켜짐' : '전송: 꺼짐 (로컬만)'}</Text>
+        </Box>
         {rows.length === 0 && <Text dimColor>No failures recorded.</Text>}
         {rows.map((r, i) => (
-          <Box key={`row-${i}`} flexDirection="column">
-            <Box>
-              <Text>{rowTitle(r)} </Text>
+          <Box key={`row-${i}`} flexDirection="column" borderStyle="round" borderColor="error" borderDimColor paddingX={1}>
+            <Box justifyContent="space-between" gap={1}>
+              <Box flexShrink={1}>
+                <Text color="error">✘ </Text>
+                <Text wrap="truncate-end">{rowTitle(r)}</Text>
+              </Box>
+              <Box flexShrink={0}>
               <Button
                 key={`copy-${i}`}
                 label="복사"
@@ -261,12 +268,15 @@ export const register: Register = on => {
                   void $.ui.copy({ text: copyBody(r), surface: press.surface }).catch(() => {})
                 }}
               />
+              </Box>
             </Box>
             {rowDetail(r).map((line, j) => <Text key={`d-${i}-${j}`} dimColor>{line}</Text>)}
           </Box>
         ))}
-        <Text bold>다음 전송 미리보기 ({events.length} events)</Text>
-        <Text>{batchBody(events, installId)}</Text>
+        <Text bold color="claude">다음 전송 미리보기 ({events.length} events)</Text>
+        <Box borderStyle="round" borderDimColor paddingX={1}>
+          <Text>{batchBody(events, installId)}</Text>
+        </Box>
       </Box>
     )
   }).catch(($, e, next) => next(e))
