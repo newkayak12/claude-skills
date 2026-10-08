@@ -21,7 +21,7 @@ export const PS = [
 ].join('\n')
 
 // Every process call is answered from memory and recorded in `procs`: no real signal is ever sent.
-export const world = (on: On, opts: { ps?: string; os?: string } = {}) => {
+export const world = (on: On, opts: { ps?: string; os?: string; surfaces?: string[] } = {}) => {
   memoryStore(on)
   const cells = memoryState(on)
   clockAt(on, Date.parse('Oct 8 2026 10:14:00'))
@@ -38,7 +38,7 @@ export const world = (on: On, opts: { ps?: string; os?: string } = {}) => {
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
   on('ui.open', () => ({ value: { isPlaced: true } as any }))
-  on('session.surfaces', () => ({ value: ['terminal'] }))
+  on('session.surfaces', () => ({ value: opts.surfaces ?? ['terminal'] }) as never)
   return { cells, procs, body }
 }
 
