@@ -5,7 +5,7 @@ import { memoryStore, sessionAt } from './testkit.ts'
 
 const MARKETPLACE = JSON.stringify({
   plugins: [
-    { name: 'develop', source: './develop' },
+    { name: 'develop', source: './develop', version: '1.10.3' },
     { name: 'knowledge', source: './knowledge' },
   ],
 })
@@ -29,13 +29,16 @@ const bottom = (on: On, w: World = {}) => {
   on('fs.read', (_$, e) => {
     if (e.path.endsWith('/.claude-plugin/marketplace.json')) return { value: MARKETPLACE } as never
     const m = /\/([a-z]+)\/\.mcp\.json$/.exec(e.path)
-    if (m && SERVERS[m[1]]) return { value: JSON.stringify({ mcpServers: { [SERVERS[m[1]][0]]: {} } }) } as never
+    if (m && SERVERS[m[1]!]) return { value: JSON.stringify({ mcpServers: { [SERVERS[m[1]!]![0]!]: {} } }) } as never
     throw new Error('ENOENT')
   })
   on('fs.list', (_$, e) => {
     const m = /\/([a-z]+)\/skills$/.exec(e.path)
     return { value: (SKILLS[m?.[1] ?? ''] ?? []).map(name => ({ name, kind: 'dir', size: 0, mtimeMs: 0, isLink: false })) } as never
   })
+  on('session.version', () => ({ value: { version: '2.1.293', base: '2.1.293' } }) as never)
+  on('ui.toast', () => ({ value: undefined }))
+  on('fs.write', () => ({ value: undefined }))
   on('classic.PostToolUseFailure', () => ({}))
   on('prompt.submit', (_$, e) => ({ text: e.text }))
   on('tool.call', { tool: 'Skill' }, () => (w.skill ?? { result: { success: true, commandName: 'x' } }) as never)
@@ -43,8 +46,11 @@ const bottom = (on: On, w: World = {}) => {
   on('tool.call', { tool: 'Bash' }, () => (w.bash ?? { result: { stdout: '', stderr: '' } }) as never)
 }
 
-type Logged = { reason: string; kind: string; plugin?: string; skill?: string; tool?: string; local: Record<string, string> }
-const log = (store: Map<string, unknown>) => (store.get('diag.log') ?? []) as Logged[]
+type Logged = {
+  reason: string; kind: string; plugin?: string; skill?: string; tool?: string; version?: string; cc?: string
+  local: Record<string, string>
+}
+const log = (store: Map<string, unknown>) => (store.get('trophy.failures') ?? []) as Logged[]
 
 const boot = async ($: any, on: On, interactive = true, w: World = {}) => {
   const store = memoryStore(on)
@@ -58,12 +64,12 @@ const fail = (o: object) => ({
   tool_name: 'Skill', tool_input: { skill: 'develop:clean-code' }, tool_use_id: 't1', error: 'boom', ...o,
 }) as never
 
-test('S1a owned skill failure is recorded once', async ($, on) => {
+test('S1a owned skill failure is recorded once, with the plugin and Claude Code versions', async ($, on) => {
   const store = await boot($, on)
   await $.classic.PostToolUseFailure(fail({}))
   await $.classic.PostToolUseFailure(fail({}))
-  expect(log(store).map(e => [e.kind, e.reason, e.plugin, e.skill, e.local])).toEqual([
-    ['bug', 'is_error', 'develop', 'clean-code', { text: 'boom' }],
+  expect(log(store).map(e => [e.kind, e.reason, e.plugin, e.skill, e.version, e.cc, e.local])).toEqual([
+    ['bug', 'is_error', 'develop', 'clean-code', '1.10.3', '2.1.293', { text: 'boom' }],
   ])
 })
 
@@ -87,7 +93,7 @@ test('S5 owned mcp failure is recorded with raw text only under local', async ($
     error: 'mcp down ' + SECRET,
     mcp_server: { name: 'knowledge-local', source: 'plugin' },
   }))
-  const [e] = log(store)
+  const e = log(store)[0]!
   expect([e.kind, e.reason, e.plugin, e.tool]).toEqual(['bug', 'mcp_error', 'knowledge', 'knowledge_get'])
   expect(e.local.text).toBe('mcp down ' + SECRET)
   expect(JSON.stringify({ ...e, local: undefined })).not.toContain(SECRET)
@@ -111,14 +117,14 @@ test('S2b goal-gate FAIL from fallback-check is recorded as local outcome', asyn
   expect(log(store).map(e => [e.kind, e.reason, e.local])).toEqual([['outcome', 'goal_failed', { slug: 'run1' }]])
 })
 
-test('S4 diag bug records the note under local with the last skill', async ($, on) => {
+test('S4 trophy-bug records the note under local with the last skill', async ($, on) => {
   const store = await boot($, on)
-  const usage = await $.command.run({ command: 'diag', args: 'bug' })
-  expect((usage as { text: string }).text).toMatch(/^usage: \/diag bug <note>/)
+  const usage = await $.command.run({ command: 'trophy-bug', args: '' } as never)
+  expect((usage as { text: string }).text).toMatch(/^usage: \/trophy-bug <note>/)
   expect(log(store)).toEqual([])
   await $.tool.call({ tool: 'Skill', skill: 'develop:clean-code' })
-  await $.command.run({ command: 'diag', args: 'bug it hangs ' + SECRET })
-  const [e] = log(store)
+  await $.command.run({ command: 'trophy-bug', args: 'it hangs ' + SECRET } as never)
+  const e = log(store)[0]!
   expect([e.kind, e.reason, e.plugin, e.skill, e.local.note]).toEqual(['report', 'user_report', 'develop', 'clean-code', 'it hangs ' + SECRET])
   expect(JSON.stringify({ ...e, local: undefined })).not.toContain(SECRET)
 })
@@ -126,10 +132,10 @@ test('S4 diag bug records the note under local with the last skill', async ($, o
 test('typed /plugin:free text never becomes the last skill or any sent field', async ($, on) => {
   const store = await boot($, on)
   await $.prompt.submit({ text: `/develop:${SECRET} please`, wait: false, origin: { kind: 'composer' } } as never)
-  await $.command.run({ command: 'diag', args: 'bug n1' })
+  await $.command.run({ command: 'trophy-bug', args: 'n1' } as never)
   await $.prompt.submit({ text: '/develop:clean-code', wait: false, origin: { kind: 'composer' } } as never)
-  await $.command.run({ command: 'diag', args: 'bug n2' })
-  const [a, b] = log(store)
+  await $.command.run({ command: 'trophy-bug', args: 'n2' } as never)
+  const [a, b] = log(store) as [Logged, Logged]
   expect([a.skill, a.plugin]).toEqual([undefined, undefined])
   expect([b.skill, b.plugin]).toEqual(['clean-code', 'develop'])
   expect(JSON.stringify(log(store).map(e => ({ ...e, local: undefined })))).not.toContain(SECRET)

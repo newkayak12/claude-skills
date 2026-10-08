@@ -136,7 +136,7 @@ export const register: Register = (on, options) => {
     if (!repo?.remote || !REPO_NAME.test(repo.remote)) return next(e)
 
     // Push / version bump: ask the person first; headless runs pass.
-    if (/\bgit\s+push\b|patch-(harness|teams)\.mjs/.test(cmd) && (await $.session.surfaces()).length > 0) {
+    if (/\bgit\s+push\b|patch-harness\.mjs|skills\/patch\/patch\.mjs/.test(cmd) && (await $.session.surfaces()).length > 0) {
       // a dismissed ask rejects: that is a refusal, not a failure to fail open on
       const answer = await $.ui.ask(`Run \`${cmd.slice(0, 120)}\`?`, ['Run', 'Cancel']).catch(() => undefined)
       if (answer !== 'Run') return { deny: 'mods: the person declined the push / version bump.' }

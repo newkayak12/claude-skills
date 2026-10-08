@@ -34,7 +34,7 @@ Prints the same three groups as the `/achievements` pane, as a table, from the p
 - else `hidden` → `🔒 ???`
 - else `🔒 title  ▓▓░░░ have/need` (`progress[id]`, five cells, filled = round(have/need × 5))
 
-Header: `n / total 해금`.
+Title: the top-level `title`, or `ko.title` when replying in Korean. Header: `n / total unlocked` (English) or `n / total 해금` (Korean), following the reply language.
 
 **4. Print the trigger view.** From `triggers7d`: most hit, most missed (the routing gaps: the prompt had a trigger phrase and the skill did not run), and the count of skills never fired in the last 7 days with the first five names.
 

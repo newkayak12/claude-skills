@@ -36,7 +36,7 @@ test('an interactive session registers both commands and keeps one install id', 
   const id = store.get('trophy.installId')
   await $.session.start(start(true))
 
-  expect(registered).toEqual(['achievements', 'trophy-telemetry', 'achievements', 'trophy-telemetry'])
+  expect(registered).toEqual(['achievements', 'trophy-telemetry', 'trophy-bug', 'achievements', 'trophy-telemetry', 'trophy-bug'])
   expect(String(id)).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
   expect(store.get('trophy.installId')).toBe(id)
 })

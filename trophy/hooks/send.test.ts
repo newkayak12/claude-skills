@@ -135,6 +135,41 @@ test('no prompt text, cwd, session id or absolute path reaches the body, even fr
   expect(raw).not.toMatch(/(?<![\w.])\/[\w.-]+\/[\w.-]/)
 })
 
+const FAILURES = [
+  { ts: 1, day: '2026-10-06', kind: 'bug', reason: 'is_error', plugin: 'develop', skill: 'clean-code', version: '1.10.3', cc: '2.1.293', session: 'SECRET-SESSION', local: { text: 'SECRET-ERROR at /Users/kim/x' } },
+  { ts: 2, day: '2026-10-06', kind: 'outcome', reason: 'goal_failed', session: 'SECRET-SESSION', local: { slug: 'SECRET-SLUG' } },
+  { ts: 3, day: '2026-10-06', kind: 'report', reason: 'user_report', session: 'SECRET-SESSION', local: { note: 'SECRET-NOTE' } },
+]
+
+test('a yes sends failure codes with versions under trophy\'s install id; outcomes and local text stay home', async ($, on) => {
+  const f = fixture(on, 'yes')
+  f.store.set('trophy.failures', FAILURES)
+  await $.session.start(START)
+
+  const raw = f.fetches[0]!.body
+  const failed = JSON.parse(raw).batch.filter((e: { event: string }) => e.event.startsWith('diag_'))
+  expect(failed).toEqual([
+    {
+      event: 'diag_skill_error', distinct_id: 'install-1', timestamp: '2026-10-06T12:00:00Z',
+      properties: { skill: 'clean-code', plugin: 'develop', reason: 'is_error', count: 1, day: '2026-10-06', plugin_version: '1.10.3', cc_version: '2.1.293', $process_person_profile: false },
+    },
+    {
+      event: 'diag_user_report', distinct_id: 'install-1', timestamp: '2026-10-06T12:00:00Z',
+      properties: { reason: 'user_report', count: 1, day: '2026-10-06', $process_person_profile: false },
+    },
+  ])
+  for (const secret of ['SECRET', '/Users/', 'goal_failed']) expect(raw).not.toContain(secret)
+})
+
+for (const answer of ['no', undefined]) {
+  test(`${answer ?? 'unasked'} sends no failures either`, async ($, on) => {
+    const f = fixture(on, answer)
+    f.store.set('trophy.failures', FAILURES)
+    await $.session.start(START)
+    expect(f.fetches).toHaveLength(0)
+  })
+}
+
 test('scrub drops paths and cuts at 300 characters', () => {
   expect(scrub('at /Users/kim/proj/x.ts:1')).toBe('at <path>:1')
   expect(scrub('in ~/proj/a.ts and /home/lee/b')).toBe('in <path> and <path>')

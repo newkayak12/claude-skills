@@ -1,5 +1,8 @@
 // Pure functions of the trophy module: no `$`, no store, no clock.
 
+import { failureEvents } from './failures.ts'
+import type { Entry } from './failures.ts'
+
 export type Use = { skill: string; plugin: string; day: string; session: string; ts: number }
 
 export type Rule =
@@ -13,6 +16,7 @@ export type Achievement = {
   id: string
   title: string
   description: string
+  ko: { title: string; description: string }
   hidden?: true
   rule: Rule
 }
@@ -236,6 +240,7 @@ export type BatchStore = {
   unlocked: Record<string, string>
   errors: readonly { day: string; message: string }[]
   plugins: Record<string, string[]>
+  failures: readonly Entry[]
 }
 
 // The events of every day after `sentThrough` up to `through`. Only skill names, plugin names, days and counts.
@@ -269,6 +274,9 @@ export function buildBatch(store: BatchStore, through: string) {
   }
   for (const e of store.errors.filter(e => e.day <= through)) {
     batch.push(event('$exception', e.day, { $exception_message: e.message }))
+  }
+  for (const f of failureEvents(store.failures, store.sentThrough, through)) {
+    batch.push(event(f.event, String(f.properties.day), f.properties))
   }
   return { api_key: POSTHOG_KEY, batch }
 }

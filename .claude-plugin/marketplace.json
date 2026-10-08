@@ -14,7 +14,10 @@
         "name": "newkayak12"
       },
       "source": "./develop",
-      "category": "engineering"
+      "category": "engineering",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "think",
@@ -24,7 +27,10 @@
         "name": "newkayak12"
       },
       "source": "./think",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "write",
@@ -34,7 +40,10 @@
         "name": "newkayak12"
       },
       "source": "./write",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "knowledge",
@@ -44,7 +53,10 @@
         "name": "newkayak12"
       },
       "source": "./knowledge",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "agents",
@@ -54,7 +66,10 @@
         "name": "newkayak12"
       },
       "source": "./agents",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "planning",
@@ -64,7 +79,10 @@
         "name": "newkayak12"
       },
       "source": "./planning",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "skill",
@@ -74,7 +92,10 @@
         "name": "newkayak12"
       },
       "source": "./skill",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "completion",
@@ -84,7 +105,10 @@
         "name": "newkayak12"
       },
       "source": "./completion",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "portfolio",
@@ -94,7 +118,10 @@
         "name": "newkayak12"
       },
       "source": "./portfolio",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "cognition",
@@ -104,42 +131,54 @@
         "name": "newkayak12"
       },
       "source": "./cognition",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "harness",
       "description": "Harness — a lightweight reasoning floor. Pass a raw request; a fixed six-stage engine runs Plan(opus) → SetGoal(opus, adversarial critic) → Implement(provider-routed, Codex when enabled) → Test(provider-routed, Codex when enabled) → QualityGate(opus, bounded loop + goal-level gate) → Report(sonnet). Filters repetition and below-threshold answers regardless of main-session model. B (request + engine) default; A (bespoke Workflow) for custom control flow. Enforcement: opt-in PreToolUse gate — projects list gated paths in .claude/harness-gate.json; edits there require harness engagement (fail-open). The install skill scaffolds a project: it embeds the self-contained gate hook (copies goal-gate.mjs into .claude/hooks/ and merges a PreToolUse entry into committed .claude/settings.json), plus gate config, default conventions (coding/verification/boundaries), and an ambient CLAUDE.md section — project-owned copies, never overwritten. It also optionally embeds the engine + Codex CLI adapter/runner + statically-referenced skills into .claude/harness/ for plugin-less environments (opt-in; dynamic subgoal skills[] cannot be pre-enumerated). Mode M: for control flow the fixed stages cannot express, the harness generates a bespoke Workflow from templates/meta-skeleton.js (contract preserved: judge≠actor, provider routing, bounded loops, deterministic Test, goal-level gate). Workflow path: when codex_provider is auto or required, every Implement/Test stage uses a minimal Sonnet controller to resolve engine/codex-exec-adapter.mjs and delegate to a separate local codex exec --json process; implement_provider/test_provider codex are optional trace hints, not routing prerequisites. On Codex success the controller only converts Codex output into the normal HANDOFF/evidence shape; it does not redo implementation or verification. codex_provider=auto allows explicit degraded Sonnet fallback; codex_provider=required reports provider failure instead of silently falling back. DW-off/Workflow-less fallback (engine/fallback.md): when Dynamic Workflow is disabled or the Workflow tool is absent, the orchestrator first forms a role-isolated Agent Team; the thin team lead coordinates Plan, SetGoal/Critic, Implement, Test, QualityGate, and Report teammates through files in a run directory, closed by fallback-check.mjs. Provider delegation is off by default (codex_provider defaults to off): both the Workflow and fallback paths run Implement/Test on Claude unless a run opts in with codex_provider auto or required. Active Codex sessions should follow AGENTS.md and run the harness contract directly with native tools, not recurse through codex, codex-exec-adapter.mjs, or codex-runner.mjs. SetGoal may also optionally map the repo harness-aware dual-mode skills (plans, executing-plans, subagent-driven-development, test-driven-development, etc.) as subgoal executors; none is required.",
-      "version": "1.25.0",
+      "version": "1.26.1",
       "author": {
         "name": "newkayak12"
       },
       "source": "./harness",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "graph",
       "description": "Graph engineering for the harness flow: a local MCP server owns graph state, routes nodes to vendor CLIs or the session, adjudicates results against the worktree, and keeps payloads on disk. Includes graph:install and graph:orchestrate.",
-      "version": "1.8.2",
+      "version": "1.9.0",
       "author": {
         "name": "newkayak12"
       },
       "source": "./graph",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "teams",
       "description": "A sibling of graph for requests too big for one pass: a TaskManager MCP (task-manager) sizes the request; size L is planned into a PRD and user stories, split into packages that each run the full harness in their own worktree, integrated, QA'd and gated by a background daemon; size S is handed to the development harness. Entry skills teams:orchestrate/develop/document/plan/qa/sprint, board and ticket views (tm_board, teams:board). Runs are kept under .teams_output/ and ~/.harness/tasks/. Zero runtime dependencies beyond Node 18+.",
-      "version": "0.46.0",
+      "version": "0.48.0",
       "author": {
         "name": "newkayak12"
       },
       "source": "./teams",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "trophy",
-      "description": "Steam-style achievements for using this marketplace's skills: a toast on unlock, an /achievements pane, trophy:list in conversation, and a view of which skills your prompts should have triggered. Opt-in anonymous daily counts (off by default).",
-      "version": "0.3.0",
+      "description": "Steam-style achievements for using this marketplace's skills: a toast on unlock, an /achievements pane, trophy:list in conversation, and a view of which skills your prompts should have triggered, and a local record of skill failures. Opt-in anonymous daily counts and error codes (off by default).",
+      "version": "0.5.0",
       "author": {
         "name": "newkayak12"
       },
@@ -149,32 +188,28 @@
     {
       "name": "mods",
       "description": "Beta Claude Code mods for the claude-skills workflow: skill toasts, safety guards for worktrees, running scripts, push/bump and subagent models.",
-      "version": "0.1.0-beta.3",
+      "version": "0.1.0-beta.5",
       "author": {
         "name": "newkayak12"
       },
       "source": "./mods",
-      "category": "productivity"
-    },
-    {
-      "name": "diag",
-      "description": "Beta. Records failures of this marketplace's skills and MCP tools in interactive sessions, shows them in a /diag pane, and sends only fixed error codes and counts when trophy's consent is yes.",
-      "version": "0.1.0-beta.3",
-      "author": {
-        "name": "newkayak12"
-      },
-      "source": "./diag",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "session",
-      "description": "Beta. What a session left behind: a /session pane with files changed, commits, denied calls and the longest step, a retro band on the next start, and a safe stop for stray claude -p children.",
+      "description": "Beta. What a session left behind and a safety net: a /session pane with files changed, commits, denied calls and the longest gap, a retro band on the next start, a safe stop for stray claude -p children, guards that confirm destructive commands and secret-file writes, and /memo notes pinned to the model's context.",
       "version": "0.1.0-beta.1",
       "author": {
         "name": "newkayak12"
       },
       "source": "./session",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     }
   ]
 }
