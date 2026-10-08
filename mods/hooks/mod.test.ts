@@ -109,12 +109,12 @@ test('headless: no poll, no toast, no status after session.start + 10 s; git pus
 // ---- skill toast ----
 const skill = ($: Engine, name: string) => call($, 'Skill', { skill: name })
 
-test('skill toast: a plugin of this marketplace toasts and sets the status', async ($, on) => {
+test('skill toast: a plugin of this marketplace toasts (no status)', async ($, on) => {
   const seen = world(on, { marketplace: MARKETPLACE })
   const r = await skill($, 'think:grill')
   expect(r).toEqual({ result: 'done', text: '' })
   expect(seen.toasts).toEqual(['◆ skill: think:grill'])
-  expect(seen.statuses).toEqual(['◆ skill: think:grill'])
+  expect(seen.statuses).toEqual([])
 })
 
 test('skill toast: a foreign plugin shows nothing', async ($, on) => {
@@ -356,7 +356,7 @@ test('fetch reminder: another origin runs no git', async ($, on) => {
   expect(seen.argv.some(a => a[0] === 'git')).toBe(false)
 })
 
-// ---- turn-end claude -p count (D2 form a: this session's descendants) ----
+// ---- fixtures: this session's process table ----
 // engine pid 4242 (what `sh -c 'echo $PPID'` prints). 4300 is a wrapper shell of the child 4301 (one job);
 // 4310 is a second child; 9000 is an unrelated claude -p outside this session.
 const PS = [
@@ -372,19 +372,7 @@ const PS = [
 const TURN = { reason: 'answer', answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1' } as never
 const procFor = (ps: string) => (argv: readonly string[]) => (argv[0] === 'sh' ? ok('4242\n') : argv[0] === 'ps' ? ok(ps) : ok(''))
 
-test('turn end: 2 descendant claude -p (wrapper shell counted once) + 1 unrelated -> status "2 ..."', async ($, on) => {
-  const seen = world(on, { proc: procFor(PS) })
-  await $.turn.complete(TURN)
-  expect(seen.statuses).toEqual(['⧗ 2 claude -p child(ren) running · /reap'])
-})
-
-test('turn end: only a wrapper shell + its child counts 1', async ($, on) => {
-  const seen = world(on, { proc: procFor(PS.split('\n').filter(l => !l.startsWith('4310')).join('\n')) })
-  await $.turn.complete(TURN)
-  expect(seen.statuses).toEqual(['⧗ 1 claude -p child(ren) running · /reap'])
-})
-
-test('turn end: 0 descendants clears the status (undefined)', async ($, on) => {
+test('turn end: 0 alive agents clears the status (undefined)', async ($, on) => {
   const seen = world(on, { proc: procFor(PS.split('\n').filter(l => /^\s*(1|4242|4320|9000)\s/.test(l)).join('\n')) })
   await $.turn.complete(TURN)
   expect(seen.statuses).toEqual([undefined])
@@ -408,7 +396,7 @@ const AGENTS = [
 ]
 const reap = ($: Engine) => $.command.run({ command: 'reap', args: '' } as never) as Promise<{ text?: string }>
 const kills = (seen: { argv: (readonly string[])[] }) => seen.argv.filter(a => a[0] === 'kill')
-const NO_CLAUDE_P = PS.split('\n').filter(l => !/claude -p/.test(l)).join('\n')
+const PS_NO_HEADLESS = PS.split('\n').filter(l => !/claude -p/.test(l)).join('\n')
 
 test('reap: interactive session.start registers /reap; headless registers nothing', async ($, on) => {
   const seen = world(on)
@@ -423,7 +411,7 @@ test('reap: headless session.start registers no command', async ($, on) => {
 })
 
 test('reap: stops only pending/running/waiting/idle agents, in list order, after Reap', async ($, on) => {
-  const seen = world(on, { agents: AGENTS, answer: 'Reap', proc: procFor(NO_CLAUDE_P) })
+  const seen = world(on, { agents: AGENTS, answer: 'Reap', proc: procFor(PS_NO_HEADLESS) })
   const r = await reap($)
   expect(seen.stops).toEqual(['a1', 'a2', 'a3', 'a4'])
   expect(seen.asks).toHaveLength(1)
@@ -450,7 +438,7 @@ test('reap: an installed build (.../claude/versions/<v>) counts as this session\
 })
 
 test('reap: the status line is refreshed after reaping', async ($, on) => {
-  const seen = world(on, { agents: AGENTS.slice(0, 1), answer: 'Reap', proc: procFor(NO_CLAUDE_P) })
+  const seen = world(on, { agents: AGENTS.slice(0, 1), answer: 'Reap', proc: procFor(PS_NO_HEADLESS) })
   await reap($)
   expect(seen.statuses).toEqual(['⧗ 1 agent(s) running · /reap'])
 })
@@ -487,7 +475,7 @@ test('reap: a dismissed ask stops nothing', async ($, on) => {
 })
 
 test('reap: nothing alive asks nothing and says nothing to reap', async ($, on) => {
-  const seen = world(on, { agents: AGENTS.slice(4), proc: procFor(NO_CLAUDE_P) })
+  const seen = world(on, { agents: AGENTS.slice(4), proc: procFor(PS_NO_HEADLESS) })
   const r = await reap($)
   expect(seen.asks).toEqual([])
   expect(seen.stops).toEqual([])
@@ -496,7 +484,7 @@ test('reap: nothing alive asks nothing and says nothing to reap', async ($, on) 
 
 test('reap: a child of a stopped parent is not stopped again', async ($, on) => {
   const agents = [{ id: 'p', description: 'parent', status: 'running' }, { id: 'c', description: 'child', status: 'running', parentId: 'p' }]
-  const seen = world(on, { agents, answer: 'Reap', proc: procFor(NO_CLAUDE_P) })
+  const seen = world(on, { agents, answer: 'Reap', proc: procFor(PS_NO_HEADLESS) })
   await reap($)
   expect(seen.stops).toEqual(['p'])
 })
@@ -505,7 +493,7 @@ test('reap: one failing TaskStop (throw or deny) is reported; the others still s
   const seen = world(on, {
     agents: AGENTS.slice(0, 3),
     answer: 'Reap',
-    proc: procFor(NO_CLAUDE_P),
+    proc: procFor(PS_NO_HEADLESS),
     stop: id => {
       if (id === 'a1') throw new Error('no such task')
       if (id === 'a2') return { deny: 'not allowed' }
@@ -530,16 +518,10 @@ test('reap: headless /reap asks, stops and kills nothing', async ($, on) => {
   expect(r.text).toMatch(/interactive sessions only/)
 })
 
-test('turn end: 2 alive agents and no claude -p -> "2 agent(s) running · /reap", nothing stopped', async ($, on) => {
-  const seen = world(on, { agents: AGENTS.slice(0, 2).concat(AGENTS.slice(4)), proc: procFor(NO_CLAUDE_P) })
+test('turn end: 2 alive agents -> "2 agent(s) running · /reap", nothing stopped', async ($, on) => {
+  const seen = world(on, { agents: AGENTS.slice(0, 2).concat(AGENTS.slice(4)), proc: procFor(PS_NO_HEADLESS) })
   await $.turn.complete(TURN)
   expect(seen.statuses).toEqual(['⧗ 2 agent(s) running · /reap'])
   expect(seen.stops).toEqual([])
   expect(kills(seen)).toEqual([])
-})
-
-test('turn end: 1 agent + 2 claude -p -> both counted', async ($, on) => {
-  const seen = world(on, { agents: AGENTS.slice(0, 1), proc: procFor(PS) })
-  await $.turn.complete(TURN)
-  expect(seen.statuses).toEqual(['⧗ 1 agent(s) · 2 claude -p child(ren) running · /reap'])
 })
