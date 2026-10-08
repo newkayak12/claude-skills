@@ -24,9 +24,11 @@ Claude Code 2.1.292 or newer. Older builds print one stderr line and skip the mo
 | 5 | Fetch reminder | Fetches at session start (interactive sessions only) and toasts if `origin/main` is ahead | claude-skills repo only |
 | 6 | Push / bump ask | Asks before `git push` and the `patch-harness` / `patch-teams` version bump scripts; the command is denied unless Run is chosen (dismissing the prompt also denies); headless sessions pass without asking | claude-skills repo only |
 | 7 | README without KOR | Toast on `git commit` when a staged `README.md` has no staged `KOR.md` | claude-skills repo only |
-| 8 | `claude -p` count | Moved to the `session` plugin; without it installed, the status line is gone | none |
+| 8 | `claude -p` count | At turn end, status line `n claude -p child(ren) running` for headless children of this session; cleared at 0 | interactive |
 
 "claude-skills repo only" means the session repo's remote matches `/claude-skills(\.git)?$/`; in any other repo these three do nothing. Interactive-only features do nothing in headless (`claude -p`) sessions.
+
+The `claude -p` count is per session: only processes started below this session's engine process are counted. Processes that escape it (nohup, setsid, daemons reparented to pid 1) are not counted.
 
 ## Options
 
@@ -42,3 +44,4 @@ Claude Code 2.1.292 or newer. Older builds print one stderr line and skip the mo
 - The skill toast needs the marketplace file to be readable from the plugin location; if not, no toast is shown.
 - The Agent guard also flags subagent types whose definition already pins a model, because it only sees the call's own `model` argument.
 - The worktree guard ignores a leading `cd <dir> &&` in the same command; only `-C <dir>` or the session directory is used to resolve the path.
+- The `claude -p` count is a snapshot taken at turn end, not live.
