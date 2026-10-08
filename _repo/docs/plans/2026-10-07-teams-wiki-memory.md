@@ -1,6 +1,6 @@
 # teams wiki — 세션을 넘는 장기 메모리 (2026-10-07)
 
-> 상태: 1단계 v0.42.0, 1b·2단계 v0.44.0, 3단계 v0.47.0, 4단계 v0.49.0, 5단계(§8) v0.50.0 출시. codex 실측 스모크는 로그인 후.
+> 상태: 1단계 v0.42.0, 1b·2단계 v0.44.0, 3단계 v0.47.0, 4단계 v0.49.0, 5단계(§8) v0.50.0 출시, 5단계 실측 완료. codex 실측은 보류.
 > 근거 문서: `2026-09-28-teams-cards-everywhere.md` (Principles 1–5), `2026-09-17-teams-team.md` §6b
 > ("새 층이 메모리 상태를 만든다" 금지).
 > 선례: `knowledge/scripts/sqlite-knowledge.mjs` (node:sqlite + FTS5 + BLOB 벡터 + JS cosine).
@@ -253,3 +253,7 @@ Done when
 
 Critique: P2 — 엔진 쓰기·판정 경로가 더 줄어 판정자와 wiki의 접점 없음 ✓. 단순성 — 코드 삭제 위주 ✓.
 위험 — 동시에 도는 다른 task가 같은 기간에 쓴 페이지도 report에 섞인다(기간 기준이라). 문구로 "이 task가 도는 동안 수정된"이라고 밝힌다.
+
+실측(0.50.0, 2026-10-08, ledger ws에 EPIC 2 integration을 merge한 뒤 EPIC 3, $17.02, partial): 엔진이 아무것도 넣지 않았는데 worker가
+스스로 `wiki_search` 1회, `wiki_get` 3회(`plan/f1-total-by-merchant`, `plan/f2-invalid-input-prd-section`, `log/2026-10-08-E-7d818242`)로
+이전 기록을 읽었고, 새 `plan/f2-invalid-input-prd-section`을 썼다. report "Wiki 변경"에 그 페이지가 나왔다. codex 실측은 보류(사용자).
