@@ -2,8 +2,8 @@
 
 **English** · [한국어](KOR.md)
 
-Steam-style achievements for using this marketplace's skills. Use a skill and a toast tells you what
-you unlocked; `/achievements` shows what you have, what is locked and how far along you are, and which
+Steam-style achievements for using this marketplace's skills. Use a skill and a toast and a gold card
+above the prompt (8 s) tell you what you unlocked; `/achievements` shows what you have, what is locked and how far along you are, and which
 of your prompts contained a skill's trigger phrase without the skill running. Anonymous daily counts
 go to the maintainer only if you say yes. Off by default.
 
