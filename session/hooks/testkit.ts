@@ -1,6 +1,7 @@
 // Shared by the *.test.ts files only; the module never imports it.
 import type { On } from 'claude-code'
-import { mock } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 
 // An in-memory $.store the test can read: a test's `$` has no `store` of its own.
 // `broken = true` makes every set fail, as a full or locked store would.
@@ -126,3 +127,56 @@ export const guardWorld = (on: On, w: GuardWorld = {}) => {
 }
 
 export const PASSED = { result: 'done', text: '' }
+
+export const bash = ($: Engine, command: string) => $.tool.call({ tool: 'Bash', command } as never)
+export const denial = (r: unknown) => (r as { deny?: string }).deny
+
+type Call = { tool: string } & Record<string, unknown>
+
+// The matrix every confirm-class positive owes: stopped in default and bypass (Run passes, Cancel denies),
+// a rejected ask denies, deny mode denies without asking, off passes, headless passes untouched.
+export const confirmMatrix = (id: string, call: Call, w: GuardWorld = {}) => {
+  const fire = ($: Engine) => $.tool.call(call as never)
+  for (const bypass of [false, true]) {
+    const mode = bypass ? 'bypass' : 'default'
+    test(`${id} ${mode}: Run passes after one ask`, async ($, on) => {
+      const seen = guardWorld(on, { ...w, bypass, answer: 'Run' })
+      expect(await fire($)).toEqual(PASSED)
+      expect(seen.asks).toHaveLength(1)
+    })
+    test(`${id} ${mode}: Cancel denies as declined`, async ($, on) => {
+      const seen = guardWorld(on, { ...w, bypass, answer: 'Cancel' })
+      expect(denial(await fire($))).toMatch(/^session: the person declined \(/)
+      expect(seen.asks).toHaveLength(1)
+    })
+  }
+  test(`${id} a rejecting ask denies`, async ($, on) => {
+    guardWorld(on, { ...w, answer: new Error('no ask here') })
+    expect(denial(await fire($))).toMatch(/declined/)
+  })
+  test(`${id} guard_mode=deny denies and names guard_mode=off`, { options: { guard_mode: 'deny' } }, async ($, on) => {
+    const seen = guardWorld(on, w)
+    expect(denial(await fire($))).toMatch(/guard_mode=off/)
+    expect(seen.asks).toEqual([])
+  })
+  test(`${id} guard_mode=off passes`, { options: { guard_mode: 'off' } }, async ($, on) => {
+    const seen = guardWorld(on, w)
+    expect(await fire($)).toEqual(PASSED)
+    expect(seen.asks).toEqual([])
+  })
+  test(`${id} headless passes with no ask and no log`, async ($, on) => {
+    const seen = guardWorld(on, { ...w, surfaces: [] })
+    expect(await fire($)).toEqual(PASSED)
+    expect(seen.asks).toEqual([])
+    expect(seen.store.writes).toBe(0)
+  })
+}
+
+// Calls that must pass untouched: no ask, no store write.
+export const passes = (id: string, call: Call, w: GuardWorld = {}) =>
+  test(`${id} passes`, async ($, on) => {
+    const seen = guardWorld(on, w)
+    expect(await $.tool.call(call as never)).toEqual(PASSED)
+    expect(seen.asks).toEqual([])
+    expect(seen.store.writes).toBe(0)
+  })
