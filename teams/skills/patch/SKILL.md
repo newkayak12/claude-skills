@@ -14,7 +14,6 @@ compatibility:
 related:
   - install
   - remove
-  - harness:patch
 ---
 
 # patch — prepare a synchronized teams patch release
@@ -68,4 +67,4 @@ a source checkout of this marketplace, not for refreshing files installed into a
 
 - `install` — install or refresh project-owned teams copies
 - `remove` — uninstall project-local teams governance
-- `harness:patch` — the harness plugin's equivalent release skill
+- `_repo/scripts/patch-harness.mjs` — the harness release counterpart (maintainer script, not a skill)
