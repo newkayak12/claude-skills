@@ -27,6 +27,7 @@ import { collectTask, listTasks } from './lib/view-collect.mjs';
 import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './lib/view-render-text.mjs';
 import { notableEvents, statusLine } from './lib/view-events.mjs';
 import { summarize } from './lib/view-summary.mjs';
+import { reportPayload } from './lib/view-report.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -54,7 +55,7 @@ function parseArgs(argv) {
 }
 
 function usage() {
-  return 'usage: node view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--once] [--view pipeline|tickets|resources] [--once --format status|events|summary [--since <ts>] [--cwd <dir>]]\n';
+  return 'usage: node view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--once] [--view pipeline|tickets|resources] [--once --format status|events|summary [--since <ts>] [--cwd <dir>]] [--once --format report --task <id> [--cwd <dir>]]\n';
 }
 
 // ---------- --once --format status|events (the teams-live mod's data) ----------
@@ -145,6 +146,19 @@ function eventsOutput(tasksDir, cwd, since) {
   return out.map((e) => JSON.stringify(e) + '\n').join('');
 }
 
+// One ReportPayload line for --task (the teams-live Report tab and end-of-run card). A task that is
+// unknown or unreadable still gets a payload, with report and retro null.
+function reportOutput(tasksDir, taskId) {
+  const m = taskId ? collectTask(tasksDir, taskId) : null;
+  let raw = null;
+  if (m && !m.error) {
+    try { raw = JSON.parse(readFileSync(join(tasksDir, taskId, 'task.json'), 'utf8')); } catch { raw = null; }
+  }
+  const p = reportPayload(raw || { run_id: taskId || '' });
+  if (raw) p.verdict = m.state === 'complete' ? 'finished' : m.state === 'running' ? 'running' : 'blocked';
+  return JSON.stringify(p) + '\n';
+}
+
 // ---------- HTML page (inline CSS/JS, no CDN; polls /state.json) ----------
 
 function pageHtml() {
@@ -207,6 +221,7 @@ async function main() {
   if (args.once) {
     if (args.format === 'status') { process.stdout.write(statusOutput(tasksDir, args.cwd)); return; }
     if (args.format === 'summary') { process.stdout.write(summaryOutput(tasksDir, args.cwd, args.task)); return; }
+    if (args.format === 'report') { process.stdout.write(reportOutput(tasksDir, args.task)); return; }
     if (args.format === 'events') { process.stdout.write(eventsOutput(tasksDir, args.cwd, args.since || 0)); return; }
     if (args.task) {
       process.stdout.write(render(collectTask(tasksDir, args.task)));
