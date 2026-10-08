@@ -5,7 +5,9 @@ import {
   addCommit, addDeny, addFile, addStep, emptyLedger, endTurn, fmtMs, parseNumstat, statOf, stepSpan,
 } from './ledger.ts'
 import type { Ledger } from './ledger.ts'
-import { fmtAge, matchOrphans, parsePs, PS_ARGV } from './procs.ts'
+import { checkKill } from './kill.ts'
+import type { Verdict } from './kill.ts'
+import { ancestorsOf, fmtAge, matchOrphans, parsePs, PS_ARGV } from './procs.ts'
 import type { Row } from './procs.ts'
 
 const tab = atom({ plugin: 'session', key: 'tab' } as const, 'retro' as 'retro' | 'orphans')
@@ -61,8 +63,39 @@ async function pollOrphans($: any) {
   } catch {}
 }
 
-// Task 5 fills this in; until then a press does nothing.
-async function stopOrphan(_$: any, _row: Row) {}
+// A fresh ps and the verdict on `seen` against it. The cached rows are never trusted.
+async function judge($: any, seen: Row): Promise<Verdict> {
+  if (await isWindows($)) return { ok: false, reason: 'stopping is off on Windows' }
+  const engine = await engineOf($)
+  const ps = await $.process.run([...PS_ARGV], { timeoutMs: 5000 })
+  if (ps.exitCode !== 0) return { ok: false, reason: 'could not read the process table' }
+  const rows = parsePs(ps.stdout)
+  return checkKill(seen, rows, engine, ancestorsOf(rows, engine))
+}
+
+// One pid per press, SIGTERM only: judge, ask with the full command, judge again, then the signal.
+// A refusal toasts the reason and sends nothing; a pid that is already gone just clears its row.
+async function stopOrphan($: any, seen: Row) {
+  const say = (text: string) => void $.ui.toast(text, { timeoutMs: 6000 })
+  const refuse = async (v: Extract<Verdict, { ok: false }>) => {
+    if (v.gone) await update($, orphansAtom, rows => rows.filter(r => r.pid !== seen.pid))
+    say(`not stopped: ${v.reason}`)
+  }
+  try {
+    const before = await judge($, seen)
+    if (!before.ok) return await refuse(before)
+    const answer = await $.ui.ask(`Stop pid ${seen.pid}?\n${seen.cmd}`, ['Stop', 'Cancel']).catch(() => undefined)
+    if (answer !== 'Stop') return
+    const after = await judge($, seen)
+    if (!after.ok) return await refuse(after)
+    const r = await $.process.run(['kill', '-TERM', String(after.pid)], { timeoutMs: 5000 })
+    // exit 1 with "No such process" means it ended on its own: that is success
+    if (r.exitCode !== 0 && !/no such process/i.test(String(r.stderr))) say(`not stopped: ${String(r.stderr).trim().slice(0, 120)}`)
+    await pollOrphans($)
+  } catch {
+    say('not stopped: something went wrong, nothing was sent')
+  }
+}
 
 // The ledger never changes what the engine returns: any failure while recording is swallowed.
 const track = async ($: any, change: (l: Ledger) => Ledger) => {
