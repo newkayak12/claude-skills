@@ -81,3 +81,15 @@ test('only the /achievements command opens the pane', async ($, on) => {
   expect(opened).toEqual(['trophy'])
   expect(out.text).toMatch(/pane/i)
 })
+
+test('a locked achievement draws a ▰▱ bar with have/need; an unlocked one does not', async ($, on) => {
+  memoryStore(on, { 'trophy.unlocked': { 'first-blood': '2026-10-06' } })
+  sessionAt(on, NOW)
+  bottom(on)
+  const ui = await $.ui.mount({ plugin: 'trophy', surface: 'terminal', component: 'Pane', requestId: 'trophy', props: PANE })
+
+  const lines = texts(await ui.drawn())
+
+  expect(lines.some(l => /^▰*▱+ \d+\/\d+$/.test(l))).toBe(true)
+  expect(lines.some(l => l === '🏆 First Blood · 2026-10-06')).toBe(true)
+})

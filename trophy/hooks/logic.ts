@@ -141,10 +141,18 @@ export function bar(have: number, need: number) {
   return '▓'.repeat(filled) + '░'.repeat(BAR_CELLS - filled)
 }
 
-// One row of the achievements list, as the pane and trophy:list draw it.
-export function achievementRow(a: Achievement, uses: readonly Use[], unlockedOn: string | undefined) {
+// The pane's progress: eight ▰▱ cells and have/need.
+export function cells(a: Achievement, uses: readonly Use[]) {
+  const [have, need] = progress(uses, a)
+  const filled = Math.round((have / need) * 8)
+  return `${'▰'.repeat(filled)}${'▱'.repeat(8 - filled)} ${have}/${need}`
+}
+
+// One row of the achievements list, as the pane and trophy:list draw it; the pane draws its own bar (`withBar` false).
+export function achievementRow(a: Achievement, uses: readonly Use[], unlockedOn: string | undefined, withBar = true) {
   if (unlockedOn !== undefined) return `🏆 ${a.title} · ${unlockedOn}`
   if (a.hidden) return '🔒 ???'
+  if (!withBar) return `🔒 ${a.title}`
   const [have, need] = progress(uses, a)
   return `🔒 ${a.title}  ${bar(have, need)} ${have}/${need}`
 }
