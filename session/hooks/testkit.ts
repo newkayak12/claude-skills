@@ -65,7 +65,7 @@ export type GuardWorld = {
   answer?: string | Error
   proc?: (argv: readonly string[]) => Run | Promise<Run>
   store?: Record<string, unknown>
-  // a native allow beneath the guard, as bypass mode leaves it
+  // a native allow beneath the guard, as bypass mode leaves it; set it (even false) to make it switchable
   bypass?: boolean
 }
 
@@ -112,7 +112,8 @@ export const guardWorld = (on: On, w: GuardWorld = {}) => {
     seen.opened.push(e.id)
     return { value: { isPlaced: true } as any }
   })
-  if (w.bypass) on('tool.check', () => ({ decision: 'allow' }))
+  // read per call, so one test can run default, bypass and headless in turn
+  if (w.bypass !== undefined) on('tool.check', (_$, e, next) => (w.bypass ? { decision: 'allow' as const } : next(e)))
   // $.ui.ask is an AskUserQuestion call beneath the plugin; every other tool call succeeds.
   on('tool.call', (_$, e) => {
     if (e.tool === 'AskUserQuestion') {
