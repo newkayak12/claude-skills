@@ -1,6 +1,6 @@
 # teams wiki — 세션을 넘는 장기 메모리 (2026-10-07)
 
-> 상태: 1단계 출시(v0.42.0). 1b·2단계 출시(v0.44.0). 실측 bench만 남음(별도 승인).
+> 상태: 1단계 출시(v0.42.0). 1b·2단계 출시(v0.44.0). 3단계(§6, 용도 재정의: subagent가 문서로 소통) 출시(v0.47.0).
 > 근거 문서: `2026-09-28-teams-cards-everywhere.md` (Principles 1–5), `2026-09-17-teams-team.md` §6b
 > ("새 층이 메모리 상태를 만든다" 금지).
 > 선례: `knowledge/scripts/sqlite-knowledge.mjs` (node:sqlite + FTS5 + BLOB 벡터 + JS cosine).
@@ -140,3 +140,61 @@ report 노드는 `gate:goal` **뒤에** 돈다(`taskmanager.mjs:1142`). daemon�
 
 - 저장 위치 `.teams_wiki/`(프로젝트, git 추적) vs `~/.harness/wiki/`(사용자 전역). → 기본값은 프로젝트.
   팀원과 공유된다는 점이 Confluence에 더 가깝다.
+
+## 6. 3단계 — 용도 재정의: subagent가 문서로 소통하는 곳 (2026-10-08)
+
+사용자: "wiki는 판정이 아니라 subagent간 문서로 의사소통하는걸 표현하려는거야", "subagent가 wiki mcp를 쓸 수 있게하고
+용도를 그렇게 정리해줘", "작업한 것만". 2단계의 "엔진이 쓰고 gate:goal이 판정"은 이 용도와 어긋난다.
+
+실측(`$TMPDIR/wiki-bench`, ledger fixture, EPIC 1 → EPIC 2, S 2번·L 2번)이 보여준 것:
+- S는 manager `gate:goal`이 없어 기록 0. L은 gate가 제안 파일을 못 찾아 reject, EPIC 2는 gate 실패(match 85)로 판정 미적용.
+- 판정 경로는 비용만 들고 기억을 잇지 못했다. 그 사이 EPIC 2는 EPIC 1이 저장소에 쓴 `docs/decisions/`로 결정을 이어받았다
+  — 에이전트가 직접 쓴 문서가 실제로 소통한 것.
+
+조사로 확인한 실행 경로:
+- driver·judge 세션(`driverArgv`, `judgeArgv`)은 `--plugin-dir teams`라 `teams-wiki`가 이미 뜬다. 그러나 root는
+  `${CLAUDE_PROJECT_DIR}` = 그 세션의 cwd = **package worktree** → 메인 프로젝트 wiki와 갈라진다.
+- node worker(`broker.mjs` → `claude-exec-adapter.mjs:47`)는 `--strict-mcp-config` 빈 목록 → wiki 없음.
+  `--tools`는 built-in만 제한하므로 MCP 도구는 따로 허용하면 된다.
+
+Plan (critique 2회 반영)
+1. **root 하나:** `wiki.mjs`가 CLI 진입점으로 뜰 때만 env `TEAMS_WIKI_ROOT`(비어 있지 않으면)가 `--root`보다 우선,
+   `TEAMS_WIKI_OFF=1`이면 도구 0개. 엔진은 driver·daemon spawn에 `TEAMS_WIKI_ROOT=task.cwd`(메인 프로젝트), manager
+   judge spawn에 `TEAMS_WIKI_OFF=1`을 준다. 읽기 도구는 `.teams_wiki`가 없으면 빈 결과(디렉터리를 만들지 않음).
+2. **worker에 wiki:** `claude-exec-adapter.mjs`는 `TEAMS_WIKI_ROOT`가 있고 판정 stage가 아닐 때만 `--mcp-config`에
+   `teams-wiki` 하나(root = `TEAMS_WIKI_ROOT`)와 `--allowedTools`에 읽기·`wiki_write`. 그 외엔 예전 빈 설정 그대로.
+   `broker.mjs`는 `.teams_wiki/`를 harness 경로로 본다(changed_files·verifyRestore·attribution 제외). codex는 범위 밖.
+3. **쓰기는 승인 없이:** `wiki_write` — lock 안에서 바로 저장, 같은 id = 갱신. propose/accept/reject는 사람용으로 남긴다.
+4. **판정자는 wiki를 쓰지 않는다(P2):** 판정 stage = review, gate, accept, critique, test, audit, qa execute(routing.mjs가 judge로 보는 것과 같은 한 집합, 및 manager judge). broker가 adapter에 `--no-wiki`로 알린다. adapter는 이들에게
+   wiki를 붙이지 않고, judge 세션은 `TEAMS_WIKI_OFF`. driver 세션 안에서 self로 도는 판정 node는 도구를 막을 수 없으므로
+   프롬프트에 "프로젝트 wiki를 읽지도 쓰지도 마라, 증거가 아니다" 한 줄(모든 executor 공통, 테스트로 고정).
+5. **용도를 프롬프트에:** executor가 claude(adapter, 또는 self인데 host가 claude — executor가 비면 `run.host_vendor`)이고
+   판정 stage가 아닌 node에 짧은 단락 — 먼저 `wiki_search`/`wiki_resume`로 읽고, 다른 단계·다음 EPIC이 알아야 할 것(출처
+   달린 조사 결과, 이유 달린 결정, 인터페이스·계약, 주의점)을 `wiki_write`(source = 그 node id)로 남기고 `[[링크]]`로 잇는다.
+   `log` space에는 쓰지 않는다. 단락이 없는 프롬프트는 이전과 바이트 동일.
+6. **엔진 log는 작업한 것만, 판정 없이:** report node가 끝날 때(이름 있는 지점) 트랜잭션 밖에서, 배달된 package 집합이
+   `task.wiki.log.shipped`와 다를 때만 `wiki_write`(요청 한 줄 + `## Shipped` + `## Resumed from` + `## Docs`). 배달 0이면
+   안 쓴다. **S는 log 페이지 없음**(S worker가 직접 쓴다). gate:goal 프롬프트의 wiki 블록, `wiki_decisions` fold,
+   readyToJudge 대기, `CLAIM_EFFECTS.wiki`는 걷어낸다.
+7. **문서:** README/KOR "위키 메모리"를 "subagent가 문서로 소통하는 곳"으로 다시 쓴다.
+
+Done when
+- [x] `wiki_write`가 승인 없이 저장, 검색(두 모드)·링크·백링크·INDEX.md에 바로 잡힌다. 같은 id 재작성 = 갱신. 동시 쓰기 안전.
+- [x] `TEAMS_WIKI_ROOT`·`TEAMS_WIKI_OFF`는 CLI 진입점에서만. 읽기 도구는 디렉터리를 만들지 않는다.
+- [x] driver·daemon spawn env에 `TEAMS_WIKI_ROOT=task.cwd`, judge spawn env에 `TEAMS_WIKI_OFF=1`.
+- [x] adapter: ROOT 있고 비판정 stage → `teams-wiki` 하나 + 허용 목록. ROOT 없거나 판정 stage → 예전 빈 설정 그대로.
+- [x] broker: node가 쓴 `.teams_wiki/x.md`는 changed_files에 없고 verifyRestore 뒤에도 남는다.
+- [x] 프롬프트: 비판정 claude node에 wiki 단락, codex·판정 stage엔 없음. 판정 stage엔 "wiki 사용 금지" 한 줄.
+- [x] 실제 `claude -p` 스모크 3종(쓰기 profile 쓰고 읽기 / 판정 profile 도구 없음 / `--plugin-dir teams` driver 경로에서 ROOT에 기록).
+- [x] 엔진 log: report 완료 시 배달분만, 집합이 바뀔 때만 다시 씀, 배달 0·S는 안 씀. gate:goal 프롬프트에 wiki 블록 없음, `wiki_decisions` 코드 없음.
+- [x] README/KOR 용도 재서술. 기존 teams 테스트 전체 green (Node 22.12, 24).
+
+Critique (원칙 대조)
+| 원칙 | 판정 |
+|---|---|
+| P2 작성자 자기판정 금지 | 판정 stage·judge는 wiki를 안 본다(도구 없음 또는 금지 문구). wiki는 판정 입력이 아니다. ✓ |
+| P5 작업은 카드로 | wiki 쓰기는 node 작업의 일부, 새 작업 단위 아님. ✓ |
+| §6b 메모리 상태 금지 | 상태는 md 파일과 lock, task.wiki 기록은 mutateTask. ✓ |
+| 단순성 | 판정 경로 제거로 코드 감소. 새 도구 1, env 2, adapter·broker 각 1곳, 프롬프트 문구 2. ✓ |
+| 위험 | 틀린 문서 전파 — source(node id) 기록, 반박은 supersede. self 판정 node는 문구로만 막힘(도구 차단 불가) — 테스트로 문구 고정. worker가 wiki를 안 쓸 수도 — 다음 bench로 측정. |
+- report 전에 blocked로 끝난 task는 log 페이지가 없다(알려진 한계).

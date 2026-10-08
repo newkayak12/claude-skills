@@ -314,21 +314,18 @@ test('slack-list: a size-S task reports from its run, not BLOCKED off the skippe
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
-test('Wiki 변경: renderReport lists mode, proposals and resumed ids from task.wiki; absent task.wiki leaves the report unchanged', () => {
+test('Wiki 변경: renderReport lists mode, resumed ids and the log outcome from task.wiki; absent task.wiki leaves the report unchanged', () => {
   const base = fixtureTask('/proj');
   const without = renderAll(base)[docPaths(base).report];
   assert.ok(!without.includes('Wiki 변경'));
-  const task = { ...fixtureTask('/proj'), wiki: {
-    mode: 'scan',
-    resumed: ['log/2026-10-06-E-aa11'],
-    proposals: [
-      { proposal_id: 'p1', id: 'log/2026-10-07-E-ab12', node_id: 'gate:goal:1', status: 'accepted', path: '.teams_wiki/log/2026-10-07-E-ab12.md', reason: 'good log', decided_by: 'gate:goal:1' },
-      { proposal_id: 'p2', id: 'log/2026-10-07-E-cd34', node_id: 'gate:goal:1', status: 'error', path: '.teams_wiki/_proposed/x.md', error: 'disk full' },
-    ],
-    errors: [],
-  } };
-  const out = renderAll(task)[docPaths(task).report];
+  const wiki = (log) => ({ ...fixtureTask('/proj'), wiki: { mode: 'scan', resumed: ['log/2026-10-06-E-aa11'], ...(log ? { log } : {}) } });
+  const written = wiki({ id: 'log/2026-10-07-E-ab12', path: '.teams_wiki/log/2026-10-07-E-ab12.md', status: 'written', shipped: ['P1'] });
+  const out = renderAll(written)[docPaths(written).report];
   assert.ok(out.startsWith(without.slice(0, without.indexOf('## Next backlog'))));
   const sec = out.slice(out.indexOf('## Wiki 변경'));
-  for (const s of ['scan', 'log/2026-10-06-E-aa11', 'log/2026-10-07-E-ab12', 'accepted', '.teams_wiki/log/2026-10-07-E-ab12.md', 'good log', 'gate:goal:1', 'log/2026-10-07-E-cd34', 'error', 'disk full']) assert.ok(sec.includes(s), s);
+  for (const s of ['scan', 'log/2026-10-06-E-aa11', 'log/2026-10-07-E-ab12', 'written', '.teams_wiki/log/2026-10-07-E-ab12.md']) assert.ok(sec.includes(s), s);
+  assert.ok(!sec.includes('Proposals'));
+  const failed = wiki({ status: 'error', shipped: ['P1'], error: 'disk full' });
+  assert.match(renderAll(failed)[docPaths(failed).report], /Log page: \(error\) - disk full/);
+  assert.ok(!renderAll(wiki(null))[docPaths(base).report].includes('Log page'));
 });

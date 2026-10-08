@@ -180,6 +180,7 @@ async function judge(task, n) {
     writeFileSync(p, prompt);
   } catch { /* tm_status full is the fallback view */ }
   const argv = judgeArgv(task);
+  // Judges never see the project wiki (wiki.mjs answers an empty tool list under this).
   const extra = [];
   if (task.child_opts && task.child_opts.model) extra.push('--model', task.child_opts.model);
   return new Promise((resolve) => {
@@ -187,7 +188,7 @@ async function judge(task, n) {
     let err = '';
     let proc;
     try {
-      proc = spawn(argv[0], [...argv.slice(1), ...extra, prompt], { cwd: task.cwd, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+      proc = spawn(argv[0], [...argv.slice(1), ...extra, prompt], { cwd: task.cwd, env: { ...process.env, TEAMS_WIKI_OFF: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (e) {
       resolve({ stage_ok: false, judge_failed: true, reason: `judge process for ${n.node_id} could not start: ${String((e && e.message) || e)}` });
       return;

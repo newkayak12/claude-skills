@@ -301,8 +301,10 @@ explanation of every key is in [docs/configuration.md](docs/configuration.md#con
 
 ## Wiki memory (teams-wiki)
 
-`teams-wiki` is a third MCP server in this plugin: project memory that outlives a session. The
-server works without the task engine; the engine uses it as described under "In the task engine".
+`teams-wiki` is a third MCP server in this plugin: the place where subagents (claude node
+workers and drivers) communicate through documents in the main project's `.teams_wiki`, and project memory that
+outlives a session. The server works without the task engine; the engine uses it as described under
+"In the task engine".
 
 Pages are markdown under `.teams_wiki/<space>/<slug>.md`, git-tracked and hand-editable; that is the
 source. `.teams_wiki/.index.sqlite` (FTS5 search plus the `[[link]]` graph) is disposable: delete it
@@ -316,19 +318,24 @@ way. Node 18+ is enough; `wiki_status`, `tm_status` and the report show the mode
 | `wiki_get` | One page with its links and backlinks. |
 | `wiki_resume` | Session start: the most recent `log/*` pages and the pages they link to. |
 | `wiki_list` | Pages grouped by space. |
+| `wiki_write` | Save a page directly, no approval. Same `space/slug` again updates it. |
 | `wiki_propose` | Write a proposal to `_proposed/`; never a page. |
 | `wiki_accept` | Turn a proposal into a page. |
 | `wiki_reject` | Move a proposal to `_rejected/` with the reason. |
 | `wiki_status` | Page count, pending proposals, index freshness, broken links. |
 
-Nothing writes a page directly: a model proposes, and only `wiki_accept` publishes.
+There are 9 tools. Subagents write with `wiki_write`, which needs no approval; `wiki_propose` /
+`wiki_accept` / `wiki_reject` stay for people who want a review step. The wiki root is always the main
+project (`task.cwd`), also for workers running in a worktree.
 
 **In the task engine.** `createTask` adds the latest `log/*` pages (`wiki_resume`) to the task context.
-Before the manager's `gate:goal`, the engine proposes one `log/<date>-<EPIC>` page built from
-`task.json`, no model involved. `gate:goal` accepts or rejects it with `wiki_decisions`; the report
-gets a "Wiki 변경" section. Nothing auto-accepts: a proposal the gate left alone stays in
-`_proposed/`, and `_proposed/` and `_rejected/` files are for a person to review and commit (or accept
-later with `wiki_accept`). If the wiki fails, the task runs as before.
+Claude node workers and drivers get the wiki tools. The judging stages (review, gate, accept, critique,
+test, audit, qa execute) and the manager's judges do not see the wiki, and codex workers do not get it.
+When the report node finishes, an L task gets one `log/<date>-<EPIC>` page written by the engine with
+`wiki_write`, no model and no judging: the request, the packages that shipped, the pages it resumed from
+and the doc paths. It is rewritten only when the set of shipped packages changes; nothing shipped, or a
+size-S task, writes nothing. `task.wiki` records `{mode, resumed?, log?}` and the report gets a
+"Wiki 변경" section. If the wiki fails, the task runs as before and the error is recorded on `task.wiki.log`.
 
 ## Mod (Claude Code live UI)
 

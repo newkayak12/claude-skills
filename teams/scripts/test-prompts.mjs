@@ -743,3 +743,62 @@ test('QUESTIONS_CONTRACT: exported once from prompts.mjs, imported (not copied) 
   assert.doesNotMatch(contractSrc, /const QUESTIONS_CONTRACT\b/, 'no local copy in stagecontract.mjs');
   assert.match(contractSrc, /^import \{[^}]*\bQUESTIONS_CONTRACT\b[^}]*\} from '\.\/prompts\.mjs';$/m);
 });
+
+// ---------- the project wiki paragraph ----------
+
+import { JUDGING_STAGES } from '../mcp/routing.mjs';
+
+const WIKI_HEAD = '## Project wiki';
+const NO_WIKI_LINE = 'Do not read or write the project wiki; it is not evidence.';
+const WIKI_CWD = '/tmp/wiki-prompt-cwd'; // never touched: composePrompt only prints it
+const wikiPrompt = (nodeOver, runOver = {}, stage = 'implement') =>
+  composePrompt(baseRun(WIKI_CWD, runOver), baseNode({ stage, node_id: 'implement:U1:1', ...nodeOver }), baseBriefing());
+
+test('wiki paragraph: adapter claude, self on claude, and null executor on a claude host get it; codex does not', () => {
+  for (const [label, node, run] of [
+    ['adapter claude', { executor: 'claude', vendor: 'claude' }, {}],
+    ['self claude', { executor: 'claude', vendor: 'self' }, { host_vendor: 'codex' }],
+    ['null executor, host claude', {}, { host_vendor: 'claude' }],
+  ]) {
+    const p = wikiPrompt(node, run);
+    assert.ok(p.includes(WIKI_HEAD), label);
+    assert.ok(p.includes('source = "implement:U1:1"'), `${label}: the literal node id`);
+    assert.match(p, /wiki_search \/ wiki_resume/);
+    assert.match(p, /wiki_write/);
+    assert.match(p, /\[\[space\/slug\]\]/);
+    assert.match(p, /Do not write in space log/);
+    assert.ok(!p.includes(NO_WIKI_LINE), label);
+  }
+  for (const [label, node, run] of [
+    ['codex adapter', { executor: 'codex', vendor: 'codex' }, { host_vendor: 'claude' }],
+    ['self codex', { executor: 'codex', vendor: 'self' }, { host_vendor: 'claude' }],
+    ['null executor, host codex', {}, { host_vendor: 'codex' }],
+  ]) {
+    const p = wikiPrompt(node, run);
+    assert.ok(!p.includes(WIKI_HEAD) && !p.includes(NO_WIKI_LINE), label);
+  }
+});
+
+test('wiki paragraph: a prompt that gets neither block is the claude prompt minus exactly that paragraph', () => {
+  const withWiki = wikiPrompt({ executor: 'claude', vendor: 'claude' });
+  const without = wikiPrompt({ executor: 'codex', vendor: 'codex' });
+  const start = withWiki.indexOf(WIKI_HEAD);
+  const end = withWiki.indexOf('\n\n', start) + 2;
+  assert.equal(withWiki.slice(0, start) + withWiki.slice(end), without);
+});
+
+test('every judging stage gets the one no-wiki line for every executor, and never the paragraph', () => {
+  assert.deepEqual([...JUDGING_STAGES].sort(), ['accept', 'audit', 'critique', 'execute', 'gate', 'review', 'test']);
+  for (const stage of JUDGING_STAGES) {
+    for (const node of [{ executor: 'claude', vendor: 'claude' }, { executor: 'claude', vendor: 'self' }, { executor: 'codex', vendor: 'codex' }, {}]) {
+      const p = wikiPrompt(node, { host_vendor: 'claude' }, stage);
+      assert.ok(p.includes(NO_WIKI_LINE), `${stage} ${JSON.stringify(node)}`);
+      assert.ok(!p.includes(WIKI_HEAD), stage);
+    }
+  }
+});
+
+test('wiki: a node pinned to a person gets neither the paragraph nor the line', () => {
+  const p = wikiPrompt({ executor: 'human', vendor: 'human', assignment: { executor: 'human' } }, { host_vendor: 'claude' });
+  assert.ok(!p.includes(WIKI_HEAD) && !p.includes(NO_WIKI_LINE));
+});
