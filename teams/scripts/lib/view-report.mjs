@@ -47,7 +47,7 @@ function retroItems(retro) {
   return items;
 }
 
-export function reportPayload(task, { read = readFileSync, stat = statSync } = {}) {
+export function reportPayload(task, { read = readFileSync, stat = statSync, verdict: forced } = {}) {
   const t = task || {};
   const task_id = String(t.run_id || t.task_id || '');
   let verdict = 'running';
@@ -59,6 +59,8 @@ export function reportPayload(task, { read = readFileSync, stat = statSync } = {
     verdict = rs.state === 'complete' ? 'finished' : rs.state === 'running' || rs.state === 'waiting_human' ? 'running' : 'blocked';
     failed = (rs.counts && rs.counts.failed) || 0;
   } catch { /* an unreadable graph reads as running with no failures */ }
+  // the caller's verdict (view.mjs: the task's collected state) wins, before needs are chosen
+  if (forced) verdict = forced;
   try {
     paths = docPaths(t);
     path = paths.report;
