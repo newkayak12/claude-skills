@@ -19,6 +19,15 @@ declare module 'claude-code' {
       // per-file '+a -d' from git diff --numstat, keyed by touched path
       stats: Record<string, string>
       // the summary the last session left, read at start; null when none
+      // denied calls kept by the guard, newest last (cap 200); the store key session.denials is the source
+      guard: {
+        denials: {
+          id: string; ts: number; tool: string; call: string; reason: string
+          source: 'guard' | 'native' | 'declined'; nativeRule?: string; agentId?: string
+        }[]
+      }
+      // id of the denial whose rule text the pane shows, '' when none
+      guardCopy: string
       last: { day: string; files: number; commits: number; denied: number; longestMs: number; fileList: string[] } | null
     }
   }
