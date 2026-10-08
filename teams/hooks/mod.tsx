@@ -10,6 +10,9 @@ const watch = atom({ plugin: 'teams', key: 'watch' } as const, [] as string[])
 const view = atom({ plugin: 'teams', key: 'view' } as const, 'summary' as 'summary' | 'work' | 'log' | 'report')
 // the report of one task: keyed to the task it was fetched for, so a card or tab never draws another's
 const report = atom({ plugin: 'teams', key: 'report' } as const, null as { task_id: string; payload: ReportPayload } | null)
+// the report behind the end-of-run card: its own atom, so an open Report tab on another task never
+// replaces it (nor it the tab)
+const cardReport = atom({ plugin: 'teams', key: 'cardReport' } as const, null as { task_id: string; payload: ReportPayload } | null)
 const lang = atom({ plugin: 'teams', key: 'lang' } as const, 'en' as 'en' | 'ko')
 
 // the end-of-run card per ended task: 'card' while it is shown, 'seen' once its report was opened,
@@ -105,13 +108,14 @@ function nowSentence(s: (key: keyof typeof en) => string, task: SummaryTask): st
 
 // One report call for a task: the payload is stored under that task's id. A failed call or
 // unreadable output leaves what was stored.
-async function fetchReport($: EngineInterface, taskId: string): Promise<void> {
+async function fetchReport($: EngineInterface, taskId: string, forCard = false): Promise<void> {
   try {
     const cwd = await $.session.cwd()
     const r = await $.process.run(['node', `${$.plugin.root}/scripts/view.mjs`, '--once', '--format', 'report', '--task', taskId, '--cwd', cwd])
     if (r.exitCode !== 0) return
     const payload = JSON.parse(r.stdout.trim().split('\n').pop() ?? '') as ReportPayload
-    await update($, report, () => ({ task_id: taskId, payload }))
+    if (forCard) await update($, cardReport, () => ({ task_id: taskId, payload }))
+    else await update($, report, () => ({ task_id: taskId, payload }))
   } catch {
     // a failed call keeps the last payload
   }
@@ -139,6 +143,7 @@ export const register: Register = on => {
         const since = await read($, cursor)
 
         const fetched = new Set<string>()
+        const cardFetched = new Set<string>()
         const ev = await $.process.run([
           'node', VIEW, '--once', '--format', 'events', '--since', String(since), '--cwd', cwd,
         ])
@@ -158,8 +163,8 @@ export const register: Register = on => {
             // a run that ended after this session began gets a card and one report call
             for (const one of fresh.filter(f => f.kind === 'daemon_done')) {
               await update($, ended, m => mark(m, one.task_id, 'card'))
-              fetched.add(one.task_id)
-              await fetchReport($, one.task_id)
+              cardFetched.add(one.task_id)
+              await fetchReport($, one.task_id, true)
             }
             const latest = Math.max(...fresh.map(one => one.ts))
             await update($, cursor, () => latest)
@@ -189,11 +194,11 @@ export const register: Register = on => {
           fetched.add(id)
           await fetchReport($, id)
         }
-        // a card waits for its report (none yet, or another task's in the atom) unless the tab is open
+        // a card waits for its report (none yet, or another task's in the atom)
         const waiting = cardTask(await read($, ended))
-        if (waiting !== undefined && !isTab && !fetched.has(waiting)) {
-          const held = await read($, report)
-          if (held?.task_id !== waiting || held.payload.report === null) await fetchReport($, waiting)
+        if (waiting !== undefined && !cardFetched.has(waiting)) {
+          const held = await read($, cardReport)
+          if (held?.task_id !== waiting || held.payload.report === null) await fetchReport($, waiting, true)
         }
       } catch {
         // a failed run or unreadable output leaves the last status as it was
@@ -379,7 +384,7 @@ export const register: Register = on => {
 
     // an ended run: one card in place of the running row, until the person opens the report or dismisses it
     const cardId = cardTask(await read($, ended))
-    const held = await read($, report)
+    const held = await read($, cardReport)
     if (!e.props.hasSurvey && cardId !== undefined && held?.task_id === cardId && held.payload.verdict !== 'running') {
       const { Box, Button, Text } = $.ui.resolve(e)
       const p = held.payload
@@ -396,6 +401,7 @@ export const register: Register = on => {
                 <Button key="report" label={s('reportButton')} onPress={async () => {
                   await update($, watch, l => [...l.filter(x => x !== cardId), cardId])
                   await update($, summary, () => null)
+                  await update($, report, () => held)
                   await update($, view, () => 'report')
                   await set('seen')
                   await open()
