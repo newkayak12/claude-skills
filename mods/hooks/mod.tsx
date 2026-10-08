@@ -1,7 +1,6 @@
 import type { EngineInterface, Register } from 'claude-code'
 
 const REPO_NAME = /claude-skills(\.git)?$/
-const CLAUDE_P = /\bclaude\b.*\s-p(\s|$)/
 const MODEL_DENY = 'mods: pass model ("sonnet" for build work, "opus" for plan/judge) — without it the subagent inherits the parent model.'
 
 // reload-safe caches only; nothing here is read for diagnostics
@@ -53,15 +52,6 @@ function subtree(rows: Proc[], engine: number): Set<number> {
   return below
 }
 
-// number of claude -p processes among the descendants of `engine` (D2); a wrapper shell
-// counts once: a match whose parent also matches is the same job
-function countClaudeP(ps: string, engine: number): number {
-  const rows = psRows(ps)
-  const below = subtree(rows, engine)
-  const hits = new Set(rows.filter(r => below.has(r.pid) && r.pid !== engine && CLAUDE_P.test(r.cmd)).map(r => r.pid))
-  return rows.filter(r => hits.has(r.pid) && !hits.has(r.ppid)).length
-}
-
 // the claude binary: `claude` on PATH, or an installed build that runs as .../claude/versions/<v>
 const isClaude = (cmd: string) => {
   const bin = words(cmd)[0] ?? ''
@@ -86,14 +76,10 @@ async function enginePid($: EngineInterface): Promise<number> {
   return Number(me.stdout.trim())
 }
 
-// status line: this session's unfinished agents and headless claude -p children (D2)
+// status line: this session's unfinished agents
 async function aliveStatus($: EngineInterface): Promise<void> {
-  const engine = await enginePid($)
-  const ps = await $.process.run(['ps', '-A', '-o', 'pid=,ppid=,command='])
-  const n = Number.isInteger(engine) && engine > 0 ? countClaudeP(ps.stdout, engine) : 0
   const a = (await $.agent.list()).filter(x => ALIVE.has(x.status)).length
-  const parts = [...(a > 0 ? [`${a} agent(s)`] : []), ...(n > 0 ? [`${n} claude -p child(ren)`] : [])]
-  $.ui.status(parts.length ? `⧗ ${parts.join(' · ')} running · /reap` : undefined)
+  $.ui.status(a > 0 ? `⧗ ${a} agent(s) running · /reap` : undefined)
 }
 
 export const register: Register = (on, options) => {
@@ -134,7 +120,6 @@ export const register: Register = (on, options) => {
     }
     if (mine.has(e.skill.split(':')[0])) {
       $.ui.toast(`◆ skill: ${e.skill}`)
-      $.ui.status(`◆ skill: ${e.skill}`)
     }
     return result
   }).catch(($, e, next) => next(e))
@@ -199,7 +184,7 @@ export const register: Register = (on, options) => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  // Turn-end check: unfinished agents and headless claude -p children of this session (D2).
+  // Turn-end check: unfinished agents of this session.
   // Subagent turns refresh it too; harmless. Only /reap stops anything.
   on('turn.complete', async ($, e, next) => {
     const r = await next(e)

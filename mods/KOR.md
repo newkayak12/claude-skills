@@ -19,19 +19,17 @@ Claude Code 2.1.292 이상. 이전 빌드는 stderr에 한 줄을 출력하고 �
 
 | # | 기능 | 동작 | 범위 |
 |---|---|---|---|
-| 1 | 스킬 토스트 | 이 마켓플레이스의 스킬이 호출되면 토스트와 상태줄 표시 | 인터랙티브 |
+| 1 | 스킬 토스트 | 이 마켓플레이스의 스킬이 호출되면 토스트 표시 | 인터랙티브 |
 | 2 | Agent 모델 가드 | model 없이 `Agent`를 호출하면(부모 모델 사용) 동작. `fork`는 항상 통과. 아래 옵션 참고 | 모든 세션 |
 | 3 | 실행 중 스크립트 가드 | 실행 중인 `.sh`/`.bash` 파일의 Edit/Write를 거부 | 모든 세션 |
 | 4 | 워크트리 가드 | 커밋되지 않은 변경이 있는 워크트리의 `git worktree remove --force`를 거부. 경로가 없으면 통과 | 모든 세션 |
 | 5 | fetch 알림 | 세션 시작 시(인터랙티브 세션에서만) fetch 후 `origin/main`이 앞서 있으면 토스트 | claude-skills 저장소 전용 |
 | 6 | push / bump 확인 | `git push`와 `patch-harness` / `teams/skills/patch/patch.mjs` 버전 범프 스크립트 실행 전 확인. Run을 선택하지 않으면 명령이 거부됨(프롬프트를 닫아도 거부). 헤드리스 세션은 묻지 않고 통과 | claude-skills 저장소 전용 |
 | 7 | KOR 없는 README | `git commit` 시 스테이징된 `README.md`에 `KOR.md`가 없으면 토스트 | claude-skills 저장소 전용 |
-| 8 | 살아 있는 수 | 턴 종료 시 이 세션의 끝나지 않은 에이전트와 헤드리스 자식 수를 `⧗ n agent(s) · m claude -p child(ren) running · /reap`로 상태줄 표시. 0이면 해제. 아무것도 멈추지 않음 | 인터랙티브 |
+| 8 | 살아 있는 수 | 턴 종료 시 이 세션의 끝나지 않은 에이전트 수를 `⧗ n agent(s) running · /reap`로 상태줄 표시. 0이면 해제. 아무것도 멈추지 않음 | 인터랙티브 |
 | 9 | `/reap` | 이 세션의 끝나지 않은 에이전트(pending/running/waiting/idle)와 `claude -p` 프로세스를 보여주고 Reap/Cancel을 물은 뒤, 에이전트는 TaskStop으로 멈추고 `claude -p`에는 TERM을 보냄(감싸는 셸은 건드리지 않음). 이 세션의 엔진 pid를 확인하지 못하면 프로세스는 종료하지 않음 | 인터랙티브 |
 
 "claude-skills 저장소 전용"은 세션 저장소의 remote가 `/claude-skills(\.git)?$/`와 일치할 때만 동작한다는 뜻입니다. 다른 저장소에서는 세 기능 모두 아무것도 하지 않습니다. 인터랙티브 전용 기능은 헤드리스(`claude -p`) 세션에서 동작하지 않습니다.
-
-`claude -p` 개수는 세션 단위입니다. 이 세션의 엔진 프로세스 아래에서 시작된 프로세스만 셉니다. 벗어난 프로세스(nohup, setsid, pid 1로 재부모화된 데몬)는 세지 않습니다.
 
 ## 스크린샷
 
@@ -59,7 +57,7 @@ remote 이름이 `claude-skills`인 임시 저장소에서 실제 Claude Code 2.
 7 · `KOR.md` 없이 `README.md`만 스테이징하고 `git commit`할 때 뜨는 토스트.
 
 ![alive-count](docs/images/alive-count.png)
-8 · 끝나지 않은 에이전트 1개와 `claude -p` 자식 1개를 세는 턴 종료 상태줄.
+8 · 끝나지 않은 에이전트 1개를 세는 턴 종료 상태줄(`claude -p` 개수가 session으로 옮기기 전에 찍음).
 
 ![reap-ask](docs/images/reap-ask.png)
 9 · `/reap`이 대상을 보여주고 먼저 묻는 화면.
@@ -83,4 +81,3 @@ remote 이름이 `claude-skills`인 임시 저장소에서 실제 Claude Code 2.
 - 스킬 토스트는 플러그인 위치에서 마켓플레이스 파일을 읽을 수 있어야 하며, 읽지 못하면 토스트가 없습니다.
 - Agent 가드는 정의에 모델이 이미 고정된 서브에이전트 타입도 경고합니다. 호출 자체의 `model` 인자만 보기 때문입니다.
 - 워크트리 가드는 같은 명령 앞의 `cd <dir> &&`를 무시합니다. 경로는 `-C <dir>` 또는 세션 디렉터리로만 해석합니다.
-- `claude -p` 개수는 턴 종료 시점의 스냅샷이며 실시간이 아닙니다.
