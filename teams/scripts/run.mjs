@@ -59,8 +59,7 @@
 // verdict) - B is the default for a model caller. C, this file, is what repeats tm_wait for it.
 
 import { spawn } from 'node:child_process';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { isEntryPoint } from '../mcp/pluginroots.mjs';
 import { callTool as realCallTool, mustFindTask as realMustFindTask, capacityResetAt } from '../mcp/taskmanager.mjs';
 import { docPaths as realDocPaths } from '../mcp/tickets.mjs';
 
@@ -423,4 +422,4 @@ async function main() {
 
 // Both a CLI and a library (parseArgs/exitCodeForState/runHeadless are tested directly, the way
 // inspect.mjs's renderReport is) - importing this file must print nothing and exit nothing.
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+if (isEntryPoint(import.meta.url)) main();

@@ -209,7 +209,14 @@ function openDb() {
   ensureWiki();
   const d = new (support().DatabaseSync)(join(wikiDir(), '.index.sqlite'));
   d.exec('PRAGMA busy_timeout = 10000');
-  d.exec('PRAGMA journal_mode = WAL');
+  // Switching to WAL needs an exclusive lock the busy handler does not wait for: two processes
+  // opening a fresh index at once got "database is locked". WAL persists, so retry until one wins.
+  for (let i = 0; ; i++) {
+    try { d.exec('PRAGMA journal_mode = WAL'); break; } catch (e) {
+      if (i >= 100 || !/locked|busy/i.test(String(e && e.message))) throw e;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+    }
+  }
   d.exec(`
     CREATE TABLE IF NOT EXISTS pages (id TEXT PRIMARY KEY, space TEXT, title TEXT, tags TEXT, status TEXT,
       superseded_by TEXT, updated TEXT, mtime REAL, size INTEGER, summary TEXT, body TEXT);

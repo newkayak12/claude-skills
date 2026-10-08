@@ -1,6 +1,6 @@
 # teams wiki — 세션을 넘는 장기 메모리 (2026-10-07)
 
-> 상태: 1단계 출시(v0.42.0). 1b·2단계 출시(v0.44.0). 3단계(§6, 용도 재정의: subagent가 문서로 소통) 출시(v0.47.0).
+> 상태: 1단계 v0.42.0, 1b·2단계 v0.44.0, 3단계 v0.47.0, 4단계(§7) v0.48.0 출시. codex 실측 스모크는 로그인 후.
 > 근거 문서: `2026-09-28-teams-cards-everywhere.md` (Principles 1–5), `2026-09-17-teams-team.md` §6b
 > ("새 층이 메모리 상태를 만든다" 금지).
 > 선례: `knowledge/scripts/sqlite-knowledge.mjs` (node:sqlite + FTS5 + BLOB 벡터 + JS cosine).
@@ -198,3 +198,32 @@ Critique (원칙 대조)
 | 단순성 | 판정 경로 제거로 코드 감소. 새 도구 1, env 2, adapter·broker 각 1곳, 프롬프트 문구 2. ✓ |
 | 위험 | 틀린 문서 전파 — source(node id) 기록, 반박은 supersede. self 판정 node는 문구로만 막힘(도구 차단 불가) — 테스트로 문구 고정. worker가 wiki를 안 쓸 수도 — 다음 bench로 측정. |
 - report 전에 blocked로 끝난 task는 log 페이지가 없다(알려진 한계).
+
+## 7. 4단계 — 회귀 수정과 남은 한계 (2026-10-08)
+
+사용자: 실측 bench와 한계 해소 "둘 다 해주세영". 조사 중 발견:
+- **회귀(0.47.0):** broker가 판정 stage에 `--no-wiki`를 vendor 구분 없이 넘기는데 `codex-exec-adapter.mjs`는 모르는 인자에
+  `usage()`로 종료한다 → codex로 간 판정 node(교차 vendor인 `test` 포함)가 실패.
+- **`run.mjs` main guard:** `resolve(argv[1]) === fileURLToPath(import.meta.url)`라 symlink 경로(macOS `$TMPDIR`)로 실행하면
+  아무것도 안 하고 exit 0. `pluginroots.mjs` `isEntryPoint`(realpath 비교)가 이미 있다.
+
+Plan
+1. codex adapter가 `--no-wiki`를 받는다(판정 stage = wiki 없음). 두 adapter가 broker가 넘길 수 있는 모든 플래그를 받는지 테스트.
+2. **codex worker에 wiki:** `TEAMS_WIKI_ROOT`가 있고 `--no-wiki`가 없으면 `codex exec`에 `-c mcp_servers.teams-wiki.command=<node>`
+   `-c mcp_servers.teams-wiki.args=[<wiki.mjs>, "--root", ROOT]`. 프롬프트 wiki 단락은 claude뿐 아니라 codex executor에도
+   (판정 stage 제외 규칙은 그대로). 실제 codex 스모크는 codex 로그인 후(사용자).
+3. **report 전에 막힌 EPIC:** daemon이 끝나는 지점(`daemon_done`, 트랜잭션 밖)에서도 `writeWikiLog` — 그때까지 배달된 package만,
+   배달 0이면 안 씀, 집합이 같으면 다시 안 씀.
+4. `run.mjs`는 `isEntryPoint(import.meta.url)`를 쓴다.
+
+Done when
+- [x] codex adapter가 `--no-wiki`(및 broker의 다른 플래그)를 받는다 — broker argv를 두 adapter에 넣는 테스트.
+- [x] codex argv: ROOT 있고 비판정 → `-c mcp_servers.teams-wiki.*` 두 개, 그 외엔 이전과 같은 argv. 단위 테스트.
+- [x] codex executor 비판정 node 프롬프트에 wiki 단락, 판정 stage엔 금지 문구. 테스트.
+- [x] daemon_done에서 L task의 log가 배달분으로 써진다(report 없이 blocked여도). 테스트.
+- [x] `run.mjs`를 symlink 경로로 실행해도 동작. 테스트.
+- [ ] 실제 codex 스모크(로그인 후): 비판정 쓰기, `--no-wiki` 도구 없음.
+- [x] 기존 teams 테스트 전체 green (Node 22.12, 24).
+
+Critique: P2 — 판정 stage는 vendor와 무관하게 wiki 없음 유지 ✓. 단순성 — 새 개념 없음, 기존 플래그·함수 재사용 ✓.
+위험 — 실제 codex 스모크(로그인 필요) 전에는 미확인: codex가 `-c` override를 읽는지, wiki 서버가 sandbox 밖에서 쓰는지, 비대화 승인 정책이 `wiki_write`를 허용하는지, MCP 서버가 받는 env. 막히면 codex wiki는 문서화된 한계로 남긴다. 부수 수정: `wiki.mjs` openDb의 WAL 전환을 locked/busy에서 재시도(동시 첫 open 시 `database is locked`).

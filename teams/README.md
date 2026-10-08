@@ -329,9 +329,10 @@ There are 9 tools. Subagents write with `wiki_write`, which needs no approval; `
 project (`task.cwd`), also for workers running in a worktree.
 
 **In the task engine.** `createTask` adds the latest `log/*` pages (`wiki_resume`) to the task context.
-Claude node workers and drivers get the wiki tools. The judging stages (review, gate, accept, critique,
-test, audit, qa execute) and the manager's judges do not see the wiki, and codex workers do not get it.
-When the report node finishes, an L task gets one `log/<date>-<EPIC>` page written by the engine with
+Claude and codex node workers and drivers get the wiki tools (codex through `-c mcp_servers.teams-wiki`
+overrides). The judging stages (review, gate, accept, critique, test, audit, qa execute) and the manager's
+judges do not see the wiki, for any vendor. When the report node finishes, or the task ends blocked
+before a report, an L task gets one `log/<date>-<EPIC>` page written by the engine with
 `wiki_write`, no model and no judging: the request, the packages that shipped, the pages it resumed from
 and the doc paths. It is rewritten only when the set of shipped packages changes; nothing shipped, or a
 size-S task, writes nothing. `task.wiki` records `{mode, resumed?, log?}` and the report gets a
