@@ -199,7 +199,7 @@ const EN_UI = ['Now', 'You', 'Stages', 'Work', 'Cost', 'Summary', 'Log', 'needs 
 
 // Engine beneath: a Map-backed $.state, process.run for view.mjs (status and summary answer the same
 // fixture), ui.open and ui.status recorded.
-function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly ('terminal' | 'desktop')[] = ['terminal'], data: { status?: Record<string, unknown>; task?: unknown } = {}) {
+function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly ('terminal' | 'desktop')[] = ['terminal'], data: { status?: Record<string, unknown>; task?: unknown; reports?: Record<string, unknown> } = {}) {
   const store = new Map<string, unknown>(Object.entries(init))
   const seen = { store, argv: [] as (readonly string[])[], opened: [] as string[], statuses: [] as (string | undefined)[] }
   const status = () => data.status ?? { line: '', waiting: 0 }
@@ -212,6 +212,7 @@ function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly 
   on('process.run', (_$, e) => {
     seen.argv.push(e.argv)
     const format = e.argv[e.argv.indexOf('--format') + 1]
+    if (format === 'report') return { value: ok(JSON.stringify((data.reports ?? {})[e.argv[e.argv.indexOf('--task') + 1]!] ?? null)) }
     return { value: ok(format === 'status' ? JSON.stringify(status()) : format === 'summary' ? JSON.stringify({ status: status(), task: data.task ?? null }) : '') }
   })
   on('ui.open', (_$, e) => {
@@ -246,10 +247,10 @@ const engineBand = (on: On) =>
 
 // The data reaches the mod the way it does live: one tick (pane open, so the summary call runs) over
 // the mocked view.mjs; `data` is read at every call, so a test changes it between ticks.
-async function seeded($: Engine, on: On, data: { status?: Record<string, unknown>; task?: unknown }, surface: (typeof SURFACES)[number] = 'terminal', language?: string) {
+async function seeded($: Engine, on: On, data: { status?: Record<string, unknown>; task?: unknown; reports?: Record<string, unknown> }, surface: (typeof SURFACES)[number] = 'terminal', language?: string, init: Record<string, unknown> = {}) {
   const clock = mock.clock(on, { now: 1000 })
   startWorld(on, language)
-  const seen = uiWorld(on, { watch: ['abc'] }, [surface], data)
+  const seen = uiWorld(on, { watch: ['abc'], ...init }, [surface], data)
   on('ui.panes', () => ({ value: [{ id: 'teams-live', title: 'Teams', isPlaced: true }] }) as never)
   engineBand(on) // the engine's own band, beneath the teams row
   await start($)
@@ -640,4 +641,74 @@ test('/teams-live: English reply has no teams prefix and no status-line claim', 
   expect(seen.opened).toEqual(['teams-live'])
   expect(r).not.toContain('teams-live')
   expect(r).not.toContain('status line')
+})
+
+// ---- Report tab ----
+const REPORT_TEXT = '# Report\n\nAll packages shipped.\n'
+const payload = (over: Record<string, unknown> = {}) => ({
+  task_id: 'abc', verdict: 'finished', failed: 2,
+  needs: { items: ['module b: tests red', 'module c: never dispatched', 'D1 b.txt never wired'], more: 2 },
+  path: '/proj/.teams_output/team/E-abc/80-report.md',
+  report: { text: REPORT_TEXT, truncated: false, more_lines: 0, mtime: 5 },
+  retro: null,
+  ...over,
+})
+const reportArgv = (seen: { argv: (readonly string[])[] }) => seen.argv.filter(a => a.includes('report'))
+const taskOf = (argv: readonly string[]) => argv[argv.indexOf('--task') + 1]
+
+for (const surface of SURFACES) {
+  test(`${surface}: pressing Report fetches once and draws the report verbatim; a second tick keeps it`, async ($, on) => {
+    const { seen, tick } = await seeded($, on, { status: stat(), task: demo(), reports: { abc: payload() } }, surface)
+    expect(reportArgv(seen)).toHaveLength(0)
+    const ui = await pane($, surface)
+    expect((await ui.find({ key: 'report' }))?.props).toMatchObject({ plain: true, hotkey: '4', label: 'Report' })
+    await ui.press({ key: 'report' })
+    await ui.redraw()
+    expect(reportArgv(seen)).toHaveLength(1)
+    expect(reportArgv(seen)[0]!.join(' ')).toContain('--format report --task abc')
+    expect((await ui.find({ type: 'Markdown' }))?.props.text).toBe(REPORT_TEXT)
+    await tick()
+    await ui.redraw()
+    expect(reportArgv(seen).length).toBe(2)
+    expect((await ui.find({ type: 'Markdown' }))?.props.text).toBe(REPORT_TEXT)
+  })
+
+  test(`${surface}: with the Report tab closed no report call is made`, async ($, on) => {
+    const { seen, tick } = await seeded($, on, { status: stat(), task: demo(), reports: { abc: payload() } }, surface)
+    await tick()
+    await tick()
+    expect(reportArgv(seen)).toHaveLength(0)
+  })
+
+  test(`${surface}: report null draws the missing line with the path`, async ($, on) => {
+    await seeded($, on, { status: stat(), task: demo(), reports: { abc: payload({ report: null }) } }, surface)
+    const ui = await pane($, surface)
+    await ui.press({ key: 'report' })
+    await ui.redraw()
+    expect(await shown(ui)).toContain('No report yet: /proj/.teams_output/team/E-abc/80-report.md')
+  })
+
+  test(`${surface}: a >20k report draws the path then the truncated notice before the text`, async ($, on) => {
+    const big = { text: 'line\n'.repeat(3900), truncated: true, more_lines: 1234, mtime: 5 }
+    await seeded($, on, { status: stat(), task: demo(), reports: { abc: payload({ report: big }) } }, surface)
+    const ui = await pane($, surface)
+    await ui.press({ key: 'report' })
+    await ui.redraw()
+    const text = await shown(ui)
+    const path = text.indexOf('80-report.md')
+    const notice = text.indexOf('1234 more lines')
+    const body = text.indexOf('line\\nline')
+    expect(path > 0 && notice > path && body > notice).toBe(true)
+    expect(big.text.length <= 20000).toBe(true)
+  })
+}
+
+test('Report tab: Korean tab label and missing line', async ($, on) => {
+  await seeded($, on, { status: stat(), task: demo(), reports: { abc: payload({ report: null }) } }, 'terminal', 'korean')
+  const ui = await pane($, 'terminal')
+  await ui.press({ key: 'report' })
+  await ui.redraw()
+  const text = await shown(ui)
+  expect(text).toContain('보고서')
+  expect(text).toContain('아직 보고서가 없습니다')
 })
