@@ -161,7 +161,7 @@ export const register: Register = (on, options) => {
               <Text bold>{d.tool}</Text>
               <Box flexShrink={1}><Text wrap="truncate-end">{d.call}</Text></Box>
               <Text color={d.source === 'native' ? 'warning' : 'error'}>{d.source}</Text>
-              <Button key={`copy-${d.id}`} label="[Copy rule]" onPress={() => update($, copyAtom, () => d.id)} />
+              <Button key={`copy-${d.id}`} label="Copy rule" onPress={() => update($, copyAtom, () => d.id)} />
             </Box>
             <Text dimColor wrap="truncate-end">{d.reason.split('\n')[0]}</Text>
             {shown === d.id && <Text>{`${ruleFor(d)}  (add it via /permissions)`}</Text>}

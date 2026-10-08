@@ -118,8 +118,6 @@ const track = async ($: any, change: (l: Ledger) => Ledger) => {
 
 // One hooks module per plugin on this build: the guard registers its hooks from here.
 export const register: Register = (on, options) => {
-  registerGuard(on, options)
-  registerMemo(on, options)
 
   // Non-interactive sessions (every `claude -p`) get no command and no UI; the ledger still runs below.
   on('session.start', async ($, e, next) => {
@@ -172,6 +170,10 @@ export const register: Register = (on, options) => {
     })
     return result
   }).catch(($, e, next) => next(e))
+
+  // Registered after the ledger, so the ledger wraps the guard and counts its denials too.
+  registerGuard(on, options)
+  registerMemo(on, options)
 
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) {
@@ -228,7 +230,7 @@ export const register: Register = (on, options) => {
           <Box flexShrink={0} gap={1}>
             <Button
               key="retro"
-              label="[Retro]"
+              label="Retro"
               onPress={async () => {
                 await update($, tab, () => 'retro')
                 await openPane($)
@@ -236,7 +238,7 @@ export const register: Register = (on, options) => {
             />
             <Button
               key="dismiss"
-              label="[dismiss]"
+              label="dismiss"
               onPress={async () => {
                 await update($, band, () => false)
                 await update($, lastAtom, () => null)
@@ -294,10 +296,10 @@ export const register: Register = (on, options) => {
           {rows.map(r => (
             <Box key={`o-${r.pid}`} gap={1}>
               <Text color="warning">●</Text>
-              <Text>{String(r.pid)}</Text>
+              <Box flexShrink={0}><Text>{String(r.pid)}</Text></Box>
               <Box flexShrink={1}><Text wrap="truncate-end">{r.cmd}</Text></Box>
-              <Text dimColor>{fmtAge(r.start, now)}</Text>
-              <Button key={`stop-${r.pid}`} label="[stop]" onPress={() => stopOrphan($, r)} />
+              <Box flexShrink={0}><Text dimColor>{fmtAge(r.start, now)}</Text></Box>
+              <Button key={`stop-${r.pid}`} label="stop" onPress={() => stopOrphan($, r)} />
             </Box>
           ))}
           <Text dimColor>background shells and subagents: see /tasks</Text>
