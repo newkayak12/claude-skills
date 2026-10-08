@@ -154,9 +154,8 @@ function reportOutput(tasksDir, taskId) {
   if (m && !m.error) {
     try { raw = JSON.parse(readFileSync(join(tasksDir, taskId, 'task.json'), 'utf8')); } catch { raw = null; }
   }
-  const p = reportPayload(raw || { run_id: taskId || '' });
-  if (raw) p.verdict = m.state === 'complete' ? 'finished' : m.state === 'running' ? 'running' : 'blocked';
-  return JSON.stringify(p) + '\n';
+  const verdict = raw ? (m.state === 'complete' ? 'finished' : m.state === 'running' ? 'running' : 'blocked') : undefined;
+  return JSON.stringify(reportPayload(raw || { run_id: taskId || '' }, { verdict })) + '\n';
 }
 
 // ---------- HTML page (inline CSS/JS, no CDN; polls /state.json) ----------
