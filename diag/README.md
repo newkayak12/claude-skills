@@ -1,6 +1,6 @@
 # diag (beta)
 
-Records failures of this marketplace's skills and MCP tools in interactive sessions, shows them in a `/diag` pane, and, only when trophy's telemetry consent (v2) is yes, sends fixed error codes and counts. Beta: version `0.1.0-beta.3`. Requires Claude Code 2.1.292+ (hooks module, interactive sessions only).
+Records failures of this marketplace's skills and MCP tools in interactive sessions, shows them in a `/diag` pane, and, only when trophy's telemetry consent (v2) is yes, sends fixed error codes and counts. Beta: version `0.1.0-beta.4`. Requires Claude Code 2.1.292+ (hooks module, interactive sessions only).
 
 ## Install
 ```
