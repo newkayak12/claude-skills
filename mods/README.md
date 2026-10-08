@@ -1,6 +1,6 @@
 # mods (beta)
 
-Claude Code mods (function hooks) for the claude-skills workflow: skill toasts, and safety guards.
+Claude Code mods (function hooks) for the claude-skills workflow: skill toasts, safety guards, and an orphan reaper.
 
 ## Install & Uninstall
 
@@ -24,7 +24,8 @@ Claude Code 2.1.292 or newer. Older builds print one stderr line and skip the mo
 | 5 | Fetch reminder | Fetches at session start (interactive sessions only) and toasts if `origin/main` is ahead | claude-skills repo only |
 | 6 | Push / bump ask | Asks before `git push` and the `patch-harness` / `teams/skills/patch/patch.mjs` version bump scripts; the command is denied unless Run is chosen (dismissing the prompt also denies); headless sessions pass without asking | claude-skills repo only |
 | 7 | README without KOR | Toast on `git commit` when a staged `README.md` has no staged `KOR.md` | claude-skills repo only |
-| 8 | `claude -p` count | At turn end, status line `n claude -p child(ren) running` for headless children of this session; cleared at 0 | interactive |
+| 8 | Alive count | At turn end, status line `⧗ n agent(s) · m claude -p child(ren) running · /reap` for this session's unfinished agents and headless children; cleared at 0. Never stops anything | interactive |
+| 9 | `/reap` | Lists this session's unfinished agents (pending/running/waiting/idle) and its `claude -p` processes, asks Reap/Cancel, then stops the agents with TaskStop and sends TERM to the `claude -p` processes (never their wrapper shells). Kills no process when this session's engine pid cannot be confirmed | interactive |
 
 "claude-skills repo only" means the session repo's remote matches `/claude-skills(\.git)?$/`; in any other repo these three do nothing. Interactive-only features do nothing in headless (`claude -p`) sessions.
 
@@ -40,6 +41,7 @@ The `claude -p` count is per session: only processes started below this session'
 
 ## Status and known limits
 
+- Beta (`0.1.0-beta.6`): `/reap` stops this session's orphan agents and `claude -p` children after a confirm; the turn-end status line counts unfinished agents too.
 - Beta (`0.1.0-beta.5`): the bump ask now covers the teams patch tool (`teams/skills/patch/patch.mjs`).
 - Beta (`0.1.0-beta.4`): run band and its scanner removed (harness draws it); notices carry an icon (◆ ⚠ ↓ ⧗).
 - The skill toast needs the marketplace file to be readable from the plugin location; if not, no toast is shown.
