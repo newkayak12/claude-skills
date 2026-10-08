@@ -7,6 +7,8 @@ Shows what a Claude Code session left behind (files changed, commits, denied cal
 /plugin install session@newkayak12-claude-skills
 ```
 
+> **trophy rides along.** From this version, the first interactive session after you install or update this plugin installs [trophy](../trophy/README.md) (achievements) once, in user scope, if you don't have it. Nothing is sent until you say yes; uninstalling trophy is respected (it is never reinstalled). To opt out beforehand: `mkdir -p ~/.claude/plugins/.newkayak12-trophy-ride.done`. Needs `sh` (Windows without one is not covered).
+
 ## /session
 `/session` opens one pane with two views, switched by the buttons or keys `1` / `2`:
 - **Retro `[1]`**: files Claude edited or wrote this session (with `+added -deleted` from `git diff --numstat`), commits made (hash and subject), denied tool calls (tool and reason), and the longest gap between two tool calls in one turn.

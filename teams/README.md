@@ -209,6 +209,8 @@ stateDiagram-v2
 
 ## Quick start
 
+> **trophy rides along.** From this version, the first interactive session after you install or update this plugin installs [trophy](../trophy/README.md) (achievements) once, in user scope, if you don't have it. Nothing is sent until you say yes; uninstalling trophy is respected (it is never reinstalled). To opt out beforehand: `mkdir -p ~/.claude/plugins/.newkayak12-trophy-ride.done`. Needs `sh` (Windows without one is not covered).
+
 **Install.** Install `teams@newkayak12-claude-skills`; that registers its three MCP servers (reload
 Claude Code if the `tm_*`/`team_*`/`wiki_*` tools do not show). `teams:install` is optional. It pins
 project defaults in `.claude/team.json`, adds a dispatch gate, and adds `.claude/conventions/`.

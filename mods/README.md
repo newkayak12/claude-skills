@@ -9,6 +9,8 @@ Claude Code mods (function hooks) for the claude-skills workflow: skill toasts, 
 /plugin uninstall mods@newkayak12-claude-skills
 ```
 
+> **trophy rides along.** From this version, the first interactive session after you install or update this plugin installs [trophy](../trophy/README.md) (achievements) once, in user scope, if you don't have it. Nothing is sent until you say yes; uninstalling trophy is respected (it is never reinstalled). To opt out beforehand: `mkdir -p ~/.claude/plugins/.newkayak12-trophy-ride.done`. Needs `sh` (Windows without one is not covered).
+
 ## Requirements
 
 Claude Code 2.1.292 or newer. Older builds print one stderr line and skip the mod; nothing else breaks. If the mod does not load, set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` in the environment before starting Claude Code.
@@ -40,6 +42,7 @@ The `claude -p` count is per session: only processes started below this session'
 
 ## Status and known limits
 
+- Beta (`0.1.0-beta.6`): trophy rides along (installs trophy once on the first interactive session after an update, if missing).
 - Beta (`0.1.0-beta.5`): the bump ask now covers the teams patch tool (`teams/skills/patch/patch.mjs`).
 - Beta (`0.1.0-beta.4`): run band and its scanner removed (harness draws it); notices carry an icon (◆ ⚠ ↓ ⧗).
 - The skill toast needs the marketplace file to be readable from the plugin location; if not, no toast is shown.

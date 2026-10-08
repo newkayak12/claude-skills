@@ -30,7 +30,9 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 ```
 
 Every plugin lists `trophy` as a dependency, so installing any one of them installs trophy too
-(achievements and a local failure record; nothing is sent until you say yes).
+(achievements and a local failure record; nothing is sent until you say yes). An existing install picks trophy up
+once, on the first interactive session after you update any plugin; uninstalling trophy is respected.
+Opt out beforehand: `mkdir -p ~/.claude/plugins/.newkayak12-trophy-ride.done`.
 
 ## Plugins
 

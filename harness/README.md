@@ -21,6 +21,8 @@ before anyone edits the paths it cares about.
 /plugin uninstall harness@newkayak12-claude-skills
 ```
 
+> **trophy rides along.** From this version, the first interactive session after you install or update this plugin installs [trophy](../trophy/README.md) (achievements) once, in user scope, if you don't have it. Nothing is sent until you say yes; uninstalling trophy is respected (it is never reinstalled). To opt out beforehand: `mkdir -p ~/.claude/plugins/.newkayak12-trophy-ride.done`. Needs `sh` (Windows without one is not covered).
+
 Marketplace install alone enforces nothing — it makes the skills available. Run the `install`
 skill inside a target project to make governance ambient (see
 [Installing into a project](#installing-into-a-project)).
@@ -268,6 +270,7 @@ harness ships a small mod: a status line and a pipeline band above the prompt wi
 Known limitations: the status reads the gate config relative to the session's working directory. A session that started with no UI surface (headless or SDK-hosted) keeps the mod off even if a client attaches later; start a new session to get it (a reload of an unchanged mod does not re-fire session.start).
 
 ## Status
+- v1.26.2 — trophy rides along: the first interactive session after this update installs trophy once if missing (uninstall respected)
 - v1.26.1 — Mod: the band and status line count only this worktree's runs (other worktrees belong to other sessions)
 - v1.26.0 — Mod: the `/harness-gate` pane becomes a run view in the teams 0.46.0 style: tabs Run / Units / Gate (keys `1`-`3`), a six-stage rail, per-unit state, a goal-gate match bar and what runs now; `/harness-gate` opens on Gate (gate info unchanged, plus a line for an unreadable gate config). The 1.25.0 status line and pipeline band are kept. English by default, Korean with Claude Code's `language`. Mod tests 38; real Claude Code captures EN/KO
 - v1.25.1 — Mod: the band hover card opens in the flow under the stage rows (an absolute card above the band was clipped; checked live); graph runs are named by their request
