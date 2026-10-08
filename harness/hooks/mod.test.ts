@@ -48,6 +48,11 @@ function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], files: Fil
     store.set(e.key, e.value)
     return { value: { isSet: true, version: 1 } } as never
   })
+  // the prompt area beneath the band
+  on('ui.render', { component: 'AbovePrompt' }, ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return Text({ children: 'prompt' } as never) as never
+  })
   on('ui.open', (_$, e) => {
     seen.opened.push(e.id)
     return { value: { isPlaced: true } } as never
@@ -196,4 +201,45 @@ test('/harness-gate answers and opens the pane; session start alone opens nothin
   const r = await $.command.run({ command: 'harness-gate', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
   expect(seen.opened).toEqual(['harness-gate'])
   expect(JSON.stringify(r)).toContain('pane opened')
+})
+
+const band = ($: Engine, on: On, hasSurvey = false) => {
+  return $.ui.mount({ plugin: 'harness', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey } } as never)
+}
+
+test('band: hidden with no open runs', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  world(on, ['terminal'], {})
+  await start($)
+  const ui = await band($, on)
+  expect(await ui.find({ type: 'Text', text: 'harness' })).toBeUndefined()
+})
+
+test('band: hidden while a survey shows', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  world(on, ['terminal'], { ...runFiles }, runDirs)
+  await start($)
+  const ui = await band($, on, true)
+  expect(await ui.find({ type: 'Text', text: 'Implement 1' })).toBeUndefined()
+})
+
+test('band: chips with counts, harness row then graph row, Test only for harness', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  world(on, ['terminal'], { ...runFiles }, runDirs)
+  await start($)
+  const ui = await band($, on)
+  expect(await ui.find({ type: 'Text', text: 'Plan 1' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Gate 1' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Implement 1' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Critique' })).toBeDefined()
+})
+
+test('band: hover card lists the run slug, bar and failed count', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  world(on, ['terminal'], { ...runFiles }, runDirs)
+  await start($)
+  const ui = await band($, on)
+  expect(await ui.find({ type: 'Text', text: 'c' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '1 failed' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '▰▰▰▰▰' })).toBeDefined()
 })
