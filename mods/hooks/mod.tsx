@@ -92,12 +92,27 @@ export const register: Register = (on, options) => {
     const { Box, Text } = $.ui.resolve(e)
     return (
       <Box flexDirection="column">
-        {open.map(run => (
-          <Text key={run.dir}>
-            harness {run.slug}: {run.stage}
-            {run.total > 0 ? ` · ${run.passed}/${run.total} passed${run.failed ? `, ${run.failed} failed` : ''}` : ''}
-          </Text>
-        ))}
+        {open.map(run => {
+          const ok = run.total > 0 ? Math.round((run.passed / run.total) * 10) : 0
+          const bad = run.total > 0 ? Math.min(10 - ok, Math.round((run.failed / run.total) * 10)) : 0
+          return (
+            <Box key={run.dir} flexDirection="row" gap={1}>
+              <Text color="claude">◆</Text>
+              <Text dimColor>harness</Text>
+              <Text bold wrap="truncate-end">{run.slug}</Text>
+              <Text>{run.stage}</Text>
+              {run.total > 0 ? (
+                <Text>
+                  <Text color="success">{'▰'.repeat(ok)}</Text>
+                  <Text color="error">{'▰'.repeat(bad)}</Text>
+                  <Text dimColor>{'▱'.repeat(10 - ok - bad)}</Text>
+                  {` ${run.passed}/${run.total} passed`}
+                  {run.failed > 0 ? <Text color="error">{`, ${run.failed} failed`}</Text> : null}
+                </Text>
+              ) : null}
+            </Box>
+          )
+        })}
         {await next(e)}
       </Box>
     )
