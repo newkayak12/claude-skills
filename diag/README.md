@@ -18,6 +18,7 @@ Events are kept on your machine in the plugin store (newest 500; the same reason
 
 ## /diag
 - `/diag` opens the pane: the local failures with details, and whether sending is on or off.
+- Above the prompt, a one-row band `✘ N diag <last failure>` with a `보기` button shows failures recorded since you last opened the pane. Opening the pane clears it. Your own `/diag bug` reports do not count. Local display only; nothing is sent.
 - `/diag bug <note>` records a report. The note stays local; only the fixed code `user_report` can be sent.
 
 ## What is sent
