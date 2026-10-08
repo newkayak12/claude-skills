@@ -18,6 +18,8 @@ interactive session; removing the `modules` line from `hooks/hooks.json` leaves 
 /plugin uninstall trophy@newkayak12-claude-skills
 ```
 
+The UI is in English by default and switches to Korean when Claude Code's `language` setting is Korean; the consent question lists the same data in both languages. This file and [KOR.md](KOR.md) move together.
+
 ## Use
 
 | I want to… | Do |
