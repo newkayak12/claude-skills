@@ -1,6 +1,6 @@
 # session
 
-Shows what a Claude Code session left behind (files changed, commits, denied calls, longest gap between tool calls), shows it again as a band on your next start, lists stray `claude -p` children and stops one safely, guards dangerous commands and secret writes, keeps `/memo` notes, and recaps before compacting at a % you set. Version `0.2.0`. Requires Claude Code 2.1.292+ (hooks module). It needs nothing else from this marketplace.
+Shows what a Claude Code session left behind (files changed, commits, denied calls, longest gap between tool calls), shows it again as a band on your next start, lists stray `claude -p` children and stops one safely, guards dangerous commands and secret writes, keeps `/memo` notes, recaps before compacting at a % you set, keeps that recap for `/handoff`, `/recap` and `/lessons`, times tasks and shows the cost. Version `0.3.0`. Requires Claude Code 2.1.292+ (hooks module). It needs nothing else from this marketplace.
 
 ## Install
 ```
@@ -88,6 +88,27 @@ At a context % you choose, the session is first asked for a recap (goal, decisio
 | `/smart-compact <10-95>` | set it; `60` and `60%` both work |
 
 The same value is the **Smart compact threshold (%)** row in `/config`. It runs after a main-loop turn that ended with an answer, in interactive sessions only; never for subagents. If the recap fails it does nothing and the built-in auto-compact takes over. Set it below the auto-compact point, or auto-compact fires first.
+
+## Recap, handoff, lessons
+Every recap (from smart-compact or `/handoff`) is kept for this project, the last one only.
+
+| Command | What it does |
+| --- | --- |
+| `/handoff` | make a recap now, keep it, print it |
+| `/handoff <session>` | same, and send it to that session (a peer session name or id) |
+| `/recap` | print the project's last recap (under 7 days old) |
+| `/lessons` | the "corrected more than once" lines collected from recaps (newest 20); `/lessons clear` empties them |
+
+On the next start a band shows `last recap of this project, <age>` with a **Recap** button that opens it in a pane. Lessons are never written anywhere for you: move the ones worth keeping to `CLAUDE.md` yourself.
+
+## Task timer
+`/task <name>` starts a task, `/task` shows it, `/task done` stops it, `/task log` prints today's totals by name. The status line shows `⏱ <name> 12m` while it runs, refreshed each minute; starting a new task finishes the old one.
+
+## Cost
+After each turn the status line shows the session's cost and the highest rate-limit use (`$1.23 · 5h 42%`). Set **Cost budget (USD)** in `/config` for one toast when the cost reaches it (0 = off).
+
+## Prompt hint
+Off by default (**Prompt hint** in `/config`). When on, a typed prompt of 20 characters or less that asks for work (fix/add/만들/고쳐…) and names no path, code or check gets one toast asking for scope or a check, at most every 10 minutes. The prompt itself is never changed.
 
 ## Limits
 - "Longest gap" is the largest time between two tool calls in one turn, not a measured step.
