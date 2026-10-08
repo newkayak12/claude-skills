@@ -300,9 +300,31 @@ node teams/scripts/run.mjs --resume <task_id>
 
 ## 위키 메모리 (teams-wiki)
 
-`teams-wiki`는 이 플러그인의 세 번째 MCP 서버로, 서브에이전트(claude 노드 워커와 드라이버)가 메인 프로젝트의
+`teams-wiki`는 이 플러그인의 세 번째 MCP 서버로, 서브에이전트(claude·codex 노드 워커와 드라이버)가 메인 프로젝트의
 `.teams_wiki`에 문서로 소통하는 곳이자, 세션보다 오래 가는 프로젝트 메모리입니다. 태스크 엔진 없이도 서버는
 동작하며, 엔진은 아래 "태스크 엔진에서"처럼 위키를 씁니다.
+
+```mermaid
+flowchart LR
+  subgraph PRJ["메인 프로젝트 (task.cwd)"]
+    W[(".teams_wiki/&lt;space&gt;/&lt;slug&gt;.md")]
+  end
+  subgraph WORK["워커: investigate, plan, implement, draft ... (claude, codex)"]
+    N1["package worktree P1의 노드"]
+    N2["package worktree P2의 노드"]
+    N3["나중 task의 노드"]
+  end
+  N1 -->|"wiki_write: 조사 결과, 결정, 계약, 함정"| W
+  N2 -->|"필요할 때 wiki_search / wiki_get"| W
+  W -->|"스스로 찾아 읽음"| N3
+  subgraph JUDGE["판정: review, gate, accept, critique, test, audit, qa execute, manager judge"]
+    G["wiki 도구 없음, 프롬프트: wiki는 증거가 아님"]
+  end
+  JUDGE -.-x W
+  W -->|"task가 도는 동안 수정된 페이지"| RP["Report: Wiki 변경"]
+```
+
+**무엇을 쓰나.** 나중에 누군가 필요하지만 코드나 git에서는 얻을 수 없는 것만 씁니다. 출처가 달린 사실, 이유가 달린 결정, 다른 package가 기대는 인터페이스나 계약, 함정입니다. 페이지는 `[[space/slug]]`로 서로 이어서, 한 페이지에서 다음 페이지로 따라갈 수 있습니다. 진행 기록, task 상태, 판정 결과는 쓰지 않습니다. 그건 report와 ledger에 이미 있습니다.
 
 페이지는 `.teams_wiki/<space>/<slug>.md`의 마크다운이며 git으로 추적하고 직접 고칠 수 있습니다. 이
 파일이 원본입니다. `.teams_wiki/.index.sqlite`(FTS5 검색과 `[[link]]` 그래프)는 버려도 되는 산출물이라,
