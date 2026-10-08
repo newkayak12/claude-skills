@@ -9,6 +9,7 @@ import { checkKill } from './kill.ts'
 import type { Verdict } from './kill.ts'
 import { ancestorsOf, fmtAge, matchOrphans, parsePs, PS_ARGV } from './procs.ts'
 import type { Row } from './procs.ts'
+import { statusLine } from './status.ts'
 import { DENIALS_KEY, register as registerGuard } from './guard.tsx'
 
 const tab = atom({ plugin: 'session', key: 'tab' } as const, 'retro' as 'retro' | 'orphans')
@@ -177,7 +178,7 @@ export const register: Register = (on, options) => {
         await pollOrphans($)
         // Count of claude -p children below this session, as of this turn end.
         const n = (await read($, orphansAtom)).length
-        $.ui.status(n > 0 ? `⧗ ${n} claude -p child(ren) running` : undefined)
+        $.ui.status(statusLine({ orphans: n }))
       }
     }
     return next(e)
