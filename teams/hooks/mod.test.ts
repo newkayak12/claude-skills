@@ -240,7 +240,7 @@ const shown = async (ui: Ui) => JSON.stringify(await ui.drawn())
 const labels = async (ui: Ui) => (await ui.findAll({ type: 'Button' })).map(b => String(b.props.label))
 // the header row: the title Text and the state/day/progress Text beside it
 const headerOf = async (ui: Ui) =>
-  `${(await ui.find({ type: 'Text', text: /\(E-3a3a3bb5\)/ }))?.text ?? ''} ${(await ui.find({ type: 'Text', text: /day \d+|\d+일째/ }))?.text ?? ''}`
+  `${(await ui.find({ type: 'Text', text: /E-3a3a3bb5/ }))?.text ?? ''} ${(await ui.find({ type: 'Text', text: /day \d+|\d+일째/ }))?.text ?? ''}`
 const engineBand = (on: On) =>
   on('ui.render', (_$, e) => (e.component === 'AbovePrompt' ? { type: 'Text', children: ['engine band'] } : undefined) as never)
 
@@ -283,16 +283,26 @@ for (const surface of SURFACES) {
     expect(all.filter(l => l.includes('[') || l.includes(']'))).toEqual([])
   })
 
-  test(`${surface}: the selected tab is primary and follows a press`, async ($, on) => {
+  test(`${surface}: tabs sit above the body as plain hotkey tabs; the selected one is full strength with a dot`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo() }, surface)
     const ui = await pane($, surface)
-    const variant = async (key: string) => (await ui.find({ key }))?.props.variant
-    expect(await variant('summary')).toBe('primary')
-    expect(await variant('work')).not.toBe('primary')
+    const tab = async (key: string) => (await ui.find({ key }))?.props
+    expect(await tab('summary')).toMatchObject({ plain: true, hotkey: '1', dimColor: false, label: '● Summary' })
+    expect(await tab('work')).toMatchObject({ plain: true, hotkey: '2', dimColor: true, label: 'Work' })
+    const text = await shown(ui)
+    expect(text.indexOf('Summary')).toBeLessThan(text.indexOf('Now'))
     await ui.press({ key: 'work' })
     await ui.redraw() // the stubbed $.state does not notify readers
-    expect(await variant('work')).toBe('primary')
-    expect(await variant('summary')).not.toBe('primary')
+    expect(await tab('work')).toMatchObject({ dimColor: false, label: '● Work' })
+    expect(await tab('summary')).toMatchObject({ dimColor: true, label: 'Summary' })
+  })
+
+  test(`${surface}: Work tab is a board: To do / Doing / Done columns with counts, a failed card under To do`, async ($, on) => {
+    await seeded($, on, { status: stat(), task: demo({ work: [failedCard, card('module b', 'package', 'done'), card('module c', 'package', 'done')] }) }, surface)
+    const ui = await pane($, surface)
+    await ui.press({ key: 'work' })
+    await ui.redraw()
+    for (const head of ['To do 1', 'Doing 0', 'Done 2']) expect(await ui.find({ type: 'Text', text: head })).toBeDefined()
   })
 
   test(`${surface}: Work tab has a line per card and a reason only under a failed one; Log tab has time and sentence`, async ($, on) => {
@@ -562,7 +572,7 @@ test('band: a 200-char title truncates; progress and the board button are separa
 test('pane header: title truncates; "running · day N · done/total" is its own non-truncating node', async ($, on) => {
   await seeded($, on, { status: stat(), task: demo({ title: LONG }) })
   const ui = await pane($, 'terminal')
-  const title = await ui.find({ type: 'Text', text: /\(E-3a3a3bb5\)/ })
+  const title = await ui.find({ type: 'Text', text: LONG })
   const head = await ui.find({ type: 'Text', text: 'running · day 15 · 4/5' })
   expect(title).toBeDefined()
   expect(title!.props.wrap).toBe('truncate-end')
@@ -570,12 +580,17 @@ test('pane header: title truncates; "running · day N · done/total" is its own 
   expect(head!.props.wrap).toBeUndefined()
 })
 
-test('Summary Stages: one truncating Text joined with " › "', async ($, on) => {
+test('Summary stage rail: a dot per stage, the running one bold, solid rail up to it and dotted after', async ($, on) => {
   await seeded($, on, { status: stat(), task: demo() })
   const ui = await pane($, 'terminal')
-  const row = await ui.find({ type: 'Text', text: /Plan .* › .*Build/ })
-  expect(row).toBeDefined()
-  expect(row!.props.wrap).toBe('truncate-end')
+  const text = await shown(ui)
+  expect(await ui.find({ type: 'Text', text: '● Plan' })).toBeDefined()
+  const running = (await ui.findAll({ type: 'Text', text: /^◉ / }))
+  expect(running).toHaveLength(1)
+  expect(running[0]!.props.bold).toBe(true)
+  expect(text).toContain(' ━━ ')
+  expect(text).toContain(' ┄┄ ')
+  expect(text.lastIndexOf(' ━━ ')).toBeLessThan(text.indexOf(' ┄┄ '))
 })
 
 test('Summary Work: one Text per card, capped with "+N more"', async ($, on) => {

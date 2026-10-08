@@ -345,9 +345,9 @@ teams ships a small mod: a band above the prompt, a status line that appears onl
 
 **Features**
 
-- **Band.** One row above the prompt, shown only while a run in this folder is running: title, what it is doing now, `<done>/<total>` progress, and the buttons `board` (opens the pane) and `needs you <n>` (shown when `<n>` nodes wait for you). Other mods' bands stay visible below it.
+- **Band.** One row above the prompt, shown only while a run in this folder is running: title, what it is doing now, a short progress bar with `<done>/<total>`, and the buttons `board` (opens the pane) and `needs you <n>` (shown when `<n>` nodes wait for you). Other mods' bands stay visible below it.
 - **Status line.** Shown only when you must act: `needs you: <n> waiting - open /teams-live`. The engine adds the `teams: ` prefix and draws it as a notice. Otherwise there is no status line.
-- **`/teams-live`** opens the pane: a header (title, state, day, done/total) and tabs Summary, Work and Log. Summary says what it is doing now, whether you are needed, the stages and the work. Work lists one line per card and a reason only for failed ones. Log lists events as sentences with local time. The pane follows the last run you started with `tm_open` or `tm_run`. With none, it falls back to the newest running task of this folder; with neither, `No teams run in this session.`
+- **`/teams-live`** opens the pane in a rounded frame: a header (title, state, day, done/total), then the tabs Summary, Work and Log (keys `1`-`3`; the selected one is bright with a dot) beside the task key and cost. Summary draws the stages as a rail (`● Plan ━━ ● Build ━━ ◉ QA ┄┄ ○ Report`: solid up to where the run is, dotted after), then what it is doing now, whether you are needed, one line per card and a progress bar. Work is a board with To do, Doing and Done columns and their counts; failed cards sit under To do with their reason. Log lists events as sentences with local time. The pane follows the last run you started with `tm_open` or `tm_run`. With none, it falls back to the newest running task of this folder; with neither, `No teams run in this session.`
 - **Language.** English by default; Korean when Claude Code's `language` setting is Korean.
 - **Toasts** for events after the session started (`<id8>` is the first 8 characters of the task id):
   - `E-<id8> <node_id> failed`
