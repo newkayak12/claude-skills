@@ -4,7 +4,8 @@
 // no npm dependency. The markdown converter covers only what references/house-style.md emits.
 //
 // Usage:  node render-pdf.mjs <book-dir>
-// Exit 0 → book.pdf written · 1 → no browser / print failed (book.html kept) · 2 → usage or no chapters.
+// Exit 0 → book.pdf written · 1 → no browser / print failed (book.html kept) · 2 → usage or no chapters
+//      · 3 → book.pdf written but partial: a toc chapter has no final/ file, or a referenced image is missing.
 // CHROME=<path> uses that browser only (no search).
 
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, rmSync } from 'node:fs';
@@ -49,13 +50,30 @@ function list(items) {
   return out + `</${tag}>`;
 }
 
-export function mdToHtml(md) {
+const IMAGE = /^!\[([^\]]*)\]\(([^)\s]+)\)\s*$/;
+
+// baseDir: where image paths resolve (final/). missingImages collects referenced images that do not exist.
+export function mdToHtml(md, baseDir = '.', missingImages = []) {
   const lines = md.replace(/\r\n/g, '\n').split('\n');
   const out = [];
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
-    if (/^```/.test(line)) {
+    if (IMAGE.test(line)) {
+      const [, alt, src] = line.match(IMAGE);
+      const file = resolve(baseDir, src);
+      if (!existsSync(file)) missingImages.push(src);
+      // the `그림 N-M` caption paragraph below goes inside the figure, so a page break cannot split them
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim() === '') j++;
+      const cap = [];
+      if (/^그림 \d+-\d+/.test(lines[j] || ''))
+        for (; j < lines.length && lines[j].trim() !== '' && !/^(```|#{1,6}\s|>|\s*\|)/.test(lines[j]) && !LIST.test(lines[j]) && !IMAGE.test(lines[j]); j++)
+          cap.push(lines[j].trim());
+      const figcaption = cap.length ? `<figcaption class="caption">${inline(cap.join(' '))}</figcaption>` : '';
+      out.push(`<figure><img src="${pathToFileURL(file).href}" alt="${esc(alt)}">${figcaption}</figure>`);
+      i = cap.length ? j : i + 1;
+    } else if (/^```/.test(line)) {
       const body = [];
       for (i++; i < lines.length && !/^```/.test(lines[i]); i++) body.push(lines[i]);
       i++;
@@ -77,7 +95,7 @@ export function mdToHtml(md) {
       const body = [];
       for (; i < lines.length && /^>/.test(lines[i]); i++) body.push(lines[i].replace(/^>\s?/, ''));
       // house-style boxes are one item per line (MySQL에서는 / Postgres에서는 / 깨지는 지점) — keep the lines apart
-      out.push(`<blockquote>${mdToHtml(body.join('\n\n'))}</blockquote>`);
+      out.push(`<blockquote>${mdToHtml(body.join('\n\n'), baseDir, missingImages)}</blockquote>`);
     } else if (LIST.test(line)) {
       const items = [];
       for (; i < lines.length && LIST.test(lines[i]); i++) {
@@ -89,7 +107,7 @@ export function mdToHtml(md) {
       i++;
     } else {
       const para = [];
-      for (; i < lines.length && lines[i].trim() !== '' && !/^(```|#{1,6}\s|>|\s*\|)/.test(lines[i]) && !LIST.test(lines[i]); i++)
+      for (; i < lines.length && lines[i].trim() !== '' && !/^(```|#{1,6}\s|>|\s*\|)/.test(lines[i]) && !LIST.test(lines[i]) && !IMAGE.test(lines[i]); i++)
         para.push(lines[i].trim());
       const text = para.join(' ');
       out.push(/^(그림|표|코드) \d+-\d+/.test(text) ? `<p class="caption">${inline(text)}</p>` : `<p>${inline(text)}</p>`);
@@ -115,7 +133,7 @@ export function chapterFiles(bookDir) {
   return { files, missing };
 }
 
-export function buildHtml(title, chaptersMd) {
+export function buildHtml(title, chaptersMd, baseDir = '.', missingImages = []) {
   const font = (file) => pathToFileURL(join(FONTS, file)).href;
   const css = `
 @font-face { font-family: 'NanumGothic'; font-weight: 400; src: url('${font('NanumGothic-Regular.ttf')}'); }
@@ -140,8 +158,10 @@ table { border-collapse: collapse; width: 100%; margin: 3mm 0 5mm; font-size: 9.
 th, td { border: 0.3mm solid #ccc; padding: 1.5mm 2.5mm; text-align: left; vertical-align: top; }
 th { background: #eef0f3; }
 ul, ol { margin: 0 0 3mm; padding-left: 6mm; } li { margin: 0.5mm 0; }
+figure { margin: 4mm 0 0; text-align: center; break-inside: avoid; } img { max-width: 100%; }
+figcaption.caption { text-align: left; }
 a { color: inherit; text-decoration: none; }`;
-  const body = chaptersMd.map((md) => `<section class="chapter">\n${mdToHtml(md)}\n</section>`).join('\n');
+  const body = chaptersMd.map((md) => `<section class="chapter">\n${mdToHtml(md, baseDir, missingImages)}\n</section>`).join('\n');
   return `<!doctype html>\n<html lang="ko"><head><meta charset="utf-8"><title>${esc(title)}</title><style>${css}</style></head>\n<body>\n<section class="cover"><h1>${esc(title)}</h1></section>\n${body}\n</body></html>\n`;
 }
 
@@ -181,8 +201,11 @@ export function render(bookDir, env = process.env) {
   const brief = join(dir, 'brief.md');
   const title = (existsSync(brief) && readFileSync(brief, 'utf8').match(/^#\s+(.+)$/m)?.[1].trim()) || basename(dir);
   const html = join(dir, 'book.html');
-  writeFileSync(html, buildHtml(title, files.map((f) => readFileSync(f, 'utf8'))));
-  const warn = missing.length ? `\nmissing final/ for chapters: ${missing.join(', ')}` : '';
+  const missingImages = [];
+  writeFileSync(html, buildHtml(title, files.map((f) => readFileSync(f, 'utf8')), join(dir, 'final'), missingImages));
+  const warn =
+    (missing.length ? `\nmissing final/ for chapters: ${missing.join(', ')}` : '') +
+    (missingImages.length ? `\nmissing images: ${missingImages.join(', ')}` : '');
   const browser = findBrowser(env);
   if (!browser)
     return { code: 1, msg: `no Chrome-family browser found — set CHROME=<path to Chrome/Chromium/Edge>. book.html written: ${html}${warn}` };
@@ -192,7 +215,7 @@ export function render(bookDir, env = process.env) {
     '--no-pdf-header-footer', `--print-to-pdf=${pdf}`, pathToFileURL(html).href], { encoding: 'utf8', timeout: 180000 });
   if (r.status !== 0 || !existsSync(pdf))
     return { code: 1, msg: `print failed (${browser}): ${(r.stderr || r.error?.message || '').trim().slice(-400)}${warn}` };
-  return { code: 0, msg: `book.pdf: ${pdf} (${files.length} chapters, ${browser})${warn}` };
+  return { code: warn ? 3 : 0, msg: `book.pdf: ${pdf} (${files.length} chapters, ${browser})${warn ? ' — PARTIAL' : ''}${warn}` };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
@@ -201,6 +224,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     process.exit(2);
   }
   const { code, msg } = render(process.argv[2]);
-  (code === 0 ? process.stdout : process.stderr).write(msg + '\n');
+  (code === 0 || code === 3 ? process.stdout : process.stderr).write(msg + '\n');
   process.exit(code);
 }

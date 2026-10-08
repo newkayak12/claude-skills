@@ -80,6 +80,8 @@ For each review, provide:
 | REPEATABLE READ | Dirty + non-repeatable reads | Phantom reads | Financial aggregations, inventory checks |
 | SERIALIZABLE | All anomalies | — | Booking, reservation, double-spend prevention |
 
+Rows are the SQL-standard minimum. PostgreSQL REPEATABLE READ is snapshot isolation and does not allow phantom reads (PostgreSQL docs, "Transaction Isolation", "Repeatable Read Isolation Level"). MySQL InnoDB REPEATABLE READ: consistent nonlocking reads read the transaction's snapshot (no phantoms) and locking reads/UPDATE/DELETE take next-key locks — but a locking read or DML acts on the latest committed rows, so mixing it with snapshot reads in one transaction can surface rows outside the snapshot (MySQL Reference Manual, "Transaction Isolation Levels", "Consistent Nonlocking Reads", "Phantom Rows").
+
 ## Common Anti-Patterns
 
 ### 1. Overly Wide Transactions

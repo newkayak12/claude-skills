@@ -324,7 +324,8 @@ RDS Postgres가 매일 오후만 되면 느려지는데 쿼리 하나씩 보면 
 부분 실패 후 데이터가 어긋나거나, 부하 상황에서 락 경합·타임아웃이 생길 때 격리 수준, 원자성
 공백, 지나치게 넓은 트랜잭션을 검토합니다. 먼저 어떤 ACID 속성이 위험한지 특정하고,
 `@Transactional` 안에서 실제로 무엇이 도는지 매핑합니다 — 트랜잭션 내부의 외부 I/O, N+1,
-`rollbackFor` 누락, lost update. 슬로우 쿼리는 `sql-pro`, 풀 고갈은 `connection-pool-tuner`.
+`rollbackFor` 누락, lost update. 격리 수준 표에는 PostgreSQL과 InnoDB의 REPEATABLE READ가 SQL 표준보다
+강한 지점(스냅숏 읽기에 팬텀 없음)을 적어 두었습니다. 슬로우 쿼리는 `sql-pro`, 풀 고갈은 `connection-pool-tuner`.
 
 ```
 어젯밤 타임아웃 이후 주문은 생성됐는데 결제가 안 됐습니다. @Transactional 경계를

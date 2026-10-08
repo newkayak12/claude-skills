@@ -53,30 +53,30 @@ this repo, check that `tmp/` is gitignored; if not, tell the user before writing
    as `[확인 필요: … / 추천: …]`. The first turn ends here, with the grill questions.
 1. **toc.md.** `think:untangle-thoughts` (Outline). One block per chapter in the `references/house-style.md` format:
    goal, `requires:` (earlier chapters only, order checked with think-tool), anchor analogy candidates, `sme:` (from
-   `references/skill-routing.md`). Present it with one `think:grill` round. **Stop: no stage 2 until the user
-   approves toc.md.**
+   `references/skill-routing.md`). Sweep it first: every unsourced version, default, limit gets `[확인 필요]`; list what
+   you checked. Present it with one `think:grill` round. **Stop: no stage 2 until the user approves toc.md.**
 2. **glossary.md + concepts/NN.md.** Once per book (shared glossary); sequential-thinking clusters, think-tool picks
    analogies. Per concept: definition, prerequisite, analogy + where it breaks, one example, `[확인 필요]` items.
    `knowledge:base-builder` / `knowledge:query` only when the user supplied sources.
-3. **draft/NN.md.** `agents:dispatching-parallel-agents`, one agent per chapter with its `sme:` skill mounted. No
-   worktree isolation — `tmp/` is gitignored, so a worktree strands the file; each agent writes only its own
+3. **draft/NN.md.** `agents:dispatching-parallel-agents`, one agent per chapter with its `sme:` skill mounted.
+   No worktree isolation — `tmp/` is gitignored, so a worktree strands the file; each agent writes only its own
    absolute path under `tmp/books/<slug>/`.
-4. **review/NN-rK.md.** Four checks, concurrent, never by the drafter, merged into one file: the SME skill fact-checks;
-   `cognition:epistemic-reasoner` tests every analogy and absolute claim; `write:writer-verification` review mode
-   (genre `doc`, audience from the brief); `../plans/agents/reader-agent.md` asked each learning goal as a question —
-   at most 5 per chapter per round. Findings are 🔴🟡🟢 with original → fix.
+4. **review/NN-rK.md.** Four checks, concurrent, never by the drafter, merged into one file: fact-check against the
+   official docs (or the user's sources) first, cited by URL, the SME skill second — an SME-vs-docs conflict is 🔴,
+   docs win; `cognition:epistemic-reasoner` tests every analogy and absolute claim; `write:writer-verification`
+   review mode (genre `doc`, audience from the brief); `../plans/agents/reader-agent.md` asked each learning goal as
+   a question — at most 5 per chapter per round. Findings are 🔴🟡🟢 with original → fix.
 5. **Revise draft/NN.md.** Close every 🔴🟡, then back to 4. From round 2, re-run only the checks that flagged
    something. Leftovers at the stop go to `## 남은 항목` at the end of the chapter.
-6. **final/NN.md.** Copyedit to `references/house-style.md`, then one `write:writer-verification` pass; check terms
-   against `glossary.md` across the whole book. `write:like-me` only with the user's samples;
-   `develop:architecture-designer` only for system figures.
-7. **book.pdf.** `node scripts/render-pdf.mjs tmp/books/<slug>` — chapters in toc.md order, typeset in the
-   NanumGothic fonts bundled in `assets/fonts/` (page and type in `references/house-style.md`). No browser found →
-   it exits 1 and keeps `book.html`; tell the user to set `CHROME=<path>`. Never swap in another font: the
-   page is set to Nanum metrics, and only these fonts ship with their license.
+6. **final/NN.md.** Copyedit to the house style, one `write:writer-verification` pass, `glossary.md` terms checked
+   book-wide; `write:like-me` only with user samples, `develop:architecture-designer` for system figures only.
+7. **book.pdf.** `node scripts/render-pdf.mjs tmp/books/<slug>` — toc.md order, in the NanumGothic fonts of
+   `assets/fonts/` (page, type, figures: `references/house-style.md`). Exit 1: no browser (`book.html` kept) — ask
+   for `CHROME=<path>`. Exit 3: PDF written but a chapter or image is missing — report them; that is a partial book,
+   never done. Never swap in another font: the page is set to Nanum metrics, and only these ship licensed.
 
-Done: after stage 7, `completion:verification-before-completion` with an isolated verifier against the Goal line and
-book.pdf (exists, ≥ 1 page, every toc chapter rendered).
+Done: render exit 0, then `completion:verification-before-completion` with an isolated verifier against the Goal line
+and book.pdf (exists, ≥ 1 page, every toc chapter rendered).
 
 Parallelism: one agent per book for stages 0–1; stage 2 once per book; stages 3–6 per chapter, then one book-wide
 glossary pass. Independent means no two agents write the same file.

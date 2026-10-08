@@ -315,9 +315,11 @@ routed to a skill in this repo — `think:grill` for the brief and the TOC quest
 chapter (e.g. `database-optimizer` and `sql-pro` for a Postgres book), `cognition:epistemic-reasoner` to test every
 analogy, `writer-verification` and a no-context reader for review — and a chapter's drafter never reviews it.
 Every analogy to what the reader already knows ("MySQL에서는…") states where it breaks; every version or default
-without a source is marked `[확인 필요]`. The review↔revise loop stops at 🔴🟡 = 0 or three rounds. The book ends in
+without a source is marked `[확인 필요]`; the TOC is swept for unmarked ones before you see it. Fact checks go to the official docs first and
+the subject skill second — where they disagree, the docs win. The review↔revise loop stops at 🔴🟡 = 0 or three rounds. The book ends in
 `book.pdf`, typeset in NanumGothic (text) and NanumGothicCoding (code), bundled in the skill under SIL OFL 1.1 and
-printed by any Chrome-family browser (`CHROME=<path>` to choose one). `like-me` is used only if you give writing samples.
+printed by any Chrome-family browser (`CHROME=<path>` to choose one). Figures are image files in `final/` with their
+caption kept on the same page; a book with a chapter or image missing still prints but exits 3 — partial, not done. `like-me` is used only if you give writing samples.
 
 ```
 비전공자용으로 Postgres 개념부터 심화까지 책 써줘. 나는 MySQL을 쓰니까 MySQL에 빗대서.
