@@ -79,6 +79,7 @@ export const register: Register = (on, _options) => {
         await save($, hit.key, rest)
         return { text: `Note ${cmd.n} removed. ${note}` }
       }
+      if (cmd.op !== 'clear') return { text: USAGE }
       await save($, cmd.global ? GLOBAL : projectKey(root), [])
       return { text: `Cleared ${cmd.global ? 'global' : 'project'} notes. ${note}` }
     } catch {
@@ -126,7 +127,7 @@ export const register: Register = (on, _options) => {
         {lines.map((l, i) => <Text key={`n-${i}`}>{l}</Text>)}
         {lines.length > 0 && <Text dimColor>{f.count}</Text>}
         {f.cut !== '' && <Text color="warning">{f.cut}</Text>}
-        {f.hints.map(h => <Text key={h} dimColor>{h}</Text>)}
+        {f.hints.map(line => <Text key={line} dimColor>{line}</Text>)}
       </Box>
     )
   }).catch(($, e, next) => next(e))
