@@ -31,7 +31,7 @@ stays, so a user on an older build, without plugins, or on Codex loses nothing.
 | 4 | `04-trophy.md` | new `trophy` plugin: Steam-style achievements for skill use, trigger hit/miss pane, opt-in anonymous PostHog counts | User request 2026-10-07 (brainstorming); its Task 0 extends the spike |
 | 5 | `05-spike-2.md` | Prove the five API facts plans 06-09 rest on (pane scroll, `prompt.context` after compaction, `$.ui.ask` under bypass/headless, `classic.Stop`/`turn.step`, `file://` Link) | Each later plan cites its S-item and states a fallback |
 | 6 | `06-teams-report.md` | teams mod: end-of-run card + Report tab reading `80-report.md` | Report file already exists; smallest cost (brainstorming 2026-10-08) |
-| 7 | `07-session.md` | new `session` plugin: skeleton, retro band/pane, orphan `claude -p` list with safe stop; takes over `mods` feature 9 | Orphan loops were a real cost; skeleton hosts 08 and 09 |
+| 7 | `07-session.md` | new `session` plugin: skeleton, retro band/pane, orphan `claude -p` list with safe stop; takes over `mods` feature 8 | Orphan loops were a real cost; skeleton hosts 08 and 09 |
 | 8 | `08-guard.md` | `session` guard module: dangerous-command confirm, secret-path writes, denial log + Copy rule; takes over two `mods` guards | Guards for any repo, incl. bypass mode |
 | 9 | `09-memo.md` | `session` memo module: `/memo` notes injected via `prompt.context` | Lowest value of the set — cut first if scope shrinks |
 
