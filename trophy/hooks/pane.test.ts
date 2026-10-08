@@ -93,3 +93,25 @@ test('a locked achievement draws a ▰▱ bar with have/need; an unlocked one do
   expect(lines.some(l => /^▰*▱+ \d+\/\d+$/.test(l))).toBe(true)
   expect(lines.some(l => l === '🏆 First Blood · 2026-10-06')).toBe(true)
 })
+
+test('the 실패 tab lists recorded failures, newest first', async ($, on) => {
+  memoryStore(on, {
+    'trophy.failures': [
+      { ts: 1, day: '2026-10-06', kind: 'bug', reason: 'is_error', plugin: 'develop', skill: 'clean-code', session: 's', local: { text: 'boom' } },
+      { ts: 2, day: '2026-10-07', kind: 'bug', reason: 'mcp_error', plugin: 'knowledge', tool: 'knowledge_get', session: 's', local: {} },
+    ],
+  })
+  sessionAt(on, NOW)
+  bottom(on)
+  on('ui.open', () => ({ value: { isPlaced: true } as any }))
+  const ui = await $.ui.mount({ plugin: 'trophy', surface: 'terminal', component: 'Pane', requestId: 'trophy', props: PANE })
+
+  await ui.press({ key: 'tab-failures' })
+  const lines = texts(await ui.drawn())
+
+  const first = lines.findIndex(l => l.includes('knowledge_get'))
+  const second = lines.findIndex(l => l.includes('develop:clean-code'))
+  expect(first).toBeGreaterThan(-1)
+  expect(second).toBeGreaterThan(first)
+  expect(lines).toContain('boom')
+})

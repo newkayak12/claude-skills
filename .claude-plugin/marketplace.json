@@ -14,7 +14,10 @@
         "name": "newkayak12"
       },
       "source": "./develop",
-      "category": "engineering"
+      "category": "engineering",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "think",
@@ -24,7 +27,10 @@
         "name": "newkayak12"
       },
       "source": "./think",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "write",
@@ -34,7 +40,10 @@
         "name": "newkayak12"
       },
       "source": "./write",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "knowledge",
@@ -44,7 +53,10 @@
         "name": "newkayak12"
       },
       "source": "./knowledge",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "agents",
@@ -54,7 +66,10 @@
         "name": "newkayak12"
       },
       "source": "./agents",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "planning",
@@ -64,7 +79,10 @@
         "name": "newkayak12"
       },
       "source": "./planning",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "skill",
@@ -74,7 +92,10 @@
         "name": "newkayak12"
       },
       "source": "./skill",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "completion",
@@ -84,7 +105,10 @@
         "name": "newkayak12"
       },
       "source": "./completion",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "portfolio",
@@ -94,7 +118,10 @@
         "name": "newkayak12"
       },
       "source": "./portfolio",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "cognition",
@@ -104,7 +131,10 @@
         "name": "newkayak12"
       },
       "source": "./cognition",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "harness",
@@ -114,7 +144,10 @@
         "name": "newkayak12"
       },
       "source": "./harness",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "graph",
@@ -124,7 +157,10 @@
         "name": "newkayak12"
       },
       "source": "./graph",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "teams",
@@ -134,12 +170,15 @@
         "name": "newkayak12"
       },
       "source": "./teams",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     },
     {
       "name": "trophy",
-      "description": "Steam-style achievements for using this marketplace's skills: a toast on unlock, an /achievements pane, trophy:list in conversation, and a view of which skills your prompts should have triggered. Opt-in anonymous daily counts (off by default).",
-      "version": "0.3.0",
+      "description": "Steam-style achievements for using this marketplace's skills: a toast on unlock, an /achievements pane, trophy:list in conversation, and a view of which skills your prompts should have triggered, and a local record of skill failures. Opt-in anonymous daily counts and error codes (off by default).",
+      "version": "0.4.0",
       "author": {
         "name": "newkayak12"
       },
@@ -154,17 +193,10 @@
         "name": "newkayak12"
       },
       "source": "./mods",
-      "category": "productivity"
-    },
-    {
-      "name": "diag",
-      "description": "Beta. Records failures of this marketplace's skills and MCP tools in interactive sessions, shows them in a /diag pane, and sends only fixed error codes and counts when trophy's consent is yes.",
-      "version": "0.1.0-beta.4",
-      "author": {
-        "name": "newkayak12"
-      },
-      "source": "./diag",
-      "category": "productivity"
+      "category": "productivity",
+      "dependencies": [
+        "trophy"
+      ]
     }
   ]
 }
