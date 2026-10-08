@@ -201,8 +201,8 @@
     },
     {
       "name": "session",
-      "description": "What a session left behind and a safety net: a /session pane with files changed, commits, denied calls and the longest gap, a retro band on the next start, a safe stop for stray claude -p children, guards that confirm destructive commands and secret-file writes, /memo notes pinned to the model's context, and /smart-compact: recap the session at a set context %, then compact with that recap.",
-      "version": "0.2.0",
+      "description": "What a session left behind and a safety net: a /session pane with files changed, commits, denied calls and the longest gap, a retro band on the next start, a safe stop for stray claude -p children, guards that confirm destructive commands and secret-file writes, /memo notes pinned to the model's context, /smart-compact (recap at a set context %, then compact), /handoff, /recap and /lessons from that recap, a /task timer and the session cost in the status line.",
+      "version": "0.3.0",
       "author": {
         "name": "newkayak12"
       },

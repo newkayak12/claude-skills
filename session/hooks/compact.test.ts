@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 
-import { THRESHOLD_FIELD } from './compact.ts'
+import { THRESHOLD_FIELD } from './compact.tsx'
 import { guardWorld } from './testkit.ts'
 
 const TURN = { reason: 'answer', answer: 'ok', durationMs: 1, isAborted: false, turnId: 't' } as never

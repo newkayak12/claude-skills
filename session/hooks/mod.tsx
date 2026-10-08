@@ -9,10 +9,15 @@ import { checkKill } from './kill.ts'
 import type { Verdict } from './kill.ts'
 import { ancestorsOf, fmtAge, matchOrphans, parsePs, PS_ARGV } from './procs.ts'
 import type { Row } from './procs.ts'
-import { statusLine } from './status.ts'
+import { costText, statusLine } from './status.ts'
+import { isFresh, fmtAgo, recapKey } from './recap.ts'
+import type { Recap } from './recap.ts'
+import { appendLog, dayOf, parseTask, TASK_KEY, TASK_LOG_KEY, taskStatus, todayLines } from './timer.ts'
+import type { Done, Task } from './timer.ts'
 import { DENIALS_KEY, register as registerGuard } from './guard.tsx'
 import { register as registerMemo } from './memo.tsx'
-import { register as registerCompact } from './compact.ts'
+import { register as registerHint } from './hint.ts'
+import { RECAP_PANE, register as registerCompact } from './compact.tsx'
 
 const tab = atom({ plugin: 'session', key: 'tab' } as const, 'retro' as 'retro' | 'orphans')
 const band = atom({ plugin: 'session', key: 'band' } as const, false)
@@ -21,6 +26,8 @@ const ledger = atom({ plugin: 'session', key: 'ledger' } as const, emptyLedger()
 const statsAtom = atom({ plugin: 'session', key: 'stats' } as const, {} as Record<string, string>)
 
 const lastAtom = atom({ plugin: 'session', key: 'last' } as const, null as Summary | null)
+// The project's last recap, when it is under 7 days old: the band offers it once per start.
+const recapAtom = atom({ plugin: 'session', key: 'recap' } as const, null as { ts: number } | null)
 
 const PANE = 'session'
 const LAST_KEY = 'session.last'
@@ -110,6 +117,37 @@ async function stopOrphan($: any, seen: Row) {
   }
 }
 
+// The running /task, read from the store each time: a reload or another window sees the same task.
+const runningTask = async ($: any): Promise<Task | undefined> => {
+  try {
+    return ((await $.store.get(TASK_KEY)) as Task | undefined) ?? undefined
+  } catch {
+    return undefined
+  }
+}
+
+const paintTask = async ($: any) => {
+  $.ui.status(statusLine({ task: taskStatus(await runningTask($), (await $.clock.now()) as number) }))
+}
+
+// Repaints the elapsed minutes while a task runs; one loop per load (a reload drops the old one).
+let isTicking = false
+const tick = async ($: any) => {
+  if (isTicking) return
+  isTicking = true
+  try {
+    while (await runningTask($)) {
+      await $.clock.sleep(60_000)
+      await paintTask($)
+    }
+  } finally {
+    isTicking = false
+  }
+}
+
+// One toast per load when the session's cost first reaches the /config budget.
+let isBudgetToasted = false
+
 // The ledger never changes what the engine returns: any failure while recording is swallowed.
 const track = async ($: any, change: (l: Ledger) => Ledger) => {
   try {
@@ -131,6 +169,21 @@ export const register: Register = (on, options) => {
     await $.command.register({ name: 'memo', description: 'Pin notes the model reads in every conversation of this project' })
     await $.command.register({ name: 'session-denials', description: 'Calls the guard or the permission rules denied this session' })
     await $.command.register({ name: 'smart-compact', description: 'Set the context % at which the session is recapped and compacted (/smart-compact 60)' })
+    await $.command.register({ name: 'handoff', description: 'Recap this session now and keep it for the next start; /handoff <session> also sends it there' })
+    await $.command.register({ name: 'recap', description: "Print this project's last recap (smart-compact or /handoff)" })
+    await $.command.register({ name: 'lessons', description: 'Corrections collected from recaps; /lessons clear empties them' })
+    await $.command.register({ name: 'task', description: 'Time a task: /task <name> starts, /task done stops, /task log shows today' })
+    try {
+      const r = (await $.store.get(recapKey(await $.session.root()))) as Recap | undefined
+      const fresh = isFresh(r, (await $.clock.now()) as number) ? { ts: r!.ts } : null
+      await update($, recapAtom, () => fresh)
+    } catch {
+      await update($, recapAtom, () => null)
+    }
+    if (await runningTask($)) {
+      await paintTask($)
+      void tick($).catch(() => {})
+    }
     // First start of the session: defaults. A later start (hot reload) keeps what is there.
     await update($, tab, t => t ?? 'retro')
     await update($, band, b => b ?? false)
@@ -177,6 +230,7 @@ export const register: Register = (on, options) => {
   registerGuard(on, options)
   registerMemo(on, options)
   registerCompact(on, options)
+  registerHint(on, options)
 
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) {
@@ -186,10 +240,43 @@ export const register: Register = (on, options) => {
         await pollOrphans($)
         // Count of claude -p children below this session, as of this turn end.
         const n = (await read($, orphansAtom)).length
-        $.ui.status(statusLine({ orphans: n }))
+        const usage = await $.session.usage().catch(() => undefined)
+        const cost = costText(usage?.cost?.usd, usage?.rateLimits ?? [])
+        $.ui.status(statusLine({ orphans: n, cost, task: taskStatus(await runningTask($), (await $.clock.now()) as number) }))
+        const budget = Number(options.cost_budget_usd ?? 0)
+        if (budget > 0 && !isBudgetToasted && (usage?.cost?.usd ?? 0) >= budget) {
+          isBudgetToasted = true
+          $.ui.toast(`session cost $${usage!.cost!.usd.toFixed(2)} reached the $${budget} budget`)
+        }
       }
     }
     return next(e)
+  }).catch(($, e, next) => next(e))
+
+  on('command.run', { command: 'task' }, async ($, e) => {
+    const cmd = parseTask(e.args)
+    const now = (await $.clock.now()) as number
+    const t = await runningTask($)
+    if (cmd.op === 'show') return { text: t ? taskStatus(t, now) : 'No task running. /task <name> starts one.' }
+    if (cmd.op === 'log') {
+      const log = ((await $.store.get(TASK_LOG_KEY)) as Done[] | undefined) ?? []
+      const lines = todayLines(log, dayOf(now))
+      return { text: lines.length > 0 ? lines.join('\n') : 'No finished task today.' }
+    }
+    let text = ''
+    if (t) {
+      const log = ((await $.store.get(TASK_LOG_KEY)) as Done[] | undefined) ?? []
+      await $.store.set(TASK_LOG_KEY, appendLog(log, { name: t.name, ms: now - t.start, day: dayOf(t.start) }))
+      await $.store.delete(TASK_KEY)
+      text = `done: ${taskStatus(t, now).slice(2)}`
+    }
+    if (cmd.op === 'start') {
+      await $.store.set(TASK_KEY, { name: cmd.name, start: now })
+      text = [text, `started: ${cmd.name}`].filter(Boolean).join('\n')
+      void tick($).catch(() => {})
+    }
+    await paintTask($)
+    return { text: text || 'No task running.' }
   }).catch(($, e, next) => next(e))
 
   // The pane opens only from its command.
@@ -218,12 +305,26 @@ export const register: Register = (on, options) => {
 
   // One row above the prompt on the first start after a session that left something.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey || !(await read($, band))) return next(e)
-    const last = await read($, lastAtom)
-    if (!last) return next(e)
+    if (e.props.hasSurvey) return next(e)
+    const last = (await read($, band)) ? await read($, lastAtom) : null
+    const recap = await read($, recapAtom)
+    if (!last && !recap) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
+    const now = (await $.clock.now()) as number
     return (
       <Box flexDirection="column">
+        {recap && (
+          <Box borderStyle="round" borderDimColor paddingX={1} gap={1}>
+            <Box flexShrink={1}>
+              <Text wrap="truncate-end">{`last recap of this project, ${fmtAgo(now - recap.ts)}`}</Text>
+            </Box>
+            <Box flexShrink={0} gap={1}>
+              <Button key="recap" label="Recap" onPress={async () => { await $.ui.open({ id: RECAP_PANE, title: 'Recap' }) }} />
+              <Button key="recap-dismiss" label="dismiss" onPress={async () => { await update($, recapAtom, () => null) }} />
+            </Box>
+          </Box>
+        )}
+        {last && (
         <Box borderStyle="round" borderDimColor paddingX={1} gap={1}>
           <Box flexShrink={1}>
             <Text wrap="truncate-end">
@@ -252,6 +353,7 @@ export const register: Register = (on, options) => {
             />
           </Box>
         </Box>
+        )}
         {await next(e)}
       </Box>
     )

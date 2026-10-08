@@ -31,6 +31,8 @@ declare module 'claude-code' {
       // the pinned-notes block has not yet gone to the model in this conversation
       memo: { armed: boolean }
       last: { day: string; files: number; commits: number; denied: number; longestMs: number; fileList: string[] } | null
+      // the project's last recap (under 7 days) the band offers, null when none or dismissed
+      recap: { ts: number } | null
     }
   }
 }
