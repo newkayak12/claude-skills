@@ -1,17 +1,11 @@
-import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
-
-import type { HarnessRun } from '../types'
 
 const REPO_NAME = /claude-skills(\.git)?$/
 const CLAUDE_P = /\bclaude\b.*\s-p(\s|$)/
 const MODEL_DENY = 'mods: pass model ("sonnet" for build work, "opus" for plan/judge) — without it the subagent inherits the parent model.'
 
-const runs = atom({ plugin: 'mods', key: 'runs' } as const, [] as HarnessRun[])
-
 // reload-safe caches only; nothing here is read for diagnostics
 let mine: Set<string> | undefined
-let stopTick: (() => void) | undefined
 
 const words = (cmd: string) => cmd.split(/\s+/).filter(Boolean)
 
@@ -63,17 +57,6 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     const r = await next(e)
     if ((await $.session.surfaces()).length === 0) return r
-    const root = await $.session.root()
-
-    // Harness run band: poll open fallback runs of every worktree.
-    const poll = async () => {
-      const out = await $.process.run(['node', `${$.plugin.root}/hooks/runs.mjs`, root])
-      if (out.exitCode === 0) await update($, runs, () => JSON.parse(out.stdout) as HarnessRun[])
-    }
-    stopTick?.()
-    stopTick = $.clock.every(5000, () => { void poll().catch(() => {}) }).cancel
-    void poll().catch(() => {})
-
     // Fetch reminder in claude-skills: origin/main moves from other sessions. Detached: session.start is not held.
     void (async () => {
       const repo = await $.session.repo()
@@ -81,42 +64,10 @@ export const register: Register = (on, options) => {
       await $.process.run(['git', 'fetch', '-q', 'origin'], { cwd: repo.root, timeoutMs: 20000 })
       const behind = await $.process.run(['git', 'rev-list', '--count', 'origin/main', '^HEAD'])
       const n = Number(behind.stdout.trim())
-      if (n > 0) $.ui.toast(`origin/main is ${n} commit(s) ahead — pull before editing`, { timeoutMs: 8000 })
+      if (n > 0) $.ui.toast(`↓ origin/main is ${n} commit(s) ahead — pull before editing`, { timeoutMs: 8000 })
     })().catch(() => {})
     return r
   }).catch(($, e, next) => next(e))
-
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const open = await read($, runs)
-    if (open.length === 0 || e.props.hasSurvey) return next(e)
-    const { Box, Text } = $.ui.resolve(e)
-    return (
-      <Box flexDirection="column">
-        {open.map(run => {
-          const ok = run.total > 0 ? Math.round((run.passed / run.total) * 10) : 0
-          const bad = run.total > 0 ? Math.min(10 - ok, Math.round((run.failed / run.total) * 10)) : 0
-          return (
-            <Box key={run.dir} flexDirection="row" gap={1}>
-              <Text color="claude">◆</Text>
-              <Text dimColor>harness</Text>
-              <Text bold wrap="truncate-end">{run.slug}</Text>
-              <Text>{run.stage}</Text>
-              {run.total > 0 ? (
-                <Text>
-                  <Text color="success">{'▰'.repeat(ok)}</Text>
-                  <Text color="error">{'▰'.repeat(bad)}</Text>
-                  <Text dimColor>{'▱'.repeat(10 - ok - bad)}</Text>
-                  {` ${run.passed}/${run.total} passed`}
-                  {run.failed > 0 ? <Text color="error">{`, ${run.failed} failed`}</Text> : null}
-                </Text>
-              ) : null}
-            </Box>
-          )
-        })}
-        {await next(e)}
-      </Box>
-    )
-  })
 
   // Skill toast: only skills from this marketplace.
   on('tool.call', { tool: 'Skill' }, async ($, e, next) => {
@@ -135,8 +86,8 @@ export const register: Register = (on, options) => {
       }
     }
     if (mine.has(e.skill.split(':')[0])) {
-      $.ui.toast(`skill: ${e.skill}`)
-      $.ui.status(`skill: ${e.skill}`)
+      $.ui.toast(`◆ skill: ${e.skill}`)
+      $.ui.status(`◆ skill: ${e.skill}`)
     }
     return result
   }).catch(($, e, next) => next(e))
@@ -145,7 +96,7 @@ export const register: Register = (on, options) => {
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
     if (e.tool !== 'Agent' || e.model || e.subagent_type === 'fork' || mode === 'off') return next(e)
     if (mode === 'deny') return { deny: MODEL_DENY }
-    if ((await $.session.surfaces()).length > 0) $.ui.toast(MODEL_DENY.replace('mods: ', 'mods: no model on this Agent call. '), { timeoutMs: 6000 })
+    if ((await $.session.surfaces()).length > 0) $.ui.toast('⚠ ' + MODEL_DENY.replace('mods: ', 'mods: no model on this Agent call. '), { timeoutMs: 6000 })
     return next(e)
   }).catch(($, e, next) => next(e))
 
@@ -196,7 +147,7 @@ export const register: Register = (on, options) => {
       const staged = await $.process.run(['git', 'diff', '--cached', '--name-only'])
       const files = new Set(staged.stdout.split('\n').filter(Boolean))
       const lonely = [...files].filter(f => f.endsWith('/README.md') && !files.has(f.replace(/README\.md$/, 'KOR.md')))
-      if (lonely.length) $.ui.toast(`README without KOR: ${lonely.join(', ')}`, { timeoutMs: 8000 })
+      if (lonely.length) $.ui.toast(`⚠ README without KOR: ${lonely.join(', ')}`, { timeoutMs: 8000 })
     }
     return next(e)
   }).catch(($, e, next) => next(e))
@@ -209,12 +160,7 @@ export const register: Register = (on, options) => {
     const ps = await $.process.run(['ps', '-A', '-o', 'pid=,ppid=,command='])
     const engine = Number(me.stdout.trim())
     const n = Number.isInteger(engine) && engine > 0 ? countClaudeP(ps.stdout, engine) : 0
-    $.ui.status(n > 0 ? `${n} claude -p child(ren) running` : undefined)
+    $.ui.status(n > 0 ? `⧗ ${n} claude -p child(ren) running` : undefined)
     return r
   }).catch(($, e, next) => next(e))
-
-  on('session.end', ($, e, next) => {
-    stopTick?.()
-    return next(e)
-  })
 }

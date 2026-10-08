@@ -148,7 +148,7 @@
     },
     {
       "name": "mods",
-      "description": "Beta Claude Code mods for the claude-skills workflow: skill toasts, harness run band, safety guards for worktrees, running scripts, push/bump and subagent models.",
+      "description": "Beta Claude Code mods for the claude-skills workflow: skill toasts, safety guards for worktrees, running scripts, push/bump and subagent models.",
       "version": "0.1.0-beta.2",
       "author": {
         "name": "newkayak12"
