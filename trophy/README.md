@@ -44,8 +44,8 @@ Sessions that are not interactive (`claude -p`, so every teams/graph adapter ses
 
 ## Telemetry — what is sent, where, and how to stop it
 
-**Nothing is sent unless you opt in.** The first interactive session shows one line above the prompt
-asking; `[Show contents]` shows the exact JSON of the next send before you decide. Until you answer, nothing
+**Nothing is sent unless you opt in.** The first interactive session asks in a double-framed box above the prompt
+(what is sent, what is never sent, and three buttons drawn alike); `[Show contents]` shows the exact JSON of the next send before you decide. Until you answer, nothing
 leaves your machine. Declining is remembered; it is never asked again. The answer is saved with the
 version of the question (v2 names error codes): a yes given to the older question (v1) is asked once more,
 and trophy sends nothing until you answer. A no is never re-asked.
@@ -89,6 +89,8 @@ view (most hit, most missed, never fired).
 - Achievements are counted from the day you install; there is no backfill.
 
 ## Status log
+
+- 0.5.0 — English by default, Korean when Claude Code's `language` is Korean: every pane, band and command reply, and all 80 achievements (the Korean text kept as it was). The consent question now stands out: a double-framed box with what is sent and what is never sent on their own lines and three buttons drawn alike; what is sent, when it is asked and the consent version are unchanged. Real Claude Code captures EN/KO.
 
 - 0.4.0 — the diag plugin is folded in and removed: trophy records failures itself (**실패** tab, `✘` row,
   `/trophy-bug`) and, on the same yes, sends `diag_*` codes with the plugin and Claude Code versions.

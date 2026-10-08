@@ -16,11 +16,13 @@ test('STRINGS.en has no Hangul', () => {
   for (const value of Object.values(STRINGS.en)) expect(HANGUL.test(value)).toBe(false)
 })
 
-test('the consent question lists the same data in both languages; ko is the original text', () => {
-  for (const part of ['skill names', 'daily counts', 'error codes', 'no prompts or paths']) {
-    expect(STRINGS.en.consentAsk).toContain(part)
-  }
-  expect(STRINGS.ko.consentAsk).toBe('trophy: 익명 사용 통계를 보낼까요? (스킬명·일별 횟수·오류 코드만, 프롬프트·경로 없음)')
+test('the consent question lists the same data in both languages', () => {
+  const en = `${STRINGS.en.consentAsk} ${STRINGS.en.consentSent} ${STRINGS.en.consentNotSent}`
+  for (const part of ['anonymous usage stats', 'skill names', 'daily counts', 'error codes', 'prompts', 'file paths']) expect(en).toContain(part)
+  const ko = `${STRINGS.ko.consentAsk} ${STRINGS.ko.consentSent} ${STRINGS.ko.consentNotSent}`
+  for (const part of ['익명 사용 통계', '스킬명', '일별 횟수', '오류 코드', '프롬프트', '경로']) expect(ko).toContain(part)
+  expect(STRINGS.en.consentNotSent.startsWith('Never sent')).toBe(true)
+  expect(STRINGS.ko.consentNotSent.startsWith('보내지 않는 것')).toBe(true)
 })
 
 test('every achievement has English title and description and a Korean pair', () => {
