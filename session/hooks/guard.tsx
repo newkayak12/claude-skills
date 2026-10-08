@@ -3,6 +3,7 @@ import type { Register } from 'claude-code'
 
 import { classify, classifyFile, pushRing, redact, ruleFor, splitCommands } from './guard-logic.ts'
 import type { Denial, Env, Verdict } from './guard-logic.ts'
+import { deniedCount, statusLine } from './status.ts'
 
 const PANE = 'guard-denials'
 export const DENIALS_KEY = 'session.denials'
@@ -15,7 +16,6 @@ type Mode = 'confirm' | 'deny' | 'off'
 type Ctx = { tool: string; call: string; agentId?: string; log: boolean }
 
 let seq = 0
-let denied = 0
 
 const list = (s: unknown) => String(s ?? '').split(/[,\n]/).map(x => x.trim()).filter(Boolean)
 
@@ -33,10 +33,9 @@ async function record($: any, d: Omit<Denial, 'id' | 'ts'>) {
 // A guard stop: log it, tell the person, answer the deny.
 async function stop($: any, ctx: Ctx, reason: string, source: 'guard' | 'declined') {
   if (ctx.log) await record($, { tool: ctx.tool, call: ctx.call, reason, source, agentId: ctx.agentId })
-  denied += 1
   try {
     $.ui.toast(`guard: ${reason.split('\n')[0]}`, { timeoutMs: 6000 })
-    $.ui.status(`guard: ${denied} denied`)
+    $.ui.status(statusLine({ denied: deniedCount() + 1 }))
   } catch {}
   return { deny: reason }
 }
