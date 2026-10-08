@@ -5,13 +5,14 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
 
 const args = process.argv.slice(2);
 const opts = { sandbox: 'workspace-write', addDirs: [] };
 for (let i = 0; i < args.length; i++) {
   const key = args[i];
-  if (key === '--detect' || key === '--isolated' || key === '--verify') opts[key.slice(2)] = true;
+  if (key === '--detect' || key === '--isolated' || key === '--verify' || key === '--no-wiki') opts[key.slice(2)] = true;
   else if (key === '--add-dir') opts.addDirs.push(args[++i]);
   else if (['--cwd', '--output', '--prompt-file', '--events-output', '--stage', '--sandbox', '--model'].includes(key)) opts[key.slice(2)] = args[++i];
   else throw new Error(`unknown argument ${key}`);
@@ -25,6 +26,17 @@ mkdirSync(dirname(opts.output), { recursive: true });
 function parse(text) {
   try { return JSON.parse(text); } catch { return null; }
 }
+
+// The project wiki: when the engine sets TEAMS_WIKI_ROOT (task.cwd, never a worktree) a worker
+// gets exactly one MCP server, teams-wiki, rooted there, and its tools are allowed by name so
+// writes need no approval. --tools only limits built-ins, so MCP tools are named in
+// --allowedTools. Judging stages arrive with --no-wiki (broker.mjs) and get the empty config.
+const WIKI_TOOLS = ['wiki_search', 'wiki_get', 'wiki_resume', 'wiki_list', 'wiki_status', 'wiki_write'].map(t => `mcp__teams-wiki__${t}`);
+const wikiRoot = process.env.TEAMS_WIKI_ROOT;
+const withWiki = Boolean(wikiRoot) && !opts['no-wiki'] && !opts.detect;
+const mcpConfig = withWiki
+  ? JSON.stringify({ mcpServers: { 'teams-wiki': { command: process.execPath, args: [fileURLToPath(new URL('../mcp/wiki.mjs', import.meta.url)), '--root', wikiRoot] } } })
+  : '{"mcpServers":{}}';
 
 async function invoke(prompt) {
   const readOnly = opts.sandbox === 'read-only';
@@ -44,7 +56,7 @@ async function invoke(prompt) {
   // by it - the review/gate prompt's own instruction not to write is the other half of this.
   const verifyTools = readOnly && opts.verify;
   const cli = ['-p', '--output-format', 'json', '--no-session-persistence',
-    '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
+    '--strict-mcp-config', '--mcp-config', mcpConfig,
     '--model', opts.model || 'sonnet',
     '--tools', readOnly ? (verifyTools ? 'Read,Glob,Grep,Bash' : 'Read,Glob,Grep') : 'Read,Glob,Grep,Edit,Write,Bash',
     '--permission-mode', permissionMode];
@@ -56,6 +68,7 @@ async function invoke(prompt) {
       'Bash(sed -i:*)',
     ].join(','));
   }
+  if (withWiki) cli.push('--allowedTools', WIKI_TOOLS.join(','));
   for (const dir of opts.addDirs) cli.push('--add-dir', dir);
   return await new Promise(resolveResult => {
     const child = spawn('claude', cli, { cwd: opts.cwd, stdio: ['pipe', 'pipe', 'pipe'] });

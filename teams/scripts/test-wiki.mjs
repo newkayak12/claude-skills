@@ -35,6 +35,9 @@ function fresh() {
   wiki.setLockTimeout(10000);
   return root;
 }
+// Child processes never inherit the CLI-entry env knobs unless a test sets them on purpose.
+const BASE_ENV = { ...process.env };
+delete BASE_ENV.TEAMS_WIKI_ROOT; delete BASE_ENV.TEAMS_WIKI_OFF;
 const call = (name, args) => wiki.callTool(name, args);
 const wd = (root) => join(root, '.teams_wiki');
 const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -219,7 +222,7 @@ console.log(JSON.stringify({ shared: sharedResult }));
 function runChild(root, go, name, mine, shared, hold = 0) {
   const ready = join(TMP, `${name}.ready`);
   const child = spawn(process.execPath, ['--input-type=module', '-e', CHILD, root, go, ready, JSON.stringify({ mine, shared })],
-    { env: { ...process.env, WIKI_LIB: WIKI, WIKI_TEST_HOLD_MS: String(hold) } });
+    { env: { ...BASE_ENV, WIKI_LIB: WIKI, WIKI_TEST_HOLD_MS: String(hold) } });
   let out = '', err = '';
   child.stdout.on('data', (c) => { out += c; });
   child.stderr.on('data', (c) => { err += c; });
@@ -259,21 +262,21 @@ test('DW8 two processes accepting concurrently leave md and index intact; a shar
 
 // ---------- DW9 / DW10 ----------
 
-function rpc(root, requests) {
+function rpc(root, requests, env = {}) {
   const r = spawnSync(process.execPath, [WIKI, '--root', root], {
-    input: requests.map((q) => JSON.stringify(q)).join('\n') + '\n', encoding: 'utf8', timeout: 30000,
+    env: { ...BASE_ENV, ...env }, input: requests.map((q) => JSON.stringify(q)).join('\n') + '\n', encoding: 'utf8', timeout: 30000,
   });
   return r.stdout.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
 }
 
-test('DW9 stdio: initialize + tools/list returns exactly the 8 tools', () => {
+test('DW9 stdio: initialize + tools/list returns exactly the 9 tools', () => {
   const out = rpc(fresh(), [
     { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
     { jsonrpc: '2.0', id: 2, method: 'tools/list' },
   ]);
   assert.equal(out[0].result.serverInfo.name, 'teams-wiki');
   assert.deepEqual(out[1].result.tools.map((t) => t.name).sort(), [
-    'wiki_accept', 'wiki_get', 'wiki_list', 'wiki_propose', 'wiki_reject', 'wiki_resume', 'wiki_search', 'wiki_status',
+    'wiki_accept', 'wiki_get', 'wiki_list', 'wiki_propose', 'wiki_reject', 'wiki_resume', 'wiki_search', 'wiki_status', 'wiki_write',
   ]);
 });
 
@@ -284,6 +287,203 @@ test('DW10 wiki_status works on every runtime and reports the live mode', () => 
   assert.equal(res.structuredContent.pages, 0);
   assert.equal(res.structuredContent.mode, MODE);
   assert.equal(res.structuredContent.index === null, MODE === 'scan');
+});
+
+// ---------- 3단계 w1: wiki_write, TEAMS_WIKI_ROOT / TEAMS_WIKI_OFF, reads that never create ----------
+
+test('w1 wiki_write: saved at once, returned by get/search/list/resume, links + backlinks, INDEX.md', async () => {
+  const root = fresh();
+  await call('wiki_write', { space: 'payments', slug: 'target', title: 'Target page', body: 'plain target text' });
+  const w = await call('wiki_write', {
+    space: 'log', slug: 'w1', title: 'Session log', body: 'did zorblax work, see [[payments/target]]', tags: ['a'], source: 'agent',
+  });
+  assert.deepEqual(w, { id: 'log/w1', path: join(wd(root), 'log', 'w1.md'), created: true });
+  assert.ok(existsSync(w.path));
+  const got = await call('wiki_get', { id: 'log/w1' });
+  assert.equal(got.frontmatter.status, 'accepted');
+  assert.equal(got.frontmatter.source, 'agent');
+  assert.deepEqual(got.links_out, [{ id: 'payments/target', title: 'Target page' }]);
+  assert.deepEqual((await call('wiki_get', { id: 'payments/target' })).backlinks, [{ id: 'log/w1', title: 'Session log' }]);
+  assert.deepEqual(await ids('zorblax'), ['log/w1']);
+  assert.deepEqual((await call('wiki_list', {})).log.map((p) => p.id), ['log/w1']);
+  const res = await call('wiki_resume', {});
+  assert.deepEqual(res.pages.map((p) => p.id), ['log/w1']);
+  assert.deepEqual(res.pages[0].links.map((l) => l.id), ['payments/target']);
+  const index = readFileSync(join(wd(root), 'INDEX.md'), 'utf8');
+  assert.ok(index.includes('[[log/w1]]') && index.includes('[[payments/target]]'));
+});
+
+test('w1 wiki_write: validation is wiki_propose\'s (bad space/slug, .md names, missing title/body) and writes nothing', async () => {
+  const root = fresh();
+  const ok = { space: 's', slug: 'x', title: 't', body: 'b' };
+  for (const bad of [{ space: '../x' }, { slug: 'a/b' }, { slug: 'x.md' }, { space: 'S.MD' }, { slug: '' }, { title: ' ' }, { body: '' }]) {
+    await assert.rejects(call('wiki_write', { ...ok, ...bad }), (e) => e.message.length > 0, JSON.stringify(bad));
+    await assert.rejects(call('wiki_propose', { ...ok, source: 's', ...bad }), (e) => e.message.length > 0, JSON.stringify(bad));
+  }
+  assert.deepEqual(await call('wiki_list', {}), {});
+  assert.ok(!existsSync(join(wd(root), 's')));
+});
+
+test('w1 wiki_write: the same space/slug updates (title/body changed, updated advanced, no duplicate)', async () => {
+  const root = fresh();
+  const first = await call('wiki_write', { space: 'n', slug: 'p', title: 'One', body: 'oldterm here' });
+  const before = (await call('wiki_get', { id: 'n/p' })).frontmatter.updated;
+  sleepMs(15);
+  const second = await call('wiki_write', { space: 'n', slug: 'p', title: 'Two', body: 'newterm here' });
+  assert.equal(first.created, true);
+  assert.deepEqual({ ...second, path: null }, { id: 'n/p', path: null, updated: true });
+  const got = await call('wiki_get', { id: 'n/p' });
+  assert.equal(got.frontmatter.title, 'Two');
+  assert.match(got.body, /newterm/);
+  assert.ok(got.frontmatter.updated > before);
+  assert.deepEqual(await ids('oldterm'), []);
+  assert.deepEqual(await ids('newterm'), ['n/p']);
+  assert.deepEqual((await call('wiki_list', {})).n.map((p) => p.id), ['n/p']);
+  assert.equal(readFileSync(join(wd(root), 'INDEX.md'), 'utf8').split('[[n/p]]').length - 1, 1);
+});
+
+test('w1 wiki_write: supersedes behaves as on accept', async () => {
+  fresh();
+  await call('wiki_write', { space: 'd', slug: 'old', title: 'Old', body: 'oldrule alpha' });
+  const w = await call('wiki_write', { space: 'd', slug: 'new', title: 'New', body: 'newrule alpha', supersedes: 'd/old' });
+  assert.equal(w.created, true);
+  const old = await call('wiki_get', { id: 'd/old' });
+  assert.equal(old.frontmatter.status, 'superseded');
+  assert.equal(old.frontmatter.superseded_by, 'd/new');
+  assert.deepEqual(await ids('alpha'), ['d/new']);
+  assert.deepEqual(await ids('alpha', { include_superseded: true }), ['d/new', 'd/old']);
+  await assert.rejects(call('wiki_write', { space: 'd', slug: 'x', title: 'X', body: 'b', supersedes: 'd/missing' }), /gone|no accepted/);
+  await assert.rejects(call('wiki_write', { space: 'd', slug: 'y', title: 'Y', body: 'b', supersedes: 'd/old' }), /no accepted page/);
+  assert.equal((await call('wiki_list', { space: 'd' })).d.length, 2);
+});
+
+test('w1 existing propose/accept/reject behaviour is unchanged next to wiki_write', async () => {
+  fresh();
+  const id = await accept('m', 'one', 'One', 'first body');
+  const p = await call('wiki_propose', { space: 'm', slug: 'one', title: 'One', body: 'second body', source: 't' });
+  assert.match(p.diff, /\+ second body/);
+  const acc = await call('wiki_accept', { proposal_id: p.proposal_id });
+  assert.deepEqual({ ...acc, accepted: null }, { accepted: null, id, superseded: null });
+  const q = await call('wiki_propose', { space: 'm', slug: 'two', title: 'Two', body: 'b', source: 't' });
+  assert.equal((await call('wiki_reject', { proposal_id: q.proposal_id, reason: 'no' })).rejected, q.proposal_id);
+});
+
+// Two processes write at once: distinct pages plus one shared id; both land, index and INDEX.md agree.
+const WCHILD = `
+import { existsSync, writeFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+const [root, go, ready, tag, n = '6', delay = '0', shared = '1'] = process.argv.slice(1);
+const w = await import(pathToFileURL(process.env.WIKI_LIB).href);
+w.setRoot(root);
+await w.callTool('wiki_status', {});
+writeFileSync(ready, '');
+while (!existsSync(go)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+if (+delay) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, +delay);
+for (let i = 0; i < +n; i++) await w.callTool('wiki_write', { space: 'c', slug: tag + i, title: 'Page ' + tag + i, body: 'wuniq' + tag + i + 'x' });
+if (shared === '1') await w.callTool('wiki_write', { space: 'c', slug: 'shared', title: 'Shared ' + tag, body: 'wshared ' + tag });
+w.close();
+`;
+
+test('w1 two processes running wiki_write concurrently both land and the index stays consistent', async () => {
+  const root = fresh();
+  await call('wiki_status', {});
+  wiki.close();
+  const go = join(TMP, 'go-w1');
+  const run = (tag, hold) => {
+    const ready = join(TMP, `w1-${tag}.ready`);
+    const child = spawn(process.execPath, ['--input-type=module', '-e', WCHILD, root, go, ready, tag],
+      { env: { ...BASE_ENV, WIKI_LIB: WIKI, WIKI_TEST_HOLD_MS: String(hold) } });
+    let err = '';
+    child.stderr.on('data', (c) => { err += c; });
+    return { ready, done: new Promise((res) => child.on('exit', (code) => res({ code, err }))) };
+  };
+  const a = run('a', 100), b = run('b', 0);
+  while (!existsSync(a.ready) || !existsSync(b.ready)) await new Promise((r) => setTimeout(r, 10));
+  writeFileSync(go, '');
+  for (const r of await Promise.all([a.done, b.done])) assert.equal(r.code, 0, r.err);
+  const list = (await call('wiki_list', { space: 'c' })).c;
+  assert.equal(list.length, 13);
+  const index = readFileSync(join(wd(root), 'INDEX.md'), 'utf8');
+  for (const p of list) assert.equal(index.split(`[[${p.id}]]`).length - 1, 1, p.id);
+  for (const t of ['a', 'b']) for (let i = 0; i < 6; i++) assert.deepEqual(await ids(`wuniq${t}${i}x`), [`c/${t}${i}`]);
+  assert.equal((await call('wiki_search', { query: 'wshared' })).results.length, 1);
+  assert.ok(!existsSync(join(wd(root), '.lock')));
+});
+
+// Lock proof (same shape as DW8): a's single write holds 600 ms between reading the pages and writing INDEX.md;
+// b's six writes start 150 ms in. With wiki_write unlocked, a's stale INDEX.md lands last and drops b's pages.
+test('w1 wiki_write holds the lock: a held writer makes the other wait, so INDEX.md keeps every page', async () => {
+  const root = fresh();
+  await call('wiki_status', {});
+  wiki.close();
+  const go = join(TMP, 'go-w1lock');
+  const run = (tag, hold, n, delay) => {
+    const ready = join(TMP, `w1lock-${tag}.ready`);
+    const child = spawn(process.execPath, ['--input-type=module', '-e', WCHILD, root, go, ready, tag, String(n), String(delay), '0'],
+      { env: { ...BASE_ENV, WIKI_LIB: WIKI, WIKI_TEST_HOLD_MS: String(hold) } });
+    let err = '';
+    child.stderr.on('data', (c) => { err += c; });
+    return { ready, done: new Promise((res) => child.on('exit', (code) => res({ code, err }))) };
+  };
+  const a = run('a', 600, 1, 0), b = run('b', 0, 6, 150);
+  while (!existsSync(a.ready) || !existsSync(b.ready)) await new Promise((r) => setTimeout(r, 10));
+  writeFileSync(go, '');
+  for (const r of await Promise.all([a.done, b.done])) assert.equal(r.code, 0, r.err);
+  const list = (await call('wiki_list', { space: 'c' })).c;
+  assert.equal(list.length, 7);
+  const index = readFileSync(join(wd(root), 'INDEX.md'), 'utf8');
+  for (const p of list) assert.equal(index.split(`[[${p.id}]]`).length - 1, 1, p.id);
+  assert.ok(!existsSync(join(wd(root), '.lock')));
+});
+
+test('w1 read tools on a root without .teams_wiki return empty results and do not create it; writes do', async () => {
+  const root = fresh();
+  assert.deepEqual(await call('wiki_search', { query: 'anything' }), { results: [] });
+  assert.deepEqual(await call('wiki_resume', {}), { pages: [] });
+  assert.deepEqual(await call('wiki_list', {}), {});
+  const st = await call('wiki_status', {});
+  assert.deepEqual([st.pages, st.proposals, st.broken_links, st.mode], [0, 0, [], MODE]);
+  await assert.rejects(call('wiki_get', { id: 'a/b' }), /no such page/);
+  assert.ok(!existsSync(wd(root)));
+  const r2 = fresh();
+  await call('wiki_write', { space: 'a', slug: 'b', title: 't', body: 'b' });
+  assert.ok(existsSync(wd(r2)));
+  const r3 = fresh();
+  await call('wiki_propose', { space: 'a', slug: 'b', title: 't', body: 'b', source: 's' });
+  assert.ok(existsSync(wd(r3)));
+});
+
+const call1 = (name, args) => ({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } });
+
+test('w1 CLI: non-empty TEAMS_WIKI_ROOT overrides --root; empty does not', () => {
+  const argRoot = fresh(), envRoot = fresh();
+  const write = call1('wiki_write', { space: 's', slug: 'x', title: 't', body: 'b' });
+  assert.equal(rpc(argRoot, [write], { TEAMS_WIKI_ROOT: envRoot })[0].result.isError, false);
+  assert.ok(existsSync(join(wd(envRoot), 's', 'x.md')));
+  assert.ok(!existsSync(wd(argRoot)));
+  assert.equal(rpc(argRoot, [write], { TEAMS_WIKI_ROOT: '' })[0].result.isError, false);
+  assert.ok(existsSync(join(wd(argRoot), 's', 'x.md')));
+});
+
+test('w1 CLI: TEAMS_WIKI_OFF=1 makes tools/list empty and tools/call an error; setRoot stays explicit', () => {
+  const root = fresh();
+  const out = rpc(root, [
+    { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+    { ...call1('wiki_write', { space: 's', slug: 'x', title: 't', body: 'b' }), id: 2 },
+  ], { TEAMS_WIKI_OFF: '1' });
+  assert.deepEqual(out[0].result.tools, []);
+  assert.equal(out[1].result.isError, true);
+  assert.ok(!existsSync(wd(root)));
+  assert.equal(rpc(root, [{ jsonrpc: '2.0', id: 1, method: 'tools/list' }], { TEAMS_WIKI_OFF: '0' })[0].result.tools.length, 9);
+  // in-process import: the env knobs are not read, setRoot decides
+  const prev = process.env.TEAMS_WIKI_ROOT;
+  process.env.TEAMS_WIKI_ROOT = join(TMP, 'ignored');
+  try {
+    const r = fresh();
+    wiki.callToolSync('wiki_write', { space: 's', slug: 'x', title: 't', body: 'b' });
+    assert.ok(existsSync(join(wd(r), 's', 'x.md')));
+    assert.ok(!existsSync(join(TMP, 'ignored')));
+  } finally { if (prev === undefined) delete process.env.TEAMS_WIKI_ROOT; else process.env.TEAMS_WIKI_ROOT = prev; }
 });
 
 // ---------- contract details ----------
@@ -383,7 +583,7 @@ test('scan mode: callToolSync is synchronous and callTool resolves the same resu
 });
 
 test('scan mode: whole file passes under WIKI_FORCE_SCAN=1', { skip: MODE === 'scan' }, () => {
-  const env = { ...process.env, WIKI_FORCE_SCAN: '1' };
+  const env = { ...BASE_ENV, WIKI_FORCE_SCAN: '1' };
   delete env.NODE_TEST_CONTEXT; // else the child runs as a worker of this run and prints nothing
   const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', fileURLToPath(import.meta.url)], {
     env, encoding: 'utf8', timeout: 120000,
@@ -409,7 +609,7 @@ test('fts5 runtime: wiki_status.mode is fts5 whenever the runtime can create an 
 test('parity: fts5 and a WIKI_FORCE_SCAN=1 child answer the fixed battery identically', { skip: MODE !== 'fts5' }, async () => {
   const live = await battery();
   const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], {
-    env: { ...process.env, WIKI_FORCE_SCAN: '1', WIKI_PARITY_CHILD: '1' }, encoding: 'utf8', timeout: 60000,
+    env: { ...BASE_ENV, WIKI_FORCE_SCAN: '1', WIKI_PARITY_CHILD: '1' }, encoding: 'utf8', timeout: 60000,
   });
   assert.equal(r.status, 0, r.stderr);
   const scan = JSON.parse(r.stdout.trim().split('\n').pop());

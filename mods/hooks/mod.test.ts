@@ -248,9 +248,23 @@ test('push ask: a dismissed ask denies, the push does not go through', async ($,
   expect(denied(await bash($, 'git push origin main'))).toMatch(/declined/)
 })
 
-test('patch ask: patch-teams.mjs asks, Cancel denies', async ($, on) => {
+test('patch ask: teams/skills/patch/patch.mjs asks, Cancel denies', async ($, on) => {
   const seen = world(on, { remote: SKILLS_REMOTE, answer: 'Cancel' })
-  expect(denied(await bash($, 'node _repo/scripts/patch-teams.mjs'))).toMatch(/declined/)
+  expect(
+    denied(await bash($, `node "/r/claude-skills/teams/skills/patch/patch.mjs" '{"plugin":"teams","dryRun":true}'`)),
+  ).toMatch(/declined/)
+  expect(seen.asks).toHaveLength(1)
+})
+
+test('patch ask: an installed teams copy of patch.mjs asks', async ($, on) => {
+  const seen = world(on, { remote: SKILLS_REMOTE, answer: 'Cancel' })
+  await bash($, `node /h/.claude/plugins/cache/m/teams/0.45.1/skills/patch/patch.mjs '{}'`)
+  expect(seen.asks).toHaveLength(1)
+})
+
+test('patch ask: patch-harness.mjs asks, Cancel denies', async ($, on) => {
+  const seen = world(on, { remote: SKILLS_REMOTE, answer: 'Cancel' })
+  expect(denied(await bash($, 'node _repo/scripts/patch-harness.mjs'))).toMatch(/declined/)
   expect(seen.asks).toHaveLength(1)
 })
 

@@ -1,7 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 
-import { appendEntry, buildBatch, goalFailed, harnessResult, ownedMcpTool, ownedSkill } from './logic.ts'
-import type { Entry } from './logic.ts'
+import { appendEntry, failureEvents, goalFailed, harnessResult, ownedMcpTool, ownedSkill } from './failures.ts'
+import type { Entry } from './failures.ts'
 
 const entry = (o: Partial<Entry>): Entry => ({
   ts: 1000, day: '2026-10-01', kind: 'bug', reason: 'is_error', plugin: 'develop', skill: 'clean-code',
@@ -72,10 +72,10 @@ test('appendEntry dedupes within 5 s and keeps 500', () => {
   let big: Entry[] = []
   for (let i = 0; i < 520; i++) big = appendEntry(big, entry({ ts: i * 10000 }))
   expect(big.length).toBe(500)
-  expect(big[0].ts).toBe(20 * 10000)
+  expect(big[0]!.ts).toBe(20 * 10000)
 })
 
-test('buildBatch aggregates counts per day, reason, plugin and skill', () => {
+test('failureEvents aggregates counts per day, reason, plugin and skill', () => {
   const log = [
     entry({ ts: 1 }), entry({ ts: 100000 }), entry({ ts: 200000, skill: 'other' }),
     entry({ ts: 300000, day: '2026-10-02' }),
@@ -84,7 +84,7 @@ test('buildBatch aggregates counts per day, reason, plugin and skill', () => {
     entry({ day: '2026-09-20' }),
     entry({ day: '2026-10-09' }),
   ]
-  const out = buildBatch(log, '2026-09-30', '2026-10-05')
+  const out = failureEvents(log, '2026-09-30', '2026-10-05')
   const skill = out.filter(e => e.event === 'diag_skill_error')
   expect(skill.length).toBe(3)
   expect(skill.find(e => e.properties.skill === 'clean-code' && e.properties.day === '2026-10-01')?.properties.count).toBe(2)
@@ -95,13 +95,13 @@ test('buildBatch aggregates counts per day, reason, plugin and skill', () => {
   expect(out.some(e => e.properties.day === '2026-09-20' || e.properties.day === '2026-10-09')).toBe(false)
 })
 
-test('buildBatch never emits outcomes, local fields or session ids', () => {
+test('failureEvents never emits outcomes, local fields or session ids', () => {
   const log = [
     entry({ kind: 'outcome', reason: 'subgoal_failed', local: { slug: 'run1', subgoal: 's1' } }),
     entry({ kind: 'outcome', reason: 'goal_failed' }),
     entry({ local: { text: 'SECRET raw error', path: '/Users/a/x' }, session: 'SESSION-ID' }),
   ]
-  const out = buildBatch(log, undefined, '2026-10-05')
+  const out = failureEvents(log, undefined, '2026-10-05')
   expect(out.length).toBe(1)
   const json = JSON.stringify(out)
   expect(json).not.toContain('SECRET')
@@ -109,5 +109,18 @@ test('buildBatch never emits outcomes, local fields or session ids', () => {
   expect(json).not.toContain('/Users/a')
   expect(json).not.toContain('goal_failed')
   expect(json).not.toContain('subgoal_failed')
-  expect(Object.keys(out[0].properties).sort()).toEqual(['count', 'day', 'plugin', 'reason', 'skill'])
+  expect(Object.keys(out[0]!.properties).sort()).toEqual(['count', 'day', 'plugin', 'reason', 'skill'])
+})
+
+test('failureEvents carries the plugin and Claude Code versions, and splits counts by them', () => {
+  const log = [
+    entry({ ts: 1, version: '1.10.3', cc: '2.1.293' }),
+    entry({ ts: 100000, version: '1.10.3', cc: '2.1.293' }),
+    entry({ ts: 200000, version: '1.10.4', cc: '2.1.293' }),
+  ]
+  const out = failureEvents(log, undefined, '2026-10-05')
+  expect(out.map(e => [e.properties.plugin_version, e.properties.cc_version, e.properties.count])).toEqual([
+    ['1.10.3', '2.1.293', 2],
+    ['1.10.4', '2.1.293', 1],
+  ])
 })

@@ -556,7 +556,7 @@ export function renderReport(task) {
     const w = task.wiki;
     L.push('', '## Wiki 변경', '', `mode: ${w.mode || 'unknown'}`);
     if ((w.resumed || []).length) L.push('', 'Resumed into context:', bullets(w.resumed));
-    L.push('', 'Proposals:', bullets((w.proposals || []).map((p) => `${p.id} (${p.status}) ${p.path || '(no path)'}${p.reason || p.error ? ` - ${p.reason || p.error}` : ''}${p.decided_by ? ` [decided by ${p.decided_by}]` : ''}`)));
+    if (w.log) L.push('', `Log page: ${w.log.id ? `${w.log.id} ` : ''}(${w.log.status})${w.log.path ? ` ${w.log.path}` : ''}${w.log.error ? ` - ${w.log.error}` : ''}`);
   }
   return L.join('\n') + '\n';
 }
