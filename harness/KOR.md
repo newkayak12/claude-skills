@@ -43,7 +43,7 @@ Plan(opus) → SetGoal(opus) → Implement(Codex 사용 시) → Test(Codex 사�
 |---|---|
 | 큰 요청을 계획·실행·검증·게이트까지 거쳐서 받고 싶다 | `harness` |
 | 기본 그래프 오케스트레이션 경로를 연결하거나 확인하고 싶다 | `graph:install` |
-| 프로젝트에 게이트·훅·컨벤션·CLAUDE.md 블록을 심고 싶다 | `install` |
+| 프로젝트에 게이트·훅·컨벤션·CLAUDE.md 블록을 심고 싶다 (참고 프로젝트가 있으면 `develop:like-my-code`로 컨벤션 도출) | `install` |
 | 프로젝트에서 하네스 거버넌스를 걷어내고 싶다 | `remove` |
 | 플러그인 버전을 올린 뒤 이 프로젝트에 설치된 하네스 복사본을 최신으로 맞추고 싶다 | `update` |
 | 설치 형태와 무관하게 Implement/Test를 로컬 Codex CLI에 위임하고 싶다 | `codex-control` |
@@ -214,6 +214,7 @@ Implement 단계에서 plugin 모드로 Codex 돌려야 해 — 어댑터부터 
   (엔진은 여전히 플러그인에 있습니다 — install 스킬의 gap 노트 참고)
 - `.claude/conventions/{coding,verification,boundaries}.md` — 엔진이 읽는 기본 룰셋
   (SetGoal → 승인/테스트 기준, Implement → 준수)
+  참고할 프로젝트가 있으면 설치 중 `develop:like-my-code`로 `coding.md`/`boundaries.md`를 채울 수 있습니다 (develop이 없으면 건너뜁니다)
 - 프로젝트 `CLAUDE.md`에 덧붙는 펜스 처리된 `## Harness` 섹션
 - `.gitignore`의 `.claude/.harness-markers/`
 
