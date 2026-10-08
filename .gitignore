@@ -22,3 +22,6 @@ INSTRUCT.md
 .harness-run/
 .claude/settings.local.json
 .claude/.harness-last-decision.json
+
+# local research notes (skill:audit reads it only if present)
+_reference/
