@@ -37,11 +37,11 @@ export const ancestorsOf = (rows: Row[], engine: number): number[] => {
   return out
 }
 
-// `claude -p` children of the engine; a wrapper shell and its child are one job: the outer one is listed.
+// `claude -p` children of the engine; a wrapper shell and its child are one job: the innermost claude -p is listed,
+// so a SIGTERM reaches claude itself and not only the shell above it.
 export const matchOrphans = (rows: Row[], engine: number): Row[] => {
   const hits = descendants(rows, engine).filter(r => CLAUDE_P.test(r.cmd))
-  const pids = new Set(hits.map(r => r.pid))
-  return hits.filter(r => !pids.has(r.ppid))
+  return hits.filter(r => !hits.some(h => h.ppid === r.pid))
 }
 
 // `Wed Oct  8 10:09:00 2026` (local time) against now; '' when the text does not parse.

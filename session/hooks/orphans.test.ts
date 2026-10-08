@@ -18,9 +18,9 @@ test('Orphans lists the job once with pid, command and age, and points to /tasks
   const lines = await orphansView($)
 
   expect(lines).toContain('claude -p children (2)')
-  expect(lines).toContain('4300')
+  expect(lines).toContain('4301')
   expect(lines).toContain('4310')
-  expect(lines).not.toContain('4301')
+  expect(lines).not.toContain('4300')
   expect(lines).not.toContain('9000')
   expect(lines.some(l => l.includes('claude -p job two'))).toBe(true)
   expect(lines).toContain('5m')
@@ -81,5 +81,7 @@ test('Windows: no ps and no sh, no orphan rows, the /tasks pointer stays', async
 
   expect(procs.filter(p => p[0] === 'ps' || p[0] === 'sh')).toEqual([])
   expect(lines).not.toContain('4310')
+  expect(lines.some(l => l.includes('claude -p children'))).toBe(false)
+  expect(lines).not.toContain('○ none')
   expect(lines.some(l => l.includes('/tasks'))).toBe(true)
 })

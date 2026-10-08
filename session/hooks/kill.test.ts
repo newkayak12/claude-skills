@@ -21,8 +21,12 @@ test('checkKill: a changed command or start time (pid reuse) refuses', () => {
 test('checkKill: the engine, an ancestor and the wrapped child refuse', () => {
   expect(verdict(rows.find(r => r.pid === 4242)!).ok).toBe(false)
   expect(verdict(rows.find(r => r.pid === 1)!).ok).toBe(false)
-  expect(verdict(rows.find(r => r.pid === 4301)!).ok).toBe(false)
+  expect(verdict(rows.find(r => r.pid === 4300)!).ok).toBe(false)
   expect(verdict(rows.find(r => r.pid === 9000)!).ok).toBe(false)
+})
+
+test('checkKill: the inner claude -p of a wrapped job passes', () => {
+  expect(verdict(rows.find(r => r.pid === 4301)!)).toEqual({ ok: true, pid: 4301 })
 })
 
 test('checkKill: a gone pid is flagged gone; a helper of ours and a non-claude process refuse', () => {
@@ -106,7 +110,7 @@ test('stop: the pid is gone -> no kill, no throw, the row clears', async ($, on)
 
   expect(kills(w.procs)).toEqual([])
   expect(toasts.join('\n')).toMatch(/gone/)
-  expect(w.cells.get('session.orphans')).toEqual([expect.objectContaining({ pid: 4300 })])
+  expect(w.cells.get('session.orphans')).toEqual([expect.objectContaining({ pid: 4301 })])
 })
 
 test('stop: ask declined or dismissed -> no kill', async ($, on) => {
