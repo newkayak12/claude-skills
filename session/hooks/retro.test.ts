@@ -1,7 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { clockAt, memoryState, memoryStore, texts } from './testkit.ts'
+import { bash, clockAt, guardWorld, memoryState, memoryStore, PASSED, texts } from './testkit.ts'
 
 const BAND = { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: 80 } as any
 const PANE = {
@@ -167,4 +167,13 @@ test('a broken store at start leaves no band and no throw', async ($, on) => {
   await start($)
 
   expect(texts(await (await band($)).drawn())).toEqual([])
+})
+
+test('a call the guard stops is counted as denied in the retro', async ($, on) => {
+  const seen = guardWorld(on, { answer: 'Cancel' })
+  await $.session.start({ cwd: '/proj', surface: 'terminal', isInteractive: true })
+
+  expect(await bash($, 'git reset --hard')).not.toEqual(PASSED)
+
+  expect((seen.cells.get('session.ledger') as { denied: unknown[] }).denied).toHaveLength(1)
 })
