@@ -184,10 +184,12 @@ export const register: Register = on => {
     const task = await read($, summary)
     const info = await read($, status)
 
+    // plain tabs with hotkeys 1-3: the selected one in full strength with a dot, the rest dim
     const tabs = (
-      <Box>
-        {(['summary', 'work', 'log'] as const).map(one => (
-          <Button key={one} label={s(`tab${cap(one)}` as keyof typeof en)} variant={kind === one ? 'primary' : undefined}
+      <Box columnGap={3}>
+        {(['summary', 'work', 'log'] as const).map((one, i) => (
+          <Button key={one} plain hotkey={String(i + 1)} dimColor={kind !== one}
+            label={`${kind === one ? '● ' : ''}${s(`tab${cap(one)}` as keyof typeof en)}`}
             onPress={() => update($, view, () => one)} />
         ))}
       </Box>
@@ -275,17 +277,17 @@ export const register: Register = on => {
     }
     return (
       <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
-        <Box marginBottom={1}>
+        <Box>
           <Box flexShrink={1}><Text bold wrap="truncate-end">{task.title}</Text></Box>
           <Box flexShrink={0} marginLeft={2}>
             <Text color="claude">{s('headLine', { state: stateWord, day: task.day, done: task.done, total: task.total })}</Text>
           </Box>
         </Box>
-        {body}
-        <Box marginTop={1} justifyContent="space-between">
+        <Box marginY={1} justifyContent="space-between">
           {tabs}
           <Text dimColor>{s('costLine', { usd: `$${task.cost.usd.toFixed(2)}`, turns: task.cost.turns })}</Text>
         </Box>
+        {body}
       </Box>
     )
   })
