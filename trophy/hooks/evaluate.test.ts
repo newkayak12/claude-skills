@@ -99,7 +99,7 @@ test('an unlock draws a celebration card above the prompt that the timer clears'
   await $.skill.prompt({ skill: 'think:grill', text: 'x' })
 
   expect(await ui.find({ text: /업적 해금/ })).toBeDefined()
-  expect(await ui.find({ text: /First Blood/ })).toBeDefined()
+  expect(await ui.find({ text: /생각의 시작/ })).toBeDefined()
   await clock.advance(8001)
   expect(await ui.find({ text: /업적 해금/ })).toBeUndefined()
 })
@@ -121,6 +121,6 @@ test('by default the celebration card is in English', async ($, on) => {
   await $.skill.prompt({ skill: 'think:grill', text: 'x' })
 
   expect(await ui.find({ text: /Achievement unlocked/ })).toBeDefined()
-  expect(await ui.find({ text: /First Blood/ })).toBeDefined()
+  expect(await ui.find({ text: /Thinking Cap On/ })).toBeDefined()
   expect(await ui.find({ text: /업적 해금/ })).toBeUndefined()
 })
