@@ -15,7 +15,7 @@ const texts = (node: any): string[] =>
         : []
 
 const boot = async ($: any, on: On) => {
-  memoryStore(on)
+  memoryStore(on, { 'trophy.consent': 'no', 'trophy.consentVersion': 2 })
   sessionAt(on)
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
@@ -33,7 +33,7 @@ const boot = async ($: any, on: On) => {
   on('fs.list', () => ({ value: [{ name: 'clean-code', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }) as never)
   on('classic.PostToolUseFailure', () => ({}))
   await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
-  return () => $.ui.mount({ plugin: 'diag', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  return () => $.ui.mount({ plugin: 'trophy', surface: 'terminal', component: 'AbovePrompt', props: BAND })
 }
 
 const fail = () => ({
@@ -51,19 +51,13 @@ test('band is absent until an owned failure, then shows the count and last title
   expect(lines.some(l => l.includes('develop:clean-code'))).toBe(true)
 })
 
-test('/diag clears the badge; /diag bug does not raise it', async ($, on) => {
+test('/trophy-bug does not raise the badge', async ($, on) => {
   const mount = await boot($, on)
-  await $.command.run({ command: 'diag', args: 'bug it broke' } as any)
-  expect(texts(await (await mount()).drawn())).toEqual([])
-
-  await $.classic.PostToolUseFailure(fail())
-  expect(texts(await (await mount()).drawn())).toContain('✘ 1')
-
-  await $.command.run({ command: 'diag', args: '' } as any)
+  await $.command.run({ command: 'trophy-bug', args: 'it broke' } as any)
   expect(texts(await (await mount()).drawn())).toEqual([])
 })
 
-test('the 보기 button opens the pane and clears the badge', async ($, on) => {
+test('the 보기 button opens the failures tab and clears the badge', async ($, on) => {
   const mount = await boot($, on)
   await $.classic.PostToolUseFailure(fail())
   const ui = await mount()
