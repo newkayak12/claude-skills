@@ -1,0 +1,40 @@
+{
+  "task_id": "aaaaaaaa1111",
+  "retrospective": {
+    "what_failed": [],
+    "retries": [],
+    "defects_left": [
+      {
+        "title": "D1 b.txt never wired"
+      }
+    ]
+  },
+  "next_backlog": {
+    "unfinished_stories": [],
+    "unaccepted_packages": [
+      {
+        "id": "P2",
+        "title": "module b",
+        "reason": "tests red"
+      },
+      {
+        "id": "P3",
+        "title": "module c",
+        "reason": "never dispatched"
+      }
+    ],
+    "unresolved_defects": [
+      {
+        "title": "D1 b.txt never wired"
+      },
+      {
+        "title": "D2 slow path"
+      }
+    ],
+    "open_questions": [
+      {
+        "question": "Keep the legacy flag?"
+      }
+    ]
+  }
+}
