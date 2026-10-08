@@ -1,12 +1,28 @@
-import { atom, update } from 'claude-code'
+import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import { addCommit, addDeny, addFile, addStep, emptyLedger, endTurn } from './ledger.ts'
+import {
+  addCommit, addDeny, addFile, addStep, emptyLedger, endTurn, fmtMs, parseNumstat, statOf, stepSpan,
+} from './ledger.ts'
 import type { Ledger } from './ledger.ts'
 
 const tab = atom({ plugin: 'session', key: 'tab' } as const, 'retro' as 'retro' | 'orphans')
 const band = atom({ plugin: 'session', key: 'band' } as const, false)
 const ledger = atom({ plugin: 'session', key: 'ledger' } as const, emptyLedger())
+
+const statsAtom = atom({ plugin: 'session', key: 'stats' } as const, {} as Record<string, string>)
+
+const PANE = 'session'
+
+// One `git diff --numstat` for the touched files, never in a draw. No git or a slow one: keep what was there.
+async function refreshStats($: any) {
+  try {
+    const files = (await read($, ledger)).files
+    if (files.length === 0) return
+    const r = await $.process.run(['git', 'diff', '--numstat', '--', ...files], { timeoutMs: 5000 })
+    if (r.exitCode === 0) await update($, statsAtom, () => parseNumstat(r.stdout))
+  } catch {}
+}
 
 // The ledger never changes what the engine returns: any failure while recording is swallowed.
 const track = async ($: any, change: (l: Ledger) => Ledger) => {
@@ -49,7 +65,78 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 
   on('turn.complete', async ($, e, next) => {
-    if (e.agentId === undefined) await track($, endTurn)
+    if (e.agentId === undefined) {
+      await track($, endTurn)
+      if ((await $.session.surfaces()).length > 0) await refreshStats($)
+    }
     return next(e)
+  }).catch(($, e, next) => next(e))
+
+  // The pane opens only from its command.
+  on('command.run', { command: 'session' }, async $ => {
+    await refreshStats($)
+    await $.ui.open({ id: PANE, title: 'Session' })
+    return { text: 'Session pane opened.' }
+  }).catch(($, e, next) => next(e))
+
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const { Box, Button, Text } = $.ui.resolve(e)
+    const current = await read($, tab)
+    const header = (
+      <Box borderStyle="round" borderColor="claude" gap={1}>
+        <Text key="title" bold>session</Text>
+        <Button
+          key="tab-retro"
+          label="Retro [1]"
+          hotkey="1"
+          variant={current === 'retro' ? 'primary' : undefined}
+          onPress={() => update($, tab, () => 'retro')}
+        />
+        <Button
+          key="tab-orphans"
+          label="Orphans [2]"
+          hotkey="2"
+          variant={current === 'orphans' ? 'primary' : undefined}
+          onPress={() => update($, tab, () => 'orphans')}
+        />
+      </Box>
+    )
+    if (current === 'orphans') {
+      return (
+        <Box flexDirection="column">
+          {header}
+          <Text dimColor>○ none</Text>
+        </Box>
+      )
+    }
+    const l = await read($, ledger)
+    const stats = await read($, statsAtom)
+    return (
+      <Box flexDirection="column">
+        {header}
+        <Text bold color="claude">{`files (${l.files.length})`}</Text>
+        {l.files.length === 0 && <Text dimColor>○ none</Text>}
+        {l.files.map(f => (
+          <Text key={`f-${f}`} wrap="truncate-start">{`· ${f}${statOf(stats, f) ? `  ${statOf(stats, f)}` : ''}`}</Text>
+        ))}
+        <Text bold color="claude">{`commits (${l.commits.length})`}</Text>
+        {l.commits.length === 0 && <Text dimColor>○ none</Text>}
+        {l.commits.map(c => (
+          <Box key={`c-${c.hash}`} gap={1}>
+            <Text color="success">✔</Text>
+            <Text wrap="truncate-end">{`${c.hash} ${c.subject}`}</Text>
+          </Box>
+        ))}
+        <Text bold color="claude">{`denied (${l.denied.length})`}</Text>
+        {l.denied.length === 0 && <Text dimColor>○ none</Text>}
+        {l.denied.map((d, i) => (
+          <Box key={`d-${i}`} gap={1}>
+            <Text color="error">✘</Text>
+            <Text wrap="truncate-end">{`${d.tool}  ${d.reason}`}</Text>
+          </Box>
+        ))}
+        <Text bold color="claude">{`longest gap  ${fmtMs(stepSpan(l.steps))}`}</Text>
+      </Box>
+    )
   }).catch(($, e, next) => next(e))
 }

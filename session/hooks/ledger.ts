@@ -51,7 +51,23 @@ export const stepSpan = (steps: number[]): number => {
   return best
 }
 
-export const fmtMs = (ms: number): string => {
+// `git diff --numstat` lines `added<TAB>deleted<TAB>path` -> { path: '+a -d' }; binary files ('-') read +0 -0.
+export const parseNumstat = (text: string): Record<string, string> => {
+  const out: Record<string, string> = {}
+  for (const line of text.split('\n')) {
+    const m = /^(\d+|-)\t(\d+|-)\t(.+)$/.exec(line)
+    if (m) out[m[3] ?? ''] = `+${m[1] === '-' ? 0 : m[1]} -${m[2] === '-' ? 0 : m[2]}`
+  }
+  return out
+}
+
+// numstat paths are repo-relative, touched paths absolute: match on the tail.
+export const statOf = (stats: Record<string, string>, path: string): string | undefined => {
+  for (const [rel, s] of Object.entries(stats)) if (path === rel || path.endsWith(`/${rel}`)) return s
+  return undefined
+}
+
+export const fmtMs =(ms: number): string => {
   const s = Math.round(ms / 1000)
   const m = Math.floor(s / 60)
   return m > 0 ? `${m}m${String(s % 60).padStart(2, '0')}s` : `${s}s`
