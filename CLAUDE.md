@@ -81,5 +81,5 @@ teams principles: `_repo/docs/plans/2026-09-28-teams-cards-everywhere.md`.
 
 After any change: bump version in `.claude-plugin/marketplace.json` → update `<plugin>/README.md` **and** `<plugin>/KOR.md` (English default + Korean mirror; both must move together) → commit → `git push origin main`.
 
-Maintainer bump tools (not user skills): `node _repo/scripts/patch-harness.mjs` and `node _repo/scripts/patch-teams.mjs` bump a plugin's patch version and its README/KOR status logs in one step. Minor/major bumps are done by hand. Refreshing a project's installed harness copies is the `harness:update` skill.
+Maintainer bump tools (not user skills): `node _repo/scripts/patch-harness.mjs` and the teams `patch` skill's `node teams/skills/patch/patch.mjs '<json>'` (dry-run first, see its SKILL.md) bump a plugin's patch version and its README/KOR status logs in one step. Minor/major bumps are done by hand. Refreshing a project's installed harness copies is the `harness:update` skill.
 

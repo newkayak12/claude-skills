@@ -22,7 +22,7 @@ Claude Code 2.1.292 이상. 이전 빌드는 stderr에 한 줄을 출력하고 �
 | 3 | 실행 중 스크립트 가드 | 실행 중인 `.sh`/`.bash` 파일의 Edit/Write를 거부 | 모든 세션 |
 | 4 | 워크트리 가드 | 커밋되지 않은 변경이 있는 워크트리의 `git worktree remove --force`를 거부. 경로가 없으면 통과 | 모든 세션 |
 | 5 | fetch 알림 | 세션 시작 시(인터랙티브 세션에서만) fetch 후 `origin/main`이 앞서 있으면 토스트 | claude-skills 저장소 전용 |
-| 6 | push / bump 확인 | `git push`와 `patch-harness` / `patch-teams` 버전 범프 스크립트 실행 전 확인. Run을 선택하지 않으면 명령이 거부됨(프롬프트를 닫아도 거부). 헤드리스 세션은 묻지 않고 통과 | claude-skills 저장소 전용 |
+| 6 | push / bump 확인 | `git push`와 `patch-harness` / `teams/skills/patch/patch.mjs` 버전 범프 스크립트 실행 전 확인. Run을 선택하지 않으면 명령이 거부됨(프롬프트를 닫아도 거부). 헤드리스 세션은 묻지 않고 통과 | claude-skills 저장소 전용 |
 | 7 | KOR 없는 README | `git commit` 시 스테이징된 `README.md`에 `KOR.md`가 없으면 토스트 | claude-skills 저장소 전용 |
 | 8 | `claude -p` 개수 | 턴 종료 시 이 세션의 헤드리스 자식 수를 `n claude -p child(ren) running`으로 상태줄 표시. 0이면 해제 | 인터랙티브 |
 
