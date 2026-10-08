@@ -1,19 +1,32 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Mark, StatusInfo, SummaryTask, TeamsEvent } from '../types'
+import type { Mark, ReportPayload, StatusInfo, SummaryTask, TeamsEvent } from '../types'
 
 const cursor = atom({ plugin: 'teams', key: 'cursor' } as const, 0)
 const status = atom({ plugin: 'teams', key: 'status' } as const, null as StatusInfo | null)
 const summary = atom({ plugin: 'teams', key: 'summary' } as const, null as SummaryTask | null)
 const watch = atom({ plugin: 'teams', key: 'watch' } as const, [] as string[])
-const view = atom({ plugin: 'teams', key: 'view' } as const, 'summary' as 'summary' | 'work' | 'log')
+const view = atom({ plugin: 'teams', key: 'view' } as const, 'summary' as 'summary' | 'work' | 'log' | 'report')
+// the report of one task: keyed to the task it was fetched for, so a card or tab never draws another's
+const report = atom({ plugin: 'teams', key: 'report' } as const, null as { task_id: string; payload: ReportPayload } | null)
+// the report behind the end-of-run card: its own atom, so an open Report tab on another task never
+// replaces it (nor it the tab)
+const cardReport = atom({ plugin: 'teams', key: 'cardReport' } as const, null as { task_id: string; payload: ReportPayload } | null)
 const lang = atom({ plugin: 'teams', key: 'lang' } as const, 'en' as 'en' | 'ko')
+
+// the end-of-run card per ended task: 'card' while it is shown, 'seen' once its report was opened,
+// 'dismissed' on the person's say-so
+type Ended = Record<string, 'card' | 'seen' | 'dismissed'>
+const ended = atom({ plugin: 'teams', key: 'ended' } as const, {} as Ended)
+const mark = (m: Ended, id: string, state: Ended[string]): Ended => ({ ...m, [id]: state })
 
 const PANE = 'teams-live'
 
 const en = {
-  tabSummary: 'Summary', tabWork: 'Work', tabLog: 'Log',
+  tabSummary: 'Summary', tabWork: 'Work', tabLog: 'Log', tabReport: 'Report',
+  cardFinished: 'finished', cardBlocked: 'blocked', cardFailed: 'failed {n}', cardMore: '+{n} more', reportButton: 'report', dismiss: '×',
+  reportMissing: 'No report yet: {path}', reportTruncated: 'Shortened: {n} more lines in the file.',
   now: 'Now', you: 'You', stages: 'Stages', work: 'Work', cost: 'Cost',
   youNone: 'Nothing needed', youOthers: '{n} more in other runs', costLine: '{usd} · {turns} turns',
   headLine: '{state} · day {day} · {done}/{total}', bandDone: '{done}/{total} done',
@@ -33,7 +46,9 @@ const en = {
 export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
   en,
   ko: {
-    tabSummary: '요약', tabWork: '작업', tabLog: '기록',
+    tabSummary: '요약', tabWork: '작업', tabLog: '기록', tabReport: '보고서',
+    cardFinished: '끝남', cardBlocked: '막힘', cardFailed: '실패 {n}', cardMore: '+{n}건 더', reportButton: '보고서', dismiss: '×',
+    reportMissing: '아직 보고서가 없습니다: {path}', reportTruncated: '일부만 표시: 파일에 {n}줄 더 있습니다.',
     now: '지금', you: '확인', stages: '단계', work: '작업', cost: '비용',
     youNone: '필요한 조치 없음', youOthers: '다른 실행에 {n}건 더', costLine: '{usd} · {turns}턴',
     headLine: '{state} · {day}일째 · {done}/{total}', bandDone: '{done}/{total} 완료',
@@ -91,6 +106,24 @@ function nowSentence(s: (key: keyof typeof en) => string, task: SummaryTask): st
   return task.now.subject ? `${label}: ${task.now.subject}` : label
 }
 
+// One report call for a task: the payload is stored under that task's id. A failed call or
+// unreadable output leaves what was stored.
+async function fetchReport($: EngineInterface, taskId: string, forCard = false): Promise<void> {
+  try {
+    const cwd = await $.session.cwd()
+    const r = await $.process.run(['node', `${$.plugin.root}/scripts/view.mjs`, '--once', '--format', 'report', '--task', taskId, '--cwd', cwd])
+    if (r.exitCode !== 0) return
+    const payload = JSON.parse(r.stdout.trim().split('\n').pop() ?? '') as ReportPayload
+    if (forCard) await update($, cardReport, () => ({ task_id: taskId, payload }))
+    else await update($, report, () => ({ task_id: taskId, payload }))
+  } catch {
+    // a failed call keeps the last payload
+  }
+}
+
+// the task whose card is shown now: the latest one still marked 'card'
+const cardTask = (m: Record<string, string>) => Object.keys(m).filter(k => m[k] === 'card').at(-1)
+
 const TICK_MS = 3000
 const WORK_MAX = 6
 
@@ -109,6 +142,8 @@ export const register: Register = on => {
         const cwd = await $.session.cwd()
         const since = await read($, cursor)
 
+        const fetched = new Set<string>()
+        const cardFetched = new Set<string>()
         const ev = await $.process.run([
           'node', VIEW, '--once', '--format', 'events', '--since', String(since), '--cwd', cwd,
         ])
@@ -125,6 +160,12 @@ export const register: Register = on => {
           }
           if (fresh.length > 0) {
             for (const one of fresh) $.ui.toast(one.text)
+            // a run that ended after this session began gets a card and one report call
+            for (const one of fresh.filter(f => f.kind === 'daemon_done')) {
+              await update($, ended, m => mark(m, one.task_id, 'card'))
+              cardFetched.add(one.task_id)
+              await fetchReport($, one.task_id, true)
+            }
             const latest = Math.max(...fresh.map(one => one.ts))
             await update($, cursor, () => latest)
           }
@@ -145,6 +186,19 @@ export const register: Register = on => {
           await update($, summary, () => (isSummary ? parsed.task ?? null : null))
           // pinned only while a person must act (the engine draws it as a warning)
           $.ui.status(info.waiting > 0 ? fmt(STRINGS[await read($, lang)].statusWaiting, { n: info.waiting }) : undefined)
+        }
+        // the Report tab refetches only while it is open, for the pane's task
+        const isTab = id !== undefined && (await read($, view)) === 'report'
+        if (isTab && (await read($, ended))[id] === 'card') await update($, ended, m => mark(m, id, 'seen'))
+        if (isTab && !fetched.has(id)) {
+          fetched.add(id)
+          await fetchReport($, id)
+        }
+        // a card waits for its report (none yet, or another task's in the atom)
+        const waiting = cardTask(await read($, ended))
+        if (waiting !== undefined && !cardFetched.has(waiting)) {
+          const held = await read($, cardReport)
+          if (held?.task_id !== waiting || held.payload.report === null) await fetchReport($, waiting, true)
         }
       } catch {
         // a failed run or unreadable output leaves the last status as it was
@@ -176,7 +230,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Button, Markdown, Text } = $.ui.resolve(e)
     const kind = await read($, view)
     const lang$ = await read($, lang)
     const s = (key: keyof typeof en, vars?: Record<string, string | number>) => fmt(STRINGS[lang$][key], vars)
@@ -187,17 +241,44 @@ export const register: Register = on => {
     // plain tabs with hotkeys 1-3: the selected one in full strength with a dot, the rest dim
     const tabs = (
       <Box columnGap={3}>
-        {(['summary', 'work', 'log'] as const).map((one, i) => (
+        {(['summary', 'work', 'log', 'report'] as const).map((one, i) => (
           <Button key={one} plain hotkey={String(i + 1)} dimColor={kind !== one}
             label={`${kind === one ? '● ' : ''}${s(`tab${cap(one)}` as keyof typeof en)}`}
-            onPress={() => update($, view, () => one)} />
+            onPress={async () => {
+              await update($, view, () => one)
+              if (one === 'report' && id !== undefined) {
+                await update($, ended, m => (m[id] === 'card' ? mark(m, id, 'seen') : m))
+                await fetchReport($, id)
+              }
+            }} />
         ))}
       </Box>
     )
-    if (id === undefined || task === null) {
+    if (id === undefined || (task === null && kind !== 'report')) {
       return (
         <Box flexDirection="column">
           <Text>{id === undefined ? s('noRun') : s('loading')}</Text>
+        </Box>
+      )
+    }
+    // the task's report, drawn only when it was fetched for the pane's task: its path first, then
+    // (when capped) the truncated notice, then the text
+    const rp = await read($, report)
+    const mine = rp !== null && rp.task_id === id ? rp.payload : null
+    const reportBody = mine === null ? <Text dimColor>{s('loading')}</Text>
+      : mine.report === null ? <Text>{s('reportMissing', { path: mine.path })}</Text>
+      : (
+        <Box flexDirection="column">
+          <Text>{mine.path}</Text>
+          {mine.report.truncated && <Text color="warning">{s('reportTruncated', { n: mine.report.more_lines })}</Text>}
+          <Markdown text={mine.report.text} />
+        </Box>
+      )
+    if (task === null) {
+      return (
+        <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
+          <Box marginY={1}>{tabs}</Box>
+          {reportBody}
         </Box>
       )
     }
@@ -267,13 +348,15 @@ export const register: Register = on => {
           {bar}
         </Box>
       )
-    } else {
+    } else if (kind === 'log') {
       const lines = task.log.map(one => `${one.time} ${s(`log${cap(one.kind)}` as keyof typeof en, { s: one.subject ?? '' }).trim()}`)
       body = (
         <Box flexDirection="column">
           {lines.length === 0 ? <Text dimColor>{s('noLog')}</Text> : lines.map((line, i) => <Text key={`l${i}`}>{line}</Text>)}
         </Box>
       )
+    } else {
+      body = reportBody
     }
     return (
       <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
@@ -295,11 +378,45 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const info = await read($, status)
     const task = await read($, summary)
-    if (e.props.hasSurvey || info?.latest == null || task?.state !== 'running') return next(e)
     const lang$ = await read($, lang)
     const s = (key: keyof typeof en, vars?: Record<string, string | number>) => fmt(STRINGS[lang$][key], vars)
-    const { Box, Button, Text } = $.ui.resolve(e)
     const open = () => $.ui.open({ id: PANE, title: 'Teams' })
+
+    // an ended run: one card in place of the running row, until the person opens the report or dismisses it
+    const cardId = cardTask(await read($, ended))
+    const held = await read($, cardReport)
+    if (!e.props.hasSurvey && cardId !== undefined && held?.task_id === cardId && held.payload.verdict !== 'running') {
+      const { Box, Button, Text } = $.ui.resolve(e)
+      const p = held.payload
+      const set = (state: 'seen' | 'dismissed') => update($, ended, m => mark(m, cardId, state))
+      return (
+        <Box flexDirection="column">
+          <Box>
+            <Box flexShrink={0}><Text bold color={p.verdict === 'finished' ? 'success' : 'warning'}>{`teams · ${s(p.verdict === 'finished' ? 'cardFinished' : 'cardBlocked')}`}</Text></Box>
+            {p.failed > 0 && <Box flexShrink={0} marginLeft={1}><Text color="error">{s('cardFailed', { n: p.failed })}</Text></Box>}
+            {p.needs.items.length > 0 && <Box flexShrink={1} marginLeft={1}><Text dimColor wrap="truncate-end">{`— ${p.needs.items.join('; ')}`}</Text></Box>}
+            {p.needs.more > 0 && <Box flexShrink={0} marginLeft={1}><Text dimColor>{s('cardMore', { n: p.needs.more })}</Text></Box>}
+            {p.report !== null && (
+              <Box flexShrink={0} marginLeft={1}>
+                <Button key="report" label={s('reportButton')} onPress={async () => {
+                  await update($, watch, l => [...l.filter(x => x !== cardId), cardId])
+                  await update($, summary, () => null)
+                  await update($, report, () => held)
+                  await update($, view, () => 'report')
+                  await set('seen')
+                  await open()
+                }} />
+              </Box>
+            )}
+            <Box flexShrink={0} marginLeft={1}><Button key="dismiss" label={s('dismiss')} onPress={() => set('dismissed')} /></Box>
+          </Box>
+          {await next(e)}
+        </Box>
+      )
+    }
+
+    if (e.props.hasSurvey || info?.latest == null || task?.state !== 'running') return next(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
     return (
       <Box flexDirection="column">
         <Box>

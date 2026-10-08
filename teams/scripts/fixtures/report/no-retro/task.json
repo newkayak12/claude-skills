@@ -1,0 +1,38 @@
+{
+  "run_id": "aaaaaaaa1111",
+  "cwd": "__CWD__",
+  "nodes": [
+    {
+      "node_id": "report",
+      "stage": "report",
+      "state": "done",
+      "deps": []
+    },
+    {
+      "node_id": "dispatch:P1:1",
+      "stage": "dispatch",
+      "state": "failed",
+      "subgoal_id": "P1",
+      "deps": []
+    },
+    {
+      "node_id": "dispatch:P1:2",
+      "stage": "dispatch",
+      "state": "done",
+      "subgoal_id": "P1",
+      "deps": []
+    },
+    {
+      "node_id": "dispatch:P2:1",
+      "stage": "dispatch",
+      "state": "failed",
+      "subgoal_id": "P2",
+      "deps": []
+    }
+  ],
+  "team": {
+    "opts": {
+      "docs_dir": "docs"
+    }
+  }
+}

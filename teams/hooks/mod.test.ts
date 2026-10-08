@@ -199,7 +199,7 @@ const EN_UI = ['Now', 'You', 'Stages', 'Work', 'Cost', 'Summary', 'Log', 'needs 
 
 // Engine beneath: a Map-backed $.state, process.run for view.mjs (status and summary answer the same
 // fixture), ui.open and ui.status recorded.
-function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly ('terminal' | 'desktop')[] = ['terminal'], data: { status?: Record<string, unknown>; task?: unknown } = {}) {
+function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly ('terminal' | 'desktop')[] = ['terminal'], data: { status?: Record<string, unknown>; task?: unknown; reports?: Record<string, unknown>; events?: unknown[]; failReport?: boolean } = {}) {
   const store = new Map<string, unknown>(Object.entries(init))
   const seen = { store, argv: [] as (readonly string[])[], opened: [] as string[], statuses: [] as (string | undefined)[] }
   const status = () => data.status ?? { line: '', waiting: 0 }
@@ -212,6 +212,12 @@ function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly 
   on('process.run', (_$, e) => {
     seen.argv.push(e.argv)
     const format = e.argv[e.argv.indexOf('--format') + 1]
+    if (format === 'report' && data.failReport) return { value: { exitCode: 1, stdout: '', stderr: 'boom' } }
+    if (format === 'events') {
+      const since = Number(e.argv[e.argv.indexOf('--since') + 1])
+      return { value: ok((data.events ?? []).filter(o => (o as { ts: number }).ts > since).map(o => JSON.stringify(o) + '\n').join('')) }
+    }
+    if (format === 'report') return { value: ok(JSON.stringify((data.reports ?? {})[e.argv[e.argv.indexOf('--task') + 1]!] ?? null)) }
     return { value: ok(format === 'status' ? JSON.stringify(status()) : format === 'summary' ? JSON.stringify({ status: status(), task: data.task ?? null }) : '') }
   })
   on('ui.open', (_$, e) => {
@@ -246,10 +252,10 @@ const engineBand = (on: On) =>
 
 // The data reaches the mod the way it does live: one tick (pane open, so the summary call runs) over
 // the mocked view.mjs; `data` is read at every call, so a test changes it between ticks.
-async function seeded($: Engine, on: On, data: { status?: Record<string, unknown>; task?: unknown }, surface: (typeof SURFACES)[number] = 'terminal', language?: string) {
+async function seeded($: Engine, on: On, data: { status?: Record<string, unknown>; task?: unknown; reports?: Record<string, unknown>; events?: unknown[]; failReport?: boolean }, surface: (typeof SURFACES)[number] = 'terminal', language?: string, init: Record<string, unknown> = {}) {
   const clock = mock.clock(on, { now: 1000 })
   startWorld(on, language)
-  const seen = uiWorld(on, { watch: ['abc'] }, [surface], data)
+  const seen = uiWorld(on, { watch: ['abc'], ...init }, [surface], data)
   on('ui.panes', () => ({ value: [{ id: 'teams-live', title: 'Teams', isPlaced: true }] }) as never)
   engineBand(on) // the engine's own band, beneath the teams row
   await start($)
@@ -641,3 +647,211 @@ test('/teams-live: English reply has no teams prefix and no status-line claim', 
   expect(r).not.toContain('teams-live')
   expect(r).not.toContain('status line')
 })
+
+// ---- Report tab ----
+const REPORT_TEXT = '# Report\n\nAll packages shipped.\n'
+const payload = (over: Record<string, unknown> = {}) => ({
+  task_id: 'abc', verdict: 'finished', failed: 2,
+  needs: { items: ['module b: tests red', 'module c: never dispatched', 'D1 b.txt never wired'], more: 2 },
+  path: '/proj/.teams_output/team/E-abc/80-report.md',
+  report: { text: REPORT_TEXT, truncated: false, more_lines: 0, mtime: 5 },
+  retro: null,
+  ...over,
+})
+const reportArgv = (seen: { argv: (readonly string[])[] }) => seen.argv.filter(a => a.includes('report'))
+const taskOf = (argv: readonly string[]) => argv[argv.indexOf('--task') + 1]
+
+for (const surface of SURFACES) {
+  test(`${surface}: pressing Report fetches once and draws the report verbatim; a second tick keeps it`, async ($, on) => {
+    const { seen, tick } = await seeded($, on, { status: stat(), task: demo(), reports: { abc: payload() } }, surface)
+    expect(reportArgv(seen)).toHaveLength(0)
+    const ui = await pane($, surface)
+    expect((await ui.find({ key: 'report' }))?.props).toMatchObject({ plain: true, hotkey: '4', label: 'Report' })
+    await ui.press({ key: 'report' })
+    await ui.redraw()
+    expect(reportArgv(seen)).toHaveLength(1)
+    expect(reportArgv(seen)[0]!.join(' ')).toContain('--format report --task abc')
+    expect((await ui.find({ type: 'Markdown' }))?.props.text).toBe(REPORT_TEXT)
+    await tick()
+    await ui.redraw()
+    expect(reportArgv(seen).length).toBe(2)
+    expect((await ui.find({ type: 'Markdown' }))?.props.text).toBe(REPORT_TEXT)
+  })
+
+  test(`${surface}: with the Report tab closed no report call is made`, async ($, on) => {
+    const { seen, tick } = await seeded($, on, { status: stat(), task: demo(), reports: { abc: payload() } }, surface)
+    await tick()
+    await tick()
+    expect(reportArgv(seen)).toHaveLength(0)
+  })
+
+  test(`${surface}: report null draws the missing line with the path`, async ($, on) => {
+    await seeded($, on, { status: stat(), task: demo(), reports: { abc: payload({ report: null }) } }, surface)
+    const ui = await pane($, surface)
+    await ui.press({ key: 'report' })
+    await ui.redraw()
+    expect(await shown(ui)).toContain('No report yet: /proj/.teams_output/team/E-abc/80-report.md')
+  })
+
+  test(`${surface}: a >20k report draws the path then the truncated notice before the text`, async ($, on) => {
+    const big = { text: 'line\n'.repeat(3900), truncated: true, more_lines: 1234, mtime: 5 }
+    await seeded($, on, { status: stat(), task: demo(), reports: { abc: payload({ report: big }) } }, surface)
+    const ui = await pane($, surface)
+    await ui.press({ key: 'report' })
+    await ui.redraw()
+    const text = await shown(ui)
+    const path = text.indexOf('80-report.md')
+    const notice = text.indexOf('1234 more lines')
+    const body = text.indexOf('line\\nline')
+    expect(path > 0 && notice > path && body > notice).toBe(true)
+    expect(big.text.length <= 20000).toBe(true)
+  })
+}
+
+test('Report tab: Korean tab label and missing line', async ($, on) => {
+  await seeded($, on, { status: stat(), task: demo(), reports: { abc: payload({ report: null }) } }, 'terminal', 'korean')
+  const ui = await pane($, 'terminal')
+  await ui.press({ key: 'report' })
+  await ui.redraw()
+  const text = await shown(ui)
+  expect(text).toContain('보고서')
+  expect(text).toContain('아직 보고서가 없습니다')
+})
+
+// ---- end-of-run card ----
+const END = (task_id: string, ts = 1500) => ({ ts, task_id, kind: 'daemon_done', text: `${task_id} finished: done` })
+const T_PAYLOAD = (over: Record<string, unknown> = {}) => payload({ task_id: 'tee', path: '/proj/.teams_output/team/E-tee/80-report.md', report: { text: '# T report\n', truncated: false, more_lines: 0, mtime: 7 }, ...over })
+const BLOCKED = (over: Record<string, unknown> = {}) => T_PAYLOAD({ verdict: 'blocked', failed: 1, needs: { items: ['tm_retry P1', 'decide the split'], more: 0 }, ...over })
+const find = async (ui: Ui, key: string) => ui.find({ key })
+
+for (const surface of SURFACES) {
+  test(`${surface}: daemon_done: one report call for T, a card, the toast kept; [report] follows T through the open tab`, async ($, on) => {
+    const data = { status: stat(), task: demo(), events: [END('tee')], reports: { abc: payload({ path: '/proj/E-abc/80-report.md', report: { text: 'U report', truncated: false, more_lines: 0, mtime: 1 } }), tee: T_PAYLOAD() } }
+    const { seen, tick } = await seeded($, on, data, surface)
+    expect(reportArgv(seen).map(taskOf)).toEqual(['tee'])
+    expect(seen.store.get('cardReport')).toMatchObject({ task_id: 'tee' })
+    expect(seen.store.get('ended')).toEqual({ tee: 'card' })
+    const b = await band($, surface)
+    const text = await shown(b)
+    for (const word of ['finished', 'failed 2', 'module b: tests red', 'module c: never dispatched', 'D1 b.txt never wired', '+2 more']) expect(text).toContain(word)
+    expect(await labels(b)).toEqual(['report', '×'])
+    expect(await b.find({ text: 'engine band' })).toBeDefined()
+    await b.press({ key: 'report' })
+    expect(seen.opened).toEqual(['teams-live'])
+    expect(seen.store.get('view')).toBe('report')
+    expect(seen.store.get('watch')).toEqual(['abc', 'tee'])
+    expect(seen.store.get('ended')).toEqual({ tee: 'seen' })
+    expect(await find(await band($, surface), 'report')).toBeUndefined()
+    await tick()
+    await tick()
+    const argvs = reportArgv(seen)
+    expect(argvs.length).toBe(3)
+    expect(argvs.map(taskOf)).toEqual(['tee', 'tee', 'tee'])
+    const ui = await pane($, surface)
+    const drawn = await shown(ui)
+    expect(drawn).toContain('E-tee/80-report.md')
+    expect((await ui.find({ type: 'Markdown' }))?.props.text).toBe('# T report\n')
+    expect(drawn).not.toContain('U report')
+  })
+
+  test(`${surface}: no card and the pane on U: the Report tab by key fetches U`, async ($, on) => {
+    const { seen } = await seeded($, on, { status: stat(), task: demo(), reports: { abc: payload({ report: null }) } }, surface)
+    const ui = await pane($, surface)
+    await ui.press({ key: 'report' })
+    await ui.redraw()
+    expect(reportArgv(seen).map(taskOf)).toEqual(['abc'])
+    expect(await shown(ui)).toContain('No report yet: /proj/.teams_output/team/E-abc/80-report.md')
+  })
+
+  test(`${surface}: blocked wording and items; dismiss removes the card with no open`, async ($, on) => {
+    const { seen } = await seeded($, on, { status: stat(), task: demo(), events: [END('tee')], reports: { tee: BLOCKED() } }, surface)
+    const b = await band($, surface)
+    const text = await shown(b)
+    for (const word of ['blocked', 'failed 1', 'tm_retry P1', 'decide the split']) expect(text).toContain(word)
+    expect(text).not.toContain('+0')
+    await b.press({ key: 'dismiss' })
+    expect(seen.opened).toEqual([])
+    expect(seen.store.get('ended')).toEqual({ tee: 'dismissed' })
+    expect(await find(await band($, surface), 'dismiss')).toBeUndefined()
+    expect(seen.statuses.every(x => x === undefined)).toBe(true)
+  })
+
+  test(`${surface}: blocked and no report yet: card without a button, refetched until the file exists`, async ($, on) => {
+    const data = { status: stat(), task: demo(), events: [END('tee')], reports: { tee: BLOCKED({ report: null }) } as Record<string, unknown> }
+    const { seen, tick } = await seeded($, on, data, surface)
+    expect(await labels(await band($, surface))).toEqual(['×'])
+    await tick()
+    expect(reportArgv(seen).map(taskOf)).toEqual(['tee', 'tee'])
+    data.reports.tee = BLOCKED()
+    await tick()
+    expect(await labels(await band($, surface))).toEqual(['report', '×'])
+    await tick()
+    expect(reportArgv(seen)).toHaveLength(3) // the file is there: no more calls
+  })
+
+  test(`${surface}: a failing report call leaves the card as it was`, async ($, on) => {
+    const data = { status: stat(), task: demo(), events: [END('tee')], reports: { tee: BLOCKED({ report: null }) }, failReport: false }
+    const { tick } = await seeded($, on, data, surface)
+    data.failReport = true
+    await tick()
+    const b = await band($, surface)
+    expect(await shown(b)).toContain('blocked')
+    expect(await labels(b)).toEqual(['×'])
+  })
+
+  test(`${surface}: a task that ended before session.start gets no card and no report call`, async ($, on) => {
+    const { seen } = await seeded($, on, { status: stat(), task: demo(), events: [END('tee', 900)], reports: { tee: T_PAYLOAD() } }, surface)
+    expect(seen.store.get('ended')).toBeUndefined()
+    expect(reportArgv(seen)).toHaveLength(0)
+    expect(await find(await band($, surface), 'dismiss')).toBeUndefined()
+  })
+
+  test(`${surface}: opening the Report tab on T by key marks the card seen`, async ($, on) => {
+    const { seen } = await seeded($, on, { status: stat(), task: demo(), events: [END('abc')], reports: { abc: T_PAYLOAD({ task_id: 'abc' }) } }, surface)
+    expect(seen.store.get('ended')).toEqual({ abc: 'card' })
+    const ui = await pane($, surface)
+    await ui.press({ key: 'report' })
+    expect(seen.store.get('ended')).toEqual({ abc: 'seen' })
+    expect(await find(await band($, surface), 'dismiss')).toBeUndefined()
+  })
+
+  test(`${surface}: language korean draws the card in Korean`, async ($, on) => {
+    await seeded($, on, { status: stat(), task: demo(), events: [END('tee')], reports: { tee: T_PAYLOAD() } }, surface, 'korean')
+    const b = await band($, surface)
+    const text = await shown(b)
+    for (const word of ['끝남', '실패 2', '+2건 더']) expect(text).toContain(word)
+    expect(await labels(b)).toEqual(['보고서', '×'])
+    for (const word of ['finished', 'failed', 'more']) expect(text).not.toContain(word)
+  })
+
+  test(`${surface}: a 30k report opened from the card: path, then the truncated notice, then the text`, async ($, on) => {
+    const big = { text: 'line\n'.repeat(3900), truncated: true, more_lines: 900, mtime: 5 }
+    const { seen } = await seeded($, on, { status: stat(), task: demo(), events: [END('tee')], reports: { tee: T_PAYLOAD({ report: big }) } }, surface)
+    await (await band($, surface)).press({ key: 'report' })
+    const ui = await pane($, surface)
+    const kids = (await ui.drawn()) as unknown as { children?: unknown[] }
+    const text = JSON.stringify(kids)
+    const path = text.indexOf('E-tee/80-report.md')
+    const notice = text.indexOf('900 more lines')
+    const body = text.indexOf('line\\nline')
+    expect(path > 0 && notice > path && body > notice).toBe(true)
+    expect(seen.store.get('view')).toBe('report')
+  })
+}
+
+for (const surface of SURFACES) {
+  test(`${surface}: Report tab open on U, T ends: T's card shows and stays; the tab keeps drawing U`, async ($, on) => {
+    const reports = { abc: payload({ report: { text: 'U report', truncated: false, more_lines: 0, mtime: 1 } }), tee: T_PAYLOAD() }
+    const { seen, tick } = await seeded($, on, { status: stat(), task: demo(), events: [END('tee')], reports }, surface, undefined, { view: 'report' })
+    await tick()
+    await tick()
+    const b = await band($, surface)
+    expect(await shown(b)).toContain('finished')
+    expect(await labels(b)).toEqual(['report', '×'])
+    expect(seen.store.get('ended')).toEqual({ tee: 'card' })
+    const ui = await pane($, surface)
+    expect(await shown(ui)).toContain('E-abc/80-report.md')
+    expect((await ui.find({ type: 'Markdown' }))?.props.text).toBe('U report')
+    expect(await shown(ui)).not.toContain('E-tee')
+  })
+}
