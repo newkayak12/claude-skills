@@ -22,7 +22,7 @@ Claude Code 2.1.292 or newer. Older builds print one stderr line and skip the mo
 | 3 | Running-script guard | Denies Edit/Write on a `.sh`/`.bash` file while a process is running it | all sessions |
 | 4 | Worktree guard | Denies `git worktree remove --force` when the worktree has uncommitted changes; fails open if the path is gone | all sessions |
 | 5 | Fetch reminder | Fetches at session start (interactive sessions only) and toasts if `origin/main` is ahead | claude-skills repo only |
-| 6 | Push / bump ask | Asks before `git push` and the `patch-harness` / `patch-teams` version bump scripts; the command is denied unless Run is chosen (dismissing the prompt also denies); headless sessions pass without asking | claude-skills repo only |
+| 6 | Push / bump ask | Asks before `git push` and the `patch-harness` / `teams/skills/patch/patch.mjs` version bump scripts; the command is denied unless Run is chosen (dismissing the prompt also denies); headless sessions pass without asking | claude-skills repo only |
 | 7 | README without KOR | Toast on `git commit` when a staged `README.md` has no staged `KOR.md` | claude-skills repo only |
 | 8 | `claude -p` count | At turn end, status line `n claude -p child(ren) running` for headless children of this session; cleared at 0 | interactive |
 
