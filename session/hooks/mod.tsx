@@ -2,9 +2,9 @@ import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import {
-  addCommit, addDeny, addFile, addStep, emptyLedger, endTurn, fmtMs, parseNumstat, statOf, stepSpan,
+  addCommit, addDeny, addFile, addStep, emptyLedger, endTurn, fmtMs, isEmpty, parseNumstat, statOf, stepSpan, summarize,
 } from './ledger.ts'
-import type { Ledger } from './ledger.ts'
+import type { Ledger, Summary } from './ledger.ts'
 import { checkKill } from './kill.ts'
 import type { Verdict } from './kill.ts'
 import { ancestorsOf, fmtAge, matchOrphans, parsePs, PS_ARGV } from './procs.ts'
@@ -16,7 +16,16 @@ const ledger = atom({ plugin: 'session', key: 'ledger' } as const, emptyLedger()
 
 const statsAtom = atom({ plugin: 'session', key: 'stats' } as const, {} as Record<string, string>)
 
+const lastAtom = atom({ plugin: 'session', key: 'last' } as const, null as Summary | null)
+
 const PANE = 'session'
+const LAST_KEY = 'session.last'
+
+async function openPane($: any) {
+  await refreshStats($)
+  await pollOrphans($)
+  await $.ui.open({ id: PANE, title: 'Session' })
+}
 
 // One `git diff --numstat` for the touched files, never in a draw. No git or a slow one: keep what was there.
 async function refreshStats($: any) {
@@ -111,6 +120,13 @@ export const register: Register = on => {
     // First start of the session: defaults. A later start (hot reload) keeps what is there.
     await update($, tab, t => t ?? 'retro')
     await update($, band, b => b ?? false)
+    try {
+      const stored = (await $.store.get(LAST_KEY)) as Summary | undefined
+      await update($, lastAtom, () => stored ?? null)
+      await update($, band, () => stored !== undefined)
+    } catch {
+      await update($, band, () => false)
+    }
     await $.command.register({
       name: 'session',
       description: 'What this session left behind: files, commits, denied calls; stray claude -p children',
@@ -149,11 +165,66 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 
   // The pane opens only from its command.
-  on('command.run', { command: 'session' }, async $ => {
-    await refreshStats($)
-    await pollOrphans($)
-    await $.ui.open({ id: PANE, title: 'Session' })
+  on('command.run', { command: 'session' }, async ($, e) => {
+    if (e.args.trim() === 'retro') await update($, tab, () => 'retro')
+    await openPane($)
     return { text: 'Session pane opened.' }
+  }).catch(($, e, next) => next(e))
+
+  // Save the summary, then reset in place: /clear ends a session with no new session.start.
+  // No UI here and no git or ps: the terminal may be gone and the time is short. Headless runs too.
+  on('session.end', async ($, e, next) => {
+    try {
+      const l = await read($, ledger)
+      if (!isEmpty(l)) {
+        const day = new Date((await $.clock.now()) as number).toISOString().slice(0, 10)
+        await $.store.set(LAST_KEY, summarize(l, day))
+        await update($, ledger, () => emptyLedger())
+        await update($, statsAtom, () => ({}))
+      }
+    } catch {}
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  // One row above the prompt on the first start after a session that left something.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.props.hasSurvey || !(await read($, band))) return next(e)
+    const last = await read($, lastAtom)
+    if (!last) return next(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
+    return (
+      <Box flexDirection="column">
+        <Box borderStyle="round" borderDimColor paddingX={1} gap={1}>
+          <Box flexShrink={1}>
+            <Text wrap="truncate-end">
+              {`last session: ${last.files} files, ${last.commits} commits, ${last.denied} denied, longest gap ${fmtMs(last.longestMs)}`}
+            </Text>
+          </Box>
+          <Box flexShrink={0} gap={1}>
+            <Button
+              key="retro"
+              label="[Retro]"
+              onPress={async () => {
+                await update($, tab, () => 'retro')
+                await openPane($)
+              }}
+            />
+            <Button
+              key="dismiss"
+              label="[dismiss]"
+              onPress={async () => {
+                await update($, band, () => false)
+                await update($, lastAtom, () => null)
+                try {
+                  await $.store.delete(LAST_KEY)
+                } catch {}
+              }}
+            />
+          </Box>
+        </Box>
+        {await next(e)}
+      </Box>
+    )
   }).catch(($, e, next) => next(e))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -201,6 +272,19 @@ export const register: Register = on => {
     }
     const l = await read($, ledger)
     const stats = await read($, statsAtom)
+    const last = await read($, lastAtom)
+    // Nothing yet this session: show what the previous one left, as `/session retro` promises.
+    if (isEmpty(l) && last) {
+      return (
+        <Box flexDirection="column">
+          {header}
+          <Text bold color="claude">{`last session  ${last.day}`}</Text>
+          <Text bold color="claude">{`files (${last.files})`}</Text>
+          {last.fileList.map(f => <Text key={`f-${f}`} wrap="truncate-start">{`· ${f}`}</Text>)}
+          <Text>{`${last.commits} commits · ${last.denied} denied · longest gap ${fmtMs(last.longestMs)}`}</Text>
+        </Box>
+      )
+    }
     return (
       <Box flexDirection="column">
         {header}
