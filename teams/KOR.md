@@ -312,7 +312,7 @@ node teams/scripts/run.mjs --resume <task_id>
 |---|---|
 | `wiki_search` | 페이지 검색(한국어, 영어). |
 | `wiki_get` | 페이지 하나와 그 링크, 백링크. |
-| `wiki_resume` | 세션 시작용: 최근 `log/*` 페이지와 그 페이지가 링크한 페이지. |
+| `wiki_resume` | 최근 `log/*` 페이지와 그 페이지가 링크한 페이지. 엔진은 더 이상 `log/*`를 쓰지 않으므로, 여기 있는 페이지는 사람이나 worker가 쓴 것입니다. |
 | `wiki_list` | space별 페이지 목록. |
 | `wiki_write` | 승인 없이 페이지를 바로 저장합니다. 같은 `space/slug`를 다시 쓰면 갱신합니다. |
 | `wiki_propose` | 제안을 `_proposed/`에 씁니다. 페이지는 아닙니다. |
@@ -324,13 +324,12 @@ node teams/scripts/run.mjs --resume <task_id>
 `wiki_reject`는 검토 단계를 원하는 사람을 위해 남아 있습니다. 위키 루트는 워크트리에서 도는 워커도 항상
 메인 프로젝트(`task.cwd`)입니다.
 
-**태스크 엔진에서.** `createTask`는 최근 `log/*` 페이지(`wiki_resume`)를 태스크 context에 넣습니다.
+**태스크 엔진에서.** 엔진은 위키를 쓰지 않고, 태스크 context에 넣지도 않습니다.
 claude와 codex 노드 워커와 드라이버는 위키 도구를 받습니다(codex는 `-c mcp_servers.teams-wiki` 오버라이드).
-판정 단계(review, gate, accept, critique, test, audit, qa execute)와 매니저의 judge는 어느 벤더에서도
-위키를 보지 못합니다. report 노드가 끝나거나 report 전에 태스크가 blocked로 끝나면 L 태스크는 엔진이 `wiki_write`로 `log/<날짜>-<EPIC>` 페이지 하나를 씁니다(모델도 판정도 없음). 내용은 요청,
-출고된 패키지, 이어받은 페이지, 문서 경로입니다. 출고된 패키지 집합이 바뀔 때만 다시 쓰고, 출고된 것이
-없거나 size-S 태스크면 쓰지 않습니다. `task.wiki`는 `{mode, resumed?, log?}`를 기록하고 report에 "Wiki 변경"
-절이 붙습니다. 위키가 실패해도 태스크는 이전처럼 돌고, 오류는 `task.wiki.log`에 남습니다.
+맥락이 필요하면 `wiki_search` / `wiki_get`으로 찾고, 일하면서 나중에 기억할 가치가 있는 것만 `wiki_write`로
+씁니다. 판정 단계(review, gate, accept, critique, test, audit, qa execute)와 매니저의 judge는 어느 벤더에서도
+위키를 보지 못합니다. report에는 "Wiki 변경" 절이 붙습니다. 모드와, 태스크가 도는 동안 수정된 프로젝트
+`.teams_wiki`의 페이지(`id — title (source)`)를 모든 report 형태에 보여줍니다. `.teams_wiki`가 없으면 절도 없습니다.
 
 ## Mod (Claude Code 라이브 UI)
 

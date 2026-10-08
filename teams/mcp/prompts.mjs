@@ -259,7 +259,7 @@ function packageBlock(run, n) {
 // with no recorded executor runs on the host.
 const WIKI_PARAGRAPH = [
   '## Project wiki',
-  'Read first: wiki_search / wiki_resume. Write what other stages or the next EPIC need - findings with sources, decisions with reasons, interfaces and contracts, pitfalls - with wiki_write, source = "%NODE%". Link pages with [[space/slug]]. Do not write in space log. The wiki is not judged - gates judge the work.',
+  'When you need context, find it with wiki_search (and wiki_get). Write with wiki_write only what is worth remembering later - facts with sources, decisions with reasons, contracts, pitfalls - source = "%NODE%". Link pages with [[space/slug]]. The wiki is not judged - gates judge the work.',
 ];
 const WIKI_JUDGE_LINE = 'Do not read or write the project wiki; it is not evidence.';
 function wikiBlock(run, n) {

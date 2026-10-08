@@ -316,7 +316,7 @@ way. Node 18+ is enough; `wiki_status`, `tm_status` and the report show the mode
 |---|---|
 | `wiki_search` | Search pages (Korean and English). |
 | `wiki_get` | One page with its links and backlinks. |
-| `wiki_resume` | Session start: the most recent `log/*` pages and the pages they link to. |
+| `wiki_resume` | The most recent `log/*` pages and the pages they link to. The engine no longer writes `log/*`; pages there are ones people or workers wrote. |
 | `wiki_list` | Pages grouped by space. |
 | `wiki_write` | Save a page directly, no approval. Same `space/slug` again updates it. |
 | `wiki_propose` | Write a proposal to `_proposed/`; never a page. |
@@ -328,15 +328,13 @@ There are 9 tools. Subagents write with `wiki_write`, which needs no approval; `
 `wiki_accept` / `wiki_reject` stay for people who want a review step. The wiki root is always the main
 project (`task.cwd`), also for workers running in a worktree.
 
-**In the task engine.** `createTask` adds the latest `log/*` pages (`wiki_resume`) to the task context.
+**In the task engine.** The engine does not write the wiki and does not inject it into the task context.
 Claude and codex node workers and drivers get the wiki tools (codex through `-c mcp_servers.teams-wiki`
-overrides). The judging stages (review, gate, accept, critique, test, audit, qa execute) and the manager's
-judges do not see the wiki, for any vendor. When the report node finishes, or the task ends blocked
-before a report, an L task gets one `log/<date>-<EPIC>` page written by the engine with
-`wiki_write`, no model and no judging: the request, the packages that shipped, the pages it resumed from
-and the doc paths. It is rewritten only when the set of shipped packages changes; nothing shipped, or a
-size-S task, writes nothing. `task.wiki` records `{mode, resumed?, log?}` and the report gets a
-"Wiki 변경" section. If the wiki fails, the task runs as before and the error is recorded on `task.wiki.log`.
+overrides): they search it with `wiki_search` / `wiki_get` when they need context, and write with
+`wiki_write` while working, only what is worth remembering later. The judging stages (review, gate, accept,
+critique, test, audit, qa execute) and the manager's judges do not see the wiki, for any vendor. The
+report gets a "Wiki 변경" section: the mode and the pages under the project's `.teams_wiki` modified
+while the task ran (`id — title (source)`), in every report variant. No `.teams_wiki`, no section.
 
 ## Mod (Claude Code live UI)
 
