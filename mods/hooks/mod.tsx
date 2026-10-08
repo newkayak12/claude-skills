@@ -1,6 +1,7 @@
 import type { Register } from 'claude-code'
 
 const REPO_NAME = /claude-skills(\.git)?$/
+const CLAUDE_P = /\bclaude\b.*\s-p(\s|$)/
 const MODEL_DENY = 'mods: pass model ("sonnet" for build work, "opus" for plan/judge) — without it the subagent inherits the parent model.'
 
 // reload-safe caches only; nothing here is read for diagnostics
@@ -26,6 +27,27 @@ function marketplaceCandidates(root: string): string[] {
     resolve(root, '../.claude-plugin/marketplace.json'),
     resolve(root, `../../../../marketplaces/${mkt}/.claude-plugin/marketplace.json`),
   ]
+}
+
+// number of claude -p processes among the descendants of `engine` (D2); a wrapper shell
+// counts once: a match whose parent also matches is the same job
+function countClaudeP(ps: string, engine: number): number {
+  const rows = ps.split('\n').flatMap(line => {
+    const m = line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/)
+    return m ? [{ pid: Number(m[1]), ppid: Number(m[2]), cmd: m[3] }] : []
+  })
+  const below = new Set<number>([engine])
+  for (let grew = true; grew;) {
+    grew = false
+    for (const r of rows) {
+      if (!below.has(r.pid) && below.has(r.ppid)) {
+        below.add(r.pid)
+        grew = true
+      }
+    }
+  }
+  const hits = new Set(rows.filter(r => below.has(r.pid) && r.pid !== engine && CLAUDE_P.test(r.cmd)).map(r => r.pid))
+  return rows.filter(r => hits.has(r.pid) && !hits.has(r.ppid)).length
 }
 
 export const register: Register = (on, options) => {
@@ -128,5 +150,17 @@ export const register: Register = (on, options) => {
       if (lonely.length) $.ui.toast(`⚠ README without KOR: ${lonely.join(', ')}`, { timeoutMs: 8000 })
     }
     return next(e)
+  }).catch(($, e, next) => next(e))
+
+  // Turn-end check: headless claude -p children of this session still alive (D2).
+  on('turn.complete', async ($, e, next) => {
+    const r = await next(e)
+    if ((await $.session.surfaces()).length === 0) return r
+    const me = await $.process.run(['sh', '-c', 'echo $PPID'])
+    const ps = await $.process.run(['ps', '-A', '-o', 'pid=,ppid=,command='])
+    const engine = Number(me.stdout.trim())
+    const n = Number.isInteger(engine) && engine > 0 ? countClaudeP(ps.stdout, engine) : 0
+    $.ui.status(n > 0 ? `⧗ ${n} claude -p child(ren) running` : undefined)
+    return r
   }).catch(($, e, next) => next(e))
 }
