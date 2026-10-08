@@ -29,7 +29,7 @@ const bottom = (on: On, w: World = {}) => {
   on('fs.read', (_$, e) => {
     if (e.path.endsWith('/.claude-plugin/marketplace.json')) return { value: MARKETPLACE } as never
     const m = /\/([a-z]+)\/\.mcp\.json$/.exec(e.path)
-    if (m && SERVERS[m[1]]) return { value: JSON.stringify({ mcpServers: { [SERVERS[m[1]][0]]: {} } }) } as never
+    if (m && SERVERS[m[1]!]) return { value: JSON.stringify({ mcpServers: { [SERVERS[m[1]!]![0]!]: {} } }) } as never
     throw new Error('ENOENT')
   })
   on('fs.list', (_$, e) => {
@@ -87,7 +87,7 @@ test('S5 owned mcp failure is recorded with raw text only under local', async ($
     error: 'mcp down ' + SECRET,
     mcp_server: { name: 'knowledge-local', source: 'plugin' },
   }))
-  const [e] = log(store)
+  const e = log(store)[0]!
   expect([e.kind, e.reason, e.plugin, e.tool]).toEqual(['bug', 'mcp_error', 'knowledge', 'knowledge_get'])
   expect(e.local.text).toBe('mcp down ' + SECRET)
   expect(JSON.stringify({ ...e, local: undefined })).not.toContain(SECRET)
@@ -113,12 +113,12 @@ test('S2b goal-gate FAIL from fallback-check is recorded as local outcome', asyn
 
 test('S4 diag bug records the note under local with the last skill', async ($, on) => {
   const store = await boot($, on)
-  const usage = await $.command.run({ command: 'diag', args: 'bug' })
+  const usage = await $.command.run({ command: 'diag', args: 'bug' } as never)
   expect((usage as { text: string }).text).toMatch(/^usage: \/diag bug <note>/)
   expect(log(store)).toEqual([])
   await $.tool.call({ tool: 'Skill', skill: 'develop:clean-code' })
-  await $.command.run({ command: 'diag', args: 'bug it hangs ' + SECRET })
-  const [e] = log(store)
+  await $.command.run({ command: 'diag', args: 'bug it hangs ' + SECRET } as never)
+  const e = log(store)[0]!
   expect([e.kind, e.reason, e.plugin, e.skill, e.local.note]).toEqual(['report', 'user_report', 'develop', 'clean-code', 'it hangs ' + SECRET])
   expect(JSON.stringify({ ...e, local: undefined })).not.toContain(SECRET)
 })
@@ -126,10 +126,10 @@ test('S4 diag bug records the note under local with the last skill', async ($, o
 test('typed /plugin:free text never becomes the last skill or any sent field', async ($, on) => {
   const store = await boot($, on)
   await $.prompt.submit({ text: `/develop:${SECRET} please`, wait: false, origin: { kind: 'composer' } } as never)
-  await $.command.run({ command: 'diag', args: 'bug n1' })
+  await $.command.run({ command: 'diag', args: 'bug n1' } as never)
   await $.prompt.submit({ text: '/develop:clean-code', wait: false, origin: { kind: 'composer' } } as never)
-  await $.command.run({ command: 'diag', args: 'bug n2' })
-  const [a, b] = log(store)
+  await $.command.run({ command: 'diag', args: 'bug n2' } as never)
+  const [a, b] = log(store) as [Logged, Logged]
   expect([a.skill, a.plugin]).toEqual([undefined, undefined])
   expect([b.skill, b.plugin]).toEqual(['clean-code', 'develop'])
   expect(JSON.stringify(log(store).map(e => ({ ...e, local: undefined })))).not.toContain(SECRET)

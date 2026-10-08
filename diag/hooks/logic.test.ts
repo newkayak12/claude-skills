@@ -72,7 +72,7 @@ test('appendEntry dedupes within 5 s and keeps 500', () => {
   let big: Entry[] = []
   for (let i = 0; i < 520; i++) big = appendEntry(big, entry({ ts: i * 10000 }))
   expect(big.length).toBe(500)
-  expect(big[0].ts).toBe(20 * 10000)
+  expect(big[0]!.ts).toBe(20 * 10000)
 })
 
 test('buildBatch aggregates counts per day, reason, plugin and skill', () => {
@@ -109,5 +109,5 @@ test('buildBatch never emits outcomes, local fields or session ids', () => {
   expect(json).not.toContain('/Users/a')
   expect(json).not.toContain('goal_failed')
   expect(json).not.toContain('subgoal_failed')
-  expect(Object.keys(out[0].properties).sort()).toEqual(['count', 'day', 'plugin', 'reason', 'skill'])
+  expect(Object.keys(out[0]!.properties).sort()).toEqual(['count', 'day', 'plugin', 'reason', 'skill'])
 })
