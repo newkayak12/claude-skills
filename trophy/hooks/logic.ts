@@ -16,6 +16,7 @@ export type Achievement = {
   id: string
   title: string
   description: string
+  ko: { title: string; description: string }
   hidden?: true
   rule: Rule
 }
