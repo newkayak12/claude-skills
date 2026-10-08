@@ -2,6 +2,8 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
+import { barCells } from './mod'
+
 const CONFIG = '.claude/harness-gate.json'
 const DECISION = '.claude/.harness-last-decision.json'
 const NOW = 1_000_000_000
@@ -107,6 +109,11 @@ test('open runs per stage: fallback and graph; stale, reported and finished runs
   const seen = world(on, ['terminal'], { ...runFiles }, runDirs)
   await start($)
   expect(lastStatus(seen)).toBe('Plan(1) / Implement(1) / Gate(1) · graph Implement(1)')
+})
+
+test('band bar: 1 of 4 passed fills 3 of 10 cells', () => {
+  expect(barCells({ slug: 'x', stage: 'implement', passed: 1, failed: 0, total: 4 })).toEqual({ ok: 3, bad: 0, rest: 7 })
+  expect(barCells({ slug: 'x', stage: 'implement', passed: 1, failed: 1, total: 4 })).toEqual({ ok: 3, bad: 3, rest: 4 })
 })
 
 test('graph runs alone', async ($, on) => {
