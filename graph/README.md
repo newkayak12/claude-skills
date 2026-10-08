@@ -50,6 +50,7 @@ Zero runtime dependencies, Node 18+.
 Optional: `graph:install` can run `develop:like-my-code` to write `.claude/conventions/`; the broker then tells every plan, setgoal, implement, and test node, on any vendor, to read and follow the relevant files.
 
 ## Status
+- v1.10.0 — the broker tells every plan/setgoal/implement/test node, whatever the vendor, to follow `.claude/conventions/**` (setgoal folds them into acceptance); install offers `develop:like-my-code` for a reference project
 - v1.9.1 — trophy rides along: the first interactive session after this update installs trophy once if missing (uninstall respected)
 
 - **v1.9.0 — Mod: `/graph-live` pane** (Claude Code 2.1.292+, early access, interactive sessions): a read-only view of this folder's newest graph run in the teams 0.46.0 style. Tabs Flow / Nodes (keys `1`-`2`), a stage rail, the Next / Now / Blocked line, one row per subgoal (impl → test → gate) and a gates bar; Nodes is a To do / Doing / Done board. The mod only reads the run files; files over 4 MiB are skipped. No band of its own: graph runs already show in the harness pipeline band. English by default, Korean with Claude Code's `language`. Mod tests 20; real Claude Code captures EN/KO.

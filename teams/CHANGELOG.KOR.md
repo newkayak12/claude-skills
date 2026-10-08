@@ -5,6 +5,7 @@
 `teams` 플러그인의 모든 릴리스를 최신순으로 적었습니다. 예전 KOR.md의 `## 상태` 절을 그대로 옮겨 온 것입니다. 새 릴리스 줄은 `teams:patch`가 아래 `## 상태` 맨 위에 추가합니다.
 
 ## 상태
+- v0.51.0 — **install: 참조 프로젝트** (2026-10-08). install이 참조 프로젝트 여부를 물음(기본 아니오). 있으면 `develop:like-my-code`가 `.claude/conventions/`를 작성하며, teams가 컨벤션을 접는 방식(plan/setgoal은 경로+첫 제목만, implement는 첫 제목이 대상 파일과 맞을 때만 본문, 블록 전체 4000자 상한)을 안내받음. develop이 없거나 템플릿이 없으면(`missing-src`) 건너뜀. 코드 변경 없음.
 - v0.50.2 — **teams-wiki 문서: 도식과 무엇을 쓰나** (2026-10-08). README/KOR 위키 절에 mermaid 도식(worktree의 워커가 메인 프로젝트 wiki에 쓰고 읽음, 나중 task가 스스로 읽음, 판정 단계와 judge는 wiki 없음, report에 task 동안 바뀐 페이지)과 무엇을 쓰는지 짧은 목록을 넣었습니다. 설계 문서에 현재 구조 도식. 코드 변경 없음.
 - v0.50.1 — trophy 함께 설치: 업데이트 후 첫 대화형 세션에서 trophy가 없으면 한 번 설치(삭제는 존중)
 - v0.50.0 — **teams-wiki를 EPIC에서 분리** (2026-10-08). wiki는 EPIC 기록이 아니라 worker가 일하면서 남기는 메모 공간입니다. 엔진은 더 이상 `log/<날짜>-<EPIC>` 페이지를 쓰지 않고(report 노드, `daemon_done`), 새 task의 context에 wiki 내용을 넣지도 않습니다. worker 프롬프트: 필요할 때 `wiki_search`/`wiki_get`으로 찾아 읽고, 나중에 기억할 것(출처 달린 사실, 이유 달린 결정, 계약, 함정)만 `wiki_write`. 모든 report(L, S, blocked, harness)에 task가 도는 동안(시작부터 report 노드 종료까지, render 시각 아님) 수정된 `.teams_wiki` 페이지 목록이 나옵니다. Node 22.12·24 전체 테스트 실패 0.
