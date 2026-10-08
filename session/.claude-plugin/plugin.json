@@ -1,7 +1,7 @@
 {
   "name": "session",
   "description": "What a session left behind and a safety net: a /session pane with files changed, commits, denied calls and the longest gap, a retro band on the next start, a safe stop for stray claude -p children, guards that confirm destructive commands and secret-file writes, and /memo notes pinned to the model's context.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": {
     "name": "newkayak12"
   },

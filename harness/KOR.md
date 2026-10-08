@@ -21,6 +21,8 @@ Plan(opus) → SetGoal(opus) → Implement(Codex 사용 시) → Test(Codex 사�
 /plugin uninstall harness@newkayak12-claude-skills
 ```
 
+> **trophy 함께 설치.** 이 버전부터 이 플러그인을 설치하거나 업데이트한 뒤 첫 대화형 세션에서, trophy가 없으면 [trophy](../trophy/KOR.md)(업적)를 user 범위로 한 번 설치합니다. 동의하기 전에는 아무것도 보내지 않으며, trophy를 지우면 다시 설치하지 않습니다. 미리 거부하려면: `mkdir -p ~/.claude/plugins/.newkayak12-trophy-ride.done`. `sh`가 필요합니다(sh가 없는 Windows는 해당 없음).
+
 마켓플레이스 설치만으로는 아무것도 강제되지 않습니다 — 스킬이 쓸 수 있게 될 뿐이에요. 대상
 프로젝트 안에서 `install` 스킬을 돌려야 거버넌스가 상시화됩니다
 ([프로젝트에 설치하기](#프로젝트에-설치하기) 참고).
@@ -259,6 +261,7 @@ harness는 작은 mod를 함께 제공합니다. 열린 실행을 단계별로 �
 알려진 제약: 상태 줄은 게이트 설정을 세션의 작업 디렉터리 기준으로 읽습니다. UI 표면 없이(헤드리스 또는 SDK 호스팅) 시작한 세션은 나중에 클라이언트가 붙어도 mod가 꺼진 채로 남습니다. 새 세션을 시작해야 켜집니다(바뀌지 않은 mod를 다시 로드해도 session.start는 다시 발생하지 않습니다).
 
 ## 상태
+- v1.26.2 — trophy 함께 설치: 업데이트 후 첫 대화형 세션에서 trophy가 없으면 한 번 설치(삭제는 존중)
 - v1.26.1 — Mod: 밴드와 상태 줄이 이 worktree의 실행만 셈(다른 worktree는 다른 세션 몫)
 - v1.26.0 — Mod: `/harness-gate` 패널이 teams 0.46.0 스타일의 실행 화면이 됨: 실행 / 단위 / 게이트 탭(키 `1`-`3`), 6단계 진행선, 단위별 상태, goal gate 일치율 막대, 지금 하는 일. `/harness-gate`는 게이트 탭으로 열림(게이트 정보는 그대로, 게이트 설정을 읽을 수 없을 때의 안내 추가). 1.25.0의 상태 줄과 파이프라인 밴드는 유지. 기본 영어, Claude Code `language`가 한국어면 한국어. mod 테스트 38개, 실제 Claude Code 영어·한국어 캡처로 확인
 - v1.25.1 — Mod: 밴드 호버 카드가 단계 줄 아래에 펼쳐짐(밴드 위로 띄운 카드는 잘렸음; 실제 화면에서 확인); graph 실행은 요청 문장으로 표시

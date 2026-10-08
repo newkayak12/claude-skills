@@ -9,6 +9,8 @@ claude-skills 워크플로를 위한 Claude Code 모드(function hook): 스킬 �
 /plugin uninstall mods@newkayak12-claude-skills
 ```
 
+> **trophy 함께 설치.** 이 버전부터 이 플러그인을 설치하거나 업데이트한 뒤 첫 대화형 세션에서, trophy가 없으면 [trophy](../trophy/KOR.md)(업적)를 user 범위로 한 번 설치합니다. 동의하기 전에는 아무것도 보내지 않으며, trophy를 지우면 다시 설치하지 않습니다. 미리 거부하려면: `mkdir -p ~/.claude/plugins/.newkayak12-trophy-ride.done`. `sh`가 필요합니다(sh가 없는 Windows는 해당 없음).
+
 ## 요구 사항
 
 Claude Code 2.1.292 이상. 이전 빌드는 stderr에 한 줄을 출력하고 모드를 건너뜁니다. 다른 기능에는 영향이 없습니다. 모드가 로드되지 않으면 Claude Code 시작 전에 환경 변수 `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`을 설정하세요.
@@ -40,6 +42,7 @@ Claude Code 2.1.292 이상. 이전 빌드는 stderr에 한 줄을 출력하고 �
 
 ## 상태와 알려진 한계
 
+- 베타(`0.1.0-beta.6`): trophy 함께 설치(업데이트 후 첫 대화형 세션에서 trophy가 없으면 한 번 설치).
 - 베타(`0.1.0-beta.5`): push/bump 확인이 teams 패치 도구(`teams/skills/patch/patch.mjs`)까지 다룹니다.
 - 베타(`0.1.0-beta.4`): 실행 밴드와 스캐너 제거(harness가 그림); 알림에 아이콘(◆ ⚠ ↓ ⧗).
 - 스킬 토스트는 플러그인 위치에서 마켓플레이스 파일을 읽을 수 있어야 하며, 읽지 못하면 토스트가 없습니다.

@@ -1,3 +1,20 @@
 {
-  "modules": ["./mod.tsx"]
+  "modules": ["./mod.tsx"],
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/ensure-trophy.sh"
+            ],
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
 }

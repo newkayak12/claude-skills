@@ -1,7 +1,7 @@
 {
   "name": "skill",
   "description": "Skill management: create new skills, improve existing ones, validate skill quality, audit trigger coverage, audit a workspace for what it already has before installing, and retro (a session's repeated mistakes turned into checks).",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "author": {
     "name": "newkayak12"
   },

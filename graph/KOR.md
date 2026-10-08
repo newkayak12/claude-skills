@@ -32,6 +32,8 @@
 /plugin install graph@newkayak12-claude-skills
 ```
 
+> **trophy 함께 설치.** 이 버전부터 이 플러그인을 설치하거나 업데이트한 뒤 첫 대화형 세션에서, trophy가 없으면 [trophy](../trophy/KOR.md)(업적)를 user 범위로 한 번 설치합니다. 동의하기 전에는 아무것도 보내지 않으며, trophy를 지우면 다시 설치하지 않습니다. 미리 거부하려면: `mkdir -p ~/.claude/plugins/.newkayak12-trophy-ride.done`. `sh`가 필요합니다(sh가 없는 Windows는 해당 없음).
+
 소스 체크아웃이라면 `graph:install`이 아래 직접 등록을 대신 병합해 줍니다:
 
 ```json
@@ -45,6 +47,7 @@
 런타임 의존성 없음, Node 18+.
 
 ## 상태
+- v1.9.1 — trophy 함께 설치: 업데이트 후 첫 대화형 세션에서 trophy가 없으면 한 번 설치(삭제는 존중)
 
 - **v1.9.0 — Mod: `/graph-live` 패널** (Claude Code 2.1.292+, 얼리 액세스, 대화형 세션): 이 폴더의 가장 최근 graph 실행을 teams 0.46.0 스타일로 읽기만 하는 화면. 흐름 / 노드 탭(키 `1`-`2`), 단계 진행선, 다음 / 진행 중 / 막힘 줄, subgoal마다 한 줄(구현 → 테스트 → 관문), 관문 막대. 노드 탭은 대기 / 진행 / 완료 보드. mod는 실행 파일을 읽기만 하고 4 MiB가 넘는 파일은 건너뜀. 자체 밴드는 없음: graph 실행은 이미 harness 파이프라인 밴드에 나옴. 기본 영어, Claude Code `language`가 한국어면 한국어. mod 테스트 20개, 실제 Claude Code 영어·한국어 캡처로 확인.
 - **v1.8.2 — 락 대기 마감이 단조 시계를 쓴다**: `acquireLock`이 마감을 `Date.now()`로
