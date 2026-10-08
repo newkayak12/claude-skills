@@ -243,3 +243,17 @@ test('band: hover card lists the run slug, bar and failed count', async ($, on) 
   expect(await ui.find({ type: 'Text', text: '1 failed' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '▰▰▰▰▰' })).toBeDefined()
 })
+
+test('band: a graph run is named by its request first line, else its run id', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const files: Files = {
+    ...runFiles,
+    'g4.json': JSON.stringify({ request: 'Ship the wiki memory\nwith details', nodes: [{ stage: 'plan', state: 'running' }] }),
+  }
+  world(on, ['terminal'], files, { '.harness-run': [['broker', 'dir']], '.harness-run/broker/runs': [['g1.json', 'file'], ['g4.json', 'file']] })
+  await start($)
+  const ui = await band($, on)
+  expect(await ui.find({ type: 'Text', text: 'Ship the wiki memory' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'g1' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'graph · Plan' })).toBeDefined()
+})
