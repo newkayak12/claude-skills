@@ -7,7 +7,7 @@
 
 **Goal:** a person in any repo sees what a session left behind (files changed, commits, denied
 calls, longest step) in a `/session` pane and as a band on the next start, sees which `claude -p`
-children are still alive, and can stop one safely. `mods` feature 9 then moves here.
+children are still alive, and can stop one safely. `mods` feature 8 then moves here.
 
 **Architecture:** new top-level plugin `session` with one hooks module `mod.tsx` that only wires
 events and drawing; pure logic in sibling `.ts` files. `hooks/hooks.json` lists `modules`, so the
@@ -136,13 +136,13 @@ broken store → no throw.
 
 - [ ] 1: tests (red) → 2: implement → 3: green → 4: commit
 
-### Task 7: Status-line parity, then remove `mods` feature 9 (contract step)
+### Task 7: Status-line parity, then remove `mods` feature 8 (contract step)
 **Files:** 7a: modify `session/hooks/mod.tsx`, `session/hooks/pane.test.ts`. 7b (separate later commit): `mods/hooks/mod.tsx`
 (delete `CLAUDE_P`, `countClaudeP`, the `turn.complete` hook), `mods/hooks/mod.test.ts` (their tests), `mods/README.md`,
 `mods/KOR.md` (row 9 → "moved to `session`"; `mods` users without `session` lose the status).
 **Interfaces:** 7a (expand): at turn end `$.ui.status(n > 0 ? '<n> claude -p child(ren) running' : undefined)` from the
 Task 4 poll, same text as `mods`. 7b (contract) only after `session` ships, never in one release with 7a (double status
-write). The `mods` bump to `0.1.0-beta.3` is ON HOLD.
+write). The `mods` bump to `0.1.0-beta.4` is ON HOLD.
 **Blocked by:** Tasks 4 and 6 for 7a; 7b by 7a being released (user's say-so).
 **Pass bar:** 7a: 2 `claude -p` rows → status `2 claude -p child(ren) running`, 0 → `undefined`, headless → no status
 call. 7b: `claude plugin test mods` and `validate mods` green, `grep -rn "countClaudeP\|CLAUDE_P" mods/` empty, READMEs and KORs agree.
