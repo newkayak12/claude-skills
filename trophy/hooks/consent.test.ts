@@ -13,10 +13,12 @@ const bottom = (on: On) => {
   on('ui.render', () => ({ type: 'Box', props: {}, children: [] }) as any)
 }
 const start = { cwd: '/w', surface: 'terminal', isInteractive: true } as const
+// The band asks only once something is unlocked.
+const UNLOCKED = { 'trophy.unlocked': { 'first-blood': '2026-10-06' } }
 const run = ($: any, args: string) => $.command.run({ command: 'trophy-telemetry', args } as any)
 
 test('a fresh store asks: one row, three buttons; [안 보내기] sets no and the band goes', async ($, on) => {
-  const store = memoryStore(on)
+  const store = memoryStore(on, UNLOCKED)
   sessionAt(on)
   language(on, 'Korean')
   bottom(on)
@@ -34,7 +36,7 @@ test('a fresh store asks: one row, three buttons; [안 보내기] sets no and th
 })
 
 test('by default the band asks in English with the same data listed and no Hangul', async ($, on) => {
-  memoryStore(on)
+  memoryStore(on, UNLOCKED)
   sessionAt(on)
   bottom(on)
   await $.session.start(start)
@@ -47,7 +49,7 @@ test('by default the band asks in English with the same data listed and no Hangu
 })
 
 test('the consent band draws the band beneath it', async ($, on) => {
-  memoryStore(on)
+  memoryStore(on, UNLOCKED)
   sessionAt(on)
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
@@ -57,6 +59,21 @@ test('the consent band draws the band beneath it', async ($, on) => {
 
   expect(await ui.find({ key: 'send' })).toBeDefined()
   expect(await ui.find({ text: 'engine band' })).toBeDefined()
+})
+
+test('a start with nothing unlocked asks nothing; the first unlock brings the question', async ($, on) => {
+  memoryStore(on)
+  sessionAt(on)
+  bottom(on)
+  on('ui.toast', () => ({ value: undefined }))
+  on('skill.prompt', (_$, e) => ({ text: e.text }))
+  await $.session.start(start)
+  const ui = await $.ui.mount({ plugin: 'trophy', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  expect(await ui.find({ key: 'send' })).toBeUndefined()
+
+  await $.skill.prompt({ skill: 'think:grill', text: 'x' })
+
+  expect(await ui.find({ key: 'send' })).toBeDefined()
 })
 
 test('nothing is asked in a non-interactive session', async ($, on) => {
@@ -86,7 +103,7 @@ test('/trophy-telemetry on, off and status; only these and [보내기] set yes',
 })
 
 test('[보내기] sets yes', async ($, on) => {
-  const store = memoryStore(on)
+  const store = memoryStore(on, UNLOCKED)
   sessionAt(on)
   bottom(on)
   await $.session.start(start)
@@ -101,6 +118,7 @@ test('[보내기] sets yes', async ($, on) => {
 const SEED = {
   'trophy.installId': 'install-1',
   'trophy.uses': [{ skill: 'think:grill', plugin: 'think', day: '2026-10-06', session: 's', ts: 1 }],
+  ...UNLOCKED,
 }
 const fetching = (on: On, consent: Record<string, unknown>) => {
   const store = memoryStore(on, { ...SEED, ...consent })
@@ -206,7 +224,7 @@ test('no on the shared seed fetches nothing', async ($, on) => {
 })
 
 test('the consent band stands out (double frame, every line whole) and draws its three buttons alike', async ($, on) => {
-  memoryStore(on)
+  memoryStore(on, UNLOCKED)
   sessionAt(on)
   bottom(on)
   await $.session.start(start)

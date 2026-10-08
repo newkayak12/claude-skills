@@ -44,7 +44,7 @@ Sessions that are not interactive (`claude -p`, so every teams/graph adapter ses
 
 ## Telemetry — what is sent, where, and how to stop it
 
-**Nothing is sent unless you opt in.** The first interactive session asks in a double-framed box above the prompt
+**Nothing is sent unless you opt in.** Once your first achievement unlocks, trophy asks in a double-framed box above the prompt
 (what is sent, what is never sent, and three buttons drawn alike); `[Show contents]` shows the exact JSON of the next send before you decide. Until you answer, nothing
 leaves your machine. Declining is remembered; it is never asked again. The answer is saved with the
 version of the question (v2 names error codes): a yes given to the older question (v1) is asked once more,
