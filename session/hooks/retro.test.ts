@@ -64,6 +64,14 @@ test('an empty ledger stores nothing', async ($, on) => {
   expect(store.has('session.last')).toBe(false)
 })
 
+test('a steps-only ledger stores nothing and keeps the previous summary', async ($, on) => {
+  const { store } = world(on, { store: { 'session.last': LAST }, state: { 'session.ledger': { files: [], commits: [], denied: [], steps: [1000, 5000] } } })
+
+  await $.session.end(END)
+
+  expect(store.get('session.last')).toEqual(LAST)
+})
+
 test('a broken store does not throw', async ($, on) => {
   const { store } = world(on, { state: { 'session.ledger': LEDGER } })
   store.broken = true
@@ -108,6 +116,22 @@ test('dismiss removes the band and the key; a second start shows none', async ($
   expect(texts(await (await band($)).drawn())).toEqual([])
   await start($)
   expect(texts(await (await band($)).drawn())).toEqual([])
+})
+
+test('the band shows once: a second start without dismiss shows none, retro still works', async ($, on) => {
+  const { store } = world(on, { store: { 'session.last': LAST } })
+  await start($)
+  const first = await band($)
+  expect(texts(await first.drawn()).length).toBeGreaterThan(0)
+  await first.unmount()
+
+  expect(store.has('session.last')).toBe(false)
+  await start($)
+
+  expect(texts(await (await band($)).drawn())).toEqual([])
+  await $.command.run({ command: 'session', args: 'retro' } as any)
+  const lines = texts(await (await $.ui.mount({ plugin: 'session', surface: 'terminal', component: 'Pane', requestId: 'session', props: PANE })).drawn())
+  expect(lines.some(l => l.includes('last session'))).toBe(true)
 })
 
 test('the Retro button opens the pane on the Retro tab', async ($, on) => {
