@@ -26,8 +26,10 @@ When a session ends, the summary is saved (also for `claude -p` runs). The next 
 
 No `kill -9`, no process groups, no pattern kills, no "stop all". A refusal shows a toast and sends nothing; a process that already ended just clears its row.
 
+A wrapper shell and its `claude -p` child show as one row; `[stop]` targets the inner `claude -p`.
+
 ## Status line
-At the end of a turn, `⧗ N claude -p child(ren) running` shows while children are alive. This replaces feature 8 of `mods`, which no longer has it.
+At the end of a turn the plugin sets one status line: `⧗ N claude -p child(ren) running` while children are alive, and `guard: N denied` once the guard has denied something. When both apply they are joined with ` · `. The line is cleared only when both are empty; headless runs show nothing. `mods` still has its own `claude -p` count, so both can show while both plugins are installed.
 
 ## Guard
 Before a Bash command or a Write/Edit runs, the guard checks it against a few rules and asks you first (or blocks, see Modes). It works in every repo, including bypass-permissions sessions.
