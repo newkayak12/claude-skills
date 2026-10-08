@@ -8,6 +8,7 @@
 
 import { REASONING_STAGES, FLOWS, VERDICT_FIELD, kindSkills, kindOf } from './graph.mjs';
 import { conventionsBlock } from './conventions.mjs';
+import { JUDGING_STAGES } from './routing.mjs';
 
 // Every upstream handoff inserted into a downstream prompt is sliced to this many
 // characters before it reaches the model. Restores a budget the original generation
@@ -252,6 +253,23 @@ function packageBlock(run, n) {
   return L;
 }
 
+// The project wiki (.teams_wiki in the main project) is how claude workers leave documents for
+// other stages and the next EPIC. It is never evidence: judging stages are told to stay out, and
+// only a claude executor that is not judging (and not a person) is told to use it. A node with no
+// recorded executor runs on the host.
+const WIKI_PARAGRAPH = [
+  '## Project wiki',
+  'Read first: wiki_search / wiki_resume. Write what other stages or the next EPIC need - findings with sources, decisions with reasons, interfaces and contracts, pitfalls - with wiki_write, source = "%NODE%". Link pages with [[space/slug]]. Do not write in space log. The wiki is not judged - gates judge the work.',
+];
+const WIKI_JUDGE_LINE = 'Do not read or write the project wiki; it is not evidence.';
+function wikiBlock(run, n) {
+  const asg = n.assignment || {};
+  if (n.executor === 'human' || asg.executor === 'human' || (run.human_gates || []).includes(n.stage)) return null;
+  if (JUDGING_STAGES.has(n.stage)) return [WIKI_JUDGE_LINE];
+  const ex = [n.executor, n.vendor].find((x) => x && x !== 'self') || run.host_vendor;
+  return ex === 'claude' ? WIKI_PARAGRAPH.map((l) => l.replace('%NODE%', n.node_id)) : null;
+}
+
 export function composePrompt(run, n, briefing) {
   const scopedExecution = run.allocation === 'balanced' && ['implement', 'test', 'draft'].includes(n.stage) && briefing.subgoal;
   const lines = [];
@@ -282,6 +300,9 @@ export function composePrompt(run, n, briefing) {
     lines.push(`This is a reasoning node. Do not modify project files.`);
     lines.push('');
   }
+
+  const wiki = wikiBlock(run, n);
+  if (wiki) lines.push(...wiki, '');
 
   if (!scopedExecution) {
     lines.push(`## Request`);

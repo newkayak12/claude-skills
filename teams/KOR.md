@@ -298,8 +298,9 @@ node teams/scripts/run.mjs --resume <task_id>
 
 ## 위키 메모리 (teams-wiki)
 
-`teams-wiki`는 이 플러그인의 세 번째 MCP 서버로, 세션보다 오래 가는 프로젝트 메모리입니다. 태스크
-엔진 없이도 서버는 동작하며, 엔진은 아래 "태스크 엔진에서"처럼 위키를 씁니다.
+`teams-wiki`는 이 플러그인의 세 번째 MCP 서버로, 서브에이전트(claude 노드 워커와 드라이버)가 메인 프로젝트의
+`.teams_wiki`에 문서로 소통하는 곳이자, 세션보다 오래 가는 프로젝트 메모리입니다. 태스크 엔진 없이도 서버는
+동작하며, 엔진은 아래 "태스크 엔진에서"처럼 위키를 씁니다.
 
 페이지는 `.teams_wiki/<space>/<slug>.md`의 마크다운이며 git으로 추적하고 직접 고칠 수 있습니다. 이
 파일이 원본입니다. `.teams_wiki/.index.sqlite`(FTS5 검색과 `[[link]]` 그래프)는 버려도 되는 산출물이라,
@@ -313,19 +314,23 @@ node teams/scripts/run.mjs --resume <task_id>
 | `wiki_get` | 페이지 하나와 그 링크, 백링크. |
 | `wiki_resume` | 세션 시작용: 최근 `log/*` 페이지와 그 페이지가 링크한 페이지. |
 | `wiki_list` | space별 페이지 목록. |
+| `wiki_write` | 승인 없이 페이지를 바로 저장합니다. 같은 `space/slug`를 다시 쓰면 갱신합니다. |
 | `wiki_propose` | 제안을 `_proposed/`에 씁니다. 페이지는 아닙니다. |
 | `wiki_accept` | 제안을 페이지로 만듭니다. |
 | `wiki_reject` | 제안을 사유와 함께 `_rejected/`로 옮깁니다. |
 | `wiki_status` | 페이지 수, 대기 중인 제안, 인덱스 최신 여부, 깨진 링크. |
 
-페이지를 직접 쓰는 도구는 없습니다. 모델은 제안만 하고, `wiki_accept`만 게시합니다.
+도구는 9개입니다. 서브에이전트는 승인이 필요 없는 `wiki_write`로 씁니다. `wiki_propose` / `wiki_accept` /
+`wiki_reject`는 검토 단계를 원하는 사람을 위해 남아 있습니다. 위키 루트는 워크트리에서 도는 워커도 항상
+메인 프로젝트(`task.cwd`)입니다.
 
 **태스크 엔진에서.** `createTask`는 최근 `log/*` 페이지(`wiki_resume`)를 태스크 context에 넣습니다.
-매니저의 `gate:goal` 전에 엔진이 `task.json`으로 `log/<날짜>-<EPIC>` 제안 하나를 만듭니다(모델 없음).
-`gate:goal`이 `wiki_decisions`로 수락하거나 거절하고, report에 "Wiki 변경" 절이 붙습니다. 자동
-수락은 없습니다. gate가 건드리지 않은 제안은 `_proposed/`에 남고, `_proposed/`와 `_rejected/` 파일은
-사람이 검토해 커밋하는 대상입니다(나중에 `wiki_accept`로 수락해도 됩니다). 위키가 실패해도 태스크는
-이전처럼 돕니다.
+claude 노드 워커와 드라이버는 위키 도구를 받습니다. 판정 단계(review, gate, accept, critique, test, audit,
+qa execute)와 매니저의 judge는 위키를 보지 못하고, codex 워커도 받지 않습니다. report 노드가 끝나면 L
+태스크는 엔진이 `wiki_write`로 `log/<날짜>-<EPIC>` 페이지 하나를 씁니다(모델도 판정도 없음). 내용은 요청,
+출고된 패키지, 이어받은 페이지, 문서 경로입니다. 출고된 패키지 집합이 바뀔 때만 다시 쓰고, 출고된 것이
+없거나 size-S 태스크면 쓰지 않습니다. `task.wiki`는 `{mode, resumed?, log?}`를 기록하고 report에 "Wiki 변경"
+절이 붙습니다. 위키가 실패해도 태스크는 이전처럼 돌고, 오류는 `task.wiki.log`에 남습니다.
 
 ## Mod (Claude Code 라이브 UI)
 

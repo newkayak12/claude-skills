@@ -142,3 +142,48 @@ test('workspace-write still defers to the project permission layer', () => {
     assert.equal(observed.args[observed.args.indexOf('--permission-mode') + 1], 'acceptEdits');
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
+
+// The project wiki: TEAMS_WIKI_ROOT hands a worker exactly one MCP server (teams-wiki) and names
+// its tools in --allowedTools (--tools only limits built-ins). --no-wiki or no root: the old empty config.
+const WIKI_SERVER = fileURLToPath(new URL('../mcp/wiki.mjs', import.meta.url));
+const argvOf = f => JSON.parse(readFileSync(join(f.dir, 'observed.json'))).args;
+const withoutRoot = { TEAMS_WIKI_ROOT: '' };
+
+test('TEAMS_WIKI_ROOT set: one teams-wiki server rooted there, its six tools allowed, strict config kept', () => {
+  const f = fixture();
+  try {
+    const r = f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'implement'], { TEAMS_WIKI_ROOT: '/proj/main' });
+    assert.equal(r.status, 0, r.stderr);
+    const args = argvOf(f);
+    assert.ok(args.includes('--strict-mcp-config'));
+    assert.deepEqual(JSON.parse(args[args.indexOf('--mcp-config') + 1]), {
+      mcpServers: { 'teams-wiki': { command: process.execPath, args: [WIKI_SERVER, '--root', '/proj/main'] } },
+    });
+    assert.equal(args[args.indexOf('--allowedTools') + 1],
+      'mcp__teams-wiki__wiki_search,mcp__teams-wiki__wiki_get,mcp__teams-wiki__wiki_resume,mcp__teams-wiki__wiki_list,mcp__teams-wiki__wiki_status,mcp__teams-wiki__wiki_write');
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('--no-wiki (a judging stage) or an unset TEAMS_WIKI_ROOT: the old empty config exactly, no allowed tools', () => {
+  const f = fixture();
+  try {
+    for (const [extra, env] of [[['--no-wiki'], { TEAMS_WIKI_ROOT: '/proj/main' }], [[], withoutRoot]]) {
+      const r = f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'test', ...extra], env);
+      assert.equal(r.status, 0, r.stderr);
+      const args = argvOf(f);
+      assert.equal(args[args.indexOf('--mcp-config') + 1], '{"mcpServers":{}}');
+      assert.ok(args.includes('--strict-mcp-config'));
+      assert.equal(args.includes('--allowedTools'), false);
+    }
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('--verify keeps its --disallowedTools list next to the wiki tools', () => {
+  const f = fixture();
+  try {
+    f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--sandbox', 'read-only', '--verify'], { TEAMS_WIKI_ROOT: '/proj/main' });
+    const args = argvOf(f);
+    assert.match(args[args.indexOf('--disallowedTools') + 1], /Bash\(git commit:\*\)/);
+    assert.match(args[args.indexOf('--allowedTools') + 1], /wiki_write/);
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});

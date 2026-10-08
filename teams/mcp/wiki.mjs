@@ -14,8 +14,9 @@
 // JS bm25 (k1 1.2, b 0.75, title 8 / tags 3 / body 1). Known difference: scan's fold strips only
 // U+0300-036F marks and lower-cases with JS rules, SQLite's folding tables are wider.
 //
-// No tool writes a page: wiki_propose drops a file in _proposed/, only wiki_accept turns it into a
-// page (and wiki_reject files it under _rejected/ with the reason). Accept/reject run under a lock
+// wiki_propose drops a file in _proposed/ (for a human), wiki_accept turns it into a page, wiki_reject
+// files it under _rejected/ with the reason; wiki_write saves a page directly (same space/slug = update,
+// no approval - for agents) through the same save path as accept. Writes run under a lock
 // dir (.teams_wiki/.lock, owner.json {pid, at}) like store.mjs: stolen only from a dead owner,
 // a timeout throws - there is never an unlocked write. md files are written tmp + rename.
 //
@@ -40,6 +41,7 @@ const NAME = /^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u;
 let root = process.cwd();
 let lockTimeoutMs = Number(process.env.WIKI_LOCK_TIMEOUT_MS) || 10000;
 let db = null;
+let off = false; // CLI entry only: TEAMS_WIKI_OFF=1 hides every tool
 let sqlite; // undefined = not probed yet; then { mode: 'fts5', DatabaseSync } or { mode: 'scan', error? }
 
 export function setRoot(dir) { close(); root = resolve(dir); }
@@ -409,6 +411,12 @@ function checkId(id) {
   checkName('space', space); checkName('slug', slug);
   return id;
 }
+// Shared by wiki_propose and wiki_write: name checks + the required strings; returns { space, slug, id }.
+function checkDraft(a, required) {
+  const space = checkName('space', a.space), slug = checkName('slug', a.slug);
+  for (const k of required) if (typeof a[k] !== 'string' || !a[k].trim()) throw new Error(`${k} is required`);
+  return { space, slug, id: `${space}/${slug}` };
+}
 function checkPid(pid) {
   if (typeof pid !== 'string' || !/^[\w-]+$/.test(pid)) throw new Error('invalid proposal_id');
   return pid;
@@ -438,6 +446,37 @@ function isolated(store, { id, title, body }) {
     const t = store.page(other).title.toLowerCase();
     return qt.filter((q) => koreanForms(q).some((f) => t.includes(f))).length / qt.length >= 0.5;
   });
+}
+
+// A root without .teams_wiki: reads see nothing and must not create the directory.
+const emptyStore = () => ({
+  mode: support().mode, sync: () => 0, indexedAt: () => null,
+  page: () => undefined, pages: () => [], links: () => [], rank: () => [],
+});
+const WRITE_TOOLS = new Set(['wiki_propose', 'wiki_accept', 'wiki_reject', 'wiki_write']);
+
+// Under the lock: the page file for `id` (status accepted) and, if `supersedes` names another page, that
+// page marked superseded. Shared by accept and write. Returns the superseded page's path or null.
+function savePage({ id, space, title, tags, source, body, supersedes, now, checkOld }) {
+  const oldPath = supersedes && supersedes !== id ? pagePath(checkId(supersedes)) : null;
+  if (oldPath && !existsSync(oldPath)) throw new Error(`supersedes: page ${supersedes} is gone`);
+  if (oldPath && checkOld) checkOld(readMd(oldPath).fm);
+  writeAtomic(pagePath(id), renderMd({
+    title, space, tags: tags || [], source, updated: now, status: 'accepted', superseded_by: null,
+  }, body, PAGE_KEYS));
+  if (oldPath) {
+    const old = readMd(oldPath);
+    writeAtomic(oldPath, renderMd({ ...old.fm, updated: now, status: 'superseded', superseded_by: id }, old.body, PAGE_KEYS));
+  }
+  return oldPath;
+}
+
+// After a save: INDEX.md + index refresh; a failure becomes a warning, the md files are the source.
+function reindexAfterSave(store, out) {
+  try { renderIndex(); store.sync(); } catch (e) {
+    out.warnings = [{ type: 'index', message: `page written, index update failed (rebuilds next call): ${(e && e.message) || e}` }];
+  }
+  return out;
 }
 
 const TOOL_IMPL = {
@@ -479,9 +518,7 @@ const TOOL_IMPL = {
     return out;
   },
   wiki_propose(store, a) {
-    const space = checkName('space', a.space), slug = checkName('slug', a.slug);
-    for (const k of ['title', 'body', 'source']) if (typeof a[k] !== 'string' || !a[k].trim()) throw new Error(`${k} is required`);
-    const id = `${space}/${slug}`;
+    const { space, slug, id } = checkDraft(a, ['title', 'body', 'source']);
     if (a.supersedes) {
       const old = store.page(checkId(a.supersedes));
       if (!old || old.status !== 'accepted') throw new Error(`supersedes: no accepted page ${a.supersedes}`);
@@ -507,23 +544,23 @@ const TOOL_IMPL = {
       if (!existsSync(src)) throw new Error(`no such proposal (already accepted or rejected?): ${pid}`);
       const { fm, body } = readMd(src);
       const id = `${checkName('space', fm.space)}/${checkName('slug', fm.slug)}`;
-      const now = new Date().toISOString();
-      const oldPath = fm.supersedes && fm.supersedes !== id ? pagePath(checkId(fm.supersedes)) : null;
-      if (oldPath && !existsSync(oldPath)) throw new Error(`supersedes: page ${fm.supersedes} is gone`);
-      writeAtomic(pagePath(id), renderMd({
-        title: fm.title, space: fm.space, tags: fm.tags || [], source: fm.source, updated: now, status: 'accepted', superseded_by: null,
-      }, body, PAGE_KEYS));
-      if (oldPath) {
-        const old = readMd(oldPath);
-        writeAtomic(oldPath, renderMd({ ...old.fm, updated: now, status: 'superseded', superseded_by: id }, old.body, PAGE_KEYS));
-      }
+      const oldPath = savePage({
+        id, space: fm.space, title: fm.title, tags: fm.tags, source: fm.source, body, supersedes: fm.supersedes, now: new Date().toISOString(),
+      });
       rmSync(src);
-      const out = { accepted: pid, id, superseded: oldPath ? fm.supersedes : null };
-      try { renderIndex(); store.sync(); } catch (e) {
-        // the md files are the source; INDEX.md and the index rebuild on the next call
-        out.warnings = [{ type: 'index', message: `page written, index update failed (rebuilds next call): ${(e && e.message) || e}` }];
-      }
-      return out;
+      return reindexAfterSave(store, { accepted: pid, id, superseded: oldPath ? fm.supersedes : null });
+    });
+  },
+  wiki_write(store, a) {
+    const { space, id } = checkDraft(a, ['title', 'body']);
+    if (a.supersedes) checkId(a.supersedes);
+    return withLock(() => {
+      const existed = existsSync(pagePath(id));
+      savePage({
+        id, space, title: a.title, tags: a.tags, source: a.source || null, body: a.body, supersedes: a.supersedes, now: new Date().toISOString(),
+        checkOld: (fm) => { if ((fm.status || 'accepted') !== 'accepted') throw new Error(`supersedes: no accepted page ${a.supersedes}`); },
+      });
+      return reindexAfterSave(store, { id, path: pagePath(id), [existed ? 'updated' : 'created']: true });
     });
   },
   wiki_reject(store, a) {
@@ -564,6 +601,9 @@ export const TOOLS = [
   ['wiki_propose', 'Write a proposal to _proposed/ (never a page). Returns proposal_id, diff vs the existing page, isolation warnings.',
     obj({ space: str('space'), slug: str('slug'), title: str('title'), body: str('md body; link pages with [[space/slug]]'), source: str('who/what produced it, e.g. an EPIC id'),
       tags: { type: 'array', items: { type: 'string' } }, supersedes: str('id of an accepted page this replaces') }, ['space', 'slug', 'title', 'body', 'source'])],
+  ['wiki_write', 'Save a page directly, no approval (lock, re-index, INDEX.md). Same space/slug again = update. Returns id, path, created|updated.',
+    obj({ space: str('space'), slug: str('slug'), title: str('title'), body: str('md body; link pages with [[space/slug]]'), source: str('who/what produced it'),
+      tags: { type: 'array', items: { type: 'string' } }, supersedes: str('id of an accepted page this replaces') }, ['space', 'slug', 'title', 'body'])],
   ['wiki_accept', 'Turn a proposal into a page (re-index, INDEX.md, mark superseded page).', obj({ proposal_id: str('from wiki_propose') }, ['proposal_id'])],
   ['wiki_reject', 'Move a proposal to _rejected/ with the reason.', obj({ proposal_id: str('from wiki_propose'), reason: str('why') }, ['proposal_id', 'reason'])],
   ['wiki_status', 'Page count, pending proposals, index freshness, broken [[links]].', obj({})],
@@ -572,7 +612,7 @@ export const TOOLS = [
 export function callToolSync(name, args) {
   const fn = TOOL_IMPL[name];
   if (!fn) throw new Error(`unknown tool: ${name}`);
-  const store = openStore();
+  const store = !WRITE_TOOLS.has(name) && !existsSync(wikiDir()) ? emptyStore() : openStore();
   const reindexed = store.sync();
   return fn(store, args || {}, reindexed);
 }
@@ -591,9 +631,10 @@ async function handle(msg) {
         capabilities: { tools: { listChanged: false } }, serverInfo: SERVER,
       });
     case 'ping': return reply({});
-    case 'tools/list': return reply({ tools: TOOLS });
+    case 'tools/list': return reply({ tools: off ? [] : TOOLS });
     case 'tools/call':
       try {
+        if (off) throw new Error('teams-wiki is off (TEAMS_WIKI_OFF=1)');
         const out = await callTool(params && params.name, params && params.arguments);
         return reply({ content: [{ type: 'text', text: JSON.stringify(out, null, 2) }], structuredContent: out, isError: false });
       } catch (e) {
@@ -608,6 +649,8 @@ async function handle(msg) {
 if (isEntryPoint(import.meta.url)) {
   const i = process.argv.indexOf('--root');
   if (i >= 0 && process.argv[i + 1]) setRoot(process.argv[i + 1]);
+  if (process.env.TEAMS_WIKI_ROOT) setRoot(process.env.TEAMS_WIKI_ROOT); // non-empty env beats --root
+  off = process.env.TEAMS_WIKI_OFF === '1';
   let buf = '';
   let queue = Promise.resolve(); // replies keep request order
   process.stdin.setEncoding('utf8');
