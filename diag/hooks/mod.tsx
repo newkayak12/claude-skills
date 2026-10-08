@@ -9,6 +9,9 @@ import type { Entry } from './logic.ts'
 
 const active = atom({ plugin: 'diag', key: 'active' } as const, false)
 const lastSkill = atom({ plugin: 'diag', key: 'lastSkill' } as const, '')
+// Failures recorded since the pane was last opened, and the newest one's title; band only, never sent.
+const unseen = atom({ plugin: 'diag', key: 'unseen' } as const, 0)
+const lastTitle = atom({ plugin: 'diag', key: 'lastTitle' } as const, '')
 
 const PANE = 'diag'
 const DAY_MS = 86_400_000
@@ -63,7 +66,12 @@ async function record($: any, entry: Omit<Entry, 'ts' | 'day' | 'session'>) {
   const session = (await $.session.id()) as string
   const log = ((await $.store.get('diag.log')) ?? []) as Entry[]
   const day = new Date(ts).toISOString().slice(0, 10)
-  await $.store.set('diag.log', appendEntry(log, { ...entry, ts, day, session }))
+  const full = { ...entry, ts, day, session }
+  await $.store.set('diag.log', appendEntry(log, full))
+  if (entry.kind === 'bug' || entry.kind === 'outcome') {
+    await update($, unseen, n => n + 1)
+    await update($, lastTitle, () => rowTitle(full))
+  }
 }
 
 // Recording never changes what the engine returns: any failure here is swallowed.
@@ -86,6 +94,8 @@ export const register: Register = on => {
     sendTried = false
     await update($, active, () => true)
     await update($, lastSkill, () => '')
+    await update($, unseen, () => 0)
+    await update($, lastTitle, () => '')
     owned = await loadOwned($)
     if ((await $.store.get('diag.installId')) === undefined) {
       await $.store.set('diag.installId', crypto.randomUUID())
@@ -234,8 +244,37 @@ export const register: Register = on => {
   // `/diag` opens the pane; `/diag bug <note>` is handled above.
   on('command.run', { command: 'diag' }, async ($, e, next) => {
     if (/^\s*bug(?:\s|$)/.test(e.args)) return next(e)
+    await update($, unseen, () => 0)
     await $.ui.open({ id: PANE, title: 'Diag' })
     return { text: 'Diag pane opened.' }
+  }).catch(($, e, next) => next(e))
+
+  // One row above the prompt while failures are unseen; opening the pane clears it.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const n = await read($, unseen)
+    if (e.props.hasSurvey || n === 0) return next(e)
+    const title = await read($, lastTitle)
+    const { Box, Button, Text } = $.ui.resolve(e)
+    return (
+      <Box flexDirection="column">
+        <Box gap={1}>
+          <Box flexShrink={0}><Text color="error" bold>{`✘ ${n}`}</Text></Box>
+          <Box flexShrink={0}><Text dimColor>diag</Text></Box>
+          <Box flexShrink={1}><Text wrap="truncate-end">{title}</Text></Box>
+          <Box flexShrink={0}>
+            <Button
+              key="see"
+              label="보기"
+              onPress={async () => {
+                await update($, unseen, () => 0)
+                await $.ui.open({ id: PANE, title: 'Diag' })
+              }}
+            />
+          </Box>
+        </Box>
+        {await next(e)}
+      </Box>
+    )
   }).catch(($, e, next) => next(e))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -248,12 +287,19 @@ export const register: Register = on => {
     const rows = newest(log)
     return (
       <Box flexDirection="column">
-        <Text bold>{sending ? '전송: trophy 동의 yes → 켜짐' : '전송: 꺼짐 (로컬만)'}</Text>
+        <Box gap={1}>
+          {sending ? <Text color="success">●</Text> : <Text dimColor>○</Text>}
+          <Text bold>{sending ? '전송: trophy 동의 yes → 켜짐' : '전송: 꺼짐 (로컬만)'}</Text>
+        </Box>
         {rows.length === 0 && <Text dimColor>No failures recorded.</Text>}
         {rows.map((r, i) => (
-          <Box key={`row-${i}`} flexDirection="column">
-            <Box>
-              <Text>{rowTitle(r)} </Text>
+          <Box key={`row-${i}`} flexDirection="column" borderStyle="round" borderColor="error" borderDimColor paddingX={1}>
+            <Box justifyContent="space-between" gap={1}>
+              <Box flexShrink={1}>
+                <Text color="error">✘ </Text>
+                <Text wrap="truncate-end">{rowTitle(r)}</Text>
+              </Box>
+              <Box flexShrink={0}>
               <Button
                 key={`copy-${i}`}
                 label="복사"
@@ -261,12 +307,15 @@ export const register: Register = on => {
                   void $.ui.copy({ text: copyBody(r), surface: press.surface }).catch(() => {})
                 }}
               />
+              </Box>
             </Box>
             {rowDetail(r).map((line, j) => <Text key={`d-${i}-${j}`} dimColor>{line}</Text>)}
           </Box>
         ))}
-        <Text bold>다음 전송 미리보기 ({events.length} events)</Text>
-        <Text>{batchBody(events, installId)}</Text>
+        <Text bold color="claude">다음 전송 미리보기 ({events.length} events)</Text>
+        <Box borderStyle="round" borderDimColor paddingX={1}>
+          <Text>{batchBody(events, installId)}</Text>
+        </Box>
       </Box>
     )
   }).catch(($, e, next) => next(e))

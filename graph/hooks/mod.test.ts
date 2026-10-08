@@ -85,18 +85,13 @@ function world(on: On, files: File[], opts: { language?: string; surfaces?: read
 const start = ($: Engine) => $.session.start({ cwd: '/proj', surface: 'terminal', isInteractive: true })
 const pane = ($: Engine) =>
   $.ui.mount({ plugin: 'graph', surface: 'terminal', component: 'Pane', requestId: 'graph-live', props: { title: 'Graph', isFocused: false, bodyColumns: 80, placement: 'dock' } } as never)
-const band = ($: Engine, hasSurvey = false) =>
-  $.ui.mount({ plugin: 'graph', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey, isWorking: false, maxRows: 5, bodyColumns: 80 } } as never)
 type Ui = Awaited<ReturnType<typeof pane>>
 const shown = async (ui: Ui) => JSON.stringify(await ui.drawn())
-const engineBand = (on: On) =>
-  on('ui.render', (_$, e) => (e.component === 'AbovePrompt' ? { type: 'Text', children: ['engine band'] } : undefined) as never)
 
 // the session start runs the first tick over the mocked folder
 async function seeded($: Engine, on: On, files: File[], opts: { language?: string } = {}) {
   const clock = mock.clock(on, { now: NOW })
   const seen = world(on, files, opts)
-  engineBand(on)
   await start($)
   return { seen, tick: () => clock.advance(3000) }
 }
@@ -157,11 +152,9 @@ test('Flow: a failed gate with nothing ready is Blocked, in a warning Text with 
   expect(blocked?.text).toContain('U1 gate')
   expect(blocked?.text).toContain('tests red')
   expect(await shown(ui)).toContain('blocked')
-  const ui2 = await band($)
-  expect(await shown(ui2)).toContain('Blocked at')
 })
 
-test('Flow: a finished run shows the finished word, the goal gate % and no band', async ($, on) => {
+test('Flow: a finished run shows the finished word, the goal gate %', async ($, on) => {
   let run: Run = patch(patch(patch(base(), 'test:U1:1', 'done'), 'gate:U1:1', 'done'), 'report', 'done')
   run = patch(run, 'gate:goal:1', 'done', { result: { stage_ok: true, match_pct: 92 } })
   await seeded($, on, [file(run)])
@@ -170,9 +163,6 @@ test('Flow: a finished run shows the finished word, the goal gate % and no band'
   expect(text).toContain('goal gate 92%')
   expect(text).toContain('1/1 gates')
   expect(text).toContain('All done')
-  const b = await shown(await band($))
-  expect(b).toBe(JSON.stringify(await (await band($)).drawn()))
-  expect(b).not.toContain('graph ·')
 })
 
 test('Ready mirrors the engine: U2 test is Next, not the report; a node waiting on a missing node is never Next', async ($, on) => {
@@ -254,11 +244,9 @@ test('a file that fails to parse keeps the last good view', async ($, on) => {
   expect(text).toContain('good run')
 })
 
-test('no run folder: the pane says there is no graph run, the band is untouched', async ($, on) => {
+test('no run folder: the pane says there is no graph run', async ($, on) => {
   await seeded($, on, [])
   expect(await shown(await pane($))).toContain('No graph run in this folder.')
-  expect(await shown(await band($))).toContain('engine band')
-  expect(await shown(await band($))).not.toContain('graph ·')
 })
 
 test('size guard: a 5 MiB entry shows the too-large line and is never read', async ($, on) => {
@@ -266,33 +254,6 @@ test('size guard: a 5 MiB entry shows the too-large line and is never read', asy
   const { seen } = await seeded($, on, [big])
   expect(await shown(await pane($))).toContain('too large')
   expect(seen.reads).toEqual([])
-})
-
-test('band: a live run draws graph · , the Next sentence, a 10-cell bar and a flow Button, then next', async ($, on) => {
-  await seeded($, on, [file(base())])
-  const ui = await band($)
-  const text = await shown(ui)
-  expect(text).toContain('graph · README에 한 줄 추가하는 작은 작업')
-  expect(text).toContain('Next: U1 test (attempt 1)')
-  expect(text).toContain('engine band')
-  expect(text).toContain('0/1 gates')
-  const cellsDrawn = (await ui.findAll({ type: 'Text' })).filter(t => /^[━─]+$/.test(String(t.text ?? '')))
-  expect(cellsDrawn.map(t => String(t.text).length).reduce((a, b) => a + b, 0)).toBe(10)
-  expect((await ui.find({ key: 'flow' }))?.props.label).toBe('flow')
-  await ui.press({ key: 'flow' })
-  expect((await ui.find({ key: 'flow' }))?.props.label).toBe('flow')
-})
-
-test('band: a stale run (over 2 h old) draws only next', async ($, on) => {
-  await seeded($, on, [file(base(), NOW - 3 * HOUR)])
-  const text = await shown(await band($))
-  expect(text).toContain('engine band')
-  expect(text).not.toContain('graph ·')
-})
-
-test('band: a survey leaves the band alone', async ($, on) => {
-  await seeded($, on, [file(base())])
-  expect(await shown(await band($, true))).not.toContain('graph ·')
 })
 
 test('Korean: tabs, rail and sentences are Korean, no English tab label', async ($, on) => {
@@ -303,7 +264,6 @@ test('Korean: tabs, rail and sentences are Korean, no English tab label', async 
   const text = await shown(ui)
   for (const one of ['계획', '목표 설정', '비평', '구현', '목표 관문', '보고', '다음 · U1 테스트']) expect(text).toContain(one)
   for (const one of ['Flow', 'Nodes', 'Next', 'Plan', 'Report', 'Build']) expect(text).not.toContain(one)
-  expect(await shown(await band($))).toContain('다음: U1 테스트')
 })
 
 test('read only: no fs.write is ever called', async ($, on) => {

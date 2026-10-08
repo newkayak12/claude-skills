@@ -2,8 +2,8 @@
 
 **English** · [한국어](KOR.md)
 
-Steam-style achievements for using this marketplace's skills. Use a skill and a toast tells you what
-you unlocked; `/achievements` shows what you have, what is locked and how far along you are, and which
+Steam-style achievements for using this marketplace's skills. Use a skill and a toast and a gold card
+above the prompt (8 s) tell you what you unlocked; `/achievements` shows what you have, what is locked and how far along you are, and which
 of your prompts contained a skill's trigger phrase without the skill running. Anonymous daily counts
 go to the maintainer only if you say yes. Off by default.
 
@@ -80,6 +80,7 @@ view (most hit, most missed, never fired).
 
 ## Status log
 
+- 0.3.0 — gold unlock card in the band for 8 s; ▰▱ progress bars on locked achievements; Ink-style panes and consent band.
 - 0.2.1 — the consent band no longer hides the bands beneath it.
 - 0.2.0 — consent text v2 names error codes; the answer is stored with its version, a v1 yes is
   asked once more and nothing is sent until answered. `diag_*` rows listed in the telemetry table.

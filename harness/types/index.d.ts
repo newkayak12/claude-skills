@@ -1,4 +1,6 @@
 export type Decision = { ts: number; session_id?: string; tool: string; target: string; decision: 'allow' | 'deny'; reason: string }
+export type OpenRun = { slug: string; stage: string; passed: number; failed: number; total: number }
+export type OpenRuns = { harness: OpenRun[]; graph: OpenRun[] }
 
 export type StageKey = 'plan' | 'setgoal' | 'critique' | 'implement' | 'gate' | 'report'
 export type StageMark = 'done' | 'running' | 'pending' | 'failed'
@@ -25,6 +27,7 @@ declare module 'claude-code' {
       armed: boolean
       patterns: string[]
       windowHours: number
+      runs: OpenRuns
       run: RunInfo | null
       broken: boolean
       view: 'auto' | 'run' | 'units' | 'gate'

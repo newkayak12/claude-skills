@@ -1,6 +1,6 @@
 # diag (beta)
 
-Records failures of this marketplace's skills and MCP tools in interactive sessions, shows them in a `/diag` pane, and, only when trophy's telemetry consent (v2) is yes, sends fixed error codes and counts. Beta: version `0.1.0-beta.2`. Requires Claude Code 2.1.292+ (hooks module, interactive sessions only).
+Records failures of this marketplace's skills and MCP tools in interactive sessions, shows them in a `/diag` pane, and, only when trophy's telemetry consent (v2) is yes, sends fixed error codes and counts. Beta: version `0.1.0-beta.3`. Requires Claude Code 2.1.292+ (hooks module, interactive sessions only).
 
 ## Install
 ```
@@ -18,6 +18,7 @@ Events are kept on your machine in the plugin store (newest 500; the same reason
 
 ## /diag
 - `/diag` opens the pane: the local failures with details, and whether sending is on or off.
+- Above the prompt, a one-row band `✘ N diag <last failure>` with a `보기` button shows failures recorded since you last opened the pane. Opening the pane clears it. Your own `/diag bug` reports do not count. Local display only; nothing is sent.
 - `/diag bug <note>` records a report. The note stays local; only the fixed code `user_report` can be sent.
 
 ## What is sent
