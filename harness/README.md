@@ -256,9 +256,7 @@ harness ships a small mod: a gate status line and a pane that explains the last 
 
 **Features**
 
-- **Status line**, only when the gate config exists in the project:
-  - `gate: armed (<n> patterns)`
-  - `gate: denied <target> — /harness-gate`, for 10 minutes after a deny.
+- **Status line**: open runs per stage across every worktree, fallback runs first, then graph runs — `Plan(6) / Implement(11) · graph Implement(3)`. A run untouched for 12 h is left out; with nothing open the line is empty. Gate decisions are not shown here; open `/harness-gate`.
 - **`/harness-gate`** opens a pane: the gated patterns, the engagement window, the last decision (allow or deny, tool, target, age, reason) and how to engage the harness. Without a gate config it says so.
 - The last decision comes from `.claude/.harness-last-decision.json`, written by the gate hook. It is a local runtime file, gitignored by `install`, and removed by `remove`.
 
