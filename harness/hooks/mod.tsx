@@ -239,7 +239,7 @@ async function scanRun($: EngineInterface): Promise<RunInfo | null> {
   }
 }
 
-// Open runs per stage, in flow order, every worktree: fallback runs (.harness-run/<slug>/, staged by
+// Open runs per stage, in flow order, this worktree: fallback runs (.harness-run/<slug>/, staged by
 // the first missing file: 01-plan.md, 02-goal-spec.json, a sound 02-critique.json, every subgoal's
 // result.json, 04-goal-gate.json) and graph runs (.harness-run/broker/runs/<id>.json).
 const STAGES = ['plan', 'setgoal', 'critique', 'implement', 'test', 'gate', 'report'] as const
@@ -271,11 +271,11 @@ async function countStages($: EngineInterface, cwd: string, now: number): Promis
   }
   const json = async (p: string) => { try { return JSON.parse(await $.fs.read(p)) } catch { return null } }
   const list = async (p: string) => { try { return await $.fs.list(p) } catch { return [] } }
+  // this session's worktree only: runs of other worktrees belong to other sessions
   let trees = [cwd]
   try {
-    const wt = await $.process.run(['git', '-C', cwd, 'worktree', 'list', '--porcelain'])
-    const found = wt.stdout.split('\n').filter(l => l.startsWith('worktree ')).map(l => l.slice(9))
-    if (wt.exitCode === 0 && found.length > 0) trees = found
+    const top = await $.process.run(['git', '-C', cwd, 'rev-parse', '--show-toplevel'])
+    if (top.exitCode === 0 && top.stdout.trim()) trees = [top.stdout.trim()]
   } catch {
     // not a repo: this cwd alone
   }
