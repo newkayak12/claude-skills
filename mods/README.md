@@ -22,7 +22,7 @@ Claude Code 2.1.292 or newer. Older builds print one stderr line and skip the mo
 | 3 | Running-script guard | Denies Edit/Write on a `.sh`/`.bash` file while a process is running it | all sessions |
 | 4 | Worktree guard | Denies `git worktree remove --force` when the worktree has uncommitted changes; fails open if the path is gone | all sessions |
 | 5 | Fetch reminder | Fetches at session start (interactive sessions only) and toasts if `origin/main` is ahead | claude-skills repo only |
-| 6 | Push / bump ask | Asks before `git push` and the `patch-harness` / `patch-teams` version bump scripts; the command is denied unless Run is chosen (dismissing the prompt also denies); headless sessions pass without asking | claude-skills repo only |
+| 6 | Push / bump ask | Asks before `git push` and the `patch-harness` / `teams/skills/patch/patch.mjs` version bump scripts; the command is denied unless Run is chosen (dismissing the prompt also denies); headless sessions pass without asking | claude-skills repo only |
 | 7 | README without KOR | Toast on `git commit` when a staged `README.md` has no staged `KOR.md` | claude-skills repo only |
 | 8 | `claude -p` count | At turn end, status line `n claude -p child(ren) running` for headless children of this session; cleared at 0 | interactive |
 
@@ -40,7 +40,8 @@ The `claude -p` count is per session: only processes started below this session'
 
 ## Status and known limits
 
-- Beta (`0.1.0-beta.3`): run band removed (harness draws it); notices carry an icon (◆ ⚠ ↓ ⧗).
+- Beta (`0.1.0-beta.5`): the bump ask now covers the teams patch tool (`teams/skills/patch/patch.mjs`).
+- Beta (`0.1.0-beta.4`): run band and its scanner removed (harness draws it); notices carry an icon (◆ ⚠ ↓ ⧗).
 - The skill toast needs the marketplace file to be readable from the plugin location; if not, no toast is shown.
 - The Agent guard also flags subagent types whose definition already pins a model, because it only sees the call's own `model` argument.
 - The worktree guard ignores a leading `cd <dir> &&` in the same command; only `-C <dir>` or the session directory is used to resolve the path.

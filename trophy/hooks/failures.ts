@@ -1,4 +1,4 @@
-// Pure logic for diag: no `$`, no I/O. Capture hooks (mod.tsx) call these.
+// Failures of this marketplace's skills and MCP tools: pure logic, no `$`, no I/O. mod.tsx captures, logic.ts sends.
 
 export type Reason =
   | 'is_error'
@@ -17,6 +17,9 @@ export type Entry = {
   plugin?: string
   skill?: string
   tool?: string
+  // the failing plugin's version (its marketplace entry) and Claude Code's release, when known
+  version?: string
+  cc?: string
   session: string
   // Raw text stays on this machine: never read by buildBatch.
   local: { text?: string; note?: string; slug?: string; subgoal?: string; path?: string }
@@ -115,9 +118,9 @@ export function appendEntry(log: readonly Entry[], entry: Entry): Entry[] {
 
 const SKILL_REASONS: readonly Reason[] = ['is_error', 'unsuccessful', 'forked_unsuccessful']
 
-// One event per (day, reason, plugin, skill|tool). Each property object lists its keys explicitly,
+// One event per (day, reason, plugin, skill|tool, versions). Each property object lists its keys explicitly,
 // so a field added to Entry later cannot leak. Outcomes, `local` and session ids never appear.
-export function buildBatch(log: readonly Entry[], sentThrough: string | undefined, through: string): SentEvent[] {
+export function failureEvents(log: readonly Entry[], sentThrough: string | undefined, through: string): SentEvent[] {
   const groups = new Map<string, SentEvent>()
   for (const e of log) {
     if (e.day > through || (sentThrough !== undefined && e.day <= sentThrough)) continue
@@ -137,35 +140,15 @@ export function buildBatch(log: readonly Entry[], sentThrough: string | undefine
     } else {
       continue
     }
-    const key = [event, e.day, e.reason, e.plugin ?? '', e.skill ?? e.tool ?? ''].join('|')
+    if (e.version) properties.plugin_version = e.version
+    if (e.cc) properties.cc_version = e.cc
+    const key = [event, e.day, e.reason, e.plugin ?? '', e.skill ?? e.tool ?? '', e.version ?? '', e.cc ?? ''].join('|')
     const hit = groups.get(key)
     if (hit) hit.properties.count = (hit.properties.count as number) + 1
     else groups.set(key, { event, properties })
   }
   return Array.from(groups.values())
 }
-
-export const POSTHOG_URL = 'https://us.i.posthog.com/batch/'
-// Write-only project token: public by design (same as trophy's).
-export const POSTHOG_KEY = 'phc_r4NATbMFBZvmQYiJ8MPMJSWHprgbsTkbCddtc6aYAoUg'
-export const CONSENT_VERSION = 2
-
-// The exact request body: the /diag preview shows this string and the sender posts it.
-export function batchBody(events: readonly SentEvent[], installId: string): string {
-  return JSON.stringify({
-    api_key: POSTHOG_KEY,
-    batch: events.map(e => ({
-      event: e.event,
-      distinct_id: installId,
-      timestamp: `${e.properties.day}T12:00:00Z`,
-      properties: { ...e.properties, $process_person_profile: false },
-    })),
-  })
-}
-
-// Sending follows trophy's consent: 'yes' stored at the current consent text version.
-export const sendsOn = (consent: unknown, version: unknown): boolean =>
-  consent === 'yes' && version === CONSENT_VERSION
 
 export const PANE_ROWS = 30
 
@@ -188,6 +171,7 @@ export function copyBody(e: Entry): string {
     `skill: ${target}`,
     `reason: ${e.reason}`,
     `day: ${e.day}`,
+    `version: ${e.version ?? '-'} · Claude Code ${e.cc ?? '-'}`,
     `text:`,
     e.local.text ?? e.local.note ?? [e.local.slug, e.local.subgoal].filter(Boolean).join(' '),
   ].join('\n')

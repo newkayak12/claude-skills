@@ -15,7 +15,6 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 /plugin install cognition@newkayak12-claude-skills
 /plugin install completion@newkayak12-claude-skills
 /plugin install develop@newkayak12-claude-skills
-/plugin install diag@newkayak12-claude-skills
 /plugin install graph@newkayak12-claude-skills
 /plugin install harness@newkayak12-claude-skills
 /plugin install knowledge@newkayak12-claude-skills
@@ -26,8 +25,12 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 /plugin install skill@newkayak12-claude-skills
 /plugin install teams@newkayak12-claude-skills
 /plugin install think@newkayak12-claude-skills
+/plugin install trophy@newkayak12-claude-skills
 /plugin install write@newkayak12-claude-skills
 ```
+
+Every plugin lists `trophy` as a dependency, so installing any one of them installs trophy too
+(achievements and a local failure record; nothing is sent until you say yes).
 
 ## Plugins
 
@@ -37,7 +40,6 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 | [cognition](./cognition/README.md) · [한국어](./cognition/KOR.md) | Thinking quality: assumptions, biases, fallacies, mental models, trade-offs |
 | [completion](./completion/README.md) · [한국어](./completion/KOR.md) | Verification before completion |
 | [develop](./develop/README.md) · [한국어](./develop/KOR.md) | Engineering: CLI, SQL, architecture, Spring Boot, Kotlin, TDD, and more |
-| [diag](./diag/README.md) · [한국어](./diag/KOR.md) | Beta: records failures of this marketplace's skills and MCP tools, `/diag` pane, opt-in error codes via trophy consent |
 | [graph](./graph/README.md) | Graph-owned harness orchestration, MCP installation, routing, and adjudication |
 | [harness](./harness/README.md) · [한국어](./harness/KOR.md) | Six-stage planning, implementation, verification, quality gate, and reporting |
 | [knowledge](./knowledge/README.md) · [한국어](./knowledge/KOR.md) | Knowledge bases, ontologies, graphs, RAG corpora, and querying |
@@ -48,5 +50,5 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 | [session](./session/README.md) · [한국어](./session/KOR.md) | Beta: `/session` retro pane (files, commits, denied calls), next-start retro band, safe stop for stray `claude -p` children |
 | [teams](./teams/README.md) · [한국어](./teams/KOR.md) | TaskManager MCP and per-flow teams (develop, document, plan, qa) with an EPIC/STORY board |
 | [think](./think/README.md) · [한국어](./think/KOR.md) | Brainstorming, devil's advocate, problem reframing, and more |
-| [trophy](./trophy/README.md) · [한국어](./trophy/KOR.md) | Steam-style achievements for skill use; opt-in anonymous counts |
+| [trophy](./trophy/README.md) · [한국어](./trophy/KOR.md) | Steam-style achievements for skill use and a local record of skill failures; opt-in anonymous counts and error codes |
 | [write](./write/README.md) · [한국어](./write/KOR.md) | Documentation, writing plans, and content review |

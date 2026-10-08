@@ -2,7 +2,7 @@ import { test, expect } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { CONSENT_VERSION, effectiveConsent } from './logic.ts'
-import { memoryStore, sessionAt } from './testkit.ts'
+import { language, memoryStore, sessionAt } from './testkit.ts'
 
 const BAND = { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: 100 } as any
 
@@ -18,6 +18,7 @@ const run = ($: any, args: string) => $.command.run({ command: 'trophy-telemetry
 test('a fresh store asks: one row, three buttons; [안 보내기] sets no and the band goes', async ($, on) => {
   const store = memoryStore(on)
   sessionAt(on)
+  language(on, 'Korean')
   bottom(on)
   await $.session.start(start)
   const ui = await $.ui.mount({ plugin: 'trophy', surface: 'terminal', component: 'AbovePrompt', props: BAND })
@@ -25,11 +26,24 @@ test('a fresh store asks: one row, three buttons; [안 보내기] sets no and th
   expect(await ui.find({ key: 'send' })).toBeDefined()
   expect(await ui.find({ key: 'decline' })).toBeDefined()
   expect(await ui.find({ key: 'show' })).toBeDefined()
-  expect(await ui.find({ text: /프롬프트·경로 없음/ })).toBeDefined()
+  expect(await ui.find({ text: /보내지 않는 것: 프롬프트 · 파일 경로/ })).toBeDefined()
   await ui.press({ key: 'decline' })
 
   expect(store.get('trophy.consent')).toBe('no')
   expect(await ui.find({ key: 'decline' })).toBeUndefined()
+})
+
+test('by default the band asks in English with the same data listed and no Hangul', async ($, on) => {
+  memoryStore(on)
+  sessionAt(on)
+  bottom(on)
+  await $.session.start(start)
+  const ui = await $.ui.mount({ plugin: 'trophy', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+
+  expect(await ui.find({ text: /Send anonymous usage stats/ })).toBeDefined()
+  expect(await ui.find({ text: /Never sent: prompts · file paths/ })).toBeDefined()
+  expect(await ui.find({ text: /[가-힣]/ })).toBeUndefined()
+  for (const label of ['Send', "Don't send", 'Show contents']) expect(await ui.find({ label })).toBeDefined()
 })
 
 test('the consent band draws the band beneath it', async ($, on) => {
@@ -115,15 +129,23 @@ test('effectiveConsent maps stored answer and version', () => {
 
 test('a stored v1 yes shows the band again and sends nothing', async ($, on) => {
   const f = fetching(on, { 'trophy.consent': 'yes' })
+  language(on, 'Korean')
   await $.session.start(start)
   const ui = await $.ui.mount({ plugin: 'trophy', surface: 'terminal', component: 'AbovePrompt', props: BAND })
 
   expect(await ui.find({ key: 'send' })).toBeDefined()
-  expect(await ui.find({ text: /오류 코드만/ })).toBeDefined()
+  expect(await ui.find({ text: /오류 코드/ })).toBeDefined()
   expect(f.fetches).toHaveLength(0)
   expect(f.store.get('trophy.consent')).toBe('yes')
   expect(f.store.get('trophy.consentVersion')).toBeUndefined()
   expect((await run($, 'status')).text).toContain('unasked (v1 yes — 재동의 필요)')
+})
+
+test('a stored v1 yes reports needs re-consent in English by default', async ($, on) => {
+  fetching(on, { 'trophy.consent': 'yes' })
+  await $.session.start(start)
+
+  expect((await run($, 'status')).text).toContain('unasked (v1 yes — needs re-consent)')
 })
 
 test('answering the band writes yes and version 2', async ($, on) => {
@@ -181,4 +203,19 @@ test('no on the shared seed fetches nothing', async ($, on) => {
   const f = fetching(on, { 'trophy.consent': 'no', 'trophy.consentVersion': 2 })
   await $.session.start(start)
   expect(f.fetches).toHaveLength(0)
+})
+
+test('the consent band stands out (double frame, every line whole) and draws its three buttons alike', async ($, on) => {
+  memoryStore(on)
+  sessionAt(on)
+  bottom(on)
+  await $.session.start(start)
+  const ui = await $.ui.mount({ plugin: 'trophy', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+
+  const frame = await ui.find({ key: 'consent' })
+  expect(frame!.props.borderStyle).toBe('double')
+  for (const text of [/Send anonymous usage stats/, /Sent: skill names/, /Never sent/]) {
+    expect((await ui.find({ text }))!.props.wrap).toBeUndefined()
+  }
+  for (const key of ['send', 'decline', 'show']) expect((await ui.find({ key }))!.props.variant).toBeUndefined()
 })
