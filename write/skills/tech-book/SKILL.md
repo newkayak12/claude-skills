@@ -30,27 +30,24 @@ compatibility:
 - ALWAYS stop the review↔revise loop on 🔴🟡 = 0 or after three rounds, and say which — a fourth round is polishing.
 - NEVER run `write:like-me` without ≥ 2 samples the user wrote alone. like-me is the user's voice, not "like other
   books"; the default copyedit is `references/house-style.md`.
-- ALWAYS invoke each routed skill by name, visibly (`references/skill-routing.md`). The repo's skills are the experts
-  here; a chapter written without its SME skill repeats what a general model guesses. A routed skill that isn't
-  installed: read its `SKILL.md` from the repo and follow it, and say so.
+- ALWAYS invoke each routed skill by name, visibly (`references/skill-routing.md`): without its SME skill a chapter
+  repeats what a general model guesses. Not installed → read its `SKILL.md` from the repo, follow it, and say so.
 
 Goal: a non-major reads chapter N knowing only chapters 1..N-1 and the anchor; every fact is sourced or marked; the
 closing status recounts to the files on disk.
 
 # Tech Book
 
-Writes a book as files, one stage at a time, under `tmp/books/<slug>/`, and ends in `book.pdf`. Resume book-wide
-stages (0–2) from the highest one on disk, and each chapter from its latest file in draft/, review/, final/. Outside
-this repo, check that `tmp/` is gitignored; if not, tell the user before writing.
+Writes a book as files under `tmp/books/<slug>/`, ending in `book.pdf`; outside this repo, if `tmp/` isn't gitignored,
+tell the user before writing. Resume stages 0–2 from the highest on disk, each chapter from its latest file.
 
 **Not for:** a single document, design doc, or blog post (`write:plans`); reviewing existing text
 (`write:writer-verification`); a voice rewrite (`write:like-me`); a spec from a conversation (`write:spec`).
 
 ## Process
 
-0. **brief.md.** Reader level, anchor (what the reader already knows), scope in/out, register, sources. Run one
-   `think:grill` round with a recommended answer per question; an item the user doesn't answer goes into the brief
-   as `[확인 필요: … / 추천: …]`. The first turn ends here, with the grill questions.
+0. **brief.md.** Reader level, anchor (what the reader knows), scope in/out, register, sources. One `think:grill` round
+   with a recommended answer per question; unanswered → `[확인 필요: … / 추천: …]` in the brief. The first turn ends here.
 1. **toc.md.** `think:untangle-thoughts` (Outline). One block per chapter in the `references/house-style.md` format:
    goal, `requires:` (earlier chapters only, order checked with think-tool), anchor analogy candidates, `sme:` (from
    `references/skill-routing.md`). Sweep it first: every unsourced version, default, limit gets `[확인 필요]`; list what
@@ -58,28 +55,28 @@ this repo, check that `tmp/` is gitignored; if not, tell the user before writing
 2. **glossary.md + concepts/NN.md.** Once per book (shared glossary); sequential-thinking clusters, think-tool picks
    analogies. Per concept: definition, prerequisite, analogy + where it breaks, one example, `[확인 필요]` items.
    `knowledge:base-builder` / `knowledge:query` only when the user supplied sources.
-3. **draft/NN.md.** `agents:dispatching-parallel-agents`, one agent per chapter with its `sme:` skill mounted.
-   No worktree isolation — `tmp/` is gitignored, so a worktree strands the file; each agent writes only its own
-   absolute path under `tmp/books/<slug>/`.
-4. **review/NN-rK.md.** Four checks, concurrent, never by the drafter, merged into one file: fact-check against the
-   official docs (or the user's sources) first, cited by URL, the SME skill second — an SME-vs-docs conflict is 🔴,
-   docs win; `cognition:epistemic-reasoner` tests every analogy and absolute claim; `write:writer-verification`
-   review mode (genre `doc`, audience from the brief); `../plans/agents/reader-agent.md` asked each learning goal as
-   a question — at most 5 per chapter per round. Findings are 🔴🟡🟢 with original → fix.
-5. **Revise draft/NN.md.** Close every 🔴🟡, then back to 4. From round 2, re-run only the checks that flagged
-   something. Leftovers at the stop go to `## 남은 항목` at the end of the chapter.
-6. **final/NN.md.** Copyedit to the house style, one `write:writer-verification` pass, `glossary.md` terms checked
-   book-wide; `write:like-me` only with user samples, `develop:architecture-designer` for system figures only.
-7. **book.pdf.** `node scripts/render-pdf.mjs tmp/books/<slug>` — toc.md order, in the NanumGothic fonts of
-   `assets/fonts/` (page, type, figures: `references/house-style.md`). Exit 1: no browser (`book.html` kept) — ask
-   for `CHROME=<path>`. Exit 3: PDF written but a chapter or image is missing — report them; that is a partial book,
-   never done. Never swap in another font: the page is set to Nanum metrics, and only these ship licensed.
+3. **draft/NN.md.** `agents:dispatching-parallel-agents`, one agent per chapter, its `sme:` skill mounted. No worktree
+   (`tmp/` is gitignored: a worktree strands the file); each writes only its own absolute path in `tmp/books/<slug>/`.
+4. **review/NN-rK.md.** Four checks, concurrent, never by the drafter, in one file: fact-check against the official docs
+   (or the user's sources) first, cited by URL, the SME skill second — an SME-vs-docs conflict is 🔴, docs win.
+   Official page unreachable: cite a web.archive.org copy by archive URL and capture date, naming the page unreachable
+   in the review file; no copy → `[확인 필요]`. `cognition:epistemic-reasoner` tests every analogy and absolute claim;
+   `write:writer-verification` review mode (genre `doc`, audience from the brief); `../plans/agents/reader-agent.md`
+   asks each learning goal as a question — at most 5 per chapter per round. Findings: 🔴🟡🟢, original → fix.
+5. **Revise draft/NN.md.** Close every 🔴🟡, then back to 4; from round 2 re-run only the checks that flagged something.
+   At the cap nothing more is revised: every open 🔴🟡 goes to `## 남은 항목` at the end of the chapter.
+6. **final/NN.md.** House-style copyedit, one `write:writer-verification` pass, `glossary.md` terms checked book-wide;
+   `write:like-me` only with user samples, `develop:architecture-designer` for system figures only. A fact or meaning
+   change (added sentence, re-pointed reference) gets one re-check by an agent that neither drafted nor made it, or
+   goes to `## 남은 항목`.
+7. **book.pdf.** `node scripts/render-pdf.mjs tmp/books/<slug>` — toc.md order, NanumGothic fonts of `assets/fonts/`
+   (page, type, figures: `references/house-style.md`). Exit 1: no browser (`book.html` kept) — ask for `CHROME=<path>`.
+   Exit 3: PDF written but a chapter or image is missing, or an image is not on its own line — report them; a partial
+   book, never done. Never swap in another font: the page is set to Nanum metrics, and only these ship licensed.
 
 Done: render exit 0, then `completion:verification-before-completion` with an isolated verifier against the Goal line
-and book.pdf (exists, ≥ 1 page, every toc chapter rendered).
-
-Parallelism: one agent per book for stages 0–1; stage 2 once per book; stages 3–6 per chapter, then one book-wide
-glossary pass. Independent means no two agents write the same file.
+and book.pdf (exists, ≥ 1 page, every toc chapter rendered). Parallelism: stages 0–2 once per book, 3–6 per chapter,
+then one book-wide glossary pass; no two agents write the same file.
 
 ## Output Template
 
@@ -92,7 +89,8 @@ Unverified: <m> × [확인 필요] — <list>
 Skills run: <plugin:skill × stage>
 ```
 
-Before stage 3 the Chapters and Review lines read `—`. Do NOT paste chapters into chat — they are in the files.
+Before stage 3 the Chapters and Review lines read `—`. Counts are recounted from the files at report time; a count not
+re-measured since the last change names its round, e.g. `(r3)`. Do NOT paste chapters into chat — they are in the files.
 
 ## What Claude Does / What You Do
 
@@ -104,7 +102,5 @@ Before stage 3 the Chapters and Review lines read `—`. Do NOT paste chapters i
 
 ## Related Skills
 
-- `references/skill-routing.md` — which skill runs at which stage, with what input.
-- `write:plans` — a single document or blog post.
-- `write:writer-verification` — the review passes this skill runs in stages 4 and 6.
-- `write:like-me` — the user's own voice, at stage 6, with samples.
+- `references/skill-routing.md` — which skill runs at which stage, with what input; `write:plans` — a single document.
+- `write:writer-verification` — review passes, stages 4 and 6; `write:like-me` — the user's voice, stage 6, with samples.

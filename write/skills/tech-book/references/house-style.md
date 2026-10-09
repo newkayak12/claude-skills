@@ -44,7 +44,8 @@ The break line is required; a box without it fails review.
 - Default figure is a markdown table or ASCII; a system diagram goes through `develop:architecture-designer`.
 - A figure image is a file in `final/` named `fig-N-M.svg` or `.png`, referenced `![설명](fig-N-M.svg)` on its own
   line, with the `그림 N-M …` caption paragraph below. SVG text in ASCII/Latin only — an SVG loaded as an image
-  cannot use the page's Nanum fonts — so Korean goes in the caption. A missing image makes render exit 3.
+  cannot use the page's Nanum fonts — so Korean goes in the caption. A missing image, or one not on its own line,
+  makes render exit 3.
 - Every code block's caption names what it shows and the runtime/version it was written for, or `[확인 필요: 버전]`.
 
 ## Page and type (book.pdf, `scripts/render-pdf.mjs`)
