@@ -110,6 +110,23 @@ test('missing image → code 3 naming it (or 1 without a browser), book.html wri
   assert.ok(existsSync(join(dir, 'book.html')));
 });
 
+test('image not on its own line → code 3 naming it (or 1 without a browser); code, own-line and box images not reported', () => {
+  const dir = fixture();
+  const finalDir = join(dir, 'final');
+  writeFileSync(join(finalDir, 'fig-1-1.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>');
+  const found = (md) => { const inl = []; mdToHtml(md, finalDir, [], inl); return inl; };
+  assert.deepEqual(found('```\n글 ![x](fig-1-1.svg) 글\n```'), [], 'fenced code');
+  assert.deepEqual(found('글 `![x](fig-1-1.svg)` 글'), [], 'inline code span');
+  assert.deepEqual(found('![a](fig-1-1.svg)'), [], 'own line');
+  assert.deepEqual(found('> ![a](fig-1-1.svg)'), [], 'own line in a box');
+  assert.deepEqual(found('  ![x](fig-1-1.svg)'), ['fig-1-1.svg'], 'indented line');
+  assert.deepEqual(found('- ![x](fig-1-1.svg)'), ['fig-1-1.svg'], 'list item');
+  writeFileSync(join(finalDir, '02.md'), CH2 + '\n글 ![x](fig-1-1.svg) 글\n');
+  const r = render(dir);
+  assert.equal(r.code, findBrowser() ? 3 : 1, r.msg);
+  assert.match(r.msg, /own line[^\n]*fig-1-1\.svg/);
+});
+
 const browser = findBrowser();
 test('toc chapter without final/ file → code 3, book.pdf still written, chapter named', { skip: browser ? false : 'no Chrome-family browser on this host' }, () => {
   const dir = fixture();

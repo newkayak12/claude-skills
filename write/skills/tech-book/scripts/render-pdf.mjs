@@ -5,7 +5,8 @@
 //
 // Usage:  node render-pdf.mjs <book-dir>
 // Exit 0 → book.pdf written · 1 → no browser / print failed (book.html kept) · 2 → usage or no chapters
-//      · 3 → book.pdf written but partial: a toc chapter has no final/ file, or a referenced image is missing.
+//      · 3 → book.pdf written but partial: a toc chapter has no final/ file, a referenced image is missing,
+//        or an image is not on its own line (it prints as a link).
 // CHROME=<path> uses that browser only (no search).
 
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, rmSync } from 'node:fs';
@@ -19,11 +20,13 @@ const FONTS = join(SKILL, 'assets', 'fonts');
 
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-export function inline(s) {
+// inlineImages collects the src of every `![a](p)` outside a code span: one that reaches inline() prints as a link.
+export function inline(s, inlineImages = []) {
   return s
     .split(/(`[^`]+`)/)
     .map((part) => {
       if (/^`[^`]+`$/.test(part)) return `<code>${esc(part.slice(1, -1))}</code>`;
+      for (const m of part.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)/g)) inlineImages.push(m[1]);
       return esc(part)
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/(^|[^*])\*([^*\s][^*]*?)\*(?!\*)/g, '$1<em>$2</em>')
@@ -35,16 +38,16 @@ export function inline(s) {
 const cells = (line) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
 const LIST = /^(\s*)([-*]|\d+\.)\s+(.*)$/;
 
-function list(items) {
+function list(items, inlineImages) {
   // items: [{indent, ordered, text}] — one nesting level, as house-style allows
   const tag = items[0].ordered ? 'ol' : 'ul';
   const base = items[0].indent;
   let out = `<${tag}>`;
   for (let i = 0; i < items.length; i++) {
-    out += `<li>${inline(items[i].text)}`;
+    out += `<li>${inline(items[i].text, inlineImages)}`;
     const sub = [];
     while (i + 1 < items.length && items[i + 1].indent > base) sub.push(items[++i]);
-    if (sub.length) out += list(sub);
+    if (sub.length) out += list(sub, inlineImages);
     out += '</li>';
   }
   return out + `</${tag}>`;
@@ -52,8 +55,10 @@ function list(items) {
 
 const IMAGE = /^!\[([^\]]*)\]\(([^)\s]+)\)\s*$/;
 
-// baseDir: where image paths resolve (final/). missingImages collects referenced images that do not exist.
-export function mdToHtml(md, baseDir = '.', missingImages = []) {
+// baseDir: where image paths resolve (final/). missingImages collects referenced images that do not exist;
+// inlineImages collects images not on their own line (IMAGE did not match, so they print as links).
+export function mdToHtml(md, baseDir = '.', missingImages = [], inlineImages = []) {
+  const inl = (t) => inline(t, inlineImages);
   const lines = md.replace(/\r\n/g, '\n').split('\n');
   const out = [];
   let i = 0;
@@ -70,7 +75,7 @@ export function mdToHtml(md, baseDir = '.', missingImages = []) {
       if (/^그림 \d+-\d+/.test(lines[j] || ''))
         for (; j < lines.length && lines[j].trim() !== '' && !/^(```|#{1,6}\s|>|\s*\|)/.test(lines[j]) && !LIST.test(lines[j]) && !IMAGE.test(lines[j]); j++)
           cap.push(lines[j].trim());
-      const figcaption = cap.length ? `<figcaption class="caption">${inline(cap.join(' '))}</figcaption>` : '';
+      const figcaption = cap.length ? `<figcaption class="caption">${inl(cap.join(' '))}</figcaption>` : '';
       out.push(`<figure><img src="${pathToFileURL(file).href}" alt="${esc(alt)}">${figcaption}</figure>`);
       i = cap.length ? j : i + 1;
     } else if (/^```/.test(line)) {
@@ -80,29 +85,29 @@ export function mdToHtml(md, baseDir = '.', missingImages = []) {
       out.push(`<pre><code>${esc(body.join('\n'))}</code></pre>`);
     } else if (/^#{1,6}\s/.test(line)) {
       const [, hashes, text] = line.match(/^(#{1,6})\s+(.*)$/);
-      out.push(`<h${hashes.length}>${inline(text.trim())}</h${hashes.length}>`);
+      out.push(`<h${hashes.length}>${inl(text.trim())}</h${hashes.length}>`);
       i++;
     } else if (/^\s*\|/.test(line) && /^\s*\|?\s*:?-{3,}/.test(lines[i + 1] || '')) {
       const head = cells(line);
       const rows = [];
       for (i += 2; i < lines.length && /^\s*\|/.test(lines[i]); i++) rows.push(cells(lines[i]));
       out.push(
-        `<table><thead><tr>${head.map((c) => `<th>${inline(c)}</th>`).join('')}</tr></thead><tbody>` +
-          rows.map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join('')}</tr>`).join('') +
+        `<table><thead><tr>${head.map((c) => `<th>${inl(c)}</th>`).join('')}</tr></thead><tbody>` +
+          rows.map((r) => `<tr>${r.map((c) => `<td>${inl(c)}</td>`).join('')}</tr>`).join('') +
           '</tbody></table>',
       );
     } else if (/^>/.test(line)) {
       const body = [];
       for (; i < lines.length && /^>/.test(lines[i]); i++) body.push(lines[i].replace(/^>\s?/, ''));
       // house-style boxes are one item per line (MySQL에서는 / Postgres에서는 / 깨지는 지점) — keep the lines apart
-      out.push(`<blockquote>${mdToHtml(body.join('\n\n'), baseDir, missingImages)}</blockquote>`);
+      out.push(`<blockquote>${mdToHtml(body.join('\n\n'), baseDir, missingImages, inlineImages)}</blockquote>`);
     } else if (LIST.test(line)) {
       const items = [];
       for (; i < lines.length && LIST.test(lines[i]); i++) {
         const [, ws, marker, text] = lines[i].match(LIST);
         items.push({ indent: ws.length, ordered: /\d/.test(marker), text });
       }
-      out.push(list(items));
+      out.push(list(items, inlineImages));
     } else if (line.trim() === '') {
       i++;
     } else {
@@ -110,7 +115,7 @@ export function mdToHtml(md, baseDir = '.', missingImages = []) {
       for (; i < lines.length && lines[i].trim() !== '' && !/^(```|#{1,6}\s|>|\s*\|)/.test(lines[i]) && !LIST.test(lines[i]) && !IMAGE.test(lines[i]); i++)
         para.push(lines[i].trim());
       const text = para.join(' ');
-      out.push(/^(그림|표|코드) \d+-\d+/.test(text) ? `<p class="caption">${inline(text)}</p>` : `<p>${inline(text)}</p>`);
+      out.push(/^(그림|표|코드) \d+-\d+/.test(text) ? `<p class="caption">${inl(text)}</p>` : `<p>${inl(text)}</p>`);
     }
   }
   return out.join('\n');
@@ -133,7 +138,7 @@ export function chapterFiles(bookDir) {
   return { files, missing };
 }
 
-export function buildHtml(title, chaptersMd, baseDir = '.', missingImages = []) {
+export function buildHtml(title, chaptersMd, baseDir = '.', missingImages = [], inlineImages = []) {
   const font = (file) => pathToFileURL(join(FONTS, file)).href;
   const css = `
 @font-face { font-family: 'NanumGothic'; font-weight: 400; src: url('${font('NanumGothic-Regular.ttf')}'); }
@@ -161,7 +166,7 @@ ul, ol { margin: 0 0 3mm; padding-left: 6mm; } li { margin: 0.5mm 0; }
 figure { margin: 4mm 0 0; text-align: center; break-inside: avoid; } img { max-width: 100%; }
 figcaption.caption { text-align: left; }
 a { color: inherit; text-decoration: none; }`;
-  const body = chaptersMd.map((md) => `<section class="chapter">\n${mdToHtml(md, baseDir, missingImages)}\n</section>`).join('\n');
+  const body = chaptersMd.map((md) => `<section class="chapter">\n${mdToHtml(md, baseDir, missingImages, inlineImages)}\n</section>`).join('\n');
   return `<!doctype html>\n<html lang="ko"><head><meta charset="utf-8"><title>${esc(title)}</title><style>${css}</style></head>\n<body>\n<section class="cover"><h1>${esc(title)}</h1></section>\n${body}\n</body></html>\n`;
 }
 
@@ -202,10 +207,12 @@ export function render(bookDir, env = process.env) {
   const title = (existsSync(brief) && readFileSync(brief, 'utf8').match(/^#\s+(.+)$/m)?.[1].trim()) || basename(dir);
   const html = join(dir, 'book.html');
   const missingImages = [];
-  writeFileSync(html, buildHtml(title, files.map((f) => readFileSync(f, 'utf8')), join(dir, 'final'), missingImages));
+  const inlineImages = [];
+  writeFileSync(html, buildHtml(title, files.map((f) => readFileSync(f, 'utf8')), join(dir, 'final'), missingImages, inlineImages));
   const warn =
     (missing.length ? `\nmissing final/ for chapters: ${missing.join(', ')}` : '') +
-    (missingImages.length ? `\nmissing images: ${missingImages.join(', ')}` : '');
+    (missingImages.length ? `\nmissing images: ${missingImages.join(', ')}` : '') +
+    (inlineImages.length ? `\nimages not on their own line (print as links): ${inlineImages.join(', ')}` : '');
   const browser = findBrowser(env);
   if (!browser)
     return { code: 1, msg: `no Chrome-family browser found — set CHROME=<path to Chrome/Chromium/Edge>. book.html written: ${html}${warn}` };
