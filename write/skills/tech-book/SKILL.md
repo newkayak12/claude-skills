@@ -75,8 +75,8 @@ tell the user before writing. Resume stages 0–2 from the highest on disk, each
    book, never done. Never swap in another font: the page is set to Nanum metrics, and only these ship licensed.
 
 Done: render exit 0, then `completion:verification-before-completion` with an isolated verifier against the Goal line
-and book.pdf (exists, ≥ 1 page, every toc chapter rendered). Parallelism: stages 0–2 once per book, 3–6 per chapter,
-then one book-wide glossary pass; no two agents write the same file.
+and book.pdf (exists, ≥ 1 page, every toc chapter rendered). Parallelism: one agent per book for stages 0–1, stage 2
+once per book, 3–6 per chapter, then one book-wide glossary pass; no two agents write the same file.
 
 ## Output Template
 
