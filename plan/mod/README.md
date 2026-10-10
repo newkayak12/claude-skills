@@ -92,6 +92,11 @@ Value H/M, kept out of this round to stay small; revisit after 2 and 3 ship.
    README/KOR (or CHANGELOG/CHANGELOG.KOR for teams) like any other change.
 6. **Plugin files via `$.plugin.root`.** `CLAUDE_PLUGIN_ROOT` is not set in a
    `$.process.run` child (00-spike-findings §4).
+7. **UI is drawn with Ink (user rule, 2026-10-10).** Anything a person reads in an
+   interactive session is a `ui.render` tree (Pane, AbovePrompt; the engine draws it with
+   Ink's Box/Text on the terminal), opened by its command or a band button. A command's
+   `{ text }` is the headless answer only; interactive, it opens the pane and returns a
+   one-line `{ text }` at most. No ASCII-art views inside `{ text }`, no browser page.
 
 ## Next round (user-picked 2026-10-07)
 
