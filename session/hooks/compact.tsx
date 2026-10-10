@@ -1,14 +1,18 @@
+import { atom, update } from 'claude-code'
 import type { On, PluginOptions } from 'claude-code'
 
 import { corrections, fmtAgo, isFresh, lessonsKey, makeRecap, mergeLessons, RECAP_PROMPT, recapKey } from './recap.ts'
 import type { Recap } from './recap.ts'
 import { statusLine } from './status.ts'
+import { BOARD_PANE } from './board.ts'
+import type { BoardTab } from './board.ts'
 
 // Recap the session at a set context %, then compact with that recap as the summary instructions.
 // The threshold is the userConfig field, so /config shows it; /smart-compact <n> writes the same field.
 // Every recap (here or /handoff) is kept per project: the next start shows it, /lessons collects its Corrections.
 export const THRESHOLD_FIELD = 'smart_compact_threshold'
-export const RECAP_PANE = 'recap'
+// the board pane's tab; mod.tsx draws it
+const boardTab = atom({ plugin: 'session', key: 'boardTab' } as const, 'sessions' as BoardTab)
 const DEFAULT_THRESHOLD = 70
 const MIN = 10
 const MAX = 95
@@ -40,6 +44,14 @@ async function storedRecap($: any): Promise<Recap | undefined> {
   }
 }
 
+// Interactive, these views are tabs of the board (Ink); headless, their text is the answer.
+async function onBoard($: any, to: BoardTab): Promise<boolean> {
+  if ((await $.session.surfaces()).length === 0) return false
+  await update($, boardTab, () => to)
+  await $.ui.open({ id: BOARD_PANE, title: 'Board' })
+  return true
+}
+
 export const register = (on: On, options: PluginOptions) => {
   on('command.run', { command: 'smart-compact' }, async ($, e) => {
     const current = thresholdOf(options)
@@ -60,15 +72,20 @@ export const register = (on: On, options: PluginOptions) => {
     const r = await recapNow($)
     if ('reason' in r) return { text: `no recap: ${r.reason}` }
     const to = e.args.trim()
-    if (!to) return { text: r.text }
-    const address = /^session_|^[0-9a-f]{8}-[0-9a-f-]{27}$/.test(to) ? { sessionId: to } : to
-    const sent = await $.session.send({ to: address, text: `Handoff from another session:\n\n${r.text}` }).catch(
-      (err: unknown) => ({ isDelivered: false as const, reason: String(err) }),
-    )
-    return { text: `${r.text}\n\n${sent.isDelivered ? `sent to ${to}` : `not sent to ${to}: ${sent.reason}`}` }
+    let note = ''
+    if (to) {
+      const address = /^session_|^[0-9a-f]{8}-[0-9a-f-]{27}$/.test(to) ? { sessionId: to } : to
+      const sent = await $.session.send({ to: address, text: `Handoff from another session:\n\n${r.text}` }).catch(
+        (err: unknown) => ({ isDelivered: false as const, reason: String(err) }),
+      )
+      note = sent.isDelivered ? `sent to ${to}` : `not sent to ${to}: ${sent.reason.split('\n')[0]}`
+    }
+    if (await onBoard($, 'recap')) return { text: ['Recap kept, on the board', note].filter(Boolean).join('; ') + '.' }
+    return { text: note ? `${r.text}\n\n${note}` : r.text }
   }).catch(($, e, next) => next(e))
 
   on('command.run', { command: 'recap' }, async $ => {
+    if (await onBoard($, 'recap')) return { text: 'Recap opened on the board.' }
     const r = await storedRecap($)
     if (!r) return { text: 'No recap for this project in the last 7 days. /handoff makes one now.' }
     return { text: `Recap from ${fmtAgo(((await $.clock.now()) as number) - r.ts)}:\n\n${r.text}` }
@@ -80,22 +97,12 @@ export const register = (on: On, options: PluginOptions) => {
       await $.store.delete(key)
       return { text: 'Lessons cleared for this project.' }
     }
+    if (await onBoard($, 'lessons')) return { text: 'Lessons opened on the board.' }
     const kept = ((await $.store.get(key)) as string[] | undefined) ?? []
     if (kept.length === 0) return { text: 'No lessons yet: they come from the Corrections section of each recap.' }
     const lines = kept.map((l, i) => `${i + 1}. ${l}`)
     return { text: [...lines, '', 'Worth keeping? Move it to CLAUDE.md. /lessons clear empties the list.'].join('\n') }
   }).catch(($, e, next) => next(e))
-
-  // The pane the band's Recap button opens: the stored text, read-only.
-  on('ui.render', { component: 'Pane', requestId: RECAP_PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
-    const r = await storedRecap($)
-    return (
-      <Box flexDirection="column" paddingX={1}>
-        <Text>{r ? r.text : 'No recap for this project in the last 7 days.'}</Text>
-      </Box>
-    )
-  })
 
   // Matched on reason, so it sits beside mod.tsx's unmatched turn.complete hook.
   on('turn.complete', { reason: 'answer' }, async ($, e, next) => {

@@ -26,7 +26,7 @@ test('the combined cap refuses a project add when global holds 8', async ($, on)
 })
 
 test('an over-cap store renders whole notes only and list says truncated', async ($, on) => {
-  memoWorld(on, { store: { 'memo.global': Array.from({ length: 10 }, (_, i) => n(`g${i}`)) } })
+  memoWorld(on, { store: { 'memo.global': Array.from({ length: 10 }, (_, i) => n(`g${i}`)) }, surfaces: [] })
   const lines = (await submit($)).context![0]!.split('\n')
   expect(lines).toHaveLength(1 + 8)
   const list = (await memo($, 'list')).text!

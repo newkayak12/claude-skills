@@ -45,7 +45,7 @@ export const register: Register = (on, _options) => {
       const note = 'Applies from the next prompt.'
       if (cmd.op === 'pane' || cmd.op === 'list') {
         const surfaces = (await $.session.surfaces()) as unknown[]
-        if (cmd.op === 'pane' && surfaces.length > 0) {
+        if (surfaces.length > 0) {
           await $.ui.open({ id: PANE, title: 'Memo' })
           return { text: 'Memo pane opened.' }
         }
