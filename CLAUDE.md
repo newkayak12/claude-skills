@@ -8,6 +8,8 @@ Every change to this repo is checked against the coding guidelines below (think 
 
 @_repo/coding-guidelines.md
 
+Mods (plugin `hooks/*.tsx` modules): anything a person reads in an interactive session is drawn with Ink, as a `ui.render` tree (Pane or AbovePrompt), opened by its command or a band button. A command's `{ text }` is the headless answer only; interactive, it opens the pane and returns one line at most.
+
 ## Skill Awareness
 
 Before responding to any user request, check whether a relevant skill exists:
