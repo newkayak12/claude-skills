@@ -33,6 +33,40 @@ Claude Code 2.1.292 or newer. Older builds print one stderr line and skip the mo
 
 The `claude -p` count is per session: only processes started below this session's engine process are counted. Processes that escape it (nohup, setsid, daemons reparented to pid 1) are not counted.
 
+## Screenshots
+
+Captured from a live Claude Code 2.1.293 session in a scratch repo whose remote is named `claude-skills`.
+
+![skill-toast](docs/images/skill-toast.png)
+1 · Skill toast and status line after `think:back-to-basics` runs (the trophy toasts and card come from the trophy plugin).
+
+![agent-model-guard](docs/images/agent-model-guard.png)
+2 · Agent model guard (`toast` mode) on an `Agent` call with no `model`.
+
+![running-script-guard](docs/images/running-script-guard.png)
+3 · Running-script guard denies an Edit to `loop.sh` while it runs.
+
+![worktree-guard](docs/images/worktree-guard.png)
+4 · Worktree guard denies `git worktree remove --force` on a worktree with an untracked file.
+
+![fetch-reminder](docs/images/fetch-reminder.png)
+5 · Fetch reminder at session start when `origin/main` is ahead.
+
+![push-ask](docs/images/push-ask.png)
+6 · Push ask before `git push`; anything but Run denies the command.
+
+![readme-without-kor](docs/images/readme-without-kor.png)
+7 · Toast on `git commit` with a staged `README.md` and no `KOR.md`.
+
+![alive-count](docs/images/alive-count.png)
+8 · Turn-end status line counting one unfinished agent and one `claude -p` child.
+
+![reap-ask](docs/images/reap-ask.png)
+9 · `/reap` lists its targets and asks first.
+
+![reap-result](docs/images/reap-result.png)
+9 · `/reap` after Reap: the agent stopped, the `claude -p` child killed.
+
 ## Options
 
 `agent_model_guard` (set in `/config`, default `toast`):

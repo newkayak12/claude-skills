@@ -394,6 +394,34 @@ teams ships a small mod: a band above the prompt, a status line that appears onl
 
 Known limitation: a session that started with no UI surface (headless or SDK-hosted) keeps the mod off even if a client attaches later; start a new session to get it (a reload of an unchanged mod does not re-fire session.start).
 
+### Screenshots
+
+Captured from a real Claude Code 2.1.293 session on a scratch repo (a size-L task with a small budget, so it stops before shape).
+
+![band](docs/images/band.png)
+The band while a run is going: title, what it is doing now, progress and `board`.
+
+![pane-summary](docs/images/pane-summary.png)
+`/teams-live` Summary: the stage rail, Now and You lines (here a run parked on a human `areas-critique` gate).
+
+![pane-work](docs/images/pane-work.png)
+The Work tab: To do / Doing / Done columns with their counts.
+
+![end-card](docs/images/end-card.png)
+The end-of-run card: verdict, what needs you, `report` and `×`.
+
+![pane-report](docs/images/pane-report.png)
+The Report tab, opened from the card: the path of `80-report.md`, then the report.
+
+![toast](docs/images/toast.png)
+A toast when a run of this session ends.
+
+![gate](docs/images/gate.png)
+The dispatch gate denying a direct edit under `.claude/teams-dispatch.json` while no task is open.
+
+![status-guard](docs/images/status-guard.png)
+The `team_status` guard denying `full: true` with no `node_id`.
+
 ## More
 
 - [CHANGELOG.md](CHANGELOG.md): every release, newest first.
