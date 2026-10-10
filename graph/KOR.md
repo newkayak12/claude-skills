@@ -393,6 +393,16 @@ graph는 작은 mod를 함께 제공합니다. graph 엔진의 진행 중인 실
 - **데이터 출처.** 세션 폴더의 `.harness-run/broker/runs/`에서 가장 최근 실행 파일을 읽습니다. graph는 실행 파일을 실행을 시작한 폴더 아래에 쓰므로, 이 폴더에서 시작한 실행만 보이고 다른 폴더(다른 worktree 포함)에서 시작한 실행은 보이지 않습니다. 살아 있는 실행이 없으면 패널에 실행이 없다고 표시됩니다.
 - **언어.** 기본은 영어이고, Claude Code의 `language` 설정이 한국어이면 한국어로 표시됩니다.
 
+### 스크린샷
+
+Claude Code 2.1.293 대화형 터미널 세션에서 끝난 실행을 실제로 캡처했습니다.
+
+![graph-live-flow](docs/images/graph-live-flow.png)
+`/graph-live` 흐름 탭: 단계 진행선, 지금 줄, 서브골 한 줄씩(impl → test → gate), 관문 막대.
+
+![graph-live-nodes](docs/images/graph-live-nodes.png)
+`/graph-live` 노드 탭: 모든 노드를 대기 / 진행 / 완료 보드에 표시, 재시도는 `#2`.
+
 ## 스킬
 
 - `install` — 기존 그래프 엔진을 복사하지 않고 연결하거나 검증합니다

@@ -33,6 +33,40 @@ Claude Code 2.1.292 이상. 이전 빌드는 stderr에 한 줄을 출력하고 �
 
 `claude -p` 개수는 세션 단위입니다. 이 세션의 엔진 프로세스 아래에서 시작된 프로세스만 셉니다. 벗어난 프로세스(nohup, setsid, pid 1로 재부모화된 데몬)는 세지 않습니다.
 
+## 스크린샷
+
+remote 이름이 `claude-skills`인 임시 저장소에서 실제 Claude Code 2.1.293 세션으로 찍었습니다.
+
+![skill-toast](docs/images/skill-toast.png)
+1 · `think:back-to-basics` 실행 뒤의 스킬 토스트와 상태줄(trophy 토스트와 카드는 trophy 플러그인이 그림).
+
+![agent-model-guard](docs/images/agent-model-guard.png)
+2 · `model` 없는 `Agent` 호출에 뜬 Agent 모델 가드(`toast` 모드).
+
+![running-script-guard](docs/images/running-script-guard.png)
+3 · 실행 중인 `loop.sh`의 Edit를 거부하는 실행 중 스크립트 가드.
+
+![worktree-guard](docs/images/worktree-guard.png)
+4 · 추적되지 않은 파일이 있는 워크트리의 `git worktree remove --force`를 거부하는 워크트리 가드.
+
+![fetch-reminder](docs/images/fetch-reminder.png)
+5 · `origin/main`이 앞서 있을 때 세션 시작에 뜨는 fetch 알림.
+
+![push-ask](docs/images/push-ask.png)
+6 · `git push` 전 확인. Run 외의 선택은 명령을 거부합니다.
+
+![readme-without-kor](docs/images/readme-without-kor.png)
+7 · `KOR.md` 없이 `README.md`만 스테이징하고 `git commit`할 때 뜨는 토스트.
+
+![alive-count](docs/images/alive-count.png)
+8 · 끝나지 않은 에이전트 1개와 `claude -p` 자식 1개를 세는 턴 종료 상태줄.
+
+![reap-ask](docs/images/reap-ask.png)
+9 · `/reap`이 대상을 보여주고 먼저 묻는 화면.
+
+![reap-result](docs/images/reap-result.png)
+9 · Reap 선택 뒤의 `/reap`: 에이전트 정지, `claude -p` 자식 종료.
+
 ## 옵션
 
 `agent_model_guard` (`/config`에서 설정, 기본값 `toast`):

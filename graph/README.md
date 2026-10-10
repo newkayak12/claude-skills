@@ -437,6 +437,16 @@ graph ships a small mod: a pane that shows the live run of the graph engine. It 
 - **Where the data comes from.** The newest run file in `.harness-run/broker/runs/` under the session folder. graph writes a run file under the folder the run was started in, so only runs started in this folder show; a run started from another folder (another worktree included) does not. If none is live, the pane says there is no run.
 - **Language.** English by default; Korean when Claude Code's `language` setting is Korean.
 
+### Screenshots
+
+Captured from a live Claude Code 2.1.293 terminal session, showing a finished run.
+
+![graph-live-flow](docs/images/graph-live-flow.png)
+`/graph-live`, Flow tab: stage rail, the Now line, one row per subgoal (impl → test → gate) and the gates bar.
+
+![graph-live-nodes](docs/images/graph-live-nodes.png)
+`/graph-live`, Nodes tab: every node on a To do / Doing / Done board, retries marked `#2`.
+
 ## Skills
 
 - `install` — connect or verify the existing graph engine without copying it

@@ -41,6 +41,31 @@ UI는 기본적으로 영어이고, Claude Code의 `language` 설정이 한국�
 
 대화형이 아닌 세션(`claude -p`, 즉 teams/graph 어댑터 세션 전부)은 아무것도 기록하지 않습니다.
 
+## 스크린샷
+
+Claude Code 2.1.293 터미널에서 실제로 캡처한 화면입니다 (영어 UI).
+
+![unlock-card](docs/images/unlock-card.png)
+스킬을 써서 업적을 풀자마자 프롬프트 위에 뜨는 금색 카드.
+
+![achievements-pane](docs/images/achievements-pane.png)
+`/achievements`: 업적 탭. 푼 업적과 잠긴 업적의 ▰▱ 진행 막대.
+
+![triggers-tab](docs/images/triggers-tab.png)
+트리거 탭: 프롬프트에 `write:writer-verification`의 트리거 문구가 있었지만 스킬은 실행되지 않음.
+
+![failures-tab](docs/images/failures-tab.png)
+실패 탭: `/trophy-bug`로 남긴 보고와 **복사** 버튼.
+
+![consent-band](docs/images/consent-band.png)
+프롬프트 위의 동의 질문. 답하기 전에는 아무것도 보내지 않습니다.
+
+![consent-preview](docs/images/consent-preview.png)
+**Show contents**: 다음 전송의 JSON 그대로 (여기서는 이벤트 0개).
+
+![telemetry-status](docs/images/telemetry-status.png)
+거절한 뒤의 `/trophy-telemetry status`.
+
 ## 텔레메트리 — 무엇을, 어디로 보내고, 어떻게 끄는가
 
 **동의하지 않으면 아무것도 전송되지 않습니다.** 첫 업적이 해금되면 프롬프트 위 이중 테두리 상자로 묻습니다(보내는 것, 보내지 않는 것, 똑같은 모양의 버튼 세 개).

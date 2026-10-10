@@ -33,8 +33,20 @@ Claude Code 세션이 남긴 것(변경한 파일, 커밋, 거부된 호출, 도
 ## 상태줄
 플러그인은 상태줄을 하나 씁니다. 자식이 살아 있으면 `⧗ N claude -p child(ren) running`(턴이 끝날 때마다 갱신), 가드가 무언가를 거부하면 그 즉시 `guard: N denied`를 표시하고, 둘 다 해당하면 ` · `로 이어 붙입니다. 둘 다 비었을 때만 지워지며, 헤드리스 실행에서는 아무것도 표시하지 않습니다. `mods`에도 자체 `claude -p` 개수 표시가 남아 있어, 두 플러그인을 함께 설치하면 둘 다 보일 수 있습니다.
 
+![status-line](docs/images/status-line.png)
+*가드가 `.env` 쓰기를 거부한 뒤의 상태줄: `guard: 1 denied · $0.11 · seven_day 35%`.*
+
+![orphan-count](docs/images/orphan-count.png)
+*백그라운드로 띄운 `claude -p` 자식: `⧗ 1 claude -p child(ren) running`.*
+
 ## 가드
 Bash 명령이나 Write/Edit가 실행되기 전에 몇 가지 규칙으로 검사해 먼저 묻습니다(모드에 따라 막기만 하기도 합니다). 모든 저장소에서 동작하며 bypass-permissions 세션도 포함합니다.
+
+![guard-ask](docs/images/guard-ask.png)
+*`hard-reset` 규칙: `git reset --hard HEAD` 전에 Run / Cancel을 묻습니다.*
+
+![guard-toast](docs/images/guard-toast.png)
+*`secret-write` 질문에 Cancel: toast와 모델이 돌려받는 이유.*
 
 ### 규칙
 | 규칙 | 걸리는 경우 | 기본 |
@@ -62,6 +74,9 @@ bypass는 네이티브 프롬프트가 없다는 뜻이지 안전망이 없다�
 ### 거부 로그
 `/session-denials`는 거부된 호출 패널을 엽니다. `[Copy rule]`은 `/permissions`에 넣을 규칙을 보여 줍니다. 항목에는 도구, 가린 호출(토큰, `NAME=value`, URL 비밀번호는 마스킹. 파일 호출은 경로만 저장), 이유, 출처가 들어갑니다. 플러그인 저장소에 최근 200개까지 보관하며 저장소에는 아무것도 쓰지 않습니다. `log_enabled`로 끌 수 있습니다. 가드가 본 네이티브 권한 거부도 기록하지만, 네이티브 대화상자에서 직접 누른 "No"는 기록하지 않습니다.
 
+![denials-pane](docs/images/denials-pane.png)
+*`/session-denials`: 거부된 호출 2건. `[Copy rule]`이 `Bash(git reset:*)`를 보여 줍니다.*
+
 ## 메모
 `/memo`는 다음 프롬프트에 함께 실리는 짧은 메모를 보관해, `/compact`나 `/clear` 뒤에도 모델이 다시 보게 합니다.
 
@@ -73,6 +88,9 @@ bypass는 네이티브 프롬프트가 없다는 뜻이지 안전망이 없다�
 | `/memo list` | 메모 출력 |
 | `/memo rm <n>` | `list`의 번호 `n` 메모 삭제 |
 | `/memo clear [--global]` | 프로젝트 메모 또는 전역 메모 비우기 |
+
+![memo-pane](docs/images/memo-pane.png)
+*대화창의 `/memo list` 출력과 전역·프로젝트 메모가 든 Memo 패널.*
 
 ### 범위와 한도
 범위는 프로젝트(저장소 루트 기준)와 전역 둘입니다. 한도는 둘을 합쳐 셉니다. 메모 8개, 각 280자, 전체 1200자이며 넘으면 이유와 함께 추가를 거부합니다. 주입되는 블록은 고정 머리말 다음에 `[global]`, `[project]` 메모 순입니다. 대화마다 한 번 실리고, `/compact`나 `/clear` 뒤, 또는 내용이 바뀐 뒤 다음 프롬프트부터 다시 실립니다.
@@ -101,14 +119,23 @@ smart-compact나 `/handoff`가 만든 recap은 프로젝트별로 마지막 하�
 
 다음 시작 때 밴드에 `last recap of this project, <경과>`와 **Recap** 버튼이 나오고, 누르면 패널로 열립니다. lessons는 어디에도 자동으로 쓰지 않습니다. 남길 만한 것은 직접 `CLAUDE.md`로 옮기세요.
 
+![handoff](docs/images/handoff.png)
+*`/smart-compact 60` 다음 `/handoff`: 6개 항목 recap을 출력하고 보관합니다.*
+
 ## 작업 타이머
 `/task <이름>`으로 시작, `/task`로 확인, `/task done`으로 종료, `/task log`로 오늘 이름별 합계를 봅니다. 진행 중에는 상태줄에 `⏱ <이름> 12m`이 1분마다 갱신되고, 새 작업을 시작하면 이전 작업은 끝난 것으로 기록됩니다.
 
 ## 비용
 턴마다 상태줄에 세션 비용과 가장 높은 rate limit 사용률이 나옵니다(`$1.23 · 5h 42%`). `/config`의 **Cost budget (USD)**를 정하면 그 금액에 닿을 때 toast가 한 번 뜹니다(0이면 끔).
 
+![cost-budget](docs/images/cost-budget.png)
+*Cost budget을 $0.01로 둔 경우: 첫 턴 뒤의 toast와 상태줄의 비용.*
+
 ## 프롬프트 힌트
 기본은 꺼짐입니다(`/config`의 **Prompt hint**). 켜면 20자 이하이면서 작업을 요청하고(fix/add/만들/고쳐…) 경로·코드·검증 기준이 없는 프롬프트에 범위나 검증 기준을 묻는 toast가 10분에 한 번까지 뜹니다. 프롬프트 자체는 바꾸지 않습니다.
+
+![prompt-hint](docs/images/prompt-hint.png)
+*Prompt hint 켬: `add logging`에 범위·검증 기준 toast가 뜨고, 프롬프트는 그대로 실행됩니다.*
 
 ## 한계
 - "longest gap"은 한 턴 안에서 두 도구 호출 사이 가장 긴 시간이며, 측정된 단계 시간이 아닙니다.
