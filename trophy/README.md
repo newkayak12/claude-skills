@@ -42,6 +42,31 @@ your machine; the **Copy** button copies it as a bug body.
 
 Sessions that are not interactive (`claude -p`, so every teams/graph adapter session) record nothing.
 
+## Screenshots
+
+Real captures from Claude Code 2.1.293 (terminal, English UI).
+
+![unlock-card](docs/images/unlock-card.png)
+The gold card above the prompt right after a skill unlocks an achievement.
+
+![achievements-pane](docs/images/achievements-pane.png)
+`/achievements`: the Achievements tab with unlocked rows and ▰▱ progress on locked ones.
+
+![triggers-tab](docs/images/triggers-tab.png)
+The Triggers tab: a prompt had `write:writer-verification`'s trigger phrase but the skill did not run.
+
+![failures-tab](docs/images/failures-tab.png)
+The Failures tab with a `/trophy-bug` report and its **Copy** button.
+
+![consent-band](docs/images/consent-band.png)
+The consent question above the prompt; nothing is sent until you answer.
+
+![consent-preview](docs/images/consent-preview.png)
+**Show contents**: the exact JSON of the next send (here 0 events).
+
+![telemetry-status](docs/images/telemetry-status.png)
+`/trophy-telemetry status` after declining.
+
 ## Telemetry — what is sent, where, and how to stop it
 
 **Nothing is sent unless you opt in.** Once your first achievement unlocks, trophy asks in a double-framed box above the prompt

@@ -389,6 +389,34 @@ teams는 작은 mod를 함께 제공합니다. 현재 세션의 실행을 보여
 
 알려진 제약: UI 표면 없이(헤드리스 또는 SDK 호스팅) 시작한 세션은 나중에 클라이언트가 붙어도 mod가 꺼진 채로 남습니다. 새 세션을 시작해야 켜집니다(바뀌지 않은 mod를 다시 로드해도 session.start는 다시 발생하지 않습니다).
 
+### 스크린샷
+
+스크래치 저장소에서 실제 Claude Code 2.1.293 세션으로 찍었습니다(예산을 작게 준 size L 작업이라 shape 전에 멈춥니다). 화면 문구는 영어 기본값입니다.
+
+![band](docs/images/band.png)
+실행 중일 때의 밴드: 제목, 지금 하는 일, 진행률, `board` 버튼.
+
+![pane-summary](docs/images/pane-summary.png)
+`/teams-live` 요약 탭: 단계 레일과 지금·확인 줄(여기서는 사람 `areas-critique` 게이트에서 대기 중인 실행).
+
+![pane-work](docs/images/pane-work.png)
+작업 탭: 대기 / 진행 / 완료 열과 개수.
+
+![end-card](docs/images/end-card.png)
+실행 종료 카드: 판정, 확인이 필요한 항목, `report`와 `×`.
+
+![pane-report](docs/images/pane-report.png)
+카드에서 연 보고서 탭: `80-report.md` 경로와 보고서 본문.
+
+![toast](docs/images/toast.png)
+이 세션의 실행이 끝날 때 뜨는 토스트.
+
+![gate](docs/images/gate.png)
+열린 작업이 없을 때 `.claude/teams-dispatch.json` 대상 파일을 직접 고치려 하면 디스패치 게이트가 거부하는 화면.
+
+![status-guard](docs/images/status-guard.png)
+`node_id` 없이 `full: true`로 부른 `team_status`를 가드가 거부하는 화면.
+
 ## 더 보기
 
 - [CHANGELOG.KOR.md](CHANGELOG.KOR.md): 모든 릴리스, 최신순.

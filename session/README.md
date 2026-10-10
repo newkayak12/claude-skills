@@ -33,8 +33,20 @@ A wrapper shell and its `claude -p` child show as one row; `[stop]` targets the 
 ## Status line
 The plugin keeps one status line: `⧗ N claude -p child(ren) running` while children are alive (updated at the end of each turn), and `guard: N denied` as soon as the guard denies something. When both apply they are joined with ` · `. The line is cleared only when both are empty; headless runs show nothing. `mods` still has its own `claude -p` count, so both can show while both plugins are installed.
 
+![status-line](docs/images/status-line.png)
+*The status line after the guard denied a `.env` write: `guard: 1 denied · $0.11 · seven_day 35%`.*
+
+![orphan-count](docs/images/orphan-count.png)
+*A `claude -p` child started in the background: `⧗ 1 claude -p child(ren) running`.*
+
 ## Guard
 Before a Bash command or a Write/Edit runs, the guard checks it against a few rules and asks you first (or blocks, see Modes). It works in every repo, including bypass-permissions sessions.
+
+![guard-ask](docs/images/guard-ask.png)
+*`hard-reset` rule: the guard asks Run / Cancel before `git reset --hard HEAD`.*
+
+![guard-toast](docs/images/guard-toast.png)
+*Cancel on a `secret-write` ask: the toast, and the reason the model gets back.*
 
 ### Rules
 | Rule | Fires on | Default |
@@ -62,6 +74,9 @@ Not a sandbox. `python -c`, `find -delete`, `dd`, shell aliases and scripts that
 ### Denial log
 `/session-denials` opens a pane of denied calls with `[Copy rule]`, which shows the `/permissions` rule to add. Each entry holds the tool, a redacted call (tokens, `NAME=value` pairs and URL passwords are masked; a file call stores only its path), the reason and the source. It lives in plugin storage, newest 200, and nothing is written to your repository. `log_enabled` turns it off. It also records native permission denials it saw; your own "No" in a native dialog is not logged.
 
+![denials-pane](docs/images/denials-pane.png)
+*`/session-denials`: two declined calls; `[Copy rule]` shows `Bash(git reset:*)`.*
+
 ## Memo
 `/memo` keeps short notes that ride along with your next prompt, so the model sees them again after `/compact` or `/clear`.
 
@@ -73,6 +88,9 @@ Not a sandbox. `python -c`, `find -delete`, `dd`, shell aliases and scripts that
 | `/memo list` | print the notes |
 | `/memo rm <n>` | remove note `n` as numbered in `list` |
 | `/memo clear [--global]` | clear the project notes, or the global ones |
+
+![memo-pane](docs/images/memo-pane.png)
+*`/memo list` in the transcript and the Memo pane with a global and a project note.*
 
 ### Scopes and caps
 Two scopes: project (keyed by the repo root) and global. Caps count both together: 8 notes, 280 characters each, 1200 in total; an add past a cap is refused with the reason. The injected block is a fixed header plus `[global]` notes then `[project]` notes. It is sent once per conversation and again after `/compact` or `/clear`, or after any change, from the next prompt.
@@ -101,14 +119,23 @@ Every recap (from smart-compact or `/handoff`) is kept for this project, the las
 
 On the next start a band shows `last recap of this project, <age>` with a **Recap** button that opens it in a pane. Lessons are never written anywhere for you: move the ones worth keeping to `CLAUDE.md` yourself.
 
+![handoff](docs/images/handoff.png)
+*`/smart-compact 60` then `/handoff`: the six-part recap, printed and kept.*
+
 ## Task timer
 `/task <name>` starts a task, `/task` shows it, `/task done` stops it, `/task log` prints today's totals by name. The status line shows `⏱ <name> 12m` while it runs, refreshed each minute; starting a new task finishes the old one.
 
 ## Cost
 After each turn the status line shows the session's cost and the highest rate-limit use (`$1.23 · 5h 42%`). Set **Cost budget (USD)** in `/config` for one toast when the cost reaches it (0 = off).
 
+![cost-budget](docs/images/cost-budget.png)
+*Cost budget set to $0.01: the toast after the first turn, and the cost in the status line.*
+
 ## Prompt hint
 Off by default (**Prompt hint** in `/config`). When on, a typed prompt of 20 characters or less that asks for work (fix/add/만들/고쳐…) and names no path, code or check gets one toast asking for scope or a check, at most every 10 minutes. The prompt itself is never changed.
+
+![prompt-hint](docs/images/prompt-hint.png)
+*Prompt hint on: `add logging` gets the scope/check toast; the prompt still runs.*
 
 ## Limits
 - "Longest gap" is the largest time between two tool calls in one turn, not a measured step.

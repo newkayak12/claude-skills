@@ -261,6 +261,25 @@ harness는 작은 mod를 함께 제공합니다. 열린 실행을 단계별로 �
 
 알려진 제약: 상태 줄은 게이트 설정을 세션의 작업 디렉터리 기준으로 읽습니다. UI 표면 없이(헤드리스 또는 SDK 호스팅) 시작한 세션은 나중에 클라이언트가 붙어도 mod가 꺼진 채로 남습니다. 새 세션을 시작해야 켜집니다(바뀌지 않은 mod를 다시 로드해도 session.start는 다시 발생하지 않습니다).
 
+### 스크린샷
+
+Claude Code 2.1.293 대화형 터미널 세션에서 실제로 캡처했습니다.
+
+![pipeline-band](docs/images/pipeline-band.png)
+열린 harness·graph 실행을 보여 주는 밴드, `Implement 1` 칩에 마우스를 올렸을 때의 카드, 프롬프트 아래 상태 줄.
+
+![gate-denial](docs/images/gate-denial.png)
+하네스를 켜기 전에 게이트 대상 경로를 Edit하려 하자 게이트 훅이 거부한 장면.
+
+![harness-gate-run](docs/images/harness-gate-run.png)
+`/harness-gate` 실행 탭: 단계 진행선, 지금 하는 일, 서브골 한 줄씩, 목표 게이트 막대.
+
+![harness-gate-units](docs/images/harness-gate-units.png)
+`/harness-gate` 단위 탭: 서브골의 대기 / 진행 / 완료 보드.
+
+![harness-gate-gate](docs/images/harness-gate-gate.png)
+`/harness-gate` 게이트 탭: 게이트 패턴, 개입 유효 시간, 마지막 판정.
+
 ## 상태
 - v1.27.0 — install이 참조 프로젝트 여부를 물음(기본 아니오). 있으면 `develop:like-my-code`가 그 스타일로 `.claude/conventions/coding.md`·`boundaries.md`를 채움(규칙마다 레포 근거와 인용 출처). develop이 없으면 건너뜀
 - v1.26.2 — trophy 함께 설치: 업데이트 후 첫 대화형 세션에서 trophy가 없으면 한 번 설치(삭제는 존중)
