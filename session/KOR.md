@@ -1,6 +1,6 @@
 # session
 
-Claude Code 세션이 남긴 것(변경한 파일, 커밋, 거부된 호출, 도구 호출 사이 가장 긴 간격)을 보여 주고, 다음 시작 때 밴드로 다시 보여 주며, 남아 있는 `claude -p` 자식 프로세스를 나열하고 안전하게 중지하며, 위험한 명령과 비밀 파일 쓰기를 가드하고, `/memo` 메모를 보관하고, 정한 %에서 recap 뒤 compact하며, 그 recap을 `/handoff`·`/recap`·`/lessons`에 쓰고, 작업 시간과 비용을 보여 줍니다. 버전 `0.3.0`. Claude Code 2.1.292 이상(hooks 모듈)이 필요합니다. 이 마켓플레이스의 다른 것은 필요 없습니다.
+Claude Code 세션이 남긴 것(변경한 파일, 커밋, 거부된 호출, 도구 호출 사이 가장 긴 간격)을 보여 주고, 다음 시작 때 밴드로 다시 보여 주며, 남아 있는 `claude -p` 자식 프로세스를 나열하고 안전하게 중지하며, 위험한 명령과 비밀 파일 쓰기를 가드하고, `/memo` 메모를 보관하고, 정한 %에서 recap 뒤 compact하며, 그 recap을 `/handoff`·`/recap`·`/lessons`에 쓰고, 작업 시간과 비용을 보여 주고, 열린 세션 전부를 `/board` 한 화면에(각 세션의 harness·graph·teams 실행과 함께) 보여 주며, main이 바뀌면 같은 저장소의 다른 세션에 알립니다. 버전 `0.4.0`. Claude Code 2.1.292 이상(hooks 모듈)이 필요합니다. 이 마켓플레이스의 다른 것은 필요 없습니다.
 
 ## 설치
 ```
@@ -85,7 +85,7 @@ bypass는 네이티브 프롬프트가 없다는 뜻이지 안전망이 없다�
 |---|---|
 | `/memo` | 읽기 전용 Memo 패널을 엽니다(모델이 받는 것과 같은 텍스트, 개수, 14일 이상 된 메모의 "CLAUDE.md로 옮길까?" 힌트) |
 | `/memo add [--global] <text>` | 메모 추가(기본은 프로젝트) |
-| `/memo list` | 메모 출력 |
+| `/memo list` | Memo 패널 열기(headless에서는 메모 출력) |
 | `/memo rm <n>` | `list`의 번호 `n` 메모 삭제 |
 | `/memo clear [--global]` | 프로젝트 메모 또는 전역 메모 비우기 |
 
@@ -112,18 +112,18 @@ smart-compact나 `/handoff`가 만든 recap은 프로젝트별로 마지막 하�
 
 | 명령 | 하는 일 |
 | --- | --- |
-| `/handoff` | 지금 recap을 만들어 보관하고 출력 |
+| `/handoff` | 지금 recap을 만들어 보관하고 보드의 Recap 탭으로 열기 |
 | `/handoff <session>` | 같은 동작에 더해 그 세션(피어 세션 이름이나 id)으로 전송 |
-| `/recap` | 이 프로젝트의 마지막 recap 출력(7일 이내) |
-| `/lessons` | recap에서 모은 "두 번 이상 고친 것" 목록(최근 20개). `/lessons clear`로 비우기 |
+| `/recap` | 이 프로젝트의 마지막 recap(7일 이내)을 보드의 Recap 탭으로 열기 |
+| `/lessons` | recap에서 모은 "두 번 이상 고친 것" 목록(최근 20개)을 보드의 Lessons 탭으로 열기. `/lessons clear`로 비우기 |
 
-다음 시작 때 밴드에 `last recap of this project, <경과>`와 **Recap** 버튼이 나오고, 누르면 패널로 열립니다. lessons는 어디에도 자동으로 쓰지 않습니다. 남길 만한 것은 직접 `CLAUDE.md`로 옮기세요.
+headless 실행(`claude -p`)에서는 이 명령들이 텍스트를 출력합니다. 다음 시작 때 밴드에 `last recap of this project, <경과>`와 **Recap** 버튼이 나오고, 누르면 보드의 Recap 탭이 열립니다. lessons는 어디에도 자동으로 쓰지 않습니다. 남길 만한 것은 직접 `CLAUDE.md`로 옮기세요.
 
 ![handoff](docs/images/handoff.png)
 *`/smart-compact 60` 다음 `/handoff`: 6개 항목 recap을 출력하고 보관합니다.*
 
 ## 작업 타이머
-`/task <이름>`으로 시작, `/task`로 확인, `/task done`으로 종료, `/task log`로 오늘 이름별 합계를 봅니다. 진행 중에는 상태줄에 `⏱ <이름> 12m`이 1분마다 갱신되고, 새 작업을 시작하면 이전 작업은 끝난 것으로 기록됩니다.
+`/task <이름>`으로 시작, `/task`로 확인, `/task done`으로 종료, `/task log`로 오늘 이름별 합계를 보드의 Today 탭에서 봅니다(headless에서는 출력). 진행 중에는 상태줄에 `⏱ <이름> 12m`이 1분마다 갱신되고, 새 작업을 시작하면 이전 작업은 끝난 것으로 기록됩니다.
 
 ## 비용
 턴마다 상태줄에 세션 비용과 가장 높은 rate limit 사용률이 나옵니다(`$1.23 · 5h 42%`). `/config`의 **Cost budget (USD)**를 정하면 그 금액에 닿을 때 toast가 한 번 뜹니다(0이면 끔).
@@ -137,10 +137,21 @@ smart-compact나 `/handoff`가 만든 recap은 프로젝트별로 마지막 하�
 ![prompt-hint](docs/images/prompt-hint.png)
 *Prompt hint 켬: `add logging`에 범위·검증 기준 toast가 뜨고, 프롬프트는 그대로 실행됩니다.*
 
+## 보드
+`/board`는 이 플러그인이 있는 열린 인터랙티브 세션 전부를 한 패널에 보여 주는, 플러그인이 아는 것을 보는 기본 화면입니다. 탭은 **Sessions** `[1]`, **Recap** `[2]`, **Lessons** `[3]`, **Today** `[4]`이고 `[r]`로 세션 목록을 새로 고칩니다.
+
+세션 행마다 브랜치, 컨텍스트 %, 비용, 진행 중인 작업, 그리고 그 폴더의 실행 세 칸이 나옵니다. 칸은 각 플러그인 패널의 표현과 표시를 그대로 씁니다: `harness ● running 1/3`, `graph ○ blocked 4/9`, `teams ✔ finished 3/3`, 없으면 `–`. 진행 중인 실행은 그 세션에서 자세히 볼 명령(`/harness-gate`, `/graph-live`, `/teams-live`)을 함께 보여 줍니다. 보드는 실행 파일을 직접 읽으므로 그 플러그인들이 없어도 됩니다.
+
+세션은 시작할 때와 턴마다 자기 행을 쓰고, 끝날 때 지웁니다. 30분 동안 갱신되지 않은 행은 idle로, 하루가 지난 행은 버립니다. 행은 이 컴퓨터의 플러그인 저장소에만 있습니다.
+
+## main 변경 알림
+한 세션에서 `main`으로의 `git push`가 성공하면(`origin main`, `HEAD:main`, `x:main`, main 브랜치에서의 그냥 push), 같은 저장소에서 최근 30분 안에 움직인 다른 열린 세션마다 `origin/main moved to <sha> … Fetch before editing or bumping versions.` 메시지가 갑니다. 세션당 2분에 한 번까지이고, 이 세션에는 `main moved: told N of M` toast가 뜹니다. headless 실행은 보내지 않습니다.
+
 ## 한계
 - "longest gap"은 한 턴 안에서 두 도구 호출 사이 가장 긴 시간이며, 측정된 단계 시간이 아닙니다.
 - 거부 횟수는 이 플러그인이 도구 호출 결과로 본 거부만 셉니다.
 - 경로는 일반 텍스트입니다(클릭 링크 없음).
 - Windows: 고아 프로세스 영역은 숨겨지고 중지는 꺼집니다. Retro 보기와 밴드는 동작합니다.
+- 보드의 harness 칸은 통과한 subgoal 수를 spec과 실행 폴더의 subgoal 수와 비교해 셉니다. 전체 단계 보기는 `/harness-gate`에 있습니다.
 - UI는 인터랙티브 세션 전용입니다. 헤드리스 실행은 기록과 요약 저장만 하고 아무것도 그리지 않습니다.
 - 실제 터미널 세션(2.1.294)에서 확인했습니다. 패널, `[stop]`, 회고 밴드, auto·bypass 모드의 가드 확인, `/clear` 뒤 `/memo`. 데스크톱 Code 탭은 아직 확인하지 않았습니다.

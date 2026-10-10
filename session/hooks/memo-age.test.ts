@@ -9,7 +9,7 @@ const PANE = { title: 'Memo', isFocused: true, bodyColumns: 80, placement: 'inli
 
 for (const [days, hinted] of [[13, false], [14, true]] as const) {
   test(`${days} days old: hint ${hinted ? 'shown' : 'absent'} in list and pane, never injected`, async ($, on) => {
-    memoWorld(on, { store: seed(days) })
+    memoWorld(on, { store: seed(days), surfaces: [] })
     const list = (await memo($, 'list')).text!
     const pane = texts(await (await $.ui.mount({ plugin: 'session', surface: 'terminal', component: 'Pane', requestId: 'memo', props: PANE })).drawn())
     expect(list.includes('14d old: move to CLAUDE.md?')).toBe(hinted)

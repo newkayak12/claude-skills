@@ -4,13 +4,19 @@ import { memo, memoWorld } from './testkit.ts'
 
 const KEY = 'memo.project:/proj'
 
-test('add then list shows the note with N/8', async ($, on) => {
-  memoWorld(on)
-  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+test('add then list shows the note with N/8 (headless text)', async ($, on) => {
+  memoWorld(on, { surfaces: [] })
   expect((await memo($, 'add use staging DB')).text).toMatch(/added/)
   const list = (await memo($, 'list')).text!
   expect(list).toContain('use staging DB')
   expect(list).toContain('1/8')
+})
+
+test('interactive, /memo list opens the pane (Ink) and answers one line', async ($, on) => {
+  const seen = memoWorld(on)
+  await memo($, 'add use staging DB')
+  expect((await memo($, 'list')).text).toBe('Memo pane opened.')
+  expect(seen.opened).toEqual(['memo'])
 })
 
 test('/memo is registered at session start', async ($, on) => {

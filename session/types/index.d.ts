@@ -33,6 +33,15 @@ declare module 'claude-code' {
       last: { day: string; files: number; commits: number; denied: number; longestMs: number; fileList: string[] } | null
       // the project's last recap (under 7 days) the band offers, null when none or dismissed
       recap: { ts: number } | null
+      // the board pane's tab and the rows read from the store when it opened or refreshed
+      boardTab: 'sessions' | 'recap' | 'lessons' | 'today'
+      // same shape as BoardRow in hooks/board.ts (the contract cannot import it)
+      boardRows: {
+        sessionId: string; root: string; branch: string; repo: string; percent: number; usd: number; task: string; ts: number
+        runs: Partial<Record<'harness' | 'graph' | 'teams', {
+          state: 'running' | 'stalled' | 'blocked' | 'finished' | 'failed'; done: number; total: number; live: boolean
+        }>>
+      }[]
     }
   }
 }

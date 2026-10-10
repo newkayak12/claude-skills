@@ -14,8 +14,8 @@ const RECAP = `1. Goal: ship\n6. Corrections:\n- verify before saying done\n- re
 const cmd = ($: any, command: string, args = '') =>
   $.command.run({ command, args } as never) as Promise<{ text?: string }>
 
-const world = (on: any, w: { store?: Record<string, unknown>; percent?: number; cost?: number } = {}) => {
-  const seen = guardWorld(on, { store: w.store })
+const world = (on: any, w: { store?: Record<string, unknown>; percent?: number; cost?: number; surfaces?: 'terminal'[] } = {}) => {
+  const seen = guardWorld(on, { store: w.store, surfaces: w.surfaces })
   const sends: { to: unknown; text: string }[] = []
   on('turn.complete', (_$: any, e: any) => ({ text: e.answer }))
   on('session.id', () => ({ value: 'sess-1' }))
@@ -73,8 +73,8 @@ test('prompt hint fires only on short task prompts without detail', () => {
 })
 
 // E7 + E2 + E5 through the engine
-test('/handoff keeps the recap and its corrections; /recap prints it', async ($, on) => {
-  const w = world(on)
+test('/handoff keeps the recap and its corrections; /recap prints it (headless text)', async ($, on) => {
+  const w = world(on, { surfaces: [] })
   expect((await cmd($, 'handoff')).text).toContain('Goal: ship')
   expect((w.seen.store.get(recapKey('/proj')) as { text: string }).text).toBe(RECAP)
   expect(w.seen.store.get(lessonsKey('/proj'))).toEqual(['verify before saying done', 'reply in Korean'])
@@ -82,6 +82,21 @@ test('/handoff keeps the recap and its corrections; /recap prints it', async ($,
   expect((await cmd($, 'lessons')).text).toContain('1. verify before saying done')
   await cmd($, 'lessons', 'clear')
   expect(w.seen.store.get(lessonsKey('/proj'))).toBeUndefined()
+})
+
+test('interactive, /handoff /recap /lessons /task log open board tabs and answer one line', async ($, on) => {
+  const w = world(on)
+  const one = async (command: string, args = '') => {
+    const t = (await cmd($, command, args)).text ?? ''
+    expect(t.split('\n')).toHaveLength(1)
+    return t
+  }
+  expect(await one('handoff')).toContain('Recap kept')
+  expect(await one('recap')).toContain('board')
+  expect(await one('lessons')).toContain('board')
+  expect(await one('task', 'log')).toContain('board')
+  expect(w.seen.opened).toEqual(['board', 'board', 'board', 'board'])
+  expect((w.seen.store.get(recapKey('/proj')) as { text: string }).text).toBe(RECAP)
 })
 
 test('/handoff <name> sends the recap to that session', async ($, on) => {
@@ -106,7 +121,7 @@ test('smart-compact keeps its recap too', async ($, on) => {
 })
 
 test('/recap with nothing stored says how to make one', async ($, on) => {
-  world(on)
+  world(on, { surfaces: [] })
   expect((await cmd($, 'recap')).text).toMatch(/\/handoff/)
 })
 
@@ -133,7 +148,7 @@ test('/task starts, shows, finishes and logs today', async ($, on) => {
   expect((await cmd($, 'task', 'done')).text).toContain('done: write docs')
   expect(w.seen.store.get(TASK_KEY)).toBeUndefined()
   expect(w.seen.store.get(TASK_LOG_KEY)).toHaveLength(1)
-  expect((await cmd($, 'task', 'log')).text).toContain('write docs')
+  expect((await cmd($, 'task', 'log')).text).toBe('Today opened on the board.')
 })
 
 // E8

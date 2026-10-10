@@ -33,7 +33,7 @@ test('interactive start registers /session and sets defaults', async ($, on) => 
 
   await $.session.start(start(true))
 
-  expect(registered).toEqual(['memo', 'session-denials', 'smart-compact', 'handoff', 'recap', 'lessons', 'task', 'session'])
+  expect(registered).toEqual(['memo', 'session-denials', 'smart-compact', 'handoff', 'recap', 'lessons', 'task', 'board', 'session'])
   expect(cells.get('session.tab')).toBe('retro')
   expect(cells.get('session.band')).toBe(false)
 })

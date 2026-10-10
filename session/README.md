@@ -1,6 +1,6 @@
 # session
 
-Shows what a Claude Code session left behind (files changed, commits, denied calls, longest gap between tool calls), shows it again as a band on your next start, lists stray `claude -p` children and stops one safely, guards dangerous commands and secret writes, keeps `/memo` notes, recaps before compacting at a % you set, keeps that recap for `/handoff`, `/recap` and `/lessons`, times tasks and shows the cost. Version `0.3.0`. Requires Claude Code 2.1.292+ (hooks module). It needs nothing else from this marketplace.
+Shows what a Claude Code session left behind (files changed, commits, denied calls, longest gap between tool calls), shows it again as a band on your next start, lists stray `claude -p` children and stops one safely, guards dangerous commands and secret writes, keeps `/memo` notes, recaps before compacting at a % you set, keeps that recap for `/handoff`, `/recap` and `/lessons`, times tasks and shows the cost, shows every open session on one `/board` (with its harness, graph and teams runs), and tells the other sessions of a repo when main moves. Version `0.4.0`. Requires Claude Code 2.1.292+ (hooks module). It needs nothing else from this marketplace.
 
 ## Install
 ```
@@ -85,7 +85,7 @@ Not a sandbox. `python -c`, `find -delete`, `dd`, shell aliases and scripts that
 |---|---|
 | `/memo` | open the read-only Memo pane (the same text the model gets, counts, and a "move to CLAUDE.md?" hint on notes 14 days or older) |
 | `/memo add [--global] <text>` | add a note (project by default) |
-| `/memo list` | print the notes |
+| `/memo list` | open the Memo pane (headless: print the notes) |
 | `/memo rm <n>` | remove note `n` as numbered in `list` |
 | `/memo clear [--global]` | clear the project notes, or the global ones |
 
@@ -112,18 +112,18 @@ Every recap (from smart-compact or `/handoff`) is kept for this project, the las
 
 | Command | What it does |
 | --- | --- |
-| `/handoff` | make a recap now, keep it, print it |
+| `/handoff` | make a recap now, keep it, open it on the board's Recap tab |
 | `/handoff <session>` | same, and send it to that session (a peer session name or id) |
-| `/recap` | print the project's last recap (under 7 days old) |
-| `/lessons` | the "corrected more than once" lines collected from recaps (newest 20); `/lessons clear` empties them |
+| `/recap` | open the project's last recap (under 7 days old) on the board's Recap tab |
+| `/lessons` | open the "corrected more than once" lines collected from recaps (newest 20) on the board's Lessons tab; `/lessons clear` empties them |
 
-On the next start a band shows `last recap of this project, <age>` with a **Recap** button that opens it in a pane. Lessons are never written anywhere for you: move the ones worth keeping to `CLAUDE.md` yourself.
+In a headless run (`claude -p`) these commands print their text instead. On the next start a band shows `last recap of this project, <age>` with a **Recap** button that opens the board's Recap tab. Lessons are never written anywhere for you: move the ones worth keeping to `CLAUDE.md` yourself.
 
 ![handoff](docs/images/handoff.png)
 *`/smart-compact 60` then `/handoff`: the six-part recap, printed and kept.*
 
 ## Task timer
-`/task <name>` starts a task, `/task` shows it, `/task done` stops it, `/task log` prints today's totals by name. The status line shows `⏱ <name> 12m` while it runs, refreshed each minute; starting a new task finishes the old one.
+`/task <name>` starts a task, `/task` shows it, `/task done` stops it, `/task log` opens today's totals by name on the board's Today tab (headless: prints them). The status line shows `⏱ <name> 12m` while it runs, refreshed each minute; starting a new task finishes the old one.
 
 ## Cost
 After each turn the status line shows the session's cost and the highest rate-limit use (`$1.23 · 5h 42%`). Set **Cost budget (USD)** in `/config` for one toast when the cost reaches it (0 = off).
@@ -137,10 +137,21 @@ Off by default (**Prompt hint** in `/config`). When on, a typed prompt of 20 cha
 ![prompt-hint](docs/images/prompt-hint.png)
 *Prompt hint on: `add logging` gets the scope/check toast; the prompt still runs.*
 
+## Board
+`/board` opens one pane for every open interactive session that has this plugin, the default place to see what the plugin knows. Tabs: **Sessions** `[1]`, **Recap** `[2]`, **Lessons** `[3]`, **Today** `[4]`; `[r]` refreshes the sessions.
+
+Each session row shows its branch, context %, cost, running task and three cells for the runs in its folder, in the words and marks of each plugin's own pane: `harness ● running 1/3`, `graph ○ blocked 4/9`, `teams ✔ finished 3/3`, or `–` when there is none. A live run names the command that shows its detail in that session (`/harness-gate`, `/graph-live`, `/teams-live`). The board reads the run files itself, so it needs none of those plugins.
+
+A session writes its row at start and after each turn, and removes it when it ends; a row not updated for 30 minutes is marked idle, and one older than a day is dropped. Rows are kept in this plugin's store on your machine only.
+
+## Main moved
+When a `git push` to `main` goes through in one session (`origin main`, `HEAD:main`, `x:main`, or a plain push while on main), every other open session of the same repository that was active in the last 30 minutes gets a message: `origin/main moved to <sha> … Fetch before editing or bumping versions.` At most one message per session every 2 minutes; this session gets a toast `main moved: told N of M`. Headless runs send nothing.
+
 ## Limits
 - "Longest gap" is the largest time between two tool calls in one turn, not a measured step.
 - Denied counts only denials this plugin saw as a tool call result.
 - Paths are plain text (no clickable links).
 - Windows: the orphan section is hidden and stopping is off; the Retro view and band work.
+- The board's harness cell counts subgoals that passed against the spec's and the run folder's subgoals; the full stage view stays in `/harness-gate`.
 - Interactive sessions only for UI; headless runs record the ledger and save the summary, nothing is drawn.
 - Checked in a live terminal session (2.1.294): panes, `[stop]`, the retro band, guard asks in auto and bypass mode, and `/memo` after `/clear`. The desktop Code tab is not checked yet.
