@@ -1,6 +1,6 @@
 # session plugin, Bundle G: session board and main-moved broadcast (design)
 
-Status: DESIGN, awaiting approval (CLAUDE.md "Design Changes": plan, setgoal, critique, approval, then code). No code yet.
+Status: BUILT as session 0.4.0 (approved 2026-10-10: "진행하자"). Live two-session check of the board and G3 still to do by hand.
 Plugin `session` (0.3.0). Picked on 2026-10-10 from the G list: G3 (main-moved broadcast) and G6 (session board). User decisions the same day: the board is the default place to see things; it shows harness, graph and teams as their current panes do; every mod UI is drawn with Ink (CLAUDE.md "Mods" line; local `plan/mod/README.md` rule 7).
 Principles: `plan/mod/README.md` (interactive-only UI, every hook fails open, no plugin depends on a mod); API facts: the `plugin-authoring` types (engine 2.1.294).
 
@@ -67,3 +67,13 @@ start / turn end → heartbeat row → `/board` reads all rows → pane. Bash pu
 1. Board scope: this repo's sessions only, or every session on the machine (rows carry `repo`, so both are cheap)? Proposal: all, this repo's first.
 2. Keep the Send button?
 3. Build order proposal: verify Critique 1–2 and the teams reader with a two-session spike → heartbeat → G6 → G0 → G3.
+
+## Decisions (2026-10-10)
+
+- Spike (two concurrent `claude -p` with a throwaway mod): `$.store` is shared live between concurrent sessions and neither overwrites the other (4 keys from 2 sessions all kept); `$.session.send({ to: { sessionId } })` reaches a sibling top-level session (`isDelivered: true`, receiver's `session.receive` origin `peer`), while the bare id string is refused. Critique 1-2 closed; no `$.fs` fallback built.
+- Scope: every session on the machine that has the plugin, this one first (Open question 1).
+- The row's `Send` button is cut (Critique 5); `/handoff <session>` already sends.
+- No new band button: the board opens from `/board`, and the band's Recap button now opens the board's Recap tab (the 0.3.0 `recap` pane is gone).
+- teams cell: the newest `.teams_output/broker/runs/*.json`, read with graph's copied `runState`; teams' own pane words (`running`, `stalled`, `finished`) come out the same.
+- G3 runs inside the `tool.call` hook (awaited), not in the background, because `$` use after a hook returns is still unproven (smart-compact's open question).
+- Survey of the Ink rule over all mods: `/memo list` now opens the Memo pane interactively (fixed here). `mods`' `/reap` still answers multi-line text; left for a `mods` change.
