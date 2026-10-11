@@ -56,6 +56,7 @@
 | 하고 싶은 일 | 스킬 |
 |---|---|
 | 토폴로지 선택, 트레이드오프 평가, ADR 작성 | `architecture-designer` |
+| 책·문서·공유용 그림을 검사된 SVG + PNG로 (Mermaid 말고) | `diagram` |
 | 코드 쓰기 전에 이벤트로 도메인 발견 | `event-storming` |
 | 바운디드 컨텍스트·애그리거트·유비쿼터스 언어 모델링 | `domain-driven-design` |
 | 서비스 분리가 타당한지, 커플링만 늘리는지 판정 | `service-boundary-validator` |
@@ -350,22 +351,45 @@ RDS Postgres가 매일 오후만 되면 느려지는데 쿼리 하나씩 보면 
 출력: 요구사항 요약(기능 + 비기능) → Mermaid 아키텍처 다이어그램 → 트레이드오프를 포함한 ADR
 형식의 핵심 결정 → 근거가 붙은 기술 추천 → 리스크와 완화 전략.
 
-시스템을 열어 보고 공유할 수 있는 인터랙티브 다이어그램으로도 그립니다. 아키텍처, 데이터 흐름,
-워크플로, 라이프사이클, 시퀀스를 지원합니다([archify](https://github.com/tt-a1i/archify)의 방식을
-의존성 없이 흡수). 에이전트가 타입이 있는 JSON IR을 쓰고 모든 노드의 위치를 직접 정합니다
-(`references/diagram-ir.md`). `scripts/diagram.mjs check`는 읽을 수 없는 그림을 거절하고(한 칸에
-노드 둘, 속하지 않은 경계 안의 노드, 연결 없는 노드, 너무 긴 라벨) 문제마다 고칠 방법으로
-알려줍니다. `render`는 검사를 통과했을 때만 HTML 한 파일(인라인 SVG, 노드에 마우스를 올리면 연결선
-강조, 라이트/다크)을 쓰므로, 잘못된 수정본이 마지막 정상본을 덮지 않습니다. 마크다운 문서 안에서는
-여전히 Mermaid를 씁니다.
+열어 보거나 공유하거나 인쇄할 그림은 `diagram`으로 그립니다. 마크다운 문서 안에서는 여전히
+Mermaid를 씁니다.
+
+### `diagram`
+
+Mermaid나 ASCII 그림 대신 검사를 통과한 그림을 그립니다. 에이전트는 먼저 그림인지 표인지 정하고
+(요점이 공간적이거나, 계층이거나, 둘 이상의 주체에 걸친 시간 흐름이거나, 측정값 비교일 때만 그림),
+타입이 있는 JSON IR을 쓰며 모든 칸·행·열의 위치를 직접 정합니다. 스크립트는 거절만 하고 아무것도
+옮기지 않습니다. 유형: `architecture`, `dataflow`, `workflow`, `lifecycle`, `sequence`
+(`references/diagram-ir.md`, [archify](https://github.com/tt-a1i/archify)의 방식을 의존성 없이 흡수한
+것으로 `architecture-designer`에서 분리)와 `layout`(페이지 배치, 행 + undo 레코드, 버전 체인. 축척이
+아니면 `축척 아님` 표시), `tree`(B-tree, 클러스터드 + 보조 인덱스, 실행 계획. 두 키 표기 방식 모두에서
+키 순서 검사), `timeline`(세션, 잠금 대기, 데드락), `er`(까마귀발 표기, 끝마다 선택성
+`1` · `0..1` · `0..*` · `1..*`, 유일 속성 옆 `UK`), `chart`(0부터 시작하는 막대, 선, 중앙값을 렌더러가
+그리는 점) (`references/figures.md`).
+
+`node scripts/diagram.mjs check fig.json`은 내장 폰트로 모든 라벨을 재고, 넘침, 겹침, 상자나 라벨을
+지나는 선, 잘림, `…`로 잘릴 라벨, 146 mm 책 폭에서 7.5 pt 미만인 글자, 폰트에 없는 문자, 그리고
+유형마다 오해를 부르는 경우(합이 맞지 않는 크기, 순서가 틀린 키, 어떤 잠금으로도 설명되지 않는 대기,
+0에서 시작하지 않는 막대 축)를 거절합니다. 거절마다 고칠 방법으로 알려줍니다. 이어서
+`figure fig.json fig`가 `fig.svg`(스크립트·외부 참조 없는 자기완결 파일, NanumGothic 부분집합을
+`@font-face`로 내장해 수십 KB)와 헤드리스 Chrome 계열 브라우저로 2배 크기 `fig.png`를 씁니다
+(브라우저가 없으면 SVG만 쓰고 exit 3, `CHROME=` 지정). 에이전트는 PNG를 직접 보고 나서야 끝났다고
+하며, 최대 3라운드입니다. 선택 항목 `legend` 객체로 edge 스타일 키 이름을 바꾸고(`{"sync": "요청"}`),
+edge 라벨은 자기 선과 겹치지 않는 자리를 고릅니다. grid 유형과 sequence는 `render fig.json fig.html`로
+예전처럼 인터랙티브 HTML(마우스 올림 강조, 라이트/다크)도 씁니다.
+
+스킬에 NanumGothic Regular + Bold(SIL OFL 1.1, 라이선스는 `assets/fonts/`)가 들어 있어 플러그인이 약
+4 MB 커집니다. 브라우저가 아닌 SVG 렌더러(librsvg, Inkscape, QuickLook)는 `@font-face`를 무시할 수
+있으니 그런 곳에는 PNG를 쓰세요.
 
 ```
-웹 요청을 다이어그램으로 그려줘: 브라우저가 API를 부르고, API가 Redis를 확인하고, 캐시 미스면
-PostgreSQL을 조회해 캐시를 채운다. 공유할 거야.
+9장에 넣을 InnoDB 16KB 페이지 구조를 그림으로 그려줘. 두 세션이 한 행 잠금을 기다리는 건
+타임라인으로. 머메이드 말고.
 ```
 
-teams도 이를 씁니다. shape가 패키지 맵을 이 IR로 돌려주면 매니저가 문서 옆에 렌더링하고,
-critique와 integrate가 그 이음새를 읽습니다.
+teams도 이를 씁니다. `teams/mcp/diagram.mjs`는 바이트 단위로 같은 사본이며(달라지면 테스트 실패),
+shape가 패키지 맵을 이 IR로 돌려주면 매니저가 문서 옆에 렌더링하고, critique와 integrate가 그
+이음새를 읽습니다.
 
 ### `event-storming`
 
