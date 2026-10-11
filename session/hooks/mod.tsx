@@ -335,7 +335,7 @@ export const register: Register = (on, options) => {
     } catch {}
     await $.command.register({ name: 'memo', description: 'Pin notes the model reads in every conversation of this project' })
     await $.command.register({ name: 'session-denials', description: 'Calls the guard or the permission rules denied this session' })
-    await $.command.register({ name: 'smart-compact', description: 'Set the context % at which the session is recapped and compacted (/smart-compact 60)' })
+    await $.command.register({ name: 'smart-compact', description: 'Set the context % at which the session is recapped and compacted (/smart-compact 60); /smart-compact log lists its checks' })
     await $.command.register({ name: 'handoff', description: 'Recap this session now and keep it for the next start; /handoff <session> also sends it there' })
     await $.command.register({ name: 'recap', description: "Print this project's last recap (smart-compact or /handoff)" })
     await $.command.register({ name: 'lessons', description: 'Corrections collected from recaps; /lessons clear empties them' })
