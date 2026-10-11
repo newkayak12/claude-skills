@@ -1,6 +1,8 @@
 import { atom, update } from 'claude-code'
 import type { On, PluginOptions } from 'claude-code'
 
+import { appendLog, asLog, fmtLastCheck, fmtLog, fmtStats, LOG_KEY, patchLog } from './compact-log.ts'
+import type { LogEntry, LogStats } from './compact-log.ts'
 import { corrections, fmtAgo, isFresh, lessonsKey, makeRecap, mergeLessons, RECAP_PROMPT, recapKey } from './recap.ts'
 import type { Recap } from './recap.ts'
 import { statusLine } from './status.ts'
@@ -19,6 +21,57 @@ const MAX = 95
 
 const thresholdOf = (options: PluginOptions) => Number(options[THRESHOLD_FIELD] ?? DEFAULT_THRESHOLD)
 let isRunning = false
+
+// The decision log: writes run one after another on one chain, so a pending→outcome patch and the next
+// turn's append cannot overwrite each other. The turn never waits on it; a failing store is only counted.
+const stats: LogStats = { evaluated: 0, byDecision: {}, logWriteErrors: 0 }
+let logChain: Promise<void> = Promise.resolve()
+let logSeq = 0
+const PROC = Date.now().toString(36)
+
+const firstLine = (err: unknown) => (err instanceof Error ? err.message : String(err)).split('\n')[0]!
+
+const count = (decision: string) => {
+  const kind = decision.split(':').slice(0, decision.startsWith('skipped:') ? 2 : 1).join(':')
+  stats.byDecision[kind] = (stats.byDecision[kind] ?? 0) + 1
+}
+
+function writeLog($: any, change: (list: LogEntry[]) => Promise<LogEntry[]>) {
+  logChain = logChain.then(async () => {
+    try {
+      const r: any = await $.store.set(LOG_KEY, await change(asLog(await $.store.get(LOG_KEY))))
+      if (r && typeof r === 'object' && 'deny' in r) throw new Error(String(r.deny))
+    } catch (err) {
+      stats.logWriteErrors++
+      stats.lastLogError = firstLine(err)
+    }
+  })
+}
+
+// One stored entry; returns its id so the recapping entry's outcome can be patched in later.
+function logDecision($: any, percent: number | null | undefined, threshold: number, decision: string, outcome = decision) {
+  count(decision)
+  const id = `${PROC}-${++logSeq}`
+  writeLog($, async list => {
+    const ts = (await $.clock.now()) as number
+    let session = 'unknown'
+    try {
+      session = String(await $.session.id())
+    } catch {}
+    return appendLog(list, { id, ts, session, percent: percent ?? null, threshold, decision, outcome })
+  })
+  return id
+}
+
+const readLog = async ($: any) => {
+  try {
+    return asLog(await $.store.get(LOG_KEY))
+  } catch {
+    return []
+  }
+}
+
+const logOutcome = ($: any, id: string, outcome: string) => writeLog($, async list => patchLog(list, id, outcome))
 
 // One fork over the transcript; kept as the project's recap, its Corrections added to the lessons.
 async function recapNow($: any): Promise<{ text: string } | { reason: string }> {
@@ -56,7 +109,15 @@ export const register = (on: On, options: PluginOptions) => {
   on('command.run', { command: 'smart-compact' }, async ($, e) => {
     const current = thresholdOf(options)
     const arg = e.args.trim().replace(/%$/, '')
-    if (!arg) return { text: `recap + compact at ${current}%. Change it with /smart-compact <${MIN}-${MAX}>.` }
+    if (arg === 'log') return { text: fmtLog(await readLog($), (await $.clock.now()) as number) }
+    if (!arg) {
+      const lines = [
+        `recap + compact at ${current}%. Change it with /smart-compact <${MIN}-${MAX}>; /smart-compact log lists the checks.`,
+        fmtLastCheck(await readLog($), (await $.clock.now()) as number),
+        fmtStats(stats),
+      ]
+      return { text: lines.join('\n') }
+    }
 
     const value = Number(arg)
     if (!Number.isInteger(value) || value < MIN || value > MAX) {
@@ -107,19 +168,30 @@ export const register = (on: On, options: PluginOptions) => {
   // Matched on reason, so it sits beside mod.tsx's unmatched turn.complete hook.
   on('turn.complete', { reason: 'answer' }, async ($, e, next) => {
     const result = await next(e)
-    if (e.agentId || isRunning) return result
-    if ((await $.session.surfaces()).length === 0) return result
-
-    const percent = (await $.session.usage()).context.percent ?? 0
+    stats.evaluated++
     const threshold = thresholdOf(options)
-    if (percent < threshold) return result
+    if (e.agentId) return count('skipped:agent'), result
+    if (isRunning) return logDecision($, null, threshold, 'skipped:running'), result
+    if ((await $.session.surfaces()).length === 0) return count('skipped:headless'), result
+
+    let raw: number | undefined
+    try {
+      raw = (await $.session.usage()).context.percent
+    } catch (err) {
+      logDecision($, null, threshold, `usage-failed:${firstLine(err)}`)
+      throw err
+    }
+    const percent = raw ?? 0
+    if (percent < threshold) return logDecision($, raw, threshold, 'below'), result
 
     isRunning = true
+    const id = logDecision($, raw, threshold, 'recapping', 'pending')
     const recapThenCompact = async () => {
       $.ui.status(`smart-compact: ${percent}% ≥ ${threshold}%, recapping`)
       const recap = await recapNow($)
       if ('reason' in recap) {
         $.ui.toast(`smart-compact: recap failed (${recap.reason}), left to auto-compact`)
+        logOutcome($, id, `recap-failed:${recap.reason}`)
         return
       }
       const instructions = `Keep this recap and direction intact in the summary:\n\n${recap.text}`
@@ -128,14 +200,16 @@ export const register = (on: On, options: PluginOptions) => {
         try {
           const done = await $.session.compact({ instructions })
           $.ui.toast(done.skip ? `smart-compact: skipped (${done.skip})` : 'smart-compact: recapped and compacted')
+          logOutcome($, id, done.skip ? `skip:${done.skip}` : 'compacted')
           return
         } catch {
           await $.clock.sleep(500)
         }
       }
       $.ui.toast('smart-compact: could not compact, left to auto-compact')
+      logOutcome($, id, 'compact-failed')
     }
-    void recapThenCompact().catch(() => {}).finally(() => {
+    void recapThenCompact().catch(err => logOutcome($, id, `error:${firstLine(err)}`)).finally(() => {
       $.ui.status(statusLine({}))
       isRunning = false
     })
