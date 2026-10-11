@@ -1,9 +1,14 @@
 #!/usr/bin/env node
-// develop:architecture-designer - a typed diagram IR, validated before anything is drawn, rendered to one
+// develop:diagram - a typed diagram IR, validated before anything is drawn, rendered to one
 // self-contained HTML file (inline SVG, no scripts from anywhere else, no dependencies).
 //
 //   node diagram.mjs check  <ir.json>              -> exit 0 and "ok", or exit 1 and one repair per line
 //   node diagram.mjs render <ir.json> <out.html>   -> checks first; writes out.html only when it passes
+//   node diagram.mjs figure <ir.json> <out-base>   -> checks first; writes out-base.svg (font embedded) + out-base.png (2x)
+//
+// check and figure, and every type beyond the five below, go through ./figure.mjs, loaded with a
+// dynamic import() only on that path - so this file alone still validates and renders the five
+// grid/sequence types to HTML.
 //
 // The layout is the author's, not a solver's: every node names its own grid cell (row, col) in
 // a grid diagram, and a sequence diagram's order is its message order. What this file checks is
@@ -14,6 +19,7 @@
 
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { dirname, resolve } from 'node:path';
 
 export const TYPES = ['architecture', 'dataflow', 'workflow', 'lifecycle', 'sequence'];
 export const NODE_KINDS = ['actor', 'service', 'store', 'queue', 'external', 'step', 'state', 'decision', 'package'];
@@ -55,6 +61,7 @@ export function validate(ir) {
       if (m && m.style != null && !EDGE_STYLES.includes(m.style)) errs.push(`${where}: set "style" to one of ${EDGE_STYLES.join(', ')} or leave it out`);
     });
     if (ms.length > 60) errs.push(`split the sequence: ${ms.length} messages is more than one reader follows (keep it to 60)`);
+    legendErrs(ir, ms, errs);
     return errs;
   }
   const nodes = Array.isArray(ir.nodes) ? ir.nodes : [];
@@ -88,6 +95,7 @@ export function validate(ir) {
     if (e && e.style != null && !EDGE_STYLES.includes(e.style)) errs.push(`${where}: set "style" to one of ${EDGE_STYLES.join(', ')} or leave it out`);
     if (e) { linked.add(e.from); linked.add(e.to); }
   });
+  legendErrs(ir, edges, errs);
   if (nodes.length > 1) {
     for (const id of byId.keys()) if (!linked.has(id)) errs.push(`node ${id} has no edge - connect it or drop it; an island says nothing about the system`);
   }
@@ -116,6 +124,17 @@ export function validate(ir) {
     }
   });
   return errs;
+}
+
+// "legend" renames edge styles in the legend ({"async": "붙음"}); it may name only styles in use.
+function legendErrs(ir, lines, errs) {
+  if (ir.legend == null) return;
+  if (typeof ir.legend !== 'object' || Array.isArray(ir.legend)) { errs.push('"legend" must be an object of style: label, e.g. {"async": "붙음"}'); return; }
+  const used = [...new Set(lines.map((e) => (e && e.style) || 'sync'))];
+  for (const [k, v] of Object.entries(ir.legend)) {
+    if (!used.includes(k)) errs.push(`legend: "${k}" is not a style any edge uses (${used.join(', ')}) - drop it`);
+    else if (typeof v !== 'string' || !v.trim() || v.length > MAX_LABEL) errs.push(`legend.${k}: give it a label of 1-${MAX_LABEL} characters`);
+  }
 }
 
 // ---------- rendering ----------
@@ -229,7 +248,7 @@ export function render(ir) {
   const { W, H, body } = ir.type === 'sequence' ? renderSequence(ir) : renderGrid(ir);
   const markers = EDGE_STYLES.map((s) => `<marker id="arrow-${s}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head ${s}" d="M0 0 L10 5 L0 10 z"/></marker>`).join('');
   const legend = [...new Set((ir.type === 'sequence' ? ir.messages : ir.edges || []).map((e) => e.style || 'sync'))]
-    .map((s) => `<span class="lg ${s}"><svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5"/></svg>${s}</span>`).join('');
+    .map((s) => `<span class="lg ${s}"><svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5"/></svg>${esc((ir.legend && ir.legend[s]) || s)}</span>`).join('');
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(ir.title)}</title>
@@ -277,20 +296,36 @@ export function renderToFile(ir, outPath) {
   return outPath;
 }
 
-function main(argv) {
+async function main(argv) {
   const [cmd, input, out] = argv;
-  if (!['check', 'render'].includes(cmd) || !input || (cmd === 'render' && !out)) {
-    process.stderr.write('usage: diagram.mjs check <ir.json> | render <ir.json> <out.html>\n');
+  if (!['check', 'render', 'figure'].includes(cmd) || !input || (cmd !== 'check' && !out)) {
+    process.stderr.write('usage: diagram.mjs check <ir.json> | render <ir.json> <out.html> | figure <ir.json> <out-base>\n');
     return 2;
   }
   let ir;
   try { ir = JSON.parse(readFileSync(input, 'utf8')); } catch (e) { process.stdout.write(`the IR is not readable JSON: ${e.message}\n`); return 1; }
-  const errs = validate(ir);
-  if (errs.length) { process.stdout.write(errs.map((e) => `- ${e}`).join('\n') + '\n'); return 1; }
+  const fail = (errs) => { process.stdout.write(errs.map((e) => `- ${e}`).join('\n') + '\n'); return 1; };
+  if (cmd === 'render' && TYPES.includes(ir && ir.type)) {
+    const errs = validate(ir);
+    if (errs.length) return fail(errs);
+    renderToFile(ir, out);
+    process.stdout.write(`ok ${out}\n`);
+    return 0;
+  }
+  // The static path (check, figure) and the book types: measured with the embedded font.
+  const fig = await import('./figure.mjs');
+  const opts = { baseDir: dirname(resolve(input)) };
+  if (cmd === 'figure') {
+    const r = fig.writeFigure(ir, out, opts);
+    process.stdout.write(`${r.msg}\n`);
+    return r.code;
+  }
+  const errs = fig.checkFigure(ir, opts);
+  if (errs.length) return fail(errs);
   if (cmd === 'check') { process.stdout.write('ok\n'); return 0; }
-  renderToFile(ir, out);
+  fig.renderFigureHtmlToFile(ir, out, opts);
   process.stdout.write(`ok ${out}\n`);
   return 0;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] || '').href) process.exitCode = main(process.argv.slice(2));
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) main(process.argv.slice(2)).then((code) => { process.exitCode = code; });

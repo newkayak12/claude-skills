@@ -7,7 +7,11 @@ that fails the check, and a failed revision never overwrites the last good HTML.
 ```bash
 node scripts/diagram.mjs check  arch.json             # "ok", or one repair per line (exit 1)
 node scripts/diagram.mjs render arch.json arch.html   # checks first; writes only on pass
+node scripts/diagram.mjs figure arch.json arch        # arch.svg (font embedded) + arch.png (2x) for a page
 ```
+
+`check` measures the figure as `figure` will draw it (see `figures.md` for the geometry rules and
+the five book types); `render` to HTML needs only the IR checks below.
 
 ## Pick the type
 
@@ -44,6 +48,11 @@ node scripts/diagram.mjs render arch.json arch.html   # checks first; writes onl
 
 - `kind`: `actor` `service` `store` `queue` `external` `step` `state` `decision` `package`.
 - `style`: `sync` (default, solid) · `async` (dashed) · `data` (green) · `fail` (orange, dotted - the unhappy path).
+- Legend: drawn only when the edges use two or more styles; one style, no legend. It prints the
+  style keys unless `"legend": {"sync": "요청", "async": "붙음"}` renames them - name only styles
+  the edges use, so a Korean figure never prints sync/async/data. Same for `sequence`.
+- A `store` cylinder's text sits below its top arc; a two-line label plus a sublabel does not fit
+  and is refused (shorten the label to one line or drop the sublabel).
 - `row`/`col` are yours. **Layout is a judgement, not a solver's output**: put the entry point at
   the left or top, the thing the reader must notice where the eye lands, and keep one flow on one
   row. The checker only refuses what cannot be read: two nodes in one cell, a non-member inside a
@@ -78,3 +87,5 @@ Message order is time order; the renderer numbers them.
 - A design doc, ADR or PR in markdown: Mermaid inline is fine, it renders where the text lives.
 - Something a person will open, explore or share, or a system with enough parts that hover
   matters: this IR and its HTML. Keep the `.json` next to the `.html` - it is the source to edit.
+- A book, a PDF or a printed page: `figure` - static SVG + PNG, sized for the 146 mm text width.
+  At most 3 grid columns or 4 sequence participants print legibly; the check says when it is too wide.
