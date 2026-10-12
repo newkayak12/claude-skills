@@ -12,6 +12,8 @@ const CONTRACT = {
   plan: `Return JSON: {"plan": "<the decomposition>", "handoff": "<what the next node needs>", "evidence": "<how you checked the request is actually satisfiable here>"}`,
   setgoal: `Return JSON: {"spec": {"goal": "...", "acceptance": ["goal-level criteria"], "subgoals": [{"id": "U1", "title": "...", "persona": "...", "acceptance": ["subgoal criteria"], "test": ["deterministic checks"], "deps": []}]}, "handoff": "...", "evidence": "..."}
 Every acceptance criterion must be checkable by a command or a file inspection. Reject your own vague criteria before returning.
+Goal-level acceptance entries are AC-n. If a specs/<feature>/spec.md with AC-n exists (or the plan states stories/criteria), reuse those exact IDs. Otherwise write "AC-n: Given ... When ... Then ..." after sweeping for unstated criteria (inputs that must count as the same, resource bounds, behaviour while a state holds), and write "[확인 필요]" with the assumed default for any fact the request leaves open.
+Proportional: if the request is behaviour-preserving (refactor, rename, move) or a one-line fix with a clear expected result, write ONE AC-1 ("Given the existing inputs, When ..., Then output is unchanged" / "the stated fix holds") with one piece of evidence (existing tests plus one equivalence or regression check), skip the unstated-criteria sweep and extra artifacts, and write "proportional: <reason>" in the spec.
 Make each subgoal self-contained: include applicable constraints in acceptance[], required paths in files[], and checks in test[]. Implement/Test will not receive the full request or requester conversation.
 Every subgoal must be a unit of WORK that changes files. Verification is not a subgoal: express it as that subgoal's test[] entries, which run as its own Test node. A subgoal whose only job is to check something already built has nothing for its Implement node to do and can only fail.`,
   critique: `Return JSON: {"sound": true|false, "blocking": ["..."], "problems": ["..."], "handoff": "...", "evidence": "..."}
@@ -31,7 +33,8 @@ You are the judge, not the actor, and you are the only node that sees the origin
   1. the goal-level acceptance criteria, and
   2. the REQUEST as written at the top of this briefing.
 The spec was authored from the request and may have narrowed it. Anything the request asked for that the spec never turned into a criterion belongs in "spec_drift" - the work cannot be faulted for it, but the run must not claim to have delivered it either.
-Absent evidence is a gap, not a pass. Weaknesses that do not block go in "observations", not into a rounded-up score.`,
+Absent evidence is a gap, not a pass. Weaknesses that do not block go in "observations", not into a rounded-up score.
+In "evidence" give one row per goal-level AC-n with its proof (test name or command output). An AC-n with no evidence is unmet and goes in "gaps". List changes no AC-n asked for in "observations" prefixed "out-of-spec:".`,
   report: `Return JSON: {"stage_ok": true, "handoff": "<the final report>", "evidence": "..."}
 Synthesize from the node results below only. State plainly what was not done and why.`,
 };

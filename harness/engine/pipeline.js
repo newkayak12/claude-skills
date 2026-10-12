@@ -161,6 +161,14 @@ const specPrompt =
       `${codexProviderRequired ? 'this run is not allowed to fall back from Codex' : 'codex_provider permits explicit fallback'}. ` +
       `Keep Plan, SetGoal, QualityGate, and Report on Claude. `
     : `Do not set provider fields; codex_provider is off for this run. `) +
+  `Goal-level acceptance entries are AC-n: if specs/<feature>/spec.md has AC-n (or the plan states ` +
+  `stories/criteria) reuse those exact IDs; otherwise write "AC-n: Given … When … Then …" after sweeping ` +
+  `for unstated criteria (inputs that must count as the same, resource bounds, behaviour while a state ` +
+  `holds), and mark facts the request leaves open as "[확인 필요]" with the assumed default. ` +
+  `Proportional: if the request is behaviour-preserving (refactor, rename, move) or a one-line fix with a ` +
+  `clear expected result, write ONE AC-1 ("Given the existing inputs, When ..., Then output is unchanged" / ` +
+  `"the stated fix holds") with one piece of evidence (existing tests plus one equivalence or regression ` +
+  `check), skip the unstated-criteria sweep and extra artifacts, and write "proportional: <reason>" in the spec. ` +
   `Fold any project convention rules the plan surfaced into subgoal acceptance and test entries. ` +
   `Keep it small — a trivial request is one subgoal.\n` +
   `Two hard rules on acceptance/test criteria: (a) each criterion checks THIS unit's own ` +
@@ -506,7 +514,9 @@ function goalPrompt(extra) {
     `goal-level acceptance criteria. Be adversarial: subgoals passing individually does not ` +
     `mean the goal is met. Score match_pct = your honest estimate (0-100) of how fully the ` +
     `assembled result satisfies every goal-level acceptance criterion — not an average of ` +
-    `subgoal pass/fail, a holistic judgment of the whole against the goal.\n` +
+    `subgoal pass/fail, a holistic judgment of the whole against the goal. In "reason" give one row ` +
+    `per goal-level AC-n with its evidence (test name or output); an AC-n with no evidence is unmet. ` +
+    `Then list changes that no AC-n asked for as out-of-spec.\n` +
     `Goal: ${spec.goal}\nGoal-level acceptance:\n` +
     (spec.acceptance || []).map(a => `- ${a}`).join('\n') +
     `\n\nSubgoal outcomes:\n` +
