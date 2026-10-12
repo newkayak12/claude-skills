@@ -38,6 +38,22 @@ test('interactive start registers /session and sets defaults', async ($, on) => 
   expect(cells.get('session.band')).toBe(false)
 })
 
+test('a refused name (a built-in took /recap) does not drop the commands after it', async ($, on) => {
+  memoryStore(on)
+  memoryState(on)
+  on('session.start', (_$: any, e: any) => ({ cwd: e.cwd }))
+  const registered: string[] = []
+  on('command.register', (_$: any, e: any) => {
+    if (e.name === 'recap') throw new Error('command "recap" is taken')
+    registered.push(e.name)
+    return { value: { command: e.name } }
+  })
+
+  await $.session.start(start(true))
+
+  expect(registered).toEqual(['memo', 'session-denials', 'smart-compact', 'handoff', 'lessons', 'task', 'reap', 'board', 'session'])
+})
+
 test('a second start keeps what the first left', async ($, on) => {
   const { cells } = boot(on)
   await $.session.start(start(true))
