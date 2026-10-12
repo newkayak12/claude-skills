@@ -51,9 +51,13 @@ Report the counts you saw; "tests pass" without a number is not a check.
 
 ## Agents working in the repo
 
-- Only one agent commits in a working tree at a time. Parallel committers share the git index and
-  mix commits; give each its own worktree (`isolation: "worktree"`) or run them in sequence.
-  Read-only agents may run in parallel.
+- An agent that edits repo files runs in its own worktree (`isolation: "worktree"`) by default, not
+  only when it runs in parallel; the main checkout belongs to the orchestrating session. Only one
+  agent commits in a working tree at a time — parallel committers share the git index and mix
+  commits. Read-only agents may run in parallel anywhere.
+- Every commit is authored `newkayak12 <newkayak12@gmail.com>`, the repo's configured git author.
+  Never commit as another name or email (`harness <harness@local>`, `Claude`, …); engine and tool
+  commits (harness, teams) use the same author. The `Co-Authored-By: Claude …` trailer is allowed.
 - Every subagent call names its model (`sonnet` for build work, `opus` for plan/judge).
 - Agents edit files with Read/Edit/Write, not shell scripts, and never script around the goal gate —
   if the gate blocks, open a harness run.
@@ -63,6 +67,9 @@ Report the counts you saw; "tests pass" without a number is not a check.
 
 - A bench measures a skill, not its output: run it only up to the stage the change affects, compare
   blind, and fix the skill. Output content (a bench book's chapters, figures) is not maintained.
+- Blind means: arms are anonymized before judging, and the judge runs on a different model tier than
+  the authors. Each judgment is tied to the run's done criteria; a criterion only partly met is stated
+  as such, not rounded to pass or fail.
 - Bench output lives in `tmp/` and is deleted when the result is recorded (the harness run's
   `05-report.md` and, if it matters later, a memory).
 - Docker in a bench: unique names, no host ports, tear down by exact name. Never `prune` anything.
