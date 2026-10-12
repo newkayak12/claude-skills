@@ -79,9 +79,11 @@ Before changing behaviour of a plugin (not typo/doc fixes):
 Never remove a stage, a gate, or a principle for cost or simplicity without the user's approval.
 teams principles: `_repo/docs/plans/2026-09-28-teams-cards-everywhere.md`.
 
+Layout, per-plugin checks, agent rules and clean-up: `_repo/MAINTAINING.md`.
+
 ## Update Workflow
 
-After any change: bump version in `.claude-plugin/marketplace.json` → update `<plugin>/README.md` **and** `<plugin>/KOR.md` (English default + Korean mirror; both must move together) → commit → `git push origin main`.
+After any change: bump version in `.claude-plugin/marketplace.json` → update `<plugin>/README.md` **and** `<plugin>/KOR.md` (English default + Korean mirror; both must move together) → commit → `git push skills main`.
 
 Maintainer bump tools (not user skills): `node _repo/scripts/patch-harness.mjs` and the teams `patch` skill's `node teams/skills/patch/patch.mjs '<json>'` (dry-run first, see its SKILL.md) bump a plugin's patch version and its status logs in one step (patch-harness writes README.md/KOR.md; the teams tool writes teams/CHANGELOG.md and CHANGELOG.KOR.md). Minor/major bumps are done by hand. Refreshing a project's installed harness copies is the `harness:update` skill.
 
@@ -91,6 +93,6 @@ The repo (marketplace) version is `metadata.version` in `.claude-plugin/marketpl
 
 - **When:** only when the user asks for a release or tag. A plugin bump alone does not move the repo version.
 - **Level, from the largest change since the last tag:** patch = any plugin bump (patch, minor or major) or doc change; minor = a new plugin added; major = a plugin removed or renamed, or a change to the marketplace layout that breaks existing installs.
-- **Steps:** `git fetch` → bump `metadata.version` → commit `marketplace <version>: <what moved>` → `git push origin main` → `git tag -a v<version> -m "marketplace <version>"` on that commit → `git push origin v<version>`. Tag only commits that are on origin/main.
+- **Steps:** `git fetch` → bump `metadata.version` → commit `marketplace <version>: <what moved>` → `git push skills main` → `git tag -a v<version> -m "marketplace <version>"` on that commit → `git push skills v<version>`. Tag only commits that are on skills/main.
 - **Never** move, delete, or re-point a pushed tag unless the user asks.
 
