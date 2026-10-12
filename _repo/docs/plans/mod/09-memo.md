@@ -1,6 +1,6 @@
 # 09 — session/memo: pinned user notes that survive compaction
 
-> Produced by write:plans (2026-10-08) from `_repo/docs/plans/2026-10-08-mod-memo-design.md` (approved).
+> Produced by write:plans (2026-10-08) from `_repo/docs/plans/done/2026-10-08-mod-memo-design.md` (approved).
 > Owner for execution routing: planning:executing-plans. Steps use checkbox (`- [ ]`) syntax.
 > **Lowest-value plan of the set: cut first if scope shrinks.** Nothing else depends on it.
 
