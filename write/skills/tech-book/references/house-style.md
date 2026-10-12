@@ -14,6 +14,7 @@ exit: <one observable performance newly possible after this chapter>
 misconception: <a plausible prior model or shortcut that this chapter corrects>
 example-step: <the change to the running example and why it is needed>
 evidence: <what the reader produces, predicts, diagnoses, or decides>
+length: <character budget; default 25000–35000>
 anchor: <analogy candidates to the anchor, e.g. "MySQL InnoDB 버퍼 풀 ↔ shared_buffers">
 sme: <plugin:skill from skill-routing.md, or none — [확인 필요]>
 ```
@@ -30,7 +31,7 @@ sme: <plugin:skill from skill-routing.md, or none — [확인 필요]>
 5. **따라 하는 예제** — decision → expected result → observed result → interpretation, changing one meaningful variable at a time.
 6. **경계와 실패 진단** — a counterexample or failure the reader explains; close every analogy and rule of thumb.
 7. **스스로 적용하기** — a different case, success evidence, and verification method; do not reveal the solution path.
-8. **답안과 정리** — compact decision rule and evidence for the exercise, then retrieval prompts that reconnect the learning goals and next chapter.
+8. **답안과 정리** (this heading, verbatim; the reader check cuts here) — compact decision rule and evidence for the exercise, then retrieval prompts that reconnect the learning goals and next chapter.
 
 ## Anchor box
 
@@ -40,7 +41,8 @@ sme: <plugin:skill from skill-routing.md, or none — [확인 필요]>
 > **이 비유가 깨지는 지점:** <where the mapping stops holding>
 ```
 
-Both names come from brief.md (anchor, subject) — never copied from an example. The break line is required; a box
+The anchor name is the chapter's (`concepts/NN.md`), else brief.md's; the subject name is brief.md's — never copied
+from an example. The break line is required; a box
 without it fails review.
 
 ## Review file
@@ -49,7 +51,9 @@ Each stage-4 check has one writer for `review/NN-rK-<check>.md` (fact, epistemic
 return text to it); the runner merges them into `review/NN-rK.md`. `counts:` closes every check and closure file.
 
 - 🔴 a wrong fact or behaviour; a lab that fails or prints other than observed; a required element missing; a learning
-  goal not reachable from chapters 1..N. 🟡 a reader is misled, blocked, or must guess; an unsourced claim. 🟢 polish —
+  goal not reachable from chapters 1..N; a teaching element (`teaching-elements.md`) missing without a `해당 없음`
+  reason. 🟡 a reader is misled, blocked, or must guess; an unsourced claim; an exercise whose answer the task text
+  gives away; padding (`teaching-elements.md`); a draft over its `length:` budget; a reader stall. 🟢 polish —
   style without a reader cost is 🟢.
 - One line per finding: `- 🔴 [section/code id] original → fix — evidence`. A finding offers ONE fix. Closure and
   confirmation lines start `- ✔` and carry no severity mark. The last line is `counts: 🔴 a 🟡 b 🟢 c`.
@@ -58,7 +62,8 @@ return text to it); the runner merges them into `review/NN-rK.md`. `counts:` clo
 - Round ≥ 2: each re-run check reads the diff since its last round, its own open findings, and — in a stopping round —
   the upstream diff (pinned sha → `final/N-1.md`). The diff scopes reading only.
 - `review/NN-rK-resolution.md` quotes the new text per finding. A sentence the reviser adds or takes from a reviewer is
-  labelled observed / sourced / `[확인 필요]`, as drafter text is; net growth over 15% in a round lists what was cut.
+  labelled observed / sourced / `[확인 필요]`, as drafter text is. Growth is capped at 15% per round, not counting
+  lines that add a missing required element (each listed by finding); over the cap the reviser cuts before handing back.
 - `review/NN-closure.md` (cap only): the closure pass applies each open finding whose fix is one sourced or observed
   sentence; a known-false sentence (🔴, or 🟡 the fact check marked wrong) is fixed or cut. The pass lists its hunks in
   the last resolution file; a fresh re-checker alone writes this file, covers every closure hunk, cuts included, ends
@@ -67,7 +72,7 @@ return text to it); the runner merges them into `review/NN-rK.md`. `counts:` clo
 
 ## Callouts
 
-`> **노트**` extra detail · `> **주의**` a mistake readers make · `> **팁**` a shortcut. At most one per section.
+`> **노트**` extra detail · `> **주의**` a mistake readers make · `> **팁**` a shortcut. At most one per section; the anchor box is not a callout.
 
 ## Figures, tables, code
 
@@ -78,6 +83,7 @@ return text to it); the runner merges them into `review/NN-rK.md`. `counts:` clo
   line, with the `그림 N-M …` caption paragraph below. SVG text in ASCII/Latin only — an SVG loaded as an image
   cannot use the page's Nanum fonts — so Korean goes in the caption. A missing image, or one not on its own line,
   makes render exit 3.
+- An expected-output block directly under its code takes the caption `코드 N-M의 관찰 결과` and no other text.
 - Every code block's caption names what it shows and the runtime/version it was written for, or `[확인 필요: 버전]`.
 
 ## Page and type (book.pdf, `scripts/render-pdf.mjs`)
