@@ -53,7 +53,7 @@ stage-6 step only if its file lacks `counts:` (tear down its labs by name; same 
    with a recommended answer per question; unanswered → `[확인 필요: … / 추천: …]` in the brief. The first turn ends here.
 1. **toc.md.** `think:untangle-thoughts` (Outline). One block per chapter in the `references/house-style.md` format:
    goal, `requires:` (earlier chapters only, order checked with think-tool), `entry`, observable `exit`, plausible
-   `misconception`, cumulative `example-step`, learning `evidence`, anchor candidates, and `sme:` (from
+   `misconception`, cumulative `example-step`, learning `evidence`, `length:` budget, anchor candidates, and `sme:` (from
    `references/skill-routing.md`). Group chapters into parts only when each marks a capability threshold; trace every
    chapter exit to the terminal performance and capstone. Sweep it first: every unsourced version, default, limit gets
    `[확인 필요]`; list what you checked. Present it with one `think:grill` round. **Stop: no stage 2 until the user approves toc.md.**
@@ -64,24 +64,27 @@ stage-6 step only if its file lacks `counts:` (tear down its labs by name; same 
 3. **draft/NN.md.** `agents:dispatching-parallel-agents`, one agent per chapter, its `sme:` skill mounted. No worktree
    (`tmp/` is gitignored: a worktree strands the file); each writes only its own absolute path in `tmp/books/<slug>/`.
    Follow the explanatory sequence in `references/learning-design.md`; every non-trivial chapter contains a reasoned
-   worked example, a failure diagnosis, an independent transfer exercise, verification, and a compact answer key.
+   worked example, the six elements of `references/teaching-elements.md` (once each, readable,
+   within `length:`), verification, and a compact answer key;
+   `### 장 끝 상태` closes the chapter body, before `답안과 정리`.
 4. **review/NN-rK.md.** Four concurrent checks, never by the drafter, each to `review/NN-rK-<check>.md`, merged per
    house-style "Review file". Fact: official docs (or user sources) first, cited by URL, SME skill second — an
    SME-vs-docs conflict is 🔴, docs win; unreachable → web.archive.org copy (URL + capture date), else `[확인 필요]`; labs by
    the printed method from N-1's `rebuild-end-state.sh` in an empty dir (`references/lab-recipe.md`), printed ≠ observed
    is 🔴. `cognition:epistemic-reasoner`: analogies and absolute claims. `write:writer-verification` review mode,
-   genre `doc`. `../plans/agents/reader-agent.md`, blind (1..N-1 by grep, N cut before `답안과 정리`): each learning goal at
-   its highest claimed level, at most 5 tests per round, taught, exercised, assessed. Each check file pins N-1 by
+   genre `doc`, its passes inline in the one check agent. `../plans/agents/reader-agent.md`, blind (1..N-1 by grep, N cut before `답안과 정리`): each learning goal at
+   its highest claimed level, at most 5 tests per round, taught, exercised, assessed; each teaching element present. Each check file pins N-1 by
    path + sha256; N's stopping round (zero or cap) counts only when pinned to `final/N-1.md` (learning-design).
 5. **Revise draft/NN.md.** A fresh reviser closes every 🔴🟡, text first, then changed labs in one script, replacing
-   before adding (≤ 15% growth per round; files: house-style); round 3 closes by cutting. Back to 4; from round 2 only
+   before adding (≤ 15% growth per round, required elements exempt; house-style); round 3 closes by cutting. Back to 4; from round 2 only
    the checks that flagged 🔴🟡 re-run (🟢-only: no), reading the diff, but a lab, code, or output change re-runs the fact
    check's whole lab chain. At the cap one closure pass, re-checked by a fresh agent in `review/NN-closure.md`, fixes or
    cuts each known-false sentence — not a round; open items go to `status-NN.md` `## 남은 항목`, never final/.
 6. **final/NN.md.** 6a per chapter: house-style copyedit, one `write:writer-verification` pass not by the editor,
    terms into `glossary-delta-NN.md`, `write:like-me` only with user samples, `develop:diagram` for figures (SVG+PNG);
    an agent that neither drafted nor edited re-checks the draft→final diff, itself classing hunks form or meaning
-   (answer key, sources = meaning; rejected → revert or `status-NN.md`). 6b, after every final: merge deltas, then the
+   (answer key, sources = meaning; rejected → revert or `status-NN.md`). A 6a 🟡: known-false → fixed by the editor and
+   re-checked in that diff; otherwise `status-NN.md`. 6b, after every final: merge deltas, then the
    book-wide learning pass (`references/learning-design.md`), every `rebuild-end-state.sh` replayed in order.
 7. **book.pdf.** `node scripts/render-pdf.mjs tmp/books/<slug>` — toc.md order, NanumGothic fonts of `assets/fonts/`
    (page, type, figures: `references/house-style.md`). Exit 1: no browser (`book.html` kept) — ask for `CHROME=<path>`.
@@ -117,5 +120,6 @@ re-measured since the last change names its round, e.g. `(r3)`. Do NOT paste cha
 ## Related Skills
 
 - `references/learning-design.md` — book arc, chapter teaching sequence, examples, practice, and evidence;
+  `references/teaching-elements.md` — the six required teaching elements and their shapes;
   `references/skill-routing.md` — which skill runs at which stage, with what input; `write:plans` — a single document.
 - `write:writer-verification` — review passes, stages 4 and 6; `write:like-me` — the user's voice, stage 6, with samples.

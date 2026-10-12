@@ -55,19 +55,18 @@ chapter: starting state, change, concept exposed, observable result, artifact pa
 indexes, accounts, files later chapters reuse). A chapter may use a local example when forcing it into the running
 example would add irrelevant machinery; record why in the ledger.
 
-A running-example chapter's final ends with `### 장 끝 상태` (what exists, by canonical name) and ships
+A running-example chapter whose blocks build runnable state (files, a database) ends with `### 장 끝 상태` (what
+exists, by canonical name) and ships
 `artifacts/chNN/rebuild-end-state.sh` — one command, any working directory, builds that state from nothing — plus
-`checksums.txt` over files the chapter's blocks produce, never files the reader writes or output that varies run to run (timings, ids, dates). Once `final/N-1.md` exists it
+`checksums.txt` over files the chapter's blocks produce, never files the reader writes or output that varies run to run (timings, ids, dates). Whoever writes the script runs it
+twice from an empty directory and checks both runs; `checksums.txt` is copied into the rebuilt state. Once `final/N-1.md` exists it
 wins over the ledger; a mismatch is a `cross-chapter:` item that corrects the ledger. N's stopping round waits for `final/N-1.md`;
 a zero round pinned to a draft of N-1 is followed by one round on `final/N-1.md` that re-runs only the checks the
 upstream diff touches.
 
-Every non-trivial chapter includes:
-
-- one worked example with reasoning and verification, not only a finished answer;
-- one failure or counterexample whose cause the reader diagnoses;
-- one transfer exercise using different surface details;
-- a compact answer key containing the decision rule and evidence, not just the answer.
+Every non-trivial chapter includes a worked example with reasoning and verification, the six teaching elements of
+`teaching-elements.md` (prediction, reproduced failure, diagnosis without answer, transfer with traps, observed edge
+case, equivalence check), and a compact answer key containing the decision rule and evidence, not just the answer.
 
 Practice should test the chapter's exit performance. Avoid questions answerable by copying the preceding paragraph.
 For code or commands, specify starting files/state, constraints, expected observable behavior, and a verification

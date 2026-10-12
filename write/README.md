@@ -318,7 +318,10 @@ Every analogy to what the reader already knows ("MySQL에서는…") states wher
 without a source is marked `[확인 필요]`; the TOC is swept for unmarked ones before you see it. Fact checks go to the official docs first and
 the subject skill second — where they disagree, the docs win; an unreachable docs page is cited from a web.archive.org
 copy with its capture date, or marked `[확인 필요]`. Findings use defined 🔴🟡🟢 levels and one line format,
-counted once per defect; from round 2 reviewers read only the diff, and a reviser writes first, grows the chapter at
+counted once per defect. Every chapter carries six teaching elements once each — a prediction before a run, a
+reproduced failure, a diagnosis task without the answer, a transfer task with traps, an observed edge case, an
+equivalence check (non-code forms for non-code subjects) — inside a `length:` budget (default 25–35k characters);
+a missing element is 🔴, padding, a give-away task or a reader stall is 🟡. From round 2 reviewers read only the diff, and a reviser writes first, grows the chapter at
 most 15% a round and labels new claims. The fact check runs every lab the way the reader is told to, under
 `references/lab-recipe.md` (unique project names, no host ports, teardown by name, never `prune`); each chapter ships
 `rebuild-end-state.sh` with checksums, and the next chapter's review pins it by sha256. The review↔revise loop stops at
