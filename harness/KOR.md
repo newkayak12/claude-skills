@@ -281,6 +281,7 @@ Claude Code 2.1.293 대화형 터미널 세션에서 실제로 캡처했습니�
 `/harness-gate` 게이트 탭: 게이트 패턴, 개입 유효 시간, 마지막 판정.
 
 ## 상태
+- v1.34.0 — harness 플러그인이 켜져 있으면 프로젝트 goal-gate 복사본은 판정을 플러그인에 맡김(오래된 복사본이 판정하지 않음); plan 프롬프트에서 게시 중단된 assist 플러그인 제거
 - v1.33.0 — harness 안의 harness 금지: goal gate에 막힌 서브에이전트(agent_id)나 run 노드(HARNESS_NODE=1)는 멈추고 호출자에게 보고하라는 안내를 받고, 진입 스킬(harness, graph:orchestrate, teams:orchestrate/develop/sprint/document/plan/qa) 호출은 거부됨; 모든 거부 문구에 이를 명시; 프로젝트 goal-gate 복사본이 플러그인과 다르면 harness:update를 안내하는 토스트 하나
 - v1.32.0 — teams도 설치돼 있으면 goal-gate 거부가 종류로 안내(단순 개발 → graph, 없으면 harness 스킬; 스펙·기획·QA·여러 영역·애매함 → teams:orchestrate), 충돌은 토스트 하나로 알림
 - v1.31.2 — fallback: goal-gate FAIL인 COMPLETE는 done이 아니라 미달 AC-n과 함께 끝남으로 보고

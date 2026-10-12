@@ -18,7 +18,7 @@ Restore: run the command, then move the files where they belong (a plugin to the
 | `develop/skills/pragmatic-programmer` | codebase-health diagnosis across seven principles | `bf4e49f3` | `git checkout bf4e49f3 -- _repo/deprecated/develop/skills/pragmatic-programmer` |
 | `develop/code-documenter` | docstring and API documentation skill | `bf4e49f3` | `git checkout bf4e49f3 -- _repo/deprecated/develop/code-documenter` |
 | `develop/dev-quality-workflow` | staged dev quality workflow | `bf4e49f3` | `git checkout bf4e49f3 -- _repo/deprecated/develop/dev-quality-workflow` |
-| `develop/microservices-architect` | microservice design skill | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/develop/microservices-architect` |
+| `develop/microservices-architect` | microservice design skill | `bf4e49f3` | `git checkout bf4e49f3 -- _repo/deprecated/develop/microservices-architect` |
 | `think/skills/microinteractions` | UI micro-moment design | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/think/skills/microinteractions` |
 | `think/skills/deep-thinking-workflow` | staged ideate-critique-converge workflow | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/think/skills/deep-thinking-workflow` |
 | `cognition/skills/thinking-style-profiler` | personal thinking-pattern profile | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/cognition/skills/thinking-style-profiler` |

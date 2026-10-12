@@ -117,6 +117,7 @@ view (most hit, most missed, never fired).
 
 ## Status log
 
+- v0.8.3 — trigger data drops the removed `portfolio:feedback-beta` and `assist` skills.
 - v0.8.2 — English trigger phrases match on word boundaries, so `done` no longer fires inside `abandoned`.
 - v0.8.1 — Codex: MCP servers register under Codex (`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`); Claude reads them from plugin.json.
 - 0.8.0 — Skill toast moved in from the retired `mods` plugin: one `◆ <plugin:skill>` toast per Skill tool call of this marketplace, skipped when that call unlocks an achievement (the 🏆 toast stands for it). Interactive sessions only.
