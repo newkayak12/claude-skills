@@ -1256,6 +1256,77 @@ def cloning(tmp):
           "a clone past the slide edge is refused")
 
 
+def row_groups(tmp):
+    """Repeated row GROUPS extend at the last observed interval; irregular or differing ones do not."""
+    print("row group cloning")
+    make_png(tmp / "g.png", 40, 40)
+
+    def template(name, groups):
+        make_template(tmp / name, tmp / "g.png")
+        pkg = deck.Package(tmp / name)
+        pkg.parts[deck.slide_order(pkg)[1]] = _slide(groups).encode("utf-8")
+        pkg.write(tmp / name)
+
+    def row(i, y, sz=None, desc=True):
+        kids = [_sp("Head %d" % i, None, [(0, "h%d" % i)], cx=3000000, cy=400000, x=1000000, y=y)]
+        if desc:
+            kids.append(_sp("Desc %d" % i, None, [(0, "d%d" % i)], cx=3000000, cy=300000,
+                            x=1400000, y=y + 450000))
+        body = "".join(kids)
+        if sz:
+            body = body.replace('sz="1800"', 'sz="%d"' % sz)
+        return ('<p:grpSp><p:nvGrpSpPr><p:cNvPr id="%d" name="Row %d"/><p:cNvGrpSpPr/><p:nvPr/>'
+                '</p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="1000000" y="%d"/>'
+                '<a:ext cx="3400000" cy="750000"/><a:chOff x="1000000" y="%d"/>'
+                '<a:chExt cx="3400000" cy="750000"/></a:xfrm></p:grpSpPr>%s</p:grpSp>'
+                % (700 + i, i, y, y, body))
+
+    def build(name, body):
+        src = tmp / (name + ".mdx")
+        src.write_text("---\ntemplate: %s.pptx\noutput: %s-out.pptx\n---\n\n## @s2\n%s"
+                       % (name, name, body), encoding="utf-8")
+        return run_cmd(["build", "--deck", str(src)]), tmp / (name + "-out.pptx")
+
+    def root_of(pptx):
+        return ET.fromstring(deck.Package(pptx).parts["ppt/slides/slide1.xml"]).find(
+            deck.q("p:cSld") + "/" + deck.q("p:spTree"))
+
+    def group_ys(pptx):
+        return sorted(int(g.find(deck.q("p:grpSpPr") + "/" + deck.q("a:xfrm") + "/"
+                                 + deck.q("a:off")).get("y"))
+                      for g in root_of(pptx).findall(deck.q("p:grpSp")))
+
+    template("g1.pptx", [row(i, 1000000 + i * 1200000) for i in range(3)])
+    out, pptx = build("g1", "text5: H3\ntext6: D3\ntext5_plus1: H4\ntext6_plus1: D4\n"
+                            "text5_plus2: H5\ntext6_plus2: D5\n")
+    check(group_ys(pptx) == [1000000 + i * 1200000 for i in range(5)],
+          "3 row groups + 2 clones sit at the last interval: %s" % group_ys(pptx))
+    texts = set(slide_texts(pptx, "ppt/slides/slide1.xml"))
+    check({"H4", "D4", "H5", "D5"} <= texts, "each cloned group takes the next item's texts")
+    ids = [c.get("id") for c in root_of(pptx).iter(deck.q("p:cNvPr"))]
+    check(len(set(ids)) == len(ids), "every shape in a cloned group gets a unique id")
+    chk = run_cmd(["check", "--deck", str(tmp / "g1.mdx")])
+    check("cannot clone" not in chk, "check accepts a row-group clone key: %s" % chk[:80])
+
+    template("g2.pptx", [row(0, 1000000), row(1, 2200000), row(2, 4000000)])
+    out, pptx = build("g2", "text5_plus1: x\n")
+    check("irregular" in out and len(group_ys(pptx)) == 3, "irregular row spacing: refused, says why")
+    template("g3.pptx", [row(0, 1000000), row(1, 2200000), row(2, 3400000, sz=2400)])
+    out, pptx = build("g3", "text5_plus1: x\n")
+    check("format" in out and len(group_ys(pptx)) == 3, "last row differs in format: refused, says why")
+    template("g4.pptx", [row(i, 1000000 + i * 1500000) for i in range(4)])
+    out, pptx = build("g4", "text7_plus1: x\n")
+    check("outside the slide" in out and len(group_ys(pptx)) == 4, "a row past the slide edge is refused")
+    template("g5.pptx", [row(i, 1000000 + i * 1200000) for i in range(3)])
+    out, pptx = build("g5", "text1_plus1: x\n")
+    check("text5_plus1" in out or "text6_plus1" in out, "a row that is not the last points at the last")
+    template("g6.pptx", [row(0, 1000000, desc=False), row(1, 1700000, desc=False),
+                         row(2, 2400000), row(3, 3600000)])
+    out, pptx = build("g6", "text5_plus1: H\ntext6_plus1: D\n")
+    check(group_ys(pptx) == [1000000, 1700000, 2400000, 3600000, 4800000],
+          "only the trailing same-format rows set the interval: %s" % group_ys(pptx))
+
+
 def workdir():
     """A container renderer's daemon may not see /tmp, so mirror test_render.py there."""
     if os.environ.get("DECK_RENDER_DOCKER") and not shutil.which("soffice"):
@@ -1278,6 +1349,7 @@ def main():
         one_line_slots(tmp)
         underfill(tmp)
         cloning(tmp)
+        row_groups(tmp)
         spilling(tmp)
         fonts(tmp)
         metrics(tmp)

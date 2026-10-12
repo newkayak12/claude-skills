@@ -2239,6 +2239,7 @@ CLONE_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*?)_plus([1-9]\d*)")
 SIBLING_MIN = 3        # two shapes prove no interval
 SIBLING_TOL = 0.03     # spacing may wobble this much of the interval
 ALIGN_TOL = 2000       # EMU: siblings share the cross coordinate within this
+GROUP_TOL = 0.10       # row groups: every gap within this of the last one
 
 
 def _sibling_format(el, slot):
@@ -2249,7 +2250,7 @@ def _sibling_format(el, slot):
             rpr.get("b") if rpr is not None else None, slot.box[3])
 
 
-def plan_clone(spTree, slots, key, slide_dims):
+def _plan_shape_clone(spTree, slots, key, slide_dims):
     """Clone the shape `key` names ('textN_plusK') into spTree and register its Slot.
 
     Returns (slot, None) or (None, reason)."""
@@ -2309,6 +2310,130 @@ def plan_clone(spTree, slots, key, slide_dims):
     clone.off_y, clone.z = box[1], 1 + max(s.z for s in slots.values())
     slots[key] = clone
     return clone, None
+
+
+def _group_format(g):
+    sig = []
+    for c in g:
+        if c.tag not in (q("p:sp"), q("p:pic"), q("p:graphicFrame"), q("p:grpSp")):
+            continue
+        tx = c.find(q("p:txBody"))
+        rpr = next(iter(tx.iter(q("a:rPr"))), None) if tx is not None else None
+        sig.append((c.tag, first_font_size(tx) if tx is not None else None,
+                    text_color_ref(tx) if tx is not None else None,
+                    rpr.get("b") if rpr is not None else None))
+    return tuple(sig)
+
+
+def _group_xfrm(g):
+    return g.find(q("p:grpSpPr") + "/" + q("a:xfrm"))
+
+
+def _is_clone(g):
+    c = g.find(q("p:nvGrpSpPr") + "/" + q("p:cNvPr"))
+    return c is not None and " clone " in (c.get("name") or "")
+
+
+def _plan_group_clone(spTree, slots, key, slide_dims):
+    """Clone the whole row group holding `textN` (key 'textN_plusK') at the last interval."""
+    base_id, k = CLONE_RE.fullmatch(key).group(1), int(CLONE_RE.fullmatch(key).group(2))
+    base = slots[base_id]
+    group_path = base.path[:-1]
+    group = resolve_path(spTree, group_path)
+    holder_path = group_path[:-1]
+    holder = resolve_path(spTree, holder_path)
+    if group.tag != q("p:grpSp") or _group_xfrm(group) is None:
+        return None, "'%s' is not inside a row group" % base_id
+    rows = [(i, c) for i, c in enumerate(list(holder))
+            if c.tag == q("p:grpSp") and _group_xfrm(c) is not None and not _is_clone(c)]
+
+    def at(c, part):
+        a = _group_xfrm(c).find(q("a:" + part))
+        return (int(a.get("x" if part == "off" else "cx", 0)),
+                int(a.get("y" if part == "off" else "cy", 0)))
+
+    gx = at(group, "off")
+    best = None
+    for axis, cross in ((1, 0), (0, 1)):
+        line = sorted((r for r in rows if abs(at(r[1], "off")[cross] - gx[cross]) <= ALIGN_TOL),
+                      key=lambda r: at(r[1], "off")[axis])
+        if len(line) >= 2 and (best is None or len(line) > len(best[1])):
+            best = (axis, line)
+    if best is None:
+        return None, "its group has no aligned sibling group, so there is no row interval to extend"
+    axis, line = best
+    last_i, last_g = line[-1]
+    tail = [r for r in reversed(line)]
+    run = []
+    for r in tail:
+        if _group_format(r[1]) != _group_format(last_g):
+            break
+        run.append(r)
+    run.reverse()
+    if len(run) < 2:
+        return None, ("the last row group differs in format from the one before it (text size, "
+                      "colour, weight or shapes), so the rows are not a series")
+    pos = [at(r[1], "off")[axis] for r in run]
+    gaps = [b - a for a, b in zip(pos, pos[1:])]
+    step = gaps[-1]
+    if step <= 0 or any(abs(g - step) > GROUP_TOL * step for g in gaps):
+        return None, ("the row spacing is irregular (gaps %s EMU), so a clone has no position "
+                      "the template vouches for" % ", ".join(str(g) for g in gaps))
+    last_path = holder_path + [last_i]
+    if group is not last_g:
+        rel = base.path[len(group_path):]
+        twin = next((s for s in slots.values() if s.path == last_path + rel
+                     and not CLONE_RE.fullmatch(s.id)), None)
+        return None, ("its row is not the last one; clone from '%s_plus%d'"
+                      % (twin.id if twin else "a slot in the last row", k))
+    off, ext = at(last_g, "off"), at(last_g, "ext")
+    delta = k * step
+    new_off = list(off)
+    new_off[axis] += delta
+    if holder is spTree and (new_off[0] + ext[0] > slide_dims[0]
+                             or new_off[1] + ext[1] > slide_dims[1]):
+        return None, "'%s' would fall outside the slide" % key
+    el = copy.deepcopy(last_g)
+    _group_xfrm(el).find(q("a:off")).attrib.update(x=str(new_off[0]), y=str(new_off[1]))
+    nxt = max(int(c.get("id", 0)) for c in spTree.iter(q("p:cNvPr")))
+    for c in el.iter(q("p:cNvPr")):
+        nxt += 1
+        c.set("id", str(nxt))
+    el.find(q("p:nvGrpSpPr") + "/" + q("p:cNvPr")).set(
+        "name", "%s clone %d" % (el.find(q("p:nvGrpSpPr") + "/" + q("p:cNvPr")).get("name", ""), k))
+    holder.append(el)
+    new_path = holder_path + [len(list(holder)) - 1]
+    top = max(s.z for s in slots.values())
+    for s in [s for s in slots.values() if s.path[:len(last_path)] == last_path
+              and not CLONE_RE.fullmatch(s.id)]:
+        ns = copy.copy(s)
+        ns.id, ns.path, ns.z = "%s_plus%d" % (s.id, k), new_path + s.path[len(last_path):], top + 1
+        if s.box:
+            b = list(s.box)
+            b[axis] += delta
+            ns.box = tuple(b)
+            ns.off_y = b[1]
+        top += 1
+        slots.setdefault(ns.id, ns)
+    return slots.get(key), None
+
+
+def plan_clone(spTree, slots, key, slide_dims):
+    """Clone for `key` ('textN_plusK'): the shape itself, else the row group that holds it.
+
+    Returns (slot, None) or (None, reason); (None, None) when `key` is not a clone key."""
+    if not CLONE_RE.fullmatch(key):
+        return None, None
+    got, why = _plan_shape_clone(spTree, slots, key, slide_dims)
+    if got is not None:
+        return got, None
+    base = slots.get(CLONE_RE.fullmatch(key).group(1))
+    if base is not None and len(base.path) >= 2:
+        got, gwhy = _plan_group_clone(spTree, slots, key, slide_dims)
+        if got is not None:
+            return got, None
+        return None, gwhy if "no sibling aligned" in (why or "") else "%s; as a row group: %s" % (why, gwhy)
+    return None, why
 
 
 def slot_frame_cx(el):
