@@ -2,7 +2,7 @@
 
 > Decided by the user, 2026-09-28 ("서브 에픽이 어딨어 … agile 안해봄? / 스프린트", approved "고").
 > Supersedes: `2026-09-17-teams-team.md` §2 "STORY를 L로 재면 sub-EPIC을 연다 … `max_depth`",
-> its §7/§8b sub-EPIC rows, and `2026-09-28-teams-sub-epic.md` (never implemented).
+> its §7/§8b sub-EPIC rows, and `done/2026-09-28-teams-sub-epic.md` (never implemented).
 > Keeps: every principle in `2026-09-28-teams-cards-everywhere.md`.
 
 ## Why

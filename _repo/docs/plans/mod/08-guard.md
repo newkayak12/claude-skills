@@ -1,6 +1,6 @@
 # 08 — session: dangerous-command guard pack and denial log
 
-> Produced by write:plans (2026-10-08) from `_repo/docs/plans/2026-10-08-mod-guard-design.md` (approved,
+> Produced by write:plans (2026-10-08) from `_repo/docs/plans/done/2026-10-08-mod-guard-design.md` (approved,
 > incl. its "Decisions" section). Owner for execution routing: planning:executing-plans. Steps use
 > checkbox (`- [ ]`) syntax. Design-change rule (CLAUDE.md) applies: this is the plan stage.
 

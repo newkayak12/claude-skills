@@ -1,6 +1,6 @@
 # 07 — session: retro card and orphan watcher (new plugin)
 
-> Produced by write:plans (2026-10-08) from `_repo/docs/plans/2026-10-08-mod-session-design.md`.
+> Produced by write:plans (2026-10-08) from `_repo/docs/plans/done/2026-10-08-mod-session-design.md`.
 > Owner for execution routing: planning:executing-plans. Steps use checkbox (`- [ ]`) syntax.
 > Design-change rule still applies (CLAUDE.md "Design Changes"): this is the plan stage; the
 > design and its "Decisions" section were approved by the user on 2026-10-08.
