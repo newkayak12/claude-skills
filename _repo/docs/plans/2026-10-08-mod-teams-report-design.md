@@ -1,7 +1,7 @@
 # teams mod: end-of-run report card and Report tab (design)
 
 Stage: plan + critique of the repo's Design Changes rule. No code before user approval.
-Governing docs: `plan/mod/README.md` (shared rules), `plan/mod/02-teams-live.md`,
+Governing docs: `_repo/docs/plans/mod/README.md` (shared rules), `_repo/docs/plans/mod/02-teams-live.md`,
 `_repo/docs/plans/2026-09-28-teams-cards-everywhere.md` (teams principles).
 
 ## Context

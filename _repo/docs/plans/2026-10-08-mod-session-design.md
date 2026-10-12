@@ -1,7 +1,7 @@
 # `session` mod — retro card, orphan-work watcher, changed-files tab (design)
 
 Status: DESIGN, awaiting approval (CLAUDE.md "Design Changes": plan, setgoal, critique, then implement). No code yet.
-Governing docs: `plan/mod/README.md` (shared rules; backlog "session retro card"), `plan/mod/00-spike-findings.md`.
+Governing docs: `_repo/docs/plans/mod/README.md` (shared rules; backlog "session retro card"), `_repo/docs/plans/mod/00-spike-findings.md`.
 
 ## Context
 
@@ -23,7 +23,7 @@ or which of its background processes are still alive, and cannot safely stop the
   `hooks/hooks.json` (`modules`, one entry), one `mod.tsx` that only wires events and drawing, plain `.ts`
   siblings for pure logic (process-tree walk, tally, safety checks; sibling `.ts` imports are proven, JSON
   is not importable), `types/index.d.ts` for `$.state`, `mod.test.ts`, `README.md` + `KOR.md`.
-- Follows `plan/mod/README.md` shared rules: interactive-only UI (`surfaces().length > 0`), every gating
+- Follows `_repo/docs/plans/mod/README.md` shared rules: interactive-only UI (`surfaces().length > 0`), every gating
   hook ends in `.catch(next)`, files via `$.plugin.root`, every path fails open.
 - Standalone: no `userConfig` needed, no skill, no repo-name check, no git requirement for the core.
 

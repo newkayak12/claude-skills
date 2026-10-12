@@ -1,8 +1,8 @@
 # session plugin, Bundle G: session board and main-moved broadcast (design)
 
 Status: BUILT as session 0.4.0 (approved 2026-10-10: "진행하자"). Live two-session check of the board and G3 still to do by hand.
-Plugin `session` (0.3.0). Picked on 2026-10-10 from the G list: G3 (main-moved broadcast) and G6 (session board). User decisions the same day: the board is the default place to see things; it shows harness, graph and teams as their current panes do; every mod UI is drawn with Ink (CLAUDE.md "Mods" line; local `plan/mod/README.md` rule 7).
-Principles: `plan/mod/README.md` (interactive-only UI, every hook fails open, no plugin depends on a mod); API facts: the `plugin-authoring` types (engine 2.1.294).
+Plugin `session` (0.3.0). Picked on 2026-10-10 from the G list: G3 (main-moved broadcast) and G6 (session board). User decisions the same day: the board is the default place to see things; it shows harness, graph and teams as their current panes do; every mod UI is drawn with Ink (CLAUDE.md "Mods" line; local `_repo/docs/plans/mod/README.md` rule 7).
+Principles: `_repo/docs/plans/mod/README.md` (interactive-only UI, every hook fails open, no plugin depends on a mod); API facts: the `plugin-authoring` types (engine 2.1.294).
 
 ## Context
 Several sessions run at once on this repo, each in its own worktree. Today:

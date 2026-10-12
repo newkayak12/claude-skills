@@ -1,6 +1,6 @@
 # session plugin, Bundle C: pinned memo mod
 
-Status: design for approval (CLAUDE.md "Design Changes": plan, setgoal, critique, approval, then code). Plugin `session` is shared with other bundles; this doc covers the memo mod only. Principles: `plan/mod/README.md`; API facts: `plan/mod/00-spike-findings.md`, the `plugin-authoring` types (engine 2.1.293).
+Status: design for approval (CLAUDE.md "Design Changes": plan, setgoal, critique, approval, then code). Plugin `session` is shared with other bundles; this doc covers the memo mod only. Principles: `_repo/docs/plans/mod/README.md`; API facts: `_repo/docs/plans/mod/00-spike-findings.md`, the `plugin-authoring` types (engine 2.1.293).
 
 ## Context
 Mods exist for mods/diag/trophy. Backlog already names `prompt.compose`/context injection (teams). Compaction summarises the conversation and can drop short asides the user typed ("use staging DB", "do not touch X").
