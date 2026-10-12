@@ -18,7 +18,6 @@ A Claude Code plugin marketplace with skills for engineering, product, thinking,
 /plugin install graph@newkayak12-claude-skills
 /plugin install harness@newkayak12-claude-skills
 /plugin install knowledge@newkayak12-claude-skills
-/plugin install mods@newkayak12-claude-skills
 /plugin install planning@newkayak12-claude-skills
 /plugin install portfolio@newkayak12-claude-skills
 /plugin install session@newkayak12-claude-skills
@@ -45,12 +44,12 @@ Opt out beforehand: `mkdir -p ~/.claude/plugins/.newkayak12-trophy-ride.done`.
 | [graph](./graph/README.md) | Graph-owned harness orchestration, MCP installation, routing, and adjudication |
 | [harness](./harness/README.md) · [한국어](./harness/KOR.md) | Six-stage planning, implementation, verification, quality gate, and reporting |
 | [knowledge](./knowledge/README.md) · [한국어](./knowledge/KOR.md) | Knowledge bases, ontologies, graphs, RAG corpora, and querying |
-| [mods](./mods/README.md) · [한국어](./mods/KOR.md) | Claude Code mods: skill toasts, safety guards, and `/reap` for orphan agents (Claude Code 2.1.292+) |
+| [mods](./mods/README.md) · [한국어](./mods/KOR.md) | Retired: its features moved to `session` (`/reap`, unfinished-agent count, Agent model guard, guards) and `trophy` (skill toast); uninstall it |
 | [planning](./planning/README.md) · [한국어](./planning/KOR.md) | Executing plans and roadmap planning |
 | [portfolio](./portfolio/README.md) · [한국어](./portfolio/KOR.md) | Portfolio and career: feedback, JD analysis, interview prep |
 | [skill](./skill/README.md) · [한국어](./skill/KOR.md) | Skill creation, improvement, and validation |
-| [session](./session/README.md) · [한국어](./session/KOR.md) | Beta: `/session` retro pane (files, commits, denied calls), next-start retro band, safe stop for stray `claude -p` children, `/smart-compact` (recap, then compact at a context % you set), `/handoff` · `/recap` · `/lessons`, `/task` timer, cost in the status line, `/board` of every open session with its harness/graph/teams runs, main-moved message to sibling sessions |
+| [session](./session/README.md) · [한국어](./session/KOR.md) | Beta: `/session` retro pane (files, commits, denied calls), next-start retro band, safe stop for stray `claude -p` children, `/smart-compact` (recap, then compact at a context % you set), `/handoff` · `/recap` · `/lessons`, `/task` timer, cost in the status line, `/board` of every open session with its harness/graph/teams runs, main-moved message to sibling sessions, `/reap` for orphan agents, unfinished-agent count, Agent model guard |
 | [teams](./teams/README.md) · [한국어](./teams/KOR.md) | TaskManager MCP and per-flow teams (develop, document, plan, qa) with an EPIC/STORY board |
 | [think](./think/README.md) · [한국어](./think/KOR.md) | Brainstorming, devil's advocate, problem reframing, and more |
-| [trophy](./trophy/README.md) · [한국어](./trophy/KOR.md) | Steam-style achievements for skill use and a local record of skill failures; opt-in anonymous counts and error codes |
+| [trophy](./trophy/README.md) · [한국어](./trophy/KOR.md) | Steam-style achievements for skill use, a `◆ plugin:skill` toast per skill call, and a local record of skill failures; opt-in anonymous counts and error codes |
 | [write](./write/README.md) · [한국어](./write/KOR.md) | Documentation, writing plans, and content review |
