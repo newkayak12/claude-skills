@@ -128,10 +128,9 @@ Pictures take a fit mode — `| fit` keeps the whole image, the default `fill` c
 and `| transparent` knocks a PNG's background out. Slots you leave out keep the template's
 content.
 
-More items than the template has shapes: `text4_plus1: ...` clones the next shape past the
-last of a row (or column) of at least 3 same-format siblings at a constant interval —
-`check` refuses with the reason when the siblings differ in format, are irregularly spaced,
-sit in different groups, or the clone would leave the slide. Never a free placement.
+More items than shapes: `text4_plus1: ...` clones the next same-format sibling shape, or the
+next repeated row group, at the template's own interval; `check` refuses with the reason
+otherwise (`references/mdx-syntax.md`).
 
 Full syntax — slot forms, `!drop`, `notes:`, inline emphasis, outline levels, and what
 `template_hash` protects against — is in `references/mdx-syntax.md`. Read it before
@@ -154,14 +153,7 @@ python3 /abs/path/scripts/deck.py check --deck deck.mdx
 Errors must be fixed. Warnings are judgment calls — surface every one, including the ones
 you decide to ignore.
 
-| What it measures | Against |
-|---|---|
-| A table or text running off the slide | the slide edge — an error, naming the rows lost |
-| A line too wide for a slot the template keeps to one line | that slot's own frame, in em, so Hangul is not counted as Latin |
-| A slot holding far less than the template puts there | the template's own volume — the frame was drawn for that much and the slide opens a hole |
-| Text running lower than the design puts it | the template's own line count, and what sits below |
-| Crop loss, effective dpi, palette strays, pasted-box borders | the frame, the screen, and the template's palette |
-| Text over a picture | the pixels actually behind it: 3:1 for large type, 4.5:1 for body |
+What it measures (table, and how font widths are resolved): `references/render-and-check.md`.
 
 A picture drawn *after* the words it covers is an error — they end up behind the image.
 
@@ -183,23 +175,12 @@ The same `deck.mdx` always produces a byte-identical pptx.
 python3 /abs/path/scripts/deck.py render --deck deck.mdx
 ```
 
-Builds, converts through LibreOffice, writes PNG previews of every page, and audits the
-rendered geometry — `overlap` (two text frames clash), `bunched` (lines inside one frame
-sit closer than that frame's own norm, so text has outgrown its box), `off-slide` (the
-renderer cut it). Clean means clean: the audit compares across frames and measures pitch
-against each frame's median, so CJK fonts whose em box exceeds a 100% line do not trip it.
-
-`render` first says which of the template's typefaces the renderer does not have. A
-substituted font rewraps every line, so until those are installed the preview's line breaks
-are the substitute's, not the deck's — the fix is to install the font, not to shorten the
-words. The pptx itself always names the right faces.
-
-Read the previews for layout, not for spacing. LibreOffice pads the join between CJK and
-Latin by default, so `평균 42분` renders as `평균  42 분` in the preview while the pptx holds
-the original string. Check `<a:t>` in the built file before treating spacing as a defect.
-
-Renderer is `soffice` on PATH or `DECK_RENDER_DOCKER=<image>`. With neither, `render`
-refuses rather than pretending the layout was checked — say so and fall back to `build`.
+Builds, converts through LibreOffice, writes PNG previews, and audits the rendered geometry
+(`overlap`, `bunched`, `off-slide`). It first names any template typeface the renderer lacks —
+until installed, line breaks in the preview are the substitute's. Read previews for layout, not
+CJK/Latin spacing (check `<a:t>` in the built file). Renderer: `soffice` on PATH or
+`DECK_RENDER_DOCKER=<image>`; with neither, `render` refuses — say so and fall back to `build`.
+Details: `references/render-and-check.md`.
 
 ## Output Template
 
@@ -245,7 +226,7 @@ The six that change what you can promise:
 | **No new layouts** | Every slide is a clone. Content with no archetype needs the template extended in PowerPoint — say so rather than approximating. |
 | **A template is mandatory** | No built-in design, no fallback. |
 | **Charts are not writable** | `build` leaves the template's numbers. Use an SVG in a picture slot. |
-| **Frames never move** | Write short and the gap stays; `check` reports it, only the template can close it. Exception: `textN_plusK` extends a clean sibling series (same format, constant interval, same group). |
+| **Frames never move** | Write short and the gap stays; `check` reports it, only the template can close it. Exception: `textN_plusK` extends a clean sibling or row-group series. |
 | **Layout truth needs a renderer** | `check` estimates and cannot resolve margins under a line. Only `render` sees what collides. |
 | **Legibility is PNG only** | Type over a JPEG or SVG backdrop is unscored; inherited text colors are left alone. |
 
