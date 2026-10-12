@@ -1,6 +1,6 @@
 # Worktrees tab (session) and gate-deny push (harness) — 2026-10-12
 
-Asked by the user 2026-10-12 ("1. 좋고 2 -> 이건 푸시로 주면 좋고"). Status: **awaiting approval**.
+Asked by the user 2026-10-12 ("1. 좋고 2 -> 이건 푸시로 주면 좋고"). Status: approved 2026-10-12; shipped in session 0.6.0 and harness 1.28.0 (checked live: Worktrees tab cleaned a merged scratch worktree and its branch; a deny called PushNotification from the mod, not sent while at the terminal, so the toast showed).
 Governing docs: `2026-10-10-mod-session-board-design.md` (board tabs, Ink views), `2026-10-08-mod-guard-design.md`
 (fail open, interactive only), harness gate stays a command hook (review 2026-10-12: the mod only displays).
 
