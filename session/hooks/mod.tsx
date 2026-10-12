@@ -14,9 +14,9 @@ import { isFresh, fmtAgo, lessonsKey, recapKey } from './recap.ts'
 import type { Recap } from './recap.ts'
 import {
   BOARD_OPEN, BOARD_PANE, brokerCell, cellText, DETAIL, harnessCell, IDLE_MS, liveRows, mainMovedText, peersOf,
-  pushesMain, ROW_MAX_AGE_MS, ROW_PREFIX, rowKey, rowText, SEND_GAP_MS, shortId,
+  isInUse, parseWorktrees, pushesMain, ROW_MAX_AGE_MS, ROW_PREFIX, rowKey, rowText, SEND_GAP_MS, shortId, wtReason, wtText,
 } from './board.ts'
-import type { BoardRow, BoardTab, Cell, Runs } from './board.ts'
+import type { BoardRow, BoardTab, Cell, Runs, WtRow } from './board.ts'
 import { appendLog, dayOf, parseTask, TASK_KEY, TASK_LOG_KEY, taskStatus, todayLines } from './timer.ts'
 import type { Done, Task } from './timer.ts'
 import { DENIALS_KEY, register as registerGuard } from './guard.tsx'
@@ -37,6 +37,7 @@ const recapAtom = atom({ plugin: 'session', key: 'recap' } as const, null as { t
 
 const boardTab = atom({ plugin: 'session', key: 'boardTab' } as const, 'sessions' as BoardTab)
 const boardRows = atom({ plugin: 'session', key: 'boardRows' } as const, [] as BoardRow[])
+const boardWorktrees = atom({ plugin: 'session', key: 'boardWorktrees' } as const, [] as WtRow[])
 
 const PANE = 'session'
 const LAST_KEY = 'session.last'
@@ -294,9 +295,92 @@ async function refreshBoard($: any) {
   await update($, boardRows, () => liveRows(rows, now, me))
 }
 
+// ---- the Worktrees tab: facts from git, never in a draw; Clean copies .harness-run, then removes ----
+
+// Exit code and trimmed stdout of one git command; exit -1 when it could not run.
+const gitRun = async ($: any, args: string[], timeoutMs = 5000): Promise<{ code: number; out: string }> => {
+  try {
+    const r = await $.process.run(['git', ...args], { timeoutMs })
+    return { code: r.exitCode, out: String(r.stdout).trim() }
+  } catch {
+    return { code: -1, out: '' }
+  }
+}
+
+async function scanWorktrees($: any): Promise<WtRow[]> {
+  const list = parseWorktrees((await gitRun($, ['worktree', 'list', '--porcelain'])).out)
+  const roots = liveRows(await allRows($), (await $.clock.now()) as number, '').map(r => r.root)
+  const rows: WtRow[] = []
+  for (const [i, w] of list.entries()) {
+    const exists = (await $.process.run(['test', '-d', w.path], { timeoutMs: 3000 }).catch(() => ({ exitCode: 1 }))).exitCode === 0
+    const status = exists ? await gitRun($, ['-C', w.path, 'status', '--porcelain']) : { code: -1, out: '' }
+    const age = exists ? await gitRun($, ['-C', w.path, 'log', '-1', '--format=%ct', 'HEAD']) : { code: -1, out: '' }
+    const merged = w.head !== '' && (await gitRun($, ['merge-base', '--is-ancestor', w.head, 'main'])).code === 0
+    rows.push({
+      ...w,
+      isMain: i === 0,
+      exists,
+      uncommitted: status.code === 0 ? status.out.split('\n').filter(l => l !== '').length : -1,
+      merged,
+      lastCommitMs: Number(age.out) > 0 ? Number(age.out) * 1000 : 0,
+      inUse: isInUse(w.path, roots),
+    })
+  }
+  return rows
+}
+
+async function refreshWorktrees($: any) {
+  const rows = await scanWorktrees($)
+  await update($, boardWorktrees, () => rows)
+}
+
+// Ask, re-read the row, then: copy each .harness-run/<name> to the main checkout (a name already there, or
+// any copy failure, stops the clean), `git worktree remove` (no --force), `git branch -d` (no -D).
+async function cleanWorktree($: any, seen: WtRow) {
+  const say = (text: string) => void $.ui.toast(text, { timeoutMs: 8000 })
+  try {
+    const answer = await $.ui.ask(`Clean ${seen.path}?\nbranch ${seen.branch || '(detached)'}, merged, no changes`, ['Clean', 'Cancel']).catch(() => undefined)
+    if (answer !== 'Clean') return
+    const fresh = await scanWorktrees($)
+    const row = fresh.find(r => r.path === seen.path)
+    const why = row === undefined ? 'gone' : wtReason(row)
+    if (row === undefined || why !== '') return say(`not cleaned: ${why}`)
+    const main = fresh.find(r => r.isMain)?.path
+    if (main === undefined) return say('not cleaned: main checkout not found')
+    const steps: string[] = []
+    const src = `${row.path}/.harness-run`
+    const names = (await listOf($, src)).map(e => e.name)
+    if (names.length > 0) {
+      const taken = new Set((await listOf($, `${main}/.harness-run`)).map(e => e.name))
+      const clash = names.find(n => taken.has(n))
+      if (clash !== undefined) return say(`not cleaned: .harness-run/${clash} already exists in main; nothing removed`)
+      const mk = await $.process.run(['mkdir', '-p', `${main}/.harness-run`], { timeoutMs: 5000 }).catch(() => ({ exitCode: 1 }))
+      if (mk.exitCode !== 0) return say('not cleaned: could not create .harness-run in main; nothing removed')
+      for (const n of names) {
+        const cp = await $.process.run(['cp', '-R', `${src}/${n}`, `${main}/.harness-run/${n}`], { timeoutMs: 60000 }).catch(() => ({ exitCode: 1 }))
+        if (cp.exitCode !== 0) return say(`not cleaned: copying .harness-run/${n} failed; nothing removed`)
+      }
+      steps.push(`copied ${names.length} .harness-run`)
+    }
+    const rm = await gitRun($, ['-C', main, 'worktree', 'remove', row.path], 60000)
+    if (rm.code !== 0) return say(`not cleaned: worktree remove refused${steps.length ? ` (${steps.join(', ')})` : ''}`)
+    steps.push('worktree removed')
+    if (row.branch !== '') {
+      const br = await gitRun($, ['-C', main, 'branch', '-d', row.branch])
+      steps.push(br.code === 0 ? `branch ${row.branch} deleted` : `branch ${row.branch} kept (-d refused)`)
+    }
+    say(steps.join(' · '))
+  } catch {
+    say('not cleaned: something went wrong')
+  } finally {
+    await refreshWorktrees($).catch(() => {})
+  }
+}
+
 async function openBoard($: any, to: BoardTab) {
   await update($, boardTab, () => to)
   if (to === 'sessions') await refreshBoard($)
+  if (to === 'worktrees') await refreshWorktrees($)
   await $.ui.open(BOARD_OPEN)
 }
 
@@ -487,7 +571,7 @@ export const register: Register = (on, options) => {
   // /board [recap|lessons|today]: the pane interactive; headless, the rows as text.
   on('command.run', { command: 'board' }, async ($, e) => {
     const arg = e.args.trim()
-    const to: BoardTab = arg === 'recap' || arg === 'lessons' || arg === 'today' ? arg : 'sessions'
+    const to: BoardTab = arg === 'recap' || arg === 'lessons' || arg === 'today' || arg === 'worktrees' ? arg : 'sessions'
     if ((await $.session.surfaces()).length > 0) {
       // bare /board on an open board closes it
       if (!arg && (await $.ui.panes()).some((p: { id: string }) => p.id === BOARD_PANE)) {
@@ -687,7 +771,7 @@ export const register: Register = (on, options) => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const current = await read($, boardTab)
     const now = (await $.clock.now()) as number
-    const tabs: [BoardTab, string, string][] = [['sessions', 'Sessions', '1'], ['recap', 'Recap', '2'], ['lessons', 'Lessons', '3'], ['today', 'Today', '4']]
+    const tabs: [BoardTab, string, string][] = [['sessions', 'Sessions', '1'], ['recap', 'Recap', '2'], ['lessons', 'Lessons', '3'], ['today', 'Today', '4'], ['worktrees', 'Worktrees', '5']]
     const header = (
       <Box borderStyle="round" borderColor="claude" gap={1}>
         <Text key="title" bold>board</Text>
@@ -700,10 +784,12 @@ export const register: Register = (on, options) => {
             onPress={async () => {
               await update($, boardTab, () => id)
               if (id === 'sessions') await refreshBoard($)
+              if (id === 'worktrees') await refreshWorktrees($)
             }}
           />
         ))}
         {current === 'sessions' && <Button key="refresh" label="refresh [r]" hotkey="r" onPress={() => refreshBoard($)} />}
+        {current === 'worktrees' && <Button key="refresh-wt" label="refresh [r]" hotkey="r" onPress={() => refreshWorktrees($)} />}
         <Button key="close" role="dismiss" label="close [q]" hotkey="q" onPress={() => $.ui.close({ id: BOARD_PANE })} />
       </Box>
     )
@@ -750,6 +836,33 @@ export const register: Register = (on, options) => {
           <Text bold color="claude">finished today</Text>
           {lines.length === 0 && <Text dimColor>○ none</Text>}
           {lines.map((l, i) => <Text key={`t-${i}`}>{l}</Text>)}
+        </Box>
+      )
+    }
+
+    if (current === 'worktrees') {
+      const wts = await read($, boardWorktrees)
+      return (
+        <Box flexDirection="column">
+          {header}
+          <Text bold color="claude">{`worktrees (${wts.length})`}</Text>
+          {wts.length === 0 && <Text dimColor>○ none</Text>}
+          {wts.map(w => {
+            const why = wtReason(w)
+            return (
+              <Box key={`w-${w.path}`} flexDirection="column" marginBottom={1}>
+                <Box gap={1}>
+                  <Box flexShrink={1}><Text wrap="truncate-end">{wtText(w, now)}</Text></Box>
+                  {why === '' ? (
+                    <Button key={`clean-${w.path}`} label="Clean" onPress={() => cleanWorktree($, w)} />
+                  ) : (
+                    <Box flexShrink={0}><Text dimColor>{why}</Text></Box>
+                  )}
+                </Box>
+                <Text dimColor wrap="truncate-start">{`  ${w.path}`}</Text>
+              </Box>
+            )
+          })}
         </Box>
       )
     }

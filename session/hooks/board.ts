@@ -17,7 +17,7 @@ export type BoardRow = {
   ts: number
 }
 
-export type BoardTab = 'sessions' | 'recap' | 'lessons' | 'today'
+export type BoardTab = 'sessions' | 'recap' | 'lessons' | 'today' | 'worktrees'
 
 export const BOARD_PANE = 'board'
 // Esc closes it while it has the keys; focus asks for them so [q] and the tab keys work at once.
@@ -121,3 +121,54 @@ export function pushesMain(command: string, branch: string): boolean {
 
 export const mainMovedText = (sha: string, subject: string, from: string) =>
   `main moved to ${sha} (pushed by session ${from}): ${subject}. Fetch before editing or bumping versions.`
+
+// ---- the Worktrees tab: facts per `git worktree list --porcelain` entry, and when Clean is offered ----
+
+export type Worktree = { path: string; head: string; branch: string }
+export type WtRow = Worktree & {
+  isMain: boolean
+  exists: boolean
+  // -1: `git status` failed
+  uncommitted: number
+  merged: boolean
+  // ms timestamp of the last commit, 0 when unknown
+  lastCommitMs: number
+  inUse: boolean
+}
+
+// Blocks separated by a blank line: `worktree <path>`, `HEAD <sha>`, `branch refs/heads/<name>` or `detached`.
+export function parseWorktrees(porcelain: string): Worktree[] {
+  const out: Worktree[] = []
+  for (const block of porcelain.split(/\n\s*\n/)) {
+    let path = ''
+    let head = ''
+    let branch = ''
+    for (const line of block.split('\n')) {
+      if (line.startsWith('worktree ')) path = line.slice('worktree '.length).trim()
+      else if (line.startsWith('HEAD ')) head = line.slice('HEAD '.length).trim()
+      else if (line.startsWith('branch ')) branch = line.slice('branch '.length).trim().replace(/^refs\/heads\//, '')
+    }
+    if (path !== '') out.push({ path, head, branch })
+  }
+  return out
+}
+
+// An open board session whose folder is the worktree or inside it.
+export const isInUse = (path: string, roots: readonly string[]) =>
+  roots.some(r => r === path || r.startsWith(path.endsWith('/') ? path : `${path}/`))
+
+// Why a row cannot be cleaned, or '' when it can: not the main checkout, path exists, merged, 0 uncommitted, not in use.
+export function wtReason(r: WtRow): string {
+  if (r.isMain) return 'main'
+  if (!r.exists) return 'missing'
+  if (r.uncommitted < 0) return 'unreadable'
+  if (!r.merged) return 'unmerged'
+  if (r.uncommitted > 0) return `${r.uncommitted} change${r.uncommitted === 1 ? '' : 's'}`
+  if (r.inUse) return 'in use'
+  return ''
+}
+
+export const wtText = (r: WtRow, now: number) =>
+  `${r.branch || `(detached ${r.head.slice(0, 7)})`} · ${r.uncommitted < 0 ? '? changes' : `${r.uncommitted} changes`} · ${r.merged ? 'merged' : 'unmerged'} · ${
+    r.lastCommitMs > 0 ? `${Math.max(0, Math.floor((now - r.lastCommitMs) / 86400e3))}d ago` : 'age ?'
+  }${r.inUse ? ' · in use' : ''}`

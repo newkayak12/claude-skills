@@ -141,11 +141,14 @@ headless 실행(`claude -p`)에서는 이 명령들이 텍스트를 출력합니
 *Prompt hint 켬: `add logging`에 범위·검증 기준 toast가 뜨고, 프롬프트는 그대로 실행됩니다.*
 
 ## 보드
-`/board`는 이 플러그인이 있는 열린 인터랙티브 세션 전부를 한 패널에 보여 주는, 플러그인이 아는 것을 보는 기본 화면입니다. 탭은 **Sessions** `[1]`, **Recap** `[2]`, **Lessons** `[3]`, **Today** `[4]`이고 `[r]`로 세션 목록을 새로 고칩니다.
+`/board`는 이 플러그인이 있는 열린 인터랙티브 세션 전부를 한 패널에 보여 주는, 플러그인이 아는 것을 보는 기본 화면입니다. 탭은 **Sessions** `[1]`, **Recap** `[2]`, **Lessons** `[3]`, **Today** `[4]`, **Worktrees** `[5]`(`/board worktrees`)이고 `[r]`로 세션 또는 worktree 목록을 새로 고칩니다.
 
 세션 행마다 브랜치, 컨텍스트 %, 비용, 진행 중인 작업, 그리고 그 폴더의 실행 세 칸이 나옵니다. 칸은 각 플러그인 패널의 표현과 표시를 그대로 씁니다: `harness ● running 1/3`, `graph ○ blocked 4/9`, `teams ✔ finished 3/3`, 없으면 `–`. 진행 중인 실행은 그 세션에서 자세히 볼 명령(`/harness-gate`, `/graph-live`, `/teams-live`)을 함께 보여 줍니다. 보드는 실행 파일을 직접 읽으므로 그 플러그인들이 없어도 됩니다.
 
 세션은 시작할 때와 턴마다 자기 행을 쓰고, 끝날 때 지웁니다. 30분 동안 갱신되지 않은 행은 idle로, 하루가 지난 행은 버립니다. 행은 이 컴퓨터의 플러그인 저장소에만 있습니다.
+
+### Worktrees
+이 저장소의 `git worktree list --porcelain` 항목마다 한 줄: 브랜치(또는 detached), 커밋 안 한 변경 수(ignored 파일 제외), `main`에 병합 여부, 마지막 커밋 경과, 열린 보드 세션의 폴더가 그 안에 있으면 `in use`. **Clean** 버튼은 메인 체크아웃이 아니고, 병합되었고, 변경이 0개이고, 사용 중이 아니고, 경로가 존재하는 행에만 나타납니다. 그 외 행은 이유(`unmerged`, `3 changes`, `in use`, `main`, `missing`)를 보여 줍니다. Clean은 `Clean` / `Cancel`을 먼저 묻고 행을 다시 읽은 뒤: `<worktree>/.harness-run/<name>`을 메인 체크아웃의 `.harness-run/<name>`으로 복사하고(이미 있는 이름이나 복사 실패가 있으면 아무것도 지우기 전에 중단), `git worktree remove`(`--force` 없음), `git branch -d`(`-D` 없음, 거부되면 보고하고 worktree는 이미 제거된 상태)를 실행합니다. 단계 요약은 토스트 하나로 나옵니다. 인터랙티브 세션 전용.
 
 ## 에이전트
 - **`/reap`**: 이 세션의 끝나지 않은 에이전트(pending, running, waiting, idle)와 `claude -p` 프로세스를 나열하고 `Reap` / `Cancel`을 물은 뒤, 에이전트는 TaskStop으로 중지하고(중지된 에이전트의 자식은 건너뜀) `claude -p` 프로세스에는 `SIGTERM`을 보냅니다. 래퍼 셸에는 보내지 않습니다. 이 세션 자신의 프로세스를 확인할 수 없으면 어떤 프로세스도 죽이지 않습니다. 결과는 줄마다(`stopped:`, `killed:`, `failed:`) 출력되고 상태줄이 갱신됩니다. 인터랙티브 세션 전용입니다.
