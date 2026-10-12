@@ -355,7 +355,7 @@ Mermaid나 ASCII 그림 대신 검사를 통과한 그림을 그립니다. 에�
 edge 라벨은 자기 선과 겹치지 않는 자리를 고릅니다. grid 유형과 sequence는 `render fig.json fig.html`로
 예전처럼 인터랙티브 HTML(마우스 올림 강조, 라이트/다크)도 씁니다.
 
-스킬에 NanumGothic Regular + Bold(SIL OFL 1.1, 라이선스는 `assets/fonts/`)가 들어 있어 플러그인이 약
+스킬에 NanumGothic Regular + Bold(SIL OFL 1.1, 라이선스는 tech-book의 `assets/fonts/`, 공유)가 들어 있어 플러그인이 약
 4 MB 커집니다. 브라우저가 아닌 SVG 렌더러(librsvg, Inkscape, QuickLook)는 `@font-face`를 무시할 수
 있으니 그런 곳에는 PNG를 쓰세요.
 

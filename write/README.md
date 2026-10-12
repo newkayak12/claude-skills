@@ -372,7 +372,7 @@ found; set `CHROME=`). The agent reads the PNG before calling it done, at most 3
 own line. `render fig.json fig.html` still writes the interactive HTML (hover, light/dark) for the
 grid and sequence types.
 
-The skill ships NanumGothic Regular + Bold (SIL OFL 1.1, licence in `assets/fonts/`), about 4 MB of
+The skill ships NanumGothic Regular + Bold (SIL OFL 1.1, licence in tech-book's `assets/fonts/`, shared), about 4 MB of
 the plugin. Non-browser SVG renderers (librsvg, Inkscape, QuickLook) may ignore `@font-face`; the PNG
 is the copy for those.
 

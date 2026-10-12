@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const FONTS = join(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'fonts');
+const FONTS = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'tech-book', 'assets', 'fonts'); // one shared copy, owned by tech-book
 const cache = new Map();
 
 export function loadFont(weight = 'Regular') {
