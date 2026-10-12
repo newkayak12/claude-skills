@@ -120,4 +120,4 @@ export function pushesMain(command: string, branch: string): boolean {
 }
 
 export const mainMovedText = (sha: string, subject: string, from: string) =>
-  `origin/main moved to ${sha} (pushed by session ${from}): ${subject}. Fetch before editing or bumping versions.`
+  `main moved to ${sha} (pushed by session ${from}): ${subject}. Fetch before editing or bumping versions.`

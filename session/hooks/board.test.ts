@@ -60,6 +60,7 @@ test('harness runs: finished, running within 2 h, stalled after', () => {
 const git = (branch = 'feat') => (argv: readonly string[]) => {
   if (argv.includes('--abbrev-ref')) return ran(`${branch}\n`)
   if (argv.includes('--git-common-dir')) return ran(`${REPO}\n`)
+  if (argv.includes('origin/main')) return ran('') // the remote is not named origin
   if (argv.includes('--short')) return ran('abc1234\n')
   if (argv.includes('--format=%s')) return ran('session 0.4.0: board\n')
   return ran('')
@@ -147,7 +148,7 @@ test('a push to main tells the other sessions of this repo once', async ($, on) 
   await bash($, 'git push origin main')
   expect(sends).toHaveLength(1)
   expect(sends[0]!.to).toBe('a')
-  expect(sends[0]!.text).toContain('origin/main moved to abc1234')
+  expect(sends[0]!.text).toContain('main moved to abc1234')
   expect(seen.toasts.some(t => /told 1 of 1/.test(t))).toBe(true)
 })
 
