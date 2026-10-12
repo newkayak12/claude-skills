@@ -869,6 +869,7 @@ function pushWorld(on: On, push: (e: any) => unknown, events: string) {
 const sentOk = () => ({ result: { pushSent: true, localSent: false }, text: '' })
 const evLines = (...o: object[]) => o.map(x => JSON.stringify(x)).join('\n') + '\n'
 const R1 = { ts: 1500, task_id: 'E-aaaaaaaa1', kind: 'node_finish', text: 'E-aaaaaaaa P1-gate failed' }
+const R3 = { ts: 1700, task_id: 'E-aaaaaaaa1', kind: 'node_finish', text: 'E-aaaaaaaa gate:P1:2 failed (attempt 2)', package: 'P1', attempt: 2 }
 const R2 = { ts: 1600, task_id: 'E-aaaaaaaa1', kind: 'upstream_fix_rounds_exhausted', text: 'E-aaaaaaaa P1: fix rounds used up' }
 
 test('push: reject, needs-you and run-ended each push once with the task, kind and what', async ($, on) => {
@@ -885,6 +886,18 @@ test('push: reject, needs-you and run-ended each push once with the task, kind a
     'teams E-aaaaaaaa: run ended — finished: done',
   ])
   expect(seen.toasts).toHaveLength(4)
+})
+
+test('push: a retried package reject carries its attempt, and each attempt pushes once', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { pushes } = pushWorld(on, sentOk, evLines(R1, R3))
+  await start($)
+  await clock.advance(3000)
+  await clock.advance(3000)
+  expect(pushes.map(p => p.message)).toEqual([
+    'teams E-aaaaaaaa: rejected — P1-gate failed',
+    'teams E-aaaaaaaa: rejected — gate:P1:2 failed (attempt 2)',
+  ])
 })
 
 test('push: an event before the session start is not pushed', async ($, on) => {

@@ -17,6 +17,17 @@ test('node_finish: only the failed one is notable', () => {
   assert.deepEqual(out[0], { ts: 10, task_id: ID, kind: 'node_finish', text: 'E-1a2b3c4d n1 failed' });
 });
 
+test('node_finish: the package and attempt ride along; the attempt shows from the second', () => {
+  const out = notableEvents([
+    L({ ts: 10, event: 'node_finish', task_id: ID, node_id: 'gate:P1:2', subgoal_id: 'P1', attempt: 2, state: 'failed' }),
+    L({ ts: 11, event: 'node_finish', task_id: ID, node_id: 'gate:P2:1', subgoal_id: 'P2', attempt: 1, state: 'failed' }),
+  ], 0);
+  assert.deepEqual(out, [
+    { ts: 10, task_id: ID, kind: 'node_finish', text: 'E-1a2b3c4d gate:P1:2 failed (attempt 2)', package: 'P1', attempt: 2 },
+    { ts: 11, task_id: ID, kind: 'node_finish', text: 'E-1a2b3c4d gate:P2:1 failed', package: 'P2', attempt: 1 },
+  ]);
+});
+
 test('the other five events produce the table texts', () => {
   const t = (e) => notableEvents([L({ ts: 5, task_id: ID, ...e })], 0).map((x) => x.text);
   assert.deepEqual(t({ event: 'waiting_human', node_id: 'n3' }), ['E-1a2b3c4d needs you: n3']);

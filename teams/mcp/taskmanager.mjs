@@ -4590,7 +4590,7 @@ export function finish(task, n, result) {
     }
   }
   saveRun(task);
-  record(task, { event: 'node_finish', task_id: task.run_id, node_id: n.node_id, stage: n.stage, stage_ok: n.result.stage_ok === true, state: n.state });
+  record(task, { event: 'node_finish', task_id: task.run_id, node_id: n.node_id, stage: n.stage, stage_ok: n.result.stage_ok === true, state: n.state, ...(n.subgoal_id ? { subgoal_id: n.subgoal_id } : {}), ...(n.attempt ? { attempt: n.attempt } : {}) });
   try { syncTickets(task, ticketsBefore, n.node_id); } catch { /* evidence, not a dependency */ }
   return verdict(task, n);
 }
