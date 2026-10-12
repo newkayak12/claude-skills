@@ -85,7 +85,7 @@ else {
     subgoalIds = s.subgoals.map((x) => x && x.id).filter(Boolean).map(String);
   // placeholder-title guard (degenerate spec)
   const titles = (s.subgoals || []).map((x) => (x && x.title) || '');
-  if (titles.some((t) => /^(tbd|todo|placeholder|title)\b/i.test(t.trim())))
+  if (titles.some((t) => /^(tbd|todo|placeholder|title)\W*$/i.test(t.trim())))
     p('02-goal-spec.json: a subgoal has a placeholder title');
 }
 
@@ -117,6 +117,7 @@ if (gg.missing) p('goal-level gate missing (04-goal-gate.json)');
 else if (gg.invalid) p(`04-goal-gate.json invalid JSON: ${gg.invalid}`);
 else if (typeof (gg.value || {}).match_pct !== 'number')
   p('04-goal-gate.json: no numeric match_pct');
+else if (gg.value.match_pct <= 0) p('04-goal-gate.json: match_pct is 0 — no criteria met');
 
 // --- Report ---
 nonEmptyText('05-report.md', 'Report (05-report.md)');
