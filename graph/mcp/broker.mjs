@@ -171,6 +171,8 @@ function runAdapter(vendor, extraArgs, cwd, opts = {}) {
     try {
       child = spawn(vendor.command, [...(vendor.args || []), ...extraArgs], {
         cwd,
+        // a node does a stage's work; it must not open a run (the gates read HARNESS_NODE)
+        env: { ...process.env, HARNESS_NODE: '1' },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } catch (error) {

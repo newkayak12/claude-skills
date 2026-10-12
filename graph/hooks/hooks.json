@@ -1,6 +1,17 @@
 {
   "modules": ["./mod.tsx"],
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/node-gate.mjs"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "matcher": "startup",

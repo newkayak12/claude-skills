@@ -188,7 +188,7 @@ async function judge(task, n) {
     let err = '';
     let proc;
     try {
-      proc = spawn(argv[0], [...argv.slice(1), ...extra, prompt], { cwd: task.cwd, env: { ...process.env, TEAMS_WIKI_OFF: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
+      proc = spawn(argv[0], [...argv.slice(1), ...extra, prompt], { cwd: task.cwd, env: { ...process.env, TEAMS_WIKI_OFF: '1', HARNESS_NODE: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (e) {
       resolve({ stage_ok: false, judge_failed: true, reason: `judge process for ${n.node_id} could not start: ${String((e && e.message) || e)}` });
       return;
