@@ -14,6 +14,7 @@ export type GraphRun = {
   run_id: string
   request: string
   routing_blocked?: boolean
+  max_retries?: number
   spec?: { goal?: string; subgoals?: { id: string; title?: string }[] } | null
   nodes: GraphNode[]
 }

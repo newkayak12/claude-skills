@@ -440,6 +440,7 @@ graph ships a small mod: a pane that shows the live run of the graph engine. It 
 
 - **`/graph-live`** opens the pane. Tabs are Flow and Nodes (keys `1`-`2`; the selected one is bright with a dot). Flow draws the stages as a rail (`● Plan ━━ ● SetGoal ━━ ● Critique ━━ ◉ Build ┄┄ ○ Goal gate ┄┄ ○ Report`), a Next, Now or Blocked line (what runs next, what runs now, or where the run is stuck), one line per subgoal with its impl, test and gate steps, a gates bar and the goal-gate `%`. Nodes lists every node with its state and attempt.
 - **Where the data comes from.** The newest run file in `.harness-run/broker/runs/` under the session folder. graph writes a run file under the folder the run was started in, so only runs started in this folder show; a run started from another folder (another worktree included) does not. If none is live, the pane says there is no run.
+- **Push on run events.** A node verdict that fails and is retried (`rejected`), a run whose retries are spent (`failed`) or that routing blocked (`blocked`), and a finished run (`complete`) each raise a PushNotification once per run, node, kind and attempt: `graph <run>: <kind> — <node> (<attempt>/<max>)`. When the push is not sent (you are at the terminal) or fails, the same line is a toast. Nothing older than the session start is pushed. Progress is never pushed. The mod still only reads the run files.
 - **Language.** English by default; Korean when Claude Code's `language` setting is Korean.
 
 ### Screenshots
