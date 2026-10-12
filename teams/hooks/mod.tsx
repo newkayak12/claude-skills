@@ -137,8 +137,8 @@ const PUSH_KIND: Record<string, keyof typeof en> = {
 async function pushEvent($: EngineInterface, one: TeamsEvent, sent: Set<string>): Promise<void> {
   try {
     const kind = PUSH_KIND[one.kind]
-    // the ledger gives no attempt number: each event (its ts) is its own attempt
-    const key = `${one.task_id}|${one.kind}|${one.text}|${one.ts}`
+    // once per (task, kind, package, attempt); the ts keeps two lines of one attempt apart
+    const key = `${one.task_id}|${one.kind}|${one.package ?? ''}|${one.attempt ?? ''}|${one.text}|${one.ts}`
     if (kind === undefined || sent.has(key)) return
     sent.add(key)
     const m = /^(E-\S+) (.*)$/.exec(one.text)

@@ -1,4 +1,4 @@
-export type TeamsEvent = { ts: number; task_id: string; kind: string; text: string }
+export type TeamsEvent = { ts: number; task_id: string; kind: string; text: string; package?: string; attempt?: number }
 
 // `view.mjs --once --format status`: the one-line status of this cwd
 export type StatusInfo = { line: string; waiting: number; latest?: string | null }

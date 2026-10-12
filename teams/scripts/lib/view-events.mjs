@@ -5,7 +5,7 @@ const id8 = (taskId) => 'E-' + String(taskId ?? '').replace(/^E-/, '').slice(0, 
 
 // One entry per notable ledger event; null = silent.
 const TEXT = {
-  node_finish: (e, id) => (e.state === 'failed' ? `${id} ${e.node_id} failed` : null),
+  node_finish: (e, id) => (e.state === 'failed' ? `${id} ${e.node_id} failed${e.attempt > 1 ? ` (attempt ${e.attempt})` : ''}` : null),
   waiting_human: (e, id) => `${id} needs you: ${e.node_id}`,
   child_driver_capacity: (e, id) => `${id} paused: provider limit`,
   daemon_done: (e, id) => `${id} finished: ${e.state}`,
@@ -20,7 +20,10 @@ export function notableEvents(lines, sinceTs) {
     try { e = JSON.parse(line); } catch { continue; } // torn last line
     if (!e || typeof e.ts !== 'number' || e.ts <= sinceTs) continue;
     const text = TEXT[e.event]?.(e, id8(e.task_id));
-    if (text) out.push({ ts: e.ts, task_id: e.task_id, kind: e.event, text });
+    if (!text) continue;
+    // the package and attempt, when the ledger line carries them (absent fields stay absent)
+    const pkg = e.subgoal_id ?? e.package_id;
+    out.push({ ts: e.ts, task_id: e.task_id, kind: e.event, text, ...(pkg != null ? { package: String(pkg) } : {}), ...(typeof e.attempt === 'number' ? { attempt: e.attempt } : {}) });
   }
   return out;
 }

@@ -189,6 +189,9 @@ test('double fold: a second foldDispatch from afterClaim finishes nothing - one 
   assert.ok(second && second.busy, `the second fold saw the live claim: ${JSON.stringify(second)}`);
   assert.equal(first.state, 'done', JSON.stringify(first));
   assert.equal(events(id, 'node_finish', 'dispatch:P1:1').length, 1, 'exactly one node_finish');
+  const fin = events(id, 'node_finish', 'dispatch:P1:1')[0];
+  assert.equal(fin.subgoal_id, 'P1', 'the recorded node_finish names its package');
+  assert.equal(fin.attempt, 1, 'and its attempt');
   const after = nodeOf(id, 'dispatch:P1:1');
   assert.equal(after.claim, undefined);
   assert.ok(after.result.commit, 'the fold committed');
