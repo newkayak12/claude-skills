@@ -179,6 +179,31 @@ test('G2: a sibling git worktree of a gated repo is gated', () => {
   rmSync(wt, { recursive: true, force: true });
 });
 
+test('1.28 S1: a linked worktree inside the project sees the main root\'s open run', () => {
+  const dir = project();
+  execFileSync('git', ['-C', dir, 'add', '.claude/harness-gate.json']);
+  execFileSync('git', ['-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'init']);
+  const wt = join(dir, '.claude', 'worktrees', 'w');
+  execFileSync('git', ['-C', dir, 'worktree', 'add', '-q', wt]);
+  assert.equal(run(edit(wt, join(wt, 'a.mjs'))), 'deny');
+  fallbackRun(dir);
+  assert.equal(run(edit(wt, join(wt, 'a.mjs'))), 'allow');
+  assert.equal(run(bash(wt, 'echo x > a.mjs')), 'allow');
+});
+
+test('1.28 S2: read-only segments do not pull their paths into the gate', () => {
+  const dir = project();
+  assert.equal(run(bash(dir, 'grep x a/SKILL.md; rm -f "$T"')), 'allow');
+  assert.equal(run(bash(dir, 'T=$(mktemp); diff a.mjs b.mjs > $T; rm $T')), 'allow');
+});
+
+test('1.28 S3: writes through assignments, redirects and sed -i stay denied', () => {
+  const dir = project();
+  assert.equal(run(bash(dir, 'F=a.mjs; cat $F; rm $F')), 'deny');
+  assert.equal(run(bash(dir, 'echo x > a/SKILL.md')), 'deny');
+  assert.equal(run(bash(dir, 'sed -i s/a/b/ x.mjs')), 'deny');
+});
+
 test('G2: CLAUDE_PROJECT_DIR is the fallback root; no config anywhere means no gate', () => {
   const bare = mkdtempSync(join(tmpdir(), 'goal-gate-bare-'));
   assert.equal(run(edit(bare, join(bare, 'a.mjs'))), 'allow');

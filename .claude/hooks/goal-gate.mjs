@@ -64,7 +64,12 @@ const live = (ts, now, windowMs) => ts > 0 && ts <= now + SKEW_MS && now - ts <=
 export function findRoot(target, env = process.env) {
   let dir = dirname(target);
   for (;;) {
-    if (existsSync(join(dir, CONFIG))) return dir;
+    if (existsSync(join(dir, CONFIG))) {
+      // A linked worktree carries the tracked config but not the gitignored runs and markers:
+      // the main project root holds those.
+      const proj = mainRoot(dir);
+      return proj && proj !== dir && existsSync(join(proj, CONFIG)) ? { root: proj, worktree: dir } : dir;
+    }
     const up = dirname(dir);
     if (up === dir) break;
     dir = up;
@@ -85,6 +90,18 @@ export function findRoot(target, env = process.env) {
   const pd = env.CLAUDE_PROJECT_DIR;
   if (pd && existsSync(join(pd, CONFIG))) return pd;
   return null;
+}
+
+// The main project of a linked worktree (git-common-dir differs from git-dir), else null.
+function mainRoot(dir) {
+  try {
+    const [gitDir, common] = execFileSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000,
+    }).trim().split('\n');
+    return common && gitDir !== common ? dirname(common) : null;
+  } catch {
+    return null;
+  }
 }
 
 function inside(root, p) {
@@ -444,7 +461,12 @@ export function bashWriteTargets(command, cwd) {
   // A path can reach a writing segment from outside its argv: an expansion, an input redirect or
   // heredoc, a list-file flag or --stdin, xargs/parallel (F=P; rm "$F", xargs rm < list): then every word of
   // the command, heredoc bodies included, may be the target.
-  if (texts.some((t) => /[$`<]|--pathspec-from-file|--stdin\b|\b(xargs|parallel)\b/.test(t))) texts.push(cmd);
+  // An expansion alone draws only from the segments and heredoc bodies that can set it: a
+  // read-only segment's paths (grep x a/SKILL.md; rm "$T") are not the target.
+  if (texts.some((t) => /[<]|--pathspec-from-file|--stdin\b|\b(xargs|parallel)\b/.test(t))) texts.push(cmd);
+  else if (texts.some((t) => /[$`]/.test(t))) {
+    texts.push(...segs.filter((g) => /^(\w+=|(for|export|declare|local|readonly|read)\b)|</.test(g)), ...docs.map((d) => d.body));
+  }
   if (docs.some(heredocWrites)) texts.push(cmd);
   // A data heredoc plus a later shell/interpreter run: the file's name cannot be matched (cd, glob,
   // relative spelling), so the whole command, heredoc bodies included, may name the target. The

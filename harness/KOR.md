@@ -281,6 +281,7 @@ Claude Code 2.1.293 대화형 터미널 세션에서 실제로 캡처했습니�
 `/harness-gate` 게이트 탭: 게이트 패턴, 개입 유효 시간, 마지막 판정.
 
 ## 상태
+- v1.28.0 — Goal gate: 프로젝트 안의 링크된 워크트리(설정은 추적, run은 gitignore)도 메인 루트의 진행 중 run을 봅니다. 다른 구간이 변수로 쓸 때 읽기 전용 구간(grep/cat/diff)의 경로를 더 이상 게이트 대상으로 끌어오지 않습니다. (2026-10-12)
 - v1.27.1 — Plan 프롬프트가 현재 스킬 플러그인 목록을 씁니다(pm:* 제거, 그 일은 planning:*와 write:plans가 맡음). 심볼릭 링크 경로(macOS /tmp -> /private/tmp)로 들어온 형제 워크트리도 goal gate가 검사합니다. (2026-10-12)
 - v1.27.0 — install이 참조 프로젝트 여부를 물음(기본 아니오). 있으면 `develop:like-my-code`가 그 스타일로 `.claude/conventions/coding.md`·`boundaries.md`를 채움(규칙마다 레포 근거와 인용 출처). develop이 없으면 건너뜀
 - v1.26.2 — trophy 함께 설치: 업데이트 후 첫 대화형 세션에서 trophy가 없으면 한 번 설치(삭제는 존중)
