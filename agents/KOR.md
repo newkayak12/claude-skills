@@ -59,7 +59,8 @@ subtask로 나누고 각각 프롬프트도 써줘.
 ### `dispatching-parallel-agents`
 
 독립적인 작업이 2개 이상일 때 쓰는 job 할당기입니다. 동시에 뿌리면서 각 작업에 맞는 persona를
-얹습니다 — SQL은 database-optimizer, flaky 테스트는 flaky-test-analyzer, 맞는 게 없으면 general-purpose. 서로 연관된 작업(하나 고치면 다른 게 같이
+얹습니다 — SQL은 database-optimizer, flaky 테스트는 flaky-test-analyzer, UI 버그는
+frontend-developer, 맞는 게 없으면 general-purpose. 서로 연관된 작업(하나 고치면 다른 게 같이
 고쳐질 수 있는), 전체 시스템 상태를 알아야 이해되는 작업, 같은 파일을 건드릴 작업엔 쓰지 마세요 —
 그건 같이 조사해야 합니다. 이건 무관한 작업들의 수평 팬아웃이고, 하네스가 하나의 목표를 고정
 단계로 세로로 미는 것과 정반대 축입니다.
