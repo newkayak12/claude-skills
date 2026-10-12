@@ -1,6 +1,6 @@
 # session
 
-Claude Code 세션이 남긴 것(변경한 파일, 커밋, 거부된 호출, 도구 호출 사이 가장 긴 간격)을 보여 주고, 다음 시작 때 밴드로 다시 보여 주며, 남아 있는 `claude -p` 자식 프로세스를 나열하고 안전하게 중지하며, 위험한 명령과 비밀 파일 쓰기를 가드하고, `/memo` 메모를 보관하고, 정한 %에서 recap 뒤 compact하며, 그 recap을 `/handoff`·`/recap`·`/lessons`에 쓰고, 작업 시간과 비용을 보여 주고, 열린 세션 전부를 `/board` 한 화면에(각 세션의 harness·graph·teams 실행과 함께) 보여 주며, main이 바뀌면 같은 저장소의 다른 세션에 알립니다. 버전 `0.4.1`. Claude Code 2.1.292 이상(hooks 모듈)이 필요합니다. 이 마켓플레이스의 다른 것은 필요 없습니다.
+Claude Code 세션이 남긴 것(변경한 파일, 커밋, 거부된 호출, 도구 호출 사이 가장 긴 간격)을 보여 주고, 다음 시작 때 밴드로 다시 보여 주며, 남아 있는 `claude -p` 자식 프로세스를 나열하고 안전하게 중지하며, 위험한 명령과 비밀 파일 쓰기를 가드하고, `/memo` 메모를 보관하고, 정한 %에서 recap 뒤 compact하며, 그 recap을 `/handoff`·`/recap`·`/lessons`에 쓰고, 작업 시간과 비용을 보여 주고, 열린 세션 전부를 `/board` 한 화면에(각 세션의 harness·graph·teams 실행과 함께) 보여 주며, main이 바뀌면 같은 저장소의 다른 세션에 알리고, 모델 없이 Agent를 호출하면 경고하며, 끝나지 않은 에이전트를 `/reap`으로 중지합니다. 버전 `0.5.0`. Claude Code 2.1.292 이상(hooks 모듈)이 필요합니다. 이 마켓플레이스의 다른 것은 필요 없습니다.
 
 ## 설치
 ```
@@ -31,7 +31,7 @@ Claude Code 세션이 남긴 것(변경한 파일, 커밋, 거부된 호출, 도
 래퍼 셸과 그 `claude -p` 자식은 한 행으로 보이며, `[stop]`은 안쪽 `claude -p`를 대상으로 합니다.
 
 ## 상태줄
-플러그인은 상태줄을 하나 씁니다. 자식이 살아 있으면 `⧗ N claude -p child(ren) running`(턴이 끝날 때마다 갱신), 가드가 무언가를 거부하면 그 즉시 `guard: N denied`를 표시하고, 둘 다 해당하면 ` · `로 이어 붙입니다. 둘 다 비었을 때만 지워지며, 헤드리스 실행에서는 아무것도 표시하지 않습니다. `mods`에도 자체 `claude -p` 개수 표시가 남아 있어, 두 플러그인을 함께 설치하면 둘 다 보일 수 있습니다.
+플러그인은 상태줄을 하나 씁니다. 이 세션에 끝나지 않은 에이전트가 있으면 `⧗ N agent(s) · /reap`, 자식이 살아 있으면 `⧗ N claude -p child(ren) running`(둘 다 턴이 끝날 때마다 갱신), 가드가 무언가를 거부하면 그 즉시 `guard: N denied`를 표시합니다. 해당하는 부분은 작업 뒤, 비용 앞에 ` · `로 이어 붙입니다. 모두 비었을 때만 지워지며, 헤드리스 실행에서는 아무것도 표시하지 않습니다.
 
 ![status-line](docs/images/status-line.png)
 *가드가 `.env` 쓰기를 거부한 뒤의 상태줄: `guard: 1 denied · $0.11 · seven_day 35%`.*
@@ -147,8 +147,15 @@ headless 실행(`claude -p`)에서는 이 명령들이 텍스트를 출력합니
 
 세션은 시작할 때와 턴마다 자기 행을 쓰고, 끝날 때 지웁니다. 30분 동안 갱신되지 않은 행은 idle로, 하루가 지난 행은 버립니다. 행은 이 컴퓨터의 플러그인 저장소에만 있습니다.
 
+## 에이전트
+- **`/reap`**: 이 세션의 끝나지 않은 에이전트(pending, running, waiting, idle)와 `claude -p` 프로세스를 나열하고 `Reap` / `Cancel`을 물은 뒤, 에이전트는 TaskStop으로 중지하고(중지된 에이전트의 자식은 건너뜀) `claude -p` 프로세스에는 `SIGTERM`을 보냅니다. 래퍼 셸에는 보내지 않습니다. 이 세션 자신의 프로세스를 확인할 수 없으면 어떤 프로세스도 죽이지 않습니다. 결과는 줄마다(`stopped:`, `killed:`, `failed:`) 출력되고 상태줄이 갱신됩니다. 인터랙티브 세션 전용입니다.
+- **Agent 모델 가드**: `model` 없는 `Agent` 호출(`fork` 제외)은 하위 에이전트가 부모 모델을 그대로 씁니다. `/config`의 **Agent model guard**(`agent_model_guard`)로 정합니다. `toast`(기본)는 경고만 하고 호출은 진행, `deny`는 차단, `off`는 아무것도 하지 않습니다. 호출 자체의 `model` 인자만 보며, 에이전트 정의에 고정된 모델은 보지 않습니다.
+
 ## main 변경 알림
 한 세션에서 `main`으로의 `git push`가 성공하면(`origin main`, `HEAD:main`, `x:main`, main 브랜치에서의 그냥 push), 같은 저장소에서 최근 30분 안에 움직인 다른 열린 세션마다 `origin/main moved to <sha> … Fetch before editing or bumping versions.` 메시지가 갑니다. 세션당 2분에 한 번까지이고, 이 세션에는 `main moved: told N of M` toast가 뜹니다. headless 실행은 보내지 않습니다.
+
+## 상태
+- `0.5.0`: mods의 Agent 모델 가드, 에이전트 개수, /reap을 흡수.
 
 ## 한계
 - "longest gap"은 한 턴 안에서 두 도구 호출 사이 가장 긴 시간이며, 측정된 단계 시간이 아닙니다.

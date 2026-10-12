@@ -1,11 +1,12 @@
-// The plugin owns one status line; the running task, the claude -p child count, the guard denial count and the cost share it.
+// The plugin owns one status line; the running task, the unfinished-agent count, the claude -p child count, the guard denial count and the cost share it.
 // Pure: callers pass the result to $.ui.status themselves ($ never crosses an import).
-const parts = { orphans: 0, denied: 0, task: '', cost: '' }
+const parts = { agents: 0, orphans: 0, denied: 0, task: '', cost: '' }
 
 export function statusLine(patch: Partial<typeof parts>): string | undefined {
   Object.assign(parts, patch)
   const shown = [
     parts.task,
+    parts.agents > 0 ? `⧗ ${parts.agents} agent(s) · /reap` : '',
     parts.orphans > 0 ? `⧗ ${parts.orphans} claude -p child(ren) running` : '',
     parts.denied > 0 ? `guard: ${parts.denied} denied` : '',
     parts.cost,

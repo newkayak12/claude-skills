@@ -1,7 +1,7 @@
 {
   "name": "session",
   "description": "What a session left behind and a safety net: a /session pane with files changed, commits, denied calls and the longest gap, a retro band on the next start, a safe stop for stray claude -p children, guards that confirm destructive commands and secret-file writes, /memo notes pinned to the model's context, /smart-compact (recap at a set context %, then compact), /handoff, /recap and /lessons from that recap, a /task timer and the session cost in the status line, a /board of every open session with its harness, graph and teams runs, and a message to the other sessions of a repo when main moves.",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "author": {
     "name": "newkayak12"
   },
@@ -53,6 +53,17 @@
       "description": "One toast when this session's cost reaches it; 0 turns it off.",
       "default": 0,
       "min": 0
+    },
+    "agent_model_guard": {
+      "type": "string",
+      "title": "Agent model guard",
+      "description": "What to do when an Agent call names no model (the subagent inherits the parent's): toast (warn), deny (block), off.",
+      "default": "toast",
+      "options": [
+        "toast",
+        "deny",
+        "off"
+      ]
     },
     "prompt_hint": {
       "type": "boolean",
