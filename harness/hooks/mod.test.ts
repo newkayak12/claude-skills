@@ -20,7 +20,7 @@ const key = (files: Files, path: string) => Object.keys(files).find(k => path.en
 // cwd (none: not a repo, so the cwd is the one tree)
 type Dirs = Record<string, [string, 'dir' | 'file', number?][]>
 function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], files: Files, dirs: Dirs = {}, top?: string) {
-  const seen = { statuses: [] as (string | undefined)[], commands: [] as string[], opened: [] as string[], reads: 0, argv: [] as string[][], listed: [] as string[] }
+  const seen = { statuses: [] as (string | undefined)[], commands: [] as string[], opened: [] as string[], reads: 0, toasts: [] as string[], argv: [] as string[][], listed: [] as string[] }
   const store = new Map<string, unknown>()
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: '/proj' }) as never)
@@ -47,6 +47,10 @@ function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], files: Fil
     const f = files[key(files, e.path) ?? '']
     if (f instanceof Error) throw f
     return { value: f } as never
+  })
+  on('ui.toast', (_$, e) => {
+    seen.toasts.push(e.text)
+    return { value: undefined } as never
   })
   on('ui.status', (_$, e) => {
     seen.statuses.push(e.text)
@@ -170,6 +174,20 @@ for (const [name, text] of [
     expect(await ui.find({ type: 'Text', text: 'No gated call decided yet.' })).toBeDefined()
   })
 }
+
+test('toast: first poll and old denies are silent; a newer deny toasts once', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const files: Files = { [CONFIG]: cfg, [DECISION]: deny(NOW - 1000) }
+  const seen = world(on, ['terminal'], files)
+  await start($)
+  await clock.advance(5000)
+  expect(seen.toasts).toEqual([])
+  files[DECISION] = deny(NOW + 1000)
+  await clock.advance(5000)
+  expect(seen.toasts).toEqual(["⛔ goal gate blocked Write: a/x.md — finish the harness run, don't script around it"])
+  await clock.advance(5000)
+  expect(seen.toasts.length).toBe(1)
+})
 
 test('read error: no throw, the gate state stays', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
