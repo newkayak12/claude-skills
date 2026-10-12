@@ -1,84 +1,26 @@
-# mods
+# mods — 은퇴
 
-claude-skills 워크플로를 위한 Claude Code 모드(function hook): 스킬 토스트, 안전 가드, 고아 정리.
+[English](README.md) · **한국어**
 
-## 설치 & 제거
+`mods`는 은퇴했습니다. 기능은 다른 곳으로 옮겼으니 제거하세요.
 
 ```bash
-/plugin install mods@newkayak12-claude-skills
 /plugin uninstall mods@newkayak12-claude-skills
 ```
 
-> **trophy 함께 설치.** 이 버전부터 이 플러그인을 설치하거나 업데이트한 뒤 첫 대화형 세션에서, trophy가 없으면 [trophy](../trophy/KOR.md)(업적)를 user 범위로 한 번 설치합니다. 동의하기 전에는 아무것도 보내지 않으며, trophy를 지우면 다시 설치하지 않습니다. 미리 거부하려면: `mkdir -p ~/.claude/plugins/.newkayak12-trophy-ride.done`. `sh`가 필요합니다(sh가 없는 Windows는 해당 없음).
+0.3.0은 모듈을 로드하지 않고 아무 일도 하지 않습니다. 단, 이 마켓플레이스의 모든 플러그인이 가진 첫 세션의 [trophy](../trophy/KOR.md) 설치는 그대로입니다(거부: `mkdir -p ~/.claude/plugins/.newkayak12-trophy-ride.done`).
 
-## 요구 사항
+## 기능별 이동처
 
-Claude Code 2.1.292 이상. 이전 빌드는 stderr에 한 줄을 출력하고 모드를 건너뜁니다. 다른 기능에는 영향이 없습니다. 모드가 로드되지 않으면 Claude Code 시작 전에 환경 변수 `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`을 설정하세요.
+| # | 기능 | 이동처 |
+|---|---|---|
+| 1 | 스킬 토스트 | [trophy](../trophy/KOR.md): Skill 호출마다 `◆ <plugin:skill>` 토스트 하나, 그 호출로 업적이 해금되면 생략 |
+| 2 | Agent 모델 가드 | [session](../session/KOR.md), 옵션 `agent_model_guard`(기본 `toast`) |
+| 3, 4 | 실행 중 스크립트 가드, 워크트리 가드 | [session](../session/KOR.md) 가드 |
+| 5, 6, 7 | fetch 알림, push/범프 확인, KOR 없는 README | 이 저장소 전용: `.claude/hooks/repo-rules.mjs`(`.claude/settings.json`의 command 훅). 확인은 사람이 붙은 세션에서만 |
+| 8 | 끝나지 않은 에이전트 수 | [session](../session/KOR.md) 상태줄 |
+| 9 | `/reap` | [session](../session/KOR.md) |
 
-## 기능
+## 상태 로그
 
-| # | 기능 | 동작 | 범위 |
-|---|---|---|---|
-| 1 | 스킬 토스트 | 이 마켓플레이스의 스킬이 호출되면 토스트 표시 | 인터랙티브 |
-| 2 | Agent 모델 가드 | model 없이 `Agent`를 호출하면(부모 모델 사용) 동작. `fork`는 항상 통과. 아래 옵션 참고 | 모든 세션 |
-| 3 | 실행 중 스크립트 가드 | 실행 중인 `.sh`/`.bash` 파일의 Edit/Write를 거부 | 모든 세션 |
-| 4 | 워크트리 가드 | 커밋되지 않은 변경이 있는 워크트리의 `git worktree remove --force`를 거부. 경로가 없으면 통과 | 모든 세션 |
-| 5 | fetch 알림 | 세션 시작 시(인터랙티브 세션에서만) fetch 후 `origin/main`이 앞서 있으면 토스트 | claude-skills 저장소 전용 |
-| 6 | push / bump 확인 | `git push`와 `patch-harness` / `teams/skills/patch/patch.mjs` 버전 범프 스크립트 실행 전 확인. Run을 선택하지 않으면 명령이 거부됨(프롬프트를 닫아도 거부). 헤드리스 세션은 묻지 않고 통과 | claude-skills 저장소 전용 |
-| 7 | KOR 없는 README | `git commit` 시 스테이징된 `README.md`에 `KOR.md`가 없으면 토스트 | claude-skills 저장소 전용 |
-| 8 | 살아 있는 수 | 턴 종료 시 이 세션의 끝나지 않은 에이전트 수를 `⧗ n agent(s) running · /reap`로 상태줄 표시. 0이면 해제. 아무것도 멈추지 않음 | 인터랙티브 |
-| 9 | `/reap` | 이 세션의 끝나지 않은 에이전트(pending/running/waiting/idle)와 `claude -p` 프로세스를 보여주고 Reap/Cancel을 물은 뒤, 에이전트는 TaskStop으로 멈추고 `claude -p`에는 TERM을 보냄(감싸는 셸은 건드리지 않음). 이 세션의 엔진 pid를 확인하지 못하면 프로세스는 종료하지 않음 | 인터랙티브 |
-
-"claude-skills 저장소 전용"은 세션 저장소의 remote가 `/claude-skills(\.git)?$/`와 일치할 때만 동작한다는 뜻입니다. 다른 저장소에서는 세 기능 모두 아무것도 하지 않습니다. 인터랙티브 전용 기능은 헤드리스(`claude -p`) 세션에서 동작하지 않습니다.
-
-## 스크린샷
-
-remote 이름이 `claude-skills`인 임시 저장소에서 실제 Claude Code 2.1.293 세션으로 찍었습니다.
-
-![skill-toast](docs/images/skill-toast.png)
-1 · `think:back-to-basics` 실행 뒤의 스킬 토스트와 상태줄(trophy 토스트와 카드는 trophy 플러그인이 그림).
-
-![agent-model-guard](docs/images/agent-model-guard.png)
-2 · `model` 없는 `Agent` 호출에 뜬 Agent 모델 가드(`toast` 모드).
-
-![running-script-guard](docs/images/running-script-guard.png)
-3 · 실행 중인 `loop.sh`의 Edit를 거부하는 실행 중 스크립트 가드.
-
-![worktree-guard](docs/images/worktree-guard.png)
-4 · 추적되지 않은 파일이 있는 워크트리의 `git worktree remove --force`를 거부하는 워크트리 가드.
-
-![fetch-reminder](docs/images/fetch-reminder.png)
-5 · `origin/main`이 앞서 있을 때 세션 시작에 뜨는 fetch 알림.
-
-![push-ask](docs/images/push-ask.png)
-6 · `git push` 전 확인. Run 외의 선택은 명령을 거부합니다.
-
-![readme-without-kor](docs/images/readme-without-kor.png)
-7 · `KOR.md` 없이 `README.md`만 스테이징하고 `git commit`할 때 뜨는 토스트.
-
-![alive-count](docs/images/alive-count.png)
-8 · 끝나지 않은 에이전트 1개를 세는 턴 종료 상태줄(`claude -p` 개수가 session으로 옮기기 전에 찍음).
-
-![reap-ask](docs/images/reap-ask.png)
-9 · `/reap`이 대상을 보여주고 먼저 묻는 화면.
-
-![reap-result](docs/images/reap-result.png)
-9 · Reap 선택 뒤의 `/reap`: 에이전트 정지, `claude -p` 자식 종료.
-
-## 옵션
-
-`agent_model_guard` (`/config`에서 설정, 기본값 `toast`):
-
-- `toast`: 경고만 하고 호출은 진행.
-- `deny`: 호출 차단. 활성화: `/config`를 열어 `mods.agent_model_guard`를 찾아 `deny`로 설정. 모드는 이 설정을 직접 쓰지 않습니다.
-- `off`: 아무것도 하지 않음.
-
-## 상태와 알려진 한계
-
-- `0.2.0`: 상태줄은 끝나지 않은 에이전트 수만 보여줍니다(`⧗ n agent(s) running · /reap`, 0이면 지움). `claude -p` 개수는 이제 `session`의 상태줄이 보여줍니다(계속 보려면 `session` 설치). `◆ skill`은 토스트로만 뜹니다. `/reap`은 여전히 에이전트와 `claude -p` 자식을 모두 멈춥니다.
-- `0.1.0`(베타 종료): `/reap`이 확인 후 이 세션의 고아 에이전트와 `claude -p` 자식을 멈추고, 턴 종료 상태줄이 끝나지 않은 에이전트도 셉니다. trophy 함께 설치(업데이트 후 첫 대화형 세션에서 trophy가 없으면 한 번 설치).
-- 베타(`0.1.0-beta.5`): push/bump 확인이 teams 패치 도구(`teams/skills/patch/patch.mjs`)까지 다룹니다.
-- 베타(`0.1.0-beta.4`): 실행 밴드와 스캐너 제거(harness가 그림); 알림에 아이콘(◆ ⚠ ↓ ⧗).
-- 스킬 토스트는 플러그인 위치에서 마켓플레이스 파일을 읽을 수 있어야 하며, 읽지 못하면 토스트가 없습니다.
-- Agent 가드는 정의에 모델이 이미 고정된 서브에이전트 타입도 경고합니다. 호출 자체의 `model` 인자만 보기 때문입니다.
-- 워크트리 가드는 같은 명령 앞의 `cd <dir> &&`를 무시합니다. 경로는 `-C <dir>` 또는 세션 디렉터리로만 해석합니다.
+- 0.3.0 — 은퇴: function hook 모듈 없음. 기능은 session, trophy, 저장소 자체 훅으로 이동. 설계: `_repo/docs/plans/2026-10-12-mods-retire-design.md`.

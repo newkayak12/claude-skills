@@ -192,8 +192,8 @@
     },
     {
       "name": "mods",
-      "description": "Claude Code mods for the claude-skills workflow: skill toasts, safety guards for worktrees, running scripts, push/bump and subagent models, and /reap for orphan agents and claude -p children.",
-      "version": "0.2.0",
+      "description": "Retired: features moved to session and trophy; uninstall.",
+      "version": "0.3.0",
       "author": {
         "name": "newkayak12"
       },
