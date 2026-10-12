@@ -35,6 +35,7 @@
 | 하고 싶은 일 | 스킬 |
 |---|---|
 | 실패하는 테스트를 먼저 쓰고, 진짜 실패할 수 있는지 증명 | `test-driven-development` |
+| 스펙과 수용 기준을 먼저 쓰고, 구현 뒤 기준마다 검증 | `spec-driven-development` |
 | 테스트 없는 코드에 테스트 추가, 커버리지 감사, 테스트 계획·테스트 케이스 목록 | `test-master` |
 | API 시나리오를 스펙으로 수집·생성, 스펙마다 액터 AI 디스패치, `ci.sh` 설치 | `scenario-director` |
 | 시나리오 스펙 하나를 curl로 직접 실행 — 로컬에서도, CI의 `claude -p` 단위로도 | `scenario-actor` |
@@ -164,6 +165,17 @@ database workflow로 네 레이어 전부 점검해주세요.
 예상 소요: 전체 4~16시간, 단계당 1~3시간.
 
 ### 테스트
+
+### `spec-driven-development`
+
+코드 전에 스펙부터 씁니다. Specify(스토리 `US-n`, Given/When/Then 수용 기준 `AC-n`, 모르는 사실은 `[확인 필요]`)에서
+승인을 받고, 이어 design, tasks, implement, verify로 갑니다. 스펙 밖 코드가 필요하면 스펙을 먼저 고칩니다. 마지막
+표에 기준별 증거와 스펙 밖 변경 목록이 나옵니다. 계획만 필요하면 `write:plans`, 테스트 우선 루프는
+`test-driven-development`를 쓰세요.
+
+```
+이 기능 스펙부터 쓰고 승인받은 뒤 구현하고, 수용 기준마다 증거를 보여주세요.
+```
 
 ### `test-driven-development`
 

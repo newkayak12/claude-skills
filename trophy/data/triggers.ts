@@ -428,6 +428,18 @@ export const triggers = [
     ]
   },
   {
+    "skill": "develop:spec-driven-development",
+    "plugin": "develop",
+    "phrases": [
+      "acceptance criteria before code",
+      "spec first",
+      "spec-driven development",
+      "명세부터 쓰고 구현",
+      "수용 기준 먼저",
+      "스펙 먼저"
+    ]
+  },
+  {
     "skill": "develop:spring-boot-engineer",
     "plugin": "develop",
     "phrases": []
