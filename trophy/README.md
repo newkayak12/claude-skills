@@ -40,6 +40,8 @@ its MCP tools fails, or a harness run writes a failed subgoal or goal gate (harn
 Each record keeps the failing plugin's version and the Claude Code release. The raw error text stays on
 your machine; the **Copy** button copies it as a bug body.
 
+Keyboard: `ctrl+x tab` focuses the band, then press a letter (`v` View, `d` Dismiss, `s`/`n`/`p` on the consent question) or move with Tab/arrows and Enter. `ctrl+x tab` also moves to an open pane (`t`/`r`/`f` switch tabs). `Esc` returns; `ctrl+x ctrl+a` collapses the band.
+
 Sessions that are not interactive (`claude -p`, so every teams/graph adapter session) record nothing.
 
 ## Screenshots
@@ -115,6 +117,7 @@ view (most hit, most missed, never fired).
 
 ## Status log
 
+- 0.7.0 — Every control can be pressed from the keyboard, with the key shown in its label: `View [v]`, a new `Dismiss [d]` (clears the badge without opening the pane), the pane tabs `[t]` `[r]` `[f]`, and the consent buttons `s`/`n`/`p`. `/achievements` opens the pane with the keys. What is recorded or sent, and the consent version, are unchanged.
 - 0.6.1 — The types contract declares `anyUnlocked` and `lang`, so `claude plugin validate` passes again (0.6.0 failed it; the mod still loaded and worked). No behaviour change.
 - 0.6.0 — The consent question waits for your first achievement: starting Claude Code with nothing unlocked shows no box. An earlier answer no longer flashes the question for a moment at start. What is sent and the consent version are unchanged.
 - 0.5.0 — English by default, Korean when Claude Code's `language` is Korean: every pane, band and command reply, and all 80 achievements (the Korean text kept as it was). The consent question now stands out: a double-framed box with what is sent and what is never sent on their own lines and three buttons drawn alike; what is sent, when it is asked and the consent version are unchanged. Real Claude Code captures EN/KO.
