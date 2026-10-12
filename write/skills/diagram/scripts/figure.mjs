@@ -1,4 +1,4 @@
-// develop:diagram - the static path: a checked IR becomes one self-contained SVG (light palette
+// write:diagram - the static path: a checked IR becomes one self-contained SVG (light palette
 // resolved, NanumGothic subset embedded as a data-URI @font-face, no script, no external reference)
 // and a PNG rasterized from it at 2x through an <img>, the way a book page loads it.
 //

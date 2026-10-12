@@ -5,6 +5,7 @@
 Every release of the `teams` plugin, newest first. Moved here verbatim from the README's old `## Status` section. `teams:patch` prepends new release lines under `## Status` below.
 
 ## Status
+- v0.51.4 — **diagram path follows its move to write:diagram** (2026-10-12). The vendored `mcp/diagram.mjs` now tracks `write/skills/diagram/scripts/diagram.mjs`; header comment and `test-diagram.mjs` path updated. No engine behavior change.
 - v0.51.3 — Codex: MCP servers register under Codex (`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`); Claude reads them from plugin.json.
 - v0.51.2 — **patch skill points at the real harness bump tool** (2026-10-12). teams:patch names _repo/scripts/patch-harness.mjs instead of a removed harness:patch skill; marketplace entry now depends on harness. No engine change.
 - v0.51.1 — **diagram moved to develop:diagram** (2026-10-11). The vendored `mcp/diagram.mjs` now tracks `develop/skills/diagram/scripts/diagram.mjs` (split out of architecture-designer in develop 1.12.0): an optional `legend` object renames edge-style keys (labels 1-48 chars, keys must be styles in use) and the HTML legend prints the renamed label; `test-diagram.mjs` reads the skill copy and diagram-ir.md from the new path. No engine behavior change.

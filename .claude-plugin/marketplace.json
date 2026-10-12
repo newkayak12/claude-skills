@@ -11,8 +11,8 @@
   "plugins": [
     {
       "name": "develop",
-      "description": "Engineering skills: CLI, SQL, clean architecture, clean code, DDD, database optimization, chaos engineering, Spring Boot, microservices, Kotlin, TDD, frontend, code documentation, testing, bug diagnosis, security audit, architecture review, deprecation & migration, SRE, performance profiling & optimization, incident response, documentation strategy, like-my-code (a repo's style as harness conventions, each rule with evidence and a cited source), diagram (checked self-contained SVG + PNG figures: page layout, B-tree, lock timeline, ER, chart, architecture, sequence), and dev-quality-workflow (full dev cycle entry point). ADR drafting moved to write:plans (ADR format).",
-      "version": "1.12.0",
+      "description": "Engineering skills: CLI, SQL, clean architecture, clean code, DDD, database optimization, chaos engineering, Spring Boot, microservices, Kotlin, TDD, frontend, code documentation, testing, bug diagnosis, security audit, architecture review, deprecation & migration, SRE, performance profiling & optimization, incident response, documentation strategy, like-my-code (a repo's style as harness conventions, each rule with evidence and a cited source), and dev-quality-workflow (full dev cycle entry point). ADR drafting moved to write:plans (ADR format); diagram moved to write:diagram.",
+      "version": "1.13.0",
       "author": {
         "name": "newkayak12"
       },
@@ -37,8 +37,8 @@
     },
     {
       "name": "write",
-      "description": "Writing skills: plans (one entry, purpose chosen at step 0 — gate-ready implementation plans with production-time gap/ambiguity checks + per-step pass bars and dual-mode; reader documents co-written section by section with reader testing; fixed-template design reviews and ADRs; technical blog posts; SBI feedback), spec (a settled conversation synthesised into a spec, open points marked, no re-interview), skill writing, and writer verification (v2 — five passes incl. a humanizer for machine tells, draft loop that rewrites until 🔴🟡 = 0, PR descriptions from a diff as first-class input), and tech-book (performance-based book arc, cumulative examples, transfer practice, six required teaching elements within a chapter length budget, staged review loops with defined severities, lab-running fact checks, pinned chapter end states and a cap closure pass, and PDF in bundled NanumGothic). Knowledge-base, graph, RAG, and query skills moved to the knowledge plugin.",
-      "version": "1.12.0",
+      "description": "Writing skills: plans (one entry, purpose chosen at step 0 — gate-ready implementation plans with production-time gap/ambiguity checks + per-step pass bars and dual-mode; reader documents co-written section by section with reader testing; fixed-template design reviews and ADRs; technical blog posts; SBI feedback), spec (a settled conversation synthesised into a spec, open points marked, no re-interview), skill writing, and writer verification (v2 — five passes incl. a humanizer for machine tells, draft loop that rewrites until 🔴🟡 = 0, PR descriptions from a diff as first-class input), and tech-book (performance-based book arc, cumulative examples, transfer practice, six required teaching elements within a chapter length budget, staged review loops with defined severities, lab-running fact checks, pinned chapter end states and a cap closure pass, and PDF in bundled NanumGothic), diagram (checked self-contained SVG + PNG figures: page layout, B-tree, lock timeline, ER, chart, architecture, sequence; moved from develop). Knowledge-base, graph, RAG, and query skills moved to the knowledge plugin.",
+      "version": "1.13.0",
       "author": {
         "name": "newkayak12"
       },
@@ -169,7 +169,7 @@
     {
       "name": "teams",
       "description": "A sibling of graph for requests too big for one pass: a TaskManager MCP (task-manager) sizes the request; size L is planned into a PRD and user stories, split into packages that each run the full harness in their own worktree, integrated, QA'd and gated by a background daemon; size S is handed to the development harness. Entry skills teams:orchestrate/develop/document/plan/qa/sprint, board and ticket views (tm_board, teams:board). Runs are kept under .teams_output/ and ~/.harness/tasks/. Zero runtime dependencies beyond Node 18+.",
-      "version": "0.51.3",
+      "version": "0.51.4",
       "author": {
         "name": "newkayak12"
       },
@@ -206,7 +206,7 @@
     {
       "name": "session",
       "description": "What a session left behind and a safety net: a /session pane with files changed, commits, denied calls and the longest gap, a retro band on the next start, a safe stop for stray claude -p children, guards that confirm destructive commands and secret-file writes, /memo notes pinned to the model's context, /smart-compact (recap at a set context %, then compact), /handoff, /recap and /lessons from that recap, a /task timer and the session cost in the status line, a /board of every open session with its harness, graph and teams runs, and a message to the other sessions of a repo when main moves.",
-      "version": "0.5.0",
+      "version": "0.5.1",
       "author": {
         "name": "newkayak12"
       },

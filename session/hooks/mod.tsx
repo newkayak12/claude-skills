@@ -23,7 +23,7 @@ import { DENIALS_KEY, register as registerGuard } from './guard.tsx'
 import { register as registerMemo } from './memo.tsx'
 import { register as registerHint } from './hint.ts'
 import { register as registerCompact } from './compact.tsx'
-import { aliveCount, register as registerAgents } from './agents.ts'
+import { aliveCount, register as registerAgents } from './agents.tsx'
 
 const tab = atom({ plugin: 'session', key: 'tab' } as const, 'retro' as 'retro' | 'orphans')
 const band = atom({ plugin: 'session', key: 'band' } as const, false)

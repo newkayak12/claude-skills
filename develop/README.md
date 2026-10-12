@@ -56,7 +56,6 @@ the specialist skills in a fixed order and let you join mid-process.
 | I want to… | Skill |
 |---|---|
 | Choose a topology, weigh trade-offs, write ADRs | `architecture-designer` |
-| Draw a checked figure (SVG + PNG) for a book, doc or share — not Mermaid | `diagram` |
 | Discover the domain with events before any code exists | `event-storming` |
 | Model bounded contexts, aggregates, and a ubiquitous language | `domain-driven-design` |
 | Decide whether a service split is real or would just add coupling | `service-boundary-validator` |
@@ -363,48 +362,8 @@ Output: requirements summary (functional + non-functional) → Mermaid architect
 decisions in ADR format with trade-offs → technology recommendations with rationale → risks and
 mitigations.
 
-A figure that will be opened, shared or printed is drawn with `diagram`; Mermaid stays the choice
+A figure that will be opened, shared or printed is drawn with `write:diagram`; Mermaid stays the choice
 inside a markdown doc.
-
-### `diagram`
-
-Draws a checked figure instead of Mermaid or ASCII art. The agent decides figure or table first
-(a figure only when the point is spatial, hierarchical, temporal across two or more actors, or a
-measured comparison), writes a typed JSON IR and places every cell, row and column itself; the
-script refuses, it never moves anything. Types: `architecture`, `dataflow`, `workflow`,
-`lifecycle`, `sequence` (`references/diagram-ir.md`, the approach of
-[archify](https://github.com/tt-a1i/archify) folded in without a dependency, split out of
-`architecture-designer`) and `layout` (page layout, row + undo record, version chain; `축척 아님`
-stamp when not to scale), `tree` (B-tree, clustered + secondary index, execution plan; key order
-checked under either key convention), `timeline` (sessions, lock waits, deadlock), `er`
-(crow's-foot ends with per-end optionality `1` · `0..1` · `0..*` · `1..*`, `UK` beside a unique
-attribute) and `chart` (bar from 0, line, dot with the median drawn by the renderer)
-(`references/figures.md`).
-
-`node scripts/diagram.mjs check fig.json` measures every label with the embedded font and refuses
-overflow, overlap, a line through a box or over a label, clipping, a label that would be cut, text
-under 7.5 pt at a 146 mm book width, a character the font lacks, and each type's misleading cases
-(sizes that do not add up, keys out of order, a wait no lock explains, a bar axis not from 0); each
-refusal is phrased as its repair. `figure fig.json fig` then writes `fig.svg` — self-contained, no
-script or external reference, a NanumGothic subset embedded as `@font-face` (tens of KB) — and
-`fig.png` at 2x through a headless Chrome-family browser (exit 3 with the SVG written when none is
-found; set `CHROME=`). The agent reads the PNG before calling it done, at most 3 rounds. An optional
-`legend` object renames edge-style keys (`{"sync": "요청"}`); edge labels pick a spot clear of their
-own line. `render fig.json fig.html` still writes the interactive HTML (hover, light/dark) for the
-grid and sequence types.
-
-The skill ships NanumGothic Regular + Bold (SIL OFL 1.1, licence in `assets/fonts/`), about 4 MB of
-the plugin. Non-browser SVG renderers (librsvg, Inkscape, QuickLook) may ignore `@font-face`; the PNG
-is the copy for those.
-
-```
-Draw the InnoDB 16KB page layout for chapter 9 as a figure, and the two sessions waiting
-on one row lock as a timeline. Not Mermaid.
-```
-
-teams uses it too: `teams/mcp/diagram.mjs` is a byte-identical copy (a test fails on drift); shape
-returns its package map in this IR, the manager renders it beside the docs, and critique and
-integrate read its seams.
 
 ### `event-storming`
 
