@@ -136,7 +136,7 @@ const plan = await agent(
   `Produce a short plan: (1) decomposition into independent units of work, ` +
   `(2) real ordering dependencies only, (3) for each unit, which of this repository's ` +
   `skills fit (plugins: develop:*, think:*, write:*, knowledge:*, agents:*, ` +
-  `planning:*, skill:*, completion:*, portfolio:*, cognition:*) ` +
+  `planning:*, skill:*, completion:*, portfolio:*, cognition:*, assist:*) ` +
   `and what executor persona fits, (4) how each unit can be deterministically verified ` +
   `(commands to run, files to inspect), (5) if the project defines .claude/conventions/**, ` +
   `Read the relevant ones and list the rules that must constrain this work. ` +
