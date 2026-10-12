@@ -344,18 +344,8 @@ async function runEvents($: EngineInterface, start: number, tries: Map<string, n
     return tries.get(id)!
   }
   for (const d of await ls($, RUNS)) {
-    if (d.kind !== 'dir') continue
-    if (d.name === 'broker') {
-      for (const f of await ls($, `${RUNS}/broker/runs`)) {
-        if (!f.name.endsWith('.json') || f.mtimeMs <= start) continue
-        const g = await readJson($, `${RUNS}/broker/runs/${f.name}`, f)
-        const nodes = (Array.isArray(g?.nodes) ? g.nodes : []) as { stage?: string; state?: string }[]
-        if (!nodes.some(n => n.stage === 'report' && n.state === 'done')) continue
-        const request = typeof g?.request === 'string' ? firstLine(g.request).slice(0, 60) : ''
-        emit(request || f.name.replace(/\.json$/, ''), 'graph Report', 'complete', 1, 1)
-      }
-      continue
-    }
+    // graph runs (broker/) are pushed by the graph mod, which sees their rejects too
+    if (d.kind !== 'dir' || d.name === 'broker') continue
     const base = `${RUNS}/${d.name}`
     const files = await ls($, base)
     const file = (name: string) => files.find(f => f.name === name)
