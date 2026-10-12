@@ -5,6 +5,7 @@
 `teams` 플러그인의 모든 릴리스를 최신순으로 적었습니다. 예전 KOR.md의 `## 상태` 절을 그대로 옮겨 온 것입니다. 새 릴리스 줄은 `teams:patch`가 아래 `## 상태` 맨 위에 추가합니다.
 
 ## 상태
+- v0.51.3 — Codex: MCP 서버가 Codex에서도 등록됩니다(`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`). Claude는 plugin.json에서 읽습니다.
 - v0.51.2 — **patch 스킬이 실제 harness 범프 도구를 가리킵니다** (2026-10-12). teams:patch가 없어진 harness:patch 스킬 대신 _repo/scripts/patch-harness.mjs를 씁니다. 마켓플레이스 항목이 harness에 의존합니다. 엔진 변경 없음.
 - v0.51.1 — **diagram이 develop:diagram으로 이동** (2026-10-11). 벤더링한 `mcp/diagram.mjs`가 이제 `develop/skills/diagram/scripts/diagram.mjs`(develop 1.12.0에서 architecture-designer로부터 분리)를 따릅니다. 선택 항목 `legend` 객체로 edge 스타일 키 이름을 바꿀 수 있고(라벨 1-48자, 쓰인 스타일만), HTML 범례가 바뀐 이름을 찍습니다. `test-diagram.mjs`는 새 경로의 스킬 사본과 diagram-ir.md를 읽습니다. 엔진 동작 변화 없음.
 - v0.51.0 — **install: 참조 프로젝트** (2026-10-08). install이 참조 프로젝트 여부를 물음(기본 아니오). 있으면 `develop:like-my-code`가 `.claude/conventions/`를 작성하며, teams가 컨벤션을 접는 방식(plan/setgoal은 경로+첫 제목만, implement는 첫 제목이 대상 파일과 맞을 때만 본문, 블록 전체 4000자 상한)을 안내받음. develop이 없거나 템플릿이 없으면(`missing-src`) 건너뜀. 코드 변경 없음.

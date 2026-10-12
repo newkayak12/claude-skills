@@ -50,6 +50,7 @@ Zero runtime dependencies, Node 18+.
 Optional: `graph:install` can run `develop:like-my-code` to write `.claude/conventions/`; the broker then tells every plan, setgoal, implement, and test node, on any vendor, to read and follow the relevant files.
 
 ## Status
+- v1.10.1 — Codex: MCP servers register under Codex (`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`); Claude reads them from plugin.json.
 - v1.10.0 — the broker tells every plan/setgoal/implement/test node, whatever the vendor, to follow `.claude/conventions/**` (setgoal folds them into acceptance); install offers `develop:like-my-code` for a reference project
 - v1.9.1 — trophy rides along: the first interactive session after this update installs trophy once if missing (uninstall respected)
 
