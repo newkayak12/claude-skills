@@ -2266,7 +2266,7 @@ export function commitWorktree(cwd, message) {
   if (!drop.ok) return { ok: false, reason: drop.err || 'could not leave the harness state out of the commit' };
   const staged = git(cwd, ['diff', '--cached', '--quiet']);
   if (staged.ok) return { ok: true, commit: null }; // nothing to commit is not an error
-  const c = gitIndexed(cwd, ['-c', 'user.email=harness@local', '-c', 'user.name=harness', 'commit', '-q', '-m', message]);
+  const c = gitIndexed(cwd, ['commit', '-q', '-m', message]);
   if (!c.ok) return { ok: false, reason: c.err || 'git commit failed' };
   return { ok: true, commit: git(cwd, ['rev-parse', 'HEAD']).out };
 }
@@ -2274,7 +2274,7 @@ export function commitWorktree(cwd, message) {
 // Merge one branch into a worktree. A conflict is observed, not reported: the files git
 // marks unmerged are the evidence, and the merge is aborted so the tree stays usable.
 function mergeInto(cwd, branch, message) {
-  const r = git(cwd, ['-c', 'user.email=harness@local', '-c', 'user.name=harness', 'merge', '--no-ff', '--no-edit', '-m', message, branch]);
+  const r = git(cwd, ['merge', '--no-ff', '--no-edit', '-m', message, branch]);
   if (r.ok) return { ok: true, commit: git(cwd, ['rev-parse', 'HEAD']).out };
   const conflicts = git(cwd, ['diff', '--name-only', '--diff-filter=U']).out.split('\n').filter(Boolean);
   git(cwd, ['merge', '--abort']);
