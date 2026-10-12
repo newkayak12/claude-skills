@@ -12,7 +12,7 @@
     {
       "name": "develop",
       "description": "Engineering skills: SQL, clean architecture, clean code, DDD, database optimization, chaos engineering, Spring Boot, Kotlin, TDD, testing, bug diagnosis, security audit, architecture review, deprecation & migration, SRE, performance profiling & optimization, incident response, documentation strategy, like-my-code (a repo's style as harness conventions, each rule with evidence and a cited source). ADR drafting moved to write:plans (ADR format); diagram moved to write:diagram.",
-      "version": "1.14.0",
+      "version": "1.14.1",
       "author": {
         "name": "newkayak12"
       },

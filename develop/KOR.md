@@ -169,7 +169,8 @@ database workflow로 네 레이어 전부 점검해주세요.
 ### `spec-driven-development`
 
 코드 전에 스펙부터 씁니다. Specify(스토리 `US-n`, Given/When/Then 수용 기준 `AC-n`, 모르는 사실은 `[확인 필요]`)에서
-승인을 받고, 이어 design, tasks, implement, verify로 갑니다. 스펙 밖 코드가 필요하면 스펙을 먼저 고칩니다. 마지막
+승인을 받습니다. 승인 전에 요청이 말하지 않은 기준(같은 값으로 쳐야 할 입력, 자원 상한, 상태가 유지되는 동안의 동작)을
+훑습니다. 이어 design, tasks, implement, verify로 갑니다. 스펙 밖 코드가 필요하면 스펙을 먼저 고칩니다. 마지막
 표에 기준별 증거와 스펙 밖 변경 목록이 나옵니다. 계획만 필요하면 `write:plans`, 테스트 우선 루프는
 `test-driven-development`를 쓰세요.
 

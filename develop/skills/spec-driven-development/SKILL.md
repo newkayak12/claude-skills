@@ -1,12 +1,12 @@
 ---
 name: spec-driven-development
 description: >-
-  Use when a feature should be specified before it is coded — user stories, acceptance criteria, then tasks and a
-  per-criterion check. Triggers on: "스펙 먼저", "명세부터 쓰고 구현", "수용 기준 먼저", "spec first",
-  "spec-driven development", "acceptance criteria before code".
+  Use when a feature should be specified before it is coded — stories, acceptance criteria, tasks, a
+  per-criterion check. Triggers: "스펙 먼저", "명세부터 쓰고 구현", "수용 기준 먼저", "spec first",
+  "spec-driven development".
 license: MIT
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
 scenarios:
   - "write the spec and acceptance criteria first, then implement"
   - "let's do spec-driven development on this feature"
@@ -46,8 +46,11 @@ work through the multi-agent graph (`teams:develop`). A one-line fix → say so 
 ## Process
 
 1. **Specify.** Read the code and docs first; ask one line at most. Write `spec.md`: problem, `US-n` stories,
-   `AC-n` criteria in Given/When/Then (each cites its `US-n`), out of scope, `[확인 필요]` items. **Gate:** show the
-   spec and wait for approval. No design or code before it.
+   `AC-n` criteria in Given/When/Then (each cites its `US-n`), out of scope, `[확인 필요]` items. Before the gate,
+   sweep for criteria the request implies but never states — inputs that must count as the same (case, whitespace,
+   encoding), resource bounds (growth, retention), behaviour while a state holds — each becomes an AC or a
+   `[확인 필요]` (bench: a spec without the sweep let `Bob`/`bob` each get their own lockout counter). **Gate:** show
+   the spec and wait for approval. No design or code before it.
 2. **Design.** `design.md`: interface contracts, data model, decisions in one line each. Every item names the
    `AC-n` it serves; an item serving none is cut.
 3. **Tasks.** `tasks.md`: one task per AC (or a tight group), each with its failing test first and its IDs. Order by
@@ -61,7 +64,8 @@ Templates: `references/templates.md`. Store under `specs/<feature>/`, or where t
 
 ## Output Template
 
-Per step, the file named above. Closing report:
+Per step, the file named above. The closing report is only what follows — design.md and tasks.md stay files,
+never pasted:
 
 | AC | Story | Task | Evidence (test name / output) | Status |
 |---|---|---|---|---|
