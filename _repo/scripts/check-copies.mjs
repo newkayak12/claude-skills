@@ -32,6 +32,17 @@ for (const files of groups) {
   if (present.some((b) => !b.equals(present[0]))) problems.push(`drift: ${files.join(' = ')}`)
 }
 
+// 3. The routeText function (ROUTE-BEGIN..ROUTE-END) in both gate hooks.
+const routeOf = (f) => {
+  const s = readFileSync(join(root, f), 'utf8')
+  const a = s.indexOf('// ROUTE-BEGIN')
+  const b = s.indexOf('// ROUTE-END')
+  return a < 0 || b < a ? null : s.slice(a, b)
+}
+const routes = ['harness/hooks/goal-gate.mjs', 'teams/hooks/dispatch-gate.mjs'].map(routeOf)
+if (routes.some((r) => r === null)) problems.push('missing: ROUTE-BEGIN..ROUTE-END block in a gate hook')
+else if (routes[0] !== routes[1]) problems.push('drift: routeText in harness/hooks/goal-gate.mjs = teams/hooks/dispatch-gate.mjs')
+
 const hasSkill = (dir) =>
   existsSync(dir) &&
   readdirSync(dir).some((n) => n === 'SKILL.md' || (statSync(join(dir, n)).isDirectory() && hasSkill(join(dir, n))))

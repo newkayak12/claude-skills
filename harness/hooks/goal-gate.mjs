@@ -574,6 +574,31 @@ function analyzeBash(command, cwd) {
   return { direct, script };
 }
 
+// ROUTE-BEGIN (byte-identical in harness/hooks/goal-gate.mjs and teams/hooks/dispatch-gate.mjs; _repo/scripts/check-copies.mjs)
+// The routing paragraph when teams and harness or graph are both installed in dir, else ''.
+// Any error gives '': the caller keeps its own message.
+function routeText(dir) {
+  try {
+    const json = (f) => {
+      try { return JSON.parse(readFileSync(f, 'utf8')); } catch { return null; }
+    };
+    const has = (f) => json(join(dir, f)) !== null;
+    const harness = has('.claude/harness-gate.json');
+    const teams = has('.claude/teams-dispatch.json');
+    const on = (f) => json(f)?.enabledPlugins?.['graph@newkayak12-claude-skills'] === true;
+    const graph = Boolean(json(join(dir, '.mcp.json'))?.mcpServers?.['graph-engineering']) ||
+      on(join(dir, '.claude', 'settings.json')) || on(join(process.env.HOME || '~', '.claude', 'settings.json'));
+    if (!teams || !(harness || graph)) return '';
+    const simple = graph ? 'graph:orchestrate' : 'harness:harness';
+    return `This project also dispatches through ${['teams', harness && 'harness', graph && 'graph'].filter(Boolean).join(' + ')}; route by the kind of work.\n` +
+      `  - Simple development (a code change with its tests, one area) -> Skill({skill: "${simple}"})\n` +
+      `  - A spec document, planning, QA, several areas, or unsure -> Skill({skill: "teams:orchestrate", args: "<the user's request>"})\n`;
+  } catch {
+    return '';
+  }
+}
+// ROUTE-END
+
 function deny(reason) {
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason },
@@ -650,11 +675,15 @@ function main() {
     process.exit(0);
   }
 
+  const routed = routeText(root);
   const bypass = judged.some((j) => j.script && isGated(j.rel, cfg.patterns));
   const reason = bypass
     ? `${gated.slice(0, 3).join(', ')}: goal gate: running a script that touches a gated file is the same write — ` +
       'open/finish the harness run instead of working around the gate.'
-    : `${gated.slice(0, 3).join(', ')} is gated by the harness (.claude/harness-gate.json). ` +
+    : routed
+      ? `${gated.slice(0, 3).join(', ')} is gated by the harness (.claude/harness-gate.json) and by teams (.claude/teams-dispatch.json). ${routed}` +
+        'Either route opens a run that unlocks both gates; a mention in text does not.'
+      : `${gated.slice(0, 3).join(', ')} is gated by the harness (.claude/harness-gate.json). ` +
     'Engage the harness before editing it: invoke the harness skill and follow its Process - ' +
     'the graph MCP, the Workflow engine, or an Agent Team fallback run whose plan, goal-spec and ' +
     'sound critique are on disk. A mention in text does not engage it.';

@@ -20,6 +20,7 @@ const lang = atom({ plugin: 'harness', key: 'lang' } as const, 'en' as 'en' | 'k
 const PANE = 'harness-gate'
 const CONFIG = '.claude/harness-gate.json'
 const DECISION = '.claude/.harness-last-decision.json'
+const TEAMS_CONFIG = '.claude/teams-dispatch.json'
 const TICK_MS = 5000
 const RUNS = '.harness-run'
 const LIVE_MS = 2 * 60 * 60 * 1000
@@ -387,7 +388,14 @@ export const register: Register = on => {
         await update($, last, () => decision)
         if (decision) {
           if (seenTs !== null && decision.ts > seenTs && decision.decision === 'deny') {
-            $.ui.toast(`⛔ goal gate blocked ${decision.tool}: ${decision.target} — finish the harness run, don't script around it`, { timeoutMs: 8000 })
+            // teams' dispatch gate has no toast of its own, so this is the one toast when the gates meet
+            const meet = await $.fs.exists(TEAMS_CONFIG)
+            $.ui.toast(
+              meet
+                ? `⛔ harness and teams gates both blocked ${decision.tool}: ${decision.target} — simple dev: graph/harness; spec, planning, QA or unsure: teams:orchestrate`
+                : `⛔ goal gate blocked ${decision.tool}: ${decision.target} — finish the harness run, don't script around it`,
+              { timeoutMs: 8000 },
+            )
           }
           seenTs = Math.max(seenTs ?? 0, decision.ts)
         } else if (seenTs === null) seenTs = 0

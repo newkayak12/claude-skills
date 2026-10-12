@@ -589,6 +589,63 @@ test('1.30 AC-3: no open run - a gated repo script, a /tmp script on /tmp, and a
   assert.equal(run(bash(dir, 'python3 scripts/check.py')), 'deny');
 });
 
+// ---- gate routing (_repo/docs/plans/2026-10-12-gate-routing.md) ----
+
+function routeReason(dir, env = {}) {
+  const home = mkdtempSync(join(tmpdir(), 'route-home-'));
+  const r = spawnSync('node', [HOOK], { input: JSON.stringify(edit(dir, join(dir, 'a.js'))), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: '', HOME: home, ...env } });
+  rmSync(home, { recursive: true, force: true });
+  return r.stdout.trim() ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+}
+const TEAMS_LINE = '  - A spec document, planning, QA, several areas, or unsure -> Skill({skill: "teams:orchestrate", args: "<the user\'s request>"})\n';
+const addTeams = (dir) => write(join(dir, '.claude', 'teams-dispatch.json'), '{}');
+const addGraph = (dir) => write(join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { 'graph-engineering': {} } }));
+
+test('routing AC-1: harness + teams, simple development names the harness skill, the rest teams', () => {
+  const dir = project();
+  addTeams(dir);
+  const r = routeReason(dir);
+  assert.match(r, /This project also dispatches through teams \+ harness; route by the kind of work\./);
+  assert.ok(r.includes('Simple development (a code change with its tests, one area) -> Skill({skill: "harness:harness"})\n'));
+  assert.ok(r.includes(TEAMS_LINE));
+});
+
+test('routing AC-2: harness + graph + teams, simple development names graph', () => {
+  const dir = project();
+  addTeams(dir);
+  addGraph(dir);
+  const r = routeReason(dir);
+  assert.match(r, /teams \+ harness \+ graph/);
+  assert.ok(r.includes('Skill({skill: "graph:orchestrate"})'));
+  assert.ok(!r.includes('harness:harness'));
+  assert.ok(r.includes(TEAMS_LINE));
+});
+
+test('routing AC-2: graph enabled in the user settings counts', () => {
+  const dir = project();
+  addTeams(dir);
+  const home = mkdtempSync(join(tmpdir(), 'route-home-'));
+  write(join(home, '.claude', 'settings.json'), JSON.stringify({ enabledPlugins: { 'graph@newkayak12-claude-skills': true } }));
+  const r = routeReason(dir, { HOME: home });
+  assert.ok(r.includes('Skill({skill: "graph:orchestrate"})'));
+});
+
+test('routing AC-4: one gate only keeps today\'s message; harness + graph without teams too', () => {
+  const dir = project();
+  const today = routeReason(dir);
+  assert.match(today, /Engage the harness before editing it: invoke the harness skill/);
+  assert.ok(!today.includes('teams:orchestrate'));
+  addGraph(dir);
+  assert.equal(routeReason(dir), today);
+});
+
+test('routing: a broken teams config still routes nothing wrong and the verdict stays deny', () => {
+  const dir = project();
+  write(join(dir, '.claude', 'teams-dispatch.json'), '{not json');
+  assert.equal(run(edit(dir, join(dir, 'a.js'))), 'deny');
+  assert.match(routeReason(dir), /Engage the harness before editing it/);
+});
+
 // ---- parity: the repo's installed copy is the plugin's hook ----
 
 test('parity: .claude/hooks/goal-gate.mjs equals harness/hooks/goal-gate.mjs', () => {
