@@ -1,0 +1,6 @@
+# Batch A — identity rewrite (2026-10-12)
+
+- domain-driven-design: 191 → 96 lines. Missing P4/P10 (no forbidden reflex), P9 (Goal), P6 (Not for), P1 (verdict), P2, P12 (6 catalog tables in body). Now: NEVER draw borders from a noun list (scar: per-noun services = network coupling), `[확인 필요]` for unstated rules, Goal line, Not-for + 4 handoffs, Output tables + recountable Tally; catalog tables cut (details already in references/).
+- architecture-designer: 125 → 97 lines. Missing P4/P10, P9, P6 (Use/Skip table only), P1, P2. Now: NEVER more distributed than constraints force (scar: distributed monolith), `[확인 필요]` NFRs, Goal, Not-for + 5 handoffs, Tally line; Distributed Topology folded into Process step 3 (distributed gate) instead of a standalone section; MUST/MUST NOT list removed (absorbed into mandates/steps).
+- clean-code: 176 → 172 lines. Missing P4/P10, P9, P6 (Use/Skip table). Now: NEVER judge by taste or diff alone (scar: retries probe 0/2 → 2/2), implement-stage output mandate, Goal, Not-for + 5 handoffs; P1 verdict line kept. Mode Map, G1–G6, I1–I8, Output Template kept intact for teams mounts → stays above 70% target by design.
+- Descriptions unchanged → develop/README.md, KOR.md untouched. Checks: validate_plugins PASSED, test-repo-rules ok, check-copies ok, teams test-mounts 19/19.

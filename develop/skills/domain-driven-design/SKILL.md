@@ -26,166 +26,71 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
+## Standing Mandates
+
+- NEVER draw a context boundary from a noun list. A border goes where a term changes meaning, and the map quotes both
+  meanings. Contexts cut per noun (`Customer`, `Order`, `Product`) become entity services that call each other on
+  every request — the coupling stays, now over the network, and `develop:service-boundary-validator` then finds it.
+- A business rule nobody stated is marked `[확인 필요: <rule>]`, never invented; an invented invariant ships as code.
+
+Goal: every context on the map cites the term whose meaning changes at its border, every aggregate names the invariant
+it guards, and the closing tally recounts to the tables.
+
 # Domain-Driven Design
 
-Keep the code shaped like the business so intricate rules remain readable.
+Keeps the code shaped like the business: shared words, explicit borders, small aggregates that guard real rules.
 
-## When to Use / When Not to Use
-
-| Use | Skip |
-|-----|------|
-| Making code mirror business concepts | Architecture layering (use clean-architecture) |
-| Defining service boundaries from domain analysis | Service coupling validation (use service-boundary-validator) |
-| Experts and engineers name the same thing differently | Simple CRUD apps without complex business rules |
-| Identifying core domain vs. generic subdomains | |
+**Not for** layering or the dependency rule (`develop:clean-architecture`); checking whether existing service cuts hold
+(`develop:service-boundary-validator`); topology, ADRs, datastore choice (`develop:architecture-designer`); running a
+discovery workshop from nothing (`develop:event-storming`). Plain CRUD with no rules → say so and stop.
 
 ## Process
 
-1. **Score the model** — Rate 0–10 based on the framework below
-2. **Build ubiquitous language** — Collaborate with domain experts; document shared terms
-3. **Map bounded contexts** — Identify where language changes; draw context boundaries
-4. **Define building blocks** — Classify each object as Entity, Value Object, or Aggregate
-5. **Design events and repositories** — Wire causality through Domain Events; abstract persistence
-6. **Distill the core domain** — Identify what provides competitive advantage; focus effort there
-
-## Scoring
-
-**Target: 10/10.** Full marks: an expert can read the class names and recognise them, aggregates stay small, and nothing is an anemic model.
-
-## Framework
-
-### 1. Ubiquitous language
-
-One precise vocabulary that developers and domain experts both use in speech, documents and source code.
-
-| Situation | Pattern | Example |
-|---|---|---|
-| Class naming | Name classes after domain concepts | `LoanApplication`, not `RequestHandler` |
-| Method naming | Use verbs the business uses | `policy.underwrite()`, not `policy.process()` |
-| Event naming | Past-tense domain actions | `ClaimSubmitted`, not `DataSaved` |
-| Packages | Group by business capability | `shipping/` and `billing/` rather than `controllers/` and `services/` |
-| Review | Push back on purely technical names | `Manager`, `Helper`, `Processor`, `Utils` signal an unnamed concept |
-
-Details: `references/ubiquitous-language.md`
-
-### 2. Bounded contexts, context maps
-
-A bounded context marks the region where one particular model, with its own vocabulary, is valid.
-
-| Situation | Pattern | Example |
-|---|---|---|
-| Calling an outside system | Anti-Corruption Layer | Map the vendor's payload into your own types at the edge |
-| Team collaboration | Shared Kernel | Two teams co-own a small `Money` value object library |
-| Replacing a legacy system | Conformist or ACL | An adapter exposes the old system in your own terms |
-| Many downstream consumers | Open Host Service + Published Language | One versioned API, documented, with a shared schema |
-| Module boundaries | Separate packages per context | `myapp.shipping` and `myapp.billing` with explicit translation |
-
-Details: `references/bounded-contexts.md`
-
-### 3. Entities, value objects, aggregates
-
-- **Entity**: identity persists across state changes ("same person even if name changes")
-- **Value Object**: defined entirely by attributes; immutable ("$10 bill is interchangeable")
-- **Aggregate Root**: the one door into a cluster; guards its invariants and points to other aggregates by id
-
-| Situation | Pattern | Example |
-|---|---|---|
-| Tracked over time | Entity with id | `Order` keeps its `orderId` through every status change |
-| Group of attributes | Value object | `Address(street, city, zip)` gets replaced wholesale, never modified in place |
-| Consistency boundary | Aggregate root | `OrderLine` is reached only via its `Order` |
-| Cross-aggregate reference | Reference by ID | `Order` stores `customerId`, not a `Customer` object |
-
-Details: `references/building-blocks.md`
-
-### 4. Domain Events
-
-A domain event states a business-relevant fact that has already happened, named in the past tense.
-
-| Situation | Pattern | Example |
-|---|---|---|
-| Status changes | Aggregate records an event | `order.place()` yields `OrderPlaced` |
-| Crossing contexts | Integration event | Billing publishes `InvoicePaid`; shipping reacts by scheduling a pickup |
-| Audit trail | Store events as history | Event log: `OrderPlaced` → `PaymentReceived` → `OrderShipped` |
-| Eventual consistency | Asynchronous subscribers | An `InventoryReserved` subscriber adjusts stock later |
-
-Details: `references/domain-events.md`
-
-### 5. Repositories and factories
-
-- **Repository**: makes stored aggregates look like a collection and conceals the storage
-- **Factory**: encapsulates complex object creation; ensures aggregates are always created in valid state
-
-| Situation | Pattern | Example |
-|---|---|---|
-| Loading aggregates | Repository interface | `OrderRepository.findOpenFor(customerId)` declared in the domain |
-| Non-trivial construction | Factory method | `Order.fromQuote(quote)` checks inputs and builds a valid order |
-| Reusable selection rule | Specification | `Overdue(30).and(HighValue)` reused for validation and lookup |
-| Ports and adapters | Contract in the domain, implementation outside | `OrderRepository` interface lives in domain; `PostgresOrderRepository` lives in infrastructure |
-
-Details: `references/repositories-factories.md`
-
-### 6. Strategic design, distillation
-
-- **Core Domain**: the competitive edge; assign your strongest people and deepest modeling
-- **Supporting Subdomain**: necessary but not differentiating; build it plainly, no gold-plating
-- **Generic Subdomain**: commodity; purchase or adopt open source
-
-| Situation | Pattern | Example |
-|---|---|---|
-| Make or buy | Classify the subdomain | Pricing engine is built (core); card processing is bought (generic) |
-| Code layout | Keep core apart from generic | `domain/pricing/` holds the rich model; `infrastructure/email/` is a thin adapter |
-
-Details: `references/strategic-design.md`
-
-## Common Mistakes
-
-| Mistake | Fix |
-|---------|-----|
-| Names taken from the framework | Use business terms such as `ClaimAdjudicator` |
-| A single model for the whole company | Split into contexts, each with its own model |
-| Oversized aggregates | Shrink them, link by id, tolerate eventual consistency |
-| Rules live in services over a hollow model | Move the rules onto entities and value objects |
-| External systems called directly | Put each behind a translating adapter |
-
-## Quick Diagnostic
-
-| Check | When the answer is no | Action |
-|---|---|---|
-| Would an expert recognise your class names? | Names are engineering jargon | Rename using the shared vocabulary |
-| Are the context borders written down? | Models leak into each other | Draw a context map and choose a relationship pattern per border |
-| Does each aggregate hold only what one invariant needs? | Large aggregates, contention | Split and refer by id |
-| Do domain objects carry the rules? | Anemic model; logic sits in services | Relocate rules onto the objects |
-| Does every external integration go through a translation layer? | Outside models seep into the domain | Introduce an anti-corruption layer per integration |
+1. **Read before asking.** Collect the vocabulary already in the code, docs, tickets and the user's words. Ask at most
+   one line, only for what none of them answers.
+2. **Language.** List each key term with its meaning per speaker or module. A term with two meanings is a border
+   candidate; a technical name (`Manager`, `Helper`, `Processor`) marks an unnamed concept. Detail:
+   `references/ubiquitous-language.md`.
+3. **Contexts.** Draw a border at each meaning change, name the relationship on each edge (ACL, Shared Kernel,
+   Conformist, Open Host / Published Language) and classify each context core / supporting / generic. Detail:
+   `references/bounded-contexts.md`, `references/strategic-design.md`.
+4. **Aggregates.** Per context: entities vs value objects, then aggregates sized to one invariant each, referencing
+   other aggregates by id. An aggregate with no invariant to name is not one — fold it or drop it. Detail:
+   `references/building-blocks.md`.
+5. **Events and persistence.** Past-tense events each aggregate emits, with consumers; repository interfaces in the
+   domain, factories where construction can fail. Detail: `references/domain-events.md`,
+   `references/repositories-factories.md`.
+6. **Check.** Recount: contexts without a quoted term, aggregates without an invariant, rules left in services over a
+   hollow model, outside systems reached without translation. Fix or list each; then write the tally.
 
 ## Output Template
 
-When modeling a domain, provide:
-1. Bounded context map with context names and relationships
-2. Ubiquitous language glossary (key terms per context)
-3. Aggregate definitions with invariants and state transitions
-4. Domain event list (past tense, with publishers and consumers)
+**Context map** — Mermaid or a table: context, type (core/supporting/generic), edges with relationship pattern.
+
+| Context | Border term | Meaning here | Meaning across the border |
+|---|---|---|---|
+| Billing | "account" | payer with a balance | Identity: login credentials |
+
+| Context | Aggregate | Invariant it guards | Events emitted → consumer |
+|---|---|---|---|
+| Ordering | Order | total = Σ lines; no lines after `placed` | `OrderPlaced` → Billing |
+
+Glossary: term — definition, per context. Open: each `[확인 필요: …]` with who can answer.
+
+Tally: `<n>` contexts (core `<a>` / supporting `<b>` / generic `<c>`) · `<m>` aggregates, `<m>` with an invariant ·
+`<k>` open rules.
 
 ## What Claude Does / What You Do
 
 | Claude | You |
 |--------|-----|
-| Drafts bounded context boundaries from domain description | Validate with domain experts |
-| Classifies objects as Entity / Value Object / Aggregate | Confirm business invariants |
-| Generates domain event names and flow | Review with product team |
-| Writes repository interface signatures | Implement in infrastructure layer |
-
-## Reference Files
-
-- `references/ubiquitous-language.md`
-- `references/bounded-contexts.md`
-- `references/building-blocks.md`
-- `references/domain-events.md`
-- `references/repositories-factories.md`
-- `references/strategic-design.md`
+| Extracts terms from code and docs, draws borders where meanings split | Confirm each meaning with a domain expert |
+| Sizes aggregates to named invariants; marks unstated rules | Supply or reject each `[확인 필요]` rule |
+| Names events, consumers and repository interfaces | Decide which context is core and where effort goes |
 
 ## Related Skills
 
-- `develop:clean-architecture` — architecture layers and dependency rule
-- `develop:event-storming` — workshop technique to discover domain events collaboratively
-- `develop:service-boundary-validator` — validate microservice decomposition
-- `develop:architecture-designer` — distributed system design
+- `develop:event-storming` — discover events and terms with the team before modelling
+- `develop:service-boundary-validator` — test whether the drawn borders survive as service cuts
+- `develop:clean-architecture` — layers and the dependency rule inside a context
+- `develop:architecture-designer` — topology and ADRs once the contexts are set

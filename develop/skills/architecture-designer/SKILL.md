@@ -24,102 +24,74 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
+## Standing Mandates
+
+- NEVER propose a shape more distributed than the stated constraints force. Start at the first row of
+  `references/architecture-patterns.md` and name the constraint behind every step down. Services split without
+  per-service CI/CD, tracing and independent teams keep the coupling and add the network: a distributed monolith that
+  costs more to run and change than the monolith it replaced.
+- A requirement nobody stated (load, latency, retention, team count) is marked `[확인 필요: …]`, never assumed; a
+  design built on a guessed number is defended by nothing.
+
+Goal: every non-functional requirement carries a number or a `[확인 필요]`, every step away from a single deployable
+names its forcing constraint, every key decision has an ADR, and the closing tally recounts to them.
+
 # Architecture Designer
 
-Acts as a senior architect: shapes system topology, weighs patterns against constraints, and records the reasoning behind each choice.
+Shapes system topology, weighs each choice against the constraints that force it, and records why.
 
-## When to Use / When Not to Use
-
-| Use | Skip |
-|-----|------|
-| Designing new system topology from scratch | Internal layer dependency rule (use clean-architecture) |
-| Choosing between monolith, modular monolith, microservices | Domain modeling with bounded contexts (use domain-driven-design) |
-| Writing ADRs for major technology choices | Coding implementation (use spring-boot-engineer, kotlin-specialist) |
-| Reviewing existing architecture for scalability | |
+**Not for** layering inside one deployable (`develop:clean-architecture`); bounded contexts and aggregates
+(`develop:domain-driven-design`); checking whether existing service cuts hold (`develop:service-boundary-validator`);
+reviewing shallow modules in code that exists (`develop:architecture-review`); implementation code
+(`develop:spring-boot-engineer`, `develop:kotlin-specialist`).
 
 ## Process
 
-1. **Understand requirements** — Collect what the system must do, how well it must do it, and what limits apply. Confirm nothing is missing before moving on.
-2. **Identify patterns** — Map the requirements onto candidate shapes from the Reference Guide. Use think-tool to weigh trade-offs explicitly when two or more patterns plausibly fit.
-3. **Design** — Draft the architecture, write down what each choice costs, and draw it: Mermaid inline in a document; a figure that is opened, shared or printed goes through `write:diagram`. You place every node - layout is part of the argument.
-4. **Document** — Record every key decision as an ADR.
-5. **Review** — Walk stakeholders through it. If it does not hold up, go back to step 3 with their feedback written down.
-
-## Reference Guide
-
-| Topic | Reference | Read when |
-|-------|-----------|-----------|
-| System shape | `references/architecture-patterns.md` | Deciding between monolith, modular monolith, services, events |
-| ADR | `references/adr-template.md` | Recording a decision |
-| Design document | `references/system-design.md` | Writing the full design up |
-| Datastore | `references/database-selection.md` | Picking a database |
-| Quality targets | `references/nfr-checklist.md` | Turning non-functional wishes into measurable targets |
-
-## Constraints
-
-**MUST DO**
-- Capture each significant decision in an ADR
-- State non-functional requirements up front
-- Weigh costs alongside benefits
-- Design for the ways it will fail
-- Account for the operational burden
-- Get stakeholder review before calling it final
-
-**MUST NOT DO**
-- Build for scale nobody has asked for
-- Pick a technology without comparing options
-- Overlook running costs
-- Start designing before requirements are understood
-- Leave security out
+1. **Requirements.** Read the repo, docs and request first; then list functional needs and each quality target as a
+   number (`references/nfr-checklist.md`). Ask at most one line; mark the rest `[확인 필요]` and proceed.
+2. **Shape.** Walk `references/architecture-patterns.md` from the top. Stop at the first row the constraints allow;
+   each step down cites the requirement that forces it. Two rows still fit → weigh them in one table (cost, failure
+   mode, operational load) instead of picking silently.
+3. **Distributed gate** (only if step 2 reached services). Check the prerequisites: CI/CD per service, container
+   orchestration, distributed tracing, two or more independent teams, clear domain ownership. Mostly absent →
+   modular monolith; partly met → extract one pilot service. Going ahead, the design fixes:
+   - a Service Inventory: service, responsibility, data owned, communication, SLA — each service owns a private
+     database, no shared schema;
+   - async (events/outbox) for slow or cross-aggregate work; sync only for query/command pairs, ≤ 3 hops on a
+     user-facing path;
+   - per remote call: timeout, retry budget, failure behaviour, circuit breaker;
+   - one correlation ID across services, health/readiness probes, a canary or blue-green plan.
+4. **Datastores.** Per store, the access pattern that picks it (`references/database-selection.md`).
+5. **Draw.** Mermaid inline in a document; a figure that will be opened, shared or printed goes through
+   `write:diagram`. You place every node — layout is part of the argument.
+6. **Record.** One ADR per key decision with the options weighed and what it gives up (`references/adr-template.md`);
+   the full write-up follows `references/system-design.md`.
+7. **Check.** Recount the tally against the tables; a decision without an ADR or a step down without a constraint goes
+   back to step 2 or 6. The user's review is the last step — their objections reopen step 2.
 
 ## Output Template
 
-A design delivers:
-1. Requirements recap, functional and non-functional
-2. Overview diagram: Mermaid inline in a markdown doc; a figure that will be opened, shared or printed through `write:diagram` (its `.json` source alongside)
-3. Key decisions and what they trade away (ADR format — see `references/adr-template.md`)
-4. Technology picks, each with its reason
-5. Risks and how to contain them
+1. **Requirements** — functional list; NFR table: quality, target number or `[확인 필요]`, source.
+2. **Shape** — chosen row and, for each step past the first, `<step> ← <requirement id>`. Services: the Service
+   Inventory and the distributed-gate result.
+3. **Diagram** — Mermaid, or a `write:diagram` figure with its `.json` source.
+4. **Decisions** — ADR list: id, decision, rejected options, cost.
+5. **Risks** — risk, trigger, containment.
 
-### Example diagram (Mermaid)
-
-```mermaid
-graph TD
-    App["Mobile / web app"] --> Edge["Edge gateway"]
-    Edge --> Billing["Billing service"]
-    Edge --> Catalog["Catalog service"]
-    Catalog --> Store[("Catalog store, PostgreSQL")]
-    Catalog --> Bus["Event bus, Kafka"]
-    Bus --> Mailer["Email sender"]
-```
-
-For a worked ADR example and full template, see `references/adr-template.md`.
-
-## Distributed Topology (microservices)
-
-Before splitting, check prerequisites: CI/CD per service, container orchestration, distributed tracing, at least 2 independent squads, clear domain ownership. Mostly absent → modular monolith first; partly met → extract one pilot service.
-
-If proceeding, the ADR's Service Inventory lists service, responsibility, data owned, communication, SLA. Defaults:
-- Each service owns a private database; no shared schema.
-- Async (events/outbox) for slow work or work spanning aggregates; sync only for query/command pairs, at most 3 hops in a user-facing path.
-- Every remote call states timeout, retry budget, failure behaviour, and sits behind a circuit breaker.
-- One correlation ID traced across every service; health/readiness probes and a canary or blue-green plan.
-
-To check where the cuts fall, use `develop:service-boundary-validator`.
+Tally: shape `<row>` · NFRs `<x>/<y>` with numbers · ADRs `<n>` · open `[확인 필요]` `<k>` · risks `<r>`.
 
 ## What Claude Does / What You Do
 
 | Claude | You |
 |--------|-----|
-| Produces architecture diagrams (Mermaid inline, or a checked figure through `write:diagram`) and component descriptions | Share requirements and constraints |
-| Writes ADRs with alternatives and trade-offs | Validate with domain experts and stakeholders |
-| Evaluates technology options with rationale | Make final technology decisions |
-| Identifies risks and mitigation strategies | Confirm operational capacity for chosen approach |
+| Turns requirements into numbered targets; marks the missing ones | Supply the numbers and the team/ops facts |
+| Picks the least distributed shape the constraints allow, with the trail | Make the final technology call |
+| Writes ADRs, the diagram and the risk list | Review with stakeholders; confirm you can operate it |
 
 ## Related Skills
 
-- `develop:clean-architecture` — internal layer dependencies and dependency rule
-- `develop:domain-driven-design` — domain modeling and bounded contexts
-- `develop:service-boundary-validator` — where to cut services and whether boundaries hold
-- `write:plans` (ADR format) — writing individual Architecture Decision Records
-- `write:diagram` — drawing the design as a checked SVG + PNG figure or interactive HTML
+- `develop:domain-driven-design` — the contexts this topology should follow
+- `develop:service-boundary-validator` — where to cut services and whether the cuts hold
+- `develop:clean-architecture` — layers inside each deployable
+- `write:plans` — a standalone ADR or design-review document
+- `write:diagram` — the design as a checked SVG + PNG figure or interactive HTML
