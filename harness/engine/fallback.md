@@ -91,6 +91,8 @@ removed). Instead:
 4. You may only tell the user the run is **done** after `fallback-check.mjs RUN` prints
    `COMPLETE` (see §7). Missing or degenerate artifacts ⇒ the check fails ⇒ not done. This is
    the anti-bypass: skipping stages leaves their files absent, and the check names them.
+   `COMPLETE … goal-gate FAIL (<90)` means the run finished, not that the work is done: report it
+   as finished with the unmet AC-n listed, never as done.
 
 ## 1. Plan (opus)
 
