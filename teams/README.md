@@ -416,6 +416,8 @@ The Report tab, opened from the card: the path of `80-report.md`, then the repor
 ![toast](docs/images/toast.png)
 A toast when a run of this session ends.
 
+**Push.** A reject (a failed node, spent fix rounds), a node that needs you, and the end of a run also send a PushNotification, `teams <task>: rejected — <what>`, so you hear about it away from the terminal. The toast above stays; a push that is not sent (you are at the terminal, or push is off) leaves just the toast. Only events after the session started, once each; a failed push is silent.
+
 ![gate](docs/images/gate.png)
 The dispatch gate denying a direct edit under `.claude/teams-dispatch.json` while no task is open.
 

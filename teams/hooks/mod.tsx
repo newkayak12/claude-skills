@@ -40,6 +40,7 @@ const en = {
   workMore: '+{n} more', cmdDesc: 'Open the teams live pane', paneOpened: 'pane opened',
   board: 'board', inbox: 'needs you {n}', statusWaiting: 'needs you: {n} waiting - open /teams-live',
   colTodo: 'To do', colDoing: 'Doing', colDone: 'Done',
+  pushRejected: 'rejected', pushNeedsYou: 'needs you', pushEnded: 'run ended',
 }
 
 // one table, two languages; the type keeps the keys identical
@@ -62,6 +63,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     workMore: '+{n}건 더', cmdDesc: '팀 실행 현황 창 열기', paneOpened: '창을 열었습니다',
     board: '보드', inbox: '확인 필요 {n}', statusWaiting: '확인 필요: {n}건 대기 - /teams-live 열기',
     colTodo: '대기', colDoing: '진행', colDone: '완료',
+    pushRejected: '반려', pushNeedsYou: '확인 필요', pushEnded: '실행 종료',
   },
 }
 
@@ -124,11 +126,36 @@ async function fetchReport($: EngineInterface, taskId: string, forCard = false):
 // the task whose card is shown now: the latest one still marked 'card'
 const cardTask = (m: Record<string, string>) => Object.keys(m).filter(k => m[k] === 'card').at(-1)
 
+// push kinds: a reject (a failed node or spent fix rounds), a person must act, the run ended
+const PUSH_KIND: Record<string, keyof typeof en> = {
+  node_finish: 'pushRejected', upstream_fix_rounds_exhausted: 'pushRejected',
+  waiting_human: 'pushNeedsYou', daemon_done: 'pushEnded', daemon_exhausted: 'pushEnded',
+}
+
+// One push for an event, `teams <task>: <kind> - <what>`. The event's text already toasts, so a push not
+// sent (user at the terminal, off, throw) needs no second toast. Fail open: nothing here may throw.
+async function pushEvent($: EngineInterface, one: TeamsEvent, sent: Set<string>): Promise<void> {
+  try {
+    const kind = PUSH_KIND[one.kind]
+    // the ledger gives no attempt number: each event (its ts) is its own attempt
+    const key = `${one.task_id}|${one.kind}|${one.text}|${one.ts}`
+    if (kind === undefined || sent.has(key)) return
+    sent.add(key)
+    const m = /^(E-\S+) (.*)$/.exec(one.text)
+    const message = `teams ${m?.[1] ?? one.task_id}: ${STRINGS[await read($, lang)][kind]} \u2014 ${m?.[2] ?? one.text}`.slice(0, 200)
+    // PushNotification's result: { pushSent?, localSent? }
+    await $.tool.call({ tool: 'PushNotification', message, status: 'proactive' } as never)
+  } catch {
+    // a failed push is a push not sent
+  }
+}
+
 const TICK_MS = 3000
 const WORK_MAX = 6
 
 export const register: Register = on => {
   let isRunning = false
+  const pushed = new Set<string>()
 
   on('session.start', async ($, e, next) => {
     if ((await $.session.surfaces()).length === 0) return next(e)
@@ -159,7 +186,10 @@ export const register: Register = on => {
             }
           }
           if (fresh.length > 0) {
-            for (const one of fresh) $.ui.toast(one.text)
+            for (const one of fresh) {
+              $.ui.toast(one.text)
+              await pushEvent($, one, pushed)
+            }
             // a run that ended after this session began gets a card and one report call
             for (const one of fresh.filter(f => f.kind === 'daemon_done')) {
               await update($, ended, m => mark(m, one.task_id, 'card'))
