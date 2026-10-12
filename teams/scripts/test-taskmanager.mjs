@@ -2466,6 +2466,55 @@ test('m7: a resumed task from before planning cards names its QA card QA-F1, nev
   assert.deepEqual(qaCards(cards, 'integrate:1').map((q) => q.id), ['QA-F1', 'QA-F2']);
 });
 
+test('sdd: a QA card\'s acceptance is its own area\'s AC-n verbatim; no AC-n keeps the generic line', async () => {
+  const { qaCards } = await import('../mcp/taskmanager.mjs');
+  const node = (id, stories) => [
+    { stage: 'dispatch', subgoal_id: id, state: 'done', attempt: 1, result: { user_stories: stories } },
+    { stage: 'accept', subgoal_id: id, state: 'done', attempt: 1 },
+  ];
+  const f1 = ['F1-AC-1: Given a, When b, Then c', 'F1-AC-2: Given d, When e, Then f'];
+  const task = {
+    run_id: 't', request: 'r',
+    planning_pkgs: [{ id: 'PLAN-F1', area: 'F1' }, { id: 'PLAN-F2', area: 'F2' }],
+    nodes: [...node('PLAN-F1', [{ id: 'F1-US-1', title: 'a', acceptance: f1 }]), ...node('PLAN-F2', [{ id: 'F2-US-1', title: 'b', acceptance: ['plain item with no id'] }])],
+  };
+  const [qa1, qa2] = qaCards(task, 'integrate:1');
+  assert.deepEqual(qa1.acceptance, f1, 'exactly its area\'s AC-n, verbatim');
+  assert.match(qa2.acceptance[0], /every user story of feature area F2 has been exercised/);
+});
+
+test('sdd: shape must carry every PRD AC-n into an implementing package\'s acceptance[], and cite no AC-n the PRD never wrote', async () => {
+  const { validateShape, CONTRACT } = await import('../mcp/taskmanager.mjs');
+  assert.match(CONTRACT.shape, /copies the AC-n items of every story it implements/);
+  const stories = [
+    { id: 'F1-US-1', title: 'a', acceptance: ['F1-AC-1: Given x, When y, Then z', 'F1-AC-2: Given x, When y, Then w'] },
+    { id: 'F2-US-1', title: 'b', acceptance: ['F2-AC-1: Given p, When q, Then r'] },
+  ];
+  const pkg = (id, impl, acceptance, enables = []) => ({ id, title: id, brief: 'b', acceptance, implements: impl, enables, deps: [] });
+  const base = { acceptance: ['the integrated app boots'] };
+  const ok = validateShape({ ...base, packages: [pkg('P1', ['F1-US-1'], ['F1-AC-1: Given x, When y, Then z', 'F1-AC-2: Given x, When y, Then w']), pkg('P2', ['F2-US-1'], ['F2-AC-1: Given p, When q, Then r'])] }, stories);
+  assert.deepEqual(ok, []);
+  // A model that drops the area prefix ("AC-2") is normalised, not refused, while it is unambiguous.
+  const uniq = [{ id: 'F1-US-1', title: 'a', acceptance: ['F1-AC-1: Given x'] }, { id: 'F2-US-1', title: 'b', acceptance: ['F2-AC-2: Given p'] }];
+  assert.deepEqual(validateShape({ ...base, packages: [pkg('P1', ['F1-US-1'], ['AC-1: Given x']), pkg('P2', ['F2-US-1'], ['AC-2: Given p'])] }, uniq), []);
+  // Shortened and ambiguous (both areas have an AC-1): refused, not guessed.
+  assert.match(validateShape({ ...base, packages: [pkg('P1', ['F1-US-1'], ['AC-1: Given x', 'AC-2: Given x']), pkg('P2', ['F2-US-1'], ['F2-AC-1: Given p'])] }, stories).join('; '), /acceptance IDs not in the PRD: AC-1/);
+  // Left out of every implementing package: named exactly.
+  const lost = validateShape({ ...base, packages: [pkg('P1', ['F1-US-1'], ['F1-AC-1: Given x']), pkg('P2', ['F2-US-1'], ['F2-AC-1: Given p'])] }, stories);
+  assert.equal(lost.filter((p) => /missing from every implementing package/.test(p) && /F1-AC-2/.test(p) && !/F1-AC-1|F2-AC-1/.test(p.split(' - ')[0])).length, 1, JSON.stringify(lost));
+  // Carried only by a package that does not implement (or enable) its story does not count.
+  const wrong = validateShape({ ...base, packages: [pkg('P1', ['F1-US-1'], ['F1-AC-1: Given x']), pkg('P2', ['F2-US-1'], ['F2-AC-1: Given p', 'F1-AC-2: Given x'])] }, stories);
+  assert.match(wrong.join('; '), /missing from every implementing package's acceptance\[\]: F1-AC-2/);
+  // Enabling a story counts.
+  assert.deepEqual(validateShape({ ...base, packages: [pkg('P0', [], ['F1-AC-1: Given x', 'F1-AC-2: Given x'], ['F1-US-1']), pkg('P1', ['F1-US-1'], ['F1 delivered']), pkg('P2', ['F2-US-1'], ['F2-AC-1: Given p'])] }, stories), []);
+  // An AC-n the PRD never wrote is refused.
+  const bogus = validateShape({ ...base, packages: [pkg('P1', ['F1-US-1'], ['F1-AC-1: Given x', 'F1-AC-2: Given x', 'F1-AC-9: invented']), pkg('P2', ['F2-US-1'], ['F2-AC-1: Given p'])] }, stories);
+  assert.match(bogus.join('; '), /acceptance IDs not in the PRD: F1-AC-9/);
+  // A PRD with no AC-n (or no planning at all) is untouched.
+  const plain = [{ id: 'US-1', title: 'a', acceptance: ['x'] }, { id: 'US-2', title: 'b', acceptance: ['y'] }];
+  assert.deepEqual(validateShape({ ...base, packages: [pkg('P1', ['US-1'], ['AC-7 whatever']), pkg('P2', ['US-2'], ['b'])] }, plain), []);
+});
+
 test('m8: shape may not name a develop package after a card; tm_ticket\'s refusal lists the cards', async () => {
   const { validateShape } = await import('../mcp/taskmanager.mjs');
   const pkg = (id) => ({ id, title: id, brief: 'b', acceptance: ['a'], touches: [id], deps: [] });

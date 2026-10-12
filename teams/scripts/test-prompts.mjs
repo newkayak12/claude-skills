@@ -783,6 +783,39 @@ test('wiki paragraph: a prompt that gets neither block is the claude prompt minu
   assert.equal(withWiki.slice(0, start) + withWiki.slice(end), without);
 });
 
+test('sdd: the AC-n contract reaches the PRD, the planning bridge, setgoal, both gates, QA and audit', () => {
+  // PRD (AC-1): AC-n Given/When/Then, unique ids, [확인 필요] defaults.
+  assert.match(PRD_CONTRACT, /<area>-AC-n: Given \.\.\. When \.\.\. Then \.\.\./);
+  assert.match(PRD_CONTRACT, /unique across the merged PRD/);
+  assert.match(PRD_CONTRACT, /\[확인 필요\] <assumed default>/);
+  // Planning bridge.
+  assert.match(CONTRACT['gate:goal'], /keeping its "AC-n:" prefix exactly as written/);
+  // setgoal (AC-3, AC-4): reuse IDs, proportional rule.
+  assert.match(CONTRACT.setgoal, /Goal-level acceptance entries are AC-n: reuse the exact IDs/);
+  assert.match(CONTRACT.setgoal, /Proportional:.*ONE "AC-1".*"proportional: <reason>"/);
+  // gate and gate:goal (AC-3): one row per AC-n, unmet in gaps, out-of-spec observations.
+  for (const stage of ['gate', 'gate:goal']) {
+    assert.match(CONTRACT[stage], /one (?:evidence )?row per (?:goal-level )?AC-n/, stage);
+    assert.match(CONTRACT[stage], /an AC-n with no evidence is unmet and goes in "gaps"/, stage);
+    assert.match(CONTRACT[stage], /prefixed "out-of-spec:"/, stage);
+  }
+  // QA cases/execute (AC-5) and audit (AC-6).
+  assert.match(CONTRACT.cases, /naming the AC-n it exercises/);
+  assert.match(CONTRACT.execute, /naming the AC-n it breaks or "out-of-spec"/);
+  assert.match(CONTRACT.audit, /"ac_checked": \["F1-AC-2 -> met\|partial\|missing -> evidence"\]/);
+  assert.match(CONTRACT.audit, /each of its AC-n into "ac_checked"/);
+});
+
+test('sdd: a child setgoal for a package whose acceptance carries AC-n is told to keep those IDs', () => {
+  const cwd = tmpProject();
+  try {
+    const run = baseRun(cwd, { package: { id: 'P1', title: 't', acceptance: ['F1-AC-1: Given a, When b, Then c'] } });
+    const p = composePrompt(run, baseNode({ stage: 'setgoal' }), baseBriefing());
+    assert.match(p, /F1-AC-1: Given a, When b, Then c/);
+    assert.match(p, /an item that carries an AC-n keeps that ID/);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
 test('every judging stage gets the one no-wiki line for every executor, and never the paragraph', () => {
   assert.deepEqual([...JUDGING_STAGES].sort(), ['accept', 'audit', 'critique', 'execute', 'gate', 'review', 'test']);
   for (const stage of JUDGING_STAGES) {
