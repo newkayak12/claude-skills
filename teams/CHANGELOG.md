@@ -5,6 +5,7 @@
 Every release of the `teams` plugin, newest first. Moved here verbatim from the README's old `## Status` section. `teams:patch` prepends new release lines under `## Status` below.
 
 ## Status
+- v0.52.0 — when harness or graph is installed too, the dispatch-gate deny routes by kind: simple development → graph (else harness), spec, planning, QA, several areas or unsure → teams:orchestrate; same route text as the harness gate
 - v0.51.5 — engine commits and merges use the repository configured git author instead of harness@local
 - v0.51.4 — **diagram path follows its move to write:diagram** (2026-10-12). The vendored `mcp/diagram.mjs` now tracks `write/skills/diagram/scripts/diagram.mjs`; header comment and `test-diagram.mjs` path updated. No engine behavior change.
 - v0.51.3 — Codex: MCP servers register under Codex (`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`); Claude reads them from plugin.json.

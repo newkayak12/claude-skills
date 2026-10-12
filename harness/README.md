@@ -290,6 +290,7 @@ The gate hook denying an Edit to a gated path before the harness is engaged.
 `/harness-gate`, Gate tab: gated patterns, engagement window and the last decision.
 
 ## Status
+- v1.32.0 — when teams is installed too, a goal-gate deny routes by kind (simple development → graph, else the harness skill; spec, planning, QA, several areas or unsure → teams:orchestrate), with one toast for the conflict
 - v1.31.2 — fallback: COMPLETE with goal-gate FAIL is reported as finished with the unmet AC-n, never as done
 - v1.31.1 — fallback-check: a 0% goal gate is INCOMPLETE; titles starting with todo are not placeholders
 - v1.31.0 — SetGoal scales the AC contract down: a behaviour-preserving request (refactor, rename, move) or a one-line fix gets ONE AC-1 with one piece of evidence (existing tests plus one equivalence/regression check), no unstated-criteria sweep, `proportional: <reason>` in the spec; the gate table has one row. (2026-10-12)

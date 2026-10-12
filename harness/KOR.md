@@ -281,6 +281,7 @@ Claude Code 2.1.293 대화형 터미널 세션에서 실제로 캡처했습니�
 `/harness-gate` 게이트 탭: 게이트 패턴, 개입 유효 시간, 마지막 판정.
 
 ## 상태
+- v1.32.0 — teams도 설치돼 있으면 goal-gate 거부가 종류로 안내(단순 개발 → graph, 없으면 harness 스킬; 스펙·기획·QA·여러 영역·애매함 → teams:orchestrate), 충돌은 토스트 하나로 알림
 - v1.31.2 — fallback: goal-gate FAIL인 COMPLETE는 done이 아니라 미달 AC-n과 함께 끝남으로 보고
 - v1.31.1 — fallback-check: goal gate 0%는 INCOMPLETE로 판정, todo로 시작하는 제목은 placeholder로 보지 않음
 - v1.31.0 — SetGoal이 AC 계약을 요청 크기에 맞춥니다: 동작 보존 요청(리팩터링·이름 변경·이동)이나 한 줄 수정은 증거 하나(기존 테스트 + 동등성/회귀 확인 하나)짜리 AC-1 하나만 쓰고, 누락 기준 점검은 생략하며, spec에 `proportional: <이유>`를 적습니다. gate 표는 한 줄. (2026-10-12)
