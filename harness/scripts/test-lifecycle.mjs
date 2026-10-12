@@ -114,12 +114,14 @@ try {
   const installed = run(INSTALL, { projectDir: old, gate: { patterns: ['\\.[cm]?js$'] } });
   assert.equal(installed.actions.settings, 'widened');
   assert.match(readJson(join(old, '.claude', 'settings.json')).hooks.PreToolUse[0].matcher, /\|Bash\|?/);
+  assert.match(readJson(join(old, '.claude', 'settings.json')).hooks.PreToolUse[0].matcher, /\|Skill\b/);
+  assert.match(JSON.parse(readFileSync(join(HARNESS_ROOT, 'hooks', 'hooks.json'), 'utf8')).hooks.PreToolUse[0].matcher, /\|Skill\b/);
   assert.equal(readFileSync(join(old, '.gitignore'), 'utf8'), 'node_modules/\n.claude/.harness-markers/\n.harness-run/\n.claude/.harness-last-decision.json\n.claude/settings.local.json\n');
   const fresh = join(scratch, 'fresh-install');
   mkdirSync(fresh, { recursive: true });
   const freshReport = run(INSTALL, { projectDir: fresh, gate: { patterns: ['\\.[cm]?js$'] } });
   assert.equal(freshReport.actions.settings, 'created');
-  assert.match(readJson(join(fresh, '.claude', 'settings.json')).hooks.PreToolUse[0].matcher, /Bash/);
+  assert.match(readJson(join(fresh, '.claude', 'settings.json')).hooks.PreToolUse[0].matcher, /Bash.*Skill/);
   assert.equal(run(INSTALL, { projectDir: fresh }).actions.gitignore, 'present');
   // install -> remove on a fresh repo leaves no decision file and no .gitignore.
   write(join(fresh, '.claude', '.harness-last-decision.json'), '{}\n');

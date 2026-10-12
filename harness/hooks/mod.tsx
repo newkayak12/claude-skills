@@ -412,6 +412,15 @@ export const register: Register = on => {
       // unreadable settings: English
     }
     await $.command.register({ name: 'harness-gate', description: STRINGS[await read($, lang)].cmdDesc })
+    // a project hook copy that differs from this plugin's own is out of date (installed once, never refreshed)
+    try {
+      const copy = '.claude/hooks/goal-gate.mjs'
+      if ((await $.fs.exists(copy)) && (await $.fs.read(copy)) !== (await $.fs.read(`${$.plugin.root}/hooks/goal-gate.mjs`))) {
+        $.ui.toast('⚠ project goal gate is out of date — run harness:update', { timeoutMs: 8000 })
+      }
+    } catch {
+      // unreadable: say nothing
+    }
     await tick()
     $.clock.every(TICK_MS, tick)
 

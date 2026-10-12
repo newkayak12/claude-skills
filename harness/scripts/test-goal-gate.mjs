@@ -646,6 +646,44 @@ test('routing: a broken teams config still routes nothing wrong and the verdict 
   assert.match(routeReason(dir), /Engage the harness before editing it/);
 });
 
+// ---- subagent recursion: a blocked subagent stops and reports ----
+
+function reasonOfInput(input) {
+  const r = spawnSync('node', [HOOK], { input: JSON.stringify(input), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: '' } });
+  return r.stdout.trim() ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+}
+const skill = (dir, name, extra = {}) => ({ tool_name: 'Skill', cwd: dir, session_id: 's1', tool_input: { skill: name }, ...extra });
+const NOTE = 'A subagent that sees this must not invoke the harness again — stop and report to its caller.';
+
+test('AC-1: a subagent denied on a gated edit is told to stop and report, not to invoke the harness', () => {
+  const dir = project();
+  const input = edit(dir, join(dir, 'a.js'), { agent_id: 'sub1', agent_type: 'general-purpose' });
+  assert.equal(run(input), 'deny');
+  const why = reasonOfInput(input);
+  assert.match(why, /Do not invoke the harness skill/);
+  assert.match(why, /Stop and report this block/);
+  assert.ok(!why.includes('invoke the harness skill and follow'));
+});
+
+test('AC-1: the main session verdict is unchanged and its deny text carries the subagent sentence', () => {
+  const dir = project();
+  const why = reasonOfInput(edit(dir, join(dir, 'a.js')));
+  assert.match(why, /Engage the harness before editing it: invoke the harness skill/);
+  assert.ok(why.endsWith(NOTE));
+});
+
+test('AC-2: a subagent calling Skill harness:harness (or harness) is denied; others and the main session pass', () => {
+  const dir = project();
+  for (const name of ['harness:harness', 'harness']) {
+    assert.equal(run(skill(dir, name, { agent_id: 'sub1' })), 'deny');
+    assert.match(reasonOfInput(skill(dir, name, { agent_id: 'sub1' })), /Stop and report this block/);
+  }
+  assert.equal(run(skill(dir, 'harness:harness')), 'allow');
+  assert.equal(run(skill(dir, 'harness:install', { agent_id: 'sub1' })), 'allow');
+  assert.equal(run(skill(dir, 'develop:clean-code', { agent_id: 'sub1' })), 'allow');
+  assert.equal(run({ tool_name: 'Skill', cwd: dir, tool_input: {}, agent_id: 'sub1' }), 'allow');
+});
+
 // ---- parity: the repo's installed copy is the plugin's hook ----
 
 test('parity: .claude/hooks/goal-gate.mjs equals harness/hooks/goal-gate.mjs', () => {

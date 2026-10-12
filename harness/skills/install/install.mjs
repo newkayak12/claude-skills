@@ -159,8 +159,9 @@ function main() {
         for (const g of arr) {
           if (!(g.hooks || []).some((h) => String(h.command || '').includes('goal-gate.mjs'))) continue;
           const parts = String(g.matcher || '').split('|').filter(Boolean);
-          if (parts.length && !parts.includes('Bash')) {
-            g.matcher = [...parts, 'Bash'].join('|');
+          const missing = ['Bash', 'Skill'].filter((t) => !parts.includes(t));
+          if (parts.length && missing.length) {
+            g.matcher = [...parts, ...missing].join('|');
             widened = true;
           }
         }
