@@ -1,6 +1,6 @@
 # session
 
-Claude Code 세션이 남긴 것(변경한 파일, 커밋, 거부된 호출, 도구 호출 사이 가장 긴 간격)을 보여 주고, 다음 시작 때 밴드로 다시 보여 주며, 남아 있는 `claude -p` 자식 프로세스를 나열하고 안전하게 중지하며, 위험한 명령과 비밀 파일 쓰기를 가드하고, `/memo` 메모를 보관하고, 정한 %에서 recap 뒤 compact하며, 그 recap을 `/handoff`·`/last-recap`·`/lessons`에 쓰고, 작업 시간과 비용을 보여 주고, 열린 세션 전부를 `/board` 한 화면에(각 세션의 harness·graph·teams 실행과 함께) 보여 주며, main이 바뀌면 같은 저장소의 다른 세션에 알리고, 모델 없이 Agent를 호출하면 경고하며, 끝나지 않은 에이전트를 `/reap`으로 중지합니다. 버전 `0.5.5`. Claude Code 2.1.292 이상(hooks 모듈)이 필요합니다. 이 마켓플레이스의 다른 것은 필요 없습니다.
+Claude Code 세션이 남긴 것(변경한 파일, 커밋, 거부된 호출, 도구 호출 사이 가장 긴 간격)을 보여 주고, 다음 시작 때 밴드로 다시 보여 주며, 남아 있는 `claude -p` 자식 프로세스를 나열하고 안전하게 중지하며, 위험한 명령과 비밀 파일 쓰기를 가드하고, `/memo` 메모를 보관하고, 정한 %에서 recap 뒤 compact하며, 그 recap을 `/handoff`·`/last-recap`·`/lessons`에 쓰고, 작업 시간과 비용을 보여 주고, 열린 세션 전부를 `/board` 한 화면에(각 세션의 harness·graph·teams 실행과 함께) 보여 주며, main이 바뀌면 같은 저장소의 다른 세션에 알리고, 모델 없이 Agent를 호출하면 경고하며, 끝나지 않은 에이전트를 `/reap`으로 중지합니다. 버전 `0.5.6`. Claude Code 2.1.292 이상(hooks 모듈)이 필요합니다. 이 마켓플레이스의 다른 것은 필요 없습니다.
 
 ## 설치
 ```
@@ -152,9 +152,10 @@ headless 실행(`claude -p`)에서는 이 명령들이 텍스트를 출력합니
 - **Agent 모델 가드**: `model` 없는 `Agent` 호출(`fork` 제외)은 하위 에이전트가 부모 모델을 그대로 씁니다. `/config`의 **Agent model guard**(`agent_model_guard`)로 정합니다. `toast`(기본)는 경고만 하고 호출은 진행, `deny`는 차단, `off`는 아무것도 하지 않습니다. 호출 자체의 `model` 인자만 보며, 에이전트 정의에 고정된 모델은 보지 않습니다.
 
 ## main 변경 알림
-한 세션에서 `main`으로의 `git push`가 성공하면(`origin main`, `HEAD:main`, `x:main`, main 브랜치에서의 그냥 push), 같은 저장소에서 최근 30분 안에 움직인 다른 열린 세션마다 `origin/main moved to <sha> … Fetch before editing or bumping versions.` 메시지가 갑니다. 세션당 2분에 한 번까지이고, 이 세션에는 `main moved: told N of M` toast가 뜹니다. headless 실행은 보내지 않습니다.
+한 세션에서 `main`으로의 `git push`가 성공하면(`origin main`, `HEAD:main`, `x:main`, main 브랜치에서의 그냥 push), 같은 저장소에서 최근 30분 안에 움직인 다른 열린 세션마다 `main moved to <sha> … Fetch before editing or bumping versions.` 메시지가 갑니다. 세션당 2분에 한 번까지이고, 이 세션에는 `main moved: told N of M` toast가 뜹니다. headless 실행은 보내지 않습니다.
 
 ## 상태
+- `0.5.6`: main 이동 메시지가 `origin/main` 대신 push한 HEAD를 읽음 — 원격 이름이 origin이 아니면 빈 메시지가 가고 반복분이 중복으로 버려졌음.
 - `0.5.5`: recap은 다음 단계에 필요한 것만 남김(진행 중 섹션 추가, 끝난 작업은 한 줄) — compact가 따로 요약을 쓰지 않고 recap을 요약으로 씀.
 - `0.5.4`: recap 밴드를 recap마다 한 번만 표시 — Recap이나 dismiss를 기억하고, 세션 자신의 smart-compact recap으로는 띄우지 않음.
 - `0.5.3`: 모델 미지정 토스트를 짧은 한 줄로, 해당 Agent 호출 이름을 붙여 표시.

@@ -310,8 +310,9 @@ async function tellMainMoved($: any) {
   const now = (await $.clock.now()) as number
   const peers = peersOf(await allRows($), me, now).filter(p => now - (lastSent.get(p.sessionId) ?? 0) >= SEND_GAP_MS)
   if (peers.length === 0) return
-  const sha = await gitOut($, ['rev-parse', '--short', 'origin/main'])
-  const subject = await gitOut($, ['log', '-1', '--format=%s', 'origin/main'])
+  // HEAD is the main just pushed; origin/main is absent when the remote has another name
+  const sha = await gitOut($, ['rev-parse', '--short', 'HEAD'])
+  const subject = await gitOut($, ['log', '-1', '--format=%s', 'HEAD'])
   const text = mainMovedText(sha, subject, shortId(me.sessionId))
   let told = 0
   for (const p of peers) {
