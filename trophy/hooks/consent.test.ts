@@ -237,3 +237,22 @@ test('the consent band stands out (double frame, every line whole) and draws its
   }
   for (const key of ['send', 'decline', 'show']) expect((await ui.find({ key }))!.props.variant).toBeUndefined()
 })
+
+test('the consent buttons carry hotkeys s/n/p, are drawn plain and none is primary; send sets yes', async ($, on) => {
+  const store = memoryStore(on, UNLOCKED)
+  sessionAt(on)
+  bottom(on)
+  await $.session.start(start)
+  const ui = await $.ui.mount({ plugin: 'trophy', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+
+  const buttons = await ui.findAll({ type: 'Button' })
+  const by = (key: string) => buttons.find(b => b.key === key)!.props
+  expect([by('send').hotkey, by('decline').hotkey, by('show').hotkey]).toEqual(['s', 'n', 'p'])
+  for (const b of buttons) {
+    expect(b.props.plain).toBe(true)
+    expect(b.props.variant).toBeUndefined()
+  }
+  await ui.press({ key: 'send' })
+
+  expect(store.get('trophy.consent')).toBe('yes')
+})
