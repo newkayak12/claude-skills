@@ -184,8 +184,6 @@ XYZ+S 분모는 성과 주장 불릿만, `불릿/롤`은 `—`, 리크루터 패
 않는다, 지원자가 직접 쓴 문장은 오타·용어 오용·문서 간 모순 세 가지만 보고 리뷰 자세를 작성에
 끌고 가지 않는다.
 
-**베타 레인 — `feedback-beta`.** feedback에 pattern의 네 측정을 한 번에 더한 버전입니다. `피동 n`과 `팀 주어 n`이 집계 줄에 붙고, 숫자 밀도는 완전 주장 분모 기준의 읽기 값으로만 보고하며(두 번 감점하지 않음), 의사결정 가시성은 부록 메모입니다. 명시적으로 베타를 요청할 때만 동작하고, 안정판 `feedback`과 `pattern`은 그대로입니다. 승격은 비교 실행(`evals/`) 뒤에 결정합니다.
-
 ### `pattern`
 
 내용이 아니라 **읽히는 방식**을 봅니다. 여섯 차원을 감사합니다: 의사결정 동사 비율(제안/채택/배제
@@ -454,6 +452,5 @@ python /abs/path/to/skills/deck-builder/scripts/ppt_keycolor_changer.py replace 
 ## 이름 변경
 
 - `portfolio:feedback` — `portfolio:portfolio-feedback`에서 이름이 바뀜; 기존 이름은 더 이상 동작하지 않습니다.
-- `portfolio:feedback-beta` — `portfolio:portfolio-feedback-beta`에서 이름이 바뀜; 기존 이름은 더 이상 동작하지 않습니다.
 - `portfolio:pattern` — `portfolio:portfolio-pattern`에서 이름이 바뀜; 기존 이름은 더 이상 동작하지 않습니다.
 - `portfolio:rewrite` — `portfolio:portfolio-rewrite`에서 이름이 바뀜; 기존 이름은 더 이상 동작하지 않습니다.

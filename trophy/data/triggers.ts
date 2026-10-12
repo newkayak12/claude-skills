@@ -668,16 +668,6 @@ export const triggers = [
     ]
   },
   {
-    "skill": "portfolio:feedback-beta",
-    "plugin": "portfolio",
-    "phrases": [
-      "beta feedback with patterns",
-      "feedback beta",
-      "피드백 베타로",
-      "피드백이랑 문체 패턴까지 같이 봐줘"
-    ]
-  },
-  {
     "skill": "portfolio:fit",
     "plugin": "portfolio",
     "phrases": [
