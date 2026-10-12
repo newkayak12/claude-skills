@@ -194,7 +194,8 @@ export const register = (on: On, options: PluginOptions) => {
         logOutcome($, id, `recap-failed:${recap.reason}`)
         return
       }
-      const instructions = `Keep this recap and direction intact in the summary:\n\n${recap.text}`
+      // the recap is the summary: compact adds only what it lacks, so the two are not carried twice
+      const instructions = `The recap below is the summary; keep it intact. Do not restate what it says, and do not list past user messages or finished work. Add only what its Direction needs and it lacks (exact code, error text):\n\n${recap.text}`
       // compact rejects while a turn runs; retry until the turn has ended
       for (let attempt = 0; attempt < 20; attempt++) {
         try {
