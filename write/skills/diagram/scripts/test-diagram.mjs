@@ -264,7 +264,7 @@ test('pixel identity: the subset renders exactly like the full NanumGothic (Regu
   const dir = scratch();
   try {
     for (const weight of ['Regular', 'Bold']) {
-      const full = readFileSync(join(SKILL, 'assets', 'fonts', `NanumGothic-${weight}.ttf`));
+      const full = readFileSync(join(SKILL, '..', 'tech-book', 'assets', 'fonts', `NanumGothic-${weight}.ttf`));
       const shots = [full, subsetFont(loadFont(weight), text)].map((font, i) => {
         const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="40" viewBox="0 0 420 40"><style>@font-face{font-family:'F';src:url(data:font/ttf;base64,${font.toString('base64')}) format('truetype')}text{font-family:'F';font-kerning:none;font-variant-ligatures:none}</style><rect width="420" height="40" fill="#fff"/><text x="6" y="26" font-size="16">${text}</text></svg>`;
         const p = join(dir, `${weight}-${i}`);
