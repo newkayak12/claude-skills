@@ -46,6 +46,9 @@ Report the counts you saw; "tests pass" without a number is not a check.
   `.claude-plugin/marketplace.json` (and `<plugin>/.codex-plugin/` if it has one). Patch for a fix,
   minor for new behaviour or a skill added/removed, major for a breaking rename.
 - README.md and KOR.md move together in the same commit.
+- Releases are batched: fixes land on main without a bump. Versions move once per batch (end of a
+  work session, or when the user asks): one bump per plugin per batch, one README/KOR status line
+  per plugin per batch. A hotfix the user needs installed now is the exception.
 - Remote is `skills`: `git pull --rebase skills main`, then `git push skills main`.
 - Marketplace version and tag (`v<x.y.z>`) move only when the user asks for a release:
   - The repo version is `metadata.version` in `.claude-plugin/marketplace.json`; each release is the

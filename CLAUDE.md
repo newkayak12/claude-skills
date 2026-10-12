@@ -84,7 +84,7 @@ Layout, per-plugin checks, agent rules and clean-up: `_repo/MAINTAINING.md`.
 
 ## Update Workflow
 
-After any change: bump version in `.claude-plugin/marketplace.json` → update `<plugin>/README.md` **and** `<plugin>/KOR.md` (English default + Korean mirror; both must move together) → commit → `git push skills main`.
+Fixes land unbumped; versions move once per batch (end of a session or on the user's ask; a hotfix the user needs now is the exception, see `_repo/MAINTAINING.md`). For a batch: bump version in `.claude-plugin/marketplace.json` → update `<plugin>/README.md` **and** `<plugin>/KOR.md` (English default + Korean mirror; both must move together) → commit → `git push skills main`.
 
 Maintainer bump tools (not user skills): `node _repo/scripts/patch-harness.mjs` and the teams `patch` skill's `node teams/skills/patch/patch.mjs '<json>'` (dry-run first, see its SKILL.md) bump a plugin's patch version and its status logs in one step (patch-harness writes README.md/KOR.md; the teams tool writes teams/CHANGELOG.md and CHANGELOG.KOR.md). Minor/major bumps are done by hand. Refreshing a project's installed harness copies is the `harness:update` skill.
 
