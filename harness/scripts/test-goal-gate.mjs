@@ -684,6 +684,27 @@ test('AC-2: a subagent calling Skill harness:harness (or harness) is denied; oth
   assert.equal(run({ tool_name: 'Skill', cwd: dir, tool_input: {}, agent_id: 'sub1' }), 'allow');
 });
 
+test('HARNESS_NODE=1: every entry skill is denied with no gate config; non-entry skills and unset env pass', () => {
+  const bare = mkdtempSync(join(tmpdir(), 'goal-gate-bare-'));
+  const env = { HARNESS_NODE: '1' };
+  for (const name of ['harness:harness', 'harness', 'graph:orchestrate', 'teams:orchestrate', 'teams:develop', 'teams:sprint', 'teams:document', 'teams:plan', 'teams:qa']) {
+    assert.equal(run(skill(bare, name), env), 'deny', name);
+  }
+  assert.equal(run(skill(bare, 'harness:install'), env), 'allow');
+  assert.equal(run(skill(bare, 'teams:board'), env), 'allow');
+  assert.equal(run(skill(bare, 'teams:orchestrate'), { HARNESS_NODE: '' }), 'allow');
+  // a subagent without a gate config is still left alone
+  assert.equal(run(skill(bare, 'teams:orchestrate', { agent_id: 'a' })), 'allow');
+  const dir = project();
+  assert.equal(run(skill(dir, 'graph:orchestrate', { agent_id: 'a' })), 'deny');
+});
+
+test('HARNESS_NODE=1: a gated edit gets the stop-and-report text', () => {
+  const dir = project();
+  const r = spawnSync('node', [HOOK], { input: JSON.stringify(edit(dir, join(dir, 'a.js'))), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: '', HARNESS_NODE: '1' } });
+  assert.match(JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason, /Stop and report this block/);
+});
+
 // ---- parity: the repo's installed copy is the plugin's hook ----
 
 test('parity: .claude/hooks/goal-gate.mjs equals harness/hooks/goal-gate.mjs', () => {

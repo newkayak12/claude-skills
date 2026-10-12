@@ -599,9 +599,16 @@ function routeText(dir) {
 }
 // ROUTE-END
 
+// NODE-BEGIN (byte-identical in harness/hooks/goal-gate.mjs, teams/hooks/dispatch-gate.mjs and graph/hooks/node-gate.mjs; _repo/scripts/check-copies.mjs)
+// A run node (a subagent: hook input has agent_id; a graph/teams worker process: HARNESS_NODE=1)
+// must never open a run again. These are the skills that open one.
+const ENTRY_SKILL_RE = /^(?:(?:harness:)?harness|graph:orchestrate|teams:(?:orchestrate|develop|sprint|document|plan|qa))$/;
 const SUBAGENT_NOTE = 'A subagent that sees this must not invoke the harness again — stop and report to its caller.';
 const SUBAGENT_STOP = 'You are inside a run. Do not invoke the harness skill, graph, teams, Workflow or open a run. ' +
   'Stop and report this block (file + reason) to your caller.';
+// 'node' (HARNESS_NODE=1), 'agent' (agent_id), or '' (a main session)
+const nodeKind = (input) => (process.env.HARNESS_NODE === '1' ? 'node' : input && typeof input.agent_id === 'string' && input.agent_id !== '' ? 'agent' : '');
+// NODE-END
 
 function deny(reason) {
   process.stdout.write(JSON.stringify({
@@ -622,13 +629,15 @@ function main() {
   const tool = input.tool_name;
   const sid = input.session_id || 'unknown';
   const now = Date.now();
-  const sub = typeof input.agent_id === 'string' && input.agent_id !== '';
+  const kind = nodeKind(input);
+  const sub = kind !== '';
 
-  // A subagent opening the harness is the recursion: stop and report, never nest a run.
+  // A node or subagent opening a run is the recursion: stop and report, never nest a run.
+  // A node process is unambiguous; a subagent only counts where a gate is configured.
   if (tool === 'Skill') {
     const skill = input.tool_input && input.tool_input.skill;
-    if (!sub || typeof skill !== 'string' || !/^(harness:)?harness$/.test(skill)) process.exit(0);
-    if (!findRoot(join(cwd, '_'))) process.exit(0); // no gate configured here
+    if (!sub || typeof skill !== 'string' || !ENTRY_SKILL_RE.test(skill)) process.exit(0);
+    if (kind === 'agent' && !findRoot(join(cwd, '_'))) process.exit(0); // no gate configured here
     deny(`Skill ${skill}: ${SUBAGENT_STOP}`);
   }
 

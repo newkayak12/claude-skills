@@ -135,6 +135,17 @@ function routeText(dir) {
 }
 // ROUTE-END
 
+// NODE-BEGIN (byte-identical in harness/hooks/goal-gate.mjs, teams/hooks/dispatch-gate.mjs and graph/hooks/node-gate.mjs; _repo/scripts/check-copies.mjs)
+// A run node (a subagent: hook input has agent_id; a graph/teams worker process: HARNESS_NODE=1)
+// must never open a run again. These are the skills that open one.
+const ENTRY_SKILL_RE = /^(?:(?:harness:)?harness|graph:orchestrate|teams:(?:orchestrate|develop|sprint|document|plan|qa))$/;
+const SUBAGENT_NOTE = 'A subagent that sees this must not invoke the harness again — stop and report to its caller.';
+const SUBAGENT_STOP = 'You are inside a run. Do not invoke the harness skill, graph, teams, Workflow or open a run. ' +
+  'Stop and report this block (file + reason) to your caller.';
+// 'node' (HARNESS_NODE=1), 'agent' (agent_id), or '' (a main session)
+const nodeKind = (input) => (process.env.HARNESS_NODE === '1' ? 'node' : input && typeof input.agent_id === 'string' && input.agent_id !== '' ? 'agent' : '');
+// NODE-END
+
 function main() {
   let hook;
   try {
@@ -143,13 +154,27 @@ function main() {
     return ALLOW;
   }
   const cwd = hook.cwd || process.cwd();
+  const kind = nodeKind(hook);
+  const skill = hook.tool_name === 'Skill' && hook.tool_input ? hook.tool_input.skill : null;
+  if (hook.tool_name === 'Skill') {
+    if (!kind || typeof skill !== 'string' || !ENTRY_SKILL_RE.test(skill)) return ALLOW;
+  }
   let cfg;
   try {
     cfg = JSON.parse(readFileSync(join(cwd, '.claude', 'teams-dispatch.json'), 'utf8'));
   } catch {
-    return ALLOW; // no opt-in, or unreadable config: no gate
+    // no opt-in, or unreadable config: no gate - except a worker process, which is never to open a run
+    if (hook.tool_name === 'Skill' && kind === 'node') {
+      process.stderr.write(`Skill ${skill}: ${SUBAGENT_STOP}\n`);
+      return DENY;
+    }
+    return ALLOW;
   }
   if (!cfg || typeof cfg !== 'object') return ALLOW;
+  if (hook.tool_name === 'Skill') {
+    process.stderr.write(`Skill ${skill}: ${SUBAGENT_STOP}\n`);
+    return DENY;
+  }
 
   const file = targetOf(hook.tool_input);
   if (!file) return ALLOW;
@@ -176,6 +201,10 @@ function main() {
 
   // The instruction is a skill, not a bare tm_open: the entry skill is what sizes the request,
   // picks the flow, drives the run and ends with its report - a bare tm_open skips all of that.
+  if (kind) {
+    process.stderr.write(`teams: ${rel} is under dispatch control and no task is open. ${SUBAGENT_STOP}\n`);
+    return DENY;
+  }
   const routed = routeText(cwd);
   process.stderr.write(
     `teams: ${rel} is under dispatch control, and no task is open for this project.\n` +
@@ -187,7 +216,7 @@ function main() {
       `  - a backlog, a budget or a timebox -> Skill({skill: "teams:sprint", ...}) instead\n` +
       `The skill opens the task (tm_open) and drives it: a small request runs as one graph, a large one as packages with their own worktrees,\n` +
       `each change gated, reviewed by a different identity, and committed on its own branch.\n` +
-      `To edit directly instead, remove .claude/teams-dispatch.json or add "${rel}" to its "allow".\n`,
+      `To edit directly instead, remove .claude/teams-dispatch.json or add "${rel}" to its "allow".\n${SUBAGENT_NOTE}\n`,
   );
   return DENY;
 }

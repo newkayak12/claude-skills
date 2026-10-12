@@ -43,6 +43,17 @@ const routes = ['harness/hooks/goal-gate.mjs', 'teams/hooks/dispatch-gate.mjs'].
 if (routes.some((r) => r === null)) problems.push('missing: ROUTE-BEGIN..ROUTE-END block in a gate hook')
 else if (routes[0] !== routes[1]) problems.push('drift: routeText in harness/hooks/goal-gate.mjs = teams/hooks/dispatch-gate.mjs')
 
+// 4. The NODE block (entry skills, stop-and-report text) in the harness, teams and graph hooks.
+const nodeOf = (f) => {
+  const s = readFileSync(join(root, f), 'utf8')
+  const a = s.indexOf('// NODE-BEGIN')
+  const b = s.indexOf('// NODE-END')
+  return a < 0 || b < a ? null : s.slice(a, b)
+}
+const nodes = ['harness/hooks/goal-gate.mjs', 'teams/hooks/dispatch-gate.mjs', 'graph/hooks/node-gate.mjs'].map(nodeOf)
+if (nodes.some((r) => r === null)) problems.push('missing: NODE-BEGIN..NODE-END block in a gate hook')
+else if (nodes.some((r) => r !== nodes[0])) problems.push('drift: NODE block in harness goal-gate = teams dispatch-gate = graph node-gate')
+
 const hasSkill = (dir) =>
   existsSync(dir) &&
   readdirSync(dir).some((n) => n === 'SKILL.md' || (statSync(join(dir, n)).isDirectory() && hasSkill(join(dir, n))))

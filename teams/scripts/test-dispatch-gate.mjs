@@ -45,6 +45,43 @@ test('a gated write with nothing open is denied, and the message says what to ca
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('HARNESS_NODE=1 or agent_id: a gated write says stop and report; a main session keeps the invoke text and gains the sentence', () => {
+  const dir = project({ paths: ['src/**'] });
+  try {
+    const input = { file_path: join(dir, 'src/a.mjs'), content: 'x'.repeat(5000) };
+    const node = run(dir, input, 'Write', { HARNESS_NODE: '1' });
+    assert.equal(node.status, 2);
+    assert.match(node.stderr, /Stop and report this block/);
+    assert.ok(!/Skill\(\{skill: "teams:orchestrate"/.test(node.stderr));
+    const main = run(dir, input, 'Write', { HARNESS_NODE: '' });
+    assert.match(main.stderr, /Skill\(\{skill: "teams:orchestrate"/);
+    assert.match(main.stderr, /A subagent that sees this must not invoke the harness again/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('Skill: a node or subagent calling an entry skill is denied; others and main sessions pass', () => {
+  const dir = project({ paths: ['src/**'] });
+  const bare = project(null);
+  const call = (d, skill, extra = {}, env = {}) => {
+    const r = spawnSync(process.execPath, [gate], {
+      input: JSON.stringify({ cwd: d, tool_name: 'Skill', tool_input: { skill }, ...extra }),
+      encoding: 'utf8',
+      env: { ...process.env, HARNESS_NODE: '', ...env },
+    });
+    return r.status;
+  };
+  try {
+    for (const s of ['teams:orchestrate', 'teams:develop', 'teams:sprint', 'teams:document', 'teams:plan', 'teams:qa', 'graph:orchestrate', 'harness:harness']) {
+      assert.equal(call(bare, s, {}, { HARNESS_NODE: '1' }), 2, s);
+    }
+    assert.equal(call(dir, 'teams:orchestrate', { agent_id: 'a' }), 2);
+    assert.equal(call(bare, 'teams:orchestrate', { agent_id: 'a' }), 0);
+    assert.equal(call(dir, 'teams:orchestrate'), 0);
+    assert.equal(call(bare, 'teams:board', {}, { HARNESS_NODE: '1' }), 0);
+    assert.equal(call(dir, 'teams:board', { agent_id: 'a' }), 0);
+  } finally { rmSync(dir, { recursive: true, force: true }); rmSync(bare, { recursive: true, force: true }); }
+});
+
 test('once a run is open the nodes are the ones writing, so writes pass', () => {
   const dir = project({ paths: ['src/**'] });
   try {
