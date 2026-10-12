@@ -319,6 +319,11 @@ widths; a slot whose font is not found falls back to the em model and says 추�
 measures the template's voice — sentence endings, length quantiles, share of English terms and
 figures, footnote marks — so new text is written in the reference's own register.
 
+More items than the template has rows: `textN_plusK` clones the next sibling shape, or the whole repeated
+row group, at the template's own interval — only for same-format siblings on one axis with a constant
+gap, and never past the slide edge. Anything irregular is refused with the reason; the template stays
+the design authority.
+
 Where the template lays type over a picture — a full-bleed backdrop with a title on it — neither
 the image nor the text is wrong on its own and the slide is still unreadable, so `check` decodes
 the pixels that actually land behind each text box (following the crop, the fit mode and any
