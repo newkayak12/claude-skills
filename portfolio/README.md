@@ -312,6 +312,13 @@ strayed off the template's palette, and whether an image's border will read as a
 that slide's background. A picture losing half of itself is treated as the same defect as a table
 row falling off the slide: the engine does not lose content quietly.
 
+Fitting is budgeted before writing, not discovered after. `catalog` reads the real font files
+(TTF/OTF `head`/`hhea`/`hmtx`/`cmap`, found via `fc-match` or the standard font folders) and prints
+each slot's budget — face, size, characters per line × lines — and `check` wraps on those measured
+widths; a slot whose font is not found falls back to the em model and says 추정. `catalog` also
+measures the template's voice — sentence endings, length quantiles, share of English terms and
+figures, footnote marks — so new text is written in the reference's own register.
+
 Where the template lays type over a picture — a full-bleed backdrop with a title on it — neither
 the image nor the text is wrong on its own and the slide is still unreadable, so `check` decodes
 the pixels that actually land behind each text box (following the crop, the fit mode and any
