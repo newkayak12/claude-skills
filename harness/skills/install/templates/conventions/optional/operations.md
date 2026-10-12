@@ -106,3 +106,4 @@ All three must be in place to trace incidents.
 - `develop:performance-profiling-optimization` — performance bottleneck analysis
 - `develop:circuit-breaker-tuner` — external dependency failure isolation
 - `develop:connection-pool-tuner` — DB connection pool
+- `develop:dockerfile-optimizer` — container operation efficiency

@@ -1,0 +1,15 @@
+{
+  "goal": "develop 재정비: 38→32 스킬, 남은 32개 identity P1–P13 정렬, develop 2.0.0",
+  "done_criteria": [
+    {"id": "D1", "check": "ls develop/skills | wc -l == 35"},
+    {"id": "D2", "check": "grep -rE 'frontend-developer|cli-developer|dockerfile-optimizer|microservices-architect|code-documenter|dev-quality-workflow' --exclude-dir=deprecated --exclude-dir=.harness-run --exclude='CHANGELOG*' . 결과 0건 (README/KOR의 은퇴→대체 매핑 표 제외)"},
+    {"id": "D3", "check": "CLAUDE.md 워크플로 표에 dev-quality-workflow 없음, 대체 진입점 명시"},
+    {"id": "D4", "check": "32개 SKILL.md 모두 'Not for' 1회 이상, Goal/stop 라인 1개, NEVER/Do NOT 1개 이상, Output Template에 verdict/count 줄"},
+    {"id": "D5", "check": "python3 _repo/scripts/validate_plugins.py 와 node _repo/scripts/test-repo-rules.mjs, node teams/scripts/test-mounts.mjs 통과"},
+    {"id": "D6", "check": "배치마다 작성자와 다른 리뷰 에이전트의 P1–P13 판정 기록 존재"},
+    {"id": "D7", "check": "DDD, architecture-designer, clean-code 실 실행 1회씩, 구버전 대비 악화 없음 기록"},
+    {"id": "D8", "check": "develop plugin.json·marketplace.json develop 버전 2.0.0, README.md와 KOR.md 동시 갱신"}
+  ],
+  "phases": ["phase1-structure", "batch-A", "batch-B", "batch-C", "batch-D", "batch-E", "batch-F", "release"],
+  "out_of_scope": ["marketplace metadata.version/tag (요청 시에만)", "harness 커밋 1900486, 4ffe7be"]
+}
