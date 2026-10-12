@@ -724,6 +724,25 @@ def guards(tmp):
         rc = deck.main(["catalog", "--template", str(tmp / "template.pptx")])
     check(rc == 0 and "deck.mdx" in buf.getvalue(),
           "catalog tells you to save the source as deck.mdx")
+    check("## Voice" in buf.getvalue() and "p25 / p50 / p75" in buf.getvalue()
+          and "Footnotes: none" in buf.getvalue(), "catalog prints a Voice section on the fixture")
+
+
+def voice(tmp):
+    print("voice")
+    sents = ["성능을 개선했습니다", "API 응답 시간 단축", "구조를 분리했다", "처리량 30% 증가",
+             "※ 내부 측정 기준", "지연을 줄였어요"]
+    v = deck.voice_fingerprint(sents)
+    ends = dict(v["endings"])
+    check(v["n"] == 6, "voice counts sentences")
+    check(abs(ends["했습니다"] - 100 / 6) < 0.01 and abs(ends["noun-final"] - 300 / 6) < 0.01,
+          "ending distribution: 했습니다 and noun-final shares")
+    check(ends["other -다"] > 0 and ends["-요"] > 0, "other -다 and -요 endings are told apart")
+    check(abs(v["english"] - 100 / 6) < 0.01 and abs(v["digits"] - 100 / 6) < 0.01,
+          "English-term and digit shares")
+    check(v["footnote"] == [("※", 1)], "footnote convention reads the marker")
+    check(v["length"][0] <= v["length"][1] <= v["length"][2], "length quantiles are ordered")
+    check(deck.voice_fingerprint([]) is None, "no sentences, no fingerprint")
 
 
 def run_cmd(argv):
@@ -1206,6 +1225,7 @@ def main():
         notes(tmp)
         svg_assets(tmp)
         guards(tmp)
+        voice(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     print()
