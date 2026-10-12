@@ -13,7 +13,7 @@ import { costText, statusLine } from './status.ts'
 import { isFresh, fmtAgo, lessonsKey, recapKey } from './recap.ts'
 import type { Recap } from './recap.ts'
 import {
-  BOARD_PANE, brokerCell, cellText, DETAIL, harnessCell, IDLE_MS, liveRows, mainMovedText, peersOf,
+  BOARD_OPEN, BOARD_PANE, brokerCell, cellText, DETAIL, harnessCell, IDLE_MS, liveRows, mainMovedText, peersOf,
   pushesMain, ROW_MAX_AGE_MS, ROW_PREFIX, rowKey, rowText, SEND_GAP_MS, shortId,
 } from './board.ts'
 import type { BoardRow, BoardTab, Cell, Runs } from './board.ts'
@@ -287,7 +287,7 @@ async function refreshBoard($: any) {
 async function openBoard($: any, to: BoardTab) {
   await update($, boardTab, () => to)
   if (to === 'sessions') await refreshBoard($)
-  await $.ui.open({ id: BOARD_PANE, title: 'Board' })
+  await $.ui.open(BOARD_OPEN)
 }
 
 // After a push to main: one message to each other session of this repo seen in the last 30 min,
@@ -474,6 +474,11 @@ export const register: Register = (on, options) => {
     const arg = e.args.trim()
     const to: BoardTab = arg === 'recap' || arg === 'lessons' || arg === 'today' ? arg : 'sessions'
     if ((await $.session.surfaces()).length > 0) {
+      // bare /board on an open board closes it
+      if (!arg && (await $.ui.panes()).some((p: { id: string }) => p.id === BOARD_PANE)) {
+        await $.ui.close({ id: BOARD_PANE })
+        return { text: 'Board closed.' }
+      }
       await openBoard($, to)
       return { text: 'Board opened.' }
     }
@@ -684,6 +689,7 @@ export const register: Register = (on, options) => {
           />
         ))}
         {current === 'sessions' && <Button key="refresh" label="refresh [r]" hotkey="r" onPress={() => refreshBoard($)} />}
+        <Button key="close" role="dismiss" label="close [q]" hotkey="q" onPress={() => $.ui.close({ id: BOARD_PANE })} />
       </Box>
     )
     const root = String(await $.session.root())

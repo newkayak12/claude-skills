@@ -72,8 +72,8 @@ const reads: Record<string, string> = {
   '.harness-run/broker/runs/aa-11.json': JSON.stringify({ nodes: [node('p', 'plan', 'done'), node('i', 'implement', 'running', ['p'])] }),
 }
 
-const world = (on: any, w: { surfaces?: 'terminal'[]; store?: Record<string, unknown>; branch?: string } = {}) => {
-  const seen = guardWorld(on, { surfaces: w.surfaces, store: w.store, proc: git(w.branch) })
+const world = (on: any, w: { surfaces?: 'terminal'[]; store?: Record<string, unknown>; branch?: string; panes?: unknown[] } = {}) => {
+  const seen = guardWorld(on, { surfaces: w.surfaces, store: w.store, proc: git(w.branch), panes: w.panes } as never)
   const sends: { to: unknown; text: string }[] = []
   on('turn.complete', (_$: any, e: any) => ({ text: e.answer }))
   on('session.id', () => ({ value: 'me' }))
@@ -120,6 +120,23 @@ test('/board opens the pane; it shows every session with its runs', async ($, on
   expect(lines).toContain('graph ● running 1/2')
   expect(lines).toContain('teams ✔ finished 3/3')
   expect(lines.some(l => l.includes('/graph-live'))).toBe(true)
+})
+
+test('the board opens focused and closes on Escape', async ($, on) => {
+  const { seen } = world(on)
+  await $.command.run({ command: 'board', args: '' } as never)
+  expect(seen.openArgs[0]).toMatchObject({ id: 'board', focus: true, closeOnEscape: true })
+})
+
+test('bare /board on an open board closes it; [q] closes it', async ($, on) => {
+  world(on, { panes: [{ id: 'board', title: 'Board', isShown: true, isFocused: true, isPlaced: true }] })
+  const closed: string[] = []
+  on('ui.close', (_$, e) => { closed.push(e.id); return { value: undefined } })
+  expect(((await $.command.run({ command: 'board', args: '' } as never)) as { text: string }).text).toBe('Board closed.')
+  expect(closed).toEqual(['board'])
+  const ui = await $.ui.mount({ plugin: 'session', surface: 'terminal', component: 'Pane', requestId: 'board', props: PANE })
+  await ui.press({ key: 'close' })
+  expect(closed).toEqual(['board', 'board'])
 })
 
 test('a push to main tells the other sessions of this repo once', async ($, on) => {
