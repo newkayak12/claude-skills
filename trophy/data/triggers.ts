@@ -37,11 +37,6 @@ export const triggers = [
     ]
   },
   {
-    "skill": "assist:decision",
-    "plugin": "assist",
-    "phrases": []
-  },
-  {
     "skill": "cognition:assumption-extractor",
     "plugin": "cognition",
     "phrases": []

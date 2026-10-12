@@ -202,25 +202,6 @@
       "dependencies": [
         "trophy"
       ]
-    },
-    {
-      "name": "assist",
-      "description": "Beta: Decision assistance that composes knowledge retrieval, reframing, option generation, adversarial review, evidence calibration, tradeoff analysis, domain expertise, and decision records.",
-      "version": "0.1.0-beta.1",
-      "author": {
-        "name": "newkayak12"
-      },
-      "source": "./assist",
-      "category": "productivity",
-      "dependencies": [
-        "knowledge",
-        "think",
-        "cognition",
-        "write",
-        "planning",
-        "develop",
-        "portfolio"
-      ]
     }
   ]
 }
