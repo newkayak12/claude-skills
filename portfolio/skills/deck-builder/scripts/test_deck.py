@@ -33,16 +33,20 @@ def check(cond, label):
 
 # ── Minimal template construction ────────────────────────────────────────────
 
-def _sp(name, ph, paras, cx=4000000, cy=600000, x=0, y=0):
+def _sp(name, ph, paras, cx=4000000, cy=600000, x=0, y=0, face=None, sz=1800, wrap=None):
     ph_xml = '<p:ph type="%s"/>' % ph if ph else ""
+    faces = ('<a:latin typeface="%s"/><a:ea typeface="%s"/>' % (face, face)) if face else ""
+    rpr = ('<a:rPr lang="en" sz="%d">%s</a:rPr>' % (sz, faces)) if face \
+        else '<a:rPr lang="en" sz="%d"/>' % sz
     body = "".join(
-        '<a:p><a:pPr lvl="%d"/><a:r><a:rPr lang="en" sz="1800"/><a:t>%s</a:t></a:r></a:p>'
-        % (lvl, t) for lvl, t in paras)
+        '<a:p><a:pPr lvl="%d"/><a:r>%s<a:t>%s</a:t></a:r></a:p>' % (lvl, rpr, t)
+        for lvl, t in paras)
+    bodypr = '<a:bodyPr wrap="%s"/>' % wrap if wrap else "<a:bodyPr/>"
     return (
         '<p:sp><p:nvSpPr><p:cNvPr id="%d" name="%s"/><p:cNvSpPr/><p:nvPr>%s</p:nvPr>'
         '</p:nvSpPr><p:spPr><a:xfrm><a:off x="%d" y="%d"/><a:ext cx="%d" cy="%d"/></a:xfrm>'
-        '</p:spPr><p:txBody><a:bodyPr/>%s</p:txBody></p:sp>'
-        % (abs(hash(name)) % 900 + 2, name, ph_xml, x, y, cx, cy, body))
+        '</p:spPr><p:txBody>%s%s</p:txBody></p:sp>'
+        % (abs(hash(name)) % 900 + 2, name, ph_xml, x, y, cx, cy, bodypr, body))
 
 
 def _pic(name, rid, cx, cy):
@@ -1041,6 +1045,137 @@ def fonts(tmp):
           "a weight suffix resolves to its family: NanumSquare Bold needs NanumSquare")
 
 
+def build_font(path, kind, upem, asc, desc, gap, glyphs, nhm, names, fmt12_only=False):
+    """A minimal sfnt written with struct. glyphs: [(codepoint|None, advance)], gid 0 first.
+    kind 'ttf' (glyf-flavoured, cmap fmt 4 unless fmt12_only) | 'otf' ('OTTO' + CFF stub)."""
+    n = len(glyphs)
+    head = struct.pack(">IIIIHHqqhhhhHHhhh", 0x10000, 0, 0, 0x5F0F3CF5, 0, upem, 0, 0,
+                       0, 0, 0, 0, 0, 8, 2, 0, 0)
+    hhea = struct.pack(">Ihhh", 0x10000, asc, desc, gap) + b"\0" * 24 + struct.pack(">H", nhm)
+    maxp = struct.pack(">IH", 0x5000, n)
+    hmtx = b"".join(struct.pack(">Hh", a, 0) for _, a in glyphs[:nhm]) + b"\0\0" * (n - nhm)
+    mapped = sorted((cp, gid) for gid, (cp, _) in enumerate(glyphs) if cp is not None)
+    f12 = struct.pack(">HHIII", 12, 0, 16 + 12 * len(mapped), 0, len(mapped)) + b"".join(
+        struct.pack(">III", cp, cp, gid) for cp, gid in mapped)
+    bmp = [(cp, gid) for cp, gid in mapped if cp <= 0xFFFF] + [(0xFFFF, 0)]
+    seg = len(bmp)
+    f4 = struct.pack(">HHHHHHH", 4, 16 + 8 * seg, 0, seg * 2, 0, 0, 0)
+    f4 += b"".join(struct.pack(">H", c) for c, _ in bmp) + b"\0\0"
+    f4 += b"".join(struct.pack(">H", c) for c, _ in bmp)
+    f4 += b"".join(struct.pack(">h", ((g - c) + 0x8000) % 0x10000 - 0x8000) if c != 0xFFFF
+                   else struct.pack(">h", 1) for c, g in bmp)
+    f4 += b"\0\0" * seg
+    if fmt12_only:
+        cmap = struct.pack(">HH", 0, 1) + struct.pack(">HHI", 3, 10, 12) + f12
+    else:
+        cmap = struct.pack(">HH", 0, 1) + struct.pack(">HHI", 3, 1, 12) + f4
+    recs, blob = [], b""
+    for nid, s in names.items():
+        raw = s.encode("utf-16-be")
+        recs.append(struct.pack(">HHHHHH", 3, 1, 0x409, nid, len(raw), len(blob)))
+        blob += raw
+    name = struct.pack(">HHH", 0, len(recs), 6 + 12 * len(recs)) + b"".join(recs) + blob
+    tables = {"head": head, "hhea": hhea, "maxp": maxp, "hmtx": hmtx, "cmap": cmap,
+              "name": name, "CFF " if kind == "otf" else "glyf": b"\0" * 4}
+    tags = sorted(tables)
+    out = struct.pack(">4sHHHH", b"OTTO" if kind == "otf" else b"\0\1\0\0", len(tags), 0, 0, 0)
+    off = 12 + 16 * len(tags)
+    body = b""
+    for t in tags:
+        data = tables[t]
+        out += struct.pack(">4sIII", t.encode(), 0, off + len(body), len(data))
+        body += data + b"\0" * (-len(data) % 4)
+    Path(path).write_bytes(out + body)
+
+
+def metrics(tmp):
+    """Real font metrics: parse head/hhea/hmtx/cmap, find the font, budget the slot."""
+    print("font tables parsed from the file")
+    fd = tmp / "fonts"
+    fd.mkdir()
+    # TTF: cmap fmt 4. gid 4 is past numberOfHMetrics, so it reuses the last advance.
+    build_font(fd / "t.ttf", "ttf", 1000, 800, -250, 85,
+               [(None, 500), (ord("A"), 600), (ord("가"), 1000), (ord(" "), 250),
+                (ord("."), 0)], 4,
+               {1: "Testface", 2: "Regular", 4: "Testface Regular"})
+    # OTF: cmap fmt 12 only, one codepoint outside the BMP.
+    build_font(fd / "t.otf", "otf", 2048, 1800, -400, 0,
+               [(None, 1000), (ord("A"), 1200), (ord("가"), 2048), (0x1F600, 2048)], 4,
+               {1: "Testface", 2: "Bold", 4: "Testface Bold"}, fmt12_only=True)
+    t = deck.read_font(fd / "t.ttf")
+    check((t.units_per_em, t.ascender, t.descender, t.line_gap) == (1000, 800, -250, 85),
+          "TTF head/hhea: unitsPerEm, ascender, descender, lineGap")
+    check(t.advance(ord("A")) == 600 and t.advance(ord("가")) == 1000
+          and t.advance(ord(" ")) == 250, "TTF hmtx advance per codepoint through cmap fmt 4")
+    check(t.advance(ord(".")) == 250,
+          "a glyph past numberOfHMetrics takes the last advance")
+    check(t.advance(ord("Z")) is None, "an unmapped codepoint has no advance")
+    check(abs(t.width("AA", 10) - 12.0) < 1e-9 and abs(t.line_height(10) - 11.35) < 1e-9,
+          "width and line height scale by size/unitsPerEm: 1.135 em")
+    o = deck.read_font(fd / "t.otf")
+    check((o.units_per_em, o.ascender, o.descender, o.line_gap) == (2048, 1800, -400, 0),
+          "OTF head/hhea read the same way")
+    check(o.advance(ord("A")) == 1200 and o.advance(0x1F600) == 2048,
+          "OTF advance through cmap fmt 12, astral plane included")
+
+    print("finding the font")
+    check(deck.find_font("Testface", dirs=[fd]).units_per_em == 1000
+          and deck.find_font("Testface", bold=True, dirs=[fd]).units_per_em == 2048
+          and deck.find_font("testface bold", dirs=[fd]).units_per_em == 2048,
+          "family + weight picks the file; a weight in the name does too")
+    check(deck.find_font("NoSuchFace", dirs=[fd]) is None, "an absent family is None, not a guess")
+    os.environ["DECK_FONT_DIRS"] = str(fd)
+    try:
+        check(deck.find_font("Testface") is not None, "DECK_FONT_DIRS adds search directories")
+    finally:
+        del os.environ["DECK_FONT_DIRS"]
+
+    print("budget from measured widths")
+    make_png(tmp / "m.png", 40, 40)
+    make_template(tmp / "m.pptx", tmp / "m.png")
+    pkg = deck.Package(tmp / "m.pptx")
+    part = deck.slide_order(pkg)[1]
+    pkg.parts[part] = _slide([
+        _sp("Body 2", "body", [(0, "A" * 10)], cx=3000000, cy=600000, face="Testface",
+            sz=1000, wrap="square"),
+        _sp("Ghost 3", "body", [(0, "A" * 10)], cx=3000000, cy=600000, y=900000,
+            face="NoSuchFace", sz=1000, wrap="square"),
+    ]).encode("utf-8")
+    pkg.write(tmp / "m.pptx")
+    os.environ["DECK_FONT_DIRS"] = str(fd)
+    try:
+        pkg = deck.Package(tmp / "m.pptx")
+        slots = deck.analyze_slide(ET.fromstring(pkg.parts[deck.slide_order(pkg)[1]]),
+                                   deck.slide_size(pkg)[1])
+        body, ghost = slots[0], slots[1]
+        check(not body.estimated and ghost.estimated,
+              "a slot knows whether its numbers are measured or estimated")
+        check(deck.wrapped_lines(body, ["A" * 40]) == 2 and deck.wrapped_lines(ghost, ["A" * 40]) == 1,
+              "40 A: 240pt measured wraps in a 221.8pt frame; the em model (220pt) says one line")
+        check(abs(body.line_h - 11.35 * deck.EMU_PER_PT) < 2,
+              "line height comes from hhea, not the 1.2 constant")
+        more = deck.spill(body, list(body.sample) + ["A"])
+        check(more and more[0] > 0, "measured widths carry no slack: one extra line is reported")
+        body.wrap = "none"
+        check(deck.wrapped_lines(body, ["A" * 400]) == 1,
+              "wrap=none never breaks a line, however long")
+        body.wrap = "square"
+        para = ET.fromstring('<a:p xmlns:a="%s"><a:r><a:t>a</a:t></a:r><a:br/>'
+                             '<a:r><a:t>b</a:t></a:r></a:p>' % A[1:-1])
+        check(deck.para_segments(para) == ["a", "b"],
+              "an explicit line break splits a paragraph into lines of its own")
+        out = run_cmd(["catalog", "--template", str(tmp / "m.pptx")])
+        check("| slot | 서체 | 예산 |" in out, "catalog prints the budget table")
+        row = next((l for l in out.splitlines() if l.startswith("| `text1`") and "Testface" in l), "")
+        check("Testface" in row and "10pt" in row and "한 줄 36자 × 최대 3줄" in row
+              and "추정" not in row, "measured row: font, size, chars per line x max lines: %s" % row)
+        grow = next((l for l in out.splitlines() if l.startswith("| `text2`")
+                     and "NoSuchFace" in l), "")
+        check("추정" in grow, "a font that is not found says 추정: %s" % grow)
+    finally:
+        del os.environ["DECK_FONT_DIRS"]
+
+
 def workdir():
     """A container renderer's daemon may not see /tmp, so mirror test_render.py there."""
     if os.environ.get("DECK_RENDER_DOCKER") and not shutil.which("soffice"):
@@ -1064,6 +1199,7 @@ def main():
         underfill(tmp)
         spilling(tmp)
         fonts(tmp)
+        metrics(tmp)
         legibility(tmp)
         emphasis(tmp)
         drift(tmp)

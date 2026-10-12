@@ -270,6 +270,231 @@ def offset(el):
     return None
 
 
+# ── Font metrics ─────────────────────────────────────────────────────────────
+# head (unitsPerEm) · hhea (ascender/descender/lineGap, numberOfHMetrics) · hmtx (advance
+# per glyph) · cmap (codepoint -> glyph, formats 4 and 12) · name. An OTF's hmtx is the
+# same as a TTF's, so the outline flavour does not matter. No kerning, no shaping.
+
+class Font:
+    def __init__(self, path, tables):
+        self.path = str(path)
+        head, hhea = tables["head"], tables["hhea"]
+        self.units_per_em = struct.unpack_from(">H", head, 18)[0]
+        self.ascender, self.descender, self.line_gap = struct.unpack_from(">hhh", hhea, 4)
+        self._nhm = struct.unpack_from(">H", hhea, 34)[0]
+        self._hmtx = tables["hmtx"]
+        self._cmap = _parse_cmap(tables["cmap"])
+        self.names = _parse_names(tables.get("name", b""))
+        self.label = (self.names.get(4) or self.names.get(16) or self.names.get(1)
+                      or Path(path).stem)
+
+    def advance(self, cp):
+        """Advance in font units, or None when the font has no glyph for cp."""
+        gid = self._cmap.get(cp)
+        if gid is None:
+            return None
+        i = min(gid, self._nhm - 1)
+        return struct.unpack_from(">H", self._hmtx, 4 * i)[0]
+
+    def width(self, text, size):
+        """Points. A character with no glyph takes the font's .notdef width."""
+        notdef = struct.unpack_from(">H", self._hmtx, 0)[0]
+        total = 0
+        for ch in text:
+            a = self.advance(ord(ch))
+            total += notdef if a is None else a
+        return total * size / self.units_per_em
+
+    def line_height(self, size):
+        return (self.ascender - self.descender + self.line_gap) * size / self.units_per_em
+
+
+def _parse_cmap(data):
+    n = struct.unpack_from(">H", data, 2)[0]
+    subs = []
+    for i in range(n):
+        plat, enc, off = struct.unpack_from(">HHI", data, 4 + 8 * i)
+        fmt = struct.unpack_from(">H", data, off)[0]
+        if fmt in (4, 12) and (plat, enc) in ((3, 10), (3, 1), (0, 3), (0, 4), (0, 6)):
+            subs.append((fmt, off))
+    subs.sort(key=lambda s: -s[0])          # format 12 covers the astral planes
+    out = {}
+    for fmt, off in subs:
+        if fmt == 12:
+            groups = struct.unpack_from(">I", data, off + 12)[0]
+            for g in range(groups):
+                start, end, gid = struct.unpack_from(">III", data, off + 16 + 12 * g)
+                for c in range(start, end + 1):
+                    out.setdefault(c, gid + c - start)
+        else:
+            seg = struct.unpack_from(">H", data, off + 6)[0] // 2
+            ends = off + 14
+            starts, deltas, ranges = ends + 2 * seg + 2, ends + 4 * seg + 2, ends + 6 * seg + 2
+            for s in range(seg):
+                end = struct.unpack_from(">H", data, ends + 2 * s)[0]
+                start = struct.unpack_from(">H", data, starts + 2 * s)[0]
+                delta = struct.unpack_from(">h", data, deltas + 2 * s)[0]
+                rng = struct.unpack_from(">H", data, ranges + 2 * s)[0]
+                if end == 0xFFFF:
+                    end = min(end, 0xFFFE)
+                for c in range(start, end + 1):
+                    if rng == 0:
+                        gid = (c + delta) & 0xFFFF
+                    else:
+                        pos = ranges + 2 * s + rng + 2 * (c - start)
+                        gid = struct.unpack_from(">H", data, pos)[0]
+                        gid = (gid + delta) & 0xFFFF if gid else 0
+                    if gid:
+                        out.setdefault(c, gid)
+    return out
+
+
+def _parse_names(data):
+    """name id -> string, preferring the English record over a localised one."""
+    if len(data) < 6:
+        return {}
+    count, base = struct.unpack_from(">HH", data, 2)
+    out, rank = {}, {}
+    for i in range(count):
+        plat, _, lang, nid, ln, off = struct.unpack_from(">HHHHHH", data, 6 + 12 * i)
+        raw = data[base + off: base + off + ln]
+        try:
+            s = raw.decode("utf-16-be") if plat in (0, 3) else raw.decode("mac_roman")
+        except UnicodeDecodeError:
+            continue
+        r = 0 if (plat == 3 and lang == 0x409) else 1 if (plat == 1 and lang == 0) else 2
+        if nid not in out or r < rank[nid]:
+            out[nid], rank[nid] = s, r
+    return out
+
+
+def _sfnt_tables(f, wanted):
+    """Read only the wanted tables from an open font file (first face of a .ttc)."""
+    f.seek(0)
+    head = f.read(12)
+    base = 0
+    if head[:4] == b"ttcf":
+        f.seek(12)
+        base = struct.unpack(">I", f.read(4))[0]
+        f.seek(base)
+        head = f.read(12)
+    n = struct.unpack_from(">H", head, 4)[0]
+    recs = f.read(16 * n)
+    out = {}
+    for i in range(n):
+        tag, _, off, ln = struct.unpack_from(">4sIII", recs, 16 * i)
+        t = tag.decode("latin-1")
+        if t in wanted:
+            f.seek(off)
+            out[t] = f.read(ln)
+    return out
+
+
+def read_font(path):
+    """Parse a TTF/OTF/TTC file into a Font. Raises on anything that is not a usable sfnt."""
+    with open(str(path), "rb") as f:
+        tables = _sfnt_tables(f, ("head", "hhea", "hmtx", "cmap", "name"))
+    for need in ("head", "hhea", "hmtx", "cmap"):
+        if need not in tables:
+            raise ValueError("%s: no %s table" % (path, need))
+    return Font(path, tables)
+
+
+FONT_EXT = (".ttf", ".otf", ".ttc")
+STD_FONT_DIRS = ("/System/Library/Fonts", "/Library/Fonts", "~/Library/Fonts",
+                 "/usr/share/fonts", "/usr/local/share/fonts", "~/.fonts",
+                 "~/.local/share/fonts", "C:\\Windows\\Fonts")
+_INDEX = {}      # dirs tuple -> {key: path}
+_FONTS = {}      # path -> Font
+
+
+def _norm(s):
+    return re.sub(r"[\s_\-]+", "", s or "").lower()
+
+
+def _font_keys(names):
+    fam, sub = names.get(1, ""), names.get(2, "")
+    tfam, tsub = names.get(16, ""), names.get(17, "")
+    keys = {_norm(names.get(4)), _norm(fam + " " + sub), _norm(tfam + " " + tsub)}
+    if _norm(sub) in ("regular", "") and fam:
+        keys.add(_norm(fam))
+    if _norm(tsub) in ("regular", "") and tfam:
+        keys.add(_norm(tfam))
+    keys.discard("")
+    return keys
+
+
+def _scan(dirs):
+    key = tuple(str(d) for d in dirs)
+    if key in _INDEX:
+        return _INDEX[key]
+    index = {}
+    for d in dirs:
+        for root, _, files in os.walk(os.path.expanduser(str(d))):
+            for fn in sorted(files):
+                if not fn.lower().endswith(FONT_EXT):
+                    continue
+                p = os.path.join(root, fn)
+                try:
+                    with open(p, "rb") as f:
+                        names = _parse_names(_sfnt_tables(f, ("name",)).get("name", b""))
+                except (OSError, struct.error, ValueError):
+                    continue
+                for k in _font_keys(names):
+                    index.setdefault(k, p)
+    _INDEX[key] = index
+    return index
+
+
+def _load(path):
+    if path not in _FONTS:
+        try:
+            _FONTS[path] = read_font(path)
+        except (OSError, struct.error, ValueError):
+            _FONTS[path] = None
+    return _FONTS[path]
+
+
+def find_font(family, bold=False, dirs=None):
+    """The Font for a typeface name, or None. Never a substitute: a near miss is a lie
+    about every width downstream, so an absent face stays absent and the caller says 추정.
+
+    dirs=None searches DECK_FONT_DIRS, then fontconfig, then the standard directories."""
+    n = _norm(family)
+    if not n:
+        return None
+    cands = ([n + "bold", n] if bold else [n + "regular", n])
+    if dirs is not None:
+        stages = [list(dirs)]
+    else:
+        env = [d for d in os.environ.get("DECK_FONT_DIRS", "").split(os.pathsep) if d]
+        stages = [env, "fc", list(STD_FONT_DIRS)]
+    for stage in stages:
+        if stage == "fc":
+            path = _fc_match(family, bold)
+            if path:
+                font = _load(path)
+                if font and set(cands) & _font_keys(font.names):
+                    return font
+            continue
+        if not stage:
+            continue
+        index = _scan(stage)
+        for c in cands:
+            if c in index:
+                return _load(index[c])
+    return None
+
+
+def _fc_match(family, bold):
+    try:
+        r = subprocess.run(["fc-match", "-f", "%{file}", family + (":bold" if bold else "")],
+                           capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
+
+
 LATIN_EM = 0.55          # average advance of a Latin glyph, in em
 WIDE_EM = 1.0            # a full-width CJK glyph occupies the whole em box
 
@@ -298,6 +523,17 @@ def para_text(p):
     return "".join(t.text or "" for t in p.iter(q("a:t")))
 
 
+def para_segments(p):
+    """The paragraph's text split at its line breaks (<a:br/>): each piece starts a line."""
+    segs = [""]
+    for child in p:
+        if child.tag == q("a:br"):
+            segs.append("")
+        elif child.tag in (q("a:r"), q("a:fld")):
+            segs[-1] += "".join(t.text or "" for t in child.iter(q("a:t")))
+    return segs
+
+
 def para_level(p):
     pPr = p.find(q("a:pPr"))
     return int(pPr.get("lvl", 0)) if pPr is not None else 0
@@ -322,6 +558,7 @@ class Slot:
         self.path = path
         self.label = label
         self.sample = []         # sample lines / rows from the template
+        self.segments = []       # per sample paragraph: its text split at explicit line breaks
         self.max_chars = None    # per line, in the script the template itself uses
         self.max_em = None       # per line, in em — the measure that does not lie
         self.proto_em = None     # the widest line the template itself puts here
@@ -339,6 +576,86 @@ class Slot:
         self.box = None          # (x, y, cx, cy) in EMU, when the shape carries one
         self.z = 0               # document order: later shapes paint over earlier ones
         self.color_ref = None    # ("srgb", hex) | ("scheme", name) for the first run
+        self.font = None         # Font for Latin text, when the file was found
+        self.ea_font = None      # Font for East Asian text
+        self.face = ""           # the typeface the slide asks for, as written
+        self.estimated = True    # True: widths come from the em model, not a font file
+        self.wrap = "square"     # bodyPr wrap: "none" never breaks a line
+        self.insets = (7.2, 3.6, 7.2, 3.6)   # l, t, r, b in points
+        self.eff_size = 18.0     # pt, after any autofit scale
+        self.lnspc = 1.0         # paragraph line spacing multiple
+
+
+def run_face(txBody):
+    """(latin typeface, east-asian typeface, bold) of the first run that names a face.
+    Theme references (+mn-lt) are not resolved here — those slots stay estimated."""
+    for rPr in list(txBody.iter(q("a:rPr"))) + list(txBody.iter(q("a:endParaRPr"))):
+        latin, ea = rPr.find(q("a:latin")), rPr.find(q("a:ea"))
+        lt = latin.get("typeface") if latin is not None else None
+        et = ea.get("typeface") if ea is not None else None
+        if lt and not lt.startswith("+"):
+            et = et if et and not et.startswith("+") else lt
+            return lt, et, rPr.get("b") == "1"
+    return None, None, False
+
+
+def body_geometry(txBody):
+    """(wrap, (l, t, r, b) insets in pt, fontScale, line spacing multiple)."""
+    bp = txBody.find(q("a:bodyPr"))
+    if bp is None:
+        bp = ET.Element("x")
+    ins = tuple(int(bp.get(k, d)) / EMU_PER_PT for k, d in
+                (("lIns", 91440), ("tIns", 45720), ("rIns", 91440), ("bIns", 45720)))
+    na = bp.find(q("a:normAutofit"))
+    scale = int(na.get("fontScale", 100000)) / 100000.0 if na is not None else 1.0
+    spc = 1.0
+    sp = txBody.find(".//" + q("a:pPr") + "/" + q("a:lnSpc") + "/" + q("a:spcPct"))
+    if sp is not None:
+        spc = int(sp.get("val", 100000)) / 100000.0
+    return bp.get("wrap", "square"), ins, scale, spc
+
+
+def _is_ea(ch):
+    return unicodedata.east_asian_width(ch) in ("W", "F")
+
+
+def slot_em(slot, s):
+    """Width of s in em at the slot's size: from the font file when there is one, else
+    the em model. The only place a width is read."""
+    if slot.estimated:
+        return text_em(s)
+    total = 0.0
+    for ch in s:
+        f = slot.ea_font if _is_ea(ch) else slot.font
+        a = f.advance(ord(ch))
+        total += (a / f.units_per_em) if a is not None else char_em(ch)
+    return total
+
+
+def wrap_count(slot, text):
+    """Lines one paragraph takes: greedy word wrap on measured widths. Breaks fall at
+    spaces; a word wider than the line is broken at the character that overflows."""
+    avail = slot.max_em
+    lines, cur = 1, 0.0
+    for word in re.findall(r"\S+\s*|\s+", text) or [""]:
+        body = word.rstrip()
+        w = slot_em(slot, body)
+        trail = slot_em(slot, word[len(body):])
+        if cur + w <= avail + 1e-9:
+            cur += w + trail
+            continue
+        if cur > 0:
+            lines, cur = lines + 1, 0.0
+        if w <= avail + 1e-9:
+            cur = w + trail
+            continue
+        for ch in body:
+            cw = slot_em(slot, ch)
+            if cur + cw > avail + 1e-9 and cur > 0:
+                lines, cur = lines + 1, 0.0
+            cur += cw
+        cur += trail
+    return lines
 
 
 def _is_autofield(txBody):
@@ -415,19 +732,31 @@ def analyze_slide(root, slide_cy=None):
             stype = "list" if len(paras) > 1 else "text"
             slot = Slot(sid, stype, path, name)
             slot.sample = [para_text(p) for p in paras]
+            slot.segments = [para_segments(p) for p in paras]
             slot.max_items = len(paras)
             ext, off = extent(el), offset(el)
             size = first_font_size(txBody) or 18.0
+            wrap, ins, scale, spc = body_geometry(txBody)
+            size *= scale
+            lt, et, bold = run_face(txBody)
+            slot.face, slot.wrap, slot.insets, slot.eff_size, slot.lnspc = lt or "", wrap, ins, size, spc
+            if lt:
+                slot.font = find_font(lt, bold)
+                slot.ea_font = find_font(et, bold) if et != lt else slot.font
+            slot.estimated = slot.font is None or slot.ea_font is None
             if ext:
-                cx_pt = ext[0] / EMU_PER_PT
+                cx_pt = ext[0] / EMU_PER_PT - ins[0] - ins[2]
                 slot.max_em = max(2.0, cx_pt / size)
-                slot.max_chars = max(4, int(slot.max_em / mean_em(slot.sample)))
-                slot.proto_em = max([text_em(t) for t in slot.sample] or [0.0])
-                slot.proto_vol = sum(text_em(t) for t in slot.sample)
-                slot.proto_lines = sum(max(1, math.ceil(text_em(t) / slot.max_em))
-                                       for t in slot.sample)
+                joined = "".join(slot.sample)
+                mean = (slot_em(slot, joined) / len(joined)) if joined else (
+                    LATIN_EM if slot.estimated else slot_em(slot, "\uac00"))
+                slot.max_chars = max(4, int(slot.max_em / mean))
+                slot.proto_em = max([slot_em(slot, t) for t in slot.sample] or [0.0])
+                slot.proto_vol = sum(slot_em(slot, t) for t in slot.sample)
+                slot.proto_lines = sum(wrapped_lines(slot, segs) for segs in slot.segments)
             slot.size_pt = first_font_size(txBody)
-            slot.line_h = int(size * 1.2 * EMU_PER_PT)
+            slot.line_h = int((slot.font.line_height(size) * spc if slot.font
+                               else size * 1.2) * EMU_PER_PT)
             slot.box, slot.z = shape_box(el), z
             slot.color_ref = text_color_ref(txBody)
             if off:
@@ -753,7 +1082,7 @@ ANCHORS = ("center", "top", "bottom", "left", "right")
 FLAGS = ("transparent",)
 UNDERFILL_FLOOR = 60.0   # em — below this the slot is a label, and emptiness means nothing
 UNDERFILL_RATIO = 0.55   # of the template's own volume
-SPILL_SLACK = 1          # lines — the wrap estimate is worth about this much, and a
+SPILL_SLACK = 1          # lines, em-model slots only — the estimate is worth about this much, and a
                          # designed frame often carries less slack than that, so only a
                          # gross overrun is knowable here. `render` settles the rest.
 
@@ -1148,9 +1477,11 @@ def covers_slide(slot, size, tol=0.97):
 
 def wrapped_lines(slot, items):
     """How many rendered lines the items take in this slot's frame."""
-    if not slot.max_em:
+    if not slot.max_em or slot.wrap == "none":
         return len(items)
-    return sum(max(1, math.ceil(text_em(t) / slot.max_em)) for t in items)
+    if slot.estimated:
+        return sum(max(1, math.ceil(text_em(t) / slot.max_em)) for t in items)
+    return sum(wrap_count(slot, t) for t in items)
 
 
 def spill(slot, items):
@@ -1165,7 +1496,7 @@ def spill(slot, items):
     if not slot.box or not slot.line_h or not slot.max_em or slot.proto_lines is None:
         return None
     lines = wrapped_lines(slot, items)
-    extra = lines - slot.proto_lines - SPILL_SLACK
+    extra = lines - slot.proto_lines - (SPILL_SLACK if slot.estimated else 0)
     return (max(0, extra) * slot.line_h, lines, slot.proto_lines)
 
 
@@ -1638,6 +1969,33 @@ def pt(emu):
     return emu / EMU_PER_PT
 
 
+def slot_budget(slot):
+    """(서체, 예산) cells for the catalog: what the slot is set in and how much fits.
+    Measured when the font file was found; otherwise the em model, and it says 추정."""
+    size = "%gpt" % round(slot.eff_size, 1)
+    face = slot.font.label if slot.font else (slot.face or "상속")
+    if slot.estimated:
+        face += " (추정)"
+    face = "%s %s" % (face, size)
+    if not slot.max_em:
+        return face, "프레임 상속 — 폭을 알 수 없음"
+    n = slot.max_chars
+    if slot.wrap == "none":
+        text = "1줄 %d자 (줄바꿈 없음 — 넘치면 프레임 밖으로)" % n
+    else:
+        usable = (slot.box[3] / EMU_PER_PT - slot.insets[1] - slot.insets[3]) if slot.box else 0
+        rows = max(1, int(usable / (slot.line_h / EMU_PER_PT))) if usable else None
+        if rows is None:
+            text = "한 줄 %d자 (높이는 상속)" % n
+        elif rows == 1:
+            text = "한 줄 %d자, 1줄 (넘치면 겹침)" % n
+        else:
+            text = "한 줄 %d자 × 최대 %d줄" % (n, rows)
+    if slot.estimated:
+        text = "추정 · " + text
+    return face, text
+
+
 def cmd_catalog(args):
     require_template(args.template)
     pkg = Package(args.template)
@@ -1740,6 +2098,12 @@ def cmd_catalog(args):
                 shows = s.label or "chart"
                 cap = "not writable"
             lines.append("| `%s` | %s | %s | %s |" % (s.id, s.type, shows, cap))
+        texty = [s for s in slots if s.type in ("text", "list")]
+        if texty:
+            lines += ["", "| slot | 서체 | 예산 |", "|---|---|---|"]
+            for s in texty:
+                face, budget = slot_budget(s)
+                lines.append("| `%s` | %s | %s |" % (s.id, face, budget))
         lines += ["", "```markdown", stub_for("s%d" % idx, slots, title), "```", ""]
     text = "\n".join(lines) + "\n"
     if args.output:
@@ -2284,6 +2648,7 @@ def cmd_check(args):
     backgrounds = {"s%d" % i: slide_background(pkg, n) for i, n in enumerate(protos, 1)}
 
     errs, warns = list(errors), []
+    basis, no_font = {True: set(), False: set()}, set()
     verify_signature(front, pkg, protos, slide_cy, errs)
     for spec in specs:
         tag = "@%s (line %d)" % (spec.archetype, spec.line)
@@ -2348,8 +2713,11 @@ def cmd_check(args):
                 # so an absolute width is noise. What matters is a slot the designer kept
                 # to one line, or content far longer than the slot was drawn for.
                 one_line = slot.proto_em is not None and 0 < slot.proto_em <= slot.max_em
+                basis[slot.estimated].add("%s.%s" % (spec.archetype, slot.id))
+                if slot.estimated and slot.face:
+                    no_font.add(slot.face)
                 for lvl, text in as_items(kind, value):
-                    wide = text_em(text)
+                    wide = slot_em(slot, text)
                     if one_line and wide > slot.max_em * 1.05:
                         warns.append("line %d: %s.%s — the template keeps this slot to one "
                                      "line and this is %.0f%% too wide for it, so it drops "
@@ -2372,15 +2740,14 @@ def cmd_check(args):
             if slot.type in ("text", "list") and slot.fits:
                 nlines = len(as_items(kind, value))
                 if slot.max_em:
-                    nlines = sum(max(1, math.ceil(text_em(t) / slot.max_em))
-                                 for _, t in as_items(kind, value))
+                    nlines = wrapped_lines(slot, [t for _, t in as_items(kind, value)])
                 if nlines > slot.fits:
                     warns.append("line %d: %s.%s — about %d lines once wrapped, but only %d "
                                  "clear the bottom of the slide; the rest is cut off unless "
                                  "the shape shrinks text to fit"
                                  % (line, tag, slot_id, nlines, slot.fits))
             if slot.type in ("text", "list") and (slot.proto_vol or 0) >= UNDERFILL_FLOOR:
-                mine = sum(text_em(t) for _, t in as_items(kind, value))
+                mine = sum(slot_em(slot, t) for _, t in as_items(kind, value))
                 if mine < slot.proto_vol * UNDERFILL_RATIO:
                     warns.append("line %d: %s.%s — %.0f%% of the text the template puts "
                                  "here. The frame was drawn for that much, so the slide "
@@ -2410,6 +2777,14 @@ def cmd_check(args):
 
     print("check %s against %s" % (md_path.name, template.name))
     print("  %d slides, %d error(s), %d warning(s)" % (len(specs), len(errs), len(warns)))
+    if basis[True] or basis[False]:
+        say = "  글자 폭: 측정 %d슬롯 (폰트 파일 기준)" % len(basis[False])
+        if basis[True]:
+            say += " · 추정 %d슬롯 (em 모델)" % len(basis[True])
+            if no_font:
+                say += " — 폰트를 찾지 못함: %s. 설치하거나 DECK_FONT_DIRS로 알려주면 측정으로 바뀝니다" \
+                       % ", ".join(sorted(no_font))
+        print(say)
     for e in errs:
         print("  ERROR  %s" % e)
     for w in warns:

@@ -37,6 +37,14 @@
 
 ## Phase 1 — 실제 폰트 메트릭 ★ 나머지 전부의 전제
 
+**상태 (2026-10-12): 구현됨, 판정 기준은 부분 충족.** `read_font`(head/hhea/hmtx/cmap 4·12/name) ·
+`find_font`(`DECK_FONT_DIRS` → fc-match → 표준 디렉터리, 못 찾으면 `추정`) · catalog
+`| slot | 서체 | 예산 |` · check 측정 폭. V35 렌더 대조(NanumSquare, LibreOffice): `wrap="square"`
+문단 50/52(96.2%, em 모델은 40/52 = 76.9%). `wrap="none"` 문단은 168/302(55.6%) — 프레임이
+텍스트에 딱 맞춰져 있어 LibreOffice가 절반가량을 줄바꿈하고, 상속 크기·혼합 크기 런이 남은
+오차입니다. `SPILL_SLACK`은 측정 슬롯에서만 0, em 상수는 폴백(`추정`)으로 남겼고 제거하지
+않았습니다(normAutofit 재측정 전).
+
 **이것이 "한 번에"의 유일한 조건입니다.** 검사를 똑똑하게 만드는 게 아니라, 쓰기 전에
 예산을 아는 것입니다.
 

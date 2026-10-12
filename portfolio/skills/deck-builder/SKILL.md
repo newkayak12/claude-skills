@@ -83,7 +83,10 @@ python3 /abs/path/scripts/deck.py catalog \
 ```
 
 Prints every archetype as `@s1`…`@sN` with its slots, what the template currently shows,
-and a capacity estimate. Read it before anything else.
+and a per-slot budget (`| slot | 서체 | 예산 |`: font, size, characters per line × max lines).
+Widths come from the real font file when it is found (`fc-match`, standard font
+directories, or `DECK_FONT_DIRS`); a slot whose font is missing says `추정`. Write to the
+budget, and read it before anything else.
 
 ### Step 2 · Map content onto archetypes
 
@@ -156,9 +159,9 @@ you decide to ignore.
 
 A picture drawn *after* the words it covers is an error — they end up behind the image.
 
-Every estimate here is calibrated against the template's own content rather than an
-absolute, because most frames are drawn to hold text that already wraps. Margins under
-about one line are past what a static estimate can resolve: only Step 6 settles those.
+Where the font was found, `check` wraps on measured widths and reports an extra line
+without slack. Where it says `추정`, estimates are calibrated against the template's own
+content and margins under about one line are past what it can resolve. Step 6 settles the rest.
 
 ### Step 5 · Build
 
