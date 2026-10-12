@@ -56,6 +56,17 @@ test('a fired skill the prompt did not match is unmatched', async ($, on) => {
   expect(counts[DAY]!['develop:bug-diagnoser']).toEqual({ hit: 0, miss: 0, unmatched: 1 })
 })
 
+test('an English phrase inside a longer word or pasted log is not a match', async ($, on) => {
+  const store = memoryStore(on)
+  sessionAt(on)
+  bottom(on)
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+
+  const { counts } = await run($, store, 'task abandoned, undone', [])
+
+  expect(counts?.[DAY]?.['completion:verification-before-completion']).toBeUndefined()
+})
+
 test('a typed /command records no trigger result', async ($, on) => {
   const store = memoryStore(on)
   sessionAt(on)
