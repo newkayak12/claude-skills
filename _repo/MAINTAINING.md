@@ -47,7 +47,15 @@ Report the counts you saw; "tests pass" without a number is not a check.
   minor for new behaviour or a skill added/removed, major for a breaking rename.
 - README.md and KOR.md move together in the same commit.
 - Remote is `skills`: `git pull --rebase skills main`, then `git push skills main`.
-- Marketplace version and tag (`v<x.y.z>`) move only when the user asks for a release (rules in `CLAUDE.md`).
+- Marketplace version and tag (`v<x.y.z>`) move only when the user asks for a release:
+  - The repo version is `metadata.version` in `.claude-plugin/marketplace.json`; each release is the
+    annotated tag `v<metadata.version>`, message `marketplace <version>`. A plugin bump alone does not move it.
+  - Level, from the largest change since the last tag: patch = any plugin bump or doc change; minor = a
+    new plugin added; major = a plugin removed or renamed, or a marketplace layout change that breaks installs.
+  - Steps: `git fetch` → bump `metadata.version` → commit `marketplace <version>: <what moved>` →
+    `git push skills main` → `git tag -a v<version> -m "marketplace <version>"` on that commit →
+    `git push skills v<version>`. Tag only commits that are on skills/main.
+  - Never move, delete, or re-point a pushed tag unless the user asks.
 
 ## Agents working in the repo
 
