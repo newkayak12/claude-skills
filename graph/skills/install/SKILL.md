@@ -24,7 +24,7 @@ Codex adapter remain plugin-owned and are updated with the `graph` plugin.
 
 ## Install modes
 
-Prefer the marketplace plugin. Its `.mcp.json` already registers the
+Prefer the marketplace plugin. Its plugin manifest already registers the
 `graph-engineering` stdio server, so installation should not add project files (on request only, `.claude/conventions/`; see below). Ask the
 user to install or update `graph@newkayak12-claude-skills`, reload Claude Code if needed,
 then verify that `graph_open`, `graph_next`, `graph_run`, `graph_submit`, `graph_retry`,
@@ -97,4 +97,4 @@ the observed tool list, and the reference-project outcome (ran / declined / skip
 - `orchestrate` — drive a request through the connected graph
 - `develop:like-my-code` — writes the `.claude/conventions/` files the broker tells nodes to follow
 - `harness:harness` — the six-stage reasoning contract represented by the graph
-- `../../.mcp.json` — plugin-owned MCP registration
+- `../../.claude-plugin/plugin.json` — plugin-owned MCP registration (`mcpServers`; Codex reads `../../.codex-plugin/plugin.json`)
