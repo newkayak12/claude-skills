@@ -38,6 +38,15 @@ A-mode/manual authoring) and the authoring rules the SetGoal stage follows.
 
 1. **acceptance is derived from the goal, per request.** No fixed rubric; vague acceptance
    = worthless gate.
+   Goal-level `acceptance[]` entries are `AC-n` (Given/When/Then): the same IDs as `specs/<feature>/spec.md`
+   when one exists, else new ones after an unstated-criteria sweep (same-input variants, resource
+   bounds, behaviour while a state holds); missing facts are `[확인 필요]`. The goal gate reports one
+   row per AC-n with evidence (unmet if none) plus out-of-spec changes.
+   Proportional: a behaviour-preserving request (refactor, rename, move) or a one-line fix with a
+   clear expected result gets ONE `AC-1` ("Given the existing inputs, When …, Then output is
+   unchanged" / "the stated fix holds") with one piece of evidence (existing tests plus one
+   equivalence or regression check); no unstated-criteria sweep, no extra artifacts; the spec says
+   "proportional: <reason>" and the gate table has one row.
 2. **test[] must be executable without trusting the executor** — commands to run, files to
    inspect. This is what makes the Test stage deterministic evidence, not narrative review.
 3. **skills[] maps repository skills** (develop:*, think:*, write:*, pm:*, …) the executor

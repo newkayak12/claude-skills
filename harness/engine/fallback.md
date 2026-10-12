@@ -113,6 +113,18 @@ rules that constrain the work, plus per-unit deterministic checks (commands, fil
    aspirational or arbitrary-threshold target (a chosen % reduction, subjective quality words) is
    a **soft goal**, not a hard pass/fail bar — the judge treats every listed entry as hard, so
    restate it concretely or drop it.
+   **Goal-level `acceptance[]` is the AC-n contract.** If a `specs/<feature>/spec.md` with `AC-n`
+   exists (or the plan states stories/criteria), the entries are exactly those AC-n, same IDs, not
+   new ones. Otherwise write each as `AC-n: Given … When … Then …` (checkable by a command or file),
+   and sweep for unstated criteria before finishing: inputs that must count as the same
+   (case, whitespace, aliases), resource bounds (memory, size, rate), and behaviour while a state
+   holds (during a lock, mid-failure). A fact the request leaves open becomes a `[확인 필요]` entry
+   (with the assumed default), not a silent choice.
+   **Proportional:** if the request is behaviour-preserving (refactor, rename, move) or a one-line
+   fix with a clear expected result, write ONE `AC-1` ("Given the existing inputs, When …, Then
+   output is unchanged" / "the stated fix holds") with one piece of evidence (existing tests plus
+   one equivalence or regression check); skip the unstated-criteria sweep and extra artifacts, and
+   write "proportional: <reason>" in the spec. The gate's AC table then has one row.
    If `RUN/providers.json` says `codex.ready=true`, Implement/Test will route to Codex by
    default for every subgoal; `"implement_provider":"codex"` and `"test_provider":"codex"` are
    optional trace hints, not routing prerequisites. Keep Plan, SetGoal, QualityGate, and Report
@@ -185,7 +197,9 @@ After all subgoals, assign a fresh goal-level QualityGate teammate (opus,
 `think:devils-advocate`) that reads the run
 directory and judges the **assembled whole** against goal-level `acceptance[]`, scoring
 `match_pct` (0–100, holistic — not an average of subgoal pass/fail). It **writes
-`RUN/04-goal-gate.json`** `{match_pct, pass, reason}`. If `match_pct < 90`, dispatch a repair
+`RUN/04-goal-gate.json`** `{match_pct, pass, reason, ac_rows[], out_of_spec[]}`: one `ac_rows`
+entry `{id, met, evidence}` per goal-level `AC-n` (evidence = test name or command output; no
+evidence means `met:false`), and `out_of_spec[]` listing changes no AC-n asked for. If `match_pct < 90`, dispatch a repair
 Implement using the same provider-routing rule as Implement stages, then re-gate — up to
 `max_retries` times. If a re-gate
 returns the same `gaps`/`reason` as the pass before it, the repair made no progress — stop early
