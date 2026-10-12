@@ -128,6 +128,11 @@ Pictures take a fit mode — `| fit` keeps the whole image, the default `fill` c
 and `| transparent` knocks a PNG's background out. Slots you leave out keep the template's
 content.
 
+More items than the template has shapes: `text4_plus1: ...` clones the next shape past the
+last of a row (or column) of at least 3 same-format siblings at a constant interval —
+`check` refuses with the reason when the siblings differ in format, are irregularly spaced,
+sit in different groups, or the clone would leave the slide. Never a free placement.
+
 Full syntax — slot forms, `!drop`, `notes:`, inline emphasis, outline levels, and what
 `template_hash` protects against — is in `references/mdx-syntax.md`. Read it before
 writing the first slide.
@@ -240,7 +245,7 @@ The six that change what you can promise:
 | **No new layouts** | Every slide is a clone. Content with no archetype needs the template extended in PowerPoint — say so rather than approximating. |
 | **A template is mandatory** | No built-in design, no fallback. |
 | **Charts are not writable** | `build` leaves the template's numbers. Use an SVG in a picture slot. |
-| **Frames never move** | Write short and the gap stays; `check` reports it, only the template can close it. |
+| **Frames never move** | Write short and the gap stays; `check` reports it, only the template can close it. Exception: `textN_plusK` extends a clean sibling series (same format, constant interval, same group). |
 | **Layout truth needs a renderer** | `check` estimates and cannot resolve margins under a line. Only `render` sees what collides. |
 | **Legibility is PNG only** | Type over a JPEG or SVG backdrop is unscored; inherited text colors are left alone. |
 

@@ -1195,6 +1195,67 @@ def metrics(tmp):
         del os.environ["DECK_FONT_DIRS"]
 
 
+def cloning(tmp):
+    """Same-format siblings at a constant interval extend to the item count; nothing else does."""
+    print("sibling shape cloning")
+    make_png(tmp / "c.png", 40, 40)
+
+    def template(name, shapes):
+        make_template(tmp / name, tmp / "c.png")
+        pkg = deck.Package(tmp / name)
+        pkg.parts[deck.slide_order(pkg)[1]] = _slide(shapes).encode("utf-8")
+        pkg.write(tmp / name)
+
+    def item(i, y, x=1000000, sz=None):
+        xml = _sp("Item %d" % i, None, [(0, "t%d" % i)], cx=4000000, cy=500000, x=x, y=y)
+        return xml.replace('sz="1800"', 'sz="%d"' % sz) if sz else xml
+
+    def build(name, body):
+        src = tmp / (name + ".mdx")
+        src.write_text("---\ntemplate: %s.pptx\noutput: %s-out.pptx\n---\n\n## @s2\n%s"
+                       % (name, name, body), encoding="utf-8")
+        out = run_cmd(["build", "--deck", str(src)])
+        return out, tmp / (name + "-out.pptx")
+
+    def boxes(pptx):
+        pkg = deck.Package(pptx)
+        root = ET.fromstring(pkg.parts[deck.slide_order(pkg)[0]])
+        return sorted(deck.shape_box(e)[1] for e, _ in deck.walk_shapes(
+            root.find(deck.q("p:cSld") + "/" + deck.q("p:spTree"))) if deck.shape_box(e))
+
+    template("c1.pptx", [item(i, 1000000 + i * 800000) for i in range(3)])
+    out, pptx = build("c1", "text1: a\ntext2: b\ntext3: c\ntext3_plus1: d\ntext3_plus2: e\n")
+    ys = boxes(pptx)
+    check(ys == [1000000 + i * 800000 for i in range(5)],
+          "3 siblings + 2 clones sit at count + k*interval: %s" % ys)
+    check({"d", "e"} <= set(slide_texts(pptx, "ppt/slides/slide1.xml")),
+          "the clones carry the new text")
+    ids = [e.find(deck.q("p:nvSpPr") + "/" + deck.q("p:cNvPr")).get("id")
+           for e, _ in deck.walk_shapes(ET.fromstring(deck.Package(pptx).parts[
+               "ppt/slides/slide1.xml"]).find(deck.q("p:cSld") + "/" + deck.q("p:spTree")))]
+    check(len(set(ids)) == len(ids), "cloned shapes get unique ids")
+    ok = run_cmd(["check", "--deck", str(tmp / "c1.mdx")])
+    check("no slot" not in ok, "check accepts a clone key: %s" % ok[:80])
+
+    template("c2.pptx", [item(0, 1000000), item(1, 1800000), item(2, 3000000)])
+    out, pptx = build("c2", "text3_plus1: d\n")
+    check("constant" in out and len(boxes(pptx)) == 3,
+          "irregular spacing: no clone, says why")
+    template("c3.pptx", [item(0, 1000000), item(1, 1800000), item(2, 2600000, sz=2400)])
+    out, pptx = build("c3", "text3_plus1: d\n")
+    check("format" in out and len(boxes(pptx)) == 3, "differing format: no clone, says why")
+    template("c4.pptx", [item(0, 1000000), item(1, 1800000)])
+    out, pptx = build("c4", "text2_plus1: d\n")
+    check("at least 3" in out and len(boxes(pptx)) == 2, "two shapes prove no interval")
+    template("c5.pptx", [item(i, 1000000 + i * 800000) for i in range(3)])
+    out, pptx = build("c5", "text2_plus1: d\n")
+    check("text3_plus1" in out and len(boxes(pptx)) == 3,
+          "cloning from a middle sibling points at the last one")
+    out, pptx = build("c5", "text3_plus9: d\n")
+    check("outside the slide" in out and len(boxes(pptx)) == 3,
+          "a clone past the slide edge is refused")
+
+
 def workdir():
     """A container renderer's daemon may not see /tmp, so mirror test_render.py there."""
     if os.environ.get("DECK_RENDER_DOCKER") and not shutil.which("soffice"):
@@ -1216,6 +1277,7 @@ def main():
         vector_invariant(tmp)
         one_line_slots(tmp)
         underfill(tmp)
+        cloning(tmp)
         spilling(tmp)
         fonts(tmp)
         metrics(tmp)

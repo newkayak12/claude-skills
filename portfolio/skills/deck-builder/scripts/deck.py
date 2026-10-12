@@ -2229,6 +2229,88 @@ def apply_value(spTree, slot, kind, value, imgctx, problems, where):
                         "template values kept" % (where, slot.id))
 
 
+# ── Sibling cloning ──────────────────────────────────────────────────────────
+#
+# `textN_plusK` asks for the K-th shape past the last of a row (or column) of
+# same-format siblings. The position is the interval the template already uses —
+# never a free placement. Anything that is not a clean series is refused with the reason.
+
+CLONE_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*?)_plus([1-9]\d*)")
+SIBLING_MIN = 3        # two shapes prove no interval
+SIBLING_TOL = 0.03     # spacing may wobble this much of the interval
+ALIGN_TOL = 2000       # EMU: siblings share the cross coordinate within this
+
+
+def _sibling_format(el, slot):
+    rpr = next(iter(el.find(q("p:txBody")).iter(q("a:rPr"))), None)
+    latin = rpr.find(q("a:latin")) if rpr is not None else None
+    return (slot.type, slot.max_items, slot.size_pt, slot.color_ref,
+            latin.get("typeface") if latin is not None else None,
+            rpr.get("b") if rpr is not None else None, slot.box[3])
+
+
+def plan_clone(spTree, slots, key, slide_dims):
+    """Clone the shape `key` names ('textN_plusK') into spTree and register its Slot.
+
+    Returns (slot, None) or (None, reason)."""
+    m = CLONE_RE.fullmatch(key)
+    if not m:
+        return None, None
+    base_id, k = m.group(1), int(m.group(2))
+    base = slots.get(base_id)
+    if base is None or base.type not in ("text", "list") or not base.box:
+        return None, "'%s' is not a text shape with a position, so it cannot be cloned" % base_id
+    parent_path = base.path[:-1]
+    parent = resolve_path(spTree, parent_path)
+    peers = [s for s in slots.values() if s.type in ("text", "list") and s.box
+             and s.path[:-1] == parent_path and not CLONE_RE.fullmatch(s.id)]
+    sigs = {s.id: _sibling_format(resolve_path(spTree, s.path), s) for s in peers}
+    best = None
+    for axis, cross in ((1, 0), (0, 1)):          # stacked down, then side by side
+        line = sorted((s for s in peers if abs(s.box[cross] - base.box[cross]) <= ALIGN_TOL),
+                      key=lambda s: s.box[axis])
+        if len(line) >= 2 and (best is None or len(line) > len(best[1])):
+            best = (axis, line)
+    if best is None:
+        return None, ("'%s' has no sibling aligned with it, so there is no interval to extend "
+                      "(shapes inside different groups are not siblings)" % base_id)
+    axis, line = best
+    same = [s for s in line if sigs[s.id] == sigs[base_id]]
+    if len(same) < SIBLING_MIN:
+        if len(line) >= SIBLING_MIN:
+            return None, ("'%s' has aligned siblings (%s) that differ in format — size, colour, "
+                          "font, weight or height — so they are not a series"
+                          % (base_id, ", ".join(s.id for s in line)))
+        return None, ("cloning needs at least %d same-format siblings at one interval; "
+                      "'%s' has %d" % (SIBLING_MIN, base_id, len(same)))
+    pos = [s.box[axis] for s in same]
+    gaps = [b - a for a, b in zip(pos, pos[1:])]
+    interval = sum(gaps) / len(gaps)
+    if min(gaps) <= 0 or max(gaps) - min(gaps) > max(ALIGN_TOL, SIBLING_TOL * interval):
+        return None, ("the spacing of %s is not constant (gaps %s EMU), so a clone has no "
+                      "position the template vouches for"
+                      % (", ".join(s.id for s in same), ", ".join(str(g) for g in gaps)))
+    last = same[-1]
+    if base_id != last.id:
+        return None, "'%s' is not the last of its row; clone from '%s_plus%d'" % (base_id, last.id, k)
+    box = list(last.box)
+    box[axis] = last.box[axis] + int(round(k * interval))
+    if parent is spTree and (box[0] + box[2] > slide_dims[0] or box[1] + box[3] > slide_dims[1]):
+        return None, "'%s' would fall outside the slide" % key
+    el = copy.deepcopy(resolve_path(spTree, last.path))
+    el.find(q("p:spPr") + "/" + q("a:xfrm") + "/" + q("a:off")).attrib.update(
+        x=str(box[0]), y=str(box[1]))
+    cnv = el.find(q("p:nvSpPr") + "/" + q("p:cNvPr"))
+    cnv.set("id", str(1 + max(int(c.get("id", 0)) for c in spTree.iter(q("p:cNvPr")))))
+    cnv.set("name", "%s clone %d" % (cnv.get("name", ""), k))
+    parent.append(el)
+    clone = copy.copy(last)
+    clone.id, clone.path, clone.box = key, parent_path + [len(list(parent)) - 1], tuple(box)
+    clone.off_y, clone.z = box[1], 1 + max(s.z for s in slots.values())
+    slots[key] = clone
+    return clone, None
+
+
 def slot_frame_cx(el):
     ext = extent(el)
     return ext[0] if ext else None
@@ -2438,6 +2520,12 @@ def cmd_build(args):
             if slot_id == "notes":
                 note_text = "\n".join(t for _, t in as_items(kind, value))
                 continue
+            if slot_id not in slots and CLONE_RE.fullmatch(slot_id):
+                _, why = plan_clone(spTree, slots, slot_id, slide_size(pkg))
+                if why:
+                    problems.append("%s: '@%s' cannot clone '%s' — %s"
+                                    % (where, spec.archetype, slot_id, why))
+                    continue
             if slot_id not in slots:
                 problems.append("%s: '@%s' has no slot '%s' (has: %s)"
                                 % (where, spec.archetype, slot_id,
@@ -2743,6 +2831,13 @@ def cmd_check(args):
                 continue
             seen.add(slot_id)
             slot = by_id.get(slot_id)
+            if slot is None and CLONE_RE.fullmatch(slot_id):
+                probe = ET.fromstring(pkg.parts[protos[int(spec.archetype[1:]) - 1]])
+                slot, why = plan_clone(probe.find(q("p:cSld") + "/" + q("p:spTree")),
+                                       dict(by_id), slot_id, slide_size(pkg))
+                if why:
+                    errs.append("line %d: %s cannot clone '%s' — %s" % (line, tag, slot_id, why))
+                    continue
             if slot is None:
                 errs.append("line %d: %s has no slot '%s' — available: %s"
                             % (line, tag, slot_id, ", ".join(by_id)))
