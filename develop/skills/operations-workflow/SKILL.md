@@ -44,7 +44,7 @@ compatibility:
 
 ```
 Phase 1: BUILD
-  [1] dockerfile-optimizer      ← skip for non-container deployments
+  [1] container image review     ← skip for non-container deployments
         |
         v
 Phase 2: OBSERVE
@@ -68,7 +68,7 @@ Phase 4: RESPOND
 ## Steps
 
 ### Step 1 — Container Image Optimization
-**Skill:** `dockerfile-optimizer`
+**Skill:** none dedicated — review the Dockerfile directly (multi-stage build, layer cache order, non-root user, pinned base image)
 **Goal:** Minimize image size, accelerate CI cache, harden container security
 **Input:** Existing Dockerfile and target runtime stack
 **Output:** Annotated before/after diff, size delta estimate, security findings
@@ -152,6 +152,5 @@ Phase 4: RESPOND
 
 ## Related Skills
 
-- Peer: `develop:dev-quality-workflow` (greenfield quality cycle, overlaps at Step 6)
 - Before: `develop:architecture-designer` (system boundaries before hardening)
-- Individual: `dockerfile-optimizer`, `sre-engineer`, `performance-profiling-optimization`, `circuit-breaker-tuner`, `chaos-engineer`, `incident-response-playbook` (Step 6's RCA flags product-decision root causes to the feature owner directly — see that skill's "When Root Cause Traces to a Product Decision")
+- Individual: `sre-engineer`, `performance-profiling-optimization`, `circuit-breaker-tuner`, `chaos-engineer`, `incident-response-playbook` (Step 6's RCA flags product-decision root causes to the feature owner directly — see that skill's "When Root Cause Traces to a Product Decision")

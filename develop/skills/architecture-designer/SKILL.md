@@ -95,6 +95,18 @@ graph TD
 
 For a worked ADR example and full template, see `references/adr-template.md`.
 
+## Distributed Topology (microservices)
+
+Before splitting, check prerequisites: CI/CD per service, container orchestration, distributed tracing, at least 2 independent squads, clear domain ownership. Mostly absent → modular monolith first; partly met → extract one pilot service.
+
+If proceeding, the ADR's Service Inventory lists service, responsibility, data owned, communication, SLA. Defaults:
+- Each service owns a private database; no shared schema.
+- Async (events/outbox) for slow work or work spanning aggregates; sync only for query/command pairs, at most 3 hops in a user-facing path.
+- Every remote call states timeout, retry budget, failure behaviour, and sits behind a circuit breaker.
+- One correlation ID traced across every service; health/readiness probes and a canary or blue-green plan.
+
+To check where the cuts fall, use `develop:service-boundary-validator`.
+
 ## What Claude Does / What You Do
 
 | Claude | You |
@@ -108,6 +120,6 @@ For a worked ADR example and full template, see `references/adr-template.md`.
 
 - `develop:clean-architecture` — internal layer dependencies and dependency rule
 - `develop:domain-driven-design` — domain modeling and bounded contexts
-- `develop:microservices-architect` — distributed system decomposition
+- `develop:service-boundary-validator` — where to cut services and whether boundaries hold
 - `write:plans` (ADR format) — writing individual Architecture Decision Records
 - `write:diagram` — drawing the design as a checked SVG + PNG figure or interactive HTML

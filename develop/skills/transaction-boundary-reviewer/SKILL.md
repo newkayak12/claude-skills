@@ -158,6 +158,6 @@ public void deduct(Long accountId, BigDecimal amount) {
 ## Related Skills
 
 - `spring-boot-engineer` — for implementing the corrected `@Transactional` patterns
-- `microservices-architect` — when the issue is cross-service transaction design
+- `architecture-designer` — when the issue is cross-service transaction design
 - `circuit-breaker-tuner` — wide transactions compound cascading failure risk
 - `connection-pool-tuner` — wide transactions can exhaust the connection pool

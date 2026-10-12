@@ -25,7 +25,6 @@ the specialist skills in a fixed order and let you join mid-process.
 
 | I want to… | Skill |
 |---|---|
-| Run a full quality cycle: design → domain → tests → performance → docs → ops | `dev-quality-workflow` |
 | Design a system end to end, from domain discovery to ADRs | `architecture-workflow` |
 | Build a test suite from scratch and stabilize CI | `testing-workflow` |
 | Investigate DB slowness across every layer | `database-workflow` |
@@ -60,7 +59,6 @@ the specialist skills in a fixed order and let you join mid-process.
 | Model bounded contexts, aggregates, and a ubiquitous language | `domain-driven-design` |
 | Decide whether a service split is real or would just add coupling | `service-boundary-validator` |
 | Get business logic out of controllers and frameworks | `clean-architecture` |
-| Design or restructure a distributed system | `microservices-architect` |
 | Find where existing code most needs deepening, ranked by git history | `architecture-review` |
 | Drop, rename, or retire a column, API, or feature without breaking its users | `deprecation-and-migration` |
 
@@ -73,7 +71,6 @@ the specialist skills in a fixed order and let you join mid-process.
 | Find the bottleneck before optimizing anything | `performance-profiling-optimization` |
 | Stop a slow dependency from taking the caller down | `circuit-breaker-tuner` |
 | Test failure tolerance on purpose, with a bounded blast radius | `chaos-engineer` |
-| Shrink an image and stop cache-busting the build | `dockerfile-optimizer` |
 
 **Languages & frameworks**
 
@@ -81,8 +78,6 @@ the specialist skills in a fixed order and let you join mid-process.
 |---|---|
 | Build a Spring Boot 3.x backend — REST, Security, JPA, WebFlux | `spring-boot-engineer` |
 | Write idiomatic Kotlin — coroutines, Flow, KMP, Compose, Ktor | `kotlin-specialist` |
-| Build React / Next.js UI with TypeScript and Tailwind | `frontend-developer` |
-| Build a CLI with subcommands, flags, and shell completions | `cli-developer` |
 
 **Code quality & documentation**
 
@@ -91,36 +86,29 @@ the specialist skills in a fixed order and let you join mid-process.
 | Get a review or gate verdict on a change, or implement one test-first | `clean-code` |
 | Turn a repo's own code style into harness conventions, with sources | `like-my-code` |
 | Audit a feature or service for exploitable flaws in auth, input, secrets, payments | `security-auditor` |
-| Generate docstrings, JSDoc, or an OpenAPI spec for existing code | `code-documenter` |
 | Plan which docs should exist, for whom, and who keeps them current | `documentation-strategy` |
+
+## Retired/merged in 2.0.0 → use X
+
+| Was | Use instead |
+|---|---|
+| `frontend-developer` | retired (no replacement) |
+| `cli-developer` | retired (no replacement) |
+| `dockerfile-optimizer` | retired; review the Dockerfile directly |
+| `dev-quality-workflow` | `teams:develop` + `clean-code` review gate |
+| `microservices-architect` | `architecture-designer` (topology), `service-boundary-validator` (where to cut) |
+| `code-documenter` | `documentation-strategy` |
 
 ## Skills
 
 ### Workflows
 
-### `dev-quality-workflow`
-
-The full engineering quality cycle in six steps, each driven by a specialist skill:
-`architecture-designer` → `domain-driven-design` → `test-driven-development` →
-`performance-profiling-optimization` → `documentation-strategy` → `incident-response-playbook`.
-Every step has a documented skip condition, so an already-approved architecture or a
-single-maintainer internal tool drops out of the sequence instead of wasting a pass. Use it for a
-greenfield feature or a refactor across several layers — not for a quick bug fix or a single-file
-change.
-
-```
-We're building the new settlement service from scratch. Run the full dev quality workflow —
-architecture is not decided yet, and it goes to production in six weeks.
-```
-
-Tell it where you already are and it joins mid-flight: "DDD부터" starts at Step 2, "already
-implemented, just check performance" jumps to Step 4.
 
 ### `architecture-workflow`
 
 Seven steps from domain discovery to documented decision: `event-storming` (optional if the domain
 is well understood) → `domain-driven-design` → `service-boundary-validator` → `clean-architecture`
-→ `architecture-designer` → `microservices-architect` (optional if staying on a monolith) →
+→ `architecture-designer` (its Distributed Topology section, optional if staying on a monolith) →
 `write:plans` (ADR format), which is the one step never skipped. Use it for a new system or a
 monolith-to-MSA evaluation; for iterating inside an existing stable architecture, call the
 individual skill instead.
@@ -164,7 +152,7 @@ Estimated: 2–6 hours for the full run, 30–90 min per step.
 
 ### `operations-workflow`
 
-Four phases — build, observe, harden, respond — over six skills: `dockerfile-optimizer` →
+Four phases — build, observe, harden, respond — over six steps: a direct Dockerfile review →
 `sre-engineer` → `performance-profiling-optimization` → `circuit-breaker-tuner` → `chaos-engineer`
 → `incident-response-playbook`. Order matters: chaos runs only after circuit breakers are
 configured, and it is skipped entirely when no monitoring stack exists. Use it for a pre-launch
@@ -371,7 +359,7 @@ Facilitates domain discovery through events, in three levels: Big Picture (whole
 contexts, pain points), Process Level, then Design Level. Use it when starting a new product,
 untangling a legacy system, or when someone asks where domain modeling should even begin. Not when
 the domain is already well modeled and stable, and not for producing code — run it first, then
-hand off to `microservices-architect` or `spring-boot-engineer`. A term that conflicts with the glossary is
+hand off to `architecture-designer` or `spring-boot-engineer`. A term that conflicts with the glossary is
 challenged on the spot, and when code exists the terms are cross-checked against it.
 
 ```
@@ -398,7 +386,7 @@ Answers "should this be its own service?" by evidence rather than instinct. Maps
 graphs, shared databases, and bidirectional dependencies; audits which service creates, reads,
 updates, and deletes each entity; checks each service against one team with the cognitive-load
 test; then recommends merge, split, convert to async, or fix ownership. Not for designing
-boundaries from scratch — run `event-storming` first, then `microservices-architect`.
+boundaries from scratch — run `event-storming` first, then `architecture-designer`.
 
 ```
 We want to pull inventory out of the order service. Validate the split: they share three
@@ -420,18 +408,6 @@ Our controllers are 400 lines and query JPA repositories directly. Score the cur
 layering, list the dependency violations, and show me the ports-and-adapters refactor.
 ```
 
-### `microservices-architect`
-
-Designs and evaluates distributed systems: monolith decomposition, service boundaries via DDD,
-sync vs. async communication, data strategy, resilience, and observability. It starts by asking
-whether microservices are warranted at all — with no CI/CD, no container orchestration, and fewer
-than two independent squads it recommends a modular monolith instead. Not for implementation code
-(use `spring-boot-engineer`).
-
-```
-E-commerce monolith, 12 engineers in three squads, Kubernetes already in place. Design
-the decomposition — service boundaries, communication patterns, and data ownership.
-```
 
 ### `architecture-review`
 
@@ -559,21 +535,6 @@ Plan a game day for our Kubernetes checkout path: pod kills first, then AZ loss.
 blast radius to 5% of traffic and give me the abort criteria.
 ```
 
-### `dockerfile-optimizer`
-
-Analyzes an existing Dockerfile and returns concrete before/after fixes for layer caching, image
-size, build speed, and security. Two passes: note every finding across the 8 checks first, then
-apply fixes — so one visible issue does not get fixed while interacting issues are missed. Not for
-Kubernetes manifests, docker-compose orchestration, or runtime security policy (AppArmor, seccomp).
-
-```
-Our image is 1.8GB and every code change re-runs npm install. Here's the Dockerfile —
-find everything wrong first, then give me the rewritten version.
-```
-
-Covers base image selection (alpine / distroless / slim / full), multi-stage builds, layer
-ordering, `.dockerignore`, non-root users, and secrets leaking into layers. Reference material:
-`references/antipatterns.md`, `references/dockerignore-template.md`.
 
 ### Languages & frameworks
 
@@ -583,7 +544,7 @@ Builds and extends Java backends on Spring Boot 3.x: REST APIs, Spring Security 
 authentication, Spring Data JPA, WebFlux reactive endpoints, caching, transaction management, and
 validation. It designs data access and security before coding and confirms the plan first, then
 implements with constructor injection and layered structure. Not for service decomposition
-decisions (use `microservices-architect`); pair with `kotlin-specialist` for Kotlin idioms.
+decisions (use `architecture-designer`); pair with `kotlin-specialist` for Kotlin idioms.
 
 ```
 Build the REST API for our member service — JWT auth with Spring Security 6, JPA
@@ -603,33 +564,7 @@ Convert this Java service to Kotlin and make the async paths coroutine-based —
 proper scope handling and cancellation, not GlobalScope everywhere.
 ```
 
-### `frontend-developer`
 
-Builds and fixes UI: React components, layouts, client-side interactivity, data-fetching hooks,
-styling, and forms. Defaults to Next.js App Router, TypeScript, and Tailwind unless the project
-says otherwise; defines prop/state/API types before implementing, and builds top-down from the
-layout shell. Not for Vue, Svelte, or Angular, and not for backend APIs.
-
-```
-Build a dashboard page in our Next.js app — server-side data fetch, filter controls,
-responsive table, and proper loading and error states.
-```
-
-### `cli-developer`
-
-Builds command-line tools: subcommand hierarchy, flags and argument parsing, interactive prompts,
-progress bars, shell completions, and cross-platform distribution. It lists every command with its
-expected `--help` output before writing code and checks that flag naming stays consistent and no
-existing signatures break. Not for web UIs or REST APIs, and not for SRE pipeline integration alone
-(use `sre-engineer`).
-
-```
-Build a CLI that manages our deployment configs across environments — subcommands for
-list/diff/apply, a --dry-run flag, and zsh completions.
-```
-
-Framework defaults: Node.js `commander` → `yargs` → `oclif`; Python `typer` → `click` → `argparse`;
-Go `cobra + viper`, with `bubbletea` for TUIs only.
 
 ### Code quality & documentation
 
@@ -691,19 +626,6 @@ Audit the checkout and order APIs before launch — auth, input handling, secret
 Only what an attacker could actually exploit. Don't change the code.
 ```
 
-### `code-documenter`
-
-Creates documentation that does not exist yet: docstrings and JSDoc for functions and classes,
-OpenAPI/Swagger specs generated from an existing API, doc sites, READMEs, and tutorials. It asks
-for format preferences and exclusions first, and follows existing conventions in the codebase —
-defaulting to Google style for Python and JSDoc for TypeScript/JS when none are found. Not for
-architectural decision records (use `write:plans` (ADR format)) or planning a doc system (use
-`documentation-strategy`).
-
-```
-This module has no docs at all. Add docstrings to the public API, generate an OpenAPI
-spec from the controllers, and write a README that gets a new engineer running.
-```
 
 ### `documentation-strategy`
 

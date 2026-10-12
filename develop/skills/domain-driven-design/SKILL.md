@@ -188,4 +188,4 @@ When modeling a domain, provide:
 - `develop:clean-architecture` — architecture layers and dependency rule
 - `develop:event-storming` — workshop technique to discover domain events collaboratively
 - `develop:service-boundary-validator` — validate microservice decomposition
-- `develop:microservices-architect` — distributed system design
+- `develop:architecture-designer` — distributed system design

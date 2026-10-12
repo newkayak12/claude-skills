@@ -24,7 +24,7 @@ metadata:
   keywords: fault injection, game day, blast radius, steady-state hypothesis, Chaos Mesh, Litmus
   kind: specialist
   produces: experiment docs and injection code
-  see-also: sre-engineer, microservices-architect, circuit-breaker-tuner
+  see-also: sre-engineer, architecture-designer, circuit-breaker-tuner
 ---
 
 # Chaos Engineer
@@ -115,5 +115,5 @@ For network latency (toxiproxy) and Chaos Monkey examples, see `references/chaos
 ## Related Skills
 
 - `sre-engineer` — SLO definition, error budgets, incident response
-- `microservices-architect` — resilience pattern design for distributed systems
+- `architecture-designer` — resilience pattern design for distributed systems
 - `circuit-breaker-tuner` — configure failure thresholds before running chaos experiments

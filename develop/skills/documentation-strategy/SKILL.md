@@ -3,7 +3,7 @@ name: documentation-strategy
 effort: high
 description: >-
   Use when a team needs a plan for what docs to write. Triggers on: "문서 뭐부터 써야 해?", "온보딩 문서 정리", "런북/ADR 체계", "doc
-  coverage map", "documentation audit". Not for adding docstrings or OpenAPI specs.
+  coverage map", "documentation audit", "주석/독스트링 달아줘", "OpenAPI 문서 만들어줘".
 scenarios:
   - "Our codebase has no docs and new engineers keep asking the same questions repeatedly"
   - "We have documentation but it's scattered across three wikis and no one knows what's current"
@@ -139,13 +139,22 @@ Add to your team's PR template:
 
 ---
 
+## Inline Docs and API Specs
+
+For docstrings, JSDoc/KDoc, OpenAPI or a doc site on existing code:
+1. Ask which format to use; else read the repo for the convention; else Google style (Python), JSDoc (TS/JS).
+2. List public functions, classes and endpoints without docs; write all in the one chosen format, including parameters, returns and raised errors.
+3. Run every example: `pytest --doctest-modules`, `tsc --noEmit`, `npx @redocly/cli lint` for OpenAPI.
+4. Report coverage; flag files under 70% function coverage and any endpoint short of 100%.
+
+NEVER guess the docstring format or publish an example that was not run.
+
 ## Escalation Paths
 
 | Need | Go To |
 |------|-------|
 | Architectural decisions to document | `write:plans` (ADR format) |
 | System design → architecture docs | [`../architecture-designer/SKILL.md`](../architecture-designer/SKILL.md) |
-| Inline code documentation | [`../code-documenter/SKILL.md`](../code-documenter/SKILL.md) |
 | Incident RCA to store and maintain | [`../incident-response-playbook/SKILL.md`](../incident-response-playbook/SKILL.md) |
 
 ## What Claude Does / What You Do
@@ -159,7 +168,6 @@ Add to your team's PR template:
 
 ## Related Skills
 
-- `develop:code-documenter` — inline docs, docstrings, OpenAPI
 - `develop:architecture-designer` — architecture docs and ADRs
 - `develop:incident-response-playbook` — RCA content to store and maintain
 - `write:spec` — drafting one substantial document

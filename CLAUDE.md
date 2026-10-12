@@ -26,7 +26,7 @@ For complex multi-step tasks, use these workflow skills as entry points:
 
 | User says | Invoke |
 |-----------|--------|
-| New feature, full dev cycle, quality process | `develop:dev-quality-workflow` |
+| New feature, full dev cycle, quality process | `teams:develop` (code through the graph); `develop:clean-code` for the review gate |
 | Job application, career transition, interview prep | `portfolio:job-application-workflow` |
 | TDD, test coverage strategy, flaky CI | `develop:testing-workflow` |
 | DB performance, slow query, connection pool, transactions | `develop:database-workflow` |

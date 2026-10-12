@@ -11,7 +11,7 @@
   "plugins": [
     {
       "name": "develop",
-      "description": "Engineering skills: CLI, SQL, clean architecture, clean code, DDD, database optimization, chaos engineering, Spring Boot, microservices, Kotlin, TDD, frontend, code documentation, testing, bug diagnosis, security audit, architecture review, deprecation & migration, SRE, performance profiling & optimization, incident response, documentation strategy, like-my-code (a repo's style as harness conventions, each rule with evidence and a cited source), and dev-quality-workflow (full dev cycle entry point). ADR drafting moved to write:plans (ADR format); diagram moved to write:diagram.",
+      "description": "Engineering skills: SQL, clean architecture, clean code, DDD, database optimization, chaos engineering, Spring Boot, Kotlin, TDD, testing, bug diagnosis, security audit, architecture review, deprecation & migration, SRE, performance profiling & optimization, incident response, documentation strategy, like-my-code (a repo's style as harness conventions, each rule with evidence and a cited source). ADR drafting moved to write:plans (ADR format); diagram moved to write:diagram.",
       "version": "1.13.0",
       "author": {
         "name": "newkayak12"

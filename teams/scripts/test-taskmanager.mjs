@@ -3724,7 +3724,7 @@ test('the shape contract asks each package for optional skills, and says why sha
 const SKILLED = {
   acceptance: ['both modules build together'],
   packages: [
-    { ...SHAPE.packages[0], skills: ['develop:cli-developer', 'develop:clean-code'] },
+    { ...SHAPE.packages[0], skills: ['develop:kotlin-specialist', 'develop:clean-code'] },
     SHAPE.packages[1],
   ],
 };
@@ -3735,7 +3735,7 @@ test('a package that names skills hands them to its child run with the precedenc
     const nx = await tm.call('tm_next', { task_id });
     const child = await g.call('team_status', { run_id: nx.children[0].run_id, cwd: nx.children[0].cwd, full: true });
     assert.match(child.context, /Method for this package/);
-    assert.match(child.context, /- develop:cli-developer\n- develop:clean-code/);
+    assert.match(child.context, /- develop:kotlin-specialist\n- develop:clean-code/);
     // The child's nodes never read the manager's briefing, so the three rules have to be here.
     assert.match(child.context, /not installed here is skipped without comment or substitute/);
     assert.match(child.context, /output template does not apply/);
@@ -3769,7 +3769,7 @@ test('the packages listing shows a package\'s method so critique can attack the 
     await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...SKILLED, handoff: 's' }) });
     const nx = await tm.call('tm_next', { task_id });
     const critique = readFileSync(nx.ready.find((n) => n.stage === 'critique').briefing_path, 'utf8');
-    assert.match(critique, /### P1 — module a \(develop\)\nTouches: a\.txt\nMethod: develop:cli-developer, develop:clean-code/);
+    assert.match(critique, /### P1 — module a \(develop\)\nTouches: a\.txt\nMethod: develop:kotlin-specialist, develop:clean-code/);
     assert.doesNotMatch(critique, /### P2 — module b \(develop\)\nTouches: b\.txt\nMethod:/, 'a package with no skills gets no Method line');
   });
 });

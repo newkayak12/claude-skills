@@ -238,7 +238,7 @@ Follow the handoff contract in [references/retrieval-layout.md](references/retri
 
 ## Related Skills
 
-- `develop:code-documenter` - use when the main goal is inline/API/code documentation rather than a linked knowledge base.
+- `develop:documentation-strategy` - use when the main goal is inline/API/code documentation rather than a linked knowledge base.
 - `knowledge:rag-corpus-builder` - use when the goal is retrieval-ready chunks, metadata, citations, and eval queries.
 - `knowledge:ontology-builder` - use when note types, domains, aliases, or relation meanings need shared semantic control across vault, graph, and RAG outputs.
 - `knowledge:graph-builder` - use when the goal is entity/relationship schema and graph-ready records.

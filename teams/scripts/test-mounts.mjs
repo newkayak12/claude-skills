@@ -178,17 +178,17 @@ test('a gate subgoal briefing has exactly one Method heading naming clean-code a
   const run = { cwd: '/tmp/mounts-test', request: 'r', context: '', allocation: 'ordered' };
   const briefing = {
     upstream: [],
-    subgoal: { id: 'U1', title: 't', kind: 'subgoal', skills: ['develop:cli-developer'], acceptance: ['a'], test: ['t'] },
+    subgoal: { id: 'U1', title: 't', kind: 'subgoal', skills: ['develop:kotlin-specialist'], acceptance: ['a'], test: ['t'] },
   };
   const prompt = composePrompt(run, node('gate:U1:1', 'gate', { subgoal_id: 'U1' }), briefing);
   assert.equal(prompt.match(/Method/g).length, 1, 'one Method heading, no other method block');
   const method = prompt.slice(prompt.indexOf('## Method'), prompt.indexOf('## Required output'));
   assert.match(method, /- develop:clean-code\n- think:devils-advocate\n/);
   assert.ok(method.includes(SKILL_INVOKE_LINE));
-  assert.doesNotMatch(prompt, /develop:cli-developer/, 'the judge does not get the author\'s method');
+  assert.doesNotMatch(prompt, /develop:kotlin-specialist/, 'the judge does not get the author\'s method');
 
   const impl = composePrompt(run, node('implement:U1:1', 'implement', { subgoal_id: 'U1' }), briefing);
-  assert.match(impl, /## Method\n[^\n]*\n- develop:cli-developer\n/, 'the author keeps the method the spec picked');
+  assert.match(impl, /## Method\n[^\n]*\n- develop:kotlin-specialist\n/, 'the author keeps the method the spec picked');
 });
 
 // ---------- createRun stores the options ----------
