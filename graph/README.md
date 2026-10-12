@@ -50,6 +50,7 @@ Zero runtime dependencies, Node 18+.
 Optional: `graph:install` can run `develop:like-my-code` to write `.claude/conventions/`; the broker then tells every plan, setgoal, implement, and test node, on any vendor, to read and follow the relevant files.
 
 ## Status
+- v1.11.1 — `gate:goal` evidence is a table, one `| AC | verdict | evidence |` row per AC-n, then an "Out of spec:" list.
 - v1.11.0 — setgoal and `gate:goal` prompts use the AC-n contract: goal-level criteria are AC-n (spec.md IDs reused, else Given/When/Then with an unstated-criteria sweep and `[확인 필요]`); the goal gate gives one evidence row per AC-n (unmet without) and flags out-of-spec changes. A behaviour-preserving or one-line request gets one proportional AC-1 with one piece of evidence and no sweep. (2026-10-12)
 - v1.10.1 — Codex: MCP servers register under Codex (`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`); Claude reads them from plugin.json.
 - v1.10.0 — the broker tells every plan/setgoal/implement/test node, whatever the vendor, to follow `.claude/conventions/**` (setgoal folds them into acceptance); install offers `develop:like-my-code` for a reference project

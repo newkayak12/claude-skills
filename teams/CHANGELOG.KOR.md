@@ -5,6 +5,7 @@
 `teams` 플러그인의 모든 릴리스를 최신순으로 적었습니다. 예전 KOR.md의 `## 상태` 절을 그대로 옮겨 온 것입니다. 새 릴리스 줄은 `teams:patch`가 아래 `## 상태` 맨 위에 추가합니다.
 
 ## 상태
+- v0.51.5 — 엔진 커밋과 머지가 harness@local 대신 저장소에 설정된 git 작성자를 사용
 - v0.51.4 — **diagram 경로가 write:diagram 이동을 따라갑니다** (2026-10-12). 벤더링한 `mcp/diagram.mjs`가 이제 `write/skills/diagram/scripts/diagram.mjs`를 따르고, 헤더 주석과 `test-diagram.mjs` 경로를 고쳤습니다. 엔진 동작 변경 없음.
 - v0.51.3 — Codex: MCP 서버가 Codex에서도 등록됩니다(`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`). Claude는 plugin.json에서 읽습니다.
 - v0.51.2 — **patch 스킬이 실제 harness 범프 도구를 가리킵니다** (2026-10-12). teams:patch가 없어진 harness:patch 스킬 대신 _repo/scripts/patch-harness.mjs를 씁니다. 마켓플레이스 항목이 harness에 의존합니다. 엔진 변경 없음.
