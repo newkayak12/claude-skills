@@ -14,3 +14,6 @@ jobs:
 
       - name: Validate plugin installability
         run: python3 _repo/scripts/validate_plugins.py
+
+      - name: Check byte-identical copies
+        run: node _repo/scripts/check-copies.mjs
