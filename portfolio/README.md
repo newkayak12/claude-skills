@@ -200,8 +200,6 @@ decision the candidate has settled goes on a `[확정]` list and is not reopened
 candidate writes their own sentence, only typos, misused terms, and cross-document contradictions
 are checked — the reviewer posture does not follow into their writing.
 
-**Beta lane — `feedback-beta`.** feedback plus pattern's four measures in one pass: `피동 n` and `팀 주어 n` join the tally, number density is reported over 완전 주장's denominator as a reading (never a second penalty), and decision visibility is an appendix note. Triggers only on an explicit beta request; the stable `feedback` and `pattern` are unchanged. Promotion is decided after comparison runs (`evals/`).
-
 ### `pattern`
 
 Not what your portfolio says but how it reads. Audits six dimensions: decision-verb ratio
@@ -479,6 +477,5 @@ tool, not here.
 ## Renames
 
 - `portfolio:feedback` — renamed from `portfolio:portfolio-feedback`; the old name no longer resolves.
-- `portfolio:feedback-beta` — renamed from `portfolio:portfolio-feedback-beta`; the old name no longer resolves.
 - `portfolio:pattern` — renamed from `portfolio:portfolio-pattern`; the old name no longer resolves.
 - `portfolio:rewrite` — renamed from `portfolio:portfolio-rewrite`; the old name no longer resolves.
