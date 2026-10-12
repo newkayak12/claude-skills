@@ -576,3 +576,112 @@ test('push throws: toast, no crash, the tick keeps running', async ($, on) => {
   await clock.advance(5000)
   expect(seen.w.statuses.length).toBeGreaterThan(1)
 })
+
+// run events: reject / failed / complete, read from run files written after the session started
+const NEW = NOW + 1000
+const gj = (o: object) => JSON.stringify(o)
+const runWorld = (on: On, files: Files, dirs: Dirs, push: (e: any) => unknown = sent) => {
+  const pushes = [] as any[]
+  const w = world(on, ['terminal'], files, dirs)
+  on('tool.call', (_$, e: any) => {
+    pushes.push(e)
+    return push(e) as never
+  })
+  return { pushes, toasts: w.toasts, statuses: w.statuses }
+}
+const msgs = (s: { pushes: any[] }) => s.pushes.map(p => p.message)
+const R = '.harness-run/r'
+type Ents = [string, 'dir' | 'file', number?][]
+const OLD_MF: Ents = [['manifest.json', 'file', NOW - 5000]]
+const rdirs = (run: Ents = OLD_MF, extra: Dirs = {}): Dirs => ({ '.harness-run': [['r', 'dir']], [R]: run, ...extra })
+
+test('critique sound:false pushes a reject once', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const files: Files = { 'r/manifest.json': gj({ max_retries: 2 }), 'r/02-critique.json': gj({ sound: false }) }
+  const dirs = rdirs()
+  const seen = runWorld(on, files, dirs)
+  await start($)
+  dirs[R] = [...OLD_MF, ['02-critique.json', 'file', NEW]]
+  await clock.advance(5000)
+  await clock.advance(5000)
+  expect(msgs(seen)).toEqual(['harness r: rejected — Critique (1/2)'])
+})
+
+test('a failing subgoal gate pushes a reject with attempt/max; a pass does not', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const files: Files = {
+    'r/manifest.json': gj({ max_retries: 3 }),
+    'r/subgoals/s1/gate-1.json': gj({ pass: false }),
+    'r/subgoals/s1/gate-2.json': gj({ pass: true }),
+  }
+  const dirs = rdirs(OLD_MF, { [`${R}/subgoals`]: [['s1', 'dir']], [`${R}/subgoals/s1`]: [['gate-1.json', 'file', NEW], ['gate-2.json', 'file', NEW]] })
+  const seen = runWorld(on, files, dirs)
+  await start($)
+  await clock.advance(5000)
+  expect(msgs(seen)).toEqual(['harness r: rejected — QualityGate s1 (1/3)'])
+})
+
+test('retries spent pushes failed; a goal gate under 90 is a reject, then failed once reported', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const files: Files = {
+    'r/manifest.json': gj({}),
+    'r/subgoals/s1/result.json': gj({ passed: false, attempts: 2 }),
+    'r/04-goal-gate.json': gj({ match_pct: 70, pass: false, reason: 'x' }),
+  }
+  const dirs = rdirs([...OLD_MF, ['04-goal-gate.json', 'file', NEW]], { [`${R}/subgoals`]: [['s1', 'dir']], [`${R}/subgoals/s1`]: [['result.json', 'file', NEW]] })
+  const seen = runWorld(on, files, dirs)
+  await start($)
+  await clock.advance(5000)
+  expect(msgs(seen)).toEqual(['harness r: failed — subgoal s1 (2/2)', 'harness r: rejected — goal gate (1/2)'])
+  dirs[R] = [...dirs[R], ['05-report.md', 'file', NEW + 5000]]
+  await clock.advance(5000)
+  expect(msgs(seen).slice(2)).toEqual(['harness r: failed — goal gate (1/2)'])
+})
+
+test('a run with a report and no failure pushes complete once', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const files: Files = { 'r/manifest.json': gj({}), 'r/04-goal-gate.json': gj({ match_pct: 95, pass: true }), 'r/subgoals/s1/result.json': gj({ passed: true, attempts: 1 }) }
+  const dirs = rdirs([...OLD_MF, ['04-goal-gate.json', 'file', NEW], ['05-report.md', 'file', NEW]], { [`${R}/subgoals`]: [['s1', 'dir']], [`${R}/subgoals/s1`]: [['result.json', 'file', NEW]] })
+  const seen = runWorld(on, files, dirs)
+  await start($)
+  await clock.advance(5000)
+  await clock.advance(5000)
+  expect(msgs(seen)).toEqual(['harness r: complete — Report (1/1)'])
+})
+
+test('a finished graph run pushes complete', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const files: Files = { 'g2.json': gj({ request: 'ship it', nodes: [{ stage: 'report', state: 'done' }] }) }
+  const dirs: Dirs = { '.harness-run': [['broker', 'dir']], ['.harness-run/' + 'broker/runs']: [['g2.json', 'file', NEW]] }
+  const seen = runWorld(on, files, dirs)
+  await start($)
+  await clock.advance(5000)
+  expect(msgs(seen)).toEqual(['harness ship it: complete — graph Report (1/1)'])
+})
+
+test('run events from before the session started are not pushed', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const files: Files = { 'r/manifest.json': gj({}), 'r/02-critique.json': gj({ sound: false }), 'r/05-report.md': 'x' }
+  const old = NOW - 60_000
+  const seen = runWorld(on, files, rdirs([['manifest.json', 'file', old], ['02-critique.json', 'file', old], ['05-report.md', 'file', old]]))
+  await start($)
+  await clock.advance(5000)
+  expect(seen.pushes).toEqual([])
+  expect(seen.toasts).toEqual([])
+})
+
+test('run event not sent: toast; push throws: toast and the tick keeps running', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const files: Files = { 'r/manifest.json': gj({}), 'r/02-critique.json': gj({ sound: false }) }
+  const dirs = rdirs([...OLD_MF, ['02-critique.json', 'file', NEW]])
+  let n = 0
+  const seen = runWorld(on, files, dirs, () => {
+    if (n++ === 0) return { result: { message: 'm', pushSent: false, localSent: false, disabledReason: 'user_present' }, text: '' }
+    throw new Error('no tool')
+  })
+  await start($)
+  expect(seen.toasts).toEqual(['harness r: rejected — Critique (1/2)'])
+  dirs[R] = [...OLD_MF, ['02-critique.json', 'file', NEW + 9000]]
+  await clock.advance(5000)
+  expect(seen.toasts.slice(1)).toEqual(['harness r: rejected — Critique (2/2)'])
+})
