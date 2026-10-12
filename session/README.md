@@ -1,6 +1,6 @@
 # session
 
-Shows what a Claude Code session left behind (files changed, commits, denied calls, longest gap between tool calls), shows it again as a band on your next start, lists stray `claude -p` children and stops one safely, guards dangerous commands and secret writes, keeps `/memo` notes, recaps before compacting at a % you set, keeps that recap for `/handoff`, `/last-recap` and `/lessons`, times tasks and shows the cost, shows every open session on one `/board` (with its harness, graph and teams runs), tells the other sessions of a repo when main moves, warns when an Agent call names no model, and stops unfinished agents with `/reap`. Version `0.5.4`. Requires Claude Code 2.1.292+ (hooks module). It needs nothing else from this marketplace.
+Shows what a Claude Code session left behind (files changed, commits, denied calls, longest gap between tool calls), shows it again as a band on your next start, lists stray `claude -p` children and stops one safely, guards dangerous commands and secret writes, keeps `/memo` notes, recaps before compacting at a % you set, keeps that recap for `/handoff`, `/last-recap` and `/lessons`, times tasks and shows the cost, shows every open session on one `/board` (with its harness, graph and teams runs), tells the other sessions of a repo when main moves, warns when an Agent call names no model, and stops unfinished agents with `/reap`. Version `0.5.5`. Requires Claude Code 2.1.292+ (hooks module). It needs nothing else from this marketplace.
 
 ## Install
 ```
@@ -98,7 +98,7 @@ Two scopes: project (keyed by the repo root) and global. Caps count both togethe
 Not CLAUDE.md, not auto-memory: notes are not files, are never written to your repository, and are not shared. Put lasting rules in `CLAUDE.md`; use a memo for something you want pinned for now.
 
 ## Smart compact
-At a context % you choose, the session is first asked for a recap (goal, decisions, state, open items, next direction), then compacted with that recap as the summary instructions, so the compacted context keeps where you were heading.
+At a context % you choose, the session is first asked for a recap built around the next steps (goal, direction, what was in progress with its file:line, decisions, open items, corrections), then compacted with that recap as the summary itself: compact adds only what the recap lacks, so nothing is carried twice and finished work drops out.
 
 | Command | What it does |
 | --- | --- |
@@ -155,6 +155,7 @@ A session writes its row at start and after each turn, and removes it when it en
 When a `git push` to `main` goes through in one session (`origin main`, `HEAD:main`, `x:main`, or a plain push while on main), every other open session of the same repository that was active in the last 30 minutes gets a message: `origin/main moved to <sha> … Fetch before editing or bumping versions.` At most one message per session every 2 minutes; this session gets a toast `main moved: told N of M`. Headless runs send nothing.
 
 ## Status
+- `0.5.5`: the recap keeps only what the next steps need (a new In progress section; finished work as one line), and compact takes it as the summary instead of writing its own beside it.
 - `0.5.4`: the recap band is offered once per recap — Recap or dismiss is remembered, and a session's own smart-compact recap never raises it.
 - `0.5.3`: the no-model toast is one short line naming the Agent call, e.g. `⚠ no model: "rb12 runner" inherits the parent model`.
 - `0.5.2`: the `/board` pane closes with Esc, `[q]`, or a bare `/board` while it is open.

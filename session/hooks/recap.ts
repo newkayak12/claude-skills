@@ -1,11 +1,13 @@
 // The recap smart-compact and /handoff make, and what is kept of it. Pure: callers do the $ calls.
 
-export const RECAP_PROMPT = `Write a recap of this session that a fresh context can continue from. Use the session's language. Sections:
+export const RECAP_PROMPT = `Write a recap of this session that a fresh context can continue from. Use the session's language.
+Keep only what the next steps need; leave out finished work they do not depend on.
+Sections:
 1. Goal: what the user is trying to achieve
-2. Decisions: what was settled, with the reason
-3. State: what is done, files touched, what is verified
-4. Open: unfinished work, known problems
-5. Direction: the next concrete steps
+2. Direction: the next concrete steps, in order
+3. In progress: what was being done when this recap was written — file:line, the exact snippet or error text the next step needs
+4. Decisions: what was settled that the next steps must respect, with the reason; finished work only as one line with its commit
+5. Open: unfinished work and known problems not covered by Direction
 6. Corrections: things the user had to correct more than once, one per line starting with "- "; write "- none" if there were none
 Plain text, no preamble.`
 
