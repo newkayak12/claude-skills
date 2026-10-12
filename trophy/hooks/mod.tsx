@@ -263,10 +263,11 @@ async function mirror($: EngineInterface) {
 }
 
 // Records one skill use; always called before `next`, so a throw here falls to the hook's `.catch`.
-async function note($: EngineInterface, name: string) {
-  if (!(await read($, active))) return
+// Returns true when this use unlocked an achievement (its 🏆 toast then stands for the skill toast).
+async function note($: EngineInterface, name: string): Promise<boolean> {
+  if (!(await read($, active))) return false
   const hit = resolveSkill(name, triggers)
-  if (!hit) return
+  if (!hit) return false
   const uses = ((await $.store.get('trophy.uses')) ?? []) as Use[]
   const now = await $.clock.now()
   const recorded = recordUse(uses, hit.skill, now, await $.session.id())
@@ -290,6 +291,7 @@ async function note($: EngineInterface, name: string) {
     })
   }
   await mirror($)
+  return fresh.length > 0
 }
 
 export const register: Register = on => {
@@ -346,12 +348,13 @@ export const register: Register = on => {
 
   // Also: the Skill tool answered but the skill did not succeed; remembers the last owned skill.
   on('tool.call', { tool: 'Skill' }, async ($, e, next) => {
-    await note($, e.skill)
+    const unlocked = await note($, e.skill)
     const result = await next(e)
     if (e.tool !== 'Skill' || !(await read($, active))) return result
     await safe(async () => {
       const hit = ownedSkill(e.skill, owned.skills)
       if (!hit) return
+      if (!unlocked) $.ui.toast(`◆ ${hit.plugin}:${hit.skill}`)
       await update($, lastSkill, () => `${hit.plugin}:${hit.skill}`)
       const r = result as { deny?: string; isError?: boolean; result?: any }
       if (r.deny !== undefined || r.isError || !r.result || r.result.success !== false) return

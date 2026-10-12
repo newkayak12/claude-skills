@@ -2,8 +2,8 @@
 
 **English** · [한국어](KOR.md)
 
-Steam-style achievements for using this marketplace's skills. Use a skill and a toast and a gold card
-above the prompt (8 s) tell you what you unlocked; `/achievements` shows what you have, what is locked and how far along you are, and which
+Steam-style achievements for using this marketplace's skills. Use a skill and a `◆ plugin:skill` toast shows it; an unlock adds a toast and a gold card
+above the prompt (8 s) telling you what you unlocked; `/achievements` shows what you have, what is locked and how far along you are, and which
 of your prompts contained a skill's trigger phrase without the skill running. It also keeps a local
 record of this marketplace's skills and MCP tools failing (the **Failures** tab). Anonymous daily counts and
 fixed error codes go to the maintainer only if you say yes. Off by default.
@@ -117,6 +117,7 @@ view (most hit, most missed, never fired).
 
 ## Status log
 
+- 0.8.0 — Skill toast moved in from the retired `mods` plugin: one `◆ <plugin:skill>` toast per Skill tool call of this marketplace, skipped when that call unlocks an achievement (the 🏆 toast stands for it). Interactive sessions only.
 - 0.7.1 — Keyboard keys stay only on the consent question (s/n/p); the failure row and the pane are back to 0.6.1 (no Dismiss, no key hints).
 - 0.7.0 — Every control can be pressed from the keyboard, with the key shown in its label: `View [v]`, a new `Dismiss [d]` (clears the badge without opening the pane), the pane tabs `[t]` `[r]` `[f]`, and the consent buttons `s`/`n`/`p`. `/achievements` opens the pane with the keys. What is recorded or sent, and the consent version, are unchanged.
 - 0.6.1 — The types contract declares `anyUnlocked` and `lang`, so `claude plugin validate` passes again (0.6.0 failed it; the mod still loaded and worked). No behaviour change.
