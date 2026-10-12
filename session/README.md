@@ -141,11 +141,14 @@ Off by default (**Prompt hint** in `/config`). When on, a typed prompt of 20 cha
 *Prompt hint on: `add logging` gets the scope/check toast; the prompt still runs.*
 
 ## Board
-`/board` opens one pane for every open interactive session that has this plugin, the default place to see what the plugin knows. Tabs: **Sessions** `[1]`, **Recap** `[2]`, **Lessons** `[3]`, **Today** `[4]`; `[r]` refreshes the sessions.
+`/board` opens one pane for every open interactive session that has this plugin, the default place to see what the plugin knows. Tabs: **Sessions** `[1]`, **Recap** `[2]`, **Lessons** `[3]`, **Today** `[4]`, **Worktrees** `[5]` (`/board worktrees`); `[r]` refreshes the sessions or worktrees.
 
 Each session row shows its branch, context %, cost, running task and three cells for the runs in its folder, in the words and marks of each plugin's own pane: `harness ● running 1/3`, `graph ○ blocked 4/9`, `teams ✔ finished 3/3`, or `–` when there is none. A live run names the command that shows its detail in that session (`/harness-gate`, `/graph-live`, `/teams-live`). The board reads the run files itself, so it needs none of those plugins.
 
 A session writes its row at start and after each turn, and removes it when it ends; a row not updated for 30 minutes is marked idle, and one older than a day is dropped. Rows are kept in this plugin's store on your machine only.
+
+### Worktrees
+One row per `git worktree list --porcelain` entry of this repo: branch (or detached), uncommitted count (ignored files not counted), merged into `main`, age of the last commit, and `in use` when an open board session's folder is inside it. A **Clean** button appears only on a row that is not the main checkout, is merged, has 0 uncommitted changes, is not in use and whose path exists; other rows say why (`unmerged`, `3 changes`, `in use`, `main`, `missing`). Clean asks `Clean` / `Cancel`, re-reads the row, then: copies each `<worktree>/.harness-run/<name>` to the main checkout's `.harness-run/<name>` (a name already there, or any copy failure, stops the clean before anything is removed), runs `git worktree remove` (never `--force`), then `git branch -d` (never `-D`; a refusal is reported and the worktree stays removed). One toast summarises the steps. Interactive sessions only.
 
 ## Agents
 - **`/reap`**: lists this session's unfinished agents (pending, running, waiting, idle) and its `claude -p` processes, asks `Reap` / `Cancel`, then stops the agents with TaskStop (children of a stopped agent are skipped) and sends `SIGTERM` to the `claude -p` processes, never to their wrapper shells. It kills no process when this session's own process cannot be confirmed. The result is printed line by line (`stopped:`, `killed:`, `failed:`) and the status line is refreshed. Interactive sessions only.
