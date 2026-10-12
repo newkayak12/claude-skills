@@ -50,6 +50,7 @@ text5: !drop
 | `key: path/to.png \| fit` | how the image meets the frame — see below |
 | `key: path/to.svg` | same, rasterized at build time and cached in `.deckcache/` |
 | `key: !drop` | delete that shape from the slide |
+| `textN_plusK: value` | clone the K-th shape past `textN`, the last of >=3 same-format siblings at a constant interval (same group); refused with a reason otherwise |
 | `notes:` | speaker notes; reserved, works on any archetype |
 | slot omitted | keeps the template's own content |
 
