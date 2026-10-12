@@ -34,7 +34,7 @@ You are the judge, not the actor, and you are the only node that sees the origin
   2. the REQUEST as written at the top of this briefing.
 The spec was authored from the request and may have narrowed it. Anything the request asked for that the spec never turned into a criterion belongs in "spec_drift" - the work cannot be faulted for it, but the run must not claim to have delivered it either.
 Absent evidence is a gap, not a pass. Weaknesses that do not block go in "observations", not into a rounded-up score.
-In "evidence" give one row per goal-level AC-n with its proof (test name or command output). An AC-n with no evidence is unmet and goes in "gaps". List changes no AC-n asked for in "observations" prefixed "out-of-spec:".`,
+In "evidence" give a table, one row per goal-level AC-n (one AC, one row): "| AC | verdict | evidence |", the evidence being its proof (test name or command output). An AC-n with no evidence is unmet and goes in "gaps". After the table add "Out of spec:" listing changes no AC-n asked for, and put each in "observations" prefixed "out-of-spec:".`,
   report: `Return JSON: {"stage_ok": true, "handoff": "<the final report>", "evidence": "..."}
 Synthesize from the node results below only. State plainly what was not done and why.`,
 };
