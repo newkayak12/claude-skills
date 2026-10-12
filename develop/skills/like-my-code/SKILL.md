@@ -1,9 +1,9 @@
 ---
 name: like-my-code
 description: >-
-  Use when a repo's own code style must become written policy — harness conventions (coding.md, boundaries.md)
-  backed by repo evidence and Clean Code-class sources. Triggers: "내 코드 스타일로 컨벤션 뽑아줘",
-  "이 레포 스타일을 정책으로", "like my code", "extract conventions from this repo".
+  Use when a repo's code style must become written policy — harness conventions (coding.md, boundaries.md)
+  backed by repo evidence. Triggers: "내 코드 스타일로 컨벤션 뽑아줘", "이 레포 스타일을 정책으로",
+  "like my code", "extract conventions from this repo".
 license: MIT
 metadata:
   version: "0.1.0"

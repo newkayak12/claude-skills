@@ -1,5 +1,6 @@
 ---
 name: agent-task-decomposer
+effort: high
 description: >-
   Use when a task is too large or ambiguous to hand to a single agent without
   first defining clear subtask boundaries. Triggers on: "큰 작업 분해해줘", "에이전트
@@ -24,6 +25,14 @@ compatibility:
 ---
 
 # Agent Task Decomposer
+
+## Standing Mandates
+
+- NEVER decompose an ambiguous task. Ask one focused question first, then decompose the clear task.
+- ALWAYS finish dependency mapping (Step 3) before writing any subtask prompt.
+- NEVER let two subtasks own the same file. One owner per file.
+- ALWAYS give each subtask only the context it needs, with an explicit scope guard (what it must NOT do).
+- ALWAYS write every prompt with all five elements: goal, inputs, hard constraints, output format, verification step.
 
 ## Why This Matters
 
