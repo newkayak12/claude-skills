@@ -1,5 +1,4 @@
 {
-  "modules": ["./mod.tsx"],
   "hooks": {
     "SessionStart": [
       {
