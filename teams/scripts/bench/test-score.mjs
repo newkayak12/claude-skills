@@ -316,6 +316,8 @@ test('spec_present / spec_user_stories: a PRD under docs/ with a "## User storie
       '- US-1: import a bank CSV — acceptance: rows parse into typed records',
       '- US-2: categorize by user rules — acceptance: each row gets a category',
       '- US-3: report monthly spending — acceptance: totals group by month',
+      '  - F1-AC-1: Given a CSV, When imported, Then rows parse into typed records',
+      '  - F1-AC-2: Given a rule, When categorizing, Then each row gets a category (F1-AC-1 again, AC-3 plain)',
     ].join('\n'),
   });
   try {
@@ -323,6 +325,7 @@ test('spec_present / spec_user_stories: a PRD under docs/ with a "## User storie
     const score = JSON.parse(readFileSync(`${ws}.score.json`, 'utf8'));
     assert.equal(score.criteria.spec_present, true);
     assert.equal(score.criteria.spec_user_stories, 3);
+    assert.equal(score.criteria.spec_acceptance_ids, 3, 'distinct AC ids: F1-AC-1, F1-AC-2, AC-3');
     // NO_JUDGE held every judge-backed criterion back - both the pre-existing kind (none of
     // which apply to a code-flat, non-goal, non-seam case) and the two new ones.
     assert.equal(score.criteria.spec_traceability, 'skipped');
@@ -351,6 +354,7 @@ test('no spec in the tree: spec_present=false, spec_user_stories=0, spec_traceab
     const score = JSON.parse(readFileSync(`${ws}.score.json`, 'utf8'));
     assert.equal(score.criteria.spec_present, false);
     assert.equal(score.criteria.spec_user_stories, 0);
+    assert.equal(score.criteria.spec_acceptance_ids, 0);
     assert.equal(score.criteria.spec_traceability, 'n/a');
   } finally { rmSync(ws, { recursive: true, force: true }); }
 });

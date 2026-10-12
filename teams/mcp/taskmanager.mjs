@@ -974,6 +974,9 @@ function knownIds(task) {
   return [...planningPkgs(task), ...((task.spec && task.spec.packages) || []), ...qaPkgs(task), ...(task.audit_pkg ? [task.audit_pkg] : [])].map((p) => String(p.id));
 }
 
+// An acceptance ID as the PRD writes it ("F1-AC-2") or a model shortens it ("AC-2").
+const AC_ID = /\b(?:F\d+-)?AC-\d+\b/g;
+
 export function validateShape(spec, userStories) {
   const problems = [];
   if (!spec || typeof spec !== 'object') return ['shape returned no packages object'];
@@ -1057,6 +1060,38 @@ export function validateShape(spec, userStories) {
         if (!mine.size && !enables.size) problems.push(`package ${p.id} implements no user story: every package in a planned task delivers some part of the PRD, or it is not in this shape - a package that owns only shared artifacts other packages build on lists the stories it makes possible in enables[] instead`);
         else if (ids.every((u) => mine.has(u))) problems.push(`package ${p.id} claims every user story (${ids.join(', ')}): implements[] is what this package delivers, not what it touches - a package that delivers all of them is the whole job, not a package`);
       }
+    }
+    // Acceptance IDs ride under their story (sdd step 3, option A: no new field): a package that
+    // implements a story carries that story's AC-n, ID-prefixed, in its own acceptance[]. Only
+    // checked when the PRD wrote AC-n at all, so a PRD without them is untouched.
+    const prdAc = new Map(); // AC id -> the story that owns it
+    for (const u of userStories) {
+      const sid = storyId(u);
+      const acc = u && typeof u === 'object' && Array.isArray(u.acceptance) ? u.acceptance : [];
+      for (const x of acc) for (const m of String(x).match(AC_ID) || []) if (!prdAc.has(m)) prdAc.set(m, sid);
+    }
+    if (prdAc.size) {
+      const resolve = (t) => {
+        if (prdAc.has(t)) return t;
+        if (/^F\d+-/.test(t)) return null;
+        const hits = [...prdAc.keys()].filter((k) => k.endsWith(`-${t}`));
+        return hits.length === 1 ? hits[0] : null;
+      };
+      const carried = new Set();
+      const unknown = new Set();
+      for (const p of packages) {
+        const owns = new Set([...(Array.isArray(p && p.implements) ? p.implements : []), ...(Array.isArray(p && p.enables) ? p.enables : [])].map(String));
+        for (const x of Array.isArray(p && p.acceptance) ? p.acceptance : []) {
+          for (const t of String(x).match(AC_ID) || []) {
+            const k = resolve(t);
+            if (!k) unknown.add(t);
+            else if (owns.has(String(prdAc.get(k)))) carried.add(k);
+          }
+        }
+      }
+      const lost = [...prdAc.keys()].filter((k) => !carried.has(k));
+      if (lost.length) problems.push(`PRD acceptance criteria missing from every implementing package's acceptance[]: ${lost.join(', ')} - copy each AC-n item verbatim, ID-prefixed, into the acceptance[] of the package that implements (or enables) its story`);
+      if (unknown.size) problems.push(`acceptance IDs not in the PRD: ${[...unknown].join(', ')} - a package may cite only the AC-n its stories wrote`);
     }
   }
   return problems;
@@ -1155,6 +1190,8 @@ export function qaCards(task, integrateId) {
     // is QA-F<n> by position, never QA-PLAN (m7).
     const f = p.area || (/^PLAN-F\d+$/.test(String(p.id)) ? String(p.id).slice(5) : `F${i + 1}`);
     const mine = stories.filter((u) => u.card === String(p.id));
+    // This area's AC-n, verbatim: the card is judged per criterion, not per generic sentence.
+    const acItems = mine.flatMap((u) => (Array.isArray(u.acceptance) ? u.acceptance : []).map(String).filter((x) => /\bAC-\d+\b/.test(x)));
     return {
       id: `QA-${f}`, area: f, area_title: p.area_title || p.title || f, phase: 'qa', flow: 'qa', integration_of: integrateId,
       title: `QA: ${p.area_title || p.title || f}`,
@@ -1165,7 +1202,7 @@ export function qaCards(task, integrateId) {
         'User stories this card exercises, each with the acceptance it is judged against:',
         planningStoryLines(mine),
       ].filter((x) => x !== '').join('\n'),
-      acceptance: [`every user story of feature area ${f} has been exercised end to end on the integrated result, and defects, if any, are reported`],
+      acceptance: acItems.length ? acItems : [`every user story of feature area ${f} has been exercised end to end on the integrated result, and defects, if any, are reported`],
       deps: [], touches: [],
     };
   });
@@ -3785,6 +3822,9 @@ export function composeTaskPrompt(task, n) {
     L.push(`Planning split by FEATURE. Your split is the second one and its criterion is OWNERSHIP - which tree, which team touches it: one story may become two packages, or two stories one package.`);
     L.push(`User stories it produced - every "packages[].implements[]" this stage returns must together cover all of these, by id:`);
     L.push(bullets(userStories.map((u) => `${storyLabel(u)}${u.card ? ` (${u.card})` : ''}`)));
+    if (userStories.some((u) => u && Array.isArray(u.acceptance) && u.acceptance.some((x) => /\bAC-\d+\b/.test(String(x))))) {
+      L.push(`Their acceptance (AC-n) - copy each item verbatim, ID-prefixed, into the acceptance[] of the package that implements (or enables) its story; the shape is refused if one is left out:\n${planningStoryLines(userStories)}`);
+    }
     // What the judges said while letting it through. A gap named on an ACCEPTED node used to go
     // nowhere at all - gaps travelled only on rejection - so accept:PLAN calling the PRD "a
     // generic high-demand ticketing PRD with 'idol concert' in the title" (idol-pm-1,
