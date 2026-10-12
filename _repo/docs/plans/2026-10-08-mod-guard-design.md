@@ -1,7 +1,7 @@
 # Mod guard pack and denial log (plugin `session`, Bundle B) — design
 
 Status: design only, awaiting approval (CLAUDE.md "Design Changes": plan, setgoal, critique, approve, then implement).
-Governing docs: `plan/mod/README.md` (shared rules 1-6), `plan/mod/01-gate-heredoc-fix.md` (Bash false-positive lessons), `mods/KOR.md`.
+Governing docs: `_repo/docs/plans/mod/README.md` (shared rules 1-6), `_repo/docs/plans/mod/01-gate-heredoc-fix.md` (Bash false-positive lessons), `mods/KOR.md`.
 
 ## Context
 

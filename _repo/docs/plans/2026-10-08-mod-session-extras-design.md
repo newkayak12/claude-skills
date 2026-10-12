@@ -2,7 +2,7 @@
 
 Status: DESIGN, awaiting approval (CLAUDE.md "Design Changes": plan, setgoal, critique, approval, then code). No code yet.
 Plugin `session` (0.2.0) already ships the ledger/retro, guard, memo and `/smart-compact`. This doc covers eight small additions picked on 2026-10-08.
-Principles: `plan/mod/README.md` (interactive-only UI, every hook fails open, no plugin depends on a mod); API facts: the `plugin-authoring` types (engine 2.1.294).
+Principles: `_repo/docs/plans/mod/README.md` (interactive-only UI, every hook fails open, no plugin depends on a mod); API facts: the `plugin-authoring` types (engine 2.1.294).
 
 ## Context
 `/smart-compact` (session 0.2.0, shipped without a design doc) forks one recap over the transcript and compacts with it. The recap is the most useful artefact the plugin makes, and it is thrown away after the compact. Several asks reuse it (resume, handoff, lessons); the rest are small session-awareness signals (cost, time, idle, big diffs, vague prompts).
