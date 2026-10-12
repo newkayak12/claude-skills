@@ -599,6 +599,10 @@ function routeText(dir) {
 }
 // ROUTE-END
 
+const SUBAGENT_NOTE = 'A subagent that sees this must not invoke the harness again — stop and report to its caller.';
+const SUBAGENT_STOP = 'You are inside a run. Do not invoke the harness skill, graph, teams, Workflow or open a run. ' +
+  'Stop and report this block (file + reason) to your caller.';
+
 function deny(reason) {
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason },
@@ -618,6 +622,15 @@ function main() {
   const tool = input.tool_name;
   const sid = input.session_id || 'unknown';
   const now = Date.now();
+  const sub = typeof input.agent_id === 'string' && input.agent_id !== '';
+
+  // A subagent opening the harness is the recursion: stop and report, never nest a run.
+  if (tool === 'Skill') {
+    const skill = input.tool_input && input.tool_input.skill;
+    if (!sub || typeof skill !== 'string' || !/^(harness:)?harness$/.test(skill)) process.exit(0);
+    if (!findRoot(join(cwd, '_'))) process.exit(0); // no gate configured here
+    deny(`Skill ${skill}: ${SUBAGENT_STOP}`);
+  }
 
   // What this call would write.
   let targets = [];
@@ -675,6 +688,11 @@ function main() {
     process.exit(0);
   }
 
+  if (sub) {
+    const why = `${gated.slice(0, 3).join(', ')}: goal gate blocked this edit. ${SUBAGENT_STOP}`;
+    record('deny', why);
+    deny(why);
+  }
   const routed = routeText(root);
   const bypass = judged.some((j) => j.script && isGated(j.rel, cfg.patterns));
   const reason = bypass
@@ -687,8 +705,9 @@ function main() {
     'Engage the harness before editing it: invoke the harness skill and follow its Process - ' +
     'the graph MCP, the Workflow engine, or an Agent Team fallback run whose plan, goal-spec and ' +
     'sound critique are on disk. A mention in text does not engage it.';
-  record('deny', reason);
-  deny(reason);
+  const full = `${reason} ${SUBAGENT_NOTE}`;
+  record('deny', full);
+  deny(full);
 }
 
 // The last gated decision, for the mod's status line. Outside .harness-markers (anyRecentMarker

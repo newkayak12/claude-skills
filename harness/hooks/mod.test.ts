@@ -13,7 +13,9 @@ const deny = (ts: number) => JSON.stringify({ ts, tool: 'Write', target: 'a/x.md
 type Files = Record<string, string | Error>
 
 // the engine resolves a relative path against the working directory
-const key = (files: Files, path: string) => Object.keys(files).find(k => path.endsWith(`/${k}`))
+// (the longest matching key wins: the project's .claude/hooks/x and the plugin's hooks/x both end in hooks/x)
+const key = (files: Files, path: string) =>
+  Object.keys(files).filter(k => path.endsWith(`/${k}`)).sort((a, b) => b.length - a.length)[0]
 
 // The engine beneath: surfaces, fs.exists/read over a file map, status, command.register, $.state, ui.open.
 // dirs: a directory path suffix to its entries ([name, kind, mtimeMs]); top: git's top-level for the
@@ -200,6 +202,33 @@ test('toast: with teams installed too, one toast names the conflict and the rout
   expect(seen.toasts).toHaveLength(1)
   expect(seen.toasts[0]).toContain('harness and teams gates')
   expect(seen.toasts[0]).toContain('teams:orchestrate')
+})
+
+const GATE = '.claude/hooks/goal-gate.mjs'
+const STALE_TOAST = '⚠ project goal gate is out of date — run harness:update'
+
+test('stale gate: the project copy differs from the plugin\'s, one toast at session start', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const seen = world(on, ['terminal'], { [CONFIG]: cfg, [GATE]: 'old', 'hooks/goal-gate.mjs': 'new' })
+  await start($)
+  await clock.advance(20000)
+  expect(seen.toasts).toEqual([STALE_TOAST])
+})
+
+test('stale gate: identical or absent project copy gives no toast', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const same = world(on, ['terminal'], { [CONFIG]: cfg, [GATE]: 'same', 'hooks/goal-gate.mjs': 'same' })
+  await start($)
+  await clock.advance(20000)
+  expect(same.toasts).toEqual([])
+})
+
+test('stale gate: no project copy gives no toast', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const seen = world(on, ['terminal'], { [CONFIG]: cfg, 'hooks/goal-gate.mjs': 'new' })
+  await start($)
+  await clock.advance(20000)
+  expect(seen.toasts).toEqual([])
 })
 
 test('read error: no throw, the gate state stays', async ($, on) => {
