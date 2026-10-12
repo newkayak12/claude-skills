@@ -290,6 +290,7 @@ The gate hook denying an Edit to a gated path before the harness is engaged.
 `/harness-gate`, Gate tab: gated patterns, engagement window and the last decision.
 
 ## Status
+- v1.33.0 — no harness inside a harness: a subagent (agent_id) or run node (HARNESS_NODE=1) blocked by the goal gate is told to stop and report to its caller, and its call to an entry skill (harness, graph:orchestrate, teams:orchestrate/develop/sprint/document/plan/qa) is denied; every deny says so; a project goal-gate copy that differs from the plugin's raises one toast to run harness:update
 - v1.32.0 — when teams is installed too, a goal-gate deny routes by kind (simple development → graph, else the harness skill; spec, planning, QA, several areas or unsure → teams:orchestrate), with one toast for the conflict
 - v1.31.2 — fallback: COMPLETE with goal-gate FAIL is reported as finished with the unmet AC-n, never as done
 - v1.31.1 — fallback-check: a 0% goal gate is INCOMPLETE; titles starting with todo are not placeholders
