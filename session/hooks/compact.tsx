@@ -6,7 +6,7 @@ import type { LogEntry, LogStats } from './compact-log.ts'
 import { corrections, fmtAgo, isFresh, lessonsKey, makeRecap, mergeLessons, RECAP_PROMPT, recapKey } from './recap.ts'
 import type { Recap } from './recap.ts'
 import { statusLine } from './status.ts'
-import { BOARD_PANE } from './board.ts'
+import { BOARD_OPEN } from './board.ts'
 import type { BoardTab } from './board.ts'
 
 // Recap the session at a set context %, then compact with that recap as the summary instructions.
@@ -101,7 +101,7 @@ async function storedRecap($: any): Promise<Recap | undefined> {
 async function onBoard($: any, to: BoardTab): Promise<boolean> {
   if ((await $.session.surfaces()).length === 0) return false
   await update($, boardTab, () => to)
-  await $.ui.open({ id: BOARD_PANE, title: 'Board' })
+  await $.ui.open(BOARD_OPEN)
   return true
 }
 

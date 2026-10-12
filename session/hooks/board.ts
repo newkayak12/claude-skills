@@ -20,6 +20,8 @@ export type BoardRow = {
 export type BoardTab = 'sessions' | 'recap' | 'lessons' | 'today'
 
 export const BOARD_PANE = 'board'
+// Esc closes it while it has the keys; focus asks for them so [q] and the tab keys work at once.
+export const BOARD_OPEN = { id: BOARD_PANE, title: 'Board', focus: true, closeOnEscape: true } as const
 export const ROW_PREFIX = 'board.session:'
 export const rowKey = (sessionId: string) => `${ROW_PREFIX}${sessionId}`
 export const ROW_MAX_AGE_MS = 24 * 60 * 60 * 1000

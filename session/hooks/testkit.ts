@@ -82,6 +82,7 @@ export const guardWorld = (on: On, w: GuardWorld = {}) => {
     toasts: [] as string[],
     statuses: [] as (string | undefined)[],
     opened: [] as string[],
+    openArgs: [] as Record<string, unknown>[],
     commands: [] as string[],
   }
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
@@ -108,8 +109,10 @@ export const guardWorld = (on: On, w: GuardWorld = {}) => {
     seen.statuses.push(e.text)
     return { value: undefined }
   })
+  on('ui.panes', () => ({ value: ((w as { panes?: unknown[] }).panes ?? []) as any }))
   on('ui.open', (_$, e) => {
     seen.opened.push(e.id)
+    seen.openArgs.push({ ...e })
     return { value: { isPlaced: true } as any }
   })
   // read per call, so one test can run default, bypass and headless in turn
