@@ -1651,15 +1651,19 @@ def cmd_catalog(args):
         "Slots you leave out keep the template's own content. `slot: !drop` removes the shape.",
         "`notes:` works on any slide and becomes that slide's speaker notes.",
         "",
-        "Save the source as `deck%s` and start it with:" % DECK_EXT,
+        "Save the source as `deck%s` beside the template and start it with:" % DECK_EXT,
         "",
         "```",
         "---",
         "template: %s" % args.template,
         "template_hash: %s" % template_signature(pkg, parts, slide_cy),
-        "output: deck.pptx",
         "---",
         "```",
+        "",
+        "Everything the build produces lands in `%s/` next to it — pptx, pdf, page "
+        "previews and the cache. That directory is regenerated in full, so delete it "
+        "freely and never edit anything inside it. `output:` in the front matter "
+        "overrides the location if you need it somewhere else." % BUILD_DIR,
         "",
     ]
     theme, used = template_palette(pkg, parts)
@@ -1891,6 +1895,27 @@ def _swap_picture(el, raw_value, imgctx, problems, where, slot):
 
 # ── Build ────────────────────────────────────────────────────────────────────
 
+BUILD_DIR = "build"
+
+
+def build_dir(md_path):
+    """Where everything the build produces goes. Deleting it loses nothing."""
+    return Path(md_path).parent / BUILD_DIR
+
+
+def resolve_output(front, args, md_path):
+    """The pptx path: --output, then `output:`, then build/<source stem>.pptx.
+
+    Source and artifact live in separate directories because that is what the model
+    claims: deck.mdx is edited, everything under build/ is regenerated. A flat folder
+    makes the two look like peers and invites someone to hand-edit the pptx.
+    """
+    md_path = Path(md_path)
+    named = args.output if getattr(args, "output", None) else front.get("output")
+    out = Path(named) if named else build_dir(md_path) / (md_path.stem + ".pptx")
+    return out if out.is_absolute() else md_path.parent / out
+
+
 def resolve_template(front, args, md_path):
     if args.template:
         return require_template(args.template)
@@ -1905,9 +1930,7 @@ def cmd_build(args):
     md_path = require_deck(args.deck)
     front, specs, errors = parse_deck(md_path.read_text(encoding="utf-8"))
     template = resolve_template(front, args, md_path)
-    out = Path(args.output or front.get("output") or md_path.with_suffix(".pptx"))
-    if not out.is_absolute():
-        out = md_path.parent / out
+    out = resolve_output(front, args, md_path)
     if not specs:
         raise SystemExit("error: %s has no slides (no `## @archetype` headers)" % md_path.name)
 
@@ -1932,7 +1955,7 @@ def cmd_build(args):
 
     imgctx = {"pkg": pkg, "base": md_path.parent.resolve(), "n": 0,
               "by_src": {}, "exts": set(), "add_rel": None,
-              "renderer": Renderer(), "cache": md_path.parent / ".deckcache",
+              "renderer": Renderer(), "cache": build_dir(md_path) / ".cache",
               "rasterized": 0, "cropped": [], "knocked": 0}
     problems = list(errors) + drift
     new_parts = []
@@ -2451,11 +2474,10 @@ class Renderer:
         return out
 
     def previews(self, workdir, pdf, dpi=72):
-        stem = Path(pdf).stem
-        self.sh(workdir, "command -v pdftoppm >/dev/null || exit 0; mkdir -p %s-pages && "
-                         "pdftoppm -r %d -png %s %s-pages/p && chmod -R a+rwX %s-pages"
-                % (stem, dpi, pdf, stem, stem))
-        d = workdir / ("%s-pages" % stem)
+        self.sh(workdir, "command -v pdftoppm >/dev/null || exit 0; mkdir -p pages && "
+                         "pdftoppm -r %d -png %s pages/p && chmod -R a+rwX pages"
+                % (dpi, pdf))
+        d = workdir / "pages"
         return sorted(d.glob("p*.png")) if d.is_dir() else []
 
 
@@ -2562,9 +2584,7 @@ def cmd_render(args):
     rc = cmd_build(args)
     md_path = Path(args.deck)
     front, _, _ = parse_deck(md_path.read_text(encoding="utf-8"))
-    out = Path(args.output or front.get("output") or md_path.with_suffix(".pptx"))
-    if not out.is_absolute():
-        out = md_path.parent / out
+    out = resolve_output(front, args, md_path)
     work = out.parent
 
     print("render via %s" % r.describe())
