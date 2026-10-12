@@ -37,6 +37,7 @@ Opt out beforehand: `mkdir -p ~/.claude/plugins/.newkayak12-trophy-ride.done`.
 
 | Plugin | Description |
 |--------|-------------|
+| [assist](./assist/README.md) · [한국어](./assist/KOR.md) | Beta: decision assistance that routes to the smallest useful set of knowledge, thinking, cognition, domain, writing, and planning skills |
 | [agents](./agents/README.md) · [한국어](./agents/KOR.md) | Agent orchestration: parallel agents, subagent-driven development |
 | [cognition](./cognition/README.md) · [한국어](./cognition/KOR.md) | Thinking quality: assumptions, biases, fallacies, mental models, trade-offs |
 | [completion](./completion/README.md) · [한국어](./completion/KOR.md) | Verification before completion |
