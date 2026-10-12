@@ -1,6 +1,6 @@
 # session
 
-Claude Code 세션이 남긴 것(변경한 파일, 커밋, 거부된 호출, 도구 호출 사이 가장 긴 간격)을 보여 주고, 다음 시작 때 밴드로 다시 보여 주며, 남아 있는 `claude -p` 자식 프로세스를 나열하고 안전하게 중지하며, 위험한 명령과 비밀 파일 쓰기를 가드하고, `/memo` 메모를 보관하고, 정한 %에서 recap 뒤 compact하며, 그 recap을 `/handoff`·`/last-recap`·`/lessons`에 쓰고, 작업 시간과 비용을 보여 주고, 열린 세션 전부를 `/board` 한 화면에(각 세션의 harness·graph·teams 실행과 함께) 보여 주며, main이 바뀌면 같은 저장소의 다른 세션에 알리고, 모델 없이 Agent를 호출하면 경고하며, 끝나지 않은 에이전트를 `/reap`으로 중지합니다. 버전 `0.5.2`. Claude Code 2.1.292 이상(hooks 모듈)이 필요합니다. 이 마켓플레이스의 다른 것은 필요 없습니다.
+Claude Code 세션이 남긴 것(변경한 파일, 커밋, 거부된 호출, 도구 호출 사이 가장 긴 간격)을 보여 주고, 다음 시작 때 밴드로 다시 보여 주며, 남아 있는 `claude -p` 자식 프로세스를 나열하고 안전하게 중지하며, 위험한 명령과 비밀 파일 쓰기를 가드하고, `/memo` 메모를 보관하고, 정한 %에서 recap 뒤 compact하며, 그 recap을 `/handoff`·`/last-recap`·`/lessons`에 쓰고, 작업 시간과 비용을 보여 주고, 열린 세션 전부를 `/board` 한 화면에(각 세션의 harness·graph·teams 실행과 함께) 보여 주며, main이 바뀌면 같은 저장소의 다른 세션에 알리고, 모델 없이 Agent를 호출하면 경고하며, 끝나지 않은 에이전트를 `/reap`으로 중지합니다. 버전 `0.5.3`. Claude Code 2.1.292 이상(hooks 모듈)이 필요합니다. 이 마켓플레이스의 다른 것은 필요 없습니다.
 
 ## 설치
 ```
@@ -155,6 +155,7 @@ headless 실행(`claude -p`)에서는 이 명령들이 텍스트를 출력합니
 한 세션에서 `main`으로의 `git push`가 성공하면(`origin main`, `HEAD:main`, `x:main`, main 브랜치에서의 그냥 push), 같은 저장소에서 최근 30분 안에 움직인 다른 열린 세션마다 `origin/main moved to <sha> … Fetch before editing or bumping versions.` 메시지가 갑니다. 세션당 2분에 한 번까지이고, 이 세션에는 `main moved: told N of M` toast가 뜹니다. headless 실행은 보내지 않습니다.
 
 ## 상태
+- `0.5.3`: 모델 미지정 토스트를 짧은 한 줄로, 해당 Agent 호출 이름을 붙여 표시.
 - `0.5.2`: `/board` 창이 Esc, `[q]`, 열려 있을 때 다시 입력한 `/board`로 닫힘.
 - `0.5.1`: `/reap`이 결과를 pane에 보여 주고 한 줄만 반환(Ink 규칙).
 - `0.5.0`: mods의 Agent 모델 가드, 에이전트 개수, /reap을 흡수. `/recap`을 `/last-recap`으로 변경: Claude Code 2.1.292에 내장 `/recap`이 생겨 등록이 실패하면서 `/task`·`/reap`·`/board`·`/session`까지 빠졌음. 이제 명령을 하나씩 등록해 거부된 이름 하나만 빠짐.

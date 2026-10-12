@@ -1,6 +1,6 @@
 # session
 
-Shows what a Claude Code session left behind (files changed, commits, denied calls, longest gap between tool calls), shows it again as a band on your next start, lists stray `claude -p` children and stops one safely, guards dangerous commands and secret writes, keeps `/memo` notes, recaps before compacting at a % you set, keeps that recap for `/handoff`, `/last-recap` and `/lessons`, times tasks and shows the cost, shows every open session on one `/board` (with its harness, graph and teams runs), tells the other sessions of a repo when main moves, warns when an Agent call names no model, and stops unfinished agents with `/reap`. Version `0.5.2`. Requires Claude Code 2.1.292+ (hooks module). It needs nothing else from this marketplace.
+Shows what a Claude Code session left behind (files changed, commits, denied calls, longest gap between tool calls), shows it again as a band on your next start, lists stray `claude -p` children and stops one safely, guards dangerous commands and secret writes, keeps `/memo` notes, recaps before compacting at a % you set, keeps that recap for `/handoff`, `/last-recap` and `/lessons`, times tasks and shows the cost, shows every open session on one `/board` (with its harness, graph and teams runs), tells the other sessions of a repo when main moves, warns when an Agent call names no model, and stops unfinished agents with `/reap`. Version `0.5.3`. Requires Claude Code 2.1.292+ (hooks module). It needs nothing else from this marketplace.
 
 ## Install
 ```
@@ -155,6 +155,7 @@ A session writes its row at start and after each turn, and removes it when it en
 When a `git push` to `main` goes through in one session (`origin main`, `HEAD:main`, `x:main`, or a plain push while on main), every other open session of the same repository that was active in the last 30 minutes gets a message: `origin/main moved to <sha> … Fetch before editing or bumping versions.` At most one message per session every 2 minutes; this session gets a toast `main moved: told N of M`. Headless runs send nothing.
 
 ## Status
+- `0.5.3`: the no-model toast is one short line naming the Agent call, e.g. `⚠ no model: "rb12 runner" inherits the parent model`.
 - `0.5.2`: the `/board` pane closes with Esc, `[q]`, or a bare `/board` while it is open.
 - `0.5.1`: `/reap` shows its result lines in a pane and returns one line (Ink rule).
 - `0.5.0`: absorbs mods' agent model guard, agent count, /reap. `/recap` is now `/last-recap`: Claude Code 2.1.292 has a built-in `/recap`, and the failed registration dropped `/task`, `/reap`, `/board` and `/session`. Commands now register one by one, so one refused name drops only itself.

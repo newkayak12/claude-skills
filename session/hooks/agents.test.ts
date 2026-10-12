@@ -56,7 +56,7 @@ const model = ($: Engine, args: Record<string, unknown> = {}) => $.tool.call({ t
 const denied = (r: unknown) => (r as { deny?: string }).deny
 
 // ---- Agent model guard ----
-const MODEL_TOAST = /no model on this Agent call/
+const MODEL_TOAST = /no model: "x" inherits the parent model/
 
 test('Agent guard toast (default): no model toasts and the call passes', async ($, on) => {
   const w = setup(on)
