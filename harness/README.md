@@ -290,6 +290,7 @@ The gate hook denying an Edit to a gated path before the harness is engaged.
 `/harness-gate`, Gate tab: gated patterns, engagement window and the last decision.
 
 ## Status
+- v1.30.0 — Goal gate: a `cd` outside the project no longer pulls its relative paths into the gate (the directory is tracked per command segment; subshell, `||` and `cd $VAR` keep the wide reach). A command that runs a script file (bash/sh/python/node/ruby, `./x`, `. x`, `sh -c "$(cat x)"`) is judged by the file's contents like an inline script; a gated or tracked-and-unmodified repo script is not. The mod toasts when a newer deny is recorded. (2026-10-12)
 - v1.28.1 — Plan prompt lists assist:* (assist beta plugin added).
 - v1.28.0 — Goal gate: a linked worktree inside the project (tracked config, gitignored runs) now sees the main root's engaged run; a read-only segment (grep/cat/diff) no longer pulls its paths into the gate when another segment writes through a variable. (2026-10-12)
 - v1.27.1 — Plan prompt lists the current skill plugins (pm:* removed; planning:*/write:plans own that work). The goal gate gates a sibling worktree reached through a symlinked path (macOS /tmp -> /private/tmp). (2026-10-12)

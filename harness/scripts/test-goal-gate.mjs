@@ -494,6 +494,101 @@ test('last decision: the decision file never lands in .harness-markers', () => {
   assert.ok(!files.some((f) => /decision/.test(f)), files.join(' '));
 });
 
+// ---- 1.30: only paths inside the root; executed scripts judged by their contents ----
+
+const BYPASS = /running a script that touches a gated file/;
+
+function denyReason(input) {
+  const r = spawnSync('node', [HOOK], { input: JSON.stringify(input), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: '' } });
+  return r.stdout.trim() ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+}
+
+test('1.30 AC-1: a cd outside the root keeps its relative paths outside the root', () => {
+  const dir = project();
+  for (const c of [
+    'cd /tmp/x && cp a.js paginate.js',
+    'cd /tmp/x && node --test t.mjs',
+    'cp /tmp/a.js /tmp/b.js',
+    'cd /tmp/x && echo hi > out.js',
+    'cd /tmp/x && git log --output=o.js',
+  ]) assert.equal(run(bash(dir, c)), 'allow', c);
+});
+
+test('1.30 AC-1: inside the root, or when the cd cannot be followed, the old reach stays', () => {
+  const dir = project();
+  mkdirSync(join(dir, 'sub'));
+  for (const c of [
+    'cp a.js paginate.js',
+    'cd sub && cp a.js paginate.js',
+    'cd /tmp/x || cp a.js paginate.js',
+    '(cd /tmp/x; cp a.js paginate.js)',
+    'cd $SOME && cp a.js paginate.js',
+    'cd - && cp a.js paginate.js',
+    'cd /tmp/x; cd ' + dir + '; echo hi > out.js',
+  ]) assert.equal(run(bash(dir, c)), 'deny', c);
+});
+
+const outside = () => mkdtempSync(join(tmpdir(), 'goal-gate-out-'));
+const SH = (d) => `#!/bin/sh\ncp /etc/hostname ${d}/paginate.js\n`;
+const SPELLINGS = [
+  ['s.sh', SH, (s) => `bash ${s}`],
+  ['s.sh', SH, (s) => `sh ${s}`],
+  ['s.py', (d) => `open('${d}/paginate.js', 'w').write('x')\n`, (s) => `python3 ${s}`],
+  ['s.mjs', (d) => `import { writeFileSync } from 'node:fs';\nwriteFileSync('${d}/paginate.js', 'x');\n`, (s) => `node ${s}`],
+  ['s.js', (d) => `require('fs').writeFileSync('${d}/paginate.js', 'x');\n`, (s) => `node ${s}`],
+  ['s.rb', (d) => `File.write("${d}/paginate.js", "x")\n`, (s) => `ruby ${s}`],
+  ['s.sh', SH, (s) => s],
+  ['s.sh', SH, (s) => `. ${s}`],
+  ['s.sh', SH, (s) => `sh -c "$(cat ${s})"`],
+];
+for (const [name, body, cmd] of SPELLINGS) {
+  test(`1.30 AC-2: a script outside the root that writes a gated file is denied: ${cmd('SCRIPT')}`, () => {
+    const dir = project();
+    const sdir = outside();
+    const sp = join(sdir, name);
+    write(sp, body(dir));
+    chmodSync(sp, 0o755);
+    const input = bash(dir, cmd(sp));
+    assert.equal(run(input), 'deny');
+    assert.match(denyReason(input), BYPASS);
+  });
+}
+
+test("1.30 AC-2: an over-cap script falls back to the command's own path words", () => {
+  const dir = project();
+  const sdir = outside();
+  write(join(sdir, 'big.py'), `open('${dir}/paginate.js', 'w')\n` + '#'.repeat(600 * 1024));
+  assert.equal(run(bash(dir, `python3 ${join(sdir, 'big.py')} ${join(dir, 'paginate.js')}`)), 'deny');
+  assert.equal(run(bash(dir, `python3 ${join(sdir, 'big.py')}`)), 'allow');
+});
+
+test('1.30 AC-2: engaged, the same script runs', () => {
+  const dir = project();
+  const sdir = outside();
+  write(join(sdir, 's.py'), `open('${dir}/paginate.js', 'w')\n`);
+  const t = transcript(dir, [toolUse('g3', 'mcp__graph__graph_open', {}), toolResult('g3', false)]);
+  assert.equal(run(bash(dir, `python3 ${join(sdir, 's.py')}`, { transcript_path: t })), 'allow');
+});
+
+test('1.30 AC-3: no open run - a gated repo script, a /tmp script on /tmp, and a committed repo script run', () => {
+  const dir = project();
+  write(join(dir, 'tests', 't.mjs'), "import { writeFileSync } from 'node:fs';\nwriteFileSync('tests/out.mjs', 'x');\n");
+  write(join(dir, 'scripts', 'check.py'), "import os\nopen('SKILL.md')\nopen('tests/t.mjs')\nopen('x.js', 'w')\n");
+  write(join(dir, 'scripts', 'fresh.py'), "import os\nopen('x.js', 'w')\n");
+  execFileSync('git', ['-C', dir, 'add', 'scripts/check.py']);
+  execFileSync('git', ['-C', dir, '-c', 'user.email=a@b', '-c', 'user.name=a', 'commit', '-qm', 'c']);
+  const sdir = outside();
+  write(join(sdir, 'ok.py'), "open('/tmp/only-here.txt', 'w').write('x')\n");
+  assert.equal(run(bash(dir, 'node --test tests/t.mjs')), 'allow');
+  assert.equal(run(bash(dir, 'python3 scripts/check.py')), 'allow');
+  assert.equal(run(bash(dir, `python3 ${join(sdir, 'ok.py')}`)), 'allow');
+  // an uncommitted in-repo script is not reviewed code: judged by its contents
+  assert.equal(run(bash(dir, 'python3 scripts/fresh.py')), 'deny');
+  // so is a committed one that was edited since
+  write(join(dir, 'scripts', 'check.py'), "open('x.js', 'w')\n");
+  assert.equal(run(bash(dir, 'python3 scripts/check.py')), 'deny');
+});
+
 // ---- parity: the repo's installed copy is the plugin's hook ----
 
 test('parity: .claude/hooks/goal-gate.mjs equals harness/hooks/goal-gate.mjs', () => {

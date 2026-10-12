@@ -348,6 +348,9 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     if ((await $.session.surfaces()).length === 0) return next(e)
 
+    // the newest decision timestamp seen; null until the first poll, which only sets the baseline
+    let seenTs: number | null = null
+
     async function tick() {
       try {
         // the status line: open runs per stage; the gate's decisions live in /harness-gate
@@ -382,6 +385,12 @@ export const register: Register = on => {
         await update($, windowHours, () => hours)
         await update($, armed, () => true)
         await update($, last, () => decision)
+        if (decision) {
+          if (seenTs !== null && decision.ts > seenTs && decision.decision === 'deny') {
+            $.ui.toast(`⛔ goal gate blocked ${decision.tool}: ${decision.target} — finish the harness run, don't script around it`, { timeoutMs: 8000 })
+          }
+          seenTs = Math.max(seenTs ?? 0, decision.ts)
+        } else if (seenTs === null) seenTs = 0
       } catch {
         // a read error leaves the gate state as it was
       }

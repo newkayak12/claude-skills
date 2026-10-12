@@ -452,35 +452,126 @@ function bases(cmd, cwd) {
 // collected. Words of a segment that writes nothing (pgrep -f 'a/b.mjs') are not collected. Each
 // is resolved against every base it could be relative to.
 export function bashWriteTargets(command, cwd) {
+  const a = analyzeBash(command, cwd);
+  return [...new Set([...a.direct, ...a.script])];
+}
+
+// The directory each simple command runs in, following `cd X` in order; null when it cannot be
+// followed (a subshell, `||`, `cd $VAR`, `cd -`, a cd flag): the caller then tries every base.
+function segDirs(segs, head, cwd) {
+  if (/\|\||[(`]/.test(head)) return null;
+  const out = [];
+  let cur = cwd;
+  for (const g of segs) {
+    out.push(cur);
+    const m = /^cd(?:\s+("([^"]*)"|'([^']*)'|[^\s;&|<>()]+))?\s*$/.exec(g);
+    if (!m) continue;
+    const t = m[2] ?? m[3] ?? m[1] ?? '~';
+    if (/[$`*?]/.test(t) || t.startsWith('-')) return null;
+    cur = resolve(cur, t.replace(/^~(?=\/|$)/, process.env.HOME || '~'));
+  }
+  return out;
+}
+
+const READ_CAP = 512 * 1024;
+
+// A script inside a gated root that is reviewed code: itself a gated file, or tracked in git and
+// unmodified. Running it is not a way around the gate.
+function reviewedScript(p) {
+  try {
+    const f = findRoot(p);
+    if (!f) return false;
+    const root = typeof f === 'string' ? f : f.root;
+    const base = typeof f === 'string' ? f : (gitTop(f.worktree) || f.root);
+    const rel = gatedRel(base, p) ?? gatedRel(base, real(p));
+    if (rel == null) return false;
+    if (isGated(rel, loadConfig(root).patterns)) return true;
+    const opts = { stdio: 'ignore', timeout: 2000, cwd: dirname(p) };
+    execFileSync('git', ['ls-files', '--error-unmatch', '--', p], opts);
+    execFileSync('git', ['diff', '--quiet', 'HEAD', '--', p], opts);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const pathWords = (text) => (String(text).match(PATHLIKE) || []).filter((t) => !t.startsWith('-') && /[./]/.test(t) && !/^\.+$/.test(t));
+
+// What a command that runs a file writes: the file's contents are judged like an inline script.
+// Returns the words (path-like) the script names, or the command's own words when it cannot be read.
+function scriptWords(seg, dirs) {
+  const out = [];
+  const seen = new Set();
+  for (const w of seg.match(PATHLIKE) || []) {
+    if (w.startsWith('-')) continue;
+    for (const d of dirs) {
+      const p = resolve(d, w.replace(/^~(?=\/)/, process.env.HOME || '~'));
+      if (seen.has(p)) continue;
+      seen.add(p);
+      let st;
+      try {
+        st = statSync(p);
+      } catch {
+        continue;
+      }
+      if (!st.isFile() || reviewedScript(p)) continue;
+      let text = null;
+      try {
+        const buf = readFileSync(p);
+        if (buf.subarray(0, 4096).includes(0)) continue; // a binary, not a script
+        if (st.size <= READ_CAP) text = buf.toString('utf8');
+      } catch {
+        /* unreadable */
+      }
+      if (text === null) out.push(...pathWords(seg));
+      else if (SCRIPT_WRITE.test(text) || WRITE_CMD.test(text)) out.push(...pathWords(text));
+    }
+  }
+  return out;
+}
+
+function analyzeBash(command, cwd) {
   const cmd = String(command || '');
   const { head, docs } = splitHeredocs(cmd);
-  const found = new Set(redirectTargets(head));
-  for (const m of head.matchAll(GIT_OUTPUT)) found.add(m[2] ?? m[3] ?? m[1]);
   const segs = simpleCommands(head);
-  const texts = segs.filter(segmentWrites);
+  const dirs = segDirs(segs, head, cwd);
+  const allBases = bases(head, cwd);
+  const dirsOf = (i) => (dirs ? [dirs[i]] : allBases);
+  const found = []; // { w, ds }
+  segs.forEach((g, i) => {
+    for (const t of redirectTargets(g)) found.push({ w: t, ds: dirsOf(i) });
+    for (const m of g.matchAll(GIT_OUTPUT)) found.push({ w: m[2] ?? m[3] ?? m[1], ds: dirsOf(i) });
+  });
+  const items = [];
+  segs.forEach((g, i) => { if (segmentWrites(g)) items.push({ text: g, ds: dirsOf(i) }); });
+  const texts = items.map((it) => it.text);
+  const more = []; // whole-command texts: any base
   // A path can reach a writing segment from outside its argv: an expansion, an input redirect or
   // heredoc, a list-file flag or --stdin, xargs/parallel (F=P; rm "$F", xargs rm < list): then every word of
   // the command, heredoc bodies included, may be the target.
   // An expansion alone draws only from the segments and heredoc bodies that can set it: a
   // read-only segment's paths (grep x a/SKILL.md; rm "$T") are not the target.
-  if (texts.some((t) => /[<]|--pathspec-from-file|--stdin\b|\b(xargs|parallel)\b/.test(t))) texts.push(cmd);
+  if (texts.some((t) => /[<]|--pathspec-from-file|--stdin\b|\b(xargs|parallel)\b/.test(t))) more.push(cmd);
   else if (texts.some((t) => /[$`]/.test(t))) {
-    texts.push(...segs.filter((g) => /^(\w+=|(for|export|declare|local|readonly|read)\b)|</.test(g)), ...docs.map((d) => d.body));
+    more.push(...segs.filter((g) => /^(\w+=|(for|export|declare|local|readonly|read)\b)|</.test(g)), ...docs.map((d) => d.body));
   }
-  if (docs.some(heredocWrites)) texts.push(cmd);
+  if (docs.some(heredocWrites)) more.push(cmd);
   // A data heredoc plus a later shell/interpreter run: the file's name cannot be matched (cd, glob,
   // relative spelling), so the whole command, heredoc bodies included, may name the target. The
   // heredoc's own consumer (python3 - <<EOF) is judged by heredocWrites, not here.
-  if (docs.some((d) => !simpleCommands(d.line).some(executes)) && segs.some(executes)) texts.push(cmd);
-  for (const text of texts) {
-    for (const t of text.match(PATHLIKE) || []) {
-      if (t.startsWith('-') || !/[./]/.test(t) || /^\.+$/.test(t)) continue;
-      found.add(t);
-    }
-  }
-  const out = new Set();
-  for (const b of bases(head, cwd)) for (const w of found) out.add(resolve(b, w.replace(/^~(?=\/)/, process.env.HOME || '~')));
-  return [...out];
+  if (docs.some((d) => !simpleCommands(d.line).some(executes)) && segs.some(executes)) more.push(cmd);
+  for (const it of items) for (const w of pathWords(it.text)) found.push({ w, ds: it.ds });
+  for (const text of more) for (const w of pathWords(text)) found.push({ w, ds: allBases });
+  const home = (w) => w.replace(/^~(?=\/)/, process.env.HOME || '~');
+  const direct = new Set();
+  for (const { w, ds } of found) for (const d of ds) direct.add(resolve(d, home(w)));
+  // A command that runs a file is judged by what the file does.
+  const script = new Set();
+  segs.forEach((g, i) => {
+    if (!executes(g) || readOnly(g)) return;
+    for (const w of scriptWords(g, dirsOf(i))) for (const d of dirsOf(i)) script.add(resolve(d, home(w)));
+  });
+  return { direct, script };
 }
 
 function deny(reason) {
@@ -505,11 +596,14 @@ function main() {
 
   // What this call would write.
   let targets = [];
+  let viaScript = new Set();
   if (EDIT_TOOLS.has(tool)) {
     const fp = (input.tool_input && (input.tool_input.file_path || input.tool_input.notebook_path)) || '';
     if (fp) targets = [resolve(cwd, String(fp))];
   } else if (tool === 'Bash') {
-    targets = bashWriteTargets(input.tool_input && input.tool_input.command, cwd);
+    const a = analyzeBash(input.tool_input && input.tool_input.command, cwd);
+    viaScript = new Set([...a.script].filter((t) => !a.direct.has(t)));
+    targets = [...new Set([...a.direct, ...a.script])];
   }
 
   // Each target's root and root-relative path. Only a target inside a configured root is gated.
@@ -519,7 +613,7 @@ function main() {
     if (!f) continue;
     const root = typeof f === 'string' ? f : f.root;
     const base = typeof f === 'string' ? f : (gitTop(f.worktree) || f.root);
-    judged.push({ root, rel: gatedRel(base, t) ?? gatedRel(base, real(t)) });
+    judged.push({ root, rel: gatedRel(base, t) ?? gatedRel(base, real(t)), script: viaScript.has(t) });
   }
   // Task/Agent (and a Bash that writes nothing gated) still refresh markers when engaged.
   const rootF = judged.length ? judged[0].root : findRoot(join(cwd, '_'));
@@ -556,8 +650,11 @@ function main() {
     process.exit(0);
   }
 
-  const reason =
-    `${gated.slice(0, 3).join(', ')} is gated by the harness (.claude/harness-gate.json). ` +
+  const bypass = judged.some((j) => j.script && isGated(j.rel, cfg.patterns));
+  const reason = bypass
+    ? `${gated.slice(0, 3).join(', ')}: goal gate: running a script that touches a gated file is the same write — ` +
+      'open/finish the harness run instead of working around the gate.'
+    : `${gated.slice(0, 3).join(', ')} is gated by the harness (.claude/harness-gate.json). ` +
     'Engage the harness before editing it: invoke the harness skill and follow its Process - ' +
     'the graph MCP, the Workflow engine, or an Agent Team fallback run whose plan, goal-spec and ' +
     'sound critique are on disk. A mention in text does not engage it.';
