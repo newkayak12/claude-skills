@@ -153,6 +153,23 @@ function focus(s: (k: Key, v?: Record<string, string | number>) => string, m: Mo
   return { kind: 'run', head, text: one === undefined ? s('nothing') : label(s, one, 'attempt'), color: 'claude' }
 }
 
+// the run events worth a push, as stable keys: a retried node verdict, retries spent, the run finished
+function events(run: GraphRun) {
+  const out: { key: string; kind: string; node: string; attempt: number }[] = []
+  const add = (kind: string, n: GraphNode) => out.push({ key: `${run.run_id}:${n.node_id}:${kind}:${n.attempt}`, kind, node: n.node_id, attempt: n.attempt })
+  for (const n of run.nodes) if (n.state === 'failed' && n.final !== true) add('rejected', n)
+  const state = runState(run)
+  if (state === 'complete') {
+    const report = run.nodes.find(n => n.stage === 'report' && n.state === 'done')
+    if (report !== undefined) add('complete', report)
+  } else if (state === 'blocked') {
+    const spent = run.nodes.find(n => n.state === 'failed' && n.final === true)
+    if (spent !== undefined) add('failed', spent)
+    else if (run.routing_blocked) add('blocked', run.nodes.find(n => n.state === 'failed') ?? run.nodes[0]!)
+  }
+  return out
+}
+
 const titleOf = (run: GraphRun) => run.request.split('\n')[0]!.replace(/^\[[^\]]*\]\s*/, '').slice(0, 80)
 
 export const register: Register = on => {
@@ -160,6 +177,39 @@ export const register: Register = on => {
 
   on('session.start', async ($, e, next) => {
     if ((await $.session.surfaces()).length === 0) return next(e)
+
+    const startMs = await $.clock.now()
+    const pushed = new Set<string>()
+    const baselined = new Set<string>()
+
+    // a reject, a failed or blocked run, a finished run: one PushNotification each (a toast when it is not sent)
+    async function notifyRun(run: GraphRun, mtimeMs: number) {
+      try {
+        const fresh = events(run).filter(ev => !pushed.has(ev.key))
+        for (const ev of fresh) pushed.add(ev.key)
+        // a run last written before this session started: what it already holds is not news
+        if (!baselined.has(run.run_id)) {
+          baselined.add(run.run_id)
+          if (mtimeMs < startMs) return
+        }
+        for (const ev of fresh) {
+          const max = typeof run.max_retries === 'number' ? `/${run.max_retries}` : ''
+          const message = `graph ${run.run_id.slice(0, 8)}: ${ev.kind} — ${ev.node} (${ev.attempt}${max})`.slice(0, 200)
+          let sent = false
+          try {
+            // PushNotification's result: { message, pushSent?, localSent?, disabledReason? } (user_present at the terminal)
+            const out = (await $.tool.call({ tool: 'PushNotification', message, status: 'proactive' } as never)) as { result?: unknown }
+            const r = typeof out?.result === 'object' && out.result !== null ? (out.result as Record<string, unknown>) : undefined
+            sent = r?.pushSent === true || r?.localSent === true
+          } catch {
+            // a failed push is a push not sent
+          }
+          if (!sent) $.ui.toast(message)
+        }
+      } catch {
+        // fail open: the pane is unaffected
+      }
+    }
 
     // the newest run file; skipped when it is unchanged, kept when it does not parse
     async function tick() {
@@ -196,6 +246,7 @@ export const register: Register = on => {
             return // a failed read or parse leaves the last good view
           }
         }
+        await notifyRun(run, newest.mtimeMs)
         const live = fresh && runState(run) !== 'complete'
         if (prev !== null && prev.run === run && prev.live === live) return
         await update($, snap, () => ({ run, big: false, mtimeMs: newest.mtimeMs, size: newest.size, live }))

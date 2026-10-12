@@ -273,3 +273,92 @@ test('read only: no fs.write is ever called', async ($, on) => {
   await ui.press({ key: 'nodes' })
   expect(seen.writes).toBe(0)
 })
+
+// run push: PushNotification's result is { message, pushSent?, localSent?, disabledReason? }
+async function pushed(push: (e: any) => unknown, files: File[], on: On, $: Engine) {
+  const seen = { pushes: [] as any[], toasts: [] as string[] }
+  on('tool.call', (_$, e: any) => {
+    seen.pushes.push(e)
+    return push(e) as never
+  })
+  on('ui.toast', (_$, e: any) => {
+    seen.toasts.push(e.text)
+    return { value: undefined } as never
+  })
+  const s = await seeded($, on, files)
+  return { ...seen, ...s }
+}
+const sentOk = () => ({ result: { message: 'm', pushSent: true, localSent: true }, text: '' })
+const fresh = (run: unknown): File => file(run, NOW + 1000)
+const rejected = () => patch(base(), 'implement:U1:1', 'failed', { result: { reason: 'nope' } })
+const R = '696f2f93'
+
+test('a reject (failed node, not final) is pushed once with attempt/max; repeats are not', async ($, on) => {
+  const files = [file(base())]
+  const w = await pushed(sentOk, files, on, $)
+  files[0] = fresh(rejected())
+  await w.tick()
+  await w.tick()
+  expect(w.pushes.map(p => [p.tool, p.message, p.status])).toEqual([['PushNotification', `graph ${R}: rejected — implement:U1:1 (1/2)`, 'proactive']])
+  expect(w.toasts).toEqual([])
+})
+
+test('a new attempt failing is a new reject', async ($, on) => {
+  const files = [file(base())]
+  const w = await pushed(sentOk, files, on, $)
+  files[0] = fresh(rejected())
+  await w.tick()
+  files[0] = fresh(withNodes([...rejected().nodes, node(['implement:U1:2', 'failed', { result: { reason: 'again' } }])]))
+  await w.tick()
+  expect(w.pushes.map(p => p.message)).toEqual([`graph ${R}: rejected — implement:U1:1 (1/2)`, `graph ${R}: rejected — implement:U1:2 (2/2)`])
+})
+
+test('retries spent (failed, final) pushes failed, not a reject', async ($, on) => {
+  const files = [file(base())]
+  const w = await pushed(sentOk, files, on, $)
+  files[0] = fresh(patch(base(), 'implement:U1:1', 'failed', { final: true }))
+  await w.tick()
+  expect(w.pushes.map(p => p.message)).toEqual([`graph ${R}: failed — implement:U1:1 (1/2)`])
+})
+
+test('routing_blocked with no failed node pushes blocked', async ($, on) => {
+  const files = [file(base())]
+  const w = await pushed(sentOk, files, on, $)
+  files[0] = fresh(base({ routing_blocked: true }))
+  await w.tick()
+  expect(w.pushes.map(p => p.message)).toEqual([`graph ${R}: blocked — plan (1/2)`])
+})
+
+test('a finished run pushes complete once', async ($, on) => {
+  const files = [file(base())]
+  const w = await pushed(sentOk, files, on, $)
+  files[0] = fresh(withNodes(base().nodes.map(n => ({ ...n, state: 'done' }))))
+  await w.tick()
+  await w.tick()
+  expect(w.pushes.map(p => p.message)).toEqual([`graph ${R}: complete — report (1/2)`])
+})
+
+test('what a run held before the session started is not pushed', async ($, on) => {
+  const w = await pushed(sentOk, [file(rejected())], on, $)
+  await w.tick()
+  expect(w.pushes).toEqual([])
+  expect(w.toasts).toEqual([])
+})
+
+test('not sent (user at the terminal): the same line is a toast', async ($, on) => {
+  const files = [file(base())]
+  const w = await pushed(() => ({ result: { message: 'm', pushSent: false, localSent: false, disabledReason: 'user_present' }, text: '' }), files, on, $)
+  files[0] = fresh(rejected())
+  await w.tick()
+  expect(w.toasts).toEqual([`graph ${R}: rejected — implement:U1:1 (1/2)`])
+})
+
+test('a throwing push is a toast too', async ($, on) => {
+  const files = [file(base())]
+  const w = await pushed(() => {
+    throw new Error('no transport')
+  }, files, on, $)
+  files[0] = fresh(rejected())
+  await w.tick()
+  expect(w.toasts).toEqual([`graph ${R}: rejected — implement:U1:1 (1/2)`])
+})
