@@ -71,7 +71,7 @@ const en = {
   cmdBug: "Report a problem with this marketplace's last skill; the note stays local",
   bugUsage: 'usage: /trophy-bug <note>', bugRecorded: 'Recorded.', bugFailed: 'Could not record the report.',
   paneOpened: 'Achievements pane opened.', unlockedCount: '{done} / {n} unlocked',
-  tabTrophies: 'Achievements [t]', tabTriggers: 'Triggers [r]', tabFailures: 'Failures [f]',
+  tabTrophies: 'Achievements', tabTriggers: 'Triggers', tabFailures: 'Failures',
   copy: 'Copy', noFailures: 'No failures recorded.',
   headHit: 'Most-hit skills (7 days)', headMiss: 'Most-missed skills (had a trigger phrase, not used)',
   headNever: 'Never-used skills ({n})',
@@ -80,7 +80,7 @@ const en = {
   consentAsk: '📊 trophy · Send anonymous usage stats?', consentSent: 'Sent: skill names · daily counts · error codes',
   consentNotSent: 'Never sent: prompts · file paths',
   send: 'Send', decline: "Don't send", show: 'Show contents',
-  unlockHead: '🏆 Achievement unlocked!', see: 'View [v]', dismiss: 'Dismiss [d]',
+  unlockHead: '🏆 Achievement unlocked!', see: 'View',
 }
 
 // one table, two languages; the type keeps the keys identical
@@ -93,7 +93,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     cmdBug: '이 마켓플레이스의 마지막 스킬 문제 신고 (메모는 로컬에만 저장)',
     bugUsage: '사용법: /trophy-bug <메모>', bugRecorded: '기록했습니다.', bugFailed: '신고를 기록하지 못했습니다.',
     paneOpened: '업적 창을 열었습니다.', unlockedCount: '{done} / {n} 해금',
-    tabTrophies: '업적 [t]', tabTriggers: '트리거 [r]', tabFailures: '실패 [f]',
+    tabTrophies: '업적', tabTriggers: '트리거', tabFailures: '실패',
     copy: '복사', noFailures: '기록된 실패가 없습니다.',
     headHit: '가장 많이 맞은 스킬 (7일)', headMiss: '가장 많이 놓친 스킬 (트리거 문구는 있었는데 안 쓴)',
     headNever: '한 번도 안 쓴 스킬 ({n})',
@@ -102,7 +102,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     consentAsk: '📊 trophy · 익명 사용 통계를 보낼까요?', consentSent: '보내는 것: 스킬명 · 일별 횟수 · 오류 코드',
     consentNotSent: '보내지 않는 것: 프롬프트 · 파일 경로',
     send: '보내기', decline: '안 보내기', show: '내용 보기',
-    unlockHead: '🏆 업적 해금!', see: '보기 [v]', dismiss: '닫기 [d]',
+    unlockHead: '🏆 업적 해금!', see: '보기',
   },
 }
 
@@ -469,7 +469,7 @@ export const register: Register = on => {
   // The pane opens only from its command.
   on('command.run', { command: 'achievements' }, async $ => {
     if ((await read($, tab)) === 'failures') await update($, unseen, () => 0)
-    await $.ui.open({ id: PANE, title: await str($, 'paneTitle'), focus: true })
+    await $.ui.open({ id: PANE, title: await str($, 'paneTitle') })
     return { text: await str($, 'paneOpened') }
   }).catch(failOpen)
 
@@ -489,21 +489,18 @@ export const register: Register = on => {
         </Text>
         <Button
           key="tab-trophies"
-          hotkey="t"
           label={t('tabTrophies')}
           variant={current === 'trophies' ? 'primary' : undefined}
           onPress={() => update($, tab, () => 'trophies')}
         />
         <Button
           key="tab-triggers"
-          hotkey="r"
           label={t('tabTriggers')}
           variant={current === 'triggers' ? 'primary' : undefined}
           onPress={() => update($, tab, () => 'triggers')}
         />
         <Button
           key="tab-failures"
-          hotkey="f"
           label={t('tabFailures')}
           variant={current === 'failures' ? 'primary' : undefined}
           onPress={() => showFailures($)}
@@ -639,10 +636,7 @@ export const register: Register = on => {
             <Box flexShrink={0}><Text color="error" bold>{`✘ ${failed}`}</Text></Box>
             <Box flexShrink={0}><Text dimColor>trophy</Text></Box>
             <Box flexShrink={1}><Text wrap="truncate-end">{await read($, lastTitle)}</Text></Box>
-            <Box flexShrink={0} gap={1}>
-              <Button key="see" hotkey="v" label={t('see')} onPress={() => showFailures($)} />
-              <Button key="dismiss" hotkey="d" label={t('dismiss')} onPress={() => update($, unseen, () => 0)} />
-            </Box>
+            <Box flexShrink={0}><Button key="see" label={t('see')} onPress={() => showFailures($)} /></Box>
           </Box>
         ) : null}
       </Box>

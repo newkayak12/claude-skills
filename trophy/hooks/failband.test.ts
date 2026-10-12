@@ -14,7 +14,7 @@ const texts = (node: any): string[] =>
         ? texts(node.children)
         : []
 
-const boot = async ($: any, on: On, opened: any[] = []) => {
+const boot = async ($: any, on: On) => {
   memoryStore(on, { 'trophy.consent': 'no', 'trophy.consentVersion': 2 })
   sessionAt(on)
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
@@ -23,10 +23,7 @@ const boot = async ($: any, on: On, opened: any[] = []) => {
     const { Box } = $.ui.resolve(e)
     return Box({}) as never
   })
-  on('ui.open', (_$, e) => {
-    opened.push(e)
-    return { value: { isPlaced: true } as any }
-  })
+  on('ui.open',() => ({ value: { isPlaced: true } as any }))
   on('fs.read', (_$, e) => {
     if (e.path.endsWith('/.claude-plugin/marketplace.json')) {
       return { value: JSON.stringify({ plugins: [{ name: 'develop', source: './develop' }] }) } as never
@@ -68,49 +65,4 @@ test('the 보기 button opens the failures tab and clears the badge', async ($, 
   await ui.press({ key: 'see' })
 
   expect(texts(await (await mount()).drawn())).toEqual([])
-})
-
-const buttonProps = async (ui: any, key: string) =>
-  (await ui.findAll({ type: 'Button' })).find((b: any) => b.key === key)?.props
-
-test('View carries hotkey v and shows it; pressing it opens the failures pane and clears the badge', async ($, on) => {
-  const opened: any[] = []
-  const mount = await boot($, on, opened)
-  await $.classic.PostToolUseFailure(fail())
-  const ui = await mount()
-
-  const props = await buttonProps(ui, 'see')
-  expect(props.hotkey).toBe('v')
-  expect(props.label).toBe('View [v]')
-  await ui.press({ key: 'see' })
-
-  expect(opened.map(o => o.id)).toEqual(['trophy'])
-  expect(texts(await (await mount()).drawn())).toEqual([])
-})
-
-test('Dismiss carries hotkey d and clears the badge without opening a pane', async ($, on) => {
-  const opened: any[] = []
-  const mount = await boot($, on, opened)
-  await $.classic.PostToolUseFailure(fail())
-  const ui = await mount()
-
-  const props = await buttonProps(ui, 'dismiss')
-  expect(props.hotkey).toBe('d')
-  expect(props.label).toBe('Dismiss [d]')
-  await ui.press({ key: 'dismiss' })
-
-  expect(opened).toEqual([])
-  expect(texts(await (await mount()).drawn())).toEqual([])
-})
-
-test('no band Button carries a digit hotkey or autoFocus', async ($, on) => {
-  const mount = await boot($, on)
-  await $.classic.PostToolUseFailure(fail())
-  const buttons = await (await mount()).findAll({ type: 'Button' })
-
-  expect(buttons.length).toBeGreaterThan(0)
-  for (const b of buttons) {
-    expect(String(b.props.hotkey ?? '')).not.toMatch(/\d/)
-    expect(b.props.autoFocus).toBeUndefined()
-  }
 })
