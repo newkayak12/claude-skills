@@ -649,14 +649,14 @@ test('a run with a report and no failure pushes complete once', async ($, on) =>
   expect(msgs(seen)).toEqual(['harness r: complete — Report (1/1)'])
 })
 
-test('a finished graph run pushes complete', async ($, on) => {
+test('a finished graph run is left to the graph mod: no harness push', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const files: Files = { 'g2.json': gj({ request: 'ship it', nodes: [{ stage: 'report', state: 'done' }] }) }
   const dirs: Dirs = { '.harness-run': [['broker', 'dir']], ['.harness-run/' + 'broker/runs']: [['g2.json', 'file', NEW]] }
   const seen = runWorld(on, files, dirs)
   await start($)
   await clock.advance(5000)
-  expect(msgs(seen)).toEqual(['harness ship it: complete — graph Report (1/1)'])
+  expect(msgs(seen)).toEqual([])
 })
 
 test('run events from before the session started are not pushed', async ($, on) => {
