@@ -617,7 +617,31 @@ function deny(reason) {
   process.exit(0);
 }
 
+// harness:install copies this file to <project>/.claude/hooks/. That copy goes stale; when the
+// harness plugin is enabled its own hook (same file, from the plugin dir) judges, so the copy
+// steps aside. The role is read from the file's own path, not the env: the plugin cache never
+// sits under .claude/hooks, and no env var can flip it. Only the one enabledPlugins key is read.
+function deferToPlugin() {
+  try {
+    const self = decodeURIComponent(new URL(import.meta.url).pathname);
+    if (!/\/\.claude\/hooks\/goal-gate\.mjs$/.test(self)) return false;
+    const projectDir = dirname(dirname(dirname(self)));
+    const on = (f) => {
+      try {
+        return JSON.parse(readFileSync(f, 'utf8'))?.enabledPlugins?.['harness@newkayak12-claude-skills'] === true;
+      } catch {
+        return false;
+      }
+    };
+    return on(join(projectDir, '.claude', 'settings.json')) || on(join(projectDir, '.claude', 'settings.local.json')) ||
+      on(join(process.env.HOME || '~', '.claude', 'settings.json'));
+  } catch {
+    return false;
+  }
+}
+
 function main() {
+  if (deferToPlugin()) process.exit(0);
   let input;
   try {
     input = JSON.parse(readFileSync(0, 'utf8'));

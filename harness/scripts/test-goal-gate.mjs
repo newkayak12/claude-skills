@@ -705,6 +705,52 @@ test('HARNESS_NODE=1: a gated edit gets the stop-and-report text', () => {
   assert.match(JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason, /Stop and report this block/);
 });
 
+// ---- the project copy defers to the enabled plugin ----
+
+const PLUGIN_KEY = 'harness@newkayak12-claude-skills';
+
+function projectCopy(dir) {
+  const p = join(dir, '.claude', 'hooks', 'goal-gate.mjs');
+  write(p, readFileSync(HOOK, 'utf8'));
+  return p;
+}
+
+function runAt(hook, input, env = {}) {
+  const r = spawnSync('node', [hook], { input: JSON.stringify(input), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: '', ...env } });
+  assert.equal(r.status, 0, r.stderr);
+  return r.stdout.trim() ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'allow';
+}
+
+test('project copy + plugin enabled (project settings, local settings, user settings): allow without judging', () => {
+  for (const where of ['project', 'local', 'user']) {
+    const dir = project();
+    const home = mkdtempSync(join(tmpdir(), 'goal-gate-home-'));
+    const settings = { enabledPlugins: { [PLUGIN_KEY]: true } };
+    if (where === 'project') write(join(dir, '.claude', 'settings.json'), JSON.stringify(settings));
+    if (where === 'local') write(join(dir, '.claude', 'settings.local.json'), JSON.stringify(settings));
+    if (where === 'user') write(join(home, '.claude', 'settings.json'), JSON.stringify(settings));
+    const hook = projectCopy(dir);
+    assert.equal(runAt(hook, edit(dir, join(dir, 'a.js')), { HOME: home }), 'allow', where);
+  }
+});
+
+test('project copy, plugin not enabled (absent, false, bad JSON): existing verdicts', () => {
+  for (const body of [null, JSON.stringify({ enabledPlugins: { [PLUGIN_KEY]: false } }), JSON.stringify({ enabledPlugins: { other: true } }), '{not json']) {
+    const dir = project();
+    const home = mkdtempSync(join(tmpdir(), 'goal-gate-home-'));
+    if (body !== null) write(join(dir, '.claude', 'settings.json'), body);
+    const hook = projectCopy(dir);
+    assert.equal(runAt(hook, edit(dir, join(dir, 'a.js')), { HOME: home }), 'deny', String(body));
+  }
+});
+
+test('plugin role (not under .claude/hooks) with the plugin enabled still judges', () => {
+  const dir = project();
+  const home = mkdtempSync(join(tmpdir(), 'goal-gate-home-'));
+  write(join(dir, '.claude', 'settings.json'), JSON.stringify({ enabledPlugins: { [PLUGIN_KEY]: true } }));
+  assert.equal(runAt(HOOK, edit(dir, join(dir, 'a.js')), { HOME: home }), 'deny');
+});
+
 // ---- parity: the repo's installed copy is the plugin's hook ----
 
 test('parity: .claude/hooks/goal-gate.mjs equals harness/hooks/goal-gate.mjs', () => {
