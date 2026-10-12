@@ -22,6 +22,7 @@ const CONFIG = '.claude/harness-gate.json'
 const DECISION = '.claude/.harness-last-decision.json'
 const TEAMS_CONFIG = '.claude/teams-dispatch.json'
 const TICK_MS = 5000
+const PUSH_GAP_MS = 10 * 60 * 1000
 const RUNS = '.harness-run'
 const LIVE_MS = 2 * 60 * 60 * 1000
 const MAX_READ = 4 * 1024 * 1024
@@ -351,6 +352,25 @@ export const register: Register = on => {
 
     // the newest decision timestamp seen; null until the first poll, which only sets the baseline
     let seenTs: number | null = null
+    // a deny is pushed (one per path per 10 min); a push not sent, or one skipped, is the toast
+    const pushed = new Map<string, number>()
+    async function notifyDeny(target: string, message: string) {
+      let sent = false
+      try {
+        const now = await $.clock.now()
+        const at = pushed.get(target)
+        if (at === undefined || now - at >= PUSH_GAP_MS) {
+          pushed.set(target, now)
+          // PushNotification's result: { message, pushSent?, localSent?, disabledReason? } (user_present at the terminal)
+          const out = (await $.tool.call({ tool: 'PushNotification', message: message.slice(0, 200), status: 'proactive' } as never)) as { result?: unknown }
+          const r = asRecord(out?.result)
+          sent = r?.pushSent === true || r?.localSent === true
+        }
+      } catch {
+        // a failed push is a push not sent
+      }
+      if (!sent) $.ui.toast(message, { timeoutMs: 8000 })
+    }
 
     async function tick() {
       try {
@@ -390,11 +410,11 @@ export const register: Register = on => {
           if (seenTs !== null && decision.ts > seenTs && decision.decision === 'deny') {
             // teams' dispatch gate has no toast of its own, so this is the one toast when the gates meet
             const meet = await $.fs.exists(TEAMS_CONFIG)
-            $.ui.toast(
+            await notifyDeny(
+              decision.target,
               meet
                 ? `⛔ harness and teams gates both blocked ${decision.tool}: ${decision.target} — simple dev: graph/harness; spec, planning, QA or unsure: teams:orchestrate`
                 : `⛔ goal gate blocked ${decision.tool}: ${decision.target} — finish the harness run, don't script around it`,
-              { timeoutMs: 8000 },
             )
           }
           seenTs = Math.max(seenTs ?? 0, decision.ts)

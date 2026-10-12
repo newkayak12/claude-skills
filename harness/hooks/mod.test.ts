@@ -502,3 +502,77 @@ test('band: a graph run is named by its request first line, else its run id', as
   expect(await ui.find({ type: 'Text', text: 'g1' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'graph · Plan' })).toBeDefined()
 })
+
+// gate deny push: PushNotification's result is { message, pushSent?, localSent?, disabledReason? }
+const pushWorld = (on: On, files: Files, push: (e: any) => unknown) => {
+  const pushes = [] as any[]
+  const w = world(on, ['terminal'], files)
+  on('tool.call', (_$, e: any) => {
+    pushes.push(e)
+    return push(e) as never
+  })
+  return { pushes, toasts: w.toasts, w }
+}
+const sent = () => ({ result: { message: 'm', pushSent: true, localSent: true }, text: '' })
+const LINE = "⛔ goal gate blocked Write: a/x.md — finish the harness run, don't script around it"
+
+test('a deny newer than the session start is pushed once', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const files: Files = { [CONFIG]: cfg }
+  const seen = pushWorld(on, files, sent)
+  await start($)
+  files[DECISION] = deny(NOW + 1000)
+  await clock.advance(5000)
+  await clock.advance(5000)
+  expect(seen.pushes.map(p => [p.tool, p.message, p.status])).toEqual([['PushNotification', LINE, 'proactive']])
+  expect(seen.toasts).toEqual([])
+})
+
+test('a deny from before the session start is not pushed', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const seen = pushWorld(on, { [CONFIG]: cfg, [DECISION]: deny(NOW - 60_000) }, sent)
+  await start($)
+  await clock.advance(5000)
+  expect(seen.pushes).toEqual([])
+  expect(seen.toasts).toEqual([])
+})
+
+test('the same path within 10 minutes is not pushed again; after 10 it is', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const files: Files = { [CONFIG]: cfg }
+  const seen = pushWorld(on, files, sent)
+  await start($)
+  files[DECISION] = deny(NOW + 1000)
+  await clock.advance(5000)
+  files[DECISION] = deny(NOW + 60_000)
+  await clock.advance(60_000)
+  expect(seen.pushes.length).toBe(1)
+  await clock.advance(11 * 60_000)
+  files[DECISION] = deny(NOW + 11 * 60_000 + 65_000)
+  await clock.advance(5000)
+  expect(seen.pushes.length).toBe(2)
+})
+
+test('not sent (user at the terminal): the same line is a toast', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const files: Files = { [CONFIG]: cfg }
+  const seen = pushWorld(on, files, () => ({ result: { message: 'm', pushSent: false, localSent: false, disabledReason: 'user_present' }, text: '' }))
+  await start($)
+  files[DECISION] = deny(NOW + 1000)
+  await clock.advance(5000)
+  expect(seen.toasts).toEqual([LINE])
+})
+
+test('push throws: toast, no crash, the tick keeps running', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const files: Files = { [CONFIG]: cfg }
+  const seen = pushWorld(on, files, () => {
+    throw new Error('no tool')
+  })
+  await start($)
+  files[DECISION] = deny(NOW + 1000)
+  await clock.advance(5000)
+  expect(seen.toasts).toEqual([LINE])
+  await clock.advance(5000)
+  expect(seen.w.statuses.length).toBeGreaterThan(1)
+})
