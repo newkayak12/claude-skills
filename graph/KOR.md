@@ -49,6 +49,7 @@
 선택: `graph:install`이 `develop:like-my-code`를 실행해 `.claude/conventions/`를 만들 수 있다. 이후 broker가 모든 plan, setgoal, implement, test 노드(벤더 무관)에 관련 파일을 읽고 따르라는 지시를 넣는다.
 
 ## 상태
+- v1.10.1 — Codex: MCP 서버가 Codex에서도 등록됩니다(`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`). Claude는 plugin.json에서 읽습니다.
 - v1.10.0 — 브로커가 벤더와 상관없이 plan/setgoal/implement/test 노드에 `.claude/conventions/**`를 따르라고 지시(setgoal은 acceptance에 반영). install이 참조 프로젝트에 `develop:like-my-code`를 제안
 - v1.9.1 — trophy 함께 설치: 업데이트 후 첫 대화형 세션에서 trophy가 없으면 한 번 설치(삭제는 존중)
 

@@ -393,6 +393,8 @@ Node 24+(플래그 없는 `node:sqlite` + FTS5). Node 22.5–23은 `--experiment
 docker compose -f knowledge/compose.yaml run --rm knowledge-index
 ```
 
+- v1.21.3 — Codex: MCP 서버가 Codex에서도 등록됩니다(`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`). Claude는 plugin.json에서 읽습니다.
+
 ## 로드맵
 
 [ROADMAP.md](ROADMAP.md) — 무엇을 측정 중이고, 무엇이 대기 중이며, 무엇을 의도적으로

@@ -131,6 +131,19 @@ def check_plugin(plugin_entry):
     if marketplace_version and plugin_version and marketplace_version != plugin_version:
         warn(f"{prefix} version mismatch — marketplace.json: {marketplace_version}, plugin.json: {plugin_version}")
 
+    # 3b. Codex manifest (optional) must mirror name + version
+    codex_path = os.path.join(plugin_dir, ".codex-plugin", "plugin.json")
+    if os.path.exists(codex_path):
+        try:
+            with open(codex_path) as f:
+                codex_data = json.load(f)
+        except json.JSONDecodeError as e:
+            err(f"{prefix} .codex-plugin/plugin.json is not valid JSON: {e}")
+        else:
+            for field in ("name", "version"):
+                if codex_data.get(field) != plugin_data.get(field):
+                    err(f"{prefix} .codex-plugin/plugin.json {field} {codex_data.get(field)!r} != plugin.json {plugin_data.get(field)!r}")
+
     # 3a. README title version (only when README embeds one, e.g. "# portfolio (v1.1.8)")
     readme_path = os.path.join(plugin_dir, "README.md")
     if plugin_version and os.path.exists(readme_path):

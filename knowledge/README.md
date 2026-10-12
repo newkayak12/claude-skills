@@ -410,6 +410,8 @@ some 22.x builds lack FTS5. The bundled Docker image is a known-good path:
 docker compose -f knowledge/compose.yaml run --rm knowledge-index
 ```
 
+- v1.21.3 — Codex: MCP servers register under Codex (`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`); Claude reads them from plugin.json.
+
 ## Roadmap
 
 [ROADMAP.md](ROADMAP.md) — what is measured, what is queued, and what is deliberately not being

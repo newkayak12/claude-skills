@@ -1,0 +1,21 @@
+{
+  "name": "knowledge",
+  "version": "1.21.3",
+  "description": "Answerability-gated knowledge skills and local MCP: linked Markdown, relation-aware graph extraction, graph visualization, RAG preparation, SQLite index building, and source-grounded retrieval.",
+  "author": {
+    "name": "newkayak12"
+  },
+  "repository": "https://github.com/newkayak12/claude-skills",
+  "license": "MIT",
+  "skills": "./skills/",
+  "mcpServers": {
+    "knowledge-local": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "--no-warnings",
+        "${PLUGIN_ROOT}/servers/knowledge-mcp.mjs"
+      ]
+    }
+  }
+}

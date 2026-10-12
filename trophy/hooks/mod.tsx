@@ -144,7 +144,11 @@ async function loadOwned($: EngineInterface): Promise<Owned> {
         out.skills[p.name] = entries.filter(x => x.kind === 'dir').map(x => x.name)
       } catch {}
       try {
-        out.servers[p.name] = Object.keys((await readJson($, `${dir}/.mcp.json`)).mcpServers ?? {})
+        const manifest = await readJson($, `${dir}/.claude-plugin/plugin.json`).catch(() => ({}))
+        const inline = manifest.mcpServers
+        out.servers[p.name] = Object.keys(
+          inline && typeof inline === 'object' ? inline : ((await readJson($, `${dir}/.mcp.json`)).mcpServers ?? {}),
+        )
       } catch {}
     }
     break

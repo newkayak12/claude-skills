@@ -117,6 +117,7 @@ view (most hit, most missed, never fired).
 
 ## Status log
 
+- v0.8.1 — Codex: MCP servers register under Codex (`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`); Claude reads them from plugin.json.
 - 0.8.0 — Skill toast moved in from the retired `mods` plugin: one `◆ <plugin:skill>` toast per Skill tool call of this marketplace, skipped when that call unlocks an achievement (the 🏆 toast stands for it). Interactive sessions only.
 - 0.7.1 — Keyboard keys stay only on the consent question (s/n/p); the failure row and the pane are back to 0.6.1 (no Dismiss, no key hints).
 - 0.7.0 — Every control can be pressed from the keyboard, with the key shown in its label: `View [v]`, a new `Dismiss [d]` (clears the badge without opening the pane), the pane tabs `[t]` `[r]` `[f]`, and the consent buttons `s`/`n`/`p`. `/achievements` opens the pane with the keys. What is recorded or sent, and the consent version, are unchanged.
