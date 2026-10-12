@@ -317,12 +317,25 @@ analogy, `writer-verification` and a no-context reader for review — and a chap
 Every analogy to what the reader already knows ("MySQL에서는…") states where it breaks; every version or default
 without a source is marked `[확인 필요]`; the TOC is swept for unmarked ones before you see it. Fact checks go to the official docs first and
 the subject skill second — where they disagree, the docs win; an unreachable docs page is cited from a web.archive.org
-copy with its capture date, or marked `[확인 필요]`. The review↔revise loop stops at 🔴🟡 = 0 or three rounds; what is
-still open at the cap goes to the chapter's `## 남은 항목`, and a final-pass change to a fact or meaning is re-checked
-by an agent that neither drafted nor made it. Status counts are recounted from the files when reported. The book ends in
+copy with its capture date, or marked `[확인 필요]`. Findings use defined 🔴🟡🟢 levels and one line format,
+counted once per defect; from round 2 reviewers read only the diff, and a reviser writes first, grows the chapter at
+most 15% a round and labels new claims. The fact check runs every lab the way the reader is told to, under
+`references/lab-recipe.md` (unique project names, no host ports, teardown by name, never `prune`); each chapter ships
+`rebuild-end-state.sh` with checksums, and the next chapter's review pins it by sha256. The review↔revise loop stops at
+🔴🟡 = 0 or three rounds; at the cap one closure pass applies sourced one-line fixes and cuts known-false sentences,
+re-checked by another agent, and what stays open goes to `status-NN.md`, never into the book. The final pass is
+re-checked by an agent that neither drafted nor edited it, then one book-wide pass replays every chapter's end state. Status counts are recounted from the files when reported. The book ends in
 `book.pdf`, typeset in NanumGothic (text) and NanumGothicCoding (code), bundled in the skill under SIL OFL 1.1 and
-printed by any Chrome-family browser (`CHROME=<path>` to choose one). Figures are image files in `final/` with their
+printed by any Chrome-family browser (`CHROME=<path>` to choose one). Figures are image files in `final/`, drawn with `develop:diagram`, with their
 caption kept on the same page; a book with a chapter or image missing, or an image not on its own line, still prints but exits 3 — partial, not done. `like-me` is used only if you give writing samples.
+
+The book is designed around a starting performance, one observable terminal performance, a throughline, and a
+capstone. Each chapter declares its entry and exit capability, misconception, step in a cumulative example, and
+evidence. Chapters teach through a concrete problem, failure of the reader's prior model, a causal working model,
+guided example, boundary, failure diagnosis, and independent transfer exercise with verification and an answer key.
+Reader tests check the highest claimed level—recall, explanation, application, diagnosis, or design—and a final
+book-wide pass checks difficulty jumps, prerequisites, example continuity, and whether the capstone is solvable from
+the book alone.
 
 ```
 비전공자용으로 Postgres 개념부터 심화까지 책 써줘. 나는 MySQL을 쓰니까 MySQL에 빗대서.

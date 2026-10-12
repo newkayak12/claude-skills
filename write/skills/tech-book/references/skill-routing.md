@@ -13,13 +13,13 @@ Invoke each by name, visibly. "Conditional" rows run only when their condition h
 | 2 / 4 sources | `knowledge:base-builder` | conditional: the user supplied source material | the sources | a vault | `sources/` |
 | 2 / 4 sources | `knowledge:query` | conditional: a vault exists | one fact to check | cited answer | the concept or review file |
 | 3 draft | `agents:dispatching-parallel-agents` | always | one chapter per agent, `sme:` persona mounted, no worktree | one draft file per agent | `draft/NN.md` |
-| 3–4 SME | per `sme:` (table below) | the chapter's subject | concepts/NN.md, then draft/NN.md | draft content; then a fact check | `draft/NN.md`, `review/NN-rK.md` |
-| 4 review | `cognition:epistemic-reasoner` | always | every anchor analogy (Instrument 2) and absolute claim (Instrument 1) | mappings that hold / break; overclaims | `review/NN-rK.md` |
-| 4 review | `write:writer-verification` | always, review mode, genre `doc` | draft/NN.md + audience from brief | 🔴🟡🟢 findings with fixes | `review/NN-rK.md` |
-| 4 review | `../plans/agents/reader-agent.md` | always, ≤ 5 questions per chapter per round | draft/NN.md only + one learning goal as a question | answer + where the text lost them | `review/NN-rK.md` |
+| 3–4 SME | per `sme:` (table below) | the chapter's subject | concepts/NN.md, then draft/NN.md | draft content; then a fact check | `draft/NN.md`, `review/NN-rK-fact.md` |
+| 4 review | `cognition:epistemic-reasoner` | always | every anchor analogy (Instrument 2) and absolute claim (Instrument 1) | mappings that hold / break; overclaims | `review/NN-rK-epistemic.md` |
+| 4 review | `write:writer-verification` | always, review mode, genre `doc`; its passes run inline in one agent | draft/NN.md + audience from brief | 🔴🟡🟢 findings with fixes | `review/NN-rK-writer.md` |
+| 4 review | `../plans/agents/reader-agent.md` | always, ≤ 5 tests per chapter per round; one fresh sub-agent attempts each transfer blind | chapters 1..N-1 by grep + chapter N cut before `답안과 정리` + one goal at its claimed level | answer/artifact + ambiguity, unsupported prerequisite, and transfer failure | `review/NN-rK-reader.md` |
 | 6 copyedit | `write:writer-verification` | always, one final pass | final/NN.md | remaining 🔴🟡 | `final/NN.md` |
 | 6 copyedit | `write:like-me` | conditional: ≥ 2 samples the user wrote alone | final/NN.md + samples | the user's voice | `final/NN.md` |
-| 6 figures | `develop:architecture-designer` | conditional: a system/architecture figure | the components and flows | diagram (diagram IR) | `final/fig-N-M.*` |
+| 6 figures | `develop:diagram` | conditional: a figure explains better than a table (layout, tree, timeline, ER, chart, system) | the facts + sources | `figure` SVG + PNG, `check` ok | `final/fig-N-M.*` |
 | done | `completion:verification-before-completion` | always | the Goal line + file listing | isolated verdict | chat |
 
 ## SME by subject (`sme:` in toc.md)

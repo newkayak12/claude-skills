@@ -27,48 +27,62 @@ compatibility:
 - ALWAYS close every analogy to the anchor (e.g. "MySQL에서는…") with where it breaks. A non-major carries an analogy
   past the point it holds; the break line is what stops them.
 - NEVER let the agent that drafted a chapter review it. Review is a separate agent; its findings are applied, not argued.
-- ALWAYS stop the review↔revise loop on 🔴🟡 = 0 or after three rounds, and say which — a fourth round is polishing.
+- ALWAYS stop the review↔revise loop on distinct 🔴🟡 = 0 or after three rounds, and say which — a fourth round is polishing.
 - NEVER run `write:like-me` without ≥ 2 samples the user wrote alone. like-me is the user's voice, not "like other
   books"; the default copyedit is `references/house-style.md`.
 - ALWAYS invoke each routed skill by name, visibly (`references/skill-routing.md`): without its SME skill a chapter
   repeats what a general model guesses. Not installed → read its `SKILL.md` from the repo, follow it, and say so.
 
 Goal: a non-major reads chapter N knowing only chapters 1..N-1 and the anchor; every fact is sourced or marked; the
-closing status recounts to the files on disk.
+book moves them from the brief's starting performance to its terminal performance with observable practice evidence;
+the closing status recounts to the files on disk.
 
 # Tech Book
 
 Writes a book as files under `tmp/books/<slug>/`, ending in `book.pdf`; outside this repo, if `tmp/` isn't gitignored,
-tell the user before writing. Resume stages 0–2 from the highest on disk, each chapter from its latest file.
+tell the user before writing. Resume stages 0–2 from the highest on disk, a chapter from its latest file, a check or
+stage-6 step only if its file lacks `counts:` (tear down its labs by name; same pinned inputs).
 
 **Not for:** a single document, design doc, or blog post (`write:plans`); reviewing existing text
 (`write:writer-verification`); a voice rewrite (`write:like-me`); a spec from a conversation (`write:spec`).
 
 ## Process
 
-0. **brief.md.** Reader level, anchor (what the reader knows), scope in/out, register, sources. One `think:grill` round
+0. **brief.md.** Reader level, anchor (what the reader knows), scope in/out, register, sources; starting performance,
+   one observable terminal performance, the book's throughline, and a capstone with success criteria. One `think:grill` round
    with a recommended answer per question; unanswered → `[확인 필요: … / 추천: …]` in the brief. The first turn ends here.
 1. **toc.md.** `think:untangle-thoughts` (Outline). One block per chapter in the `references/house-style.md` format:
-   goal, `requires:` (earlier chapters only, order checked with think-tool), anchor analogy candidates, `sme:` (from
-   `references/skill-routing.md`). Sweep it first: every unsourced version, default, limit gets `[확인 필요]`; list what
-   you checked. Present it with one `think:grill` round. **Stop: no stage 2 until the user approves toc.md.**
-2. **glossary.md + concepts/NN.md.** Once per book (shared glossary); sequential-thinking clusters, think-tool picks
-   analogies. Per concept: definition, prerequisite, analogy + where it breaks, one example, `[확인 필요]` items.
-   `knowledge:base-builder` / `knowledge:query` only when the user supplied sources.
+   goal, `requires:` (earlier chapters only, order checked with think-tool), `entry`, observable `exit`, plausible
+   `misconception`, cumulative `example-step`, learning `evidence`, anchor candidates, and `sme:` (from
+   `references/skill-routing.md`). Group chapters into parts only when each marks a capability threshold; trace every
+   chapter exit to the terminal performance and capstone. Sweep it first: every unsourced version, default, limit gets
+   `[확인 필요]`; list what you checked. Present it with one `think:grill` round. **Stop: no stage 2 until the user approves toc.md.**
+2. **glossary.md + example-ledger.md + concepts/NN.md.** Once per book; sequential-thinking clusters, think-tool picks
+   analogies. Per concept: definition, prerequisite, analogy + where it breaks, causal working model, misconception it
+   corrects, one worked example, one boundary/counterexample, the transfer task and its expected evidence, `[확인 필요]`
+   items. `knowledge:base-builder` / `knowledge:query` only when the user supplied sources.
 3. **draft/NN.md.** `agents:dispatching-parallel-agents`, one agent per chapter, its `sme:` skill mounted. No worktree
    (`tmp/` is gitignored: a worktree strands the file); each writes only its own absolute path in `tmp/books/<slug>/`.
-4. **review/NN-rK.md.** Four checks, concurrent, never by the drafter, in one file: fact-check against the official docs
-   (or the user's sources) first, cited by URL, the SME skill second — an SME-vs-docs conflict is 🔴, docs win.
-   Official page unreachable: cite a web.archive.org copy by archive URL and capture date, naming the page unreachable
-   in the review file; no copy → `[확인 필요]`. `cognition:epistemic-reasoner` tests every analogy and absolute claim;
-   `write:writer-verification` review mode (genre `doc`, audience from the brief); `../plans/agents/reader-agent.md`
-   asks each learning goal as a question — at most 5 per chapter per round. Findings: 🔴🟡🟢, original → fix.
-5. **Revise draft/NN.md.** Close every 🔴🟡, then back to 4; from round 2 re-run only the checks that flagged something.
-   At the cap nothing more is revised: every open 🔴🟡 goes to `## 남은 항목` at the end of the chapter.
-6. **final/NN.md.** House-style copyedit, one `write:writer-verification` pass, `glossary.md` terms checked book-wide;
-   `write:like-me` only with user samples, `develop:architecture-designer` for system figures only. A fact or meaning
-   change (added sentence, re-pointed reference) gets one re-check by an agent that neither drafted nor made it, or
-   goes to `## 남은 항목`.
+   Follow the explanatory sequence in `references/learning-design.md`; every non-trivial chapter contains a reasoned
+   worked example, a failure diagnosis, an independent transfer exercise, verification, and a compact answer key.
+4. **review/NN-rK.md.** Four concurrent checks, never by the drafter, each to `review/NN-rK-<check>.md`, merged per
+   house-style "Review file". Fact: official docs (or user sources) first, cited by URL, SME skill second — an
+   SME-vs-docs conflict is 🔴, docs win; unreachable → web.archive.org copy (URL + capture date), else `[확인 필요]`; labs by
+   the printed method from N-1's `rebuild-end-state.sh` in an empty dir (`references/lab-recipe.md`), printed ≠ observed
+   is 🔴. `cognition:epistemic-reasoner`: analogies and absolute claims. `write:writer-verification` review mode,
+   genre `doc`. `../plans/agents/reader-agent.md`, blind (1..N-1 by grep, N cut before `답안과 정리`): each learning goal at
+   its highest claimed level, at most 5 tests per round, taught, exercised, assessed. Each check file pins N-1 by
+   path + sha256; N's stopping round (zero or cap) counts only when pinned to `final/N-1.md` (learning-design).
+5. **Revise draft/NN.md.** A fresh reviser closes every 🔴🟡, text first, then changed labs in one script, replacing
+   before adding (≤ 15% growth per round; files: house-style); round 3 closes by cutting. Back to 4; from round 2 only
+   the checks that flagged something re-run, reading the diff, but a lab, code, or output change re-runs the fact
+   check's whole lab chain. At the cap one closure pass, re-checked by a fresh agent in `review/NN-closure.md`, fixes or
+   cuts each known-false sentence — not a round; open items go to `status-NN.md` `## 남은 항목`, never final/.
+6. **final/NN.md.** 6a per chapter: house-style copyedit, one `write:writer-verification` pass not by the editor,
+   terms into `glossary-delta-NN.md`, `write:like-me` only with user samples, `develop:diagram` for figures (SVG+PNG);
+   an agent that neither drafted nor edited re-checks the draft→final diff, itself classing hunks form or meaning
+   (answer key, sources = meaning; rejected → revert or `status-NN.md`). 6b, after every final: merge deltas, then the
+   book-wide learning pass (`references/learning-design.md`), every `rebuild-end-state.sh` replayed in order.
 7. **book.pdf.** `node scripts/render-pdf.mjs tmp/books/<slug>` — toc.md order, NanumGothic fonts of `assets/fonts/`
    (page, type, figures: `references/house-style.md`). Exit 1: no browser (`book.html` kept) — ask for `CHROME=<path>`.
    Exit 3: PDF written but a chapter or image is missing, or an image is not on its own line — report them; a partial
@@ -76,7 +90,7 @@ tell the user before writing. Resume stages 0–2 from the highest on disk, each
 
 Done: render exit 0, then `completion:verification-before-completion` with an isolated verifier against the Goal line
 and book.pdf (exists, ≥ 1 page, every toc chapter rendered). Parallelism: one agent per book for stages 0–1, stage 2
-once per book, 3–6 per chapter, then one book-wide glossary pass; no two agents write the same file.
+once per book, 3–6a per chapter, then 6b once per book; no two agents write the same file.
 
 ## Output Template
 
@@ -84,7 +98,7 @@ once per book, 3–6 per chapter, then one book-wide glossary pass; no two agent
 Next: <the one decision for the user — e.g. approve toc.md, answer grill items 2·4>
 Book: <title> · tmp/books/<slug>/ · stage <n> of 0–7
 Chapters <k>: final <a> · in loop <b> (round r/3) · stopped at cap <c>
-Review open: 🔴 x · 🟡 y · 🟢 z | analogies tested <n>: hold <h> · break stated <b>
+Review open: 🔴 x · 🟡 y · 🟢 z | learning goals evidenced <e>/<g> · transfer tasks passed <p>/<t> | analogies tested <n>: hold <h> · break stated <b>
 Unverified: <m> × [확인 필요] — <list>
 Skills run: <plugin:skill × stage>
 ```
@@ -102,5 +116,6 @@ re-measured since the last change names its round, e.g. `(r3)`. Do NOT paste cha
 
 ## Related Skills
 
-- `references/skill-routing.md` — which skill runs at which stage, with what input; `write:plans` — a single document.
+- `references/learning-design.md` — book arc, chapter teaching sequence, examples, practice, and evidence;
+  `references/skill-routing.md` — which skill runs at which stage, with what input; `write:plans` — a single document.
 - `write:writer-verification` — review passes, stages 4 and 6; `write:like-me` — the user's voice, stage 6, with samples.
