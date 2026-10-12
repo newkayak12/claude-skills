@@ -1,6 +1,6 @@
-// develop:diagram - the IR, its HTML renderer (shared with teams/mcp/diagram.mjs) and the static
+// write:diagram - the IR, its HTML renderer (shared with teams/mcp/diagram.mjs) and the static
 // figure path (figure.mjs + font.mjs): self-contained SVG with an embedded NanumGothic subset + 2x PNG.
-//   node --test develop/skills/diagram/scripts/test-diagram.mjs
+//   node --test write/skills/diagram/scripts/test-diagram.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync, copyFileSync, statSync } from 'node:fs';
@@ -38,7 +38,7 @@ test('diagram.mjs keeps its exports and its only static imports are node: builti
   const imports = src.split('\n').filter((l) => /^import /.test(l));
   assert.ok(imports.length > 0);
   for (const l of imports) assert.match(l, /from 'node:/, l);
-  assert.match(src.split('\n').slice(0, 20).join('\n'), /develop:diagram/);
+  assert.match(src.split('\n').slice(0, 20).join('\n'), /write:diagram/);
   assert.match(src, /teams\/mcp\/diagram\.mjs/);
 });
 

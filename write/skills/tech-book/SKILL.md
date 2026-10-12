@@ -81,7 +81,7 @@ stage-6 step only if its file lacks `counts:` (tear down its labs by name; same 
    check's whole lab chain. At the cap one closure pass, re-checked by a fresh agent in `review/NN-closure.md`, fixes or
    cuts each known-false sentence — not a round; open items go to `status-NN.md` `## 남은 항목`, never final/.
 6. **final/NN.md.** 6a per chapter: house-style copyedit, one `write:writer-verification` pass not by the editor,
-   terms into `glossary-delta-NN.md`, `write:like-me` only with user samples, `develop:diagram` for figures (SVG+PNG);
+   terms into `glossary-delta-NN.md`, `write:like-me` only with user samples, `write:diagram` for figures (SVG+PNG);
    an agent that neither drafted nor edited re-checks the draft→final diff, itself classing hunks form or meaning
    (answer key, sources = meaning; rejected → revert or `status-NN.md`). A 6a 🟡: known-false → fixed by the editor and
    re-checked in that diff; otherwise `status-NN.md`. 6b, after every final: merge deltas, then the

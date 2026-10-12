@@ -1,4 +1,4 @@
-// develop:diagram - TrueType reading and subsetting with node: builtins only.
+// write:diagram - TrueType reading and subsetting with node: builtins only.
 // A figure embeds only the glyphs its text uses (plus every component a composite glyph is built
 // from - Hangul syllables are jamo composites), and the checker measures text with the same
 // advance widths the browser will use (kerning and ligatures are switched off in the SVG).

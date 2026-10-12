@@ -27,6 +27,7 @@ harness-aware입니다 — 혼자 돌리면 문서를 내고, `harness:harness` 
 | 글 검토, 또는 사람이 쓴 것처럼 읽히는 PR 설명·글 초안 | `writer-verification` |
 | 내 글 샘플로 배운 *내* 말투로 다시 쓰기 | `like-me` |
 | 기술서적을 단계별로 쓰기 — 목차 먼저, 장마다 검수 루프, 마지막에 PDF | `tech-book` |
+| 책·문서·공유용 그림을 검사된 SVG + PNG로 (Mermaid 말고) | `diagram` |
 
 knowledge-base, knowledge-graph, RAG corpus, query 스킬은 이제 `knowledge` 플러그인에
 있습니다.
@@ -317,7 +318,7 @@ sha256으로 고정합니다. 검수↔퇴고 루프는 🔴🟡 = 0이거나 3�
 아니라 `status-NN.md`로 갑니다. 마지막 손질은 그 장을 쓰지도 고치지도 않은 에이전트가 확인하고, 책 전체 점검에서
 모든 장의 끝 상태를 차례로 다시 만듭니다. 상태 보고의 수치는 보고할 때 파일에서 다시 셉니다. 마지막은 `book.pdf`이고, 본문은
 나눔고딕, 코드는 나눔고딕코딩으로 조판합니다. 두 폰트는 SIL OFL 1.1로 스킬 안에 들어 있고, Chrome 계열 브라우저로
-인쇄합니다(`CHROME=<경로>`로 지정 가능). 그림은 `develop:diagram`으로 그린 `final/`의 이미지 파일이고 캡션과 같은 쪽에 놓입니다. 빠진 장이나
+인쇄합니다(`CHROME=<경로>`로 지정 가능). 그림은 `write:diagram`으로 그린 `final/`의 이미지 파일이고 캡션과 같은 쪽에 놓입니다. 빠진 장이나
 그림이 있거나, 이미지가 한 줄에 단독으로 있지 않으면 PDF는 만들되 종료 코드 3으로 끝납니다 — 미완성이지 완료가 아닙니다. `like-me`는 글 샘플을 줄 때만 씁니다.
 
 책은 독자의 시작 수행 능력, 관찰 가능한 최종 수행 능력 하나, 책 전체를 잇는 질문, 종합 과제를 먼저 정하고 설계합니다.
@@ -329,6 +330,43 @@ sha256으로 고정합니다. 검수↔퇴고 루프는 🔴🟡 = 0이거나 3�
 ```
 비전공자용으로 Postgres 개념부터 심화까지 책 써줘. 나는 MySQL을 쓰니까 MySQL에 빗대서.
 ```
+
+### `diagram`
+
+Mermaid나 ASCII 그림 대신 검사를 통과한 그림을 그립니다. 에이전트는 먼저 그림인지 표인지 정하고
+(요점이 공간적이거나, 계층이거나, 둘 이상의 주체에 걸친 시간 흐름이거나, 측정값 비교일 때만 그림),
+타입이 있는 JSON IR을 쓰며 모든 칸·행·열의 위치를 직접 정합니다. 스크립트는 거절만 하고 아무것도
+옮기지 않습니다. 유형: `architecture`, `dataflow`, `workflow`, `lifecycle`, `sequence`
+(`references/diagram-ir.md`, [archify](https://github.com/tt-a1i/archify)의 방식을 의존성 없이 흡수한
+것으로 `architecture-designer`에서 분리)와 `layout`(페이지 배치, 행 + undo 레코드, 버전 체인. 축척이
+아니면 `축척 아님` 표시), `tree`(B-tree, 클러스터드 + 보조 인덱스, 실행 계획. 두 키 표기 방식 모두에서
+키 순서 검사), `timeline`(세션, 잠금 대기, 데드락), `er`(까마귀발 표기, 끝마다 선택성
+`1` · `0..1` · `0..*` · `1..*`, 유일 속성 옆 `UK`), `chart`(0부터 시작하는 막대, 선, 중앙값을 렌더러가
+그리는 점) (`references/figures.md`).
+
+`node scripts/diagram.mjs check fig.json`은 내장 폰트로 모든 라벨을 재고, 넘침, 겹침, 상자나 라벨을
+지나는 선, 잘림, `…`로 잘릴 라벨, 146 mm 책 폭에서 7.5 pt 미만인 글자, 폰트에 없는 문자, 그리고
+유형마다 오해를 부르는 경우(합이 맞지 않는 크기, 순서가 틀린 키, 어떤 잠금으로도 설명되지 않는 대기,
+0에서 시작하지 않는 막대 축)를 거절합니다. 거절마다 고칠 방법으로 알려줍니다. 이어서
+`figure fig.json fig`가 `fig.svg`(스크립트·외부 참조 없는 자기완결 파일, NanumGothic 부분집합을
+`@font-face`로 내장해 수십 KB)와 헤드리스 Chrome 계열 브라우저로 2배 크기 `fig.png`를 씁니다
+(브라우저가 없으면 SVG만 쓰고 exit 3, `CHROME=` 지정). 에이전트는 PNG를 직접 보고 나서야 끝났다고
+하며, 최대 3라운드입니다. 선택 항목 `legend` 객체로 edge 스타일 키 이름을 바꾸고(`{"sync": "요청"}`),
+edge 라벨은 자기 선과 겹치지 않는 자리를 고릅니다. grid 유형과 sequence는 `render fig.json fig.html`로
+예전처럼 인터랙티브 HTML(마우스 올림 강조, 라이트/다크)도 씁니다.
+
+스킬에 NanumGothic Regular + Bold(SIL OFL 1.1, 라이선스는 `assets/fonts/`)가 들어 있어 플러그인이 약
+4 MB 커집니다. 브라우저가 아닌 SVG 렌더러(librsvg, Inkscape, QuickLook)는 `@font-face`를 무시할 수
+있으니 그런 곳에는 PNG를 쓰세요.
+
+```
+9장에 넣을 InnoDB 16KB 페이지 구조를 그림으로 그려줘. 두 세션이 한 행 잠금을 기다리는 건
+타임라인으로. 머메이드 말고.
+```
+
+teams도 이를 씁니다. `teams/mcp/diagram.mjs`는 바이트 단위로 같은 사본이며(달라지면 테스트 실패),
+shape가 패키지 맵을 이 IR로 돌려주면 매니저가 문서 옆에 렌더링하고, critique와 integrate가 그
+이음새를 읽습니다.
 
 ## MCP
 

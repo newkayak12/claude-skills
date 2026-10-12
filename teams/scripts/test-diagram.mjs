@@ -1,4 +1,4 @@
-// The diagram IR (develop:diagram's scripts/diagram.mjs, vendored at mcp/diagram.mjs)
+// The diagram IR (write:diagram's scripts/diagram.mjs, vendored at mcp/diagram.mjs)
 // and the manager's use of it: shape's package map, drawn beside the docs and read by critique.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,13 +12,13 @@ import { autoPackageDiagram, repairGroups } from '../mcp/taskmanager.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 test('the vendored renderer is byte-identical to the skill\'s copy', () => {
-  const skill = readFileSync(join(HERE, '..', '..', 'develop', 'skills', 'diagram', 'scripts', 'diagram.mjs'), 'utf8');
+  const skill = readFileSync(join(HERE, '..', '..', 'write', 'skills', 'diagram', 'scripts', 'diagram.mjs'), 'utf8');
   const vendored = readFileSync(join(HERE, '..', 'mcp', 'diagram.mjs'), 'utf8');
-  assert.equal(vendored, skill, 'copy develop/skills/diagram/scripts/diagram.mjs over teams/mcp/diagram.mjs');
+  assert.equal(vendored, skill, 'copy write/skills/diagram/scripts/diagram.mjs over teams/mcp/diagram.mjs');
 });
 
 test('every example in the skill\'s diagram-ir.md validates and renders', () => {
-  const md = readFileSync(join(HERE, '..', '..', 'develop', 'skills', 'diagram', 'references', 'diagram-ir.md'), 'utf8');
+  const md = readFileSync(join(HERE, '..', '..', 'write', 'skills', 'diagram', 'references', 'diagram-ir.md'), 'utf8');
   const blocks = [...md.matchAll(/```json\n([\s\S]*?)```/g)].map((m) => JSON.parse(m[1]));
   assert.ok(blocks.length >= 2);
   for (const ir of blocks) {

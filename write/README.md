@@ -27,6 +27,7 @@ run it alone, and a machine-readable spec when a `harness:harness` run is drivin
 | Review text, or draft a PR description / post that reads as human-written | `writer-verification` |
 | Rewrite text so it sounds like *me*, learned from my own samples | `like-me` |
 | Write a technical book in stages — TOC first, review loop per chapter, PDF at the end | `tech-book` |
+| Draw a checked figure (SVG + PNG) for a book, doc or share — not Mermaid | `diagram` |
 
 Knowledge-base, knowledge-graph, RAG corpus, and query skills now live in the `knowledge`
 plugin.
@@ -329,7 +330,7 @@ most 15% a round and labels new claims. The fact check runs every lab the way th
 re-checked by another agent, and what stays open goes to `status-NN.md`, never into the book. The final pass is
 re-checked by an agent that neither drafted nor edited it, then one book-wide pass replays every chapter's end state. Status counts are recounted from the files when reported. The book ends in
 `book.pdf`, typeset in NanumGothic (text) and NanumGothicCoding (code), bundled in the skill under SIL OFL 1.1 and
-printed by any Chrome-family browser (`CHROME=<path>` to choose one). Figures are image files in `final/`, drawn with `develop:diagram`, with their
+printed by any Chrome-family browser (`CHROME=<path>` to choose one). Figures are image files in `final/`, drawn with `write:diagram`, with their
 caption kept on the same page; a book with a chapter or image missing, or an image not on its own line, still prints but exits 3 — partial, not done. `like-me` is used only if you give writing samples.
 
 The book is designed around a starting performance, one observable terminal performance, a throughline, and a
@@ -343,6 +344,46 @@ the book alone.
 ```
 비전공자용으로 Postgres 개념부터 심화까지 책 써줘. 나는 MySQL을 쓰니까 MySQL에 빗대서.
 ```
+
+### `diagram`
+
+Draws a checked figure instead of Mermaid or ASCII art. The agent decides figure or table first
+(a figure only when the point is spatial, hierarchical, temporal across two or more actors, or a
+measured comparison), writes a typed JSON IR and places every cell, row and column itself; the
+script refuses, it never moves anything. Types: `architecture`, `dataflow`, `workflow`,
+`lifecycle`, `sequence` (`references/diagram-ir.md`, the approach of
+[archify](https://github.com/tt-a1i/archify) folded in without a dependency, split out of
+`architecture-designer`) and `layout` (page layout, row + undo record, version chain; `축척 아님`
+stamp when not to scale), `tree` (B-tree, clustered + secondary index, execution plan; key order
+checked under either key convention), `timeline` (sessions, lock waits, deadlock), `er`
+(crow's-foot ends with per-end optionality `1` · `0..1` · `0..*` · `1..*`, `UK` beside a unique
+attribute) and `chart` (bar from 0, line, dot with the median drawn by the renderer)
+(`references/figures.md`).
+
+`node scripts/diagram.mjs check fig.json` measures every label with the embedded font and refuses
+overflow, overlap, a line through a box or over a label, clipping, a label that would be cut, text
+under 7.5 pt at a 146 mm book width, a character the font lacks, and each type's misleading cases
+(sizes that do not add up, keys out of order, a wait no lock explains, a bar axis not from 0); each
+refusal is phrased as its repair. `figure fig.json fig` then writes `fig.svg` — self-contained, no
+script or external reference, a NanumGothic subset embedded as `@font-face` (tens of KB) — and
+`fig.png` at 2x through a headless Chrome-family browser (exit 3 with the SVG written when none is
+found; set `CHROME=`). The agent reads the PNG before calling it done, at most 3 rounds. An optional
+`legend` object renames edge-style keys (`{"sync": "요청"}`); edge labels pick a spot clear of their
+own line. `render fig.json fig.html` still writes the interactive HTML (hover, light/dark) for the
+grid and sequence types.
+
+The skill ships NanumGothic Regular + Bold (SIL OFL 1.1, licence in `assets/fonts/`), about 4 MB of
+the plugin. Non-browser SVG renderers (librsvg, Inkscape, QuickLook) may ignore `@font-face`; the PNG
+is the copy for those.
+
+```
+Draw the InnoDB 16KB page layout for chapter 9 as a figure, and the two sessions waiting
+on one row lock as a timeline. Not Mermaid.
+```
+
+teams uses it too: `teams/mcp/diagram.mjs` is a byte-identical copy (a test fails on drift); shape
+returns its package map in this IR, the manager renders it beside the docs, and critique and
+integrate read its seams.
 
 ## MCP
 
@@ -362,4 +403,5 @@ Add the remote SSE endpoints in Claude settings → MCP Servers.
 
 ## Renames
 
+- `write:diagram` — moved from `develop:diagram` (write 1.13.0 / develop 1.13.0); the old name no longer resolves.
 - `write:like-me` — renamed from `write:write-like-me`; the old name no longer resolves.

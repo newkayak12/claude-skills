@@ -19,7 +19,7 @@ Invoke each by name, visibly. "Conditional" rows run only when their condition h
 | 4 review | `../plans/agents/reader-agent.md` | always, ≤ 5 tests per chapter per round; one fresh sub-agent attempts each transfer blind | chapters 1..N-1 by grep + chapter N cut before `답안과 정리` + one goal at its claimed level | answer/artifact + ambiguity, unsupported prerequisite, and transfer failure | `review/NN-rK-reader.md` |
 | 6 copyedit | `write:writer-verification` | always, one final pass | final/NN.md | remaining 🔴🟡 | `final/NN.md` |
 | 6 copyedit | `write:like-me` | conditional: ≥ 2 samples the user wrote alone | final/NN.md + samples | the user's voice | `final/NN.md` |
-| 6 figures | `develop:diagram` | conditional: a figure explains better than a table (layout, tree, timeline, ER, chart, system) | the facts + sources | `figure` SVG + PNG, `check` ok | `final/fig-N-M.*` |
+| 6 figures | `write:diagram` | conditional: a figure explains better than a table (layout, tree, timeline, ER, chart, system) | the facts + sources | `figure` SVG + PNG, `check` ok | `final/fig-N-M.*` |
 | done | `completion:verification-before-completion` | always | the Goal line + file listing | isolated verdict | chat |
 
 ## SME by subject (`sme:` in toc.md)

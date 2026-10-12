@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// develop:diagram - a typed diagram IR, validated before anything is drawn, rendered to one
+// write:diagram - a typed diagram IR, validated before anything is drawn, rendered to one
 // self-contained HTML file (inline SVG, no scripts from anywhere else, no dependencies).
 //
 //   node diagram.mjs check  <ir.json>              -> exit 0 and "ok", or exit 1 and one repair per line

@@ -78,7 +78,7 @@ return text to it); the runner merges them into `review/NN-rK.md`. `counts:` clo
 
 - Numbered per chapter: `그림 N-M`, `표 N-M`, `코드 N-M` — a caption is its own paragraph starting with that label
   (the PDF styles it as a caption); above a table or code block, below a figure.
-- Default figure is a markdown table or ASCII; any other figure goes through `develop:diagram` (self-contained SVG + PNG, Korean labels, its `check` must pass).
+- Default figure is a markdown table or ASCII; any other figure goes through `write:diagram` (self-contained SVG + PNG, Korean labels, its `check` must pass).
 - A figure image is a file in `final/` named `fig-N-M.svg` or `.png`, referenced `![설명](fig-N-M.svg)` on its own
   line, with the `그림 N-M …` caption paragraph below. SVG text in ASCII/Latin only — an SVG loaded as an image
   cannot use the page's Nanum fonts — so Korean goes in the caption. A missing image, or one not on its own line,

@@ -41,7 +41,7 @@ Acts as a senior architect: shapes system topology, weighs patterns against cons
 
 1. **Understand requirements** — Collect what the system must do, how well it must do it, and what limits apply. Confirm nothing is missing before moving on.
 2. **Identify patterns** — Map the requirements onto candidate shapes from the Reference Guide. Use think-tool to weigh trade-offs explicitly when two or more patterns plausibly fit.
-3. **Design** — Draft the architecture, write down what each choice costs, and draw it: Mermaid inline in a document; a figure that is opened, shared or printed goes through `develop:diagram`. You place every node - layout is part of the argument.
+3. **Design** — Draft the architecture, write down what each choice costs, and draw it: Mermaid inline in a document; a figure that is opened, shared or printed goes through `write:diagram`. You place every node - layout is part of the argument.
 4. **Document** — Record every key decision as an ADR.
 5. **Review** — Walk stakeholders through it. If it does not hold up, go back to step 3 with their feedback written down.
 
@@ -76,7 +76,7 @@ Acts as a senior architect: shapes system topology, weighs patterns against cons
 
 A design delivers:
 1. Requirements recap, functional and non-functional
-2. Overview diagram: Mermaid inline in a markdown doc; a figure that will be opened, shared or printed through `develop:diagram` (its `.json` source alongside)
+2. Overview diagram: Mermaid inline in a markdown doc; a figure that will be opened, shared or printed through `write:diagram` (its `.json` source alongside)
 3. Key decisions and what they trade away (ADR format — see `references/adr-template.md`)
 4. Technology picks, each with its reason
 5. Risks and how to contain them
@@ -99,7 +99,7 @@ For a worked ADR example and full template, see `references/adr-template.md`.
 
 | Claude | You |
 |--------|-----|
-| Produces architecture diagrams (Mermaid inline, or a checked figure through `develop:diagram`) and component descriptions | Share requirements and constraints |
+| Produces architecture diagrams (Mermaid inline, or a checked figure through `write:diagram`) and component descriptions | Share requirements and constraints |
 | Writes ADRs with alternatives and trade-offs | Validate with domain experts and stakeholders |
 | Evaluates technology options with rationale | Make final technology decisions |
 | Identifies risks and mitigation strategies | Confirm operational capacity for chosen approach |
@@ -110,4 +110,4 @@ For a worked ADR example and full template, see `references/adr-template.md`.
 - `develop:domain-driven-design` — domain modeling and bounded contexts
 - `develop:microservices-architect` — distributed system decomposition
 - `write:plans` (ADR format) — writing individual Architecture Decision Records
-- `develop:diagram` — drawing the design as a checked SVG + PNG figure or interactive HTML
+- `write:diagram` — drawing the design as a checked SVG + PNG figure or interactive HTML

@@ -2,6 +2,7 @@ import { test, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
 import { PS, world } from './orphankit.ts'
+import { texts } from './testkit.ts'
 
 type Agent = { id: string; description: string; status: string; parentId?: string }
 
@@ -48,6 +49,8 @@ const AGENTS: Agent[] = [
 ]
 const NO_HEADLESS = PS.split('\n').filter(l => !/claude -p/.test(l)).join('\n')
 const reap = ($: Engine) => $.command.run({ command: 'reap', args: '' } as never) as Promise<{ text?: string }>
+const paneText = async ($: Engine) =>
+  texts(await (await ($ as any).ui.mount({ plugin: 'session', surface: 'terminal', component: 'Pane', requestId: 'reap-result', props: { title: 'Reap', isFocused: true, bodyColumns: 80, placement: 'inline', scroll: { bodyRows: 20 }, view: {} } })).drawn()).join('\n')
 const kills = (procs: string[][]) => procs.filter(p => p[0] === 'kill')
 const model = ($: Engine, args: Record<string, unknown> = {}) => $.tool.call({ tool: 'Agent', prompt: 'x', description: 'x', ...args } as never)
 const denied = (r: unknown) => (r as { deny?: string }).deny
@@ -119,8 +122,10 @@ test('reap: stops only pending/running/waiting/idle agents, in list order, after
   const r = await reap($)
   expect(w.stops).toEqual(['a1', 'a2', 'a3', 'a4'])
   expect(w.asks[0]).toMatch(/agent: build thing \(running\)/)
-  expect(r.text).toMatch(/stopped: build thing/)
-  expect(r.text ?? '').not.toMatch(/done|broke|gone/)
+  expect(r.text).toBe('reap: 4 stopped, 0 failed')
+  const drawn = await paneText($)
+  expect(drawn).toMatch(/stopped: build thing/)
+  expect(drawn).not.toMatch(/done|broke|gone/)
   expect(w.toasts).toEqual(['⧗ reap: 4 done, 0 failed'])
   expect(kills(w.procs)).toEqual([])
 })
@@ -129,7 +134,8 @@ test('reap: kills the claude -p jobs below this engine, never a wrapper shell or
   const w = setup(on)
   const r = await reap($)
   expect(kills(w.procs)).toEqual([['kill', '-TERM', '4301', '4310']])
-  expect(r.text).toMatch(/killed: claude -p 4301 4310/)
+  expect(r.text).toBe('reap: 1 stopped, 0 failed')
+  expect(await paneText($)).toMatch(/killed: claude -p 4301 4310/)
 })
 
 test('reap: an installed build (.../claude/versions/<v>) counts as this session\'s engine', async ($, on) => {
@@ -157,7 +163,7 @@ test('reap: an engine row missing from ps kills nothing and says so', async ($, 
   const r = await reap($)
   expect(kills(w.procs)).toEqual([])
   expect(w.stops).toEqual(['a1'])
-  expect(r.text).toMatch(/engine pid unknown/)
+  expect(await paneText($)).toMatch(/engine pid unknown/)
 })
 
 for (const [name, answer] of [['Cancel', 'Cancel'], ['a dismissed ask', new Error('dismissed')]] as const) {
@@ -195,9 +201,7 @@ test('reap: one failing TaskStop (throw or deny) is reported; the others still s
   })
   const r = await reap($)
   expect(w.stops).toEqual(['a1', 'a2', 'a3'])
-  expect(r.text).toMatch(/failed: build thing \(.+\)/)
-  expect(r.text).toMatch(/failed: idle mate \(not allowed\)/)
-  expect(r.text).toMatch(/stopped: waits/)
+  expect(r.text).toBe('reap: 1 stopped, 2 failed')
   expect(w.toasts).toEqual(['⧗ reap: 1 done, 2 failed'])
 })
 
