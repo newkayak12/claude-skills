@@ -49,6 +49,7 @@
 선택: `graph:install`이 `develop:like-my-code`를 실행해 `.claude/conventions/`를 만들 수 있다. 이후 broker가 모든 plan, setgoal, implement, test 노드(벤더 무관)에 관련 파일을 읽고 따르라는 지시를 넣는다.
 
 ## 상태
+- v1.12.0 — 노드 프로세스에 `HARNESS_NODE=1`을 붙이고, 새 Skill 훅(`hooks/node-gate.mjs`)이 노드의 run 진입 스킬 호출(harness, graph:orchestrate, teams 진입 스킬)을 멈추고 보고하라는 안내와 함께 거부합니다. 노드가 run 안에서 run을 띄울 수 없습니다.
 - v1.11.1 — `gate:goal` 증거를 AC-n마다 `| AC | verdict | evidence |` 한 행인 표로 쓰고, 이어서 "Out of spec:" 목록을 붙입니다.
 - v1.11.0 — setgoal과 `gate:goal` 프롬프트가 AC-n 계약을 씁니다: goal 수준 기준은 AC-n(spec.md ID 재사용, 없으면 누락 기준 점검 후 Given/When/Then, `[확인 필요]`), goal gate는 AC-n마다 증거 한 줄(없으면 미충족)과 spec 밖 변경을 보고합니다. 동작 보존 또는 한 줄 수정 요청은 증거 하나짜리 AC-1 하나만 쓰고 점검은 생략합니다. (2026-10-12)
 - v1.10.1 — Codex: MCP 서버가 Codex에서도 등록됩니다(`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`). Claude는 plugin.json에서 읽습니다.

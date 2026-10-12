@@ -5,6 +5,7 @@
 Every release of the `teams` plugin, newest first. Moved here verbatim from the README's old `## Status` section. `teams:patch` prepends new release lines under `## Status` below.
 
 ## Status
+- v0.53.0 — no run inside a run: worker spawns (broker nodes, daemon judge) carry HARNESS_NODE=1, drivers do not; the dispatch gate tells a node or subagent to stop and report instead of invoking teams:orchestrate, and denies its call to a run entry skill (Skill added to the matcher)
 - v0.52.0 — when harness or graph is installed too, the dispatch-gate deny routes by kind: simple development → graph (else harness), spec, planning, QA, several areas or unsure → teams:orchestrate; same route text as the harness gate
 - v0.51.5 — engine commits and merges use the repository configured git author instead of harness@local
 - v0.51.4 — **diagram path follows its move to write:diagram** (2026-10-12). The vendored `mcp/diagram.mjs` now tracks `write/skills/diagram/scripts/diagram.mjs`; header comment and `test-diagram.mjs` path updated. No engine behavior change.
