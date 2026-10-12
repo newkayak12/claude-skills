@@ -75,6 +75,7 @@ remote 이름이 `claude-skills`인 임시 저장소에서 실제 Claude Code 2.
 
 ## 상태와 알려진 한계
 
+- `0.2.0`: 상태줄은 끝나지 않은 에이전트 수만 보여줍니다(`⧗ n agent(s) running · /reap`, 0이면 지움). `claude -p` 개수는 이제 `session`의 상태줄이 보여줍니다(계속 보려면 `session` 설치). `◆ skill`은 토스트로만 뜹니다. `/reap`은 여전히 에이전트와 `claude -p` 자식을 모두 멈춥니다.
 - `0.1.0`(베타 종료): `/reap`이 확인 후 이 세션의 고아 에이전트와 `claude -p` 자식을 멈추고, 턴 종료 상태줄이 끝나지 않은 에이전트도 셉니다. trophy 함께 설치(업데이트 후 첫 대화형 세션에서 trophy가 없으면 한 번 설치).
 - 베타(`0.1.0-beta.5`): push/bump 확인이 teams 패치 도구(`teams/skills/patch/patch.mjs`)까지 다룹니다.
 - 베타(`0.1.0-beta.4`): 실행 밴드와 스캐너 제거(harness가 그림); 알림에 아이콘(◆ ⚠ ↓ ⧗).

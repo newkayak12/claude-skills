@@ -75,6 +75,7 @@ Captured from a live Claude Code 2.1.293 session in a scratch repo whose remote 
 
 ## Status and known limits
 
+- `0.2.0`: the status line shows only the unfinished-agent count (`⧗ n agent(s) running · /reap`, cleared at 0); the `claude -p` count is now `session`'s status line (install `session` to keep it); `◆ skill` is a toast only. `/reap` still stops both agents and `claude -p` children.
 - `0.1.0` (out of beta): `/reap` stops this session's orphan agents and `claude -p` children after a confirm, and the turn-end status line counts unfinished agents too; trophy rides along (installs trophy once on the first interactive session after an update, if missing).
 - Beta (`0.1.0-beta.5`): the bump ask now covers the teams patch tool (`teams/skills/patch/patch.mjs`).
 - Beta (`0.1.0-beta.4`): run band and its scanner removed (harness draws it); notices carry an icon (◆ ⚠ ↓ ⧗).
