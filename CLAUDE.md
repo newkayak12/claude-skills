@@ -29,6 +29,7 @@ For complex multi-step tasks, use these workflow skills as entry points:
 | New feature, full dev cycle, quality process | `teams:develop` (code through the graph); `develop:clean-code` for the review gate |
 | Job application, career transition, interview prep | `portfolio:job-application-workflow` |
 | TDD, test coverage strategy, flaky CI | `develop:testing-workflow` |
+| Spec first, spec-driven development, acceptance criteria before code | `develop:spec-driven-development` |
 | DB performance, slow query, connection pool, transactions | `develop:database-workflow` |
 | System architecture, DDD, service boundaries, MSA | `develop:architecture-workflow` |
 | Production readiness, SRE, chaos testing, incident response | `develop:operations-workflow` |

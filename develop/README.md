@@ -35,6 +35,7 @@ the specialist skills in a fixed order and let you join mid-process.
 | I want to… | Skill |
 |---|---|
 | Write a failing test first and prove it can actually fail | `test-driven-development` |
+| Write the spec and acceptance criteria first, then implement and verify each criterion | `spec-driven-development` |
 | Add tests to untested code, audit coverage, write a test plan or a test-case list | `test-master` |
 | Collect/generate API scenarios as specs, dispatch one actor AI per spec, install `ci.sh` | `scenario-director` |
 | Execute one scenario spec by hand with curl — locally or as CI's `claude -p` unit | `scenario-actor` |
@@ -167,6 +168,17 @@ container, SLOs, circuit breakers, and a runbook before launch.
 Estimated: 4–16 hours for the full run, 1–3 hours per step.
 
 ### Testing
+
+### `spec-driven-development`
+
+Spec before code. Specify (stories `US-n`, Given/When/Then criteria `AC-n`, `[확인 필요]` for missing facts) with an
+approval gate, then design, tasks, implement, and verify. Spec changes come before any out-of-spec code; the closing
+table shows evidence per criterion and lists out-of-spec changes. Not for a bare plan (`write:plans`) or the
+test-first loop (`test-driven-development`).
+
+```
+Spec this feature first, get my approval, then implement and show evidence for every acceptance criterion.
+```
 
 ### `test-driven-development`
 
