@@ -1,6 +1,6 @@
 # session
 
-Shows what a Claude Code session left behind (files changed, commits, denied calls, longest gap between tool calls), shows it again as a band on your next start, lists stray `claude -p` children and stops one safely, guards dangerous commands and secret writes, keeps `/memo` notes, recaps before compacting at a % you set, keeps that recap for `/handoff`, `/recap` and `/lessons`, times tasks and shows the cost, shows every open session on one `/board` (with its harness, graph and teams runs), and tells the other sessions of a repo when main moves. Version `0.4.1`. Requires Claude Code 2.1.292+ (hooks module). It needs nothing else from this marketplace.
+Shows what a Claude Code session left behind (files changed, commits, denied calls, longest gap between tool calls), shows it again as a band on your next start, lists stray `claude -p` children and stops one safely, guards dangerous commands and secret writes, keeps `/memo` notes, recaps before compacting at a % you set, keeps that recap for `/handoff`, `/recap` and `/lessons`, times tasks and shows the cost, shows every open session on one `/board` (with its harness, graph and teams runs), tells the other sessions of a repo when main moves, warns when an Agent call names no model, and stops unfinished agents with `/reap`. Version `0.5.0`. Requires Claude Code 2.1.292+ (hooks module). It needs nothing else from this marketplace.
 
 ## Install
 ```
@@ -31,7 +31,7 @@ No `kill -9`, no process groups, no pattern kills, no "stop all". A refusal show
 A wrapper shell and its `claude -p` child show as one row; `[stop]` targets the inner `claude -p`.
 
 ## Status line
-The plugin keeps one status line: `⧗ N claude -p child(ren) running` while children are alive (updated at the end of each turn), and `guard: N denied` as soon as the guard denies something. When both apply they are joined with ` · `. The line is cleared only when both are empty; headless runs show nothing. `mods` still has its own `claude -p` count, so both can show while both plugins are installed.
+The plugin keeps one status line: `⧗ N agent(s) · /reap` while this session has unfinished agents, `⧗ N claude -p child(ren) running` while children are alive (both updated at the end of each turn), and `guard: N denied` as soon as the guard denies something. The parts that apply are joined with ` · `, after the task and before the cost. The line is cleared only when all are empty; headless runs show nothing.
 
 ![status-line](docs/images/status-line.png)
 *The status line after the guard denied a `.env` write: `guard: 1 denied · $0.11 · seven_day 35%`.*
@@ -147,8 +147,15 @@ Each session row shows its branch, context %, cost, running task and three cells
 
 A session writes its row at start and after each turn, and removes it when it ends; a row not updated for 30 minutes is marked idle, and one older than a day is dropped. Rows are kept in this plugin's store on your machine only.
 
+## Agents
+- **`/reap`**: lists this session's unfinished agents (pending, running, waiting, idle) and its `claude -p` processes, asks `Reap` / `Cancel`, then stops the agents with TaskStop (children of a stopped agent are skipped) and sends `SIGTERM` to the `claude -p` processes, never to their wrapper shells. It kills no process when this session's own process cannot be confirmed. The result is printed line by line (`stopped:`, `killed:`, `failed:`) and the status line is refreshed. Interactive sessions only.
+- **Agent model guard**: an `Agent` call with no `model` (and not a `fork`) makes the subagent inherit the parent's model. Set **Agent model guard** (`agent_model_guard`) in `/config`: `toast` (default) warns and lets the call run, `deny` blocks it, `off` does nothing. Only the call's own `model` argument is seen, not one pinned in the agent's definition.
+
 ## Main moved
 When a `git push` to `main` goes through in one session (`origin main`, `HEAD:main`, `x:main`, or a plain push while on main), every other open session of the same repository that was active in the last 30 minutes gets a message: `origin/main moved to <sha> … Fetch before editing or bumping versions.` At most one message per session every 2 minutes; this session gets a toast `main moved: told N of M`. Headless runs send nothing.
+
+## Status
+- `0.5.0`: absorbs mods' agent model guard, agent count, /reap.
 
 ## Limits
 - "Longest gap" is the largest time between two tool calls in one turn, not a measured step.

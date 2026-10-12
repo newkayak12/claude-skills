@@ -23,6 +23,7 @@ import { DENIALS_KEY, register as registerGuard } from './guard.tsx'
 import { register as registerMemo } from './memo.tsx'
 import { register as registerHint } from './hint.ts'
 import { register as registerCompact } from './compact.tsx'
+import { aliveCount, register as registerAgents } from './agents.ts'
 
 const tab = atom({ plugin: 'session', key: 'tab' } as const, 'retro' as 'retro' | 'orphans')
 const band = atom({ plugin: 'session', key: 'band' } as const, false)
@@ -340,6 +341,7 @@ export const register: Register = (on, options) => {
     await $.command.register({ name: 'recap', description: "Print this project's last recap (smart-compact or /handoff)" })
     await $.command.register({ name: 'lessons', description: 'Corrections collected from recaps; /lessons clear empties them' })
     await $.command.register({ name: 'task', description: 'Time a task: /task <name> starts, /task done stops, /task log shows today' })
+    await $.command.register({ name: 'reap', description: "Stop this session's unfinished agents and claude -p children (asks first)" })
     await $.command.register({ name: 'board', description: 'Open sessions: branch, context %, cost, task, harness/graph/teams runs; tabs for recap, lessons, today' })
     await heartbeat($)
     try {
@@ -406,6 +408,7 @@ export const register: Register = (on, options) => {
   registerMemo(on, options)
   registerCompact(on, options)
   registerHint(on, options)
+  registerAgents(on, options)
 
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) {
@@ -417,7 +420,7 @@ export const register: Register = (on, options) => {
         const n = (await read($, orphansAtom)).length
         const usage = await $.session.usage().catch(() => undefined)
         const cost = costText(usage?.cost?.usd, usage?.rateLimits ?? [])
-        $.ui.status(statusLine({ orphans: n, cost, task: taskStatus(await runningTask($), (await $.clock.now()) as number) }))
+        $.ui.status(statusLine({ agents: aliveCount(await $.agent.list().catch(() => [])), orphans: n, cost, task: taskStatus(await runningTask($), (await $.clock.now()) as number) }))
         await heartbeat($)
         const budget = Number(options.cost_budget_usd ?? 0)
         if (budget > 0 && !isBudgetToasted && (usage?.cost?.usd ?? 0) >= budget) {
