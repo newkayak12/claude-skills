@@ -57,7 +57,7 @@ example would add irrelevant machinery; record why in the ledger.
 
 A running-example chapter's final ends with `### 장 끝 상태` (what exists, by canonical name) and ships
 `artifacts/chNN/rebuild-end-state.sh` — one command, any working directory, builds that state from nothing — plus
-`checksums.txt` over files the chapter's blocks produce, never files the reader writes. Once `final/N-1.md` exists it
+`checksums.txt` over files the chapter's blocks produce, never files the reader writes or output that varies run to run (timings, ids, dates). Once `final/N-1.md` exists it
 wins over the ledger; a mismatch is a `cross-chapter:` item that corrects the ledger. N's stopping round waits for `final/N-1.md`;
 a zero round pinned to a draft of N-1 is followed by one round on `final/N-1.md` that re-runs only the checks the
 upstream diff touches.
