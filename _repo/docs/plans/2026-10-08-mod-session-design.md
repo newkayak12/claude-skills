@@ -98,6 +98,10 @@ Diff stats: one `git diff --numstat -- <paths>` per pane open and per turn end, 
 Moves: the `turn.complete` hook, `countClaudeP`, `CLAUDE_P`, and their tests in `mods/hooks/mod.test.ts`;
 the "claude -p child(ren) running" status. Everything else in `mods` stays.
 
+Decided 2026-10-12 (mods 0.2.0): the unfinished-agent count and `/reap` stay in `mods`. `/reap` is the one
+command that stops this session's orphan agents, and its status line (`⧗ n agent(s) running · /reap`) is the
+cue to run it; `session` keeps only the `claude -p` count, so the two never write the same number.
+
 1. `session` ships first with the same count as a status line entry (feature parity before removal).
 2. Then `mods` is cut by a version bump (`0.1.0-beta.4`) that deletes feature 8; both READMEs and KORs note
    "moved to `session`". Users of `mods` who do not install `session` lose the status: say so in the notes.
