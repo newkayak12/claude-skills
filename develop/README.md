@@ -71,6 +71,7 @@ the specialist skills in a fixed order and let you join mid-process.
 | Find the bottleneck before optimizing anything | `performance-profiling-optimization` |
 | Stop a slow dependency from taking the caller down | `circuit-breaker-tuner` |
 | Test failure tolerance on purpose, with a bounded blast radius | `chaos-engineer` |
+| Shrink an image and stop cache-busting the build | `dockerfile-optimizer` |
 
 **Languages & frameworks**
 
@@ -79,6 +80,7 @@ the specialist skills in a fixed order and let you join mid-process.
 | Build a Spring Boot 3.x backend — REST, Security, JPA, WebFlux | `spring-boot-engineer` |
 | Write idiomatic Kotlin — coroutines, Flow, KMP, Compose, Ktor | `kotlin-specialist` |
 | Build React / Next.js UI with TypeScript and Tailwind | `frontend-developer` |
+| Build a CLI with subcommands, flags, and shell completions | `cli-developer` |
 
 **Code quality & documentation**
 
@@ -93,8 +95,6 @@ the specialist skills in a fixed order and let you join mid-process.
 
 | Was | Use instead |
 |---|---|
-| `cli-developer` | retired (no replacement) |
-| `dockerfile-optimizer` | retired; review the Dockerfile directly |
 | `dev-quality-workflow` | `teams:develop` + `clean-code` review gate |
 | `microservices-architect` | `architecture-designer` (topology), `service-boundary-validator` (where to cut) |
 | `code-documenter` | `documentation-strategy` |
@@ -152,7 +152,7 @@ Estimated: 2–6 hours for the full run, 30–90 min per step.
 
 ### `operations-workflow`
 
-Four phases — build, observe, harden, respond — over six steps: a direct Dockerfile review →
+Four phases — build, observe, harden, respond — over six skills: `dockerfile-optimizer` →
 `sre-engineer` → `performance-profiling-optimization` → `circuit-breaker-tuner` → `chaos-engineer`
 → `incident-response-playbook`. Order matters: chaos runs only after circuit breakers are
 configured, and it is skipped entirely when no monitoring stack exists. Use it for a pre-launch
@@ -535,6 +535,21 @@ Plan a game day for our Kubernetes checkout path: pod kills first, then AZ loss.
 blast radius to 5% of traffic and give me the abort criteria.
 ```
 
+### `dockerfile-optimizer`
+
+Analyzes an existing Dockerfile and returns concrete before/after fixes for layer caching, image
+size, build speed, and security. Two passes: note every finding across the 8 checks first, then
+apply fixes — so one visible issue does not get fixed while interacting issues are missed. Not for
+Kubernetes manifests, docker-compose orchestration, or runtime security policy (AppArmor, seccomp).
+
+```
+Our image is 1.8GB and every code change re-runs npm install. Here's the Dockerfile —
+find everything wrong first, then give me the rewritten version.
+```
+
+Covers base image selection (alpine / distroless / slim / full), multi-stage builds, layer
+ordering, `.dockerignore`, non-root users, and secrets leaking into layers. Reference material:
+`references/antipatterns.md`, `references/dockerignore-template.md`.
 
 ### Languages & frameworks
 
@@ -577,6 +592,22 @@ layout shell. Not for Vue, Svelte, or Angular, and not for backend APIs.
 Build a dashboard page in our Next.js app — server-side data fetch, filter controls,
 responsive table, and proper loading and error states.
 ```
+
+### `cli-developer`
+
+Builds command-line tools: subcommand hierarchy, flags and argument parsing, interactive prompts,
+progress bars, shell completions, and cross-platform distribution. It lists every command with its
+expected `--help` output before writing code and checks that flag naming stays consistent and no
+existing signatures break. Not for web UIs or REST APIs, and not for SRE pipeline integration alone
+(use `sre-engineer`).
+
+```
+Build a CLI that manages our deployment configs across environments — subcommands for
+list/diff/apply, a --dry-run flag, and zsh completions.
+```
+
+Framework defaults: Node.js `commander` → `yargs` → `oclif`; Python `typer` → `click` → `argparse`;
+Go `cobra + viper`, with `bubbletea` for TUIs only.
 
 ### Code quality & documentation
 

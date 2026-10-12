@@ -224,6 +224,11 @@ export const triggers = [
     ]
   },
   {
+    "skill": "develop:cli-developer",
+    "plugin": "develop",
+    "phrases": []
+  },
+  {
     "skill": "develop:connection-pool-tuner",
     "plugin": "develop",
     "phrases": [
@@ -265,6 +270,19 @@ export const triggers = [
       "drop this column",
       "이 api 없애자",
       "컬럼 지우는 마이그레이션"
+    ]
+  },
+  {
+    "skill": "develop:dockerfile-optimizer",
+    "plugin": "develop",
+    "phrases": [
+      "docker optimize",
+      "dockerfile",
+      "도커 최적화",
+      "빌드 시간",
+      "이거 좀 봐줘",
+      "이미지 크기",
+      "컨테이너 최적화"
     ]
   },
   {

@@ -71,6 +71,7 @@
 | 최적화 전에 병목부터 찾기 | `performance-profiling-optimization` |
 | 느린 의존성이 호출 측을 끌어내리지 않게 막기 | `circuit-breaker-tuner` |
 | 블라스트 반경을 제한한 의도적 장애 내성 검증 | `chaos-engineer` |
+| 이미지 크기 줄이고 빌드 캐시 무효화 막기 | `dockerfile-optimizer` |
 
 **언어 · 프레임워크**
 
@@ -79,6 +80,7 @@
 | Spring Boot 3.x 백엔드 — REST, Security, JPA, WebFlux | `spring-boot-engineer` |
 | 관용적인 Kotlin — 코루틴, Flow, KMP, Compose, Ktor | `kotlin-specialist` |
 | TypeScript·Tailwind 기반 React / Next.js UI | `frontend-developer` |
+| 서브커맨드·플래그·셸 컴플리션을 갖춘 CLI | `cli-developer` |
 
 **코드 품질 · 문서화**
 
@@ -93,8 +95,6 @@
 
 | 이전 | 대체 |
 |---|---|
-| `cli-developer` | 은퇴 (대체 없음) |
-| `dockerfile-optimizer` | 은퇴, Dockerfile을 직접 점검 |
 | `dev-quality-workflow` | `teams:develop` + `clean-code` 리뷰 게이트 |
 | `microservices-architect` | `architecture-designer`(토폴로지), `service-boundary-validator`(어디서 자를지) |
 | `code-documenter` | `documentation-strategy` |
@@ -150,7 +150,7 @@ database workflow로 네 레이어 전부 점검해주세요.
 
 ### `operations-workflow`
 
-빌드 → 관측 → 강화 → 대응 4단계, 6단계: Dockerfile 직접 점검 → `sre-engineer` →
+빌드 → 관측 → 강화 → 대응 4단계, 6개 스킬: `dockerfile-optimizer` → `sre-engineer` →
 `performance-profiling-optimization` → `circuit-breaker-tuner` → `chaos-engineer` →
 `incident-response-playbook`. 순서가 중요합니다. 카오스는 서킷 브레이커 설정 이후에만 돌리고,
 모니터링 스택이 없으면 아예 건너뜁니다. 출시 전 운영 준비 점검이나 반복적으로 문제가 나는 서비스
@@ -514,6 +514,21 @@ Slack·상태 페이지 공지 템플릿과 RCA 포맷(요약, 타임라인, 근
 블라스트 반경은 트래픽 5%로 제한하고 중단 기준도 정해주세요.
 ```
 
+### `dockerfile-optimizer`
+
+기존 Dockerfile을 분석해 레이어 캐싱, 이미지 크기, 빌드 속도, 보안에 대한 구체적인 before/after
+수정안을 냅니다. 2패스 방식입니다. 먼저 8개 체크 전체를 훑어 모든 문제를 기록하고, 그다음 수정을
+적용합니다 — 눈에 띄는 하나를 고치다가 서로 얽힌 다른 문제를 놓치지 않기 위해서입니다. 쿠버네티스
+매니페스트, docker-compose 오케스트레이션, 런타임 보안 정책(AppArmor, seccomp)은 대상이 아닙니다.
+
+```
+이미지가 1.8GB고 코드 한 줄만 바꿔도 npm install이 다시 돕니다. Dockerfile 첨부합니다.
+문제부터 전부 찾아낸 다음에 다시 쓴 버전을 주세요.
+```
+
+다루는 범위: 베이스 이미지 선택(alpine / distroless / slim / full), 멀티스테이지 빌드, 레이어
+순서, `.dockerignore`, 논루트 유저, 레이어에 남는 시크릿. 참고 문서: `references/antipatterns.md`,
+`references/dockerignore-template.md`.
 
 ### 언어 · 프레임워크
 
@@ -554,6 +569,21 @@ Vue·Svelte·Angular나 백엔드 API는 대상이 아닙니다.
 Next.js 앱에 대시보드 페이지를 만들어주세요. 서버 사이드 데이터 패칭, 필터 컨트롤,
 반응형 테이블, 로딩·에러 상태 처리까지요.
 ```
+
+### `cli-developer`
+
+커맨드라인 도구를 만듭니다. 서브커맨드 계층, 플래그와 인자 파싱, 인터랙티브 프롬프트, 진행
+표시줄, 셸 컴플리션, 크로스 플랫폼 배포를 다룹니다. 코드를 쓰기 전에 모든 커맨드와 기대되는
+`--help` 출력을 먼저 나열하고, 플래그 네이밍 일관성과 기존 시그니처 호환을 확인합니다. 웹 UI나
+REST API, SRE 파이프라인 연동만 필요한 경우(`sre-engineer`)는 제외입니다.
+
+```
+환경별 배포 설정을 관리하는 CLI를 만들어주세요. list/diff/apply 서브커맨드,
+--dry-run 플래그, zsh 컴플리션까지요.
+```
+
+프레임워크 기본 선택: Node.js `commander` → `yargs` → `oclif`, Python `typer` → `click` →
+`argparse`, Go `cobra + viper` (TUI만 `bubbletea`).
 
 ### 코드 품질 · 문서화
 
