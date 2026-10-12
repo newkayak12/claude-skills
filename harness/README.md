@@ -290,6 +290,7 @@ The gate hook denying an Edit to a gated path before the harness is engaged.
 `/harness-gate`, Gate tab: gated patterns, engagement window and the last decision.
 
 ## Status
+- v1.28.1 — Plan prompt lists assist:* (assist beta plugin added).
 - v1.28.0 — Goal gate: a linked worktree inside the project (tracked config, gitignored runs) now sees the main root's engaged run; a read-only segment (grep/cat/diff) no longer pulls its paths into the gate when another segment writes through a variable. (2026-10-12)
 - v1.27.1 — Plan prompt lists the current skill plugins (pm:* removed; planning:*/write:plans own that work). The goal gate gates a sibling worktree reached through a symlinked path (macOS /tmp -> /private/tmp). (2026-10-12)
 - v1.27.0 — install asks whether a reference project exists (default No); if yes, `develop:like-my-code` fills `.claude/conventions/coding.md` and `boundaries.md` from its style, each rule with repo evidence and a cited source; skipped when develop is absent
