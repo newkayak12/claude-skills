@@ -106,6 +106,7 @@ environment exposes, route to the closest one; when nothing fits, use
 |------------|------------------|
 | Kotlin / JVM code change | kotlin-specialist |
 | Slow query, index, N+1, connection pool | sql-pro / database-optimizer |
+| Frontend UI / component / styling bug | frontend-developer |
 | Flaky / intermittently failing test | flaky-test-analyzer |
 | Code quality / readability review | clean-code reviewer |
 | Infra / deploy / SRE incident | sre / operations specialist |
@@ -129,7 +130,7 @@ Fan out concurrently. Each brief is:
 # All run at once — one persona-matched agent per independent job
 Agent(subagent_type=flaky-test-analyzer, isolation="worktree", prompt="Fix agent-tool-abort.test.ts — 3 timing failures …")
 Agent(subagent_type=database-optimizer,  isolation="worktree", prompt="Cut p99 on GET /orders — slow query, see EXPLAIN …")
-Agent(subagent_type=kotlin-specialist,   isolation="worktree", prompt="Fix null handling in OrderMapper …")
+Agent(subagent_type=frontend-developer,  isolation="worktree", prompt="Fix cart badge not updating after remove …")
 ```
 
 **Worktree isolation.** For every agent that writes files, prefer

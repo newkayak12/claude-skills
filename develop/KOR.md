@@ -78,6 +78,7 @@
 |---|---|
 | Spring Boot 3.x 백엔드 — REST, Security, JPA, WebFlux | `spring-boot-engineer` |
 | 관용적인 Kotlin — 코루틴, Flow, KMP, Compose, Ktor | `kotlin-specialist` |
+| TypeScript·Tailwind 기반 React / Next.js UI | `frontend-developer` |
 
 **코드 품질 · 문서화**
 
@@ -92,7 +93,6 @@
 
 | 이전 | 대체 |
 |---|---|
-| `frontend-developer` | 은퇴 (대체 없음) |
 | `cli-developer` | 은퇴 (대체 없음) |
 | `dockerfile-optimizer` | 은퇴, Dockerfile을 직접 점검 |
 | `dev-quality-workflow` | `teams:develop` + `clean-code` 리뷰 게이트 |
@@ -542,6 +542,18 @@ GlobalScope 남발 말고 스코프와 취소를 제대로 다뤄주세요.
 ```
 
 
+
+### `frontend-developer`
+
+UI를 만들고 고칩니다. React 컴포넌트, 레이아웃, 클라이언트 인터랙션, 데이터 패칭 훅, 스타일링,
+폼 처리를 다룹니다. 프로젝트에 별도 지정이 없으면 Next.js App Router + TypeScript + Tailwind가
+기본입니다. 구현 전에 props·state·API 타입을 정의하고, 레이아웃 셸부터 톱다운으로 만듭니다.
+Vue·Svelte·Angular나 백엔드 API는 대상이 아닙니다.
+
+```
+Next.js 앱에 대시보드 페이지를 만들어주세요. 서버 사이드 데이터 패칭, 필터 컨트롤,
+반응형 테이블, 로딩·에러 상태 처리까지요.
+```
 
 ### 코드 품질 · 문서화
 

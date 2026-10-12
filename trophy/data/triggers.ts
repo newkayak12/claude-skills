@@ -310,6 +310,13 @@ export const triggers = [
     ]
   },
   {
+    "skill": "develop:frontend-developer",
+    "plugin": "develop",
+    "phrases": [
+      "build a react component"
+    ]
+  },
+  {
     "skill": "develop:incident-response-playbook",
     "plugin": "develop",
     "phrases": [

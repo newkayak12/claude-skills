@@ -78,6 +78,7 @@ the specialist skills in a fixed order and let you join mid-process.
 |---|---|
 | Build a Spring Boot 3.x backend — REST, Security, JPA, WebFlux | `spring-boot-engineer` |
 | Write idiomatic Kotlin — coroutines, Flow, KMP, Compose, Ktor | `kotlin-specialist` |
+| Build React / Next.js UI with TypeScript and Tailwind | `frontend-developer` |
 
 **Code quality & documentation**
 
@@ -92,7 +93,6 @@ the specialist skills in a fixed order and let you join mid-process.
 
 | Was | Use instead |
 |---|---|
-| `frontend-developer` | retired (no replacement) |
 | `cli-developer` | retired (no replacement) |
 | `dockerfile-optimizer` | retired; review the Dockerfile directly |
 | `dev-quality-workflow` | `teams:develop` + `clean-code` review gate |
@@ -565,6 +565,18 @@ proper scope handling and cancellation, not GlobalScope everywhere.
 ```
 
 
+
+### `frontend-developer`
+
+Builds and fixes UI: React components, layouts, client-side interactivity, data-fetching hooks,
+styling, and forms. Defaults to Next.js App Router, TypeScript, and Tailwind unless the project
+says otherwise; defines prop/state/API types before implementing, and builds top-down from the
+layout shell. Not for Vue, Svelte, or Angular, and not for backend APIs.
+
+```
+Build a dashboard page in our Next.js app — server-side data fetch, filter controls,
+responsive table, and proper loading and error states.
+```
 
 ### Code quality & documentation
 
