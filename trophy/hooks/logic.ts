@@ -110,7 +110,18 @@ export function evaluate(uses: readonly Use[], catalog: readonly Achievement[], 
 export function matchTriggers(text: string, index: readonly TriggerEntry[]): string[] {
   if (text.trimStart().startsWith('/')) return []
   const lower = text.toLowerCase()
-  return index.filter(t => t.phrases.some(p => lower.includes(p))).map(t => t.skill)
+  return index.filter(t => t.phrases.some(p => contains(lower, p))).map(t => t.skill)
+}
+
+// A phrase edged by an ASCII letter or digit must not start or end inside a longer word ("done" in "abandoned").
+function contains(lower: string, phrase: string): boolean {
+  for (let i = lower.indexOf(phrase); i !== -1; i = lower.indexOf(phrase, i + 1)) {
+    const before = i > 0 && /[a-z0-9]/.test(lower[i - 1]!) && /[a-z0-9]/.test(phrase[0]!)
+    const end = i + phrase.length
+    const after = end < lower.length && /[a-z0-9]/.test(lower[end]!) && /[a-z0-9]/.test(phrase[phrase.length - 1]!)
+    if (!before && !after) return true
+  }
+  return false
 }
 
 export type TurnResult = { hit: string[]; miss: string[]; unmatched: string[] }
