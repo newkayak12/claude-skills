@@ -1,6 +1,6 @@
 # session
 
-Claude Code 세션이 남긴 것(변경한 파일, 커밋, 거부된 호출, 도구 호출 사이 가장 긴 간격)을 보여 주고, 다음 시작 때 밴드로 다시 보여 주며, 남아 있는 `claude -p` 자식 프로세스를 나열하고 안전하게 중지하며, 위험한 명령과 비밀 파일 쓰기를 가드하고, `/memo` 메모를 보관하고, 정한 %에서 recap 뒤 compact하며, 그 recap을 `/handoff`·`/recap`·`/lessons`에 쓰고, 작업 시간과 비용을 보여 주고, 열린 세션 전부를 `/board` 한 화면에(각 세션의 harness·graph·teams 실행과 함께) 보여 주며, main이 바뀌면 같은 저장소의 다른 세션에 알리고, 모델 없이 Agent를 호출하면 경고하며, 끝나지 않은 에이전트를 `/reap`으로 중지합니다. 버전 `0.5.0`. Claude Code 2.1.292 이상(hooks 모듈)이 필요합니다. 이 마켓플레이스의 다른 것은 필요 없습니다.
+Claude Code 세션이 남긴 것(변경한 파일, 커밋, 거부된 호출, 도구 호출 사이 가장 긴 간격)을 보여 주고, 다음 시작 때 밴드로 다시 보여 주며, 남아 있는 `claude -p` 자식 프로세스를 나열하고 안전하게 중지하며, 위험한 명령과 비밀 파일 쓰기를 가드하고, `/memo` 메모를 보관하고, 정한 %에서 recap 뒤 compact하며, 그 recap을 `/handoff`·`/last-recap`·`/lessons`에 쓰고, 작업 시간과 비용을 보여 주고, 열린 세션 전부를 `/board` 한 화면에(각 세션의 harness·graph·teams 실행과 함께) 보여 주며, main이 바뀌면 같은 저장소의 다른 세션에 알리고, 모델 없이 Agent를 호출하면 경고하며, 끝나지 않은 에이전트를 `/reap`으로 중지합니다. 버전 `0.5.0`. Claude Code 2.1.292 이상(hooks 모듈)이 필요합니다. 이 마켓플레이스의 다른 것은 필요 없습니다.
 
 ## 설치
 ```
@@ -117,7 +117,7 @@ smart-compact나 `/handoff`가 만든 recap은 프로젝트별로 마지막 하�
 | --- | --- |
 | `/handoff` | 지금 recap을 만들어 보관하고 보드의 Recap 탭으로 열기 |
 | `/handoff <session>` | 같은 동작에 더해 그 세션(피어 세션 이름이나 id)으로 전송 |
-| `/recap` | 이 프로젝트의 마지막 recap(7일 이내)을 보드의 Recap 탭으로 열기 |
+| `/last-recap` | 이 프로젝트의 마지막 recap(7일 이내)을 보드의 Recap 탭으로 열기 |
 | `/lessons` | recap에서 모은 "두 번 이상 고친 것" 목록(최근 20개)을 보드의 Lessons 탭으로 열기. `/lessons clear`로 비우기 |
 
 headless 실행(`claude -p`)에서는 이 명령들이 텍스트를 출력합니다. 다음 시작 때 밴드에 `last recap of this project, <경과>`와 **Recap** 버튼이 나오고, 누르면 보드의 Recap 탭이 열립니다. lessons는 어디에도 자동으로 쓰지 않습니다. 남길 만한 것은 직접 `CLAUDE.md`로 옮기세요.
@@ -155,7 +155,7 @@ headless 실행(`claude -p`)에서는 이 명령들이 텍스트를 출력합니
 한 세션에서 `main`으로의 `git push`가 성공하면(`origin main`, `HEAD:main`, `x:main`, main 브랜치에서의 그냥 push), 같은 저장소에서 최근 30분 안에 움직인 다른 열린 세션마다 `origin/main moved to <sha> … Fetch before editing or bumping versions.` 메시지가 갑니다. 세션당 2분에 한 번까지이고, 이 세션에는 `main moved: told N of M` toast가 뜹니다. headless 실행은 보내지 않습니다.
 
 ## 상태
-- `0.5.0`: mods의 Agent 모델 가드, 에이전트 개수, /reap을 흡수. 명령을 하나씩 등록: Claude Code 2.1.292의 내장 `/recap`이 이름을 가져가 등록이 실패하면서 `/task`·`/reap`·`/board`·`/session`까지 빠지던 문제를 고침. 이제 session의 `/recap`만 빠짐(내장 명령이 응답).
+- `0.5.0`: mods의 Agent 모델 가드, 에이전트 개수, /reap을 흡수. `/recap`을 `/last-recap`으로 변경: Claude Code 2.1.292에 내장 `/recap`이 생겨 등록이 실패하면서 `/task`·`/reap`·`/board`·`/session`까지 빠졌음. 이제 명령을 하나씩 등록해 거부된 이름 하나만 빠짐.
 
 ## 한계
 - "longest gap"은 한 턴 안에서 두 도구 호출 사이 가장 긴 시간이며, 측정된 단계 시간이 아닙니다.

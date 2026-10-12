@@ -145,7 +145,7 @@ export const register = (on: On, options: PluginOptions) => {
     return { text: note ? `${r.text}\n\n${note}` : r.text }
   }).catch(($, e, next) => next(e))
 
-  on('command.run', { command: 'recap' }, async $ => {
+  on('command.run', { command: 'last-recap' }, async $ => {
     if (await onBoard($, 'recap')) return { text: 'Recap opened on the board.' }
     const r = await storedRecap($)
     if (!r) return { text: 'No recap for this project in the last 7 days. /handoff makes one now.' }

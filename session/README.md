@@ -1,6 +1,6 @@
 # session
 
-Shows what a Claude Code session left behind (files changed, commits, denied calls, longest gap between tool calls), shows it again as a band on your next start, lists stray `claude -p` children and stops one safely, guards dangerous commands and secret writes, keeps `/memo` notes, recaps before compacting at a % you set, keeps that recap for `/handoff`, `/recap` and `/lessons`, times tasks and shows the cost, shows every open session on one `/board` (with its harness, graph and teams runs), tells the other sessions of a repo when main moves, warns when an Agent call names no model, and stops unfinished agents with `/reap`. Version `0.5.0`. Requires Claude Code 2.1.292+ (hooks module). It needs nothing else from this marketplace.
+Shows what a Claude Code session left behind (files changed, commits, denied calls, longest gap between tool calls), shows it again as a band on your next start, lists stray `claude -p` children and stops one safely, guards dangerous commands and secret writes, keeps `/memo` notes, recaps before compacting at a % you set, keeps that recap for `/handoff`, `/last-recap` and `/lessons`, times tasks and shows the cost, shows every open session on one `/board` (with its harness, graph and teams runs), tells the other sessions of a repo when main moves, warns when an Agent call names no model, and stops unfinished agents with `/reap`. Version `0.5.0`. Requires Claude Code 2.1.292+ (hooks module). It needs nothing else from this marketplace.
 
 ## Install
 ```
@@ -117,7 +117,7 @@ Every recap (from smart-compact or `/handoff`) is kept for this project, the las
 | --- | --- |
 | `/handoff` | make a recap now, keep it, open it on the board's Recap tab |
 | `/handoff <session>` | same, and send it to that session (a peer session name or id) |
-| `/recap` | open the project's last recap (under 7 days old) on the board's Recap tab |
+| `/last-recap` | open the project's last recap (under 7 days old) on the board's Recap tab |
 | `/lessons` | open the "corrected more than once" lines collected from recaps (newest 20) on the board's Lessons tab; `/lessons clear` empties them |
 
 In a headless run (`claude -p`) these commands print their text instead. On the next start a band shows `last recap of this project, <age>` with a **Recap** button that opens the board's Recap tab. Lessons are never written anywhere for you: move the ones worth keeping to `CLAUDE.md` yourself.
@@ -155,7 +155,7 @@ A session writes its row at start and after each turn, and removes it when it en
 When a `git push` to `main` goes through in one session (`origin main`, `HEAD:main`, `x:main`, or a plain push while on main), every other open session of the same repository that was active in the last 30 minutes gets a message: `origin/main moved to <sha> … Fetch before editing or bumping versions.` At most one message per session every 2 minutes; this session gets a toast `main moved: told N of M`. Headless runs send nothing.
 
 ## Status
-- `0.5.0`: absorbs mods' agent model guard, agent count, /reap. Commands register one by one: on Claude Code 2.1.292 the built-in `/recap` took that name and the failed registration dropped `/task`, `/reap`, `/board` and `/session`; now only session's `/recap` is lost (the built-in one answers).
+- `0.5.0`: absorbs mods' agent model guard, agent count, /reap. `/recap` is now `/last-recap`: Claude Code 2.1.292 has a built-in `/recap`, and the failed registration dropped `/task`, `/reap`, `/board` and `/session`. Commands now register one by one, so one refused name drops only itself.
 
 ## Limits
 - "Longest gap" is the largest time between two tool calls in one turn, not a measured step.
