@@ -110,6 +110,31 @@ function sizeOf(input) {
   return Infinity; // unknown size is not a reason to let something through
 }
 
+// ROUTE-BEGIN (byte-identical in harness/hooks/goal-gate.mjs and teams/hooks/dispatch-gate.mjs; _repo/scripts/check-copies.mjs)
+// The routing paragraph when teams and harness or graph are both installed in dir, else ''.
+// Any error gives '': the caller keeps its own message.
+function routeText(dir) {
+  try {
+    const json = (f) => {
+      try { return JSON.parse(readFileSync(f, 'utf8')); } catch { return null; }
+    };
+    const has = (f) => json(join(dir, f)) !== null;
+    const harness = has('.claude/harness-gate.json');
+    const teams = has('.claude/teams-dispatch.json');
+    const on = (f) => json(f)?.enabledPlugins?.['graph@newkayak12-claude-skills'] === true;
+    const graph = Boolean(json(join(dir, '.mcp.json'))?.mcpServers?.['graph-engineering']) ||
+      on(join(dir, '.claude', 'settings.json')) || on(join(process.env.HOME || '~', '.claude', 'settings.json'));
+    if (!teams || !(harness || graph)) return '';
+    const simple = graph ? 'graph:orchestrate' : 'harness:harness';
+    return `This project also dispatches through ${['teams', harness && 'harness', graph && 'graph'].filter(Boolean).join(' + ')}; route by the kind of work.\n` +
+      `  - Simple development (a code change with its tests, one area) -> Skill({skill: "${simple}"})\n` +
+      `  - A spec document, planning, QA, several areas, or unsure -> Skill({skill: "teams:orchestrate", args: "<the user's request>"})\n`;
+  } catch {
+    return '';
+  }
+}
+// ROUTE-END
+
 function main() {
   let hook;
   try {
@@ -151,10 +176,14 @@ function main() {
 
   // The instruction is a skill, not a bare tm_open: the entry skill is what sizes the request,
   // picks the flow, drives the run and ends with its report - a bare tm_open skips all of that.
+  const routed = routeText(cwd);
   process.stderr.write(
     `teams: ${rel} is under dispatch control, and no task is open for this project.\n` +
-      `This session dispatches the work; a node writes it. Do not write this file. Invoke the teams entry skill now with the user's request, in their words:\n` +
-      `  Skill({skill: "teams:orchestrate", args: "<the user's request>"})\n` +
+      `This session dispatches the work; a node writes it. Do not write this file. ` +
+      (routed
+        ? `${routed}Use the user's request, in their words, as args.\n`
+        : `Invoke the teams entry skill now with the user's request, in their words:\n` +
+          `  Skill({skill: "teams:orchestrate", args: "<the user's request>"})\n`) +
       `  - a backlog, a budget or a timebox -> Skill({skill: "teams:sprint", ...}) instead\n` +
       `The skill opens the task (tm_open) and drives it: a small request runs as one graph, a large one as packages with their own worktrees,\n` +
       `each change gated, reviewed by a different identity, and committed on its own branch.\n` +

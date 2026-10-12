@@ -144,3 +144,64 @@ test('a task opened through a symlink of this project counts as open, both ways'
     rmSync(linkDir, { recursive: true, force: true });
   }
 });
+
+// ---- gate routing (_repo/docs/plans/2026-10-12-gate-routing.md) ----
+
+function routed(dir, setup) {
+  const home = mkdtempSync(join(tmpdir(), 'route-home-'));
+  try {
+    setup?.(home);
+    return run(dir, { file_path: join(dir, 'src/a.mjs'), content: 'x'.repeat(5000) }, 'Write', { HOME: home });
+  } finally { rmSync(home, { recursive: true, force: true }); }
+}
+const TEAMS_LINE = '  - A spec document, planning, QA, several areas, or unsure -> Skill({skill: "teams:orchestrate", args: "<the user\'s request>"})\n';
+
+test('routing AC-1: harness + teams names the harness skill for simple development, teams for the rest', () => {
+  const dir = project({ paths: ['src/**'] });
+  try {
+    writeFileSync(join(dir, '.claude', 'harness-gate.json'), '{}');
+    const r = routed(dir);
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /This project also dispatches through teams \+ harness; route by the kind of work\./);
+    assert.ok(r.stderr.includes('-> Skill({skill: "harness:harness"})\n'));
+    assert.ok(r.stderr.includes(TEAMS_LINE));
+    assert.match(r.stderr, /remove \.claude\/teams-dispatch\.json/, 'the way out stays');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('routing AC-3: graph + teams (no harness config) names graph for simple development', () => {
+  const dir = project({ paths: ['src/**'] });
+  try {
+    writeFileSync(join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { 'graph-engineering': {} } }));
+    const r = routed(dir);
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /through teams \+ graph;/);
+    assert.ok(r.stderr.includes('Skill({skill: "graph:orchestrate"})'));
+    assert.ok(r.stderr.includes(TEAMS_LINE));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('routing AC-2: graph enabled in user settings with harness: graph first', () => {
+  const dir = project({ paths: ['src/**'] });
+  try {
+    writeFileSync(join(dir, '.claude', 'harness-gate.json'), '{}');
+    const r = routed(dir, (home) => {
+      mkdirSync(join(home, '.claude'), { recursive: true });
+      writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify({ enabledPlugins: { 'graph@newkayak12-claude-skills': true } }));
+    });
+    assert.match(r.stderr, /through teams \+ harness \+ graph;/);
+    assert.ok(r.stderr.includes('Skill({skill: "graph:orchestrate"})'));
+    assert.ok(!r.stderr.includes('harness:harness'));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('routing AC-4: teams alone keeps today\'s message', () => {
+  const dir = project({ paths: ['src/**'] });
+  try {
+    const r = routed(dir);
+    assert.equal(r.status, 2);
+    assert.ok(!r.stderr.includes('route by the kind of work'));
+    assert.match(r.stderr, /Invoke the teams entry skill now with the user's request/);
+    assert.match(r.stderr, /Skill\(\{skill: "teams:orchestrate", args: "<the user's request>"\}\)/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

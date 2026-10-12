@@ -189,6 +189,19 @@ test('toast: first poll and old denies are silent; a newer deny toasts once', as
   expect(seen.toasts.length).toBe(1)
 })
 
+test('toast: with teams installed too, one toast names the conflict and the route', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const files: Files = { [CONFIG]: cfg, '.claude/teams-dispatch.json': '{}', [DECISION]: deny(NOW - 1000) }
+  const seen = world(on, ['terminal'], files)
+  await start($)
+  await clock.advance(5000)
+  files[DECISION] = deny(NOW + 1000)
+  await clock.advance(5000)
+  expect(seen.toasts).toHaveLength(1)
+  expect(seen.toasts[0]).toContain('harness and teams gates')
+  expect(seen.toasts[0]).toContain('teams:orchestrate')
+})
+
 test('read error: no throw, the gate state stays', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const files: Files = { [CONFIG]: cfg, [DECISION]: deny(NOW) }
