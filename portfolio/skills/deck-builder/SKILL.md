@@ -52,6 +52,7 @@ procedure and presets in `references/recolor.md` — discover, map by lightness,
 - **Never build without a reference template.** There is no built-in deck design and no fallback. If the user has not given you a `.pptx`, stop and ask for one — do not assemble slides some other way, do not offer a generic deck, do not fabricate a template. The engine refuses too, but the ask belongs to you, before any work.
 - **The source file is `deck.mdx`, never `deck.md`.** It is compiled, not read. The engine rejects any other extension.
 - **Catalog before writing.** Never author `deck.mdx` from a guess about the template. Run `catalog` and write against the slot ids it prints.
+- **Write in the voice `catalog` measured.** Its `## Voice` section is the reference's own sentence endings, length, English-term and digit share, footnote mark. Match them; do not default to your own register.
 - **Never hand-edit the output pptx.** It is regenerated on the next build. Corrections go into `deck.mdx`.
 - **Run `check` before `build`, and show the user the warnings.** Overflow warnings are what stands between crowded text and a slide nobody can read.
 - **Visibility decides, not tidiness.** `| transparent` is right when the image's content stays legible against the slide; `check` says when it would not, and a panel behind the image is the better answer there. Don't reach for transparency because it sounds cleaner.

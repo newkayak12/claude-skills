@@ -1996,6 +1996,79 @@ def slot_budget(slot):
     return face, text
 
 
+_FOOT = re.compile(r"^\s*(\*+|※|[†‡]|\[\d+\]|\(\d+\)|\d+[.)])\s*\S")
+
+
+def slide_sentences(pkg, slide_parts):
+    """Paragraphs of 10+ chars on the slides (text boxes and table cells); shorter
+    ones are labels and headers, not sentences."""
+    out = []
+    for part in slide_parts:
+        for p in ET.fromstring(pkg.parts[part]).iter(q("a:p")):
+            t = para_text(p).strip()
+            if len(t) >= 10:
+                out.append(t)
+    return out
+
+
+def sentence_ending(s):
+    s = re.sub(r"[\s.!?)\]…]+$", "", s)
+    if s.endswith("했습니다"):
+        return "했습니다"
+    if s.endswith("다"):
+        return "other -다"
+    if s.endswith("요"):
+        return "-요"
+    return "noun-final"
+
+
+def voice_fingerprint(sentences):
+    """Measured, never declared: how the reference's own sentences read."""
+    n = len(sentences)
+    if not n:
+        return None
+    ends = {}
+    for s in sentences:
+        k = sentence_ending(s)
+        ends[k] = ends.get(k, 0) + 1
+    lens = sorted(len(s) for s in sentences)
+    quant = [lens[min(n - 1, int(n * f))] for f in (0.25, 0.5, 0.75)]
+
+    def pct(c):
+        return 100.0 * c / n
+
+    marks = {}
+    for s in sentences:
+        m = _FOOT.match(s)
+        if m:
+            k = "digit" if m.group(1)[0].isdigit() or m.group(1)[0] in "[(" else m.group(1)
+            marks[k] = marks.get(k, 0) + 1
+    return {
+        "n": n,
+        "endings": sorted(((k, pct(v)) for k, v in ends.items()), key=lambda kv: -kv[1]),
+        "length": quant,
+        "english": pct(sum(1 for s in sentences if re.search(r"[A-Za-z]{3,}", s))),
+        "digits": pct(sum(1 for s in sentences if re.search(r"\d", s))),
+        "footnote": sorted(marks.items(), key=lambda kv: -kv[1]),
+    }
+
+
+def voice_lines(v):
+    lines = ["## Voice", "",
+             "Measured from the reference's own %d sentences. Write new text in this voice: "
+             "same endings, same length, same share of English terms and figures." % v["n"],
+             "",
+             "- Endings: " + " · ".join("%s %.0f%%" % kv for kv in v["endings"]),
+             "- Length (chars) p25 / p50 / p75: %d / %d / %d" % tuple(v["length"]),
+             "- Sentences with an English term: %.0f%%" % v["english"],
+             "- Sentences with a digit: %.0f%%" % v["digits"]]
+    if v["footnote"]:
+        lines.append("- Footnotes: " + ", ".join("`%s` (%d)" % kv for kv in v["footnote"]))
+    else:
+        lines.append("- Footnotes: none in the template")
+    return lines + [""]
+
+
 def cmd_catalog(args):
     require_template(args.template)
     pkg = Package(args.template)
@@ -2061,6 +2134,9 @@ def cmd_catalog(args):
             lines.append("Sizes in use, largest first: "
                          + ", ".join("**%gpt** (%d)" % (k, n) for k, n in sizes))
         lines.append("")
+    voice = voice_fingerprint(slide_sentences(pkg, parts))
+    if voice:
+        lines += voice_lines(voice)
     for idx, part in enumerate(parts, 1):
         slots = analyze_slide(ET.fromstring(pkg.parts[part]), slide_cy)
         title = slide_title(slots)
