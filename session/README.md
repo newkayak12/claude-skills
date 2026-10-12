@@ -155,7 +155,7 @@ A session writes its row at start and after each turn, and removes it when it en
 When a `git push` to `main` goes through in one session (`origin main`, `HEAD:main`, `x:main`, or a plain push while on main), every other open session of the same repository that was active in the last 30 minutes gets a message: `origin/main moved to <sha> … Fetch before editing or bumping versions.` At most one message per session every 2 minutes; this session gets a toast `main moved: told N of M`. Headless runs send nothing.
 
 ## Status
-- `0.5.0`: absorbs mods' agent model guard, agent count, /reap.
+- `0.5.0`: absorbs mods' agent model guard, agent count, /reap. Commands register one by one: on Claude Code 2.1.292 the built-in `/recap` took that name and the failed registration dropped `/task`, `/reap`, `/board` and `/session`; now only session's `/recap` is lost (the built-in one answers).
 
 ## Limits
 - "Longest gap" is the largest time between two tool calls in one turn, not a measured step.

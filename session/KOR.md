@@ -155,7 +155,7 @@ headless 실행(`claude -p`)에서는 이 명령들이 텍스트를 출력합니
 한 세션에서 `main`으로의 `git push`가 성공하면(`origin main`, `HEAD:main`, `x:main`, main 브랜치에서의 그냥 push), 같은 저장소에서 최근 30분 안에 움직인 다른 열린 세션마다 `origin/main moved to <sha> … Fetch before editing or bumping versions.` 메시지가 갑니다. 세션당 2분에 한 번까지이고, 이 세션에는 `main moved: told N of M` toast가 뜹니다. headless 실행은 보내지 않습니다.
 
 ## 상태
-- `0.5.0`: mods의 Agent 모델 가드, 에이전트 개수, /reap을 흡수.
+- `0.5.0`: mods의 Agent 모델 가드, 에이전트 개수, /reap을 흡수. 명령을 하나씩 등록: Claude Code 2.1.292의 내장 `/recap`이 이름을 가져가 등록이 실패하면서 `/task`·`/reap`·`/board`·`/session`까지 빠지던 문제를 고침. 이제 session의 `/recap`만 빠짐(내장 명령이 응답).
 
 ## 한계
 - "longest gap"은 한 턴 안에서 두 도구 호출 사이 가장 긴 시간이며, 측정된 단계 시간이 아닙니다.
