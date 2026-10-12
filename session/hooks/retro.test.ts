@@ -134,6 +134,34 @@ test('the band shows once: a second start without dismiss shows none, retro stil
   expect(lines.some(l => l.includes('last session'))).toBe(true)
 })
 
+// recap band: offered once, never for this session's own recap
+const RECAP_NOW = Date.parse('2026-10-08T09:00:00Z')
+const recapWorld = (on: On, sessionId: string) => {
+  const w = world(on, { store: { 'recap.project:/w': { text: 'GOAL: x', ts: RECAP_NOW - 60_000, sessionId } } })
+  on('session.root', () => ({ value: '/w' }) as never)
+  on('session.id', () => ({ value: 'me' }) as never)
+  return w
+}
+const recapShown = async ($: any) => texts(await (await band($)).drawn()).some(l => l.includes('last recap'))
+
+test('recap band: another session\'s recap shows; dismiss keeps it gone on the next start', async ($, on) => {
+  const { store } = recapWorld(on, 'other')
+  await start($)
+  expect(await recapShown($)).toBe(true)
+  const ui = await band($)
+  await ui.press({ key: 'recap-dismiss' })
+  expect(await recapShown($)).toBe(false)
+  expect(store.get('recap.seen:/w')).toBe(RECAP_NOW - 60_000)
+  await start($)
+  expect(await recapShown($)).toBe(false)
+})
+
+test('recap band: this session\'s own recap (a smart-compact just wrote it) never shows', async ($, on) => {
+  recapWorld(on, 'me')
+  await start($)
+  expect(await recapShown($)).toBe(false)
+})
+
 test('the Retro button opens the pane on the Retro tab', async ($, on) => {
   const { ui, cells } = world(on, { store: { 'session.last': LAST }, state: { 'session.tab': 'orphans' } })
   await start($)

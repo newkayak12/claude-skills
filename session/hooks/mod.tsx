@@ -41,6 +41,16 @@ const boardRows = atom({ plugin: 'session', key: 'boardRows' } as const, [] as B
 const PANE = 'session'
 const LAST_KEY = 'session.last'
 
+const recapSeenKey = (root: string) => `recap.seen:${root}`
+
+// Hides the band and remembers the recap, so no later start or compact offers it again.
+async function dismissRecap($: any, ts: number) {
+  await update($, recapAtom, () => null)
+  try {
+    await $.store.set(recapSeenKey(await $.session.root()), ts)
+  } catch {}
+}
+
 async function openPane($: any) {
   await refreshStats($)
   await pollOrphans($)
@@ -352,8 +362,12 @@ export const register: Register = (on, options) => {
     }
     await heartbeat($)
     try {
-      const r = (await $.store.get(recapKey(await $.session.root()))) as Recap | undefined
-      const fresh = isFresh(r, (await $.clock.now()) as number) ? { ts: r!.ts } : null
+      // Offered once: never this session's own recap (a smart-compact just wrote it), never one dismissed.
+      const root = await $.session.root()
+      const r = (await $.store.get(recapKey(root))) as Recap | undefined
+      const seen = ((await $.store.get(recapSeenKey(root)).catch(() => undefined)) as number | undefined) ?? 0
+      const own = r?.sessionId === (await $.session.id())
+      const fresh = isFresh(r, (await $.clock.now()) as number) && !own && r!.ts > seen ? { ts: r!.ts } : null
       await update($, recapAtom, () => fresh)
     } catch {
       await update($, recapAtom, () => null)
@@ -531,8 +545,8 @@ export const register: Register = (on, options) => {
               <Text wrap="truncate-end">{`last recap of this project, ${fmtAgo(now - recap.ts)}`}</Text>
             </Box>
             <Box flexShrink={0} gap={1}>
-              <Button key="recap" label="Recap" onPress={async () => { await openBoard($, 'recap') }} />
-              <Button key="recap-dismiss" label="dismiss" onPress={async () => { await update($, recapAtom, () => null) }} />
+              <Button key="recap" label="Recap" onPress={async () => { await dismissRecap($, recap.ts); await openBoard($, 'recap') }} />
+              <Button key="recap-dismiss" label="dismiss" onPress={() => dismissRecap($, recap.ts)} />
             </Box>
           </Box>
         )}
