@@ -73,18 +73,18 @@ test('prompt hint fires only on short task prompts without detail', () => {
 })
 
 // E7 + E2 + E5 through the engine
-test('/handoff keeps the recap and its corrections; /recap prints it (headless text)', async ($, on) => {
+test('/handoff keeps the recap and its corrections; /last-recap prints it (headless text)', async ($, on) => {
   const w = world(on, { surfaces: [] })
   expect((await cmd($, 'handoff')).text).toContain('Goal: ship')
   expect((w.seen.store.get(recapKey('/proj')) as { text: string }).text).toBe(RECAP)
   expect(w.seen.store.get(lessonsKey('/proj'))).toEqual(['verify before saying done', 'reply in Korean'])
-  expect((await cmd($, 'recap')).text).toContain('Goal: ship')
+  expect((await cmd($, 'last-recap')).text).toContain('Goal: ship')
   expect((await cmd($, 'lessons')).text).toContain('1. verify before saying done')
   await cmd($, 'lessons', 'clear')
   expect(w.seen.store.get(lessonsKey('/proj'))).toBeUndefined()
 })
 
-test('interactive, /handoff /recap /lessons /task log open board tabs and answer one line', async ($, on) => {
+test('interactive, /handoff /last-recap /lessons /task log open board tabs and answer one line', async ($, on) => {
   const w = world(on)
   const one = async (command: string, args = '') => {
     const t = (await cmd($, command, args)).text ?? ''
@@ -92,7 +92,7 @@ test('interactive, /handoff /recap /lessons /task log open board tabs and answer
     return t
   }
   expect(await one('handoff')).toContain('Recap kept')
-  expect(await one('recap')).toContain('board')
+  expect(await one('last-recap')).toContain('board')
   expect(await one('lessons')).toContain('board')
   expect(await one('task', 'log')).toContain('board')
   expect(w.seen.opened).toEqual(['board', 'board', 'board', 'board'])
@@ -120,9 +120,9 @@ test('smart-compact keeps its recap too', async ($, on) => {
   expect((w.seen.store.get(recapKey('/proj')) as { text: string }).text).toBe(RECAP)
 })
 
-test('/recap with nothing stored says how to make one', async ($, on) => {
+test('/last-recap with nothing stored says how to make one', async ($, on) => {
   world(on, { surfaces: [] })
-  expect((await cmd($, 'recap')).text).toMatch(/\/handoff/)
+  expect((await cmd($, 'last-recap')).text).toMatch(/\/handoff/)
 })
 
 // E1

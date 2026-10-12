@@ -334,13 +334,13 @@ export const register: Register = (on, options) => {
       const kept = ((await $.store.get(DENIALS_KEY)) as never[] | undefined) ?? []
       await update($, { plugin: 'session', key: 'guard' } as const, () => ({ denials: kept }))
     } catch {}
-    // Each on its own: a name the engine refuses (a built-in took it, as /recap on 2.1.292) must not drop the rest.
+    // Each on its own: a name the engine refuses (a built-in took it, as /recap did on 2.1.292) must not drop the rest.
     for (const c of [
       { name: 'memo', description: 'Pin notes the model reads in every conversation of this project' },
       { name: 'session-denials', description: 'Calls the guard or the permission rules denied this session' },
       { name: 'smart-compact', description: 'Set the context % at which the session is recapped and compacted (/smart-compact 60); /smart-compact log lists its checks' },
       { name: 'handoff', description: 'Recap this session now and keep it for the next start; /handoff <session> also sends it there' },
-      { name: 'recap', description: "Print this project's last recap (smart-compact or /handoff)" },
+      { name: 'last-recap', description: "Print this project's last recap (smart-compact or /handoff)" },
       { name: 'lessons', description: 'Corrections collected from recaps; /lessons clear empties them' },
       { name: 'task', description: 'Time a task: /task <name> starts, /task done stops, /task log shows today' },
       { name: 'reap', description: "Stop this session's unfinished agents and claude -p children (asks first)" },
