@@ -855,3 +855,71 @@ for (const surface of SURFACES) {
     expect(await shown(ui)).not.toContain('E-tee')
   })
 }
+
+// push on a reject, a person who must act, and the end of a run (design 2026-10-12-mod-run-push)
+function pushWorld(on: On, push: (e: any) => unknown, events: string) {
+  const pushes: any[] = []
+  const seen = world(on, ['terminal'], argv => (isEvents(argv) ? ok(events) : ok('{"line":"","waiting":0}')))
+  on('tool.call', (_$, e: any) => {
+    pushes.push(e)
+    return push(e) as never
+  })
+  return { pushes, seen }
+}
+const sentOk = () => ({ result: { pushSent: true, localSent: false }, text: '' })
+const evLines = (...o: object[]) => o.map(x => JSON.stringify(x)).join('\n') + '\n'
+const R1 = { ts: 1500, task_id: 'E-aaaaaaaa1', kind: 'node_finish', text: 'E-aaaaaaaa P1-gate failed' }
+const R2 = { ts: 1600, task_id: 'E-aaaaaaaa1', kind: 'upstream_fix_rounds_exhausted', text: 'E-aaaaaaaa P1: fix rounds used up' }
+
+test('push: reject, needs-you and run-ended each push once with the task, kind and what', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { pushes, seen } = pushWorld(on, sentOk, evLines(R1, R2, E1, E2))
+  await start($)
+  await clock.advance(3000)
+  await clock.advance(3000)
+  expect(pushes.map(p => [p.tool, p.status])).toEqual(Array(4).fill(['PushNotification', 'proactive']))
+  expect(pushes.map(p => p.message)).toEqual([
+    'teams E-aaaaaaaa: rejected — P1-gate failed',
+    'teams E-aaaaaaaa: rejected — P1: fix rounds used up',
+    'teams E-aaaaaaaa: needs you — needs you: n1',
+    'teams E-aaaaaaaa: run ended — finished: done',
+  ])
+  expect(seen.toasts).toHaveLength(4)
+})
+
+test('push: an event before the session start is not pushed', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { pushes, seen } = pushWorld(on, sentOk, evLines({ ...R1, ts: 900 }))
+  await start($)
+  await clock.advance(3000)
+  expect(pushes).toEqual([])
+  expect(seen.toasts).toEqual([])
+})
+
+test('push: a silent kind is not pushed; a seen event is not pushed twice', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { pushes } = pushWorld(on, sentOk, evLines({ ts: 1500, task_id: 'E-aaaaaaaa1', kind: 'child_driver_capacity', text: 'E-aaaaaaaa paused: provider limit' }, R1))
+  await start($)
+  await clock.advance(3000)
+  await clock.advance(3000)
+  await clock.advance(3000)
+  expect(pushes.map(p => p.message)).toEqual(['teams E-aaaaaaaa: rejected — P1-gate failed'])
+})
+
+test('push not sent: the event toast already shows it, once', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { pushes, seen } = pushWorld(on, () => ({ result: { pushSent: false, localSent: false }, text: '' }), evLines(R1))
+  await start($)
+  await clock.advance(3000)
+  expect(pushes).toHaveLength(1)
+  expect(seen.toasts).toEqual([R1.text])
+})
+
+test('push throws: no throw, the event toast shows, the next event still pushes', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { pushes, seen } = pushWorld(on, () => { throw new Error('no transport') }, evLines(R1, R2))
+  await start($)
+  await clock.advance(3000)
+  expect(pushes).toHaveLength(2)
+  expect(seen.toasts).toEqual([R1.text, R2.text])
+})
