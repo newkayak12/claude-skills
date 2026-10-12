@@ -116,6 +116,6 @@ Sequential numbering. Never delete or rewrite an accepted ADR — supersede inst
 - `writer-verification` — final pass to catch hedging in Decision
 - `tradeoff-articulator` — frame Rationale as "accept X to gain Y"
 - `bias-auditor` — when the decision boundary is unclear or Negative is empty
-- `architecture-designer` / `domain-driven-design` / `microservices-architect` — domain context for the decision being captured
+- `architecture-designer` / `domain-driven-design` — domain context for the decision being captured
 
 Fallback if any related skill is not installed: see `references/formats/adr-process.md`.

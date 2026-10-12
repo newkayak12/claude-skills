@@ -110,5 +110,5 @@ compatibility:
 ## Related Skills
 
 - Individual skills: `develop:test-driven-development`, `develop:test-master`, `develop:flaky-test-analyzer`
-- Before: `develop:dev-quality-workflow` (if you want the full dev cycle including architecture and docs)
+- Before: `develop:architecture-workflow` (if architecture is still open)
 - After: `develop:performance-profiling-optimization` (once the test suite is green and stable)

@@ -35,7 +35,7 @@ Writing §6 before §5 prevents anchoring on the first design that came to mind 
 
 Domain hints for which architecture skill to call alongside brainstorming:
 - Domain modeling involved → `domain-driven-design`
-- Service decomposition → `microservices-architect`
+- Service decomposition → `architecture-designer`
 - Topology / database / infrastructure → `architecture-designer`
 
 ## Step 5 — Converge and write §5 Proposed Design

@@ -31,7 +31,7 @@ compatibility:
 - Asking "where should our service boundaries be?"
 
 **Do not use when:**
-- You need implementation code — run Event Storming first, then use `microservices-architect` or `spring-boot-engineer`
+- You need implementation code — run Event Storming first, then use `architecture-designer` or `spring-boot-engineer`
 - The domain is already well-modeled and stable
 
 ## Process
@@ -133,7 +133,7 @@ Hotspots Remaining: [open questions]
 
 ## Related Skills
 
-- `microservices-architect` — design service boundaries after bounded contexts are discovered
+- `service-boundary-validator` — validate service boundaries after bounded contexts are discovered
 - `service-boundary-validator` — validate the boundaries against DDD and team topology principles
 - `write:plans` (ADR format) — document key decisions that emerge from the workshop
 - `domain-driven-design` — deeper DDD concepts for aggregates and context mapping

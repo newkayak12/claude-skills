@@ -31,7 +31,7 @@ compatibility:
 - Auditing data ownership before a migration
 
 **Do not use when:**
-- Designing new boundaries from scratch — run `event-storming` first, then use `microservices-architect`
+- Designing new boundaries from scratch — run `event-storming` first, then `architecture-designer`
 
 ## Process
 
@@ -139,6 +139,11 @@ For each entity E:
   4. Which services delete E? → Same — only the owner deletes.
 ```
 
+## Where to Cut
+
+- Start from bounded contexts (`domain-driven-design`); each candidate service solely owns its data, publishes an explicit API contract, and ships on its own.
+- No team of its own, no independent deploy, or no prerequisites (CI/CD, orchestration, tracing) → keep it a module in a modular monolith.
+
 ## Quick Checklist
 
 - [ ] Each service has exactly one owning team
@@ -152,7 +157,7 @@ For each entity E:
 
 ## Related Skills
 
-- `microservices-architect` — design new service boundaries after validation
+- `architecture-designer` — design the topology and communication once boundaries hold
 - `event-storming` — discover bounded contexts to inform boundary decisions
 - `transaction-boundary-reviewer` — fix cross-service transaction anti-patterns
 - `write:plans` (ADR format) — document the split or merge decision

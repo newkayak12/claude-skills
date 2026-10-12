@@ -2481,7 +2481,7 @@ function containsBranch(cwd, branch) {
 }
 
 // Array.isArray rather than a truthiness check: a shape that returns "skills":
-// "develop:cli-developer" as a bare string would otherwise be spread through the briefing one
+// "develop:kotlin-specialist" as a bare string would otherwise be spread through the briefing one
 // character per bullet, and the package would look like it had asked for twenty skills.
 function packageSkills(pkg) {
   return (Array.isArray(pkg && pkg.skills) ? pkg.skills : []).map(String).filter(Boolean);

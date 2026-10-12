@@ -25,7 +25,6 @@
 
 | 하고 싶은 일 | 스킬 |
 |---|---|
-| 설계 → 도메인 → 테스트 → 성능 → 문서 → 운영 전체 품질 사이클 | `dev-quality-workflow` |
 | 도메인 발견부터 ADR까지 시스템 설계 전 과정 | `architecture-workflow` |
 | 테스트 스위트를 처음부터 만들고 CI 안정화 | `testing-workflow` |
 | DB 성능 저하를 모든 레이어에서 추적 | `database-workflow` |
@@ -60,7 +59,6 @@
 | 바운디드 컨텍스트·애그리거트·유비쿼터스 언어 모델링 | `domain-driven-design` |
 | 서비스 분리가 타당한지, 커플링만 늘리는지 판정 | `service-boundary-validator` |
 | 비즈니스 로직을 컨트롤러·프레임워크에서 분리 | `clean-architecture` |
-| 분산 시스템 설계 또는 재구조화 | `microservices-architect` |
 | 기존 코드에서 가장 먼저 깊게 다듬을 곳을 git 이력으로 찾기 | `architecture-review` |
 | 컬럼·API·기능을 쓰는 쪽을 깨뜨리지 않고 삭제·이름 변경·폐기 | `deprecation-and-migration` |
 
@@ -73,7 +71,6 @@
 | 최적화 전에 병목부터 찾기 | `performance-profiling-optimization` |
 | 느린 의존성이 호출 측을 끌어내리지 않게 막기 | `circuit-breaker-tuner` |
 | 블라스트 반경을 제한한 의도적 장애 내성 검증 | `chaos-engineer` |
-| 이미지 크기 줄이고 빌드 캐시 무효화 막기 | `dockerfile-optimizer` |
 
 **언어 · 프레임워크**
 
@@ -81,8 +78,6 @@
 |---|---|
 | Spring Boot 3.x 백엔드 — REST, Security, JPA, WebFlux | `spring-boot-engineer` |
 | 관용적인 Kotlin — 코루틴, Flow, KMP, Compose, Ktor | `kotlin-specialist` |
-| TypeScript·Tailwind 기반 React / Next.js UI | `frontend-developer` |
-| 서브커맨드·플래그·셸 컴플리션을 갖춘 CLI | `cli-developer` |
 
 **코드 품질 · 문서화**
 
@@ -91,35 +86,29 @@
 | 변경에 대한 리뷰·게이트 판정, 또는 테스트부터 쓰는 구현 | `clean-code` |
 | 레포의 코드 스타일을 근거와 함께 하네스 컨벤션으로 정리 | `like-my-code` |
 | 기능·서비스를 인증·입력·시크릿·결제 기준으로 실제 뚫리는 취약점만 점검 | `security-auditor` |
-| 기존 코드에 docstring·JSDoc·OpenAPI 스펙 생성 | `code-documenter` |
 | 어떤 문서를, 누구를 위해, 누가 유지할지 설계 | `documentation-strategy` |
+
+## 2.0.0에서 은퇴/병합 → 대체
+
+| 이전 | 대체 |
+|---|---|
+| `frontend-developer` | 은퇴 (대체 없음) |
+| `cli-developer` | 은퇴 (대체 없음) |
+| `dockerfile-optimizer` | 은퇴, Dockerfile을 직접 점검 |
+| `dev-quality-workflow` | `teams:develop` + `clean-code` 리뷰 게이트 |
+| `microservices-architect` | `architecture-designer`(토폴로지), `service-boundary-validator`(어디서 자를지) |
+| `code-documenter` | `documentation-strategy` |
 
 ## Skills
 
 ### 워크플로
 
-### `dev-quality-workflow`
-
-엔지니어링 품질 전 과정을 6단계로 돌리며, 각 단계를 전문 스킬이 담당합니다:
-`architecture-designer` → `domain-driven-design` → `test-driven-development` →
-`performance-profiling-optimization` → `documentation-strategy` → `incident-response-playbook`.
-단계마다 skip 조건이 정의되어 있어서, 이미 승인된 아키텍처나 유지보수자 1명짜리 내부 도구는
-해당 단계를 건너뜁니다. 신규 기능이나 여러 레이어에 걸친 리팩토링용이며, 간단한 버그 수정이나
-파일 하나 고치는 작업에는 쓰지 않습니다.
-
-```
-신규 정산 서비스를 처음부터 만듭니다. dev quality workflow 전체 돌려주세요.
-아키텍처는 아직 미정이고 6주 뒤 프로덕션 배포입니다.
-```
-
-지금 어느 단계인지 말하면 그 지점부터 합류합니다. "DDD부터"면 Step 2, "구현은 끝났고 성능만"이면
-Step 4로 바로 갑니다.
 
 ### `architecture-workflow`
 
 도메인 발견부터 결정 문서화까지 7단계: `event-storming`(도메인이 이미 명확하면 생략) →
 `domain-driven-design` → `service-boundary-validator` → `clean-architecture` →
-`architecture-designer` → `microservices-architect`(모놀리스 유지면 생략) →
+`architecture-designer`(분산 토폴로지 섹션, 모놀리스 유지면 생략) →
 `write:plans` (ADR format). 마지막 ADR 단계만은 절대 건너뛰지 않습니다. 신규 시스템이나
 모놀리스 → MSA 검토용이고, 안정된 기존 아키텍처 안에서 반복 작업할 때는 개별 스킬을 쓰세요.
 
@@ -161,7 +150,7 @@ database workflow로 네 레이어 전부 점검해주세요.
 
 ### `operations-workflow`
 
-빌드 → 관측 → 강화 → 대응 4단계, 6개 스킬: `dockerfile-optimizer` → `sre-engineer` →
+빌드 → 관측 → 강화 → 대응 4단계, 6단계: Dockerfile 직접 점검 → `sre-engineer` →
 `performance-profiling-optimization` → `circuit-breaker-tuner` → `chaos-engineer` →
 `incident-response-playbook`. 순서가 중요합니다. 카오스는 서킷 브레이커 설정 이후에만 돌리고,
 모니터링 스택이 없으면 아예 건너뜁니다. 출시 전 운영 준비 점검이나 반복적으로 문제가 나는 서비스
@@ -358,7 +347,7 @@ Mermaid를 씁니다.
 이벤트를 통한 도메인 발견을 3단계로 진행합니다. Big Picture(도메인 전체, 바운디드 컨텍스트,
 문제 지점) → Process Level → Design Level. 새 제품을 시작할 때, 레거시를 풀어헤칠 때, 도메인
 모델링을 어디서 시작해야 할지 모를 때 쓰세요. 도메인이 이미 잘 모델링되어 안정적이면 필요 없고,
-코드 산출물이 필요하면 먼저 이걸 돌린 뒤 `microservices-architect`나 `spring-boot-engineer`로
+코드 산출물이 필요하면 먼저 이걸 돌린 뒤 `architecture-designer`나 `spring-boot-engineer`로
 넘기세요. 용어집과 어긋나는 용어는 그 자리에서 짚고, 코드가 있으면 용어를 코드와 대조합니다.
 
 ```
@@ -384,7 +373,7 @@ Mermaid를 씁니다.
 "이걸 별도 서비스로 빼야 하나?"를 감이 아니라 근거로 답합니다. 동기 호출 그래프, 공유 DB, 양방향
 의존성을 매핑하고, 엔티티별로 어느 서비스가 생성·조회·수정·삭제하는지 감사하고, 서비스마다 팀이
 하나씩 대응되는지 인지 부하 테스트로 확인한 뒤 병합·분리·비동기 전환·소유권 수정 중 하나를
-권고합니다. 경계를 처음부터 설계하는 거라면 `event-storming` → `microservices-architect` 순서입니다.
+권고합니다. 경계를 처음부터 설계하는 거라면 `event-storming` → `architecture-designer` 순서입니다.
 
 ```
 재고를 주문 서비스에서 분리하려 합니다. 테이블 3개를 공유하고 양방향으로 동기 호출하는데,
@@ -405,17 +394,6 @@ test로 그냥 거쳐 가는 모듈을 드러내고, 포트는 두 번째 어댑
 의존성 위반을 나열한 뒤 포트-어댑터 리팩토링안을 보여주세요.
 ```
 
-### `microservices-architect`
-
-분산 시스템을 설계하고 평가합니다. 모놀리스 분해, DDD 기반 서비스 경계, 동기 vs 비동기 통신,
-데이터 전략, 복원력, 관측성을 다룹니다. 첫 질문은 "마이크로서비스가 필요한가"입니다 — CI/CD도
-컨테이너 오케스트레이션도 없고 독립 스쿼드가 2개 미만이면 모듈러 모놀리스를 먼저 권합니다.
-구현 코드는 `spring-boot-engineer`입니다.
-
-```
-이커머스 모놀리스, 엔지니어 12명 3개 스쿼드, 쿠버네티스는 이미 있습니다.
-분해 설계를 해주세요 — 서비스 경계, 통신 패턴, 데이터 소유권까지.
-```
 
 ### `architecture-review`
 
@@ -536,21 +514,6 @@ Slack·상태 페이지 공지 템플릿과 RCA 포맷(요약, 타임라인, 근
 블라스트 반경은 트래픽 5%로 제한하고 중단 기준도 정해주세요.
 ```
 
-### `dockerfile-optimizer`
-
-기존 Dockerfile을 분석해 레이어 캐싱, 이미지 크기, 빌드 속도, 보안에 대한 구체적인 before/after
-수정안을 냅니다. 2패스 방식입니다. 먼저 8개 체크 전체를 훑어 모든 문제를 기록하고, 그다음 수정을
-적용합니다 — 눈에 띄는 하나를 고치다가 서로 얽힌 다른 문제를 놓치지 않기 위해서입니다. 쿠버네티스
-매니페스트, docker-compose 오케스트레이션, 런타임 보안 정책(AppArmor, seccomp)은 대상이 아닙니다.
-
-```
-이미지가 1.8GB고 코드 한 줄만 바꿔도 npm install이 다시 돕니다. Dockerfile 첨부합니다.
-문제부터 전부 찾아낸 다음에 다시 쓴 버전을 주세요.
-```
-
-다루는 범위: 베이스 이미지 선택(alpine / distroless / slim / full), 멀티스테이지 빌드, 레이어
-순서, `.dockerignore`, 논루트 유저, 레이어에 남는 시크릿. 참고 문서: `references/antipatterns.md`,
-`references/dockerignore-template.md`.
 
 ### 언어 · 프레임워크
 
@@ -559,7 +522,7 @@ Slack·상태 페이지 공지 템플릿과 RCA 포맷(요약, 타임라인, 근
 Spring Boot 3.x 기반 Java 백엔드를 만들고 확장합니다. REST API, Spring Security 6와 인증,
 Spring Data JPA, WebFlux 리액티브 엔드포인트, 캐싱, 트랜잭션 관리, 검증을 다룹니다. 코딩 전에
 데이터 접근과 보안을 설계하고 확인받은 뒤, 생성자 주입과 레이어 구조로 구현합니다. 서비스 분해
-결정은 `microservices-architect`, Kotlin 관용구는 `kotlin-specialist`와 함께 쓰세요.
+결정은 `architecture-designer`, Kotlin 관용구는 `kotlin-specialist`와 함께 쓰세요.
 
 ```
 회원 서비스 REST API를 만들어주세요. Spring Security 6 JWT 인증, JPA 영속화,
@@ -578,32 +541,7 @@ Jetpack Compose 안드로이드, Ktor 서버, 타입 안전 DSL을 다룹니다.
 GlobalScope 남발 말고 스코프와 취소를 제대로 다뤄주세요.
 ```
 
-### `frontend-developer`
 
-UI를 만들고 고칩니다. React 컴포넌트, 레이아웃, 클라이언트 인터랙션, 데이터 패칭 훅, 스타일링,
-폼 처리를 다룹니다. 프로젝트에 별도 지정이 없으면 Next.js App Router + TypeScript + Tailwind가
-기본입니다. 구현 전에 props·state·API 타입을 정의하고, 레이아웃 셸부터 톱다운으로 만듭니다.
-Vue·Svelte·Angular나 백엔드 API는 대상이 아닙니다.
-
-```
-Next.js 앱에 대시보드 페이지를 만들어주세요. 서버 사이드 데이터 패칭, 필터 컨트롤,
-반응형 테이블, 로딩·에러 상태 처리까지요.
-```
-
-### `cli-developer`
-
-커맨드라인 도구를 만듭니다. 서브커맨드 계층, 플래그와 인자 파싱, 인터랙티브 프롬프트, 진행
-표시줄, 셸 컴플리션, 크로스 플랫폼 배포를 다룹니다. 코드를 쓰기 전에 모든 커맨드와 기대되는
-`--help` 출력을 먼저 나열하고, 플래그 네이밍 일관성과 기존 시그니처 호환을 확인합니다. 웹 UI나
-REST API, SRE 파이프라인 연동만 필요한 경우(`sre-engineer`)는 제외입니다.
-
-```
-환경별 배포 설정을 관리하는 CLI를 만들어주세요. list/diff/apply 서브커맨드,
---dry-run 플래그, zsh 컴플리션까지요.
-```
-
-프레임워크 기본 선택: Node.js `commander` → `yargs` → `oclif`, Python `typer` → `click` →
-`argparse`, Go `cobra + viper` (TUI만 `bubbletea`).
 
 ### 코드 품질 · 문서화
 
@@ -662,17 +600,6 @@ REST API, SRE 파이프라인 연동만 필요한 경우(`sre-engineer`)는 제�
 실제로 뚫리는 것만, 코드는 수정하지 말고.
 ```
 
-### `code-documenter`
-
-아직 없는 문서를 만듭니다. 함수·클래스 docstring과 JSDoc, 기존 API에서 생성한 OpenAPI/Swagger
-스펙, 문서 사이트, README, 튜토리얼을 다룹니다. 먼저 선호 포맷과 제외 대상을 묻고 코드베이스의
-기존 관례를 따르며, 없으면 Python은 Google 스타일, TypeScript/JS는 JSDoc이 기본입니다.
-아키텍처 결정 기록은 `write:plans` (ADR format), 문서 체계 설계는 `documentation-strategy`입니다.
-
-```
-이 모듈에 문서가 전혀 없습니다. 공개 API에 docstring을 붙이고 컨트롤러에서 OpenAPI
-스펙을 생성한 뒤, 신규 입사자가 바로 돌려볼 수 있는 README까지 써주세요.
-```
 
 ### `documentation-strategy`
 

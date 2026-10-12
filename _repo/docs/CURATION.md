@@ -41,9 +41,9 @@ per-skill 흐름: brainstorm 방향 → 유저 확정 → 재작성 → overlap 
 ## 🔲 C. 병합 클러스터 — 내용 확인 후 확정 (기준①)
 
 - **develop 테스트 (4→2 예상)**: `test-master`(140) · `testing-workflow`(인덱스) · `flaky-test-analyzer`(122) [+ `test-driven-development`는 B]
-- **develop 아키텍처 (8→3~4)**: `architecture-designer` · `architecture-workflow`(인덱스) · `clean-architecture` · `domain-driven-design` · `microservices-architect` · `service-boundary-validator` · `event-storming` · `transaction-boundary-reviewer` — 페르소나형 다수
-- **develop 운영/튜너 (다수→축소)**: `connection-pool-tuner` · `circuit-breaker-tuner` · `database-optimizer` · `database-workflow`(인덱스) · `performance-profiling-optimization` · `sql-pro` · `chaos-engineer` · `sre-engineer` · `incident-response-playbook` · `operations-workflow`(인덱스) · `dockerfile-optimizer` — `-tuner/-optimizer/-engineer` 페르소나 래퍼 비중 큼
-- **develop 페르소나 (품질·중복 동시 의심)**: `kotlin-specialist` · `spring-boot-engineer` · `frontend-developer` · `cli-developer` · `code-documenter`
+- **develop 아키텍처 (8→3~4)**: `architecture-designer` · `architecture-workflow`(인덱스) · `clean-architecture` · `domain-driven-design` · `service-boundary-validator` · `event-storming` · `transaction-boundary-reviewer` — 페르소나형 다수
+- **develop 운영/튜너 (다수→축소)**: `connection-pool-tuner` · `circuit-breaker-tuner` · `database-optimizer` · `database-workflow`(인덱스) · `performance-profiling-optimization` · `sql-pro` · `chaos-engineer` · `sre-engineer` · `incident-response-playbook` · `operations-workflow`(인덱스)  — `-tuner/-optimizer/-engineer` 페르소나 래퍼 비중 큼
+- **develop 페르소나 (품질·중복 동시 의심)**: `kotlin-specialist` · `spring-boot-engineer`
 - **think ↔ cognition (19개, 미션 겹침)**: 두 플러그인이 "사고 도구"로 목적 중복 → 플러그인 통합 + 인덱스 1개 후보. `microinteractions`(UI)·`negotiation`은 think에 이질 → 재배치/독립
 
 ---

@@ -25,7 +25,7 @@ metadata:
   scope: implementation
   role: specialist
   triggers: Spring Boot, Spring Security, Spring Data JPA, Spring Cloud, WebFlux, Java REST API, Actuator
-  related-skills: database-optimizer, microservices-architect, transaction-boundary-reviewer, kotlin-specialist
+  related-skills: database-optimizer, architecture-designer, transaction-boundary-reviewer, kotlin-specialist
   version: "1.1.0"
 ---
 
@@ -39,7 +39,7 @@ metadata:
 - Setting up Actuator, health probes, or Spring Cloud components
 
 **Do not use when:**
-- Architecture-level service decomposition decisions (use `microservices-architect`)
+- Architecture-level service decomposition decisions (use `architecture-designer`)
 - Kotlin-idiomatic concerns (pair with `kotlin-specialist`)
 
 ## Process
@@ -166,7 +166,7 @@ Entities stay behind the service; the controller returns a response record (see 
 
 ## Related Skills
 
-- `microservices-architect` — for architecture decisions before implementation
+- `architecture-designer` — for architecture decisions before implementation
 - `database-optimizer` — for JPA query performance and index tuning
 - `transaction-boundary-reviewer` — for `@Transactional` boundary analysis
 - `kotlin-specialist` — for Kotlin-idiomatic patterns in Spring services

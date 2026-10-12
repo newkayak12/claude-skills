@@ -37,6 +37,11 @@ export const triggers = [
     ]
   },
   {
+    "skill": "assist:decision",
+    "plugin": "assist",
+    "phrases": []
+  },
+  {
     "skill": "cognition:assumption-extractor",
     "plugin": "cognition",
     "phrases": []
@@ -219,23 +224,6 @@ export const triggers = [
     ]
   },
   {
-    "skill": "develop:cli-developer",
-    "plugin": "develop",
-    "phrases": []
-  },
-  {
-    "skill": "develop:code-documenter",
-    "plugin": "develop",
-    "phrases": [
-      "add jsdoc",
-      "generate openapi spec",
-      "swagger 문서 만들어줘",
-      "write a readme tutorial",
-      "문서 사이트 만들어줘",
-      "주석/독스트링 달아줘"
-    ]
-  },
-  {
     "skill": "develop:connection-pool-tuner",
     "plugin": "develop",
     "phrases": [
@@ -280,37 +268,16 @@ export const triggers = [
     ]
   },
   {
-    "skill": "develop:dev-quality-workflow",
-    "plugin": "develop",
-    "phrases": [
-      "dev quality process",
-      "full dev cycle",
-      "개발 품질 전체",
-      "새 기능 처음부터 제대로"
-    ]
-  },
-  {
-    "skill": "develop:dockerfile-optimizer",
-    "plugin": "develop",
-    "phrases": [
-      "docker optimize",
-      "dockerfile",
-      "도커 최적화",
-      "빌드 시간",
-      "이거 좀 봐줘",
-      "이미지 크기",
-      "컨테이너 최적화"
-    ]
-  },
-  {
     "skill": "develop:documentation-strategy",
     "plugin": "develop",
     "phrases": [
       "doc coverage map",
       "documentation audit",
+      "openapi 문서 만들어줘",
       "런북/adr 체계",
       "문서 뭐부터 써야 해?",
-      "온보딩 문서 정리"
+      "온보딩 문서 정리",
+      "주석/독스트링 달아줘"
     ]
   },
   {
@@ -343,13 +310,6 @@ export const triggers = [
     ]
   },
   {
-    "skill": "develop:frontend-developer",
-    "plugin": "develop",
-    "phrases": [
-      "build a react component"
-    ]
-  },
-  {
     "skill": "develop:incident-response-playbook",
     "plugin": "develop",
     "phrases": [
@@ -369,15 +329,13 @@ export const triggers = [
     ]
   },
   {
-    "skill": "develop:microservices-architect",
+    "skill": "develop:like-my-code",
     "plugin": "develop",
     "phrases": [
-      "decompose the monolith",
-      "msa로 쪼갤까?",
-      "saga design",
-      "sync vs async calls",
-      "분산 시스템 설계",
-      "서비스 간 통신 rest vs 이벤트"
+      "extract conventions from this repo",
+      "like my code",
+      "내 코드 스타일로 컨벤션 뽑아줘",
+      "이 레포 스타일을 정책으로"
     ]
   },
   {
@@ -1020,6 +978,17 @@ export const triggers = [
     ]
   },
   {
+    "skill": "write:diagram",
+    "plugin": "write",
+    "phrases": [
+      "draw this as a figure",
+      "그림으로 그려줘",
+      "도식화해줘",
+      "시퀀스 다이어그램",
+      "책에 넣을 그림"
+    ]
+  },
+  {
     "skill": "write:like-me",
     "plugin": "write",
     "phrases": [
@@ -1047,6 +1016,17 @@ export const triggers = [
       "turn this conversation into a spec",
       "대화 내용으로 스펙 써줘",
       "방금 얘기한 거 spec으로 정리해줘"
+    ]
+  },
+  {
+    "skill": "write:tech-book",
+    "plugin": "write",
+    "phrases": [
+      "write a tech book",
+      "개념부터 심화까지 책으로",
+      "기술서적 써줘",
+      "책 목차→검수→퇴고로 가자",
+      "책 집필"
     ]
   },
   {

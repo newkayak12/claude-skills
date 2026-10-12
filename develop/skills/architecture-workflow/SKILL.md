@@ -113,7 +113,7 @@ compatibility:
 ---
 
 ### Step 6 — Microservices Architecture (optional)
-**Skill:** `microservices-architect`
+**Skill:** `architecture-designer` (Distributed Topology)
 **Goal:** Design distributed communication, data strategy, resilience patterns, and deployment topology
 **Input:** System architecture and validated service boundaries from Steps 3 and 5
 **Output:** Service inventory, sync/async communication map, database-per-service strategy, observability plan
@@ -152,6 +152,6 @@ compatibility:
 | Writes ADRs with alternatives and consequences | Approve wording, store ADRs in the repo |
 
 ## Related Skills
-- Peer: `develop:dev-quality-workflow` — full engineering quality cycle after architecture is set
+- After: `teams:develop` — run the implementation through the graph once architecture is set
 - Before: `think:redefine-problem` — early-stage decision framing before Step 1
 - After: `develop:spring-boot-engineer` or `develop:kotlin-specialist` — implementation after Step 7
