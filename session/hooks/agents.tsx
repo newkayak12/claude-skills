@@ -44,7 +44,7 @@ export const register = (on: On, options: PluginOptions) => {
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
     if (e.tool !== 'Agent' || e.model || e.subagent_type === 'fork' || mode === 'off') return next(e)
     if (mode === 'deny') return { deny: MODEL_DENY }
-    if ((await $.session.surfaces()).length > 0) $.ui.toast('⚠ session: no model on this Agent call. ' + MODEL_DENY.replace('session: ', ''), { timeoutMs: 6000 })
+    if ((await $.session.surfaces()).length > 0) $.ui.toast(`⚠ no model: "${String(e.description ?? 'agent').slice(0, 40)}" inherits the parent model`, { timeoutMs: 6000 })
     return next(e)
   }).catch(($, e, next) => next(e))
 
