@@ -9,7 +9,7 @@ work on with Codex.
 - Plugin manifests live at `<plugin>/.claude-plugin/plugin.json`.
 - The marketplace manifest lives at `.claude-plugin/marketplace.json`.
 - The harness plugin lives under `harness/`.
-- Non-plugin material lives under `_repo/`: design docs (`_repo/docs/`), repo scripts (`_repo/scripts/`), retired plugins (`_repo/deprecated/`).
+- Non-plugin material lives under `_repo/`: design docs (`_repo/docs/`), repo scripts (`_repo/scripts/`), the restore table for retired items (`_repo/deprecated/README.md`).
 
 Before modifying this repo, read and follow `_repo/coding-guidelines.md` and `_repo/MAINTAINING.md`.
 

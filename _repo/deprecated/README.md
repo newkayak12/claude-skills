@@ -1,52 +1,31 @@
 # deprecated
 
-Plugins that are no longer published to the marketplace, and unused skills and artifacts of live plugins. The files stay here so their frameworks can
-be read and lifted; nothing routes to them.
+Retired plugins, skills and artifacts. The files are not in the tree; git history keeps every one of them.
+Each row gives the last commit that contained the item and the command that brings it back.
 
-| Plugin | Skills | Unpublished | Note |
+Restore: run the command, then move the files where they belong (a plugin to the repo root, a skill back into its plugin's `skills/`), add a plugin to `.claude-plugin/marketplace.json`, and give it a `KOR.md`.
+
+| Item | What | Last commit holding it | Restore |
 |---|---|---|---|
-| `self` | 12 | `fef3604` (2026-08-27), unlinked deliberately 2026-09-11 | self-understanding: values, fears, identity, motivation, shadow, `talk` counseling persona |
-| `leadership` | 5 | `fef3604` (2026-08-27), unlinked deliberately 2026-09-11 | IC/manager leveling and 1-on-1 preparation |
-| `pm` | 22 | `dab44e5` (2026-08-30, hidden); moved here 2026-09-28 | product management; think/planning/develop now carry what they used (planning 1.2.0 absorbed hypothesis, prioritization and problem-validation parts), teams inlined its PRD contract at 0.20.0 |
-| `harness-beta` | 2 | `d396f2d` (2026-09-08), its only commit | routing idea (classifier choosing Agent Team vs. Dynamic Workflow) absorbed into `graph` |
-| `mods` | 0 (hooks module) | 2026-10-12 | retired at 0.3.0: features moved to `session` (/reap, agent count, Agent model guard, guards) and `trophy` (skill toast); repo rules to `.claude/hooks/repo-rules.mjs` |
-| `technique-write` | 2 | 2026-09-30 | fixed-template Design Review and ADR; now formats of `write:plans` (`write/skills/plans/references/formats/`) |
+| `self` (plugin, 12 skills) | self-understanding: values, fears, identity, shadow, `talk`; load-bearing parts absorbed by `think:mentor` | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/self` |
+| `leadership` (plugin, 5 skills) | IC/manager leveling and 1-on-1 preparation | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/leadership` |
+| `pm` (plugin, 22 skills) | product management; parts absorbed by planning, think, develop | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/pm` |
+| `harness-beta` (plugin) | classifier choosing Agent Team vs. Dynamic Workflow; routing idea absorbed into `graph` | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/harness-beta` |
+| `mods` (plugin) | retired at 0.3.0; features moved to `session` and `trophy` | `eba3ff3a` | `git checkout eba3ff3a -- _repo/deprecated/mods` |
+| `technique-write` (plugin) | Design Review and ADR templates; now formats of `write:plans` | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/technique-write` |
+| `assist` (plugin) | beta decision assistance, unpublished 2026-10-12 | `7e299e97` | `git checkout 7e299e97 -- assist` |
+| `portfolio/skills/feedback-beta` | beta lane closed 2026-09-02, promoted into `feedback` 1.13.0 | `63142c35` | `git checkout 63142c35 -- portfolio/skills/feedback-beta` |
+| `develop/skills/pragmatic-programmer` | codebase-health diagnosis across seven principles | `bf4e49f3` | `git checkout bf4e49f3 -- _repo/deprecated/develop/skills/pragmatic-programmer` |
+| `develop/code-documenter` | docstring and API documentation skill | `bf4e49f3` | `git checkout bf4e49f3 -- _repo/deprecated/develop/code-documenter` |
+| `develop/dev-quality-workflow` | staged dev quality workflow | `bf4e49f3` | `git checkout bf4e49f3 -- _repo/deprecated/develop/dev-quality-workflow` |
+| `develop/microservices-architect` | microservice design skill | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/develop/microservices-architect` |
+| `think/skills/microinteractions` | UI micro-moment design | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/think/skills/microinteractions` |
+| `think/skills/deep-thinking-workflow` | staged ideate-critique-converge workflow | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/think/skills/deep-thinking-workflow` |
+| `cognition/skills/thinking-style-profiler` | personal thinking-pattern profile | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/cognition/skills/thinking-style-profiler` |
+| `write/skills/doc-coauthoring` | merged into `write:plans` (document purpose) | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/write/skills/doc-coauthoring` |
+| `write/skills/technical-blog-writer` | merged into `write:plans` (blog purpose) | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/write/skills/technical-blog-writer` |
+| `write/skills/sbi-writer` | merged into `write:plans` (feedback purpose) | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/write/skills/sbi-writer` |
+| `artifacts/think-devils-advocate-workspace` | generated benchmark output of devils-advocate iteration 1 | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/artifacts` |
+| `docs/diagrams` | teams architecture and first-run diagrams nothing cites | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/docs` |
 
-## Skills and artifacts (moved 2026-09-29, `_repo/docs/plans/2026-09-29-repo-tidy.md`)
-
-The plugins below are still live. Only these pieces of them were unused, meaning no workflow, skill or code routed to them, so they moved here with their contents unchanged.
-
-| Path | What | Plugin version that dropped it |
-|---|---|---|
-| `develop/skills/pragmatic-programmer` | codebase-health diagnosis across seven principles | develop 1.5.4 |
-| `think/skills/microinteractions` | UI micro-moment design | think 1.3.3 |
-| `think/skills/deep-thinking-workflow` | staged ideate-critique-converge workflow over other think skills | think (next release) |
-| `cognition/skills/thinking-style-profiler` | personal thinking-pattern profile | cognition 1.1.4 |
-| `artifacts/think-devils-advocate-workspace` | generated benchmark output of devils-advocate iteration 1 | — |
-| `_repo/docs/diagrams/` | teams architecture and first-run diagrams nothing cites | — |
-
-## Merged into `write:plans` (2026-09-30)
-
-`write/skills/writing-plans` was renamed `write/skills/plans` and became the one entry for plan-first writing; its Step 0 picks the purpose. These three moved here unchanged; their content lives on under `write/skills/plans/references/`.
-
-| Path | Now |
-|---|---|
-| `write/skills/doc-coauthoring` | `plans` document purpose — `references/document.md`, `agents/reader-agent.md` |
-| `write/skills/technical-blog-writer` | `plans` blog purpose — `references/examples/blog.md` |
-| `write/skills/sbi-writer` | `plans` feedback purpose — `references/examples/sbi.md` |
-
-They were absent from `.claude-plugin/marketplace.json` from `fef3604` onward — a release commit that
-mentioned neither — and the removal was confirmed as intended on 2026-09-11.
-
-## Rules
-
-- No live plugin references `self:`, `leadership:`, `harness-beta:`, or `pm:` any more. A skill that wants
-  one of these capabilities carries it directly instead of routing to a plugin the user cannot install.
-- `think:mentor` absorbed the parts that were load-bearing for it — values conflict, avoidance,
-  identity, motivation, shadow, and the boundary that used to hand a painful session to `self:talk`.
-  See its `## Moves` table and `references/moves.md`.
-- `harness-beta` explored a classifier choosing between a role-isolated Agent Team and a Dynamic
-  Workflow per request; it never advanced past its first commit. `graph` picked up that routing idea
-  and is the place to look for it now.
-- The validator does not check this directory, and these versions are frozen at their last published value (`self` 1.1.3, `leadership` 1.1.2). If one comes
-  back, move it out, add it to `marketplace.json`, and give it a `KOR.md` — `self` never had one.
+No live plugin references `self:`, `leadership:`, `harness-beta:`, `pm:` or `assist:`. A skill that wants one of these capabilities carries it directly.
