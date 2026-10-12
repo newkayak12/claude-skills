@@ -172,7 +172,8 @@ Estimated: 4–16 hours for the full run, 1–3 hours per step.
 ### `spec-driven-development`
 
 Spec before code. Specify (stories `US-n`, Given/When/Then criteria `AC-n`, `[확인 필요]` for missing facts) with an
-approval gate, then design, tasks, implement, and verify. Spec changes come before any out-of-spec code; the closing
+approval gate — after a sweep for unstated criteria (inputs that must count as the same, resource bounds, behaviour
+while a state holds) — then design, tasks, implement, and verify. Spec changes come before any out-of-spec code; the closing
 table shows evidence per criterion and lists out-of-spec changes. Not for a bare plan (`write:plans`) or the
 test-first loop (`test-driven-development`).
 

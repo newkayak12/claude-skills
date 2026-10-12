@@ -1,7 +1,7 @@
 {
   "name": "develop",
   "description": "Engineering skills: SQL, clean architecture, clean code, DDD, database optimization, chaos engineering, Spring Boot, Kotlin, TDD, testing, bug diagnosis, security audit, architecture review, deprecation & migration, SRE, performance profiling & optimization, incident response, documentation strategy. ADR drafting moved to write:plans (ADR format).",
-  "version": "1.14.0",
+  "version": "1.14.1",
   "author": {
     "name": "newkayak12"
   },
