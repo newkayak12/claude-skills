@@ -96,7 +96,7 @@ precede a run; add it whenever the project is ready to commit to it.
 
 ## Install modes
 
-Prefer the marketplace plugin. Its `.mcp.json` already registers the `teams-engineering`
+Prefer the marketplace plugin. Its plugin manifest already registers the `teams-engineering`
 and `task-manager` stdio servers, so installation should not add project files beyond what
 `install.mjs` writes. Ask the user to install or update `teams@newkayak12-claude-skills`
 and reload Claude Code if needed.

@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 // future collision (a rename, a copy-pasted tool, an accidental cross-import) fail loudly
 // instead of silently reintroducing the old ambiguity.
 //
-// Everything here is derived from source (regex-parsed .mcp.json + mcp/*.mjs), never a
+// Everything here is derived from source (the plugin manifest's mcpServers, or a legacy .mcp.json, + mcp/*.mjs), never a
 // hardcoded list of "the current tool names" - the point is to catch drift, not freeze it.
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -52,11 +52,17 @@ function extractServerAndTools(scriptPath) {
   return { serverName, toolNames };
 }
 
+// Servers live inline in .claude-plugin/plugin.json (Claude) since the Codex split; a plugin
+// without them there falls back to a root .mcp.json.
 function mcpServersForPlugin(pluginDir) {
-  const mcpJsonPath = join(pluginDir, '.mcp.json');
-  if (!existsSync(mcpJsonPath)) return [];
-  const cfg = JSON.parse(readFileSync(mcpJsonPath, 'utf8'));
-  const servers = cfg.mcpServers || {};
+  const manifestPath = join(pluginDir, '.claude-plugin', 'plugin.json');
+  const manifest = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, 'utf8')) : {};
+  let servers = manifest.mcpServers && typeof manifest.mcpServers === 'object' ? manifest.mcpServers : null;
+  if (!servers) {
+    const mcpJsonPath = join(pluginDir, '.mcp.json');
+    if (!existsSync(mcpJsonPath)) return [];
+    servers = JSON.parse(readFileSync(mcpJsonPath, 'utf8')).mcpServers || {};
+  }
   return Object.entries(servers).map(([declaredName, def]) => {
     const args = (def.args || []).map((a) => String(a).replace('${CLAUDE_PLUGIN_ROOT}', pluginDir));
     const scriptArg = args.find((a) => a.endsWith('.mjs')) || args[args.length - 1];
@@ -159,10 +165,10 @@ test('MCP tool names are pairwise disjoint across teams / graph / harness', () =
   // graph declares all of its tools in the one file, graph/mcp/broker.mjs.
   assert.ok(byPlugin.graph.includes('graph_open'), 'expected graph_open, from graph/mcp/broker.mjs');
 
-  // harness ships no MCP server at all today - no .mcp.json anywhere under harness/, so
+  // harness ships no MCP server at all today - no mcpServers in its manifest and no .mcp.json, so
   // mcpServersForPlugin() returns []. An empty set here is a fact about harness, not a
   // sign the extractor missed something; do not add a "length > 0" guard for it. If
-  // harness ever gains an MCP server (a harness/.mcp.json appears), it is picked up by
+  // harness ever gains an MCP server (in its manifest or a .mcp.json), it is picked up by
   // mcpServersForPlugin() automatically and starts being covered by the disjointness
   // check below with no change to this test.
   assert.deepEqual(byPlugin.harness, []);
