@@ -75,7 +75,7 @@ stage-6 step only if its file lacks `counts:` (tear down its labs by name; same 
    path + sha256; N's stopping round (zero or cap) counts only when pinned to `final/N-1.md` (learning-design).
 5. **Revise draft/NN.md.** A fresh reviser closes every 🔴🟡, text first, then changed labs in one script, replacing
    before adding (≤ 15% growth per round; files: house-style); round 3 closes by cutting. Back to 4; from round 2 only
-   the checks that flagged something re-run, reading the diff, but a lab, code, or output change re-runs the fact
+   the checks that flagged 🔴🟡 re-run (🟢-only: no), reading the diff, but a lab, code, or output change re-runs the fact
    check's whole lab chain. At the cap one closure pass, re-checked by a fresh agent in `review/NN-closure.md`, fixes or
    cuts each known-false sentence — not a round; open items go to `status-NN.md` `## 남은 항목`, never final/.
 6. **final/NN.md.** 6a per chapter: house-style copyedit, one `write:writer-verification` pass not by the editor,
