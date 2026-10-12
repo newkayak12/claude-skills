@@ -11,7 +11,7 @@ things live, how to check them, and how to leave the repo clean*. When the two d
 | `<plugin>/` (top level) | one plugin: `.claude-plugin/plugin.json`, `skills/`, `hooks/` (mod), `README.md` + `KOR.md` | notes, plans, reports |
 | `_repo/docs/plans/` | design docs, dated `YYYY-MM-DD-<topic>.md`; mod plans in `mod/` | code |
 | `_repo/scripts/` | repo-wide checks (`validate_plugins.py`, `check-copies.mjs`, bump tools) | plugin code |
-| `_repo/deprecated/` | retired plugins, kept for history | anything installable |
+| `_repo/deprecated/` | README only: restore table (item, last commit, `git checkout` command) for retired items | files of retired items |
 | `.claude/` | this repo's own hooks (goal gate, repo rules) | plugin code |
 | `tmp/` (gitignored) | scratch output of a bench or experiment | anything to keep |
 | `.harness-run/` (gitignored) | one folder per harness run | — |
