@@ -290,6 +290,7 @@ The gate hook denying an Edit to a gated path before the harness is engaged.
 `/harness-gate`, Gate tab: gated patterns, engagement window and the last decision.
 
 ## Status
+- v1.31.2 — fallback: COMPLETE with goal-gate FAIL is reported as finished with the unmet AC-n, never as done
 - v1.31.1 — fallback-check: a 0% goal gate is INCOMPLETE; titles starting with todo are not placeholders
 - v1.31.0 — SetGoal scales the AC contract down: a behaviour-preserving request (refactor, rename, move) or a one-line fix gets ONE AC-1 with one piece of evidence (existing tests plus one equivalence/regression check), no unstated-criteria sweep, `proportional: <reason>` in the spec; the gate table has one row. (2026-10-12)
 - v1.30.0 — Goal gate: a `cd` outside the project no longer pulls its relative paths into the gate (the directory is tracked per command segment; subshell, `||` and `cd $VAR` keep the wide reach). A command that runs a script file (bash/sh/python/node/ruby, `./x`, `. x`, `sh -c "$(cat x)"`) is judged by the file's contents like an inline script; a gated or tracked-and-unmodified repo script is not. The mod toasts when a newer deny is recorded. (2026-10-12)
