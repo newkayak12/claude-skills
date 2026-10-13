@@ -20,120 +20,97 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
+## Standing Mandates
+
+- NEVER supply the domain's events, rules, or terms yourself. Claude drafts candidates only from what the user or the
+  code gave; anything else is `[확인 필요: ○○]` for the domain experts. (Scar: invented events read as domain
+  knowledge, and the bounded contexts built on them came out as the model's guess about the business.)
+- NEVER name an event as a noun or in present tense ("Order", "Order is placed"); past tense only. Never jump to
+  aggregates before events and commands are on the wall.
+- Do NOT resolve a hotspot by picking a side. Mark it red, quote both meanings, and leave it for the people who disagree.
+- Goal: each bounded context is documented in the template with its hotspots listed, and the closing tally recounts to
+  the contexts; the run stops at the levels the user asked for.
+
 # Event Storming Facilitation
 
-## When to Use / When Not to Use
+Discovers bounded contexts by asking domain events, commands, and aggregates in order, with experts and developers.
 
-**Use when:**
-- Starting a new product and need to discover bounded contexts
-- Auditing or untangling a legacy system
-- Aligning engineers with domain experts before writing code
-- Asking "where should our service boundaries be?"
-
-**Do not use when:**
-- You need implementation code — run Event Storming first, then use `architecture-designer` or `spring-boot-engineer`
-- The domain is already well-modeled and stable
+**Not for** implementation code, or a domain that is already modelled and stable (`develop:domain-driven-design`);
+checking whether service cuts hold (`develop:service-boundary-validator`); topology (`develop:architecture-designer`).
 
 ## Process
 
 ### Level 1: Big Picture (2–4 hours)
-Goal: Explore the entire business domain; discover bounded contexts and pain points.
+Goal: the whole business domain, candidate bounded contexts, pain points.
 
 1. Invite 6–10 people: at least two domain experts and two developers
-2. Storm domain events freely (orange stickies, past tense): "What happens in this business?"
-3. Enforce past tense: "Order Placed", not "Order is placed"
-4. Cluster the timeline — related events hint at bounded contexts
-5. Mark red hotspots where experts disagree or language shifts
-6. Name the clusters — these are candidate bounded contexts
+2. Storm domain events (orange, past tense): "What happens in this business?"
+3. Cluster the timeline; related events hint at bounded contexts
+4. Mark red hotspots where experts disagree or language shifts
+5. Name the clusters: candidate bounded contexts
 
-**Glossary check (rules live in `domain-driven-design/references/ubiquitous-language.md`, see "When Terms Conflict" and "Glossary Maintenance"):**
-- Challenge a term the moment it conflicts with the glossary: quote both meanings ("Glossary: 'Order' = confirmed purchase. Just now: 'Order' = cart.") and mark a red hotspot.
+**Glossary check (rules in `domain-driven-design/references/ubiquitous-language.md`, "When Terms Conflict" and "Glossary Maintenance"):**
+- A term that conflicts with the glossary gets both meanings quoted ("Glossary: 'Order' = confirmed purchase. Just now: 'Order' = cart.") and a red hotspot.
 - When code exists, cross-check workshop terms against class and method names; name each mismatch (`cancel()` in code vs "void" in the room).
 - Keep implementation detail (tables, endpoints) out of the glossary.
 
 ### Level 2: Process Level (2–3 hours)
-Goal: Add commands, actors, and policies to understand who triggers what and why.
+Goal: who triggers what and why. For each orange event:
+1. "What caused this?" → blue Command to the left
+2. "Who issued it?" → yellow Actor above
+3. "Is it triggered by a rule?" → lilac Policy between event and command
+4. "What does the actor need to see?" → pink Read Model to the left
+5. Commands crossing system boundaries → white External System
 
-For each orange event:
-1. Ask "What caused this?" → blue Command to the left
-2. Ask "Who issued this command?" → yellow Actor above
-3. Ask "Is this triggered by a rule?" → lilac Policy between event and command
-4. Ask "What does the actor need to see?" → pink Read Model to the left
-5. Where commands cross system boundaries → white External System
-
-Reading flow (left to right):
-```
-[Read Model] → [Actor] → [Command] → [Policy] → [Domain Event]
-```
+Flow: `[Read Model] → [Actor] → [Command] → [Policy] → [Domain Event]`
 
 ### Level 3: Design Level (2–4 hours, per bounded context)
-Goal: Identify aggregates, define APIs, prepare for implementation.
+Goal: aggregates, APIs, ready for implementation.
+1. Group event/command pairs by aggregate (commands that target the same state machine)
+2. Name each aggregate in the context's ubiquitous language
+3. Define boundaries: which events cross contexts (integration events)
+4. Per aggregate: invariants, state transitions, commands handled
+5. Eventually-consistent aggregates → candidates for Saga or Outbox
 
-1. Group event/command pairs by aggregate (which commands target the same state machine?)
-2. Name each aggregate using the bounded context's ubiquitous language
-3. Define context boundaries: which events cross from one context to another? (integration events)
-4. For each aggregate: list invariants, state transitions, and commands handled
-5. Identify eventually-consistent aggregates → candidates for Saga or Outbox pattern
+## Sticky Legend
+
+| Color | Type | Naming |
+|-------|------|--------|
+| Orange | Domain Event | Past tense: "Order Placed" |
+| Blue | Command | Imperative: "Place Order" |
+| Yellow | Actor | Role: "Warehouse Clerk" |
+| Lilac | Policy | "Whenever X, then Y" |
+| Pink | Read Model | What the actor sees to decide |
+| White | External System | "Stripe", "FedEx API" |
+| White (wide) | Aggregate | Noun owning state and invariants |
+| Red | Hotspot | Question or conflict: mark and move on |
 
 ## Output Template
 
-After the workshop, document each bounded context:
-
 ```
-Bounded Context: [Name]
-Ubiquitous Language: [key terms and their definitions]
-Commands: [list of commands handled]
-Domain Events: [list of events emitted]
-Integration Events (published): [events other contexts listen to]
-Aggregates: [name, invariants, state transitions]
-External Dependencies: [other contexts or systems consumed]
-Hotspots Remaining: [open questions]
+## Event storming — <domain>, levels <1–3 run>
+
+Bounded Context: <name>
+Ubiquitous Language: <term — definition>
+Commands: <list> · Domain Events: <list>
+Integration Events (published): <events other contexts listen to>
+Aggregates: <name, invariants, state transitions>
+External Dependencies: <contexts or systems consumed>
+Hotspots Remaining: <question, both meanings quoted>
+
+<n> contexts · <e> events · <h> hotspots open · <u> items [확인 필요]
 ```
 
 ## What Claude Does / What You Do
 
 | Claude | You |
 |--------|-----|
-| Facilitates question sequences for each sticky type | Gather domain experts and developers |
-| Identifies bounded context candidate names | Confirm with domain experts using real business language |
-| Spots red flag patterns (noun events, missing actors) | Resolve hotspots with the actual stakeholders |
-| Drafts the Bounded Context Output Template | Fill in from the actual workshop results |
-| Recommends Design Level aggregate names | Validate invariants against real business rules |
-
-## Sticky Legend
-
-| Color | Type | Naming Convention |
-|-------|------|-------------------|
-| Orange | Domain Event | Past tense: "Order Placed", "Payment Failed" |
-| Blue | Command | Imperative: "Place Order", "Cancel Shipment" |
-| Yellow | Actor / User | Role: "Customer", "Warehouse Clerk" |
-| Lilac | Policy / Business Rule | "Whenever X, then Y" |
-| Pink | Read Model / View | What the actor sees to decide |
-| White | External System | Third-party name: "Stripe", "FedEx API" |
-| White (wide) | Aggregate | Noun owning state and enforcing invariants |
-| Red | Hotspot | Question or conflict — mark and move on |
-
-## Common Mistakes
-
-| Mistake | Fix |
-|---------|-----|
-| Events named as nouns ("Order") | Enforce past-tense verbs: "Order Placed" |
-| Only developers in the room | Require domain experts — they are the primary source |
-| Skipping hotspots | Mark every disagreement; resolve after the session |
-| Jumping to aggregates before events | Complete Level 1 and 2 before Level 3 |
-| One person controlling the wall | Distribute stickies physically; anyone can place any sticky |
-
-## Facilitation Checklist
-
-- [ ] Diverse participants: domain experts equal or outnumber developers
-- [ ] Timer set per phase
-- [ ] Red hotspot stickies available to everyone
-- [ ] Photography or digital export taken at end of each phase
-- [ ] Follow-up scheduled for hotspot resolution
+| Facilitates the question sequence per sticky type, drafts the template | Gather domain experts and developers; supply the events |
+| Proposes context names, spots noun events and missing actors | Confirm names in real business language; resolve hotspots with stakeholders |
+| Suggests aggregate names | Validate invariants against real business rules |
 
 ## Related Skills
 
-- `service-boundary-validator` — validate service boundaries after bounded contexts are discovered
-- `service-boundary-validator` — validate the boundaries against DDD and team topology principles
-- `write:plans` (ADR format) — document key decisions that emerge from the workshop
-- `domain-driven-design` — deeper DDD concepts for aggregates and context mapping
+- `develop:domain-driven-design` — deeper DDD for aggregates and context mapping
+- `develop:service-boundary-validator` — validate service boundaries once contexts are found
+- `write:plans` (ADR format) — record decisions that emerge from the workshop

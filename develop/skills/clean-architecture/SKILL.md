@@ -26,22 +26,26 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
+## Standing Mandates
+
+- NEVER add a port, layer, or interface "for flexibility". One adapter keeps the seam concrete; a port needs a second
+  real adapter or a test fake you actually use. (Scar: single-implementation interfaces everywhere make a CRUD service
+  five files per change.)
+- NEVER score from impressions. Every point off the score cites a violating import (`file:line`, direction) you read.
+- A fact you were not shown (module layout, which layer a class sits in) is `[확인 필요: ○○]`, never inferred; a score resting on one is `provisional`.
+- Goal: the score recounts to the listed violations, and step 5 is checked (rule tests run with no framework import) or marked `[확인 필요]`.
+
 # Clean Architecture Framework
 
 Keep the rules that earn the business its money free of imports from the tools that deliver them: web stack, datastore, messaging.
 
-## When to Use / When Not to Use
-
-| Use | Skip |
-|-----|------|
-| Designing layer boundaries for a new service | Code-level naming and function size (use clean-code) |
-| Business logic is coupled to HTTP or ORM | Domain modeling with bounded contexts (use domain-driven-design) |
-| Swap database or framework is too hard | Simple scripts or prototypes |
-| Writing testable use cases | |
+**Not for** code-level naming and function size (`develop:clean-code`), bounded contexts and aggregates
+(`develop:domain-driven-design`), topology and deployment (`develop:architecture-designer`), ranking refactor targets
+in a live repo (`develop:architecture-review`), or simple scripts and prototypes.
 
 ## Process
 
-1. **Assess current state** — Score the architecture 0–10; identify dependency rule violations
+1. **Assess current state** — Read the imports; list dependency rule violations; score 0–10
 2. **Draw concentric circles** — innermost Entities, then Use Cases, then Interface Adapters, outermost Frameworks/Drivers
 3. **Identify violations** — Find import arrows pointing outward; list them
 4. **Apply Dependency Inversion** — Define interfaces in inner circles; implementations in outer circles
@@ -55,7 +59,7 @@ Keep the rules that earn the business its money free of imports from the tools t
 
 ## Scoring
 
-**Goal: 10/10.** Rate architecture 0–10. A 10/10 means every business rule can be exercised in a test with nothing else running.
+Rate 0–10. A 10 means every business rule can be exercised in a test with nothing else running.
 
 ## The Clean Architecture Framework
 
@@ -110,13 +114,7 @@ See: [references/components-and-solid.md](references/components-and-solid.md)
 
 ### 5. SOLID Principles
 
-| Principle | Core Rule | Common Violation |
-|-----------|-----------|-----------------|
-| SRP | One reason to change | `Employee` handles pay, reporting, and persistence |
-| OCP | New behaviour arrives as new classes, existing ones stay untouched | Another `if` branch per new variant |
-| LSP | Subtypes usable through base type | `Square extends Rectangle` breaks `setWidth()` contract |
-| ISP | Don't force clients to depend on unused methods | Fat interface forces importing unneeded methods |
-| DIP | High-level modules depend on abstractions | `OrderService` imports `StripeClient` directly |
+SRP, OCP, LSP, ISP, DIP, with traps and checks in the reference. Typical DIP break: `OrderService` imports `StripeClient` directly.
 
 See: [references/components-and-solid.md](references/components-and-solid.md)
 
@@ -130,21 +128,21 @@ See: [references/boundary-strength.md](references/boundary-strength.md)
 
 ## Quick Diagnostic
 
-| Question | If No | Action |
-|----------|-------|--------|
-| Do the rule tests pass with neither datastore nor server up? | Rules are entangled with infrastructure | Extract entities and use cases behind interfaces |
-| Does every import point toward the center? | The dependency rule is broken | Introduce interfaces; invert the offending dependency |
-| Could the datastore change with the rules left alone? | Persistence leaking inward | Implement Repository pattern |
-| Do use cases ignore how requests arrive? | Use Cases know about HTTP | Remove delivery-specific types; use plain DTOs |
-| Is the framework kept in the outer ring? | The framework dictates your structure | Hide framework calls behind your own interfaces |
+Any "no" is a violation row: rule tests need neither datastore nor server · every import points inward · the datastore
+can change with the rules untouched · use cases ignore how requests arrive · the framework stays in the outer ring.
 
 ## Output Template
 
-When designing or reviewing an architecture, provide:
-1. Score (0–10) with justification
-2. Dependency violations found (import path + direction)
-3. Refactoring plan (interfaces to extract, classes to move)
-4. Before/after diagram (Mermaid or ASCII)
+```
+## Clean architecture — <service or path>
+
+Score: <n>/10 — <one line citing the violations below>
+Violations: <# · importer → imported (file:line) · direction> ...
+Plan: <interface to extract / class to move, per violation #>
+Diagram: before/after (Mermaid or ASCII)
+
+<v> violations · <p> ports proposed · <u> facts [확인 필요]
+```
 
 ## What Claude Does / What You Do
 
@@ -164,6 +162,7 @@ When designing or reviewing an architecture, provide:
 
 ## Related Skills
 
+- `develop:architecture-review` — rank which tangled modules to deepen first, from git history
 - `develop:clean-code` — code-level quality within each layer
 - `develop:domain-driven-design` — domain modeling and bounded contexts
 - `develop:architecture-designer` — structural and deployment-level decisions

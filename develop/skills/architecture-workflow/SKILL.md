@@ -26,132 +26,61 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
+## Standing Mandates
+
+- NEVER run a step on a missing input. A step's input absent (no domain description, no boundaries from Step 3) is
+  `[확인 필요: ○○]` and the run stops there or the user says to skip. (Scar: a layer design drawn over boundaries nobody
+  validated got redone when Step 3 moved them.)
+- NEVER drift to microservices. Step 6 runs only if Step 3 or the user's constraints call for distribution; the default
+  is a modular monolith.
+- NEVER restate a step skill's method here; invoke it by name, relay its verdict, and never grade its output yourself.
+- Goal: each step run or skipped with a reason, the ADR trail (Step 7) holds one ADR per decision, and the closing
+  tally recounts to the step lines. One step per turn unless the user asks to continue.
+
 # Architecture Workflow
 
-7-step process: domain discovery → modeling → boundary validation → layering → component design → distribution → documentation.
+7-step process: domain discovery, modeling, boundary validation, layering, system design, distribution, ADRs.
 
-## When to Use / When Not to Use
-
-| Use | Skip |
-|-----|------|
-| New product or system from scratch | Single-skill task — use the individual skill directly |
-| Monolith-to-MSA evaluation or system redesign | Iterating inside an existing stable architecture |
-| Greenfield design needing structured decisions | Quick refactor within one service |
-
----
-
-## Workflow Overview
-
-```
-[1] Event Storming          ← optional if domain is well-understood
-        ↓
-[2] Domain-Driven Design
-        ↓
-[3] Service Boundary Validator
-        ↓
-[4] Clean Architecture
-        ↓
-[5] Architecture Designer
-        ↓
-[6] Microservices Architect ← optional if staying on monolith
-        ↓
-[7] ADR Writer              ← always last
-```
-
----
+**Not for** a single-skill task (call that skill), iterating inside a stable architecture or one service's quick
+refactor, or ranking refactor targets in an existing repo (`develop:architecture-review`).
 
 ## Steps
 
-### Step 1 — Event Storming
-**Skill:** `event-storming`
-**Goal:** Discover bounded contexts, domain events, and aggregates through a structured workshop
-**Input:** Business domain description, stakeholder knowledge
-**Output:** Bounded context map, domain event timeline, aggregate candidates, hotspot list
-**Skip if:** Domain is well-modeled, ubiquitous language established, bounded contexts documented
-> "Step 1 시작" 또는 "이벤트 스토밍 워크샵 진행해줘"
+| # | Skill | Input | Output | Skip if |
+|---|-------|-------|--------|---------|
+| 1 | `event-storming` | Domain description, stakeholder knowledge | Bounded context map, event timeline, aggregate candidates, hotspots | Domain well-modeled, contexts documented |
+| 2 | `domain-driven-design` | Contexts from 1 (or existing knowledge) | Context map, glossary, aggregates with invariants, event list | A validated DDD model exists |
+| 3 | `service-boundary-validator` | Domain model from 2 | Coupling report, data ownership map, split/merge/keep per boundary | New monolith, no decomposition within 12 months |
+| 4 | `clean-architecture` | Validated boundaries from 3 | Layer diagram, dependency score, interface contracts, refactoring plan | Stateless functions needing 2 layers or fewer |
+| 5 | `architecture-designer` | Steps 2–4 | System diagram, technology picks, NFR coverage, risks | Stack and topology already approved |
+| 6 | `architecture-designer` (Distributed Topology), optional | Steps 3 and 5 | Service inventory, sync/async map, data-per-service, observability | Staying on a monolith or modular monolith |
+| 7 | `write:plans` (ADR format) | Decisions from 1–6 | One ADR per decision in `docs/adr/`, numbered, status set | Never skipped |
 
----
+Start prompts: "Step N 시작" or name the skill. Say where you are and the run joins there ("도메인은 정리됨, Step 3부터";
+"모놀리스 유지" → Steps 4–5–7; "이미 MSA, ADR만" → Step 7).
 
-### Step 2 — Domain-Driven Design
-**Skill:** `domain-driven-design`
-**Goal:** Formalize bounded contexts, aggregates, and ubiquitous language into a rigorous domain model
-**Input:** Bounded context candidates from Step 1 (or existing domain knowledge)
-**Output:** Context map, ubiquitous language glossary, aggregate definitions with invariants, domain event list
-**Skip if:** Full DDD model already exists and is validated by domain experts
-> "Step 2 시작" 또는 "DDD 도메인 모델링 해줘"
+## Output Template
 
----
+```
+## Architecture workflow — <system>
 
-### Step 3 — Service Boundary Validation
-**Skill:** `service-boundary-validator`
-**Goal:** Validate proposed boundaries for coupling, data ownership conflicts, and distributed monolith patterns
-**Input:** Domain model and bounded contexts from Step 2
-**Output:** Coupling analysis report, data ownership map, split/merge/keep recommendation per boundary
-**Skip if:** Building a new monolith with no decomposition planned in the next 12 months
-> "Step 3 시작" 또는 "서비스 경계 검증해줘"
+| Step | Skill | Status (done / skipped: <reason> / blocked: [확인 필요: ○○]) | Artifact |
+|------|-------|-----|----------|
 
----
-
-### Step 4 — Clean Architecture
-**Skill:** `clean-architecture`
-**Goal:** Define internal layer structure, dependency rules, and ports-and-adapters boundaries per service
-**Input:** Validated service boundaries from Step 3
-**Output:** Concentric layer diagram, dependency rule score (0–10), interface contracts, refactoring plan
-**Skip if:** Services are stateless functions with trivial internal logic (≤ 2 layers needed)
-> "Step 4 시작" 또는 "클린 아키텍처 레이어 설계해줘"
-
----
-
-### Step 5 — Architecture Design
-**Skill:** `architecture-designer`
-**Goal:** Define full system topology, technology selections, NFRs, risks, and ADR candidates
-**Input:** Domain model, validated boundaries, and layer structure from Steps 2–4
-**Output:** System architecture diagram, technology recommendations, NFR coverage, risk list
-**Skip if:** Technology stack and system topology are already decided and approved
-> "Step 5 시작" 또는 "시스템 아키텍처 설계해줘"
-
----
-
-### Step 6 — Microservices Architecture (optional)
-**Skill:** `architecture-designer` (Distributed Topology)
-**Goal:** Design distributed communication, data strategy, resilience patterns, and deployment topology
-**Input:** System architecture and validated service boundaries from Steps 3 and 5
-**Output:** Service inventory, sync/async communication map, database-per-service strategy, observability plan
-**Skip if:** Staying on a monolith or modular monolith — proceed directly to Step 7
-> "Step 6 시작" 또는 "마이크로서비스 아키텍처 설계해줘"
-
----
-
-### Step 7 — ADR Documentation
-**Skill:** `write:plans` (ADR format)
-**Goal:** Record all significant decisions with context, alternatives considered, and honest trade-offs
-**Input:** Decisions from Steps 1–6 (boundaries, tech choices, communication patterns, layer design)
-**Output:** One ADR per decision in `docs/adr/`, numbered sequentially, status set
-**Skip if:** Never — always document decisions before implementation begins
-> "Step 7 시작" 또는 "ADR 작성해줘"
-
----
-
-## State Tracking
-
-어느 단계에 있는지 알려주면 바로 합류합니다:
-- "도메인은 이미 정리됨, Step 3부터" → service boundary validation으로 직행
-- "모놀리스 유지, 내부 설계만" → Steps 4–5–7 (Step 6 건너뜀)
-- "이미 MSA, ADR만" → Step 7로 직행
+Next: <step N, or "complete">
+<d> done · <s> skipped · <b> blocked · <a> ADRs written
+```
 
 ## What Claude Does / What You Do
 
 | Claude | You |
 |--------|-----|
-| Facilitates event storming, identifies bounded context candidates | Provide domain experts, validate business language |
-| Drafts domain model, aggregate definitions, context map | Confirm invariants and ubiquitous language with the team |
-| Runs coupling analysis and applies the 5 boundary tests | Provide service dependency data and team ownership |
-| Draws layer diagrams, flags dependency rule violations | Confirm which layers hold the most business logic |
-| Produces architecture diagrams, technology recommendations | Make final technology and topology decisions |
-| Designs resilience patterns and service communication map | Confirm SLA requirements and operational capacity |
+| Runs each step skill and carries its output to the next | Provide domain experts, team ownership, SLAs; confirm invariants and language |
+| Flags a missing input before the step runs | Make the technology and topology decisions |
 | Writes ADRs with alternatives and consequences | Approve wording, store ADRs in the repo |
 
 ## Related Skills
-- After: `teams:develop` — run the implementation through the graph once architecture is set
+
 - Before: `think:redefine-problem` — early-stage decision framing before Step 1
+- After: `teams:develop` — run the implementation through the graph once architecture is set
 - After: `develop:spring-boot-engineer` or `develop:kotlin-specialist` — implementation after Step 7

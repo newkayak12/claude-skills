@@ -64,7 +64,7 @@ a design you hand over (`develop:clean-architecture`); modelling the domain or i
    - **Deletion test** result: `reappears in <n> callers` or `vanishes`
    Confidence is a function of those counts, not a feeling: **high** = commits ≥ 10 and callers ≥ 5 and the
    complexity reappears; **medium** = two of the three; **low** = one. Sort by commits × callers. A count that cannot
-   be obtained is written `unverified`, counts as not met, and the row cannot be high.
+   be obtained is written `[확인 필요: ○○]`, counts as not met, and the row cannot be high.
 6. **ADR check.** Compare each candidate with the ADRs found. Contradiction → keep the row only if the friction is
    concrete (cite the commits or callers); tag it `conflicts ADR-<id>`.
 7. **Stop.** Present the table and ask which candidate to take. After the pick, and only then, proceed to
