@@ -1,0 +1,25 @@
+#!/bin/sh
+# Pre-commit hook: validate plugin quality before committing
+# Runs scripts/validate_plugins.py — fails commit if errors found
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+
+# Only run if SKILL.md or plugin.json files are staged
+STAGED=$(git diff --cached --name-only | grep -E "(SKILL\.md|plugin\.json|marketplace\.json)")
+if [ -z "$STAGED" ]; then
+  exit 0
+fi
+
+echo "Running plugin validator..."
+V="$REPO_ROOT/_repo/scripts/validate_plugins.py"; [ -f "$V" ] || V="$REPO_ROOT/scripts/validate_plugins.py"
+python3 "$V"
+STATUS=$?
+
+if [ $STATUS -ne 0 ]; then
+  echo ""
+  echo "Commit blocked: fix errors above before committing."
+  echo "To skip (not recommended): git commit --no-verify"
+  exit 1
+fi
+
+exit 0

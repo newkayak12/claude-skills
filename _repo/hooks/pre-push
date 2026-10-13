@@ -1,0 +1,4 @@
+#!/bin/sh
+# Refuse a push while a harness run is open or reports an unwaived missing criterion.
+# Same rule as the Claude Code hook, here so Codex and a plain terminal get it too.
+exec node "$(git rev-parse --show-toplevel)/.claude/hooks/repo-rules.mjs" prepush

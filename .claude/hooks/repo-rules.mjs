@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // claude-skills repo rules as command hooks (moved here from the retired mods plugin).
-// Usage: repo-rules.mjs <start|bash>; hook JSON on stdin. Fails open on every error: no output, exit 0.
+// Usage: repo-rules.mjs <start|bash>; hook JSON on stdin. `prepush` (git hook) takes no JSON. Fails open on every error: no output, exit 0.
 //   start: git fetch; a systemMessage when origin/main is ahead of HEAD.
 //   bash:  `git push` and the version-bump scripts are denied while a harness run is open or
 //          reports an unwaived missing criterion; otherwise they ask first, only in an attended session
@@ -72,6 +72,22 @@ export function decide(mode, input, env, run = git) {
     }
   }
   return {}
+}
+
+// prepush: run by git's pre-push hook (_repo/hooks/pre-push), so the hold applies to every
+// client, not only Claude Code. Exit 1 refuses the push; read errors fail open.
+if (import.meta.url === `file://${process.argv[1]}` && process.argv[2] === 'prepush') {
+  let held = []
+  try {
+    held = heldRuns(git(process.cwd(), ['rev-parse', '--show-toplevel']).trim())
+  } catch {
+    // fail open
+  }
+  if (held.length) {
+    process.stderr.write(`push refused — harness run not finished: ${held.join(', ')}. Close it with 05-report.md; a missing criterion ships only with a "waived: <user's words>" line.\n`)
+    process.exit(1)
+  }
+  process.exit(0)
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
