@@ -294,6 +294,7 @@ The gate hook denying an Edit to a gated path before the harness is engaged.
 The mod also publishes each fallback run's outcome (`pass` on a report with no failure, `reject` on a failed goal gate after the report, `fail` on a failed subgoal; no ids) as the state value `harness.outcome`, for the `trophy` plugin's opt-in counts.
 
 ## Status
+- v1.36.0 — the mod publishes each run's outcome (pass, reject or fail, once per run and outcome) as its own `outcome` state for trophy to count; no ids, and the harness works the same without trophy.
 - v1.35.0 — the mod sends a push notification (toast when it cannot) when the gate denies (once per path per 10 min) and on run rejects, failures and completions; graph runs are left to the graph mod.
 - v1.34.1 — Codex uses a schema-compatible hook overlay while preserving the goal gate for edits and nested run entry calls; Claude hooks are unchanged. A non-entry Skill call exits the gate at once again, as before the overlay (it no longer refreshes engagement markers). Codex `apply_patch` renames (`*** Move to:`) are judged by their target path. The Codex overlay leaves out the SessionStart trophy install hook on purpose (trophy is Claude-only).
 - v1.34.0 — a project goal-gate copy defers to the plugin when the harness plugin is enabled (no stale copy can judge); the plan prompt no longer lists the unpublished assist plugin

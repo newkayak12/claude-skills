@@ -285,6 +285,7 @@ Claude Code 2.1.293 대화형 터미널 세션에서 실제로 캡처했습니�
 모드는 폴백 실행의 결과(실패 없이 보고서가 나오면 `pass`, 보고서 뒤 목표 게이트 실패면 `reject`, 하위 목표 실패면 `fail`, id 없음)를 상태 값 `harness.outcome`으로도 발행합니다. `trophy` 플러그인의 옵트인 집계용입니다.
 
 ## 상태
+- v1.36.0 — mod가 run 결과(통과·반려·실패, run과 결과마다 한 번)를 자기 `outcome` 상태로 발행해 trophy가 셉니다. id는 담지 않고, trophy가 없어도 harness는 똑같이 동작합니다.
 - v1.35.0 — 게이트가 막을 때(경로당 10분에 한 번)와 run 반려·실패·완료 때 mod가 푸시 알림을 보냅니다(못 보내면 토스트). graph run은 graph mod에 맡깁니다.
 - v1.34.1 — Codex는 스키마 호환 훅 오버레이를 사용하면서 편집 및 중첩 run 진입 호출에 대한 goal gate를 그대로 유지하며, Claude 훅은 변경되지 않습니다. 진입 스킬이 아닌 Skill 호출은 오버레이 이전처럼 게이트를 바로 통과합니다(참여 마커를 갱신하지 않음). Codex `apply_patch`의 이름 변경(`*** Move to:`)도 새 경로로 판정합니다. Codex 오버레이는 SessionStart의 trophy 설치 훅을 일부러 넣지 않습니다(trophy는 Claude 전용).
 - v1.34.0 — harness 플러그인이 켜져 있으면 프로젝트 goal-gate 복사본은 판정을 플러그인에 맡김(오래된 복사본이 판정하지 않음); plan 프롬프트에서 게시 중단된 assist 플러그인 제거

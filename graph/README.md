@@ -50,6 +50,7 @@ Zero runtime dependencies, Node 18+.
 Optional: `graph:install` can run `develop:like-my-code` to write `.claude/conventions/`; the broker then tells every plan, setgoal, implement, and test node, on any vendor, to read and follow the relevant files.
 
 ## Status
+- v1.14.0 — the mod publishes each run's outcome (pass or fail, once per run) as its own `outcome` state for trophy to count; no ids, and graph works the same without trophy.
 - v1.13.0 — the mod sends a push notification (toast when it cannot) on a node reject, a failed or blocked run, and a finished run.
 - v1.12.1 — Codex uses a schema-compatible hook overlay and blocks nested graph, harness, and teams MCP entry calls inside nodes; Claude's existing Skill gate is unchanged. The Codex overlay leaves out the SessionStart trophy install hook on purpose (trophy is Claude-only).
 - v1.12.0 — node processes carry `HARNESS_NODE=1`; a new Skill hook (`hooks/node-gate.mjs`) denies a node's call to a run entry skill (harness, graph:orchestrate, teams entry skills) with a stop-and-report message, so a node cannot start a run inside a run.
