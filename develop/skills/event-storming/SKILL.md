@@ -49,7 +49,7 @@ Outcome: the whole business domain, candidate bounded contexts, pain points.
 4. Mark red hotspots where experts disagree or language shifts
 5. Name the clusters: candidate bounded contexts
 
-**Glossary check (rules in `domain-driven-design/references/ubiquitous-language.md`, "When Terms Conflict" and "Glossary Maintenance"):**
+**Glossary check (rules in `domain-driven-design/references/ubiquitous-language.md`; conflicting terms signal a context boundary):**
 - A term that conflicts with the glossary gets both meanings quoted ("Glossary: 'Order' = confirmed purchase. Just now: 'Order' = cart.") and a red hotspot.
 - When code exists, cross-check workshop terms against class and method names; name each mismatch (`cancel()` in code vs "void" in the room).
 - Keep implementation detail (tables, endpoints) out of the glossary.
