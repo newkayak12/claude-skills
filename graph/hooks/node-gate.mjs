@@ -7,6 +7,13 @@ import { readFileSync } from 'node:fs';
 // A run node (a subagent: hook input has agent_id; a graph/teams worker process: HARNESS_NODE=1)
 // must never open a run again. These are the skills that open one.
 const ENTRY_SKILL_RE = /^(?:(?:harness:)?harness|graph:orchestrate|teams:(?:orchestrate|develop|sprint|document|plan|qa))$/;
+const ENTRY_MCP_RE = /(?:^|__)(graph_open|tm_open|tm_run)$/;
+const entryCall = (input) => {
+  const tool = String(input?.tool_name || '');
+  const skill = tool === 'Skill' ? input?.tool_input?.skill : null;
+  if (typeof skill === 'string' && ENTRY_SKILL_RE.test(skill)) return `Skill ${skill}`;
+  return ENTRY_MCP_RE.test(tool) ? tool : '';
+};
 const SUBAGENT_NOTE = 'A subagent that sees this must not invoke the harness again — stop and report to its caller.';
 const SUBAGENT_STOP = 'You are inside a run. Do not invoke the harness skill, graph, teams, Workflow or open a run. ' +
   'Stop and report this block (file + reason) to your caller.';
@@ -17,10 +24,10 @@ const nodeKind = (input) => (process.env.HARNESS_NODE === '1' ? 'node' : input &
 try {
   if (process.env.HARNESS_NODE === '1') {
     const input = JSON.parse(readFileSync(0, 'utf8'));
-    const skill = input && input.tool_name === 'Skill' && input.tool_input ? input.tool_input.skill : null;
-    if (nodeKind(input) && typeof skill === 'string' && ENTRY_SKILL_RE.test(skill)) {
+    const entry = entryCall(input);
+    if (nodeKind(input) && entry) {
       process.stdout.write(JSON.stringify({
-        hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Skill ${skill}: ${SUBAGENT_STOP} ${SUBAGENT_NOTE}` },
+        hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `${entry}: ${SUBAGENT_STOP} ${SUBAGENT_NOTE}` },
       }));
     }
   }

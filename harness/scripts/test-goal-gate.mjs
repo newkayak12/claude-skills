@@ -56,6 +56,7 @@ function run(input, env = {}) {
 
 const edit = (dir, fp, extra = {}) => ({ tool_name: 'Edit', cwd: dir, session_id: 's1', tool_input: { file_path: fp }, ...extra });
 const bash = (dir, command, extra = {}) => ({ tool_name: 'Bash', cwd: dir, session_id: 's1', tool_input: { command }, ...extra });
+const patch = (dir, command, extra = {}) => ({ tool_name: 'apply_patch', cwd: dir, session_id: 's1', tool_input: { command }, ...extra });
 
 function fallbackRun(dir, { sound = true, report = false, critiqueFirst = false } = {}) {
   const run = join(dir, '.harness-run', 'x');
@@ -80,6 +81,27 @@ test('G1: not engaged - a gated edit is denied, an ungated one allowed', () => {
   const t = transcript(dir, [prose('hello')]);
   assert.equal(run(edit(dir, join(dir, 'src', 'a.mjs'), { transcript_path: t })), 'deny');
   assert.equal(run(edit(dir, join(dir, 'README.md'), { transcript_path: t })), 'allow');
+});
+
+test('Codex apply_patch: gated targets deny and ungated targets allow', () => {
+  const dir = project();
+  assert.equal(run(patch(dir, '*** Begin Patch\n*** Add File: src/a.mjs\n+x\n*** End Patch')), 'deny');
+  assert.equal(run(patch(dir, '*** Begin Patch\n*** Add File: README.md\n+x\n*** End Patch')), 'allow');
+  assert.equal(run(patch(dir, '*** Begin Patch\n*** Update File: README.md\n@@\n-x\n+y\n*** Update File: src/a.mjs\n@@\n-x\n+y\n*** End Patch')), 'deny');
+});
+
+test('Codex registers goal-gate for apply_patch without Claude modules', () => {
+  const config = JSON.parse(readFileSync(join(HERE, '..', 'hooks', 'codex.json'), 'utf8'));
+  assert.equal(config.modules, undefined);
+  assert.match(config.hooks.PreToolUse[0].matcher, /apply_patch/);
+  assert.match(config.hooks.PreToolUse[0].hooks[0].command, /goal-gate\.mjs/);
+});
+
+test('Codex MCP entry tools are denied inside a run and allowed in the main session', () => {
+  for (const tool_name of ['mcp__graph-engineering__graph_open', 'mcp__task-manager__tm_open', 'mcp__task-manager__tm_run']) {
+    assert.equal(run({ tool_name, cwd: project(), tool_input: {} }, { HARNESS_NODE: '1' }), 'deny', tool_name);
+    assert.equal(run({ tool_name, cwd: project(), tool_input: {} }), 'allow', tool_name);
+  }
 });
 
 test('G1: the engine path or the deny text as prose does not engage (B1)', () => {

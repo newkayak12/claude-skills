@@ -41,6 +41,8 @@ import { join, resolve, dirname, relative, isAbsolute, sep, basename } from 'nod
 import { execFileSync } from 'node:child_process';
 
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+const patchTargets = (command, cwd) => [...String(command || '').matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)]
+  .map((m) => resolve(cwd, m[1].trim()));
 const CLEAN_MS = 24 * 60 * 60 * 1000;
 const SKEW_MS = 60 * 1000;
 const CONFIG = join('.claude', 'harness-gate.json');
@@ -603,6 +605,13 @@ function routeText(dir) {
 // A run node (a subagent: hook input has agent_id; a graph/teams worker process: HARNESS_NODE=1)
 // must never open a run again. These are the skills that open one.
 const ENTRY_SKILL_RE = /^(?:(?:harness:)?harness|graph:orchestrate|teams:(?:orchestrate|develop|sprint|document|plan|qa))$/;
+const ENTRY_MCP_RE = /(?:^|__)(graph_open|tm_open|tm_run)$/;
+const entryCall = (input) => {
+  const tool = String(input?.tool_name || '');
+  const skill = tool === 'Skill' ? input?.tool_input?.skill : null;
+  if (typeof skill === 'string' && ENTRY_SKILL_RE.test(skill)) return `Skill ${skill}`;
+  return ENTRY_MCP_RE.test(tool) ? tool : '';
+};
 const SUBAGENT_NOTE = 'A subagent that sees this must not invoke the harness again — stop and report to its caller.';
 const SUBAGENT_STOP = 'You are inside a run. Do not invoke the harness skill, graph, teams, Workflow or open a run. ' +
   'Stop and report this block (file + reason) to your caller.';
@@ -658,11 +667,11 @@ function main() {
 
   // A node or subagent opening a run is the recursion: stop and report, never nest a run.
   // A node process is unambiguous; a subagent only counts where a gate is configured.
-  if (tool === 'Skill') {
-    const skill = input.tool_input && input.tool_input.skill;
-    if (!sub || typeof skill !== 'string' || !ENTRY_SKILL_RE.test(skill)) process.exit(0);
+  const entry = entryCall(input);
+  if (entry) {
+    if (!sub) process.exit(0);
     if (kind === 'agent' && !findRoot(join(cwd, '_'))) process.exit(0); // no gate configured here
-    deny(`Skill ${skill}: ${SUBAGENT_STOP}`);
+    deny(`${entry}: ${SUBAGENT_STOP}`);
   }
 
   // What this call would write.
@@ -671,6 +680,8 @@ function main() {
   if (EDIT_TOOLS.has(tool)) {
     const fp = (input.tool_input && (input.tool_input.file_path || input.tool_input.notebook_path)) || '';
     if (fp) targets = [resolve(cwd, String(fp))];
+  } else if (tool === 'apply_patch') {
+    targets = patchTargets(input.tool_input && input.tool_input.command, cwd);
   } else if (tool === 'Bash') {
     const a = analyzeBash(input.tool_input && input.tool_input.command, cwd);
     viaScript = new Set([...a.script].filter((t) => !a.direct.has(t)));
