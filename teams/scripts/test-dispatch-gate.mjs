@@ -65,6 +65,18 @@ test('Codex apply_patch gates matching files, including a matching file after an
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('Codex apply_patch: a Move to a gated path is judged; a rename with no new content stays under min_chars', () => {
+  const dir = project({ paths: ['src/**'], min_chars: 4 });
+  try {
+    const move = (to, body) => `*** Begin Patch\n*** Update File: notes.txt\n*** Move to: ${to}\n${body}*** End Patch`;
+    const r = run(dir, { command: move('src/b.mjs', '@@\n-x\n+hello world\n') }, 'apply_patch');
+    assert.equal(r.status, 2, 'moved into a gated path with content');
+    assert.match(r.stderr, /src\/b\.mjs/);
+    assert.equal(run(dir, { command: move('docs/b.txt', '@@\n-x\n+hello world\n') }, 'apply_patch').status, 0, 'moved to an ungated path');
+    assert.equal(run(dir, { command: move('src/b.mjs', '') }, 'apply_patch').status, 0, 'a bare rename adds no work');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('HARNESS_NODE=1 or agent_id: a gated write says stop and report; a main session keeps the invoke text and gains the sentence', () => {
   const dir = project({ paths: ['src/**'] });
   try {

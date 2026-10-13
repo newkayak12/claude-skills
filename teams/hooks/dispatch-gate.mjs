@@ -103,7 +103,7 @@ function targetOf(input) {
 }
 
 function patchTargets(command) {
-  return [...String(command || '').matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((m) => m[1].trim());
+  return [...String(command || '').matchAll(/^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$/gm)].map((m) => m[1].trim());
 }
 
 function sizeOf(input) {

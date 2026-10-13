@@ -158,7 +158,7 @@ One row per `git worktree list --porcelain` entry of this repo: branch (or detac
 When a `git push` to `main` goes through in one session (`origin main`, `HEAD:main`, `x:main`, or a plain push while on main), every other open session of the same repository that was active in the last 30 minutes gets a message: `main moved to <sha> … Fetch before editing or bumping versions.` At most one message per session every 2 minutes; this session gets a toast `main moved: told N of M`. Headless runs send nothing.
 
 ## Status
-- `0.5.7`: Codex uses an explicit empty, schema-compatible hook overlay because Session's UI hook module is Claude-only; Claude behavior is unchanged and Codex no longer fails plugin initialization.
+- `0.5.7`: Codex uses an explicit empty, schema-compatible hook overlay because Session's UI hook module is Claude-only; Claude behavior is unchanged and Codex no longer fails plugin initialization. The overlay also leaves out the SessionStart trophy install hook on purpose (trophy is Claude-only).
 - `0.5.6`: the main-moved message reads the pushed HEAD, not `origin/main` — with a remote not named origin it was sent empty and every repeat was dropped as a duplicate.
 - `0.5.5`: the recap keeps only what the next steps need (a new In progress section; finished work as one line), and compact takes it as the summary instead of writing its own beside it.
 - `0.5.4`: the recap band is offered once per recap — Recap or dismiss is remembered, and a session's own smart-compact recap never raises it.

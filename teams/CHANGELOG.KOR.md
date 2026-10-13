@@ -5,7 +5,7 @@
 `teams` 플러그인의 모든 릴리스를 최신순으로 적었습니다. 예전 KOR.md의 `## 상태` 절을 그대로 옮겨 온 것입니다. 새 릴리스 줄은 `teams:patch`가 아래 `## 상태` 맨 위에 추가합니다.
 
 ## 상태
-- v0.54.1 — Codex는 스키마 호환 훅 오버레이를 사용하고 편집 및 중첩 run 진입 호출의 dispatch gate를 유지하며, Claude 훅은 변경되지 않습니다.
+- v0.54.1 — Codex는 스키마 호환 훅 오버레이를 사용하고 편집 및 중첩 run 진입 호출의 dispatch gate를 유지하며, Claude 훅은 변경되지 않습니다. Codex `apply_patch`의 이름 변경(`*** Move to:`)도 새 경로로 판정합니다. Codex 오버레이는 SessionStart의 trophy 설치 훅을 일부러 넣지 않습니다(trophy는 Claude 전용).
 - v0.54.0 — AC-n 계약을 끝까지 연결: PRD 스토리가 `<area>-AC-n` Given/When/Then(누락 기준 점검, `[확인 필요]`)을 갖고; shape는 어떤 구현 패키지도 맡지 않은 PRD AC-n(과 PRD에 없는 AC-n)을 거부; setgoal은 AC-n ID 재사용(한 줄 작업은 비례 규칙); gate와 gate:goal은 AC-n마다 증거 한 행과 `out-of-spec:` 관찰; QA 카드와 케이스가 AC-n을 명시; audit은 `ac_checked` 보고; 벤치는 `spec_acceptance_ids` 집계
 - v0.53.0 — run 안의 run 금지: 작업 spawn(broker 노드, daemon 판정)에 HARNESS_NODE=1을 붙이고 driver에는 붙이지 않음; dispatch gate가 노드나 서브에이전트에게 teams:orchestrate 대신 멈추고 보고하라고 안내하고, run 진입 스킬 호출을 거부(matcher에 Skill 추가)
 - v0.52.0 — harness나 graph도 설치돼 있으면 dispatch-gate 거부가 종류로 안내: 단순 개발 → graph(없으면 harness), 스펙·기획·QA·여러 영역·애매함 → teams:orchestrate; harness 게이트와 같은 안내문
