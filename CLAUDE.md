@@ -8,6 +8,15 @@ Every change to this repo is checked against the coding guidelines below (think 
 
 @_repo/coding-guidelines.md
 
+### How the four guidelines apply here
+
+| Guideline (Karpathy) | Rule in this repo |
+|---|---|
+| **Think Before Coding** — "Don't assume. Don't hide confusion. Surface tradeoffs." | A behaviour change starts with plan → setgoal → critique and the user's approval (Design Changes below). Unclear or several readings → ask before editing. |
+| **Simplicity First** — "Minimum code that solves the problem. Nothing speculative." | No new skill when an existing one can be split or extended; no new top-level directory unless it is a plugin; no option nobody asked for. |
+| **Surgical Changes** — "Touch only what you must. Clean up only your own mess." | Edit files with Read/Edit/Write only (main session and agents alike); Bash is for git, checks and tests. Stage explicit paths. Fixes land unbumped; no unrelated tidy-ups in the same change. |
+| **Goal-Driven Execution** — "Define success criteria. Loop until verified." | Done = the checks in `_repo/MAINTAINING.md` with counts reported, plus one real run for a behaviour change. Every harness run opened ends with `05-report.md`, partial criteria stated as partial. |
+
 Mods (plugin `hooks/*.tsx` modules): anything a person reads in an interactive session is drawn with Ink, as a `ui.render` tree (Pane or AbovePrompt), opened by its command or a band button. A command's `{ text }` is the headless answer only; interactive, it opens the pane and returns one line at most.
 
 ## Skill Awareness

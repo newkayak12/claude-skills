@@ -9,7 +9,7 @@ things live, how to check them, and how to leave the repo clean*. When the two d
 | Path | Holds | Never holds |
 |---|---|---|
 | `<plugin>/` (top level) | one plugin: `.claude-plugin/plugin.json`, `skills/`, `hooks/` (mod), `README.md` + `KOR.md` | notes, plans, reports |
-| `_repo/docs/plans/` | design docs, dated `YYYY-MM-DD-<topic>.md`; mod plans in `mod/` | code |
+| `_repo/docs/plans/` | design docs, dated `YYYY-MM-DD-<topic>.md`; mod plans in `mod/`; shipped plans in `done/` (a plan cited by code comments stays put) | code |
 | `_repo/scripts/` | repo-wide checks (`validate_plugins.py`, `check-copies.mjs`, bump tools) | plugin code |
 | `_repo/deprecated/` | README only: restore table (item, last commit, `git checkout` command) for retired items | files of retired items |
 | `.claude/` | this repo's own hooks (goal gate, repo rules) | plugin code |
@@ -25,7 +25,7 @@ Always:
 
 ```sh
 python3 _repo/scripts/validate_plugins.py   # every plugin installable (CI runs this)
-node _repo/scripts/check-copies.mjs         # vendored copies identical (CI runs this)
+node _repo/scripts/check-copies.mjs         # vendored copies + ROUTE/NODE blocks of the gate hooks identical (CI runs this)
 ```
 
 Then the plugin you touched:
@@ -34,21 +34,24 @@ Then the plugin you touched:
 |---|---|
 | a mod (`<plugin>/hooks/*.tsx`: session, trophy, harness, graph, teams) | `cd <plugin> && claude plugin test .` |
 | teams / graph / harness / knowledge scripts | `node --test <plugin>/scripts/test-*.mjs` |
-| harness goal gate | `node --test harness/scripts/test-goal-gate.mjs`, then copy it byte-identical to `.claude/hooks/goal-gate.mjs` |
+| teams bench scripts | `node --test teams/scripts/bench/test-*.mjs` |
+| harness goal gate | `node harness/scripts/test-goal-gate.mjs` (own runner, prints `all passed`), then copy it byte-identical to `.claude/hooks/goal-gate.mjs` |
 | `write:diagram` | `node write/skills/diagram/scripts/test-diagram.mjs` (teams vendors its `diagram.mjs`) |
+| `write:tech-book` | `node --test write/skills/tech-book/scripts/test-*.mjs` |
+| `portfolio:deck-builder` | in its `scripts/`: `python3 test_deck.py`, `DECK_RENDER_DOCKER=deck-render python3 test_render.py` |
 | a SKILL.md only | the validator above; a behaviour change also needs one real run (see Benches) |
 
 Report the counts you saw; "tests pass" without a number is not a check.
 
 ## Versions and release
 
-- Plugin change → bump `<plugin>/.claude-plugin/plugin.json` **and** its entry in
-  `.claude-plugin/marketplace.json` (and `<plugin>/.codex-plugin/` if it has one). Patch for a fix,
-  minor for new behaviour or a skill added/removed, major for a breaking rename.
-- README.md and KOR.md move together in the same commit.
 - Releases are batched: fixes land on main without a bump. Versions move once per batch (end of a
   work session, or when the user asks): one bump per plugin per batch, one README/KOR status line
   per plugin per batch. A hotfix the user needs installed now is the exception.
+- A batch bump touches `<plugin>/.claude-plugin/plugin.json` **and** its entry in
+  `.claude-plugin/marketplace.json` (and `<plugin>/.codex-plugin/` if it has one). Patch for a fix,
+  minor for new behaviour or a skill added/removed, major for a breaking rename.
+- README.md and KOR.md move together in the same commit.
 - Remote is `skills`: `git pull --rebase skills main`, then `git push skills main`.
 - Marketplace version and tag (`v<x.y.z>`) move only when the user asks for a release:
   - The repo version is `metadata.version` in `.claude-plugin/marketplace.json`; each release is the
@@ -70,8 +73,10 @@ Report the counts you saw; "tests pass" without a number is not a check.
   Never commit as another name or email (`harness <harness@local>`, `Claude`, …); engine and tool
   commits (harness, teams) use the same author. The `Co-Authored-By: Claude …` trailer is allowed.
 - Every subagent call names its model (`sonnet` for build work, `opus` for plan/judge).
-- Agents edit files with Read/Edit/Write, not shell scripts, and never script around the goal gate —
-  if the gate blocks, open a harness run.
+- Everyone — the main session and every agent — edits files with Read/Edit/Write, not shell
+  scripts (sed, python, heredocs), and never scripts around the goal gate. If the gate blocks the
+  orchestrating session, it opens a harness run; a subagent or harness/teams node never opens one —
+  it stops and reports to its caller.
 - Stage explicit paths, never `git add -A` at the root while another task has changes.
 
 ## Benches and experiments
