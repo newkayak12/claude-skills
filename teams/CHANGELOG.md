@@ -5,6 +5,7 @@
 Every release of the `teams` plugin, newest first. Moved here verbatim from the README's old `## Status` section. `teams:patch` prepends new release lines under `## Status` below.
 
 ## Status
+- v0.55.0 — the mod sends a push notification (toast when it cannot) on rejects, needs-you and run end; `node_finish` carries the package and attempt, and a reject push names the attempt.
 - v0.54.1 — Codex uses a schema-compatible hook overlay and preserves dispatch gating for edits and nested run entry calls; Claude hooks are unchanged. Codex `apply_patch` renames (`*** Move to:`) are judged by their target path. The Codex overlay leaves out the SessionStart trophy install hook on purpose (trophy is Claude-only).
 - v0.54.0 — AC-n contract end to end: PRD stories carry `<area>-AC-n` Given/When/Then with an unstated-criteria sweep and `[확인 필요]`; shape refuses a PRD AC-n no implementing package carries (and an invented one); setgoal reuses AC-n ids (proportional rule for one-line tasks); gate and gate:goal give one evidence row per AC-n with `out-of-spec:` observations; QA cards and cases name AC-n; audit reports `ac_checked`; bench counts `spec_acceptance_ids`
 - v0.53.0 — no run inside a run: worker spawns (broker nodes, daemon judge) carry HARNESS_NODE=1, drivers do not; the dispatch gate tells a node or subagent to stop and report instead of invoking teams:orchestrate, and denies its call to a run entry skill (Skill added to the matcher)

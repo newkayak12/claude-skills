@@ -49,6 +49,7 @@
 선택: `graph:install`이 `develop:like-my-code`를 실행해 `.claude/conventions/`를 만들 수 있다. 이후 broker가 모든 plan, setgoal, implement, test 노드(벤더 무관)에 관련 파일을 읽고 따르라는 지시를 넣는다.
 
 ## 상태
+- v1.13.0 — 노드 반려, 실패·막힌 run, 끝난 run에서 mod가 푸시 알림을 보냅니다(못 보내면 토스트).
 - v1.12.1 — Codex는 스키마 호환 훅 오버레이를 사용하고 노드 안에서 graph·harness·teams MCP 진입 호출을 차단합니다. Claude의 기존 Skill gate는 변경되지 않습니다. Codex 오버레이는 SessionStart의 trophy 설치 훅을 일부러 넣지 않습니다(trophy는 Claude 전용).
 - v1.12.0 — 노드 프로세스에 `HARNESS_NODE=1`을 붙이고, 새 Skill 훅(`hooks/node-gate.mjs`)이 노드의 run 진입 스킬 호출(harness, graph:orchestrate, teams 진입 스킬)을 멈추고 보고하라는 안내와 함께 거부합니다. 노드가 run 안에서 run을 띄울 수 없습니다.
 - v1.11.1 — `gate:goal` 증거를 AC-n마다 `| AC | verdict | evidence |` 한 행인 표로 쓰고, 이어서 "Out of spec:" 목록을 붙입니다.

@@ -283,6 +283,7 @@ Claude Code 2.1.293 대화형 터미널 세션에서 실제로 캡처했습니�
 `/harness-gate` 게이트 탭: 게이트 패턴, 개입 유효 시간, 마지막 판정.
 
 ## 상태
+- v1.35.0 — 게이트가 막을 때(경로당 10분에 한 번)와 run 반려·실패·완료 때 mod가 푸시 알림을 보냅니다(못 보내면 토스트). graph run은 graph mod에 맡깁니다.
 - v1.34.1 — Codex는 스키마 호환 훅 오버레이를 사용하면서 편집 및 중첩 run 진입 호출에 대한 goal gate를 그대로 유지하며, Claude 훅은 변경되지 않습니다. 진입 스킬이 아닌 Skill 호출은 오버레이 이전처럼 게이트를 바로 통과합니다(참여 마커를 갱신하지 않음). Codex `apply_patch`의 이름 변경(`*** Move to:`)도 새 경로로 판정합니다. Codex 오버레이는 SessionStart의 trophy 설치 훅을 일부러 넣지 않습니다(trophy는 Claude 전용).
 - v1.34.0 — harness 플러그인이 켜져 있으면 프로젝트 goal-gate 복사본은 판정을 플러그인에 맡김(오래된 복사본이 판정하지 않음); plan 프롬프트에서 게시 중단된 assist 플러그인 제거
 - v1.33.0 — harness 안의 harness 금지: goal gate에 막힌 서브에이전트(agent_id)나 run 노드(HARNESS_NODE=1)는 멈추고 호출자에게 보고하라는 안내를 받고, 진입 스킬(harness, graph:orchestrate, teams:orchestrate/develop/sprint/document/plan/qa) 호출은 거부됨; 모든 거부 문구에 이를 명시; 프로젝트 goal-gate 복사본이 플러그인과 다르면 harness:update를 안내하는 토스트 하나

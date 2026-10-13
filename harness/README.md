@@ -292,6 +292,7 @@ The gate hook denying an Edit to a gated path before the harness is engaged.
 `/harness-gate`, Gate tab: gated patterns, engagement window and the last decision.
 
 ## Status
+- v1.35.0 — the mod sends a push notification (toast when it cannot) when the gate denies (once per path per 10 min) and on run rejects, failures and completions; graph runs are left to the graph mod.
 - v1.34.1 — Codex uses a schema-compatible hook overlay while preserving the goal gate for edits and nested run entry calls; Claude hooks are unchanged. A non-entry Skill call exits the gate at once again, as before the overlay (it no longer refreshes engagement markers). Codex `apply_patch` renames (`*** Move to:`) are judged by their target path. The Codex overlay leaves out the SessionStart trophy install hook on purpose (trophy is Claude-only).
 - v1.34.0 — a project goal-gate copy defers to the plugin when the harness plugin is enabled (no stale copy can judge); the plan prompt no longer lists the unpublished assist plugin
 - v1.33.0 — no harness inside a harness: a subagent (agent_id) or run node (HARNESS_NODE=1) blocked by the goal gate is told to stop and report to its caller, and its call to an entry skill (harness, graph:orchestrate, teams:orchestrate/develop/sprint/document/plan/qa) is denied; every deny says so; a project goal-gate copy that differs from the plugin's raises one toast to run harness:update
