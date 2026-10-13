@@ -1,6 +1,6 @@
 {
   "name": "trophy",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "description": "Steam-style achievements for this marketplace's skills. Claude Code only: its hook module and skill are not exposed in Codex.",
   "author": {
     "name": "newkayak12"
