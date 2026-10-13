@@ -32,10 +32,10 @@ metadata:
 ## Standing Mandates
 
 - NEVER change anything before a baseline is recorded (`EXPLAIN (ANALYZE, BUFFERS)`, latency, cache hit rate), and
-  never make two changes in one round. (Scar: two simultaneous changes, one helped and one hurt, and the net number
-  hid both.) No baseline supplied is `[확인 필요: baseline]` and the tuning stops there.
+  never make two changes in one round. Two changes at once make the net number unattributable. No baseline supplied is `[확인 필요: baseline]` and the tuning stops there.
 - NEVER run `ALTER SYSTEM` or edit `my.cnf` on a managed database (RDS, Cloud SQL, Aurora); use the parameter group.
   Deployment type unknown is `[확인 필요: deployment]`.
+- Do NOT add an index that duplicates another's leading columns or serves no measured query; each index taxes every write.
 - A gain not shown by a before/after measurement is `unverified`, never "should be faster".
 - Goal: each change has a baseline number, an after number, and a keep or revert; stop at the target or after 3 rounds
   with no gain, reporting what remains. The closing tally recounts to the change lines.
@@ -53,7 +53,7 @@ measured step at a time.
 2. **Baseline.** `EXPLAIN (ANALYZE, BUFFERS)`, latency, buffer hit rate.
 3. **Bottleneck.** Read the plan and server stats: costly nodes, absent indexes, stale statistics, lock waits, VACUUM lag.
 4. **One change.** Index, parameter, or partition; PostgreSQL indexes `CONCURRENTLY`; rehearse outside production.
-5. **Measure.** Re-run the baseline; keep or revert. Revert if writes slow or replicas fall behind. Then the next change.
+5. **Measure.** Re-run the baseline; keep or revert. Revert if writes slow or replicas fall behind. Then the next change. Before sending, recount the tally against the change lines; fix the header if they differ.
 
 | Plan signal | Suggests | Usual first move |
 |-------------|----------|------------------|

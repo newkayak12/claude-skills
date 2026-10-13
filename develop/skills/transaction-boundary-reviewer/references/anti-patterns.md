@@ -18,7 +18,8 @@
 | REPEATABLE READ | Dirty + non-repeatable reads | Phantom reads | Financial aggregations, inventory checks |
 | SERIALIZABLE | All anomalies | none | Booking, reservation, double-spend prevention |
 
-Rows are the SQL-standard minimum. PostgreSQL REPEATABLE READ is snapshot isolation and does not allow phantom reads
+Rows are the SQL-standard minimum. PostgreSQL REPEATABLE READ (snapshot isolation) still allows write skew; only
+SERIALIZABLE (SSI) or explicit `SELECT ... FOR UPDATE` on the read set prevents it. MySQL InnoDB default: REPEATABLE READ. PostgreSQL REPEATABLE READ is snapshot isolation and does not allow phantom reads
 (PostgreSQL docs, "Transaction Isolation", "Repeatable Read Isolation Level"). MySQL InnoDB REPEATABLE READ: consistent
 nonlocking reads read the transaction's snapshot (no phantoms) and locking reads/UPDATE/DELETE take next-key locks, but a
 locking read or DML acts on the latest committed rows, so mixing it with snapshot reads in one transaction can surface
@@ -36,12 +37,14 @@ public void processOrder(Order order) {
 }
 
 // Good: database work is atomic; side effects happen after commit
+// in OrderWriter (a separate bean):
 @Transactional
 public Order saveOrder(Order order) { return orderRepository.save(order); }
 
+// in the caller:
 public void processOrder(Order order) {
-    Order saved = saveOrder(order);     // commits here
-    paymentGateway.charge(saved);       // no locks held
+    Order saved = orderWriter.saveOrder(order);  // separate bean: the proxy applies, commit happens on return
+    paymentGateway.charge(saved);                // no locks held
 }
 ```
 
@@ -85,6 +88,11 @@ public void deduct(Long accountId, BigDecimal amount) {
 | Saga (choreography) | Long-running processes; 2-3 services |
 | Saga (orchestration) | Complex multi-step flows needing visibility; 4+ services |
 | Two-Phase Commit | Avoid; only when strong consistency is non-negotiable and you control both systems |
+
+## 5. Self-invocation
+
+`this.method()` inside the same bean skips the Spring proxy, so its `@Transactional` (and `REQUIRES_NEW`) never
+applies. Fix: call through another bean, inject self, or use `TransactionTemplate`.
 
 ## Checklist
 

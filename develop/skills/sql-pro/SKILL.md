@@ -36,7 +36,8 @@ metadata:
   `[확인 필요: EXPLAIN ANALYZE]`, and the rewrite is marked `unmeasured`.
 - NEVER report a speedup you did not see as a before/after number. A claimed gain without both plans is `unverified`.
 - Target engine and version unknown is `[확인 필요: engine/version]`; never assume dialect-specific syntax is available.
-- Goal: the final query, its plan before and after, and a closing tally that recounts to the evidence lines.
+- Goal: the final query, its plan before and after, and a closing tally that recounts to the evidence lines (schema or
+  porting tasks: the DDL/query and its caveats; plan lines read n/a).
 
 # SQL Pro
 
@@ -50,9 +51,10 @@ Writes and rewrites SQL, designs schemas, and ports queries between dialects, ju
 1. **Context.** Read schema, indexes, and the query; confirm engine and version. Read the repo before asking.
 2. **Design.** Shape the query as set operations: CTEs, window functions, correct join types.
 3. **Plan.** Read the `EXPLAIN` first, then optimize: covering indexes, early filters, no big sequential scans.
-4. **Verify.** Re-run `EXPLAIN ANALYZE`; compare to the baseline. Stop when the target is met or after 3 rounds with no
-   improvement, and report the best plan with the remaining bottleneck.
-5. **Document.** Index rationale, engine caveats, minimum version.
+4. **Verify.** Re-run `EXPLAIN ANALYZE`; compare to the baseline. Stop when the user's latency target is met (absent:
+   `[확인 필요: target latency]`) or after 3 rounds with no improvement, and report the best plan with the remaining bottleneck.
+5. **Document.** Index rationale, engine caveats, minimum version. Before sending, recount the tally against the
+   finding/change lines; fix the header if they differ.
 
 Coding rules and worked examples (CTE, window, correlated-subquery rewrite): `references/worked-examples.md`.
 
