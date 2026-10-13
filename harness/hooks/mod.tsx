@@ -332,11 +332,13 @@ async function countStages($: EngineInterface, cwd: string, now: number): Promis
 //             pass:false (or match_pct < 90) before 05-report.md (each rewrite is one more attempt)
 //   failed    subgoals/<id>/result.json passed:false (retries spent); a failing goal gate once 05-report.md exists
 //   complete  05-report.md written with no failure; a graph run whose report node is done
-type RunEvent = { key: string; message: string }
+// `outcome` is the run outcome trophy counts (a retry or an attempt-level reject carries none)
+type RunOutcome = 'pass' | 'reject' | 'fail'
+type RunEvent = { key: string; message: string; outcome?: RunOutcome }
 async function runEvents($: EngineInterface, start: number, tries: Map<string, number>): Promise<RunEvent[]> {
   const out: RunEvent[] = []
-  const emit = (run: string, where: string, kind: string, attempt: number, max: number | string) =>
-    out.push({ key: `${run}|${where}|${kind}|${attempt}`, message: `harness ${run}: ${kind} — ${where} (${attempt}/${max})` })
+  const emit = (run: string, where: string, kind: string, attempt: number, max: number | string, outcome?: RunOutcome) =>
+    out.push({ key: `${run}|${where}|${kind}|${attempt}`, message: `harness ${run}: ${kind} — ${where} (${attempt}/${max})`, ...(outcome ? { outcome } : {}) })
   // a file rewritten by each retry counts one attempt per write
   const nth = (run: string, where: string, mtime: number) => {
     const id = `${run}|${where}|${mtime}`
@@ -373,7 +375,7 @@ async function runEvents($: EngineInterface, start: number, tries: Map<string, n
       const r = res ? await readJson($, `${dir}/result.json`, res) : undefined
       if (r?.passed === false) {
         failed = true
-        if (res!.mtimeMs > start) emit(run, `subgoal ${sg.name}`, 'failed', Number(r.attempts) || max, max)
+        if (res!.mtimeMs > start) emit(run, `subgoal ${sg.name}`, 'failed', Number(r.attempts) || max, max, 'fail')
       }
     }
 
@@ -383,11 +385,11 @@ async function runEvents($: EngineInterface, start: number, tries: Map<string, n
       const g = await readJson($, `${base}/04-goal-gate.json`, gg)
       if (g?.pass === false || (typeof g?.match_pct === 'number' && g.match_pct < PASS_PCT && g.pass !== true)) {
         failed = true
-        emit(run, 'goal gate', reported ? 'failed' : 'rejected', nth(run, 'goal gate', gg.mtimeMs), max)
+        emit(run, 'goal gate', reported ? 'failed' : 'rejected', nth(run, 'goal gate', gg.mtimeMs), max, reported ? 'reject' : undefined)
       }
     }
 
-    if (reported !== undefined && reported.mtimeMs > start && !failed) emit(run, 'Report', 'complete', 1, 1)
+    if (reported !== undefined && reported.mtimeMs > start && !failed) emit(run, 'Report', 'complete', 1, 1, 'pass')
   }
   return out
 }
@@ -455,12 +457,23 @@ export const register: Register = on => {
 
     // rejects, failures and completions of runs, once each, none from before the session started
     const told = new Set<string>()
+    // one published outcome per (run, outcome): several failed subgoals or a re-written goal gate count once
+    const published = new Set<string>()
     const tries = new Map<string, number>()
     async function notifyRuns() {
       try {
         for (const ev of await runEvents($, startMs, tries)) {
           if (told.has(ev.key)) continue
           told.add(ev.key)
+          const run = ev.key.split('|')[0]
+          if (ev.outcome !== undefined && !published.has(`${run}|${ev.outcome}`)) {
+            published.add(`${run}|${ev.outcome}`)
+            try {
+              await $.state.set({ plugin: 'harness', key: 'outcome' }, { system: 'harness', outcome: ev.outcome, at: await $.clock.now() })
+            } catch {
+              // fail open: a lost outcome never costs the push
+            }
+          }
           await push(ev.message.slice(0, 200))
         }
       } catch {

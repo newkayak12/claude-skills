@@ -38,6 +38,17 @@ test('the other five events produce the table texts', () => {
   assert.deepEqual(t({ event: 'node_start' }), []);
 });
 
+test('a daemon_done line carries the daemon state; other lines do not', () => {
+  const out = notableEvents([
+    L({ ts: 5, event: 'daemon_done', task_id: ID, state: 'partial' }),
+    L({ ts: 6, event: 'daemon_done', task_id: ID }),
+    L({ ts: 7, event: 'daemon_exhausted', task_id: ID, state: 'x' }),
+    L({ ts: 8, event: 'waiting_human', task_id: ID, node_id: 'n3', state: 'x' }),
+  ], 0);
+  assert.deepEqual(out.map((e) => e.state), ['partial', undefined, undefined, undefined]);
+  assert.equal('state' in out[1], false);
+});
+
 test('events at or before sinceTs are dropped', () => {
   const out = notableEvents([
     L({ ts: 10, event: 'daemon_exhausted', task_id: ID }),

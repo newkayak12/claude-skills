@@ -6,6 +6,9 @@ import { triggers } from '../data/triggers.ts'
 import {
   achievementRow,
   cells,
+  addActivity,
+  addMcp,
+  addOutcome,
   addTurn,
   buildBatch,
   buildProfile,
@@ -14,7 +17,11 @@ import {
   dayOf,
   effectiveConsent,
   evaluate,
+  markActive,
   matchTriggers,
+  osOf,
+  outcomeOf,
+  ownedMcpByName,
   POSTHOG_URL,
   recordUse,
   resolveSkill,
@@ -23,7 +30,7 @@ import {
   triggerLists,
   typedCommand,
 } from './logic.ts'
-import type { Achievement, BatchStore, DayCounts, Use } from './logic.ts'
+import type { Achievement, Activity, BatchStore, DayCounts, McpCalls, Os, Outcomes, System, Use, Versions } from './logic.ts'
 import {
   appendEntry, copyBody, goalFailed, harnessResult, marketplaceCandidates, newest, ownedMcpTool, ownedSkill,
   rowDetail, rowTitle,
@@ -45,6 +52,8 @@ const lastSkill = atom({ plugin: 'trophy', key: 'lastSkill' } as const, '')
 const unseen = atom({ plugin: 'trophy', key: 'unseen' } as const, 0)
 const lastTitle = atom({ plugin: 'trophy', key: 'lastTitle' } as const, '')
 const lang = atom({ plugin: 'trophy', key: 'lang' } as const, 'en' as 'en' | 'ko')
+// The last UTC day this session was counted active; a session left open past midnight marks the new day on its next prompt.
+const lastActiveDay = atom({ plugin: 'trophy', key: 'lastActiveDay' } as const, '')
 
 const CARD_MS = 8000
 const BAR = 10
@@ -76,9 +85,15 @@ const en = {
   headHit: 'Most-hit skills (7 days)', headMiss: 'Most-missed skills (had a trigger phrase, not used)',
   headNever: 'Never-used skills ({n})',
   telemetryUsage: 'usage: /trophy-telemetry on|off|status',
-  telemetryReconsent: 'unasked (v1 yes — needs re-consent)',
-  consentAsk: '📊 trophy · Send anonymous usage stats?', consentSent: 'Sent: skill names · daily counts · error codes',
-  consentNotSent: 'Never sent: prompts · file paths',
+  telemetryReconsent: 'unasked (earlier yes — needs re-consent)',
+  consentAsk: '📊 trophy · Send anonymous usage stats?',
+  consentSent: 'Sent: skill and tool names · daily counts · run results · error codes · plugin/Claude Code versions · OS type',
+  consentNotSent: 'Never sent: prompts · file paths · project or task names',
+  lastSendNone: 'last send: none yet',
+  lastSend: 'last send: {at} · days {from}–{through} · {events} events · {result}',
+  lastSendFirst: 'last send: {at} · first send, through {through} · {events} events · {result}',
+  sendNow: 'trophy telemetry: yes — sent {events} events ({result})',
+  sendNotDue: 'trophy telemetry: yes — nothing due (sent through {through})',
   send: 'Send', decline: "Don't send", show: 'Show contents',
   unlockHead: '🏆 Achievement unlocked!', see: 'View',
 }
@@ -98,9 +113,15 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     headHit: '가장 많이 맞은 스킬 (7일)', headMiss: '가장 많이 놓친 스킬 (트리거 문구는 있었는데 안 쓴)',
     headNever: '한 번도 안 쓴 스킬 ({n})',
     telemetryUsage: '사용법: /trophy-telemetry on|off|status',
-    telemetryReconsent: 'unasked (v1 yes — 재동의 필요)',
-    consentAsk: '📊 trophy · 익명 사용 통계를 보낼까요?', consentSent: '보내는 것: 스킬명 · 일별 횟수 · 오류 코드',
-    consentNotSent: '보내지 않는 것: 프롬프트 · 파일 경로',
+    telemetryReconsent: 'unasked (이전 동의 — 재동의 필요)',
+    consentAsk: '📊 trophy · 익명 사용 통계를 보낼까요?',
+    consentSent: '보내는 것: 스킬·도구 이름 · 일별 횟수 · 실행 결과 · 오류 코드 · 플러그인/Claude Code 버전 · OS 종류',
+    consentNotSent: '보내지 않는 것: 프롬프트 · 파일 경로 · 프로젝트/작업 이름',
+    lastSendNone: '마지막 전송: 아직 없음',
+    lastSend: '마지막 전송: {at} · {from}–{through} · 이벤트 {events}개 · {result}',
+    lastSendFirst: '마지막 전송: {at} · 첫 전송, {through}까지 · 이벤트 {events}개 · {result}',
+    sendNow: 'trophy telemetry: yes — 이벤트 {events}개 전송 ({result})',
+    sendNotDue: 'trophy telemetry: yes — 보낼 것 없음 ({through}까지 전송됨)',
     send: '보내기', decline: '안 보내기', show: '내용 보기',
     unlockHead: '🏆 업적 해금!', see: '보기',
   },
@@ -119,6 +140,8 @@ type Owned = { skills: Record<string, string[]>; servers: Record<string, string[
 // unreadable, so no failure is recorded (fails toward privacy). `cc` is Claude Code's release.
 let owned: Owned = { skills: {}, servers: {}, versions: {} }
 let cc = ''
+// A label from HOME/USERPROFILE, computed once per session; the variables themselves are never kept.
+let os: Os = 'other'
 
 const readJson = async ($: EngineInterface, path: string) => JSON.parse(await $.fs.read(path))
 
@@ -207,6 +230,10 @@ async function readBatchStore($: EngineInterface): Promise<BatchStore> {
     errors: (await get('trophy.errors', [])) as BatchStore['errors'],
     plugins: (await get('trophy.plugins', {})) as Record<string, string[]>,
     failures: (await get('trophy.failures', [])) as Entry[],
+    versions: (await get('trophy.versions', {})) as Versions,
+    activity: (await get('trophy.activity', {})) as Activity,
+    mcpCalls: (await get('trophy.mcpCalls', {})) as McpCalls,
+    outcomes: (await get('trophy.outcomes', {})) as Outcomes,
   }
 }
 
@@ -224,28 +251,84 @@ async function recordPlugins($: EngineInterface) {
   await $.store.set('trophy.plugins', { ...all, [day]: [...new Set([...(all[day] ?? []), ...names])].sort() })
 }
 
-// Sends the days not yet sent, up to yesterday, for a person who said yes; a failed send changes nothing.
-async function sendIfDue($: EngineInterface) {
+type LastSend = {
+  at: string
+  from: string | null
+  through: string
+  events: number
+  result: string
+  error?: string
+}
+type SendOutcome = { due: false; through: string | undefined } | { due: true; last: LastSend }
+
+// One send at a time: a button press and a session start share the same promise.
+let sending: Promise<SendOutcome> | null = null
+
+// Sends the days not yet sent, up to yesterday, for a person who said yes; a failed send changes nothing
+// but is recorded in `trophy.lastSend`. Nothing due: no fetch and `lastSend` stays.
+function sendIfDue($: EngineInterface): Promise<SendOutcome> {
+  sending ??= sendDue($).finally(() => {
+    sending = null
+  })
+  return sending
+}
+
+async function sendDue($: EngineInterface): Promise<SendOutcome> {
+  const sent = (await $.store.get('trophy.sentThrough')) as string | undefined
   const answer = effectiveConsent(
     (await $.store.get('trophy.consent')) as Consent | undefined,
     (await $.store.get('trophy.consentVersion')) as number | undefined,
   )
-  if (answer !== 'yes') return
   const through = await yesterday($)
-  const sent = (await $.store.get('trophy.sentThrough')) as string | undefined
-  if (sent !== undefined && sent >= through) return
+  if (answer !== 'yes' || (sent !== undefined && sent >= through)) return { due: false, through: sent }
   const body = buildBatch(await readBatchStore($), through)
-  if (body.batch.length > 0) {
-    const res = await $.http.fetch(POSTHOG_URL, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) return
+  const last: LastSend = {
+    at: new Date(await $.clock.now()).toISOString(), from: sent ?? null, through, events: body.batch.length, result: 'empty',
   }
-  const errors = (((await $.store.get('trophy.errors')) ?? []) as BatchStore['errors']).filter(e => e.day > through)
-  await $.store.set('trophy.errors', errors)
-  await $.store.set('trophy.sentThrough', through)
+  let landed = true
+  if (body.batch.length > 0) {
+    try {
+      const res = await $.http.fetch(POSTHOG_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      last.result = res.ok ? 'ok' : `http_${res.status}`
+      landed = res.ok
+    } catch (err) {
+      last.result = 'error'
+      last.error = scrub(String((err as { message?: unknown })?.message ?? err))
+      landed = false
+    }
+  }
+  if (landed) {
+    const errors = (((await $.store.get('trophy.errors')) ?? []) as BatchStore['errors']).filter(e => e.day > through)
+    await $.store.set('trophy.errors', errors)
+    await $.store.set('trophy.sentThrough', through)
+  }
+  await $.store.set('trophy.lastSend', last)
+  return { due: true, last }
+}
+
+// The one line `on` and the Send button answer with.
+async function sendLine($: EngineInterface): Promise<string> {
+  const r = await sendIfDue($).catch(() => undefined)
+  if (r?.due) return str($, 'sendNow', { events: r.last.events, result: r.last.result })
+  return str($, 'sendNotDue', { through: r?.through ?? '-' })
+}
+
+async function lastSendLine($: EngineInterface): Promise<string> {
+  const last = (await $.store.get('trophy.lastSend')) as LastSend | undefined
+  if (!last) return str($, 'lastSendNone')
+  const vars = { at: last.at, from: last.from ?? '', through: last.through, events: last.events, result: last.result }
+  return str($, last.from === null ? 'lastSendFirst' : 'lastSend', vars)
+}
+
+export async function countOutcome($: EngineInterface, system: System, value: unknown) {
+  const hit = outcomeOf(value, system)
+  if (!hit) return
+  const outcomes = ((await $.store.get('trophy.outcomes')) ?? {}) as Outcomes
+  await $.store.set('trophy.outcomes', addOutcome(outcomes, dayOf(await $.clock.now()), hit.system, hit.outcome))
 }
 
 // The file trophy:list reads. Written after every store change; a failed write never blocks the prompt.
@@ -338,6 +421,17 @@ export const register: Register = on => {
       argumentHint: '<note>',
     })
     await recordPlugins($).catch(() => {})
+    await safe(async () => {
+      os = osOf(await $.env.get('HOME'), await $.env.get('USERPROFILE'))
+      const day = dayOf(await $.clock.now())
+      if (Object.keys(owned.versions).length > 0) {
+        const versions = ((await $.store.get('trophy.versions')) ?? {}) as Versions
+        await $.store.set('trophy.versions', { ...versions, [day]: { ...versions[day], ...owned.versions } })
+      }
+      const activity = ((await $.store.get('trophy.activity')) ?? {}) as Activity
+      await $.store.set('trophy.activity', addActivity(activity, day, cc, os))
+      await update($, lastActiveDay, () => day)
+    })
     await sendIfDue($).catch(() => {})
 
     return next(e)
@@ -370,6 +464,44 @@ export const register: Register = on => {
         skill: hit.skill,
         local: forked ? { text: cut(r.result.result) } : {},
       })
+    })
+    return result
+  }).catch(failOpen)
+
+  // Counts this marketplace's MCP tools once per call: isError decides ok or error. Names only; the result goes back unchanged.
+  on('tool.call', async ($, e, next) => {
+    const tool = String(e.tool)
+    if (!tool.startsWith('mcp__plugin_') || !(await read($, active))) return next(e)
+    const result = await next(e)
+    await safe(async () => {
+      const hit = ownedMcpByName(tool, owned.servers)
+      if (!hit) return
+      const kind = (result as { isError?: unknown } | undefined)?.isError === true ? 'error' : 'ok'
+      const calls = ((await $.store.get('trophy.mcpCalls')) ?? {}) as McpCalls
+      await $.store.set('trophy.mcpCalls', addMcp(calls, dayOf(await $.clock.now()), hit.plugin, hit.tool, kind))
+    })
+    return result
+  }).catch(failOpen)
+
+  // Run outcomes the graph, teams and harness mods publish: only the system and the outcome label are counted.
+  on('state.set', { plugin: 'graph', key: 'outcome' }, async ($, e, next) => {
+    const result = await next(e)
+    await safe(async () => {
+      if (await read($, active)) await countOutcome($, 'graph', e.value)
+    })
+    return result
+  }).catch(failOpen)
+  on('state.set', { plugin: 'teams', key: 'outcome' }, async ($, e, next) => {
+    const result = await next(e)
+    await safe(async () => {
+      if (await read($, active)) await countOutcome($, 'teams', e.value)
+    })
+    return result
+  }).catch(failOpen)
+  on('state.set', { plugin: 'harness', key: 'outcome' }, async ($, e, next) => {
+    const result = await next(e)
+    await safe(async () => {
+      if (await read($, active)) await countOutcome($, 'harness', e.value)
     })
     return result
   }).catch(failOpen)
@@ -446,6 +578,13 @@ export const register: Register = on => {
   // A prompt's trigger phrases are matched on the way in and judged against the skills that fired when the turn ends.
   on('prompt.submit', async ($, e, next) => {
     if (await read($, active)) {
+      await safe(async () => {
+        const day = dayOf(await $.clock.now())
+        if (day === (await read($, lastActiveDay))) return
+        const activity = ((await $.store.get('trophy.activity')) ?? {}) as Activity
+        await $.store.set('trophy.activity', markActive(activity, day, cc, os))
+        await update($, lastActiveDay, () => day)
+      })
       await update($, turnMatched, () => matchTriggers(e.text, triggers))
       await update($, turnFired, () => [])
       const typed = typedCommand(e.text)
@@ -589,14 +728,19 @@ export const register: Register = on => {
 
   on('command.run', { command: 'trophy-telemetry' }, async ($, e) => {
     const arg = e.args.trim()
-    if (arg === 'on' || arg === 'off') {
-      await setConsent($, arg === 'on' ? 'yes' : 'no')
-      return { text: `trophy telemetry: ${arg === 'on' ? 'yes' : 'no'}` }
+    if (arg === 'on') {
+      await setConsent($, 'yes')
+      return { text: await sendLine($) }
+    }
+    if (arg === 'off') {
+      await setConsent($, 'no')
+      return { text: 'trophy telemetry: no' }
     }
     if (arg === 'status') {
       const now = await read($, consent)
       const old = now === 'unasked' && (await $.store.get('trophy.consent')) === 'yes'
-      return { text: `trophy telemetry: ${old ? await str($, 'telemetryReconsent') : now === 'yes' ? `yes (v${CONSENT_VERSION})` : now}` }
+      const answer = old ? await str($, 'telemetryReconsent') : now === 'yes' ? `yes (v${CONSENT_VERSION})` : now
+      return { text: `trophy telemetry: ${answer} · ${await lastSendLine($)}` }
     }
     return { text: await str($, 'telemetryUsage') }
   }).catch(failOpen)
@@ -622,7 +766,10 @@ export const register: Register = on => {
             <Text>{`   ${t('consentSent')}`}</Text>
             <Text>{`   ${t('consentNotSent')}`}</Text>
             <Box marginTop={1} marginLeft={3} columnGap={3}>
-              <Button key="send" hotkey="s" plain label={t('send')} onPress={() => setConsent($, 'yes')} />
+              <Button key="send" hotkey="s" plain label={t('send')} onPress={async () => {
+                await setConsent($, 'yes')
+                $.ui.toast(await sendLine($))
+              }} />
               <Button key="decline" hotkey="n" plain label={t('decline')} onPress={() => setConsent($, 'no')} />
               <Button key="show" hotkey="p" plain label={t('show')} onPress={() => $.ui.open({ id: BATCH_PANE, title: t('previewTitle') })} />
             </Box>

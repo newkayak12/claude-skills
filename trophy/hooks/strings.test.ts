@@ -18,9 +18,11 @@ test('STRINGS.en has no Hangul', () => {
 
 test('the consent question lists the same data in both languages', () => {
   const en = `${STRINGS.en.consentAsk} ${STRINGS.en.consentSent} ${STRINGS.en.consentNotSent}`
-  for (const part of ['anonymous usage stats', 'skill names', 'daily counts', 'error codes', 'prompts', 'file paths']) expect(en).toContain(part)
+  for (const part of ['anonymous usage stats', 'tool names', 'daily counts', 'run results', 'error codes', 'plugin/Claude Code versions', 'OS type', 'prompts', 'file paths', 'project or task names']) expect(en).toContain(part)
   const ko = `${STRINGS.ko.consentAsk} ${STRINGS.ko.consentSent} ${STRINGS.ko.consentNotSent}`
-  for (const part of ['익명 사용 통계', '스킬명', '일별 횟수', '오류 코드', '프롬프트', '경로']) expect(ko).toContain(part)
+  for (const part of ['익명 사용 통계', '도구 이름', '일별 횟수', '실행 결과', '오류 코드', '플러그인/Claude Code 버전', 'OS 종류', '프롬프트', '경로', '프로젝트/작업 이름']) expect(ko).toContain(part)
+  expect(STRINGS.en.telemetryReconsent).not.toContain('v1')
+  expect(STRINGS.ko.telemetryReconsent).not.toContain('v1')
   expect(STRINGS.en.consentNotSent.startsWith('Never sent')).toBe(true)
   expect(STRINGS.ko.consentNotSent.startsWith('보내지 않는 것')).toBe(true)
 })

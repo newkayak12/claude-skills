@@ -1,6 +1,6 @@
 // Pure functions of the trophy module: no `$`, no store, no clock.
 
-import { failureEvents } from './failures.ts'
+import { failureEvents, ownedMcpTool } from './failures.ts'
 import type { Entry } from './failures.ts'
 
 export type Use = { skill: string; plugin: string; day: string; session: string; ts: number }
@@ -228,8 +228,8 @@ export function scrub(message: string) {
   return message.replace(/(?<![\w.])(?:[A-Za-z]:\\[^\s'"():;,]*|~?\/[^\s'"():;,]*)/g, '<path>').slice(0, 300)
 }
 
-// v1 = the first band text (no version stored); v2 names error codes.
-export const CONSENT_VERSION = 2
+// v1 = the first band text (no version stored); v2 names error codes; v3 adds versions, OS type and run results.
+export const CONSENT_VERSION = 3
 export type ConsentAnswer = 'unasked' | 'yes' | 'no'
 
 // A yes counts only for the text version it answered; an older yes reads as unasked, a no stays no.
@@ -243,6 +243,11 @@ export const POSTHOG_URL = 'https://us.i.posthog.com/batch/'
 // Write-only project token: public by design.
 export const POSTHOG_KEY = 'phc_r4NATbMFBZvmQYiJ8MPMJSWHprgbsTkbCddtc6aYAoUg'
 
+export type Activity = Record<string, Record<string, number>>
+export type McpCalls = Record<string, Record<string, { ok: number; error: number }>>
+export type Outcomes = Record<string, Record<string, number>>
+export type Versions = Record<string, Record<string, string>>
+
 export type BatchStore = {
   installId: string
   sentThrough?: string
@@ -252,11 +257,108 @@ export type BatchStore = {
   errors: readonly { day: string; message: string }[]
   plugins: Record<string, string[]>
   failures: readonly Entry[]
+  versions?: Versions
+  activity?: Activity
+  mcpCalls?: McpCalls
+  outcomes?: Outcomes
 }
 
-// The events of every day after `sentThrough` up to `through`. Only skill names, plugin names, days and counts.
+export type Os = 'darwin' | 'linux' | 'win32' | 'other'
+
+// The engine has no OS API: HOME / USERPROFILE decide a label, and only the label is kept.
+export function osOf(home?: string, userprofile?: string): Os {
+  if (home) {
+    if (home.startsWith('/Users/')) return 'darwin'
+    if (home.startsWith('/home/') || home === '/root') return 'linux'
+    if (/^[A-Za-z]:[\\/]/.test(home) || /^\/[a-z]\//i.test(home)) return 'win32'
+    return 'other'
+  }
+  return userprofile ? 'win32' : 'other'
+}
+
+// The newest `versions` entry on or before `day` that names the plugin.
+export function versionOn(versions: Versions, day: string, plugin: string): string | undefined {
+  const days = Object.keys(versions).filter(d => d <= day && versions[d]?.[plugin] !== undefined).sort()
+  const last = days[days.length - 1]
+  return last === undefined ? undefined : versions[last]![plugin]
+}
+
+export function addActivity(activity: Activity, day: string, cc: string, os: Os): Activity {
+  const key = `${cc}|${os}`
+  const today = { ...activity[day] }
+  today[key] = (today[key] ?? 0) + 1
+  return { ...activity, [day]: today }
+}
+
+// Marks the day active without counting a session.
+export function markActive(activity: Activity, day: string, cc: string, os: Os): Activity {
+  const key = `${cc}|${os}`
+  const today = { ...activity[day] }
+  today[key] = today[key] ?? 0
+  return { ...activity, [day]: today }
+}
+
+export function addMcp(calls: McpCalls, day: string, plugin: string, tool: string, kind: 'ok' | 'error'): McpCalls {
+  const key = `${plugin}|${tool}`
+  const today = { ...calls[day] }
+  const cell = { ok: 0, error: 0, ...today[key] }
+  cell[kind] += 1
+  today[key] = cell
+  return { ...calls, [day]: today }
+}
+
+// `mcp__plugin_<plugin>_<server>__<tool>` by name only: tool.call carries no provenance.
+export function ownedMcpByName(
+  name: unknown,
+  servers: Readonly<Record<string, readonly string[]>>,
+): { plugin: string; server: string; tool: string } | undefined {
+  return ownedMcpTool(name, { source: 'plugin' }, servers)
+}
+
+const SYSTEMS = ['graph', 'teams', 'harness'] as const
+const OUTCOME_KINDS = ['pass', 'reject', 'fail'] as const
+export type System = (typeof SYSTEMS)[number]
+export type OutcomeKind = (typeof OUTCOME_KINDS)[number]
+
+// A producer's published outcome, reduced to its two fixed labels; anything else is dropped.
+export function outcomeOf(value: unknown, system: System): { system: System; outcome: OutcomeKind } | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const v = value as { system?: unknown; outcome?: unknown }
+  if (v.system !== system) return undefined
+  const outcome = OUTCOME_KINDS.find(o => o === v.outcome)
+  return outcome === undefined ? undefined : { system, outcome }
+}
+
+export function addOutcome(outcomes: Outcomes, day: string, system: System, outcome: OutcomeKind): Outcomes {
+  const key = `${system}|${outcome}`
+  const today = { ...outcomes[day] }
+  today[key] = (today[key] ?? 0) + 1
+  return { ...outcomes, [day]: today }
+}
+
+// Required and optional property keys of every event; buildBatch builds each from these names only.
+export const EVENT_KEYS: Record<string, { required: string[]; optional: string[] }> = {
+  skill_used: { required: ['skill', 'plugin', 'day', 'count'], optional: ['plugin_version'] },
+  trigger_result: { required: ['skill', 'day', 'hit', 'miss', 'unmatched'], optional: ['plugin_version'] },
+  achievement_unlocked: { required: ['id'], optional: [] },
+  plugins_installed: { required: ['plugin', 'day'], optional: [] },
+  daily_active: { required: ['day', 'cc_version', 'os', 'sessions'], optional: [] },
+  mcp_tool_result: { required: ['day', 'plugin', 'tool', 'ok', 'error'], optional: ['plugin_version'] },
+  run_outcome: { required: ['day', 'system', 'outcome', 'count'], optional: [] },
+  diag_skill_error: { required: ['skill', 'plugin', 'reason', 'count', 'day'], optional: ['plugin_version', 'cc_version'] },
+  diag_mcp_error: { required: ['tool', 'plugin', 'reason', 'count', 'day'], optional: ['plugin_version', 'cc_version'] },
+  diag_user_report: { required: ['reason', 'count', 'day'], optional: ['skill', 'plugin', 'plugin_version', 'cc_version'] },
+  $exception: { required: ['$exception_message'], optional: [] },
+}
+
+// The events of every day after `sentThrough` up to `through`. Only names, days, labels and counts.
 export function buildBatch(store: BatchStore, through: string) {
   const inRange = (day: string) => day > (store.sentThrough ?? '') && day <= through
+  const versions = store.versions ?? {}
+  const withVersion = (day: string, plugin: string) => {
+    const v = plugin ? versionOn(versions, day, plugin) : undefined
+    return v === undefined ? {} : { plugin_version: v }
+  }
   const event = (name: string, day: string, properties: Record<string, unknown>) => ({
     event: name,
     distinct_id: store.installId,
@@ -273,15 +375,40 @@ export function buildBatch(store: BatchStore, through: string) {
     used.set(`${u.day} ${u.skill}`, { ...row, count: row.count + 1 })
     if (u.plugin) (pluginsByDay[u.day] ??= new Set()).add(u.plugin)
   }
-  for (const { day, ...rest } of used.values()) batch.push(event('skill_used', day, { ...rest, day }))
+  for (const r of used.values()) {
+    batch.push(event('skill_used', r.day, { skill: r.skill, plugin: r.plugin, day: r.day, count: r.count, ...withVersion(r.day, r.plugin) }))
+  }
   for (const [day, skills] of Object.entries(store.triggers).filter(([d]) => inRange(d))) {
-    for (const [skill, c] of Object.entries(skills)) batch.push(event('trigger_result', day, { skill, day, ...c }))
+    for (const [skill, c] of Object.entries(skills)) {
+      batch.push(event('trigger_result', day, {
+        skill, day, hit: c.hit, miss: c.miss, unmatched: c.unmatched, ...withVersion(day, skill.split(':')[0]!),
+      }))
+    }
   }
   for (const [id, day] of Object.entries(store.unlocked).filter(([, d]) => inRange(d))) {
     batch.push(event('achievement_unlocked', day, { id }))
   }
   for (const [day, set] of Object.entries(pluginsByDay).filter(([d]) => inRange(d))) {
     for (const plugin of [...set].sort()) batch.push(event('plugins_installed', day, { plugin, day }))
+  }
+  for (const [day, cells] of Object.entries(store.activity ?? {}).filter(([d]) => inRange(d))) {
+    for (const [key, sessions] of Object.entries(cells)) {
+      const i = key.lastIndexOf('|')
+      batch.push(event('daily_active', day, { day, cc_version: key.slice(0, i), os: key.slice(i + 1), sessions }))
+    }
+  }
+  for (const [day, cells] of Object.entries(store.mcpCalls ?? {}).filter(([d]) => inRange(d))) {
+    for (const [key, c] of Object.entries(cells)) {
+      const [plugin = '', tool = ''] = key.split('|')
+      batch.push(event('mcp_tool_result', day, { day, plugin, tool, ok: c.ok, error: c.error, ...withVersion(day, plugin) }))
+    }
+  }
+  for (const [day, cells] of Object.entries(store.outcomes ?? {}).filter(([d]) => inRange(d))) {
+    for (const [key, count] of Object.entries(cells)) {
+      const [system, outcome, ...rest] = key.split('|')
+      if (rest.length > 0 || !SYSTEMS.some(s => s === system) || !OUTCOME_KINDS.some(o => o === outcome)) continue
+      batch.push(event('run_outcome', day, { day, system, outcome, count }))
+    }
   }
   for (const e of store.errors.filter(e => e.day <= through)) {
     batch.push(event('$exception', e.day, { $exception_message: e.message }))

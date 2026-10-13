@@ -1,4 +1,5 @@
-export type TeamsEvent = { ts: number; task_id: string; kind: string; text: string; package?: string; attempt?: number }
+// `state` is the daemon's final state on a daemon_done line (complete, partial, blocked, ...)
+export type TeamsEvent = { ts: number; task_id: string; kind: string; text: string; state?: string; package?: string; attempt?: number }
 
 // `view.mjs --once --format status`: the one-line status of this cwd
 export type StatusInfo = { line: string; waiting: number; latest?: string | null }
@@ -43,6 +44,8 @@ declare module 'claude-code' {
       cardReport: { task_id: string; payload: ReportPayload } | null
       ended: Record<string, 'card' | 'seen' | 'dismissed'>
       lang: 'en' | 'ko'
+      // the run outcome this mod publishes for trophy: labels only, never an id (same type in graph and harness)
+      outcome: { system: 'graph' | 'teams' | 'harness'; outcome: 'pass' | 'reject' | 'fail'; at: number } | null
     }
   }
 }

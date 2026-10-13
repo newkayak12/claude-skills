@@ -18,6 +18,13 @@ declare module 'claude-code' {
       anyUnlocked: boolean
       // UI language, from Claude Code's `language` setting
       lang: 'en' | 'ko'
+      // last UTC day this session was counted active ('' before the first start)
+      lastActiveDay: string
     }
+    // Run outcomes the graph, teams and harness mods publish. trophy reads them through `state.set` hooks;
+    // each declaration repeats the producer's own type and must stay identical to it.
+    graph: { outcome: { system: 'graph' | 'teams' | 'harness'; outcome: 'pass' | 'reject' | 'fail'; at: number } | null }
+    teams: { outcome: { system: 'graph' | 'teams' | 'harness'; outcome: 'pass' | 'reject' | 'fail'; at: number } | null }
+    harness: { outcome: { system: 'graph' | 'teams' | 'harness'; outcome: 'pass' | 'reject' | 'fail'; at: number } | null }
   }
 }

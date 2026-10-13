@@ -410,6 +410,8 @@ Claude Code 2.1.293 대화형 터미널 세션에서 끝난 실행을 실제로 
 ![graph-live-nodes](docs/images/graph-live-nodes.png)
 `/graph-live` 노드 탭: 모든 노드를 대기 / 진행 / 완료 보드에 표시, 재시도는 `#2`.
 
+모드는 각 실행의 결과(complete면 `pass`, failed·blocked면 `fail`, id 없음)를 상태 값 `graph.outcome`으로도 발행합니다. `trophy` 플러그인의 옵트인 집계용입니다.
+
 ## 스킬
 
 - `install` — 기존 그래프 엔진을 복사하지 않고 연결하거나 검증합니다

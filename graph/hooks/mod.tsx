@@ -181,6 +181,7 @@ export const register: Register = on => {
     const startMs = await $.clock.now()
     const pushed = new Set<string>()
     const baselined = new Set<string>()
+    const published = new Set<string>()
 
     // a reject, a failed or blocked run, a finished run: one PushNotification each (a toast when it is not sent)
     async function notifyRun(run: GraphRun, mtimeMs: number) {
@@ -193,6 +194,16 @@ export const register: Register = on => {
           if (mtimeMs < startMs) return
         }
         for (const ev of fresh) {
+          // the run outcome trophy counts: one per (run, outcome); a node reject is a retry, not an outcome
+          const outcome = ev.kind === 'complete' ? 'pass' : ev.kind === 'failed' || ev.kind === 'blocked' ? 'fail' : undefined
+          if (outcome !== undefined && !published.has(`${run.run_id}:${outcome}`)) {
+            published.add(`${run.run_id}:${outcome}`)
+            try {
+              await $.state.set({ plugin: 'graph', key: 'outcome' }, { system: 'graph', outcome, at: await $.clock.now() })
+            } catch {
+              // fail open: a lost outcome never costs the push
+            }
+          }
           const max = typeof run.max_retries === 'number' ? `/${run.max_retries}` : ''
           const message = `graph ${run.run_id.slice(0, 8)}: ${ev.kind} — ${ev.node} (${ev.attempt}${max})`.slice(0, 200)
           let sent = false

@@ -141,6 +141,21 @@ async function pushEvent($: EngineInterface, one: TeamsEvent, sent: Set<string>)
     const key = `${one.task_id}|${one.kind}|${one.package ?? ''}|${one.attempt ?? ''}|${one.text}|${one.ts}`
     if (kind === undefined || sent.has(key)) return
     sent.add(key)
+    // the run outcome trophy counts, from the daemon's state field; any other state is no outcome
+    const outcome =
+      one.kind === 'daemon_exhausted' ? 'fail'
+        : one.kind !== 'daemon_done' ? undefined
+          : one.state === 'complete' ? 'pass'
+            : one.state === 'partial' ? 'reject'
+              : one.state === 'blocked' ? 'fail'
+                : undefined
+    if (outcome !== undefined) {
+      try {
+        await $.state.set({ plugin: 'teams', key: 'outcome' }, { system: 'teams', outcome, at: await $.clock.now() })
+      } catch {
+        // fail open: a lost outcome never costs the push
+      }
+    }
     const m = /^(E-\S+) (.*)$/.exec(one.text)
     const message = `teams ${m?.[1] ?? one.task_id}: ${STRINGS[await read($, lang)][kind]} \u2014 ${m?.[2] ?? one.text}`.slice(0, 200)
     // PushNotification's result: { pushSent?, localSent? }

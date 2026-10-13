@@ -28,7 +28,7 @@ test('a fresh store asks: one row, three buttons; [안 보내기] sets no and th
   expect(await ui.find({ key: 'send' })).toBeDefined()
   expect(await ui.find({ key: 'decline' })).toBeDefined()
   expect(await ui.find({ key: 'show' })).toBeDefined()
-  expect(await ui.find({ text: /보내지 않는 것: 프롬프트 · 파일 경로/ })).toBeDefined()
+  expect(await ui.find({ text: /보내지 않는 것: 프롬프트 · 파일 경로 · 프로젝트\/작업 이름/ })).toBeDefined()
   await ui.press({ key: 'decline' })
 
   expect(store.get('trophy.consent')).toBe('no')
@@ -43,7 +43,7 @@ test('by default the band asks in English with the same data listed and no Hangu
   const ui = await $.ui.mount({ plugin: 'trophy', surface: 'terminal', component: 'AbovePrompt', props: BAND })
 
   expect(await ui.find({ text: /Send anonymous usage stats/ })).toBeDefined()
-  expect(await ui.find({ text: /Never sent: prompts · file paths/ })).toBeDefined()
+  expect(await ui.find({ text: /Never sent: prompts · file paths · project or task names/ })).toBeDefined()
   expect(await ui.find({ text: /[가-힣]/ })).toBeUndefined()
   for (const label of ['Send', "Don't send", 'Show contents']) expect(await ui.find({ label })).toBeDefined()
 })
@@ -135,13 +135,14 @@ const fetching = (on: On, consent: Record<string, unknown>) => {
 }
 
 test('effectiveConsent maps stored answer and version', () => {
-  expect(CONSENT_VERSION).toBe(2)
-  expect(effectiveConsent('yes', 2)).toBe('yes')
+  expect(CONSENT_VERSION).toBe(3)
+  expect(effectiveConsent('yes', CONSENT_VERSION)).toBe('yes')
   expect(effectiveConsent('yes', undefined)).toBe('unasked')
   expect(effectiveConsent('yes', 1)).toBe('unasked')
+  expect(effectiveConsent('yes', 2)).toBe('unasked')
   expect(effectiveConsent('no', undefined)).toBe('no')
-  expect(effectiveConsent('no', 2)).toBe('no')
-  expect(effectiveConsent('unasked', 2)).toBe('unasked')
+  expect(effectiveConsent('no', CONSENT_VERSION)).toBe('no')
+  expect(effectiveConsent('unasked', CONSENT_VERSION)).toBe('unasked')
   expect(effectiveConsent(undefined, undefined)).toBe('unasked')
 })
 
@@ -153,20 +154,21 @@ test('a stored v1 yes shows the band again and sends nothing', async ($, on) => 
 
   expect(await ui.find({ key: 'send' })).toBeDefined()
   expect(await ui.find({ text: /오류 코드/ })).toBeDefined()
+  expect(await ui.find({ text: /OS 종류/ })).toBeDefined()
   expect(f.fetches).toHaveLength(0)
   expect(f.store.get('trophy.consent')).toBe('yes')
   expect(f.store.get('trophy.consentVersion')).toBeUndefined()
-  expect((await run($, 'status')).text).toContain('unasked (v1 yes — 재동의 필요)')
+  expect((await run($, 'status')).text).toContain('unasked (이전 동의 — 재동의 필요)')
 })
 
 test('a stored v1 yes reports needs re-consent in English by default', async ($, on) => {
   fetching(on, { 'trophy.consent': 'yes' })
   await $.session.start(start)
 
-  expect((await run($, 'status')).text).toContain('unasked (v1 yes — needs re-consent)')
+  expect((await run($, 'status')).text).toContain('unasked (earlier yes — needs re-consent)')
 })
 
-test('answering the band writes yes and version 2', async ($, on) => {
+test('answering the band writes yes and the current version', async ($, on) => {
   const f = fetching(on, { 'trophy.consent': 'yes' })
   await $.session.start(start)
   const ui = await $.ui.mount({ plugin: 'trophy', surface: 'terminal', component: 'AbovePrompt', props: BAND })
@@ -174,9 +176,9 @@ test('answering the band writes yes and version 2', async ($, on) => {
   await ui.press({ key: 'send' })
 
   expect(f.store.get('trophy.consent')).toBe('yes')
-  expect(f.store.get('trophy.consentVersion')).toBe(2)
+  expect(f.store.get('trophy.consentVersion')).toBe(CONSENT_VERSION)
   expect(await ui.find({ key: 'send' })).toBeUndefined()
-  expect((await run($, 'status')).text).toContain('yes (v2)')
+  expect((await run($, 'status')).text).toContain(`yes (v${CONSENT_VERSION})`)
 })
 
 test('a stored no is never re-asked and sends nothing', async ($, on) => {
@@ -188,21 +190,28 @@ test('a stored no is never re-asked and sends nothing', async ($, on) => {
   expect(f.fetches).toHaveLength(0)
 })
 
-test('trophy-telemetry on writes version 2', async ($, on) => {
+test('trophy-telemetry on writes the current version', async ($, on) => {
   const f = fetching(on, {})
   await $.session.start(start)
 
   await run($, 'on')
-  expect(f.store.get('trophy.consentVersion')).toBe(2)
+  expect(f.store.get('trophy.consentVersion')).toBe(CONSENT_VERSION)
   await run($, 'off')
   expect(f.store.get('trophy.consent')).toBe('no')
-  expect(f.store.get('trophy.consentVersion')).toBe(2)
+  expect(f.store.get('trophy.consentVersion')).toBe(CONSENT_VERSION)
 })
 
-test('control: yes at version 2 on the shared seed fetches once', async ($, on) => {
-  const f = fetching(on, { 'trophy.consent': 'yes', 'trophy.consentVersion': 2 })
+test('a v3 yes sends', async ($, on) => {
+  const f = fetching(on, { 'trophy.consent': 'yes', 'trophy.consentVersion': CONSENT_VERSION })
   await $.session.start(start)
   expect(f.fetches).toHaveLength(1)
+})
+
+test('a v2 yes reads as unasked and sends nothing', async ($, on) => {
+  const f = fetching(on, { 'trophy.consent': 'yes', 'trophy.consentVersion': 2 })
+  await $.session.start(start)
+  expect(f.fetches).toHaveLength(0)
+  expect((await run($, 'status')).text).toContain('unasked')
 })
 
 test('yes with no version on the shared seed fetches nothing', async ($, on) => {
@@ -218,7 +227,7 @@ test('yes at version 1 on the shared seed fetches nothing', async ($, on) => {
 })
 
 test('no on the shared seed fetches nothing', async ($, on) => {
-  const f = fetching(on, { 'trophy.consent': 'no', 'trophy.consentVersion': 2 })
+  const f = fetching(on, { 'trophy.consent': 'no', 'trophy.consentVersion': CONSENT_VERSION })
   await $.session.start(start)
   expect(f.fetches).toHaveLength(0)
 })
@@ -232,7 +241,7 @@ test('the consent band stands out (double frame, every line whole) and draws its
 
   const frame = await ui.find({ key: 'consent' })
   expect(frame!.props.borderStyle).toBe('double')
-  for (const text of [/Send anonymous usage stats/, /Sent: skill names/, /Never sent/]) {
+  for (const text of [/Send anonymous usage stats/, /Sent: skill and tool names/, /Never sent/]) {
     expect((await ui.find({ text }))!.props.wrap).toBeUndefined()
   }
   for (const key of ['send', 'decline', 'show']) expect((await ui.find({ key }))!.props.variant).toBeUndefined()

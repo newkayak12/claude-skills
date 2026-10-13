@@ -48,7 +48,7 @@ const file = (run: unknown, mtimeMs = NOW - 1000, name = 'a1.json'): File => ({ 
 // The engine beneath: a Map-backed $.state, surfaces, a runs folder (fs.list / fs.read), settings, ui.open.
 function world(on: On, files: File[], opts: { language?: string; surfaces?: readonly ('terminal' | 'desktop')[] } = {}) {
   const store = new Map<string, unknown>()
-  const seen = { reads: [] as string[], lists: [] as string[], opened: [] as string[], commands: [] as string[], files, writes: 0 }
+  const seen = { reads: [] as string[], lists: [] as string[], opened: [] as string[], commands: [] as string[], files, writes: 0, outcomes: [] as any[], failSet: false }
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.surfaces', () => ({ value: opts.surfaces ?? ['terminal'] }))
   on('command.register', (_$, e) => {
@@ -72,6 +72,10 @@ function world(on: On, files: File[], opts: { language?: string; surfaces?: read
   })
   on('state.get', (_$, e) => ({ value: { value: store.get(e.key), version: 0 } }) as never)
   on('state.set', (_$, e) => {
+    if (e.plugin === 'graph' && e.key === 'outcome') {
+      if (seen.failSet) throw new Error('state is down')
+      seen.outcomes.push(e.value)
+    }
     store.set(e.key, e.value)
     return { value: { isSet: true, version: 1 } } as never
   })
@@ -361,4 +365,68 @@ test('a throwing push is a toast too', async ($, on) => {
   files[0] = fresh(rejected())
   await w.tick()
   expect(w.toasts).toEqual([`graph ${R}: rejected — implement:U1:1 (1/2)`])
+})
+
+// the run outcome graph publishes for trophy: three labels and a time, never an id
+const outcomesOf = (w: { outcomes: any[] }) => w.outcomes.map(o => o.outcome)
+
+test('a finished run publishes pass once, with exactly system, outcome and at', async ($, on) => {
+  const files = [file(base())]
+  const w = await pushed(sentOk, files, on, $)
+  files[0] = fresh(withNodes(base().nodes.map(n => ({ ...n, state: 'done' }))))
+  await w.tick()
+  await w.tick()
+  expect(outcomesOf(w.seen)).toEqual(['pass'])
+  expect(Object.keys(w.seen.outcomes[0]).sort()).toEqual(['at', 'outcome', 'system'])
+  expect(w.seen.outcomes[0].system).toBe('graph')
+})
+
+test('retries spent publishes fail', async ($, on) => {
+  const files = [file(base())]
+  const w = await pushed(sentOk, files, on, $)
+  files[0] = fresh(patch(base(), 'implement:U1:1', 'failed', { final: true }))
+  await w.tick()
+  expect(outcomesOf(w.seen)).toEqual(['fail'])
+})
+
+test('routing blocked publishes fail', async ($, on) => {
+  const files = [file(base())]
+  const w = await pushed(sentOk, files, on, $)
+  files[0] = fresh(base({ routing_blocked: true }))
+  await w.tick()
+  expect(outcomesOf(w.seen)).toEqual(['fail'])
+})
+
+test('blocked and then failed in one run publishes fail once', async ($, on) => {
+  const files = [file(base())]
+  const w = await pushed(sentOk, files, on, $)
+  files[0] = fresh(base({ routing_blocked: true }))
+  await w.tick()
+  files[0] = fresh(patch(base({ routing_blocked: true }), 'implement:U1:1', 'failed', { final: true }))
+  await w.tick()
+  expect(outcomesOf(w.seen)).toEqual(['fail'])
+})
+
+test('a node reject publishes nothing', async ($, on) => {
+  const files = [file(base())]
+  const w = await pushed(sentOk, files, on, $)
+  files[0] = fresh(rejected())
+  await w.tick()
+  expect(w.pushes).toHaveLength(1)
+  expect(w.seen.outcomes).toEqual([])
+})
+
+test('a run held before the session started publishes nothing', async ($, on) => {
+  const w = await pushed(sentOk, [file(withNodes(base().nodes.map(n => ({ ...n, state: 'done' }))))], on, $)
+  await w.tick()
+  expect(w.seen.outcomes).toEqual([])
+})
+
+test('a failing state write never breaks the push', async ($, on) => {
+  const files = [file(base())]
+  const w = await pushed(sentOk, files, on, $)
+  w.seen.failSet = true
+  files[0] = fresh(withNodes(base().nodes.map(n => ({ ...n, state: 'done' }))))
+  await w.tick()
+  expect(w.pushes.map(p => p.message)).toEqual([`graph ${R}: complete — report (1/2)`])
 })
