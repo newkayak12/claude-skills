@@ -58,6 +58,23 @@ sh(clone, 'add', 'p/KOR.md')
 check('commit: README with KOR -> silent', Object.keys(bash('git commit -m x', clone).out).length === 0)
 check('non-commit with lonely README -> silent', Object.keys(bash('ls', clone).out).length === 0)
 
+// harness runs: push/bump refused while a run is open or reports an unwaived missing criterion
+const runDir = join(clone, '.harness-run/r1')
+mkdirSync(runDir, { recursive: true })
+mkdirSync(join(clone, '.harness-run/broker'))
+writeFileSync(join(runDir, 'manifest.json'), '{}')
+const denied = r => decision(r) === 'deny' && /r1/.test(r.out.hookSpecificOutput.permissionDecisionReason)
+check('open run: push unattended -> deny', denied(bash('git push origin main', clone)))
+check('open run: push attended -> deny', denied(bash('git push origin main', clone, ATT)))
+check('open run: teams patch -> deny', denied(bash("node teams/skills/patch/patch.mjs '{}'", clone)))
+check('open run: git status -> pass', decision(bash('git status', clone)) === undefined)
+writeFileSync(join(runDir, '05-report.md'), '| AC-1 | missing | no run |\n')
+check('report with missing -> deny', denied(bash('git push origin main', clone)))
+writeFileSync(join(runDir, '05-report.md'), '| AC-1 | missing | no run |\nwaived: "ship it" (user)\n')
+check('missing + waived -> today\'s behaviour', decision(bash('git push origin main', clone)) === undefined && decision(bash('git push origin main', clone, ATT)) === 'ask')
+writeFileSync(join(runDir, '05-report.md'), '| AC-1 | met | ok |\n')
+check('clean report -> today\'s behaviour', decision(bash('git push origin main', clone)) === undefined)
+
 check('garbage stdin -> fail open', run('bash', 'not json').code === 0 && Object.keys(run('bash', 'not json').out).length === 0)
 check('bad cwd -> fail open', run('bash', { tool_name: 'Bash', tool_input: { command: 'git commit' }, cwd: '/nonexistent' }).code === 0)
 
