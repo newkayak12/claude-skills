@@ -39,13 +39,11 @@ with native Codex tools instead:
 The Codex CLI adapter remains for Claude-orchestrated harness stages that optionally call a
 local Codex CLI process. It is not the Codex-session compatibility path.
 
-## Validation
+## Validation and versioning
 
-After plugin or skill changes, run:
-
-```sh
-python3 _repo/scripts/validate_plugins.py
-```
+Checks, version bumps and release steps are in `_repo/MAINTAINING.md` (one source for Claude and
+Codex). In short: run `validate_plugins.py` and `check-copies.mjs` plus the touched plugin's tests;
+fixes land unbumped and versions move once per batch, README.md and KOR.md together.
 
 For harness engine script changes, also run:
 
@@ -54,13 +52,3 @@ node --check harness/engine/codex-exec-adapter.mjs
 node --check harness/engine/codex-runner.mjs
 node --check harness/engine/fallback-check.mjs
 ```
-
-## Versioning
-
-When changing plugin behavior, bump the affected plugin version in:
-
-- `<plugin>/.claude-plugin/plugin.json`
-- `.claude-plugin/marketplace.json`
-
-For harness changes, also add a concise entry at the top of `harness/README.md` under
-`## Status`.
