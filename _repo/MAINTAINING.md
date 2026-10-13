@@ -10,6 +10,7 @@ things live, how to check them, and how to leave the repo clean*. When the two d
 |---|---|---|
 | `<plugin>/` (top level) | one plugin: `.claude-plugin/plugin.json`, `skills/`, `hooks/` (mod), `README.md` + `KOR.md` | notes, plans, reports |
 | `_repo/docs/plans/` | design docs, dated `YYYY-MM-DD-<topic>.md`; mod plans in `mod/`; shipped plans in `done/` (a plan cited by code comments stays put) | code |
+| `_repo/hooks/` | git hooks (`pre-commit` validator, `pre-push` run hold) via `core.hooksPath` | — |
 | `_repo/scripts/` | repo-wide checks (`validate_plugins.py`, `check-copies.mjs`, bump tools) | plugin code |
 | `_repo/deprecated/` | README only: restore table (item, last commit, `git checkout` command) for retired items | files of retired items |
 | `.claude/` | this repo's own hooks (goal gate, repo rules) | plugin code |
@@ -102,7 +103,9 @@ At the end of a piece of work:
 2. Every harness run you opened has `05-report.md` — an open run keeps the goal gate engaged, and
    `.claude/hooks/repo-rules.mjs` refuses `git push` and the bump tools while any run is open or its
    report has a `| missing |` row. A missing criterion ships only with a `waived: <user's words>`
-   line in that report.
+   line in that report. Codex and a plain terminal get the same push hold from git: run
+   `git config core.hooksPath _repo/hooks` once per clone (it also runs the validator on commit).
+   `--no-verify` and bump scripts run outside Claude Code are not covered.
 3. No containers, volumes, or background processes you started are left running.
 4. `tmp/` holds nothing you are done with.
 5. Nothing new at the top level that is not a plugin.
