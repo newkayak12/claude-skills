@@ -52,7 +52,7 @@ the code defect behind the failure (`develop:bug-diagnoser`).
 
 Detection sources, most to least reliable: alert, synthetic monitor, user report, team member — see [`references/background.md`](references/background.md#detection-sources).
 
-After severity: open an incident channel, even if you're still diagnosing.
+Declare a provisional severity from the table, then open an incident channel, even if still diagnosing.
 
 ## Phase 2 — Triage (target: < 5 min for P0/P1)
 
@@ -64,7 +64,7 @@ Answer these questions fast:
 4. **What changed recently?** (deployments, feature flags, infra changes, dependency updates)
 5. **What is the blast radius?** (data corruption? revenue loss? SLA breach?)
 
-**Triage output**: severity classification + incident commander assigned.
+**Triage output**: severity confirmed or raised + incident commander assigned.
 
 ## Phase 3 — Communicate
 
@@ -114,7 +114,7 @@ A runbook is 3 lines (Means / First check / Escalate to) — format and example 
 
 ### When Root Cause Traces to a Product Decision
 
-If the timeline shows the trigger was a feature behaving as designed (a rollout that hit an untested segment, a launch assumption that didn't hold), the Action Items above won't stop a recurrence. Add one RCA line instead: `Product decision to revisit: [decision] — flag to [feature owner] for the next planning cycle.` This skill stops at naming the decision; validating the hypothesis and deciding iterate-vs-pivot is a product-side call.
+If the timeline shows the trigger was a feature behaving as designed (a rollout that hit an untested segment, a launch assumption that didn't hold), the RCA's Action Items (`references/rca-template.md`) won't stop a recurrence. Add one RCA line instead: `Product decision to revisit: [decision] — flag to [feature owner] for the next planning cycle.` This skill stops at naming the decision; validating the hypothesis and deciding iterate-vs-pivot is a product-side call.
 
 ## Incident Commander Checklist
 
