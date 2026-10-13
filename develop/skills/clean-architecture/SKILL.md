@@ -31,7 +31,7 @@ compatibility:
 - NEVER add a port, layer, or interface "for flexibility". One adapter keeps the seam concrete; a port needs a second
   real adapter or a test fake you actually use. (Scar: single-implementation interfaces everywhere make a CRUD service
   five files per change.)
-- NEVER score from impressions. Every point off the score cites a violating import (`file:line`, direction) you read.
+- NEVER score from impressions. Every point off the score cites a violating import (`file:line`, direction) you read. (An impression-based 6/10 cannot be recounted or argued with.)
 - A fact you were not shown (module layout, which layer a class sits in) is `[확인 필요: ○○]`, never inferred; a score resting on one is `provisional`.
 - Goal: the score recounts to the listed violations, and step 5 is checked (rule tests run with no framework import) or marked `[확인 필요]`.
 
@@ -148,7 +148,7 @@ Diagram: before/after (Mermaid or ASCII)
 
 | Claude | You |
 |--------|-----|
-| Draws the concentric circle diagram | Share existing module structure |
+| Draws the concentric circle diagram | Decide which violations to fix now |
 | Identifies dependency rule violations | Confirm business rules and domain entities |
 | Defines interface contracts at each boundary | Implement concrete classes in outer circles |
 | Writes Use Case input/output DTOs | Wire dependencies in Main/composition root |

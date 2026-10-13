@@ -25,7 +25,7 @@ compatibility:
 - NEVER recommend a split or merge before the data-ownership audit is done. Skipping it is the failure that ships a
   distributed monolith: two services split on paper still write the same tables.
 - NEVER cut a boundary because a noun looks like a service. A cut needs its own team, its own data, and an independent
-  deploy; otherwise it stays a module.
+  deploy; otherwise it stays a module. (Scar: per-noun services became a network of chatty calls and shared tables.)
 - A fact you were not shown (who writes this table, which team owns it, call counts) is `[확인 필요: ○○]`, never guessed.
   A verdict resting on one is `provisional`.
 - Goal: every service gets a verdict from the five tests with the failing test numbered, and the closing tally
@@ -45,8 +45,8 @@ across services (`develop:transaction-boundary-reviewer`).
 1. **Coupling.** Map synchronous call graphs, shared databases, bidirectional dependencies. Read the code or config
    before asking.
 2. **Data ownership.** Per entity: who creates, reads, updates, deletes. The creator owns it; any other writer is a violation.
-3. **Team alignment.** One owning team per service? Missing → `[확인 필요: owner]`.
-4. **Tests and verdict.** Run the five tests, then merge / split / convert to async / fix ownership.
+3. **Team alignment.** One owning team per service, and can that team hold it in its head (cognitive-load test)? Missing → `[확인 필요: owner]`.
+4. **Tests and verdict.** Run the five tests, then merge / split / convert to async / fix ownership. Recount the tally against the verdict lines.
 
 With `sequential-thinking`, take steps 1–4 in order.
 
@@ -65,6 +65,7 @@ Any fail → the boundary is suspect.
 - **Shared database** — two services write one schema, or one reads the other's tables. Fix: access only through the owner's API.
 - **Chatty calls** — more than 3 synchronous hops in a user-facing path. Fix: merge if always called together; async events; BFF at the edge.
 - **Bidirectional dependency** — A calls B and B calls A. Fix: pick the authority direction; events for the way back.
+- **Cross-service transaction** — one operation commits in two services' stores. Fix: events + outbox (`develop:transaction-boundary-reviewer`).
 - **Deployment coupling** — "Can we deploy A on Monday and B the next Friday?" No → implicit shared contract.
 
 ## Split or Keep
