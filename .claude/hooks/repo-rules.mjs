@@ -16,8 +16,8 @@ const git = (cwd, args, timeout = 10000) =>
 const ASK = /\bgit\s+push\b|patch-harness\.mjs|skills\/patch\/patch\.mjs/
 const COMMIT = /\bgit\s+commit\b/
 
-// .harness-run/<slug>/ with a manifest and no 05-report.md (open), or a 05-report with a
-// "| missing |" row and no "waived:" line.
+// .harness-run/<slug>/ with a manifest and no 05-report.md (open), or a 05-report whose table has
+// "missing" in a row's verdict (second) cell and no "waived:" line.
 function heldRuns(root) {
   const base = join(root, '.harness-run')
   if (!existsSync(base)) return []
@@ -27,7 +27,7 @@ function heldRuns(root) {
     const report = join(dir, '05-report.md')
     if (!existsSync(report)) return true
     const text = readFileSync(report, 'utf8')
-    return /\|\s*missing\s*\|/i.test(text) && !/^waived:/im.test(text)
+    return /^\|[^|\n]*\|\s*missing\s*\|/im.test(text) && !/^waived:/im.test(text)
   }).map(slug => {
     const report = join(base, slug, '05-report.md')
     return existsSync(report) ? `${slug} (missing criteria)` : `${slug} (no 05-report)`

@@ -74,6 +74,8 @@ writeFileSync(join(runDir, '05-report.md'), '| AC-1 | missing | no run |\nwaived
 check('missing + waived -> today\'s behaviour', decision(bash('git push origin main', clone)) === undefined && decision(bash('git push origin main', clone, ATT)) === 'ask')
 writeFileSync(join(runDir, '05-report.md'), '| AC-1 | met | ok |\n')
 check('clean report -> today\'s behaviour', decision(bash('git push origin main', clone)) === undefined)
+writeFileSync(join(runDir, '05-report.md'), '| AC-3 | met | `| missing |` row → deny |\n')
+check('"missing" quoted in evidence -> not held', decision(bash('git push origin main', clone)) === undefined)
 
 check('garbage stdin -> fail open', run('bash', 'not json').code === 0 && Object.keys(run('bash', 'not json').out).length === 0)
 check('bad cwd -> fail open', run('bash', { tool_name: 'Bash', tool_input: { command: 'git commit' }, cwd: '/nonexistent' }).code === 0)
