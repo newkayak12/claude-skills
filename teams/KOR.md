@@ -419,6 +419,8 @@ teams는 작은 mod를 함께 제공합니다. 현재 세션의 실행을 보여
 ![status-guard](docs/images/status-guard.png)
 `node_id` 없이 `full: true`로 부른 `team_status`를 가드가 거부하는 화면.
 
+모드는 태스크가 어떻게 끝났는지(`complete`면 `pass`, `partial`이면 `reject`, `blocked`거나 데몬 재시작 소진이면 `fail`, id 없음)를 상태 값 `teams.outcome`으로도 발행합니다. `trophy` 플러그인의 옵트인 집계용입니다.
+
 ## 더 보기
 
 - [CHANGELOG.KOR.md](CHANGELOG.KOR.md): 모든 릴리스, 최신순.

@@ -424,6 +424,8 @@ The dispatch gate denying a direct edit under `.claude/teams-dispatch.json` whil
 ![status-guard](docs/images/status-guard.png)
 The `team_status` guard denying `full: true` with no `node_id`.
 
+The mod also publishes how a task ended (`pass` on `complete`, `reject` on `partial`, `fail` on `blocked` or daemon restarts used up; no ids) as the state value `teams.outcome`, for the `trophy` plugin's opt-in counts.
+
 ## More
 
 - [CHANGELOG.md](CHANGELOG.md): every release, newest first.

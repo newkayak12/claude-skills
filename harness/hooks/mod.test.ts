@@ -22,7 +22,7 @@ const key = (files: Files, path: string) =>
 // cwd (none: not a repo, so the cwd is the one tree)
 type Dirs = Record<string, [string, 'dir' | 'file', number?][]>
 function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], files: Files, dirs: Dirs = {}, top?: string) {
-  const seen = { statuses: [] as (string | undefined)[], commands: [] as string[], opened: [] as string[], reads: 0, toasts: [] as string[], argv: [] as string[][], listed: [] as string[] }
+  const seen = { statuses: [] as (string | undefined)[], commands: [] as string[], opened: [] as string[], reads: 0, toasts: [] as string[], argv: [] as string[][], listed: [] as string[], outcomes: [] as any[], failSet: false }
   const store = new Map<string, unknown>()
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: '/proj' }) as never)
@@ -60,6 +60,10 @@ function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], files: Fil
   })
   on('state.get', (_$, e) => ({ value: { value: store.get(e.key), version: 0 } }) as never)
   on('state.set', (_$, e) => {
+    if (e.plugin === 'harness' && e.key === 'outcome') {
+      if (seen.failSet) throw new Error('state is down')
+      seen.outcomes.push(e.value)
+    }
     store.set(e.key, e.value)
     return { value: { isSet: true, version: 1 } } as never
   })
@@ -587,7 +591,7 @@ const runWorld = (on: On, files: Files, dirs: Dirs, push: (e: any) => unknown = 
     pushes.push(e)
     return push(e) as never
   })
-  return { pushes, toasts: w.toasts, statuses: w.statuses }
+  return { pushes, toasts: w.toasts, statuses: w.statuses, outcomes: w.outcomes, w }
 }
 const msgs = (s: { pushes: any[] }) => s.pushes.map(p => p.message)
 const R = '.harness-run/r'
@@ -684,4 +688,96 @@ test('run event not sent: toast; push throws: toast and the tick keeps running',
   dirs[R] = [...OLD_MF, ['02-critique.json', 'file', NEW + 9000]]
   await clock.advance(5000)
   expect(seen.toasts.slice(1)).toEqual(['harness r: rejected — Critique (2/2)'])
+})
+
+// the run outcome harness publishes for trophy: carried by the event, never parsed from the message
+const labels = (s: { outcomes: any[] }) => s.outcomes.map(o => o.outcome)
+const reported = (extra: Ents = [], dirs: Dirs = {}) => rdirs([...OLD_MF, ['05-report.md', 'file', NEW], ...extra], dirs)
+
+test('outcome: Report complete publishes pass, with exactly system, outcome and at', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const files: Files = { 'r/manifest.json': gj({}), 'r/04-goal-gate.json': gj({ match_pct: 95, pass: true }) }
+  const seen = runWorld(on, files, reported([['04-goal-gate.json', 'file', NEW]]))
+  await start($)
+  await clock.advance(5000)
+  await clock.advance(5000)
+  expect(labels(seen)).toEqual(['pass'])
+  expect(Object.keys(seen.outcomes[0]).sort()).toEqual(['at', 'outcome', 'system'])
+  expect(seen.outcomes[0].system).toBe('harness')
+})
+
+test('outcome: a goal gate that failed after the report publishes reject', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const files: Files = { 'r/manifest.json': gj({}), 'r/04-goal-gate.json': gj({ match_pct: 70, pass: false }) }
+  const seen = runWorld(on, files, reported([['04-goal-gate.json', 'file', NEW]]))
+  await start($)
+  await clock.advance(5000)
+  expect(labels(seen)).toEqual(['reject'])
+})
+
+test('outcome: a goal gate under 90 before the report is only a rejected attempt: no outcome', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const files: Files = { 'r/manifest.json': gj({}), 'r/04-goal-gate.json': gj({ match_pct: 70, pass: false }) }
+  const seen = runWorld(on, files, rdirs([...OLD_MF, ['04-goal-gate.json', 'file', NEW]]))
+  await start($)
+  await clock.advance(5000)
+  expect(msgs(seen)).toEqual(['harness r: rejected — goal gate (1/2)'])
+  expect(seen.outcomes).toEqual([])
+})
+
+test('outcome: retries spent publishes fail; two failed subgoals publish fail once', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const files: Files = {
+    'r/manifest.json': gj({}),
+    'r/subgoals/s1/result.json': gj({ passed: false, attempts: 2 }),
+    'r/subgoals/s2/result.json': gj({ passed: false, attempts: 2 }),
+  }
+  const dirs = rdirs(OLD_MF, {
+    [`${R}/subgoals`]: [['s1', 'dir'], ['s2', 'dir']],
+    [`${R}/subgoals/s1`]: [['result.json', 'file', NEW]],
+    [`${R}/subgoals/s2`]: [['result.json', 'file', NEW]],
+  })
+  const seen = runWorld(on, files, dirs)
+  await start($)
+  await clock.advance(5000)
+  await clock.advance(5000)
+  expect(msgs(seen)).toEqual(['harness r: failed — subgoal s1 (2/2)', 'harness r: failed — subgoal s2 (2/2)'])
+  expect(labels(seen)).toEqual(['fail'])
+})
+
+test('outcome: a critique or subgoal gate rejection publishes nothing', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const files: Files = {
+    'r/manifest.json': gj({ max_retries: 3 }),
+    'r/02-critique.json': gj({ sound: false }),
+    'r/subgoals/s1/gate-1.json': gj({ pass: false }),
+  }
+  const dirs = rdirs([...OLD_MF, ['02-critique.json', 'file', NEW]], { [`${R}/subgoals`]: [['s1', 'dir']], [`${R}/subgoals/s1`]: [['gate-1.json', 'file', NEW]] })
+  const seen = runWorld(on, files, dirs)
+  await start($)
+  await clock.advance(5000)
+  expect(seen.pushes).toHaveLength(2)
+  expect(seen.outcomes).toEqual([])
+})
+
+test('outcome: a run finished before the session started and a graph run publish nothing', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const old = NOW - 60_000
+  const files: Files = { 'r/manifest.json': gj({}), 'r/05-report.md': 'x', 'g2.json': gj({ request: 'ship it', nodes: [{ stage: 'report', state: 'done' }] }) }
+  const dirs: Dirs = { '.harness-run': [['r', 'dir'], ['broker', 'dir']], [R]: [['manifest.json', 'file', old], ['05-report.md', 'file', old]], '.harness-run/broker/runs': [['g2.json', 'file', NEW]] }
+  const seen = runWorld(on, files, dirs)
+  await start($)
+  await clock.advance(5000)
+  expect(seen.outcomes).toEqual([])
+})
+
+test('outcome: a failing state write never breaks the push', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const files: Files = { 'r/manifest.json': gj({}), 'r/04-goal-gate.json': gj({ match_pct: 95, pass: true }) }
+  const seen = runWorld(on, files, reported([['04-goal-gate.json', 'file', NEW]]))
+  seen.w.failSet = true
+  await start($)
+  await clock.advance(5000)
+  expect(msgs(seen)).toEqual(['harness r: complete — Report (1/1)'])
+  expect(seen.outcomes).toEqual([])
 })

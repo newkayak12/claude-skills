@@ -454,6 +454,8 @@ Captured from a live Claude Code 2.1.293 terminal session, showing a finished ru
 ![graph-live-nodes](docs/images/graph-live-nodes.png)
 `/graph-live`, Nodes tab: every node on a To do / Doing / Done board, retries marked `#2`.
 
+The mod also publishes each run's outcome (`pass` on complete, `fail` on failed or blocked; no ids) as the state value `graph.outcome`, for the `trophy` plugin's opt-in counts.
+
 ## Skills
 
 - `install` — connect or verify the existing graph engine without copying it

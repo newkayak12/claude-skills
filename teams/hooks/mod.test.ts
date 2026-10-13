@@ -860,11 +860,24 @@ for (const surface of SURFACES) {
 function pushWorld(on: On, push: (e: any) => unknown, events: string) {
   const pushes: any[] = []
   const seen = world(on, ['terminal'], argv => (isEvents(argv) ? ok(events) : ok('{"line":"","waiting":0}')))
+  // a Map-backed $.state; the run outcome writes (for trophy) are kept apart
+  const store = new Map<string, unknown>()
+  const outcomes: any[] = []
+  const flags = { failSet: false }
+  on('state.get', (_$, e) => ({ value: { value: store.get(e.key), version: 0 } }) as never)
+  on('state.set', (_$, e) => {
+    if (e.plugin === 'teams' && e.key === 'outcome') {
+      if (flags.failSet) throw new Error('state is down')
+      outcomes.push(e.value)
+    }
+    store.set(e.key, e.value)
+    return { value: { isSet: true, version: 1 } } as never
+  })
   on('tool.call', (_$, e: any) => {
     pushes.push(e)
     return push(e) as never
   })
-  return { pushes, seen }
+  return { pushes, seen, outcomes, flags }
 }
 const sentOk = () => ({ result: { pushSent: true, localSent: false }, text: '' })
 const evLines = (...o: object[]) => o.map(x => JSON.stringify(x)).join('\n') + '\n'
@@ -935,4 +948,64 @@ test('push throws: no throw, the event toast shows, the next event still pushes'
   await clock.advance(3000)
   expect(pushes).toHaveLength(2)
   expect(seen.toasts).toEqual([R1.text, R2.text])
+})
+
+// the run outcome teams publishes for trophy: mapped from the daemon_done state field, never from the text
+const done = (state: string | undefined, ts = 1500, task = 'E-aaaaaaaa1') => ({ ts, task_id: task, kind: 'daemon_done', text: `E-aaaaaaaa finished: ${state}`, ...(state === undefined ? {} : { state }) })
+const exhausted = { ts: 1500, task_id: 'E-aaaaaaaa1', kind: 'daemon_exhausted', text: 'E-aaaaaaaa stopped: daemon restarts used up' }
+
+test('outcome: daemon_done complete publishes pass, partial reject, blocked fail', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { outcomes } = pushWorld(on, sentOk, evLines(done('complete', 1500, 'E-t1'), done('partial', 1600, 'E-t2'), done('blocked', 1700, 'E-t3')))
+  await start($)
+  await clock.advance(3000)
+  expect(outcomes.map(o => o.outcome)).toEqual(['pass', 'reject', 'fail'])
+  for (const o of outcomes) {
+    expect(Object.keys(o).sort()).toEqual(['at', 'outcome', 'system'])
+    expect(o.system).toBe('teams')
+  }
+})
+
+test('outcome: daemon_exhausted publishes fail', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { outcomes } = pushWorld(on, sentOk, evLines(exhausted))
+  await start($)
+  await clock.advance(3000)
+  expect(outcomes.map(o => o.outcome)).toEqual(['fail'])
+})
+
+test('outcome: an unknown state, a missing state and a non-run event publish nothing', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { outcomes } = pushWorld(on, sentOk, evLines(done('unfinished', 1500, 'E-t1'), done(undefined, 1600, 'E-t2'), R1, E1))
+  await start($)
+  await clock.advance(3000)
+  expect(outcomes).toEqual([])
+})
+
+test('outcome: a repeated event publishes once', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { outcomes } = pushWorld(on, sentOk, evLines(done('complete')))
+  await start($)
+  await clock.advance(3000)
+  await clock.advance(3000)
+  await clock.advance(3000)
+  expect(outcomes).toHaveLength(1)
+})
+
+test('outcome: an event before the session start publishes nothing', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { outcomes } = pushWorld(on, sentOk, evLines(done('complete', 900)))
+  await start($)
+  await clock.advance(3000)
+  expect(outcomes).toEqual([])
+})
+
+test('outcome: a failing state write never breaks the push', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { pushes, outcomes, flags } = pushWorld(on, sentOk, evLines(done('complete')))
+  flags.failSet = true
+  await start($)
+  await clock.advance(3000)
+  expect(outcomes).toEqual([])
+  expect(pushes.map(p => p.message)).toEqual(['teams E-aaaaaaaa: run ended — finished: complete'])
 })

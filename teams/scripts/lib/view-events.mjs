@@ -23,7 +23,9 @@ export function notableEvents(lines, sinceTs) {
     if (!text) continue;
     // the package and attempt, when the ledger line carries them (absent fields stay absent)
     const pkg = e.subgoal_id ?? e.package_id;
-    out.push({ ts: e.ts, task_id: e.task_id, kind: e.event, text, ...(pkg != null ? { package: String(pkg) } : {}), ...(typeof e.attempt === 'number' ? { attempt: e.attempt } : {}) });
+    // the daemon's final state rides on daemon_done, so a consumer maps a field and never the text
+    const state = e.event === 'daemon_done' && typeof e.state === 'string' ? { state: e.state } : {};
+    out.push({ ts: e.ts, task_id: e.task_id, kind: e.event, text, ...state, ...(pkg != null ? { package: String(pkg) } : {}), ...(typeof e.attempt === 'number' ? { attempt: e.attempt } : {}) });
   }
   return out;
 }

@@ -32,6 +32,8 @@ declare module 'claude-code' {
       broken: boolean
       view: 'auto' | 'run' | 'units' | 'gate'
       lang: 'en' | 'ko'
+      // the run outcome this mod publishes for trophy: labels only, never an id (same type in graph and teams)
+      outcome: { system: 'graph' | 'teams' | 'harness'; outcome: 'pass' | 'reject' | 'fail'; at: number } | null
     }
   }
 }

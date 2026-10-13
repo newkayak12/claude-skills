@@ -27,6 +27,8 @@ declare module 'claude-code' {
       snap: Snap | null
       view: 'flow' | 'nodes'
       lang: 'en' | 'ko'
+      // the run outcome this mod publishes for trophy: labels only, never an id (same type in teams and harness)
+      outcome: { system: 'graph' | 'teams' | 'harness'; outcome: 'pass' | 'reject' | 'fail'; at: number } | null
     }
   }
 }

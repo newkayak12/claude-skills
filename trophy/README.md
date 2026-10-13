@@ -67,25 +67,30 @@ The consent question above the prompt; nothing is sent until you answer.
 **Show contents**: the exact JSON of the next send (here 0 events).
 
 ![telemetry-status](docs/images/telemetry-status.png)
-`/trophy-telemetry status` after declining.
+`/trophy-telemetry status` after declining. (Older capture: `status` now also shows the last send.)
 
 ## Telemetry — what is sent, where, and how to stop it
 
 **Nothing is sent unless you opt in.** Once your first achievement unlocks, trophy asks in a double-framed box above the prompt
 (what is sent, what is never sent, and three buttons drawn alike); `[Show contents]` shows the exact JSON of the next send before you decide. Until you answer, nothing
 leaves your machine. Declining is remembered; it is never asked again. The answer is saved with the
-version of the question (v2 names error codes): a yes given to the older question (v1) is asked once more,
-and trophy sends nothing until you answer. A no is never re-asked.
+version of the question (v3 adds plugin and Claude Code versions, OS type and run results): a yes given to an
+older question (v1, v2) is asked once more, and trophy sends nothing until you answer. A no is never re-asked.
 
-Once a day (at the start of the first interactive session after midnight UTC) the plugin sends the
-previous days' events to PostHog (`https://us.i.posthog.com/batch/`, the maintainer's project). Per day:
+When you answer yes (`[Send]` or `/trophy-telemetry on`) the days up to yesterday are sent at once, and the reply
+or toast says how many events went. After that the plugin sends again at the start of the first interactive session
+of each new UTC day, to PostHog (`https://us.i.posthog.com/batch/`, the maintainer's project). Events are dated by the
+day they count, not by the send time. Per day:
 
 | Event | Properties |
 |---|---|
-| `skill_used` | skill name, plugin name, day, count |
-| `trigger_result` | skill name, day, counts of: prompt had its trigger phrase and the skill ran / did not run / ran without a phrase |
+| `skill_used` | skill name, plugin name, day, count, `plugin_version` |
+| `trigger_result` | skill name, day, counts of: prompt had its trigger phrase and the skill ran / did not run / ran without a phrase; `plugin_version` |
 | `achievement_unlocked` | achievement id |
 | `plugins_installed` | plugin name, day — one per plugin of this marketplace whose skills the session lists |
+| `daily_active` | day, Claude Code release (`cc_version`), OS type (`darwin`, `linux`, `win32`, `other`), `sessions` |
+| `mcp_tool_result` | day, plugin name, MCP tool name, `ok` and `error` counts, `plugin_version` |
+| `run_outcome` | day, `system` (`graph`, `teams`, `harness`), `outcome` (`pass`, `reject`, `fail`), count |
 | `diag_*` | skill, plugin, MCP tool name, error code (`reason`), `count`, `day`, the plugin's version (`plugin_version`) and the Claude Code release (`cc_version`) — fixed codes; no messages, paths or prompts. |
 | `$exception` | the message of a failure inside this module, with every file path replaced by `<path>`, 300 characters at most |
 
@@ -94,10 +99,21 @@ machine) and `$process_person_profile: false`. **Never sent:** prompt text, work
 project or file names, file paths, session ids, your username or email. The PostHog project discards
 client IP addresses ("Discard client IP data" is on); the project token in the code is write-only.
 
-A failed send is kept and tried again the next day.
+A failed send changes nothing and is tried again at the next interactive start or `/trophy-telemetry on`.
+
+What the new rows mean:
+- `sessions` counts interactive session starts that day (resume, `/clear` and a mod reload may each count). A day reached
+  only because a session stayed open past midnight UTC sends `sessions: 0`.
+- `ok` is transport ok: the tool answered without `isError`. A tool that returns `{"error": …}` as a normal result counts as ok.
+- `run_outcome` counts the outcomes the graph, teams and harness mods saw and published (no ids, only the two labels),
+  not runs. pass / (pass + reject + fail) is not a per-run success rate. One run can count several outcomes (a graph run
+  that is blocked and later completes counts fail and pass; a harness run with a failed subgoal and a failed goal gate counts
+  fail and reject). Runs that end outside an interactive session, or in a session closed before the end, are not counted,
+  and the same outcome seen by two open sessions counts twice.
 
 **Turn it off:** `/trophy-telemetry off` (stored in the Claude Code store; takes effect at once), or
-uninstall the plugin. `/trophy-telemetry status` shows the current answer. Locally, everything the
+uninstall the plugin. `/trophy-telemetry status` shows the current answer and the last send (when, which days, how many
+events, the result). Locally, everything the
 mod keeps is in Claude Code's plugin store and `~/.claude/trophy/profile.json` (achievements and
 counts, no prompts).
 
@@ -114,6 +130,11 @@ view (most hit, most missed, never fired).
 - Organizations whose policy skips user-level `skill.prompt` hooks still record: the plugin also
   listens to the Skill tool call and to the typed-command expansion; one use is counted once.
 - Achievements are counted from the day you install; there is no backfill.
+- Under an organization policy that skips user-level classic hooks, the failure capture on `PostToolUseFailure` never
+  runs, so no `diag_mcp_error` or skill `is_error` code is recorded there. MCP counts use `tool.call`, which still runs.
+- `mcp_tool_result.error` counts every `isError` result; `diag_mcp_error` counts only where `PostToolUseFailure` runs.
+  The two can disagree and neither is derived from the other.
+- Parallel MCP calls (and near-simultaneous outcome writes) can drop a count: an undercount, as with the other counters.
 
 ## Status log
 

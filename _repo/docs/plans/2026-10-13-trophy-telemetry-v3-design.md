@@ -124,6 +124,10 @@ not runs: pass/(pass+reject+fail) is not a per-run success rate, and the README 
 - A graph `blocked` that is later resumed and completes counts once as fail and once as pass.
 - Runs that end outside an interactive session (`teams run` CLI, `-p`, a session closed before the end) are not counted.
 - A producer's dedupe is per session: the same outcome seen by two open sessions counts twice.
+- graph and harness publish at most once per (run, outcome) (v3c decision): two failed subgoals, a re-written goal gate, or
+  graph `blocked` then `failed` count one `fail`. One run can still count different outcomes (a harness run with a failed
+  subgoal and a failed goal gate counts fail and reject). teams publishes under its push key; a `daemon_done` state other than
+  complete|partial|blocked publishes nothing. harness events carry the outcome as a field, not parsed from the message.
 
 trophy's existing Bash `goal_failed` local record (it reads fallback-check output) is pre-existing coupling, left as is
 (out of scope, noted); the v3b slug side fix is dropped with `harnessSlugOf`/`harnessVerdict`/`runStateOf`/`runsSeen`.

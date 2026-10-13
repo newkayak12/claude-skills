@@ -66,24 +66,29 @@ Claude Code 2.1.293 터미널에서 실제로 캡처한 화면입니다 (영어 
 **Show contents**: 다음 전송의 JSON 그대로 (여기서는 이벤트 0개).
 
 ![telemetry-status](docs/images/telemetry-status.png)
-거절한 뒤의 `/trophy-telemetry status`.
+거절한 뒤의 `/trophy-telemetry status`. (이전 캡처: 지금의 `status`는 마지막 전송도 보여줍니다.)
 
 ## 텔레메트리 — 무엇을, 어디로 보내고, 어떻게 끄는가
 
 **동의하지 않으면 아무것도 전송되지 않습니다.** 첫 업적이 해금되면 프롬프트 위 이중 테두리 상자로 묻습니다(보내는 것, 보내지 않는 것, 똑같은 모양의 버튼 세 개).
 `[내용 보기]`를 누르면 다음에 보낼 JSON을 그대로 보여줍니다. 답하기 전에는 아무것도 내 컴퓨터를 떠나지
-않습니다. 거절하면 기억하고 다시 묻지 않습니다. 답은 질문 버전과 함께 저장됩니다(v2는 오류 코드를
-명시). 이전 질문(v1)에 한 동의는 한 번 다시 묻고, 답하기 전까지 trophy도 전송하지 않습니다.
+않습니다. 거절하면 기억하고 다시 묻지 않습니다. 답은 질문 버전과 함께 저장됩니다(v3는 플러그인·Claude Code
+버전, OS 종류, 실행 결과를 추가). 이전 질문(v1, v2)에 한 동의는 한 번 다시 묻고, 답하기 전까지 trophy도 전송하지 않습니다.
 
-동의하면 하루에 한 번(UTC 자정 이후 첫 대화형 세션 시작 시) 지난 날들의 이벤트를 PostHog
-(`https://us.i.posthog.com/batch/`, 메인테이너의 프로젝트)로 보냅니다. 하루 단위로:
+'예'로 답하면(`[보내기]` 또는 `/trophy-telemetry on`) 어제까지의 날들을 바로 보내고, 응답이나 토스트가 몇 개를
+보냈는지 알려줍니다. 그 뒤로는 새 UTC 날의 첫 대화형 세션 시작 때마다 PostHog
+(`https://us.i.posthog.com/batch/`, 메인테이너의 프로젝트)로 보냅니다. 이벤트의 날짜는 전송 시각이 아니라
+집계한 날입니다. 하루 단위로:
 
 | 이벤트 | 속성 |
 |---|---|
-| `skill_used` | 스킬 이름, 플러그인 이름, 날짜, 횟수 |
-| `trigger_result` | 스킬 이름, 날짜, (트리거 문구가 있었고 스킬이 실행됨 / 실행 안 됨 / 문구 없이 실행됨) 횟수 |
+| `skill_used` | 스킬 이름, 플러그인 이름, 날짜, 횟수, `plugin_version` |
+| `trigger_result` | 스킬 이름, 날짜, (트리거 문구가 있었고 스킬이 실행됨 / 실행 안 됨 / 문구 없이 실행됨) 횟수, `plugin_version` |
 | `achievement_unlocked` | 업적 id |
 | `plugins_installed` | 플러그인 이름, 날짜 — 세션이 스킬을 나열한 이 마켓플레이스 플러그인마다 하나 |
+| `daily_active` | 날짜, Claude Code 릴리스(`cc_version`), OS 종류(`darwin`, `linux`, `win32`, `other`), `sessions` |
+| `mcp_tool_result` | 날짜, 플러그인 이름, MCP 도구 이름, `ok`·`error` 횟수, `plugin_version` |
+| `run_outcome` | 날짜, `system`(`graph`, `teams`, `harness`), `outcome`(`pass`, `reject`, `fail`), 횟수 |
 | `diag_*` | skill·plugin·MCP tool 이름, 오류 코드(`reason`), `count`, `day`, 플러그인 버전(`plugin_version`), Claude Code 릴리스(`cc_version`) — 고정 코드; 메시지·경로·프롬프트 없음. |
 | `$exception` | 이 모듈 내부 오류 메시지. 파일 경로는 모두 `<path>`로 바뀌고 300자까지 |
 
@@ -92,10 +97,19 @@ Claude Code 2.1.293 터미널에서 실제로 캡처한 화면입니다 (영어 
 프로젝트·파일 이름, 파일 경로, 세션 id, 사용자 이름·이메일. PostHog 프로젝트는 클라이언트 IP를 버리도록
 설정되어 있고("Discard client IP data" 켜짐), 코드에 있는 프로젝트 토큰은 쓰기 전용입니다.
 
-전송에 실패하면 보관했다가 다음 날 다시 시도합니다.
+전송에 실패해도 아무것도 바뀌지 않으며, 다음 대화형 시작이나 `/trophy-telemetry on` 때 다시 시도합니다.
+
+새 행의 뜻:
+- `sessions`는 그날의 대화형 세션 시작 횟수입니다(resume, `/clear`, 모드 리로드도 각각 셀 수 있음). 세션이 UTC 자정을
+  넘겨 열려 있어서만 활성이 된 날은 `sessions: 0`을 보냅니다.
+- `ok`는 전송 계층의 성공입니다: 도구가 `isError` 없이 답했다는 뜻. 도구가 `{"error": …}`를 정상 결과로 돌려줘도 ok로 셉니다.
+- `run_outcome`은 graph·teams·harness 모드가 보고 발행한 결과(id 없이 두 라벨만)의 횟수이며, 실행 횟수가 아닙니다.
+  pass / (pass + reject + fail)은 실행별 성공률이 아닙니다. 한 실행이 여러 결과로 셀 수 있습니다(차단됐다가 나중에
+  완료된 graph 실행은 fail과 pass, 하위 목표가 실패하고 목표 게이트도 실패한 harness 실행은 fail과 reject).
+  대화형 세션 밖에서 끝나거나 끝나기 전에 세션이 닫힌 실행은 세지 않고, 열려 있는 두 세션이 본 같은 결과는 두 번 셉니다.
 
 **끄기:** `/trophy-telemetry off` (Claude Code 저장소에 저장되며 즉시 적용), 또는 플러그인 제거.
-`/trophy-telemetry status`로 현재 답을 확인합니다. 로컬에는 Claude Code의 플러그인 저장소와
+`/trophy-telemetry status`로 현재 답과 마지막 전송(시각, 날짜 범위, 이벤트 수, 결과)을 확인합니다. 로컬에는 Claude Code의 플러그인 저장소와
 `~/.claude/trophy/profile.json`(업적과 횟수, 프롬프트 없음)만 남습니다.
 
 ## 스킬
@@ -110,6 +124,11 @@ Claude Code 2.1.293 터미널에서 실제로 캡처한 화면입니다 (영어 
 - 조직 정책이 사용자 수준 `skill.prompt` 훅을 건너뛰는 경우에도 기록됩니다. 이 플러그인은 Skill 도구 호출과
   입력한 명령의 확장도 함께 듣고, 한 번의 사용은 한 번만 셉니다.
 - 업적은 설치한 날부터 집계하며 소급하지 않습니다.
+- 사용자 수준 classic 훅을 건너뛰는 조직 정책에서는 `PostToolUseFailure` 실패 기록이 실행되지 않아 그 경로의
+  `diag_mcp_error`와 스킬 `is_error` 코드가 남지 않습니다. MCP 횟수는 계속 실행되는 `tool.call`로 셉니다.
+- `mcp_tool_result.error`는 모든 `isError` 결과를, `diag_mcp_error`는 `PostToolUseFailure`가 실행되는 곳만 셉니다.
+  둘은 어긋날 수 있고 서로에서 유도되지 않습니다.
+- 병렬 MCP 호출(과 거의 동시에 일어난 결과 기록)은 횟수를 놓칠 수 있습니다: 다른 카운터처럼 과소 집계입니다.
 
 ## 상태 로그
 

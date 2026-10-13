@@ -1,7 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { scrub } from './logic.ts'
+import { CONSENT_VERSION, scrub } from './logic.ts'
 import { memoryStore, sessionAt } from './testkit.ts'
 
 const DAY = 86_400_000
@@ -20,7 +20,7 @@ const SEED = {
 }
 
 const fixture = (on: On, consent: string | undefined, status = 200) => {
-  const store = memoryStore(on, { ...SEED, ...(consent ? { 'trophy.consent': consent, 'trophy.consentVersion': 2 } : {}) })
+  const store = memoryStore(on, { ...SEED, ...(consent ? { 'trophy.consent': consent, 'trophy.consentVersion': CONSENT_VERSION } : {}) })
   const clock = sessionAt(on, TODAY)
   const fetches: { url: string; body: string }[] = []
   const answer = { status }
