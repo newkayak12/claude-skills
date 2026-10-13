@@ -52,7 +52,7 @@ Unsure → solo, and defer to stage boundaries if a pipeline owns the run.
 
 Cycle: RED → falsifiability probe → verify failure → GREEN → verify pass → REFACTOR → repeat. Before the first RED, skim `references/testing-anti-patterns.md` (asserting on mocks, test-only production methods, tautological expectations).
 
-**RED.** One behavior per test, named as a sentence about that behavior, real collaborators (mock only what cannot run in the test).
+**RED.** One behavior per test, named as a sentence about that behavior (an "and" in the name means split it; `test1`/`works` are not names), real collaborators (mock only what cannot run in the test).
 
 ```typescript
 test('opens the circuit after 3 consecutive failures', async () => {

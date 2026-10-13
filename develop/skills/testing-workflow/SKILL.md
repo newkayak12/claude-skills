@@ -26,17 +26,19 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
+## Standing Mandates
+
+- NEVER mark a step done on a claim. Each step closes with its count line (below) taken from a run or a file, not from memory. (Scar: "tests added" with none executed.)
+- NEVER start Step 3 before Step 2's gap list exists (a flaky diagnosis without the gap list fixes symptoms in code that is not covered), and NEVER fix a flaky test by re-running it.
+- Invoked by a pipeline stage (teams subgoal `test`, harness Test): run only what the stage names — usually Step 1's verify run — and mark the other steps `skipped — pipeline stage`; never start a coverage audit or flaky hunt the stage did not ask for.
+- No coverage report or CI log → `[확인 필요]` on that step line, not an estimate. Read the repo (tests, CI config, coverage output) before asking the user anything.
+- Goal: all three step lines filled, or each skipped step carries its Skip-if reason; stop there.
+
 # Testing Workflow
 
 3 steps: write first → strategize coverage → stabilize CI. Each step is a sub-skill; this skill only sequences them and checks the hand-off.
 
 **Not for** one test on already-covered code, consistent (non-flaky) failures — those are bugs (`bug-diagnoser`) — or a one-off unit test request (`test-master`).
-
-## Standing Mandates
-
-- NEVER mark a step done on a claim. Each step closes with its count line (below) taken from a run or a file, not from memory. (Scar: "tests added" with none executed.)
-- NEVER start Step 3 before Step 2's gap list exists, and NEVER fix a flaky test by re-running it.
-- Goal: all three step lines filled, or each skipped step carries its Skip-if reason; stop there.
 
 ## Steps
 
