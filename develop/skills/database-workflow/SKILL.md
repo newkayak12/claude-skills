@@ -8,6 +8,8 @@ description: >-
 type: workflow
 theme: engineering
 scenarios:
+  - "Run the full database workflow — prod DB is slow"
+  - "Review our DB end to end: queries, pool, transactions"
   - "database workflow 전체 돌려줘"
   - "DB 성능 문제 처음부터 끝까지 점검해줘"
   - "database performance investigation 시작"
@@ -29,8 +31,8 @@ compatibility:
 ## Standing Mandates
 
 - NEVER run a step on a missing input. No EXPLAIN output from Step 1, no pool settings for Step 3 is
-  `[확인 필요: ○○]`; the run stops there or the user says to skip. (Scar: tuning the server before the query plan was
-  in hand sent two rounds at a config that was never the cause.)
+  `[확인 필요: ○○]`; the run stops there or the user says to skip. Server tuning without the query plan has nothing to
+  measure against.
 - NEVER restate a step skill's method here; invoke it by name, relay its verdict, and never grade its output yourself.
 - NEVER skip a step on a hunch. A skip needs the step's Skip-if evidence, quoted.
 - Goal: each step run or skipped with its evidence, one step per turn unless the user asks to continue, and the closing
@@ -54,6 +56,7 @@ for pool sizing only, `develop:transaction-boundary-reviewer` for transaction re
 
 Start prompts: "Step N 시작" or name the skill. Say where you are and the run joins there ("커넥션 풀부터" -> Step 3;
 "트랜잭션 경계만" -> Step 4).
+Before sending, recount the tally against the step lines; fix the header if they differ.
 
 ## Output Template
 

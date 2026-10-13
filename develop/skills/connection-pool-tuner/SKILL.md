@@ -22,8 +22,7 @@ compatibility:
 ## Standing Mandates
 
 - NEVER raise `maximumPoolSize` to fix timeouts before the symptom is diagnosed. A bigger pool in front of slow queries
-  or leaked connections moves the queue into the database and slows everything. (Scar: the usual first move, and the
-  most common failure.) Name the cause from the symptom table first.
+  or leaked connections moves the queue into the database and slows everything. Name the cause from the symptom table first.
 - NEVER size from thread count or guess. The size comes from the DB server's cores and disk type; absent is
   `[확인 필요: DB cores/disk]`, and no number is given.
 - A recovery claim needs pool metrics under load (active, pending, wait time); without them it is `unverified`.
@@ -40,10 +39,13 @@ held too long (`develop:transaction-boundary-reviewer`), though it is a frequent
 ## Process
 
 1. **Symptom to cause.** Match the table below; check active vs. max and what holds connections.
-2. **Size.** Apply the formula in `references/pool-config.md` to the DB server's cores and disk.
+2. **Size.** Apply the formula in `references/pool-config.md` to the DB server's cores and disk. The result is the total
+   across every app instance (and pgBouncer) hitting this DB; divide by instance count for `maximumPoolSize`.
+   `core_count` = physical cores, not hyperthreads.
 3. **Configure.** `maximumPoolSize`, `minimumIdle`, `connectionTimeout`, `maxLifetime` (shorter than the firewall timeout), `keepaliveTime`.
-4. **Leak detection and metrics.** `leakDetectionThreshold` about 2x P99 query time; alert on `pending > 0` sustained.
+4. **Leak detection and metrics.** `leakDetectionThreshold` above the longest legitimate connection hold time (transaction, not single query); alert on `pending > 0` sustained.
 5. **Validate.** Utilization 60-80% at peak, no timeouts. Stop after 3 rounds without improvement and report the remaining cause.
+   Before sending, recount the tally against the config lines; fix the header if they differ.
 
 | Symptom | Likely cause | Investigation |
 |---------|-------------|---------------|
