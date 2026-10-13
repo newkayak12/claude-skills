@@ -6,9 +6,10 @@ description: >-
 scenarios:
   - "Define SLOs and error budgets for our user-facing API services"
   - "Help me set up observability with metrics, logs, and distributed tracing"
-  - "Design an on-call rotation and alerting strategy for our platform team"
+  - "Our pager is noisy — fix the alerting with burn-rate alerts"
   - "SLO와 에러 버짓을 정의하고 싶어"
   - "모니터링과 분산 트레이싱 전략을 수립해줘"
+  - "알람이 너무 많이 울려서 피로해, 정리해줘"
 compatibility:
   recommended:
     - think-tool
@@ -24,39 +25,56 @@ metadata:
   triggers: SRE, SLO, SLI, error budget, burn rate, toil, on-call, alert fatigue, golden signals
 ---
 
+## Standing Mandates
+
+- NEVER pick an SLO target the user has not confirmed. A target Claude chose alone is a guess that alert rules then
+  enforce; confirm it before any alert rule is written.
+- NEVER state an SLO as an adjective ("highly available"). It is a number with a window, because only a number can be
+  burned down and recounted.
+- NEVER page on a condition that has no runbook. The page wakes a person who then has nothing to do.
+- NEVER invent a missing fact (traffic, current error rate, stack). Write `[확인 필요: ○○]` and stop at that point;
+  an SLO built on a made-up baseline is wrong from day one.
+- Goal: every SLO has a number, a window, a user-impact sentence and a confirmed target, and every page-level alert has
+  a runbook line; the closing tally recounts to the SLO and alert tables.
+
 # SRE Engineer
 
-## When to Use / When Not to Use
-
-**Use when:**
-- Establishing SLOs and error budgets for a service
-- Building dashboards around the four golden signals, plus burn-rate alerts over paired windows
-- Writing runbooks that tell on-call what to do
-- Identifying and automating operational toil
-- Planning capacity from traffic forecasts
-
-**Do not use when:**
-- Planning failure-injection experiments (use `chaos-engineer`)
-- Provisioning infrastructure (use DevOps/IaC skills)
+**Not for** an active incident (`develop:incident-response-playbook`), failure-injection experiments
+(`develop:chaos-engineer`), or provisioning infrastructure (IaC skills).
 
 ## Process
 
-0. **Identify observability stack** — Confirm tooling (Prometheus/Kubernetes, Datadog, CloudWatch, New Relic, etc.) before generating any config. All reference examples default to Prometheus/Kubernetes.
-1. **Assess reliability** — Look at the architecture, any SLOs already in place, past incidents and how much toil the team carries
-2. **Define SLOs** — Choose SLIs that reflect user experience, then set a target for each
-3. **Verify alignment** — Get the user to confirm the SLO targets. Do not move past this step until they have explicitly said yes.
-4. **Implement monitoring** — Create golden-signal dashboards and burn-rate alerts that use a long and a short window
-5. **Automate toil** — Find the repeated manual work and script it away
-6. **Test resilience** — Plan and run failure experiments, then check that recovery stays within RTO and RPO
+0. **Identify the observability stack** — Prometheus/Kubernetes, Datadog, CloudWatch, New Relic. Reference examples
+   default to Prometheus/Kubernetes; do not emit config for a stack you have not confirmed.
+1. **Assess reliability** — read the architecture, any SLOs in place, past incidents, current toil. Read the repo and
+   configs before asking anything they answer.
+2. **Define SLOs** — pick SLIs that reflect user experience, then a target for each. Mark unknown traffic or error
+   rates `[확인 필요: ○○]`.
+3. **Verify alignment** — the user confirms each target. Do not move past this step until they have said yes; this is
+   the user's decision (what is acceptable downtime), not Claude's.
+4. **Implement monitoring** — golden-signal dashboards (latency, traffic, errors, saturation per service) and
+   burn-rate alerts over a long and a short window.
+5. **Automate toil** — find repeated manual work, measure it, script it. A recurring task left manual needs a stated
+   reason.
+6. **Test resilience** — hand failure experiments to `develop:chaos-engineer`; check recovery against RTO and RPO.
+7. **Recount** — count SLOs, page-level alerts and runbook lines; fix the tally line if they differ from the tables.
 
 ## Output Template
 
-For each SRE engagement, provide:
-1. SLO definitions: each SLI, how it is measured, and its target
-2. Monitoring and alerting configuration, as Prometheus YAML or the equivalent
-3. Automation scripts for the toil identified (Kotlin, Python, Go, or Terraform)
-4. Runbooks whose steps end in a concrete remediation
-5. Brief note on reliability impact
+```
+## SRE plan — <service> (<observability stack>)
+
+| SLI | Measured how | Target | Window | User impact if missed | Confirmed |
+|-----|--------------|--------|--------|-----------------------|-----------|
+
+| Alert | Condition (long/short window) | Severity | Runbook |
+|-------|-------------------------------|----------|---------|
+
+Toil: <task> — <hours/week> — <automation or reason it stays manual>
+Gaps: [확인 필요: ○○] ...
+
+<n> SLOs (<c> confirmed) · <a> alerts (<r> with runbook) · <g> gaps
+```
 
 ## What Claude Does / What You Do
 
@@ -83,8 +101,10 @@ For each SRE engagement, provide:
 - **Bound label cardinality** — every distinct label combination is its own time series; user IDs, URLs, or request IDs as labels blow up storage and query cost. Keep labels to small fixed sets.
 - **Never log secrets, tokens, or full PII** — logs are copied to many systems with weaker access control and long retention; mask or drop them at the source.
 - **Verify the alert actually fires** — fire it once (inject the condition or lower the threshold) and see the page arrive; an alert never seen firing is an assumption, not a safeguard.
+- **Every incident ends in a blameless postmortem** that names systems, not a culprit; naming a person teaches people to hide the next failure.
+- **Over 50% toil needs an automation plan** — a team that spends most of its time on repeated manual work has no time left to improve reliability.
 
-Runbook format for alerts: see `incident-response-playbook`; a short skeleton is in `references/monitoring-alerting.md`.
+Runbook format for alerts: see `develop:incident-response-playbook`; a short skeleton is in `references/monitoring-alerting.md`.
 
 ## Example: SLO Definition and Error Budget
 
@@ -92,7 +112,7 @@ Runbook format for alerts: see `incident-response-playbook`; a short skeleton is
 # Objective: 99.9% success ratio, 30-day rolling window
 # Budget in time:     0.001 x 43,200 min = 43.2 min
 # Budget in requests: 0.001 x 10M requests = 10,000 failures
-# 5,000 failures in week one = half the budget gone with 75% of the window left
+# 5,000 failures in week one = half the budget gone with ~77% of the window left
 # -> the error budget policy kicks in: hold non-critical releases
 ```
 
@@ -121,26 +141,9 @@ groups:
           runbook: "runbook link for this alert"
 ```
 
-## Constraints
-
-**MUST DO:**
-- Identify the observability stack before generating any config
-- Confirm SLO targets with the user before generating alert rules
-- State every SLO as a number with a window, never as an adjective
-- Cover latency, traffic, errors and saturation for each service
-- Run a blameless postmortem after every incident
-- Measure toil and report how it trends
-
-**MUST NOT DO:**
-- Pick an SLO target with no stated user impact
-- Page on a condition that has no runbook
-- Tolerate >50% toil without an automation plan
-- Skip a postmortem, or write one that names a culprit
-- Leave a recurring task as a manual procedure
-
 ## Related Skills
 
-- `chaos-engineer` — design and run failure experiments
-- `circuit-breaker-tuner` — reduce error budget consumption from cascading failures
-- `database-optimizer` — improve DB golden signals (latency, saturation)
-- `incident-response-playbook` — structured response when SLO is burning fast
+- `develop:chaos-engineer` — design and run failure experiments
+- `develop:circuit-breaker-tuner` — reduce error budget consumption from cascading failures
+- `develop:database-optimizer` — improve DB golden signals (latency, saturation)
+- `develop:incident-response-playbook` — structured response when SLO is burning fast

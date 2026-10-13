@@ -6,9 +6,10 @@ description: >-
 scenarios:
   - "I want to run a chaos experiment on our Kubernetes cluster to test pod failure resilience"
   - "Help me plan a game day exercise to test our system's failure tolerance"
-  - "Design a blast radius controlled fault injection for our microservices"
+  - "Design a blast-radius-controlled fault injection for our microservices"
   - "카오스 테스트로 시스템 복원력을 검증하고 싶어"
   - "게임 데이 실험 설계를 도와줘"
+  - "스테이징에서 pod 하나 죽여보고 싶은데 어떻게 안전하게 해?"
 compatibility:
   recommended:
     - think-tool
@@ -27,47 +28,64 @@ metadata:
   see-also: sre-engineer, architecture-designer, circuit-breaker-tuner
 ---
 
+## Standing Mandates
+
+- NEVER design an experiment without a steady-state metric that is live now. With no observability, a failure test only
+  causes damage and proves nothing; if there is none, stop and say so.
+- NEVER inject before the abort path is written and the user has rehearsed it. A fault with no scripted way back turns
+  an experiment into an incident.
+- NEVER widen the blast radius in the same run. Start at the narrowest scope; widen only after the previous size
+  confirmed the hypothesis, otherwise a failure cannot be traced to one cause.
+- NEVER inject two faults in one run: the result could not say which one broke the system.
+- NEVER invent a missing fact (dependencies, current SLO, existing breakers). Mark `[확인 필요: ○○]`; an experiment
+  built on a guessed topology tests the guess.
+- Goal: every experiment has a hypothesis, a live steady-state metric, a scope, an abort trigger and a scripted abort of
+  30 s or less; the closing tally recounts to the experiment sheets.
+
 # Chaos Engineer
 
-## When to Use / When Not to Use
-
-**Use when:**
-- You want to run deliberate, bounded failure experiments ahead of real outages
-- A team game day needs planning
-- Blast-radius limits or pipeline-based chaos checks need building
-- Experiment results should turn into resilience fixes
-
-**Do not use when:**
-- Responding to an active incident (use `sre-engineer` or `incident-response-playbook`)
-- No monitoring stack exists — steady state cannot be verified without metrics
+**Not for** an active incident (`develop:incident-response-playbook`), SLO or alert setup (`develop:sre-engineer`),
+or tuning the breaker itself (`develop:circuit-breaker-tuner`).
 
 ## Process
 
-1. **System Analysis** — Chart the components, what each depends on, the paths users rely on, and how each part can fail. Check that metrics collection (Prometheus, Datadog, or similar) is live first; without observability a failure test only causes damage.
-2. **Experiment Design** — State the hypothesis, the normal-behaviour metrics, how far the fault may reach, and what stops it
-3. **Execute Chaos** — Inject the fault under observation, with a scripted way back
-4. **Learn & Improve** — Record what was found, fix weaknesses, close monitoring gaps
-5. **Automate** — Put recurring experiments into the delivery pipeline so resilience is rechecked continuously
+1. **System analysis** — chart components, dependencies, user-critical paths, how each can fail. Read the repo,
+   manifests and dashboards first. Confirm metrics collection (Prometheus, Datadog or similar) is live.
+2. **Experiment design** — hypothesis, normal-behaviour metrics, how far the fault may reach, what stops it. Fill
+   `references/experiment-design.md`.
+3. **Execute** — user runs it; inject under observation with the scripted way back at hand.
+4. **Learn** — record what was found, fix weaknesses, close monitoring gaps; every run ends with a write-up and one or
+   more tracked fixes (`references/post-mortem.md`).
+5. **Automate** — put recurring experiments into the delivery pipeline.
+6. **Recount** — count experiments, the ones with all five fields, and the findings; fix the tally if the sheets differ.
 
 ## Safety Checklist
 
 Enforce on every experiment:
 
 - **Baseline before fault** — measure the steady-state metrics and confirm they are stable before anything is injected
-- **Smallest scope first** — begin with the narrowest blast radius; widen only after the previous size confirmed the hypothesis
+- **Smallest scope first** — narrowest blast radius first
 - **Abort in 30 s or less** — the stop path is scripted and rehearsed before the experiment starts
-- **One variable** — inject a single failure condition per run
-- **Production needs a net** — anything customer-facing must already have breakers, flags, or canary isolation in place
-- **Finish with a write-up** — every run closes with a short report and one or more tracked fixes
+- **One variable** — a single failure condition per run
+- **Production needs a net** — anything customer-facing must already have breakers, flags, or canary isolation in place;
+  without them a bounded test can still reach users
+- **Finish with a write-up** — short report, tracked fixes
 
 ## Output Template
 
-For each experiment, provide:
-1. Design document: hypothesis, normal-behaviour metrics, scope of impact
-2. Injection scripts or manifests
-3. Dashboards and alert rules covering the experiment window
-4. Rollback procedure (scripted, ≤ 30s)
-5. Findings summary with proposed fixes
+```
+## Experiment — <title> (<env>)
+
+Hypothesis: <when X fails, Y stays within Z>
+Steady state: <metric, normal range, live? yes/no>
+Scope: <rung> · Abort trigger: <condition> · Abort script: <command> (<s> s)
+Injection: <manifest or script>
+Result: confirmed / refuted / aborted — <metric reading>
+Fixes: <tracked item, owner>
+Gaps: [확인 필요: ○○] ...
+
+<n> experiments · <c> confirmed · <r> refuted · <a> aborted · <g> gaps
+```
 
 ## What Claude Does / What You Do
 
@@ -114,6 +132,7 @@ For network latency (toxiproxy) and Chaos Monkey examples, see `references/chaos
 
 ## Related Skills
 
-- `sre-engineer` — SLO definition, error budgets, incident response
-- `architecture-designer` — resilience pattern design for distributed systems
-- `circuit-breaker-tuner` — configure failure thresholds before running chaos experiments
+- `develop:sre-engineer` — SLO definition, error budgets, alerting
+- `develop:incident-response-playbook` — when the failure is real and active
+- `develop:architecture-designer` — resilience pattern design for distributed systems
+- `develop:circuit-breaker-tuner` — configure failure thresholds before running chaos experiments

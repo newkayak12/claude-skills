@@ -1,16 +1,16 @@
 ---
 name: circuit-breaker-tuner
 description: >-
-  Use when a slow or failing downstream service is causing upstream latency,
-  thread exhaustion, or outages — and you need to configure or tune circuit
-  breakers, bulkheads, timeouts, and fallbacks to prevent cascading failures.
-  Triggers on:.
+  Use when a slow or failing downstream is exhausting upstream threads or causing outages and breakers, bulkheads,
+  timeouts or fallbacks need configuring. Triggers on: "서킷 브레이커 설정", "서킷이 자주 열려", "cascading failure",
+  "circuit breaker tuning". Not for SQL or chaos design.
 scenarios:
   - "Our circuit breaker is tripping too often and causing unnecessary service disruptions"
   - "Help me tune the circuit breaker thresholds for our payment service"
-  - "Circuit breaker keeps opening on false positives, need to configure proper settings"
+  - "A slow downstream keeps exhausting our threads — add bulkheads and fallbacks"
   - "서킷 브레이커가 너무 자주 열려서 서비스 장애가 발생해"
   - "서킷 브레이커 임계값 설정을 도와줘"
+  - "다운스트림이 느려지면 우리 서비스 전체가 죽어, 어떻게 막아?"
 compatibility:
   recommended:
     - think-tool
@@ -21,39 +21,53 @@ compatibility:
     평가합니다. Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
+## Standing Mandates
+
+- NEVER set a threshold from defaults or round numbers alone. Take the dependency's measured latency and recovery time;
+  if they are missing, write `[확인 필요: ○○]` and give the starting value labelled as a starting value. A breaker
+  tuned to a guessed recovery time flaps open/probe/open or stays open too long.
+- NEVER ship a breaker without a fallback decision and a bulkhead. An OPEN circuit with no fallback throws to the
+  caller, and without a bulkhead the pool is already exhausted before the circuit opens.
+- NEVER apply a tuned value without the user confirming it against their metrics; Claude cannot see production
+  traffic.
+- NEVER treat a timeout as a breaker setting only: the HTTP client timeout and `slowCallDurationThreshold` must be
+  checked against each other, otherwise calls time out before they can be counted as slow.
+- Goal: each dependency has a config with a stated reason per value, a fallback, a bulkhead, a state-change alert and
+  an OPEN to HALF_OPEN to CLOSED test; the closing tally recounts to the dependency table.
+
 # Circuit Breaker Tuner
 
-## When to Use / When Not to Use
-
-**Use when:**
-- A slow or failing downstream service is exhausting threads or connection pools
-- You need to tune failure thresholds, recovery timing, or HALF_OPEN probe behavior
-- An application has no resilience layer and a downstream failure takes down the whole system
-- You need fallback strategies for graceful degradation
-
-**Do not use when:**
-- The problem is slow SQL queries or missing database indexes
-- You need chaos experiment design (use `chaos-engineer`)
+**Not for** slow SQL or missing indexes (`develop:sql-pro`, `develop:database-optimizer`), pool sizing alone
+(`develop:connection-pool-tuner`), or designing failure experiments (`develop:chaos-engineer`).
 
 ## Process
 
-1. **Identify the dependency** — Which downstream service is failing or slow? What is its typical latency and recovery time?
-2. **Choose state machine parameters** — Set `failureRateThreshold`, `waitDurationInOpenState`, `minimumNumberOfCalls`
-3. **Configure the sliding window** — COUNT_BASED (by request count) vs TIME_BASED (by time window)
-4. **Define a fallback** — What should callers receive when the circuit is OPEN?
-5. **Add a bulkhead** — Limit concurrent calls to prevent pool exhaustion before the circuit opens
-6. **Wire monitoring** — Alert on circuit state transitions (CLOSED → OPEN)
+1. **Identify the dependency** — which downstream is failing or slow; typical latency and recovery time. Read client
+   code, config and dashboards first; mark what is absent `[확인 필요: ○○]`.
+2. **Choose state machine parameters** — `failureRateThreshold`, `waitDurationInOpenState`, `minimumNumberOfCalls`.
+3. **Configure the sliding window** — COUNT_BASED (by request count) or TIME_BASED (by time window).
+4. **Define a fallback** — what callers receive when the circuit is OPEN.
+5. **Add a bulkhead** — limit concurrent calls so the pool is not exhausted before the circuit opens.
+6. **Wire monitoring** — alert on state transitions (CLOSED to OPEN).
+7. **Recount** — count dependencies, those with all five parts (config, fallback, bulkhead, alert, recovery test) and
+   open `[확인 필요]` items; fix the tally if the table differs.
 
-For full YAML templates, see `references/resilience4j-config.md`. For fallback code examples, see `references/fallback-patterns.md`. For metrics, see `references/metrics-alerting.md`.
+Templates: `references/resilience4j-config.md`; fallback code: `references/fallback-patterns.md`; metrics:
+`references/metrics-alerting.md`.
 
 ## Output Template
 
-For each circuit breaker configuration, provide:
-1. Resilience4j YAML or code config with commented rationale
-2. Fallback method implementation
-3. Bulkhead config (concurrent call limit)
-4. Monitoring alert rule for state change events
-5. Test scenario verifying OPEN → HALF_OPEN → CLOSED recovery
+```
+## Circuit breaker — <service> (<library, version>)
+
+| Dependency | Latency / recovery (source) | failureRate | waitOpen | minCalls | Window | Fallback | Bulkhead | Alert | Recovery test |
+|------------|-----------------------------|-------------|----------|----------|--------|----------|----------|-------|---------------|
+
+Config: Resilience4j YAML or code, each value with a one-line rationale
+Gaps: [확인 필요: ○○] ...
+
+<n> dependencies · <c> complete · <g> gaps
+```
 
 ## What Claude Does / What You Do
 
@@ -121,6 +135,7 @@ HALF_OPEN → (probe fails) → OPEN
 
 ## Related Skills
 
-- `connection-pool-tuner` — pool exhaustion often co-occurs with missing circuit breakers
-- `chaos-engineer` — test circuit breaker behavior with controlled failure injection
-- `transaction-boundary-reviewer` — wide transactions compound cascading failure risk
+- `develop:connection-pool-tuner` — pool exhaustion often co-occurs with missing circuit breakers
+- `develop:chaos-engineer` — test circuit breaker behavior with controlled failure injection
+- `develop:transaction-boundary-reviewer` — wide transactions compound cascading failure risk
+- `develop:sre-engineer` — alerting and error budget for the breaker's state changes

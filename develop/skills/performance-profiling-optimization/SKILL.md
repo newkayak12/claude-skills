@@ -25,14 +25,20 @@ compatibility:
 - ALWAYS capture a baseline before touching anything.
 - ALWAYS change one thing at a time, so the delta has one cause.
 - ALWAYS run the correctness check first — a speedup that changes results does not count.
-- NEVER optimize without data or guess at bottlenecks.
-- NEVER keep a change that is neutral or worse — revert it.
+- NEVER optimize without data or guess at bottlenecks — a guessed fix costs a deploy and often moves the wrong number.
+- NEVER keep a change that is neutral or worse — revert it; it still adds complexity and risk.
+- NEVER invent a missing metric (percentile, RPS, heap size). Mark `[확인 필요: ○○]` and ask for the measurement; a
+  made-up baseline makes every later delta meaningless.
+- Goal: a baseline, a profiler-confirmed bottleneck, one change at a time with before/after numbers beyond run-to-run
+  variance, and a guard; the closing tally recounts to the change lines.
 
 # Performance Profiling & Optimization
 
 Measure first. Hypothesize second. Profile third. Fix fourth. Verify always. Guard last.
 
-Never optimize without data. Never guess at bottlenecks.
+**Not for** SQL rewrites (`develop:sql-pro`), database server tuning (`develop:database-optimizer`) or pool sizing
+(`develop:connection-pool-tuner`) — see Escalation Paths. An active production incident goes to
+`develop:incident-response-playbook` first.
 
 ---
 
@@ -60,8 +66,9 @@ Map symptoms to candidate causes using the table below. Pick the top 2–3.
 | Network latency spikes | DNS resolution, connection setup overhead, chatty API calls |
 | GC pause > 200ms | Large old-gen, too-frequent allocation, premature promotion |
 
-### Step 3 — Profile (tool guidance below)
-Target the hypothesis. Don't profile everything at once.
+### Step 3 — Profile
+Target the hypothesis. Don't profile everything at once. Tools by symptom (CPU, memory, IO, network) and bottleneck
+signatures with fixes: `references/profiling-tools.md`.
 
 ### Step 4 — Fix
 One change at a time, so the delta in Step 5 has one cause. Document what you changed and why.
@@ -82,98 +89,6 @@ Stop the regression from returning. Pick the metric the fix was justified by (e.
 enforce it: a CI performance budget (fail the build above 800ms P95 in the load test, judged on a median of
 repeated runs so variance does not make it flaky) and/or an alert on that metric in production monitoring.
 When the guard fires, return to Step 1 and re-baseline.
-
----
-
-## Profiling Tool Guide
-
-### CPU Profiling
-**Goal**: find where CPU cycles are spent — hot methods, tight loops.
-
-- **async-profiler** (JVM): low-overhead sampling profiler. Produces flame graphs.
-  ```bash
-  ./asprof -d 30 -f /tmp/flamegraph.html <pid>
-  ```
-- **py-spy** (Python): sampling profiler, no code changes needed.
-  ```bash
-  py-spy record -o profile.svg --pid <pid>
-  ```
-- **perf + FlameGraph** (Linux system-level):
-  ```bash
-  perf record -F 99 -p <pid> -g -- sleep 30
-  perf script | stackcollapse-perf.pl | flamegraph.pl > cpu.svg
-  ```
-- **Reading a flame graph**: wide boxes = time-consuming. Look for wide plateaus near the top.
-
-**Common CPU findings**: serialization/deserialization in hot path, regex compilation inside loops, reflection overhead, N+1 computation.
-
-### Memory Profiling
-**Goal**: find what's allocated, what's retained, and why GC can't collect it.
-
-- **JVM heap dump**:
-  ```bash
-  jcmd <pid> GC.heap_dump /tmp/heap.hprof
-  # Analyze with Eclipse MAT or VisualVM
-  ```
-- **GC log analysis** (JVM): enable with `-Xlog:gc*:file=/tmp/gc.log:time,uptime`
-  - Look for: frequency of full GC, pause duration, heap occupancy after GC
-  - Tool: GCEasy.io for visual analysis
-- **Python memory**: `tracemalloc`, `memory_profiler`
-- **Go**: `pprof` heap profile: `go tool pprof http://localhost:6060/debug/pprof/heap`
-
-**Common memory findings**: static collections that grow unboundedly, event listeners never removed, large byte arrays for batch processing, connection/stream objects not closed.
-
-### IO Profiling
-**Goal**: find slow queries, missing indexes, excessive disk reads.
-
-- **Slow query log** (MySQL/PostgreSQL):
-  ```sql
-  -- PostgreSQL
-  SET log_min_duration_statement = 100; -- log queries > 100ms
-  SELECT * FROM pg_stat_statements ORDER BY total_time DESC LIMIT 20;
-  ```
-- **EXPLAIN ANALYZE**: run on any query taking > 50ms.
-- **strace** (Linux): trace syscalls for a process.
-  ```bash
-  strace -p <pid> -e trace=read,write,open,close -T 2>&1 | head -100
-  ```
-- **iotop**: identify processes doing most IO.
-
-### Network Profiling
-**Goal**: find latency between services, connection overhead, chattiness.
-
-- **Distributed tracing** (Jaeger, Zipkin, OpenTelemetry): span timings across services.
-- **tcpdump / Wireshark**: packet-level inspection.
-- **curl with timing**:
-  ```bash
-  curl -w "@curl-format.txt" -o /dev/null -s https://api.example.com/endpoint
-  # Shows: dns, connect, tls, TTFB, total
-  ```
-- **Connection reuse**: check if HTTP keep-alive is enabled; check connection pool hit rate.
-
----
-
-## Common Bottleneck Patterns
-
-### N+1 Query
-**Signature**: DB query count scales linearly with result set size. Latency low per query, high in aggregate.
-**Fix**: batch load with `IN (...)`, use JOIN, or add a data loader.
-
-### Thread Pool Exhaustion
-**Signature**: requests queue up, latency spikes, thread count at max, CPU low.
-**Fix**: increase pool size (carefully), or reduce work per thread, or use async I/O.
-
-### Memory Leak → GC Pressure → Latency Spikes
-**Signature**: heap grows over hours/days, full GC frequency increases, P99 spikes correlate with GC events.
-**Fix**: find the retention root via heap dump; fix the leak; tune GC only as a temporary measure.
-
-### Hot Lock / Synchronized Block
-**Signature**: high CPU, many threads in BLOCKED state in thread dump.
-**Fix**: reduce lock scope, use lock-free data structures, partition the lock.
-
-### Large Serialization Payload
-**Signature**: high CPU on serialization threads, large response sizes, high memory allocation rate.
-**Fix**: project only needed fields, paginate, use binary formats (protobuf, avro) for internal APIs.
 
 ---
 
@@ -201,7 +116,7 @@ Frame performance work in cost and user impact terms — not engineering eleganc
 
 ## Quick Reference Checklist
 
-Before declaring the investigation done:
+Before declaring the investigation done (recount the tally against the change lines first; fix the verdict line if they differ):
 - [ ] Baseline metrics captured before any change
 - [ ] Bottleneck confirmed with profiler data (not just hypothesis)
 - [ ] Root cause identified (not just symptom)
@@ -215,6 +130,23 @@ Before declaring the investigation done:
 
 **Stack coverage note:** Tool examples in this skill are JVM (async-profiler, heap dumps, GC logs), Python (py-spy, memory-profiler), and Go (pprof) centric. For Node.js: use `clinic.js` or `--inspect` with Chrome DevTools. For Rust: use `cargo flamegraph` or `perf`. The investigation workflow (measure → hypothesize → profile → fix → verify) applies to all stacks regardless of tooling.
 
+## Output Template
+
+```
+## Performance investigation — <service/endpoint>
+
+Problem: <one-line statement with P50/P95/P99, RPS, CPU, heap>
+Bottleneck: <profiler evidence: tool, file/graph, top frame>
+
+| # | Change | Correctness | Before | After | Variance | Kept / reverted |
+|---|--------|-------------|--------|-------|----------|-----------------|
+
+Guard: <CI budget or alert, metric and threshold>
+Gaps: [확인 필요: ○○] ...
+
+<n> changes · <k> kept · <r> reverted · <g> gaps — resolved / unresolved / blocked
+```
+
 ## What Claude Does / What You Do
 
 | Claude | You |
@@ -226,6 +158,7 @@ Before declaring the investigation done:
 
 ## Related Skills
 
+- `develop:sql-pro` — when the bottleneck is one query's text or plan
 - `develop:database-optimizer` — when the bottleneck is database infrastructure
 - `develop:connection-pool-tuner` — pool exhaustion and latency spikes
 - `develop:incident-response-playbook` — when the regression is an active production incident
