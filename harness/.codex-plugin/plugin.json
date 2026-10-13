@@ -1,6 +1,6 @@
 {
   "name": "harness",
-  "version": "1.35.0",
+  "version": "1.36.0",
   "description": "Harness — a lightweight reasoning floor with planning, implementation, verification, quality-gate, and reporting skills. Active Codex sessions run the contract directly with native tools.",
   "author": {
     "name": "newkayak12"
