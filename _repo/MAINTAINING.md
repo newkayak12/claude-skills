@@ -14,7 +14,7 @@ things live, how to check them, and how to leave the repo clean*. When the two d
 | `_repo/deprecated/` | README only: restore table (item, last commit, `git checkout` command) for retired items | files of retired items |
 | `.claude/` | this repo's own hooks (goal gate, repo rules) | plugin code |
 | `tmp/` (gitignored) | scratch output of a bench or experiment | anything to keep |
-| `.harness-run/` (gitignored) | one folder per harness run | — |
+| `.harness-run/` (gitignored; `develop-realign` files were committed before the ignore) | one folder per harness run | — |
 
 A new top-level directory is a new plugin, or it does not exist. A note worth keeping goes in
 `_repo/docs/`; one that isn't is not written to the repo.
@@ -40,6 +40,10 @@ Then the plugin you touched:
 | `write:tech-book` | `node --test write/skills/tech-book/scripts/test-*.mjs` |
 | `portfolio:deck-builder` | in its `scripts/`: `python3 test_deck.py`, `DECK_RENDER_DOCKER=deck-render python3 test_render.py` |
 | a SKILL.md only | the validator above; a behaviour change also needs one real run (see Benches) |
+| `.claude/hooks/repo-rules.mjs` | `node _repo/scripts/test-repo-rules.mjs` |
+
+The goal gate (`.claude/harness-gate.json`) covers `.js/.mjs/.cjs`, `.ts/.tsx`, `.py`, `SKILL.md`,
+`hooks.json` and `.claude-plugin/{plugin,marketplace}.json`; docs (README, KOR, CHANGELOG, plans) are not gated.
 
 Report the counts you saw; "tests pass" without a number is not a check.
 
@@ -95,7 +99,10 @@ Report the counts you saw; "tests pass" without a number is not a check.
 At the end of a piece of work:
 
 1. `git status` is clean and `main` equals `skills/main`.
-2. Every harness run you opened has `05-report.md` — an open run keeps the goal gate engaged.
+2. Every harness run you opened has `05-report.md` — an open run keeps the goal gate engaged, and
+   `.claude/hooks/repo-rules.mjs` refuses `git push` and the bump tools while any run is open or its
+   report has a `| missing |` row. A missing criterion ships only with a `waived: <user's words>`
+   line in that report.
 3. No containers, volumes, or background processes you started are left running.
 4. `tmp/` holds nothing you are done with.
 5. Nothing new at the top level that is not a plugin.
