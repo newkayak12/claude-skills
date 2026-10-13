@@ -31,6 +31,26 @@ Hypothesis shape: with N replicas, killing one never drops availability below th
 
 Generate load while injecting pod loss or CPU stress, and record time from signal to new ready pods. Metrics lag, stabilization windows, and node-provisioning delay usually dominate; compare against the traffic ramp you expect.
 
+## Example: pod-kill experiment (Chaos Mesh)
+
+```yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: orders-pod-kill
+  namespace: staging
+spec:
+  action: pod-kill
+  mode: fixed-percent
+  value: "33"            # at most a third of matching pods
+  selector:
+    namespaces: [staging]
+    labelSelectors:
+      app: orders
+```
+
+`pod-kill` is one-shot: deleting the resource does not bring pods back, so cap the blast radius (`value`, selector) up front. For a fault that is held for a period and is undone on deletion, use `pod-failure` with `duration`. For any irreversible fault, write the manual recovery step (reschedule, restore, redeploy) before you start.
+
 ## Custom controllers
 
 Delete or corrupt a share of custom resources and confirm the operator reconciles them back. Also stop the operator itself and check that workloads keep serving while it is down.

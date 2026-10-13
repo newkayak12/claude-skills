@@ -5,7 +5,7 @@ Moved out of SKILL.md. Open at Step 3 (Profile) and when matching a signature.
 ## CPU Profiling
 **Outcome**: find where CPU cycles are spent — hot methods, tight loops.
 
-- **async-profiler** (JVM): low-overhead sampling profiler. Produces flame graphs.
+- **async-profiler** (JVM): low-overhead sampling profiler. Produces flame graphs. The `asprof` launcher is 3.x; on 2.x use `profiler.sh` with the same `-d`/`-f` flags.
   ```bash
   ./asprof -d 30 -f /tmp/flamegraph.html <pid>
   ```
@@ -66,6 +66,10 @@ Moved out of SKILL.md. Open at Step 3 (Profile) and when matching a signature.
   # Shows: dns, connect, tls, TTFB, total
   ```
 - **Connection reuse**: check if HTTP keep-alive is enabled; check connection pool hit rate.
+
+## Stack coverage note
+
+Tool examples here are JVM (async-profiler, heap dumps, GC logs), Python (py-spy, memory-profiler) and Go (pprof) centric. For Node.js use `clinic.js` or `--inspect` with Chrome DevTools. For Rust use `cargo flamegraph` or `perf`. The workflow (measure, hypothesize, profile, fix, verify) applies to all stacks regardless of tooling.
 
 ## Common Bottleneck Patterns
 

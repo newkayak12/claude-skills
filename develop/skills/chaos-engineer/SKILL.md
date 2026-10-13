@@ -50,26 +50,18 @@ or tuning the breaker itself (`develop:circuit-breaker-tuner`).
 ## Process
 
 1. **System analysis** — chart components, dependencies, user-critical paths, how each can fail. Read the repo,
-   manifests and dashboards first. Confirm metrics collection (Prometheus, Datadog or similar) is live.
-2. **Experiment design** — hypothesis, normal-behaviour metrics, how far the fault may reach, what stops it. Fill
-   `references/experiment-design.md`.
-3. **Execute** — user runs it; inject under observation with the scripted way back at hand.
+   manifests and dashboards first. Confirm metrics collection (Prometheus, Datadog or similar) is live, and measure the
+   steady state until it is stable before anything is injected.
+2. **Experiment design** — hypothesis, normal-behaviour metrics, how far the fault may reach (narrowest scope first),
+   what stops it, one fault per run. Fill `references/experiment-design.md`. `pod-kill` is irreversible: cap
+   `value`/selector and write the manual recovery first; reversible = `pod-failure` + `duration`
+   (`references/kubernetes-chaos.md`).
+3. **Execute** — user runs it; inject under observation with the scripted way back (30 s or less, rehearsed) at hand.
+   Production: breakers, flags or canary isolation already in place, or stay in staging.
 4. **Learn** — record what was found, fix weaknesses, close monitoring gaps; every run ends with a write-up and one or
    more tracked fixes (`references/post-mortem.md`).
 5. **Automate** — put recurring experiments into the delivery pipeline.
 6. **Recount** — count experiments, the ones with all five fields, and the findings; fix the tally if the sheets differ.
-
-## Safety Checklist
-
-Enforce on every experiment:
-
-- **Baseline before fault** — measure the steady-state metrics and confirm they are stable before anything is injected
-- **Smallest scope first** — narrowest blast radius first
-- **Abort in 30 s or less** — the stop path is scripted and rehearsed before the experiment starts
-- **One variable** — a single failure condition per run
-- **Production needs a net** — anything customer-facing must already have breakers, flags, or canary isolation in place;
-  without them a bounded test can still reach users
-- **Finish with a write-up** — short report, tracked fixes
 
 ## Output Template
 
@@ -103,32 +95,10 @@ Gaps: [확인 필요: ○○] ...
 |------|------|-----------|
 | Experiment sheet | `references/experiment-design.md` | writing the claim, scope rungs, abort triggers |
 | Host and cloud faults | `references/infrastructure-chaos.md` | network, dependency, resource, zone, DNS, certificate faults |
-| Cluster faults | `references/kubernetes-chaos.md` | pod, node, partition, autoscaling faults |
-| Tooling | `references/chaos-tools.md` | picking a tool, random-kill scripts, pipeline gates |
+| Cluster faults | `references/kubernetes-chaos.md` | pod, node, partition, autoscaling faults, Chaos Mesh pod-kill example |
+| Tooling | `references/chaos-tools.md` | picking a tool, random-kill scripts, pipeline gates, toxiproxy |
 | Game days | `references/game-days.md` | running a supervised session |
 | Write-up | `references/post-mortem.md` | report after a game day or real incident |
-
-## Example: Pod Kill Experiment (Chaos Mesh)
-
-```yaml
-apiVersion: chaos-mesh.org/v1alpha1
-kind: PodChaos
-metadata:
-  name: orders-pod-kill
-  namespace: staging
-spec:
-  action: pod-kill
-  mode: fixed-percent
-  value: "33"            # at most a third of matching pods
-  selector:
-    namespaces: [staging]
-    labelSelectors:
-      app: orders
-```
-
-`pod-kill` is one-shot: deleting the resource does not bring pods back, so cap the blast radius (`value`, selector) up front. For a fault that is held for a period and is undone on deletion, use `pod-failure` with `duration`. For any irreversible fault, write the manual recovery step (reschedule, restore, redeploy) before you start.
-
-For network latency (toxiproxy) and Chaos Monkey examples, see `references/chaos-tools.md`.
 
 ## Related Skills
 

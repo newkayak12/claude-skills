@@ -84,3 +84,11 @@ Actions, in order:
 - Compensation or time off in lieu for out-of-hours pages.
 - Anyone can escalate without justification.
 - Every page either produces a fix, a threshold change or a deletion.
+
+## Telemetry rules
+
+- **Carry one correlation ID across services** (propagate the trace/request ID in headers and every log line) — without it a request cannot be followed across hops, so the cause stays a guess.
+- **Bound label cardinality** — every distinct label combination is its own time series; user IDs, URLs, or request IDs as labels blow up storage and query cost. Keep labels to small fixed sets.
+- **Never log secrets, tokens, or full PII** — logs are copied to many systems with weaker access control and long retention; mask or drop them at the source.
+- **Verify the alert actually fires** — fire it once (inject the condition or lower the threshold) and see the page arrive; an alert never seen firing is an assumption, not a safeguard.
+- **Over 50% toil needs an automation plan** — a team that spends most of its time on repeated manual work has no time left to improve reliability.

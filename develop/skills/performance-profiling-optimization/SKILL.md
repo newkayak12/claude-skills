@@ -22,7 +22,7 @@ compatibility:
 ---
 ## Standing Mandates
 
-- ALWAYS capture a baseline before touching anything.
+- ALWAYS capture a baseline before touching anything — without it no later delta can be measured.
 - ALWAYS change one thing at a time, so the delta has one cause.
 - ALWAYS run the correctness check first — a speedup that changes results does not count.
 - NEVER optimize without data or guess at bottlenecks — a guessed fix costs a deploy and often moves the wrong number.
@@ -37,10 +37,8 @@ compatibility:
 Measure first. Hypothesize second. Profile third. Fix fourth. Verify always. Guard last.
 
 **Not for** SQL rewrites (`develop:sql-pro`), database server tuning (`develop:database-optimizer`) or pool sizing
-(`develop:connection-pool-tuner`) — see Escalation Paths. An active production incident goes to
+(`develop:connection-pool-tuner`) — hand off by name (Related Skills). An active production incident goes to
 `develop:incident-response-playbook` first.
-
----
 
 ## Investigation Workflow
 
@@ -76,59 +74,17 @@ If changes must ship together, measure each alone first.
 
 ### Step 5 — Verify
 Re-run the same load, same conditions, same duration, that reproduced the problem. Compare against baseline.
-- **Correctness check first**: tests pass and output is identical to before. A speedup that changes results
-  (dropped work, stale cache, skipped validation) is a bug, so the metric does not count until this passes.
+- Correctness first; revert neutral or worse (see Mandates).
 - **Beat the noise**: repeat the runs and compare the delta to run-to-run variance, not one mean. A 3% gain
   inside ±5% variance is a different sample, not a gain.
-- **Neutral or worse: revert.** A change that does not measurably help still adds complexity and risk; keep
-  only what the numbers prove.
 If the fix holds: document it. If not: return to Step 2.
 
 ### Step 6 — Guard
 Stop the regression from returning. Pick the metric the fix was justified by (e.g. P99 of `/checkout`) and
 enforce it: a CI performance budget (fail the build above 800ms P95 in the load test, judged on a median of
-repeated runs so variance does not make it flaky) and/or an alert on that metric in production monitoring.
-When the guard fires, return to Step 1 and re-baseline.
-
----
-
-## Making the Case for Performance Work
-
-Frame performance work in cost and user impact terms — not engineering elegance.
-
-**Template**:
-> "Current P99 latency is X ms. Industry benchmark / SLA target is Y ms.
-> At our traffic of Z RPS, each 100ms of extra latency costs approximately [conversion rate / user satisfaction / infra cost].
-> Proposed fix requires [N days]. Expected outcome: P99 drops to W ms, [cost/impact metric] improves by K%."
-
----
-
-## Escalation Paths
-
-| Bottleneck Found | Escalate To |
-|-----------------|-------------|
-| DB query performance, missing indexes, slow writes | [`../database-optimizer/SKILL.md`](../database-optimizer/SKILL.md) |
-| Connection pool exhaustion, pool sizing | [`../connection-pool-tuner/SKILL.md`](../connection-pool-tuner/SKILL.md) |
-| Latency spikes causing downstream failures / cascades | [`../circuit-breaker-tuner/SKILL.md`](../circuit-breaker-tuner/SKILL.md) |
-| Production profiling, SLO definition, alerting | [`../sre-engineer/SKILL.md`](../sre-engineer/SKILL.md) |
-
----
-
-## Quick Reference Checklist
-
-Before declaring the investigation done (recount the tally against the change lines first; fix the verdict line if they differ):
-- [ ] Baseline metrics captured before any change
-- [ ] Bottleneck confirmed with profiler data (not just hypothesis)
-- [ ] Root cause identified (not just symptom)
-- [ ] Fix applied one change at a time
-- [ ] Correctness check passed; improvement exceeds run-to-run variance (neutral changes reverted)
-- [ ] CI budget or alert guards the metric
-- [ ] Change documented with before/after numbers
-- [ ] Regression test or load test added to prevent recurrence
-
----
-
-**Stack coverage note:** Tool examples in this skill are JVM (async-profiler, heap dumps, GC logs), Python (py-spy, memory-profiler), and Go (pprof) centric. For Node.js: use `clinic.js` or `--inspect` with Chrome DevTools. For Rust: use `cargo flamegraph` or `perf`. The investigation workflow (measure → hypothesize → profile → fix → verify) applies to all stacks regardless of tooling.
+repeated runs so variance does not make it flaky) and/or an alert on that metric in production monitoring, plus a
+regression or load test. When the guard fires, return to Step 1 and re-baseline.
+Before declaring done, recount the tally against the change lines; fix the verdict line if they differ.
 
 ## Output Template
 
@@ -161,5 +117,7 @@ Gaps: [확인 필요: ○○] ...
 - `develop:sql-pro` — when the bottleneck is one query's text or plan
 - `develop:database-optimizer` — when the bottleneck is database infrastructure
 - `develop:connection-pool-tuner` — pool exhaustion and latency spikes
+- `develop:circuit-breaker-tuner` — latency spikes causing downstream failures or cascades
+- `develop:sre-engineer` — production profiling, SLO definition, alerting
 - `develop:incident-response-playbook` — when the regression is an active production incident
 - `completion:verification-before-completion` — confirm the improvement with fresh evidence

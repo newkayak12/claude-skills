@@ -34,22 +34,8 @@ compatibility:
 
 # Incident Response Playbook
 
-Speed matters. Clarity matters more. Blame solves nothing.
-
 **Not for** SLO or alert setup (`develop:sre-engineer`), failure-injection tests (`develop:chaos-engineer`), or finding
 the code defect behind the failure (`develop:bug-diagnoser`).
-
----
-
-## Incident Lifecycle
-
-```
-Detect → Triage → Communicate → Mitigate → Resolve → Learn
-```
-
-Each phase has a clear exit condition. Do not skip phases under pressure.
-
----
 
 ## Severity Classification
 
@@ -62,15 +48,11 @@ Each phase has a clear exit condition. Do not skip phases under pressure.
 
 **Escalate up, not down.** When in doubt, treat as higher severity.
 
----
-
 ## Phase 1 — Detect
 
 Detection sources, most to least reliable: alert, synthetic monitor, user report, team member — see [`references/background.md`](references/background.md#detection-sources).
 
-**First action on detection**: open an incident channel immediately, even if you're still diagnosing.
-
----
+After severity: open an incident channel, even if you're still diagnosing.
 
 ## Phase 2 — Triage (target: < 5 min for P0/P1)
 
@@ -84,43 +66,10 @@ Answer these questions fast:
 
 **Triage output**: severity classification + incident commander assigned.
 
-
----
-
 ## Phase 3 — Communicate
 
-### Rule: communicate before you know the answer.
-Silence is worse than "we're investigating." Update every 15–30 min for P0/P1.
-
-### Internal Slack Update Template
-
-```
-[P0] <Service> - <Brief description>
-Status: Investigating / Identified / Mitigating / Resolved
-Impact: <Who is affected and how>
-Start time: <HH:MM UTC>
-Last update: <HH:MM UTC>
-IC: @<incident-commander>
-Bridge: <link to war room>
-Next update: <HH:MM UTC>
-```
-
-### Status Page Update Template
-
-```
-Investigating: We are aware of an issue affecting <service/feature>.
-Our team is actively investigating. We will provide an update by <time>.
-
-Identified: We have identified the cause of the issue affecting <service/feature>.
-We are working on a fix and expect resolution by <time>.
-
-Resolved: The issue affecting <service/feature> has been resolved as of <time>.
-All systems are operating normally. An RCA will be published within 48 hours.
-```
-
-**What NOT to say publicly**: internal system names, specific error messages that reveal architecture, speculation about cause before confirmed.
-
----
+Communicate before you know the answer; silence is worse than "we're investigating." Update every 15–30 min for P0/P1.
+Slack and status-page templates, and what not to say publicly: `references/comms-templates.md`.
 
 ## Phase 4 — Mitigate
 
@@ -129,8 +78,6 @@ Outcome: **reduce user impact now**, even if the root cause isn't fully understo
 Common mitigation actions (rollback, flag off, scale out, shed load, redirect traffic, restore) with when-to-use and risk: [`references/background.md`](references/background.md#common-mitigation-actions).
 
 **Mitigation ≠ Fix.** Document that mitigation is a temporary measure. The real fix comes after the incident.
-
----
 
 ## Phase 5 — Resolve
 
@@ -142,62 +89,15 @@ Exit criteria for "Resolved":
 - [ ] Affected users notified (if required)
 - [ ] Incident channel archived or closed
 
----
-
 ## Phase 6 — Learn (RCA / Post-Mortem)
 
-Target: publish RCA within 48–72 hours for P0/P1.
-
-### RCA Template
-
-```markdown
-## Incident RCA: <Title>
-
-**Date**: YYYY-MM-DD
-**Duration**: X hours Y minutes
-**Severity**: P0 / P1 / P2
-**Services Affected**: <list>
-**Author(s)**: <names>
-**Status**: Draft / Final
-
----
-
-### Summary
-One paragraph. What happened, what was the user impact, how was it resolved.
-
-### Timeline
-| Time (UTC) | Event |
-|------------|-------|
-| HH:MM | Alert fired / issue first detected |
-| HH:MM | On-call paged |
-| HH:MM | Triage complete; P0 declared |
-| HH:MM | Root cause identified |
-| HH:MM | Mitigation applied |
-| HH:MM | Incident resolved |
-
-### Root Cause
-Specific, technical explanation. Not "human error" — explain what made the error possible.
-Write it as causal steps (A → B → C). Each step carries an `Evidence:` line — the log, metric, trace, or diff that shows it. No evidence = mark the step `hypothesis`, not fact.
-
-### Contributing Factors
-- Factor 1 (e.g., no alerting on X metric)
-- Factor 2 (e.g., runbook for this scenario was missing)
-- Factor 3 (e.g., deploy pipeline did not catch Y in staging)
-
-### What Went Well
-- ...
-
-### Action Items
-| Item | Owner | Due Date | Priority |
-|------|-------|----------|----------|
-| Add alert for X | @person | YYYY-MM-DD | High |
-| Update runbook for Y scenario | @person | YYYY-MM-DD | Medium |
-| Add canary deploy for Z service | @person | YYYY-MM-DD | High |
-```
+Target: publish RCA within 48–72 hours for P0/P1. Full template (summary, timeline, root cause, contributing factors,
+action items): `references/rca-template.md`. Root cause is written as causal steps (A → B → C), each with an
+`Evidence:` line — the log, metric, trace or diff that shows it; no evidence means mark it `hypothesis`, not fact.
 
 ### Quick RCA (P2/P3 only)
 
-P0/P1 use the full template above. For P2/P3 a half page is enough:
+P0/P1 use the full template. For P2/P3 a half page is enough:
 
 ```markdown
 ## Quick RCA: <Title> (P2/P3)
@@ -216,28 +116,9 @@ A runbook is 3 lines (Means / First check / Escalate to) — format and example 
 
 If the timeline shows the trigger was a feature behaving as designed (a rollout that hit an untested segment, a launch assumption that didn't hold), the Action Items above won't stop a recurrence. Add one RCA line instead: `Product decision to revisit: [decision] — flag to [feature owner] for the next planning cycle.` This skill stops at naming the decision; validating the hypothesis and deciding iterate-vs-pivot is a product-side call.
 
-### Blameless Culture
-
-Document systems and process gaps, never individuals; reframe "Alice pushed bad code" as the missing pipeline stage. Detail: [`references/background.md`](references/background.md#blameless-culture).
-
----
-
 ## Incident Commander Checklist
 
 Severity declared, channel opened, responders assigned, first comms sent, mitigation running, 15–30 min cadence, resolution confirmed, RCA scheduled, runbook refreshed — full checklist: [`references/background.md`](references/background.md#incident-commander-checklist).
-
----
-
-## Escalation Paths
-
-| Situation | Escalate To |
-|-----------|-------------|
-| DB corruption, query issues, slow DB | [`../database-optimizer/SKILL.md`](../database-optimizer/SKILL.md) |
-| Performance degradation, high CPU/memory | [`../performance-profiling-optimization/SKILL.md`](../performance-profiling-optimization/SKILL.md) |
-| Observability gaps, SLO/alerting setup | [`../sre-engineer/SKILL.md`](../sre-engineer/SKILL.md) |
-| Understanding failure modes before they happen | [`../chaos-engineer/SKILL.md`](../chaos-engineer/SKILL.md) |
-| Writing and storing the RCA | [`../documentation-strategy/SKILL.md`](../documentation-strategy/SKILL.md) |
-| Root cause traces to a feature/rollout decision, not a technical defect | See "When Root Cause Traces to a Product Decision" above — flag to the feature owner; this skill's RCA covers technical root cause only |
 
 ## Output Template
 
@@ -265,8 +146,9 @@ Before sending, recount the cause steps and action items against the RCA; fix th
 
 ## Related Skills
 
-- `develop:sre-engineer` — SLOs, alerting, runbooks
+- `develop:database-optimizer` — DB corruption, query issues, slow DB
+- `develop:performance-profiling-optimization` — when the incident is a performance regression
+- `develop:sre-engineer` — observability gaps, SLOs, alerting, runbooks
 - `develop:chaos-engineer` — test failure modes before they happen
 - `develop:bug-diagnoser` — when the cause is a code defect to reproduce and fix
 - `develop:documentation-strategy` — where to store and maintain the RCA
-- `develop:performance-profiling-optimization` — when the incident is a performance regression

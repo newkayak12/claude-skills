@@ -41,6 +41,16 @@ Key points:
 
 ---
 
+## Choosing a strategy
+
+| Strategy | When to Use |
+|----------|------------|
+| Cached response | Data changes infrequently; stale is acceptable |
+| Default value | Empty/neutral response is acceptable |
+| Throw specific exception | Caller can handle the failure explicitly |
+| Queue for retry | Eventually-consistent operations |
+| Static response | Critical UX must not break |
+
 ## No-Fallback Is Still an Option
 
 A circuit breaker without a fallback throws an exception when OPEN. That is better than a 30-second timeout, but a meaningful fallback provides a degraded-but-useful response. Only omit fallbacks when there is genuinely no acceptable degraded behavior (e.g., a payment where queuing is not possible).
