@@ -77,10 +77,10 @@ Next: <step N, or "complete">
 
 | Claude | You |
 |--------|-----|
-| Runs each step skill and carries its output to the next | Build and measure before/after image sizes |
+| Runs each step skill and carries its output to the next | Supply each step's inputs and decide skips |
 | Flags a missing input before the step runs | Confirm SLOs reflect real user expectations |
-| Drafts SLOs, thresholds, experiments, runbooks | Run load tests; test breakers under load |
-| Keeps the tally | Execute chaos experiments; verify rollback first; fill in environment-specific context |
+| Drafts SLOs, thresholds, experiments, runbooks | Build and measure images; run load tests; test breakers under load |
+| Keeps the tally | Execute chaos experiments (verify rollback first); fill in environment-specific context |
 
 ## Related Skills
 

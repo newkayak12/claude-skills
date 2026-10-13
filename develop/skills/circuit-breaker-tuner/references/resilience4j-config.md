@@ -113,3 +113,24 @@ Normal P99: 2s    → slowCallDurationThreshold: 4–6s
 ```
 
 Do not set this to your own SLA timeout — that is too late. The circuit should detect slowness before your timeout fires.
+
+## The State Machine
+
+```
+CLOSED → (failures exceed threshold) → OPEN → (wait duration) → HALF_OPEN
+HALF_OPEN → (probe succeeds) → CLOSED
+HALF_OPEN → (probe fails) → OPEN
+```
+
+- **CLOSED**: Normal operation. Failures are counted.
+- **OPEN**: Failing fast. All calls return error/fallback immediately. Downstream gets time to recover.
+- **HALF_OPEN**: Probe state. A limited number of calls test recovery. Success → CLOSED; failure → OPEN.
+
+## Common Mistakes
+
+- **`minimumNumberOfCalls` too low** — single slow call opens the circuit
+- **`waitDurationInOpenState` too short** — circuit cycles open/probe/open without recovery
+- **Client errors (4xx) not in `ignoreExceptions`** — inflate failure rate with caller mistakes
+- **Same timeout for all services** — payment and recommendation have different profiles
+- **No fallback defined** — OPEN state throws uncaught exception instead of degrading gracefully
+- **HTTP timeout < `slowCallDurationThreshold`** — a slow dependency shows up only as timeouts (failures) and `slowCallRateThreshold` never trips

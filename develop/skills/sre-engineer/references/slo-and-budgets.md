@@ -78,6 +78,42 @@ Alert on burn rate with two windows (long confirms it is real, short confirms it
 
 Threshold in error-ratio terms = burn rate x (1 - SLO). For 99.9%: 14.4 x 0.001 = 0.0144.
 
+### Worked budget math
+
+```
+# Objective: 99.9% success ratio, 30-day rolling window
+# Budget in time:     0.001 x 43,200 min = 43.2 min
+# Budget in requests: 0.001 x 10M requests = 10,000 failures
+# 5,000 failures in week one = half the budget gone with ~77% of the window left
+# -> the error budget policy kicks in: hold non-critical releases
+```
+
+### Fast-burn alert rule
+
+```yaml
+groups:
+  - name: availability_slo
+    rules:
+      # Fast burn: 14.4x sustainable rate (2% of the 30-day budget in one hour)
+      - alert: ErrorBudgetFastBurn
+        expr: |
+          (
+            sum(rate(http_server_requests_seconds_count{status=~"5.."}[1h]))
+            / sum(rate(http_server_requests_seconds_count[1h]))
+          ) > (0.001 * 14.4)
+          and
+          (
+            sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+            / sum(rate(http_server_requests_seconds_count[5m]))
+          ) > (0.001 * 14.4)
+        labels:
+          severity: page
+        annotations:
+          runbook: "runbook link for this alert"
+```
+
+`for:` is optional here: the 5m short window already confirms the burn is ongoing. Add `for: 2m` only to damp flapping.
+
 ## Policy
 
 Write the policy before the budget runs out, get product and engineering to sign it, and keep it to a page.
