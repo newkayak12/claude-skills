@@ -90,6 +90,21 @@ test('Codex apply_patch: gated targets deny and ungated targets allow', () => {
   assert.equal(run(patch(dir, '*** Begin Patch\n*** Update File: README.md\n@@\n-x\n+y\n*** Update File: src/a.mjs\n@@\n-x\n+y\n*** End Patch')), 'deny');
 });
 
+test('Codex apply_patch: a Move to a gated path is denied, to an ungated path allowed', () => {
+  const dir = project();
+  assert.equal(run(patch(dir, '*** Begin Patch\n*** Update File: a.txt\n*** Move to: src/b.mjs\n@@\n-x\n+y\n*** End Patch')), 'deny');
+  assert.equal(run(patch(dir, '*** Begin Patch\n*** Update File: a.txt\n*** Move to: b.txt\n@@\n-x\n+y\n*** End Patch')), 'allow');
+});
+
+test('Claude: a non-entry Skill in an engaged root exits at once and refreshes no marker', () => {
+  const dir = project();
+  fallbackRun(dir);
+  const call = { tool_name: 'Skill', cwd: dir, session_id: 's1', tool_input: { skill: 'think:mentor' } };
+  assert.equal(run(call), 'allow');
+  assert.equal(existsSync(join(dir, '.claude', '.harness-markers')), false, 'no marker written');
+  assert.equal(run({ ...call, tool_input: { skill: 'harness' }, agent_id: 'sub1' }), 'deny', 'an entry skill from a subagent stays denied');
+});
+
 test('Codex registers goal-gate for apply_patch without Claude modules', () => {
   const config = JSON.parse(readFileSync(join(HERE, '..', 'hooks', 'codex.json'), 'utf8'));
   assert.equal(config.modules, undefined);

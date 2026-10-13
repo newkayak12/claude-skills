@@ -41,7 +41,7 @@ import { join, resolve, dirname, relative, isAbsolute, sep, basename } from 'nod
 import { execFileSync } from 'node:child_process';
 
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
-const patchTargets = (command, cwd) => [...String(command || '').matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)]
+const patchTargets = (command, cwd) => [...String(command || '').matchAll(/^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$/gm)]
   .map((m) => resolve(cwd, m[1].trim()));
 const CLEAN_MS = 24 * 60 * 60 * 1000;
 const SKEW_MS = 60 * 1000;
@@ -673,6 +673,7 @@ function main() {
     if (kind === 'agent' && !findRoot(join(cwd, '_'))) process.exit(0); // no gate configured here
     deny(`${entry}: ${SUBAGENT_STOP}`);
   }
+  if (tool === 'Skill') process.exit(0); // any other skill writes nothing and refreshes nothing
 
   // What this call would write.
   let targets = [];
