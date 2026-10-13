@@ -155,6 +155,7 @@ headless 실행(`claude -p`)에서는 이 명령들이 텍스트를 출력합니
 한 세션에서 `main`으로의 `git push`가 성공하면(`origin main`, `HEAD:main`, `x:main`, main 브랜치에서의 그냥 push), 같은 저장소에서 최근 30분 안에 움직인 다른 열린 세션마다 `main moved to <sha> … Fetch before editing or bumping versions.` 메시지가 갑니다. 세션당 2분에 한 번까지이고, 이 세션에는 `main moved: told N of M` toast가 뜹니다. headless 실행은 보내지 않습니다.
 
 ## 상태
+- `0.5.7`: Session UI 훅 모듈은 Claude 전용이므로 Codex는 명시적인 빈 스키마 호환 훅 오버레이를 사용합니다. Claude 동작은 그대로이고 Codex 플러그인 초기화 오류는 사라집니다.
 - `0.5.6`: main 이동 메시지가 `origin/main` 대신 push한 HEAD를 읽음 — 원격 이름이 origin이 아니면 빈 메시지가 가고 반복분이 중복으로 버려졌음.
 - `0.5.5`: recap은 다음 단계에 필요한 것만 남김(진행 중 섹션 추가, 끝난 작업은 한 줄) — compact가 따로 요약을 쓰지 않고 recap을 요약으로 씀.
 - `0.5.4`: recap 밴드를 recap마다 한 번만 표시 — Recap이나 dismiss를 기억하고, 세션 자신의 smart-compact recap으로는 띄우지 않음.

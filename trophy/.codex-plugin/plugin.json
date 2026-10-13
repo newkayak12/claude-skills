@@ -1,0 +1,12 @@
+{
+  "name": "trophy",
+  "version": "0.8.4",
+  "description": "Steam-style achievements for using this marketplace's skills, with trophy:list available in conversation.",
+  "author": {
+    "name": "newkayak12"
+  },
+  "repository": "https://github.com/newkayak12/claude-skills",
+  "license": "MIT",
+  "skills": "./.codex-plugin/skills/",
+  "hooks": "./hooks/codex.json"
+}

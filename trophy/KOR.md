@@ -113,6 +113,7 @@ Claude Code 2.1.293 터미널에서 실제로 캡처한 화면입니다 (영어 
 
 ## 상태 로그
 
+- v0.8.4 — Codex는 명시적인 빈 스키마 호환 훅 오버레이를 사용하고 Claude 전용 `trophy:list`를 노출하지 않습니다. Claude 훅과 업적 동작은 변경되지 않습니다.
 - v0.8.3 — 트리거 데이터에서 삭제된 `portfolio:feedback-beta`와 `assist` 스킬을 뺐습니다.
 - v0.8.2 — 영어 트리거 문구는 단어 경계에서만 맞습니다. `done`이 `abandoned` 안에서 걸리지 않습니다.
 - v0.8.1 — Codex: MCP 서버가 Codex에서도 등록됩니다(`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`). Claude는 plugin.json에서 읽습니다.

@@ -1,0 +1,11 @@
+{
+  "name": "session",
+  "version": "0.5.7",
+  "description": "Claude Code session panes, guards, memo, compact, handoff, timing, and session board features. Its Claude hook module is disabled in Codex.",
+  "author": {
+    "name": "newkayak12"
+  },
+  "repository": "https://github.com/newkayak12/claude-skills",
+  "license": "MIT",
+  "hooks": "./hooks/codex.json"
+}

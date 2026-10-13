@@ -117,6 +117,7 @@ view (most hit, most missed, never fired).
 
 ## Status log
 
+- v0.8.4 — Codex uses an explicit empty, schema-compatible hook overlay and does not expose the Claude-only `trophy:list`; Claude hooks and achievements are unchanged.
 - v0.8.3 — trigger data drops the removed `portfolio:feedback-beta` and `assist` skills.
 - v0.8.2 — English trigger phrases match on word boundaries, so `done` no longer fires inside `abandoned`.
 - v0.8.1 — Codex: MCP servers register under Codex (`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`); Claude reads them from plugin.json.

@@ -2,13 +2,14 @@
 process.env.TEAMS_RUNS_DIR ??= 'off';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const gate = fileURLToPath(new URL('../hooks/dispatch-gate.mjs', import.meta.url));
+const codexHooks = fileURLToPath(new URL('../hooks/codex.json', import.meta.url));
 
 function project(config) {
   const dir = mkdtempSync(join(tmpdir(), 'dispatch-gate-'));
@@ -27,6 +28,13 @@ function run(cwd, tool_input, tool_name = 'Write', env = {}) {
   return { status: r.status, stderr: r.stderr };
 }
 
+test('Codex registers dispatch-gate for apply_patch without Claude modules', () => {
+  const config = JSON.parse(readFileSync(codexHooks, 'utf8'));
+  assert.equal(config.modules, undefined);
+  assert.match(config.hooks.PreToolUse[0].matcher, /apply_patch/);
+  assert.match(config.hooks.PreToolUse[0].hooks[0].command, /dispatch-gate\.mjs/);
+});
+
 test('no opt-in file means no gate at all', () => {
   const dir = project(null);
   try {
@@ -42,6 +50,18 @@ test('a gated write with nothing open is denied, and the message says what to ca
     assert.match(r.stderr, /Skill\(\{skill: "teams:orchestrate"/);
     assert.match(r.stderr, /src\/a\.mjs/);
     assert.match(r.stderr, /remove \.claude\/teams-dispatch\.json/, 'a gate must say how to get out of it');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('Codex apply_patch gates matching files, including a matching file after an allowed one', () => {
+  const dir = project({ paths: ['src/**'], min_chars: 4 });
+  try {
+    const small = '*** Begin Patch\n*** Add File: src/a.mjs\n+x\n*** End Patch';
+    assert.equal(run(dir, { command: small }, 'apply_patch').status, 0, 'small patch passes');
+    const gated = '*** Begin Patch\n*** Add File: README.md\n+hello\n*** Add File: src/a.mjs\n+world\n*** End Patch';
+    const r = run(dir, { command: gated }, 'apply_patch');
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /src\/a\.mjs/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -80,6 +100,16 @@ test('Skill: a node or subagent calling an entry skill is denied; others and mai
     assert.equal(call(bare, 'teams:board', {}, { HARNESS_NODE: '1' }), 0);
     assert.equal(call(dir, 'teams:board', { agent_id: 'a' }), 0);
   } finally { rmSync(dir, { recursive: true, force: true }); rmSync(bare, { recursive: true, force: true }); }
+});
+
+test('Codex MCP entry tools are denied inside a worker and allowed in the main session', () => {
+  const dir = project(null);
+  try {
+    for (const tool of ['mcp__graph-engineering__graph_open', 'mcp__task-manager__tm_open', 'mcp__task-manager__tm_run']) {
+      assert.equal(run(dir, {}, tool, { HARNESS_NODE: '1' }).status, 2, tool);
+      assert.equal(run(dir, {}, tool).status, 0, tool);
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('once a run is open the nodes are the ones writing, so writes pass', () => {

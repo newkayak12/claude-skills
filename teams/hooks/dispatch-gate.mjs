@@ -102,11 +102,19 @@ function targetOf(input) {
   return i.file_path || i.notebook_path || i.path || '';
 }
 
+function patchTargets(command) {
+  return [...String(command || '').matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((m) => m[1].trim());
+}
+
 function sizeOf(input) {
   const i = input || {};
   if (typeof i.content === 'string') return i.content.length;
   if (typeof i.new_string === 'string') return i.new_string.length;
   if (Array.isArray(i.edits)) return i.edits.reduce((n, e) => n + String(e?.new_string || '').length, 0);
+  if (typeof i.command === 'string' && /^\*\*\* (?:Begin Patch|Add|Update|Delete) File:/m.test(i.command)) {
+    return i.command.split('\n').filter((line) => line.startsWith('+') && !line.startsWith('+++'))
+      .reduce((n, line) => n + line.slice(1).length, 0);
+  }
   return Infinity; // unknown size is not a reason to let something through
 }
 
@@ -139,6 +147,13 @@ function routeText(dir) {
 // A run node (a subagent: hook input has agent_id; a graph/teams worker process: HARNESS_NODE=1)
 // must never open a run again. These are the skills that open one.
 const ENTRY_SKILL_RE = /^(?:(?:harness:)?harness|graph:orchestrate|teams:(?:orchestrate|develop|sprint|document|plan|qa))$/;
+const ENTRY_MCP_RE = /(?:^|__)(graph_open|tm_open|tm_run)$/;
+const entryCall = (input) => {
+  const tool = String(input?.tool_name || '');
+  const skill = tool === 'Skill' ? input?.tool_input?.skill : null;
+  if (typeof skill === 'string' && ENTRY_SKILL_RE.test(skill)) return `Skill ${skill}`;
+  return ENTRY_MCP_RE.test(tool) ? tool : '';
+};
 const SUBAGENT_NOTE = 'A subagent that sees this must not invoke the harness again — stop and report to its caller.';
 const SUBAGENT_STOP = 'You are inside a run. Do not invoke the harness skill, graph, teams, Workflow or open a run. ' +
   'Stop and report this block (file + reason) to your caller.';
@@ -155,44 +170,51 @@ function main() {
   }
   const cwd = hook.cwd || process.cwd();
   const kind = nodeKind(hook);
-  const skill = hook.tool_name === 'Skill' && hook.tool_input ? hook.tool_input.skill : null;
-  if (hook.tool_name === 'Skill') {
-    if (!kind || typeof skill !== 'string' || !ENTRY_SKILL_RE.test(skill)) return ALLOW;
+  const entry = entryCall(hook);
+  if (entry && !kind) {
+    return ALLOW;
   }
   let cfg;
   try {
     cfg = JSON.parse(readFileSync(join(cwd, '.claude', 'teams-dispatch.json'), 'utf8'));
   } catch {
     // no opt-in, or unreadable config: no gate - except a worker process, which is never to open a run
-    if (hook.tool_name === 'Skill' && kind === 'node') {
-      process.stderr.write(`Skill ${skill}: ${SUBAGENT_STOP}\n`);
+    if (entry && kind === 'node') {
+      process.stderr.write(`${entry}: ${SUBAGENT_STOP}\n`);
       return DENY;
     }
     return ALLOW;
   }
   if (!cfg || typeof cfg !== 'object') return ALLOW;
-  if (hook.tool_name === 'Skill') {
-    process.stderr.write(`Skill ${skill}: ${SUBAGENT_STOP}\n`);
+  if (entry) {
+    process.stderr.write(`${entry}: ${SUBAGENT_STOP}\n`);
     return DENY;
   }
 
-  const file = targetOf(hook.tool_input);
-  if (!file) return ALLOW;
-  let rel;
+  const files = hook.tool_name === 'apply_patch'
+    ? patchTargets(hook.tool_input && hook.tool_input.command)
+    : [targetOf(hook.tool_input)].filter(Boolean);
+  if (!files.length) return ALLOW;
+  let rels;
   try {
-    rel = relative(cwd, resolve(cwd, file)).split(sep).join('/');
+    rels = files.map((file) => relative(cwd, resolve(cwd, file)).split(sep).join('/'))
+      .filter((rel) => rel && !rel.startsWith('..'));
   } catch {
     return ALLOW;
   }
-  if (!rel || rel.startsWith('..')) return ALLOW; // outside the project is not ours to gate
+  if (!rels.length) return ALLOW; // outside the project is not ours to gate
   // Never gate the harness's own state, or a file inside a package worktree: that is node
   // work by definition.
-  if (rel.startsWith('.harness-run/') || rel.startsWith('.teams_output/') || rel.startsWith('.harness-tasks/') || rel.startsWith('.claude/')) return ALLOW;
+  rels = rels.filter((rel) => !rel.startsWith('.harness-run/') && !rel.startsWith('.teams_output/') &&
+    !rel.startsWith('.harness-tasks/') && !rel.startsWith('.claude/'));
+  if (!rels.length) return ALLOW;
 
   const allow = Array.isArray(cfg.allow) ? cfg.allow : [];
-  if (allow.some((p) => matches(p, rel))) return ALLOW;
+  rels = rels.filter((rel) => !allow.some((p) => matches(p, rel)));
+  if (!rels.length) return ALLOW;
   const paths = Array.isArray(cfg.paths) && cfg.paths.length ? cfg.paths : ['**'];
-  if (!paths.some((p) => matches(p, rel))) return ALLOW;
+  const rel = rels.find((candidate) => paths.some((p) => matches(p, candidate)));
+  if (!rel) return ALLOW;
 
   const min = Number.isFinite(cfg.min_chars) ? cfg.min_chars : 0;
   if (sizeOf(hook.tool_input) < min) return ALLOW;

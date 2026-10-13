@@ -39,6 +39,16 @@ with native Codex tools instead:
 The Codex CLI adapter remains for Claude-orchestrated harness stages that optionally call a
 local Codex CLI process. It is not the Codex-session compatibility path.
 
+## Cross-client behavior
+
+Claude Code is the reference implementation for this repository, but supported Codex overlays
+must preserve the same functional behavior. Do not solve a Codex parse error by silently dropping
+a Claude hook, gate, skill, or MCP capability. Keep Claude-only syntax (for example hook
+`modules`) out of Codex configuration, adapt Codex tool payloads at the boundary, and verify both
+clients independently. A compatibility change is complete only when the existing Claude tests
+remain green and a real Codex invocation proves the equivalent allow/deny or success/failure path;
+configuration parsing alone is not sufficient.
+
 ## Validation and versioning
 
 Checks, version bumps and release steps are in `_repo/MAINTAINING.md` (one source for Claude and

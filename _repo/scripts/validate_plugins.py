@@ -133,6 +133,7 @@ def check_plugin(plugin_entry):
 
     # 3b. Codex manifest (optional) must mirror name + version
     codex_path = os.path.join(plugin_dir, ".codex-plugin", "plugin.json")
+    codex_data = None
     if os.path.exists(codex_path):
         try:
             with open(codex_path) as f:
@@ -143,6 +144,30 @@ def check_plugin(plugin_entry):
             for field in ("name", "version"):
                 if codex_data.get(field) != plugin_data.get(field):
                     err(f"{prefix} .codex-plugin/plugin.json {field} {codex_data.get(field)!r} != plugin.json {plugin_data.get(field)!r}")
+
+    # Claude hook modules use a top-level `modules` field that Codex hooks do not
+    # accept. An explicit Codex-only hook file suppresses default discovery of
+    # hooks/hooks.json while leaving Claude's module registration untouched.
+    hooks_json = os.path.join(plugin_dir, "hooks", "hooks.json")
+    try:
+        with open(hooks_json) as f:
+            has_claude_modules = isinstance(json.load(f).get("modules"), list)
+    except (OSError, ValueError, AttributeError):
+        has_claude_modules = False
+    if has_claude_modules and (codex_data is None or codex_data.get("hooks") != "./hooks/codex.json"):
+        err(f"{prefix} Claude hook modules require .codex-plugin/plugin.json hooks: './hooks/codex.json'")
+    elif has_claude_modules:
+        codex_hooks_path = os.path.join(plugin_dir, "hooks", "codex.json")
+        try:
+            with open(codex_hooks_path) as f:
+                codex_hooks = json.load(f)
+        except (OSError, ValueError) as e:
+            err(f"{prefix} invalid hooks/codex.json: {e}")
+        else:
+            if not isinstance(codex_hooks, dict) or not isinstance(codex_hooks.get("hooks"), dict):
+                err(f"{prefix} hooks/codex.json must contain a hooks object")
+            if "modules" in codex_hooks:
+                err(f"{prefix} hooks/codex.json must not contain Claude-only modules")
 
     # 3a. README title version (only when README embeds one, e.g. "# portfolio (v1.1.8)")
     readme_path = os.path.join(plugin_dir, "README.md")

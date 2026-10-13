@@ -19,6 +19,16 @@ Every change to this repo is checked against the coding guidelines below (think 
 
 Mods (plugin `hooks/*.tsx` modules): anything a person reads in an interactive session is drawn with Ink, as a `ui.render` tree (Pane or AbovePrompt), opened by its command or a band button. A command's `{ text }` is the headless answer only; interactive, it opens the pane and returns one line at most.
 
+## Cross-client behavior
+
+Claude Code is the reference implementation for this repository, but supported Codex overlays
+must preserve the same functional behavior. Do not solve a Codex parse error by silently dropping
+a Claude hook, gate, skill, or MCP capability. Keep Claude-only syntax (for example hook
+`modules`) out of Codex configuration, adapt Codex tool payloads at the boundary, and verify both
+clients independently. A compatibility change is complete only when the existing Claude tests
+remain green and a real Codex invocation proves the equivalent allow/deny or success/failure path;
+configuration parsing alone is not sufficient.
+
 ## Skill Awareness
 
 Before responding to any user request, check whether a relevant skill exists:
@@ -98,4 +108,3 @@ Fixes land unbumped; versions move once per batch (end of a session or on the us
 Maintainer bump tools (not user skills): `node _repo/scripts/patch-harness.mjs` and the teams `patch` skill's `node teams/skills/patch/patch.mjs '<json>'` (dry-run first, see its SKILL.md) bump a plugin's patch version and its status logs in one step (patch-harness writes README.md/KOR.md; the teams tool writes teams/CHANGELOG.md and CHANGELOG.KOR.md). Minor/major bumps are done by hand. Refreshing a project's installed harness copies is the `harness:update` skill.
 
 Repo version and tags move only when the user asks for a release; never move, delete, or re-point a pushed tag unless asked. Steps and levels: `_repo/MAINTAINING.md` (Versions and release).
-
