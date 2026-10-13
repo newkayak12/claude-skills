@@ -24,13 +24,20 @@ compatibility:
 
 - ALWAYS classify severity before any other action — severity drives escalation and communication cadence.
 - ALWAYS separate mitigation (restore service) from investigation (find root cause) — do not block one on the other.
-- NEVER assign blame to individuals in post-mortems — focus on systemic factors.
+- NEVER assign blame to individuals in post-mortems — focus on systemic factors; naming a person teaches the team to
+  hide the next failure.
 - NEVER skip the timeline reconstruction step in RCA; gaps in the timeline are often the cause.
-
+- NEVER state a root-cause step without an `Evidence:` line, and NEVER fill a timeline or impact gap with a plausible
+  guess. Mark `[확인 필요: ○○]` or `hypothesis`; a guessed cause sends the action items at the wrong fix.
+- Goal: severity declared, mitigation separate from investigation, and an RCA whose every cause step has evidence or a
+  `hypothesis` tag; the closing tally recounts to the cause-chain lines.
 
 # Incident Response Playbook
 
 Speed matters. Clarity matters more. Blame solves nothing.
+
+**Not for** SLO or alert setup (`develop:sre-engineer`), failure-injection tests (`develop:chaos-engineer`), or finding
+the code defect behind the failure (`develop:bug-diagnoser`).
 
 ---
 
@@ -117,7 +124,7 @@ All systems are operating normally. An RCA will be published within 48 hours.
 
 ## Phase 4 — Mitigate
 
-Goal: **reduce user impact now**, even if the root cause isn't fully understood.
+Outcome: **reduce user impact now**, even if the root cause isn't fully understood.
 
 Common mitigation actions (rollback, flag off, scale out, shed load, redirect traffic, restore) with when-to-use and risk: [`references/background.md`](references/background.md#common-mitigation-actions).
 
@@ -232,6 +239,21 @@ Severity declared, channel opened, responders assigned, first comms sent, mitiga
 | Writing and storing the RCA | [`../documentation-strategy/SKILL.md`](../documentation-strategy/SKILL.md) |
 | Root cause traces to a feature/rollout decision, not a technical defect | See "When Root Cause Traces to a Product Decision" above — flag to the feature owner; this skill's RCA covers technical root cause only |
 
+## Output Template
+
+```
+## Incident — <title> [P0|P1|P2|P3]
+
+Status: Investigating / Identified / Mitigating / Resolved · IC: <name or [확인 필요: ○○]>
+Impact: <who, how, since HH:MM UTC>
+Mitigation: <action, time, risk> · Cause chain: <A -> B -> C, each with Evidence: or hypothesis>
+Gaps: [확인 필요: ○○] ...
+
+<n> cause steps (<e> with evidence · <h> hypothesis) · <a> action items · <g> gaps
+```
+
+Before sending, recount the cause steps and action items against the RCA; fix the tally if they differ.
+
 ## What Claude Does / What You Do
 
 | Claude | You |
@@ -245,5 +267,6 @@ Severity declared, channel opened, responders assigned, first comms sent, mitiga
 
 - `develop:sre-engineer` — SLOs, alerting, runbooks
 - `develop:chaos-engineer` — test failure modes before they happen
+- `develop:bug-diagnoser` — when the cause is a code defect to reproduce and fix
 - `develop:documentation-strategy` — where to store and maintain the RCA
 - `develop:performance-profiling-optimization` — when the incident is a performance regression

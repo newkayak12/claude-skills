@@ -26,132 +26,64 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
+## Standing Mandates
+
+- NEVER mark a step done on Claude's own say-so. Each step skill returns its verdict; relay it verbatim and never grade
+  its output yourself, because the pass that produced the work cannot judge it.
+- NEVER restate a step skill's method here; invoke it by name. Two copies of one method drift apart.
+- NEVER skip a step on a hunch. A skip needs the step's Skip-if evidence, quoted.
+- NEVER run Step 5 (chaos) before Step 4 is deployed and Step 2's monitoring is confirmed live; a failure test with no
+  breaker or no metrics only causes damage.
+- NEVER supply a missing input (SLOs, downstream list, recovery times). Mark `[확인 필요: ○○]`; the step blocks there.
+- Goal: each step run, skipped with evidence, or blocked with its missing input, one step per turn unless the user
+  asks to continue, and the closing tally recounts to the step lines.
+
 # Operations Workflow
 
-4-phase production operations process: build → observe → harden → respond.
+4-phase production operations process: build, observe, harden, respond.
 
-## When to Use / When Not to Use
-
-| Use | Skip |
-|-----|------|
-| Pre-launch production readiness review | Active incident in progress — use incident-response-playbook directly |
-| New service going to prod for the first time | Single-step need — run the individual skill directly |
-| System showing recurring production issues | Quick config tweak with no systemic gaps |
-
----
-
-## Workflow Overview
-
-```
-Phase 1: BUILD
-  [1] dockerfile-optimizer      ← skip for non-container deployments
-        |
-        v
-Phase 2: OBSERVE
-  [2] sre-engineer              ← SLOs, error budgets, golden signals
-        |
-  [3] performance-profiling-optimization  ← baseline, bottlenecks, fix
-        |
-        v
-Phase 3: HARDEN
-  [4] circuit-breaker-tuner     ← downstream resilience, fallbacks
-        |
-  [5] chaos-engineer            ← run AFTER Step 4 is configured
-        |
-        v
-Phase 4: RESPOND
-  [6] incident-response-playbook  ← runbooks, severity matrix, RCA
-```
-
----
+**Not for** an active incident (`develop:incident-response-playbook` directly) or a single-step need (run that skill
+directly).
 
 ## Steps
 
-### Step 1 — Container Image Optimization
-**Skill:** `dockerfile-optimizer`
-**Goal:** Minimize image size, accelerate CI cache, harden container security
-**Input:** Existing Dockerfile and target runtime stack
-**Output:** Annotated before/after diff, size delta estimate, security findings
-**Skip if:** Service is not containerized (VM, bare-metal, or FaaS)
+| # | Phase | Skill | Input | Output | Skip if |
+|---|-------|-------|-------|--------|---------|
+| 1 | Build | `develop:dockerfile-optimizer` | Dockerfile, target runtime stack | Annotated before/after diff, size delta, security findings | Service is not containerized (VM, bare-metal, FaaS) |
+| 2 | Observe | `develop:sre-engineer` | Architecture, traffic patterns, reliability requirements | SLO definitions, burn-rate alert rules, error budget policy, runbook stubs | SLOs already defined, approved, alerting active |
+| 3 | Observe | `develop:performance-profiling-optimization` | Running service with P50/P95/P99 metrics; load test or production traffic profile | One-line problem statement, profiler evidence, before/after comparison | Performance non-critical and P99 within SLO headroom |
+| 4 | Harden | `develop:circuit-breaker-tuner` | Downstream list, typical latency, recovery times | Resilience4j config (or equivalent), fallbacks, bulkhead, state-change alerts | No downstream dependencies, or all calls idempotent fire-and-forget |
+| 5 | Harden | `develop:chaos-engineer` | Step 4 config deployed; Step 2 monitoring live | Experiment design (hypothesis, blast radius, rollback), injection scripts, learning summary | No monitoring stack exists |
+| 6 | Respond | `develop:incident-response-playbook` | Architecture, failure modes from Steps 4-5, SLO thresholds from Step 2 | Severity matrix (P0-P3), comms templates, on-call runbook, RCA template | Runbooks already exist and cover this service's failure modes |
 
-> "Step 1 시작" 또는 "Dockerfile 최적화해줘"
+Start prompts: "Step N 시작" or name the skill. Say where you are and the run joins there ("컨테이너 없어" -> Step 2,
+"SLO 이미 있어" -> Step 3, "서킷 브레이커 됐어" -> Step 5). Step 6's RCA flags product-decision root causes to the
+feature owner (see that skill).
+Before sending, recount the tally against the step lines; fix the header if they differ.
 
----
+## Output Template
 
-### Step 2 — SLO and Observability Setup
-**Skill:** `sre-engineer`
-**Goal:** Define SLIs/SLOs, configure golden-signal dashboards, set multi-window burn-rate alerts
-**Input:** Service architecture, traffic patterns, business reliability requirements
-**Output:** SLO definitions, Prometheus alert rules (or equivalent), error budget policy, runbook stubs
-**Skip if:** SLOs are already defined, approved, and alerting is active
+```
+## Operations workflow — <service>
 
-> "Step 2 시작" 또는 "SLO와 모니터링 설정해줘"
+| Step | Skill | Status (done / skipped: <Skip-if evidence> / blocked: [확인 필요: ○○]) | Finding |
+|------|-------|-----|---------|
 
----
-
-### Step 3 — Performance Baseline and Profiling
-**Skill:** `performance-profiling-optimization`
-**Goal:** Establish latency/resource baseline, identify bottlenecks, verify fixes with data
-**Input:** Running service with P50/P95/P99 metrics; load test or production traffic profile
-**Output:** Problem statement, profiler evidence (flame graph), before/after comparison
-**Skip if:** Performance is non-critical and P99 is within SLO headroom
-
-> "Step 3 시작" 또는 "성능 프로파일링해줘"
-
----
-
-### Step 4 — Circuit Breaker Configuration
-**Skill:** `circuit-breaker-tuner`
-**Goal:** Prevent cascading failures from slow or failing downstream dependencies
-**Input:** List of downstream services, their typical latency, and recovery times
-**Output:** Resilience4j YAML (or equivalent), fallback methods, bulkhead config, state-change alerts
-**Skip if:** Service has no downstream dependencies or all calls are idempotent fire-and-forget
-
-> "Step 4 시작" 또는 "서킷 브레이커 설정해줘"
-
----
-
-### Step 5 — Chaos Experiments
-**Skill:** `chaos-engineer`
-**Goal:** Validate that circuit breakers, fallbacks, and SLO alerting hold under real failure conditions
-**Input:** Step 4 circuit breaker config; Step 2 monitoring stack confirmed active
-**Output:** Experiment design doc (hypothesis, blast radius, rollback), injection scripts, learning summary
-**Skip if:** No monitoring stack exists — chaos without observability is undefined
-
-> **Dependency:** Run only after Step 4 is deployed and verified.
-
-> "Step 5 시작" 또는 "카오스 테스트 설계해줘"
-
----
-
-### Step 6 — Incident Response Playbook
-**Skill:** `incident-response-playbook`
-**Goal:** Define severity classification, runbooks, escalation paths, and RCA template pre-launch
-**Input:** Architecture, failure modes from Steps 4–5, SLO thresholds from Step 2
-**Output:** Severity matrix (P0–P3), Slack templates, on-call runbook, RCA template
-**Skip if:** Runbooks already exist and cover this service's failure modes
-
-> "Step 6 시작" 또는 "인시던트 플레이북 만들어줘"
-
----
-
-## State Tracking
-
-어느 단계에 있는지 알려주면 바로 합류합니다: "컨테이너 없어" → Step 2, "SLO 이미 있어" → Step 3, "서킷 브레이커 됐어" → Step 5. Skip 조건에 해당하면 자동으로 다음 단계로 안내합니다.
+Next: <step N, or "complete">
+<d> done · <s> skipped · <b> blocked
+```
 
 ## What Claude Does / What You Do
 
 | Claude | You |
 |--------|-----|
-| Dockerfile 8-check analysis, annotated diff | Build and measure before/after image sizes |
-| SLO targets, Prometheus alert YAML | Confirm SLOs reflect real user expectations |
-| Profiler commands, bottleneck hypothesis, fix options | Run load tests; confirm fix in production |
-| Circuit breaker thresholds with rationale, fallback stubs | Test under load; confirm recovery time |
-| Chaos experiment design, blast radius controls, rollback scripts | Execute; verify rollback before starting |
-| Runbook templates, severity matrix, RCA structure | Fill in environment-specific operational context |
+| Runs each step skill and carries its output to the next | Build and measure before/after image sizes |
+| Flags a missing input before the step runs | Confirm SLOs reflect real user expectations |
+| Drafts SLOs, thresholds, experiments, runbooks | Run load tests; test breakers under load |
+| Keeps the tally | Execute chaos experiments; verify rollback first; fill in environment-specific context |
 
 ## Related Skills
 
-- Peer: `develop:dev-quality-workflow` (greenfield quality cycle, overlaps at Step 6)
 - Before: `develop:architecture-designer` (system boundaries before hardening)
-- Individual: `dockerfile-optimizer`, `sre-engineer`, `performance-profiling-optimization`, `circuit-breaker-tuner`, `chaos-engineer`, `incident-response-playbook` (Step 6's RCA flags product-decision root causes to the feature owner directly — see that skill's "When Root Cause Traces to a Product Decision")
+- Adjacent: `develop:clean-code` (code review gate for the changes these steps produce)
+- Individual: `develop:dockerfile-optimizer`, `develop:sre-engineer`, `develop:performance-profiling-optimization`, `develop:circuit-breaker-tuner`, `develop:chaos-engineer`, `develop:incident-response-playbook`
