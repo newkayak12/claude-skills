@@ -20,144 +20,88 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
+## Standing Mandates
+
+- NEVER recommend a split or merge before the data-ownership audit is done. Skipping it is the failure that ships a
+  distributed monolith: two services split on paper still write the same tables.
+- NEVER cut a boundary because a noun looks like a service. A cut needs its own team, its own data, and an independent
+  deploy; otherwise it stays a module.
+- A fact you were not shown (who writes this table, which team owns it, call counts) is `[확인 필요: ○○]`, never guessed.
+  A verdict resting on one is `provisional`.
+- Goal: every service gets a verdict from the five tests with the failing test numbered, and the closing tally
+  recounts to the verdict lines.
+
 # Service Boundary Validator
 
-## When to Use / When Not to Use
+Checks whether existing or proposed service cuts hold: can each deploy alone, own its data, and fail without taking
+the others down.
 
-**Use when:**
-- Evaluating whether services can actually deploy independently
-- Suspecting a distributed monolith (coupled services with shared database or chatty sync calls)
-- Deciding whether to split or merge services
-- Auditing data ownership before a migration
-
-**Do not use when:**
-- Designing new boundaries from scratch — run `event-storming` first, then `architecture-designer`
+**Not for** designing topology from scratch (`develop:architecture-designer`, which owns the Distributed Topology
+choice), discovering contexts (`develop:event-storming`, `develop:domain-driven-design`), or fixing a transaction
+across services (`develop:transaction-boundary-reviewer`).
 
 ## Process
 
-1. **Coupling analysis** — Map synchronous call graphs, shared databases, and bidirectional dependencies
-2. **Data ownership audit** — For each entity: which service creates, reads, updates, and deletes it?
-3. **Team alignment check** — Does each service map to one team? Apply the cognitive load test.
-4. **Recommendation** — Merge / split / convert to async / fix ownership
+1. **Coupling.** Map synchronous call graphs, shared databases, bidirectional dependencies. Read the code or config
+   before asking.
+2. **Data ownership.** Per entity: who creates, reads, updates, deletes. The creator owns it; any other writer is a violation.
+3. **Team alignment.** One owning team per service? Missing → `[확인 필요: owner]`.
+4. **Tests and verdict.** Run the five tests, then merge / split / convert to async / fix ownership.
 
-If `sequential-thinking` is available, use it to work through these four steps in order — skipping data ownership analysis before issuing a split recommendation is a high-probability, high-consequence failure.
+With `sequential-thinking`, take steps 1–4 in order.
+
+## The 5 Tests
+
+1. Deploys independently, no coordination with other services
+2. One team owns it without ongoing negotiation
+3. Its data is exclusively its own: no other service writes its tables
+4. Its domain language does not shift meaning at the boundary
+5. Its failure degrades, but does not break, others
+
+Any fail → the boundary is suspect.
+
+## Red Flags
+
+- **Shared database** — two services write one schema, or one reads the other's tables. Fix: access only through the owner's API.
+- **Chatty calls** — more than 3 synchronous hops in a user-facing path. Fix: merge if always called together; async events; BFF at the edge.
+- **Bidirectional dependency** — A calls B and B calls A. Fix: pick the authority direction; events for the way back.
+- **Deployment coupling** — "Can we deploy A on Monday and B the next Friday?" No → implicit shared contract.
+
+## Split or Keep
+
+Split when owners, deploy frequency, scaling needs, or ubiquitous language differ. Keep together when they always
+change or are called together, one team owns both, the split would share a database or need a distributed transaction.
+
+## Where to Cut
+
+- Start from bounded contexts (`domain-driven-design`); each candidate solely owns its data, publishes an explicit API contract, and ships on its own.
+- No team of its own, no independent deploy, or no prerequisites (CI/CD, orchestration, tracing) → keep it a module in a modular monolith.
 
 ## Output Template
 
 ```
-Service: [Name]
-Owner Team: [Team name]
-Data Owned: [List of tables/entities]
-Data Read from Others: [Entity → owning service, access method]
-Synchronous Dependencies: [Service → purpose → can it be made async?]
-Events Published: [Event name → consumers]
-Events Consumed: [Event name → publisher]
+## Boundary check — <system>
 
-Red Flags Found:
-- [Specific coupling issue]
+Service: <name> · Owner: <team | [확인 필요: owner]>
+Data owned: <tables/entities> · Read from others: <entity → owner, access method>
+Sync dependencies: <service → purpose → async possible?> · Events: <published → consumers | consumed ← publisher>
+Tests: 1 ✓/✗ · 2 ✓/✗ · 3 ✓/✗ · 4 ✓/✗ · 5 ✓/✗
+Red flags: <specific coupling, with file or call evidence>
+Verdict: merge | split | convert to async | fix ownership | keep — <one line citing the failing test number>
 
-Recommendation:
-- [Concrete action: merge / split / convert to async / fix ownership]
+<n> services checked · <k> pass all five · <m> verdicts provisional
 ```
 
 ## What Claude Does / What You Do
 
 | Claude | You |
 |--------|-----|
-| Analyzes service call graph for chatty patterns | Provide the service dependency diagram or description |
-| Identifies shared database anti-patterns | Confirm which services access which tables |
-| Applies the 5 boundary tests | Validate against your team structure |
-| Runs the split decision framework | Make the final split or merge decision |
-| Drafts the coupling analysis report | Fill in actual data ownership from your codebase |
-
-## The 5 Tests for a Well-Placed Boundary
-
-A service boundary is correct only if all five hold:
-
-1. The service can be deployed independently without coordinating with other services
-2. A single team can own it without ongoing negotiation with other teams
-3. Its data is owned exclusively — no other service writes to its database tables
-4. Its domain language is consistent — terms do not shift meaning at the boundary
-5. Failure of this service degrades, but does not break, other services
-
-If any fails, the boundary is suspect.
-
-## Red Flags: Distributed Monolith Patterns
-
-### Shared Database
-
-Services A and B both write to the same schema, or A reads B's tables directly via SQL. The database becomes the integration point — schema changes require coordinating both services.
-
-**Fix:** Each service owns its data exclusively. Other services access it only through the owning service's API.
-
-### Chatty APIs (Temporal Coupling)
-
-To complete one user-facing operation, Service A makes 5+ synchronous calls to B, C, D in sequence.
-
-**Threshold:** More than 3 synchronous hops in a user-facing request path is a warning sign.
-
-**Fix options:** Merge if always called together; use async events for non-blocking workflows; BFF/API composition at the edge.
-
-### Bidirectional Dependencies
-
-Service A calls B, and B also calls A. This means deployment order is undefined and neither service is the source of truth.
-
-**Fix:** Identify the natural authority direction. Introduce an event or callback pattern if the consumer needs to communicate back.
-
-### Deployment Coupling
-
-All services must be deployed simultaneously. This reveals implicit shared contracts that change together — no deployment independence exists.
-
-**Diagnosis question:** "Can we deploy Service A on Monday and Service B the following Friday?"
-
-## Split Decision Framework
-
-```
-Should service X be split into A and B?
-
-Yes, split if:
-  - A and B are owned by different teams
-  - A and B have different deployment frequencies
-  - A and B have different scaling requirements
-  - A and B have clearly distinct ubiquitous language
-
-No, keep together if:
-  - A and B always change together
-  - A and B are always called together in every operation
-  - A and B are owned by the same team with no plans to split
-  - Splitting would create a shared database problem
-  - The split introduces a distributed transaction requirement
-```
-
-## Data Ownership Analysis
-
-```
-For each entity E:
-  1. Which service creates E? → That service owns E.
-  2. Which services read E? → They call the owning service's API or receive events.
-  3. Which services update E? → Any service other than the owner is a violation.
-  4. Which services delete E? → Same — only the owner deletes.
-```
-
-## Where to Cut
-
-- Start from bounded contexts (`domain-driven-design`); each candidate service solely owns its data, publishes an explicit API contract, and ships on its own.
-- No team of its own, no independent deploy, or no prerequisites (CI/CD, orchestration, tracing) → keep it a module in a modular monolith.
-
-## Quick Checklist
-
-- [ ] Each service has exactly one owning team
-- [ ] No service reads another service's database directly
-- [ ] Synchronous call chains are ≤ 3 hops for user-facing requests
-- [ ] No bidirectional synchronous dependencies
-- [ ] Services can be deployed independently
-- [ ] Each service's ubiquitous language is internally consistent
-- [ ] Data ownership is unambiguous for every entity
-- [ ] Cross-service writes use events + outbox, not shared transactions
+| Analyzes call graph and shared-database patterns, applies the five tests | Provide the dependency diagram and confirm who accesses which tables |
+| Drafts the verdict per service | Validate against team structure; make the split or merge decision |
 
 ## Related Skills
 
-- `architecture-designer` — design the topology and communication once boundaries hold
-- `event-storming` — discover bounded contexts to inform boundary decisions
-- `transaction-boundary-reviewer` — fix cross-service transaction anti-patterns
+- `develop:architecture-designer` — design the topology and communication once boundaries hold
+- `develop:event-storming` — discover bounded contexts to inform boundary decisions
+- `develop:transaction-boundary-reviewer` — fix cross-service transaction anti-patterns
 - `write:plans` (ADR format) — document the split or merge decision
