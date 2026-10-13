@@ -100,6 +100,11 @@
 | `microservices-architect` | `architecture-designer`(토폴로지), `service-boundary-validator`(어디서 자를지) |
 | `code-documenter` | `documentation-strategy` |
 
+2.0.0은 나머지 스킬도 한 모양으로 맞춥니다: Standing Mandates(NEVER마다 이유), Goal 한 줄,
+Not-for 한 줄, 입력에 없는 사실은 `[확인 필요]`, 판정·개수 줄로 끝나는 Output Template.
+예시와 템플릿은 `references/`로 옮겼습니다. `clean-code`는 1.14 문구 그대로입니다 — 블라인드
+실행에서 재작성본이 이전 버전에 4번 중 3번 졌습니다.
+
 ## Skills
 
 ### 워크플로
