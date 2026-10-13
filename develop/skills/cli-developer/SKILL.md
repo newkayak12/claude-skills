@@ -1,10 +1,8 @@
 ---
 name: cli-developer
 description: >-
-  Use when someone needs to build a command-line tool — defining subcommands,
-  flags, and argument parsing; adding interactive prompts, progress bars, or
-  shell completions; or distributing a cross-platform terminal application.
-  Triggers on:.
+  Use when building a command-line tool — subcommands, flags, prompts, progress bars, shell completions, cross-platform
+  distribution. Triggers on: "CLI 도구 만들어줘", "서브커맨드 설계", "build a CLI". Not for web UIs or REST APIs.
 scenarios:
   - "Build a CLI tool that manages deployment configurations across environments"
   - "I need to create a command-line interface for our internal developer tools"
@@ -24,102 +22,83 @@ metadata:
   version: "1.1.0"
   scope: implementation
   role: specialist
-  related-skills: sre-engineer, code-documenter
+  related-skills: sre-engineer, documentation-strategy
   output-format: code
   triggers: CLI, command-line tool, terminal app, subcommands, flags, shell completion, interactive prompt, progress bar, oclif, argparse, bubbletea
 ---
 
+## Standing Mandates
+
+- NEVER write code before the expected `--help` of every command is written down. The command surface is the public
+  API: scripts and muscle memory depend on it, so it is cheaper to argue about on paper than after release.
+- NEVER change a shipped command's name, flag or exit code in place; a rename is a breaking change. Add the new form,
+  keep the old as an alias, and say so.
+- NEVER call the tool done from reading the code. Run `<cli> --help`, `<cli> --version`, one failing input, and one
+  piped run (`<cli> ... | cat`, stdin not a TTY), and quote the output and exit codes; a run you could not do is
+  `not run: <what>`. Prompts that block in CI and colour codes in a pipe show only in those runs.
+- NEVER write diagnostics or progress to stdout; stdout is data that may be piped, so logs and errors go to stderr.
+- NEVER hardcode a platform path (`~`, `/tmp`, `C:\`); use `os.homedir()` / `Path.home()` / the platform's config dir.
+- Missing facts (target OSes, shells, who runs it, startup budget, config sources) are `[확인 필요: ○○]`; do not pick
+  them silently. Startup time is measured and reported against the user's budget; a fixed number such as 50 ms is
+  realistic for a Go binary and not for a Node or Python one.
+- Goal: every command has help text, an exit-code contract and a non-interactive path, and the closing tally recounts
+  to the command list.
+
 # CLI Developer
 
-## When to Use / When Not to Use
-
-**Use when:**
-- Building a new CLI tool with subcommands, flags, config handling
-- Adding shell completions, progress bars, or interactive prompts
-- Distributing a cross-platform terminal binary
-
-**Do not use when:**
-- Building a web UI or REST API
-- The task is SRE pipeline integration only (use `sre-engineer`)
+**Not for** web UIs or REST APIs, SRE pipeline integration alone (`develop:sre-engineer`), or the written docs around
+the tool (`develop:documentation-strategy`).
 
 ## Process
 
-1. **Analyze UX** — Work out who runs this and for what, sketch the command hierarchy, and write the expected `--help` output of every command before any code.
-2. **Design commands** — Lay out subcommands, flags, arguments and configuration sources. Check that flag names follow one convention and that no shipped command signature changes.
-3. **Select framework** — Node.js: `commander` → `yargs` → `oclif`; Python: `typer` → `click` → `argparse`; Go: `cobra + viper` → `bubbletea` (TUI only)
-4. **Implement** — Write the tool on the chosen framework and verify that `<cli> --help` and `<cli> --version` both behave.
-5. **Polish** — Add completions, clear error messages and progress feedback; confirm color is gated on a TTY and that SIGINT shuts down cleanly.
-6. **Test** — Smoke-test on each target OS and measure cold-start time (goal: under 50ms).
+1. **Analyze UX** — who runs it, for what; sketch the command hierarchy; write each command's expected `--help`.
+2. **Design commands** — subcommands, flags, arguments, config sources and precedence (flag > env > file > default);
+   one flag-naming convention; no shipped signature changes.
+3. **Select framework** — Node.js `commander` → `yargs` → `oclif`; Python `typer` → `click` → `argparse`; Go
+   `cobra + viper`, `bubbletea` for a TUI only.
+4. **Implement** — validate input before any work; every question has a flag or env fallback; exit cleanly on SIGINT.
+5. **Polish** — completions for the shells in scope, clear errors, progress feedback; colour only when stdout is a TTY.
+6. **Test** — run the commands from the Mandates on each target OS and measure cold start.
+7. **Recount** — count commands, those with help text, a documented exit code, and a non-interactive path; fix the
+   tally if it differs.
 
 ## Output Template
 
-For each CLI feature, provide:
+```
+## <tool>
+
 1. Entry point and subcommand layout
-2. How configuration is read: files, environment, flags
-3. The working code, including error paths
-4. Completion scripts for the shells in scope
-5. A short rationale for UX choices
+2. Config: files, environment, flags, precedence
+3. Code, including error paths and exit codes
+4. Completion scripts for <shells>
+5. UX rationale, one line per choice
+
+Open: [확인 필요: ○○] ...
+
+Commands <n> · help text <h> · exit codes <e> · non-interactive <i> · completions <shells>
+Run: --help ok · --version ok · piped ok · cold start <ms> (budget <ms>) | not run: <what>
+```
 
 ## What Claude Does / What You Do
 
 | Claude | You |
 |--------|-----|
-| Designs command hierarchy and flag naming | Confirm the UX matches your user workflows |
-| Generates framework boilerplate (commander/typer/cobra) | Implement domain-specific business logic |
-| Writes TTY detection and SIGINT handling | Test on all target platforms |
-| Generates shell completion scripts | Verify completions in your actual shell |
-| Recommends cross-platform path handling | Run final distribution and packaging |
+| Designs hierarchy and flag naming | Confirm it matches your users' workflows |
+| Generates framework boilerplate and completions | Implement the domain logic |
+| Handles TTY detection, SIGINT, paths | Test on your target OSes and shells |
 
 ## Reference Guide
 
 | Area | File | Read it when |
 |------|------|--------------|
 | Command surface | `references/design-patterns.md` | Naming, flags, config precedence, exit codes |
-| Node.js | `references/node-cli.md` | yargs, commander, inquirer-style prompts, npm publishing |
+| Node.js | `references/node-cli.md` | commander, yargs, prompts, npm publishing |
 | Python | `references/python-cli.md` | typer, click, argparse, rich |
 | Go | `references/go-cli.md` | viper, cobra, signals, tests, releases |
 | Go TUI | `references/go-tui.md` | bubbletea models, bubbles components |
 | UX | `references/ux-patterns.md` | Feedback, colour, help text, errors |
 
-## Minimal Example (Node.js, commander)
-
-```js
-const { Command } = require('commander');
-
-const cli = new Command('mytool').description('Demo tool').version('1.0.0');
-
-cli
-  .command('echo <text>')
-  .description('Print text back')
-  .option('-u, --upper', 'convert to upper case')
-  .action((text, { upper }) => {
-    console.log(upper ? text.toUpperCase() : text);
-  });
-
-cli.parse();
-```
-
-For Python and Go, see the matching files under `references/`.
-
-## Constraints
-
-**MUST DO:**
-- Start in under 50ms
-- Provide `--help` and `--version`
-- Name flags by one consistent convention
-- Exit cleanly on SIGINT (Ctrl+C)
-- Validate input before doing any work
-- Detect TTY before applying color output
-- Work both interactively and unattended
-
-**MUST NOT DO:**
-- Send logs or diagnostics to stderr, never to stdout that may be piped
-- Alter an existing command's signature; a rename counts as a breaking change
-- Block on a prompt in CI/CD; every question needs a flag or env fallback
-- Hardcode platform-specific paths (use `os.homedir()` / `Path.home()`)
-- Ship without shell completions
-
 ## Related Skills
 
-- `sre-engineer` — for integrating CLI tools into SRE pipelines
-- `code-documenter` — for documenting CLI commands and flags
+- `develop:sre-engineer` — wiring the tool into SRE pipelines
+- `develop:documentation-strategy` — documenting commands and flags

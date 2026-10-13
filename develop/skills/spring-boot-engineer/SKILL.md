@@ -1,10 +1,8 @@
 ---
 name: spring-boot-engineer
 description: >-
-  Use when someone needs to build or extend a Java backend using the Spring
-  ecosystem — wiring up a new REST API, configuring security and authentication,
-  connecting to a database via JPA, or setting up reactive endpoints with Spring
-  Boot 3.x.
+  Use when building or extending a Spring Boot 3.x Java backend — REST, Spring Security, JPA, WebFlux, Actuator.
+  Triggers on: "Spring Boot API", "스프링 시큐리티 설정", "JPA 연동". Not for service decomposition or query tuning.
 scenarios:
   - "Build a REST API with Spring Boot including security, JPA, and error handling"
   - "Help me configure Spring Security for JWT-based authentication"
@@ -29,144 +27,84 @@ metadata:
   version: "1.1.0"
 ---
 
+## Standing Mandates
+
+- NEVER report a feature done from reading the code. Run the project's own build and tests (`./mvnw test` or
+  `./gradlew test`, whichever the repo has) and quote the pass/total line; a test you could not run is written
+  `not run: <command>`. A wrong `requestMatchers` order or a missing `@Valid` compiles fine and fails only when run.
+- NEVER return a JPA entity from a controller. Serialization walks lazy associations (`LazyInitializationException`
+  or a hidden query per row) and exposes columns nobody chose to publish. Return a response record.
+- NEVER leave an endpoint without a security test that asserts the unauthenticated and the unauthorized response as
+  well as the success. Filter-chain rules match first-to-last, so a broad matcher placed early silently decides.
+- NEVER rely on `@Transactional` on a private method or a self-invoked method: the proxy is bypassed and no
+  transaction starts. Put the boundary on a public method of a separate bean.
+- NEVER use Boot 2.x idioms (`WebSecurityConfigurerAdapter`, `antMatchers`, `javax.*`): they were removed or moved in
+  Spring Security 6 and Boot 3, so the code does not compile.
+- Missing facts (Boot and Java version, database, token issuer, who may call what) are read from `pom.xml` /
+  `build.gradle` / `application*.yml` first; the rest is `[확인 필요: ○○]`. Never invent an issuer URI, a secret or a
+  role name, and never commit a secret.
+- Goal: every endpoint has `@Valid` input, a security rule and a test; the build is green with the output quoted; the
+  closing tally recounts to the controller files.
+
 # Spring Boot Engineer
 
-## When to Use / When Not to Use
-
-**Use when:**
-- Building REST controllers, JPA repositories, or service layers in Spring Boot 3.x
-- Configuring Spring Security 6, OAuth2, or JWT authentication
-- Setting up Actuator, health probes, or Spring Cloud components
-
-**Do not use when:**
-- Architecture-level service decomposition decisions (use `architecture-designer`)
-- Kotlin-idiomatic concerns (pair with `kotlin-specialist`)
+**Not for** service decomposition (`develop:architecture-designer`), slow JPA queries or indexes
+(`develop:database-optimizer`), transaction-scope analysis of existing code (`develop:transaction-boundary-reviewer`),
+Kotlin idioms (`develop:kotlin-specialist`), or an exploit audit (`develop:security-auditor`).
 
 ## Process
 
-1. **Analyze requirements** — Pin down service boundaries, API contracts, data model and security needs
-2. **Design architecture** — Decide persistence, remote-call and security approach; get agreement before writing code
-3. **Implement** — Build layered services whose dependencies arrive through the constructor
-4. **Secure** — Wire authentication, OAuth2 resource-server rules, method-level checks and CORS; compile the rules and see the security tests green
-5. **Test** — Cover units, slices and integration paths; execute `./mvnw test` and read the result
-6. **Deploy** — Enable Actuator health endpoints; check that `/actuator/health` reports `UP`
+1. **Analyze** — read the build file and config; pin API contracts, data model, security needs; list `[확인 필요]`.
+2. **Design** — persistence, remote-call and security approach in a few lines; get agreement before writing code.
+3. **Implement** — layers with constructor injection (final fields; no field `@Autowired`); `@ConfigurationProperties`
+   for settings; secrets from environment or a secret store.
+4. **Secure** — authentication, resource-server rules, method-level checks, CORS (`references/security.md`).
+5. **Test** — slice tests, Testcontainers where a real database matters, security tests (`references/testing.md`).
+   Run the build; read the result.
+6. **Operate** — Actuator health endpoints on; with the app running, `/actuator/health` reports `UP`.
+7. **Recount** — count controllers' endpoints, those with `@Valid` bodies, a security rule, and a test; fix the tally if
+   it differs.
 
 ## Output Template
 
-For each Spring Boot feature, provide:
+```
+## <feature>
+
 1. Entity with validation annotations
-2. Repository interface extending JpaRepository
-3. Service with constructor injection and `@Transactional`
-4. REST controller with `@Valid` input and `@RestControllerAdvice`
-5. Test slice (`@WebMvcTest` or `@DataJpaTest`)
+2. Repository interface
+3. Service: constructor injection, @Transactional (writes) / readOnly = true (reads)
+4. Controller: @Valid input, response records, @RestControllerAdvice
+5. Tests: @WebMvcTest / @DataJpaTest, security cases
+
+Open: [확인 필요: ○○] ...
+
+Endpoints <n> · @Valid <v> · security rule <s> · security test <t>
+Build: <command> → <pass>/<total> | not run: <command>
+```
 
 ## What Claude Does / What You Do
 
 | Claude | You |
 |--------|-----|
-| Generates layered architecture scaffolding | Provide domain requirements and data model |
-| Configures Spring Security rules and JWT setup | Verify auth behavior in your environment |
-| Writes `@Transactional` boundaries and JPA queries | Run tests and confirm correct data behavior |
-| Sets up Actuator endpoints and health indicators | Connect to your monitoring stack |
-| Generates `@WebMvcTest` and Testcontainers test slices | Run the full test suite and fix failures |
+| Scaffolds layered code, security rules, JPA queries | Provide domain requirements and the data model |
+| Writes transaction boundaries and test slices | Run the full suite and fix environment failures |
+| Sets up Actuator and health indicators | Connect your monitoring and issuer/secret store |
 
 ## Reference Guide
 
 | Need | Read | Covers |
 |------|------|--------|
+| Worked example | `references/example-book.md` | Entity to controller for one resource |
 | Controllers and API errors | `references/web.md` | DTOs, validation, problem details, outbound clients, CORS |
 | Persistence | `references/data.md` | Entity mapping, repositories, fetching, transactions, migrations |
 | Authentication and authorization | `references/security.md` | Filter chain, resource server, method rules |
 | Distributed deployment | `references/cloud.md` | Config, discovery, gateway, resilience, probes, packaging |
 | Tests | `references/testing.md` | Slices, Testcontainers, security tests |
 
-## Minimal Working Example
-
-The example is a small `Book` catalog.
-
-```java
-@Entity
-@Table(name = "books")
-public class Book {
-    @Id
-    @GeneratedValue(strategy = GenerationType.SEQUENCE)
-    private Long id;
-
-    @NotBlank
-    private String title;
-
-    @PositiveOrZero
-    private BigDecimal cost;
-    // accessors omitted
-}
-
-public interface BookRepository extends JpaRepository<Book, Long> {
-    List<Book> findByTitleContainingIgnoreCase(String fragment);
-}
-
-public record BookRequest(@NotBlank String title, @PositiveOrZero BigDecimal cost) {}
-
-public record BookResponse(Long id, String title) {}
-
-@Service
-public class BookService {
-    private final BookRepository books;
-
-    public BookService(BookRepository books) { this.books = books; }
-
-    @Transactional(readOnly = true)
-    public List<Book> search(String fragment) {
-        return books.findByTitleContainingIgnoreCase(fragment);
-    }
-
-    @Transactional
-    public Book add(BookRequest req) {
-        Book b = new Book();
-        b.setTitle(req.title());
-        b.setCost(req.cost());
-        return books.save(b);
-    }
-}
-
-@RestController
-@RequestMapping("/api/v1/books")
-public class BookController {
-    private final BookService books;
-
-    public BookController(BookService books) { this.books = books; }
-
-    @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public BookResponse add(@Valid @RequestBody BookRequest req) {
-        Book saved = books.add(req);
-        return new BookResponse(saved.getId(), saved.getTitle());
-    }
-}
-```
-
-Entities stay behind the service; the controller returns a response record (see `references/web.md`).
-
-## Constraints
-
-**MUST DO:**
-
-| Rule | Pattern |
-|------|---------|
-| Constructor injection | Final fields assigned in the constructor |
-| Validate API input | Annotate each write endpoint's body with `@Valid` |
-| Typed settings | Bind with `@ConfigurationProperties`, prefix `app` |
-| Transaction scope | Writes spanning several steps are `@Transactional`; reads add `readOnly = true` |
-| Secrets | Supplied by environment or a secret store, not by committed property files |
-
-**MUST NOT DO:**
-- Inject fields with `@Autowired`
-- Accept unvalidated request bodies
-- Call `.block()` inside a reactive chain
-- Carry over Boot 2.x idioms such as `WebSecurityConfigurerAdapter`
-
 ## Related Skills
 
-- `architecture-designer` — for architecture decisions before implementation
-- `database-optimizer` — for JPA query performance and index tuning
-- `transaction-boundary-reviewer` — for `@Transactional` boundary analysis
-- `kotlin-specialist` — for Kotlin-idiomatic patterns in Spring services
+- `develop:architecture-designer` — architecture decisions before implementation
+- `develop:database-optimizer` — JPA query performance and index tuning
+- `develop:transaction-boundary-reviewer` — `@Transactional` boundary analysis
+- `develop:kotlin-specialist` — Kotlin-idiomatic Spring services
+- `develop:security-auditor` — exploitability audit of the finished service

@@ -22,17 +22,26 @@ compatibility:
 
 ## Standing Mandates
 
-- NEVER write a rule the repo doesn't show. Each positive rule needs ≥2 `file:line` examples from ≥2 files and a consistency ratio; absence/boundary rules ("never imports", "append-only") carry a violation count or commit evidence plus one `file:line` example.
+- NEVER write a rule the repo doesn't show: an unevidenced rule is the model's taste filed as the user's policy, and
+  every later session obeys it. Each positive rule needs ≥2 `file:line` examples from ≥2 files and a consistency ratio; absence/boundary rules ("never imports", "append-only") carry a violation count or commit evidence plus one `file:line` example.
 - A pattern below 70% consistency, or seen in fewer than 3 files, is *uncertain* — listed, not written.
 - ALWAYS cite from `references/sources.md` only. No fitting source → `repo-only`. Never cite a book or item from memory.
 - NEVER adopt a habit that contradicts a cited source silently — it goes under *Conflicts*; the user decides keep or drop.
-- NEVER sample generated, vendored, or fixture code. Formatter/linter configs in the repo outrank counted habits.
-- NEVER overwrite a filled line in an existing convention file. Fill `<!-- fill -->` placeholders and append; show the diff.
+- NEVER sample generated, vendored, or fixture code: its style is the generator's, not the team's. Formatter/linter
+  configs in the repo outrank counted habits.
+- NEVER overwrite a filled line in an existing convention file: someone wrote it deliberately. Fill `<!-- fill -->`
+  placeholders and append; show the diff.
 - Cite a section only when its title in `sources.md` names the rule's topic (naming → `CC ch.2`, function size → `CC ch.3` / `RF Long Function`, layer imports → `CA ch.22`, indent/line length/spacing → `CC ch.5`, comments → `CC ch.4`, errors → `CC ch.7`, class size → `CC ch.10`; semicolons, quotes and other syntax → the language guide). Language-bound sources (EJ and every guide row) cite only for code in that language. A stretched fit is `repo-only` — never launder a habit through a loosely related source.
 - Rules are checkable: "functions ≤ 30 lines (91% of 212)", not "functions are short".
 - Every count comes from a command you ran (grep, a script), never an estimate; a rule whose topic no section title names (e.g. guard clauses) is `repo-only`.
 
+Goal: every written rule has its count, ≥2 examples and a source or `repo-only`; everything seen but not written is
+listed as uncertain or conflict; the closing tally recounts to the written files.
+
 # Like My Code
+
+**Not for** reviewing code against conventions (`develop:clean-code`), deciding what the architecture should be
+(`develop:architecture-designer`), or installing the empty convention files (`harness:install`).
 
 ## Process
 
@@ -66,6 +75,9 @@ generated/vendor/test-fixture paths, keep up to ~40 files across modules. Read f
 lists: *Do not modify without explicit user approval*, *Off-limits entirely* (generated/vendored dirs),
 *Requires a dependent update when changed*. Missing file → create from the harness template headings. Report the diff.
 
+**7. Recount.** Count the rules in each written file, those with a source, and `repo-only`; fix the tally line if the
+files differ.
+
 ## Output Template
 
 ```
@@ -90,6 +102,8 @@ boundaries.md
 
 Uncertain: [pattern — ratio — why not a rule]
 Conflicts: [habit + ratio] vs [source says] — keep or drop?
+
+Tally: <n> rules written (<s> sourced · <r> repo-only) · <u> uncertain · <c> conflicts awaiting your call
 ```
 
 ## What Claude Does / What You Do

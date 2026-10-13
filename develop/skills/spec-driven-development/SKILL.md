@@ -31,7 +31,7 @@ compatibility:
   could not even be measured). Write the spec first, get it approved, then code.
 - A fact the request does not give is marked `[확인 필요: <fact>]`, never guessed; a guessed rule ships as code.
 - Code that needs behaviour the spec lacks stops until the spec is amended and re-approved. Never amend the spec
-  to match code already written.
+  to match code already written: the spec then proves nothing, because it was bent to fit the code it should judge.
 
 Goal: every AC-n traces to a US-n, a task and a piece of evidence, and every change outside the spec is listed.
 

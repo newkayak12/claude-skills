@@ -1,9 +1,9 @@
 ---
 name: dockerfile-optimizer
 description: >-
-  Use when someone shares a Dockerfile and needs it improved for build speed,
-  image size, or security. Triggers on: "도커 최적화", "이미지 크기", "빌드 시간", "컨테이너 최적화",
-  "Dockerfile", "docker optimize", "이거 좀 봐줘" (when a Dockerfile is pasted)
+  Use when someone shares a Dockerfile and needs it improved for build speed, image size, or security. Triggers on:
+  "도커 최적화", "이미지 크기", "빌드 시간", "Dockerfile", "docker optimize", "이거 좀 봐줘" (when a Dockerfile is
+  pasted). Not for Kubernetes or compose.
 scenarios:
   - "optimize this Dockerfile"
   - "why is my Docker image so large?"
@@ -21,160 +21,85 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
+## Standing Mandates
+
+- NEVER report a size or time saving you did not measure. Build before and after (`docker image ls`,
+  `docker build --no-cache`, a warm rebuild after touching one source file) and quote both numbers; a build you could
+  not run is `not measured: <why>`, and any estimate is labelled `estimate`. A layer-count guess says nothing about
+  bytes, and caches hide real build time.
+- NEVER edit before all 8 checks are listed. Fixes interact (a multi-stage split changes where `USER`, the cache
+  mounts and the secrets belong), so fixing the first visible issue misses or breaks the others.
+- NEVER change a fix's reach beyond its finding: every changed line traces to a numbered check. A rewrite for taste
+  makes the diff unreviewable.
+- NEVER swap the base image family silently. `alpine` uses musl libc, so native modules and glibc binaries can break;
+  flag the swap as a risk and ask the user to run their tests.
+- NEVER treat a secret already in a layer as fixed by deleting it later: layers are immutable and the secret stays
+  readable. Say it must be rotated.
+- Missing facts (target stack, runtime base, registry limits, whether a build is possible here) are
+  `[확인 필요: ○○]`; do not guess the runtime user or the entrypoint.
+- Goal: every finding maps to one of the 8 checks with a before/after hunk, the build either ran with measured numbers
+  or is marked `not measured`, and the closing tally recounts to the findings table.
+
 # Dockerfile Optimizer
 
-Analyzes existing Dockerfiles and delivers concrete before/after improvements for layer caching, image size, build speed, and security.
-
-## When to Use / When Not to Use
-
-| Use | Skip |
-|-----|------|
-| Dockerfile needs size or speed improvements | Kubernetes manifest tuning |
-| Build cache misses are causing slow CI | docker-compose service orchestration |
-| Container running as root in production | Runtime container security policy (AppArmor, seccomp) |
-| Secrets appearing in image layers | |
+**Not for** Kubernetes manifests, docker-compose orchestration, runtime container policy (AppArmor, seccomp), or
+production deployment and health checks (`develop:sre-engineer`).
 
 ## Process
 
-**Two-pass approach:** First pass — analyze all 8 checks and note all issues before touching anything. Second pass — apply fixes. This prevents fixing one visible issue while missing others that interact with it.
+1. **Pass 1, findings only.** Run the 8 checks in order and list every finding before changing anything. Details and
+   code: `references/eight-checks.md`, `references/antipatterns.md`.
 
-For a detailed antipatterns checklist per check, read `references/antipatterns.md`. For a ready-to-use `.dockerignore` template, read `references/dockerignore-template.md`.
+   | # | Check | Look for |
+   |---|-------|----------|
+   | 1 | Base image | `latest`, full image in runtime stage, unpinned version |
+   | 2 | Multi-stage | compilers or dev dependencies in the runtime image |
+   | 3 | Layers | split `apt-get`, cache left in a layer |
+   | 4 | `.dockerignore` | missing file; `.git`, `node_modules` in context (`references/dockerignore-template.md`) |
+   | 5 | User | process runs as root |
+   | 6 | COPY vs ADD | `ADD` with a URL or without a tar to extract |
+   | 7 | CMD / ENTRYPOINT | shell form (no signal forwarding) |
+   | 8 | Secrets | `ENV` / `ARG` secrets, files copied then deleted |
 
-## The Mental Model: Layers Are Cache Keys
-
-Docker builds images as a stack of immutable layers. Each instruction (`RUN`, `COPY`, `ADD`) creates a new layer. The build cache invalidates a layer — and every layer after it — the moment its instruction or its inputs change.
-
-**Layer order is your primary optimization lever.** Put instructions that change rarely at the top; put instructions that change often (your application code) at the bottom.
-
-```
-# Bad — copies source before installing deps; any code change re-runs npm install
-COPY . .
-RUN npm ci
-
-# Good — deps cached separately; code changes only rebuild the last two layers
-COPY package*.json ./
-RUN npm ci
-COPY . .
-```
-
-## The 8-Check Analysis Framework
-
-Work through these in order during the first pass. Note every finding before making any change.
-
-### 1. Base Image Selection
-
-| Choice | Use When |
-|--------|----------|
-| `alpine` variant | Small production image; minimal tooling needed at runtime |
-| `distroless` (Google) | Maximum security; no shell, no package manager |
-| `slim` Debian variant | Need glibc compatibility but not full Debian |
-| Full official image | Only in build stages, never in final runtime stage |
-
-Avoid `latest` in production. Pin to a digest or at minimum a minor version: `node:20.11-alpine3.19`.
-
-### 2. Multi-Stage Builds
-
-Multi-stage builds are the single highest-impact optimization available. They let you use a fat builder image with compilers and dev tools, then copy only the final artifact into a minimal runtime image.
-
-```dockerfile
-# Stage 1: build
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
-
-# Stage 2: runtime — only the built output, no node_modules, no source
-FROM node:20-alpine AS runtime
-WORKDIR /app
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-```
-
-### 3. Layer Count and RUN Consolidation
-
-```dockerfile
-# Bad — three layers, apt cache left in layer 1
-RUN apt-get update
-RUN apt-get install -y curl
-RUN rm -rf /var/lib/apt/lists/*
-
-# Good — one layer, cache never committed
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
-```
-
-### 4. .dockerignore
-
-Without a `.dockerignore`, `COPY . .` sends the entire build context to the Docker daemon — including `node_modules`, `.git`, test fixtures, and local config files. See `references/dockerignore-template.md` for a ready-to-use template.
-
-### 5. Non-Root User
-
-```dockerfile
-RUN addgroup --system --gid 1001 appgroup \
-    && adduser --system --uid 1001 --ingroup appgroup appuser
-USER appuser
-```
-
-Many official images ship a pre-created non-privileged user (`node`, `www-data`) — use it: `USER node`.
-
-### 6. COPY vs ADD
-
-Use `COPY` unless you specifically need `ADD`'s features (auto-extracting tarballs). `ADD` with URLs bypasses the build cache unpredictably.
-
-### 7. CMD vs ENTRYPOINT
-
-Use exec form (`["executable", "arg"]`), not shell form (`executable arg`). Shell form spawns a shell as PID 1, which does not forward signals correctly.
-
-```dockerfile
-# Shell form — PID 1 is /bin/sh, signals not forwarded
-CMD node server.js
-
-# Exec form — PID 1 is node, SIGTERM reaches your process
-ENTRYPOINT ["node"]
-CMD ["server.js"]
-```
-
-### 8. Secret Handling
-
-Never put secrets in `ENV` or `ARG` — they are visible in `docker history`. Use BuildKit secrets for build-time, and runtime injection for runtime.
-
-```dockerfile
-# Good — secret mounted at build time, never committed to a layer
-RUN --mount=type=secret,id=api_key \
-    API_KEY=$(cat /run/secrets/api_key) ./fetch-assets.sh
-```
+   Layer order is the main lever: rarely-changing instructions first, application code last, so a code change does
+   not re-run the dependency install.
+2. **Baseline.** Build the original and record size and cold/warm times, or write `not measured: <why>`.
+3. **Pass 2, apply.** One hunk per finding, with a comment naming its check number.
+4. **Measure.** Rebuild; compare; confirm the container still starts.
+5. **Recount.** Count findings per check, those fixed, and those measured; fix the tally if it differs.
 
 ## Output Template
 
-For each Dockerfile reviewed, provide:
-1. **Before/after diff** with inline comments explaining each change
-2. **Size impact estimate** (if measurable from layer analysis)
-3. **Cache hit improvement** explanation
-4. **Security issues found** with severity (Critical/High/Medium)
+```
+## Dockerfile review — <image / path>
+
+| # | Check | Finding | Severity | Fixed |
+|---|-------|---------|----------|-------|
+
+Diff: before/after hunks, each commented with its check number
+
+| | Before | After |
+|---|--------|-------|
+| Image size | <docker image ls> | <...> |
+| Cold build | <s> | <s> |
+| Warm rebuild (source changed) | <s> | <s> |
+
+Security: Critical/High/Medium items with severity; a leaked secret -> rotate
+Open: [확인 필요: ○○] ...
+
+<n> findings · <f> fixed · <m> measured · <r> need your decision (base image swap, secret rotation)
+```
 
 ## What Claude Does / What You Do
 
 | Claude | You |
 |--------|-----|
-| Runs 8-check analysis and lists all findings | Provide the Dockerfile and target stack |
-| Produces annotated before/after diff | Run `docker build` and verify build succeeds |
-| Recommends base image alternatives | Measure before/after with `docker image ls` |
-| Writes `.dockerignore` template | Confirm secrets are moved to runtime injection |
-
-## Measuring Impact
-
-After optimizing, measure:
-- `docker image ls <image>` — compare sizes before and after
-- `docker build --no-cache .` — cold build time
-- `docker build .` (after changing only source) — warm build time
-- `docker history <image>` — layer breakdown; look for unexpectedly large layers
-- `dive <image>` (third-party tool) — interactive layer explorer showing wasted space
+| Lists all 8 checks' findings, then writes the annotated diff | Provide the Dockerfile and target stack |
+| Writes the `.dockerignore` | Run `docker build` and confirm it succeeds |
+| Names base-image alternatives with their risks | Decide the swap; rotate any leaked secret |
 
 ## Related Skills
 
 - `develop:sre-engineer` — production container deployment and health checks
 - `develop:chaos-engineer` — resilience testing for containerized services
-- `develop:cli-developer` — wrapping container tooling in a CLI
+- `develop:security-auditor` — exploitability audit beyond Dockerfile hygiene
