@@ -82,7 +82,8 @@ Official images often ship a user (`node`); use `USER node`.
 
 ## 6. COPY vs ADD
 
-`COPY` unless you need `ADD`'s tar auto-extraction. `ADD` with a URL bypasses the build cache unpredictably.
+`COPY` unless you need `ADD`'s tar auto-extraction. `ADD` with a URL is a download with no integrity check; use
+`ADD --checksum=sha256:...` or `curl` plus a verify step.
 
 ## 7. CMD vs ENTRYPOINT
 

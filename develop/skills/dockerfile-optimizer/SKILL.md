@@ -59,7 +59,7 @@ production deployment and health checks (`develop:sre-engineer`).
    | 5 | User | process runs as root |
    | 6 | COPY vs ADD | `ADD` with a URL or without a tar to extract |
    | 7 | CMD / ENTRYPOINT | shell form (no signal forwarding) |
-   | 8 | Secrets | `ENV` / `ARG` secrets, files copied then deleted |
+   | 8 | Secrets | `ENV` / `ARG` secrets, files copied then deleted, no `RUN --mount=type=secret` |
 
    Layer order is the main lever: rarely-changing instructions first, application code last, so a code change does
    not re-run the dependency install.

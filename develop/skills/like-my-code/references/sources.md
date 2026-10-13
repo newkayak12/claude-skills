@@ -3,6 +3,15 @@
 Cite as `[key §section]`, e.g. `[CC ch.2]`, `[RF Long Function]`, `[EJ item 54]`, `[KT naming]`.
 No match here → write `repo-only`. Never cite from memory outside this list.
 
+## Topic to section mapping
+
+Cite a section only when its title here names the rule's topic: naming → `CC ch.2`, function size → `CC ch.3` /
+`RF Long Function`, layer imports → `CA ch.22`, indent/line length/spacing → `CC ch.5`, comments → `CC ch.4`,
+errors → `CC ch.7`, class size → `CC ch.10`; semicolons, quotes and other syntax → the language guide. Language-bound
+sources (EJ and every guide row) cite only for code in that language. A stretched fit is `repo-only` — never launder
+a habit through a loosely related source. A rule whose topic no section title names (e.g. guard clauses) is
+`repo-only`.
+
 ## Books
 
 | Key | Work | Citable sections |

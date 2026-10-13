@@ -35,7 +35,7 @@ metadata:
 - NEVER return a JPA entity from a controller. Serialization walks lazy associations (`LazyInitializationException`
   or a hidden query per row) and exposes columns nobody chose to publish. Return a response record.
 - NEVER leave an endpoint without a security test that asserts the unauthenticated and the unauthorized response as
-  well as the success. Filter-chain rules match first-to-last, so a broad matcher placed early silently decides.
+  well as the success (a deliberately public endpoint: one test asserting it stays public). Filter-chain rules match first-to-last, so a broad matcher placed early silently decides.
 - NEVER rely on `@Transactional` on a private method or a self-invoked method: the proxy is bypassed and no
   transaction starts. Put the boundary on a public method of a separate bean.
 - NEVER use Boot 2.x idioms (`WebSecurityConfigurerAdapter`, `antMatchers`, `javax.*`): they were removed or moved in
@@ -70,7 +70,7 @@ Kotlin idioms (`develop:kotlin-specialist`), or an exploit audit (`develop:secur
 ```
 ## <feature>
 
-1. Entity with validation annotations
+1. Entity; request/response records with validation annotations
 2. Repository interface
 3. Service: constructor injection, @Transactional (writes) / readOnly = true (reads)
 4. Controller: @Valid input, response records, @RestControllerAdvice

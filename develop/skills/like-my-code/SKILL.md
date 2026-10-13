@@ -23,7 +23,9 @@ compatibility:
 ## Standing Mandates
 
 - NEVER write a rule the repo doesn't show: an unevidenced rule is the model's taste filed as the user's policy, and
-  every later session obeys it. Each positive rule needs ≥2 `file:line` examples from ≥2 files and a consistency ratio; absence/boundary rules ("never imports", "append-only") carry a violation count or commit evidence plus one `file:line` example.
+  every later session obeys it. Each positive rule needs ≥2 `file:line` examples from ≥2 files and a consistency
+  ratio; absence/boundary rules ("never imports", "append-only") carry a violation count or commit evidence plus one
+  `file:line` example.
 - A pattern below 70% consistency, or seen in fewer than 3 files, is *uncertain* — listed, not written.
 - ALWAYS cite from `references/sources.md` only. No fitting source → `repo-only`. Never cite a book or item from memory.
 - NEVER adopt a habit that contradicts a cited source silently — it goes under *Conflicts*; the user decides keep or drop.
@@ -31,9 +33,11 @@ compatibility:
   configs in the repo outrank counted habits.
 - NEVER overwrite a filled line in an existing convention file: someone wrote it deliberately. Fill `<!-- fill -->`
   placeholders and append; show the diff.
-- Cite a section only when its title in `sources.md` names the rule's topic (naming → `CC ch.2`, function size → `CC ch.3` / `RF Long Function`, layer imports → `CA ch.22`, indent/line length/spacing → `CC ch.5`, comments → `CC ch.4`, errors → `CC ch.7`, class size → `CC ch.10`; semicolons, quotes and other syntax → the language guide). Language-bound sources (EJ and every guide row) cite only for code in that language. A stretched fit is `repo-only` — never launder a habit through a loosely related source.
+- Cite only a section whose title names the rule's topic (mapping: `references/sources.md`); a stretched fit is
+  `repo-only`.
 - Rules are checkable: "functions ≤ 30 lines (91% of 212)", not "functions are short".
-- Every count comes from a command you ran (grep, a script), never an estimate; a rule whose topic no section title names (e.g. guard clauses) is `repo-only`.
+- Every count comes from a command you ran (grep, a script), never an estimate.
+- A source repo or target that can't be read is `[확인 필요: ○○]`; stop before Write.
 
 Goal: every written rule has its count, ≥2 examples and a source or `repo-only`; everything seen but not written is
 listed as uncertain or conflict; the closing tally recounts to the written files.
@@ -53,17 +57,8 @@ style can govern a new one.
 generated/vendor/test-fixture paths, keep up to ~40 files across modules. Read formatter and lint configs
 (`.editorconfig`, `ktlint`, `detekt.yml`, `.eslintrc*`, `ruff.toml`, …) first — they are rules already.
 
-**3. Observe.** Count, per dimension, what the samples do:
-
-| Dimension | Count |
-|---|---|
-| Naming | type/function/variable shapes, predicate prefixes, banned noise words, test naming |
-| Functions | length distribution, parameter count, early return vs nested |
-| Errors | exceptions vs result types, custom error hierarchy, swallowed catches |
-| Comments | ratio, what they explain (why vs what), doc-comment coverage on public API |
-| Structure | one type per file, package-by-feature vs by-layer |
-| Dependencies | import direction between layers/modules, who may import framework code |
-| Boundaries | generated dirs, append-only paths (migrations: never edited after add), co-change pairs (files that change together in ≥80% of commits) |
+**3. Observe.** Count, per dimension, what the samples do: naming, functions, errors, comments, structure,
+dependencies, boundaries (what to count: `references/dimensions.md`).
 
 **4. Cite.** For each rule ≥70%, attach the source from `references/sources.md` that states it
 (`[CC ch.3]`, `[RF Long Function]`, `[CA ch.22]`, `[KT naming rules]`). A rule the source contradicts
@@ -87,18 +82,12 @@ Target: <dir>/.claude/conventions/
 coding.md
 ## Naming & structure
 - Predicates start with is/has/can — 94% (118/125) · ex: src/a/Order.kt:42, src/b/User.kt:17 · [CC ch.2]
-## Style
-- Functions ≤ 30 lines — 91% (193/212) · ex: … · [RF Long Function]
-## Dependencies
-- domain/** never imports infra/** — 100% (0 violations / 64 files) · ex: src/domain/Order.kt:3, src/domain/User.kt:5 (imports) · [CA ch.22]
+(then Style, Dependencies in the same shape)
 
 boundaries.md
 ## Do not modify without explicit user approval
 - db/migration/** — append-only (0 edits after add in 38 files) · ex: db/migration/V12__add_user.sql:1 · repo-only
-## Off-limits entirely
-- src/generated/** — generated (header "DO NOT EDIT") · ex: src/generated/Api.kt:1 · repo-only
-## Requires a dependent update when changed
-- api/openapi.yaml ↔ src/api/** — co-changed in 88% of commits · ex: a1b2c3d, e4f5a6b · repo-only
+(then Off-limits entirely, Requires a dependent update when changed)
 
 Uncertain: [pattern — ratio — why not a rule]
 Conflicts: [habit + ratio] vs [source says] — keep or drop?
