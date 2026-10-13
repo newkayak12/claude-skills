@@ -25,9 +25,9 @@ compatibility:
 - NEVER supply the domain's events, rules, or terms yourself. Claude drafts candidates only from what the user or the
   code gave; anything else is `[확인 필요: ○○]` for the domain experts. (Scar: invented events read as domain
   knowledge, and the bounded contexts built on them came out as the model's guess about the business.)
-- NEVER name an event as a noun or in present tense ("Order", "Order is placed"); past tense only. Never jump to
+- NEVER name an event as a noun or in present tense ("Order", "Order is placed"); past tense only (present-tense or noun stickies turn into entities, and the timeline disappears). Never jump to
   aggregates before events and commands are on the wall.
-- Do NOT resolve a hotspot by picking a side. Mark it red, quote both meanings, and leave it for the people who disagree.
+- Do NOT resolve a hotspot by picking a side. Mark it red, quote both meanings, and leave it for the people who disagree. (A hotspot Claude resolves hides the disagreement the workshop exists to surface.)
 - Goal: each bounded context is documented in the template with its hotspots listed, and the closing tally recounts to
   the contexts; the run stops at the levels the user asked for.
 
@@ -41,7 +41,7 @@ checking whether service cuts hold (`develop:service-boundary-validator`); topol
 ## Process
 
 ### Level 1: Big Picture (2–4 hours)
-Goal: the whole business domain, candidate bounded contexts, pain points.
+Outcome: the whole business domain, candidate bounded contexts, pain points.
 
 1. Invite 6–10 people: at least two domain experts and two developers
 2. Storm domain events (orange, past tense): "What happens in this business?"
@@ -55,7 +55,7 @@ Goal: the whole business domain, candidate bounded contexts, pain points.
 - Keep implementation detail (tables, endpoints) out of the glossary.
 
 ### Level 2: Process Level (2–3 hours)
-Goal: who triggers what and why. For each orange event:
+Outcome: who triggers what and why. For each orange event:
 1. "What caused this?" → blue Command to the left
 2. "Who issued it?" → yellow Actor above
 3. "Is it triggered by a rule?" → lilac Policy between event and command
@@ -65,7 +65,7 @@ Goal: who triggers what and why. For each orange event:
 Flow: `[Read Model] → [Actor] → [Command] → [Policy] → [Domain Event]`
 
 ### Level 3: Design Level (2–4 hours, per bounded context)
-Goal: aggregates, APIs, ready for implementation.
+Outcome: aggregates, APIs, ready for implementation.
 1. Group event/command pairs by aggregate (commands that target the same state machine)
 2. Name each aggregate in the context's ubiquitous language
 3. Define boundaries: which events cross contexts (integration events)

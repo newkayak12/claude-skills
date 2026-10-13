@@ -48,12 +48,12 @@ refactor, or ranking refactor targets in an existing repo (`develop:architecture
 
 | # | Skill | Input | Output | Skip if |
 |---|-------|-------|--------|---------|
-| 1 | `event-storming` | Domain description, stakeholder knowledge | Bounded context map, event timeline, aggregate candidates, hotspots | Domain well-modeled, contexts documented |
-| 2 | `domain-driven-design` | Contexts from 1 (or existing knowledge) | Context map, glossary, aggregates with invariants, event list | A validated DDD model exists |
-| 3 | `service-boundary-validator` | Domain model from 2 | Coupling report, data ownership map, split/merge/keep per boundary | New monolith, no decomposition within 12 months |
-| 4 | `clean-architecture` | Validated boundaries from 3 | Layer diagram, dependency score, interface contracts, refactoring plan | Stateless functions needing 2 layers or fewer |
-| 5 | `architecture-designer` | Steps 2–4 | System diagram, technology picks, NFR coverage, risks | Stack and topology already approved |
-| 6 | `architecture-designer` (Distributed Topology), optional | Steps 3 and 5 | Service inventory, sync/async map, data-per-service, observability | Staying on a monolith or modular monolith |
+| 1 | `develop:event-storming` | Domain description, stakeholder knowledge | Bounded context map, event timeline, aggregate candidates, hotspots | Domain well-modeled, contexts documented |
+| 2 | `develop:domain-driven-design` | Contexts from 1 (or existing knowledge) | Context map, glossary, aggregates with invariants, event list | A validated DDD model exists |
+| 3 | `develop:service-boundary-validator` | Domain model from 2 | Coupling report, data ownership map, split/merge/keep per boundary | New monolith, no decomposition within 12 months |
+| 4 | `develop:clean-architecture` | Validated boundaries from 3 | Layer diagram, dependency score, interface contracts, refactoring plan | Stateless functions needing 2 layers or fewer |
+| 5 | `develop:architecture-designer` | Steps 2–4 | System diagram, technology picks, NFR coverage, risks | Stack and topology already approved |
+| 6 | `develop:architecture-designer` (Distributed Topology), optional | Steps 3 and 5 | Service inventory, sync/async map, data-per-service, observability | Staying on a monolith or modular monolith |
 | 7 | `write:plans` (ADR format) | Decisions from 1–6 | One ADR per decision in `docs/adr/`, numbered, status set | Never skipped |
 
 Start prompts: "Step N 시작" or name the skill. Say where you are and the run joins there ("도메인은 정리됨, Step 3부터";
