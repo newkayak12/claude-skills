@@ -40,108 +40,24 @@ classified keep, update or delete; the closing tally recounts to both lists.
 **Not for** writing one substantial document end to end (`write:spec`, `write:plans`), recording a single decision
 (`write:plans` ADR format), or running an incident review (`develop:incident-response-playbook`).
 
-Good documentation answers the right question for the right person at the right time.
+## Process
 
----
-
-## Documentation Taxonomy
-
-Each document type has a distinct audience, purpose, and update cadence.
-
-| Type | Audience | Purpose | Update Trigger |
-|------|----------|---------|----------------|
-| **Architecture Overview** | New engineers, tech leads, auditors | Understand how the system fits together | Major design changes |
-| **API Reference** | Consumers of your API (internal or external) | Know how to call your API correctly | Every API change |
-| **Runbook** | On-call engineers under pressure | Execute a specific operation step by step | When the steps change |
-| **ADR** (Architecture Decision Record) | Future team members, reviewers | Understand why a decision was made | Written once; amended, not deleted |
-| **Onboarding Guide** | New team members | Get productive in < 1 week | Quarterly review + when workflow changes |
-| **Decision Log** | Whole team | Lightweight record of minor decisions | Ongoing |
-| **RCA / Post-Mortem** | Team + stakeholders | Learn from incidents | After every P0/P1 incident |
-
----
-
-## Audience-First Approach
-
-Before writing a single word, answer:
-
-1. **Who reads this?** (new hire? experienced engineer? product manager? external developer?)
-2. **When do they read it?** (first day? 2am during an incident? planning a new feature?)
-3. **What state are they in?** (curious and learning? stressed and time-pressured? skeptical?)
-4. **What do they need to walk away with?** (understanding? a decision? a completed action?)
-
-**Audience determines format:**
-- Stressed on-call engineer → numbered steps, no prose, commands they can copy
-- New hire exploring the system → narrative overview, context, links to more detail
-- External API consumer → precise parameter specs, examples for every endpoint, error codes
-
----
-
-## Docs as Code
-
-### Where docs live
-
-| Scenario | Recommendation |
-|----------|---------------|
-| Docs that change with code (API docs, runbooks for a service) | In the service repo, co-located with code |
-| System-wide architecture docs, ADRs | Dedicated `docs/` repo or monorepo `docs/` folder |
-| Operational runbooks accessed during incidents | Wiki (Confluence, Notion) AND linked from repo |
-| Onboarding guides | Wiki — easier to edit for non-engineers; reviewed quarterly |
-
-**Rule**: docs that must stay in sync with code belong in the repo. Docs that evolve independently of code belong in the wiki.
-
-### Keeping docs fresh
-
-- **Review docs in PRs**: add a step to your PR template — "Did you update relevant docs?"
-- **Doc owners**: each doc has an owner listed in frontmatter or a `CODEOWNERS`-style file.
-- **Freshness dates**: add `last_reviewed: YYYY-MM-DD` to long-lived docs. Stale = > 6 months without review.
-- **Broken link CI check**: add a link checker to your CI pipeline for docs repos.
-
----
-
-## Documentation Debt
-
-Documentation debt accumulates silently. Treat it like technical debt.
-
-**Write** when:
-- A new system, service, or API launches
-- An on-call incident reveals a missing runbook
-- The same question is asked by 3+ people
-
-**Update** when:
-- A system design decision changes
-- A runbook step fails because reality diverged from the doc
-- An API changes signature or behavior
-
-**Delete** when:
-- The system it documents no longer exists
-- The doc has been superseded and the old version causes confusion
-- It's a stub that was never filled in (replace with a "to be written" notice or remove entirely)
-
-**The cost of wrong documentation**: an engineer follows an outdated runbook during an incident and makes things worse. Stale docs are actively harmful.
-
----
-
-## Template Set
-
-See `references/templates.md` for Architecture Overview, Runbook, and Onboarding Guide templates.
-
-## Practical Workflow
-
-### Starting a documentation project from scratch
-
-1. Audit what exists (even informal). Don't duplicate.
-2. Identify the highest-pain gap (most asked question, most recent incident gap, newest service with no docs).
-3. Pick one doc type. Write it to the relevant template.
+1. Audit what exists (even informal). Don't duplicate; classify each doc keep / update / delete.
+2. Identify the highest-pain gap (most asked question, latest incident gap, newest service with no docs).
+3. Pick one doc type and write it to the template (`references/templates.md`); name audience, owner, update trigger
+   and location (`references/doc-types.md`).
 4. Get one reviewer who matches the target audience — not the author.
-5. Merge and announce. A doc no one knows exists doesn't help.
-6. Add it to the relevant index/README.
-7. Recount the audited docs (keep / update / delete) and the recommended docs with audience, owner, trigger and
+5. Merge, announce, and add it to the index/README. Add a Documentation checkbox group to the PR template (no docs
+   change / updated doc link / new doc link) so the doc stays current.
+6. Recount the audited docs (keep / update / delete) and the recommended docs with audience, owner, trigger and
    location; fix the tally if the lists differ.
 
-### Docs in the PR workflow
-
-Add a Documentation checkbox group to the PR template: no docs change needed / updated existing doc (link) / added
-new doc (link).
+**Inline docs and API specs** (docstrings, JSDoc/KDoc, OpenAPI, doc site on existing code):
+1. Ask which format to use; else read the repo for the convention; else Google style (Python), JSDoc (TS/JS).
+2. List public functions, classes and endpoints without docs; write all in the one chosen format, including
+   parameters, returns and raised errors.
+3. Run every example: `pytest --doctest-modules`, `tsc --noEmit`, `npx @redocly/cli lint` for OpenAPI.
+4. Report coverage; flag files under 70% function coverage and any endpoint short of 100%.
 
 ## Output Template
 
@@ -156,16 +72,6 @@ Open: [확인 필요: ○○] ...
 Audited <n> (keep <k> · update <u> · delete <d>) · recommended <r> · missing owner <o>
 ```
 
----
-
-## Inline Docs and API Specs
-
-For docstrings, JSDoc/KDoc, OpenAPI or a doc site on existing code:
-1. Ask which format to use; else read the repo for the convention; else Google style (Python), JSDoc (TS/JS).
-2. List public functions, classes and endpoints without docs; write all in the one chosen format, including parameters, returns and raised errors.
-3. Run every example: `pytest --doctest-modules`, `tsc --noEmit`, `npx @redocly/cli lint` for OpenAPI.
-4. Report coverage; flag files under 70% function coverage and any endpoint short of 100%.
-
 ## What Claude Does / What You Do
 
 | Claude | You |
@@ -174,6 +80,13 @@ For docstrings, JSDoc/KDoc, OpenAPI or a doc site on existing code:
 | Names audience and maintenance owner per doc type | Confirm the owners |
 | Writes the highest-pain missing doc from the template | Pick the doc type to start with |
 | Adds the doc to the index/README | Get a reviewer who matches the target audience |
+
+## Reference Guide
+
+| Need | File | Covers |
+|------|------|--------|
+| Doc types, audience, placement, debt | `references/doc-types.md` | Taxonomy, audience-first questions, docs as code, write/update/delete rules |
+| Templates | `references/templates.md` | Architecture Overview, Runbook, Onboarding Guide |
 
 ## Related Skills
 

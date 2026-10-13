@@ -57,8 +57,8 @@ Compose), a full coverage plan (`develop:test-master`), or a failing build with 
 4. **Lint** — run `detekt` and `ktlint` (agent contract: `agents/lint-qa.md`); fix every violation.
 5. **Optimize** — value classes, sequences, inlining, only where a measurement supports them.
 6. **Test** — `runTest` plus Turbine for Flow emissions, one test that cancels each scope; run every KMP target.
-7. **Recount** — grep the touched files for `GlobalScope`, `runBlocking`, `!!` and scopes without a cancellation test;
-   fix the tally if it differs.
+7. **Recount** — grep the touched files for `GlobalScope`, `runBlocking`, `!!`, and scope builders
+   (`CoroutineScope(`, `launch`, `async`); match each scope to a cancelling `runTest`; fix the tally if it differs.
 
 ## Output Template
 

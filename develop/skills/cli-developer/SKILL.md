@@ -56,8 +56,10 @@ the tool (`develop:documentation-strategy`).
    one flag-naming convention; no shipped signature changes.
 3. **Select framework** — Node.js `commander` → `yargs` → `oclif`; Python `typer` → `click` → `argparse`; Go
    `cobra + viper`, `bubbletea` for a TUI only.
-4. **Implement** — validate input before any work; every question has a flag or env fallback; exit cleanly on SIGINT.
-5. **Polish** — completions for the shells in scope, clear errors, progress feedback; colour only when stdout is a TTY.
+4. **Implement** — validate input before any work; every question has a flag or env fallback; on SIGINT clean up and exit
+   130 (128+2); 0 success, 1 failure, 2 usage error unless the repo already defines codes.
+5. **Polish** — completions for the shells in scope, clear errors, progress feedback; colour only when stdout is a
+   TTY, and honour `NO_COLOR`.
 6. **Test** — run the commands from the Mandates on each target OS and measure cold start.
 7. **Recount** — count commands, those with help text, a documented exit code, and a non-interactive path; fix the
    tally if it differs.
