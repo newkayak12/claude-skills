@@ -1,9 +1,8 @@
 ---
 name: circuit-breaker-tuner
 description: >-
-  Use when a slow or failing downstream is exhausting upstream threads or causing outages and breakers, bulkheads,
-  timeouts or fallbacks need configuring. Triggers on: "서킷 브레이커 설정", "서킷이 자주 열려", "cascading failure",
-  "circuit breaker tuning". Not for SQL or chaos design.
+  Use when a slow or failing downstream exhausts upstream threads and breakers, bulkheads or fallbacks need tuning.
+  Triggers on: "서킷 브레이커 설정", "서킷이 자주 열려", "cascading failure", "circuit breaker tuning". Not for SQL or chaos.
 scenarios:
   - "Our circuit breaker is tripping too often and causing unnecessary service disruptions"
   - "Help me tune the circuit breaker thresholds for our payment service"
