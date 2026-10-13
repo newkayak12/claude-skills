@@ -24,16 +24,6 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
-## Standing Mandates
-
-- NEVER judge a diff by taste or by the diff alone. The bar is the acceptance list — the caller's, else the spec the
-  change claims (G1). Probe: a commit closing an issue that put retries out of scope added retries; 0/2 reviews that
-  read only the diff flagged it, 2/2 after reading the issue first.
-- In an implement stage, code and tests in the tree are the output; returning the steps instead is a failed stage.
-
-Goal: every finding carries `file:line`, severity and a fix; the verdict line recounts to the blocking rows; implement
-leaves a test file written before the code and its output.
-
 # Clean Code
 
 Code that communicates intent, minimizes surprises, and welcomes change — judged in gate
@@ -53,9 +43,14 @@ Pick the mode from the stage you were called in and the output the caller asks f
 - A caller's required output always overrides this skill's Output Template. When nobody
   can answer, an open point becomes a recorded assumption, never a question.
 
-**Not for** layer or dependency-rule decisions (`develop:clean-architecture`); domain modelling
-(`develop:domain-driven-design`); security review (`develop:security-auditor`); performance work
-(`develop:performance-profiling-optimization` — profile first); matching the user's own style (`develop:like-my-code`).
+## When to Use / When Not to Use
+
+| Use | Skip |
+|-----|------|
+| Quality gate or PR review of a diff | Architectural layer decisions (use clean-architecture) |
+| Refactoring legacy code | Domain modeling (use domain-driven-design) |
+| Implementing a stated requirement others will maintain | Performance optimization (profile first) |
+| Naming variables, functions, classes | Infrastructure or deployment config |
 
 ## The Six Dimensions
 
@@ -127,8 +122,9 @@ Each step names what it leaves in the tree. Worked example: references/modes.md.
 8. **I8 Self-gate.** Run gate mode G2–G4 over your own diff; fix every blocking and major
    finding. *Leaves:* no blocking findings.
 
-In an implement **stage**: edit the files, then return the caller's shape (`changed_files` =
-files you actually changed, `checks` = test output).
+In an implement **stage** these steps are how you do the work: edit the files, then return
+the caller's shape (`changed_files` = files you actually changed, `checks` = test output).
+Returning the steps instead of the code is a failed stage.
 
 ## Output Template
 
@@ -163,9 +159,14 @@ Then: files changed, test command → output.
 
 ## Reference Files
 
-[review-framework.md](references/review-framework.md) (dimensions, diagnostic, optional score) ·
-[modes.md](references/modes.md) (severity rubric, worked examples) · per dimension: naming-conventions,
-functions-and-methods, comments-formatting, error-handling, testing-principles, code-smells (all in `references/`).
+- [review-framework.md](references/review-framework.md) — six dimensions, quick diagnostic, optional score
+- [modes.md](references/modes.md) — severity rubric, finding/gaps examples, implement walkthrough
+- [naming-conventions.md](references/naming-conventions.md)
+- [functions-and-methods.md](references/functions-and-methods.md)
+- [comments-formatting.md](references/comments-formatting.md)
+- [error-handling.md](references/error-handling.md)
+- [testing-principles.md](references/testing-principles.md)
+- [code-smells.md](references/code-smells.md)
 
 ## Related Skills
 
