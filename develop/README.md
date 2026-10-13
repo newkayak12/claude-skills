@@ -100,6 +100,11 @@ the specialist skills in a fixed order and let you join mid-process.
 | `microservices-architect` | `architecture-designer` (topology), `service-boundary-validator` (where to cut) |
 | `code-documenter` | `documentation-strategy` |
 
+2.0.0 also gives every other skill one shape: Standing Mandates (each NEVER with its reason), one
+Goal line, a Not-for line, `[확인 필요]` for facts the input does not show, and an Output
+Template that ends in a verdict or count line; examples and templates moved to `references/`.
+`clean-code` keeps its 1.14 text: in blind runs its rewrite lost to the old one 3 of 4 times.
+
 ## Skills
 
 ### Workflows
