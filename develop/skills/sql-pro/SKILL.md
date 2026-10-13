@@ -29,123 +29,64 @@ metadata:
   output-format: code
 ---
 
+## Standing Mandates
+
+- NEVER propose a rewrite or index before you have the execution plan and the row counts. A fix written from the query
+  text alone is a guess; the same text can be fast on 10k rows and a full scan on 50M. No plan supplied is
+  `[확인 필요: EXPLAIN ANALYZE]`, and the rewrite is marked `unmeasured`.
+- NEVER report a speedup you did not see as a before/after number. A claimed gain without both plans is `unverified`.
+- Target engine and version unknown is `[확인 필요: engine/version]`; never assume dialect-specific syntax is available.
+- Goal: the final query, its plan before and after, and a closing tally that recounts to the evidence lines.
+
 # SQL Pro
 
-## When to Use / When Not to Use
+Writes and rewrites SQL, designs schemas, and ports queries between dialects, judged by the plan, not by the look of the query.
 
-**Use when:**
-- Writing or rewriting SQL queries: joins, CTEs, window functions, recursive queries
-- Designing or normalizing a schema
-- Interpreting an EXPLAIN plan for a slow query
-- Migrating SQL between PostgreSQL, MySQL, and SQL Server dialects
-
-**Do not use when:**
-- The bottleneck is server-level config (use `database-optimizer`)
-- The issue is connection pool exhaustion (use `connection-pool-tuner`)
+**Not for** server-level causes: memory, VACUUM, lock waits (`develop:database-optimizer`), pool exhaustion
+(`develop:connection-pool-tuner`), or transaction scope (`develop:transaction-boundary-reviewer`).
 
 ## Process
 
-1. **Schema Analysis** — Review table structure, existing indexes, query patterns
-2. **Design** — Sketch the query as set operations: CTEs, window functions, and the right join types
-3. **Version Check** — Confirm target engine and version; flag any feature requiring a minimum version
-4. **Optimize** — Study the plan, add covering indexes, and remove full scans of big tables
-5. **Verify** — Re-run `EXPLAIN ANALYZE`, check that large tables are no longer scanned sequentially, and repeat until the query is under the 100 ms target
-6. **Document** — Provide query explanation, index rationale, performance metrics, and minimum version requirements
+1. **Context.** Read schema, indexes, and the query; confirm engine and version. Read the repo before asking.
+2. **Design.** Shape the query as set operations: CTEs, window functions, correct join types.
+3. **Plan.** Read the `EXPLAIN` first, then optimize: covering indexes, early filters, no big sequential scans.
+4. **Verify.** Re-run `EXPLAIN ANALYZE`; compare to the baseline. Stop when the target is met or after 3 rounds with no
+   improvement, and report the best plan with the remaining bottleneck.
+5. **Document.** Index rationale, engine caveats, minimum version.
 
-## Output Template
-
-For each SQL task, provide:
-1. The final query, commented inline
-2. Indexes it needs, and why
-3. Execution plan analysis (key patterns found)
-4. Timing or cost numbers, before and after
-5. Engine-specific caveats where they apply
-6. Minimum version requirements (e.g., `PostgreSQL >= 10`, `MySQL >= 8.0`)
-
-## What Claude Does / What You Do
-
-| Claude | You |
-|--------|-----|
-| Writes set-based query using CTEs or window functions | Provide sample data or schema DDL |
-| Recommends covering index strategy | Run `CREATE INDEX CONCURRENTLY` in your environment |
-| Reads EXPLAIN output and identifies plan patterns | Provide actual EXPLAIN ANALYZE output |
-| Flags dialect-specific syntax differences | Test against your actual database version |
-| Writes up the timing difference between old and new query | Check it against production-sized data |
-
-## Reference Guide
+Coding rules and worked examples (CTE, window, correlated-subquery rewrite): `references/worked-examples.md`.
 
 | Topic | File | Read it when |
 |-------|------|--------------|
 | Query shapes | `references/query-patterns.md` | Joins, CTEs, recursion, subquery rewrites, pivots, keyset paging |
 | Analytic windows | `references/window-functions.md` | Ranking, running totals, LAG/LEAD, frames, gaps-and-islands |
 | Tuning and plans | `references/optimization.md` | Plan reading, index choice, statistics, partitioning |
-| Schema design | `references/database-design.md` | Normal forms, choosing keys, constraints, history tables, migrations |
-| Porting between engines | `references/dialect-differences.md` | Translating SQL between PostgreSQL, MySQL, SQL Server and Oracle |
+| Schema design | `references/database-design.md` | Normal forms, keys, constraints, history tables, migrations |
+| Porting engines | `references/dialect-differences.md` | PostgreSQL, MySQL, SQL Server, Oracle |
 
-## Worked Examples
+## Output Template
 
-### CTE Pattern
-```sql
-WITH latest AS (
-    SELECT
-        customer_id,
-        id AS order_pk,
-        total_amount AS amount,
-        ROW_NUMBER() OVER (
-            PARTITION BY customer_id ORDER BY placed_at DESC, id DESC
-        ) AS recency
-    FROM orders WHERE status = 'completed'
-)
-SELECT customer_id, order_pk, amount
-FROM latest
-WHERE recency = 1;  -- newest completed order for each customer
+```
+## SQL — <task>
+
+Query: <final query, commented inline>
+Indexes: <DDL → why>
+Plan: before <cost/time, key node> → after <cost/time, key node>   (or unmeasured: [확인 필요: EXPLAIN ANALYZE])
+Caveats: <engine-specific>   Minimum version: <e.g. PostgreSQL >= 10>
+
+<n> queries · <m> measured before/after · <k> unmeasured
 ```
 
-### Window Pattern
-```sql
-SELECT
-    store_id,
-    sale_date,
-    amount,
-    SUM(amount) OVER (PARTITION BY store_id ORDER BY sale_date) AS cumulative,
-    RANK()      OVER (PARTITION BY store_id ORDER BY amount DESC) AS amount_rank
-FROM sales;
-```
+## What Claude Does / What You Do
 
-### Before / After Optimization
-```sql
--- BEFORE: correlated subquery runs once per order row
-SELECT ord.id AS order_id,
-       (SELECT SUM(ln.quantity) FROM order_lines ln WHERE ln.order_id = ord.id) AS qty_total
-FROM orders ord;
-
--- AFTER: total each order's lines a single time, then join back
-WITH line_totals AS (
-    SELECT order_id, SUM(quantity) AS units_sold
-    FROM order_lines
-    GROUP BY order_id
-)
-SELECT ord.id AS order_id, COALESCE(lt.units_sold, 0) AS qty_total
-FROM orders ord
-LEFT JOIN line_totals lt ON lt.order_id = ord.id;
-```
-
-## Constraints
-
-**MUST DO:**
-- Read the execution plan before proposing any optimization
-- Prefer set-based statements to row-at-a-time loops
-- Apply filtering early (before joins where possible)
-- Test existence with EXISTS, not COUNT
-- Handle NULLs explicitly
-
-**MUST NOT DO:**
-- Ship `SELECT *` in production queries
-- Reach for cursors when a set-based form exists
-- Propose a fix without asking about row counts and cardinality
+| Claude | You |
+|--------|-----|
+| Writes the set-based query, reads the plan, proposes indexes | Provide schema DDL, sample data, actual `EXPLAIN ANALYZE` |
+| Flags dialect differences | Test on your DB version; run `CREATE INDEX CONCURRENTLY` yourself |
+| Writes up the before/after | Check it against production-sized data |
 
 ## Related Skills
 
-- `database-optimizer` — server-level tuning after the query is optimized
-- `connection-pool-tuner` — pool sizing if slow queries are exhausting connections
-- `spring-boot-engineer` — for JPA query methods and `@Query` annotations
+- `develop:database-optimizer` — server-level tuning after the query is optimized
+- `develop:connection-pool-tuner` — pool sizing if slow queries are exhausting connections
+- `develop:spring-boot-engineer` — JPA query methods and `@Query`

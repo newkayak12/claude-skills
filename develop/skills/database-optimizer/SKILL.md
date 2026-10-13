@@ -29,101 +29,71 @@ metadata:
   related-skills: sql-pro, connection-pool-tuner, sre-engineer
 ---
 
+## Standing Mandates
+
+- NEVER change anything before a baseline is recorded (`EXPLAIN (ANALYZE, BUFFERS)`, latency, cache hit rate), and
+  never make two changes in one round. (Scar: two simultaneous changes, one helped and one hurt, and the net number
+  hid both.) No baseline supplied is `[확인 필요: baseline]` and the tuning stops there.
+- NEVER run `ALTER SYSTEM` or edit `my.cnf` on a managed database (RDS, Cloud SQL, Aurora); use the parameter group.
+  Deployment type unknown is `[확인 필요: deployment]`.
+- A gain not shown by a before/after measurement is `unverified`, never "should be faster".
+- Goal: each change has a baseline number, an after number, and a keep or revert; stop at the target or after 3 rounds
+  with no gain, reporting what remains. The closing tally recounts to the change lines.
+
 # Database Optimizer
 
-## When to Use / When Not to Use
+Finds the server-side cause of database slowness (memory, VACUUM, locks, statistics, partitioning) and changes it one
+measured step at a time.
 
-**Use when:**
-- EXPLAIN plan is in hand but the fix is server config, not query rewriting
-- Investigating lock contention, VACUUM lag, or statistics staleness
-- Tuning `shared_buffers`, `work_mem`, or InnoDB buffer pool
-- Designing partitioning strategy or index structure
-
-**Do not use when:**
-- The fix is rewriting a slow SQL query (use `sql-pro`)
-- The bottleneck is connection pool exhaustion (use `connection-pool-tuner`)
+**Not for** rewriting the query text (`develop:sql-pro`) or pool sizing (`develop:connection-pool-tuner`).
 
 ## Process
 
-1. **Initial triage** — Confirm: database engine + version, deployment type (self-managed vs. cloud-managed), and whether direct connection is available
-2. **Capture baseline** — Run `EXPLAIN (ANALYZE, BUFFERS)` before any changes
-3. **Identify bottlenecks** — Read the plan for costly queries, absent indexes and misconfigured settings
-4. **Design solutions** — Index strategy, query rewrites, schema or config improvements
-5. **Implement incrementally** — Apply a single change, confirm its effect, then move on
-6. **Validate results** — Repeat `EXPLAIN ANALYZE`, set costs side by side, and time the real workload
+1. **Triage.** Engine and version, deployment type (self-managed or cloud-managed), direct access or not.
+2. **Baseline.** `EXPLAIN (ANALYZE, BUFFERS)`, latency, buffer hit rate.
+3. **Bottleneck.** Read the plan and server stats: costly nodes, absent indexes, stale statistics, lock waits, VACUUM lag.
+4. **One change.** Index, parameter, or partition; PostgreSQL indexes `CONCURRENTLY`; rehearse outside production.
+5. **Measure.** Re-run the baseline; keep or revert. Revert if writes slow or replicas fall behind. Then the next change.
 
-> On cloud-managed databases (RDS, Cloud SQL, Aurora): `ALTER SYSTEM` and `my.cnf` edits are unavailable. Use parameter groups or the console instead.
+| Plan signal | Suggests | Usual first move |
+|-------------|----------|------------------|
+| `Seq Scan` over a big table | Few rows kept, nothing indexed | B-tree index on the filtered column |
+| `Nested Loop`, large outer side | Inner re-probed per outer row | Index the inner join key, or let a hash join win |
+| Estimated `rows=1`, actual 50000 | Statistics out of date | `ANALYZE` the table |
+| `Buffers: hit=40 read=120000` | Pages mostly from disk | Grow `shared_buffers`, or add a covering index |
+| `Sort Method: external merge  Disk` | Sort overflowed memory | Raise `work_mem` for that session or role |
 
-Use `sequential-thinking` if available — it enforces the baseline-capture step and prevents skipping directly to index creation.
+| Area | File | Read when |
+|------|------|-----------|
+| Plans and query shape | `references/query-optimization.md` | Reading EXPLAIN output, slow statements |
+| Index design | `references/index-design-patterns.md` | B-tree, covering, partial, expression |
+| PostgreSQL memory and WAL | `references/postgresql-memory-wal.md` | shared_buffers, work_mem, WAL |
+| PostgreSQL VACUUM and locking | `references/postgresql-vacuum-locking.md` | VACUUM, locks, SKIP LOCKED, advisory locks, lock order |
+| MySQL memory and I/O | `references/mysql-memory-io.md` | InnoDB memory, I/O |
+| Monitoring | `references/monitoring-postgresql.md`, `references/monitoring-mysql.md` | pg_stat_statements, locks; performance schema, InnoDB status |
 
 ## Output Template
 
-For each optimization task, provide:
-1. Performance analysis with baseline numbers: latency, plan cost, hit rate of the buffer cache
-2. Identified bottlenecks with EXPLAIN evidence
-3. Optimization strategy naming each concrete change
-4. SQL and configuration changes to apply
-5. Validation queries that measure the improvement
-6. Monitoring to keep after the change
+```
+## DB tuning — <system> (<engine> <version>, <self-managed | managed>)
+
+Baseline: <latency, plan cost, hit rate>
+Change <n>: <what> → after <numbers> → keep | revert
+Monitoring to keep: <metrics>
+
+<n> changes · <k> kept · <r> reverted · <u> unverified
+```
 
 ## What Claude Does / What You Do
 
 | Claude | You |
 |--------|-----|
-| Reads EXPLAIN output and identifies plan patterns | Provide the actual EXPLAIN output |
-| Recommends index type (B-tree, covering, partial, expression) | Run `CREATE INDEX CONCURRENTLY` in your environment |
-| Generates parameter tuning recommendations | Apply via parameter group or `ALTER SYSTEM` |
-| Writes the queries that prove the gain | Confirm the gain on production-sized data |
-| Flags cloud-managed platform constraints | Verify access level (console vs. direct connection) |
-
-## Reference Guide
-
-| Area | File | Read when |
-|------|------|-----------|
-| Plans and query shape | `references/query-optimization.md` | Reading EXPLAIN output, slow statements |
-| Index Design | `references/index-design-patterns.md` | B-tree, covering, partial, expression indexes |
-| PostgreSQL Memory & WAL | `references/postgresql-memory-wal.md` | shared_buffers, work_mem, WAL config |
-| PostgreSQL VACUUM & Locking | `references/postgresql-vacuum-locking.md` | VACUUM, connection pooling, lock management; queue claims with SKIP LOCKED, advisory locks, lock order against deadlocks |
-| MySQL Memory & I/O | `references/mysql-memory-io.md` | InnoDB memory, I/O config |
-| PostgreSQL Monitoring | `references/monitoring-postgresql.md` | pg_stat_statements, connections, locks |
-| MySQL Monitoring | `references/monitoring-mysql.md` | Performance schema, InnoDB status |
-
-## EXPLAIN Output — Key Patterns
-
-| Plan signal | What it suggests | Usual first move |
-|-------------|------------------|------------------|
-| `Seq Scan` over a big table | Filter keeps few rows but nothing indexed | B-tree index on the filtered column |
-| `Nested Loop` driven by a large outer side | Inner side re-probed once per outer row | Index the inner join key, or let a hash join win |
-| Estimated `rows=1`, actual 50000 | Planner statistics out of date | `ANALYZE` the table |
-| `Buffers: hit=40 read=120000` | Pages mostly fetched from disk | Grow `shared_buffers`, or add a covering index |
-| `Sort Method: external merge  Disk: ...` | Sort overflowed memory | Raise `work_mem` for that session or role |
-
-```sql
--- BUFFERS separates cached reads from disk reads
-EXPLAIN (ANALYZE, BUFFERS)
-SELECT p.id, u.display_name
-FROM payment p
-JOIN app_user u ON u.id = p.user_id
-WHERE p.state = 'authorized'
-  AND p.created_at > now() - interval '24 hours'
-```
-
-## Constraints
-
-**MUST DO:**
-- Capture `EXPLAIN (ANALYZE, BUFFERS)` before any changes — this is the baseline
-- Build PostgreSQL indexes `CONCURRENTLY` so writers are not blocked
-- Rehearse outside production; revert if writes slow or replicas fall behind
-- One change per round; measure before the next
-
-**MUST NOT DO:**
-- Change anything before a baseline is recorded
-- Add indexes that duplicate another or serve no query
-- Make multiple changes simultaneously
-- Use `ALTER SYSTEM` on Amazon RDS or other cloud-managed databases
+| Reads EXPLAIN, names the bottleneck, proposes one change | Provide the actual EXPLAIN output and engine/deployment facts |
+| Writes the parameter or index change and the validation queries | Apply via parameter group or `ALTER SYSTEM`; run `CREATE INDEX CONCURRENTLY` |
+| Flags managed-platform constraints | Confirm the gain on production-sized data |
 
 ## Related Skills
 
-- `sql-pro` — rewriting slow queries when the server is correctly configured
-- `connection-pool-tuner` — pool sizing after server config is validated
-- `sre-engineer` — monitoring and alerting on database golden signals
+- `develop:sql-pro` — rewrite slow queries once the server is configured
+- `develop:connection-pool-tuner` — pool sizing after server config is validated
+- `develop:sre-engineer` — monitoring and alerting on database golden signals
