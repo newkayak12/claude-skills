@@ -61,6 +61,7 @@ Turns "remove or replace this" into additive-first steps with counted consumers,
 6. **Migrate the users.** Churn rule: whoever owns the deprecated thing migrates its users — or ships an adapter so
    they need no change. A deprecation notice alone is not a migration. Track consumers moved per round.
 7. **Close.** Remove the old code, tests, docs, flags, and the notice. Zombie code left behind is named in the output.
+   Recount phases, irreversible steps and consumers moved against the table; fix the footer if it differs.
 
 Bound: if a bake window shows consumers rising instead of falling, stop and report the new count; do not push on.
 

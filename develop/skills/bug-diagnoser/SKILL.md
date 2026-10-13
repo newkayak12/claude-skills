@@ -26,7 +26,8 @@ compatibility:
   Reading code first anchors on whatever looks wrong; a `FIXME: off by one?` over correct code is the classic trap,
   and "fixing" it ships a second bug while the first stays. (mattpocock `diagnosing-bugs`: "jumping straight to a
   hypothesis is the exact failure this skill prevents.")
-- NEVER show a secret in a command or output — write `<REDACTED>`; build loops against env vars.
+- NEVER show a secret in a command or output — write `<REDACTED>`; build loops against env vars. Commands and output
+  end up in transcripts and commit messages.
 - ALWAYS tag every temporary debug line `[DEBUG-<4 hex>]` so cleanup is one grep. Untagged logs survive into commits.
 
 Goal: the user's symptom goes red in one command, the fix turns that command green, and the cause is named with the
@@ -62,7 +63,7 @@ application code belongs here, with a pinned reproduction rate.
    multi-caller chain if that is what fails). No such seam → report that as a finding; do not fake one with a shallow
    test. Apply the smallest fix; the loop and the test go green; re-run the original, un-minimised scenario.
 6. **Clean up.** `grep -rn "DEBUG-"` returns nothing; throwaway harnesses deleted; the confirmed hypothesis goes into
-   the commit message.
+   the commit message. Recount the hypothesis table and the cleanup line; fix the output if either differs.
 
 **Stop rule.** Two rounds in which every hypothesis is falsified (three failed fixes count as a round) → stop. Report
 what was ruled out and why the loop or the architecture is now the suspect; do not start a third round of guesses.

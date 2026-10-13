@@ -22,16 +22,25 @@ compatibility:
 ---
 ## Standing Mandates
 
-- ALWAYS audit existing docs before recommending new ones — redundant docs are worse than none.
-- ALWAYS specify audience and maintenance owner for every doc type recommended.
-- NEVER treat all doc types the same — ADRs, runbooks, and onboarding guides serve different readers.
-- NEVER recommend creating documentation without a plan for keeping it current.
+- ALWAYS audit existing docs before recommending new ones — redundant docs are worse than none: two copies drift
+  apart and readers cannot tell which is current.
+- ALWAYS specify audience and maintenance owner for every doc type recommended. A doc with no owner is stale by the
+  next release; an owner not in the repo or wiki is `[확인 필요: owner]`, never a guessed name.
+- NEVER treat all doc types the same — ADRs, runbooks, and onboarding guides serve different readers in different
+  states (an on-call engineer at 2 a.m. cannot read a narrative).
+- NEVER recommend creating documentation without a plan for keeping it current: stale docs mislead with false
+  confidence.
+- NEVER publish a docstring format guess or an example that was not run.
 
+Goal: every recommended doc has an audience, an owner, an update trigger and a place to live; everything audited is
+classified keep, update or delete; the closing tally recounts to both lists.
 
 # Documentation Strategy
 
+**Not for** writing one substantial document end to end (`write:spec`, `write:plans`), recording a single decision
+(`write:plans` ADR format), or running an incident review (`develop:incident-response-playbook`).
+
 Good documentation answers the right question for the right person at the right time.
-Bad documentation is worse than none — it misleads with false confidence.
 
 ---
 
@@ -126,15 +135,25 @@ See `references/templates.md` for Architecture Overview, Runbook, and Onboarding
 4. Get one reviewer who matches the target audience — not the author.
 5. Merge and announce. A doc no one knows exists doesn't help.
 6. Add it to the relevant index/README.
+7. Recount the audited docs (keep / update / delete) and the recommended docs with audience, owner, trigger and
+   location; fix the tally if the lists differ.
 
 ### Docs in the PR workflow
 
-Add to your team's PR template:
-```markdown
-## Documentation
-- [ ] No docs changes needed
-- [ ] Updated existing doc: [link]
-- [ ] Added new doc: [link]
+Add a Documentation checkbox group to the PR template: no docs change needed / updated existing doc (link) / added
+new doc (link).
+
+## Output Template
+
+```
+## Documentation plan — <scope>
+
+Audit: | doc | location | state | keep / update / delete |
+Plan:  | doc type | audience | owner | update trigger | location |
+Start with: <one doc> — why it is the highest-pain gap
+Open: [확인 필요: ○○] ...
+
+Audited <n> (keep <k> · update <u> · delete <d>) · recommended <r> · missing owner <o>
 ```
 
 ---
@@ -146,16 +165,6 @@ For docstrings, JSDoc/KDoc, OpenAPI or a doc site on existing code:
 2. List public functions, classes and endpoints without docs; write all in the one chosen format, including parameters, returns and raised errors.
 3. Run every example: `pytest --doctest-modules`, `tsc --noEmit`, `npx @redocly/cli lint` for OpenAPI.
 4. Report coverage; flag files under 70% function coverage and any endpoint short of 100%.
-
-NEVER guess the docstring format or publish an example that was not run.
-
-## Escalation Paths
-
-| Need | Go To |
-|------|-------|
-| Architectural decisions to document | `write:plans` (ADR format) |
-| System design → architecture docs | [`../architecture-designer/SKILL.md`](../architecture-designer/SKILL.md) |
-| Incident RCA to store and maintain | [`../incident-response-playbook/SKILL.md`](../incident-response-playbook/SKILL.md) |
 
 ## What Claude Does / What You Do
 
@@ -171,3 +180,4 @@ NEVER guess the docstring format or publish an example that was not run.
 - `develop:architecture-designer` — architecture docs and ADRs
 - `develop:incident-response-playbook` — RCA content to store and maintain
 - `write:spec` — drafting one substantial document
+- `write:plans` — ADR format for a single decision

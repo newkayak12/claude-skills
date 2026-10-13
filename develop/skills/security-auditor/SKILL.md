@@ -24,8 +24,10 @@ compatibility:
   pattern match is not a vulnerability. Measured 2026-10-06 on a four-route Express fixture: a review without this skill
   listed 10 findings, 6 of them hardening items with no attacker path, and the real exploits sat among them. A long
   list is how real findings get ignored. Hardening with no path goes to the dropped list, not the findings.
-- NEVER print a secret value. Report `path:line` and the key name only (`stripeSecretKey`, prefix `sk_live_`).
-- Read-only. Fixes are proposed, not applied.
+- NEVER print a secret value. Report `path:line` and the key name only (`stripeSecretKey`, prefix `sk_live_`); the
+  report is copied into tickets and chats, so a printed key becomes a second leak.
+- Read-only. Fixes are proposed, not applied: the user rotates secrets and orders fixes, and an edit made during an
+  audit changes the code being judged.
 
 Goal: every reported finding has a recountable path and a fix; everything considered and not reported is listed with
 its reason; the tally line recounts to both lists.

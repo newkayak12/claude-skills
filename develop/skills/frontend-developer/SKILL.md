@@ -1,10 +1,8 @@
 ---
 name: frontend-developer
 description: >-
-  Use when someone needs to build or fix UI — React components, page layouts,
-  client-side interactivity, data-fetching hooks, styling, or form handling.
-  Defaults to Next.js App Router, TypeScript, and Tailwind. Triggers on: "build
-  a React component".
+  Use when building or fixing UI — React/Next.js components, layouts, hooks, forms (App Router, TypeScript, Tailwind
+  defaults). Triggers on: "build a React component", "React 컴포넌트", "Next.js 폼". Not for Vue/Svelte/Angular.
 scenarios:
   - "Build a React dashboard with data fetching, state management, and responsive layout"
   - "Help me fix this UI bug where the modal doesn't close properly on mobile"
@@ -20,96 +18,75 @@ compatibility:
     더 체계적으로 수행합니다. Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
+## Standing Mandates
+
+- NEVER call UI work done from reading the code. Run the project's type check, lint and tests and quote the results;
+  anything only a browser shows (layout on mobile, focus order, screen-reader output) is written
+  `not checked in browser: <what>`. A modal that does not close on mobile compiles and passes a render smoke test.
+- NEVER add `'use client'` by default. Every client component ships its code and dependencies to the browser and
+  gives up server-side data fetching; add it only for state, event handlers or browser APIs, and say which.
+- NEVER use `dangerouslySetInnerHTML` with unsanitized input (XSS), and NEVER use `any` (use `unknown` plus a type
+  guard): both switch off the checks that would catch the bug.
+- NEVER invent an API response shape, design token or copy string. Read the types, the API client and the Tailwind
+  config first; what is absent is `[확인 필요: ○○]`.
+- Defaults (Next.js App Router, TypeScript, Tailwind) apply only when the repo does not say otherwise: read
+  `package.json` and the config for versions and conventions.
+- Goal: the type check and tests pass with the output quoted, and each review item (types, effects, a11y, keys, test
+  file) is counted on the files touched.
+
 # Frontend Developer
 
-Senior React/Next.js developer. Default to TypeScript, Tailwind CSS, and Next.js App Router unless the project specifies otherwise.
-
-## When to Use / When Not to Use
-
-**Use when:**
-- Building or fixing React/Next.js components, pages, or layouts
-- Implementing data fetching, form handling, or client-side interactivity
-- Styling with Tailwind, adding ARIA accessibility, or extracting custom hooks
-
-**Do not use when:**
-- Building Vue, Svelte, or Angular UIs
-- Building backend APIs (use `spring-boot-engineer` or relevant server skill)
+**Not for** Vue, Svelte or Angular, backend APIs (`develop:spring-boot-engineer` or the relevant server skill),
+coverage beyond a smoke test (`develop:test-master`), or a UI bug of unknown cause (`develop:bug-diagnoser`).
 
 ## Process
 
-1. **Clarify scope** — Identify component boundaries, data flow direction, and whether server or client rendering is appropriate
-2. **Define types** — Write TypeScript interfaces/types for props, state, and API shapes before implementation
-3. **Implement** — Build top-down: layout shell first, then data-dependent children
-4. **Style** — Apply Tailwind with mobile-first responsive breakpoints
-5. **Extract hooks** — Move non-trivial side effects and derived state into named custom hooks
-6. **Review** — Before finalizing, verify:
-   - All props explicitly typed; no `any`
-   - Every `useEffect` has a cleanup return
-   - All interactive elements have ARIA labels; `alt` on all `<img>`
-   - List items use stable `key` props (not array index)
-   - Test file present alongside the component
+1. **Clarify scope** — component boundaries, data flow direction, server or client rendering; read the repo's existing
+   components first.
+2. **Define types** — props, state and API shapes before implementation.
+3. **Implement** — layout shell first, then data-dependent children. Fetch in Server Components and pass typed props
+   down (`references/component-patterns.md`).
+4. **Style** — Tailwind, mobile-first breakpoints.
+5. **Extract hooks** — non-trivial effects and derived state into named custom hooks.
+6. **State and forms** — server/async data: TanStack Query; shared synchronous UI state: Zustand; local state:
+   `useState`. Forms: Zod schemas; Server Actions for forms with no client interactivity, React Hook Form for complex
+   client forms.
+7. **Review** — on the files touched:
+   - no `any`; all props typed
+   - every effect that starts a timer, subscription or request cleans it up (timers, listeners, `AbortController`)
+   - interactive elements have accessible names and roles; `alt` on every `<img>`
+   - list items use stable keys, not array index
+   - a test file sits beside the component
+8. **Recount** — count components, those passing each review item, and unchecked browser items; fix the tally if it
+   differs.
 
 ## Output Template
 
-For each frontend feature, deliver:
-1. **Types file** — all props and data shapes
-2. **Component file** — single-responsibility, named export
-3. **Hook file** (if applicable) — custom hook with JSDoc comment
-4. **Test file** — render smoke test using Vitest + React Testing Library
-5. **Brief note** — which rendering model was chosen (server vs client) and why
+```
+## <feature>
+
+1. Types file: props and data shapes
+2. Component file: single responsibility, named export
+3. Hook file (if any): custom hook with a short doc comment
+4. Test file: render smoke test (Vitest + React Testing Library, or the repo's runner)
+5. Rendering choice: server | client — why
+
+Open: [확인 필요: ○○] ...
+
+Components <n> · typed <t> · effects cleaned <e> · a11y <a> · stable keys <k> · tests <p>/<total>
+Checked: tsc <ok|n errors> · lint <ok|n> | not checked in browser: <what>
+```
 
 ## What Claude Does / What You Do
 
 | Claude | You |
 |--------|-----|
-| Generates TypeScript interfaces and component scaffolding | Provide design mockups and API response shapes |
-| Recommends Server vs Client Component split | Confirm data-fetching requirements and auth context |
-| Writes Tailwind utility classes with responsive breakpoints | Adjust for your design system tokens |
-| Implements ARIA attributes and accessibility patterns | Test with a screen reader in your target browser |
-| Writes render smoke tests | Run tests and verify component behavior in the browser |
-
-## Key Patterns
-
-### Component Structure (Server vs Client)
-
-Default to Server Components. Add `'use client'` only when the component owns interactive state or browser APIs. Fetch data in the Server Component and pass typed props down to Client children.
-
-See `references/component-patterns.md` for full `DashboardPage` / `UserCard` examples.
-
-### State Architecture
-
-- **Server/async data** (API responses, caching): TanStack Query (`useQuery`, `useMutation`)
-- **Shared synchronous UI state** (theme, auth session, modal stack): Zustand
-- **Localized UI state** (open/closed, form field value): `useState`
-
-### Form Handling
-
-- Use Zod schemas for validation
-- Native `<form>` + Server Actions for forms without client-side interactivity
-- React Hook Form for complex client-side forms
-
-## Constraints
-
-**MUST DO:**
-- Type all props with explicit interfaces; never use `React.FC`
-- Use `'use client'` only when the component truly needs browser APIs, event handlers, or React state
-- Add `aria-label`, `role`, and `aria-expanded`/`aria-hidden` where semantics are ambiguous
-- Always clean up `useEffect` side effects (timers, subscriptions, AbortControllers)
-- Use `key` props from a stable unique ID, never array index
-
-**MUST NOT DO:**
-- Use `any` — prefer `unknown` with a type guard
-- Fetch data inside a Client Component with `useEffect` when a Server Component can do it
-- Put business logic inside JSX render functions
-- Skip `alt` attributes on `<img>` elements
-- Use `dangerouslySetInnerHTML` without sanitization
-
-## Knowledge Reference
-
-React 18+, Next.js 14+ App Router, TypeScript 5+, Tailwind CSS v3, Zustand, TanStack Query, Zod, Vitest + React Testing Library, Radix UI, next/image, next/font, next/navigation
+| Writes types, components, hooks, Tailwind, smoke tests | Provide mockups and API response shapes |
+| Recommends the server/client split | Confirm data-fetching and auth context |
+| Adds ARIA and accessibility patterns | Test with a screen reader in your target browser |
 
 ## Related Skills
 
-- `spring-boot-engineer` — for the backend APIs this UI consumes
-- `code-documenter` — for adding JSDoc to component props and hooks
-- `test-master` — for comprehensive component testing beyond smoke tests
+- `develop:spring-boot-engineer` — the backend API this UI consumes
+- `develop:test-master` — component testing beyond smoke tests
+- `develop:bug-diagnoser` — a UI bug whose cause is not yet proven
