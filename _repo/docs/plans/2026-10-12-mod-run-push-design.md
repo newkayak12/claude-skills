@@ -1,7 +1,7 @@
 # Push on run outcomes and rejects (harness, graph, teams) — 2026-10-12
 
 Approved by the user 2026-10-12 ("harness, graph, teams 다"; "reject 나면 알려주는게 맞지 그래야 상태를
-가늠하지"). Extends `2026-10-12-mod-worktrees-gate-push-design.md` §2 (gate-deny push; on main, unreleased).
+가늠하지"). Extends `2026-10-12-mod-worktrees-gate-push-design.md` §2 (gate-deny push). Shipped in harness 1.35.0, graph 1.13.0, teams 0.55.0 (2026-10-13 batch).
 
 ## Rule (same in all three mods)
 
