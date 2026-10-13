@@ -28,87 +28,51 @@ compatibility:
 
 # Testing Workflow
 
-3-step test quality process: write first → strategize coverage → stabilize CI.
+3 steps: write first → strategize coverage → stabilize CI. Each step is a sub-skill; this skill only sequences them and checks the hand-off.
 
-## When to Use / When Not to Use
+**Not for** one test on already-covered code, consistent (non-flaky) failures — those are bugs (`bug-diagnoser`) — or a one-off unit test request (`test-master`).
 
-| Use | Skip |
-|-----|------|
-| Starting a new feature with no tests | Adding a single test to already-covered code |
-| Test suite exists but has no coverage strategy | Consistent (non-flaky) test failures — those are bugs |
-| CI is failing intermittently due to flaky tests | Quick one-off unit test request |
+## Standing Mandates
 
----
-
-## Workflow Overview
-
-```
-[1] Test-Driven Development
-     Write failing test → minimal code → refactor
-        ↓
-[2] Test Coverage Strategy
-     Audit coverage gaps → test pyramid → test plan
-        ↓
-[3] Flaky Test Elimination
-     Triage → root cause → fix → CI hardening
-```
-
----
+- NEVER mark a step done on a claim. Each step closes with its count line (below) taken from a run or a file, not from memory. (Scar: "tests added" with none executed.)
+- NEVER start Step 3 before Step 2's gap list exists, and NEVER fix a flaky test by re-running it.
+- Goal: all three step lines filled, or each skipped step carries its Skip-if reason; stop there.
 
 ## Steps
 
-### Step 1 — Test-Driven Development
-**Skill:** `test-driven-development`
-**Goal:** Drive new feature implementation through failing tests first; enforce red-green-refactor discipline
-**Input:** Feature requirements or acceptance criteria
-**Output:** Passing test suite built test-first; implementation with no production code written before a failing test
-**Skip if:** Feature is a throwaway prototype or you are adding tests to existing untested code (go to Step 2)
+```
+[1] test-driven-development → [2] test-master → [3] flaky-test-analyzer
+```
 
-> "Step 1 시작" 또는 "TDD로 이 기능 개발해줘"
+| Step | Skill | Input | Done when | Skip if |
+|---|---|---|---|---|
+| 1 | `test-driven-development` | requirements / acceptance criteria | every new behavior has a RED Evidence Record and a passing test; no production code before a failing test | throwaway prototype, or tests added to untested code (go to 2) |
+| 2 | `test-master` | the module from Step 1, or existing code | coverage gap report, test plan with severities, cases for uncovered paths | targets already met and a current plan exists |
+| 3 | `flaky-test-analyzer` | failing CI logs / known flaky tests from Step 2 | root cause per flaky test, fix, one prevention rule | CI passes consistently with no re-run workarounds |
 
----
+Joining mid-process: "커버리지부터" → Step 2; "flaky test만" → Step 3; a matching Skip-if moves on to the next step.
 
-### Step 2 — Test Coverage Strategy
-**Skill:** `test-master`
-**Goal:** Audit coverage gaps, define the test pyramid, produce a formal test plan covering unit, integration, E2E, performance, and security tiers
-**Input:** Codebase or module from Step 1 (or existing code if skipping Step 1)
-**Output:** Coverage gap report, test plan with severity ratings, scaffolded test cases for uncovered paths
-**Skip if:** Coverage targets are already met and a current test plan exists
+## Output Template
 
-> "Step 2 시작" 또는 "테스트 커버리지 분석하고 전략 잡아줘"
-
----
-
-### Step 3 — Flaky Test Elimination
-**Skill:** `flaky-test-analyzer`
-**Goal:** Diagnose and fix intermittent failures in CI; apply prevention rules to the whole suite
-**Input:** Failing CI run logs or list of known flaky tests from Step 2
-**Output:** Root cause per flaky test, concrete fix (code + CI config), prevention rule added to suite guidelines
-**Skip if:** All tests pass consistently in CI with no re-run workarounds
-
-> "Step 3 시작" 또는 "flaky test 원인 찾고 고쳐줘"
-
----
-
-## State Tracking
-
-어느 단계에 있는지 알려주면 바로 합류합니다:
-- "커버리지부터" → Step 2로 직행
-- "flaky test만 봐줘" → Step 3로 직행
-- Skip 조건에 해당하면 자동으로 다음 단계로 안내
+```
+## Testing workflow — <scope>
+Verdict: <stable | N open items>
+Step 1 TDD: 6 behaviors · 6 RED records · 6 green  (or: skipped — <reason>)
+Step 2 Coverage: line 62% → 81% · 7 gaps found · 5 closed · 2 open (<ids>)
+Step 3 Flaky: 4 flaky · 4 root-caused · 3 fixed · 1 quarantined (<ticket>)
+CI: 20 isolated reruns of each fixed test · 20/20 green
+```
 
 ## What Claude Does / What You Do
 
 | Claude | You |
 |--------|-----|
-| Writes failing tests with clear names (Step 1) | Confirm the test tests the right behavior |
-| Writes minimal passing implementation (Step 1) | Run tests and verify pass/fail as expected |
-| Coverage gap analysis, test plan scaffolding (Step 2) | Provide existing test files and coverage reports |
-| Flakiness root cause + fix patterns (Step 3) | Run the failing test 20 times in isolation to confirm |
-| CI config recommendations (Step 3) | Wire fixes and configure CI pipeline |
+| Writes failing tests and minimal code (Step 1) | Confirm the test pins the right behavior |
+| Gap analysis and test plan (Step 2) | Provide test files and coverage reports |
+| Root cause and fix per flaky test (Step 3) | Run each failing test 20 times in isolation; wire the fixes and CI |
 
 ## Related Skills
 
-- Individual skills: `develop:test-driven-development`, `develop:test-master`, `develop:flaky-test-analyzer`
-- Before: `develop:architecture-workflow` (if architecture is still open)
-- After: `develop:performance-profiling-optimization` (once the test suite is green and stable)
+- `develop:test-driven-development`, `develop:test-master`, `develop:flaky-test-analyzer` — the three steps
+- Before: `develop:architecture-workflow` (architecture still open)
+- After: `develop:performance-profiling-optimization` (suite green and stable)

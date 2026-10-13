@@ -21,102 +21,70 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
+## Standing Mandates
+
+- NEVER fix before the category is named from evidence (a run count, a log line, an ordering), and NEVER propose a re-run, retry, or `sleep` as the fix. (Scar: re-run workarounds hide the cause and the failure rate climbs back.)
+- NEVER call a failure flaky until it has passed and failed on the same code. A consistent failure is a bug, not flakiness.
+- A cause you have not reproduced is `[unconfirmed]` with the run that would confirm it — never stated as the cause.
+- Goal: one named category, one evidenced root cause, one fix, one prevention rule per test; stop at 20 isolated runs per hypothesis and report the pass/fail counts you have.
+
 # Flaky Test Analyzer
 
-## When to Use / When Not to Use
+Diagnose intermittent test failures by category, prove the cause, fix it.
 
-**Use when:**
-- A test fails intermittently without code changes
-- Tests pass locally but fail in CI
-- Re-runs are being used as a workaround (treating symptoms, not the cause)
-
-**Do not use when:**
-- The test fails consistently — that is a bug, not flakiness
-- You need to write new tests (use `test-master` or `test-driven-development`)
+**Not for** consistent failures (`bug-diagnoser`), new tests (`test-master`, `test-driven-development`), or deliberate failure injection (`chaos-engineer`).
 
 ## Process
 
-1. **Triage first** — identify the failure category before attempting a fix
-2. **Reproduce in isolation** — run only the failing test 20 times
-3. **Reproduce with ordering** — run the failing test after each other test in the suite
-4. **Add logging** — capture timestamps, thread names, and state snapshots at failure time
-5. **Check nondeterministic inputs** — search for `new Date()`, `Math.random()`, `UUID.randomUUID()`, `System.currentTimeMillis()`
-6. **Check resource cleanup** — verify `@AfterEach` teardown, unclosed streams, un-stubbed mocks
+1. **Triage first** — name the failure category from the table below before any fix.
+2. **Reproduce in isolation** — run only the failing test 20 times; record passes/fails.
+3. **Reproduce with ordering** — run it after each other test in the suite.
+4. **Add logging** — timestamps, thread names, state snapshots at failure time.
+5. **Check nondeterministic inputs** — `new Date()`, `Math.random()`, `UUID.randomUUID()`, `System.currentTimeMillis()`.
+6. **Check cleanup** — `@AfterEach` teardown, unclosed streams, un-stubbed mocks.
 
-If `sequential-thinking` is available, use it to work through steps 1–5 in order — skipping triage before fixing is the primary failure mode.
+With `sequential-thinking`, take steps 1–5 in order: skipping triage is the main failure mode.
+
+## Triage
+
+| Fails when | Category | Fix |
+|---|---|---|
+| Run repeatedly in isolation; passes after a sleep | 1 Timing / async race | `waitFor` / awaitility, event signals, injected `Clock`; never `Thread.sleep` |
+| Run after specific other tests | 2 Shared state / ordering | reset in `@BeforeEach`/`@AfterEach`, `@Transactional` rollback or truncate, instance injection; random order (`--randomly-seed=random`) |
+| Run with real external systems | 3 External dependency | mock at the boundary (WireMock, Mockito); Testcontainers when a real DB is needed |
+| Run in parallel | 4 Concurrency | port 0, per-test resources, no shared singletons |
+| CI but not locally | 5 Environment (clock, timezone, path, env var) | `TZ=UTC` in CI, `ZonedDateTime` not `Date`, unique data per run (UUID prefix) |
+
+Code-level examples per category: `references/flaky-fix-patterns.md`.
+
+## Prevention
+
+- Random test order in CI by default.
+- Quarantine a test that flakes in more than 1% of runs.
+- No "re-run on failure" workaround without a ticket for the root cause.
+- No `@Disabled` / `@Ignore` without a linked issue.
 
 ## Output Template
 
-For each flaky test analysis, provide:
-1. Failure category (from the triage table below)
-2. Root cause diagnosis with evidence
-3. Concrete fix (code snippet)
-4. Prevention rule for the test suite
-5. Recommended CI configuration to catch this class of flakiness earlier
+```
+## Flaky analysis — <test>
+Verdict: <root-caused | unconfirmed>  ·  Category: <1–5 name>  ·  Isolation: 7/20 failed · Ordered after <X>: 20/20 failed
+Root cause: <evidence: log line / ordering / env diff>
+Fix: <code snippet>  ·  Verified: 20/20 passed after fix | not yet run [unconfirmed]
+Prevention rule: <one line>
+CI config to catch this class earlier: <flag / setting>
+```
 
 ## What Claude Does / What You Do
 
 | Claude | You |
 |--------|-----|
-| Identifies failure category from symptom description | Provide the test code and failure log |
-| Explains why the root cause causes intermittent failure | Run the test 20 times in isolation to confirm |
-| Provides the specific fix pattern (waitFor, Clock injection, etc.) | Implement and verify the fix |
-| Suggests `@BeforeEach` / `@AfterEach` cleanup patterns | Apply to the full test suite |
-| Recommends CI flags (random ordering, etc.) | Configure CI pipeline |
-
-## Triage: Find the Category First
-
-| Fails When | Category |
-|-----------|----------|
-| Run repeatedly in isolation | Timing dependency or resource leak |
-| Run after specific other tests | Ordering / shared state dependency |
-| Run in parallel | Concurrency or shared resource conflict |
-| Run on CI but not locally | Environment dependency (clock, timezone, path, env var) |
-| Run with real external systems | External dependency (network, DB, third-party API) |
-| Passes after a sleep/wait | Timing / async race condition |
-
-## The 5 Flakiness Categories
-
-**1. Timing Dependencies** — Asserts on async work before it completes.
-Fix: use `waitFor`/`awaitility`, event-driven signals, or inject a controllable `Clock`. Never use `Thread.sleep`.
-
-**2. Shared State Between Tests** — Tests pollute database, static variables, in-memory caches, or file system.
-Fix: reset state in `@BeforeEach`/`@AfterEach`; use `@Transactional` rollback or explicit truncate; prefer instance injection over singletons.
-
-**3. External Dependencies** — Tests call real HTTP APIs, databases, or message queues.
-Fix: mock at the boundary (WireMock, Mockito); use Testcontainers for integration tests needing a real DB.
-
-**4. Test Ordering Dependencies** — Test B implicitly relies on state created by Test A.
-Fix: self-contained setup per test; run tests in random order (`--randomly-seed=random`).
-
-**5. Concurrency and Parallelism** — Parallel tests share ports, files, or singletons.
-Fix: use port 0 (OS-assigned); inject resources so each test gets its own instance.
-
-## Fix Patterns Quick Reference
-
-| Root Cause | Fix |
-|-----------|-----|
-| Async race condition | Use `waitFor` / `awaitility`; never `Thread.sleep` |
-| System clock dependency | Inject `Clock`; use fixed clock in tests |
-| Database pollution | `@Transactional` rollback or truncate in `@BeforeEach` |
-| Static/singleton state | Reset in `@BeforeEach`/`@AfterEach`; prefer instance injection |
-| Real HTTP/DB calls | Mock with WireMock, Mockito, or Testcontainers |
-| Ordering dependency | Self-contained setup; run tests in random order |
-| Port conflict | Use port 0; never hardcode test ports |
-| Timezone sensitivity | Set `TZ=UTC` in CI; use `ZonedDateTime` not `Date` |
-| Random data collisions | Use unique test data per run (UUID prefix) |
-
-For category-specific fix code examples, see `references/flaky-fix-patterns.md`.
-
-## Prevention
-
-- Run tests in random order in CI by default
-- Quarantine any test that flakes more than 1% of runs
-- Never commit a "re-run on failure" workaround without a ticket to fix the root cause
-- Fail the build on any `@Disabled` / `@Ignore` without a linked issue
+| Names the category from the symptoms and logs; explains why the cause is intermittent | Provide the test code and failure log |
+| Gives the fix pattern and cleanup/CI-flag recommendations | Run the test 20 times in isolation to confirm; apply the fix to the suite; configure CI |
 
 ## Related Skills
 
-- `test-master` — writing new tests with built-in flakiness prevention
-- `test-driven-development` — TDD patterns that reduce flakiness by design
-- `chaos-engineer` — when you want to intentionally test failure behavior
+- `develop:test-master` — new tests with flakiness prevention built in
+- `develop:test-driven-development` — TDD patterns that reduce flakiness by design
+- `develop:chaos-engineer` — intentional failure testing
+- `develop:bug-diagnoser` — failures that are consistent

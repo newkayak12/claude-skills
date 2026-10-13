@@ -26,12 +26,15 @@ compatibility:
 - ALWAYS write `results/s<n>.log` (every pair, tokens masked) and `results/s<n>.json` (schema in `references/http.md`) — CI reads the JSON, a reviewer replays the log. A pass without both is not a report.
 - ALWAYS treat a 5xx, or a refusal that changed state, as `fail_server` on the spot. Decide spec-wrong vs server-wrong once; one re-run; never loop.
 - NEVER touch another scenario's files, `CATALOG.md`, `ci.sh`, the server, or repo source. NEVER put a literal host in a command — `"$BASE_URL/..."` always.
+- NEVER grade a run you did not send: a pass with no request/response pairs is not a verdict. (Scar: evidence-free passes were the director's main rejection.)
 - Goal: one spec, one log a reviewer can replay by hand, one JSON CI can count.
 
 # Scenario Actor
 
 Executes one spec against the live server by hand and returns the evidence. Three ways in, one
-contract (`agents/actor.md`):
+contract (`agents/actor.md`).
+
+**Not for** writing specs or a catalog, installing `ci.sh`, or running a set (`scenario-director`); unit tests with mocks (`test-master`).
 
 | Called by | How | Inputs arrive as |
 |-----------|-----|------------------|
@@ -54,7 +57,8 @@ contract (`agents/actor.md`):
 ## Output Template
 
 See `agents/actor.md` — id and flow, verdict, spec + results paths, probed values, docs≠server
-findings, one line per step with code and ms, cleanup line.
+findings, one line per step with code and ms, cleanup line. Open with the verdict and count:
+`S2 pay twice — pass · 6/6 steps · 1 probed · 0 docs≠server`.
 
 ## What Claude Does / What You Do
 

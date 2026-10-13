@@ -28,131 +28,86 @@ compatibility:
     Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요.
 ---
 
+## Standing Mandates
+
+- NEVER write a test whose expected value you took from the code under test. Derive it from the spec or acceptance; read code only for names. (Scar: expectations copied from the implementation pass by construction and pin its bugs.)
+- NEVER assert truthiness or non-null where an exact value exists, and never cover only the success side — each behavior gets a happy and an error/edge/boundary case.
+- NEVER report a percentage, a pass, or a result you did not run (Reference mode runs nothing). A missing fact is `[확인 필요]` under Assumptions, not a guess.
+- NEVER rerun a failing test until it passes; sort it as assertion miss or flakiness and hand flakiness to `flaky-test-analyzer`.
+- Goal: every acceptance item maps to at least one case with a concrete expected result, or to a Not-covered reason — Reference mode stops at the case file, Full mode stops when the targets are met or the gap is named.
+
 # Test Master
 
-Testing specialist covering functional, performance, and security checks, from case specs through execution and reporting.
+Tests and case specs from a spec: write, improve, audit, report.
 
-## When to Use / When Not to Use
-
-| Use | Skip |
-|-----|------|
-| Need to create tests from scratch | Already doing TDD (use test-driven-development) |
-| Auditing test coverage | Debugging a specific flaky test (use flaky-test-analyzer) |
-| Writing a formal test plan | Just need a code review |
-| Adding tests to untested legacy code | |
-| A test-case writing step needs case specs (Reference mode) | |
+**Not for** red-green-refactor discipline (`test-driven-development`), one intermittent failure (`flaky-test-analyzer`), multi-step HTTP flows against a live server (`scenario-director`), or a code review.
 
 ## Modes
 
 | | Full (interactive) | Reference (headless) |
 |---|---|---|
-| When | A person asks for tests, a plan, or an audit | A test-case writing step consults this skill — e.g. teams qa `cases`, clean-code implement mode's tests-first step — or the caller says "cases only" / no one is there to answer |
-| Steps | 1 → 5 below | 1, 2, then 3R; stop |
+| When | A person asks for tests, a plan, or an audit | A pipeline step consults this skill (teams qa `cases`, clean-code implement's tests-first step), or "cases only" / nobody can answer |
+| Steps | 1 → 5 | 1, 2, then 3R; stop |
 | Writes | test code, results, report | one case-spec file at the caller's path ([case-spec.md](references/case-spec.md)) |
-| Runs tests / coverage | yes | no — nothing is executed, no results or percentages claimed |
-| Asks the user | to confirm scope and edge cases | never — open points go under Assumptions |
+| Runs tests / coverage | yes | no |
+| Asks the user | scope and edge cases | never — open points go under Assumptions |
 
-Unsure? Invoked by a pipeline or another skill's step, or nobody can answer → Reference mode. If the caller defines its own return shape, write the case file at its path and return that shape.
+Unsure → Reference mode. If the caller defines its own return shape, write the case file at its path and return that shape.
 
 ## Process
 
-If sequential-thinking is available, invoke it for steps 1–2 before writing any test code: explicitly complete "Define scope" and "Create strategy" as separate sequential steps, passing each step's output as input to the next. This prevents generating test files before the testing type, framework, and coverage targets are confirmed.
+With sequential-thinking, complete steps 1 and 2 as separate steps before any test code.
 
-1. **Define scope** — Decide what is under test and which testing types apply (Reference mode: work from the stated acceptance/spec, not the implementation; read code solely for endpoint and field names)
-2. **Create strategy** — Decide how each testing type applies: functional, performance, security
+1. **Define scope** — what is under test, which testing types apply (Reference: work from the acceptance, not the implementation).
+2. **Create strategy** — how functional, performance, security apply.
 
-3R. **Reference mode: write case specs, then stop** — per [case-spec.md](references/case-spec.md): each case has id, behavior, level, precondition/input, expected result, and the acceptance it covers; happy plus error/edge/boundary per behavior; a coverage map from every acceptance to its cases; unresolved points as Assumptions. Do not write test code, run tests, or ask.
+3R. **Reference: write case specs, then stop** — per [case-spec.md](references/case-spec.md): id, behavior, level, precondition/input, expected result, acceptance covered; a coverage map from every acceptance to its cases; unresolved points as Assumptions. No test code, no runs, no questions.
 
-3. **Write tests** (Full from here) — Author the tests using exact assertions (example further down)
-4. **Execute** — Run the tests and gather the outcomes
-   - On failure: sort it as a real assertion miss or an environment/flakiness issue, fix the underlying cause, run again
-   - Flaky results: with think-tool available, use it to trace the failure chain before settling on a diagnosis; look for order coupling and async timing, then stabilize or retry narrowly
-5. **Report** — Write up findings with a severity each and concrete fixes
-   - Check the coverage targets before closing and name any gap
-
-## Quick-Start Example
-
-A small Kotlin/JUnit 5 test showing the patterns this skill expects:
-
-```kotlin
-class DiscountTest {
-    @Test
-    fun `premium customers get ten percent off`() {
-        val total = discount(price = 100, tier = Tier.PREMIUM)
-        assertEquals(90, total)          // exact value, not just non-null
-    }
-
-    @Test
-    fun `negative price is rejected`() {
-        val ex = assertThrows<IllegalArgumentException> { discount(-1, Tier.STANDARD) }
-        assertEquals("price must be non-negative", ex.message)
-    }
-}
-```
-
-The same shape carries over to any other framework.
+3. **Write tests** (Full) — exact assertions, doubles for external dependencies, one plain-sentence title per behavior, no run-order coupling, no production data.
+4. **Execute** — run; on failure sort real miss vs environment/flakiness and fix the cause. With think-tool, trace the failure chain before diagnosing.
+5. **Report** — findings with severity and a concrete fix each; check coverage targets and name any gap.
 
 ## Reference Guide
 
-Read the file that matches the task:
-
 | Subject | File | Open When |
-|-------|-----------|-----------|
-| Unit tests | `references/unit-testing.md` | JUnit/MockK idioms, test doubles, parametrized boundary cases |
-| Integration | `references/integration-testing.md` | Spring test slices, Testcontainers, persistence behaviour |
-| E2E | `references/e2e-testing.md` | Picking user journeys; keeping browser tests stable |
-| Load and speed | `references/performance-testing.md` | k6; shaping load, stress, spike and soak runs |
-| Security | `references/security-testing.md` | Authentication, authorization and input-validation checklist |
-| Reporting | `references/test-reports.md` | Report layout, writing a finding, severity scale |
-| QA Practice | `references/qa-methodology.md` | Plans, design techniques, defects, shift-left, quality gates |
-| Automation | `references/automation.md` | Structure, reliability, scaling, CI layout, team practice |
-| Test-First | `references/tdd-cycle.md` | Red-green-refactor discipline, bug-fix flow |
-| Test Smells | `references/test-smells.md` | Test review, mock misuse, brittle or hollow tests |
-| Case Spec | `references/case-spec.md` | Reference mode: case-file shape, derivation rules |
-
-## Constraints
-
-**MUST DO**
-- Cover happy paths and also error/edge cases such as empty input, null, and boundary values
-- Replace external dependencies with doubles; unit tests never hit real APIs or databases
-- Title every test with a plain sentence describing the behaviour verified
-- Assert exact outcomes (`assertEquals(90, total)`), not mere truthiness
-- Run the suite in CI/CD; record coverage gaps and close them (Full mode — Reference mode documents uncovered acceptance under "Not covered" instead)
-- Give every case a specific expected result and the acceptance it covers (both modes)
-
-**MUST NOT**
-- Omit failure paths, e.g. exercising only the success side of a try/catch
-- Feed production data into tests; build fixtures or factories instead
-- Write tests that depend on run order; each must run on its own
-- Ignore flakiness; isolate the test and repair it instead of rerunning until it passes
-- Couple tests to internals such as which private calls happen; verify what an observer can see
+|---|---|---|
+| Unit | `references/unit-testing.md` | JUnit/MockK idioms, doubles, parametrized boundaries |
+| Integration | `references/integration-testing.md` | Spring slices, Testcontainers |
+| E2E | `references/e2e-testing.md` | Picking journeys; stable browser tests |
+| Load | `references/performance-testing.md` | k6 load, stress, spike, soak |
+| Security | `references/security-testing.md` | Auth and input-validation checklist |
+| Reporting | `references/test-reports.md` | Report layout, finding, severity |
+| QA practice | `references/qa-methodology.md` | Plans, design techniques, defects, gates |
+| Automation | `references/automation.md` | Structure, CI layout |
+| Test-first | `references/tdd-cycle.md` | Red-green-refactor, bug-fix flow |
+| Smells | `references/test-smells.md` | Mock misuse, brittle or hollow tests |
+| Case spec | `references/case-spec.md` | Reference mode file shape |
 
 ## Output Template
 
-**Full mode** — for a test plan, deliver:
-1. Scope and approach
-2. Test cases, each with its expected outcome
-3. Analysis of coverage
-4. Findings, each rated Critical/High/Medium/Low
-5. Specific fixes to apply
+**Full mode:**
 
-**Reference mode** — one file at the caller's path, shape in [case-spec.md](references/case-spec.md): `Status: specified, not run`; case table `id | behavior | kind | level | precondition / input | expected result | acceptance covered`; Coverage (acceptance → case ids); Assumptions; Not covered. Checkable: every row has a concrete expected result, every acceptance has ≥1 case or a Not-covered reason, no run results.
+```
+## Test report — <scope>
+Verdict: <targets met | N gaps>  ·  Cases: 14 (9 happy, 5 error/edge)  ·  Run: 14 passed, 0 failed
+Coverage: line 84% / branch 71% (target 80/70) · uncovered: <file:range>
+Findings: 1 Critical, 0 High, 2 Medium, 1 Low
+| # | Severity | Finding | Fix |
+```
+
+**Reference mode** — one file at the caller's path: `Status: specified, not run`; case table `id | behavior | kind | level | precondition / input | expected result | acceptance covered`; Coverage (acceptance → case ids); Assumptions; Not covered. Closing line: `Cases: N · acceptance covered: X/Y · Not covered: Z · Assumptions: W`. Every row has a concrete expected result; no run results.
 
 ## What Claude Does / What You Do
 
-Full (interactive) rows; Reference mode is the last row.
-
 | Claude | You |
 |--------|-----|
-| Generates test scaffolding and assertions | Confirm test scope and edge cases |
-| Identifies coverage gaps from existing code | Run tests and share failure output |
-| Writes test plan structure | Validate that tests match business intent |
-| Suggests mocking strategies | Integrate tests into CI/CD pipeline |
-| Reference (headless): writes the case-spec file from the acceptance, records assumptions instead of asking | Nothing during the step — the next step (run / implement) executes the cases and overturns a wrong assumption |
+| Writes scaffolding, assertions, plan structure; finds coverage gaps | Confirm scope and edge cases; validate the tests match business intent |
+| Suggests mocking strategies | Run the tests, share failure output, wire CI |
+| Reference: writes the case file from the acceptance, records assumptions instead of asking | Nothing during the step — the next step executes the cases and overturns a wrong assumption |
 
 ## Related Skills
 
-- `develop:test-driven-development` — TDD workflow (red-green-refactor cycle); turns Reference-mode cases into failing tests
-- `develop:scenario-director` — multi-step HTTP scenario specs + catalog (its own reference mode)
-- `develop:flaky-test-analyzer` — diagnose intermittent test failures
+- `develop:test-driven-development` — red-green-refactor; turns Reference-mode cases into failing tests
+- `develop:scenario-director` — multi-step HTTP scenario specs + catalog
+- `develop:flaky-test-analyzer` — intermittent failures
 - `develop:clean-code` — test code quality and readability
