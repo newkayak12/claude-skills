@@ -12,7 +12,6 @@ const MARKETPLACE = JSON.stringify({
 const SKILLS: Record<string, string[]> = { develop: ['clean-code', 'bug-diagnoser'], knowledge: [] }
 const SERVERS: Record<string, string[]> = { knowledge: ['knowledge-local'] }
 const SECRET = 'SECRET-free-text'
-const GOOD = '/Users/a/proj/.harness-run/run1/subgoals/s4/result.json'
 
 const start = (isInteractive: boolean) => ({
   cwd: '/work',
@@ -99,24 +98,6 @@ test('S5 owned mcp failure is recorded with raw text only under local', async ($
   expect(JSON.stringify({ ...e, local: undefined })).not.toContain(SECRET)
 })
 
-test('S2a failing subgoal result.json is recorded as local outcome', async ($, on) => {
-  const store = await boot($, on)
-  await $.tool.call({ tool: 'Write', file_path: GOOD, content: '{"passed":false}' })
-  await $.tool.call({ tool: 'Write', file_path: '/tmp/x/.harness-run/run1/subgoals/s4/result.json', content: '{"passed":false}' })
-  await $.tool.call({ tool: 'Write', file_path: GOOD.replace('s4', 's5'), content: '{"passed":true}' })
-  expect(log(store).map(e => [e.kind, e.reason, e.local])).toEqual([
-    ['outcome', 'subgoal_failed', { slug: 'run1', subgoal: 's4', path: GOOD }],
-  ])
-})
-
-test('S2b goal-gate FAIL from fallback-check is recorded as local outcome', async ($, on) => {
-  const w: World = { bash: { result: { stdout: 'x\nCOMPLETE run1 goal-gate FAIL\n', stderr: '' } } }
-  const store = await boot($, on, true, w)
-  await $.tool.call({ tool: 'Bash', command: 'node .harness/fallback-check.mjs run1' })
-  await $.tool.call({ tool: 'Bash', command: 'echo COMPLETE run1 goal-gate FAIL' })
-  expect(log(store).map(e => [e.kind, e.reason, e.local])).toEqual([['outcome', 'goal_failed', { slug: 'run1' }]])
-})
-
 test('S4 trophy-bug records the note under local with the last skill', async ($, on) => {
   const store = await boot($, on)
   const usage = await $.command.run({ command: 'trophy-bug', args: '' } as never)
@@ -172,8 +153,6 @@ test('non-owned, foreign, successful and denied calls record nothing', async ($,
   await $.tool.call({ tool: 'Skill', skill: 'clean-code' }) // bare
   w.skill = { deny: 'no' }
   await $.tool.call({ tool: 'Skill', skill: 'develop:clean-code' }) // denied
-  w.write = { deny: 'no' }
-  await $.tool.call({ tool: 'Write', file_path: GOOD, content: '{"passed":false}' })
   expect(log(store)).toEqual([])
 })
 
@@ -182,7 +161,6 @@ test('non-interactive session records nothing', async ($, on) => {
   const store = await boot($, on, false, w)
   await $.classic.PostToolUseFailure(fail({}))
   await $.tool.call({ tool: 'Skill', skill: 'develop:clean-code' })
-  await $.tool.call({ tool: 'Write', file_path: GOOD, content: '{"passed":false}' })
   expect([...store.keys()]).toEqual([])
 })
 

@@ -129,8 +129,9 @@ not runs: pass/(pass+reject+fail) is not a per-run success rate, and the README 
   subgoal and a failed goal gate counts fail and reject). teams publishes under its push key; a `daemon_done` state other than
   complete|partial|blocked publishes nothing. harness events carry the outcome as a field, not parsed from the message.
 
-trophy's existing Bash `goal_failed` local record (it reads fallback-check output) is pre-existing coupling, left as is
-(out of scope, noted); the v3b slug side fix is dropped with `harnessSlugOf`/`harnessVerdict`/`runStateOf`/`runsSeen`.
+The old local failure records read harness files and the fallback gate's output; that coupling is closed 2026-10-14. trophy now
+records a local `subgoal_failed` (harness `fail`) or `goal_failed` (harness `reject`) entry from the harness's published
+`outcome` state only. The v3b slug side fix stays dropped with `harnessSlugOf`/`harnessVerdict`/`runStateOf`/`runsSeen`.
 
 ## Event allowlist (v3)
 Each event's `properties` is built from explicit keys, never by spreading a stored object. Today `skill_used` spreads `...rest` and `trigger_result` spreads `...c`; both become explicit. Every event also carries `$process_person_profile: false`.
@@ -234,6 +235,12 @@ Fix:
   so concurrent events can drop a count: an undercount, the same pattern `record()` already has.
 - Run outcomes exist only where the producer's mod runs (interactive, Claude Code) and only for what it detects today
   (graph: the newest run its tick reads).
+- Local `subgoal_failed`/`goal_failed` entries now come from the harness mod's published outcome, so coverage shifts: the
+  harness mod scans only the cwd's `.harness-run`; the old tmp-path exclusion is gone (a scratch run under cwd counts); a
+  plugin-less embedded harness install publishes nothing, so no record; harness polls on mtime after session start and
+  publishes once per (run, outcome) per session, so two failed subgoals give one entry and the record has no slug/subgoal/path
+  (`Entry.local` keeps those fields for stored older entries); and `appendEntry` dedupes the same reason within 5 s without a
+  target, so a `subgoal_failed` and a repeat inside 5 s in one session count once.
 - A call the engine never hands to `tool.call` (or whose `next` throws, e.g. an interrupt) is not counted.
 
 ## Out of scope

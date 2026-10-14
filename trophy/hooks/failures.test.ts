@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 
-import { appendEntry, failureEvents, goalFailed, harnessResult, ownedMcpTool, ownedSkill } from './failures.ts'
+import { appendEntry, failureEvents, outcomeFailure, ownedMcpTool, ownedSkill } from './failures.ts'
 import type { Entry } from './failures.ts'
 
 const entry = (o: Partial<Entry>): Entry => ({
@@ -38,24 +38,15 @@ test('ownedMcpTool rejects a foreign marketplace server', () => {
   expect(ownedMcpTool('mcp__plugin_knowledge_knowledge-local__knowledge_get', undefined, servers)).toBeUndefined()
 })
 
-test('harnessResult ignores tmp paths', () => {
-  const fail = '{"passed":false}'
-  const p = '/Users/a/proj/.harness-run/run1/subgoals/s3/result.json'
-  expect(harnessResult(p, fail)).toEqual({ slug: 'run1', subgoal: 's3', passed: false })
-  expect(harnessResult(p, '{"passed":true}')).toBeUndefined()
-  expect(harnessResult(p, 'not json')).toBeUndefined()
-  expect(harnessResult('/Users/a/proj/.harness-run/run1/subgoals/s3/impl-1.md', fail)).toBeUndefined()
-  for (const tmp of [
-    '/tmp/x', '/private/tmp/x', '/var/folders/ab/cd/T/x', '/Users/a/scratch',
-  ]) {
-    expect(harnessResult(tmp + '/.harness-run/r/subgoals/s1/result.json', fail, ['/Users/a/scratch'])).toBeUndefined()
-  }
-})
-
-test('goalFailed matches COMPLETE goal-gate FAIL only', () => {
-  expect(goalFailed('x\nCOMPLETE run1 goal-gate FAIL\n')).toBe(true)
-  expect(goalFailed('INCOMPLETE run1 goal-gate FAIL')).toBe(false)
-  expect(goalFailed('COMPLETE run1 goal-gate PASS')).toBe(false)
+test('outcomeFailure maps a harness fail or reject to a failure reason, nothing else', () => {
+  expect(outcomeFailure({ system: 'harness', outcome: 'fail', at: 1 })).toBe('subgoal_failed')
+  expect(outcomeFailure({ system: 'harness', outcome: 'reject', at: 1 })).toBe('goal_failed')
+  expect(outcomeFailure({ system: 'harness', outcome: 'pass', at: 1 })).toBeUndefined()
+  expect(outcomeFailure({ system: 'graph', outcome: 'fail', at: 1 })).toBeUndefined()
+  expect(outcomeFailure({ system: 'teams', outcome: 'reject', at: 1 })).toBeUndefined()
+  expect(outcomeFailure({ system: 'harness', outcome: 'partial' })).toBeUndefined()
+  expect(outcomeFailure(null)).toBeUndefined()
+  expect(outcomeFailure('fail')).toBeUndefined()
 })
 
 test('appendEntry dedupes within 5 s and keeps 500', () => {
