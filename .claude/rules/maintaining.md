@@ -82,6 +82,14 @@ Report the counts you saw; "tests pass" without a number is not a check.
   memory if it matters later).
 - Docker in a bench: unique names, no host ports, tear down by exact name. Never `prune` anything.
 
+## Maintenance vault
+
+A private knowledge vault, `../claude-skills-knowledge` (its README has the search command), holds
+past decisions, run reports and lessons. Where it exists:
+- A plan searches it first and cites the decisions and past defects it found.
+- A run that writes `05-report.md` adds one note to it and commits there.
+Where it does not (Codex, another machine), skip both; nothing here depends on it.
+
 ## Leaving it clean
 
 1. `git status` is clean and `main` equals `skills/main`.
