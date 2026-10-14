@@ -1147,6 +1147,64 @@ def zones(tmp):
           % next((l.strip() for l in out.splitlines() if "임계" in l), out[-200:]))
 
 
+def run_styles(tmp):
+    """A paragraph keeps its line breaks, run formats and per-paragraph layout."""
+    print("formats inside a paragraph")
+    make_png(tmp / "rs.png", 40, 40)
+    make_template(tmp / "rs.pptx", tmp / "rs.png")
+    pkg = deck.Package(tmp / "rs.pptx")
+    two = ('<p:sp><p:nvSpPr><p:cNvPr id="7" name="Two"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>'
+           '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="6000000" cy="1200000"/></a:xfrm>'
+           '</p:spPr><p:txBody><a:bodyPr/>'
+           '<a:p><a:pPr marL="0"/><a:r><a:rPr lang="ko-KR" sz="1600" b="1"/><a:t>경력</a:t></a:r>'
+           '<a:r><a:rPr lang="en-US" sz="1600" b="1"/><a:t> </a:t></a:r>'
+           '<a:r><a:rPr lang="ko-KR" sz="1000"/><a:t>(총 4년)</a:t></a:r></a:p>'
+           '<a:p><a:pPr marL="457200"/><a:r><a:rPr lang="ko-KR" sz="1200"/><a:t>둘째</a:t></a:r></a:p>'
+           '</p:txBody></p:sp>')
+    pkg.parts[deck.slide_order(pkg)[1]] = _slide([two]).encode("utf-8")
+    pkg.write(tmp / "rs.pptx")
+    slot = deck.analyze_slide(ET.fromstring(pkg.parts[deck.slide_order(pkg)[1]]))[0]
+    check(slot.para_formats[0][1] == ["16pt 굵게", "10pt"],
+          "lang alone does not make a new format: %s" % slot.para_formats[0][1])
+
+    def built(body):
+        src = tmp / "rs.mdx"
+        src.write_text("---\ntemplate: rs.pptx\noutput: rs-out.pptx\n---\n\n## @s2\n" + body,
+                       encoding="utf-8")
+        return run_cmd(["check", "--deck", str(src)]), run_cmd(["build", "--deck", str(src)]), \
+            ET.fromstring(deck.Package(tmp / "rs-out.pptx").parts["ppt/slides/slide1.xml"])
+
+    def runs(root, n=0):
+        p = list(root.iter(A + "p"))[n]
+        return [("br" if c.tag == A + "br" else c.find(A + "t").text,
+                 c.find(A + "rPr").get("sz") if c.find(A + "rPr") is not None else None,
+                 c.find(A + "rPr").get("b") if c.find(A + "rPr") is not None else None)
+                for c in p if c.tag in (A + "r", A + "br")]
+
+    _, _, root = built("text1:\n  - 경력 [(총 10년)]{2}<br>[두 줄째]{2}\n  - 셋째\n")
+    got = runs(root)
+    check(got == [("경력 ", "1600", "1"), ("(총 10년)", "1000", None), ("br", "1600", "1"),
+                  ("두 줄째", "1000", None)],
+          "`[..]{2}` takes format 2 and `<br>` writes a line break: %s" % got)
+    pprs = [p.find(A + "pPr").get("marL") for p in root.iter(A + "p")]
+    check(pprs == ["0", "457200"],
+          "each paragraph keeps its own template paragraph's indent: %s" % pprs)
+    _, _, root = built("text1: 경력 [**굵게만**]{2} [보통]{2}\n")
+    got = runs(root)
+    check(got[1:] == [("굵게만", "1000", "1"), (" ", "1600", "1"), ("보통", "1000", None)],
+          "** bolds only its span; format 2 text stays regular: %s" % got)
+    chk, _, root = built("text1: 경력 [없음]{3}\n")
+    check("`{3}` 서식이 없습니다" in chk and "1 = 16pt 굵게 · 2 = 10pt" in chk,
+          "a format the paragraph does not have is a check error naming the ones it has")
+    _, _, root = built("text1: 리터럴 \\[x]{2}\n")
+    check("".join(t for t, _, _ in runs(root)) == "리터럴 [x]{2}", "`\\[x]{2}` is literal text")
+    check(deck.plain_text("a [b]{2}<br>**c**") == "ab\nc".replace("ab", "a b"),
+          "measuring sees the text a reader sees, `<br>` as a new line")
+    cat = run_cmd(["catalog", "--template", str(tmp / "rs.pptx")])
+    check("- `text1` 문단 1: 서식: 1 = 16pt 굵게 · 2 = 10pt" in cat,
+          "catalog prints the formats a paragraph offers")
+
+
 def build_font(path, kind, upem, asc, desc, gap, glyphs, nhm, names, fmt12_only=False):
     """A minimal sfnt written with struct. glyphs: [(codepoint|None, advance)], gid 0 first.
     kind 'ttf' (glyf-flavoured, cmap fmt 4 unless fmt12_only) | 'otf' ('OTTO' + CFF stub)."""
@@ -1437,6 +1495,7 @@ def main():
         fonts(tmp)
         bundled_fonts(tmp)
         zones(tmp)
+        run_styles(tmp)
         metrics(tmp)
         legibility(tmp)
         emphasis(tmp)

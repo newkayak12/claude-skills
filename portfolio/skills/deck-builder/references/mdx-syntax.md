@@ -61,6 +61,24 @@ separate run cloned from the template's own, so an emphasised phrase keeps the f
 and color it was going to have — emphasis flips attributes, it does not replace type. An
 unmatched marker stays literal text.
 
+## Formats inside a paragraph
+
+A template paragraph often mixes formats — a 16pt blue label then a 10pt grey note, a bold
+key then regular values. `catalog` numbers them per paragraph (`서식: 1 = 16pt #435EA0 굵게 ·
+2 = 10pt #A6A6A6`; size, weight, colour and face count, `lang` does not).
+
+| Form | Meaning |
+|---|---|
+| `[text]{n}` | write `text` in that paragraph's format n; unmarked text is format 1 |
+| `<br>` | line break inside the paragraph (the template's `<a:br/>`) |
+| `\[text]{n}` | literal text, no format |
+
+`**`/`*`/`` ` `` apply on top of the chosen format. A format the paragraph does not have is a
+`check` error that lists the ones it has. Paragraph i (and table row i) is cloned from the
+template's paragraph (row) i when it exists at the same level, so each keeps its own indent,
+spacing and cell formats; extra items repeat the level's first paragraph (the last row).
+Leading and trailing spaces of a value are trimmed.
+
 ## Outline levels
 
 Indenting a list item two extra spaces writes it at outline level 1. It only *looks*
