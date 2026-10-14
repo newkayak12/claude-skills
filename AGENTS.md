@@ -3,8 +3,9 @@
 This repository is primarily a Claude Code skill/plugin repository, but it is also safe to
 work on with Codex.
 
-Before modifying this repo, read `_repo/coding-guidelines.md` and every file in `.claude/rules/`
-— the same rules Claude Code loads:
+Read `.claude/CLAUDE.md` (skill routing, workflow entry points, MCP use), then, before modifying
+this repo, `_repo/coding-guidelines.md` and every file in `.claude/rules/` — the same
+instructions and rules Claude Code loads:
 
 | File | Covers |
 |---|---|
