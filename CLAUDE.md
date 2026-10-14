@@ -17,7 +17,7 @@ Every change to this repo is checked against the coding guidelines below (think 
 | **Surgical Changes** — "Touch only what you must. Clean up only your own mess." | Edit files with Read/Edit/Write only (main session and agents alike); Bash is for git, checks and tests. Stage explicit paths. Fixes land unbumped; no unrelated tidy-ups in the same change. |
 | **Goal-Driven Execution** — "Define success criteria. Loop until verified." | Done = the checks in `_repo/MAINTAINING.md` with counts reported, plus one real run for a behaviour change. Every harness run opened ends with `05-report.md`, partial criteria stated as partial. |
 
-Mods (plugin `hooks/*.tsx` modules): anything a person reads in an interactive session is drawn with Ink, as a `ui.render` tree (Pane or AbovePrompt), opened by its command or a band button. A command's `{ text }` is the headless answer only; interactive, it opens the pane and returns one line at most.
+Mods (plugin `hooks/*.tsx` modules): anything a person reads in an interactive session is drawn with Ink, as a `ui.render` tree (Pane or AbovePrompt), opened by its command or a band button. A command's `{ text }` is the headless answer only; interactive, it opens the pane and returns one line at most. Skill vs mod — the skill does the work and writes the files; the mod only shows and guards (table: `_repo/MAINTAINING.md` "Skill or mod").
 
 ## Cross-client behavior
 
