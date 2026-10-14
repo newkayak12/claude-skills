@@ -130,6 +130,9 @@ notes: 숫자의 출처를 먼저 말할 것
 text5: !drop
 ```
 
+Inside a paragraph, `[text]{n}` writes in the template paragraph's format n (`catalog` lists
+them) and `<br>` breaks the line — so a label + note keeps both looks.
+
 Pictures take a fit mode — `| fit` keeps the whole image, the default `fill` crops it —
 and `| transparent` knocks a PNG's background out. Slots you leave out keep the template's
 content.

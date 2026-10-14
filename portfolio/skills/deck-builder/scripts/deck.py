@@ -589,6 +589,8 @@ class Slot:
         self.insets = (7.2, 3.6, 7.2, 3.6)   # l, t, r, b in points
         self.eff_size = 18.0     # pt, after any autofit scale
         self.lnspc = 1.0         # paragraph line spacing multiple
+        self.para_formats = []   # per template paragraph: (level, [run format label])
+        self.has_br = False      # the template breaks a line inside a paragraph here
 
 
 def run_face(txBody):
@@ -739,6 +741,9 @@ def analyze_slide(root, slide_cy=None):
             slot.sample = [para_text(p) for p in paras]
             slot.segments = [para_segments(p) for p in paras]
             slot.max_items = len(paras)
+            slot.para_formats = [(para_level(p), [format_label(r) for r in run_formats(p)])
+                                 for p in paras]
+            slot.has_br = any(p.find(q("a:br")) is not None for p in paras)
             ext, off = extent(el), offset(el)
             size = first_font_size(txBody) or 18.0
             wrap, ins, scale, spc = body_geometry(txBody)
@@ -945,10 +950,85 @@ def split_emphasis(text):
     return out or [(text, False, False, False)]
 
 
+BR_RE = re.compile(r"<br\s*/?>", re.I)
+SPAN_RE = re.compile(r"(?<!\\)\[(.+?)\]\{(\d+)\}")
+
+
+LOOK_ATTRS = ("sz", "b", "i", "u", "strike", "spc", "baseline", "cap", "kern")
+
+
+def run_look(r):
+    """What a run looks like — size, weight, colour, face — ignoring lang/dirty/err,
+    which split one visible format into many."""
+    rPr = r.find(q("a:rPr"))
+    if rPr is None:
+        return ()
+    kids = tuple(ET.tostring(c) for c in rPr
+                 if c.tag in (q("a:solidFill"), q("a:latin"), q("a:ea"), q("a:highlight")))
+    off = {"b": "0", "i": "0", "u": "none", "strike": "noStrike", "baseline": "0"}
+    return tuple(None if rPr.get(a) == off.get(a) else rPr.get(a) for a in LOOK_ATTRS) + kids
+
+
+def run_formats(p):
+    """The paragraph's distinct run formats, in order of appearance: [run element].
+    `[text]{n}` in deck.mdx picks format n; unmarked text is format 1."""
+    seen, out = set(), []
+    for r in p.findall(q("a:r")):
+        key = run_look(r)
+        if key not in seen:
+            seen.add(key)
+            out.append(r)
+    return out
+
+
+def format_label(r):
+    """`16pt #435EA0 굵게` — what a run format looks like, for the catalog."""
+    rPr = r.find(q("a:rPr"))
+    if rPr is None:
+        return "상속"
+    bits = ["%gpt" % (int(rPr.get("sz")) / 100.0)] if rPr.get("sz") else []
+    fill = rPr.find(q("a:solidFill"))
+    if fill is not None:
+        c = fill.find(q("a:srgbClr"))
+        s = fill.find(q("a:schemeClr"))
+        bits.append("#" + c.get("val") if c is not None else s.get("val") if s is not None else "")
+    if rPr.get("b") == "1":
+        bits.append("굵게")
+    return " ".join(b for b in bits if b) or "상속"
+
+
+def split_spans(text):
+    """[(text, format n) | (None, 'br')] from `[text]{n}` spans and `<br>`."""
+    out = []
+    for i, line in enumerate(BR_RE.split(text)):
+        if i:
+            out.append((None, "br"))
+        pos = 0
+        for m in SPAN_RE.finditer(line):
+            if m.start() > pos:
+                out.append((line[pos:m.start()], 1))
+            out.append((m.group(1), int(m.group(2))))
+            pos = m.end()
+        if pos < len(line) or not line:
+            out.append((line[pos:], 1))
+    return [(t.replace("\\[", "["), n) if t is not None else (t, n) for t, n in out]
+
+
+def plain_text(text):
+    """What a reader sees of a value: markup removed, `<br>` as a newline."""
+    out = "".join("\n" if t is None else t for t, _ in split_spans(text))
+    return EMPHASIS_RE.sub(lambda m: m.group(1) or m.group(2) or m.group(3), out)
+
+
+def max_span_format(text):
+    return max([n for t, n in split_spans(text) if t is not None] or [1])
+
+
 def _set_para_text(p, text):
-    """Replace a paragraph's runs with runs carrying `text`, honouring inline emphasis."""
-    runs = p.findall(q("a:r"))
-    base = copy.deepcopy(runs[0]) if runs else None
+    """Replace a paragraph's runs with runs carrying `text`, honouring inline emphasis,
+    `[text]{n}` (the paragraph's own run format n) and `<br>`."""
+    formats = [copy.deepcopy(r) for r in run_formats(p)]
+    base = formats[0] if formats else None
     for child in list(p):
         if child.tag in (q("a:r"), q("a:br"), q("a:fld")):
             p.remove(child)
@@ -962,10 +1042,28 @@ def _set_para_text(p, text):
             for sub in list(endPr):
                 rPr.append(copy.deepcopy(sub))
         ET.SubElement(base, q("a:t"))
+    formats = formats or [base]
 
     anchor = p.find(q("a:endParaRPr"))
-    for chunk, bold, italic, mono in split_emphasis(text):
-        run = copy.deepcopy(base)
+    pieces = []
+    for span, n in split_spans(text):
+        if span is None:
+            pieces.append((None, None, False, False, False))
+            continue
+        fmt = formats[n - 1] if 0 < n <= len(formats) else formats[0]
+        pieces += [(fmt,) + e for e in split_emphasis(span) if e[0] or not span]
+    for fmt, chunk, bold, italic, mono in pieces:
+        if fmt is None:
+            br = ET.Element(q("a:br"))
+            rp = base.find(q("a:rPr"))
+            if rp is not None:
+                br.append(copy.deepcopy(rp))
+            if anchor is not None:
+                p.insert(list(p).index(anchor), br)
+            else:
+                p.append(br)
+            continue
+        run = copy.deepcopy(fmt)
         rPr = run.find(q("a:rPr"))
         if rPr is None:
             rPr = ET.Element(q("a:rPr"))
@@ -992,6 +1090,17 @@ def _set_para_text(p, text):
             p.append(run)
 
 
+def prototype_para(paras, by_level, i, level):
+    """Item i is cloned from template paragraph i when that one sits at the same level —
+    so each keeps its own indent and run formats — else the first paragraph of the level."""
+    if i < len(paras) and para_level(paras[i]) == level:
+        return paras[i]
+    proto = by_level.get(level)
+    if proto is None:
+        proto = by_level[min(by_level)] if by_level else paras[0]
+    return proto
+
+
 def _write_paragraphs(txBody, items):
     """items: [(level, text)]. Reuses template paragraphs as formatting prototypes."""
     paras = txBody.findall(q("a:p"))
@@ -1004,10 +1113,8 @@ def _write_paragraphs(txBody, items):
         txBody.remove(p)
     if not items:
         items = [(0, "")]
-    for level, text in items:
-        proto = by_level.get(level)
-        if proto is None:
-            proto = by_level[min(by_level)] if by_level else paras[0]
+    for i, (level, text) in enumerate(items):
+        proto = prototype_para(paras, by_level, i, level)
         p = copy.deepcopy(proto)
         if para_level(p) != level:
             pPr = p.find(q("a:pPr"))
@@ -1042,8 +1149,9 @@ def _write_table(tbl, rows):
     for tr in trs:
         if tr is not header:
             tbl.remove(tr)
-    for cells in supplied:
-        tr = copy.deepcopy(proto)
+    for i, cells in enumerate(supplied):
+        # Row i keeps template row i's own cell formats; rows past the template's repeat the last.
+        tr = copy.deepcopy(body_protos[i] if i < len(body_protos) else proto)
         tcs = tr.findall(q("a:tc"))
         for col in range(min(ncols, len(tcs))):
             text = cells[col] if col < len(cells) else ""
@@ -2319,6 +2427,16 @@ def cmd_catalog(args):
             for s in texty:
                 face, budget = slot_budget(s)
                 lines.append("| `%s` | %s | %s |" % (s.id, face, budget))
+            styled = [s for s in texty if s.has_br or any(len(f) > 1 for _, f in s.para_formats)]
+            if styled:
+                lines += ["", "문단 안 서식 — `[텍스트]{n}`으로 n번 서식, `<br>`로 줄바꿈:"]
+                for s in styled:
+                    for k, (_, fmts) in enumerate(s.para_formats, 1):
+                        if len(fmts) > 1:
+                            lines.append("- `%s` 문단 %d: 서식: %s" % (s.id, k, " · ".join(
+                                "%d = %s" % (n, f) for n, f in enumerate(fmts, 1))))
+                    if s.has_br:
+                        lines.append("- `%s`: 템플릿이 문단 안에서 `<br>`로 줄을 바꿉니다" % s.id)
         if zones.get("s%d" % idx):
             lines += ["", "| 도형 쌍 | 템플릿 간격(pt) | 반복 횟수 | 임계 |", "|---|---|---|---|"]
             for r in zones["s%d" % idx]:
@@ -2343,6 +2461,12 @@ def as_items(kind, value):
         return [(0, " ".join(r)) for r in value]
     text = value or ""
     return [(0, line) for line in text.split("\n")]
+
+
+def seen_items(kind, value):
+    """as_items as a reader sees them, for measuring: markup gone, each `<br>` a new line."""
+    return [(lvl, piece) for lvl, t in as_items(kind, value)
+            for piece in plain_text(t).split("\n")]
 
 
 def apply_value(spTree, slot, kind, value, imgctx, problems, where):
@@ -3149,6 +3273,20 @@ def cmd_check(args):
             if slot.type == "chart":
                 warns.append("line %d: %s.%s is a chart — not writable, template data kept"
                              % (line, tag, slot_id))
+            if slot.type in ("text", "list") and slot.para_formats:
+                levels = {}
+                for k, (lv, _) in enumerate(slot.para_formats):
+                    levels.setdefault(lv, k)
+                for i, (lvl, text) in enumerate(as_items(kind, value)):
+                    if i < len(slot.para_formats) and slot.para_formats[i][0] == lvl:
+                        fmts = slot.para_formats[i][1]
+                    else:
+                        fmts = slot.para_formats[levels.get(lvl, levels[min(levels)])][1]
+                    if max_span_format(text) > max(1, len(fmts)):
+                        errs.append("line %d: %s.%s — `{%d}` 서식이 없습니다. 이 문단의 서식: %s"
+                                    % (line, tag, slot_id, max_span_format(text),
+                                       " · ".join("%d = %s" % (n, f)
+                                                  for n, f in enumerate(fmts, 1)) or "1"))
             if slot.type in ("text", "list") and slot.max_em:
                 # The template calibrates itself: most slots hold text that already wraps,
                 # so an absolute width is noise. What matters is a slot the designer kept
@@ -3157,7 +3295,7 @@ def cmd_check(args):
                 basis[slot.estimated].add("%s.%s" % (spec.archetype, slot.id))
                 if slot.estimated and slot.face:
                     no_font.add(slot.face)
-                for lvl, text in as_items(kind, value):
+                for lvl, text in seen_items(kind, value):
                     wide = slot_em(slot, text)
                     if one_line and wide > slot.max_em * 1.05:
                         warns.append("line %d: %s.%s — the template keeps this slot to one "
@@ -3179,16 +3317,16 @@ def cmd_check(args):
                             % (line, tag, slot_id, len(value), slot.fits,
                                ", ".join(truncate(x, 14) for x in lost)))
             if slot.type in ("text", "list") and slot.fits:
-                nlines = len(as_items(kind, value))
+                nlines = len(seen_items(kind, value))
                 if slot.max_em:
-                    nlines = wrapped_lines(slot, [t for _, t in as_items(kind, value)])
+                    nlines = wrapped_lines(slot, [t for _, t in seen_items(kind, value)])
                 if nlines > slot.fits:
                     warns.append("line %d: %s.%s — about %d lines once wrapped, but only %d "
                                  "clear the bottom of the slide; the rest is cut off unless "
                                  "the shape shrinks text to fit"
                                  % (line, tag, slot_id, nlines, slot.fits))
             if slot.type in ("text", "list") and (slot.proto_vol or 0) >= UNDERFILL_FLOOR:
-                mine = sum(slot_em(slot, t) for _, t in as_items(kind, value))
+                mine = sum(slot_em(slot, t) for _, t in seen_items(kind, value))
                 if mine < slot.proto_vol * UNDERFILL_RATIO:
                     warns.append("line %d: %s.%s — %.0f%% of the text the template puts "
                                  "here. The frame was drawn for that much, so the slide "
@@ -3196,7 +3334,7 @@ def cmd_check(args):
                                  "choose an archetype shaped for less."
                                  % (line, tag, slot_id, mine / slot.proto_vol * 100))
             if slot.type in ("text", "list"):
-                got = spill(slot, [t for _, t in as_items(kind, value)])
+                got = spill(slot, [t for _, t in seen_items(kind, value)])
                 if got and got[0] > 0:
                     over, lines, was = got
                     into = shapes_below(slot, slots, over)
