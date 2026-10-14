@@ -12,6 +12,15 @@
 | Text over a picture | the pixels actually behind it: 3:1 for large type, 4.5:1 for body |
 | Text running into a neighbour's critical zone (`임계 침범`) | the gap the template repeats for that shape pair |
 
+## 템플릿 자체 (the template's own problems)
+
+A warning is the deck's only if the deck caused it. `check` compares each slot with the
+template's own content (what `extract` gives): a slot holding exactly that content warns
+under `템플릿 자체`, counted apart. `render` also converts the template itself with the same
+renderer; a deck page's finding that appears identically on the template's page of that
+archetype goes under `템플릿 자체`, and only the rest count for `--strict`. Report both — the
+template's are real on the page too, but rewriting the deck will not fix them.
+
 ## Critical zone (임계 구간)
 
 The zone comes from the template, not from a constant. `catalog` collects, on every template

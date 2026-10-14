@@ -71,13 +71,16 @@ key then regular values. `catalog` numbers them per paragraph (`서식: 1 = 16pt
 |---|---|
 | `[text]{n}` | write `text` in that paragraph's format n; unmarked text is format 1 |
 | `<br>` | line break inside the paragraph (the template's `<a:br/>`) |
-| `\[text]{n}` | literal text, no format |
+| `\[`, `\]`, `\*`, `` \` `` | the literal character, not markup |
+| `\ ` | a space the parser would trim (a value's leading/trailing spaces); a value ending in `\` ends in a space |
 
 `**`/`*`/`` ` `` apply on top of the chosen format. A format the paragraph does not have is a
 `check` error that lists the ones it has. Paragraph i (and table row i) is cloned from the
 template's paragraph (row) i when it exists at the same level, so each keeps its own indent,
 spacing and cell formats; extra items repeat the level's first paragraph (the last row).
-Leading and trailing spaces of a value are trimmed.
+
+`deck.py extract --template t.pptx --output deck.mdx` writes the template's own content in
+this syntax; built unchanged, it reproduces every paragraph's runs, breaks and indents.
 
 ## Outline levels
 
