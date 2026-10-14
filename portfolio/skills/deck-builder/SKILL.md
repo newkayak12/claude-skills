@@ -61,6 +61,7 @@ procedure and presets in `references/recolor.md` — discover, map by lightness,
 - **A deck is read by people, so look at it.** When a renderer is available, finish with `render`, not `build` — the layout audit and the page previews are the only place text collisions show up. If no renderer is available, say so plainly in the report instead of implying the layout was checked.
 - **Never invent an archetype.** If no template slide fits the content, say so and ask whether to reshape the content or extend the template — do not approximate.
 - **Report the warnings you chose to ignore.** An overflow warning you decided was fine still belongs in the final report — the user is the one who will see the slide.
+- **Keep the template's gaps.** Every `임계 침범` (check) and `zone`/`drift` (render) goes in the report; fix it by shortening or another archetype, never by moving a frame.
 - **Charts are read-only.** Say this out loud when the chosen archetype has one; the template's numbers ship unless the user edits the chart in PowerPoint.
 
 ---
@@ -85,9 +86,14 @@ python3 /abs/path/scripts/deck.py catalog \
 
 Prints every archetype as `@s1`…`@sN` with its slots, what the template currently shows,
 and a per-slot budget (`| slot | 서체 | 예산 |`: font, size, characters per line × max lines).
-Widths come from the real font file when it is found (`fc-match`, standard font
-directories, or `DECK_FONT_DIRS`); a slot whose font is missing says `추정`. Write to the
-budget, and read it before anything else.
+Widths come from the real font file when it is found (`DECK_FONT_DIRS`, the bundled
+NanumSquare / NanumSquareRound / NanumSquare Neo in `assets/fonts/`, `fc-match`, standard
+font directories); a slot whose font is missing says `추정`. Write to the budget, and read it
+before anything else.
+
+Each archetype also gets `| 도형 쌍 | 템플릿 간격(pt) | 반복 횟수 | 임계 |`: the gap between
+neighbouring shapes that the template repeats is that pair's critical zone; content stays out
+of it (`references/render-and-check.md`).
 
 ### Step 2 · Map content onto archetypes
 
@@ -176,7 +182,7 @@ python3 /abs/path/scripts/deck.py render --deck deck.mdx
 ```
 
 Builds, converts through LibreOffice, writes PNG previews, and audits the rendered geometry
-(`overlap`, `bunched`, `off-slide`). It first names any template typeface the renderer lacks —
+(`overlap`, `bunched`, `off-slide`, `zone`, `drift`). It first names any template typeface the renderer lacks —
 until installed, line breaks in the preview are the substitute's. Read previews for layout, not
 CJK/Latin spacing (check `<a:t>` in the built file). Renderer: `soffice` on PATH or
 `DECK_RENDER_DOCKER=<image>`; with neither, `render` refuses — say so and fall back to `build`.

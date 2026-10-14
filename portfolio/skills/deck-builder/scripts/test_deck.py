@@ -1064,6 +1064,89 @@ def fonts(tmp):
           "a weight suffix resolves to its family: NanumSquare Bold needs NanumSquare")
 
 
+def bundled_fonts(tmp):
+    """NanumSquare family ships with the skill, so it measures with nothing installed."""
+    print("bundled NanumSquare family")
+    saved = os.environ.pop("DECK_FONT_DIRS", None)
+    try:
+        for fam, bold in (("NanumSquare", False), ("NanumSquare", True),
+                          ("NanumSquareRound", False), ("NanumSquare Neo", False)):
+            f = deck.find_font(fam, bold)
+            check(f is not None and Path(f.path).parent == deck.BUNDLED_FONT_DIR,
+                  "%s%s is measured from the bundled file: %s"
+                  % (fam, " bold" if bold else "", f and Path(f.path).name))
+    finally:
+        if saved is not None:
+            os.environ["DECK_FONT_DIRS"] = saved
+    check((deck.BUNDLED_FONT_DIR / "OFL.txt").is_file()
+          and (deck.BUNDLED_FONT_DIR / "README.md").is_file(),
+          "the licence and the source/checksum note ship with the fonts")
+
+
+def zones(tmp):
+    """The gap the template keeps between neighbours is a zone content must stay out of."""
+    print("critical zone between shapes")
+    make_png(tmp / "z.png", 40, 40)
+    make_template(tmp / "z.pptx", tmp / "z.png")
+    pkg = deck.Package(tmp / "z.pptx")
+    gap = 20 * deck.EMU_PER_PT
+
+    def column(extra):
+        return _slide([
+            _sp("Title 1", "title", [(0, "제목")], cx=3000000, cy=600000, x=0, y=0),
+            _sp("Body 2", "body", [(0, "가나다")], cx=3000000, cy=600000, x=0, y=600000 + gap),
+            _sp("Body 3", "body", [(0, "아래")], cx=3000000, cy=400000,
+                x=0, y=1200000 + 2 * gap),
+        ] + extra)
+    a, b = deck.slide_order(pkg)
+    pkg.parts[a] = column([]).encode("utf-8")
+    pkg.parts[b] = column([
+        _sp("Left 4", None, [(0, "겹침")], cx=1000000, cy=500000, x=5000000, y=0),
+        _sp("Right 5", None, [(0, "겹침")], cx=1000000, cy=500000, x=5500000, y=200000),
+        _sp("Last 6", None, [(0, "끝")], cx=3000000, cy=300000,
+            x=0, y=1600000 + 2 * gap + 50 * deck.EMU_PER_PT),
+    ]).encode("utf-8")
+    pkg.write(tmp / "z.pptx")
+    pkg = deck.Package(tmp / "z.pptx")
+    zs = deck.template_zones(pkg, deck.slide_order(pkg), deck.slide_size(pkg)[1])
+    tb = [r for r in zs["s1"] if r["a"] == ["title"]]
+    check(tb and abs(tb[0]["gap"] - 20) < 0.1 and tb[0]["count"] == 2
+          and abs(tb[0]["zone"] - 20) < 0.1,
+          "a gap the template repeats is the pair's zone: %s"
+          % [(r["label"], r["gap"], r["count"], r["zone"]) for r in tb])
+    once = [r for r in zs["s2"] if r["b"] == ["text5"]]
+    check(once and once[0]["count"] == 1 and once[0]["borrowed"]
+          and abs(once[0]["zone"] - 20) < 0.1,
+          "a one-off gap borrows its role's recurring value: %s"
+          % [(r["label"], r["gap"], deck.zone_cell(r)) for r in once])
+    outlined = [r["label"] for r in zs["s2"] if "외곽선(2개 도형" in r["label"]]
+    check(outlined, "overlapping shapes are measured as one outermost outline: %s" % outlined)
+    units = deck.zone_units(deck.analyze_slide(ET.fromstring(pkg.parts[deck.slide_order(pkg)[1]])))
+    merged = [u for u in units if len(u[1]) == 2]
+    check(merged and abs(merged[0][0][2] - 1500000 / deck.EMU_PER_PT) < 0.1,
+          "the outline spans both shapes' outer edges: %s"
+          % [(round(u[0][0]), round(u[0][2])) for u in merged])
+    lone = [r for recs in zs.values() for r in recs if r["zone"] is None]
+    check(lone and all(deck.zone_cell(r) == "기준 없음" for r in lone),
+          "a pair with nothing to borrow says 기준 없음: %s" % [r["label"] for r in lone])
+
+    cat = run_cmd(["catalog", "--template", str(tmp / "z.pptx")])
+    check("| 도형 쌍 | 템플릿 간격(pt) | 반복 횟수 | 임계 |" in cat
+          and "| `title` ↓ `text1` | 20.0 | 2 | 20.0pt |" in cat,
+          "catalog prints the zone table")
+
+    src = tmp / "z.mdx"
+    head = "---\ntemplate: z.pptx\noutput: z_out.pptx\n---\n\n## @s1\n"
+    src.write_text(head + "text1: 가나다라\n", encoding="utf-8")
+    check("임계 침범" not in run_cmd(["check", "--deck", str(src)]),
+          "text that stays in its frame raises nothing")
+    src.write_text(head + "text1: %s\n" % ("가" * 120), encoding="utf-8")
+    out = run_cmd(["check", "--deck", str(src)])
+    check("임계 침범" in out and "`text1` ↓ `text2`" in out,
+          "text pushed into the neighbour's zone is 임계 침범: %s"
+          % next((l.strip() for l in out.splitlines() if "임계" in l), out[-200:]))
+
+
 def build_font(path, kind, upem, asc, desc, gap, glyphs, nhm, names, fmt12_only=False):
     """A minimal sfnt written with struct. glyphs: [(codepoint|None, advance)], gid 0 first.
     kind 'ttf' (glyf-flavoured, cmap fmt 4 unless fmt12_only) | 'otf' ('OTTO' + CFF stub)."""
@@ -1352,6 +1435,8 @@ def main():
         row_groups(tmp)
         spilling(tmp)
         fonts(tmp)
+        bundled_fonts(tmp)
+        zones(tmp)
         metrics(tmp)
         legibility(tmp)
         emphasis(tmp)

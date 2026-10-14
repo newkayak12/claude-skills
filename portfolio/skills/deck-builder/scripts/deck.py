@@ -31,6 +31,7 @@ import statistics
 import struct
 import subprocess
 import sys
+import tempfile
 import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -404,6 +405,9 @@ FONT_EXT = (".ttf", ".otf", ".ttc")
 STD_FONT_DIRS = ("/System/Library/Fonts", "/Library/Fonts", "~/Library/Fonts",
                  "/usr/share/fonts", "/usr/local/share/fonts", "~/.fonts",
                  "~/.local/share/fonts", "C:\\Windows\\Fonts")
+# NanumSquare / NanumSquareRound / NanumSquare Neo (OFL), shipped so a template on them
+# measures and renders on real metrics with nothing installed.
+BUNDLED_FONT_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
 _INDEX = {}      # dirs tuple -> {key: path}
 _FONTS = {}      # path -> Font
 
@@ -459,7 +463,8 @@ def find_font(family, bold=False, dirs=None):
     """The Font for a typeface name, or None. Never a substitute: a near miss is a lie
     about every width downstream, so an absent face stays absent and the caller says 추정.
 
-    dirs=None searches DECK_FONT_DIRS, then fontconfig, then the standard directories."""
+    dirs=None searches DECK_FONT_DIRS, then the bundled fonts, then fontconfig, then the
+    standard directories."""
     n = _norm(family)
     if not n:
         return None
@@ -468,7 +473,7 @@ def find_font(family, bold=False, dirs=None):
         stages = [list(dirs)]
     else:
         env = [d for d in os.environ.get("DECK_FONT_DIRS", "").split(os.pathsep) if d]
-        stages = [env, "fc", list(STD_FONT_DIRS)]
+        stages = [env, [str(BUNDLED_FONT_DIR)], "fc", list(STD_FONT_DIRS)]
     for stage in stages:
         if stage == "fc":
             path = _fc_match(family, bold)
@@ -1515,6 +1520,139 @@ def shapes_below(slot, slots, over_emu):
     return [o for _, o in sorted(hit, key=lambda kv: kv[0])]
 
 
+# ── Critical zone ────────────────────────────────────────────────────────────
+#
+# The gap between neighbouring shapes is the template's, not ours: a gap that recurs
+# across its slides (within ±ZONE_TOL_PT, at least ZONE_MIN_REPEAT times) is that
+# pair's zone, and content must not run into it. Shapes that overlap or share a group
+# are one unit — the outermost outline around them — since their own gaps say nothing.
+
+ZONE_TOL_PT = 1.0
+ZONE_MIN_REPEAT = 2
+ZONE_BAND = 0.5          # neighbours share at least this much of the smaller cross extent
+
+
+def zone_role(slot):
+    if slot.id.startswith("title"):
+        return "제목"
+    if slot.type in ("text", "list"):
+        return "본문"
+    return {"picture": "그림", "table": "표", "chart": "차트"}.get(slot.type, slot.type)
+
+
+def zone_units(slots):
+    """[(box in pt, [slots])]: overlapping or grouped shapes merged into their outline."""
+    units = [([s], tuple(pt(v) for v in s.box)) for s in slots if s.box]
+
+    def touch(a, b):
+        return box_intersection(a[1], b[1]) is not None or any(
+            len(x.path) > 1 and x.path[:-1] == y.path[:-1] for x in a[0] for y in b[0])
+
+    merged = True
+    while merged:
+        merged = False
+        for i in range(len(units)):
+            for j in range(i + 1, len(units)):
+                if touch(units[i], units[j]):
+                    (ma, ba), (mb, bb) = units[i], units[j]
+                    x0, y0 = min(ba[0], bb[0]), min(ba[1], bb[1])
+                    x1 = max(ba[0] + ba[2], bb[0] + bb[2])
+                    y1 = max(ba[1] + ba[3], bb[1] + bb[3])
+                    units[i] = (ma + mb, (x0, y0, x1 - x0, y1 - y0))
+                    del units[j]
+                    merged = True
+                    break
+            if merged:
+                break
+    return [(box, members) for members, box in units]
+
+
+def unit_label(members):
+    if len(members) == 1:
+        return "`%s`" % members[0].id
+    return "외곽선(%d개 도형: %s)" % (len(members), ", ".join(m.id for m in members))
+
+
+def unit_role(members):
+    roles = {zone_role(m) for m in members}
+    return roles.pop() if len(roles) == 1 else "외곽선"
+
+
+def neighbour_gaps(units):
+    """[(i, j, axis, gap_pt)]: for each unit, its nearest neighbour below ('↓') and to
+    the right ('→') that shares at least ZONE_BAND of the cross extent."""
+    out = []
+    for i, (a, _) in enumerate(units):
+        for axis, lo, ext in (("↓", 1, 3), ("→", 0, 2)):
+            cl, ce = 1 - lo, 5 - ext
+            best = None
+            for j, (b, _) in enumerate(units):
+                if i == j:
+                    continue
+                gap = b[lo] - (a[lo] + a[ext])
+                if gap < 0:
+                    continue
+                shared = min(a[cl] + a[ce], b[cl] + b[ce]) - max(a[cl], b[cl])
+                if shared < ZONE_BAND * min(a[ce], b[ce]):
+                    continue
+                if best is None or gap < best[1]:
+                    best = (j, gap)
+            if best:
+                out.append((i, best[0], axis, best[1]))
+    return out
+
+
+def template_zones(pkg, parts, slide_cy):
+    """{archetype: [pair]} — every neighbouring pair on every slide, with the zone the
+    template's own recurring gaps give it. A pair is a dict: a, b (member slot ids),
+    a_box, b_box (pt), label, axis, gap, count, zone (None = 기준 없음), borrowed, spread."""
+    pairs = {}
+    for idx, part in enumerate(parts, 1):
+        slots = analyze_slide(ET.fromstring(pkg.parts[part]), slide_cy)
+        units = zone_units(slots)
+        recs = []
+        for i, j, axis, gap in neighbour_gaps(units):
+            (ab, am), (bb, bm) = units[i], units[j]
+            recs.append({"a": [m.id for m in am], "b": [m.id for m in bm],
+                         "a_box": ab, "b_box": bb, "axis": axis, "gap": gap,
+                         "label": "%s %s %s" % (unit_label(am), axis, unit_label(bm)),
+                         "key": (unit_role(am), unit_role(bm), axis),
+                         "count": 1, "zone": None, "borrowed": False, "spread": 0.0})
+        pairs["s%d" % idx] = recs
+    by_key = {}
+    for recs in pairs.values():
+        for r in recs:
+            by_key.setdefault(r["key"], []).append(r)
+    for recs in by_key.values():
+        recs.sort(key=lambda r: r["gap"])
+        clusters, cur = [], []
+        for r in recs:
+            if cur and r["gap"] - cur[0]["gap"] > 2 * ZONE_TOL_PT:
+                clusters.append(cur)
+                cur = []
+            cur.append(r)
+        clusters.append(cur)
+        recurring = [c for c in clusters if len(c) >= ZONE_MIN_REPEAT]
+        for c in clusters:
+            if len(c) >= ZONE_MIN_REPEAT:
+                z = statistics.median(r["gap"] for r in c)
+                for r in c:
+                    r.update(count=len(c), zone=z, spread=c[-1]["gap"] - c[0]["gap"])
+            elif recurring:
+                near = min(recurring, key=lambda k: abs(statistics.median(
+                    r["gap"] for r in k) - c[0]["gap"]))
+                for r in c:
+                    r.update(zone=min(r["gap"], statistics.median(x["gap"] for x in near)),
+                             borrowed=True, spread=near[-1]["gap"] - near[0]["gap"])
+    return pairs
+
+
+def zone_cell(r):
+    if r["zone"] is None:
+        return "기준 없음"
+    return "%.1fpt%s" % (r["zone"], " (빌림)" if r["borrowed"] else "")
+
+
 def text_over_pictures(slots, min_frac=0.12):
     """[(text_slot, picture_slot, covered fraction)] for text that shares a picture's box.
 
@@ -2137,6 +2275,7 @@ def cmd_catalog(args):
     voice = voice_fingerprint(slide_sentences(pkg, parts))
     if voice:
         lines += voice_lines(voice)
+    zones = template_zones(pkg, parts, slide_cy)
     for idx, part in enumerate(parts, 1):
         slots = analyze_slide(ET.fromstring(pkg.parts[part]), slide_cy)
         title = slide_title(slots)
@@ -2180,6 +2319,11 @@ def cmd_catalog(args):
             for s in texty:
                 face, budget = slot_budget(s)
                 lines.append("| `%s` | %s | %s |" % (s.id, face, budget))
+        if zones.get("s%d" % idx):
+            lines += ["", "| 도형 쌍 | 템플릿 간격(pt) | 반복 횟수 | 임계 |", "|---|---|---|---|"]
+            for r in zones["s%d" % idx]:
+                lines.append("| %s | %.1f | %d | %s |"
+                             % (r["label"], r["gap"], r["count"], zone_cell(r)))
         lines += ["", "```markdown", stub_for("s%d" % idx, slots, title), "```", ""]
     text = "\n".join(lines) + "\n"
     if args.output:
@@ -2930,6 +3074,7 @@ def cmd_check(args):
     slide_cy = slide_size(pkg)[1]
     catalog = {"s%d" % i: analyze_slide(ET.fromstring(pkg.parts[n]), slide_cy)
                for i, n in enumerate(protos, 1)}
+    zones = template_zones(pkg, protos, slide_cy)
 
     theme_colors, used_colors = template_palette(pkg, protos)
     theme = dict(theme_colors)
@@ -3062,6 +3207,16 @@ def cmd_check(args):
                                "runs %.0fpt lower than the design puts it%s. Cut it to %d "
                                "lines, or use an archetype with room."
                                % (line, tag, slot_id, lines, was, pt(over), where, was))
+                    for r in zones.get(spec.archetype, []):
+                        if r["axis"] != "↓" or slot_id not in r["a"] or r["zone"] is None:
+                            continue
+                        left = r["gap"] - pt(over)
+                        if left < r["zone"] - ZONE_TOL_PT:
+                            warns.append("line %d: %s.%s — 임계 침범: %s 사이 간격이 %.1fpt로 "
+                                         "줄어 템플릿 임계 %s보다 %.1fpt 들어갑니다. 줄이거나 "
+                                         "여유 있는 아키타입으로 바꾸세요 (도형은 옮기지 않음)."
+                                         % (line, tag, slot_id, r["label"], max(left, 0.0),
+                                            zone_cell(r), r["zone"] - left))
             if slot.type == "list" and slot.max_items and kind == "list" \
                     and len(value) > slot.max_items and not slot.box:
                 warns.append("line %d: %s.%s — %d items vs %d in the template; extra items "
@@ -3110,13 +3265,30 @@ class Renderer:
         return self.local if self.local else "docker %s" % self.image
 
     def sh(self, workdir, script):
+        # The bundled fonts join what fontconfig already sees, so soffice wraps on them.
         if self.local:
-            return subprocess.run(["bash", "-c", script], cwd=str(workdir),
+            return subprocess.run(["bash", "-c", script], cwd=str(workdir), env=self._fc_env(),
                                   capture_output=True, text=True, timeout=900)
         return subprocess.run(
             ["docker", "run", "--rm", "--entrypoint", "bash", "-u", "0",
-             "-v", "%s:/work" % workdir, "-w", "/work", self.image, "-c", script],
+             "-v", "%s:/work" % workdir,
+             "-v", "%s:/usr/share/fonts/deck-builder:ro" % BUNDLED_FONT_DIR,
+             "-w", "/work", self.image, "-c", script],
             capture_output=True, text=True, timeout=1800)
+
+    def _fc_env(self):
+        env = dict(os.environ)
+        if BUNDLED_FONT_DIR.is_dir():
+            if not getattr(self, "_fc_conf", None):
+                fd, self._fc_conf = tempfile.mkstemp(suffix=".conf", prefix="deck-fonts-")
+                with os.fdopen(fd, "w") as f:
+                    f.write('<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n'
+                            '<fontconfig><include ignore_missing="yes">%s</include>'
+                            '<dir>%s</dir></fontconfig>\n'
+                            % (env.get("FONTCONFIG_FILE", "/etc/fonts/fonts.conf"),
+                               BUNDLED_FONT_DIR))
+            env["FONTCONFIG_FILE"] = self._fc_conf
+        return env
 
     def to_pdf(self, workdir, name):
         r = self.sh(workdir, "export HOME=/tmp/lohome; mkdir -p $HOME; "
@@ -3220,6 +3392,75 @@ def collisions(xml_text, cross_tol=0.05, bunch_tol=0.70):
     return found
 
 
+def zone_audit(xml_text, archetypes, zones, slide_w_pt):
+    """Rendered text against the template's critical zones.
+
+    `zone`: a unit's rendered lines run past its frame and into the zone before its
+    neighbour. `drift`: pages on one archetype whose rendered gap for one pair (content
+    to content, frame where a unit has no text) spreads wider than the template's own
+    cluster does (at least ZONE_TOL_PT) — the same layout no longer looks the same."""
+    found, seen = [], {}
+    for pi, (pw, ph, blocks) in enumerate(_bbox_pages(xml_text), 1):
+        if pi > len(archetypes):
+            break
+        arch = archetypes[pi - 1]
+        k = pw / slide_w_pt if slide_w_pt else 1.0
+        content = {}
+        boxes = {r[s + "_box"] for r in zones.get(arch, []) for s in ("a", "b")}
+        for lines in blocks:
+            # A block belongs to the frame holding its first line (text overruns downward),
+            # else its last line (overruns upward), else the frame it overlaps most.
+            def holding(box):
+                cx, cy = (box[0] + box[2]) / 2 / k, (box[1] + box[3]) / 2 / k
+                return next((u for u in boxes if u[0] <= cx <= u[0] + u[2]
+                             and u[1] <= cy <= u[1] + u[3]), None)
+            bx = (min(b[0] for b, _ in lines) / k, min(b[1] for b, _ in lines) / k)
+            bx += (max(b[2] for b, _ in lines) / k - bx[0], max(b[3] for b, _ in lines) / k - bx[1])
+            own = holding(lines[0][0]) or holding(lines[-1][0]) or max(
+                boxes, key=lambda u: (box_intersection(bx, u) or (0, 0, 0, 0))[2]
+                * (box_intersection(bx, u) or (0, 0, 0, 0))[3], default=None)
+            if own is None or not box_intersection(bx, own):
+                continue
+            got = content.setdefault(own, [1e9, 1e9, -1e9, -1e9])
+            for box, _ in lines:
+                got[0], got[1] = min(got[0], box[0] / k), min(got[1], box[1] / k)
+                got[2], got[3] = max(got[2], box[2] / k), max(got[3], box[3] / k)
+        for r in zones.get(arch, []):
+            a, b = r["a_box"], r["b_box"]
+            ca = content.get(a)
+            cb = content.get(b, [b[0], b[1], b[0] + b[2], b[1] + b[3]])
+            if r["axis"] == "↓":
+                frame_end, end = a[1] + a[3], (ca[3] if ca else None)
+                start = b[1]
+                seen_gap = cb[1] - (ca[3] if ca else a[1] + a[3])
+            else:
+                frame_end, end = a[0] + a[2], (ca[2] if ca else None)
+                start = b[0]
+                seen_gap = cb[0] - (ca[2] if ca else a[0] + a[2])
+            if end is not None and r["zone"] is not None and end > frame_end + ZONE_TOL_PT \
+                    and start - end < r["zone"] - ZONE_TOL_PT:
+                found.append((pi, "zone", "%s — 글이 프레임을 %.1fpt 넘어 임계 %s 안으로 "
+                              "%.1fpt 들어감" % (r["label"], end - frame_end, zone_cell(r),
+                                                r["zone"] - (start - end))))
+            # The later shape's text can overrun backwards too (bottom- or centre-anchored).
+            back = cb[1] if r["axis"] == "↓" else cb[0]
+            if content.get(b) and r["zone"] is not None and back < start - ZONE_TOL_PT \
+                    and back - frame_end < r["zone"] - ZONE_TOL_PT:
+                found.append((pi, "zone", "%s — 뒤 도형의 글이 프레임을 %.1fpt 거슬러 임계 %s "
+                              "안으로 %.1fpt 들어감" % (r["label"], start - back, zone_cell(r),
+                                                       r["zone"] - (back - frame_end))))
+            seen.setdefault((arch, r["label"]), []).append((pi, seen_gap, r["spread"]))
+    for (arch, label), obs in sorted(seen.items(), key=lambda kv: kv[1][0][0]):
+        if len(obs) < 2:
+            continue
+        gaps = [g for _, g, _ in obs]
+        if max(gaps) - min(gaps) > max(obs[0][2], ZONE_TOL_PT):
+            found.append((obs[0][0], "drift", "@%s 슬라이드 %s: %s %s pt"
+                          % (arch, "·".join(str(p) for p, _, _ in obs), label,
+                             "/".join("%.0f" % g for g in gaps))))
+    return found
+
+
 def missing_fonts(pkg, slide_parts, available):
     """Typefaces the template asks for that the renderer does not have.
 
@@ -3256,7 +3497,7 @@ def cmd_render(args):
     md_path = Path(args.deck)
     front, _, _ = parse_deck(md_path.read_text(encoding="utf-8"))
     out = resolve_output(front, args, md_path)
-    work = out.parent
+    work = out.parent.resolve()   # docker reads a relative `-v build:/work` as a named volume
 
     print("render via %s" % r.describe())
     built = Package(out)
@@ -3280,6 +3521,11 @@ def cmd_render(args):
         print("  ! no pdftotext in the renderer — skipping the collision audit")
         return rc
     hits = collisions(box)
+    _, specs, _ = parse_deck(md_path.read_text(encoding="utf-8"))
+    tpl = Package(resolve_template(front, args, md_path))
+    tparts = slide_order(tpl)
+    zones = template_zones(tpl, tparts, slide_size(tpl)[1])
+    hits += zone_audit(box, [s.archetype for s in specs], zones, pt(slide_size(tpl)[0]))
     if not hits:
         print("  layout: clean — nothing overlaps or runs off a slide")
         return rc
