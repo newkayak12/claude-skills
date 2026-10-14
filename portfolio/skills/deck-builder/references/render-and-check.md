@@ -66,6 +66,11 @@ Read the previews for layout, not for spacing. LibreOffice pads the join between
 Latin by default, so `평균 42분` renders as `평균  42 분` in the preview while the pptx holds
 the original string. Check `<a:t>` in the built file before treating spacing as a defect.
 
+A one-line slot (`wrap="none"`) that PowerPoint grows to fit (`spAutoFit`) is wrapped at the
+box width by LibreOffice. `render` therefore converts a copy without `spAutoFit` on those
+bodies — the template baseline too — so the PDF keeps the line as PowerPoint does; the built
+pptx is left as built.
+
 Renderer is `soffice` on PATH or `DECK_RENDER_DOCKER=<image>`. With neither, `render`
 refuses rather than pretending the layout was checked — say so and fall back to `build`.
 

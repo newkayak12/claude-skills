@@ -3519,6 +3519,19 @@ def cmd_check(args):
 # ── Rendering and the geometric audit ────────────────────────────────────────
 
 XH = "{http://www.w3.org/1999/xhtml}"
+_NOWRAP_BODY = re.compile(r'(<a:bodyPr\b[^>]*\bwrap="none"[^>]*(?<!/)>)(.*?)(</a:bodyPr>)', re.S)
+
+
+def lo_nowrap_copy(src, dst):
+    """Copy a pptx, dropping spAutoFit from every wrap="none" body (LibreOffice input only)."""
+    with zipfile.ZipFile(str(src)) as zin, zipfile.ZipFile(str(dst), "w", zipfile.ZIP_DEFLATED) as zout:
+        for n in zin.namelist():
+            data = zin.read(n)
+            if n.endswith(".xml") and n.startswith("ppt/") and b'wrap="none"' in data:
+                text = _NOWRAP_BODY.sub(lambda m: m.group(1) + re.sub(
+                    r"<a:spAutoFit\s*/>", "", m.group(2)) + m.group(3), data.decode("utf-8"))
+                data = text.encode("utf-8")
+            zout.writestr(n, data)
 
 
 class Renderer:
@@ -3564,9 +3577,19 @@ class Renderer:
         return env
 
     def to_pdf(self, workdir, name):
+        # LibreOffice wraps a wrap="none" body at the box width when it also has spAutoFit;
+        # PowerPoint keeps the line and grows the box. Convert a copy without spAutoFit there,
+        # so the PDF matches PowerPoint; the pptx itself is left as built.
+        src = Path(workdir) / name
+        tmp = src.with_name(".lo-" + name)
+        lo_nowrap_copy(src, tmp)
         r = self.sh(workdir, "export HOME=/tmp/lohome; mkdir -p $HOME; "
                              "soffice --headless -env:UserInstallation=file:///tmp/loprof "
-                             "--convert-to pdf %s 2>&1 | tail -2" % name)
+                             "--convert-to pdf %s 2>&1 | tail -2" % tmp.name)
+        tmp.unlink()
+        made = tmp.with_suffix(".pdf")
+        if made.is_file():
+            os.replace(str(made), str(src.with_suffix(".pdf")))
         return (r.stdout + r.stderr).strip()
 
     def bbox(self, workdir, pdf):
