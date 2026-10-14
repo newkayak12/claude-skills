@@ -338,6 +338,7 @@ def run(work, r):
 
     legibility(work, r)
     zones(work, r)
+    nowrap(work, r)
     fidelity(work, r)
 
 
@@ -391,6 +392,38 @@ def zones(work, r):
           "the overrunning body is a zone finding on page 3")
     check(re.search(r"drift\s+@s1 슬라이드 1·2·3: `title` ↓ `text1`", out) is not None,
           "the wrapped title moves the title↔body gap: one drift finding naming the slides")
+
+
+def nowrap(work, r):
+    """wrap="none" + spAutoFit stays one line in the PDF, as PowerPoint draws it."""
+    print("wrap=none with spAutoFit on the page")
+    fixture_template.build(work / "nwtpl.pptx",
+                           fixture_template.placeholder_png(64, 36, (200, 200, 200)))
+    pkg = deck.Package(work / "nwtpl.pptx")
+    head = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld xmlns:a="%s" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+            'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld>'
+            '<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/>'
+            '</p:nvGrpSpPr><p:grpSpPr/>' % A[1:-1])
+    sp = _zsp(2, "Cert", None, "정보처리기사 2021.08 (한국산업인력공단)",
+              600000, 1000000, 1200000, 300000, 1200).replace(
+        '<a:bodyPr wrap="square" anchor="t"/>',
+        '<a:bodyPr wrap="none" anchor="ctr"><a:spAutoFit /></a:bodyPr>')
+    pkg.parts[deck.slide_order(pkg)[0]] = (head + sp + "</p:spTree></p:cSld></p:sld>").encode()
+    pkg.write(work / "nw.pptx")
+    before = (work / "nw.pptx").read_bytes()
+    r.to_pdf(work, "nw.pptx")
+    box = r.bbox(work, "nw.pdf")
+    if box is None:
+        skip("wrap=none line count (pdftotext unavailable)")
+        return
+    text = "정보처리기사2021.08(한국산업인력공단)"
+    page1 = box.split("</page>")[0]
+    cert = [l for l in re.findall(r"<line[^>]*>(.*?)</line>", page1, re.S)
+            if "".join(re.findall(r">([^<]+)</word>", l)) in text]
+    check(len(cert) == 1, "the 12pt line in a 94pt wrap=none box renders as one line (%d)"
+          % len(cert))
+    check((work / "nw.pptx").read_bytes() == before, "the pptx itself is left as built")
 
 
 def fidelity(work, r):
