@@ -338,6 +338,7 @@ def run(work, r):
 
     legibility(work, r)
     zones(work, r)
+    fidelity(work, r)
 
 
 def _zsp(sid, name, ph, text, x, y, cx, cy, sz):
@@ -390,6 +391,41 @@ def zones(work, r):
           "the overrunning body is a zone finding on page 3")
     check(re.search(r"drift\s+@s1 슬라이드 1·2·3: `title` ↓ `text1`", out) is not None,
           "the wrapped title moves the title↔body gap: one drift finding naming the slides")
+
+
+def fidelity(work, r):
+    """The template's own content, extracted and rendered, looks like the template rendered."""
+    print("extract round-trip on the page")
+    fixture_template.build(work / "ftpl.pptx",
+                           fixture_template.placeholder_png(64, 36, (200, 200, 200)))
+    deck.main(["extract", "--template", str(work / "ftpl.pptx"), "--output", str(work / "f.mdx")])
+    text = (work / "f.mdx").read_text(encoding="utf-8").replace(
+        "template: %s" % (work / "ftpl.pptx"), "template: ftpl.pptx\noutput: f.pptx")
+    (work / "f.mdx").write_text(text, encoding="utf-8")
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        deck.main(["render", "--deck", str(work / "f.mdx")])
+    out = buf.getvalue()
+    check("layout: clean" in out,
+          "every finding on the template's own content is the template's: %s"
+          % next((l.strip() for l in out.splitlines() if "layout:" in l), out[-120:]))
+    built = sorted((work / "pages").glob("p*.png"))
+    keep = work / "pages-deck"
+    shutil.rmtree(keep, ignore_errors=True)
+    (work / "pages").rename(keep)
+    ref = r.previews(work, "template-ref.pdf")
+    worst = 1.0
+    for a, b in zip(sorted(keep.glob("p*.png")), ref):
+        pa, pb = deck.read_png(a), deck.read_png(b)
+        same = total = 0
+        for r1, r2 in zip(pa[2], pb[2]):
+            for p1, p2 in zip(r1, r2):
+                total += 1
+                same += max(abs(p1[c] - p2[c]) for c in range(3)) <= 8
+        worst = min(worst, same / float(total or 1))
+    check(built and len(built) == len(ref) and worst >= 0.999,
+          "every page matches the template's own render (worst %.4f over %d pages)"
+          % (worst, len(ref)))
 
 
 def band_median(png, frac_top, frac_bottom, frac_left=0.05, frac_right=0.95):

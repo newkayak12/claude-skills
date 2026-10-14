@@ -1205,6 +1205,73 @@ def run_styles(tmp):
           "catalog prints the formats a paragraph offers")
 
 
+def fidelity(tmp):
+    """A template's own content, extracted and rebuilt, is the template; and what the
+    template itself warns about is not the deck's."""
+    print("extract round-trip and escapes")
+    check(deck.plain_text("\\ 앞 공백") == " 앞 공백" and deck.plain_text("끝 공백\\") == "끝 공백 "
+          and deck.plain_text("\\*별\\* \\`틱\\` \\[x]{2}") == "*별* `틱` [x]{2}",
+          "`\\ ` and a trailing `\\` keep spaces; `\\*` `\\`` `\\[` are literal")
+    make_png(tmp / "fx.png", 40, 40)
+    make_template(tmp / "fx.pptx", tmp / "fx.png")
+    pkg = deck.Package(tmp / "fx.pptx")
+    styled = ('<p:sp><p:nvSpPr><p:cNvPr id="9" name="Styled"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>'
+              '<p:spPr><a:xfrm><a:off x="0" y="3000000"/><a:ext cx="6000000" cy="900000"/>'
+              '</a:xfrm></p:spPr><p:txBody><a:bodyPr/>'
+              '<a:p><a:r><a:rPr lang="ko-KR" sz="1600" b="1"/><a:t> 경력 *주* </a:t></a:r>'
+              '<a:r><a:rPr lang="ko-KR" sz="1000"/><a:t>(총 4년) </a:t></a:r><a:br/>'
+              '<a:r><a:rPr lang="ko-KR" sz="1000"/><a:t>[메모]{2}</a:t></a:r></a:p>'
+              '<a:p><a:pPr marL="457200"/><a:r><a:rPr lang="ko-KR" sz="1200"/><a:t>둘째</a:t></a:r>'
+              '</a:p></p:txBody></p:sp>')
+    part = deck.slide_order(pkg)[1]
+    pkg.parts[part] = pkg.parts[part].replace(b"</p:spTree>", styled.encode("utf-8") + b"</p:spTree>")
+    pkg.write(tmp / "fx.pptx")
+    run_cmd(["extract", "--template", str(tmp / "fx.pptx"), "--output", str(tmp / "fx.mdx")])
+    src = (tmp / "fx.mdx").read_text(encoding="utf-8")
+    (tmp / "fx.mdx").write_text(src.replace("template: %s" % (tmp / "fx.pptx"),
+                                            "template: fx.pptx\noutput: fx-out.pptx"),
+                                encoding="utf-8")
+    run_cmd(["build", "--deck", str(tmp / "fx.mdx")])
+
+    def paras(pptx):
+        p = deck.Package(pptx)
+        out = []
+        for part in deck.slide_order(p):
+            for para in ET.fromstring(p.parts[part]).iter(A + "p"):
+                runs = []
+                for c in para:
+                    if c.tag == A + "r":
+                        look, t = deck.run_look(c), c.find(A + "t").text or ""
+                        if runs and runs[-1][0] == look:
+                            runs[-1] = (look, runs[-1][1] + t)
+                        else:
+                            runs.append((look, t))
+                    elif c.tag == A + "br":
+                        runs.append(("br", ""))
+                pPr = para.find(A + "pPr")
+                out.append((ET.tostring(pPr) if pPr is not None else b"",
+                            [r for r in runs if r[1] or r[0] == "br"]))
+        return out
+    a, b = paras(tmp / "fx.pptx"), paras(tmp / "fx-out.pptx")
+    check(a == b, "extract -> build reproduces every paragraph's runs, breaks and pPr (%d paragraphs%s)"
+          % (len(a), "" if a == b else "; first diff %r" % (next(
+              ((x, y) for x, y in zip(a, b) if x != y), None),)))
+
+    print("warnings the template itself raises")
+    out = run_cmd(["check", "--deck", str(tmp / "fx.mdx")])
+    deck_warns = [l.strip() for l in out.splitlines() if l.startswith("  warn")
+                  and not re.search(r"keeps template content for (pic\d+(, )?)+$", l)]
+    check("0 error(s)" in out and not deck_warns,
+          "the template's own content raises no deck warning (picture reminders aside): %s"
+          % deck_warns)
+    (tmp / "fx.mdx").write_text((tmp / "fx.mdx").read_text(encoding="utf-8").replace(
+        "둘째", "둘째 " + "아주 긴 문장 " * 40), encoding="utf-8")
+    out = run_cmd(["check", "--deck", str(tmp / "fx.mdx")])
+    check(re.search(r"0 warning\(s\)", out) is None,
+          "a changed slot still warns: %s" % next((l.strip() for l in out.splitlines()
+                                                   if "slides," in l), out[:80]))
+
+
 def build_font(path, kind, upem, asc, desc, gap, glyphs, nhm, names, fmt12_only=False):
     """A minimal sfnt written with struct. glyphs: [(codepoint|None, advance)], gid 0 first.
     kind 'ttf' (glyf-flavoured, cmap fmt 4 unless fmt12_only) | 'otf' ('OTTO' + CFF stub)."""
@@ -1496,6 +1563,7 @@ def main():
         bundled_fonts(tmp)
         zones(tmp)
         run_styles(tmp)
+        fidelity(tmp)
         metrics(tmp)
         legibility(tmp)
         emphasis(tmp)

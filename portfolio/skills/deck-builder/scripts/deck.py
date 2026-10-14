@@ -997,8 +997,30 @@ def format_label(r):
     return " ".join(b for b in bits if b) or "상속"
 
 
+ESCAPES = (("\\ ", ""), ("\\*", ""), ("\\`", ""), ("\\[", ""),
+           ("\\]", ""))
+
+
+def protect(text):
+    """Escaped characters out of the parsers' way: `\\ ` a space the parser would trim
+    (a value ending in `\\` ends in a space), `\\*` `\\`` `\\[` literal."""
+    if text.endswith("\\") and not text.endswith("\\\\"):
+        text = text[:-1] + ""
+    for esc, mark in ESCAPES:
+        text = text.replace(esc, mark)
+    return text
+
+
+def restore(text):
+    for esc, mark in ESCAPES:
+        text = text.replace(mark, esc[1])
+    return text
+
+
 def split_spans(text):
-    """[(text, format n) | (None, 'br')] from `[text]{n}` spans and `<br>`."""
+    """[(text, format n) | (None, 'br')] from `[text]{n}` spans and `<br>`; escapes stay
+    protected for split_emphasis and come back through restore()."""
+    text = protect(text)
     out = []
     for i, line in enumerate(BR_RE.split(text)):
         if i:
@@ -1011,13 +1033,13 @@ def split_spans(text):
             pos = m.end()
         if pos < len(line) or not line:
             out.append((line[pos:], 1))
-    return [(t.replace("\\[", "["), n) if t is not None else (t, n) for t, n in out]
+    return out
 
 
 def plain_text(text):
     """What a reader sees of a value: markup removed, `<br>` as a newline."""
     out = "".join("\n" if t is None else t for t, _ in split_spans(text))
-    return EMPHASIS_RE.sub(lambda m: m.group(1) or m.group(2) or m.group(3), out)
+    return restore(EMPHASIS_RE.sub(lambda m: m.group(1) or m.group(2) or m.group(3), out))
 
 
 def max_span_format(text):
@@ -1081,6 +1103,7 @@ def _set_para_text(p, text):
         t = run.find(q("a:t"))
         if t is None:
             t = ET.SubElement(run, q("a:t"))
+        chunk = restore(chunk)
         t.text = chunk
         if chunk != chunk.strip():
             t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
@@ -2452,6 +2475,101 @@ def cmd_catalog(args):
     return 0
 
 
+# ── Extract: a template's own content as deck.mdx ────────────────────────────
+
+def _escape_chars(text):
+    for ch in "*`[]":
+        text = text.replace(ch, "\\" + ch)
+    return text
+
+
+def _escape(text):
+    text = _escape_chars(text)
+    if not text.strip(" "):
+        return "\\ " * len(text)
+    lead = len(text) - len(text.lstrip(" "))
+    trail = len(text) - len(text.rstrip(" ")) if text.strip() else 0
+    core = text.strip(" ") if text.strip() else text
+    return "\\ " * lead + core + "\\ " * trail
+
+
+def para_markup(p):
+    """One paragraph as mdx: runs grouped by format (`[..]{n}`), `<br>`, escapes."""
+    looks = [run_look(r) for r in run_formats(p)]
+    groups = []
+    for el in p:
+        if el.tag == q("a:r"):
+            n = looks.index(run_look(el)) + 1
+            t = el.find(q("a:t"))
+            t = t.text or "" if t is not None else ""
+            if groups and groups[-1][0] == n:
+                groups[-1] = (n, groups[-1][1] + t)
+            else:
+                groups.append((n, t))
+        elif el.tag == q("a:br"):
+            groups.append((0, None))
+    out = []
+    for i, (n, t) in enumerate(groups):
+        if n == 0:
+            out.append("<br>")
+            continue
+        # Spaces only matter at the value's edges, where the parser trims them.
+        edge = i == 0 or i == len(groups) - 1
+        body = _escape(t) if edge else _escape_chars(t)
+        out.append(body if n == 1 or not t else "[%s]{%d}" % (body, n))
+    return "".join(out)
+
+
+def extract_lines(pkg, parts, slide_cy):
+    out = []
+    for idx, part in enumerate(parts, 1):
+        root = ET.fromstring(pkg.parts[part])
+        spTree = root.find(q("p:cSld") + "/" + q("p:spTree"))
+        out.append("## @s%d" % idx)
+        for s in analyze_slide(root, slide_cy):
+            el = resolve_path(spTree, s.path)
+            if s.type in ("text", "list"):
+                paras = el.find(q("p:txBody")).findall(q("a:p"))
+                if not any(para_text(p).strip() for p in paras):
+                    continue
+                if len(paras) == 1:
+                    out.append("%s: %s" % (s.id, para_markup(paras[0])))
+                else:
+                    out.append("%s:" % s.id)
+                    out += ["  " + "  " * para_level(p) + "- " + para_markup(p) for p in paras]
+            elif s.type == "table":
+                out.append("%s:" % s.id)
+                for tr in el.iter(q("a:tr")):
+                    cells = [" ".join(para_markup(p) for p in tc.iter(q("a:p"))).replace("|", "/")
+                             for tc in tr.findall(q("a:tc"))]
+                    out.append("  | %s |" % " | ".join(c or " " for c in cells))
+        out.append("")
+    return out
+
+
+def cmd_extract(args):
+    require_template(args.template)
+    pkg = Package(args.template)
+    parts = slide_order(pkg)
+    slide_cy = slide_size(pkg)[1]
+    text = "\n".join(["---", "template: %s" % args.template,
+                      "template_hash: %s" % template_signature(pkg, parts, slide_cy), "---", ""]
+                     + extract_lines(pkg, parts, slide_cy))
+    if args.output:
+        Path(args.output).write_text(text, encoding="utf-8")
+        print("extract -> %s  (%d slides, the template's own content)" % (args.output, len(parts)))
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
+def template_values(pkg, parts, slide_cy):
+    """{(archetype, slot id): (kind, value)} — the template's own content, parsed the way a
+    deck value is, so a deck slot can be compared with it."""
+    _, specs, _ = parse_deck("\n".join(extract_lines(pkg, parts, slide_cy)))
+    return {(s.archetype, sid): (kind, value) for s in specs for sid, kind, value, _ in s.values}
+
+
 # ── Applying values ──────────────────────────────────────────────────────────
 
 def as_items(kind, value):
@@ -3199,6 +3317,8 @@ def cmd_check(args):
     catalog = {"s%d" % i: analyze_slide(ET.fromstring(pkg.parts[n]), slide_cy)
                for i, n in enumerate(protos, 1)}
     zones = template_zones(pkg, protos, slide_cy)
+    # A slot holding exactly the template's own content: what it warns is the template's.
+    own_values, own_lines = template_values(pkg, protos, slide_cy), set()
 
     theme_colors, used_colors = template_palette(pkg, protos)
     theme = dict(theme_colors)
@@ -3224,6 +3344,8 @@ def cmd_check(args):
                                  % (line, tag))
                 continue
             seen.add(slot_id)
+            if own_values.get((spec.archetype, slot_id)) == (kind, value):
+                own_lines.add(line)
             slot = by_id.get(slot_id)
             if slot is None and CLONE_RE.fullmatch(slot_id):
                 probe = ET.fromstring(pkg.parts[protos[int(spec.archetype[1:]) - 1]])
@@ -3360,9 +3482,17 @@ def cmd_check(args):
                 warns.append("line %d: %s.%s — %d items vs %d in the template; extra items "
                              "are cloned and may run past the frame"
                              % (line, tag, slot_id, len(value), slot.max_items))
-        untouched = [s.id for s in slots if s.id not in seen and s.type != "chart"]
+        # Text the template itself leaves empty is not content a deck forgot to set.
+        untouched = [s.id for s in slots if s.id not in seen and s.type != "chart"
+                     and (s.type == "picture" or (spec.archetype, s.id) in own_values)]
         if untouched:
             warns.append("%s: keeps template content for %s" % (tag, ", ".join(untouched)))
+
+    def own(w):
+        m = re.match(r"line (\d+):", w)
+        return bool(m) and int(m.group(1)) in own_lines
+    inherited = [w for w in warns if own(w)]
+    warns = [w for w in warns if not own(w)]
 
     print("check %s against %s" % (md_path.name, template.name))
     print("  %d slides, %d error(s), %d warning(s)" % (len(specs), len(errs), len(warns)))
@@ -3378,6 +3508,11 @@ def cmd_check(args):
         print("  ERROR  %s" % e)
     for w in warns:
         print("  warn   %s" % w)
+    if inherited:
+        print("  템플릿 자체: %d건 — 템플릿 원본 내용 그대로인 슬롯에서도 나는 경고라 덱이 만든 "
+              "문제가 아닙니다" % len(inherited))
+        for w in inherited:
+            print("    %s" % w)
     return 1 if errs else 0
 
 
@@ -3663,14 +3798,38 @@ def cmd_render(args):
     tpl = Package(resolve_template(front, args, md_path))
     tparts = slide_order(tpl)
     zones = template_zones(tpl, tparts, slide_size(tpl)[1])
-    hits += zone_audit(box, [s.archetype for s in specs], zones, pt(slide_size(tpl)[0]))
+    archs = [s.archetype for s in specs]
+    hits += zone_audit(box, archs, zones, pt(slide_size(tpl)[0]))
+
+    # The template rendered the same way is the baseline: what its own page of that
+    # archetype already shows is the template's, not something this deck did.
+    ref = work / "template-ref.pptx"
+    shutil.copyfile(str(resolve_template(front, args, md_path)), str(ref))
+    r.to_pdf(work, ref.name)
+    rbox = r.bbox(work, ref.with_suffix(".pdf").name) if ref.with_suffix(".pdf").is_file() else None
+    seen = set()
+    if rbox:
+        own = collisions(rbox) + zone_audit(rbox, ["s%d" % i for i in range(1, len(tparts) + 1)],
+                                            zones, pt(slide_size(tpl)[0]))
+        seen = {(p, k, d) for p, k, d in own}
+    inherited = [h for h in hits if h[0] <= len(archs)
+                 and (int(archs[h[0] - 1][1:]), h[1], h[2]) in seen]
+    hits = [h for h in hits if h not in inherited]
+
     if not hits:
         print("  layout: clean — nothing overlaps or runs off a slide")
-        return rc
-    print("  layout: %d problem(s) — look at these pages before you present" % len(hits))
-    for page, kind, detail in hits:
-        print("    page %d  %-9s %s" % (page, kind, detail))
-    return 1 if args.strict else rc
+    else:
+        print("  layout: %d problem(s) — look at these pages before you present" % len(hits))
+        for page, kind, detail in hits:
+            print("    page %d  %-9s %s" % (page, kind, detail))
+    if inherited:
+        print("  템플릿 자체: %d건 — 템플릿 원본을 같은 렌더러로 그려도 같은 페이지에 나옵니다"
+              % len(inherited))
+        for page, kind, detail in inherited:
+            print("    page %d  %-9s %s" % (page, kind, detail))
+    if rbox is None:
+        print("  ! 템플릿 원본을 렌더하지 못해 템플릿 자체 문제와 구분하지 못했습니다")
+    return 1 if (hits and args.strict) else rc
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
@@ -3684,6 +3843,11 @@ def main(argv=None):
     c.add_argument("--template", required=True, help="reference .pptx (mandatory)")
     c.add_argument("--output")
     c.set_defaults(func=cmd_catalog)
+
+    x = sub.add_parser("extract", help="template.pptx -> deck.mdx holding its own content")
+    x.add_argument("--template", required=True, help="reference .pptx (mandatory)")
+    x.add_argument("--output")
+    x.set_defaults(func=cmd_extract)
 
     k = sub.add_parser("check", help="validate deck.mdx against the reference template")
     k.add_argument("--deck", required=True, metavar="deck" + DECK_EXT)
