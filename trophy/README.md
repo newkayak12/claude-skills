@@ -138,6 +138,7 @@ view (most hit, most missed, never fired).
 
 ## Status log
 
+- v0.9.1 — local failure records `subgoal_failed` and `goal_failed` come only from the outcome the harness mod publishes; trophy no longer reads harness files or gate output (records no longer carry the run slug).
 - v0.9.0 — telemetry v3 (opt-in, off by default): plugin version on each count, a daily active mark, MCP ok/error per owned tool (from `tool.call`), run outcomes the graph, teams and harness mods publish, a last-send line in `/trophy-telemetry status`, consent text v3.
 - v0.8.5 — the Codex manifest says trophy is Claude-only.
 - v0.8.4 — Codex uses an explicit empty, schema-compatible hook overlay and does not expose the Claude-only `trophy:list`; Claude hooks and achievements are unchanged.
