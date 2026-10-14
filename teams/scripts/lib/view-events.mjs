@@ -1,4 +1,4 @@
-// Pure helpers for the teams-live mod: which ledger lines deserve a toast, and the status line.
+// Pure helpers for the teams-status mod: which ledger lines deserve a toast, and the status line.
 // No fs - view.mjs reads the ledger and hands the lines in.
 
 const id8 = (taskId) => 'E-' + String(taskId ?? '').replace(/^E-/, '').slice(0, 8);

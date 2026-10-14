@@ -1950,6 +1950,9 @@ test('tm_file lets a user file a STORY directly, reporter: "user" / origin: "tm_
     assert.equal(d1.reporter, 'user');
     assert.equal(d1.origin, 'tm_file');
     assert.deepEqual(task.nodes.find((n) => n.node_id === 'gate:goal:1').deps, ['integrate:2']);
+    const ledger = readFileSync(join(root, task_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    const fd = ledger.filter((e) => e.event === 'defects_filed');
+    assert.deepEqual(fd.map((e) => [e.reporter, e.origin, e.filed]), [['user', 'tm_file', ['D1']]], 'fileDefects says what it filed, once');
 
     nx = await tm.call('tm_next', { task_id });
     assert.equal(nx.children.length, 1);
@@ -5144,6 +5147,16 @@ test('a judge that could not judge is re-judged, not treated as a refusal: no re
     assert.equal(load().nodes.find((x) => x.node_id === 'integrate:1').state, 'failed');
     const ev = await tm.call('tm_events', { task_id });
     assert.equal(ev.events.filter((e) => e.event === 'daemon_rejudge').length, 2);
+    // Every judging keeps its own ledger verdict line, though each re-judge erased the node's result.
+    const ledger = readFileSync(join(root, task_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    const verdicts = ledger.filter((e) => e.event === 'verdict' && e.node_id === 'integrate:1');
+    assert.equal(verdicts.length, 3, 'the first judging and both re-judges');
+    assert.deepEqual(verdicts.map((v) => v.verdict), ['judge_failed', 'judge_failed', 'judge_failed']);
+    assert.match(verdicts[0].reason, /session limit/);
+    assert.match(verdicts[2].reason, /spawn ENOENT/);
+    assert.ok(verdicts.every((v) => v.reason.length <= 300 && v.stage === 'integrate'));
+    const acc = ledger.find((e) => e.event === 'verdict' && e.node_id === 'accept:P1:1');
+    assert.deepEqual({ verdict: acc.verdict, score: acc.score, actor: acc.actor }, { verdict: 'accept', score: 90, actor: null }, 'a session submit records no actor it cannot know');
   });
 });
 
@@ -6832,6 +6845,12 @@ test('gate:human parks the manager critique for a person instead of a model, and
     assert.equal(rejected.result.sound, false);
     assert.deepEqual(rejected.result.gaps, ['ownership overlap between P1 and P2']);
     assert.match(rejected.result.reason, /P1 and P2 both touch a\.txt/);
+    // The person's answer and verdict are on the ledger with who gave them.
+    const ledger = (await tm.call('tm_events', { task_id })).events;
+    const human = ledger.filter((e) => e.event === 'tm_submit_human' && e.node_id === 'critique').pop();
+    assert.equal(human.answer, 'reject: P1 and P2 both touch a.txt');
+    const v = ledger.filter((e) => e.event === 'verdict' && e.node_id === 'critique').pop();
+    assert.deepEqual({ actor: v.actor, verdict: v.verdict }, { actor: 'human', verdict: 'reject' });
   }, { interactive: true, human_gates: ['critique'] });
 });
 

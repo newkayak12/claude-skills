@@ -1,0 +1,12 @@
+{
+  "name": "think",
+  "version": "1.6.0",
+  "description": "Thinking and ideation skills: mentor, brainstorming (with opt-in persona debate mode), grill, devils-advocate, redefine-problem, back-to-basics, untangle-thoughts, and negotiate. Its Claude hook module (/brainstorming-status pane) is disabled in Codex.",
+  "author": {
+    "name": "newkayak12"
+  },
+  "repository": "https://github.com/newkayak12/claude-skills",
+  "license": "MIT",
+  "skills": "./skills/",
+  "hooks": "./hooks/codex.json"
+}

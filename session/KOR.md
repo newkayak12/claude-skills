@@ -143,7 +143,7 @@ headless 실행(`claude -p`)에서는 이 명령들이 텍스트를 출력합니
 ## 보드
 `/board`는 이 플러그인이 있는 열린 인터랙티브 세션 전부를 한 패널에 보여 주는, 플러그인이 아는 것을 보는 기본 화면입니다. 탭은 **Sessions** `[1]`, **Recap** `[2]`, **Lessons** `[3]`, **Today** `[4]`, **Worktrees** `[5]`(`/board worktrees`)이고 `[r]`로 세션 또는 worktree 목록을 새로 고칩니다.
 
-세션 행마다 브랜치, 컨텍스트 %, 비용, 진행 중인 작업, 그리고 그 폴더의 실행 세 칸이 나옵니다. 칸은 각 플러그인 패널의 표현과 표시를 그대로 씁니다: `harness ● running 1/3`, `graph ○ blocked 4/9`, `teams ✔ finished 3/3`, 없으면 `–`. 진행 중인 실행은 그 세션에서 자세히 볼 명령(`/harness-gate`, `/graph-live`, `/teams-live`)을 함께 보여 줍니다. 보드는 실행 파일을 직접 읽으므로 그 플러그인들이 없어도 됩니다.
+세션 행마다 브랜치, 컨텍스트 %, 비용, 진행 중인 작업, 그리고 그 폴더의 실행 세 칸이 나옵니다. 칸은 각 플러그인 패널의 표현과 표시를 그대로 씁니다: `harness ● running 1/3`, `graph ○ blocked 4/9`, `teams ✔ finished 3/3`, 없으면 `–`. 진행 중인 실행은 그 세션에서 자세히 볼 명령(`/harness-status`, `/graph-status`, `/teams-status`)을 함께 보여 줍니다. 보드는 실행 파일을 직접 읽으므로 그 플러그인들이 없어도 됩니다.
 
 세션은 시작할 때와 턴마다 자기 행을 쓰고, 끝날 때 지웁니다. 30분 동안 갱신되지 않은 행은 idle로, 하루가 지난 행은 버립니다. 행은 이 컴퓨터의 플러그인 저장소에만 있습니다.
 
@@ -158,6 +158,7 @@ headless 실행(`claude -p`)에서는 이 명령들이 텍스트를 출력합니
 한 세션에서 `main`으로의 `git push`가 성공하면(`origin main`, `HEAD:main`, `x:main`, main 브랜치에서의 그냥 push), 같은 저장소에서 최근 30분 안에 움직인 다른 열린 세션마다 `main moved to <sha> … Fetch before editing or bumping versions.` 메시지가 갑니다. 세션당 2분에 한 번까지이고, 이 세션에는 `main moved: told N of M` toast가 뜹니다. headless 실행은 보내지 않습니다.
 
 ## 상태
+- `0.7.0`: `start_band`(기본 `off`, `recap`, `retro`, `both`)로 새 세션에서 밴드에 무엇을 보일지 고릅니다. `/board`는 각 플러그인의 `-status` 패널을 가리킵니다.
 - `0.6.0`: `/board`에 Worktrees 탭(키 5, `/board worktrees`)이 생기고, 병합된 worktree를 지우는 확인형 Clean 버튼이 있습니다.
 - `0.5.7`: Session UI 훅 모듈은 Claude 전용이므로 Codex는 명시적인 빈 스키마 호환 훅 오버레이를 사용합니다. Claude 동작은 그대로이고 Codex 플러그인 초기화 오류는 사라집니다. 오버레이는 SessionStart의 trophy 설치 훅도 일부러 넣지 않습니다(trophy는 Claude 전용).
 - `0.5.6`: main 이동 메시지가 `origin/main` 대신 push한 HEAD를 읽음 — 원격 이름이 origin이 아니면 빈 메시지가 가고 반복분이 중복으로 버려졌음.
@@ -173,6 +174,6 @@ headless 실행(`claude -p`)에서는 이 명령들이 텍스트를 출력합니
 - 거부 횟수는 이 플러그인이 도구 호출 결과로 본 거부만 셉니다.
 - 경로는 일반 텍스트입니다(클릭 링크 없음).
 - Windows: 고아 프로세스 영역은 숨겨지고 중지는 꺼집니다. Retro 보기와 밴드는 동작합니다.
-- 보드의 harness 칸은 통과한 subgoal 수를 spec과 실행 폴더의 subgoal 수와 비교해 셉니다. 전체 단계 보기는 `/harness-gate`에 있습니다.
+- 보드의 harness 칸은 통과한 subgoal 수를 spec과 실행 폴더의 subgoal 수와 비교해 셉니다. 전체 단계 보기는 `/harness-status`에 있습니다.
 - UI는 인터랙티브 세션 전용입니다. 헤드리스 실행은 기록과 요약 저장만 하고 아무것도 그리지 않습니다.
 - 실제 터미널 세션(2.1.294)에서 확인했습니다. 패널, `[stop]`, 회고 밴드, auto·bypass 모드의 가드 확인, `/clear` 뒤 `/memo`. 데스크톱 Code 탭은 아직 확인하지 않았습니다.

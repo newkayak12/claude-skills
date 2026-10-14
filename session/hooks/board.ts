@@ -93,7 +93,7 @@ export const cellText = (c: Cell | undefined) =>
   c === undefined ? '–' : `${MARK[c.state]} ${c.state}${c.total > 0 ? ` ${c.done}/${c.total}` : ''}`
 
 // The command that shows a run's detail, in the session that runs it.
-export const DETAIL: Record<keyof Runs, string> = { harness: '/harness-gate', graph: '/graph-live', teams: '/teams-live' }
+export const DETAIL: Record<keyof Runs, string> = { harness: '/harness-status', graph: '/graph-status', teams: '/teams-status' }
 
 export const shortId = (id: string) => id.replace(/^session_/, '').slice(0, 8)
 

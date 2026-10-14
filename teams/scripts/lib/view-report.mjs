@@ -1,4 +1,4 @@
-// reportPayload(): the pure builder behind `view.mjs --once --format report` (the teams-live mod's
+// reportPayload(): the pure builder behind `view.mjs --once --format report` (the teams-status mod's
 // Report tab and end-of-run card). Takes a task.json object, resolves its report paths with
 // docPaths (so a custom docs_dir works), and returns one plain-JSON payload. Every read failure
 // becomes null; nothing here throws.

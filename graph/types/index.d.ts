@@ -9,6 +9,12 @@ export type GraphNode = {
   subgoal_id?: string | null
   final?: boolean
   result?: { stage_ok?: boolean; reason?: string; match_pct?: number } | null
+  vendor?: string | null
+  executor?: string | null
+  model?: string | null
+  feedback?: string | null
+  started_at?: number
+  finished_at?: number
 }
 export type GraphRun = {
   run_id: string
@@ -25,7 +31,7 @@ declare module 'claude-code' {
   interface PluginState {
     graph: {
       snap: Snap | null
-      view: 'flow' | 'nodes'
+      view: 'flow' | 'detail'
       lang: 'en' | 'ko'
       // the run outcome this mod publishes for trophy: labels only, never an id (same type in teams and harness)
       outcome: { system: 'graph' | 'teams' | 'harness'; outcome: 'pass' | 'reject' | 'fail'; at: number } | null

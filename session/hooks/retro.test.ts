@@ -87,7 +87,16 @@ test('session.end resets the ledger in place', async ($, on) => {
   expect(cells.get('session.ledger')).toEqual({ files: [], commits: [], denied: [], steps: [] })
 })
 
-test('a stored summary and an interactive start show the band with the numbers', async ($, on) => {
+const BOTH = { options: { start_band: 'both' } }
+
+test('start_band off (default): a stored summary and a recap show no band', async ($, on) => {
+  world(on, { store: { 'session.last': LAST } })
+  await start($)
+
+  expect(texts(await (await band($)).drawn())).toEqual([])
+})
+
+test('a stored summary and an interactive start show the band with the numbers', BOTH, async ($, on) => {
   world(on, { store: { 'session.last': LAST } })
   await start($)
 
@@ -103,7 +112,7 @@ test('no stored summary and no band', async ($, on) => {
   expect(texts(await (await band($)).drawn())).toEqual([])
 })
 
-test('dismiss removes the band and the key; a second start shows none', async ($, on) => {
+test('dismiss removes the band and the key; a second start shows none', BOTH, async ($, on) => {
   const { store } = world(on, { store: { 'session.last': LAST } })
   await start($)
   const ui = await band($)
@@ -118,7 +127,7 @@ test('dismiss removes the band and the key; a second start shows none', async ($
   expect(texts(await (await band($)).drawn())).toEqual([])
 })
 
-test('the band shows once: a second start without dismiss shows none, retro still works', async ($, on) => {
+test('the band shows once: a second start without dismiss shows none, retro still works', BOTH, async ($, on) => {
   const { store } = world(on, { store: { 'session.last': LAST } })
   await start($)
   const first = await band($)
@@ -144,7 +153,7 @@ const recapWorld = (on: On, sessionId: string) => {
 }
 const recapShown = async ($: any) => texts(await (await band($)).drawn()).some(l => l.includes('last recap'))
 
-test('recap band: another session\'s recap shows; dismiss keeps it gone on the next start', async ($, on) => {
+test('recap band: another session\'s recap shows; dismiss keeps it gone on the next start', BOTH, async ($, on) => {
   const { store } = recapWorld(on, 'other')
   await start($)
   expect(await recapShown($)).toBe(true)
@@ -162,7 +171,7 @@ test('recap band: this session\'s own recap (a smart-compact just wrote it) neve
   expect(await recapShown($)).toBe(false)
 })
 
-test('the Retro button opens the pane on the Retro tab', async ($, on) => {
+test('the Retro button opens the pane on the Retro tab', BOTH, async ($, on) => {
   const { ui, cells } = world(on, { store: { 'session.last': LAST }, state: { 'session.tab': 'orphans' } })
   await start($)
   const b = await band($)

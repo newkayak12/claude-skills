@@ -1,4 +1,4 @@
-// summarize(): the pure builder behind `view.mjs --once --format summary` (the teams-live mod).
+// summarize(): the pure builder behind `view.mjs --once --format summary` (the teams-status mod).
 //
 //   node --test teams/scripts/test-view-summary.mjs
 process.env.TZ = 'UTC';

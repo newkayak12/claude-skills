@@ -21,6 +21,21 @@ export type SummaryTask = {
   log: { time: string; kind: string; subject: string | null }[]
 }
 
+// `view.mjs --once --format teams` teams part (teams/scripts/lib/view-status.mjs teamsView)
+export type NowLine = { team: string; key: string; node: string; agent: string | null; elapsed_ms: number | null }
+export type TeamsView = {
+  now: NowLine[]
+  teams: { team: string; cards: { id: string; key: string; title: string; state: string | null; mark: Mark; now: { node: string; agent: string | null; elapsed_ms: number | null } | null }[] }[]
+}
+
+// `view.mjs --once --format decisions --task <id> [--card <id>]` (view-status.mjs decisionsView)
+export type Decision = {
+  ts: number | null; time: string | null; card: string | null; node: string | null; kind: string
+  actor?: string | null; verdict?: string | null; score?: number | null; reason?: string | null; text?: string | null
+  blocking?: string[]; problems?: string[]; gaps?: string[]; title?: string; evidence?: string | null; filed_by?: string | null
+}
+export type DecisionsPayload = { card: string | null; entries: Decision[] }
+
 // `view.mjs --once --format report --task <id>` (teams/scripts/lib/view-report.mjs)
 export type ReportPayload = {
   task_id: string
@@ -39,7 +54,11 @@ declare module 'claude-code' {
       watch: string[]
       status: StatusInfo | null
       summary: SummaryTask | null
-      view: 'summary' | 'work' | 'log' | 'report'
+      view: 'teams' | 'decisions' | 'log' | 'report'
+      teams: TeamsView | null
+      // the Decisions tab: fetched for one task, and one card when one was picked
+      decisions: { task_id: string; card: string | null; payload: DecisionsPayload } | null
+      selected: string | null
       report: { task_id: string; payload: ReportPayload } | null
       cardReport: { task_id: string; payload: ReportPayload } | null
       ended: Record<string, 'card' | 'seen' | 'dismissed'>

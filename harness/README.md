@@ -259,13 +259,12 @@ harness ships a small mod: a status line and a pipeline band above the prompt wi
 
 **Features**
 
-- **Status line**: open runs per stage in this worktree (other worktrees belong to other sessions), fallback runs first, then graph runs — `Plan(6) / Implement(11) · graph Implement(3)`. A run untouched for 12 h is left out; with nothing open the line is empty. Gate decisions are not shown here; open `/harness-gate`.
+- **Status line**: open runs per stage in this worktree (other worktrees belong to other sessions), fallback runs first, then graph runs — `Plan(6) / Implement(11) · graph Implement(3)`. A run untouched for 12 h is left out; with nothing open the line is empty. Gate decisions are not shown here; open `/harness-status`.
 - **Band** above the prompt: one pipeline row per kind with open runs (`harness`, then `graph`), `Plan ━ Setgoal ━ Critique ━ Implement ━ Test ━ Gate ━ Report` (Test for harness only). A stage with open runs is a bold chip with its count (`Implement 11`), empty stages are dim; labels shorten to fit 80 columns. Hover a chip for a card listing its runs: slug, a ▰▱ passed/total bar and `N failed`. Hidden when nothing is open.
-- **`/harness-gate`** opens the pane on the Gate tab. The tabs are Run, Units and Gate (keys `1`-`3`; the selected one is bright with a dot).
-  - **Run** draws the six stages as a rail (`● Plan ━━ ● SetGoal ━━ ● Critique ━━ ◉ Implement/Test ┄┄ ○ Gate ┄┄ ○ Report`: solid up to where the run is, dotted after), what it is doing now, one line per subgoal and a progress bar.
-  - **Units** is a board with To do, Doing and Done columns for the subgoals, with tries and the goal-gate match as a `%` bar against the pass bar.
-  - **Gate** is the existing view: the gated patterns, the engagement window, the last decision (allow or deny, tool, target, age, reason) and how to engage the harness. Without a gate config it says so.
-- **Where the data comes from.** The run view reads `.harness-run/<run>/` in the session folder (plan, goal spec, critique, gate files and the subgoal folders) read-only, and follows the newest live run, else the newest run. The last decision comes from `.claude/.harness-last-decision.json`, written by the gate hook. It is a local runtime file, gitignored by `install`, and removed by `remove`. A gate config that cannot be read shows an invalid-config notice on the Gate tab.
+- **`/harness-status`** opens the pane on the Detail tab; the command again, Esc or `q` closes it. At the top, a **Now** line: the stage or subgoal at work, the agent and the time since the run's newest file changed. The harness records no vendor or model, so the agent reads `—`. Tabs are Flow and Detail (keys `1`-`2`; the selected one is bright with a dot).
+  - **Flow** draws the six stages as a rail (`● Plan ━━ ● SetGoal ━━ ● Critique ━━ ◉ Implement/Test ┄┄ ○ Gate ┄┄ ○ Report`: solid up to where the run is, dotted after), then the stages in order. Each subgoal opens into its gate verdicts: a rejected attempt shows its reason (`↳ …`) and the retry sits one level under it. A rejected critique (`sound:false`) and a failing goal gate show theirs too. A progress bar closes the tab.
+  - **Detail** lists per subgoal the result (passed or failed, tries, stalled when the retry changed nothing) and every `gate-<n>.json` verdict with its reason and gaps, then the goal-gate match as a `%` bar against the pass bar. Under it, **Gate rules**: the gated patterns, the engagement window, the last decision (allow or deny, tool, target, age, reason) and how to engage the harness. Without a gate config it says so.
+- **Where the data comes from.** The run view reads `.harness-run/<run>/` in the session folder (plan, goal spec, critique, gate files and the subgoal folders) read-only, and follows the newest live run, else the newest run. The last decision comes from `.claude/.harness-last-decision.json`, written by the gate hook. It is a local runtime file, gitignored by `install`, and removed by `remove`. A gate config that cannot be read shows an invalid-config notice under Gate rules.
 - **Gate deny push.** When the gate denies a call while you are away, the mod sends its deny line (`⛔ goal gate blocked <Tool>: <path> …`, or the harness-and-teams routing line) as a `PushNotification`. If it is not sent (you are at the terminal), or the same path was pushed in the last 10 minutes, the same line is a toast. Denies from before the session started are ignored; any failure is silent.
 - **Run push.** Same push, same toast fallback, for what happens in a run: `harness <run>: <kind> — <stage/subgoal> (<attempt>/<max>)`. Kinds: `rejected` (`02-critique.json` `sound:false`; a subgoal's `gate-<n>.json` or `04-goal-gate.json` failing before the report), `failed` (a subgoal's `result.json` `passed:false`, or a failing goal gate once `05-report.md` exists) and `complete` (`05-report.md` written with no failure; graph runs are pushed by the graph mod). Once per run, stage or subgoal, kind and attempt; only files written after the session started; interactive sessions only; any failure is silent.
 - **Language.** English by default; Korean when Claude Code's `language` setting is Korean.
@@ -282,18 +281,16 @@ The band with open harness and graph runs, the hover card of the `Implement 1` c
 ![gate-denial](docs/images/gate-denial.png)
 The gate hook denying an Edit to a gated path before the harness is engaged.
 
-![harness-gate-run](docs/images/harness-gate-run.png)
-`/harness-gate`, Run tab: stage rail, what the run is doing, one line per subgoal, goal-gate bar.
+![status-flow](docs/images/status-flow.png)
+The `/harness-status` Flow tab: where the run is and, for a rejected attempt, why it was sent back.
 
-![harness-gate-units](docs/images/harness-gate-units.png)
-`/harness-gate`, Units tab: To do / Doing / Done board of the subgoals.
-
-![harness-gate-gate](docs/images/harness-gate-gate.png)
-`/harness-gate`, Gate tab: gated patterns, engagement window and the last decision.
+![status-detail](docs/images/status-detail.png)
+The Detail tab: per-subgoal results with each gate verdict's reason, the goal-gate match and the gate rules.
 
 The mod also publishes each fallback run's outcome (`pass` on a report with no failure, `reject` on a failed goal gate after the report, `fail` on a failed subgoal; no ids) as the state value `harness.outcome`, for the `trophy` plugin's opt-in counts.
 
 ## Status
+- v1.37.0 — `/harness-status` (was `/harness-gate`): a Now line, Flow (stages, each reject's reason with the retry under it, a rejected critique too) and Detail (per-subgoal results, every gate verdict, goal-gate match, gate rules). Closes on Esc, q or the command again.
 - v1.36.0 — the mod publishes each run's outcome (pass, reject or fail, once per run and outcome) as its own `outcome` state for trophy to count; no ids, and the harness works the same without trophy.
 - v1.35.0 — the mod sends a push notification (toast when it cannot) when the gate denies (once per path per 10 min) and on run rejects, failures and completions; graph runs are left to the graph mod.
 - v1.34.1 — Codex uses a schema-compatible hook overlay while preserving the goal gate for edits and nested run entry calls; Claude hooks are unchanged. A non-entry Skill call exits the gate at once again, as before the overlay (it no longer refreshes engagement markers). Codex `apply_patch` renames (`*** Move to:`) are judged by their target path. The Codex overlay leaves out the SessionStart trophy install hook on purpose (trophy is Claude-only).

@@ -4,7 +4,9 @@ export type OpenRuns = { harness: OpenRun[]; graph: OpenRun[] }
 
 export type StageKey = 'plan' | 'setgoal' | 'critique' | 'implement' | 'gate' | 'report'
 export type StageMark = 'done' | 'running' | 'pending' | 'failed'
-export type RunSub = { id: string; title: string; state: StageMark; reason: string; tries: number }
+// a QualityGate verdict, subgoals/<id>/gate-<n>.json
+export type RunGate = { n: number; pass: boolean; reason: string }
+export type RunSub = { id: string; title: string; state: StageMark; reason: string; tries: number; gates: RunGate[]; stalled: boolean }
 // the current run of .harness-run/<run>/, as the mod reads it
 export type RunInfo = {
   slug: string
@@ -18,6 +20,10 @@ export type RunInfo = {
   now: { kind: 'implement' | 'test' | 'gate' | 'retry' | 'stage' | 'done'; id?: string; title?: string; attempt?: number; stage?: StageKey }
   match: number | null
   pass: boolean | null
+  // 02-critique.json: sound (null: no file) and why it was not
+  critique: { sound: boolean | null; reason: string }
+  goalReason: string // 04-goal-gate.json reason
+  lastMs: number // mtime of the run's newest file
 }
 
 declare module 'claude-code' {
@@ -30,7 +36,7 @@ declare module 'claude-code' {
       runs: OpenRuns
       run: RunInfo | null
       broken: boolean
-      view: 'auto' | 'run' | 'units' | 'gate'
+      view: 'auto' | 'flow' | 'detail'
       lang: 'en' | 'ko'
       // the run outcome this mod publishes for trophy: labels only, never an id (same type in graph and teams)
       outcome: { system: 'graph' | 'teams' | 'harness'; outcome: 'pass' | 'reject' | 'fail'; at: number } | null

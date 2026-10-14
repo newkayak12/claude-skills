@@ -1,4 +1,4 @@
-// Pure builder behind `view.mjs --once --format summary` (the teams-live mod's data). Takes the
+// Pure builder behind `view.mjs --once --format summary` (the teams-status mod's data). Takes the
 // collectTask() model and returns a small plain-JSON object a person can read: what is it doing,
 // who is it waiting on, how much is left. No fs; no node ids, paths or verdict fields leave here.
 
@@ -22,7 +22,7 @@ function stageOfNode(id) {
 const nodeState = (s) => (s === 'done' ? 'done' : s === 'failed' || s === 'blocked' ? 'failed'
   : s === 'running' || s === 'waiting_human' ? 'running' : 'pending');
 
-function cardState(c) {
+export function cardState(c) {
   const states = [c.accept && c.accept.state, c.dispatch && c.dispatch.state].filter(Boolean);
   if (states.some((s) => s === 'failed' || s === 'blocked')) return 'failed';
   if (c.accept && c.accept.state === 'done') return 'done';

@@ -767,6 +767,31 @@ test('judge positive control: no interference -> the verdict is applied and judg
   assert.deepEqual(load(id).spec.packages.map((p) => p.id), ['P1', 'P2']);
 });
 
+test('a judge verdict names who judged: vendor/model on the node, a ledger verdict line with actor and reason, not in the result', async () => {
+  const cwd = repo();
+  const id = shapeReady(cwd);
+  const j = judgeWith(async (_t, n) => (n.stage === 'shape'
+    ? ok({ ...SHAPE2, handoff: 's' })
+    : { stage_ok: true, sound: false, problems: ['P1 and P2 both touch a.txt'], judged_by: { vendor: 'claude', model: 'opus-x' } }));
+  await daemon.stepOnce(id, { judge: j.judge });
+  await daemon.stepOnce(id, { judge: j.judge });
+  const n = nodeOf(id, 'critique');
+  assert.equal(n.vendor, 'claude');
+  assert.equal(n.model, 'opus-x');
+  assert.equal(n.result.judged_by, undefined, 'the actor is not part of the verdict');
+  const [v] = events(id, 'verdict', 'critique');
+  assert.deepEqual({ actor: v.actor, verdict: v.verdict, stage: v.stage, reason: v.reason },
+    { actor: 'claude·opus-x', verdict: 'reject', stage: 'critique', reason: 'P1 and P2 both touch a.txt' });
+  assert.equal(events(id, 'verdict', 'shape').length, 0, 'shape is not a judge node');
+});
+
+test('judgedBy: the model from the stream init event, else the --model asked for', () => {
+  const init = JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-x' });
+  assert.deepEqual(daemon.judgedBy(`${init}\n{"type":"result","result":"{}"}\n`), { vendor: 'claude', model: 'claude-x' });
+  assert.deepEqual(daemon.judgedBy('not json\n', ['--model', 'sonnet']), { vendor: 'claude', model: 'sonnet' });
+  assert.deepEqual(daemon.judgedBy(''), { vendor: 'claude', model: null });
+});
+
 test('a judge that throws: its judging stamp is cleared and the node stays pending', async () => {
   const cwd = repo();
   const id = shapeReady(cwd);

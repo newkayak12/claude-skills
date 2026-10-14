@@ -22,7 +22,7 @@ const key = (files: Files, path: string) =>
 // cwd (none: not a repo, so the cwd is the one tree)
 type Dirs = Record<string, [string, 'dir' | 'file', number?][]>
 function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], files: Files, dirs: Dirs = {}, top?: string) {
-  const seen = { statuses: [] as (string | undefined)[], commands: [] as string[], opened: [] as string[], reads: 0, toasts: [] as string[], argv: [] as string[][], listed: [] as string[], outcomes: [] as any[], failSet: false }
+  const seen = { statuses: [] as (string | undefined)[], commands: [] as string[], opened: [] as string[], openArgs: [] as any[], closed: [] as string[], panes: [] as { id: string }[], reads: 0, toasts: [] as string[], argv: [] as string[][], listed: [] as string[], outcomes: [] as any[], failSet: false }
   const store = new Map<string, unknown>()
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: '/proj' }) as never)
@@ -74,7 +74,15 @@ function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], files: Fil
   })
   on('ui.open', (_$, e) => {
     seen.opened.push(e.id)
+    seen.openArgs.push(e)
+    seen.panes.push({ id: e.id })
     return { value: { isPlaced: true } } as never
+  })
+  on('ui.panes', () => ({ value: seen.panes }) as never)
+  on('ui.close', (_$, e) => {
+    seen.closed.push(e.id)
+    seen.panes = seen.panes.filter(p => p.id !== e.id)
+    return { value: undefined } as never
   })
   return seen
 }
@@ -82,7 +90,7 @@ function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], files: Fil
 const start = ($: Engine) => $.session.start({ cwd: '/proj', surface: 'terminal', isInteractive: true })
 const lastStatus = (seen: { statuses: (string | undefined)[] }) => seen.statuses[seen.statuses.length - 1]
 
-test('surfaces []: no timer, no status, /harness-gate not registered', async ($, on) => {
+test('surfaces []: no timer, no status, /harness-status not registered', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const seen = world(on, [], { [CONFIG]: cfg })
   await start($)
@@ -97,7 +105,7 @@ test('no config: status is undefined', async ($, on) => {
   const seen = world(on, ['terminal'], {})
   await start($)
   expect(seen.statuses).toEqual([undefined])
-  expect(seen.commands).toEqual(['harness-gate'])
+  expect(seen.commands).toEqual(['harness-status'])
 })
 
 const STALE = NOW - 13 * 60 * 60 * 1000
@@ -249,7 +257,7 @@ test('read error: no throw, the gate state stays', async ($, on) => {
 })
 
 const pane = ($: Engine, surface: 'terminal' | 'desktop') =>
-  $.ui.mount({ plugin: 'harness', surface, component: 'Pane', requestId: 'harness-gate', props: { title: 'Harness gate', isFocused: false, bodyColumns: 80, placement: 'dock' } } as never)
+  $.ui.mount({ plugin: 'harness', surface, component: 'Pane', requestId: 'harness-status', props: { title: 'Harness', isFocused: false, bodyColumns: 80, placement: 'dock' } } as never)
 
 for (const surface of ['terminal', 'desktop'] as const) {
   test(`${surface}: pane with no config says so`, async ($, on) => {
@@ -280,17 +288,57 @@ for (const surface of ['terminal', 'desktop'] as const) {
   })
 }
 
-test('/harness-gate answers and opens the pane; session start alone opens nothing', async ($, on) => {
+const cmd = ($: Engine) => $.command.run({ command: 'harness-status', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
+
+test('/harness-status answers and opens the pane; session start alone opens nothing', async ($, on) => {
   mock.clock(on, { now: NOW })
   const seen = world(on, ['terminal'], { [CONFIG]: cfg })
   await start($)
   expect(seen.opened).toEqual([])
-  const r = await $.command.run({ command: 'harness-gate', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
-  expect(seen.opened).toEqual(['harness-gate'])
+  const r = await cmd($)
+  expect(seen.opened).toEqual(['harness-status'])
   expect(JSON.stringify(r)).toContain('pane opened')
 })
 
-// ---- run view: Run / Units / Gate tabs and the band ----
+// close: Esc (closeOnEscape on the open), q (the dismiss button), the command again
+test('close 1/3: the pane is opened to close on Escape', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const seen = world(on, ['terminal'], { [CONFIG]: cfg })
+  await start($)
+  await cmd($)
+  expect(seen.openArgs[0]).toMatchObject({ id: 'harness-status', focus: true, closeOnEscape: true })
+})
+
+test('close 2/3: the q button dismisses the pane', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const seen = world(on, ['terminal'], { [CONFIG]: cfg })
+  await start($)
+  const ui = await pane($, 'terminal')
+  expect((await ui.find({ key: 'close' }))?.props).toMatchObject({ role: 'dismiss', hotkey: 'q' })
+  await ui.press({ key: 'close' })
+  expect(seen.closed).toEqual(['harness-status'])
+})
+
+test('close 3/3: the command again closes an open pane, a third time opens it', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const seen = world(on, ['terminal'], { [CONFIG]: cfg })
+  await start($)
+  await cmd($)
+  const r = JSON.stringify(await cmd($))
+  expect(seen.closed).toEqual(['harness-status'])
+  expect(r).toContain('pane closed')
+  await cmd($)
+  expect(seen.opened).toEqual(['harness-status', 'harness-status'])
+})
+
+test('the old command name is gone', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const seen = world(on, ['terminal'], { [CONFIG]: cfg })
+  await start($)
+  expect(seen.commands).not.toContain('harness-gate')
+})
+
+// ---- run view: Flow / Detail tabs and the band ----
 const RUN = '.harness-run/demo'
 const specJson = JSON.stringify({ goal: 'Build demo', subgoals: [{ id: 'S1', title: 'first' }, { id: 'S2', title: 'second' }, { id: 'S3', title: 'third' }] })
 const manifestJson = JSON.stringify({ request: 'Build demo\nmore lines', subgoals: [{ id: 'S1', order: 1 }, { id: 'S2', order: 2 }, { id: 'S3', order: 3 }] })
@@ -326,7 +374,8 @@ function dirsOf(files: Files, ages: Record<string, number> = {}): Dirs {
 
 type Ui = Awaited<ReturnType<typeof pane>>
 const shown = async (ui: Ui) => JSON.stringify(await ui.drawn())
-const buttons = async (ui: Ui) => (await ui.findAll({ type: 'Button' })).map(b => b.props as { label: string; hotkey?: string })
+// the tabs; the close button (hotkey q) is tested apart
+const buttons = async (ui: Ui) => (await ui.findAll({ type: 'Button' })).map(b => b.props as { label: string; hotkey?: string }).filter(b => b.hotkey !== 'q')
 const oldAges = (files: Files, ms: number) => Object.fromEntries(Object.keys(files).map(k => [k, ms]))
 
 async function seeded($: Engine, on: On, files: Files, opts: { language?: string; ages?: Record<string, number>; surfaces?: readonly ('terminal' | 'desktop')[] } = {}) {
@@ -338,18 +387,18 @@ async function seeded($: Engine, on: On, files: Files, opts: { language?: string
 }
 
 for (const surface of ['terminal', 'desktop'] as const) {
-  test(`${surface}: Run tab: tabs with hotkeys, rail, Now, a line per subgoal and the 1/3 bar`, async ($, on) => {
+  test(`${surface}: Flow tab: tabs with hotkeys, rail, Now with no agent, a line per subgoal and the 1/3 bar`, async ($, on) => {
     await seeded($, on, demoRun(), { surfaces: [surface] })
     const ui = await pane($, surface)
     expect(await buttons(ui)).toMatchObject([
-      { label: '● Run', hotkey: '1' },
-      { label: 'Units', hotkey: '2' },
-      { label: 'Gate', hotkey: '3' },
+      { label: '● Flow', hotkey: '1' },
+      { label: 'Detail', hotkey: '2' },
     ])
     for (const word of ['● Plan', '● SetGoal', '● Critique', '◉ Implement/Test', '○ Gate', '○ Report']) {
       expect(await ui.find({ type: 'Text', text: word })).toBeDefined()
     }
-    expect(await ui.find({ type: 'Text', text: /Now.*Gating S2/ })).toBeDefined()
+    // no vendor is recorded: the agent reads —; elapsed is the time since the run's newest file changed
+    expect(await ui.find({ type: 'Text', text: '▶ Now · Gating S2: second · — · 1m 0s' })).toBeDefined()
     const text = await shown(ui)
     expect(text).toContain('Build demo')
     for (const mark of ['"✔"', '"●"', '"○"', ' S1 first', ' S2 second', ' S3 third']) expect(text).toContain(mark)
@@ -359,38 +408,88 @@ for (const surface of ['terminal', 'desktop'] as const) {
   })
 }
 
+test('narrow pane: tab labels stay Flow / Detail, the tab row does not shrink, the slug is on the title line', async ($, on) => {
+  await seeded($, on, demoRun())
+  const ui = await $.ui.mount({ plugin: 'harness', surface: 'terminal', component: 'Pane', requestId: 'harness-status', props: { title: 'Harness', isFocused: false, bodyColumns: 40, placement: 'dock' } } as never)
+  expect((await buttons(ui)).map(b => b.label)).toEqual(['● Flow', 'Detail'])
+  const text = await shown(ui)
+  // tabs sit in a flexShrink 0 box, followed by the close button in its own box
+  expect(text).toContain('{"type":"Box","props":{"flexShrink":0},"children":[{"type":"Box","props":{"columnGap":3}')
+  expect(text).toContain('{"type":"Text","props":{"dimColor":true,"wrap":"truncate-end"},"children":["demo"]}')
+  // the slug is not in the tab row any more
+  expect(text.indexOf('"demo"')).toBeLessThan(text.indexOf('"key":"flow"'))
+})
+
 test('goal gate result shows the percentage bar', async ($, on) => {
   await seeded($, on, demoRun({ [`${RUN}/04-goal-gate.json`]: JSON.stringify({ match_pct: 92, pass: true }) }))
   expect(await (await pane($, 'terminal')).find({ type: 'Text', text: /92%/ })).toBeDefined()
 })
 
-test('a failed subgoal sits under To do on Units with its gate reason', async ($, on) => {
-  await seeded($, on, demoRun({
-    [`${RUN}/subgoals/S2/gate-1.json`]: JSON.stringify({ pass: false, reason: 'tests red' }),
-    [`${RUN}/subgoals/S2/result.json`]: JSON.stringify({ id: 'S2', passed: false, attempts: 1 }),
-  }))
-  const ui = await pane($, 'terminal')
-  await ui.press({ key: 'units' })
-  await ui.redraw() // the stubbed $.state does not notify readers
-  const text = await shown(ui)
-  for (const word of ['To do 2', 'Doing 0', 'Done 1', '✘', 'tests red']) expect(text).toContain(word)
-  expect(text.indexOf('To do')).toBeLessThan(text.indexOf('tests red'))
+// S2 rejected twice by its gate, passed on the third try; S1 passed first time
+const retriedRun = (over: Files = {}) => demoRun({
+  [`${RUN}/subgoals/S2/gate-1.json`]: JSON.stringify({ pass: false, reason: 'tests red', gaps: ['no case for empty input'] }),
+  [`${RUN}/subgoals/S2/gate-2.json`]: JSON.stringify({ pass: false, reason: 'still red' }),
+  [`${RUN}/subgoals/S2/gate-3.json`]: JSON.stringify({ pass: true, reason: 'ok' }),
+  [`${RUN}/subgoals/S2/result.json`]: JSON.stringify({ id: 'S2', passed: true, attempts: 3 }),
+  ...over,
 })
 
-test('hotkey 3 (the Gate tab) shows the gate texts', async ($, on) => {
-  await seeded($, on, demoRun({ [CONFIG]: cfg }))
+test('Flow: a rejected gate attempt shows its reason and the retry nested under it', async ($, on) => {
+  await seeded($, on, retriedRun())
+  const text = await shown(await pane($, 'terminal'))
+  const at = (s: string) => text.indexOf(s)
+  expect(at(' attempt 1')).toBeLessThan(at('↳ tests red; no case for empty input'))
+  expect(at('↳ tests red; no case for empty input')).toBeLessThan(at(' attempt 2'))
+  expect(at(' attempt 2')).toBeLessThan(at('↳ still red'))
+  expect(at('↳ still red')).toBeLessThan(at(' attempt 3'))
+  expect(text).not.toContain('↳ ok')
+})
+
+test('Flow: a rejected critique keeps its reason, a rejected goal gate too', async ($, on) => {
+  await seeded($, on, demoRun({
+    [`${RUN}/02-critique.json`]: JSON.stringify({ sound: false, problems: ['AC-2 has no check', 'S3 too big'], blocking: ['no test plan'] }),
+  }))
+  let text = await shown(await pane($, 'terminal'))
+  expect(text).toContain('↳ no test plan; AC-2 has no check; S3 too big')
+  expect(text).toContain('"✘"')
+})
+
+test('Flow: a failing goal gate shows its reason', async ($, on) => {
+  await seeded($, on, retriedRun({ [`${RUN}/04-goal-gate.json`]: JSON.stringify({ match_pct: 70, pass: false, reason: 'AC-2 not met' }) }))
+  expect(await shown(await pane($, 'terminal'))).toContain('↳ AC-2 not met')
+})
+
+test('Detail: per subgoal the result and every gate verdict; the gate rules folded under it', async ($, on) => {
+  await seeded($, on, retriedRun({ [CONFIG]: cfg }))
   const ui = await pane($, 'terminal')
-  await ui.press({ key: 'gate' })
-  await ui.redraw()
+  await ui.press({ key: 'detail' })
+  await ui.redraw() // the stubbed $.state does not notify readers
+  const text = await shown(ui)
+  for (const word of ['passed · 3 tries', 'gate 1: rejected — tests red; no case for empty input', 'gate 2: rejected — still red', 'gate 3: passed', 'Gate rules']) {
+    expect(text).toContain(word)
+  }
+  expect(text).not.toContain('To do')
   expect(await ui.find({ type: 'Text', text: 'Gated patterns (3): ^a/, ^b/, ^c/' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'Engagement window: 3 h' })).toBeDefined()
 })
 
-test('no run folder: the Gate tab by default, the no-run sentence on Run', async ($, on) => {
+test('Detail: a failed subgoal with a stalled retry says so', async ($, on) => {
+  await seeded($, on, demoRun({
+    [`${RUN}/subgoals/S2/gate-1.json`]: JSON.stringify({ pass: false, reason: 'tests red' }),
+    [`${RUN}/subgoals/S2/result.json`]: JSON.stringify({ id: 'S2', passed: false, attempts: 1, stalled: true }),
+  }))
+  const ui = await pane($, 'terminal')
+  await ui.press({ key: 'detail' })
+  await ui.redraw()
+  const text = await shown(ui)
+  for (const word of ['failed · 1 tries', 'stalled: the retry changed nothing', 'gate 1: rejected — tests red']) expect(text).toContain(word)
+})
+
+test('no run folder: the Detail tab by default (gate rules), the no-run sentence on Flow', async ($, on) => {
   await seeded($, on, { [CONFIG]: cfg })
   const ui = await pane($, 'terminal')
   expect(await ui.find({ type: 'Text', text: 'Gated patterns (3): ^a/, ^b/, ^c/' })).toBeDefined()
-  await ui.press({ key: 'run' })
+  await ui.press({ key: 'flow' })
   await ui.redraw()
   expect(await ui.find({ type: 'Text', text: 'No harness run in this folder.' })).toBeDefined()
 })
@@ -398,7 +497,7 @@ test('no run folder: the Gate tab by default, the no-run sentence on Run', async
 test("graph's broker dir is not a harness run", async ($, on) => {
   await seeded($, on, { '.harness-run/broker/runs/x.json': '{}', [CONFIG]: cfg })
   const ui = await pane($, 'terminal')
-  await ui.press({ key: 'run' })
+  await ui.press({ key: 'flow' })
   await ui.redraw()
   expect(await ui.find({ type: 'Text', text: 'No harness run in this folder.' })).toBeDefined()
 })
@@ -427,18 +526,23 @@ test('an old unfinished run does not outrank a run finished 10 min ago', async (
 test('korean: tab and rail labels come from the ko table, no English tab label', async ($, on) => {
   await seeded($, on, demoRun({ [CONFIG]: cfg }), { language: 'Korean' })
   const ui = await pane($, 'terminal')
-  expect((await buttons(ui)).map(b => b.label)).toEqual(['● 실행', '단위', '게이트'])
+  expect((await buttons(ui)).map(b => b.label)).toEqual(['● 흐름', '상세'])
   const text = await shown(ui)
-  for (const word of ['계획', '비평', '구현/테스트']) expect(text).toContain(word)
-  for (const word of ['Plan', 'SetGoal', 'Critique', 'Units']) expect(text).not.toContain(word)
+  for (const word of ['계획', '비평', '구현/테스트', '닫기 [q]']) expect(text).toContain(word)
+  for (const word of ['Plan', 'SetGoal', 'Critique', 'Detail', 'close [']) expect(text).not.toContain(word)
+  await ui.press({ key: 'detail' })
+  await ui.redraw()
+  const detail = await shown(ui)
+  for (const word of ['아직 판정 전', '게이트 규칙']) expect(detail).toContain(word)
+  for (const word of ['not judged', 'Gate rules', 'passed']) expect(detail).not.toContain(word)
 })
 
-test('/harness-gate opens the pane on the Gate tab even when a run exists', async ($, on) => {
+test('/harness-status opens the pane on the Detail tab even when a run exists', async ($, on) => {
   const seen = await seeded($, on, demoRun({ [CONFIG]: cfg }))
-  await $.command.run({ command: 'harness-gate', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
-  expect(seen.opened).toEqual(['harness-gate'])
+  await cmd($)
+  expect(seen.opened).toEqual(['harness-status'])
   const ui = await pane($, 'terminal')
-  expect(await buttons(ui)).toMatchObject([{ label: 'Run' }, { label: 'Units' }, { label: '● Gate' }])
+  expect(await buttons(ui)).toMatchObject([{ label: 'Flow' }, { label: '● Detail' }])
   expect(await ui.find({ type: 'Text', text: 'Gated patterns (3): ^a/, ^b/, ^c/' })).toBeDefined()
 })
 
@@ -447,9 +551,9 @@ test('an invalid gate config says it could not be read, not that it is missing; 
   const ui = await pane($, 'terminal')
   expect(await ui.find({ type: 'Text', text: 'Gate config .claude/harness-gate.json could not be read (invalid JSON).' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /is not in this project/ })).toBeUndefined()
-  const r = await $.command.run({ command: 'harness-gate', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
+  const r = await cmd($)
   expect(JSON.stringify(r)).toContain('"pane opened"')
-  expect(JSON.stringify(r)).not.toContain('harness-gate:')
+  expect(JSON.stringify(r)).not.toContain('harness-status:')
 })
 
 const band = ($: Engine, on: On, hasSurvey = false) => {

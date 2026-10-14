@@ -51,11 +51,11 @@ test('no surface: no timer, no command', async ($, on) => {
   expect(seen.commands).toEqual([])
 })
 
-test('terminal: /teams-live is registered and the tick runs view.mjs from the plugin root', async ($, on) => {
+test('terminal: /teams-status is registered and the tick runs view.mjs from the plugin root', async ($, on) => {
   const clock = mock.clock(on, { now: 1000 })
   const seen = world(on, ['terminal'], () => ok(''))
   await start($)
-  expect(seen.commands).toEqual(['teams-live'])
+  expect(seen.commands).toEqual(['teams-status'])
   await clock.advance(3000)
   expect(seen.argv.length > 0).toBe(true)
   expect(seen.argv.every(a => a[0] === 'node' && a[1].endsWith('/scripts/view.mjs') && !a[1].startsWith('${'))).toBe(true)
@@ -81,7 +81,7 @@ test('status line: pinned only while someone must act, then cleared', async ($, 
   on('ui.panes', () => ({ value: [] }) as never)
   await start($)
   await clock.advance(3000)
-  expect(seen.statuses).toEqual(['needs you: 2 waiting - open /teams-live'])
+  expect(seen.statuses).toEqual(['needs you: 2 waiting - open /teams-status'])
   body = '{"line":"teams: E-aaaaaaaa 1/4 P1 implement","waiting":0}'
   await clock.advance(3000)
   expect(seen.statuses[seen.statuses.length - 1]).toBeUndefined()
@@ -192,6 +192,29 @@ const demo = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 const failedCard = card('module a', 'package', 'failed', { reason: 'verifier rejected: tests red' })
+// `--format teams` rows (view-status.mjs teamsView) and one card's decision thread (decisionsView)
+const row = (id: string, title: string, state: string, mark: string, now: unknown = null) => ({ id, key: `E-3a3a3bb5/${id}`, title, state, mark, now })
+const TEAMS = {
+  now: [
+    { team: 'develop', key: 'E-3a3a3bb5/P1', node: 'implement', agent: 'codex·gpt-5', elapsed_ms: 240000 },
+    { team: 'epic', key: 'E-3a3a3bb5', node: 'integrate:1', agent: 'claude·opus', elapsed_ms: 35000 },
+  ],
+  teams: [
+    { team: 'planning', cards: [row('PLAN-F1', 'plan feature 1', 'DONE', 'done')] },
+    { team: 'develop', cards: [row('P0', 'module a', 'BLOCKED', 'failed'), row('P1', 'module b', 'IN_PROGRESS', 'running', { node: 'implement', agent: 'codex·gpt-5', elapsed_ms: 240000 })] },
+    { team: 'qa', cards: [row('QA-F1', 'QA feature 1', 'READY', 'pending')] },
+    { team: 'audit', cards: [row('AUDIT', 'Planning audit', 'READY', 'pending')] },
+  ],
+}
+const THREAD = {
+  card: 'P1',
+  entries: [
+    { ts: 1, time: '10:00', card: 'P1', node: 'accept:P1:1', kind: 'verdict', actor: 'claude·opus', verdict: 'judge_failed', score: null, reason: 'reply was not JSON' },
+    { ts: 2, time: '10:05', card: 'P1', node: 'accept:P1:1', kind: 'verdict', actor: 'claude·sonnet', verdict: 'reject', score: 70, reason: 'AC 3 missing', gaps: ['AC 3 untested'] },
+    { ts: 3, time: '10:06', card: 'P1', node: 'critique', kind: 'answer', actor: 'human', text: 'reject: overlap' },
+  ],
+}
+const fmtOf = (argv: readonly string[]) => argv[argv.indexOf('--format') + 1]
 const stat = (over: Record<string, unknown> = {}) => ({ line: 'teams: E-3a3a3bb5 12/17 ', waiting: 0, latest: '3a3a3bb5-f4b7', ...over })
 
 const LEAKS = ['verdict=', 'match=', '/Users/', '/var/', 'dispatch:', 'gate:goal', 'accept:']
@@ -199,9 +222,10 @@ const EN_UI = ['Now', 'You', 'Stages', 'Work', 'Cost', 'Summary', 'Log', 'needs 
 
 // Engine beneath: a Map-backed $.state, process.run for view.mjs (status and summary answer the same
 // fixture), ui.open and ui.status recorded.
-function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly ('terminal' | 'desktop')[] = ['terminal'], data: { status?: Record<string, unknown>; task?: unknown; reports?: Record<string, unknown>; events?: unknown[]; failReport?: boolean } = {}) {
+type Data = { status?: Record<string, unknown>; task?: unknown; teams?: unknown; decisions?: (card: string | null) => unknown; reports?: Record<string, unknown>; events?: unknown[]; failReport?: boolean }
+function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly ('terminal' | 'desktop')[] = ['terminal'], data: Data = {}) {
   const store = new Map<string, unknown>(Object.entries(init))
-  const seen = { store, argv: [] as (readonly string[])[], opened: [] as string[], statuses: [] as (string | undefined)[] }
+  const seen = { store, argv: [] as (readonly string[])[], opened: [] as string[], openArgs: [] as unknown[], statuses: [] as (string | undefined)[] }
   const status = () => data.status ?? { line: '', waiting: 0 }
   on('session.surfaces', () => ({ value: surfaces }))
   on('state.get', (_$, e) => ({ value: { value: store.get(e.key), version: 0 } }) as never)
@@ -218,10 +242,16 @@ function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly 
       return { value: ok((data.events ?? []).filter(o => (o as { ts: number }).ts > since).map(o => JSON.stringify(o) + '\n').join('')) }
     }
     if (format === 'report') return { value: ok(JSON.stringify((data.reports ?? {})[e.argv[e.argv.indexOf('--task') + 1]!] ?? null)) }
+    if (format === 'decisions') {
+      const card = e.argv.includes('--card') ? e.argv[e.argv.indexOf('--card') + 1]! : null
+      return { value: ok(JSON.stringify(data.decisions?.(card) ?? { card, entries: [] })) }
+    }
+    if (format === 'teams') return { value: ok(JSON.stringify({ status: status(), task: data.task ?? null, teams: data.teams ?? null })) }
     return { value: ok(format === 'status' ? JSON.stringify(status()) : format === 'summary' ? JSON.stringify({ status: status(), task: data.task ?? null }) : '') }
   })
   on('ui.open', (_$, e) => {
     seen.opened.push(e.id)
+    seen.openArgs.push(e)
     return { value: { isPlaced: true } } as never
   })
   on('ui.status', (_$, e) => {
@@ -238,7 +268,7 @@ function startWorld(on: On, language?: string) {
   on('settings.read', () => ({ value: language === undefined ? {} : { language } }) as never)
 }
 const pane = ($: Engine, surface: (typeof SURFACES)[number]) =>
-  $.ui.mount({ plugin: 'teams', surface, component: 'Pane', requestId: 'teams-live', props: { title: 'Teams', isFocused: false, bodyColumns: 80, placement: 'dock' } } as never)
+  $.ui.mount({ plugin: 'teams', surface, component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: 80, placement: 'dock' } } as never)
 const band = ($: Engine, surface: (typeof SURFACES)[number], hasSurvey = false) =>
   $.ui.mount({ plugin: 'teams', surface, component: 'AbovePrompt', props: { hasSurvey, isWorking: false, maxRows: 5, bodyColumns: 80 } } as never)
 type Ui = Awaited<ReturnType<typeof pane>>
@@ -252,11 +282,11 @@ const engineBand = (on: On) =>
 
 // The data reaches the mod the way it does live: one tick (pane open, so the summary call runs) over
 // the mocked view.mjs; `data` is read at every call, so a test changes it between ticks.
-async function seeded($: Engine, on: On, data: { status?: Record<string, unknown>; task?: unknown; reports?: Record<string, unknown>; events?: unknown[]; failReport?: boolean }, surface: (typeof SURFACES)[number] = 'terminal', language?: string, init: Record<string, unknown> = {}) {
+async function seeded($: Engine, on: On, data: Data, surface: (typeof SURFACES)[number] = 'terminal', language?: string, init: Record<string, unknown> = {}) {
   const clock = mock.clock(on, { now: 1000 })
   startWorld(on, language)
   const seen = uiWorld(on, { watch: ['abc'], ...init }, [surface], data)
-  on('ui.panes', () => ({ value: [{ id: 'teams-live', title: 'Teams', isPlaced: true }] }) as never)
+  on('ui.panes', () => ({ value: [{ id: 'teams-status', title: 'Teams', isPlaced: true }] }) as never)
   engineBand(on) // the engine's own band, beneath the teams row
   await start($)
   await clock.advance(3000)
@@ -289,34 +319,54 @@ for (const surface of SURFACES) {
     expect(all.filter(l => l.includes('[') || l.includes(']'))).toEqual([])
   })
 
-  test(`${surface}: tabs sit above the body as plain hotkey tabs; the selected one is full strength with a dot`, async ($, on) => {
+  test(`${surface}: Now sits on top, then the tabs: plain hotkey tabs 1-4, the selected one full strength with a dot`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo() }, surface)
     const ui = await pane($, surface)
     const tab = async (key: string) => (await ui.find({ key }))?.props
-    expect(await tab('summary')).toMatchObject({ plain: true, hotkey: '1', dimColor: false, label: '● Summary' })
-    expect(await tab('work')).toMatchObject({ plain: true, hotkey: '2', dimColor: true, label: 'Work' })
+    expect(await tab('teams')).toMatchObject({ plain: true, hotkey: '1', dimColor: false, label: '● Teams' })
+    expect(await tab('decisions')).toMatchObject({ plain: true, hotkey: '2', dimColor: true, label: 'Decisions' })
+    expect(await tab('log')).toMatchObject({ hotkey: '3' })
+    expect(await tab('report')).toMatchObject({ hotkey: '4' })
     const text = await shown(ui)
-    expect(text.indexOf('Summary')).toBeLessThan(text.indexOf('Now'))
-    await ui.press({ key: 'work' })
+    expect(text.indexOf('Now')).toBeLessThan(text.indexOf('Teams'))
+    await ui.press({ key: 'decisions' })
     await ui.redraw() // the stubbed $.state does not notify readers
-    expect(await tab('work')).toMatchObject({ dimColor: false, label: '● Work' })
-    expect(await tab('summary')).toMatchObject({ dimColor: true, label: 'Summary' })
+    expect(await tab('decisions')).toMatchObject({ dimColor: false, label: '● Decisions' })
+    expect(await tab('teams')).toMatchObject({ dimColor: true, label: 'Teams' })
   })
 
-  test(`${surface}: Work tab is a board: To do / Doing / Done columns with counts, a failed card under To do`, async ($, on) => {
-    await seeded($, on, { status: stat(), task: demo({ work: [failedCard, card('module b', 'package', 'done'), card('module c', 'package', 'done')] }) }, surface)
+  test(`${surface}: Teams tab: one block per team, each card with its state and what it does now; Now lists each active actor`, async ($, on) => {
+    await seeded($, on, { status: stat(), task: demo({ work: [failedCard] }), teams: TEAMS }, surface)
     const ui = await pane($, surface)
-    await ui.press({ key: 'work' })
-    await ui.redraw()
-    for (const head of ['To do 1', 'Doing 0', 'Done 2']) expect(await ui.find({ type: 'Text', text: head })).toBeDefined()
+    for (const head of ['Planning', 'Develop', 'QA', 'Audit']) expect(await ui.find({ type: 'Text', text: head })).toBeDefined()
+    expect((await ui.find({ key: 'card:P1' }))?.props.label).toBe('● module b · IN_PROGRESS · implement codex·gpt-5 4m')
+    expect((await ui.find({ key: 'card:P0' }))?.props.label).toBe('✘ module a · BLOCKED')
+    expect(await ui.find({ type: 'Text', text: '  verifier rejected: tests red' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '  Develop · E-3a3a3bb5/P1 · implement · codex·gpt-5 · 4m' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '  EPIC · E-3a3a3bb5 · integrate:1 · claude·opus · 35s' })).toBeDefined()
   })
 
-  test(`${surface}: Work tab has a line per card and a reason only under a failed one; Log tab has time and sentence`, async ($, on) => {
+  test(`${surface}: a card pressed opens its own decision thread: earlier and later verdict with actor and reason`, async ($, on) => {
+    const { seen } = await seeded($, on, { status: stat(), task: demo(), teams: TEAMS, decisions: card => (card === 'P1' ? THREAD : { card: null, entries: [] }) }, surface)
+    const ui = await pane($, surface)
+    await ui.press({ key: 'card:P1' })
+    await ui.redraw()
+    const call = seen.argv.filter(a => fmtOf(a) === 'decisions').at(-1)!
+    expect(call[call.indexOf('--card') + 1]).toBe('P1')
+    expect((await ui.find({ key: 'decisions' }))?.props.label).toBe('● Decisions')
+    expect(await ui.find({ type: 'Text', text: 'Card P1' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '10:00 claude·opus · could not judge · accept:P1:1 — reply was not JSON' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '10:05 claude·sonnet · rejected 70% · accept:P1:1 — AC 3 missing' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '      gaps: AC 3 untested' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '10:06 human · answered · critique — reject: overlap' })).toBeDefined()
+    await ui.press({ key: 'all' })
+    const last = seen.argv.filter(a => fmtOf(a) === 'decisions').at(-1)!
+    expect(last.includes('--card')).toBe(false)
+  })
+
+  test(`${surface}: a failed card shows its reason once; Log tab has time and sentence`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo({ work: [failedCard, card('module b', 'package', 'done')] }) }, surface)
     const ui = await pane($, surface)
-    expect(await ui.find({ key: 'work' })).toBeDefined()
-    await ui.press({ key: 'work' })
-    await ui.redraw()
     const work = await shown(ui)
     expect(work).toContain('module a')
     expect(work).toContain('module b')
@@ -382,7 +432,7 @@ for (const surface of SURFACES) {
     const ui = await band($, surface)
     expect((await ui.find({ key: 'inbox' }))?.props.label).toBe('needs you 2')
     await ui.press({ key: 'board' })
-    expect(seen.opened).toEqual(['teams-live'])
+    expect(seen.opened).toEqual(['teams-status'])
     expect(await shown(await pane($, surface))).toContain('2 more in other runs')
   })
 
@@ -416,23 +466,53 @@ for (const surface of SURFACES) {
     for (const word of ['✘', 'module a', 'verifier rejected: tests red']) expect(failed).toContain(word)
   })
 
-  test(`${surface}: language korean draws no English UI word and the 요약 tab`, async ($, on) => {
-    await seeded($, on, { status: stat({ waiting: 2 }), task: demo({ work: [failedCard] }) }, surface, 'korean')
+  test(`${surface}: language korean draws no English UI word and the 팀 tab`, async ($, on) => {
+    await seeded($, on, { status: stat({ waiting: 2 }), task: demo({ work: [failedCard] }), teams: TEAMS }, surface, 'korean')
     const texts = [await shown(await pane($, surface)), await shown(await band($, surface))]
-    for (const text of texts) for (const word of EN_UI) expect(text).not.toContain(word)
-    expect(texts[0]).toContain('요약')
+    for (const text of texts) for (const word of [...EN_UI, 'Teams', 'Decisions', 'Develop', 'Audit', '"label":"close"']) expect(text).not.toContain(word)
+    expect(texts[0]).toContain('● 팀')
+    expect(texts[0]).toContain('개발')
     expect(texts[0]).toContain('Build the expense tracker')
   })
 }
 
 for (const language of ['English', undefined]) {
-  test(`language ${language ?? 'unset'}: the pane shows Summary`, async ($, on) => {
+  test(`language ${language ?? 'unset'}: the pane shows Teams`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo() }, 'terminal', language)
     const text = await shown(await pane($, 'terminal'))
-    expect(text).toContain('Summary')
-    expect(text).not.toContain('요약')
+    expect(text).toContain('Teams')
+    expect(text).not.toContain('결정')
   })
 }
+
+// ---- closing: Escape, q, and the command again ----
+test('the pane opens focused and closes on Escape (from the command and the band)', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  startWorld(on)
+  const seen = uiWorld(on, { watch: ['abc'] }, ['terminal'], { status: stat(), task: demo() })
+  on('ui.panes', () => ({ value: [] }) as never)
+  engineBand(on)
+  await start($)
+  await clock.advance(3000) // learns status.latest
+  await clock.advance(3000) // the summary the band draws
+  await $.command.run({ command: 'teams-status', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
+  await (await band($, 'terminal')).press({ key: 'board' })
+  expect(seen.openArgs).toHaveLength(2)
+  for (const args of seen.openArgs) expect(args).toMatchObject({ id: 'teams-status', focus: true, closeOnEscape: true })
+})
+
+test('q closes the pane; /teams-status on an open pane closes it', async ($, on) => {
+  const closed: string[] = []
+  on('ui.close', (_$, e) => { closed.push(e.id); return { value: undefined } })
+  await seeded($, on, { status: stat(), task: demo() })
+  const ui = await pane($, 'terminal')
+  expect((await ui.find({ key: 'close' }))?.props).toMatchObject({ hotkey: 'q', role: 'dismiss', label: 'close' })
+  await ui.press({ key: 'close' })
+  expect(closed).toEqual(['teams-status'])
+  const r = await $.command.run({ command: 'teams-status', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
+  expect(closed).toEqual(['teams-status', 'teams-status'])
+  expect(JSON.stringify(r)).toContain('pane closed')
+})
 
 test('language korean: stalled pane header and the waiting status line have no English UI word', async ($, on) => {
   const { seen } = await seeded($, on, { status: stat({ waiting: 2 }), task: demo({ state: 'stalled' }) }, 'terminal', '한국어')
@@ -474,7 +554,7 @@ async function tickWorld($: Engine, on: On, init: Record<string, unknown>, isOpe
   const clock = mock.clock(on, { now: 1000 })
   startWorld(on)
   const seen = uiWorld(on, init, ['terminal'], data)
-  on('ui.panes', () => ({ value: isOpen ? [{ id: 'teams-live', title: 'Teams', isPlaced: true }] : [] }) as never)
+  on('ui.panes', () => ({ value: isOpen ? [{ id: 'teams-status', title: 'Teams', isPlaced: true }] : [] }) as never)
   await start($)
   const ticks: (readonly string[])[][] = []
   const tick = async () => {
@@ -505,16 +585,24 @@ test('tick: pane closed and a task is known: one --format summary call without -
   expect(w.ticks[1]![0]!.includes('--task')).toBe(false)
 })
 
-test('tick: pane open: one --format summary call with --task paneTask; no --view, no status call', async ($, on) => {
+test('tick: pane open: one --format teams call with --task paneTask; no --view, no status call', async ($, on) => {
   const w = await tickWorld($, on, { watch: ['abc'] }, true)
   await w.tick()
   await w.tick()
   for (const calls of w.ticks) {
     expect(calls).toHaveLength(1)
-    expect(formatOf(calls[0]!)).toBe('summary')
+    expect(formatOf(calls[0]!)).toBe('teams')
     expect(calls[0]![calls[0]!.indexOf('--task') + 1]).toBe('abc')
   }
   expect(w.seen.argv.some(a => a.includes('--view'))).toBe(false)
+})
+
+test('tick: Decisions tab open: one more call, --format decisions for the pane task and picked card', async ($, on) => {
+  const w = await tickWorld($, on, { watch: ['abc'], view: 'decisions', selected: 'P1' }, true)
+  await w.tick()
+  expect(w.ticks[0]!.map(formatOf)).toEqual(['teams', 'decisions'])
+  const d = w.ticks[0]![1]!
+  expect([d[d.indexOf('--task') + 1], d[d.indexOf('--card') + 1]]).toEqual(['abc', 'P1'])
 })
 
 test('tick: pane open falls back to status.latest once known', async ($, on) => {
@@ -536,13 +624,14 @@ test('tick stores the summary the pane then draws without running a process', as
   expect(w.seen.argv).toHaveLength(n)
 })
 
-test('/teams-live answers and opens the pane; session start alone opens nothing', async ($, on) => {
+test('/teams-status answers and opens the pane; session start alone opens nothing', async ($, on) => {
   const seen = uiWorld(on)
   startWorld(on)
+  on('ui.panes', () => ({ value: [] }) as never)
   await start($)
   expect(seen.opened).toEqual([])
-  const r = await $.command.run({ command: 'teams-live', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
-  expect(seen.opened).toEqual(['teams-live'])
+  const r = await $.command.run({ command: 'teams-status', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
+  expect(seen.opened).toEqual(['teams-status'])
   expect(JSON.stringify(r)).toContain('pane opened')
 })
 
@@ -622,8 +711,9 @@ test('now: Korean "fixnext" has no English', async ($, on) => {
   expect(text).not.toContain('Waiting')
 })
 
-test('/teams-live: Korean reply and description have no English, no teams prefix, no status-line claim', async ($, on) => {
+test('/teams-status: Korean reply and description have no English, no teams prefix, no status-line claim', async ($, on) => {
   uiWorld(on)
+  on('ui.panes', () => ({ value: [] }) as never)
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: '/proj' }))
   on('settings.read', () => ({ value: { language: 'korean' } }) as never)
@@ -633,18 +723,19 @@ test('/teams-live: Korean reply and description have no English, no teams prefix
     return { value: { command: e.name } }
   })
   await start($)
-  const r = JSON.stringify(await $.command.run({ command: 'teams-live', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never))
+  const r = JSON.stringify(await $.command.run({ command: 'teams-status', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never))
   expect(r.replace(/"text"/, "")).not.toMatch(/[A-Za-z]{4}/)
   expect(description).not.toMatch(/[A-Za-z]{4}/)
 })
 
-test('/teams-live: English reply has no teams prefix and no status-line claim', async ($, on) => {
+test('/teams-status: English reply has no teams prefix and no status-line claim', async ($, on) => {
   const seen = uiWorld(on)
   startWorld(on)
+  on('ui.panes', () => ({ value: [] }) as never)
   await start($)
-  const r = JSON.stringify(await $.command.run({ command: 'teams-live', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never))
-  expect(seen.opened).toEqual(['teams-live'])
-  expect(r).not.toContain('teams-live')
+  const r = JSON.stringify(await $.command.run({ command: 'teams-status', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never))
+  expect(seen.opened).toEqual(['teams-status'])
+  expect(r).not.toContain('teams-status')
   expect(r).not.toContain('status line')
 })
 
@@ -737,7 +828,7 @@ for (const surface of SURFACES) {
     expect(await labels(b)).toEqual(['report', '×'])
     expect(await b.find({ text: 'engine band' })).toBeDefined()
     await b.press({ key: 'report' })
-    expect(seen.opened).toEqual(['teams-live'])
+    expect(seen.opened).toEqual(['teams-status'])
     expect(seen.store.get('view')).toBe('report')
     expect(seen.store.get('watch')).toEqual(['abc', 'tee'])
     expect(seen.store.get('ended')).toEqual({ tee: 'seen' })

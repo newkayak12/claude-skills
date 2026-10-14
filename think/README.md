@@ -112,6 +112,27 @@ Output shape:
 [설계] architecture · components · data flow · errors · tests → approval → write:plans
 ```
 
+**Debate mode** (opt-in, about 3× tokens). For a one-way door, a cross-team choice, or finalists the
+criteria don't separate, Claude offers it in one line; or ask for it ("토론으로", "debate"). Claude
+shows three personas (swap any), each runs as its own subagent to propose options, then they attack
+and rebut each other for up to two rounds; Claude still cuts with the kill-criteria and adds
+`[충돌]` — who clashed where. Every utterance is logged to `.claude/brainstorming/<slug>.jsonl`. With
+fewer than two agents left it finishes in normal mode and says so.
+
+**`/brainstorming-status` pane** (Claude Code, interactive sessions only; never required). Reads the
+newest debate log: tabs Timeline (↑↓ scroll, Tab onto a persona to filter, who is speaking now),
+Options (for/against per option), Result. A band line shows the debate while it runs
+(`Brainstorming · 2/3 · speaking: X`), an end card after. Closes on Esc, q, or the command again.
+
+![status-band](docs/images/status-band.png)
+The band while a debate runs: which round and who is speaking.
+
+![status-timeline](docs/images/status-timeline.png)
+Timeline: every proposal, attack and rebuttal in order, so you see how an option won or lost.
+
+![status-options](docs/images/status-options.png)
+Options: for and against per option at a glance.
+
 ### `grill`
 
 Interrogates a plan you already hold, before anything is built. It reads the README and the code the plan touches

@@ -1,4 +1,4 @@
-// reportPayload(): the pure builder behind `view.mjs --once --format report` (the teams-live Report tab).
+// reportPayload(): the pure builder behind `view.mjs --once --format report` (the teams-status Report tab).
 //
 //   node --test teams/scripts/test-view-report.mjs
 import { test } from 'node:test';

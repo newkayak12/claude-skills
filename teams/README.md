@@ -377,8 +377,9 @@ teams ships a small mod: a band above the prompt, a status line that appears onl
 **Features**
 
 - **Band.** One row above the prompt, shown only while a run in this folder is running: title, what it is doing now, a short progress bar with `<done>/<total>`, and the buttons `board` (opens the pane) and `needs you <n>` (shown when `<n>` nodes wait for you). Other mods' bands stay visible below it.
-- **Status line.** Shown only when you must act: `needs you: <n> waiting - open /teams-live`. The engine adds the `teams: ` prefix and draws it as a notice. Otherwise there is no status line.
-- **`/teams-live`** opens the pane in a rounded frame: a header (title, state, day, done/total), then the tabs Summary, Work, Log and Report (keys `1`-`4`; the selected one is bright with a dot) beside the task key and cost. Summary draws the stages as a rail (`● Plan ━━ ● Build ━━ ◉ QA ┄┄ ○ Report`: solid up to where the run is, dotted after), then what it is doing now, whether you are needed, one line per card and a progress bar. Work is a board with To do, Doing and Done columns and their counts; failed cards sit under To do with their reason. Log lists events as sentences with local time. The pane follows the last run you started with `tm_open` or `tm_run`. With none, it falls back to the newest running task of this folder; with neither, `No teams run in this session.`
+- **Status line.** Shown only when you must act: `needs you: <n> waiting - open /teams-status`. The engine adds the `teams: ` prefix and draws it as a notice. Otherwise there is no status line.
+- **`/teams-status`** opens the pane in a rounded frame; `Esc`, `q` or `/teams-status` again closes it. A header (title, state, day, done/total), then **Now**: what the run is doing, one line per active actor (team, card key, stage or node, vendor·model where recorded, elapsed) and whether you are needed. Below it the tabs Teams, Decisions, Log and Report (keys `1`-`4`; the selected one is bright with a dot) beside the task key and cost. Teams draws the stages as a rail (`● Plan ━━ ● Build ━━ ◉ QA ┄┄ ○ Report`), then one block per team (Planning, Develop, QA, Audit) with each card's state and what it is doing now, and a progress bar; a failed card shows its reason. Decisions is the timeline of who proposed what, each verdict (accept or reject, score, actor, reason, blocking/problems/gaps), retries and re-judges, re-splits, defects filed with their evidence, your answers and the task's decisions. Pick a card with ↑↓ and Enter to see only its thread. Log lists events as sentences with local time. The pane follows the last run you started with `tm_open` or `tm_run`. With none, it falls back to the newest running task of this folder; with neither, `No teams run in this session.`
+- **Verdict ledger.** Every judge node that settles writes a `verdict` line to the task ledger (`node_id`, `stage`, `actor` vendor·model when known, `verdict`, `score`, `reason` up to 300 characters), so a re-judge keeps the earlier verdict. A person's `tm_submit` answer is recorded with its text (up to 300 characters). `view.mjs --once --format teams|decisions` prints what the pane draws.
 - **End-of-run card.** When a run of this session ends (finished or blocked), the band shows one card in place of the running row: the verdict, `failed <n>`, up to three things that need you (`+<n> more` for the rest), a `report` button and `×`. A blocked run shows the card without the button until `80-report.md` exists. `report` opens the pane on that run's Report tab; `×`, or opening the Report tab, clears the card. A run that ended before the session started gets no card.
 - **Report tab.** Key `4` shows the run's `80-report.md` in the pane: the file path on the first line, then (when the file is longer than 20000 characters) a notice with the number of lines left out, then the report text. The tab follows the pane's run, and the file is read again only while the tab is open. Chatting the report back to you is unchanged.
 - **Interactive only, nothing lost without it.** The card and the tab need an interactive surface. Without one, or with the `modules` line removed, the report is still written and still relayed in chat.
@@ -398,14 +399,14 @@ Known limitation: a session that started with no UI surface (headless or SDK-hos
 
 Captured from a real Claude Code 2.1.293 session on a scratch repo (a size-L task with a small budget, so it stops before shape).
 
-![band](docs/images/band.png)
-The band while a run is going: title, what it is doing now, progress and `board`.
+![status-band](docs/images/status-band.png)
+The band while a run is going: title, what it is doing now and progress; select it to open `/teams-status`.
 
-![pane-summary](docs/images/pane-summary.png)
-`/teams-live` Summary: the stage rail, Now and You lines (here a run parked on a human `areas-critique` gate).
+![status-teams](docs/images/status-teams.png)
+The Teams tab: who is working on what right now, per team and card, with the stage rail and progress.
 
-![pane-work](docs/images/pane-work.png)
-The Work tab: To do / Doing / Done columns with their counts.
+![status-decisions](docs/images/status-decisions.png)
+The Decisions tab: who proposed what, each verdict with its reason, retries and filed defects, so you can see why the run went the way it did.
 
 ![end-card](docs/images/end-card.png)
 The end-of-run card: verdict, what needs you, `report` and `×`.

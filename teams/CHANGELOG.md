@@ -5,6 +5,7 @@
 Every release of the `teams` plugin, newest first. Moved here verbatim from the README's old `## Status` section. `teams:patch` prepends new release lines under `## Status` below.
 
 ## Status
+- v0.57.0 — `/teams-status` (was `/teams-live`): a control panel with a Now line per active actor, a Teams tab (each team's cards and what they do now), a Decisions timeline (proposals, verdicts with actor and reason, re-judges, filed defects, your answers; pick a card for its thread) and Log; closes on Esc, q or the command again. The ledger records `verdict` lines, `tm_submit_human` answers, `defects_filed` and each node's vendor·model.
 - v0.56.0 — the mod publishes a run's end (complete, partial, blocked or exhausted) as its own `outcome` state for trophy to count; `daemon_done` events carry the daemon's `state`. No ids, and teams works the same without trophy.
 - v0.55.0 — the mod sends a push notification (toast when it cannot) on rejects, needs-you and run end; `node_finish` carries the package and attempt, and a reject push names the attempt.
 - v0.54.1 — Codex uses a schema-compatible hook overlay and preserves dispatch gating for edits and nested run entry calls; Claude hooks are unchanged. Codex `apply_patch` renames (`*** Move to:`) are judged by their target path. The Codex overlay leaves out the SessionStart trophy install hook on purpose (trophy is Claude-only).
