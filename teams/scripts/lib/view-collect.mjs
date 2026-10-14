@@ -119,8 +119,11 @@ function nodeSummary(n) {
   // finish()/submit() write n.executor/n.model off the routing decision - see stagePolicy).
   // The RESOURCE view's "workers per TASK" is this, verbatim - a second lookup would just be
   // this same field re-read from a different door.
-  out.executor = n.executor || null;
+  // A manager node the daemon judged (or a person answered) carries vendor/model instead.
+  out.executor = n.executor || n.vendor || null;
   out.model = n.model || null;
+  // A judge node stays pending while the daemon's judge() runs; its stamp says since when.
+  if (n.judging && n.judging.at) out.judging_since = n.judging.at;
   // A human-pinned node (graph.mjs's applyHumanPin / openAsk) carries n.assignment.executor
   // 'human' and, once someone is actually holding it, n.state 'waiting_human'. Surfaced here
   // (not just on the package) so both the TICKET view's per-TASK rows and the RESOURCE view's

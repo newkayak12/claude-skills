@@ -1951,6 +1951,8 @@ function fileDefects(task, defects, opts) {
   }
   const feedback = defects.map((d) => `${(d && d.title) || ''}${d && d.evidence ? `: ${d.evidence}` : ''}`).filter(Boolean).join('\n- ');
   const fresh = reintegrateBehind(task, oldDep, acceptIds, feedback);
+  // Every route that files (QA's accept, the audit, tm_file, upstream) says so on the ledger once.
+  record(task, { event: 'defects_filed', task_id: task.run_id, reporter, origin, filed: filed.map((p) => p.id) });
   // acceptIds (parallel to `filed`, same order) is what fileUpstreamDefects reads to rewire a
   // downstream package's own next attempt onto the fix instead of the upstream package's stale
   // accept - every other caller ignores the extra key.
@@ -4321,6 +4323,45 @@ function managerReviewerIndependence(task, n) {
   return null;
 }
 
+// Who judged a node: vendor·model the daemon's judge() or a person stamped on it, else (a dispatch)
+// the last child-run node the broker tagged with an executor. null when nothing recorded one.
+function actorOf(n) {
+  if (n.vendor) return n.model ? `${n.vendor}·${n.model}` : n.vendor;
+  if (n.stage !== 'dispatch' || !n.child) return null;
+  const child = loadRun(n.child.cwd, n.child.run_id);
+  const tagged = child && Array.isArray(child.nodes) ? child.nodes.filter((x) => x.executor && x.state === 'done').pop() : null;
+  if (!tagged) return null;
+  n.vendor = tagged.executor;
+  if (tagged.model) n.model = tagged.model;
+  return actorOf(n);
+}
+
+const short = (s) => String(s).slice(0, 300);
+
+// One ledger line per settled judge node (status panes design 2026-10-14): a re-judge resets the
+// node, so without this the earlier verdict is gone from task.json.
+function recordVerdict(task, n) {
+  const r = n.result || {};
+  const f = VERDICT[n.stage];
+  const verdict = n.state === 'done' ? f : r.judge_failed === true ? 'judge_failed' : 'reject';
+  const why = r.reason || [r.blocking, r.problems, r.gaps].flatMap((x) => (Array.isArray(x) ? x : []))
+    .map((x) => (typeof x === 'object' ? (x.text || JSON.stringify(x)) : String(x))).join('; ');
+  record(task, {
+    event: 'verdict', task_id: task.run_id, node_id: n.node_id, stage: n.stage,
+    ...(n.subgoal_id ? { subgoal_id: n.subgoal_id } : {}), ...(n.attempt ? { attempt: n.attempt } : {}),
+    actor: actorOf(n), verdict, score: Number.isFinite(r.match_pct) ? r.match_pct : null, reason: why ? short(why) : null,
+  });
+}
+
+// A person's answer as one line for the ledger: decisions as "question: chose", a gate's reason,
+// else the payload itself.
+function answerText(payload) {
+  const p = payload || {};
+  if (Array.isArray(p.decisions)) return short(p.decisions.map((d) => `${(d && d.question) || ''}: ${d && d.chose !== undefined ? d.chose : ''}`).join('; '));
+  if (typeof p.accept === 'boolean') return short(`${p.accept ? 'accept' : 'reject'}${p.reason ? `: ${p.reason}` : ''}`);
+  return short(JSON.stringify(p));
+}
+
 export function finish(task, n, result) {
   // A node settling is what moves a ticket, and it is the one place both callers pass through -
   // tm_submit and the daemon alike. Hooking the caller instead left the whole surface stale
@@ -4590,6 +4631,7 @@ export function finish(task, n, result) {
     }
   }
   saveRun(task);
+  if (VERDICT[n.stage]) recordVerdict(task, n);
   record(task, { event: 'node_finish', task_id: task.run_id, node_id: n.node_id, stage: n.stage, stage_ok: n.result.stage_ok === true, state: n.state, ...(n.subgoal_id ? { subgoal_id: n.subgoal_id } : {}), ...(n.attempt ? { attempt: n.attempt } : {}) });
   try { syncTickets(task, ticketsBefore, n.node_id); } catch { /* evidence, not a dependency */ }
   return verdict(task, n);
@@ -7005,8 +7047,10 @@ function toolSubmitHumanManager(task, key, nodeId, rawPayload) {
   // card typically does not. Same default computeSubmitResult gives the child-run path: absent
   // means true, only an explicit false means false.
   const payload = { ...shaped, stage_ok: shaped.stage_ok !== false };
+  n.vendor = 'human';
+  delete n.model;
   const verdictOut = finish(task, n, payload);
-  record(task, { event: 'tm_submit_human', task_id: task.run_id, key, node_id: nodeId, stage_ok: verdictOut.stage_ok === true });
+  record(task, { event: 'tm_submit_human', task_id: task.run_id, key, node_id: nodeId, stage_ok: verdictOut.stage_ok === true, answer: answerText(rawPayload) });
   return { task_id: task.run_id, key, node_id: nodeId, state: n.state, result: n.result };
 }
 
@@ -7074,7 +7118,7 @@ function toolSubmitHuman(task, a) {
   const { result, done } = computeSubmitResult(child, n, payload, 'human');
   const answeredAt = Date.now();
   queueHumanAction(dispatch.child.cwd, dispatch.child.run_id, { kind: 'submit', node_id: nodeId, payload, answered_at: answeredAt });
-  record(task, { event: 'tm_submit_human', task_id: task.run_id, key, node_id: nodeId, stage_ok: result.stage_ok });
+  record(task, { event: 'tm_submit_human', task_id: task.run_id, key, node_id: nodeId, stage_ok: result.stage_ok, answer: answerText(a.payload) });
 
   // The driver already exited the moment nothing was left ready for it (zero compute while
   // waiting - graph.mjs's promoteWaitingHuman). Resume it now, the same shape clearCapacity

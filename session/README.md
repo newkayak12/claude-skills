@@ -143,7 +143,7 @@ Off by default (**Prompt hint** in `/config`). When on, a typed prompt of 20 cha
 ## Board
 `/board` opens one pane for every open interactive session that has this plugin, the default place to see what the plugin knows. Tabs: **Sessions** `[1]`, **Recap** `[2]`, **Lessons** `[3]`, **Today** `[4]`, **Worktrees** `[5]` (`/board worktrees`); `[r]` refreshes the sessions or worktrees.
 
-Each session row shows its branch, context %, cost, running task and three cells for the runs in its folder, in the words and marks of each plugin's own pane: `harness ● running 1/3`, `graph ○ blocked 4/9`, `teams ✔ finished 3/3`, or `–` when there is none. A live run names the command that shows its detail in that session (`/harness-gate`, `/graph-live`, `/teams-live`). The board reads the run files itself, so it needs none of those plugins.
+Each session row shows its branch, context %, cost, running task and three cells for the runs in its folder, in the words and marks of each plugin's own pane: `harness ● running 1/3`, `graph ○ blocked 4/9`, `teams ✔ finished 3/3`, or `–` when there is none. A live run names the command that shows its detail in that session (`/harness-status`, `/graph-status`, `/teams-status`). The board reads the run files itself, so it needs none of those plugins.
 
 A session writes its row at start and after each turn, and removes it when it ends; a row not updated for 30 minutes is marked idle, and one older than a day is dropped. Rows are kept in this plugin's store on your machine only.
 
@@ -158,6 +158,7 @@ One row per `git worktree list --porcelain` entry of this repo: branch (or detac
 When a `git push` to `main` goes through in one session (`origin main`, `HEAD:main`, `x:main`, or a plain push while on main), every other open session of the same repository that was active in the last 30 minutes gets a message: `main moved to <sha> … Fetch before editing or bumping versions.` At most one message per session every 2 minutes; this session gets a toast `main moved: told N of M`. Headless runs send nothing.
 
 ## Status
+- `0.7.0`: `start_band` (`off` default, `recap`, `retro`, `both`) picks what the band shows on a new session; `/board` points to the plugins' `-status` panes.
 - `0.6.0`: `/board` has a Worktrees tab (key 5, `/board worktrees`) with a guarded Clean button for merged worktrees.
 - `0.5.7`: Codex uses an explicit empty, schema-compatible hook overlay because Session's UI hook module is Claude-only; Claude behavior is unchanged and Codex no longer fails plugin initialization. The overlay also leaves out the SessionStart trophy install hook on purpose (trophy is Claude-only).
 - `0.5.6`: the main-moved message reads the pushed HEAD, not `origin/main` — with a remote not named origin it was sent empty and every repeat was dropped as a duplicate.
@@ -173,6 +174,6 @@ When a `git push` to `main` goes through in one session (`origin main`, `HEAD:ma
 - Denied counts only denials this plugin saw as a tool call result.
 - Paths are plain text (no clickable links).
 - Windows: the orphan section is hidden and stopping is off; the Retro view and band work.
-- The board's harness cell counts subgoals that passed against the spec's and the run folder's subgoals; the full stage view stays in `/harness-gate`.
+- The board's harness cell counts subgoals that passed against the spec's and the run folder's subgoals; the full stage view stays in `/harness-status`.
 - Interactive sessions only for UI; headless runs record the ledger and save the summary, nothing is drawn.
 - Checked in a live terminal session (2.1.294): panes, `[stop]`, the retro band, guard asks in auto and bypass mode, and `/memo` after `/clear`. The desktop Code tab is not checked yet.

@@ -118,6 +118,20 @@ function lastResultText(stdout) {
   return last && typeof last.result === 'string' ? last.result : '';
 }
 
+// Who a judge call ran as: `claude`, and the model its stream's init event names (else the
+// --model it was asked for). Exported for the test.
+export function judgedBy(stdout, extra = []) {
+  let model = null;
+  for (const line of String(stdout || '').split('\n')) {
+    if (!line.trim()) continue;
+    let e;
+    try { e = JSON.parse(line); } catch { continue; }
+    if (e && e.type === 'system' && typeof e.model === 'string' && e.model) { model = e.model; break; }
+  }
+  const i = extra.indexOf('--model');
+  return { vendor: 'claude', model: model || (i >= 0 ? extra[i + 1] : null) };
+}
+
 // A judge's reply is asked to be "that JSON object and nothing else" (composeTaskPrompt), but a
 // model reply is prose the way a person's is: a code fence around it, a sentence before it. Take
 // the first `{`..last `}` span rather than trust the whole string is clean JSON - the same
@@ -228,7 +242,7 @@ async function judge(task, n) {
       const text = lastResultText(out);
       try {
         const parsed = extractJson(text);
-        settle(unexplainedRefusal(parsed) || parsed);
+        settle({ ...(unexplainedRefusal(parsed) || parsed), judged_by: judgedBy(out, extra) });
       } catch (e) {
         settle({
           stage_ok: false,
@@ -394,7 +408,11 @@ function applyJudged(taskId, nodeId, stamp, result) {
         return { superseded: true };
       }
       delete f.judging;
-      const out = finish(t, f, result);
+      // who judged (judge()'s judged_by): stamped on the node, kept out of the verdict itself
+      const { judged_by: by, ...verdict } = result || {};
+      delete f.vendor; delete f.model;
+      if (by && by.vendor) { f.vendor = by.vendor; if (by.model) f.model = by.model; }
+      const out = finish(t, f, verdict);
       // finish() alone does not delegate a size-S task to its own run - toolSubmit calls
       // delegateIfSmall right after finish() for the size node, and the daemon makes the same
       // call here, on the fresh node, only for a verdict that was applied.

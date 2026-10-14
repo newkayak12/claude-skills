@@ -1,13 +1,16 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Mark, ReportPayload, StatusInfo, SummaryTask, TeamsEvent } from '../types'
+import type { Decision, DecisionsPayload, Mark, ReportPayload, StatusInfo, SummaryTask, TeamsEvent, TeamsView } from '../types'
 
 const cursor = atom({ plugin: 'teams', key: 'cursor' } as const, 0)
 const status = atom({ plugin: 'teams', key: 'status' } as const, null as StatusInfo | null)
 const summary = atom({ plugin: 'teams', key: 'summary' } as const, null as SummaryTask | null)
+const teams = atom({ plugin: 'teams', key: 'teams' } as const, null as TeamsView | null)
+const decisions = atom({ plugin: 'teams', key: 'decisions' } as const, null as { task_id: string; card: string | null; payload: DecisionsPayload } | null)
+const selected = atom({ plugin: 'teams', key: 'selected' } as const, null as string | null)
 const watch = atom({ plugin: 'teams', key: 'watch' } as const, [] as string[])
-const view = atom({ plugin: 'teams', key: 'view' } as const, 'summary' as 'summary' | 'work' | 'log' | 'report')
+const view = atom({ plugin: 'teams', key: 'view' } as const, 'teams' as 'teams' | 'decisions' | 'log' | 'report')
 // the report of one task: keyed to the task it was fetched for, so a card or tab never draws another's
 const report = atom({ plugin: 'teams', key: 'report' } as const, null as { task_id: string; payload: ReportPayload } | null)
 // the report behind the end-of-run card: its own atom, so an open Report tab on another task never
@@ -21,10 +24,18 @@ type Ended = Record<string, 'card' | 'seen' | 'dismissed'>
 const ended = atom({ plugin: 'teams', key: 'ended' } as const, {} as Ended)
 const mark = (m: Ended, id: string, state: Ended[string]): Ended => ({ ...m, [id]: state })
 
-const PANE = 'teams-live'
+const PANE = 'teams-status'
+// opened by the person: it takes the keys, and Escape hands them back by closing it
+const OPEN = { id: PANE, title: 'Teams', focus: true, closeOnEscape: true } as const
 
 const en = {
-  tabSummary: 'Summary', tabWork: 'Work', tabLog: 'Log', tabReport: 'Report',
+  tabTeams: 'Teams', tabDecisions: 'Decisions', tabLog: 'Log', tabReport: 'Report', close: 'close',
+  teamPlanning: 'Planning', teamDevelop: 'Develop', teamQa: 'QA', teamAudit: 'Audit', teamEpic: 'EPIC', nodeWaiting: 'waiting for you',
+  decAll: 'all cards', decCard: 'Card {c}', decNone: 'No decisions recorded yet.',
+  kindProposal: 'proposed', kindRetry: 'retry', kindRejudge: 're-judge', kindResplit: 're-split', kindDefect: 'defect filed', kindAnswer: 'answered', kindDecision: 'decided',
+  vAccept: 'accepted', vSound: 'sound', vVerified: 'verified', vReject: 'rejected', vJudgeFailed: 'could not judge',
+  lineBlocking: 'blocking', lineProblems: 'problems', lineGaps: 'gaps', lineEvidence: 'evidence',
+  paneClosed: 'pane closed',
   cardFinished: 'finished', cardBlocked: 'blocked', cardFailed: 'failed {n}', cardMore: '+{n} more', reportButton: 'report', dismiss: '×',
   reportMissing: 'No report yet: {path}', reportTruncated: 'Shortened: {n} more lines in the file.',
   now: 'Now', you: 'You', stages: 'Stages', work: 'Work', cost: 'Cost',
@@ -37,9 +48,8 @@ const en = {
   logPassed: '{s} passed', logFailed: '{s} failed', logFiled: '{s} filed', logIntegrated: '{s} integrated',
   logDispatched: '{s} started', logWaiting: '{s} waiting for you', logFinished: '{s} finished',
   noRun: 'No teams run in this session.', loading: 'Loading...', noLog: 'Nothing logged yet.',
-  workMore: '+{n} more', cmdDesc: 'Open the teams live pane', paneOpened: 'pane opened',
-  board: 'board', inbox: 'needs you {n}', statusWaiting: 'needs you: {n} waiting - open /teams-live',
-  colTodo: 'To do', colDoing: 'Doing', colDone: 'Done',
+  workMore: '+{n} more', cmdDesc: 'Open or close the teams status pane', paneOpened: 'pane opened',
+  board: 'board', inbox: 'needs you {n}', statusWaiting: 'needs you: {n} waiting - open /teams-status',
   pushRejected: 'rejected', pushNeedsYou: 'needs you', pushEnded: 'run ended',
 }
 
@@ -47,7 +57,13 @@ const en = {
 export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
   en,
   ko: {
-    tabSummary: '요약', tabWork: '작업', tabLog: '기록', tabReport: '보고서',
+    tabTeams: '팀', tabDecisions: '결정', tabLog: '기록', tabReport: '보고서', close: '닫기',
+    teamPlanning: '기획', teamDevelop: '개발', teamQa: 'QA', teamAudit: '감사', teamEpic: '에픽', nodeWaiting: '답변 대기',
+    decAll: '전체 카드', decCard: '카드 {c}', decNone: '아직 기록된 결정이 없습니다.',
+    kindProposal: '제안', kindRetry: '재시도', kindRejudge: '재판정', kindResplit: '재분할', kindDefect: '결함 등록', kindAnswer: '답변', kindDecision: '결정',
+    vAccept: '승인', vSound: '타당', vVerified: '검증됨', vReject: '반려', vJudgeFailed: '판정 실패',
+    lineBlocking: '차단', lineProblems: '문제', lineGaps: '누락', lineEvidence: '근거',
+    paneClosed: '창을 닫았습니다',
     cardFinished: '끝남', cardBlocked: '막힘', cardFailed: '실패 {n}', cardMore: '+{n}건 더', reportButton: '보고서', dismiss: '×',
     reportMissing: '아직 보고서가 없습니다: {path}', reportTruncated: '일부만 표시: 파일에 {n}줄 더 있습니다.',
     now: '지금', you: '확인', stages: '단계', work: '작업', cost: '비용',
@@ -60,9 +76,8 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     logPassed: '{s} 통과', logFailed: '{s} 실패', logFiled: '{s} 등록', logIntegrated: '{s} 반영',
     logDispatched: '{s} 시작', logWaiting: '{s} 답변 대기', logFinished: '{s} 끝남',
     noRun: '이 세션에 팀 실행이 없습니다.', loading: '불러오는 중...', noLog: '아직 기록이 없습니다.',
-    workMore: '+{n}건 더', cmdDesc: '팀 실행 현황 창 열기', paneOpened: '창을 열었습니다',
-    board: '보드', inbox: '확인 필요 {n}', statusWaiting: '확인 필요: {n}건 대기 - /teams-live 열기',
-    colTodo: '대기', colDoing: '진행', colDone: '완료',
+    workMore: '+{n}건 더', cmdDesc: '팀 현황 창 열기/닫기', paneOpened: '창을 열었습니다',
+    board: '보드', inbox: '확인 필요 {n}', statusWaiting: '확인 필요: {n}건 대기 - /teams-status 열기',
     pushRejected: '반려', pushNeedsYou: '확인 필요', pushEnded: '실행 종료',
   },
 }
@@ -77,6 +92,14 @@ const DOT: Record<Mark, string> = { done: '●', running: '◉', pending: '○',
 const TINT: Record<Mark, string> = { done: 'success', running: 'claude', pending: 'inactive', failed: 'error' }
 const BAR = 24
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+// 35s, 4m, 1h 2m
+const since = (ms: number | null) => {
+  if (ms === null) return ''
+  const m = Math.floor(ms / 60000)
+  return ms < 60000 ? `${Math.floor(ms / 1000)}s` : m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`
+}
+const VERDICT_WORD: Record<string, keyof typeof en> = { accept: 'vAccept', sound: 'vSound', verified: 'vVerified', reject: 'vReject', judge_failed: 'vJudgeFailed' }
 
 const asRecord = (v: unknown): Record<string, unknown> | undefined =>
   typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : undefined
@@ -118,6 +141,20 @@ async function fetchReport($: EngineInterface, taskId: string, forCard = false):
     const payload = JSON.parse(r.stdout.trim().split('\n').pop() ?? '') as ReportPayload
     if (forCard) await update($, cardReport, () => ({ task_id: taskId, payload }))
     else await update($, report, () => ({ task_id: taskId, payload }))
+  } catch {
+    // a failed call keeps the last payload
+  }
+}
+
+// One decisions call for a task (and the picked card); a failed call keeps what was stored.
+async function fetchDecisions($: EngineInterface, taskId: string): Promise<void> {
+  try {
+    const cwd = await $.session.cwd()
+    const card = await read($, selected)
+    const r = await $.process.run(['node', `${$.plugin.root}/scripts/view.mjs`, '--once', '--format', 'decisions', '--task', taskId, '--cwd', cwd, ...(card === null ? [] : ['--card', card])])
+    if (r.exitCode !== 0) return
+    const payload = JSON.parse(r.stdout.trim().split('\n').pop() ?? '') as DecisionsPayload
+    await update($, decisions, () => ({ task_id: taskId, card, payload }))
   } catch {
     // a failed call keeps the last payload
   }
@@ -216,22 +253,26 @@ export const register: Register = on => {
           }
         }
 
-        // one data call: the summary while the pane is open or a task of this cwd is running, else the status
+        // one data call: the teams rows while the pane is open, the summary while a task of this cwd
+        // is running, else the status
         const isOpen = (await $.ui.panes()).some(p => p.id === PANE)
         const isSummary = isOpen || (await read($, status))?.latest != null
         const id = isOpen ? await paneTask($) : undefined
         const data = await $.process.run([
-          'node', VIEW, '--once', '--format', isSummary ? 'summary' : 'status', '--cwd', cwd,
+          'node', VIEW, '--once', '--format', isOpen ? 'teams' : isSummary ? 'summary' : 'status', '--cwd', cwd,
           ...(id === undefined ? [] : ['--task', id]),
         ])
         if (data.exitCode === 0) {
-          const parsed = JSON.parse(data.stdout) as { status: StatusInfo; task: SummaryTask | null } & StatusInfo
+          const parsed = JSON.parse(data.stdout) as { status: StatusInfo; task: SummaryTask | null; teams?: TeamsView | null } & StatusInfo
           const info: StatusInfo = isSummary ? parsed.status : parsed
           await update($, status, () => info)
           await update($, summary, () => (isSummary ? parsed.task ?? null : null))
+          await update($, teams, () => parsed.teams ?? null)
           // pinned only while a person must act (the engine draws it as a warning)
           $.ui.status(info.waiting > 0 ? fmt(STRINGS[await read($, lang)].statusWaiting, { n: info.waiting }) : undefined)
         }
+        // the Decisions tab refetches only while it is open, for the pane's task and picked card
+        if (id !== undefined && (await read($, view)) === 'decisions') await fetchDecisions($, id)
         // the Report tab refetches only while it is open, for the pane's task
         const isTab = id !== undefined && (await read($, view)) === 'report'
         if (isTab && (await read($, ended))[id] === 'card') await update($, ended, m => mark(m, id, 'seen'))
@@ -259,7 +300,7 @@ export const register: Register = on => {
     } catch {
       // unreadable settings: English
     }
-    await $.command.register({ name: 'teams-live', description: STRINGS[await read($, lang)].cmdDesc })
+    await $.command.register({ name: 'teams-status', description: STRINGS[await read($, lang)].cmdDesc })
     // events older than this session's start are not toasted
     const now = await $.clock.now()
     await update($, cursor, since => (since === 0 ? now : since))
@@ -268,9 +309,13 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // asked for by the person: the pane seats at any width
-  on('command.run', { command: 'teams-live' }, async $ => {
-    await $.ui.open({ id: PANE, title: 'Teams' })
+  // asked for by the person: the pane seats at any width; the command again closes it
+  on('command.run', { command: 'teams-status' }, async $ => {
+    if ((await $.ui.panes()).some(p => p.id === PANE)) {
+      await $.ui.close({ id: PANE })
+      return { text: STRINGS[await read($, lang)].paneClosed }
+    }
+    await $.ui.open(OPEN)
     return { text: STRINGS[await read($, lang)].paneOpened }
   })
 
@@ -283,11 +328,13 @@ export const register: Register = on => {
     const task = await read($, summary)
     const info = await read($, status)
 
-    // plain tabs with hotkeys 1-3: the selected one in full strength with a dot, the rest dim
+    const close = <Button key="close" role="dismiss" plain hotkey="q" label={s('close')} onPress={() => $.ui.close({ id: PANE })} />
+    // plain tabs with hotkeys 1-4: the selected one in full strength with a dot, the rest dim
     const tabs = (
-      <Box columnGap={3}>
-        {(['summary', 'work', 'log', 'report'] as const).map((one, i) => (
-          <Button key={one} plain hotkey={String(i + 1)} dimColor={kind !== one}
+      // a tab that does not fit moves whole to the next line, never splits
+      <Box columnGap={2} flexWrap="wrap">
+        {(['teams', 'decisions', 'log', 'report'] as const).map((one, i) => (
+          <Box key={`tab-${one}`} flexShrink={0}><Button key={one} plain hotkey={String(i + 1)} dimColor={kind !== one}
             label={`${kind === one ? '● ' : ''}${s(`tab${cap(one)}` as keyof typeof en)}`}
             onPress={async () => {
               await update($, view, () => one)
@@ -295,7 +342,8 @@ export const register: Register = on => {
                 await update($, ended, m => (m[id] === 'card' ? mark(m, id, 'seen') : m))
                 await fetchReport($, id)
               }
-            }} />
+              if (one === 'decisions' && id !== undefined) await fetchDecisions($, id)
+            }} /></Box>
         ))}
       </Box>
     )
@@ -303,6 +351,7 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column">
           <Text>{id === undefined ? s('noRun') : s('loading')}</Text>
+          {close}
         </Box>
       )
     }
@@ -322,7 +371,7 @@ export const register: Register = on => {
     if (task === null) {
       return (
         <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
-          <Box marginY={1}>{tabs}</Box>
+          <Box marginY={1} justifyContent="space-between">{tabs}{close}</Box>
           {reportBody}
         </Box>
       )
@@ -344,10 +393,31 @@ export const register: Register = on => {
       </Box>
     )
 
+    // Now: the run in one sentence, then one line per active actor, then what waits on the person
+    const you = task.you.items.length > 0 ? task.you.items.join('; ') : task.you.count > 0 ? String(task.you.count) : s('youNone')
+    const others = (info?.waiting ?? 0) - task.you.count
+    const tv = await read($, teams)
+    const teamWord = (t: string) => s(`team${cap(t)}` as keyof typeof en) || t
+    const nodeWord = (n: string) => (n === 'waiting' ? s('nodeWaiting') : n)
+    const nowBox = (
+      <Box flexDirection="column">
+        <Text color="claude" bold wrap="truncate-end">{`▶ ${s('now')} · ${nowSentence(s, task)}`}</Text>
+        {(tv?.now ?? []).map((l, i) => (
+          <Text key={`n${i}`} wrap="truncate-end">{`  ${teamWord(l.team)} · ${l.key} · ${nodeWord(l.node)} · ${l.agent ?? '—'} · ${since(l.elapsed_ms)}`}</Text>
+        ))}
+        <Text color={task.you.count > 0 ? 'warning' : 'inactive'} wrap="truncate-end">{`⚑ ${s('you')} · ${you}`}</Text>
+        {others > 0 && <Text color="warning">{`  ${s('youOthers', { n: others })}`}</Text>}
+      </Box>
+    )
+    const pick = async (cardId: string) => {
+      await update($, selected, () => cardId)
+      await update($, view, () => 'decisions')
+      await fetchDecisions($, id)
+    }
+
     let body
-    if (kind === 'summary') {
-      const you = task.you.items.length > 0 ? task.you.items.join('; ') : task.you.count > 0 ? String(task.you.count) : s('youNone')
-      const others = (info?.waiting ?? 0) - task.you.count
+    if (kind === 'teams') {
+      const reasonOf = (title: string) => task.work.find(w => w.title === title && w.state === 'failed')?.reason ?? null
       body = (
         <Box flexDirection="column">
           <Box flexWrap="wrap">
@@ -362,35 +432,69 @@ export const register: Register = on => {
               )
             })}
           </Box>
-          <Box flexDirection="column" marginTop={1}>
-            <Text color="claude" bold wrap="truncate-end">{`▶ ${s('now')} · ${nowSentence(s, task)}`}</Text>
-            <Text color={task.you.count > 0 ? 'warning' : 'inactive'} wrap="truncate-end">{`⚑ ${s('you')} · ${you}`}</Text>
-            {others > 0 && <Text color="warning">{`  ${s('youOthers', { n: others })}`}</Text>}
-          </Box>
-          <Box flexDirection="column" marginY={1}>
-            {task.work.slice(0, WORK_MAX).map(card)}
-            {task.work.length > WORK_MAX && <Text dimColor>{`  ${s('workMore', { n: task.work.length - WORK_MAX })}`}</Text>}
-          </Box>
+          {tv === null ? (
+            // before the first teams call: the summary's card list
+            <Box flexDirection="column" marginY={1}>
+              {task.work.slice(0, WORK_MAX).map(card)}
+              {task.work.length > WORK_MAX && <Text dimColor>{`  ${s('workMore', { n: task.work.length - WORK_MAX })}`}</Text>}
+            </Box>
+          ) : (
+            // one block per team; each card a button (↑↓ moves, Enter opens its decision thread)
+            <Box flexDirection="column" marginY={1}>
+              {tv.teams.map(t => (
+                <Box key={`t-${t.team}`} flexDirection="column">
+                  <Text bold>{teamWord(t.team)}</Text>
+                  {t.cards.map(c => (
+                    <Box key={`k-${c.id}`} flexDirection="column">
+                      {/* one line per card: a narrow pane clips the label instead of wrapping it */}
+                      <Box height={1} overflow="hidden"><Button key={`card:${c.id}`} plain dimColor={c.mark === 'done'}
+                        label={`${MARK[c.mark]} ${c.title} · ${c.state ?? ''}${c.now ? ` · ${nodeWord(c.now.node)} ${c.now.agent ?? ''} ${since(c.now.elapsed_ms)}`.trimEnd() : ''}`}
+                        onPress={() => pick(c.id)} /></Box>
+                      {c.mark === 'failed' && reasonOf(c.title) && <Text color="error" wrap="truncate-end">{`  ${reasonOf(c.title)}`}</Text>}
+                    </Box>
+                  ))}
+                </Box>
+              ))}
+            </Box>
+          )}
           {bar}
         </Box>
       )
-    } else if (kind === 'work') {
-      const cols = [
-        { key: 'colTodo', tint: 'inactive', cards: task.work.filter(c => c.state === 'pending' || c.state === 'failed') },
-        { key: 'colDoing', tint: 'claude', cards: task.work.filter(c => c.state === 'running') },
-        { key: 'colDone', tint: 'success', cards: task.work.filter(c => c.state === 'done') },
-      ] as const
+    } else if (kind === 'decisions') {
+      const pickedId = await read($, selected)
+      const dp = await read($, decisions)
+      const mine = dp !== null && dp.task_id === id && dp.card === pickedId ? dp.payload.entries : null
+      const what = (d: Decision) => {
+        const label = d.kind === 'verdict' ? s(VERDICT_WORD[d.verdict ?? ''] ?? 'vReject') : s(`kind${cap(d.kind)}` as keyof typeof en) || d.kind
+        const score = d.score !== null && d.score !== undefined ? ` ${d.score}%` : ''
+        const why = d.reason ?? d.text ?? d.title ?? ''
+        return `${d.time ?? '     '} ${d.actor ?? '—'} · ${label}${score} · ${d.node ?? d.card ?? ''}${why ? ` — ${why}` : ''}`
+      }
+      const subs = (d: Decision) => [
+        ...(d.blocking ?? []).map(x => `${s('lineBlocking')}: ${x}`),
+        ...(d.problems ?? []).map(x => `${s('lineProblems')}: ${x}`),
+        ...(d.gaps ?? []).map(x => `${s('lineGaps')}: ${x}`),
+        ...(d.evidence ? [`${s('lineEvidence')}: ${d.evidence}`] : []),
+      ]
       body = (
         <Box flexDirection="column">
-          <Box>
-            {cols.map(col => (
-              <Box key={col.key} flexDirection="column" width="33%" borderStyle="round" borderColor={col.tint} paddingX={1}>
-                <Text bold color={col.tint}>{`${s(col.key)} ${col.cards.length}`}</Text>
-                {col.cards.map(card)}
+          {pickedId !== null && (
+            <Box columnGap={2}>
+              <Text bold>{s('decCard', { c: pickedId })}</Text>
+              <Button key="all" plain label={s('decAll')} onPress={async () => {
+                await update($, selected, () => null)
+                await fetchDecisions($, id)
+              }} />
+            </Box>
+          )}
+          {mine === null ? <Text dimColor>{s('loading')}</Text>
+            : mine.length === 0 ? <Text dimColor>{s('decNone')}</Text>
+            : mine.map((d, i) => (
+              <Box key={`d${i}`} flexDirection="column">
+                <Text color={d.verdict === 'reject' || d.kind === 'defect' ? 'error' : d.kind === 'answer' || d.kind === 'decision' ? 'warning' : undefined} wrap="truncate-end">{what(d)}</Text>
+                {subs(d).map((line, j) => <Text key={`d${i}-${j}`} dimColor wrap="truncate-end">{`      ${line}`}</Text>)}
               </Box>
             ))}
-          </Box>
-          {bar}
         </Box>
       )
     } else if (kind === 'log') {
@@ -410,10 +514,15 @@ export const register: Register = on => {
           <Box flexShrink={0} marginLeft={2}>
             <Text color="claude">{s('headLine', { state: stateWord, day: task.day, done: task.done, total: task.total })}</Text>
           </Box>
+          <Box flexShrink={0} marginLeft={2}>{close}</Box>
         </Box>
-        <Box marginY={1} justifyContent="space-between">
-          {tabs}
-          <Text dimColor>{`${task.key} · ${s('costLine', { usd: `$${task.cost.usd.toFixed(2)}`, turns: task.cost.turns })}`}</Text>
+        <Box marginTop={1}>{nowBox}</Box>
+        {/* the tab row never wraps: the tabs keep their width, the key/cost text truncates */}
+        <Box marginY={1}>
+          <Box flexShrink={1}>{tabs}</Box>
+          <Box flexGrow={1} flexShrink={1} justifyContent="flex-end" marginLeft={2}>
+            <Text dimColor wrap="truncate-end">{`${task.key} · ${s('costLine', { usd: `$${task.cost.usd.toFixed(2)}`, turns: task.cost.turns })}`}</Text>
+          </Box>
         </Box>
         {body}
       </Box>
@@ -425,7 +534,7 @@ export const register: Register = on => {
     const task = await read($, summary)
     const lang$ = await read($, lang)
     const s = (key: keyof typeof en, vars?: Record<string, string | number>) => fmt(STRINGS[lang$][key], vars)
-    const open = () => $.ui.open({ id: PANE, title: 'Teams' })
+    const open = () => $.ui.open(OPEN)
 
     // an ended run: one card in place of the running row, until the person opens the report or dismisses it
     const cardId = cardTask(await read($, ended))

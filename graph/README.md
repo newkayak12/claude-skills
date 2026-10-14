@@ -50,6 +50,7 @@ Zero runtime dependencies, Node 18+.
 Optional: `graph:install` can run `develop:like-my-code` to write `.claude/conventions/`; the broker then tells every plan, setgoal, implement, and test node, on any vendor, to read and follow the relevant files.
 
 ## Status
+- v1.15.0 — `/graph-status` (was `/graph-live`): a Now line per running node with vendor·model and time; Flow shows each rejected attempt's reason with the retry under it; Detail lists every attempt with its feedback. Closes on Esc, q or the command again.
 - v1.14.0 — the mod publishes each run's outcome (pass or fail, once per run) as its own `outcome` state for trophy to count; no ids, and graph works the same without trophy.
 - v1.13.0 — the mod sends a push notification (toast when it cannot) on a node reject, a failed or blocked run, and a finished run.
 - v1.12.1 — Codex uses a schema-compatible hook overlay and blocks nested graph, harness, and teams MCP entry calls inside nodes; Claude's existing Skill gate is unchanged. The Codex overlay leaves out the SessionStart trophy install hook on purpose (trophy is Claude-only).
@@ -440,20 +441,18 @@ graph ships a small mod: a pane that shows the live run of the graph engine. It 
 
 **Features**
 
-- **`/graph-live`** opens the pane. Tabs are Flow and Nodes (keys `1`-`2`; the selected one is bright with a dot). Flow draws the stages as a rail (`● Plan ━━ ● SetGoal ━━ ● Critique ━━ ◉ Build ┄┄ ○ Goal gate ┄┄ ○ Report`), a Next, Now or Blocked line (what runs next, what runs now, or where the run is stuck), one line per subgoal with its impl, test and gate steps, a gates bar and the goal-gate `%`. Nodes lists every node with its state and attempt.
+- **`/graph-status`** opens the pane; the command again, Esc or `q` closes it. At the top, a **Now** line per running node: the node, its agent as `vendor·model` (`—` when the run file records none) and how long it has run; with nothing running it reads Next or Blocked (where the run is stuck). Tabs are Flow and Detail (keys `1`-`2`; the selected one is bright with a dot).
+  - **Flow** draws the stages as a rail (`● Plan ━━ ● SetGoal ━━ ● Critique ━━ ◉ Build ┄┄ ○ Goal gate ┄┄ ○ Report`), then the stages with their attempts: each subgoal attempt is one `impl ━ test ━ gate` line. A rejected attempt shows its reason (`↳ …`, from the node's result, else the feedback its retry carries) and the retry sits one level under it. Then a gates bar and the goal-gate `%`.
+  - **Detail** lists every node that ran, retries included: vendor·model, time, the feedback it was handed and, for a failed node, why.
+
+  ![status-flow](docs/images/status-flow.png)
+  Flow while a run is going: which node is working and, for a rejected attempt, why it was sent back.
+
+  ![status-detail](docs/images/status-detail.png)
+  Detail: every attempt with its agent, time and the feedback it got.
 - **Where the data comes from.** The newest run file in `.harness-run/broker/runs/` under the session folder. graph writes a run file under the folder the run was started in, so only runs started in this folder show; a run started from another folder (another worktree included) does not. If none is live, the pane says there is no run.
 - **Push on run events.** A node verdict that fails and is retried (`rejected`), a run whose retries are spent (`failed`) or that routing blocked (`blocked`), and a finished run (`complete`) each raise a PushNotification once per run, node, kind and attempt: `graph <run>: <kind> — <node> (<attempt>/<max>)`. When the push is not sent (you are at the terminal) or fails, the same line is a toast. Nothing older than the session start is pushed. Progress is never pushed. The mod still only reads the run files.
 - **Language.** English by default; Korean when Claude Code's `language` setting is Korean.
-
-### Screenshots
-
-Captured from a live Claude Code 2.1.293 terminal session, showing a finished run.
-
-![graph-live-flow](docs/images/graph-live-flow.png)
-`/graph-live`, Flow tab: stage rail, the Now line, one row per subgoal (impl → test → gate) and the gates bar.
-
-![graph-live-nodes](docs/images/graph-live-nodes.png)
-`/graph-live`, Nodes tab: every node on a To do / Doing / Done board, retries marked `#2`.
 
 The mod also publishes each run's outcome (`pass` on complete, `fail` on failed or blocked; no ids) as the state value `graph.outcome`, for the `trophy` plugin's opt-in counts.
 

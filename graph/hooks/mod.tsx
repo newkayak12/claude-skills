@@ -2,50 +2,53 @@ import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import type { GraphNode, GraphRun, Snap } from '../types'
-import { MARK, TINT, board, bar, cap, fmt, isKorean, rail, tabs } from './draw'
+import { MARK, TINT, bar, cap, fmt, isKorean, rail, tabs } from './draw'
 import type { Mark } from './draw'
+import { active, detailRows, flowGroups } from './status'
+import type { FlowGroup, FlowLine } from './status'
 
 // Read only: the mod lists and reads the broker's run files and writes nothing.
 const snap = atom({ plugin: 'graph', key: 'snap' } as const, null as Snap | null)
-const view = atom({ plugin: 'graph', key: 'view' } as const, 'flow' as 'flow' | 'nodes')
+const view = atom({ plugin: 'graph', key: 'view' } as const, 'flow' as 'flow' | 'detail')
 const lang = atom({ plugin: 'graph', key: 'lang' } as const, 'en' as 'en' | 'ko')
 
-const PANE = 'graph-live'
+const PANE = 'graph-status'
+const LINE_MAX = 24 // flow lines / detail rows drawn before "+n more"
+const NOW_MAX = 3 // running nodes named on the Now lines
 const DIR = '.harness-run/broker/runs'
 const FILE = /^[0-9a-f-]+\.json$/ // not the `<file>.<pid>.<uuid>.tmp` the store renames from
 const MAX_BYTES = 4 * 1024 * 1024 // $.fs.read rejects more
 const LIVE_MS = 2 * 60 * 60 * 1000
 const TICK_MS = 3000
 const BAR = 24
-const COL_MAX = 6
 
 const en = {
-  tabFlow: 'Flow', tabNodes: 'Nodes',
+  tabFlow: 'Flow', tabDetail: 'Detail',
   now: 'Now', next: 'Next', blockedAt: 'Blocked at', allDone: 'All done', nothing: 'Nothing to run',
   stateRunning: 'running', stateBlocked: 'blocked', stateComplete: 'finished',
   headLine: '{state} · {done}/{total}', gates: '{done}/{total} gates', goalGate: 'goal gate {pct}%',
   stagePlan: 'Plan', stageSetgoal: 'SetGoal', stageCritique: 'Critique', stageBuild: 'Build', stageGate: 'Goal gate', stageReport: 'Report',
   nodeImplement: 'impl', nodeTest: 'test', nodeGate: 'gate',
-  attempt: '(attempt {n})', again: '#{n}',
+  attempt: '(attempt {n})', feedback: 'feedback',
   noRun: 'No graph run in this folder.', tooBig: 'This run file is too large to show.',
-  more: '+{n} more', cmdDesc: 'Open the graph live pane', paneOpened: 'pane opened',
-  colTodo: 'To do', colDoing: 'Doing', colDone: 'Done',
+  more: '+{n} more', cmdDesc: 'Open or close the graph status pane', paneOpened: 'pane opened', paneClosed: 'pane closed',
+  closeBtn: 'close [q]',
 }
 
 // one table, two languages; the type keeps the keys identical
 export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
   en,
   ko: {
-    tabFlow: '흐름', tabNodes: '노드',
+    tabFlow: '흐름', tabDetail: '상세',
     now: '지금', next: '다음', blockedAt: '막힌 곳', allDone: '모두 끝남', nothing: '실행할 것 없음',
     stateRunning: '진행 중', stateBlocked: '막힘', stateComplete: '완료',
     headLine: '{state} · {done}/{total}', gates: '관문 {done}/{total}', goalGate: '목표 관문 {pct}%',
     stagePlan: '계획', stageSetgoal: '목표 설정', stageCritique: '비평', stageBuild: '구현', stageGate: '목표 관문', stageReport: '보고',
     nodeImplement: '구현', nodeTest: '테스트', nodeGate: '관문',
-    attempt: '({n}번째 시도)', again: '#{n}',
+    attempt: '({n}번째 시도)', feedback: '전달된 피드백',
     noRun: '이 폴더에 그래프 실행이 없습니다.', tooBig: '실행 파일이 너무 커서 보여줄 수 없습니다.',
-    more: '+{n}건 더', cmdDesc: '그래프 실행 현황 창 열기', paneOpened: '창을 열었습니다',
-    colTodo: '대기', colDoing: '진행', colDone: '완료',
+    more: '+{n}건 더', cmdDesc: '그래프 상태 창 열기/닫기', paneOpened: '창을 열었습니다', paneClosed: '창을 닫았습니다',
+    closeBtn: '닫기 [q]',
   },
 }
 type Key = keyof typeof en
@@ -275,30 +278,50 @@ export const register: Register = on => {
     } catch {
       // unreadable settings: English
     }
-    await $.command.register({ name: 'graph-live', description: STRINGS[await read($, lang)].cmdDesc })
+    await $.command.register({ name: 'graph-status', description: STRINGS[await read($, lang)].cmdDesc })
     await tick()
     $.clock.every(TICK_MS, tick)
 
     return next(e)
   })
 
-  on('command.run', { command: 'graph-live' }, async $ => {
-    await $.ui.open({ id: PANE, title: 'Graph' })
-    return { text: STRINGS[await read($, lang)].paneOpened }
+  // the command again closes the pane; Esc and q close it too (closeOnEscape, the close button)
+  on('command.run', { command: 'graph-status' }, async $ => {
+    const text = STRINGS[await read($, lang)]
+    let isOpen = false
+    try {
+      isOpen = (await $.ui.panes()).some((p: { id: string }) => p.id === PANE)
+    } catch {
+      // panes unreadable: open it
+    }
+    if (isOpen) {
+      await $.ui.close({ id: PANE })
+      return { text: text.paneClosed }
+    }
+    await $.ui.open({ id: PANE, title: 'Graph', focus: true, closeOnEscape: true })
+    return { text: text.paneOpened }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const ui = $.ui.resolve(e)
-    const { Box, Text } = ui
+    const { Box, Button, Text } = ui
     const kind = await read($, view)
     const lang$ = await read($, lang)
     const s = (key: Key, vars?: Record<string, string | number>) => fmt(STRINGS[lang$][key], vars)
     const sn = await read($, snap)
-    if (sn === null || (sn.run === null && !sn.big)) return <Box flexDirection="column"><Text>{s('noRun')}</Text></Box>
-    if (sn.run === null) return <Box flexDirection="column"><Text color="warning">{s('tooBig')}</Text></Box>
+    const closeBtn = <Button key="close" role="dismiss" label={s('closeBtn')} hotkey="q" onPress={() => $.ui.close({ id: PANE })} />
+    if (sn === null || (sn.run === null && !sn.big)) return <Box flexDirection="column"><Text>{s('noRun')}</Text>{closeBtn}</Box>
+    if (sn.run === null) return <Box flexDirection="column"><Text color="warning">{s('tooBig')}</Text>{closeBtn}</Box>
 
     const m = model(sn.run)
     const f = focus(s, m)
+    const now = await $.clock.now()
+    // Now: a line per running node (agent, how long); with none running, the sentence of focus()
+    const act = active(sn.run, now).slice(0, NOW_MAX)
+    const nowLines =
+      act.length > 0
+        ? act.map(a => ({ color: 'claude', text: `▶ ${s('now')} · ${label(s, a.node, 'attempt')} · ${a.agent}${a.elapsed === '' ? '' : ` · ${a.elapsed}`}` }))
+        : [{ color: f.color, text: `${f.kind === 'blocked' ? '⚠' : '▶'} ${f.head} · ${f.text}` }]
     const stateWord = s(`state${cap(m.state)}` as Key)
     const gatesText = `${s('gates', { done: m.done, total: m.total })}${m.pct === undefined ? '' : ` · ${s('goalGate', { pct: m.pct })}`}`
     const mark = (n: GraphNode | undefined, word: string) => {
@@ -306,55 +329,69 @@ export const register: Register = on => {
       return <Text color={TINT[st]}>{`${MARK[st]} ${word}`}</Text>
     }
 
+    const subTitle = (id: string) => m.subgoals.find(g => g.id === id)?.title ?? ''
+    const attemptText = (l: FlowLine) => s('attempt', { n: l.attempt })
+    // one line per attempt: a subgoal's impl/test/gate chain, or one stage; a retry sits under the reject it answers
+    const flowItem = (g: FlowGroup, l: FlowLine, key: string) => {
+      const pad = (g.sg === null ? 0 : 1) + Math.min(l.depth, 4)
+      const of = (st: string) => l.nodes.find(x => x.stage === st)
+      const joined = (n: GraphNode | undefined) => (n !== undefined && n.state !== 'pending' && n.state !== 'skipped' ? ' ━ ' : ' ┄ ')
+      const stageWord = (STRINGS[lang$] as Record<string, string>)[`stage${cap(g.stage)}`] ?? g.stage
+      return (
+        <Box key={key} flexDirection="column" marginLeft={pad * 2}>
+          {g.sg === null ? (
+            <Text wrap="truncate-end"><Text color={TINT[l.state]}>{MARK[l.state]}</Text>{` ${stageWord}${l.attempt > 1 ? ` ${attemptText(l)}` : ''}`}</Text>
+          ) : (
+            <Box>
+              {mark(of('implement'), s('nodeImplement'))}
+              <Text dimColor>{joined(of('test'))}</Text>
+              {mark(of('test'), s('nodeTest'))}
+              <Text dimColor>{joined(of('gate'))}</Text>
+              {mark(of('gate'), s('nodeGate'))}
+              <Text dimColor>{` ${attemptText(l)}`}</Text>
+            </Box>
+          )}
+          {l.reason !== '' && <Text color="error" wrap="truncate-end">{`↳ ${l.reason}`}</Text>}
+        </Box>
+      )
+    }
+
     let body
     if (kind === 'flow') {
+      const items: unknown[] = []
+      flowGroups(sn.run).forEach((g, gi) => {
+        if (g.sg !== null) items.push(<Text key={`h${gi}`} bold wrap="truncate-end">{`${g.sg} ${subTitle(g.sg)}`.trim()}</Text>)
+        g.lines.forEach((l, li) => items.push(flowItem(g, l, `l${gi}-${li}`)))
+      })
       body = (
         <Box flexDirection="column">
-          <Box flexDirection="column" marginTop={1}>
-            <Text color={f.color} bold wrap="truncate-end">{`${f.kind === 'blocked' ? '⚠' : '▶'} ${f.head} · ${f.text}`}</Text>
-          </Box>
           <Box flexDirection="column" marginY={1}>
-            {m.subgoals.slice(0, COL_MAX).map(g => {
-              const imp = m.nodeOf(g.id, 'implement')
-              const tst = m.nodeOf(g.id, 'test')
-              const gat = m.nodeOf(g.id, 'gate')
-              const joined = (n: GraphNode | undefined) => (n !== undefined && n.state !== 'pending' ? ' ━ ' : ' ┄ ')
-              return (
-                <Box key={g.id}>
-                  <Box flexShrink={1}><Text wrap="truncate-end">{`${g.id} ${g.title ?? ''}`.trim()}</Text></Box>
-                  <Box flexShrink={0} marginLeft={2}>
-                    {mark(imp, s('nodeImplement'))}
-                    <Text dimColor>{joined(tst)}</Text>
-                    {mark(tst, s('nodeTest'))}
-                    <Text dimColor>{joined(gat)}</Text>
-                    {mark(gat, s('nodeGate'))}
-                  </Box>
-                </Box>
-              )
-            })}
-            {m.subgoals.length > COL_MAX && <Text dimColor>{`  ${s('more', { n: m.subgoals.length - COL_MAX })}`}</Text>}
+            {items.slice(0, LINE_MAX)}
+            {items.length > LINE_MAX && <Text dimColor>{`  ${s('more', { n: items.length - LINE_MAX })}`}</Text>}
           </Box>
           {bar(ui, m.done, m.total, BAR, gatesText)}
         </Box>
       )
     } else {
-      const card = (n: GraphNode, i: number) => {
-        const st = n.state === 'unreachable' ? 'pending' : nodeMark(n.state)
-        return (
-          <Box key={`n${i}`} flexDirection="column">
-            <Text wrap="truncate-end"><Text color={TINT[st]}>{MARK[st]}</Text>{` ${label(s, n, 'again')}`}</Text>
-            {n.state === 'failed' && n.result?.reason && <Text color="error" wrap="truncate-end">{`  ${n.result.reason}`}</Text>}
-          </Box>
-        )
-      }
-      const cols = [
-        { label: s('colTodo'), tint: 'inactive', items: m.nodes.filter(n => n.state !== 'running' && n.state !== 'done') },
-        { label: s('colDoing'), tint: 'claude', items: m.nodes.filter(n => n.state === 'running') },
-        { label: s('colDone'), tint: 'success', items: m.nodes.filter(n => n.state === 'done') },
-      ]
+      const rows = detailRows(sn.run, now)
       body = (
         <Box flexDirection="column">
-          {board(ui, cols, card)}
+          <Box flexDirection="column" marginY={1}>
+            {rows.slice(0, LINE_MAX).map((r, i) => {
+              const st = nodeMark(r.node.state)
+              return (
+                <Box key={`d${i}`} flexDirection="column">
+                  <Text wrap="truncate-end">
+                    <Text color={TINT[st]}>{MARK[st]}</Text>
+                    {` ${label(s, r.node, 'attempt')}  ${r.agent}${r.elapsed === '' ? '' : `  ${r.elapsed}`}`}
+                  </Text>
+                  {r.feedback !== '' && <Text dimColor wrap="truncate-end">{`  ${s('feedback')}: ${r.feedback}`}</Text>}
+                  {r.reason !== '' && <Text color="error" wrap="truncate-end">{`  ${r.reason}`}</Text>}
+                </Box>
+              )
+            })}
+            {rows.length > LINE_MAX && <Text dimColor>{`  ${s('more', { n: rows.length - LINE_MAX })}`}</Text>}
+          </Box>
           {bar(ui, m.done, m.total, BAR, gatesText)}
         </Box>
       )
@@ -363,13 +400,19 @@ export const register: Register = on => {
       <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
         <Box>
           <Box flexShrink={1}><Text bold wrap="truncate-end">{titleOf(sn.run)}</Text></Box>
+          <Box flexShrink={1} marginLeft={2}><Text dimColor wrap="truncate-end">{sn.run.run_id.slice(0, 8)}</Text></Box>
           <Box flexShrink={0} marginLeft={2}>
             <Text color="claude">{s('headLine', { state: stateWord, done: m.done, total: m.total })}</Text>
           </Box>
         </Box>
+        <Box flexDirection="column" marginTop={1}>
+          {nowLines.map((l, i) => <Text key={`now${i}`} color={l.color} bold wrap="truncate-end">{l.text}</Text>)}
+        </Box>
         <Box marginY={1} justifyContent="space-between">
-          {tabs(ui, [{ key: 'flow', label: s('tabFlow') }, { key: 'nodes', label: s('tabNodes') }], kind, key => update($, view, () => key as 'flow' | 'nodes'))}
-          <Text dimColor>{sn.run.run_id.slice(0, 8)}</Text>
+          <Box flexShrink={0}>
+            {tabs(ui, [{ key: 'flow', label: s('tabFlow') }, { key: 'detail', label: s('tabDetail') }], kind, key => update($, view, () => key as 'flow' | 'detail'))}
+          </Box>
+          <Box flexShrink={0} marginLeft={2}>{closeBtn}</Box>
         </Box>
         <Box flexDirection="column">
           {m.rail.length > 0 && rail(ui, m.rail.map(g => ({ label: s(`stage${g.key}` as Key), state: g.state })))}

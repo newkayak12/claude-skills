@@ -5,6 +5,7 @@
 `teams` 플러그인의 모든 릴리스를 최신순으로 적었습니다. 예전 KOR.md의 `## 상태` 절을 그대로 옮겨 온 것입니다. 새 릴리스 줄은 `teams:patch`가 아래 `## 상태` 맨 위에 추가합니다.
 
 ## 상태
+- v0.57.0 — `/teams-status`(이전 `/teams-live`): 일하는 주체마다 지금 줄, Teams 탭(팀별 카드와 지금 하는 일), Decisions 타임라인(제안, 판정자·사유가 붙은 판정, 재판정, 등록된 결함, 사용자 답변, 카드를 골라 그 흐름만), Log가 있는 컨트롤 패널. Esc, q, 같은 명령으로 닫힙니다. ledger에 `verdict` 줄, `tm_submit_human` 답변, `defects_filed`, 노드의 vendor·model이 기록됩니다.
 - v0.56.0 — mod가 run 종료(완료·부분 완료·막힘·소진)를 자기 `outcome` 상태로 발행해 trophy가 셉니다. `daemon_done` 이벤트에 daemon의 `state`가 실립니다. id는 담지 않고, trophy가 없어도 teams는 똑같이 동작합니다.
 - v0.55.0 — 반려, 사람 확인 필요, run 종료 때 mod가 푸시 알림을 보냅니다(못 보내면 토스트). `node_finish`에 패키지와 시도 번호가 실리고, 반려 알림에 시도 번호가 나옵니다.
 - v0.54.1 — Codex는 스키마 호환 훅 오버레이를 사용하고 편집 및 중첩 run 진입 호출의 dispatch gate를 유지하며, Claude 훅은 변경되지 않습니다. Codex `apply_patch`의 이름 변경(`*** Move to:`)도 새 경로로 판정합니다. Codex 오버레이는 SessionStart의 trophy 설치 훅을 일부러 넣지 않습니다(trophy는 Claude 전용).

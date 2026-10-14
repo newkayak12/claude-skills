@@ -1,4 +1,4 @@
-// Pure helpers behind `view.mjs --once --format status|events` (the teams-live mod).
+// Pure helpers behind `view.mjs --once --format status|events` (the teams-status mod).
 //
 //   node --test teams/scripts/test-view-events.mjs
 import { test } from 'node:test';

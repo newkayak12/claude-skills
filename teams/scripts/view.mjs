@@ -28,6 +28,7 @@ import { renderText, renderIndexText, renderTicketsText, renderResourcesText } f
 import { notableEvents, statusLine } from './lib/view-events.mjs';
 import { summarize } from './lib/view-summary.mjs';
 import { reportPayload } from './lib/view-report.mjs';
+import { teamsView, decisionsView } from './lib/view-status.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -49,16 +50,17 @@ function parseArgs(argv) {
     else if (arg === '--format') a.format = argv[++i];
     else if (arg === '--since') a.since = Number(argv[++i]) || 0;
     else if (arg === '--cwd') a.cwd = argv[++i];
+    else if (arg === '--card') a.card = argv[++i];
     else if (arg === '--help'|| arg === '-h') a.help = true;
   }
   return a;
 }
 
 function usage() {
-  return 'usage: node view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--once] [--view pipeline|tickets|resources] [--once --format status|events|summary [--since <ts>] [--cwd <dir>]] [--once --format report --task <id> [--cwd <dir>]]\n';
+  return 'usage: node view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--once] [--view pipeline|tickets|resources] [--once --format status|events|summary|teams [--since <ts>] [--cwd <dir>]] [--once --format report --task <id> [--cwd <dir>]] [--once --format decisions --task <id> [--card <id>]]\n';
 }
 
-// ---------- --once --format status|events (the teams-live mod's data) ----------
+// ---------- --once --format status|events|summary|teams|decisions (the teams-status mod's data) ----------
 
 const TAIL_BYTES = 256 * 1024;
 
@@ -126,6 +128,23 @@ function summaryOutput(tasksDir, cwd, taskId) {
   return JSON.stringify({ status, task: m && !m.error ? summarize(m) : null }) + '\n';
 }
 
+// summaryOutput plus the per-team rows and Now lines (the /teams-status pane while it is open).
+function teamsOutput(tasksDir, cwd, taskId) {
+  const status = JSON.parse(statusOutput(tasksDir, cwd));
+  const id = taskId || status.latest;
+  const m = id ? collectTask(tasksDir, id) : null;
+  const ok = m && !m.error;
+  return JSON.stringify({ status, task: ok ? summarize(m) : null, teams: ok ? teamsView(m) : null }) + '\n';
+}
+
+// The decision timeline of --task (one card's with --card), from task.json and the ledger tail.
+function decisionsOutput(tasksDir, taskId, card) {
+  let raw = null;
+  try { raw = taskId ? JSON.parse(readFileSync(join(tasksDir, taskId, 'task.json'), 'utf8')) : null; } catch { raw = null; }
+  const ledger = raw ? tailLines(join(tasksDir, taskId, 'ledger.jsonl')).map((l) => { try { return JSON.parse(l); } catch { return null; } }) : [];
+  return JSON.stringify(decisionsView(raw, ledger, { card: card || null })) + '\n';
+}
+
 // Ledgers whose file changed after `since` (mtime, ms), whatever the task's state: daemon_done and
 // daemon_exhausted are written after a task stops running, so a running-only filter would never
 // deliver them. A task.json-less dir is not listed and an unreadable one carries `error`; both skipped.
@@ -146,7 +165,7 @@ function eventsOutput(tasksDir, cwd, since) {
   return out.map((e) => JSON.stringify(e) + '\n').join('');
 }
 
-// One ReportPayload line for --task (the teams-live Report tab and end-of-run card). A task that is
+// One ReportPayload line for --task (the teams-status Report tab and end-of-run card). A task that is
 // unknown or unreadable still gets a payload, with report and retro null.
 function reportOutput(tasksDir, taskId) {
   const m = taskId ? collectTask(tasksDir, taskId) : null;
@@ -220,6 +239,8 @@ async function main() {
   if (args.once) {
     if (args.format === 'status') { process.stdout.write(statusOutput(tasksDir, args.cwd)); return; }
     if (args.format === 'summary') { process.stdout.write(summaryOutput(tasksDir, args.cwd, args.task)); return; }
+    if (args.format === 'teams') { process.stdout.write(teamsOutput(tasksDir, args.cwd, args.task)); return; }
+    if (args.format === 'decisions') { process.stdout.write(decisionsOutput(tasksDir, args.task, args.card)); return; }
     if (args.format === 'report') { process.stdout.write(reportOutput(tasksDir, args.task)); return; }
     if (args.format === 'events') { process.stdout.write(eventsOutput(tasksDir, args.cwd, args.since || 0)); return; }
     if (args.task) {

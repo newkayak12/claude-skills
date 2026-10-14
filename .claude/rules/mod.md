@@ -30,3 +30,15 @@ around the model: what a person sees, and what the client adds on top.
    No ASCII-art views in `{ text }`, no browser page.
 
 Test: `cd <plugin> && claude plugin test .`, and one live session where the pane opens and closes.
+
+## A UI change is done when
+1. **Seen live.** In tmux, `claude --plugin-dir ./<plugin>`, open it by its command and its band
+   line, close it by Esc, q and the command again.
+2. **Not broken at any width.** Capture at 190 and at 110 columns: no wrapped tab row, no label
+   pushed under another, no cut glyph, long text ends in `…`. Fix before shipping, not after.
+3. **Shot for the README.** `python3 _repo/scripts/mod-shot.py <tmux-session> <plugin>/docs/images/<name>.png
+   [--rows A:B] [--cols A:B]`, one image per surface that changed (pane tab, band, card, toast).
+   Demo data is fictional and generic — never a real project, task, company, or person's work.
+4. **Introduced in the README.** README.md and KOR.md show each image with one or two lines on what
+   feedback it gives the person and when (e.g. "while a run is going, the band says which node is
+   working; when it ends, a card offers the report").

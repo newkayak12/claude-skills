@@ -2,8 +2,9 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Decision, OpenRun, OpenRuns, RunInfo, RunSub, StageKey } from '../types'
-import { MARK, TINT, bar, board, cap, fmt, isKorean, rail, tabs } from './draw'
+import { MARK, TINT, bar, cap, fmt, isKorean, rail, tabs } from './draw'
 import type { Mark } from './draw'
+import { NONE, critiqueReason, flowLines, gateReason, goalReason, sinceLast } from './status'
 
 const last = atom({ plugin: 'harness', key: 'last' } as const, null as Decision | null)
 const armed = atom({ plugin: 'harness', key: 'armed' } as const, false)
@@ -13,11 +14,11 @@ const windowHours = atom({ plugin: 'harness', key: 'windowHours' } as const, 2)
 const broken = atom({ plugin: 'harness', key: 'broken' } as const, false)
 const runs = atom({ plugin: 'harness', key: 'runs' } as const, { harness: [], graph: [] } as OpenRuns)
 const run = atom({ plugin: 'harness', key: 'run' } as const, null as RunInfo | null)
-// 'auto' opens on Run when a run is found, else on Gate
-const view = atom({ plugin: 'harness', key: 'view' } as const, 'auto' as 'auto' | 'run' | 'units' | 'gate')
+// 'auto' opens on Flow when a run is found, else on Detail (where the gate rules are)
+const view = atom({ plugin: 'harness', key: 'view' } as const, 'auto' as 'auto' | 'flow' | 'detail')
 const lang = atom({ plugin: 'harness', key: 'lang' } as const, 'en' as 'en' | 'ko')
 
-const PANE = 'harness-gate'
+const PANE = 'harness-status'
 const CONFIG = '.claude/harness-gate.json'
 const DECISION = '.claude/.harness-last-decision.json'
 const TEAMS_CONFIG = '.claude/teams-dispatch.json'
@@ -28,19 +29,20 @@ const LIVE_MS = 2 * 60 * 60 * 1000
 const MAX_READ = 4 * 1024 * 1024
 const PASS_PCT = 90 // the pass bar of the run checker (engine fallback check)
 const BAR = 24
-const WORK_MAX = 6
+const LINE_MAX = 24 // flow lines / detail lines drawn before "+n more"
 const RUN_STAGES: StageKey[] = ['plan', 'setgoal', 'critique', 'implement', 'gate', 'report']
 
 const en = {
-  paneTitle: 'Harness gate', tabRun: 'Run', tabUnits: 'Units', tabGate: 'Gate',
+  paneTitle: 'Harness status', tabFlow: 'Flow', tabDetail: 'Detail',
   stagePlan: 'Plan', stageSetgoal: 'SetGoal', stageCritique: 'Critique', stageImplement: 'Implement/Test', stageGate: 'Gate', stageReport: 'Report',
   now: 'Now', nowImplement: 'Implementing', nowTest: 'Testing', nowGate: 'Gating', nowRetry: 'Retrying',
   nowStage: 'Working on {stage}', nowDone: 'All done', attempt: ' (attempt {n})',
   stateRunning: 'running', stateStalled: 'stalled', stateComplete: 'finished', headLine: '{state} · {done}/{total}',
-  tries: '{n} tries', goalGate: 'Goal gate', passBar: '{pct}% (pass ≥ {bar})', more: '+{n} more',
-  colTodo: 'To do', colDoing: 'Doing', colDone: 'Done',
-  noRun: 'No harness run in this folder.',
-  cmdDesc: 'Why the harness gate denied the last call, and how to engage it', paneOpened: 'pane opened',
+  tryNo: 'attempt {n}', resPassed: 'passed · {n} tries', resFailed: 'failed · {n} tries', resNone: 'not judged yet', stalled: 'stalled: the retry changed nothing',
+  gateRejected: 'gate {n}: rejected', gatePassed: 'gate {n}: passed', critiqueRejected: 'Critique rejected', rules: 'Gate rules',
+  goalGate: 'Goal gate', passBar: '{pct}% (pass ≥ {bar})', more: '+{n} more',
+  noRun: 'No harness run in this folder.', closeBtn: 'close [q]',
+  cmdDesc: 'Open or close the harness status pane: run flow and detail, why the gate denied the last call', paneOpened: 'pane opened', paneClosed: 'pane closed',
   noGate: 'No gate configured: .claude/harness-gate.json is not in this project.',
   badGate: 'Gate config .claude/harness-gate.json could not be read (invalid JSON).',
   gated: 'Gated patterns ({n}): {list}', window: 'Engagement window: {h} h',
@@ -57,15 +59,16 @@ const en = {
 export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
   en,
   ko: {
-    paneTitle: '하네스 게이트', tabRun: '실행', tabUnits: '단위', tabGate: '게이트',
+    paneTitle: '하네스 상태', tabFlow: '흐름', tabDetail: '상세',
     stagePlan: '계획', stageSetgoal: '목표 설정', stageCritique: '비평', stageImplement: '구현/테스트', stageGate: '게이트', stageReport: '보고',
     now: '지금', nowImplement: '구현 중', nowTest: '테스트 중', nowGate: '게이트 판정 중', nowRetry: '재시도 중',
     nowStage: '{stage} 진행 중', nowDone: '모두 끝남', attempt: ' ({n}번째 시도)',
     stateRunning: '진행 중', stateStalled: '멈춤', stateComplete: '완료', headLine: '{state} · {done}/{total}',
-    tries: '{n}회 시도', goalGate: '목표 게이트', passBar: '{pct}% (통과 ≥ {bar})', more: '+{n}건 더',
-    colTodo: '대기', colDoing: '진행', colDone: '완료',
-    noRun: '이 폴더에 하네스 실행이 없습니다.',
-    cmdDesc: '하네스 게이트가 마지막 호출을 막은 이유와 개입 방법', paneOpened: '창을 열었습니다',
+    tryNo: '{n}번째 시도', resPassed: '통과 · {n}회 시도', resFailed: '실패 · {n}회 시도', resNone: '아직 판정 전', stalled: '멈춤: 재시도로 달라진 것이 없음',
+    gateRejected: '게이트 {n}: 반려', gatePassed: '게이트 {n}: 통과', critiqueRejected: '비평 반려', rules: '게이트 규칙',
+    goalGate: '목표 게이트', passBar: '{pct}% (통과 ≥ {bar})', more: '+{n}건 더',
+    noRun: '이 폴더에 하네스 실행이 없습니다.', closeBtn: '닫기 [q]',
+    cmdDesc: '하네스 상태 창 열기/닫기: 실행 흐름과 상세, 게이트가 마지막 호출을 막은 이유', paneOpened: '창을 열었습니다', paneClosed: '창을 닫았습니다',
     noGate: '게이트 설정 없음: 이 프로젝트에 .claude/harness-gate.json 이 없습니다.',
     badGate: '게이트 설정 .claude/harness-gate.json 을 읽을 수 없습니다 (JSON 오류).',
     gated: '게이트 대상 ({n}): {list}', window: '개입 유효 시간: {h}시간',
@@ -184,6 +187,12 @@ async function scanRun($: EngineInterface): Promise<RunInfo | null> {
     const lastGate = gn > 0 ? await readJson($, `${dir}/gate-${gn}.json`, sub.find(f => f.name === `gate-${gn}.json`)) : undefined
     const attempt = Math.max(1, impl, test, gn)
     const title = titles.get(id) ?? ''
+    // every verdict, so a reject keeps its reason after the retry
+    const gates: RunSub['gates'] = []
+    for (let n = 1; n <= gn; n++) {
+      const g = n === gn ? lastGate : await readJson($, `${dir}/gate-${n}.json`, sub.find(f => f.name === `gate-${n}.json`))
+      if (g !== undefined) gates.push({ n, pass: g.pass === true, reason: gateReason(g) })
+    }
     let state: Mark = impl > 0 ? 'running' : 'pending'
     if (result?.passed === true) state = 'done'
     else if (result?.passed === false) state = 'failed'
@@ -191,6 +200,7 @@ async function scanRun($: EngineInterface): Promise<RunInfo | null> {
       id, title, state,
       reason: state === 'failed' && typeof lastGate?.reason === 'string' ? lastGate.reason : '',
       tries: Math.max(Number(result?.attempts ?? 0) || 0, attempt),
+      gates, stalled: result?.stalled === true,
     })
     // what the first unfinished subgoal is doing
     if (doing === undefined && result === undefined) {
@@ -208,7 +218,7 @@ async function scanRun($: EngineInterface): Promise<RunInfo | null> {
   const raw: { done: boolean; failed?: boolean }[] = [
     { done: has('01-plan.md') },
     { done: spec !== undefined },
-    { done: critique !== undefined && critique.sound !== false },
+    { done: critique !== undefined && critique.sound !== false, failed: critique?.sound === false },
     { done: implDone, failed: implDone && subs.some(x => x.state === 'failed') },
     { done: gate !== undefined, failed: goalPass === false },
     { done: has('05-report.md') },
@@ -238,6 +248,9 @@ async function scanRun($: EngineInterface): Promise<RunInfo | null> {
     live: isLive(pick), finished: pick.finished, stages, subs,
     done: subs.filter(x => x.state === 'done').length, total: subs.length,
     now: nowInfo, match, pass: goalPass,
+    critique: { sound: typeof critique?.sound === 'boolean' ? critique.sound : null, reason: critiqueReason(critique) },
+    goalReason: goalReason(gate),
+    lastMs: pick.time,
   }
 }
 
@@ -483,7 +496,7 @@ export const register: Register = on => {
 
     async function tick() {
       try {
-        // the status line: open runs per stage; the gate's decisions live in /harness-gate
+        // the status line: open runs per stage; the gate's decisions live in /harness-status
         const open = await countStages($, await $.session.cwd(), await $.clock.now())
         $.ui.status(stageStatus(open.counts))
         await update($, runs, () => open.runs)
@@ -541,7 +554,7 @@ export const register: Register = on => {
     } catch {
       // unreadable settings: English
     }
-    await $.command.register({ name: 'harness-gate', description: STRINGS[await read($, lang)].cmdDesc })
+    await $.command.register({ name: 'harness-status', description: STRINGS[await read($, lang)].cmdDesc })
     // a project hook copy that differs from this plugin's own is out of date (installed once, never refreshed)
     try {
       const copy = '.claude/hooks/goal-gate.mjs'
@@ -557,11 +570,23 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // asked for by the person: the pane seats at any width; the command answers why the gate denied
-  on('command.run', { command: 'harness-gate' }, async $ => {
-    await update($, view, () => 'gate' as const)
-    await $.ui.open({ id: PANE, title: 'Harness' })
-    return { text: STRINGS[await read($, lang)].paneOpened }
+  // the command opens the pane on Detail (the gate rules and why the last call was denied); again, it closes it.
+  // Esc and q close it too (closeOnEscape, the close button)
+  on('command.run', { command: 'harness-status' }, async $ => {
+    const text = STRINGS[await read($, lang)]
+    let isOpen = false
+    try {
+      isOpen = (await $.ui.panes()).some((p: { id: string }) => p.id === PANE)
+    } catch {
+      // panes unreadable: open it
+    }
+    if (isOpen) {
+      await $.ui.close({ id: PANE })
+      return { text: text.paneClosed }
+    }
+    await update($, view, () => 'detail' as const)
+    await $.ui.open({ id: PANE, title: 'Harness', focus: true, closeOnEscape: true })
+    return { text: text.paneOpened }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -570,48 +595,42 @@ export const register: Register = on => {
     const s = strings(await read($, lang))
     const r = await read($, run)
     const picked = await read($, view)
-    const kind = picked === 'auto' ? (r === null ? 'gate' : 'run') : picked
+    const kind = picked === 'auto' ? (r === null ? 'detail' : 'flow') : picked
+    const now = await $.clock.now()
+    const closeBtn = <Button key="close" role="dismiss" label={s('closeBtn')} hotkey="q" onPress={() => $.ui.close({ id: PANE })} />
 
-    const items = (['run', 'units', 'gate'] as const).map(k => ({ key: k, label: s(`tab${cap(k)}` as Key) }))
-    const tabRow = tabs(ui, items, kind, k => update($, view, () => k as 'run' | 'units' | 'gate'))
+    const items = (['flow', 'detail'] as const).map(k => ({ key: k, label: s(`tab${cap(k)}` as Key) }))
+    const tabRow = tabs(ui, items, kind, k => update($, view, () => k as 'flow' | 'detail'))
 
-    let body
-    if (kind === 'gate') {
-      if (!(await read($, armed))) {
-        body = <Text>{s((await read($, broken)) ? 'badGate' : 'noGate')}</Text>
-      } else {
-        const list = await read($, patterns)
-        const hours = await read($, windowHours)
-        const d = await read($, last)
-        const now = await $.clock.now()
-        body = (
-          <Box flexDirection="column">
-            <Text>{s('gated', { n: list.length, list: list.join(', ') })}</Text>
-            <Text>{s('window', { h: hours })}</Text>
-            {d === null ? (
-              <Text>{s('noDecision')}</Text>
-            ) : (
-              <Box flexDirection="column">
-                <Text>{s('lastDecision', { decision: d.decision, tool: d.tool, target: d.target, ago: ago(s, now - d.ts) })}</Text>
-                <Text>{s('reason', { reason: d.reason })}</Text>
-              </Box>
-            )}
-            <Text>{s('engage')}</Text>
-          </Box>
-        )
-      }
-    } else if (r === null) {
-      body = <Text>{s('noRun')}</Text>
-    } else {
-      const unit = (x: RunSub, i: number) => (
-        <Box key={`u${i}`} flexDirection="column">
-          <Text wrap="truncate-end">
-            <Text color={TINT[x.state]}>{MARK[x.state]}</Text>
-            {` ${x.id}${x.title ? ` ${x.title}` : ''}${kind === 'run' && x.tries > 1 ? `  ${s('tries', { n: x.tries })}` : ''}`}
-          </Text>
-          {x.state === 'failed' && x.reason !== '' && <Text color="error" wrap="truncate-end">{`  ${x.reason}`}</Text>}
+    // the gate's own rules and its last decision (the part of the pane that answers a deny)
+    const rules = async () => {
+      if (!(await read($, armed))) return <Text>{s((await read($, broken)) ? 'badGate' : 'noGate')}</Text>
+      const list = await read($, patterns)
+      const hours = await read($, windowHours)
+      const d = await read($, last)
+      return (
+        <Box flexDirection="column">
+          <Text>{s('gated', { n: list.length, list: list.join(', ') })}</Text>
+          <Text>{s('window', { h: hours })}</Text>
+          {d === null ? (
+            <Text>{s('noDecision')}</Text>
+          ) : (
+            <Box flexDirection="column">
+              <Text>{s('lastDecision', { decision: d.decision, tool: d.tool, target: d.target, ago: ago(s, now - d.ts) })}</Text>
+              <Text>{s('reason', { reason: d.reason })}</Text>
+            </Box>
+          )}
+          <Text>{s('engage')}</Text>
         </Box>
       )
+    }
+
+    let body
+    if (r === null) {
+      body = kind === 'detail' ? await rules() : <Text>{s('noRun')}</Text>
+    } else {
+      const reasonLine = (text: string, pad: number, key: string) =>
+        text === '' ? null : <Text key={key} color="error" wrap="truncate-end">{`${' '.repeat(pad)}↳ ${text}`}</Text>
       const progress =
         r.match !== null
           ? (
@@ -621,52 +640,86 @@ export const register: Register = on => {
             </Box>
           )
           : bar(ui, r.done, r.total, BAR, `${r.done}/${r.total}`)
-      if (kind === 'run') {
-        body = (
-          <Box flexDirection="column">
-            {rail(ui, r.stages.map(g => ({ label: s(`stage${cap(g.key)}` as Key), state: g.state })))}
-            <Box flexDirection="column" marginTop={1}>
-              <Text color="claude" bold wrap="truncate-end">{`▶ ${s('now')} · ${nowSentence(s, r)}`}</Text>
-            </Box>
-            <Box flexDirection="column" marginY={1}>
-              {r.subs.slice(0, WORK_MAX).map(unit)}
-              {r.subs.length > WORK_MAX && <Text dimColor>{`  ${s('more', { n: r.subs.length - WORK_MAX })}`}</Text>}
-            </Box>
-            {progress}
-          </Box>
-        )
+      const rows: unknown[] = []
+      if (kind === 'flow') {
+        // stages in order; each subgoal opens into its gate verdicts, a retry one level under the reject it answers
+        flowLines(r).forEach((l, i) => {
+          const pad = l.kind === 'attempt' ? 2 + Math.min(l.depth, 4) * 2 : 0
+          const name =
+            l.kind === 'stage' ? s(`stage${cap(l.stage!)}` as Key)
+            : l.kind === 'sub' ? `${l.id}${l.title ? ` ${l.title}` : ''}`
+            : s('tryNo', { n: l.n ?? 0 })
+          rows.push(
+            <Text key={`f${i}`} wrap="truncate-end">
+              {' '.repeat(pad)}
+              <Text color={TINT[l.state]}>{MARK[l.state]}</Text>
+              {` ${name}`}
+            </Text>,
+          )
+          const why = reasonLine(l.reason, pad + 2, `w${i}`)
+          if (why !== null) rows.push(why)
+        })
       } else {
-        body = (
-          <Box flexDirection="column">
-            {board(
-              ui,
-              [
-                { label: s('colTodo'), tint: 'inactive', items: r.subs.filter(x => x.state === 'pending' || x.state === 'failed') },
-                { label: s('colDoing'), tint: 'claude', items: r.subs.filter(x => x.state === 'running') },
-                { label: s('colDone'), tint: 'success', items: r.subs.filter(x => x.state === 'done') },
-              ],
-              unit,
-            )}
-            {progress}
-          </Box>
-        )
+        // per subgoal: the result and every gate verdict; the critique and the goal gate when they rejected
+        if (r.critique.sound === false) {
+          rows.push(<Text key="c" color="error" wrap="truncate-end">{`${MARK.failed} ${s('critiqueRejected')}`}</Text>)
+          const why = reasonLine(r.critique.reason, 2, 'cw')
+          if (why !== null) rows.push(why)
+        }
+        r.subs.forEach((x, i) => {
+          rows.push(<Text key={`s${i}`} wrap="truncate-end"><Text color={TINT[x.state]}>{MARK[x.state]}</Text>{` ${x.id}${x.title ? ` ${x.title}` : ''}`}</Text>)
+          const result = x.state === 'done' ? s('resPassed', { n: x.tries }) : x.state === 'failed' ? s('resFailed', { n: x.tries }) : s('resNone')
+          rows.push(<Text key={`r${i}`} dimColor wrap="truncate-end">{`  ${result}${x.stalled ? ` · ${s('stalled')}` : ''}`}</Text>)
+          x.gates.forEach(gt =>
+            rows.push(
+              <Text key={`g${i}-${gt.n}`} color={gt.pass ? undefined : 'error'} wrap="truncate-end">
+                {`  ${s(gt.pass ? 'gatePassed' : 'gateRejected', { n: gt.n })}${gt.reason !== '' && !gt.pass ? ` — ${gt.reason}` : ''}`}
+              </Text>,
+            ),
+          )
+        })
+        if (r.goalReason !== '' && r.pass === false) {
+          rows.push(<Text key="gg" color="error" wrap="truncate-end">{`${MARK.failed} ${s('goalGate')}`}</Text>)
+          const why = reasonLine(r.goalReason, 2, 'ggw')
+          if (why !== null) rows.push(why)
+        }
       }
+      body = (
+        <Box flexDirection="column">
+          {kind === 'flow' && rail(ui, r.stages.map(g => ({ label: s(`stage${cap(g.key)}` as Key), state: g.state })))}
+          <Box flexDirection="column" marginY={1}>
+            {rows.slice(0, LINE_MAX)}
+            {rows.length > LINE_MAX && <Text dimColor>{`  ${s('more', { n: rows.length - LINE_MAX })}`}</Text>}
+          </Box>
+          {progress}
+          {kind === 'detail' && (
+            <Box flexDirection="column" marginTop={1}>
+              <Text bold>{s('rules')}</Text>
+              {await rules()}
+            </Box>
+          )}
+        </Box>
+      )
     }
 
+    // Now: the stage or subgoal at work, the agent (the harness records none), time since the last file change
+    const nowLine = r === null ? null : r.now.kind === 'done' ? `▶ ${s('now')} · ${nowSentence(s, r)}` : `▶ ${s('now')} · ${nowSentence(s, r)} · ${NONE}${sinceLast(r, now) === '' ? '' : ` · ${sinceLast(r, now)}`}`
     const state = r === null ? '' : r.finished ? s('stateComplete') : r.live ? s('stateRunning') : s('stateStalled')
     return (
       <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
         <Box>
           <Box flexShrink={1}><Text bold wrap="truncate-end">{r === null ? s('paneTitle') : r.title}</Text></Box>
+          {r !== null && <Box flexShrink={1} marginLeft={2}><Text dimColor wrap="truncate-end">{r.slug}</Text></Box>}
           {r !== null && (
             <Box flexShrink={0} marginLeft={2}>
               <Text color="claude">{s('headLine', { state, done: r.done, total: r.total })}</Text>
             </Box>
           )}
         </Box>
+        {nowLine !== null && <Box marginTop={1}><Text color="claude" bold wrap="truncate-end">{nowLine}</Text></Box>}
         <Box marginY={1} justifyContent="space-between">
-          {tabRow}
-          {r !== null && <Text dimColor>{r.slug}</Text>}
+          <Box flexShrink={0}>{tabRow}</Box>
+          <Box flexShrink={0} marginLeft={2}>{closeBtn}</Box>
         </Box>
         {body}
       </Box>

@@ -617,8 +617,10 @@ export const register: Register = (on, options) => {
   // One row above the prompt on the first start after a session that left something.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
-    const last = (await read($, band)) ? await read($, lastAtom) : null
-    const recap = await read($, recapAtom)
+    // start_band (default off): which of the two start rows the person asked for
+    const show = String(options.start_band ?? 'off')
+    const last = (show === 'retro' || show === 'both') && (await read($, band)) ? await read($, lastAtom) : null
+    const recap = show === 'recap' || show === 'both' ? await read($, recapAtom) : null
     if (!last && !recap) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const now = (await $.clock.now()) as number

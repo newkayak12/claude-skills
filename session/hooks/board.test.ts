@@ -120,7 +120,7 @@ test('/board opens the pane; it shows every session with its runs', async ($, on
   expect(lines).toContain('other-branch')
   expect(lines).toContain('graph ● running 1/2')
   expect(lines).toContain('teams ✔ finished 3/3')
-  expect(lines.some(l => l.includes('/graph-live'))).toBe(true)
+  expect(lines.some(l => l.includes('/graph-status'))).toBe(true)
 })
 
 test('the board opens focused and closes on Escape', async ($, on) => {

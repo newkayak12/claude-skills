@@ -11,6 +11,8 @@ scenarios:
   - "대시보드 기능 추가하려는데 어디서부터 시작해?"
   - "We need to design a rate limiting system"
   - "How should I architect this new microservice?"
+  - "결제 시스템 교체 건인데 토론으로 옵션 뽑아줘"
+  - "Run this as a debate — we can't undo the database choice"
 compatibility:
   optional:
     - think-tool
@@ -79,6 +81,14 @@ Cut to two or three. If you feel strongly pulled to one, run `cognition:bias-aud
 presenting — that pull is where confirmation bias lives. If `mcp-reasoner` is available and the
 criteria don't separate the finalists, use it to commit.
 
+**Debate mode (opt-in).** Steps 3a–3b run as a persona debate only when the user asks ("토론으로",
+"debate") or says yes to a one-line offer. Offer it when the choice is a one-way door, crosses
+teams, or the finalists are not separated by the criteria — and name the cost (about 3× tokens).
+Otherwise normal mode, unchanged. Flow: show 3 personas (user may swap) → each an independent
+subagent, model named, generating options → merge → devils-advocate attack/rebut, ≤2 rounds →
+cut with kill-criteria. Every utterance is one JSON line in `.claude/brainstorming/<slug>.jsonl`.
+Fewer than 2 agents alive → finish in normal mode and say so. Detail: `references/debate.md`.
+
 **4. Present and get approval.** Size each section to its complexity: a few sentences where it's
 simple, detail where the nuance is. Cover architecture, components, data flow, error handling,
 testing. Check each major section with the user. If they ask "any other options?" or every option
@@ -101,6 +111,7 @@ fix what the change touches, nothing else.
 [기준 / Kill-criteria]  the list above, filled in for this decision
 [후보 / Finalists]      2–3 survivors, one trade-off table
 [설계 / Design]         for the chosen option — architecture · components · data flow · errors · tests
+[충돌 / Clashes]        debate mode only: who clashed with whom, on which option, and how it settled
 → approval → write:plans
 ```
 
@@ -115,6 +126,7 @@ Write in the user's language.
 | Reads the project before asking anything | Answer one question at a time; say "you decide" when you don't care |
 | Generates options without judging, then cuts with stated criteria | Pick a finalist or send it back to diverge |
 | Keeps implementation out of the design | Approve the design before any code is written |
+| Offers debate mode only where it pays; runs it on a yes | Say yes, or swap a persona; `/brainstorming-status` to watch |
 
 ## Related Skills
 
