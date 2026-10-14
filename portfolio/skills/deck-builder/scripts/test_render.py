@@ -337,6 +337,59 @@ def run(work, r):
           "rows past the slide edge really are lost — which is why check errors on them")
 
     legibility(work, r)
+    zones(work, r)
+
+
+def _zsp(sid, name, ph, text, x, y, cx, cy, sz):
+    ph_xml = '<p:ph type="%s"/>' % ph if ph else ""
+    return ('<p:sp><p:nvSpPr><p:cNvPr id="%d" name="%s"/><p:cNvSpPr/><p:nvPr>%s</p:nvPr>'
+            '</p:nvSpPr><p:spPr><a:xfrm><a:off x="%d" y="%d"/><a:ext cx="%d" cy="%d"/>'
+            '</a:xfrm></p:spPr><p:txBody><a:bodyPr wrap="square" anchor="t"/><a:p><a:r>'
+            '<a:rPr lang="ko-KR" sz="%d"><a:latin typeface="NanumSquare"/>'
+            '<a:ea typeface="NanumSquare"/></a:rPr><a:t>%s</a:t></a:r></a:p></p:txBody></p:sp>'
+            % (sid, name, ph_xml, x, y, cx, cy, sz, text))
+
+
+def zones(work, r):
+    """Same archetype, three slides: one title wraps (drift), one body overruns (zone)."""
+    print("critical zone and drift on the page (NanumSquare, bundled)")
+    fixture_template.build(work / "ztpl.pptx",
+                           fixture_template.placeholder_png(64, 36, (200, 200, 200)))
+    pkg = deck.Package(work / "ztpl.pptx")
+    gap = 20 * deck.EMU_PER_PT
+    head = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld xmlns:a="%s" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+            'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld>'
+            '<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/>'
+            '</p:nvGrpSpPr><p:grpSpPr/>' % A[1:-1])
+    col = (_zsp(2, "Title", "title", "제목", 600000, 400000, 9000000, 900000, 2400)
+           + _zsp(3, "Body", None, "본문 한 줄", 600000, 1300000 + gap, 9000000, 600000, 1800)
+           + _zsp(4, "Below", None, "아래 상자", 600000, 1900000 + 2 * gap, 9000000, 600000,
+                  1800))
+    for part in deck.slide_order(pkg)[:2]:
+        pkg.parts[part] = (head + col + "</p:spTree></p:cSld></p:sld>").encode("utf-8")
+    pkg.write(work / "ztpl.pptx")
+    zs = deck.template_zones(pkg, deck.slide_order(pkg), deck.slide_size(pkg)[1])
+    check(any(r_["a"] == ["title"] and r_["count"] >= 2 for r_ in zs["s1"]),
+          "the template's repeated title gap is a zone")
+    long_title = "임계 구간이 흔들리는지 보려고 일부러 두 줄로 넘어가게 길게 쓴 제목입니다 정말로 깁니다"
+    (work / "zdeck.mdx").write_text(
+        "---\ntemplate: ztpl.pptx\noutput: zdeck.pptx\n---\n\n"
+        "## @s1\ntitle: 짧은 제목\ntext1: 본문 한 줄\n\n"
+        "## @s1\ntitle: %s\ntext1: 본문 한 줄\n\n"
+        "## @s1\ntitle: 짧은 제목\ntext1: %s\n" % (long_title, "넘치는 본문입니다 " * 60),
+        encoding="utf-8")
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        deck.main(["render", "--deck", str(work / "zdeck.mdx")])
+    out = buf.getvalue()
+    print("    " + "\n    ".join(l for l in out.splitlines() if "page" in l or "!" in l))
+    check("NanumSquare" not in "".join(l for l in out.splitlines() if "renderer has no" in l),
+          "the renderer sees the bundled NanumSquare — nothing substituted")
+    check(re.search(r"page 3\s+zone\s+`text1` ↓ `text2` — 글이 프레임을", out) is not None,
+          "the overrunning body is a zone finding on page 3")
+    check(re.search(r"drift\s+@s1 슬라이드 1·2·3: `title` ↓ `text1`", out) is not None,
+          "the wrapped title moves the title↔body gap: one drift finding naming the slides")
 
 
 def band_median(png, frac_top, frac_bottom, frac_left=0.05, frac_right=0.95):
