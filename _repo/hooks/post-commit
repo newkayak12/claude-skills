@@ -1,0 +1,6 @@
+#!/bin/sh
+# Keep Codex on this repo's current plugin versions (background; never blocks the commit).
+REPO_ROOT=$(git rev-parse --show-toplevel)
+command -v node >/dev/null 2>&1 || exit 0
+(node "$REPO_ROOT/_repo/scripts/sync-codex.mjs" >/dev/null 2>&1 &)
+exit 0

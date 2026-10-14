@@ -15,7 +15,7 @@ The rules live in `.claude/rules/` (Claude Code loads them; Codex reads them via
 | `compat-claude.md` | older Claude Code builds |
 | `compat-codex.md` | Codex |
 
-@_repo/coding-guidelines.md
+@../_repo/coding-guidelines.md
 
 ## Skill Awareness
 

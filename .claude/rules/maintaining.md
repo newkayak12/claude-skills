@@ -42,6 +42,12 @@ Report the counts you saw; "tests pass" without a number is not a check.
   `node teams/skills/patch/patch.mjs '<json>'` (dry-run first) bump a patch version and its status
   logs in one step. Minor/major by hand. Refreshing a project's installed harness copies is `harness:update`.
 - Remote is `skills`: `git pull --rebase skills main`, then `git push skills main`.
+- Installed copies stay current by themselves once `git config core.hooksPath _repo/hooks` is set:
+  Claude Code pulls the GitHub marketplace on start (`autoUpdate: true` — so a bump reaches it on
+  push); Codex runs the local repo through a versioned cache, refreshed by `post-commit`/`post-merge`
+  (`node _repo/scripts/sync-codex.mjs`) for every enabled plugin whose version moved. A plugin
+  change Codex should see therefore needs a version bump; run the script by hand to check
+  (`codex: plugins current`).
 - Marketplace version and tag (`v<x.y.z>`) move only when the user asks for a release:
   - The repo version is `metadata.version` in `.claude-plugin/marketplace.json`; each release is the
     annotated tag `v<metadata.version>`, message `marketplace <version>`. A plugin bump alone does not move it.
