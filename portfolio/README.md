@@ -322,6 +322,14 @@ row group, at the template's own interval — only for same-format siblings on o
 gap, and never past the slide edge. Anything irregular is refused with the reason; the template stays
 the design authority.
 
+A template paragraph keeps its own mixed formats: `[text]{n}` writes in its format n, `<br>` breaks
+the line, and `deck.py extract` prints the template's own content in this syntax — built unchanged,
+it reproduces the template. `check` and `render` measure against the template itself, so a problem
+the template already has is listed under 템플릿 자체, apart from what the deck caused. Each pair of
+neighbouring shapes keeps the gap the template repeats (`임계 침범`, `zone`, `drift`). The bundled
+NanumSquare family is always visible to the renderer, and `render` keeps PowerPoint's one-line
+(`wrap="none"`) slots on one line in the PDF.
+
 Where the template lays type over a picture — a full-bleed backdrop with a title on it — neither
 the image nor the text is wrong on its own and the slide is still unreadable, so `check` decodes
 the pixels that actually land behind each text box (following the crop, the fit mode and any
