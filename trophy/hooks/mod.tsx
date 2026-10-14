@@ -32,7 +32,7 @@ import {
 } from './logic.ts'
 import type { Achievement, Activity, BatchStore, DayCounts, McpCalls, Os, Outcomes, System, Use, Versions } from './logic.ts'
 import {
-  appendEntry, copyBody, goalFailed, harnessResult, marketplaceCandidates, newest, ownedMcpTool, ownedSkill,
+  appendEntry, copyBody, marketplaceCandidates, newest, outcomeFailure, ownedMcpTool, ownedSkill,
   rowDetail, rowTitle,
 } from './failures.ts'
 import type { Entry } from './failures.ts'
@@ -501,7 +501,10 @@ export const register: Register = on => {
   on('state.set', { plugin: 'harness', key: 'outcome' }, async ($, e, next) => {
     const result = await next(e)
     await safe(async () => {
-      if (await read($, active)) await countOutcome($, 'harness', e.value)
+      if (!(await read($, active))) return
+      await countOutcome($, 'harness', e.value)
+      const reason = outcomeFailure(e.value)
+      if (reason) await record($, { kind: 'outcome', reason, local: {} })
     })
     return result
   }).catch(failOpen)
@@ -520,36 +523,6 @@ export const register: Register = on => {
       if (mcp) await record($, { kind: 'bug', reason: 'mcp_error', plugin: mcp.plugin, tool: mcp.tool, local: { text } })
     })
     return next(e)
-  }).catch(failOpen)
-
-  // The harness engine wrote a final failed subgoal result (local only, never sent).
-  on('tool.call', { tool: 'Write' }, async ($, e, next) => {
-    const result = await next(e)
-    if (e.tool !== 'Write' || !(await read($, active))) return result
-    await safe(async () => {
-      const r = result as { deny?: string; isError?: boolean }
-      if (r.deny !== undefined || r.isError) return
-      const hit = harnessResult(e.file_path, e.content)
-      if (hit) {
-        await record($, { kind: 'outcome', reason: 'subgoal_failed', local: { slug: hit.slug, subgoal: hit.subgoal, path: e.file_path } })
-      }
-    })
-    return result
-  }).catch(failOpen)
-
-  // fallback-check.mjs printed the final `COMPLETE <slug> goal-gate FAIL` (local only, never sent).
-  on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
-    const result = await next(e)
-    if (e.tool !== 'Bash' || !(await read($, active))) return result
-    await safe(async () => {
-      const r = result as { deny?: string; isError?: boolean; result?: { stdout?: string } }
-      if (r.deny !== undefined || r.isError || !e.command.includes('fallback-check.mjs')) return
-      const stdout = r.result?.stdout ?? ''
-      if (!goalFailed(stdout)) return
-      const slug = /^COMPLETE\s+(\S+)/m.exec(stdout)?.[1]
-      await record($, { kind: 'outcome', reason: 'goal_failed', local: slug ? { slug } : {} })
-    })
-    return result
   }).catch(failOpen)
 
   // `/trophy-bug <note>`: the note stays local; only the code `user_report` can be sent.

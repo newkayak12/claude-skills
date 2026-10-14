@@ -21,7 +21,8 @@ export type Entry = {
   version?: string
   cc?: string
   session: string
-  // Raw text stays on this machine: never read by buildBatch.
+  // Raw text stays on this machine: never read by buildBatch. slug/subgoal/path are kept only because stored
+  // pre-change outcome entries still carry them; new outcome entries have an empty local.
   local: { text?: string; note?: string; slug?: string; subgoal?: string; path?: string }
 }
 
@@ -29,7 +30,6 @@ export type SentEvent = { event: string; properties: Record<string, string | num
 
 const DEDUPE_MS = 5000
 const KEEP = 500
-const TMP_PREFIXES = ['/tmp/', '/private/tmp/', '/var/folders/', '/private/var/folders/']
 
 // The two places a marketplace.json can sit relative to the plugin root.
 export function marketplaceCandidates(root: string, marketplace?: string): string[] {
@@ -81,27 +81,12 @@ export function ownedMcpTool(
   return undefined
 }
 
-// A final failed subgoal result written by the harness engine; scratch copies are ignored.
-export function harnessResult(
-  path: string,
-  content: string,
-  tmpdirs: readonly string[] = [],
-): { slug: string; subgoal: string; passed: false } | undefined {
-  const m = /\/\.harness-run\/([^/]+)\/subgoals\/([^/]+)\/result\.json$/.exec(path)
-  if (!m || m[1] === undefined || m[2] === undefined) return undefined
-  const roots = TMP_PREFIXES.concat(tmpdirs.map(d => d.replace(/\/+$/, '') + '/'))
-  if (roots.some(r => path.startsWith(r))) return undefined
-  try {
-    const body = JSON.parse(content) as { passed?: unknown }
-    return body && body.passed === false ? { slug: m[1], subgoal: m[2], passed: false } : undefined
-  } catch {
-    return undefined
-  }
-}
-
-// fallback-check.mjs final line: `COMPLETE <slug> goal-gate FAIL`. Not INCOMPLETE, not PASS.
-export function goalFailed(stdout: string): boolean {
-  return /^COMPLETE\b.*goal-gate FAIL/m.test(stdout)
+// The harness's published outcome as a local failure reason: fail is a failed subgoal, reject a failed goal gate.
+export function outcomeFailure(value: unknown): Reason | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const v = value as { system?: unknown; outcome?: unknown }
+  if (v.system !== 'harness') return undefined
+  return v.outcome === 'fail' ? 'subgoal_failed' : v.outcome === 'reject' ? 'goal_failed' : undefined
 }
 
 const sameTarget = (a: Entry, b: Entry) => (a.skill ?? a.tool) === (b.skill ?? b.tool)
