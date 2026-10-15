@@ -82,29 +82,6 @@ Report the counts you saw; "tests pass" without a number is not a check.
   memory if it matters later).
 - Docker in a bench: unique names, no host ports, tear down by exact name. Never `prune` anything.
 
-## Maintenance vault
-
-A private knowledge vault, `../claude-skills-knowledge` (its README has the commands), is this
-repo's memory: past decisions, run reports and lessons. Claude's auto-memory only points to it.
-
-**Read.** Before a plan, search it and cite the decisions and past defects it found.
-
-**Write, without being asked,** when one of these happens in a session:
-
-| Event | Note |
-|---|---|
-| The user corrects how you work, or confirms an approach that was not obvious | `lessons/les-<slug>.md`: the rule, **Why**, **How to apply**, the user's words verbatim |
-| A design decision is made or reversed (plan approved, option chosen, principle set) | `decisions/dec-<slug>.md`: what, why, what was rejected |
-| A harness run writes `05-report.md`, or a bench/real run is measured | `runs/run-<slug>.md`: goal, AC verdicts, partial/missing, `waived:` line, numbers |
-| A failure is diagnosed (root cause found, host quirk, tool limit) | `lessons/les-<slug>.md`: symptom, cause, fix or workaround |
-
-- Search first; update the existing note instead of adding a near-duplicate. A note that turns out wrong is corrected or removed.
-- Frontmatter and catalog shape follow the vault's existing notes (`id`, `title`, `type`, `domain` = plugin or `repo`, `tags`, `sources` with exact paths); add the line to `_knowledge/catalog.jsonl`, reindex, then `git commit` and `git push` in the vault.
-- Not a note: what the repo or git history already records, one-session chatter, secrets.
-- Write at the moment it happens, not at the end of the session.
-
-Where the vault is absent (Codex, another machine), skip both; nothing here depends on it.
-
 ## Leaving it clean
 
 1. `git status` is clean and `main` equals `skills/main`.
