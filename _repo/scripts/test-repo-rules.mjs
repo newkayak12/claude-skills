@@ -19,6 +19,11 @@ sh(origin, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow
 sh(root, 'clone', '-q', origin, clone)
 sh(origin, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'two')
 
+// scratch tasks root, set before any spawn so every hook run inherits it (the real ~/.harness/tasks is never read)
+const tasks = join(root, 'tasks')
+mkdirSync(tasks)
+process.env.HARNESS_TASKS_DIR = tasks
+
 const run = (mode, input, env = {}) => {
   const r = spawnSync('node', [hook, mode], {
     input: typeof input === 'string' ? input : JSON.stringify(input),
@@ -58,29 +63,35 @@ sh(clone, 'add', 'p/KOR.md')
 check('commit: README with KOR -> silent', Object.keys(bash('git commit -m x', clone).out).length === 0)
 check('non-commit with lonely README -> silent', Object.keys(bash('ls', clone).out).length === 0)
 
-// harness runs: push/bump refused while a run is open or reports an unwaived missing criterion
-const runDir = join(clone, '.harness-run/r1')
-mkdirSync(runDir, { recursive: true })
-mkdirSync(join(clone, '.harness-run/broker'))
-writeFileSync(join(runDir, 'manifest.json'), '{}')
-const denied = r => decision(r) === 'deny' && /r1/.test(r.out.hookSpecificOutput.permissionDecisionReason)
-check('open run: push unattended -> deny', denied(bash('git push origin main', clone)))
-check('open run: push attended -> deny', denied(bash('git push origin main', clone, ATT)))
-check('open run: teams patch -> deny', denied(bash("node teams/skills/patch/patch.mjs '{}'", clone)))
-check('open run: git status -> pass', decision(bash('git status', clone)) === undefined)
+// teams tasks: push/bump refused while a task for this checkout is open (ledger's last event is not daemon_done)
+const task = (id, cwd, events) => {
+  mkdirSync(join(tasks, id), { recursive: true })
+  writeFileSync(join(tasks, id, 'task.json'), JSON.stringify({ cwd }))
+  if (events) writeFileSync(join(tasks, id, 'ledger.jsonl'), events.map(event => JSON.stringify({ event })).join('\n') + '\n')
+}
+const denied = (r, id) => decision(r) === 'deny' && r.out.hookSpecificOutput.permissionDecisionReason.includes(id)
 const prepush = () => spawnSync('node', [hook, 'prepush'], { cwd: clone, encoding: 'utf8' })
+// cwd written unresolved (macOS /var vs /private/var) to prove realpath matching
+const unresolved = clone.replace(/^\/private/, '')
+task('t-open', unresolved, ['tm_open'])
+check('open task: push unattended -> deny', denied(bash('git push origin main', clone), 't-open'))
+check('open task: push attended -> deny', denied(bash('git push origin main', clone, ATT), 't-open'))
+check('open task: teams patch -> deny', denied(bash("node teams/skills/patch/patch.mjs '{}'", clone), 't-open'))
+check('open task: git status -> pass', decision(bash('git status', clone)) === undefined)
 const held = prepush()
-check('prepush: open run -> exit 1 naming the slug', held.status === 1 && /r1/.test(held.stderr))
-writeFileSync(join(runDir, '05-report.md'), '| AC-1 | missing | no run |\n')
-check('report with missing -> deny', denied(bash('git push origin main', clone)))
-check('prepush: missing -> exit 1', prepush().status === 1)
-writeFileSync(join(runDir, '05-report.md'), '| AC-1 | missing | no run |\nwaived: "ship it" (user)\n')
-check('missing + waived -> today\'s behaviour', decision(bash('git push origin main', clone)) === undefined && decision(bash('git push origin main', clone, ATT)) === 'ask')
-check('prepush: waived -> exit 0', prepush().status === 0)
-writeFileSync(join(runDir, '05-report.md'), '| AC-1 | met | ok |\n')
-check('clean report -> today\'s behaviour', decision(bash('git push origin main', clone)) === undefined)
-writeFileSync(join(runDir, '05-report.md'), '| AC-3 | met | `| missing |` row → deny |\n')
-check('"missing" quoted in evidence -> not held', decision(bash('git push origin main', clone)) === undefined)
+check('prepush: open task -> exit 1 naming the id', held.status === 1 && /t-open/.test(held.stderr))
+writeFileSync(join(tasks, 't-open/ledger.jsonl'), '{"event":"tm_open"}\n{"event":"daemon_spawned"}\n{"event":"daemon_done"}\n')
+check('daemon_done last -> push unattended pass, attended ask', decision(bash('git push origin main', clone)) === undefined && decision(bash('git push origin main', clone, ATT)) === 'ask')
+check('prepush: daemon_done -> exit 0', prepush().status === 0)
+writeFileSync(join(tasks, 't-open/ledger.jsonl'), '{"event":"tm_open"}\n{"event":"daemon_done"}\n{"event":"tm_retry"}\n')
+check('retry after daemon_done -> deny', denied(bash('git push origin main', clone), 't-open'))
+writeFileSync(join(tasks, 't-open/ledger.jsonl'), '{"event":"daemon_done"}\n')
+task('t-other', join(root, 'elsewhere'), ['tm_open'])
+check('open task with another cwd -> pass', decision(bash('git push origin main', clone)) === undefined)
+task('t-nolog', clone)
+check('task with no ledger -> deny', denied(bash('git push origin main', clone), 't-nolog'))
+writeFileSync(join(tasks, 't-nolog/task.json'), '{not json')
+check('corrupt task.json -> fail open', decision(bash('git push origin main', clone)) === undefined)
 
 check('garbage stdin -> fail open', run('bash', 'not json').code === 0 && Object.keys(run('bash', 'not json').out).length === 0)
 check('bad cwd -> fail open', run('bash', { tool_name: 'Bash', tool_input: { command: 'git commit' }, cwd: '/nonexistent' }).code === 0)

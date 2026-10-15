@@ -10,9 +10,13 @@ Every change is checked against `_repo/coding-guidelines.md` (Karpathy's four):
 | **Think Before Coding** | A behaviour change starts with plan → setgoal → critique and the user's approval (below). Unclear or several readings → ask before editing. |
 | **Simplicity First** | No new skill when an existing one can be split or extended; no new top-level directory unless it is a plugin; no option nobody asked for. |
 | **Surgical Changes** | Edit files with Read/Edit/Write only (main session and agents alike); Bash is for git, checks and tests. Stage explicit paths. Fixes land unbumped; no unrelated tidy-ups in the same change. |
-| **Goal-Driven Execution** | Done = the checks in `maintaining.md` with counts reported, plus one real run for a behaviour change. Every harness run opened ends with `05-report.md`, partial criteria stated as partial. |
+| **Goal-Driven Execution** | Done = the checks in `maintaining.md` with counts reported, plus one real run for a behaviour change. Every Sprint ends with its report, partial criteria stated as partial. |
 
-## Design changes (harness rule)
+## Design changes
+
+A change is a card on `_repo/docs/backlog.md`, taken into a Sprint, closed by the Sprint's report.
+A Sprint opens with `tm_open` and `size: "L"` (an unpinned small backlog sizes S and runs as one
+harness pass with no STORY cards; see `backlog.md`).
 
 Before changing behaviour of a plugin (not typo/doc fixes):
 1. **plan** — what changes and why, citing the governing design doc (`_repo/docs/plans/`).
@@ -32,9 +36,9 @@ teams principles: `_repo/docs/plans/2026-09-28-teams-cards-everywhere.md`.
 | `_repo/hooks/` | git hooks (`pre-commit` validator, `pre-push` run hold) via `core.hooksPath` | — |
 | `_repo/scripts/` | repo-wide checks (`validate_plugins.py`, `check-copies.mjs`, bump tools) | plugin code |
 | `_repo/deprecated/` | README only: restore table for retired items | files of retired items |
-| `.claude/` | this repo's own hooks (goal gate, repo rules) and these rules | plugin code |
+| `.claude/` | this repo's own hook (repo rules), teams config (`team.json`, `teams-dispatch.json`) and these rules | plugin code |
 | `tmp/` (gitignored) | scratch output of a bench or experiment | anything to keep |
-| `.harness-run/` (gitignored) | one folder per harness run | — |
+| `.harness-run/` (gitignored) | written by a teams size-S pass | — |
 
 A new top-level directory is a new plugin, or it does not exist. A note worth keeping goes in
 `_repo/docs/`; one that isn't is not written to the repo.
@@ -49,3 +53,4 @@ A new top-level directory is a new plugin, or it does not exist. A note worth ke
 | `mod.md` | what a mod is and its rules |
 | `compat-claude.md` | older Claude Code builds |
 | `compat-codex.md` | Codex |
+| `backlog.md` | where work waits; the Sprint loop |

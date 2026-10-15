@@ -15,6 +15,7 @@ instructions and rules Claude Code loads:
 | `.claude/rules/mod.md` | what a mod is and its rules (Claude-only surface) |
 | `.claude/rules/compat-claude.md` | older Claude Code builds |
 | `.claude/rules/compat-codex.md` | Codex: cross-client behaviour, harness paths, running inside a Codex session |
+| `.claude/rules/backlog.md` | where work waits; the Sprint loop |
 
 ## Repository Shape
 
