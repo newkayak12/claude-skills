@@ -31,22 +31,16 @@ compatibility:
 
 # Dispatching Parallel Agents
 
-## Overview
-
-You have several independent jobs — different failing test files, a slow query,
-a frontend bug, separate code reviews. Doing them one at a time wastes wall-clock,
-and handing them all to one generalist wastes expertise. This skill is a **job
-allocator**: it fans the jobs out **in parallel** (the core capability) and mounts
-the **best-fit persona** on each one.
+Independent jobs, fanned out in parallel, each on the persona it calls for, then
+gathered and verified as a whole. Parallelism is the engine; persona-matching is
+the multiplier.
 
 **Core principle:** one isolated agent per independent job, running concurrently —
 and each agent wears the persona that job actually calls for.
 
 **Allocator, not pipeline.** The harness (`harness:harness`) runs *fixed vertical
 stages* over a single goal (Plan→Implement→Test→…). This skill is the opposite
-axis: *horizontal fan-out* of unrelated jobs, no stages, no ordering. You are not
-advancing one goal through phases — you are throwing N jobs at N specialists at
-once and collecting what comes back.
+axis: *horizontal fan-out* of unrelated jobs, no stages, no ordering.
 
 ## When to Use
 
@@ -72,108 +66,61 @@ Multiple jobs or failures?
 - You need full system state to understand any of them
 - Agents would edit the same files or contend for the same resource
 
-## The Gate
+## Process
+
+0. **INDEPENDENCE** — confirm the jobs are truly independent BEFORE fanning out
+   (use sequential-thinking / think-tool for this check).
+   - No two agents will touch the same files.
+   - No causal link (fixing one won't fix/break another).
+   - Each job is fully understandable without the others' context.
+
+   A wrong parallelism call costs more than sequential would have.
+1. **ALLOCATE** — match each job to its best-fit persona by what the job IS, not by
+   a fixed registry: extract the dominant signal, route to the closest specialist.
+   No clear fit → general-purpose. Persona table and method:
+   [references/allocation-and-briefs.md](references/allocation-and-briefs.md).
+2. **DISPATCH** — one isolated subagent per job, in parallel. Mount the persona, give
+   a focused self-contained brief, no shared context between agents. This is the
+   parallel-agent core — it always stays. Each brief has five parts:
+   1. **Persona** — who the agent is ("You are a database-optimizer…")
+   2. **Focused scope** — one job, one boundary ("only src/agents/agent-tool-abort.test.ts")
+   3. **Self-contained context** — the errors, test names, constraints it needs
+   4. **Constraints** — what it must NOT touch ("do not change production code")
+   5. **Expected output** — the summary/verdict shape you want back
+
+   Dispatch call and a full example brief:
+   [references/allocation-and-briefs.md](references/allocation-and-briefs.md).
+
+   **Worktree isolation.** For every agent that writes files, prefer
+   `isolation: "worktree"` — each gets its own git worktree, so edits can't collide.
+   If the runtime doesn't support it, fall back to the step-0 check: no two agents
+   touch the same files. Read-only agents need neither.
+
+   Each agent runs in its **own context** — it never sees your reasoning or the other
+   agents' work. That isolation is deliberate: it keeps jobs from cross-contaminating
+   and keeps each verdict independent (same isolation principle as
+   `completion:verification-before-completion`).
+3. **GATHER** — integrate and settle "done". When agents return:
+   1. **Read each summary** — understand what each persona changed.
+   2. **Check for conflicts** — did any two agents touch the same code despite step 0?
+      Worktree results must be merged back into the main tree; resolve and re-check
+      conflicts after each merge.
+   3. **Run the whole thing** — the full suite / build, not just the touched parts.
+   4. **Settle the claim** — route "it passes now" through
+      `completion:verification-before-completion` (isolated fresh evidence), not the
+      agents' own success messages.
+
+## Output Template
 
 ```
-0. INDEPENDENCE  Confirm the jobs are truly independent BEFORE fanning out.
-                 → No two agents will touch the same files.
-                 → No causal link (fixing one won't fix/break another).
-                 → Each job is fully understandable without the others' context.
-                 A wrong parallelism call costs more than sequential would have.
-                 (Use sequential-thinking / think-tool for this check.)
-1. ALLOCATE      Match each job to its best-fit persona by what the job IS,
-                 not by a fixed registry. See the matching method below.
-                 No clear fit → general-purpose.
-2. DISPATCH      One isolated subagent per job, in parallel. Mount the persona,
-                 give a focused self-contained brief, no shared context between
-                 agents. Agents that write files each get their own worktree
-                 (`isolation: "worktree"`) when the runtime supports it; without
-                 it, step 0's no-shared-files check is the only collision guard. This is the
-                 parallel-agent core — it always stays.
-3. GATHER        Collect summaries. Verify fixes don't conflict, run the whole
-                 thing, and settle "done" through verification-before-completion.
+## Gather report
+Job 1: <job> — persona: <persona> | scope: <files/boundary> | worktree: <path | none (no-shared-files)>
+  result: <summary of what changed>
+  conflicts: <found / resolved, or none>
+Job 2: …
+Full suite: <command> → exit <code>
+Verification (completion:verification-before-completion): <verdict>
 ```
-
-## 1. ALLOCATE — match each job to a persona
-
-Read the job, extract its dominant signal (language, layer, failure type, artifact),
-and pick the persona whose specialty covers it. Match *dynamically* on the signal —
-the table below is illustration, not a closed list. Whatever specialist agents your
-environment exposes, route to the closest one; when nothing fits, use
-`general-purpose`.
-
-| Job signal | Persona to mount |
-|------------|------------------|
-| Kotlin / JVM code change | kotlin-specialist |
-| Slow query, index, N+1, connection pool | sql-pro / database-optimizer |
-| Frontend UI / component / styling bug | frontend-developer |
-| Flaky / intermittently failing test | flaky-test-analyzer |
-| Code quality / readability review | clean-code reviewer |
-| Infra / deploy / SRE incident | sre / operations specialist |
-| No clean specialty match | general-purpose |
-
-The value is the **method**: signal → specialist. A generalist can do any one job,
-but the persona-matched agent brings the right defaults, vocabulary, and failure
-instincts, so its output needs less correction on gather.
-
-## 2. DISPATCH — parallel, isolated, persona-mounted
-
-Fan out concurrently. Each brief is:
-
-1. **Persona** — who the agent is ("You are a database-optimizer…")
-2. **Focused scope** — one job, one boundary ("only src/agents/agent-tool-abort.test.ts")
-3. **Self-contained context** — the errors, test names, constraints it needs
-4. **Constraints** — what it must NOT touch ("do not change production code")
-5. **Expected output** — the summary/verdict shape you want back
-
-```
-# All run at once — one persona-matched agent per independent job
-Agent(subagent_type=flaky-test-analyzer, isolation="worktree", prompt="Fix agent-tool-abort.test.ts — 3 timing failures …")
-Agent(subagent_type=database-optimizer,  isolation="worktree", prompt="Cut p99 on GET /orders — slow query, see EXPLAIN …")
-Agent(subagent_type=frontend-developer,  isolation="worktree", prompt="Fix cart badge not updating after remove …")
-```
-
-**Worktree isolation.** For every agent that writes files, prefer
-`isolation: "worktree"` — each gets its own git worktree, so edits can't collide.
-If the runtime doesn't support it, fall back to the step-0 check: no two agents
-touch the same files. Read-only agents need neither.
-
-Each agent runs in its **own context** — it never sees your reasoning or the other
-agents' work. That isolation is deliberate: it keeps jobs from cross-contaminating
-and keeps each verdict independent (same isolation principle as
-`completion:verification-before-completion`).
-
-Example brief:
-
-```markdown
-You are a flaky-test-analyzer. Fix the 3 failing tests in
-src/agents/agent-tool-abort.test.ts:
-
-1. "should abort tool with partial output capture" — expects 'interrupted at' in message
-2. "should handle mixed completed and aborted tools" — fast tool aborted instead of completed
-3. "should properly track pendingToolCount" — expects 3 results but gets 0
-
-These look like timing/race issues. Your task:
-1. Read the test file; understand what each test verifies.
-2. Find the root cause — timing vs a real bug.
-3. Fix by replacing arbitrary timeouts with event-based waiting; fix the abort
-   implementation if it's a real bug; adjust expectations only if behavior changed.
-
-Do NOT just increase timeouts, and do NOT touch other test files.
-Return: root cause + exactly what you changed.
-```
-
-## 3. GATHER — integrate and settle "done"
-
-When agents return:
-1. **Read each summary** — understand what each persona changed.
-2. **Check for conflicts** — did any two agents touch the same code despite step 0?
-   Worktree results must be merged back into the main tree; resolve and re-check
-   conflicts after each merge.
-3. **Run the whole thing** — the full suite / build, not just the touched parts.
-4. **Settle the claim** — route "it passes now" through
-   `completion:verification-before-completion` (isolated fresh evidence), not the
-   agents' own success messages.
 
 ## Common Mistakes
 
@@ -203,7 +150,7 @@ When agents return:
 | Dispatches isolated agents in parallel | Review the gathered result |
 | Gathers and verifies the whole | Accept or send back |
 
-## Related
+## Related Skills
 
 - `agents:agent-task-decomposer` — split one big job into the independent pieces this
   skill then fans out.
@@ -211,9 +158,3 @@ When agents return:
   with isolated fresh evidence, not agent self-reports.
 - `harness:harness` — the other axis: fixed vertical stages over one goal, where
   this skill is horizontal fan-out of many jobs.
-
-## Bottom line
-
-Independent jobs, fanned out in parallel, each on the persona it calls for, then
-gathered and verified as a whole. Parallelism is the engine; persona-matching is
-the multiplier.

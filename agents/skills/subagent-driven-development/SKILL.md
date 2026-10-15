@@ -36,51 +36,48 @@ Use this skill when all three conditions are met:
 
 `planning:executing-plans` gates the plan and routes its sequential/dependent steps here. Use manual execution when you don't yet have a plan.
 
-## The Process
+## Process
 
-```dot
-digraph process {
-    rankdir=TB;
+1. **Read the plan once.** Extract all tasks with full text, note context, create the task list.
+2. **Per task, in plan order** — one at a time; never start a task before the task it depends on has passed review:
+   1. If think-tool is available, pick the model tier (see Model Selection).
+   2. Dispatch the implementer subagent (`./implementer-prompt.md`) with the task's full text and scene-setting context.
+   3. Implementer asks questions? Answer questions, provide context, then re-dispatch; no rushing into implementation.
+   4. The implementer implements, tests, commits, self-reviews.
+   5. Handle its status (see Handling Implementer Status).
+   6. Dispatch the spec-reviewer (`./spec-reviewer-prompt.md`) and code-quality-reviewer (`./code-quality-reviewer-prompt.md`) in the **same turn** — both are read-only and have no dependency on each other's output. Wait for both to complete, then act on their combined findings.
+   7. Both pass? No: the implementer fixes the combined findings, then re-dispatch **both** reviewers in the same turn (spec gaps or quality issues alike). Fixes for one can affect the other, so no reviewer is skipped. Repeat until both pass.
+   8. Only mark the task complete when both spec and quality reviewers have passed in the same review round.
+3. More tasks remain? Go to the next task (step 2). None: dispatch the final code reviewer subagent for the entire implementation.
+4. Finalize the branch: full tests + commit + PR/merge (see Integration).
 
-    subgraph cluster_per_task {
-        label="Per Task";
-        "Dispatch implementer subagent (./implementer-prompt.md)" [shape=box];
-        "Implementer subagent asks questions?" [shape=diamond];
-        "Answer questions, provide context" [shape=box];
-        "Implementer subagent implements, tests, commits, self-reviews" [shape=box];
-        "Dispatch spec + quality reviewers IN PARALLEL (./spec-reviewer-prompt.md + ./code-quality-reviewer-prompt.md)" [shape=box];
-        "Both reviewers pass? (wait for both)" [shape=diamond];
-        "Implementer subagent fixes combined findings" [shape=box];
-        "Mark task complete in task list" [shape=box];
-    }
+**If subagent asks questions:**
+- Answer clearly and completely
+- Provide additional context if needed
+- Don't rush them into implementation
 
-    "Read plan, extract all tasks with full text, note context, create task list" [shape=box];
-    "More tasks remain?" [shape=diamond];
-    "Dispatch final code reviewer subagent for entire implementation" [shape=box];
-    "Finalize branch: full tests + commit + PR/merge" [shape=box style=filled fillcolor=lightgreen];
+**If reviewer finds issues:**
+- Implementer (same subagent) fixes them
+- Reviewer reviews again
+- Repeat until approved
+- Don't skip the re-review
 
-    "Read plan, extract all tasks with full text, note context, create task list" -> "Dispatch implementer subagent (./implementer-prompt.md)";
-    "Dispatch implementer subagent (./implementer-prompt.md)" -> "Implementer subagent asks questions?";
-    "Implementer subagent asks questions?" -> "Answer questions, provide context" [label="yes"];
-    "Answer questions, provide context" -> "Dispatch implementer subagent (./implementer-prompt.md)";
-    "Implementer subagent asks questions?" -> "Implementer subagent implements, tests, commits, self-reviews" [label="no"];
-    "Implementer subagent implements, tests, commits, self-reviews" -> "Dispatch spec + quality reviewers IN PARALLEL (./spec-reviewer-prompt.md + ./code-quality-reviewer-prompt.md)";
-    "Dispatch spec + quality reviewers IN PARALLEL (./spec-reviewer-prompt.md + ./code-quality-reviewer-prompt.md)" -> "Both reviewers pass? (wait for both)";
-    "Both reviewers pass? (wait for both)" -> "Implementer subagent fixes combined findings" [label="no"];
-    "Implementer subagent fixes combined findings" -> "Dispatch spec + quality reviewers IN PARALLEL (./spec-reviewer-prompt.md + ./code-quality-reviewer-prompt.md)" [label="re-review"];
-    "Both reviewers pass? (wait for both)" -> "Mark task complete in task list" [label="yes"];
-    "Mark task complete in task list" -> "More tasks remain?";
-    "More tasks remain?" -> "Dispatch implementer subagent (./implementer-prompt.md)" [label="yes"];
-    "More tasks remain?" -> "Dispatch final code reviewer subagent for entire implementation" [label="no"];
-    "Dispatch final code reviewer subagent for entire implementation" -> "Finalize branch: full tests + commit + PR/merge";
-}
-```
+**If subagent fails task:**
+- Dispatch fix subagent with specific instructions
+- Don't try to fix manually (context pollution)
 
-**Parallel review note:** After each implementation task, dispatch the spec-reviewer and code-quality-reviewer in the **same turn** — both are read-only and have no dependency on each other's output. Wait for both to complete, then act on their combined findings.
+Prompt templates: `./implementer-prompt.md` (dispatch implementer subagent), `./spec-reviewer-prompt.md` (dispatch spec compliance reviewer subagent), `./code-quality-reviewer-prompt.md` (dispatch code quality reviewer subagent).
+Example: `references/example-workflow.md` (full concrete trace). Why this beats alternatives: `references/rationale.md`.
 
-**Re-review routing after fixes:** After any fix (spec gaps or quality issues), the implementer fixes, then re-dispatch **both** reviewers in the same turn. Fixes for one can affect the other, so no reviewer is skipped.
+## Output Template
 
-Only mark the task complete when both spec and quality reviewers have passed in the same review round.
+Keep this record as the run goes; one ledger row per task:
+
+| Task | Model tier | Implementer status | Spec verdict | Quality verdict | Review rounds | Commit |
+|------|-----------|--------------------|--------------|-----------------|---------------|--------|
+| 1 — <title> | cheap / standard / capable | DONE | pass | pass | 1 | <sha> |
+
+Then: final reviewer verdict; full-suite command + exit code; done-verdict via `completion:verification-before-completion`.
 
 ## Model Selection
 
@@ -113,16 +110,6 @@ Implementer subagents report one of four statuses. Handle each appropriately:
 
 **Never** ignore an escalation or force the same model to retry without changes. If the implementer said it's stuck, something needs to change.
 
-## Prompt Templates
-
-- `./implementer-prompt.md` - Dispatch implementer subagent
-- `./spec-reviewer-prompt.md` - Dispatch spec compliance reviewer subagent
-- `./code-quality-reviewer-prompt.md` - Dispatch code quality reviewer subagent
-
-## Example Workflow
-
-See `references/example-workflow.md` for a full concrete trace. For context on why this approach works better than alternatives, see `references/rationale.md`.
-
 ## Red Flags
 
 **Never:**
@@ -139,21 +126,6 @@ See `references/example-workflow.md` for a full concrete trace. For context on w
 - Let implementer self-review replace actual review (both are needed)
 - **Act on only one review result while the other is still running** — wait for both, then decide
 - Move to next task while either review has open issues
-
-**If subagent asks questions:**
-- Answer clearly and completely
-- Provide additional context if needed
-- Don't rush them into implementation
-
-**If reviewer finds issues:**
-- Implementer (same subagent) fixes them
-- Reviewer reviews again
-- Repeat until approved
-- Don't skip the re-review
-
-**If subagent fails task:**
-- Dispatch fix subagent with specific instructions
-- Don't try to fix manually (context pollution)
 
 ## Integration
 
