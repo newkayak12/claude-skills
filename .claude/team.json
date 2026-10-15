@@ -1,0 +1,30 @@
+{
+  "max_parallel_teams": "auto",
+  "max_parallel_ceiling": null,
+  "interactive": false,
+  "ask_timeout": null,
+  "brainstorm": true,
+  "human_gates": [],
+  "qa_rounds": 2,
+  "upstream_fix_rounds": 2,
+  "roles": {
+    "planning": "auto",
+    "qa": true,
+    "audit": true
+  },
+  "goal_threshold": 90,
+  "max_retries": 2,
+  "driver_restarts": 2,
+  "stall_minutes": 20,
+  "restart_period_minutes": 0,
+  "vendor": "auto",
+  "allocation": "ordered",
+  "docs_dir": ".teams_output/team",
+  "plugin_dirs": [],
+  "retry_policy": "continue",
+  "budget_usd": null,
+  "timebox_minutes": null,
+  "budget_grace_usd": null,
+  "budget_grace_minutes": 5,
+  "initiative": null
+}

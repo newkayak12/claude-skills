@@ -14,15 +14,6 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash|Task|Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/goal-gate.mjs\""
-          }
-        ]
-      },
-      {
         "matcher": "Bash",
         "hooks": [
           {

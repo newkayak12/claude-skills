@@ -18,10 +18,10 @@ INSTRUCT.md
 **/.knowledge/knowledge.sqlite
 **/.knowledge/knowledge.sqlite-shm
 **/.knowledge/knowledge.sqlite-wal
-.claude/.harness-markers/
 .harness-run/
 .claude/settings.local.json
-.claude/.harness-last-decision.json
 
 # local research notes (skill:audit reads it only if present)
 _reference/
+.teams_output/
+.claude/.harness-markers/
