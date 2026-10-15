@@ -1,8 +1,8 @@
 ---
 name: plans
 description: >-
-  Use when writing starts from a plan: an implementation plan or ticket breakdown before code, a PRD, design doc or
-  RFC, a design review or ADR, a tech blog, or SBI feedback. Triggers: "구현 계획 써줘", "티켓으로 쪼개줘", "PRD 작성", "ADR 써줘".
+  Use when writing starts from a plan: implementation plan or ticket breakdown before code, PRD, design doc, RFC, ADR, tech blog, SBI feedback.
+  Triggers: "구현 계획 써줘", "PRD 작성". Not for running or gating a written plan; use planning:executing-plans.
 scenarios:
   - "이 기능 구현 계획 작성해줘"
   - "Create an implementation plan for this new service"
