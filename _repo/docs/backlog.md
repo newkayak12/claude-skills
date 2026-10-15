@@ -9,15 +9,6 @@ never retire them as duplicates, and never reference superpowers.
 
 ### Repo and rules
 
-1. **Rules follow teams, not the removed harness gate**
-   - Why: harness governance was removed (2026-10-15); `repo.md`, `maintaining.md` and
-     `.claude/hooks/repo-rules.mjs` still speak of the goal gate, harness runs and `05-report.md`.
-   - Acceptance: no rule names the goal gate or `.claude/harness-gate.json`; the change loop reads
-     backlog → Sprint → report; the rule says a Sprint opens with `size: "L"` (an unpinned
-     small backlog sizes S and runs as one harness pass, no STORY cards); repo-rules' push hold keys on open teams tasks or is removed;
-     `node _repo/scripts/test-repo-rules.mjs` passes; `backlog.md` is listed in the rule-file
-     tables of `repo.md` and `CLAUDE.md` (left out on 2026-10-15 while E-c313c8f1 edited them).
-
 3. **Maintenance vault is reachable or the rule says where it is**
    - Why: `maintaining.md` points to `../claude-skills-knowledge`; nothing is there on this machine.
    - Acceptance: the vault path in the rules exists, or the rule names how to get it.

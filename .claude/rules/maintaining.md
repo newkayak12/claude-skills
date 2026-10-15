@@ -16,7 +16,7 @@ Then the plugin you touched:
 | a mod (`<plugin>/hooks/*.tsx`) | `cd <plugin> && claude plugin test .` |
 | teams / graph / harness / knowledge scripts | `node --test <plugin>/scripts/test-*.mjs` |
 | teams bench scripts | `node --test teams/scripts/bench/test-*.mjs` |
-| harness goal gate | `node harness/scripts/test-goal-gate.mjs` (own runner, prints `all passed`), then copy it byte-identical to `.claude/hooks/goal-gate.mjs` |
+| harness plugin hooks | `node harness/scripts/test-goal-gate.mjs` (own runner, prints `all passed`) |
 | `write:diagram` | `node write/skills/diagram/scripts/test-diagram.mjs` (teams vendors its `diagram.mjs`) |
 | `write:tech-book` | `node --test write/skills/tech-book/scripts/test-*.mjs` |
 | `portfolio:deck-builder` | in its `scripts/`: `python3 test_deck.py`, `DECK_RENDER_DOCKER=deck-render python3 test_render.py` |
@@ -24,8 +24,8 @@ Then the plugin you touched:
 | `.claude/hooks/repo-rules.mjs` | `node _repo/scripts/test-repo-rules.mjs` |
 | harness engine scripts | also `node --check` on `harness/engine/{codex-exec-adapter,codex-runner,fallback-check}.mjs` |
 
-The goal gate (`.claude/harness-gate.json`) covers `.js/.mjs/.cjs`, `.ts/.tsx`, `.py`, `SKILL.md`,
-`hooks.json` and `.claude-plugin/{plugin,marketplace}.json`; docs (README, KOR, CHANGELOG, plans) are not gated.
+The teams dispatch gate: paths in `.claude/teams-dispatch.json` are denied to the driving session
+until a task is open (`tm_open`).
 
 Report the counts you saw; "tests pass" without a number is not a check.
 
@@ -68,8 +68,8 @@ Report the counts you saw; "tests pass" without a number is not a check.
   trailer is allowed.
 - Every subagent call names its model (`sonnet` for build work, `opus` for plan/judge).
 - Everyone edits files with Read/Edit/Write, not shell scripts (sed, python, heredocs), and never
-  scripts around the goal gate. If the gate blocks the orchestrating session, it opens a harness run;
-  a subagent or harness/teams node never opens one — it stops and reports to its caller.
+  scripts around the dispatch gate. If the gate blocks the orchestrating session, it opens a teams
+  task; a subagent or teams node never opens one — it stops and reports to its caller.
 - Stage explicit paths, never `git add -A` at the root while another task has changes.
 
 ## Benches and experiments
@@ -78,18 +78,17 @@ Report the counts you saw; "tests pass" without a number is not a check.
   blind, and fix the skill. Output content is not maintained.
 - Blind means: arms anonymized before judging, judge on a different model tier than the authors,
   each judgment tied to the run's done criteria; a partly met criterion is stated as such.
-- Bench output lives in `tmp/` and is deleted when the result is recorded (`05-report.md`, and a
+- Bench output lives in `tmp/` and is deleted when the result is recorded (the Sprint report, and a
   memory if it matters later).
 - Docker in a bench: unique names, no host ports, tear down by exact name. Never `prune` anything.
 
 ## Leaving it clean
 
 1. `git status` is clean and `main` equals `origin/main`.
-2. Every harness run you opened has `05-report.md` — an open run keeps the goal gate engaged, and
-   `.claude/hooks/repo-rules.mjs` refuses `git push` and the bump tools while any run is open or its
-   report has a `| missing |` row. A missing criterion ships only with a `waived: <user's words>`
-   line. Codex and a plain terminal get the same push hold from git: `git config core.hooksPath
-   _repo/hooks` once per clone. `--no-verify` and bump scripts run outside Claude Code are not covered.
+2. Every teams task you opened has finished, its report written. `.claude/hooks/repo-rules.mjs`
+   refuses `git push` and the bump tools while a teams task for this checkout is open, so the
+   batch bump comes after the Sprint's task closes. Codex and a plain terminal get the same push
+   hold from git: `git config core.hooksPath _repo/hooks` once per clone. `--no-verify` and bump scripts run outside Claude Code are not covered.
 3. No containers, volumes, or background processes you started are left running.
 4. `tmp/` holds nothing you are done with.
 5. Nothing new at the top level that is not a plugin.
