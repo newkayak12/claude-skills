@@ -41,7 +41,7 @@ Report the counts you saw; "tests pass" without a number is not a check.
 - Bump tools (maintainer, not user skills): `node _repo/scripts/patch-harness.mjs` and
   `node teams/skills/patch/patch.mjs '<json>'` (dry-run first) bump a patch version and its status
   logs in one step. Minor/major by hand. Refreshing a project's installed harness copies is `harness:update`.
-- Remote is `skills`: `git pull --rebase skills main`, then `git push skills main`.
+- Remote is `origin`: `git pull --rebase origin main`, then `git push origin main`.
 - Installed copies stay current by themselves once `git config core.hooksPath _repo/hooks` is set:
   Claude Code pulls the GitHub marketplace on start (`autoUpdate: true` — so a bump reaches it on
   push); Codex runs the local repo through a versioned cache, refreshed by `post-commit`/`post-merge`
@@ -54,8 +54,8 @@ Report the counts you saw; "tests pass" without a number is not a check.
   - Level, from the largest change since the last tag: patch = any plugin bump or doc change; minor = a
     new plugin added; major = a plugin removed or renamed, or a marketplace layout change that breaks installs.
   - Steps: `git fetch` → bump `metadata.version` → commit `marketplace <version>: <what moved>` →
-    `git push skills main` → `git tag -a v<version> -m "marketplace <version>"` on that commit →
-    `git push skills v<version>`. Tag only commits that are on skills/main.
+    `git push origin main` → `git tag -a v<version> -m "marketplace <version>"` on that commit →
+    `git push origin v<version>`. Tag only commits that are on origin/main.
   - Never move, delete, or re-point a pushed tag unless the user asks.
 
 ## Agents working in the repo
@@ -84,7 +84,7 @@ Report the counts you saw; "tests pass" without a number is not a check.
 
 ## Leaving it clean
 
-1. `git status` is clean and `main` equals `skills/main`.
+1. `git status` is clean and `main` equals `origin/main`.
 2. Every harness run you opened has `05-report.md` — an open run keeps the goal gate engaged, and
    `.claude/hooks/repo-rules.mjs` refuses `git push` and the bump tools while any run is open or its
    report has a `| missing |` row. A missing criterion ships only with a `waived: <user's words>`
