@@ -15,9 +15,6 @@ The rules live in `.claude/rules/` (Claude Code loads them; Codex reads them via
 | `compat-claude.md` | older Claude Code builds |
 | `compat-codex.md` | Codex |
 
-Memory for this repo is the private vault `../claude-skills-knowledge`: search it before planning,
-and add notes to it as things happen (`maintaining.md` "Maintenance vault").
-
 @_repo/coding-guidelines.md
 
 ## Skill Awareness
