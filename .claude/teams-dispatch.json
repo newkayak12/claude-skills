@@ -1,0 +1,11 @@
+{
+  "paths": [
+    "*/skills/**",
+    "*/scripts/**",
+    "*/mcp/**",
+    "*/hooks/**",
+    "*/engine/**",
+    "_repo/scripts/**"
+  ],
+  "min_chars": 400
+}
