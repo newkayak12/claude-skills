@@ -336,7 +336,33 @@ User: "https://github.com/pixel-agents-hq/pixel-agents 이런 느낌으로 서�
 Then: "저걸 하라는게 아니라 저렇게 좀 이쁘게 사용자를 고려해서 쓰는 사람 친화적으로 하자고". The
 references (statusline, pixel-agents) are the bar for care and friendliness, not features to copy: no
 pixel art, no web office. What carries over is that a person can see who is doing what and how the
-workers hand work to each other, drawn with care:
+workers hand work to each other, drawn with care.
+
+And: "저건 뭘하는지 눈에 캐릭터로 보이잖아 그런 직관적인걸 원하는거야 UIUX를 고려하자고". **The rule
+for every mod (harness, teams, graph, session): a glance, not a read.** Each worker is a small character
+whose face and pose show its state, animated in Ink, so a person knows what is happening before reading
+a word; the text line beside it is the detail. Same character set across mods, colour by state:
+
+```text
+ (•_•)✎   editing        (•_•)▸   running a command   (•‿•)✔  accepted
+ (•_•)⌕   reading        (-_-)ᶻ   idle / waits        (•︵•)✘  rejected, retrying
+ (°_°)…   thinking       (°o°)⚑   waits on you        (⌐■_■)⚖ judging
+```
+
+Floor at 110 with characters:
+
+```text
+  (•‿•)✔ PLAN      done · 4 STORYs                                                        $1.20
+  (•_•)✎ P2        editing form.ts — currency field · try 2/3                       9m    $2.35
+     └ (•_•)⌕      reading schema.ts
+  (•_•)▸ P3        npm test -- invoice · 12 ✔ 1 ✘                                    4m    $0.90
+  (-_-)ᶻ P4        waits for P1, P2
+  (°o°)⚑ P2        asks you: "Keep the legacy invoice PDF route?"                   [answer]
+  P1 ──✔──▶ P4  contract handed over       gate ──✘──▶ P2  negative currency accepted
+```
+
+Every mod card adds a UI/UX pass before it is done: show the person the `demo` render first, and fix
+what they cannot read at a glance. The pieces below are the first draft of that:
 
 - **Floor tab in the teams pane (Ink).** One desk per worker of the EPIC — PLAN, each package driver
   (P1…Pn), its subagents, QA, the gate judge. Each desk: a character glyph that changes with the action
