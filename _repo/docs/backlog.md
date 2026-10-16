@@ -70,6 +70,10 @@ never retire them as duplicates, and never reference superpowers.
     - Acceptance: with two runs open, each pane lists both and switches between them by key;
       the band names how many are open; non-mod readouts (`view.mjs --once`, CLIs) list both too;
       `claude plugin test .` passes for each plugin; seen live at 190 and 110 columns.
+    - Design first (user, 2026-10-16: "팀즈 하네스 그래프 병렬 실행 시 모드 어떻게 그릴지 고민하기"):
+      a section of card 31's design doc settles how parallel runs are drawn across the three
+      plugins — one shared surface or one per plugin, how a teams L EPIC's packages (each its own
+      worktree and graph run) nest under it, which run the band leads with — before any code.
 
 30. **session Memo pane cannot be closed**
     - Why: `/memo` always calls `$.ui.open` (session/hooks/memo.tsx), so a second `/memo` reopens
@@ -89,6 +93,10 @@ never retire them as duplicates, and never reference superpowers.
     - Principle (user, same day): "각 스킬에 특화되도록 사용자 친화적으로!" — each mod speaks its own
       skill's language (harness: plan/critique/subgoals; teams: EPIC/STORY/cards; graph: nodes;
       session: memo/guards), not one generic status layout; plain words over engine field names.
+    - Bar (user, 2026-10-16: "현재 모드 고도화 … 실제 사용 유아이같이 고도로 발달하고 사람이
+      보기좋게가 가장 중요 정보도 다 표현하고"): product-grade UI, readable first, with every key
+      field above present. The design doc shows a mockup per mod at 190 and 110 columns, and the
+      gate is the live screenshots against it.
 
 ### Sprint process
 
