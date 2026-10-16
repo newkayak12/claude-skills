@@ -70,8 +70,8 @@ Why, in the user's words: "전체적으로 mod가 더 디테일해야할거 같�
 the same letter, plus: the three-row band, priority-drop segments, dark/light theme, a `demo` fixture
 (`minimal`/`full`/`parallel`/`narrow`), seen live at 190 and 110, README/KOR shot. UI/UX first
 (user: "저건 뭘하는지 눈에 캐릭터로 보이잖아 그런 직관적인걸 원하는거야 UIUX를 고려하자고"): a glance,
-not a read — each worker is a small animated character whose face shows its state (design doc, character
-set), and the user sees the `demo` render before a card is done.
+not a read — each worker's state is one icon and colour (spinner while acting; no character faces, user:
+"캐릭터눈 딱히 크게 필요는 없긴 한뎅"), and the user sees the `demo` render before a card is done.
 
 34. **H. harness pane says what the run is doing** — design §4 H.
 35. **T. teams pane shows every STORY at work** — design §4 T (after card 28), plus the design's
