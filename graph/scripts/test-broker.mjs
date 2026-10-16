@@ -11,7 +11,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, utimesSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, utimesSync, chmodSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -2001,5 +2001,177 @@ test('the peer vendor, not the driver, writes the run report', async () => {
     assert.match(report.routing_reason, /preference=codex/);
     assert.equal((await c.call('graph_run', { run_id, cwd, node_id: 'report' })).state, 'done');
     assert.equal((await c.call('graph_status', { run_id, cwd })).state, 'complete');
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
+// ---------- run-file contract the graph mod reads: owner, created_at, cost_usd, last_step ----------
+
+const runFile = (cwd, runId) => join(cwd, '.harness-run', 'broker', 'runs', `${runId}.json`);
+const readRun = (cwd, runId) => JSON.parse(readFileSync(runFile(cwd, runId), 'utf8'));
+
+test('owner is stored exactly as given, and is null when none is given', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    assert.equal(readRun(cwd, runId).owner, null);
+    const key = 'E-abcd1234/P2';
+    const owner = { task_id: 'T-9', key, extra: 'kept' };
+    const owned = await openRun(c, cwd, { owner });
+    assert.deepEqual(readRun(cwd, owned).owner, owner);
+    assert.equal(readRun(cwd, owned).owner.key, key, 'the STORY key was rewritten');
+  });
+});
+
+test('graph_open declares owner {task_id, key}', async () => {
+  const c = await new Client().init();
+  try {
+    const open = (await c.send('tools/list', {})).result.tools.find((t) => t.name === 'graph_open');
+    const owner = open.inputSchema.properties.owner;
+    assert.equal(owner.type, 'object');
+    assert.deepEqual(Object.keys(owner.properties).sort(), ['key', 'task_id']);
+  } finally { c.close(); }
+});
+
+test('cost_usd is present and null on every new run', async () => {
+  await withRun(async ({ cwd, runId }) => {
+    const run = readRun(cwd, runId);
+    assert.ok('cost_usd' in run, 'cost_usd missing from a new run');
+    assert.equal(run.cost_usd, null);
+  });
+});
+
+test('created_at is set once at createRun and owner/cost_usd/created_at survive a later submit byte for byte', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    const before = readRun(cwd, runId);
+    assert.ok(Number.isInteger(before.created_at) && before.created_at > 0);
+    assert.deepEqual(before.owner, { task_id: 'T-1', key: 'E-abcd1234/P1' });
+    assert.equal(before.cost_usd, null);
+    await new Promise((r) => setTimeout(r, 15));
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    const after = readRun(cwd, runId);
+    assert.equal(after.created_at, before.created_at);
+    assert.equal(JSON.stringify(after.owner), JSON.stringify(before.owner));
+    assert.equal(after.cost_usd, before.cost_usd);
+  }, { owner: { task_id: 'T-1', key: 'E-abcd1234/P1' } });
+});
+
+// reason (a gate or failed node) > handoff > last of checks > evidence
+test('nodes[].last_step takes the first non-empty of reason, handoff, last check, evidence', async () => {
+  const cwd = repo();
+  const c = await new Client().init();
+  try {
+    const stepOf = async (payload) => {
+      const id = await openRun(c, cwd);
+      await c.call('graph_submit', { run_id: id, cwd, node_id: 'plan', payload });
+      return readRun(cwd, id).nodes.find((n) => n.node_id === 'plan').last_step;
+    };
+    assert.equal(await stepOf({ stage_ok: false, reason: 'R', handoff: 'H', checks: ['c1', 'c2'], evidence: 'E' }), 'R');
+    assert.equal(await stepOf({ stage_ok: true, handoff: 'H', checks: ['c1', 'c2'], evidence: 'E' }), 'H');
+    assert.equal(await stepOf({ stage_ok: true, handoff: '  ', checks: ['c1', 'c2'], evidence: 'E' }), 'c2');
+    assert.equal(await stepOf({ stage_ok: true, checks: [], evidence: 'E' }), 'E');
+    assert.equal(await stepOf({ stage_ok: true }), null);
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('last_step collapses whitespace to one line and is cut to 120 chars', async () => {
+  const cwd = repo();
+  const c = await new Client().init();
+  try {
+    const stepOf = async (handoff) => {
+      const id = await openRun(c, cwd);
+      await c.call('graph_submit', { run_id: id, cwd, node_id: 'plan', payload: ok({ handoff }) });
+      return readRun(cwd, id).nodes.find((n) => n.node_id === 'plan').last_step;
+    };
+    assert.equal(await stepOf('  a\n\n  b\tc \r\n d  '), 'a b c d');
+    const long = await stepOf('x'.repeat(300));
+    assert.equal(long.length, 120);
+    assert.equal(long, 'x'.repeat(120));
+    assert.equal((await stepOf('y'.repeat(119) + '\n' + 'z'.repeat(50))).length, 120);
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('last_step lands in the same run-file write as the node result', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'together' }) });
+    const plan = readRun(cwd, runId).nodes.find((n) => n.node_id === 'plan');
+    assert.equal(plan.state, 'done');
+    assert.equal(plan.last_step, 'together');
+    assert.equal(readRun(cwd, runId).nodes.find((n) => n.node_id === 'setgoal').last_step, undefined);
+  });
+});
+
+function dirSnapshot(cwd) {
+  const dir = join(cwd, '.harness-run', 'broker', 'runs');
+  return readdirSync(dir).sort().map((f) => {
+    const p = join(dir, f);
+    return [f, readFileSync(p, 'utf8'), statSync(p).mtimeMs];
+  });
+}
+
+test('a run file without created_at reads as unknown and is never backfilled', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    const p = runFile(cwd, runId);
+    const stripped = readRun(cwd, runId);
+    delete stripped.created_at;
+    writeFileSync(p, JSON.stringify(stripped, null, 2));
+    const before = dirSnapshot(cwd);
+
+    const overview = await c.call('graph_status', { cwd });
+    assert.equal(overview.runs.find((r) => r.run_id === runId).created_at, 'unknown');
+    assert.equal((await c.call('graph_status', { run_id: runId, cwd })).run_id, runId);
+    assert.equal((await c.call('graph_next', { run_id: runId, cwd })).run_id, runId);
+    const list = spawnSync('node', [BROKER, 'runs', '--list', '--json', '--cwd', cwd], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    assert.equal(JSON.parse(list.stdout)[0].created_at, 'unknown');
+
+    assert.deepEqual(dirSnapshot(cwd), before, 'a reader wrote the run dir');
+    assert.ok(!('created_at' in readRun(cwd, runId)));
+  });
+});
+
+test('runs --list prints one line per run and --json the same rows, with no stdin and no write', async () => {
+  const cwd = repo();
+  const c = await new Client().init();
+  try {
+    const standalone = await openRun(c, cwd);
+    const owned = await openRun(c, cwd, { owner: { task_id: 'T-7', key: 'E-abcd1234/P2' } });
+    const legacy = await openRun(c, cwd);
+    await c.call('graph_submit', { run_id: owned, cwd, node_id: 'plan', payload: ok({ handoff: 'plan\nwritten' }) });
+    forceRunning(cwd, owned, 'setgoal', 1000);
+    const p = runFile(cwd, legacy);
+    const stripped = readRun(cwd, legacy);
+    delete stripped.created_at;
+    writeFileSync(p, JSON.stringify(stripped, null, 2));
+    const before = dirSnapshot(cwd);
+
+    const run = (...args) => spawnSync('node', [BROKER, 'runs', '--list', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
+    const text = run('--cwd', cwd);
+    assert.equal(text.status, 0, text.stderr);
+    const lines = text.stdout.trimEnd().split('\n');
+    assert.equal(lines.length, 3);
+    const line = (id) => lines.find((l) => l.startsWith(id.slice(0, 8) + '  '));
+    const iso = (id) => new Date(readRun(cwd, id).created_at).toISOString();
+    assert.equal(line(standalone), `${standalone.slice(0, 8)}  running  —  ${iso(standalone)}  —  —`);
+    assert.equal(line(owned), `${owned.slice(0, 8)}  running  E-abcd1234/P2  ${iso(owned)}  —  setgoal: plan written`);
+    assert.equal(line(legacy), `${legacy.slice(0, 8)}  running  —  unknown  —  —`);
+    assert.ok(lines[2].startsWith(legacy.slice(0, 8)), 'a run of unknown age is not listed last');
+
+    const json = run('--json', '--cwd', cwd);
+    assert.equal(json.status, 0, json.stderr);
+    const rows = JSON.parse(json.stdout);
+    assert.equal(rows.length, 3);
+    const row = (id) => rows.find((r) => r.id8 === id.slice(0, 8));
+    assert.deepEqual(row(standalone), { id8: standalone.slice(0, 8), state: 'running', owner: null, created_at: iso(standalone), cost_usd: null, running: null });
+    assert.deepEqual(row(owned), {
+      id8: owned.slice(0, 8), state: 'running', owner: { task_id: 'T-7', key: 'E-abcd1234/P2' },
+      created_at: iso(owned), cost_usd: null, running: { node_id: 'setgoal', last_step: 'plan written' },
+    });
+    assert.equal(row(legacy).created_at, 'unknown');
+
+    assert.deepEqual(dirSnapshot(cwd), before, 'runs --list wrote the run dir');
+    const empty = repo();
+    try {
+      const none = run('--cwd', empty);
+      assert.equal(none.status, 0);
+      assert.equal(none.stdout, '');
+      assert.deepEqual(JSON.parse(run('--json', '--cwd', empty).stdout), []);
+    } finally { rmSync(empty, { recursive: true, force: true }); }
   } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
 });
