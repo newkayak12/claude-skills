@@ -21,7 +21,7 @@
 // Zero dependencies: MCP's stdio transport is newline-delimited JSON-RPC 2.0.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
@@ -700,6 +700,17 @@ function withRejectionReason(n, result) {
   return synthesized ? { ...result, reason: synthesized.slice(0, 300) } : result;
 }
 
+const LAST_STEP_MAX = 120;
+
+// First non-empty of reason, handoff, last of checks, evidence; one line, cut to 120.
+function lastStep(result) {
+  const checks = Array.isArray(result.checks) ? result.checks : [];
+  const pick = [result.reason, result.handoff, checks[checks.length - 1], result.evidence]
+    .map((v) => (v === undefined || v === null ? '' : String(v).replace(/\s+/g, ' ').trim()))
+    .find(Boolean);
+  return pick ? pick.slice(0, LAST_STEP_MAX) : null;
+}
+
 function finishNode(run, nodeId, result, vendorName, expect) {
   const why = transact(run, (fresh) => {
     const { n, why: late } = claimOutcome(fresh, nodeId, expect);
@@ -728,6 +739,7 @@ function finishNode(run, nodeId, result, vendorName, expect) {
         expandSubgoals(fresh, result.spec.subgoals);
       }
     }
+    n.last_step = lastStep(n.result);
     return null;
   });
   if (why) return supersededVerdict(run, nodeId, expect, vendorName, why);
@@ -900,6 +912,11 @@ const TOOLS = [
         sandbox: { type: 'string' },
         isolated: { type: 'boolean', description: 'cwd is a private worktree with only this run in it' },
         max_retries: { type: 'number' },
+        owner: {
+          type: 'object',
+          description: 'the STORY this run belongs to, stored as given: key is the full STORY key (E-xxxxxxxx/P2). Omit for a standalone run.',
+          properties: { task_id: { type: 'string' }, key: { type: 'string' } },
+        },
       },
       required: ['request', 'cwd'],
     },
@@ -1030,6 +1047,7 @@ async function toolGraphOpen(a) {
     // coercion, so there is no second value for the two sites to disagree on. Left as-is.
     isolated: a.isolated === true,
     max_retries: a.max_retries,
+    owner: a.owner,
   });
   record(cwd, { event: 'graph_open', run_id: run.run_id, vendor: run.vendor });
   return { run_id: run.run_id, cwd, ...(await toolGraphNext({ run_id: run.run_id, cwd })) };
@@ -1397,6 +1415,11 @@ async function toolGraphRetry(a) {
   return { run_id: run.run_id, target: sid, subgoal_id: sid, retried: true, attempt: out.attempt, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
 }
 
+// A run file without created_at is of unknown age; no reader invents or writes one.
+function createdAtOf(run) {
+  return Number.isFinite(run.created_at) ? new Date(run.created_at).toISOString() : 'unknown';
+}
+
 // What is happening right now, without a run_id in hand. A lead that lost the id - a
 // fresh session, a compaction, a second operator looking in - had no way back into a run
 // from the MCP alone, and no way to see what a blocking graph_run is doing meanwhile.
@@ -1418,7 +1441,7 @@ function progressOverview(a) {
         state: state.state,
         counts: state.counts,
         request: String(run.request || '').slice(0, 160),
-        created_at: new Date(run.created_at || now).toISOString(),
+        created_at: createdAtOf(run),
         running: run.nodes.filter((n) => n.state === 'running').map((n) => ({
           node_id: n.node_id,
           stage: n.stage,
@@ -1589,6 +1612,49 @@ async function handle(msg) {
       if (typeof id === 'undefined') return null;
       return { jsonrpc: '2.0', id, error: { code: -32601, message: 'method not found: ' + method } };
   }
+}
+
+// `runs --list` is the non-mod readout. It runs before the stdin loop is attached, reads
+// run files only (no reclaim, no lock, no write) and exits.
+function runRows(cwd) {
+  return listRuns(cwd)
+    .sort((x, y) => (Number.isFinite(y.created_at) ? y.created_at : -1) - (Number.isFinite(x.created_at) ? x.created_at : -1))
+    .map((run) => {
+      const node = run.nodes.find((n) => n.state === 'running');
+      const finished = run.nodes.filter((n) => (n.state === 'done' || n.state === 'failed') && n.last_step)
+        .sort((x, y) => (y.finished_at || 0) - (x.finished_at || 0))[0];
+      return {
+        id8: run.run_id.slice(0, 8),
+        state: runState(run).state,
+        owner: run.owner || null,
+        created_at: createdAtOf(run),
+        cost_usd: Number.isFinite(run.cost_usd) ? run.cost_usd : null,
+        running: node ? { node_id: node.node_id, last_step: node.last_step || (finished && finished.last_step) || null } : null,
+      };
+    });
+}
+
+function runsListMain(args) {
+  const at = args.indexOf('--cwd');
+  const cwd = resolve(at >= 0 && args[at + 1] ? args[at + 1] : process.cwd());
+  const rows = runRows(cwd);
+  const out = args.includes('--json')
+    ? JSON.stringify(rows, null, 2) + '\n'
+    : rows.map((r) => [
+      r.id8, r.state, (r.owner && r.owner.key) || '—', r.created_at,
+      r.cost_usd === null ? '—' : `$${r.cost_usd.toFixed(2)}`,
+      r.running ? `${r.running.node_id}: ${r.running.last_step || '—'}` : '—',
+    ].join('  ') + '\n').join('');
+  writeSync(1, out);
+  process.exit(0);
+}
+
+if (process.argv[2] === 'runs') {
+  if (!process.argv.includes('--list')) {
+    process.stderr.write('usage: broker.mjs runs --list [--cwd DIR] [--json]\n');
+    process.exit(2);
+  }
+  runsListMain(process.argv.slice(3));
 }
 
 let buf = '';

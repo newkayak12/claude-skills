@@ -141,7 +141,7 @@ test('the exact set of properties toolGraphOpen hands createRun is pinned', () =
   const names = createRunProperties(readFileSync(BROKER, 'utf8')).map((p) => p.name);
   assert.deepStrictEqual(names, [
     'cwd', 'request', 'context', 'vendor', 'allocation', 'host_vendor', 'host_model',
-    'native_models', 'model', 'policy', 'candidates', 'sandbox', 'isolated', 'max_retries',
+    'native_models', 'model', 'policy', 'candidates', 'sandbox', 'isolated', 'max_retries', 'owner',
   ]);
 });
 

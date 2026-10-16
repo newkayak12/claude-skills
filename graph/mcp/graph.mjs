@@ -164,6 +164,8 @@ export function createRun(opts) {
     isolated: opts.isolated === true,
     max_retries: Number.isInteger(opts.max_retries) ? opts.max_retries : 2,
     created_at: Date.now(),
+    owner: opts.owner || null,
+    cost_usd: null,
     // Capacity state starts explicit: no writer normalizes it any more (transactions
     // apply exactly what changed), so a fresh run must not report it as missing.
     capacity_epoch: 0,
