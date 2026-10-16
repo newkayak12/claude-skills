@@ -9,7 +9,7 @@ instructions and rules Claude Code loads:
 
 | File | Covers |
 |---|---|
-| `.claude/rules/repo.md` | how a change is made: the four guidelines, plan → setgoal → critique → approval, layout |
+| `.claude/rules/repo.md` | how a change is made: the four guidelines, approval → tm_open → plan → setgoal → critique, layout |
 | `.claude/rules/maintaining.md` | checks, versions and release, agents, benches, leaving it clean |
 | `.claude/rules/skill.md` | what a skill is and how one is written |
 | `.claude/rules/mod.md` | what a mod is and its rules (Claude-only surface) |
