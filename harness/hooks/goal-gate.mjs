@@ -499,6 +499,46 @@ function reviewedScript(p) {
 
 const pathWords = (text) => (String(text).match(PATHLIKE) || []).filter((t) => !t.startsWith('-') && /[./]/.test(t) && !/^\.+$/.test(t));
 
+// A static import of a relative module (import { f } from './lib.mjs', import '../setup.mjs'): the
+// specifier is code the script loads, not a file it writes, and the word `import` alone does not
+// make a script write-capable. A dynamic import() and a package or node: import are left as they were.
+const REL_IMPORT = /\bimport\s*(?:[^'";()]*?\bfrom\s*)?(['"])\.{1,2}\/[^'"\n]*\1/g;
+
+// The harness plugin's root, read from this file's own path (as deferToPlugin does): the file must
+// sit in a harness plugin's hooks/ and not be the project copy under .claude/hooks/, and the root
+// must hold a plugin.json named harness. Null anywhere else, so no env var or project file flips it.
+function harnessPluginRoot() {
+  try {
+    const self = decodeURIComponent(new URL(import.meta.url).pathname);
+    if (/\/\.claude\/hooks\//.test(self) || !/\/hooks\/goal-gate\.mjs$/.test(self)) return null;
+    const root = dirname(dirname(self));
+    const manifest = JSON.parse(readFileSync(join(root, '.claude-plugin', 'plugin.json'), 'utf8'));
+    return manifest && manifest.name === 'harness' ? root : null;
+  } catch {
+    return null;
+  }
+}
+
+// Exactly `node <installed harness plugin>/skills/remove/remove.mjs ['<json>']`: harness:remove
+// must be able to delete the gate's own files, which its own words name. Anything else on the
+// segment (a node flag, a redirect, another argument) is not this invocation. Chained commands are
+// separate segments and judged on their own.
+const REMOVE_CALL = /^node\s+(?:"([^"$`\\]+)"|([^\s'"$`;&|<>()\\]+))(?:\s+'[^']*')?$/;
+function isHarnessRemove(seg, dirs) {
+  const m = REMOVE_CALL.exec(seg);
+  if (!m) return false;
+  const root = harnessPluginRoot();
+  if (!root) return false;
+  try {
+    const script = real(join(root, 'skills', 'remove', 'remove.mjs'));
+    if (!existsSync(script)) return false;
+    const given = (m[1] ?? m[2]).replace(/^~(?=\/)/, process.env.HOME || '~');
+    return dirs.every((d) => real(resolve(d, given)) === script);
+  } catch {
+    return false;
+  }
+}
+
 // What a command that runs a file writes: the file's contents are judged like an inline script.
 // Returns the words (path-like) the script names, or the command's own words when it cannot be read.
 function scriptWords(seg, dirs) {
@@ -525,8 +565,12 @@ function scriptWords(seg, dirs) {
       } catch {
         /* unreadable */
       }
-      if (text === null) out.push(...pathWords(seg));
-      else if (SCRIPT_WRITE.test(text) || WRITE_CMD.test(text)) out.push(...pathWords(text));
+      if (text === null) {
+        out.push(...pathWords(seg));
+        continue;
+      }
+      const body = text.replace(REL_IMPORT, '');
+      if (SCRIPT_WRITE.test(body) || WRITE_CMD.test(body)) out.push(...pathWords(body));
     }
   }
   return out;
@@ -570,7 +614,7 @@ function analyzeBash(command, cwd) {
   // A command that runs a file is judged by what the file does.
   const script = new Set();
   segs.forEach((g, i) => {
-    if (!executes(g) || readOnly(g)) return;
+    if (!executes(g) || readOnly(g) || isHarnessRemove(g, dirsOf(i))) return;
     for (const w of scriptWords(g, dirsOf(i))) for (const d of dirsOf(i)) script.add(resolve(d, home(w)));
   });
   return { direct, script };
