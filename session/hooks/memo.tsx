@@ -46,7 +46,12 @@ export const register: Register = (on, _options) => {
       if (cmd.op === 'pane' || cmd.op === 'list') {
         const surfaces = (await $.session.surfaces()) as unknown[]
         if (surfaces.length > 0) {
-          await $.ui.open({ id: PANE, title: 'Memo' })
+          // bare /memo on an open pane closes it
+          if (cmd.op === 'pane' && ((await $.ui.panes()) as { id: string }[]).some(p => p.id === PANE)) {
+            await $.ui.close({ id: PANE })
+            return { text: 'Memo pane closed.' }
+          }
+          await $.ui.open({ id: PANE, title: 'Memo', focus: true, closeOnEscape: true })
           return { text: 'Memo pane opened.' }
         }
         if (g.length + p.length === 0) return { text: USAGE }
@@ -108,7 +113,7 @@ export const register: Register = (on, _options) => {
   }).catch(($, e, next) => next(e))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
     let g: Note[] = []
     let p: Note[] = []
     try {
@@ -121,6 +126,7 @@ export const register: Register = (on, _options) => {
       <Box flexDirection="column">
         <Box borderStyle="round" borderColor="claude" gap={1}>
           <Text key="title" bold>memo</Text>
+          <Button key="close" role="dismiss" label="close [q]" hotkey="q" onPress={() => $.ui.close({ id: PANE })} />
         </Box>
         {lines.length === 0 && <Text dimColor>{USAGE}</Text>}
         {lines.length > 0 && <Text key="h" bold>{render(g, p).split('\n')[0]}</Text>}

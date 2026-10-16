@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 
-import { memoWorld, submit, texts } from './testkit.ts'
+import { memo, memoWorld, submit, texts } from './testkit.ts'
 
 const PANE = { title: 'Memo', isFocused: true, bodyColumns: 80, placement: 'inline', scroll: { bodyRows: 20 }, view: {} } as any
 const mount = ($: any) => $.ui.mount({ plugin: 'session', surface: 'terminal', component: 'Pane', requestId: 'memo', props: PANE })
@@ -21,10 +21,42 @@ test('an empty store shows the usage line', async ($, on) => {
   expect(texts(await (await mount($)).drawn()).some(l => l.startsWith('usage: /memo'))).toBe(true)
 })
 
-test('read-only: no inputs, no buttons', async ($, on) => {
+test('read-only: no inputs; the one Button is the dismiss [q]', async ($, on) => {
   memoWorld(on, { store: SEED })
   const json = JSON.stringify(await (await mount($)).drawn())
-  expect(json).not.toMatch(/"type":"(Button|Input|TextInput)"/)
+  expect(json).not.toMatch(/"type":"(Input|TextInput)"/)
+  expect(json.match(/"type":"Button"/g)).toHaveLength(1)
+  expect(json).toMatch(/"hotkey":"q"/)
+})
+
+const OPEN_PANE = [{ id: 'memo', title: 'Memo', isShown: true, isFocused: true, isPlaced: true }]
+const openWorld = (on: any) => memoWorld(on, { store: SEED, panes: OPEN_PANE } as never)
+
+test('bare /memo on an open pane closes it', async ($, on) => {
+  const seen = openWorld(on)
+  expect((await memo($, '')).text).toBe('Memo pane closed.')
+  expect(seen.closed).toEqual(['memo'])
+  expect(seen.opened).toEqual([])
+})
+
+test('/memo list on an open pane opens it again and never closes', async ($, on) => {
+  const seen = openWorld(on)
+  expect((await memo($, 'list')).text).toBe('Memo pane opened.')
+  expect(seen.opened).toEqual(['memo'])
+  expect(seen.closed).toEqual([])
+})
+
+test('the memo pane opens with closeOnEscape', async ($, on) => {
+  const seen = memoWorld(on, { store: SEED })
+  await memo($, '')
+  expect(seen.openArgs[0]).toMatchObject({ id: 'memo', closeOnEscape: true })
+})
+
+test('[q] closes the pane through the dismiss Button', async ($, on) => {
+  const seen = memoWorld(on, { store: SEED })
+  const ui = await mount($)
+  await ui.press({ key: 'close' })
+  expect(seen.closed).toEqual(['memo'])
 })
 
 test('/memo opens the pane interactively; headless opens none and list answers', async ($, on) => {
