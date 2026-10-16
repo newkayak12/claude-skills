@@ -3160,11 +3160,11 @@ test('tm_open starts one viewer per tasks root and hands back its URL; .view.jso
   const pids = [];
   try {
     const open = await tm.call('tm_open', { request: 'r', cwd, vendor: 'self', roles: { qa: false }, brainstorm: false });
-    assert.match(open.view_url, new RegExp(`^http://127\\.0\\.0\\.1:\\d+/\\?task=${open.task_id}$`));
+    assert.match(open.view_url, new RegExp(`^http://127\\.0\\.0\\.1:\\d+/E-${open.task_id.slice(0, 8)}$`));
     const rec = readViewRecord(root);
     assert.ok(rec, '.view.json missing, unreadable, or its pid is already dead');
     pids.push(rec.pid);
-    assert.equal(open.view_url, `http://127.0.0.1:${rec.port}/?task=${open.task_id}`);
+    assert.equal(open.view_url, `http://127.0.0.1:${rec.port}/E-${open.task_id.slice(0, 8)}`);
   } finally {
     for (const pid of pids) { try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ } }
     tm.close();
@@ -3189,7 +3189,7 @@ test('a second tm_open under the same tasks root reuses the first viewer - one w
     assert.ok(rec2, '.view.json missing after the second tm_open');
     assert.equal(rec2.pid, rec1.pid, 'the second tm_open must reuse the same viewer process, not spawn a second one');
     assert.equal(rec2.port, rec1.port, 'reuse must keep the same port');
-    assert.match(open2.view_url, new RegExp(`^http://127\\.0\\.0\\.1:${rec1.port}/\\?task=${open2.task_id}$`));
+    assert.match(open2.view_url, new RegExp(`^http://127\\.0\\.0\\.1:${rec1.port}/E-${open2.task_id.slice(0, 8)}$`));
   } finally {
     for (const pid of pids) { try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ } }
     tm.close();

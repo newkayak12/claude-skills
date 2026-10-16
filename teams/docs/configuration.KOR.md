@@ -117,7 +117,12 @@ modes" 절이 두 항목을 모두 보여줍니다.
 node teams/scripts/view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--once] [--view pipeline|tickets|resources]
 ```
 
-`--once` 없이 실행하면 `127.0.0.1`에 로컬 HTTP 서버를 띄우고 URL을 출력합니다: 열어보면
+`--once` 없이 실행하면 `127.0.0.1`에 로컬 HTTP 서버를 띄우고 URL을 출력합니다(기본 포트
+`7431`, `TEAMS_VIEW_PORT`나 `--port`로 바꿀 수 있고, `7431`이 사용 중이면 빈 포트를 쓰고 그
+포트를 `<tasksRoot>/.view.json`에 기록합니다). 태스크 페이지는 `/E-<id 앞 8자>`이고, 예전
+`/?task=<id>` 링크도 그대로 동작하며, 모르는 키는 인덱스를 보여줍니다. `tm_open`/`tm_run`은
+기록된 뷰어의 포트가 `GET /state.json`에 응답할 때(약 2초 재시도)만 재사용하고, 아니면 새로
+띄워 `.view.json`을 다시 씁니다. `tm_status`는 pid만 확인합니다. 열어보면
 ~3초마다 폴링하는 실시간 화면을 볼 수 있고, 뷰가 세 개입니다 (탭으로 즉시 전환되며, 추가
 요청 없이 같은 폴링 결과를 그대로 씁니다):
 

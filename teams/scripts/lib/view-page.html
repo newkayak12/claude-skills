@@ -146,7 +146,7 @@
 <script>
 (function () {
   var qs = new URLSearchParams(location.search);
-  var taskParam = qs.get('task');
+  var taskParam = qs.get('task') || ((location.pathname || '').match(/^\/(E-[^\/]+)$/) || [])[1] || null;
   var app = document.getElementById('app');
   var openPkgs = new Set();
   // Which of the three renderers draws a task's own body - pipeline (default), tickets,

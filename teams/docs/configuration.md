@@ -119,7 +119,12 @@ or a text tree, built from the same `task.json` and child run files these tools 
 node teams/scripts/view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--once] [--view pipeline|tickets|resources]
 ```
 
-With no `--once`, it starts a local HTTP server on `127.0.0.1` and prints the URL: open it for a
+With no `--once`, it starts a local HTTP server on `127.0.0.1` and prints the URL (default port
+`7431`; `TEAMS_VIEW_PORT` or `--port` overrides it, and a taken `7431` falls back to a free port
+that is recorded in `<tasksRoot>/.view.json`). A task's page is `/E-<first 8 of its id>`, the old
+`/?task=<id>` link still works, and an unknown key shows the index. `tm_open`/`tm_run` reuse a
+recorded viewer only when its port answers `GET /state.json` (about 2s of retries), else they
+start a new one and rewrite `.view.json`; `tm_status` only checks the pid. Open it for a
 live page that polls every ~3s, with three views (a tab strip switches between them instantly,
 no extra request — all three read the same poll):
 
