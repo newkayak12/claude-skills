@@ -238,6 +238,33 @@ test('--list with nothing open exits 0 and says so; --json is an empty array', (
   assert.deepEqual(listJson(root), []);
 });
 
+test('the --json row contract pins waiting as null|{who,what} and the round and problem shapes', () => {
+  const { root } = repoWithRuns({
+    alpha: {
+      files: {
+        '01-plan.md': 'plan', '02-goal-spec.json': SPEC, 'now.json': NOW_FILE,
+        '02-critique.r1.json': { sound: false, problems: [{ severity: 'major', text: 'a' }] },
+        '02-critique.json': { sound: false, problems: ['Nit: b'] },
+      },
+    },
+    beta: { files: { '01-plan.md': 'plan' } },
+  });
+  const rows = listJson(root);
+  for (const row of rows) {
+    assert.deepEqual(Object.keys(row).sort(), ROW_KEYS);
+    assert.ok(row.waiting === null || (Object.keys(row.waiting).sort().join() === 'what,who' && ['you', 'vendor'].includes(row.waiting.who)));
+    assert.equal(typeof row.stalled, 'boolean');
+    assert.ok(row.started_at === null || typeof row.started_at === 'string');
+    assert.ok(Number.isInteger(row.max_critique_rounds));
+    for (const rd of row.rounds) {
+      assert.deepEqual(Object.keys(rd).sort(), ['file', 'problems', 'round', 'sound']);
+      for (const pr of rd.problems) assert.deepEqual(Object.keys(pr).sort(), ['severity', 'text']);
+    }
+  }
+  assert.deepEqual(rows.find((x) => x.slug === 'alpha').waiting, { who: 'you', what: 'pick a vendor' });
+  assert.equal(rows.find((x) => x.slug === 'beta').waiting, null);
+});
+
 test('--list --json rows carry the pinned key set, now.json and the stalled flag', () => {
   const { root, dirs } = repoWithRuns({
     alpha: { files: { '01-plan.md': 'plan', 'now.json': NOW_FILE } },
