@@ -17,14 +17,6 @@ never retire them as duplicates, and never reference superpowers.
     - Acceptance: hook and rule say the same thing (a test covers a failed-task case); worktree push
       decided and tested; `repo.md` places the approval step relative to `tm_open`.
 
-4. **Commit or ignore `.claude/conventions/`**
-   - Why: teams install created conventions, but `.gitignore` ignores `.claude/conventions/`.
-   - Acceptance: decided; the ignore line matches the decision.
-
-5. **Clean leftover top-level dirs**
-   - Why: ignored `mods/` (only `.claude-plugin/types`) and `_reference/` sit at the top level.
-   - Acceptance: `mods/` deleted; `_reference/` kept or moved by decision.
-
 6. **Skeleton check script**
    - Why: no check lists skills missing Process / Output Template / What Claude Does / Related Skills
      or over 200 lines; today's counts (30 / 28 / 13; 7 over 200) were measured by hand.
