@@ -109,6 +109,8 @@ never retire them as duplicates, and never reference superpowers.
       rebuilt from knowledge skills; nothing of vault or noah's content in this repo.
     - Principle (user, same day): "외부에 노출되는 스킬을 줄이고 내부적으로 진행하면 좋을 듯" — few
       user-facing entry skills; the builders run inside them, not as separate triggers.
+      The user must be able to use it easily without knowing the internals (user: "사용자는 내부를
+      모르고 편하게 써야만한다") — no internal skill, stage or file name is something they must know or say.
 
 ### Sprint process
 
