@@ -9,6 +9,14 @@ never retire them as duplicates, and never reference superpowers.
 
 ### Repo and rules
 
+33. **Push hold matches what the rules promise**
+    - Why: card 1 (E-e9a37754, 2026-10-16) left gaps: the hold ends at `daemon_done` whatever the
+      outcome, while `maintaining.md` says "finished, its report written"; a push from a linked
+      worktree is not held; `repo.md` does not say whether plan → critique → approval comes before
+      `tm_open` or inside the Sprint.
+    - Acceptance: hook and rule say the same thing (a test covers a failed-task case); worktree push
+      decided and tested; `repo.md` places the approval step relative to `tm_open`.
+
 4. **Commit or ignore `.claude/conventions/`**
    - Why: teams install created conventions, but `.gitignore` ignores `.claude/conventions/`.
    - Acceptance: decided; the ignore line matches the decision.
