@@ -14,7 +14,7 @@ Every change is checked against `_repo/coding-guidelines.md` (Karpathy's four):
 
 ## Design changes
 
-A change is a card on `_repo/docs/backlog.md`, taken into a Sprint, closed by the Sprint's report.
+A behaviour change is a card on `_repo/docs/backlog.md`, taken into a Sprint, closed by the Sprint's report.
 A Sprint opens with `tm_open` and `size: "L"` (an unpinned small backlog sizes S and runs as one
 harness pass with no STORY cards; see `backlog.md`).
 
@@ -33,7 +33,7 @@ teams principles: `_repo/docs/plans/2026-09-28-teams-cards-everywhere.md`.
 |---|---|---|
 | `<plugin>/` (top level) | one plugin: `.claude-plugin/plugin.json`, `skills/`, `hooks/` (mod), `README.md` + `KOR.md` | notes, plans, reports |
 | `_repo/docs/plans/` | design docs, dated `YYYY-MM-DD-<topic>.md`; mod plans in `mod/`; shipped plans in `done/` (a plan cited by code comments stays put) | code |
-| `_repo/hooks/` | git hooks (`pre-commit` validator, `pre-push` run hold) via `core.hooksPath` | — |
+| `_repo/hooks/` | git hooks (`pre-commit` validator, `pre-push` task hold) via `core.hooksPath` | — |
 | `_repo/scripts/` | repo-wide checks (`validate_plugins.py`, `check-copies.mjs`, bump tools) | plugin code |
 | `_repo/deprecated/` | README only: restore table for retired items | files of retired items |
 | `.claude/` | this repo's own hook (repo rules), teams config (`team.json`, `teams-dispatch.json`) and these rules | plugin code |
