@@ -75,10 +75,7 @@ the same letter, plus: the three-row band, priority-drop segments, dark/light th
     "teams Floor" section: a Floor tab where each worker is a desk whose glyph follows its action, with
     a hand-off feed (user: "pixel-agents 이런 느낌으로 서로 협업하느널 봤으면 좋겠어"); several open
     EPICs listed and switchable (user: "teams 여러개 돌렸을 때 대응 안되어 있는거 같고"); a task with no
-    live driver reads stalled, not `IN_PROGRESS` (seen: 9-day-old tasks still IN_PROGRESS).
-38. **teams web viewer Office page** — the pixel version of the Floor in `view.mjs`'s browser page,
-    same `floor` data; after 35.
-36. **G. graph pane: own band, owned runs, last step** — design §4 G.
+    live driver reads stalled, not `IN_PROGRESS` (seen: 9-day-old tasks still IN_PROGRESS).36. **G. graph pane: own band, owned runs, last step** — design §4 G.
 37. **S. session memo and guard read as live state** — design §4 S (after card 30).
 
 ### Sprint process

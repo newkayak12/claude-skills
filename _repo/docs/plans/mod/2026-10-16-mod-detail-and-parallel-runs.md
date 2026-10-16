@@ -333,8 +333,10 @@ At 110:
 User: "https://github.com/pixel-agents-hq/pixel-agents 이런 느낌으로 서로 협업하느널 봤으면 좋겠어 좀;;
 더 구체적이고 자세하게 사용자는 알 수 있도록", and "teams 여러개 돌렸을 때 대응 안되어 있는거 같고".
 
-pixel-agents draws each agent as a character at a desk that types, reads or runs as the agent does, with a
-speech bubble when it waits. teams gets the same idea in two places:
+Then: "저걸 하라는게 아니라 저렇게 좀 이쁘게 사용자를 고려해서 쓰는 사람 친화적으로 하자고". The
+references (statusline, pixel-agents) are the bar for care and friendliness, not features to copy: no
+pixel art, no web office. What carries over is that a person can see who is doing what and how the
+workers hand work to each other, drawn with care:
 
 - **Floor tab in the teams pane (Ink).** One desk per worker of the EPIC — PLAN, each package driver
   (P1…Pn), its subagents, QA, the gate judge. Each desk: a character glyph that changes with the action
@@ -342,8 +344,6 @@ speech bubble when it waits. teams gets the same idea in two places:
   in plain words with its file or command, try n/max, elapsed and cost. Between desks, the hand-offs
   as they happen: "P1 → P2  API contract accepted (gate 96%)", "gate → P2  rejected: negative currency",
   "P2 ⚑ you  Keep the legacy invoice PDF route?". The last few hand-offs stay as a short feed.
-- **Office page in the teams web viewer** (`view.mjs`, already a browser readout — not a mod surface):
-  the pixel version, sprites at desks per role, same data, same feed. Built after the Ink tab.
 - **Several EPICs at once.** The pane's header lists every open EPIC of this checkout (`E-59a16f4f ●
   E-e4aa64a3 ●`), `[` / `]` switch, and the Floor can show all open EPICs' desks grouped by EPIC.
   Seen 2026-10-16: `view.mjs --once` lists two open EPICs but the pane follows one; tasks from 9 days ago
