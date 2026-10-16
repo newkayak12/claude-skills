@@ -328,6 +328,54 @@ At 110:
          6m · top finding: "no check for empty CSV"
 ```
 
+### teams Floor — watching the team work (user, 2026-10-16)
+
+User: "https://github.com/pixel-agents-hq/pixel-agents 이런 느낌으로 서로 협업하느널 봤으면 좋겠어 좀;;
+더 구체적이고 자세하게 사용자는 알 수 있도록", and "teams 여러개 돌렸을 때 대응 안되어 있는거 같고".
+
+pixel-agents draws each agent as a character at a desk that types, reads or runs as the agent does, with a
+speech bubble when it waits. teams gets the same idea in two places:
+
+- **Floor tab in the teams pane (Ink).** One desk per worker of the EPIC — PLAN, each package driver
+  (P1…Pn), its subagents, QA, the gate judge. Each desk: a character glyph that changes with the action
+  (✍ editing, 📖 reading, ▶ running a command, 💭 thinking, 💤 idle, ⚑ waiting on you), the current action
+  in plain words with its file or command, try n/max, elapsed and cost. Between desks, the hand-offs
+  as they happen: "P1 → P2  API contract accepted (gate 96%)", "gate → P2  rejected: negative currency",
+  "P2 ⚑ you  Keep the legacy invoice PDF route?". The last few hand-offs stay as a short feed.
+- **Office page in the teams web viewer** (`view.mjs`, already a browser readout — not a mod surface):
+  the pixel version, sprites at desks per role, same data, same feed. Built after the Ink tab.
+- **Several EPICs at once.** The pane's header lists every open EPIC of this checkout (`E-59a16f4f ●
+  E-e4aa64a3 ●`), `[` / `]` switch, and the Floor can show all open EPICs' desks grouped by EPIC.
+  Seen 2026-10-16: `view.mjs --once` lists two open EPICs but the pane follows one; tasks from 9 days ago
+  still read `IN_PROGRESS` with no live driver — a dead task must read stalled/abandoned, not running.
+
+Data: every desk comes from files the engine already writes — `drivers/*.stream.jsonl` (`tool_use`
+name + input path/command → action; `parent_task_id` → subagent desks), `ledger.jsonl` (accept/reject/
+fold → hand-offs), ask cards (→ ⚑). The parsing lives in `view.mjs` (node, tested), exposed as a
+`floor` block in `--once --format summary`; the mod only draws it.
+
+Floor at 110:
+
+```text
+╭─ Teams ─ E-3f9a21c0 ● Billing settings revamp   E-7c20aa11 ○ Search rate limit ──────── [ ] · 1-4 · q ─╮
+│ Floor                                                                       2h 05m · $11.80 · 1/4 STORYs │
+│                                                                                                         │
+│  ✔ PLAN        done · 4 STORYs, 7 cards                                                         $1.20   │
+│  ✍ P2 builder  editing src/settings/form.ts — currency field · try 2/3                     9m  $2.35   │
+│     └ 📖 sub    reading src/settings/schema.ts                                                         │
+│  ▶ P3 builder  npm test -- invoice  (12 passed, 1 failing)                                  4m  $0.90   │
+│  💤 P4 builder  waits for P1, P2                                                                        │
+│  ⚖ gate        judging P1 — done, 96% ✔                                                       $0.40   │
+│                                                                                                         │
+│  hand-offs                                                                                              │
+│  17:42  gate → P2   rejected try 1: currency field accepts negative values                              │
+│  17:40  P1 → P4    API contract accepted (gate 96%) — P4 still waits for P2                             │
+│  17:38  P2 ⚑ you    "Keep the legacy invoice PDF route?"                                    [answer]    │
+│                                                                                                         │
+│ ● Floor 1  STORYs 2  Decisions 3  Log 4                                                                 │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+```
+
 ## 4. Cards
 
 **Fold-ins.** 27 → teams card (doing now, per-STORY elapsed/cost; the "driver per agent-list entry" ask becomes
