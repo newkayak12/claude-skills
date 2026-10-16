@@ -9,10 +9,6 @@ never retire them as duplicates, and never reference superpowers.
 
 ### Repo and rules
 
-3. **Maintenance vault is reachable or the rule says where it is**
-   - Why: `maintaining.md` points to `../claude-skills-knowledge`; nothing is there on this machine.
-   - Acceptance: the vault path in the rules exists, or the rule names how to get it.
-
 4. **Commit or ignore `.claude/conventions/`**
    - Why: teams install created conventions, but `.gitignore` ignores `.claude/conventions/`.
    - Acceptance: decided; the ignore line matches the decision.
