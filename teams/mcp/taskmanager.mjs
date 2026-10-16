@@ -2417,7 +2417,8 @@ function cleanTask(task, dryRun) {
     }
   }
   git(task.cwd, ['worktree', 'prune']);
-  if (!dryRun && (removed_worktrees.length || removed_branches.length)) {
+  // Recorded even when nothing was removed: .claude/hooks/repo-rules.mjs releases its push hold on a last `clean` event.
+  if (!dryRun) {
     record(task, {
       event: 'clean', task_id: task.run_id,
       removed_worktrees: removed_worktrees.map((x) => x.package_id),

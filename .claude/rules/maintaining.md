@@ -87,9 +87,15 @@ Report the counts you saw; "tests pass" without a number is not a check.
 
 1. `git status` is clean and `main` equals `origin/main`.
 2. Every teams task you opened has finished, its report written. `.claude/hooks/repo-rules.mjs`
-   refuses `git push` and the bump tools while a teams task for this checkout is open, so the
-   batch bump comes after the Sprint's task closes. Codex and a plain terminal get the same push
-   hold from git: `git config core.hooksPath _repo/hooks` once per clone. `--no-verify` and bump scripts run outside Claude Code are not covered.
+   refuses `git push` and the bump tools while a teams task for this repo holds them: any task
+   whose cwd shares the push's git dir (`git rev-parse --git-common-dir`), so the main checkout
+   and every linked worktree count, each way. A task is released when its ledger has
+   `daemon_done` and `<docs_dir>/E-<run_id[0:8]>/80-report.md` exists, whatever the outcome, or
+   when its last relevant ledger event is `clean` (`tm_clean` always records one). A report
+   without `daemon_done` (a crashed daemon) stays held, and so does a failed task with no
+   report, until `tm_clean`. So the batch bump comes after the Sprint's task closes (the
+   person's approval comes before `tm_open`; see `repo.md`). Codex and a plain terminal get the
+   same push hold from git: `git config core.hooksPath _repo/hooks` once per clone. `--no-verify` and bump scripts run outside Claude Code are not covered.
 3. No containers, volumes, or background processes you started are left running.
 4. `tmp/` holds nothing you are done with.
 5. Nothing new at the top level that is not a plugin.
