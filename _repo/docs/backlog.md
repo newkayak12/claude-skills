@@ -111,19 +111,11 @@ never retire them as duplicates, and never reference superpowers.
     - Acceptance: kept with a stated boundary and under 200 lines, or retired with a restore row in
       `_repo/deprecated/` (check age and direct use first — no refs is not unused).
 
-15. **One home for spec writing**
-    - Why: `develop:spec-driven-development` (0 refs) and `write:spec` overlap.
-    - Acceptance: one owns spec writing; the other's description points to it or it is retired.
-
 16. **Skill-meta boundary**
     - Why: `write:writing-skills` and `skill:create/audit/quality-assurance/trigger-validator` cite only
       each other; `quality-assurance` and `trigger-validator` lack Process and Output Template.
     - Acceptance: each has a "not for" naming its neighbours; no two share a trigger phrase; both
       missing skeletons filled.
-
-17. **think:devils-advocate vs cognition overlap**
-    - Why: overlaps `cognition:critical-thinking-workflow` (teams mounts the latter — frozen).
-    - Acceptance: devils-advocate's description says what it is not, pointing to the workflow; workflow untouched.
 
 18. **think:redefine-problem vs think:back-to-basics**
     - Why: both answer "the approach feels wrong"; redefine-problem also lacks Process and Output Template.
