@@ -12,9 +12,251 @@
 // Exit 0 + "COMPLETE"   → all required artifacts present and well-formed.
 // Exit 1 + problem list → what is missing or degenerate (each on its own line, prefixed "- ").
 // Exit 2                → usage / unreadable run directory (caller error, not a run verdict).
+//
+// Readouts (exit 0, or 2 on a caller error; never a run verdict):
+//   --now <RUN_DIR> '<json>'            write RUN_DIR/now.json
+//   --list [--cwd DIR] [--json]         open runs of this worktree
+//   --show <RUN_DIR> --json             one run, same row shape as --list
+//
+// Shared contract (the harness mod and codex read these shapes; change them only together):
+// - now.json = {stage, doing, round, last_step, next, waiting, cost_usd, at, since}. The input
+//   needs a non-empty string stage; every other key defaults to null. waiting is null or
+//   {who:'you'|'vendor', what:string}, and any other value is rejected (only 'you' means the run
+//   waits on a person). last_step is cut to 120 chars. cost_usd is a number or null, shown as
+//   '—' when null. at is stamped on every call; since is kept while stage is unchanged and reset
+//   when it changes. at/since in the input are ignored. Written to a temp file, then renamed;
+//   a rejected input writes nothing.
+// - Open run: a manifest, no 05-report.md, newest file (run dir and subgoals/) under 12 h; 2-12 h
+//   is stalled. Root is the git toplevel of --cwd, else --cwd. .harness-run/broker is not a run.
+// - Row = {slug, dir, stage, round, waiting, stalled, now, started_at, max_critique_rounds,
+//   rounds, passed, failed, total}. stage is derived from the files (plan, setgoal, critique,
+//   implement, gate, report), not from now.json. round = now.round, else the number of critique
+//   rounds, else null. waiting = now.waiting or null. now = parsed now.json or null.
+//   started_at = manifest.started_at or null (never backfilled). max_critique_rounds =
+//   manifest.max_critique_rounds, default 2.
+// - rounds[] = [{round, file, sound, problems:[{severity, text}]}], oldest first. 02-critique.json
+//   is the newest; 02-critique.r<n>.json are older and get round n; the newest gets one more
+//   than the highest n. severity is one of blocker|major|minor|nit: a severity field is kept
+//   (case-insensitive), a bare string or a problem without one is read from its text prefix
+//   ('Nit:', 'Blocker -'), and anything unrecognised is major.
 
-import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, existsSync, readdirSync, statSync, writeFileSync, renameSync, unlinkSync, realpathSync } from 'node:fs';
+import { join, basename, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+
+const SEVERITIES = ['blocker', 'major', 'minor', 'nit'];
+const STALLED_MS = 2 * 3600 * 1000;
+const OPEN_MS = 12 * 3600 * 1000;
+const LAST_STEP_MAX = 120;
+
+const fail2 = (msg) => {
+  process.stderr.write(`${msg}\n`);
+  process.exit(2);
+};
+const readJsonFile = (path) => {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return null;
+  }
+};
+const isDir = (path) => {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+};
+const fmtCost = (c) => (typeof c === 'number' ? c.toFixed(2) : '—');
+
+function cmdNow(runDir, raw) {
+  if (!runDir || raw === undefined) fail2("usage: node fallback-check.mjs --now <RUN_DIR> '<json>'");
+  if (!isDir(runDir)) fail2(`run directory not found: ${runDir}`);
+  let input;
+  try {
+    input = JSON.parse(raw);
+  } catch (e) {
+    fail2(`--now: not JSON: ${e && e.message}`);
+  }
+  if (!input || typeof input !== 'object' || Array.isArray(input)) fail2('--now: expected a JSON object');
+  if (typeof input.stage !== 'string' || !input.stage.trim()) fail2('--now: stage must be a non-empty string');
+  const w = input.waiting ?? null;
+  if (w !== null && !(typeof w === 'object' && !Array.isArray(w) && ['you', 'vendor'].includes(w.who) && typeof w.what === 'string'))
+    fail2("--now: waiting must be null or {who:'you'|'vendor', what:string}");
+  if (input.cost_usd != null && typeof input.cost_usd !== 'number') fail2('--now: cost_usd must be a number or null');
+  if (input.round != null && !Number.isInteger(input.round)) fail2('--now: round must be an integer or null');
+  const str = (v) => (v == null ? null : String(v));
+  const at = new Date().toISOString();
+  const prev = readJsonFile(join(runDir, 'now.json'));
+  const out = {
+    stage: input.stage,
+    doing: str(input.doing),
+    round: input.round ?? null,
+    last_step: input.last_step == null ? null : String(input.last_step).slice(0, LAST_STEP_MAX),
+    next: str(input.next),
+    waiting: w === null ? null : { who: w.who, what: w.what },
+    cost_usd: input.cost_usd ?? null,
+    at,
+    since: prev && prev.stage === input.stage && typeof prev.since === 'string' ? prev.since : at,
+  };
+  const target = join(runDir, 'now.json');
+  const tmp = `${target}.tmp-${process.pid}`;
+  try {
+    writeFileSync(tmp, `${JSON.stringify(out)}\n`);
+    renameSync(tmp, target);
+  } catch (e) {
+    try {
+      unlinkSync(tmp);
+    } catch {
+      /* no temp file was written */
+    }
+    fail2(`--now: cannot write ${target}: ${e && e.message}`);
+  }
+  process.stdout.write(`now: ${out.stage} · ${out.doing ?? '—'} · round ${out.round ?? '—'} · cost ${fmtCost(out.cost_usd)}\n`);
+  process.exit(0);
+}
+
+const severityOf = (value, text) => {
+  if (typeof value === 'string' && SEVERITIES.includes(value.trim().toLowerCase())) return value.trim().toLowerCase();
+  if (typeof value !== 'string') {
+    const m = /^\s*\[?(blocker|major|minor|nit)\s*[:\]\-—–)]/i.exec(text);
+    if (m) return m[1].toLowerCase();
+  }
+  return 'major';
+};
+const normalizeProblem = (p) => {
+  if (p && typeof p === 'object') {
+    const text = String(p.text ?? p.problem ?? p.description ?? p.reason ?? '');
+    return { severity: severityOf(p.severity, text), text };
+  }
+  const text = String(p ?? '');
+  return { severity: severityOf(undefined, text), text };
+};
+
+const critiqueRounds = (dir, names) => {
+  const older = names
+    .map((f) => ({ f, m: /^02-critique\.r(\d+)\.json$/.exec(f) }))
+    .filter((x) => x.m)
+    .map((x) => ({ file: x.f, round: Number(x.m[1]) }))
+    .sort((a, b) => a.round - b.round);
+  const files = [...older];
+  if (names.includes('02-critique.json')) files.push({ file: '02-critique.json', round: (older.length ? older[older.length - 1].round : 0) + 1 });
+  return files.map(({ file, round }) => {
+    const c = readJsonFile(join(dir, file));
+    return {
+      round,
+      file,
+      sound: typeof c?.sound === 'boolean' ? c.sound : null,
+      problems: Array.isArray(c?.problems) ? c.problems.map(normalizeProblem) : [],
+    };
+  });
+};
+
+function buildRow(dir, nowMs) {
+  const names = readdirSync(dir);
+  const has = (n) => names.includes(n);
+  const subs = (() => {
+    try {
+      return readdirSync(join(dir, 'subgoals'));
+    } catch {
+      return [];
+    }
+  })();
+  const mtimes = [
+    ...names.map((n) => statSync(join(dir, n)).mtimeMs),
+    ...subs.map((n) => statSync(join(dir, 'subgoals', n)).mtimeMs),
+  ];
+  const age = nowMs - Math.max(0, ...mtimes);
+  const manifest = readJsonFile(join(dir, 'manifest.json'));
+  const spec = readJsonFile(join(dir, '02-goal-spec.json'));
+  const rounds = critiqueRounds(dir, names);
+  const newest = rounds.length ? rounds[rounds.length - 1] : null;
+  const ids = (Array.isArray(spec?.subgoals) ? spec.subgoals : []).map((s) => String(s && s.id));
+  let passed = 0;
+  let failed = 0;
+  for (const id of ids) {
+    const r = readJsonFile(join(dir, 'subgoals', id, 'result.json'));
+    if (r?.passed === true) passed++;
+    else if (r?.passed === false) failed++;
+  }
+  const stage = !has('01-plan.md') ? 'plan'
+    : !spec ? 'setgoal'
+    : newest?.file !== '02-critique.json' || newest.sound !== true ? 'critique'
+    : passed + failed < ids.length ? 'implement'
+    : !has('04-goal-gate.json') ? 'gate'
+    : 'report';
+  const nowJson = readJsonFile(join(dir, 'now.json'));
+  const cap = manifest?.max_critique_rounds;
+  return {
+    slug: basename(dir),
+    dir,
+    stage,
+    round: Number.isInteger(nowJson?.round) ? nowJson.round : rounds.length ? newest.round : null,
+    waiting: nowJson?.waiting ?? null,
+    stalled: age > STALLED_MS && age <= OPEN_MS,
+    now: nowJson,
+    started_at: typeof manifest?.started_at === 'string' ? manifest.started_at : null,
+    max_critique_rounds: Number.isInteger(cap) && cap >= 1 ? cap : 2,
+    rounds,
+    passed,
+    failed,
+    total: ids.length,
+    _age: age,
+  };
+}
+const publicRow = ({ _age, ...row }) => row;
+
+function cmdList(args) {
+  let cwd = process.cwd();
+  let json = false;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--cwd' && args[i + 1]) cwd = args[++i];
+    else if (args[i] === '--json') json = true;
+    else fail2('usage: node fallback-check.mjs --list [--cwd DIR] [--json]');
+  }
+  cwd = resolve(cwd);
+  if (!isDir(cwd)) fail2(`directory not found: ${cwd}`);
+  const top = spawnSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+  const root = top.status === 0 && top.stdout.trim() ? top.stdout.trim() : cwd;
+  const base = join(root, '.harness-run');
+  const nowMs = Date.now();
+  const rows = [];
+  let slugs = [];
+  try {
+    slugs = readdirSync(base);
+  } catch {
+    /* no runs here */
+  }
+  for (const slug of slugs) {
+    const dir = join(base, slug);
+    if (slug === 'broker' || !isDir(dir) || !existsSync(join(dir, 'manifest.json')) || existsSync(join(dir, '05-report.md'))) continue;
+    const row = buildRow(dir, nowMs);
+    if (row._age <= OPEN_MS) rows.push(row);
+  }
+  rows.sort((a, b) => a._age - b._age || a.slug.localeCompare(b.slug));
+  if (json) process.stdout.write(`${JSON.stringify(rows.map(publicRow), null, 2)}\n`);
+  else if (rows.length === 0) process.stdout.write('no open runs\n');
+  else
+    for (const r of rows) {
+      const w = r.waiting ? `${r.waiting.who}: ${r.waiting.what}` : '—';
+      process.stdout.write(
+        `${r.slug}\t${r.stage}\tround ${r.round ?? '—'}\twaiting ${w}\tcost ${fmtCost(r.now?.cost_usd)}${r.stalled ? '\tstalled' : ''}\n`,
+      );
+    }
+  process.exit(0);
+}
+
+function cmdShow(args) {
+  const dir = args.find((a) => !a.startsWith('--'));
+  if (!dir || !args.includes('--json')) fail2('usage: node fallback-check.mjs --show <RUN_DIR> --json');
+  if (!isDir(dir)) fail2(`run directory not found: ${dir}`);
+  process.stdout.write(`${JSON.stringify(publicRow(buildRow(realpathSync(dir), Date.now())), null, 2)}\n`);
+  process.exit(0);
+}
+
+if (process.argv[2] === '--now') cmdNow(process.argv[3], process.argv[4]);
+if (process.argv[2] === '--list') cmdList(process.argv.slice(3));
+if (process.argv[2] === '--show') cmdShow(process.argv.slice(3));
 
 const RUN = process.argv[2];
 if (!RUN) {

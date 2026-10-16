@@ -49,11 +49,13 @@ writes exactly the artifacts below; the completion check (`fallback-check.mjs`) 
 
 ```
 .harness-run/<slug>/
-  manifest.json              # {request, context?, max_retries, team:{lead,roles[]}, subgoals:[{id,order}], stages:{...}}
+  manifest.json              # {request, context?, started_at, max_retries, max_critique_rounds, team:{lead,roles[]}, subgoals:[{id,order}], stages:{...}}
+  now.json                   # live readout, written only by `fallback-check.mjs --now` (§0a)
   providers.json             # optional provider readiness, e.g. {codex:{ready:true,implement:true,test:true}}
   01-plan.md                 # Plan stage output
   02-goal-spec.json          # SetGoal output — MUST parse, MUST match goal-spec.md schema
-  02-critique.json           # critic verdict {sound, problems[]}
+  02-critique.json           # newest critic verdict {sound, problems:[{severity, text}]}
+  02-critique.r<n>.json      # earlier critic rounds (r1 = first), copied here before 02-critique.json is overwritten
   subgoals/<id>/
     impl-<n>.md              # Implement handoff for attempt n (≤1500 chars: paths, names, interfaces)
     impl-<n>.codex.events.jsonl  # optional Codex --json event stream when Implement used Codex
@@ -73,8 +75,10 @@ There is **no sentinel and no edit-gate** in this fallback (an earlier version k
 literal sentinel string; it leaked out of docs/descriptions and false-positived, so it was
 removed). Instead:
 
-1. Create `RUN=.harness-run/<slug>/` and write `manifest.json` with the request, `max_retries`
-   (default 2), empty `subgoals`/`stages`, and the declared Agent Team roles/ownership.
+1. Create `RUN=.harness-run/<slug>/` and write `manifest.json` with the request, `started_at`
+   (current UTC time, ISO 8601, e.g. `date -u +%Y-%m-%dT%H:%M:%SZ`; written once here, never
+   changed later), `max_retries` (default 2), `max_critique_rounds` (default 2), empty
+   `subgoals`/`stages`, and the declared Agent Team roles/ownership.
 2. Detect external providers — **only when the run was explicitly started with
    `codex_provider=auto` or `codex_provider=required`.** Delegation is off by default: with no
    such argument, skip this step entirely, write no `RUN/providers.json`, and run every
@@ -93,6 +97,25 @@ removed). Instead:
    the anti-bypass: skipping stages leaves their files absent, and the check names them.
    `COMPLETE … goal-gate FAIL (<90)` means the run finished, not that the work is done: report it
    as finished with the unmet AC-n listed, never as done.
+
+## 0a. Progress readout — call `--now` at every stage step
+
+Run this **before you assign each teammate** — Plan, SetGoal, Critic (each round), and for every
+subgoal attempt Implement, Test and QualityGate, then the goal-level QualityGate and Report — with
+that teammate's stage, and again whenever you hand the work to a person or wait on a vendor. A
+stage that starts without its `--now` call is a skipped step; do not move on until it has run:
+
+```
+node harness/engine/fallback-check.mjs --now RUN '{"stage":"implement","doing":"<what is running>","round":1,"last_step":"<what just finished>","next":"<what comes next>","waiting":null}'
+```
+
+- `stage` is one of `plan`, `setgoal`, `critique`, `implement`, `test`, `gate`, `report`; `round` is
+  the critique round or the attempt number `n` (else `null`).
+- `waiting` is `null`, `{"who":"you","what":"<what the person must decide>"}` or
+  `{"who":"vendor","what":"<what is running elsewhere>"}`. Nothing else is accepted.
+- Omit `cost_usd` (a standalone run does not know it). The command stamps `at` and `since` itself and
+  writes `RUN/now.json`; never write that file by hand. A non-zero exit means the call was
+  rejected: fix the JSON and call again.
 
 ## 1. Plan (opus)
 
@@ -132,12 +155,18 @@ rules that constrain the work, plus per-unit deterministic checks (commands, fil
    optional trace hints, not routing prerequisites. Keep Plan, SetGoal, QualityGate, and Report
    on Claude. If Codex is absent or not ready, omit provider fields.
 2. Assign the **separate Critic teammate** (opus) invoking `think:devils-advocate` to refute it; it reads
-   the spec path and **writes `RUN/02-critique.json`** `{sound, problems[]}`. It must flag two
+   the spec path and **writes `RUN/02-critique.json`** `{sound, problems:[{severity, text}]}`, one
+   `severity` per problem: `blocker`, `major`, `minor` or `nit`. It must flag two
    unwinnable-gate patterns: acceptance/test tied to global/shared repo state instead of the
    unit's own artifacts, and arbitrary-% or subjective targets written as hard bars.
 3. If `sound:false`, assign **one fresh SetGoal revision teammate** (opus) to rewrite `RUN/02-goal-spec.json`
    in place. Reject a degenerate spec (empty subgoals / empty acceptance / placeholder titles)
    and re-author once.
+4. **Re-critique after every revision**, up to `manifest.max_critique_rounds` (default 2) critic
+   rounds in total. Before the Critic writes round `n+1`, copy the current `02-critique.json` to
+   `02-critique.r<n>.json` (`n` = rounds already run, so the first round becomes `r1`); the newest
+   verdict is always `02-critique.json`. Stop when `sound:true` or the cap is reached; on the cap
+   with `sound:false`, continue with the spec and record the unmet problems in `manifest.json`.
 
 Record the subgoal ids + linear order (next section) into `manifest.json`.
 

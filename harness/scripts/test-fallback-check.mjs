@@ -1,7 +1,7 @@
 // fallback-check regressions: 0% goal gate must not be COMPLETE; "todo list feature" is a real title.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, utimesSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -50,4 +50,321 @@ test('title starting with "todo" is not a placeholder', () => {
 test('bare "TODO" title is still a placeholder', () => {
   const r = run(makeRun({ title: 'TODO' }));
   assert.equal(r.status, 1, r.stdout);
+});
+
+// ---- now.json, --list, --show (card 34) ----
+const NOW_KEYS = ['stage', 'doing', 'round', 'last_step', 'next', 'waiting', 'cost_usd', 'at', 'since'];
+const ROW_KEYS = [
+  'dir', 'failed', 'max_critique_rounds', 'now', 'passed', 'round', 'rounds',
+  'slug', 'stage', 'stalled', 'started_at', 'total', 'waiting',
+];
+const HOUR = 3600 * 1000;
+
+const now = (d, obj) =>
+  spawnSync('node', [CHECK, '--now', d, typeof obj === 'string' ? obj : JSON.stringify(obj)], { encoding: 'utf8' });
+const readNow = (d) => JSON.parse(readFileSync(join(d, 'now.json'), 'utf8'));
+const emptyDir = () => mkdtempSync(join(tmpdir(), 'fbn-'));
+const full = (o = {}) => ({
+  stage: 'implement', doing: 'writing math.js', round: 1, last_step: 'plan done', next: 'test',
+  waiting: null, cost_usd: 0.42, ...o,
+});
+
+test('--now writes the 7 keys plus at and since', () => {
+  const d = emptyDir();
+  const r = now(d, full());
+  assert.equal(r.status, 0, r.stderr);
+  const n = readNow(d);
+  assert.deepEqual(Object.keys(n).sort(), [...NOW_KEYS].sort());
+  assert.equal(n.stage, 'implement');
+  assert.equal(n.cost_usd, 0.42);
+  assert.ok(!Number.isNaN(Date.parse(n.at)));
+  assert.equal(n.since, n.at);
+});
+
+test('--now with bad JSON exits non-zero and writes nothing', () => {
+  const d = emptyDir();
+  const r = now(d, '{not json');
+  assert.notEqual(r.status, 0);
+  assert.deepEqual(readdirSync(d), []);
+});
+
+test('--now without a stage exits non-zero and writes nothing', () => {
+  const d = emptyDir();
+  const r = now(d, { doing: 'x' });
+  assert.notEqual(r.status, 0);
+  assert.deepEqual(readdirSync(d), []);
+});
+
+test('--now on a missing run dir exits 2', () => {
+  const r = now(join(tmpdir(), 'fbn-does-not-exist-xyz'), full());
+  assert.equal(r.status, 2);
+});
+
+test('--now leaves no temp file behind', () => {
+  const d = emptyDir();
+  now(d, full());
+  assert.deepEqual(readdirSync(d), ['now.json']);
+});
+
+test('--now stores a missing cost_usd as null and shows it as an em dash', () => {
+  const d = emptyDir();
+  const { cost_usd, ...noCost } = full();
+  const r = now(d, noCost);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(readNow(d).cost_usd, null);
+  assert.match(r.stdout, /cost —/);
+});
+
+test('--now keeps since while the stage is unchanged and resets it when the stage changes', () => {
+  const d = emptyDir();
+  writeFileSync(join(d, 'now.json'), JSON.stringify({ ...full(), at: '2026-01-01T00:00:00.000Z', since: '2026-01-01T00:00:00.000Z' }));
+  assert.equal(now(d, full({ doing: 'second step' })).status, 0);
+  const same = readNow(d);
+  assert.equal(same.since, '2026-01-01T00:00:00.000Z');
+  assert.notEqual(same.at, '2026-01-01T00:00:00.000Z');
+  assert.equal(same.doing, 'second step');
+  assert.equal(now(d, full({ stage: 'test' })).status, 0);
+  const changed = readNow(d);
+  assert.notEqual(changed.since, '2026-01-01T00:00:00.000Z');
+  assert.equal(changed.since, changed.at);
+});
+
+test('--now ignores at and since in the input', () => {
+  const d = emptyDir();
+  now(d, full({ at: 'x', since: 'y' }));
+  const n = readNow(d);
+  assert.ok(!Number.isNaN(Date.parse(n.at)));
+  assert.equal(n.since, n.at);
+});
+
+test('--now cuts last_step to 120 characters', () => {
+  const d = emptyDir();
+  now(d, full({ last_step: 'x'.repeat(300) }));
+  assert.equal(readNow(d).last_step.length, 120);
+});
+
+test('--now accepts waiting as null or {who, what} and rejects anything else', () => {
+  for (const waiting of [null, { who: 'you', what: 'approve the plan' }, { who: 'vendor', what: 'codex running' }]) {
+    const d = emptyDir();
+    assert.equal(now(d, full({ waiting })).status, 0);
+    assert.deepEqual(readNow(d).waiting, waiting);
+  }
+  for (const waiting of ['approve the plan', { who: 'me', what: 'x' }, { who: 'you' }, { what: 'x' }, 3]) {
+    const d = emptyDir();
+    const r = now(d, full({ waiting }));
+    assert.notEqual(r.status, 0, JSON.stringify(waiting));
+    assert.deepEqual(readdirSync(d), [], JSON.stringify(waiting));
+  }
+});
+
+// -- run fixtures for --list / --show --
+
+function repoWithRuns(specs) {
+  const root = mkdtempSync(join(tmpdir(), 'fbl-'));
+  spawnSync('git', ['init', '-q'], { cwd: root });
+  const dirs = {};
+  for (const [slug, o] of Object.entries(specs)) {
+    const d = join(root, '.harness-run', slug);
+    const w = (rel, v) => {
+      mkdirSync(dirname(join(d, rel)), { recursive: true });
+      writeFileSync(join(d, rel), typeof v === 'string' ? v : JSON.stringify(v));
+    };
+    w('manifest.json', o.manifest ?? { request: 'do it', subgoals: [{ id: 's1' }] });
+    for (const [rel, v] of Object.entries(o.files ?? {})) w(rel, v);
+    if (o.ageHours != null) {
+      const t = new Date(Date.now() - o.ageHours * HOUR);
+      for (const f of [d, join(d, 'manifest.json'), ...Object.keys(o.files ?? {}).map((k) => join(d, k))]) utimesSync(f, t, t);
+    }
+    dirs[slug] = d;
+  }
+  return { root, dirs };
+}
+const list = (root, ...more) => spawnSync('node', [CHECK, '--list', '--cwd', root, ...more], { encoding: 'utf8' });
+const listJson = (root) => JSON.parse(list(root, '--json').stdout);
+
+const SPEC = { goal: 'a goal that is long enough', acceptance: ['a'], subgoals: [{ id: 's1', title: 'T' }] };
+const NOW_FILE = { ...full({ stage: 'implement', round: 1, waiting: { who: 'you', what: 'pick a vendor' } }), at: 'a', since: 'a' };
+
+test('--list prints both open runs of a 2-run fixture with stage, round and waiting', () => {
+  const { root } = repoWithRuns({
+    alpha: { files: { '01-plan.md': 'plan', '02-goal-spec.json': SPEC, 'now.json': NOW_FILE } },
+    beta: { files: { '01-plan.md': 'plan' }, ageHours: 3 },
+  });
+  const r = list(root);
+  assert.equal(r.status, 0, r.stderr);
+  const lines = r.stdout.trim().split('\n');
+  assert.equal(lines.length, 2, r.stdout);
+  const a = lines.find((l) => l.startsWith('alpha'));
+  const b = lines.find((l) => l.startsWith('beta'));
+  assert.match(a, /critique/);
+  assert.match(a, /round 1/);
+  assert.match(a, /waiting you: pick a vendor/);
+  assert.match(a, /cost 0\.42/);
+  assert.doesNotMatch(a, /stalled/);
+  assert.match(b, /setgoal/);
+  assert.match(b, /round —/);
+  assert.match(b, /waiting —/);
+  assert.match(b, /cost —/);
+  assert.match(b, /stalled/);
+});
+
+test('--list skips finished, abandoned (12 h) and manifest-less runs', () => {
+  const { root } = repoWithRuns({
+    open: { files: { '01-plan.md': 'plan' } },
+    done: { files: { '05-report.md': 'a report that is long enough' } },
+    old: { files: { '01-plan.md': 'plan' }, ageHours: 13 },
+  });
+  mkdirSync(join(root, '.harness-run', 'nomanifest'), { recursive: true });
+  mkdirSync(join(root, '.harness-run', 'broker', 'runs'), { recursive: true });
+  assert.deepEqual(listJson(root).map((x) => x.slug), ['open']);
+});
+
+test('--list reads the git toplevel from a subdirectory and falls back to cwd outside a repo', () => {
+  const { root } = repoWithRuns({ one: { files: { '01-plan.md': 'plan' } } });
+  mkdirSync(join(root, 'sub'));
+  const sub = spawnSync('node', [CHECK, '--list', '--cwd', join(root, 'sub'), '--json'], { encoding: 'utf8' });
+  assert.deepEqual(JSON.parse(sub.stdout).map((x) => x.slug), ['one']);
+  const plain = mkdtempSync(join(tmpdir(), 'fbp-'));
+  mkdirSync(join(plain, '.harness-run', 'two'), { recursive: true });
+  writeFileSync(join(plain, '.harness-run', 'two', 'manifest.json'), '{"request":"r"}');
+  assert.deepEqual(listJson(plain).map((x) => x.slug), ['two']);
+});
+
+test('--list with nothing open exits 0 and says so; --json is an empty array', () => {
+  const { root } = repoWithRuns({});
+  const r = list(root);
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /no open runs/);
+  assert.deepEqual(listJson(root), []);
+});
+
+test('--list --json rows carry the pinned key set, now.json and the stalled flag', () => {
+  const { root, dirs } = repoWithRuns({
+    alpha: { files: { '01-plan.md': 'plan', 'now.json': NOW_FILE } },
+    beta: { files: { '01-plan.md': 'plan' }, ageHours: 3 },
+  });
+  const rows = listJson(root);
+  assert.equal(rows.length, 2);
+  for (const row of rows) assert.deepEqual(Object.keys(row).sort(), ROW_KEYS);
+  const alpha = rows.find((x) => x.slug === 'alpha');
+  const beta = rows.find((x) => x.slug === 'beta');
+  assert.equal(alpha.dir, realpathSync(dirs.alpha));
+  assert.deepEqual(alpha.now, NOW_FILE);
+  assert.deepEqual(alpha.waiting, { who: 'you', what: 'pick a vendor' });
+  assert.equal(alpha.round, 1);
+  assert.equal(alpha.stalled, false);
+  assert.equal(beta.now, null);
+  assert.equal(beta.waiting, null);
+  assert.equal(beta.stalled, true);
+});
+
+test('manifest.started_at is read as-is; an older manifest reads null and is not backfilled', () => {
+  const { root, dirs } = repoWithRuns({
+    new: { manifest: { request: 'r', started_at: '2026-10-16T01:00:00.000Z', max_critique_rounds: 3 }, files: { '01-plan.md': 'p' } },
+    old: { files: { '01-plan.md': 'p' } },
+  });
+  const rows = listJson(root);
+  const n = rows.find((x) => x.slug === 'new');
+  const o = rows.find((x) => x.slug === 'old');
+  assert.equal(n.started_at, '2026-10-16T01:00:00.000Z');
+  assert.equal(n.max_critique_rounds, 3);
+  assert.equal(o.started_at, null);
+  assert.equal(o.max_critique_rounds, 2);
+  assert.ok(!('started_at' in JSON.parse(readFileSync(join(dirs.old, 'manifest.json'), 'utf8'))));
+});
+
+test('critique severity: new-format field is kept, an unknown value becomes major', () => {
+  const { root } = repoWithRuns({
+    r: {
+      files: {
+        '01-plan.md': 'p', '02-goal-spec.json': SPEC,
+        '02-critique.json': {
+          sound: false,
+          problems: [
+            { severity: 'blocker', text: 'no acceptance' },
+            { severity: 'Nit', text: 'typo' },
+            { severity: 'catastrophic', text: 'odd value' },
+          ],
+        },
+      },
+    },
+  });
+  const [row] = listJson(root);
+  assert.deepEqual(row.rounds[0].problems, [
+    { severity: 'blocker', text: 'no acceptance' },
+    { severity: 'nit', text: 'typo' },
+    { severity: 'major', text: 'odd value' },
+  ]);
+});
+
+test('critique severity: an old-format string is parsed from its text prefix, else major', () => {
+  const { root } = repoWithRuns({
+    r: {
+      files: {
+        '01-plan.md': 'p', '02-goal-spec.json': SPEC,
+        '02-critique.json': {
+          sound: false,
+          problems: ['Nit: wording', 'BLOCKER: gate is unwinnable', 'minor - naming', 'Majority of tests are missing', 'no prefix at all'],
+        },
+      },
+    },
+  });
+  const [row] = listJson(root);
+  assert.deepEqual(row.rounds[0].problems.map((p) => p.severity), ['nit', 'blocker', 'minor', 'major', 'major']);
+  assert.equal(row.rounds[0].problems[0].text, 'Nit: wording');
+});
+
+test('a rejected critique with 3 rounds lists every round in order, newest last', () => {
+  const crit = (sound, problems) => ({ sound, problems });
+  const { root } = repoWithRuns({
+    r: {
+      files: {
+        '01-plan.md': 'p', '02-goal-spec.json': SPEC,
+        '02-critique.r2.json': crit(false, ['Minor: second']),
+        '02-critique.r1.json': crit(false, [{ severity: 'blocker', text: 'first' }]),
+        '02-critique.r10.json': crit(false, ['Nit: tenth']),
+        '02-critique.json': crit(false, ['Major: newest']),
+      },
+    },
+  });
+  const [row] = listJson(root);
+  assert.deepEqual(row.rounds.map((x) => [x.round, x.file]), [
+    [1, '02-critique.r1.json'], [2, '02-critique.r2.json'], [10, '02-critique.r10.json'], [11, '02-critique.json'],
+  ]);
+  assert.deepEqual(row.rounds.map((x) => x.sound), [false, false, false, false]);
+  assert.deepEqual(row.rounds.map((x) => x.problems[0].severity), ['blocker', 'minor', 'nit', 'major']);
+  assert.equal(row.round, 11);
+  assert.equal(row.stage, 'critique');
+});
+
+test('--list text rounds fall back to the critique round count when now.json has none', () => {
+  const { root } = repoWithRuns({
+    r: { files: { '01-plan.md': 'p', '02-goal-spec.json': SPEC, '02-critique.r1.json': { sound: false, problems: [] }, '02-critique.json': { sound: true, problems: [] } } },
+  });
+  assert.match(list(root).stdout, /round 2/);
+});
+
+test('--show --json returns one run in the --list row shape', () => {
+  const { root, dirs } = repoWithRuns({
+    a: { files: { '01-plan.md': 'p', 'now.json': NOW_FILE, '02-goal-spec.json': SPEC, '02-critique.json': { sound: true, problems: [] }, 'subgoals/s1/result.json': { passed: true } } },
+  });
+  const r = spawnSync('node', [CHECK, '--show', dirs.a, '--json'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const row = JSON.parse(r.stdout);
+  assert.deepEqual(row, listJson(root)[0]);
+  assert.deepEqual(Object.keys(row).sort(), ROW_KEYS);
+  assert.equal(row.stage, 'gate');
+  assert.deepEqual([row.passed, row.failed, row.total], [1, 0, 1]);
+});
+
+test('--show on a missing dir exits 2', () => {
+  const r = spawnSync('node', [CHECK, '--show', join(tmpdir(), 'fbn-nope-xyz'), '--json'], { encoding: 'utf8' });
+  assert.equal(r.status, 2);
+});
+
+test('bare RUN_DIR keeps exit 0, 1 and 2', () => {
+  assert.equal(run(makeRun()).status, 0);
+  assert.equal(run(makeRun({ matchPct: 0 })).status, 1);
+  assert.equal(run(join(tmpdir(), 'fbn-nope-xyz')).status, 2);
+  assert.equal(spawnSync('node', [CHECK], { encoding: 'utf8' }).status, 2);
 });
