@@ -1,16 +1,16 @@
 ---
 name: writing-skills
 description: >-
-  Use when editing an existing SKILL.md to meet repo conventions, or fixing a
-  skill that misfires (new skills go to skill:create). Triggers: "SKILL.md 고쳐줘",
-  "skill 개선해줘", "skill documentation", "스킬 문서 작성", "skill이 안 떠", "fix this skill".
+  Use when editing SKILL.md body to repo conventions. Not for new skills (skill:create),
+  misfires (skill:trigger-validator), review (skill:quality-assurance). Triggers: "SKILL.md 고쳐줘",
+  "skill 개선해줘", "skill documentation", "스킬 문서 작성", "fix this skill".
 scenarios:
   - "이 SKILL.md가 컨벤션에 맞는지 보고 고쳐줘"
   - "SKILL.md 구조 정리해줘"
   - "Fix this SKILL.md so it follows the repo conventions"
   - "기존 skill 개선해줘"
-  - "This skill never triggers — fix its description"
-  - "Skill 설명이 너무 약한 것 같아, 개선해줘"
+  - "This skill never triggers — fix its description (owner: skill:trigger-validator)"
+  - "Skill 설명이 너무 약한 것 같아, 개선해줘 (description 문제면 skill:trigger-validator가 담당)"
 compatibility:
   optional:
     - think-tool           # framing the RED-phase pressure scenario before drafting
@@ -26,6 +26,10 @@ This skill produces convention-compliant `SKILL.md` files. It does not grade
 its own output — that job belongs to two gates it hands off to by name. Read
 this file when you're about to draft, edit, or repair a skill; read the gates'
 own SKILL.md files when it's time to actually run them.
+
+**Not for** drafting a new skill (`skill:create`), a skill that does not fire or has a weak
+description (`skill:trigger-validator`), or reviewing a finished skill without editing it
+(`skill:quality-assurance`).
 
 ## The Docs Cycle, Borrowed From TDD
 

@@ -2,7 +2,7 @@
 name: audit
 effort: high
 description: >-
-  Use when you want to know what a workspace already has and what is missing. Triggers on: "뭘 더 설치하면 좋아?", "워크스페이스 점검", "what am I missing", "what skills or plugins do I have here".
+  Use when you want to know what a workspace already has and what is missing. Not for writing/fixing a skill (skill:create, write:writing-skills). Triggers on: "뭘 더 설치하면 좋아?", "워크스페이스 점검", "what am I missing", "what skills or plugins do I have here".
 scenarios:
   - "What am I missing in this workspace? Check what's installed before suggesting anything"
   - "Which plugins or MCP servers would help this repo, given what we already have?"
@@ -29,7 +29,7 @@ compatibility:
 
 Reads what this workspace has installed, matches the user's gap against the catalogs it can see, and says what is present, installable, or absent.
 
-**Not for** installing the harness (`harness:install`) or authoring a skill (`skill:create`).
+**Not for** installing the harness (`harness:install`), authoring a skill (`skill:create`), or editing, reviewing or fixing the trigger of one existing skill (`write:writing-skills`, `skill:quality-assurance`, `skill:trigger-validator`).
 
 ## Process
 

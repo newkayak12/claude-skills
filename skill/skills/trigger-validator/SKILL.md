@@ -1,10 +1,9 @@
 ---
 name: trigger-validator
 description: >-
-  Use when a skill isn't triggering reliably on natural language or Korean
-  input. Triggers on: "스킬이 트리거 안 돼", "skill not firing", "description 개선해줘",
-  "한국어 트리거 추가해줘", "trigger coverage audit", "skill 발동 조건 점검", "description이 너무
-  keyword만 있어".
+  Use when a skill doesn't fire or its description needs a rewrite. Not for body (write:writing-skills)
+  or review (skill:quality-assurance). Triggers: "스킬이 트리거 안 돼", "SKILL.md가 안 떠",
+  "skill not firing", "description 개선해줘", "trigger coverage audit".
 scenarios:
   - "이 skill이 한국어로 말할 때 안 트리거돼"
   - "Skill description이 너무 기술적인 키워드만 있어"
@@ -26,7 +25,13 @@ Analyzes skill `description` fields for trigger coverage gaps and rewrites them 
 
 The description field is the only signal Claude uses to decide whether to invoke a skill. If it lists only formal English keywords, conversational or Korean requests will miss. This skill audits that coverage and produces a drop-in replacement description.
 
-## Input
+**Not for** editing the body of a skill (`write:writing-skills`) or a quality review of a skill that already fires (`skill:quality-assurance`); this skill touches the `description` field only.
+
+Also triggers on (kept out of the 250-char description): "skill이 안 떠", "한국어 트리거 추가해줘", "skill 발동 조건 점검", "description이 너무 keyword만 있어".
+
+## Process
+
+### Input
 
 Accept one of:
 - **Single skill** — path (e.g., `develop/skills/clean-code`) or name (`clean-code`)
@@ -34,8 +39,6 @@ Accept one of:
 - **All** — full audit across the repo
 
 If no target is given, ask for one before proceeding.
-
-## Workflow
 
 ### 1. Read Target Skills
 
@@ -126,7 +129,7 @@ After:
 Use when code is hard to read or change and needs review or cleanup. Triggers on: "코드 리뷰해줘", "이 코드 좀 봐줘", "가독성", "리팩토링", "this is hard to read", "code review".
 ```
 
-## Output Format
+## Output Template
 
 ### Single Skill
 

@@ -2,7 +2,8 @@
 name: create
 effort: high
 description: >-
-  Use when a new skill should be written to read like the repo's existing skills. Triggers on: "스킬 만들어줘",
+  Use when a new skill should be written to read like the repo's existing skills. Not for editing one
+  (write:writing-skills) or surveying what is installed (skill:audit). Triggers on: "스킬 만들어줘",
   "새 스킬 뼈대", "우리 스킬처럼 만들어줘", "이걸 스킬로", "create a skill".
 scenarios:
   - "Create a skill for reviewing database migrations, like our other skills"
@@ -30,7 +31,7 @@ compatibility:
 
 Writes a new skill that carries the repo's house identity — re-checkable output, no invented facts, one forbidden reflex, a stated boundary, the user deciding — then hands it to the two gates.
 
-**Not for** editing or repairing an existing skill (`write:writing-skills`).
+**Not for** editing or repairing an existing skill (`write:writing-skills`), or surveying what the workspace already has (`skill:audit`).
 
 ## Process
 
