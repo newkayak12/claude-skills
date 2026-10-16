@@ -1,15 +1,16 @@
 ---
 name: redefine-problem
 description: >-
-  Use when solutions keep feeling wrong or shallow — when the problem itself may
-  be mis-defined. Triggers on: "뭔가 잘못된 것 같아", "계속 이 문제가 반복돼", "다른 각도로 봐야 할 것
-  같아", "wrong problem", "solutions feel off", "이 문제 자체가 맞는 건지", "증상만 자꾸 잡는 느낌".
+  Use when the same problem keeps coming back or only symptoms get fixed — the problem itself may
+  be mis-defined. Not for an approach or inherited constraint that feels wrong (think:back-to-basics).
+  Triggers on: "계속 이 문제가 반복돼", "문제를 다른 각도로 정의해야 할 것 같아", "wrong problem",
+  "the metric doesn't move", "이 문제 자체가 맞는 건지", "증상만 자꾸 잡는 느낌".
 scenarios:
   - "계속 해결하려는데 같은 문제가 반복돼"
   - "이 해결책들이 다 뭔가 어색한데, 내가 잘못된 걸 풀고 있는 건 아닐까?"
   - "We keep shipping features but the metric doesn't move"
-  - "뭔가 근본적으로 잘못된 것 같은 느낌이 드는데"
-  - "I've tried three approaches and none of them feel right"
+  - "뭔가 근본적으로 잘못된 것 같은 느낌이 드는데 (문제 정의가 아니라 접근이 의심되면 think:back-to-basics가 담당)"
+  - "I've tried three approaches and none of them feel right (if it's the approach that feels wrong, owner: think:back-to-basics)"
   - "이 문제 자체를 다시 정의해야 할 것 같아"
 compatibility:
   recommended:
@@ -31,6 +32,10 @@ related:
 
 Brainstorming과 다른 점: brainstorming은 *주어진 문제에 더 많은 해법*을 만든다. 이 스킬은 *문제가 제대로 정의되었는지*를 묻는다.
 
+**Not for** an approach or inherited constraint that feels wrong while the goal is right (`back-to-basics`), more ideas for a settled problem (`brainstorming`), or attacking a plan (`devils-advocate`).
+
+Also triggers on (kept out of the description): "다른 각도로 봐야 할 것 같아", "solutions feel off".
+
 ## When to Use This vs. Brainstorming
 
 | Situation | Use |
@@ -39,10 +44,11 @@ Brainstorming과 다른 점: brainstorming은 *주어진 문제에 더 많은 �
 | "I keep trying things but nothing works" | redefine-problem |
 | "What should I build?" | brainstorming |
 | "Why does this keep being a problem?" | redefine-problem |
-| "I have solutions but they all feel wrong" | redefine-problem |
+| "I have solutions but the same problem keeps coming back" | redefine-problem |
 | "Maybe I'm solving the wrong thing" | redefine-problem |
+| "This approach feels wrong" / "is this constraint even real?" | back-to-basics |
 
-## Core Workflow
+## Process
 
 ### Step 1 — Capture the Stated Problem
 
@@ -104,7 +110,7 @@ think-tool을 사용해 가정을 enumerate. 출력 시작 전에 이 표를 완
 
 가장 큰 진전을 unlock하는 framing 선택, 또는 sharper 버전으로 합성.
 
-## Output Format
+## Output Template
 
 ```
 1. Stated problem: [원문]
@@ -165,7 +171,7 @@ See `references/examples.md` for worked examples across software and non-softwar
 
 ## Related Skills
 
-- `back-to-basics` — 재프레이밍 후 근본 가정을 더 깊이 분해하고 바닥부터 재구성하고 싶을 때
+- `back-to-basics` — 목표는 맞는데 접근이 이상하거나 물려받은 제약이 진짜인지 의심될 때(접근이 잘못된 느낌은 그쪽이 소유). 재프레이밍 후 근본 가정을 더 깊이 분해하고 바닥부터 재구성하고 싶을 때도
 - `devils-advocate` — 재프레이밍한 새 방향에 강한 반론으로 검증하고 싶을 때. multi-persona *공격*이 필요하면 그쪽
 - `brainstorming` — 문제 정의가 분명해진 뒤 해법을 발산해야 할 때. 제약 *완화*로 해법을 찾고 싶다면 그쪽의 constraint relaxation
 - `bias-auditor` — reframing 결과 confidence가 높다면 점검

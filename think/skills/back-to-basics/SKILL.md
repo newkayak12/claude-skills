@@ -3,14 +3,16 @@ name: back-to-basics
 effort: high
 description: >-
   Use when an approach feels fundamentally wrong or an inherited constraint may not be real — rebuild
-  from what is actually known. Triggers: "왜 이렇게 해야 해?", "기본부터 다시 생각해", "first principles",
-  "가정을 의심해봐", "처음부터 설계하면".
+  from what is actually known. Not for a mis-defined problem with recurring symptoms (think:redefine-problem).
+  Triggers: "왜 이렇게 해야 해?", "기본부터 다시 생각해", "first principles",
+  "가정을 의심해봐", "처음부터 설계하면", "이 제약이 진짜 필요한지", "이 방식이 뭔가 잘못된 것 같아".
 scenarios:
   - "왜 배포가 2주나 걸려야 해? 진짜 필수적인 단계가 뭐야?"
   - "레거시 제약 없이 처음부터 설계하면 어떻게 될까?"
   - "이 방식이 당연하다는 가정을 다 걷어내고 다시 생각해보자"
   - "Why does onboarding have to take 3 weeks? Rebuild it from first principles"
-  - "We keep optimizing the wrong thing — what do we actually know for certain?"
+  - "We keep optimizing the wrong thing — what do we actually know for certain? (if the problem itself is mis-defined, owner: think:redefine-problem)"
+  - "이 방식이 뭔가 근본적으로 잘못된 것 같아, 확실한 것만 남기고 다시 보자"
 compatibility:
   recommended:
     - think-tool
@@ -39,7 +41,7 @@ related:
 
 Breaks an approach down to what can be checked, then rebuilds from there. Questions the approach and its constraints, not the goal.
 
-**Not for** doubting whether the problem statement is right (`redefine-problem`), full counterargument work (`devils-advocate`), or routine decisions with known good answers.
+**Not for** a mis-defined problem whose symptoms keep recurring (`redefine-problem`), full counterargument work (`devils-advocate`), or routine decisions with known good answers.
 
 ---
 
