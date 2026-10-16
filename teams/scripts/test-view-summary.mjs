@@ -4,7 +4,9 @@
 process.env.TZ = 'UTC';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { summarize } from './lib/view-summary.mjs';
+import { stageOfNode, STAGE_KEYS } from './lib/view-stages.mjs';
 
 const NOW = Date.UTC(2026, 9, 7, 12, 0, 0);
 const ms = (id, state, extra = {}) => ({ node_id: id, stage: id.split(':')[0], state, ...extra });
@@ -159,4 +161,56 @@ test('work is in run order: plan, build cards, then defects', () => {
   m.packages = [m.packages[3], m.packages[1], m.packages[0], m.packages[2]]; // D1, P1, PLAN, P2
   assert.deepEqual(summarize(m, { now: NOW }).work.map((w) => w.kind), ['plan', 'package', 'package', 'audit', 'defect']);
   assert.deepEqual(summarize(m, { now: NOW }).work.map((w) => w.title).slice(0, 3), ['Plan (PRD)', 'module a', 'module b']);
+});
+
+// ---------- a size-S task on the development harness: stages come from model.harness ----------
+
+// What collectTask() puts on a harness_run task: its own stage model (view-collect.mjs), beside the
+// frozen size/shape/critique graph a size-S task still carries.
+function harnessModel(states = {}, over = {}) {
+  return demo({
+    state: 'running', packages: [], audit: null, qa: null,
+    manager_stages: [ms('size', 'done'), ms('shape', 'skipped'), ms('critique', 'skipped')],
+    harness: { slug: 'req', moving: false, driver: { alive: true }, stages: STAGE_KEYS.map((key) => ({ key, state: states[key] || 'pending' })) },
+    ...over,
+  });
+}
+const barOf = (s) => s.stages.map((x) => `${x.key}:${x.state}`);
+
+test('harness: stagesOf draws from model.harness - 01-plan.md filled plan, the frozen skipped shape/critique nodes do not hold it back', () => {
+  const s = summarize(harnessModel({ plan: 'done' }), { now: NOW });
+  assert.deepEqual(barOf(s), ['plan:done', 'build:running', 'integrate:pending', 'qa:pending', 'gate:pending', 'report:pending']);
+  clean(harnessModel({ plan: 'done' }));
+});
+
+test('harness: the moving flag does not fill a stage - a fresh stream with no stage file leaves nothing done', () => {
+  const m = harnessModel({}, { harness: { slug: 'req', moving: true, driver: { alive: true }, stages: STAGE_KEYS.map((key) => ({ key, state: 'pending' })) } });
+  const s = summarize(m, { now: NOW });
+  assert.ok(s.stages.every((x) => x.state !== 'done'), barOf(s).join(' '));
+});
+
+test('harness: a done gate backfills the stages the run never wrote a file for; a failed gate reads failed; complete fills all', () => {
+  assert.deepEqual(barOf(summarize(harnessModel({ plan: 'done', gate: 'done' }), { now: NOW })),
+    ['plan:done', 'build:done', 'integrate:done', 'qa:done', 'gate:done', 'report:running']);
+  assert.equal(summarize(harnessModel({ plan: 'done', gate: 'failed', report: 'done' }, { state: 'partial' }), { now: NOW }).stages.find((x) => x.key === 'gate').state, 'failed');
+  assert.ok(summarize(harnessModel({ plan: 'done' }, { state: 'complete' }), { now: NOW }).stages.every((x) => x.state === 'done'));
+});
+
+test('harness: skipped areas and areas-critique nodes never read blocked or failed, on the frozen graph or in the harness model', () => {
+  const m = harnessModel({ plan: 'done' });
+  m.manager_stages.push(ms('areas', 'skipped'), ms('areas-critique', 'skipped'));
+  assert.ok(!barOf(summarize(m, { now: NOW })).some((x) => x.endsWith(':failed')));
+  const plain = demo();
+  plain.manager_stages.push(ms('areas', 'skipped'), ms('areas-critique', 'skipped'));
+  assert.ok(!barOf(summarize(plain, { now: NOW })).some((x) => x.endsWith(':failed')));
+});
+
+test('stageOfNode lives once, in view-stages.mjs: view-summary.mjs and view-collect.mjs import it', () => {
+  assert.deepEqual(['size', 'implement:U1:1', 'integrate:1', 'integrate:2', 'gate:goal:1', 'report', 'areas'].map(stageOfNode),
+    ['plan', 'build', 'integrate', 'qa', 'gate', 'report', null]);
+  for (const f of ['view-summary.mjs', 'view-collect.mjs']) {
+    const src = readFileSync(new URL(`./lib/${f}`, import.meta.url), 'utf8');
+    assert.ok(!/function stageOfNode/.test(src), `${f} defines its own stageOfNode`);
+    assert.match(src, /from '\.\/view-stages\.mjs'/);
+  }
 });
