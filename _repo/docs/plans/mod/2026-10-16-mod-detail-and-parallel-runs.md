@@ -303,21 +303,21 @@ as it will read once the engine writes it.
   graph  7c1e09ab · gate s2 try 2 · 2/5                                                                 [open]
 ```
 
-### band presets (user, 2026-10-16)
+### band — the detailed one is the band (user, 2026-10-16)
 
-User: "band 좋은데 더 자세한게 나음 https://github.com/scrothers/statusline 같이 미리에셋을 가지고 있든 하면 어떄".
-Taken from that statusline (Go, three lines, each answering one question):
+User: "band 좋은데 더 자세한게 나음 https://github.com/scrothers/statusline 같이 미리에셋을 가지고 있든 하면 어떄",
+then: "고른다기 보다는 저렇게 디테일하게 mod를 만들고 공을 들이자는거야". Not a preset switch: every mod is
+built with that statusline's level of detail and polish. The one-row bands above are superseded.
 
-- **Presets.** `compact` = the one-row-per-plugin band above. `detailed` (default) = up to three rows per
-  leading run, each answering one question: *what is it doing and does it wait on me* / *how far along* /
-  *what has it cost*. `full` = `detailed` for every open run, not only the leading one.
+- **Three rows per leading run,** each answering one question: *what is it doing and does it wait on me* /
+  *how far along* / *what has it cost and what came back last*. Other open runs show as `+N`.
 - **Segments with a priority.** Each row is a list of segments; under width pressure the lowest drop first
   until the row fits. The run name and `⚑` never drop, only truncate with `…`.
 - **Theme follows Claude Code's dark/light setting;** icon set with a Nerd Font glyph and a plain fallback.
 - **`demo` per mod.** A command renders fixture scenarios (`minimal`, `full`, `parallel`, `narrow`) with no
   live run — used for the README shots and the 190/110 width check.
 
-`detailed` at 110:
+At 110:
 
 ```text
 ⚑ teams  E-3f9a21c0 Billing settings revamp · P2 asks: "Keep the legacy invoice PDF route?"   [answer] +1
@@ -337,6 +337,8 @@ card depends on it.
 
 Every card: engine field first with its node/python test, then the mod; `claude plugin test .` count reported;
 seen live in tmux at 190 and 110 against §3; README/KOR shot per changed surface (mod.md "A UI change is done").
+The band is the three-row one ("the detailed one is the band"), segments drop by priority, theme follows
+dark/light, and a `demo` fixture renders `minimal`/`full`/`parallel`/`narrow` without a live run.
 
 - **H. harness pane says what the run is doing.** Acceptance: engine writes `now.json` (`stage, doing, round,
   last_step, next, waiting, cost_usd`) and `manifest.started_at`, critique `problems[].severity`; the pane draws
@@ -367,4 +369,7 @@ seen live in tmux at 190 and 110 against §3; README/KOR shot per changed surfac
 5. Keys `[` / `]` for runs and `g` for a STORY's graph run — fine, or another pair?
 6. Session: is memo + guard the right "at a glance", or should the session band also carry the board's
    cross-session run count?
-7. Where the band preset is chosen: one key per plugin (each plugin's own settings) or one shared key?
+
+Taken 2026-10-16 as the recommended answers (the user approved the direction from the mockups, not each
+question; any can be reopened): 1 per-plugin panes, teams owns its runs; 2 graph gets its own
+band row; 3 `—`; 4 add `problems[].severity`; 5 `[` / `]` and `g`; 6 memo + guard only. No preset switch.

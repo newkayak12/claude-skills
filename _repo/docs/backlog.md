@@ -46,14 +46,6 @@ never retire them as duplicates, and never reference superpowers.
     - Acceptance: a stable, readable address (fixed default port; EPIC key like `E-124098e5` in the
       path instead of the uuid); old uuid links still resolve.
 
-27. **Viewer shows what is running under a task**
-    - Why: the view does not say enough about which node, package and driver is working now.
-    - Acceptance: for an open EPIC the view shows each running node/STORY, its driver's current
-      action (latest `tm_log` line), elapsed time and cost; read-only, from the task files.
-    - Also: teams work runs as separate `claude -p` drivers, so the session's agent list shows
-      nothing while a task runs; the driving session should see each running driver/subagent
-      (a band line or agent-list entry per driver).
-
 28. **A size-S task reads as blocked with nothing moving**
     - Why: E-124098e5 (size S, harness fallback, driver alive) shows `blocked · 0/0`, only `Plan` lit;
       the skipped `areas`/`areas-critique` nodes are read as blocked and the S run's own stages
@@ -62,41 +54,26 @@ never retire them as duplicates, and never reference superpowers.
     - Acceptance: an S task with a live driver reads running, its harness stages fill the stage bar,
       and a multi-item backlog title says "N items"; view tests cover it.
 
-29. **Mods show several concurrent runs (harness, teams, graph)**
-    - Why: each pane follows one run. harness: the newest live `.harness-run/<run>/` of this
-      worktree only (the band counts open runs per stage); teams: the last watched task, else this
-      cwd's newest running one; graph: the newest run file. A second run started meanwhile is
-      invisible in the pane, and runs in other worktrees (teams L packages) never show.
-    - Acceptance: with two runs open, each pane lists both and switches between them by key;
-      the band names how many are open; non-mod readouts (`view.mjs --once`, CLIs) list both too;
-      `claude plugin test .` passes for each plugin; seen live at 190 and 110 columns.
-    - Design first (user, 2026-10-16: "팀즈 하네스 그래프 병렬 실행 시 모드 어떻게 그릴지 고민하기"):
-      a section of card 31's design doc settles how parallel runs are drawn across the three
-      plugins — one shared surface or one per plugin, how a teams L EPIC's packages (each its own
-      worktree and graph run) nest under it, which run the band leads with — before any code.
-
 30. **session Memo pane cannot be closed**
     - Why: `/memo` always calls `$.ui.open` (session/hooks/memo.tsx), so a second `/memo` reopens
       instead of closing, and the pane handles neither Esc nor q — breaks mod rule "closes on Esc,
       q and the command again" (`.claude/rules/mod.md`). teams' pane already toggles (`$.ui.close`).
     - Acceptance: `/memo` toggles; Esc and q close it; a pane test covers all three; seen live.
 
-31. **Mods say what is happening, not just that something is**
-    - Why: user, 2026-10-15: "전체적으로 mod가 더 디테일해야할거 같아 일단 있다 그 이상 이하도 아니게보인다".
-      Seen today: the harness pane showed a run but not that its critique had rejected the spec
-      (4 major findings) and SetGoal was rewriting it; the teams pane read `blocked · 0/0` on a live run.
-    - Acceptance: a design doc in `_repo/docs/plans/mod/` first (brainstorm → approval), naming per
-      mod (harness, teams, graph, session) what a person must read at a glance — current stage and
-      what it is doing now (latest driver action), last verdict and its top finding, progress
-      (subgoals/STORYs done of total), elapsed and cost, what happens next / what waits on you.
-      Then one card per mod. Folds in 27, 28, 29 where they overlap.
-    - Principle (user, same day): "각 스킬에 특화되도록 사용자 친화적으로!" — each mod speaks its own
-      skill's language (harness: plan/critique/subgoals; teams: EPIC/STORY/cards; graph: nodes;
-      session: memo/guards), not one generic status layout; plain words over engine field names.
-    - Bar (user, 2026-10-16: "현재 모드 고도화 … 실제 사용 유아이같이 고도로 발달하고 사람이
-      보기좋게가 가장 중요 정보도 다 표현하고"): product-grade UI, readable first, with every key
-      field above present. The design doc shows a mockup per mod at 190 and 110 columns, and the
-      gate is the live screenshots against it.
+### Mods — detail and polish (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
+
+Why, in the user's words: "전체적으로 mod가 더 디테일해야할거 같아 일단 있다 그 이상 이하도 아니게보인다"
+(2026-10-15); "각 스킬에 특화되도록 사용자 친화적으로!"; "팀즈 하네스 그래프 병렬 실행 시 모드 어떻게
+그릴지 고민하기"; "실제 사용 유아이같이 고도로 발달하고 사람이 보기좋게가 가장 중요 정보도 다
+표현하고"; "저렇게 디테일하게 mod를 만들고 공을 들이자는거야" (scrothers/statusline as the bar,
+2026-10-16). Folds in former cards 27, 29, 31. Each card's acceptance is the design doc §4 card of
+the same letter, plus: the three-row band, priority-drop segments, dark/light theme, a `demo` fixture
+(`minimal`/`full`/`parallel`/`narrow`), seen live at 190 and 110, README/KOR shot.
+
+34. **H. harness pane says what the run is doing** — design §4 H.
+35. **T. teams pane shows every STORY at work** — design §4 T (after card 28).
+36. **G. graph pane: own band, owned runs, last step** — design §4 G.
+37. **S. session memo and guard read as live state** — design §4 S (after card 30).
 
 ### Sprint process
 
