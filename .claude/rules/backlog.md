@@ -26,6 +26,18 @@ N. **Title — what changes, not the symptom**
 Search the list first; add to an existing card instead of a near-duplicate. Group under a `###`
 heading by area. Frozen items (teams-mounted skills) go under `## Frozen`, never pulled.
 
+## What a card needs to be done
+
+Sorted by the change, per `repo.md` (Goal-Driven row), `maintaining.md` ("a SKILL.md only" row), `skill.md`:
+
+- **Behaviour change** — a skill's steps, gates or output; a hook, mod, script or engine. The checks
+  for the touched plugin in `maintaining.md`, counts reported, plus one real run.
+- **Skeleton or wording edit** — a section added, a "not for" line, a typo, a trigger phrase (last bullet). Checks
+  only: `python3 _repo/scripts/validate_plugins.py`, `node _repo/scripts/check-copies.mjs`, and for a
+  SKILL.md's shape `node _repo/scripts/check-skeleton.mjs`. It is report-only (always exit 0): read its
+  output; a skill under "skeleton problems" fails, one listed as frozen is not pulled.
+- Rewording a description's trigger changes routing: a behaviour change unless a routing probe is run.
+
 ## Sprint loop
 
 One session is one Sprint:
