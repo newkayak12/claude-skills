@@ -338,26 +338,25 @@ references (statusline, pixel-agents) are the bar for care and friendliness, not
 pixel art, no web office. What carries over is that a person can see who is doing what and how the
 workers hand work to each other, drawn with care.
 
-And: "저건 뭘하는지 눈에 캐릭터로 보이잖아 그런 직관적인걸 원하는거야 UIUX를 고려하자고". **The rule
-for every mod (harness, teams, graph, session): a glance, not a read.** Each worker is a small character
-whose face and pose show its state, animated in Ink, so a person knows what is happening before reading
-a word; the text line beside it is the detail. Same character set across mods, colour by state:
+And: "저건 뭘하는지 눈에 캐릭터로 보이잖아 그런 직관적인걸 원하는거야 UIUX를 고려하자고". Then: "캐릭터눈 딱히 크게 필요는 없긴 한뎅" — no faces. **The rule for every mod (harness, teams,
+graph, session): a glance, not a read.** Each worker's state is one icon and one colour (a spinner while
+it acts), so a person knows what is happening before reading a word; the text beside it is the detail.
+Same icons across mods:
 
 ```text
- (•_•)✎   editing        (•_•)▸   running a command   (•‿•)✔  accepted
- (•_•)⌕   reading        (-_-)ᶻ   idle / waits        (•︵•)✘  rejected, retrying
- (°_°)…   thinking       (°o°)⚑   waits on you        (⌐■_■)⚖ judging
+ ✎ editing    ⌕ reading    ▸ running a command    … thinking    ⚖ judging
+ ✔ accepted   ✘ rejected, retrying    ◌ idle / waits    ⚑ waits on you
 ```
 
-Floor at 110 with characters:
+Floor at 110:
 
 ```text
-  (•‿•)✔ PLAN      done · 4 STORYs                                                        $1.20
-  (•_•)✎ P2        editing form.ts — currency field · try 2/3                       9m    $2.35
-     └ (•_•)⌕      reading schema.ts
-  (•_•)▸ P3        npm test -- invoice · 12 ✔ 1 ✘                                    4m    $0.90
-  (-_-)ᶻ P4        waits for P1, P2
-  (°o°)⚑ P2        asks you: "Keep the legacy invoice PDF route?"                   [answer]
+  ✔ PLAN      done · 4 STORYs                                                        $1.20
+  ✎ P2        editing form.ts — currency field · try 2/3                       9m    $2.35
+    └ ⌕ sub   reading schema.ts
+  ▸ P3        npm test -- invoice · 12 ✔ 1 ✘                                    4m    $0.90
+  ◌ P4        waits for P1, P2
+  ⚑ P2        asks you: "Keep the legacy invoice PDF route?"                   [answer]
   P1 ──✔──▶ P4  contract handed over       gate ──✘──▶ P2  negative currency accepted
 ```
 
