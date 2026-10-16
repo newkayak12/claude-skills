@@ -96,6 +96,18 @@ never retire them as duplicates, and never reference superpowers.
       skill's language (harness: plan/critique/subgoals; teams: EPIC/STORY/cards; graph: nodes;
       session: memo/guards), not one generic status layout; plain words over engine field names.
 
+### knowledge plugin
+
+33. **knowledge builds a second brain, not only a vault**
+    - Why: user, 2026-10-16: "knowledge가 저거랑 비슷할거고 그 활용이 vault, noah지" — reference
+      https://github.com/coleam00/second-brain-starter. Its pieces knowledge lacks today: a memory
+      layer (persona/soul, user profile, decisions·lessons, daily log), session hooks (SessionStart
+      loads memory, PreCompact/SessionEnd capture decisions), hybrid keyword+vector memory search,
+      a proactive heartbeat. vault and noah are hand-built instances of it.
+    - Acceptance: a design doc in `_repo/docs/plans/` first (brainstorm → approval) mapping each
+      reference piece to a knowledge skill (extend, not a new plugin); vault and noah could be
+      rebuilt from knowledge skills; nothing of vault or noah's content in this repo.
+
 ### Sprint process
 
 32. **Sprint verification sized to the change**
