@@ -11,7 +11,7 @@ process.env.TEAMS_RUNS_DIR ??= 'off';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, appendFileSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, appendFileSync, writeFileSync, readFileSync, rmSync, existsSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1786,4 +1786,258 @@ test('--once --format summary: no running task in the cwd and no --task gives ta
     assert.equal(r.status, 0, r.stderr);
     assert.equal(JSON.parse(r.stdout).task, null);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+// ---------- a size-S task on the development harness (task.harness_run, S1/S1a) ----------
+//
+// collectTask reads the harness run the way taskstate.harnessState does - driver liveness, the
+// restart budget, the run's own report - but strictly read-only: resolveHarnessRun/harnessState
+// record a refused pointer in the ledger and write h.run, and a viewer never writes.
+
+const HID = 'aaaaaaaa-1111-4222-8333-444444444444';
+const DEAD_PID = 2 ** 22 + 991;
+
+function harnessTask({ harness = {}, task = {} } = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'view-test-harness-'));
+  const dir = join(root, HID);
+  const cwd = join(root, 'proj');
+  mkdirSync(join(dir, 'drivers'), { recursive: true });
+  mkdirSync(cwd, { recursive: true });
+  const now = Date.now();
+  const body = {
+    run_id: HID, kind: 'task', cwd, request: 'small request', created_at: now, size: 'S', store_path: join(dir, 'task.json'),
+    nodes: [node('size', 'size', [], { state: 'done' }), node('shape', 'shape', ['size'], { state: 'skipped' }), node('critique', 'critique', ['shape'], { state: 'skipped' })],
+    harness_run: {
+      cwd, opened_at: now, route: null, run: null, pointer: join(dir, 'harness-run.json'), report_path: join(dir, 'harness-report.md'),
+      driver: { pid: process.pid, log: join(dir, 'drivers', 'S.stream.jsonl'), restarts: [] },
+      ...harness,
+    },
+    ...task,
+  };
+  writeFileSync(join(dir, 'task.json'), JSON.stringify(body));
+  return { root, dir, cwd, collect: () => collectTask(root, HID), cleanup: () => rmSync(root, { recursive: true, force: true }) };
+}
+
+// A fallback run dir (.harness-run/<slug>/) tagged with this task, and the pointer naming it.
+function harnessFallbackRun(f, files = {}, { tagged = true } = {}) {
+  const runDir = join(f.cwd, '.harness-run', 'req-slug');
+  mkdirSync(runDir, { recursive: true });
+  writeFileSync(join(runDir, 'manifest.json'), JSON.stringify(tagged ? { request: 'r', teams_task: HID } : { request: 'r' }));
+  for (const [name, content] of Object.entries(files)) writeFileSync(join(runDir, name), typeof content === 'string' ? content : JSON.stringify(content));
+  writeFileSync(join(f.dir, 'harness-run.json'), JSON.stringify({ route: 'fallback', run_dir: runDir }));
+  return runDir;
+}
+
+// A graph run file under <cwd>/.harness-run/broker/runs/ tagged with this task, and its pointer.
+function harnessGraphRun(f, nodes) {
+  const runId = 'graph-run-1';
+  const p = join(f.cwd, '.harness-run', 'broker', 'runs', `${runId}.json`);
+  mkdirSync(dirname(p), { recursive: true });
+  writeFileSync(p, JSON.stringify({ run_id: runId, request: `[teams-task ${HID}] small request`, created_at: Date.now(), nodes }));
+  writeFileSync(join(f.dir, 'harness-run.json'), JSON.stringify({ route: 'graph', run_id: runId, cwd: f.cwd }));
+}
+
+const stageStates = (m) => Object.fromEntries(m.harness.stages.map((s) => [s.key, s.state]));
+
+test('collect(): a size-S task with a live harness driver reads running, not the frozen graph\'s blocked', () => {
+  const f = harnessTask();
+  try {
+    const m = f.collect();
+    assert.equal(m.error, null);
+    assert.equal(m.state, 'running');
+    assert.equal(m.harness.driver.alive, true);
+    assert.equal(m.harness.moving, false, 'no stream line yet');
+  } finally { f.cleanup(); }
+});
+
+test('collect(): a harness driver dead past its restart budget reads blocked; dead with budget left, or parked on capacity, still reads running', () => {
+  const restarts = [{ pid: DEAD_PID, at: Date.now() }, { pid: DEAD_PID, at: Date.now() }];
+  const driver = (r) => ({ pid: DEAD_PID, log: null, restarts: r });
+  let f = harnessTask({ harness: { driver: driver(restarts) } });
+  try { assert.equal(f.collect().state, 'blocked', 'two restarts spent of the default budget of two'); } finally { f.cleanup(); }
+  f = harnessTask({ harness: { driver: driver(restarts.slice(0, 1)) } });
+  try { assert.equal(f.collect().state, 'running', 'one restart left: the daemon will respawn it'); } finally { f.cleanup(); }
+  f = harnessTask({ task: { driver_restarts: 0 }, harness: { driver: driver([]) } });
+  try { assert.equal(f.collect().state, 'blocked', 'a budget of zero'); } finally { f.cleanup(); }
+  f = harnessTask({ task: { driver_restarts: 0 }, harness: { driver: driver([]), waiting_capacity: { reason: 'limit', since: Date.now() } } });
+  try { assert.equal(f.collect().state, 'running', 'waiting_capacity is parked, not dead'); } finally { f.cleanup(); }
+});
+
+test('collect(): a dead driver whose S.stream.jsonl is fresh still reads running and moving; a stale stream does not', () => {
+  const f = harnessTask({ task: { driver_restarts: 0 }, harness: { driver: { pid: DEAD_PID, log: null, restarts: [] } } });
+  try {
+    const log = join(f.dir, 'drivers', 'S.stream.jsonl');
+    writeFileSync(log, '{"type":"assistant"}\n');
+    // the driver record has no log of its own: the S stream under drivers/ is the one looked at
+    const fresh = f.collect();
+    assert.equal(fresh.state, 'running');
+    assert.equal(fresh.harness.moving, true);
+    const old = (Date.now() - 30 * 60000) / 1000;
+    utimesSync(log, old, old);
+    const stale = f.collect();
+    assert.equal(stale.state, 'blocked');
+    assert.equal(stale.harness.moving, false);
+  } finally { f.cleanup(); }
+});
+
+test('collect(): a harness run\'s written report reads complete when its goal gate passed, partial when it did not', () => {
+  const f = harnessTask();
+  try {
+    harnessFallbackRun(f, { '01-plan.md': '# plan', '04-goal-gate.json': { match_pct: 95, pass: true }, '05-report.md': '# report' });
+    const done = f.collect();
+    assert.equal(done.state, 'complete');
+    assert.deepEqual(stageStates(done), { plan: 'done', build: 'pending', integrate: 'pending', qa: 'pending', gate: 'done', report: 'done' });
+    harnessFallbackRun(f, { '01-plan.md': '# plan', '04-goal-gate.json': { match_pct: 40, pass: false, reason: 'AC 2 unmet' }, '05-report.md': '# report' });
+    const part = f.collect();
+    assert.equal(part.state, 'partial');
+    assert.equal(stageStates(part).gate, 'failed');
+    assert.equal(stageStates(part).report, 'done');
+  } finally { f.cleanup(); }
+});
+
+test('collect(): a fallback run\'s 01-plan.md fills plan; 02-* alone fills it too; the gate and report stay pending until their files exist', () => {
+  const f = harnessTask();
+  try {
+    harnessFallbackRun(f, { '01-plan.md': '# plan' });
+    const m = f.collect();
+    assert.equal(m.state, 'running');
+    assert.deepEqual(stageStates(m), { plan: 'done', build: 'pending', integrate: 'pending', qa: 'pending', gate: 'pending', report: 'pending' });
+    assert.equal(m.harness.slug, 'req-slug');
+    rmSync(join(f.cwd, '.harness-run'), { recursive: true, force: true });
+    harnessFallbackRun(f, { '02-goal-spec.json': {} });
+    assert.equal(stageStates(f.collect()).plan, 'done');
+  } finally { f.cleanup(); }
+});
+
+test('collect(): the harness stage model counts into model.counts (status reads done/total from it)', () => {
+  const f = harnessTask();
+  try {
+    harnessFallbackRun(f, { '01-plan.md': '# plan' });
+    const c = f.collect().counts;
+    assert.equal(c.done, 1);
+    assert.equal(Object.values(c).reduce((s, n) => s + n, 0), 6, 'one count per stage of the bar');
+  } finally { f.cleanup(); }
+});
+
+test('collect(): a fresh S.stream.jsonl only says the driver is moving - with no 01-/04-/05- file no stage is filled', () => {
+  const f = harnessTask();
+  try {
+    harnessFallbackRun(f, {});
+    writeFileSync(join(f.dir, 'drivers', 'S.stream.jsonl'), '{"type":"assistant"}\n');
+    const m = f.collect();
+    assert.equal(m.harness.moving, true);
+    assert.ok(m.harness.stages.every((s) => s.state === 'pending'), JSON.stringify(m.harness.stages));
+  } finally { f.cleanup(); }
+});
+
+test('collect(): a graph-route harness run maps its nodes through stageOfNode; skipped areas and areas-critique never read blocked or failed', () => {
+  const f = harnessTask();
+  try {
+    harnessGraphRun(f, [
+      node('plan', 'plan', [], { state: 'done' }),
+      node('setgoal', 'setgoal', ['plan'], { state: 'done' }),
+      node('critique', 'critique', ['setgoal'], { state: 'done' }),
+      node('areas', 'areas', ['critique'], { state: 'skipped' }),
+      node('areas-critique', 'areas-critique', ['areas'], { state: 'skipped' }),
+      node('implement:U1:1', 'implement', ['critique'], { state: 'running', subgoal_id: 'U1' }),
+      node('test:U1:1', 'test', ['implement:U1:1'], { subgoal_id: 'U1' }),
+      node('report', 'report', ['implement:U1:1']),
+    ]);
+    const m = f.collect();
+    assert.equal(m.state, 'running');
+    assert.deepEqual(stageStates(m), { plan: 'done', build: 'running', integrate: 'pending', qa: 'pending', gate: 'pending', report: 'pending' });
+    assert.ok(!JSON.stringify(m.harness).includes('blocked'));
+  } finally { f.cleanup(); }
+});
+
+test('collect(): the stalled-daemon check still applies to a harness_run task', () => {
+  const dead = { pid: DEAD_PID, log: null, restarts: [] };
+  let f = harnessTask({ task: { daemon: { pid: DEAD_PID, started_at: 1 } }, harness: { driver: dead } });
+  try {
+    assert.equal(f.collect().state, 'stalled', 'daemon dead, harness driver dead, budget left: nothing will move it');
+    writeFileSync(join(f.dir, 'drivers', 'S.stream.jsonl'), '{"type":"assistant"}\n');
+    assert.equal(f.collect().state, 'running', 'a moving stream is something alive');
+  } finally { f.cleanup(); }
+  f = harnessTask({ task: { daemon: { pid: DEAD_PID, started_at: 1 } } });
+  try { assert.equal(f.collect().state, 'running', 'a live harness driver is still driving it'); } finally { f.cleanup(); }
+  f = harnessTask({ task: { daemon: { pid: process.pid, started_at: 1 } }, harness: { driver: dead } });
+  try { assert.equal(f.collect().state, 'running', 'a live daemon will respawn the driver'); } finally { f.cleanup(); }
+});
+
+test('collect(): the viewer is read-only on a harness_run task - a refused pointer leaves task.json and ledger.jsonl byte-identical and records no harness_pointer_refused', () => {
+  const f = harnessTask();
+  try {
+    // the pointer names a run dir whose manifest is NOT tagged with this task: ownsRun refuses it
+    harnessFallbackRun(f, { '01-plan.md': '# plan' }, { tagged: false });
+    const ledger = join(f.dir, 'ledger.jsonl');
+    writeFileSync(ledger, '{"ts":1,"event":"harness_open"}\n');
+    const taskBefore = readFileSync(join(f.dir, 'task.json'));
+    const ledgerBefore = readFileSync(ledger);
+    for (let i = 0; i < 3; i++) {
+      const m = f.collect();
+      assert.equal(m.state, 'running');
+      assert.ok(m.harness.stages.every((s) => s.state === 'pending'), 'a refused pointer is not this task\'s run');
+    }
+    assert.ok(readFileSync(join(f.dir, 'task.json')).equals(taskBefore), 'task.json byte-identical');
+    assert.ok(readFileSync(ledger).equals(ledgerBefore), 'ledger.jsonl byte-identical');
+    assert.ok(!readFileSync(ledger, 'utf8').includes('harness_pointer_refused'));
+  } finally { f.cleanup(); }
+});
+
+test('collect(): a harness_run task with no ledger file gets none created by looking at it', () => {
+  const f = harnessTask();
+  try {
+    harnessFallbackRun(f, {}, { tagged: false });
+    f.collect();
+    assert.equal(existsSync(join(f.dir, 'ledger.jsonl')), false);
+  } finally { f.cleanup(); }
+});
+
+test('deriveTitle(): requests[] with N>1 reads "N items"; a single request reads as its item; no requests[] is unchanged', () => {
+  const backlog = ['[backlog priority 0] one', '[backlog priority 1] two', '[backlog priority 2] three'];
+  assert.equal(deriveTitle('[backlog priority 0] one\n\n[backlog priority 1] two', ['one', 'two', 'three']), '3 items');
+  assert.equal(deriveTitle(backlog.join('\n\n'), ['one', 'two']), '2 items');
+  assert.equal(deriveTitle('[backlog priority 0] Fix the login bug. Then more.', ['Fix the login bug. Then more.']), 'Fix the login bug');
+  assert.equal(deriveTitle('x', [{ request: 'Fix the login bug', acceptance: ['a'] }]), 'Fix the login bug', 'an {request, acceptance} item reads as its request');
+  assert.equal(deriveTitle('Fix the login bug. Also docs.', []), 'Fix the login bug');
+  assert.equal(deriveTitle('Fix the login bug. Also docs.', undefined), 'Fix the login bug');
+  assert.equal(deriveTitle('Fix the login bug. Also docs.'), 'Fix the login bug');
+});
+
+test('collect()/listTasks(): a three-item backlog task is titled "3 items" in the EPIC header and in the index', () => {
+  const f = harnessTask({ task: { request: '[backlog priority 0] a\n\n[backlog priority 1] b\n\n[backlog priority 2] c', requests: ['a', 'b', 'c'] } });
+  try {
+    assert.equal(f.collect().ticket.title, '3 items');
+    assert.equal(listTasks(f.root)[0].title, '3 items');
+    assert.match(renderTicketsText(f.collect()), /3 items/);
+  } finally { f.cleanup(); }
+});
+
+test('renderText()/renderResourcesText(): a harness_run task draws its stages from model.harness - plan filled, the rest open', () => {
+  const f = harnessTask();
+  try {
+    harnessFallbackRun(f, { '01-plan.md': '# plan' });
+    writeFileSync(join(f.dir, 'drivers', 'S.stream.jsonl'), '{"type":"assistant"}\n');
+    const m = f.collect();
+    for (const text of [renderText(m), renderResourcesText(m)]) {
+      assert.match(text, /\[v\] plan/, text);
+      assert.match(text, /\[\.\] build/, text);
+      assert.match(text, /moving/, text);
+    }
+    assert.ok(!renderText(m).includes('manager pipeline:'), 'the frozen size/shape/critique graph is not shown as the pipeline');
+  } finally { f.cleanup(); }
+});
+
+test('view.mjs --once on a harness_run task fixture prints state running, the plan stage filled and the title "3 items"', () => {
+  const f = harnessTask({ task: { request: '[backlog priority 0] a\n\n[backlog priority 1] b\n\n[backlog priority 2] c', requests: ['a', 'b', 'c'] } });
+  try {
+    harnessFallbackRun(f, { '01-plan.md': '# plan' });
+    const run = (...a) => spawnSync('node', [VIEW, '--once', '--tasks-dir', f.root, '--task', HID, ...a], { encoding: 'utf8' });
+    const pipeline = run();
+    assert.equal(pipeline.status, 0, pipeline.stderr);
+    assert.match(pipeline.stdout, /state=running/);
+    assert.match(pipeline.stdout, /\[v\] plan/);
+    const tickets = run('--view', 'tickets');
+    assert.match(tickets.stdout, /3 items/);
+  } finally { f.cleanup(); }
 });
