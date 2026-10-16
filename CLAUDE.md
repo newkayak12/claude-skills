@@ -8,7 +8,7 @@ The rules live in `.claude/rules/` (Claude Code loads them; Codex reads them via
 
 | File | Covers |
 |---|---|
-| `repo.md` | how a change is made: the four guidelines, plan → setgoal → critique → approval, layout |
+| `repo.md` | how a change is made: the four guidelines, approval → tm_open → plan → setgoal → critique, layout |
 | `maintaining.md` | checks, versions and release, agents, benches, leaving it clean |
 | `skill.md` | what a skill is and how one is written |
 | `mod.md` | what a mod is and its rules |
