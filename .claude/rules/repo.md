@@ -24,6 +24,10 @@ Before changing behaviour of a plugin (not typo/doc fixes):
 3. **critique** — check it against the doc's principles; show the user and get approval. No code before approval.
 4. **implement → gate** — show the result against the done-criteria.
 
+Where approval sits: the person approves the cards and decisions in the session, before `tm_open`
+(the brainstorm). Plan → setgoal → critique then run inside the Sprint as stages, and the Sprint
+report is where the person checks the result.
+
 Never remove a stage, a gate, or a principle for cost or simplicity without the user's approval.
 teams principles: `_repo/docs/plans/2026-09-28-teams-cards-everywhere.md`.
 
