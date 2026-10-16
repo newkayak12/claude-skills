@@ -788,11 +788,93 @@ test('plugin role (not under .claude/hooks) with the plugin enabled still judges
   assert.equal(runAt(HOOK, edit(dir, join(dir, 'a.js')), { HOME: home }), 'deny');
 });
 
-// ---- parity: the repo's installed copy is the plugin's hook ----
+// ---- card 9: a read-only command that names a gated extension passes ----
 
-test('parity: .claude/hooks/goal-gate.mjs equals harness/hooks/goal-gate.mjs', () => {
-  const repo = join(HERE, '..', '..');
-  assert.equal(readFileSync(join(repo, '.claude', 'hooks', 'goal-gate.mjs'), 'utf8'), readFileSync(HOOK, 'utf8'));
+test('card 9: an unreviewed read-only script that imports ./lib.mjs is allowed', () => {
+  const dir = project();
+  const sdir = outside();
+  write(join(sdir, 'ro.mjs'), "import { count } from './lib.mjs';\nimport '../setup.mjs';\nconsole.log(count());\n");
+  assert.equal(run(bash(dir, `node ${join(sdir, 'ro.mjs')}`)), 'allow');
+});
+
+test('card 9: grep --include and a read-only node script that names .mjs stay allowed', () => {
+  const dir = project();
+  const sdir = outside();
+  write(join(sdir, 'x.mjs'), "console.log('hello');\n");
+  for (const c of [
+    "grep -rn --include='*.mjs' foo .",
+    'grep -rn --include="*.mjs" foo teams',
+    "grep -rln --include='*.mjs' --include='*.cjs' cp .",
+    `node ${join(sdir, 'x.mjs')}`,
+    `cd ${sdir} && node x.mjs`,
+  ]) assert.equal(run(bash(dir, c)), 'allow', c);
+});
+
+test('card 9: a script outside the gated root that can write still denies, whatever it imports', () => {
+  const dir = project();
+  const sdir = outside();
+  const target = `${dir}/paginate.js`;
+  write(join(sdir, 'w1.mjs'), `import { x } from './lib.mjs';\nimport { writeFileSync } from 'node:fs';\nwriteFileSync('${target}', x);\n`);
+  // no write-named call: only the node:fs import marks it write-capable
+  write(join(sdir, 'w2.mjs'), `import { cpSync } from 'node:fs';\nimport { x } from './lib.mjs';\ncpSync(x, '${target}');\n`);
+  write(join(sdir, 'w3.py'), `import sys\nopen('${target}', 'w').write(sys.argv[1])\n`);
+  for (const f of ['w1.mjs', 'w2.mjs', 'w3.py']) {
+    const input = bash(dir, `${f.endsWith('.py') ? 'python3' : 'node'} ${join(sdir, f)}`);
+    assert.equal(run(input), 'deny', f);
+    assert.match(denyReason(input), BYPASS, f);
+  }
+});
+
+// ---- card 7: harness:remove runs under the gate with no run open ----
+
+const PLUGIN_REMOVE = join(HERE, '..', 'skills', 'remove', 'remove.mjs');
+const removeCmd = (dir, script = PLUGIN_REMOVE) => `node "${script}" '{\n  "projectDir": "${dir}",\n  "purgeConventions": false\n}'`;
+
+test('card 7: the installed plugin\'s remove.mjs runs with no run open', () => {
+  const dir = project();
+  assert.equal(run(bash(dir, removeCmd(dir))), 'allow');
+  assert.equal(run(bash(dir, `node ${PLUGIN_REMOVE} '{"projectDir":"${dir}"}'`)), 'allow');
+});
+
+test('card 7: a look-alike remove.mjs outside the plugin root, or a different script naming the same paths, is denied', () => {
+  const dir = project();
+  const sdir = outside();
+  const fake = join(sdir, 'skills', 'remove', 'remove.mjs');
+  write(fake, readFileSync(PLUGIN_REMOVE, 'utf8'));
+  assert.equal(run(bash(dir, removeCmd(dir, fake))), 'deny', 'copy of remove.mjs elsewhere');
+  write(join(sdir, 'evil.mjs'), `import { rmSync } from 'node:fs';\nrmSync('${dir}/.claude/settings.json');\nrmSync('${dir}/.claude/harness-gate.json');\n`);
+  assert.equal(run(bash(dir, `node ${join(sdir, 'evil.mjs')}`)), 'deny', 'a different script');
+  // a hook and a remove.mjs laid out like the plugin, but under no harness plugin root
+  const hc = join(sdir, 'hc');
+  write(join(hc, 'hooks', 'goal-gate.mjs'), readFileSync(HOOK, 'utf8'));
+  write(join(hc, 'skills', 'remove', 'remove.mjs'), readFileSync(PLUGIN_REMOVE, 'utf8'));
+  assert.equal(runAt(join(hc, 'hooks', 'goal-gate.mjs'), bash(dir, removeCmd(dir, join(hc, 'skills', 'remove', 'remove.mjs')))), 'deny', 'no plugin.json named harness');
+});
+
+test('card 7: the exemption is the one invocation, not what is chained to it', () => {
+  const dir = project();
+  for (const c of [
+    `${removeCmd(dir)} && echo x > .claude/settings.json`,
+    `${removeCmd(dir)}; rm .claude/harness-gate.json`,
+    `node --import ./pre.mjs "${PLUGIN_REMOVE}" '{"projectDir":"${dir}"}'`,
+    `node "${PLUGIN_REMOVE}" '{"projectDir":"${dir}"}' > .claude/settings.json`,
+    `NODE_OPTIONS=--require=./pre.js ${removeCmd(dir)}`,
+  ]) assert.equal(run(bash(dir, c)), 'deny', c);
+});
+
+test('card 7: a hand Edit or Write of the gate\'s own files stays denied', () => {
+  const dir = project();
+  for (const p of ['.claude/settings.json', '.claude/settings.local.json', '.claude/harness-gate.json', '.claude/hooks/goal-gate.mjs', '.claude/.harness-markers/s1', '.harness-run/broker/open-nodes.json']) {
+    for (const tool_name of ['Edit', 'Write']) {
+      assert.equal(run({ tool_name, cwd: dir, session_id: 's1', tool_input: { file_path: join(dir, p) } }), 'deny', `${tool_name} ${p}`);
+    }
+  }
+});
+
+test('card 7: the project copy of the hook gives remove.mjs no exemption', () => {
+  const dir = project();
+  const home = mkdtempSync(join(tmpdir(), 'goal-gate-home-'));
+  assert.equal(runAt(projectCopy(dir), bash(dir, removeCmd(dir)), { HOME: home }), 'deny');
 });
 
 if (failures) {
