@@ -82,6 +82,7 @@ export const guardWorld = (on: On, w: GuardWorld = {}) => {
     toasts: [] as string[],
     statuses: [] as (string | undefined)[],
     opened: [] as string[],
+    closed: [] as string[],
     openArgs: [] as Record<string, unknown>[],
     commands: [] as string[],
   }
@@ -114,6 +115,10 @@ export const guardWorld = (on: On, w: GuardWorld = {}) => {
     seen.opened.push(e.id)
     seen.openArgs.push({ ...e })
     return { value: { isPlaced: true } as any }
+  })
+  on('ui.close', (_$, e) => {
+    seen.closed.push(e.id)
+    return { value: undefined }
   })
   // read per call, so one test can run default, bypass and headless in turn
   if (w.bypass !== undefined) on('tool.check', (_$, e, next) => (w.bypass ? { decision: 'allow' as const } : next(e)))
