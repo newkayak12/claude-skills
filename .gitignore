@@ -14,7 +14,6 @@ INSTRUCT.md
 /report/
 *-workspace/
 .claude/.feedback/
-.claude/conventions/
 **/.knowledge/knowledge.sqlite
 **/.knowledge/knowledge.sqlite-shm
 **/.knowledge/knowledge.sqlite-wal
