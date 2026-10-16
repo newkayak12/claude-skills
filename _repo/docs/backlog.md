@@ -107,6 +107,8 @@ never retire them as duplicates, and never reference superpowers.
     - Acceptance: a design doc in `_repo/docs/plans/` first (brainstorm → approval) mapping each
       reference piece to a knowledge skill (extend, not a new plugin); vault and noah could be
       rebuilt from knowledge skills; nothing of vault or noah's content in this repo.
+    - Principle (user, same day): "외부에 노출되는 스킬을 줄이고 내부적으로 진행하면 좋을 듯" — few
+      user-facing entry skills; the builders run inside them, not as separate triggers.
 
 ### Sprint process
 
