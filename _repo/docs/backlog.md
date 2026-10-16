@@ -98,7 +98,7 @@ never retire them as duplicates, and never reference superpowers.
 
 ### knowledge plugin
 
-33. **knowledge builds a second brain, not only a vault**
+34. **knowledge builds a second brain, not only a vault**
     - Why: user, 2026-10-16: "knowledge가 저거랑 비슷할거고 그 활용이 vault, noah지" — reference
       https://github.com/coleam00/second-brain-starter. Its pieces knowledge lacks today: a memory
       layer (persona/soul, user profile, decisions·lessons, daily log), session hooks (SessionStart
