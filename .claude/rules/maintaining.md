@@ -22,6 +22,7 @@ Then the plugin you touched:
 | `portfolio:deck-builder` | in its `scripts/`: `python3 test_deck.py`, `DECK_RENDER_DOCKER=deck-render python3 test_render.py` |
 | a SKILL.md only | the validator above; a behaviour change also needs one real run |
 | `.claude/hooks/repo-rules.mjs` | `node _repo/scripts/test-repo-rules.mjs` |
+| a SKILL.md's shape | `node _repo/scripts/check-skeleton.mjs` (report only, always exit 0; frozen teams skills listed apart); its test `node --test _repo/scripts/test-check-skeleton.mjs` |
 | harness engine scripts | also `node --check` on `harness/engine/{codex-exec-adapter,codex-runner,fallback-check}.mjs` |
 
 The teams dispatch gate: paths in `.claude/teams-dispatch.json` are denied to the driving session
