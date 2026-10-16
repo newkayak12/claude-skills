@@ -23,6 +23,13 @@ related:
 Throw the request at the graph engine, then run the loop it hands back. The engine owns the
 graph, the spec, the prompts, and the verdicts. You own only the loop.
 
+## Process
+
+1. Open the run with `graph_open` (request, `cwd`, `isolated`, host identity) — see The loop.
+2. Run the loop: `graph_next`, then every ready node — self nodes via a fresh agent, vendor nodes via `graph_run`.
+3. Read each verdict, retry per The loop when `blocked`, and mirror progress from verdicts only.
+4. Stop when the run is complete or blocked; report with the Output Template, never doing a node's work yourself.
+
 ## Standing Mandates
 
 - NEVER call `graph_status({full: true})` on a run. One node at a time: `detail_path`, or `graph_status({full: true, node_id})`.
@@ -64,26 +71,8 @@ compaction — call `graph_status({cwd})` and read it back off the run list.
 
 ## Show the graph while it runs
 
-A run is long and mostly silent, and the user cannot see inside it. Mirror the graph into
-whatever live progress surface the host has — a task list is the usual one:
-
-- Each `graph_next` — open a task per newly ready node, subject `<node_id> · <vendor>/<model>`.
-- On dispatch — that task to `in_progress`.
-- On the verdict — `completed`, with the short `reason` appended when it failed.
-
-The graph already carries the dependencies, so the surface ends up shaped like the run: nodes
-waiting, one moving, the rest done. On a host with no such surface, print the same three
-columns as plain lines instead:
-
-```
-✅ implement:U1:1  codex/gpt-5.6-sol   files verified
-❌ gate:U1:1       self/opus           rejected, 40% — retrying U1
-⏳ test:U2:1       codex/gpt-5.6-sol   running
-```
-
-Either way the vocabulary is the same and it is small: `node_id`, `vendor`/`model`, `state`,
-and the short `reason`. Never open a payload to enrich a line — no gap text, no evidence, no
-`detail_path` read. **A line you cannot write from the verdict is a line you do not write.**
+Mirror each node into the host's task list (or plain lines) from the verdict alone — never open
+a payload to enrich a line: `references/progress.md`.
 
 **On a judging node `stage_ok` only means the judging itself worked.** The verdict is
 `accept` (gate), `verified` (test), or `sound` (critique); a negative one makes the node
@@ -117,7 +106,7 @@ parseable JSON, submit `{stage_ok: false, reason: "executor returned no verdict"
 not do the work in this context. If the host cannot launch at the returned model, say so
 in the report instead of substituting a tier silently.
 
-## Output template
+## Output Template
 
 ```
 ## <request>
@@ -171,22 +160,16 @@ Anything past the balanced default lives in `references/`:
 | legacy `ordered` mode, per-stage `policy`, `native_models`, provenance | `references/routing.md` |
 | working directory, snapshot identity, briefing scope | `references/handoffs.md` |
 | quota reporting, checkpoints, `reset_capacity` | `references/capacity.md` |
+| progress mirroring, verdict fields | `references/progress.md` |
 
 A usage limit is `failure_kind:"quota"`, never an ordinary failure — submit it that way, and
 call `graph_next` for the alternate route.
 
 ## Verdicts
 
-| field | meaning |
-|---|---|
-| `stage_ok` | adjudicated. Never report a value above what the broker returned. |
-| `verified` | test nodes: the checks ran and passed |
-| `accept`, `match_pct`, `gap_count` | gate nodes |
-| `changed_files_verified` | `true`/`false` under `isolated`; `null` in a shared worktree unless contradicted |
-| `contradicted_files` | claimed files the worktree does not show — these fail the node |
-
-`null` verification means "could not attribute": neither a pass nor a failure. Say so
-rather than rounding it up.
+Fields (`stage_ok`, `verified`, `accept`, `changed_files_verified`, `contradicted_files`) are in
+`references/progress.md`. Never report a value above what the broker returned; a `null`
+verification means "could not attribute" — say so rather than rounding it up.
 
 ## Rules
 
@@ -206,7 +189,7 @@ rather than rounding it up.
 | Runs the loop and reports from the verdicts | Nothing during a `graph_run` (it blocks) |
 | On missing tools or failing `graph_open`, stops and runs `graph:install`, never the work itself | Reads `.harness-run/broker/` for the full history if wanted |
 
-## Related skills
+## Related Skills
 
 - `harness` — the six-stage contract this flow implements
 - `install` — connect or verify the graph-engineering MCP before running this flow

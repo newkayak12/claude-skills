@@ -22,7 +22,9 @@ Connect the graph engine already shipped by this plugin. Do not copy, regenerate
 fork the engine: `mcp/broker.mjs`, `mcp/graph.mjs`, `mcp/prompts.mjs`, and the bundled
 Codex adapter remain plugin-owned and are updated with the `graph` plugin.
 
-## Install modes
+## Process
+
+### 1. Install modes
 
 Prefer the marketplace plugin. Its plugin manifest already registers the
 `graph-engineering` stdio server, so installation should not add project files (on request only, `.claude/conventions/`; see below). Ask the
@@ -49,7 +51,7 @@ Do not use `${CLAUDE_PLUGIN_ROOT}` in a project-owned `.mcp.json`; that variable
 to the plugin's own manifest. Do not register both marketplace and project-local copies,
 because two servers exposing the same `graph_*` tools make routing ambiguous.
 
-## Reference project conventions (optional)
+### 2. Reference project conventions (optional)
 
 Ask: "Do you have a reference project whose code style graph nodes should follow?"
 Default **No**. If yes and `develop:like-my-code` is available, run it with target
@@ -62,7 +64,7 @@ The graph broker injects one instruction into every plan, setgoal, implement, an
 node prompt, regardless of vendor: read the relevant `.claude/conventions/**` files and
 follow them (setgoal folds them into `acceptance[]`).
 
-## Verification
+### 3. Verification
 
 1. Confirm `node --version` is 18 or newer.
 2. Validate the selected server path exists when using project-local mode.
@@ -81,6 +83,8 @@ follow them (setgoal folds them into `acceptance[]`).
    `graph_open({vendor: "auto"})` call still stays on `self`; a named vendor fails instead
    of silently degrading.
 
+## Output Template
+
 Report which mode is active, which files changed, whether a reload is still required,
 the observed tool list, and the reference-project outcome (ran / declined / skipped: develop absent). Installation ends there; use `graph:orchestrate` to run work.
 
@@ -92,7 +96,7 @@ the observed tool list, and the reference-project outcome (ran / declined / skip
 | Asks the reference-project question (default No); runs `develop:like-my-code` into `.claude/conventions/` when yes | Answers it, or installs `develop@newkayak12-claude-skills` first |
 | Never copies or forks the engine; avoids double registration | Chooses project-local mode only when running from a source checkout |
 
-## Related
+## Related Skills
 
 - `orchestrate` — drive a request through the connected graph
 - `develop:like-my-code` — writes the `.claude/conventions/` files the broker tells nodes to follow
