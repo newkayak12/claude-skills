@@ -9,30 +9,21 @@ never retire them as duplicates, and never reference superpowers.
 
 ### Repo and rules
 
-33. **Push hold matches what the rules promise**
-    - Why: card 1 (E-e9a37754, 2026-10-16) left gaps: the hold ends at `daemon_done` whatever the
-      outcome, while `maintaining.md` says "finished, its report written"; a push from a linked
-      worktree is not held; `repo.md` does not say whether plan → critique → approval comes before
-      `tm_open` or inside the Sprint.
-    - Acceptance: hook and rule say the same thing (a test covers a failed-task case); worktree push
-      decided and tested; `repo.md` places the approval step relative to `tm_open`.
-
-### harness plugin bugs
-
-7. **harness:remove deadlocks under its own gate**
-   - Why: with the gate on, Claude cannot run `remove.mjs` (Bash naming a `.mjs` counts as a write)
-     nor edit `.claude/settings.json` — only a user `!` command gets out.
-   - Acceptance: a session with the gate engaged runs `harness:remove` to completion; a test covers it.
-
-8. **harness:remove deletes .gitignore lines it does not own**
-   - Why: it removed `.harness-run/` and `.claude/settings.local.json`, which this repo listed itself.
-   - Acceptance: remove only deletes lines inside its own marker; a test with pre-existing lines keeps them.
-
-9. **Goal gate treats any `.mjs` named in Bash as a write**
-   - Why: `grep --include="*.mjs"` and read-only `node x.mjs` were denied.
-   - Acceptance: read-only commands naming a gated extension pass; a script that writes gated files still denies.
+44. **Wording left behind by the E-e4aa64a3 merges**
+    - Why: E-746e822f report (2026-10-17): `skill:trigger-validator` "Applying Changes" still says
+      bump; harness SKILL/README keep goal-gate wording P4 changed; `validate_plugins.py` gained 2
+      WARNs (description length: `think:back-to-basics` 330, `think:redefine-problem` 328 chars);
+      `repo.md` Design-changes step 3 carries the approval-before-`tm_open` clause that belongs above
+      the list.
+    - Acceptance: validator 0 WARN; the four spots reworded; checks only (wording, per backlog rule).
 
 ### teams plugin bugs
+
+45. **Two teams tests fail on main**
+    - Why: on main before and after the 2026-10-17 merge: "Claude adapter starts fresh, keeps cwd,
+      uses explicit efficient model, and imposes no spending cap" and "S1: the harness driver loads the
+      graph and harness plugins" (1242 tests, 2 fail). Cause unverified.
+    - Acceptance: `node --test teams/scripts/test-*.mjs` 0 fail.
 
 39. **One unaccepted package must not strand the accepted ones**
     - Why: 2026-10-16 E-e4aa64a3 accepted 7/8 packages and E-59a16f4f 1/4, yet both settled with
@@ -45,32 +36,6 @@ never retire them as duplicates, and never reference superpowers.
       the report names the rest "not done" (as the budget stop already does); a gate node denied a
       tool reports `blocked: tool denied`, not a reject; a failure that reproduces on the base is
       excluded from a package's score; tests cover all three.
-
-25. **Viewer trusts a stale `.view.json`**
-    - Why: 2026-10-15 `tm_open` returned `view_url` on port 53388 while nothing listened; the record
-      (written 2026-10-07) pointed at a dead viewer, yet `readViewRecord`'s pid-only liveness check
-      passed (pid reuse is the likely cause — unverified).
-    - Acceptance: `ensureViewer` confirms the port answers before reusing a record, else respawns;
-      a test with a live-but-foreign pid and a closed port covers it.
-
-26. **Viewer address a person can read**
-    - Why: `http://127.0.0.1:53388/?task=<uuid>` — random port, raw uuid; user asked for it friendlier.
-    - Acceptance: a stable, readable address (fixed default port; EPIC key like `E-124098e5` in the
-      path instead of the uuid); old uuid links still resolve.
-
-28. **A size-S task reads as blocked with nothing moving**
-    - Why: E-124098e5 (size S, harness fallback, driver alive) shows `blocked · 0/0`, only `Plan` lit;
-      the skipped `areas`/`areas-critique` nodes are read as blocked and the S run's own stages
-      (`.harness-run/<slug>/`, `S.stream.jsonl`) are never rendered. The title shows only the first
-      backlog item of a multi-item Sprint.
-    - Acceptance: an S task with a live driver reads running, its harness stages fill the stage bar,
-      and a multi-item backlog title says "N items"; view tests cover it.
-
-30. **session Memo pane cannot be closed**
-    - Why: `/memo` always calls `$.ui.open` (session/hooks/memo.tsx), so a second `/memo` reopens
-      instead of closing, and the pane handles neither Esc nor q — breaks mod rule "closes on Esc,
-      q and the command again" (`.claude/rules/mod.md`). teams' pane already toggles (`$.ui.close`).
-    - Acceptance: `/memo` toggles; Esc and q close it; a pane test covers all three; seen live.
 
 ### Mods — detail and polish (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
 
@@ -85,16 +50,19 @@ the same letter, plus: the three-row band, priority-drop segments, dark/light th
 not a read — each worker's state is one icon and colour (spinner while acting; no character faces, user:
 "캐릭터눈 딱히 크게 필요는 없긴 한뎅"), and the user sees the `demo` render before a card is done.
 
-40. **H. harness pane says what the run is doing** — design §4 H (E-59a16f4f partial: engine on
-    branch, mods not built).
-41. **T. teams pane shows every STORY at work** — design §4 T (after card 28), plus the design's
+40. **H. harness pane says what the run is doing** — design §4 H. Engine fields (`now.json`,
+    `--list`, severity) merged 2026-10-17; the mod is not built. Check first: `fallback-check --list`
+    reported stage "critique" while the manifest said plan and setgoal were done (unverified stale read).
+41. **T. teams pane shows every STORY at work** — design §4 T (card 28 merged; the page does not
+    render `model.harness` yet), plus the design's
     "teams Floor" section: a Floor tab where each worker is a desk whose glyph follows its action, with
     a hand-off feed (user: "pixel-agents 이런 느낌으로 서로 협업하느널 봤으면 좋겠어"); several open
     EPICs listed and switchable (user: "teams 여러개 돌렸을 때 대응 안되어 있는거 같고"); a task with no
     live driver reads stalled, not `IN_PROGRESS` (seen: 9-day-old tasks still IN_PROGRESS).
-42. **G. graph pane: own band, owned runs, last step** — design §4 G (E-59a16f4f: broker accepted,
-    mod not built).
-43. **S. session memo and guard read as live state** — design §4 S (after card 30).
+42. **G. graph pane: own band, owned runs, last step** — design §4 G. Broker fields merged
+    2026-10-17; no `runs --list` readout yet; the mod is not built.
+43. **S. session memo and guard read as live state** — design §4 S. Card 30 merged (memo toggles,
+    Esc/q close); README/KOR still say "read-only Memo pane" and `memo-pane.png` is stale.
 
 ### knowledge plugin
 
@@ -112,14 +80,6 @@ not a read — each worker's state is one icon and colour (spinner while acting;
       The user must be able to use it easily without knowing the internals (user: "사용자는 내부를
       모르고 편하게 써야만한다") — no internal skill, stage or file name is something they must know or say.
 
-### Sprint process
-
-32. **Sprint verification sized to the change**
-    - Why: E-124098e5 spent $17.74 / 33 turns on four SKILL.md edits; its goal-spec was 65 KB and
-      the first critique rejected it (4 major). "One real run" per card drove most of that.
-    - Acceptance: the backlog rule says when a card needs a real run (behaviour change) and when
-      checks suffice (skeleton/wording); the next skeleton Sprint costs a fraction of this one.
-
 ### Overlaps
 
 14. **planning:roadmap-planning keeps a reason to exist**
@@ -127,31 +87,21 @@ not a read — each worker's state is one icon and colour (spinner while acting;
     - Acceptance: kept with a stated boundary and under 200 lines, or retired with a restore row in
       `_repo/deprecated/` (check age and direct use first — no refs is not unused).
 
-16. **Skill-meta boundary**
-    - Why: `write:writing-skills` and `skill:create/audit/quality-assurance/trigger-validator` cite only
-      each other; `quality-assurance` and `trigger-validator` lack Process and Output Template.
-    - Acceptance: each has a "not for" naming its neighbours; no two share a trigger phrase; both
-      missing skeletons filled.
-
-18. **think:redefine-problem vs think:back-to-basics**
-    - Why: both answer "the approach feels wrong"; redefine-problem also lacks Process and Output Template.
-    - Acceptance: distinct triggers; redefine-problem gets its skeleton.
-
 ### Skeleton and length (one card per skill, next edit)
 
-19. **graph:install** — missing all four sections. Acceptance: four sections.
-20. **agents:agent-task-decomposer** — missing all four sections; 210 lines. Acceptance: four sections, under 200.
 21. **portfolio:deck-builder** — 249 lines. Acceptance: under 200, detail in `references/`, one real run.
 22. **knowledge:base-builder** — 247 lines. Acceptance: under 200, detail in `references/`, one real run.
-23. **graph:orchestrate** — 212 lines, no Process. Acceptance: Process section, under 200.
-24. **Remaining skeleton gaps** — whatever card 6's check lists after cards 10–23, excluding
-    teams-mounted skills. Acceptance: count falls each Sprint; no mass rewrite.
+24. **Remaining skeleton gaps** — `node _repo/scripts/check-skeleton.mjs` lists 22 non-frozen skills
+    (2026-10-17: Process 11, Output Template 13, Related Skills 4, over 200 lines 3). Acceptance:
+    count falls each Sprint; no mass rewrite.
 
 ## Frozen (do not pull)
 
 - `teams:orchestrate` (204 lines) and teams skills missing sections (`plan`, `qa`, `document`,
   `develop`) — frozen until teams decides.
 - `cognition:critical-thinking-workflow` — teams mounts it.
+- `agents:agent-task-decomposer` (210 lines, missing Process / Output Template / Related Skills) —
+  teams mounts it; former card 20.
 
 ## Sprints
 
@@ -159,3 +109,8 @@ not a read — each worker's state is one icon and colour (spinner while acting;
 |---|---|---|---|
 | E-124098e5 | 2026-10-15 | 10–13 | shipped `72f0c818`; size S (one harness pass); goal gate 91; $17.74 |
 | E-c313c8f1 | 2026-10-15 | 2 | shipped (rules say `origin`); size S; $3.89 |
+| E-e9a37754 | 2026-10-16 | 1 | shipped `03c69989`; size S; $6.81 |
+| E-2136f280 | 2026-10-16 | 6 | shipped `d3ddb002`; size S; $5.04 |
+| E-e4aa64a3 | 2026-10-16 | 33, 25, 26, 28, 7, 8, 9, 30, 32, 16, 18, 19, 23 | partial (7/8 accepted, nothing merged; card 39); $78.32 |
+| E-59a16f4f | 2026-10-16 | 40 H, 42 G | partial (engine fields only); $27.38 |
+| E-746e822f | 2026-10-17 | merge of the two above | shipped `5692bb74`; size S; $9.65; all suites at or above baseline |
