@@ -2,25 +2,13 @@
 // collectTask() model and returns a small plain-JSON object a person can read: what is it doing,
 // who is it waiting on, how much is left. No fs; no node ids, paths or verdict fields leave here.
 
+import { STAGE_KEYS, stageOfNode, nodeState, mergeStates } from './view-stages.mjs';
+
 const DAY_MS = 86400000;
-const STAGE_KEYS = ['plan', 'build', 'integrate', 'qa', 'gate', 'report'];
 const HUMAN_STAGE = { plan: 'plan', build: 'build', integrate: 'integration', qa: 'QA', gate: 'final gate', report: 'report' };
 
 // A free-text reason may carry a path or a node id; drop both.
 const scrub = (s) => String(s || '').replace(/\S*\/(?:Users|var|tmp)\/\S*/g, '').replace(/\b[\w-]+:[\w-]+(?::\d+)+/g, '').replace(/\s+/g, ' ').trim();
-
-function stageOfNode(id) {
-  const base = String(id).split(':')[0];
-  if (/^(size|shape|critique|setgoal|plan)$/.test(base)) return 'plan';
-  if (/^(implement|test|cases|execute)$/.test(base)) return 'build';
-  if (base === 'integrate') return Number(String(id).split(':')[1]) > 1 ? 'qa' : 'integrate';
-  if (base === 'gate') return 'gate';
-  if (base === 'report') return 'report';
-  return null;
-}
-
-const nodeState = (s) => (s === 'done' ? 'done' : s === 'failed' || s === 'blocked' ? 'failed'
-  : s === 'running' || s === 'waiting_human' ? 'running' : 'pending');
 
 export function cardState(c) {
   const states = [c.accept && c.accept.state, c.dispatch && c.dispatch.state].filter(Boolean);
@@ -46,19 +34,18 @@ function cardsOf(m) {
   return out.map((x, i) => [x, i]).sort((a, b) => RANK[a[0].kind] - RANK[b[0].kind] || a[1] - b[1]).map(([x]) => x);
 }
 
-const mergeStates = (states) => {
-  if (!states.length) return null;
-  if (states.includes('failed')) return 'failed';
-  if (states.every((s) => s === 'done')) return 'done';
-  if (states.every((s) => s === 'pending')) return 'pending';
-  return 'running';
-};
-
 function stagesOf(m, cards) {
   const by = Object.fromEntries(STAGE_KEYS.map((k) => [k, []]));
-  for (const n of [...(m.manager_stages || []), ...((m.s_run && m.s_run.nodes) || [])]) {
-    const k = stageOfNode(n.node_id);
-    if (k) by[k].push(nodeState(n.state));
+  if (m.harness) {
+    // A harness_run task: the run's own stages (view-collect's harnessStages). Its frozen
+    // size/shape/critique graph says nothing about them, and `moving` fills nothing. A stage the
+    // run has not touched is pending = no evidence, so a later done stage can still backfill it.
+    for (const s of m.harness.stages || []) if (by[s.key] && s.state !== 'pending') by[s.key].push(s.state);
+  } else {
+    for (const n of [...(m.manager_stages || []), ...((m.s_run && m.s_run.nodes) || [])]) {
+      const k = stageOfNode(n.node_id);
+      if (k) by[k].push(nodeState(n.state));
+    }
   }
   for (const x of cards) by[x.stage].push(x.state);
   const raw = STAGE_KEYS.map((k) => mergeStates(by[k]));
