@@ -122,3 +122,49 @@ test('view.mjs --once --format decisions reads task.json and the ledger of --tas
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// A size-S task on the development harness: task.harness_run, the frozen size/shape/critique graph
+// (shape and critique skipped), one live driver. Its stages come from the run's own files.
+function harnessRoot(files) {
+  const root = mkdtempSync(join(tmpdir(), 'view-status-harness-'));
+  const id = 'bbbbbbbb-1111-4222-8333-444444444444';
+  const cwd = join(root, 'proj');
+  const dir = join(root, id);
+  const runDir = join(cwd, '.harness-run', 'req');
+  mkdirSync(runDir, { recursive: true });
+  mkdirSync(dir, { recursive: true });
+  const now = Date.now();
+  const nodes = [
+    { node_id: 'size', stage: 'size', state: 'done', deps: [], after: [] },
+    { node_id: 'shape', stage: 'shape', state: 'skipped', deps: ['size'], after: [] },
+    { node_id: 'critique', stage: 'critique', state: 'skipped', deps: ['shape'], after: [] },
+  ];
+  writeFileSync(join(runDir, 'manifest.json'), JSON.stringify({ request: 'r', teams_task: id }));
+  for (const [name, body] of Object.entries(files)) writeFileSync(join(runDir, name), body);
+  writeFileSync(join(dir, 'harness-run.json'), JSON.stringify({ route: 'fallback', run_dir: runDir }));
+  writeFileSync(join(dir, 'task.json'), JSON.stringify({
+    run_id: id, kind: 'task', cwd, request: 'small request', created_at: now, size: 'S', nodes,
+    harness_run: { cwd, opened_at: now, route: null, run: null, pointer: join(dir, 'harness-run.json'), driver: { pid: process.pid, restarts: [] } },
+  }));
+  return { root, id, cwd };
+}
+
+test('status: a harness_run task is listed as running and its done/total counts the harness stages (plan filled = 1/6)', () => {
+  const f = harnessRoot({ '01-plan.md': '# plan' });
+  try {
+    const run = (...a) => spawnSync('node', [join(HERE, 'view.mjs'), '--tasks-dir', f.root, '--once', ...a], { encoding: 'utf8' });
+    const r = run('--format', 'status', '--cwd', f.cwd);
+    assert.equal(r.status, 0, r.stderr);
+    const status = JSON.parse(r.stdout);
+    assert.equal(status.latest, f.id, 'a live driver puts it among the running tasks');
+    assert.equal(status.line, 'teams: E-bbbbbbbb 1/6 ');
+    const gate = harnessRoot({ '01-plan.md': '# plan', '04-goal-gate.json': JSON.stringify({ match_pct: 90, pass: true }) });
+    try {
+      assert.equal(JSON.parse(spawnSync('node', [join(HERE, 'view.mjs'), '--tasks-dir', gate.root, '--once', '--format', 'status'], { encoding: 'utf8' }).stdout).line, 'teams: E-bbbbbbbb 2/6 ');
+    } finally { rmSync(gate.root, { recursive: true, force: true }); }
+    const teams = JSON.parse(run('--format', 'teams', '--cwd', f.cwd).stdout);
+    assert.deepEqual(teams.task.stages.map((s) => `${s.key}:${s.state}`), ['plan:done', 'build:running', 'integrate:pending', 'qa:pending', 'gate:pending', 'report:pending']);
+  } finally {
+    rmSync(f.root, { recursive: true, force: true });
+  }
+});

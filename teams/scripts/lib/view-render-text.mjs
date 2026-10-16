@@ -113,6 +113,15 @@ function renderChild(child, indent, out) {
   }
 }
 
+// A harness_run task's run: its driver and the stage bar, both from model.harness (the one field
+// view-collect.mjs fills). `moving` only says the driver's stream is fresh; it marks no stage.
+function renderHarness(h, indent, out) {
+  out.push(line(indent, `harness run: ${h.slug || '(not found yet)'}${h.moving ? ' - driver moving' : ''}`));
+  const d = h.driver;
+  if (d) out.push(line(indent + 1, `driver pid=${d.pid} alive=${d.alive} restarts=${d.restarts}`));
+  out.push(line(indent + 1, `stages: ${(h.stages || []).map((s) => `[${mark(s.state)}] ${s.key}`).join(' ')}`));
+}
+
 function renderModelBody(m, indent, out) {
   if (m.error) { out.push(line(indent, `ERROR: ${m.error}`)); return; }
   out.push(line(indent, `state=${m.state} size=${m.size || '?'} flow=${m.flow || '?'} cost=${fmtUsd(m.cost && m.cost.usd)}${m.cost && m.cost.estimated_usd ? ` (~${fmtUsd(m.cost.estimated_usd)} running, estimated)` : ''} turns=${m.cost && m.cost.turns} elapsed=${fmtMs(m.elapsed_ms)}`));
@@ -127,6 +136,7 @@ function renderModelBody(m, indent, out) {
   }
   if (m.package_map) out.push(line(indent, `package map (${m.package_map.source === 'shape' ? 'drawn by shape' : 'from deps'}): ${m.package_map.path}`));
   if (m.daemon) out.push(line(indent, `daemon pid=${m.daemon.pid} alive=${m.daemon.alive} restarts=${m.daemon.restarts}${m.daemon.exhausted ? ' EXHAUSTED' : ''}`));
+  if (m.harness) { renderHarness(m.harness, indent, out); return; }
   if (m.s_run) {
     out.push(line(indent, 'S run:'));
     for (const n of m.s_run.nodes || []) renderNode(n, indent + 1, out);
@@ -338,6 +348,7 @@ function renderResourcesBody(m, indent, out) {
   out.push(line(indent + 1, d
     ? `pid=${d.pid} alive=${d.alive} started=${fmtTime(d.started_at)} restarts=${d.restarts}${d.exhausted ? ' EXHAUSTED' : ''}`
     : '(no daemon - driven by hand or an MCP client)'));
+  if (m.harness) { renderHarness(m.harness, indent, out); return; }
   if (m.s_run) { renderTeam('S', m.s_run, indent, out); return; }
   for (const p of m.packages || []) renderTeam(`${p.id}${p.title ? ' - ' + p.title : ''}`, p.child, indent, out, !!(p.dispatch && p.dispatch.opening));
   for (const r of (m.qa && m.qa.rounds) || []) renderTeam(`QA:${r.round}`, r.child, indent, out, !!(r.dispatch && r.dispatch.opening));

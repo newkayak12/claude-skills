@@ -7,10 +7,13 @@
 // broker). A parse failure is tolerated, not fatal: it is reported on the model as
 // `error` / a node's own `read_error`, never thrown past collect().
 import { pidAlive } from '../../mcp/proc.mjs';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { basename, join, resolve } from 'node:path';
 import { loadRunAt, runState } from '../../mcp/graph.mjs';
+import { readPointer, ownsRun, findTaggedRun, harnessVerdict, graphRunPath } from '../../mcp/harnessrun.mjs';
+import { countedDriverRestarts, restartBudget } from '../../mcp/taskstate.mjs';
 import { driverCostOf, collectTaskCosts } from '../bench/lib/drivercost.mjs';
+import { STAGE_KEYS, stageOfNode, nodeState, mergeStates } from './view-stages.mjs';
 // listTasks()'s card model speaks tickets.mjs's own vocabulary (EPIC key, ticket state, phase,
 // STORY rows) rather than inventing a second one - the same words tm_board and tm_ticket already
 // use, so a person moving between the index and those MCP tools never has to re-learn what
@@ -398,6 +401,84 @@ export function collectTask(tasksDir, taskId, opts = {}) {
   }
 }
 
+// ---------- a size-S task on the development harness (task.harness_run) ----------
+//
+// taskstate.harnessState reads this state through resolveHarnessRun, which records a refused
+// pointer in the ledger and writes h.run into task.json. A viewer never writes, so the same
+// judgement is made here from the read-only half of harnessrun.mjs (readPointer, ownsRun,
+// findTaggedRun, harnessVerdict) and the pid / restart budget taskstate already exports.
+
+// A stream line newer than this says the driver is still moving.
+const MOVING_MS = 2 * 60 * 1000;
+
+// The run this task owns: the one already recorded, else the driver's pointer when the run it
+// names carries this task's tag, else the tagged run found on disk. Nothing is recorded.
+function findHarnessRun(task, taskId) {
+  const h = task.harness_run;
+  const id = task.run_id || taskId;
+  const cwd = h.cwd || task.cwd;
+  try {
+    if (h.run && ownsRun(h.run, id, h.opened_at)) return h.run;
+    const p = readPointer(h.pointer, cwd);
+    if (p && ownsRun(p, id, h.opened_at)) return p;
+    return findTaggedRun(cwd, id, h.opened_at);
+  } catch {
+    return null;
+  }
+}
+
+function readJsonFile(path) {
+  try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; }
+}
+
+// The stage bar of one harness run, from the run's own files: a graph run's nodes through
+// stageOfNode (a skipped node is not work), a fallback run dir's 01-plan.md / 02-* (plan),
+// 04-goal-gate.json (gate) and 05-report.md (report). A stage nothing says anything about stays
+// pending - the stream log is never read here.
+function harnessStages(run) {
+  const by = Object.fromEntries(STAGE_KEYS.map((k) => [k, []]));
+  if (run && run.route === 'graph') {
+    const g = loadRunAt(graphRunPath(run.cwd, run.run_id));
+    for (const n of (g && Array.isArray(g.nodes) ? g.nodes : [])) {
+      if (!n || n.state === 'skipped') continue;
+      const k = stageOfNode(n.node_id);
+      if (k) by[k].push(nodeState(n.state));
+    }
+  } else if (run && run.route === 'fallback') {
+    let names = [];
+    try { names = readdirSync(run.run_dir); } catch { /* run dir gone */ }
+    if (names.includes('01-plan.md') || names.some((f) => f.startsWith('02-'))) by.plan.push('done');
+    const gate = readJsonFile(join(run.run_dir, '04-goal-gate.json'));
+    if (gate) by.gate.push(gate.pass === true ? 'done' : 'failed');
+    if (names.includes('05-report.md')) by.report.push('done');
+  }
+  return STAGE_KEYS.map((key) => ({ key, state: mergeStates(by[key]) || 'pending' }));
+}
+
+// taskstate.harnessState's judgement, read-only: the run's written report is complete (its goal
+// gate accepted) or partial; else running while the driver lives, is parked on capacity, or its
+// stream is still moving; blocked once it is dead past its restart budget.
+function collectHarness(task, taskId, tasksDir) {
+  const h = task.harness_run;
+  const run = findHarnessRun(task, taskId);
+  const v = run ? harnessVerdict(run) : null;
+  const log = (h.driver && h.driver.log) || join(tasksDir, taskId, 'drivers', 'S.stream.jsonl');
+  let moving = false;
+  try { moving = Date.now() - statSync(log).mtimeMs <= MOVING_MS; } catch { /* no stream yet */ }
+  const driver = driverInfo(h.driver, pidAliveFromDriver);
+  let state = 'running';
+  if (v && v.finished) state = v.accept ? 'complete' : 'partial';
+  else if (!(h.waiting_capacity || !h.driver || (driver && driver.alive) || moving)
+    && countedDriverRestarts(task, h.driver).length >= restartBudget(task)) state = 'blocked';
+  const stages = harnessStages(run);
+  const counts = { pending: 0, running: 0, done: 0, failed: 0 };
+  for (const s of stages) counts[s.state] += 1;
+  return {
+    state, counts,
+    harness: { slug: run ? (run.route === 'fallback' ? basename(run.run_dir) : run.run_id) : null, moving, driver, stages },
+  };
+}
+
 function collectTaskFromValue(tasksDir, taskId, task, opts) {
   // Every level adds ITS OWN id/path before recursing into its own packages/s_run, so a nested
   // task discovered one level down already sees its immediate parent as an ancestor, not only
@@ -408,9 +489,12 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     ancestorIds: new Set([...(opts.ancestorIds || []), taskId]),
     ancestorPaths: new Set([...(opts.ancestorPaths || []), resolve(taskPathOf(tasksDir, taskId))]),
   };
-  const isS = !!task.s_run;
-  let state, counts, sRun = null;
-  if (isS) {
+  const isH = !!task.harness_run;
+  const isS = !isH && !!task.s_run;
+  let state, counts, sRun = null, harness = null;
+  if (isH) {
+    ({ state, counts, harness } = collectHarness(task, taskId, tasksDir));
+  } else if (isS) {
     const run = loadRunAt(join(task.s_run.cwd, '.teams_output', 'broker', 'runs', `${task.s_run.run_id}.json`));
     const cs = run ? runState(run) : { state: 'missing', counts: {} };
     state = cs.state === 'complete' ? 'complete' : (cs.state === 'running' ? 'running' : 'blocked');
@@ -486,8 +570,10 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
   // fields at all under the test seam (HARNESS_TEST_NO_DRIVER) - not a frozen snapshot, just not
   // resourced with a driver process. Only a NESTED copy earns the extra suspicion, because only
   // a nested copy can be the kind of frozen worktree artifact this exists to catch.
+  const harnessAlive = !!(harness && (harness.moving || (harness.driver && harness.driver.alive)));
   if (visiting.depth > 0 && state === 'running') {
     const anyDriverAlive = (daemon && daemon.alive)
+      || harnessAlive
       || (sRun && sRun.driver && sRun.driver.alive)
       || [...packages, ...qaRounds, ...auditRounds].some((p) => p.child && p.child.driver && p.child.driver.alive);
     if (!anyDriverAlive) state = 'stale';
@@ -496,7 +582,8 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     // running - nothing is. idol-plan-2's S run read 'running' 86h after daemon_done blocked,
     // because a child run file a dead driver never finished still says running. (A task driven by
     // hand has no task.daemon at all and is left alone, per the comment above.)
-    const anyDriverAlive = (sRun && sRun.driver && sRun.driver.alive)
+    const anyDriverAlive = harnessAlive
+      || (sRun && sRun.driver && sRun.driver.alive)
       || [...packages, ...qaRounds, ...auditRounds].some((p) => p.child && p.child.driver && p.child.driver.alive);
     if (!anyDriverAlive) state = 'stalled';
   }
@@ -519,7 +606,7 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     // plan/setgoal/impl/qualitygate), never `state`/`flow` below (the engine's own run-state
     // words) - the two are deliberately different vocabularies for different audiences (see
     // tickets.mjs's header comment), and this surface shows both rather than picking one.
-    ticket: { key: epicKey(task.run_id || taskId), title: deriveTitle(task.request), state: epicTicketState(task), phase: epicPhase(task) },
+    ticket: { key: epicKey(task.run_id || taskId), title: deriveTitle(task.request, task.requests), state: epicTicketState(task), phase: epicPhase(task) },
     size: task.size || null,
     flow: task.flow && task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),
     kind: task.kind || 'task',
@@ -536,6 +623,9 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     qa: qaCards.length ? { id: qaCards.map((c) => c.id).join(', '), cards: qaCards, rounds: qaRounds } : null,
     audit: task.audit_pkg ? { id: task.audit_pkg.id, rounds: auditRounds } : null,
     s_run: sRun,
+    // The harness run's stage bar and whether its driver is moving - the one field every renderer
+    // (view-summary's stagesOf, view-render-text) draws a harness_run task's stages from.
+    harness,
     events,
     flow_metrics,
     error: null,
@@ -547,9 +637,18 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
 // (up to the first ./!/?), falls back to the whole string when none of those appear, then
 // truncates. The full `request` is never lost: view.mjs's per-task page (and --task <id>) still
 // show it in full - this is only the index's headline.
+//
+// A backlog (tm_open requests[], the raw items in task.requests) reads "N items" past one item;
+// one item reads as itself, not as the composed "[backlog priority 0] ..." request string.
 const TITLE_MAX = 72;
-export function deriveTitle(request) {
-  const s = String(request || '').trim();
+export function deriveTitle(request, requests) {
+  let text = request;
+  if (Array.isArray(requests) && requests.length > 1) return `${requests.length} items`;
+  if (Array.isArray(requests) && requests.length === 1) {
+    const r = requests[0];
+    text = r && typeof r === 'object' ? (r.request ?? r.text ?? r.title ?? '') : r;
+  }
+  const s = String(text || '').trim();
   if (!s) return '(no request)';
   const clause = (s.match(/^[^.!?]*[.!?]/) || [s])[0].replace(/[.!?]+$/, '').trim();
   if (clause.length <= TITLE_MAX) return clause;
@@ -605,7 +704,7 @@ export function listTasks(tasksDir) {
     rows.push({
       task_id: id,
       epic_key: key,
-      title: deriveTitle(task.request),
+      title: deriveTitle(task.request, task.requests),
       state,
       phase,
       // Grouping/display only - a person-set label above the EPIC (teamconfig.mjs's own
