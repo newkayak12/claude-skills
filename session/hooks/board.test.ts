@@ -130,14 +130,12 @@ test('the board opens focused and closes on Escape', async ($, on) => {
 })
 
 test('bare /board on an open board closes it; [q] closes it', async ($, on) => {
-  world(on, { panes: [{ id: 'board', title: 'Board', isShown: true, isFocused: true, isPlaced: true }] })
-  const closed: string[] = []
-  on('ui.close', (_$, e) => { closed.push(e.id); return { value: undefined } })
+  const { seen } = world(on, { panes: [{ id: 'board', title: 'Board', isShown: true, isFocused: true, isPlaced: true }] })
   expect(((await $.command.run({ command: 'board', args: '' } as never)) as { text: string }).text).toBe('Board closed.')
-  expect(closed).toEqual(['board'])
+  expect(seen.closed).toEqual(['board'])
   const ui = await $.ui.mount({ plugin: 'session', surface: 'terminal', component: 'Pane', requestId: 'board', props: PANE })
   await ui.press({ key: 'close' })
-  expect(closed).toEqual(['board', 'board'])
+  expect(seen.closed).toEqual(['board', 'board'])
 })
 
 test('a push to main tells the other sessions of this repo once', async ($, on) => {
