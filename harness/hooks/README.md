@@ -43,6 +43,8 @@ the gate off is itself a gated edit.
   - That means an interpreter or shell anywhere in a simple command with `-e`/`-c`, or a heredoc fed to one, whose text holds a write-capable call.
   - Write-capable calls include file write/open, copy/move/remove, `exec*`/`spawn`/`subprocess`/`system`, `shutil`, `os.*`, and dynamic lookups such as `getattr`/`globals`/`Function`.
   - A shell fed a script always counts. A script that only *mentions* a path writes nothing.
+  - A static `import` of a relative module (`import { f } from './lib.mjs'`) is not a write and its specifier is not a written path. A `node:`/package import or a dynamic `import()` still counts.
+  - **One exact exemption:** `node <harness plugin>/skills/remove/remove.mjs ['<json>']`, so `harness:remove` can finish with the gate on and no run open. The plugin root is read from the hook's own path (a `plugin.json` named `harness`, never the project copy under `.claude/hooks/`) and the script path must resolve to that root's `remove.mjs`. A copy elsewhere, a node flag, a redirect or a chained command is judged as before.
 - **Data heredocs:** a heredoc fed to anything else is data, so only its redirect target is written. Its body's paths count when the body holds a write verb or call, or when the same command line runs the file it writes. A heredoc that never closes is judged as a whole command.
 
 Design rules (from v0's failed hook experiments): PreToolUse only, fail-open on every
@@ -57,4 +59,4 @@ Known holes (this is a guard rail against skipping the process, not security):
 - any live marker passes every session in the window (parallel subagents need it).
 
 Add `.claude/.harness-markers/`, `.harness-run/`, `.claude/.harness-last-decision.json` and `.claude/settings.local.json` to the
-project's `.gitignore` (`install` does).
+project's `.gitignore` (`install` does: the ones not already listed, inside a `# harness:begin` / `# harness:end` block that `remove` deletes, nothing else).

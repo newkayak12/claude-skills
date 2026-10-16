@@ -139,23 +139,42 @@ function removeClaudeBlock(claudeMdPath, notes) {
   return 'removed-block';
 }
 
-// The lines install.mjs adds (its GITIGNORE_LINES).
+// The lines install.mjs may add (its GITIGNORE_LINES); used to spot a legacy unmarked install.
 const GITIGNORE_LINES = ['.claude/.harness-markers/', '.harness-run/', '.claude/.harness-last-decision.json', '.claude/settings.local.json'];
 
-function removeGitignoreLine(gitignorePath) {
+const GITIGNORE_BEGIN = '# harness:begin';
+const GITIGNORE_END = '# harness:end';
+
+// Deletes only the block install fenced (begin..end inclusive); every other line, including ones
+// that match GITIGNORE_LINES outside the block, is the project's own. A file with those lines
+// and no block is a legacy install: left in place and reported.
+function removeGitignoreBlock(gitignorePath, notes) {
   if (!existsSync(gitignorePath)) return 'absent';
   const current = readFileSync(gitignorePath, 'utf8');
-  const lines = current.split(/\r?\n/);
-  const kept = lines.filter((line) => !GITIGNORE_LINES.includes(line.trim()));
-  if (kept.length === lines.length) return 'absent';
+  const lines = current.split('\n');
+  const trimmed = lines.map((line) => line.trim());
+  const begins = trimmed.flatMap((line, i) => (line === GITIGNORE_BEGIN ? [i] : []));
+  const ends = trimmed.flatMap((line, i) => (line === GITIGNORE_END ? [i] : []));
 
-  while (kept.length && kept.at(-1) === '') kept.pop();
+  if (!begins.length && !ends.length) {
+    if (!trimmed.some((line) => GITIGNORE_LINES.includes(line))) return 'absent';
+    notes.push(
+      `.gitignore lists harness lines outside a ${GITIGNORE_BEGIN} / ${GITIGNORE_END} block (legacy install) — left in place; remove them by hand`,
+    );
+    return 'legacy-left';
+  }
+  if (begins.length !== 1 || ends.length !== 1 || begins[0] > ends[0]) {
+    notes.push(`.gitignore has a broken or duplicate ${GITIGNORE_BEGIN} / ${GITIGNORE_END} marker — left untouched`);
+    return 'marker-error';
+  }
+
+  const kept = [...lines.slice(0, begins[0]), ...lines.slice(ends[0] + 1)];
   if (!kept.some((line) => line.trim())) {
     rmSync(gitignorePath);
     return 'removed-file';
   }
-  writeFileSync(gitignorePath, kept.join('\n') + '\n');
-  return 'removed-line';
+  writeFileSync(gitignorePath, kept.join('\n'));
+  return 'removed-block';
 }
 
 function removeEmptyDir(path, cleaned) {
@@ -186,7 +205,7 @@ function main() {
   actions.markers = removeKnownPath(join(claudeDir, '.harness-markers'));
   actions.decision = removeKnownPath(join(claudeDir, '.harness-last-decision.json'));
   actions.claudeMd = removeClaudeBlock(join(projectDir, 'CLAUDE.md'), notes);
-  actions.gitignore = removeGitignoreLine(join(projectDir, '.gitignore'));
+  actions.gitignore = removeGitignoreBlock(join(projectDir, '.gitignore'), notes);
 
   if (args.purgeConventions === true) {
     actions.conventions = removeKnownPath(join(claudeDir, 'conventions'));
