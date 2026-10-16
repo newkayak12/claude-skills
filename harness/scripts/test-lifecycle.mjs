@@ -60,9 +60,15 @@ try {
     join(project, 'CLAUDE.md'),
     '# Project\n\nBefore.\n\n<!-- harness:begin v1 -->\n## Harness\nRules.\n<!-- harness:end -->\n\nAfter.\n',
   );
-  write(join(project, '.gitignore'), 'node_modules/\n.claude/.harness-markers/\n.harness-run/\ndist/\n.claude/settings.local.json\n');
+  // Only the lines inside the harness block go; the project's own lines (even ones install would
+  // also write, like .claude/settings.local.json) stay.
+  write(
+    join(project, '.gitignore'),
+    'node_modules/\n# harness:begin\n.claude/.harness-markers/\n.harness-run/\n# harness:end\ndist/\n.claude/settings.local.json\n',
+  );
 
   const removed = run(REMOVE, { projectDir: project });
+  assert.equal(removed.actions.gitignore, 'removed-block');
   assert.equal(removed.actions.hookScript, 'removed');
   assert.equal(removed.actions.conventions, 'kept');
   assert.equal(existsSync(join(project, '.claude', 'hooks', 'goal-gate.mjs')), false);
@@ -75,7 +81,7 @@ try {
   assert.match(settings.hooks.PreToolUse[0].hooks[0].command, /custom-goal-gate/);
   assert.match(settings.hooks.PreToolUse[0].hooks[1].command, /keep-me/);
   assert.equal(readFileSync(join(project, 'CLAUDE.md'), 'utf8'), '# Project\n\nBefore.\n\nAfter.\n');
-  assert.equal(readFileSync(join(project, '.gitignore'), 'utf8'), 'node_modules/\ndist/\n');
+  assert.equal(readFileSync(join(project, '.gitignore'), 'utf8'), 'node_modules/\ndist/\n.claude/settings.local.json\n');
 
   const removedAgain = run(REMOVE, { projectDir: project });
   assert.equal(removedAgain.actions.hookScript, 'absent');
@@ -103,7 +109,7 @@ try {
     '<!-- harness:end -->\nkeep\n<!-- harness:begin v1 -->\n',
   );
 
-  // install: an old registration without Bash is widened; .gitignore gets every harness line.
+  // install: an old registration without Bash is widened; .gitignore gets the lines it lacks, in a block.
   const INSTALL = join(HARNESS_ROOT, 'skills', 'install', 'install.mjs');
   const old = join(scratch, 'old-install');
   write(join(old, '.claude', 'settings.json'), JSON.stringify({ hooks: { PreToolUse: [{
@@ -116,19 +122,108 @@ try {
   assert.match(readJson(join(old, '.claude', 'settings.json')).hooks.PreToolUse[0].matcher, /\|Bash\|?/);
   assert.match(readJson(join(old, '.claude', 'settings.json')).hooks.PreToolUse[0].matcher, /\|Skill\b/);
   assert.match(JSON.parse(readFileSync(join(HARNESS_ROOT, 'hooks', 'hooks.json'), 'utf8')).hooks.PreToolUse[0].matcher, /\|Skill\b/);
-  assert.equal(readFileSync(join(old, '.gitignore'), 'utf8'), 'node_modules/\n.claude/.harness-markers/\n.harness-run/\n.claude/.harness-last-decision.json\n.claude/settings.local.json\n');
+  assert.equal(installed.actions.gitignore, 'appended');
+  assert.equal(
+    readFileSync(join(old, '.gitignore'), 'utf8'),
+    'node_modules/\n.claude/.harness-markers/\n# harness:begin\n.harness-run/\n.claude/.harness-last-decision.json\n.claude/settings.local.json\n# harness:end\n',
+  );
   const fresh = join(scratch, 'fresh-install');
   mkdirSync(fresh, { recursive: true });
   const freshReport = run(INSTALL, { projectDir: fresh, gate: { patterns: ['\\.[cm]?js$'] } });
   assert.equal(freshReport.actions.settings, 'created');
+  assert.equal(freshReport.actions.gitignore, 'created');
+  assert.equal(
+    readFileSync(join(fresh, '.gitignore'), 'utf8'),
+    '# harness:begin\n.claude/.harness-markers/\n.harness-run/\n.claude/.harness-last-decision.json\n.claude/settings.local.json\n# harness:end\n',
+  );
   assert.match(readJson(join(fresh, '.claude', 'settings.json')).hooks.PreToolUse[0].matcher, /Bash.*Skill/);
   assert.equal(run(INSTALL, { projectDir: fresh }).actions.gitignore, 'present');
   // install -> remove on a fresh repo leaves no decision file and no .gitignore.
   write(join(fresh, '.claude', '.harness-last-decision.json'), '{}\n');
   const freshRemoved = run(REMOVE, { projectDir: fresh });
   assert.equal(freshRemoved.actions.decision, 'removed');
+  assert.equal(freshRemoved.actions.gitignore, 'removed-file');
   assert.equal(existsSync(join(fresh, '.claude', '.harness-last-decision.json')), false);
   assert.equal(existsSync(join(fresh, '.gitignore')), false);
+
+  // install -> remove on a project that already lists node_modules/, .harness-run/,
+  // .claude/settings.local.json and dist/: install writes only what is missing; all four survive.
+  const listed = join(scratch, 'listed');
+  const LISTED = 'node_modules/\n.harness-run/\n.claude/settings.local.json\ndist/\n';
+  write(join(listed, '.gitignore'), LISTED);
+  const listedInstalled = run(INSTALL, { projectDir: listed });
+  assert.equal(listedInstalled.actions.gitignore, 'appended');
+  assert.equal(
+    readFileSync(join(listed, '.gitignore'), 'utf8'),
+    LISTED + '# harness:begin\n.claude/.harness-markers/\n.claude/.harness-last-decision.json\n# harness:end\n',
+  );
+  assert.equal(run(INSTALL, { projectDir: listed }).actions.gitignore, 'present');
+  assert.equal(run(REMOVE, { projectDir: listed }).actions.gitignore, 'removed-block');
+  assert.equal(readFileSync(join(listed, '.gitignore'), 'utf8'), LISTED);
+
+  // install: every line already listed -> no block is written.
+  const allListed = join(scratch, 'all-listed');
+  const ALL_LISTED = '.claude/.harness-markers/\n.harness-run/\n.claude/.harness-last-decision.json\n.claude/settings.local.json\n';
+  write(join(allListed, '.gitignore'), ALL_LISTED);
+  assert.equal(run(INSTALL, { projectDir: allListed }).actions.gitignore, 'present');
+  assert.equal(readFileSync(join(allListed, '.gitignore'), 'utf8'), ALL_LISTED);
+
+  // remove: a legacy install (lines, no marker) is left in place and reported.
+  const legacy = join(scratch, 'legacy');
+  const LEGACY = 'node_modules/\n.claude/.harness-markers/\n.harness-run/\n';
+  write(join(legacy, '.gitignore'), LEGACY);
+  const legacyReport = run(REMOVE, { projectDir: legacy });
+  assert.equal(legacyReport.actions.gitignore, 'legacy-left');
+  assert.ok(legacyReport.notes.some((n) => /legacy/.test(n) && /\.gitignore/.test(n)), 'notes name the legacy .gitignore');
+  assert.equal(readFileSync(join(legacy, '.gitignore'), 'utf8'), LEGACY);
+  const bare = join(scratch, 'no-gitignore-at-all');
+  mkdirSync(bare, { recursive: true });
+  assert.equal(run(REMOVE, { projectDir: bare }).actions.gitignore, 'absent');
+
+  // install and remove: a broken or duplicate marker -> marker-error, file byte-identical.
+  const BROKEN = {
+    'missing-end': 'node_modules/\n# harness:begin\n.harness-run/\n',
+    'missing-begin': 'node_modules/\n.harness-run/\n# harness:end\n',
+    'misordered': '# harness:end\n.harness-run/\n# harness:begin\n',
+    'duplicate': '# harness:begin\n.harness-run/\n# harness:end\n# harness:begin\n.claude/settings.local.json\n# harness:end\n',
+  };
+  for (const [name, content] of Object.entries(BROKEN)) {
+    for (const [verb, script] of [['remove', REMOVE], ['install', INSTALL]]) {
+      const dir = join(scratch, `broken-${name}-${verb}`);
+      write(join(dir, '.gitignore'), content);
+      const report = run(script, { projectDir: dir });
+      assert.equal(report.actions.gitignore, 'marker-error', `${verb} ${name}`);
+      assert.ok(report.notes.some((n) => /\.gitignore/.test(n) && /marker/.test(n)), `${verb} ${name} notes`);
+      assert.equal(readFileSync(join(dir, '.gitignore'), 'utf8'), content, `${verb} ${name} untouched`);
+    }
+  }
+
+  // remove under the gate: configured and enforcing, no run open. The plugin's goal-gate hook
+  // judges the real remove.mjs invocation and lets it finish; a hand edit of the same files is denied.
+  const gated = join(scratch, 'gated');
+  mkdirSync(gated, { recursive: true });
+  run(INSTALL, { projectDir: gated, gate: { patterns: ['\\.[cm]?js$'] } });
+  const HOOK = join(HARNESS_ROOT, 'hooks', 'goal-gate.mjs');
+  const judge = (input) => {
+    const r = spawnSync(process.execPath, [HOOK], {
+      input: JSON.stringify({ cwd: gated, session_id: 'lifecycle', ...input }),
+      encoding: 'utf8',
+      env: { ...process.env, CLAUDE_PROJECT_DIR: '' },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout.trim() ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'allow';
+  };
+  for (const p of ['settings.json', 'harness-gate.json']) {
+    assert.equal(judge({ tool_name: 'Edit', tool_input: { file_path: join(gated, '.claude', p) } }), 'deny', `gate enforces ${p}`);
+  }
+  const removeCall = `node "${REMOVE}" '{\n  "projectDir": "${gated}",\n  "purgeConventions": false\n}'`;
+  assert.equal(judge({ tool_name: 'Bash', tool_input: { command: removeCall } }), 'allow', 'remove.mjs passes the gate');
+  const gatedRemoved = run(REMOVE, { projectDir: gated });
+  assert.equal(gatedRemoved.actions.hookScript, 'removed');
+  assert.equal(gatedRemoved.actions.gate, 'removed');
+  assert.equal(gatedRemoved.actions.settings, 'removed');
+  assert.equal(existsSync(join(gated, '.claude', 'harness-gate.json')), false);
+  assert.equal(existsSync(join(gated, '.claude', 'hooks', 'goal-gate.mjs')), false);
 
   // patch: synchronized dry-run and write across both manifests + bilingual README/KOR status.
   const repo = join(scratch, 'repo');

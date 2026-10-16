@@ -22,7 +22,7 @@
 //         { "name": "verification-before-completion", "src": "/abs/completion/skills/verification-before-completion" } ]
 //     }
 //   }
-// Always installs the hook (script + settings.json merge) and the .gitignore line — those
+// Always installs the hook (script + settings.json merge) and the .gitignore block — those
 // are the enforcement core. Default is idempotent and non-destructive: an existing file is
 // never overwritten (reported 'kept'). With "refresh": true, plugin-owned copies are
 // re-copied ('refreshed'/'unchanged') to pull a newer plugin version; user-owned files are
@@ -42,6 +42,8 @@ const PLUGIN_ROOT = resolve(HERE, '..', '..'); // <plugin> (harness/)
 // What a gated project must not commit: session markers, harness run directories (plan/spec/
 // critique scratch that engages the gate), the gate's last-decision file, and per-user settings.
 const GITIGNORE_LINES = ['.claude/.harness-markers/', '.harness-run/', '.claude/.harness-last-decision.json', '.claude/settings.local.json'];
+const GITIGNORE_BEGIN = '# harness:begin';
+const GITIGNORE_END = '# harness:end';
 
 function parseArgs() {
   const raw = process.argv[2];
@@ -243,18 +245,35 @@ function main() {
   }
 
   // ---- .gitignore: the markers dir, the run directory and the per-user settings ----
+  // Only the lines the file does not already list (anywhere), fenced in a harness block so
+  // remove can take back exactly what install wrote. A broken or duplicate marker: untouched.
   {
     const giPath = join(projectDir, '.gitignore');
     const cur = existsSync(giPath) ? readFileSync(giPath, 'utf8') : null;
-    const have = new Set((cur || '').split(/\r?\n/).map((l) => l.trim()));
+    const lines = (cur || '').split('\n');
+    const trimmed = lines.map((l) => l.trim());
+    const begins = trimmed.flatMap((l, i) => (l === GITIGNORE_BEGIN ? [i] : []));
+    const ends = trimmed.flatMap((l, i) => (l === GITIGNORE_END ? [i] : []));
+    const have = new Set(trimmed);
     const missing = GITIGNORE_LINES.filter((l) => !have.has(l));
-    if (cur == null) {
-      writeFileSync(giPath, GITIGNORE_LINES.join('\n') + '\n');
+    const hasBlock = begins.length === 1 && ends.length === 1 && begins[0] < ends[0];
+    if (!hasBlock && (begins.length || ends.length)) {
+      report.actions.gitignore = 'marker-error';
+      report.notes.push(`.gitignore has a broken or duplicate ${GITIGNORE_BEGIN} / ${GITIGNORE_END} marker — left untouched`);
+    } else if (cur == null) {
+      writeFileSync(giPath, [GITIGNORE_BEGIN, ...GITIGNORE_LINES, GITIGNORE_END].join('\n') + '\n');
       report.actions.gitignore = 'created';
     } else if (!missing.length) {
       report.actions.gitignore = 'present';
+    } else if (hasBlock) {
+      lines.splice(ends[0], 0, ...missing);
+      writeFileSync(giPath, lines.join('\n'));
+      report.actions.gitignore = 'appended';
     } else {
-      writeFileSync(giPath, cur + (cur.endsWith('\n') || !cur ? '' : '\n') + missing.join('\n') + '\n');
+      writeFileSync(
+        giPath,
+        cur + (cur.endsWith('\n') || !cur ? '' : '\n') + [GITIGNORE_BEGIN, ...missing, GITIGNORE_END].join('\n') + '\n',
+      );
       report.actions.gitignore = 'appended';
     }
   }
