@@ -34,6 +34,18 @@ never retire them as duplicates, and never reference superpowers.
 
 ### teams plugin bugs
 
+39. **One unaccepted package must not strand the accepted ones**
+    - Why: 2026-10-16 E-e4aa64a3 accepted 7/8 packages and E-59a16f4f 1/4, yet both settled with
+      integrate, QA and the goal gate unreachable — nothing merged; the session had to open
+      E-746e822f to integrate by hand. Seen causes: (a) P8's gate nodes were denied Bash, found no
+      defect, and returned accept:false because `attacks[]` was empty; (b) accept nodes "failed even
+      though verdict accept=true" (E-e4aa64a3 P2 try 1, E-59a16f4f P1 try 3 at 87% < threshold 90);
+      (c) a pre-existing failing test (stale goal-gate parity) held every harness package under 90.
+    - Acceptance: when retries run out on some packages, integrate runs over the accepted ones and
+      the report names the rest "not done" (as the budget stop already does); a gate node denied a
+      tool reports `blocked: tool denied`, not a reject; a failure that reproduces on the base is
+      excluded from a package's score; tests cover all three.
+
 25. **Viewer trusts a stale `.view.json`**
     - Why: 2026-10-15 `tm_open` returned `view_url` on port 53388 while nothing listened; the record
       (written 2026-10-07) pointed at a dead viewer, yet `readViewRecord`'s pid-only liveness check
@@ -73,13 +85,16 @@ the same letter, plus: the three-row band, priority-drop segments, dark/light th
 not a read — each worker's state is one icon and colour (spinner while acting; no character faces, user:
 "캐릭터눈 딱히 크게 필요는 없긴 한뎅"), and the user sees the `demo` render before a card is done.
 
-34. **H. harness pane says what the run is doing** — design §4 H.
-35. **T. teams pane shows every STORY at work** — design §4 T (after card 28), plus the design's
+40. **H. harness pane says what the run is doing** — design §4 H (E-59a16f4f partial: engine on
+    branch, mods not built).
+41. **T. teams pane shows every STORY at work** — design §4 T (after card 28), plus the design's
     "teams Floor" section: a Floor tab where each worker is a desk whose glyph follows its action, with
     a hand-off feed (user: "pixel-agents 이런 느낌으로 서로 협업하느널 봤으면 좋겠어"); several open
     EPICs listed and switchable (user: "teams 여러개 돌렸을 때 대응 안되어 있는거 같고"); a task with no
-    live driver reads stalled, not `IN_PROGRESS` (seen: 9-day-old tasks still IN_PROGRESS).36. **G. graph pane: own band, owned runs, last step** — design §4 G.
-37. **S. session memo and guard read as live state** — design §4 S (after card 30).
+    live driver reads stalled, not `IN_PROGRESS` (seen: 9-day-old tasks still IN_PROGRESS).
+42. **G. graph pane: own band, owned runs, last step** — design §4 G (E-59a16f4f: broker accepted,
+    mod not built).
+43. **S. session memo and guard read as live state** — design §4 S (after card 30).
 
 ### knowledge plugin
 
