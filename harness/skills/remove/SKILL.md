@@ -45,6 +45,15 @@ The operation is idempotent: a second run reports `absent` rather than failing. 
 `.claude/harness/` namespace is install-owned and is removed as a unit; conventions are kept
 unless `purgeConventions` is explicitly true.
 
+## Output Template
+
+```
+Removed: <artifacts>
+Absent: <artifacts not found (idempotent re-run)>
+Preserved for manual cleanup: <settings.json (parse-error) | CLAUDE.md markers (marker-error)>
+Conventions: kept (removed only if purgeConventions is true)
+```
+
 ## What Claude Does / What You Do
 
 | Claude | You |
@@ -52,7 +61,7 @@ unless `purgeConventions` is explicitly true.
 | Confirms scope, runs the remove script, reads the JSON report | Confirms removal and any `purgeConventions` |
 | Verifies hook registration and paths are gone and unrelated settings remain | Reviews preserved conventions |
 
-## Related
+## Related Skills
 
 - `install` — scaffold the project-local governance files
 - `update` — refresh installed copies after a plugin version bump
