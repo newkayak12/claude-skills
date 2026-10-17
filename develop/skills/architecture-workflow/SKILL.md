@@ -44,7 +44,7 @@ compatibility:
 **Not for** a single-skill task (call that skill), iterating inside a stable architecture or one service's quick
 refactor, or ranking refactor targets in an existing repo (`develop:architecture-review`).
 
-## Steps
+## Process
 
 | # | Skill | Input | Output | Skip if |
 |---|-------|-------|--------|---------|
