@@ -21,7 +21,7 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
       old `E-xxxxxxxx` keys still resolve; a finished task's worktrees and merged branches are
       removed (or listed by `tm_clean`); tests cover naming, collisions and old-key lookup.
 
-50. **A failure toast says what failed, why, and what happens next**
+50. **A failure toast says what failed, why, and what happens next** — in E-041cf197
     - Why: user, 2026-10-17: "야 토스트 failed 된거 떴는데 뭘 실패했는지 내용을 알 수가 없잖아". The teams
       toast is the event's `text` from `view.mjs --format events`, only `E-6b073e8a critique:2 failed
       (attempt 2)`. The ledger already holds the reason on the `verdict` event of the same node
@@ -167,3 +167,8 @@ Cards 40–43 are in Sprint E-95de6173 (2026-10-17).
 | E-746e822f | 2026-10-17 | merge of the two above | shipped `5692bb74`; size S; $9.65; all suites at or above baseline |
 | E-45422629 | 2026-10-17 | 21, 22 | blocked at QA; the two skills taken from its integration tree by the session (196 / 158 lines; QA test/ junk left out); $27.57 |
 | E-4607a6a6 | 2026-10-17 | 39, 45, 44, 40–43 | nothing built: plan-integrate rejected the F5/F6 (graph/teams pane) seam 3 times; $60.57 |
+| E-95de6173 | 2026-10-17 | 39, 45, 44, 40–43 | running |
+| E-6b073e8a | 2026-10-17 | 24 (develop, portfolio, think, harness) | running |
+| E-69f230a3 | 2026-10-17 | 24 (knowledge) | running |
+| E-2146f402 | 2026-10-17 | 46 | running |
+| E-041cf197 | 2026-10-17 | 50 | running |
