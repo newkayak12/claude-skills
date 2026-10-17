@@ -19,6 +19,16 @@ never retire them as duplicates, and never reference superpowers.
 
 ### teams plugin bugs
 
+46. **Tasks, branches and worktrees named in words a person can read**
+    - Why: user, 2026-10-17: "backlog harness의 티캣,을 4522629같은거 말고 자연어로 정하면 더 좋을 것
+      같음 사람이 알 수 있게", with an Orca sidebar screenshot: worktrees listed as
+      `harness/45422629/P2`, `harness/4607a6a6/PLAN-F3`, `harness/e4aa64a3/PLAN-F5` … — nothing says
+      what each is, and finished tasks' worktrees and branches pile up (17+ `harness/*` branches seen).
+    - Acceptance: an EPIC gets a short readable slug from its request (e.g. `skeleton-gaps-develop`)
+      used in the ticket key, branch and worktree names (`teams/skeleton-gaps-develop/P2-memo-pane`);
+      old `E-xxxxxxxx` keys still resolve; a finished task's worktrees and merged branches are
+      removed (or listed by `tm_clean`); tests cover naming, collisions and old-key lookup.
+
 45. **Two teams tests fail on main**
     - Why: on main before and after the 2026-10-17 merge: "Claude adapter starts fresh, keeps cwd,
       uses explicit efficient model, and imposes no spending cap" and "S1: the harness driver loads the
