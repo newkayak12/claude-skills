@@ -78,7 +78,9 @@ Treat `chunks.jsonl` plus `sources.csv` as the canonical RAG corpus. Vector data
 8. **Create eval queries.** Reuse stable question IDs from `_knowledge/questions.jsonl` when present. Add retrieval tests for direct lookup, synonym/operator-language lookup, source-symbol lookup, comparison, multi-document synthesis, freshness-sensitive questions, and negative queries that should not retrieve irrelevant content. Keep retrieval relevance results distinct from `_knowledge/question-results.jsonl`, which grades whether retrieved evidence can establish the answer.
 9. **Emit importable artifacts.** Produce the default portable layout unless the user requested a specific target. If a vector store is requested, keep the portable artifacts and add an ingestion note for that store.
 
-## Chunk Record Shape
+## Output Template
+
+### Chunk Record Shape
 
 Use this as a default unless the target vector store or pipeline has a required schema:
 
@@ -101,7 +103,7 @@ Use this as a default unless the target vector store or pipeline has a required 
 }
 ```
 
-## Output Options
+### Output Options
 
 | Artifact | Purpose |
 |---|---|
