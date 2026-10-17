@@ -58,6 +58,6 @@ Next: review git diff, commit
 | Detects the mode, rebuilds the embed config, runs `install.mjs` with `"refresh": true`, reports | Bumps the plugin first; reviews and commits the diff |
 | Stops and names any embed source it cannot resolve | Supplies the missing source path |
 
-## Related
+## Related Skills
 - `install` — first-time scaffolding (`install.mjs`)
 - `remove` — uninstalling project-local harness governance
