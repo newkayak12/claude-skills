@@ -45,7 +45,9 @@ If the user answers roughly, proceed with a small provisional schema and mark un
 7. **Emit graph-ready artifacts.** Produce a schema plus machine-usable data such as CSV, JSONL, Cypher, RDF/Turtle, or Markdown tables, depending on the user's storage target.
 8. **Check graph quality and question reachability.** Look for orphan nodes, duplicate canonical entities, unsupported claims, ambiguous edge types, overbroad labels, missing provenance, and extraction drift across sources. For every `graph_check` question, verify that all required answer nodes are reachable within a declared hop bound through specific, directional, evidence-backed edges. Record the result in `_graph/question-reachability.jsonl`; unreachable questions are graph defects, not optional observations.
 
-## Schema Shape
+## Output Template
+
+### Schema Shape
 
 Start with this minimal structure and adapt it to the corpus:
 
@@ -78,7 +80,7 @@ Good relationship names are specific and directional:
 | `USES` for everything | `CALLS`, `QUERIES`, `IMPORTS`, `CONFIGURES`, `AUTHENTICATES_WITH` |
 | `HAS` | `HAS_FIELD`, `HAS_POLICY`, `HAS_DECISION`, `HAS_STATUS` |
 
-## Output Options
+### Output Options
 
 Choose the smallest useful output unless the user requested a specific graph database.
 
