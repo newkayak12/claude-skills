@@ -29,7 +29,7 @@ related:
 
 Takes messy, scattered input — rough notes, half-formed ideas, stream-of-consciousness text — and produces clear, structured output with hierarchy, connections, and a distilled core message.
 
-## Core Workflow
+## Process
 
 1. **Absorb** — Read all input without filtering. Identify every distinct idea, no matter how fragmented.
 2. **Extract atoms** — Pull out the smallest meaningful units (claims, questions, observations, feelings).
@@ -45,7 +45,17 @@ Takes messy, scattered input — rough notes, half-formed ideas, stream-of-consc
 - **sequential-thinking:** Invoke for steps 3–5 when input contains more than ~5 distinct ideas or the user explicitly requests a structured breakdown. Each step's output should be passed explicitly as input to the next.
 - **think-tool:** Invoke at step 6 (Surface gaps). Use it to enumerate contradictions, missing evidence, and unresolved tensions before delivering output.
 
-## Technique Selection
+## Output Template
+
+### Format rules
+
+- Always start with the **structured output** — do not summarize the input back to the user first.
+- Label clearly: outline, mind map, concept map, or core claim extraction.
+- Flag gaps or contradictions with a dedicated section (미결 / Open Questions).
+- Keep language consistent with the user's input language (한국어 입력 → 한국어 출력).
+- Offer one concrete next step at the end (e.g., "이 아웃라인으로 초안 써드릴까요?").
+
+### Technique Selection
 
 Choose the output shape before structuring. Use this table:
 
@@ -56,9 +66,9 @@ Choose the output shape before structuring. Use this table:
 | 5+ ideas with named cross-links or a knowledge-base goal | Zettelkasten |
 | User needs only the core message, not full structure | Core Claim Extraction |
 
-## Techniques
+### Techniques
 
-### Outline (default for writing prep)
+#### Outline (default for writing prep)
 
 Use numbered hierarchy. Start with the core claim as the title.
 
@@ -73,7 +83,7 @@ Core Claim / Title
   Conclusion / So what?
 ```
 
-### Text Mind Map (for visual thinkers)
+#### Text Mind Map (for visual thinkers)
 
 Use indented branching. Center node first, branches radiate out.
 
@@ -87,7 +97,7 @@ Use indented branching. Center node first, branches radiate out.
 └── Branch C (tension / open question)
 ```
 
-### Zettelkasten-style Concept Linking
+#### Zettelkasten-style Concept Linking
 
 For complex ideas with many cross-connections. Each atom gets an ID and explicit links.
 
@@ -101,7 +111,7 @@ For complex ideas with many cross-connections. Each atom gets an ID and explicit
 
 Use this when ideas recur across different contexts or the user wants to build a knowledge base rather than a single document.
 
-### Core Claim Extraction
+#### Core Claim Extraction
 
 When the user just needs the essence:
 
@@ -140,14 +150,6 @@ When the user just needs the essence:
 ```
 
 See `references/examples.md` for more examples: essay framing and philosophical concept linking.
-
-## Output Format Rules
-
-- Always start with the **structured output** — do not summarize the input back to the user first.
-- Label clearly: outline, mind map, concept map, or core claim extraction.
-- Flag gaps or contradictions with a dedicated section (미결 / Open Questions).
-- Keep language consistent with the user's input language (한국어 입력 → 한국어 출력).
-- Offer one concrete next step at the end (e.g., "이 아웃라인으로 초안 써드릴까요?").
 
 ## Constraints
 

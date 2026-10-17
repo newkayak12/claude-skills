@@ -100,6 +100,19 @@ idempotent and non-destructive: existing files are never overwritten.
    absent, flag the engine gap; if accepted, list what was embedded and the dynamic-`skills[]`
    boundary.
 
+## Output Template
+
+```
+Created: <files>
+Kept: <files>
+Needs user input: <placeholders, conflicts>
+like-my-code: ran | declined | skipped: develop absent
+Gate: blocks Write|Edit|MultiEdit|NotebookEdit and Bash writes on the listed patterns; fail-open
+Engine gap: <flagged if embedding declined and plugin absent>
+Embedded: <list, with the dynamic skills[] boundary — if accepted>
+Per-action status: created | kept | already | parse-error
+```
+
 ## Updating after a plugin version bump
 
 A plain re-run of `install.mjs` is non-destructive and keeps every existing file, so it will NOT
@@ -114,7 +127,7 @@ pull a newer engine/hook. After a plugin bump use the `update` skill (`install.m
 | Runs the install script for deterministic file ops, then conventions (via `develop:like-my-code` when a reference project is given) and the CLAUDE.md block | Fills remaining placeholders |
 | Reports honestly from the script's JSON (plugin-engine gap, dynamic-skill boundary) | Commits settings, hook, `.claude/harness/` copies, conventions; re-runs with `"refresh": true` after a plugin bump |
 
-## Related
+## Related Skills
 - `install.mjs` — deterministic file ops (gate/hook/embed/gitignore) this skill invokes
 - `harness` skill — running the six-stage engine
 - `remove` skill — uninstalling project-local harness governance

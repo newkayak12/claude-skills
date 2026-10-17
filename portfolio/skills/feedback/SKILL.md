@@ -83,7 +83,7 @@ If `sequential-thinking` is available, use it here to map the portfolio's shape 
 
 ---
 
-## Output
+## Output Template
 
 Write in the user's language. Blocks marked *omit* are dropped entirely when empty. Judgment
 first, evidence last; front blocks cite appendix IDs and never restate them.

@@ -40,7 +40,7 @@ Measure first. Hypothesize second. Profile third. Fix fourth. Verify always. Gua
 (`develop:connection-pool-tuner`) — hand off by name (Related Skills). An active production incident goes to
 `develop:incident-response-playbook` first.
 
-## Investigation Workflow
+## Process
 
 ### Step 1 — Establish a Baseline
 Before touching anything, capture current state:
