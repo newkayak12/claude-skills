@@ -45,7 +45,7 @@ compatibility:
 **Not for** a single-layer request (call that skill: `develop:sql-pro` for one query, `develop:connection-pool-tuner`
 for pool sizing only, `develop:transaction-boundary-reviewer` for transaction review only).
 
-## Steps
+## Process
 
 | # | Skill | Input | Output | Skip if |
 |---|-------|-------|--------|---------|
