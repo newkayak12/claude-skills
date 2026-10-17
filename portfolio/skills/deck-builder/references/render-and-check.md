@@ -1,5 +1,18 @@
 # Check and render — detail
 
+## What `catalog` prints
+
+Prints every archetype as `@s1`…`@sN` with its slots, what the template currently shows,
+and a per-slot budget (`| slot | 서체 | 예산 |`: font, size, characters per line × max lines).
+Widths come from the real font file when it is found (`DECK_FONT_DIRS`, the bundled
+NanumSquare / NanumSquareRound / NanumSquare Neo in `assets/fonts/`, `fc-match`, standard
+font directories); a slot whose font is missing says `추정`. Write to the budget, and read it
+before anything else.
+
+Each archetype also gets `| 도형 쌍 | 템플릿 간격(pt) | 반복 횟수 | 임계 |`: the gap between
+neighbouring shapes that the template repeats is that pair's critical zone; content stays out
+of it (see Critical zone below).
+
 ## What `check` measures
 
 | What it measures | Against |
@@ -11,6 +24,10 @@
 | Crop loss, effective dpi, palette strays, pasted-box borders | the frame, the screen, and the template's palette |
 | Text over a picture | the pixels actually behind it: 3:1 for large type, 4.5:1 for body |
 | Text running into a neighbour's critical zone (`임계 침범`) | the gap the template repeats for that shape pair |
+
+Where the font was found, `check` wraps on measured widths and reports an extra line
+without slack. Where it says `추정`, estimates are calibrated against the template's own
+content and margins under about one line are past what it can resolve. Step 6 settles the rest.
 
 ## 템플릿 자체 (the template's own problems)
 

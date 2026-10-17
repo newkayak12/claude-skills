@@ -54,6 +54,28 @@ text5: !drop
 | `notes:` | speaker notes; reserved, works on any archetype |
 | slot omitted | keeps the template's own content |
 
+## Worked example
+
+```markdown
+---
+template: template.pptx
+template_hash: 5f84440a3521      # from catalog — pins the deck to the template's structure
+output: deck.pptx
+---
+
+## @s3
+title: 분기 요약
+text1:
+  - 응답 p99 **2.1s → 340ms**
+  - 배포 실패율 12% → 0.4%
+table1:
+  | 지표 | 이전 | 이후 |
+  | p99 | 2.1s | 340ms |
+pic1: assets/arch.svg
+notes: 숫자의 출처를 먼저 말할 것
+text5: !drop
+```
+
 ## Inline emphasis
 
 `**bold**`, `*italic*` and `` `code` `` work inside any text or list value. Each becomes a

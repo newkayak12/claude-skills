@@ -95,70 +95,11 @@ Folders reduce the search space; metadata handles overlapping classifications. B
 
 ## Note Templates
 
-Each note should generally use this base shape:
-
-```markdown
----
-id: payment-authorization
-title: Payment Authorization
-type: concept
-domain: billing
-status: verified
-confidence: direct
-tags:
-  - payment
-  - authorization
-aliases:
-  - 결제 승인
-  - payment approval
-entities:
-  - PaymentService
-  - PaymentGateway
-sources:
-  - path/to/source.ext
-related:
-  - retry-policy
----
-
-# Note Title
-
-One-paragraph summary of the durable idea.
-
-## Key Points
-
-- Specific, source-grounded point.
-- Link to related notes with [[Useful Wikilinks]].
-
-## Related
-
-- [[Related Note]]
-
-## Sources
-
-- `path/to/source.ext`
-```
-
-Adapt the sections by note type:
-
-| Note type | Required emphasis |
-|---|---|
-| `concept` | Definition, boundaries, aliases, related concepts |
-| `code-module` | Responsibilities, key symbols, entry points, dependencies, tests |
-| `workflow` | Trigger, steps, inputs/outputs, failure modes, owner |
-| `decision` | Context, chosen option, rejected alternatives, consequences |
-| `relation` | `contrast`, `equivalence`, or `sequence`; participants, conditions/dimensions, and evidence for every side |
-| `moc` | Why the linked notes belong together and recommended reading paths |
-| `glossary-entry` | Canonical term, aliases, short definition, source of terminology |
+Before writing the first note, read [references/note-templates.md](references/note-templates.md#note-templates) for the base note shape and the per-type emphasis table.
 
 ## Linking Conventions
 
-- Use stable, human-readable note titles: `Payment Authorization Flow`, not `payment-auth-flow-notes-final`.
-- Add aliases in frontmatter only when they materially improve search or preserve existing terminology.
-- Prefer links between notes over duplicating the same explanation in multiple places.
-- Preserve repository paths exactly in source references.
-- When a note is generated from code, include the key symbols, files, commands, or tests that justify the summary.
-- Keep important notes reachable from `index.md` or a MOC within two clicks.
-- Avoid orphan notes unless they are intentionally listed in `open-questions.md` as isolated findings.
+Before linking notes or writing source references, read [references/note-templates.md](references/note-templates.md#linking-conventions).
 
 ## Provenance Levels
 
@@ -175,57 +116,27 @@ For `inferred`, `uncertain`, or `stale-risk`, add a short explanation in `Open Q
 
 ## Frontmatter for Retrieval Exports
 
-Keep the base note frontmatter above simple and stable so catalog, graph, and later RAG exports can reuse it without reclassification.
-
-Useful fields:
-
-| Field | Purpose |
-|---|---|
-| `id` | Keeps identity stable when a note moves or its title changes |
-| `title` | Provides an explicit lookup label independent of the filename |
-| `type` | Enables filtering by note shape |
-| `domain` | Provides the primary placement and retrieval axis |
-| `status` | Marks draft, verified, deprecated, or needs-review |
-| `confidence` | Separates direct evidence from inference |
-| `tags` | Adds controlled cross-cutting retrieval terms without duplicating notes |
-| `sources` | Preserves provenance for RAG citations |
-| `related` | Gives graph extraction a cleaner edge seed than raw wikilinks alone |
-| `aliases` | Preserves source terminology and search variants |
-| `entities` | Supports entity lookup and later graph/RAG metadata propagation |
-| `user_terms` | Preserves operator language and UI-facing lookup terms without misclassifying them as aliases |
-| `source_symbols` | Preserves code, configuration, statement, and schema identifiers used to ground cross-layer lookup |
-| `lookup_layers` | Declares the user-facing and implementation layers a note intentionally bridges |
-| `relation_type` / `participants` | Makes contrast, equivalence, or sequence claims queryable as first-class knowledge |
-| `review_status` | Tracks review workflow separately from evidence confidence |
+Before writing note frontmatter or any catalog, graph, or RAG export field, read [references/retrieval-layout.md](references/retrieval-layout.md#frontmatter-for-retrieval-exports) for the field table.
 
 ## AI Lookup Catalog
 
-For non-trivial vaults, emit one record per note in `_knowledge/catalog.jsonl` using the contracts in [references/retrieval-layout.md](references/retrieval-layout.md) and [references/answerability-contract.md](references/answerability-contract.md). Keep summaries short enough for candidate selection, paths current, IDs stable, and terms grounded in language users actually search. Include relation-side evidence and vocabulary bridge fields where applicable. `knowledge:query` should search the catalog first and open only a small candidate set.
+Before emitting `_knowledge/catalog.jsonl`, read [references/retrieval-layout.md](references/retrieval-layout.md#ai-lookup-catalog) and [references/answerability-contract.md](references/answerability-contract.md) for the record contract.
 
 ## RAG Handoff
 
-Use `knowledge:rag-corpus-builder` when the user requests embeddings, a vector index, chunk-level retrieval, or the vault has outgrown efficient targeted note lookup.
-
-Follow the handoff contract in [references/retrieval-layout.md](references/retrieval-layout.md): note bodies remain corpus input, catalog/frontmatter provide identity and metadata, semantic headings become preferred chunk boundaries, and unresolved quality or access issues remain visible in the ingestion report.
+Before routing to `knowledge:rag-corpus-builder`, read [references/retrieval-layout.md](references/retrieval-layout.md#rag-handoff) for the handoff contract.
 
 ## Quality Bar
 
-- The vault can be browsed from `index.md` without knowing the source tree.
-- Non-trivial vaults include `vault-plan.md` and follow its naming and note-type rules.
-- A reader can predict a note's folder from the documented placement rule, and cross-cutting topics do not create duplicate notes.
-- `_knowledge/catalog.jsonl` resolves every catalog entry to one current note path and enables title, alias, tag, domain, and entity lookup.
-- Operator/UI-to-code/database lookup jobs have explicit `user_terms`, `source_symbols`, and declared bridge layers; `aliases` remains same-referent vocabulary.
-- Relation notes represent contrasts, equivalences, and sequences with at least two participants and evidence for every side.
-- Every declared competency question has one current result. All results are `complete`, cite direct evidence, include the required note IDs, and report no missing parts.
-- `_knowledge/coverage.md` reports numeric answerability coverage, and the answerability validator exits successfully before completion is claimed.
-- Important components, concepts, decisions, and workflows have at least one inbound link.
-- Important notes are reachable from `index.md` or a MOC within two clicks.
-- Every non-obvious claim is traceable to a source or labeled as an inference.
-- Frontmatter is consistent enough to support later `rag-corpus-builder` or `graph-builder` work.
-- RAG-ready vaults preserve stable IDs, semantic headings, exact source references, and metadata that can propagate without reclassification.
-- Improvement memory records concrete evidence and actionable next changes without becoming catalog or RAG content itself.
-- Notes are useful independently but improve when followed through links.
-- The result avoids documentation theater: no generic summaries, no invented architecture, no empty MOCs, and no link spam.
+Completion gates; the full 16-item list is in [references/retrieval-layout.md](references/retrieval-layout.md#quality-bar-checklist).
+
+- Navigation and placement: `index.md` browsable without the source tree, `vault-plan.md` rules followed, folder predictable from the placement rule with no duplicate notes, important notes reachable within two clicks and linked inbound.
+- Catalog and vocabulary: every catalog entry resolves to one current note path; `user_terms`, `source_symbols`, bridge layers explicit; `aliases` same-referent only.
+- Relation notes: at least two participants and evidence for every side.
+- Answerability: every competency question has one current `complete` result with direct evidence and required note IDs; `_knowledge/coverage.md` numeric; the validator exits successfully.
+- Evidence: every non-obvious claim traceable to a source or labeled as inference.
+- Export readiness: frontmatter consistent for `rag-corpus-builder` or `graph-builder`; stable IDs, semantic headings, exact source references; improvement memory concrete, not catalog or RAG content.
+- Notes useful independently and better when linked; no documentation theater (generic summaries, invented architecture, empty MOCs, link spam).
 
 ## What Claude Does / What You Do
 

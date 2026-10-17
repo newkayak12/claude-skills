@@ -84,16 +84,7 @@ python3 /abs/path/scripts/deck.py catalog \
   --template "template.pptx" --output "deck.catalog.md"
 ```
 
-Prints every archetype as `@s1`…`@sN` with its slots, what the template currently shows,
-and a per-slot budget (`| slot | 서체 | 예산 |`: font, size, characters per line × max lines).
-Widths come from the real font file when it is found (`DECK_FONT_DIRS`, the bundled
-NanumSquare / NanumSquareRound / NanumSquare Neo in `assets/fonts/`, `fc-match`, standard
-font directories); a slot whose font is missing says `추정`. Write to the budget, and read it
-before anything else.
-
-Each archetype also gets `| 도형 쌍 | 템플릿 간격(pt) | 반복 횟수 | 임계 |`: the gap between
-neighbouring shapes that the template repeats is that pair's critical zone; content stays out
-of it (`references/render-and-check.md`).
+What the catalog prints (slots, per-slot budget, critical zones) and how font widths are found: `references/render-and-check.md` — read before writing any slot; write to the budget.
 
 ### Step 2 · Map content onto archetypes
 
@@ -110,38 +101,7 @@ Get a nod on the plan. Wrong archetype choice is the expensive mistake, not wron
 
 ### Step 3 · Write `deck.mdx`
 
-```markdown
----
-template: template.pptx
-template_hash: 5f84440a3521      # from catalog — pins the deck to the template's structure
-output: deck.pptx
----
-
-## @s3
-title: 분기 요약
-text1:
-  - 응답 p99 **2.1s → 340ms**
-  - 배포 실패율 12% → 0.4%
-table1:
-  | 지표 | 이전 | 이후 |
-  | p99 | 2.1s | 340ms |
-pic1: assets/arch.svg
-notes: 숫자의 출처를 먼저 말할 것
-text5: !drop
-```
-
-Inside a paragraph, `[text]{n}` writes in the template paragraph's format n (`catalog` lists
-them) and `<br>` breaks the line — so a label + note keeps both looks. `deck.py extract
---template t.pptx` prints the template's own content in this syntax — a starting point that
-builds back to the template exactly.
-
-Pictures take a fit mode — `| fit` keeps the whole image, the default `fill` crops it —
-and `| transparent` knocks a PNG's background out. Slots you leave out keep the template's
-content.
-
-More items than shapes: `text4_plus1: ...` clones the next same-format sibling shape, or the
-next repeated row group, at the template's own interval; `check` refuses with the reason
-otherwise (`references/mdx-syntax.md`).
+A whole `deck.mdx` as a worked example, paragraph formats (`[text]{n}`, `<br>`), `extract`, picture `fit` and `| transparent`, and `textN_plusK` cloning: `references/mdx-syntax.md` — read when writing a slide for the first time or when a slot needs more than plain text.
 
 Full syntax — slot forms, `!drop`, `notes:`, inline emphasis, outline levels, and what
 `template_hash` protects against — is in `references/mdx-syntax.md`. Read it before
@@ -168,9 +128,7 @@ What it measures (table, and how font widths are resolved): `references/render-a
 
 A picture drawn *after* the words it covers is an error — they end up behind the image.
 
-Where the font was found, `check` wraps on measured widths and reports an extra line
-without slack. Where it says `추정`, estimates are calibrated against the template's own
-content and margins under about one line are past what it can resolve. Step 6 settles the rest.
+How much slack `check` allows, and when to trust `추정`: `references/render-and-check.md` — read when a warning sits within a line of the limit.
 
 ### Step 5 · Build
 
@@ -186,12 +144,8 @@ The same `deck.mdx` always produces a byte-identical pptx.
 python3 /abs/path/scripts/deck.py render --deck deck.mdx
 ```
 
-Builds, converts through LibreOffice, writes PNG previews, and audits the rendered geometry
-(`overlap`, `bunched`, `off-slide`, `zone`, `drift`). It first names any template typeface the renderer lacks —
-until installed, line breaks in the preview are the substitute's. Read previews for layout, not
-CJK/Latin spacing (check `<a:t>` in the built file). Renderer: `soffice` on PATH or
-`DECK_RENDER_DOCKER=<image>`; with neither, `render` refuses — say so and fall back to `build`.
-Details: `references/render-and-check.md`.
+What `render` does (PNG previews, geometry audit, missing-font notice, renderer choice and
+the `build` fallback): `references/render-and-check.md` — read before running it.
 
 ## Output Template
 
@@ -230,16 +184,9 @@ Report after a build:
 
 ## Limitations
 
-The six that change what you can promise:
-
-| Limit | Consequence |
-|---|---|
-| **No new layouts** | Every slide is a clone. Content with no archetype needs the template extended in PowerPoint — say so rather than approximating. |
-| **A template is mandatory** | No built-in design, no fallback. |
-| **Charts are not writable** | `build` leaves the template's numbers. Use an SVG in a picture slot. |
-| **Frames never move** | Write short and the gap stays; `check` reports it, only the template can close it. Exception: `textN_plusK` extends a clean sibling or row-group series. |
-| **Layout truth needs a renderer** | `check` estimates and cannot resolve margins under a line. Only `render` sees what collides. |
-| **Legibility is PNG only** | Type over a JPEG or SVG backdrop is unscored; inherited text colors are left alone. |
+Six limits change what you can promise: no new layouts, a mandatory template, charts that are
+not writable, frames that never move, layout truth that needs a renderer, and legibility
+scored on PNG only. Read the wording and consequence of each before promising any of them.
 
 Full table, and which step catches each one: `references/limits.md`.
 

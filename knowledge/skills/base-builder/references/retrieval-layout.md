@@ -72,3 +72,49 @@ After a meaningful knowledge-base build or update, append a dated entry to `_kno
 - Keep entries concise and append-only; preserve earlier evidence even when a later pass supersedes its recommendation.
 - Do not copy sensitive source content, produce a generic activity diary, or add an entry when the run produced no material learning.
 - Treat this file as local operational memory. Do not add it to `_knowledge/catalog.jsonl`, graph extraction, or a future RAG corpus.
+
+## Frontmatter for Retrieval Exports
+
+Keep the base note frontmatter in [note-templates.md](note-templates.md) simple and stable so catalog, graph, and later RAG exports can reuse it without reclassification.
+
+Useful fields:
+
+| Field | Purpose |
+|---|---|
+| `id` | Keeps identity stable when a note moves or its title changes |
+| `title` | Provides an explicit lookup label independent of the filename |
+| `type` | Enables filtering by note shape |
+| `domain` | Provides the primary placement and retrieval axis |
+| `status` | Marks draft, verified, deprecated, or needs-review |
+| `confidence` | Separates direct evidence from inference |
+| `tags` | Adds controlled cross-cutting retrieval terms without duplicating notes |
+| `sources` | Preserves provenance for RAG citations |
+| `related` | Gives graph extraction a cleaner edge seed than raw wikilinks alone |
+| `aliases` | Preserves source terminology and search variants |
+| `entities` | Supports entity lookup and later graph/RAG metadata propagation |
+| `user_terms` | Preserves operator language and UI-facing lookup terms without misclassifying them as aliases |
+| `source_symbols` | Preserves code, configuration, statement, and schema identifiers used to ground cross-layer lookup |
+| `lookup_layers` | Declares the user-facing and implementation layers a note intentionally bridges |
+| `relation_type` / `participants` | Makes contrast, equivalence, or sequence claims queryable as first-class knowledge |
+| `review_status` | Tracks review workflow separately from evidence confidence |
+
+## Quality Bar Checklist
+
+The full list behind the Quality Bar summary in SKILL.md.
+
+- The vault can be browsed from `index.md` without knowing the source tree.
+- Non-trivial vaults include `vault-plan.md` and follow its naming and note-type rules.
+- A reader can predict a note's folder from the documented placement rule, and cross-cutting topics do not create duplicate notes.
+- `_knowledge/catalog.jsonl` resolves every catalog entry to one current note path and enables title, alias, tag, domain, and entity lookup.
+- Operator/UI-to-code/database lookup jobs have explicit `user_terms`, `source_symbols`, and declared bridge layers; `aliases` remains same-referent vocabulary.
+- Relation notes represent contrasts, equivalences, and sequences with at least two participants and evidence for every side.
+- Every declared competency question has one current result. All results are `complete`, cite direct evidence, include the required note IDs, and report no missing parts.
+- `_knowledge/coverage.md` reports numeric answerability coverage, and the answerability validator exits successfully before completion is claimed.
+- Important components, concepts, decisions, and workflows have at least one inbound link.
+- Important notes are reachable from `index.md` or a MOC within two clicks.
+- Every non-obvious claim is traceable to a source or labeled as an inference.
+- Frontmatter is consistent enough to support later `rag-corpus-builder` or `graph-builder` work.
+- RAG-ready vaults preserve stable IDs, semantic headings, exact source references, and metadata that can propagate without reclassification.
+- Improvement memory records concrete evidence and actionable next changes without becoming catalog or RAG content itself.
+- Notes are useful independently but improve when followed through links.
+- The result avoids documentation theater: no generic summaries, no invented architecture, no empty MOCs, and no link spam.
