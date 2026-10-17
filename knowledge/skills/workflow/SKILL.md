@@ -37,7 +37,9 @@ Build the vault, then repair retrieval in measured rounds until it stops improvi
 
 ---
 
-## Workflow Overview
+## Process
+
+### Workflow Overview
 
 ```
 [A] Build once
@@ -59,7 +61,7 @@ Build the vault, then repair retrieval in measured rounds until it stops improvi
 
 ---
 
-## Phase A — Build (once)
+### Phase A — Build (once)
 
 | Step | Skill | Skip if |
 |---|---|---|
@@ -70,7 +72,7 @@ Build the vault, then repair retrieval in measured rounds until it stops improvi
 
 Competency questions in `_knowledge/questions.jsonl` are a **precondition for Phase B**, not an output of it. Without them there is nothing to measure and the loop cannot start.
 
-## Phase B — Split and baseline (once)
+### Phase B — Split and baseline (once)
 
 ```bash
 node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval \
@@ -81,7 +83,7 @@ node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval \
 
 Record the reranker ceiling once too: `eval --k 50` minus `eval --k 10`. Required notes missing at both depths can never be recovered by reordering.
 
-## Phase C — Diagnose
+### Phase C — Diagnose
 
 Read, in this order: `repair_targets` (each gap and how many questions the note blocks), the per-`kind` hit breakdown, then `relation_participant_evicted_ids` on any comparison question that lost a sibling note.
 
@@ -98,11 +100,11 @@ Read, in this order: `repair_targets` (each gap and how many questions the note 
 
 Re-indexing between rounds is cheap: an unchanged document reuses its stored embedding, so a round that edits two notes re-embeds two documents. `embeddings_computed` far above the number of edited notes means the cache was rejected — usually because the provider or model changed, which makes the round a provider change, not a corpus one.
 
-## Phase D — One change
+### Phase D — One change
 
 Apply exactly one. Ground every added term in the source, never in the question set — copying a question's words into a note is test-set leakage that scores well and retrieves nothing new.
 
-## Phase E — Re-measure
+### Phase E — Re-measure
 
 ```bash
 node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval \
@@ -111,7 +113,7 @@ node --no-warnings "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" eval \
 
 **Corpus and vocabulary edits: revert on any regression**, even when `recall_at_k` rose — competency sets are small enough that an aggregate gain routinely hides a question that stopped working. **Engine, provider, and reranker changes are judged differently**: they move every question at once, so weigh net movement and holdout together and name the regressions instead of reverting on their existence.
 
-## Stop conditions
+### Stop conditions
 
 1. **Two consecutive rounds with no dev improvement** — the remaining gaps are not the kind this loop fixes.
 2. **Every remaining `repair_target` is `missing-note` with no source material** — an authoring problem; the honest answer is that the vault does not contain the answer.
