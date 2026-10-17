@@ -35,7 +35,9 @@ _graph/edges.jsonl             # or graph/edges.jsonl
 
 Markdown is indexed through each catalog record's `path`; the indexer does not crawl arbitrary `*.md` files. If Markdown exists without `_knowledge/catalog.jsonl`, use `knowledge:base-builder` to create the catalog before indexing. If graph or RAG JSONL must be produced or repaired, use `knowledge:graph-builder` or `knowledge:rag-corpus-builder` first.
 
-## Build
+## Process
+
+### Build
 
 1. Inspect the discovered inputs and state which artifact types are present or missing.
 2. Choose the embedding provider:
@@ -82,7 +84,7 @@ The `index` operation rebuilds the SQLite schema and contents from the current s
 
 Report `embeddings_reused` and `embeddings_computed`. A rebuild that recomputes everything when little changed means the cache was rejected: the provider, model, or prompt template differs from the existing index, or the schema version moved. That is correct behavior, not a fault — but say which it was rather than reporting a slow build as normal. Pass `--no-reuse-embeddings` to force a cold rebuild when a measurement needs one.
 
-## Verify
+### Verify
 
 After indexing:
 
@@ -91,9 +93,9 @@ After indexing:
 3. Compare the returned note, chunk, node, and edge counts with the discovered inputs. Explain legitimately absent artifact types instead of treating every zero as success.
 4. When notes exist, run one bounded search smoke test using a term that appears verbatim in a known note title or alias, and confirm that note is returned with `lexical_match: true`. A smoke test whose results are all `lexical_match: false` indicates a ranking or tokenization problem, not a passing build. When graph nodes and edges exist, run one neighbor lookup for a known node.
 5. When `_knowledge/questions.jsonl` exists, run `eval --root /path/to/vault --k 10` and report `mrr`, `recall_at_k`, and `mean_distinct_notes`. A `mean_distinct_notes` well below k means chunks of one note are crowding the top slots; results are grouped per note by default, so this should only happen with `--group none`. Any competency question whose required notes are missing from the top k is a retrieval defect: name the question rather than reporting the build as clean, and follow the retrieval repair loop below instead of accepting the score.
-6. Report the database path, source root, indexed counts, embedding provider/model/dimensions, fingerprint, and freshness.
+6. Report as in Output Template below.
 
-## Retrieval Repair Loop
+### Retrieval Repair Loop
 
 Run this when eval reports missed questions. It is a measurement loop, not an editing loop: the
 danger is not a failed question, it is a fix that scores well because it was tuned against the
@@ -166,6 +168,12 @@ report that plainly instead of citing the dev gain.
 Do not cite the SQLite file as source evidence and do not commit it merely to share knowledge. Commit or synchronize the canonical Markdown and JSONL instead. Do not modify source artifacts during an index-only request.
 
 Read [the local SQLite reference](../query/references/local-sqlite.md) when Docker operation, MCP routing, Ollama configuration, or failure recovery is needed.
+
+## Output Template
+
+Report the database path, source root, indexed counts, embedding provider/model/dimensions, fingerprint, and freshness.
+
+Build result fields to carry: `embedding_quality`, `embedding_prompt`, `documents_windowed`, `embeddings_reused`, `embeddings_computed`.
 
 ## What Claude Does / What You Do
 
