@@ -21,6 +21,18 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
       old `E-xxxxxxxx` keys still resolve; a finished task's worktrees and merged branches are
       removed (or listed by `tm_clean`); tests cover naming, collisions and old-key lookup.
 
+50. **A failure toast says what failed, why, and what happens next**
+    - Why: user, 2026-10-17: "야 토스트 failed 된거 떴는데 뭘 실패했는지 내용을 알 수가 없잖아". The teams
+      toast is the event's `text` from `view.mjs --format events`, only `E-6b073e8a critique:2 failed
+      (attempt 2)`. The ledger already holds the reason on the `verdict` event of the same node
+      (`reason`: "unjudgeable - P2-RUN1 tests portfolio:feedback with input the skill does not
+      handle…") and the next step on the following event (`auto_reshape` → shape:3). Most of these are
+      the engine correcting itself, so a bare "failed" alarms for nothing.
+    - Acceptance: a `node_finish` failed event carries a short reason (from its verdict, ≤1 line,
+      cut with `…`) and the next step (`retrying as shape:3`, `retry 2/3`, `needs you`, `gave up`);
+      the toast and push show both; a self-correcting retry reads as info, not as failure; the
+      same in graph and harness toasts; `view.mjs` test covers the event text.
+
 Mods, in the user's words: "전체적으로 mod가 더 디테일해야할거 같아 일단 있다 그 이상 이하도 아니게보인다"
 (2026-10-15); "각 스킬에 특화되도록 사용자 친화적으로!"; "팀즈 하네스 그래프 병렬 실행 시 모드 어떻게
 그릴지 고민하기"; "실제 사용 유아이같이 고도로 발달하고 사람이 보기좋게가 가장 중요 정보도 다
