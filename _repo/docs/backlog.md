@@ -7,17 +7,9 @@ never retire them as duplicates, and never reference superpowers.
 
 ## Ready
 
-### Repo and rules
+Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — the UI cards below come first.
 
-44. **Wording left behind by the E-e4aa64a3 merges**
-    - Why: E-746e822f report (2026-10-17): `skill:trigger-validator` "Applying Changes" still says
-      bump; harness SKILL/README keep goal-gate wording P4 changed; `validate_plugins.py` gained 2
-      WARNs (description length: `think:back-to-basics` 330, `think:redefine-problem` 328 chars);
-      `repo.md` Design-changes step 3 carries the approval-before-`tm_open` clause that belongs above
-      the list.
-    - Acceptance: validator 0 WARN; the four spots reworded; checks only (wording, per backlog rule).
-
-### teams plugin bugs
+### Mods and naming — UI first (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
 
 46. **Tasks, branches and worktrees named in words a person can read**
     - Why: user, 2026-10-17: "backlog harness의 티캣,을 4522629같은거 말고 자연어로 정하면 더 좋을 것
@@ -28,6 +20,69 @@ never retire them as duplicates, and never reference superpowers.
       used in the ticket key, branch and worktree names (`teams/skeleton-gaps-develop/P2-memo-pane`);
       old `E-xxxxxxxx` keys still resolve; a finished task's worktrees and merged branches are
       removed (or listed by `tm_clean`); tests cover naming, collisions and old-key lookup.
+
+Mods, in the user's words: "전체적으로 mod가 더 디테일해야할거 같아 일단 있다 그 이상 이하도 아니게보인다"
+(2026-10-15); "각 스킬에 특화되도록 사용자 친화적으로!"; "팀즈 하네스 그래프 병렬 실행 시 모드 어떻게
+그릴지 고민하기"; "실제 사용 유아이같이 고도로 발달하고 사람이 보기좋게가 가장 중요 정보도 다
+표현하고"; "저렇게 디테일하게 mod를 만들고 공을 들이자는거야" (scrothers/statusline as the bar,
+2026-10-16). Folds in former cards 27, 29, 31. Each card's acceptance is the design doc §4 card of
+the same letter, plus: the three-row band, priority-drop segments, dark/light theme, a `demo` fixture
+(`minimal`/`full`/`parallel`/`narrow`), seen live at 190 and 110, README/KOR shot. UI/UX first
+(user: "저건 뭘하는지 눈에 캐릭터로 보이잖아 그런 직관적인걸 원하는거야 UIUX를 고려하자고"): a glance,
+not a read — each worker's state is one icon and colour (spinner while acting; no character faces, user:
+"캐릭터눈 딱히 크게 필요는 없긴 한뎅"), and the user sees the `demo` render before a card is done.
+Cards 40–43 are in Sprint E-95de6173 (2026-10-17).
+
+40. **H. harness pane says what the run is doing** — design §4 H. Engine fields (`now.json`,
+    `--list`, severity) merged 2026-10-17; the mod is not built. Check first: `fallback-check --list`
+    reported stage "critique" while the manifest said plan and setgoal were done (unverified stale read).
+41. **T. teams pane shows every STORY at work** — design §4 T (card 28 merged; the page does not
+    render `model.harness` yet), plus the design's
+    "teams Floor" section: a Floor tab where each worker is a desk whose glyph follows its action, with
+    a hand-off feed (user: "pixel-agents 이런 느낌으로 서로 협업하느널 봤으면 좋겠어"); several open
+    EPICs listed and switchable (user: "teams 여러개 돌렸을 때 대응 안되어 있는거 같고"); a task with no
+    live driver reads stalled, not `IN_PROGRESS` (seen: 9-day-old tasks still IN_PROGRESS).
+42. **G. graph pane: own band, owned runs, last step** — design §4 G. Broker fields merged
+    2026-10-17; no `runs --list` readout yet; the mod is not built.
+43. **S. session memo and guard read as live state** — design §4 S. Card 30 merged (memo toggles,
+    Esc/q close); README/KOR still say "read-only Memo pane" and `memo-pane.png` is stale.
+
+49. **Mods put subagent-to-subagent communication to work**
+    - Why: user, 2026-10-17: "mod 추가로 subagent 간 의사소통하는거 더 적극적으로 활용할 수 있는 방법
+      찾아보자". Today teams workers are separate `claude -p` drivers that hand work over only through
+      files (ledger, reports); the session sees none of it live, and workers cannot ask each other.
+    - Acceptance: a short design first — what the mod API and Claude Code offer for agents talking to
+      each other (messages between running agents, the session's agent list, shared state), which
+      teams/graph hand-offs would gain (a STORY asking the PLAN author, QA asking a builder, a
+      question routed to the person), and how the Floor's hand-off feed shows it; user approves
+      before code.
+
+### Repo and rules
+
+44. **Wording left behind by the E-e4aa64a3 merges**
+    - Why: E-746e822f report (2026-10-17): `skill:trigger-validator` "Applying Changes" still says
+      bump; harness SKILL/README keep goal-gate wording P4 changed; `validate_plugins.py` gained 2
+      WARNs (description length: `think:back-to-basics` 330, `think:redefine-problem` 328 chars);
+      `repo.md` Design-changes step 3 carries the approval-before-`tm_open` clause that belongs above
+      the list.
+    - Acceptance: validator 0 WARN; the four spots reworded; checks only (wording, per backlog rule).
+
+47. **A skill that analyses requirements and splits them**
+    - Why: user, 2026-10-17: "요건을 분석하고 분할하는 스킬도 하나 backlog에" (asked first: "요건을
+      decompose 하는 스킬 우리 있나?"). Today the job is spread: `write:plans` (tickets),
+      `develop:spec-driven-development` (US/AC, then code), `agents:agent-task-decomposer` (agent
+      subtasks; teams-mounted, frozen), teams' planning stage (internal).
+    - Acceptance: a short design first — extend one of these or a new skill (repo rule: no new skill
+      when one can be extended); input a raw requirement or 기획서, output analysed requirements
+      (actors, rules, open questions) split into independently deliverable items with acceptance;
+      one real run on a sample 기획서.
+
+48. **graph + harness into teams (plan: `_repo/docs/plans/2026-10-17-graph-harness-into-teams.md`)**
+    - Why: user, 2026-10-17: "결과적으로 하위호환을 위해서 harness, graph를 두지만 (stable) 장기적인
+      방향은 teams"; evaluation by a seeded matrix with repeated runs ("여러 번 돌려보는게 맞을거 같음").
+    - Acceptance: the plan's Tasks 1–9 with their pass bars; after UI cards (user priority).
+
+### teams plugin bugs
 
 45. **Two teams tests fail on main**
     - Why: on main before and after the 2026-10-17 merge: "Claude adapter starts fresh, keeps cwd,
@@ -46,33 +101,6 @@ never retire them as duplicates, and never reference superpowers.
       the report names the rest "not done" (as the budget stop already does); a gate node denied a
       tool reports `blocked: tool denied`, not a reject; a failure that reproduces on the base is
       excluded from a package's score; tests cover all three.
-
-### Mods — detail and polish (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
-
-Why, in the user's words: "전체적으로 mod가 더 디테일해야할거 같아 일단 있다 그 이상 이하도 아니게보인다"
-(2026-10-15); "각 스킬에 특화되도록 사용자 친화적으로!"; "팀즈 하네스 그래프 병렬 실행 시 모드 어떻게
-그릴지 고민하기"; "실제 사용 유아이같이 고도로 발달하고 사람이 보기좋게가 가장 중요 정보도 다
-표현하고"; "저렇게 디테일하게 mod를 만들고 공을 들이자는거야" (scrothers/statusline as the bar,
-2026-10-16). Folds in former cards 27, 29, 31. Each card's acceptance is the design doc §4 card of
-the same letter, plus: the three-row band, priority-drop segments, dark/light theme, a `demo` fixture
-(`minimal`/`full`/`parallel`/`narrow`), seen live at 190 and 110, README/KOR shot. UI/UX first
-(user: "저건 뭘하는지 눈에 캐릭터로 보이잖아 그런 직관적인걸 원하는거야 UIUX를 고려하자고"): a glance,
-not a read — each worker's state is one icon and colour (spinner while acting; no character faces, user:
-"캐릭터눈 딱히 크게 필요는 없긴 한뎅"), and the user sees the `demo` render before a card is done.
-
-40. **H. harness pane says what the run is doing** — design §4 H. Engine fields (`now.json`,
-    `--list`, severity) merged 2026-10-17; the mod is not built. Check first: `fallback-check --list`
-    reported stage "critique" while the manifest said plan and setgoal were done (unverified stale read).
-41. **T. teams pane shows every STORY at work** — design §4 T (card 28 merged; the page does not
-    render `model.harness` yet), plus the design's
-    "teams Floor" section: a Floor tab where each worker is a desk whose glyph follows its action, with
-    a hand-off feed (user: "pixel-agents 이런 느낌으로 서로 협업하느널 봤으면 좋겠어"); several open
-    EPICs listed and switchable (user: "teams 여러개 돌렸을 때 대응 안되어 있는거 같고"); a task with no
-    live driver reads stalled, not `IN_PROGRESS` (seen: 9-day-old tasks still IN_PROGRESS).
-42. **G. graph pane: own band, owned runs, last step** — design §4 G. Broker fields merged
-    2026-10-17; no `runs --list` readout yet; the mod is not built.
-43. **S. session memo and guard read as live state** — design §4 S. Card 30 merged (memo toggles,
-    Esc/q close); README/KOR still say "read-only Memo pane" and `memo-pane.png` is stale.
 
 ### knowledge plugin
 
