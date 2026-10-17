@@ -55,7 +55,7 @@ If the user gives only a rough answer, start with competency questions and a pro
 8. **Map to assets.** Explain how ontology classes map to Markdown frontmatter, graph node labels, relationship types, RAG metadata fields, and query filters.
 9. **Validate against sources.** Test the ontology on real examples and revise vague classes, overloaded relationships, duplicate terms, and unsupported abstractions.
 
-## Output Shape
+## Output Template
 
 Produce the smallest useful ontology package:
 

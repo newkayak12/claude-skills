@@ -21,7 +21,9 @@ Turn an existing graph dataset into one self-contained HTML file for visual expl
 
 This skill is a renderer, not a graph builder. Never infer, merge, rename, or create nodes and edges to improve the picture. If graph artifacts do not exist, route graph extraction to `knowledge:graph-builder` first.
 
-## Input Discovery
+## Process
+
+### Input Discovery
 
 When the user does not provide paths, search in this order:
 
@@ -39,7 +41,7 @@ The bundled renderer accepts the graph fields already supported by the knowledge
 - Edge endpoints: `source_node_id` / `target_node_id`, `source_id` / `target_id`, `from` / `to`, or `source` / `target`
 - Relationship: `relationship_type`, `type`, `relation`, or `label`
 
-## Render
+### Render
 
 Run the bundled renderer from the vault root:
 
@@ -57,15 +59,21 @@ If `CLAUDE_PLUGIN_ROOT` is unavailable, resolve `scripts/render-graph-view.mjs` 
 --title <text>    Title shown in the viewer
 ```
 
-The generated HTML embeds normalized graph data and all CSS/JavaScript. It must remain usable offline and must not depend on a CDN, package install, server, or local-file fetch.
+The HTML file and its constraints: see Output Template.
 
-## Verification
+### Verification
 
 After rendering:
 
 1. Confirm the command reports the expected node and edge counts. Any edge whose endpoint is absent is omitted and reported; do not hide that discrepancy.
 2. Confirm the output exists and contains the embedded graph payload, canvas, search control, filters, and detail panel.
 3. When browser access is available, open the file and check that nodes draw, zoom/pan works, search dims non-matches, filters change the visible subgraph, and clicking a node opens its source-grounded details.
+
+Report: see Output Template.
+
+## Output Template
+
+The generated HTML embeds normalized graph data and all CSS/JavaScript. It must remain usable offline and must not depend on a CDN, package install, server, or local-file fetch.
 
 Report the absolute output path, rendered counts, and any omitted invalid edges. Do not claim visual browser verification when only file-level checks were performed.
 
