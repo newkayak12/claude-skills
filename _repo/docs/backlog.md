@@ -63,11 +63,14 @@ Cards 40–43 are in Sprint E-95de6173 (2026-10-17).
     - Why: user, 2026-10-17: "mod 추가로 subagent 간 의사소통하는거 더 적극적으로 활용할 수 있는 방법
       찾아보자". Today teams workers are separate `claude -p` drivers that hand work over only through
       files (ledger, reports); the session sees none of it live, and workers cannot ask each other.
-    - Acceptance: a short design first — what the mod API and Claude Code offer for agents talking to
-      each other (messages between running agents, the session's agent list, shared state), which
-      teams/graph hand-offs would gain (a STORY asking the PLAN author, QA asking a builder, a
-      question routed to the person), and how the Floor's hand-off feed shows it; user approves
-      before code.
+    - Design approved 2026-10-17: `_repo/docs/plans/mod/2026-10-17-subagent-communication.md` §6
+      (user: "Agent 같 메시징 통로를 적극적으로 사용", B now, questions through the TeamLeader, no
+      mid-turn nudge, nothing to the person when unattached).
+    - Acceptance: spike settles delivery to a `claude -p` session by id mid-turn (report in the
+      doc); B: a run's ask reaches the person's band as `⚑ P2 asks you…` within one tick, answered
+      through `tm_submit`, works with `modules` removed; C: a STORY's question to the TeamLeader is
+      answered or forwarded and recorded as `asked`/`answered` in `ledger.jsonl`, with tests; the
+      Floor feed (card 41) shows both.
 
 ### Repo and rules
 
