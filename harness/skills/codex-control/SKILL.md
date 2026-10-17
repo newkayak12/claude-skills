@@ -20,7 +20,7 @@ related:
 Resolve and run the harness Codex CLI bridge without assuming the project embedded
 `.claude/harness/**`.
 
-## Adapter Resolution
+## Process
 
 Use the first existing `codex-exec-adapter.mjs` path:
 
@@ -44,6 +44,15 @@ Claude/Sonnet path.
   files, and do not trust the Implement narrative without command/file evidence.
 - After Codex returns, read the adapter JSON and produce the normal harness artifact
   shape expected by the current stage.
+
+## Output Template
+
+```
+Adapter: <resolved codex-exec-adapter.mjs path | Codex unavailable>
+Detect: <providers.json path>
+Process: separate Codex processes for Implement and Test
+Artifact: <stage artifact produced from the adapter JSON>
+```
 
 ## What Claude Does / What You Do
 
