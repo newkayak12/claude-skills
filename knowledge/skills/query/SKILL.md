@@ -122,7 +122,7 @@ If the query is concrete, skip intake and answer from the available assets. If a
 8. **Record failures only when authorized.** Ordinary queries are read-only. Return an `Improvement candidate` block for partial or unanswerable results. Append it to `_knowledge/improvement-notes.md` or update `_knowledge/question-results.jsonl` only when the user requested vault maintenance, the current build is running the competency gate, or the vault plan explicitly opts into query-failure logging.
 9. **Suggest follow-up queries only when useful.** Offer targeted next questions when they would materially improve the user's investigation.
 
-## Output Shape
+## Output Template
 
 For ordinary answers, always begin with the coverage grade:
 
