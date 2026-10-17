@@ -2,13 +2,10 @@
 
 **English** · [한국어](KOR.md)
 
-Two skills for the moment a plan exists but nothing has been executed yet — at two very different
-altitudes. `executing-plans` is the pre-flight gate on an implementation plan: review it as an
-adversary, stamp an observable pass bar on every step, then route it to an executor without
-running a single step itself. `roadmap-planning` works a quarter or two above that, turning
-competing initiatives into a sequenced, stakeholder-ready roadmap. Both refuse to move forward on
-an unexamined assumption — one about a plan's preconditions, the other about capacity and
-dependencies.
+One skill for the moment a plan exists but nothing has been executed yet. `executing-plans` is the
+pre-flight gate on an implementation plan: review it as an adversary, stamp an observable pass bar
+on every step, then route it to an executor without running a single step itself. It refuses to
+move forward on an unexamined assumption about a plan's preconditions.
 
 ## Install & Uninstall
 
@@ -24,7 +21,6 @@ dependencies.
 | I want to… | Skill |
 |---|---|
 | Check a written implementation plan is sound and hand it to the right executor | `executing-plans` |
-| Turn goals and competing initiatives into a sequenced quarterly roadmap | `roadmap-planning` |
 
 ## Skills
 
@@ -61,36 +57,6 @@ executor the harness's SetGoal stage can optionally map onto a subgoal (`harness
 down to a single session — where the six-stage engine derives acceptance criteria and gates on
 them automatically, here you do it by hand before dispatch. Nothing is pre-wired; each side runs
 without the other.
-
-### `roadmap-planning`
-
-A five-phase workflow, roughly 1–2 weeks of elapsed time with 45–90 minutes of active facilitation
-a day, that turns business goals, customer problems, technical constraints, and stakeholder
-requests into a sequenced roadmap and the deck that explains it. Use it for annual or quarterly
-planning, after a strategy session, or to reframe a feature list as outcomes. Not for sprint
-planning, not when the strategy itself is still unclear, and not when stakeholders are expecting
-date commitments — address that expectation first.
-
-```
-15개 initiatives competing for Q2 across three teams. Build the roadmap: epic
-hypotheses, RICE scoring, dependency-ordered quarters, and the exec deck.
-```
-
-| Phase | Days | Output |
-|---|---|---|
-| 1. Gather inputs | 1–2 | 3–5 business outcomes, 3–5 validated problems, tech investments, stakeholder requests |
-| 2. Define initiatives | 3–4 | 10–15 epics with hypothesis, success metric, T-shirt effort |
-| 3. Prioritize | 5 | Ranked backlog, top 10 epics |
-| 4. Sequence | 6–7 | Now/Next/Later or quarterly roadmap, dependency map, capacity check |
-| 5. Communicate | Week 2 | 30–45 min deck, stakeholder alignment, published roadmap v1.0 |
-
-Standing mandates: always map dependencies between epics before sequencing; always separate
-committed from aspirational; never build a roadmap without the team's real capacity constraints;
-never sequence without stakeholder alignment on top-level outcomes. Supporting files:
-`template.md` (fill-in structure), `examples/sample.md`, `references/roadmap-types.md`,
-`references/anti-patterns.md`, `references/validating-customer-problems.md` (pattern vs. anecdote
-check for Phase 1), `references/prioritization-frameworks.md` (RICE + MoSCoW for Phase 3), and
-`agents/roadmap-coordinator.md` for guided facilitation.
 
 ## Related plugins
 

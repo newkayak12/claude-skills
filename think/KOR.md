@@ -274,7 +274,6 @@ Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세�
 - 질문 자체가 이상하게 느껴지면 먼저 `redefine-problem`.
 - 검토가 필요한 대상이 내 판단 자체라면 `mentor`. 질문이 제대로 서고 남은 게 비교뿐이면
   `cognition:tradeoff-articulator`로 넘깁니다.
-- 결정이 나오면 `develop:architecture-workflow`(엔지니어링 인계)나 `planning:roadmap-planning`(제품/전략
-  결정을 로드맵으로 배치)으로 넘깁니다.
+- 결정이 나오면 `develop:architecture-workflow`(엔지니어링 인계)로 넘깁니다.
 - `write:plans` (design review format)는 발산과 스트레스 테스트 결과를 리뷰 가능한 설계 문서로
   바꿔줍니다.
