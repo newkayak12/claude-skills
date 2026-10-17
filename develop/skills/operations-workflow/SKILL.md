@@ -45,7 +45,7 @@ compatibility:
 **Not for** an active incident (`develop:incident-response-playbook` directly) or a single-step need (run that skill
 directly).
 
-## Steps
+## Process
 
 | # | Phase | Skill | Input | Output | Skip if |
 |---|-------|-------|-------|--------|---------|

@@ -48,13 +48,15 @@ the code defect behind the failure (`develop:bug-diagnoser`).
 
 **Escalate up, not down.** When in doubt, treat as higher severity.
 
-## Phase 1 — Detect
+## Process
+
+### Phase 1 — Detect
 
 Detection sources, most to least reliable: alert, synthetic monitor, user report, team member — see [`references/background.md`](references/background.md#detection-sources).
 
 Declare a provisional severity from the table, then open an incident channel, even if still diagnosing.
 
-## Phase 2 — Triage (target: < 5 min for P0/P1)
+### Phase 2 — Triage (target: < 5 min for P0/P1)
 
 Answer these questions fast:
 
@@ -66,12 +68,12 @@ Answer these questions fast:
 
 **Triage output**: severity confirmed or raised + incident commander assigned.
 
-## Phase 3 — Communicate
+### Phase 3 — Communicate
 
 Communicate before you know the answer; silence is worse than "we're investigating." Update every 15–30 min for P0/P1.
 Slack and status-page templates, and what not to say publicly: `references/comms-templates.md`.
 
-## Phase 4 — Mitigate
+### Phase 4 — Mitigate
 
 Outcome: **reduce user impact now**, even if the root cause isn't fully understood.
 
@@ -79,7 +81,7 @@ Common mitigation actions (rollback, flag off, scale out, shed load, redirect tr
 
 **Mitigation ≠ Fix.** Document that mitigation is a temporary measure. The real fix comes after the incident.
 
-## Phase 5 — Resolve
+### Phase 5 — Resolve
 
 Exit criteria for "Resolved":
 - [ ] Error rate back to baseline
@@ -89,13 +91,13 @@ Exit criteria for "Resolved":
 - [ ] Affected users notified (if required)
 - [ ] Incident channel archived or closed
 
-## Phase 6 — Learn (RCA / Post-Mortem)
+### Phase 6 — Learn (RCA / Post-Mortem)
 
 Target: publish RCA within 48–72 hours for P0/P1. Full template (summary, timeline, root cause, contributing factors,
 action items): `references/rca-template.md`. Root cause is written as causal steps (A → B → C), each with an
 `Evidence:` line — the log, metric, trace or diff that shows it; no evidence means mark it `hypothesis`, not fact.
 
-### Quick RCA (P2/P3 only)
+#### Quick RCA (P2/P3 only)
 
 P0/P1 use the full template. For P2/P3 a half page is enough:
 
@@ -108,11 +110,11 @@ P0/P1 use the full template. For P2/P3 a half page is enough:
 **Follow-up** (1-3 items, owner + date):
 ```
 
-### Runbooks
+#### Runbooks
 
 A runbook is 3 lines (Means / First check / Escalate to) — format and example in `references/runbook-format.md`. When closing an incident where a runbook was used, refresh it: fix wrong steps, add the missing check, then link the update in the Action Items.
 
-### When Root Cause Traces to a Product Decision
+#### When Root Cause Traces to a Product Decision
 
 If the timeline shows the trigger was a feature behaving as designed (a rollout that hit an untested segment, a launch assumption that didn't hold), the RCA's Action Items (`references/rca-template.md`) won't stop a recurrence. Add one RCA line instead: `Product decision to revisit: [decision] — flag to [feature owner] for the next planning cycle.` This skill stops at naming the decision; validating the hypothesis and deciding iterate-vs-pivot is a product-side call.
 
