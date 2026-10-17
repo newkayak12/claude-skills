@@ -1,6 +1,6 @@
 # Subagent communication through mods — draft (card 49)
 
-Status: draft for the user's choice. No code. Backlog card 49.
+Status: approved 2026-10-17 (decisions in §6). Backlog card 49.
 
 User, 2026-10-17: "mod 추가로 subagent 간 의사소통하는거 더 적극적으로 활용할 수 있는 방법 찾아보자".
 
@@ -111,3 +111,20 @@ start only when `$.session.surfaces()` is non-empty.
    when nobody is attached?
 5. Mod rule 2 lists timers, panes, bands, toasts as interactive-only; does a driver-side
    `session.send` count as surface (interactive-only) or as engine work (allowed headless)?
+
+## 6. Decisions (user, 2026-10-17)
+
+"그니까 Agent 같 메시징 통로를 적극적으로 사용할 수 있게 하는게 좋을거 같고 B(현재 teams 쓸 수 있으니까)
+2. TeamLeader 통하면 더 좋고 3,4은 당신추천"
+
+1. The point is that workers use the message channel actively, not only that the Floor shows it:
+   B is built now (teams is usable today), C follows, A comes with the Floor card as the view of it.
+2. C goes through the TeamLeader: a STORY driver asks the manager, never a sibling directly; the
+   manager answers from the plan and wiki or forwards, and the engine writes `asked` / `answered`.
+3. D is out: a reject waits for the next try (one recorded instruction channel).
+4. Messages to the person (B) are off when no surface is attached; the ask card and `tm_inbox`
+   still carry the question. A driver↔TeamLeader exchange (C) is engine work recorded in the
+   ledger, so it runs headless too (answers question 5).
+
+Order: spike (the three assumptions in §4.2) → B → C → A in the Floor card. A failed spike stops B
+and C and comes back to the user with what was seen.
