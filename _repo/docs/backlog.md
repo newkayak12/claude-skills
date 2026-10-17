@@ -89,8 +89,6 @@ not a read — each worker's state is one icon and colour (spinner while acting;
 
 ### Skeleton and length (one card per skill, next edit)
 
-21. **portfolio:deck-builder** — 249 lines. Acceptance: under 200, detail in `references/`, one real run.
-22. **knowledge:base-builder** — 247 lines. Acceptance: under 200, detail in `references/`, one real run.
 24. **Remaining skeleton gaps** — `node _repo/scripts/check-skeleton.mjs` lists 22 non-frozen skills
     (2026-10-17: Process 11, Output Template 13, Related Skills 4, over 200 lines 3). Acceptance:
     count falls each Sprint; no mass rewrite.
@@ -114,3 +112,5 @@ not a read — each worker's state is one icon and colour (spinner while acting;
 | E-e4aa64a3 | 2026-10-16 | 33, 25, 26, 28, 7, 8, 9, 30, 32, 16, 18, 19, 23 | partial (7/8 accepted, nothing merged; card 39); $78.32 |
 | E-59a16f4f | 2026-10-16 | 40 H, 42 G | partial (engine fields only); $27.38 |
 | E-746e822f | 2026-10-17 | merge of the two above | shipped `5692bb74`; size S; $9.65; all suites at or above baseline |
+| E-45422629 | 2026-10-17 | 21, 22 | blocked at QA; the two skills taken from its integration tree by the session (196 / 158 lines; QA test/ junk left out); $27.57 |
+| E-4607a6a6 | 2026-10-17 | 39, 45, 44, 40–43 | nothing built: plan-integrate rejected the F5/F6 (graph/teams pane) seam 3 times; $60.57 |

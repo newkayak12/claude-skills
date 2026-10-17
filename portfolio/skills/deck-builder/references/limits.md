@@ -4,9 +4,9 @@ Stated here rather than discovered in a PDF. Report the ones that bite on a give
 
 | Limitation | Detail |
 |---|---|
-| **A template is mandatory** | There is no built-in design. Without a reference `.pptx` the engine exits with an error and produces nothing. |
-| **No new layouts** | Output slides are clones of template slides. Content with no matching archetype needs the template extended in PowerPoint first. |
-| **Charts are not writable** | Series values live in an embedded xlsx plus cached XML. `catalog` lists chart slots; `build` leaves them at template values. |
+| **A template is mandatory** | There is no built-in design. Without a reference `.pptx` the engine exits with an error and produces nothing. No built-in design, no fallback. |
+| **No new layouts** | Output slides are clones of template slides. Content with no matching archetype needs the template extended in PowerPoint first. Say so rather than approximating. |
+| **Charts are not writable** | Series values live in an embedded xlsx plus cached XML. `catalog` lists chart slots; `build` leaves them at template values. Use an SVG in a picture slot. |
 | **The package is raster only** | SVG is rasterized on the way in; other vector formats (`.emf`, `.wmf`, `.pdf`, `.eps`, `.ai`) are refused — export them to PNG. A deck must look the same in PowerPoint, Keynote and a PDF export. |
 | **SVG assets need the renderer at build time** | PNG and JPEG assets need nothing. An `.svg` has to be rasterized, so `build` needs LibreOffice for that slot. |
 | **Layout truth needs a renderer** | `check` estimates from frame width ÷ font size. Only `render` sees what actually collides, and it needs LibreOffice. |
@@ -14,7 +14,7 @@ Stated here rather than discovered in a PDF. Report the ones that bite on a give
 | **Color checks are approximate** | Palette conformance reads hexes out of SVG text; the pasted-box check decodes PNG borders only (not JPEG) and compares against the slide, layout or master background — not against a shape sitting behind the frame. |
 | **Legibility scoring is PNG only** | Text over a picture is measured against the decoded PNG behind it. A JPEG or SVG backdrop is not scored, and a text color the template inherits rather than states is skipped rather than guessed at. |
 | **Contrast is area, not glyphs** | The score is the fraction of the text box's area below the threshold, not per-letter. A busy image can pass on average and still swallow one word. |
-| **Frames do not move** | Every frame keeps the position and size the template gave it. Writing less than the template holds leaves the gap where the rest would have been; `check` reports it, but only the template can fix it. |
+| **Frames do not move** | Every frame keeps the position and size the template gave it. Writing less than the template holds leaves the gap where the rest would have been; `check` reports it, but only the template can fix it. Exception: `textN_plusK` extends a clean sibling or row-group series. |
 | **A static estimate cannot resolve a one-line margin** | With the font file found, wrapping uses its measured advances (hmtx/cmap, no kerning) and carries no slack; without it (`추정`) the per-script em model is worth about ±1 line. `wrap="none"` frames are fitted exactly to their text, so LibreOffice wraps about half of them where PowerPoint would not — measured, not predictable from widths. Designed frames often carry less slack than that. `check` therefore reports only an overrun past that slack, measured against the template's own line count; `render` settles the rest. |
 | **Capacity is measured only when the font is found** | Widths come from the real font's metrics when the file is found, else from frame width ÷ font size with a per-script em model (full-width for CJK, ~0.55 em for Latin), labelled `추정`. Runs that inherit their size from the master are read at 18pt. It is calibrated against the template's own text — a slot whose own content already wraps is treated as a wrapping slot — so it is a prompt to look, not a verdict. |
 | **A missing font makes the preview lie** | LibreOffice substitutes silently and a substitute rewraps every line. `render` names the typefaces it could not find; until they are installed, judge content from the pptx and only layout that survives substitution from the preview. |
