@@ -283,8 +283,7 @@ Add the remote SSE endpoints in Claude settings → MCP Servers.
 - `redefine-problem` first if the question itself feels wrong.
 - `mentor` when the thing needing examination is your own judgment; once the question is stated
   right and a comparison is what's left, it hands over to `cognition:tradeoff-articulator`.
-- After a decision, feed it into `develop:architecture-workflow` (engineering handoff) or
-  `planning:roadmap-planning` (sequencing a product/strategy decision into a roadmap).
+- After a decision, feed it into `develop:architecture-workflow` (engineering handoff).
 - `write:plans` (design review format) turns the divergence and stress-test output into a
   reviewable design doc.
 

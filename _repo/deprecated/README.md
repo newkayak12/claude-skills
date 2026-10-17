@@ -15,6 +15,7 @@ Restore: run the command, then move the files where they belong (a plugin to the
 | `technique-write` (plugin) | Design Review and ADR templates; now formats of `write:plans` | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/technique-write` |
 | `assist` (plugin) | beta decision assistance, unpublished 2026-10-12 | `7e299e97` | `git checkout 7e299e97 -- assist` |
 | `portfolio/skills/feedback-beta` | beta lane closed 2026-09-02, promoted into `feedback` 1.13.0 | `63142c35` | `git checkout 63142c35 -- portfolio/skills/feedback-beta` |
+| `planning/skills/roadmap-planning` | quarterly roadmap workflow with roadmap-coordinator agent; retired 2026-10-17: never invoked in any session log, no skill or agent depends on it, 241 lines over the 200 target | `08247eb7` | `git checkout 08247eb7 -- planning/skills/roadmap-planning` |
 | `develop/skills/pragmatic-programmer` | codebase-health diagnosis across seven principles | `bf4e49f3` | `git checkout bf4e49f3 -- _repo/deprecated/develop/skills/pragmatic-programmer` |
 | `develop/code-documenter` | docstring and API documentation skill | `bf4e49f3` | `git checkout bf4e49f3 -- _repo/deprecated/develop/code-documenter` |
 | `develop/dev-quality-workflow` | staged dev quality workflow | `bf4e49f3` | `git checkout bf4e49f3 -- _repo/deprecated/develop/dev-quality-workflow` |

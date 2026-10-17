@@ -633,20 +633,6 @@ export const triggers = [
     ]
   },
   {
-    "skill": "planning:roadmap-planning",
-    "plugin": "planning",
-    "phrases": [
-      "feature list를 outcome 기반으로 바꿔줘",
-      "q2 로드맵",
-      "roadmap planning",
-      "로드맵 만들어줘",
-      "분기 계획",
-      "분기별 계획 세워줘",
-      "이니셔티브 우선순위 정해줘",
-      "이해관계자 정렬"
-    ]
-  },
-  {
     "skill": "portfolio:deck-builder",
     "plugin": "portfolio",
     "phrases": []
