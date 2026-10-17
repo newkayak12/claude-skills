@@ -128,3 +128,15 @@ start only when `$.session.surfaces()` is non-empty.
 
 Order: spike (the three assumptions in §4.2) → B → C → A in the Floor card. A failed spike stops B
 and C and comes back to the user with what was seen.
+
+## 7. Spike result (2026-10-17, Claude Code 2.1.302)
+
+All three assumptions hold for `claude -p` → `claude -p`:
+- Delivery: yes. `SendMessage` takes the session **name** (`work-27`), not its id; a mod's
+  `$.session.send({to:{sessionId}})` takes the id. Name lookup: `~/.claude/sessions/<pid>.json`.
+- Mid-turn: yes, read at the next tool boundary in the same turn; an idle session is woken.
+- Hook: `session.receive` fires in the receiver (`origin.kind: peer`).
+- Caveat: a sender in another permission mode (`prompting` → `bypass`) is delivered and hooked
+  but the model never sees the text. B consumes it in the person's mod hook, so B holds; C needs
+  manager and drivers in the same mode. `tm_open` must pass the person's session id to drivers.
+- Untested: an interactive receiver; a finished target; whether daemon-spawned drivers register.
