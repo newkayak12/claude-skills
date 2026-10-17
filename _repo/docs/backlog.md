@@ -21,7 +21,7 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
       old `E-xxxxxxxx` keys still resolve; a finished task's worktrees and merged branches are
       removed (or listed by `tm_clean`); tests cover naming, collisions and old-key lookup.
 
-50. **A failure toast says what failed, why, and what happens next** — in E-041cf197
+50. **A failure toast says what failed, why, and what happens next**
     - Why: user, 2026-10-17: "야 토스트 failed 된거 떴는데 뭘 실패했는지 내용을 알 수가 없잖아". The teams
       toast is the event's `text` from `view.mjs --format events`, only `E-6b073e8a critique:2 failed
       (attempt 2)`. The ledger already holds the reason on the `verdict` event of the same node
@@ -97,6 +97,41 @@ Cards 40–43 are in Sprint E-95de6173 (2026-10-17).
       방향은 teams"; evaluation by a seeded matrix with repeated runs ("여러 번 돌려보는게 맞을거 같음").
     - Acceptance: the plan's Tasks 1–9 with their pass bars; after UI cards (user priority).
 
+### Subagents and parallel runs — use and clean up (user, 2026-10-17)
+
+51. **Every subagent, driver and worktree started is reaped when its work ends, and a cap holds
+    the machine**
+    - Why: user, 2026-10-17: "서브에이전트 때문에 컴퓨터 문제가 있었던거 같음 왜 정리를 안하는거임?" —
+      "비상이라 지웠고"; "서브에이전트 쓰고 지우는 것에 대한 강화 내용 추가". Seen that day: 6 teams
+      EPICs (each a daemon plus up to 3 parallel `claude -p` drivers, each in its own worktree) and 3
+      background Agent subagents ran at once; the person had to delete worktrees and branches by hand.
+      After that the 5 daemons stayed alive, and every `tm_*` call respawned them, and the respawned
+      daemons started new drivers and judges into worktrees that no longer existed (verified: pids
+      14809/14868/48191 drivers, 50833 judge). The session took 40+ minutes to stop them.
+    - Acceptance:
+      - Rules (`maintaining.md` "Agents working in the repo"): a cap on what runs at once across the
+        session — teams EPICs plus Agent subagents (number stated); before opening another, count live
+        drivers (`ps`) and wait if at the cap; when an agent's result is taken, its worktree and branch
+        are removed in the same step; a session ends with `ps` showing no driver, daemon or judge it
+        started and `git worktree list` showing only main.
+      - teams: a global cap on live `claude -p` drivers across all tasks of one machine (team.json key,
+        default from cores/memory), counted by the daemon before each spawn; tests.
+      - teams: `tm_cancel({task_id})` stops the daemon, its drivers and judges, marks the task
+        cancelled (terminal), writes the report stub and `clean`; no `tm_*` call respawns a cancelled
+        task; tests.
+      - teams: a task whose worktree directory is gone does not respawn drivers into it; the daemon
+        stops and records why; tests.
+      - session mod (`agents.tsx` reap): lists live subagents, teams drivers and worktrees with age, and
+        reaps the finished ones in one action.
+
+52. **Release the tm_clean fix: record `clean` even when nothing was removed**
+    - Why: 2026-10-17, installed teams 0.57.0 records `clean` only when it removed a worktree or
+      branch (`taskmanager.mjs:2420`). After the person deleted worktrees by hand, `tm_clean` removed
+      nothing, wrote no `clean`, and the push hold never released; the session had to run main's
+      `taskmanager.mjs` over stdio. Main already has the fix, unreleased.
+    - Acceptance: teams batch bump carries it; `tm_clean` on an already-clean task appends `clean` and
+      the push hold releases (test exists on main — confirm it runs in the suite).
+
 ### teams plugin bugs
 
 45. **Two teams tests fail on main**
@@ -133,13 +168,6 @@ Cards 40–43 are in Sprint E-95de6173 (2026-10-17).
       The user must be able to use it easily without knowing the internals (user: "사용자는 내부를
       모르고 편하게 써야만한다") — no internal skill, stage or file name is something they must know or say.
 
-### Overlaps
-
-14. **planning:roadmap-planning keeps a reason to exist**
-    - Why: 0 inbound refs, 241 lines, planning plugin has 2 skills.
-    - Acceptance: kept with a stated boundary and under 200 lines, or retired with a restore row in
-      `_repo/deprecated/` (check age and direct use first — no refs is not unused).
-
 ### Skeleton and length (one card per skill, next edit)
 
 24. **Remaining skeleton gaps** — `node _repo/scripts/check-skeleton.mjs` lists 22 non-frozen skills
@@ -167,8 +195,9 @@ Cards 40–43 are in Sprint E-95de6173 (2026-10-17).
 | E-746e822f | 2026-10-17 | merge of the two above | shipped `5692bb74`; size S; $9.65; all suites at or above baseline |
 | E-45422629 | 2026-10-17 | 21, 22 | blocked at QA; the two skills taken from its integration tree by the session (196 / 158 lines; QA test/ junk left out); $27.57 |
 | E-4607a6a6 | 2026-10-17 | 39, 45, 44, 40–43 | nothing built: plan-integrate rejected the F5/F6 (graph/teams pane) seam 3 times; $60.57 |
-| E-95de6173 | 2026-10-17 | 39, 45, 44, 40–43 | running |
-| E-6b073e8a | 2026-10-17 | 24 (develop, portfolio, think, harness) | running |
-| E-69f230a3 | 2026-10-17 | 24 (knowledge) | running |
-| E-2146f402 | 2026-10-17 | 46 | running |
-| E-041cf197 | 2026-10-17 | 50 | running |
+| E-95de6173 | 2026-10-17 | 39, 45, 44, 40–43 | stopped in plan (machine overload, worktrees deleted); 6/7 PLAN sections kept on `rescue/95de6173-plan-*`; $37 |
+| E-6b073e8a | 2026-10-17 | 24 (develop, portfolio, think, harness) | stopped at QA; integration kept on `rescue/6b073e8a-skeleton`; $19 |
+| E-69f230a3 | 2026-10-17 | 24 (knowledge) | stopped at goal gate; integration kept on `rescue/69f230a3-knowledge`; $17 |
+| E-2146f402 | 2026-10-17 | 46 | stopped before build (PLAN only); $11 |
+| E-041cf197 | 2026-10-17 | 50 | stopped in build; PLAN on `rescue/95de6173-plan-F1` (041cf197's PLAN-F1); $10 |
+| E-c2808479 | 2026-10-17 | 14 | shipped `524ecff0`; size S; $6.21 |
