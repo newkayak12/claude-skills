@@ -196,6 +196,9 @@ Cards 40–43 are in Sprint E-95de6173 (2026-10-17).
     - Decided (user, 2026-10-18): "내가 준 재료를 바탕으로 글감 모으고 각 글감을 기록하는 형식을 만들자
       포트폴리오 온리니까" — material comes only from what the user hands over; one record format per
       material item; the store belongs to portfolio, not knowledge.
+    - Format (user, same day): "글감마다 폴더, 세부 내용마다 md로" — `material/<id>/` per item, one md
+      per part (meta, problem, decision, result, learned, gaps, history). Nice to have later: knowledge
+      can build over these folders. Order: "글감모으기부터 시작" — collection first.
 
 ### Skeleton and length (one card per skill, next edit)
 
