@@ -10,6 +10,8 @@ export type Denial = {
   call: string
   reason: string
   source: 'guard' | 'native' | 'declined'
+  // the guard's own rule id (`hard-reset`); a native stop has none
+  rule?: string
   nativeRule?: string
   agentId?: string
 }
@@ -426,6 +428,32 @@ export function pushRing<T>(list: readonly T[], item: T, cap: number): T[] {
   const next = [...list, item]
   return next.length > cap ? next.slice(next.length - cap) : next
 }
+
+export type StopRow = { id: string; tool: string; call: string; reason: string; rule: string; source: Denial['source']; sourceLabel: string; time: string }
+
+const SOURCE_LABEL: Record<Denial['source'], string> = { guard: 'guard', declined: 'declined', native: 'native' }
+
+// Local HH:MM, not UTC.
+const localTime = (ts: number) => {
+  const d = new Date(ts)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+// The ring (newest last) as pane rows, newest first. The rule is the guard's id, else the native permission rule, else a dash.
+export const stopRows = (ring: readonly Denial[]): StopRow[] =>
+  [...ring].reverse().map(d => ({
+    id: d.id,
+    tool: d.tool,
+    call: d.call,
+    reason: d.reason,
+    rule: d.rule ?? d.nativeRule ?? '—',
+    source: d.source,
+    sourceLabel: SOURCE_LABEL[d.source],
+    time: localTime(d.ts),
+  }))
+
+// Every ring entry is a stop, so the count is the ring length.
+export const stopHeader = (mode: string, ring: readonly Denial[]) => ({ mode, stopped: ring.length })
 
 // `Bash(git reset:*)` for a Bash call, `Write(path)` for a file call.
 export function ruleFor(d: { tool: string; call: string }): string {

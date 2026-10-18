@@ -93,3 +93,15 @@ test('log_enabled=false records nothing but still denies', { options: { log_enab
   expect(denial(await bash($, 'rm -rf /'))).toMatch(/declined/)
   expect(seen.store.writes).toBe(0)
 })
+
+test('a guard stop and a declined confirm store the rule id; a native deny stores none', async ($, on) => {
+  const seen = guardWorld(on, { answer: 'Cancel' })
+  await $.tool.call({ tool: 'Bash', command: 'git reset --hard' } as never)
+  expect(stored(seen)[0]).toMatchObject({ source: 'declined', rule: 'hard-reset' })
+})
+
+test('a deny-class guard stop stores its rule id', async ($, on) => {
+  const seen = guardWorld(on, { proc: argv => ran(argv.includes('status') ? ' M a.ts\n' : '') })
+  await $.tool.call({ tool: 'Bash', command: 'git worktree remove --force /w/x' } as never)
+  expect(stored(seen)[0]).toMatchObject({ source: 'guard', rule: 'worktree-dirty-remove' })
+})
