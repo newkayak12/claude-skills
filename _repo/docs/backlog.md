@@ -193,6 +193,9 @@ Cards 40–43 are in Sprint E-95de6173 (2026-10-17).
       store the later steps read (no re-asking, no random picks); writing draws each problem from that
       store; deck-builder renders it; feedback findings go back onto the material and the loop repeats;
       one user-facing entry, internals hidden (card 34 principle); one real run end to end.
+    - Decided (user, 2026-10-18): "내가 준 재료를 바탕으로 글감 모으고 각 글감을 기록하는 형식을 만들자
+      포트폴리오 온리니까" — material comes only from what the user hands over; one record format per
+      material item; the store belongs to portfolio, not knowledge.
 
 ### Skeleton and length (one card per skill, next edit)
 
