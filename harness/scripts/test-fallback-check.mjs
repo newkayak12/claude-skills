@@ -1,7 +1,7 @@
 // fallback-check regressions: 0% goal gate must not be COMPLETE; "todo list feature" is a real title.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, utimesSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, utimesSync, realpathSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -434,7 +434,7 @@ test('a now.json older than the newest artifact yields the derived stage', () =>
   });
   const [row] = listJson(root);
   assert.equal(row.stage, 'critique');
-  assert.equal(row.now.stage, 'setgoal');
+  assert.equal(row.now, null);
 });
 
 test('now.stage test maps to implement; an unparseable at or an unknown stage falls back to the derived stage', () => {
@@ -522,6 +522,146 @@ test('a rejected --now (bad JSON, bad waiting, bad cost, bad round) leaves an ex
     assert.notEqual(now(d, bad).status, 0, JSON.stringify(bad));
   }
   assert.equal(readFileSync(join(d, 'now.json'), 'utf8'), before);
+  assert.deepEqual(readdirSync(d), ['now.json']);
+});
+
+// ---- one freshness check governs every now.json field (D1) ----
+
+// now.json counts as a whole or not at all: a stale or invalid `at` drops stage, round, waiting and
+// now together, so the pane cannot show a stale "waiting on you".
+const liveFiles = (nowJson, extra = {}) => ({
+  '01-plan.md': 'plan', '02-goal-spec.json': SPEC, '02-critique.json': CRIT_REJECTED, 'now.json': nowJson, ...extra,
+});
+const showRow = (dir) => JSON.parse(spawnSync('node', [CHECK, '--show', dir, '--json'], { encoding: 'utf8' }).stdout);
+const textLine = (root, slug) => list(root).stdout.trim().split('\n').find((l) => l.startsWith(`${slug}\t`));
+
+test('a stale now.json is ignored whole: no round 7, no waiting you, no now, cost em dash (text, --json, --show)', () => {
+  const stale = new Date(Date.now() - HOUR).toISOString();
+  const nowObj = { ...full({ stage: 'setgoal', round: 7, waiting: { who: 'you', what: 'approve' } }), at: stale, since: stale };
+  const { root, dirs } = repoWithRuns({ r: { files: liveFiles(nowObj) } });
+  const line = textLine(root, 'r');
+  assert.doesNotMatch(line, /round 7/);
+  assert.doesNotMatch(line, /waiting you/);
+  assert.match(line, /\tcritique\tround 1\twaiting —\tcost —/);
+  const [row] = listJson(root);
+  assert.equal(row.stage, 'critique');
+  assert.equal(row.round, 1);
+  assert.equal(row.waiting, null);
+  assert.equal(row.now, null);
+  assert.deepEqual(showRow(dirs.r), row);
+});
+
+test('a stale now.json on a run with no critique reads round null', () => {
+  const stale = new Date(Date.now() - HOUR).toISOString();
+  const nowObj = { ...full({ stage: 'setgoal', round: 7, waiting: { who: 'you', what: 'approve' } }), at: stale, since: stale };
+  const { root } = repoWithRuns({ r: { files: { '01-plan.md': 'plan', 'now.json': nowObj } } });
+  const [row] = listJson(root);
+  assert.deepEqual([row.stage, row.round, row.waiting, row.now], ['setgoal', null, null, null]);
+  assert.match(textLine(root, 'r'), /round —\twaiting —\tcost —/);
+});
+
+test('a missing or unparseable at, or a now.json that is not an object, is stale whole', () => {
+  const at = freshAt();
+  const base = full({ stage: 'setgoal', round: 7, waiting: { who: 'you', what: 'approve' } });
+  const cases = [
+    { ...base, since: at },
+    { ...base, at: 'not a time', since: at },
+    { ...base, at: null, since: at },
+    [1, 2, 3],
+    7,
+    'text',
+  ];
+  for (const nowObj of cases) {
+    const { root, dirs } = repoWithRuns({ r: { files: liveFiles(nowObj) } });
+    const label = JSON.stringify(nowObj);
+    const line = textLine(root, 'r');
+    assert.doesNotMatch(line, /round 7/, label);
+    assert.doesNotMatch(line, /waiting you/, label);
+    assert.match(line, /cost —/, label);
+    const [row] = listJson(root);
+    assert.deepEqual([row.stage, row.round, row.waiting, row.now], ['critique', 1, null, null], label);
+    assert.deepEqual(showRow(dirs.r), row, label);
+  }
+});
+
+test('a fresh now.json keeps round, waiting, now and cost on text, --json and --show', () => {
+  const at = freshAt();
+  const nowObj = { ...full({ stage: 'setgoal', round: 7, waiting: { who: 'you', what: 'approve' }, cost_usd: 2.5 }), at, since: at };
+  const { root, dirs } = repoWithRuns({ r: { files: liveFiles(nowObj) } });
+  assert.match(textLine(root, 'r'), /\tsetgoal\tround 7\twaiting you: approve\tcost 2\.50/);
+  const [row] = listJson(root);
+  assert.deepEqual([row.stage, row.round, row.waiting, row.now], ['setgoal', 7, { who: 'you', what: 'approve' }, nowObj]);
+  assert.deepEqual(showRow(dirs.r), row);
+});
+
+test('a fresh now.json with an unknown stage keeps its round and waiting but not its stage', () => {
+  const at = freshAt();
+  const nowObj = { ...full({ stage: 'dancing', round: 7, waiting: { who: 'you', what: 'approve' } }), at, since: at };
+  const { root } = repoWithRuns({ r: { files: liveFiles(nowObj) } });
+  const [row] = listJson(root);
+  assert.deepEqual([row.stage, row.round, row.waiting], ['critique', 7, { who: 'you', what: 'approve' }]);
+});
+
+// ---- an entry that cannot be stat'ed contributes mtime 0 (D5) ----
+
+test('a dangling symlink in the run dir and in subgoals/ leaves --list, --json and --show exit 0 with the same row', () => {
+  const files = { '01-plan.md': 'plan', '02-goal-spec.json': SPEC, '02-critique.json': CRIT_REJECTED, 'subgoals/keep.txt': 'x' };
+  const clean = repoWithRuns({ r: { files } });
+  const linked = repoWithRuns({ r: { files } });
+  symlinkSync('/nonexistent', join(linked.dirs.r, 'dangling'));
+  symlinkSync('/nonexistent', join(linked.dirs.r, 'subgoals', 'dangling'));
+  const text = list(linked.root);
+  assert.equal(text.status, 0, text.stderr);
+  assert.doesNotMatch(text.stderr, /ENOENT/);
+  const json = list(linked.root, '--json');
+  assert.equal(json.status, 0, json.stderr);
+  const [row] = JSON.parse(json.stdout);
+  const show = spawnSync('node', [CHECK, '--show', linked.dirs.r, '--json'], { encoding: 'utf8' });
+  assert.equal(show.status, 0, show.stderr);
+  assert.deepEqual(Object.keys(row).sort(), ROW_KEYS);
+  assert.deepEqual(JSON.parse(show.stdout), row);
+  const [base] = listJson(clean.root);
+  assert.deepEqual([row.stage, row.round, row.severity], [base.stage, base.round, base.severity]);
+});
+
+test('a run whose only artifact is a dangling symlink still gets a row, with no ENOENT', () => {
+  const { root, dirs } = repoWithRuns({ r: {} });
+  symlinkSync('/nonexistent', join(dirs.r, 'dangling'));
+  const r = list(root);
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /ENOENT/);
+  assert.equal(listJson(root)[0].stage, 'plan');
+});
+
+const NOW_STAGE_LIST = ['plan', 'setgoal', 'critique', 'implement', 'test', 'gate', 'report'];
+
+test('--now rejects a stage the reader would ignore and writes nothing', () => {
+  for (const stage of ['dancing', 'PLAN', ' plan', '', 5]) {
+    const d = emptyDir();
+    const r = now(d, { stage });
+    assert.notEqual(r.status, 0, JSON.stringify(stage));
+    assert.match(r.stderr, /^--now:/, JSON.stringify(stage));
+    for (const s of NOW_STAGE_LIST) assert.ok(r.stderr.includes(s), `${JSON.stringify(stage)} names ${s}`);
+    assert.deepEqual(readdirSync(d), [], `${JSON.stringify(stage)} left files`);
+  }
+});
+
+test('--now accepts each of the 7 stages and writes it', () => {
+  for (const stage of NOW_STAGE_LIST) {
+    const d = emptyDir();
+    const r = now(d, { stage });
+    assert.equal(r.status, 0, `${stage}: ${r.stderr}`);
+    assert.equal(readNow(d).stage, stage);
+  }
+});
+
+test('--now with an unknown stage leaves an existing now.json byte-identical', () => {
+  const d = emptyDir();
+  assert.equal(now(d, full()).status, 0);
+  const before = readFileSync(join(d, 'now.json'));
+  const r = now(d, { stage: 'dancing' });
+  assert.notEqual(r.status, 0);
+  assert.deepEqual(readFileSync(join(d, 'now.json')), before);
   assert.deepEqual(readdirSync(d), ['now.json']);
 });
 

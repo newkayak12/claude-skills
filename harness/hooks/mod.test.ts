@@ -833,6 +833,70 @@ test('the key catcher also takes 1-4 (tabs) and q (close), the keys its focus wo
   expect(seen.closed).toEqual(['harness-status'])
 })
 
+test('[ and ] walk one frozen order: three runs give 1/3, 2/3, 3/3, 1/3 on ], and the reverse on [', async ($, on) => {
+  const rej = (slug: string, text: string) => doing(slug, text, { rounds: [{ round: 1, sound: false, file: 'x', problems: [{ severity: 'major', text: 'no check' }] }] })
+  const seen = world(on, ['terminal'], {})
+  seen.listing.stdout = list([doing('tidy', 'doing tidy'), rej('csv', 'doing csv'), waiting('fix')])
+  mock.clock(on, { now: NOW })
+  await start($)
+  await cmd($)
+  const ui = await pane($, 'terminal', 194)
+  const at = async () => (await header(ui)).match(/run \d of \d/)![0]
+  // opening order: fix (waits), csv (unseen reject), tidy; opening reads 1 of 3
+  expect(await at()).toBe('run 1 of 3')
+  expect(seen.store.get('selected')).toBe('fix')
+  const seq: string[] = []
+  const slugs: unknown[] = []
+  for (let i = 0; i < 4; i++) {
+    await typeKey(ui, ']')
+    seq.push(await at())
+    slugs.push(seen.store.get('selected'))
+  }
+  expect(seq).toEqual(['run 2 of 3', 'run 3 of 3', 'run 1 of 3', 'run 2 of 3'])
+  expect(slugs).toEqual(['csv', 'tidy', 'fix', 'csv'])
+  // csv was looked at on the way: the order stayed, and [ is its exact reverse
+  expect(seen.store.get('looked')).toMatchObject({ csv: 1 })
+  const back: unknown[] = []
+  for (let i = 0; i < 4; i++) {
+    await typeKey(ui, '[')
+    back.push(seen.store.get('selected'))
+  }
+  expect(back).toEqual(['fix', 'tidy', 'csv', 'fix'])
+})
+
+test('the run with an unseen reject that opens first reads run 1 of 2, and stays first after ] and [', async ($, on) => {
+  const rejected = doing('r', 'doing R', { rounds: [{ round: 1, sound: false, file: 'x', problems: [{ severity: 'major', text: 'no check' }] }] })
+  const seen = await seeded($, on, {}, { rows: [doing('a', 'doing A'), rejected] })
+  await cmd($)
+  const ui = await pane($, 'terminal', 194)
+  expect(await header(ui)).toContain('run 1 of 2')
+  expect(seen.store.get('selected')).toBe('r')
+  expect(seen.store.get('looked')).toEqual({ r: 1 })
+  await typeKey(ui, ']')
+  expect(await header(ui)).toContain('run 2 of 2')
+  expect(seen.store.get('selected')).toBe('a')
+  await typeKey(ui, '[')
+  expect(await header(ui)).toContain('run 1 of 2')
+  expect(seen.store.get('selected')).toBe('r')
+})
+
+test('a run that opens while the pane is open re-orders the list and the selection stays on its slug', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const seen = world(on, ['terminal'], {})
+  seen.listing.stdout = list([doing('a', 'doing A'), doing('b', 'doing B')])
+  await start($)
+  await cmd($)
+  const ui = await pane($, 'terminal', 194)
+  await typeKey(ui, ']')
+  expect(seen.store.get('selected')).toBe('b')
+  seen.listing.stdout = list([doing('c', 'doing C'), doing('a', 'doing A'), doing('b', 'doing B')])
+  await clock.advance(5000)
+  await ui.redraw()
+  expect(seen.store.get('selected')).toBe('b')
+  expect(await textOf(ui)).toContain('doing B')
+  expect(await header(ui)).toContain('run 3 of 3')
+})
+
 test('with one run [ and ] change nothing', async ($, on) => {
   const seen = await seeded($, on, {}, { rows: [doing('a', 'doing A')] })
   const ui = await pane($, 'terminal', 194)

@@ -4,7 +4,7 @@ import type { HarnessRow, RunInfo, RunSub } from '../types'
 import { DEMO_NOW, bandLines, paneLines, plain, railLine } from './harness-draw'
 import type { PaneCtx } from './harness-draw'
 import {
-  NONE, clock, costText, countsText, critiqueReason, cycleRun, doingText, elapsedText, flowLines, gateReason, goalReason, hasNewReject, inStageText,
+  NONE, clock, costText, countsText, critiqueReason, cycleRun, doingText, elapsedText, flowLines, frozenOrder, gateReason, goalReason, hasNewReject, inStageText,
   isActing, lastStep, listArgv, markLooked, normalizeRow, openTab, openingOrder, otherRunLabel, parseRows, pickRun, railItems, rankedProblems, restText,
   paneKey, roundHeading, roundText, runCount, runPosition, runState, severityOf, shownRows, sinceLast, span, spinnerPlan, stageLabel, topFinding, youLine,
 } from './status'
@@ -159,6 +159,31 @@ test('opening order: waiting on you, else a reject since you last looked, else t
   expect(hasNewReject(failed, {})).toBe(true)
   expect(hasNewReject(failed, markLooked({}, failed))).toBe(false)
   expect(markLooked({ a: 1 }, null)).toEqual({ a: 1 })
+})
+
+test('frozen order: the same slugs after looked changes; recomputed when a run closes or opens', () => {
+  const tidy = row('tidy')
+  const csv = row('csv', { rounds: [{ round: 1, sound: false, problems: [] }] })
+  const fix = row('fix', { waiting: { who: 'you', what: 'approve' } })
+  const slugs = (rs: HarnessRow[]) => rs.map(r => r.slug)
+  const first = frozenOrder([tidy, csv, fix], {}, null)
+  expect(slugs(first)).toEqual(['fix', 'csv', 'tidy'])
+  // csv's reject is looked at: openingOrder alone would now put tidy before csv
+  const looked = markLooked({}, csv)
+  expect(slugs(openingOrder([tidy, csv, fix], looked))).toEqual(['fix', 'tidy', 'csv'])
+  expect(slugs(frozenOrder([tidy, csv, fix], looked, slugs(first)))).toEqual(['fix', 'csv', 'tidy'])
+  // a refreshed list in another order or with changed rows does not move them either
+  expect(slugs(frozenOrder([fix, tidy, csv], looked, slugs(first)))).toEqual(['fix', 'csv', 'tidy'])
+  const fixed = frozenOrder([tidy, csv, { ...fix, waiting: null }], looked, slugs(first))
+  expect(fixed[0]!.waiting).toBeNull()
+  // a run closes: ordered again
+  expect(slugs(frozenOrder([tidy, csv], looked, slugs(first)))).toEqual(['tidy', 'csv'])
+  // a run opens: ordered again, the new waiting one first
+  const extra = row('extra', { waiting: { who: 'you', what: 'ok' } })
+  expect(slugs(frozenOrder([tidy, csv, fix, extra], looked, slugs(first)))).toEqual(['fix', 'extra', 'tidy', 'csv'])
+  // one closes and another opens at once: same count, different set
+  expect(slugs(frozenOrder([tidy, csv, extra], looked, slugs(first)))).toEqual(['extra', 'tidy', 'csv'])
+  expect(frozenOrder([], {}, [])).toEqual([])
 })
 
 test('[ and ]: run k of n, wrap, the tab label; one run changes nothing', () => {

@@ -188,6 +188,15 @@ export function openingOrder(rows: readonly HarnessRow[], looked: Record<string,
   return rows.map((r, i) => ({ r, i })).sort((a, b) => rank(a.r) - rank(b.r) || a.i - b.i).map(x => x.r)
 }
 
+// openingOrder, kept: `frozen` is the slug order of the last call. While the open slugs are the same set, that order
+// stands, so a look (markLooked) or a changed row never moves a run under `[` / `]`; a run that opens or closes, or
+// no `frozen` (null), orders again from `looked`.
+export function frozenOrder(rows: readonly HarnessRow[], looked: Record<string, number>, frozen: readonly string[] | null): HarnessRow[] {
+  const bySlug = new Map(rows.map(r => [r.slug, r]))
+  const same = frozen !== null && frozen.length === rows.length && bySlug.size === rows.length && frozen.every(s => bySlug.has(s))
+  return same ? frozen.map(s => bySlug.get(s)!) : openingOrder(rows, looked)
+}
+
 // The run shown: the selected slug while it is open, else the first in opening order.
 export const pickRun = (ordered: readonly HarnessRow[], selected: string | null): HarnessRow | null =>
   ordered.find(r => r.slug === selected) ?? ordered[0] ?? null
