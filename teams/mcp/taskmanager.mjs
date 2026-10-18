@@ -2233,6 +2233,10 @@ function ensureWorktree(task, name, base = 'HEAD') {
     warnUncommittedGate(task, path);
     return { ok: true, path, branch, created: false };
   }
+  // Created only on the first open. A tree this task already ran a child in that is not there now
+  // was deleted from outside: re-creating it from the branch would hand a driver a tree without
+  // the work it had, so it is refused and the daemon stops (worktreeGoneStop).
+  if (wasOpened(task, path)) return { ok: false, gone: true, path, branch, reason: `the worktree at ${path} is gone` };
   mkdirSync(dirname(path), { recursive: true });
   const exists = git(task.cwd, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]).ok;
   const r = exists
@@ -2491,8 +2495,56 @@ export function packageOf(task, id) {
 function repairWorktree(task, pkg) {
   const src = task.nodes.find((x) => x.node_id === String(pkg.integration_of) && x.integration);
   if (!src) return { ok: false, path: null, branch: null, reason: `${pkg.id} repairs ${pkg.integration_of}, which has no integration worktree` };
-  if (!existsSync(join(src.integration.cwd, '.git'))) return { ok: false, path: src.integration.cwd, branch: src.integration.branch, reason: `the integration worktree at ${src.integration.cwd} is gone` };
+  if (!existsSync(join(src.integration.cwd, '.git'))) return { ok: false, gone: true, path: src.integration.cwd, branch: src.integration.branch, reason: `the integration worktree at ${src.integration.cwd} is gone` };
   return { ok: true, path: src.integration.cwd, branch: src.integration.branch, created: false };
+}
+
+// A package tree some node of this task already ran a child in.
+function wasOpened(task, path) {
+  return (task.nodes || []).some((x) => x.child && x.child.cwd === path);
+}
+
+// A directory a driver (or judge) is about to be spawned into that is gone, or null. Checked
+// before any spawn, not after one failed: a package tree that existed and vanished (running child,
+// a retry about to reopen it, a repair/QA/audit package's integration tree) and the task's own
+// cwd. A tree not yet created is not gone - ensureWorktree makes it on the first open.
+export function findGoneWorktree(task) {
+  if (task.cwd && !existsSync(task.cwd)) return { kind: 'task_cwd', node_id: null, subgoal_id: null, path: task.cwd };
+  for (const n of task.nodes || []) {
+    if (n.stage === 'dispatch' && n.state === 'running' && n.child && n.child.cwd && !existsSync(n.child.cwd)) {
+      return { kind: 'package', node_id: n.node_id, subgoal_id: n.subgoal_id, path: n.child.cwd };
+    }
+  }
+  for (const n of readyNodes(task)) {
+    if (n.stage !== 'dispatch' || n.state !== 'pending') continue;
+    const pkg = packageOf(task, n.subgoal_id);
+    if (!pkg) continue;
+    if (pkg.repair || pkg.phase === 'qa' || pkg.phase === 'audit') {
+      const src = task.nodes.find((x) => x.node_id === String(pkg.integration_of) && x.integration);
+      if (src && !existsSync(join(src.integration.cwd, '.git'))) return { kind: 'integration', node_id: n.node_id, subgoal_id: n.subgoal_id, path: src.integration.cwd };
+      continue;
+    }
+    const path = join(taskDir(task.run_id), 'worktrees', String(pkg.id));
+    if (!existsSync(join(path, '.git')) && wasOpened(task, path)) return { kind: 'package', node_id: n.node_id, subgoal_id: n.subgoal_id, path };
+  }
+  return null;
+}
+
+// The daemon's stop for a gone directory: nothing is spawned into it, one `worktree_gone` event
+// names the node key and the missing path, and taskState reads blocked until a person decides
+// (tm_cancel, or tm_clean once it is settled). Inside a transaction; the flag rides its commit.
+// Returns the stop, whether it was written now or already stood.
+export function worktreeGoneStop(task, found = null) {
+  if (task.worktree_gone || task.cancelled) return task.worktree_gone || null;
+  const f = found || findGoneWorktree(task);
+  if (!f) return null;
+  const key = f.key || (f.node_id ? taskKey(task.run_id, f.subgoal_id, f.node_id) : epicKey(task.run_id));
+  const reason = f.kind === 'task_cwd'
+    ? `the task's own directory ${f.path} is gone`
+    : `the ${f.kind === 'integration' ? 'integration' : 'package'} worktree ${f.path} is gone`;
+  task.worktree_gone = { kind: f.kind, node_id: f.node_id, key, path: f.path, reason, at: Date.now() };
+  record(task, { event: 'worktree_gone', task_id: task.run_id, node_id: f.node_id, key, path: f.path, kind: f.kind, reason });
+  return task.worktree_gone;
 }
 
 // Where integration round N starts. Normally the project's HEAD, with every package branch
@@ -3125,6 +3177,13 @@ export function managerState(task) {
 }
 
 export function taskState(task) {
+  // tm_cancel's marker and the daemon's worktree-gone stop outrank anything the graph says: the
+  // first is terminal, the second reads blocked with the reason until a person decides.
+  if (task.cancelled) return { state: 'cancelled', counts: {}, reason: 'cancelled by tm_cancel' };
+  if (task.worktree_gone) {
+    const counts = task.harness_run || task.s_run ? {} : (runState(task).counts || {});
+    return { state: 'blocked', counts, reason: task.worktree_gone.reason };
+  }
   if (task.harness_run) return harnessState(task);
   if (!task.s_run) {
     const st = managerState(task);
@@ -3165,7 +3224,7 @@ function sState(cs) {
 export function serviceDaemon(task) {
   if (noDaemon()) return false;
   const st = taskState(task).state;
-  if (st === 'complete' || st === 'partial' || st === 'blocked') return false;
+  if (st === 'complete' || st === 'partial' || st === 'blocked' || st === 'cancelled') return false;
   if (task.daemon && driverAlive(task.daemon)) return false;
   if (spawning(task.daemon)) return false; // a spawn already under way: one daemon per task
   if (task.daemon && task.daemon.exhausted) return false;
@@ -3233,6 +3292,14 @@ function openChildOnSlot(task, n, progress, reservation) {
     : pkg.repair || pkg.phase === 'qa' || pkg.phase === 'audit'
       ? repairWorktree(task, pkg)
       : ensureWorktree(task, String(pkg.id), depBranches[0] || task.base_ref || 'HEAD');
+  // A tree that existed and is gone is the daemon's stop, not this node's failure: the node goes
+  // back to pending and the next tick's worktreeGoneStop (advanceDispatches, the daemon step) names
+  // it. It reaches here only when the tree vanished after that look.
+  if (!wt.ok && wt.gone) {
+    n.state = 'pending';
+    delete n.child;
+    return;
+  }
   if (!wt.ok) {
     n.state = 'failed';
     n.result = { stage_ok: false, reason: `could not create a worktree for ${pkg.id}: ${wt.reason}` };
@@ -6460,6 +6527,19 @@ function fireAfterReserve(info) {
 // r: {attempt, reason, restarts, spawn(task, holder) -> process record, apply(task, holder, rec)}.
 // Returns false when a live reservation already stands (nothing reserved).
 function reserveSpawn(task, slot, holder, r) {
+  // Nothing spawns for a cancelled task, or into a directory that is gone (the daemon's own cwd
+  // included): the stop is recorded instead (worktreeGoneStop). The scan in advanceDispatches and
+  // the daemon step finds the usual cases first; this is the backstop at the one spawn gate.
+  if (task.cancelled || task.worktree_gone) return false;
+  const dir = slot === 'daemon' ? task.cwd : holder.cwd;
+  if (dir && !existsSync(dir)) {
+    const n = slot === 'daemon' || slot === 'S' ? null : getNode(task, slot);
+    worktreeGoneStop(task, {
+      kind: slot === 'daemon' ? 'task_cwd' : 'package', node_id: n ? n.node_id : null, subgoal_id: n ? n.subgoal_id : null,
+      key: n ? null : `${epicKey(task.run_id)}${slot === 'S' ? '/S' : ''}`, path: dir,
+    });
+    return false;
+  }
   if (holder.spawning) {
     if (liveClaim(holder.spawning)) return false;
     record(task, { event: 'spawn_reclaimed', task_id: task.run_id, node_id: slot, pid: holder.spawning.pid, token: holder.spawning.token });
@@ -6792,6 +6872,11 @@ export function advanceDispatches(taskRef) {
   let settledIntents = [];
   const claims = mutateTask(taskId, (task) => {
     settledIntents = reclaimOrphanedOpens(task);
+    // A cancelled task opens nothing; a gone worktree (or task cwd) stops the task before any
+    // driver is spawned into it (worktreeGoneStop).
+    if (task.cancelled) return [];
+    worktreeGoneStop(task);
+    if (task.worktree_gone) return [];
     // budget/timebox stop: no NEW package opens once the task is over budget - a running one
     // (this check never sees, since it never touches state 'running') still finishes.
     if (task.budget_stopped) return [];
@@ -6856,6 +6941,9 @@ export function advanceDispatches(taskRef) {
 // spent restart budget leaves it dead. Returns how many it touched.
 export function serviceRunningDispatches(task) {
   applySuspends(task);
+  if (task.cancelled) return 0;
+  worktreeGoneStop(task);
+  if (task.worktree_gone) return 0;
   let serviced = 0;
   for (const n of task.nodes) {
     if (n.stage !== 'dispatch' || n.state !== 'running' || !n.child || !n.child.driver) continue;

@@ -37,7 +37,7 @@ import {
   dispatchSettled, foldDispatch, readyToJudge, serviceSRun, delegateIfSmall,
   finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages, autoRejudge, autoResumeCapacity, pendingRejudgeAt,
   STAGE_SKILLS, syncTickets, autoReshape, closeFailedPlanning, promoteManagerHumanGates, enforceBudget,
-  expireAsks, nextAskDeadline,
+  expireAsks, nextAskDeadline, worktreeGoneStop,
 } from './taskmanager.mjs';
 import { ticketSnapshot } from './tickets.mjs';
 import { harvestTask } from './runlog.mjs';
@@ -462,6 +462,10 @@ async function stepOnceInner(taskId, judgeFn) {
   // Sleep/wake first: a suspend since the last tick is recorded before the ask timeout, the stall
   // watchdog and the timebox below read the clock (taskstate.mjs applySuspends).
   tx((t) => applySuspends(t));
+  // A cancelled task has nothing left to drive. A gone worktree or task cwd stops it here, before
+  // any driver or judge is spawned (taskmanager.mjs's worktreeGoneStop): the task then reads
+  // blocked and main() records daemon_done.
+  if (tx((t) => { worktreeGoneStop(t); return !!(t.cancelled || t.worktree_gone); })) return false;
   // ask_timeout: this daemon is the clock for every `ask` card under the task - a parked child
   // has no driver to notice its own deadline (taskmanager.mjs's expireAsks).
   const expired = tx((t) => expireAsks(t).length > 0);
@@ -644,15 +648,19 @@ async function main() {
         continue;
       }
     }
+    // tm_cancel owns the end of a cancelled task (its daemon_done and clean): this loop writes nothing.
+    if (fresh.cancelled) return;
     if (taskState(fresh).state !== 'running') {
+      // A task stopped on a gone worktree has nothing left to close, re-judge or wait for.
+      const stopped = !!fresh.worktree_gone;
       // The closers run at the TOP of a step; a node that failed at the end of this one (the goal
       // gate, code-sprint-S6) left the task blocked before enforceBudget ever saw it, and the
       // stopped Sprint ended with no report. Give them one look before calling it done.
-      const closed = await loopStep(TASK_ID, streak, () => mutateTask(TASK_ID, (t) => enforceBudget(t)));
+      const closed = stopped ? { ok: true, value: false } : await loopStep(TASK_ID, streak, () => mutateTask(TASK_ID, (t) => enforceBudget(t)));
       if (!closed.ok) { await lockRetry(); continue; }
       if (closed.value) continue;
       // Not running is not finished while a failed judge still has a scheduled re-judge.
-      const rejudgeAt = pendingRejudgeAt(fresh);
+      const rejudgeAt = stopped ? null : pendingRejudgeAt(fresh);
       if (rejudgeAt !== null) {
         await new Promise((r) => setTimeout(r, Math.max(1000, Math.min(rejudgeAt - Date.now() + 500, 60 * 1000))));
         continue;
@@ -660,7 +668,7 @@ async function main() {
       // Nor while an `ask` card waits with an ask_timeout set: the whole graph parked on a person
       // (manager-level card, or a size-S run) leaves nothing else to drive, and exiting here would
       // leave nobody to answer it at its deadline. Sleep until then (capped, re-checked) instead.
-      const askAt = nextAskDeadline(fresh);
+      const askAt = stopped ? null : nextAskDeadline(fresh);
       if (askAt !== null) {
         await new Promise((r) => setTimeout(r, Math.max(250, Math.min(askAt - Date.now() + 250, 60 * 1000))));
         continue;
