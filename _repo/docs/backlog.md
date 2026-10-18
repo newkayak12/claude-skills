@@ -117,13 +117,8 @@ Cards 40–43 are in Sprint E-95de6173 (2026-10-17).
         drivers (`ps`) and wait if at the cap; when an agent's result is taken, its worktree and branch
         are removed in the same step; a session ends with `ps` showing no driver, daemon or judge it
         started and `git worktree list` showing only main.
-      - teams: a global cap on live `claude -p` drivers across all tasks of one machine (team.json key,
-        default from cores/memory), counted by the daemon before each spawn; tests.
-      - teams: `tm_cancel({task_id})` stops the daemon, its drivers and judges, marks the task
-        cancelled (terminal), writes the report stub and `clean`; no `tm_*` call respawns a cancelled
-        task; tests.
-      - teams: a task whose worktree directory is gone does not respawn drivers into it; the daemon
-        stops and records why; tests.
+      - teams part shipped 2026-10-18 (E-32e8068c, merged `8e3a7550`): `tm_cancel`, `max_live_drivers`
+        (default 4), stop on a gone worktree. Left: the session mod reap line below; the rules part is in.
       - session mod (`agents.tsx` reap): lists live subagents, teams drivers and worktrees with age, and
         reaps the finished ones in one action.
 
@@ -136,12 +131,6 @@ Cards 40–43 are in Sprint E-95de6173 (2026-10-17).
       the push hold releases (test exists on main — confirm it runs in the suite).
 
 ### teams plugin bugs
-
-45. **Two teams tests fail on main**
-    - Why: on main before and after the 2026-10-17 merge: "Claude adapter starts fresh, keeps cwd,
-      uses explicit efficient model, and imposes no spending cap" and "S1: the harness driver loads the
-      graph and harness plugins" (1242 tests, 2 fail). Cause unverified.
-    - Acceptance: `node --test teams/scripts/test-*.mjs` 0 fail.
 
 39. **One unaccepted package must not strand the accepted ones**
     - Why: 2026-10-16 E-e4aa64a3 accepted 7/8 packages and E-59a16f4f 1/4, yet both settled with
@@ -204,3 +193,5 @@ Cards 40–43 are in Sprint E-95de6173 (2026-10-17).
 | E-2146f402 | 2026-10-17 | 46 | stopped before build (PLAN only); $11 |
 | E-041cf197 | 2026-10-17 | 50 | stopped in build; PLAN on `rescue/95de6173-plan-F1` (041cf197's PLAN-F1); $10 |
 | E-c2808479 | 2026-10-17 | 14 | shipped `524ecff0`; size S; $6.21 |
+| E-32e8068c | 2026-10-18 | 51 (teams), 45 | shipped by hand `8e3a7550` (P1's gate could not re-run tests: card 39); teams suite 1265, 0 fail; $41 |
+| E-6ab58cc6 | 2026-10-18 | 40, 43 | running |
