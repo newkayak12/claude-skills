@@ -23,13 +23,14 @@ declare module 'claude-code' {
       guard: {
         denials: {
           id: string; ts: number; tool: string; call: string; reason: string
-          source: 'guard' | 'native' | 'declined'; nativeRule?: string; agentId?: string
+          source: 'guard' | 'native' | 'declined'; rule?: string; nativeRule?: string; agentId?: string
         }[]
       }
       // id of the denial whose rule text the pane shows, '' when none
       guardCopy: string
-      // the pinned-notes block has not yet gone to the model in this conversation
-      memo: { armed: boolean }
+      // armed: the pinned-notes block has not yet gone to the model in this conversation
+      // sentAt: epoch ms of the last send (from $.clock.now() at injection), 0 before the first one
+      memo: { armed: boolean; sentAt: number }
       last: { day: string; files: number; commits: number; denied: number; longestMs: number; fileList: string[] } | null
       // the project's last recap (under 7 days) the band offers, null when none or dismissed
       recap: { ts: number } | null

@@ -52,13 +52,60 @@ export function render(g: Note[], p: Note[]): string {
   return lines.length === 0 ? '' : [HEADER, ...lines].join('\n')
 }
 
+// Whole days since the note was written; a note stamped in the future is 0 days old.
+export const noteAge = (note: Note, now: number): number => Math.max(0, Math.floor((now - note.ts) / DAY))
+
+export const isStale = (note: Note, now: number): boolean => noteAge(note, now) >= AGE_DAYS
+
+export const ageLabel = (days: number): string => (days === 0 ? 'today' : days === 1 ? '1 day old' : `${days} days old`)
+
+// `<n>/1200 chars`: the characters of `notes` against the cap over both scopes.
+export const sizeLabel = (notes: Note[]): string => `${total(notes)}/${MAX_TOTAL} chars`
+
+// Local HH:MM of when the block last went to the model; a dash before the first send.
+export function sentLabel(sentAt?: number): string {
+  if (!sentAt) return '—'
+  const d = new Date(sentAt)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
 // Shown in the pane and in /memo list only; never part of the block.
 export function ageHint(note: Note, now: number): string {
-  const days = Math.floor((now - note.ts) / DAY)
-  return days >= AGE_DAYS ? `${days}d old: move to CLAUDE.md?` : ''
+  return isStale(note, now) ? `${noteAge(note, now)}d old: move to CLAUDE.md?` : ''
 }
 
 export const tokens = (n: Note) => Math.ceil(n.text.length / 4)
+
+export type MemoRow = {
+  n: number; scope: 'global' | 'project'; text: string; days: number; stale: boolean; age: string; hint: string; meta: string
+}
+
+// One row per note the block carries, numbered as `/memo list` and `/memo rm` number them.
+export function memoRows(g: Note[], p: Note[], now: number): MemoRow[] {
+  const v = visible(g, p)
+  const row = (scope: MemoRow['scope'], note: Note, n: number): MemoRow => {
+    const days = noteAge(note, now)
+    const age = ageLabel(days)
+    return { n, scope, text: note.text, days, stale: isStale(note, now), age, hint: ageHint(note, now), meta: `${n} · ${scope} · ${age}` }
+  }
+  return [...v.g.map(x => ['global', x] as const), ...v.p.map(x => ['project', x] as const)].map(([s, x], i) => row(s, x, i + 1))
+}
+
+// Everything the pane and /memo list show beyond the block itself: rows, counts, size, truncation.
+export function facts(g: Note[], p: Note[], now: number, sentAt = 0) {
+  const v = visible(g, p)
+  const shown = [...v.g, ...v.p]
+  const sent = sentLabel(sentAt)
+  return {
+    v,
+    rows: memoRows(g, p, now),
+    size: sizeLabel(shown),
+    sent,
+    summary: `sent with this conversation: ${sent} · ${sizeLabel(shown)}`,
+    count: `${shown.length}/${MAX_NOTES} notes · ${sizeLabel(shown)} · ~${shown.reduce((n, x) => n + tokens(x), 0)} tok`,
+    cut: v.cut ? 'truncated: the store is over its caps; only whole notes up to the caps are used' : '',
+  }
+}
 
 export type Cmd =
   | { op: 'add'; global: boolean; text: string }

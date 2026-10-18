@@ -1,15 +1,17 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import { ageHint, clean, MAX_NOTES, MAX_TOTAL, noteLines, parse, refusal, render, tokens, USAGE, visible } from './memo-logic.ts'
+import { ageHint, clean, facts, MAX_NOTES, noteLines, parse, refusal, render, USAGE } from './memo-logic.ts'
 import type { Note } from './memo-logic.ts'
 
 const PANE = 'memo'
+const FOOTER = '/memo add <text> · /memo rm <n> · /memo clear · Esc, q or /memo closes'
 const GLOBAL = 'memo.global'
 const projectKey = (root: string) => `memo.project:${root}`
 
-// True until the block went to the model in this conversation; /compact, /clear and every write set it again.
-const armed = atom({ plugin: 'session', key: 'memo' } as const, { armed: true })
+// armed: true until the block went to the model in this conversation; /compact, /clear and every write set it again.
+// sentAt: epoch ms of that send, 0 before the first one.
+const armed = atom({ plugin: 'session', key: 'memo' } as const, { armed: true, sentAt: 0 })
 
 async function load($: any): Promise<{ g: Note[]; p: Note[]; root: string }> {
   const root = (await $.session.root()) as string
@@ -18,21 +20,7 @@ async function load($: any): Promise<{ g: Note[]; p: Note[]; root: string }> {
 
 const save = async ($: any, key: string, notes: Note[]) => {
   await $.store.set(key, notes)
-  await update($, armed, () => ({ armed: true }))
-}
-
-// Everything the pane and /memo list show beyond the block itself: counts, truncation, age hints.
-function facts(g: Note[], p: Note[], now: number) {
-  const v = visible(g, p)
-  const shown = [...v.g, ...v.p]
-  const chars = shown.reduce((n, x) => n + x.text.length, 0)
-  const hints = shown.map((n, i) => ({ i: i + 1, hint: ageHint(n, now), tok: tokens(n) })).filter(h => h.hint)
-  return {
-    v,
-    count: `${shown.length}/${MAX_NOTES} notes · ${chars}/${MAX_TOTAL} chars · ~${shown.reduce((n, x) => n + tokens(x), 0)} tok`,
-    cut: v.cut ? 'truncated: the store is over its caps; only whole notes up to the caps are used' : '',
-    hints: hints.map(h => `note ${h.i}: ${h.hint}`),
-  }
+  await update($, armed, prev => ({ ...prev, armed: true }))
 }
 
 export const register: Register = (on, _options) => {
@@ -99,7 +87,8 @@ export const register: Register = (on, _options) => {
       const { g, p } = await load($)
       const block = render(g, p)
       if (!block) return next(e)
-      await update($, armed, () => ({ armed: false }))
+      const sentAt = (await $.clock.now()) as number
+      await update($, armed, prev => ({ ...prev, armed: false, sentAt }))
       return next({ ...e, context: [...(e.context ?? []), block] })
     } catch {
       return next(e)
@@ -108,7 +97,7 @@ export const register: Register = (on, _options) => {
 
   // A new context window (after /compact or /clear) has lost the block; resume and startup have not.
   on('classic.SessionStart', async ($, e, next) => {
-    if (e.source === 'compact' || e.source === 'clear') await update($, armed, () => ({ armed: true }))
+    if (e.source === 'compact' || e.source === 'clear') await update($, armed, prev => ({ ...prev, armed: true }))
     return next(e)
   }).catch(($, e, next) => next(e))
 
@@ -120,7 +109,7 @@ export const register: Register = (on, _options) => {
       ;({ g, p } = await load($))
     } catch {}
     const now = (await $.clock.now()) as number
-    const f = facts(g, p, now)
+    const f = facts(g, p, now, (await read($, armed)).sentAt)
     const lines = noteLines(f.v.g, f.v.p)
     return (
       <Box flexDirection="column">
@@ -129,11 +118,17 @@ export const register: Register = (on, _options) => {
           <Button key="close" role="dismiss" label="close [q]" hotkey="q" onPress={() => $.ui.close({ id: PANE })} />
         </Box>
         {lines.length === 0 && <Text dimColor>{USAGE}</Text>}
-        {lines.length > 0 && <Text key="h" bold>{render(g, p).split('\n')[0]}</Text>}
-        {lines.map((l, i) => <Text key={`n-${i}`}>{l}</Text>)}
-        {lines.length > 0 && <Text dimColor>{f.count}</Text>}
-        {f.cut !== '' && <Text color="warning">{f.cut}</Text>}
-        {f.hints.map(line => <Text key={line} dimColor>{line}</Text>)}
+        {lines.length > 0 && <Text key="s" dimColor wrap="truncate-end">{f.summary}</Text>}
+        {lines.length > 0 && <Text key="h" bold wrap="truncate-end">{render(g, p).split('\n')[0]}</Text>}
+        {lines.map((l, i) => <Text key={`n-${i}`} wrap="truncate-end">{l}</Text>)}
+        {f.rows.map(r => (
+          <Box key={`m-${r.n}`} gap={1}>
+            <Text dimColor>{r.meta}</Text>
+            {r.stale && <Text color="warning" wrap="truncate-end">{r.hint}</Text>}
+          </Box>
+        ))}
+        {f.cut !== '' && <Text color="warning" wrap="truncate-end">{f.cut}</Text>}
+        {lines.length > 0 && <Text dimColor wrap="truncate-end">{FOOTER}</Text>}
       </Box>
     )
   }).catch(($, e, next) => next(e))
