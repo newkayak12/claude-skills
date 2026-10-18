@@ -110,7 +110,7 @@ import { computeSubmitResult } from './broker.mjs';
 // header comment) - reused here, not re-parsed, so tm_status/tm_board/the report briefing can
 // never disagree with what the view surface already shows for the same task.
 import { pidAlive } from './proc.mjs';
-import { peek as capPeek, reserveSlot, noteWaiting, clearWaiting } from './livecap.mjs';
+import { peek as capPeek, reserveSlot, noteWaiting, clearWaiting, sameProcess, liveProc, registryProcesses } from './livecap.mjs';
 import { collectDriverCosts, collectTaskCosts, collectNodeCosts } from './drivercost.mjs';
 import { applyMerge, foldRecords } from './reducers.mjs';
 // Light PLAN mode (_repo/docs/plans/2026-09-28-teams-light-plan.md): the structural "is acceptance
@@ -3412,7 +3412,7 @@ function openChildOnSlot(task, n, progress, reservation) {
     const driver = spawnChildDriver(task, n.node_id, n.child);
     if (reservation) reservation.attach(driver);
     n.child.driver = driver;
-    delete n.waiting_cap;
+    clearWaiting(task, n, n.node_id);
     if (progress) progress({ driver });
     record(task, {
       event: 'child_driver_spawned', task_id: task.run_id, node_id: n.node_id, child_run_id: child.run_id,
@@ -5000,6 +5000,16 @@ const TOOLS = [
       tasks: { type: 'array', items: { type: 'object' }, description: 'present only when task_id is omitted - one entry per task under the tasks root' },
     } },
   },
+  {
+    name: 'tm_cancel',
+    description: 'Stop a running, blocked or partial task for good. In order: saves a cancel marker on task.json in the same commit that clears spawning reservations and in-flight open claims; kills the task\'s daemon, drivers and judges and confirms every pid dead before anything is appended; retires the task\'s own child graph runs; writes a report stub at <docs_dir>/E-<task8>/80-report.md; appends daemon_done {state:"cancelled"} and then `clean` as the last ledger event (which releases the repo push hold). The task then reads `cancelled` (terminal); tm_status, tm_clean, tm_wait and tm_next spawn nothing on it, and tm_retry and tm_submit refuse it. Worktrees and branches are left for a later tm_clean. On a complete, cancelled or already-cleaned task it is a no-op that reports the current state.',
+    inputSchema: { type: 'object', properties: { task_id: { type: 'string' } }, required: ['task_id'] },
+    outputSchema: { type: 'object', properties: {
+      task_id: { type: 'string' }, state: { type: 'string' }, noop: { type: 'boolean' }, reason: { type: 'string' }, was: { type: 'string' },
+      killed: { type: 'array', items: { type: 'object', properties: { role: { type: 'string' }, pid: { type: 'integer' } } } },
+      retired_runs: { type: 'integer' }, report: { type: 'string' }, note: { type: 'string' },
+    } },
+  },
 ];
 
 function toolEvents(a) {
@@ -5631,6 +5641,141 @@ function toolClean(a) {
     return { state: st, ...cleanTask(task, dryRun) };
   });
   return { dry_run: dryRun, tasks: results };
+}
+
+// tm_cancel({task_id}) - stop a task for good (backlog card 51). The order is the point:
+//   1. one transaction saves task.cancelled and, in the same commit, clears every spawning token
+//      and in-flight `open` claim, so nothing new starts from here on (reserveSpawn, advanceDispatches
+//      and the daemon loop all read the marker);
+//   2. the daemon, every driver and every judge are killed, and each pid is confirmed dead - the
+//      pids are re-collected after each round, since an open that was mid-effect may have spawned one
+//      more - before ANYTHING is appended, so a late daemon write cannot land after `clean`;
+//   3. the task's own child graph runs are retired (undoOpen's marking, scoped to n.child);
+//   4. a report stub, then daemon_done {state:'cancelled'} (what the dispatch gate reads), then
+//      `clean` as the last ledger event (what the push hold reads).
+// Worktrees and branches stay for a later tm_clean. A complete, cancelled or cleaned task is a
+// no-op that reports the state. Async only so the event loop can reap the children it just killed.
+const CANCEL_RELEVANT = ['tm_open', 'tm_retry', 'daemon_spawned', 'daemon_done', 'clean'];
+
+function lastRelevantEvent(taskId) {
+  let lines = [];
+  try { lines = readFileSync(join(taskDir(taskId), 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean); } catch { return null; }
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try { const e = JSON.parse(lines[i]); if (CANCEL_RELEVANT.includes(e.event)) return e.event; } catch { /* torn line */ }
+  }
+  return null;
+}
+
+// Every process this task is known to have started and that is still the process recorded.
+function taskProcesses(taskId) {
+  const task = loadRunAt(taskPath(taskId));
+  const out = [];
+  const add = (p, role) => { if (p && Number.isInteger(p.pid)) out.push({ role, pid: p.pid, started_at: p.started_at, command: p.command }); };
+  if (task) {
+    add(task.daemon, 'daemon');
+    add(task.daemon && task.daemon.keep_awake, 'keep_awake');
+    for (const n of task.nodes || []) {
+      add(n.child && n.child.driver, `driver:${n.node_id}`);
+      add(n.judging && n.judging.proc, `judge:${n.node_id}`);
+    }
+    add(task.harness_run && task.harness_run.driver, 'driver:S');
+    add(task.s_run && task.s_run.driver, 'driver:S');
+  }
+  // An open that spawned its driver and never applied it is known only to its intent.
+  try {
+    for (const f of readdirSync(join(taskDir(taskId), 'opening'))) {
+      const intent = readIntent(taskId, f.replace(/\.json$/, ''));
+      if (intent) add(intent.driver, `driver:${intent.node_id || 'open'}`);
+    }
+  } catch { /* no intents */ }
+  for (const p of registryProcesses(taskId)) add(p, `reserved:${p.where}`);
+  const seen = new Set();
+  return out.filter((p) => {
+    if (seen.has(p.pid)) return false;
+    seen.add(p.pid);
+    // keep_awake is a caffeinate this server started, not a process whose identity was recorded.
+    return p.role === 'keep_awake' ? liveProc(p.pid) : sameProcess(p) && liveProc(p.pid);
+  });
+}
+
+const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function stopTaskProcesses(taskId) {
+  const killed = [];
+  for (let round = 0; round < 5; round++) {
+    const procs = taskProcesses(taskId);
+    if (!procs.length) return killed;
+    for (const sig of ['SIGTERM', 'SIGKILL']) {
+      for (const p of procs) {
+        if (!liveProc(p.pid)) continue;
+        // A driver is a group leader (detached): the whole subtree goes. A judge is not.
+        try { process.kill(-p.pid, sig); } catch { try { process.kill(p.pid, sig); } catch { /* gone */ } }
+        if (!killed.some((k) => k.pid === p.pid)) killed.push({ role: p.role, pid: p.pid });
+      }
+      for (let i = 0; i < 60 && procs.some((p) => liveProc(p.pid)); i++) await delay(50);
+      if (!procs.some((p) => liveProc(p.pid))) break;
+    }
+  }
+  await delay(30); // let the event loop reap what it just killed
+  const left = taskProcesses(taskId);
+  if (left.length) throw new Error(`tm_cancel could not stop ${left.map((p) => `${p.role} (pid ${p.pid})`).join(', ')}; the cancel marker is saved and nothing was written after it - run tm_cancel again`);
+  return killed;
+}
+
+async function toolCancel(a) {
+  const found = mustFindTask(a);
+  const id = found.run_id;
+  const state = taskState(found).state;
+  const last = lastRelevantEvent(id);
+  // A cancel that stopped after its marker (a pid it could not kill) is not finished: it resumes.
+  if (state === 'complete' || last === 'clean') {
+    return { task_id: id, state, noop: true, reason: `the task is ${state}${last === 'clean' ? ' and already cleaned' : ''}; there is nothing to cancel` };
+  }
+  // 1. the marker and the cleared reservations, in one commit
+  const was = withTask(a, (task) => {
+    const before = taskState(task).state;
+    if (!task.cancelled) {
+      task.cancelled = { at: Date.now(), by: 'tm_cancel', was: before };
+      for (const h of [task.daemon, task.harness_run, task.s_run, ...task.nodes.map((n) => n.child)].filter(Boolean)) delete h.spawning;
+      for (const n of task.nodes) {
+        if (!n.claim || n.claim.op !== 'open') continue;
+        delete n.claim;
+        if (n.stage === 'dispatch' && n.state === 'running' && !n.child) n.state = 'pending';
+      }
+      record(task, { event: 'tm_cancel', task_id: task.run_id, was: before });
+    }
+    return task.cancelled.was;
+  });
+  // 2. every pid dead, confirmed, before anything is appended
+  const killed = await stopTaskProcesses(id);
+  // 3. the task's own child runs, by its own child pointers
+  const task = loadRunAt(taskPath(id));
+  let retired = 0;
+  for (const n of [...task.nodes.filter((x) => x.child), ...(task.s_run ? [{ node_id: 'S', child: task.s_run }] : [])]) {
+    try {
+      mutateRun(join(n.child.cwd, '.teams_output', 'broker', 'runs', `${n.child.run_id}.json`), (r) => {
+        r.retired = { by: 'teams', node_id: n.node_id, reason: 'cancelled by tm_cancel', at: Date.now() };
+      });
+      retired++;
+    } catch { /* the run never got a file, or it is gone */ }
+  }
+  // 4. the stub, then the two closing events
+  const report = docPaths(task).report;
+  if (!existsSync(report)) {
+    mkdirSync(dirname(report), { recursive: true });
+    writeFileSync(report, [
+      `# Report — cancelled`, '',
+      `Task ${epicKey(id)} was cancelled with tm_cancel at ${new Date(task.cancelled.at).toISOString()} (it was ${was}). No report stage ran; nothing here was judged.`, '',
+      `## What was stopped`, '',
+      ...(killed.length ? killed.map((k) => `- ${k.role} (pid ${k.pid})`) : ['- no live process was left']), '',
+      `## What is left`, '',
+      `- Worktrees and branches stay as they are until tm_clean.`,
+      `- ${retired} child graph run(s) were retired.`, '',
+    ].join('\n'));
+  }
+  record({ run_id: id }, { event: 'daemon_done', task_id: id, state: 'cancelled', cancelled: true });
+  record({ run_id: id }, { event: 'clean', task_id: id, cancelled: true, removed_worktrees: [], removed_branches: [], kept_branches: [] });
+  return { task_id: id, state: 'cancelled', was, killed, retired_runs: retired, report, note: 'worktrees and branches stay until tm_clean' };
 }
 
 export function requireRunnable(task, nodeId) {
@@ -7060,6 +7205,7 @@ export function promoteManagerHumanGates(task) {
 
 function toolNext(a) {
   const first = withTask(a, (task) => {
+    if (task.cancelled) return { out: { task_id: task.run_id, state: 'cancelled', counts: {}, flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'), ready: [], children: [], next: 'this task was cancelled with tm_cancel: nothing more runs' } };
     // Refresh the shared engagement marker in every tree a live driver is working in, so the
     // harness gate's 2h window never closes on a long package (see engage.mjs).
     for (const n of task.nodes) {
@@ -7155,6 +7301,7 @@ function toolSubmit(a) {
   // transaction; a throw anywhere in it (a refused payload) leaves neither the node nor the
   // tm_submit ledger line behind.
   const r = withTask(a, (task) => {
+    if (task.cancelled) throw new Error('task cancelled: tm_cancel stopped it, nothing more is submitted to it');
     if (a.key) return { out: toolSubmitHuman(task, a) };
     const already = idempotentSubmit(task, getNode(task, String(a.node_id)), a);
     if (already) return { out: already };
@@ -7431,6 +7578,7 @@ function toolRetry(a) {
 }
 
 function retryTask(task, a) {
+  if (task.cancelled) throw new Error('task cancelled');
   // A driver parked waiting_capacity after a usage-limit death spent no restart; the way back
   // is not a retried package but a cleared wait, once the caller believes capacity is back.
   // Clears every waiting child (or just package_id's, or task.s_run for a size-S task) and
@@ -7567,7 +7715,7 @@ function toolStatus(a) {
     try { ids = readdirSync(tasksRoot()); } catch { ids = []; }
     const tasks = ids.map((id) => loadRunAt(taskPath(id))).filter(Boolean)
       .sort((x, y) => (y.created_at || 0) - (x.created_at || 0))
-      .map((t) => { const s = runState(t); return { task_id: t.run_id, cwd: t.cwd, state: s.state, counts: s.counts, size: t.size, request: String(t.request).slice(0, 160), created_at: new Date(t.created_at).toISOString() }; });
+      .map((t) => { const s = t.cancelled || t.worktree_gone ? taskState(t) : runState(t); return { task_id: t.run_id, cwd: t.cwd, state: s.state, counts: s.counts, size: t.size, request: String(t.request).slice(0, 160), created_at: new Date(t.created_at).toISOString() }; });
     return { root: tasksRoot(), tasks };
   }
   let task = mustFindTask(a);
@@ -7724,6 +7872,7 @@ function dispatch(name, a) {
     case 'tm_inbox': return toolInbox(a);
     case 'tm_docs': return toolDocs(a);
     case 'tm_clean': return toolClean(a);
+    case 'tm_cancel': return toolCancel(a);
     default: throw new Error('unknown tool: ' + name);
   }
 }
@@ -7746,8 +7895,10 @@ export async function callTool(name, args) {
   // fresh under the lock and writes it whole.
   // One transaction: two concurrent callers cannot both see a dead daemon and both reserve its
   // spawn; the spawn itself runs after the commit (task.daemon.spawning, reserveSpawn).
-  if (a.task_id && name !== 'tm_open' && name !== 'tm_run') {
+  if (a.task_id && name !== 'tm_open' && name !== 'tm_run' && name !== 'tm_cancel') {
     withTask(a, (task) => {
+      // A cancelled task is left alone: no ask answered, no daemon raised.
+      if (task.cancelled) return;
       // An expired ask is answered on the next look even when no daemon is left to notice it.
       expireAsks(task);
       serviceDaemon(task);
