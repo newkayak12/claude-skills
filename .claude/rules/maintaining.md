@@ -72,6 +72,15 @@ Report the counts you saw; "tests pass" without a number is not a check.
   scripts around the dispatch gate. If the gate blocks the orchestrating session, it opens a teams
   task; a subagent or teams node never opens one — it stops and reports to its caller.
 - Stage explicit paths, never `git add -A` at the root while another task has changes.
+- What runs at once is capped: at most 2 teams EPICs and 1 background Agent per session (each EPIC
+  is a daemon plus up to 3 `claude -p` drivers in their own worktrees; 6 EPICs and 3 agents
+  overloaded the machine on 2026-10-17). Before opening another, count live drivers
+  (`ps aux | grep 'claude -p' | grep -v grep | wc -l`) and wait if at the cap.
+- Reap in the same step you take the result: an agent's commit is cherry-picked, then its worktree
+  and branch are removed; a finished EPIC is merged, then `tm_clean`ed. A session ends with no
+  driver, daemon or judge it started in `ps`, and `git worktree list` showing only main.
+- Work lost to a deleted worktree or branch is still in git: `git fsck --unreachable` → pin it to a
+  `rescue/<task>` branch before anything else.
 
 ## Benches and experiments
 
