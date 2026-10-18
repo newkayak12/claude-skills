@@ -20,7 +20,7 @@
 //
 // Shared contract (the harness mod and codex read these shapes; change them only together):
 // - now.json = {stage, doing, round, last_step, next, waiting, cost_usd, at, since}. The input
-//   needs a non-empty string stage; every other key defaults to null. waiting is null or
+//   needs a stage of plan|setgoal|critique|implement|test|gate|report, exactly as written; every other key defaults to null. waiting is null or
 //   {who:'you'|'vendor', what:string}, and any other value is rejected (only 'you' means the run
 //   waits on a person). last_step is cut to 120 chars. cost_usd is a number or null, shown as
 //   '—' when null. at is stamped on every call; since is kept while stage is unchanged and reset
@@ -34,6 +34,10 @@
 //   excluded), with now.stage 'test' read as implement; otherwise it is derived from the files
 //   (plan, setgoal, critique, implement, gate, report). round = now.round, else the number of
 //   critique rounds, else null. waiting = now.waiting or null. now = parsed now.json or null.
+//   One freshness check governs every now.json field, not only stage: now.json is used only when it
+//   is an object whose `at` parses and is not older than the newest artifact. Otherwise it is
+//   ignored whole — stage and round come from the files, waiting and now are null, and the text
+//   line shows cost '—'.
 //   started_at = manifest.started_at or null (never backfilled). max_critique_rounds =
 //   manifest.max_critique_rounds, default 2. severity = {blocker, major, minor, nit}, always all
 //   four counts, over the problems of every critique round in rounds[].
@@ -82,7 +86,7 @@ function cmdNow(runDir, raw) {
     fail2(`--now: not JSON: ${e && e.message}`);
   }
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail2('--now: expected a JSON object');
-  if (typeof input.stage !== 'string' || !input.stage.trim()) fail2('--now: stage must be a non-empty string');
+  if (!NOW_STAGES.includes(input.stage)) fail2(`--now: stage must be one of ${NOW_STAGES.join('|')}`);
   const w = input.waiting ?? null;
   if (w !== null && !(typeof w === 'object' && !Array.isArray(w) && ['you', 'vendor'].includes(w.who) && typeof w.what === 'string'))
     fail2("--now: waiting must be null or {who:'you'|'vendor', what:string}");
@@ -155,15 +159,28 @@ const critiqueRounds = (dir, names) => {
   });
 };
 
-// now.json names the stage only while it is at least as new as the run's newest artifact (now.json
-// itself excluded); an artifact written after the call means the run has moved on, so the files win.
+// now.json is live only while it is an object whose `at` parses and is at least as new as the run's
+// newest artifact (now.json itself excluded); an artifact written after the call means the run has
+// moved on, so the files win. One check, used for every field read from now.json.
 const NOW_STAGES = ['plan', 'setgoal', 'critique', 'implement', 'test', 'gate', 'report'];
-const reconcileStage = (nowJson, derived, artifactMs) => {
-  if (!nowJson || typeof nowJson !== 'object' || Array.isArray(nowJson)) return derived;
-  if (typeof nowJson.stage !== 'string' || !NOW_STAGES.includes(nowJson.stage)) return derived;
+const liveNow = (nowJson, artifactMs) => {
+  if (!nowJson || typeof nowJson !== 'object' || Array.isArray(nowJson)) return null;
   const at = Date.parse(nowJson.at);
-  if (Number.isNaN(at) || at < artifactMs) return derived;
-  return nowJson.stage === 'test' ? 'implement' : nowJson.stage;
+  return Number.isNaN(at) || at < artifactMs ? null : nowJson;
+};
+const reconcileStage = (live, derived) => {
+  if (!live || typeof live.stage !== 'string' || !NOW_STAGES.includes(live.stage)) return derived;
+  return live.stage === 'test' ? 'implement' : live.stage;
+};
+
+// An entry that cannot be stat'ed (a dangling symlink) counts as mtime 0, so a read-only report
+// still gets its row.
+const mtimeOf = (path) => {
+  try {
+    return statSync(path).mtimeMs;
+  } catch {
+    return 0;
+  }
 };
 
 function buildRow(dir, nowMs) {
@@ -177,8 +194,8 @@ function buildRow(dir, nowMs) {
     }
   })();
   const mtimes = [
-    ...names.map((n) => statSync(join(dir, n)).mtimeMs),
-    ...subs.map((n) => statSync(join(dir, 'subgoals', n)).mtimeMs),
+    ...names.map((n) => mtimeOf(join(dir, n))),
+    ...subs.map((n) => mtimeOf(join(dir, 'subgoals', n))),
   ];
   const age = nowMs - Math.max(0, ...mtimes);
   const manifest = readJsonFile(join(dir, 'manifest.json'));
@@ -199,23 +216,23 @@ function buildRow(dir, nowMs) {
     : passed + failed < ids.length ? 'implement'
     : !has('04-goal-gate.json') ? 'gate'
     : 'report';
-  const nowJson = readJsonFile(join(dir, 'now.json'));
   const artifactMs = Math.max(
     0,
-    ...names.filter((n) => n !== 'now.json' && !n.startsWith('now.json.tmp-')).map((n) => statSync(join(dir, n)).mtimeMs),
-    ...subs.map((n) => statSync(join(dir, 'subgoals', n)).mtimeMs),
+    ...names.filter((n) => n !== 'now.json' && !n.startsWith('now.json.tmp-')).map((n) => mtimeOf(join(dir, n))),
+    ...subs.map((n) => mtimeOf(join(dir, 'subgoals', n))),
   );
+  const live = liveNow(readJsonFile(join(dir, 'now.json')), artifactMs);
   const severity = Object.fromEntries(SEVERITIES.map((s) => [s, 0]));
   for (const rd of rounds) for (const pr of rd.problems) severity[pr.severity]++;
   const cap = manifest?.max_critique_rounds;
   return {
     slug: basename(dir),
     dir,
-    stage: reconcileStage(nowJson, derived, artifactMs),
-    round: Number.isInteger(nowJson?.round) ? nowJson.round : rounds.length ? newest.round : null,
-    waiting: nowJson?.waiting ?? null,
+    stage: reconcileStage(live, derived),
+    round: Number.isInteger(live?.round) ? live.round : rounds.length ? newest.round : null,
+    waiting: live?.waiting ?? null,
     stalled: age > STALLED_MS && age <= OPEN_MS,
-    now: nowJson,
+    now: live,
     started_at: typeof manifest?.started_at === 'string' ? manifest.started_at : null,
     max_critique_rounds: Number.isInteger(cap) && cap >= 1 ? cap : 2,
     severity,
