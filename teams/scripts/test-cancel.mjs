@@ -61,6 +61,11 @@ const { pidAlive } = await import(join(HERE, '..', 'mcp', 'proc.mjs'));
 // Alive and not a zombie: a child this process killed answers a signal probe until libuv reaps it.
 const { liveProc } = await import(join(HERE, '..', 'mcp', 'livecap.mjs'));
 const { docPaths } = await import(join(HERE, '..', 'mcp', 'tickets.mjs'));
+// The repo's push hold, unedited: it reads the task's ledger (last of tm_open / tm_retry /
+// daemon_spawned / daemon_done / clean) and denies `git push` while a task of the same repo is held.
+const { decide } = await import(join(HERE, '..', '..', '.claude', 'hooks', 'repo-rules.mjs'));
+const pushDecision = (cwd) => decide('bash', { tool_name: 'Bash', tool_input: { command: 'git push origin main' }, cwd }, { HARNESS_TASKS_DIR: ROOT, HOME: ROOT });
+const pushDenied = (cwd) => pushDecision(cwd).hookSpecificOutput?.permissionDecision === 'deny';
 
 const scratch = [];
 const bystanders = [];
@@ -185,6 +190,10 @@ test('tm_cancel on a running task: every pid dead, state cancelled, stub, retire
   const childRuns = before.nodes.filter((n) => n.child).map((n) => join(n.child.cwd, '.teams_output', 'broker', 'runs', `${n.child.run_id}.json`));
   assert.equal(childRuns.length, 2);
   const stubsBefore = spawned();
+  // A run in a child cwd that is not one of the task's own run ids must survive the cancel.
+  const foreignRun = join(dirname(childRuns[0]), 'foreign-run.json');
+  writeFileSync(foreignRun, JSON.stringify({ run_id: 'foreign-run', nodes: [] }));
+  assert.ok(pushDenied(cwd), 'a live task holds the repo push before the cancel');
 
   const out = await call('tm_cancel', { task_id: id });
 
@@ -220,6 +229,9 @@ test('tm_cancel on a running task: every pid dead, state cancelled, stub, retire
     const run = JSON.parse(readFileSync(f, 'utf8'));
     assert.ok(run.retired && run.retired.by === 'teams', `${f} retired`);
   }
+  assert.equal(JSON.parse(readFileSync(foreignRun, 'utf8')).retired, undefined, 'a run that is not the task\'s own is left alone');
+  // the last event `clean` releases the push hold, with the hook unedited
+  assert.ok(!pushDenied(cwd), 'the push hold is released by the closing clean');
   // (7) worktrees and branches stay for a later tm_clean
   const trees = git(cwd, 'worktree', 'list').stdout;
   assert.ok(trees.includes('/worktrees/P1') && trees.includes('/worktrees/P2'), trees);
