@@ -181,6 +181,19 @@ Cards 40–43 are in Sprint E-95de6173 (2026-10-17).
       The user must be able to use it easily without knowing the internals (user: "사용자는 내부를
       모르고 편하게 써야만한다") — no internal skill, stage or file name is something they must know or say.
 
+### portfolio plugin
+
+54. **portfolio runs one flow on managed material: collect → write → render → feedback**
+    - Why: user, 2026-10-18: "포트폴리오 스킬에 매니징 있니? 그니까 글감을 모으고 관리하고 그걸 바탕으로
+      내 문제로 쓰고 그걸 deckbuilder로 렌더링하고 다시 그걸 portfolio feedback으로 하고 이런 플로가
+      있어야 할거 같은데 글감 관리 못하고 그냥 무작위로 하니까 계속 헛짓거리를 하던데". Today portfolio
+      has deck-builder, feedback, fit, rewrite, pattern, interview skills but nothing keeps the material
+      (episodes, problems, numbers, evidence) between sessions, and no skill chains the four steps.
+    - Acceptance: a design doc first (brainstorm → approval); material is collected and kept in one
+      store the later steps read (no re-asking, no random picks); writing draws each problem from that
+      store; deck-builder renders it; feedback findings go back onto the material and the loop repeats;
+      one user-facing entry, internals hidden (card 34 principle); one real run end to end.
+
 ### Skeleton and length (one card per skill, next edit)
 
 24. **Remaining skeleton gap: harness:harness** — `node _repo/scripts/check-skeleton.mjs` lists 1 non-frozen
