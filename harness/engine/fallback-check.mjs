@@ -173,6 +173,16 @@ const reconcileStage = (live, derived) => {
   return live.stage === 'test' ? 'implement' : live.stage;
 };
 
+// An entry that cannot be stat'ed (a dangling symlink) counts as mtime 0, so a read-only report
+// still gets its row.
+const mtimeOf = (path) => {
+  try {
+    return statSync(path).mtimeMs;
+  } catch {
+    return 0;
+  }
+};
+
 function buildRow(dir, nowMs) {
   const names = readdirSync(dir);
   const has = (n) => names.includes(n);
@@ -184,8 +194,8 @@ function buildRow(dir, nowMs) {
     }
   })();
   const mtimes = [
-    ...names.map((n) => statSync(join(dir, n)).mtimeMs),
-    ...subs.map((n) => statSync(join(dir, 'subgoals', n)).mtimeMs),
+    ...names.map((n) => mtimeOf(join(dir, n))),
+    ...subs.map((n) => mtimeOf(join(dir, 'subgoals', n))),
   ];
   const age = nowMs - Math.max(0, ...mtimes);
   const manifest = readJsonFile(join(dir, 'manifest.json'));
@@ -208,8 +218,8 @@ function buildRow(dir, nowMs) {
     : 'report';
   const artifactMs = Math.max(
     0,
-    ...names.filter((n) => n !== 'now.json' && !n.startsWith('now.json.tmp-')).map((n) => statSync(join(dir, n)).mtimeMs),
-    ...subs.map((n) => statSync(join(dir, 'subgoals', n)).mtimeMs),
+    ...names.filter((n) => n !== 'now.json' && !n.startsWith('now.json.tmp-')).map((n) => mtimeOf(join(dir, n))),
+    ...subs.map((n) => mtimeOf(join(dir, 'subgoals', n))),
   );
   const live = liveNow(readJsonFile(join(dir, 'now.json')), artifactMs);
   const severity = Object.fromEntries(SEVERITIES.map((s) => [s, 0]));
