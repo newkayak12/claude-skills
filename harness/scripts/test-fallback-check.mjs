@@ -633,6 +633,38 @@ test('a run whose only artifact is a dangling symlink still gets a row, with no 
   assert.equal(listJson(root)[0].stage, 'plan');
 });
 
+const NOW_STAGE_LIST = ['plan', 'setgoal', 'critique', 'implement', 'test', 'gate', 'report'];
+
+test('--now rejects a stage the reader would ignore and writes nothing', () => {
+  for (const stage of ['dancing', 'PLAN', ' plan', '', 5]) {
+    const d = emptyDir();
+    const r = now(d, { stage });
+    assert.notEqual(r.status, 0, JSON.stringify(stage));
+    assert.match(r.stderr, /^--now:/, JSON.stringify(stage));
+    for (const s of NOW_STAGE_LIST) assert.ok(r.stderr.includes(s), `${JSON.stringify(stage)} names ${s}`);
+    assert.deepEqual(readdirSync(d), [], `${JSON.stringify(stage)} left files`);
+  }
+});
+
+test('--now accepts each of the 7 stages and writes it', () => {
+  for (const stage of NOW_STAGE_LIST) {
+    const d = emptyDir();
+    const r = now(d, { stage });
+    assert.equal(r.status, 0, `${stage}: ${r.stderr}`);
+    assert.equal(readNow(d).stage, stage);
+  }
+});
+
+test('--now with an unknown stage leaves an existing now.json byte-identical', () => {
+  const d = emptyDir();
+  assert.equal(now(d, full()).status, 0);
+  const before = readFileSync(join(d, 'now.json'));
+  const r = now(d, { stage: 'dancing' });
+  assert.notEqual(r.status, 0);
+  assert.deepEqual(readFileSync(join(d, 'now.json')), before);
+  assert.deepEqual(readdirSync(d), ['now.json']);
+});
+
 test('bare RUN_DIR keeps exit 0, 1 and 2', () => {
   assert.equal(run(makeRun()).status, 0);
   assert.equal(run(makeRun({ matchPct: 0 })).status, 1);
