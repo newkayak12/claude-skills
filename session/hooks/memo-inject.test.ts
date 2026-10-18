@@ -52,3 +52,31 @@ test('a corrupt or unreadable store leaves the input unchanged', async ($, on) =
   expect(r.text).toBe('hi')
   expect(r.context).toBeUndefined()
 })
+
+const SENT_NOW = Date.parse('2026-10-08T09:00:00Z')
+const cell = (seen: ReturnType<typeof memoWorld>) => seen.cells.get('session.memo') as { armed: boolean; sentAt?: number } | undefined
+
+test('sentAt is unset before the first send and set from the clock at injection', async ($, on) => {
+  const seen = memoWorld(on, { store: { [KEY]: [NOTE] } })
+  expect(cell(seen)?.sentAt ?? 0).toBe(0)
+  await submit($)
+  expect(cell(seen)).toEqual({ armed: false, sentAt: SENT_NOW })
+})
+
+test('a prompt with no block to send leaves sentAt unset', async ($, on) => {
+  const seen = memoWorld(on)
+  await submit($)
+  expect(cell(seen)?.sentAt ?? 0).toBe(0)
+})
+
+test('toggling armed and saving a note keep sentAt', async ($, on) => {
+  const seen = memoWorld(on, { store: { [KEY]: [NOTE] } })
+  await submit($)
+  await $.classic.SessionStart({ source: 'compact' })
+  expect(cell(seen)).toEqual({ armed: true, sentAt: SENT_NOW })
+  await $.command.run({ command: 'memo', args: 'add second' } as never)
+  expect(cell(seen)).toEqual({ armed: true, sentAt: SENT_NOW })
+  await submit($)
+  await $.command.run({ command: 'memo', args: 'rm 1' } as never)
+  expect(cell(seen)?.sentAt).toBe(SENT_NOW)
+})

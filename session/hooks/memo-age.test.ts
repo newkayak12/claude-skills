@@ -17,3 +17,17 @@ for (const [days, hinted] of [[13, false], [14, true]] as const) {
     expect((await submit($)).context!.join('\n')).not.toMatch(/old:|CLAUDE\.md/)
   })
 }
+
+test('a 14 day old note reads its age and the stale hint in its own row', async ($, on) => {
+  memoWorld(on, { store: seed(14), surfaces: [] })
+  const lines = texts(await (await $.ui.mount({ plugin: 'session', surface: 'terminal', component: 'Pane', requestId: 'memo', props: PANE })).drawn())
+  expect(lines).toContain('1 · project · 14 days old')
+  expect(lines).toContain('14d old: move to CLAUDE.md?')
+})
+
+test('a 13 day old note has its age row and no hint', async ($, on) => {
+  memoWorld(on, { store: seed(13), surfaces: [] })
+  const lines = texts(await (await $.ui.mount({ plugin: 'session', surface: 'terminal', component: 'Pane', requestId: 'memo', props: PANE })).drawn())
+  expect(lines).toContain('1 · project · 13 days old')
+  expect(lines.some(l => l.includes('move to CLAUDE.md'))).toBe(false)
+})
