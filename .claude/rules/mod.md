@@ -32,6 +32,12 @@ around the model: what a person sees, and what the client adds on top.
 Test: `cd <plugin> && claude plugin test .`, and one live session where the pane opens and closes.
 
 ## A UI change is done when
+0. **A person reads it at a glance** (user, 2026-10-17: "사람이 보기 좋게!"). Information present
+   is not enough. One item per line, its facts on that line (a note with its scope badge and age, not
+   the age on a separate list below). Columns aligned across rows (time · tool · what · rule · source).
+   State told by icon and colour first, words second (a deny, a decline and a native stop look different).
+   No word said twice, no internal label (`memo close [q]`) where a title belongs, keys in one dim footer.
+   The demo render is shown to the user and approved before the card closes.
 1. **Seen live.** In tmux, `claude --plugin-dir ./<plugin>`, open it by its command and its band
    line, close it by Esc, q and the command again.
 2. **Not broken at any width.** Capture at 190 and at 110 columns: no wrapped tab row, no label
