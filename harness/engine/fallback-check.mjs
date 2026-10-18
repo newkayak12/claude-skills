@@ -29,11 +29,14 @@
 // - Open run: a manifest, no 05-report.md, newest file (run dir and subgoals/) under 12 h; 2-12 h
 //   is stalled. Root is the git toplevel of --cwd, else --cwd. .harness-run/broker is not a run.
 // - Row = {slug, dir, stage, round, waiting, stalled, now, started_at, max_critique_rounds,
-//   rounds, passed, failed, total}. stage is derived from the files (plan, setgoal, critique,
-//   implement, gate, report), not from now.json. round = now.round, else the number of critique
-//   rounds, else null. waiting = now.waiting or null. now = parsed now.json or null.
+//   severity, rounds, passed, failed, total}. stage = now.stage when now.json is a valid object
+//   with a known stage and an `at` not older than the newest artifact of the run (now.json
+//   excluded), with now.stage 'test' read as implement; otherwise it is derived from the files
+//   (plan, setgoal, critique, implement, gate, report). round = now.round, else the number of
+//   critique rounds, else null. waiting = now.waiting or null. now = parsed now.json or null.
 //   started_at = manifest.started_at or null (never backfilled). max_critique_rounds =
-//   manifest.max_critique_rounds, default 2.
+//   manifest.max_critique_rounds, default 2. severity = {blocker, major, minor, nit}, always all
+//   four counts, over the problems of every critique round in rounds[].
 // - rounds[] = [{round, file, sound, problems:[{severity, text}]}], oldest first. 02-critique.json
 //   is the newest; 02-critique.r<n>.json are older and get round n; the newest gets one more
 //   than the highest n. severity is one of blocker|major|minor|nit: a severity field is kept
@@ -152,6 +155,17 @@ const critiqueRounds = (dir, names) => {
   });
 };
 
+// now.json names the stage only while it is at least as new as the run's newest artifact (now.json
+// itself excluded); an artifact written after the call means the run has moved on, so the files win.
+const NOW_STAGES = ['plan', 'setgoal', 'critique', 'implement', 'test', 'gate', 'report'];
+const reconcileStage = (nowJson, derived, artifactMs) => {
+  if (!nowJson || typeof nowJson !== 'object' || Array.isArray(nowJson)) return derived;
+  if (typeof nowJson.stage !== 'string' || !NOW_STAGES.includes(nowJson.stage)) return derived;
+  const at = Date.parse(nowJson.at);
+  if (Number.isNaN(at) || at < artifactMs) return derived;
+  return nowJson.stage === 'test' ? 'implement' : nowJson.stage;
+};
+
 function buildRow(dir, nowMs) {
   const names = readdirSync(dir);
   const has = (n) => names.includes(n);
@@ -179,24 +193,32 @@ function buildRow(dir, nowMs) {
     if (r?.passed === true) passed++;
     else if (r?.passed === false) failed++;
   }
-  const stage = !has('01-plan.md') ? 'plan'
+  const derived = !has('01-plan.md') ? 'plan'
     : !spec ? 'setgoal'
     : newest?.file !== '02-critique.json' || newest.sound !== true ? 'critique'
     : passed + failed < ids.length ? 'implement'
     : !has('04-goal-gate.json') ? 'gate'
     : 'report';
   const nowJson = readJsonFile(join(dir, 'now.json'));
+  const artifactMs = Math.max(
+    0,
+    ...names.filter((n) => n !== 'now.json' && !n.startsWith('now.json.tmp-')).map((n) => statSync(join(dir, n)).mtimeMs),
+    ...subs.map((n) => statSync(join(dir, 'subgoals', n)).mtimeMs),
+  );
+  const severity = Object.fromEntries(SEVERITIES.map((s) => [s, 0]));
+  for (const rd of rounds) for (const pr of rd.problems) severity[pr.severity]++;
   const cap = manifest?.max_critique_rounds;
   return {
     slug: basename(dir),
     dir,
-    stage,
+    stage: reconcileStage(nowJson, derived, artifactMs),
     round: Number.isInteger(nowJson?.round) ? nowJson.round : rounds.length ? newest.round : null,
     waiting: nowJson?.waiting ?? null,
     stalled: age > STALLED_MS && age <= OPEN_MS,
     now: nowJson,
     started_at: typeof manifest?.started_at === 'string' ? manifest.started_at : null,
     max_critique_rounds: Number.isInteger(cap) && cap >= 1 ? cap : 2,
+    severity,
     rounds,
     passed,
     failed,
