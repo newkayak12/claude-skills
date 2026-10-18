@@ -110,6 +110,7 @@ import { computeSubmitResult } from './broker.mjs';
 // header comment) - reused here, not re-parsed, so tm_status/tm_board/the report briefing can
 // never disagree with what the view surface already shows for the same task.
 import { pidAlive } from './proc.mjs';
+import { peek as capPeek, reserveSlot, noteWaiting, clearWaiting } from './livecap.mjs';
 import { collectDriverCosts, collectTaskCosts, collectNodeCosts } from './drivercost.mjs';
 import { applyMerge, foldRecords } from './reducers.mjs';
 // Light PLAN mode (_repo/docs/plans/2026-09-28-teams-light-plan.md): the structural "is acceptance
@@ -3181,7 +3182,30 @@ export function serviceDaemon(task) {
 }
 
 // Executed by the server the moment the node is ready. The model never opens a run.
+// The slot under max_live_drivers is taken first, before a worktree or a run file exists: a node
+// that finds the cap full goes back to pending (the claim's apply writes that), marked
+// waiting_cap, and is opened by a later poll. A first driver is the one spawn that is not
+// reserveSpawn's, so the reservation is made here and kept until the driver's pid is attached.
 export function openChild(task, n, progress = null) {
+  let reservation = null;
+  if (!noDriver()) {
+    const got = reserveSlot(task, { label: n.node_id });
+    if (!got.ok) {
+      n.state = 'pending';
+      delete n.child;
+      noteWaiting(task, n, n.node_id, got);
+      return;
+    }
+    reservation = got.slot;
+  }
+  try {
+    openChildOnSlot(task, n, progress, reservation);
+  } finally {
+    if (reservation) reservation.release();
+  }
+}
+
+function openChildOnSlot(task, n, progress, reservation) {
   const pkg = packageOf(task, n.subgoal_id);
   if (!pkg) {
     n.state = 'failed';
@@ -3319,7 +3343,9 @@ export function openChild(task, n, progress = null) {
   if (!noDriver()) {
     n.child.spawn_count = 0; // the first spawn gets no filename suffix; a respawn starts at 1
     const driver = spawnChildDriver(task, n.node_id, n.child);
+    if (reservation) reservation.attach(driver);
     n.child.driver = driver;
+    delete n.waiting_cap;
     if (progress) progress({ driver });
     record(task, {
       event: 'child_driver_spawned', task_id: task.run_id, node_id: n.node_id, child_run_id: child.run_id,
@@ -4702,6 +4728,7 @@ const TOOLS = [
         driver_restarts: { type: 'integer', description: 'default 2: how many times a package or size-S driver that died mid-run is respawned on the SAME run_id before the dispatch folds blocked. A usage-limit death never spends this - it parks on waiting_capacity for tm_retry({reset_capacity:true}) instead.' },
         stall_minutes: { type: 'integer', description: 'default 20, also settable in .claude/team.json. A driver can be alive (its pid answers) and still be making no progress - this is the "no progress" signal, read against the mtime of the files this child\'s own run writes. Idle this long flags the dispatch once (stalled_since, cleared the moment progress resumes); idle 3x this long kills the driver and lets the ordinary dead-driver path respawn it, spending a restart. 0 disables the whole check.' },
         restart_period_minutes: { type: 'integer', description: 'default 0 (a flat, forever counter - today\'s behavior), also settable in .claude/team.json. >0 turns driver_restarts into a sliding window in minutes: only restarts within the last restart_period_minutes count toward the budget, so a driver that dies rarely never exhausts a budget sized for "how many deaths in a row".' },
+        max_live_drivers: { type: 'integer', description: 'default 4, also settable in .claude/team.json. A machine-wide cap on live teams-spawned `claude -p` drivers and judges across every task under the tasks root. At or over it a spawn site spawns nothing: the node stays ready, one waiting_cap ledger event is written, and the daemon re-checks within 15 s (no timeout).' },
         interactive: { type: 'boolean', description: 'default false, also settable in .claude/team.json. Passed to every child run. When a planning subgoal\'s investigate stage comes back with a decision it could not settle from any source but CAN name candidates for, true opens an `ask` card between investigate and draft and parks that run in waiting_human until a person picks - tm_inbox lists it (with its questions and options), tm_submit({key, payload:{decisions}}) answers it. false decides by default and records the questions on the run instead, so the report can show what nobody was asked.' },
         ask_timeout: { type: ['integer', 'null'], description: 'default null (wait forever), also settable in .claude/team.json. Milliseconds an interactive `ask` card may wait on a person; once it expires the engine answers it itself with each question\'s `default` (else its first, recommended option), recorded `by: "timeout"` and listed in tm_inbox\'s `decided`. Checked by the task daemon (and on any tm_* call for this task), so expiry lands within ~15s of the deadline.' },
         goal_threshold: { type: 'integer', description: 'default 90: the manager\'s own goal gate must report match_pct at or above this to accept, and it is passed through to every child run as its own goal_threshold. A gate that says accept with 40% match is reporting a partial result as a pass. 0 accepts on the verdict alone.' },
@@ -5728,6 +5755,15 @@ export function serviceHarnessRun(task) {
   if (v && v.finished && !h.finished_at) h.finished_at = Date.now();
   const changed = () => JSON.stringify([h.run || null, h.refused_pointer || null, !!h.finished_at, !!h.exhausted]) !== before;
   const d = h.driver;
+  // The first driver deferred at max_live_drivers (openHarnessRun): no driver exists to restart,
+  // so the wait ends here, by spawning that first driver once a slot is free.
+  if (!d && h.waiting_cap && !(v && v.finished) && !task.budget_stopped && !spawning(h) && !noDriver()) {
+    return respawnDriver(task, 'S', h, {
+      attempt: 0, reason: 'spawn', restarts: [],
+      spawn: (t) => spawnHarnessDriver(t),
+      event: (t, fresh) => ({ event: 'child_driver_spawned', task_id: t.run_id, node_id: 'S', pid: fresh.pid, cwd: t.cwd, log: fresh.log, command: fresh.command, ...(fresh.error ? { error: fresh.error } : {}) }),
+    }) || changed();
+  }
   if ((v && v.finished) || !d || driverAlive(d) || h.waiting_capacity || task.budget_stopped || spawning(h)) return changed();
   const usage = driverUsageLimitText(d);
   if (usage) {
@@ -6431,7 +6467,23 @@ function reserveSpawn(task, slot, holder, r) {
   }
   // No transaction on this task (foldChild's dead-driver respawn on foldDispatch's snapshot, which
   // its apply copies back): no lock to leave, so spawn in place.
-  if (!inTransaction(task.run_id)) { r.apply(task, holder, r.spawn(task, holder)); return true; }
+  if (!inTransaction(task.run_id)) {
+    let reservation = null;
+    if (capped(slot)) {
+      const got = reserveSlot(task, { label: slot });
+      if (!got.ok) { noteWaiting(task, holder, slot, got); return false; }
+      reservation = got.slot;
+    }
+    try {
+      const rec = r.spawn(task, holder);
+      if (reservation) reservation.attach(rec);
+      clearWaiting(task, holder, slot);
+      r.apply(task, holder, rec);
+    } finally {
+      if (reservation) reservation.release();
+    }
+    return true;
+  }
   const token = randomUUID();
   holder.spawning = { pid: process.pid, token, attempt: r.attempt, reason: r.reason, restarts: r.restarts };
   heldClaims.add(token);
@@ -6439,30 +6491,57 @@ function reserveSpawn(task, slot, holder, r) {
   return true;
 }
 
+// The daemon is not a driver: only `claude -p` drivers (a child run, the size-S harness run) count
+// against max_live_drivers. A test that spawns nothing (noDriver) has no driver to count.
+function capped(slot) {
+  return slot !== 'daemon' && !noDriver();
+}
+
 function applySpawn(taskId, slot, token, r) {
   let rec = null;
   let kept = false;
+  let reservation = null;
+  let atCap = null;
   try {
     fireAfterReserve({ task_id: taskId, slot, token });
     const snap = loadRunAt(taskPath(taskId));
     const h = snap && spawnHolder(snap, slot);
     // Lost before the spawn (taken over or cleared in the window): start nothing.
-    if (h && h.spawning && h.spawning.token === token) rec = r.spawn(snap, h);
+    if (h && h.spawning && h.spawning.token === token) {
+      if (capped(slot)) {
+        const got = reserveSlot(snap, { label: slot });
+        if (got.ok) reservation = got.slot; else atCap = got;
+      }
+      if (!atCap) {
+        rec = r.spawn(snap, h);
+        if (reservation) reservation.attach(rec);
+      }
+    }
     kept = mutateTask(taskId, (fresh) => {
       const holder = spawnHolder(fresh, slot);
       const holds = !!(holder && holder.spawning && holder.spawning.token === token);
+      // At the cap: nothing was spawned, the reservation is dropped and the wait is recorded once;
+      // whoever services this holder next (the daemon tick, a tm_next) asks again.
+      if (holds && atCap) {
+        delete holder.spawning;
+        noteWaiting(fresh, holder, slot, atCap);
+        return false;
+      }
       if (!holds || !rec) {
         record(fresh, { event: 'spawn_lost', task_id: taskId, node_id: slot, token, pid: rec ? rec.pid : null, holder: holder && holder.spawning ? holder.spawning.token : null });
         if (holds) delete holder.spawning;
         return false;
       }
       delete holder.spawning;
+      clearWaiting(fresh, holder, slot);
       r.apply(fresh, holder, rec);
       return true;
     });
   } finally {
     // Not written (lost, or the apply threw): nothing tracks this process, so it does not run.
     if (!kept && rec) killDriver(rec);
+    // A reservation that holds the spawned pid stays as registry evidence until the pid dies.
+    if (reservation) reservation.release();
     heldClaims.delete(token);
   }
 }
@@ -6577,7 +6656,7 @@ function releaseClaim(taskId, nodeId, claim, err) {
 
 // Node fields each effect writes (and nothing else): what the apply copies back.
 const CLAIM_EFFECTS = {
-  open: { state: 'running', fields: ['state', 'result', 'started_at', 'child', 'base_commit'], run: (task, n, progress) => openChild(task, n, progress) },
+  open: { state: 'running', fields: ['state', 'result', 'started_at', 'child', 'base_commit', 'waiting_cap'], run: (task, n, progress) => openChild(task, n, progress) },
   integrate: { state: 'pending', fields: ['state', 'result', 'integration'], run: (task, n) => prepareIntegration(task, n) },
   'plan-integrate': { state: 'pending', fields: ['prd', 'state', 'result'], run: (task, n) => preparePlanIntegration(task, n) },
 };
@@ -6724,6 +6803,13 @@ export function advanceDispatches(taskRef) {
     // where their deps allow (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md principle 5).
     const out = [];
     const take = (n) => {
+      // max_live_drivers: a pre-claim look, counting what this pass already took. openChild takes
+      // the slot for real (livecap.mjs); this keeps a full machine from claim churn every poll.
+      if (!noDriver()) {
+        const look = capPeek(task, { extra: out.length });
+        if (!look.ok) { noteWaiting(task, n, n.node_id, look); return false; }
+        clearWaiting(task, n, n.node_id);
+      }
       const claim = claimNode(task, n, 'open');
       if (!claim) return false;
       n.state = 'running';
