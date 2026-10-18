@@ -42,7 +42,7 @@ process.stdin.on('end', () => {
 test('Claude adapter starts fresh, keeps cwd, uses explicit efficient model, and imposes no spending cap', () => {
   const f = fixture();
   try {
-    const r = f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'test', '--events-output', join(f.dir, 'events.jsonl')]);
+    const r = f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'test', '--events-output', join(f.dir, 'events.jsonl')], { TEAMS_WIKI_ROOT: undefined });
     assert.equal(r.status, 0, r.stderr);
     assert.equal(r.report.stage_ok, true);
     assert.equal(r.report.usage.input_tokens, 12);
