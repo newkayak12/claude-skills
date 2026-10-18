@@ -434,7 +434,7 @@ test('a now.json older than the newest artifact yields the derived stage', () =>
   });
   const [row] = listJson(root);
   assert.equal(row.stage, 'critique');
-  assert.equal(row.now.stage, 'setgoal');
+  assert.equal(row.now, null);
 });
 
 test('now.stage test maps to implement; an unparseable at or an unknown stage falls back to the derived stage', () => {
@@ -523,6 +523,83 @@ test('a rejected --now (bad JSON, bad waiting, bad cost, bad round) leaves an ex
   }
   assert.equal(readFileSync(join(d, 'now.json'), 'utf8'), before);
   assert.deepEqual(readdirSync(d), ['now.json']);
+});
+
+// ---- one freshness check governs every now.json field (D1) ----
+
+// now.json counts as a whole or not at all: a stale or invalid `at` drops stage, round, waiting and
+// now together, so the pane cannot show a stale "waiting on you".
+const liveFiles = (nowJson, extra = {}) => ({
+  '01-plan.md': 'plan', '02-goal-spec.json': SPEC, '02-critique.json': CRIT_REJECTED, 'now.json': nowJson, ...extra,
+});
+const showRow = (dir) => JSON.parse(spawnSync('node', [CHECK, '--show', dir, '--json'], { encoding: 'utf8' }).stdout);
+const textLine = (root, slug) => list(root).stdout.trim().split('\n').find((l) => l.startsWith(`${slug}\t`));
+
+test('a stale now.json is ignored whole: no round 7, no waiting you, no now, cost em dash (text, --json, --show)', () => {
+  const stale = new Date(Date.now() - HOUR).toISOString();
+  const nowObj = { ...full({ stage: 'setgoal', round: 7, waiting: { who: 'you', what: 'approve' } }), at: stale, since: stale };
+  const { root, dirs } = repoWithRuns({ r: { files: liveFiles(nowObj) } });
+  const line = textLine(root, 'r');
+  assert.doesNotMatch(line, /round 7/);
+  assert.doesNotMatch(line, /waiting you/);
+  assert.match(line, /\tcritique\tround 1\twaiting —\tcost —/);
+  const [row] = listJson(root);
+  assert.equal(row.stage, 'critique');
+  assert.equal(row.round, 1);
+  assert.equal(row.waiting, null);
+  assert.equal(row.now, null);
+  assert.deepEqual(showRow(dirs.r), row);
+});
+
+test('a stale now.json on a run with no critique reads round null', () => {
+  const stale = new Date(Date.now() - HOUR).toISOString();
+  const nowObj = { ...full({ stage: 'setgoal', round: 7, waiting: { who: 'you', what: 'approve' } }), at: stale, since: stale };
+  const { root } = repoWithRuns({ r: { files: { '01-plan.md': 'plan', 'now.json': nowObj } } });
+  const [row] = listJson(root);
+  assert.deepEqual([row.stage, row.round, row.waiting, row.now], ['setgoal', null, null, null]);
+  assert.match(textLine(root, 'r'), /round —\twaiting —\tcost —/);
+});
+
+test('a missing or unparseable at, or a now.json that is not an object, is stale whole', () => {
+  const at = freshAt();
+  const base = full({ stage: 'setgoal', round: 7, waiting: { who: 'you', what: 'approve' } });
+  const cases = [
+    { ...base, since: at },
+    { ...base, at: 'not a time', since: at },
+    { ...base, at: null, since: at },
+    [1, 2, 3],
+    7,
+    'text',
+  ];
+  for (const nowObj of cases) {
+    const { root, dirs } = repoWithRuns({ r: { files: liveFiles(nowObj) } });
+    const label = JSON.stringify(nowObj);
+    const line = textLine(root, 'r');
+    assert.doesNotMatch(line, /round 7/, label);
+    assert.doesNotMatch(line, /waiting you/, label);
+    assert.match(line, /cost —/, label);
+    const [row] = listJson(root);
+    assert.deepEqual([row.stage, row.round, row.waiting, row.now], ['critique', 1, null, null], label);
+    assert.deepEqual(showRow(dirs.r), row, label);
+  }
+});
+
+test('a fresh now.json keeps round, waiting, now and cost on text, --json and --show', () => {
+  const at = freshAt();
+  const nowObj = { ...full({ stage: 'setgoal', round: 7, waiting: { who: 'you', what: 'approve' }, cost_usd: 2.5 }), at, since: at };
+  const { root, dirs } = repoWithRuns({ r: { files: liveFiles(nowObj) } });
+  assert.match(textLine(root, 'r'), /\tsetgoal\tround 7\twaiting you: approve\tcost 2\.50/);
+  const [row] = listJson(root);
+  assert.deepEqual([row.stage, row.round, row.waiting, row.now], ['setgoal', 7, { who: 'you', what: 'approve' }, nowObj]);
+  assert.deepEqual(showRow(dirs.r), row);
+});
+
+test('a fresh now.json with an unknown stage keeps its round and waiting but not its stage', () => {
+  const at = freshAt();
+  const nowObj = { ...full({ stage: 'dancing', round: 7, waiting: { who: 'you', what: 'approve' } }), at, since: at };
+  const { root } = repoWithRuns({ r: { files: liveFiles(nowObj) } });
+  const [row] = listJson(root);
+  assert.deepEqual([row.stage, row.round, row.waiting], ['critique', 7, { who: 'you', what: 'approve' }]);
 });
 
 test('bare RUN_DIR keeps exit 0, 1 and 2', () => {

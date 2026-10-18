@@ -34,6 +34,10 @@
 //   excluded), with now.stage 'test' read as implement; otherwise it is derived from the files
 //   (plan, setgoal, critique, implement, gate, report). round = now.round, else the number of
 //   critique rounds, else null. waiting = now.waiting or null. now = parsed now.json or null.
+//   One freshness check governs every now.json field, not only stage: now.json is used only when it
+//   is an object whose `at` parses and is not older than the newest artifact. Otherwise it is
+//   ignored whole — stage and round come from the files, waiting and now are null, and the text
+//   line shows cost '—'.
 //   started_at = manifest.started_at or null (never backfilled). max_critique_rounds =
 //   manifest.max_critique_rounds, default 2. severity = {blocker, major, minor, nit}, always all
 //   four counts, over the problems of every critique round in rounds[].
@@ -155,15 +159,18 @@ const critiqueRounds = (dir, names) => {
   });
 };
 
-// now.json names the stage only while it is at least as new as the run's newest artifact (now.json
-// itself excluded); an artifact written after the call means the run has moved on, so the files win.
+// now.json is live only while it is an object whose `at` parses and is at least as new as the run's
+// newest artifact (now.json itself excluded); an artifact written after the call means the run has
+// moved on, so the files win. One check, used for every field read from now.json.
 const NOW_STAGES = ['plan', 'setgoal', 'critique', 'implement', 'test', 'gate', 'report'];
-const reconcileStage = (nowJson, derived, artifactMs) => {
-  if (!nowJson || typeof nowJson !== 'object' || Array.isArray(nowJson)) return derived;
-  if (typeof nowJson.stage !== 'string' || !NOW_STAGES.includes(nowJson.stage)) return derived;
+const liveNow = (nowJson, artifactMs) => {
+  if (!nowJson || typeof nowJson !== 'object' || Array.isArray(nowJson)) return null;
   const at = Date.parse(nowJson.at);
-  if (Number.isNaN(at) || at < artifactMs) return derived;
-  return nowJson.stage === 'test' ? 'implement' : nowJson.stage;
+  return Number.isNaN(at) || at < artifactMs ? null : nowJson;
+};
+const reconcileStage = (live, derived) => {
+  if (!live || typeof live.stage !== 'string' || !NOW_STAGES.includes(live.stage)) return derived;
+  return live.stage === 'test' ? 'implement' : live.stage;
 };
 
 function buildRow(dir, nowMs) {
@@ -199,23 +206,23 @@ function buildRow(dir, nowMs) {
     : passed + failed < ids.length ? 'implement'
     : !has('04-goal-gate.json') ? 'gate'
     : 'report';
-  const nowJson = readJsonFile(join(dir, 'now.json'));
   const artifactMs = Math.max(
     0,
     ...names.filter((n) => n !== 'now.json' && !n.startsWith('now.json.tmp-')).map((n) => statSync(join(dir, n)).mtimeMs),
     ...subs.map((n) => statSync(join(dir, 'subgoals', n)).mtimeMs),
   );
+  const live = liveNow(readJsonFile(join(dir, 'now.json')), artifactMs);
   const severity = Object.fromEntries(SEVERITIES.map((s) => [s, 0]));
   for (const rd of rounds) for (const pr of rd.problems) severity[pr.severity]++;
   const cap = manifest?.max_critique_rounds;
   return {
     slug: basename(dir),
     dir,
-    stage: reconcileStage(nowJson, derived, artifactMs),
-    round: Number.isInteger(nowJson?.round) ? nowJson.round : rounds.length ? newest.round : null,
-    waiting: nowJson?.waiting ?? null,
+    stage: reconcileStage(live, derived),
+    round: Number.isInteger(live?.round) ? live.round : rounds.length ? newest.round : null,
+    waiting: live?.waiting ?? null,
     stalled: age > STALLED_MS && age <= OPEN_MS,
-    now: nowJson,
+    now: live,
     started_at: typeof manifest?.started_at === 'string' ? manifest.started_at : null,
     max_critique_rounds: Number.isInteger(cap) && cap >= 1 ? cap : 2,
     severity,
