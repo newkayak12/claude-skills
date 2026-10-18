@@ -56,7 +56,7 @@ test('bare "TODO" title is still a placeholder', () => {
 const NOW_KEYS = ['stage', 'doing', 'round', 'last_step', 'next', 'waiting', 'cost_usd', 'at', 'since'];
 const ROW_KEYS = [
   'dir', 'failed', 'max_critique_rounds', 'now', 'passed', 'round', 'rounds',
-  'slug', 'stage', 'stalled', 'started_at', 'total', 'waiting',
+  'severity', 'slug', 'stage', 'stalled', 'started_at', 'total', 'waiting',
 ];
 const HOUR = 3600 * 1000;
 
@@ -183,7 +183,11 @@ const list = (root, ...more) => spawnSync('node', [CHECK, '--list', '--cwd', roo
 const listJson = (root) => JSON.parse(list(root, '--json').stdout);
 
 const SPEC = { goal: 'a goal that is long enough', acceptance: ['a'], subgoals: [{ id: 's1', title: 'T' }] };
-const NOW_FILE = { ...full({ stage: 'implement', round: 1, waiting: { who: 'you', what: 'pick a vendor' } }), at: 'a', since: 'a' };
+// A now.json counts only while its `at` is not older than the run's newest artifact, so a fixture
+// that wants it honoured stamps `at` a minute ahead of the files written in the same instant.
+const freshAt = () => new Date(Date.now() + 60 * 1000).toISOString();
+const NOW_FILE = { ...full({ stage: 'implement', round: 1, waiting: { who: 'you', what: 'pick a vendor' } }), at: freshAt(), since: freshAt() };
+const CRIT_REJECTED = { sound: false, problems: [{ severity: 'major', text: 'acceptance is vague' }] };
 
 test('--list prints both open runs of a 2-run fixture with stage, round and waiting', () => {
   const { root } = repoWithRuns({
@@ -196,7 +200,8 @@ test('--list prints both open runs of a 2-run fixture with stage, round and wait
   assert.equal(lines.length, 2, r.stdout);
   const a = lines.find((l) => l.startsWith('alpha'));
   const b = lines.find((l) => l.startsWith('beta'));
-  assert.match(a, /critique/);
+  assert.match(a, /\timplement\t/);
+  assert.doesNotMatch(a, /critique/);
   assert.match(a, /round 1/);
   assert.match(a, /waiting you: pick a vendor/);
   assert.match(a, /cost 0\.42/);
@@ -373,7 +378,7 @@ test('--list text rounds fall back to the critique round count when now.json has
 
 test('--show --json returns one run in the --list row shape', () => {
   const { root, dirs } = repoWithRuns({
-    a: { files: { '01-plan.md': 'p', 'now.json': NOW_FILE, '02-goal-spec.json': SPEC, '02-critique.json': { sound: true, problems: [] }, 'subgoals/s1/result.json': { passed: true } } },
+    a: { files: { '01-plan.md': 'p', 'now.json': { ...NOW_FILE, stage: 'gate' }, '02-goal-spec.json': SPEC, '02-critique.json': { sound: true, problems: [] }, 'subgoals/s1/result.json': { passed: true } } },
   });
   const r = spawnSync('node', [CHECK, '--show', dirs.a, '--json'], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
@@ -387,6 +392,137 @@ test('--show --json returns one run in the --list row shape', () => {
 test('--show on a missing dir exits 2', () => {
   const r = spawnSync('node', [CHECK, '--show', join(tmpdir(), 'fbn-nope-xyz'), '--json'], { encoding: 'utf8' });
   assert.equal(r.status, 2);
+});
+
+// ---- stage reconciliation, severity rollup, cost and field pins (card 40, node half) ----
+
+// Case A has no now.json: the stage comes from the files, and `critique` is right (a spec and no
+// critique file yet). Case B was seen reading `critique` in the pane while the lead had already
+// called --now with stage setgoal round 2: buildRow derived the stage from files only.
+const stageFixture = () => repoWithRuns({
+  a: { files: { '01-plan.md': 'plan', '02-goal-spec.json': SPEC } },
+  b: {
+    files: {
+      '01-plan.md': 'plan', '02-goal-spec.json': SPEC, '02-critique.json': CRIT_REJECTED,
+      'now.json': { ...full({ stage: 'setgoal', round: 2 }), at: freshAt(), since: freshAt() },
+    },
+  },
+});
+
+test('stale-stage fixture: --list prints both runs, and case B reads the now.json stage', () => {
+  const { root } = stageFixture();
+  const r = list(root);
+  assert.equal(r.status, 0, r.stderr);
+  const lines = r.stdout.trim().split('\n');
+  assert.equal(lines.length, 2, r.stdout);
+  const a = lines.find((l) => l.startsWith('a\t'));
+  const b = lines.find((l) => l.startsWith('b\t'));
+  assert.match(a, /\tcritique\t/);
+  assert.match(b, /\tsetgoal\t/);
+  assert.doesNotMatch(b, /critique/);
+  assert.match(b, /round 2/);
+  const rows = listJson(root);
+  assert.equal(rows.find((x) => x.slug === 'a').stage, 'critique');
+  assert.equal(rows.find((x) => x.slug === 'b').stage, 'setgoal');
+  assert.equal(rows.find((x) => x.slug === 'b').round, 2);
+});
+
+test('a now.json older than the newest artifact yields the derived stage', () => {
+  const stale = new Date(Date.now() - HOUR).toISOString();
+  const { root } = repoWithRuns({
+    r: { files: { '01-plan.md': 'plan', '02-goal-spec.json': SPEC, 'now.json': { ...full({ stage: 'setgoal' }), at: stale, since: stale } } },
+  });
+  const [row] = listJson(root);
+  assert.equal(row.stage, 'critique');
+  assert.equal(row.now.stage, 'setgoal');
+});
+
+test('now.stage test maps to implement; an unparseable at or an unknown stage falls back to the derived stage', () => {
+  const at = freshAt();
+  const row = (now) => listJson(repoWithRuns({ r: { files: { '01-plan.md': 'plan', '02-goal-spec.json': SPEC, 'now.json': now } } }).root)[0];
+  assert.equal(row({ ...full({ stage: 'test' }), at, since: at }).stage, 'implement');
+  assert.equal(row({ ...full({ stage: 'gate' }), at: 'a', since: 'a' }).stage, 'critique');
+  assert.equal(row({ ...full({ stage: 'dancing' }), at, since: at }).stage, 'critique');
+  assert.equal(row({ ...full({ stage: '' }), at, since: at }).stage, 'critique');
+});
+
+test('an invalid now.json (not an object) leaves the derived stage', () => {
+  const { root } = repoWithRuns({ r: { files: { '01-plan.md': 'plan', 'now.json': '{broken' } } });
+  const [row] = listJson(root);
+  assert.equal(row.stage, 'setgoal');
+  assert.equal(row.now, null);
+});
+
+test('--show reads the same reconciled stage as --list', () => {
+  const { root, dirs } = stageFixture();
+  const r = spawnSync('node', [CHECK, '--show', dirs.b, '--json'], { encoding: 'utf8' });
+  assert.equal(JSON.parse(r.stdout).stage, 'setgoal');
+  assert.deepEqual(JSON.parse(r.stdout), listJson(root).find((x) => x.slug === 'b'));
+});
+
+test('severity rollup counts blocker, major, minor and nit across every critique round', () => {
+  const { root } = repoWithRuns({
+    r: {
+      files: {
+        '01-plan.md': 'p', '02-goal-spec.json': SPEC,
+        '02-critique.r1.json': { sound: false, problems: [{ severity: 'blocker', text: 'a' }, 'Nit: b', { severity: 'weird', text: 'c' }] },
+        '02-critique.json': { sound: false, problems: [{ severity: 'minor', text: 'd' }, 'Blocker - e', 'Minor: f', 'no prefix'] },
+      },
+    },
+  });
+  const [row] = listJson(root);
+  assert.deepEqual(row.severity, { blocker: 2, major: 2, minor: 2, nit: 1 });
+  assert.deepEqual(Object.keys(row.severity), ['blocker', 'major', 'minor', 'nit']);
+});
+
+test('severity rollup is all zeros for a run with no critique, and a critique with no problems', () => {
+  const { root } = repoWithRuns({
+    none: { files: { '01-plan.md': 'p' } },
+    empty: { files: { '01-plan.md': 'p', '02-goal-spec.json': SPEC, '02-critique.json': { sound: true, problems: [] } } },
+  });
+  for (const row of listJson(root)) assert.deepEqual(row.severity, { blocker: 0, major: 0, minor: 0, nit: 0 });
+});
+
+test('--list text shows cost_usd as an em dash when null or missing and as a number when set', () => {
+  const at = freshAt();
+  const files = (cost) => ({ '01-plan.md': 'p', 'now.json': { ...full({ stage: 'plan' }), ...cost, at, since: at } });
+  const { root } = repoWithRuns({
+    nul: { files: files({ cost_usd: null }) },
+    missing: { files: { '01-plan.md': 'p', 'now.json': { stage: 'plan', at, since: at } } },
+    num: { files: files({ cost_usd: 1.5 }) },
+    nonow: { files: { '01-plan.md': 'p' } },
+  });
+  const lines = list(root).stdout.trim().split('\n');
+  const line = (slug) => lines.find((l) => l.startsWith(`${slug}\t`));
+  assert.match(line('nul'), /cost —/);
+  assert.match(line('missing'), /cost —/);
+  assert.match(line('nonow'), /cost —/);
+  assert.match(line('num'), /cost 1\.50/);
+});
+
+test('the now.json fields reach the row unchanged: stage, doing, round, last_step, next, waiting, cost_usd', () => {
+  const at = freshAt();
+  const nowObj = {
+    stage: 'implement', doing: 'writing math.js', round: 3, last_step: 'plan done', next: 'test',
+    waiting: { who: 'vendor', what: 'codex running' }, cost_usd: 0.42, at, since: at,
+  };
+  const { root } = repoWithRuns({ r: { files: { '01-plan.md': 'p', 'now.json': nowObj } } });
+  const [row] = listJson(root);
+  assert.deepEqual(row.now, nowObj);
+  assert.equal(row.round, 3);
+  assert.deepEqual(row.waiting, { who: 'vendor', what: 'codex running' });
+  assert.equal(row.stage, 'implement');
+});
+
+test('a rejected --now (bad JSON, bad waiting, bad cost, bad round) leaves an existing now.json untouched', () => {
+  const d = emptyDir();
+  assert.equal(now(d, full()).status, 0);
+  const before = readFileSync(join(d, 'now.json'), 'utf8');
+  for (const bad of ['{nope', full({ waiting: 'x' }), full({ cost_usd: 'a lot' }), full({ round: 1.5 }), { doing: 'x' }]) {
+    assert.notEqual(now(d, bad).status, 0, JSON.stringify(bad));
+  }
+  assert.equal(readFileSync(join(d, 'now.json'), 'utf8'), before);
+  assert.deepEqual(readdirSync(d), ['now.json']);
 });
 
 test('bare RUN_DIR keeps exit 0, 1 and 2', () => {
