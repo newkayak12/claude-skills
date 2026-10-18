@@ -20,7 +20,7 @@
 //
 // Shared contract (the harness mod and codex read these shapes; change them only together):
 // - now.json = {stage, doing, round, last_step, next, waiting, cost_usd, at, since}. The input
-//   needs a non-empty string stage; every other key defaults to null. waiting is null or
+//   needs a stage of plan|setgoal|critique|implement|test|gate|report, exactly as written; every other key defaults to null. waiting is null or
 //   {who:'you'|'vendor', what:string}, and any other value is rejected (only 'you' means the run
 //   waits on a person). last_step is cut to 120 chars. cost_usd is a number or null, shown as
 //   '—' when null. at is stamped on every call; since is kept while stage is unchanged and reset
@@ -86,7 +86,7 @@ function cmdNow(runDir, raw) {
     fail2(`--now: not JSON: ${e && e.message}`);
   }
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail2('--now: expected a JSON object');
-  if (typeof input.stage !== 'string' || !input.stage.trim()) fail2('--now: stage must be a non-empty string');
+  if (!NOW_STAGES.includes(input.stage)) fail2(`--now: stage must be one of ${NOW_STAGES.join('|')}`);
   const w = input.waiting ?? null;
   if (w !== null && !(typeof w === 'object' && !Array.isArray(w) && ['you', 'vendor'].includes(w.who) && typeof w.what === 'string'))
     fail2("--now: waiting must be null or {who:'you'|'vendor', what:string}");
