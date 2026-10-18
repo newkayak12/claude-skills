@@ -911,9 +911,18 @@ test('S1: a pointer to an untagged or older run is refused; the tagged run is fo
 test('S1: the harness driver loads the graph and harness plugins', async () => {
   const { driverArgv } = await import('../mcp/taskmanager.mjs');
   const dirs = (argv) => argv.flatMap((a, i) => (argv[i - 1] === '--plugin-dir' ? [a] : []));
-  const harness = dirs(driverArgv(null, { harness: true }));
-  assert.ok(harness.some((d) => /[\\/]graph$/.test(d)), harness.join(' '));
-  assert.ok(harness.some((d) => /[\\/]harness$/.test(d)), harness.join(' '));
+  const prev = process.env.CLAUDE_PLUGIN_ROOT;
+  const prevDriver = process.env.HARNESS_CHILD_DRIVER;
+  delete process.env.CLAUDE_PLUGIN_ROOT;
+  delete process.env.HARNESS_CHILD_DRIVER;
+  try {
+    const harness = dirs(driverArgv(null, { harness: true }));
+    assert.ok(harness.some((d) => /[\\/]graph$/.test(d)), harness.join(' '));
+    assert.ok(harness.some((d) => /[\\/]harness$/.test(d)), harness.join(' '));
+  } finally {
+    if (prev !== undefined) process.env.CLAUDE_PLUGIN_ROOT = prev;
+    if (prevDriver !== undefined) process.env.HARNESS_CHILD_DRIVER = prevDriver;
+  }
 });
 test('S1: the harness prompt carries the request, context and decisions, the tagged graph_open, the fallback manifest tag, the pointer and the report path - and no Workflow route', async () => {
   const f = driverFixture({}, FAKE_DRIVER_RESPAWN);
