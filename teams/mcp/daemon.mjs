@@ -37,11 +37,12 @@ import {
   dispatchSettled, foldDispatch, readyToJudge, serviceSRun, delegateIfSmall,
   finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages, autoRejudge, autoResumeCapacity, pendingRejudgeAt,
   STAGE_SKILLS, syncTickets, autoReshape, closeFailedPlanning, promoteManagerHumanGates, enforceBudget,
-  expireAsks, nextAskDeadline,
+  expireAsks, nextAskDeadline, worktreeGoneStop,
 } from './taskmanager.mjs';
 import { ticketSnapshot } from './tickets.mjs';
 import { harvestTask } from './runlog.mjs';
 import { pluginDirArgs, isEntryPoint, teamsPluginRoot } from './pluginroots.mjs';
+import { reserveSlot, noteWaiting, clearWaiting } from './livecap.mjs';
 
 function parseArgs(argv) {
   const out = {};
@@ -181,12 +182,26 @@ export function unexplainedRefusal(result) {
   return { ...result, stage_ok: false, judge_failed: true, reason: 'the judge refused without a reason or gaps - a refusal nobody can act on; asked again' };
 }
 
+// The judge's own pid, on n.judging.proc (where livecap.mjs reads it from every task.json) and on
+// its slot's registry entry. Only while this judge still holds the stamp.
+function recordJudgeProc(task, n, slot, rec) {
+  if (slot) slot.attach(rec);
+  const token = n.judging && n.judging.token;
+  if (!token || !rec.pid) return;
+  try {
+    mutateTask(task.run_id, (t) => {
+      const f = t.nodes.find((x) => x.node_id === n.node_id);
+      if (f && f.judging && f.judging.token === token) f.judging.proc = rec;
+    });
+  } catch { /* the registry entry still counts it */ }
+}
+
 // One single-shot `claude -p` call for one judging node: the same briefing a fresh agent would
 // have been handed (briefing_path), the same Required-output contract, run headless and parsed
 // back into the JSON finish() expects. stage_ok:false on any failure to get one - a judge that
 // could not judge is not a verdict on the work, and finish()/succeeded() already treat
 // stage_ok:false as a plain failed node, retryable the same way any other one is.
-async function judge(task, n) {
+async function judge(task, n, { slot = null } = {}) {
   const prompt = composeTaskPrompt(task, n);
   try {
     const p = briefingPath(task, n);
@@ -207,6 +222,9 @@ async function judge(task, n) {
       resolve({ stage_ok: false, judge_failed: true, reason: `judge process for ${n.node_id} could not start: ${String((e && e.message) || e)}` });
       return;
     }
+    // The judge is a live `claude -p` like a driver: its pid goes to the slot and onto n.judging
+    // so livecap.mjs counts it from any process.
+    recordJudgeProc(task, n, slot, { pid: proc.pid || null, started_at: Date.now(), command: argv.join(' ') });
     // settle() guarantees exactly one resolve no matter which of close / error / timeout wins,
     // and clears the timer so a finished judge cannot leave the process alive on a pending handle.
     let settled = false;
@@ -262,7 +280,10 @@ async function judge(task, n) {
 // The fallback timer is the safety net, not the mechanism - 15s is short enough that a daemon
 // stuck on a missed event self-heals inside the time a person would wait before checking
 // tm_status by hand, and long enough that it is not a disguised poll loop.
-const FALLBACK_WAIT_MS = 15000;
+// It is also the cap re-check: a node waiting on max_live_drivers (livecap.mjs) is looked at again
+// when this elapses, since a slot frees in another task's process this one holds no watch on.
+// HARNESS_DAEMON_POLL_MS lowers it for tests.
+export const FALLBACK_WAIT_MS = Number(process.env.HARNESS_DAEMON_POLL_MS) > 0 ? Number(process.env.HARNESS_DAEMON_POLL_MS) : 15000;
 
 function watchDir(dir, onChange) {
   try {
@@ -377,6 +398,7 @@ function stampJudging(taskId, nodeId) {
     }
     const stamp = { pid: process.pid, token: randomUUID(), attempt: n.attempt || 1, reopened: n.reopened || 0, at: Date.now() };
     n.judging = stamp;
+    clearWaiting(t, n, nodeId);
     heldJudging.add(stamp.token);
     record(t, { event: 'judge_start', task_id: t.run_id, node_id: nodeId, stage: n.stage, token: stamp.token, attempt: stamp.attempt, reopened: stamp.reopened });
     const task = structuredClone(t);
@@ -440,6 +462,10 @@ async function stepOnceInner(taskId, judgeFn) {
   // Sleep/wake first: a suspend since the last tick is recorded before the ask timeout, the stall
   // watchdog and the timebox below read the clock (taskstate.mjs applySuspends).
   tx((t) => applySuspends(t));
+  // A cancelled task has nothing left to drive. A gone worktree or task cwd stops it here, before
+  // any driver or judge is spawned (taskmanager.mjs's worktreeGoneStop): the task then reads
+  // blocked and main() records daemon_done.
+  if (tx((t) => { worktreeGoneStop(t); return !!(t.cancelled || t.worktree_gone); })) return false;
   // ask_timeout: this daemon is the clock for every `ask` card under the task - a parked child
   // has no driver to notice its own deadline (taskmanager.mjs's expireAsks).
   const expired = tx((t) => expireAsks(t).length > 0);
@@ -519,27 +545,43 @@ async function stepOnceInner(taskId, judgeFn) {
   const candidates = readyToJudge(loadRunAt(taskPath(taskId)) || { nodes: [] })
     .filter((n) => n.stage !== 'dispatch').map((n) => n.node_id);
   for (const nodeId of candidates) {
-    const s = stampJudging(taskId, nodeId);
-    if (!s) continue;
-    let result;
-    try {
-      result = await judgeFn(s.task, s.node);
-    } catch (e) {
-      // A clear that fails (ELOCKTIMEOUT) must not mask the judge's own error: the stamp it
-      // leaves is reclaimed as stale later; the ledger keeps both, and the judge error surfaces.
-      try {
-        clearJudging(taskId, nodeId, s.stamp);
-      } catch (clearErr) {
-        record({ run_id: taskId }, {
-          event: 'judging_clear_failed', task_id: taskId, node_id: nodeId, token: s.stamp.token,
-          error: String((clearErr && clearErr.message) || clearErr).slice(0, 300),
-          judge_error: String((e && e.message) || e).slice(0, 300),
-        });
+    // A judge is a `claude -p` too: it takes a slot under max_live_drivers before it is stamped.
+    // At the cap the node stays ready (no stamp), one waiting_cap event, and the next tick asks
+    // again. A test's injected judgeFn spawns nothing and takes no slot.
+    let slot = null;
+    if (judgeFn === judge) {
+      const got = reserveSlot(loadRunAt(taskPath(taskId)) || { run_id: taskId }, { label: `judge:${nodeId}` });
+      if (!got.ok) {
+        tx((t) => { const f = t.nodes.find((x) => x.node_id === nodeId); if (f) noteWaiting(t, f, nodeId, got); });
+        continue;
       }
-      throw e;
+      slot = got.slot;
     }
-    applyJudged(taskId, nodeId, s.stamp, result);
-    progressed = true;
+    try {
+      const s = stampJudging(taskId, nodeId);
+      if (!s) continue;
+      let result;
+      try {
+        result = await judgeFn(s.task, s.node, { slot });
+      } catch (e) {
+        // A clear that fails (ELOCKTIMEOUT) must not mask the judge's own error: the stamp it
+        // leaves is reclaimed as stale later; the ledger keeps both, and the judge error surfaces.
+        try {
+          clearJudging(taskId, nodeId, s.stamp);
+        } catch (clearErr) {
+          record({ run_id: taskId }, {
+            event: 'judging_clear_failed', task_id: taskId, node_id: nodeId, token: s.stamp.token,
+            error: String((clearErr && clearErr.message) || clearErr).slice(0, 300),
+            judge_error: String((e && e.message) || e).slice(0, 300),
+          });
+        }
+        throw e;
+      }
+      applyJudged(taskId, nodeId, s.stamp, result);
+      progressed = true;
+    } finally {
+      if (slot) slot.release();
+    }
   }
 
   // An integrate that refused on its checks leaves the graph "blocked" by node state alone, but
@@ -606,15 +648,19 @@ async function main() {
         continue;
       }
     }
+    // tm_cancel owns the end of a cancelled task (its daemon_done and clean): this loop writes nothing.
+    if (fresh.cancelled) return;
     if (taskState(fresh).state !== 'running') {
+      // A task stopped on a gone worktree has nothing left to close, re-judge or wait for.
+      const stopped = !!fresh.worktree_gone;
       // The closers run at the TOP of a step; a node that failed at the end of this one (the goal
       // gate, code-sprint-S6) left the task blocked before enforceBudget ever saw it, and the
       // stopped Sprint ended with no report. Give them one look before calling it done.
-      const closed = await loopStep(TASK_ID, streak, () => mutateTask(TASK_ID, (t) => enforceBudget(t)));
+      const closed = stopped ? { ok: true, value: false } : await loopStep(TASK_ID, streak, () => mutateTask(TASK_ID, (t) => enforceBudget(t)));
       if (!closed.ok) { await lockRetry(); continue; }
       if (closed.value) continue;
       // Not running is not finished while a failed judge still has a scheduled re-judge.
-      const rejudgeAt = pendingRejudgeAt(fresh);
+      const rejudgeAt = stopped ? null : pendingRejudgeAt(fresh);
       if (rejudgeAt !== null) {
         await new Promise((r) => setTimeout(r, Math.max(1000, Math.min(rejudgeAt - Date.now() + 500, 60 * 1000))));
         continue;
@@ -622,7 +668,7 @@ async function main() {
       // Nor while an `ask` card waits with an ask_timeout set: the whole graph parked on a person
       // (manager-level card, or a size-S run) leaves nothing else to drive, and exiting here would
       // leave nobody to answer it at its deadline. Sleep until then (capped, re-checked) instead.
-      const askAt = nextAskDeadline(fresh);
+      const askAt = stopped ? null : nextAskDeadline(fresh);
       if (askAt !== null) {
         await new Promise((r) => setTimeout(r, Math.max(250, Math.min(askAt - Date.now() + 250, 60 * 1000))));
         continue;
