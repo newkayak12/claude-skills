@@ -59,6 +59,15 @@ Cards 40–43 are in Sprint E-95de6173 (2026-10-17).
 43. **S. session memo and guard read as live state** — design §4 S. Card 30 merged (memo toggles,
     Esc/q close); README/KOR still say "read-only Memo pane" and `memo-pane.png` is stale.
 
+53. **smart-compact holds its threshold inside a long turn**
+    - Why: 2026-10-18, building Phantom with the threshold at 40% the context reached ~45%: smart-compact
+      checks only on `turn.complete` (reason answer), so one turn of dozens of tool calls (build, test,
+      release, install) is never checked until it ends; the recap adds more on top. Cause verified
+      (`session/hooks/compact.tsx` turn.complete handler; README "Smart compact").
+    - Acceptance: usage is also checked between tool calls; at or over the threshold mid-turn the
+      recap + compact runs at the next point compact accepts, before the next answer; a test drives a
+      turn that crosses the threshold mid-way; seen once live.
+
 49. **Mods put subagent-to-subagent communication to work**
     - Why: user, 2026-10-17: "mod 추가로 subagent 간 의사소통하는거 더 적극적으로 활용할 수 있는 방법
       찾아보자". Today teams workers are separate `claude -p` drivers that hand work over only through
