@@ -44,16 +44,26 @@ function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-// {start: epoch ms | null, command: string | null} of a live pid, or null when ps cannot say.
+// {zombie, start: epoch ms | null, command: string | null} of a pid, or null when ps cannot say.
+// A killed child that nobody has reaped yet still answers a signal probe; its ps state is Z.
 export function procInfo(pid) {
   try {
-    const out = execFileSync('ps', ['-ww', '-o', 'lstart=,command=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).replace(/^\s+/, '').split('\n')[0];
+    const out = execFileSync('ps', ['-ww', '-o', 'stat=,lstart=,command=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).replace(/^\s+/, '').split('\n')[0];
     if (!out) return null;
-    const start = Date.parse(out.slice(0, 24));
-    return { start: Number.isFinite(start) ? start : null, command: out.slice(24).trim() || null };
+    const stat = out.split(/\s+/)[0];
+    const rest = out.slice(stat.length).replace(/^\s+/, '');
+    const start = Date.parse(rest.slice(0, 24));
+    return { zombie: stat.startsWith('Z'), start: Number.isFinite(start) ? start : null, command: rest.slice(24).trim() || null };
   } catch {
     return null;
   }
+}
+
+// Alive and not a zombie.
+export function liveProc(pid) {
+  if (!pidAlive(pid)) return false;
+  const info = procInfo(pid);
+  return !(info && info.zombie);
 }
 
 // A recorded {pid, started_at, command} still names the live process it was written for.
@@ -61,6 +71,7 @@ export function sameProcess(entry) {
   if (!entry || !entry.pid || !pidAlive(entry.pid)) return false;
   const info = procInfo(entry.pid);
   if (!info) return true; // cannot tell: trust the signal probe
+  if (info.zombie) return false;
   if (Number.isFinite(entry.started_at) && info.start !== null && info.start > entry.started_at + START_SLACK_MS) return false;
   if (entry.command && info.command) {
     const bin = basename(String(entry.command).split(' ')[0]);
@@ -159,6 +170,12 @@ export function liveProcesses(root = tasksRoot(), { prune = false } = {}) {
     }
   }
   return [...byPid.values()];
+}
+
+// The registry's processes for one task: a spawn that has a pid but may not be on task.json yet.
+export function registryProcesses(taskId, root = tasksRoot()) {
+  return readRegistry(root).filter((e) => e.pid && e.task_id === taskId)
+    .map((e) => ({ pid: e.pid, started_at: e.started_at, command: e.command, where: e.label || 'reservation' }));
 }
 
 // Count only, no reservation: a pre-claim look. {ok, live, cap}; `extra` is what the caller has
