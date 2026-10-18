@@ -170,9 +170,9 @@ Cards 40–43 are in Sprint E-95de6173 (2026-10-17).
 
 ### Skeleton and length (one card per skill, next edit)
 
-24. **Remaining skeleton gaps** — `node _repo/scripts/check-skeleton.mjs` lists 22 non-frozen skills
-    (2026-10-17: Process 11, Output Template 13, Related Skills 4, over 200 lines 3). Acceptance:
-    count falls each Sprint; no mass rewrite.
+24. **Remaining skeleton gap: harness:harness** — `node _repo/scripts/check-skeleton.mjs` lists 1 non-frozen
+    skill (2026-10-17, after merging E-6b073e8a and E-69f230a3: 20 → 1): `harness:harness` missing Output
+    Template and Related Skills. Acceptance: 0 skeleton problems; no mass rewrite.
 
 ## Frozen (do not pull)
 
