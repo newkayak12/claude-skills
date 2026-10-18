@@ -57,6 +57,7 @@ import {
   storyLinks, packageFiling, parseTicketKey, storyBlockedReason,
   planningPkgs, livePlanningPkgs, qaPkgs, phaseOfId, planningStories, storyId, storyLabel,
 } from './tickets.mjs';
+import { resolveBase, failingTests, compareOnBase, exclusionLine } from './basefail.mjs';
 import { writeDocs, renderPrd, cardDocuments, questionLine } from './docs.mjs';
 import { mode as wikiMode } from './wikibridge.mjs';
 import { harnessVerdict, taskTag } from './harnessrun.mjs';
@@ -1249,6 +1250,12 @@ function retryPackage(task, pkgId, feedback) {
   const first = roundDispatch(task, pkgId);
   const spent = attempt - ((first && first.attempt) || 1);
   if (spent > task.max_retries) {
+    // Recorded before settleFailure writes the integrate off: reintegrateExhausted needs to know
+    // which packages are not done once the rest has finished.
+    if (((task.spec && task.spec.packages) || []).some((p) => !p.repair && String(p.id) === String(pkgId))) {
+      const ex = task.exhausted || (task.exhausted = { packages: [] });
+      if (!ex.packages.includes(String(pkgId))) ex.packages.push(String(pkgId));
+    }
     const dead = task.nodes.filter((n) => n.subgoal_id === pkgId && n.state === 'failed' && !n.final);
     // Settle first, save second: an object literal evaluates left to right, and a save that
     // runs before the settling writes the unsettled graph.
@@ -1381,6 +1388,73 @@ function reintegrateBehind(task, oldId, acceptIds, feedback) {
   return fresh;
 }
 
+// Packages a spent retry budget left not done, once the one integrate over the rest has opened:
+// the exhausted ones and everything that waits on them. Every coupling that used to key on
+// task.budget_stopped alone (the undeliverable filter, the judges' scope, the goal floor) reads this.
+function notDoneIds(task) {
+  const ex = task.exhausted;
+  return (ex && ex.reintegrated && Array.isArray(ex.not_done)) ? ex.not_done : [];
+}
+
+// card 39 (E-32e8068c, 2026-10-18): P1 spent its retries, settleFailure wrote the integrate, QA
+// and gate:goal off, and the accepted P2 never reached an integration tree. Once nothing is
+// running and every other package is accepted, ONE integrate opens over the accepted ones and
+// what settleFailure wrote off behind the old integrate comes back, as rescueQaRound does for a
+// QA card. A dependent of a not-done package is not done and is not merged. Zero accepted opens
+// nothing; the guard is task.exhausted.reintegrated, like task.budget_stopped.reintegrated.
+export function reintegrateExhausted(task) {
+  const ex = task.exhausted;
+  if (!ex || ex.reintegrated || task.cancelled || task.worktree_gone || task.budget_stopped) return false;
+  if (task.s_run || task.harness_run) return false;
+  if (task.nodes.some((n) => n.state === 'running') || pendingRejudgeAt(task) !== null) return false;
+  const packages = ((task.spec && task.spec.packages) || []).filter((p) => !p.repair);
+  const dependents = new Set(ex.packages.map(String));
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const p of packages) {
+      if (dependents.has(String(p.id)) || !(p.deps || []).some((d) => dependents.has(String(d)))) continue;
+      dependents.add(String(p.id));
+      grew = true;
+    }
+  }
+  const accepted = [];
+  for (const p of packages) {
+    if (dependents.has(String(p.id))) continue;
+    const a = latestBySubgoal(task, String(p.id), 'accept');
+    // Not accepted and not dead: a retry, a judge or a dispatch is still owed.
+    if (!a || a.state !== 'done') return false;
+    accepted.push(a.node_id);
+  }
+  if (!accepted.length) return false;
+  const old = task.nodes.filter((n) => n.stage === 'integrate' && !task.nodes.some((x) => x.supersedes === n.node_id)).pop();
+  if (!old || old.state !== 'unreachable') return false;
+  const notDone = packages.map((p) => String(p.id)).filter((id) => dependents.has(id));
+  const fresh = reintegrateBehind(task, old.node_id, accepted, `retry budget exhausted; not done: ${notDone.join(', ')}`);
+  old.state = 'skipped';
+  old.final = true;
+  old.result = { stage_ok: false, reason: `superseded by ${fresh}: retry budget exhausted - integrating only the accepted packages` };
+  ex.reintegrated = fresh;
+  ex.not_done = notDone;
+  const alive = (x) => x && ['done', 'pending', 'running', 'waiting_human'].includes(x.state);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const x of task.nodes) {
+      if (x.state !== 'unreachable') continue;
+      if (![...x.deps, ...(x.after || [])].every((d) => alive(task.nodes.find((y) => y.node_id === d)))) continue;
+      x.state = 'pending';
+      delete x.result;
+      delete x.final;
+      // Counted like autoRejudge's reopen: only a child run's merge reads it, to let a reopen win.
+      x.reopened = (x.reopened || 0) + 1;
+      grew = true;
+    }
+  }
+  for (const q of qaPkgs(task)) if (q.integration_of === old.node_id) q.integration_of = fresh;
+  record(task, { event: 'exhausted_reintegrated', task_id: task.run_id, integrate: fresh, accepted, not_done: notDone });
+  saveRun(task);
+  return true;
+}
+
 // Append a repair package to the shape, expand it like any other package, and open a fresh
 // integrate behind it - the same move retryPackage makes when a package it retried was the one
 // an integrate blamed. The old integrate stays failed as evidence, superseded, and the goal
@@ -1415,7 +1489,7 @@ function openRepair(task, integ) {
     acceptance: ((task.spec && task.spec.acceptance) || []).slice(),
     // Every path any package claimed: the seam is between them, so none of them is out of bounds.
     touches: [...new Set(packages.flatMap((p) => (p.touches || []).map(String)))],
-    deps: packages.filter((p) => !p.repair).map((p) => String(p.id)),
+    deps: packages.filter((p) => !p.repair && !notDoneIds(task).includes(String(p.id))).map((p) => String(p.id)),
   });
   // The same deps the failed integrate had - every package's accept, all done. A repair that
   // depended on the failed integrate itself could never become ready: a failed node is never
@@ -1585,6 +1659,9 @@ export function autoRetryPackages(task) {
     });
     changed = true;
   }
+  // The package that just spent its retries may be the last thing the daemon waited on; the same
+  // tick opens the integrate, before the task reads blocked and the daemon is done.
+  if (reintegrateExhausted(task)) changed = true;
   return changed;
 }
 
@@ -1766,6 +1843,8 @@ export function autoRepair(task) {
   // A stopped box opens nothing new (see autoRetryPackages): a repair or reshape now would sit
   // undispatched with the task reading running forever. enforceBudget closes it to the report.
   if (task.budget_stopped) return false;
+  // Before a repair or a reshape: the accepted packages reach an integration tree first.
+  if (reintegrateExhausted(task)) return true;
   const target = integrateToRepair(task);
   if (!target.node) return false;
   const out = openRepair(task, target.node);
@@ -3368,7 +3447,9 @@ function openChildOnSlot(task, n, progress, reservation) {
   const child = createRun({
     ...task.child_opts,
     cwd: wt.path,
-    request: [String(pkg.brief), n.feedback ? `\n\nPrevious attempt of this package was rejected - fix this:\n${n.feedback}` : ''].join(''),
+    request: [String(pkg.brief),
+      pkg.phase === 'qa' && notDoneIds(task).length ? `\n\nOut of scope: ${notDoneIds(task).join(', ')} not done (retry budget exhausted) and absent from the integrated result by design. Exercise what was merged; do not report their missing work as a defect.` : '',
+      n.feedback ? `\n\nPrevious attempt of this package was rejected - fix this:\n${n.feedback}` : ''].join(''),
     context: childContext(task, pkg),
     isolated: true,
     flow,
@@ -3745,7 +3826,8 @@ export function prepareIntegration(task, n) {
   // not deliver either: the sweep's integrate depends on the accepted ones only, and this merges
   // the same set. code-sprint-P3: P2's dispatch failed as the box ran out, integrate:2 refused
   // "package P2 has no delivered branch", and P1 - accepted - never reached an integration tree.
-  const undeliverable = (id) => skippedForBudget(id) || (task.budget_stopped && !deliveredBranch(task, id));
+  // A spent retry budget (reintegrateExhausted) leaves the same hole: the not-done packages never deliver.
+  const undeliverable = (id) => skippedForBudget(id) || (task.budget_stopped && !deliveredBranch(task, id)) || notDoneIds(task).includes(String(id));
   const ordered = dependencyOrder((task.spec.packages || []).filter((p) => !p.repair && !undeliverable(p.id)));
   for (const p of ordered) {
     const branch = deliveredBranch(task, p.id);
@@ -4095,7 +4177,12 @@ export function composeTaskPrompt(task, n) {
       L.push(`## What the child run delivered`);
       L.push(`child run ${r.child_run_id} at ${r.child_cwd} on branch ${r.branch} — ${r.child_state}`);
       L.push(`Its goal gate: accept=${r.accept} match=${r.match_pct === undefined ? '?' : r.match_pct + '%'}`);
-      if ((r.gaps || []).length) L.push(`Gaps it named:\n${bullets(r.gaps)}`);
+      // A failure an earlier attempt's accept found on the base commit too (excludeBaseFailures) is
+      // not briefed as this package's gap; it is listed apart so nothing is dropped silently.
+      const onBase = (task.base_exclusions && task.base_exclusions[String(n.subgoal_id)]) || [];
+      const ownGaps = (r.gaps || []).filter((g) => !onBase.some((e) => String(g).includes(e.test)));
+      if (ownGaps.length) L.push(`Gaps it named:\n${bullets(ownGaps)}`);
+      if (onBase.length) L.push(`Not counted against this package:\n${bullets(onBase.map(exclusionLine))}`);
       if ((r.spec_drift || []).length) L.push(`Spec drift it named:\n${bullets(r.spec_drift)}`);
       // The child's set fold (its own `reduce` node, plus the deterministic write-scope check
       // recorded onto it - item 1/2 of the reducer plan): what its parallel subgoals collided
@@ -4158,6 +4245,18 @@ export function composeTaskPrompt(task, n) {
     L.push('');
     L.push(`## Scope: the Sprint's box ran out`);
     L.push(`budget_usd/timebox_minutes stopped this task. Packages ${task.budget_stopped.skipped_packages.join(', ')} were never dispatched and are carried to the next Sprint - their work is absent BY DESIGN, not a defect. Judge only the packages that were merged: that they work together and meet their own acceptance, and the goal-level criteria they alone can satisfy. Set ${verdictField} true if they do. Name the skipped work (in unowned or gaps) for the record, but it is not a reason to refuse.`);
+  }
+  // The same for a spent retry budget (reintegrateExhausted): the packages left out are named, and
+  // QA's card is told they are outside what it exercises.
+  const notDone = notDoneIds(task);
+  const qaCard = n.stage === 'accept' && phaseOfId(task, n.subgoal_id) === 'qa';
+  if (notDone.length && (n.stage === 'integrate' || String(n.node_id).startsWith('gate:goal') || qaCard)) {
+    L.push('');
+    L.push(`## Scope: packages not done`);
+    L.push(`${notDone.join(', ')} ${notDone.length > 1 ? 'are' : 'is'} not done: a package spent its retry budget and the rest wait on it. Their work is absent from the merged tree BY DESIGN, not a defect of the packages that were merged.`);
+    L.push(qaCard
+      ? `${notDone.join(', ')} ${notDone.length > 1 ? 'are' : 'is'} outside QA's scope: do not file their missing work as a defect; name it in observations.`
+      : `Judge only the packages that were merged: that they work together and meet their own acceptance, and the goal-level criteria they alone can satisfy. Set ${n.stage === 'integrate' ? 'verified' : 'accept'} true if they do. Name the missing work in gaps for the record; it is not a reason to refuse.`);
   }
   // Distinct from skipped_packages above: a QA/AUDIT pass that WAS dispatched (once, or through
   // every retry the box allowed) but never produced a verdict before budget/timebox stopped the
@@ -4232,6 +4331,7 @@ export function composeTaskPrompt(task, n) {
       if (r.evidence) L.push(`Evidence: ${r.evidence}`);
       const gaps = r.gaps || [...(r.blocking || []), ...(r.problems || [])];
       if (gaps.length) L.push(`Gaps:\n${bullets(gaps)}`);
+      if ((r.exclusions || []).length) L.push(`Not counted against ${x.subgoal_id || x.node_id}:\n${bullets(r.exclusions)}`);
       if (r.reason) L.push(`Reason: ${r.reason}`);
       L.push('');
     }
@@ -4325,7 +4425,9 @@ export function succeeded(task, n, result) {
   // idol-pm-1's PRD, the case the floor exists for, named its gap - it still fails.
   if ((n.stage === 'gate' || n.stage === 'accept') && Number.isFinite(result.match_pct)) {
     const floor = Number.isInteger(task.goal_threshold) ? task.goal_threshold : 90;
-    const named = Array.isArray(result.gaps) && result.gaps.length > 0;
+    // A gap that names a failure also failing on the base (excludeBaseFailures) does not count.
+    const excluded = Array.isArray(result.base_excluded) ? result.base_excluded : [];
+    const named = Array.isArray(result.gaps) && result.gaps.some((g) => !excluded.some((e) => String(g).includes(e.test)));
     // accept:QA is the exception: its points are docked for the defects it files, and filing them
     // is what fixes them. Failing it on the floor dropped the defects (the file hook runs only on
     // 'done') and reran the whole QA on the same tree (awake-beta-ref1: accept:QA:2 accepted at
@@ -4337,7 +4439,7 @@ export function succeeded(task, n, result) {
     // accept:true at 72 with three of four backlog items shipped, failed on the floor, no report).
     // The judge's own accept stands; the shortfall is what the retro's Next backlog carries.
     const boxedGoal = n.stage === 'gate' && String(n.node_id).startsWith('gate:goal')
-      && task.budget_stopped && (task.budget_stopped.skipped_packages || []).length > 0;
+      && ((task.budget_stopped && (task.budget_stopped.skipped_packages || []).length > 0) || notDoneIds(task).length > 0);
     if (result.match_pct < floor && (n.stage === 'gate' || named) && !filesDefects && !boxedGoal) return false;
   }
   // A rejection needs no evidence of its own. A positive verdict does: dispatch's accept
@@ -4348,6 +4450,48 @@ export function succeeded(task, n, result) {
     return false;
   }
   return true;
+}
+
+// Test seam only: the runner compareOnBase uses for the base side. null runs the real command.
+export const __baseFail = { run: null };
+
+// An output line that says its command failed, for a check whose output carries no TAP names.
+const FAILED_OUTPUT = /(?:^|[^\d])[1-9]\d*\s+(?:fail|failed|failing)\b|\bexit(?:ed)?(?:\s+(?:code|status))?\s*[:=]?\s*[1-9]/i;
+
+// card 39 F1-US-3: a failing check of a package's accept that also fails on the commit the
+// package branched from is not the package's doing. Only that check runs on the base (twice, in
+// compareOnBase's temp worktree), each exclusion is written under the package as
+// exclusionLine(...), and succeeded() leaves the floor alone when those were the only gaps.
+// Fails closed: any throw, a base that cannot run or an empty comparison excludes nothing.
+function excludeBaseFailures(task, n, result) {
+  try {
+    const pkg = packageOf(task, n.subgoal_id);
+    if (!pkg || pkg.phase || pkg.repair || result.stage_ok !== true || result.accept !== true) return result;
+    if (noDriver() && !__baseFail.run) return result; // test seam: nothing is spawned
+    const floor = Number.isInteger(task.goal_threshold) ? task.goal_threshold : 90;
+    const below = Number.isFinite(result.match_pct) && result.match_pct < floor && Array.isArray(result.gaps) && result.gaps.length > 0;
+    const failing = (Array.isArray(result.checks) ? result.checks : []).map((c) => {
+      const s = String(c);
+      const i = s.indexOf(' -> ');
+      return i < 0 ? null : { command: s.slice(0, i).trim(), output: s.slice(i + 4) };
+    }).filter((c) => c && c.command && (failingTests(c.output).length || (below && FAILED_OUTPUT.test(c.output))));
+    if (!failing.length) return result;
+    const d = task.nodes.find((x) => x.stage === 'dispatch' && x.subgoal_id === n.subgoal_id && (x.attempt || 1) === (n.attempt || 1));
+    if (!d || !d.child || !d.child.cwd) return result;
+    const baseSha = resolveBase({ cwd: d.child.cwd, baseCommit: d.base_commit, branch: d.child.branch, baseRef: task.base_ref });
+    const excluded = failing.flatMap((c) => compareOnBase({
+      cwd: d.child.cwd, baseSha, command: c.command, packageOutput: c.output, packageExit: 1,
+      ...(__baseFail.run ? { run: __baseFail.run } : {}),
+    }).excluded);
+    if (!excluded.length) return result;
+    const id = String(n.subgoal_id);
+    const known = (task.base_exclusions && task.base_exclusions[id]) || [];
+    task.base_exclusions = { ...(task.base_exclusions || {}), [id]: [...known, ...excluded.filter((e) => !known.some((k) => k.test === e.test))] };
+    record(task, { event: 'base_failures_excluded', task_id: task.run_id, node_id: n.node_id, package_id: id, base: baseSha, excluded: excluded.map((e) => e.test) });
+    return { ...result, base_excluded: excluded, exclusions: excluded.map(exclusionLine) };
+  } catch {
+    return result;
+  }
 }
 
 function verdict(task, n) {
@@ -4466,6 +4610,7 @@ export function finish(task, n, result) {
     result = { ...result, integration_branch: n.integration.branch, integration_cwd: n.integration.cwd,
       merged: (n.integration.merged || []).map((m) => `${m.package} ${m.branch} -> ${m.commit}`) };
   }
+  if (n.stage === 'accept') result = excludeBaseFailures(task, n, result);
   const reviewerIndependence = managerReviewerIndependence(task, n);
   if (reviewerIndependence) result = { ...result, reviewer_independence: reviewerIndependence };
   const f = VERDICT[n.stage];
@@ -4474,6 +4619,8 @@ export function finish(task, n, result) {
     && Number.isFinite(result.match_pct) && result.match_pct < floor;
   if (belowFloor && task.budget_stopped && (task.budget_stopped.skipped_packages || []).length && String(n.node_id).startsWith('gate:goal')) {
     result = { ...result, goal_floor_waived: `budget/timebox stopped the Sprint with ${task.budget_stopped.skipped_packages.join(', ')} undone; match_pct ${result.match_pct} is judged against the whole goal` };
+  } else if (belowFloor && notDoneIds(task).length && String(n.node_id).startsWith('gate:goal')) {
+    result = { ...result, goal_floor_waived: `retries ran out with ${notDoneIds(task).join(', ')} not done; match_pct ${result.match_pct} is judged against the whole goal` };
   }
   const noEvidence = EVIDENCED.has(n.stage) && f && result[f] === true
     && !(Array.isArray(result.checks) && result.checks.length > 0);
