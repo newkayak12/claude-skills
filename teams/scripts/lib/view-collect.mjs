@@ -511,6 +511,11 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     counts = cs.counts || {};
   }
 
+  // tm_cancel's marker is terminal, and the daemon's worktree-gone stop reads blocked
+  // (taskmanager.mjs taskState): neither is a graph state, so the run's own reading gives way.
+  if (task.cancelled) state = 'cancelled';
+  else if (task.worktree_gone) state = 'blocked';
+
   const packages = [];
   // The planning cards (one per feature area, cards-everywhere C2) dispatch BEFORE shape writes
   // task.spec, so they are listed on their own: gated behind spec.packages, a running PLAN team

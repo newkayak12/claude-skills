@@ -19,9 +19,13 @@ export function cardState(c) {
   return 'pending';
 }
 
+// tm_cancel leaves the node states as they were, so a dispatch that was running still says so; on
+// a cancelled task nothing is running, and what was in flight reads as not started.
+const idleIfCancelled = (m, s) => (m.state === 'cancelled' && s === 'running' ? 'pending' : s);
+
 function cardsOf(m) {
   const out = [];
-  const add = (c, kind, stage) => out.push({ c, kind, stage, state: cardState(c) });
+  const add = (c, kind, stage) => out.push({ c, kind, stage, state: idleIfCancelled(m, cardState(c)) });
   for (const p of m.packages || []) {
     if (p.phase === 'planning') add(p, 'plan', 'plan');
     else if (p.origin) add(p, 'defect', 'qa');
@@ -40,11 +44,11 @@ function stagesOf(m, cards) {
     // A harness_run task: the run's own stages (view-collect's harnessStages). Its frozen
     // size/shape/critique graph says nothing about them, and `moving` fills nothing. A stage the
     // run has not touched is pending = no evidence, so a later done stage can still backfill it.
-    for (const s of m.harness.stages || []) if (by[s.key] && s.state !== 'pending') by[s.key].push(s.state);
+    for (const s of m.harness.stages || []) if (by[s.key] && s.state !== 'pending') by[s.key].push(idleIfCancelled(m, s.state));
   } else {
     for (const n of [...(m.manager_stages || []), ...((m.s_run && m.s_run.nodes) || [])]) {
       const k = stageOfNode(n.node_id);
-      if (k) by[k].push(nodeState(n.state));
+      if (k) by[k].push(idleIfCancelled(m, nodeState(n.state)));
     }
   }
   for (const x of cards) by[x.stage].push(x.state);
@@ -121,6 +125,7 @@ export function summarize(model, { now = Date.now() } = {}) {
   const pick = cards.find((x) => x.state === 'running') || cards.find((x) => x.state === 'failed')
     || cards.find((x) => x.state === 'pending' && x.kind === 'defect');
   if (m.state === 'complete') nowStep = { kind: 'done', subject: null, detail: null };
+  else if (m.state === 'cancelled') nowStep = { kind: 'idle', subject: null, detail: null };
   else if (waiting.length) nowStep = { kind: 'answer', subject: waiting[0], detail: null };
   else if (pick) {
     const w = work[cards.indexOf(pick)];

@@ -234,6 +234,8 @@ function harnessTicketState(task) {
 }
 
 export function epicTicketState(task) {
+  if (task.cancelled) return 'CANCELLED';
+  if (task.worktree_gone) return 'BLOCKED';
   if (task.harness_run) return harnessTicketState(task);
   if (task.s_run) return sRunTicketState(loadSRun(task));
   if (task.nodes.some((n) => n.stage === 'report' && n.state === 'done')) {
@@ -265,6 +267,7 @@ export function epicTicketState(task) {
 // (accept:Pn, integrate, gate:goal, report). null once the report is done - there is no phase
 // left to name. A size-S task delegates to sRunPhase, same reason as epicTicketState above.
 export function epicPhase(task) {
+  if (task.cancelled) return null;
   if (task.harness_run) {
     const st = harnessTicketState(task);
     return st === 'DONE' || st === 'SETTLED' ? null : (task.harness_run.run ? 'impl' : 'plan');
