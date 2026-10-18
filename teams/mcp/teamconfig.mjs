@@ -119,6 +119,11 @@ export const TEAM_DEFAULTS = Object.freeze({
   // for a week never exhausts its budget the way a flat counter would - see serviceDeadDriver's
   // own windowing.
   restart_period_minutes: 0,
+  // Global cap on live teams-spawned `claude -p` drivers and judges across every task under the
+  // tasks root (livecap.mjs). At or over it a spawn site does not spawn: the node stays ready,
+  // one waiting_cap event is written, and the daemon re-checks. The spawning task's own value is
+  // checked against the machine-wide count. Fixed 4, no derivation from cores or memory.
+  max_live_drivers: 4,
   vendor: 'auto',
   allocation: 'ordered',
   // The DEFAULT lives under .teams_output/, but this key is user-settable, so docs_dir is not
@@ -206,6 +211,7 @@ const CHECK = {
   driver_restarts: (v) => Number.isInteger(v) && v >= 0,
   stall_minutes: (v) => Number.isInteger(v) && v >= 0,
   restart_period_minutes: (v) => Number.isInteger(v) && v >= 0,
+  max_live_drivers: (v) => Number.isInteger(v) && v >= 1,
   vendor: (v) => typeof v === 'string' && v.length > 0,
   allocation: (v) => typeof v === 'string' && v.length > 0,
   docs_dir: (v) => typeof v === 'string' && v.length > 0,
