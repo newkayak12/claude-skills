@@ -7,7 +7,7 @@ import type { Mark } from './draw'
 import { DEMO_NOW, bandLines, demoRows, innerWidth, paneContent, paneHead, parseDemoArg, renderLines, tabRowPlan } from './harness-draw'
 import type { PaneCtx, TabLabels } from './harness-draw'
 import {
-  critiqueReason, cycleRun, flowLines, gateReason, goalReason, listArgv, markLooked, openTab, openingOrder, otherRunLabel, parseRows,
+  critiqueReason, cycleRun, flowLines, frozenOrder, gateReason, goalReason, listArgv, markLooked, openTab, otherRunLabel, parseRows,
   paneKey, pickRun, runPosition, shownRows, spinnerPlan,
 } from './status'
 
@@ -423,11 +423,16 @@ async function loadRows($: EngineInterface): Promise<HarnessRow[] | null> {
   }
 }
 
-// What the pane and band draw: the live rows, or the demo's; in opening order for the person's `looked` marks.
+// The slug order `[` / `]` walk, fixed until a run opens or closes, or the pane opens from closed or the demo changes
+// (then null: opening order decides again). A cache a reload may lose: the order is then worked out once more.
+let frozen: string[] | null = null
+
+// What the pane and band draw: the live rows, or the demo's; in the frozen opening order.
 async function view($: EngineInterface) {
   const name = await read($, demo)
   const open = name === null ? await read($, rows) : demoRows(name)
-  const ordered = openingOrder(open, await read($, looked))
+  const ordered = frozenOrder(open, await read($, looked), frozen)
+  frozen = ordered.map(r => r.slug)
   const sel = await read($, selected)
   return { demo: name, ordered, sel, picked: pickRun(ordered, sel), nowMs: name === null ? await $.clock.now() : DEMO_NOW }
 }
@@ -512,6 +517,7 @@ export const register: Register = on => {
     // a second session.start (a cleared session) starts over: the old interval ends
     spinner?.cancel()
     spinner = null
+    frozen = null
     kick = () => syncSpinner($)
 
     // PushNotification's result: { message, pushSent?, localSent?, disabledReason? } (user_present at the terminal);
@@ -663,8 +669,10 @@ export const register: Register = on => {
     if (want !== null) {
       await update($, demo, () => (want === 'off' ? null : want))
       await update($, selected, () => null)
+      frozen = null
       await refresh($)
     }
+    if (!isOpen) frozen = null // a pane opened from closed orders again: an unseen reject leads
     if (want === 'off') return { text: text.demoOff }
     const v = await view($)
     // the run opening order picks is the run shown from here on, by slug: marking its reject as seen must not move it
