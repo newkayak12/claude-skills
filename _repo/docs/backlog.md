@@ -43,7 +43,7 @@ the same letter, plus: the three-row band, priority-drop segments, dark/light th
 (user: "저건 뭘하는지 눈에 캐릭터로 보이잖아 그런 직관적인걸 원하는거야 UIUX를 고려하자고"): a glance,
 not a read — each worker's state is one icon and colour (spinner while acting; no character faces, user:
 "캐릭터눈 딱히 크게 필요는 없긴 한뎅"), and the user sees the `demo` render before a card is done.
-Cards 40–43 are in Sprint E-95de6173 (2026-10-17).
+Cards 40–43 are in Sprint E-cec6daae (2026-10-18; E-95de6173 did not finish them).
 
 40. **H. harness pane says what the run is doing** — design §4 H. Engine fields (`now.json`,
     `--list`, severity) merged 2026-10-17; the mod is not built. Check first: `fallback-check --list`
