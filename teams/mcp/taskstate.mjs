@@ -209,6 +209,9 @@ export function unfinishedWork(task) {
       ? `${id}: never dispatched (budget/timebox)`
       : `${id}: not accepted (${d.node_id} ${d.state})`);
   }
+  // Once the one integrate over the accepted packages has opened (reintegrateExhausted).
+  const ex = task.exhausted;
+  if (ex && ex.reintegrated && Array.isArray(ex.not_done) && ex.not_done.length) reasons.push(`not done: ${ex.not_done.join(', ')} (retry budget exhausted)`);
   const integ = last((n) => n.stage === 'integrate' && n.state !== 'skipped');
   if (!integ) reasons.push('no integrate ran');
   else if (integ.state !== 'done') reasons.push(`${integ.node_id} ${integ.state}${integ.result && integ.result.verified === false ? ' (verified=false)' : ''}`);
