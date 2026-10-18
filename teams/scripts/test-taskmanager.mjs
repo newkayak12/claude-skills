@@ -7342,6 +7342,19 @@ test('Card 39: a cancelled task gets no integrate and no "not done"', async () =
   });
 });
 
+test('Card 39: a task whose worktree is gone gets no integrate', async () => {
+  const { autoRetryPackages, autoRepair } = await import('../mcp/taskmanager.mjs');
+  await withBoxRoot(async (root) => {
+    const task = exhaustedTask(root, 'x6g', { p2: 'running' });
+    inTx(task, autoRetryPackages);
+    Object.assign(nodeOf(task, 'dispatch:P2:1'), { state: 'done', result: { stage_ok: true } });
+    Object.assign(nodeOf(task, 'accept:P2:1'), { state: 'done', result: { stage_ok: true, accept: true, match_pct: 90, checks: ['ok'] } });
+    task.worktree_gone = { kind: 'package', node_id: 'dispatch:P2:1', key: 'P2', path: join(root, 'gone'), reason: 'worktree directory is gone', at: Date.now() };
+    assert.equal(inTx(task, autoRepair), false);
+    assert.deepEqual(task.nodes.filter((x) => x.stage === 'integrate').map((x) => x.node_id), ['integrate:1']);
+  });
+});
+
 test('Card 39: P1 spends its retries for real, P2 is accepted - integrate merges only P2, the goal gate is waived, the task reads partial', async () => {
   const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
   await withTask(async ({ tm, g, root, task_id }) => {
