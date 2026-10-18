@@ -4092,3 +4092,120 @@ if (a.includes('--stage')) {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+// ---------- a gate denied a tool is blocked, not rejected ----------
+// E-32e8068c (2026-10-18): P1's child gate rejected three times at 78-82 only because it could not
+// re-run the tests (Bash denied). The adapter now reports blocked:'tool denied' for that; the engine
+// keeps the node failed and counted as an attempt, but it carries no verdict and feeds the next attempt nothing.
+
+const DENIED = { stage_ok: false, blocked: 'tool denied', reason: 'blocked: tool denied', denied: ['node --test x.mjs'] };
+
+async function throughTest(c, cwd, runId) {
+  await throughCritique(c, cwd, runId);
+  const f = dirty(cwd);
+  await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [f] }) });
+  await c.call('team_submit', { run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+}
+
+test('a gate result with blocked:tool denied fails the node with the blocked reason and no verdict fields', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughTest(c, cwd, runId);
+    const v = await c.call('team_submit', {
+      run_id: runId, cwd, node_id: 'gate:U1:1',
+      payload: { ...DENIED, match_pct: 81, accept: false, gaps: ['could not re-run the suite'], reason: 'rejected: no re-run' },
+    });
+    assert.equal(v.state, 'failed');
+    assert.equal(v.reason, 'blocked: tool denied');
+    assert.equal(v.match_pct, undefined);
+    assert.equal(v.reassigned, undefined, 'a blocked gate is not a reject the engine reassigns on');
+    const { node } = await c.call('team_status', { run_id: runId, cwd, full: true, node_id: 'gate:U1:1' });
+    assert.equal(node.result.blocked, 'tool denied');
+    assert.deepEqual(node.result.denied, ['node --test x.mjs']);
+    for (const key of ['match_pct', 'accept', 'gaps']) assert.equal(key in node.result, false, `${key} must be gone`);
+    assert.equal(node.result.stage_ok, false);
+  }, { isolated: true });
+});
+
+test('a blocked gate counts as one attempt: the retry budget runs out exactly as for a plain failed gate', async () => {
+  const sequence = async (plain) => {
+    const seen = [];
+    await withRun(async ({ c, cwd, runId }) => {
+      await throughTest(c, cwd, runId);
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        if (attempt > 1) {
+          const f = dirty(cwd);
+          await c.call('team_submit', { run_id: runId, cwd, node_id: `implement:U1:${attempt}`, payload: ok({ changed_files: [f] }) });
+          await c.call('team_submit', { run_id: runId, cwd, node_id: `test:U1:${attempt}`, payload: ok({ verified: true }) });
+        }
+        const v = await c.call('team_submit', {
+          run_id: runId, cwd, node_id: `gate:U1:${attempt}`,
+          payload: plain ? { stage_ok: false, reason: 'infra down' } : DENIED,
+        });
+        assert.equal(v.state, 'failed');
+        const r = await c.call('team_retry', { run_id: runId, cwd, subgoal_id: 'U1' });
+        seen.push([r.retried, r.attempt]);
+        if (!r.retried) { assert.match(r.reason, /budget/); break; }
+      }
+    }, { isolated: true, max_retries: 1 });
+    return seen;
+  };
+  const blocked = await sequence(false);
+  assert.deepEqual(blocked, [[true, 2], [false, undefined]], 'one retry, then the budget is gone');
+  assert.deepEqual(blocked, await sequence(true), 'identical to a failed gate that never judged');
+});
+
+test('what a blocked gate carried does not reach the next attempt as reject feedback', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughTest(c, cwd, runId);
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'gate:U1:1', payload: ok({ accept: false, match_pct: 80, gaps: ['no runtime check'] }) });
+    assert.match(loadRun(cwd, runId).nodes.find((n) => n.node_id === 'implement:U1:2').feedback, /no runtime check/, 'control: a real reject is carried');
+
+    const f = dirty(cwd);
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U1:2', payload: ok({ changed_files: [f] }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'test:U1:2', payload: ok({ verified: true }) });
+    await c.call('team_submit', {
+      run_id: runId, cwd, node_id: 'gate:U1:2',
+      payload: { ...DENIED, match_pct: 79, accept: false, gaps: ['could not re-run the suite'] },
+    });
+    const r = await c.call('team_retry', { run_id: runId, cwd, subgoal_id: 'U1' });
+    assert.equal(r.retried, true);
+    const feedback = loadRun(cwd, runId).nodes.find((n) => n.node_id === 'implement:U1:3').feedback;
+    assert.equal(feedback, '', 'neither the blocked gate, nor the older reject it superseded, is handed on');
+  }, { isolated: true });
+});
+
+test('an adapter report with blocked at exit 0 reaches the node through team_run, not as an adapter exit', async () => {
+  const cwd = repoWithMutatingVendor();
+  const adapter = join(cwd, 'blocked-adapter.mjs');
+  writeFileSync(adapter, `#!/usr/bin/env node
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+const a = process.argv.slice(2), get = k => a[a.indexOf(k) + 1];
+const out = get('--output'); mkdirSync(dirname(out), { recursive: true });
+if (a.includes('--detect')) { writeFileSync(out, JSON.stringify({ vendor: { ready: true, reachable: true } })); process.exit(0); }
+writeFileSync(out, JSON.stringify({ stage_ok: false, last_message: 'I could not run the tests', verification_error: 'blocked: tool denied',
+  result: { stage_ok: false, blocked: 'tool denied', reason: 'blocked: tool denied', denied: ['node --test x.mjs'] } }));
+process.exit(0);
+`);
+  writeFileSync(join(cwd, '.claude', 'broker-vendors.json'), JSON.stringify({
+    blocker: { command: 'node', args: [adapter], requires_binary: null, sandboxes: ['read-only', 'workspace-write'], default_sandbox: 'workspace-write' },
+  }));
+  const c = await new Client().init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, vendor: 'blocker', isolated: true, goal_judges: 1 });
+    await throughCritique(c, cwd, run_id);
+    const f = dirty(cwd);
+    await c.call('team_submit', { run_id, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [f] }) });
+    await c.call('team_submit', { run_id, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    const v = await c.call('team_run', { run_id, cwd, node_id: 'gate:U1:1' });
+    assert.equal(v.state, 'failed', JSON.stringify(v));
+    assert.equal(v.reason, 'blocked: tool denied', 'not "adapter exit 1"');
+    const { node } = await c.call('team_status', { run_id, cwd, full: true, node_id: 'gate:U1:1' });
+    assert.equal(node.result.blocked, 'tool denied');
+    assert.deepEqual(node.result.denied, ['node --test x.mjs']);
+    assert.equal('match_pct' in node.result, false);
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});

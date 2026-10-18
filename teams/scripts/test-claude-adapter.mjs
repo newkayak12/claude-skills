@@ -27,7 +27,7 @@ process.stdin.on('end', () => {
     console.log(JSON.stringify({result:run[1]})); return;
   }
   if(read) { console.log(JSON.stringify({result:read[1]})); return; }
-  console.log(JSON.stringify({result:JSON.stringify({stage_ok:true, verified:true, checks:['check -> passed'], evidence:'e'}), usage:{input_tokens:12,output_tokens:4}}));
+  console.log(JSON.stringify({result:JSON.stringify({stage_ok:true, verified:true, checks:['check -> passed'], evidence:'e'}), usage:{input_tokens:12,output_tokens:4}, permission_denials: process.env.MOCK_DENIALS ? JSON.parse(process.env.MOCK_DENIALS) : undefined}));
 });
 `);
   chmodSync(binary, 0o755);
@@ -185,5 +185,79 @@ test('--verify keeps its --disallowedTools list next to the wiki tools', () => {
     const args = argvOf(f);
     assert.match(args[args.indexOf('--disallowedTools') + 1], /Bash\(git commit:\*\)/);
     assert.match(args[args.indexOf('--allowedTools') + 1], /wiki_write/);
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+// E-32e8068c (2026-10-18): a gate denied Bash could not re-run the suite, rejected on that alone, and
+// the engine read it as a verdict on the work. The json envelope's permission_denials[] says which
+// tool was denied; a Bash command the node needed (not one --disallowedTools blocks on purpose) makes
+// the report `blocked`, not a reject. Exit stays 0: the broker discards the payload of a non-zero exit.
+const denial = command => ({ tool_name: 'Bash', tool_use_id: 't1', tool_input: { command } });
+const gateRun = (f, denials) => f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'gate', '--sandbox', 'read-only', '--verify'],
+  { ...withoutRoot, ...(denials === undefined ? {} : { MOCK_DENIALS: JSON.stringify(denials) }) });
+
+test('a Bash command the node needed was denied: the report is blocked: tool denied, exit 0, no verdict', () => {
+  const f = fixture();
+  try {
+    const r = gateRun(f, [denial('node --test teams/scripts/test-x.mjs')]);
+    assert.equal(r.status, 0, 'the broker reads the report only from a zero exit');
+    assert.deepEqual(r.report.result, {
+      stage_ok: false, blocked: 'tool denied', reason: 'blocked: tool denied', denied: ['node --test teams/scripts/test-x.mjs'],
+    });
+    assert.equal('match_pct' in r.report.result, false);
+    assert.equal('accept' in r.report.result, false);
+    assert.equal(r.report.stage_ok, false);
+    assert.equal(r.report.verification_error, 'blocked: tool denied');
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('empty or absent permission_denials leave the report and exit code as they were', () => {
+  const f = fixture();
+  try {
+    const plain = gateRun(f);
+    assert.equal(plain.status, 0, plain.stderr);
+    assert.equal(plain.report.stage_ok, true);
+    assert.equal(plain.report.result.blocked, undefined);
+    const empty = gateRun(f, []);
+    assert.equal(empty.status, 0, empty.stderr);
+    assert.deepEqual(empty.report, plain.report);
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('a denial of a command --disallowedTools blocks on purpose, or of a tool other than Bash, is not blocked', () => {
+  const f = fixture();
+  try {
+    for (const denials of [
+      [denial('rm -rf x')], [denial('git commit -m x')], [denial('sed -i s/a/b/ f')],
+      [{ tool_name: 'Edit', tool_input: { file_path: 'a.txt' } }], [denial('rm -rf x'), { tool_name: 'Write', tool_input: {} }],
+    ]) {
+      const r = gateRun(f, denials);
+      assert.equal(r.status, 0, r.stderr);
+      assert.equal(r.report.stage_ok, true, JSON.stringify(denials));
+      assert.equal(r.report.result.blocked, undefined, JSON.stringify(denials));
+    }
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('a verb that only shares a prefix with the disallow list, or a read-only sed, still counts; denied[] lists only those', () => {
+  const f = fixture();
+  try {
+    const r = gateRun(f, [denial('rm -rf x'), denial('sed -n 1,5p a.txt'), denial('git status'), denial('rmdir d')]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.report.result.blocked, 'tool denied');
+    assert.deepEqual(r.report.result.denied, ['sed -n 1,5p a.txt', 'git status', 'rmdir d']);
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('a detect run, or a failed adapter exit, never reads permission_denials', () => {
+  const f = fixture();
+  try {
+    const d = f.run(['--detect', '--sandbox', 'read-only'], { ...withoutRoot, MOCK_DENIALS: JSON.stringify([denial('node -v')]) });
+    assert.equal(d.status, 0, d.stderr);
+    assert.equal(d.report.vendor.reachable, true);
+    assert.equal(d.report.result, undefined);
+    const quota = f.run(['--prompt-file', join(f.dir, 'prompt.md')], { ...withoutRoot, MOCK_QUOTA: '1', MOCK_DENIALS: JSON.stringify([denial('node -v')]) });
+    assert.equal(quota.status, 1);
+    assert.equal(quota.report.result, undefined);
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
