@@ -102,8 +102,8 @@ removed). Instead:
 
 Run this **before you assign each teammate** — Plan, SetGoal, Critic (each round), and for every
 subgoal attempt Implement, Test and QualityGate, then the goal-level QualityGate and Report — with
-that teammate's stage, and again whenever you hand the work to a person or wait on a vendor. A
-stage that starts without its `--now` call is a skipped step; do not move on until it has run:
+that teammate's `stage`, `doing`, `round`, `last_step` and `next`, and again whenever you hand the
+work to a person or wait on a vendor. A stage that starts without its `--now` call is a skipped step; do not move on until it has run:
 
 ```
 node harness/engine/fallback-check.mjs --now RUN '{"stage":"implement","doing":"<what is running>","round":1,"last_step":"<what just finished>","next":"<what comes next>","waiting":null}'
