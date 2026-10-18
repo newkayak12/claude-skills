@@ -1,7 +1,7 @@
 // fallback-check regressions: 0% goal gate must not be COMPLETE; "todo list feature" is a real title.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, utimesSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, utimesSync, realpathSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -600,6 +600,37 @@ test('a fresh now.json with an unknown stage keeps its round and waiting but not
   const { root } = repoWithRuns({ r: { files: liveFiles(nowObj) } });
   const [row] = listJson(root);
   assert.deepEqual([row.stage, row.round, row.waiting], ['critique', 7, { who: 'you', what: 'approve' }]);
+});
+
+// ---- an entry that cannot be stat'ed contributes mtime 0 (D5) ----
+
+test('a dangling symlink in the run dir and in subgoals/ leaves --list, --json and --show exit 0 with the same row', () => {
+  const files = { '01-plan.md': 'plan', '02-goal-spec.json': SPEC, '02-critique.json': CRIT_REJECTED, 'subgoals/keep.txt': 'x' };
+  const clean = repoWithRuns({ r: { files } });
+  const linked = repoWithRuns({ r: { files } });
+  symlinkSync('/nonexistent', join(linked.dirs.r, 'dangling'));
+  symlinkSync('/nonexistent', join(linked.dirs.r, 'subgoals', 'dangling'));
+  const text = list(linked.root);
+  assert.equal(text.status, 0, text.stderr);
+  assert.doesNotMatch(text.stderr, /ENOENT/);
+  const json = list(linked.root, '--json');
+  assert.equal(json.status, 0, json.stderr);
+  const [row] = JSON.parse(json.stdout);
+  const show = spawnSync('node', [CHECK, '--show', linked.dirs.r, '--json'], { encoding: 'utf8' });
+  assert.equal(show.status, 0, show.stderr);
+  assert.deepEqual(Object.keys(row).sort(), ROW_KEYS);
+  assert.deepEqual(JSON.parse(show.stdout), row);
+  const [base] = listJson(clean.root);
+  assert.deepEqual([row.stage, row.round, row.severity], [base.stage, base.round, base.severity]);
+});
+
+test('a run whose only artifact is a dangling symlink still gets a row, with no ENOENT', () => {
+  const { root, dirs } = repoWithRuns({ r: {} });
+  symlinkSync('/nonexistent', join(dirs.r, 'dangling'));
+  const r = list(root);
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /ENOENT/);
+  assert.equal(listJson(root)[0].stage, 'plan');
 });
 
 test('bare RUN_DIR keeps exit 0, 1 and 2', () => {
