@@ -1,10 +1,15 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Decision, OpenRun, OpenRuns, RunInfo, RunSub, StageKey } from '../types'
-import { MARK, TINT, bar, cap, fmt, isKorean, rail, tabs } from './draw'
+import type { Decision, HarnessRow, PaneTab, RunInfo, RunSub, StageKey } from '../types'
+import { MARK, TINT, bar, cap, fmt, isKorean, tabs } from './draw'
 import type { Mark } from './draw'
-import { NONE, critiqueReason, flowLines, gateReason, goalReason, sinceLast } from './status'
+import { DEMO_NOW, bandLines, demoRows, innerWidth, paneContent, paneHead, parseDemoArg, renderLines, tabRowPlan } from './harness-draw'
+import type { PaneCtx, TabLabels } from './harness-draw'
+import {
+  critiqueReason, cycleRun, flowLines, gateReason, goalReason, listArgv, markLooked, openTab, openingOrder, otherRunLabel, parseRows,
+  paneKey, pickRun, runPosition, shownRows, spinnerPlan,
+} from './status'
 
 const last = atom({ plugin: 'harness', key: 'last' } as const, null as Decision | null)
 const armed = atom({ plugin: 'harness', key: 'armed' } as const, false)
@@ -12,17 +17,26 @@ const patterns = atom({ plugin: 'harness', key: 'patterns' } as const, [] as str
 const windowHours = atom({ plugin: 'harness', key: 'windowHours' } as const, 2)
 // the config file exists but is not JSON
 const broken = atom({ plugin: 'harness', key: 'broken' } as const, false)
-const runs = atom({ plugin: 'harness', key: 'runs' } as const, { harness: [], graph: [] } as OpenRuns)
 const run = atom({ plugin: 'harness', key: 'run' } as const, null as RunInfo | null)
-// 'auto' opens on Flow when a run is found, else on Detail (where the gate rules are)
-const view = atom({ plugin: 'harness', key: 'view' } as const, 'auto' as 'auto' | 'flow' | 'detail')
 const lang = atom({ plugin: 'harness', key: 'lang' } as const, 'en' as 'en' | 'ko')
+// the open runs of `fallback-check --list --json`: the last good list; [] until the first read answers
+const rows = atom({ plugin: 'harness', key: 'rows' } as const, [] as HarnessRow[])
+// the run the pane shows, by slug; null (or a slug no longer open): opening order decides
+const selected = atom({ plugin: 'harness', key: 'selected' } as const, null as string | null)
+// per slug, the rejects the person has seen
+const looked = atom({ plugin: 'harness', key: 'looked' } as const, {} as Record<string, number>)
+// the spinner's frame counter
+const spin = atom({ plugin: 'harness', key: 'tick' } as const, 0)
+const paneTab = atom({ plugin: 'harness', key: 'paneTab' } as const, 'now' as PaneTab)
+const demo = atom({ plugin: 'harness', key: 'demo' } as const, null as 'minimal' | 'full' | 'parallel' | 'narrow' | null)
 
 const PANE = 'harness-status'
 const CONFIG = '.claude/harness-gate.json'
 const DECISION = '.claude/.harness-last-decision.json'
 const TEAMS_CONFIG = '.claude/teams-dispatch.json'
 const TICK_MS = 5000
+const SPIN_MS = 800 // a spinner frame; faster than the 5 s tick, and only while a shown run acts
+const LIST_TIMEOUT_MS = 10_000
 const PUSH_GAP_MS = 10 * 60 * 1000
 const RUNS = '.harness-run'
 const LIVE_MS = 2 * 60 * 60 * 1000
@@ -33,11 +47,9 @@ const LINE_MAX = 24 // flow lines / detail lines drawn before "+n more"
 const RUN_STAGES: StageKey[] = ['plan', 'setgoal', 'critique', 'implement', 'gate', 'report']
 
 const en = {
-  paneTitle: 'Harness status', tabFlow: 'Flow', tabDetail: 'Detail',
+  paneTitle: 'Harness status', tabNow: 'Now', tabFlow: 'Flow', tabFindings: 'Findings', tabRules: 'Gate rules', tabRulesShort: 'Rules',
+  prev: 'prev', next: 'next', keysHint: '[ ] run · 1-4 tab · q close', demoOn: 'demo: {name}', demoOff: 'demo off', demoFiles: 'The demo has no run files.',
   stagePlan: 'Plan', stageSetgoal: 'SetGoal', stageCritique: 'Critique', stageImplement: 'Implement/Test', stageGate: 'Gate', stageReport: 'Report',
-  now: 'Now', nowImplement: 'Implementing', nowTest: 'Testing', nowGate: 'Gating', nowRetry: 'Retrying',
-  nowStage: 'Working on {stage}', nowDone: 'All done', attempt: ' (attempt {n})',
-  stateRunning: 'running', stateStalled: 'stalled', stateComplete: 'finished', headLine: '{state} · {done}/{total}',
   tryNo: 'attempt {n}', resPassed: 'passed · {n} tries', resFailed: 'failed · {n} tries', resNone: 'not judged yet', stalled: 'stalled: the retry changed nothing',
   gateRejected: 'gate {n}: rejected', gatePassed: 'gate {n}: passed', critiqueRejected: 'Critique rejected', rules: 'Gate rules',
   goalGate: 'Goal gate', passBar: '{pct}% (pass ≥ {bar})', more: '+{n} more',
@@ -59,11 +71,9 @@ const en = {
 export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
   en,
   ko: {
-    paneTitle: '하네스 상태', tabFlow: '흐름', tabDetail: '상세',
+    paneTitle: '하네스 상태', tabNow: '지금', tabFlow: '흐름', tabFindings: '발견', tabRules: '게이트 규칙', tabRulesShort: '규칙',
+    prev: '이전', next: '다음', keysHint: '[ ] 실행 · 1-4 탭 · q 닫기', demoOn: '데모: {name}', demoOff: '데모 끝', demoFiles: '데모에는 실행 파일이 없습니다.',
     stagePlan: '계획', stageSetgoal: '목표 설정', stageCritique: '비평', stageImplement: '구현/테스트', stageGate: '게이트', stageReport: '보고',
-    now: '지금', nowImplement: '구현 중', nowTest: '테스트 중', nowGate: '게이트 판정 중', nowRetry: '재시도 중',
-    nowStage: '{stage} 진행 중', nowDone: '모두 끝남', attempt: ' ({n}번째 시도)',
-    stateRunning: '진행 중', stateStalled: '멈춤', stateComplete: '완료', headLine: '{state} · {done}/{total}',
     tryNo: '{n}번째 시도', resPassed: '통과 · {n}회 시도', resFailed: '실패 · {n}회 시도', resNone: '아직 판정 전', stalled: '멈춤: 재시도로 달라진 것이 없음',
     gateRejected: '게이트 {n}: 반려', gatePassed: '게이트 {n}: 통과', critiqueRejected: '비평 반려', rules: '게이트 규칙',
     goalGate: '목표 게이트', passBar: '{pct}% (통과 ≥ {bar})', more: '+{n}건 더',
@@ -135,8 +145,9 @@ const maxN = (names: string[], prefix: string) =>
 const records = (v: unknown) =>
   (Array.isArray(v) ? (v as unknown[]) : []).map(asRecord).filter((r): r is Record<string, unknown> => r !== undefined && typeof r.id === 'string')
 
-// The current run of .harness-run/<run>/: the newest live run, else the newest by time. Read only.
-async function scanRun($: EngineInterface): Promise<RunInfo | null> {
+// The files of one run, .harness-run/<slug>/ (the Flow and Gate rules tabs); no slug: the newest live run, else the
+// newest by time. Which runs are open, and which one the pane shows, is the node list's and status.ts's call. Read only.
+async function scanRun($: EngineInterface, slug: string | null): Promise<RunInfo | null> {
   const now = await $.clock.now()
   const cands: { slug: string; files: Ent[]; subs: Record<string, Ent[]>; time: number; finished: boolean }[] = []
   for (const d of await ls($, RUNS)) {
@@ -157,7 +168,7 @@ async function scanRun($: EngineInterface): Promise<RunInfo | null> {
   }
   const isLive = (c: (typeof cands)[number]) => !c.finished && now - c.time < LIVE_MS
   const newest = (list: typeof cands) => [...list].sort((a, b) => b.time - a.time)[0]
-  const pick = newest(cands.filter(isLive)) ?? newest(cands)
+  const pick = cands.find(c => c.slug === slug) ?? newest(cands.filter(isLive)) ?? newest(cands)
   if (pick === undefined) return null
 
   const base = `${RUNS}/${pick.slug}`
@@ -265,8 +276,6 @@ const FINISHED = new Set(['done', 'skipped', 'unreachable'])
 
 export type StageCounts = { harness: Partial<Record<Stage, number>>; graph: Partial<Record<Stage, number>> }
 
-export type { OpenRuns }
-
 const label = (s: Stage) => s.charAt(0).toUpperCase() + s.slice(1)
 const counted = (c: Partial<Record<Stage, number>>) =>
   STAGES.filter(s => (c[s] ?? 0) > 0).map(s => `${label(s)}(${c[s]})`).join(' / ')
@@ -277,12 +286,10 @@ export function stageStatus(c: StageCounts): string | undefined {
   return parts.length > 0 ? parts.join(' · ') : undefined
 }
 
-async function countStages($: EngineInterface, cwd: string, now: number): Promise<{ counts: StageCounts; runs: OpenRuns }> {
+async function countStages($: EngineInterface, cwd: string, now: number): Promise<StageCounts> {
   const out: StageCounts = { harness: {}, graph: {} }
-  const detail: OpenRuns = { harness: [], graph: [] }
-  const add = (kind: 'harness' | 'graph', s: Stage, r: Omit<OpenRun, 'stage'>) => {
+  const add = (kind: 'harness' | 'graph', s: Stage) => {
     out[kind][s] = (out[kind][s] ?? 0) + 1
-    detail[kind].push({ ...r, stage: s })
   }
   const json = async (p: string) => { try { return JSON.parse(await $.fs.read(p)) } catch { return null } }
   const list = async (p: string) => { try { return await $.fs.list(p) } catch { return [] } }
@@ -306,9 +313,7 @@ async function countStages($: EngineInterface, cwd: string, now: number): Promis
           const nodes = (Array.isArray(g?.nodes) ? g.nodes : []) as { stage?: string; state?: string }[]
           if (nodes.some(n => n.stage === 'report' && n.state === 'done')) continue
           const stage = STAGES.find(s => nodes.some(n => n.stage === s && !FINISHED.has(String(n.state))))
-          // the request's first line names the run for a person; the run id when there is none
-          const request = typeof g?.request === 'string' ? g.request.trim().split('\n')[0].slice(0, 60) : ''
-          if (stage) add('graph', stage, { slug: request || f.name.replace(/\.json$/, ''), passed: 0, failed: 0, total: 0 })
+          if (stage) add('graph', stage)
         }
         continue
       }
@@ -333,10 +338,10 @@ async function countStages($: EngineInterface, cwd: string, now: number): Promis
         : crit?.sound !== true ? 'critique'
         : judged < ids.length ? 'implement'
         : !has('04-goal-gate.json') ? 'gate'
-        : 'report', { slug: run.name, passed, failed, total: ids.length })
+        : 'report')
     }
   }
-  return { counts: out, runs: detail }
+  return out
 }
 
 // Reject / failed / complete events of the fallback runs in .harness-run/<slug>/ (and finished graph runs),
@@ -407,29 +412,107 @@ async function runEvents($: EngineInterface, start: number, tries: Map<string, n
   return out
 }
 
-const SHORT: Record<Stage, string> = { plan: 'Plan', setgoal: 'Goal', critique: 'Crit', implement: 'Impl', test: 'Test', gate: 'Gate', report: 'Rpt' }
-const CELLS = 10
-
-// passed ▰ in success, failed ▰ in error, the rest ▱ dim; at least one cell for any run judged
-export function barCells(r: OpenRun): { ok: number; bad: number; rest: number } {
-  if (r.total === 0) return { ok: 0, bad: 0, rest: CELLS }
-  const ok = Math.min(CELLS, Math.round((r.passed / r.total) * CELLS))
-  const bad = Math.min(CELLS - ok, Math.round((r.failed / r.total) * CELLS))
-  return { ok, bad, rest: CELLS - ok - bad }
+// The open runs from the node CLI (rule 6: the path through $.plugin.root). A non-zero exit, a timeout, a throw or
+// output that is not a list is no answer: null, and the caller keeps its last good list.
+async function loadRows($: EngineInterface): Promise<HarnessRow[] | null> {
+  try {
+    const out = await $.process.run(listArgv($.plugin.root, await $.session.cwd()), { timeoutMs: LIST_TIMEOUT_MS })
+    return out.exitCode === 0 ? parseRows(out.stdout) : null
+  } catch {
+    return null
+  }
 }
 
-// a person's words for what the run is on now
-function nowSentence(s: S, r: RunInfo): string {
-  const n = r.now
-  if (n.kind === 'done') return s('nowDone')
-  if (n.kind === 'stage') return s('nowStage', { stage: s(`stage${cap(n.stage ?? 'plan')}` as Key) })
-  const what = `${s(`now${cap(n.kind)}` as Key)} ${n.id}${n.title ? `: ${n.title}` : ''}`
-  return n.attempt !== undefined && (n.attempt > 1 || n.kind === 'retry') ? `${what}${s('attempt', { n: n.attempt })}` : what
+// What the pane and band draw: the live rows, or the demo's; in opening order for the person's `looked` marks.
+async function view($: EngineInterface) {
+  const name = await read($, demo)
+  const open = name === null ? await read($, rows) : demoRows(name)
+  const ordered = openingOrder(open, await read($, looked))
+  const sel = await read($, selected)
+  return { demo: name, ordered, sel, picked: pickRun(ordered, sel), nowMs: name === null ? await $.clock.now() : DEMO_NOW }
+}
+
+async function paneOpen($: EngineInterface): Promise<boolean> {
+  try {
+    return (await $.ui.panes()).some((p: { id: string }) => p.id === PANE)
+  } catch {
+    return false // panes unreadable: closed
+  }
+}
+
+// Set at session.start of a session that has a surface, to look at the spinner again with that session's engine (a
+// timer is started from it, not from a command or a draw); no surface, never set, no timer. A cache a reload may lose.
+let kick: (() => Promise<void>) | null = null
+let spinner: { cancel: () => void } | null = null
+
+// The files of the run the Flow and Gate rules tabs show; the demo and no run have none.
+async function refreshRun($: EngineInterface) {
+  try {
+    const v = await view($)
+    const found = v.demo !== null || v.picked === null ? null : await scanRun($, v.picked.slug)
+    await update($, run, () => found)
+  } catch {
+    // an unreadable run dir leaves the last run as it was
+  }
+}
+
+// The open runs, read again: the node list (never in the demo), then the run files. Every failure leaves what was there.
+async function refresh($: EngineInterface) {
+  try {
+    if ((await read($, demo)) === null) {
+      const next = await loadRows($)
+      if (next !== null) await update($, rows, () => next)
+    }
+    await refreshRun($)
+    // a reject that lands while the pane shows the run has been seen
+    if (await paneOpen($)) {
+      const shown = (await view($)).picked
+      await update($, looked, l => markLooked(l, shown))
+    }
+  } catch {
+    // an unreadable list or run dir leaves the last one as it was
+  }
+  await kick?.()
+}
+
+// The faster interval: only while a run on screen acts (a pane or the band shows it) and a surface exists; it ends as
+// soon as the run waits, stalls or ends, or the pane and band are gone.
+async function syncSpinner($: EngineInterface) {
+  try {
+    const v = await view($)
+    const shown = shownRows(v.ordered, v.sel, await paneOpen($))
+    const { run: go } = spinnerPlan(shown, (await $.session.surfaces()).length, shown.length > 0)
+    if (go && spinner === null) spinner = $.clock.every(SPIN_MS, () => step($))
+    else if (!go && spinner !== null) {
+      spinner.cancel()
+      spinner = null
+    }
+  } catch {
+    // a failed check leaves the timer as it was
+  }
+}
+async function step($: EngineInterface) {
+  await syncSpinner($)
+  if (spinner !== null) await update($, spin, n => n + 1)
+}
+
+// `[` and `]`: the next run by slug, marked as looked at; one run or none, nothing changes
+async function cycle($: EngineInterface, by: 1 | -1) {
+  const v = await view($)
+  const slug = cycleRun(v.ordered, v.sel, by)
+  await update($, selected, () => slug)
+  await update($, looked, l => markLooked(l, pickRun(v.ordered, slug)))
+  await refreshRun($)
+  await kick?.()
 }
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     if ((await $.session.surfaces()).length === 0) return next(e)
+    // a second session.start (a cleared session) starts over: the old interval ends
+    spinner?.cancel()
+    spinner = null
+    kick = () => syncSpinner($)
 
     // PushNotification's result: { message, pushSent?, localSent?, disabledReason? } (user_present at the terminal);
     // not sent or thrown: the same line as a toast
@@ -497,15 +580,8 @@ export const register: Register = on => {
     async function tick() {
       try {
         // the status line: open runs per stage; the gate's decisions live in /harness-status
-        const open = await countStages($, await $.session.cwd(), await $.clock.now())
-        $.ui.status(stageStatus(open.counts))
-        await update($, runs, () => open.runs)
-        try {
-          const found = await scanRun($)
-          await update($, run, () => found)
-        } catch {
-          // an unreadable run dir leaves the last run as it was
-        }
+        $.ui.status(stageStatus(await countStages($, await $.session.cwd(), await $.clock.now())))
+        await refresh($)
         await notifyRuns()
         if (!(await $.fs.exists(CONFIG))) {
           await update($, armed, () => false)
@@ -554,7 +630,7 @@ export const register: Register = on => {
     } catch {
       // unreadable settings: English
     }
-    await $.command.register({ name: 'harness-status', description: STRINGS[await read($, lang)].cmdDesc })
+    await $.command.register({ name: 'harness-status', description: STRINGS[await read($, lang)].cmdDesc, argumentHint: 'demo [minimal|full|parallel|narrow|off]' })
     // a project hook copy that differs from this plugin's own is out of date (installed once, never refreshed)
     try {
       const copy = '.claude/hooks/goal-gate.mjs'
@@ -565,42 +641,82 @@ export const register: Register = on => {
       // unreadable: say nothing
     }
     await tick()
+    const first = openTab((await view($)).picked !== null)
+    await update($, paneTab, () => first)
     $.clock.every(TICK_MS, tick)
 
     return next(e)
   })
 
-  // the command opens the pane on Detail (the gate rules and why the last call was denied); again, it closes it.
-  // Esc and q close it too (closeOnEscape, the close button)
-  on('command.run', { command: 'harness-status' }, async $ => {
+  // The command opens the pane on the run to look at (Now), or on the gate rules when no run is open; again, it
+  // closes it. Esc and q close it too (closeOnEscape, the close button). `demo [name|off]` draws the fixtures instead
+  // of the live runs. The answer is one line: the headless reply.
+  on('command.run', { command: 'harness-status' }, async ($, e) => {
     const text = STRINGS[await read($, lang)]
-    let isOpen = false
-    try {
-      isOpen = (await $.ui.panes()).some((p: { id: string }) => p.id === PANE)
-    } catch {
-      // panes unreadable: open it
-    }
-    if (isOpen) {
+    const want = parseDemoArg(e.args ?? '', await read($, demo))
+    const isOpen = await paneOpen($)
+    if (want === null && isOpen) {
       await $.ui.close({ id: PANE })
+      await kick?.()
       return { text: text.paneClosed }
     }
-    await update($, view, () => 'detail' as const)
-    await $.ui.open({ id: PANE, title: 'Harness', focus: true, closeOnEscape: true })
-    return { text: text.paneOpened }
+    if (want !== null) {
+      await update($, demo, () => (want === 'off' ? null : want))
+      await update($, selected, () => null)
+      await refresh($)
+    }
+    if (want === 'off') return { text: text.demoOff }
+    const v = await view($)
+    // the run opening order picks is the run shown from here on, by slug: marking its reject as seen must not move it
+    const slug = v.picked?.slug ?? null
+    await update($, selected, () => slug)
+    if (!isOpen) {
+      await update($, paneTab, () => openTab(v.picked !== null))
+      await update($, looked, l => markLooked(l, v.picked))
+      await $.ui.open({ id: PANE, title: 'Harness', focus: true, closeOnEscape: true })
+    }
+    await refreshRun($)
+    await kick?.()
+    return { text: want === null ? text.paneOpened : fmt(text.demoOn, { name: want }) }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Button, Input, Text } = $.ui.resolve(e)
     const ui = { Box, Text, Button }
     const s = strings(await read($, lang))
-    const r = await read($, run)
-    const picked = await read($, view)
-    const kind = picked === 'auto' ? (r === null ? 'detail' : 'flow') : picked
-    const now = await $.clock.now()
+    const v = await view($)
+    const r = v.picked
+    const files = await read($, run)
+    const ri = files !== null && r !== null && files.slug === r.slug ? files : null
+    const tab = await read($, paneTab)
+    const now = v.nowMs
     const closeBtn = <Button key="close" role="dismiss" label={s('closeBtn')} hotkey="q" onPress={() => $.ui.close({ id: PANE })} />
-
-    const items = (['flow', 'detail'] as const).map(k => ({ key: k, label: s(`tab${cap(k)}` as Key) }))
-    const tabRow = tabs(ui, items, kind, k => update($, view, () => k as 'flow' | 'detail'))
+    const labels = Object.fromEntries(
+      (['now', 'flow', 'findings', 'rules'] as const).map(k => [k, { label: s(`tab${cap(k)}` as Key), short: s(k === 'rules' ? 'tabRulesShort' : (`tab${cap(k)}` as Key)) }]),
+    ) as TabLabels
+    const ctx: PaneCtx = {
+      width: innerWidth(e.props.bodyColumns), nowMs: now, tick: await read($, spin),
+      pos: runPosition(v.ordered, v.sel), other: otherRunLabel(v.ordered, v.sel), tab,
+    }
+    const plan = tabRowPlan(ctx, labels)
+    const tabRow = tabs(ui, plan.items, tab, k => update($, paneTab, () => k as PaneTab))
+    // `[` and `]` cannot be a Button hotkey (one digit or lowercase letter; the engine refuses them): the pane's Input has
+    // the focus ring when the pane is opened with focus (the moment hotkeys are armed), takes every printable key, and
+    // status.ts paneKey reads the last one; prev / next are Buttons for the pointer
+    const onKey = async (text: string) => {
+      const key = paneKey(text)
+      if (key === null) return
+      if (key.kind === 'step') await cycle($, key.by)
+      else if (key.kind === 'tab') await update($, paneTab, () => key.tab)
+      else await $.ui.close({ id: PANE })
+    }
+    const steps =
+      v.ordered.length > 1 ? (
+        <Box columnGap={2}>
+          <Button key="prev" plain label={s('prev')} onPress={() => cycle($, -1)} />
+          <Button key="next" plain label={s('next')} onPress={() => cycle($, 1)} />
+        </Box>
+      ) : null
 
     // the gate's own rules and its last decision (the part of the pane that answers a deny)
     const rules = async () => {
@@ -625,25 +741,31 @@ export const register: Register = on => {
       )
     }
 
+    // Now and Findings are drawn from the row (harness-draw); Flow and Gate rules read the run's files
+    const kind = tab === 'rules' ? 'detail' : 'flow'
     let body
     if (r === null) {
-      body = kind === 'detail' ? await rules() : <Text>{s('noRun')}</Text>
+      body = tab === 'rules' ? await rules() : <Text>{s('noRun')}</Text>
+    } else if (tab === 'now' || tab === 'findings') {
+      body = renderLines(ui, paneContent(r, ctx))
+    } else if (ri === null) {
+      body = tab === 'rules' ? await rules() : <Text>{s(v.demo === null ? 'noRun' : 'demoFiles')}</Text>
     } else {
       const reasonLine = (text: string, pad: number, key: string) =>
         text === '' ? null : <Text key={key} color="error" wrap="truncate-end">{`${' '.repeat(pad)}↳ ${text}`}</Text>
       const progress =
-        r.match !== null
+        ri.match !== null
           ? (
             <Box>
               <Text>{`${s('goalGate')} `}</Text>
-              {bar(ui, r.match, 100, BAR, s('passBar', { pct: r.match, bar: PASS_PCT }))}
+              {bar(ui, ri.match, 100, BAR, s('passBar', { pct: ri.match, bar: PASS_PCT }))}
             </Box>
           )
-          : bar(ui, r.done, r.total, BAR, `${r.done}/${r.total}`)
+          : bar(ui, ri.done, ri.total, BAR, `${ri.done}/${ri.total}`)
       const rows: unknown[] = []
       if (kind === 'flow') {
         // stages in order; each subgoal opens into its gate verdicts, a retry one level under the reject it answers
-        flowLines(r).forEach((l, i) => {
+        flowLines(ri).forEach((l, i) => {
           const pad = l.kind === 'attempt' ? 2 + Math.min(l.depth, 4) * 2 : 0
           const name =
             l.kind === 'stage' ? s(`stage${cap(l.stage!)}` as Key)
@@ -661,12 +783,12 @@ export const register: Register = on => {
         })
       } else {
         // per subgoal: the result and every gate verdict; the critique and the goal gate when they rejected
-        if (r.critique.sound === false) {
+        if (ri.critique.sound === false) {
           rows.push(<Text key="c" color="error" wrap="truncate-end">{`${MARK.failed} ${s('critiqueRejected')}`}</Text>)
-          const why = reasonLine(r.critique.reason, 2, 'cw')
+          const why = reasonLine(ri.critique.reason, 2, 'cw')
           if (why !== null) rows.push(why)
         }
-        r.subs.forEach((x, i) => {
+        ri.subs.forEach((x, i) => {
           rows.push(<Text key={`s${i}`} wrap="truncate-end"><Text color={TINT[x.state]}>{MARK[x.state]}</Text>{` ${x.id}${x.title ? ` ${x.title}` : ''}`}</Text>)
           const result = x.state === 'done' ? s('resPassed', { n: x.tries }) : x.state === 'failed' ? s('resFailed', { n: x.tries }) : s('resNone')
           rows.push(<Text key={`r${i}`} dimColor wrap="truncate-end">{`  ${result}${x.stalled ? ` · ${s('stalled')}` : ''}`}</Text>)
@@ -678,16 +800,15 @@ export const register: Register = on => {
             ),
           )
         })
-        if (r.goalReason !== '' && r.pass === false) {
+        if (ri.goalReason !== '' && ri.pass === false) {
           rows.push(<Text key="gg" color="error" wrap="truncate-end">{`${MARK.failed} ${s('goalGate')}`}</Text>)
-          const why = reasonLine(r.goalReason, 2, 'ggw')
+          const why = reasonLine(ri.goalReason, 2, 'ggw')
           if (why !== null) rows.push(why)
         }
       }
       body = (
         <Box flexDirection="column">
-          {kind === 'flow' && rail(ui, r.stages.map(g => ({ label: s(`stage${cap(g.key)}` as Key), state: g.state })))}
-          <Box flexDirection="column" marginY={1}>
+          <Box flexDirection="column">
             {rows.slice(0, LINE_MAX)}
             {rows.length > LINE_MAX && <Text dimColor>{`  ${s('more', { n: rows.length - LINE_MAX })}`}</Text>}
           </Box>
@@ -702,99 +823,34 @@ export const register: Register = on => {
       )
     }
 
-    // Now: the stage or subgoal at work, the agent (the harness records none), time since the last file change
-    const nowLine = r === null ? null : r.now.kind === 'done' ? `▶ ${s('now')} · ${nowSentence(s, r)}` : `▶ ${s('now')} · ${nowSentence(s, r)} · ${NONE}${sinceLast(r, now) === '' ? '' : ` · ${sinceLast(r, now)}`}`
-    const state = r === null ? '' : r.finished ? s('stateComplete') : r.live ? s('stateRunning') : s('stateStalled')
+    // the header, Now / last step / You and the rail are harness-draw's lines; the tab row and the keys are Buttons
     return (
       <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
-        <Box>
-          <Box flexShrink={1}><Text bold wrap="truncate-end">{r === null ? s('paneTitle') : r.title}</Text></Box>
-          {r !== null && <Box flexShrink={1} marginLeft={2}><Text dimColor wrap="truncate-end">{r.slug}</Text></Box>}
-          {r !== null && (
-            <Box flexShrink={0} marginLeft={2}>
-              <Text color="claude">{s('headLine', { state, done: r.done, total: r.total })}</Text>
-            </Box>
-          )}
-        </Box>
-        {nowLine !== null && <Box marginTop={1}><Text color="claude" bold wrap="truncate-end">{nowLine}</Text></Box>}
-        <Box marginY={1} justifyContent="space-between">
-          <Box flexShrink={0}>{tabRow}</Box>
-          <Box flexShrink={0} marginLeft={2}>{closeBtn}</Box>
-        </Box>
+        {r === null ? <Text bold wrap="truncate-end">{s('paneTitle')}</Text> : renderLines(ui, paneHead(r, ctx))}
         {body}
+        <Box marginTop={1} justifyContent="space-between">
+          <Box flexShrink={0}>{tabRow}</Box>
+          {plan.right !== '' && <Box flexShrink={1} marginLeft={2}><Text dimColor wrap="truncate-end">{plan.right}</Text></Box>}
+        </Box>
+        <Box columnGap={2}>
+          {closeBtn}
+          {steps}
+          <Input key="keys" autoFocus value="" placeholder={s('keysHint')} onInput={onKey} onSubmit={() => {}} />
+        </Box>
       </Box>
     )
   })
 
-  // the band: one pipeline row per kind with open runs; a stage with runs is a chip with a hover card
+  // the band: three rows for the leading harness run (what it is doing and whether it waits on you / how far / what
+  // it cost and what came back last), `+N` for the others. Graph runs are the graph mod's: no row for them here.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const open = await read($, runs)
-    const kinds = (['harness', 'graph'] as const).filter(k => open[k].length > 0)
-    if (e.props.hasSurvey || kinds.length === 0) return next(e)
-    const { Box, Text } = $.ui.resolve(e)
+    const v = await view($)
+    if (e.props.hasSurvey || v.ordered.length === 0) return next(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const lines = bandLines(v.ordered, { width: e.props.bodyColumns, nowMs: v.nowMs, tick: await read($, spin) })
     return (
       <Box flexDirection="column">
-        {kinds.map(kind => {
-          const stages = STAGES.filter(s => kind === 'graph' || s !== 'test')
-          const count = (s: Stage) => open[kind].filter(r => r.stage === s).length
-          // full labels while the row fits 80 columns, short ones past that
-          const width = (names: (s: Stage) => string) =>
-            9 + stages.reduce((n, s) => n + names(s).length + (count(s) > 0 ? String(count(s)).length + 1 : 0), 0) + 3 * (stages.length - 1)
-          const name = width(label) <= 76 ? label : (s: Stage) => SHORT[s]
-          return (
-            <Box key={kind} flexShrink={1}>
-              <Text dimColor>{kind.padEnd(8)} </Text>
-              {stages.map((s, i) => {
-                const rows = open[kind].filter(r => r.stage === s)
-                return (
-                  <Box key={s} flexShrink={1} hover={rows.length > 0 ? { scope: `${kind}-${s}` } : undefined}>
-                    {i > 0 && <Text dimColor>{' ━ '}</Text>}
-                    {rows.length === 0 ? (
-                      <Text dimColor color="inactive" wrap="truncate-end">{name(s)}</Text>
-                    ) : (
-                      <Text bold color="claude" wrap="truncate-end">{`${name(s)} ${rows.length}`}</Text>
-                    )}
-                  </Box>
-                )
-              })}
-            </Box>
-          )
-        })}
-        {/* one hidden card per lit chip, in the flow under the rows: the band's region holds it */}
-        {kinds.flatMap(kind =>
-          STAGES.map(s => ({ s, rows: open[kind].filter(r => r.stage === s) }))
-            .filter(c => c.rows.length > 0)
-            .map(({ s, rows }) => (
-              <Box
-                key={`card-${kind}-${s}`}
-                display="none"
-                hover={{ scope: `${kind}-${s}`, display: 'flex' }}
-                flexDirection="column"
-                borderStyle="round"
-                borderColor="claude"
-                paddingX={1}
-              >
-                <Text dimColor>{`${kind} · ${label(s)}`}</Text>
-                {rows.map(r => {
-                  const b = barCells(r)
-                  return (
-                    <Box key={r.slug} gap={1}>
-                      <Text wrap="truncate-end">{r.slug}</Text>
-                      {kind === 'harness' && (
-                        <Text>
-                          <Text color="success">{'▰'.repeat(b.ok)}</Text>
-                          <Text color="error">{'▰'.repeat(b.bad)}</Text>
-                          <Text dimColor>{'▱'.repeat(b.rest)}</Text>
-                          {` ${r.passed}/${r.total}`}
-                        </Text>
-                      )}
-                      {r.failed > 0 && <Text color="error">{`${r.failed} failed`}</Text>}
-                    </Box>
-                  )
-                })}
-              </Box>
-            )),
-        )}
+        {renderLines({ Box, Text, Button }, lines)}
         {await next(e)}
       </Box>
     )
