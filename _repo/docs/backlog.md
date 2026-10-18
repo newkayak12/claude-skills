@@ -67,6 +67,10 @@ Cards 40–43 are in Sprint E-95de6173 (2026-10-17).
     - Acceptance: usage is also checked between tool calls; at or over the threshold mid-turn the
       recap + compact runs at the next point compact accepts, before the next answer; a test drives a
       turn that crosses the threshold mid-way; seen once live.
+    - Also (2026-10-18, Mac): toast "smart-compact: could not compact, left to auto-compact". The
+      compact retry gives up after 20 × 500 ms and its `catch {}` drops the error, so the log says only
+      `compact-failed`. Acceptance: the log keeps the last compact error; the retry waits for the turn
+      to end (not a fixed 10 s); a test where compact rejects past 10 s still compacts.
 
 49. **Mods put subagent-to-subagent communication to work**
     - Why: user, 2026-10-17: "mod 추가로 subagent 간 의사소통하는거 더 적극적으로 활용할 수 있는 방법
