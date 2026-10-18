@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import { classify, classifyFile, pushRing, redact, ruleFor, splitCommands } from './guard-logic.ts'
+import { classify, classifyFile, pushRing, redact, ruleFor, splitCommands, stopHeader, stopRows } from './guard-logic.ts'
 import type { Denial, Env, Verdict } from './guard-logic.ts'
 import { deniedCount, statusLine } from './status.ts'
 
@@ -31,8 +31,8 @@ async function record($: any, d: Omit<Denial, 'id' | 'ts'>) {
 }
 
 // A guard stop: log it, tell the person, answer the deny.
-async function stop($: any, ctx: Ctx, reason: string, source: 'guard' | 'declined') {
-  if (ctx.log) await record($, { tool: ctx.tool, call: ctx.call, reason, source, agentId: ctx.agentId })
+async function stop($: any, ctx: Ctx, reason: string, source: 'guard' | 'declined', rule: string) {
+  if (ctx.log) await record($, { tool: ctx.tool, call: ctx.call, reason, source, rule, agentId: ctx.agentId })
   try {
     $.ui.toast(`guard: ${reason.split('\n')[0]}`, { timeoutMs: 6000 })
     $.ui.status(statusLine({ denied: deniedCount() + 1 }))
@@ -43,14 +43,14 @@ async function stop($: any, ctx: Ctx, reason: string, source: 'guard' | 'decline
 // The one place a confirm-class verdict becomes a question; a missing or failing ask counts as Cancel.
 async function askOrDeny($: any, v: NonNullable<Verdict>, e: any, next: (e: any) => any, mode: Mode, ctx: Ctx, label: string) {
   if (mode === 'off') return next(e)
-  if (v.action === 'deny') return stop($, ctx, v.reason, 'guard')
-  if (mode === 'deny') return stop($, ctx, `${v.reason} Set guard_mode=off in /config to allow.`, 'guard')
+  if (v.action === 'deny') return stop($, ctx, v.reason, 'guard', v.rule)
+  if (mode === 'deny') return stop($, ctx, `${v.reason} Set guard_mode=off in /config to allow.`, 'guard', v.rule)
   let answer: string | undefined
   try {
     answer = await $.ui.ask(`Run \`${label.slice(0, 120)}\`?`, ['Run', 'Cancel'])
   } catch {}
   if (answer === 'Run') return next(e)
-  return stop($, ctx, `session: the person declined (${v.rule}).`, 'declined')
+  return stop($, ctx, `session: the person declined (${v.rule}).`, 'declined', v.rule)
 }
 
 // Interactive sessions only: headless agents pass every rule and nothing is logged.
@@ -140,27 +140,36 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'session-denials' }, async ($, e) => {
     if ((await $.session.surfaces()).length === 0) return { text: 'Nothing to show here: no screen is attached.' }
-    await $.ui.open({ id: PANE, title: 'Denied calls' })
+    // the command again on an open pane closes it
+    if (((await $.ui.panes()) as { id: string }[]).some(p => p.id === PANE)) {
+      await $.ui.close({ id: PANE })
+      return { text: 'Denials pane closed.' }
+    }
+    await $.ui.open({ id: PANE, title: 'Denied calls', closeOnEscape: true })
     return { text: 'Denials pane opened.' }
   }).catch(($, e, next) => next(e))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
-    const rows = [...(await read($, guardAtom)).denials].reverse()
+    const ring = (await read($, guardAtom)).denials
+    const rows = stopRows(ring)
+    const head = stopHeader(mode, ring)
     const shown = await read($, copyAtom)
     return (
       <Box flexDirection="column">
         <Box borderStyle="round" borderColor="claude" gap={1}>
-          <Text key="title" bold>{`denied calls (${rows.length})`}</Text>
+          <Text key="title" bold>{`guard: ${head.mode} mode · ${head.stopped} stopped`}</Text>
+          <Button key="close" role="dismiss" label="close [q]" hotkey="q" onPress={() => $.ui.close({ id: PANE })} />
         </Box>
         {rows.length === 0 && <Text dimColor>no denials</Text>}
         {rows.map(d => (
           <Box key={`d-${d.id}`} flexDirection="column">
             <Box gap={1}>
-              <Text dimColor>{new Date(d.ts).toISOString().slice(11, 16)}</Text>
+              <Text dimColor>{d.time}</Text>
               <Text bold>{d.tool}</Text>
               <Box flexShrink={1}><Text wrap="truncate-end">{d.call}</Text></Box>
-              <Text color={d.source === 'native' ? 'warning' : 'error'}>{d.source}</Text>
+              <Text dimColor>{d.rule}</Text>
+              <Text color={d.source === 'native' ? 'warning' : 'error'}>{d.sourceLabel}</Text>
               <Button key={`copy-${d.id}`} label="Copy rule" onPress={() => update($, copyAtom, () => d.id)} />
             </Box>
             <Text dimColor wrap="truncate-end">{d.reason.split('\n')[0]}</Text>

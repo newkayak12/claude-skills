@@ -71,3 +71,27 @@ test('headless: no pane', async ($, on) => {
   expect(seen.opened).toEqual([])
   expect(r.text).toContain('use staging DB')
 })
+
+test('each note shows its scope and age; the summary shows a dash before the first send and the size', async ($, on) => {
+  memoWorld(on, { store: SEED })
+  const lines = texts(await (await mount($)).drawn())
+  expect(lines).toContain('1 · global · today')
+  expect(lines).toContain('2 · project · today')
+  expect(lines).toContain('sent with this conversation: — · 29/1200 chars')
+})
+
+test('after the block went out the summary shows the local send time', async ($, on) => {
+  memoWorld(on, { store: SEED })
+  await submit($)
+  const d = new Date(T0)
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const lines = texts(await (await mount($)).drawn())
+  expect(lines).toContain(`sent with this conversation: ${hm} · 29/1200 chars`)
+})
+
+test('the pane holds one close hint and long note lines truncate with an ellipsis', async ($, on) => {
+  memoWorld(on, { store: SEED })
+  const json = JSON.stringify(await (await mount($)).drawn())
+  expect(json).toMatch(/Esc, q or \/memo closes/)
+  expect(json).toMatch(/"wrap":"truncate-end"/)
+})
