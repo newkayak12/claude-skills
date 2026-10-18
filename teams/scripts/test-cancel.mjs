@@ -304,3 +304,33 @@ test('a pid that is not the recorded process is not killed', async () => {
   assert.equal(out.state, 'cancelled');
   assert.ok(pidAlive(bystander.pid), 'an unrelated process that reused the pid is left alone');
 });
+
+// ---------- the viewers read a cancelled task as terminal ----------
+
+test('the viewers read a cancelled task as terminal, not as work still in flight', async () => {
+  const { collectTask } = await import(join(HERE, 'lib', 'view-collect.mjs'));
+  const { summarize } = await import(join(HERE, 'lib', 'view-summary.mjs'));
+  const { reportPayload } = await import(join(HERE, 'lib', 'view-report.mjs'));
+  const { epicTicketState, epicPhase } = await import(join(HERE, '..', 'mcp', 'tickets.mjs'));
+  const cwd = repo();
+  const id = seedTask(cwd, ['P1']);
+  // The cancel leaves the node states as they were: a dispatch that was running stays "running".
+  save(id, (t) => { t.nodes.find((n) => n.node_id === 'dispatch:P1:1').state = 'running'; });
+  await call('tm_cancel', { task_id: id });
+  const task = load(id);
+  assert.equal(epicTicketState(task), 'CANCELLED');
+  assert.equal(epicPhase(task), null);
+  const model = collectTask(ROOT, id);
+  assert.equal(model.state, 'cancelled', 'collectTask: not stalled, not running');
+  const sum = summarize(model);
+  assert.equal(sum.state, 'cancelled');
+  assert.equal(sum.now.kind, 'idle', 'no "build" step is being worked on a cancelled task');
+  assert.ok(!sum.stages.some((s) => s.state === 'running'), 'no stage reads running');
+  assert.ok(!sum.work.some((w) => w.state === 'running'), 'no card reads running');
+  // the report tab: the task's collected state wins, a cancelled task reads blocked-not-running
+  const rp = reportPayload(task, { verdict: model.state === 'complete' ? 'finished' : model.state === 'running' ? 'running' : 'blocked' });
+  assert.equal(rp.verdict, 'blocked');
+  assert.ok(rp.report && /cancel/i.test(rp.report.text || rp.report.head || JSON.stringify(rp.report)), 'the stub is the report');
+  const board = await call('tm_board', { task_id: id });
+  assert.equal(board.state, 'CANCELLED');
+});
