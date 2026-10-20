@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -165,7 +166,7 @@ test('foreign: lists hand-made files; no subcommand modifies them', () => {
   init(cwd, 'b');
   init(cwd, 'a');
   run(cwd, ['index']);
-  run(cwd, ['log', '--id', 'a', '--note', 'n', '--status', 'shaped']);
+  run(cwd, ['log', '--id', 'a', '--note', 'n', '--status', 'shaped', '--later-step', 'shape']);
   run(cwd, ['foreign']);
   for (const p of handmade) {
     assert.equal(state(p), before[p], p);
@@ -188,11 +189,11 @@ test('log: appends a dated line, keeps earlier lines, status edit touches only t
   assert.equal(h1.slice(h0.length), '- 2026-03-04: first note\n');
   assert.equal(fs.readFileSync(metaP, 'utf8'), m0, 'no --status: meta untouched');
 
-  const r = run(cwd, ['log', '--id', 'a', '--note', 'moved', '--status', 'shaped']);
+  const r = run(cwd, ['log', '--id', 'a', '--note', 'moved', '--status', 'shaped', '--later-step', 'shape']);
   assert.equal(r.code, 0);
   const h2 = fs.readFileSync(hist, 'utf8');
   assert.ok(h2.startsWith(h1));
-  assert.equal(h2.slice(h1.length), `- ${DATE}: moved (status: raw -> shaped)\n`);
+  assert.equal(h2.slice(h1.length), `- ${DATE}: moved (status: raw -> shaped; step: shape)\n`);
   assert.equal(fs.readFileSync(metaP, 'utf8'), m0.replace('status: raw', 'status: shaped'));
 
   const bad = run(cwd, ['log', '--id', 'ghost', '--note', 'x']);
@@ -200,8 +201,126 @@ test('log: appends a dated line, keeps earlier lines, status edit touches only t
   assert.match(bad.json.error, /unknown id/);
   assert.equal(fs.existsSync(path.join(cwd, 'material/ghost')), false);
   const before = snap(path.join(cwd, 'material'));
-  assert.equal(run(cwd, ['log', '--id', 'a', '--note', 'x', '--status', 'done']).code, 1);
+  assert.equal(run(cwd, ['log', '--id', 'a', '--note', 'x', '--status', 'done', '--later-step', 'shape']).code, 1);
   assert.deepEqual(snap(path.join(cwd, 'material')), before, 'invalid status writes nothing');
+});
+
+test('status guard: step 1 never changes status; --status needs --later-step, else refused and nothing written', () => {
+  const { cwd } = project();
+  init(cwd, 'a');
+  const mat = path.join(cwd, 'material');
+  const before = snap(mat);
+  const refused = run(cwd, ['log', '--id', 'a', '--note', 'moved', '--status', 'shaped']);
+  assert.equal(refused.code, 1);
+  assert.match(refused.json.error, /later steps/);
+  const refusedInit = run(cwd, ['init', '--id', 'b', '--title', 't', '--source', 's', '--status', 'shaped']);
+  assert.equal(refusedInit.code, 1);
+  assert.match(refusedInit.json.error, /later steps/);
+  assert.deepEqual(snap(mat), before, 'refused calls write nothing');
+  assert.match(fs.readFileSync(path.join(mat, 'a/meta.md'), 'utf8'), /^status: raw$/m);
+  // the step-1 flow (init, log without --status, answer, index) leaves status raw
+  run(cwd, ['log', '--id', 'a', '--note', 'step-1 note']);
+  run(cwd, ['index']);
+  assert.match(fs.readFileSync(path.join(mat, 'a/meta.md'), 'utf8'), /^status: raw$/m);
+  assert.match(fs.readFileSync(path.join(mat, 'index.md'), 'utf8'), /\| a \| T a \| raw \|/);
+});
+
+const QUESTION = '[result] 40% 단축은 무엇을 기준으로 측정했나요?';
+const CITE = 'retro2.md + "## 에피소드 A"';
+function withGaps(cwd, id = 'a') {
+  init(cwd, id);
+  const gaps = path.join(cwd, 'material', id, 'gaps.md');
+  fs.appendFileSync(gaps, `- ${QUESTION}\n- [problem] 장애 시각은 언제인가요?\n`);
+  return gaps;
+}
+
+test('answer: the question line stays visible, marked answered with its citation, never deleted', () => {
+  const { cwd } = project();
+  const gaps = withGaps(cwd);
+  const r = run(cwd, ['answer', '--id', 'a', '--question', QUESTION, '--citation', CITE]);
+  assert.equal(r.code, 0);
+  assert.equal(r.json.result, 'answered');
+  const lines = fs.readFileSync(gaps, 'utf8').split('\n');
+  assert.ok(lines.includes(`- [답변됨] ${QUESTION} — 답변: ${CITE}`), 'answered line kept with citation');
+  assert.ok(!lines.includes(`- ${QUESTION}`), 'no longer listed as open');
+  assert.ok(lines.includes('- [problem] 장애 시각은 언제인가요?'), 'other open question untouched');
+  assert.equal(lines.filter((l) => l.includes('40% 단축은')).length, 1, 'question not deleted, not duplicated');
+});
+
+test('answer: a re-run without the answer leaves every question open; unknown or ambiguous questions are refused', () => {
+  const { cwd } = project();
+  const gaps = withGaps(cwd);
+  const before = snap(path.join(cwd, 'material'));
+  run(cwd, ['log', '--id', 'a', '--note', 'no new material']);
+  run(cwd, ['index']);
+  const text = fs.readFileSync(gaps, 'utf8');
+  assert.ok(text.includes(`- ${QUESTION}\n`) && !text.includes('[답변됨]'));
+  assert.equal(run(cwd, ['answer', '--id', 'a', '--question', '없는 질문', '--citation', CITE]).code, 1);
+  assert.equal(run(cwd, ['answer', '--id', 'ghost', '--question', QUESTION, '--citation', CITE]).code, 1);
+  assert.equal(fs.readFileSync(gaps, 'utf8'), text);
+  assert.notDeepEqual(snap(path.join(cwd, 'material')), before, 'sanity: the log call did write once');
+  fs.appendFileSync(gaps, `- ${QUESTION}\n`);
+  assert.match(run(cwd, ['answer', '--id', 'a', '--question', QUESTION, '--citation', CITE]).json.error, /ambiguous/);
+});
+
+test('answer: the same answer again is unchanged; a different citation for an answered question is refused', () => {
+  const { cwd } = project();
+  const gaps = withGaps(cwd);
+  run(cwd, ['answer', '--id', 'a', '--question', QUESTION, '--citation', CITE]);
+  const once = fs.readFileSync(gaps, 'utf8');
+  const again = run(cwd, ['answer', '--id', 'a', '--question', QUESTION, '--citation', CITE]);
+  assert.equal(again.json.result, 'unchanged');
+  assert.equal(fs.readFileSync(gaps, 'utf8'), once);
+  assert.equal(run(cwd, ['answer', '--id', 'a', '--question', QUESTION, '--citation', 'other.md + L1']).code, 1);
+  assert.equal(fs.readFileSync(gaps, 'utf8'), once);
+});
+
+test('no-op run: repeating an identical operation changes no byte of any file under material/, history.md included', () => {
+  const { cwd } = project();
+  const mat = path.join(cwd, 'material');
+  const sha = (dir) => {
+    const out = {};
+    const walk = (d) => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const p = path.join(d, e.name);
+        if (e.isDirectory()) walk(p);
+        else out[path.relative(dir, p)] = crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+      }
+    };
+    walk(dir);
+    return out;
+  };
+  const pass = (env) => {
+    run(cwd, ['init', '--id', 'a', '--title', 'T a', '--source', 'resume.md#a'], env);
+    run(cwd, ['log', '--id', 'a', '--note', 'retro.md: problem and decision filled'], env);
+    run(cwd, ['answer', '--id', 'a', '--question', QUESTION, '--citation', CITE], env);
+    run(cwd, ['index'], env);
+  };
+  withGaps(cwd);
+  pass({});
+  const first = sha(mat);
+  assert.ok(Object.keys(first).length > 7);
+  pass({ MATERIAL_DATE: '2027-05-06' });          // identical input, another day
+  assert.deepEqual(sha(mat), first);
+  assert.equal(fs.readFileSync(path.join(mat, 'a/history.md'), 'utf8').match(/retro\.md: problem/g).length, 1);
+});
+
+test('one marker and one rule: 근거 없음 only, answered questions kept, status reserved (script, SKILL.md, references agree)', () => {
+  const root = path.join(import.meta.dirname, '..');
+  const files = [path.join(root, 'SKILL.md'), ...fs.readdirSync(path.join(root, 'references')).map((f) => path.join(root, 'references', f)), SCRIPT, import.meta.filename];
+  const read = (f) => fs.readFileSync(f, 'utf8');
+  const marker = '확인 ' + '필요';
+  for (const f of files) assert.ok(!read(f).includes(marker), `${path.basename(f)} has the old marker`);
+  const skill = read(path.join(root, 'SKILL.md'));
+  const parts = read(path.join(root, 'references/parts.md'));
+  assert.match(skill, /근거 없음/);
+  assert.match(parts, /근거 없음/);
+  assert.match(skill, /\[답변됨\]/);
+  assert.match(parts, /\[답변됨\]/);
+  assert.ok(!/delete that question/i.test(parts), 'parts.md no longer deletes answered questions');
+  assert.match(skill, /never changes (the )?status/i);
+  assert.match(skill, /a no-op run writes nothing, history\.md included/i);
+  assert.match(skill, /--later-step/);
 });
 
 test('writes stay under material/; hostile ids are rejected', () => {
