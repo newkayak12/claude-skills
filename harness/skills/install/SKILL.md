@@ -66,7 +66,10 @@ idempotent and non-destructive: existing files are never overwritten.
    Omit `gate` to skip the gate write; omit `embed` to skip embedding. It **always** installs
    the hook (`.claude/hooks/goal-gate.mjs` + a merged `.claude/settings.json` PreToolUse entry
    — never clobbering existing hooks; an unparseable settings.json is left untouched) and the
-   `.gitignore` line. **Read the JSON report it prints** (per-action `created`/`kept`/`already`
+   `.gitignore` block (`# harness:begin` / `# harness:end`; only the missing lines of
+   `.claude/.harness-markers/`, `.harness-run/`, `.claude/.harness-last-decision.json` and
+   `.claude/settings.local.json` are added, one by one; a broken or duplicate marker gives
+   `marker-error` and the file is untouched). **Read the JSON report it prints** (per-action `created`/`kept`/`already`
    /`parse-error`) — that is the source of truth for step 5.
 
 3. **Conventions — `.claude/conventions/`** (judgment, agent-run):

@@ -2,8 +2,8 @@
 name: back-to-basics
 effort: high
 description: >-
-  Use when an approach feels fundamentally wrong or an inherited constraint may not be real — rebuild
-  from what is actually known. Not for a mis-defined problem with recurring symptoms (think:redefine-problem).
+  Use when an approach feels wrong or a constraint may not be real. Not for a mis-defined problem
+  (think:redefine-problem).
   Triggers: "왜 이렇게 해야 해?", "기본부터 다시 생각해", "first principles",
   "가정을 의심해봐", "처음부터 설계하면", "이 제약이 진짜 필요한지", "이 방식이 뭔가 잘못된 것 같아".
 scenarios:

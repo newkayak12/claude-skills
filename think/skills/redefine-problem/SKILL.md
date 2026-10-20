@@ -1,9 +1,9 @@
 ---
 name: redefine-problem
 description: >-
-  Use when the same problem keeps coming back or only symptoms get fixed — the problem itself may
-  be mis-defined. Not for an approach or inherited constraint that feels wrong (think:back-to-basics).
-  Triggers on: "계속 이 문제가 반복돼", "문제를 다른 각도로 정의해야 할 것 같아", "wrong problem",
+  Use when the same problem keeps recurring or only symptoms get fixed. Not for a wrong approach
+  (think:back-to-basics).
+  Triggers: "계속 이 문제가 반복돼", "문제를 다른 각도로 정의해야 할 것 같아", "wrong problem",
   "the metric doesn't move", "이 문제 자체가 맞는 건지", "증상만 자꾸 잡는 느낌".
 scenarios:
   - "계속 해결하려는데 같은 문제가 반복돼"

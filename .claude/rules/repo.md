@@ -17,11 +17,12 @@ Every change is checked against `_repo/coding-guidelines.md` (Karpathy's four):
 A behaviour change is a card on `_repo/docs/backlog.md`, taken into a Sprint, closed by the Sprint's report.
 A Sprint opens with `tm_open` and `size: "L"` (an unpinned small backlog sizes S and runs as one
 harness pass with no STORY cards; see `backlog.md`).
+The person's approval of the cards and decisions comes before `tm_open`. No code before approval.
 
 Before changing behaviour of a plugin (not typo/doc fixes):
 1. **plan** — what changes and why, citing the governing design doc (`_repo/docs/plans/`).
 2. **setgoal** — checkable done-criteria.
-3. **critique** — check it against the doc's principles inside the Sprint; the person's approval of the cards and decisions comes before `tm_open`. No code before approval.
+3. **critique** — check it against the doc's principles inside the Sprint.
 4. **implement → gate** — show the result against the done-criteria.
 
 Where approval sits: the person approves the cards and decisions in the session, before `tm_open`

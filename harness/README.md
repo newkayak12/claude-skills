@@ -113,10 +113,10 @@ bump, re-run with `"refresh": true` — it re-copies only plugin-owned files (`g
 
 Uninstalls project-local harness governance: the hook, its `settings.json` registration,
 `.claude/harness-gate.json`, `.claude/.harness-last-decision.json`, `.claude/harness/`,
-`.claude/.harness-markers/`, the fenced CLAUDE.md block, and the `.gitignore` line. `.claude/conventions/` is project-owned and is
+`.claude/.harness-markers/`, the fenced CLAUDE.md block, and the `.gitignore` block between `# harness:begin` and `# harness:end` (deleted as a whole). `.claude/conventions/` is project-owned and is
 **preserved by default** — purging it requires explicit confirmation. A malformed `settings.json`
 or unmatched CLAUDE markers are left in place and reported for manual cleanup rather than deleted
-to force completion.
+to force completion. Harness lines in `.gitignore` outside that block are reported `legacy-left` and kept; a broken or duplicate `# harness:begin` / `# harness:end` marker gives `marker-error` and the file is untouched.
 
 ```
 Uninstall the harness from this project, but keep .claude/conventions/ — we've edited those.
@@ -223,7 +223,8 @@ governance ambient — it scaffolds project-owned copies (never overwrites exist
   reads (SetGoal → acceptance/test, Implement → follows)
   If you have a reference project, install can fill `coding.md`/`boundaries.md` from it via `develop:like-my-code` (skipped when develop is absent)
 - a fenced `## Harness` section appended to the project's `CLAUDE.md`
-- `.claude/.harness-markers/` in `.gitignore`
+- a `# harness:begin` / `# harness:end` block in `.gitignore`: `install` adds line by line only the missing ones of
+  `.claude/.harness-markers/`, `.harness-run/`, `.claude/.harness-last-decision.json` and `.claude/settings.local.json`
 
 The project owns the copies afterward. Lifecycle skills only change them when explicitly
 invoked: `install` with `refresh:true` refreshes plugin-owned copies, and `remove` cleans up
@@ -232,14 +233,25 @@ the installation.
 **Enforcement** is an opt-in PreToolUse gate ([`hooks/`](hooks/)): a project lists gated paths in
 `.claude/harness-gate.json`, and `Write|Edit|MultiEdit|NotebookEdit` there — or a `Bash` command
 that writes there — requires harness engagement. Engagement is a record (a Workflow/graph/teams
-tool call that ran, an open broker node, or a fallback run with plan, goal-spec and a sound
-critique on disk), never a string in the transcript. The gate's own config, hook and settings
-are always gated. Fail-open everywhere (v0 lesson).
+tool call that ran, an open broker node, a fallback run with plan, goal-spec and a sound
+critique on disk, or a live marker), never a string in the transcript. Fail-open everywhere (v0 lesson).
+
+- **Markers engage.** A live marker in `.claude/.harness-markers/` engages the gate (parallel
+  subagents; teams writes one into each package worktree); a marker with a future timestamp is ignored.
+- **Always gated.** `.claude/harness-gate.json`, `.claude/settings.json` and `settings.local.json`,
+  `.claude/hooks/**` and `.claude/.harness-markers/**` are gated whatever `patterns` says. The one
+  exemption is `node <harness plugin>/skills/remove/remove.mjs ['<json>']` run from the installed
+  plugin; the project copy of the hook never exempts it.
+- **Read-only commands.** `grep`, `egrep`, `fgrep`, `rg`, `cat`, `head`, `tail`, `less`, `wc`, `ls`
+  and `echo` (and `git log|show|diff|status`) that own the whole simple command write nothing, so a
+  write verb or path inside them is not judged. A command containing `$(…)` or backticks is not exempt.
+- **Imports.** A static relative `import` (`import { f } from './lib.mjs'`) is not a write and its
+  specifier is not a written path. A `node:` or package import, or a dynamic `import()`, still counts.
 
 ## Lifecycle helpers
 
 - **`harness:remove`** removes the installed hook, registration, gate, embedded runtime,
-  marker cache, CLAUDE.md block, and gitignore entry. Project-owned conventions are preserved
+  marker cache, CLAUDE.md block, and the `.gitignore` block (`legacy-left` lines kept, `marker-error` leaves the file untouched). Project-owned conventions are preserved
   unless their removal is explicitly requested.
 - **`harness:update`** refreshes a project's installed copies after a plugin bump by running
   `install.mjs` with `"refresh": true`; user-owned files are never touched.
