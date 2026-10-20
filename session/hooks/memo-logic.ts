@@ -107,6 +107,45 @@ export function facts(g: Note[], p: Note[], now: number, sentAt = 0) {
   }
 }
 
+// The pane's own wording, one function per fact it draws; the tsx renders what these return.
+export const FOOTER_KEYS = '/memo add <text> · /memo rm <n> · /memo clear'
+export const FOOTER_LEAD = `${FOOTER_KEYS} · Esc,`
+export const FOOTER_TAIL = 'or /memo closes'
+const BADGE_WIDTH = 'project'.length
+
+export const ageText = (days: number): string => (days === 0 ? 'today' : `${days}d`)
+
+export const staleHint = (note: Note, now: number): string => (isStale(note, now) ? 'stale?' : '')
+
+export const scopeBadge = (scope: 'global' | 'project'): string => scope.padEnd(BADGE_WIDTH)
+
+export type MemoLine = { n: number; badge: string; text: string; age: string; stale: string }
+
+// One line per note the block carries, numbered as `/memo list` and `/memo rm` number them.
+export function memoLines(g: Note[], p: Note[], now: number): MemoLine[] {
+  const v = visible(g, p)
+  const all = [...v.g.map(n => ['global', n] as const), ...v.p.map(n => ['project', n] as const)]
+  return all.map(([scope, note], i) => ({
+    n: i + 1, badge: scopeBadge(scope), text: note.text, age: ageText(noteAge(note, now)), stale: staleHint(note, now),
+  }))
+}
+
+// The send time while the block is out in this conversation; a dash while it is armed to go out again.
+export const sentText = (armed: boolean, sentAt?: number): string => (armed ? '—' : sentLabel(sentAt))
+
+export function memoHeader(g: Note[], p: Note[], sent: { armed: boolean; sentAt?: number }): string {
+  const v = visible(g, p)
+  const shown = [...v.g, ...v.p]
+  return `${shown.length} ${shown.length === 1 ? 'note' : 'notes'} · ${sizeLabel(shown)} · sent ${sentText(sent.armed, sent.sentAt)}`
+}
+
+// Stored notes the caps left out of the block; '' when none.
+export function cutLine(g: Note[], p: Note[]): string {
+  const v = visible(g, p)
+  const left = g.length + p.length - v.g.length - v.p.length
+  return left > 0 ? `+${left} not sent` : ''
+}
+
 export type Cmd =
   | { op: 'add'; global: boolean; text: string }
   | { op: 'list' | 'pane' }
