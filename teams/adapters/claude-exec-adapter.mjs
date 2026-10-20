@@ -38,6 +38,26 @@ const mcpConfig = withWiki
   ? JSON.stringify({ mcpServers: { 'teams-wiki': { command: process.execPath, args: [fileURLToPath(new URL('../mcp/wiki.mjs', import.meta.url)), '--root', wikiRoot] } } })
   : '{"mcpServers":{}}';
 
+// The Bash verbs a read-only --verify node must not run. One list for the CLI flag and for the
+// denial check: a denied command on it is the guard working, not a tool the node needed.
+const DISALLOWED_BASH = [
+  'Bash(git commit:*)', 'Bash(git push:*)', 'Bash(git add:*)', 'Bash(git rm:*)',
+  'Bash(git reset:*)', 'Bash(git checkout:*)', 'Bash(git merge:*)', 'Bash(git stash:*)',
+  'Bash(git apply:*)', 'Bash(rm:*)', 'Bash(mv:*)', 'Bash(cp:*)', 'Bash(chmod:*)',
+  'Bash(sed -i:*)',
+];
+const DISALLOWED_PREFIXES = DISALLOWED_BASH.map(p => p.match(/^Bash\((.*):\*\)$/)[1]);
+
+// Bash commands the claude -p json envelope reports denied that the node needed and this
+// adapter never blocked on purpose.
+function neededDenials(envelope) {
+  const denials = Array.isArray(envelope?.permission_denials) ? envelope.permission_denials : [];
+  return denials
+    .filter(d => d?.tool_name === 'Bash' && typeof d.tool_input?.command === 'string')
+    .map(d => d.tool_input.command)
+    .filter(cmd => !DISALLOWED_PREFIXES.some(p => cmd.trim() === p || cmd.trim().startsWith(`${p} `)));
+}
+
 async function invoke(prompt) {
   const readOnly = opts.sandbox === 'read-only';
   const permissionMode = readOnly ? 'dontAsk'
@@ -61,12 +81,7 @@ async function invoke(prompt) {
     '--tools', readOnly ? (verifyTools ? 'Read,Glob,Grep,Bash' : 'Read,Glob,Grep') : 'Read,Glob,Grep,Edit,Write,Bash',
     '--permission-mode', permissionMode];
   if (verifyTools) {
-    cli.push('--disallowedTools', [
-      'Bash(git commit:*)', 'Bash(git push:*)', 'Bash(git add:*)', 'Bash(git rm:*)',
-      'Bash(git reset:*)', 'Bash(git checkout:*)', 'Bash(git merge:*)', 'Bash(git stash:*)',
-      'Bash(git apply:*)', 'Bash(rm:*)', 'Bash(mv:*)', 'Bash(cp:*)', 'Bash(chmod:*)',
-      'Bash(sed -i:*)',
-    ].join(','));
+    cli.push('--disallowedTools', DISALLOWED_BASH.join(','));
   }
   if (withWiki) cli.push('--allowedTools', WIKI_TOOLS.join(','));
   for (const dir of opts.addDirs) cli.push('--add-dir', dir);
@@ -133,6 +148,15 @@ try {
       last_message: message, error: envelope?.error, errors: envelope?.errors, stderr: proc.stderr, usage: envelope?.usage, model_usage: envelope?.modelUsage,
       verification_error: ok && usable ? '' : proc.stderr || message || 'Claude returned no valid stage JSON' };
     process.exitCode = ok && usable ? 0 : 1;
+    // A node denied a Bash call it needed judged nothing: not a reject. Exit 0, because the broker
+    // drops the report of a non-zero exit (transportOk) and with it the blocked marker.
+    const denied = neededDenials(envelope);
+    if (denied.length && proc.status === 0 && !proc.stopped) {
+      report.stage_ok = false;
+      report.result = { stage_ok: false, blocked: 'tool denied', reason: 'blocked: tool denied', denied };
+      report.verification_error = 'blocked: tool denied';
+      process.exitCode = 0;
+    }
   }
   writeFileSync(opts.output, JSON.stringify(report, null, 2) + '\n');
 } catch (error) {
