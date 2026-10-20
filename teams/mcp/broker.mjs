@@ -1046,6 +1046,10 @@ function reviewIndependence(run, n, executor, model) {
 // never reached its gate - the check that failed it. A review that listed what the text
 // lacks, or a test that printed the failing command, is the feedback the next draft or
 // implement needs; carrying only gate verdicts sent it in blind.
+// A node denied a tool it needed (adapter: blocked 'tool denied') judged nothing, so it is
+// never feedback and never a rejection signature.
+const toolDenied = (result) => Boolean(result) && result.blocked === 'tool denied';
+
 function subgoalFeedback(run, sid) {
   const judged = run.nodes.filter((n) => n.subgoal_id === sid && n.result && (n.stage === 'gate' || n.state === 'failed'));
   const last = judged[judged.length - 1];
@@ -1053,10 +1057,10 @@ function subgoalFeedback(run, sid) {
   // subgoal being retried for it must hear that too, since its own gate passed.
   const goal = run.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id === null && n.state === 'failed' && !n.final && n.result).pop();
   return [
-    ...(last && last.result
+    ...(last && last.result && !toolDenied(last.result)
       ? [last.result.reason || '', ...(last.result.gaps || []), ...(last.result.verified === false ? (last.result.checks || []) : [])]
       : []),
-    ...(goal ? [`goal gate ${goal.node_id}: ${goal.result.reason || 'rejected'}`, ...(goal.result.gaps || [])] : []),
+    ...(goal && !toolDenied(goal.result) ? [`goal gate ${goal.node_id}: ${goal.result.reason || 'rejected'}`, ...(goal.result.gaps || [])] : []),
   ].filter(Boolean).join('\n- ');
 }
 
@@ -1071,7 +1075,7 @@ function subgoalFeedback(run, sid) {
 // signature are not converging: the work is being asked for something it cannot produce
 // where it stands, and a third attempt spends budget to learn that again.
 function rejectionSig(result) {
-  if (!result) return '';
+  if (!result || toolDenied(result)) return '';
   const gaps = [...(result.gaps || []), ...(result.blocking || [])].map((g) => String(g).trim().toLowerCase());
   return [String(result.reason || '').trim().toLowerCase(), ...gaps.sort()].filter(Boolean).join('|');
 }
@@ -1243,6 +1247,12 @@ function autoReassign(run, n) {
 
 export function finishNode(run, n, result, vendorName) {
   delete n.recovery; // historical interruptions remain in n.interruptions
+  // Blocked is not a verdict: whatever verdict fields rode along are dropped, and the node fails
+  // and counts as an attempt like any other failed node. First, so no later rule reads them.
+  if (toolDenied(result)) {
+    const { match_pct, accept, gaps, ...rest } = result;
+    result = { ...rest, stage_ok: false, reason: 'blocked: tool denied' };
+  }
   // A gate that says accept with nothing in checks[] did not fail the work - it failed to
   // do its own job. That is a defect in the judging, not a verdict on the subgoal, so it
   // must read as one and it must not autoReassign the subgoal the way a real rejection
