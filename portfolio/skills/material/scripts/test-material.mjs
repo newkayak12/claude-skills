@@ -1,0 +1,267 @@
+// node --test portfolio/skills/material/scripts/test-material.mjs
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+const SCRIPT = path.join(import.meta.dirname, 'material.mjs');
+const PARTS = ['meta.md', 'problem.md', 'decision.md', 'result.md', 'learned.md', 'gaps.md', 'history.md'];
+const DATE = '2026-01-02';
+
+// A fresh project dir inside a parent that also holds a sibling dir, to catch writes outside cwd.
+function project() {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'material-test-'));
+  const cwd = path.join(parent, 'proj');
+  fs.mkdirSync(cwd);
+  fs.mkdirSync(path.join(parent, 'sibling'));
+  fs.writeFileSync(path.join(parent, 'sibling', 'keep.txt'), 'keep');
+  return { parent, cwd };
+}
+function run(cwd, args, env = {}) {
+  const r = spawnSync(process.execPath, [SCRIPT, ...args], {
+    cwd, encoding: 'utf8', env: { ...process.env, MATERIAL_DATE: DATE, ...env },
+  });
+  const out = r.stdout;
+  assert.ok(out.endsWith('\n') && out.trim().split('\n').length === 1, `one line on stdout: ${out}`);
+  return { code: r.status, json: JSON.parse(out) };
+}
+const init = (cwd, id, title = 'T ' + id, source = 'resume.md#' + id) =>
+  run(cwd, ['init', '--id', id, '--title', title, '--source', source]);
+// path -> "mtimeMs:content" for every file under dir
+function snap(dir) {
+  const out = {};
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isSymbolicLink()) out[p] = 'symlink';
+      else if (e.isDirectory()) walk(p);
+      else out[p] = `${fs.statSync(p).mtimeMs}:${fs.readFileSync(p, 'utf8')}`;
+    }
+  };
+  if (fs.existsSync(dir)) walk(dir);
+  return out;
+}
+
+test('id: slug of source plus title, Hangul kept, deterministic', () => {
+  const { cwd } = project();
+  const a = run(cwd, ['id', '--source', 'Resume.md#프로젝트 A', '--title', '캐시  도입']);
+  assert.equal(a.code, 0);
+  assert.equal(a.json.id, 'resume-md-프로젝트-a--캐시-도입');
+  assert.deepEqual(run(cwd, ['id', '--source', 'Resume.md#프로젝트 A', '--title', '캐시  도입']).json, a.json);
+  assert.equal(fs.existsSync(path.join(cwd, 'material')), false, 'id writes nothing');
+});
+
+test('init: creates seven parts with status raw; second init is exists and changes nothing', () => {
+  const { cwd } = project();
+  const r = run(cwd, ['init', '--id', 'a', '--title', 'Title A', '--source', 'doc.md#A', '--period', '2024', '--role', 'lead', '--tags', 'x,y']);
+  assert.equal(r.json.result, 'created');
+  for (const p of PARTS) assert.ok(fs.existsSync(path.join(cwd, 'material', 'a', p)), p);
+  const meta = fs.readFileSync(path.join(cwd, 'material/a/meta.md'), 'utf8');
+  for (const l of ['title: Title A', 'status: raw', 'source: doc.md#A', 'period: 2024', 'role: lead', 'tags: x,y']) {
+    assert.ok(meta.split('\n').includes(l), l);
+  }
+  const result = fs.readFileSync(path.join(cwd, 'material/a/result.md'), 'utf8');
+  assert.match(result, /\| number \| evidence source \| label \|/);
+  assert.match(result, /user-stated/);
+  assert.match(result, /근거 없음/);
+  assert.match(fs.readFileSync(path.join(cwd, 'material/a/problem.md'), 'utf8'), /^# 문제/);
+
+  fs.appendFileSync(path.join(cwd, 'material/a/problem.md'), 'filled by hand\n');
+  const before = snap(path.join(cwd, 'material'));
+  const again = run(cwd, ['init', '--id', 'a', '--title', 'Other', '--source', 'other.md']);
+  assert.equal(again.json.result, 'exists');
+  assert.deepEqual(snap(path.join(cwd, 'material')), before);
+});
+
+test('init: a partial folder reports exists and is not completed', () => {
+  const { cwd } = project();
+  fs.mkdirSync(path.join(cwd, 'material/p'), { recursive: true });
+  fs.writeFileSync(path.join(cwd, 'material/p/meta.md'), 'title: P\n');
+  const before = snap(path.join(cwd, 'material'));
+  assert.equal(init(cwd, 'p').json.result, 'exists');
+  assert.deepEqual(snap(path.join(cwd, 'material')), before);
+});
+
+test('match: new / same / ambiguous (string difference only, never resolved, nothing written)', () => {
+  const { cwd } = project();
+  const m = (id, source, title) => run(cwd, ['match', '--id', id, '--source', source, '--title', title]).json;
+  assert.equal(m('x', 'a.md#p1', 'Cache').result, 'new');
+  assert.equal(fs.existsSync(path.join(cwd, 'material')), false, 'match writes nothing');
+
+  init(cwd, 'a-p1--cache', 'Cache', 'a.md#p1');
+  const same = m('x', ' A.md#P1 ', 'cache');            // normalised: trim, case-fold, whitespace
+  assert.equal(same.result, 'same');
+  assert.equal(same.candidates[0].id, 'a-p1--cache');
+  assert.equal(m('y', 'a.md#p1', 'Queue').result, 'ambiguous');                            // same source, different title
+  assert.equal(m('z', 'b.md#p9', 'Cache').result, 'ambiguous');                            // same title, other source
+  assert.equal(m('w', 'b.md#p9', 'Brand new').result, 'new');
+
+  // Fixtures below are string comparisons only: a renamed episode ("Cache layer") is seen as
+  // "same source, different title", not recognised semantically; same episode under two sources
+  // is seen as "same title, different source". Both are reported, never resolved.
+  const renamed = m('r', 'a.md#p1', 'Cache layer');
+  assert.equal(renamed.result, 'ambiguous');
+  assert.equal(renamed.candidates[0].reason, 'same source, different title');
+  const twoSources = m('t', 'c.md#q', 'Cache');
+  assert.equal(twoSources.result, 'ambiguous');
+  assert.equal(twoSources.candidates[0].reason, 'same title, different source');
+  assert.deepEqual(Object.keys(twoSources.candidates[0]).sort(), ['id', 'reason', 'source', 'title']);
+
+  const files = snap(path.join(cwd, 'material'));
+  m('t', 'c.md#q', 'Cache');
+  assert.deepEqual(snap(path.join(cwd, 'material')), files, 'match wrote no file');
+});
+
+test('match: also reads index.md rows', () => {
+  const { cwd } = project();
+  fs.mkdirSync(path.join(cwd, 'material'));
+  fs.writeFileSync(path.join(cwd, 'material/index.md'),
+    '| id | title | status | source |\n|---|---|---|---|\n| old | Old Story | raw | notes.md |\n');
+  const r = run(cwd, ['match', '--id', 'n', '--source', 'notes.md', '--title', 'old story']).json;
+  assert.equal(r.result, 'same');
+  assert.equal(r.candidates[0].id, 'old');
+});
+
+test('index: every item once with status; N then N+1 rows; re-run is byte identical', () => {
+  const { cwd } = project();
+  init(cwd, 'b'); init(cwd, 'a'); init(cwd, 'c');
+  const r1 = run(cwd, ['index']).json;
+  assert.deepEqual(r1.rows.map((r) => r.id), ['a', 'b', 'c']);
+  assert.ok(r1.rows.every((r) => r.status === 'raw'));
+  assert.deepEqual(r1.skipped, []);
+  const idx = path.join(cwd, 'material/index.md');
+  const first = fs.readFileSync(idx, 'utf8');
+  run(cwd, ['index']);
+  assert.equal(fs.readFileSync(idx, 'utf8'), first);
+
+  init(cwd, 'd');
+  fs.mkdirSync(path.join(cwd, 'material/nometa'));
+  const r2 = run(cwd, ['index']).json;
+  assert.equal(r2.rows.length, 4);
+  assert.deepEqual(r2.skipped, ['nometa']);
+  const body = fs.readFileSync(idx, 'utf8').split('\n').filter((l) => /^\| [a-d] \|/.test(l));
+  assert.equal(body.length, 4);
+  assert.equal(new Set(body).size, 4);
+  assert.ok(body[0].startsWith('| a | T a | raw | resume.md#a |'));
+});
+
+test('foreign: lists hand-made files; no subcommand modifies them', () => {
+  const { cwd } = project();
+  init(cwd, 'a');
+  const mat = path.join(cwd, 'material');
+  fs.writeFileSync(path.join(mat, 'notes.md'), 'mine');
+  fs.writeFileSync(path.join(mat, 'a', 'extra.md'), 'mine too');
+  fs.mkdirSync(path.join(mat, 'loose'));
+  fs.writeFileSync(path.join(mat, 'loose', 'x.txt'), 'x');
+  const handmade = [path.join(mat, 'notes.md'), path.join(mat, 'a/extra.md'), path.join(mat, 'loose/x.txt')];
+  const state = (p) => `${fs.statSync(p).mtimeMs}:${fs.readFileSync(p, 'utf8')}`;
+  const before = Object.fromEntries(handmade.map((p) => [p, state(p)]));
+
+  assert.deepEqual(run(cwd, ['foreign']).json, { foreign: ['a/extra.md', 'loose/x.txt', 'notes.md'] });
+  run(cwd, ['id', '--source', 's', '--title', 't']);
+  run(cwd, ['match', '--id', 'q', '--source', 's', '--title', 't']);
+  init(cwd, 'b');
+  init(cwd, 'a');
+  run(cwd, ['index']);
+  run(cwd, ['log', '--id', 'a', '--note', 'n', '--status', 'shaped']);
+  run(cwd, ['foreign']);
+  for (const p of handmade) {
+    assert.equal(state(p), before[p], p);
+  }
+  assert.equal(run(cwd, ['foreign']).json.foreign.length, 3, 'index.md and the seven parts are not foreign');
+  assert.deepEqual(run(project().cwd, ['foreign']).json, { foreign: [] });
+});
+
+test('log: appends a dated line, keeps earlier lines, status edit touches only the status line', () => {
+  const { cwd } = project();
+  init(cwd, 'a');
+  const hist = path.join(cwd, 'material/a/history.md');
+  const metaP = path.join(cwd, 'material/a/meta.md');
+  const h0 = fs.readFileSync(hist, 'utf8');
+  const m0 = fs.readFileSync(metaP, 'utf8');
+
+  run(cwd, ['log', '--id', 'a', '--note', 'first note'], { MATERIAL_DATE: '2026-03-04' });
+  const h1 = fs.readFileSync(hist, 'utf8');
+  assert.ok(h1.startsWith(h0));
+  assert.equal(h1.slice(h0.length), '- 2026-03-04: first note\n');
+  assert.equal(fs.readFileSync(metaP, 'utf8'), m0, 'no --status: meta untouched');
+
+  const r = run(cwd, ['log', '--id', 'a', '--note', 'moved', '--status', 'shaped']);
+  assert.equal(r.code, 0);
+  const h2 = fs.readFileSync(hist, 'utf8');
+  assert.ok(h2.startsWith(h1));
+  assert.equal(h2.slice(h1.length), `- ${DATE}: moved (status: raw -> shaped)\n`);
+  assert.equal(fs.readFileSync(metaP, 'utf8'), m0.replace('status: raw', 'status: shaped'));
+
+  const bad = run(cwd, ['log', '--id', 'ghost', '--note', 'x']);
+  assert.equal(bad.code, 1);
+  assert.match(bad.json.error, /unknown id/);
+  assert.equal(fs.existsSync(path.join(cwd, 'material/ghost')), false);
+  const before = snap(path.join(cwd, 'material'));
+  assert.equal(run(cwd, ['log', '--id', 'a', '--note', 'x', '--status', 'done']).code, 1);
+  assert.deepEqual(snap(path.join(cwd, 'material')), before, 'invalid status writes nothing');
+});
+
+test('writes stay under material/; hostile ids are rejected', () => {
+  const { parent, cwd } = project();
+  init(cwd, 'a');
+  const outsideBefore = snap(parent);
+  const inside = (s) => Object.fromEntries(Object.entries(s).filter(([p]) => !p.startsWith(path.join(cwd, 'material'))));
+  for (const bad of ['../x', '..', 'a/b', '/etc/x', 'a\\b', '.hidden', '']) {
+    for (const args of [
+      ['init', '--id', bad, '--title', 't', '--source', 's'],
+      ['log', '--id', bad, '--note', 'n'],
+      ['match', '--id', bad, '--source', 's', '--title', 't'],
+    ]) {
+      const r = run(cwd, args);
+      assert.equal(r.code, 1, args.join(' '));
+      assert.ok(r.json.error);
+    }
+  }
+  assert.deepEqual(snap(parent), outsideBefore);
+  // a symlinked material/<id> pointing out is not followed
+  const target = path.join(parent, 'sibling');
+  fs.symlinkSync(target, path.join(cwd, 'material/link'));
+  const before = snap(target);
+  assert.equal(run(cwd, ['log', '--id', 'link', '--note', 'n']).code, 1);
+  assert.deepEqual(snap(target), before);
+  // across the whole run nothing outside material/ in the project or its parent appeared
+  run(cwd, ['index']);
+  assert.deepEqual(inside(snap(parent)), inside(outsideBefore));
+  assert.deepEqual(fs.readdirSync(cwd), ['material']);
+});
+
+test('usage errors: JSON {error}, non-zero exit', () => {
+  const { cwd } = project();
+  for (const args of [[], ['nope'], ['id', '--source', 's'], ['init', '--id', 'a', '--title', 't'],
+    ['init', '--id', 'a', '--title', 't', '--source', 's', '--status', 'bogus'], ['log', '--id', 'a'], ['id', '--bogus', 'x'], ['id', '--source']]) {
+    const r = run(cwd, args);
+    assert.equal(r.code, 1, args.join(' '));
+    assert.deepEqual(Object.keys(r.json), ['error']);
+  }
+  assert.equal(fs.existsSync(path.join(cwd, 'material')), false);
+});
+
+test('every subcommand prints exactly one JSON object; script imports only node: built-ins', () => {
+  const { cwd } = project();
+  for (const args of [
+    ['id', '--source', 's', '--title', 't'],
+    ['match', '--id', 'i', '--source', 's', '--title', 't'],
+    ['init', '--id', 'i', '--title', 't', '--source', 's'],
+    ['index'],
+    ['log', '--id', 'i', '--note', 'n'],
+    ['foreign'],
+  ]) {
+    const r = run(cwd, args); // run() asserts a single stdout line that parses as JSON
+    assert.equal(r.code, 0, args[0]);
+    assert.equal(typeof r.json, 'object');
+    assert.ok(!Array.isArray(r.json));
+  }
+  const src = fs.readFileSync(SCRIPT, 'utf8');
+  const specs = [...src.matchAll(/^import\s.*?from\s+'([^']+)'/gm)].map((m) => m[1]);
+  assert.ok(specs.length > 0);
+  assert.ok(specs.every((s) => s.startsWith('node:')), specs.join());
+  assert.ok(!/\brequire\(|import\(/.test(src));
+});
