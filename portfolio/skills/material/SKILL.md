@@ -56,7 +56,7 @@ Per-part procedures: `references/parts.md`. Citation, evidence and matching: `re
 1. **Read** every handed file or pasted text in full. Split it into episodes (one problem → decision → result story each). No episode found → say so and stop.
 2. **Identify** each episode: `id` from source and title, then `match`.
 3. **Branch** on the result (rule d). Stop on `ambiguous` for that episode and ask; continue with the others.
-4. **Fill** the seven parts per `references/parts.md`: `init` for `new`, in-place edit for `same`. Apply rules (a)-(c) line by line. For each answered gaps question, `answer` it.
+4. **Fill** the seven parts per `references/parts.md`: `init` for `new`; for `same`, read the item's parts and compare the episode statement by statement, then add each statement the parts lack in place, cited. Apply rules (a)-(c) line by line. For each answered gaps question, `answer` it.
 5. **Record**: `log` one note per item created or changed (source, what changed); skip it for an item that did not change (rule i). Never pass `--status`.
 6. **Index and scan**: run `index`, then `foreign`.
 7. **Summarize** per the template.
