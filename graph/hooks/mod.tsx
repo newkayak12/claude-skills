@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
 import type { GraphNode, GraphRun, Snap } from '../types'
 import { MARK, TINT, bar, cap, fmt, isKorean, rail, tabs } from './draw'
@@ -156,21 +156,56 @@ function focus(s: (k: Key, v?: Record<string, string | number>) => string, m: Mo
   return { kind: 'run', head, text: one === undefined ? s('nothing') : label(s, one, 'attempt'), color: 'claude' }
 }
 
-// the run events worth a push, as stable keys: a retried node verdict, retries spent, the run finished
-function events(run: GraphRun) {
-  const out: { key: string; kind: string; node: string; attempt: number }[] = []
-  const add = (kind: string, n: GraphNode) => out.push({ key: `${run.run_id}:${n.node_id}:${kind}:${n.attempt}`, kind, node: n.node_id, attempt: n.attempt })
-  for (const n of run.nodes) if (n.state === 'failed' && n.final !== true) add('rejected', n)
-  const state = runState(run)
-  if (state === 'complete') {
-    const report = run.nodes.find(n => n.stage === 'report' && n.state === 'done')
-    if (report !== undefined) add('complete', report)
-  } else if (state === 'blocked') {
-    const spent = run.nodes.find(n => n.state === 'failed' && n.final === true)
-    if (spent !== undefined) add('failed', spent)
-    else if (run.routing_blocked) add('blocked', run.nodes.find(n => n.state === 'failed') ?? run.nodes[0]!)
+// what scripts/failure-events.mjs returns per failed, reshaped or blocked node: the mod renders it as given
+type FailureEvent = {
+  key: string
+  kind: string
+  node: string
+  attempt: number
+  what: string
+  reason: string
+  next_step: string | null
+  severity: 'info' | 'failure'
+}
+type RunEvent = { key: string; kind: string; node: string; attempt: number }
+
+const FAILURE_MS = 10_000 // an info toast keeps the default timeout; a failure stays longer
+const PUSH_MAX = 200
+const PUSHED_STEPS = ['gave up', 'needs you']
+
+// the node script's events for one run file; a failed call or unreadable output is no events
+async function fetchFailures($: EngineInterface, file: string): Promise<FailureEvent[]> {
+  try {
+    const r = await $.process.run(['node', `${$.plugin.root}/scripts/failure-events.mjs`, file])
+    if (r.exitCode !== 0) return []
+    const out: unknown = JSON.parse(r.stdout.trim())
+    return Array.isArray(out) ? (out as FailureEvent[]) : []
+  } catch {
+    return []
   }
-  return out
+}
+
+// icon and timeout from the node-given severity and next_step only
+const failureIcon = (ev: FailureEvent) => (ev.next_step === 'needs you' ? '⚠' : ev.severity === 'failure' ? '✗' : '↻')
+const failureLine = (run: GraphRun, ev: FailureEvent) =>
+  `${run.run_id.slice(0, 8)} ${ev.what} failed: ${ev.reason}${ev.next_step === null ? '' : ` → ${ev.next_step}`}`
+
+// the run finished: the one event the mod reads from the run file itself
+function completeEvent(run: GraphRun): RunEvent[] {
+  if (runState(run) !== 'complete') return []
+  const report = run.nodes.find(n => n.stage === 'report' && n.state === 'done')
+  return report === undefined ? [] : [{ key: `${run.run_id}:${report.node_id}:complete:${report.attempt}`, kind: 'complete', node: report.node_id, attempt: report.attempt }]
+}
+
+// PushNotification's result: { message, pushSent?, localSent?, disabledReason? } (user_present at the terminal)
+async function push($: EngineInterface, message: string): Promise<boolean> {
+  try {
+    const out = (await $.tool.call({ tool: 'PushNotification', message, status: 'proactive' } as never)) as { result?: unknown }
+    const r = typeof out?.result === 'object' && out.result !== null ? (out.result as Record<string, unknown>) : undefined
+    return r?.pushSent === true || r?.localSent === true
+  } catch {
+    return false // a failed push is a push not sent
+  }
 }
 
 const titleOf = (run: GraphRun) => run.request.split('\n')[0]!.replace(/^\[[^\]]*\]\s*/, '').slice(0, 80)
@@ -185,11 +220,17 @@ export const register: Register = on => {
     const pushed = new Set<string>()
     const baselined = new Set<string>()
     const published = new Set<string>()
+    const scanned = new Map<string, number>() // run id -> the file mtime its events were taken from
 
-    // a reject, a failed or blocked run, a finished run: one PushNotification each (a toast when it is not sent)
-    async function notifyRun(run: GraphRun, mtimeMs: number) {
+    // a failed, reshaped or blocked node toasts (a gave up also pushes); a finished run pushes (a toast when it is not sent)
+    async function notifyRun(run: GraphRun, mtimeMs: number, name: string) {
       try {
-        const fresh = events(run).filter(ev => !pushed.has(ev.key))
+        // the events change only when the file does: one script run per write
+        if (scanned.get(run.run_id) === mtimeMs) return
+        const file = `${await $.session.cwd()}/${DIR}/${name}`
+        scanned.set(run.run_id, mtimeMs)
+        const failures = await fetchFailures($, file)
+        const fresh: (RunEvent | FailureEvent)[] = [...failures, ...completeEvent(run)].filter(ev => !pushed.has(ev.key))
         for (const ev of fresh) pushed.add(ev.key)
         // a run last written before this session started: what it already holds is not news
         if (!baselined.has(run.run_id)) {
@@ -207,18 +248,18 @@ export const register: Register = on => {
               // fail open: a lost outcome never costs the push
             }
           }
-          const max = typeof run.max_retries === 'number' ? `/${run.max_retries}` : ''
-          const message = `graph ${run.run_id.slice(0, 8)}: ${ev.kind} — ${ev.node} (${ev.attempt}${max})`.slice(0, 200)
-          let sent = false
-          try {
-            // PushNotification's result: { message, pushSent?, localSent?, disabledReason? } (user_present at the terminal)
-            const out = (await $.tool.call({ tool: 'PushNotification', message, status: 'proactive' } as never)) as { result?: unknown }
-            const r = typeof out?.result === 'object' && out.result !== null ? (out.result as Record<string, unknown>) : undefined
-            sent = r?.pushSent === true || r?.localSent === true
-          } catch {
-            // a failed push is a push not sent
+          if ('what' in ev) {
+            const line = failureLine(run, ev)
+            const long = ev.severity !== 'info' || ev.next_step === 'needs you'
+            const toast = `${failureIcon(ev)} ${line}`
+            if (long) $.ui.toast(toast, { timeoutMs: FAILURE_MS })
+            else $.ui.toast(toast)
+            if (ev.next_step !== null && PUSHED_STEPS.includes(ev.next_step)) await push($, `graph ${line}`.slice(0, PUSH_MAX))
+            continue
           }
-          if (!sent) $.ui.toast(message)
+          const max = typeof run.max_retries === 'number' ? `/${run.max_retries}` : ''
+          const message = `graph ${run.run_id.slice(0, 8)}: ${ev.kind} — ${ev.node} (${ev.attempt}${max})`.slice(0, PUSH_MAX)
+          if (!(await push($, message))) $.ui.toast(message)
         }
       } catch {
         // fail open: the pane is unaffected
@@ -260,7 +301,7 @@ export const register: Register = on => {
             return // a failed read or parse leaves the last good view
           }
         }
-        await notifyRun(run, newest.mtimeMs)
+        await notifyRun(run, newest.mtimeMs, newest.name)
         const live = fresh && runState(run) !== 'complete'
         if (prev !== null && prev.run === run && prev.live === live) return
         await update($, snap, () => ({ run, big: false, mtimeMs: newest.mtimeMs, size: newest.size, live }))
