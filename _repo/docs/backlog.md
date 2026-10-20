@@ -21,7 +21,7 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
       old `E-xxxxxxxx` keys still resolve; a finished task's worktrees and merged branches are
       removed (or listed by `tm_clean`); tests cover naming, collisions and old-key lookup.
 
-50. **A failure toast says what failed, why, and what happens next**
+50. **A failure toast says what failed, why, and what happens next** — in E-910c1de2
     - Why: user, 2026-10-17: "야 토스트 failed 된거 떴는데 뭘 실패했는지 내용을 알 수가 없잖아". The teams
       toast is the event's `text` from `view.mjs --format events`, only `E-6b073e8a critique:2 failed
       (attempt 2)`. The ledger already holds the reason on the `verdict` event of the same node
@@ -58,7 +58,7 @@ those, one card per EPIC (43 first; 40 and 41 before 42).
     live driver reads stalled, not `IN_PROGRESS` (seen: 9-day-old tasks still IN_PROGRESS).
 42. **G. graph pane: own band, owned runs, last step** — design §4 G. Broker fields merged
     2026-10-17; no `runs --list` readout yet; the mod is not built.
-43. **S. session memo and guard read as live state** — design §4 S. E-6ab58cc6 P3 put the fields in
+43. **S. session memo and guard read as live state** — in E-f40c89a8 — design §4 S. E-6ab58cc6 P3 put the fields in
     (2026-10-17) but the demo reads as a dump (user: "사람이 보기 좋게!"): note and its age on separate
     lists, "21 days old 21d old", guard rows unaligned, no colour by source. Close only after the
     `mod.md` rule 0 polish and the user's look at the demo. Card 30 merged (memo toggles,
