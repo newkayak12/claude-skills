@@ -1,0 +1,84 @@
+---
+name: material
+description: >-
+  Use when someone hands over career material (retrospectives, resumes, notes,
+  chat dumps) to collect as portfolio items before writing. Triggers on:
+  "글감 모아줘", "회고로 포트폴리오 재료", "collect my material".
+scenarios:
+  - "Here is my retrospective. Collect the episodes as portfolio material."
+  - "I added one detail to the payment-migration story and answered your question — update it."
+  - "Turn these notes and chat logs into material items, don't make anything up."
+  - "이 회고록에서 글감 모아줘"
+  - "내가 준 자료로 에피소드별 글감 폴더 만들어줘"
+  - "지난번 질문에 답했어, 글감 업데이트해줘"
+compatibility:
+  optional:
+    - think-tool
+  remote_mcp_note: >-
+    MCP 없이도 동작합니다. think-tool은 에피소드 경계나 병합 여부가 애매할 때만 쓰입니다.
+---
+
+# Portfolio Material
+
+Collection only: material in, `material/<id>/` items out. **Not for** writing the portfolio, rendering a deck, or feedback loop-back (later steps).
+
+Script, run from the project root: `node ${CLAUDE_PLUGIN_ROOT}/skills/material/scripts/material.mjs <subcommand> [flags]`. Each prints one JSON object.
+
+| Subcommand | Flags | Does |
+|---|---|---|
+| `id` | `--source --title` | Returns the slug id |
+| `match` | `--id --source --title` | `new` / `same` / `ambiguous` (+ candidates); writes nothing |
+| `init` | `--id --source --title` (opt. `--period --role --tags`) | Creates the item folder with the seven parts, status `raw`; `exists` writes nothing |
+| `index` | none | Rewrites `material/index.md` |
+| `log` | `--id --note` (`--status` never used here) | Appends a line to `history.md` |
+| `foreign` | none | Lists files in `material/` the flow did not write |
+
+Re-run: `same` needs the same `--source` and `--title` as the first run. Reuse the `source:` line of the item's `meta.md` and its title; a changed file name or section gives `ambiguous`.
+Per-part procedures: `references/parts.md`. Citation, evidence and matching: `references/citation-evidence-matching.md`.
+
+## Rules
+
+- (a) Only the given material is used; nothing is invented. Every filled part holds a short paraphrase plus a verbatim quote or pointer, cited `<file> + heading or line range`; for pasted or chat text, a message index, timestamp or verbatim first-words quote.
+- (b) Anything unknown goes to `gaps.md` as a question for the user and is never guessed.
+- (c) In `result.md`, a figure with a unit or percentage needs an evidence citation; a bare user statement is labelled `user-stated`; a figure with neither is marked `근거 없음`.
+- (d) On a re-run, `match` decides: `same` updates the parts in place and logs it in `history.md`; `new` runs `init`; `ambiguous` asks the user to pick merge or new, never a guess. An answer to a gaps question arrives as new material and is cited.
+- (e) Only status `raw` is created. Later steps own other transitions; any status change is logged in `history.md`.
+- (f) Content stays in the language of the material. Personal or confidential data is kept as given and stored only in the user's project.
+- (g) Foreign files in `material/` are left alone and listed in the summary.
+- (h) The final summary lists items added or updated, the open gaps count, and the foreign files.
+
+## Process
+
+1. **Read** every handed file or pasted text in full. Split it into episodes (one problem → decision → result story each). No episode found → say so and stop.
+2. **Identify** each episode: `id` from source and title, then `match`.
+3. **Branch** on the result (rule d). Stop on `ambiguous` for that episode and ask; continue with the others.
+4. **Fill** the seven parts per `references/parts.md`: `init` for `new`, in-place edit for `same`. Apply rules (a)-(c) line by line.
+5. **Record**: `log` one note per item created or changed (source, what changed). Never pass `--status`.
+6. **Index and scan**: run `index`, then `foreign`.
+7. **Summarize** per the template.
+
+## Output Template
+
+```
+수집 결과 (<n>건 입력 → 추가 <a>, 갱신 <u>, 질문 대기 <q>)
+- 추가: <id> — <title>
+- 갱신: <id> — <what changed> (출처: <citation>)
+- 병합/신규 선택 대기: <id> ↔ <candidate id> — <reason>
+열린 빈칸: <count> (<id>: <question> ...)
+foreign 파일: <paths or 없음>
+다음 단계(이 skill 범위 밖): 글쓰기, 덱 렌더링, 피드백 반영
+```
+
+## What Claude Does / What You Do
+
+| Claude | You |
+|--------|-----|
+| Splits the material into episodes, runs `match`, fills parts with cited paraphrases | Hand over the material; keep file names and sections stable between runs |
+| Marks unsourced figures and writes unknowns as gaps.md questions | Answer gaps by handing the answer as new material |
+| Asks merge or new on `ambiguous` | Pick merge or new |
+| Reports items, open gaps and foreign files | Move or remove foreign files yourself if you want them gone |
+
+## Related Skills
+
+- Neighbour: `portfolio:job-application-workflow` (the full application flow this feeds)
+- Later steps, not done here: writing, deck rendering (`portfolio:deck-builder`), feedback loop-back
