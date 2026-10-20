@@ -25,7 +25,7 @@ Claude settings or project instructions. The deterministic work lives in `remove
 1. Inspect the target project for the known install artifacts:
    `.claude/hooks/goal-gate.mjs`, its `settings.json` registration,
    `.claude/harness-gate.json`, `.claude/.harness-last-decision.json`, `.claude/harness/`,
-   `.claude/.harness-markers/`, the fenced Harness block in `CLAUDE.md`, and the `.gitignore` marker line.
+   `.claude/.harness-markers/`, the fenced Harness block in `CLAUDE.md`, and the `.gitignore` block between `# harness:begin` and `# harness:end`. The block goes as a whole; harness lines outside it are reported `legacy-left` and kept, and a broken or duplicate marker gives `marker-error` with the file untouched.
 2. Treat the user's explicit remove/uninstall request as authorization to remove those exact
    artifacts. Before using `purgeConventions`, say that `.claude/conventions/` is project-owned
    and may contain edits, and get explicit confirmation.
