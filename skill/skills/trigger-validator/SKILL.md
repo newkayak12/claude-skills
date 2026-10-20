@@ -171,7 +171,7 @@ Then produce individual reports for all skills scoring below 7. For skills scori
 
 If the request already asked for a fix ("개선해줘", "rewrite it"), apply the rewrites. Otherwise show them side-by-side and ask once before applying.
 
-Update only the `description` field in each file's frontmatter — do not touch the body. Then follow the repo's update workflow (in this repo, `CLAUDE.md` → Update Workflow: bump the version in `.claude-plugin/marketplace.json`, update `<plugin>/README.md` and `<plugin>/KOR.md` together, commit).
+Update only the `description` field in each file's frontmatter — do not touch the body. This skill ends at the frontmatter edit; versions and release are governed by the repo's own rules, not here (in this repo, `.claude/rules/maintaining.md` → "Versions and release").
 
 ## What Claude Does / What You Do
 
