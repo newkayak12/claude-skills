@@ -109,9 +109,9 @@ node "<plugin>/skills/install/install.mjs" '{
 
 프로젝트에 설치된 하네스 거버넌스를 걷어냅니다: 훅, `settings.json` 등록,
 `.claude/harness-gate.json`, `.claude/.harness-last-decision.json`, `.claude/harness/`,
-`.claude/.harness-markers/`, CLAUDE.md의 펜스 블록, `.gitignore` 한 줄. `.claude/conventions/`는 프로젝트 소유라 **기본적으로 보존**되고, 지우려면
+`.claude/.harness-markers/`, CLAUDE.md의 펜스 블록, `.gitignore`의 `# harness:begin` ~ `# harness:end` 블록(블록 전체 삭제). `.claude/conventions/`는 프로젝트 소유라 **기본적으로 보존**되고, 지우려면
 명시적 확인이 필요합니다. 깨진 `settings.json`이나 짝이 안 맞는 CLAUDE 마커는 완료를 억지로
-만들려고 통째로 지우지 않고, 그대로 두고 수동 정리 대상으로 보고합니다.
+만들려고 통째로 지우지 않고, 그대로 두고 수동 정리 대상으로 보고합니다. 블록 밖에 있는 `.gitignore`의 하네스 줄은 `legacy-left`로 보고하고 그대로 두며, `# harness:begin` / `# harness:end` 마커가 깨졌거나 중복이면 `marker-error`로 보고하고 파일은 건드리지 않습니다.
 
 ```
 이 프로젝트에서 하네스 지워줘. 단 .claude/conventions/ 는 우리가 고친 거라 남겨줘.
@@ -216,7 +216,8 @@ Implement 단계에서 plugin 모드로 Codex 돌려야 해 — 어댑터부터 
   (SetGoal → 승인/테스트 기준, Implement → 준수)
   참고할 프로젝트가 있으면 설치 중 `develop:like-my-code`로 `coding.md`/`boundaries.md`를 채울 수 있습니다 (develop이 없으면 건너뜁니다)
 - 프로젝트 `CLAUDE.md`에 덧붙는 펜스 처리된 `## Harness` 섹션
-- `.gitignore`의 `.claude/.harness-markers/`
+- `.gitignore`의 `# harness:begin` / `# harness:end` 블록: `install`은 `.claude/.harness-markers/`, `.harness-run/`,
+  `.claude/.harness-last-decision.json`, `.claude/settings.local.json` 중 없는 줄만 한 줄씩 추가합니다
 
 이후 사본은 프로젝트 소유입니다. 라이프사이클 스킬은 명시적으로 부를 때만 건드립니다:
 `install`을 `refresh:true`로 돌리면 플러그인 소유 사본을 갱신하고, `remove`는 설치를 정리합니다.
@@ -225,13 +226,25 @@ Implement 단계에서 plugin 모드로 Codex 돌려야 해 — 어댑터부터 
 `.claude/harness-gate.json`에 게이트 대상 경로를 적으면, 그 경로에 대한
 `Write|Edit|MultiEdit|NotebookEdit`와 그 경로에 쓰는 `Bash` 명령은 하네스 사용을 요구합니다.
 사용 여부는 기록으로만 판단합니다(실제로 실행된 Workflow/graph/teams 도구 호출, 열린 broker 노드,
-plan·goal-spec·sound critique가 디스크에 있는 fallback run). 대화 속 문자열은 인정하지 않습니다.
-게이트 자신의 설정·훅·settings는 항상 게이트 대상입니다. 어디서든 fail-open입니다(v0의 교훈).
+plan·goal-spec·sound critique가 디스크에 있는 fallback run, 살아 있는 마커). 대화 속 문자열은 인정하지 않습니다.
+어디서든 fail-open입니다(v0의 교훈).
+
+- **마커가 사용으로 인정됩니다.** `.claude/.harness-markers/`의 살아 있는 마커는 게이트를 연 것으로 칩니다
+  (병렬 서브에이전트용이며 teams가 패키지 워크트리마다 하나씩 씁니다). 타임스탬프가 미래인 마커는 무시합니다.
+- **항상 게이트 대상.** `.claude/harness-gate.json`, `.claude/settings.json`과 `settings.local.json`,
+  `.claude/hooks/**`, `.claude/.harness-markers/**`는 `patterns`와 무관하게 게이트 대상입니다. 면제는
+  하나뿐입니다. 설치된 플러그인에서 실행하는 `node <harness plugin>/skills/remove/remove.mjs ['<json>']`이며,
+  프로젝트에 복사된 훅은 이 면제를 주지 않습니다.
+- **읽기 전용 명령.** 단순 명령 전체를 차지하는 `grep`, `egrep`, `fgrep`, `rg`, `cat`, `head`, `tail`, `less`, `wc`,
+  `ls`, `echo`(그리고 `git log|show|diff|status`)는 아무것도 쓰지 않으므로 그 안의 쓰기 동사나 경로는 판정하지
+  않습니다. `$(…)`나 백틱이 들어 있는 명령은 면제되지 않습니다.
+- **import.** 정적 상대 `import`(`import { f } from './lib.mjs'`)는 쓰기가 아니고 그 경로도 쓴 경로로 치지 않습니다.
+  `node:`나 패키지 import, 동적 `import()`는 그대로 쓰기로 셉니다.
 
 ## 라이프사이클 헬퍼
 
 - **`harness:remove`** — 설치된 훅, 등록, 게이트, 임베드 런타임, 마커 캐시, CLAUDE.md 블록,
-  gitignore 항목을 제거합니다. 프로젝트 소유 컨벤션은 명시적으로 요청하지 않는 한 보존됩니다.
+  `.gitignore` 블록을 제거합니다(`legacy-left` 줄은 그대로 두고, `marker-error`면 파일을 건드리지 않습니다). 프로젝트 소유 컨벤션은 명시적으로 요청하지 않는 한 보존됩니다.
 - **`harness:update`** — 플러그인 버전을 올린 뒤 `install.mjs`를 `"refresh": true`로 실행해
   설치된 복사본을 갱신합니다. 사용자 소유 파일은 건드리지 않습니다.
 
