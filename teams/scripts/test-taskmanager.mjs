@@ -7205,6 +7205,239 @@ test('code-sprint-P3: a package that failed as the box ran out is left out of th
   }, { budget_usd: 10 });
 });
 
+// Card 39 (E-32e8068c, 2026-10-18): P1 spent its retries, settleFailure wrote integrate, QA and
+// gate:goal off, and the accepted P2 was never integrated. Node shapes are task.json's, trimmed:
+// P1's only dispatch failed with max_retries 0, so the next autoRetryPackages settles it.
+// p2: 'done' | 'running' | 'serial' (P2 waits on P1, so nothing is ever accepted).
+function exhaustedTask(root, id, { p2 = 'done', dependent = false, qa = false, over = {} } = {}) {
+  const nd = (node_id, stage, subgoal_id, deps, state, extra = {}) => ({ node_id, stage, subgoal_id, deps, after: [], state, ...(['dispatch', 'accept'].includes(stage) ? { attempt: 1 } : {}), ...extra });
+  const p2deps = p2 === 'serial' ? ['critique', 'accept:P1:1'] : ['critique'];
+  const accepts = ['accept:P1:1', 'accept:P2:1', ...(dependent ? ['accept:P3:1'] : [])];
+  mkdirSync(join(root, id), { recursive: true });
+  return {
+    run_id: id, store_path: join(root, id, 'task.json'), cwd: root, request: 'exhausted', created_at: Date.now(), max_retries: 0,
+    spec: { acceptance: ['both modules'], packages: [{ id: 'P1', title: 'a', deps: [] }, { id: 'P2', title: 'b', deps: p2 === 'serial' ? ['P1'] : [] }, ...(dependent ? [{ id: 'P3', title: 'c', deps: ['P1'] }] : [])] },
+    ...(qa ? { qa_pkgs: [{ id: 'QA-F1', phase: 'qa', flow: 'qa', integration_of: 'integrate:1', title: 'QA' }] } : {}),
+    nodes: [
+      nd('size', 'size', null, [], 'done', { result: { stage_ok: true } }),
+      nd('critique', 'critique', null, [], 'done', { result: { stage_ok: true, sound: true } }),
+      nd('dispatch:P1:1', 'dispatch', 'P1', ['critique'], 'failed', { result: { stage_ok: false, accept: false, child_state: 'blocked', reason: 'gate rejected' } }),
+      nd('accept:P1:1', 'accept', 'P1', ['dispatch:P1:1'], 'pending'),
+      nd('dispatch:P2:1', 'dispatch', 'P2', p2deps, p2 === 'done' ? 'done' : p2 === 'running' ? 'running' : 'pending', p2 === 'done' ? { result: { stage_ok: true, child_state: 'complete' } } : {}),
+      nd('accept:P2:1', 'accept', 'P2', ['dispatch:P2:1'], p2 === 'done' ? 'done' : 'pending', p2 === 'done' ? { result: { stage_ok: true, accept: true, match_pct: 90, checks: ['ok'] } } : {}),
+      ...(dependent ? [nd('dispatch:P3:1', 'dispatch', 'P3', ['critique', 'accept:P1:1'], 'pending'), nd('accept:P3:1', 'accept', 'P3', ['dispatch:P3:1'], 'pending')] : []),
+      nd('integrate:1', 'integrate', null, accepts, 'pending'),
+      ...(qa ? [nd('dispatch:QA-F1:1', 'dispatch', 'QA-F1', ['integrate:1'], 'pending'), nd('accept:QA-F1:1', 'accept', 'QA-F1', ['dispatch:QA-F1:1'], 'pending')] : []),
+      nd('gate:goal:1', 'gate', null, [qa ? 'accept:QA-F1:1' : 'integrate:1'], 'pending'),
+      nd('report', 'report', null, [], 'pending', { after: ['gate:goal:1'] }),
+    ],
+    ...over,
+  };
+}
+const nodeOf = (task, id) => task.nodes.find((x) => x.node_id === id);
+
+test('Card 39: P1 exhausts its retries and P2 is accepted - one integrate opens over P2 alone, names "not done: P1", and revives QA and gate:goal', async () => {
+  const { autoRetryPackages, unfinishedWork, taskState, composeTaskPrompt: compose } = await import('../mcp/taskmanager.mjs');
+  await withBoxRoot(async (root) => {
+    const task = exhaustedTask(root, 'x1', { qa: true });
+    assert.equal(inTx(task, autoRetryPackages), true);
+    const integrates = task.nodes.filter((x) => x.stage === 'integrate');
+    assert.deepEqual(integrates.map((x) => x.node_id), ['integrate:1', 'integrate:2'], 'exactly one subset integrate');
+    const fresh = nodeOf(task, 'integrate:2');
+    assert.deepEqual(fresh.deps, ['accept:P2:1'], 'only the accepted package');
+    assert.equal(fresh.supersedes, 'integrate:1');
+    assert.match(fresh.feedback, /not done: P1/);
+    assert.equal(nodeOf(task, 'integrate:1').state, 'skipped');
+    // What settleFailure wrote off behind the integrate is back, rewired onto the fresh one.
+    const qaDispatch = nodeOf(task, 'dispatch:QA-F1:1');
+    assert.equal(qaDispatch.state, 'pending');
+    assert.deepEqual(qaDispatch.deps, ['integrate:2']);
+    assert.equal(qaDispatch.result, undefined, 'the unreachable verdict is cleared');
+    assert.equal(nodeOf(task, 'accept:QA-F1:1').state, 'pending');
+    const goal = nodeOf(task, 'gate:goal:1');
+    assert.equal(goal.state, 'pending');
+    assert.equal(goal.result, undefined);
+    assert.equal(goal.final, undefined);
+    assert.equal(nodeOf(task, 'accept:P1:1').state, 'unreachable', 'the dead package itself stays dead');
+    // The final state reads partial through unfinishedWork, with the same wording.
+    assert.match(unfinishedWork(task).partial_reasons.join('\n'), /not done: P1/);
+    for (const id of ['integrate:2', 'dispatch:QA-F1:1', 'accept:QA-F1:1', 'gate:goal:1']) nodeOf(task, id).state = 'done';
+    nodeOf(task, 'report').state = 'done';
+    assert.equal(taskState(task).state, 'partial');
+    assert.match(taskState(task).partial_reasons.join('\n'), /not done: P1/);
+    // The judges are told the not-done package is outside what they judge.
+    const brief = compose(task, nodeOf(task, 'integrate:2'));
+    assert.match(brief, /## Scope: packages not done/);
+    assert.match(brief, /P1/);
+  });
+});
+
+test('Card 39: a gate:goal behind a subset integrate that lands below the floor is waived over the not-done packages', async () => {
+  const { autoRetryPackages, finish } = await import('../mcp/taskmanager.mjs');
+  await withBoxRoot(async (root) => {
+    const task = exhaustedTask(root, 'x2');
+    inTx(task, autoRetryPackages);
+    nodeOf(task, 'integrate:2').state = 'done';
+    const goal = nodeOf(task, 'gate:goal:1');
+    inTx(task, finish, goal, { stage_ok: true, accept: true, match_pct: 72, gaps: ['P1 never shipped'], checks: ['git log -> P2 merged'], evidence: 'e' });
+    assert.equal(goal.state, 'done', JSON.stringify(goal.result));
+    assert.match(goal.result.goal_floor_waived, /P1/);
+  });
+});
+
+test('Card 39: with nothing accepted the retry budget settles as before and no integrate opens', async () => {
+  const { autoRetryPackages, autoRepair } = await import('../mcp/taskmanager.mjs');
+  await withBoxRoot(async (root) => {
+    const task = exhaustedTask(root, 'x3', { p2: 'serial' });
+    inTx(task, autoRetryPackages);
+    assert.equal(inTx(task, autoRepair), false);
+    assert.deepEqual(task.nodes.filter((x) => x.stage === 'integrate').map((x) => x.node_id), ['integrate:1']);
+    assert.equal(nodeOf(task, 'integrate:1').state, 'unreachable');
+    assert.equal(nodeOf(task, 'gate:goal:1').state, 'unreachable');
+  });
+});
+
+test('Card 39: a dependent of the failed package is not done and not integrated, an accepted sibling is', async () => {
+  const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
+  await withBoxRoot(async (root) => {
+    const task = exhaustedTask(root, 'x4', { dependent: true });
+    inTx(task, autoRetryPackages);
+    const fresh = nodeOf(task, 'integrate:2');
+    assert.deepEqual(fresh.deps, ['accept:P2:1']);
+    assert.match(fresh.feedback, /not done: P1, P3/);
+    assert.equal(nodeOf(task, 'dispatch:P3:1').state, 'unreachable', 'P3 is not revived');
+  });
+});
+
+test('Card 39: the subset integrate waits while a package is running, opens once, and never twice', async () => {
+  const { autoRetryPackages, autoRepair } = await import('../mcp/taskmanager.mjs');
+  await withBoxRoot(async (root) => {
+    const task = exhaustedTask(root, 'x5', { p2: 'running' });
+    inTx(task, autoRetryPackages);
+    assert.equal(inTx(task, autoRepair), false, 'P2 is still running');
+    assert.deepEqual(task.nodes.filter((x) => x.stage === 'integrate').map((x) => x.node_id), ['integrate:1']);
+    Object.assign(nodeOf(task, 'dispatch:P2:1'), { state: 'done', result: { stage_ok: true } });
+    Object.assign(nodeOf(task, 'accept:P2:1'), { state: 'done', result: { stage_ok: true, accept: true, match_pct: 90, checks: ['ok'] } });
+    assert.equal(inTx(task, autoRepair), true, 'nothing running now');
+    assert.deepEqual(task.nodes.filter((x) => x.stage === 'integrate').map((x) => x.node_id), ['integrate:1', 'integrate:2']);
+    assert.equal(task.exhausted.reintegrated, 'integrate:2');
+    nodeOf(task, 'integrate:2').state = 'done';
+    assert.equal(inTx(task, autoRepair), false, 'a second tick');
+    assert.equal(inTx(task, autoRetryPackages), false);
+    assert.deepEqual(task.nodes.filter((x) => x.stage === 'integrate').map((x) => x.node_id), ['integrate:1', 'integrate:2']);
+  });
+});
+
+test('Card 39: a cancelled task gets no integrate and no "not done"', async () => {
+  const { autoRetryPackages, autoRepair, unfinishedWork } = await import('../mcp/taskmanager.mjs');
+  await withBoxRoot(async (root) => {
+    const task = exhaustedTask(root, 'x6', { p2: 'running' });
+    inTx(task, autoRetryPackages);
+    Object.assign(nodeOf(task, 'dispatch:P2:1'), { state: 'done', result: { stage_ok: true } });
+    Object.assign(nodeOf(task, 'accept:P2:1'), { state: 'done', result: { stage_ok: true, accept: true, match_pct: 90, checks: ['ok'] } });
+    task.cancelled = { at: Date.now(), by: 'tm_cancel', was: 'running' };
+    assert.equal(inTx(task, autoRepair), false);
+    assert.deepEqual(task.nodes.filter((x) => x.stage === 'integrate').map((x) => x.node_id), ['integrate:1']);
+    assert.doesNotMatch(unfinishedWork(task).partial_reasons.join('\n'), /not done/);
+  });
+});
+
+test('Card 39: a task whose worktree is gone gets no integrate', async () => {
+  const { autoRetryPackages, autoRepair } = await import('../mcp/taskmanager.mjs');
+  await withBoxRoot(async (root) => {
+    const task = exhaustedTask(root, 'x6g', { p2: 'running' });
+    inTx(task, autoRetryPackages);
+    Object.assign(nodeOf(task, 'dispatch:P2:1'), { state: 'done', result: { stage_ok: true } });
+    Object.assign(nodeOf(task, 'accept:P2:1'), { state: 'done', result: { stage_ok: true, accept: true, match_pct: 90, checks: ['ok'] } });
+    task.worktree_gone = { kind: 'package', node_id: 'dispatch:P2:1', key: 'P2', path: join(root, 'gone'), reason: 'worktree directory is gone', at: Date.now() };
+    assert.equal(inTx(task, autoRepair), false);
+    assert.deepEqual(task.nodes.filter((x) => x.stage === 'integrate').map((x) => x.node_id), ['integrate:1']);
+  });
+});
+
+test('Card 39: P1 spends its retries for real, P2 is accepted - integrate merges only P2, the goal gate is waived, the task reads partial', async () => {
+  const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_SPLIT); // P1 and P2, no deps: two at once
+    let nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children.length, 2);
+    await completeChild(g, nx.children.find((c) => c.package_id === 'P2'));
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:1' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:P2:1', payload: ok({ accept: true, match_pct: 90 }) });
+    const load = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    for (let attempt = 1; attempt <= load().max_retries + 1; attempt++) {
+      nx = await tm.call('tm_next', { task_id });
+      const child = nx.children.find((c) => c.node_id === `dispatch:P1:${attempt}`);
+      assert.ok(child, `attempt ${attempt} is dispatched`);
+      await blockChild(g, child);
+      assert.equal((await tm.call('tm_submit', { task_id, node_id: `dispatch:P1:${attempt}` })).state, 'failed');
+      withTasksRoot(root, () => inTx(load(), autoRetryPackages));
+    }
+    nx = await tm.call('tm_next', { task_id });
+    const task = load();
+    const integ = task.nodes.find((n) => n.stage === 'integrate' && n.supersedes === 'integrate:1');
+    assert.ok(integ, JSON.stringify(task.nodes.map((n) => [n.node_id, n.state])));
+    assert.deepEqual(nx.ready.map((n) => n.node_id), [integ.node_id]);
+    assert.deepEqual(integ.integration.merged.map((m) => m.package), ['P2'], 'P1 has no delivered branch and is left out of the merge');
+    assert.match(readFileSync(nx.ready[0].briefing_path, 'utf8'), /## Scope: packages not done/);
+    await tm.call('tm_submit', { task_id, node_id: integ.node_id, payload: ok({ verified: true, checks: ['git log -> P2 merged'] }) });
+    nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['gate:goal:1']);
+    await tm.call('tm_submit', { task_id, node_id: 'gate:goal:1', payload: ok({ accept: true, match_pct: 72, gaps: ['P1 never shipped'] }) });
+    const gate = load().nodes.find((n) => n.node_id === 'gate:goal:1');
+    assert.equal(gate.state, 'done', JSON.stringify(gate.result));
+    assert.match(gate.result.goal_floor_waived, /P1/);
+    await tm.call('tm_next', { task_id });
+    await tm.call('tm_submit', { task_id, node_id: 'report', payload: ok({ handoff: 'P2 shipped; P1 not done' }) });
+    const st = await tm.call('tm_status', { task_id });
+    assert.equal(st.state, 'partial');
+    assert.match(st.partial_reasons.join('\n'), /not done: P1/);
+  });
+});
+
+// Card 39 F1-US-3: a failure the commit a package branched from already has is not the package's.
+// The base runner is injected (__baseFail.run); no suite runs on a real base.
+test('Card 39: an accept below the floor whose only gap fails on the base commit too is done, and lists the exclusion; a failure only on the package still fails', async () => {
+  const { finish, __baseFail } = await import('../mcp/taskmanager.mjs');
+  const cwd = repo();
+  const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim();
+  const fixture = (root, id) => {
+    mkdirSync(join(root, id), { recursive: true });
+    return {
+      run_id: id, store_path: join(root, id, 'task.json'), cwd, request: 'r', created_at: Date.now(), max_retries: 2,
+      spec: { packages: [{ id: 'P1', title: 'a', acceptance: ['a'], deps: [] }] },
+      nodes: [
+        { node_id: 'dispatch:P1:1', stage: 'dispatch', subgoal_id: 'P1', deps: [], after: [], state: 'done', attempt: 1, base_commit: sha, child: { cwd, branch: 'HEAD' }, result: { stage_ok: true } },
+        { node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', deps: ['dispatch:P1:1'], after: [], state: 'pending', attempt: 1 },
+      ],
+    };
+  };
+  const verdict = (command) => ({ stage_ok: true, accept: true, match_pct: 72, gaps: ['test foo fails'], checks: ['ok -> looked fine', `${command} -> not ok 1 - foo\n# fail 1`], evidence: 'e' });
+  const prior = __baseFail.run;
+  try {
+    await withBoxRoot(async (root) => {
+      const calls = [];
+      __baseFail.run = (command) => { calls.push(command); return { status: 1, stdout: 'not ok 1 - foo\n# fail 1\n', stderr: '' }; };
+      const onBase = fixture(root, 'b1');
+      inTx(onBase, finish, nodeOf(onBase, 'accept:P1:1'), verdict('node --test also-fails-on-base.mjs'));
+      const a = nodeOf(onBase, 'accept:P1:1');
+      assert.equal(a.state, 'done', JSON.stringify(a.result));
+      assert.deepEqual(a.result.exclusions, [`excluded (also fails on base ${sha.slice(0, 7)}): foo`]);
+      assert.ok(calls.length > 0 && calls.every((c) => c === 'node --test also-fails-on-base.mjs'), `only the failing check ran on the base: ${JSON.stringify(calls)}`);
+
+      __baseFail.run = () => ({ status: 0, stdout: '', stderr: '' });
+      const onPackage = fixture(root, 'b2');
+      inTx(onPackage, finish, nodeOf(onPackage, 'accept:P1:1'), verdict('node --test fails-on-package-only.mjs'));
+      const b = nodeOf(onPackage, 'accept:P1:1');
+      assert.equal(b.state, 'failed', 'a failure the base does not have still fails on the floor');
+      assert.deepEqual(b.result.exclusions || [], []);
+    });
+  } finally {
+    __baseFail.run = prior;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('code-sprint-P5: past the box\'s warning line no audit is opened; the goal gate judges the integrate', async () => {
   await withTask(async ({ tm, g, cwd, root, task_id }) => {
     await toIntegrateWithPlanning(tm, g, task_id, cwd);
