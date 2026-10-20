@@ -5,10 +5,17 @@
 //
 //   node material.mjs id      --source S --title T
 //   node material.mjs match   --id I --source S --title T
-//   node material.mjs init    --id I --source S --title T [--period P --role R --tags G --status X]
+//   node material.mjs init    --id I --source S --title T [--period P --role R --tags G]
 //   node material.mjs index
-//   node material.mjs log     --id I --note N [--status X]
+//   node material.mjs log     --id I --note N
+//   node material.mjs answer  --id I --question Q --citation C
 //   node material.mjs foreign
+//
+// Step 1 (collection) creates status "raw" and never changes it. A status other than raw
+// (init --status, log --status) is reserved for later steps and refused unless the caller
+// names the step with --later-step; the step is recorded in history.md.
+// A no-op writes nothing: init on an existing id, index with unchanged content, a log note
+// already in history.md, an answer already recorded.
 //
 // Matching is detection by string difference only (normalised: NFC, trimmed, case-folded,
 // whitespace-collapsed). It is NOT semantic: a renamed episode is only seen as "same source,
@@ -19,7 +26,8 @@ import path from 'node:path';
 
 const PARTS = ['meta.md', 'problem.md', 'decision.md', 'result.md', 'learned.md', 'gaps.md', 'history.md'];
 const STATUSES = ['raw', 'shaped', 'written', 'rendered', 'reviewed'];
-const FLAGS = new Set(['id', 'source', 'title', 'period', 'role', 'tags', 'note', 'status']);
+const FLAGS = new Set(['id', 'source', 'title', 'period', 'role', 'tags', 'note', 'status', 'later-step', 'question', 'citation']);
+const ANSWERED = '[답변됨]';
 const ID_RE = /^[\p{L}\p{N}][\p{L}\p{N}-]*$/u;
 const MAT = path.resolve(process.cwd(), 'material');
 
@@ -37,6 +45,10 @@ function needId(a) {
 }
 function needStatus(s) {
   if (!STATUSES.includes(s)) fail(`invalid status: ${s} (one of ${STATUSES.join('|')})`);
+}
+// Status is owned by later steps; step 1 never passes it.
+function needLaterStep(a) {
+  if (!one(a['later-step'])) fail('--status belongs to later steps: pass --later-step <name> (step 1 never changes status)');
 }
 function today() {
   const env = process.env.MATERIAL_DATE;
@@ -139,6 +151,7 @@ const cmd = {
     need(a, 'title', 'source');
     const status = a.status ?? 'raw';
     needStatus(status);
+    if (status !== 'raw') needLaterStep(a);
     if (lstat(path.join(MAT, a.id))) return { result: 'exists', id: a.id };
     const meta = [
       '# 메타', '',
@@ -151,7 +164,7 @@ const cmd = {
       '- number: 단위나 퍼센트가 붙은 수치 하나당 한 줄.',
       '- evidence source: 건네받은 자료 안의 인용(파일 + 제목 또는 줄 범위).',
       '- label: 사용자가 직접 말했을 뿐 자료에 근거가 없으면 `user-stated`.',
-      '- 근거가 전혀 없는 수치는 evidence source 칸에 `근거 없음`이라고 적는다.', '',
+      '- 근거가 전혀 없는 수치는 evidence source 칸에 `근거 없음`이라고 적고, gaps.md에 출처를 묻는 질문을 더한다.', '',
     ].join('\n');
     const heads = { 'problem.md': '문제', 'decision.md': '결정', 'learned.md': '배운 점', 'gaps.md': '빈칸 (질문)' };
     const body = {
@@ -168,31 +181,71 @@ const cmd = {
     const rows = items.sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
     const lines = ['# 글감 목록', '', '| id | title | status | source |', '|---|---|---|---|'];
     for (const r of rows) lines.push(`| ${[r.id, r.title, r.status, r.source].map(cell).join(' | ')} |`);
-    safeWrite('index.md', lines.join('\n') + '\n');
+    const text = lines.join('\n') + '\n';
+    let prev = null;
+    try { prev = fs.readFileSync(path.join(MAT, 'index.md'), 'utf8'); } catch { /* none yet */ }
+    if (prev !== text) safeWrite('index.md', text);
     return { rows, skipped };
   },
 
   log(a) {
     needId(a);
     need(a, 'note');
-    if (a.status !== undefined) needStatus(a.status);
+    if (a.status !== undefined) { needStatus(a.status); needLaterStep(a); }
     const dir = path.join(MAT, a.id);
     if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) fail(`unknown id: ${a.id}`);
-    let line = `- ${today()}: ${one(a.note)}`;
+    let body = one(a.note);
     let metaText;
     if (a.status !== undefined) {
       try { metaText = fs.readFileSync(path.join(dir, 'meta.md'), 'utf8'); } catch { fail(`no meta.md for ${a.id}`); }
       const m = /^status:[ \t]*(.*)$/m.exec(metaText);
       if (!m) fail(`no status line in meta.md of ${a.id}`);
-      line += ` (status: ${m[1].trim()} -> ${a.status})`;
+      body += ` (status: ${m[1].trim()} -> ${a.status}; step: ${one(a['later-step'])})`;
       metaText = metaText.replace(/^status:.*$/m, `status: ${a.status}`);
     }
     const hist = path.join(dir, 'history.md');
     let prev = '';
     try { prev = fs.readFileSync(hist, 'utf8'); } catch { /* new history */ }
+    // A note already recorded is the same change again: write nothing.
+    if (prev.split(/\r?\n/).some((l) => l.replace(/^- \d{4}-\d{2}-\d{2}: /, '') === body && l.startsWith('- '))) {
+      return { result: 'unchanged', id: a.id };
+    }
+    const line = `- ${today()}: ${body}`;
     safeWrite(`${a.id}/history.md`, (prev && !prev.endsWith('\n') ? '\n' : '') + line + '\n', 'a');
     if (metaText !== undefined) safeWrite(`${a.id}/meta.md`, metaText);
     return { result: 'logged', id: a.id, line };
+  },
+
+  // Marks an open gaps.md question answered and keeps it visible: the line stays, prefixed
+  // [답변됨] and suffixed with the citation of the material that answered it. Never deletes.
+  answer(a) {
+    needId(a);
+    need(a, 'question', 'citation');
+    const dir = path.join(MAT, a.id);
+    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) fail(`unknown id: ${a.id}`);
+    let text;
+    try { text = fs.readFileSync(path.join(dir, 'gaps.md'), 'utf8'); } catch { fail(`no gaps.md for ${a.id}`); }
+    const q = norm(a.question.replace(/^\s*-\s+/, ''));
+    const cite = one(a.citation);
+    const lines = text.split('\n');
+    const open = [], answered = [];
+    lines.forEach((l, i) => {
+      if (!l.startsWith('- ')) return;
+      const body = l.slice(2);
+      if (body.startsWith(ANSWERED + ' ')) {
+        const m = /^\[답변됨\] (.*) — 답변: (.*)$/.exec(body.trimEnd());
+        if (m && norm(m[1]) === q) answered.push({ i, cite: m[2].trim() });
+      } else if (norm(body) === q) open.push(i);
+    });
+    if (open.length > 1) fail('ambiguous question: more than one open line matches');
+    if (open.length === 0) {
+      if (answered.some((x) => norm(x.cite) === norm(cite))) return { result: 'unchanged', id: a.id };
+      fail(answered.length ? 'question already answered with a different citation' : 'no such open question');
+    }
+    const line = `- ${ANSWERED} ${one(lines[open[0]].slice(2))} — 답변: ${cite}`;
+    lines[open[0]] = line;
+    safeWrite(`${a.id}/gaps.md`, lines.join('\n'));
+    return { result: 'answered', id: a.id, line };
   },
 
   foreign() {
@@ -225,7 +278,7 @@ function parse(argv) {
 
 try {
   const [sub, ...rest] = process.argv.slice(2);
-  if (!Object.hasOwn(cmd, sub ?? '')) fail(`unknown subcommand: ${sub ?? ''} (id|match|init|index|log|foreign)`);
+  if (!Object.hasOwn(cmd, sub ?? '')) fail(`unknown subcommand: ${sub ?? ''} (id|match|init|index|log|answer|foreign)`);
   process.stdout.write(JSON.stringify(cmd[sub](parse(rest))) + '\n');
 } catch (e) {
   process.stdout.write(JSON.stringify({ error: e.message }) + '\n');

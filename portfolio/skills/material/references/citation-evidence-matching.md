@@ -9,7 +9,7 @@ A citation points at the material so the user can find the line again.
 | A file | `<file> + heading or line range` | `retro.md + "## 에피소드 A"`, `retro.md + L12-14` |
 | Pasted text or chat dump with no file | message index, timestamp, or a verbatim quote of the first words | `chat #7`, `[14:02]`, `"지난 분기에 캐시를…"` |
 
-- Prefer the heading; use a line range when there is no heading. Paths are as the user gave them (relative to the project root).
+- Prefer the heading; use a line range only when there is no heading (line numbers shift when the source grows). Paths are as the user gave them (relative to the project root).
 - A quote is verbatim: same characters, same language, no fixing of typos. A paraphrase never goes inside quote marks.
 - A line you cannot cite is not written. Move it to gaps.md as a question.
 - Several sources: cite each one used. A re-run adds the new source next to the old one, never in place of it.
@@ -18,11 +18,11 @@ A citation points at the material so the user can find the line again.
 
 A figure is any number with a unit or a percentage (`40%`, `3초`, `12만 건`, `2주`).
 
-1. Cited in the material (a measurement, report, dashboard note, or named document) → the citation is the evidence.
+1. Backed by a record inside the handed material (a measurement, table, report excerpt or dashboard note that is itself there) → the citation of that record is the evidence.
 2. Only the user's own statement ("체감상 40%") → cite the statement and label it `user-stated`.
 3. Neither → `근거 없음` in the evidence column, plus a gaps.md question asking where it came from.
 
-A document the user names but did not hand over is not evidence: cite the statement that names it and label it `user-stated`. Never repair a figure by inference, back-calculation or a "typical" value.
+A document the user names but did not hand over is not evidence (hand it over as new material and a re-run cites it): cite the statement that names it and label it `user-stated`. Never repair a figure by inference, back-calculation or a "typical" value.
 
 ## Matching (item identity)
 
