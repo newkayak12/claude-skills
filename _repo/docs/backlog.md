@@ -43,7 +43,9 @@ the same letter, plus: the three-row band, priority-drop segments, dark/light th
 (user: "저건 뭘하는지 눈에 캐릭터로 보이잖아 그런 직관적인걸 원하는거야 UIUX를 고려하자고"): a glance,
 not a read — each worker's state is one icon and colour (spinner while acting; no character faces, user:
 "캐릭터눈 딱히 크게 필요는 없긴 한뎅"), and the user sees the `demo` render before a card is done.
-Cards 40–43 are in Sprint E-cec6daae (2026-10-18; E-95de6173 did not finish them).
+Cards 40–43: E-cec6daae (2026-10-18) stopped in planning; its PRDs and the boundary rulings are
+`_repo/docs/plans/mod/2026-10-18-f{1..4}-*-prd.md` and `2026-10-20-f1-f4-boundaries.md` — build from
+those, one card per EPIC (43 first; 40 and 41 before 42).
 
 40. **H. harness pane says what the run is doing** — design §4 H. Engine fields (`now.json`,
     `--list`, severity) merged 2026-10-17; the mod is not built. Check first: `fallback-check --list`
@@ -89,14 +91,6 @@ Cards 40–43 are in Sprint E-cec6daae (2026-10-18; E-95de6173 did not finish th
       Floor feed (card 41) shows both.
 
 ### Repo and rules
-
-44. **Wording left behind by the E-e4aa64a3 merges**
-    - Why: E-746e822f report (2026-10-17): `skill:trigger-validator` "Applying Changes" still says
-      bump; harness SKILL/README keep goal-gate wording P4 changed; `validate_plugins.py` gained 2
-      WARNs (description length: `think:back-to-basics` 330, `think:redefine-problem` 328 chars);
-      `repo.md` Design-changes step 3 carries the approval-before-`tm_open` clause that belongs above
-      the list.
-    - Acceptance: validator 0 WARN; the four spots reworded; checks only (wording, per backlog rule).
 
 47. **A skill that analyses requirements and splits them**
     - Why: user, 2026-10-17: "요건을 분석하고 분할하는 스킬도 하나 backlog에" (asked first: "요건을
@@ -145,17 +139,16 @@ Cards 40–43 are in Sprint E-cec6daae (2026-10-18; E-95de6173 did not finish th
 
 ### teams plugin bugs
 
-39. **One unaccepted package must not strand the accepted ones**
-    - Why: 2026-10-16 E-e4aa64a3 accepted 7/8 packages and E-59a16f4f 1/4, yet both settled with
-      integrate, QA and the goal gate unreachable — nothing merged; the session had to open
-      E-746e822f to integrate by hand. Seen causes: (a) P8's gate nodes were denied Bash, found no
-      defect, and returned accept:false because `attacks[]` was empty; (b) accept nodes "failed even
-      though verdict accept=true" (E-e4aa64a3 P2 try 1, E-59a16f4f P1 try 3 at 87% < threshold 90);
-      (c) a pre-existing failing test (stale goal-gate parity) held every harness package under 90.
-    - Acceptance: when retries run out on some packages, integrate runs over the accepted ones and
-      the report names the rest "not done" (as the budget stop already does); a gate node denied a
-      tool reports `blocked: tool denied`, not a reject; a failure that reproduces on the base is
-      excluded from a package's score; tests cover all three.
+39. **Finish card 39: tool denial in the task manager's own judges, base exclusion before scoring**
+    - Why: E-64cda2b0 (merged by hand 2026-10-20, `2c160959`..`ebbe1787`) shipped subset integrate,
+      `basefail.mjs` and the adapter's `blocked: tool denied`, but its report leaves: (a) the task
+      manager's stream-json judges (accept/gate nodes it runs itself) still read a denial as a reject
+      — E-64cda2b0's own P1 failed that way; (b) base exclusion is applied after the judge scored the
+      attempt, so it helps only the next attempt; (c) a real dontAsk denial was never reproduced live.
+      The run itself also stranded P3/P4 — the fix landed only after it.
+    - Acceptance: a task-manager judge denied Bash reads `blocked: tool denied` (test); excluded base
+      failures are removed from the briefing before the judge scores; one live `claude -p` denial
+      probe recorded in the test fixture.
 
 ### knowledge plugin
 
