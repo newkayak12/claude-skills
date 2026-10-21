@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { frame, draw } from './demo-frames.ts'
+import { frame, draw, cells } from './demo-frames.ts'
 import { STRINGS } from './mod'
 
 type Run = { exitCode: number; stdout: string; stderr: string }
@@ -1445,10 +1445,16 @@ const shownFrames: string[] = []
 const LONGT = 'Migrate every legacy report exporter to the new streaming writer and keep each output file byte for byte identical across all supported locales, then retire the old exporters, their fixtures and every flag that still points at them'
 const LONGD = 'rewriting the exporter fixtures for every supported locale and re-running the whole comparison suite twice, once per writer, then comparing the output byte for byte'
 const wkd = (id: string, state: string, doing = '') => ({ id, state, doing })
+// what an EPIC's Now line, card list and cost say; each differs from the STORY titles and the You line, and the cost is the STORYs' sum
+const body = (usd: number, turns: number) => ({
+  now: { kind: 'build', subject: 'the parser and the writer', detail: '' },
+  work: [card('parser package', 'package', 'done'), card('writer package', 'package', 'pending')],
+  cost: { usd, turns },
+})
 const DEMO: Record<string, { tasks: unknown[]; you?: unknown }> = {
   minimal: {
     tasks: [epicOf('tS', 'E-aaaaaaaa', [story('E-aaaaaaaa', 'rename the config key', { doing: 'editing config.ts', elapsed_ms: 35000, cost_usd: 0.12 })], {
-      harness: { slug: 'run-1', moving: true }, stages: [stage('plan', 'done'), stage('build', 'running')], workers: [wkd('PLAN', 'done'), wkd('BUILD', 'acting', 'editing config.ts')],
+      ...body(0.12, 3), harness: { slug: 'run-1', moving: true }, stages: [stage('plan', 'done'), stage('build', 'running')], workers: [wkd('PLAN', 'done'), wkd('BUILD', 'acting', 'editing config.ts')],
     })],
   },
   full: {
@@ -1460,25 +1466,25 @@ const DEMO: Record<string, { tasks: unknown[]; you?: unknown }> = {
       ], {
         workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', 'editing parser.ts'), wkd('P2', 'idle'), wkd('P3', 'you', 'asks a question'), wkd('JUDGE', 'idle')],
         handoffs: [ho('10:01', 'PLAN', 'the plan', 'P1'), ho('10:02', 'P1', 'a diff', 'JUDGE'), ho('10:03', 'JUDGE', 'a verdict', 'P1'), ho('10:04', 'P2', 'test results', 'JUDGE'), ho('10:05', 'P3', 'a question', 'you')],
-        you: { count: 1, items: ['cache layer'], cards: [{ key: 'E-3a3a3bb5/P3', title: 'cache layer', question: 'keep the old cache key format?' }] },
+        ...body(1.92, 14),
+        you: { count: 1, items: ['one open question'], cards: [{ key: 'E-3a3a3bb5/P3', title: 'cache layer', question: 'keep the old cache key format?' }] },
       }),
       epicOf('tC', 'E-cccccccc', [story('E-cccccccc/P1', 'old import job', { doing: 'running tests', state: 'stalled', live: false })], { live: false, age_ms: 7200000, state: 'stalled' }),
     ],
   },
   parallel: {
     tasks: [
-      epicOf('tA', 'E-3a3a3bb5', [story('E-3a3a3bb5/P1', 'parser module', { doing: 'editing parser.ts', elapsed_ms: 240000, cost_usd: 0.42 })], { workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', 'editing parser.ts')] }),
-      epicOf('tB', 'E-bbbbbbbb', [story('E-bbbbbbbb/P1', 'report writer', { doing: 'reading', elapsed_ms: 35000, cost_usd: 1.5 })], { workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', 'reading')] }),
+      epicOf('tA', 'E-3a3a3bb5', [story('E-3a3a3bb5/P1', 'parser module', { doing: 'editing parser.ts', elapsed_ms: 240000, cost_usd: 0.42 })], { ...body(0.42, 6), workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', 'editing parser.ts')] }),
+      epicOf('tB', 'E-bbbbbbbb', [story('E-bbbbbbbb/P1', 'report writer', { doing: 'reading', elapsed_ms: 35000, cost_usd: 1.5 })], { ...body(1.5, 8), workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', 'reading')] }),
     ],
   },
   narrow: {
     tasks: [epicOf('tN', 'E-dddddddd', [
       story('E-dddddddd/P1', LONGT, { doing: LONGD, last_verdict: 'reject', try: 2, max: 3, elapsed_ms: 240000, cost_usd: 0.42, cost_estimated: true }),
       story('E-dddddddd/P2', 'short title', { doing: 'reading', elapsed_ms: 35000, cost_usd: 1.5 }),
-    ], { title: LONGT, workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', LONGD)], handoffs: [ho('10:01', 'PLAN', LONGD, 'P1')] })],
+    ], { ...body(1.92, 14), title: LONGT, workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', LONGD)], handoffs: [ho('10:01', 'PLAN', LONGD, 'P1')] })],
   },
 }
-const glyphCount = (s: string) => Array.from(s).length
 const bodyOf = (lines: string[]) => lines.filter(l => l.startsWith('│')).map(l => l.slice(2, -2).trimEnd())
 
 for (const variant of Object.keys(DEMO)) {
@@ -1500,12 +1506,15 @@ for (const variant of Object.keys(DEMO)) {
         const body = name === 'band' ? lines : bodyOf(lines)
         expect(body.length).toBeGreaterThan(0)
         for (const l of lines) {
-          expect(glyphCount(l)).toBeLessThanOrEqual(cols)
+          expect(cells(l)).toBeLessThanOrEqual(cols)
           expect(l).not.toContain('\uFFFD')
           expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(l)).toBe(false)
         }
-        // no orphan …: none stands alone in its cell (at the line start or after a column gap)
-        for (const l of body) expect(/(^|\s\s)…/.test(l)).toBe(false)
+        // no orphan …: none doubled, none alone in its cell (a line start or after a column gap)
+        for (const l of body) {
+          expect(l).not.toContain('……')
+          expect(/(^|\s\s)…/.test(l)).toBe(false)
+        }
         if (name === 'band') continue
         // the tab row is one line: all five labels sit on the same line
         const tabRows = body.filter(l => /Floor/.test(l) && /STORYs/.test(l) && /Decisions/.test(l) && /Log/.test(l) && /Report/.test(l))
