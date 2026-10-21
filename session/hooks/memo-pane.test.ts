@@ -133,6 +133,9 @@ test('a long note ends in an ellipsis at 110 columns with its age and stale hint
   expect(rows[0]).toMatch(/… 21d stale\? │$/)
   expect(Array.from(rows[0]!).length).toBeLessThanOrEqual(110)
   expect(JSON.stringify(tree)).toMatch(/"wrap":"truncate-end"/)
+  // The fixture cannot see an unpinned cell wrap (Ink's default flexShrink is 1), so pin it in the tree:
+  // number, badge, age and stale each sit in a flexShrink 0 box; only the text box shrinks.
+  expect(JSON.stringify(tree).match(/"flexShrink":0/g)).toHaveLength(4)
 })
 
 test('the cut shows one warning line with the count of stored notes not sent', async ($, on) => {
