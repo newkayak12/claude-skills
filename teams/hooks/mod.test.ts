@@ -4,6 +4,8 @@ import type { On } from 'claude-code'
 
 import { frame, draw, cells } from './demo-frames.ts'
 import { STRINGS } from './mod'
+import { paneKey, paneSlash } from './pane'
+import { footerPlan, tabRowPlan } from './teams-draw'
 
 type Run = { exitCode: number; stdout: string; stderr: string }
 const ok = (stdout: string): Run => ({ exitCode: 0, stdout, stderr: '' })
@@ -326,21 +328,22 @@ for (const surface of SURFACES) {
     expect(all.filter(l => l.includes('[') || l.includes(']'))).toEqual([])
   })
 
-  test(`${surface}: the title sits on top, then the tabs: plain hotkey tabs 1-5, the selected one full strength with a dot`, async ($, on) => {
+  test(`${surface}: the title sits on top, then the tabs: plain tabs, the selected one full strength with a dot (1-5 are Input keys, no Button hotkey)`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo() }, surface)
     const ui = await pane($, surface)
     const tab = async (key: string) => (await ui.find({ key }))?.props
-    expect(await tab('floor')).toMatchObject({ plain: true, hotkey: '1', dimColor: false, label: '● Floor 1' })
-    expect(await tab('stories')).toMatchObject({ plain: true, hotkey: '2', dimColor: true, label: 'STORYs 2' })
-    expect(await tab('decisions')).toMatchObject({ plain: true, hotkey: '3', dimColor: true, label: 'Decisions 3' })
-    expect(await tab('log')).toMatchObject({ hotkey: '4', label: 'Log 4' })
-    expect(await tab('report')).toMatchObject({ hotkey: '5', label: 'Report 5' })
+    expect(await tab('floor')).toMatchObject({ plain: true, dimColor: false, label: '● Floor' })
+    expect(await tab('stories')).toMatchObject({ plain: true, dimColor: true, label: 'STORYs' })
+    expect(await tab('decisions')).toMatchObject({ plain: true, dimColor: true, label: 'Decisions' })
+    expect(await tab('log')).toMatchObject({ label: 'Log' })
+    expect(await tab('report')).toMatchObject({ label: 'Report' })
+    for (const key of ['floor', 'stories', 'decisions', 'log', 'report']) expect((await tab(key))?.hotkey).toBeUndefined()
     const text = await shown(ui)
     expect(text.indexOf('Build the expense tracker')).toBeLessThan(text.indexOf('Floor'))
     await ui.press({ key: 'decisions' })
     await ui.redraw() // the stubbed $.state does not notify readers
-    expect(await tab('decisions')).toMatchObject({ dimColor: false, label: '● Decisions 3' })
-    expect(await tab('floor')).toMatchObject({ dimColor: true, label: 'Floor 1' })
+    expect(await tab('decisions')).toMatchObject({ dimColor: false, label: '● Decisions' })
+    expect(await tab('floor')).toMatchObject({ dimColor: true, label: 'Floor' })
   })
 
   // (the per-actor Now lines of `teams.now` left the pane with the Now block: the worker rows and the band say who acts)
@@ -366,7 +369,7 @@ for (const surface of SURFACES) {
     await ui.redraw()
     const call = seen.argv.filter(a => fmtOf(a) === 'decisions').at(-1)!
     expect(call.slice(2)).toEqual(['--once', '--format', 'decisions', '--task', 'abc', '--cwd', '/proj', '--card', 'P1'])
-    expect((await ui.find({ key: 'decisions' }))?.props.label).toBe('● Decisions 3')
+    expect((await ui.find({ key: 'decisions' }))?.props.label).toBe('● Decisions')
     expect(await ui.find({ type: 'Text', text: 'Card P1' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '10:00 claude·opus · could not judge · accept:P1:1 — reply was not JSON' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '10:05 claude·sonnet · rejected 70% · accept:P1:1 — AC 3 missing' })).toBeDefined()
@@ -413,7 +416,7 @@ for (const surface of SURFACES) {
     })
   }
 
-  test(`${surface}: band shows the teams row and the engine band beneath it`, async ($, on) => {
+  test(`${surface}: band shows the teams row and the engine-supplied band beneath it`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo() }, surface)
     const ui = await band($, surface)
     const text = await shown(ui)
@@ -501,7 +504,7 @@ for (const surface of SURFACES) {
     await ui.redraw()
     const texts = [floor, await shown(ui), await shown(await band($, surface))]
     for (const text of texts) for (const word of [...EN_UI, 'Teams', 'Decisions', 'Develop', 'Audit', '"label":"close"', 'q close']) expect(text).not.toContain(word)
-    expect(texts[0]).toContain('● 현장 1')
+    expect(texts[0]).toContain('● 현장')
     expect(texts[1]).toContain('개발')
     expect(texts[0]).toContain('Build the expense tracker')
     expect(texts[0]).toContain('q 닫기')
@@ -538,7 +541,7 @@ test('q closes the pane; /teams-status on an open pane closes it', async ($, on)
   on('ui.close', (_$, e) => { closed.push(e.id); return { value: undefined } })
   await seeded($, on, { status: stat(), task: demo() })
   const ui = await pane($, 'terminal')
-  expect((await ui.find({ key: 'close' }))?.props).toMatchObject({ hotkey: 'q', role: 'dismiss', label: 'q close', plain: true, dimColor: true })
+  expect((await ui.find({ key: 'close' }))?.props).toMatchObject({ role: 'dismiss', label: 'q close', plain: true, dimColor: true })
   // said once, as the footer's last item; the key hint does not say it again
   expect((await shown(ui)).split('"label":"q close"').length - 1).toBe(1)
   expect((await shown(ui)).replace('"key":"close"', '').split('close').length - 1).toBe(1)
@@ -549,6 +552,76 @@ test('q closes the pane; /teams-status on an open pane closes it', async ($, on)
   const r = await $.command.run({ command: 'teams-status', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
   expect(closed).toEqual(['teams-status', 'teams-status'])
   expect(JSON.stringify(r)).toContain('pane closed')
+})
+
+// the pane's Input is focused on open: q and the digits reach it as text, so they are read there, not as Button hotkeys
+test('with the Input focused: q closes; digits 1-5 pick the tabs; /teams-status submitted closes; /other runs that command', async ($, on) => {
+  const closed: string[] = []
+  const ran: unknown[] = []
+  on('ui.close', (_$, e) => { closed.push(e.id); return { value: undefined } })
+  on('command.run', (_$, e) => { ran.push(e); return { value: { text: '' } } as never })
+  await seeded($, on, { status: stat(), task: demo(), teams: TEAMS }, 'terminal')
+  const ui = await pane($, 'terminal')
+  const typed = async (text: string, kind: 'change' | 'submit' = 'change') => {
+    await ui.input({ key: 'keys', text, kind } as never)
+    await ui.redraw()
+  }
+  expect((await ui.find({ key: 'keys' }))?.props.autoFocus).toBe(true)
+  // digits: each picks its tab (the selected one carries the dot)
+  for (const [digit, label] of [['2', '● STORYs'], ['3', '● Decisions'], ['4', '● Log'], ['5', '● Report'], ['1', '● Floor']] as const) {
+    await typed(digit)
+    expect(await labels(ui)).toContain(label)
+  }
+  expect(closed).toEqual([])
+  // a slash command being typed holds every key: `/teams-status` ends in `s`, `/x q` ends in q
+  await typed('/teams-status')
+  await typed('/help q')
+  expect(closed).toEqual([])
+  await typed('/teams-status', 'submit')
+  expect(closed).toEqual(['teams-status'])
+  await typed('/help me', 'submit')
+  expect(ran).toHaveLength(1)
+  expect(ran[0]).toMatchObject({ command: 'help', args: 'me' })
+  await typed('x', 'submit') // not a command: nothing
+  expect(closed).toEqual(['teams-status'])
+  await typed('q')
+  expect(closed).toEqual(['teams-status', 'teams-status'])
+})
+
+test('paneKey and paneSlash: q closes, digits pick tabs, a `/` holds the keys, the command starts at the first `/`', () => {
+  expect(paneKey('q')).toEqual({ kind: 'close' })
+  expect(paneKey('][2')).toEqual({ kind: 'tab', tab: 'stories' })
+  expect(paneKey('5')).toEqual({ kind: 'tab', tab: 'report' })
+  expect(paneKey('6')).toBeNull()
+  expect(paneKey('/teams-status')).toBeNull()
+  expect(paneKey('/help q')).toBeNull()
+  expect(paneKey('')).toBeNull()
+  expect(paneKey(undefined)).toBeNull()
+  expect(paneSlash('/teams-status')).toEqual({ kind: 'close' })
+  expect(paneSlash('][2q/teams-status ')).toEqual({ kind: 'close' })
+  expect(paneSlash('/help me now')).toEqual({ kind: 'run', command: 'help', args: 'me now' })
+  expect(paneSlash('jk')).toBeNull()
+  expect(paneSlash('/')).toBeNull()
+  expect(paneSlash(3)).toBeNull()
+})
+
+test('tabRowPlan: the cost text goes first, then the gap, then the longest label is cut with …; footerPlan: close stays whole', () => {
+  const tabs = ['● Floor', 'STORYs', 'Decisions', 'Log', 'Report']
+  const total = (p: { labels: string[]; gap: number }) => p.labels.reduce((n, l) => n + [...l].length, 0) + p.gap * 4
+  const cost = '$1.92 · 14 turns'
+  expect(tabRowPlan(tabs, cost, 80)).toEqual({ labels: tabs, gap: 2, cost })
+  const noCost = tabRowPlan(tabs, cost, 42)
+  expect(noCost).toEqual({ labels: tabs, gap: 2, cost: null })
+  const tight = tabRowPlan(tabs, cost, 34)
+  expect(tight.cost).toBeNull()
+  expect(total(tight)).toBeLessThanOrEqual(34)
+  expect(tight.labels.some(l => l.endsWith('…'))).toBe(true)
+  const hint = '[ ] EPIC · j k row · 1-5 tabs'
+  expect(footerPlan({ steps: 0, open: '', close: 'q close', hint }, 80).hint).toBe(hint)
+  const cut = footerPlan({ steps: 2, open: '', close: 'q close', hint }, 42).hint
+  expect(cut.endsWith('…')).toBe(true)
+  expect([...cut].length + 10 + 4 + 7 + 4).toBeLessThanOrEqual(42) // hint + Input chrome + prev/next + close + two gaps of 2
+  expect(footerPlan({ steps: 2, open: 'g open run', close: 'q close', hint }, 30).hint).toBe('')
 })
 
 test('language korean: stalled pane header and the waiting status line have no English UI word', async ($, on) => {
@@ -800,7 +873,7 @@ for (const surface of SURFACES) {
     const { seen, tick } = await seeded($, on, { status: stat(), task: demo(), reports: { abc: payload() } }, surface)
     expect(reportArgv(seen)).toHaveLength(0)
     const ui = await pane($, surface)
-    expect((await ui.find({ key: 'report' }))?.props).toMatchObject({ plain: true, hotkey: '5', label: 'Report 5' })
+    expect((await ui.find({ key: 'report' }))?.props).toMatchObject({ plain: true, label: 'Report' })
     await ui.press({ key: 'report' })
     await ui.redraw()
     expect(reportArgv(seen)).toHaveLength(1)
@@ -1645,6 +1718,47 @@ for (const variant of Object.keys(DEMO)) {
   }
 }
 
+// the side pane the host really gives: bodyColumns 78 (190-column terminal) and 46 (110): one tab row with all five
+// names, the footer keeps `close` once, and anything cut ends in …
+for (const bodyColumns of [78, 46]) {
+  for (const variant of ['full', 'narrow']) {
+    test(`side pane at ${bodyColumns} body columns: ${variant}: one tab row with five names, footer closes once, no line wider`, async ($, on) => {
+      const d = DEMO[variant]!
+      const first = d.tasks[0] as { task_id: string }
+      await seeded($, on, { status: stat(), tasks: d.tasks, task: first }, 'terminal', undefined, { epic: first.task_id }, true)
+      const ui = await $.ui.mount({ plugin: 'teams', surface: 'terminal', component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns, placement: 'dock' } } as never)
+      for (const tab of ['floor', 'stories']) {
+        if (tab === 'stories') {
+          await ui.press({ key: 'stories' })
+          await ui.redraw()
+        }
+        const lines = frame((await ui.drawn()) as any, 'Teams', bodyColumns + 4)
+        const body = bodyOf(lines)
+        for (const l of lines) expect(cells(l)).toBeLessThanOrEqual(bodyColumns + 4)
+        const tabRows = body.filter(l => /Floor/.test(l) && /STORYs/.test(l) && /Decisions/.test(l) && /Log/.test(l) && /Report/.test(l))
+        expect(tabRows).toHaveLength(1)
+        expect(body.filter(l => /Decisions/.test(l))).toHaveLength(1)
+        const foot = body[body.length - 1]!
+        expect(body.filter(l => l.includes('close'))).toEqual([foot])
+        expect(foot.endsWith('q close')).toBe(true)
+        expect(foot).not.toContain('q: q')
+        if (bodyColumns === 46) {
+          expect(tabRows[0]).not.toContain('turns') // the cost text gave way
+          if (variant === 'full' && tab === 'floor') expect(foot).toContain('…') // several EPICs: prev/next take room, the key hint is cut and says so
+        }
+        for (const l of body) {
+          expect(l).not.toContain('……')
+          expect(/(^|\s\s)…/.test(l)).toBe(false)
+        }
+      }
+    })
+  }
+}
+
 test('demo frames', () => {
-  if (SHOW) throw new Error(`\n${shownFrames.join('\n')}`)
+  // the runner indents an error message, so the frames go to stdout as they are (headings start at column 0), then the test fails
+  if (SHOW) {
+    console.log(`\n${shownFrames.join('\n')}\n`)
+    throw new Error('SHOW is on: frames printed above')
+  }
 })

@@ -2,8 +2,8 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Decision, DecisionsPayload, Mark, PaneView, ReportPayload, StatusInfo, SummaryItem, SummaryTask, SummaryTaskEntry, TeamsEvent, TeamsView } from '../types'
-import { fallbackSelection, paneKey, stepClamp, storyRows } from './pane'
-import { STORY_SHRINK, columnWidths, epicCells, epicState, handoffCells, renderLines, rowLine, since, storyCells, workerCells } from './teams-draw'
+import { fallbackSelection, paneKey, paneSlash, stepClamp, storyRows } from './pane'
+import { STORY_SHRINK, columnWidths, epicCells, epicState, handoffCells, renderLines, rowLine, since, storyCells, tabRowPlan, footerPlan, workerCells } from './teams-draw'
 import type { Line } from './teams-draw'
 
 const cursor = atom({ plugin: 'teams', key: 'cursor' } as const, 0)
@@ -416,21 +416,24 @@ export const register: Register = on => {
     const inner = Math.max(20, (e.props.bodyColumns ?? 80) - 4)
 
     // said once, as the footer's last item
-    const close = <Button key="close" role="dismiss" plain dimColor hotkey="q" label={s('close')} onPress={() => $.ui.close({ id: PANE })} />
-    // plain tabs with hotkeys 1-5 on one line: the selected one in full strength with a dot, the rest dim
+    // (no Button hotkey: the pane's Input holds the focus and takes `q` and `1`-`5` as text, see onKey)
+    const close = <Button key="close" role="dismiss" plain dimColor label={s('close')} onPress={() => $.ui.close({ id: PANE })} />
+    // plain tabs on one line: the selected one in full strength with a dot, the rest dim; `1`-`5` pick them
+    const TABS = ['floor', 'stories', 'decisions', 'log', 'report'] as const
+    const pickTab = async (one: (typeof TABS)[number]) => {
+      await update($, view, () => one)
+      if (one === 'report' && id !== undefined) {
+        await update($, ended, m => (m[id] === 'card' ? mark(m, id, 'seen') : m))
+        await fetchReport($, id)
+      }
+      if (one === 'decisions' && id !== undefined) await fetchDecisions($, id)
+    }
+    const costText = task === null ? '' : s('costLine', { usd: `$${task.cost.usd.toFixed(2)}`, turns: task.cost.turns })
+    const tabPlan = tabRowPlan(TABS.map(one => `${kind === one ? '● ' : ''}${s(`tab${cap(one)}` as keyof typeof en)}`), costText, inner)
     const tabs = (
-      <Box columnGap={2}>
-        {(['floor', 'stories', 'decisions', 'log', 'report'] as const).map((one, i) => (
-          <Box key={`tab-${one}`} flexShrink={0}><Button key={one} plain hotkey={String(i + 1)} dimColor={kind !== one}
-            label={`${kind === one ? '● ' : ''}${s(`tab${cap(one)}` as keyof typeof en)} ${i + 1}`}
-            onPress={async () => {
-              await update($, view, () => one)
-              if (one === 'report' && id !== undefined) {
-                await update($, ended, m => (m[id] === 'card' ? mark(m, id, 'seen') : m))
-                await fetchReport($, id)
-              }
-              if (one === 'decisions' && id !== undefined) await fetchDecisions($, id)
-            }} /></Box>
+      <Box columnGap={tabPlan.gap}>
+        {TABS.map((one, i) => (
+          <Box key={`tab-${one}`} flexShrink={0}><Button key={one} plain dimColor={kind !== one} label={tabPlan.labels[i]!} onPress={() => pickTab(one)} /></Box>
         ))}
       </Box>
     )
@@ -490,7 +493,9 @@ export const register: Register = on => {
     const onKey = async (text: string) => {
       const key = paneKey(text)
       if (key === null) return
-      if (key.kind === 'step') await cycle(key.by)
+      if (key.kind === 'close') await $.ui.close({ id: PANE })
+      else if (key.kind === 'tab') await pickTab(key.tab)
+      else if (key.kind === 'step') await cycle(key.by)
       else if (kind !== 'stories') return
       else if (key.kind === 'row') await update($, row, () => stepClamp(pick, key.by, rows.length))
       else if (target !== undefined && target.run_file != null) {
@@ -501,13 +506,23 @@ export const register: Register = on => {
         }
       }
     }
+    // the same Input takes a typed `/command`, held until Enter (paneKey fires no key on text holding `/`): `/teams-status`
+    // closes the pane, `/name args` runs that command. Not awaited: awaited inside onSubmit the host cuts the hook at its budget.
+    const onSubmit = async (text: string) => {
+      const slash = paneSlash(text)
+      if (slash === null) return
+      if (slash.kind === 'close') await $.ui.close({ id: PANE })
+      else void $.command.run({ command: slash.command, args: slash.args }).catch(() => {})
+    }
+    const openHint = kind === 'stories' ? s('openHint') : ''
+    const footerHint = footerPlan({ steps: listed.length > 1 ? 2 : 0, open: openHint, close: s('close'), hint: s('keysHint') }, inner).hint
     const footer = (
       <Box columnGap={2}>
         {listed.length > 1 && <Button key="prev" plain label={s('prev')} onPress={() => cycle(-1)} />}
         {listed.length > 1 && <Button key="next" plain label={s('next')} onPress={() => cycle(1)} />}
-        <Input key="keys" autoFocus value="" placeholder={s('keysHint')} onInput={onKey} onSubmit={() => {}} />
-        {kind === 'stories' && <Text dimColor={!canOpen}>{s('openHint')}</Text>}
-        {close}
+        <Box flexShrink={1} height={1} overflow="hidden"><Input key="keys" autoFocus value="" placeholder={footerHint} onInput={onKey} onSubmit={onSubmit} /></Box>
+        {openHint !== '' && <Text dimColor={!canOpen}>{openHint}</Text>}
+        <Box flexShrink={0}>{close}</Box>
       </Box>
     )
     if (task === null) {
@@ -671,12 +686,14 @@ export const register: Register = on => {
         )}
         {epics !== null && <Box marginTop={entry === undefined ? 1 : 0}>{epics}</Box>}
         {waitBox}
-        {/* the tab row never wraps: the tabs keep their width, the cost text truncates */}
+        {/* the tab row never wraps: tabRowPlan drops the cost text first, then shortens the labels */}
         <Box marginY={1}>
-          <Box flexShrink={1}>{tabs}</Box>
-          <Box flexGrow={1} flexShrink={1} justifyContent="flex-end" marginLeft={2}>
-            <Text dimColor wrap="truncate-end">{s('costLine', { usd: `$${task.cost.usd.toFixed(2)}`, turns: task.cost.turns })}</Text>
-          </Box>
+          <Box flexShrink={0}>{tabs}</Box>
+          {tabPlan.cost !== null && (
+            <Box flexGrow={1} flexShrink={1} justifyContent="flex-end" marginLeft={2}>
+              <Text dimColor wrap="truncate-end">{tabPlan.cost}</Text>
+            </Box>
+          )}
         </Box>
         {body}
         {footer}
