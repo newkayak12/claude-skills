@@ -438,6 +438,55 @@ test('waiting graph-route harness stage of an S task reads live and counts', () 
   } finally { w.cleanup(); }
 });
 
+// The contract the teams pane renders from: a closed set of worker states, nothing said for idle/done
+// workers, a capped feed, and the facts the EPIC row prints.
+test('worker states are a closed set; idle and done workers say nothing', () => {
+  const w = world();
+  try {
+    const ask = node('ask:U1:1', 'ask', [], { state: 'waiting_human', subgoal_id: 'U1', questions: [{ question: 'Keep the legacy PDF route?' }] });
+    const l = lTask(w, { pkgs: [{ id: 'P1', streamAgeMs: 1000, child: { nodes: [ask] } }, { id: 'P2', done: true, streamAgeMs: 1000 }, { id: 'P3', streamAgeMs: STALL_MS + 60000 }, { id: 'P4', streamAgeMs: 1000 }] });
+    const { workers } = entryOf(w, l.id).floor;
+    const STATES = ['acting', 'you', 'done', 'stalled', 'idle'];
+    assert.ok(workers.length >= 5);
+    for (const x of workers) assert.ok(STATES.includes(x.state), `${x.id}: ${x.state}`);
+    assert.deepEqual([...new Set(workers.map((x) => x.state))].sort(), ['acting', 'done', 'idle', 'you']);
+    for (const x of workers.filter((y) => y.state === 'idle' || y.state === 'done')) assert.equal(x.doing, '', x.id);
+    const stalled = entryOf(w, lTask(w, { id: 'cccccccc-0003', ageMs: 30 * MIN, pkgs: [{ id: 'P1', streamAgeMs: STALL_MS + 60000 }] }).id).floor.workers;
+    for (const x of stalled) assert.ok(STATES.includes(x.state), `${x.id}: ${x.state}`);
+    assert.equal(stalled[0].state, 'stalled');
+    assert.equal(stalled[0].doing, '');
+  } finally { w.cleanup(); }
+});
+
+test('hand-offs stay at five however long the ledger is', () => {
+  const w = world();
+  try {
+    const ledger = Array.from({ length: 9 }, (_, i) => ({ ts: 1000 * (i + 1), event: 'verdict', task_id: 'aaaaaaaa-0001', node_id: `accept:P1:${i + 1}`, subgoal_id: 'P1', actor: 'judge', verdict: i % 2 ? 'reject' : 'accept' }));
+    const l = lTask(w, { pkgs: [{ id: 'P1', streamAgeMs: 1000 }], ledger });
+    assert.equal(entryOf(w, l.id).floor.handoffs.length, 5);
+    assert.equal(summary(w).tasks[0].handoffs.length, 5);
+  } finally { w.cleanup(); }
+});
+
+test('a waiting task entry carries what its EPIC row prints', () => {
+  const w = world();
+  try {
+    const H25 = 25 * 3600 * 1000;
+    const ask = node('ask:U1:1', 'ask', [], { state: 'waiting_human', subgoal_id: 'U1', questions: [{ question: 'Keep the legacy PDF route?' }] });
+    lTask(w, { id: 'aaaaaaaa-0001', ageMs: H25, pkgs: [{ id: 'P1', streamAgeMs: H25, child: { nodes: [ask] } }, { id: 'P2', done: true, streamAgeMs: H25 }] });
+    const t = summary(w).tasks[0];
+    assert.equal(t.state, 'waiting_human');
+    assert.equal(t.key, 'E-aaaaaaaa');
+    assert.equal(typeof t.title, 'string');
+    assert.ok(t.title.length > 0);
+    assert.equal(t.total, 2);
+    assert.equal(t.done, 1);
+    assert.equal(t.live, true);
+    assert.equal(t.age_ms, null);
+    for (const k of ['workers', 'handoffs', 'you']) assert.ok(k in t, k);
+  } finally { w.cleanup(); }
+});
+
 test('two planning cards get distinct worker ids; max is null without a child limit', () => {
   const m = { task_id: 't', state: 'running', ticket: { key: 'E-t' }, packages: [
     { id: 'PL1', phase: 'planning', title: 'a', dispatch: { state: 'running' }, child: {} },

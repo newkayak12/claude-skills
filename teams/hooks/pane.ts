@@ -3,19 +3,41 @@
  * its task leaves the list. No engine, no drawing: mod.tsx reads state and calls these.
  */
 
-// `[` / `]` step the EPIC, `j` / `k` the STORY row, `g` opens the row's run. Digits and q are Button hotkeys, so they
-// are not read here (a key would fire twice). Any other text, none, or a non-string is no key.
-export type PaneKey = { kind: 'step'; by: 1 | -1 } | { kind: 'row'; by: 1 | -1 } | { kind: 'open' } | null
+export type PaneTabKey = 'floor' | 'stories' | 'decisions' | 'log' | 'report'
+const KEY_TABS: Record<string, PaneTabKey> = { '1': 'floor', '2': 'stories', '3': 'decisions', '4': 'log', '5': 'report' }
+
+// `[` / `]` step the EPIC, `j` / `k` the STORY row, `g` opens the row's run, `1`-`5` pick a tab, `q` closes. The pane's
+// Input holds the focus, so these keys reach it as text, never a Button hotkey. Text holding a `/` is a slash command
+// being typed (`/teams-status`): held, no key fires until submit (paneSlash). Any other text, none, or a non-string is no key.
+export type PaneKey =
+  | { kind: 'step'; by: 1 | -1 } | { kind: 'row'; by: 1 | -1 } | { kind: 'open' } | { kind: 'tab'; tab: PaneTabKey } | { kind: 'close' } | null
 
 export function paneKey(text: unknown): PaneKey {
-  if (typeof text !== 'string' || text === '') return null
+  if (typeof text !== 'string' || text === '' || text.includes('/')) return null
   const k = [...text].pop()!
+  if (k === 'q') return { kind: 'close' }
+  const tab = KEY_TABS[k]
+  if (tab !== undefined) return { kind: 'tab', tab }
   if (k === ']') return { kind: 'step', by: 1 }
   if (k === '[') return { kind: 'step', by: -1 }
   if (k === 'j') return { kind: 'row', by: 1 }
   if (k === 'k') return { kind: 'row', by: -1 }
   if (k === 'g') return { kind: 'open' }
   return null
+}
+
+// A slash command typed into the pane's Input and submitted. The buffer may start with earlier key presses, so the
+// command starts at the first `/`. `/teams-status` closes the pane (the command again toggles); `/name args` runs that
+// command; anything else is dropped.
+export type PaneSlash = { kind: 'close' } | { kind: 'run'; command: string; args: string } | null
+
+export function paneSlash(text: unknown): PaneSlash {
+  if (typeof text !== 'string') return null
+  const at = text.indexOf('/')
+  if (at < 0) return null
+  const m = /^\/([^\s/]+)\s*(.*)$/.exec(text.slice(at).trim())
+  if (m === null) return null
+  return m[1] === 'teams-status' ? { kind: 'close' } : { kind: 'run', command: m[1]!, args: m[2]! }
 }
 
 // one step inside 0..count-1: it stops at the ends, never wraps
