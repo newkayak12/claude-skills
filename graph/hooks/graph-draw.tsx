@@ -230,8 +230,6 @@ export const footerKeys = (n: number): { key: string; label: string }[] => [
 // (`[ prev next ]` and `[ q ] close`, as seen in a live session)
 export const paneFooter = (n: number): Line => [seg(n >= 2 ? '[ prev next ]  [ q ] close' : '[ q ] close', { dim: true })]
 
-const tabLine = (c: PaneCtx): Line => [seg('graph', { bold: true }), ...(c.owner !== undefined ? [seg(`  under ${c.owner}`, { dim: true })] : [])]
-
 // The header keeps its right part (id8 · state · age · cost · run k of n) whole and cuts the title first. When the
 // title would be left under HEAD_TITLE_MIN cells beside it, the right part moves to a line of its own under the title,
 // and `run k of n` shortens to `k/n` only when even that line is too wide.
@@ -246,9 +244,11 @@ function headerLines(r: GraphRow, c: PaneCtx): Line[] {
   ]
   const full = fit(right(`run ${c.pos.k} of ${c.pos.n}`), 1000)
   const title: Line = [seg(r.request, { bold: true })]
-  if (lineWidth(full) + 2 + Math.min(lineWidth(title), HEAD_TITLE_MIN) <= c.width) return [leftRight(title, right(`run ${c.pos.k} of ${c.pos.n}`), c.width, HEAD_TITLE_MIN)]
+  // the teams hand-off sits on a dim line under the header, so a cut title never takes it along
+  const owner: Line[] = c.owner === undefined ? [] : [[seg(`under ${c.owner}`, { dim: true })]]
+  if (lineWidth(full) + 2 + Math.min(lineWidth(title), HEAD_TITLE_MIN) <= c.width) return [leftRight(title, right(`run ${c.pos.k} of ${c.pos.n}`), c.width, HEAD_TITLE_MIN), ...owner]
   const below = lineWidth(full) <= c.width ? full : fit(right(`${c.pos.k}/${c.pos.n}`), c.width)
-  return [clipLine(title, c.width), [seg(' '.repeat(Math.max(0, c.width - lineWidth(below)))), ...below]]
+  return [clipLine(title, c.width), [seg(' '.repeat(Math.max(0, c.width - lineWidth(below)))), ...below], ...owner]
 }
 
 function nowLine(r: GraphRow, c: PaneCtx): Line {
@@ -334,7 +334,7 @@ function subgoalLines(r: GraphRow, c: PaneCtx): Line[] {
 
 // everything but the footer: mod.tsx draws the footer's keys as buttons
 export function paneBody(r: GraphRow, c: PaneCtx): Line[] {
-  const out: Line[] = [tabLine(c), ...headerLines(r, c), [], nowLine(r, c), lastLine(r, c)]
+  const out: Line[] = [...headerLines(r, c), [], nowLine(r, c), lastLine(r, c)]
   if (r.routing_blocked) out.push(waitsLine(r, c))
   if (r.subgoals.length > 0) {
     // gates, not attempts: the latest gate per subgoal (one each, started or not) plus the goal gate when it exists
@@ -360,7 +360,7 @@ export function detailLines(r: GraphRow, c: PaneCtx): Line[] {
     name: `${nodeLabel(n)}${n.attempt !== null && n.attempt > 1 ? ` ${slot(w.attempt, n.attempt)}` : ''}`,
   }))
   const nameW = Math.max(0, ...shown.map(x => cells(x.name)))
-  const out: Line[] = [tabLine(c), ...headerLines(r, c), []]
+  const out: Line[] = [...headerLines(r, c), []]
   for (const { n, name } of shown) {
     out.push([stageIcon(n, c.tick), seg(' '), seg(pad(name, nameW + 2)), seg(n.agent ?? NONE, { dim: true })])
     const feedback = oneLine(n.feedback)

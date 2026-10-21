@@ -35,6 +35,15 @@ function workState({ mark, waiting, live, stalled }) {
   return 'idle';
 }
 
+// One state, one icon, one word. A live word (acting, you) is the driver's own `doing` text, blank when
+// there is none; every other state has a fixed word and `word_key` (its state) for the pane to localize.
+const MARKS = { acting: '●', you: '⚑', idle: '◌', done: '✔', stalled: '⊘', failed: '✘' };
+const FIXED = { idle: 'idle', done: 'done', stalled: 'stalled', failed: 'failed' };
+export function markOf(state, doing = '') {
+  const live = state === 'acting' || state === 'you';
+  return { icon: MARKS[state], word: live ? doing : FIXED[state], word_key: live ? '' : state };
+}
+
 // facts: { stories: { [id]: { live, doing, cost_usd, cost_estimated, run_file } }, judge: { live, doing }, ledger: [lines] }
 export function floorOf(model, facts = {}, { now = Date.now() } = {}) {
   const m = model;
@@ -47,10 +56,11 @@ export function floorOf(model, facts = {}, { now = Date.now() } = {}) {
   const add = (id, base, f, mark, waiting) => {
     const state = workState({ mark, waiting, live: !!f.live, stalled });
     const doing = state === 'acting' || state === 'you' ? (f.doing || '') : '';
-    workers.push({ id, state, doing });
+    workers.push({ id, state, doing, ...markOf(state, doing) });
     if (mark === 'done' || mark === 'pending') return;
+    const itemState = mark === 'failed' && state !== 'you' ? 'failed' : state;
     items.push({
-      ...base, state: mark === 'failed' && state !== 'you' ? 'failed' : state, doing,
+      ...base, state: itemState, doing, ...markOf(itemState, doing),
       cost_usd: f.cost_usd ?? null, cost_estimated: !!f.cost_estimated,
       live: !!f.live || state === 'you', run_file: f.run_file ?? null,
     });
@@ -82,6 +92,8 @@ export function floorOf(model, facts = {}, { now = Date.now() } = {}) {
     }
   }
   const judge = facts.judge || {};
-  workers.push({ id: 'judge', state: judge.live ? 'acting' : 'idle', doing: judge.live ? (judge.doing || '') : '' });
+  const judgeState = judge.live ? 'acting' : 'idle';
+  const judgeDoing = judge.live ? (judge.doing || '') : '';
+  workers.push({ id: 'judge', state: judgeState, doing: judgeDoing, ...markOf(judgeState, judgeDoing) });
   return { items, workers, handoffs: handoffs(facts.ledger, { limit: 5 }) };
 }

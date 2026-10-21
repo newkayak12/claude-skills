@@ -94,10 +94,10 @@ export function renderLines(ui: Ui, lines: readonly Line[], keyOf = 'l') {
 
 export const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const
 
-// icon · spinner (acting only) · worker · doing (an idle worker says `idleWord` in the same column, dim)
-export function workerCells(workers: readonly SummaryWorker[], frameNo: number, idleWord: string): StoryCells[] {
+// icon · spinner (acting only) · worker · word (node's icon and word; `fixed` localizes a fixed word by its word_key)
+export function workerCells(workers: readonly SummaryWorker[], frameNo: number, fixed: (key: string) => string): StoryCells[] {
   return workers.map(w => ({
-    cells: [ICON[w.state], w.state === 'acting' ? SPINNER[frameNo % SPINNER.length]! : '', w.id, w.state === 'idle' ? idleWord : w.doing],
+    cells: [w.icon, w.state === 'acting' ? SPINNER[frameNo % SPINNER.length]! : '', w.id, w.word_key ? fixed(w.word_key) : w.word],
     tints: [TINT[w.state], TINT[w.state], undefined, 'dim'],
   }))
 }
@@ -110,10 +110,10 @@ export const handoffCells = (feed: readonly Handoff[]): string[][] => feed.slice
 export type StoryCells = { cells: string[]; tints: (Tint | 'dim' | undefined)[] }
 
 // icon · title · doing · verdict · try/max · elapsed · cost · harness (an S task's stages and run)
-export function storyCells(item: SummaryItem, verdict: string, harness: string, selected: boolean): StoryCells {
+export function storyCells(item: SummaryItem, verdict: string, harness: string, selected: boolean, fixed: (key: string) => string): StoryCells {
   return {
     cells: [
-      selected ? '▸' : '', ICON[item.state], item.title, item.doing, verdict, tryText(item.try, item.max),
+      selected ? '▸' : '', item.icon, item.title, item.word_key ? fixed(item.word_key) : item.word, verdict, tryText(item.try, item.max),
       since(item.elapsed_ms), costText(item.cost_usd, item.cost_estimated), harness,
     ],
     tints: [undefined, TINT[item.state], undefined, undefined, undefined, 'dim', 'dim', 'dim', 'dim'],
