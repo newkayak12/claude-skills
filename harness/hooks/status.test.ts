@@ -4,9 +4,9 @@ import type { HarnessRow, RunInfo, RunSub } from '../types'
 import { DEMO_NOW, bandLines, paneLines, plain, railLine } from './harness-draw'
 import type { PaneCtx } from './harness-draw'
 import {
-  NONE, clock, costText, countsText, critiqueReason, cycleRun, doingText, elapsedText, flowLines, frozenOrder, gateReason, goalReason, hasNewReject, inStageText,
-  isActing, lastStep, listArgv, markLooked, normalizeRow, openTab, openingOrder, otherRunLabel, parseRows, pickRun, railItems, rankedProblems, restText,
-  paneKey, roundHeading, roundText, runCount, runPosition, runState, severityOf, shownRows, sinceLast, span, spinnerPlan, stageLabel, topFinding, youLine,
+  NONE, clock, costText, countsText, cycleRun, doingText, elapsedText, failureToast, failuresOf, flowLines, frozenOrder, hasNewReject, inStageText,
+  isActing, lastStep, listArgv, markLooked, normalizeRow, openTab, openingOrder, otherRunLabel, parseRow, parseRows, pickRun, railItems, rankedProblems, reasonFor, restText,
+  paneKey, roundHeading, roundText, runCount, runPosition, runState, severityOf, shownRows, showArgv, sinceLast, span, spinnerPlan, stageLabel, topFinding, youLine,
 } from './status'
 
 const sub = (id: string, state: RunSub['state'], gates: RunSub['gates'] = []): RunSub => ({ id, title: '', state, reason: '', tries: gates.length, gates, stalled: false })
@@ -20,19 +20,61 @@ const info = (over: Partial<RunInfo> = {}): RunInfo => ({
   critique: { sound: true, reason: '' }, goalReason: '', lastMs: 0, ...over,
 })
 
-test('critiqueReason joins reason, blocking and problems (strings or objects), one line', () => {
-  expect(critiqueReason(undefined)).toBe('')
-  expect(critiqueReason({ sound: true })).toBe('')
-  expect(critiqueReason({ sound: false, reason: 'not testable', blocking: ['no plan'], problems: [{ text: 'AC-2 vague' }, 'S3\nbig'] }))
-    .toBe('not testable; no plan; AC-2 vague; S3 big')
-  expect(critiqueReason({ problems: 'one string' })).toBe('one string')
+// the failures the node gives a row: {key, at, what, reason, next_step, severity}; the pane only reads them
+const failure = (key: string, over: Record<string, unknown> = {}) => ({
+  key, at: 5, what: 'QualityGate S1', reason: 'tests red; no case for empty input', next_step: 'retry 1/3', severity: 'info', ...over,
+})
+const failing = (...fs: object[]) => normalizeRow({ slug: 'r', failures: fs })!
+
+test('normalizeRow keeps each failure as the node gave it and drops a malformed one; no list is no failures', () => {
+  expect(normalizeRow({ slug: 'r' })!.failures).toEqual([])
+  expect(normalizeRow({ slug: 'r', failures: 'x' })!.failures).toEqual([])
+  const keep = failure('r|gate|S1|1')
+  const bare = failure('r|result|S1', { next_step: null, severity: 'gave up', what: 'subgoal S1', reason: 'no reason recorded' })
+  const bad = [null, 3, 'x', {}, failure(''), failure('k', { at: 'soon' }), failure('k', { severity: 'loud' }), failure('k', { what: 4 }), failure('k', { reason: null }), failure('k', { next_step: 5 })]
+  expect(failuresOf(failing(keep, ...bad, bare))).toEqual([keep, bare])
 })
 
-test('gateReason and goalReason', () => {
-  expect(gateReason({ pass: false, reason: 'tests red', gaps: ['a', { gap: 'b' }] })).toBe('tests red; a; b')
-  expect(gateReason({ pass: true })).toBe('')
-  expect(goalReason({ match_pct: 60, reason: 'AC-2 missing', out_of_spec: ['extra file'] })).toBe('AC-2 missing; extra file')
-  expect(gateReason({ reason: 'x'.repeat(500) })).toHaveLength(240)
+test('parseRows and parseRow carry failures; a row built by hand has none (failuresOf is [])', () => {
+  const f = failure('csv-export|critique|1', { what: 'Critique', next_step: 'retry 1/3' })
+  expect(parseRows(JSON.stringify([{ slug: 'csv-export', failures: [f] }]))![0]!.failures).toEqual([f])
+  expect(parseRow(JSON.stringify({ slug: 'csv-export', failures: [f] }))!.failures).toEqual([f])
+  for (const bad of ['', 'not json', '[]', '{"slug":""}', undefined, 7]) expect(parseRow(bad)).toBeNull()
+  expect(failuresOf({ slug: 'x' } as HarnessRow)).toEqual([])
+})
+
+test('reasonFor: the reason of the newest failure under a key, whole segments only; none is empty', () => {
+  const r = failing(
+    failure('r|gate|S1|1', { reason: 'one' }), failure('r|gate|S1|10', { reason: 'ten' }), failure('r|gate|S1|2', { reason: 'two' }),
+    failure('r|critique|1', { reason: 'first' }), failure('r|critique|2', { reason: 'second' }), failure('r|goal|1', { reason: 'AC-2 not met' }),
+  )
+  const fs = failuresOf(r)
+  expect(reasonFor(fs, 'r|gate|S1|1')).toBe('one')
+  expect(reasonFor(fs, 'r|gate|S1|10')).toBe('ten')
+  expect(reasonFor(fs, 'r|critique')).toBe('second')
+  expect(reasonFor(fs, 'r|goal')).toBe('AC-2 not met')
+  expect(reasonFor(fs, 'r|gate|S2|1')).toBe('')
+  expect(reasonFor(fs, 'r|gate|S')).toBe('')
+  expect(reasonFor([], 'r|goal')).toBe('')
+})
+
+test('failureToast: info is ↻ with the default timeout and no push; needs you is ⚠ and gave up is ✗, 10 s and a push', () => {
+  const info = failureToast('r', failuresOf(failing(failure('k')))[0]!)
+  expect(info).toEqual({ text: '↻ r QualityGate S1 failed: tests red; no case for empty input → retry 1/3', pushText: null })
+  const you = failureToast('r', failuresOf(failing(failure('k', { what: 'setgoal', reason: 'approve the goal spec', next_step: 'needs you', severity: 'needs you' })))[0]!)
+  expect(you).toEqual({ text: '⚠ r setgoal failed: approve the goal spec → needs you', pushText: '⚠ r setgoal failed: approve the goal spec → needs you', timeoutMs: 10_000 })
+  const gone = failureToast('r', failuresOf(failing(failure('k', { what: 'subgoal S1', next_step: 'gave up', severity: 'gave up' })))[0]!)
+  expect(gone.text.startsWith('✗ r subgoal S1 failed: ')).toBe(true)
+  expect(gone.timeoutMs).toBe(10_000)
+  expect(gone.pushText).toBe(gone.text)
+})
+
+test('failureToast: no next_step leaves the arrow out; the push text is cut at 200, the toast is not', () => {
+  const none = failureToast('r', failuresOf(failing(failure('k', { next_step: null, severity: 'gave up', reason: 'cut off' })))[0]!)
+  expect(none.text).toBe('✗ r QualityGate S1 failed: cut off')
+  const huge = failureToast('r'.repeat(150), failuresOf(failing(failure('k', { reason: 'x'.repeat(120), severity: 'gave up', next_step: 'gave up' })))[0]!)
+  expect(huge.pushText).toHaveLength(200)
+  expect(huge.text.length).toBeGreaterThan(200)
 })
 
 test('clock and sinceLast: a finished run has no elapsed', () => {
@@ -135,7 +177,7 @@ test('normalizeRow is tolerant: a missing or malformed field takes a default and
       { round: 1, sound: null, problems: [] },
       { round: 2, sound: null, problems: [{ severity: 'blocker', text: 'a b' }, { severity: 'major', text: 'c' }, { severity: 'major', text: 'd' }, { severity: 'major', text: '' }] },
     ],
-    passed: 0, failed: 0, total: 0,
+    passed: 0, failed: 0, total: 0, failures: [],
   })
   // waiting falls back to now.waiting; a numeric cost is the only cost
   const w = normalizeRow({ slug: 's', now: { stage: 'plan', waiting: { who: 'you', what: 'ok?' }, cost_usd: '3' } })!
@@ -367,6 +409,10 @@ test('band: three rows, +N for the others, harness rows only', () => {
   expect(bandLines([], { width: 190, nowMs: T0, tick: 0 })).toEqual([])
   // no cost: —; no finding: the elapsed time stays
   expect(plain(bandLines([row('b', { started_at: iso(5 * 60_000) })], { width: 190, nowMs: T0, tick: 0 })[2]!)).toBe('          — · 5m')
+})
+
+test('showArgv: node runs the engine from the plugin root on one run directory', () => {
+  expect(showArgv('/p/harness', '/w/.harness-run/r')).toEqual(['node', '/p/harness/engine/fallback-check.mjs', '--show', '/w/.harness-run/r', '--json'])
 })
 
 test('listArgv: node runs the engine from the plugin root for this folder', () => {
