@@ -21,12 +21,14 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
       old `E-xxxxxxxx` keys still resolve; a finished task's worktrees and merged branches are
       removed (or listed by `tm_clean`); tests cover naming, collisions and old-key lookup.
 
-58. **Two rule-0 nits left in the teams and graph panes**
-    - Why: user approved cards 40–43 and 50 on the demos 2026-10-22 ("그정도면 일단 오케이"); two
-      nits seen then: the graph pane's first body line `graph` repeats the frame title `Graph`; the
-      teams STORYs row `◌ report writer  running tests` pairs an idle icon with a working word.
-    - Acceptance: graph pane body starts with the run title; a STORY row's icon and doing-word agree
-      (test); demos at 190 and 110.
+59. **Mod tests check the node logic, not a hand-copied mirror; size-S spec checks can fail**
+    - Why: E-eccf9590 (card 58, merged `0b85840a`, 2026-10-22) report: `teams/hooks/mod.test.ts`
+      hand-mirrors `markOf` from `view-floor.mjs` because the tsx runner cannot import node — the
+      two can drift unseen; the demo-loop check is a blacklist, not the six `(icon, word)` pairs;
+      the harness spec template's `grep … && echo MISMATCH || echo ok` always exits 0 and its
+      split-demo command lacks `2>&1`.
+    - Acceptance: a test ties the mod's mirror to the node function (or the mirror is gone); the
+      demo check is a whitelist; the spec-template check exits non-zero on a mismatch.
 
 Mods, in the user's words: "전체적으로 mod가 더 디테일해야할거 같아 일단 있다 그 이상 이하도 아니게보인다"
 (2026-10-15); "각 스킬에 특화되도록 사용자 친화적으로!"; "팀즈 하네스 그래프 병렬 실행 시 모드 어떻게
