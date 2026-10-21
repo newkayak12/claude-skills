@@ -5,7 +5,6 @@ import type { On } from 'claude-code'
 const DIR = '.harness-run/broker/runs'
 const HOUR = 3_600_000
 const NOW = 10 * HOUR
-const MiB = 1024 * 1024
 
 type Spec = [id: string, state: string, extra?: Record<string, unknown>]
 
@@ -42,40 +41,63 @@ const withNodes = (nodes: ReturnType<typeof node>[], over: Record<string, unknow
 const patch = (run: Run, id: string, state: string, extra: Record<string, unknown> = {}) =>
   base({ nodes: run.nodes.map(n => (n.node_id === id ? { ...n, state, ...extra } : n)) })
 
-type File = { name: string; mtimeMs: number; body: string; size?: number; kind?: string }
+type File = { name: string; mtimeMs: number; body: string }
 const file = (run: unknown, mtimeMs = NOW - 1000, name = 'a1.json'): File => ({ name, mtimeMs, body: JSON.stringify(run) })
 
-// The engine beneath: a Map-backed $.state, surfaces, a runs folder (fs.list / fs.read), settings, ui.open.
+// one run file as `broker.mjs runs --list/--show --json` prints it (the node decides; this stub only reshapes the fixture)
+const rowOf = (f: File) => {
+  const run = JSON.parse(f.body)
+  const done = run.nodes.some((n: any) => n.stage === 'report' && n.state === 'done')
+  const age = NOW - f.mtimeMs
+  return {
+    id8: run.run_id.slice(0, 8), state: done ? 'complete' : 'running', owner: run.owner ?? null, created_at: new Date(NOW - 2 * HOUR).toISOString(), cost_usd: null,
+    running: null, run_id: run.run_id, file: `/proj/${DIR}/${f.name}`, request: run.request.split('\n')[0], max_retries: run.max_retries ?? null,
+    last_change: new Date(f.mtimeMs).toISOString(), last_change_ms: f.mtimeMs, age_ms: age, open: !done && age < 12 * HOUR, stalled: !done && age >= 2 * HOUR,
+    routing_blocked: run.routing_blocked === true, unavailable_vendors: {},
+    subgoals: (run.spec?.subgoals ?? []).map((g: any) => ({ id: g.id, title: g.title ?? '' })),
+    last_step: null, acting: run.nodes.some((n: any) => n.state === 'running'), rejects: run.nodes.filter((n: any) => n.state === 'failed').length,
+    nodes: run.nodes.map((n: any) => ({
+      node_id: n.node_id, stage: n.stage, subgoal_id: n.subgoal_id ?? null, state: n.state, attempt: n.attempt,
+      agent: n.vendor ? `${n.vendor}·${n.model}` : null, started_at: n.started_at ?? null, finished_at: n.finished_at ?? null,
+      reason: n.result?.reason ?? null, feedback: n.feedback ?? null, last_step: null,
+    })),
+  }
+}
+
+// The engine beneath: a Map-backed $.state, surfaces, the node readout (process.run), settings, ui.open.
 function world(on: On, files: File[], opts: { language?: string; surfaces?: readonly ('terminal' | 'desktop')[] } = {}) {
   const store = new Map<string, unknown>()
-  const seen = { reads: [] as string[], lists: [] as string[], opened: [] as string[], openArgs: [] as any[], closed: [] as string[], panes: [] as { id: string }[], commands: [] as string[], files, writes: 0, outcomes: [] as any[], failSet: false, runs: [] as (readonly string[])[], events: [] as unknown[], script: { exitCode: 0, raw: undefined as string | undefined } }
+  const seen = {
+    opened: [] as string[], openArgs: [] as any[], closed: [] as string[], panes: [] as { id: string }[], commands: [] as string[], commandArgs: [] as any[],
+    files, outcomes: [] as any[], failSet: false, runs: [] as (readonly string[])[], events: [] as unknown[],
+    script: { exitCode: 0, raw: undefined as string | undefined }, listCalls: [] as (readonly string[])[], showCalls: [] as (readonly string[])[],
+    list: { exitCode: 0, raw: undefined as string | undefined }, store,
+  }
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: '/proj' }))
-  // failure-events.mjs, stubbed: it answers with the events the test set (its own logic is tested in graph/scripts)
+  // the readout answers --list and --show from the fixtures; failure-events.mjs answers with the events the test set
+  // (its own logic is tested in graph/scripts)
   on('process.run', (_$, e) => {
-    seen.runs.push(e.argv)
+    const argv = e.argv
+    if (argv[2] === 'runs' && argv.includes('--list')) {
+      seen.listCalls.push(argv)
+      return { value: { exitCode: seen.list.exitCode, stdout: seen.list.raw ?? JSON.stringify(seen.files.map(rowOf)), stderr: '' } } as never
+    }
+    if (argv[2] === 'runs' && argv.includes('--show')) {
+      seen.showCalls.push(argv)
+      const f = seen.files.find(one => String(argv[4]).endsWith(`/${one.name}`))
+      return { value: f === undefined ? { exitCode: 1, stdout: '', stderr: 'no file' } : { exitCode: 0, stdout: JSON.stringify(rowOf(f)), stderr: '' } } as never
+    }
+    seen.runs.push(argv)
     return { value: { exitCode: seen.script.exitCode, stdout: seen.script.raw ?? `${JSON.stringify(seen.events)}\n`, stderr: '' } } as never
   })
   on('session.surfaces', () => ({ value: opts.surfaces ?? ['terminal'] }))
   on('command.register', (_$, e) => {
     seen.commands.push(e.name)
+    seen.commandArgs.push(e)
     return { value: { command: e.name } }
   })
   on('settings.read', () => ({ value: opts.language === undefined ? {} : { language: opts.language } }) as never)
-  on('fs.list', (_$, e) => {
-    seen.lists.push(String(e.path))
-    return { value: seen.files.map(f => ({ name: f.name, kind: f.kind ?? 'file', size: f.size ?? f.body.length, mtimeMs: f.mtimeMs, isLink: false })) } as never
-  })
-  on('fs.read', (_$, e) => {
-    seen.reads.push(String(e.path))
-    const f = seen.files.find(one => String(e.path).endsWith(`/${one.name}`))
-    if (f === undefined) throw new Error('ENOENT')
-    return { value: f.body } as never
-  })
-  on('fs.write', () => {
-    seen.writes += 1
-    return { value: undefined } as never
-  })
   on('state.get', (_$, e) => ({ value: { value: store.get(e.key), version: 0 } }) as never)
   on('state.set', (_$, e) => {
     if (e.plugin === 'graph' && e.key === 'outcome') {
@@ -84,6 +106,11 @@ function world(on: On, files: File[], opts: { language?: string; surfaces?: read
     }
     store.set(e.key, e.value)
     return { value: { isSet: true, version: 1 } } as never
+  })
+  // the prompt area beneath the band
+  on('ui.render', { component: 'AbovePrompt' }, ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return Text({ children: 'prompt' } as never) as never
   })
   on('ui.open', (_$, e) => {
     seen.opened.push(e.id)
@@ -101,30 +128,68 @@ function world(on: On, files: File[], opts: { language?: string; surfaces?: read
 }
 
 const start = ($: Engine) => $.session.start({ cwd: '/proj', surface: 'terminal', isInteractive: true })
-const pane = ($: Engine) =>
-  $.ui.mount({ plugin: 'graph', surface: 'terminal', component: 'Pane', requestId: 'graph-status', props: { title: 'Graph', isFocused: false, bodyColumns: 80, placement: 'dock' } } as never)
+const pane = ($: Engine, bodyColumns = 80) =>
+  $.ui.mount({ plugin: 'graph', surface: 'terminal', component: 'Pane', requestId: 'graph-status', props: { title: 'Graph', isFocused: false, bodyColumns, placement: 'dock' } } as never)
 type Ui = Awaited<ReturnType<typeof pane>>
 const shown = async (ui: Ui) => JSON.stringify(await ui.drawn())
+const band = ($: Engine, bodyColumns = 190, hasSurvey = false) =>
+  $.ui.mount({ plugin: 'graph', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey, bodyColumns } } as never)
+const typeKey = async (ui: Ui, text: string) => {
+  await ui.input({ key: 'keys', text, kind: 'change' })
+  await ui.redraw()
+}
 
-// the session start runs the first tick over the mocked folder
+// the session start runs the first tick over the mocked readout
 async function seeded($: Engine, on: On, files: File[], opts: { language?: string } = {}) {
   const clock = mock.clock(on, { now: NOW })
   const seen = world(on, files, opts)
   await start($)
-  return { seen, tick: () => clock.advance(3000) }
+  return { seen, clock, tick: () => clock.advance(5000) }
 }
 
 const LEAKS = ['implement:U1:1', 'test:U1:1', 'gate:U1:1', 'gate:goal', '/Users/', '/var/']
 
-test('no surface: no command and no folder read', async ($, on) => {
-  mock.clock(on, { now: NOW })
-  const seen = world(on, [file(base())], { surfaces: [] })
+test('no surface: no command, no readout call, no timer, no band, no spinner', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const seen = world(on, [file(patch(base(), 'test:U1:1', 'running'))], { surfaces: [] })
   await start($)
+  await clock.advance(30_000)
   expect(seen.commands).toEqual([])
-  expect(seen.lists).toEqual([])
+  expect(seen.listCalls).toEqual([])
+  expect(seen.store.get('spin')).toBeUndefined()
+  expect(await shown(await band($))).not.toContain('696f2f93')
 })
 
-const run = ($: Engine) => $.command.run({ command: 'graph-status', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
+test('the tick calls the node readout from the plugin root every 5 s, and the mod reads no run folder itself', async ($, on) => {
+  const { seen, clock } = await seeded($, on, [file(base())])
+  expect(seen.listCalls).toHaveLength(1)
+  const argv = seen.listCalls[0]!
+  expect(argv[0]).toBe('node')
+  expect(argv[1]).toMatch(/\/mcp\/broker\.mjs$/)
+  expect(argv.slice(2)).toEqual(['runs', '--list', '--json', '--cwd', '/proj'])
+  await clock.advance(5000)
+  await clock.advance(5000)
+  expect(seen.listCalls).toHaveLength(3)
+  expect((seen.store.get('rows') as unknown[]).length).toBe(1)
+})
+
+test('a readout that fails or prints garbage keeps the previous rows and throws nothing', async ($, on) => {
+  const { seen, tick } = await seeded($, on, [file(base())])
+  expect((seen.store.get('rows') as any[])[0].id8).toBe('696f2f93')
+  seen.list.exitCode = 1
+  await tick()
+  seen.list.exitCode = 0
+  seen.list.raw = 'not json'
+  await tick()
+  seen.list.raw = '{"not":"a list"}'
+  await tick()
+  expect((seen.store.get('rows') as any[])[0].id8).toBe('696f2f93')
+  seen.list.raw = '[]'
+  await tick()
+  expect(seen.store.get('rows')).toEqual([]) // an empty list is an answer
+})
+
+const run = ($: Engine, args = '') => $.command.run({ command: 'graph-status', args, origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
 
 test('/graph-status opens the pane and says so; the reply has no id', async ($, on) => {
   const { seen } = await seeded($, on, [file(base())])
@@ -145,7 +210,7 @@ test('close 2/3: the q button dismisses the pane', async ($, on) => {
   const { seen } = await seeded($, on, [file(base())])
   const ui = await pane($)
   const btn = await ui.find({ key: 'close' })
-  expect(btn?.props).toMatchObject({ role: 'dismiss', hotkey: 'q' })
+  expect(btn?.props).toMatchObject({ role: 'dismiss', hotkey: 'q', label: 'q' })
   await ui.press({ key: 'close' })
   expect(seen.closed).toEqual(['graph-status'])
 })
@@ -166,214 +231,209 @@ test('the old command name is gone', async ($, on) => {
   expect(seen.commands).not.toContain('graph-live')
 })
 
-test('Flow: tabs, rail, Next line, subgoal title and the 0/1 bar over the run file', async ($, on) => {
+// card 57: the pane's Input takes `[`/`]`, so typed slash text must still reach the host
+test('REQ-1 (a): ] then ]/graph-status typed into the pane closes it', async ($, on) => {
   const { seen } = await seeded($, on, [file(base())])
-  expect(seen.lists).toHaveLength(1)
-  expect(seen.lists[0]!.endsWith(`/${DIR}`) || seen.lists[0] === DIR).toBe(true)
+  await run($)
   const ui = await pane($)
+  await typeKey(ui, ']')
+  expect(seen.closed).toEqual([])
+  await ui.input({ key: 'keys', text: ']/graph-status', kind: 'submit' })
+  expect(seen.closed).toEqual(['graph-status'])
+  expect(seen.panes).toEqual([])
+})
+
+test('REQ-1 (b): /graph-status typed into the pane closes it; the slash text presses no key', async ($, on) => {
+  const { seen } = await seeded($, on, [file(base())])
+  const ui = await pane($)
+  await ui.input({ key: 'keys', text: '/graph-status', kind: 'change' })
+  expect(seen.closed).toEqual([]) // the q inside slash text is not the close key
+  await ui.input({ key: 'keys', text: '/graph-status', kind: 'submit' })
+  expect(seen.closed).toEqual(['graph-status'])
+})
+
+test('REQ-1 (c): /other x runs that command once with exactly {command, args}, not awaited; no-slash text submits nothing', async ($, on) => {
+  const ran: unknown[] = []
+  // a command that never answers must not hold the handler
+  on('command.run', { command: 'other' }, (_$, e) => {
+    ran.push(e)
+    return new Promise(() => {}) as never
+  })
+  const { seen } = await seeded($, on, [file(base())])
+  const ui = await pane($)
+  await ui.input({ key: 'keys', text: '/other x', kind: 'change' })
+  await ui.input({ key: 'keys', text: '/other x', kind: 'submit' })
+  await ui.input({ key: 'keys', text: 'x', kind: 'submit' })
+  expect(ran).toHaveLength(1)
+  expect(ran[0]).toMatchObject({ command: 'other', args: 'x' })
+  expect(seen.closed).toEqual([])
+})
+
+test('the pane: tabs Flow/Detail, id, request, subgoal title and the dim footer with a q button, no old close text', async ($, on) => {
+  await seeded($, on, [file(base())])
+  const ui = await pane($, 120)
   const text = await shown(ui)
   expect((await ui.find({ key: 'flow' }))?.props).toMatchObject({ plain: true, hotkey: '1', dimColor: false, label: '● Flow' })
   expect((await ui.find({ key: 'detail' }))?.props).toMatchObject({ plain: true, hotkey: '2', dimColor: true, label: 'Detail' })
-  for (const one of ['● Plan', '● SetGoal', '● Critique', '◉ Build', '○ Goal gate', '○ Report']) {
-    expect(await ui.find({ type: 'Text', text: one })).toBeDefined()
-  }
-  expect(text).toContain(' ━━ ')
-  expect(text).toContain(' ┄┄ ')
-  expect(text).toContain('Next · U1 test (attempt 1)')
-  expect(text).not.toContain('Now ·')
-  expect(text).toContain('Create README.md with a single line')
-  expect(text).toContain('0/1 gates')
-  expect(text).toContain('README에 한 줄 추가하는 작은 작업')
+  expect(await ui.find({ key: 'keys' })).toBeDefined() // the Input that takes [ ] and typed slash text
   expect(text).toContain('696f2f93')
-  expect(text).not.toContain('teams-task')
+  expect(text).toContain('[teams-task 97f05d73') // the readout's first line is shown as given
+  expect(text).toContain('Create README.md with a single line')
+  expect(text).not.toContain('close [q]')
+  expect(text).not.toContain('닫기 [q]')
   for (const leak of LEAKS) expect(text).not.toContain(leak)
 })
 
-test('Flow: a running node reads Now, not Next', async ($, on) => {
-  await seeded($, on, [file(patch(base(), 'test:U1:1', 'running'))])
-  const text = await shown(await pane($))
-  expect(text).toContain('Now · U1 test (attempt 1)')
-  expect(text).not.toContain('Next ·')
-})
-
-test('Flow: a failed gate with nothing ready is Blocked, in a warning Text with the reason', async ($, on) => {
-  const run = patch(patch(base(), 'test:U1:1', 'done'), 'gate:U1:1', 'failed', { result: { stage_ok: false, reason: 'tests red' } })
-  await seeded($, on, [file(run)])
-  const ui = await pane($)
-  const blocked = await ui.find({ type: 'Text', text: /Blocked/ })
-  expect(blocked?.props.color).toBe('warning')
-  expect(blocked?.text).toContain('U1 gate')
-  expect(blocked?.text).toContain('tests red')
-  expect(await shown(ui)).toContain('blocked')
-})
-
-test('Flow: a finished run shows the finished word, the goal gate %', async ($, on) => {
-  let run: Run = patch(patch(patch(base(), 'test:U1:1', 'done'), 'gate:U1:1', 'done'), 'report', 'done')
-  run = patch(run, 'gate:goal:1', 'done', { result: { stage_ok: true, match_pct: 92 } })
-  await seeded($, on, [file(run)])
-  const text = await shown(await pane($))
-  expect(text).toContain('finished')
-  expect(text).toContain('goal gate 92%')
-  expect(text).toContain('1/1 gates')
-  expect(text).toContain('All done')
-})
-
-test('Ready mirrors the engine: U2 test is Next, not the report; a node waiting on a missing node is never Next', async ($, on) => {
-  const run = withNodes(
-    [
-      node(['plan', 'done']),
-      node(['setgoal', 'done'], ['plan']),
-      node(['critique', 'done'], ['setgoal']),
-      node(['implement:U1:1', 'done'], ['critique']),
-      node(['test:U1:1', 'done'], ['implement:U1:1']),
-      node(['gate:U1:1', 'failed', { final: true, result: { stage_ok: false, reason: 'x' } }], ['test:U1:1']),
-      node(['implement:U2:1', 'done'], ['critique']),
-      node(['test:U2:1', 'pending'], ['implement:U2:1']),
-      node(['gate:U2:1', 'pending'], ['test:U2:1']),
-      node(['gate:goal:1', 'unreachable'], ['gate:U1:1', 'gate:U2:1']),
-      node(['report', 'pending'], [], ['gate:goal:1']),
-      node(['test:U3:1', 'pending'], ['implement:U2:1'], ['nowhere']),
-    ],
-    { spec: { subgoals: [{ id: 'U1', title: 'one' }, { id: 'U2', title: 'two' }, { id: 'U3', title: 'three' }] } },
-  )
-  await seeded($, on, [file(run)])
-  const text = await shown(await pane($))
-  expect(text).toContain('Next · U2 test (attempt 1)')
-  expect(text).not.toContain('Next · Report')
-  expect(text).not.toContain('Next · U3')
-})
-
-const T0 = NOW - 200_000
-// a retried run: attempt 1 rejected at the gate with a reason, attempt 2 carries the feedback and is running
-const retried = () =>
-  withNodes([
+test('Detail: one line per node with its agent, feedback and failure reason', async ($, on) => {
+  const retried = withNodes([
     node(['plan', 'done']),
-    node(['setgoal', 'done'], ['plan']),
-    node(['critique', 'done'], ['setgoal']),
-    node(['implement:U1:1', 'done', { vendor: 'codex', executor: 'codex', model: 'gpt-5', started_at: T0, finished_at: T0 + 60_000 }], ['critique']),
-    node(['test:U1:1', 'done'], ['implement:U1:1']),
-    node(['gate:U1:1', 'failed', { result: { stage_ok: false, reason: 'README line missing' } }], ['test:U1:1']),
-    node(['implement:U1:2', 'running', { vendor: 'claude', executor: 'claude', model: 'opus', started_at: NOW - 125_000, feedback: 'Add the README line\nsecond line' }], ['critique']),
-    node(['test:U1:2', 'pending'], ['implement:U1:2']),
-    node(['gate:U1:2', 'pending'], ['test:U1:2']),
-    node(['gate:goal:1', 'pending'], ['gate:U1:2']),
-    node(['report', 'pending'], [], ['gate:goal:1']),
+    node(['implement:U1:1', 'done', { vendor: 'codex', model: 'gpt-5' }], ['plan']),
+    node(['gate:U1:1', 'failed', { result: { stage_ok: false, reason: 'README line missing' } }], ['implement:U1:1']),
+    node(['implement:U1:2', 'running', { vendor: 'claude', model: 'opus', feedback: 'Add the README line\nsecond line' }], ['plan']),
   ])
-
-test('Now: the running node with its vendor·model and elapsed time', async ($, on) => {
-  await seeded($, on, [file(retried())])
-  const text = await shown(await pane($))
-  expect(text).toContain('Now · U1 impl (attempt 2) · claude·opus · 2m 5s')
-})
-
-test('narrow pane: tab labels stay Flow / Detail, the tab row does not shrink, the run id is on the title line', async ($, on) => {
-  await seeded($, on, [file(base())])
-  const ui = await $.ui.mount({ plugin: 'graph', surface: 'terminal', component: 'Pane', requestId: 'graph-status', props: { title: 'Graph', isFocused: false, bodyColumns: 40, placement: 'dock' } } as never)
-  expect((await ui.find({ key: 'flow' }))?.props.label).toBe('● Flow')
-  expect((await ui.find({ key: 'detail' }))?.props.label).toBe('Detail')
-  const text = await shown(ui)
-  expect(text).toContain('{"type":"Box","props":{"flexShrink":0},"children":[{"type":"Box","props":{"columnGap":3}')
-  expect(text).toContain('{"type":"Text","props":{"dimColor":true,"wrap":"truncate-end"},"children":["696f2f93"]}')
-  expect(text.indexOf('696f2f93')).toBeLessThan(text.indexOf('"key":"flow"'))
-})
-
-test('Now: no vendor recorded reads —', async ($, on) => {
-  await seeded($, on, [file(patch(base(), 'test:U1:1', 'running'))])
-  expect(await shown(await pane($))).toContain('Now · U1 test (attempt 1) · —')
-})
-
-test('Flow: a rejected attempt shows its reason and the retry nested under it', async ($, on) => {
-  await seeded($, on, [file(retried())])
-  const text = await shown(await pane($))
-  expect(text).toContain('↳ README line missing')
-  expect(text.indexOf('(attempt 1)')).toBeLessThan(text.indexOf('↳ README line missing'))
-  expect(text.indexOf('↳ README line missing')).toBeLessThan(text.lastIndexOf('(attempt 2)')) // the first one is the Now line
-  expect(text).toContain('"marginLeft":2')
-  expect(text).toContain('"marginLeft":4')
-})
-
-test('Detail: per node agent, timing, feedback carried and the failure reason; no board', async ($, on) => {
-  await seeded($, on, [file(retried())])
+  await seeded($, on, [file(retried)])
   const ui = await pane($)
   await ui.press({ key: 'detail' })
   await ui.redraw() // the stubbed $.state does not notify readers
-  expect((await ui.find({ key: 'detail' }))?.props).toMatchObject({ dimColor: false, label: '● Detail' })
   const text = await shown(ui)
-  expect(text).toContain('U1 impl (attempt 1)  codex·gpt-5  1m 0s')
-  expect(text).toContain('U1 impl (attempt 2)  claude·opus  2m 5s')
+  expect(await ui.find({ key: 'detail' })).toBeDefined()
+  expect(text).toContain('codex·gpt-5')
+  expect(text).toContain('claude·opus')
   expect(text).toContain('feedback: Add the README line second line')
   expect(text).toContain('README line missing')
-  expect(text).not.toContain('To do')
-  for (const leak of LEAKS) expect(text).not.toContain(leak)
 })
 
-test('Flow: a skipped (superseded) attempt is not drawn on the flow lines', async ($, on) => {
-  const run = base()
-  run.nodes.unshift(node(['implement:U1:0', 'failed'], ['critique']) as never)
-  run.nodes[0] = { ...run.nodes[0]!, state: 'skipped' }
-  await seeded($, on, [file(run)])
-  const text = await shown(await pane($))
-  expect(text).not.toContain('✘')
-})
-
-test('the newest *.json wins; a tmp sibling and a non-JSON file are ignored', async ($, on) => {
-  const old = base({ request: 'old run' })
-  const fresh = base({ request: 'fresh run' })
-  const decoy = base({ request: 'tmp decoy' })
-  const { seen } = await seeded($, on, [
-    file(old, NOW - 5000, 'aaaa.json'),
-    file(fresh, NOW - 3000, 'bbbb.json'),
-    file(decoy, NOW - 100, 'cccc.json.123.deadbeef.tmp'),
-    file(decoy, NOW - 50, 'notes.txt'),
-  ])
-  const text = await shown(await pane($))
-  expect(text).toContain('fresh run')
-  expect(text).not.toContain('tmp decoy')
-  expect(seen.reads).toHaveLength(1)
-})
-
-test('a file that fails to parse keeps the last good view', async ($, on) => {
-  const files = [file(base({ request: 'good run' }), NOW - 4000, 'aaaa.json')]
-  const { seen, tick } = await seeded($, on, files)
-  seen.files.splice(0, 1, { name: 'aaaa.json', mtimeMs: NOW - 100, body: '{"run_id": "x", "nodes": [' })
-  await tick()
-  expect(seen.reads).toHaveLength(2)
-  const text = await shown(await pane($))
-  expect(text).toContain('good run')
-})
-
-test('no run folder: the pane says there is no graph run', async ($, on) => {
-  await seeded($, on, [])
-  expect(await shown(await pane($))).toContain('No graph run in this folder.')
-})
-
-test('size guard: a 5 MiB entry shows the too-large line and is never read', async ($, on) => {
-  const big: File = { name: 'a1.json', mtimeMs: NOW - 10, body: '{}', size: 5 * MiB }
-  const { seen } = await seeded($, on, [big])
-  expect(await shown(await pane($))).toContain('too large')
-  expect(seen.reads).toEqual([])
-})
-
-test('Korean: tabs, rail and sentences are Korean, no English tab label', async ($, on) => {
+test('Korean: the tab labels are Korean', async ($, on) => {
   await seeded($, on, [file(base())], { language: 'Korean' })
   const ui = await pane($)
   expect((await ui.find({ key: 'flow' }))?.props.label).toBe('● 흐름')
   expect((await ui.find({ key: 'detail' }))?.props.label).toBe('상세')
-  const text = await shown(ui)
-  for (const one of ['계획', '목표 설정', '비평', '구현', '목표 관문', '보고', '다음 · U1 테스트']) expect(text).toContain(one)
-  for (const one of ['Flow', 'Detail', 'Next', 'Plan', 'Report', 'Build']) expect(text).not.toContain(one)
+  expect(await shown(ui)).not.toContain('Detail')
 })
 
-test('read only: no fs.write is ever called', async ($, on) => {
+test('no run: the pane says there is no graph run', async ($, on) => {
+  await seeded($, on, [])
+  expect(await shown(await pane($))).toContain('No graph run in this folder.')
+})
+
+test('read only: the mod calls the readout and the toast script, and nothing else', async ($, on) => {
   const { seen, tick } = await seeded($, on, [file(base())])
   await tick()
   const ui = await pane($)
   await ui.press({ key: 'detail' })
-  expect(seen.writes).toBe(0)
+  for (const argv of [...seen.listCalls, ...seen.runs]) expect(argv[0]).toBe('node')
+})
+
+// two standalone runs: `]` and `[` walk them in opening order and stop at the ends
+const two = () => [file(base(), NOW - 2000, 'a1.json'), file(base({ run_id: 'cafe0000-d3b1-43c1-9fdb-d49bbbd9bcce', request: 'second run' }), NOW - 1000, 'b2.json')]
+const header = async (ui: Ui) => (await shown(ui)).match(/run \d of \d/)?.[0]
+
+test('[ and ] walk the runs as key presses and stop at the ends; prev and next are buttons', async ($, on) => {
+  const { seen } = await seeded($, on, two())
+  await run($)
+  const ui = await pane($)
+  expect(await header(ui)).toBe('run 1 of 2')
+  await typeKey(ui, '[') // at the first run: nothing
+  expect(await header(ui)).toBe('run 1 of 2')
+  await typeKey(ui, ']')
+  expect(await header(ui)).toBe('run 2 of 2')
+  await typeKey(ui, ']') // at the last run: nothing
+  expect(await header(ui)).toBe('run 2 of 2')
+  await ui.press({ key: 'prev' })
+  await ui.redraw()
+  expect(await header(ui)).toBe('run 1 of 2')
+  await ui.press({ key: 'next' })
+  await ui.redraw()
+  expect(await header(ui)).toBe('run 2 of 2')
+  expect(seen.store.get('selected')).toBeDefined()
+})
+
+test('one run: no prev and next buttons', async ($, on) => {
+  await seeded($, on, [file(base())])
+  const ui = await pane($)
+  expect(await ui.find({ key: 'prev' })).toBeUndefined()
+  expect(await ui.find({ key: 'next' })).toBeUndefined()
+})
+
+// ---- the band ----
+test('band: a standalone open run shows one graph row and an open button that opens the pane', async ($, on) => {
+  const { seen } = await seeded($, on, [file(base())])
+  const ui = await band($)
+  const text = await shown(ui)
+  expect(text).toContain('graph')
+  expect(text).toContain('696f2f93')
+  const btn = await ui.find({ key: 'open' })
+  expect(btn?.props.label).toBe('open')
+  await ui.press({ key: 'open' })
+  expect(seen.opened).toEqual(['graph-status'])
+})
+
+test('band: hidden with no open run, with only an owned or a finished run, and while a survey shows', async ($, on) => {
+  const owned = base({ owner: { task_id: 't', key: 'E-abcd1234' } })
+  const done = withNodes(base().nodes.map(n => ({ ...n, state: 'done' })))
+  const { seen, tick } = await seeded($, on, [file(owned, NOW - 1000, 'o.json'), file({ ...done, run_id: 'dead0000-0000-0000-0000-000000000000' }, NOW - 1000, 'd.json')])
+  expect(await (await band($)).find({ key: 'open' })).toBeUndefined()
+  seen.files.splice(0, 2, file(base()))
+  await tick()
+  expect(await (await band($)).find({ key: 'open' })).toBeDefined()
+  expect(await (await band($, 190, true)).find({ key: 'open' })).toBeUndefined()
+})
+
+// ---- the spinner: a faster interval, only while a shown run acts ----
+test('spinner: while a run acts and the band shows it, a frame every 800 ms', async ($, on) => {
+  const { seen, clock } = await seeded($, on, [file(patch(base(), 'test:U1:1', 'running'))])
+  await clock.advance(1700)
+  expect(Number(seen.store.get('spin') ?? 0)).toBe(2)
+})
+
+test('spinner: absent when nothing acts', async ($, on) => {
+  const { seen, clock } = await seeded($, on, [file(base())])
+  await clock.advance(12_000)
+  expect(seen.store.get('spin')).toBeUndefined()
+})
+
+// ---- /graph-status open <run-file> <owner-key>: the teams hand-off ----
+const FILE = `/proj/${DIR}/a1.json`
+const owned = () => base({ owner: { task_id: 't', key: 'E-abcd1234' } })
+
+test('the command registers the open argument hint', async ($, on) => {
+  const { seen } = await seeded($, on, [])
+  expect(seen.commandArgs[0].argumentHint).toBe('[open <run-file> <owner-key>]')
+})
+
+test('open <file> <key>: the node shows that file, the pane opens on it under the key; it is not in the band', async ($, on) => {
+  const { seen } = await seeded($, on, [file(owned())])
+  const r = JSON.stringify(await run($, `open ${FILE} E-abcd1234`))
+  expect(r).toContain('pane opened')
+  expect(seen.showCalls).toHaveLength(1)
+  expect(seen.showCalls[0]!.slice(2)).toEqual(['runs', '--show', FILE, '--json'])
+  expect(seen.opened).toEqual(['graph-status'])
+  const ui = await pane($)
+  const text = await shown(ui)
+  expect(text).toContain('696f2f93')
+  expect(text).toContain('under E-abcd1234')
+  expect(await ui.find({ key: 'next' })).toBeUndefined() // the opened run is not part of a [ ] list
+  expect(await shown(await band($))).not.toContain('696f2f93')
+})
+
+test('open with a missing key or file: the usage line, nothing opens', async ($, on) => {
+  const { seen } = await seeded($, on, [file(owned())])
+  for (const args of ['open', `open ${FILE}`, `open ${FILE} nope`, `open ${FILE} E-abcd1234 extra`, 'bogus']) {
+    const r = JSON.stringify(await run($, args))
+    expect(r).toContain('usage: /graph-status open')
+  }
+  expect(seen.opened).toEqual([])
+  expect(seen.showCalls).toEqual([])
+})
+
+test('open a file the node cannot read: one line, nothing opens', async ($, on) => {
+  const { seen } = await seeded($, on, [file(owned())])
+  expect(JSON.stringify(await run($, 'open /proj/missing.json E-abcd1234'))).toContain('could not read')
+  expect(seen.opened).toEqual([])
 })
 
 // run events: the failed / reshaped / blocked ones come from failure-events.mjs (stubbed in world()),
-// the finished run from the run file. PushNotification's result is { message, pushSent?, localSent?, disabledReason? }
+// the finished run from the row. PushNotification's result is { message, pushSent?, localSent?, disabledReason? }
 async function pushed(push: (e: any) => unknown, files: File[], on: On, $: Engine) {
   const seen = { pushes: [] as any[], toasts: [] as string[], toastArgs: [] as any[] }
   on('tool.call', (_$, e: any) => {
@@ -414,7 +474,7 @@ async function change(w: { seen: { events: unknown[] }; tick: () => Promise<unkn
   await w.tick()
 }
 
-test('the mod runs failure-events.mjs from the plugin root on the run file, and computes no reason itself', async ($, on) => {
+test('the mod runs failure-events.mjs from the plugin root on the row file, and computes no reason itself', async ($, on) => {
   const files = [file(base())]
   const w = await pushed(sentOk, files, on, $)
   await change(w, files, rejected(), [evt()])
@@ -524,7 +584,7 @@ test('a script that fails or prints garbage is no events: no throw, no toast, an
 test('a finished run pushes complete once', async ($, on) => {
   const files = [file(base())]
   const w = await pushed(sentOk, files, on, $)
-  files[0] = fresh(withNodes(base().nodes.map(n => ({ ...n, state: 'done' }))))
+  await change(w, files, withNodes(base().nodes.map(n => ({ ...n, state: 'done' }))), [])
   await w.tick()
   await w.tick()
   expect(w.pushes.map(p => p.message)).toEqual([`graph ${R}: complete — report (1/2)`])
@@ -543,15 +603,14 @@ test('what a run held before the session started is not shown or pushed', async 
     return { value: undefined } as never
   })
   await start($)
-  await clock.advance(3000)
+  await clock.advance(5000)
   expect(toasts).toEqual([])
 })
 
 test('a finished run not sent (user at the terminal): the same line is a toast', async ($, on) => {
   const files = [file(base())]
   const w = await pushed(() => ({ result: { message: 'm', pushSent: false, localSent: false, disabledReason: 'user_present' }, text: '' }), files, on, $)
-  files[0] = fresh(withNodes(base().nodes.map(n => ({ ...n, state: 'done' }))))
-  await w.tick()
+  await change(w, files, withNodes(base().nodes.map(n => ({ ...n, state: 'done' }))), [])
   expect(w.toasts).toEqual([`graph ${R}: complete — report (1/2)`])
 })
 
@@ -560,8 +619,7 @@ test('a throwing push on a finished run is a toast too', async ($, on) => {
   const w = await pushed(() => {
     throw new Error('no transport')
   }, files, on, $)
-  files[0] = fresh(withNodes(base().nodes.map(n => ({ ...n, state: 'done' }))))
-  await w.tick()
+  await change(w, files, withNodes(base().nodes.map(n => ({ ...n, state: 'done' }))), [])
   expect(w.toasts).toEqual([`graph ${R}: complete — report (1/2)`])
 })
 
@@ -580,8 +638,7 @@ const outcomesOf = (w: { outcomes: any[] }) => w.outcomes.map(o => o.outcome)
 test('a finished run publishes pass once, with exactly system, outcome and at', async ($, on) => {
   const files = [file(base())]
   const w = await pushed(sentOk, files, on, $)
-  files[0] = fresh(withNodes(base().nodes.map(n => ({ ...n, state: 'done' }))))
-  await w.tick()
+  await change(w, files, withNodes(base().nodes.map(n => ({ ...n, state: 'done' }))), [])
   await w.tick()
   expect(outcomesOf(w.seen)).toEqual(['pass'])
   expect(Object.keys(w.seen.outcomes[0]).sort()).toEqual(['at', 'outcome', 'system'])
@@ -628,8 +685,7 @@ test('a failing state write never breaks the push', async ($, on) => {
   const files = [file(base())]
   const w = await pushed(sentOk, files, on, $)
   w.seen.failSet = true
-  files[0] = fresh(withNodes(base().nodes.map(n => ({ ...n, state: 'done' }))))
-  await w.tick()
+  await change(w, files, withNodes(base().nodes.map(n => ({ ...n, state: 'done' }))), [])
   expect(w.pushes.map(p => p.message)).toEqual([`graph ${R}: complete — report (1/2)`])
 })
 

@@ -1615,9 +1615,14 @@ async function handle(msg) {
 function runRows(cwd) {
   return listRuns(cwd)
     .sort((x, y) => (Number.isFinite(y.created_at) ? y.created_at : -1) - (Number.isFinite(x.created_at) ? x.created_at : -1))
-    .map((run) => {
-      const file = runFilePath(cwd, run.run_id);
-      return runRow(run, { file, mtimeMs: statSync(file).mtimeMs });
+    .flatMap((run) => {
+      // a run file whose name differs from its run_id, or one that vanished since the listing, is skipped
+      try {
+        const file = runFilePath(cwd, run.run_id);
+        return [runRow(run, { file, mtimeMs: statSync(file).mtimeMs })];
+      } catch {
+        return [];
+      }
     });
 }
 

@@ -2407,3 +2407,12 @@ test('runs usage line names both --list and --show', async () => {
   assert.match(out.stderr, /--list/);
   assert.match(out.stderr, /--show/);
 });
+
+test('runs --list skips a run file whose name does not match its run_id, and still lists the others', async () => {
+  await withRun(async ({ cwd, runId }) => {
+    writeFileSync(join(dirname(runFile(cwd, runId)), 'bbbb2222.json'), readFileSync(runFile(cwd, runId), 'utf8').replace(runId, 'aaaa1111-0000-0000-0000-000000000000'));
+    const out = readout(['--list', '--json', '--cwd', cwd]);
+    assert.equal(out.status, 0, out.stderr);
+    assert.deepEqual(JSON.parse(out.stdout).map((r) => r.run_id), [runId]);
+  });
+});
