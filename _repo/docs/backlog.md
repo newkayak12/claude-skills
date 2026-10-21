@@ -208,6 +208,13 @@ those, one card per EPIC (43 first; 40 and 41 before 42).
       `근거 없음` applied inconsistently to a figure whose cited capture was not handed over; agents also
       reported an unreliable open-gaps count in the summary, an empty result table for episodes with no
       figures, add-on material from another file read as ambiguous. Next: write step.
+    - Step 2 (user, 2026-10-21, with a PRD and session findings from real deck work kept outside the repo —
+      real names in them): "이건 portfolio 작업하는건데 스킬로 빼버리고 deck-builder, portfolio-feedback
+      등 사용해서 강화하게 하고" — a new `portfolio:manage` skill owns skeleton → deck.mdx, versions
+      (snapshot before every edit), evidence order and the user's corrections, a decision gate, a page-
+      reference renumber engine (tested, incl. the double-replace regression), the "to align" table; it
+      calls `material`, `feedback`/`pattern`/`rewrite` and `deck-builder` (check; build/render only when
+      told) to strengthen the deck. Fixtures fictional; no real names or employer data in the repo.
 
 ### Skeleton and length (one card per skill, next edit)
 
