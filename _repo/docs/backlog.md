@@ -21,18 +21,12 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
       old `E-xxxxxxxx` keys still resolve; a finished task's worktrees and merged branches are
       removed (or listed by `tm_clean`); tests cover naming, collisions and old-key lookup.
 
-50. **A failure toast says what failed, why, and what happens next** — built (E-910c1de2, merged by
-    hand 2026-10-21, `f8eb7de0`..`3578e337`); open until the person sees the toast demo (`mod.md` rule 0)
-    - Why: user, 2026-10-17: "야 토스트 failed 된거 떴는데 뭘 실패했는지 내용을 알 수가 없잖아". The teams
-      toast is the event's `text` from `view.mjs --format events`, only `E-6b073e8a critique:2 failed
-      (attempt 2)`. The ledger already holds the reason on the `verdict` event of the same node
-      (`reason`: "unjudgeable - P2-RUN1 tests portfolio:feedback with input the skill does not
-      handle…") and the next step on the following event (`auto_reshape` → shape:3). Most of these are
-      the engine correcting itself, so a bare "failed" alarms for nothing.
-    - Acceptance: a `node_finish` failed event carries a short reason (from its verdict, ≤1 line,
-      cut with `…`) and the next step (`retrying as shape:3`, `retry 2/3`, `needs you`, `gave up`);
-      the toast and push show both; a self-correcting retry reads as info, not as failure; the
-      same in graph and harness toasts; `view.mjs` test covers the event text.
+58. **Two rule-0 nits left in the teams and graph panes**
+    - Why: user approved cards 40–43 and 50 on the demos 2026-10-22 ("그정도면 일단 오케이"); two
+      nits seen then: the graph pane's first body line `graph` repeats the frame title `Graph`; the
+      teams STORYs row `◌ report writer  running tests` pairs an idle icon with a working word.
+    - Acceptance: graph pane body starts with the run title; a STORY row's icon and doing-word agree
+      (test); demos at 190 and 110.
 
 Mods, in the user's words: "전체적으로 mod가 더 디테일해야할거 같아 일단 있다 그 이상 이하도 아니게보인다"
 (2026-10-15); "각 스킬에 특화되도록 사용자 친화적으로!"; "팀즈 하네스 그래프 병렬 실행 시 모드 어떻게
@@ -44,33 +38,8 @@ the same letter, plus: the three-row band, priority-drop segments, dark/light th
 (user: "저건 뭘하는지 눈에 캐릭터로 보이잖아 그런 직관적인걸 원하는거야 UIUX를 고려하자고"): a glance,
 not a read — each worker's state is one icon and colour (spinner while acting; no character faces, user:
 "캐릭터눈 딱히 크게 필요는 없긴 한뎅"), and the user sees the `demo` render before a card is done.
-Cards 40–43: E-cec6daae (2026-10-18) stopped in planning; its PRDs and the boundary rulings are
-`_repo/docs/plans/mod/2026-10-18-f{1..4}-*-prd.md` and `2026-10-20-f1-f4-boundaries.md` — build from
-those, one card per EPIC (43 first; 40 and 41 before 42).
-
-40. **H. harness pane says what the run is doing** — design §4 H. Engine fields (`now.json`,
-    `--list`, severity) merged 2026-10-17; the mod is not built. Check first: `fallback-check --list`
-    reported stage "critique" while the manifest said plan and setgoal were done (unverified stale read).
-41. **T. teams pane shows every STORY at work** — design §4 T (card 28 merged; the page does not
-    render `model.harness` yet), plus the design's
-    "teams Floor" section: a Floor tab where each worker is a desk whose glyph follows its action, with
-    a hand-off feed (user: "pixel-agents 이런 느낌으로 서로 협업하느널 봤으면 좋겠어"); several open
-    EPICs listed and switchable (user: "teams 여러개 돌렸을 때 대응 안되어 있는거 같고"); a task with no
-    live driver reads stalled, not `IN_PROGRESS` (seen: 9-day-old tasks still IN_PROGRESS).
-    - Built 2026-10-21 (E-5a39da7e, merged `a486a6e1`). Left, from the demo against rule 0: header
-      `task tA running · day 15 · 4/5  close` repeats the EPIC list's `task tA` and the bar's `4/5`,
-      and `close` sits beside the footer's `q close`; the Floor keeps the old Now block, stage rail,
-      package list and bar on top of the workers and feed (the PRD's Floor is workers + feed); band
-      row 2 reads `engine band` and row 1 `board needs you 1`; P2/JUDGE idle rows say nothing. Also
-      live tmux check, mod-shot images and README/KOR lines (mod.md 1, 3, 4); confirm the
-      waiting_human-not-stalled exception.
-42. **G. graph pane: own band, owned runs, last step** — design §4 G. Broker fields merged
-    2026-10-17; no `runs --list` readout yet; the mod is not built.
-43. **S. session memo and guard read as live state** — built 2026-10-21 (`d9dd6259`, session suite 545/0); open: memo age and stale go in a right-aligned column, stale by colour not the word (user look 2026-10-21) — design §4 S. E-6ab58cc6 P3 put the fields in
-    (2026-10-17) but the demo reads as a dump (user: "사람이 보기 좋게!"): note and its age on separate
-    lists, "21 days old 21d old", guard rows unaligned, no colour by source. Close only after the
-    `mod.md` rule 0 polish and the user's look at the demo. Card 30 merged (memo toggles,
-    Esc/q close); README/KOR still say "read-only Memo pane" and `memo-pane.png` is stale.
+Cards 40–43 and 50 shipped and approved 2026-10-22 (harness, teams, graph, session panes; failure
+toasts).
 
 53. **smart-compact holds its threshold inside a long turn**
     - Why: 2026-10-18, building Phantom with the threshold at 40% the context reached ~45%: smart-compact
@@ -114,16 +83,6 @@ those, one card per EPIC (43 first; 40 and 41 before 42).
     - Why: user, 2026-10-17: "결과적으로 하위호환을 위해서 harness, graph를 두지만 (stable) 장기적인
       방향은 teams"; evaluation by a seeded matrix with repeated runs ("여러 번 돌려보는게 맞을거 같음").
     - Acceptance: the plan's Tasks 1–9 with their pass bars; after UI cards (user priority).
-
-### Mod panes — command typed again (2026-10-21)
-
-57. **teams and graph panes close on their command typed again, like harness**
-    - Why: E-339d0156 (cards 55/56, merged `0192ffac`) found the cause in harness: a pane opened with
-      `focus:true` and an autoFocus `Input` swallows the typed `/harness-status`, so no
-      `command.run` reaches the plugin; fixed by forwarding slash text from the Input (not awaited).
-      teams 0.58.0 (`teams/hooks/mod.tsx` ~492-510) has the same autoFocus Input — likely the same
-      bug (unverified); graph unchecked.
-    - Acceptance: live tmux, each pane closes on its command typed again at 190 and 110 columns.
 
 ### Subagents and parallel runs — use and clean up (user, 2026-10-17)
 
