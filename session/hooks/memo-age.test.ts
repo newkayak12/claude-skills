@@ -6,28 +6,38 @@ const NOW = Date.parse('2026-10-08T09:00:00Z')
 const DAY = 86_400_000
 const seed = (days: number) => ({ 'memo.project:/proj': [{ text: 'old fact', ts: NOW - days * DAY }] })
 const PANE = { title: 'Memo', isFocused: true, bodyColumns: 80, placement: 'inline', scroll: { bodyRows: 20 }, view: {} } as any
+const mount = ($: any) => $.ui.mount({ plugin: 'session', surface: 'terminal', component: 'Pane', requestId: 'memo', props: PANE })
 
 for (const [days, hinted] of [[13, false], [14, true]] as const) {
-  test(`${days} days old: hint ${hinted ? 'shown' : 'absent'} in list and pane, never injected`, async ($, on) => {
+  test(`${days} days old: stale hint ${hinted ? 'shown' : 'absent'} in the pane, the list keeps its wording, never injected`, async ($, on) => {
     memoWorld(on, { store: seed(days), surfaces: [] })
     const list = (await memo($, 'list')).text!
-    const pane = texts(await (await $.ui.mount({ plugin: 'session', surface: 'terminal', component: 'Pane', requestId: 'memo', props: PANE })).drawn())
+    const lines = texts(await (await mount($)).drawn())
     expect(list.includes('14d old: move to CLAUDE.md?')).toBe(hinted)
-    expect(pane.some(l => l.includes('14d old: move to CLAUDE.md?'))).toBe(hinted)
-    expect((await submit($)).context!.join('\n')).not.toMatch(/old:|CLAUDE\.md/)
+    expect(lines.includes('stale?')).toBe(hinted)
+    expect(lines.some(l => l.includes('move to CLAUDE.md') || l.includes('days old'))).toBe(false)
+    expect((await submit($)).context!.join('\n')).not.toMatch(/old:|CLAUDE\.md|stale/)
   })
 }
 
-test('a 14 day old note reads its age and the stale hint in its own row', async ($, on) => {
-  memoWorld(on, { store: seed(14), surfaces: [] })
-  const lines = texts(await (await $.ui.mount({ plugin: 'session', surface: 'terminal', component: 'Pane', requestId: 'memo', props: PANE })).drawn())
-  expect(lines).toContain('1 · project · 14 days old')
-  expect(lines).toContain('14d old: move to CLAUDE.md?')
+test('a 21 day old note reads its age once as 21d, with the stale hint, in its own row', async ($, on) => {
+  memoWorld(on, { store: seed(21) })
+  const lines = texts(await (await mount($)).drawn())
+  expect(lines).toContain('1')
+  expect(lines).toContain('project')
+  expect(lines).toContain('21d')
+  expect(lines).toContain('stale?')
+  expect(lines.filter(l => l.includes('21'))).toEqual(['21d'])
 })
 
-test('a 13 day old note has its age row and no hint', async ($, on) => {
-  memoWorld(on, { store: seed(13), surfaces: [] })
-  const lines = texts(await (await $.ui.mount({ plugin: 'session', surface: 'terminal', component: 'Pane', requestId: 'memo', props: PANE })).drawn())
-  expect(lines).toContain('1 · project · 13 days old')
-  expect(lines.some(l => l.includes('move to CLAUDE.md'))).toBe(false)
+test('a note under a day old reads today', async ($, on) => {
+  memoWorld(on, { store: seed(0) })
+  expect(texts(await (await mount($)).drawn())).toContain('today')
+})
+
+test('the row cells are number, badge, text, age and hint, left to right', async ($, on) => {
+  memoWorld(on, { store: seed(14) })
+  const lines = texts(await (await mount($)).drawn())
+  const at = lines.indexOf('old fact')
+  expect(lines.slice(at - 2, at + 3)).toEqual(['1', 'project', 'old fact', '14d', 'stale?'])
 })
