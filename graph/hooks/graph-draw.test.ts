@@ -65,6 +65,15 @@ test('band: a stalled run reads stalled with its age, dimmed, with no spinner gl
   for (const g of ['✎', '⌕', '▸', '⚖']) expect(plain(line)).not.toContain(g)
 })
 
+test('band: a stalled run that waits on the person still leads with ⚑', () => {
+  for (const w of WIDTHS) {
+    const t = plain(bandLines(demoRows('narrow'), { width: w, nowMs: DEMO_NOW, tick: 0 })[0]!)
+    expect(t.startsWith('⚑')).toBe(true)
+    expect(t).toContain('stalled ·')
+    expect(t.startsWith('◌')).toBe(false)
+  }
+})
+
 test('pane header: right part is id8 · state · age · cost · run k of n, no key names', () => {
   const r = leading('full')
   const head = plain(paneBody(r, ctxFor(190, { pos: { k: 1, n: 2 } }))[1]!)
@@ -108,8 +117,22 @@ test('pane: a rejected try is one ↳ line with reason and feedback, ending in �
   expect(wide.endsWith('…')).toBe(false)
 })
 
-test('pane: a gates count sits on the Subgoals line', () => {
-  expect(text(paneBody(leading('full'), ctxFor(190))).some(l => l.startsWith('Subgoals') && l.endsWith('gates 1/5'))).toBe(true)
+test('pane: a gates count counts gates, not attempts, on the Subgoals line', () => {
+  const gates = (s: (typeof DEMO_SCENARIOS)[number]) => text(paneBody(leading(s), ctxFor(190))).find(l => l.startsWith('Subgoals'))!
+  expect(gates('full').endsWith('gates 1/4')).toBe(true)
+  expect(gates('parallel').endsWith('gates 0/1')).toBe(true)
+  expect(gates('narrow').endsWith('gates 0/2')).toBe(true)
+})
+
+test('pane: a subgoal that has not started has no try; the last step of a run has its age', () => {
+  const sg = (s: (typeof DEMO_SCENARIOS)[number], id: string) => text(paneBody(leading(s), ctxFor(190))).find(l => l.startsWith(`${id} `))!
+  expect(sg('full', 'U3')).not.toContain('try')
+  expect(sg('full', 'U2')).toContain('try 2')
+  expect(sg('narrow', 'U2')).not.toContain('try')
+  expect(sg('parallel', 'U1')).not.toContain('try')
+  const last = text(paneBody(leading('parallel'), ctxFor(190))).find(l => l.includes('Last'))!
+  expect(last).toContain('Listed the keys that expire this month')
+  expect(last.endsWith('48m')).toBe(true)
 })
 
 test('pane: "under <key>" is in the tab row only when ctx.owner is given', () => {
@@ -158,7 +181,9 @@ test('every scenario at 190 and 110 fits: no line over its width, no break, no c
       for (const l of pane) expect(lineWidth(l)).toBeLessThanOrEqual(w - 4)
       for (const l of text(pane).filter(x => x.includes('↳'))) expect(l.endsWith('…') || cells(l) < w - 4).toBe(true)
       const head = plain(pane[1]!)
-      expect(head).toMatch(/[0-9a-f]{8} · (running|blocked|stalled|complete)( · [^·]+)? · (\$[\d.]+|—)( · run 1 of [12])?$/)
+      const pos = runPosition(ordered, null)
+      expect(head).toMatch(/[0-9a-f]{8} · (running|blocked|stalled|complete) · \d+[smhd]( \d+[smhd])? · (\$[\d.]+|—) · run \d of \d$/)
+      expect(head.endsWith(` · run ${pos.k} of ${pos.n}`)).toBe(true)
       expect(lines.filter(l => l.startsWith('# ')).length).toBe(s === 'parallel' ? 3 : 2)
     }
   }
