@@ -107,3 +107,4 @@ One per line — what the next step cannot proceed without.
 - Steps: `fit`, `feedback`, `rewrite`, `write:writer-verification`, `interview-plan`, `mock-interview`
 - Adjacent: `pattern` (how the writing reads), `deck-builder` (portfolio deck as pptx)
 - After: `think:negotiate` (offer negotiation)
+- Before: `portfolio:material` (collect retrospectives and notes into material items before writing)
