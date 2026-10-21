@@ -31,7 +31,7 @@ import { tasksRoot } from '../mcp/taskmanager.mjs';
 import { DEFAULT_VIEW_PORT, viewKey } from '../mcp/viewserver.mjs';
 import { collectTask, listTasks } from './lib/view-collect.mjs';
 import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './lib/view-render-text.mjs';
-import { notableEvents, statusLine } from './lib/view-events.mjs';
+import { notableEvents, statusLine, HOLD_MS } from './lib/view-events.mjs';
 import { summarize } from './lib/view-summary.mjs';
 import { reportPayload } from './lib/view-report.mjs';
 import { teamsView, decisionsView } from './lib/view-status.mjs';
@@ -151,21 +151,39 @@ function decisionsOutput(tasksDir, taskId, card) {
   return JSON.stringify(decisionsView(raw, ledger, { card: card || null })) + '\n';
 }
 
+// What notableEvents reads from task.json: max_retries and each node's result.reason. An unreadable
+// task.json leaves them out and the events fall back to the defaults.
+function taskFacts(tasksDir, taskId) {
+  let raw;
+  try { raw = JSON.parse(readFileSync(join(tasksDir, taskId, 'task.json'), 'utf8')); } catch { return {}; }
+  const reasons = {};
+  for (const n of Array.isArray(raw.nodes) ? raw.nodes : []) {
+    if (n && n.node_id && n.result && typeof n.result.reason === 'string') reasons[n.node_id] = n.result.reason;
+  }
+  return { reasons, ...(Number.isInteger(raw.max_retries) ? { maxRetries: raw.max_retries } : {}) };
+}
+
 // Ledgers whose file changed after `since` (mtime, ms), whatever the task's state: daemon_done and
 // daemon_exhausted are written after a task stops running, so a running-only filter would never
 // deliver them. A task.json-less dir is not listed and an unreadable one carries `error`; both skipped.
+//
+// A failed node_finish is told with its reason and next step, and held up to HOLD_MS for the event
+// that says what happens next, so an event with ts > since can sit in a ledger last written up to
+// HOLD_MS before `since`: the mtime skip is widened by that. Its reason is the latest verdict in the
+// 256 KiB tail; a verdict older than the tail is not seen and the reason is task.json's
+// result.reason for the node, else `no reason recorded`.
 function eventsOutput(tasksDir, cwd, since) {
   const want = cwd ? samePath(cwd) : null;
   const out = [];
   for (const row of listTasks(tasksDir)) {
     if (row.error) continue;
     const ledger = join(tasksDir, row.task_id, 'ledger.jsonl');
-    try { if (statSync(ledger).mtimeMs <= since) continue; } catch { continue; }
+    try { if (statSync(ledger).mtimeMs <= Math.max(0, since - HOLD_MS)) continue; } catch { continue; }
     if (want) {
       const m = collectTask(tasksDir, row.task_id);
       if (m.error || !m.cwd || samePath(m.cwd) !== want) continue;
     }
-    out.push(...notableEvents(tailLines(ledger), since));
+    out.push(...notableEvents(tailLines(ledger), since, { now: Date.now(), ...taskFacts(tasksDir, row.task_id) }));
   }
   out.sort((a, b) => a.ts - b.ts);
   return out.map((e) => JSON.stringify(e) + '\n').join('');
