@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import type { HarnessRow } from '../types'
 import {
-  ALLOWED, DEMO_NOW, DEMO_SCENARIOS, GLYPH, RAIL_GLYPHS, STATE_GLYPHS, bandLines, clip, clipLine, demoRows, fit, frame, fs, leftRight, lineWidth,
+  ALLOWED, DEMO_NOW, DEMO_SCENARIOS, GLYPH, footerFits, RAIL_GLYPHS, STATE_GLYPHS, bandLines, clip, clipLine, demoRows, fit, frame, fs, leftRight, lineWidth,
   innerWidth, paneContent, paneHead, paneLines, parseDemoArg, plain, railLine, renderDemo, spinnerFrame, stateGlyph, tabRowPlan,
 } from './harness-draw'
 import { cycleRun, doingOf, elapsedText, inStageText, openingOrder, otherRunLabel, pickRun, railItems, runPosition } from './status'
@@ -336,4 +336,17 @@ test('demo text is pinned: any change to a fixture or its layout changes a hash 
     'parallel@190': '3f00bb97:32', 'parallel@110': 'acee0b4c:32',
     'narrow@190': '4975a559:21', 'narrow@110': '12a320f1:21',
   })
+})
+
+test('footerFits: prev/next join only when keys, steps and the host submit hint fit; one run never', () => {
+  const en = { lead: '[ ] run · 1-4 tab · Esc or', tail: 'closes', prev: 'prev', next: 'next' }
+  const ko = { lead: '[ ] 실행 · 1-4 탭 · Esc 또는', tail: '로 닫기', prev: '이전', next: '다음' }
+  for (const t of [en, ko]) {
+    expect(footerFits(t, 46, 2).steps).toBe(false) // the 110-column pane
+    expect(footerFits(t, 190, 2).steps).toBe(true)
+    expect(footerFits(t, 190, 1).steps).toBe(false)
+  }
+  // edge: keys 39 + steps 11 + hint 9 = 59 cells for en
+  expect(footerFits(en, 58, 2).steps).toBe(false)
+  expect(footerFits(en, 59, 2).steps).toBe(true)
 })

@@ -316,6 +316,22 @@ export function tabRowPlan(c: PaneCtx, labels: TabLabels = TAB_LABELS): { items:
 // Columns inside the pane's own round border and padding, from the columns the engine gives the body
 export const innerWidth = (bodyColumns: number) => Math.max(20, bodyColumns - 4)
 
+// Terminal cells of a string: Hangul, CJK and full-width forms take two
+export const cells = (t: string) => [...t].reduce((n, c) => n + (/[ᄀ-ᅟ⺀-꓏가-힣＀-｠]/.test(c) ? 2 : 1), 0)
+
+// The host Input draws '⏎ submit' at the row's end; its gap plus label
+export const SUBMIT_HINT_CELLS = 1 + cells('⏎ submit')
+
+// The footer keys row (lead, [ q ], tail, then prev/next beside it): prev/next join only when keys, steps and the
+// host's submit hint all fit the width; otherwise the keys stay one row and [ ] still step
+export function footerFits(
+  t: { lead: string; tail: string; prev: string; next: string }, w: number, runs: number,
+): { steps: boolean } {
+  const keys = cells(t.lead) + 1 + 5 + 1 + cells(t.tail)
+  const steps = 1 + cells(t.prev) + 2 + cells(t.next)
+  return { steps: runs > 1 && keys + steps + SUBMIT_HINT_CELLS <= w }
+}
+
 // header, Now / last step / You, the rail
 export function paneHead(r: HarnessRow, c: PaneCtx): Line[] {
   const compact = compactAt(c.width)

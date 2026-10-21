@@ -392,7 +392,9 @@ const footerOf = async (ui: Ui): Promise<{ parts: { kind: string; text: string; 
   leaves(box)
   return { parts, joined: parts.map(x => x.text).join(' '), box: box! }
 }
-const wordsOf = (s: string) => s.split(/[\s·,]+/).filter(w => /^[\p{L}-]{2,}$|^\/harness-status$/u.test(w))
+const inputBoxOf = (footer: Node): Node =>
+  ((footer.children ?? []) as Node[]).find(k => typeof k === 'object' && k !== null && ((k.children ?? []) as Node[]).some(c => c?.type === 'Input'))!
+const wordsOf =(s: string) => s.split(/[\s·,]+/).filter(w => /^[\p{L}-]{2,}$|^\/harness-status$/u.test(w))
 
 async function footerPinned($: Engine, on: On, language: string, rows: object[]) {
   await seeded($, on, demoRun(), { language, rows })
@@ -409,6 +411,8 @@ async function footerPinned($: Engine, on: On, language: string, rows: object[])
   const cells = (s: string) => [...s].reduce((a, c) => a + (/[ᄀ-ᅟ⺀-꓏가-힣＀-｠]/.test(c) ? 2 : 1), 0)
   expect(cells(tx[0]) + 1 + 5 + 1 + cells(tx[1])).toBeLessThanOrEqual(46)
   expect(f.joined).not.toContain('/harness-status')
+  // the host Input draws '⏎ submit' beside the keys: its wrapping Box is one row high so the hint is clipped, never a 2nd/3rd row
+  expect(inputBoxOf(f.box).props).toMatchObject({ height: 1, overflow: 'hidden' })
   expect(f.parts.find(x => x.kind === 'Input')?.text).toBe('')
   expect(f.joined).not.toMatch(/\[ ?close|close \[q\]|닫기 \[q\]|q close(?!s)|q 닫기/)
   const btns = f.parts.filter(x => x.kind === 'Button').map(x => x.text)
@@ -429,7 +433,16 @@ test('footer ko, several runs: prev and next join the row, keys still once', asy
 })
 
 for (const language of ['English', 'Korean']) {
-  test(`footer ${language} at the 110-column pane width, several runs: prev and next are left out so the keys stay one row`, async ($, on) => {
+  for (const many of [false, true]) {
+    test(`footer ${language} at the 110-column pane (inner width 46), ${many ? 'several runs' : 'one run'}: prev and next left out, the Input hint cannot add a row`, async ($, on) => {
+      await seeded($, on, demoRun(), { language, rows: many ? [acting('demo'), acting('other')] : [csv()] })
+      const f = await footerOf(await pane($, 'terminal', 50))
+      expect(f.parts.filter(x => x.kind === 'Button').map(x => x.text)).toEqual(['q'])
+      expect(inputBoxOf(f.box).props).toMatchObject({ height: 1, overflow: 'hidden' })
+      expect(f.joined).not.toContain('/harness-status')
+    })
+  }
+  test(`footer ${language} at the old 48 width, several runs: prev and next left out`, async ($, on) => {
     await seeded($, on, demoRun(), { language, rows: [acting('demo'), acting('other')] })
     const f = await footerOf(await pane($, 'terminal', 48))
     expect(f.parts.filter(x => x.kind === 'Button').map(x => x.text)).toEqual(['q'])
