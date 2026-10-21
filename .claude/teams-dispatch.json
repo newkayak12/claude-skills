@@ -7,5 +7,6 @@
     "*/engine/**",
     "_repo/scripts/**"
   ],
-  "min_chars": 400
+  "min_chars": 400,
+  "allow": ["portfolio/**"]
 }
