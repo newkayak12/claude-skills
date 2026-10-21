@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import { classify, classifyFile, pushRing, redact, ruleFor, splitCommands, stopHeader, stopRows } from './guard-logic.ts'
+import { classify, classifyFile, copyReveal, pushRing, redact, splitCommands, stopCells, stopColumns, stopHeader, stopHeaderText, stopRows } from './guard-logic.ts'
 import type { Denial, Env, Verdict } from './guard-logic.ts'
 import { deniedCount, statusLine } from './status.ts'
 
@@ -153,29 +153,33 @@ export const register: Register = (on, options) => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const ring = (await read($, guardAtom)).denials
     const rows = stopRows(ring)
-    const head = stopHeader(mode, ring)
+    const width = stopColumns(rows)
     const shown = await read($, copyAtom)
     return (
       <Box flexDirection="column">
-        <Box borderStyle="round" borderColor="claude" gap={1}>
-          <Text key="title" bold>{`guard: ${head.mode} mode · ${head.stopped} stopped`}</Text>
-          <Button key="close" role="dismiss" label="close [q]" hotkey="q" onPress={() => $.ui.close({ id: PANE })} />
-        </Box>
-        {rows.length === 0 && <Text dimColor>no denials</Text>}
-        {rows.map(d => (
-          <Box key={`d-${d.id}`} flexDirection="column">
-            <Box gap={1}>
-              <Text dimColor>{d.time}</Text>
-              <Text bold>{d.tool}</Text>
-              <Box flexShrink={1}><Text wrap="truncate-end">{d.call}</Text></Box>
-              <Text dimColor>{d.rule}</Text>
-              <Text color={d.source === 'native' ? 'warning' : 'error'}>{d.sourceLabel}</Text>
-              <Button key={`copy-${d.id}`} label="Copy rule" onPress={() => update($, copyAtom, () => d.id)} />
+        <Text key="head" bold>{stopHeaderText(stopHeader(mode, ring))}</Text>
+        {rows.length === 0 && <Text>no denials</Text>}
+        {rows.map(r => {
+          const c = stopCells(r, width)
+          return (
+            <Box key={`d-${c.id}`} flexDirection="column">
+              <Box gap={1}>
+                <Text dimColor>{c.time}</Text>
+                <Text bold>{c.tool}</Text>
+                <Box flexGrow={1} flexShrink={1}><Text wrap="truncate-end">{c.what}</Text></Box>
+                <Text dimColor>{c.rule}</Text>
+                {c.source.tone === 'dim' ? <Text dimColor>{c.source.text}</Text> : <Text color={c.source.tone}>{c.source.text}</Text>}
+                <Button key={`copy-${c.id}`} label="copy" onPress={() => update($, copyAtom, () => c.id)} />
+              </Box>
+              {shown === c.id && <Text>{copyReveal(r)}</Text>}
             </Box>
-            <Text dimColor wrap="truncate-end">{d.reason.split('\n')[0]}</Text>
-            {shown === d.id && <Text>{`${ruleFor(d)}  (add it via /permissions)`}</Text>}
-          </Box>
-        ))}
+          )
+        })}
+        <Box key="foot" gap={1}>
+          <Text dimColor>Esc ·</Text>
+          <Button key="close" role="dismiss" label="q" hotkey="q" onPress={() => $.ui.close({ id: PANE })} />
+          <Text dimColor>· /session-denials closes</Text>
+        </Box>
       </Box>
     )
   }).catch(($, e, next) => next(e))
