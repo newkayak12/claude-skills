@@ -6,7 +6,8 @@
 //
 // Prints a JSON array of {key, kind, node, attempt, what, reason, next_step, severity}; `[]` on any
 // error, exit 0 (a mod guard fails open). next_step is `retry A/B`, `retrying as setgoal:N`,
-// `gave up`, or null (nothing decided yet). graph has no human wait, so never `needs you`.
+// `gave up` (a `final: true` failed node, which is what a graph_settle leaves in the run file, or a
+// routing_blocked run), or null (nothing decided yet). graph has no human wait, so never `needs you`.
 // The engine records no spec-retry field: a spec retry is read from the shape retrySpec leaves,
 // a critique skipped with its own result next to a setgoal of the following attempt.
 
@@ -54,10 +55,14 @@ export function failureEvents(run) {
     const next = run.nodes.find((x) => x.stage === 'setgoal' && x.attempt === n.attempt + 1);
     if (next !== undefined) add('reshaped', n, `retrying as setgoal:${next.attempt}`);
   }
-  if (runState(run).state === 'blocked') {
-    const spent = run.nodes.find((n) => n.state === 'failed' && n.final === true);
-    const stuck = spent ?? (run.routing_blocked ? (run.nodes.find((n) => n.state === 'failed') ?? run.nodes[0]) : undefined);
-    if (stuck !== undefined) add(spent !== undefined ? 'failed' : 'blocked', stuck, GAVE_UP);
+  // graph_settle (the broker's ledger event) leaves `final: true` on the failed node: that mark is
+  // the run-file record of it, and it counts whatever the run does next (the order-only report
+  // runs on after a settle, so the run is rarely `blocked` by then)
+  const spent = run.nodes.find((n) => n.state === 'failed' && n.final === true);
+  if (spent !== undefined) add('failed', spent, GAVE_UP);
+  else if (run.routing_blocked && runState(run).state === 'blocked') {
+    const stuck = run.nodes.find((n) => n.state === 'failed') ?? run.nodes[0];
+    if (stuck !== undefined) add('blocked', stuck, GAVE_UP);
   }
   return out;
 }

@@ -477,6 +477,15 @@ test('the push text is cut at 200 chars', async ($, on) => {
   expect(w.pushes[0].message.startsWith(`graph ${R} ${what} failed: rrrr`)).toBe(true)
 })
 
+test('the push text keeps the whole reason and the next step when a 120-char reason fits in 200', async ($, on) => {
+  const files = [file(base())]
+  const w = await pushed(sentOk, files, on, $)
+  const reason = 'r'.repeat(119) + '…'
+  await change(w, files, rejected(), [gaveUp({ reason })])
+  expect(w.pushes[0].message).toBe(`graph ${R} implement:U1:1 failed: ${reason} → gave up`)
+  expect(w.pushes[0].message.length).toBeLessThanOrEqual(200)
+})
+
 test('a new attempt failing is a new event, shown once each', async ($, on) => {
   const files = [file(base())]
   const w = await pushed(sentOk, files, on, $)

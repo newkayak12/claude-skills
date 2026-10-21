@@ -12,7 +12,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRun, expandSubgoals, retrySpec, settleFailure } from '../mcp/graph.mjs';
+import { createRun, expandSubgoals, retrySpec, runState, settleFailure } from '../mcp/graph.mjs';
 import { failureEvents } from './failure-events.mjs';
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'failure-events.mjs');
@@ -30,11 +30,6 @@ const fail = (run, id, reason, extra = {}) => {
   n.result = reason === undefined ? null : { stage_ok: false, reason };
   Object.assign(n, extra);
   return n;
-};
-// the report is order-only behind the settled gate and runs on, which ends the run `complete`:
-// a run is blocked (the state a gave up is reported in) only once nothing is left to run
-const stall = (run) => {
-  byId(run, 'report').state = 'unreachable';
 };
 const only = (events) => {
   assert.equal(events.length, 1, JSON.stringify(events));
@@ -150,12 +145,11 @@ test('a failed critique before its reshape: reported with no next step (the resh
   f.done();
 });
 
-test('a final failed node in a blocked run is gave up, severity failure', () => {
+test('a final failed node is gave up, severity failure', () => {
   const f = withSubgoal();
   const n = fail(f.run, 'implement:U1:1', 'compiler crashed');
   settleFailure(f.run, n);
   assert.equal(n.final, true);
-  stall(f.run);
   const e = only(failureEvents(f.run));
   assert.deepEqual(e, {
     key: `${f.run.run_id}:implement:U1:1:failed:1`,
@@ -177,10 +171,25 @@ test('graph_settle: the root and a downstream node it settled are one gave up, o
   const touched = settleFailure(f.run, root);
   assert.ok(touched.includes('gate:U1:1'));
   assert.equal(byId(f.run, 'gate:U1:1').final, true);
-  stall(f.run);
   const gaveUp = failureEvents(f.run).filter((e) => e.next_step === 'gave up');
   assert.equal(gaveUp.length, 1);
   assert.equal(gaveUp[0].severity, 'failure');
+  f.done();
+});
+
+test('graph_settle is gave up whatever the run does next: report ready, running or written', () => {
+  const f = withSubgoal();
+  settleFailure(f.run, fail(f.run, 'implement:U1:1', 'compiler crashed'));
+  assert.equal(runState(f.run).state, 'running'); // the order-only report is ready, so the run is not blocked
+  assert.equal(only(failureEvents(f.run)).next_step, 'gave up');
+  byId(f.run, 'report').state = 'running';
+  assert.equal(only(failureEvents(f.run)).next_step, 'gave up');
+  byId(f.run, 'report').state = 'done';
+  assert.equal(runState(f.run).state, 'complete');
+  const e = only(failureEvents(f.run));
+  assert.equal(e.next_step, 'gave up');
+  assert.equal(e.severity, 'failure');
+  assert.equal(e.reason, 'compiler crashed');
   f.done();
 });
 
