@@ -192,7 +192,8 @@ export function bandLines(ordered: readonly GraphRow[], o: { width: number; nowM
   const run = runningNode(r)
   const plus: FitSeg = { ...fs(`+${more}`, { sep: '  ', fixed: true, dim: true }), right: true }
   const parts: FitSeg[] = [
-    { parts: [dim ? seg(GLYPH.idle, { tint: 'inactive', bold: true }) : stateGlyph(r, o.tick)], fixed: true },
+    // a stalled run still leads with ⚑ when it waits on the person; otherwise the idle glyph
+    { parts: [dim && !r.routing_blocked ? seg(GLYPH.idle, { tint: 'inactive', bold: true }) : stateGlyph(r, o.tick)], fixed: true },
     fs('graph', { sep: ' ', drop: 6, dim: true }),
     fs(r.id8, { sep: ' ', bold: !dim, dim }),
   ]
@@ -282,7 +283,7 @@ function subgoalLines(r: GraphRow, c: PaneCtx): Line[] {
       id: sg.id,
       title: oneLine(sg.title),
       icons: STAGES.map(s => stageIcon(latest(mine.filter(n => n.stage === s)), c.tick)),
-      tries: impl === null ? '' : tryText(impl, null),
+      tries: impl === null || impl.state === 'pending' ? '' : tryText(impl, null),
       agent: impl?.agent ?? NONE,
       time: started.length === 0 || ended === 0 ? NONE : ageText(ended - Math.min(...started)),
     }
@@ -315,12 +316,14 @@ function subgoalLines(r: GraphRow, c: PaneCtx): Line[] {
 
 // everything but the footer: mod.tsx draws the footer's keys as buttons
 export function paneBody(r: GraphRow, c: PaneCtx): Line[] {
-  const gates = r.nodes.filter(n => n.stage === 'gate')
   const out: Line[] = [tabLine(c), headerLine(r, c), [], nowLine(r, c), lastLine(r, c)]
   if (r.routing_blocked) out.push(waitsLine(r, c))
   if (r.subgoals.length > 0) {
-    const done = gates.filter(n => n.state === 'done').length
-    out.push([], leftRight([seg('Subgoals', { bold: true })], [fs(`gates ${done}/${gates.length}`, { dim: true })], c.width, 8), ...subgoalLines(r, c))
+    // gates, not attempts: the latest gate per subgoal (one each, started or not) plus the goal gate when it exists
+    const gateOf = (id: string | null) => latest(r.nodes.filter(n => n.stage === 'gate' && n.subgoal_id === id))
+    const latestGates = [...r.subgoals.map(sg => gateOf(sg.id)), ...(gateOf(null) === null ? [] : [gateOf(null)])]
+    const done = latestGates.filter(n => n?.state === 'done').length
+    out.push([], leftRight([seg('Subgoals', { bold: true })], [fs(`gates ${done}/${latestGates.length}`, { dim: true })], c.width, 8), ...subgoalLines(r, c))
   }
   return out.map(l => clipLine(l, c.width))
 }
@@ -405,7 +408,7 @@ export function demoRows(s: DemoScenario): GraphRow[] {
     state: 'blocked', routing_blocked: true, unavailable_vendors: { gemini: 'quota' }, cost_usd: 0.8, created_at: new Date(at(52 * MIN)).toISOString(),
     last_change_ms: at(6 * MIN), age_ms: 6 * MIN, last_step: 'Listed the keys that expire this month',
     subgoals: [{ id: 'U1', title: 'Rotate and re-sign' }],
-    nodes: [node('plan', 'done', { agent: SONNET, started_at: at(52 * MIN), finished_at: at(48 * MIN) }), node('implement:U1:1', 'pending')],
+    nodes: [node('plan', 'done', { agent: SONNET, started_at: at(52 * MIN), finished_at: at(48 * MIN), last_step: 'Listed the keys that expire this month' }), node('implement:U1:1', 'pending')],
   })
   const owned = run('b33f00d1', 'Fix the retry loop in the worker', {
     owner: { task_id: 'demo-task', key: 'E-3f9a21c0/P2' }, acting: true, running: { node_id: 'implement:U1:1', last_step: null },
