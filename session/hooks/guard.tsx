@@ -165,13 +165,11 @@ export const register: Register = (on, options) => {
             <Box key={`d-${c.id}`} flexDirection="column">
               <Box gap={1}>
                 <Box flexShrink={0}><Text dimColor>{c.time}</Text></Box>
-                <Box flexShrink={0}><Text bold>{c.tool}</Text></Box>
-                <Box flexGrow={1} flexShrink={1}><Text wrap="truncate-end">{c.what}</Text></Box>
-                <Box flexShrink={0}><Text dimColor>{c.rule}</Text></Box>
-                <Box flexShrink={0}>
-                  {c.source.tone === 'dim' ? <Text dimColor>{c.source.text}</Text> : <Text color={c.source.tone}>{c.source.text}</Text>}
-                </Box>
-                <Button key={`copy-${c.id}`} label="copy" onPress={() => update($, copyAtom, () => c.id)} />
+                <Box flexShrink={1}><Text bold wrap="truncate-end">{c.tool}</Text></Box>
+                <Box flexGrow={1} flexShrink={100}><Text wrap="truncate-end">{c.what}</Text></Box>
+                <Box flexShrink={1}><Text dimColor wrap="truncate-end">{c.rule}</Text></Box>
+                <Box flexShrink={0}>{c.source.tone === 'dim' ? <Text dimColor>{c.source.text}</Text> : <Text color={c.source.tone}>{c.source.text}</Text>}</Box>
+                <Button key={`copy-${c.id}`} label="copy" flexShrink={0} onPress={() => update($, copyAtom, () => c.id)} />
               </Box>
               {shown === c.id && <Text>{copyReveal(r)}</Text>}
             </Box>
@@ -180,7 +178,7 @@ export const register: Register = (on, options) => {
         <Box key="foot" gap={1}>
           <Text dimColor>Esc ·</Text>
           <Button key="close" role="dismiss" label="q" hotkey="q" onPress={() => $.ui.close({ id: PANE })} />
-          <Text dimColor>· /session-denials closes</Text>
+          <Text dimColor wrap="truncate-end">· /session-denials closes</Text>
         </Box>
       </Box>
     )
