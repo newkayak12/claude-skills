@@ -1,6 +1,7 @@
 // Demo fixture for the Memo and Guard panes: turns a drawn tree into the lines a terminal of `cols` columns shows.
 // Test-only; the module never imports it. It mimics Ink: a row of cells, `wrap="truncate-end"` text and a
-// `flexShrink` box give way (ending in `…`), everything else keeps its width. Fictional data only.
+// `flexShrink` box give way (ending in `…`), a `flexGrow` box fills what is left, everything else keeps its width.
+// Fictional data only.
 type Node = { type?: string; props?: Record<string, any>; children?: (Node | string)[] }
 
 const chars = (s: string) => Array.from(s)
@@ -24,6 +25,9 @@ function row(cells: (Node | string)[], gap: number, cols: number): string {
     if (over <= 0) break
     parts[i] = fit(parts[i]!, Math.max(1, chars(parts[i]!).length - over))
   }
+  // a `flexGrow` box takes the width left over, so the cells after it start at the same column on every row
+  const grow = cells.findIndex(c => typeof c !== 'string' && c.props?.flexGrow)
+  if (grow >= 0 && total() < cols) parts[grow] = parts[grow]!.padEnd(chars(parts[grow]!).length + cols - total())
   return fit(parts.join(' '.repeat(gap)), cols)
 }
 
