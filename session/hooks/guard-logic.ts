@@ -455,6 +455,60 @@ export const stopRows = (ring: readonly Denial[]): StopRow[] =>
 // Every ring entry is a stop, so the count is the ring length.
 export const stopHeader = (mode: string, ring: readonly Denial[]) => ({ mode, stopped: ring.length })
 
+export const stopHeaderText = (h: { mode: string; stopped: number }) => `${h.mode} mode · ${h.stopped} stopped`
+
+// The mark says the source without colour, the tone without the word. An unknown source (the ring is a stored value) gets a dash, no mark.
+export type Tone = 'error' | 'warning' | 'dim'
+const MARKS: Record<Denial['source'], { mark: string; tone: Tone }> = {
+  guard: { mark: '✘', tone: 'error' },
+  declined: { mark: '○', tone: 'dim' },
+  native: { mark: '●', tone: 'warning' },
+}
+export const sourceMark = (source: string): { mark: string; tone: Tone; word: string } =>
+  Object.hasOwn(MARKS, source) ? { ...MARKS[source as Denial['source']], word: source } : { mark: '', tone: 'dim', word: '—' }
+
+// Widest source word, `declined`; the mark and its space come before it.
+const SOURCE_W = 8
+export const TOOL_CAP = 14
+export const RULE_CAP = 24
+
+export type StopColumns = { tool: number; rule: number; source: number }
+export const stopColumns = (rows: readonly StopRow[]): StopColumns => {
+  const widest = (f: (r: StopRow) => string, cap: number) => Math.min(cap, Math.max(0, ...rows.map(r => Array.from(f(r)).length)))
+  return { tool: widest(r => r.tool, TOOL_CAP), rule: widest(r => r.rule, RULE_CAP), source: SOURCE_W }
+}
+
+// Cut with an ellipsis past `w`, pad to it otherwise.
+const cell = (s: string, w: number) => {
+  const c = Array.from(s)
+  return (c.length <= w ? s : `${c.slice(0, Math.max(0, w - 1)).join('')}…`).padEnd(w)
+}
+
+export type StopCells = {
+  id: string
+  time: string
+  tool: string
+  what: string
+  rule: string
+  source: { mark: string; tone: Tone; word: string; text: string }
+}
+
+// The strings of one row; the pane only places them. `what` is left whole for the pane to cut to the free width.
+export const stopCells = (r: StopRow, w: StopColumns): StopCells => {
+  const s = sourceMark(r.source)
+  return {
+    id: r.id,
+    time: r.time,
+    tool: cell(r.tool, w.tool),
+    what: r.call,
+    rule: cell(r.rule, w.rule),
+    source: { ...s, text: (s.mark ? `${s.mark} ${s.word}` : s.word).padEnd(SOURCE_W + 2) },
+  }
+}
+
+// The reveal under a row whose copy button was pressed.
+export const copyReveal = (d: { tool: string; call: string }) => `${ruleFor(d)}  (add it via /permissions)`
+
 // `Bash(git reset:*)` for a Bash call, `Write(path)` for a file call.
 export function ruleFor(d: { tool: string; call: string }): string {
   if (d.tool !== 'Bash') return `${d.tool}(${d.call})`

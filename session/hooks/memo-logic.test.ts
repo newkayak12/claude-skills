@@ -1,6 +1,9 @@
 import { test, expect } from 'claude-code/testing'
 
-import { ageLabel, facts, isStale, memoRows, noteAge, sentLabel, sizeLabel } from './memo-logic.ts'
+import {
+  ageLabel, ageText, cutLine, facts, FOOTER_KEYS, FOOTER_LEAD, FOOTER_TAIL, isStale, memoHeader, memoLines, memoRows, noteAge, scopeBadge, sentLabel,
+  sentText, sizeLabel, staleHint,
+} from './memo-logic.ts'
 
 const NOW = Date.parse('2026-10-08T09:00:00Z')
 const DAY = 86_400_000
@@ -73,4 +76,97 @@ test('facts: the summary carries the sent time, or a dash before the first send,
   expect(f.summary).toBe('sent with this conversation: 14:02 · 3/1200 chars')
   expect(facts([note('abc', 0)], [], NOW).summary).toBe('sent with this conversation: — · 3/1200 chars')
   expect(facts([note('abc', 0)], [], NOW, 0).sent).toBe('—')
+})
+
+test('ageText reads today under a day, then <n>d', () => {
+  expect([0, 1, 9, 21].map(ageText)).toEqual(['today', '1d', '9d', '21d'])
+})
+
+test('staleHint: 13 days carries none, 14 and 15 carry stale?', () => {
+  expect([13, 14, 15].map(d => staleHint(note('a', d), NOW))).toEqual(['', 'stale?', 'stale?'])
+})
+
+test('scopeBadge pads both scopes to one width', () => {
+  expect(scopeBadge('global')).toBe('global ')
+  expect(scopeBadge('project')).toBe('project')
+  expect(scopeBadge('global')).toHaveLength(scopeBadge('project').length)
+})
+
+test('memoLines: global first then project, numbered as /memo rm, one line of facts each', () => {
+  const lines = memoLines([note('g1', 21)], [note('p1', 0), note('p2', 13)], NOW)
+  expect(lines).toEqual([
+    { n: 1, badge: 'global ', text: 'g1', age: '21d', stale: 'stale?' },
+    { n: 2, badge: 'project', text: 'p1', age: 'today', stale: '' },
+    { n: 3, badge: 'project', text: 'p2', age: '13d', stale: '' },
+  ])
+})
+
+test('memoLines leaves out the notes the caps cut', () => {
+  const big = (i: number) => ({ text: String(i).repeat(280), ts: NOW })
+  expect(memoLines([], [big(1), big(2), big(3), big(4), big(5)], NOW)).toHaveLength(4)
+})
+
+test('sentText: the local time once the block went out, a dash while armed even with an earlier sentAt', () => {
+  const at = new Date(2026, 9, 8, 14, 2).getTime()
+  expect(sentText(false, at)).toBe('14:02')
+  expect(sentText(true, at)).toBe('—')
+  expect(sentText(true, 0)).toBe('—')
+  expect(sentText(false, 0)).toBe('—')
+})
+
+test('memoHeader: count, size over the visible notes and the send state', () => {
+  const at = new Date(2026, 9, 8, 14, 2).getTime()
+  expect(memoHeader([note('abc', 0)], [note('de', 1)], { armed: false, sentAt: at })).toBe('2 notes · 5/1200 chars · sent 14:02')
+  expect(memoHeader([note('abc', 0)], [note('de', 1)], { armed: true, sentAt: at })).toBe('2 notes · 5/1200 chars · sent —')
+  expect(memoHeader([], [note('abc', 0)], { armed: true, sentAt: 0 })).toBe('1 note · 3/1200 chars · sent —')
+})
+
+test('memoHeader counts the visible notes only', () => {
+  const big = (i: number) => ({ text: String(i).repeat(280), ts: NOW })
+  expect(memoHeader([], [big(1), big(2), big(3), big(4), big(5)], { armed: true, sentAt: 0 })).toBe('4 notes · 1120/1200 chars · sent —')
+})
+
+test('memoHeader sums 412 characters over both scopes', () => {
+  expect(memoHeader([note('x'.repeat(200), 0)], [note('y'.repeat(212), 0)], { armed: true, sentAt: 0 })).toContain('412/1200 chars')
+})
+
+test('cutLine is +<n> not sent for the stored notes the caps left out, empty when none', () => {
+  const big = (i: number) => ({ text: String(i).repeat(280), ts: NOW })
+  expect(cutLine([], [big(1), big(2), big(3), big(4), big(5), big(6)])).toBe('+2 not sent')
+  expect(cutLine([note('a', 0)], [note('b', 0)])).toBe('')
+  expect(cutLine([], [])).toBe('')
+})
+
+test('FOOTER_KEYS are the three /memo forms', () => {
+  expect(FOOTER_KEYS).toBe('/memo add <text> · /memo rm <n> · /memo clear')
+})
+
+// AC-22: plain words only; a slash command is typed as written and a key name is a key, so both are exempt.
+const COMMANDS = /\/memo(?: add <text>| rm <n>| clear)?/g
+const KEYS = new Set(['esc', 'q'])
+const repeatedWords = (...parts: string[]): string[] => {
+  const seen = new Set<string>()
+  const again = new Set<string>()
+  for (const w of parts.join(' ').replace(COMMANDS, ' ').split(/[^A-Za-z]+/).filter(Boolean).map(s => s.toLowerCase())) {
+    if (KEYS.has(w)) continue
+    if (seen.has(w)) again.add(w)
+    seen.add(w)
+  }
+  return [...again]
+}
+
+test('the Memo title row, header and footer say no plain word twice', () => {
+  const at = new Date(2026, 9, 8, 14, 2).getTime()
+  const title = 'Memo'
+  const footer = `${FOOTER_LEAD} q ${FOOTER_TAIL}`
+  for (const [armed, sentAt] of [[false, at], [true, at], [true, 0]] as const) {
+    const header = memoHeader([note('abc', 0)], [note('de', 1)], { armed, sentAt })
+    expect(repeatedWords(title, header, footer)).toEqual([])
+  }
+})
+
+test('the repeated-word check reports a word said twice and ignores slash commands and key names', () => {
+  expect(repeatedWords('Memo', '2 notes · 5/1200 chars · sent —', '/memo add <text> · Esc, q or /memo closes chars')).toEqual(['chars'])
+  expect(repeatedWords('Memo', 'Memo list')).toEqual(['memo'])
+  expect(repeatedWords('/memo clear · /memo rm <n> · Esc, Esc, q q')).toEqual([])
 })

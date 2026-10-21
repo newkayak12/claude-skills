@@ -1,11 +1,12 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import { ageHint, clean, facts, MAX_NOTES, noteLines, parse, refusal, render, USAGE } from './memo-logic.ts'
+import {
+  ageHint, clean, cutLine, facts, FOOTER_LEAD, FOOTER_TAIL, MAX_NOTES, memoHeader, memoLines, noteLines, parse, refusal, render, USAGE,
+} from './memo-logic.ts'
 import type { Note } from './memo-logic.ts'
 
 const PANE = 'memo'
-const FOOTER = '/memo add <text> · /memo rm <n> · /memo clear · Esc, q or /memo closes'
 const GLOBAL = 'memo.global'
 const projectKey = (root: string) => `memo.project:${root}`
 
@@ -109,26 +110,28 @@ export const register: Register = (on, _options) => {
       ;({ g, p } = await load($))
     } catch {}
     const now = (await $.clock.now()) as number
-    const f = facts(g, p, now, (await read($, armed)).sentAt)
-    const lines = noteLines(f.v.g, f.v.p)
+    const sent = await read($, armed)
+    const lines = memoLines(g, p, now)
+    const cut = cutLine(g, p)
     return (
       <Box flexDirection="column">
-        <Box borderStyle="round" borderColor="claude" gap={1}>
-          <Text key="title" bold>memo</Text>
-          <Button key="close" role="dismiss" label="close [q]" hotkey="q" onPress={() => $.ui.close({ id: PANE })} />
-        </Box>
-        {lines.length === 0 && <Text dimColor>{USAGE}</Text>}
-        {lines.length > 0 && <Text key="s" dimColor wrap="truncate-end">{f.summary}</Text>}
-        {lines.length > 0 && <Text key="h" bold wrap="truncate-end">{render(g, p).split('\n')[0]}</Text>}
-        {lines.map((l, i) => <Text key={`n-${i}`} wrap="truncate-end">{l}</Text>)}
-        {f.rows.map(r => (
-          <Box key={`m-${r.n}`} gap={1}>
-            <Text dimColor>{r.meta}</Text>
-            {r.stale && <Text color="warning" wrap="truncate-end">{r.hint}</Text>}
+        {lines.length === 0 && <Text>no notes</Text>}
+        {lines.length > 0 && <Text key="h" bold wrap="truncate-end">{memoHeader(g, p, sent)}</Text>}
+        {lines.map(l => (
+          <Box key={`n-${l.n}`} gap={1}>
+            <Box flexShrink={0}><Text>{String(l.n)}</Text></Box>
+            <Box flexShrink={0}><Text>{l.badge}</Text></Box>
+            <Box flexShrink={1}><Text wrap="truncate-end">{l.text}</Text></Box>
+            <Box flexShrink={0}><Text dimColor>{l.age}</Text></Box>
+            {l.stale !== '' && <Box flexShrink={0}><Text color="warning">{l.stale}</Text></Box>}
           </Box>
         ))}
-        {f.cut !== '' && <Text color="warning" wrap="truncate-end">{f.cut}</Text>}
-        {lines.length > 0 && <Text dimColor wrap="truncate-end">{FOOTER}</Text>}
+        {cut !== '' && <Text color="warning" wrap="truncate-end">{cut}</Text>}
+        <Box key="footer" gap={1}>
+          <Text dimColor wrap="truncate-end">{FOOTER_LEAD}</Text>
+          <Button key="q" role="dismiss" label="q" hotkey="q" onPress={() => $.ui.close({ id: PANE })} />
+          <Text dimColor wrap="truncate-end">{FOOTER_TAIL}</Text>
+        </Box>
       </Box>
     )
   }).catch(($, e, next) => next(e))

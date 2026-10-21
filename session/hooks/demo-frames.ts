@@ -1,6 +1,7 @@
 // Demo fixture for the Memo and Guard panes: turns a drawn tree into the lines a terminal of `cols` columns shows.
 // Test-only; the module never imports it. It mimics Ink: a row of cells, `wrap="truncate-end"` text and a
-// `flexShrink` box give way (ending in `…`), everything else keeps its width. Fictional data only.
+// `flexShrink` box give way (ending in `…`, the highest `flexShrink` first), a `flexGrow` box fills what is left,
+// everything else keeps its width. Fictional data only.
 type Node = { type?: string; props?: Record<string, any>; children?: (Node | string)[] }
 
 const chars = (s: string) => Array.from(s)
@@ -13,17 +14,22 @@ const textOf = (n: Node | string): string =>
   typeof n === 'string' ? n : n.type === 'Button' ? String(n.props?.label ?? '') : (n.children ?? []).map(textOf).join('')
 
 const shrinks = (n: Node | string): boolean =>
-  typeof n !== 'string' && (n.props?.wrap === 'truncate-end' || n.props?.flexShrink !== undefined || (n.children ?? []).some(shrinks))
+  typeof n !== 'string' && (n.props?.wrap === 'truncate-end' || Number(n.props?.flexShrink) > 0 || (n.children ?? []).some(shrinks))
 
 function row(cells: (Node | string)[], gap: number, cols: number): string {
   const parts = cells.map(textOf)
   const total = () => parts.reduce((n, s) => n + chars(s).length, 0) + gap * (parts.length - 1)
-  const flex = cells.map((c, i) => (shrinks(c) ? i : -1)).filter(i => i >= 0)
-  for (const i of flex.reverse()) {
+  const weight = (c: Node | string) => (typeof c !== 'string' && Number(c.props?.flexShrink) > 0 ? Number(c.props!.flexShrink) : 1)
+  const flex = cells.map((c, i) => (shrinks(c) ? i : -1)).filter(i => i >= 0).reverse()
+  flex.sort((a, b) => weight(cells[b]!) - weight(cells[a]!)) // stable: last index first among equals
+  for (const i of flex) {
     const over = total() - cols
     if (over <= 0) break
     parts[i] = fit(parts[i]!, Math.max(1, chars(parts[i]!).length - over))
   }
+  // a `flexGrow` box takes the width left over, so the cells after it start at the same column on every row
+  const grow = cells.findIndex(c => typeof c !== 'string' && c.props?.flexGrow)
+  if (grow >= 0 && total() < cols) parts[grow] = parts[grow]!.padEnd(chars(parts[grow]!).length + cols - total())
   return fit(parts.join(' '.repeat(gap)), cols)
 }
 
