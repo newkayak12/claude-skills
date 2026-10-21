@@ -2,12 +2,14 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
+import { STRINGS } from './mod'
+
 type Run = { exitCode: number; stdout: string; stderr: string }
 const ok = (stdout: string): Run => ({ exitCode: 0, stdout, stderr: '' })
 
 // The engine beneath the plugin: surfaces, cwd, process.run, toast, status, command.register.
 function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], runs: (argv: readonly string[]) => Run) {
-  const seen = { argv: [] as (readonly string[])[], toasts: [] as string[], statuses: [] as (string | undefined)[], commands: [] as string[], inFlight: 0, maxInFlight: 0 }
+  const seen = { argv: [] as (readonly string[])[], toasts: [] as string[], toastEvents: [] as { text: string; timeoutMs?: number }[], statuses: [] as (string | undefined)[], commands: [] as string[], inFlight: 0, maxInFlight: 0 }
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.surfaces', () => ({ value: surfaces }))
   on('session.cwd', () => ({ value: '/proj' }))
@@ -25,6 +27,7 @@ function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], runs: (arg
   })
   on('ui.toast', (_$, e) => {
     seen.toasts.push(e.text)
+    seen.toastEvents.push(e as { text: string; timeoutMs?: number })
     return { value: undefined }
   })
   on('ui.status', (_$, e) => {
@@ -1099,4 +1102,75 @@ test('outcome: a failing state write never breaks the push', async ($, on) => {
   await clock.advance(3000)
   expect(outcomes).toEqual([])
   expect(pushes.map(p => p.message)).toEqual(['teams E-aaaaaaaa: run ended — finished: complete'])
+})
+
+// a failed node_finish carries run, node, reason, next_step and severity; the mod renders them, never the text
+const FAIL = (o: object = {}) => ({
+  ts: 1500, task_id: 'E-aaaaaaaa1', kind: 'node_finish', text: 'E-aaaaaaaa critique:2 failed (attempt 2): shape too wide → retrying as shape:3',
+  run: 'E-aaaaaaaa', node: 'critique:2', attempt: 2, reason: 'shape too wide', next_step: 'retrying as shape:3', severity: 'info', ...o,
+})
+const GAVE_UP = FAIL({ ts: 1600, node: 'accept:P1:3', reason: 'gap: no test', next_step: 'gave up', severity: 'failure' })
+const NEEDS_YOU = FAIL({ ts: 1700, node: 'plan:1', reason: 'which db?', next_step: 'needs you', severity: 'failure' })
+
+test('failure line, info: a ↻ toast with the default timeout, and no push', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { pushes, seen } = pushWorld(on, sentOk, evLines(FAIL()))
+  await start($)
+  await clock.advance(3000)
+  expect(seen.toasts).toEqual(['↻ E-aaaaaaaa critique:2 failed: shape too wide → retrying as shape:3'])
+  expect(seen.toastEvents[0].timeoutMs).toBeUndefined()
+  expect(pushes).toEqual([])
+})
+
+test('failure line, gave up and needs you: ✗ and ⚠ toasts with a 10 s timeout, each pushed once with reason and next step', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { pushes, seen } = pushWorld(on, sentOk, evLines(GAVE_UP, NEEDS_YOU))
+  await start($)
+  await clock.advance(3000)
+  await clock.advance(3000)
+  expect(seen.toasts).toEqual(['✗ E-aaaaaaaa accept:P1:3 failed: gap: no test → gave up', '⚠ E-aaaaaaaa plan:1 failed: which db? → needs you'])
+  expect(seen.toastEvents.map(t => t.timeoutMs)).toEqual([10000, 10000])
+  expect(pushes.map(p => p.message)).toEqual([
+    'teams E-aaaaaaaa: rejected — accept:P1:3 failed: gap: no test → gave up',
+    'teams E-aaaaaaaa: rejected — plan:1 failed: which db? → needs you',
+  ])
+})
+
+test('failure line, no next step: a ↻ toast without the arrow, no push', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { pushes, seen } = pushWorld(on, sentOk, evLines(FAIL({ next_step: null })))
+  await start($)
+  await clock.advance(3000)
+  expect(seen.toasts).toEqual(['↻ E-aaaaaaaa critique:2 failed: shape too wide'])
+  expect(pushes).toEqual([])
+})
+
+test('failure line: the push is cut at 200 characters, ending in …', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { pushes } = pushWorld(on, sentOk, evLines({ ...GAVE_UP, reason: 'x'.repeat(120) + ' ' + 'y'.repeat(100) }))
+  await start($)
+  await clock.advance(3000)
+  expect(pushes).toHaveLength(1)
+  expect(pushes[0].message).toHaveLength(200)
+  expect(pushes[0].message.endsWith('…')).toBe(true)
+})
+
+test('failure line, ko: the word failed is Korean in the toast and the push', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  on('settings.read', () => ({ value: { language: 'korean' } }) as never)
+  const { pushes, seen } = pushWorld(on, sentOk, evLines(GAVE_UP))
+  await start($)
+  await clock.advance(3000)
+  expect(seen.toasts).toEqual(['✗ E-aaaaaaaa accept:P1:3 ' + STRINGS.ko.nodeFailed + ': gap: no test → gave up'])
+  expect(pushes[0].message).toContain(STRINGS.ko.nodeFailed)
+})
+
+test('a line with severity but no run, node or reason toasts its text as before, and no tick throws', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const torn = { ts: 1500, task_id: 'E-aaaaaaaa1', kind: 'node_finish', text: 'E-aaaaaaaa n1 failed', severity: 'failure', next_step: 7, reason: {} }
+  const { seen } = pushWorld(on, sentOk, evLines(torn) + '{"ts":16')
+  await start($)
+  await clock.advance(3000)
+  expect(seen.toasts).toEqual(['E-aaaaaaaa n1 failed'])
+  expect(seen.toastEvents[0].timeoutMs).toBeUndefined()
 })

@@ -50,7 +50,7 @@ const en = {
   noRun: 'No teams run in this session.', loading: 'Loading...', noLog: 'Nothing logged yet.',
   workMore: '+{n} more', cmdDesc: 'Open or close the teams status pane', paneOpened: 'pane opened',
   board: 'board', inbox: 'needs you {n}', statusWaiting: 'needs you: {n} waiting - open /teams-status',
-  pushRejected: 'rejected', pushNeedsYou: 'needs you', pushEnded: 'run ended',
+  pushRejected: 'rejected', pushNeedsYou: 'needs you', pushEnded: 'run ended', nodeFailed: 'failed',
 }
 
 // one table, two languages; the type keeps the keys identical
@@ -78,7 +78,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     noRun: '이 세션에 팀 실행이 없습니다.', loading: '불러오는 중...', noLog: '아직 기록이 없습니다.',
     workMore: '+{n}건 더', cmdDesc: '팀 현황 창 열기/닫기', paneOpened: '창을 열었습니다',
     board: '보드', inbox: '확인 필요 {n}', statusWaiting: '확인 필요: {n}건 대기 - /teams-status 열기',
-    pushRejected: '반려', pushNeedsYou: '확인 필요', pushEnded: '실행 종료',
+    pushRejected: '반려', pushNeedsYou: '확인 필요', pushEnded: '실행 종료', nodeFailed: '실패',
   },
 }
 
@@ -169,11 +169,40 @@ const PUSH_KIND: Record<string, keyof typeof en> = {
   waiting_human: 'pushNeedsYou', daemon_done: 'pushEnded', daemon_exhausted: 'pushEnded',
 }
 
+// A failed node_finish as view.mjs tells it (scripts/lib/view-events.mjs): the node worked out the run,
+// node, reason and next step; the mod only draws them. A line missing any of them is an old-shape line.
+// (A local extension: teams/types is not this change's to edit.)
+type FailedFinish = TeamsEvent & { run?: string; node?: string; reason?: string; next_step?: string | null; severity?: string }
+type Failure = { run: string; node: string; reason: string; next: string | null; severity: 'info' | 'failure' }
+
+function failureOf(one: FailedFinish): Failure | null {
+  const { run, node, reason, next_step: next, severity } = one
+  if (one.kind !== 'node_finish' || typeof run !== 'string' || typeof node !== 'string' || typeof reason !== 'string') return null
+  if (severity !== 'info' && severity !== 'failure') return null
+  if (next !== undefined && next !== null && typeof next !== 'string') return null
+  return { run, node, reason, next: next ?? null, severity }
+}
+
+// `<node> failed: <reason> → <next step>`, the arrow left out when there is no next step
+const failureWhat = (f: Failure, word: string) => `${f.node} ${word}: ${f.reason}${f.next === null ? '' : ` → ${f.next}`}`
+
+const FAIL_TOAST_MS = 10000
+const PUSH_MAX = 200
+
+// info (retry, reshape, nothing yet) is ↻ with the default timeout; a person must act ⚠, gave up ✗, both held longer
+function toastFailure($: EngineInterface, f: Failure, word: string): void {
+  if (f.severity === 'info') $.ui.toast(`↻ ${f.run} ${failureWhat(f, word)}`)
+  else $.ui.toast(`${f.next === 'needs you' ? '⚠' : '✗'} ${f.run} ${failureWhat(f, word)}`, { timeoutMs: FAIL_TOAST_MS })
+}
+
 // One push for an event, `teams <task>: <kind> - <what>`. The event's text already toasts, so a push not
 // sent (user at the terminal, off, throw) needs no second toast. Fail open: nothing here may throw.
 async function pushEvent($: EngineInterface, one: TeamsEvent, sent: Set<string>): Promise<void> {
   try {
     const kind = PUSH_KIND[one.kind]
+    // a failed node pushes only once it needs you or gave up; a retry or reshape is a toast
+    const failed = failureOf(one)
+    if (failed !== null && failed.severity !== 'failure') return
     // once per (task, kind, package, attempt); the ts keeps two lines of one attempt apart
     const key = `${one.task_id}|${one.kind}|${one.package ?? ''}|${one.attempt ?? ''}|${one.text}|${one.ts}`
     if (kind === undefined || sent.has(key)) return
@@ -193,8 +222,15 @@ async function pushEvent($: EngineInterface, one: TeamsEvent, sent: Set<string>)
         // fail open: a lost outcome never costs the push
       }
     }
-    const m = /^(E-\S+) (.*)$/.exec(one.text)
-    const message = `teams ${m?.[1] ?? one.task_id}: ${STRINGS[await read($, lang)][kind]} \u2014 ${m?.[2] ?? one.text}`.slice(0, 200)
+    const words = STRINGS[await read($, lang)]
+    let message: string
+    if (failed !== null) {
+      message = `teams ${failed.run}: ${words[kind]} \u2014 ${failureWhat(failed, words.nodeFailed)}`
+      if (message.length > PUSH_MAX) message = message.slice(0, PUSH_MAX - 1) + '\u2026'
+    } else {
+      const m = /^(E-\S+) (.*)$/.exec(one.text)
+      message = `teams ${m?.[1] ?? one.task_id}: ${words[kind]} \u2014 ${m?.[2] ?? one.text}`.slice(0, 200)
+    }
     // PushNotification's result: { pushSent?, localSent? }
     await $.tool.call({ tool: 'PushNotification', message, status: 'proactive' } as never)
   } catch {
@@ -239,7 +275,9 @@ export const register: Register = on => {
           }
           if (fresh.length > 0) {
             for (const one of fresh) {
-              $.ui.toast(one.text)
+              const failure = failureOf(one)
+              if (failure === null) $.ui.toast(one.text)
+              else toastFailure($, failure, STRINGS[await read($, lang)].nodeFailed)
               await pushEvent($, one, pushed)
             }
             // a run that ended after this session began gets a card and one report call
