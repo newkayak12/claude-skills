@@ -28,8 +28,8 @@ Each figure with a unit or percentage gets a row:
 | Situation | evidence source column | label column |
 |---|---|---|
 | The material cites a measurement, doc or section | the citation | (empty) |
-| The user states it with no document behind it | the citation of the statement | `user-stated` |
-| Neither | `근거 없음` (the only missing-evidence marker) | (empty); add a gaps.md question for the source, always |
+| The user flags it as their own claim ("체감상", "내 기억으로는", "I estimate") | the citation of the statement | `user-stated` |
+| No record and no such flag (written plainly in the text) | `근거 없음` (the only missing-evidence marker) | (empty); add a gaps.md question for the source, always |
 
 Never round, convert or recompute a figure; copy it as written.
 

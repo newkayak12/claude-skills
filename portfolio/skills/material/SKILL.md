@@ -43,7 +43,7 @@ Per-part procedures: `references/parts.md`. Citation, evidence and matching: `re
 
 - (a) Only the given material is used; nothing is invented. Every filled part holds a short paraphrase plus a verbatim quote or pointer, cited `<file> + heading or line range`; for pasted or chat text, a message index, timestamp or verbatim first-words quote.
 - (b) Anything unknown goes to `gaps.md` as a question for the user and is never guessed.
-- (c) In `result.md`, a figure with a unit or percentage needs an evidence citation; a bare user statement is labelled `user-stated`; a figure with neither is marked `근거 없음` and gets a gaps.md question for its source. `근거 없음` is the only missing-evidence marker.
+- (c) In `result.md`, a figure with a unit or percentage needs an evidence citation; a figure the user flags as their own claim ("체감상", "내 기억으로는", "I estimate", or says so when handing over) is labelled `user-stated`; a figure with no citation in the handed material and no such flag is marked `근거 없음` and gets a gaps.md question for its source. A figure written plainly in the text, with no record and no flag, is the `근거 없음` case. `근거 없음` is the only missing-evidence marker.
 - (d) On a re-run, `match` decides: `same` updates the parts in place and logs it in `history.md`; `new` runs `init`; `ambiguous` asks the user to pick merge or new, never a guess. An answer to a gaps question arrives as new material: the part is updated with its citation and `answer` marks the question `[답변됨]`. An answered question is never deleted.
 - (e) Step 1 creates status `raw` and never changes status. Later steps own every other transition and name themselves with `--later-step`; each is logged in `history.md`.
 - (f) Content stays in the language of the material. Personal or confidential data is kept as given and stored only in the user's project.
@@ -56,7 +56,7 @@ Per-part procedures: `references/parts.md`. Citation, evidence and matching: `re
 1. **Read** every handed file or pasted text in full. Split it into episodes (one problem → decision → result story each). No episode found → say so and stop.
 2. **Identify** each episode: `id` from source and title, then `match`.
 3. **Branch** on the result (rule d). Stop on `ambiguous` for that episode and ask; continue with the others.
-4. **Fill** the seven parts per `references/parts.md`: `init` for `new`; for `same`, read the item's parts and compare the episode statement by statement, then add each statement the parts lack in place, cited. Apply rules (a)-(c) line by line. For each answered gaps question, `answer` it.
+4. **Fill** the seven parts per `references/parts.md`: `init` for `new`; for `same`, read the item's parts and compare the episode statement by statement, then add each statement the parts lack in place, cited. Apply rules (a)-(c) line by line. Write parts with the file tools (Write/Edit), never shell `echo` or heredocs: citations hold quotes and `#`, which break shell quoting. Re-read each file you wrote and check no line ends mid-citation. For each answered gaps question, `answer` it after the part is updated, with `--question` set to the open line exactly as it stands after `- `, `[part]` prefix included.
 5. **Record**: `log` one note per item created or changed (source, what changed); skip it for an item that did not change (rule i). Never pass `--status`.
 6. **Index and scan**: run `index`, then `foreign`.
 7. **Summarize** per the template.
