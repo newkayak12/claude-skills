@@ -52,6 +52,9 @@ export const lineWidth = (l: Line) => l.reduce((n, s) => n + cells(s.t), 0)
 // cut to w cells; the cut ends in …
 export function clipLine(l: Line, w: number): Line {
   if (lineWidth(l) <= w) return l
+  // trailing spaces are not text: a line that fits without them is not cut, so a lone `—` is never cut to `—…`
+  const last0 = l[l.length - 1]
+  if (last0 !== undefined && last0.t.trimEnd() !== last0.t) return clipLine([...l.slice(0, -1), ...(last0.t.trimEnd() === '' ? [] : [{ ...last0, t: last0.t.trimEnd() }])], w)
   if (w <= 0) return []
   const out: Line = []
   let left = w - 1
@@ -229,15 +232,23 @@ export const paneFooter = (n: number): Line => [seg(n >= 2 ? '[ prev next ]  [ q
 
 const tabLine = (c: PaneCtx): Line => [seg('graph', { bold: true }), ...(c.owner !== undefined ? [seg(`  under ${c.owner}`, { dim: true })] : [])]
 
-function headerLine(r: GraphRow, c: PaneCtx): Line {
-  const right = [
+// The header keeps its right part (id8 · state · age · cost · run k of n) whole and cuts the title first. When the
+// title would be left under HEAD_TITLE_MIN cells beside it, the right part moves to a line of its own under the title,
+// and `run k of n` shortens to `k/n` only when even that line is too wide.
+const HEAD_TITLE_MIN = 12
+function headerLines(r: GraphRow, c: PaneCtx): Line[] {
+  const right = (run: string): FitSeg[] => [
     fs(r.id8, { fixed: true, bold: true }),
     fs(stateWord(r), { sep: ' · ', fixed: true }),
-    fs(sinceText(createdMs(r), c.nowMs), { sep: ' · ', drop: 2 }),
+    fs(sinceText(createdMs(r), c.nowMs), { sep: ' · ', fixed: true }),
     fs(costText(r), { sep: ' · ', fixed: true }),
-    fs(`run ${c.pos.k} of ${c.pos.n}`, { sep: ' · ', drop: 1 }),
+    fs(run, { sep: ' · ', fixed: true }),
   ]
-  return leftRight([seg(r.request, { bold: true })], right, c.width, 20)
+  const full = fit(right(`run ${c.pos.k} of ${c.pos.n}`), 1000)
+  const title: Line = [seg(r.request, { bold: true })]
+  if (lineWidth(full) + 2 + Math.min(lineWidth(title), HEAD_TITLE_MIN) <= c.width) return [leftRight(title, right(`run ${c.pos.k} of ${c.pos.n}`), c.width, HEAD_TITLE_MIN)]
+  const below = lineWidth(full) <= c.width ? full : fit(right(`${c.pos.k}/${c.pos.n}`), c.width)
+  return [clipLine(title, c.width), [seg(' '.repeat(Math.max(0, c.width - lineWidth(below)))), ...below]]
 }
 
 function nowLine(r: GraphRow, c: PaneCtx): Line {
@@ -296,10 +307,12 @@ function subgoalLines(r: GraphRow, c: PaneCtx): Line[] {
   const col = (f: (p: (typeof per)[number]) => string) => Math.max(0, ...per.map(p => cells(f(p))))
   const idW = col(p => p.id)
   const tryW = col(p => p.tries)
-  const agentW = Math.min(24, col(p => p.agent))
+  let agentW = Math.min(24, col(p => p.agent))
   const timeW = col(p => p.time)
-  const rest = c.width - (idW + 2) - 7 - (tryW + 2) - (agentW + 2) - timeW
-  const titleW = Math.max(8, Math.min(col(p => p.title), rest))
+  const restOf = () => c.width - (idW + 2) - 7 - (tryW + 2) - (agentW + 2) - timeW
+  // in a narrow pane the agent column gives way before the title falls under 8 cells, so no column's tail is cut
+  if (restOf() < 8) agentW = Math.max(Math.min(agentW, 6), agentW - (8 - restOf()))
+  const titleW = Math.max(4, Math.min(col(p => p.title), restOf()))
   const out: Line[] = []
   for (const p of per) {
     const icons: Seg[] = p.icons.flatMap((s, i) => (i > 0 ? [seg(' '), s] : [s]))
@@ -321,7 +334,7 @@ function subgoalLines(r: GraphRow, c: PaneCtx): Line[] {
 
 // everything but the footer: mod.tsx draws the footer's keys as buttons
 export function paneBody(r: GraphRow, c: PaneCtx): Line[] {
-  const out: Line[] = [tabLine(c), headerLine(r, c), [], nowLine(r, c), lastLine(r, c)]
+  const out: Line[] = [tabLine(c), ...headerLines(r, c), [], nowLine(r, c), lastLine(r, c)]
   if (r.routing_blocked) out.push(waitsLine(r, c))
   if (r.subgoals.length > 0) {
     // gates, not attempts: the latest gate per subgoal (one each, started or not) plus the goal gate when it exists
@@ -347,7 +360,7 @@ export function detailLines(r: GraphRow, c: PaneCtx): Line[] {
     name: `${nodeLabel(n)}${n.attempt !== null && n.attempt > 1 ? ` ${slot(w.attempt, n.attempt)}` : ''}`,
   }))
   const nameW = Math.max(0, ...shown.map(x => cells(x.name)))
-  const out: Line[] = [tabLine(c), headerLine(r, c), []]
+  const out: Line[] = [tabLine(c), ...headerLines(r, c), []]
   for (const { n, name } of shown) {
     out.push([stageIcon(n, c.tick), seg(' '), seg(pad(name, nameW + 2)), seg(n.agent ?? NONE, { dim: true })])
     const feedback = oneLine(n.feedback)

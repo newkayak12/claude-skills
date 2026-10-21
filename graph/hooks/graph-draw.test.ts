@@ -7,7 +7,10 @@ import type { Line, PaneCtx } from './graph-draw'
 import { cycleRun, openingOrder, pickRun, runPosition, standalone } from './status'
 import type { GraphRow } from '../types'
 
-const WIDTHS = [190, 110]
+// the terminal widths the request names (190, 110) and the side pane's real widths in them (~78, ~46 cells)
+const WIDTHS = [190, 110, 78, 46]
+const HEAD = /[0-9a-f]{8} · (running|blocked|stalled|complete) · \d+[smhd]( \d+[smhd])? · (\$[\d.]+|—) · (run \d of \d|\d\/\d)$/
+const headOf = (pane: Line[]) => pane.slice(1, 3).map(plain).find(l => HEAD.test(l)) ?? ''
 const ctxFor = (w: number, over: Partial<PaneCtx> = {}): PaneCtx => ({ width: w - 4, nowMs: DEMO_NOW, tick: 0, pos: { k: 1, n: 1 }, ...over })
 const leading = (s: (typeof DEMO_SCENARIOS)[number]) => pickRun(openingOrder(standalone(demoRows(s)), {}), null)!
 const text = (ls: Line[]) => ls.map(plain)
@@ -76,9 +79,44 @@ test('band: a stalled run that waits on the person still leads with ⚑', () => 
 
 test('pane header: right part is id8 · state · age · cost · run k of n, no key names', () => {
   const r = leading('full')
-  const head = plain(paneBody(r, ctxFor(190, { pos: { k: 1, n: 2 } }))[1]!)
+  const head = headOf(paneBody(r, ctxFor(190, { pos: { k: 1, n: 2 } })))
   expect(head.endsWith('c4e1f2a9 · running · 38m · $3.40 · run 1 of 2')).toBe(true)
   expect(head).not.toMatch(/\bq\b|\[|\]/)
+})
+
+test('pane header: at every width the right part is whole (id8, state, age, cost, run k of n) and the title is what is cut', () => {
+  for (const s of DEMO_SCENARIOS) {
+    const r = leading(s)
+    for (const w of WIDTHS) {
+      const pane = paneBody(r, ctxFor(w, { pos: { k: 2, n: 3 } }))
+      const head = headOf(pane)
+      expect(head).toMatch(HEAD)
+      expect(head).toContain(r.id8)
+      expect(head).toMatch(/ · (\$[\d.]+|—) · (run 2 of 3|2\/3)$/)
+      // down to 78 cells the words stay; the title never pushes a piece of the right part out
+      if (w >= 78) expect(head.endsWith('run 2 of 3')).toBe(true)
+      for (const l of pane.slice(0, 4)) expect(lineWidth(l)).toBeLessThanOrEqual(w - 4)
+    }
+  }
+  // the title is cut first: 78 cells keeps the whole right part on the title's line with a cut title
+  const r = leading('full')
+  const one = plain(paneBody(r, ctxFor(78))[1]!)
+  expect(one.endsWith('c4e1f2a9 · running · 38m · $3.40 · run 1 of 1')).toBe(true)
+  expect(one.includes('…')).toBe(true)
+  // 46 cells: the right part has its own line under the title
+  const two = paneBody(r, ctxFor(46)).map(plain)
+  expect(two[1]!.startsWith('Migrate')).toBe(true)
+  expect(two[2]!.trim().startsWith('c4e1f2a9')).toBe(true)
+})
+
+test('a lone — is not cut to —…: trailing spaces are not text', () => {
+  const l: Line = [{ t: 'ab' }, { t: '   ' }, { t: '—' }, { t: '   ' }]
+  expect(plain(clipLine(l, 6))).toBe('ab   —')
+  for (const s of DEMO_SCENARIOS) {
+    for (const w of WIDTHS) {
+      for (const line of renderDemo(s, w).split('\n')) expect(line).not.toMatch(/(^|\s)—…/)
+    }
+  }
 })
 
 test('pane: a Now line, a last-step line with its age, and — when the last step is null', () => {
@@ -101,7 +139,13 @@ test('pane: each subgoal is one line and its columns start at the same cell on e
     const sg = lines.filter(l => /^U\d/.test(plain(l)))
     expect(sg.length).toBe(3)
     const offsets = (l: Line) => l.map((_, i) => lineWidth(l.slice(0, i)))
-    for (const l of sg.slice(1)) expect(offsets(l)).toEqual(offsets(sg[0]!))
+    // a row that ends early (trailing spaces trimmed) has fewer segments; the ones it has start at the same cells
+    for (const l of sg.slice(1)) {
+      const a = offsets(l)
+      const b = offsets(sg[0]!)
+      const n = Math.min(a.length, b.length)
+      expect(a.slice(0, n)).toEqual(b.slice(0, n))
+    }
     expect(plain(sg[1]!)).toContain('try 2')
     expect(plain(sg[1]!)).toContain('codex·gpt-5')
   }
@@ -180,10 +224,10 @@ test('every scenario at 190 and 110 fits: no line over its width, no break, no c
       const pane = paneBody(pickRun(ordered, null)!, ctxFor(w, { pos: runPosition(ordered, null) }))
       for (const l of pane) expect(lineWidth(l)).toBeLessThanOrEqual(w - 4)
       for (const l of text(pane).filter(x => x.includes('↳'))) expect(l.endsWith('…') || cells(l) < w - 4).toBe(true)
-      const head = plain(pane[1]!)
+      const head = headOf(pane)
       const pos = runPosition(ordered, null)
-      expect(head).toMatch(/[0-9a-f]{8} · (running|blocked|stalled|complete) · \d+[smhd]( \d+[smhd])? · (\$[\d.]+|—) · run \d of \d$/)
-      expect(head.endsWith(` · run ${pos.k} of ${pos.n}`)).toBe(true)
+      expect(head).toMatch(HEAD)
+      expect(head.endsWith(` · run ${pos.k} of ${pos.n}`) || head.endsWith(` · ${pos.k}/${pos.n}`)).toBe(true)
       expect(lines.filter(l => l.startsWith('# ')).length).toBe(s === 'parallel' ? 3 : 2)
     }
   }
@@ -199,8 +243,8 @@ test('parallel shows two standalone runs and no owned run; [ ] reach both', () =
   expect(cycleRun(ordered, null, 1)).toBe(ordered[1]!.run_id)
   for (const w of WIDTHS) {
     const out = renderDemo('parallel', w)
-    expect(out).toContain('run 1 of 2')
-    expect(out).toContain('run 2 of 2')
+    expect(out).toMatch(/run 1 of 2|· 1\/2/)
+    expect(out).toMatch(/run 2 of 2|· 2\/2/)
     expect(out).toContain('[ prev next ]  [ q ] close')
     expect(out).not.toContain('b33f00d1')
     expect(out).not.toContain('E-3f9a21c0/P2')
