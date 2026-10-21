@@ -13,7 +13,9 @@ const textOf = (n: Node | string): string =>
   typeof n === 'string' ? n : n.type === 'Button' ? String(n.props?.label ?? '') : (n.children ?? []).map(textOf).join('')
 
 const shrinks = (n: Node | string): boolean =>
-  typeof n !== 'string' && (n.props?.wrap === 'truncate-end' || n.props?.flexShrink !== undefined || (n.children ?? []).some(shrinks))
+  typeof n !== 'string' &&
+  n.props?.flexShrink !== 0 &&
+  (n.props?.wrap === 'truncate-end' || n.props?.flexShrink !== undefined || (n.children ?? []).some(shrinks))
 
 function row(cells: (Node | string)[], gap: number, cols: number): string {
   const parts = cells.map(textOf)
