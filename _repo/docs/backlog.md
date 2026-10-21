@@ -59,7 +59,7 @@ those, one card per EPIC (43 first; 40 and 41 before 42).
     live driver reads stalled, not `IN_PROGRESS` (seen: 9-day-old tasks still IN_PROGRESS).
 42. **G. graph pane: own band, owned runs, last step** — design §4 G. Broker fields merged
     2026-10-17; no `runs --list` readout yet; the mod is not built.
-43. **S. session memo and guard read as live state** — built 2026-10-21 (`d9dd6259`, session suite 545/0); open until the person approves the demo — design §4 S. E-6ab58cc6 P3 put the fields in
+43. **S. session memo and guard read as live state** — built 2026-10-21 (`d9dd6259`, session suite 545/0); open: memo age and stale go in a right-aligned column, stale by colour not the word (user look 2026-10-21) — design §4 S. E-6ab58cc6 P3 put the fields in
     (2026-10-17) but the demo reads as a dump (user: "사람이 보기 좋게!"): note and its age on separate
     lists, "21 days old 21d old", guard rows unaligned, no colour by source. Close only after the
     `mod.md` rule 0 polish and the user's look at the demo. Card 30 merged (memo toggles,
