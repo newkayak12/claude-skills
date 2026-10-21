@@ -24,11 +24,12 @@ export type SummaryTask = {
 // `view.mjs --once --format summary` floor part (teams/scripts/lib/view-floor.mjs): per listed task
 export type WorkState = 'acting' | 'idle' | 'you' | 'done' | 'stalled'
 export type SummaryItem = {
-  key: string; title: string; state: WorkState | 'failed'; doing: string; last_verdict: string | null
+  key: string; title: string; state: WorkState | 'failed'; doing: string; icon: string; word: string; word_key: string; last_verdict: string | null
   cost_usd: number | null; cost_estimated: boolean; try: number | null; max: number | null
   live: boolean; elapsed_ms: number | null; run_file: string | null; owner_key: string
 }
-export type SummaryWorker = { id: string; state: WorkState; doing: string }
+// icon, word, word_key: node's one state -> mark (view-floor.mjs markOf); word_key is '' for a live word, else the state to localize
+export type SummaryWorker = { id: string; state: WorkState; doing: string; icon: string; word: string; word_key: string }
 export type Handoff = { time: string; from: string; what: string; to: string }
 export type SummaryTaskEntry = SummaryTask & {
   task_id: string; created_at: number | null

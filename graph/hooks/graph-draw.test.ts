@@ -10,7 +10,7 @@ import type { GraphRow } from '../types'
 // the terminal widths the request names (190, 110) and the side pane's real widths in them (~78, ~46 cells)
 const WIDTHS = [190, 110, 78, 46]
 const HEAD = /[0-9a-f]{8} · (running|blocked|stalled|complete) · \d+[smhd]( \d+[smhd])? · (\$[\d.]+|—) · (run \d of \d|\d\/\d)$/
-const headOf = (pane: Line[]) => pane.slice(1, 3).map(plain).find(l => HEAD.test(l)) ?? ''
+const headOf = (pane: Line[]) => pane.slice(0, 2).map(plain).find(l => HEAD.test(l)) ?? ''
 const ctxFor = (w: number, over: Partial<PaneCtx> = {}): PaneCtx => ({ width: w - 4, nowMs: DEMO_NOW, tick: 0, pos: { k: 1, n: 1 }, ...over })
 const leading = (s: (typeof DEMO_SCENARIOS)[number]) => pickRun(openingOrder(standalone(demoRows(s)), {}), null)!
 const text = (ls: Line[]) => ls.map(plain)
@@ -100,13 +100,13 @@ test('pane header: at every width the right part is whole (id8, state, age, cost
   }
   // the title is cut first: 78 cells keeps the whole right part on the title's line with a cut title
   const r = leading('full')
-  const one = plain(paneBody(r, ctxFor(78))[1]!)
+  const one = plain(paneBody(r, ctxFor(78))[0]!)
   expect(one.endsWith('c4e1f2a9 · running · 38m · $3.40 · run 1 of 1')).toBe(true)
   expect(one.includes('…')).toBe(true)
   // 46 cells: the right part has its own line under the title
   const two = paneBody(r, ctxFor(46)).map(plain)
-  expect(two[1]!.startsWith('Migrate')).toBe(true)
-  expect(two[2]!.trim().startsWith('c4e1f2a9')).toBe(true)
+  expect(two[0]!.startsWith('Migrate')).toBe(true)
+  expect(two[1]!.trim().startsWith('c4e1f2a9')).toBe(true)
 })
 
 test('a lone — is not cut to —…: trailing spaces are not text', () => {
@@ -179,18 +179,34 @@ test('pane: a subgoal that has not started has no try; the last step of a run ha
   expect(last.endsWith('48m')).toBe(true)
 })
 
-test('pane: "under <key>" is in the tab row only when ctx.owner is given', () => {
+test('pane: the body starts with the run title, never a standalone `graph` line, at every width', () => {
+  const cutOf = (l: string) => l.replace(/\s+\S+ · (running|blocked|stalled|complete) · .*$/, '').replace(/…$/, '').trimEnd()
+  for (const s of DEMO_SCENARIOS) {
+    const r = leading(s)
+    for (const w of WIDTHS) {
+      for (const first of [paneBody(r, ctxFor(w))[0]!, detailLines(r, ctxFor(w))[0]!].map(plain)) {
+        expect(first.startsWith('graph')).toBe(false)
+        expect(r.request.startsWith(cutOf(first))).toBe(true)
+        expect(cutOf(first).length).toBeGreaterThan(0)
+      }
+    }
+  }
+})
+
+test('pane: "under <key>" is one dim line right under the header, only when ctx.owner is given', () => {
   const r = leading('full')
   const owned = text(paneBody(r, ctxFor(190, { owner: 'E-3f9a21c0/P2' })))
-  expect(owned[0]).toContain('under E-3f9a21c0/P2')
-  expect(owned.slice(1).some(l => l.includes('under '))).toBe(false)
+  expect(owned[0]!.startsWith('under')).toBe(false)
+  expect(owned[1]).toBe('under E-3f9a21c0/P2')
+  expect(owned.filter(l => l.includes('under ')).length).toBe(1)
+  expect(paneBody(r, ctxFor(190, { owner: 'E-3f9a21c0/P2' }))[1]!.every(s => s.dim === true)).toBe(true)
   expect(text(paneBody(r, ctxFor(190))).some(l => l.includes('under '))).toBe(false)
 })
 
 test('pane: a teams-engine row with no cost or last step reads — for both', () => {
   const r: GraphRow = { ...leading('full'), cost_usd: null, last_step: null, nodes: leading('full').nodes.map(n => ({ ...n, last_step: null })) }
   const t = text(paneBody(r, ctxFor(190)))
-  expect(t[1]).toContain('· — ·')
+  expect(t[0]).toContain('· — ·')
   expect(t.some(l => /^\s*Last\s+—/.test(l))).toBe(true)
 })
 
@@ -258,7 +274,7 @@ test('detailLines: skipped nodes absent, attempt shown from 2, agent column alig
     { ...r.nodes[0]!, node_id: 'test:U9:1', stage: 'test', subgoal_id: 'U9', state: 'skipped', attempt: 1 },
   ]
   const ls = text(detailLines({ ...r, nodes }, ctxFor(190)))
-  const body = ls.slice(3)
+  const body = ls.slice(2)
   expect(ls.join('\n')).not.toContain('U9')
   expect(body.some(l => l.includes('implement U2 (attempt 2)'))).toBe(true)
   expect(body.some(l => l.includes('plan ') && !l.includes('attempt'))).toBe(true)

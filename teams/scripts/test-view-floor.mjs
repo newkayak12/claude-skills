@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { node } from '../mcp/graph.mjs';
 import { collectTask, STALL_MS } from './lib/view-collect.mjs';
 import { summarize } from './lib/view-summary.mjs';
-import { floorOf } from './lib/view-floor.mjs';
+import { floorOf, markOf } from './lib/view-floor.mjs';
 import { handoffs } from './lib/view-events.mjs';
 import { floorTasks, floorFacts, cacheStats, DAY_MS } from './lib/view-floor-fs.mjs';
 
@@ -131,7 +131,7 @@ test('L EPIC with three packages', () => {
     assert.equal(p1.max, 3);
     assert.equal(p1.owner_key, 'E-aaaaaaaa/P1');
     assert.ok(typeof p1.elapsed_ms === 'number' || p1.elapsed_ms === null);
-    assert.deepEqual(Object.keys(p1).sort(), ['cost_estimated', 'cost_usd', 'doing', 'elapsed_ms', 'key', 'last_verdict', 'live', 'max', 'owner_key', 'run_file', 'state', 'title', 'try'].sort());
+    assert.deepEqual(Object.keys(p1).sort(), ['cost_estimated', 'cost_usd', 'doing', 'elapsed_ms', 'key', 'last_verdict', 'live', 'max', 'owner_key', 'run_file', 'state', 'title', 'try', 'icon', 'word', 'word_key'].sort());
     assert.deepEqual(t.workers.map((x) => x.id), ['P1', 'P2', 'P3', 'judge']);
     assert.deepEqual(t.workers.slice(0, 3).map((x) => x.state), ['acting', 'acting', 'acting']);
     assert.equal(t.workers[3].state, 'idle');
@@ -495,4 +495,47 @@ test('two planning cards get distinct worker ids; max is null without a child li
   const f = floorOf(m, {});
   assert.deepEqual(f.workers.map((x) => x.id), ['PLAN', 'PLAN2', 'judge']);
   assert.deepEqual(f.items.map((x) => x.max), [null, 2]);
+});
+
+const PAIRS = {
+  acting: ['●', 'editing a.ts', ''], you: ['⚑', 'asks a question', ''], idle: ['◌', 'idle', 'idle'],
+  done: ['✔', 'done', 'done'], stalled: ['⊘', 'stalled', 'stalled'], failed: ['✘', 'failed', 'failed'],
+};
+
+test('icon and word agree for every state (markOf)', () => {
+  assert.deepEqual(Object.keys(PAIRS).sort(), ['acting', 'done', 'failed', 'idle', 'stalled', 'you']);
+  for (const [state, [icon, word, key]] of Object.entries(PAIRS)) {
+    assert.deepEqual(markOf(state, state === 'you' ? 'asks a question' : 'editing a.ts'), { icon, word, word_key: key }, state);
+  }
+  // a live state without a driver word is blank, never an invented one
+  assert.deepEqual(markOf('acting', ''), { icon: '●', word: '', word_key: '' });
+  assert.deepEqual(markOf('you'), { icon: '⚑', word: '', word_key: '' });
+  // a still state ignores any doing text it is handed
+  for (const st of ['idle', 'done', 'stalled', 'failed']) assert.equal(markOf(st, 'running tests').word, st);
+});
+
+test('icon and word agree for every state (floorOf items and workers)', () => {
+  const pkg = (id, dispatch) => ({ id, title: id, dispatch, child: {} });
+  const run = (packages, facts, extra = {}) => floorOf({ task_id: 't', state: 'running', ticket: { key: 'E-t' }, packages, ...extra }, facts);
+  const live = { doing: 'editing a.ts', live: true };
+  const f = run(
+    [pkg('A', { state: 'running' }), pkg('B', { state: 'waiting_human' }), pkg('C', { state: 'running' }), pkg('D', { state: 'failed' }), pkg('E', { state: 'failed' }), { ...pkg('F', { state: 'done' }), accept: { state: 'done' } }],
+    { stories: { A: live, B: { doing: 'asks a question', live: false }, D: live, E: { doing: 'old text', live: false } } },
+  );
+  const item = Object.fromEntries(f.items.map((i) => [i.key, i]));
+  const worker = Object.fromEntries(f.workers.map((x) => [x.id, x]));
+  const is = (x, state) => { const [icon, word, key] = PAIRS[state]; assert.equal(x.icon, icon); assert.equal(x.word, word); assert.equal(x.word_key, key); };
+  is(item.A, 'acting'); is(worker.A, 'acting');
+  is(item.B, 'you'); is(worker.B, 'you');
+  is(item.C, 'idle'); is(worker.C, 'idle');
+  is(worker.F, 'done'); assert.equal(item.F, undefined);
+  // failed with a live driver and a doing word: the row says failed, not the live word; state and doing keep their meaning
+  assert.equal(item.D.state, 'failed'); assert.equal(item.D.doing, 'editing a.ts'); is(item.D, 'failed');
+  is(item.E, 'failed');
+  is(worker.judge, 'idle');
+  const judged = run([pkg('A', { state: 'running' })], { stories: { A: live }, judge: { live: true, doing: 'judging A' } });
+  assert.equal(judged.workers.find((x) => x.id === 'judge').word, 'judging A');
+  // stalled: it was working and nothing is alive
+  const st = run([pkg('A', { state: 'running' })], { stories: { A: { doing: 'x', live: false } } }, { state: 'stalled' });
+  is(st.items[0], 'stalled'); is(st.workers[0], 'stalled');
 });

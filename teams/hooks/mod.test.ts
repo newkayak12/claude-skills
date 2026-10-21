@@ -1289,17 +1289,30 @@ test('a line with severity but no run, node or reason toasts its text as before,
 })
 
 // ---- F4: listed EPICs, the STORYs tab, [ ] and g, the flag ----
-const story = (key: string, title: string, over: Record<string, unknown> = {}) => ({
-  key, title, state: 'acting', doing: '', last_verdict: null, cost_usd: null, cost_estimated: false, try: null, max: null,
-  live: true, elapsed_ms: null, run_file: null, owner_key: key, ...over,
-})
+// node's markOf (teams/scripts/lib/view-floor.mjs), mirrored: the tsx test runner cannot import it
+const MARKS: Record<string, { icon: string; word: string }> = {
+  acting: { icon: '●', word: '' }, you: { icon: '⚑', word: '' }, idle: { icon: '◌', word: 'idle' },
+  done: { icon: '✔', word: 'done' }, stalled: { icon: '⊘', word: 'stalled' }, failed: { icon: '✘', word: 'failed' },
+}
+const markOf = (state: string, doing: string) => {
+  const m = MARKS[state]!
+  const live = state === 'acting' || state === 'you'
+  return { icon: m.icon, word: live ? doing : m.word, word_key: live ? '' : state }
+}
+const story = (key: string, title: string, over: Record<string, unknown> = {}) => {
+  const base = { state: 'acting', doing: '', ...over } as { state: string; doing: string }
+  return {
+    key, title, last_verdict: null, cost_usd: null, cost_estimated: false, try: null, max: null,
+    live: true, elapsed_ms: null, run_file: null, owner_key: key, ...over, ...markOf(base.state, base.doing),
+  }
+}
 const epicOf = (id: string, key: string, items: unknown[], over: Record<string, unknown> = {}) => ({
   ...demo({ key, title: `task ${id}` }), task_id: id, created_at: 500, live: true, age_ms: null, items, workers: [], handoffs: [], harness: null, ...over,
 })
 const FULL = [
   epicOf('tA', 'E-3a3a3bb5', [
     story('E-3a3a3bb5/P1', 'module b', { doing: 'editing a.ts', last_verdict: 'reject', try: 2, max: 3, elapsed_ms: 240000, cost_usd: 0.42, cost_estimated: true, run_file: '/w/runs/p1.json' }),
-    story('E-3a3a3bb5/P2', 'a much longer module title for the cut', { doing: 'running tests', state: 'idle', elapsed_ms: 3720000 }),
+    story('E-3a3a3bb5/P2', 'a much longer module title for the cut', { state: 'idle', elapsed_ms: 3720000 }),
   ]),
   epicOf('tB', 'E-bbbbbbbb', [
     story('E-bbbbbbbb', 'small thing', { doing: 'reading', elapsed_ms: 35000, cost_usd: 1.5, owner_key: 'E-bbbbbbbb' }),
@@ -1325,12 +1338,12 @@ for (const surface of SURFACES) {
     const [a, b, c] = rows as [string, string, string]
     // every fact on its row, `~` kept, a missing cost blank
     for (const part of ['module b', 'editing a.ts', 'rejected', '2/3', '4m', '~$0.42']) expect(a).toContain(part)
-    expect(b).toContain('running tests')
+    expect(b).toContain('idle')
     expect(b).toContain('1h 2m')
     expect(b).not.toContain('$')
     for (const part of ['small thing', 'reading', '35s', '$1.50', 'run-7', '▸']) expect(c).toContain(part)
     // the same column starts at the same character on every row
-    expect(a.indexOf('editing a.ts')).toBe(b.indexOf('running tests'))
+    expect(a.indexOf('editing a.ts')).toBe(b.indexOf('idle'))
     expect(a.indexOf('editing a.ts')).toBe(c.indexOf('reading'))
     expect(a.indexOf('4m')).toBe(b.indexOf('1h 2m'))
     expect(a.indexOf('4m')).toBe(c.indexOf('35s'))
@@ -1473,7 +1486,7 @@ for (const surface of SURFACES) {
 }
 
 // ---- F4: the Floor: worker lines, hand-off feed, the 800 ms clock ----
-const wk = (id: string, state: string, doing = '') => ({ id, state, doing })
+const wk = (id: string, state: string, doing = '') => ({ id, state, doing, ...markOf(state, doing) })
 const ho = (time: string, from: string, what: string, to: string) => ({ time, from, what, to })
 const WORKERS = [wk('PLAN', 'done'), wk('P1', 'acting', 'editing a.ts'), wk('P2', 'idle'), wk('P3', 'you', 'asks a question'), wk('JUDGE', 'stalled')]
 const floorOf = (workers: unknown[], handoffs: unknown[] = []) => [epicOf('tA', 'E-3a3a3bb5', [], { workers, handoffs })]
@@ -1493,7 +1506,7 @@ for (const surface of SURFACES) {
     expect(new Set(lines.map(l => l.indexOf(/PLAN|P\d|JUDGE/.exec(l)![0]))).size).toBe(1)
   })
 
-  test(`${surface}: floor idle worker says idle, dim, in the column of the other doing texts; a done one says nothing`, async ($, on) => {
+  test(`${surface}: floor idle worker says idle, dim, in the column of the other doing texts; a done one says done`, async ($, on) => {
     const workers = [wk('PLAN', 'done'), wk('P1', 'acting', 'editing a.ts'), wk('P2', 'idle'), wk('P3', 'you', 'asks a question'), wk('JUDGE', 'idle')]
     await seeded($, on, { status: stat(), tasks: floorOf(workers), task: demo() }, surface, undefined, { epic: 'tA' })
     const ui = await wide($, surface)
@@ -1503,7 +1516,7 @@ for (const surface of SURFACES) {
       expect(idle.indexOf('idle')).toBe(p1.indexOf('editing a.ts'))
       expect(idle.indexOf('idle')).toBe(p3.indexOf('asks a question'))
     }
-    expect(plan.trimEnd().endsWith('PLAN')).toBe(true)
+    expect(plan.trimEnd().endsWith('done')).toBe(true)
     expect((await ui.findAll({ type: 'Text', text: /^idle\s*$/ })).map(t => t.props.dimColor)).toEqual([true, true])
   })
 
@@ -1601,7 +1614,7 @@ const WIDTHS = [190, 110] as const
 const shownFrames: string[] = []
 const LONGT = 'Migrate every legacy report exporter to the new streaming writer and keep each output file byte for byte identical across all supported locales, then retire the old exporters, their fixtures and every flag that still points at them'
 const LONGD = 'translating the sample strings into twelve languages and re-running the full comparison suite twice, once per engine, before diffing the results line by line'
-const wkd = (id: string, state: string, doing = '') => ({ id, state, doing })
+const wkd = (id: string, state: string, doing = '') => ({ id, state, doing, ...markOf(state, doing) })
 // what an EPIC's Now line, card list and cost say; each differs from the STORY titles and the You line, and the cost is the STORYs' sum
 const body = (usd: number, turns: number) => ({
   now: { kind: 'build', subject: 'the parser and the writer', detail: '' },
@@ -1618,7 +1631,7 @@ const DEMO: Record<string, { tasks: unknown[]; you?: unknown }> = {
     tasks: [
       epicOf('tA', 'E-3a3a3bb5', [
         story('E-3a3a3bb5/P1', 'parser module', { doing: 'editing parser.ts', last_verdict: 'reject', try: 2, max: 3, elapsed_ms: 240000, cost_usd: 0.42, cost_estimated: true, run_file: '/w/runs/p1.json' }),
-        story('E-3a3a3bb5/P2', 'report writer', { doing: 'running tests', state: 'idle', elapsed_ms: 3720000, cost_usd: 1.5 }),
+        story('E-3a3a3bb5/P2', 'report writer', { state: 'idle', elapsed_ms: 3720000, cost_usd: 1.5 }),
         story('E-3a3a3bb5/P3', 'cache layer', { doing: 'asks a question', state: 'you', elapsed_ms: 600000 }),
       ], {
         workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', 'editing parser.ts'), wkd('P2', 'idle'), wkd('P3', 'you', 'asks a question'), wkd('JUDGE', 'idle')],
@@ -1626,7 +1639,7 @@ const DEMO: Record<string, { tasks: unknown[]; you?: unknown }> = {
         ...body(1.92, 14),
         you: { count: 1, items: ['one open question'], cards: [{ key: 'E-3a3a3bb5/P3', title: 'cache layer', question: 'keep the old cache key format?' }] },
       }),
-      epicOf('tC', 'E-cccccccc', [story('E-cccccccc/P1', 'old import job', { doing: 'running tests', state: 'stalled', live: false })], { live: false, age_ms: 7200000, state: 'stalled' }),
+      epicOf('tC', 'E-cccccccc', [story('E-cccccccc/P1', 'old import job', { state: 'stalled', live: false })], { live: false, age_ms: 7200000, state: 'stalled' }),
     ],
   },
   parallel: {
@@ -1676,6 +1689,11 @@ for (const variant of Object.keys(DEMO)) {
         if (name === 'band') {
           for (const l of lines) for (const gone of ['engine band', 'board needs you']) expect(l).not.toContain(gone)
           continue
+        }
+        // a STORY row's icon and word agree: a still or ended state never carries a working word
+        if (name === 'stories') {
+          for (const l of body.filter(l => /^[▸\s]*[◌⊘✔✘]\s\s/.test(l.replace(/^[^\w▸◌⊘✔✘●⚑]*/, '')))) expect(l).not.toMatch(/editing|reading|running tests|asks a question|translating/)
+          if (variant === 'full') expect(body.some(l => /◌.*idle/.test(l)) && body.some(l => /⊘.*stalled/.test(l))).toBe(true)
         }
         // `close` is said once, by the footer
         expect(body.filter(l => l.includes('close'))).toEqual([body[body.length - 1]])

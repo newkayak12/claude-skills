@@ -50,7 +50,7 @@ const en = {
   reportMissing: 'No report yet: {path}', reportTruncated: 'Shortened: {n} more lines in the file.',
   stages: 'Stages', work: 'Work', cost: 'Cost',
   youOthers: '{n} more in other runs', costLine: '{usd} · {turns} turns',
-  headLine: '{state} · {done}/{total}', workerIdle: 'idle', bandDone: '{done}/{total} done',
+  headLine: '{state} · {done}/{total}', wordIdle: 'idle', wordDone: 'done', wordStalled: 'stalled', wordFailed: 'failed', bandDone: '{done}/{total} done',
   stateRunning: 'running', stateStalled: 'stalled', stateComplete: 'finished', stateFailed: 'failed',
   stagePlan: 'Plan', stageBuild: 'Build', stageIntegrate: 'Integrate', stageQa: 'QA', stageGate: 'Final gate', stageReport: 'Report',
   nowFix: 'Fixing defect', nowFixnext: 'Waiting to fix defect', nowBuild: 'Building', nowPlan: 'Planning', nowQa: 'QA', nowAnswer: 'Waiting for your answer',
@@ -79,7 +79,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     reportMissing: '아직 보고서가 없습니다: {path}', reportTruncated: '일부만 표시: 파일에 {n}줄 더 있습니다.',
     stages: '단계', work: '작업', cost: '비용',
     youOthers: '다른 실행에 {n}건 더', costLine: '{usd} · {turns}턴',
-    headLine: '{state} · {done}/{total}', workerIdle: '유휴', bandDone: '{done}/{total} 완료',
+    headLine: '{state} · {done}/{total}', wordIdle: '유휴', wordDone: '완료', wordStalled: '멈춤', wordFailed: '실패', bandDone: '{done}/{total} 완료',
     stateRunning: '진행 중', stateStalled: '멈춤', stateComplete: '완료', stateFailed: '실패',
     stagePlan: '계획', stageBuild: '구현', stageIntegrate: '통합', stageQa: 'QA', stageGate: '최종 관문', stageReport: '보고',
     nowFix: '결함 수정 중', nowFixnext: '결함 수정 대기', nowBuild: '구현 중', nowPlan: '계획 중', nowQa: 'QA 중', nowAnswer: '답변 대기 중',
@@ -406,6 +406,8 @@ export const register: Register = on => {
     const kind = await read($, view)
     const lang$ = await read($, lang)
     const s = (key: keyof typeof en, vars?: Record<string, string | number>) => fmt(STRINGS[lang$][key], vars)
+    // node's word_key (idle, done, stalled, failed) names a STRINGS entry; a pure lookup, no decision
+    const fixedWord = (key: string) => s(`word${key.charAt(0).toUpperCase()}${key.slice(1)}` as keyof typeof en)
     const id = await paneTask($)
     const listed = await read($, tasks)
     const entry = listed.find(t => t.task_id === id)
@@ -473,7 +475,7 @@ export const register: Register = on => {
     const verdictText = (v: string | null) => (v === null ? '' : VERDICT_WORD[v] === undefined ? v : s(VERDICT_WORD[v]!))
     const harnessText = (t: SummaryTaskEntry) => t.harness === null ? ''
       : `${t.stages.map(g => `${MARK[g.state]}${s(`stage${cap(g.key)}` as keyof typeof en)}`).join(' ')}${t.harness.slug ? ` · ${t.harness.slug}` : ''}${t.harness.moving ? ' ▸' : ''}`
-    const storyOf = rows.map(({ entry: t, item }, i) => storyCells(item, verdictText(item.last_verdict), harnessText(t), i === pick))
+    const storyOf = rows.map(({ entry: t, item }, i) => storyCells(item, verdictText(item.last_verdict), harnessText(t), i === pick, fixedWord))
     const storyWidths = columnWidths(storyOf.map(r => r.cells), inner, 2, STORY_SHRINK)
     const storiesBody = rows.length === 0 ? <Text dimColor>{s('noStories')}</Text>
       : renderLines(ui, storyOf.map(r => rowLine(r.cells, storyWidths, 2, r.tints)), 's')
@@ -566,7 +568,7 @@ export const register: Register = on => {
 
     // the Floor: one line per worker of the shown EPIC, then the newest hand-offs; columns at one offset per block
     const frameNo = await read($, frame)
-    const workerOf = workerCells(entry?.workers ?? [], frameNo, s('workerIdle'))
+    const workerOf = workerCells(entry?.workers ?? [], frameNo, fixedWord)
     const workerWidths = columnWidths(workerOf.map(r => r.cells), inner, 2, [3])
     const handoffOf = handoffCells(entry?.handoffs ?? [])
     const handoffWidths = columnWidths(handoffOf, inner, 2, [2, 3])
