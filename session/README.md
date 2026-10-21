@@ -72,10 +72,10 @@ Bypass means no native prompts, not no safety net: the guard still asks under by
 Not a sandbox. `python -c`, `find -delete`, `dd`, shell aliases and scripts that do the same thing are not checked. Secrets are matched by path only; the content of a write is never read.
 
 ### Denial log
-`/session-denials` opens a pane of denied calls, newest first, under a header with the guard mode and the stopped count. Each row shows the local time (HH:MM), the rule that stopped it, its source (`guard`, `declined` or `native`) and `[Copy rule]`, which shows the `/permissions` rule to add. Esc, `q`, or `/session-denials` again closes it. Each entry holds the tool, a redacted call (tokens, `NAME=value` pairs and URL passwords are masked; a file call stores only its path), the reason, the guard's rule id and the source. It lives in plugin storage, newest 200, and nothing is written to your repository. `log_enabled` turns it off. It also records native permission denials it saw; your own "No" in a native dialog is not logged.
+`/session-denials` opens a pane of denied calls, newest first, under a header with the guard mode and the stopped count (`confirm mode · 6 stopped`). Each stop is one row: the local time (HH:MM), the tool, what was called, the rule that stopped it, its source and a `copy` button, which shows the `/permissions` rule to add. The source reads by its mark and colour before its word: `✘` (red) `guard`, `○` (dim) `declined`, `●` (amber) `native`. A call too long for the pane is cut with `…`. Esc, or `/session-denials` again, closes it. Each entry holds the tool, a redacted call (tokens, `NAME=value` pairs and URL passwords are masked; a file call stores only its path), the reason, the guard's rule id and the source. It lives in plugin storage, newest 200, and nothing is written to your repository. `log_enabled` turns it off. It also records native permission denials it saw; your own "No" in a native dialog is not logged.
 
 ![denials-pane](docs/images/denials-pane.png)
-*`/session-denials`: two declined calls; `[Copy rule]` shows `Bash(git reset:*)`.*
+*`/session-denials`: six stops, one row each, newest first. After a toast or a refused call it tells you what was stopped, when, by which rule and from which source; `copy` shows the rule to allow it.*
 
 ## Memo
 `/memo` keeps short notes that ride along with your next prompt, so the model sees them again after `/compact` or `/clear`.
@@ -83,14 +83,14 @@ Not a sandbox. `python -c`, `find -delete`, `dd`, shell aliases and scripts that
 ### Commands
 | Command | Does |
 |---|---|
-| `/memo` | open the Memo pane (the text the model gets; each note's scope and age; a "move to CLAUDE.md?" hint on notes 14 days or older; when the notes last went out with this conversation, `—` before the first send; size against the cap as `<n>/1200 chars`). Esc, `q`, or `/memo` again closes it |
+| `/memo` | open the Memo pane: a header with the note count, the size against the cap (`<n>/1200 chars`) and when the notes last went out with this conversation (`—` before the first send), then one note per line: its number, scope badge (`global` or `project`), text, age (`today`, `2d`) and `stale?` on notes 14 days or older (a hint to move them to `CLAUDE.md`). Long text is cut with `…`; `+N not sent` counts stored notes the caps leave out. Esc, `q`, or `/memo` again closes it |
 | `/memo add [--global] <text>` | add a note (project by default) |
 | `/memo list` | open the Memo pane (headless: print the notes) |
 | `/memo rm <n>` | remove note `n` as numbered in `list` |
 | `/memo clear [--global]` | clear the project notes, or the global ones |
 
 ![memo-pane](docs/images/memo-pane.png)
-*`/memo list` in the transcript and the Memo pane with a global and a project note.*
+*The Memo pane: one note per line with its scope badge, age and `stale?` hint, the size against the cap and the last send in the header, `+1 not sent` for a note the caps leave out. Open it before you add or remove a note to see what the model carries.*
 
 ### Scopes and caps
 Two scopes: project (keyed by the repo root) and global. Caps count both together: 8 notes, 280 characters each, 1200 in total; an add past a cap is refused with the reason. A note is stale at 14 days. The injected block is a fixed header plus `[global]` notes then `[project]` notes. It is sent once per conversation and again after `/compact` or `/clear`, or after any change, from the next prompt.
