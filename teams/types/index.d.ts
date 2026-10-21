@@ -84,6 +84,8 @@ declare module 'claude-code' {
       epic: string | null
       // the STORYs tab: the row `g` opens and `j`/`k` move, an index into every listed task's rows
       row: number
+      // the Floor spinner frame, advanced every ~800 ms while a worker acts
+      frame: number
       teams: TeamsView | null
       // the Decisions tab: fetched for one task, and one card when one was picked
       decisions: { task_id: string; card: string | null; payload: DecisionsPayload } | null

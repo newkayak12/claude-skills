@@ -4,7 +4,7 @@
  * strings and a width; mod.tsx decides what to show. Width is counted in code points (every glyph used is
  * one column).
  */
-import type { SummaryItem, SummaryTaskEntry, WorkState } from '../types'
+import type { Handoff, SummaryItem, SummaryTaskEntry, SummaryWorker, WorkState } from '../types'
 
 export type Tint = 'success' | 'claude' | 'inactive' | 'error' | 'warning'
 export type Seg = { t: string; tint?: Tint; dim?: boolean; bold?: boolean }
@@ -89,6 +89,21 @@ export function renderLines(ui: Ui, lines: readonly Line[], keyOf = 'l') {
     </Box>
   )
 }
+
+/* --- the Floor: worker lines and the hand-off feed --- */
+
+export const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const
+
+// icon · spinner (acting only) · worker · doing
+export function workerCells(workers: readonly SummaryWorker[], frameNo: number): StoryCells[] {
+  return workers.map(w => ({
+    cells: [ICON[w.state], w.state === 'acting' ? SPINNER[frameNo % SPINNER.length]! : '', w.id, w.doing],
+    tints: [TINT[w.state], TINT[w.state], undefined, 'dim'],
+  }))
+}
+
+// time · who · what · to whom
+export const handoffCells = (feed: readonly Handoff[]): string[][] => feed.slice(0, 5).map(h => [h.time, h.from, h.what, h.to ? `→ ${h.to}` : ''])
 
 /* --- the STORY rows --- */
 

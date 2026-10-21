@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Decision, DecisionsPayload, Mark, PaneView, ReportPayload, StatusInfo, SummaryItem, SummaryTask, SummaryTaskEntry, TeamsEvent, TeamsView } from '../types'
 import { fallbackSelection, paneKey, stepClamp, storyRows } from './pane'
-import { ICON, STORY_SHRINK, TINT as WORK_TINT, columnWidths, epicState, renderLines, rowLine, since, storyCells } from './teams-draw'
+import { ICON, STORY_SHRINK, TINT as WORK_TINT, columnWidths, epicState, handoffCells, renderLines, rowLine, since, storyCells, workerCells } from './teams-draw'
 import type { Line } from './teams-draw'
 
 const cursor = atom({ plugin: 'teams', key: 'cursor' } as const, 0)
@@ -19,6 +19,8 @@ const tasks = atom({ plugin: 'teams', key: 'tasks' } as const, [] as SummaryTask
 const taskIds = atom({ plugin: 'teams', key: 'taskIds' } as const, [] as string[])
 const epic = atom({ plugin: 'teams', key: 'epic' } as const, null as string | null)
 const row = atom({ plugin: 'teams', key: 'row' } as const, 0)
+// the spinner frame beside an acting worker; moved by the 800 ms clock only while a worker acts
+const frame = atom({ plugin: 'teams', key: 'frame' } as const, 0)
 // the report of one task: keyed to the task it was fetched for, so a card or tab never draws another's
 const report = atom({ plugin: 'teams', key: 'report' } as const, null as { task_id: string; payload: ReportPayload } | null)
 // the report behind the end-of-run card: its own atom, so an open Report tab on another task never
@@ -243,6 +245,7 @@ async function pushEvent($: EngineInterface, one: TeamsEvent, sent: Set<string>)
 }
 
 const TICK_MS = 3000
+const SPIN_MS = 800
 const WORK_MAX = 6
 
 export const register: Register = on => {
@@ -253,6 +256,30 @@ export const register: Register = on => {
     if ((await $.session.surfaces()).length === 0) return next(e)
 
     const VIEW = `${$.plugin.root}/scripts/view.mjs`
+
+    // the spinner clock runs only while the pane is open and a worker of the shown EPIC acts
+    let spinner: { cancel: () => void } | null = null
+    async function wantsSpin() {
+      if ((await $.session.surfaces()).length === 0) return false
+      if (!(await $.ui.panes()).some(p => p.id === PANE)) return false
+      const id = await paneTask($)
+      return (await read($, tasks)).find(t => t.task_id === id)?.workers.some(w => w.state === 'acting') ?? false
+    }
+    async function syncSpinner() {
+      const go = await wantsSpin()
+      if (go && spinner === null) {
+        spinner = $.clock.every(SPIN_MS, async () => {
+          if (await wantsSpin()) await update($, frame, n => n + 1)
+          else {
+            spinner?.cancel()
+            spinner = null
+          }
+        })
+      } else if (!go && spinner !== null) {
+        spinner.cancel()
+        spinner = null
+      }
+    }
 
     async function tick() {
       if (isRunning) return
@@ -340,6 +367,7 @@ export const register: Register = on => {
           const held = await read($, cardReport)
           if (held?.task_id !== waiting || held.payload.report === null) await fetchReport($, waiting, true)
         }
+        await syncSpinner()
       } catch {
         // a failed run or unreadable output leaves the last status as it was
       } finally {
@@ -535,6 +563,19 @@ export const register: Register = on => {
       await fetchDecisions($, id)
     }
 
+    // the Floor: one line per worker of the shown EPIC, then the newest hand-offs; columns at one offset per block
+    const frameNo = await read($, frame)
+    const workerOf = workerCells(entry?.workers ?? [], frameNo)
+    const workerWidths = columnWidths(workerOf.map(r => r.cells), inner, 2, [3])
+    const handoffOf = handoffCells(entry?.handoffs ?? [])
+    const handoffWidths = columnWidths(handoffOf, inner, 2, [2, 3])
+    const floorLines = (
+      <Box flexDirection="column" marginTop={1}>
+        {renderLines(ui, workerOf.map(r => rowLine(r.cells, workerWidths, 2, r.tints)), 'w')}
+        {handoffOf.length > 0 && <Box marginTop={1}>{renderLines(ui, handoffOf.map(r => rowLine(r, handoffWidths, 2, ['dim'])), 'h')}</Box>}
+      </Box>
+    )
+
     let body
     if (kind === 'floor') {
       const reasonOf = (title: string) => task.work.find(w => w.title === title && w.state === 'failed')?.reason ?? null
@@ -552,6 +593,7 @@ export const register: Register = on => {
               )
             })}
           </Box>
+          {floorLines}
           {tv === null ? (
             // before the first teams call: the summary's card list
             <Box flexDirection="column" marginY={1}>
