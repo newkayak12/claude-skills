@@ -57,6 +57,13 @@ those, one card per EPIC (43 first; 40 and 41 before 42).
     a hand-off feed (user: "pixel-agents 이런 느낌으로 서로 협업하느널 봤으면 좋겠어"); several open
     EPICs listed and switchable (user: "teams 여러개 돌렸을 때 대응 안되어 있는거 같고"); a task with no
     live driver reads stalled, not `IN_PROGRESS` (seen: 9-day-old tasks still IN_PROGRESS).
+    - Built 2026-10-21 (E-5a39da7e, merged `a486a6e1`). Left, from the demo against rule 0: header
+      `task tA running · day 15 · 4/5  close` repeats the EPIC list's `task tA` and the bar's `4/5`,
+      and `close` sits beside the footer's `q close`; the Floor keeps the old Now block, stage rail,
+      package list and bar on top of the workers and feed (the PRD's Floor is workers + feed); band
+      row 2 reads `engine band` and row 1 `board needs you 1`; P2/JUDGE idle rows say nothing. Also
+      live tmux check, mod-shot images and README/KOR lines (mod.md 1, 3, 4); confirm the
+      waiting_human-not-stalled exception.
 42. **G. graph pane: own band, owned runs, last step** — design §4 G. Broker fields merged
     2026-10-17; no `runs --list` readout yet; the mod is not built.
 43. **S. session memo and guard read as live state** — built 2026-10-21 (`d9dd6259`, session suite 545/0); open: memo age and stale go in a right-aligned column, stale by colour not the word (user look 2026-10-21) — design §4 S. E-6ab58cc6 P3 put the fields in
