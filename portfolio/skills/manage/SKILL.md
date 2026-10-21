@@ -2,9 +2,9 @@
 name: manage
 effort: high
 description: >-
-  Use when working on a portfolio deck: "포트폴리오 작업하자", "skeleton 수정하자", "피드백 돌려줘",
-  "순서 바꾸자", "스냅샷 찍고". One workflow — material, skeleton, feedback, deck — keeping
-  versions, corrections and settled decisions.
+  Use when writing a developer portfolio: "포트폴리오 쓰자", "포트폴리오 작업하자", "피드백 돌려줘",
+  "순서 바꾸자", "스냅샷 찍고". The whole writing flow — material, write, feedback, deck —
+  keeping versions, corrections and settled decisions.
 scenarios:
   - "Let's keep working on my portfolio deck — run feedback on the skeleton and fix what it finds."
   - "Swap the two pages of the search block and fix every page reference."
@@ -21,9 +21,9 @@ compatibility:
     noah가 없으면 정정은 글감 파일과 docs/확정사실.md에만 남고, 그 사실을 한 번 알립니다.
 ---
 
-# Portfolio Manage — one workflow from material to a reviewed deck
+# Portfolio Manage — the portfolio writing flow, material to a reviewed deck
 
-The user's one entry for portfolio deck work. It runs the other portfolio skills as its steps;
+The user's one entry for writing a portfolio, first draft to final deck. It runs the other portfolio skills as its steps;
 the user never has to name them. **Not for** a one-off review of someone else's document
 (`feedback`) or a deck that is not a portfolio (`deck-builder`).
 
@@ -55,6 +55,11 @@ is deleted; a name clash goes into a subfolder, never a merge. Page headings in 
 1. **Material.** New material → run `material` into `sources/`. Evidence order: `sources/` →
    the user's analysis notes they point to → the user. Search before asking; ask only what only
    the user can answer; everything else stays `[확인 필요: …]`.
+1b. **Write.** No skeleton yet, or a new project → write it from material only: pick episodes by
+   signal (`references/principles.md` § Composition), one project as why → the user's role and
+   decision → result, each claim citing its material item; strengths chosen from the evidence.
+   Propose the structure (blocks, order, body vs appendix) and wait before filling pages. A written
+   item is marked `material log --id <id> --note "skeleton <N>쪽" --status written --later-step manage`.
 2. **Feedback.** Run `feedback` on the skeleton (and `pattern` for how it reads); results become a
    numbered skeleton edit list with how to fix each. Never re-raise what `확정사실.md` settles.
 3. **Snapshot, then edit.** `snapshot --kind skeleton --level <major|minor|patch> --note "<what>"`
