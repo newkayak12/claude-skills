@@ -442,16 +442,21 @@ graph ships a small mod: a pane that shows the live run of the graph engine. It 
 
 **Features**
 
-- **`/graph-status`** opens the pane; the command again, Esc or `q` closes it. At the top, a **Now** line per running node: the node, its agent as `vendor·model` (`—` when the run file records none) and how long it has run; with nothing running it reads Next or Blocked (where the run is stuck). Tabs are Flow and Detail (keys `1`-`2`; the selected one is bright with a dot).
-  - **Flow** draws the stages as a rail (`● Plan ━━ ● SetGoal ━━ ● Critique ━━ ◉ Build ┄┄ ○ Goal gate ┄┄ ○ Report`), then the stages with their attempts: each subgoal attempt is one `impl ━ test ━ gate` line. A rejected attempt shows its reason (`↳ …`, from the node's result, else the feedback its retry carries) and the retry sits one level under it. Then a gates bar and the goal-gate `%`.
-  - **Detail** lists every node that ran, retries included: vendor·model, time, the feedback it was handed and, for a failed node, why.
+- **The band.** A one-line band above the prompt follows the run that needs you most: state glyph, run id, the last step, its age, cost, `+n` for more open runs, and an `[ open ]` button. A blocked or stalled run keeps its `⚑`.
 
-  ![status-flow](docs/images/status-flow.png)
-  Flow while a run is going: which node is working and, for a rejected attempt, why it was sent back.
+  ![band](docs/images/band.png)
+  The band while a run waits on you (routing blocked): it is there before you ask, and `[ open ]` opens the pane.
+- **`/graph-status`** opens the pane (or `[ open ]` on the band); the command again, Esc or `q` closes it. Tabs are Flow and Detail (keys `1`-`2`). With two runs or more, `[` and `]` (or the `prev` and `next` buttons) switch between them; typing `/graph-status` after `[` or `]` still closes it.
+  - **Flow** shows the run's request, its **Now** and **Last** step, and one row per subgoal: implement, test and gate as icons, the try number, the agent and the time. A rejected try sits under its row with its reason.
+  - **Detail** lists every node that ran, retries included: agent, the feedback it was handed and, for a failed node, why.
 
-  ![status-detail](docs/images/status-detail.png)
-  Detail: every attempt with its agent, time and the feedback it got.
-- **Where the data comes from.** The newest run file in `.harness-run/broker/runs/` under the session folder. graph writes a run file under the folder the run was started in, so only runs started in this folder show; a run started from another folder (another worktree included) does not. If none is live, the pane says there is no run.
+  ![pane](docs/images/pane.png)
+  The pane for a run in its second try: which node is working and why the first try was sent back.
+- **Hand-off from teams.** `/graph-status open <run-file> <owner-key>` opens one run file that is not in the list and names who owns it.
+
+  ![pane-tag](docs/images/pane-tag.png)
+  A run opened by hand shows `under E-0000aaaa/P1` in the title row, so you know which task it belongs to.
+- **Where the data comes from.** The node readout `broker.mjs runs --list --json` (the same one you can run by hand; `runs --show <file>` reads one file). It lists the run files in `.harness-run/broker/runs/` under the session folder, open runs only: a run started from another folder (another worktree included) does not show. A run owned by a teams task is left out of the band and the `[` `]` list. If none is open, the pane says there is no run.
 - **Push on run events.** A node verdict that fails and is retried (`rejected`), a run whose retries are spent (`failed`) or that routing blocked (`blocked`), and a finished run (`complete`) each raise a PushNotification once per run, node, kind and attempt: `graph <run>: <kind> — <node> (<attempt>/<max>)`. When the push is not sent (you are at the terminal) or fails, the same line is a toast. Nothing older than the session start is pushed. Progress is never pushed. The mod still only reads the run files.
 - **Language.** English by default; Korean when Claude Code's `language` setting is Korean.
 

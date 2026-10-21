@@ -151,8 +151,8 @@ test('pane: a teams-engine row with no cost or last step reads — for both', ()
 })
 
 test('footer: one dim line, [ ] only with two runs or more, label q, no word twice', () => {
-  expect(plain(paneFooter(1))).toBe('q close')
-  expect(plain(paneFooter(2))).toBe('[ prev next ]  q close')
+  expect(plain(paneFooter(1))).toBe('[ q ] close')
+  expect(plain(paneFooter(2))).toBe('[ prev next ]  [ q ] close')
   expect(footerKeys(1).some(k => k.key === '[ ]')).toBe(false)
   for (const n of [1, 2, 3]) {
     const f = paneFooter(n)
@@ -161,8 +161,8 @@ test('footer: one dim line, [ ] only with two runs or more, label q, no word twi
     expect(new Set(words).size).toBe(words.length)
   }
   const lines = paneLines(leading('full'), ctxFor(190, { pos: { k: 1, n: 2 } }))
-  expect(plain(lines[lines.length - 1]!)).toBe('[ prev next ]  q close')
-  expect(text(lines.slice(0, -1)).some(l => /\bq close\b|\[ prev/.test(l))).toBe(false)
+  expect(plain(lines[lines.length - 1]!)).toBe('[ prev next ]  [ q ] close')
+  expect(text(lines.slice(0, -1)).some(l => /\[ q \] close|\[ prev/.test(l))).toBe(false)
 })
 
 test('every scenario at 190 and 110 fits: no line over its width, no break, no cut glyph, long text ends in …', () => {
@@ -201,7 +201,7 @@ test('parallel shows two standalone runs and no owned run; [ ] reach both', () =
     const out = renderDemo('parallel', w)
     expect(out).toContain('run 1 of 2')
     expect(out).toContain('run 2 of 2')
-    expect(out).toContain('[ prev next ]  q close')
+    expect(out).toContain('[ prev next ]  [ q ] close')
     expect(out).not.toContain('b33f00d1')
     expect(out).not.toContain('E-3f9a21c0/P2')
   }
