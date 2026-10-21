@@ -1,7 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 
 import {
-  ageLabel, ageText, cutLine, facts, FOOTER_KEYS, isStale, memoHeader, memoLines, memoRows, noteAge, scopeBadge, sentLabel,
+  ageLabel, ageText, cutLine, facts, FOOTER_KEYS, FOOTER_LEAD, FOOTER_TAIL, isStale, memoHeader, memoLines, memoRows, noteAge, scopeBadge, sentLabel,
   sentText, sizeLabel, staleHint,
 } from './memo-logic.ts'
 
@@ -139,4 +139,34 @@ test('cutLine is +<n> not sent for the stored notes the caps left out, empty whe
 
 test('FOOTER_KEYS are the three /memo forms', () => {
   expect(FOOTER_KEYS).toBe('/memo add <text> · /memo rm <n> · /memo clear')
+})
+
+// AC-22: plain words only; a slash command is typed as written and a key name is a key, so both are exempt.
+const COMMANDS = /\/memo(?: add <text>| rm <n>| clear)?/g
+const KEYS = new Set(['esc', 'q'])
+const repeatedWords = (...parts: string[]): string[] => {
+  const seen = new Set<string>()
+  const again = new Set<string>()
+  for (const w of parts.join(' ').replace(COMMANDS, ' ').split(/[^A-Za-z]+/).filter(Boolean).map(s => s.toLowerCase())) {
+    if (KEYS.has(w)) continue
+    if (seen.has(w)) again.add(w)
+    seen.add(w)
+  }
+  return [...again]
+}
+
+test('the Memo title row, header and footer say no plain word twice', () => {
+  const at = new Date(2026, 9, 8, 14, 2).getTime()
+  const title = 'Memo'
+  const footer = `${FOOTER_LEAD} q ${FOOTER_TAIL}`
+  for (const [armed, sentAt] of [[false, at], [true, at], [true, 0]] as const) {
+    const header = memoHeader([note('abc', 0)], [note('de', 1)], { armed, sentAt })
+    expect(repeatedWords(title, header, footer)).toEqual([])
+  }
+})
+
+test('the repeated-word check reports a word said twice and ignores slash commands and key names', () => {
+  expect(repeatedWords('Memo', '2 notes · 5/1200 chars · sent —', '/memo add <text> · Esc, q or /memo closes chars')).toEqual(['chars'])
+  expect(repeatedWords('Memo', 'Memo list')).toEqual(['memo'])
+  expect(repeatedWords('/memo clear · /memo rm <n> · Esc, Esc, q q')).toEqual([])
 })
