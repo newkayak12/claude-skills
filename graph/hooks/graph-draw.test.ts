@@ -139,15 +139,15 @@ test('pane: each subgoal is one line and its columns start at the same cell on e
     const sg = lines.filter(l => /^U\d/.test(plain(l)))
     expect(sg.length).toBe(3)
     const offsets = (l: Line) => l.map((_, i) => lineWidth(l.slice(0, i)))
-    // a row that ends early (trailing spaces trimmed) has fewer segments; the ones it has start at the same cells
-    for (const l of sg.slice(1)) {
-      const a = offsets(l)
-      const b = offsets(sg[0]!)
-      const n = Math.min(a.length, b.length)
-      expect(a.slice(0, n)).toEqual(b.slice(0, n))
-    }
+    // strict: every row has all its segments (id, 3 icons + gaps, gap, title, try, agent, time) at the same cells
+    for (const l of sg) expect(l.length).toBe(11)
+    for (const l of sg.slice(1)) expect(offsets(l)).toEqual(offsets(sg[0]!))
+    // every started subgoal row still shows its time (U1 31m, U2 19m in the demo) at every width
+    expect(plain(sg[0]!).trimEnd()).toMatch(/\d+[mhd]$/)
+    expect(plain(sg[1]!).trimEnd()).toMatch(/\d+[mhd]$/)
     expect(plain(sg[1]!)).toContain('try 2')
-    expect(plain(sg[1]!)).toContain('codex·gpt-5')
+    // at 46 the agent column gives way (cut with …) so the time keeps its place
+    expect(plain(sg[1]!)).toContain(w >= 78 ? 'codex·gpt-5' : 'codex·gp')
   }
 })
 
