@@ -405,6 +405,21 @@ test('waiting card parked in a child run stays listed live past 24 h', () => {
   } finally { w.cleanup(); }
 });
 
+test('--format status counts a parked waiting card with nothing running, and agrees with summary.status', () => {
+  const w = world();
+  try {
+    const H25 = 25 * 3600 * 1000;
+    const ask = node('ask:U1:1', 'ask', [], { state: 'waiting_human', subgoal_id: 'U1', questions: [{ question: 'Keep the legacy PDF route?' }] });
+    lTask(w, { id: 'aaaaaaaa-0001', ageMs: H25, pkgs: [{ id: 'P1', streamAgeMs: H25, child: { nodes: [ask] } }] });
+    const r = spawnSync(process.execPath, [VIEW, '--once', '--format', 'status', '--tasks-dir', w.tasks, '--cwd', w.cwd], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    const st = JSON.parse(r.stdout);
+    assert.equal(st.latest, null, 'nothing is running');
+    assert.equal(st.waiting, 1);
+    assert.deepEqual(st, summary(w).status);
+  } finally { w.cleanup(); }
+});
+
 test('waiting graph-route harness stage of an S task reads live and counts', () => {
   const w = world();
   try {
