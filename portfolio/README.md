@@ -31,6 +31,7 @@ classification). Connect them under Claude settings → MCP Servers as remote SS
 |---|---|
 | Run a whole application from JD to interview day | `job-application-workflow` |
 | Collect my retrospectives, notes and chats into portfolio material, one folder per episode | `material` |
+| Write my portfolio from my material to a finished deck — write, feedback, fix, version, render — without losing decisions | `manage` |
 | Know how well I match one specific posting — or where to apply with no posting | `fit` |
 | Get an honest interviewer's read on my portfolio | `feedback` |
 | Check whether my numbers, skills, dates — and claimed level — hold up | `feedback` |
@@ -122,6 +123,27 @@ nothing, `history.md` included.
 Personal or confidential data in your material (names, employer details) is kept as given and
 stored only in your project, under `material/` in the current working directory. Files in
 `material/` that this step did not write are left alone and listed in its summary.
+
+### `manage`
+
+The portfolio writing flow in one skill: your material is written into project pages (why → your
+role and decision → result, every claim cited), then strengthened round by round until the deck
+is done. You say what you want ("포트폴리오 쓰자", "피드백 돌리고 고쳐줘", "이 두 장 순서
+바꿔줘", "그건 틀렸어, 이렇게 기록해"); it runs `material`, `feedback`, `pattern`, `rewrite` and
+`deck-builder` as its steps, so you never call them yourself.
+
+```
+skeleton.md → deck.mdx → build/        design, build source, output
+snapshot/  sources/  docs/확정사실.md   versions, material, settled facts
+```
+
+- Every wording change starts in `skeleton.md`; before the first edit of a round the current
+  version is snapshotted and the version moves (major = structure, minor = content, patch = wording).
+- Structure changes (page count, blocks, order) are proposed and wait for you.
+- Reordering pages renumbers every `N쪽` reference and `쪽` column in one pass, then verifies them.
+- A correction you give is kept in your words in the material file, in `docs/확정사실.md`, and in
+  noah when connected — so the next session does not repeat the mistake.
+- It stops at deck-builder `check`; build and render happen when you say.
 
 ### `fit`
 
