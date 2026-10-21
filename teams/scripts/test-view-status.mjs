@@ -142,6 +142,9 @@ function harnessRoot(files) {
   writeFileSync(join(runDir, 'manifest.json'), JSON.stringify({ request: 'r', teams_task: id }));
   for (const [name, body] of Object.entries(files)) writeFileSync(join(runDir, name), body);
   writeFileSync(join(dir, 'harness-run.json'), JSON.stringify({ route: 'fallback', run_dir: runDir }));
+  // the live driver has just written its stream (the stalled rule needs it)
+  mkdirSync(join(dir, 'drivers'), { recursive: true });
+  writeFileSync(join(dir, 'drivers', 'S.stream.jsonl'), '{"type":"assistant"}\n');
   writeFileSync(join(dir, 'task.json'), JSON.stringify({
     run_id: id, kind: 'task', cwd, request: 'small request', created_at: now, size: 'S', nodes,
     harness_run: { cwd, opened_at: now, route: null, run: null, pointer: join(dir, 'harness-run.json'), driver: { pid: process.pid, restarts: [] } },
