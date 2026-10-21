@@ -119,11 +119,11 @@ export const register: Register = (on, _options) => {
         {lines.length > 0 && <Text key="h" bold wrap="truncate-end">{memoHeader(g, p, sent)}</Text>}
         {lines.map(l => (
           <Box key={`n-${l.n}`} gap={1}>
-            <Text>{String(l.n)}</Text>
-            <Text>{l.badge}</Text>
+            <Box flexShrink={0}><Text>{String(l.n)}</Text></Box>
+            <Box flexShrink={0}><Text>{l.badge}</Text></Box>
             <Box flexShrink={1}><Text wrap="truncate-end">{l.text}</Text></Box>
-            <Text dimColor>{l.age}</Text>
-            {l.stale !== '' && <Text color="warning">{l.stale}</Text>}
+            <Box flexShrink={0}><Text dimColor>{l.age}</Text></Box>
+            {l.stale !== '' && <Box flexShrink={0}><Text color="warning">{l.stale}</Text></Box>}
           </Box>
         ))}
         {cut !== '' && <Text color="warning" wrap="truncate-end">{cut}</Text>}
