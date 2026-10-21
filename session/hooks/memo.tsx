@@ -121,9 +121,8 @@ export const register: Register = (on, _options) => {
           <Box key={`n-${l.n}`} gap={1}>
             <Box flexShrink={0}><Text>{String(l.n)}</Text></Box>
             <Box flexShrink={0}><Text>{l.badge}</Text></Box>
-            <Box flexShrink={1}><Text wrap="truncate-end">{l.text}</Text></Box>
-            <Box flexShrink={0}><Text dimColor>{l.age}</Text></Box>
-            {l.stale !== '' && <Box flexShrink={0}><Text color="warning">{l.stale}</Text></Box>}
+            <Box flexGrow={1} flexShrink={1}><Text wrap="truncate-end">{l.text}</Text></Box>
+            <Box flexShrink={0}><Text dimColor={!l.stale} color={l.stale ? 'warning' : undefined}>{l.age}</Text></Box>
           </Box>
         ))}
         {cut !== '' && <Text color="warning" wrap="truncate-end">{cut}</Text>}

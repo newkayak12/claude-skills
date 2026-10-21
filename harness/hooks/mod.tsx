@@ -49,12 +49,12 @@ const RUN_STAGES: StageKey[] = ['plan', 'setgoal', 'critique', 'implement', 'gat
 
 const en = {
   paneTitle: 'Harness status', tabNow: 'Now', tabFlow: 'Flow', tabFindings: 'Findings', tabRules: 'Gate rules', tabRulesShort: 'Rules',
-  prev: 'prev', next: 'next', keysHint: '[ ] run · 1-4 tab · q close', demoOn: 'demo: {name}', demoOff: 'demo off', demoFiles: 'The demo has no run files.',
+  prev: 'prev', next: 'next', keysLead: '[ ] run · 1-4 tab · Esc or', keysTail: 'closes', demoOn: 'demo: {name}', demoOff: 'demo off', demoFiles: 'The demo has no run files.',
   stagePlan: 'Plan', stageSetgoal: 'SetGoal', stageCritique: 'Critique', stageImplement: 'Implement/Test', stageGate: 'Gate', stageReport: 'Report',
   tryNo: 'attempt {n}', resPassed: 'passed · {n} tries', resFailed: 'failed · {n} tries', resNone: 'not judged yet', stalled: 'stalled: the retry changed nothing',
   gateRejected: 'gate {n}: rejected', gatePassed: 'gate {n}: passed', critiqueRejected: 'Critique rejected', rules: 'Gate rules',
   goalGate: 'Goal gate', passBar: '{pct}% (pass ≥ {bar})', more: '+{n} more',
-  noRun: 'No harness run in this folder.', closeBtn: 'close [q]',
+  noRun: 'No harness run in this folder.', closeBtn: 'q',
   cmdDesc: 'Open or close the harness status pane: run flow and detail, why the gate denied the last call', paneOpened: 'pane opened', paneClosed: 'pane closed',
   noGate: 'No gate configured: .claude/harness-gate.json is not in this project.',
   badGate: 'Gate config .claude/harness-gate.json could not be read (invalid JSON).',
@@ -73,12 +73,12 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
   en,
   ko: {
     paneTitle: '하네스 상태', tabNow: '지금', tabFlow: '흐름', tabFindings: '발견', tabRules: '게이트 규칙', tabRulesShort: '규칙',
-    prev: '이전', next: '다음', keysHint: '[ ] 실행 · 1-4 탭 · q 닫기', demoOn: '데모: {name}', demoOff: '데모 끝', demoFiles: '데모에는 실행 파일이 없습니다.',
+    prev: '이전', next: '다음', keysLead: '[ ] 실행 · 1-4 탭 · Esc 또는', keysTail: '로 닫기', demoOn: '데모: {name}', demoOff: '데모 끝', demoFiles: '데모에는 실행 파일이 없습니다.',
     stagePlan: '계획', stageSetgoal: '목표 설정', stageCritique: '비평', stageImplement: '구현/테스트', stageGate: '게이트', stageReport: '보고',
     tryNo: '{n}번째 시도', resPassed: '통과 · {n}회 시도', resFailed: '실패 · {n}회 시도', resNone: '아직 판정 전', stalled: '멈춤: 재시도로 달라진 것이 없음',
     gateRejected: '게이트 {n}: 반려', gatePassed: '게이트 {n}: 통과', critiqueRejected: '비평 반려', rules: '게이트 규칙',
     goalGate: '목표 게이트', passBar: '{pct}% (통과 ≥ {bar})', more: '+{n}건 더',
-    noRun: '이 폴더에 하네스 실행이 없습니다.', closeBtn: '닫기 [q]',
+    noRun: '이 폴더에 하네스 실행이 없습니다.', closeBtn: 'q',
     cmdDesc: '하네스 상태 창 열기/닫기: 실행 흐름과 상세, 게이트가 마지막 호출을 막은 이유', paneOpened: '창을 열었습니다', paneClosed: '창을 닫았습니다',
     noGate: '게이트 설정 없음: 이 프로젝트에 .claude/harness-gate.json 이 없습니다.',
     badGate: '게이트 설정 .claude/harness-gate.json 을 읽을 수 없습니다 (JSON 오류).',
@@ -621,9 +621,13 @@ export const register: Register = on => {
       else if (key.kind === 'tab') await update($, paneTab, () => key.tab)
       else await $.ui.close({ id: PANE })
     }
+    // prev/next join the keys row only where they fit beside it (the keys stay one row; [ and ] still step)
+    const wide = (t: string) => [...t].reduce((n, c) => n + (/[ᄀ-ᅟ⺀-꓏가-힣＀-｠]/.test(c) ? 2 : 1), 0)
+    const keysW = wide(s('keysLead')) + wide(s('keysTail')) + 5 + 2
+    const stepsW = 1 + wide(s('prev')) + 2 + wide(s('next'))
     const steps =
-      v.ordered.length > 1 ? (
-        <Box columnGap={2}>
+      v.ordered.length > 1 && keysW + stepsW <= ctx.width ? (
+        <Box columnGap={2} flexShrink={1} overflow="hidden">
           <Button key="prev" plain label={s('prev')} onPress={() => cycle($, -1)} />
           <Button key="next" plain label={s('next')} onPress={() => cycle($, 1)} />
         </Box>
@@ -743,10 +747,12 @@ export const register: Register = on => {
           <Box flexShrink={0}>{tabRow}</Box>
           {plan.right !== '' && <Box flexShrink={1} marginLeft={2}><Text dimColor wrap="truncate-end">{plan.right}</Text></Box>}
         </Box>
-        <Box columnGap={2}>
+        <Box columnGap={1}>
+          <Box flexShrink={0}><Text dimColor wrap="truncate-end">{s('keysLead')}</Text></Box>
           {closeBtn}
+          <Box flexShrink={0}><Text dimColor wrap="truncate-end">{s('keysTail')}</Text></Box>
           {steps}
-          <Input key="keys" autoFocus value="" placeholder={s('keysHint')} onInput={onKey} onSubmit={() => {}} />
+          <Box flexShrink={1} overflow="hidden"><Input key="keys" autoFocus value="" placeholder="" onInput={onKey} onSubmit={() => {}} /></Box>
         </Box>
       </Box>
     )
