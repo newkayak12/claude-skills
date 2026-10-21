@@ -7,6 +7,7 @@ import {
   NONE, clock, costText, countsText, cycleRun, doingText, elapsedText, failureToast, failuresOf, flowLines, frozenOrder, hasNewReject, inStageText,
   isActing, lastStep, listArgv, markLooked, normalizeRow, openTab, openingOrder, otherRunLabel, parseRow, parseRows, pickRun, railItems, rankedProblems, reasonFor, restText,
   paneKey, roundHeading, roundText, runCount, runPosition, runState, severityOf, shownRows, showArgv, sinceLast, span, spinnerPlan, stageLabel, topFinding, youLine,
+  doingOf, restLine, stageStatus,
 } from './status'
 
 const sub = (id: string, state: RunSub['state'], gates: RunSub['gates'] = []): RunSub => ({ id, title: '', state, reason: '', tries: gates.length, gates, stalled: false })
@@ -228,7 +229,7 @@ test('frozen order: the same slugs after looked changes; recomputed when a run c
   expect(frozenOrder([], {}, [])).toEqual([])
 })
 
-test('[ and ]: run k of n, wrap, the tab label; one run changes nothing', () => {
+test('[ and ]: run k of n, stop at the ends, the tab label; one run changes nothing', () => {
   const a = row('alpha')
   const b = row('beta', { stage: 'implement', passed: 2, total: 4 })
   const ordered = openingOrder([a, b], {})
@@ -237,11 +238,14 @@ test('[ and ]: run k of n, wrap, the tab label; one run changes nothing', () => 
   const next = cycleRun(ordered, null, 1)
   expect(next).toBe('beta')
   expect(runCount(runPosition(ordered, next))).toBe('run 2 of 2')
-  expect(cycleRun(ordered, next, 1)).toBe('alpha') // wraps
+  expect(cycleRun(ordered, next, 1)).toBe('beta') // `]` on the last run stays
+  expect(runCount(runPosition(ordered, cycleRun(ordered, next, 1)))).toBe('run 2 of 2')
   expect(runCount(runPosition(ordered, cycleRun(ordered, next, -1)))).toBe('run 1 of 2')
-  expect(cycleRun(ordered, null, -1)).toBe('beta')
+  expect(cycleRun(ordered, null, -1)).toBe('alpha') // `[` on the first run stays
+  expect(cycleRun(ordered, 'alpha', -1)).toBe('alpha')
   expect(otherRunLabel(ordered, null)).toBe('other run: beta · Implement 2/4')
-  expect(otherRunLabel(ordered, 'beta')).toBe('other run: alpha · Implement')
+  expect(otherRunLabel(ordered, 'beta')).toBe('other run: alpha · Implement') // on the last, the previous run
+  expect(otherRunLabel([a, b, row('gamma')], 'gamma')).toBe('other run: beta · Implement 2/4 (+1)')
   expect(otherRunLabel([a, b, row('gamma')], null)).toBe('other run: beta · Implement 2/4 (+1)')
   expect(otherRunLabel([row('s', { stalled: true })].concat(b), null)).toBe('other run: beta · Implement 2/4')
   expect(stageLabel(row('s', { stalled: true }))).toBe('Implement · stalled')
@@ -352,6 +356,65 @@ test('the rail repeats a loop and counts subgoals', () => {
   )
 })
 
+test('doingOf: live now.doing is not canned, the stage sentence is; doingText is its text', () => {
+  const live = row('l', { stage: 'setgoal', now: normalizeRow({ slug: 'l', now: nowJson() })!.now })
+  expect(doingOf(live)).toEqual({ text: 'SetGoal is rewriting the spec', canned: false })
+  const bare = row('b', { stage: 'critique' })
+  expect(doingOf(bare)).toEqual({ text: 'Critique is judging the spec', canned: true })
+  const blank = row('x', { stage: 'plan', now: normalizeRow({ slug: 'x', now: nowJson({ doing: '  ' }) })!.now })
+  expect(doingOf(blank).canned).toBe(true)
+  for (const r of [live, bare, blank]) expect(doingText(r)).toBe(doingOf(r).text)
+})
+
+test('the rail at the critique cap: SetGoal again only while current, a pending Critique only while a round is left', () => {
+  const marks = (r: HarnessRow) => railItems(r).map(i => `${i.label}${{ done: '✔', failed: '✘', current: '●', pending: '○' }[i.mark]}`).join(', ')
+  const two = [rejected, { ...rejected, round: 2 }] as never[]
+  expect(marks(row('r', { stage: 'setgoal', max_critique_rounds: 2, rounds: two }))).toBe(
+    'Plan✔, SetGoal✔, Critique✘, SetGoal again✔, Critique✘, SetGoal again●, Subgoals○, Goal gate○, Report○',
+  )
+  expect(marks(row('r', { stage: 'setgoal', max_critique_rounds: 3, rounds: two }))).toBe(
+    'Plan✔, SetGoal✔, Critique✘, SetGoal again✔, Critique✘, SetGoal again●, Critique○, Subgoals○, Goal gate○, Report○',
+  )
+  // past critique at the cap: no SetGoal again after the last reject
+  expect(marks(row('r', { stage: 'implement', max_critique_rounds: 2, rounds: two }))).toBe(
+    'Plan✔, SetGoal✔, Critique✘, SetGoal again✔, Critique✘, Subgoals●, Goal gate○, Report○',
+  )
+  // a sound final round: Critique done, no further SetGoal
+  expect(marks(row('r', { stage: 'implement', max_critique_rounds: 2, rounds: [rejected, { round: 2, sound: true, problems: [] }] as never[] }))).toBe(
+    'Plan✔, SetGoal✔, Critique✘, SetGoal again✔, Critique✔, Subgoals●, Goal gate○, Report○',
+  )
+})
+
+test('roundText: round 2 of 3, compact round 2/3, none is empty; failureToast names the cap the node gave', () => {
+  const r = row('r', { round: 2, max_critique_rounds: 3 })
+  expect([roundText(r), roundText(r, true), roundText(row('n'))]).toEqual(['round 2 of 3', 'round 2/3', ''])
+  const capped = failuresOf(failing(failure('r|critique|1', { what: 'Critique', reason: 'spec rejected', next_step: 'retry 1/3' })))[0]!
+  const bare = failuresOf(failing(failure('r|critique|1', { what: 'Critique', reason: 'spec rejected', next_step: 'retry 1/2' })))[0]!
+  expect(failureToast('r', capped).text).toContain('retry 1/3')
+  expect(failureToast('r', bare).text).toContain('retry 1/2')
+})
+
+test('restLine: +n and the counts of what is cut; nothing cut is empty', () => {
+  const rd = { round: 1, sound: false, problems: [1, 2, 3].map(() => ({ severity: 'major' as const, text: 'm' })).concat([{ severity: 'nit' as const, text: 'n' }]) }
+  expect(restLine(rd, 1)).toBe('+3: 2 major, 1 nit')
+  expect(restLine(rd, 4)).toBe('')
+  expect(restLine(null, 2)).toBe('')
+  expect(restText(rd, 1)).toBe('2 major, 1 nit')
+})
+
+test('stageStatus: rows per stage in flow order, stalled counted, none is undefined, never graph', () => {
+  const rows = [
+    ...Array.from({ length: 6 }, (_, i) => row(`p${i}`, { stage: 'plan' })),
+    ...Array.from({ length: 11 }, (_, i) => row(`i${i}`, { stage: 'implement', stalled: i === 0 })),
+  ]
+  expect(stageStatus(rows)).toBe('Plan(6) / Implement(11)')
+  expect(stageStatus([])).toBeUndefined()
+  expect(stageStatus([row('c', { stage: 'report' }), row('g', { stage: 'gate' }), row('s', { stage: 'setgoal' }), row('k', { stage: 'critique' })])).toBe(
+    'Setgoal(1) / Critique(1) / Gate(1) / Report(1)',
+  )
+  expect(stageStatus(rows)).not.toContain('graph')
+})
+
 test('findings: the latest round heading, its top problems by severity, the rest, and the rollup', () => {
   const r = normalizeRow({ ...ENGINE_ROW, rounds: [rejected, { round: 2, sound: false, problems: [{ severity: 'nit', text: 'n' }, { severity: 'blocker', text: 'b' }] }] })!
   expect(countsText({ blocker: 0, major: 4, minor: 0, nit: 1 })).toBe('4 major, 1 nit')
@@ -382,7 +445,7 @@ test('pane: the Now line, the last step line, the You line, the rail and the fin
   expect(at('You')).toMatch(/^ {2}You {3}nothing needed · next: critique round 2$/)
   expect(at('Plan')).toMatch(/^✔ Plan ━━ ✔ SetGoal ━━ ✘ Critique ━━ ● SetGoal again ┄┄ ○ Critique ┄┄ ○ Subgoals 0\/3 ┄┄ ○ Goal gate ┄┄ ○ Report +subgoals 0\/3 ─+$/)
   expect(at('Critique round')).toBe('Critique round 1 · rejected · 4 major, 1 nit')
-  expect(at('+')).toContain('+2 major, 1 nit · Findings (3)')
+  expect(at('+')).toContain('+3: 2 major, 1 nit · Findings (3)')
   expect(lines[lines.length - 1]).toMatch(/^● Now \(1\) {3}Flow \(2\) {3}Findings \(3\) {3}Gate rules \(4\)/)
   // waiting on you: the You line leads with ⚑ and the question; the Now glyph is idle
   const w = { ...r, waiting: { who: 'you' as const, what: 'approve the spec' }, now: { ...r.now!, waiting: { who: 'you' as const, what: 'approve the spec' } } }

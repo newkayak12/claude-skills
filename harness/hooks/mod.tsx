@@ -9,7 +9,7 @@ import type { PaneCtx, TabLabels } from './harness-draw'
 import type { RowFailure } from './status'
 import {
   cycleRun, failureToast, failuresOf, flowLines, frozenOrder, listArgv, markLooked, openTab, otherRunLabel, parseRow, parseRows,
-  paneKey, pickRun, reasonFor, runPosition, shownRows, showArgv, spinnerPlan,
+  paneKey, pickRun, reasonFor, runPosition, shownRows, showArgv, spinnerPlan, stageStatus,
 } from './status'
 
 const last = atom({ plugin: 'harness', key: 'last' } as const, null as Decision | null)
@@ -267,85 +267,6 @@ async function scanRun($: EngineInterface, slug: string | null, failures: readon
   }
 }
 
-// Open runs per stage, in flow order, this worktree: fallback runs (.harness-run/<slug>/, staged by
-// the first missing file: 01-plan.md, 02-goal-spec.json, a sound 02-critique.json, every subgoal's
-// result.json, 04-goal-gate.json) and graph runs (.harness-run/broker/runs/<id>.json).
-const STAGES = ['plan', 'setgoal', 'critique', 'implement', 'test', 'gate', 'report'] as const
-type Stage = (typeof STAGES)[number]
-// A run untouched for 12 h is abandoned, not open.
-const STALE_MS = 12 * 60 * 60 * 1000
-const FINISHED = new Set(['done', 'skipped', 'unreachable'])
-
-export type StageCounts = { harness: Partial<Record<Stage, number>>; graph: Partial<Record<Stage, number>> }
-
-const label = (s: Stage) => s.charAt(0).toUpperCase() + s.slice(1)
-const counted = (c: Partial<Record<Stage, number>>) =>
-  STAGES.filter(s => (c[s] ?? 0) > 0).map(s => `${label(s)}(${c[s]})`).join(' / ')
-
-// `Plan(6) / Implement(11) · graph Implement(3)`; nothing open is no status
-export function stageStatus(c: StageCounts): string | undefined {
-  const parts = [counted(c.harness), counted(c.graph) ? `graph ${counted(c.graph)}` : ''].filter(Boolean)
-  return parts.length > 0 ? parts.join(' · ') : undefined
-}
-
-async function countStages($: EngineInterface, cwd: string, now: number): Promise<StageCounts> {
-  const out: StageCounts = { harness: {}, graph: {} }
-  const add = (kind: 'harness' | 'graph', s: Stage) => {
-    out[kind][s] = (out[kind][s] ?? 0) + 1
-  }
-  const json = async (p: string) => { try { return JSON.parse(await $.fs.read(p)) } catch { return null } }
-  const list = async (p: string) => { try { return await $.fs.list(p) } catch { return [] } }
-  // this session's worktree only: runs of other worktrees belong to other sessions
-  let trees = [cwd]
-  try {
-    const top = await $.process.run(['git', '-C', cwd, 'rev-parse', '--show-toplevel'])
-    if (top.exitCode === 0 && top.stdout.trim()) trees = [top.stdout.trim()]
-  } catch {
-    // not a repo: this cwd alone
-  }
-  for (const tree of trees) {
-    const base = `${tree}/.harness-run`
-    for (const run of await list(base)) {
-      if (run.kind !== 'dir') continue
-      const dir = `${base}/${run.name}`
-      if (run.name === 'broker') {
-        for (const f of await list(`${dir}/runs`)) {
-          if (!f.name.endsWith('.json') || now - f.mtimeMs > STALE_MS) continue
-          const g = await json(`${dir}/runs/${f.name}`)
-          const nodes = (Array.isArray(g?.nodes) ? g.nodes : []) as { stage?: string; state?: string }[]
-          if (nodes.some(n => n.stage === 'report' && n.state === 'done')) continue
-          const stage = STAGES.find(s => nodes.some(n => n.stage === s && !FINISHED.has(String(n.state))))
-          if (stage) add('graph', stage)
-        }
-        continue
-      }
-      const files = await list(dir)
-      const has = (name: string) => files.some(f => f.name === name)
-      if (!has('manifest.json') || has('05-report.md')) continue
-      const subs = await list(`${dir}/subgoals`)
-      if (now - Math.max(0, ...files.map(f => f.mtimeMs), ...subs.map(f => f.mtimeMs)) > STALE_MS) continue
-      const spec = await json(`${dir}/02-goal-spec.json`)
-      const crit = await json(`${dir}/02-critique.json`)
-      const ids = (Array.isArray(spec?.subgoals) ? spec.subgoals : []).map((s: { id?: unknown }) => String(s.id))
-      let passed = 0
-      let failed = 0
-      for (const id of ids) {
-        const r = await json(`${dir}/subgoals/${id}/result.json`)
-        if (r?.passed === true) passed++
-        else if (r?.passed === false) failed++
-      }
-      const judged = passed + failed
-      add('harness', !has('01-plan.md') ? 'plan'
-        : !spec ? 'setgoal'
-        : crit?.sound !== true ? 'critique'
-        : judged < ids.length ? 'implement'
-        : !has('04-goal-gate.json') ? 'gate'
-        : 'report')
-    }
-  }
-  return out
-}
-
 // The events to show: each failure the node gives (`failures` of an open run's row, and of a run finished since the
 // session started, which --list leaves out so `--show` is asked, once) written after `start`, and `complete` for a
 // finished run with no failure that gave up. The node decides reason, next step and severity (status.ts failureToast
@@ -443,13 +364,13 @@ async function refreshRun($: EngineInterface) {
   }
 }
 
-// The open runs, read again: the node list (never in the demo), then the run files. Every failure leaves what was there.
-async function refresh($: EngineInterface) {
+// The open runs, read again: the node list, then the run files. Every failure leaves what was there. Returns the live
+// list when the node answered (the status line counts it, also in the demo, which draws demo rows instead), else null.
+async function refresh($: EngineInterface): Promise<HarnessRow[] | null> {
+  let live: HarnessRow[] | null = null
   try {
-    if ((await read($, demo)) === null) {
-      const next = await loadRows($)
-      if (next !== null) await update($, rows, () => next)
-    }
+    live = await loadRows($)
+    if (live !== null && (await read($, demo)) === null) await update($, rows, () => live!)
     await refreshRun($)
     // a reject that lands while the pane shows the run has been seen
     if (await paneOpen($)) {
@@ -460,6 +381,7 @@ async function refresh($: EngineInterface) {
     // an unreadable list or run dir leaves the last one as it was
   }
   await kick?.()
+  return live
 }
 
 // The faster interval: only while a run on screen acts (a pane or the band shows it) and a surface exists; it ends as
@@ -487,6 +409,7 @@ async function step($: EngineInterface) {
 async function cycle($: EngineInterface, by: 1 | -1) {
   const v = await view($)
   const slug = cycleRun(v.ordered, v.sel, by)
+  if (slug === (v.picked?.slug ?? null)) return // at an end (or one run): nothing changes
   await update($, selected, () => slug)
   await update($, looked, l => markLooked(l, pickRun(v.ordered, slug)))
   await refreshRun($)
@@ -565,9 +488,9 @@ export const register: Register = on => {
 
     async function tick() {
       try {
-        // the status line: open runs per stage; the gate's decisions live in /harness-status
-        $.ui.status(stageStatus(await countStages($, await $.session.cwd(), await $.clock.now())))
-        await refresh($)
+        // the status line: the node's open runs per stage; no answer is no status; the gate's decisions live in /harness-status
+        const live = await refresh($)
+        $.ui.status(live === null ? undefined : stageStatus(live))
         await notifyRuns()
         if (!(await $.fs.exists(CONFIG))) {
           await update($, armed, () => false)
