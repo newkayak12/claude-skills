@@ -107,8 +107,13 @@ function runningModels(tasksDir, cwd) {
   return out;
 }
 
+// The ⚑ count reads every live open task (a card parked in a child run counts though no task runs),
+// the same rule summaryOutput applies, so --format status and summary.status always agree.
 function statusOutput(tasksDir, cwd) {
-  return statusFrom(runningModels(tasksDir, cwd));
+  const listed = floorTasks({ tasksDir, cwd, now: Date.now() });
+  const status = JSON.parse(statusFrom(runningModels(tasksDir, cwd)));
+  status.waiting = listed.filter((x) => x.live).reduce((s, x) => s + waitingCount(x.m), 0);
+  return JSON.stringify(status) + '\n';
 }
 
 function statusFrom(models) {
