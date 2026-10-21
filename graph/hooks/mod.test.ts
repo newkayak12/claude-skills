@@ -51,7 +51,7 @@ const rowOf = (f: File) => {
   const age = NOW - f.mtimeMs
   return {
     id8: run.run_id.slice(0, 8), state: done ? 'complete' : 'running', owner: run.owner ?? null, created_at: new Date(NOW - 2 * HOUR).toISOString(), cost_usd: null,
-    running: null, run_id: run.run_id, file: `/proj/${DIR}/${f.name}`, request: run.request.split('\n')[0], max_retries: run.max_retries ?? null,
+    running: null, run_id: run.run_id, file: `/proj/${DIR}/${f.name}`, request: run.request.split('\n')[0].replace(/^\[teams-task [^\]]*\]\s*/, ''), max_retries: run.max_retries ?? null,
     last_change: new Date(f.mtimeMs).toISOString(), last_change_ms: f.mtimeMs, age_ms: age, open: !done && age < 12 * HOUR, stalled: !done && age >= 2 * HOUR,
     routing_blocked: run.routing_blocked === true, unavailable_vendors: {},
     subgoals: (run.spec?.subgoals ?? []).map((g: any) => ({ id: g.id, title: g.title ?? '' })),
@@ -277,7 +277,8 @@ test('the pane: tabs Flow/Detail, id, request, subgoal title and the dim footer 
   expect((await ui.find({ key: 'detail' }))?.props).toMatchObject({ plain: true, hotkey: '2', dimColor: true, label: 'Detail' })
   expect(await ui.find({ key: 'keys' })).toBeDefined() // the Input that takes [ ] and typed slash text
   expect(text).toContain('696f2f93')
-  expect(text).toContain('[teams-task 97f05d73') // the readout's first line is shown as given
+  expect(text).toContain('README에 한 줄 추가하는 작은 작업')
+  expect(text).not.toContain('[teams-task')
   expect(text).toContain('Create README.md with a single line')
   expect(text).not.toContain('close [q]')
   expect(text).not.toContain('닫기 [q]')

@@ -2,8 +2,8 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { GraphRow, OpenedRun } from '../types'
-import { MARK, TINT, fmt, isKorean, tabs } from './draw'
-import { bandLines, cells, footerKeys, paneBody, renderLines } from './graph-draw'
+import { fmt, isKorean, tabs } from './draw'
+import { bandLines, cells, detailLines, footerKeys, paneBody, renderLines } from './graph-draw'
 import type { PaneCtx } from './graph-draw'
 import { cycleRun, frozenOrder, listArgv, markLooked, paneKey, paneSlash, parseOpenArg, parseRow, parseRows, pickRun, runPosition, showArgv, spinnerPlan, standalone } from './status'
 
@@ -21,16 +21,15 @@ const opened = atom({ plugin: 'graph', key: 'opened' } as const, null as OpenedR
 const spin = atom({ plugin: 'graph', key: 'spin' } as const, 0)
 
 const PANE = 'graph-status'
-const NODE_MAX = 24 // Detail rows drawn before "+n more"
 const TICK_MS = 5000
 const SPIN_MS = 800 // a spinner frame; only while a shown run acts
 const LIST_TIMEOUT_MS = 10_000
 
 const en = {
   tabFlow: 'Flow', tabDetail: 'Detail', noRun: 'No graph run in this folder.',
-  more: '+{n} more', cmdDesc: 'Open or close the graph status pane', paneOpened: 'pane opened', paneClosed: 'pane closed',
+  cmdDesc: 'Open or close the graph status pane', paneOpened: 'pane opened', paneClosed: 'pane closed',
   closeBtn: 'q', closeWord: 'close', prev: '[ prev', next: 'next ]', bandOpen: 'open',
-  attempt: '(attempt {n})', feedback: 'feedback', openFailed: 'could not read that run file',
+  openFailed: 'could not read that run file',
 }
 
 // one table, two languages; the type keeps the keys identical
@@ -38,9 +37,9 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
   en,
   ko: {
     tabFlow: '흐름', tabDetail: '상세', noRun: '이 폴더에 그래프 실행이 없습니다.',
-    more: '+{n}건 더', cmdDesc: '그래프 상태 창 열기/닫기', paneOpened: '창을 열었습니다', paneClosed: '창을 닫았습니다',
+    cmdDesc: '그래프 상태 창 열기/닫기', paneOpened: '창을 열었습니다', paneClosed: '창을 닫았습니다',
     closeBtn: 'q', closeWord: '닫기', prev: '[ 이전', next: '다음 ]', bandOpen: '열기',
-    attempt: '({n}번째 시도)', feedback: '전달된 피드백', openFailed: '그 실행 파일을 읽을 수 없습니다',
+    openFailed: '그 실행 파일을 읽을 수 없습니다',
   },
 }
 type Key = keyof typeof en
@@ -350,27 +349,7 @@ export const register: Register = on => {
 
     let body
     if (r === null) body = <Text>{s('noRun')}</Text>
-    else if (kind === 'flow') body = renderLines(ui, paneBody(r, ctx))
-    else {
-      // Detail: one line per node, as the readout gives it
-      const nodes = r.nodes.filter(x => x.state !== 'skipped')
-      body = (
-        <Box flexDirection="column">
-          {nodes.slice(0, NODE_MAX).map((x, i) => {
-            const mark = x.state === 'done' ? 'done' : x.state === 'running' ? 'running' : x.state === 'failed' ? 'failed' : 'pending'
-            const name = `${x.stage}${x.subgoal_id !== null ? ` ${x.subgoal_id}` : ''}${x.attempt !== null && x.attempt > 1 ? ` ${s('attempt', { n: x.attempt })}` : ''}`
-            return (
-              <Box key={`d${i}`} flexDirection="column">
-                <Text wrap="truncate-end"><Text color={TINT[mark]}>{MARK[mark]}</Text>{` ${name}  ${x.agent ?? '—'}`}</Text>
-                {x.feedback !== null && x.feedback !== '' && <Text dimColor wrap="truncate-end">{`  ${s('feedback')}: ${x.feedback.replace(/\s+/g, ' ')}`}</Text>}
-                {x.reason !== null && x.reason !== '' && <Text color="error" wrap="truncate-end">{`  ${x.reason.replace(/\s+/g, ' ')}`}</Text>}
-              </Box>
-            )
-          })}
-          {nodes.length > NODE_MAX && <Text dimColor>{`  ${s('more', { n: nodes.length - NODE_MAX })}`}</Text>}
-        </Box>
-      )
-    }
+    else body = renderLines(ui, kind === 'flow' ? paneBody(r, ctx) : detailLines(r, ctx))
     const keys = footerKeys(n)
     return (
       <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
@@ -386,7 +365,7 @@ export const register: Register = on => {
             </Box>
           )}
           <Box columnGap={1} flexShrink={0}>
-            <Button key="close" role="dismiss" label={s('closeBtn')} hotkey="q" onPress={() => closePane($)} />
+            <Button key="close" role="dismiss" dimColor label={s('closeBtn')} hotkey="q" onPress={() => closePane($)} />
             <Text dimColor>{s('closeWord')}</Text>
           </Box>
           <Box flexShrink={1} height={1} overflow="hidden"><Input key="keys" autoFocus value="" placeholder="" onInput={onKey} onSubmit={onSubmit} /></Box>

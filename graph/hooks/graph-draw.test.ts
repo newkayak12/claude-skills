@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import {
-  DEMO_NOW, DEMO_SCENARIOS, bandLines, cells, clipLine, demoRows, footerKeys, lineWidth, paneBody, paneFooter, paneLines, plain, renderDemo,
+  DEMO_NOW, DEMO_SCENARIOS, bandLines, cells, clipLine, demoRows, detailLines, footerKeys, lineWidth, paneBody, paneFooter, paneLines, plain, renderDemo,
 } from './graph-draw'
 import type { Line, PaneCtx } from './graph-draw'
 import { cycleRun, openingOrder, pickRun, runPosition, standalone } from './status'
@@ -205,6 +205,38 @@ test('parallel shows two standalone runs and no owned run; [ ] reach both', () =
     expect(out).not.toContain('b33f00d1')
     expect(out).not.toContain('E-3f9a21c0/P2')
   }
+})
+
+test('detailLines: skipped nodes absent, attempt shown from 2, agent column aligned, feedback and reason under their node', () => {
+  const r = leading('full')
+  const nodes = [
+    ...r.nodes.filter(n => n.node_id === 'plan' || n.node_id === 'gate:U2:1' || n.node_id === 'implement:U2:2'),
+    { ...r.nodes[0]!, node_id: 'test:U9:1', stage: 'test', subgoal_id: 'U9', state: 'skipped', attempt: 1 },
+  ]
+  const ls = text(detailLines({ ...r, nodes }, ctxFor(190)))
+  const body = ls.slice(3)
+  expect(ls.join('\n')).not.toContain('U9')
+  expect(body.some(l => l.includes('implement U2 (attempt 2)'))).toBe(true)
+  expect(body.some(l => l.includes('plan ') && !l.includes('attempt'))).toBe(true)
+  expect(body.some(l => l.startsWith('  feedback: Return the buffered body'))).toBe(true)
+  expect(body.some(l => l.startsWith('  the legacy endpoint still streams'))).toBe(true)
+  const col = body.filter(l => /^[✔✘▸✎⌕…◌○] /u.test(l)).map(l => l.indexOf('codex') >= 0 ? l.indexOf('codex') : l.indexOf('claude-sonnet'))
+  expect(new Set(col).size).toBe(1)
+})
+
+test('detailLines: at most 24 node rows then "+n more"; every line fits both widths, a cut ends in …', () => {
+  const r = leading('full')
+  const many = Array.from({ length: 30 }, (_, i) => ({ ...r.nodes[0]!, node_id: `plan:${i}`, subgoal_id: `S${i}`, state: 'done', attempt: 1, feedback: null, reason: null }))
+  const ls = text(detailLines({ ...r, nodes: many }, ctxFor(190)))
+  expect(ls.filter(l => l.startsWith('✔')).length).toBe(24)
+  expect(ls[ls.length - 1]).toBe('  +6 more')
+  for (const w of WIDTHS) {
+    for (const d of detailLines(leading('narrow'), ctxFor(w))) {
+      expect(lineWidth(d)).toBeLessThanOrEqual(w - 4)
+    }
+  }
+  const cut = detailLines(leading('narrow'), ctxFor(40)).map(plain)
+  expect(cut.some(l => l.endsWith('…'))).toBe(true)
 })
 
 // Producer for the demo renders. The plugin test runner reads no env and imports no node:fs, so each render is

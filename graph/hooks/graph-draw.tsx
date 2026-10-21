@@ -330,6 +330,29 @@ export function paneBody(r: GraphRow, c: PaneCtx): Line[] {
 
 export const paneLines = (r: GraphRow, c: PaneCtx): Line[] => [...paneBody(r, c), [], clipLine(paneFooter(c.pos.n), c.width)]
 
+const DETAIL_MAX = 24 // node rows drawn before "+n more"
+
+// The Detail tab, everything but the footer: one row per node that ran (skipped ones are no attempt), the name and
+// agent columns aligned; a handed-on feedback and a failure reason sit under their node.
+export function detailLines(r: GraphRow, c: PaneCtx): Line[] {
+  const nodes = r.nodes.filter(n => n.state !== 'skipped')
+  const shown = nodes.slice(0, DETAIL_MAX).map(n => ({
+    n,
+    name: `${nodeLabel(n)}${n.attempt !== null && n.attempt > 1 ? ` (attempt ${n.attempt})` : ''}`,
+  }))
+  const nameW = Math.max(0, ...shown.map(x => cells(x.name)))
+  const out: Line[] = [tabLine(c), headerLine(r, c), []]
+  for (const { n, name } of shown) {
+    out.push([stageIcon(n, c.tick), seg(' '), seg(pad(name, nameW + 2)), seg(n.agent ?? NONE, { dim: true })])
+    const feedback = oneLine(n.feedback)
+    if (feedback !== '') out.push([seg('  '), seg(`feedback: ${feedback}`, { dim: true })])
+    const reason = oneLine(n.reason)
+    if (reason !== '') out.push([seg('  '), seg(reason, { tint: 'error' })])
+  }
+  if (nodes.length > DETAIL_MAX) out.push([seg(`  +${nodes.length - DETAIL_MAX} more`, { dim: true })])
+  return out.map(l => clipLine(l, c.width))
+}
+
 /* --- the demo: fixtures rendered to plain text, no live run. Fictional runs only. --- */
 
 export const DEMO_SCENARIOS = ['minimal', 'full', 'parallel', 'narrow'] as const

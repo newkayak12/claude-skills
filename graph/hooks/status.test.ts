@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import type { GraphNode, GraphRow, GraphRun } from '../types'
 import {
-  active, agentOf, ageText, clock, costText, cycleRun, detailRows, flowGroups, frozenOrder, listArgv, markLooked, openingOrder, ordered,
+  active, agentOf, ageText, clock, costText, cycleRun, flowGroups, frozenOrder, listArgv, markLooked, openingOrder, ordered,
   paneKey, paneSlash, parseOpenArg, parseRow, parseRows, pickRun, runPosition, showArgv, span, spinnerPlan, standalone,
 } from './status'
 
@@ -95,20 +95,6 @@ test('flowGroups: goal gate retries chain under the failed one; report last', ()
   const g = flowGroups(r)
   expect(g.map(x => x.stage)).toEqual(['gate', 'report'])
   expect(g[0]!.lines.map(l => [l.depth, l.reason])).toEqual([[0, 'match 60%'], [1, '']])
-})
-
-test('detailRows: skipped absent; agent, elapsed, one-line feedback, failure reason only on failed nodes', () => {
-  const r = run([
-    n('implement:U1:1', 'failed', { executor: 'codex', model: 'gpt-5', started_at: 0, finished_at: 5000, result: { reason: 'boom' } }),
-    n('implement:U1:2', 'running', { feedback: 'a\nb' }),
-    n('implement:U1:3', 'skipped'),
-    n('plan', 'done', { result: { reason: 'ignored' } }),
-  ])
-  const rows = detailRows(r, 10_000)
-  expect(rows.map(x => x.node.node_id)).toEqual(['plan', 'implement:U1:1', 'implement:U1:2'])
-  expect(rows[1]).toMatchObject({ agent: 'codex·gpt-5', elapsed: '5s', reason: 'boom', feedback: '' })
-  expect(rows[2]).toMatchObject({ agent: '—', elapsed: '', feedback: 'a b', reason: '' })
-  expect(rows[0]!.reason).toBe('')
 })
 
 test('argv: the broker readout, list and show', () => {

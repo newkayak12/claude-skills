@@ -2416,3 +2416,9 @@ test('runs --list skips a run file whose name does not match its run_id, and sti
     assert.deepEqual(JSON.parse(out.stdout).map((r) => r.run_id), [runId]);
   });
 });
+
+test('runRow: the [teams-task <id>] prefix is not part of the request title; other brackets stay', () => {
+  const row = (request) => runRow({ run_id: 'r1', request, nodes: [] }, { file: '/f', mtimeMs: 1000, now: 1000 }).request;
+  assert.equal(row('[teams-task 97f05d73-860c-4538-8203-e9a0f925b366] Add a line\nmore'), 'Add a line');
+  assert.equal(row('[fix] keep this'), '[fix] keep this');
+});
