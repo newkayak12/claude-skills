@@ -4,6 +4,8 @@ import type { On } from 'claude-code'
 
 import { frame, draw, cells } from './demo-frames.ts'
 import { STRINGS } from './mod'
+import { paneKey, paneSlash } from './pane'
+import { footerPlan, tabRowPlan } from './teams-draw'
 
 type Run = { exitCode: number; stdout: string; stderr: string }
 const ok = (stdout: string): Run => ({ exitCode: 0, stdout, stderr: '' })
@@ -222,7 +224,7 @@ const fmtOf = (argv: readonly string[]) => argv[argv.indexOf('--format') + 1]
 const stat = (over: Record<string, unknown> = {}) => ({ line: 'teams: E-3a3a3bb5 12/17 ', waiting: 0, latest: '3a3a3bb5-f4b7', ...over })
 
 const LEAKS = ['verdict=', 'match=', '/Users/', '/var/', 'dispatch:', 'gate:goal', 'accept:']
-const EN_UI = ['Now', 'You', 'Stages', 'Work', 'Cost', 'Summary', 'Log', 'needs you', 'more in other runs', 'running', 'stalled', 'finished']
+const EN_UI = ['Now', 'You', 'Stages', 'Work', 'Cost', 'Summary', 'Log', 'needs you', 'question for you', 'questions for you', 'more in other runs', 'running', 'stalled', 'finished']
 
 // Engine beneath: a Map-backed $.state, process.run for view.mjs (status and summary answer the same
 // fixture), ui.open and ui.status recorded.
@@ -278,20 +280,21 @@ const band = ($: Engine, surface: (typeof SURFACES)[number], hasSurvey = false) 
 type Ui = Awaited<ReturnType<typeof pane>>
 const shown = async (ui: Ui) => JSON.stringify(await ui.drawn())
 const labels = async (ui: Ui) => (await ui.findAll({ type: 'Button' })).map(b => String(b.props.label))
-// the header row: the title Text and the state/day/progress Text beside it
-const headerOf = async (ui: Ui) =>
-  `${(await ui.find({ type: 'Text', text: /E-3a3a3bb5/ }))?.text ?? ''} ${(await ui.find({ type: 'Text', text: /day \d+|\d+일째/ }))?.text ?? ''}`
+// the header row of a task the EPIC list does not carry: its state and progress Text
+const headerOf = async (ui: Ui) => String((await ui.find({ type: 'Text', text: /· \d+\/\d+$/ }))?.text ?? '')
 const engineBand = (on: On) =>
   on('ui.render', (_$, e) => (e.component === 'AbovePrompt' ? { type: 'Text', children: ['engine band'] } : undefined) as never)
 
 // The data reaches the mod the way it does live: one tick (pane open, so the summary call runs) over
 // the mocked view.mjs; `data` is read at every call, so a test changes it between ticks.
-async function seeded($: Engine, on: On, data: Data, surface: (typeof SURFACES)[number] = 'terminal', language?: string, init: Record<string, unknown> = {}) {
+async function seeded($: Engine, on: On, data: Data, surface: (typeof SURFACES)[number] = 'terminal', language?: string, init: Record<string, unknown> = {}, bare = false) {
   const clock = mock.clock(on, { now: 1000 })
   startWorld(on, language)
   const seen = uiWorld(on, { watch: ['abc'], ...init }, [surface], data)
   on('ui.panes', () => ({ value: [{ id: 'teams-status', title: 'Teams', isPlaced: true }] }) as never)
-  engineBand(on) // the engine's own band, beneath the teams row
+  // the engine's own band, beneath the teams row; the demo frames get an empty one so no stub text is drawn
+  if (bare) on('ui.render', (_$, e) => (e.component === 'AbovePrompt' ? { type: 'Box', children: [] } : undefined) as never)
+  else engineBand(on)
   await start($)
   await clock.advance(3000)
   return { seen, tick: () => clock.advance(3000), clock }
@@ -299,12 +302,13 @@ async function seeded($: Engine, on: On, data: Data, surface: (typeof SURFACES)[
 const seededClock = ($: Engine, on: On, data: Data, surface: (typeof SURFACES)[number]) => seeded($, on, data, surface, undefined, { epic: 'tA' })
 
 for (const surface of SURFACES) {
-  test(`${surface}: Summary answers now / you / how far / going well, with no internal ids; render runs no process`, async ($, on) => {
+  test(`${surface}: Summary answers how far / going well, with no internal ids; render runs no process`, async ($, on) => {
     const { seen } = await seeded($, on, { status: stat(), task: demo() }, surface)
     const ui = await pane($, surface)
     const n = seen.argv.length
     const text = await shown(ui)
-    for (const word of ['Now', 'You', '4/5', 'running', 'Build the expense tracker']) expect(text).toContain(word)
+    for (const word of ['4/5', 'running', 'Build the expense tracker']) expect(text).toContain(word)
+    for (const word of ['Now', 'You', 'day ']) expect(text).not.toContain(word)
     for (const leak of LEAKS) expect(text).not.toContain(leak)
     await ui.redraw()
     expect(seen.argv).toHaveLength(n)
@@ -324,42 +328,48 @@ for (const surface of SURFACES) {
     expect(all.filter(l => l.includes('[') || l.includes(']'))).toEqual([])
   })
 
-  test(`${surface}: Now sits on top, then the tabs: plain hotkey tabs 1-5, the selected one full strength with a dot`, async ($, on) => {
+  test(`${surface}: the title sits on top, then the tabs: plain tabs, the selected one full strength with a dot (1-5 are Input keys, no Button hotkey)`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo() }, surface)
     const ui = await pane($, surface)
     const tab = async (key: string) => (await ui.find({ key }))?.props
-    expect(await tab('floor')).toMatchObject({ plain: true, hotkey: '1', dimColor: false, label: '● Floor 1' })
-    expect(await tab('stories')).toMatchObject({ plain: true, hotkey: '2', dimColor: true, label: 'STORYs 2' })
-    expect(await tab('decisions')).toMatchObject({ plain: true, hotkey: '3', dimColor: true, label: 'Decisions 3' })
-    expect(await tab('log')).toMatchObject({ hotkey: '4', label: 'Log 4' })
-    expect(await tab('report')).toMatchObject({ hotkey: '5', label: 'Report 5' })
+    expect(await tab('floor')).toMatchObject({ plain: true, dimColor: false, label: '● Floor' })
+    expect(await tab('stories')).toMatchObject({ plain: true, dimColor: true, label: 'STORYs' })
+    expect(await tab('decisions')).toMatchObject({ plain: true, dimColor: true, label: 'Decisions' })
+    expect(await tab('log')).toMatchObject({ label: 'Log' })
+    expect(await tab('report')).toMatchObject({ label: 'Report' })
+    for (const key of ['floor', 'stories', 'decisions', 'log', 'report']) expect((await tab(key))?.hotkey).toBeUndefined()
     const text = await shown(ui)
-    expect(text.indexOf('Now')).toBeLessThan(text.indexOf('Floor'))
+    expect(text.indexOf('Build the expense tracker')).toBeLessThan(text.indexOf('Floor'))
     await ui.press({ key: 'decisions' })
     await ui.redraw() // the stubbed $.state does not notify readers
-    expect(await tab('decisions')).toMatchObject({ dimColor: false, label: '● Decisions 3' })
-    expect(await tab('floor')).toMatchObject({ dimColor: true, label: 'Floor 1' })
+    expect(await tab('decisions')).toMatchObject({ dimColor: false, label: '● Decisions' })
+    expect(await tab('floor')).toMatchObject({ dimColor: true, label: 'Floor' })
   })
 
-  test(`${surface}: Floor tab: one block per team, each card with its state and what it does now; Now lists each active actor`, async ($, on) => {
+  // (the per-actor Now lines of `teams.now` left the pane with the Now block: the worker rows and the band say who acts)
+  test(`${surface}: Decisions tab: one block per team, each card with its state and what it does now; the Floor has none`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo({ work: [failedCard] }), teams: TEAMS }, surface)
     const ui = await pane($, surface)
+    expect(await ui.find({ key: 'card:P1' })).toBeUndefined()
+    await ui.press({ key: 'decisions' })
+    await ui.redraw()
     for (const head of ['Planning', 'Develop', 'QA', 'Audit']) expect(await ui.find({ type: 'Text', text: head })).toBeDefined()
     expect((await ui.find({ key: 'card:P1' }))?.props.label).toBe('● module b · IN_PROGRESS · implement codex·gpt-5 4m')
     expect((await ui.find({ key: 'card:P0' }))?.props.label).toBe('✘ module a · BLOCKED')
     expect(await ui.find({ type: 'Text', text: '  verifier rejected: tests red' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: '  Develop · E-3a3a3bb5/P1 · implement · codex·gpt-5 · 4m' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: '  EPIC · E-3a3a3bb5 · integrate:1 · claude·opus · 35s' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /E-3a3a3bb5\/P1 · implement/ })).toBeUndefined()
   })
 
   test(`${surface}: a card pressed opens its own decision thread: earlier and later verdict with actor and reason`, async ($, on) => {
     const { seen } = await seeded($, on, { status: stat(), task: demo(), teams: TEAMS, decisions: card => (card === 'P1' ? THREAD : { card: null, entries: [] }) }, surface)
     const ui = await pane($, surface)
+    await ui.press({ key: 'decisions' })
+    await ui.redraw()
     await ui.press({ key: 'card:P1' })
     await ui.redraw()
     const call = seen.argv.filter(a => fmtOf(a) === 'decisions').at(-1)!
-    expect(call[call.indexOf('--card') + 1]).toBe('P1')
-    expect((await ui.find({ key: 'decisions' }))?.props.label).toBe('● Decisions 3')
+    expect(call.slice(2)).toEqual(['--once', '--format', 'decisions', '--task', 'abc', '--cwd', '/proj', '--card', 'P1'])
+    expect((await ui.find({ key: 'decisions' }))?.props.label).toBe('● Decisions')
     expect(await ui.find({ type: 'Text', text: 'Card P1' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '10:00 claude·opus · could not judge · accept:P1:1 — reply was not JSON' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '10:05 claude·sonnet · rejected 70% · accept:P1:1 — AC 3 missing' })).toBeDefined()
@@ -373,6 +383,8 @@ for (const surface of SURFACES) {
   test(`${surface}: a failed card shows its reason once; Log tab has time and sentence`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo({ work: [failedCard, card('module b', 'package', 'done')] }) }, surface)
     const ui = await pane($, surface)
+    await ui.press({ key: 'decisions' })
+    await ui.redraw()
     const work = await shown(ui)
     expect(work).toContain('module a')
     expect(work).toContain('module b')
@@ -404,7 +416,7 @@ for (const surface of SURFACES) {
     })
   }
 
-  test(`${surface}: band shows the teams row and the engine band beneath it`, async ($, on) => {
+  test(`${surface}: band shows the teams row and the engine-supplied band beneath it`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo() }, surface)
     const ui = await band($, surface)
     const text = await shown(ui)
@@ -436,10 +448,21 @@ for (const surface of SURFACES) {
   test(`${surface}: needs-you count comes from status.waiting: band Button and the pane's other-runs line`, async ($, on) => {
     const { seen } = await seeded($, on, { status: stat({ waiting: 2 }), task: demo() }, surface)
     const ui = await band($, surface)
-    expect((await ui.find({ key: 'inbox' }))?.props.label).toBe('needs you 2')
-    await ui.press({ key: 'board' })
+    expect((await ui.find({ key: 'inbox' }))?.props.label).toBe('2 questions for you')
+    expect(await ui.find({ key: 'board' })).toBeUndefined()
+    await ui.press({ key: 'inbox' })
     expect(seen.opened).toEqual(['teams-status'])
     expect(await shown(await pane($, surface))).toContain('2 more in other runs')
+  })
+
+  test(`${surface}: band says one question for you in the singular and the ko label carries the count`, async ($, on) => {
+    await seeded($, on, { status: stat({ waiting: 1 }), task: demo() }, surface)
+    expect((await (await band($, surface)).find({ key: 'inbox' }))?.props.label).toBe('1 question for you')
+  })
+
+  test(`${surface}: korean band label counts the questions`, async ($, on) => {
+    await seeded($, on, { status: stat({ waiting: 3 }), task: demo() }, surface, 'korean')
+    expect((await (await band($, surface)).find({ key: 'inbox' }))?.props.label).toBe('질문 3건')
   })
 
   test(`${surface}: band shows no inbox Button when nothing waits (regression guard)`, async ($, on) => {
@@ -466,6 +489,7 @@ for (const surface of SURFACES) {
     expect(headers[2]).not.toContain('running')
     expect(new Set(headers).size).toBe(3)
     data.task = demo({ work: [failedCard, card('module b', 'package', 'done')] })
+    await ui.press({ key: 'decisions' })
     await tick()
     await ui.redraw()
     const failed = await shown(ui)
@@ -474,11 +498,16 @@ for (const surface of SURFACES) {
 
   test(`${surface}: language korean draws no English UI word and the 현장 tab`, async ($, on) => {
     await seeded($, on, { status: stat({ waiting: 2 }), task: demo({ work: [failedCard] }), teams: TEAMS }, surface, 'korean')
-    const texts = [await shown(await pane($, surface)), await shown(await band($, surface))]
-    for (const text of texts) for (const word of [...EN_UI, 'Teams', 'Decisions', 'Develop', 'Audit', '"label":"close"']) expect(text).not.toContain(word)
-    expect(texts[0]).toContain('● 현장 1')
-    expect(texts[0]).toContain('개발')
+    const ui = await pane($, surface)
+    const floor = await shown(ui)
+    await ui.press({ key: 'decisions' })
+    await ui.redraw()
+    const texts = [floor, await shown(ui), await shown(await band($, surface))]
+    for (const text of texts) for (const word of [...EN_UI, 'Teams', 'Decisions', 'Develop', 'Audit', '"label":"close"', 'q close']) expect(text).not.toContain(word)
+    expect(texts[0]).toContain('● 현장')
+    expect(texts[1]).toContain('개발')
     expect(texts[0]).toContain('Build the expense tracker')
+    expect(texts[0]).toContain('q 닫기')
   })
 }
 
@@ -512,12 +541,87 @@ test('q closes the pane; /teams-status on an open pane closes it', async ($, on)
   on('ui.close', (_$, e) => { closed.push(e.id); return { value: undefined } })
   await seeded($, on, { status: stat(), task: demo() })
   const ui = await pane($, 'terminal')
-  expect((await ui.find({ key: 'close' }))?.props).toMatchObject({ hotkey: 'q', role: 'dismiss', label: 'close' })
+  expect((await ui.find({ key: 'close' }))?.props).toMatchObject({ role: 'dismiss', label: 'q close', plain: true, dimColor: true })
+  // said once, as the footer's last item; the key hint does not say it again
+  expect((await shown(ui)).split('"label":"q close"').length - 1).toBe(1)
+  expect((await shown(ui)).replace('"key":"close"', '').split('close').length - 1).toBe(1)
+  expect((await ui.findAll({ type: 'Button' })).at(-1)?.props.key).toBe('close')
+  for (const lang of ['en', 'ko'] as const) expect(STRINGS[lang].keysHint).not.toMatch(/q close|q 닫기/)
   await ui.press({ key: 'close' })
   expect(closed).toEqual(['teams-status'])
   const r = await $.command.run({ command: 'teams-status', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
   expect(closed).toEqual(['teams-status', 'teams-status'])
   expect(JSON.stringify(r)).toContain('pane closed')
+})
+
+// the pane's Input is focused on open: q and the digits reach it as text, so they are read there, not as Button hotkeys
+test('with the Input focused: q closes; digits 1-5 pick the tabs; /teams-status submitted closes; /other runs that command', async ($, on) => {
+  const closed: string[] = []
+  const ran: unknown[] = []
+  on('ui.close', (_$, e) => { closed.push(e.id); return { value: undefined } })
+  on('command.run', (_$, e) => { ran.push(e); return { value: { text: '' } } as never })
+  await seeded($, on, { status: stat(), task: demo(), teams: TEAMS }, 'terminal')
+  const ui = await pane($, 'terminal')
+  const typed = async (text: string, kind: 'change' | 'submit' = 'change') => {
+    await ui.input({ key: 'keys', text, kind } as never)
+    await ui.redraw()
+  }
+  expect((await ui.find({ key: 'keys' }))?.props.autoFocus).toBe(true)
+  // digits: each picks its tab (the selected one carries the dot)
+  for (const [digit, label] of [['2', '● STORYs'], ['3', '● Decisions'], ['4', '● Log'], ['5', '● Report'], ['1', '● Floor']] as const) {
+    await typed(digit)
+    expect(await labels(ui)).toContain(label)
+  }
+  expect(closed).toEqual([])
+  // a slash command being typed holds every key: `/teams-status` ends in `s`, `/x q` ends in q
+  await typed('/teams-status')
+  await typed('/help q')
+  expect(closed).toEqual([])
+  await typed('/teams-status', 'submit')
+  expect(closed).toEqual(['teams-status'])
+  await typed('/help me', 'submit')
+  expect(ran).toHaveLength(1)
+  expect(ran[0]).toMatchObject({ command: 'help', args: 'me' })
+  await typed('x', 'submit') // not a command: nothing
+  expect(closed).toEqual(['teams-status'])
+  await typed('q')
+  expect(closed).toEqual(['teams-status', 'teams-status'])
+})
+
+test('paneKey and paneSlash: q closes, digits pick tabs, a `/` holds the keys, the command starts at the first `/`', () => {
+  expect(paneKey('q')).toEqual({ kind: 'close' })
+  expect(paneKey('][2')).toEqual({ kind: 'tab', tab: 'stories' })
+  expect(paneKey('5')).toEqual({ kind: 'tab', tab: 'report' })
+  expect(paneKey('6')).toBeNull()
+  expect(paneKey('/teams-status')).toBeNull()
+  expect(paneKey('/help q')).toBeNull()
+  expect(paneKey('')).toBeNull()
+  expect(paneKey(undefined)).toBeNull()
+  expect(paneSlash('/teams-status')).toEqual({ kind: 'close' })
+  expect(paneSlash('][2q/teams-status ')).toEqual({ kind: 'close' })
+  expect(paneSlash('/help me now')).toEqual({ kind: 'run', command: 'help', args: 'me now' })
+  expect(paneSlash('jk')).toBeNull()
+  expect(paneSlash('/')).toBeNull()
+  expect(paneSlash(3)).toBeNull()
+})
+
+test('tabRowPlan: the cost text goes first, then the gap, then the longest label is cut with …; footerPlan: close stays whole', () => {
+  const tabs = ['● Floor', 'STORYs', 'Decisions', 'Log', 'Report']
+  const total = (p: { labels: string[]; gap: number }) => p.labels.reduce((n, l) => n + [...l].length, 0) + p.gap * 4
+  const cost = '$1.92 · 14 turns'
+  expect(tabRowPlan(tabs, cost, 80)).toEqual({ labels: tabs, gap: 2, cost })
+  const noCost = tabRowPlan(tabs, cost, 42)
+  expect(noCost).toEqual({ labels: tabs, gap: 2, cost: null })
+  const tight = tabRowPlan(tabs, cost, 34)
+  expect(tight.cost).toBeNull()
+  expect(total(tight)).toBeLessThanOrEqual(34)
+  expect(tight.labels.some(l => l.endsWith('…'))).toBe(true)
+  const hint = '[ ] EPIC · j k row · 1-5 tabs'
+  expect(footerPlan({ steps: 0, open: '', close: 'q close', hint }, 80).hint).toBe(hint)
+  const cut = footerPlan({ steps: 2, open: '', close: 'q close', hint }, 42).hint
+  expect(cut.endsWith('…')).toBe(true)
+  expect([...cut].length + 10 + 4 + 7 + 4).toBeLessThanOrEqual(42) // hint + Input chrome + prev/next + close + two gaps of 2
+  expect(footerPlan({ steps: 2, open: 'g open run', close: 'q close', hint }, 30).hint).toBe('')
 })
 
 test('language korean: stalled pane header and the waiting status line have no English UI word', async ($, on) => {
@@ -670,11 +774,11 @@ test('band: a 200-char title truncates; progress and the board button are separa
   expect(await labels(ui)).toContain('board')
 })
 
-test('pane header: title truncates; "running · day N · done/total" is its own non-truncating node', async ($, on) => {
+test('pane header (a task the EPIC list lacks): title truncates; "running · done/total" is its own non-truncating node', async ($, on) => {
   await seeded($, on, { status: stat(), task: demo({ title: LONG }) })
   const ui = await pane($, 'terminal')
   const title = await ui.find({ type: 'Text', text: LONG })
-  const head = await ui.find({ type: 'Text', text: 'running · day 15 · 4/5' })
+  const head = await ui.find({ type: 'Text', text: 'running · 4/5' })
   expect(title).toBeDefined()
   expect(title!.props.wrap).toBe('truncate-end')
   expect(head).toBeDefined()
@@ -684,6 +788,9 @@ test('pane header: title truncates; "running · day N · done/total" is its own 
 test('Summary stage rail: a dot per stage, the running one bold, solid rail up to it and dotted after', async ($, on) => {
   await seeded($, on, { status: stat(), task: demo() })
   const ui = await pane($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: '● Plan' })).toBeUndefined() // the Floor has no rail
+  await ui.press({ key: 'stories' })
+  await ui.redraw()
   const text = await shown(ui)
   expect(await ui.find({ type: 'Text', text: '● Plan' })).toBeDefined()
   const running = (await ui.findAll({ type: 'Text', text: /^◉ / }))
@@ -698,6 +805,8 @@ test('Summary Work: one Text per card, capped with "+N more"', async ($, on) => 
   const many = Array.from({ length: 8 }, (_, i) => card(`card ${i}`, 'package', 'done'))
   await seeded($, on, { status: stat(), task: demo({ work: many }) })
   const ui = await pane($, 'terminal')
+  await ui.press({ key: 'decisions' })
+  await ui.redraw()
   expect(await ui.find({ type: 'Text', text: '✔ card 0' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '✔ card 5' })).toBeDefined()
   expect(await ui.find({ text: 'card 6' })).toBeUndefined()
@@ -705,14 +814,15 @@ test('Summary Work: one Text per card, capped with "+N more"', async ($, on) => 
   expect(await ui.find({ type: 'Text', text: /card 0.*card 1/ })).toBeUndefined()
 })
 
+// (the Now sentence left the pane; the band says it)
 test('now: a card not yet started reads "Waiting to fix defect"', async ($, on) => {
   await seeded($, on, { status: stat(), task: demo({ now: { kind: 'fixnext', subject: 'b.txt', detail: null } }) })
-  expect(await shown(await pane($, 'terminal'))).toContain('Waiting to fix defect: b.txt')
+  expect(await shown(await band($, 'terminal'))).toContain('Waiting to fix defect: b.txt')
 })
 
 test('now: Korean "fixnext" has no English', async ($, on) => {
   await seeded($, on, { status: stat(), task: demo({ now: { kind: 'fixnext', subject: 'b.txt', detail: null } }) }, 'terminal', 'korean')
-  const text = await shown(await pane($, 'terminal'))
+  const text = await shown(await band($, 'terminal'))
   expect(text).toContain('결함 수정 대기')
   expect(text).not.toContain('Waiting')
 })
@@ -763,7 +873,7 @@ for (const surface of SURFACES) {
     const { seen, tick } = await seeded($, on, { status: stat(), task: demo(), reports: { abc: payload() } }, surface)
     expect(reportArgv(seen)).toHaveLength(0)
     const ui = await pane($, surface)
-    expect((await ui.find({ key: 'report' }))?.props).toMatchObject({ plain: true, hotkey: '5', label: 'Report 5' })
+    expect((await ui.find({ key: 'report' }))?.props).toMatchObject({ plain: true, label: 'Report' })
     await ui.press({ key: 'report' })
     await ui.redraw()
     expect(reportArgv(seen)).toHaveLength(1)
@@ -1251,6 +1361,18 @@ for (const surface of SURFACES) {
     expect(lines[2]).toContain('E-cccccccc')
   })
 
+  test(`${surface}: the EPIC row is the title: key, title, state, done/total and age once, no header row, no day, no key in the tab row`, async ($, on) => {
+    await seeded($, on, { status: stat(), tasks: FULL, task: demo() }, surface, undefined, { epic: 'tA' })
+    const ui = await pane($, surface)
+    const picked = (await textsOf(ui, PICKED))[0]!
+    for (const part of ['E-3a3a3bb5', 'task tA', 'running', '4/5', '3s']) expect(picked).toContain(part)
+    const text = await shown(ui)
+    expect(text.match(/E-3a3a3bb5(?!\/)/g)).toHaveLength(1)
+    expect(text).not.toContain('Build the expense tracker')
+    expect(text).not.toMatch(/day \d/)
+    expect(await ui.find({ type: 'Text', text: '$0.00 · 0 turns' })).toBeDefined()
+  })
+
   test(`${surface}: bracket keys clamp at both ends`, async ($, on) => {
     const { tick } = await seeded($, on, { status: stat(), tasks: FULL, task: demo() }, surface, undefined, { epic: 'tA' })
     const ui = await pane($, surface)
@@ -1371,6 +1493,41 @@ for (const surface of SURFACES) {
     expect(new Set(lines.map(l => l.indexOf(/PLAN|P\d|JUDGE/.exec(l)![0]))).size).toBe(1)
   })
 
+  test(`${surface}: floor idle worker says idle, dim, in the column of the other doing texts; a done one says nothing`, async ($, on) => {
+    const workers = [wk('PLAN', 'done'), wk('P1', 'acting', 'editing a.ts'), wk('P2', 'idle'), wk('P3', 'you', 'asks a question'), wk('JUDGE', 'idle')]
+    await seeded($, on, { status: stat(), tasks: floorOf(workers), task: demo() }, surface, undefined, { epic: 'tA' })
+    const ui = await wide($, surface)
+    const [plan, p1, p2, p3, judge] = await workerTexts(ui) as [string, string, string, string, string]
+    for (const idle of [p2, judge]) {
+      expect(idle.trimEnd().endsWith('idle')).toBe(true)
+      expect(idle.indexOf('idle')).toBe(p1.indexOf('editing a.ts'))
+      expect(idle.indexOf('idle')).toBe(p3.indexOf('asks a question'))
+    }
+    expect(plan.trimEnd().endsWith('PLAN')).toBe(true)
+    expect((await ui.findAll({ type: 'Text', text: /^idle\s*$/ })).map(t => t.props.dimColor)).toEqual([true, true])
+  })
+
+  test(`${surface}: floor idle word in Korean`, async ($, on) => {
+    await seeded($, on, { status: stat(), tasks: floorOf([wk('P2', 'idle')]), task: demo() }, surface, 'korean', { epic: 'tA' })
+    expect((await workerTexts(await wide($, surface)))[0]!.trimEnd().endsWith('유휴')).toBe(true)
+  })
+
+  test(`${surface}: the Floor holds worker and hand-off rows only; the rail is on STORYs, the cards on Decisions`, async ($, on) => {
+    const you = { count: 1, items: ['module b'], cards: [{ key: 'E-3a3a3bb5/P1', title: 'module b', question: 'keep the old API?' }] }
+    await seeded($, on, { status: stat({ waiting: 1 }), tasks: floorOf(WORKERS, [ho('10:01', 'PLAN', 'the plan', 'P1')]), task: demo({ you }), teams: TEAMS }, surface, undefined, { epic: 'tA' })
+    const ui = await wide($, surface)
+    for (const absent of [/^▶/, /^⚑ You/, /^[●◉] (Plan|Build)/, /━/, /^Planning$/, /^Develop$/]) expect(await ui.find({ type: 'Text', text: absent })).toBeUndefined()
+    expect(await ui.find({ key: 'card:P1' })).toBeUndefined()
+    expect(await workerTexts(ui)).toHaveLength(5)
+    expect(await feedTexts(ui)).toHaveLength(1)
+    await ui.press({ key: 'stories' })
+    await ui.redraw()
+    expect(await ui.find({ type: 'Text', text: '● Plan' })).toBeDefined()
+    await ui.press({ key: 'decisions' })
+    await ui.redraw()
+    expect(await ui.find({ key: 'card:P1' })).toBeDefined()
+  })
+
   test(`${surface}: floor distinct icon per state`, async ($, on) => {
     await seeded($, on, { status: stat(), tasks: floorOf(WORKERS), task: demo() }, surface, undefined, { epic: 'tA' })
     const ui = await wide($, surface)
@@ -1443,7 +1600,7 @@ const SHOW = false
 const WIDTHS = [190, 110] as const
 const shownFrames: string[] = []
 const LONGT = 'Migrate every legacy report exporter to the new streaming writer and keep each output file byte for byte identical across all supported locales, then retire the old exporters, their fixtures and every flag that still points at them'
-const LONGD = 'rewriting the exporter fixtures for every supported locale and re-running the whole comparison suite twice, once per writer, then comparing the output byte for byte'
+const LONGD = 'translating the sample strings into twelve languages and re-running the full comparison suite twice, once per engine, before diffing the results line by line'
 const wkd = (id: string, state: string, doing = '') => ({ id, state, doing })
 // what an EPIC's Now line, card list and cost say; each differs from the STORY titles and the You line, and the cost is the STORYs' sum
 const body = (usd: number, turns: number) => ({
@@ -1485,6 +1642,7 @@ const DEMO: Record<string, { tasks: unknown[]; you?: unknown }> = {
     ], { ...body(1.92, 14), title: LONGT, workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', LONGD)], handoffs: [ho('10:01', 'PLAN', LONGD, 'P1')] })],
   },
 }
+const STOP = new Set(['the', 'and', 'for', 'then', 'with', 'its', 'each', 'one', 'per', 'all', 'any', 'not', 'you'])
 const bodyOf = (lines: string[]) => lines.filter(l => l.startsWith('│')).map(l => l.slice(2, -2).trimEnd())
 
 for (const variant of Object.keys(DEMO)) {
@@ -1492,7 +1650,7 @@ for (const variant of Object.keys(DEMO)) {
     test(`demo renders at 190 and 110: ${variant} at ${cols}`, async ($, on) => {
       const d = DEMO[variant]!
       const first = d.tasks[0] as { task_id: string }
-      await seeded($, on, { status: stat({ waiting: variant === 'full' ? 1 : 0 }), tasks: d.tasks, task: first }, 'terminal', undefined, { epic: first.task_id })
+      await seeded($, on, { status: stat({ waiting: variant === 'full' ? 1 : 0 }), tasks: d.tasks, task: first }, 'terminal', undefined, { epic: first.task_id }, true)
       const ui = await $.ui.mount({ plugin: 'teams', surface: 'terminal', component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: cols - 4, placement: 'dock' } } as never)
       const rendered: Record<string, string[]> = {}
       rendered.floor = frame((await ui.drawn()) as any, 'Teams', cols)
@@ -1515,7 +1673,12 @@ for (const variant of Object.keys(DEMO)) {
           expect(l).not.toContain('……')
           expect(/(^|\s\s)…/.test(l)).toBe(false)
         }
-        if (name === 'band') continue
+        if (name === 'band') {
+          for (const l of lines) for (const gone of ['engine band', 'board needs you']) expect(l).not.toContain(gone)
+          continue
+        }
+        // `close` is said once, by the footer
+        expect(body.filter(l => l.includes('close'))).toEqual([body[body.length - 1]])
         // the tab row is one line: all five labels sit on the same line
         const tabRows = body.filter(l => /Floor/.test(l) && /STORYs/.test(l) && /Decisions/.test(l) && /Log/.test(l) && /Report/.test(l))
         expect(tabRows).toHaveLength(1)
@@ -1537,11 +1700,65 @@ for (const variant of Object.keys(DEMO)) {
         expect(bodyOf(rendered.floor!).some(l => l.includes('…'))).toBe(true)
         expect(bodyOf(rendered.stories!).some(l => l.includes('…'))).toBe(true)
       }
-      if (variant === 'full') expect(rendered.band![0]).toContain('⚑')
+      if (variant === 'full') {
+        expect(rendered.band![0]).toContain('⚑')
+        expect(rendered.band![0]).toContain('1 question for you')
+      }
+      // the title block shares no word with the Floor body, and the Floor body is worker and hand-off rows only
+      const fb = bodyOf(rendered.floor!)
+      const tabAt = fb.findIndex(l => /Floor/.test(l) && /STORYs/.test(l) && /Decisions/.test(l) && /Log/.test(l) && /Report/.test(l))
+      const floorBody = fb.slice(tabAt + 1, -1)
+      const wordsOf = (lines: string[]) => new Set(
+        lines.flatMap(l => l.match(/\p{L}[\p{L}\p{N}.\-\/]*/gu) ?? []).map(w => w.toLowerCase().replace(/[.\-\/]+$/, '')).filter(w => w.length >= 3 && !STOP.has(w)),
+      )
+      const header = wordsOf(fb.slice(0, tabAt))
+      expect([...wordsOf(floorBody)].filter(w => header.has(w))).toEqual([])
+      for (const l of floorBody.filter(l => l.trim() !== '')) expect(l).toMatch(/^[●◌⚑✔⊘✘] +(?:[⠀-⣿] +)?\S|^\d\d:\d\d /)
+    })
+  }
+}
+
+// the side pane the host really gives: bodyColumns 78 (190-column terminal) and 46 (110): one tab row with all five
+// names, the footer keeps `close` once, and anything cut ends in …
+for (const bodyColumns of [78, 46]) {
+  for (const variant of ['full', 'narrow']) {
+    test(`side pane at ${bodyColumns} body columns: ${variant}: one tab row with five names, footer closes once, no line wider`, async ($, on) => {
+      const d = DEMO[variant]!
+      const first = d.tasks[0] as { task_id: string }
+      await seeded($, on, { status: stat(), tasks: d.tasks, task: first }, 'terminal', undefined, { epic: first.task_id }, true)
+      const ui = await $.ui.mount({ plugin: 'teams', surface: 'terminal', component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns, placement: 'dock' } } as never)
+      for (const tab of ['floor', 'stories']) {
+        if (tab === 'stories') {
+          await ui.press({ key: 'stories' })
+          await ui.redraw()
+        }
+        const lines = frame((await ui.drawn()) as any, 'Teams', bodyColumns + 4)
+        const body = bodyOf(lines)
+        for (const l of lines) expect(cells(l)).toBeLessThanOrEqual(bodyColumns + 4)
+        const tabRows = body.filter(l => /Floor/.test(l) && /STORYs/.test(l) && /Decisions/.test(l) && /Log/.test(l) && /Report/.test(l))
+        expect(tabRows).toHaveLength(1)
+        expect(body.filter(l => /Decisions/.test(l))).toHaveLength(1)
+        const foot = body[body.length - 1]!
+        expect(body.filter(l => l.includes('close'))).toEqual([foot])
+        expect(foot.endsWith('q close')).toBe(true)
+        expect(foot).not.toContain('q: q')
+        if (bodyColumns === 46) {
+          expect(tabRows[0]).not.toContain('turns') // the cost text gave way
+          if (variant === 'full' && tab === 'floor') expect(foot).toContain('…') // several EPICs: prev/next take room, the key hint is cut and says so
+        }
+        for (const l of body) {
+          expect(l).not.toContain('……')
+          expect(/(^|\s\s)…/.test(l)).toBe(false)
+        }
+      }
     })
   }
 }
 
 test('demo frames', () => {
-  if (SHOW) throw new Error(`\n${shownFrames.join('\n')}`)
+  // the runner indents an error message, so the frames go to stdout as they are (headings start at column 0), then the test fails
+  if (SHOW) {
+    console.log(`\n${shownFrames.join('\n')}\n`)
+    throw new Error('SHOW is on: frames printed above')
+  }
 })

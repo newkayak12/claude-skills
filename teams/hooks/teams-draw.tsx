@@ -94,10 +94,10 @@ export function renderLines(ui: Ui, lines: readonly Line[], keyOf = 'l') {
 
 export const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const
 
-// icon · spinner (acting only) · worker · doing
-export function workerCells(workers: readonly SummaryWorker[], frameNo: number): StoryCells[] {
+// icon · spinner (acting only) · worker · doing (an idle worker says `idleWord` in the same column, dim)
+export function workerCells(workers: readonly SummaryWorker[], frameNo: number, idleWord: string): StoryCells[] {
   return workers.map(w => ({
-    cells: [ICON[w.state], w.state === 'acting' ? SPINNER[frameNo % SPINNER.length]! : '', w.id, w.doing],
+    cells: [ICON[w.state], w.state === 'acting' ? SPINNER[frameNo % SPINNER.length]! : '', w.id, w.state === 'idle' ? idleWord : w.doing],
     tints: [TINT[w.state], TINT[w.state], undefined, 'dim'],
   }))
 }
@@ -121,3 +121,42 @@ export function storyCells(item: SummaryItem, verdict: string, harness: string, 
 }
 // the harness text gives way first, then doing, then the title
 export const STORY_SHRINK = [8, 3, 2] as const
+
+// The EPIC row is the title block: marker · icon · key · title · state word · done/total · age. A live task's age runs
+// from its creation, a stalled one's is how long it has stood; a stalled row is dim throughout.
+export function epicCells(t: SummaryTaskEntry, state: WorkState, selected: boolean, now: number, stateWord: string): StoryCells {
+  const cells = [
+    selected ? '▸' : '', ICON[state], t.key, t.title, stateWord, `${t.done}/${t.total}`,
+    since(t.live ? (t.created_at === null ? null : Math.max(0, now - t.created_at)) : t.age_ms),
+  ]
+  return { cells, tints: t.live ? [undefined, TINT[state], undefined, undefined, 'dim', undefined, 'dim'] : cells.map(() => 'dim' as const) }
+}
+
+/* --- the tab row and the footer, planned against the pane's inner width --- */
+
+// The tab row on one line of `inner` columns. The cost text goes first (shown only when tabs and cost fit), then the
+// gap between tabs closes from 2 to 1, then the longest label is cut with … until the row fits.
+export function tabRowPlan(labels: readonly string[], cost: string, inner: number): { labels: string[]; gap: number; cost: string | null } {
+  const total = (ls: readonly string[], gap: number) => ls.reduce((n, l) => n + width(l), 0) + gap * Math.max(0, ls.length - 1)
+  if (cost !== '' && total(labels, 2) + 2 + width(cost) <= inner) return { labels: [...labels], gap: 2, cost }
+  if (total(labels, 2) <= inner) return { labels: [...labels], gap: 2, cost: null }
+  const out = [...labels]
+  while (total(out, 1) > inner) {
+    let at = 0
+    out.forEach((l, i) => { if (width(l) > width(out[at]!)) at = i })
+    if (width(out[at]!) <= 4) break
+    out[at] = clipText(labels[at]!, width(out[at]!) - 1)
+  }
+  return { labels: out, gap: 1, cost: null }
+}
+
+// The Input draws its own `⏎ submit` (9 columns and a gap) beside the hint while focused.
+const INPUT_CHROME = 10
+
+// The footer on one line: close stays whole; prev/next and the open hint stay when they fit; the key hint takes what is
+// left and ends in … when cut, or is dropped when under 6 columns remain.
+export function footerPlan(parts: { steps: number; open: string; close: string; hint: string }, inner: number): { hint: string } {
+  const fixed = [parts.steps > 0 ? parts.steps + 2 * (parts.steps - 1) : 0, width(parts.open), width(parts.close)].filter(n => n > 0)
+  const room = inner - INPUT_CHROME - fixed.reduce((n, w) => n + w, 0) - 2 * fixed.length
+  return { hint: room >= 6 ? clipText(parts.hint, room) : '' }
+}
