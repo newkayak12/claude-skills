@@ -20,7 +20,7 @@ A figure is any number with a unit or a percentage (`40%`, `3초`, `12만 건`, 
 
 1. Backed by a record inside the handed material (a measurement, table, report excerpt or dashboard note that is itself there) → the citation of that record is the evidence.
 2. The user flags it as their own claim ("체감상 40%", "내 기억으로는", "I estimate", or says so when handing over) → cite the statement and label it `user-stated`.
-3. Neither a record nor such a flag (a figure written plainly in the text) → `근거 없음` in the evidence column, plus a gaps.md question asking where it came from.
+3. Neither a record nor such a flag (a figure written plainly in the text) → `근거 없음` in the evidence column, plus a gaps.md question asking where it came from. That the user wrote the text is not a flag: `user-stated` needs words about the figure itself.
 
 A document the user names but did not hand over is not evidence (hand it over as new material and a re-run cites it): cite the statement that names it and label it `user-stated`. Never repair a figure by inference, back-calculation or a "typical" value.
 
