@@ -293,8 +293,9 @@ async function seeded($: Engine, on: On, data: Data, surface: (typeof SURFACES)[
   engineBand(on) // the engine's own band, beneath the teams row
   await start($)
   await clock.advance(3000)
-  return { seen, tick: () => clock.advance(3000) }
+  return { seen, tick: () => clock.advance(3000), clock }
 }
+const seededClock = ($: Engine, on: On, data: Data, surface: (typeof SURFACES)[number]) => seeded($, on, data, surface, undefined, { epic: 'tA' })
 
 for (const surface of SURFACES) {
   test(`${surface}: Summary answers now / you / how far / going well, with no internal ids; render runs no process`, async ($, on) => {
@@ -1347,3 +1348,90 @@ for (const surface of SURFACES) {
     expect(seen.argv.every(a => a[1]?.endsWith('/scripts/view.mjs'))).toBe(true)
   })
 }
+
+// ---- F4: the Floor: worker lines, hand-off feed, the 800 ms clock ----
+const wk = (id: string, state: string, doing = '') => ({ id, state, doing })
+const ho = (time: string, from: string, what: string, to: string) => ({ time, from, what, to })
+const WORKERS = [wk('PLAN', 'done'), wk('P1', 'acting', 'editing a.ts'), wk('P2', 'idle'), wk('P3', 'you', 'asks a question'), wk('JUDGE', 'stalled')]
+const floorOf = (workers: unknown[], handoffs: unknown[] = []) => [epicOf('tA', 'E-3a3a3bb5', [], { workers, handoffs })]
+const WROW = /^[●◌⚑✔⊘]  ?[⠀-⣿]? ?\S/
+const workerTexts = async (ui: Ui) => (await ui.findAll({ type: 'Text' })).map(t => String(t.text)).filter(t => /^[●◌⚑✔⊘] +(?:[⠀-⣿] +)?(?:PLAN|P\d|JUDGE)( |$)/.test(t))
+const feedTexts = async (ui: Ui) => (await ui.findAll({ type: 'Text' })).map(t => String(t.text)).filter(t => /^\d\d:\d\d .*→/.test(t))
+const frameOf = (store: Map<string, unknown>) => Number(store.get('frame') ?? 0)
+
+for (const surface of SURFACES) {
+  test(`${surface}: floor one line per worker`, async ($, on) => {
+    await seeded($, on, { status: stat(), tasks: floorOf(WORKERS), task: demo() }, surface, undefined, { epic: 'tA' })
+    const lines = await workerTexts(await wide($, surface))
+    expect(lines).toHaveLength(5)
+    for (const [i, id] of ['PLAN', 'P1', 'P2', 'P3', 'JUDGE'].entries()) expect(lines[i]).toContain(id)
+    expect(lines[1]).toContain('editing a.ts')
+    // the id starts at the same character on every line
+    expect(new Set(lines.map(l => l.indexOf(/PLAN|P\d|JUDGE/.exec(l)![0]))).size).toBe(1)
+  })
+
+  test(`${surface}: floor distinct icon per state`, async ($, on) => {
+    await seeded($, on, { status: stat(), tasks: floorOf(WORKERS), task: demo() }, surface, undefined, { epic: 'tA' })
+    const ui = await wide($, surface)
+    const icons = (await workerTexts(ui)).map(l => l[0])
+    expect(icons).toEqual(['✔', '●', '◌', '⚑', '⊘'])
+    expect(new Set(icons).size).toBe(5)
+    const text = await shown(ui)
+    for (const face of ['😀', '(^', '☺', '^_^', '•_•']) expect(text).not.toContain(face)
+  })
+
+  test(`${surface}: spinner advances only while acting`, async ($, on) => {
+    const data = { status: stat(), tasks: floorOf(WORKERS), task: demo() }
+    const { seen, clock } = await seededClock($, on, data, surface)
+    const ui = await wide($, surface)
+    await clock.advance(800)
+    const a = frameOf(seen.store)
+    expect(a).toBeGreaterThan(0)
+    await clock.advance(800)
+    expect(frameOf(seen.store)).toBe(a + 1)
+    await ui.redraw()
+    expect((await workerTexts(ui))[1]).toMatch(/^● +[⠀-⣿] +P1/)
+    expect((await workerTexts(ui))[2]).not.toMatch(/[⠀-⣿]/)
+    // nobody acts: the next tick leaves the clock to cancel itself
+    data.tasks = floorOf([wk('P1', 'idle'), wk('P2', 'done')])
+    await clock.advance(3000)
+    await clock.advance(800)
+    const b = frameOf(seen.store)
+    await clock.advance(5000)
+    expect(frameOf(seen.store)).toBe(b)
+  })
+
+  test(`${surface}: hand-off feed at most 5 aligned rows`, async ($, on) => {
+    const feed = [
+      ho('10:01', 'PLAN', 'the plan', 'P1'), ho('10:02', 'P1', 'a diff', 'JUDGE'), ho('10:03', 'JUDGE', 'a verdict', 'P1'),
+      ho('10:04', 'P2', 'tests', 'JUDGE'), ho('10:05', 'PLAN', 'a rewrite', 'P3'), ho('10:06', 'P3', 'an answer', 'PLAN'), ho('10:07', 'P1', 'more', 'JUDGE'),
+    ]
+    await seeded($, on, { status: stat(), tasks: floorOf(WORKERS, feed), task: demo() }, surface, undefined, { epic: 'tA' })
+    const rows = await feedTexts(await wide($, surface))
+    expect(rows).toHaveLength(5)
+    expect(rows[0]).toMatch(/^10:01 +PLAN +the plan +→ P1/)
+    expect(new Set(rows.map(r => r.indexOf('→'))).size).toBe(1)
+    expect(new Set(rows.map(r => r.indexOf(/PLAN|P\d|JUDGE/.exec(r)![0]))).size).toBe(1)
+  })
+
+  test(`${surface}: hand-off feed empty when none recorded`, async ($, on) => {
+    await seeded($, on, { status: stat(), tasks: floorOf(WORKERS), task: demo() }, surface, undefined, { epic: 'tA' })
+    expect(await feedTexts(await wide($, surface))).toEqual([])
+  })
+}
+
+test('no spinner clock without surface or acting worker', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const seen = uiWorld(on, {}, [], { status: stat(), tasks: floorOf(WORKERS), task: demo() })
+  startWorld(on)
+  await start($)
+  await clock.advance(10000)
+  expect(seen.argv).toHaveLength(0)
+  expect(frameOf(seen.store)).toBe(0)
+})
+
+test('no spinner clock without surface or acting worker: pane open, nobody acts', async ($, on) => {
+  const { seen, clock } = await seededClock($, on, { status: stat(), tasks: floorOf([wk('P1', 'idle')]), task: demo() }, 'terminal')
+  await clock.advance(5000)
+  expect(frameOf(seen.store)).toBe(0)
+})
