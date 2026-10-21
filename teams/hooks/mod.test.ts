@@ -2,6 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
+import { frame, draw } from './demo-frames.ts'
 import { STRINGS } from './mod'
 
 type Run = { exitCode: number; stdout: string; stderr: string }
@@ -1434,4 +1435,104 @@ test('no spinner clock without surface or acting worker: pane open, nobody acts'
   const { seen, clock } = await seededClock($, on, { status: stat(), tasks: floorOf([wk('P1', 'idle')]), task: demo() }, 'terminal')
   await clock.advance(5000)
   expect(frameOf(seen.store)).toBe(0)
+})
+
+// ---- F4: demo fixtures at 190 and 110 columns (minimal, full, parallel, narrow), fictional data ----
+// Set SHOW to true to make the last test fail with every frame as its message (the runner prints nothing).
+const SHOW = false
+const WIDTHS = [190, 110] as const
+const shownFrames: string[] = []
+const LONGT = 'Migrate every legacy report exporter to the new streaming writer and keep each output file byte for byte identical across all supported locales, then retire the old exporters, their fixtures and every flag that still points at them'
+const LONGD = 'rewriting the exporter fixtures for every supported locale and re-running the whole comparison suite twice, once per writer, then comparing the output byte for byte'
+const wkd = (id: string, state: string, doing = '') => ({ id, state, doing })
+const DEMO: Record<string, { tasks: unknown[]; you?: unknown }> = {
+  minimal: {
+    tasks: [epicOf('tS', 'E-aaaaaaaa', [story('E-aaaaaaaa', 'rename the config key', { doing: 'editing config.ts', elapsed_ms: 35000, cost_usd: 0.12 })], {
+      harness: { slug: 'run-1', moving: true }, stages: [stage('plan', 'done'), stage('build', 'running')], workers: [wkd('PLAN', 'done'), wkd('BUILD', 'acting', 'editing config.ts')],
+    })],
+  },
+  full: {
+    tasks: [
+      epicOf('tA', 'E-3a3a3bb5', [
+        story('E-3a3a3bb5/P1', 'parser module', { doing: 'editing parser.ts', last_verdict: 'reject', try: 2, max: 3, elapsed_ms: 240000, cost_usd: 0.42, cost_estimated: true, run_file: '/w/runs/p1.json' }),
+        story('E-3a3a3bb5/P2', 'report writer', { doing: 'running tests', state: 'idle', elapsed_ms: 3720000, cost_usd: 1.5 }),
+        story('E-3a3a3bb5/P3', 'cache layer', { doing: 'asks a question', state: 'you', elapsed_ms: 600000 }),
+      ], {
+        workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', 'editing parser.ts'), wkd('P2', 'idle'), wkd('P3', 'you', 'asks a question'), wkd('JUDGE', 'idle')],
+        handoffs: [ho('10:01', 'PLAN', 'the plan', 'P1'), ho('10:02', 'P1', 'a diff', 'JUDGE'), ho('10:03', 'JUDGE', 'a verdict', 'P1'), ho('10:04', 'P2', 'test results', 'JUDGE'), ho('10:05', 'P3', 'a question', 'you')],
+        you: { count: 1, items: ['cache layer'], cards: [{ key: 'E-3a3a3bb5/P3', title: 'cache layer', question: 'keep the old cache key format?' }] },
+      }),
+      epicOf('tC', 'E-cccccccc', [story('E-cccccccc/P1', 'old import job', { doing: 'running tests', state: 'stalled', live: false })], { live: false, age_ms: 7200000, state: 'stalled' }),
+    ],
+  },
+  parallel: {
+    tasks: [
+      epicOf('tA', 'E-3a3a3bb5', [story('E-3a3a3bb5/P1', 'parser module', { doing: 'editing parser.ts', elapsed_ms: 240000, cost_usd: 0.42 })], { workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', 'editing parser.ts')] }),
+      epicOf('tB', 'E-bbbbbbbb', [story('E-bbbbbbbb/P1', 'report writer', { doing: 'reading', elapsed_ms: 35000, cost_usd: 1.5 })], { workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', 'reading')] }),
+    ],
+  },
+  narrow: {
+    tasks: [epicOf('tN', 'E-dddddddd', [
+      story('E-dddddddd/P1', LONGT, { doing: LONGD, last_verdict: 'reject', try: 2, max: 3, elapsed_ms: 240000, cost_usd: 0.42, cost_estimated: true }),
+      story('E-dddddddd/P2', 'short title', { doing: 'reading', elapsed_ms: 35000, cost_usd: 1.5 }),
+    ], { title: LONGT, workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', LONGD)], handoffs: [ho('10:01', 'PLAN', LONGD, 'P1')] })],
+  },
+}
+const glyphCount = (s: string) => Array.from(s).length
+const bodyOf = (lines: string[]) => lines.filter(l => l.startsWith('│')).map(l => l.slice(2, -2).trimEnd())
+
+for (const variant of Object.keys(DEMO)) {
+  for (const cols of WIDTHS) {
+    test(`demo renders at 190 and 110: ${variant} at ${cols}`, async ($, on) => {
+      const d = DEMO[variant]!
+      const first = d.tasks[0] as { task_id: string }
+      await seeded($, on, { status: stat({ waiting: variant === 'full' ? 1 : 0 }), tasks: d.tasks, task: first }, 'terminal', undefined, { epic: first.task_id })
+      const ui = await $.ui.mount({ plugin: 'teams', surface: 'terminal', component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: cols - 4, placement: 'dock' } } as never)
+      const rendered: Record<string, string[]> = {}
+      rendered.floor = frame((await ui.drawn()) as any, 'Teams', cols)
+      await ui.press({ key: 'stories' })
+      await ui.redraw()
+      rendered.stories = frame((await ui.drawn()) as any, 'Teams', cols)
+      const bandUi = await $.ui.mount({ plugin: 'teams', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: cols } } as never)
+      rendered.band = draw((await bandUi.drawn()) as any, cols)
+      for (const [name, lines] of Object.entries(rendered)) {
+        shownFrames.push(`### ${variant} · ${cols} · ${name}`, ...lines)
+        const body = name === 'band' ? lines : bodyOf(lines)
+        expect(body.length).toBeGreaterThan(0)
+        for (const l of lines) {
+          expect(glyphCount(l)).toBeLessThanOrEqual(cols)
+          expect(l).not.toContain('\uFFFD')
+          expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(l)).toBe(false)
+        }
+        // no orphan …: none stands alone in its cell (at the line start or after a column gap)
+        for (const l of body) expect(/(^|\s\s)…/.test(l)).toBe(false)
+        if (name === 'band') continue
+        // the tab row is one line: all five labels sit on the same line
+        const tabRows = body.filter(l => /Floor/.test(l) && /STORYs/.test(l) && /Decisions/.test(l) && /Log/.test(l) && /Report/.test(l))
+        expect(tabRows).toHaveLength(1)
+        expect(body.filter(l => /Decisions/.test(l))).toHaveLength(1)
+        // columns start at one offset on every row
+        const at = (rows: string[], re: RegExp) => new Set(rows.map(r => (re.exec(r) as RegExpExecArray).index))
+        const wrows = body.filter(l => /^[●◌⚑✔⊘] +(?:[⠀-⣿] +)?(?:PLAN|BUILD|P\d|JUDGE)( |$)/.test(l))
+        if (name === 'floor') expect(at(wrows, /PLAN|BUILD|P\d|JUDGE/).size).toBeLessThanOrEqual(1)
+        const hrows = body.filter(l => /^\d\d:\d\d .*→/.test(l))
+        if (hrows.length > 0) expect(at(hrows, /→/).size).toBe(1)
+        const srows = body.filter(l => /^[▸ ] +[●◌⚑✔✘⊘]  \S/.test(l) && !EPIC_LINE.test(l))
+        if (name === 'stories') {
+          expect(srows.length).toBeGreaterThan(0)
+          if (srows.length > 1) expect(at(srows, /[●◌⚑✔✘⊘]  /).size).toBe(1)
+        }
+      }
+      // the narrow variant has long text: some line ends in …; the others have none that is not asked for
+      if (variant === 'narrow') {
+        expect(bodyOf(rendered.floor!).some(l => l.includes('…'))).toBe(true)
+        expect(bodyOf(rendered.stories!).some(l => l.includes('…'))).toBe(true)
+      }
+      if (variant === 'full') expect(rendered.band![0]).toContain('⚑')
+    })
+  }
+}
+
+test('demo frames', () => {
+  if (SHOW) throw new Error(`\n${shownFrames.join('\n')}`)
 })
