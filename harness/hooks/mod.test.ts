@@ -851,7 +851,7 @@ test('the key catcher also takes 1-4 (tabs) and q (close), the keys its focus wo
   expect(seen.closed).toEqual(['harness-status'])
 })
 
-test('[ and ] walk one frozen order: three runs give 1/3, 2/3, 3/3, 1/3 on ], and the reverse on [', async ($, on) => {
+test('[ and ] walk one frozen order and stop at the ends: ] gives 2/3, 3/3, 3/3, 3/3 and [ the reverse to 1/3', async ($, on) => {
   const rej = (slug: string, text: string) => doing(slug, text, { rounds: [{ round: 1, sound: false, file: 'x', problems: [{ severity: 'major', text: 'no check' }] }] })
   const seen = world(on, ['terminal'], {})
   seen.listing.stdout = list([doing('tidy', 'doing tidy'), rej('csv', 'doing csv'), waiting('fix')])
@@ -870,8 +870,8 @@ test('[ and ] walk one frozen order: three runs give 1/3, 2/3, 3/3, 1/3 on ], an
     seq.push(await at())
     slugs.push(seen.store.get('selected'))
   }
-  expect(seq).toEqual(['run 2 of 3', 'run 3 of 3', 'run 1 of 3', 'run 2 of 3'])
-  expect(slugs).toEqual(['csv', 'tidy', 'fix', 'csv'])
+  expect(seq).toEqual(['run 2 of 3', 'run 3 of 3', 'run 3 of 3', 'run 3 of 3'])
+  expect(slugs).toEqual(['csv', 'tidy', 'tidy', 'tidy'])
   // csv was looked at on the way: the order stayed, and [ is its exact reverse
   expect(seen.store.get('looked')).toMatchObject({ csv: 1 })
   const back: unknown[] = []
@@ -879,7 +879,7 @@ test('[ and ] walk one frozen order: three runs give 1/3, 2/3, 3/3, 1/3 on ], an
     await typeKey(ui, '[')
     back.push(seen.store.get('selected'))
   }
-  expect(back).toEqual(['fix', 'tidy', 'csv', 'fix'])
+  expect(back).toEqual(['csv', 'fix', 'fix', 'fix'])
 })
 
 test('the run with an unseen reject that opens first reads run 1 of 2, and stays first after ] and [', async ($, on) => {
