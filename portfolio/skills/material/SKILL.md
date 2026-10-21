@@ -41,7 +41,7 @@ Per-part procedures: `references/parts.md`. Citation, evidence and matching: `re
 
 ## Rules
 
-- (a) Only the given material is used; nothing is invented. Every filled part holds a short paraphrase plus a verbatim quote or pointer, cited `<file> + heading or line range`; for pasted or chat text, a message index, timestamp or verbatim first-words quote.
+- (a) Only the given material is used; nothing is invented. Every filled part holds a short paraphrase plus a verbatim quote or pointer, cited `<file> + heading or line range` (a line range only when the text has no heading; with a heading, cite heading plus quote and no line numbers, which go stale when lines are added above); for pasted or chat text, a message index, timestamp or verbatim first-words quote.
 - (b) Anything unknown goes to `gaps.md` as a question for the user and is never guessed.
 - (c) In `result.md`, a figure with a unit or percentage needs an evidence citation; a figure the user flags as their own claim ("체감상", "내 기억으로는", "I estimate", or says so when handing over) is labelled `user-stated`; a figure with no citation in the handed material and no such flag is marked `근거 없음` and gets a gaps.md question for its source. A figure written plainly in the text, with no record and no flag, is the `근거 없음` case. `근거 없음` is the only missing-evidence marker.
 - (d) On a re-run, `match` decides: `same` updates the parts in place and logs it in `history.md`; `new` runs `init`; `ambiguous` asks the user to pick merge or new, never a guess. An answer to a gaps question arrives as new material: the part is updated with its citation and `answer` marks the question `[답변됨]`. An answered question is never deleted.
@@ -49,7 +49,7 @@ Per-part procedures: `references/parts.md`. Citation, evidence and matching: `re
 - (f) Content stays in the language of the material. Personal or confidential data is kept as given and stored only in the user's project.
 - (g) Foreign files in `material/` are left alone and listed in the summary.
 - (h) The final summary lists items added or updated, the open gaps count, and the foreign files.
-- (i) A no-op run writes nothing, history.md included: when the handed material adds nothing to an item, edit no part, skip `log` and `answer`, and leave `index.md` as it is.
+- (i) A no-op run writes nothing, history.md included: when the handed material adds nothing to an item, edit no part, skip `log` and `answer`, and leave `index.md` as it is. Never rewrite an existing citation to fix drift or wording; a citation changes only when its line changes.
 
 ## Process
 

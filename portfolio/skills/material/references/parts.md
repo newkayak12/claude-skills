@@ -6,7 +6,7 @@ Content language = the material's language. Citation form: see `citation-evidenc
 Every filled line = a short paraphrase + a verbatim quote or pointer, e.g.
 
 ```
-- 캐시 미적용으로 목록 조회가 느렸다. — "목록 API가 매번 DB를 전부 스캔했다" (retro.md + "## 에피소드 A", L12-14)
+- 캐시 미적용으로 목록 조회가 느렸다. — "목록 API가 매번 DB를 전부 스캔했다" (retro.md + "## 에피소드 A")
 ```
 
 A part with nothing in the material stays at its heading; the missing piece becomes a gaps.md question.
