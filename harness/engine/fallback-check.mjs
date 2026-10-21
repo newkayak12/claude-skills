@@ -41,6 +41,18 @@
 //   started_at = manifest.started_at or null (never backfilled). max_critique_rounds =
 //   manifest.max_critique_rounds, default 2. severity = {blocker, major, minor, nit}, always all
 //   four counts, over the problems of every critique round in rounds[].
+// - failures[] = [{key, at, what, reason, next_step, severity}], oldest first, on every row (the mod
+//   renders them and decides nothing). at = the stage file's mtime in ms. next_step and severity:
+//   gate-<n>.json pass:false -> 'retry n/(max_retries+1)', info; 04-goal-gate.json failing (pass:false,
+//   or match_pct < 90 with no pass:true) -> the same with n = the count of 04-goal-gate*.json files
+//   (min 1), info, but 'gave up' once 05-report.md exists; result.json passed:false (stalled or not)
+//   -> 'gave up'; now.json (live) waiting.who 'you' -> 'needs you', what = the stage; 02-critique*.json
+//   sound:false -> 'retry <round>/<max_critique_rounds>' below the cap, 'continuing' at it, info.
+//   Severity is 'info' | 'needs you' | 'gave up'. max_retries is the manifest's, default 2.
+//   reason = the stage file's reason (critique: reason, blocking, problems; gate: reason, gaps; goal:
+//   reason, out_of_spec; result: reason; needs you: waiting.what) joined with '; ', whitespace runs
+//   -> one space, over 120 chars -> first 119 + '…', empty -> 'no reason recorded'. --list drops a run
+//   with 05-report.md, so a goal gate 'gave up' is read with --show.
 // - rounds[] = [{round, file, sound, problems:[{severity, text}]}], oldest first. 02-critique.json
 //   is the newest; 02-critique.r<n>.json are older and get round n; the newest gets one more
 //   than the highest n. severity is one of blocker|major|minor|nit: a severity field is kept
@@ -55,6 +67,9 @@ const SEVERITIES = ['blocker', 'major', 'minor', 'nit'];
 const STALLED_MS = 2 * 3600 * 1000;
 const OPEN_MS = 12 * 3600 * 1000;
 const LAST_STEP_MAX = 120;
+const REASON_MAX = 120;
+const NO_REASON = 'no reason recorded';
+const PASS_PCT = 90;
 
 const fail2 = (msg) => {
   process.stderr.write(`${msg}\n`);
@@ -183,6 +198,82 @@ const mtimeOf = (path) => {
   }
 };
 
+// A reason field is a string, or a list of strings / { text | reason | message | problem | gap } entries.
+const reasonTexts = (v) => {
+  if (typeof v === 'string') return v.trim() === '' ? [] : [v];
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((x) =>
+    typeof x === 'string' ? reasonTexts(x) : x && typeof x === 'object' ? reasonTexts(x.text ?? x.reason ?? x.message ?? x.problem ?? x.gap) : [],
+  );
+};
+// Which fields of a stage file say why it failed (the old critiqueReason, gateReason, goalReason).
+const REASON_FIELDS = {
+  critique: ['reason', 'blocking', 'problems'],
+  gate: ['reason', 'gaps'],
+  goal: ['reason', 'out_of_spec'],
+  result: ['reason'],
+};
+// One line of at most 120 chars: whitespace runs become one space, longer text is cut to 119 + '…'.
+const oneLineReason = (text) => {
+  const line = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (line === '') return NO_REASON;
+  return line.length > REASON_MAX ? `${line.slice(0, REASON_MAX - 1)}…` : line;
+};
+const failureReason = (kind, file) =>
+  oneLineReason(file && typeof file === 'object' ? REASON_FIELDS[kind].flatMap((f) => reasonTexts(file[f])).join('; ') : '');
+
+const listDir = (path) => {
+  try {
+    return readdirSync(path);
+  } catch {
+    return [];
+  }
+};
+
+// Each failed stage as {key, at, what, reason, next_step, severity}, oldest first; `at` is the stage
+// file's mtime. next_step is what happens next: `retry n/m`, `continuing`, `needs you` or `gave up`;
+// severity is info for a retry or a continue, else the same words as next_step.
+function buildFailures(dir, names, manifest, rounds, cap, live, stage) {
+  const slug = basename(dir);
+  const retries = Number.isInteger(manifest?.max_retries) && manifest.max_retries >= 0 ? manifest.max_retries : 2;
+  const out = [];
+  const add = (key, file, what, kind, content, next_step, severity) =>
+    out.push({ key: `${slug}|${key}`, at: mtimeOf(join(dir, file)), what, reason: failureReason(kind, content), next_step, severity });
+
+  for (const rd of rounds) {
+    if (rd.sound !== false) continue;
+    const below = rd.round < cap;
+    add(`critique|${rd.round}`, rd.file, 'Critique', 'critique', readJsonFile(join(dir, rd.file)), below ? `retry ${rd.round}/${cap}` : 'continuing', 'info');
+  }
+  for (const id of listDir(join(dir, 'subgoals')).sort()) {
+    const sub = join('subgoals', id);
+    if (!isDir(join(dir, sub))) continue;
+    for (const f of listDir(join(dir, sub))) {
+      const n = Number(/^gate-(\d+)\.json$/.exec(f)?.[1] ?? 0);
+      const gate = n === 0 ? null : readJsonFile(join(dir, sub, f));
+      if (gate?.pass === false) add(`gate|${id}|${n}`, join(sub, f), `QualityGate ${id}`, 'gate', gate, `retry ${n}/${retries + 1}`, 'info');
+    }
+    const res = readJsonFile(join(dir, sub, 'result.json'));
+    if (res?.passed === false) add(`result|${id}`, join(sub, 'result.json'), `subgoal ${id}`, 'result', res, 'gave up', 'gave up');
+  }
+  const gg = readJsonFile(join(dir, '04-goal-gate.json'));
+  if (gg && (gg.pass === false || (typeof gg.match_pct === 'number' && gg.match_pct < PASS_PCT && gg.pass !== true))) {
+    const n = Math.max(1, names.filter((f) => /^04-goal-gate.*\.json$/.test(f)).length);
+    const reported = names.includes('05-report.md');
+    add(`goal|${n}`, '04-goal-gate.json', 'goal gate', 'goal', gg, reported ? 'gave up' : `retry ${n}/${retries + 1}`, reported ? 'gave up' : 'info');
+  }
+  if (live?.waiting?.who === 'you')
+    out.push({
+      key: `${slug}|needs-you|${stage}|${live.at}`,
+      at: mtimeOf(join(dir, 'now.json')),
+      what: stage,
+      reason: oneLineReason(live.waiting.what),
+      next_step: 'needs you',
+      severity: 'needs you',
+    });
+  return out.sort((a, b) => a.at - b.at || a.key.localeCompare(b.key));
+}
+
 function buildRow(dir, nowMs) {
   const names = readdirSync(dir);
   const has = (n) => names.includes(n);
@@ -225,21 +316,24 @@ function buildRow(dir, nowMs) {
   const severity = Object.fromEntries(SEVERITIES.map((s) => [s, 0]));
   for (const rd of rounds) for (const pr of rd.problems) severity[pr.severity]++;
   const cap = manifest?.max_critique_rounds;
+  const maxRounds = Number.isInteger(cap) && cap >= 1 ? cap : 2;
+  const stage = reconcileStage(live, derived);
   return {
     slug: basename(dir),
     dir,
-    stage: reconcileStage(live, derived),
+    stage,
     round: Number.isInteger(live?.round) ? live.round : rounds.length ? newest.round : null,
     waiting: live?.waiting ?? null,
     stalled: age > STALLED_MS && age <= OPEN_MS,
     now: live,
     started_at: typeof manifest?.started_at === 'string' ? manifest.started_at : null,
-    max_critique_rounds: Number.isInteger(cap) && cap >= 1 ? cap : 2,
+    max_critique_rounds: maxRounds,
     severity,
     rounds,
     passed,
     failed,
     total: ids.length,
+    failures: buildFailures(dir, names, manifest, rounds, maxRounds, live, stage),
     _age: age,
   };
 }

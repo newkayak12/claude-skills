@@ -27,11 +27,17 @@ type Dirs = Record<string, [string, 'dir' | 'file', number?][]>
 type Listing = { stdout: string; exitCode: number; throws: boolean; calls: string[][] }
 function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], files: Files, dirs: Dirs = {}, top?: string) {
   const listing: Listing = { stdout: '[]', exitCode: 0, throws: false, calls: [] }
-  const seen = { statuses: [] as (string | undefined)[], commands: [] as string[], opened: [] as string[], openArgs: [] as any[], closed: [] as string[], panes: [] as { id: string }[], reads: 0, toasts: [] as string[], argv: [] as string[][], listed: [] as string[], outcomes: [] as any[], failSet: false, listing, store: new Map<string, unknown>(), commandArgs: [] as any[] }
+  const seen = { statuses: [] as (string | undefined)[], commands: [] as string[], opened: [] as string[], openArgs: [] as any[], closed: [] as string[], panes: [] as { id: string }[], reads: 0, toasts: [] as string[], toastMs: [] as (number | undefined)[], argv: [] as string[][], listed: [] as string[], outcomes: [] as any[], failSet: false, listing, shows: new Map<string, { stdout: string; exitCode: number }>(), showCalls: [] as string[][], store: new Map<string, unknown>(), commandArgs: [] as any[] }
   const store = seen.store
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: '/proj' }) as never)
   on('process.run', (_$, e) => {
+    // `fallback-check --show <dir> --json` of a finished run, by its slug (the last path segment)
+    if (e.argv.includes('--show')) {
+      seen.showCalls.push(e.argv)
+      const out = seen.shows.get(e.argv[e.argv.indexOf('--show') + 1]!.split('/').pop()!) ?? { stdout: '', exitCode: 1 }
+      return { value: { ...out, stderr: '' } } as never
+    }
     if (e.argv.includes('--list')) {
       listing.calls.push(e.argv)
       if (listing.throws) throw new Error('timed out')
@@ -63,6 +69,7 @@ function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], files: Fil
   })
   on('ui.toast', (_$, e) => {
     seen.toasts.push(e.text)
+    seen.toastMs.push(e.timeoutMs)
     return { value: undefined } as never
   })
   on('ui.status', (_$, e) => {
@@ -557,8 +564,12 @@ const tabbed = async ($: Engine, tab: 'flow' | 'rules') => {
   return ui
 }
 
+// what the node says about the failed stages of `demo` (the pane reads reasons from the row, not the run files)
+const nodeFail = (key: string, reason: string, o: object = {}) => ({ key: `demo|${key}`, at: NOW, what: 'x', reason, next_step: 'retry 1/3', severity: 'info', ...o })
+const retriedFailures = [nodeFail('gate|S2|1', 'tests red; no case for empty input'), nodeFail('gate|S2|2', 'still red')]
+
 test('Flow: a rejected gate attempt shows its reason and the retry nested under it', async ($, on) => {
-  await seeded($, on, retriedRun())
+  await seeded($, on, retriedRun(), { rows: [acting('demo', { failures: retriedFailures })] })
   const text = await shown(await tabbed($, 'flow'))
   const at = (s: string) => text.indexOf(s)
   expect(at(' attempt 1')).toBeLessThan(at('↳ tests red; no case for empty input'))
@@ -568,22 +579,29 @@ test('Flow: a rejected gate attempt shows its reason and the retry nested under 
   expect(text).not.toContain('↳ ok')
 })
 
-test('Flow: a rejected critique keeps its reason, a rejected goal gate too', async ($, on) => {
+test('Flow: a rejected critique keeps the reason the node gave', async ($, on) => {
   await seeded($, on, demoRun({
     [`${RUN}/02-critique.json`]: JSON.stringify({ sound: false, problems: ['AC-2 has no check', 'S3 too big'], blocking: ['no test plan'] }),
-  }))
+  }), { rows: [acting('demo', { failures: [nodeFail('critique|1', 'older round'), nodeFail('critique|2', 'no test plan; AC-2 has no check; S3 too big')] })] })
   const text = await shown(await tabbed($, 'flow'))
   expect(text).toContain('↳ no test plan; AC-2 has no check; S3 too big')
   expect(text).toContain('"✘"')
 })
 
-test('Flow: a failing goal gate shows its reason', async ($, on) => {
-  await seeded($, on, retriedRun({ [`${RUN}/04-goal-gate.json`]: JSON.stringify({ match_pct: 70, pass: false, reason: 'AC-2 not met' }) }))
+test('Flow: a failing goal gate shows the reason the node gave', async ($, on) => {
+  await seeded($, on, retriedRun({ [`${RUN}/04-goal-gate.json`]: JSON.stringify({ match_pct: 70, pass: false }) }), { rows: [acting('demo', { failures: [nodeFail('goal|1', 'AC-2 not met')] })] })
   expect(await shown(await tabbed($, 'flow'))).toContain('↳ AC-2 not met')
 })
 
+test('Flow: with no failure from the node a rejected file shows no reason', async ($, on) => {
+  await seeded($, on, retriedRun({ [`${RUN}/04-goal-gate.json`]: JSON.stringify({ match_pct: 70, pass: false, reason: 'read from the file' }) }))
+  const text = await shown(await tabbed($, 'flow'))
+  expect(text).not.toContain('read from the file')
+  expect(text).not.toContain('tests red')
+})
+
 test('Gate rules: per subgoal the result and every gate verdict; the gate rules folded under it', async ($, on) => {
-  await seeded($, on, retriedRun({ [CONFIG]: cfg }))
+  await seeded($, on, retriedRun({ [CONFIG]: cfg }), { rows: [acting('demo', { failures: retriedFailures })] })
   const ui = await tabbed($, 'rules') // the stubbed $.state does not notify readers: tabbed redraws
   const text = await shown(ui)
   for (const word of ['passed · 3 tries', 'gate 1: rejected — tests red; no case for empty input', 'gate 2: rejected — still red', 'gate 3: passed', 'Gate rules']) {
@@ -598,7 +616,7 @@ test('Gate rules: a failed subgoal with a stalled retry says so', async ($, on) 
   await seeded($, on, demoRun({
     [`${RUN}/subgoals/S2/gate-1.json`]: JSON.stringify({ pass: false, reason: 'tests red' }),
     [`${RUN}/subgoals/S2/result.json`]: JSON.stringify({ id: 'S2', passed: false, attempts: 1, stalled: true }),
-  }))
+  }), { rows: [acting('demo', { failures: [nodeFail('gate|S2|1', 'tests red')] })] })
   const text = await shown(await tabbed($, 'rules'))
   for (const word of ['failed · 1 tries', 'stalled: the retry changed nothing', 'gate 1: rejected — tests red']) expect(text).toContain(word)
 })
@@ -1168,203 +1186,211 @@ test('push throws: toast, no crash, the tick keeps running', async ($, on) => {
   expect(seen.w.statuses.length).toBeGreaterThan(1)
 })
 
-// run events: reject / failed / complete, read from run files written after the session started
+// Failure events: `fallback-check` gives each open row `failures` ({key, at, what, reason, next_step, severity}) and a
+// finished run (not in --list) answers `--show <dir>`. The mod renders them: a toast each, a push for needs you and gave up.
 const NEW = NOW + 1000
-const gj = (o: object) => JSON.stringify(o)
-const runWorld = (on: On, files: Files, dirs: Dirs, push: (e: any) => unknown = sent) => {
+const fail = (key: string, o: object = {}) => ({ key, at: NEW, what: 'QualityGate s1', reason: 'tests red', next_step: 'retry 1/3', severity: 'info', ...o })
+const GAVE_UP = { what: 'subgoal s1', reason: 'tests red', next_step: 'gave up', severity: 'gave up' }
+const NEEDS_YOU = { what: 'setgoal', reason: 'approve the goal spec', next_step: 'needs you', severity: 'needs you' }
+const runWorld = (on: On, push: (e: any) => unknown = sent, dirs: Dirs = {}) => {
   const pushes = [] as any[]
-  const w = world(on, ['terminal'], files, dirs)
+  const w = world(on, ['terminal'], {}, dirs)
   on('tool.call', (_$, e: any) => {
     pushes.push(e)
     return push(e) as never
   })
-  return { pushes, toasts: w.toasts, statuses: w.statuses, outcomes: w.outcomes, w }
+  return { pushes, toasts: w.toasts, toastMs: w.toastMs, statuses: w.statuses, outcomes: w.outcomes, w }
+}
+// the open run `r` as --list prints it, with these failures
+const listFailures = (seen: { w: { listing: { stdout: string } } }, ...fs: object[]) => {
+  seen.w.listing.stdout = list([rowJson('r', { failures: fs })])
 }
 const msgs = (s: { pushes: any[] }) => s.pushes.map(p => p.message)
-const R = '.harness-run/r'
-type Ents = [string, 'dir' | 'file', number?][]
-const OLD_MF: Ents = [['manifest.json', 'file', NOW - 5000]]
-const rdirs = (run: Ents = OLD_MF, extra: Dirs = {}): Dirs => ({ '.harness-run': [['r', 'dir']], [R]: run, ...extra })
-
-test('critique sound:false pushes a reject once', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const files: Files = { 'r/manifest.json': gj({ max_retries: 2 }), 'r/02-critique.json': gj({ sound: false }) }
-  const dirs = rdirs()
-  const seen = runWorld(on, files, dirs)
-  await start($)
-  dirs[R] = [...OLD_MF, ['02-critique.json', 'file', NEW]]
-  await clock.advance(5000)
-  await clock.advance(5000)
-  expect(msgs(seen)).toEqual(['harness r: rejected — Critique (1/2)'])
-})
-
-test('a failing subgoal gate pushes a reject with attempt/max; a pass does not', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const files: Files = {
-    'r/manifest.json': gj({ max_retries: 3 }),
-    'r/subgoals/s1/gate-1.json': gj({ pass: false }),
-    'r/subgoals/s1/gate-2.json': gj({ pass: true }),
-  }
-  const dirs = rdirs(OLD_MF, { [`${R}/subgoals`]: [['s1', 'dir']], [`${R}/subgoals/s1`]: [['gate-1.json', 'file', NEW], ['gate-2.json', 'file', NEW]] })
-  const seen = runWorld(on, files, dirs)
-  await start($)
-  await clock.advance(5000)
-  expect(msgs(seen)).toEqual(['harness r: rejected — QualityGate s1 (1/3)'])
-})
-
-test('retries spent pushes failed; a goal gate under 90 is a reject, then failed once reported', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const files: Files = {
-    'r/manifest.json': gj({}),
-    'r/subgoals/s1/result.json': gj({ passed: false, attempts: 2 }),
-    'r/04-goal-gate.json': gj({ match_pct: 70, pass: false, reason: 'x' }),
-  }
-  const dirs = rdirs([...OLD_MF, ['04-goal-gate.json', 'file', NEW]], { [`${R}/subgoals`]: [['s1', 'dir']], [`${R}/subgoals/s1`]: [['result.json', 'file', NEW]] })
-  const seen = runWorld(on, files, dirs)
-  await start($)
-  await clock.advance(5000)
-  expect(msgs(seen)).toEqual(['harness r: failed — subgoal s1 (2/2)', 'harness r: rejected — goal gate (1/2)'])
-  dirs[R] = [...dirs[R], ['05-report.md', 'file', NEW + 5000]]
-  await clock.advance(5000)
-  expect(msgs(seen).slice(2)).toEqual(['harness r: failed — goal gate (1/2)'])
-})
-
-test('a run with a report and no failure pushes complete once', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const files: Files = { 'r/manifest.json': gj({}), 'r/04-goal-gate.json': gj({ match_pct: 95, pass: true }), 'r/subgoals/s1/result.json': gj({ passed: true, attempts: 1 }) }
-  const dirs = rdirs([...OLD_MF, ['04-goal-gate.json', 'file', NEW], ['05-report.md', 'file', NEW]], { [`${R}/subgoals`]: [['s1', 'dir']], [`${R}/subgoals/s1`]: [['result.json', 'file', NEW]] })
-  const seen = runWorld(on, files, dirs)
-  await start($)
-  await clock.advance(5000)
-  await clock.advance(5000)
-  expect(msgs(seen)).toEqual(['harness r: complete — Report (1/1)'])
-})
-
-test('a finished graph run is left to the graph mod: no harness push', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const files: Files = { 'g2.json': gj({ request: 'ship it', nodes: [{ stage: 'report', state: 'done' }] }) }
-  const dirs: Dirs = { '.harness-run': [['broker', 'dir']], ['.harness-run/' + 'broker/runs']: [['g2.json', 'file', NEW]] }
-  const seen = runWorld(on, files, dirs)
-  await start($)
-  await clock.advance(5000)
-  expect(msgs(seen)).toEqual([])
-})
-
-test('run events from before the session started are not pushed', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const files: Files = { 'r/manifest.json': gj({}), 'r/02-critique.json': gj({ sound: false }), 'r/05-report.md': 'x' }
-  const old = NOW - 60_000
-  const seen = runWorld(on, files, rdirs([['manifest.json', 'file', old], ['02-critique.json', 'file', old], ['05-report.md', 'file', old]]))
-  await start($)
-  await clock.advance(5000)
-  expect(seen.pushes).toEqual([])
-  expect(seen.toasts).toEqual([])
-})
-
-test('run event not sent: toast; push throws: toast and the tick keeps running', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const files: Files = { 'r/manifest.json': gj({}), 'r/02-critique.json': gj({ sound: false }) }
-  const dirs = rdirs([...OLD_MF, ['02-critique.json', 'file', NEW]])
-  let n = 0
-  const seen = runWorld(on, files, dirs, () => {
-    if (n++ === 0) return { result: { message: 'm', pushSent: false, localSent: false, disabledReason: 'user_present' }, text: '' }
-    throw new Error('no tool')
-  })
-  await start($)
-  expect(seen.toasts).toEqual(['harness r: rejected — Critique (1/2)'])
-  dirs[R] = [...OLD_MF, ['02-critique.json', 'file', NEW + 9000]]
-  await clock.advance(5000)
-  expect(seen.toasts.slice(1)).toEqual(['harness r: rejected — Critique (2/2)'])
-})
-
-// the run outcome harness publishes for trophy: carried by the event, never parsed from the message
 const labels = (s: { outcomes: any[] }) => s.outcomes.map(o => o.outcome)
-const reported = (extra: Ents = [], dirs: Dirs = {}) => rdirs([...OLD_MF, ['05-report.md', 'file', NEW], ...extra], dirs)
 
-test('outcome: Report complete publishes pass, with exactly system, outcome and at', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const files: Files = { 'r/manifest.json': gj({}), 'r/04-goal-gate.json': gj({ match_pct: 95, pass: true }) }
-  const seen = runWorld(on, files, reported([['04-goal-gate.json', 'file', NEW]]))
+test('info failure: a ↻ toast with the default timeout, no push, no outcome', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const seen = runWorld(on)
+  listFailures(seen, fail('r|gate|s1|1'))
   await start($)
-  await clock.advance(5000)
-  await clock.advance(5000)
-  expect(labels(seen)).toEqual(['pass'])
+  expect(seen.toasts).toEqual(['↻ r QualityGate s1 failed: tests red → retry 1/3'])
+  expect(seen.toastMs).toEqual([undefined])
+  expect(seen.pushes).toEqual([])
+  expect(seen.outcomes).toEqual([])
+})
+
+test('needs you: a ⚠ toast for 10 s and the same line pushed', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const seen = runWorld(on)
+  listFailures(seen, fail('r|needs-you|setgoal|t', NEEDS_YOU))
+  await start($)
+  const line = '⚠ r setgoal failed: approve the goal spec → needs you'
+  expect(seen.toasts).toEqual([line])
+  expect(seen.toastMs).toEqual([10_000])
+  expect(msgs(seen)).toEqual([line])
+  expect(seen.outcomes).toEqual([])
+})
+
+test('gave up: a ✗ toast for 10 s, a push, and the run outcome fail', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const seen = runWorld(on)
+  listFailures(seen, fail('r|result|s1', GAVE_UP))
+  await start($)
+  const line = '✗ r subgoal s1 failed: tests red → gave up'
+  expect(seen.toasts).toEqual([line])
+  expect(seen.toastMs).toEqual([10_000])
+  expect(msgs(seen)).toEqual([line])
+  expect(labels(seen)).toEqual(['fail'])
   expect(Object.keys(seen.outcomes[0]).sort()).toEqual(['at', 'outcome', 'system'])
   expect(seen.outcomes[0].system).toBe('harness')
 })
 
-test('outcome: a goal gate that failed after the report publishes reject', async ($, on) => {
+test('no next step: the toast leaves the arrow out', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const seen = runWorld(on)
+  listFailures(seen, fail('r|result|s1', { ...GAVE_UP, next_step: null }))
+  await start($)
+  expect(seen.toasts).toEqual(['✗ r subgoal s1 failed: tests red'])
+})
+
+test('the push text is cut at 200 characters', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const seen = runWorld(on)
+  listFailures(seen, fail('r|result|s1', { ...GAVE_UP, what: `subgoal ${'s'.repeat(250)}` }))
+  await start($)
+  expect(msgs(seen)[0]).toHaveLength(200)
+  expect(seen.toasts[0]!.length).toBeGreaterThan(200)
+})
+
+test('a failure from before the session started is not shown', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const seen = runWorld(on)
+  listFailures(seen, fail('r|result|s1', { ...GAVE_UP, at: NOW }), fail('r|gate|s1|1', { at: NOW - 60_000 }))
+  await start($)
+  expect(seen.toasts).toEqual([])
+  expect(seen.pushes).toEqual([])
+  expect(seen.outcomes).toEqual([])
+})
+
+test('a failure is shown once by its key; a new key is shown next tick', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const files: Files = { 'r/manifest.json': gj({}), 'r/04-goal-gate.json': gj({ match_pct: 70, pass: false }) }
-  const seen = runWorld(on, files, reported([['04-goal-gate.json', 'file', NEW]]))
+  const seen = runWorld(on)
+  listFailures(seen, fail('r|gate|s1|1'))
   await start($)
   await clock.advance(5000)
+  listFailures(seen, fail('r|gate|s1|1'), fail('r|gate|s1|2', { next_step: 'retry 2/3' }))
+  await clock.advance(5000)
+  expect(seen.toasts).toEqual(['↻ r QualityGate s1 failed: tests red → retry 1/3', '↻ r QualityGate s1 failed: tests red → retry 2/3'])
+})
+
+test('a goal gate that was a retry and then gave up (same key) is shown again as gave up', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const seen = runWorld(on)
+  listFailures(seen, fail('r|goal|1', { what: 'goal gate', next_step: 'retry 1/3' }))
+  await start($)
+  listFailures(seen, fail('r|goal|1', { what: 'goal gate', next_step: 'gave up', severity: 'gave up' }))
+  await clock.advance(5000)
+  expect(seen.toasts).toEqual(['↻ r goal gate failed: tests red → retry 1/3', '✗ r goal gate failed: tests red → gave up'])
+  expect(msgs(seen)).toEqual(['✗ r goal gate failed: tests red → gave up'])
   expect(labels(seen)).toEqual(['reject'])
 })
 
-test('outcome: a goal gate under 90 before the report is only a rejected attempt: no outcome', async ($, on) => {
+test('a push not sent still leaves one toast; a push that throws leaves one toast and the tick keeps running', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const files: Files = { 'r/manifest.json': gj({}), 'r/04-goal-gate.json': gj({ match_pct: 70, pass: false }) }
-  const seen = runWorld(on, files, rdirs([...OLD_MF, ['04-goal-gate.json', 'file', NEW]]))
+  let n = 0
+  const seen = runWorld(on, () => {
+    if (n++ === 0) return { result: { message: 'm', pushSent: false, localSent: false, disabledReason: 'user_present' }, text: '' }
+    throw new Error('no tool')
+  })
+  listFailures(seen, fail('r|result|s1', GAVE_UP))
   await start($)
+  expect(seen.toasts).toHaveLength(1)
+  listFailures(seen, fail('r|result|s1', GAVE_UP), fail('r|result|s2', { ...GAVE_UP, what: 'subgoal s2' }))
   await clock.advance(5000)
-  expect(msgs(seen)).toEqual(['harness r: rejected — goal gate (1/2)'])
-  expect(seen.outcomes).toEqual([])
+  expect(seen.toasts.slice(1)).toEqual(['✗ r subgoal s2 failed: tests red → gave up'])
+  await clock.advance(5000)
+  expect(seen.statuses.length).toBeGreaterThan(2)
 })
 
-test('outcome: retries spent publishes fail; two failed subgoals publish fail once', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const files: Files = {
-    'r/manifest.json': gj({}),
-    'r/subgoals/s1/result.json': gj({ passed: false, attempts: 2 }),
-    'r/subgoals/s2/result.json': gj({ passed: false, attempts: 2 }),
-  }
-  const dirs = rdirs(OLD_MF, {
-    [`${R}/subgoals`]: [['s1', 'dir'], ['s2', 'dir']],
-    [`${R}/subgoals/s1`]: [['result.json', 'file', NEW]],
-    [`${R}/subgoals/s2`]: [['result.json', 'file', NEW]],
-  })
-  const seen = runWorld(on, files, dirs)
+test('two failed subgoals publish the fail outcome once', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const seen = runWorld(on)
+  listFailures(seen, fail('r|result|s1', GAVE_UP), fail('r|result|s2', { ...GAVE_UP, what: 'subgoal s2' }))
   await start($)
-  await clock.advance(5000)
-  await clock.advance(5000)
-  expect(msgs(seen)).toEqual(['harness r: failed — subgoal s1 (2/2)', 'harness r: failed — subgoal s2 (2/2)'])
+  expect(msgs(seen)).toHaveLength(2)
   expect(labels(seen)).toEqual(['fail'])
 })
 
-test('outcome: a critique or subgoal gate rejection publishes nothing', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const files: Files = {
-    'r/manifest.json': gj({ max_retries: 3 }),
-    'r/02-critique.json': gj({ sound: false }),
-    'r/subgoals/s1/gate-1.json': gj({ pass: false }),
-  }
-  const dirs = rdirs([...OLD_MF, ['02-critique.json', 'file', NEW]], { [`${R}/subgoals`]: [['s1', 'dir']], [`${R}/subgoals/s1`]: [['gate-1.json', 'file', NEW]] })
-  const seen = runWorld(on, files, dirs)
-  await start($)
-  await clock.advance(5000)
-  expect(seen.pushes).toHaveLength(2)
-  expect(seen.outcomes).toEqual([])
-})
-
-test('outcome: a run finished before the session started and a graph run publish nothing', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const old = NOW - 60_000
-  const files: Files = { 'r/manifest.json': gj({}), 'r/05-report.md': 'x', 'g2.json': gj({ request: 'ship it', nodes: [{ stage: 'report', state: 'done' }] }) }
-  const dirs: Dirs = { '.harness-run': [['r', 'dir'], ['broker', 'dir']], [R]: [['manifest.json', 'file', old], ['05-report.md', 'file', old]], '.harness-run/broker/runs': [['g2.json', 'file', NEW]] }
-  const seen = runWorld(on, files, dirs)
-  await start($)
-  await clock.advance(5000)
-  expect(seen.outcomes).toEqual([])
-})
-
-test('outcome: a failing state write never breaks the push', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const files: Files = { 'r/manifest.json': gj({}), 'r/04-goal-gate.json': gj({ match_pct: 95, pass: true }) }
-  const seen = runWorld(on, files, reported([['04-goal-gate.json', 'file', NEW]]))
+test('a failing state write never breaks the push', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const seen = runWorld(on)
   seen.w.failSet = true
+  listFailures(seen, fail('r|result|s1', GAVE_UP))
   await start($)
-  await clock.advance(5000)
-  expect(msgs(seen)).toEqual(['harness r: complete — Report (1/1)'])
+  expect(msgs(seen)).toEqual(['✗ r subgoal s1 failed: tests red → gave up'])
   expect(seen.outcomes).toEqual([])
 })
+
+// a finished run is not in --list; its report is newer than the session, and --show says whether it failed
+const finishedDirs = (at = NEW): Dirs => ({ '.harness-run': [['r', 'dir']], '.harness-run/r': [['manifest.json', 'file', NOW - 5000], ['05-report.md', 'file', at]] })
+const showFailures = (seen: { w: { shows: Map<string, { stdout: string; exitCode: number }> } }, ...fs: object[]) =>
+  seen.w.shows.set('r', { stdout: JSON.stringify(rowJson('r', { failures: fs })), exitCode: 0 })
+
+test('a report with no gave-up failure is complete: one toast, no push, outcome pass', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const seen = runWorld(on, sent, finishedDirs())
+  showFailures(seen, fail('r|gate|s1|1'))
+  await start($)
+  await clock.advance(5000)
+  expect(seen.toasts).toEqual(['↻ r QualityGate s1 failed: tests red → retry 1/3', 'harness r: complete — Report (1/1)'])
+  expect(seen.pushes).toEqual([])
+  expect(labels(seen)).toEqual(['pass'])
+  expect(seen.w.showCalls).toHaveLength(1)
+  expect(seen.w.showCalls[0]).toContain('/proj/.harness-run/r')
+})
+
+test('a goal gate that failed after the report gave up: push, outcome reject, never complete', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const seen = runWorld(on, sent, finishedDirs())
+  showFailures(seen, fail('r|goal|1', { what: 'goal gate', reason: 'AC-2 not met', next_step: 'gave up', severity: 'gave up' }))
+  await start($)
+  expect(seen.toasts).toEqual(['✗ r goal gate failed: AC-2 not met → gave up'])
+  expect(msgs(seen)).toEqual(['✗ r goal gate failed: AC-2 not met → gave up'])
+  expect(labels(seen)).toEqual(['reject'])
+})
+
+test('--show is asked once per finished run; a failed --show is asked again next tick', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const seen = runWorld(on, sent, finishedDirs())
+  await start($)
+  expect(seen.toasts).toEqual([])
+  showFailures(seen)
+  await clock.advance(5000)
+  await clock.advance(5000)
+  expect(seen.toasts).toEqual(['harness r: complete — Report (1/1)'])
+  expect(seen.w.showCalls).toHaveLength(2)
+})
+
+test('a run finished before the session started is not asked about; neither is a graph run', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const dirs = finishedDirs(NOW - 60_000)
+  dirs['.harness-run'] = [['r', 'dir'], ['broker', 'dir']]
+  dirs['.harness-run/broker/runs'] = [['g2.json', 'file', NEW]]
+  const seen = runWorld(on, sent, dirs)
+  showFailures(seen)
+  await start($)
+  await clock.advance(5000)
+  expect(seen.w.showCalls).toEqual([])
+  expect(seen.toasts).toEqual([])
+  expect(seen.outcomes).toEqual([])
+})
+
+test('a critique at its cap is an info toast as the node words it: continuing', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const seen = runWorld(on)
+  listFailures(seen, fail('r|critique|3', { what: 'Critique', reason: 'the node said so', next_step: 'continuing' }))
+  await start($)
+  expect(seen.toasts).toEqual(['↻ r Critique failed: the node said so → continuing'])
+  expect(seen.pushes).toEqual([])
+})
+

@@ -8,38 +8,42 @@ export const NONE = '—' // the harness records no vendor or model, so the agen
 
 const oneLine = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '')
 
-// a reason field is a string, or a list of strings / { text | reason | message } entries
-function texts(v: unknown): string[] {
-  if (typeof v === 'string') return v.trim() === '' ? [] : [v]
-  if (!Array.isArray(v)) return []
-  return v.flatMap(x => {
-    if (typeof x === 'string') return texts(x)
-    if (typeof x === 'object' && x !== null) {
-      const r = x as Record<string, unknown>
-      return texts(r.text ?? r.reason ?? r.message ?? r.problem ?? r.gap)
-    }
-    return []
-  })
+/*
+ * The failed stages of a run as `node engine/fallback-check.mjs` gives them (`failures` on each row): the reason, the
+ * next step and the severity are the node's; these are readers and a text builder, they decide nothing. Local to this
+ * file: HarnessRow in ../types is not widened, a row carries `failures` as RunRow.
+ */
+export type FailureSeverity = 'info' | 'needs you' | 'gave up'
+export type RowFailure = { key: string; at: number; what: string; reason: string; next_step: string | null; severity: FailureSeverity }
+export type RunRow = HarnessRow & { failures: RowFailure[] }
+
+const FAILURE_SEVERITIES: readonly string[] = ['info', 'needs you', 'gave up']
+const FAILURE_MARK: Record<FailureSeverity, string> = { info: '↻', 'needs you': '⚠', 'gave up': '✗' }
+export const FAILURE_TOAST_MS = 10_000 // the toast of a failure that needs a person or ended the run; info keeps the default
+const PUSH_MAX = 200
+
+// One failure, tolerant: a field of the wrong type drops the whole entry (never a guess).
+export function normalizeFailure(v: unknown): RowFailure | null {
+  const o = typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null
+  if (o === null || typeof o.key !== 'string' || o.key === '' || typeof o.at !== 'number' || !Number.isFinite(o.at)) return null
+  if (typeof o.what !== 'string' || typeof o.reason !== 'string' || !FAILURE_SEVERITIES.includes(o.severity as string)) return null
+  if (o.next_step !== null && typeof o.next_step !== 'string') return null
+  return { key: o.key, at: o.at, what: o.what, reason: o.reason, next_step: o.next_step, severity: o.severity as FailureSeverity }
 }
 
-const join = (parts: string[], max: number) => oneLine(parts.join('; '), max)
+// a row's failures, oldest first as the node lists them; a row the node did not give (the demo's) has none
+export const failuresOf = (r: HarnessRow): RowFailure[] => (r as Partial<RunRow>).failures ?? []
 
-// 02-critique.json: why the critique was not sound (blocking, problems, reason)
-export function critiqueReason(c: Record<string, unknown> | undefined): string {
-  if (c === undefined) return ''
-  return join([...texts(c.reason), ...texts(c.blocking), ...texts(c.problems)], 240)
+// The reason of the newest failure under a key: the key itself or a longer one at a `|` (so `r|gate|S1|1` is not `r|gate|S1|10`).
+export function reasonFor(failures: readonly RowFailure[], key: string): string {
+  return failures.filter(f => f.key === key || f.key.startsWith(`${key}|`)).pop()?.reason ?? ''
 }
 
-// subgoals/<id>/gate-<n>.json {pass, reason, gaps[]}
-export function gateReason(g: Record<string, unknown> | undefined): string {
-  if (g === undefined) return ''
-  return join([...texts(g.reason), ...texts(g.gaps)], 240)
-}
-
-// 04-goal-gate.json {match_pct, pass, reason}
-export function goalReason(g: Record<string, unknown> | undefined): string {
-  if (g === undefined) return ''
-  return join([...texts(g.reason), ...texts(g.out_of_spec)], 240)
+// `<icon> <run> <what> failed: <reason> → <next_step>` (no arrow without a next step); a failure that needs a person or
+// gave up also has a push text (cut at 200) and a longer toast. The icon and the timeout follow the severity only.
+export function failureToast(run: string, f: RowFailure): { text: string; pushText: string | null; timeoutMs?: number } {
+  const text = `${FAILURE_MARK[f.severity]} ${run} ${f.what} failed: ${f.reason}${f.next_step === null ? '' : ` → ${f.next_step}`}`
+  return f.severity === 'info' ? { text, pushText: null } : { text, pushText: text.slice(0, PUSH_MAX), timeoutMs: FAILURE_TOAST_MS }
 }
 
 // 45s, 3m 12s, 1h 5m; '' when unknown
@@ -139,7 +143,7 @@ export function severityOf(problems: readonly RowProblem[]): Severity {
 }
 
 // One row, tolerant: a missing or malformed field takes a safe default and nothing throws. No slug, no row.
-export function normalizeRow(v: unknown): HarnessRow | null {
+export function normalizeRow(v: unknown): RunRow | null {
   const o = obj(v)
   if (o === null || typeof o.slug !== 'string' || o.slug === '') return null
   const rounds = (Array.isArray(o.rounds) ? (o.rounds as unknown[]) : []).map(normalizeRound)
@@ -157,6 +161,7 @@ export function normalizeRow(v: unknown): HarnessRow | null {
     max_critique_rounds: typeof cap === 'number' && Number.isInteger(cap) && cap >= 1 ? cap : 2,
     severity: sev === null ? severityOf(rounds.flatMap(r => r.problems)) : { blocker: count(sev.blocker), major: count(sev.major), minor: count(sev.minor), nit: count(sev.nit) },
     rounds, passed: count(o.passed), failed: count(o.failed), total: count(o.total),
+    failures: (Array.isArray(o.failures) ? (o.failures as unknown[]) : []).map(normalizeFailure).filter((f): f is RowFailure => f !== null),
   }
 }
 
@@ -171,7 +176,17 @@ export function parseRows(text: unknown): HarnessRow[] | null {
     return null
   }
   if (!Array.isArray(v)) return null
-  return v.map(normalizeRow).filter((r): r is HarnessRow => r !== null)
+  return v.map(normalizeRow).filter((r): r is RunRow => r !== null)
+}
+
+// The `--show <dir> --json` output: one row. Anything else is null.
+export function parseRow(text: unknown): RunRow | null {
+  if (typeof text !== 'string' || text.trim() === '') return null
+  try {
+    return normalizeRow(JSON.parse(text))
+  } catch {
+    return null
+  }
 }
 
 export const waitsOnYou = (r: HarnessRow) => r.waiting?.who === 'you'
@@ -379,6 +394,8 @@ export function topFinding(r: HarnessRow): string | null {
 
 // The one reader of the run files is the node CLI (it works with no mod, compat-claude); the mod runs it.
 export const listArgv = (pluginRoot: string, cwd: string): string[] => ['node', `${pluginRoot}/engine/fallback-check.mjs`, '--list', '--json', '--cwd', cwd]
+// A finished run is not in the list; its own failures are the node's answer for its directory.
+export const showArgv = (pluginRoot: string, runDir: string): string[] => ['node', `${pluginRoot}/engine/fallback-check.mjs`, '--show', runDir, '--json']
 
 // The rows on screen: the band's leading run, and the pane's run while the pane is open.
 export function shownRows(ordered: readonly HarnessRow[], selected: string | null, paneOpen: boolean): HarnessRow[] {
