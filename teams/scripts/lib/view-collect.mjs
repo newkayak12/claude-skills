@@ -138,6 +138,10 @@ function nodeSummary(n) {
   // CURRENTLY reading waiting_human, not merely having waiting_since set: a card a human already
   // answered keeps the field (nothing clears it), and showing a stale "waiting Xh" on a resolved
   // card would be the same error runState's own waiting_human branch exists to avoid.
+  // An ask card's own question text: what the pane shows next to a card waiting on a person.
+  if (n.stage === 'ask' && Array.isArray(n.questions)) {
+    out.questions = n.questions.map((q) => String((q && (q.question || q.unknown)) || '')).filter(Boolean).slice(0, 5);
+  }
   if (n.state === 'waiting_human' && n.waiting_since) {
     out.waiting_since = n.waiting_since;
     out.waiting_elapsed_ms = elapsedMs(n.waiting_since);
@@ -172,6 +176,7 @@ function collectChildRun(cwd, runId, visiting, ticketCtx) {
     run_id: run.run_id,
     cwd,
     flow: run.flow,
+    max_retries: Number.isInteger(run.max_retries) ? run.max_retries : null,
     state: state.state,
     counts: state.counts,
     goal_verdict: state.goal_verdict || null,
@@ -512,7 +517,14 @@ function collectHarness(task, taskId, tasksDir) {
   for (const s of stages) counts[s.state] += 1;
   return {
     state, counts,
-    harness: { slug: run ? (run.route === 'fallback' ? basename(run.run_dir) : run.run_id) : null, moving, driver, stages },
+    harness: {
+      slug: run ? (run.route === 'fallback' ? basename(run.run_dir) : run.run_id) : null, moving, driver, stages,
+      // the graph-route run's own file location (run_file in the floor summary); null on the fallback route
+      graph: run && run.route === 'graph' ? { run_id: run.run_id, cwd: run.cwd } : null,
+      // graph-route nodes parked on a person (the stage bar folds waiting into running)
+      waiting: run && run.route === 'graph'
+        ? ((loadRunAt(graphRunPath(run.cwd, run.run_id)) || {}).nodes || []).filter((n) => n && n.state === 'waiting_human').length : 0,
+    },
   };
 }
 

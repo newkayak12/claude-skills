@@ -1765,7 +1765,7 @@ test('--once --format summary prints { status, task }: status is --format status
     const r = run('--format', 'summary');
     assert.equal(r.status, 0, r.stderr);
     const out = JSON.parse(r.stdout);
-    assert.deepEqual(Object.keys(out).sort(), ['status', 'task']);
+    assert.deepEqual(Object.keys(out).sort(), ['status', 'task', 'tasks']);
     assert.deepEqual(out.status, JSON.parse(run('--format', 'status').stdout));
     assert.deepEqual(Object.keys(out.task).sort(), ['cost', 'day', 'done', 'key', 'log', 'now', 'stages', 'state', 'title', 'total', 'work', 'you']);
 

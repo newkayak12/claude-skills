@@ -14,12 +14,29 @@ export type SummaryTask = {
   done: number
   total: number
   now: { kind: string; subject: string | null; detail: string | null }
-  you: { count: number; items: string[] }
+  you: { count: number; items: string[]; cards?: { key: string; title: string; question: string }[] }
   stages: { key: string; state: Mark }[]
   work: { title: string; kind: string; id: string | null; state: Mark; filed_by: string | null; reason: string | null }[]
   cost: { usd: number; turns: number }
   log: { time: string; kind: string; subject: string | null }[]
 }
+
+// `view.mjs --once --format summary` floor part (teams/scripts/lib/view-floor.mjs): per listed task
+export type WorkState = 'acting' | 'idle' | 'you' | 'done' | 'stalled'
+export type SummaryItem = {
+  key: string; title: string; state: WorkState | 'failed'; doing: string; last_verdict: string | null
+  cost_usd: number | null; cost_estimated: boolean; try: number | null; max: number | null
+  live: boolean; elapsed_ms: number | null; run_file: string | null; owner_key: string
+}
+export type SummaryWorker = { id: string; state: WorkState; doing: string }
+export type Handoff = { time: string; from: string; what: string; to: string }
+export type SummaryTaskEntry = SummaryTask & {
+  task_id: string; created_at: number | null
+  live: boolean; age_ms: number | null // age_ms: stalled tasks only, under 24 h
+  items: SummaryItem[]; workers: SummaryWorker[]; handoffs: Handoff[]
+}
+// `task` (the running task, or --task) stays as before; `tasks` is live newest-created first, then stalled
+export type SummaryOutput = { status: StatusInfo; tasks: SummaryTaskEntry[]; task: SummaryTask | null }
 
 // `view.mjs --once --format teams` teams part (teams/scripts/lib/view-status.mjs teamsView)
 export type NowLine = { team: string; key: string; node: string; agent: string | null; elapsed_ms: number | null }
