@@ -1094,6 +1094,115 @@ test('a sound shape dispatches its root package: worktree created, child run ope
   });
 });
 
+// ---------- readable names (card 46): task.slug, teams/<slug>/<Pid>-<package-slug> ----------
+
+const OPEN_ARGS = { vendor: 'self', brainstorm: false, roles: { qa: false, audit: false } };
+const taskJson = (root, id) => JSON.parse(readFileSync(join(root, id, 'task.json'), 'utf8'));
+const gitOut = (cwd, ...a) => spawnSync('git', a, { cwd, encoding: 'utf8' }).stdout.trim();
+
+test('card 46: the same request twice in one repo gets s and s-2, under different teams/<slug>/; another repo gets s again', async () => {
+  await withTask(async ({ tm, cwd, root, task_id }) => {
+    assert.equal(taskJson(root, task_id).slug, 'big-request');
+    const second = await tm.call('tm_open', { request: 'big request', cwd, ...OPEN_ARGS });
+    assert.equal(taskJson(root, second.task_id).slug, 'big-request-2');
+    const other = repo();
+    try {
+      const third = await tm.call('tm_open', { request: 'big request', cwd: other, ...OPEN_ARGS });
+      assert.equal(taskJson(root, third.task_id).slug, 'big-request', 'tasks of another repo take no slug here');
+    } finally { rmSync(other, { recursive: true, force: true }); }
+    for (const id of [task_id, second.task_id]) {
+      await throughCritique(tm, id);
+      await tm.call('tm_next', { task_id: id });
+    }
+    const branches = gitOut(cwd, 'branch', '--list', 'teams/*').split('\n').map((l) => l.replace(/^[+* ]+/, '').trim());
+    assert.ok(branches.includes('teams/big-request/P1-module'), branches.join());
+    assert.ok(branches.includes('teams/big-request-2/P1-module'), branches.join());
+    assert.ok(!branches.some((b) => b.startsWith('harness/')));
+    for (const b of branches) assert.ok(spawnSync('git', ['check-ref-format', '--branch', b]).status === 0, b);
+    // A teams/<slug>/ namespace already in the repo is taken too, even with no task for it.
+    spawnSync('git', ['branch', 'teams/stray-work/x'], { cwd });
+    const fourth = await tm.call('tm_open', { request: 'stray work', cwd, ...OPEN_ARGS });
+    assert.equal(taskJson(root, fourth.task_id).slug, 'stray-work-2');
+  });
+});
+
+test('card 46: a Korean-only request gets a romanized ascii slug; requests[] takes the first request', async () => {
+  await withTask(async ({ tm, cwd, root }) => {
+    const ko = await tm.call('tm_open', { request: '메모 패널 개선', cwd, ...OPEN_ARGS });
+    const slug = taskJson(root, ko.task_id).slug;
+    assert.match(slug, /^[a-z0-9]+(-[a-z0-9]+)*$/);
+    assert.equal(slug, 'memo-paeneol-gaeseon');
+    const many = await tm.call('tm_open', { requests: ['Fix pane layout', 'Rename the band'], cwd, ...OPEN_ARGS });
+    assert.equal(taskJson(root, many.task_id).slug, 'fix-pane-layout');
+  });
+});
+
+test('card 46: tm_board (all and one EPIC) and tm_status carry the slug, null for a task without one', async () => {
+  await withTask(async ({ tm, cwd, root, task_id }) => {
+    const board = await tm.call('tm_board', {});
+    assert.equal(board.epics.find((e) => e.task_id === task_id).slug, 'big-request');
+    assert.equal((await tm.call('tm_board', { task_id })).slug, 'big-request');
+    assert.equal((await tm.call('tm_status', { task_id })).slug, 'big-request');
+    const old = await tm.call('tm_open', { request: 'older task', cwd, ...OPEN_ARGS });
+    const file = join(root, old.task_id, 'task.json');
+    const t = taskJson(root, old.task_id);
+    delete t.slug;
+    writeFileSync(file, JSON.stringify(t));
+    assert.equal((await tm.call('tm_status', { task_id: old.task_id })).slug, null);
+    assert.equal((await tm.call('tm_board', { task_id: old.task_id })).slug, null);
+    assert.equal((await tm.call('tm_board', {})).epics.find((e) => e.task_id === old.task_id).slug, null);
+  });
+});
+
+test('card 46: a retry and a reshaped title reuse the stored branch and dir', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    const first = (await tm.call('tm_next', { task_id })).children[0];
+    assert.equal(first.branch, 'teams/big-request/P1-module');
+    assert.equal(first.cwd, join(root, task_id, 'worktrees', 'P1-module'));
+    await completeChild(g, first, { accept: false });
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' })).state, 'failed');
+    const t = taskJson(root, task_id);
+    t.spec.packages.find((p) => p.id === 'P1').title = 'a completely renamed package';
+    writeFileSync(join(root, task_id, 'task.json'), JSON.stringify(t));
+    const rt = await tm.call('tm_retry', { task_id, package_id: 'P1' });
+    assert.equal(rt.children[0].branch, first.branch);
+    assert.equal(rt.children[0].cwd, first.cwd);
+  }, { auto_reassign: false });
+});
+
+test('card 46: a slugged task refuses a teams/<slug>/ branch it did not record; the dispatch fails and no worktree is added', async () => {
+  await withTask(async ({ tm, cwd, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    spawnSync('git', ['branch', 'teams/big-request/P1-module'], { cwd });
+    await tm.call('tm_next', { task_id });
+    const n = taskJson(root, task_id).nodes.find((x) => x.node_id === 'dispatch:P1:1');
+    assert.equal(n.state, 'failed');
+    assert.match(n.result.reason, /teams\/big-request\/P1-module/);
+    assert.ok(!existsSync(join(root, task_id, 'worktrees', 'P1-module')));
+    assert.ok(!gitOut(cwd, 'worktree', 'list').includes('P1-module'));
+  });
+});
+
+test('card 46: a task without a slug keeps harness/<id8>/<name> and worktrees/<name>, found by its old E-key, retried and reused', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    const t = taskJson(root, task_id);
+    delete t.slug;
+    writeFileSync(join(root, task_id, 'task.json'), JSON.stringify(t));
+    const key = `E-${task_id.slice(0, 8)}`;
+    await throughCritique(tm, task_id);
+    const first = (await tm.call('tm_next', { task_id: key })).children[0];
+    assert.equal(first.branch, `harness/${task_id.slice(0, 8)}/P1`);
+    assert.equal(first.cwd, join(root, task_id, 'worktrees', 'P1'));
+    assert.equal((await tm.call('tm_status', { task_id: key })).slug, null);
+    await completeChild(g, first, { accept: false });
+    assert.equal((await tm.call('tm_submit', { task_id: key, node_id: 'dispatch:P1:1' })).state, 'failed');
+    const rt = await tm.call('tm_retry', { task_id: key, package_id: 'P1' });
+    assert.equal(rt.children[0].branch, first.branch);
+    assert.equal(rt.children[0].cwd, first.cwd);
+  }, { auto_reassign: false });
+});
+
 // ---------- every package runs the full harness (fractal rule; §3 chain-only reverted 2026-09-28) ----------
 //
 // _repo/docs/plans/2026-09-17-teams-team.md §2: each Team runs the four steps inside itself. A develop
@@ -1263,9 +1372,9 @@ test('a parent with two dependent children runs to report; the second child sees
     const st = await tm.call('tm_status', { task_id, node_id: 'integrate:1' });
     assert.ok(st.nodes[0].deps.includes('accept:P1:1') && st.nodes[0].deps.includes('accept:P2:1'));
     const integ = readFileSync(nx.ready[0].briefing_path, 'utf8');
-    const wtMatch = integ.match(/## Integration worktree\n(.*worktrees\/integration) on branch (harness\/[0-9a-f]{8}\/integration)/);
+    const wtMatch = integ.match(/## Integration worktree\n(.*worktrees\/integration) on branch (teams\/big-request\/integration)/);
     assert.ok(wtMatch, integ);
-    assert.match(integ, /Already merged, in dependency order:\n- P1: harness\/[0-9a-f]{8}\/P1 -> [0-9a-f]{40}\n- P2: harness\/[0-9a-f]{8}\/P2 -> [0-9a-f]{40}/, 'the manager merged, and says what');
+    assert.match(integ, /Already merged, in dependency order:\n- P1: teams\/big-request\/P1-module -> [0-9a-f]{40}\n- P2: teams\/big-request\/P2-module-b -> [0-9a-f]{40}/, 'the manager merged, and says what');
     assert.match(integ, /You may run commands and change files only inside the integration worktree/);
     assert.match(integ, /### P1 — module a \(develop\)\nTouches: a\.txt/);
     assert.equal(readFileSync(join(wtMatch[1], 'a.txt'), 'utf8'), 'x\nchanged by P1\nchanged by P2\n', 'the integration tree holds both packages\' work');
@@ -1280,7 +1389,7 @@ test('a parent with two dependent children runs to report; the second child sees
     assert.match(gate, /## Every node in this task/);
     assert.match(gate, /### dispatch:P1:1 \(dispatch\) — done accept=true match=95%/);
     assert.match(gate, /### integrate:1 \(integrate\) — done verified=true/);
-    assert.match(gate, /Merged:\n- P1 harness/, 'the gate sees the merge commits the manager made');
+    assert.match(gate, /Merged:\n- P1 teams\/big-request\//, 'the gate sees the merge commits the manager made');
     assert.match(gate, /spec_drift/);
     await tm.call('tm_submit', { task_id, node_id: 'gate:goal:1', payload: ok({ accept: true, match_pct: 92 }) });
     nx = await tm.call('tm_next', { task_id });
