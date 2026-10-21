@@ -94,10 +94,10 @@ export function renderLines(ui: Ui, lines: readonly Line[], keyOf = 'l') {
 
 export const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const
 
-// icon · spinner (acting only) · worker · doing
-export function workerCells(workers: readonly SummaryWorker[], frameNo: number): StoryCells[] {
+// icon · spinner (acting only) · worker · doing (an idle worker says `idleWord` in the same column, dim)
+export function workerCells(workers: readonly SummaryWorker[], frameNo: number, idleWord: string): StoryCells[] {
   return workers.map(w => ({
-    cells: [ICON[w.state], w.state === 'acting' ? SPINNER[frameNo % SPINNER.length]! : '', w.id, w.doing],
+    cells: [ICON[w.state], w.state === 'acting' ? SPINNER[frameNo % SPINNER.length]! : '', w.id, w.state === 'idle' ? idleWord : w.doing],
     tints: [TINT[w.state], TINT[w.state], undefined, 'dim'],
   }))
 }
@@ -121,3 +121,13 @@ export function storyCells(item: SummaryItem, verdict: string, harness: string, 
 }
 // the harness text gives way first, then doing, then the title
 export const STORY_SHRINK = [8, 3, 2] as const
+
+// The EPIC row is the title block: marker · icon · key · title · state word · done/total · age. A live task's age runs
+// from its creation, a stalled one's is how long it has stood; a stalled row is dim throughout.
+export function epicCells(t: SummaryTaskEntry, state: WorkState, selected: boolean, now: number, stateWord: string): StoryCells {
+  const cells = [
+    selected ? '▸' : '', ICON[state], t.key, t.title, stateWord, `${t.done}/${t.total}`,
+    since(t.live ? (t.created_at === null ? null : Math.max(0, now - t.created_at)) : t.age_ms),
+  ]
+  return { cells, tints: t.live ? [undefined, TINT[state], undefined, undefined, 'dim', undefined, 'dim'] : cells.map(() => 'dim' as const) }
+}
