@@ -146,48 +146,65 @@ test('no config: status is undefined', async ($, on) => {
   expect(seen.commands).toEqual(['harness-status'])
 })
 
-const STALE = NOW - 13 * 60 * 60 * 1000
-const spec = JSON.stringify({ subgoals: [{ id: 's1' }, { id: 's2' }] })
-const sound = JSON.stringify({ sound: true })
-const runFiles: Files = {
-  'b/02-goal-spec.json': spec, 'b/02-critique.json': sound, 'b/subgoals/s1/result.json': JSON.stringify({ passed: true }),
-  'c/02-goal-spec.json': spec, 'c/02-critique.json': sound,
-  'c/subgoals/s1/result.json': JSON.stringify({ passed: true }), 'c/subgoals/s2/result.json': JSON.stringify({ passed: false }),
+// graph files under .harness-run/broker/runs: the status line never reads them
+const graphFiles: Files = {
   'g1.json': JSON.stringify({ nodes: [{ stage: 'plan', state: 'done' }, { stage: 'implement', state: 'running' }, { stage: 'report', state: 'pending' }] }),
-  'g2.json': JSON.stringify({ nodes: [{ stage: 'implement', state: 'done' }, { stage: 'report', state: 'done' }] }),
 }
-const planned: Dirs[string] = [['manifest.json', 'file'], ['01-plan.md', 'file'], ['02-goal-spec.json', 'file'], ['02-critique.json', 'file']]
-const runDirs: Dirs = {
-  '.harness-run': [['a', 'dir'], ['b', 'dir'], ['c', 'dir'], ['old', 'dir'], ['done', 'dir'], ['broker', 'dir'], ['note.md', 'file']],
-  '.harness-run/a': [['manifest.json', 'file']],
-  '.harness-run/b': planned,
-  '.harness-run/c': planned,
-  '.harness-run/old': [['manifest.json', 'file', STALE]],
-  '.harness-run/done': [['manifest.json', 'file'], ['05-report.md', 'file']],
-  '.harness-run/broker/runs': [['g1.json', 'file'], ['g2.json', 'file'], ['g3.json', 'file', STALE]],
-}
+const graphDirs: Dirs = { '.harness-run': [['broker', 'dir']], '.harness-run/broker/runs': [['g1.json', 'file']] }
+const atStage = (stage: string, n: number) => Array.from({ length: n }, (_, i) => rowJson(`${stage}-${i}`, { stage }))
 
-test('open runs per stage: fallback and graph; stale, reported and finished runs left out', async ($, on) => {
+test('status line: the node rows per stage, a stalled row counted under its stage, the list asked for this worktree', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const seen = world(on, ['terminal'], { ...runFiles }, runDirs)
+  const seen = world(on, ['terminal'], {})
+  seen.listing.stdout = list([...atStage('plan', 6), ...atStage('implement', 10), rowJson('stuck', { stage: 'implement', stalled: true })])
   await start($)
-  expect(lastStatus(seen)).toBe('Plan(1) / Implement(1) / Gate(1) · graph Implement(1)')
+  expect(lastStatus(seen)).toBe('Plan(6) / Implement(11)')
+  expect(seen.listing.calls[0]).toContain('--cwd')
+  expect(seen.listing.calls[0]![seen.listing.calls[0]!.indexOf('--cwd') + 1]).toBe('/proj')
 })
 
-test("in a repo: only this worktree's runs, never other worktrees", async ($, on) => {
+test('status line: a row at the report stage counts under Report', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const seen = world(on, ['terminal'], { ...runFiles }, { '.harness-run': [['a', 'dir']], '.harness-run/a': [['manifest.json', 'file']] }, '/wt/mine')
+  const seen = world(on, ['terminal'], {})
+  seen.listing.stdout = list([rowJson('c', { stage: 'report' }), rowJson('d', { stage: 'gate' })])
   await start($)
-  expect(lastStatus(seen)).toBe('Plan(1)')
-  expect(seen.argv.some(a => a.includes('worktree'))).toBe(false)
-  expect(seen.listed.includes('/wt/mine/.harness-run')).toBe(true)
+  expect(lastStatus(seen)).toBe('Gate(1) / Report(1)')
 })
 
-test('graph runs alone', async ($, on) => {
+test('status line: graph files alone are no status; nothing open is no status', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const seen = world(on, ['terminal'], { ...runFiles }, { '.harness-run': [['broker', 'dir']], '.harness-run/broker/runs': [['g1.json', 'file']] })
+  const seen = world(on, ['terminal'], { ...graphFiles }, graphDirs)
   await start($)
-  expect(lastStatus(seen)).toBe('graph Implement(1)')
+  expect(lastStatus(seen)).toBeUndefined()
+  expect(seen.listed.some(p => p.includes('broker'))).toBe(false)
+})
+
+test('status line: a failed list (non-zero exit or a throw) leaves no status and the pane on its last good rows', async ($, on) => {
+  const seen = await seeded($, on, {}, { rows: [doing('a', 'doing A')] })
+  expect(lastStatus(seen)).toBe('Implement(1)')
+  await cmd($)
+  const ui = await pane($, 'terminal', 194)
+  seen.listing.exitCode = 2
+  await seen.clock.advance(5000)
+  expect(lastStatus(seen)).toBeUndefined()
+  await ui.redraw()
+  expect(await textOf(ui)).toContain('doing A')
+  seen.listing.exitCode = 0
+  await seen.clock.advance(5000)
+  expect(lastStatus(seen)).toBe('Implement(1)')
+  seen.listing.throws = true
+  await seen.clock.advance(5000)
+  expect(lastStatus(seen)).toBeUndefined()
+  await ui.redraw()
+  expect(await textOf(ui)).toContain('doing A')
+})
+
+test('status line in the demo: the live rows are still counted while the pane draws the demo', async ($, on) => {
+  const seen = await seeded($, on, {}, { rows: [doing('a', 'doing A')] })
+  await demoCmd($, 'demo parallel')
+  await seen.clock.advance(5000)
+  expect(lastStatus(seen)).toBe('Implement(1)')
+  expect(await textOf(await pane($, 'terminal', 194))).not.toContain('doing A')
 })
 
 test('a gate decision no longer reaches the status line', async ($, on) => {
@@ -199,12 +216,10 @@ test('a gate decision no longer reaches the status line', async ($, on) => {
 
 test('polls every 5 s and picks up a new run', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const dirs: Dirs = {}
-  const seen = world(on, ['terminal'], { [CONFIG]: cfg }, dirs)
+  const seen = world(on, ['terminal'], { [CONFIG]: cfg })
   await start($)
   expect(lastStatus(seen)).toBe(undefined)
-  dirs['.harness-run'] = [['a', 'dir']]
-  dirs['.harness-run/a'] = [['manifest.json', 'file']]
+  seen.listing.stdout = list(atStage('plan', 1))
   await clock.advance(5000)
   expect(lastStatus(seen)).toBe('Plan(1)')
 })
@@ -505,6 +520,31 @@ test('Findings tab: the node rollup over every round', async ($, on) => {
   expect((await buttons(ui))[2]).toMatchObject({ label: '● Findings' })
 })
 
+const twoRounds = () => csv({
+  stage: 'setgoal', round: 2, severity: { blocker: 1, major: 4, minor: 2, nit: 1 },
+  rounds: [...csvRounds, { round: 2, file: '02-critique.json', sound: false, problems: [
+    { severity: 'minor', text: 'subgoal s3 has no owner' },
+    { severity: 'blocker', text: 'the column order is not in the goal spec' },
+    { severity: 'minor', text: 'AC-4 names no command' },
+  ] }],
+})
+
+test('two rounds: Now shows round 2 with a +n line; Findings lists both rounds under the rollup', async ($, on) => {
+  await seeded($, on, {}, { rows: [twoRounds()] })
+  const ui = await pane($, 'terminal', 194)
+  const now = await textOf(ui)
+  expect(now).toContain('Critique round 2 · rejected · 1 blocker, 2 minor')
+  expect(now).toMatch(/blocker\s+the column order is not in the goal spec/)
+  expect(now).toMatch(/\+1: 1 minor · Findings \(3\)/)
+  await ui.press({ key: 'findings' })
+  await ui.redraw()
+  const all = await textOf(ui)
+  expect(all).toContain('All rounds · 1 blocker, 4 major, 2 minor, 1 nit')
+  expect(all).toContain('Critique round 1 · rejected · 4 major, 1 nit')
+  expect(all).toContain('Critique round 2 · rejected · 1 blocker, 2 minor')
+  expect(all.indexOf('round 1 ·')).toBeLessThan(all.indexOf('round 2 ·'))
+})
+
 test('narrow pane: the tab row stays one row of Buttons with the short labels, nothing wraps past the width', async ($, on) => {
   await seeded($, on, demoRun(), { rows: [csv()] })
   const ui = await pane($, 'terminal', 44)
@@ -724,11 +764,11 @@ test('band: a run that waits on you leads with ⚑, and cost reads — when now.
 
 test('band: with graph runs under .harness-run/broker/runs there is no graph row', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const seen = world(on, ['terminal'], { ...runFiles }, runDirs)
+  const seen = world(on, ['terminal'], { ...graphFiles }, graphDirs)
   seen.listing.stdout = list([acting('a')])
   await start($)
   const text = linesOf(await (await band($, on)).drawn())
-  expect(lastStatus(seen)).toContain('graph Implement(1)') // the status line still counts them
+  expect(lastStatus(seen)).toBe('Implement(1)') // the node's rows only, graph files are not counted
   expect(text.slice(0, 3)).toHaveLength(3)
   expect(text.some(l => /graph/i.test(l))).toBe(false)
 })
@@ -837,6 +877,21 @@ test('[ and ] switch between two open runs as key presses: run 2 of 2 after ], r
   await ui.press({ key: 'next' })
   await ui.redraw()
   expect(await header(ui)).toContain('run 2 of 2')
+  // the ends: ] on the last and [ on the first change nothing, by key or Button
+  await typeKey(ui, ']')
+  expect(await header(ui)).toContain('run 2 of 2')
+  expect(seen.store.get('selected')).toBe('b')
+  await ui.press({ key: 'next' })
+  await ui.redraw()
+  expect(await header(ui)).toContain('run 2 of 2')
+  await typeKey(ui, '[')
+  await typeKey(ui, '[')
+  expect(await header(ui)).toContain('run 1 of 2')
+  expect(seen.store.get('selected')).toBe('a')
+  await ui.press({ key: 'prev' })
+  await ui.redraw()
+  expect(await header(ui)).toContain('run 1 of 2')
+  expect(seen.store.get('selected')).toBe('a')
 })
 
 // With the Input holding the focus ring it takes every printable key, so it carries the pane's other keys too.
@@ -1046,9 +1101,8 @@ test('the command registers a demo argument hint', async ($, on) => {
 })
 
 for (const scenario of DEMO_SCENARIOS) {
-  test(`demo ${scenario}: the pane and the band draw the fixture with no call to fallback-check`, async ($, on) => {
+  test(`demo ${scenario}: the pane and the band draw the fixture, not the live rows`, async ($, on) => {
     const seen = await seeded($, on, {}, { rows: [] })
-    const calls = seen.listing.calls.length
     const r = await demoCmd($, `demo ${scenario}`)
     expect(JSON.stringify(r)).toContain(`demo: ${scenario}`)
     expect(JSON.stringify(r)).not.toContain('\\n')
@@ -1060,7 +1114,7 @@ for (const scenario of DEMO_SCENARIOS) {
     // the band's rows are what the pure function draws for the fixture at this width
     const want = bandLines(ordered, { width: 190, nowMs: DEMO_NOW, tick: 0 }).map(plain)
     expect(linesOf(await (await band($, on)).drawn()).slice(0, 3)).toEqual(want)
-    expect(seen.listing.calls.length).toBe(calls)
+    expect(lastStatus(seen)).toBeUndefined() // no live rows open: the demo rows are not counted
   })
 }
 
@@ -1074,11 +1128,14 @@ test('demo with no name steps through minimal, full, parallel, narrow; off leave
   for (let i = 0; i < 5; i++) names.push(JSON.stringify(await demoCmd($, 'demo')).match(/demo: (\w+)/)![1]!)
   expect(names).toEqual(['minimal', 'full', 'parallel', 'narrow', 'minimal'])
   await clock.advance(5000)
-  expect(seen.listing.calls.length).toBe(calls) // the demo reads no list
+  expect(seen.listing.calls.length).toBeGreaterThan(calls) // the list is read for the status line, which counts live rows
+  expect(lastStatus(seen)).toBe('Implement(1)')
+  const ui = await pane($, 'terminal', 194)
+  expect(await textOf(ui)).not.toContain('doing live') // while the pane draws the demo
   expect(seen.closed).toEqual([]) // demo does not toggle the pane
   expect(JSON.stringify(await demoCmd($, 'demo off'))).toContain('demo off')
-  expect(seen.listing.calls.length).toBeGreaterThan(calls)
-  expect(await textOf(await pane($, 'terminal', 194))).toContain('doing live')
+  await ui.redraw()
+  expect(await textOf(ui)).toContain('doing live')
 })
 
 test('the demo text at 190 and 110 columns is what renderDemo returns, line by line within the width', () => {
@@ -1217,6 +1274,17 @@ test('info failure: a ↻ toast with the default timeout, no push, no outcome', 
   expect(seen.toastMs).toEqual([undefined])
   expect(seen.pushes).toEqual([])
   expect(seen.outcomes).toEqual([])
+})
+
+test('critique failure: the toast names the node\'s retry, retry 1/3 at cap 3 and retry 1/2 without a cap', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const seen = runWorld(on)
+  seen.w.listing.stdout = list([
+    rowJson('r3', { failures: [fail('r3|critique|1', { what: 'Critique', reason: 'spec rejected', next_step: 'retry 1/3' })] }),
+    rowJson('r2', { max_critique_rounds: 2, failures: [fail('r2|critique|1', { what: 'Critique', reason: 'spec rejected', next_step: 'retry 1/2' })] }),
+  ])
+  await start($)
+  expect(seen.toasts).toEqual(['↻ r3 Critique failed: spec rejected → retry 1/3', '↻ r2 Critique failed: spec rejected → retry 1/2'])
 })
 
 test('needs you: a ⚠ toast for 10 s and the same line pushed', async ($, on) => {
