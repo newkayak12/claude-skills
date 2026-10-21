@@ -362,7 +362,8 @@ const INDENT = '          ' // under `⚑ harness `, so the rows read as one blo
 
 // The band for the harness runs in opening order: the leading run's three rows (what it is doing and whether it
 // waits on you / how far / what it cost and what came back last), `+N` for the others. No graph run is drawn here.
-export function bandLines(ordered: readonly HarnessRow[], o: { width: number; nowMs: number; tick: number }): Line[] {
+// `reserve` columns at the end of row 1 are left to mod.tsx's open button.
+export function bandLines(ordered: readonly HarnessRow[], o: { width: number; nowMs: number; tick: number; reserve?: number }): Line[] {
   const r = ordered[0]
   if (r === undefined) return []
   const w = o.width
@@ -378,7 +379,7 @@ export function bandLines(ordered: readonly HarnessRow[], o: { width: number; no
     y.you ? fs(`asks you: ${y.text}`, { sep: ' · ', tint: 'claude', bold: true }) : fs(''),
     fs(roundText(r, compact), { sep: ' · ', drop: 4 }),
     more > 0 ? { ...fs(compact ? `+${more}` : `+${more} run${more > 1 ? 's' : ''}`, { sep: '  ', fixed: true, dim: true }), right: true } : fs(''),
-  ], w)
+  ], w - (o.reserve ?? 0))
   const rail = railItems(r)
   const sub = r.total > 0 ? `subgoals ${r.passed}/${r.total}` : ''
   // the rail already names the subgoals, so the right-hand count goes first when the row is tight

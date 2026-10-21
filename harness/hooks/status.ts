@@ -437,12 +437,27 @@ export type PaneKey = { kind: 'step'; by: 1 | -1 } | { kind: 'tab'; tab: PaneTab
 const KEY_TABS: Record<string, PaneTab> = { '1': 'now', '2': 'flow', '3': 'findings', '4': 'rules' }
 
 // `[` / `]` step the run, `1`-`4` pick a tab, `q` closes; any other text (or none, or a non-string) is no key.
+// Text holding a `/` is a slash command being typed (`/harness-status`, `/help q`): held, no key fires until submit.
 export function paneKey(text: unknown): PaneKey {
-  if (typeof text !== 'string' || text === '') return null
+  if (typeof text !== 'string' || text === '' || text.includes('/')) return null
   const k = [...text].pop()!
   if (k === ']') return { kind: 'step', by: 1 }
   if (k === '[') return { kind: 'step', by: -1 }
   if (k === 'q') return { kind: 'close' }
   const tab = KEY_TABS[k]
   return tab === undefined ? null : { kind: 'tab', tab }
+}
+
+// A slash command typed into the pane's Input and submitted. The Input's buffer may start with earlier key presses
+// (`][2q/help`), so the command starts at the first `/`. `/harness-status` closes the pane (the command again toggles);
+// `/name args` runs that command; anything else is dropped.
+export type PaneSlash = { kind: 'close' } | { kind: 'run'; command: string; args: string } | null
+
+export function paneSlash(text: unknown): PaneSlash {
+  if (typeof text !== 'string') return null
+  const at = text.indexOf('/')
+  if (at < 0) return null
+  const m = /^\/([^\s/]+)\s*(.*)$/.exec(text.slice(at).trim())
+  if (m === null) return null
+  return m[1] === 'harness-status' ? { kind: 'close' } : { kind: 'run', command: m[1]!, args: m[2]! }
 }

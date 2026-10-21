@@ -4,12 +4,12 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Decision, HarnessRow, PaneTab, RunInfo, RunSub, StageKey } from '../types'
 import { MARK, TINT, bar, cap, fmt, isKorean, tabs } from './draw'
 import type { Mark } from './draw'
-import { DEMO_NOW, bandLines, demoRows, footerFits, innerWidth, paneContent, paneHead, parseDemoArg, renderLines, tabRowPlan } from './harness-draw'
+import { DEMO_NOW, bandLines, cells, demoRows, footerFits, innerWidth, paneContent, paneHead, parseDemoArg, renderLines, tabRowPlan } from './harness-draw'
 import type { PaneCtx, TabLabels } from './harness-draw'
 import type { RowFailure } from './status'
 import {
   cycleRun, failureToast, failuresOf, flowLines, frozenOrder, listArgv, markLooked, openTab, otherRunLabel, parseRow, parseRows,
-  paneKey, pickRun, reasonFor, runPosition, shownRows, showArgv, spinnerPlan, stageStatus,
+  paneKey, paneSlash, pickRun, reasonFor, runPosition, shownRows, showArgv, spinnerPlan, stageStatus,
 } from './status'
 
 const last = atom({ plugin: 'harness', key: 'last' } as const, null as Decision | null)
@@ -54,7 +54,7 @@ const en = {
   tryNo: 'attempt {n}', resPassed: 'passed · {n} tries', resFailed: 'failed · {n} tries', resNone: 'not judged yet', stalled: 'stalled: the retry changed nothing',
   gateRejected: 'gate {n}: rejected', gatePassed: 'gate {n}: passed', critiqueRejected: 'Critique rejected', rules: 'Gate rules',
   goalGate: 'Goal gate', passBar: '{pct}% (pass ≥ {bar})', more: '+{n} more',
-  noRun: 'No harness run in this folder.', closeBtn: 'q',
+  noRun: 'No harness run in this folder.', closeBtn: 'q', bandOpen: 'open',
   cmdDesc: 'Open or close the harness status pane: run flow and detail, why the gate denied the last call', paneOpened: 'pane opened', paneClosed: 'pane closed',
   noGate: 'No gate configured: .claude/harness-gate.json is not in this project.',
   badGate: 'Gate config .claude/harness-gate.json could not be read (invalid JSON).',
@@ -78,7 +78,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     tryNo: '{n}번째 시도', resPassed: '통과 · {n}회 시도', resFailed: '실패 · {n}회 시도', resNone: '아직 판정 전', stalled: '멈춤: 재시도로 달라진 것이 없음',
     gateRejected: '게이트 {n}: 반려', gatePassed: '게이트 {n}: 통과', critiqueRejected: '비평 반려', rules: '게이트 규칙',
     goalGate: '목표 게이트', passBar: '{pct}% (통과 ≥ {bar})', more: '+{n}건 더',
-    noRun: '이 폴더에 하네스 실행이 없습니다.', closeBtn: 'q',
+    noRun: '이 폴더에 하네스 실행이 없습니다.', closeBtn: 'q', bandOpen: '열기',
     cmdDesc: '하네스 상태 창 열기/닫기: 실행 흐름과 상세, 게이트가 마지막 호출을 막은 이유', paneOpened: '창을 열었습니다', paneClosed: '창을 닫았습니다',
     noGate: '게이트 설정 없음: 이 프로젝트에 .claude/harness-gate.json 이 없습니다.',
     badGate: '게이트 설정 .claude/harness-gate.json 을 읽을 수 없습니다 (JSON 오류).',
@@ -348,6 +348,20 @@ async function paneOpen($: EngineInterface): Promise<boolean> {
   }
 }
 
+// The one place the pane is opened from closed, for the command and the band's button alike: the run opening order
+// picks is the run shown from here on, by slug (marking its reject as seen must not move it). Open already: no-op.
+async function openPane($: EngineInterface): Promise<void> {
+  if (await paneOpen($)) return
+  frozen = null // a pane opened from closed orders again: an unseen reject leads
+  const v = await view($)
+  await update($, selected, () => v.picked?.slug ?? null)
+  await update($, paneTab, () => openTab(v.picked !== null))
+  await update($, looked, l => markLooked(l, v.picked))
+  await $.ui.open({ id: PANE, title: 'Harness', focus: true, closeOnEscape: true })
+  await refreshRun($)
+  await kick?.()
+}
+
 // Set at session.start of a session that has a surface, to look at the spinner again with that session's engine (a
 // timer is started from it, not from a command or a draw); no surface, never set, no timer. A cache a reload may lose.
 let kick: (() => Promise<void>) | null = null
@@ -575,19 +589,14 @@ export const register: Register = on => {
       frozen = null
       await refresh($)
     }
-    if (!isOpen) frozen = null // a pane opened from closed orders again: an unseen reject leads
     if (want === 'off') return { text: text.demoOff }
-    const v = await view($)
-    // the run opening order picks is the run shown from here on, by slug: marking its reject as seen must not move it
-    const slug = v.picked?.slug ?? null
-    await update($, selected, () => slug)
-    if (!isOpen) {
-      await update($, paneTab, () => openTab(v.picked !== null))
-      await update($, looked, l => markLooked(l, v.picked))
-      await $.ui.open({ id: PANE, title: 'Harness', focus: true, closeOnEscape: true })
-    }
-    await refreshRun($)
-    await kick?.()
+    if (isOpen) {
+      // a demo switch while open: the run shown is picked again, by slug
+      const v = await view($)
+      await update($, selected, () => v.picked?.slug ?? null)
+      await refreshRun($)
+      await kick?.()
+    } else await openPane($)
     return { text: want === null ? text.paneOpened : fmt(text.demoOn, { name: want }) }
   })
 
@@ -613,13 +622,22 @@ export const register: Register = on => {
     const tabRow = tabs(ui, plan.items, tab, k => update($, paneTab, () => k as PaneTab))
     // `[` and `]` cannot be a Button hotkey (one digit or lowercase letter; the engine refuses them): the pane's Input has
     // the focus ring when the pane is opened with focus (the moment hotkeys are armed), takes every printable key, and
-    // status.ts paneKey reads the last one; prev / next are Buttons for the pointer
+    // status.ts paneKey reads the last one; prev / next are Buttons for the pointer. The same Input takes a typed
+    // `/command` (card 55): held until Enter (paneKey fires no key on text holding `/`), then paneSlash maps it:
+    // `/harness-status` closes the pane, `/name args` runs that command. $.command.run is not awaited: awaited inside
+    // onSubmit the host cuts the hook at its 10s budget.
     const onKey = async (text: string) => {
       const key = paneKey(text)
       if (key === null) return
       if (key.kind === 'step') await cycle($, key.by)
       else if (key.kind === 'tab') await update($, paneTab, () => key.tab)
       else await $.ui.close({ id: PANE })
+    }
+    const onSubmit = async (text: string) => {
+      const slash = paneSlash(text)
+      if (slash === null) return
+      if (slash.kind === 'close') await $.ui.close({ id: PANE })
+      else void $.command.run({ command: slash.command, args: slash.args }).catch(() => {})
     }
     // prev/next join the keys row only where harness-draw's footerFits says they fit (the keys stay one row; [ and ] still step)
     const steps =
@@ -749,7 +767,7 @@ export const register: Register = on => {
           {closeBtn}
           <Box flexShrink={0}><Text dimColor wrap="truncate-end">{s('keysTail')}</Text></Box>
           {steps}
-          <Box flexShrink={1} height={1} overflow="hidden"><Input key="keys" autoFocus value="" placeholder="" onInput={onKey} onSubmit={() => {}} /></Box>
+          <Box flexShrink={1} height={1} overflow="hidden"><Input key="keys" autoFocus value="" placeholder="" onInput={onKey} onSubmit={onSubmit} /></Box>
         </Box>
       </Box>
     )
@@ -761,10 +779,15 @@ export const register: Register = on => {
     const v = await view($)
     if (e.props.hasSurvey || v.ordered.length === 0) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
-    const lines = bandLines(v.ordered, { width: e.props.bodyColumns, nowMs: v.nowMs, tick: await read($, spin) })
+    const label = STRINGS[await read($, lang)].bandOpen
+    const [row1, ...rest] = bandLines(v.ordered, { width: e.props.bodyColumns, nowMs: v.nowMs, tick: await read($, spin), reserve: cells(label) + 5 }) // the Button draws `[ label ]` (4 cells of chrome) after a 1-column margin
     return (
       <Box flexDirection="column">
-        {renderLines({ Box, Text, Button }, lines)}
+        <Box>
+          <Box flexShrink={1}>{renderLines({ Box, Text, Button }, [row1])}</Box>
+          <Box flexShrink={0} marginLeft={1}><Button key="open" label={label} onPress={() => openPane($)} /></Box>
+        </Box>
+        {renderLines({ Box, Text, Button }, rest)}
         {await next(e)}
       </Box>
     )

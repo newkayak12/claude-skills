@@ -6,7 +6,7 @@ import type { PaneCtx } from './harness-draw'
 import {
   NONE, clock, costText, countsText, cycleRun, doingText, elapsedText, failureToast, failuresOf, flowLines, frozenOrder, hasNewReject, inStageText,
   isActing, lastStep, listArgv, markLooked, normalizeRow, openTab, openingOrder, otherRunLabel, parseRow, parseRows, pickRun, railItems, rankedProblems, reasonFor, restText,
-  paneKey, roundHeading, roundText, runCount, runPosition, runState, severityOf, shownRows, showArgv, sinceLast, span, spinnerPlan, stageLabel, topFinding, youLine,
+  paneKey, paneSlash, roundHeading, roundText, runCount, runPosition, runState, severityOf, shownRows, showArgv, sinceLast, span, spinnerPlan, stageLabel, topFinding, youLine,
   doingOf, restLine, stageStatus,
 } from './status'
 
@@ -508,4 +508,18 @@ test('paneKey: ] is step +1, [ is step -1, 1-4 pick a tab, q closes; the last ch
   expect(paneKey('x[')).toEqual({ kind: 'step', by: -1 })
   expect(paneKey('[x')).toBeNull()
   for (const bad of ['', 'p', 'n', 'x', '5', 'Q', null, undefined, 3, {}, [']']]) expect(paneKey(bad)).toBeNull()
+})
+
+test('slash text holds the pane keys: a / anywhere in the text fires no key, even when it ends in q, a digit or a bracket', () => {
+  for (const t of ['/harness-status', '/help q', '/x 2', '/a [', '][2q/help', '/']) expect(paneKey(t)).toBeNull()
+  expect(paneKey('q')).toEqual({ kind: 'close' })
+})
+
+test('paneSlash: /harness-status closes (the command again), /name args runs, the text may start with earlier key presses, the rest is dropped', () => {
+  expect(paneSlash('/harness-status')).toEqual({ kind: 'close' })
+  expect(paneSlash('][2q/harness-status ')).toEqual({ kind: 'close' })
+  expect(paneSlash('/help')).toEqual({ kind: 'run', command: 'help', args: '' })
+  expect(paneSlash('/x a b')).toEqual({ kind: 'run', command: 'x', args: 'a b' })
+  expect(paneSlash('[/x  a b ')).toEqual({ kind: 'run', command: 'x', args: 'a b' })
+  for (const bad of ['', 'x', '/', '/ x', '//', null, undefined, 3]) expect(paneSlash(bad)).toBeNull()
 })

@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { DEMO_NOW, DEMO_SCENARIOS, bandLines, demoRows, plain, renderDemo } from './harness-draw'
+import { DEMO_NOW, DEMO_SCENARIOS, bandLines, cells, demoRows, plain, renderDemo } from './harness-draw'
 import { register } from './mod'
 import { openingOrder } from './status'
 
@@ -462,6 +462,32 @@ test('close 3/3: the command again closes an open pane, a third time opens it', 
   expect(seen.opened).toEqual(['harness-status', 'harness-status'])
 })
 
+// card 55: the pane's autoFocus Input takes a typed slash command; held until Enter, then mapped by status.ts paneSlash
+test('typed /harness-status closes: /harness-status typed into the pane holds the keys, and its submit closes the pane', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const seen = world(on, ['terminal'], { [CONFIG]: cfg })
+  await start($)
+  const ui = await pane($, 'terminal')
+  await ui.input({ key: 'keys', text: '/harness-status', kind: 'change' })
+  expect(seen.closed).toEqual([]) // the q, [ and digits inside slash text press nothing
+  await ui.input({ key: 'keys', text: '/harness-status', kind: 'submit' })
+  expect(seen.closed).toEqual(['harness-status'])
+})
+
+test('a /name args typed into the pane runs that command, not awaited; text with no slash submits nothing', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const seen = world(on, ['terminal'], { [CONFIG]: cfg })
+  const ran: unknown[] = []
+  on('command.run', { command: 'help' }, (_$, e) => { ran.push(e.args); return { text: 'ok' } as never })
+  await start($)
+  const ui = await pane($, 'terminal')
+  await ui.input({ key: 'keys', text: '/help q 2', kind: 'change' })
+  await ui.input({ key: 'keys', text: '/help q 2', kind: 'submit' })
+  await ui.input({ key: 'keys', text: 'x', kind: 'submit' })
+  expect(ran).toEqual(['q 2'])
+  expect(seen.closed).toEqual([])
+})
+
 test('the old command name is gone', async ($, on) => {
   mock.clock(on, { now: NOW })
   const seen = world(on, ['terminal'], { [CONFIG]: cfg })
@@ -817,6 +843,7 @@ test('band: hidden with no open runs', async ($, on) => {
   await start($)
   const ui = await band($, on)
   expect(await ui.find({ type: 'Text', text: 'harness' })).toBeUndefined()
+  expect(await ui.find({ type: 'Button' })).toBeUndefined()
 })
 
 test('band: hidden while a survey shows', async ($, on) => {
@@ -868,6 +895,51 @@ test('band at 110: low-priority segments drop first; the run name and ⚑ only t
   expect(rows[0]).toContain('…')
   expect(rows[0]).toContain('+1')
 })
+
+// the band's open Button (card 56): one Button on row 1, pressed it opens the pane the way the command does
+for (const [language, label, reserve] of [['English', 'open', 9], ['한국어', '열기', 9]] as const) {
+  test(`band button (${language}): one "${label}" Button; a press opens harness-status with focus on the command's tab`, async ($, on) => {
+    const seen = await seeded($, on, {}, { language, rows: [csv()] })
+    const ui = await band($, on)
+    const buttons = await ui.findAll({ type: 'Button' })
+    expect(buttons.map(b => (b.props as { label: string }).label)).toEqual([label])
+    expect(seen.opened).toEqual([])
+    await ui.press({ key: 'open' })
+    expect(seen.opened).toEqual(['harness-status'])
+    expect(seen.openArgs[0]).toMatchObject({ id: 'harness-status', title: 'Harness', focus: true, closeOnEscape: true })
+    // the same tab the command opens: a run is open, so Now
+    expect(seen.store.get('paneTab')).toBe('now')
+    expect(reserve).toBe(cells(label) + 5)
+  })
+}
+
+test('band button: pressed with the pane already open it opens no second pane', async ($, on) => {
+  const seen = await seeded($, on, {}, { rows: [csv()] })
+  const ui = await band($, on)
+  await ui.press({ key: 'open' })
+  await ui.press({ key: 'open' })
+  expect(seen.opened).toEqual(['harness-status'])
+  expect(seen.panes).toHaveLength(1)
+  await cmd($) // the command now closes it, as before
+  expect(seen.closed).toEqual(['harness-status'])
+})
+
+for (const width of [110, 190]) {
+  for (const [language, label] of [['English', 'open'], ['한국어', '열기']] as const) {
+    test(`band button at ${width} (${language}): every row, row 1 with the drawn button, fits by display cells and the band is still three rows`, async ($, on) => {
+      const ask = { who: 'you', what: 'approve the goal spec before critique round two starts and the large report subgoal begins building' }
+      await seeded($, on, {}, { language, rows: [rowJson('a-very-long-run-name-that-would-not-fit-with-its-doing-sentence', { waiting: ask, stage: 'setgoal', now: nowJson({ waiting: ask, round: 2 }) }), acting('b')] })
+      const ui = await band($, on, false, width)
+      const rows = linesOf(await ui.drawn())
+      expect(rows.slice(0, 3)).toHaveLength(3)
+      // drawn() holds the text, not the Button: add the 1-column margin and `[ label ]` (label cells + 4), in cells (CJK = 2)
+      expect(cells(rows[0]!) + cells(label) + 5).toBeLessThanOrEqual(width)
+      expect((await ui.findAll({ type: 'Button' })).map(x => (x.props as { label: string }).label)).toEqual([label])
+      expect(rows[0]).toMatch(/\+1( runs?)?$/) // the fixed segment (compact at 110) is not the one cut
+      for (const l of rows.slice(1, 3)) expect(cells(l)).toBeLessThanOrEqual(width)
+    })
+  }
+}
 
 // ---- the run list: read through node, kept when a read fails ----
 const doing = (slug: string, text: string, o: object = {}) => acting(slug, { now: nowJson({ doing: text }), ...o })
@@ -1195,7 +1267,7 @@ for (const scenario of DEMO_SCENARIOS) {
     const text = await textOf(await pane($, 'terminal', 194))
     expect(text).toContain(ordered[0]!.slug)
     // the band's rows are what the pure function draws for the fixture at this width
-    const want = bandLines(ordered, { width: 190, nowMs: DEMO_NOW, tick: 0 }).map(plain)
+    const want = bandLines(ordered, { width: 190, nowMs: DEMO_NOW, tick: 0, reserve: 9 }).map(plain)
     expect(linesOf(await (await band($, on)).drawn()).slice(0, 3)).toEqual(want)
     expect(lastStatus(seen)).toBeUndefined() // no live rows open: the demo rows are not counted
   })
