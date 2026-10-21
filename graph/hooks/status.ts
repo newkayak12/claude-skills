@@ -151,21 +151,6 @@ export function flowGroups(run: GraphRun): FlowGroup[] {
   return groups
 }
 
-export type DetailRow = { node: GraphNode; agent: string; elapsed: string; feedback: string; reason: string }
-
-// per node, every attempt that ran: agent, timing, the feedback it was handed, why it failed
-export function detailRows(run: GraphRun, now: number): DetailRow[] {
-  return ordered(run)
-    .filter(n => n.state !== 'skipped')
-    .map(node => ({
-      node,
-      agent: agentOf(node),
-      elapsed: clock(span(node, now)),
-      feedback: oneLine(node.feedback, 160),
-      reason: node.state === 'failed' ? oneLine(node.result?.reason, 160) : '',
-    }))
-}
-
 /* --- what the mod reads and shows: the runs of `broker.mjs runs --list/--show --json` --- */
 
 // The one reader of the run files is the node CLI (it works with no mod, compat-claude); the mod runs it.

@@ -66,7 +66,7 @@ export function runRow(run, { file, mtimeMs, now = Date.now() }) {
     running: running ? { node_id: running.node_id, last_step: running.last_step || lastStep || null } : null,
     run_id: runId,
     file,
-    request: firstLine(run.request),
+    request: firstLine(String(run.request || '').replace(/^\[teams-task [^\]]*\]\s*/, '')),
     max_retries: Number.isFinite(run.max_retries) ? run.max_retries : null,
     last_change: new Date(mtimeMs).toISOString(),
     last_change_ms: mtimeMs,
