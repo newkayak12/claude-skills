@@ -116,6 +116,9 @@ test('--verify grants Bash under read-only, with a disallow list for the mutatin
     assert.equal(r.status, 0, r.stderr);
     const args = JSON.parse(readFileSync(join(f.dir, 'observed.json'))).args;
     assert.equal(args[args.indexOf('--tools') + 1], 'Read,Glob,Grep,Bash');
+    // dontAsk denies a tool no allow rule names: without this every gate read 'tool denied'
+    assert.equal(args[args.indexOf('--permission-mode') + 1], 'dontAsk');
+    assert.equal(args[args.indexOf('--allowedTools') + 1], 'Bash');
     const disallowed = args[args.indexOf('--disallowedTools') + 1];
     for (const verb of ['git commit', 'git push', 'git add', 'rm', 'mv', 'cp']) {
       assert.match(disallowed, new RegExp(`Bash\\(${verb.replace(/ /g, '\\s')}:\\*\\)`), `${verb} must be disallowed`);
@@ -184,7 +187,7 @@ test('--verify keeps its --disallowedTools list next to the wiki tools', () => {
     f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--sandbox', 'read-only', '--verify'], { TEAMS_WIKI_ROOT: '/proj/main' });
     const args = argvOf(f);
     assert.match(args[args.indexOf('--disallowedTools') + 1], /Bash\(git commit:\*\)/);
-    assert.match(args[args.indexOf('--allowedTools') + 1], /wiki_write/);
+    assert.match(args[args.indexOf('--allowedTools') + 1], /^Bash,.*wiki_write/);
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
 

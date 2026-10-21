@@ -83,7 +83,12 @@ async function invoke(prompt) {
   if (verifyTools) {
     cli.push('--disallowedTools', DISALLOWED_BASH.join(','));
   }
-  if (withWiki) cli.push('--allowedTools', WIKI_TOOLS.join(','));
+  // dontAsk denies every tool call no allow rule names, so Bash on --tools alone is never run:
+  // every --verify gate read 'tool denied' (E-64cda2b0, E-910c1de2). Allowing Bash here is
+  // safe because --disallowedTools wins over an allow rule (live probe 2026-10-21: `node --test`
+  // ran, `rm` stayed denied).
+  const allowed = [...(verifyTools ? ['Bash'] : []), ...(withWiki ? WIKI_TOOLS : [])];
+  if (allowed.length) cli.push('--allowedTools', allowed.join(','));
   for (const dir of opts.addDirs) cli.push('--add-dir', dir);
   return await new Promise(resolveResult => {
     const child = spawn('claude', cli, { cwd: opts.cwd, stdio: ['pipe', 'pipe', 'pipe'] });
