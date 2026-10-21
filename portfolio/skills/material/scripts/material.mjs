@@ -163,8 +163,8 @@ const cmd = {
       '| number | evidence source | label |', '|---|---|---|', '| | | |', '',
       '- number: 단위나 퍼센트가 붙은 수치 하나당 한 줄.',
       '- evidence source: 건네받은 자료 안의 인용(파일 + 제목 또는 줄 범위).',
-      '- label: 사용자가 직접 말했을 뿐 자료에 근거가 없으면 `user-stated`.',
-      '- 근거가 전혀 없는 수치는 evidence source 칸에 `근거 없음`이라고 적고, gaps.md에 출처를 묻는 질문을 더한다.', '',
+      '- label: 사용자가 자기 주장이라고 직접 표시한 수치("체감상", "내 기억으로는")만 `user-stated`.',
+      '- 자료 안의 근거도 사용자 표시도 없는 수치는 evidence source 칸에 `근거 없음`이라고 적고, gaps.md에 출처를 묻는 질문을 더한다.', '',
     ].join('\n');
     const heads = { 'problem.md': '문제', 'decision.md': '결정', 'learned.md': '배운 점', 'gaps.md': '빈칸 (질문)' };
     const body = {
