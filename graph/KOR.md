@@ -49,6 +49,7 @@
 선택: `graph:install`이 `develop:like-my-code`를 실행해 `.claude/conventions/`를 만들 수 있다. 이후 broker가 모든 plan, setgoal, implement, test 노드(벤더 무관)에 관련 파일을 읽고 따르라는 지시를 넣는다.
 
 ## 상태
+- v1.16.0 — 실패 토스트가 노드가 왜 실패했고 다음에 무엇을 하는지(`retry n/m`, `retrying as setgoal:N`, `gave up`) 보여 주고, 스스로 고치는 재시도는 실패가 아니라 정보로 표시합니다. 이유와 다음 단계는 `scripts/failure-events.mjs`가 만들고 mod는 그리기만 합니다.
 - v1.15.0 — `/graph-status`(이전 `/graph-live`): 도는 노드마다 vendor·model과 시간이 붙은 지금 줄. 흐름 탭은 반려된 시도의 이유와 그 아래 재시도를, 상세 탭은 시도마다 받은 피드백을 보여 줍니다. Esc, q, 같은 명령으로 닫힙니다.
 - v1.14.0 — mod가 run 결과(통과·실패, run당 한 번)를 자기 `outcome` 상태로 발행해 trophy가 셉니다. id는 담지 않고, trophy가 없어도 graph는 똑같이 동작합니다.
 - v1.13.0 — 노드 반려, 실패·막힌 run, 끝난 run에서 mod가 푸시 알림을 보냅니다(못 보내면 토스트).
