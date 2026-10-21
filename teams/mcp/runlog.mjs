@@ -106,7 +106,13 @@ export function harvestTask({ taskDir, cwd, label, root, scorePrefix } = {}) {
 
   // Child runs: the project root's (planning) and every package worktree's.
   const failures = [];
-  const runRoots = [...(ws ? [['root', ws]] : []), ...(taskDir ? dirs(join(taskDir, 'worktrees')).map((w) => [w, join(taskDir, 'worktrees', w)]) : [])];
+  // A package worktree dir may be <Pid>-<package-slug>: label its runs by the package id the task's
+  // dispatch nodes recorded for that dir, the dir name when no node has it (legacy dirs are <Pid>).
+  const pkgIdOf = (path, dir) => {
+    const n = ((task && task.nodes) || []).find((x) => x.stage === 'dispatch' && x.subgoal_id && x.child && x.child.cwd === path);
+    return n ? String(n.subgoal_id) : dir;
+  };
+  const runRoots = [...(ws ? [['root', ws]] : []), ...(taskDir ? dirs(join(taskDir, 'worktrees')).map((w) => [pkgIdOf(join(taskDir, 'worktrees', w), w), join(taskDir, 'worktrees', w)]) : [])];
   let childRuns = 0;
   for (const [pkg, cwd] of runRoots) {
     const broker = join(cwd, '.teams_output', 'broker');

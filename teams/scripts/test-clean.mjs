@@ -218,6 +218,11 @@ test('tm_clean removes every package worktree and branch once merged into integr
     // A planning card's branch carries its PRD commit, which no integration branch holds (the PRD
     // is merged into 10-prd.md, not into the tree): its worktree goes, its branch is kept.
     assert.deepEqual(r.removed_branches.map((x) => x.package_id).sort(), ['P1', 'P2']);
+    // A new task's branches live under its own readable slug.
+    const slug = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8')).slug;
+    assert.equal(slug, 'big-request');
+    for (const b of r.removed_branches) assert.ok(b.branch.startsWith(`teams/${slug}/`), b.branch);
+    assert.ok(p1.cwd.endsWith('/worktrees/P1-module'), p1.cwd);
     assert.deepEqual(r.kept_branches.map((x) => x.package_id), ['PLAN-F1']);
     assert.match(r.kept_branches[0].reason, /not reachable/);
     assert.deepEqual(r.kept.map((k) => k.cwd), [integ.cwd]);
@@ -237,6 +242,25 @@ test('tm_clean removes every package worktree and branch once merged into integr
     // the clean reads the snapshot the planning integrate took (C4).
     await tm.call('tm_docs', { task_id, rebuild: true });
     assert.equal(readFileSync(prdPath, 'utf8'), prdBefore, '10-prd.md survives tm_clean unchanged');
+  });
+});
+
+test('a task without a slug (opened before card 46) is cleaned by its old E-key: harness/<id8>/P1 and worktrees/P1 are removed', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    const file = join(root, task_id, 'task.json');
+    const legacy = JSON.parse(readFileSync(file, 'utf8'));
+    delete legacy.slug;
+    writeFileSync(file, JSON.stringify(legacy));
+    const task = await runFullEpic(tm, g, root, task_id);
+    const p1 = dispatchChild(task, 'P1');
+    assert.equal(p1.branch, `harness/${task_id.slice(0, 8)}/P1`);
+    assert.equal(p1.cwd, join(root, task_id, 'worktrees', 'P1'));
+    const key = `E-${task_id.slice(0, 8)}`;
+    assert.equal((await tm.call('tm_status', { task_id: key })).slug, null);
+    const r = await tm.call('tm_clean', { task_id: key });
+    assert.ok(r.removed_branches.some((b) => b.branch === p1.branch));
+    assert.ok(!existsSync(join(p1.cwd, '.git')), 'the worktree is gone');
+    assert.equal(branchExists(cwd, p1.branch), false, 'the merged harness/<id8>/P1 branch is gone');
   });
 });
 

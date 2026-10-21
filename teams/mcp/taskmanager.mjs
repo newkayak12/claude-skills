@@ -51,6 +51,7 @@ import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:pat
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { touchMarker } from './engage.mjs';
+import { epicSlug, packageName, uniqueSlug } from './names.mjs';
 import {
   epicKey, initiativeKey, storyKey, taskKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
   storyTicketState, storyTaskProgress, epicBoardRows, ticketSnapshot,
@@ -384,6 +385,21 @@ function priorRetroContext(contextFrom) {
   }
 }
 
+// Slugs a new EPIC in `cwd` must not take: those of the repo's other tasks, and any teams/<slug>/
+// branch namespace already in the repo. Best-effort: a git failure takes nothing.
+function takenSlugs(cwd) {
+  const taken = new Set();
+  let ids = [];
+  try { ids = readdirSync(tasksRoot()); } catch { ids = []; }
+  for (const id of ids) {
+    const t = loadRunAt(taskPath(id));
+    if (t && t.slug && t.cwd && resolve(String(t.cwd)) === cwd) taken.add(t.slug);
+  }
+  const refs = git(cwd, ['for-each-ref', '--format=%(refname)', 'refs/heads/teams/']);
+  if (refs.ok) for (const ref of refs.out.split('\n')) { const s = ref.split('/')[3]; if (s) taken.add(s); }
+  return taken;
+}
+
 function createTask(a) {
   if (a.child_driver !== undefined || a.s_driver !== undefined) {
     throw new Error('child_driver and s_driver were removed in 0.10.0: the driving session never drives a child run or the manager loop. Open the task and watch tm_status / tm_events; the daemon and package drivers do the rest.');
@@ -422,6 +438,9 @@ function createTask(a) {
     // scheduling or execution ever reads it. null (the default) keeps every EPIC ungrouped,
     // exactly today's behaviour.
     initiative: T.initiative,
+    // The readable label of this EPIC (names.mjs), set once from the first request and used in its
+    // branch and worktree names. A task without one (opened before it existed) keeps harness/<id8>/*.
+    slug: uniqueSlug(epicSlug(requests ? requests[0] : String(a.request)), takenSlugs(cwd)),
     request: withSharedAcceptance(requests ? composeBacklogRequest(requests) : String(a.request), a.shared_acceptance),
     requests, // null for the ordinary single-request task - the byte-for-byte compat case.
     context: [priorRetro.text, a.context || ''].filter(Boolean).join('\n\n'),
@@ -2301,9 +2320,26 @@ function warnUncommittedGate(task, worktreePath) {
 // attempt left, exactly as a graph retry keeps the worktree of the attempt it replaces.
 // `base` is the commit or branch the tree starts from - the project's HEAD, or a dependency's
 // branch so the package builds on what it depends on instead of re-discovering it at merge.
-function ensureWorktree(task, name, base = 'HEAD') {
-  const path = join(taskDir(task.run_id), 'worktrees', name);
-  const branch = `harness/${shortId(task.run_id)}/${name}`;
+// The one place a package or integration tree gets its dir and branch; ensureWorktree and
+// findGoneWorktree both ask it. A task without a slug keeps harness/<id8>/<name> and worktrees/<name>.
+// With one, a package that already ran keeps the dir and branch its dispatch node stored (a retry or
+// a reshaped title must not move it), else <Pid>[-<package-slug>]; integration (no title) is `name`.
+function worktreeNames(task, name, title) {
+  const root = join(taskDir(task.run_id), 'worktrees');
+  if (!task.slug) return { path: join(root, name), branch: `harness/${shortId(task.run_id)}/${name}` };
+  const stored = (task.nodes || []).filter((x) => x.stage === 'dispatch' && x.subgoal_id === name && x.child && x.child.cwd && x.child.branch).pop();
+  if (stored) return { path: stored.child.cwd, branch: stored.child.branch };
+  const label = title == null ? name : packageName(name, title);
+  return { path: join(root, label), branch: `teams/${task.slug}/${label}` };
+}
+
+// A branch some node of this task recorded: the only existing ref a slugged task may reuse.
+function recordedBranch(task, branch) {
+  return (task.nodes || []).some((x) => (x.child && x.child.branch === branch) || (x.integration && x.integration.branch === branch));
+}
+
+function ensureWorktree(task, name, base = 'HEAD', title) {
+  const { path, branch } = worktreeNames(task, name, title);
   if (existsSync(join(path, '.git'))) {
     // The harness gate (if this project also installs harness) reads .claude/.harness-markers/
     // from the session's cwd, which for a worker IS this worktree. See engage.mjs.
@@ -2318,6 +2354,11 @@ function ensureWorktree(task, name, base = 'HEAD') {
   if (wasOpened(task, path)) return { ok: false, gone: true, path, branch, reason: `the worktree at ${path} is gone` };
   mkdirSync(dirname(path), { recursive: true });
   const exists = git(task.cwd, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]).ok;
+  // A slug names this task alone: a branch under it that no node recorded was made by someone else
+  // (two tm_open calls racing to one slug), and building on it would mix their work into this one.
+  if (exists && task.slug && !recordedBranch(task, branch)) {
+    return { ok: false, path, branch, reason: `branch ${branch} already exists and this task did not create it` };
+  }
   const r = exists
     ? git(task.cwd, ['worktree', 'add', path, branch])
     : git(task.cwd, ['worktree', 'add', '-b', branch, path, base]);
@@ -2603,7 +2644,7 @@ export function findGoneWorktree(task) {
       if (src && !existsSync(join(src.integration.cwd, '.git'))) return { kind: 'integration', node_id: n.node_id, subgoal_id: n.subgoal_id, path: src.integration.cwd };
       continue;
     }
-    const path = join(taskDir(task.run_id), 'worktrees', String(pkg.id));
+    const { path } = worktreeNames(task, String(pkg.id), pkg.title);
     if (!existsSync(join(path, '.git')) && wasOpened(task, path)) return { kind: 'package', node_id: n.node_id, subgoal_id: n.subgoal_id, path };
   }
   return null;
@@ -3367,10 +3408,10 @@ function openChildOnSlot(task, n, progress, reservation) {
   // the integrated tree, so its worktree IS the integration worktree.
   // A size-S task's QA card (m4) runs on a snapshot of the S run's working tree, never on the
   // tree itself: the S run wrote straight into the project, uncommitted.
-  const wt = pkg.s_snapshot ? ensureWorktree(task, String(pkg.id), pkg.s_snapshot)
+  const wt = pkg.s_snapshot ? ensureWorktree(task, String(pkg.id), pkg.s_snapshot, pkg.title)
     : pkg.repair || pkg.phase === 'qa' || pkg.phase === 'audit'
       ? repairWorktree(task, pkg)
-      : ensureWorktree(task, String(pkg.id), depBranches[0] || task.base_ref || 'HEAD');
+      : ensureWorktree(task, String(pkg.id), depBranches[0] || task.base_ref || 'HEAD', pkg.title);
   // A tree that existed and is gone is the daemon's stop, not this node's failure: the node goes
   // back to pending and the next tick's worktreeGoneStop (advanceDispatches, the daemon step) names
   // it. It reaches here only when the tree vanished after that look.
@@ -5351,7 +5392,7 @@ export function appendBoardTransitions(task, before, by) {
 // A no-task_id tm_board row, shared by the flat listing and every initiative group below it -
 // one function so the two can never disagree about what an epic row looks like.
 function epicRow(t) {
-  return { key: epicKey(t.run_id), task_id: t.run_id, title: String(t.request).slice(0, 60), state: epicTicketState(t), phase: epicPhase(t) };
+  return { key: epicKey(t.run_id), slug: t.slug || null, task_id: t.run_id, title: String(t.request).slice(0, 60), state: epicTicketState(t), phase: epicPhase(t) };
 }
 
 function toolBoard(a) {
@@ -5383,6 +5424,7 @@ function toolBoard(a) {
   const driverTotal = collectTaskCosts(taskDir(task.run_id), task);
   return {
     key: epicKey(task.run_id),
+    slug: task.slug || null,
     task_id: task.run_id,
     title: String(task.request).slice(0, 80),
     state: epicTicketState(task),
@@ -7890,6 +7932,7 @@ function toolStatus(a) {
     const ts = taskState(task);
     return {
       task_id: task.run_id,
+      slug: task.slug || null,
       cwd: task.cwd,
       state: ts.state,
       ...(ts.partial_reasons ? { partial: true, partial_reasons: ts.partial_reasons } : {}),
@@ -7914,6 +7957,7 @@ function toolStatus(a) {
     const ts = taskState(task);
     return {
       task_id: task.run_id,
+      slug: task.slug || null,
       cwd: task.cwd,
       state: ts.state,
       ...(ts.partial_reasons ? { partial_reasons: ts.partial_reasons } : {}),
@@ -7936,6 +7980,7 @@ function toolStatus(a) {
   const state = taskState(task);
   return {
     task_id: task.run_id,
+    slug: task.slug || null,
     cwd: task.cwd,
     state: state.state,
     ...(state.partial ? { partial: true, partial_reasons: state.partial_reasons } : {}),
