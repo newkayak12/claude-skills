@@ -21,7 +21,8 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
       old `E-xxxxxxxx` keys still resolve; a finished task's worktrees and merged branches are
       removed (or listed by `tm_clean`); tests cover naming, collisions and old-key lookup.
 
-50. **A failure toast says what failed, why, and what happens next** — in E-910c1de2
+50. **A failure toast says what failed, why, and what happens next** — built (E-910c1de2, merged by
+    hand 2026-10-21, `f8eb7de0`..`3578e337`); open until the person sees the toast demo (`mod.md` rule 0)
     - Why: user, 2026-10-17: "야 토스트 failed 된거 떴는데 뭘 실패했는지 내용을 알 수가 없잖아". The teams
       toast is the event's `text` from `view.mjs --format events`, only `E-6b073e8a critique:2 failed
       (attempt 2)`. The ledger already holds the reason on the `verdict` event of the same node
@@ -144,11 +145,14 @@ those, one card per EPIC (43 first; 40 and 41 before 42).
       `basefail.mjs` and the adapter's `blocked: tool denied`, but its report leaves: (a) the task
       manager's stream-json judges (accept/gate nodes it runs itself) still read a denial as a reject
       — E-64cda2b0's own P1 failed that way; (b) base exclusion is applied after the judge scored the
-      attempt, so it helps only the next attempt; (c) a real dontAsk denial was never reproduced live.
-      The run itself also stranded P3/P4 — the fix landed only after it.
+      attempt, so it helps only the next attempt. The run itself also stranded P3/P4 — the fix
+      landed only after it.
+    - Root cause of the gate denials, found 2026-10-21: `claude-exec-adapter.mjs` gave `--verify`
+      gates Bash on `--tools` under `--permission-mode dontAsk` with no allow rule, so every Bash call
+      was denied (live probe without the shell's `claude` alias). Fixed `eeff7b52`; installed 0.57.0
+      hot-patched until the next teams bump.
     - Acceptance: a task-manager judge denied Bash reads `blocked: tool denied` (test); excluded base
-      failures are removed from the briefing before the judge scores; one live `claude -p` denial
-      probe recorded in the test fixture.
+      failures are removed from the briefing before the judge scores.
 
 ### knowledge plugin
 
