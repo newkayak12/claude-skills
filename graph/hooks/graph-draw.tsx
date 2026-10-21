@@ -224,8 +224,8 @@ export const footerKeys = (n: number): { key: string; label: string }[] => [
   { key: 'q', label: 'close' },
 ]
 // one dim footer, the only place keys are named; the same words and spacing as the live pane's buttons
-// (`[ prev next ]` and `q close`)
-export const paneFooter = (n: number): Line => [seg(n >= 2 ? '[ prev next ]  q close' : 'q close', { dim: true })]
+// (`[ prev next ]` and `[ q ] close`, as seen in a live session)
+export const paneFooter = (n: number): Line => [seg(n >= 2 ? '[ prev next ]  [ q ] close' : '[ q ] close', { dim: true })]
 
 const tabLine = (c: PaneCtx): Line => [seg('graph', { bold: true }), ...(c.owner !== undefined ? [seg(`  under ${c.owner}`, { dim: true })] : [])]
 
