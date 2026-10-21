@@ -15,6 +15,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rm
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { STALL_AFTER_MS, OPEN_UNDER_MS, runRow } from '../mcp/runs-readout.mjs';
 
 const BROKER = join(dirname(fileURLToPath(import.meta.url)), '..', 'mcp', 'broker.mjs');
 const CODEX_ADAPTER = join(dirname(fileURLToPath(import.meta.url)), '..', 'adapters', 'codex-exec-adapter.mjs');
@@ -2020,6 +2021,27 @@ test('owner is stored exactly as given, and is null when none is given', async (
   });
 });
 
+test('owner stored with an EPIC key (an S task) reads back the same in runs --list', async () => {
+  await withRun(async ({ c, cwd }) => {
+    const owner = { task_id: 'T-3', key: 'E-abcd1234' };
+    const owned = await openRun(c, cwd, { owner });
+    assert.deepEqual(readRun(cwd, owned).owner, owner);
+    const list = spawnSync('node', [BROKER, 'runs', '--list', '--json', '--cwd', cwd], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    assert.deepEqual(JSON.parse(list.stdout).find((r) => r.run_id === owned).owner, owner);
+  });
+});
+
+test('graph_open owner description names E-xxxxxxxx, E-xxxxxxxx/Pn and omission', async () => {
+  const c = await new Client().init();
+  try {
+    const open = (await c.send('tools/list', {})).result.tools.find((t) => t.name === 'graph_open');
+    const d = open.inputSchema.properties.owner.description;
+    assert.match(d, /E-xxxxxxxx(?!\/)/);
+    assert.match(d, /E-xxxxxxxx\/Pn/);
+    assert.match(d, /omit/i);
+  } finally { c.close(); }
+});
+
 test('graph_open declares owner {task_id, key}', async () => {
   const c = await new Client().init();
   try {
@@ -2158,8 +2180,9 @@ test('runs --list prints one line per run and --json the same rows, with no stdi
     const rows = JSON.parse(json.stdout);
     assert.equal(rows.length, 3);
     const row = (id) => rows.find((r) => r.id8 === id.slice(0, 8));
-    assert.deepEqual(row(standalone), { id8: standalone.slice(0, 8), state: 'running', owner: null, created_at: iso(standalone), cost_usd: null, running: null });
-    assert.deepEqual(row(owned), {
+    const oldKeys = (r) => Object.fromEntries(['id8', 'state', 'owner', 'created_at', 'cost_usd', 'running'].map((k) => [k, r[k]]));
+    assert.deepEqual(oldKeys(row(standalone)), { id8: standalone.slice(0, 8), state: 'running', owner: null, created_at: iso(standalone), cost_usd: null, running: null });
+    assert.deepEqual(oldKeys(row(owned)), {
       id8: owned.slice(0, 8), state: 'running', owner: { task_id: 'T-7', key: 'E-abcd1234/P2' },
       created_at: iso(owned), cost_usd: null, running: { node_id: 'setgoal', last_step: 'plan written' },
     });
@@ -2174,4 +2197,228 @@ test('runs --list prints one line per run and --json the same rows, with no stdi
       assert.deepEqual(JSON.parse(run('--json', '--cwd', empty).stdout), []);
     } finally { rmSync(empty, { recursive: true, force: true }); }
   } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
+// ---------- runs --list / runs --show: the full row the graph pane draws ----------
+
+const readout = (args) => spawnSync('node', [BROKER, 'runs', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
+const listRows = (cwd) => JSON.parse(readout(['--list', '--json', '--cwd', cwd]).stdout);
+const HOUR = 60 * 60 * 1000;
+const setAge = (cwd, runId, ageMs) => {
+  const t = new Date(Date.now() - ageMs);
+  utimesSync(runFile(cwd, runId), t, t);
+};
+
+test('runs --list row: run_id, file, request, max_retries, subgoals, nodes', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    const row = listRows(cwd)[0];
+    assert.equal(row.run_id, runId);
+    assert.equal(row.file, runFile(cwd, runId));
+    assert.equal(row.request, 'r');
+    assert.equal(row.max_retries, 2);
+    assert.deepEqual(row.subgoals, [{ id: 'U1', title: 'first' }, { id: 'U2', title: 'second' }]);
+    assert.equal(row.routing_blocked, false);
+    assert.deepEqual(row.unavailable_vendors, {});
+    assert.equal(row.acting, false);
+    assert.equal(row.rejects, 0);
+    const plan = row.nodes.find((n) => n.node_id === 'plan');
+    assert.deepEqual(Object.keys(plan).sort(), ['agent', 'attempt', 'feedback', 'finished_at', 'last_step', 'node_id', 'reason', 'stage', 'started_at', 'state', 'subgoal_id']);
+    assert.equal(plan.state, 'done');
+    assert.equal(plan.last_step, 'p');
+    assert.equal(plan.reason, null);
+    assert.equal(plan.subgoal_id, null);
+    assert.equal(plan.attempt, 1);
+  });
+});
+
+test('runs --list row: request is the first line, cut with … when long', async () => {
+  const cwd = repo();
+  const c = await new Client().init();
+  try {
+    const id = (await c.call('graph_open', { request: `${'x'.repeat(300)}\nsecond line`, cwd, vendor: 'self' })).run_id;
+    const row = listRows(cwd).find((r) => r.run_id === id);
+    assert.ok(row.request.endsWith('…'));
+    assert.ok(row.request.length < 150);
+    assert.ok(!row.request.includes('second'));
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('runs --list row: last_change is the run file mtime, age_ms follows it', async () => {
+  await withRun(async ({ cwd, runId }) => {
+    setAge(cwd, runId, HOUR);
+    const row = listRows(cwd)[0];
+    assert.equal(row.last_change_ms, statSync(runFile(cwd, runId)).mtimeMs);
+    assert.equal(row.last_change, new Date(row.last_change_ms).toISOString());
+    assert.ok(row.age_ms >= HOUR && row.age_ms < HOUR + 60000);
+  });
+});
+
+test('runs --list row: open/stalled at 1h, 3h and 13h', async () => {
+  await withRun(async ({ cwd, runId }) => {
+    const at = (age) => { setAge(cwd, runId, age); const r = listRows(cwd)[0]; return [r.open, r.stalled]; };
+    assert.deepEqual(at(HOUR), [true, false]);
+    assert.deepEqual(at(3 * HOUR), [true, true]);
+    assert.deepEqual(at(13 * HOUR), [false, false]);
+  });
+});
+
+test('runs --list row: a run last touched exactly 2h ago is stalled', async () => {
+  assert.equal(STALL_AFTER_MS, 2 * HOUR);
+  await withRun(async ({ cwd, runId }) => {
+    setAge(cwd, runId, STALL_AFTER_MS);
+    const r = listRows(cwd)[0];
+    assert.equal(r.open, true);
+    assert.equal(r.stalled, true);
+  });
+  const run = { run_id: 'abcdef012345', nodes: [{ node_id: 'plan', stage: 'plan', state: 'pending', deps: [] }] };
+  const now = 10 * HOUR * 10;
+  assert.equal(runRow(run, { file: '/f', mtimeMs: now - STALL_AFTER_MS + 1, now }).stalled, false);
+  assert.equal(runRow(run, { file: '/f', mtimeMs: now - STALL_AFTER_MS, now }).stalled, true);
+});
+
+test('runs --list row: a run last touched exactly 12h ago is not open', async () => {
+  assert.equal(OPEN_UNDER_MS, 12 * HOUR);
+  await withRun(async ({ cwd, runId }) => {
+    setAge(cwd, runId, OPEN_UNDER_MS);
+    const r = listRows(cwd)[0];
+    assert.equal(r.open, false);
+    assert.equal(r.stalled, false);
+  });
+  const run = { run_id: 'abcdef012345', nodes: [{ node_id: 'plan', stage: 'plan', state: 'pending', deps: [] }] };
+  const now = 100 * HOUR;
+  assert.equal(runRow(run, { file: '/f', mtimeMs: now - OPEN_UNDER_MS + 1, now }).open, true);
+  assert.equal(runRow(run, { file: '/f', mtimeMs: now - OPEN_UNDER_MS, now }).open, false);
+});
+
+test('runs --list row: a complete run is not open, however fresh', async () => {
+  const run = { run_id: 'abcdef012345', nodes: [{ node_id: 'report', stage: 'report', state: 'done', deps: [] }] };
+  const r = runRow(run, { file: '/f', mtimeMs: 1000, now: 1000 });
+  assert.equal(r.state, 'complete');
+  assert.equal(r.open, false);
+  assert.equal(r.stalled, false);
+});
+
+test('runs --list row: last_step is the newest finished node, last_step null when none finished', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    assert.equal(listRows(cwd)[0].last_step, null);
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'plan written' }) });
+    assert.equal(listRows(cwd)[0].last_step, 'plan written');
+  });
+});
+
+test('runs --list row: acting is true while a node runs, rejects counts failed nodes', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await c.call('graph_submit', { run_id: runId, cwd, node_id: 'plan', payload: { stage_ok: false, reason: 'no good', evidence: 'e' } });
+    const failed = listRows(cwd)[0];
+    assert.equal(failed.rejects, 1);
+    assert.equal(failed.nodes.find((n) => n.node_id === 'plan').reason, 'no good');
+    forceRunning(cwd, runId, 'setgoal', 1000);
+    assert.equal(listRows(cwd)[0].acting, true);
+  });
+});
+
+test('runs --list row: routing_blocked and unavailable_vendors come from the run file', async () => {
+  await withRun(async ({ cwd, runId }) => {
+    const p = runFile(cwd, runId);
+    const run = readRun(cwd, runId);
+    run.routing_blocked = true;
+    run.unavailable_vendors = { codex: 'usage capacity exhausted in this run' };
+    writeFileSync(p, JSON.stringify(run, null, 2));
+    const row = listRows(cwd)[0];
+    assert.equal(row.routing_blocked, true);
+    assert.deepEqual(row.unavailable_vendors, { codex: 'usage capacity exhausted in this run' });
+  });
+});
+
+test('runs --list row: owner, cost_usd and id8/state/running stay, null when absent', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    const row = listRows(cwd)[0];
+    assert.equal(row.id8, runId.slice(0, 8));
+    assert.equal(row.state, 'running');
+    assert.equal(row.owner, null);
+    assert.equal(row.cost_usd, null);
+    assert.equal(row.running, null);
+    const p = runFile(cwd, runId);
+    const run = readRun(cwd, runId);
+    run.cost_usd = 1.25;
+    writeFileSync(p, JSON.stringify(run, null, 2));
+    assert.equal(listRows(cwd)[0].cost_usd, 1.25);
+  });
+});
+
+test('runs --show returns the same row as runs --list', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    const listed = listRows(cwd)[0];
+    const shown = readout(['--show', runFile(cwd, runId), '--json']);
+    assert.equal(shown.status, 0, shown.stderr);
+    const { age_ms: a, ...rest } = JSON.parse(shown.stdout);
+    const { age_ms: b, ...want } = listed;
+    assert.deepEqual(rest, want);
+  });
+});
+
+test('runs --show reads a teams-engine run file on a .teams_output/broker/runs path, owner/cost_usd/last_step null', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'broker-show-'));
+  try {
+    const runs = join(dir, '.teams_output', 'broker', 'runs');
+    mkdirSync(runs, { recursive: true });
+    const file = join(runs, 'feedbeef-0000.json');
+    writeFileSync(file, JSON.stringify({
+      run_id: 'feedbeef-0000', request: 'teams node', created_at: 1000,
+      nodes: [{ node_id: 'plan', stage: 'plan', deps: [], state: 'running' }],
+    }));
+    const before = readFileSync(file, 'utf8');
+    const out = readout(['--show', file, '--json']);
+    assert.equal(out.status, 0, out.stderr);
+    const row = JSON.parse(out.stdout);
+    assert.equal(row.file, file);
+    assert.equal(row.owner, null);
+    assert.equal(row.cost_usd, null);
+    assert.equal(row.last_step, null);
+    assert.equal(row.nodes[0].last_step, null);
+    assert.equal(row.acting, true);
+    assert.equal(readFileSync(file, 'utf8'), before);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('runs --show with a missing or bad path: non-zero, one stderr line, empty stdout, nothing written', async () => {
+  await withRun(async ({ cwd, runId }) => {
+    const before = dirSnapshot(cwd);
+    const bad = join(cwd, 'bad.json');
+    writeFileSync(bad, '{not json');
+    for (const path of [join(cwd, 'nope.json'), bad]) {
+      const out = readout(['--show', path, '--json']);
+      assert.notEqual(out.status, 0);
+      assert.equal(out.stdout, '');
+      assert.equal(out.stderr.trim().split('\n').filter(Boolean).length, 1, out.stderr);
+    }
+    const noarg = readout(['--show']);
+    assert.notEqual(noarg.status, 0);
+    assert.equal(noarg.stdout, '');
+    assert.deepEqual(dirSnapshot(cwd), before, 'runs --show wrote the run dir');
+  });
+});
+
+test('runs usage line names both --list and --show', async () => {
+  const out = readout([]);
+  assert.equal(out.status, 2);
+  assert.match(out.stderr, /--list/);
+  assert.match(out.stderr, /--show/);
+});
+
+test('runs --list skips a run file whose name does not match its run_id, and still lists the others', async () => {
+  await withRun(async ({ cwd, runId }) => {
+    writeFileSync(join(dirname(runFile(cwd, runId)), 'bbbb2222.json'), readFileSync(runFile(cwd, runId), 'utf8').replace(runId, 'aaaa1111-0000-0000-0000-000000000000'));
+    const out = readout(['--list', '--json', '--cwd', cwd]);
+    assert.equal(out.status, 0, out.stderr);
+    assert.deepEqual(JSON.parse(out.stdout).map((r) => r.run_id), [runId]);
+  });
+});
+
+test('runRow: the [teams-task <id>] prefix is not part of the request title; other brackets stay', () => {
+  const row = (request) => runRow({ run_id: 'r1', request, nodes: [] }, { file: '/f', mtimeMs: 1000, now: 1000 }).request;
+  assert.equal(row('[teams-task 97f05d73-860c-4538-8203-e9a0f925b366] Add a line\nmore'), 'Add a line');
+  assert.equal(row('[fix] keep this'), '[fix] keep this');
 });

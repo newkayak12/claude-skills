@@ -21,7 +21,7 @@
 // Zero dependencies: MCP's stdio transport is newline-delimited JSON-RPC 2.0.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, writeSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, writeSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
@@ -45,7 +45,8 @@ import {
   stagePolicy,
 } from './graph.mjs';
 import { composePrompt } from './prompts.mjs';
-import { mutateRun, writeAtomic, pidAlive } from './store.mjs';
+import { mutateRun, writeAtomic, pidAlive, runFilePath } from './store.mjs';
+import { runRow, createdAtOf } from './runs-readout.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER = { name: 'graph-engineering', version: '1.0.0' };
@@ -914,7 +915,7 @@ const TOOLS = [
         max_retries: { type: 'number' },
         owner: {
           type: 'object',
-          description: 'the STORY this run belongs to, stored as given: key is the full STORY key (E-xxxxxxxx/P2). Omit for a standalone run.',
+          description: 'who this run belongs to, stored as given: key is the EPIC key E-xxxxxxxx for an S task, or the STORY key E-xxxxxxxx/Pn for an L package. Omit for a standalone run.',
           properties: { task_id: { type: 'string' }, key: { type: 'string' } },
         },
       },
@@ -1415,11 +1416,6 @@ async function toolGraphRetry(a) {
   return { run_id: run.run_id, target: sid, subgoal_id: sid, retried: true, attempt: out.attempt, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
 }
 
-// A run file without created_at is of unknown age; no reader invents or writes one.
-function createdAtOf(run) {
-  return Number.isFinite(run.created_at) ? new Date(run.created_at).toISOString() : 'unknown';
-}
-
 // What is happening right now, without a run_id in hand. A lead that lost the id - a
 // fresh session, a compaction, a second operator looking in - had no way back into a run
 // from the MCP alone, and no way to see what a blocking graph_run is doing meanwhile.
@@ -1619,19 +1615,33 @@ async function handle(msg) {
 function runRows(cwd) {
   return listRuns(cwd)
     .sort((x, y) => (Number.isFinite(y.created_at) ? y.created_at : -1) - (Number.isFinite(x.created_at) ? x.created_at : -1))
-    .map((run) => {
-      const node = run.nodes.find((n) => n.state === 'running');
-      const finished = run.nodes.filter((n) => (n.state === 'done' || n.state === 'failed') && n.last_step)
-        .sort((x, y) => (y.finished_at || 0) - (x.finished_at || 0))[0];
-      return {
-        id8: run.run_id.slice(0, 8),
-        state: runState(run).state,
-        owner: run.owner || null,
-        created_at: createdAtOf(run),
-        cost_usd: Number.isFinite(run.cost_usd) ? run.cost_usd : null,
-        running: node ? { node_id: node.node_id, last_step: node.last_step || (finished && finished.last_step) || null } : null,
-      };
+    .flatMap((run) => {
+      // a run file whose name differs from its run_id, or one that vanished since the listing, is skipped
+      try {
+        const file = runFilePath(cwd, run.run_id);
+        return [runRow(run, { file, mtimeMs: statSync(file).mtimeMs })];
+      } catch {
+        return [];
+      }
     });
+}
+
+// `runs --show <run-file>`: one row, same shape. Any failure is one stderr line, no stdout.
+function runsShowMain(args) {
+  const at = args.indexOf('--show');
+  const path = at >= 0 ? args[at + 1] : null;
+  try {
+    if (!path || path.startsWith('--')) throw new Error('--show needs a run file');
+    const file = resolve(path);
+    const run = JSON.parse(readFileSync(file, 'utf8'));
+    if (!run || typeof run !== 'object' || Array.isArray(run)) throw new Error('not a run file');
+    const row = runRow(run, { file, mtimeMs: statSync(file).mtimeMs });
+    writeSync(1, JSON.stringify(row, null, 2) + '\n');
+    process.exit(0);
+  } catch (e) {
+    process.stderr.write(`runs --show: ${String((e && e.message) || e).split('\n')[0]}\n`);
+    process.exit(1);
+  }
 }
 
 function runsListMain(args) {
@@ -1650,8 +1660,9 @@ function runsListMain(args) {
 }
 
 if (process.argv[2] === 'runs') {
+  if (process.argv.includes('--show')) runsShowMain(process.argv.slice(3));
   if (!process.argv.includes('--list')) {
-    process.stderr.write('usage: broker.mjs runs --list [--cwd DIR] [--json]\n');
+    process.stderr.write('usage: broker.mjs runs --list [--cwd DIR] [--json] | runs --show <run-file> [--json]\n');
     process.exit(2);
   }
   runsListMain(process.argv.slice(3));
