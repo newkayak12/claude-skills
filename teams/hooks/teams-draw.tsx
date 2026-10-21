@@ -131,3 +131,32 @@ export function epicCells(t: SummaryTaskEntry, state: WorkState, selected: boole
   ]
   return { cells, tints: t.live ? [undefined, TINT[state], undefined, undefined, 'dim', undefined, 'dim'] : cells.map(() => 'dim' as const) }
 }
+
+/* --- the tab row and the footer, planned against the pane's inner width --- */
+
+// The tab row on one line of `inner` columns. The cost text goes first (shown only when tabs and cost fit), then the
+// gap between tabs closes from 2 to 1, then the longest label is cut with … until the row fits.
+export function tabRowPlan(labels: readonly string[], cost: string, inner: number): { labels: string[]; gap: number; cost: string | null } {
+  const total = (ls: readonly string[], gap: number) => ls.reduce((n, l) => n + width(l), 0) + gap * Math.max(0, ls.length - 1)
+  if (cost !== '' && total(labels, 2) + 2 + width(cost) <= inner) return { labels: [...labels], gap: 2, cost }
+  if (total(labels, 2) <= inner) return { labels: [...labels], gap: 2, cost: null }
+  const out = [...labels]
+  while (total(out, 1) > inner) {
+    let at = 0
+    out.forEach((l, i) => { if (width(l) > width(out[at]!)) at = i })
+    if (width(out[at]!) <= 4) break
+    out[at] = clipText(labels[at]!, width(out[at]!) - 1)
+  }
+  return { labels: out, gap: 1, cost: null }
+}
+
+// The Input draws its own `⏎ submit` (9 columns and a gap) beside the hint while focused.
+const INPUT_CHROME = 10
+
+// The footer on one line: close stays whole; prev/next and the open hint stay when they fit; the key hint takes what is
+// left and ends in … when cut, or is dropped when under 6 columns remain.
+export function footerPlan(parts: { steps: number; open: string; close: string; hint: string }, inner: number): { hint: string } {
+  const fixed = [parts.steps > 0 ? parts.steps + 2 * (parts.steps - 1) : 0, width(parts.open), width(parts.close)].filter(n => n > 0)
+  const room = inner - INPUT_CHROME - fixed.reduce((n, w) => n + w, 0) - 2 * fixed.length
+  return { hint: room >= 6 ? clipText(parts.hint, room) : '' }
+}
