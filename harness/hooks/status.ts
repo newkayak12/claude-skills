@@ -223,11 +223,11 @@ export function runPosition(ordered: readonly HarnessRow[], selected: string | n
 
 export const runCount = ({ k, n }: { k: number; n: number }, compact = false) => (compact ? `${k}/${n}` : `run ${k} of ${n}`)
 
-// `[` and `]`: the slug a step lands on, wrapping; with fewer than two runs, nothing changes.
+// `[` and `]`: the slug a step lands on, stopping at the first and the last run; with fewer than two runs, nothing changes.
 export function cycleRun(ordered: readonly HarnessRow[], selected: string | null, step: 1 | -1): string | null {
   if (ordered.length < 2) return selected
   const at = Math.max(0, ordered.findIndex(r => r.slug === pickRun(ordered, selected)?.slug))
-  return ordered[(at + step + ordered.length) % ordered.length]!.slug
+  return ordered[Math.min(ordered.length - 1, Math.max(0, at + step))]!.slug
 }
 
 const STAGE_NAME: Record<RowStage, string> = { plan: 'Plan', setgoal: 'SetGoal', critique: 'Critique', implement: 'Implement', gate: 'Goal gate', report: 'Report' }
@@ -239,11 +239,11 @@ export function stageLabel(r: HarnessRow): string {
   return r.stalled ? `${base} · stalled` : base
 }
 
-// The tab row's right side: the run `]` would open, and how many more there are
+// The tab row's right side: the run `]` would open (on the last run, the previous one), and how many more there are
 export function otherRunLabel(ordered: readonly HarnessRow[], selected: string | null): string | null {
   if (ordered.length < 2) return null
-  const at = ordered.findIndex(r => r.slug === pickRun(ordered, selected)?.slug)
-  const other = ordered[(at + 1) % ordered.length]!
+  const at = Math.max(0, ordered.findIndex(r => r.slug === pickRun(ordered, selected)?.slug))
+  const other = ordered[at + 1 < ordered.length ? at + 1 : at - 1]!
   return `other run: ${other.slug} · ${stageLabel(other)}${ordered.length > 2 ? ` (+${ordered.length - 2})` : ''}`
 }
 
@@ -292,8 +292,19 @@ const STAGE_DOING: Record<RowStage, string> = {
   report: 'Report is being written',
 }
 
-// what the run is doing, in a sentence: now.doing, else the stage's own
-export const doingText = (r: HarnessRow) => oneLine(r.now?.doing ?? '', 200) || STAGE_DOING[r.stage]
+// what the run is doing, in a sentence: now.doing (canned false), else the stage's own (canned true)
+export function doingOf(r: HarnessRow): { text: string; canned: boolean } {
+  const live = oneLine(r.now?.doing ?? '', 200)
+  return live === '' ? { text: STAGE_DOING[r.stage], canned: true } : { text: live, canned: false }
+}
+export const doingText = (r: HarnessRow) => doingOf(r).text
+
+// The status line: open runs per stage in flow order, `Plan(6) / Implement(11)`; a stalled row counts under its stage;
+// no rows is no status.
+export function stageStatus(rows: readonly HarnessRow[]): string | undefined {
+  const parts = ROW_STAGES.map(s => ({ s, n: rows.filter(r => r.stage === s).length })).filter(x => x.n > 0)
+  return parts.length === 0 ? undefined : parts.map(({ s, n }) => `${s.charAt(0).toUpperCase()}${s.slice(1)}(${n})`).join(' / ')
+}
 
 export const roundText = (r: HarnessRow, compact = false) =>
   r.round === null ? '' : compact ? `round ${r.round}/${r.max_critique_rounds}` : `round ${r.round} of ${r.max_critique_rounds}`
@@ -339,10 +350,12 @@ export function railItems(r: HarnessRow): RailItem[] {
     items.push(item('Critique', rd.sound === false ? 'failed' : 'done'))
     if (rd.sound !== false) return
     const lastRound = i === r.rounds.length - 1
+    // the last rejected round at the cap goes on to implement (fallback.md): its SetGoal again is drawn only while current
+    if (lastRound && r.rounds.length >= r.max_critique_rounds && at !== 1) return
     items.push(item('SetGoal again', !lastRound || at > 1 ? 'done' : at === 1 ? 'current' : 'pending', 'SetGoal'))
   })
   const latest = r.rounds[r.rounds.length - 1]
-  if (latest === undefined || latest.sound === false) items.push(item('Critique', at === 2 ? 'current' : at > 2 ? 'done' : 'pending'))
+  if (latest === undefined || (latest.sound === false && r.rounds.length < r.max_critique_rounds)) items.push(item('Critique', at === 2 ? 'current' : at > 2 ? 'done' : 'pending'))
   const judged = r.total > 0 && r.passed + r.failed >= r.total
   items.push(item(r.total > 0 ? `Subgoals ${r.passed}/${r.total}` : 'Subgoals', at === 3 ? 'current' : at > 3 ? (r.failed > 0 && judged ? 'failed' : 'done') : 'pending'))
   items.push(item('Goal gate', at === 4 ? 'current' : at > 4 ? 'done' : 'pending', 'Gate'))
@@ -379,6 +392,12 @@ export function rankedProblems(rd: RowRound | null): { n: number; severity: RowP
 export function restText(rd: RowRound | null, shown: number): string {
   const rest = rankedProblems(rd).slice(shown)
   return rest.length === 0 ? '' : countsText(severityOf(rest))
+}
+
+// `+3: 2 major, 1 nit`: the pane's cut-count line; '' when nothing is cut
+export function restLine(rd: RowRound | null, shown: number): string {
+  const rest = rankedProblems(rd).slice(shown)
+  return rest.length === 0 ? '' : `+${rest.length}: ${countsText(severityOf(rest))}`
 }
 
 // the most severe finding of the latest round that has any

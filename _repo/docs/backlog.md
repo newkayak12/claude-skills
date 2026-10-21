@@ -108,6 +108,21 @@ those, one card per EPIC (43 first; 40 and 41 before 42).
       방향은 teams"; evaluation by a seeded matrix with repeated runs ("여러 번 돌려보는게 맞을거 같음").
     - Acceptance: the plan's Tasks 1–9 with their pass bars; after UI cards (user priority).
 
+### harness mod pane (card 40 live check, 2026-10-21)
+
+55. **`/harness-status` typed again does not close the open pane**
+    - Why: seen live 2026-10-21 (tmux, 190 and 110 columns): with the pane open the command is typed
+      again and the reply is "harness: pane opened" each time; the pane's focused Input takes the
+      keystrokes, so `mod.tsx:566-570` is not reached. Also on 23f4234f, so not from card 40.
+      Cause unverified.
+    - Acceptance: in a live tmux session the command typed again closes the pane, captured at 190
+      and 110 columns; README/KOR say so again.
+
+56. **harness band has no open action for the pane**
+    - Why: seen live 2026-10-21: `mod.md` says the pane opens by its command or its band line, but
+      the band (AbovePrompt) has no Button or key that opens it; clicks did nothing. Cause unverified.
+    - Acceptance: one click or key on the band opens the pane, captured live at 190 and 110 columns.
+
 ### Subagents and parallel runs — use and clean up (user, 2026-10-17)
 
 51. **Every subagent, driver and worktree started is reaped when its work ends, and a cap holds
