@@ -8,8 +8,8 @@
 import type { HarnessRow, PaneTab, RowStage } from '../types'
 import type { Ui } from './draw'
 import {
-  costText, countsText, cycleRun, doingText, elapsedText, inStageText, isActing, lastStep, latestRound, openingOrder, otherRunLabel,
-  pickRun, railItems, rankedProblems, restText, roundHeading, roundText, runCount, runPosition, runState, severityOf,
+  costText, countsText, cycleRun, doingOf, elapsedText, inStageText, isActing, lastStep, latestRound, openingOrder, otherRunLabel,
+  pickRun, railItems, rankedProblems, restLine, roundHeading, roundText, runCount, runPosition, runState, severityOf,
   topFinding, waitsOnYou, youLine,
 } from './status'
 import type { RailItem, RailMark } from './status'
@@ -227,7 +227,8 @@ export function headerLine(r: HarnessRow, c: PaneCtx): Line {
 }
 
 const nowLine = (r: HarnessRow, c: PaneCtx, compact: boolean): Line => {
-  const left: Line = [glyphSeg(nowGlyph(r, c.tick)), seg(compact ? ' ' : ' Now   ', { dim: true }), seg(doingText(r))]
+  const d = doingOf(r)
+  const left: Line = [glyphSeg(nowGlyph(r, c.tick)), seg(compact ? ' ' : ' Now   ', { dim: true }), seg(d.text, d.canned ? { dim: true } : {})]
   return leftRight(left, [fs(roundText(r, compact), { drop: 1 }), fs(inStageText(r, c.nowMs, compact), { sep: ' · ', drop: 2 })], c.width, 20)
 }
 
@@ -259,8 +260,8 @@ function nowFindings(r: HarnessRow, c: PaneCtx, compact: boolean): Line[] {
   const out: Line[] = [clipLine([seg(heading, { bold: true })], c.width)]
   const ranked = rankedProblems(rd)
   ranked.slice(0, 2).forEach(p => out.push(problemLine(p, c.width, compact)))
-  const rest = restText(rd, 2)
-  if (rest !== '') out.push(clipLine([seg(`     +${rest} · Findings ${compact ? '' : '('}${TAB_NUM.findings}${compact ? '' : ')'}`, { dim: true })], c.width))
+  const rest = restLine(rd, 2)
+  if (rest !== '') out.push(clipLine([seg(`     ${rest} · Findings ${compact ? '' : '('}${TAB_NUM.findings}${compact ? '' : ')'}`, { dim: true })], c.width))
   return out
 }
 
@@ -353,11 +354,12 @@ export function bandLines(ordered: readonly HarnessRow[], o: { width: number; no
   const compact = w < 150
   const more = ordered.length - 1
   const y = youLine(r)
+  const d = doingOf(r)
   const row1 = fit([
     { parts: [glyphSeg(stateGlyph(r, o.tick))], fixed: true },
     fs('harness', { sep: ' ', drop: 6, dim: true }),
     fs(r.slug, { sep: ' ', bold: true }),
-    fs(doingText(r), { sep: ' · ', drop: 1, min: 16 }),
+    fs(d.text, { sep: ' · ', drop: 1, min: 16, dim: d.canned }),
     y.you ? fs(`asks you: ${y.text}`, { sep: ' · ', tint: 'claude', bold: true }) : fs(''),
     fs(roundText(r, compact), { sep: ' · ', drop: 4 }),
     fs(inStageText(r, o.nowMs, true), { sep: ' · ', drop: 5 }),
@@ -400,22 +402,32 @@ const nowOf = (o: Partial<NonNullable<HarnessRow['now']>>): NonNullable<HarnessR
 })
 
 const csvExport = withSeverity(base('csv-export', {
-  stage: 'setgoal', round: 2, started_at: iso(72 * MIN), total: 3,
-  rounds: [{
-    round: 1, sound: false,
-    problems: sev(
-      ['major', '"export button" has no check that a file actually downloads — the acceptance cannot be tested'],
-      ['major', 'the large-report subgoal edits the auth middleware, outside the plan'],
-      ['nit', 'subgoal titles mix verbs and nouns'],
-      ['major', 'no subgoal covers an empty report'],
-      ['major', 'the goal spec names no column order for the file'],
-    ),
-  }],
+  stage: 'setgoal', round: 3, started_at: iso(72 * MIN), total: 3,
+  rounds: [
+    {
+      round: 1, sound: false,
+      problems: sev(
+        ['major', '"export button" has no check that a file actually downloads — the acceptance cannot be tested'],
+        ['major', 'the large-report subgoal edits the auth middleware, outside the plan'],
+        ['nit', 'subgoal titles mix verbs and nouns'],
+        ['major', 'no subgoal covers an empty report'],
+        ['major', 'the goal spec names no column order for the file'],
+      ),
+    },
+    {
+      round: 2, sound: false,
+      problems: sev(
+        ['minor', 'the empty-report subgoal does not say what the file contains'],
+        ['blocker', 'the column order is still unspecified, so two subgoals can disagree on it'],
+        ['minor', 'subgoal s3 repeats the download check of s1'],
+      ),
+    },
+  ],
   now: nowOf({
-    stage: 'setgoal', round: 2, cost_usd: 3.4, at: iso(12_000), since: iso(6 * MIN),
-    doing: 'SetGoal is rewriting the spec — critique round 1 rejected it (4 major, 1 nit)',
+    stage: 'setgoal', round: 3, cost_usd: 3.4, at: iso(12_000), since: iso(6 * MIN),
+    doing: 'SetGoal is rewriting the spec — critique round 2 rejected it (1 blocker, 2 minor)',
     last_step: 'edited the goal spec — split "export button" into two subgoals',
-    next: 'critique round 2 judges the new spec, then 3 subgoals are built',
+    next: 'critique round 3 judges the new spec, then 3 subgoals are built',
   }),
 }))
 
@@ -427,15 +439,11 @@ export function demoRows(s: DemoScenario): HarnessRow[] {
       return [csvExport]
     case 'parallel':
       return [
-        base('tidy-exports', {
-          stage: 'implement', stalled: true, started_at: iso(5 * 60 * MIN), passed: 2, total: 4,
-          now: nowOf({ stage: 'implement', doing: 'Subgoal s3 is being built', round: null, at: iso(3 * 60 * MIN), since: iso(3 * 60 * MIN), last_step: 'ran the export tests' }),
-        }),
         withSeverity({
-          ...csvExport, stage: 'implement', round: 2, passed: 1,
-          rounds: [csvExport.rounds[0]!, { round: 2, sound: true, problems: [] }],
+          ...csvExport, stage: 'implement', round: 3, passed: 1,
+          rounds: [...csvExport.rounds, { round: 3, sound: true, problems: [] }],
           now: nowOf({
-            stage: 'implement', round: 2, cost_usd: 5.15, at: iso(8_000), since: iso(4 * MIN),
+            stage: 'implement', round: 3, cost_usd: 5.15, at: iso(8_000), since: iso(4 * MIN),
             doing: 'Subgoal s2 is being built — the date range check',
             last_step: 'edited src/export/range.ts — added the end-before-start check', next: 'its gate judges s2, then s3 starts',
           }),
