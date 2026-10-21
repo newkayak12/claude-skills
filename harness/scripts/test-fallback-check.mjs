@@ -1,7 +1,7 @@
 // fallback-check regressions: 0% goal gate must not be COMPLETE; "todo list feature" is a real title.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, utimesSync, realpathSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, utimesSync, realpathSync, symlinkSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -55,7 +55,7 @@ test('bare "TODO" title is still a placeholder', () => {
 // ---- now.json, --list, --show (card 34) ----
 const NOW_KEYS = ['stage', 'doing', 'round', 'last_step', 'next', 'waiting', 'cost_usd', 'at', 'since'];
 const ROW_KEYS = [
-  'dir', 'failed', 'max_critique_rounds', 'now', 'passed', 'round', 'rounds',
+  'dir', 'failed', 'failures', 'max_critique_rounds', 'now', 'passed', 'round', 'rounds',
   'severity', 'slug', 'stage', 'stalled', 'started_at', 'total', 'waiting',
 ];
 const HOUR = 3600 * 1000;
@@ -670,4 +670,146 @@ test('bare RUN_DIR keeps exit 0, 1 and 2', () => {
   assert.equal(run(makeRun({ matchPct: 0 })).status, 1);
   assert.equal(run(join(tmpdir(), 'fbn-nope-xyz')).status, 2);
   assert.equal(spawnSync('node', [CHECK], { encoding: 'utf8' }).status, 2);
+});
+
+// ---- failures[]: what failed, why, and what happens next (F1-US-3, F1-US-5) ----
+
+const FAIL_KEYS = ['at', 'key', 'next_step', 'reason', 'severity', 'what'];
+const failuresOf = (files, manifest) => {
+  const { root } = repoWithRuns({ r: { files, ...(manifest ? { manifest } : {}) } });
+  return listJson(root)[0].failures;
+};
+const GATE_NO = { pass: false, reason: 'tests are missing', gaps: ['no test for the empty list'] };
+
+test('a row with nothing failed has failures: []', () => {
+  assert.deepEqual(failuresOf({ '01-plan.md': 'p' }), []);
+  assert.deepEqual(failuresOf({ 'subgoals/s1/gate-1.json': { pass: true, reason: 'ok' } }), []);
+});
+
+test('gate-<n>.json pass:false is info "retry n/(max_retries+1)" with the shape {key, at, what, reason, next_step, severity}', () => {
+  const { root, dirs } = repoWithRuns({ r: { manifest: { request: 'r', max_retries: 2 }, files: { 'subgoals/s1/gate-1.json': GATE_NO, 'subgoals/s1/gate-2.json': { pass: false, reason: 'still missing' } } } });
+  const f = listJson(root)[0].failures;
+  assert.equal(f.length, 2);
+  for (const x of f) assert.deepEqual(Object.keys(x).sort(), FAIL_KEYS);
+  const one = f.find((x) => x.next_step === 'retry 1/3');
+  const two = f.find((x) => x.next_step === 'retry 2/3');
+  assert.ok(one && two, JSON.stringify(f));
+  assert.equal(one.what, 'QualityGate s1');
+  assert.equal(one.severity, 'info');
+  assert.equal(one.reason, 'tests are missing; no test for the empty list');
+  assert.equal(two.reason, 'still missing');
+  assert.notEqual(one.key, two.key);
+  assert.equal(one.at, statSync(join(dirs.r, 'subgoals', 's1', 'gate-1.json')).mtimeMs);
+});
+
+test('max_retries defaults to 2 when the manifest has none, and is read when it has', () => {
+  assert.equal(failuresOf({ 'subgoals/s1/gate-1.json': GATE_NO })[0].next_step, 'retry 1/3');
+  assert.equal(failuresOf({ 'subgoals/s1/gate-1.json': GATE_NO }, { request: 'r', max_retries: 4 })[0].next_step, 'retry 1/5');
+});
+
+test('a goal gate fail with no 05-report.md is info "retry n/(max_retries+1)"; n counts the 04-goal-gate*.json files, min 1', () => {
+  const gate = { match_pct: 60, pass: false, reason: 'two criteria unmet', out_of_spec: ['no CLI flag'] };
+  const [one] = failuresOf({ '04-goal-gate.json': gate });
+  assert.deepEqual([one.what, one.next_step, one.severity], ['goal gate', 'retry 1/3', 'info']);
+  assert.equal(one.reason, 'two criteria unmet; no CLI flag');
+  const [two] = failuresOf({ '04-goal-gate.json': gate, '04-goal-gate.r1.json': gate });
+  assert.equal(two.next_step, 'retry 2/3');
+  const [low] = failuresOf({ '04-goal-gate.json': { match_pct: 89 } });
+  assert.equal(low.next_step, 'retry 1/3');
+  assert.deepEqual(failuresOf({ '04-goal-gate.json': { match_pct: 95 } }), []);
+  assert.deepEqual(failuresOf({ '04-goal-gate.json': { match_pct: 50, pass: true } }), []);
+});
+
+test('a goal gate fail with 05-report.md present is "gave up" (--show: --list drops a reported run)', () => {
+  const { dirs } = repoWithRuns({ r: { files: { '04-goal-gate.json': { match_pct: 40, reason: 'spec not met' }, '05-report.md': 'a report that is long enough' } } });
+  const f = showRow(dirs.r).failures;
+  assert.equal(f.length, 1);
+  assert.deepEqual([f[0].what, f[0].next_step, f[0].severity, f[0].reason], ['goal gate', 'gave up', 'gave up', 'spec not met']);
+});
+
+test('now.json waiting.who "you" is "needs you" with the stage in what; a vendor wait and a stale now.json are not', () => {
+  const at = freshAt();
+  const mk = (waiting, nowAt = at) => ({ '01-plan.md': 'p', 'now.json': { ...full({ stage: 'implement', waiting }), at: nowAt, since: nowAt } });
+  const [f] = failuresOf(mk({ who: 'you', what: 'pick a vendor' }));
+  assert.deepEqual([f.what, f.reason, f.next_step, f.severity], ['implement', 'pick a vendor', 'needs you', 'needs you']);
+  assert.deepEqual(Object.keys(f).sort(), FAIL_KEYS);
+  assert.deepEqual(failuresOf(mk({ who: 'vendor', what: 'codex running' })), []);
+  assert.deepEqual(failuresOf(mk(null)), []);
+  assert.deepEqual(failuresOf(mk({ who: 'you', what: 'x' }, new Date(Date.now() - HOUR).toISOString())), []);
+});
+
+test('result.json passed:false is "gave up", with or without stalled:true', () => {
+  const f = failuresOf({
+    'subgoals/a/result.json': { passed: false, reason: 'retries spent' },
+    'subgoals/b/result.json': { passed: false, stalled: true, reason: 'no progress between attempts' },
+    'subgoals/c/result.json': { passed: true },
+  });
+  assert.equal(f.length, 2);
+  const a = f.find((x) => x.what === 'subgoal a');
+  const b = f.find((x) => x.what === 'subgoal b');
+  for (const x of [a, b]) assert.deepEqual([x.next_step, x.severity], ['gave up', 'gave up']);
+  assert.equal(a.reason, 'retries spent');
+  assert.equal(b.reason, 'no progress between attempts');
+});
+
+test('a rejected critique is "retry n/<max_critique_rounds>" below the cap and "continuing" at it, both info', () => {
+  const crit = (text) => ({ sound: false, problems: [{ severity: 'major', text }] });
+  const files = { '02-critique.r1.json': crit('acceptance is vague'), '02-critique.json': crit('gate is unwinnable') };
+  const f = failuresOf(files);
+  assert.equal(f.length, 2);
+  const r1 = f.find((x) => x.reason === 'acceptance is vague');
+  const r2 = f.find((x) => x.reason === 'gate is unwinnable');
+  assert.deepEqual([r1.what, r1.next_step, r1.severity], ['Critique', 'retry 1/2', 'info']);
+  assert.deepEqual([r2.next_step, r2.severity], ['continuing', 'info']);
+  const wide = failuresOf(files, { request: 'r', max_critique_rounds: 3 });
+  assert.deepEqual(wide.map((x) => x.next_step).sort(), ['retry 1/3', 'retry 2/3']);
+  assert.deepEqual(failuresOf({ '02-critique.json': { sound: true, problems: [] } }), []);
+});
+
+test('the reason keeps the old critiqueReason, gateReason and goalReason sources, joined with "; "', () => {
+  const [c] = failuresOf({ '02-critique.json': { sound: false, reason: 'not buildable', blocking: ['no tests'], problems: ['Nit: wording', { text: 'vague gate' }] } });
+  assert.equal(c.reason, 'not buildable; no tests; Nit: wording; vague gate');
+  const [g] = failuresOf({ 'subgoals/s1/gate-1.json': { pass: false, reason: 'r', gaps: [{ gap: 'g1' }, { reason: 'g2' }, 7] } });
+  assert.equal(g.reason, 'r; g1; g2');
+  const [o] = failuresOf({ '04-goal-gate.json': { match_pct: 1, reason: 'r', out_of_spec: ['o1'] } });
+  assert.equal(o.reason, 'r; o1');
+});
+
+test('a multi-line reason becomes one line', () => {
+  const [f] = failuresOf({ 'subgoals/s1/result.json': { passed: false, reason: 'first line\n\n  second\tline \r\n third  ' } });
+  assert.equal(f.reason, 'first line second line third');
+});
+
+test('a reason over 120 chars is its first 119 plus an ellipsis; exactly 120 is unchanged', () => {
+  const reason = (n) => failuresOf({ 'subgoals/s1/result.json': { passed: false, reason: 'x'.repeat(n) } })[0].reason;
+  const cut = reason(121);
+  assert.equal(cut.length, 120);
+  assert.equal(cut, `${'x'.repeat(119)}…`);
+  assert.equal(reason(120), 'x'.repeat(120));
+  assert.equal(reason(119), 'x'.repeat(119));
+});
+
+test('the cut is made after collapsing whitespace, not before', () => {
+  const spaced = `${'ab '.repeat(40)}end`;
+  const [f] = failuresOf({ 'subgoals/s1/result.json': { passed: false, reason: spaced.replace(/ /g, '\n\n   ') } });
+  assert.equal(f.reason, `${spaced.slice(0, 119)}…`);
+});
+
+test('no reason in the stage file reads "no reason recorded"', () => {
+  for (const files of [
+    { 'subgoals/s1/result.json': { passed: false } },
+    { 'subgoals/s1/result.json': { passed: false, reason: '   \n ' } },
+    { 'subgoals/s1/gate-1.json': { pass: false } },
+    { '04-goal-gate.json': { match_pct: 10 } },
+    { '02-critique.json': { sound: false, problems: [] } },
+  ]) assert.equal(failuresOf(files)[0].reason, 'no reason recorded', JSON.stringify(files));
+});
+
+test('failures are sorted oldest first and --show returns the same failures as --list', () => {
+  const { root, dirs } = repoWithRuns({ r: { files: { 'subgoals/s1/gate-1.json': GATE_NO, 'subgoals/s1/result.json': { passed: false } } } });
+  const t = new Date(Date.now() - 60 * 1000);
+  utimesSync(join(dirs.r, 'subgoals', 's1', 'result.json'), t, t);
+  const f = listJson(root)[0].failures;
+  assert.deepEqual(f.map((x) => x.what), ['subgoal s1', 'QualityGate s1']);
+  assert.deepEqual(showRow(dirs.r).failures, f);
 });

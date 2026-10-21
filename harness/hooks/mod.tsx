@@ -6,9 +6,10 @@ import { MARK, TINT, bar, cap, fmt, isKorean, tabs } from './draw'
 import type { Mark } from './draw'
 import { DEMO_NOW, bandLines, demoRows, innerWidth, paneContent, paneHead, parseDemoArg, renderLines, tabRowPlan } from './harness-draw'
 import type { PaneCtx, TabLabels } from './harness-draw'
+import type { RowFailure } from './status'
 import {
-  critiqueReason, cycleRun, flowLines, frozenOrder, gateReason, goalReason, listArgv, markLooked, openTab, otherRunLabel, parseRows,
-  paneKey, pickRun, runPosition, shownRows, spinnerPlan,
+  cycleRun, failureToast, failuresOf, flowLines, frozenOrder, listArgv, markLooked, openTab, otherRunLabel, parseRow, parseRows,
+  paneKey, pickRun, reasonFor, runPosition, shownRows, showArgv, spinnerPlan,
 } from './status'
 
 const last = atom({ plugin: 'harness', key: 'last' } as const, null as Decision | null)
@@ -146,8 +147,9 @@ const records = (v: unknown) =>
   (Array.isArray(v) ? (v as unknown[]) : []).map(asRecord).filter((r): r is Record<string, unknown> => r !== undefined && typeof r.id === 'string')
 
 // The files of one run, .harness-run/<slug>/ (the Flow and Gate rules tabs); no slug: the newest live run, else the
-// newest by time. Which runs are open, and which one the pane shows, is the node list's and status.ts's call. Read only.
-async function scanRun($: EngineInterface, slug: string | null): Promise<RunInfo | null> {
+// newest by time. Which runs are open, and which one the pane shows, is the node list's and status.ts's call. Why a
+// stage failed is the node's too: `failures` are the row's, and reasonFor reads them. Read only.
+async function scanRun($: EngineInterface, slug: string | null, failures: readonly RowFailure[]): Promise<RunInfo | null> {
   const now = await $.clock.now()
   const cands: { slug: string; files: Ent[]; subs: Record<string, Ent[]>; time: number; finished: boolean }[] = []
   for (const d of await ls($, RUNS)) {
@@ -202,7 +204,7 @@ async function scanRun($: EngineInterface, slug: string | null): Promise<RunInfo
     const gates: RunSub['gates'] = []
     for (let n = 1; n <= gn; n++) {
       const g = n === gn ? lastGate : await readJson($, `${dir}/gate-${n}.json`, sub.find(f => f.name === `gate-${n}.json`))
-      if (g !== undefined) gates.push({ n, pass: g.pass === true, reason: gateReason(g) })
+      if (g !== undefined) gates.push({ n, pass: g.pass === true, reason: g.pass === true ? '' : reasonFor(failures, `${pick.slug}|gate|${id}|${n}`) })
     }
     let state: Mark = impl > 0 ? 'running' : 'pending'
     if (result?.passed === true) state = 'done'
@@ -259,8 +261,8 @@ async function scanRun($: EngineInterface, slug: string | null): Promise<RunInfo
     live: isLive(pick), finished: pick.finished, stages, subs,
     done: subs.filter(x => x.state === 'done').length, total: subs.length,
     now: nowInfo, match, pass: goalPass,
-    critique: { sound: typeof critique?.sound === 'boolean' ? critique.sound : null, reason: critiqueReason(critique) },
-    goalReason: goalReason(gate),
+    critique: { sound: typeof critique?.sound === 'boolean' ? critique.sound : null, reason: critique?.sound === false ? reasonFor(failures, `${pick.slug}|critique`) : '' },
+    goalReason: goalPass === false ? reasonFor(failures, `${pick.slug}|goal`) : '',
     lastMs: pick.time,
   }
 }
@@ -344,70 +346,50 @@ async function countStages($: EngineInterface, cwd: string, now: number): Promis
   return out
 }
 
-// Reject / failed / complete events of the fallback runs in .harness-run/<slug>/ (and finished graph runs),
-// each read from a file written after `start`; keys make them once per (run, where, kind, attempt). Read only.
-//   rejected  02-critique.json sound:false; subgoals/<id>/gate-<n>.json pass:false; 04-goal-gate.json
-//             pass:false (or match_pct < 90) before 05-report.md (each rewrite is one more attempt)
-//   failed    subgoals/<id>/result.json passed:false (retries spent); a failing goal gate once 05-report.md exists
-//   complete  05-report.md written with no failure; a graph run whose report node is done
-// `outcome` is the run outcome trophy counts (a retry or an attempt-level reject carries none)
+// The events to show: each failure the node gives (`failures` of an open run's row, and of a run finished since the
+// session started, which --list leaves out so `--show` is asked, once) written after `start`, and `complete` for a
+// finished run with no failure that gave up. The node decides reason, next step and severity (status.ts failureToast
+// words them); nothing here reads a run file for them. A key shown once is not shown again (the severity is part of the
+// key: a goal gate retry and its later gave-up share the node's key). Read only.
+// `outcome` is the run outcome trophy counts: gave up on a subgoal is fail, on the goal gate reject, a clean report pass
 type RunOutcome = 'pass' | 'reject' | 'fail'
-type RunEvent = { key: string; message: string; outcome?: RunOutcome }
-async function runEvents($: EngineInterface, start: number, tries: Map<string, number>): Promise<RunEvent[]> {
-  const out: RunEvent[] = []
-  const emit = (run: string, where: string, kind: string, attempt: number, max: number | string, outcome?: RunOutcome) =>
-    out.push({ key: `${run}|${where}|${kind}|${attempt}`, message: `harness ${run}: ${kind} — ${where} (${attempt}/${max})`, ...(outcome ? { outcome } : {}) })
-  // a file rewritten by each retry counts one attempt per write
-  const nth = (run: string, where: string, mtime: number) => {
-    const id = `${run}|${where}|${mtime}`
-    if (!tries.has(id)) tries.set(id, [...tries.keys()].filter(k => k.startsWith(`${run}|${where}|`)).length + 1)
-    return tries.get(id)!
+type RunEvent = { key: string; run: string; text: string; pushText: string | null; timeoutMs?: number; outcome?: RunOutcome }
+const GAVE_UP_OUTCOME: Record<string, RunOutcome> = { result: 'fail', goal: 'reject' } // by the kind in the node's key `<run>|<kind>|…`
+
+const failureEvent = (run: string, f: RowFailure): RunEvent => {
+  const outcome = f.severity === 'gave up' ? GAVE_UP_OUTCOME[f.key.split('|')[1] ?? ''] : undefined
+  return { key: `${f.key}|${f.severity}`, run, ...failureToast(run, f), ...(outcome ? { outcome } : {}) }
+}
+
+// one finished run, as the node shows it; no answer (non-zero exit, timeout, not a row) is null
+async function showRun($: EngineInterface, dir: string): Promise<HarnessRow | null> {
+  try {
+    const out = await $.process.run(showArgv($.plugin.root, dir), { timeoutMs: LIST_TIMEOUT_MS })
+    return out.exitCode === 0 ? parseRow(out.stdout) : null
+  } catch {
+    return null
   }
+}
+
+async function runEvents($: EngineInterface, start: number, open: readonly HarnessRow[], asked: Set<string>): Promise<RunEvent[]> {
+  const out: RunEvent[] = []
+  const add = (row: HarnessRow) => {
+    for (const f of failuresOf(row)) if (f.at > start) out.push(failureEvent(row.slug, f))
+  }
+  for (const row of open) add(row)
+  const cwd = await $.session.cwd()
   for (const d of await ls($, RUNS)) {
     // graph runs (broker/) are pushed by the graph mod, which sees their rejects too
-    if (d.kind !== 'dir' || d.name === 'broker') continue
-    const base = `${RUNS}/${d.name}`
-    const files = await ls($, base)
-    const file = (name: string) => files.find(f => f.name === name)
-    const run = d.name
-    const mf = file('manifest.json')
-    const manifest = mf ? await readJson($, `${base}/manifest.json`, mf) : undefined
-    const max = Number.isInteger(manifest?.max_retries) ? Number(manifest?.max_retries) : 2
-    let failed = false
-
-    const crit = file('02-critique.json')
-    if (crit !== undefined && crit.mtimeMs > start && (await readJson($, `${base}/02-critique.json`, crit))?.sound === false) {
-      emit(run, 'Critique', 'rejected', nth(run, 'Critique', crit.mtimeMs), 2)
+    if (d.kind !== 'dir' || d.name === 'broker' || asked.has(d.name)) continue
+    const report = (await ls($, `${RUNS}/${d.name}`)).find(f => f.name === '05-report.md')
+    if (report === undefined || report.mtimeMs <= start) continue
+    const row = await showRun($, `${cwd}/${RUNS}/${d.name}`)
+    if (row === null) continue // asked again next tick
+    asked.add(d.name)
+    add(row)
+    if (!failuresOf(row).some(f => f.severity === 'gave up')) {
+      out.push({ key: `${d.name}|complete`, run: d.name, text: `harness ${d.name}: complete — Report (1/1)`, pushText: null, outcome: 'pass' })
     }
-
-    for (const sg of await ls($, `${base}/subgoals`)) {
-      if (sg.kind !== 'dir') continue
-      const dir = `${base}/subgoals/${sg.name}`
-      const sub = await ls($, dir)
-      for (const g of sub) {
-        const n = Number(/^gate-(\d+)\.json$/.exec(g.name)?.[1] ?? 0)
-        if (n === 0 || g.mtimeMs <= start) continue
-        if ((await readJson($, `${dir}/${g.name}`, g))?.pass === false) emit(run, `QualityGate ${sg.name}`, 'rejected', n, max)
-      }
-      const res = sub.find(f => f.name === 'result.json')
-      const r = res ? await readJson($, `${dir}/result.json`, res) : undefined
-      if (r?.passed === false) {
-        failed = true
-        if (res!.mtimeMs > start) emit(run, `subgoal ${sg.name}`, 'failed', Number(r.attempts) || max, max, 'fail')
-      }
-    }
-
-    const reported = file('05-report.md')
-    const gg = file('04-goal-gate.json')
-    if (gg !== undefined && gg.mtimeMs > start) {
-      const g = await readJson($, `${base}/04-goal-gate.json`, gg)
-      if (g?.pass === false || (typeof g?.match_pct === 'number' && g.match_pct < PASS_PCT && g.pass !== true)) {
-        failed = true
-        emit(run, 'goal gate', reported ? 'failed' : 'rejected', nth(run, 'goal gate', gg.mtimeMs), max, reported ? 'reject' : undefined)
-      }
-    }
-
-    if (reported !== undefined && reported.mtimeMs > start && !failed) emit(run, 'Report', 'complete', 1, 1, 'pass')
   }
   return out
 }
@@ -454,7 +436,7 @@ let spinner: { cancel: () => void } | null = null
 async function refreshRun($: EngineInterface) {
   try {
     const v = await view($)
-    const found = v.demo !== null || v.picked === null ? null : await scanRun($, v.picked.slug)
+    const found = v.demo !== null || v.picked === null ? null : await scanRun($, v.picked.slug, failuresOf(v.picked))
     await update($, run, () => found)
   } catch {
     // an unreadable run dir leaves the last run as it was
@@ -520,18 +502,13 @@ export const register: Register = on => {
     frozen = null
     kick = () => syncSpinner($)
 
-    // PushNotification's result: { message, pushSent?, localSent?, disabledReason? } (user_present at the terminal);
-    // not sent or thrown: the same line as a toast
+    // a failure that needs you or gave up is pushed as well as toasted; a push not sent or thrown costs nothing more
     async function push(message: string) {
-      let sent = false
       try {
-        const out = (await $.tool.call({ tool: 'PushNotification', message, status: 'proactive' } as never)) as { result?: unknown }
-        const r = asRecord(out?.result)
-        sent = r?.pushSent === true || r?.localSent === true
+        await $.tool.call({ tool: 'PushNotification', message, status: 'proactive' } as never)
       } catch {
         // a failed push is a push not sent
       }
-      if (!sent) $.ui.toast(message)
     }
 
     const startMs = await $.clock.now()
@@ -557,17 +534,18 @@ export const register: Register = on => {
       if (!sent) $.ui.toast(message, { timeoutMs: 8000 })
     }
 
-    // rejects, failures and completions of runs, once each, none from before the session started
+    // failures and completions of runs, once each, none from before the session started
     const told = new Set<string>()
     // one published outcome per (run, outcome): several failed subgoals or a re-written goal gate count once
     const published = new Set<string>()
-    const tries = new Map<string, number>()
+    // finished runs `--show` has answered for
+    const asked = new Set<string>()
     async function notifyRuns() {
       try {
-        for (const ev of await runEvents($, startMs, tries)) {
+        for (const ev of await runEvents($, startMs, await read($, rows), asked)) {
           if (told.has(ev.key)) continue
           told.add(ev.key)
-          const run = ev.key.split('|')[0]
+          const run = ev.run
           if (ev.outcome !== undefined && !published.has(`${run}|${ev.outcome}`)) {
             published.add(`${run}|${ev.outcome}`)
             try {
@@ -576,7 +554,9 @@ export const register: Register = on => {
               // fail open: a lost outcome never costs the push
             }
           }
-          await push(ev.message.slice(0, 200))
+          if (ev.timeoutMs === undefined) $.ui.toast(ev.text)
+          else $.ui.toast(ev.text, { timeoutMs: ev.timeoutMs })
+          if (ev.pushText !== null) await push(ev.pushText)
         }
       } catch {
         // fail open: a read error is no event
