@@ -34,9 +34,14 @@ export type SummaryTaskEntry = SummaryTask & {
   task_id: string; created_at: number | null
   live: boolean; age_ms: number | null // age_ms: stalled tasks only, under 24 h
   items: SummaryItem[]; workers: SummaryWorker[]; handoffs: Handoff[]
+  // an S task's harness run (slug, moved lately); null for a package EPIC
+  harness: { slug: string | null; moving: boolean } | null
 }
 // `task` (the running task, or --task) stays as before; `tasks` is live newest-created first, then stalled
 export type SummaryOutput = { status: StatusInfo; tasks: SummaryTaskEntry[]; task: SummaryTask | null }
+
+// the pane's tabs, in key order
+export type PaneView = 'floor' | 'stories' | 'decisions' | 'log' | 'report'
 
 // `view.mjs --once --format teams` teams part (teams/scripts/lib/view-status.mjs teamsView)
 export type NowLine = { team: string; key: string; node: string; agent: string | null; elapsed_ms: number | null }
@@ -71,7 +76,14 @@ declare module 'claude-code' {
       watch: string[]
       status: StatusInfo | null
       summary: SummaryTask | null
-      view: 'teams' | 'decisions' | 'log' | 'report'
+      view: PaneView
+      // every listed EPIC (live first, then stalled), as the last tick saw them, and the ids of the tick before
+      tasks: SummaryTaskEntry[]
+      taskIds: string[]
+      // the EPIC the pane shows (task_id); null until the first list arrives
+      epic: string | null
+      // the STORYs tab: the row `g` opens and `j`/`k` move, an index into every listed task's rows
+      row: number
       teams: TeamsView | null
       // the Decisions tab: fetched for one task, and one card when one was picked
       decisions: { task_id: string; card: string | null; payload: DecisionsPayload } | null

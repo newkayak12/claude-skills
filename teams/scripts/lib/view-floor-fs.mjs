@@ -173,6 +173,8 @@ export function floorEntry({ m, id, live, age_ms, waiting }, tasksDir, { now = D
     ...summarize(m, { now }),
     ...(waiting ? { state: 'waiting_human' } : {}),
     task_id: m.task_id, created_at: m.created_at || null, live, age_ms,
+    // an S task's harness run: the slug it is known by and whether it moved lately (the row's liveness is item.live)
+    harness: m.harness ? { slug: m.harness.slug || null, moving: !!m.harness.moving } : null,
     ...floorOf(m, floorFacts(m, tasksDir, id, { now }), { now }),
   };
 }
