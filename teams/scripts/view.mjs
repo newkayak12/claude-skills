@@ -24,15 +24,16 @@
 // Both the HTML page's /state.json and --once's text tree come from ONE collect() function
 // (teams/scripts/lib/view-collect.mjs) - this file only renders it two ways.
 import { createServer } from 'node:http';
-import { readFileSync, existsSync, openSync, readSync, fstatSync, closeSync, statSync, realpathSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { readFileSync, existsSync, openSync, readSync, fstatSync, closeSync, statSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tasksRoot } from '../mcp/taskmanager.mjs';
 import { DEFAULT_VIEW_PORT, viewKey } from '../mcp/viewserver.mjs';
 import { collectTask, listTasks } from './lib/view-collect.mjs';
 import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './lib/view-render-text.mjs';
 import { notableEvents, statusLine, HOLD_MS } from './lib/view-events.mjs';
-import { summarize } from './lib/view-summary.mjs';
+import { summarize, waitingCount } from './lib/view-summary.mjs';
+import { samePath, floorTasks, floorEntry } from './lib/view-floor-fs.mjs';
 import { reportPayload } from './lib/view-report.mjs';
 import { teamsView, decisionsView } from './lib/view-status.mjs';
 
@@ -94,10 +95,6 @@ function tailLines(path) {
 // task.json-less dir is never listed, and an unreadable one carries `error`, so unknown = not running.
 // Same directory through different paths (/var -> /private/var, any symlink) must match. A path
 // that no longer exists (a deleted temp repo) falls back to resolve().
-function samePath(p) {
-  try { return realpathSync(p); } catch { return resolve(p); }
-}
-
 function runningModels(tasksDir, cwd) {
   const want = cwd ? samePath(cwd) : null;
   const out = [];
@@ -111,7 +108,10 @@ function runningModels(tasksDir, cwd) {
 }
 
 function statusOutput(tasksDir, cwd) {
-  const models = runningModels(tasksDir, cwd);
+  return statusFrom(runningModels(tasksDir, cwd));
+}
+
+function statusFrom(models) {
   const rows = models.map((m) => {
     const c = m.counts || {};
     const total = Object.values(c).reduce((s, n) => s + (Number(n) || 0), 0);
@@ -125,13 +125,21 @@ function statusOutput(tasksDir, cwd) {
   return JSON.stringify({ line: statusLine(rows), waiting, latest: newest ? newest.task_id : null }) + '\n';
 }
 
-// { status, task }: status is exactly --format status; task is the human summary of --task, else of
-// status.latest, else null (nothing running, or the task file is unreadable).
+// { status, tasks, task }: status is exactly --format status; tasks is every open task of the cwd
+// (floorTasks: live newest created first, then stalled under 24 h with age_ms), each the human summary
+// plus items, workers and handoffs; task is the human summary of --task, else of status.latest, else
+// null (nothing running, or the task file is unreadable).
 function summaryOutput(tasksDir, cwd, taskId) {
-  const status = JSON.parse(statusOutput(tasksDir, cwd));
+  const now = Date.now();
+  const listed = floorTasks({ tasksDir, cwd, now });
+  const status = JSON.parse(statusFrom(listed.filter((x) => x.live && x.m.state === 'running').map((x) => x.m)));
+  // the ⚑ count reads the collected model, so a card parked in a child run (its driver gone on purpose) counts
+  status.waiting = listed.filter((x) => x.live).reduce((s, x) => s + waitingCount(x.m), 0);
   const id = taskId || status.latest;
-  const m = id ? collectTask(tasksDir, id) : null;
-  return JSON.stringify({ status, task: m && !m.error ? summarize(m) : null }) + '\n';
+  const hit = id ? listed.find((x) => x.m.task_id === id) : null;
+  const m = hit ? hit.m : (id ? collectTask(tasksDir, id) : null);
+  const tasks = listed.map((x) => floorEntry(x, tasksDir, { now }));
+  return JSON.stringify({ status, tasks, task: m && !m.error ? summarize(m) : null }) + '\n';
 }
 
 // summaryOutput plus the per-team rows and Now lines (the /teams-status pane while it is open).
