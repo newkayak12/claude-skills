@@ -152,14 +152,6 @@ those, one card per EPIC (43 first; 40 and 41 before 42).
       - session mod (`agents.tsx` reap): lists live subagents, teams drivers and worktrees with age, and
         reaps the finished ones in one action.
 
-52. **Release the tm_clean fix: record `clean` even when nothing was removed**
-    - Why: 2026-10-17, installed teams 0.57.0 records `clean` only when it removed a worktree or
-      branch (`taskmanager.mjs:2420`). After the person deleted worktrees by hand, `tm_clean` removed
-      nothing, wrote no `clean`, and the push hold never released; the session had to run main's
-      `taskmanager.mjs` over stdio. Main already has the fix, unreleased.
-    - Acceptance: teams batch bump carries it; `tm_clean` on an already-clean task appends `clean` and
-      the push hold releases (test exists on main — confirm it runs in the suite).
-
 ### teams plugin bugs
 
 39. **Finish card 39: tool denial in the task manager's own judges, base exclusion before scoring**

@@ -158,6 +158,7 @@ One row per `git worktree list --porcelain` entry of this repo: branch (or detac
 When a `git push` to `main` goes through in one session (`origin main`, `HEAD:main`, `x:main`, or a plain push while on main), every other open session of the same repository that was active in the last 30 minutes gets a message: `main moved to <sha> … Fetch before editing or bumping versions.` At most one message per session every 2 minutes; this session gets a toast `main moved: told N of M`. Headless runs send nothing.
 
 ## Status
+- `0.8.0`: the Memo pane shows each note on one line with its scope and its age in a right-aligned column, old notes by colour; the Guard pane shows one aligned row per stop (time · tool · what · rule · source), a guard deny, a decline and a native stop each with its own mark and colour, and closes on q; both stay on one line at 110 columns, long text ends in `…`.
 - `0.7.0`: `start_band` (`off` default, `recap`, `retro`, `both`) picks what the band shows on a new session; `/board` points to the plugins' `-status` panes.
 - `0.6.0`: `/board` has a Worktrees tab (key 5, `/board worktrees`) with a guarded Clean button for merged worktrees.
 - `0.5.7`: Codex uses an explicit empty, schema-compatible hook overlay because Session's UI hook module is Claude-only; Claude behavior is unchanged and Codex no longer fails plugin initialization. The overlay also leaves out the SessionStart trophy install hook on purpose (trophy is Claude-only).

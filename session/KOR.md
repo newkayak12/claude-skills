@@ -158,6 +158,7 @@ headless 실행(`claude -p`)에서는 이 명령들이 텍스트를 출력합니
 한 세션에서 `main`으로의 `git push`가 성공하면(`origin main`, `HEAD:main`, `x:main`, main 브랜치에서의 그냥 push), 같은 저장소에서 최근 30분 안에 움직인 다른 열린 세션마다 `main moved to <sha> … Fetch before editing or bumping versions.` 메시지가 갑니다. 세션당 2분에 한 번까지이고, 이 세션에는 `main moved: told N of M` toast가 뜹니다. headless 실행은 보내지 않습니다.
 
 ## 상태
+- `0.8.0`: Memo 패널은 메모마다 범위와 오른쪽 열에 맞춘 경과일을 한 줄에 보여 주고, 오래된 메모는 색으로 표시합니다. Guard 패널은 막힌 호출마다 열이 맞는 한 줄(시각 · 도구 · 내용 · 규칙 · 출처)이며, guard 거부·사용자 거절·기본 차단을 각기 다른 표시와 색으로 구분하고 q로 닫힙니다. 둘 다 110칸에서도 한 줄을 지키고 긴 글은 `…`로 끝납니다.
 - `0.7.0`: `start_band`(기본 `off`, `recap`, `retro`, `both`)로 새 세션에서 밴드에 무엇을 보일지 고릅니다. `/board`는 각 플러그인의 `-status` 패널을 가리킵니다.
 - `0.6.0`: `/board`에 Worktrees 탭(키 5, `/board worktrees`)이 생기고, 병합된 worktree를 지우는 확인형 Clean 버튼이 있습니다.
 - `0.5.7`: Session UI 훅 모듈은 Claude 전용이므로 Codex는 명시적인 빈 스키마 호환 훅 오버레이를 사용합니다. Claude 동작은 그대로이고 Codex 플러그인 초기화 오류는 사라집니다. 오버레이는 SessionStart의 trophy 설치 훅도 일부러 넣지 않습니다(trophy는 Claude 전용).
