@@ -1,5 +1,5 @@
 // demo-frames.ts shrinks() decides which cells of a row give way. flexShrink={0} pins a cell, as in Ink.
-// row() cuts shrinking cells from the last index backwards, so a pinned cell placed LAST is the one the old
+// row() cuts shrinking cells highest flexShrink first, the last index first among equals, so a pinned cell placed LAST is the one the old
 // `flexShrink !== undefined` condition would have cut first. Each pinned case puts the shrinking cell before it.
 import { test, expect } from 'claude-code/testing'
 
