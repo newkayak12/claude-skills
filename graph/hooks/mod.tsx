@@ -1,160 +1,50 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { GraphNode, GraphRun, Snap } from '../types'
-import { MARK, TINT, bar, cap, fmt, isKorean, rail, tabs } from './draw'
-import type { Mark } from './draw'
-import { active, detailRows, flowGroups } from './status'
-import type { FlowGroup, FlowLine } from './status'
+import type { GraphRow, OpenedRun } from '../types'
+import { fmt, isKorean, tabs } from './draw'
+import { bandLines, cells, detailLines, footerKeys, paneBody, renderLines } from './graph-draw'
+import type { PaneCtx } from './graph-draw'
+import { cycleRun, frozenOrder, listArgv, markLooked, paneKey, paneSlash, parseOpenArg, parseRow, parseRows, pickRun, runPosition, showArgv, spinnerPlan, standalone } from './status'
 
-// Read only: the mod lists and reads the broker's run files and writes nothing.
-const snap = atom({ plugin: 'graph', key: 'snap' } as const, null as Snap | null)
-const view = atom({ plugin: 'graph', key: 'view' } as const, 'flow' as 'flow' | 'detail')
+// Read only: the mod runs the node readout (`broker.mjs runs --list/--show --json`) and writes nothing.
+const tab = atom({ plugin: 'graph', key: 'view' } as const, 'flow' as 'flow' | 'detail')
 const lang = atom({ plugin: 'graph', key: 'lang' } as const, 'en' as 'en' | 'ko')
+// the open runs of the last good list; [] until the readout first answers
+const rows = atom({ plugin: 'graph', key: 'rows' } as const, [] as GraphRow[])
+// the run the pane shows, by run_id; null (or one no longer listed): opening order decides
+const selected = atom({ plugin: 'graph', key: 'selected' } as const, null as string | null)
+// per run_id, the rejects the person has seen
+const looked = atom({ plugin: 'graph', key: 'looked' } as const, {} as Record<string, number>)
+// a run opened by `/graph-status open <run-file> <owner-key>`: not in the band or the [ ] list
+const opened = atom({ plugin: 'graph', key: 'opened' } as const, null as OpenedRun | null)
+const spin = atom({ plugin: 'graph', key: 'spin' } as const, 0)
 
 const PANE = 'graph-status'
-const LINE_MAX = 24 // flow lines / detail rows drawn before "+n more"
-const NOW_MAX = 3 // running nodes named on the Now lines
-const DIR = '.harness-run/broker/runs'
-const FILE = /^[0-9a-f-]+\.json$/ // not the `<file>.<pid>.<uuid>.tmp` the store renames from
-const MAX_BYTES = 4 * 1024 * 1024 // $.fs.read rejects more
-const LIVE_MS = 2 * 60 * 60 * 1000
-const TICK_MS = 3000
-const BAR = 24
+const TICK_MS = 5000
+const SPIN_MS = 800 // a spinner frame; only while a shown run acts
+const LIST_TIMEOUT_MS = 10_000
 
 const en = {
-  tabFlow: 'Flow', tabDetail: 'Detail',
-  now: 'Now', next: 'Next', blockedAt: 'Blocked at', allDone: 'All done', nothing: 'Nothing to run',
-  stateRunning: 'running', stateBlocked: 'blocked', stateComplete: 'finished',
-  headLine: '{state} · {done}/{total}', gates: '{done}/{total} gates', goalGate: 'goal gate {pct}%',
-  stagePlan: 'Plan', stageSetgoal: 'SetGoal', stageCritique: 'Critique', stageBuild: 'Build', stageGate: 'Goal gate', stageReport: 'Report',
-  nodeImplement: 'impl', nodeTest: 'test', nodeGate: 'gate',
-  attempt: '(attempt {n})', feedback: 'feedback',
-  noRun: 'No graph run in this folder.', tooBig: 'This run file is too large to show.',
-  more: '+{n} more', cmdDesc: 'Open or close the graph status pane', paneOpened: 'pane opened', paneClosed: 'pane closed',
-  closeBtn: 'close [q]',
+  tabFlow: 'Flow', tabDetail: 'Detail', noRun: 'No graph run in this folder.',
+  cmdDesc: 'Open or close the graph status pane', paneOpened: 'pane opened', paneClosed: 'pane closed',
+  closeBtn: 'q', closeWord: 'close', prev: '[ prev', next: 'next ]', bandOpen: 'open',
+  openFailed: 'could not read that run file',
+  attempt: '(attempt {n})', feedback: 'feedback', more: '+{n} more',
 }
 
 // one table, two languages; the type keeps the keys identical
 export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
   en,
   ko: {
-    tabFlow: '흐름', tabDetail: '상세',
-    now: '지금', next: '다음', blockedAt: '막힌 곳', allDone: '모두 끝남', nothing: '실행할 것 없음',
-    stateRunning: '진행 중', stateBlocked: '막힘', stateComplete: '완료',
-    headLine: '{state} · {done}/{total}', gates: '관문 {done}/{total}', goalGate: '목표 관문 {pct}%',
-    stagePlan: '계획', stageSetgoal: '목표 설정', stageCritique: '비평', stageBuild: '구현', stageGate: '목표 관문', stageReport: '보고',
-    nodeImplement: '구현', nodeTest: '테스트', nodeGate: '관문',
-    attempt: '({n}번째 시도)', feedback: '전달된 피드백',
-    noRun: '이 폴더에 그래프 실행이 없습니다.', tooBig: '실행 파일이 너무 커서 보여줄 수 없습니다.',
-    more: '+{n}건 더', cmdDesc: '그래프 상태 창 열기/닫기', paneOpened: '창을 열었습니다', paneClosed: '창을 닫았습니다',
-    closeBtn: '닫기 [q]',
+    tabFlow: '흐름', tabDetail: '상세', noRun: '이 폴더에 그래프 실행이 없습니다.',
+    cmdDesc: '그래프 상태 창 열기/닫기', paneOpened: '창을 열었습니다', paneClosed: '창을 닫았습니다',
+    closeBtn: 'q', closeWord: '닫기', prev: '[ 이전', next: '다음 ]', bandOpen: '열기',
+    openFailed: '그 실행 파일을 읽을 수 없습니다',
+    attempt: '({n}번째 시도)', feedback: '전달된 피드백', more: '+{n}건 더',
   },
 }
 type Key = keyof typeof en
-
-const nodeMark = (state: string): Mark =>
-  state === 'done' ? 'done' : state === 'running' ? 'running' : state === 'failed' ? 'failed' : 'pending'
-
-// graph.mjs settled(): an order-only dep that can no longer change
-const settled = (n: GraphNode) =>
-  n.state === 'done' || n.state === 'skipped' || n.state === 'unreachable' || (n.state === 'failed' && n.final === true)
-
-// graph.mjs unmetDeps(), recomputed here: what still holds a pending node back
-function unmet(run: GraphRun, n: GraphNode): string[] {
-  const get = (id: string) => run.nodes.find(x => x.node_id === id)
-  const data = n.deps.filter(d => get(d)?.state !== 'done')
-  const order = (n.after ?? []).filter(d => {
-    const dep = get(d)
-    return !dep || !settled(dep)
-  })
-  const live =
-    n.stage === 'report' && data.length === 0 && order.length === 0
-      ? run.nodes.filter(x => x !== n && x.stage !== 'report' && (x.state === 'running' || (x.state === 'pending' && unmet(run, x).length === 0)))
-      : []
-  return [...data, ...order, ...live.map(x => x.node_id)]
-}
-
-const readyOf = (run: GraphRun) => run.nodes.filter(n => n.state === 'pending' && unmet(run, n).length === 0)
-
-// graph.mjs runState()
-function runState(run: GraphRun): 'running' | 'blocked' | 'complete' {
-  if (run.nodes.some(n => n.stage === 'report' && n.state === 'done')) return 'complete'
-  const isRunning = run.nodes.some(n => n.state === 'running')
-  if (run.routing_blocked && !isRunning) return 'blocked'
-  return readyOf(run).length === 0 && !isRunning ? 'blocked' : 'running'
-}
-
-const sgOf = (n: GraphNode) => (typeof n.subgoal_id === 'string' && n.subgoal_id !== '' ? n.subgoal_id : null)
-
-// a person's name for a node, never its raw id
-function label(s: (k: Key, v?: Record<string, string | number>) => string, n: GraphNode, how: 'attempt' | 'again') {
-  const sg = sgOf(n)
-  const name = sg !== null ? `${sg} ${s(`node${cap(n.stage)}` as Key)}` : s(`stage${cap(n.stage)}` as Key)
-  if (sg === null && n.attempt <= 1) return name
-  return `${name} ${s(how, { n: n.attempt })}`
-}
-
-function stageMark(nodes: GraphNode[]): Mark {
-  if (nodes.length === 0) return 'pending'
-  if (nodes.some(n => n.state === 'failed')) return 'failed'
-  if (nodes.every(n => n.state === 'done')) return 'done'
-  return nodes.some(n => n.state === 'running' || n.state === 'done') ? 'running' : 'pending'
-}
-
-function model(run: GraphRun) {
-  const nodes = run.nodes.filter(n => n.state !== 'skipped')
-  const last = (stage: string) => nodes.filter(n => n.stage === stage && sgOf(n) === null).at(-1)
-  const single = (stage: string): Mark => {
-    const n = last(stage)
-    return n === undefined ? 'pending' : stageMark([n])
-  }
-  const rail: { key: string; state: Mark }[] = [
-    { key: 'Plan', state: single('plan') },
-    { key: 'Setgoal', state: single('setgoal') },
-    { key: 'Critique', state: single('critique') },
-    { key: 'Build', state: stageMark(nodes.filter(n => sgOf(n) !== null)) },
-    { key: 'Gate', state: single('gate') },
-    { key: 'Report', state: single('report') },
-  ]
-  const state = runState(run)
-  // nothing running yet (a session run never marks a node running): the next stage is the one in progress
-  if (state === 'running' && !rail.some(g => g.state === 'running' || g.state === 'failed')) {
-    const first = rail.find(g => g.state === 'pending')
-    if (first !== undefined) first.state = 'running'
-  }
-  const subgoals = run.spec?.subgoals ?? [...new Set(nodes.map(sgOf).filter((x): x is string => x !== null))].map(id => ({ id, title: '' }))
-  const gateOf = (id: string) => nodes.filter(n => n.stage === 'gate' && sgOf(n) === id).at(-1)
-  const pct = nodes.filter(n => n.stage === 'gate' && sgOf(n) === null && typeof n.result?.match_pct === 'number').at(-1)?.result?.match_pct
-  const failed = nodes.filter(n => n.state === 'failed')
-  return {
-    state,
-    nodes,
-    rail,
-    subgoals,
-    total: subgoals.length,
-    done: subgoals.filter(g => gateOf(g.id)?.state === 'done').length,
-    pct,
-    running: nodes.filter(n => n.state === 'running'),
-    ready: readyOf(run),
-    blocked: failed.find(n => n.final !== true) ?? failed[0] ?? nodes.find(n => n.state === 'pending'),
-    nodeOf: (id: string, stage: string) => nodes.filter(n => n.stage === stage && sgOf(n) === id).at(-1),
-  }
-}
-type Model = ReturnType<typeof model>
-
-// the sentence the pane leads with
-function focus(s: (k: Key, v?: Record<string, string | number>) => string, m: Model) {
-  if (m.state === 'complete') return { kind: 'done', head: s('now'), text: s('allDone'), color: 'success' }
-  if (m.state === 'blocked') {
-    const reason = m.blocked?.result?.reason
-    const what = m.blocked === undefined ? s('nothing') : label(s, m.blocked, 'attempt')
-    return { kind: 'blocked', head: s('blockedAt'), text: reason ? `${what}: ${reason}` : what, color: 'warning' }
-  }
-  const one = m.running[0] ?? m.ready[0]
-  const head = m.running.length > 0 ? s('now') : s('next')
-  return { kind: 'run', head, text: one === undefined ? s('nothing') : label(s, one, 'attempt'), color: 'claude' }
-}
 
 // what scripts/failure-events.mjs returns per failed, reshaped or blocked node: the mod renders it as given
 type FailureEvent = {
@@ -187,14 +77,16 @@ async function fetchFailures($: EngineInterface, file: string): Promise<FailureE
 
 // icon and timeout from the node-given severity and next_step only
 const failureIcon = (ev: FailureEvent) => (ev.next_step === 'needs you' ? '⚠' : ev.severity === 'failure' ? '✗' : '↻')
-const failureLine = (run: GraphRun, ev: FailureEvent) =>
-  `${run.run_id.slice(0, 8)} ${ev.what} failed: ${ev.reason}${ev.next_step === null ? '' : ` → ${ev.next_step}`}`
+const failureLine = (row: GraphRow, ev: FailureEvent) =>
+  `${row.id8} ${ev.what} failed: ${ev.reason}${ev.next_step === null ? '' : ` → ${ev.next_step}`}`
 
-// the run finished: the one event the mod reads from the run file itself
-function completeEvent(run: GraphRun): RunEvent[] {
-  if (runState(run) !== 'complete') return []
-  const report = run.nodes.find(n => n.stage === 'report' && n.state === 'done')
-  return report === undefined ? [] : [{ key: `${run.run_id}:${report.node_id}:complete:${report.attempt}`, kind: 'complete', node: report.node_id, attempt: report.attempt }]
+// the run finished: the one event the mod reads from the row itself (the node decided its state)
+function completeEvent(row: GraphRow): RunEvent[] {
+  if (row.state !== 'complete') return []
+  const report = row.nodes.find(n => n.stage === 'report' && n.state === 'done')
+  if (report === undefined) return []
+  const attempt = report.attempt ?? 1
+  return [{ key: `${row.run_id}:${report.node_id}:complete:${attempt}`, kind: 'complete', node: report.node_id, attempt }]
 }
 
 // PushNotification's result: { message, pushSent?, localSent?, disabledReason? } (user_present at the terminal)
@@ -208,13 +100,108 @@ async function push($: EngineInterface, message: string): Promise<boolean> {
   }
 }
 
-const titleOf = (run: GraphRun) => run.request.split('\n')[0]!.replace(/^\[[^\]]*\]\s*/, '').slice(0, 80)
+// The runs from the node CLI (rule 6: the path through $.plugin.root). A non-zero exit, a timeout, a throw or output
+// that is not a list is no answer: null, and the caller keeps its last good list.
+async function loadRows($: EngineInterface): Promise<GraphRow[] | null> {
+  try {
+    const out = await $.process.run(listArgv($.plugin.root, await $.session.cwd()), { timeoutMs: LIST_TIMEOUT_MS })
+    return out.exitCode === 0 ? parseRows(out.stdout) : null
+  } catch {
+    return null
+  }
+}
+
+// one run file as the node shows it; no answer is null
+async function showRow($: EngineInterface, file: string): Promise<GraphRow | null> {
+  try {
+    const out = await $.process.run(showArgv($.plugin.root, file), { timeoutMs: LIST_TIMEOUT_MS })
+    return out.exitCode === 0 ? parseRow(out.stdout) : null
+  } catch {
+    return null
+  }
+}
+
+// The run_id order `[` / `]` walk, fixed while the listed set is the same. A cache a reload may lose: the order is then worked out again.
+let frozen: string[] | null = null
+// Set at session.start of a session that has a surface; no surface, never set, no timer. Caches a reload may lose.
+let kick: (() => Promise<void>) | null = null
+let spinner: { cancel: () => void } | null = null
+let isRunning = false
+
+// What the pane and band draw: the standalone runs in opening order, the one shown, and the opened run when there is one.
+async function view($: EngineInterface) {
+  const ordered = frozenOrder(standalone(await read($, rows)), await read($, looked), frozen)
+  frozen = ordered.map(r => r.run_id)
+  const sel = await read($, selected)
+  const op = await read($, opened)
+  return { ordered, sel, op, picked: op?.row ?? pickRun(ordered, sel) }
+}
+
+async function paneOpen($: EngineInterface): Promise<boolean> {
+  try {
+    return (await $.ui.panes()).some((p: { id: string }) => p.id === PANE)
+  } catch {
+    return false // panes unreadable: closed
+  }
+}
+
+// The faster interval runs only while a shown run acts: the pane's run, or the band's leading one.
+async function syncSpinner($: EngineInterface) {
+  try {
+    const v = await view($)
+    const shown = (await paneOpen($)) ? [v.picked] : [v.ordered[0] ?? null]
+    const { run: go } = spinnerPlan(shown, (await $.session.surfaces()).length, shown.some(r => r !== null))
+    if (go && spinner === null) spinner = $.clock.every(SPIN_MS, () => step($))
+    else if (!go && spinner !== null) {
+      spinner.cancel()
+      spinner = null
+    }
+  } catch {
+    // a failed check leaves the timer as it was
+  }
+}
+async function step($: EngineInterface) {
+  await syncSpinner($)
+  if (spinner !== null) await update($, spin, n => n + 1)
+}
+
+// The one place the pane is opened from closed (the command and the band's button): the run opening order picks is the
+// run shown from here on, by run_id. Open already: no-op.
+async function openPane($: EngineInterface): Promise<void> {
+  if (await paneOpen($)) return
+  frozen = null // opened from closed: orders again, an unseen reject leads
+  const v = await view($)
+  await update($, selected, () => v.picked?.run_id ?? null)
+  await update($, looked, l => markLooked(l, v.picked))
+  await $.ui.open({ id: PANE, title: 'Graph', focus: true, closeOnEscape: true })
+  await kick?.()
+}
+
+async function closePane($: EngineInterface): Promise<void> {
+  await $.ui.close({ id: PANE })
+  await update($, opened, () => null)
+  await kick?.()
+}
+
+// `[` and `]`: the next run by run_id, marked as looked at; at an end, one run, or an opened run, nothing changes
+async function cycle($: EngineInterface, by: 1 | -1) {
+  const v = await view($)
+  if (v.op !== null) return
+  const id = cycleRun(v.ordered, v.sel, by)
+  if (id === (v.picked?.run_id ?? null)) return
+  await update($, selected, () => id)
+  await update($, looked, l => markLooked(l, pickRun(v.ordered, id)))
+  await kick?.()
+}
 
 export const register: Register = on => {
-  let isRunning = false
-
   on('session.start', async ($, e, next) => {
     if ((await $.session.surfaces()).length === 0) return next(e)
+    // a second session.start (a cleared session) starts over: the old interval ends
+    spinner?.cancel()
+    spinner = null
+    frozen = null
+    kick = () => syncSpinner($)
 
     const startMs = await $.clock.now()
     const pushed = new Set<string>()
@@ -223,25 +210,24 @@ export const register: Register = on => {
     const scanned = new Map<string, number>() // run id -> the file mtime its events were taken from
 
     // a failed, reshaped or blocked node toasts (a gave up also pushes); a finished run pushes (a toast when it is not sent)
-    async function notifyRun(run: GraphRun, mtimeMs: number, name: string) {
+    async function notifyRun(row: GraphRow) {
       try {
         // the events change only when the file does: one script run per write
-        if (scanned.get(run.run_id) === mtimeMs) return
-        const file = `${await $.session.cwd()}/${DIR}/${name}`
-        scanned.set(run.run_id, mtimeMs)
-        const failures = await fetchFailures($, file)
-        const fresh: (RunEvent | FailureEvent)[] = [...failures, ...completeEvent(run)].filter(ev => !pushed.has(ev.key))
+        if (scanned.get(row.run_id) === row.last_change_ms) return
+        scanned.set(row.run_id, row.last_change_ms)
+        const failures = await fetchFailures($, row.file)
+        const fresh: (RunEvent | FailureEvent)[] = [...failures, ...completeEvent(row)].filter(ev => !pushed.has(ev.key))
         for (const ev of fresh) pushed.add(ev.key)
         // a run last written before this session started: what it already holds is not news
-        if (!baselined.has(run.run_id)) {
-          baselined.add(run.run_id)
-          if (mtimeMs < startMs) return
+        if (!baselined.has(row.run_id)) {
+          baselined.add(row.run_id)
+          if (row.last_change_ms < startMs) return
         }
         for (const ev of fresh) {
           // the run outcome trophy counts: one per (run, outcome); a node reject is a retry, not an outcome
           const outcome = ev.kind === 'complete' ? 'pass' : ev.kind === 'failed' || ev.kind === 'blocked' ? 'fail' : undefined
-          if (outcome !== undefined && !published.has(`${run.run_id}:${outcome}`)) {
-            published.add(`${run.run_id}:${outcome}`)
+          if (outcome !== undefined && !published.has(`${row.run_id}:${outcome}`)) {
+            published.add(`${row.run_id}:${outcome}`)
             try {
               await $.state.set({ plugin: 'graph', key: 'outcome' }, { system: 'graph', outcome, at: await $.clock.now() })
             } catch {
@@ -249,7 +235,7 @@ export const register: Register = on => {
             }
           }
           if ('what' in ev) {
-            const line = failureLine(run, ev)
+            const line = failureLine(row, ev)
             const long = ev.severity !== 'info' || ev.next_step === 'needs you'
             const toast = `${failureIcon(ev)} ${line}`
             if (long) $.ui.toast(toast, { timeoutMs: FAILURE_MS })
@@ -257,8 +243,8 @@ export const register: Register = on => {
             if (ev.next_step !== null && PUSHED_STEPS.includes(ev.next_step)) await push($, `graph ${line}`.slice(0, PUSH_MAX))
             continue
           }
-          const max = typeof run.max_retries === 'number' ? `/${run.max_retries}` : ''
-          const message = `graph ${run.run_id.slice(0, 8)}: ${ev.kind} — ${ev.node} (${ev.attempt}${max})`.slice(0, PUSH_MAX)
+          const max = typeof row.max_retries === 'number' ? `/${row.max_retries}` : ''
+          const message = `graph ${row.id8}: ${ev.kind} — ${ev.node} (${ev.attempt}${max})`.slice(0, PUSH_MAX)
           if (!(await push($, message))) $.ui.toast(message)
         }
       } catch {
@@ -266,50 +252,33 @@ export const register: Register = on => {
       }
     }
 
-    // the newest run file; skipped when it is unchanged, kept when it does not parse
+    // the readout again; a failed read leaves the last good list
     async function tick() {
       if (isRunning) return
       isRunning = true
       try {
-        const now = await $.clock.now()
-        const prev = await read($, snap)
-        let entries: { name: string; kind: string; size: number; mtimeMs: number }[]
-        try {
-          entries = await $.fs.list(DIR)
-        } catch {
-          if (prev !== null) await update($, snap, () => null)
-          return
+        const live = await loadRows($)
+        if (live !== null) {
+          await update($, rows, () => live)
+          // a run last written before the session, and not open, holds nothing new
+          for (const row of live) if (row.open || row.last_change_ms >= startMs) await notifyRun(row)
         }
-        const newest = entries.filter(f => f.kind === 'file' && FILE.test(f.name)).sort((a, b) => b.mtimeMs - a.mtimeMs)[0]
-        if (newest === undefined) {
-          if (prev !== null) await update($, snap, () => null)
-          return
+        const op = await read($, opened)
+        if (op !== null) {
+          const row = await showRow($, op.file)
+          if (row !== null) await update($, opened, () => ({ ...op, row }))
         }
-        const fresh = now - newest.mtimeMs <= LIVE_MS
-        if (newest.size > MAX_BYTES) {
-          await update($, snap, () => ({ run: null, big: true, mtimeMs: newest.mtimeMs, size: newest.size, live: false }))
-          return
+        // a reject that lands while the pane shows the run has been seen
+        if (await paneOpen($)) {
+          const shown = (await view($)).picked
+          await update($, looked, l => markLooked(l, shown))
         }
-        let run: GraphRun
-        if (prev !== null && !prev.big && prev.run !== null && prev.mtimeMs === newest.mtimeMs && prev.size === newest.size) {
-          run = prev.run
-        } else {
-          try {
-            run = JSON.parse(await $.fs.read(`${DIR}/${newest.name}`)) as GraphRun
-            if (!Array.isArray(run.nodes)) return
-          } catch {
-            return // a failed read or parse leaves the last good view
-          }
-        }
-        await notifyRun(run, newest.mtimeMs, newest.name)
-        const live = fresh && runState(run) !== 'complete'
-        if (prev !== null && prev.run === run && prev.live === live) return
-        await update($, snap, () => ({ run, big: false, mtimeMs: newest.mtimeMs, size: newest.size, live }))
       } catch {
-        // an unreadable folder leaves the last view as it was
+        // an unreadable list leaves the last view as it was
       } finally {
         isRunning = false
       }
+      await kick?.()
     }
 
     // Claude Code's own language setting, read once per session
@@ -319,146 +288,114 @@ export const register: Register = on => {
     } catch {
       // unreadable settings: English
     }
-    await $.command.register({ name: 'graph-status', description: STRINGS[await read($, lang)].cmdDesc })
+    await $.command.register({ name: 'graph-status', description: STRINGS[await read($, lang)].cmdDesc, argumentHint: '[open <run-file> <owner-key>]' })
     await tick()
     $.clock.every(TICK_MS, tick)
 
     return next(e)
   })
 
-  // the command again closes the pane; Esc and q close it too (closeOnEscape, the close button)
-  on('command.run', { command: 'graph-status' }, async $ => {
+  // The command again closes the pane; Esc and q close it too. `open <run-file> <owner-key>` is the hand-off from a teams
+  // task: that run is shown under its key, outside the band and the [ ] list. The answer is one line (the headless reply).
+  on('command.run', { command: 'graph-status' }, async ($, e) => {
     const text = STRINGS[await read($, lang)]
-    let isOpen = false
-    try {
-      isOpen = (await $.ui.panes()).some((p: { id: string }) => p.id === PANE)
-    } catch {
-      // panes unreadable: open it
-    }
-    if (isOpen) {
-      await $.ui.close({ id: PANE })
+    const arg = parseOpenArg(e.args ?? '')
+    if (arg !== null && 'usage' in arg) return { text: arg.usage }
+    const isOpen = await paneOpen($)
+    if (arg === null && isOpen) {
+      await closePane($)
       return { text: text.paneClosed }
     }
-    await $.ui.open({ id: PANE, title: 'Graph', focus: true, closeOnEscape: true })
+    if (arg !== null) {
+      const cwd = await $.session.cwd()
+      // absolute: the refresh re-reads this path from the engine's own cwd, where a relative one would stop updating
+      const file = arg.file.startsWith('/') ? arg.file : `${cwd}/${arg.file}`
+      const row = await showRow($, file)
+      if (row === null) return { text: text.openFailed }
+      await update($, opened, () => ({ file, owner: arg.owner, row }))
+    } else await update($, opened, () => null)
+    if (!isOpen) await openPane($)
+    else await kick?.()
     return { text: text.paneOpened }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const ui = $.ui.resolve(e)
-    const { Box, Button, Text } = ui
-    const kind = await read($, view)
+    const { Box, Button, Input, Text } = $.ui.resolve(e)
+    const ui = { Box, Text, Button }
     const lang$ = await read($, lang)
     const s = (key: Key, vars?: Record<string, string | number>) => fmt(STRINGS[lang$][key], vars)
-    const sn = await read($, snap)
-    const closeBtn = <Button key="close" role="dismiss" label={s('closeBtn')} hotkey="q" onPress={() => $.ui.close({ id: PANE })} />
-    if (sn === null || (sn.run === null && !sn.big)) return <Box flexDirection="column"><Text>{s('noRun')}</Text>{closeBtn}</Box>
-    if (sn.run === null) return <Box flexDirection="column"><Text color="warning">{s('tooBig')}</Text>{closeBtn}</Box>
-
-    const m = model(sn.run)
-    const f = focus(s, m)
-    const now = await $.clock.now()
-    // Now: a line per running node (agent, how long); with none running, the sentence of focus()
-    const act = active(sn.run, now).slice(0, NOW_MAX)
-    const nowLines =
-      act.length > 0
-        ? act.map(a => ({ color: 'claude', text: `▶ ${s('now')} · ${label(s, a.node, 'attempt')} · ${a.agent}${a.elapsed === '' ? '' : ` · ${a.elapsed}`}` }))
-        : [{ color: f.color, text: `${f.kind === 'blocked' ? '⚠' : '▶'} ${f.head} · ${f.text}` }]
-    const stateWord = s(`state${cap(m.state)}` as Key)
-    const gatesText = `${s('gates', { done: m.done, total: m.total })}${m.pct === undefined ? '' : ` · ${s('goalGate', { pct: m.pct })}`}`
-    const mark = (n: GraphNode | undefined, word: string) => {
-      const st = n === undefined ? 'pending' : nodeMark(n.state)
-      return <Text color={TINT[st]}>{`${MARK[st]} ${word}`}</Text>
+    const kind = await read($, tab)
+    const v = await view($)
+    const r = v.picked
+    const n = v.op !== null ? 1 : v.ordered.length
+    const ctx: PaneCtx = {
+      width: Math.max(20, e.props.bodyColumns - 4), nowMs: await $.clock.now(), tick: await read($, spin),
+      pos: v.op !== null ? { k: 1, n: 1 } : runPosition(v.ordered, v.sel), ...(v.op !== null ? { owner: v.op.owner } : {}),
+      words: { attempt: STRINGS[lang$].attempt, feedback: STRINGS[lang$].feedback, more: STRINGS[lang$].more },
     }
 
-    const subTitle = (id: string) => m.subgoals.find(g => g.id === id)?.title ?? ''
-    const attemptText = (l: FlowLine) => s('attempt', { n: l.attempt })
-    // one line per attempt: a subgoal's impl/test/gate chain, or one stage; a retry sits under the reject it answers
-    const flowItem = (g: FlowGroup, l: FlowLine, key: string) => {
-      const pad = (g.sg === null ? 0 : 1) + Math.min(l.depth, 4)
-      const of = (st: string) => l.nodes.find(x => x.stage === st)
-      const joined = (n: GraphNode | undefined) => (n !== undefined && n.state !== 'pending' && n.state !== 'skipped' ? ' ━ ' : ' ┄ ')
-      const stageWord = (STRINGS[lang$] as Record<string, string>)[`stage${cap(g.stage)}`] ?? g.stage
-      return (
-        <Box key={key} flexDirection="column" marginLeft={pad * 2}>
-          {g.sg === null ? (
-            <Text wrap="truncate-end"><Text color={TINT[l.state]}>{MARK[l.state]}</Text>{` ${stageWord}${l.attempt > 1 ? ` ${attemptText(l)}` : ''}`}</Text>
-          ) : (
-            <Box>
-              {mark(of('implement'), s('nodeImplement'))}
-              <Text dimColor>{joined(of('test'))}</Text>
-              {mark(of('test'), s('nodeTest'))}
-              <Text dimColor>{joined(of('gate'))}</Text>
-              {mark(of('gate'), s('nodeGate'))}
-              <Text dimColor>{` ${attemptText(l)}`}</Text>
-            </Box>
-          )}
-          {l.reason !== '' && <Text color="error" wrap="truncate-end">{`↳ ${l.reason}`}</Text>}
-        </Box>
-      )
+    // `[` and `]` cannot be a Button hotkey; the pane's Input has the focus ring, takes every printable key, and status.ts
+    // paneKey reads the last one. The same Input takes a typed `/command` (card 57): held until Enter, then paneSlash maps
+    // it: `/graph-status` closes the pane, `/name args` runs that command, not awaited (awaited inside onSubmit the host
+    // cuts the hook at its 10 s budget).
+    const onKey = async (text: string) => {
+      const key = paneKey(text)
+      if (key === null) return
+      if (key.kind === 'step') await cycle($, key.by)
+      else if (key.kind === 'tab') await update($, tab, () => key.tab)
+      else await closePane($)
+    }
+    const onSubmit = async (text: string) => {
+      const slash = paneSlash(text)
+      if (slash === null) return
+      if (slash.kind === 'close') await closePane($)
+      else void $.command.run({ command: slash.command, args: slash.args }).catch(() => {})
     }
 
     let body
-    if (kind === 'flow') {
-      const items: unknown[] = []
-      flowGroups(sn.run).forEach((g, gi) => {
-        if (g.sg !== null) items.push(<Text key={`h${gi}`} bold wrap="truncate-end">{`${g.sg} ${subTitle(g.sg)}`.trim()}</Text>)
-        g.lines.forEach((l, li) => items.push(flowItem(g, l, `l${gi}-${li}`)))
-      })
-      body = (
-        <Box flexDirection="column">
-          <Box flexDirection="column" marginY={1}>
-            {items.slice(0, LINE_MAX)}
-            {items.length > LINE_MAX && <Text dimColor>{`  ${s('more', { n: items.length - LINE_MAX })}`}</Text>}
-          </Box>
-          {bar(ui, m.done, m.total, BAR, gatesText)}
-        </Box>
-      )
-    } else {
-      const rows = detailRows(sn.run, now)
-      body = (
-        <Box flexDirection="column">
-          <Box flexDirection="column" marginY={1}>
-            {rows.slice(0, LINE_MAX).map((r, i) => {
-              const st = nodeMark(r.node.state)
-              return (
-                <Box key={`d${i}`} flexDirection="column">
-                  <Text wrap="truncate-end">
-                    <Text color={TINT[st]}>{MARK[st]}</Text>
-                    {` ${label(s, r.node, 'attempt')}  ${r.agent}${r.elapsed === '' ? '' : `  ${r.elapsed}`}`}
-                  </Text>
-                  {r.feedback !== '' && <Text dimColor wrap="truncate-end">{`  ${s('feedback')}: ${r.feedback}`}</Text>}
-                  {r.reason !== '' && <Text color="error" wrap="truncate-end">{`  ${r.reason}`}</Text>}
-                </Box>
-              )
-            })}
-            {rows.length > LINE_MAX && <Text dimColor>{`  ${s('more', { n: rows.length - LINE_MAX })}`}</Text>}
-          </Box>
-          {bar(ui, m.done, m.total, BAR, gatesText)}
-        </Box>
-      )
-    }
+    if (r === null) body = <Text>{s('noRun')}</Text>
+    else body = renderLines(ui, kind === 'flow' ? paneBody(r, ctx) : detailLines(r, ctx))
+    const keys = footerKeys(n)
     return (
       <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
-        <Box>
-          <Box flexShrink={1}><Text bold wrap="truncate-end">{titleOf(sn.run)}</Text></Box>
-          <Box flexShrink={1} marginLeft={2}><Text dimColor wrap="truncate-end">{sn.run.run_id.slice(0, 8)}</Text></Box>
-          <Box flexShrink={0} marginLeft={2}>
-            <Text color="claude">{s('headLine', { state: stateWord, done: m.done, total: m.total })}</Text>
-          </Box>
-        </Box>
-        <Box flexDirection="column" marginTop={1}>
-          {nowLines.map((l, i) => <Text key={`now${i}`} color={l.color} bold wrap="truncate-end">{l.text}</Text>)}
-        </Box>
-        <Box marginY={1} justifyContent="space-between">
-          <Box flexShrink={0}>
-            {tabs(ui, [{ key: 'flow', label: s('tabFlow') }, { key: 'detail', label: s('tabDetail') }], kind, key => update($, view, () => key as 'flow' | 'detail'))}
-          </Box>
-          <Box flexShrink={0} marginLeft={2}>{closeBtn}</Box>
-        </Box>
-        <Box flexDirection="column">
-          {m.rail.length > 0 && rail(ui, m.rail.map(g => ({ label: s(`stage${g.key}` as Key), state: g.state })))}
+        <Box marginBottom={1}>
+          {tabs(ui, [{ key: 'flow', label: s('tabFlow') }, { key: 'detail', label: s('tabDetail') }], kind, k => update($, tab, () => k as 'flow' | 'detail'))}
         </Box>
         {body}
+        <Box marginTop={1} columnGap={2}>
+          {keys.length > 1 && (
+            <Box columnGap={1} flexShrink={0}>
+              <Button key="prev" plain dimColor label={s('prev')} onPress={() => cycle($, -1)} />
+              <Button key="next" plain dimColor label={s('next')} onPress={() => cycle($, 1)} />
+            </Box>
+          )}
+          <Box columnGap={1} flexShrink={0}>
+            <Button key="close" role="dismiss" dimColor label={s('closeBtn')} hotkey="q" onPress={() => closePane($)} />
+            <Text dimColor>{s('closeWord')}</Text>
+          </Box>
+          <Box flexShrink={1} height={1} overflow="hidden"><Input key="keys" autoFocus value="" placeholder="" onInput={onKey} onSubmit={onSubmit} /></Box>
+        </Box>
+      </Box>
+    )
+  })
+
+  // the band: one row for the leading standalone run, `+N` for the others, and a button that opens the pane
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const v = await view($)
+    if (e.props.hasSurvey || v.ordered.length === 0) return next(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const label = STRINGS[await read($, lang)].bandOpen
+    const lines = bandLines(v.ordered, { width: e.props.bodyColumns, nowMs: await $.clock.now(), tick: await read($, spin), reserve: cells(label) + 5 }) // the Button draws `[ label ]` after a 1-column margin
+    if (lines.length === 0) return next(e)
+    return (
+      <Box flexDirection="column">
+        <Box>
+          <Box flexShrink={1}>{renderLines({ Box, Text, Button }, lines)}</Box>
+          <Box flexShrink={0} marginLeft={1}>
+            <Button key="open" label={label} onPress={async () => { await update($, opened, () => null); await openPane($) }} />
+          </Box>
+        </Box>
+        {await next(e)}
       </Box>
     )
   })

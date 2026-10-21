@@ -1,102 +1,131 @@
 import { expect, test } from 'claude-code/testing'
 
-import type { GraphNode, GraphRun } from '../types'
-import { active, agentOf, clock, detailRows, flowGroups, ordered, span } from './status'
+import type { GraphRow } from '../types'
+import {
+  ageText, costText, cycleRun, frozenOrder, listArgv, markLooked, openingOrder,
+  paneKey, paneSlash, parseOpenArg, parseRow, parseRows, pickRun, runPosition, showArgv, spinnerPlan, standalone,
+} from './status'
 
-const n = (id: string, state: string, extra: Record<string, unknown> = {}): GraphNode => {
-  const [stage, a, b] = id.split(':')
-  const isSg = stage === 'implement' || stage === 'test' || stage === 'gate'
-  const attempt = Number(isSg ? b ?? a : a ?? 1) || 1
-  return { node_id: id, stage: stage!, deps: [], state, attempt, subgoal_id: isSg ? (a === 'goal' ? null : a!) : undefined, ...extra } as GraphNode
-}
-const run = (nodes: GraphNode[]): GraphRun => ({ run_id: 'r', request: 'x', spec: { subgoals: [{ id: 'U1' }, { id: 'U2' }] }, nodes })
+const row = (id: string, extra: Record<string, unknown> = {}): GraphRow =>
+  ({
+    id8: id.slice(0, 8), state: 'running', owner: null, created_at: 'unknown', cost_usd: null, running: null, run_id: id, file: `/x/${id}.json`,
+    request: 'r', max_retries: 2, last_change: '', last_change_ms: 0, age_ms: 0, open: true, stalled: false, routing_blocked: false,
+    unavailable_vendors: {}, subgoals: [], last_step: null, acting: false, rejects: 0, nodes: [], ...extra,
+  }) as GraphRow
 
-test('agentOf: executor·model, vendor when no executor, — when nothing recorded', () => {
-  expect(agentOf(n('plan', 'done', { executor: 'claude', vendor: 'self', model: 'opus' }))).toBe('claude·opus')
-  expect(agentOf(n('plan', 'done', { vendor: 'codex' }))).toBe('codex')
-  expect(agentOf(n('plan', 'done', { vendor: null, model: null }))).toBe('—')
+test('argv: the broker readout, list and show', () => {
+  expect(listArgv('/p', '/w')).toEqual(['node', '/p/mcp/broker.mjs', 'runs', '--list', '--json', '--cwd', '/w'])
+  expect(showArgv('/p', '/f.json')).toEqual(['node', '/p/mcp/broker.mjs', 'runs', '--show', '/f.json', '--json'])
 })
 
-test('clock and span', () => {
-  expect(clock(null)).toBe('')
-  expect(clock(45_000)).toBe('45s')
-  expect(clock(192_000)).toBe('3m 12s')
-  expect(clock(3_900_000)).toBe('1h 5m')
-  expect(span(n('plan', 'running', { started_at: 1000 }), 6000)).toBe(5000)
-  expect(span(n('plan', 'done', { started_at: 1000, finished_at: 4000 }), 99999)).toBe(3000)
-  expect(span(n('plan', 'done'), 99999)).toBeNull()
-  expect(span(n('plan', 'done', { started_at: 1000 }), 99999)).toBeNull()
+test('parseRows / parseRow: bad input is null so the last good list stays; [] is an answer', () => {
+  expect(parseRows('')).toBeNull()
+  expect(parseRows('not json')).toBeNull()
+  expect(parseRows('{}')).toBeNull()
+  expect(parseRows('[]')).toEqual([])
+  const rs = parseRows(JSON.stringify([row('r1', { owner: { key: 'E-abcd1234' } }), { nope: 1 }]))!
+  expect(rs.map(r => r.run_id)).toEqual(['r1'])
+  expect(rs[0]!.owner).toEqual({ key: 'E-abcd1234' })
+  expect(parseRow('')).toBeNull()
+  expect(parseRow('[]')).toBeNull()
+  const one = parseRow(JSON.stringify({ run_id: 'r2', file: '/f', owner: null, cost_usd: null, last_step: null }))!
+  expect(one).toMatchObject({ run_id: 'r2', owner: null, cost_usd: null, last_step: null, created_at: 'unknown', nodes: [] })
 })
 
-test('active: only running nodes, with agent and elapsed', () => {
-  const r = run([n('plan', 'done'), n('implement:U1:1', 'running', { executor: 'codex', model: 'gpt-5', started_at: 0 })])
-  expect(active(r, 61_000).map(a => [a.node.node_id, a.agent, a.elapsed])).toEqual([['implement:U1:1', 'codex·gpt-5', '1m 1s']])
+test('standalone: an owned row is never in the result; a closed row is not either', () => {
+  const rs = [row('a'), row('b', { owner: { task_id: 't', key: 'E-abcd1234/P2' } }), row('c', { open: false }), row('d')]
+  expect(standalone(rs).map(r => r.run_id)).toEqual(['a', 'd'])
+  expect(standalone(rs).some(r => r.owner !== null)).toBe(false)
 })
 
-test('ordered: plan, subgoals in spec order with impl/test/gate, goal gate, report; retries after their first attempt', () => {
-  const r = run([
-    n('report', 'pending'), n('gate:goal:1', 'pending'), n('gate:U2:1', 'pending'), n('implement:U2:1', 'done'),
-    n('implement:U1:2', 'running'), n('gate:U1:1', 'failed'), n('implement:U1:1', 'done'), n('plan', 'done'),
-  ])
-  expect(ordered(r).map(x => x.node_id)).toEqual([
-    'plan', 'implement:U1:1', 'gate:U1:1', 'implement:U1:2', 'implement:U2:1', 'gate:U2:1', 'gate:goal:1', 'report',
-  ])
+test('openingOrder: routing_blocked first, then rejects since last looked, then the newest last_change', () => {
+  const rs = [
+    row('old', { last_change_ms: 1 }), row('new', { last_change_ms: 9 }),
+    row('rej', { rejects: 2, last_change_ms: 0 }), row('seen', { rejects: 1, last_change_ms: 5 }),
+    row('wait', { routing_blocked: true, last_change_ms: 0 }),
+  ]
+  expect(openingOrder(rs, { seen: 1 }).map(r => r.run_id)).toEqual(['wait', 'rej', 'new', 'seen', 'old'])
+  expect(markLooked({}, rs[2]!)).toEqual({ rej: 2 })
+  expect(markLooked({ rej: 2 }, rs[2]!)).toEqual({ rej: 2 })
 })
 
-test('flowGroups: a subgoal reject keeps its reason, the retry is one level deeper', () => {
-  const r = run([
-    n('plan', 'done'),
-    n('implement:U1:1', 'done'), n('test:U1:1', 'done'), n('gate:U1:1', 'failed', { result: { stage_ok: false, reason: 'tests red' } }),
-    n('implement:U1:2', 'done', { feedback: 'fix it' }), n('test:U1:2', 'done'), n('gate:U1:2', 'done'),
-  ])
-  const g = flowGroups(r)
-  expect(g.map(x => [x.stage, x.sg])).toEqual([['plan', null], ['implement', 'U1']])
-  const u1 = g[1]!.lines
-  expect(u1.map(l => [l.depth, l.attempt, l.state, l.reason])).toEqual([[0, 1, 'failed', 'tests red'], [1, 2, 'done', '']])
-  expect(u1[0]!.nodes.map(x => x.stage)).toEqual(['implement', 'test', 'gate'])
+test('selection: stays on the same run when a new row appears; the first open picks the opening head', () => {
+  const a = row('A', { last_change_ms: 1 })
+  const b = row('B', { last_change_ms: 2 })
+  const first = frozenOrder([a, b], {}, null)
+  expect(pickRun(first, null)?.run_id).toBe('B')
+  const grown = frozenOrder([a, b, row('C', { last_change_ms: 9 })], {}, null)
+  expect(pickRun(grown, 'A')?.run_id).toBe('A')
+  expect(runPosition(grown, 'A')).toEqual({ k: 3, n: 3 })
+  expect(frozenOrder([b, a], { A: 0 }, ['A', 'B']).map(r => r.run_id)).toEqual(['A', 'B'])
 })
 
-test('flowGroups: a reject without its own reason shows the feedback the retry carries', () => {
-  const r = run([
-    n('implement:U1:1', 'done'), n('gate:U1:1', 'failed'),
-    n('implement:U1:2', 'running', { feedback: '  missing\n  header ' }),
-  ])
-  expect(flowGroups(r)[0]!.lines[0]!.reason).toBe('missing header')
+test('cycleRun: A -> B -> A', () => {
+  const o = [row('A'), row('B')]
+  const b = cycleRun(o, 'A', 1)
+  expect(b).toBe('B')
+  expect(cycleRun(o, b, -1)).toBe('A')
 })
 
-test('flowGroups: a spec retry chains setgoal attempts; skipped placeholders are no attempt', () => {
-  const r = run([
-    n('plan', 'done'),
-    n('setgoal', 'failed', { result: { stage_ok: false, reason: 'no acceptance' } }),
-    n('setgoal:2', 'running'),
-    n('implement:U1:1', 'skipped', { result: { stage_ok: false, reason: 'superseded by spec attempt 2' } }),
-  ])
-  const g = flowGroups(r)
-  expect(g.map(x => x.stage)).toEqual(['plan', 'setgoal'])
-  expect(g[1]!.lines.map(l => [l.depth, l.attempt, l.state, l.reason])).toEqual([[0, 1, 'failed', 'no acceptance'], [1, 2, 'running', '']])
+test('cycleRun first-run end: [ on the first run leaves it', () => {
+  expect(cycleRun([row('A'), row('B')], 'A', -1)).toBe('A')
 })
 
-test('flowGroups: goal gate retries chain under the failed one; report last', () => {
-  const r = run([
-    n('gate:goal:1', 'failed', { result: { stage_ok: false, reason: 'match 60%' } }),
-    n('gate:goal:2', 'done'),
-    n('report', 'pending'),
-  ])
-  const g = flowGroups(r)
-  expect(g.map(x => x.stage)).toEqual(['gate', 'report'])
-  expect(g[0]!.lines.map(l => [l.depth, l.reason])).toEqual([[0, 'match 60%'], [1, '']])
+test('cycleRun last-run end: ] on the last run leaves it', () => {
+  expect(cycleRun([row('A'), row('B')], 'B', 1)).toBe('B')
 })
 
-test('detailRows: skipped absent; agent, elapsed, one-line feedback, failure reason only on failed nodes', () => {
-  const r = run([
-    n('implement:U1:1', 'failed', { executor: 'codex', model: 'gpt-5', started_at: 0, finished_at: 5000, result: { reason: 'boom' } }),
-    n('implement:U1:2', 'running', { feedback: 'a\nb' }),
-    n('implement:U1:3', 'skipped'),
-    n('plan', 'done', { result: { reason: 'ignored' } }),
-  ])
-  const rows = detailRows(r, 10_000)
-  expect(rows.map(x => x.node.node_id)).toEqual(['plan', 'implement:U1:1', 'implement:U1:2'])
-  expect(rows[1]).toMatchObject({ agent: 'codex·gpt-5', elapsed: '5s', reason: 'boom', feedback: '' })
-  expect(rows[2]).toMatchObject({ agent: '—', elapsed: '', feedback: 'a b', reason: '' })
-  expect(rows[0]!.reason).toBe('')
+test('cycleRun one-run case: [ and ] change nothing', () => {
+  expect(cycleRun([row('A')], 'A', 1)).toBe('A')
+  expect(cycleRun([row('A')], 'A', -1)).toBe('A')
+  expect(cycleRun([], null, 1)).toBeNull()
+})
+
+test('paneKey: [ ] 1 2 q; text holding / is a command being typed', () => {
+  expect(paneKey(']')).toEqual({ kind: 'step', by: 1 })
+  expect(paneKey('x[')).toEqual({ kind: 'step', by: -1 })
+  expect(paneKey('2')).toEqual({ kind: 'tab', tab: 'detail' })
+  expect(paneKey('q')).toEqual({ kind: 'close' })
+  expect(paneKey('z')).toBeNull()
+  expect(paneKey('')).toBeNull()
+  expect(paneKey('/q')).toBeNull()
+  expect(paneKey(']/graph-status')).toBeNull()
+})
+
+test('paneSlash: reads from the first /; graph-status closes, another command runs', () => {
+  expect(paneSlash('/graph-status')).toEqual({ kind: 'close' })
+  expect(paneSlash(']]/graph-status')).toEqual({ kind: 'close' })
+  expect(paneSlash('/other x')).toEqual({ kind: 'run', command: 'other', args: 'x' })
+  expect(paneSlash('[2/other x')).toEqual({ kind: 'run', command: 'other', args: 'x' })
+  expect(paneSlash('abc')).toBeNull()
+  expect(paneSlash(5)).toBeNull()
+})
+
+test('spinnerPlan: only while a shown run acts, not stalled, with a surface', () => {
+  expect(spinnerPlan([row('A', { acting: true })], 1, true)).toEqual({ run: true })
+  expect(spinnerPlan([row('A', { acting: true })], 0, true)).toEqual({ run: false })
+  expect(spinnerPlan([row('A', { acting: true })], 1, false)).toEqual({ run: false })
+  expect(spinnerPlan([row('A', { acting: true, stalled: true }), null], 1, true)).toEqual({ run: false })
+  expect(spinnerPlan([row('A')], 1, true)).toEqual({ run: false })
+})
+
+test('parseOpenArg: file and owner key, else one usage line; empty is the toggle', () => {
+  expect(parseOpenArg('open /x/.teams_output/broker/runs/r1.json E-3f9a21c0/P2')).toEqual({ file: '/x/.teams_output/broker/runs/r1.json', owner: 'E-3f9a21c0/P2' })
+  expect(parseOpenArg('open /x/r1.json E-3f9a21c0')).toEqual({ file: '/x/r1.json', owner: 'E-3f9a21c0' })
+  expect(parseOpenArg('')).toBeNull()
+  expect(parseOpenArg(undefined)).toBeNull()
+  for (const bad of ['open', 'open /x/r1.json', 'open /x/r1.json nokey', 'open /x/r1.json E-3f9a21c0/P2 extra', '/x/r1.json E-3f9a21c0']) {
+    const r = parseOpenArg(bad) as { usage: string }
+    expect(typeof r.usage).toBe('string')
+    expect(r.usage.includes('\n')).toBe(false)
+  }
+})
+
+test('costText and ageText: — when unknown', () => {
+  expect(costText({ cost_usd: null })).toBe('—')
+  expect(costText({ cost_usd: 3.4 })).toBe('$3.40')
+  expect(ageText(null)).toBe('—')
+  expect(ageText(45_000)).toBe('45s')
+  expect(ageText(360_000)).toBe('6m')
+  expect(ageText(4_320_000)).toBe('1h 12m')
 })
