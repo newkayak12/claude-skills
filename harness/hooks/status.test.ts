@@ -445,7 +445,7 @@ test('pane: the Now line, the last step line, the You line, the rail and the fin
   expect(at('You')).toMatch(/^ {2}You {3}nothing needed · next: critique round 2$/)
   expect(at('Plan')).toMatch(/^✔ Plan ━━ ✔ SetGoal ━━ ✘ Critique ━━ ● SetGoal again ┄┄ ○ Critique ┄┄ ○ Subgoals 0\/3 ┄┄ ○ Goal gate ┄┄ ○ Report +subgoals 0\/3 ─+$/)
   expect(at('Critique round')).toBe('Critique round 1 · rejected · 4 major, 1 nit')
-  expect(at('+')).toContain('+2 major, 1 nit · Findings (3)')
+  expect(at('+')).toContain('+3: 2 major, 1 nit · Findings (3)')
   expect(lines[lines.length - 1]).toMatch(/^● Now \(1\) {3}Flow \(2\) {3}Findings \(3\) {3}Gate rules \(4\)/)
   // waiting on you: the You line leads with ⚑ and the question; the Now glyph is idle
   const w = { ...r, waiting: { who: 'you' as const, what: 'approve the spec' }, now: { ...r.now!, waiting: { who: 'you' as const, what: 'approve the spec' } } }

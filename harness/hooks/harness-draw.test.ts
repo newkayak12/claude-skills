@@ -5,7 +5,7 @@ import {
   ALLOWED, DEMO_NOW, DEMO_SCENARIOS, GLYPH, RAIL_GLYPHS, STATE_GLYPHS, bandLines, clip, clipLine, demoRows, fit, frame, fs, leftRight, lineWidth,
   innerWidth, paneContent, paneHead, paneLines, parseDemoArg, plain, railLine, renderDemo, spinnerFrame, stateGlyph, tabRowPlan,
 } from './harness-draw'
-import { openingOrder, otherRunLabel, pickRun, railItems, runPosition } from './status'
+import { cycleRun, doingOf, openingOrder, otherRunLabel, pickRun, railItems, runPosition } from './status'
 
 const WIDTHS = [190, 110]
 const row = (slug: string, over: Partial<HarnessRow> = {}): HarnessRow => ({
@@ -152,25 +152,101 @@ test('demo: long text ends in … and no glyph is cut', () => {
 
 test('demo: the opening order, the switch and the other-run label show in the parallel fixture', () => {
   const ordered = openingOrder(demoRows('parallel'), {})
+  expect(ordered).toHaveLength(2)
   expect(ordered[0]!.slug).toBe('fix-date-filter') // waits on you
   expect(pickRun(ordered, null)!.slug).toBe('fix-date-filter')
-  expect(runPosition(ordered, null)).toEqual({ k: 1, n: 3 })
-  expect(otherRunLabel(ordered, null)).toBe('other run: csv-export · Implement 1/3 (+1)')
+  expect(runPosition(ordered, null)).toEqual({ k: 1, n: 2 })
+  expect(otherRunLabel(ordered, null)).toBe('other run: csv-export · Implement 1/3')
+  // after next: run 2 of 2, naming the previous run
+  expect(cycleRun(ordered, null, 1)).toBe('csv-export')
+  expect(runPosition(ordered, 'csv-export')).toEqual({ k: 2, n: 2 })
+  expect(otherRunLabel(ordered, 'csv-export')).toBe('other run: fix-date-filter · SetGoal')
   const text = renderDemo('parallel', 190)
   // the keys named are the keys bound: the pane's key catcher takes [ and ] as key presses
-  expect(text).toContain('run 1 of 3 ◀ [ ] ▶')
-  expect(text).toContain('run 2 of 3 ◀ [ ] ▶')
-  expect(text).toContain('other run: csv-export · Implement 1/3 (+1)')
-  expect(text).toContain('+2 runs')
-  expect(renderDemo('parallel', 110)).toContain('1/3 ◀▶')
+  expect(text).toContain('run 1 of 2 ◀ [ ] ▶')
+  expect(text).toContain('run 2 of 2 ◀ [ ] ▶')
+  expect(text).toContain('other run: csv-export · Implement 1/3')
+  expect(text).toContain('other run: fix-date-filter · SetGoal')
+  expect(text).toContain('+1 run')
+  expect(renderDemo('parallel', 110)).toContain('1/2 ◀▶')
   // the full fixture is the §3 mockup's rail and findings
   const full = renderDemo('full', 190)
-  expect(full).toContain('✔ Plan ━━ ✔ SetGoal ━━ ✘ Critique ━━ ● SetGoal again ┄┄ ○ Critique ┄┄ ○ Subgoals 0/3 ┄┄ ○ Goal gate ┄┄ ○ Report')
+  expect(full).toContain('✔ Plan ━━ ✔ SetGoal ━━ ✘ Critique ━━ ✔ SetGoal again ━━ ✘ Critique ━━ ● SetGoal again ┄┄ ○ Critique ┄┄ ○ Subgoals 0/3 ┄┄ ○ Goal gate ┄┄ ○ Report')
   expect(full).toContain('Critique round 1 · rejected · 4 major, 1 nit')
-  expect(full).toContain('round 2 of 3 · 6m in this stage')
+  expect(full).toContain('Critique round 2 · rejected · 1 blocker, 2 minor')
+  expect(full).toContain('round 3 of 3 · 6m in this stage')
   expect(full).toContain('last step: edited the goal spec')
   expect(full).toContain('12s ago')
   expect(plain(railLine(railItems(demoRows('minimal')[0]!), false))).toBe('● Plan ┄┄ ○ SetGoal ┄┄ ○ Critique ┄┄ ○ Subgoals ┄┄ ○ Goal gate ┄┄ ○ Report')
+})
+
+const ctxOf = (r: HarnessRow, tab: 'now' | 'findings' = 'now', width = 186) => {
+  const ordered = [r]
+  return { width, nowMs: DEMO_NOW, tick: 0, pos: runPosition(ordered, null), other: otherRunLabel(ordered, null), tab }
+}
+
+test('canned vs live: the stage sentence is dim when canned and not dim when live, in the pane head and the band', () => {
+  const canned = row('c', { stage: 'plan' })
+  const live = row('l', { stage: 'plan', now: { ...nowOf, stage: 'plan', doing: 'x' } })
+  const nowSeg = (r: HarnessRow) => paneHead(r, ctxOf(r)).find(l => plain(l).includes(' Now '))!.find(s => s.t === doingOf(r).text)!
+  expect(doingOf(canned).canned).toBe(true)
+  expect(nowSeg(canned).dim).toBe(true)
+  expect(nowSeg(live).t).toBe('x')
+  expect(nowSeg(live).dim).toBeFalsy()
+  const bandSeg = (r: HarnessRow) => bandLines([r], { width: 190, nowMs: DEMO_NOW, tick: 0 })[0]!.find(s => s.t === doingOf(r).text)!
+  expect(bandSeg(canned).dim).toBe(true)
+  expect(bandSeg(live).dim).toBeFalsy()
+})
+
+test('pane Now view: Now, Last step with age, You; cost — unless numeric; minimal has no live now.json', () => {
+  const min = demoRows('minimal')[0]!
+  const head = paneHead(min, ctxOf(min)).map(plain)
+  expect(head[0]).toMatch(/running · — · run 1 of 1/)
+  expect(head.find(l => l.includes('last step:'))).toMatch(/^ {8}last step: —\s*$/)
+  expect(head.find(l => l.includes(' You '))).toMatch(/^ {2}You {3}nothing needed\s*$/)
+  const live = row('l', { now: { ...nowOf, last_step: 'ran the tests', at: new Date(DEMO_NOW - 12_000).toISOString(), cost_usd: 2 } })
+  const h2 = paneHead(live, ctxOf(live)).map(plain)
+  expect(h2.find(l => l.includes('last step:'))).toMatch(/last step: ran the tests +12s ago$/)
+  expect(h2[0]).toContain('$2.00')
+  const you = row('y', { waiting: { who: 'you', what: 'approve the spec' }, now: { ...nowOf, waiting: { who: 'you', what: 'approve the spec' } } })
+  const yl = paneHead(you, ctxOf(you)).find(l => plain(l).includes(' You '))!
+  expect(plain(yl)).toMatch(/^⚑ You {3}approve the spec$/)
+  expect(yl[0]!.tint).toBe('claude')
+  const vendor = row('v', { waiting: { who: 'vendor', what: 'codex' }, now: { ...nowOf, waiting: { who: 'vendor', what: 'codex' } } })
+  const vl = plain(paneHead(vendor, ctxOf(vendor)).find(l => plain(l).includes(' You '))!)
+  expect(vl).toContain('nothing needed · waiting on a vendor: codex')
+  expect(vl).not.toContain('⚑')
+})
+
+test('two rounds: the Now view shows round 2 and +n: counts; the Findings tab lists both rounds ranked and numbered', () => {
+  const r = demoRows('full')[0]!
+  const now = paneContent(r, ctxOf(r)).map(plain)
+  expect(now[0]).toBe('Critique round 2 · rejected · 1 blocker, 2 minor')
+  expect(now[1]).toMatch(/^ {2}2 {2}blocker {2}the column order/)
+  expect(now.some(l => l.startsWith('     +1: 1 minor · Findings (3)'))).toBe(true)
+  const all = paneContent(r, ctxOf(r, 'findings')).map(plain)
+  expect(all[0]).toBe('All rounds · 1 blocker, 4 major, 2 minor, 1 nit')
+  const at1 = all.indexOf('Critique round 1 · rejected · 4 major, 1 nit')
+  const at2 = all.indexOf('Critique round 2 · rejected · 1 blocker, 2 minor')
+  expect(at1).toBeGreaterThan(0)
+  expect(at2).toBeGreaterThan(at1)
+  expect(all.slice(at1 + 1, at2 - 1).map(l => l.trim().split(/\s+/)[0])).toEqual(['1', '2', '4', '5', '3'])
+  expect(all.slice(at2 + 1).map(l => l.trim().split(/\s+/).slice(0, 2).join(' '))).toEqual(['2 blocker', '1 minor', '3 minor'])
+})
+
+test('band: a run waiting on you shows ⚑ and its question; the band leads, the picked run is the pane\'s', () => {
+  const ordered = openingOrder(demoRows('parallel'), {})
+  for (const w of WIDTHS) {
+    const rows = bandLines(ordered, { width: w, nowMs: DEMO_NOW, tick: 0 }).map(plain)
+    expect(rows[0]!.startsWith('⚑ ')).toBe(true)
+    expect(rows[0]).toContain('fix-date-filter')
+    if (w === 190) expect(rows[0]).toContain('asks you: approve the goal spec')
+    expect(rows[0]).toContain('+1')
+    expect(rows.some(l => /graph/i.test(l))).toBe(false)
+    const picked = pickRun(ordered, 'csv-export')!
+    const c = { width: w - 4, nowMs: DEMO_NOW, tick: 0, pos: runPosition(ordered, 'csv-export'), other: otherRunLabel(ordered, 'csv-export'), tab: 'now' as const }
+    expect(plain(paneHead(picked, c)[0]!)).toContain('csv-export')
+  }
 })
 
 test('paneHead and paneContent make up paneLines, and the tab row is the one line below them', () => {
@@ -232,8 +308,8 @@ test('parseDemoArg: demo steps through the scenarios, a name picks one, off leav
 test('demo text is pinned: any change to a fixture or its layout changes a hash (the report quotes this text)', () => {
   expect(Object.fromEntries(demos.map(d => [`${d.s}@${d.w}`, `${FNV(d.text)}:${d.text.split('\n').length}`]))).toEqual({
     'minimal@190': '9a3ab233:18', 'minimal@110': 'c076c198:18',
-    'full@190': 'a7057b17:42', 'full@110': '6c7e1d8a:42',
-    'parallel@190': 'e04fabfe:32', 'parallel@110': '403fbb18:32',
-    'narrow@190': '2564e6f6:21', 'narrow@110': 'd6d469a7:21',
+    'full@190': '89c420b6:47', 'full@110': 'c7438538:47',
+    'parallel@190': '92e7df7d:32', 'parallel@110': 'd7410c14:32',
+    'narrow@190': '04c4eca7:21', 'narrow@110': '4f02dad0:21',
   })
 })
