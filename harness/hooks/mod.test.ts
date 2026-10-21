@@ -368,6 +368,75 @@ test('close 2/3: the q button dismisses the pane', async ($, on) => {
   expect(seen.closed).toEqual(['harness-status'])
 })
 
+// the footer row: the Box holding the close Button; its Text, Button labels and Input placeholder in render order
+const footerOf = async (ui: Ui): Promise<{ parts: { kind: string; text: string; dim: boolean; wrap?: string }[]; joined: string; box: Node }> => {
+  let box: Node | null = null
+  const walk = (n: unknown) => {
+    if (box !== null || typeof n === 'string' || n === null || typeof n !== 'object') return
+    const node = n as Node
+    const kids = (node.children ?? []) as Node[]
+    if (kids.some(k => k.type === 'Button' && (k.props as { hotkey?: string })?.hotkey === 'q')) box = node
+    else kids.forEach(walk)
+  }
+  walk(await ui.drawn())
+  const parts: { kind: string; text: string; dim: boolean; wrap?: string }[] = []
+  const leaves = (n: unknown) => {
+    if (typeof n === 'string' || n === null || typeof n !== 'object') return
+    const node = n as Node
+    const p = (node.props ?? {}) as { label?: string; placeholder?: string; dimColor?: boolean; wrap?: string }
+    if (node.type === 'Text') parts.push({ kind: 'Text', text: flat(node), dim: p.dimColor === true, wrap: p.wrap })
+    else if (node.type === 'Button') parts.push({ kind: 'Button', text: p.label ?? '', dim: false })
+    else if (node.type === 'Input') parts.push({ kind: 'Input', text: p.placeholder ?? '', dim: false })
+    else ((node.children ?? []) as unknown[]).forEach(leaves)
+  }
+  leaves(box)
+  return { parts, joined: parts.map(x => x.text).join(' '), box: box! }
+}
+const wordsOf = (s: string) => s.split(/[\s·,]+/).filter(w => /^[\p{L}-]{2,}$|^\/harness-status$/u.test(w))
+
+async function footerPinned($: Engine, on: On, language: string, rows: object[]) {
+  await seeded($, on, demoRun(), { language, rows })
+  const f = await footerOf(await pane($, 'terminal', 194))
+  expect(f.box.props).not.toHaveProperty('flexDirection')
+  for (const t of ['[ ]', '1-4', 'Esc', 'q']) expect(f.joined.split(t).length - 1).toBe(1)
+  expect(wordsOf(f.joined).filter((w, i, a) => a.indexOf(w) !== i)).toEqual([])
+  for (const p of f.parts.filter(x => x.kind === 'Text')) {
+    expect(p.dim).toBe(true)
+    expect(p.wrap).toBe('truncate-end') // cut with …, never wrapped to a second row
+  }
+  // drawn width: lead + [ q ] + tail with their gaps fit the 110-column pane's inner width (46), single run
+  const tx = f.parts.filter(x => x.kind === 'Text').map(x => x.text)
+  const cells = (s: string) => [...s].reduce((a, c) => a + (/[ᄀ-ᅟ⺀-꓏가-힣＀-｠]/.test(c) ? 2 : 1), 0)
+  expect(cells(tx[0]) + 1 + 5 + 1 + cells(tx[1])).toBeLessThanOrEqual(46)
+  expect(f.joined).not.toContain('/harness-status')
+  expect(f.parts.find(x => x.kind === 'Input')?.text).toBe('')
+  expect(f.joined).not.toMatch(/\[ ?close|close \[q\]|닫기 \[q\]|q close(?!s)|q 닫기/)
+  const btns = f.parts.filter(x => x.kind === 'Button').map(x => x.text)
+  expect(btns).toEqual(rows.length > 1 ? ['q', ...(language === 'English' ? ['prev', 'next'] : ['이전', '다음'])] : ['q'])
+  return f.joined
+}
+test('footer en, single run: each key once, no word twice, footer Text dim, one row', async ($, on) => {
+  expect(await footerPinned($, on, 'English', [csv()])).toBe('[ ] run · 1-4 tab · Esc or q closes ')
+})
+test('footer ko, single run: each key once, no word twice, footer Text dim, one row', async ($, on) => {
+  expect(await footerPinned($, on, 'Korean', [csv()])).toBe('[ ] 실행 · 1-4 탭 · Esc 또는 q 로 닫기 ')
+})
+test('footer en, several runs: prev and next join the row, keys still once', async ($, on) => {
+  await footerPinned($, on, 'English', [acting('demo'), acting('other')])
+})
+test('footer ko, several runs: prev and next join the row, keys still once', async ($, on) => {
+  await footerPinned($, on, 'Korean', [acting('demo'), acting('other')])
+})
+
+for (const language of ['English', 'Korean']) {
+  test(`footer ${language} at the 110-column pane width, several runs: prev and next are left out so the keys stay one row`, async ($, on) => {
+    await seeded($, on, demoRun(), { language, rows: [acting('demo'), acting('other')] })
+    const f = await footerOf(await pane($, 'terminal', 48))
+    expect(f.parts.filter(x => x.kind === 'Button').map(x => x.text)).toEqual(['q'])
+    expect(f.joined).not.toContain('/harness-status')
+  })
+}
+
 test('close 3/3: the command again closes an open pane, a third time opens it', async ($, on) => {
   mock.clock(on, { now: NOW })
   const seen = world(on, ['terminal'], { [CONFIG]: cfg })
@@ -687,8 +756,8 @@ test('korean: the tabs, the close key and the Flow and Gate rules text come from
   await seeded($, on, demoRun({ [CONFIG]: cfg }), { language: 'Korean' })
   const ui = await pane($, 'terminal', 194)
   expect((await buttons(ui)).map(b => b.label)).toEqual(['● 지금', '흐름', '발견', '게이트 규칙'])
-  expect(await shown(ui)).toContain('닫기 [q]')
-  expect(await shown(ui)).not.toContain('close [')
+  expect(await shown(ui)).toContain('Esc 또는')
+  expect(await shown(ui)).not.toContain('closes')
   await ui.press({ key: 'flow' })
   await ui.redraw()
   const flow = await shown(ui)
@@ -747,7 +816,8 @@ test('band: three rows (doing and ⚑ / rail with subgoals n/m / cost and the la
   await seeded($, on, {}, { rows: [csv(), acting('other')] })
   const rows = linesOf(await (await band($, on)).drawn()).slice(0, 3)
   expect(rows).toHaveLength(3)
-  expect(rows[0]).toMatch(/^[✎⌕▸] harness demo · SetGoal is rewriting the spec after critique round 1 rejected it · round 2 of 3 · 6m/)
+  expect(rows[0]).toMatch(/^[✎⌕▸] harness demo · SetGoal is rewriting the spec after critique round 1 rejected it · round 2 of 3 +\+1 run$/)
+  expect(rows[0]).not.toMatch(/\b6m\b/)
   expect(rows[0]!.trimEnd().endsWith('+1 run')).toBe(true)
   expect(rows[1]).toContain('✔ Plan ━━ ✔ SetGoal ━━ ✘ Critique ━━ ● SetGoal again')
   expect(rows[1]).toContain('subgoals 0/3')

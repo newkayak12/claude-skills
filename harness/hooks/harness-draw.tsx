@@ -221,7 +221,6 @@ export function headerLine(r: HarnessRow, c: PaneCtx): Line {
     fs(elapsedText(r, c.nowMs), { sep: ' · ', drop: 4 }),
     fs(costText(r), { sep: ' · ', drop: 3 }),
     fs(runs, { sep: ' · ', fixed: true }),
-    fs(compact ? 'q' : 'q close', { sep: ' · ', drop: 5, dim: true }),
   ]
   return leftRight([seg(r.slug, { bold: true })], right, c.width)
 }
@@ -362,7 +361,6 @@ export function bandLines(ordered: readonly HarnessRow[], o: { width: number; no
     fs(d.text, { sep: ' · ', drop: 1, min: 16, dim: d.canned }),
     y.you ? fs(`asks you: ${y.text}`, { sep: ' · ', tint: 'claude', bold: true }) : fs(''),
     fs(roundText(r, compact), { sep: ' · ', drop: 4 }),
-    fs(inStageText(r, o.nowMs, true), { sep: ' · ', drop: 5 }),
     more > 0 ? { ...fs(compact ? `+${more}` : `+${more} run${more > 1 ? 's' : ''}`, { sep: '  ', fixed: true, dim: true }), right: true } : fs(''),
   ], w)
   const rail = railItems(r)
@@ -377,7 +375,7 @@ export function bandLines(ordered: readonly HarnessRow[], o: { width: number; no
   const row3 = fit([
     fs(INDENT, { fixed: true }),
     fs(costText(r), { fixed: true, bold: true }),
-    fs(elapsedText(r, o.nowMs), { sep: ' · ', drop: 3 }),
+    fs(elapsedText(r, o.nowMs), { sep: ' · ', fixed: true }),
     finding === null ? fs('') : fs(`top finding: ${finding}`,{ sep: ' · ', drop: 2, min: 24 }),
   ], w)
   return [row1, row2, row3]

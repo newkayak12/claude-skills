@@ -439,7 +439,7 @@ test('pane: the Now line, the last step line, the You line, the rail and the fin
   const r = normalizeRow({ ...ENGINE_ROW, rounds: [{ round: 1, sound: false, problems: [...Array(4).fill({ severity: 'major', text: 'no download check' }), { severity: 'nit', text: 'titles' }] }] })!
   const lines = paneLines(r, ctx()).map(plain)
   const at = (needle: string) => lines.find(l => l.includes(needle))!
-  expect(lines[0]).toMatch(/^csv-export +running · 1h 12m · \$3\.40 · run 1 of 1 · q close$/)
+  expect(lines[0]).toMatch(/^csv-export +running · 1h 12m · \$3\.40 · run 1 of 1$/)
   expect(at('Now')).toMatch(/^✎ Now {3}SetGoal is rewriting the spec +round 2 of 3 · 6m in this stage$/)
   expect(at('last step:')).toMatch(/^ {8}last step: edited the goal spec +12s ago$/)
   expect(at('You')).toMatch(/^ {2}You {3}nothing needed · next: critique round 2$/)
@@ -465,7 +465,7 @@ test('band: three rows, +N for the others, harness rows only', () => {
   const other = row('other')
   const rows = bandLines([lead, other], { width: 190, nowMs: T0, tick: 0 }).map(plain)
   expect(rows).toHaveLength(3)
-  expect(rows[0]).toMatch(/^✎ harness csv-export · SetGoal is rewriting the spec · round 2 of 3 · 6m +\+1 run$/)
+  expect(rows[0]).toMatch(/^✎ harness csv-export · SetGoal is rewriting the spec · round 2 of 3 +\+1 run$/)
   expect(rows[1]).toMatch(/^ {10}✔ Plan .* ○ Subgoals 0\/3 .* ○ Report +subgoals 0\/3$/)
   expect(rows[2]).toBe('          $3.40 · 1h 12m · top finding: no download check')
   expect(bandLines([lead], { width: 190, nowMs: T0, tick: 0 }).map(plain)[0]).not.toContain('+')

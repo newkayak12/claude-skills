@@ -83,14 +83,14 @@ Not a sandbox. `python -c`, `find -delete`, `dd`, shell aliases and scripts that
 ### Commands
 | Command | Does |
 |---|---|
-| `/memo` | open the Memo pane: a header with the note count, the size against the cap (`<n>/1200 chars`) and when the notes last went out with this conversation (`—` before the first send), then one note per line: its number, scope badge (`global` or `project`), text, age (`today`, `2d`) and `stale?` on notes 14 days or older (a hint to move them to `CLAUDE.md`). Long text is cut with `…`; `+N not sent` counts stored notes the caps leave out. Esc, `q`, or `/memo` again closes it |
+| `/memo` | open the Memo pane: a header with the note count, the size against the cap (`<n>/1200 chars`) and when the notes last went out with this conversation (`—` before the first send), then one note per line: its number, scope badge (`global` or `project`), text, age (`today`, `2d`), right-aligned in its own column, which turns yellow at 14 days (a hint to move the note to `CLAUDE.md`). Long text is cut with `…`; `+N not sent` counts stored notes the caps leave out. Esc, `q`, or `/memo` again closes it |
 | `/memo add [--global] <text>` | add a note (project by default) |
 | `/memo list` | open the Memo pane (headless: print the notes) |
 | `/memo rm <n>` | remove note `n` as numbered in `list` |
 | `/memo clear [--global]` | clear the project notes, or the global ones |
 
 ![memo-pane](docs/images/memo-pane.png)
-*The Memo pane: one note per line with its scope badge, age and `stale?` hint, the size against the cap and the last send in the header (`+N not sent` shows when the caps leave a note out). Open it before you add or remove a note to see what the model carries.*
+*The Memo pane: one note per line with its scope badge and age (the age turns yellow at 14 days), the size against the cap and the last send in the header (`+N not sent` shows when the caps leave a note out). Open it before you add or remove a note to see what the model carries.*
 
 ### Scopes and caps
 Two scopes: project (keyed by the repo root) and global. Caps count both together: 8 notes, 280 characters each, 1200 in total; an add past a cap is refused with the reason. A note is stale at 14 days. The injected block is a fixed header plus `[global]` notes then `[project]` notes. It is sent once per conversation and again after `/compact` or `/clear`, or after any change, from the next prompt.

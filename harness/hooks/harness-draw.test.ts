@@ -5,7 +5,7 @@ import {
   ALLOWED, DEMO_NOW, DEMO_SCENARIOS, GLYPH, RAIL_GLYPHS, STATE_GLYPHS, bandLines, clip, clipLine, demoRows, fit, frame, fs, leftRight, lineWidth,
   innerWidth, paneContent, paneHead, paneLines, parseDemoArg, plain, railLine, renderDemo, spinnerFrame, stateGlyph, tabRowPlan,
 } from './harness-draw'
-import { cycleRun, doingOf, openingOrder, otherRunLabel, pickRun, railItems, runPosition } from './status'
+import { cycleRun, doingOf, elapsedText, inStageText, openingOrder, otherRunLabel, pickRun, railItems, runPosition } from './status'
 
 const WIDTHS = [190, 110]
 const row = (slug: string, over: Partial<HarnessRow> = {}): HarnessRow => ({
@@ -79,7 +79,8 @@ test('band at 110: low-priority segments drop first; the run name and ⚑ only t
     now: { ...nowOf, stage: 'setgoal', doing: 'SetGoal is rewriting the spec after critique rejected it', round: 2, cost_usd: 3.4, since: new Date(DEMO_NOW - 6 * 60_000).toISOString() },
   })
   const wide = bandLines([lead, row('o')], { width: 190, nowMs: DEMO_NOW, tick: 0 }).map(plain)
-  expect(wide[0]).toContain('harness csv-export · SetGoal is rewriting the spec after critique rejected it · round 2 of 3 · 6m')
+  expect(wide[0]).toContain('harness csv-export · SetGoal is rewriting the spec after critique rejected it · round 2 of 3')
+  expect(wide[0]).not.toMatch(/\b6m\b/)
   expect(wide[0]!.trimEnd().endsWith('+1 run')).toBe(true)
   expect(wide[1]).toContain('subgoals 0/3')
   // 110 with a long name: the doing sentence is cut or dropped, the round and time go, the run name is whole until nothing else is left
@@ -98,6 +99,29 @@ test('band at 110: low-priority segments drop first; the run name and ⚑ only t
   expect(row1).toContain('…')
   expect(row1).toContain('a-very-')
   expect(row1).not.toContain('harness')
+})
+
+test('band: elapsed once, on row 3 next to cost; row 1 has no bare in-stage time (every demo, 190 and 110, since == started_at too)', () => {
+  const cells = (l: string) => l.split(/[\s·]+/)
+  const check = (r: HarnessRow, w: number) => {
+    const rows = bandLines([r], { width: w, nowMs: DEMO_NOW, tick: 0 }).map(plain)
+    const stage = inStageText(r, DEMO_NOW, true)
+    const el = elapsedText(r, DEMO_NOW)
+    if (stage !== '' && stage !== el) expect(cells(rows[0]!)).not.toContain(stage)
+    expect(rows[0]!.match(/(?<![\w$])\d+[smh]\b/g) ?? []).toEqual([])
+    if (el === '') return
+    const once = rows.join('\n').match(new RegExp(`(?<![\\w$])${el}(?!\\w)`, 'g')) ?? []
+    expect([w, el, rows[2], once.length]).toEqual([w, el, rows[2], 1])
+    expect(rows[2]!).toMatch(new RegExp(`^ {10}(\\$[\\d.]+|—) · ${el}(?: ·|$)`))
+  }
+  for (const s of DEMO_SCENARIOS) for (const w of WIDTHS) {
+    const lead = openingOrder(demoRows(s), {})[0]!
+    check(lead, w)
+    check({ ...lead, started_at: new Date(DEMO_NOW - 7 * 60_000).toISOString(), now: lead.now === null ? null : { ...lead.now, since: new Date(DEMO_NOW - 7 * 60_000).toISOString() } }, w)
+  }
+  // the pane's Now line still says the time in this stage
+  const r = row('csv', { started_at: new Date(DEMO_NOW - 72 * 60_000).toISOString(), now: { ...nowOf, since: new Date(DEMO_NOW - 6 * 60_000).toISOString() } })
+  expect(paneLines(r, { width: 186, nowMs: DEMO_NOW, tick: 0, pos: runPosition([r], 0), other: null, tab: 'now' } as never).map(plain).join('\n')).toMatch(/6m in this stage/)
 })
 
 test('the band draws harness runs only: three rows, never a graph row', () => {
@@ -307,9 +331,9 @@ test('parseDemoArg: demo steps through the scenarios, a name picks one, off leav
 
 test('demo text is pinned: any change to a fixture or its layout changes a hash (the report quotes this text)', () => {
   expect(Object.fromEntries(demos.map(d => [`${d.s}@${d.w}`, `${FNV(d.text)}:${d.text.split('\n').length}`]))).toEqual({
-    'minimal@190': '9a3ab233:18', 'minimal@110': 'c076c198:18',
-    'full@190': '89c420b6:47', 'full@110': 'c7438538:47',
-    'parallel@190': '92e7df7d:32', 'parallel@110': 'd7410c14:32',
-    'narrow@190': '04c4eca7:21', 'narrow@110': '4f02dad0:21',
+    'minimal@190': '1020efe9:18', 'minimal@110': '6ac0bf6e:18',
+    'full@190': '19cc7e0e:47', 'full@110': '5fd9b055:47',
+    'parallel@190': '3f00bb97:32', 'parallel@110': 'acee0b4c:32',
+    'narrow@190': '4975a559:21', 'narrow@110': '12a320f1:21',
   })
 })

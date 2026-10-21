@@ -138,7 +138,7 @@ for (const kind of VARIANTS) {
       else expect(head![3]).toMatch(/^\d\d:\d\d$/)
 
       rows.forEach((l, i) => {
-        const m = /^(\d+) (global |project) (.*?) (today|\d+d)(?: (stale\?))?$/.exec(l)
+        const m = /^(\d+) (global |project) (.*?) +(today|\d+d)$/.exec(l)
         expect(m).not.toBeNull()
         const [scope, n] = carried[i]!
         expect(Number(m![1])).toBe(i + 1)
@@ -146,8 +146,13 @@ for (const kind of VARIANTS) {
         expectCell(m![3]!, n.text)
         const days = ageOf(n)
         expect(m![4]).toBe(days === 0 ? 'today' : `${days}d`)
-        expect(m![5]).toBe(days >= 14 ? 'stale?' : undefined)
+        expect(l).not.toContain('stale')
       })
+      // the age is the last cell of every row: all rows end in the same column, the frame's last inside the border
+      expect(new Set(rows.map(glyphs)).size).toBe(1)
+      expect(glyphs(rows[0]!)).toBe(cols - 4)
+      // a long text is cut before the age, which stays whole
+      for (const l of rows) if (l.includes('…')) expect(l).toMatch(/[^\s…]…\s*(today|\s\d+d)$/)
 
       const left = stored.length - carried.length
       expect(body.filter(l => /not sent/.test(l))).toEqual(left > 0 ? [`+${left} not sent`] : [])

@@ -2,7 +2,7 @@ import { test, expect } from 'claude-code/testing'
 
 import {
   ageLabel, ageText, cutLine, facts, FOOTER_KEYS, FOOTER_LEAD, FOOTER_TAIL, isStale, memoHeader, memoLines, memoRows, noteAge, scopeBadge, sentLabel,
-  sentText, sizeLabel, staleHint,
+  sentText, sizeLabel, AGE_WIDTH,
 } from './memo-logic.ts'
 
 const NOW = Date.parse('2026-10-08T09:00:00Z')
@@ -82,8 +82,13 @@ test('ageText reads today under a day, then <n>d', () => {
   expect([0, 1, 9, 21].map(ageText)).toEqual(['today', '1d', '9d', '21d'])
 })
 
-test('staleHint: 13 days carries none, 14 and 15 carry stale?', () => {
-  expect([13, 14, 15].map(d => staleHint(note('a', d), NOW))).toEqual(['', 'stale?', 'stale?'])
+test('memoLines stale is a boolean: 13 days false, 14 and 15 true', () => {
+  expect([13, 14, 15].map(d => memoLines([note('a', d)], [], NOW)[0]!.stale)).toEqual([false, true, true])
+})
+
+test('memoLines age is right-aligned to AGE_WIDTH (5)', () => {
+  expect(AGE_WIDTH).toBe(5)
+  expect([0, 1, 21].map(d => memoLines([note('a', d)], [], NOW)[0]!.age)).toEqual(['today', '   1d', '  21d'])
 })
 
 test('scopeBadge pads both scopes to one width', () => {
@@ -95,9 +100,9 @@ test('scopeBadge pads both scopes to one width', () => {
 test('memoLines: global first then project, numbered as /memo rm, one line of facts each', () => {
   const lines = memoLines([note('g1', 21)], [note('p1', 0), note('p2', 13)], NOW)
   expect(lines).toEqual([
-    { n: 1, badge: 'global ', text: 'g1', age: '21d', stale: 'stale?' },
-    { n: 2, badge: 'project', text: 'p1', age: 'today', stale: '' },
-    { n: 3, badge: 'project', text: 'p2', age: '13d', stale: '' },
+    { n: 1, badge: 'global ', text: 'g1', age: '  21d', stale: true },
+    { n: 2, badge: 'project', text: 'p1', age: 'today', stale: false },
+    { n: 3, badge: 'project', text: 'p2', age: '  13d', stale: false },
   ])
 })
 

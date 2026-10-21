@@ -123,19 +123,20 @@ test('the footer is one dim line of keys and the ways to close', async ($, on) =
   expect(JSON.stringify(tree).match(/"type":"Button"/g)).toHaveLength(1)
 })
 
-test('a long note ends in an ellipsis at 110 columns with its age and stale hint whole, on one row', async ($, on) => {
+test('a long note ends in an ellipsis at 110 columns with its age whole at the row end, on one row', async ($, on) => {
   const LONG = 'Keep every migration reversible and say so in the pull request title and body. '.repeat(3).slice(0, 280)
   memoWorld(on, { store: { 'memo.global': [{ text: LONG, ts: T0 - 21 * 86_400_000 }] } })
   const props = { ...PANE, bodyColumns: 110 }
   const tree = await (await $.ui.mount({ plugin: 'session', surface: 'terminal', component: 'Pane', requestId: 'memo', props })).drawn()
   const rows = frame(tree as any, 'Memo', 110).filter(l => l.includes('Keep every'))
   expect(rows).toHaveLength(1)
-  expect(rows[0]).toMatch(/… 21d stale\? │$/)
+  expect(rows[0]).toMatch(/… {3}21d │$/)
+  expect(rows[0]).not.toContain('stale')
   expect(Array.from(rows[0]!).length).toBeLessThanOrEqual(110)
   expect(JSON.stringify(tree)).toMatch(/"wrap":"truncate-end"/)
   // The fixture cannot see an unpinned cell wrap (Ink's default flexShrink is 1), so pin it in the tree:
-  // number, badge, age and stale each sit in a flexShrink 0 box; only the text box shrinks.
-  expect(JSON.stringify(tree).match(/"flexShrink":0/g)).toHaveLength(4)
+  // number, badge and age each sit in a flexShrink 0 box; only the text box shrinks.
+  expect(JSON.stringify(tree).match(/"flexShrink":0/g)).toHaveLength(3)
 })
 
 test('the cut shows one warning line with the count of stored notes not sent', async ($, on) => {

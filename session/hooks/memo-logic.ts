@@ -113,20 +113,20 @@ export const FOOTER_LEAD = `${FOOTER_KEYS} · Esc,`
 export const FOOTER_TAIL = 'or /memo closes'
 const BADGE_WIDTH = 'project'.length
 
-export const ageText = (days: number): string => (days === 0 ? 'today' : `${days}d`)
+export const AGE_WIDTH = 'today'.length
 
-export const staleHint = (note: Note, now: number): string => (isStale(note, now) ? 'stale?' : '')
+export const ageText = (days: number): string => (days === 0 ? 'today' : `${days}d`)
 
 export const scopeBadge = (scope: 'global' | 'project'): string => scope.padEnd(BADGE_WIDTH)
 
-export type MemoLine = { n: number; badge: string; text: string; age: string; stale: string }
+export type MemoLine = { n: number; badge: string; text: string; age: string; stale: boolean }
 
 // One line per note the block carries, numbered as `/memo list` and `/memo rm` number them.
 export function memoLines(g: Note[], p: Note[], now: number): MemoLine[] {
   const v = visible(g, p)
   const all = [...v.g.map(n => ['global', n] as const), ...v.p.map(n => ['project', n] as const)]
   return all.map(([scope, note], i) => ({
-    n: i + 1, badge: scopeBadge(scope), text: note.text, age: ageText(noteAge(note, now)), stale: staleHint(note, now),
+    n: i + 1, badge: scopeBadge(scope), text: note.text, age: ageText(noteAge(note, now)).padStart(AGE_WIDTH), stale: isStale(note, now),
   }))
 }
 
