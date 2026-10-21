@@ -474,7 +474,7 @@ test('collect(): a nested task.json that is a stale self-copy of an ancestor (sa
     }));
 
     writeFileSync(taskPath, JSON.stringify({
-      run_id: taskId, cwd: root, request: 'top-level request', created_at: 1, store_path: taskPath,
+      run_id: taskId, cwd: root, request: 'top-level request', created_at: Date.now(), store_path: taskPath,
       spec: { packages: [{ id: 'P1', title: 'module a' }] },
       nodes: [node('dispatch:P1:1', 'dispatch', [], {
         subgoal_id: 'P1', state: 'running', child: { cwd: worktree, run_id: childRunId },
@@ -1751,9 +1751,9 @@ test('a task whose daemon and drivers are all dead reads stalled, not running (i
     writeFileSync(taskPath, JSON.stringify({ ...base, daemon: { pid: deadPid, started_at: 1 } }));
     assert.equal(collectTask(root, taskId).state, 'stalled');
     writeFileSync(taskPath, JSON.stringify({ ...base, daemon: { pid: process.pid, started_at: 1 } }));
-    assert.equal(collectTask(root, taskId).state, 'running', 'a live daemon is still driving it');
+    assert.equal(collectTask(root, taskId).state, 'stalled', 'a live daemon does not save a task whose driver is dead (F4-AC-10)');
     writeFileSync(taskPath, JSON.stringify(base));
-    assert.equal(collectTask(root, taskId).state, 'running', 'no daemon ever: driven by hand, left alone');
+    assert.equal(collectTask(root, taskId).state, 'stalled', 'no daemon, dead driver: no live driver is stalled (F4-AC-10)');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -1765,7 +1765,7 @@ test('--once --format summary prints { status, task }: status is --format status
     const r = run('--format', 'summary');
     assert.equal(r.status, 0, r.stderr);
     const out = JSON.parse(r.stdout);
-    assert.deepEqual(Object.keys(out).sort(), ['status', 'task']);
+    assert.deepEqual(Object.keys(out).sort(), ['status', 'task', 'tasks']);
     assert.deepEqual(out.status, JSON.parse(run('--format', 'status').stdout));
     assert.deepEqual(Object.keys(out.task).sort(), ['cost', 'day', 'done', 'key', 'log', 'now', 'stages', 'state', 'title', 'total', 'work', 'you']);
 
@@ -1797,7 +1797,7 @@ test('--once --format summary: no running task in the cwd and no --task gives ta
 const HID = 'aaaaaaaa-1111-4222-8333-444444444444';
 const DEAD_PID = 2 ** 22 + 991;
 
-function harnessTask({ harness = {}, task = {} } = {}) {
+function harnessTask({ harness = {}, task = {}, live = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'view-test-harness-'));
   const dir = join(root, HID);
   const cwd = join(root, 'proj');
@@ -1815,6 +1815,8 @@ function harnessTask({ harness = {}, task = {} } = {}) {
     ...task,
   };
   writeFileSync(join(dir, 'task.json'), JSON.stringify(body));
+  // live: the driver wrote its stream just now (the stalled rule needs a fresh stream.jsonl).
+  if (live) writeFileSync(join(dir, 'drivers', 'S.stream.jsonl'), '{"type":"assistant"}\n');
   return { root, dir, cwd, collect: () => collectTask(root, HID), cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
 
@@ -1840,13 +1842,13 @@ function harnessGraphRun(f, nodes) {
 const stageStates = (m) => Object.fromEntries(m.harness.stages.map((s) => [s.key, s.state]));
 
 test('collect(): a size-S task with a live harness driver reads running, not the frozen graph\'s blocked', () => {
-  const f = harnessTask();
+  const f = harnessTask({ live: true });
   try {
     const m = f.collect();
     assert.equal(m.error, null);
     assert.equal(m.state, 'running');
     assert.equal(m.harness.driver.alive, true);
-    assert.equal(m.harness.moving, false, 'no stream line yet');
+    assert.equal(m.harness.moving, true, 'a live driver has written its stream');
   } finally { f.cleanup(); }
 });
 
@@ -1856,7 +1858,7 @@ test('collect(): a harness driver dead past its restart budget reads blocked; de
   let f = harnessTask({ harness: { driver: driver(restarts) } });
   try { assert.equal(f.collect().state, 'blocked', 'two restarts spent of the default budget of two'); } finally { f.cleanup(); }
   f = harnessTask({ harness: { driver: driver(restarts.slice(0, 1)) } });
-  try { assert.equal(f.collect().state, 'running', 'one restart left: the daemon will respawn it'); } finally { f.cleanup(); }
+  try { assert.equal(f.collect().state, 'stalled', 'one restart left but no live driver: stalled until the daemon respawns it'); } finally { f.cleanup(); }
   f = harnessTask({ task: { driver_restarts: 0 }, harness: { driver: driver([]) } });
   try { assert.equal(f.collect().state, 'blocked', 'a budget of zero'); } finally { f.cleanup(); }
   f = harnessTask({ task: { driver_restarts: 0 }, harness: { driver: driver([]), waiting_capacity: { reason: 'limit', since: Date.now() } } });
@@ -1870,7 +1872,7 @@ test('collect(): a dead driver whose S.stream.jsonl is fresh still reads running
     writeFileSync(log, '{"type":"assistant"}\n');
     // the driver record has no log of its own: the S stream under drivers/ is the one looked at
     const fresh = f.collect();
-    assert.equal(fresh.state, 'running');
+    assert.equal(fresh.state, 'stalled', 'a dead pid is not a live driver even with a fresh stream (F4-AC-10)');
     assert.equal(fresh.harness.moving, true);
     const old = (Date.now() - 30 * 60000) / 1000;
     utimesSync(log, old, old);
@@ -1896,7 +1898,7 @@ test('collect(): a harness run\'s written report reads complete when its goal ga
 });
 
 test('collect(): a fallback run\'s 01-plan.md fills plan; 02-* alone fills it too; the gate and report stay pending until their files exist', () => {
-  const f = harnessTask();
+  const f = harnessTask({ live: true });
   try {
     harnessFallbackRun(f, { '01-plan.md': '# plan' });
     const m = f.collect();
@@ -1931,7 +1933,7 @@ test('collect(): a fresh S.stream.jsonl only says the driver is moving - with no
 });
 
 test('collect(): a graph-route harness run maps its nodes through stageOfNode; skipped areas and areas-critique never read blocked or failed', () => {
-  const f = harnessTask();
+  const f = harnessTask({ live: true });
   try {
     harnessGraphRun(f, [
       node('plan', 'plan', [], { state: 'done' }),
@@ -1956,16 +1958,16 @@ test('collect(): the stalled-daemon check still applies to a harness_run task', 
   try {
     assert.equal(f.collect().state, 'stalled', 'daemon dead, harness driver dead, budget left: nothing will move it');
     writeFileSync(join(f.dir, 'drivers', 'S.stream.jsonl'), '{"type":"assistant"}\n');
-    assert.equal(f.collect().state, 'running', 'a moving stream is something alive');
+    assert.equal(f.collect().state, 'stalled', 'a fresh stream does not make a dead pid a live driver (F4-AC-10)');
   } finally { f.cleanup(); }
-  f = harnessTask({ task: { daemon: { pid: DEAD_PID, started_at: 1 } } });
+  f = harnessTask({ task: { daemon: { pid: DEAD_PID, started_at: 1 } }, live: true });
   try { assert.equal(f.collect().state, 'running', 'a live harness driver is still driving it'); } finally { f.cleanup(); }
   f = harnessTask({ task: { daemon: { pid: process.pid, started_at: 1 } }, harness: { driver: dead } });
-  try { assert.equal(f.collect().state, 'running', 'a live daemon will respawn the driver'); } finally { f.cleanup(); }
+  try { assert.equal(f.collect().state, 'stalled', 'a live daemon does not save a task with no live driver (F4-AC-10)'); } finally { f.cleanup(); }
 });
 
 test('collect(): the viewer is read-only on a harness_run task - a refused pointer leaves task.json and ledger.jsonl byte-identical and records no harness_pointer_refused', () => {
-  const f = harnessTask();
+  const f = harnessTask({ live: true });
   try {
     // the pointer names a run dir whose manifest is NOT tagged with this task: ownsRun refuses it
     harnessFallbackRun(f, { '01-plan.md': '# plan' }, { tagged: false });
@@ -2029,7 +2031,7 @@ test('renderText()/renderResourcesText(): a harness_run task draws its stages fr
 });
 
 test('view.mjs --once on a harness_run task fixture prints state running, the plan stage filled and the title "3 items"', () => {
-  const f = harnessTask({ task: { request: '[backlog priority 0] a\n\n[backlog priority 1] b\n\n[backlog priority 2] c', requests: ['a', 'b', 'c'] } });
+  const f = harnessTask({ live: true, task: { request: '[backlog priority 0] a\n\n[backlog priority 1] b\n\n[backlog priority 2] c', requests: ['a', 'b', 'c'] } });
   try {
     harnessFallbackRun(f, { '01-plan.md': '# plan' });
     const run = (...a) => spawnSync('node', [VIEW, '--once', '--tasks-dir', f.root, '--task', HID, ...a], { encoding: 'utf8' });

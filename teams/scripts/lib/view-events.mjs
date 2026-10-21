@@ -3,15 +3,38 @@
 
 const id8 = (taskId) => 'E-' + String(taskId ?? '').replace(/^E-/, '').slice(0, 8);
 
-// One entry per notable ledger event; null = silent.
-const TEXT = {
-  node_finish: (e, id) => (e.state === 'failed' ? `${id} ${e.node_id} failed${e.attempt > 1 ? ` (attempt ${e.attempt})` : ''}` : null),
-  waiting_human: (e, id) => `${id} needs you: ${e.node_id}`,
-  child_driver_capacity: (e, id) => `${id} paused: provider limit`,
-  daemon_done: (e, id) => `${id} finished: ${e.state}`,
-  daemon_exhausted: (e, id) => `${id} stopped: daemon restarts used up`,
-  upstream_fix_rounds_exhausted: (e, id) => `${id} ${e.package_id}: fix rounds used up`,
+const clip = (s, n) => { const t = String(s ?? '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+export const hhmm = (ts) => {
+  const d = new Date(ts);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
+const cardLabel = (e) => String(e.subgoal_id ?? (e.key ? String(e.key).split('/')[1] : null) ?? e.node_id ?? '').split(':').slice(0, 2).join(':').replace(/^(?:dispatch|accept|ask):/, '');
+
+// The one table of what a ledger event means. text = the toast line (null = silent); hand = the
+// recorded hand-off {from, what, to} the teams pane's Floor feed shows (absent = not a hand-off).
+const EVENTS = {
+  node_finish: { text: (e, id) => (e.state === 'failed' ? `${id} ${e.node_id} failed${e.attempt > 1 ? ` (attempt ${e.attempt})` : ''}` : null) },
+  waiting_human: { text: (e, id) => `${id} needs you: ${e.node_id}`, hand: (e) => ({ from: cardLabel(e), what: 'asks you', to: 'you' }) },
+  child_driver_capacity: { text: (e, id) => `${id} paused: provider limit` },
+  daemon_done: { text: (e, id) => `${id} finished: ${e.state}` },
+  daemon_exhausted: { text: (e, id) => `${id} stopped: daemon restarts used up` },
+  upstream_fix_rounds_exhausted: { text: (e, id) => `${id} ${e.package_id}: fix rounds used up` },
+  verdict: { hand: (e) => ({ from: e.actor || 'judge', what: `verdict ${e.verdict}`, to: cardLabel(e) }) },
+  integrated: { hand: (e) => ({ from: 'integrate', what: `integrated ${e.merged ?? 0}`, to: 'EPIC' }) },
+  defects_filed: { hand: (e) => ({ from: e.reporter || 'qa', what: `filed ${(e.filed || []).length} defect(s)`, to: (e.filed || []).join(', ') || 'EPIC' }) },
+  tm_submit_human: { hand: (e) => ({ from: 'you', what: clip(e.answer, 60) || 'answered', to: cardLabel(e) }) },
+};
+
+// Ledger lines as events with a numeric ts; a torn last line is skipped.
+function parsed(lines) {
+  const evs = [];
+  for (const line of lines || []) {
+    let e;
+    try { e = JSON.parse(line); } catch { continue; }
+    if (e && typeof e.ts === 'number') evs.push(e);
+  }
+  return evs;
+}
 
 // A failed node_finish waits for the event that says what happens next; past this it is told as it stands.
 export const HOLD_MS = 120000;
@@ -81,16 +104,11 @@ function failure(evs, i, ctx, now) {
 // reasons: { node_id: result.reason from task.json }, now (ms; default the newest ts in the lines) }.
 // Without ctx the ledger is told as before: no reason, no hold.
 export function notableEvents(lines, sinceTs, ctx) {
-  const evs = [];
-  for (const line of lines) {
-    let e;
-    try { e = JSON.parse(line); } catch { continue; } // torn last line
-    if (e && typeof e.ts === 'number') evs.push(e);
-  }
+  const evs = parsed(lines);
   const now = ctx ? Math.max(typeof ctx.now === 'number' ? ctx.now : -Infinity, ...evs.map((e) => e.ts)) : null;
   const out = [];
   evs.forEach((e, i) => {
-    const base = TEXT[e.event]?.(e, id8(e.task_id));
+    const base = EVENTS[e.event]?.text?.(e, id8(e.task_id));
     if (!base) return;
     let ts = e.ts;
     let story = {};
@@ -111,6 +129,31 @@ export function notableEvents(lines, sinceTs, ctx) {
     out.push({ ts, task_id: e.task_id, kind: e.event, text, ...state, ...(pkg != null ? { package: String(pkg) } : {}), ...(typeof e.attempt === 'number' ? { attempt: e.attempt } : {}), ...story });
   });
   return out.sort((a, b) => a.ts - b.ts);
+}
+
+// ---------- recorded hand-offs (the teams pane's Floor feed) ----------
+// Only events the ledger records count: a verdict, an integration, filed defects, a person's
+// answer, a card waiting on a person. Nothing is inferred; no line, no hand-off.
+
+// The newest `limit` recorded hand-offs, newest first: [{ time, from, what, to }].
+export function handoffs(lines, { limit = 5 } = {}) {
+  const out = [];
+  for (const e of parsed(lines)) {
+    const h = EVENTS[e.event]?.hand?.(e);
+    if (h) out.push({ ts: e.ts, time: hhmm(e.ts), ...h });
+  }
+  return out.sort((a, b) => b.ts - a.ts).slice(0, limit).map(({ ts, ...h }) => h);
+}
+
+// The newest verdict recorded for each card (by subgoal_id): { P1: { verdict, ts } }.
+export function lastVerdicts(lines) {
+  const out = {};
+  for (const e of parsed(lines)) {
+    if (e.event !== 'verdict' || e.subgoal_id == null) continue;
+    const id = String(e.subgoal_id);
+    if (!out[id] || e.ts >= out[id].ts) out[id] = { verdict: e.verdict ?? null, ts: e.ts };
+  }
+  return out;
 }
 
 export function statusLine(rows) {

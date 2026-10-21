@@ -138,6 +138,10 @@ function nodeSummary(n) {
   // CURRENTLY reading waiting_human, not merely having waiting_since set: a card a human already
   // answered keeps the field (nothing clears it), and showing a stale "waiting Xh" on a resolved
   // card would be the same error runState's own waiting_human branch exists to avoid.
+  // An ask card's own question text: what the pane shows next to a card waiting on a person.
+  if (n.stage === 'ask' && Array.isArray(n.questions)) {
+    out.questions = n.questions.map((q) => String((q && (q.question || q.unknown)) || '')).filter(Boolean).slice(0, 5);
+  }
   if (n.state === 'waiting_human' && n.waiting_since) {
     out.waiting_since = n.waiting_since;
     out.waiting_elapsed_ms = elapsedMs(n.waiting_since);
@@ -172,6 +176,7 @@ function collectChildRun(cwd, runId, visiting, ticketCtx) {
     run_id: run.run_id,
     cwd,
     flow: run.flow,
+    max_retries: Number.isInteger(run.max_retries) ? run.max_retries : null,
     state: state.state,
     counts: state.counts,
     goal_verdict: state.goal_verdict || null,
@@ -321,6 +326,43 @@ function packageModel(task, pkg, dispatchNode, acceptNode, visiting) {
 }
 
 function pidAliveFromDriver(driver) { return pidAlive(driver && driver.pid); }
+
+// ---------- the stalled rule (F4-AC-9..13) ----------
+// A driver is live only while its stream.jsonl was written within STALL_MS and, when a pid is
+// recorded, that pid is alive. A task that reads READY/IN_PROGRESS/IN_REVIEW with no live driver
+// reads stalled, whether or not its daemon lives.
+export const STALL_MS = 10 * 60 * 1000;
+const STALLABLE = new Set(['READY', 'IN_PROGRESS', 'IN_REVIEW']);
+
+function mtimeOf(path) {
+  try { return statSync(path).mtimeMs; } catch { return null; }
+}
+
+export function driverLive(driver, now = Date.now()) {
+  if (!driver || !driver.log) return false;
+  const m = mtimeOf(driver.log);
+  if (m == null || now - m > STALL_MS) return false;
+  return driver.pid ? pidAlive(driver.pid) : true;
+}
+
+function taskStalled(tasksDir, taskId, task, now = Date.now()) {
+  const h = task.harness_run;
+  const nodes = Array.isArray(task.nodes) ? task.nodes : [];
+  // A driver parked on a usage limit has exited on purpose; that is waiting, not stalled.
+  if ((h && h.waiting_capacity) || nodes.some((n) => n && n.child && n.child.waiting_capacity)) return false;
+  const drivers = [];
+  if (h && h.driver) drivers.push({ ...h.driver, log: h.driver.log || join(tasksDir, taskId, 'drivers', 'S.stream.jsonl') });
+  if (task.s_run && task.s_run.driver) drivers.push(task.s_run.driver);
+  for (const n of nodes) if (n && n.child && n.child.driver) drivers.push(n.child.driver);
+  if (drivers.length) return !drivers.some((d) => driverLive(d, now));
+  // Nothing ever recorded a driver (driven by hand): the newest sign of life decides.
+  const dir = join(tasksDir, taskId);
+  const marks = [Number(task.created_at) || 0, mtimeOf(join(dir, 'ledger.jsonl')) || 0];
+  try {
+    for (const e of readdirSync(join(dir, 'drivers'))) if (e.endsWith('.stream.jsonl')) marks.push(mtimeOf(join(dir, 'drivers', e)) || 0);
+  } catch { /* no drivers dir */ }
+  return now - Math.max(...marks) > STALL_MS;
+}
 
 // The QA cards and task.audit_pkg (§2/§3 of the QA and planning-audit phase-Teams) are not part of
 // task.spec.packages - each is a fixed package template (id 'QA-F<n>' or 'AUDIT') that can be
@@ -475,7 +517,14 @@ function collectHarness(task, taskId, tasksDir) {
   for (const s of stages) counts[s.state] += 1;
   return {
     state, counts,
-    harness: { slug: run ? (run.route === 'fallback' ? basename(run.run_dir) : run.run_id) : null, moving, driver, stages },
+    harness: {
+      slug: run ? (run.route === 'fallback' ? basename(run.run_dir) : run.run_id) : null, moving, driver, stages,
+      // the graph-route run's own file location (run_file in the floor summary); null on the fallback route
+      graph: run && run.route === 'graph' ? { run_id: run.run_id, cwd: run.cwd } : null,
+      // graph-route nodes parked on a person (the stage bar folds waiting into running)
+      waiting: run && run.route === 'graph'
+        ? ((loadRunAt(graphRunPath(run.cwd, run.run_id)) || {}).nodes || []).filter((n) => n && n.state === 'waiting_human').length : 0,
+    },
   };
 }
 
@@ -576,6 +625,12 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
   // resourced with a driver process. Only a NESTED copy earns the extra suspicion, because only
   // a nested copy can be the kind of frozen worktree artifact this exists to catch.
   const harnessAlive = !!(harness && (harness.moving || (harness.driver && harness.driver.alive)));
+  const epicWord = epicTicketState(task);
+  const stalledTask = visiting.depth === 0 && STALLABLE.has(epicWord) && taskStalled(tasksDir, taskId, task);
+  if (stalledTask) {
+    if (state === 'running') state = 'stalled';
+    for (const p of packages) if (STALLABLE.has(p.ticket_state)) p.ticket_state = 'stalled';
+  }
   if (visiting.depth > 0 && state === 'running') {
     const anyDriverAlive = (daemon && daemon.alive)
       || harnessAlive
@@ -611,7 +666,7 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     // plan/setgoal/impl/qualitygate), never `state`/`flow` below (the engine's own run-state
     // words) - the two are deliberately different vocabularies for different audiences (see
     // tickets.mjs's header comment), and this surface shows both rather than picking one.
-    ticket: { key: epicKey(task.run_id || taskId), title: deriveTitle(task.request, task.requests), state: epicTicketState(task), phase: epicPhase(task) },
+    ticket: { key: epicKey(task.run_id || taskId), title: deriveTitle(task.request, task.requests), state: stalledTask ? 'stalled' : epicWord, phase: epicPhase(task) },
     size: task.size || null,
     flow: task.flow && task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),
     kind: task.kind || 'task',
@@ -702,6 +757,7 @@ export function listTasks(tasksDir) {
       // which a size-S task never sets. storyProgress still only makes sense for a task that
       // shaped packages (epicBoardRows reads task.spec.packages), so it stays skipped for one.
       state = epicTicketState(task);
+      if (STALLABLE.has(state) && taskStalled(tasksDir, id, task)) state = 'stalled';
       phase = epicPhase(task);
       if (!task.s_run) stories = storyProgress(task);
     } catch { /* leave 'unknown' / no progress - a torn task.json should not crash the index */ }

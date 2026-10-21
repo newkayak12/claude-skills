@@ -932,6 +932,7 @@ test('S1: the harness prompt carries the request, context and decisions, the tag
     const ran = await waitFor(() => (existsSync(`${f.ran}.1`) ? JSON.parse(readFileSync(`${f.ran}.1`, 'utf8')) : null), 'the harness driver to run');
     const prompt = ran.argv[ran.argv.length - 1];
     assert.match(prompt, new RegExp(`graph_open\\(\\{request: "\\[teams-task ${task_id}\\] "`));
+    assert.ok(prompt.includes(`owner: {task_id: "${task_id}", key: "E-${task_id.slice(0, 8)}"}`), 'graph_open carries the owner');
     assert.match(prompt, /allocation: "balanced"/);
     assert.match(prompt, /isolated: false/);
     assert.match(prompt, /native_models: \["sonnet"\]/);

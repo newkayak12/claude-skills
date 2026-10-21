@@ -3,12 +3,16 @@
 // who is it waiting on, how much is left. No fs; no node ids, paths or verdict fields leave here.
 
 import { STAGE_KEYS, stageOfNode, nodeState, mergeStates } from './view-stages.mjs';
+import { hhmm } from './view-events.mjs';
 
 const DAY_MS = 86400000;
 const HUMAN_STAGE = { plan: 'plan', build: 'build', integrate: 'integration', qa: 'QA', gate: 'final gate', report: 'report' };
 
 // A free-text reason may carry a path or a node id; drop both.
 const scrub = (s) => String(s || '').replace(/\S*\/(?:Users|var|tmp)\/\S*/g, '').replace(/\b[\w-]+:[\w-]+(?::\d+)+/g, '').replace(/\s+/g, ' ').trim();
+
+// A node parked on a person (a node state word, not a ledger event).
+export const waitingNode = (n) => !!n && n.state === 'waiting_human';
 
 export function cardState(c) {
   const states = [c.accept && c.accept.state, c.dispatch && c.dispatch.state].filter(Boolean);
@@ -23,7 +27,7 @@ export function cardState(c) {
 // a cancelled task nothing is running, and what was in flight reads as not started.
 const idleIfCancelled = (m, s) => (m.state === 'cancelled' && s === 'running' ? 'pending' : s);
 
-function cardsOf(m) {
+export function cardsOf(m) {
   const out = [];
   const add = (c, kind, stage) => out.push({ c, kind, stage, state: idleIfCancelled(m, cardState(c)) });
   for (const p of m.packages || []) {
@@ -76,13 +80,29 @@ function waitingOf(m, cards) {
   for (const n of [...(m.manager_stages || []), ...((m.s_run && m.s_run.nodes) || [])]) {
     if (n.state === 'waiting_human') items.push(HUMAN_STAGE[stageOfNode(n.node_id)] || 'a step');
   }
+  for (let i = 0; i < ((m.harness && m.harness.waiting) || 0); i += 1) items.push('a step');
   return items;
 }
 
-const hhmm = (ts) => {
-  const d = new Date(ts);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
+// Each card waiting on a person with the question it asks (the ask card's text; blank when it has none).
+function waitingCards(m, cards) {
+  const out = [];
+  for (const { c } of cards) {
+    const nodes = [c.dispatch, c.accept, ...((c.child && c.child.nodes) || [])].filter((n) => n && n.state === 'waiting_human');
+    if (!nodes.length) continue;
+    const question = nodes.flatMap((n) => n.questions || [])[0] || '';
+    out.push({ key: c.ticket_key || String(c.id), title: c.title || 'a card', question });
+  }
+  for (const n of [...(m.manager_stages || []), ...((m.s_run && m.s_run.nodes) || [])]) {
+    if (n.state === 'waiting_human') out.push({ key: (m.ticket && m.ticket.key) || '', title: HUMAN_STAGE[stageOfNode(n.node_id)] || 'a step', question: (n.questions || [])[0] || '' });
+  }
+  for (let i = 0; i < ((m.harness && m.harness.waiting) || 0); i += 1) out.push({ key: (m.ticket && m.ticket.key) || '', title: 'a step', question: '' });
+  return out;
+}
+
+// Everything of this task parked on a person, read from the collected model: package, QA and audit
+// cards (dispatch, accept and their child run's nodes), manager stages, the S run, harness graph nodes.
+export const waitingCount = (m) => waitingOf(m, cardsOf(m)).length;
 
 function logOf(events, titleOf) {
   const out = [];
@@ -147,7 +167,7 @@ export function summarize(model, { now = Date.now() } = {}) {
     day: Math.max(1, Math.ceil(elapsed / DAY_MS)),
     done, total: work.length,
     now: nowStep,
-    you: { count: waiting.length, items: waiting },
+    you: { count: waiting.length, items: waiting, cards: waitingCards(m, cards) },
     stages, work,
     cost: { usd: (m.cost && m.cost.usd) || 0, turns: (m.cost && m.cost.turns) || 0 },
     log: logOf(m.events, titleOf),
