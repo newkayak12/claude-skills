@@ -145,7 +145,7 @@ export const register: Register = (on, options) => {
       await $.ui.close({ id: PANE })
       return { text: 'Denials pane closed.' }
     }
-    await $.ui.open({ id: PANE, title: 'Denied calls', closeOnEscape: true })
+    await $.ui.open({ id: PANE, title: 'Denied calls', focus: true, closeOnEscape: true })
     return { text: 'Denials pane opened.' }
   }).catch(($, e, next) => next(e))
 
@@ -164,11 +164,13 @@ export const register: Register = (on, options) => {
           return (
             <Box key={`d-${c.id}`} flexDirection="column">
               <Box gap={1}>
-                <Text dimColor>{c.time}</Text>
-                <Text bold>{c.tool}</Text>
+                <Box flexShrink={0}><Text dimColor>{c.time}</Text></Box>
+                <Box flexShrink={0}><Text bold>{c.tool}</Text></Box>
                 <Box flexGrow={1} flexShrink={1}><Text wrap="truncate-end">{c.what}</Text></Box>
-                <Text dimColor>{c.rule}</Text>
-                {c.source.tone === 'dim' ? <Text dimColor>{c.source.text}</Text> : <Text color={c.source.tone}>{c.source.text}</Text>}
+                <Box flexShrink={0}><Text dimColor>{c.rule}</Text></Box>
+                <Box flexShrink={0}>
+                  {c.source.tone === 'dim' ? <Text dimColor>{c.source.text}</Text> : <Text color={c.source.tone}>{c.source.text}</Text>}
+                </Box>
                 <Button key={`copy-${c.id}`} label="copy" onPress={() => update($, copyAtom, () => c.id)} />
               </Box>
               {shown === c.id && <Text>{copyReveal(r)}</Text>}
