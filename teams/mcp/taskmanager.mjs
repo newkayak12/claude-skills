@@ -6056,7 +6056,7 @@ function harnessPrompt(task, opts = {}) {
   return [
     `Run the development harness on the request below, in cwd ${h.cwd}, with claude and codex taking part. Do not call tm_open, tm_run or team_open, and never write this task's task.json.`,
     resume,
-    `Route 1, the graph MCP: graph_open({request: "${tag} " followed by the request, cwd: "${h.cwd}", ${routing}}), then drive it to its report exactly as the graph:orchestrate skill says.`,
+    `Route 1, the graph MCP: graph_open({request: "${tag} " followed by the request, cwd: "${h.cwd}", owner: {task_id: "${task.run_id}", key: "${epicKey(task.run_id)}"}, ${routing}}), then drive it to its report exactly as the graph:orchestrate skill says.`,
     `Route 2, only when the graph MCP is not available: the harness skill's Agent Team fallback (harness/engine/fallback.md), codex through codex-exec-adapter.mjs with codex_provider "auto" (a fallback to Claude is recorded as such). Its manifest.json carries "teams_task": "${task.run_id}". Do not use the Workflow route.`,
     `As soon as the run exists, write ${h.pointer} as {"route":"graph","run_id":"<id>","cwd":"${h.cwd}"} or {"route":"fallback","run_dir":"<absolute run dir>"}.`,
     `When the run has written its report, copy that report to ${h.report_path}. The task's verdict is read from the run itself, not from anything you write.`,
