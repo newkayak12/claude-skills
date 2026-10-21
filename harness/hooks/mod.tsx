@@ -4,7 +4,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Decision, HarnessRow, PaneTab, RunInfo, RunSub, StageKey } from '../types'
 import { MARK, TINT, bar, cap, fmt, isKorean, tabs } from './draw'
 import type { Mark } from './draw'
-import { DEMO_NOW, bandLines, demoRows, innerWidth, paneContent, paneHead, parseDemoArg, renderLines, tabRowPlan } from './harness-draw'
+import { DEMO_NOW, bandLines, demoRows, footerFits, innerWidth, paneContent, paneHead, parseDemoArg, renderLines, tabRowPlan } from './harness-draw'
 import type { PaneCtx, TabLabels } from './harness-draw'
 import type { RowFailure } from './status'
 import {
@@ -621,12 +621,9 @@ export const register: Register = on => {
       else if (key.kind === 'tab') await update($, paneTab, () => key.tab)
       else await $.ui.close({ id: PANE })
     }
-    // prev/next join the keys row only where they fit beside it (the keys stay one row; [ and ] still step)
-    const wide = (t: string) => [...t].reduce((n, c) => n + (/[ᄀ-ᅟ⺀-꓏가-힣＀-｠]/.test(c) ? 2 : 1), 0)
-    const keysW = wide(s('keysLead')) + wide(s('keysTail')) + 5 + 2
-    const stepsW = 1 + wide(s('prev')) + 2 + wide(s('next'))
+    // prev/next join the keys row only where harness-draw's footerFits says they fit (the keys stay one row; [ and ] still step)
     const steps =
-      v.ordered.length > 1 && keysW + stepsW <= ctx.width ? (
+      footerFits({ lead: s('keysLead'), tail: s('keysTail'), prev: s('prev'), next: s('next') }, ctx.width, v.ordered.length).steps ? (
         <Box columnGap={2} flexShrink={1} overflow="hidden">
           <Button key="prev" plain label={s('prev')} onPress={() => cycle($, -1)} />
           <Button key="next" plain label={s('next')} onPress={() => cycle($, 1)} />
@@ -752,7 +749,7 @@ export const register: Register = on => {
           {closeBtn}
           <Box flexShrink={0}><Text dimColor wrap="truncate-end">{s('keysTail')}</Text></Box>
           {steps}
-          <Box flexShrink={1} overflow="hidden"><Input key="keys" autoFocus value="" placeholder="" onInput={onKey} onSubmit={() => {}} /></Box>
+          <Box flexShrink={1} height={1} overflow="hidden"><Input key="keys" autoFocus value="" placeholder="" onInput={onKey} onSubmit={() => {}} /></Box>
         </Box>
       </Box>
     )
