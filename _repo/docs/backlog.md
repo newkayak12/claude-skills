@@ -210,6 +210,12 @@ those, one card per EPIC (43 first; 40 and 41 before 42).
     - Format (user, same day): "글감마다 폴더, 세부 내용마다 md로" — `material/<id>/` per item, one md
       per part (meta, problem, decision, result, learned, gaps, history). Nice to have later: knowledge
       can build over these folders. Order: "글감모으기부터 시작" — collection first.
+    - Step 1 shipped 2026-10-21 (`portfolio:material`, `666b7283`): tests 17/17; real run on fictional
+      material made 2 items × 7 parts + index, re-run changed nothing. Left: item id repeats the title
+      (`retro-md-검색-api-지연--검색-api-지연`); index ids not linked to folders; `user-stated` vs
+      `근거 없음` applied inconsistently to a figure whose cited capture was not handed over; agents also
+      reported an unreliable open-gaps count in the summary, an empty result table for episodes with no
+      figures, add-on material from another file read as ambiguous. Next: write step.
 
 ### Skeleton and length (one card per skill, next edit)
 
@@ -246,3 +252,4 @@ those, one card per EPIC (43 first; 40 and 41 before 42).
 | E-c2808479 | 2026-10-17 | 14 | shipped `524ecff0`; size S; $6.21 |
 | E-32e8068c | 2026-10-18 | 51 (teams), 45 | shipped by hand `8e3a7550` (P1's gate could not re-run tests: card 39); teams suite 1265, 0 fail; $41 |
 | E-6ab58cc6 | 2026-10-18 | 40, 43 | running |
+| E-5ad30c36 → E-f169fb8c | 2026-10-18 → 21 | 54 step 1 | P1+P2 accepted; P3 (real run) failed 3× because the run's evidence was deleted before gates could read it; merged by hand `666b7283`, run by hand; $43.7 |
