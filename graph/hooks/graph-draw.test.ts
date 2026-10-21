@@ -152,7 +152,7 @@ test('pane: a teams-engine row with no cost or last step reads — for both', ()
 
 test('footer: one dim line, [ ] only with two runs or more, label q, no word twice', () => {
   expect(plain(paneFooter(1))).toBe('q close')
-  expect(plain(paneFooter(2))).toBe('[ ] switch run  ·  q close')
+  expect(plain(paneFooter(2))).toBe('[ prev next ]  q close')
   expect(footerKeys(1).some(k => k.key === '[ ]')).toBe(false)
   for (const n of [1, 2, 3]) {
     const f = paneFooter(n)
@@ -161,8 +161,8 @@ test('footer: one dim line, [ ] only with two runs or more, label q, no word twi
     expect(new Set(words).size).toBe(words.length)
   }
   const lines = paneLines(leading('full'), ctxFor(190, { pos: { k: 1, n: 2 } }))
-  expect(plain(lines[lines.length - 1]!)).toBe('[ ] switch run  ·  q close')
-  expect(text(lines.slice(0, -1)).some(l => /\bq close\b|\[ \]/.test(l))).toBe(false)
+  expect(plain(lines[lines.length - 1]!)).toBe('[ prev next ]  q close')
+  expect(text(lines.slice(0, -1)).some(l => /\bq close\b|\[ prev/.test(l))).toBe(false)
 })
 
 test('every scenario at 190 and 110 fits: no line over its width, no break, no cut glyph, long text ends in …', () => {
@@ -201,7 +201,7 @@ test('parallel shows two standalone runs and no owned run; [ ] reach both', () =
     const out = renderDemo('parallel', w)
     expect(out).toContain('run 1 of 2')
     expect(out).toContain('run 2 of 2')
-    expect(out).toContain('[ ] switch run')
+    expect(out).toContain('[ prev next ]  q close')
     expect(out).not.toContain('b33f00d1')
     expect(out).not.toContain('E-3f9a21c0/P2')
   }
@@ -222,6 +222,17 @@ test('detailLines: skipped nodes absent, attempt shown from 2, agent column alig
   expect(body.some(l => l.startsWith('  the legacy endpoint still streams'))).toBe(true)
   const col = body.filter(l => /^[✔✘▸✎⌕…◌○] /u.test(l)).map(l => l.indexOf('codex') >= 0 ? l.indexOf('codex') : l.indexOf('claude-sonnet'))
   expect(new Set(col).size).toBe(1)
+})
+
+test('detailLines: the words come from ctx.words (Korean session)', () => {
+  const r = leading('full')
+  const nodes = r.nodes.filter(n => n.node_id === 'implement:U2:2')
+  const words = { attempt: '({n}번째 시도)', feedback: '전달된 피드백', more: '+{n}건 더' }
+  const ls = text(detailLines({ ...r, nodes }, ctxFor(190, { words })))
+  expect(ls.some(l => l.includes('(2번째 시도)'))).toBe(true)
+  expect(ls.some(l => l.startsWith('  전달된 피드백: '))).toBe(true)
+  const many = Array.from({ length: 30 }, (_, i) => ({ ...r.nodes[0]!, node_id: `plan:${i}`, subgoal_id: `S${i}`, state: 'done', attempt: 1, feedback: null, reason: null }))
+  expect(text(detailLines({ ...r, nodes: many }, ctxFor(190, { words }))).pop()).toBe('  +6건 더')
 })
 
 test('detailLines: at most 24 node rows then "+n more"; every line fits both widths, a cut ends in …', () => {

@@ -211,16 +211,21 @@ export function bandLines(ordered: readonly GraphRow[], o: { width: number; nowM
 
 /* --- the pane --- */
 
-export type PaneCtx = { width: number; nowMs: number; tick: number; pos: { k: number; n: number }; owner?: string }
+// words of the Detail tab with `{n}` slots; English when the caller gives none
+export type DetailWords = { attempt: string; feedback: string; more: string }
+const EN_WORDS: DetailWords = { attempt: '(attempt {n})', feedback: 'feedback', more: '+{n} more' }
+const slot = (t: string, n: number) => t.replace('{n}', String(n))
+
+export type PaneCtx = { width: number; nowMs: number; tick: number; pos: { k: number; n: number }; owner?: string; words?: DetailWords }
 
 // the keys, as label pairs: `[ ]` only with a second run to go to
 export const footerKeys = (n: number): { key: string; label: string }[] => [
   ...(n >= 2 ? [{ key: '[ ]', label: 'switch run' }] : []),
   { key: 'q', label: 'close' },
 ]
-// one dim footer, the only place keys are named
-export const paneFooter = (n: number): Line =>
-  footerKeys(n).flatMap((k, i) => [...(i > 0 ? [seg('  ·  ', { dim: true })] : []), seg(`${k.key} ${k.label}`, { dim: true })])
+// one dim footer, the only place keys are named; the same words and spacing as the live pane's buttons
+// (`[ prev next ]` and `q close`)
+export const paneFooter = (n: number): Line => [seg(n >= 2 ? '[ prev next ]  q close' : 'q close', { dim: true })]
 
 const tabLine = (c: PaneCtx): Line => [seg('graph', { bold: true }), ...(c.owner !== undefined ? [seg(`  under ${c.owner}`, { dim: true })] : [])]
 
@@ -335,21 +340,22 @@ const DETAIL_MAX = 24 // node rows drawn before "+n more"
 // The Detail tab, everything but the footer: one row per node that ran (skipped ones are no attempt), the name and
 // agent columns aligned; a handed-on feedback and a failure reason sit under their node.
 export function detailLines(r: GraphRow, c: PaneCtx): Line[] {
+  const w = c.words ?? EN_WORDS
   const nodes = r.nodes.filter(n => n.state !== 'skipped')
   const shown = nodes.slice(0, DETAIL_MAX).map(n => ({
     n,
-    name: `${nodeLabel(n)}${n.attempt !== null && n.attempt > 1 ? ` (attempt ${n.attempt})` : ''}`,
+    name: `${nodeLabel(n)}${n.attempt !== null && n.attempt > 1 ? ` ${slot(w.attempt, n.attempt)}` : ''}`,
   }))
   const nameW = Math.max(0, ...shown.map(x => cells(x.name)))
   const out: Line[] = [tabLine(c), headerLine(r, c), []]
   for (const { n, name } of shown) {
     out.push([stageIcon(n, c.tick), seg(' '), seg(pad(name, nameW + 2)), seg(n.agent ?? NONE, { dim: true })])
     const feedback = oneLine(n.feedback)
-    if (feedback !== '') out.push([seg('  '), seg(`feedback: ${feedback}`, { dim: true })])
+    if (feedback !== '') out.push([seg('  '), seg(`${w.feedback}: ${feedback}`, { dim: true })])
     const reason = oneLine(n.reason)
     if (reason !== '') out.push([seg('  '), seg(reason, { tint: 'error' })])
   }
-  if (nodes.length > DETAIL_MAX) out.push([seg(`  +${nodes.length - DETAIL_MAX} more`, { dim: true })])
+  if (nodes.length > DETAIL_MAX) out.push([seg(`  ${slot(w.more, nodes.length - DETAIL_MAX)}`, { dim: true })])
   return out.map(l => clipLine(l, c.width))
 }
 
