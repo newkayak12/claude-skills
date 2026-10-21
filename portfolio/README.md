@@ -30,6 +30,7 @@ classification). Connect them under Claude settings → MCP Servers as remote SS
 | I want to… | Skill |
 |---|---|
 | Run a whole application from JD to interview day | `job-application-workflow` |
+| Collect my retrospectives, notes and chats into portfolio material, one folder per episode | `material` |
 | Know how well I match one specific posting — or where to apply with no posting | `fit` |
 | Get an honest interviewer's read on my portfolio | `feedback` |
 | Check whether my numbers, skills, dates — and claimed level — hold up | `feedback` |
@@ -74,6 +75,53 @@ Each step has a skip condition and a standalone-input fallback. The 자기소개
 `write` plugin and does not count characters — check each 문항's limit yourself. Nothing is
 researched about the company: fit reasons only from what you give it. Every step carries the
 `[확정]` list forward and marks missing facts `[확인 필요]`.
+
+### `material`
+
+Collection only, the step before writing. You hand over retrospectives, notes, chat dumps or
+pasted text; it splits them into episodes (one problem → decision → result story each) and
+writes one folder per episode in `material/` of your current project. Not for writing the
+portfolio, rendering a deck or feedback loop-back — those are later steps.
+
+```
+Here is my retrospective. Collect the episodes as portfolio material,
+and don't make anything up.
+```
+
+```
+material/
+  index.md
+  <id>/
+    meta.md  problem.md  decision.md  result.md  learned.md  gaps.md  history.md
+```
+
+`<id>` is a slug of the source and the title. Each file is a part of the item: `meta.md` (title,
+status, source, period, role, tags), `problem.md`, `decision.md`, `result.md`, `learned.md`,
+`gaps.md` (questions for you) and `history.md` (dated change log); `index.md` lists the items.
+File names are English, the headings inside are Korean, and the content stays in the language of
+your material. Every filled line is a short paraphrase plus a verbatim quote or pointer, cited by
+file and heading (for pasted or chat text: a message index, a timestamp or the first words).
+
+Each item has a status: `raw`, `shaped`, `written`, `rendered`, `reviewed`. This step creates
+only `raw` and never changes it; later steps own every other transition and log it in
+`history.md`.
+
+Only the material you give is used, and nothing is invented. Whatever is unknown — a cause, a
+baseline, a date, your role — becomes a question in `gaps.md` instead of a guess. Numbers in
+`result.md` carry their evidence, a citation in the material you handed over; a figure you
+flag as your own claim ("체감상", "I estimate") is labelled `user-stated`; a figure with neither is
+marked `근거 없음` and gets a `gaps.md` question for its source.
+
+Re-running on the same material updates the matching item instead of duplicating it. Match is
+decided by the source and title, so keep the source file name and section stable between runs;
+if it is unclear whether an episode is the same item, it asks you to pick merge or new. Hand
+over the answer to a `gaps.md` question as new material: the part is updated with its citation
+and the question stays visible, marked `[답변됨]`. A re-run whose material adds nothing writes
+nothing, `history.md` included.
+
+Personal or confidential data in your material (names, employer details) is kept as given and
+stored only in your project, under `material/` in the current working directory. Files in
+`material/` that this step did not write are left alone and listed in its summary.
 
 ### `fit`
 
