@@ -309,7 +309,7 @@ function subgoalLines(r: GraphRow, c: PaneCtx): Line[] {
   const tryW = col(p => p.tries)
   let agentW = Math.min(24, col(p => p.agent))
   const timeW = col(p => p.time)
-  const restOf = () => c.width - (idW + 2) - 7 - (tryW + 2) - (agentW + 2) - timeW
+  const restOf = () => c.width - (idW + 2) - 7 - 2 - (tryW + 2) - (agentW + 2) - timeW
   // in a narrow pane the agent column gives way before the title falls under 8 cells, so no column's tail is cut
   if (restOf() < 8) agentW = Math.max(Math.min(agentW, 6), agentW - (8 - restOf()))
   const titleW = Math.max(4, Math.min(col(p => p.title), restOf()))
