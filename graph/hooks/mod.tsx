@@ -30,6 +30,7 @@ const en = {
   cmdDesc: 'Open or close the graph status pane', paneOpened: 'pane opened', paneClosed: 'pane closed',
   closeBtn: 'q', closeWord: 'close', prev: '[ prev', next: 'next ]', bandOpen: 'open',
   openFailed: 'could not read that run file',
+  attempt: '(attempt {n})', feedback: 'feedback', more: '+{n} more',
 }
 
 // one table, two languages; the type keeps the keys identical
@@ -40,6 +41,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     cmdDesc: '그래프 상태 창 열기/닫기', paneOpened: '창을 열었습니다', paneClosed: '창을 닫았습니다',
     closeBtn: 'q', closeWord: '닫기', prev: '[ 이전', next: '다음 ]', bandOpen: '열기',
     openFailed: '그 실행 파일을 읽을 수 없습니다',
+    attempt: '({n}번째 시도)', feedback: '전달된 피드백', more: '+{n}건 더',
   },
 }
 type Key = keyof typeof en
@@ -327,6 +329,7 @@ export const register: Register = on => {
     const ctx: PaneCtx = {
       width: Math.max(20, e.props.bodyColumns - 4), nowMs: await $.clock.now(), tick: await read($, spin),
       pos: v.op !== null ? { k: 1, n: 1 } : runPosition(v.ordered, v.sel), ...(v.op !== null ? { owner: v.op.owner } : {}),
+      words: { attempt: STRINGS[lang$].attempt, feedback: STRINGS[lang$].feedback, more: STRINGS[lang$].more },
     }
 
     // `[` and `]` cannot be a Button hotkey; the pane's Input has the focus ring, takes every printable key, and status.ts
