@@ -417,6 +417,12 @@ test('open <file> <key>: the node shows that file, the pane opens on it under th
   expect(await shown(await band($))).not.toContain('696f2f93')
 })
 
+test('open <relative file> <key>: the node and every refresh read the absolute path under the session cwd', async ($, on) => {
+  const { seen } = await seeded($, on, [file(owned())])
+  await run($, `open ${DIR}/a1.json E-abcd1234`)
+  expect(seen.showCalls[0]!.slice(2)).toEqual(['runs', '--show', FILE, '--json'])
+})
+
 test('open with a missing key or file: the usage line, nothing opens', async ($, on) => {
   const { seen } = await seeded($, on, [file(owned())])
   for (const args of ['open', `open ${FILE}`, `open ${FILE} nope`, `open ${FILE} E-abcd1234 extra`, 'bogus']) {

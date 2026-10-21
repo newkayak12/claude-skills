@@ -308,9 +308,11 @@ export const register: Register = on => {
     }
     if (arg !== null) {
       const cwd = await $.session.cwd()
-      const row = await showRow($, arg.file.startsWith('/') ? arg.file : `${cwd}/${arg.file}`)
+      // absolute: the refresh re-reads this path from the engine's own cwd, where a relative one would stop updating
+      const file = arg.file.startsWith('/') ? arg.file : `${cwd}/${arg.file}`
+      const row = await showRow($, file)
       if (row === null) return { text: text.openFailed }
-      await update($, opened, () => ({ file: arg.file, owner: arg.owner, row }))
+      await update($, opened, () => ({ file, owner: arg.owner, row }))
     } else await update($, opened, () => null)
     if (!isOpen) await openPane($)
     else await kick?.()
