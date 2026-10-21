@@ -9,7 +9,7 @@ const chars = (s: string) => Array.from(s)
 const len = (s: string) => chars(s).length
 export const fit = (s: string, w: number): string => {
   const c = chars(s)
-  return c.length <= w ? s : `${c.slice(0, Math.max(0, w - 1)).join('')}…`
+  return c.length <= w ? s : `${c.slice(0, Math.max(0, w - 1)).join('').trimEnd()}…`
 }
 
 const textOf = (n: Node | string): string =>
@@ -116,13 +116,24 @@ function wrapRow(kids: (Node | string)[], blocks: string[][], widths: number[], 
   })
 }
 
+// Display cells of a line: wide (CJK, emoji) glyphs take two, combining marks none.
+export const cells = (s: string): number =>
+  chars(s).reduce((n, c) => {
+    const p = c.codePointAt(0)!
+    if (p === 0x200d || (p >= 0x300 && p <= 0x36f) || (p >= 0xfe00 && p <= 0xfe0f)) return n
+    const wide = (p >= 0x1100 && p <= 0x115f) || (p >= 0x2e80 && p <= 0xa4cf) || (p >= 0xac00 && p <= 0xd7a3) || (p >= 0xf900 && p <= 0xfaff) ||
+      (p >= 0xfe30 && p <= 0xfe6f) || (p >= 0xff00 && p <= 0xff60) || (p >= 0xffe0 && p <= 0xffe6) || (p >= 0x1f300 && p <= 0x1faff)
+    return n + (wide ? 2 : 1)
+  }, 0)
+
+// The lines as laid out, not clipped: a line wider than `cols` stays wider, so a test can see it.
 export function draw(n: Node | string, cols: number): string[] {
-  return block(n, cols).map(l => fit(l, cols))
+  return block(n, cols)
 }
 
 // The frame a pane sits in: a rounded border, body width = cols - 4.
 export function frame(tree: Node, title: string, cols: number): string[] {
   const body = draw(tree, cols - 4)
   const top = `╭─ ${title} ${'─'.repeat(Math.max(0, cols - len(title) - 5))}╮`
-  return [top, ...body.map(l => `│ ${l}${' '.repeat(cols - 4 - len(l))} │`), `╰${'─'.repeat(cols - 2)}╯`]
+  return [top, ...body.map(l => `│ ${l}${' '.repeat(Math.max(0, cols - 4 - len(l)))} │`), `╰${'─'.repeat(cols - 2)}╯`]
 }
