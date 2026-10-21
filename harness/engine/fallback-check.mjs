@@ -32,7 +32,8 @@
 //   severity, rounds, passed, failed, total}. stage = now.stage when now.json is a valid object
 //   with a known stage and an `at` not older than the newest artifact of the run (now.json
 //   excluded), with now.stage 'test' read as implement; otherwise it is derived from the files
-//   (plan, setgoal, critique, implement, gate, report). round = now.round, else the number of
+//   (plan, setgoal, critique, implement, gate, report); a rejected newest round with rounds.length >=
+//   max_critique_rounds is past critique, so derivation goes on to implement. round = now.round, else the number of
 //   critique rounds, else null. waiting = now.waiting or null. now = parsed now.json or null.
 //   One freshness check governs every now.json field, not only stage: now.json is used only when it
 //   is an object whose `at` parses and is not older than the newest artifact. Otherwise it is
@@ -301,9 +302,12 @@ function buildRow(dir, nowMs) {
     if (r?.passed === true) passed++;
     else if (r?.passed === false) failed++;
   }
+  const cap = manifest?.max_critique_rounds;
+  const maxRounds = Number.isInteger(cap) && cap >= 1 ? cap : 2;
+  const pastCritique = newest?.file === '02-critique.json' && (newest.sound === true || (newest.sound === false && rounds.length >= maxRounds));
   const derived = !has('01-plan.md') ? 'plan'
     : !spec ? 'setgoal'
-    : newest?.file !== '02-critique.json' || newest.sound !== true ? 'critique'
+    : !pastCritique ? 'critique'
     : passed + failed < ids.length ? 'implement'
     : !has('04-goal-gate.json') ? 'gate'
     : 'report';
@@ -315,8 +319,6 @@ function buildRow(dir, nowMs) {
   const live = liveNow(readJsonFile(join(dir, 'now.json')), artifactMs);
   const severity = Object.fromEntries(SEVERITIES.map((s) => [s, 0]));
   for (const rd of rounds) for (const pr of rd.problems) severity[pr.severity]++;
-  const cap = manifest?.max_critique_rounds;
-  const maxRounds = Number.isInteger(cap) && cap >= 1 ? cap : 2;
   const stage = reconcileStage(live, derived);
   return {
     slug: basename(dir),

@@ -350,6 +350,7 @@ test('a rejected critique with 3 rounds lists every round in order, newest last'
   const crit = (sound, problems) => ({ sound, problems });
   const { root } = repoWithRuns({
     r: {
+      manifest: { request: 'do it', max_critique_rounds: 12 },
       files: {
         '01-plan.md': 'p', '02-goal-spec.json': SPEC,
         '02-critique.r2.json': crit(false, ['Minor: second']),
@@ -812,4 +813,102 @@ test('failures are sorted oldest first and --show returns the same failures as -
   const f = listJson(root)[0].failures;
   assert.deepEqual(f.map((x) => x.what), ['subgoal s1', 'QualityGate s1']);
   assert.deepEqual(showRow(dirs.r).failures, f);
+});
+
+// ---- stage at the critique cap (card 40, U1) ----
+// fallback.md §2 step 4: a rejected round at the cap is past critique, so the run goes on to implement.
+const SPEC_U1 = { goal: 'a goal that is long enough', acceptance: ['a'], subgoals: [{ id: 'U1', title: 'T' }] };
+const REJ = (n, sev = 'major') => ({ sound: false, problems: Array.from({ length: n }, (_, i) => ({ severity: sev, text: `p${i}` })) });
+const SOUND = { sound: true, problems: [] };
+const capManifest = (cap) => (cap === undefined ? { request: 'do it' } : { request: 'do it', max_critique_rounds: cap });
+const runC = (over = {}) => ({
+  manifest: capManifest(over.cap === undefined && !('cap' in over) ? 2 : over.cap),
+  files: {
+    '01-plan.md': 'plan', '02-goal-spec.json': SPEC_U1,
+    '02-critique.r1.json': REJ(1), '02-critique.json': REJ(1),
+    'subgoals/U1/result.json': { passed: true }, '04-goal-gate.json': { match_pct: 100 },
+    ...over.files,
+  },
+});
+const stageOf = (spec) => listJson(repoWithRuns({ r: spec }).root)[0];
+
+test('six-run fixture: --list --json reads critique, setgoal, report, gate, critique, implement', () => {
+  const stale = new Date(Date.now() - HOUR).toISOString();
+  const c = runC();
+  const { root } = repoWithRuns({
+    a: { files: { '01-plan.md': 'plan', '02-goal-spec.json': SPEC_U1 } },
+    b: { files: { '01-plan.md': 'plan', '02-goal-spec.json': SPEC_U1, '02-critique.json': REJ(1), 'now.json': { ...full({ stage: 'setgoal', round: 2 }), at: freshAt(), since: freshAt() } } },
+    c,
+    d: { ...runC(), files: { ...runC().files, 'now.json': { ...full({ stage: 'gate' }), at: freshAt(), since: freshAt() } } },
+    e: { files: { '01-plan.md': 'plan', '02-goal-spec.json': SPEC_U1, 'now.json': { ...full({ stage: 'plan' }), at: stale, since: stale } } },
+    f: { files: { '01-plan.md': 'plan', '02-goal-spec.json': SPEC_U1, '02-critique.json': SOUND } },
+  });
+  const rows = Object.fromEntries(listJson(root).map((r) => [r.slug, r]));
+  assert.deepEqual(['a', 'b', 'c', 'd', 'e', 'f'].map((s) => rows[s].stage), ['critique', 'setgoal', 'report', 'gate', 'critique', 'implement']);
+  assert.equal(rows.b.round, 2);
+});
+
+test('run c variants: gate file removed reads gate', () => {
+  const c = runC();
+  delete c.files['04-goal-gate.json'];
+  assert.equal(stageOf(c).stage, 'gate');
+});
+
+test('run c variants: U1 unjudged reads implement', () => {
+  const c = runC();
+  delete c.files['subgoals/U1/result.json'];
+  delete c.files['04-goal-gate.json'];
+  assert.equal(stageOf(c).stage, 'implement');
+});
+
+test('run c variants: one rejected round at cap 2 stays critique', () => {
+  const c = runC();
+  delete c.files['02-critique.r1.json'];
+  assert.equal(stageOf(c).stage, 'critique');
+});
+
+test('run c variants: two rejected rounds at cap 3 stay critique', () => {
+  assert.equal(stageOf(runC({ cap: 3 })).stage, 'critique');
+});
+
+test('run c variants: an unjudged newest round stays critique even at the cap', () => {
+  const row = stageOf(runC({ files: { '02-critique.json': { problems: [] } } }));
+  assert.equal(row.stage, 'critique');
+});
+
+test('cap defaults to 2 when max_critique_rounds is absent, "2", 2.5 or 0', () => {
+  for (const cap of [undefined, '2', 2.5, 0]) {
+    const row = stageOf(runC({ cap }));
+    assert.equal(row.max_critique_rounds, 2, String(cap));
+    assert.equal(row.stage, 'report', `cap ${String(cap)}`);
+  }
+});
+
+test('rejected-critique fixture: cap 3 stays critique with two rounds and severity rolled up; cap 2 reads implement', () => {
+  const files = {
+    '01-plan.md': 'plan', '02-goal-spec.json': SPEC_U1,
+    '02-critique.r1.json': { sound: false, problems: [...Array.from({ length: 4 }, (_, i) => ({ severity: 'major', text: `m${i}` })), { severity: 'nit', text: 'n' }] },
+    '02-critique.json': { sound: false, problems: [{ severity: 'blocker', text: 'b' }, { severity: 'minor', text: 'x' }, { severity: 'minor', text: 'y' }] },
+  };
+  const row = stageOf({ manifest: capManifest(3), files });
+  assert.equal(row.stage, 'critique');
+  assert.deepEqual(row.rounds.map((r) => [r.round, r.file, r.sound]), [[1, '02-critique.r1.json', false], [2, '02-critique.json', false]]);
+  assert.deepEqual(row.rounds[0].problems.map((p) => p.severity), ['major', 'major', 'major', 'major', 'nit']);
+  assert.deepEqual(row.rounds[1].problems.map((p) => p.severity), ['blocker', 'minor', 'minor']);
+  assert.deepEqual(row.severity, { blocker: 1, major: 4, minor: 2, nit: 1 });
+  assert.equal(stageOf({ manifest: capManifest(2), files }).stage, 'implement');
+});
+
+test('--list text with two open runs prints one tab-separated line each, newest first, stalled marked', () => {
+  const { root } = repoWithRuns({
+    old: { files: { '01-plan.md': 'plan' }, ageHours: 3 },
+    fresh: { files: { '01-plan.md': 'plan', '02-goal-spec.json': SPEC_U1 } },
+  });
+  const lines = list(root).stdout.trim().split('\n');
+  assert.equal(lines.length, 2);
+  assert.deepEqual(lines.map((l) => l.split('\t')[0]), ['fresh', 'old']);
+  assert.equal(lines[0].split('\t')[1], 'critique');
+  assert.equal(lines[1].split('\t')[1], 'setgoal');
+  assert.ok(lines[1].endsWith('\tstalled'));
+  assert.doesNotMatch(lines[0], /stalled/);
 });
