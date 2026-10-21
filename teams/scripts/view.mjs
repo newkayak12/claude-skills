@@ -142,13 +142,13 @@ function summaryOutput(tasksDir, cwd, taskId) {
   return JSON.stringify({ status, tasks, task: m && !m.error ? summarize(m) : null }) + '\n';
 }
 
-// summaryOutput plus the per-team rows and Now lines (the /teams-status pane while it is open).
+// summaryOutput (status, tasks) plus the per-team rows and Now lines of --task (the /teams-status pane while it is open).
 function teamsOutput(tasksDir, cwd, taskId) {
-  const status = JSON.parse(statusOutput(tasksDir, cwd));
-  const id = taskId || status.latest;
+  const base = JSON.parse(summaryOutput(tasksDir, cwd, taskId));
+  const id = taskId || base.status.latest;
   const m = id ? collectTask(tasksDir, id) : null;
   const ok = m && !m.error;
-  return JSON.stringify({ status, task: ok ? summarize(m) : null, teams: ok ? teamsView(m) : null }) + '\n';
+  return JSON.stringify({ status: base.status, tasks: base.tasks, task: ok ? summarize(m) : null, teams: ok ? teamsView(m) : null }) + '\n';
 }
 
 // The decision timeline of --task (one card's with --card), from task.json and the ledger tail.

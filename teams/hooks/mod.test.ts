@@ -225,7 +225,7 @@ const EN_UI = ['Now', 'You', 'Stages', 'Work', 'Cost', 'Summary', 'Log', 'needs 
 
 // Engine beneath: a Map-backed $.state, process.run for view.mjs (status and summary answer the same
 // fixture), ui.open and ui.status recorded.
-type Data = { status?: Record<string, unknown>; task?: unknown; teams?: unknown; decisions?: (card: string | null) => unknown; reports?: Record<string, unknown>; events?: unknown[]; failReport?: boolean }
+type Data = { status?: Record<string, unknown>; tasks?: unknown[]; task?: unknown; teams?: unknown; decisions?: (card: string | null) => unknown; reports?: Record<string, unknown>; events?: unknown[]; failReport?: boolean }
 function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly ('terminal' | 'desktop')[] = ['terminal'], data: Data = {}) {
   const store = new Map<string, unknown>(Object.entries(init))
   const seen = { store, argv: [] as (readonly string[])[], opened: [] as string[], openArgs: [] as unknown[], statuses: [] as (string | undefined)[] }
@@ -249,8 +249,8 @@ function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly 
       const card = e.argv.includes('--card') ? e.argv[e.argv.indexOf('--card') + 1]! : null
       return { value: ok(JSON.stringify(data.decisions?.(card) ?? { card, entries: [] })) }
     }
-    if (format === 'teams') return { value: ok(JSON.stringify({ status: status(), task: data.task ?? null, teams: data.teams ?? null })) }
-    return { value: ok(format === 'status' ? JSON.stringify(status()) : format === 'summary' ? JSON.stringify({ status: status(), task: data.task ?? null }) : '') }
+    if (format === 'teams') return { value: ok(JSON.stringify({ status: status(), tasks: data.tasks, task: data.task ?? null, teams: data.teams ?? null })) }
+    return { value: ok(format === 'status' ? JSON.stringify(status()) : format === 'summary' ? JSON.stringify({ status: status(), tasks: data.tasks, task: data.task ?? null }) : '') }
   })
   on('ui.open', (_$, e) => {
     seen.opened.push(e.id)
@@ -322,23 +322,24 @@ for (const surface of SURFACES) {
     expect(all.filter(l => l.includes('[') || l.includes(']'))).toEqual([])
   })
 
-  test(`${surface}: Now sits on top, then the tabs: plain hotkey tabs 1-4, the selected one full strength with a dot`, async ($, on) => {
+  test(`${surface}: Now sits on top, then the tabs: plain hotkey tabs 1-5, the selected one full strength with a dot`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo() }, surface)
     const ui = await pane($, surface)
     const tab = async (key: string) => (await ui.find({ key }))?.props
-    expect(await tab('teams')).toMatchObject({ plain: true, hotkey: '1', dimColor: false, label: '● Teams' })
-    expect(await tab('decisions')).toMatchObject({ plain: true, hotkey: '2', dimColor: true, label: 'Decisions' })
-    expect(await tab('log')).toMatchObject({ hotkey: '3' })
-    expect(await tab('report')).toMatchObject({ hotkey: '4' })
+    expect(await tab('floor')).toMatchObject({ plain: true, hotkey: '1', dimColor: false, label: '● Floor 1' })
+    expect(await tab('stories')).toMatchObject({ plain: true, hotkey: '2', dimColor: true, label: 'STORYs 2' })
+    expect(await tab('decisions')).toMatchObject({ plain: true, hotkey: '3', dimColor: true, label: 'Decisions 3' })
+    expect(await tab('log')).toMatchObject({ hotkey: '4', label: 'Log 4' })
+    expect(await tab('report')).toMatchObject({ hotkey: '5', label: 'Report 5' })
     const text = await shown(ui)
-    expect(text.indexOf('Now')).toBeLessThan(text.indexOf('Teams'))
+    expect(text.indexOf('Now')).toBeLessThan(text.indexOf('Floor'))
     await ui.press({ key: 'decisions' })
     await ui.redraw() // the stubbed $.state does not notify readers
-    expect(await tab('decisions')).toMatchObject({ dimColor: false, label: '● Decisions' })
-    expect(await tab('teams')).toMatchObject({ dimColor: true, label: 'Teams' })
+    expect(await tab('decisions')).toMatchObject({ dimColor: false, label: '● Decisions 3' })
+    expect(await tab('floor')).toMatchObject({ dimColor: true, label: 'Floor 1' })
   })
 
-  test(`${surface}: Teams tab: one block per team, each card with its state and what it does now; Now lists each active actor`, async ($, on) => {
+  test(`${surface}: Floor tab: one block per team, each card with its state and what it does now; Now lists each active actor`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo({ work: [failedCard] }), teams: TEAMS }, surface)
     const ui = await pane($, surface)
     for (const head of ['Planning', 'Develop', 'QA', 'Audit']) expect(await ui.find({ type: 'Text', text: head })).toBeDefined()
@@ -356,7 +357,7 @@ for (const surface of SURFACES) {
     await ui.redraw()
     const call = seen.argv.filter(a => fmtOf(a) === 'decisions').at(-1)!
     expect(call[call.indexOf('--card') + 1]).toBe('P1')
-    expect((await ui.find({ key: 'decisions' }))?.props.label).toBe('● Decisions')
+    expect((await ui.find({ key: 'decisions' }))?.props.label).toBe('● Decisions 3')
     expect(await ui.find({ type: 'Text', text: 'Card P1' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '10:00 claude·opus · could not judge · accept:P1:1 — reply was not JSON' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '10:05 claude·sonnet · rejected 70% · accept:P1:1 — AC 3 missing' })).toBeDefined()
@@ -469,21 +470,21 @@ for (const surface of SURFACES) {
     for (const word of ['✘', 'module a', 'verifier rejected: tests red']) expect(failed).toContain(word)
   })
 
-  test(`${surface}: language korean draws no English UI word and the 팀 tab`, async ($, on) => {
+  test(`${surface}: language korean draws no English UI word and the 현장 tab`, async ($, on) => {
     await seeded($, on, { status: stat({ waiting: 2 }), task: demo({ work: [failedCard] }), teams: TEAMS }, surface, 'korean')
     const texts = [await shown(await pane($, surface)), await shown(await band($, surface))]
     for (const text of texts) for (const word of [...EN_UI, 'Teams', 'Decisions', 'Develop', 'Audit', '"label":"close"']) expect(text).not.toContain(word)
-    expect(texts[0]).toContain('● 팀')
+    expect(texts[0]).toContain('● 현장 1')
     expect(texts[0]).toContain('개발')
     expect(texts[0]).toContain('Build the expense tracker')
   })
 }
 
 for (const language of ['English', undefined]) {
-  test(`language ${language ?? 'unset'}: the pane shows Teams`, async ($, on) => {
+  test(`language ${language ?? 'unset'}: the pane shows Floor`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo() }, 'terminal', language)
     const text = await shown(await pane($, 'terminal'))
-    expect(text).toContain('Teams')
+    expect(text).toContain('Floor')
     expect(text).not.toContain('결정')
   })
 }
@@ -760,7 +761,7 @@ for (const surface of SURFACES) {
     const { seen, tick } = await seeded($, on, { status: stat(), task: demo(), reports: { abc: payload() } }, surface)
     expect(reportArgv(seen)).toHaveLength(0)
     const ui = await pane($, surface)
-    expect((await ui.find({ key: 'report' }))?.props).toMatchObject({ plain: true, hotkey: '4', label: 'Report' })
+    expect((await ui.find({ key: 'report' }))?.props).toMatchObject({ plain: true, hotkey: '5', label: 'Report 5' })
     await ui.press({ key: 'report' })
     await ui.redraw()
     expect(reportArgv(seen)).toHaveLength(1)
@@ -1174,3 +1175,175 @@ test('a line with severity but no run, node or reason toasts its text as before,
   expect(seen.toasts).toEqual(['E-aaaaaaaa n1 failed'])
   expect(seen.toastEvents[0].timeoutMs).toBeUndefined()
 })
+
+// ---- F4: listed EPICs, the STORYs tab, [ ] and g, the flag ----
+const story = (key: string, title: string, over: Record<string, unknown> = {}) => ({
+  key, title, state: 'acting', doing: '', last_verdict: null, cost_usd: null, cost_estimated: false, try: null, max: null,
+  live: true, elapsed_ms: null, run_file: null, owner_key: key, ...over,
+})
+const epicOf = (id: string, key: string, items: unknown[], over: Record<string, unknown> = {}) => ({
+  ...demo({ key, title: `task ${id}` }), task_id: id, created_at: 500, live: true, age_ms: null, items, workers: [], handoffs: [], harness: null, ...over,
+})
+const FULL = [
+  epicOf('tA', 'E-3a3a3bb5', [
+    story('E-3a3a3bb5/P1', 'module b', { doing: 'editing a.ts', last_verdict: 'reject', try: 2, max: 3, elapsed_ms: 240000, cost_usd: 0.42, cost_estimated: true, run_file: '/w/runs/p1.json' }),
+    story('E-3a3a3bb5/P2', 'a much longer module title for the cut', { doing: 'running tests', state: 'idle', elapsed_ms: 3720000 }),
+  ]),
+  epicOf('tB', 'E-bbbbbbbb', [
+    story('E-bbbbbbbb', 'small thing', { doing: 'reading', elapsed_ms: 35000, cost_usd: 1.5, owner_key: 'E-bbbbbbbb' }),
+  ], { harness: { slug: 'run-7', moving: true }, stages: [stage('plan', 'done'), stage('build', 'running')] }),
+  epicOf('tC', 'E-cccccccc', [], { live: false, age_ms: 7200000, state: 'stalled' }),
+]
+const textsOf = async (ui: Ui, re: RegExp) => (await ui.findAll({ type: 'Text', text: re })).map(t => String(t.text))
+// a line of the EPIC list, the picked one, and a STORY row, as the whole line (the outer Text, not its pieces)
+const EPIC_LINE = /^[▸ ] +[●◌⚑⊘] +E-[0-9a-f]{8} /
+const PICKED = /^▸ +[●◌⚑⊘] +E-[0-9a-f]{8} /
+const rowTexts = async (ui: Ui) => (await ui.findAll({ type: 'Text' })).map(t => String(t.text)).filter(t => /^[▸ ] +[●◌⚑⊘✔✘]  \S/.test(t) && !EPIC_LINE.test(t))
+const wide = ($: Engine, surface: (typeof SURFACES)[number]) =>
+  $.ui.mount({ plugin: 'teams', surface, component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: 140, placement: 'dock' } } as never)
+
+for (const surface of SURFACES) {
+  test(`${surface}: story rows aligned`, async ($, on) => {
+    await seeded($, on, { status: stat(), tasks: FULL, task: demo() }, surface, undefined, { epic: 'tA' })
+    const ui = await wide($, surface)
+    await ui.press({ key: 'stories' })
+    await ui.redraw()
+    const rows = await rowTexts(ui)
+    expect(rows).toHaveLength(3)
+    const [a, b, c] = rows as [string, string, string]
+    // every fact on its row, `~` kept, a missing cost blank
+    for (const part of ['module b', 'editing a.ts', 'rejected', '2/3', '4m', '~$0.42']) expect(a).toContain(part)
+    expect(b).toContain('running tests')
+    expect(b).toContain('1h 2m')
+    expect(b).not.toContain('$')
+    for (const part of ['small thing', 'reading', '35s', '$1.50', 'run-7', '▸']) expect(c).toContain(part)
+    // the same column starts at the same character on every row
+    expect(a.indexOf('editing a.ts')).toBe(b.indexOf('running tests'))
+    expect(a.indexOf('editing a.ts')).toBe(c.indexOf('reading'))
+    expect(a.indexOf('4m')).toBe(b.indexOf('1h 2m'))
+    expect(a.indexOf('4m')).toBe(c.indexOf('35s'))
+    // the icon leads each row
+    expect(a).toContain('●')
+    expect(b).toContain('◌')
+  })
+
+  test(`${surface}: story rows end in … when the pane is narrow`, async ($, on) => {
+    await seeded($, on, { status: stat(), tasks: FULL, task: demo() }, surface, undefined, { epic: 'tA' })
+    const ui = await $.ui.mount({ plugin: 'teams', surface, component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: 50, placement: 'dock' } } as never)
+    await ui.press({ key: 'stories' })
+    await ui.redraw()
+    expect((await rowTexts(ui)).some(r => r.includes('…'))).toBe(true)
+  })
+
+  test(`${surface}: the header lists every EPIC, the picked one marked, stalled last and dim with its age`, async ($, on) => {
+    await seeded($, on, { status: stat(), tasks: FULL, task: demo() }, surface, undefined, { epic: 'tA' })
+    const ui = await pane($, surface)
+    const lines = await textsOf(ui, EPIC_LINE)
+    expect(lines).toHaveLength(3)
+    expect(lines[0]).toContain('▸')
+    expect(lines[1]).not.toContain('▸')
+    expect(lines[2]).toContain('2h 0m')
+    expect(lines[2]).toContain('⊘')
+    expect(lines[0]).toContain('E-3a3a3bb5')
+    expect(lines[1]).toContain('E-bbbbbbbb')
+    expect(lines[2]).toContain('E-cccccccc')
+  })
+
+  test(`${surface}: bracket keys clamp at both ends`, async ($, on) => {
+    const { tick } = await seeded($, on, { status: stat(), tasks: FULL, task: demo() }, surface, undefined, { epic: 'tA' })
+    const ui = await pane($, surface)
+    const key = async (text: string) => {
+      await ui.input({ key: 'keys', text, kind: 'change' })
+      await tick()
+      await ui.redraw()
+    }
+    const picked = async () => (await textsOf(ui, PICKED))[0] ?? ''
+    expect(await picked()).toContain('E-3a3a3bb5')
+    await key('[') // first: stays on the first
+    expect(await picked()).toContain('E-3a3a3bb5')
+    await key(']')
+    expect(await picked()).toContain('E-bbbbbbbb')
+    await key(']')
+    expect(await picked()).toContain('E-cccccccc')
+    await key(']') // last: stays on the last
+    expect(await picked()).toContain('E-cccccccc')
+    await key('[')
+    expect(await picked()).toContain('E-bbbbbbbb')
+    // the prev and next Buttons do the same
+    await ui.press({ key: 'next' })
+    await ui.redraw()
+    expect(await picked()).toContain('E-cccccccc')
+    await ui.press({ key: 'prev' })
+    await ui.redraw()
+    expect(await picked()).toContain('E-bbbbbbbb')
+  })
+
+  test(`${surface}: selection falls back to nearest`, async ($, on) => {
+    const data: Data = { status: stat(), tasks: FULL, task: demo() }
+    const { tick } = await seeded($, on, data, surface, undefined, { epic: 'tB' })
+    const ui = await pane($, surface)
+    expect((await textsOf(ui, PICKED))[0]).toContain('E-bbbbbbbb')
+    // the picked task leaves the list: the pane stays open and the selection moves to the nearest listed task
+    data.tasks = [FULL[0]!, FULL[2]!]
+    await tick()
+    await ui.redraw()
+    expect((await textsOf(ui, PICKED))[0]).toContain('E-cccccccc')
+    // the last one leaves too: the nearest left is the first
+    data.tasks = [FULL[0]!]
+    await tick()
+    await ui.redraw()
+    expect((await textsOf(ui, PICKED))[0]).toContain('E-3a3a3bb5')
+  })
+
+  test(`${surface}: g opens graph-status with run file`, async ($, on) => {
+    const calls: { command: string; args: string }[] = []
+    on('command.run', (_$, e) => {
+      calls.push({ command: e.command, args: e.args })
+      return { text: '' }
+    })
+    await seeded($, on, { status: stat(), tasks: FULL, task: demo() }, surface, undefined, { epic: 'tA' })
+    const ui = await pane($, surface)
+    await ui.press({ key: 'stories' })
+    await ui.redraw()
+    await ui.input({ key: 'keys', text: 'g', kind: 'change' })
+    expect(calls.map(c => `${c.command} ${c.args}`)).toEqual(['graph-status open /w/runs/p1.json E-3a3a3bb5/P1'])
+  })
+
+  test(`${surface}: g without run file makes no call`, async ($, on) => {
+    const calls: unknown[] = []
+    on('command.run', (_$, e) => {
+      calls.push(e)
+      return { text: '' }
+    })
+    await seeded($, on, { status: stat(), tasks: FULL, task: demo() }, surface, undefined, { epic: 'tA' })
+    const ui = await pane($, surface)
+    await ui.press({ key: 'stories' })
+    await ui.redraw()
+    await ui.input({ key: 'keys', text: 'j', kind: 'change' }) // the second row has no run file
+    await ui.redraw()
+    expect((await ui.find({ type: 'Text', text: 'g open run' }))?.props.dimColor).toBe(true)
+    await ui.input({ key: 'keys', text: 'g', kind: 'change' })
+    expect(calls).toEqual([])
+  })
+
+  test(`${surface}: band leads with flag when waiting`, async ($, on) => {
+    await seeded($, on, { status: stat({ waiting: 1, latest: null }), task: null }, surface)
+    const ui = await band($, surface)
+    const first = await ui.find({ type: 'Text' })
+    expect(first?.text).toBe('⚑')
+    expect(first?.props.color).toBe('warning')
+  })
+
+  test(`${surface}: band has no flag when nothing waits`, async ($, on) => {
+    await seeded($, on, { status: stat(), task: demo() }, surface)
+    expect(await shown(await band($, surface))).not.toContain('⚑')
+  })
+
+  test(`${surface}: waiting card shows question, writes nothing`, async ($, on) => {
+    const { seen } = await seeded($, on, { status: stat({ waiting: 1 }), tasks: FULL, task: demo({ you: { count: 1, items: ['module b'], cards: [{ key: 'E-3a3a3bb5/P1', title: 'module b', question: 'keep the old API?' }] } }) }, surface, undefined, { epic: 'tA' })
+    const ui = await pane($, surface)
+    expect(await ui.find({ type: 'Text', text: /module b — keep the old API\?/ })).toBeDefined()
+    // the mod only reads: no tm_submit, no write, only view.mjs runs
+    expect(seen.argv.every(a => a[1]?.endsWith('/scripts/view.mjs'))).toBe(true)
+  })
+}

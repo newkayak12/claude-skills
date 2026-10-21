@@ -68,19 +68,19 @@ function lTask(w, { id = 'aaaaaaaa-0001', cwd = w.cwd, ageMs = 0, pkgs = [{ id: 
 }
 
 // A size-S task on the development harness (task.harness_run), optionally with the legacy s_run too.
-function sTask(w, { id = 'bbbbbbbb-0001', graphFile = false, legacyFile = false, withLegacyRef = false, streamAgeMs = 1000 } = {}) {
+function sTask(w, { id = 'bbbbbbbb-0001', graphFile = false, legacyFile = false, withLegacyRef = false, streamAgeMs = 1000, ageMs = 0, pid = process.pid } = {}) {
   const dir = join(w.tasks, id);
   const hcwd = join(w.root, 'hcwd');
   const log = join(dir, 'drivers', 'S.stream.jsonl');
   const runId = 'graph-run-1';
-  const now = Date.now();
+  const now = Date.now() - ageMs;
   write(log, asst('s driver working') + '\n', streamAgeMs);
   if (graphFile) write(join(hcwd, '.harness-run', 'broker', 'runs', `${runId}.json`), JSON.stringify({ run_id: runId, request: `do it [teams-task ${id}]`, created_at: now, nodes: [] }));
   const scwd = join(w.root, 'scwd');
   if (legacyFile) write(join(scwd, '.teams_output', 'broker', 'runs', 'legacy-run-1.json'), JSON.stringify({ run_id: 'legacy-run-1', flow: 'develop', nodes: [node('implement:U1:1', 'implement', [], { state: 'running', subgoal_id: 'U1' })] }));
   write(join(dir, 'task.json'), JSON.stringify({
     run_id: id, kind: 'task', cwd: w.cwd, request: 'small thing', size: 'S', created_at: now - 5000, store_path: join(dir, 'task.json'), nodes: [],
-    harness_run: { cwd: hcwd, opened_at: now - 10000, driver: { pid: process.pid, log, restarts: [] }, ...(graphFile ? { run: { route: 'graph', run_id: runId, cwd: hcwd } } : {}) },
+    harness_run: { cwd: hcwd, opened_at: now - 10000, driver: { pid, log, restarts: [] }, ...(graphFile ? { run: { route: 'graph', run_id: runId, cwd: hcwd } } : {}) },
     ...(withLegacyRef ? { s_run: { cwd: scwd, run_id: 'legacy-run-1', driver: { pid: process.pid, log, restarts: [] } } } : {}),
   }));
   return { id, dir, hcwd, scwd, runId, graphPath: join(hcwd, '.harness-run', 'broker', 'runs', `${runId}.json`), legacyPath: join(scwd, '.teams_output', 'broker', 'runs', 'legacy-run-1.json') };
@@ -408,13 +408,18 @@ test('waiting card parked in a child run stays listed live past 24 h', () => {
 test('waiting graph-route harness stage of an S task reads live and counts', () => {
   const w = world();
   try {
-    const s = sTask(w, { graphFile: true, streamAgeMs: 60 * MIN });
+    const s = sTask(w, { graphFile: true, streamAgeMs: 60 * MIN, ageMs: 25 * 60 * MIN, pid: 2 ** 22 + 12345 });
     write(s.graphPath, JSON.stringify({ run_id: s.runId, request: `do it [teams-task ${s.id}]`, created_at: Date.now(), nodes: [node('implement:U1:1', 'implement', [], { state: 'waiting_human', subgoal_id: 'U1' })] }));
     const out = summary(w);
     assert.equal(out.tasks.length, 1);
     assert.equal(out.tasks[0].live, true);
     assert.equal(out.tasks[0].you.count, 1);
     assert.equal(out.status.waiting, 1);
+    assert.equal(out.tasks[0].items[0].state, 'you');
+    assert.equal(out.tasks[0].workers[0].state, 'you');
+    assert.equal(out.tasks[0].items[0].live, true);
+    assert.equal(typeof out.tasks[0].harness.moving, 'boolean');
+    assert.ok(out.tasks[0].harness.slug);
   } finally { w.cleanup(); }
 });
 

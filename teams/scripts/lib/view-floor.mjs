@@ -60,7 +60,7 @@ export function floorOf(model, facts = {}, { now = Date.now() } = {}) {
     const id = 'S';
     const f = story(id);
     const mark = m.state === 'complete' ? 'done' : m.state === 'blocked' ? 'failed' : 'running';
-    const waiting = (m.s_run ? m.s_run.nodes : []).some(waitingNode);
+    const waiting = (m.s_run ? m.s_run.nodes : []).some(waitingNode) || !!(m.harness && m.harness.waiting > 0);
     add(id, {
       key: epic, title: (m.ticket && m.ticket.title) || '', last_verdict: null, try: null, max: null,
       elapsed_ms: m.elapsed_ms ?? null, owner_key: epic,
