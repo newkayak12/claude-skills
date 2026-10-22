@@ -352,7 +352,7 @@
   function ticketsBody(m) {
     if (m.error) return '<p class="reason">' + esc(m.error) + '</p>';
     var t = m.ticket || {};
-    var out = ['<div class="panel"><h1>' + esc(t.key || m.task_id) + '</h1>',
+    var out = ['<div class="panel"><h1>' + esc(t.key || m.task_id) + (t.slug ? ' · ' + esc(t.slug) : '') + '</h1>',
       '<div class="request-box">' + esc(m.request) + '</div>',
       '<div class="header-grid">',
       '<div class="stat"><div class="label">state</div><div class="value"><span class="badge ' + esc(t.state || '') + '">' + esc(t.state || '–') + '</span></div></div>',
@@ -515,7 +515,7 @@
     var defects = t.open_defects ? '<span class="defects">open defects: ' + t.open_defects + '</span>' : '';
     return (
       '<a class="epic-card" href="/?task=' + encodeURIComponent(t.task_id) + '">' +
-      '<div class="top"><span class="key mono">' + esc(t.epic_key) + '</span>' +
+      '<div class="top"><span class="key mono">' + esc(t.epic_key) + (t.slug ? ' · ' + esc(t.slug) : '') + '</span>' +
       '<span class="badge ' + esc(t.state) + '">' + esc(statusText) + '</span></div>' +
       '<div class="title">' + esc(t.title) + '</div>' +
       '<div class="meta"><span>' + meta.map(esc).join('</span><span>') + '</span>' + (defects ? defects : '') + '</div>' +
