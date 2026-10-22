@@ -131,13 +131,11 @@ toasts).
 
 ### teams plugin bugs
 
-60. **A finished, cleaned size-S task reads `stalled · impl`; titles cut at a file name's dot**
-    - Why: 2026-10-22, `view.mjs --once` right after `tm_clean` of E-e32398ec (DONE a minute before):
-      it and every earlier merged size-S task (E-eccf9590, E-0b008dc4, E-a213de5b …) show
-      `stalled · impl`; titles stop at the first `.` even inside a path — "Backlog card 46
-      (_repo/docs/backlog". Cause unverified: the ledger still has `daemon_done state:complete`; it read DONE until the
-      worktree (and its `.harness-run/`) was removed, so the size-S state likely comes from there.
-    - Acceptance: a done task stays DONE after `tm_clean` (test); a title keeps `backlog.md` whole.
+60. **`taskstate.mjs` reads a cleaned size-S task's unreadable run like `tickets.mjs` did**
+    - Why: E-e5fb01e7 (2026-10-22) fixed the stalled read in `tickets.mjs`/`view-collect.mjs` with
+      `harness_run.accepted`; its report names `teams/mcp/taskstate.mjs` as having the same weakness.
+    - Acceptance: a test where `taskState` of a finished, cleaned size-S task is complete (accepted)
+      or partial (rejected), not running.
 
 39. **Finish card 39: tool denial in the task manager's own judges, base exclusion before scoring**
     - Why: E-64cda2b0 (merged by hand 2026-10-20, `2c160959`..`ebbe1787`) shipped subset integrate,
