@@ -110,7 +110,7 @@ function seedTask(cwd, ids, extraNodes = [], extra = {}) {
   const path = tm.taskPath(run_id);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify({
-    run_id, kind: 'task', store_path: path, cwd, request: 'r', created_at: Date.now(),
+    run_id, kind: 'task', store_path: path, cwd, request: 'r', created_at: Date.now(), slug: `cancel-${seq}`,
     flow: 'develop', flow_chosen: 'develop', size: 'L', max_retries: 2, driver_restarts: 2,
     base_ref: null, team: { opts: { max_parallel_teams: 4, max_live_drivers: 8 } },
     spec: { acceptance: ['a'], packages: ids.map(pkg) },
@@ -235,7 +235,7 @@ test('tm_cancel on a running task: every pid dead, state cancelled, stub, retire
   // (7) worktrees and branches stay for a later tm_clean
   const trees = git(cwd, 'worktree', 'list').stdout;
   assert.ok(trees.includes('/worktrees/P1') && trees.includes('/worktrees/P2'), trees);
-  assert.ok(git(cwd, 'branch', '--list', 'harness/*').stdout.includes('/P1'));
+  assert.ok(git(cwd, 'branch', '--list', 'teams/*').stdout.includes('/P1'));
   assert.deepEqual(spawned(), stubsBefore, 'the cancel itself spawned nothing');
 
   // (8) a following call on the cancelled task spawns nothing

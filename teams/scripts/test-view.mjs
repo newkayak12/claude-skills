@@ -635,7 +635,7 @@ test('listTasks() lists every task dir under tasksRoot, newest first', async () 
     assert.equal(row.task_id, task_id);
     assert.deepStrictEqual(Object.keys(row).sort(), [
       'cost_usd', 'created_at', 'elapsed_ms', 'epic_key', 'initiative', 'open_defects',
-      'phase', 'size', 'state', 'stories_done', 'stories_total', 'task_id', 'title',
+      'phase', 'size', 'slug', 'state', 'stories_done', 'stories_total', 'task_id', 'title',
     ].sort());
     // Pinned exactly: row.state is tickets.mjs's epicTicketState() ('IN_PROGRESS'), never the
     // engine's own runState() ('running') - the two vocabularies are close enough (both real
@@ -1012,7 +1012,7 @@ test('collect() adds ticket_key/ticket_state/attempt to each package (tickets.mj
     assert.equal(p1.assignee, null, 'no pin was ever placed on P1');
     assert.equal(p2.ticket_state, 'READY', 'P2\'s only dep (P1) is already DONE');
     assert.deepEqual(model.ticket, {
-      key: epicKeyHere, title: 'a request for the view test', state: 'IN_PROGRESS', phase: 'impl',
+      key: epicKeyHere, slug: 'request-view-test', title: 'a request for the view test', state: 'IN_PROGRESS', phase: 'impl',
     });
   });
 });
@@ -1456,6 +1456,16 @@ test('renderIndexText() renders one card per row, in tickets.mjs vocabulary (epi
   ].join('\n'));
 });
 
+test('renderIndexText() puts the slug after the key for a slugged row, and leaves an unslugged row as before', () => {
+  const rows = [
+    { task_id: 't1', epic_key: 'E-t1', slug: 'ship-thing', title: 'ship the thing', state: 'IN_PROGRESS', phase: 'impl', size: 'L', cost_usd: 0, elapsed_ms: 5000 },
+    { task_id: 't2', epic_key: 'E-t2', slug: null, title: 'done deal', state: 'DONE', phase: null, size: 'S', cost_usd: 0, elapsed_ms: 5000 },
+  ];
+  const lines = renderIndexText(rows, '/tmp/x').split('\n');
+  assert.equal(lines[1], '  E-t1  ship-thing  IN_PROGRESS · impl  ship the thing');
+  assert.equal(lines[3], '  E-t2  DONE  done deal');
+});
+
 test('renderIndexText() on an empty tasks dir', () => {
   assert.equal(renderIndexText([], '/tmp/nowhere'), 'tasks under /tmp/nowhere:\n  (none)\n');
 });
@@ -1767,7 +1777,7 @@ test('--once --format summary prints { status, task }: status is --format status
     const out = JSON.parse(r.stdout);
     assert.deepEqual(Object.keys(out).sort(), ['status', 'task', 'tasks']);
     assert.deepEqual(out.status, JSON.parse(run('--format', 'status').stdout));
-    assert.deepEqual(Object.keys(out.task).sort(), ['cost', 'day', 'done', 'key', 'log', 'now', 'stages', 'state', 'title', 'total', 'work', 'you']);
+    assert.deepEqual(Object.keys(out.task).sort(), ['cost', 'day', 'done', 'key', 'log', 'now', 'slug', 'stages', 'state', 'title', 'total', 'work', 'you']);
 
     const text = JSON.stringify(out.task);
     for (const tok of ['verdict', 'match_pct', 'dispatch:', 'gate:goal', 'accept:', '/Users/', '/var/', '/tmp/']) {

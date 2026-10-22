@@ -162,6 +162,7 @@ export function summarize(model, { now = Date.now() } = {}) {
   const elapsed = m.elapsed_ms ?? (m.created_at ? now - m.created_at : 0);
   return {
     key: (m.ticket && m.ticket.key) || String(m.task_id || ''),
+    slug: (m.ticket && m.ticket.slug) || null,
     title: (m.ticket && m.ticket.title) || String(m.request || '').slice(0, 72),
     state: m.state,
     day: Math.max(1, Math.ceil(elapsed / DAY_MS)),

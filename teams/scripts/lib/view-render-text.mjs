@@ -278,7 +278,7 @@ export function renderTicketsText(model) {
   const out = [];
   if (model.error) { out.push(`task ${model.task_id}`, `ERROR: ${model.error}`); return out.join('\n') + '\n'; }
   const t = model.ticket || {};
-  out.push(`${t.key || model.task_id}  ${t.state || '?'}${t.phase ? ' · ' + t.phase : ''}  ${t.title || ''}`);
+  out.push(`${t.key || model.task_id}  ${t.slug ? t.slug + '  ' : ''}${t.state || '?'}${t.phase ? ' · ' + t.phase : ''}  ${t.title || ''}`);
   if (model.request) out.push(`request: ${model.request.length > 300 ? model.request.slice(0, 300) + '...' : model.request}`);
   if (model.flow_metrics) out.push(formatFlowMetricsLine(model.flow_metrics));
   const columns = {};
@@ -377,7 +377,7 @@ export function renderIndexText(rows, tasksDir) {
   if (!rows.length) { out.push('  (none)'); return out.join('\n') + '\n'; }
   for (const r of rows) {
     if (r.error) { out.push(`  ${r.epic_key}  ERROR: ${r.error}  (task ${r.task_id})`); continue; }
-    out.push(`  ${r.epic_key}  ${statusLabel(r)}  ${r.title}`);
+    out.push(`  ${r.epic_key}  ${r.slug ? r.slug + '  ' : ''}${statusLabel(r)}  ${r.title}`);
     const bits = [`task=${r.task_id}`, `size=${r.size || '?'}`];
     if (r.initiative) bits.push(`initiative=${r.initiative}`);
     const stories = storiesLabel(r);
