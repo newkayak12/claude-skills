@@ -29,7 +29,9 @@ Each figure with a unit or percentage gets a row:
 |---|---|---|
 | The material cites a measurement, doc or section | the citation | (empty) |
 | The user flags it as their own claim ("체감상", "내 기억으로는", "I estimate") | the citation of the statement | `user-stated` |
-| No record and no such flag (written plainly in the text) | `근거 없음` (the only missing-evidence marker) | (empty); add a gaps.md question for the source, always |
+| No record and no such flag (written plainly in the text), or it cites a document that was not handed over | `근거 없음` (the only missing-evidence marker) | (empty); add a gaps.md question for the source (naming the document when one is cited), always |
+
+An episode with no figure at all: replace the empty table with one line, `수치 없음 — 자료에 단위·퍼센트가 붙은 수치가 없다.`, and keep the non-numeric outcomes below it.
 
 Never round, convert or recompute a figure; copy it as written.
 

@@ -30,7 +30,8 @@ Script, run from the project root: `node ${CLAUDE_PLUGIN_ROOT}/skills/material/s
 | `match` | `--id --source --title` | `new` / `same` / `ambiguous` (+ candidates); writes nothing |
 | `init` | `--id --source --title` (opt. `--period --role --tags`) | Creates the item folder with the seven parts, status `raw`; `exists` writes nothing |
 | `index` | none | Rewrites `material/index.md` only if its content changes |
-| `log` | `--id --note` | Appends a line to `history.md`; a note already there is `unchanged` |
+| `log` | `--id --note` (opt. `--add-source`) | Appends a line to `history.md`; a note already there is `unchanged`. `--add-source` records a merged second source in `meta.md` (`also:`) so it matches `same` next time |
+| `gaps` | none | Open and answered question counts per item, from `gaps.md` |
 | `answer` | `--id --question --citation` | Marks the open gaps.md question `[답변됨]` with the citation of the answering material; the line stays |
 | `foreign` | none | Lists files in `material/` the flow did not write |
 
@@ -43,12 +44,12 @@ Per-part procedures: `references/parts.md`. Citation, evidence and matching: `re
 
 - (a) Only the given material is used; nothing is invented. Every filled part holds a short paraphrase plus a verbatim quote or pointer, cited `<file> + heading or line range` (a line range only when the text has no heading; with a heading, cite heading plus quote and no line numbers, which go stale when lines are added above); for pasted or chat text, a message index, timestamp or verbatim first-words quote.
 - (b) Anything unknown goes to `gaps.md` as a question for the user and is never guessed.
-- (c) In `result.md`, a figure with a unit or percentage needs an evidence citation; a figure the user flags as their own claim ("체감상", "내 기억으로는", "I estimate", or says so when handing over) is labelled `user-stated`; a figure with no citation in the handed material and no such flag is marked `근거 없음` and gets a gaps.md question for its source. A figure written plainly in the text, with no record and no flag, is the `근거 없음` case, even when the user wrote the whole text: `user-stated` needs words about the figure itself ("체감상", "I estimate"), never just authorship. `근거 없음` is the only missing-evidence marker.
+- (c) In `result.md`, a figure with a unit or percentage needs an evidence citation; a figure the user flags as their own claim ("체감상", "내 기억으로는", "I estimate", or says so when handing over) is labelled `user-stated`; a figure with no citation in the handed material and no such flag is marked `근거 없음` and gets a gaps.md question for its source. A figure written plainly in the text, with no record and no flag, is the `근거 없음` case, even when the user wrote the whole text: `user-stated` needs words about the figure itself ("체감상", "I estimate"), never just authorship. A figure citing a document that was not handed over is also `근거 없음`, its question naming that document. `근거 없음` is the only missing-evidence marker.
 - (d) On a re-run, `match` decides: `same` updates the parts in place and logs it in `history.md`; `new` runs `init`; `ambiguous` asks the user to pick merge or new, never a guess. An answer to a gaps question arrives as new material: the part is updated with its citation and `answer` marks the question `[답변됨]`. An answered question is never deleted.
 - (e) Step 1 creates status `raw` and never changes status. Later steps own every other transition and name themselves with `--later-step`; each is logged in `history.md`.
 - (f) Content stays in the language of the material. Personal or confidential data is kept as given and stored only in the user's project.
 - (g) Foreign files in `material/` are left alone and listed in the summary.
-- (h) The final summary lists items added or updated, the open gaps count, and the foreign files.
+- (h) The final summary lists items added or updated, the open gaps count taken from `gaps` (never counted by hand), and the foreign files.
 - (i) A no-op run writes nothing, history.md included: when the handed material adds nothing to an item, edit no part, skip `log` and `answer`, and leave `index.md` as it is. Never rewrite an existing citation to fix drift or wording; a citation changes only when its line changes.
 
 ## Process
