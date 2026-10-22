@@ -215,16 +215,15 @@ test('tm_clean removes every package worktree and branch once merged into integr
     assert.equal(r.dry_run, false);
     // The planning card's worktree is a package worktree too (cards-everywhere C2): cleaned alike.
     assert.deepEqual(r.removed_worktrees.map((x) => x.package_id).sort(), ['P1', 'P2', 'PLAN-F1']);
-    // A planning card's branch carries its PRD commit, which no integration branch holds (the PRD
-    // is merged into 10-prd.md, not into the tree): its worktree goes, its branch is kept.
-    assert.deepEqual(r.removed_branches.map((x) => x.package_id).sort(), ['P1', 'P2']);
+    // A planning card's branch carries its PRD commit, which no integration branch holds, but the
+    // PRD is merged into 10-prd.md once plan-integrate is done: its worktree and its branch go.
+    assert.deepEqual(r.removed_branches.map((x) => x.package_id).sort(), ['P1', 'P2', 'PLAN-F1']);
     // A new task's branches live under its own readable slug.
     const slug = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8')).slug;
     assert.equal(slug, 'big-request');
     for (const b of r.removed_branches) assert.ok(b.branch.startsWith(`teams/${slug}/`), b.branch);
     assert.ok(p1.cwd.endsWith('/worktrees/P1-module'), p1.cwd);
-    assert.deepEqual(r.kept_branches.map((x) => x.package_id), ['PLAN-F1']);
-    assert.match(r.kept_branches[0].reason, /not reachable/);
+    assert.deepEqual(r.kept_branches, []);
     assert.deepEqual(r.kept.map((k) => k.cwd), [integ.cwd]);
 
     assert.ok(!existsSync(join(p1.cwd, '.git')), 'P1 worktree gone');
@@ -272,8 +271,8 @@ test('tm_clean is idempotent: a second call finds everything already gone', asyn
     const second = await tm.call('tm_clean', { task_id });
     assert.equal(second.removed_worktrees.length, 0);
     assert.equal(second.removed_branches.length, 0);
-    assert.deepEqual(second.already_clean.map((x) => x.package_id).sort(), ['P1', 'P2']);
-    assert.deepEqual(second.kept_branches.map((x) => x.package_id), ['PLAN-F1'], 'the PRD branch is still kept, never deleted');
+    assert.deepEqual(second.already_clean.map((x) => x.package_id).sort(), ['P1', 'P2', 'PLAN-F1']);
+    assert.deepEqual(second.kept_branches, []);
   });
 });
 
@@ -293,8 +292,8 @@ test('tm_clean({dry_run:true}) reports what it would remove and touches no git s
     const r = await tm.call('tm_clean', { task_id, dry_run: true });
     assert.equal(r.dry_run, true);
     assert.deepEqual(r.removed_worktrees.map((x) => x.package_id).sort(), ['P1', 'P2', 'PLAN-F1']);
-    assert.deepEqual(r.removed_branches.map((x) => x.package_id).sort(), ['P1', 'P2']);
-    assert.deepEqual(r.kept_branches.map((x) => x.package_id), ['PLAN-F1']);
+    assert.deepEqual(r.removed_branches.map((x) => x.package_id).sort(), ['P1', 'P2', 'PLAN-F1']);
+    assert.deepEqual(r.kept_branches, []);
     assert.ok(existsSync(join(p1.cwd, '.git')), 'dry_run never removes the worktree');
     assert.equal(branchExists(p1.cwd, p1.branch), true, 'dry_run never deletes the branch');
     // Nothing was actually removed, so a real clean afterwards still finds it all.
@@ -315,8 +314,8 @@ test('a package branch with commits made after integration is kept (reason given
     git(p1.cwd, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'work after integration']);
 
     const r = await tm.call('tm_clean', { task_id });
-    assert.deepEqual(r.removed_branches.map((x) => x.package_id).sort(), ['P2']);
-    assert.deepEqual(r.kept_branches.map((x) => x.package_id).sort(), ['P1', 'PLAN-F1']);
+    assert.deepEqual(r.removed_branches.map((x) => x.package_id).sort(), ['P2', 'PLAN-F1']);
+    assert.deepEqual(r.kept_branches.map((x) => x.package_id).sort(), ['P1']);
     assert.match(r.kept_branches[0].reason, /not reachable/);
     assert.deepEqual(r.removed_worktrees.map((x) => x.package_id).sort(), ['P1', 'P2', 'PLAN-F1'], 'the worktree directory is removed either way - the branch ref alone keeps the commits');
 
@@ -358,5 +357,36 @@ test('tm_clean({}) without task_id sweeps every task under the tasks root, defau
       tmB.close();
       rmSync(cwdB, { recursive: true, force: true });
     }
+  });
+});
+
+test('after tm_clean the slug is free again: the same request opens as the plain slug, not -2', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    const task = await runFullEpic(tm, g, root, task_id);
+    const planCard = task.nodes.filter((x) => x.stage === 'dispatch' && x.subgoal_id === 'PLAN-F1' && x.child).pop().child;
+    assert.equal(branchExists(cwd, planCard.branch), true, 'the planning-card branch exists before the clean');
+    const open = (request) => tm.call('tm_open', { brainstorm: false, request, cwd, vendor: 'self', roles: { qa: false, audit: false } });
+    const slugOf = (id) => JSON.parse(readFileSync(join(root, id, 'task.json'), 'utf8')).slug;
+    assert.equal(slugOf((await open('big request')).task_id), 'big-request-2', 'before the clean the slug is taken');
+
+    await tm.call('tm_clean', { task_id });
+    assert.equal(branchExists(cwd, planCard.branch), false, 'the planning-card branch the task made is deleted');
+    // The integration branch is the delivered result and stays; its ref still holds the slug until it goes too.
+    const integ = integration(task);
+    assert.equal(slugOf((await open('big request')).task_id), 'big-request-3', 'a kept integration branch keeps the slug (-2 is held by the open above)');
+    git(cwd, ['worktree', 'remove', '--force', integ.cwd]);
+    git(cwd, ['branch', '-D', integ.branch]);
+    assert.equal(slugOf((await open('big request')).task_id), 'big-request', 'cleaned and nothing left under it: the plain slug');
+  });
+});
+
+test('a teams/<slug>/* branch the cleaned task did not create survives tm_clean', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    await runFullEpic(tm, g, root, task_id);
+    assert.equal(git(cwd, ['branch', 'teams/big-request/foreign']).ok, true);
+    const r = await tm.call('tm_clean', { task_id });
+    assert.ok(!r.removed_branches.some((b) => b.branch === 'teams/big-request/foreign'));
+    assert.equal(branchExists(cwd, 'teams/big-request/foreign'), true, 'the foreign branch is untouched');
+    git(cwd, ['branch', '-D', 'teams/big-request/foreign']);
   });
 });

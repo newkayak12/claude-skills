@@ -11,19 +11,20 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
 
 ### Mods and naming — UI first (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
 
-46. **Readable names, follow-up: pane demo, collision scope, Korean slugs**
-    - Why: E-e32398ec (card 46, merged 2026-10-22) shipped `teams/<slug>/<Pid>-<pkg>` names and the
-      slug column; its report leaves: mod.md 0-4 not done for the slug column (live tmux 190/110,
-      README shot, demo approval); `uniqueSlug` counts same-cwd tasks, not the git common dir (a
-      linked worktree opening the same request gets the same slug and fails at dispatch); Korean
-      romanization keeps particles (`harness-ui-tikaet-eul-gateungeo`); a leftover
-      `teams/<slug>/PLAN-F1-*` branch survives `tm_clean` and pushes the next same request to `-2`.
-    - Demo 2026-10-22 (tmux, fictional fixture): the pane is ~78 cols at a 190 screen and ~46 at 110;
-      the slug column eats the title ("메모…", "Add…") at 190, and at 110 the title, state word and
-      count are all gone — the row is only key + slug. The slug repeats the title (rule 0).
-      Proposed: no slug column in the pane rows; the slug in the Report header and `view.mjs` only.
-    - Acceptance: the pane slug column demo approved; collisions counted per git common dir;
-      Korean particles dropped from slugs (test with the user's sentence).
+46. **Readable names, follow-up: pane without the slug column — live check and README shot**
+    - Why: E-e2f5da7c (2026-10-22) dropped the slug column from the pane rows (slug stays in the
+      Report header and `view.mjs`), counted slug collisions per git common dir, made `tm_clean`
+      delete the task's own branches, and stripped Korean particles (`티켓을 같은거` → `tiket-gateungeo`).
+      Tests: teams 1415/1415, mod 206/206. Left: mod.md 0-4 for the changed rows.
+    - Acceptance: live tmux at 190 and 110 shows the title whole; README/KOR shot; demo approved.
+
+61. **A size-S driver ends its turn while its own subagent and tests still run, and is restarted**
+    - Why: E-e2f5da7c (2026-10-22): the driver's turn ended while "implement U2" and a full
+      `node --test` ran in the background; `claude -p` stopped them after 10 min ("Background tasks
+      still running 10m after the last turn … stopping them") and the daemon spent a restart (1/2).
+      The restarted driver did the same once, then resumed on its own wakeup. Cost ~1h.
+    - Acceptance: the driver waits for its own background work before ending a turn (prompt rule or
+      `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` in the spawn env), with a test on the spawn command.
 
 65. **Card 59 follow-up: exit-code rule in teams prompts, mirror function pinned, flaky tests**
     - Why: E-f7c68f6a (card 59, merged 2026-10-22) report: the "a check passes or fails by its exit

@@ -122,15 +122,15 @@ export function storyCells(item: SummaryItem, verdict: string, harness: string, 
 // the harness text gives way first, then doing, then the title
 export const STORY_SHRINK = [8, 3, 2] as const
 
-// The EPIC row is the title block: marker · icon · key · slug · title · state word · done/total · age. The slug is read
-// from the summary, blank when the task has none (its column then takes no room). A live task's age runs
+// The EPIC row is the title block: marker · icon · key · title · state word · done/total · age. The slug is not a pane
+// column (the Report header and view.mjs show it). A live task's age runs
 // from its creation, a stalled one's is how long it has stood; a stalled row is dim throughout.
 export function epicCells(t: SummaryTaskEntry, state: WorkState, selected: boolean, now: number, stateWord: string): StoryCells {
   const cells = [
-    selected ? '▸' : '', ICON[state], t.key, t.slug ?? '', t.title, stateWord, `${t.done}/${t.total}`,
+    selected ? '▸' : '', ICON[state], t.key, t.title, stateWord, `${t.done}/${t.total}`,
     since(t.live ? (t.created_at === null ? null : Math.max(0, now - t.created_at)) : t.age_ms),
   ]
-  return { cells, tints: t.live ? [undefined, TINT[state], undefined, 'dim', undefined, 'dim', undefined, 'dim'] : cells.map(() => 'dim' as const) }
+  return { cells, tints: t.live ? [undefined, TINT[state], undefined, undefined, 'dim', undefined, 'dim'] : cells.map(() => 'dim' as const) }
 }
 
 /* --- the tab row and the footer, planned against the pane's inner width --- */
