@@ -22,7 +22,7 @@ A figure is any number with a unit or a percentage (`40%`, `3초`, `12만 건`, 
 2. The user flags it as their own claim ("체감상 40%", "내 기억으로는", "I estimate", or says so when handing over) → cite the statement and label it `user-stated`.
 3. Neither a record nor such a flag (a figure written plainly in the text) → `근거 없음` in the evidence column, plus a gaps.md question asking where it came from. That the user wrote the text is not a flag: `user-stated` needs words about the figure itself.
 
-A document the user names but did not hand over is not evidence (hand it over as new material and a re-run cites it): cite the statement that names it and label it `user-stated`. Never repair a figure by inference, back-calculation or a "typical" value.
+A document the user names but did not hand over ("대시보드 4월 캡처") is not evidence and not a flag: the figure is `근거 없음`, and its gaps.md question asks for that document by name (hand it over as new material and a re-run cites it). Never repair a figure by inference, back-calculation or a "typical" value.
 
 ## Matching (item identity)
 
@@ -39,7 +39,7 @@ node ${CLAUDE_PLUGIN_ROOT}/skills/material/scripts/material.mjs match --id <id> 
 |---|---|
 | `new` | `init`, then fill the parts. |
 | `same` | Do not `init`. Update the parts in place, `log` the change. |
-| `ambiguous` | Show the `candidates` (id, title, source, reason) and ask: merge into candidate X, or new item? Write nothing until answered. Merge = treat as `same` with the candidate's id; new = `init` under the new id. Never guess. |
+| `ambiguous` | Show the `candidates` (id, title, source, reason) and ask: merge into candidate X, or new item? Write nothing until answered. Merge = treat as `same` with the candidate's id and `log --add-source <this source>`, so the next run of this source matches `same`; new = `init` under the new id. Never guess. |
 
 `match` compares strings only; a renamed episode or the same episode from a second source shows up as `ambiguous`, not `same`. Do not judge sameness by meaning yourself; ask.
 

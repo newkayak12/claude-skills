@@ -7,8 +7,9 @@
 //   node material.mjs match   --id I --source S --title T
 //   node material.mjs init    --id I --source S --title T [--period P --role R --tags G]
 //   node material.mjs index
-//   node material.mjs log     --id I --note N
+//   node material.mjs log     --id I --note N [--add-source S]
 //   node material.mjs answer  --id I --question Q --citation C
+//   node material.mjs gaps
 //   node material.mjs foreign
 //
 // Step 1 (collection) creates status "raw" and never changes it. A status other than raw
@@ -26,7 +27,7 @@ import path from 'node:path';
 
 const PARTS = ['meta.md', 'problem.md', 'decision.md', 'result.md', 'learned.md', 'gaps.md', 'history.md'];
 const STATUSES = ['raw', 'shaped', 'written', 'rendered', 'reviewed'];
-const FLAGS = new Set(['id', 'source', 'title', 'period', 'role', 'tags', 'note', 'status', 'later-step', 'question', 'citation']);
+const FLAGS = new Set(['id', 'source', 'title', 'period', 'role', 'tags', 'note', 'status', 'later-step', 'question', 'citation', 'add-source']);
 const ANSWERED = '[답변됨]';
 const ID_RE = /^[\p{L}\p{N}][\p{L}\p{N}-]*$/u;
 const MAT = path.resolve(process.cwd(), 'material');
@@ -99,7 +100,7 @@ function folderItems() {
   const items = [], skipped = [];
   for (const name of itemDirs()) {
     const m = readMeta(path.join(MAT, name));
-    if (m && m.title) items.push({ id: name, title: m.title, status: m.status || '', source: m.source || '' });
+    if (m && m.title) items.push({ id: name, title: m.title, status: m.status || '', source: m.source || '', also: m.also || '' });
     else skipped.push(name);
   }
   return { items, skipped };
@@ -113,7 +114,7 @@ function indexItems() {
     if (!line.startsWith('|')) continue;
     const c = line.split(/(?<!\\)\|/).slice(1, -1).map((s) => s.trim().replace(/\\\|/g, '|'));
     if (c.length < 4 || c[0] === 'id' || /^:?-+:?$/.test(c[0])) continue;
-    out.push({ id: c[0], title: c[1], status: c[2], source: c[3] });
+    out.push({ id: c[0].replace(/^\[(.+?)\]\(.*\)$/, '$1'), title: c[1], status: c[2], source: c[3] });
   }
   return out;
 }
@@ -121,8 +122,11 @@ function indexItems() {
 const cmd = {
   id(a) {
     need(a, 'source', 'title');
-    const s = slug(a.source), t = slug(a.title);
+    let s = slug(a.source);
+    const t = slug(a.title);
     if (!s || !t) fail('source and title must contain letters or digits');
+    // a source that already ends in the title (`retro.md#검색-지연` + `검색 지연`) does not repeat it
+    if (s !== t && s.endsWith(`-${t}`)) s = s.slice(0, -(t.length + 1));
     return { id: `${s}--${t}` };
   },
 
@@ -134,7 +138,9 @@ const cmd = {
     const src = norm(a.source), ttl = norm(a.title);
     const same = [], other = [];
     for (const it of all.values()) {
-      const sameSrc = norm(it.source) === src, sameTtl = norm(it.title) === ttl;
+      // `also:` holds sources the user already merged into this item (log --add-source)
+      const sources = [it.source, ...String(it.also || '').split(';')].map(norm).filter(Boolean);
+      const sameSrc = sources.includes(src), sameTtl = norm(it.title) === ttl;
       const c = (reason) => ({ id: it.id, title: it.title, source: it.source, reason });
       if (sameSrc && sameTtl) same.push(c('same source and title'));
       else if (sameTtl) other.push(c('same title, different source'));
@@ -180,7 +186,7 @@ const cmd = {
     const { items, skipped } = folderItems();
     const rows = items.sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
     const lines = ['# 글감 목록', '', '| id | title | status | source |', '|---|---|---|---|'];
-    for (const r of rows) lines.push(`| ${[r.id, r.title, r.status, r.source].map(cell).join(' | ')} |`);
+    for (const r of rows) lines.push(`| ${[`[${r.id}](${encodeURI(r.id)}/meta.md)`, r.title, r.status, r.source].map(cell).join(' | ')} |`);
     const text = lines.join('\n') + '\n';
     let prev = null;
     try { prev = fs.readFileSync(path.join(MAT, 'index.md'), 'utf8'); } catch { /* none yet */ }
@@ -196,8 +202,23 @@ const cmd = {
     if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) fail(`unknown id: ${a.id}`);
     let body = one(a.note);
     let metaText;
-    if (a.status !== undefined) {
+    if (a['add-source'] !== undefined) {
+      const add = one(a['add-source']);
+      if (!add) fail('missing --add-source');
       try { metaText = fs.readFileSync(path.join(dir, 'meta.md'), 'utf8'); } catch { fail(`no meta.md for ${a.id}`); }
+      const m = readMeta(dir);
+      const known = [m.source, ...String(m.also || '').split(';')].map(norm).filter(Boolean);
+      if (!known.includes(norm(add))) {
+        const also = [...String(m.also || '').split(';').map(one).filter(Boolean), add].join('; ');
+        metaText = /^also:.*$/m.test(metaText)
+          ? metaText.replace(/^also:.*$/m, `also: ${also}`)
+          : metaText.replace(/^(source:.*)$/m, `$1\nalso: ${also}`);
+      }
+      body += ` (source added: ${add})`;
+    }
+    if (a.status !== undefined) {
+      metaText ??= (() => { try { return fs.readFileSync(path.join(dir, 'meta.md'), 'utf8'); } catch { return undefined; } })();
+      if (metaText === undefined) fail(`no meta.md for ${a.id}`);
       const m = /^status:[ \t]*(.*)$/m.exec(metaText);
       if (!m) fail(`no status line in meta.md of ${a.id}`);
       body += ` (status: ${m[1].trim()} -> ${a.status}; step: ${one(a['later-step'])})`;
@@ -248,6 +269,19 @@ const cmd = {
     return { result: 'answered', id: a.id, line };
   },
 
+  // Open questions per item, counted from gaps.md itself: the summary's count comes from here.
+  gaps() {
+    const items = [];
+    for (const { id } of folderItems().items) {
+      let text = '';
+      try { text = fs.readFileSync(path.join(MAT, id, 'gaps.md'), 'utf8'); } catch { /* none */ }
+      const lines = text.split(/\r?\n/).filter((l) => l.startsWith('- '));
+      const answered = lines.filter((l) => l.slice(2).startsWith(ANSWERED + ' ')).length;
+      items.push({ id, open: lines.length - answered, answered });
+    }
+    return { open: items.reduce((n, x) => n + x.open, 0), items };
+  },
+
   foreign() {
     const found = [];
     const walk = (dir, rel) => {
@@ -278,7 +312,7 @@ function parse(argv) {
 
 try {
   const [sub, ...rest] = process.argv.slice(2);
-  if (!Object.hasOwn(cmd, sub ?? '')) fail(`unknown subcommand: ${sub ?? ''} (id|match|init|index|log|answer|foreign)`);
+  if (!Object.hasOwn(cmd, sub ?? '')) fail(`unknown subcommand: ${sub ?? ''} (id|match|init|index|log|answer|gaps|foreign)`);
   process.stdout.write(JSON.stringify(cmd[sub](parse(rest))) + '\n');
 } catch (e) {
   process.stdout.write(JSON.stringify({ error: e.message }) + '\n');
