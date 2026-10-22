@@ -1294,7 +1294,7 @@ const story = (key: string, title: string, over: Record<string, unknown> = {}) =
   live: true, elapsed_ms: null, run_file: null, owner_key: key, ...over,
 })
 const epicOf = (id: string, key: string, items: unknown[], over: Record<string, unknown> = {}) => ({
-  ...demo({ key, title: `task ${id}` }), task_id: id, created_at: 500, live: true, age_ms: null, items, workers: [], handoffs: [], harness: null, ...over,
+  ...demo({ key, title: `task ${id}` }), task_id: id, slug: null, created_at: 500, live: true, age_ms: null, items, workers: [], handoffs: [], harness: null, ...over,
 })
 const FULL = [
   epicOf('tA', 'E-3a3a3bb5', [
@@ -1371,7 +1371,35 @@ for (const surface of SURFACES) {
     expect(text).not.toContain('Build the expense tracker')
     expect(text).not.toMatch(/day \d/)
     expect(await ui.find({ type: 'Text', text: '$0.00 · 0 turns' })).toBeDefined()
+    // no slug: no slug column, the row reads as before
+    expect(picked).toMatch(/^▸ +● +E-3a3a3bb5 {2}task tA {2}/)
   })
+
+  // the slug sits right after the key, dim; the title gives way first, at 190 and 110 columns
+  for (const cols of [190, 110]) {
+    test(`${surface}: the EPIC row shows the slug after the key and cuts the title first at ${cols}`, async ($, on) => {
+      const long = 'Migrate every legacy report exporter to the new streaming writer and keep each output file identical across all supported locales'
+      const tasks = [
+        epicOf('tA', 'E-3a3a3bb5', [], { title: long, slug: 'report-exporters' }),
+        epicOf('tB', 'E-bbbbbbbb', [], { title: 'short', slug: 'quick-fix' }),
+        epicOf('tC', 'E-cccccccc', [], { title: 'older', slug: null }),
+      ]
+      await seeded($, on, { status: stat(), tasks, task: demo() }, surface, undefined, { epic: 'tA' })
+      const ui = await $.ui.mount({ plugin: 'teams', surface, component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: cols - 4, placement: 'dock' } } as never)
+      const lines = await textsOf(ui, EPIC_LINE)
+      expect(lines).toHaveLength(3)
+      const [a, b, c] = lines as [string, string, string]
+      expect(a).toMatch(/E-3a3a3bb5 {2}report-exporters +Migrate/)
+      expect(a).toContain('…')
+      expect(a).not.toContain('identical across all supported locales')
+      expect(b).toMatch(/E-bbbbbbbb {2}quick-fix +short/)
+      // columns align across rows: every title starts at one offset, rows keep to the pane width
+      expect(new Set([a.indexOf('Migrate'), b.indexOf('short'), c.indexOf('older')]).size).toBe(1)
+      for (const l of lines) expect(cells(l)).toBeLessThanOrEqual(cols - 4)
+      const dim = await ui.find({ type: 'Text', text: /report-exporters/ })
+      expect(dim).toBeDefined()
+    })
+  }
 
   test(`${surface}: bracket keys clamp at both ends`, async ($, on) => {
     const { tick } = await seeded($, on, { status: stat(), tasks: FULL, task: demo() }, surface, undefined, { epic: 'tA' })
@@ -1623,7 +1651,7 @@ const DEMO: Record<string, { tasks: unknown[]; you?: unknown }> = {
       ], {
         workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', 'editing parser.ts'), wkd('P2', 'idle'), wkd('P3', 'you', 'asks a question'), wkd('JUDGE', 'idle')],
         handoffs: [ho('10:01', 'PLAN', 'the plan', 'P1'), ho('10:02', 'P1', 'a diff', 'JUDGE'), ho('10:03', 'JUDGE', 'a verdict', 'P1'), ho('10:04', 'P2', 'test results', 'JUDGE'), ho('10:05', 'P3', 'a question', 'you')],
-        ...body(1.92, 14),
+        ...body(1.92, 14), slug: 'expense-tracker',
         you: { count: 1, items: ['one open question'], cards: [{ key: 'E-3a3a3bb5/P3', title: 'cache layer', question: 'keep the old cache key format?' }] },
       }),
       epicOf('tC', 'E-cccccccc', [story('E-cccccccc/P1', 'old import job', { doing: 'running tests', state: 'stalled', live: false })], { live: false, age_ms: 7200000, state: 'stalled' }),
@@ -1639,7 +1667,7 @@ const DEMO: Record<string, { tasks: unknown[]; you?: unknown }> = {
     tasks: [epicOf('tN', 'E-dddddddd', [
       story('E-dddddddd/P1', LONGT, { doing: LONGD, last_verdict: 'reject', try: 2, max: 3, elapsed_ms: 240000, cost_usd: 0.42, cost_estimated: true }),
       story('E-dddddddd/P2', 'short title', { doing: 'reading', elapsed_ms: 35000, cost_usd: 1.5 }),
-    ], { ...body(1.92, 14), title: LONGT, workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', LONGD)], handoffs: [ho('10:01', 'PLAN', LONGD, 'P1')] })],
+    ], { ...body(1.92, 14), title: LONGT, slug: 'exporter-rewrite', workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', LONGD)], handoffs: [ho('10:01', 'PLAN', LONGD, 'P1')] })],
   },
 }
 const STOP = new Set(['the', 'and', 'for', 'then', 'with', 'its', 'each', 'one', 'per', 'all', 'any', 'not', 'you'])
