@@ -514,6 +514,20 @@ test('icon and word agree for every state (markOf)', () => {
   for (const st of ['idle', 'done', 'stalled', 'failed']) assert.equal(markOf(st, 'running tests').word, st);
 });
 
+test('mod.test.ts mirror equals markOf for every state', () => {
+  const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../hooks/mod.test.ts'), 'utf8');
+  const blocks = [...src.matchAll(/\/\/ MARKS-BEGIN[^\n]*\n([\s\S]*?)\/\/ MARKS-END/g)];
+  assert.equal(blocks.length, 1, 'exactly one MARKS-BEGIN..MARKS-END block');
+  const line = blocks[0][1].trim();
+  const marks = JSON.parse(line.slice(line.indexOf('= ') + 2).replace(/;$/, ''));
+  assert.deepEqual(Object.keys(marks).sort(), ['acting', 'done', 'failed', 'idle', 'stalled', 'you']);
+  for (const [state, { icon, word }] of Object.entries(marks)) {
+    for (const doing of ['', 'editing a.ts']) {
+      assert.deepEqual({ icon, word: word ?? doing, word_key: word === null ? '' : state }, markOf(state, doing), `${state} / ${doing}`);
+    }
+  }
+});
+
 test('icon and word agree for every state (floorOf items and workers)', () => {
   const pkg = (id, dispatch) => ({ id, title: id, dispatch, child: {} });
   const run = (packages, facts, extra = {}) => floorOf({ task_id: 't', state: 'running', ticket: { key: 'E-t' }, packages, ...extra }, facts);
