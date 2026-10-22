@@ -7,7 +7,7 @@
 //   --received --session <id>   stdin: a peer message; a teams ask appends a `received` row and prints its key,
 //                               anything else prints nothing; exit 0 either way
 // Rows: <tasksDir>/<task_id>/asks.jsonl. Sessions: TEAMS_SESSIONS_DIR, else ~/.claude/sessions.
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { tasksRoot } from '../mcp/taskmanager.mjs';
@@ -59,7 +59,7 @@ async function main(argv) {
     for await (const c of process.stdin) text += c;
     const n = parseAskMessage(text.replace(/\n$/, ''));
     const session = arg(argv, '--session');
-    if (!n || !n.task_id || !session) return;
+    if (!n || !session || !/^[A-Za-z0-9-]+$/.test(String(n.task_id || '')) || !existsSync(join(tasksDir, n.task_id, 'task.json'))) return;
     appendRow(tasksDir, n.task_id, { event: 'received', key: n.key, session, at: Date.now() });
     process.stdout.write(n.key + '\n');
   }

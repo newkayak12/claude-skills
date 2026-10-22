@@ -59,6 +59,7 @@ const en = {
   logDispatched: '{s} started', logWaiting: '{s} waiting for you', logFinished: '{s} finished',
   noRun: 'No teams run in this session.', loading: 'Loading...', noLog: 'Nothing logged yet.',
   workMore: '+{n} more', cmdDesc: 'Open or close the teams status pane', paneOpened: 'pane opened',
+  asksYou: '{who} asks you: {q}',
   board: 'board', inboxOne: '{n} question for you', inboxMany: '{n} questions for you', statusWaiting: 'needs you: {n} waiting - open /teams-status',
   pushRejected: 'rejected', pushNeedsYou: 'needs you', pushEnded: 'run ended', nodeFailed: 'failed',
   prev: '◀', next: '▶', keysHint: '[ ] EPIC · j k row · 1-5 tabs', openHint: 'g open run', noStories: 'No STORY at work.',
@@ -88,6 +89,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     logDispatched: '{s} 시작', logWaiting: '{s} 답변 대기', logFinished: '{s} 끝남',
     noRun: '이 세션에 팀 실행이 없습니다.', loading: '불러오는 중...', noLog: '아직 기록이 없습니다.',
     workMore: '+{n}건 더', cmdDesc: '팀 현황 창 열기/닫기', paneOpened: '창을 열었습니다',
+    asksYou: '{who}님이 묻습니다: {q}',
     board: '보드', inboxOne: '질문 {n}건', inboxMany: '질문 {n}건', statusWaiting: '확인 필요: {n}건 대기 - /teams-status 열기',
     pushRejected: '반려', pushNeedsYou: '확인 필요', pushEnded: '실행 종료', nodeFailed: '실패',
     prev: '◀', next: '▶', keysHint: '[ ] 에픽 · j k 행 · 1-5 탭', openHint: 'g 실행 열기', noStories: '진행 중인 스토리가 없습니다.',
@@ -250,6 +252,8 @@ const WORK_MAX = 6
 export const register: Register = on => {
   let isRunning = false
   const pushed = new Set<string>()
+  // the session.start tick, kept so a received ask can refresh the data once
+  let refresh: (() => Promise<void>) | null = null
 
   on('session.start', async ($, e, next) => {
     if ((await $.session.surfaces()).length === 0) return next(e)
@@ -326,9 +330,16 @@ export const register: Register = on => {
         const isOpen = (await $.ui.panes()).some(p => p.id === PANE)
         const isSummary = isOpen || (await read($, status))?.latest != null
         const id = isOpen ? await paneTask($) : undefined
+        let sid: string | undefined
+        try {
+          sid = await $.session.id()
+        } catch {
+          // no session id: the call goes without --session
+        }
         const data = await $.process.run([
           'node', VIEW, '--once', '--format', isOpen ? 'teams' : isSummary ? 'summary' : 'status', '--cwd', cwd,
           ...(id === undefined ? [] : ['--task', id]),
+          ...(sid === undefined ? [] : ['--session', sid]),
         ])
         if (data.exitCode === 0) {
           const parsed = JSON.parse(data.stdout) as { status: StatusInfo; tasks?: SummaryTaskEntry[]; task: SummaryTask | null; teams?: TeamsView | null } & StatusInfo
@@ -385,6 +396,7 @@ export const register: Register = on => {
     // events older than this session's start are not toasted
     const now = await $.clock.now()
     await update($, cursor, since => (since === 0 ? now : since))
+    refresh = tick
     $.clock.every(TICK_MS, tick)
 
     return next(e)
@@ -572,8 +584,12 @@ export const register: Register = on => {
     const workerWidths = columnWidths(workerOf.map(r => r.cells), inner, 2, [3])
     const handoffOf = handoffCells(entry?.handoffs ?? [])
     const handoffWidths = columnWidths(handoffOf, inner, 2, [2, 3])
+    // asks addressed to this session, from node's status.asks: one warning line each, above the hand-offs
+    const askOf = ((await read($, status))?.asks ?? []).map(a => [`⚑ ${a.who} → you`, a.question])
+    const askWidths = columnWidths(askOf, inner, 2, [1])
     const floorLines = (
       <Box flexDirection="column">
+        {askOf.length > 0 && <Box marginBottom={1}>{renderLines(ui, askOf.map(r => rowLine(r, askWidths, 2, ['warning'])), 'a')}</Box>}
         {renderLines(ui, workerOf.map(r => rowLine(r.cells, workerWidths, 2, r.tints)), 'w')}
         {handoffOf.length > 0 && <Box marginTop={1}>{renderLines(ui, handoffOf.map(r => rowLine(r, handoffWidths, 2, ['dim'])), 'h')}</Box>}
       </Box>
@@ -750,11 +766,21 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const inboxLabel = (n: number) => s(n === 1 ? 'inboxOne' : 'inboxMany', { n })
     const flag = flagged ? <Box flexShrink={0} marginRight={1}><Text color="warning" bold>⚑</Text></Box> : null
+    // a card addressed to this session: its question leads the ⚑ row (node's status.asks, newest first)
+    const asks = info?.asks ?? []
+    const first = asks[0]
+    const asked = first === undefined ? null : (
+      <>
+        <Box flexShrink={1} marginRight={1}><Text color="warning" wrap="truncate-end">{s('asksYou', { who: first.who, q: first.question })}</Text></Box>
+        {asks.length > 1 && <Box flexShrink={0} marginRight={1}><Text dimColor>{`+${asks.length - 1}`}</Text></Box>}
+      </>
+    )
     if (task === null || !isRunning) {
       return (
         <Box flexDirection="column">
           <Box>
             {flag}
+            {asked}
             <Box flexShrink={0}><Button key="inbox" label={inboxLabel(Math.max(info?.waiting ?? 0, task?.you.count ?? 0))} onPress={open} /></Box>
           </Box>
           {await next(e)}
@@ -765,6 +791,7 @@ export const register: Register = on => {
       <Box flexDirection="column">
         <Box>
           {flag}
+          {asked}
           <Box flexShrink={1}><Text dimColor wrap="truncate-end">{`teams · ${task.title} — ${nowSentence(s, task)}`}</Text></Box>
           <Box flexShrink={0} marginLeft={1}>
             <Text color="success">{'━'.repeat(task.total > 0 ? Math.round((10 * task.done) / task.total) : 0)}</Text>
@@ -788,6 +815,36 @@ export const register: Register = on => {
     const id = taskIdOf(r)
     if (id !== undefined) await update($, watch, list => (list.includes(id) ? list : [...list, id]))
     return r
+  }).catch(($, e, next) => next(e))
+
+  // sender: a driver hands its asks to the opener session after submit/next; headless too, fail open,
+  // the result goes back unchanged (node decides what is sent; this only runs and transports)
+  on('tool.call', { tool: /__(team_submit|team_next)$/ }, async ($, e, next) => {
+    const r = await next(e)
+    try {
+      const ASK = `${$.plugin.root}/scripts/ask-message.mjs`
+      const plan = await $.process.run(['node', ASK, '--send-plan', '--self', await $.session.id()])
+      if (plan.exitCode !== 0) return r
+      for (const m of JSON.parse(plan.stdout) as { to: string; text: string; key: string }[]) {
+        try {
+          const sent = await $.session.send({ to: { sessionId: m.to }, text: m.text })
+          await $.process.run(['node', ASK, '--sent', m.key, ...(sent.isDelivered ? ['--ok'] : ['--error', sent.reason])])
+        } catch (err) {
+          await $.process.run(['node', ASK, '--sent', m.key, '--error', String((err as Error)?.message ?? err)])
+        }
+      }
+    } catch {
+      // a lost hand-off is the poll's job
+    }
+    return r
+  }).catch(($, e, next) => next(e))
+
+  // receiver: a peer's message that node reads as a teams ask is taken here and the data refreshed once
+  on('session.receive', { origin: { kind: 'peer' } }, async ($, e, next) => {
+    const r = await $.process.run(['node', `${$.plugin.root}/scripts/ask-message.mjs`, '--received', '--session', await $.session.id()], { stdin: e.text })
+    if (r.exitCode !== 0 || r.stdout.trim() === '') return next(e)
+    if (refresh !== null) await refresh()
+    return { consumed: 'teams ask' }
   }).catch(($, e, next) => next(e))
 
   // guard: runs headless too
