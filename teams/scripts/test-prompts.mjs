@@ -557,6 +557,12 @@ test('the setgoal contract defines deps as start-order, not subject-matter order
   assert.match(setgoal, /give each one the section it owns, by heading/);
 });
 
+test('the setgoal contract tells test[] entries to pass or fail by exit code', () => {
+  for (const marker of ['passes or fails by its exit code', '! grep', 'echo MISMATCH', '2>&1']) {
+    assert.ok(CONTRACT.setgoal.includes(marker), `CONTRACT.setgoal carries "${marker}"`);
+  }
+});
+
 // --- ask: the one briefing in this file written for a person (D2 step 2) ---
 
 test('an ask card prints the choice, its consequences and who owns it', () => {

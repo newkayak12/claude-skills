@@ -187,6 +187,8 @@ test('spec-check guidance: exit-code rule at its three sites, and the forms beha
     const src = read(f);
     assert.match(src, /passes or fails by its exit code/, `${f} lacks the exit-code rule`);
     assert.ok(src.includes('! grep'), `${f} lacks the "! grep" form`);
+    assert.ok(src.includes('echo MISMATCH'), `${f} lacks the banned "echo MISMATCH" form`);
+    assert.ok(src.includes('2>&1'), `${f} lacks the "2>&1" piped-producer rule`);
   }
   const sh = (cmd) => spawnSync('sh', ['-c', cmd], { encoding: 'utf8' }).status;
   const bad = `printf '◌  editing a.ts\\n'`;
