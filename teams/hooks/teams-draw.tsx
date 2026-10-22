@@ -1,8 +1,8 @@
 /*
  * Teams-only drawing: icons and tints per state, text that is cut with `…`, columns that start at the same
  * character on every row, and the one place lines of segments become Ink Text. Pure: every function takes
- * strings and a width; mod.tsx decides what to show. Width is counted in code points (every glyph used is
- * one column).
+ * strings and a width; mod.tsx decides what to show. Width is counted in display cells (Hangul, CJK and emoji
+ * take two; combining marks, ZWJ and variation selectors none; the icons and the spinner one).
  */
 import type { Handoff, SummaryItem, SummaryTaskEntry, SummaryWorker, WorkState } from '../types'
 
@@ -12,14 +12,40 @@ export type Line = Seg[]
 // the resolved components from $.ui.resolve(e)
 export type Ui = { Box: any; Text: any }
 
-export const width = (s: string) => Array.from(s).length
+// display cells of one code point: wide glyphs 2, combining marks / ZWJ / variation selectors 0, the rest 1
+function cellsOf(ch: string): number {
+  const c = ch.codePointAt(0)!
+  if ((c >= 0x300 && c <= 0x36f) || c === 0x200d || (c >= 0xfe00 && c <= 0xfe0f)) return 0
+  if (
+    (c >= 0x1100 && c <= 0x115f) || (c >= 0x2e80 && c <= 0xa4cf) || (c >= 0xac00 && c <= 0xd7a3) || (c >= 0xf900 && c <= 0xfaff) ||
+    (c >= 0xfe30 && c <= 0xfe6f) || (c >= 0xff00 && c <= 0xff60) || (c >= 0xffe0 && c <= 0xffe6) || (c >= 0x1f300 && c <= 0x1faff)
+  ) return 2
+  return 1
+}
+
+export const width = (s: string) => Array.from(s).reduce((n, ch) => n + cellsOf(ch), 0)
 export const padText = (s: string, w: number) => s + ' '.repeat(Math.max(0, w - width(s)))
 
-// cut to w columns; the cut ends in …
+// cut to w display cells; the cut ends in … and never splits a glyph (a mark or a ZWJ join stays with its base)
 export function clipText(s: string, w: number): string {
   if (width(s) <= w) return s
   if (w <= 0) return ''
-  return `${Array.from(s).slice(0, w - 1).join('').trimEnd()}…`
+  const clusters: string[] = []
+  let joined = false
+  for (const ch of Array.from(s)) {
+    if (clusters.length > 0 && (cellsOf(ch) === 0 || joined)) clusters[clusters.length - 1] += ch
+    else clusters.push(ch)
+    joined = ch === '‍'
+  }
+  let out = ''
+  let used = 0
+  for (const cl of clusters) {
+    const n = width(cl)
+    if (used + n > w - 1) break
+    out += cl
+    used += n
+  }
+  return `${out.trimEnd()}…`
 }
 
 /* --- icons and tints: one glyph and one colour per state, no faces --- */
@@ -49,17 +75,33 @@ export const tryText = (n: number | null, max: number | null) => (n === null ? '
 
 // Widths of the columns of `rows` so that they, with `gap` between the non-empty ones, fit `total`. A column with no
 // text takes no room. Columns give way in `shrink` order, each down to `min`; whatever is left over is cut by the caller.
-export function columnWidths(rows: readonly (readonly string[])[], total: number, gap: number, shrink: readonly number[], min = 4): number[] {
+// With a `drop` list, a row still too wide after shrinking loses the next listed column whole (width 0, its gap goes with
+// it) and shrinks again with the freed room; the first shrink column (the title) keeps `titleMin` until every drop is
+// spent, and only then gives way toward `min`. A column cut to 1 cell would be a bare … and becomes 0.
+export function columnWidths(
+  rows: readonly (readonly string[])[], total: number, gap: number, shrink: readonly number[], min = 4,
+  drop: readonly number[] = [], titleMin = min,
+): number[] {
   const count = rows.reduce((n, r) => Math.max(n, r.length), 0)
-  const widths = Array.from({ length: count }, (_, c) => rows.reduce((n, r) => Math.max(n, width(r[c] ?? '')), 0))
-  const spent = () => widths.reduce((n, w) => n + w, 0) + gap * Math.max(0, widths.filter(w => w > 0).length - 1)
-  for (const c of shrink) {
-    const over = spent() - total
-    if (over <= 0) break
-    const w = widths[c]
-    if (w !== undefined && w > min) widths[c] = Math.max(min, w - over)
+  const natural = Array.from({ length: count }, (_, c) => rows.reduce((n, r) => Math.max(n, width(r[c] ?? '')), 0))
+  const plan = (dropped: number, titleFloor: number): number[] => {
+    const widths = [...natural]
+    for (const c of drop.slice(0, dropped)) if (c < widths.length) widths[c] = 0
+    const spent = () => widths.reduce((n, w) => n + w, 0) + gap * Math.max(0, widths.filter(w => w > 0).length - 1)
+    shrink.forEach((c, i) => {
+      const over = spent() - total
+      if (over <= 0) return
+      const w = widths[c]
+      const floor = i === 0 ? titleFloor : min
+      if (w !== undefined && w > floor) widths[c] = Math.max(floor, w - over)
+    })
+    return widths
   }
-  return widths
+  const fits = (ws: readonly number[]) => ws.reduce((n, w) => n + w, 0) + gap * Math.max(0, ws.filter(w => w > 0).length - 1) <= total
+  let widths = plan(0, titleMin)
+  for (let k = 1; k <= drop.length && !fits(widths); k++) widths = plan(k, titleMin)
+  if (!fits(widths)) widths = plan(drop.length, min)
+  return widths.map((w, c) => (w === 1 && (natural[c] ?? 0) > 1 ? 0 : w))
 }
 
 // one row cut and padded to its column widths; `tints` colour a column, the rest is plain

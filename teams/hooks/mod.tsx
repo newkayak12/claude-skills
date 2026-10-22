@@ -477,7 +477,7 @@ export const register: Register = on => {
     const now = await $.clock.now()
     const epicWord = (t: SummaryTaskEntry) => (t.state === 'waiting_human' ? s('nodeWaiting') : s(`state${cap(t.state)}` as keyof typeof en) || t.state)
     const epicOf = listed.map(t => epicCells(t, epicState(t), t.task_id === id, now, epicWord(t)))
-    const epicWidths = columnWidths(epicOf.map(r => r.cells), inner, 2, [3])
+    const epicWidths = columnWidths(epicOf.map(r => r.cells), inner, 2, [3], 4, [6, 5], 12)
     const epicLines: Line[] = epicOf.map(r => rowLine(r.cells, epicWidths, 2, r.tints))
     const epics = epicLines.length === 0 ? null : renderLines(ui, epicLines, 'e')
 
