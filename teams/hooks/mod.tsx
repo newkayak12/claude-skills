@@ -771,10 +771,11 @@ export const register: Register = on => {
     const asks = info?.asks ?? []
     const first = asks[0]
     const asked = first === undefined ? null : (
-      <>
-        <Box flexShrink={1} marginRight={1}><Text color="warning" wrap="truncate-end">{s('asksYou', { who: first.who, q: first.question })}</Text></Box>
-        {asks.length > 1 && <Box flexShrink={0} marginRight={1}><Text dimColor>{`+${asks.length - 1}`}</Text></Box>}
-      </>
+      // one row Box, not a fragment: the host lays fragment children out on their own line
+      <Box flexDirection="row" flexShrink={1} marginRight={1}>
+        <Box flexShrink={1}><Text color="warning" wrap="truncate-end">{s('asksYou', { who: first.who, q: first.question })}</Text></Box>
+        {asks.length > 1 && <Box flexShrink={0} marginLeft={1}><Text dimColor>{`+${asks.length - 1}`}</Text></Box>}
+      </Box>
     )
     if (task === null || !isRunning) {
       return (
