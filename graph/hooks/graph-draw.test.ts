@@ -311,7 +311,8 @@ test('detailLines: at most 24 node rows then "+n more"; every line fits both wid
 })
 
 // Producer for the demo renders. The plugin test runner reads no env and imports no node:fs, so each render is
-// printed between marker lines; graph/scripts/split-demo.mjs cuts `claude plugin test .` stdout into files.
+// printed between marker lines; the runner puts them on stderr, so pipe `claude plugin test . 2>&1` into
+// graph/scripts/split-demo.mjs, which cuts them into files.
 test('prints every demo render between marker lines', () => {
   for (const s of DEMO_SCENARIOS) {
     for (const w of WIDTHS) {

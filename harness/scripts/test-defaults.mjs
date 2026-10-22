@@ -28,6 +28,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
 const HARNESS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => readFileSync(join(HARNESS_ROOT, rel), 'utf8');
@@ -179,4 +180,19 @@ test('proof: the guard reports a drifted goal threshold', () => {
     { file: 'b', src: 'const GOAL_MATCH_THRESHOLD = 80' },
   ];
   assert.deepStrictEqual(distinctValues(collectLiterals(drifted, THRESHOLD_RE)), ['80', '90']);
+});
+
+test('spec-check guidance: exit-code rule at its three sites, and the forms behave as stated', () => {
+  for (const f of ['goal-spec.md', 'engine/fallback.md', 'engine/pipeline.js']) {
+    const src = read(f);
+    assert.match(src, /passes or fails by its exit code/, `${f} lacks the exit-code rule`);
+    assert.ok(src.includes('! grep'), `${f} lacks the "! grep" form`);
+  }
+  const sh = (cmd) => spawnSync('sh', ['-c', cmd], { encoding: 'utf8' }).status;
+  const bad = `printf '◌  editing a.ts\\n'`;
+  const clean = `printf '◌  idle\\n'`;
+  const re = `'[◌⊘✔✘] +editing'`;
+  assert.equal(sh(`! ${bad} | grep -nE ${re}`), 1, 'new form on a mismatch');
+  assert.equal(sh(`! ${clean} | grep -nE ${re}`), 0, 'new form on clean input');
+  assert.equal(sh(`${bad} | grep -nE ${re} && echo MISMATCH || echo ok`), 0, 'old form exits 0 on a mismatch: why it is banned');
 });
