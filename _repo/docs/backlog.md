@@ -18,14 +18,6 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
       Tests: teams 1415/1415, mod 206/206. Left: mod.md 0-4 for the changed rows.
     - Acceptance: live tmux at 190 and 110 shows the title whole; README/KOR shot; demo approved.
 
-61. **A size-S driver ends its turn while its own subagent and tests still run, and is restarted**
-    - Why: E-e2f5da7c (2026-10-22): the driver's turn ended while "implement U2" and a full
-      `node --test` ran in the background; `claude -p` stopped them after 10 min ("Background tasks
-      still running 10m after the last turn … stopping them") and the daemon spent a restart (1/2).
-      The restarted driver did the same once, then resumed on its own wakeup. Cost ~1h.
-    - Acceptance: the driver waits for its own background work before ending a turn (prompt rule or
-      `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` in the spawn env), with a test on the spawn command.
-
 65. **Flaky tests under load: name them when they recur**
     - Why: card 65 rest shipped 2026-10-22 (E-7e3a46f0: exit-code rule in the teams setgoal prompt,
       `markOf` form and all guidance markers pinned). The one-off failures (teams 1369/1, graph 198/1,
@@ -128,12 +120,6 @@ toasts).
         reaps the finished ones in one action.
 
 ### teams plugin bugs
-
-60. **`taskstate.mjs` reads a cleaned size-S task's unreadable run like `tickets.mjs` did**
-    - Why: E-e5fb01e7 (2026-10-22) fixed the stalled read in `tickets.mjs`/`view-collect.mjs` with
-      `harness_run.accepted`; its report names `teams/mcp/taskstate.mjs` as having the same weakness.
-    - Acceptance: a test where `taskState` of a finished, cleaned size-S task is complete (accepted)
-      or partial (rejected), not running.
 
 39. **Finish card 39: tool denial in the task manager's own judges, base exclusion before scoring**
     - Why: E-64cda2b0 (merged by hand 2026-10-20, `2c160959`..`ebbe1787`) shipped subset integrate,

@@ -2922,6 +2922,7 @@ function driverPrompt(task, child, opts = {}) {
     `complete or blocked - a fresh agent for every ready node, its JSON relayed verbatim to team_submit,`,
     `team_retry as the loop says.`,
     routing.length ? `Pass ${routing.join(', ')}.` : '',
+    `Never end a turn while your own background agent or test run is still running; wait for it to finish first.`,
     `End with the skill's output template.`,
   ].filter(Boolean).join(' ');
 }
@@ -2954,6 +2955,9 @@ function spawnChildDriver(task, nodeIdLabel, child, opts = {}) {
     // The project wiki lives in the main project, never in a worktree a child may run in.
     env.TEAMS_WIKI_ROOT = task.cwd;
     Object.assign(env, openerEnv(task));
+    // `claude -p` otherwise caps how long it waits on its own background agents at the end of a
+    // turn; 0 makes the driver wait for them without a ceiling. An explicit opts.env may override.
+    env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS = '0';
     if (opts.env) Object.assign(env, opts.env);
     const prompt = opts.prompt || driverPrompt(task, child, opts);
     const proc = spawn(argv[0], [...argv.slice(1), prompt], {
@@ -6127,6 +6131,7 @@ function harnessPrompt(task, opts = {}) {
     `Route 2, only when the graph MCP is not available: the harness skill's Agent Team fallback (harness/engine/fallback.md), codex through codex-exec-adapter.mjs with codex_provider "auto" (a fallback to Claude is recorded as such). Its manifest.json carries "teams_task": "${task.run_id}". Do not use the Workflow route.`,
     `As soon as the run exists, write ${h.pointer} as {"route":"graph","run_id":"<id>","cwd":"${h.cwd}"} or {"route":"fallback","run_dir":"<absolute run dir>"}.`,
     `When the run has written its report, copy that report to ${h.report_path}. The task's verdict is read from the run itself, not from anything you write.`,
+    `Never end a turn while your own background agent or test run is still running; wait for it to finish first.`,
     '',
     'Request:',
     String(task.request || ''),
