@@ -137,7 +137,9 @@ rules that constrain the work, plus per-unit deterministic checks (commands, fil
    which concurrent work can change and no single subgoal can satisfy deterministically; (b) an
    aspirational or arbitrary-threshold target (a chosen % reduction, subjective quality words) is
    a **soft goal**, not a hard pass/fail bar — the judge treats every listed entry as hard, so
-   restate it concretely or drop it.
+   restate it concretely or drop it. A test[] entry passes or fails by its exit code: a check that
+   must find nothing is `! grep …`, never `grep … && echo MISMATCH || echo ok` (exits 0 either way);
+   a producer piped into a reader carries `2>&1` when it prints on stderr (`claude plugin test .`).
    **Goal-level `acceptance[]` is the AC-n contract.** If a `specs/<feature>/spec.md` with `AC-n`
    exists (or the plan states stories/criteria), the entries are exactly those AC-n, same IDs, not
    new ones. Otherwise write each as `AC-n: Given … When … Then …` (checkable by a command or file),

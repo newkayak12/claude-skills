@@ -1289,16 +1289,10 @@ test('a line with severity but no run, node or reason toasts its text as before,
 })
 
 // ---- F4: listed EPICs, the STORYs tab, [ ] and g, the flag ----
-// node's markOf (teams/scripts/lib/view-floor.mjs), mirrored: the tsx test runner cannot import it
-const MARKS: Record<string, { icon: string; word: string }> = {
-  acting: { icon: '●', word: '' }, you: { icon: '⚑', word: '' }, idle: { icon: '◌', word: 'idle' },
-  done: { icon: '✔', word: 'done' }, stalled: { icon: '⊘', word: 'stalled' }, failed: { icon: '✘', word: 'failed' },
-}
-const markOf = (state: string, doing: string) => {
-  const m = MARKS[state]!
-  const live = state === 'acting' || state === 'you'
-  return { icon: m.icon, word: live ? doing : m.word, word_key: live ? '' : state }
-}
+// MARKS-BEGIN mirror of markOf (teams/scripts/lib/view-floor.mjs); teams/scripts/test-view-floor.mjs checks it
+const MARKS: Record<string, { icon: string; word: string | null }> = {"acting":{"icon":"●","word":null},"you":{"icon":"⚑","word":null},"idle":{"icon":"◌","word":"idle"},"done":{"icon":"✔","word":"done"},"stalled":{"icon":"⊘","word":"stalled"},"failed":{"icon":"✘","word":"failed"}}
+// MARKS-END
+const markOf = (state: string, doing: string) => { const m = MARKS[state]!; return { icon: m.icon, word: m.word ?? doing, word_key: m.word === null ? '' : state } }
 const story = (key: string, title: string, over: Record<string, unknown> = {}) => {
   const base = { state: 'acting', doing: '', ...over } as { state: string; doing: string }
   return {
@@ -1720,7 +1714,16 @@ for (const variant of Object.keys(DEMO)) {
         }
         // a STORY row's icon and word agree: a still or ended state never carries a working word
         if (name === 'stories') {
-          for (const l of body.filter(l => /^[▸\s]*[◌⊘✔✘]\s\s/.test(l.replace(/^[^\w▸◌⊘✔✘●⚑]*/, '')))) expect(l).not.toMatch(/editing|reading|running tests|asks a question|translating/)
+          const PAIRS6: Record<string, string | null> = { '●': null, '⚑': null, '◌': 'idle', '✔': 'done', '⊘': 'stalled', '✘': 'failed' }
+          const prows = body.filter(l => /^[▸ ] +\S  \S/.test(l) && !/^[▸ ] +\S +E-[0-9a-f]{8} /.test(l))
+          for (const l of prows) {
+            const icon = l.trim().replace(/^▸\s*/, '')[0]!
+            const word = l.trim().replace(/^▸\s*/, '').split(/\s{2,}/)[2]
+            expect(Object.keys(PAIRS6)).toContain(icon)
+            if (PAIRS6[icon] === null) expect(['idle', 'done', 'stalled', 'failed']).not.toContain(word)
+            else expect(word).toBe(PAIRS6[icon])
+          }
+          if (variant === 'full') for (const i of ['●', '◌', '⚑', '⊘']) expect(prows.map(l => l.trim().replace(/^▸\s*/, '')[0])).toContain(i)
           if (variant === 'full') expect(body.some(l => /◌.*idle/.test(l)) && body.some(l => /⊘.*stalled/.test(l))).toBe(true)
         }
         // `close` is said once, by the footer
