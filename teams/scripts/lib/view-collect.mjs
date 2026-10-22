@@ -666,7 +666,7 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     // plan/setgoal/impl/qualitygate), never `state`/`flow` below (the engine's own run-state
     // words) - the two are deliberately different vocabularies for different audiences (see
     // tickets.mjs's header comment), and this surface shows both rather than picking one.
-    ticket: { key: epicKey(task.run_id || taskId), title: deriveTitle(task.request, task.requests), state: stalledTask ? 'stalled' : epicWord, phase: epicPhase(task) },
+    ticket: { key: epicKey(task.run_id || taskId), slug: task.slug || null, title: deriveTitle(task.request, task.requests), state: stalledTask ? 'stalled' : epicWord, phase: epicPhase(task) },
     size: task.size || null,
     flow: task.flow && task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),
     kind: task.kind || 'task',
@@ -765,6 +765,7 @@ export function listTasks(tasksDir) {
     rows.push({
       task_id: id,
       epic_key: key,
+      slug: task.slug || null,
       title: deriveTitle(task.request, task.requests),
       state,
       phase,

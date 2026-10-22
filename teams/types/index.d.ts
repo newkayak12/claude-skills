@@ -8,6 +8,7 @@ export type StatusInfo = { line: string; waiting: number; latest?: string | null
 export type Mark = 'done' | 'running' | 'pending' | 'failed'
 export type SummaryTask = {
   key: string
+  slug: string | null
   title: string
   state: string
   day: number
