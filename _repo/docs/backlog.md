@@ -11,13 +11,6 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
 
 ### Mods and naming — UI first (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
 
-46. **Readable names, follow-up: pane without the slug column — live check and README shot**
-    - Why: E-e2f5da7c (2026-10-22) dropped the slug column from the pane rows (slug stays in the
-      Report header and `view.mjs`), counted slug collisions per git common dir, made `tm_clean`
-      delete the task's own branches, and stripped Korean particles (`티켓을 같은거` → `tiket-gateungeo`).
-      Tests: teams 1415/1415, mod 206/206. Left: mod.md 0-4 for the changed rows.
-    - Acceptance: live tmux at 190 and 110 shows the title whole; README/KOR shot; demo approved.
-
 65. **Flaky tests under load: name them when they recur**
     - Why: card 65 rest shipped 2026-10-22 (E-7e3a46f0: exit-code rule in the teams setgoal prompt,
       `markOf` form and all guidance markers pinned). The one-off failures (teams 1369/1, graph 198/1,

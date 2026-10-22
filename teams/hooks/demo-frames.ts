@@ -2,14 +2,40 @@
 // Test-only; mod.tsx never imports it. Same approach as session/hooks/demo-frames.ts (a row of cells; `wrap="truncate-end"`
 // text and a `flexShrink` box give way, ending in `…`, the highest `flexShrink` first; a `flexGrow` box fills what is
 // left), extended for what the teams pane draws: nested boxes, margins, gaps, `space-between`, `flex-end`, `flexWrap`,
-// `height` and a Text that wraps. Fictional data only.
+// `height` and a Text that wraps. Widths are display cells (a Hangul or emoji glyph takes two), as a terminal shows them.
+// Fictional data only.
 type Node = { type?: string; props?: Record<string, any>; children?: (Node | string)[] }
 
 const chars = (s: string) => Array.from(s)
-const len = (s: string) => chars(s).length
+
+// Display cells of a line: wide (CJK, emoji) glyphs take two, combining marks none.
+export const cells = (s: string): number =>
+  chars(s).reduce((n, c) => {
+    const p = c.codePointAt(0)!
+    if (p === 0x200d || (p >= 0x300 && p <= 0x36f) || (p >= 0xfe00 && p <= 0xfe0f)) return n
+    const wide = (p >= 0x1100 && p <= 0x115f) || (p >= 0x2e80 && p <= 0xa4cf) || (p >= 0xac00 && p <= 0xd7a3) || (p >= 0xf900 && p <= 0xfaff) ||
+      (p >= 0xfe30 && p <= 0xfe6f) || (p >= 0xff00 && p <= 0xff60) || (p >= 0xffe0 && p <= 0xffe6) || (p >= 0x1f300 && p <= 0x1faff)
+    return n + (wide ? 2 : 1)
+  }, 0)
+
+const len = cells
+
+// how many glyphs of `c` fit in `w` cells, never splitting a glyph
+const fitCount = (c: string[], w: number): number => {
+  let used = 0
+  let i = 0
+  for (; i < c.length; i++) {
+    const cw = cells(c[i]!)
+    if (used + cw > w) break
+    used += cw
+  }
+  return i
+}
+
 export const fit = (s: string, w: number): string => {
+  if (cells(s) <= w) return s
   const c = chars(s)
-  return c.length <= w ? s : `${c.slice(0, Math.max(0, w - 1)).join('').trimEnd()}…`
+  return `${c.slice(0, fitCount(c, Math.max(0, w - 1))).join('').trimEnd()}…`
 }
 
 const textOf = (n: Node | string): string =>
@@ -30,11 +56,12 @@ function wrapText(s: string, w: number): string[] {
   const out: string[] = []
   let rest = s
   while (len(rest) > w) {
-    const head = chars(rest).slice(0, w).join('')
-    const at = head.lastIndexOf(' ')
-    const cut = at > 0 ? at : w
-    out.push(chars(rest).slice(0, cut).join(''))
-    rest = chars(rest).slice(cut).join('').trimStart()
+    const c = chars(rest)
+    const n = Math.max(1, fitCount(c, w))
+    const at = c.slice(0, n).lastIndexOf(' ')
+    const cut = at > 0 ? at : n
+    out.push(c.slice(0, cut).join(''))
+    rest = c.slice(cut).join('').trimStart()
   }
   return [...out, rest]
 }
@@ -115,16 +142,6 @@ function wrapRow(kids: (Node | string)[], blocks: string[][], widths: number[], 
     return Array.from({ length: height }, (_, y) => r.map(i => pad(blocks[i]![y] ?? '', widths[i]!)).join(' '.repeat(gap)))
   })
 }
-
-// Display cells of a line: wide (CJK, emoji) glyphs take two, combining marks none.
-export const cells = (s: string): number =>
-  chars(s).reduce((n, c) => {
-    const p = c.codePointAt(0)!
-    if (p === 0x200d || (p >= 0x300 && p <= 0x36f) || (p >= 0xfe00 && p <= 0xfe0f)) return n
-    const wide = (p >= 0x1100 && p <= 0x115f) || (p >= 0x2e80 && p <= 0xa4cf) || (p >= 0xac00 && p <= 0xd7a3) || (p >= 0xf900 && p <= 0xfaff) ||
-      (p >= 0xfe30 && p <= 0xfe6f) || (p >= 0xff00 && p <= 0xff60) || (p >= 0xffe0 && p <= 0xffe6) || (p >= 0x1f300 && p <= 0x1faff)
-    return n + (wide ? 2 : 1)
-  }, 0)
 
 // The lines as laid out, not clipped: a line wider than `cols` stays wider, so a test can see it.
 export function draw(n: Node | string, cols: number): string[] {

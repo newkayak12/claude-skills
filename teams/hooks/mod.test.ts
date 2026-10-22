@@ -5,7 +5,7 @@ import type { On } from 'claude-code'
 import { frame, draw, cells } from './demo-frames.ts'
 import { STRINGS } from './mod'
 import { paneKey, paneSlash } from './pane'
-import { footerPlan, tabRowPlan } from './teams-draw'
+import { clipText, columnWidths, footerPlan, padText, tabRowPlan, width } from './teams-draw'
 
 type Run = { exitCode: number; stdout: string; stderr: string }
 const ok = (stdout: string): Run => ({ exitCode: 0, stdout, stderr: '' })
@@ -1804,6 +1804,118 @@ for (const bodyColumns of [78, 46]) {
     })
   }
 }
+
+// ---- widths by display cells: Korean and English rows in one pane ----
+test('width counts display cells: Hangul 2, ASCII 1, marks and joiners 0', () => {
+  expect(width('메모')).toBe(4)
+  expect(width('abc')).toBe(3)
+  expect(width('a메b')).toBe(4)
+  expect(width('')).toBe(0)
+  expect(width('é')).toBe(1)
+  expect(padText('메모', 6)).toBe('메모  ')
+  expect(padText('abc', 6)).toBe('abc   ')
+  expect(padText('메모 앱', 3)).toBe('메모 앱')
+})
+
+test('clipText cuts by display cells, ends in …, never splits a glyph', () => {
+  const ko = '메모 앱에 태그 검색 추가'
+  for (let w = 1; w <= width(ko); w++) {
+    const out = clipText(ko, w)
+    expect(width(out)).toBeLessThanOrEqual(w)
+    if (w < width(ko)) expect(out.endsWith('…')).toBe(true)
+    expect(out).not.toContain('�')
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(out)).toBe(false)
+    // what stays is a whole-glyph prefix of the original
+    expect(ko.startsWith(out.slice(0, -1).trimEnd())).toBe(true)
+  }
+  expect(clipText(ko, 6)).toBe('메모…')
+  expect(clipText(ko, 5)).toBe('메모…')
+  expect(clipText(ko, 0)).toBe('')
+  expect(clipText(ko, -3)).toBe('')
+  expect(clipText('abc', 0)).toBe('')
+  expect(clipText('abc', 3)).toBe('abc')
+  expect(clipText(ko, width(ko))).toBe(ko)
+})
+
+test('columnWidths: no drop list keeps the old widths; a drop list sheds age first, then count, and never leaves a width-1 column', () => {
+  const row = ['▸', '●', 'E-3a3a3bb5', 'Add CSV export to the reports page', 'running', '4/5', '3s']
+  // no drop list: the title gives way down to its floor, as before
+  expect(columnWidths([row], 50, 2, [3])).toEqual([1, 1, 10, 14, 7, 3, 2])
+  expect(columnWidths([row], 40, 2, [3])).toEqual([1, 1, 10, 4, 7, 3, 2])
+  expect(columnWidths([row], 100, 2, [3])).toEqual([1, 1, 10, 34, 7, 3, 2])
+  // with [6, 5] and a title floor of 12: the age goes first, the count only when the title would still be under 12
+  expect(columnWidths([row], 100, 2, [3], 4, [6, 5], 12)).toEqual([1, 1, 10, 34, 7, 3, 2])
+  expect(columnWidths([row], 44, 2, [3], 4, [6, 5], 12)).toEqual([1, 1, 10, 12, 7, 3, 0])
+  expect(columnWidths([row], 40, 2, [3], 4, [6, 5], 12)).toEqual([1, 1, 10, 13, 7, 0, 0])
+  // a column cut to one cell would be a bare …: it becomes 0
+  expect(columnWidths([['ab', 'abcdefgh']], 4, 1, [1], 1)).toEqual([2, 0])
+  for (const total of [20, 24, 30, 36, 40, 44, 50]) {
+    // columns 0 and 1 are one cell by nature; every other column is 0 or at least 2
+    for (const w of columnWidths([row], total, 2, [3], 4, [6, 5], 12).slice(2)) expect(w).not.toBe(1)
+  }
+})
+
+// one Korean-title task and one English-title task listed together; pane width 78 and 46 is the frame() cols argument
+// (body = cols - 4, so inner 74 and 42; the pane is given bodyColumns = cols)
+const KO_TITLE = '메모 앱에 태그 검색 추가'
+const EN_TITLE = 'Add CSV export to the reports page'
+for (const cols of [78, 46]) {
+  const bodyColumns = cols
+  test(`mixed Korean and English EPIC rows at pane width ${cols}: same column offsets, no line wider, the title keeps room, no lone …`, async ($, on) => {
+    const tasks = [
+      epicOf('tA', 'E-3a3a3bb5', [], { title: KO_TITLE }),
+      epicOf('tB', 'E-bbbbbbbb', [], { title: EN_TITLE }),
+    ]
+    await seeded($, on, { status: stat(), tasks, task: demo() }, 'terminal', undefined, { epic: 'tA' }, true)
+    const ui = await $.ui.mount({ plugin: 'teams', surface: 'terminal', component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns, placement: 'dock' } } as never)
+    const lines = frame((await ui.drawn()) as any, 'Teams', cols)
+    // (b) no line of the frame is wider than the pane
+    for (const l of lines) expect(cells(l)).toBeLessThanOrEqual(cols)
+    const rows = lines.filter(l => /E-[0-9a-f]{8} /.test(l))
+    expect(rows).toHaveLength(2)
+    const [ko, en] = rows as [string, string]
+    // (a) the state word starts at the same display-cell offset on both rows
+    expect(ko).toContain('running')
+    expect(en).toContain('running')
+    expect(cells(ko.slice(0, ko.indexOf('running')))).toBe(cells(en.slice(0, en.indexOf('running'))))
+    // the title starts at one offset too
+    expect(cells(ko.slice(0, ko.indexOf('메')))).toBe(cells(en.slice(0, en.indexOf('Add'))))
+    // no lone … column on any line
+    for (const l of lines) expect(/\s…(\s|│|$)/.test(l)).toBe(false)
+    if (cols === 46) {
+      // (c) the state word stays; the count and the age are dropped; the title keeps 12 cells before any …
+      for (const r of rows) {
+        expect(r).toContain('running')
+        expect(r).not.toMatch(/\d\/\d/)
+        expect(r).not.toMatch(/\d+[smh]\b/)
+      }
+      for (const [r, first] of [[ko, '메'], [en, 'Add']] as const) {
+        const title = r.slice(r.indexOf(first), r.indexOf('running')).trimEnd()
+        const at = title.indexOf('…')
+        expect(cells(at >= 0 ? title.slice(0, at) : title)).toBeGreaterThanOrEqual(12)
+      }
+    } else {
+      // (d) wide enough: the count and the age are still there
+      for (const r of rows) {
+        expect(r).toMatch(/\d\/\d/)
+        expect(r).toMatch(/\d+[smh]\b/)
+      }
+    }
+  })
+}
+
+test('190 columns: the tab row keeps the cost text, fits the pane and ends in the right border', async ($, on) => {
+  const d = DEMO.full!
+  const first = d.tasks[0] as { task_id: string }
+  await seeded($, on, { status: stat(), tasks: d.tasks, task: first }, 'terminal', undefined, { epic: first.task_id }, true)
+  const ui = await $.ui.mount({ plugin: 'teams', surface: 'terminal', component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: 190, placement: 'dock' } } as never)
+  const lines = frame((await ui.drawn()) as any, 'Teams', 190)
+  const tabRows = lines.filter(l => l.includes('Floor') && /turns/.test(l))
+  expect(tabRows).toHaveLength(1)
+  expect(cells(tabRows[0]!)).toBeLessThanOrEqual(190)
+  expect(tabRows[0]!.endsWith('│')).toBe(true)
+  for (const l of lines) expect(cells(l)).toBeLessThanOrEqual(190)
+})
 
 test('demo frames', () => {
   // the runner indents an error message, so the frames go to stdout as they are (headings start at column 0), then the test fails
