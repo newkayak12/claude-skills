@@ -108,6 +108,9 @@ import {
   reasonFromVerdict,
 } from './graph.mjs';
 import { computeSubmitResult } from './broker.mjs';
+// A running STORY's question to its TeamLeader (card 49 part C): the event shapes and the
+// validation are storyask.mjs's, written to the ledger and acted on here.
+import { newAskId, askedEvent, answeredEvent, validateAsk } from './storyask.mjs';
 // The same driver-stream reader view.mjs's RESOURCE view already uses (see drivercost.mjs's own
 // header comment) - reused here, not re-parsed, so tm_status/tm_board/the report briefing can
 // never disagree with what the view surface already shows for the same task.
@@ -2916,11 +2919,20 @@ function driverPrompt(task, child, opts = {}) {
     o.host_model ? `host_model ${o.host_model}` : '',
     Array.isArray(o.native_models) && o.native_models.length ? `native_models ${o.native_models.join(', ')}` : '',
   ].filter(Boolean);
+  // A STORY's own driver may ask its TeamLeader (tm_ask) and is then parked; the resume carries
+  // every answered question verbatim.
+  const story = task.nodes.find((x) => x.stage === 'dispatch' && x.child && x.child.run_id === child.run_id);
+  const answers = (opts.asks || []).map((a) => `Your question (ask_id ${a.ask_id}): ${a.question}\nAnswer from ${a.by === 'person' ? 'the person' : 'the TeamLeader'}: ${a.answer}`);
   return [
     `Use the teams:orchestrate skill, but CONTINUE the graph run that is already open instead of opening one:`,
     `run_id ${child.run_id} at cwd ${child.cwd}. Do not call team_open or tm_open.`,
-    opts.resume
-      ? `A previous driver for this exact run died before it finished; call team_status({run_id, cwd}) first to see what it already completed, and resume from there - do not redo a node that is already done.`
+    answers.length
+      ? `A previous driver for this exact run parked on a question and is replaced by you; call team_status({run_id, cwd}) first, then continue from there - do not redo a node that is already done.\n${answers.join('\n')}`
+      : opts.resume
+        ? `A previous driver for this exact run died before it finished; call team_status({run_id, cwd}) first to see what it already completed, and resume from there - do not redo a node that is already done.`
+        : '',
+    story && story.subgoal_id
+      ? `If a question blocks you that neither your briefing nor the plan settles, call tm_ask({task_id: "${task.run_id}", key: "${storyKey(task.run_id, story.subgoal_id)}", question}) once with the whole question, then end your turn at once: you are parked at no cost and resumed with the answer. Do not guess and do not poll.`
       : '',
     `Read references/loop.md, then drive team_next/team_run/team_submit exactly as it says until the run is`,
     `complete or blocked - a fresh agent for every ready node, its JSON relayed verbatim to team_submit,`,
@@ -3068,6 +3080,9 @@ export function driverRestartsSpent(task, child) {
 export function serviceDeadDriver(task, child, nodeId) {
   const driver = child.driver;
   if (!driver || driverAlive(driver) || spawning(child)) return false;
+  // A STORY parked on its question (tm_ask) is not a dead run: its driver exited on purpose. The
+  // one thing it needs is the answer, once every question it asked has one (no restart spent).
+  if (storyAsksOf(task, nodeId).length) return deliverStoryAnswers(task, nodeId, child);
   const run = loadRun(child.cwd, child.run_id);
   const cs = run ? runState(run) : { state: 'missing' };
   // A run parked on a human is not a dead run, and no driver is SUPPOSED to be alive while it
@@ -3585,6 +3600,7 @@ function openChildOnSlot(task, n, progress, reservation) {
 export function dispatchSettled(task, n) {
   if (!n.child) return false;
   if (n.child.waiting_capacity) return false; // parked until the reset; autoResumeCapacity reopens it
+  if (storyAsksOf(task, n.node_id).length) return false; // parked on a question to its TeamLeader (tm_ask)
   const child = loadRun(n.child.cwd, n.child.run_id);
   if (!child) {
     // Missing file: foldChild will report that, and that IS a fold. Unparseable file: another
@@ -5277,6 +5293,20 @@ const TOOLS = [
       retired_runs: { type: 'integer' }, report: { type: 'string' }, note: { type: 'string' },
     } },
   },
+  {
+    name: 'tm_ask',
+    description: 'For a running STORY\'s own driver: ask the TeamLeader a question the briefing and the plan do not settle. Records `asked` on the task\'s ledger and parks the driver - end your turn right after the call; you are resumed, at no cost while you wait, with the answer in your prompt. A fresh answer node reads the plan and the wiki and either answers, or forwards the question to the person as an ask card (tm_inbox) that tm_submit answers. There is no timeout, no cap on questions and no de-dupe. Refused for an empty question, a key that is not a STORY of this task, or a STORY that is not running.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string' },
+        key: { type: 'string', description: 'your own STORY key (E-xxxxxxxx/Pn), as your prompt gives it' },
+        question: { type: 'string', description: 'the whole question, in your own words' },
+      },
+      required: ['task_id', 'key', 'question'],
+    },
+    outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, key: { type: 'string' }, ask_id: { type: 'string' }, state: { type: 'string' }, next: { type: 'string' } }, required: ['task_id', 'key', 'ask_id', 'state'] },
+  },
 ];
 
 function toolEvents(a) {
@@ -5790,10 +5820,12 @@ function inboxEntry(task, pid, run, n) {
       title: (sg && sg.title) || String(n.subgoal_id || n.node_id),
       acceptance: (sg && sg.acceptance) || [],
       ...(n.stage === 'ask' ? { questions: n.questions || [] } : {}),
+      // A running STORY's forwarded question (tm_ask): which question it is and whose it is.
+      ...(n.stage === 'ask' && n.ask_id ? { ask_id: n.ask_id, story_key: n.story_key } : {}),
       briefing_path: n.briefing_path || null,
       who: (n.assignment && n.assignment.who) || null,
       since: n.waiting_since || null,
-      ...(n.stage === 'ask' && askTimeoutMs(task) && n.waiting_since ? { expires_at: n.waiting_since + askTimeoutMs(task) } : {}),
+      ...(n.stage === 'ask' && !n.ask_id && askTimeoutMs(task) && n.waiting_since ? { expires_at: n.waiting_since + askTimeoutMs(task) } : {}),
     } };
   }
   // An ask nobody answered before ask_timeout: decided for the person, so it is listed with the
@@ -7633,6 +7665,11 @@ function toolSubmitHumanManager(task, key, nodeId, rawPayload) {
   if (n.stage === 'ask' && !Array.isArray((rawPayload || {}).decisions)) {
     throw new Error(`${key}'s card (${nodeId}) is a decision: payload needs decisions[], one {question, chose} per question in tm_inbox`);
   }
+  // A STORY's forwarded question (tm_ask): the person's answer is the text they chose, and it is
+  // checked before anything is written - an answer with no text would resume the driver on nothing.
+  const story = n.stage === 'ask' && n.ask_id ? (task.story_asks || []).find((x) => x.ask_id === n.ask_id) : null;
+  const storyAnswer = story ? storyAnswerText(rawPayload) : null;
+  if (story && !storyAnswer) throw new Error(`${key}'s card is a STORY's question: its answer needs text (decisions[].chose)`);
   const shaped = humanSubmitPayload(n, rawPayload);
   // finish() (unlike broker.mjs's computeSubmitResult) does not default stage_ok on a raw
   // submission - a driver's own JSON always states it, but a person answering a decisions[]
@@ -7642,7 +7679,8 @@ function toolSubmitHumanManager(task, key, nodeId, rawPayload) {
   n.vendor = 'human';
   delete n.model;
   const verdictOut = finish(task, n, payload);
-  record(task, { event: 'tm_submit_human', task_id: task.run_id, key, node_id: nodeId, stage_ok: verdictOut.stage_ok === true, answer: answerText(rawPayload) });
+  record(task, { event: 'tm_submit_human', task_id: task.run_id, key, node_id: nodeId, ...(n.ask_id ? { ask_id: n.ask_id } : {}), stage_ok: verdictOut.stage_ok === true, answer: answerText(rawPayload) });
+  if (story && story.state === 'forwarded') storyAskAnswered(task, story, { answer: storyAnswer, by: 'person', route: 'forward' });
   return { task_id: task.run_id, key, node_id: nodeId, state: n.state, result: n.result };
 }
 
@@ -7725,6 +7763,127 @@ function toolSubmitHuman(task, a) {
   return { task_id: task.run_id, key, node_id: nodeId, state: done ? 'done' : 'failed', result };
 }
 
+// ---------- a running STORY's question to its TeamLeader (card 49 part C) ----------
+//
+// design: _repo/docs/plans/mod/2026-10-17-subagent-communication.md §6; the ledger events are
+// storyask.mjs's. task.story_asks keeps one entry per tm_ask for the life of the task - no cap, no
+// de-dupe, no timeout:
+//   {ask_id, key, pkg, node_id (the STORY's dispatch node), question, state, at, ...}
+//   pending    asked; no answer node holds it
+//   answering  the daemon's answer node holds it ({pid, token}); the marker that keeps it from
+//              being run twice
+//   forwarded  the answer node could not settle it: an ask card (card_node_id) waits on a person
+//   answered   {answer, by, route}; the answer is not yet in the driver's hands
+//   delivered  the STORY's driver was respawned with it
+// The driver exited when tm_ask told it to, so while any of its entries is not delivered the STORY
+// is parked: serviceDeadDriver does not restart it and dispatchSettled does not fold it. It is
+// respawned once, with every answer, when none is outstanding.
+
+export function storyAsksOf(task, nodeId) {
+  return (task.story_asks || []).filter((a) => a.node_id === nodeId && a.state !== 'delivered');
+}
+
+// Respawn the parked STORY's driver with its answers; spawns nothing while the old driver is still
+// alive (it has not exited yet) or a spawn is under way - serviceDeadDriver asks again next tick.
+// No restart is spent: this is what the driver was always going to do next. An answer counts as
+// delivered only when a process started.
+function deliverStoryAnswers(task, nodeId, child) {
+  const open = storyAsksOf(task, nodeId);
+  if (!open.length || open.some((a) => a.state !== 'answered')) return false;
+  const n = getNode(task, nodeId);
+  if (!n || n.state !== 'running' || !child) {
+    for (const a of open) a.state = 'delivered';
+    return false;
+  }
+  if (noDriver() || driverAlive(child.driver) || spawning(child)) return false;
+  const asks = open.map((a) => ({ ask_id: a.ask_id, question: a.question, answer: a.answer, by: a.by }));
+  const ids = asks.map((a) => a.ask_id);
+  const attempt = nextSpawnAttempt(child);
+  return respawnDriver(task, nodeId, child, {
+    attempt, reason: 'story_answered', restarts: (child.driver && child.driver.restarts) || [],
+    spawn: (t, c) => spawnChildDriver(t, nodeId, c, { resume: true, attempt, asks }),
+    event: (t, fresh) => {
+      if (fresh.pid) for (const a of t.story_asks || []) if (ids.includes(a.ask_id)) a.state = 'delivered';
+      return { event: 'child_driver_restarted', task_id: t.run_id, node_id: nodeId, pid: fresh.pid, reason: 'story_answered', asks: ids };
+    },
+  });
+}
+
+// The answer is the text the person chose; an answer with no text is not one.
+function storyAnswerText(payload) {
+  const chosen = ((payload || {}).decisions || []).map((d) => (d && d.chose !== undefined && d.chose !== null ? String(d.chose) : '')).filter((s) => s.trim() !== '');
+  return chosen.length ? chosen.join('\n') : null;
+}
+
+// tm_ask({task_id, key, question}): the running STORY `key` asks its TeamLeader. Records `asked`
+// and parks the STORY's driver; the daemon's answer node takes it from there (daemon.mjs
+// answerStoryAsks). The input names the asker by its own key only - there is no field for another
+// STORY or driver.
+function toolAsk(a) {
+  return withTask(a, (task) => {
+    if (task.cancelled) throw new Error('task cancelled: tm_cancel stopped it, nothing more is asked of it');
+    const v = validateAsk({ task, key: a.key, question: a.question });
+    if (!v.ok) throw new Error(`tm_ask refused: ${v.reason}`);
+    const dispatch = latestBySubgoal(task, v.pkgId, 'dispatch');
+    const ask_id = newAskId();
+    (task.story_asks || (task.story_asks = [])).push({ ask_id, key: v.key, pkg: v.pkgId, node_id: dispatch.node_id, question: a.question, state: 'pending', at: Date.now() });
+    record(task, askedEvent({ task_id: task.run_id, key: v.key, node_id: dispatch.node_id, question: a.question, ask_id }));
+    return { task_id: task.run_id, key: v.key, ask_id, state: 'parked', next: 'End your turn now. You are resumed, at no cost while you wait, with the answer in your prompt.' };
+  });
+}
+
+// The daemon's answer node: the asks it may take now (pending, or answering under a claim that is
+// no longer live - a daemon that died mid-answer), one claim at a time. `live(claim)` is the
+// daemon's own check.
+export function claimableStoryAsks(task, live) {
+  return (task.story_asks || []).filter((a) => a.state === 'pending' || (a.state === 'answering' && !live(a.answering))).map((a) => a.ask_id);
+}
+
+export function claimStoryAsk(task, askId, claim, live) {
+  const a = (task.story_asks || []).find((x) => x.ask_id === askId);
+  if (!a || !(a.state === 'pending' || (a.state === 'answering' && !live(a.answering)))) return null;
+  a.state = 'answering';
+  a.answering = claim;
+  record(task, { event: 'story_ask_answering', task_id: task.run_id, key: a.key, node_id: a.node_id, ask_id: a.ask_id });
+  return structuredClone(a);
+}
+
+// verdict: storyask.mjs parseVerdict's. Applied only to the claim that was dispatched.
+export function settleStoryAsk(task, askId, token, verdict) {
+  const a = (task.story_asks || []).find((x) => x.ask_id === askId);
+  if (!a || a.state !== 'answering' || !a.answering || a.answering.token !== token) return { superseded: true };
+  delete a.answering;
+  if (verdict.verdict === 'answer') storyAskAnswered(task, a, { answer: verdict.answer, by: 'teamleader', route: 'answer' });
+  else forwardStoryAsk(task, a, verdict.reason);
+  return { superseded: false, state: a.state };
+}
+
+// Writes `answered` and hands the answer to the parked driver (now, or on the tick its old process
+// has exited).
+function storyAskAnswered(task, a, { answer, by, route }) {
+  a.state = 'answered';
+  a.answer = answer;
+  a.by = by;
+  a.route = route;
+  record(task, answeredEvent({ task_id: task.run_id, key: a.key, node_id: a.node_id, answer, by, route, ask_id: a.ask_id }));
+  const n = getNode(task, a.node_id);
+  deliverStoryAnswers(task, a.node_id, n && n.child);
+}
+
+// No `answered`: the question goes to the person as an ask card - free text, blocking (no
+// options, no default, so it never times out) - and the driver stays parked until their tm_submit.
+function forwardStoryAsk(task, a, reason) {
+  const owner = `story-${a.pkg}`;
+  const attempt = task.nodes.filter((x) => x.stage === 'ask' && x.ask_owner === owner).length + 1;
+  const ids = openAsk(task, getNode(task, a.node_id), [{ question: a.question, to: 'requester', why: reason }], { owner, attempt, blocking: true, story: { ask_id: a.ask_id, key: a.key } });
+  if (!ids.length) throw new Error(`could not open the card for ${a.ask_id}`);
+  writeManagerBriefing(task, getNode(task, ids[0]));
+  a.state = 'forwarded';
+  a.card_node_id = ids[0];
+  a.forward_reason = reason;
+  record(task, { event: 'story_ask_forwarded', task_id: task.run_id, key: a.key, node_id: a.node_id, ask_id: a.ask_id, card: ids[0], reason });
+}
+
 // Free respawn of a parked child's driver so it drains a queued human action - no restart spent.
 // Shared by tm_submit({key}) and expireAsks. Caller saves the task.
 function resumeParkedDriver(task, nodeId, childRef, reason) {
@@ -7793,7 +7952,8 @@ function askRuns(task) {
 
 function expiringAsks(run, ref) {
   const queued = ref ? new Set(peekHumanActions(ref.cwd, run.run_id).filter((x) => x.kind === 'submit').map((x) => x.node_id)) : new Set();
-  return run.nodes.filter((x) => x.stage === 'ask' && x.state === 'waiting_human' && Number.isInteger(x.waiting_since) && !queued.has(x.node_id));
+  // A STORY's own question (ask_id) waits forever: there is nothing a timeout could answer it with.
+  return run.nodes.filter((x) => x.stage === 'ask' && !x.ask_id && x.state === 'waiting_human' && Number.isInteger(x.waiting_since) && !queued.has(x.node_id));
 }
 
 // An ask's deadline, pushed back by the time the machine slept after it started waiting.
@@ -8146,6 +8306,7 @@ function dispatch(name, a) {
     case 'tm_docs': return toolDocs(a);
     case 'tm_clean': return toolClean(a);
     case 'tm_cancel': return toolCancel(a);
+    case 'tm_ask': return toolAsk(a);
     default: throw new Error('unknown tool: ' + name);
   }
 }

@@ -1266,6 +1266,10 @@ export function routeExecutionQuestions(run, n, questions) {
 // `attempt` its attempt number, so a card can stand for the EPIC rather than one package;
 // `blocking: true` keeps a question with no options and no default, which is exactly what makes
 // it blocking - the default filter below would drop it.
+// `story: {ask_id, key}` (card 49 part C) is a running STORY's forwarded question: it is stamped on
+// the card (ask_id, story_key), is never filtered as already settled (a question is never dropped),
+// and leaves `n`'s consumers alone - the STORY's dispatch node is still what they wait on, the card
+// only holds its parked driver.
 export function openAsk(run, n, questions, opts = {}) {
   if (!n) return [];
   let qs = (questions || []).filter((q) => q && (q.question || q.unknown)
@@ -1285,8 +1289,9 @@ export function openAsk(run, n, questions, opts = {}) {
   // run.task_decisions joins the set (§6.2-2): a question the task already settled - in the
   // session, in the engine's brainstorm, in PLAN - is as answered here as one this run's own
   // card answered.
+  const story = opts.story || null;
   const settled = new Set(settledDecisions(run).map((d) => d.question));
-  if (settled.size) {
+  if (settled.size && !story) {
     qs = qs.filter((q) => !settled.has(q.question || q.unknown));
     if (!qs.length) return [];
   }
@@ -1327,6 +1332,7 @@ export function openAsk(run, n, questions, opts = {}) {
       // node_id is `ask:<owner>:<attempt>`, so reading the owner back out of it would mean
       // parsing, and answeredDecisions has to match it exactly across attempts.
       ask_owner: String(owner),
+      ...(story ? { ask_id: story.ask_id, story_key: story.key } : {}),
       attempt,
       questions: groupQs,
       assignment: { executor: 'human', vendor: 'human', who: who || null, reason: `a decision no source could answer (${n.stage} questions)` },
@@ -1344,7 +1350,7 @@ export function openAsk(run, n, questions, opts = {}) {
   // carry that decision as an open question and the answer would arrive too late to be a rule.
   // Rewired into whichever list originally named the node - a data (`deps`) consumer stays a
   // data consumer, an order-only (`after`) one stays order-only.
-  for (const c of consumers) {
+  for (const c of story ? [] : consumers) {
     if (c.deps.includes(n.node_id)) c.deps = [...c.deps.filter((d) => d !== n.node_id), ...ids];
     if ((c.after || []).includes(n.node_id)) c.after = [...c.after.filter((d) => d !== n.node_id), ...ids];
   }
