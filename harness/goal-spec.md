@@ -49,6 +49,9 @@ A-mode/manual authoring) and the authoring rules the SetGoal stage follows.
    "proportional: <reason>" and the gate table has one row.
 2. **test[] must be executable without trusting the executor** — commands to run, files to
    inspect. This is what makes the Test stage deterministic evidence, not narrative review.
+   A test[] entry passes or fails by its exit code: a check that must find nothing is `! grep …`,
+   never `grep … && echo MISMATCH || echo ok` (exits 0 either way); a producer piped into a reader
+   carries `2>&1` when it prints on stderr (`claude plugin test .`).
 3. **skills[] maps repository skills** (develop:*, think:*, write:*, pm:*, …) the executor
    invokes before working. 1–3 per subgoal; none is acceptable for generic work.
 4. **subgoals are divide-and-conquer.** deps only for real ordering; independent subgoals

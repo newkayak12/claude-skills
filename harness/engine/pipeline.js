@@ -152,6 +152,9 @@ const specPrompt =
   `only knows what you write. subgoals are divide-and-conquer; deps only for real ordering. ` +
   `skills[] lists 1-3 repository skill names the executor must invoke. test[] lists shell ` +
   `commands or concrete checks a verifier can execute without trusting the executor. ` +
+  `A test[] entry passes or fails by its exit code: a check that must find nothing is \`! grep …\`, ` +
+  `never \`grep … && echo MISMATCH || echo ok\` (exits 0 either way); a producer piped into a reader ` +
+  `carries \`2>&1\` when it prints on stderr (\`claude plugin test .\`). ` +
   (codexDelegationEnabled
     ? `Codex routing is enabled for this run, so every Implement/Test stage will delegate ` +
       `to the local Codex CLI route by default, even if provider fields are omitted. You may set ` +
@@ -187,7 +190,7 @@ const critique = await agent(
   mountSkill('think:devils-advocate', 'it structures the strongest objections') +
   `\nAdversarially critique this goal-spec. You did NOT write it. Refute: wrong decomposition, ` +
   `vague/unfalsifiable acceptance, missing subgoal the goal needs, fake dependencies, ` +
-  `unverifiable test[] entries, skill mappings that don't fit. Flag two unwinnable-gate patterns ` +
+  `unverifiable test[] entries (including a check that exits 0 whatever it finds), skill mappings that don't fit. Flag two unwinnable-gate patterns ` +
   `specifically: (1) any acceptance/test criterion that hinges on global or shared repository state ` +
   `(whole-repo git diff/status, aggregate repo-wide counts) instead of the subgoal's own artifacts — ` +
   `concurrent work makes these non-deterministic and impossible to satisfy; (2) any aspirational or ` +
