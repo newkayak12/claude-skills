@@ -49,7 +49,10 @@ toasts).
       answered or forwarded and recorded as `asked`/`answered` in `ledger.jsonl`, with tests; the
       Floor feed (card 41) shows both.
     - B merged 2026-10-22 (E-73f703e6; band demo approval and README shot pending): the poll delivers live (`RESULT LIVE-POLL`);
-      the send is held by Claude Code, see card 63. C is still open; keep this card.
+      the send is held by Claude Code, see card 63. C merged 2026-10-22 (E-d1e2fa27 P1-P3, integrated by hand: P2's third attempt failed at plan with
+      its retry budget spent; merged tree teams 1474/1474, mod 212/212; a forwarded answer gives one
+      `you -> P3` line in the Floor feed). Left: B's band demo approval and README shot; a forwarded
+      ask with nobody attached waits forever (decision U-5) — say so in the README; a `tm_open` live pass of C.
 
 62. **tm_open records a stale opener after /clear**
     - Why: live 2026-10-22 (card 49B check): after `/clear` the session id changed
