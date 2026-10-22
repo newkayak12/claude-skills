@@ -1378,13 +1378,13 @@ for (const surface of SURFACES) {
     expect(text).not.toContain('Build the expense tracker')
     expect(text).not.toMatch(/day \d/)
     expect(await ui.find({ type: 'Text', text: '$0.00 · 0 turns' })).toBeDefined()
-    // no slug: no slug column, the row reads as before
+    // the row has no slug column
     expect(picked).toMatch(/^▸ +● +E-3a3a3bb5 {2}task tA {2}/)
   })
 
-  // the slug sits right after the key, dim; the title gives way first, at 190 and 110 columns
+  // the slug is not a pane column; the title takes the width and gives way first, at 190 and 110 columns
   for (const cols of [190, 110]) {
-    test(`${surface}: the EPIC row shows the slug after the key and cuts the title first at ${cols}`, async ($, on) => {
+    test(`${surface}: the EPIC row has no slug and cuts the title first at ${cols}`, async ($, on) => {
       const long = 'Migrate every legacy report exporter to the new streaming writer and keep each output file identical across all supported locales'
       const tasks = [
         epicOf('tA', 'E-3a3a3bb5', [], { title: long, slug: 'report-exporters' }),
@@ -1396,15 +1396,16 @@ for (const surface of SURFACES) {
       const lines = await textsOf(ui, EPIC_LINE)
       expect(lines).toHaveLength(3)
       const [a, b, c] = lines as [string, string, string]
-      expect(a).toMatch(/E-3a3a3bb5 {2}report-exporters +Migrate/)
-      expect(a).toContain('…')
-      expect(a).not.toContain('identical across all supported locales')
-      expect(b).toMatch(/E-bbbbbbbb {2}quick-fix +short/)
+      expect(a).toMatch(/E-3a3a3bb5 {2}Migrate/)
+      for (const l of lines) expect(l).not.toMatch(/report-exporters|quick-fix/)
+      if (cols === 110) {
+        expect(a).toContain('…')
+        expect(a).not.toContain('identical across all supported locales')
+      } else expect(a).toContain('identical across all supported locales')
+      expect(b).toMatch(/E-bbbbbbbb {2}short/)
       // columns align across rows: every title starts at one offset, rows keep to the pane width
       expect(new Set([a.indexOf('Migrate'), b.indexOf('short'), c.indexOf('older')]).size).toBe(1)
       for (const l of lines) expect(cells(l)).toBeLessThanOrEqual(cols - 4)
-      const dim = await ui.find({ type: 'Text', text: /report-exporters/ })
-      expect(dim).toBeDefined()
     })
   }
 

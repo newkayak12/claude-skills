@@ -31,6 +31,16 @@ function romanize(text) {
   return out;
 }
 
+// One trailing particle off a Hangul word, the longest match first; a word that is only a particle
+// (or would be empty after the strip) is kept.
+const PARTICLES = ['에서', '으로', '을', '를', '이', '가', '은', '는', '에', '의', '로', '와', '과', '도', '만'];
+function stripParticle(word) {
+  for (const p of PARTICLES) {
+    if (word.length > p.length && word.endsWith(p)) return word.slice(0, -p.length);
+  }
+  return word;
+}
+
 const isPathLike = (tok) => tok.includes('/') || /\.[a-z][a-z0-9]{0,4}$/i.test(tok);
 
 // Words of `text` in order, each { ascii: boolean, w }, path tokens, stopwords and numbers dropped.
@@ -43,7 +53,7 @@ function wordsOf(text) {
       if (/^[a-z0-9]/.test(m)) {
         if (!STOPWORDS.has(m) && !/^[0-9]+$/.test(m)) out.push({ ascii: true, w: m });
       } else {
-        const r = romanize(m);
+        const r = romanize(stripParticle(m));
         if (r) out.push({ ascii: false, w: r });
       }
     }

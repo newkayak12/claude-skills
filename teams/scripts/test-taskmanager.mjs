@@ -8875,3 +8875,19 @@ test('W2 hygiene: nothing in this suite wrote a .teams_wiki into the repo or the
     assert.equal(existsSync(join(dir, '.teams_wiki')), false, `${dir} has a .teams_wiki`);
   }
 });
+
+test('a slug is taken across a repo\'s linked worktrees: the same request opened from one gets -2', async () => {
+  await withTask(async ({ tm, cwd, root, task_id }) => {
+    const wt = join(mkdtempSync(join(tmpdir(), 'tm-wt-')), 'linked');
+    try {
+      execFileSync('git', ['worktree', 'add', '-q', '-b', 'tm-linked-test', wt], { cwd });
+      const open = await tm.call('tm_open', { request: 'big request', cwd: wt, vendor: 'self', brainstorm: false, roles: { qa: false, audit: false } });
+      assert.equal(JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8')).slug, 'big-request');
+      assert.equal(JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8')).slug, 'big-request-2');
+    } finally {
+      spawnSync('git', ['worktree', 'remove', '--force', wt], { cwd });
+      spawnSync('git', ['branch', '-D', 'tm-linked-test'], { cwd });
+      rmSync(dirname(wt), { recursive: true, force: true });
+    }
+  });
+});

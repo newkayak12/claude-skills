@@ -391,9 +391,20 @@ function takenSlugs(cwd) {
   const taken = new Set();
   let ids = [];
   try { ids = readdirSync(tasksRoot()); } catch { ids = []; }
+  // Same repo = same git common dir (a linked worktree shares its main checkout's); when git cannot
+  // say, the old same-cwd rule stands.
+  const common = (dir) => {
+    const r = git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+    return r.ok && r.out ? resolve(r.out) : null;
+  };
+  const mine = common(cwd);
   for (const id of ids) {
     const t = loadRunAt(taskPath(id));
-    if (t && t.slug && t.cwd && resolve(String(t.cwd)) === cwd) taken.add(t.slug);
+    if (!t || !t.slug || !t.cwd) continue;
+    // A cleaned task has let go of its slug; any branch it kept under it is still caught by the ref scan below.
+    if (lastRelevantEvent(id) === 'clean') continue;
+    const tcwd = resolve(String(t.cwd));
+    if (tcwd === cwd || (mine && common(tcwd) === mine)) taken.add(t.slug);
   }
   const refs = git(cwd, ['for-each-ref', '--format=%(refname)', 'refs/heads/teams/']);
   if (refs.ok) for (const ref of refs.out.split('\n')) { const s = ref.split('/')[3]; if (s) taken.add(s); }
@@ -2455,8 +2466,8 @@ function mergeInto(cwd, branch, message) {
 // merges INTO it (prepareIntegration) - teams never merges an integration branch into the
 // project's own branch (v0.31.1's finding, still true), so that branch is the only place this
 // task's accepted work survives once package branches are gone. A planning card has a worktree
-// of its own (cards-everywhere C2) and is cleaned like a package: its branch is kept when its PRD
-// commits are reachable from nowhere else, and the merged 10-prd.md does not need the tree - the
+// of its own (cards-everywhere C2) and is cleaned like a package: its branch is deleted once plan-integrate
+// is done (the PRD is snapshotted), and the merged 10-prd.md does not need the tree - the
 // planning integrate snapshotted every card's section (preparePlanIntegration).
 //
 // One candidate per package id: ensureWorktree keeps exactly one worktree per id for the whole
@@ -2510,6 +2521,7 @@ function cleanTask(task, dryRun) {
   const keepCwds = new Set([task.cwd, ...keep.map((k) => k.cwd)]);
   const refs = [...keep.map((k) => k.branch), 'HEAD'];
   const candidates = dispatchWorktreeCandidates(task).filter((c) => !keepCwds.has(c.cwd));
+  const planIntegrated = task.nodes.some((n) => n.stage === 'plan-integrate' && n.state === 'done');
   const removed_worktrees = [];
   const removed_branches = [];
   const kept_branches = [];
@@ -2519,7 +2531,10 @@ function cleanTask(task, dryRun) {
     const branchExists = git(task.cwd, ['rev-parse', '--verify', '--quiet', branchRef]).ok;
     const worktreeExists = existsSync(join(c.cwd, '.git'));
     if (!branchExists && !worktreeExists) { already_clean.push({ package_id: c.package_id, cwd: c.cwd, branch: c.branch }); continue; }
-    const reachableVia = branchExists ? branchReachableFrom(task.cwd, c.branch, refs) : null;
+    // A planning card's branch carries a PRD commit no integration branch holds. Once plan-integrate
+    // is done its section is snapshotted into 10-prd.md, so the branch this task made is spent.
+    const spentPlanCard = planIntegrated && recordedBranch(task, c.branch) && (task.planning_pkgs || []).some((p) => p.id === c.package_id);
+    const reachableVia = branchExists ? (branchReachableFrom(task.cwd, c.branch, refs) || (spentPlanCard ? 'plan-integrate' : null)) : null;
     if (dryRun) {
       if (worktreeExists) removed_worktrees.push({ package_id: c.package_id, cwd: c.cwd, branch: c.branch });
       if (branchExists) {

@@ -61,6 +61,18 @@ test('Korean-only request is romanized (pinned spellings)', () => {
   assert.equal(epicSlug('밖'), 'bak');
 });
 
+test('trailing Korean particle is dropped before romanizing; longest wins; lone particle kept', () => {
+  const sentence = 'harness UI 티켓을 같은거';
+  const s = epicSlug(sentence);
+  assert.ok(!s.split('-').includes('eul') && s !== 'harness-ui-tikaet-eul-gateungeo', s);
+  assert.equal(s, 'harness-ui');
+  assert.equal(epicSlug('티켓을 같은거'), 'tiket-gateungeo'); // Korean-only: 을 off 티켓을
+  assert.equal(epicSlug('서버에서 파일으로'), 'seobeo-pail'); // 에서 and 으로 beat 에 / 로
+  assert.equal(epicSlug('을'), 'eul'); // only a particle: kept
+  assert.equal(epicSlug('이 의'), 'i-ui');
+  assert.equal(epicSlug('메모 패널 개선'), 'memo-paeneol-gaeseon'); // 선 is no particle
+});
+
 test('mixed request: two+ ascii words win; fewer romanize Hangul too', () => {
   assert.equal(epicSlug('메모 pane fix 개선'), 'pane-fix');
   const s = epicSlug(USER_SENTENCE);
