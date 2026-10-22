@@ -22,7 +22,10 @@ const EVENTS = {
   verdict: { hand: (e) => ({ from: e.actor || 'judge', what: `verdict ${e.verdict}`, to: cardLabel(e) }) },
   integrated: { hand: (e) => ({ from: 'integrate', what: `integrated ${e.merged ?? 0}`, to: 'EPIC' }) },
   defects_filed: { hand: (e) => ({ from: e.reporter || 'qa', what: `filed ${(e.filed || []).length} defect(s)`, to: (e.filed || []).join(', ') || 'EPIC' }) },
-  tm_submit_human: { hand: (e) => ({ from: 'you', what: clip(e.answer, 60) || 'answered', to: cardLabel(e) }) },
+  // a forwarded answer carries its ask_id and is drawn once, as `answered`
+  tm_submit_human: { hand: (e) => (e.ask_id ? null : { from: 'you', what: clip(e.answer, 60) || 'answered', to: cardLabel(e) }) },
+  asked: { hand: (e) => ({ from: cardLabel(e), what: clip(e.question, 60), to: 'TeamLeader' }) },
+  answered: { hand: (e) => ({ from: e.by === 'teamleader' ? 'TeamLeader' : 'you', what: clip(e.answer, 60), to: cardLabel(e) }) },
 };
 
 // Ledger lines as events with a numeric ts; a torn last line is skipped.

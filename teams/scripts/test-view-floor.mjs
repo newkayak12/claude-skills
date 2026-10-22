@@ -468,6 +468,38 @@ test('hand-offs stay at five however long the ledger is', () => {
   } finally { w.cleanup(); }
 });
 
+// Part C: the story-ask exchange (ledger lines in teams/mcp/storyask.mjs's shape) reaches the feed with no mod.
+test('--once summary: asked and answered lines are hand-offs, newest 5 only, no mod or TTY needed', () => {
+  const w = world();
+  try {
+    const t = 'aaaaaaaa-0001';
+    const base = { task_id: t, key: 'E-aaaaaaaa/P3', node_id: 'dispatch:P3:1', ask_id: '3f0c2a52-8d1e-4a6b-9a53-2d6c1c9d7e10' };
+    const ledger = [
+      { ts: 1000, event: 'verdict', task_id: t, node_id: 'accept:P1:1', subgoal_id: 'P1', actor: 'judge', verdict: 'accept' },
+      { ts: 2000, event: 'integrated', task_id: t, node_id: 'integrate:1', merged: 1 },
+      { ts: 3000, event: 'verdict', task_id: t, node_id: 'accept:P2:1', subgoal_id: 'P2', actor: 'judge', verdict: 'reject' },
+      { ts: 4000, event: 'asked', ...base, question: 'is amount in cents?' },
+      { ts: 5000, event: 'answered', ...base, answer: 'cents, see the plan', by: 'teamleader', route: 'answer' },
+      { ts: 6000, event: 'asked', ...base, ask_id: 'b1', question: 'which currency for refunds?' },
+      { ts: 7000, event: 'tm_submit_human', task_id: t, key: 'E-aaaaaaaa/P3/ask:P3:1', node_id: 'ask:P3:1', answer: 'EUR', ask_id: 'b1' },
+      { ts: 8000, event: 'answered', ...base, ask_id: 'b1', answer: 'EUR', by: 'person', route: 'forward' },
+    ];
+    const l = lTask(w, { id: t, pkgs: [{ id: 'P3', streamAgeMs: 1000 }], ledger });
+    const r = spawnSync(process.execPath, [VIEW, '--once', '--format', 'summary', '--tasks-dir', w.tasks, '--cwd', w.cwd], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    const h = JSON.parse(r.stdout).tasks.find((x) => x.task_id === l.id).handoffs;
+    // newest first, five of the seven drawn lines; the forwarded submit is not drawn a second time
+    assert.deepEqual(h.map(({ from, what, to }) => ({ from, what, to })), [
+      { from: 'you', what: 'EUR', to: 'P3' },
+      { from: 'P3', what: 'which currency for refunds?', to: 'TeamLeader' },
+      { from: 'TeamLeader', what: 'cents, see the plan', to: 'P3' },
+      { from: 'P3', what: 'is amount in cents?', to: 'TeamLeader' },
+      { from: 'judge', what: 'verdict reject', to: 'P2' },
+    ]);
+    assert.deepEqual(Object.keys(h[0]).sort(), ['from', 'time', 'to', 'what']);
+  } finally { w.cleanup(); }
+});
+
 test('a waiting task entry carries what its EPIC row prints', () => {
   const w = world();
   try {
