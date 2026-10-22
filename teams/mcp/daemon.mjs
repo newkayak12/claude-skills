@@ -38,8 +38,10 @@ import {
   finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages, autoRejudge, autoResumeCapacity, pendingRejudgeAt,
   STAGE_SKILLS, syncTickets, autoReshape, closeFailedPlanning, promoteManagerHumanGates, enforceBudget,
   expireAsks, nextAskDeadline, worktreeGoneStop, excludeBaseBeforeJudge, recordBaseExclusions,
+  claimableStoryAsks, claimStoryAsk, settleStoryAsk,
 } from './taskmanager.mjs';
-import { ticketSnapshot } from './tickets.mjs';
+import { ticketSnapshot, docPaths } from './tickets.mjs';
+import { answerPrompt, parseVerdict } from './storyask.mjs';
 import { harvestTask } from './runlog.mjs';
 import { pluginDirArgs, isEntryPoint, teamsPluginRoot } from './pluginroots.mjs';
 import { reserveSlot, noteWaiting, clearWaiting } from './livecap.mjs';
@@ -296,6 +298,121 @@ async function judge(task, n, { slot = null } = {}) {
   });
 }
 
+// ---------- answerNode(): a running STORY's question to its TeamLeader (card 49 part C) ----------
+//
+// One fresh single-shot `claude -p` per question, run like a judge - the same run limit
+// (JUDGE_TIMEOUT_MS, SIGTERM then SIGKILL), a livecap slot, its log kept beside the judges' - but
+// with the plan and the wiki to read and nothing else: Read, Grep, Glob and the two wiki read
+// tools. The other task-manager, engineering and wiki-write tools are denied by name. Its reply is
+// storyask.mjs's verdict (parseVerdict); a crash or a timeout is a forward, so a question is never
+// dropped.
+//
+// Test seams: stepOnce's `answer` option replaces this function; HARNESS_ANSWER_DRIVER replaces the
+// whole command line (a stub, exactly like HARNESS_JUDGE_DRIVER), the prompt still appended last.
+
+const ANSWER_DENIED = [
+  'mcp__plugin_teams_task-manager', 'mcp__plugin_teams_teams-engineering',
+  ...['accept', 'list', 'propose', 'reject', 'resume', 'status', 'write'].map((t) => `mcp__plugin_teams_teams-wiki__wiki_${t}`),
+];
+
+export function answerArgv(task = null) {
+  const override = String(process.env.HARNESS_ANSWER_DRIVER || '').trim();
+  if (override) return override.split(/\s+/);
+  // `=` form: both flags are variadic and would otherwise swallow the prompt that follows.
+  return ['claude', '-p', '--output-format', 'stream-json', '--verbose',
+    '--dangerously-skip-permissions', '--setting-sources', 'project',
+    '--plugin-dir', teamsPluginRoot(),
+    '--tools=Read,Grep,Glob', `--disallowedTools=${ANSWER_DENIED.join(',')}`];
+}
+
+export function answerNode(task, ask, { slot = null } = {}) {
+  const docs = docPaths(task);
+  const prompt = answerPrompt({
+    question: ask.question,
+    planPath: `${[docs.prd, docs.shape, docs.story(ask.pkg)].join(', ')} (all under ${docs.dir})`,
+    wikiHint: `the project wiki of ${task.cwd}: wiki_search by the words of the question, then wiki_get the page`,
+  });
+  const argv = answerArgv(task);
+  const extra = task.child_opts && task.child_opts.model ? ['--model', task.child_opts.model] : [];
+  const env = { ...process.env, TEAMS_WIKI_ROOT: task.cwd, HARNESS_NODE: '1' };
+  delete env.TEAMS_WIKI_OFF;
+  return new Promise((resolve) => {
+    let out = '';
+    let err = '';
+    let proc;
+    try {
+      proc = spawn(argv[0], [...argv.slice(1), ...extra, prompt], { cwd: task.cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (e) {
+      resolve({ crashed: true, error: String((e && e.message) || e) });
+      return;
+    }
+    if (slot) slot.attach({ pid: proc.pid || null, started_at: Date.now(), command: argv.join(' ') });
+    let settled = false;
+    const settle = (v) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(v);
+    };
+    const timer = setTimeout(() => {
+      try { proc.kill('SIGTERM'); } catch { /* already gone */ }
+      setTimeout(() => { try { proc.kill('SIGKILL'); } catch { /* already gone */ } }, 5000).unref();
+      settle({ timedOut: true });
+    }, JUDGE_TIMEOUT_MS);
+    proc.on('error', (e) => settle({ crashed: true, error: String((e && e.message) || e) }));
+    proc.stdout.on('data', (d) => { out += d; });
+    proc.stderr.on('data', (d) => { err += d; });
+    proc.on('close', (code) => {
+      keepJudgeLog(task, { node_id: `answer-${ask.ask_id.slice(0, 8)}` }, out);
+      const text = lastResultText(out);
+      if (judgeDenials(out).length) settle({ crashed: true, error: `tool denied: ${err.slice(-200)}` });
+      else if (!text && code) settle({ crashed: true, error: `exited ${code}: ${err.slice(-200)}` });
+      else settle(text);
+    });
+  });
+}
+
+// A claim is live while this process holds it, or its owner process is alive.
+const heldAnswering = new Set();
+function liveAnswering(c) {
+  if (!c || !c.token) return false;
+  return c.pid === process.pid ? heldAnswering.has(c.token) : pidAlive(c.pid);
+}
+
+// Every question a parked STORY asked and nobody holds: one answer node each, awaited here the way
+// a judge is. The claim (n.answering on the story_asks entry, written before the node runs) is the
+// dispatched marker - a second tick, or a second daemon, never runs the same question twice.
+async function answerStoryAsks(taskId, answerFn) {
+  const ids = claimableStoryAsks(loadRunAt(taskPath(taskId)) || {}, liveAnswering);
+  let did = false;
+  for (const askId of ids) {
+    let slot = null;
+    if (answerFn === answerNode) {
+      const got = reserveSlot(loadRunAt(taskPath(taskId)) || { run_id: taskId }, { label: `answer:${askId.slice(0, 8)}` });
+      if (!got.ok) continue; // at the cap: the question stays pending, the next tick asks again
+      slot = got.slot;
+    }
+    const claim = { pid: process.pid, token: randomUUID(), at: Date.now() };
+    try {
+      const ask = mutateTask(taskId, (t) => claimStoryAsk(t, askId, claim, liveAnswering));
+      if (!ask) continue;
+      heldAnswering.add(claim.token);
+      let raw;
+      try {
+        raw = await answerFn(loadRunAt(taskPath(taskId)), ask, { slot });
+      } catch (e) {
+        raw = { crashed: true, error: String((e && e.message) || e) };
+      }
+      mutateTask(taskId, (t) => settleStoryAsk(t, askId, claim.token, parseVerdict(raw)));
+      did = true;
+    } finally {
+      heldAnswering.delete(claim.token);
+      if (slot) slot.release();
+    }
+  }
+  return did;
+}
+
 // ---------- the loop ----------
 
 // fs.watch is best-effort: a rename-based watch can silently miss an event on some filesystems
@@ -377,7 +494,7 @@ export async function stepOnce(taskRef, opts = {}) {
   const start = loadRunAt(taskPath(taskId));
   const before = start ? ticketSnapshot(start) : {};
   try {
-    return await stepOnceInner(taskId, opts.judge || judge);
+    return await stepOnceInner(taskId, opts.judge || judge, opts.answer || answerNode);
   } finally {
     try { const after = loadRunAt(taskPath(taskId)); if (after) syncTickets(after, before, 'daemon'); } catch { /* evidence, not a dependency */ }
   }
@@ -480,7 +597,7 @@ function clearJudging(taskId, nodeId, stamp) {
   }
 }
 
-async function stepOnceInner(taskId, judgeFn) {
+async function stepOnceInner(taskId, judgeFn, answerFn) {
   const tx = (fn) => mutateTask(taskId, fn);
   // Sleep/wake first: a suspend since the last tick is recorded before the ask timeout, the stall
   // watchdog and the timebox below read the clock (taskstate.mjs applySuspends).
@@ -558,6 +675,11 @@ async function stepOnceInner(taskId, judgeFn) {
     if (!out || out.busy || out.lost || out.idempotent || out.opening) continue;
     progressed = true;
   }
+
+  // A running STORY that asked its TeamLeader (tm_ask) is parked: answer, or forward to the person.
+  // Checked before the await: a tick with no question to answer must not yield, or the judge pass
+  // below would read the task a moment later than every tick before this one did.
+  if (claimableStoryAsks(loadRunAt(taskPath(taskId)) || {}, liveAnswering).length && await answerStoryAsks(taskId, answerFn)) progressed = true;
 
   // Judge every ready reasoning node - size, shape, critique, accept, integrate, gate, report -
   // one single-shot claude -p each, exactly the fresh agent a briefing_path was always meant for.
