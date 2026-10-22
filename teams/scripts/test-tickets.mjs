@@ -226,6 +226,14 @@ test('EPIC ticket state: before shape -> READY, packages exist -> IN_PROGRESS, i
   assert.equal(epicTicketState(baseTask([node('report', 'report', [], { state: 'done', result: {} })])), 'DONE');
 });
 
+test('harness_run with an unreadable run: finished_at + accepted -> DONE, accepted false -> SETTLED, no finished_at -> IN_PROGRESS', () => {
+  const run = { run_dir: join(tmpdir(), 'tickets-test-no-such-run-dir') };
+  const task = (h) => ({ nodes: [], harness_run: { run, ...h } });
+  assert.equal(epicTicketState(task({ finished_at: 1, accepted: true })), 'DONE');
+  assert.equal(epicTicketState(task({ finished_at: 1, accepted: false })), 'SETTLED');
+  assert.equal(epicTicketState(task({})), 'IN_PROGRESS');
+});
+
 // idol-pm-1 (2026-09-22): three shaping attempts spent, zero packages dispatched, six of seven
 // STORYs released as unreachable - and a report written over that settled failure. The report's
 // own prose said "구현된 것은 없다"; this row said DONE, and so did every surface built on it.

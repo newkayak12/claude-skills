@@ -1475,6 +1475,7 @@ test('deriveTitle() takes the first sentence/clause of the request as the card h
     'Demo: build the expense tracker across two modules, then QA the integra…');
   assert.equal(deriveTitle('Fix the login bug. Also update the docs.'), 'Fix the login bug');
   assert.equal(deriveTitle('no terminal punctuation at all here'), 'no terminal punctuation at all here');
+  assert.equal(deriveTitle('Backlog card 46 (_repo/docs/backlog.md) x. Next'), 'Backlog card 46 (_repo/docs/backlog.md) x');
   assert.equal(deriveTitle(''), '(no request)');
   assert.equal(deriveTitle(undefined), '(no request)');
   assert.equal(deriveTitle('   '), '(no request)');
@@ -1873,6 +1874,14 @@ test('collect(): a harness driver dead past its restart budget reads blocked; de
   try { assert.equal(f.collect().state, 'blocked', 'a budget of zero'); } finally { f.cleanup(); }
   f = harnessTask({ task: { driver_restarts: 0 }, harness: { driver: driver([]), waiting_capacity: { reason: 'limit', since: Date.now() } } });
   try { assert.equal(f.collect().state, 'running', 'waiting_capacity is parked, not dead'); } finally { f.cleanup(); }
+});
+
+test('collect(): a finished harness task whose run is gone (cleaned) reads complete/partial, never stalled', () => {
+  const dead = { pid: DEAD_PID, log: null, restarts: [] };
+  let f = harnessTask({ harness: { driver: dead, finished_at: Date.now(), accepted: true, run: null } });
+  try { assert.equal(f.collect().state, 'complete'); } finally { f.cleanup(); }
+  f = harnessTask({ harness: { driver: dead, finished_at: Date.now(), accepted: false, run: null } });
+  try { assert.equal(f.collect().state, 'partial'); } finally { f.cleanup(); }
 });
 
 test('collect(): a dead driver whose S.stream.jsonl is fresh still reads running and moving; a stale stream does not', () => {

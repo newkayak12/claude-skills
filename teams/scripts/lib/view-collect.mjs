@@ -510,6 +510,7 @@ function collectHarness(task, taskId, tasksDir) {
   const driver = driverInfo(h.driver, pidAliveFromDriver);
   let state = 'running';
   if (v && v.finished) state = v.accept ? 'complete' : 'partial';
+  else if ((!v || v.readable === false) && h.finished_at) state = h.accepted === false ? 'partial' : 'complete';
   else if (!(h.waiting_capacity || !h.driver || (driver && driver.alive) || moving)
     && countedDriverRestarts(task, h.driver).length >= restartBudget(task)) state = 'blocked';
   const stages = harnessStages(run);
@@ -712,7 +713,7 @@ export function deriveTitle(request, requests) {
   }
   const s = String(text || '').trim();
   if (!s) return '(no request)';
-  const clause = (s.match(/^[^.!?]*[.!?]/) || [s])[0].replace(/[.!?]+$/, '').trim();
+  const clause = (s.match(/^[\s\S]*?[.!?](?=\s|$)/) || [s])[0].replace(/[.!?]+$/, '').trim();
   if (clause.length <= TITLE_MAX) return clause;
   return `${clause.slice(0, TITLE_MAX - 1).trimEnd()}…`;
 }

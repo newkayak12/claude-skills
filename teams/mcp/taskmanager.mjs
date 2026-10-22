@@ -6160,11 +6160,12 @@ export function serviceHarnessRun(task) {
   const h = task.harness_run;
   if (!h) return false;
   applySuspends(task);
-  const before = JSON.stringify([h.run || null, h.refused_pointer || null, !!h.finished_at, !!h.exhausted]);
+  const before = JSON.stringify([h.run || null, h.refused_pointer || null, !!h.finished_at, !!h.exhausted, h.accepted]);
   const run = resolveHarnessRun(task);
   const v = run ? harnessVerdict(run) : null;
-  if (v && v.finished && !h.finished_at) h.finished_at = Date.now();
-  const changed = () => JSON.stringify([h.run || null, h.refused_pointer || null, !!h.finished_at, !!h.exhausted]) !== before;
+  if (v && v.finished && !h.finished_at) { h.finished_at = Date.now(); h.accepted = !!v.accept; }
+  if (h.finished_at && h.accepted === undefined && v && v.finished) h.accepted = !!v.accept;
+  const changed = () => JSON.stringify([h.run || null, h.refused_pointer || null, !!h.finished_at, !!h.exhausted, h.accepted]) !== before;
   const d = h.driver;
   // The first driver deferred at max_live_drivers (openHarnessRun): no driver exists to restart,
   // so the wait ends here, by spawning that first driver once a slot is free.
