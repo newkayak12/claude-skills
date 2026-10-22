@@ -1804,6 +1804,16 @@ for (const surface of SURFACES) {
     expect(await ui.find({ type: 'Text', text: 'P2 asks you: Keep the legacy PDF route?' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '+1' })).toBeDefined()
     expect(await labels(ui)).toContain('2 questions for you')
+    // +1 sits in the same row Box as the question (a fragment lets the host break the line)
+    type N = { type?: string; props?: Record<string, unknown>; children?: unknown }
+    const kids = (n: N): N[] => (Array.isArray(n.children) ? (n.children as N[]) : n.children ? [n.children as N] : []).filter(c => typeof c === 'object' && c !== null)
+    const has = (n: N, t: string): boolean => (n.props?.children === t || n.children === t || (Array.isArray(n.children) && n.children.includes(t))) || kids(n).some(c => has(c, t))
+    const rows: N[] = []
+    const walk = (n: N) => { if (has(n, '+1') && has(n, 'P2 asks you: Keep the legacy PDF route?')) rows.push(n); kids(n).forEach(walk) }
+    walk(await ui.drawn() as N)
+    const row = rows.at(-1)
+    expect(row?.type).toBe('Box')
+    expect(row?.props?.flexDirection).toBe('row')
   })
 
   test(`${surface}: band asks [] with one waiting is today's band`, async ($, on) => {
