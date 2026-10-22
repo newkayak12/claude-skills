@@ -2,7 +2,9 @@
 export type TeamsEvent = { ts: number; task_id: string; kind: string; text: string; state?: string; package?: string; attempt?: number }
 
 // `view.mjs --once --format status`: the one-line status of this cwd
-export type StatusInfo = { line: string; waiting: number; latest?: string | null }
+// a question waiting on one interactive session (lib/view-asks.mjs asksFor); `via` is 'send' once the driver's message arrived
+export type AskNotice = { task_id: string; key: string; who: string; question: string; since: number | null; via: 'send' | 'poll' }
+export type StatusInfo = { line: string; waiting: number; latest?: string | null; asks?: AskNotice[] }
 
 // `view.mjs --once --format summary` task part (teams/scripts/lib/view-summary.mjs)
 export type Mark = 'done' | 'running' | 'pending' | 'failed'
@@ -14,7 +16,7 @@ export type SummaryTask = {
   done: number
   total: number
   now: { kind: string; subject: string | null; detail: string | null }
-  you: { count: number; items: string[]; cards?: { key: string; title: string; question: string }[] }
+  you: { count: number; items: string[]; cards?: { key: string; title: string; question: string; who: string; since: number | null }[] }
   stages: { key: string; state: Mark }[]
   work: { title: string; kind: string; id: string | null; state: Mark; filed_by: string | null; reason: string | null }[]
   cost: { usd: number; turns: number }

@@ -302,7 +302,7 @@ test('--format status: another cwd gives an empty line', () => {
   const f = fixture();
   try {
     const r = spawnSync(process.execPath, [VIEW, '--once', '--tasks-dir', f.tasks, '--cwd', join(f.root, 'elsewhere'), '--format', 'status'], { encoding: 'utf8' });
-    assert.deepEqual(JSON.parse(r.stdout), { line: '', waiting: 0, latest: null });
+    assert.deepEqual(JSON.parse(r.stdout), { line: '', waiting: 0, latest: null, asks: [] });
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 
