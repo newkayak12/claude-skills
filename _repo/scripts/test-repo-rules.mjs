@@ -158,6 +158,32 @@ task('t-wt', main, ['tm_open', 'daemon_spawned'])
 check('worktree: with the worktree deleted, a task in main still holds a push from main', heldBy(prepushAt(main)))
 drop('t-wt')
 
+// package worktrees: a slugged task (teams/<slug>/P1-x) and a legacy one (harness/<id8>/P1) hold and release
+// a push from their linked worktree the same way; the hook keys on the task cwd and the E-<id8> report path
+const pkgMain = join(wtRoot, 'pkg-main')
+mkdirSync(pkgMain)
+sh(pkgMain, 'init', '-q', '-b', 'main')
+sh(pkgMain, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'one')
+for (const [label, id, branch] of [
+  ['slugged', 'aaaa1111-0000-0000-0000-000000000001', 'teams/fix-names/P1-x'],
+  ['legacy', 'bbbb2222-0000-0000-0000-000000000002', 'harness/bbbb2222/P1'],
+]) {
+  const pkg = join(wtRoot, `pkg-${label}`)
+  sh(pkgMain, 'worktree', 'add', '-q', pkg, '-b', branch)
+  task(id, pkgMain, ['tm_open', 'daemon_spawned'])
+  const heldHere = () => denied(bash('git push origin HEAD', pkg), id) && prepushAt(pkg).status === 1
+  const freeHere = () => decision(bash('git push origin HEAD', pkg)) === undefined && prepushAt(pkg).status === 0
+  check(`${label} package worktree: open task -> push and prepush deny`, heldHere())
+  writeFileSync(join(tasks, id, 'ledger.jsonl'), '{"event":"tm_open"}\n{"event":"daemon_done"}\n')
+  check(`${label} package worktree: daemon_done without a report -> deny`, heldHere())
+  report(id, pkgMain)
+  check(`${label} package worktree: daemon_done + 80-report.md -> allow`, freeHere())
+  rmSync(join(pkgMain, '.teams_output'), { recursive: true, force: true })
+  writeFileSync(join(tasks, id, 'ledger.jsonl'), '{"event":"tm_open"}\n{"event":"clean"}\n')
+  check(`${label} package worktree: clean event -> allow`, freeHere())
+  drop(id)
+}
+
 check('garbage stdin -> fail open', run('bash', 'not json').code === 0 && Object.keys(run('bash', 'not json').out).length === 0)
 check('bad cwd -> fail open', run('bash', { tool_name: 'Bash', tool_input: { command: 'git commit' }, cwd: '/nonexistent' }).code === 0)
 
