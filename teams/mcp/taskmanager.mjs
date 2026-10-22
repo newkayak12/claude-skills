@@ -1382,6 +1382,9 @@ function integrateToRepair(task) {
   if (r.judge_failed === true) {
     return { error: `${last.node_id} was never judged (${String(r.reason || '').slice(0, 120)}); it is re-judged, not repaired.` };
   }
+  if (r.blocked) {
+    return { error: `${last.node_id} was blocked (${String(r.reason || '').slice(0, 120)}), not judged; allow the tool and tm_retry it instead of repairing.` };
+  }
   if (r.verified === true) {
     return { error: `${last.node_id} verified the combined tree; its failure is not a seam. Fix what its stage_ok=false named, or retry the package its checks blame with tm_retry({task_id, package_id}).` };
   }
@@ -1563,7 +1566,7 @@ export function autoReshape(task) {
   // (2026-09-22) hit the 45m judge timeout twice in 247 minutes; under this code that is two of
   // the three shaping attempts gone to a timeout string. Once the rejudge budget IS spent there
   // is no verdict coming, and reshaping is the only move left - so reshape then.
-  const judgeStuck = (n) => n.result.judge_failed === true && (n.judge_attempts || 0) < JUDGE_ATTEMPTS_MAX;
+  const judgeStuck = (n) => Boolean(n.result.blocked) || (n.result.judge_failed === true && (n.judge_attempts || 0) < JUDGE_ATTEMPTS_MAX);
   // The plan stage's split and the planning integrate are the shaping pair's planning twins
   // (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C2/C4), recovered the same way: a failed
   // split is split again with its problems as feedback; a planning integrate whose judge never
@@ -1627,6 +1630,7 @@ export function autoRetryPackages(task) {
     if ((failed.result.conflicts || []).length) continue;
     if (failed.result.waiting_capacity) continue;
     if (failed.result.judge_failed === true) continue; // no verdict yet - autoRejudge owns it
+    if (failed.result.blocked) continue; // a judge was denied a tool: no verdict, no reject feedback to retry on
     // A failed dispatch:QA whose child actually ran execute and recorded defects (foldChild's
     // defectsFound, carried onto this node as result.defects) is not a package to retry - its
     // case set already found what it was sent to find. Before this check, a rejected or
@@ -4285,7 +4289,8 @@ export function composeTaskPrompt(task, n) {
       }
       if ((r.changed_files || []).length) L.push(`Files it reported changing:\n${bullets(r.changed_files)}`);
       L.push(`Its report:`);
-      L.push(r.report || '(no report)');
+      // The report names the same failures: its lines about an excluded base failure are dropped too.
+      L.push(r.report ? String(r.report).split('\n').filter((line) => !onBase.some((e) => line.includes(e.test))).join('\n') : '(no report)');
       L.push('');
       L.push(`Verify in the worktree at ${r.child_cwd}. The report is a claim; the tree is the evidence.`);
     }
@@ -4535,32 +4540,63 @@ const FAILED_OUTPUT = /(?:^|[^\d])[1-9]\d*\s+(?:fail|failed|failing)\b|\bexit(?:
 // Fails closed: any throw, a base that cannot run or an empty comparison excludes nothing.
 function excludeBaseFailures(task, n, result) {
   try {
-    const pkg = packageOf(task, n.subgoal_id);
-    if (!pkg || pkg.phase || pkg.repair || result.stage_ok !== true || result.accept !== true) return result;
-    if (noDriver() && !__baseFail.run) return result; // test seam: nothing is spawned
-    const floor = Number.isInteger(task.goal_threshold) ? task.goal_threshold : 90;
-    const below = Number.isFinite(result.match_pct) && result.match_pct < floor && Array.isArray(result.gaps) && result.gaps.length > 0;
-    const failing = (Array.isArray(result.checks) ? result.checks : []).map((c) => {
-      const s = String(c);
-      const i = s.indexOf(' -> ');
-      return i < 0 ? null : { command: s.slice(0, i).trim(), output: s.slice(i + 4) };
-    }).filter((c) => c && c.command && (failingTests(c.output).length || (below && FAILED_OUTPUT.test(c.output))));
-    if (!failing.length) return result;
-    const d = task.nodes.find((x) => x.stage === 'dispatch' && x.subgoal_id === n.subgoal_id && (x.attempt || 1) === (n.attempt || 1));
-    if (!d || !d.child || !d.child.cwd) return result;
-    const baseSha = resolveBase({ cwd: d.child.cwd, baseCommit: d.base_commit, branch: d.child.branch, baseRef: task.base_ref });
-    const excluded = failing.flatMap((c) => compareOnBase({
-      cwd: d.child.cwd, baseSha, command: c.command, packageOutput: c.output, packageExit: 1,
-      ...(__baseFail.run ? { run: __baseFail.run } : {}),
-    }).excluded);
-    if (!excluded.length) return result;
-    const id = String(n.subgoal_id);
-    const known = (task.base_exclusions && task.base_exclusions[id]) || [];
-    task.base_exclusions = { ...(task.base_exclusions || {}), [id]: [...known, ...excluded.filter((e) => !known.some((k) => k.test === e.test))] };
-    record(task, { event: 'base_failures_excluded', task_id: task.run_id, node_id: n.node_id, package_id: id, base: baseSha, excluded: excluded.map((e) => e.test) });
-    return { ...result, base_excluded: excluded, exclusions: excluded.map(exclusionLine) };
+    if (result.stage_ok !== true || result.accept !== true) return result;
+    const found = failingOnBase(task, n, result);
+    if (!found) return result;
+    recordBaseExclusions(task, n, found);
+    return { ...result, base_excluded: found.excluded, exclusions: found.excluded.map(exclusionLine) };
   } catch {
     return result;
+  }
+}
+
+// The compare half, shared by excludeBaseFailures and excludeBaseBeforeJudge: the failing checks of
+// `evidence` ({checks, match_pct, gaps}) run on the package's base commit. {baseSha, excluded} or null.
+function failingOnBase(task, n, evidence) {
+  const pkg = packageOf(task, n.subgoal_id);
+  if (!pkg || pkg.phase || pkg.repair) return null;
+  if (noDriver() && !__baseFail.run) return null; // test seam: nothing is spawned
+  const floor = Number.isInteger(task.goal_threshold) ? task.goal_threshold : 90;
+  const below = Number.isFinite(evidence.match_pct) && evidence.match_pct < floor && Array.isArray(evidence.gaps) && evidence.gaps.length > 0;
+  const failing = (Array.isArray(evidence.checks) ? evidence.checks : []).map((c) => {
+    const s = String(c);
+    const i = s.indexOf(' -> ');
+    return i < 0 ? null : { command: s.slice(0, i).trim(), output: s.slice(i + 4) };
+  }).filter((c) => c && c.command && (failingTests(c.output).length || (below && FAILED_OUTPUT.test(c.output))));
+  if (!failing.length) return null;
+  const d = task.nodes.find((x) => x.stage === 'dispatch' && x.subgoal_id === n.subgoal_id && (x.attempt || 1) === (n.attempt || 1));
+  if (!d || !d.child || !d.child.cwd) return null;
+  const baseSha = resolveBase({ cwd: d.child.cwd, baseCommit: d.base_commit, branch: d.child.branch, baseRef: task.base_ref });
+  const excluded = failing.flatMap((c) => compareOnBase({
+    cwd: d.child.cwd, baseSha, command: c.command, packageOutput: c.output, packageExit: 1,
+    ...(__baseFail.run ? { run: __baseFail.run } : {}),
+  }).excluded);
+  return excluded.length ? { baseSha, excluded } : null;
+}
+
+// The record half: the exclusions under the package (deduped by test) and one ledger line.
+export function recordBaseExclusions(task, n, { baseSha, excluded }) {
+  const id = String(n.subgoal_id);
+  const known = (task.base_exclusions && task.base_exclusions[id]) || [];
+  task.base_exclusions = { ...(task.base_exclusions || {}), [id]: [...known, ...excluded.filter((e) => !known.some((k) => k.test === e.test))] };
+  record(task, { event: 'base_failures_excluded', task_id: task.run_id, node_id: n.node_id, package_id: id, base: baseSha, excluded: excluded.map((e) => e.test) });
+}
+
+// Before the judge scores an attempt: the failures its child's goal gate named (checks[] of the run
+// file; the dispatch result keeps only gaps and the report) that the base commit has too. Base runs
+// take minutes, so the daemon calls this on a snapshot OUTSIDE any transaction and persists the
+// returned {baseSha, excluded} with recordBaseExclusions in a mutateTask. null: nothing excluded.
+export function excludeBaseBeforeJudge(task, n) {
+  try {
+    if (n.stage !== 'accept') return null;
+    const d = task.nodes.find((x) => x.stage === 'dispatch' && x.subgoal_id === n.subgoal_id && (x.attempt || 1) === (n.attempt || 1));
+    if (!d || !d.child || !d.child.cwd || !d.child.run_id) return null;
+    const child = loadRun(d.child.cwd, d.child.run_id);
+    const gate = child && Array.isArray(child.nodes)
+      ? child.nodes.filter((x) => x.stage === 'gate' && x.subgoal_id === null && x.result && x.state !== 'skipped').pop() : null;
+    return gate ? failingOnBase(task, n, gate.result) : null;
+  } catch {
+    return null;
   }
 }
 
@@ -4651,7 +4687,7 @@ const short = (s) => String(s).slice(0, 300);
 function recordVerdict(task, n) {
   const r = n.result || {};
   const f = VERDICT[n.stage];
-  const verdict = n.state === 'done' ? f : r.judge_failed === true ? 'judge_failed' : 'reject';
+  const verdict = n.state === 'done' ? f : r.blocked ? 'blocked' : r.judge_failed === true ? 'judge_failed' : 'reject';
   const why = r.reason || [r.blocking, r.problems, r.gaps].flatMap((x) => (Array.isArray(x) ? x : []))
     .map((x) => (typeof x === 'object' ? (x.text || JSON.stringify(x)) : String(x))).join('; ');
   record(task, {
@@ -4675,6 +4711,20 @@ export function finish(task, n, result) {
   // tm_submit and the daemon alike. Hooking the caller instead left the whole surface stale
   // between steps, and a daemon step is a whole judge call long (2026-09-22).
   const ticketsBefore = ticketSnapshot(task);
+  // A judge denied a tool it needed (daemon.mjs judgeDenials) judged nothing: the node is recorded
+  // blocked, never rejected - no reject is counted, no retry feedback is built (autoRetryPackages,
+  // autoReshape and integrateToRepair skip a blocked result), and it is not judge_failed, so
+  // autoRejudge leaves it alone. The task reads blocked until a person allows the tool.
+  if (result && result.blocked && result.stage_ok !== true) {
+    n.state = 'failed';
+    n.result = result;
+    n.finished_at = Date.now();
+    saveRun(task);
+    if (VERDICT[n.stage]) recordVerdict(task, n);
+    record(task, { event: 'node_finish', task_id: task.run_id, node_id: n.node_id, stage: n.stage, stage_ok: false, state: n.state, ...(n.subgoal_id ? { subgoal_id: n.subgoal_id } : {}), ...(n.attempt ? { attempt: n.attempt } : {}) });
+    try { syncTickets(task, ticketsBefore, n.node_id); } catch { /* evidence, not a dependency */ }
+    return verdict(task, n);
+  }
   // The merges the manager made are part of the integrate node's account.
   if (n.stage === 'integrate' && n.integration) {
     result = { ...result, integration_branch: n.integration.branch, integration_cwd: n.integration.cwd,

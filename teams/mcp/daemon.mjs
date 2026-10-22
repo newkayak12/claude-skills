@@ -37,12 +37,13 @@ import {
   dispatchSettled, foldDispatch, readyToJudge, serviceSRun, delegateIfSmall,
   finish, composeTaskPrompt, briefingPath, autoRepair, autoRetryPackages, autoRejudge, autoResumeCapacity, pendingRejudgeAt,
   STAGE_SKILLS, syncTickets, autoReshape, closeFailedPlanning, promoteManagerHumanGates, enforceBudget,
-  expireAsks, nextAskDeadline, worktreeGoneStop,
+  expireAsks, nextAskDeadline, worktreeGoneStop, excludeBaseBeforeJudge, recordBaseExclusions,
 } from './taskmanager.mjs';
 import { ticketSnapshot } from './tickets.mjs';
 import { harvestTask } from './runlog.mjs';
 import { pluginDirArgs, isEntryPoint, teamsPluginRoot } from './pluginroots.mjs';
 import { reserveSlot, noteWaiting, clearWaiting } from './livecap.mjs';
+import { neededDenials } from './denials.mjs';
 
 function parseArgs(argv) {
   const out = {};
@@ -117,6 +118,21 @@ function lastResultText(stdout) {
     if (e && e.type === 'result') last = e;
   }
   return last && typeof last.result === 'string' ? last.result : '';
+}
+
+// The Bash commands a judge needed and was denied, read from the last `result` event's
+// permission_denials (same shape as the json envelope the worker adapter reads; probed live on
+// claude 2.1.308 under --dangerously-skip-permissions with --disallowedTools). The judge skips
+// permissions, so this event field is the only signal. [] when nothing was denied.
+export function judgeDenials(stdout) {
+  let last = null;
+  for (const line of String(stdout || '').split('\n')) {
+    if (!line.trim()) continue;
+    let e;
+    try { e = JSON.parse(line); } catch { continue; }
+    if (e && e.type === 'result') last = e;
+  }
+  return neededDenials(last);
 }
 
 // Who a judge call ran as: `claude`, and the model its stream's init event names (else the
@@ -257,6 +273,13 @@ async function judge(task, n, { slot = null } = {}) {
     proc.stderr.on('data', (d) => { err += d; });
     proc.on('close', () => {
       keepJudgeLog(task, n, out);
+      // A judge denied a tool it needed judged nothing: blocked, not a reject, and not judge_failed
+      // (autoRejudge would ask again and be denied again).
+      const denied = judgeDenials(out);
+      if (denied.length) {
+        settle({ stage_ok: false, blocked: 'tool denied', reason: 'blocked: tool denied', denied, judged_by: judgedBy(out, extra) });
+        return;
+      }
       const text = lastResultText(out);
       try {
         const parsed = extractJson(text);
@@ -562,6 +585,11 @@ async function stepOnceInner(taskId, judgeFn) {
       if (!s) continue;
       let result;
       try {
+        // A failure the child's gate named that the base commit has too is struck before the judge
+        // scores the attempt. Base runs take up to 240s: they run on the stamped snapshot, outside
+        // the stamp's transaction, and only the result is persisted (and given to this judge's briefing).
+        const onBase = excludeBaseBeforeJudge(s.task, s.node);
+        if (onBase) s.task.base_exclusions = tx((t) => { recordBaseExclusions(t, s.node, onBase); return t.base_exclusions; });
         result = await judgeFn(s.task, s.node, { slot });
       } catch (e) {
         // A clear that fails (ELOCKTIMEOUT) must not mask the judge's own error: the stamp it

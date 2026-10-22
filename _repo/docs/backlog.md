@@ -121,20 +121,6 @@ toasts).
 
 ### teams plugin bugs
 
-39. **Finish card 39: tool denial in the task manager's own judges, base exclusion before scoring**
-    - Why: E-64cda2b0 (merged by hand 2026-10-20, `2c160959`..`ebbe1787`) shipped subset integrate,
-      `basefail.mjs` and the adapter's `blocked: tool denied`, but its report leaves: (a) the task
-      manager's stream-json judges (accept/gate nodes it runs itself) still read a denial as a reject
-      — E-64cda2b0's own P1 failed that way; (b) base exclusion is applied after the judge scored the
-      attempt, so it helps only the next attempt. The run itself also stranded P3/P4 — the fix
-      landed only after it.
-    - Root cause of the gate denials, found 2026-10-21: `claude-exec-adapter.mjs` gave `--verify`
-      gates Bash on `--tools` under `--permission-mode dontAsk` with no allow rule, so every Bash call
-      was denied (live probe without the shell's `claude` alias). Fixed `eeff7b52`; installed 0.57.0
-      hot-patched until the next teams bump.
-    - Acceptance: a task-manager judge denied Bash reads `blocked: tool denied` (test); excluded base
-      failures are removed from the briefing before the judge scores.
-
 64. **Interactive L task ignores roles.planning:false and the human_gates card**
     - Why: live 2026-10-22: in an interactive L task, `roles.planning:false` in `team.json` did not stop
       the planning flow (PLAN-F1/F2 ran), and `human_gates: ["gate"]` did not produce the card. Cause
