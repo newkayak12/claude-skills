@@ -526,6 +526,12 @@ test('mod.test.ts mirror equals markOf for every state', () => {
       assert.deepEqual({ icon, word: word ?? doing, word_key: word === null ? '' : state }, markOf(state, doing), `${state} / ${doing}`);
     }
   }
+  const markOfLines = src.split('\n').filter((l) => l.startsWith('const markOf = (state: string, doing: string) =>'));
+  assert.equal(markOfLines.length, 1, 'exactly one markOf line in mod.test.ts');
+  assert.equal(
+    markOfLines[0],
+    "const markOf = (state: string, doing: string) => { const m = MARKS[state]!; return { icon: m.icon, word: m.word ?? doing, word_key: m.word === null ? '' : state } }",
+  );
 });
 
 test('icon and word agree for every state (floorOf items and workers)', () => {

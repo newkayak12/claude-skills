@@ -26,14 +26,11 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
     - Acceptance: the driver waits for its own background work before ending a turn (prompt rule or
       `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` in the spawn env), with a test on the spawn command.
 
-65. **Card 59 follow-up: exit-code rule in teams prompts, mirror function pinned, flaky tests**
-    - Why: E-f7c68f6a (card 59, merged 2026-10-22) report: the "a check passes or fails by its exit
-      code" rule is in harness goal-spec/fallback/pipeline but not in `teams/mcp/prompts.mjs:107`;
-      the node mirror test checks the MARKS data, not the tsx `markOf` one-liner; the guidance test
-      pins only two markers per site; unnamed one-off failures under load (teams node 1369/1, graph
-      198/1, plugin-test "Loading" 5000 ms timeout), cause unverified.
-    - Acceptance: teams setgoal prompt carries the rule (test); the mirror function's form pinned;
-      the flaky tests named and fixed or marked.
+65. **Flaky tests under load: name them when they recur**
+    - Why: card 65 rest shipped 2026-10-22 (E-7e3a46f0: exit-code rule in the teams setgoal prompt,
+      `markOf` form and all guidance markers pinned). The one-off failures (teams 1369/1, graph 198/1,
+      plugin-test "Loading" 5000 ms) did not reproduce in 3+3 runs (1416/1416, 200/200, 206/206).
+    - Acceptance: the next recurrence names the test and its cause; fixed or marked with that cause.
 
 Mods, in the user's words: "전체적으로 mod가 더 디테일해야할거 같아 일단 있다 그 이상 이하도 아니게보인다"
 (2026-10-15); "각 스킬에 특화되도록 사용자 친화적으로!"; "팀즈 하네스 그래프 병렬 실행 시 모드 어떻게
