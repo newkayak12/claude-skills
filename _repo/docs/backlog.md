@@ -131,19 +131,6 @@ toasts).
 
 ### teams plugin bugs
 
-61. **harness gate: a small edit to a gated build file needs a lighter way through**
-    - Why: user, 2026-10-22, pasted from another project (colo-flamingo): "PreToolUse:Edit hook error:
-      /colo-flamingo/build.gradle.kts is gated by the harness (.claude/harness-gate.json). Engage the
-      harness before editing it: invoke the harness skill and follow its Process - the graph MCP, the
-      Workflow engine, or an Agent Team fallback run whose plan, goal-spec and sound critique are on
-      disk. …" — asked to put it on the backlog. One edit to `build.gradle.kts` was refused until a
-      full harness run (plan, goal-spec, critique on disk). Cause unverified: whether the gate glob
-      in that project is too wide, or the gate has no path for a one-line change.
-    - Acceptance: reproduce in a scratch project with the same `harness-gate.json`; a one-file,
-      few-line edit to a gated build file has a documented light path (or the glob is narrowed),
-      decided with the user; the refusal message says which path applies; `node
-      harness/scripts/test-goal-gate.mjs` prints `all passed`.
-
 60. **A finished, cleaned size-S task reads `stalled · impl`; titles cut at a file name's dot**
     - Why: 2026-10-22, `view.mjs --once` right after `tm_clean` of E-e32398ec (DONE a minute before):
       it and every earlier merged size-S task (E-eccf9590, E-0b008dc4, E-a213de5b …) show
