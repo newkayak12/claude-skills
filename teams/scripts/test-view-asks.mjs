@@ -141,6 +141,8 @@ test('view --session: poll ask, task cwd differs from session cwd', () => {
     assert.equal(st.asks.length, 1);
     assert.deepEqual({ ...st.asks[0], since: null }, { task_id: 'aaaaaaaa-0001', key: 'E-aaaaaaaa/P2', who: 'P2', question: Q, since: null, via: 'poll' });
     assert.deepEqual(view(w, 'status', '--session', 's-1').asks.map((a) => a.who), ['P2']);
+    // scope split: waiting is cwd-scoped (0 for /b), asks is not; the band keys on asks for this case
+    assert.equal(st.waiting, 0);
   } finally { w.cleanup(); }
 });
 
