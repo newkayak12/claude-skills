@@ -86,6 +86,28 @@ test('cost_by_kind buckets node adapter sessions too, so it sums to cost_usd (po
   } finally { for (const x of [cwd, tasks, root, wt]) rmSync(x, { recursive: true, force: true }); }
 });
 
+// card 46: a package worktree dir is <Pid>-<package-slug>; the archive labels its runs by package id.
+test('a package dir named <Pid>-<slug> is labelled by the package id its dispatch node recorded; an unmatched dir keeps its name', () => {
+  const { cwd, tasks, td } = fixture();
+  const root = mkdtempSync(join(tmpdir(), 'runlog-root-'));
+  try {
+    const failedRun = (dir, run_id) => {
+      const runs = join(td, 'worktrees', dir, '.teams_output', 'broker', 'runs');
+      mkdirSync(runs, { recursive: true });
+      writeFileSync(join(runs, `${run_id}.json`), JSON.stringify({ run_id, nodes: [{ node_id: 'test:U1:1', stage: 'test', state: 'failed', result: { stage_ok: true, verified: false, reason: 'nope' } }] }));
+    };
+    failedRun('P1-memo-pane', 'r1');
+    failedRun('P9', 'r9');
+    const task = JSON.parse(readFileSync(join(td, 'task.json'), 'utf8'));
+    task.nodes.push({ node_id: 'dispatch:P1:1', stage: 'dispatch', subgoal_id: 'P1', state: 'done', child: { cwd: join(td, 'worktrees', 'P1-memo-pane'), run_id: 'r1' } });
+    writeFileSync(join(td, 'task.json'), JSON.stringify(task));
+    const r = harvestTask({ taskDir: td, cwd, root });
+    assert.ok(existsSync(join(r.out, 'runs', 'P1', 'r1.json')));
+    assert.ok(existsSync(join(r.out, 'runs', 'P9', 'r9.json')), 'a legacy dir keeps its name');
+    assert.deepEqual(r.summary.failures.filter((f) => f.level === 'child').map((f) => f.package).sort(), ['P1', 'P9']);
+  } finally { for (const x of [cwd, tasks, root]) rmSync(x, { recursive: true, force: true }); }
+});
+
 // Same run: budget_usd 25, budget_stopped fired at spend $25.18 (the in-flight QA:2 child was
 // already running and enforceBudget never kills a running dispatch), then the goal gate got
 // rewired and the report ran to close the task - both mandatory closing stages - landing at

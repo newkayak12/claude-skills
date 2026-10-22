@@ -142,6 +142,29 @@ test('a worktree not yet created is still created on the first open, and a drive
   await release();
 });
 
+test('a slugged task: the package dir is <Pid>-<package-slug>, and its vanished tree is a stop naming that path (card 46)', async () => {
+  const cwd = repo();
+  const id = seedTask(cwd, [pkg('P1')], dispatchOf('P1'), { slug: 'wt-gone' });
+  tm.advanceDispatches(id);
+  await until(() => drivers() >= 1, 'the first attempt driver');
+  await release();
+  const n = nodeOf(id, 'dispatch:P1:1');
+  assert.equal(n.child.branch, 'teams/wt-gone/P1-module-p1');
+  assert.ok(n.child.cwd.endsWith('/worktrees/P1-module-p1'), n.child.cwd);
+  save(id, (t) => {
+    const d = t.nodes.find((x) => x.node_id === 'dispatch:P1:1');
+    d.state = 'failed';
+    d.result = { stage_ok: false, reason: 'the attempt failed' };
+  });
+  rmSync(n.child.cwd, { recursive: true, force: true });
+  const before = drivers();
+  for (let i = 0; i < 3; i++) await daemon.stepOnce(id);
+  await sleep(300);
+  assert.equal(drivers(), before, 'no driver spawned into the gone tree');
+  oneStop(id, '/worktrees/P1-module-p1', 'dispatch:P1:2');
+  assert.ok(!existsSync(n.child.cwd), 'the tree was not re-created');
+});
+
 test('autoRetryPackages -> ensureWorktree: a retry into a package tree that vanished spawns nothing and stops', async () => {
   const cwd = repo();
   const id = seedTask(cwd, [pkg('P1')], dispatchOf('P1'));

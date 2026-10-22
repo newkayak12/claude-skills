@@ -63,6 +63,12 @@ test('demo model: counts, stages, now, you', () => {
   clean(demo());
 });
 
+test('slug is top-level and comes from the ticket; null when absent', () => {
+  const slugged = demo({ ticket: { key: 'E-3a3a3bb5', slug: 'expense-tracker', title: 'Build the expense tracker' } });
+  assert.equal(summarize(slugged, { now: NOW }).slug, 'expense-tracker');
+  assert.equal(summarize(demo(), { now: NOW }).slug, null);
+});
+
 test('stalled keeps its state', () => {
   assert.equal(summarize(demo({ state: 'stalled' }), { now: NOW }).state, 'stalled');
   clean(demo({ state: 'stalled' }));
