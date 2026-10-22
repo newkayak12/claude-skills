@@ -30,18 +30,11 @@ not a read — each worker's state is one icon and colour (spinner while acting;
 Cards 40–43 and 50 shipped and approved 2026-10-22 (harness, teams, graph, session panes; failure
 toasts).
 
-53. **smart-compact holds its threshold inside a long turn**
-    - Why: 2026-10-18, building Phantom with the threshold at 40% the context reached ~45%: smart-compact
-      checks only on `turn.complete` (reason answer), so one turn of dozens of tool calls (build, test,
-      release, install) is never checked until it ends; the recap adds more on top. Cause verified
-      (`session/hooks/compact.tsx` turn.complete handler; README "Smart compact").
-    - Acceptance: usage is also checked between tool calls; at or over the threshold mid-turn the
-      recap + compact runs at the next point compact accepts, before the next answer; a test drives a
-      turn that crosses the threshold mid-way; seen once live.
-    - Also (2026-10-18, Mac): toast "smart-compact: could not compact, left to auto-compact". The
-      compact retry gives up after 20 × 500 ms and its `catch {}` drops the error, so the log says only
-      `compact-failed`. Acceptance: the log keeps the last compact error; the retry waits for the turn
-      to end (not a fixed 10 s); a test where compact rejects past 10 s still compacts.
+53. **smart-compact mid-turn check: seen once live**
+    - Why: E-cf167033 (2026-10-22) shipped the check between tool calls and the retry that waits for
+      the turn to end, last error logged as `compact-failed:<first line>`; session mod 552/552. Not yet
+      seen live.
+    - Acceptance: one live session with a low threshold where a long turn compacts mid-way.
 
 49. **Mods put subagent-to-subagent communication to work**
     - Why: user, 2026-10-17: "mod 추가로 subagent 간 의사소통하는거 더 적극적으로 활용할 수 있는 방법

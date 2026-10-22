@@ -1,6 +1,7 @@
 import { atom, update } from 'claude-code'
 import type { On, PluginOptions } from 'claude-code'
 
+import { compactFailed, compactRetry, firstLine, shouldCompactNow } from './compact-logic.ts'
 import { appendLog, asLog, fmtLastCheck, fmtLog, fmtStats, LOG_KEY, patchLog } from './compact-log.ts'
 import type { LogEntry, LogStats } from './compact-log.ts'
 import { corrections, fmtAgo, isFresh, lessonsKey, makeRecap, mergeLessons, RECAP_PROMPT, recapKey } from './recap.ts'
@@ -29,7 +30,8 @@ let logChain: Promise<void> = Promise.resolve()
 let logSeq = 0
 const PROC = Date.now().toString(36)
 
-const firstLine = (err: unknown) => (err instanceof Error ? err.message : String(err)).split('\n')[0]!
+// false from a main-thread tool call until the turn's turn.complete; compact only succeeds once it is true
+let turnEnded = true
 
 const count = (decision: string) => {
   const kind = decision.split(':').slice(0, decision.startsWith('skipped:') ? 2 : 1).join(':')
@@ -71,7 +73,9 @@ const readLog = async ($: any) => {
   }
 }
 
-const logOutcome = ($: any, id: string, outcome: string) => writeLog($, async list => patchLog(list, id, outcome))
+function logOutcome($: any, id: string, outcome: string) {
+  writeLog($, async list => patchLog(list, id, outcome))
+}
 
 // One fork over the transcript; kept as the project's recap, its Corrections added to the lessons.
 async function recapNow($: any): Promise<{ text: string } | { reason: string }> {
@@ -167,6 +171,7 @@ export const register = (on: On, options: PluginOptions) => {
 
   // Matched on reason, so it sits beside mod.tsx's unmatched turn.complete hook.
   on('turn.complete', { reason: 'answer' }, async ($, e, next) => {
+    if (!e.agentId) turnEnded = true
     const result = await next(e)
     stats.evaluated++
     const threshold = thresholdOf(options)
@@ -184,36 +189,77 @@ export const register = (on: On, options: PluginOptions) => {
     const percent = raw ?? 0
     if (percent < threshold) return logDecision($, raw, threshold, 'below'), result
 
-    isRunning = true
-    const id = logDecision($, raw, threshold, 'recapping', 'pending')
-    const recapThenCompact = async () => {
-      $.ui.status(`smart-compact: ${percent}% ≥ ${threshold}%, recapping`)
-      const recap = await recapNow($)
-      if ('reason' in recap) {
-        $.ui.toast(`smart-compact: recap failed (${recap.reason}), left to auto-compact`)
-        logOutcome($, id, `recap-failed:${recap.reason}`)
-        return
-      }
-      // the recap is the summary: compact adds only what it lacks, so the two are not carried twice
-      const instructions = `The recap below is the summary; keep it intact. Do not restate what it says, and do not list past user messages or finished work. Add only what its Direction needs and it lacks (exact code, error text):\n\n${recap.text}`
-      // compact rejects while a turn runs; retry until the turn has ended
-      for (let attempt = 0; attempt < 20; attempt++) {
-        try {
-          const done = await $.session.compact({ instructions })
-          $.ui.toast(done.skip ? `smart-compact: skipped (${done.skip})` : 'smart-compact: recapped and compacted')
-          logOutcome($, id, done.skip ? `skip:${done.skip}` : 'compacted')
-          return
-        } catch {
-          await $.clock.sleep(500)
-        }
-      }
-      $.ui.toast('smart-compact: could not compact, left to auto-compact')
-      logOutcome($, id, 'compact-failed')
-    }
-    void recapThenCompact().catch(err => logOutcome($, id, `error:${firstLine(err)}`)).finally(() => {
-      $.ui.status(statusLine({}))
-      isRunning = false
-    })
+    startRecapThenCompact($, raw, percent, threshold)
     return result
   }).catch(($, e, next) => next(e))
+
+}
+
+// A module may hook an event once without a matcher, so mod.tsx's tool.call and turn.complete hooks call these.
+// Mid-turn: a long turn can cross the threshold before turn.complete. Never throws, never alters the call.
+export async function midTurnCheck($: any, e: { agentId?: string }, options: PluginOptions) {
+  if (e.agentId) return
+  turnEnded = false
+  try {
+    if (isRunning || (await $.session.surfaces()).length === 0) return
+    const raw = (await $.session.usage()).context.percent
+    const threshold = thresholdOf(options)
+    const percent = raw ?? 0
+    if (shouldCompactNow(percent, threshold, { isRunning, surfaces: 1 }) === 'run') startRecapThenCompact($, raw, percent, threshold)
+  } catch (err) {
+    // every tool call would write a log entry; only the count (shown by /smart-compact) is kept
+    count(`usage-failed:${firstLine(err)}`)
+  }
+}
+
+// Any turn end, whatever its reason, releases a compact that waits for the turn to finish.
+export const turnEnd = (e: { agentId?: string }) => {
+  if (!e.agentId) turnEnded = true
+}
+
+// Recap, then compact with the recap as the summary; one run at a time, off the hook that started it.
+function startRecapThenCompact($: any, raw: number | null | undefined, percent: number, threshold: number) {
+  isRunning = true
+  const id = logDecision($, raw, threshold, 'recapping', 'pending')
+  const run = async () => {
+    $.ui.status(`smart-compact: ${percent}% ≥ ${threshold}%, recapping`)
+    const recap = await recapNow($)
+    if ('reason' in recap) {
+      $.ui.toast(`smart-compact: recap failed (${recap.reason}), left to auto-compact`)
+      logOutcome($, id, `recap-failed:${recap.reason}`)
+      return
+    }
+    // the recap is the summary: compact adds only what it lacks, so the two are not carried twice
+    const instructions = `The recap below is the summary; keep it intact. Do not restate what it says, and do not list past user messages or finished work. Add only what its Direction needs and it lacks (exact code, error text):\n\n${recap.text}`
+    // compact rejects while a turn runs: wait for the turn to end, then a bounded number of final tries
+    let lastError: unknown
+    let finalTries = 0
+    for (;;) {
+      // the first try is at once, even mid-turn; after a rejection, wait for the turn end
+      const step = lastError === undefined ? 'try' : compactRetry(turnEnded, finalTries, lastError)
+      if (step === 'fail') {
+        $.ui.toast('smart-compact: could not compact, left to auto-compact')
+        logOutcome($, id, compactFailed(lastError))
+        return
+      }
+      if (step === 'wait') {
+        await $.clock.sleep(500)
+        continue
+      }
+      if (turnEnded) finalTries++
+      try {
+        const done = await $.session.compact({ instructions })
+        $.ui.toast(done.skip ? `smart-compact: skipped (${done.skip})` : 'smart-compact: recapped and compacted')
+        logOutcome($, id, done.skip ? `skip:${done.skip}` : 'compacted')
+        return
+      } catch (err) {
+        lastError = err
+        await $.clock.sleep(500)
+      }
+    }
+  }
+  void run().catch(err => logOutcome($, id, `error:${firstLine(err)}`)).finally(() => {
+    $.ui.status(statusLine({}))
+    isRunning = false
+  })
 }
