@@ -1808,3 +1808,182 @@ test('demo frames', () => {
     throw new Error('SHOW is on: frames printed above')
   }
 })
+
+// ---- card 49B: asks addressed to this session ----
+const ASK = { task_id: 'aaaaaaaa-0001', key: 'E-aaaaaaaa/P2', who: 'P2', question: 'Keep the legacy PDF route?', since: 1000, via: 'send' }
+const ASK2 = { ...ASK, key: 'E-aaaaaaaa/P3', who: 'P3', question: 'Drop the cache?' }
+const sessionId = (on: On, id = 'me') => on('session.id', () => ({ value: id }) as never)
+const allTexts = async (ui: Ui) => (await ui.findAll({ type: 'Text' })).map(t => String(t.text))
+
+for (const surface of SURFACES) {
+  test(`${surface}: band one ask shows who and question, then the inbox Button`, async ($, on) => {
+    await seeded($, on, { status: stat({ waiting: 1, asks: [ASK] }), task: demo() }, surface)
+    const ui = await band($, surface)
+    const q = await ui.find({ type: 'Text', text: 'P2 asks you: Keep the legacy PDF route?' })
+    expect(q?.props.color).toBe('warning')
+    expect(q?.props.wrap).toBe('truncate-end')
+    expect(await labels(ui)).toContain('1 question for you')
+    expect((await allTexts(ui)).some(t => /^\+\d/.test(t))).toBe(false)
+  })
+
+  test(`${surface}: band two asks shows +1`, async ($, on) => {
+    await seeded($, on, { status: stat({ waiting: 2, asks: [ASK, ASK2] }), task: demo() }, surface)
+    const ui = await band($, surface)
+    expect(await ui.find({ type: 'Text', text: 'P2 asks you: Keep the legacy PDF route?' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '+1' })).toBeDefined()
+    expect(await labels(ui)).toContain('2 questions for you')
+    // +1 sits in the same row Box as the question (a fragment lets the host break the line)
+    type N = { type?: string; props?: Record<string, unknown>; children?: unknown }
+    const kids = (n: N): N[] => (Array.isArray(n.children) ? (n.children as N[]) : n.children ? [n.children as N] : []).filter(c => typeof c === 'object' && c !== null)
+    const has = (n: N, t: string): boolean => (n.props?.children === t || n.children === t || (Array.isArray(n.children) && n.children.includes(t))) || kids(n).some(c => has(c, t))
+    const rows: N[] = []
+    const walk = (n: N) => { if (has(n, '+1') && has(n, 'P2 asks you: Keep the legacy PDF route?')) rows.push(n); kids(n).forEach(walk) }
+    walk(await ui.drawn() as N)
+    const row = rows.at(-1)
+    expect(row?.type).toBe('Box')
+    expect(row?.props?.flexDirection).toBe('row')
+  })
+
+  test(`${surface}: band asks [] with one waiting is today's band`, async ($, on) => {
+    await seeded($, on, { status: stat({ waiting: 1, asks: [] }), task: demo() }, surface)
+    const ui = await band($, surface)
+    expect((await allTexts(ui))[0]).toBe('⚑')
+    expect((await shown(ui))).not.toContain('asks you')
+    expect(await labels(ui)).toContain('1 question for you')
+  })
+
+  test(`${surface}: band ask from another repo (waiting 0, no task) still shows the ask row`, async ($, on) => {
+    await seeded($, on, { status: stat({ waiting: 0, latest: null, asks: [ASK] }), task: null }, surface)
+    const ui = await band($, surface)
+    expect(await ui.find({ type: 'Text', text: 'P2 asks you: Keep the legacy PDF route?' })).toBeDefined()
+    expect((await allTexts(ui))[0]).toBe('⚑')
+    expect(await labels(ui)).toContain('1 question for you')
+  })
+
+  test(`${surface}: band ko label exact`, async ($, on) => {
+    await seeded($, on, { status: stat({ waiting: 1, asks: [ASK] }), task: demo() }, surface, 'ko')
+    expect(await (await band($, surface)).find({ type: 'Text', text: 'P2님이 묻습니다: Keep the legacy PDF route?' })).toBeDefined()
+  })
+
+  test(`${surface}: Floor line for an addressed card, none for an unaddressed waiting card`, async ($, on) => {
+    const you = { count: 2, items: ['a', 'b'], cards: [{ key: ASK.key, title: 'a', question: ASK.question, who: 'P2', since: 1000 }, { key: 'E-aaaaaaaa/P4', title: 'b', question: 'other?', who: 'P4', since: 1000 }] }
+    await seeded($, on, { status: stat({ waiting: 2, asks: [ASK] }), tasks: floorOf(WORKERS), task: demo({ you }), teams: TEAMS }, surface, undefined, { epic: 'tA' })
+    const ui = await wide($, surface)
+    const lines = (await allTexts(ui)).filter(t => t.includes('→ you') && t.includes('Keep'))
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toMatch(/^⚑ P2 → you {2}Keep the legacy PDF route\?/)
+    expect((await ui.findAll({ type: 'Text', text: /^⚑ P2 → you/ })).some(t => t.props.color === 'warning')).toBe(true)
+    expect((await allTexts(ui)).filter(t => t.includes('P4 → you'))).toEqual([])
+  })
+}
+
+test('tick: data call carries --session me, events call does not; no surfaces = no tick', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  startWorld(on)
+  sessionId(on)
+  const seen = uiWorld(on, {}, ['terminal'])
+  on('ui.panes', () => ({ value: [] }) as never)
+  await start($)
+  await clock.advance(3000)
+  const data = seen.argv.filter(a => !isEvents(a))
+  expect(data).toHaveLength(1)
+  expect(data[0]![data[0]!.indexOf('--session') + 1]).toBe('me')
+  expect(seen.argv.filter(isEvents).every(a => !a.includes('--session'))).toBe(true)
+})
+
+test('tick: no surfaces, no tick even with a session id', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  sessionId(on)
+  const seen = world(on, [], () => ok(''))
+  await start($)
+  await clock.advance(6000)
+  expect(seen.argv).toHaveLength(0)
+})
+
+// sender and receiver: ask-message.mjs runs, the mod only transports
+function askWorld(on: On, answer: (argv: readonly string[]) => Run, sendResult: { isDelivered: boolean; reason?: string } | 'throw' = { isDelivered: true }) {
+  const seen = { argv: [] as (readonly string[])[], sent: [] as { to: unknown; text: string }[] }
+  const result = { content: [{ type: 'text', text: 'x' }], structuredContent: { ok: true } }
+  on('session.surfaces', () => ({ value: [] }))
+  sessionId(on)
+  on('tool.call', () => ({ result, text: '' }) as never)
+  on('process.run', (_$, e) => {
+    seen.argv.push(e.argv)
+    return { value: answer(e.argv) }
+  })
+  on('session.send', (_$, e) => {
+    seen.sent.push({ to: e.to, text: e.text })
+    if (sendResult === 'throw') throw new Error('gone')
+    return sendResult as never
+  })
+  return { seen, result }
+}
+const PLAN = JSON.stringify([{ to: 'opener-1', text: '[teams ask] P2 asks you: q', key: 'E-aaaaaaaa/P2' }])
+const planOr = (plan: string) => (argv: readonly string[]) => (argv.includes('--send-plan') ? ok(plan) : ok(''))
+
+test('sender: team_submit sends node\'s message headless, records --ok, returns the result unchanged', async ($, on) => {
+  const w = askWorld(on, planOr(PLAN))
+  const r = await call($, 'mcp__teams__team_submit', {})
+  expect(r).toEqual({ result: w.result, text: '' })
+  expect(w.seen.sent).toHaveLength(1)
+  expect(w.seen.sent[0]!.text).toBe('[teams ask] P2 asks you: q')
+  expect(JSON.stringify(w.seen.sent[0]!.to)).toContain('opener-1')
+  expect(w.seen.argv.some(a => a.includes('--send-plan') && a[a.indexOf('--self') + 1] === 'me')).toBe(true)
+  expect(w.seen.argv.some(a => a.includes('--sent') && a.includes('E-aaaaaaaa/P2') && a.includes('--ok'))).toBe(true)
+})
+
+test('sender: an empty plan sends nothing', async ($, on) => {
+  const w = askWorld(on, planOr('[]\n'))
+  await call($, 'mcp__teams__team_next', {})
+  expect(w.seen.sent).toEqual([])
+  expect(w.seen.argv.some(a => a.includes('--sent'))).toBe(false)
+})
+
+for (const refused of [{ isDelivered: false, reason: 'no such session' }, 'throw'] as const) {
+  test(`sender: a send that fails (${typeof refused === 'string' ? refused : 'not delivered'}) records --error and leaves the result unchanged`, async ($, on) => {
+    const w = askWorld(on, planOr(PLAN), refused)
+    const r = await call($, 'mcp__teams__team_submit', {})
+    expect(r).toEqual({ result: w.result, text: '' })
+    expect(w.seen.argv.some(a => a.includes('--sent') && a.includes('--error'))).toBe(true)
+  })
+}
+
+test('receiver: a teams ask is consumed and the data refreshed once; other text passes through', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  startWorld(on)
+  sessionId(on)
+  const store = new Map<string, unknown>()
+  const seen = { argv: [] as (readonly string[])[] }
+  on('session.surfaces', () => ({ value: ['terminal'] }))
+  on('state.get', (_$, e) => ({ value: { value: store.get(e.key), version: 0 } }) as never)
+  on('state.set', (_$, e) => {
+    store.set(e.key, e.value)
+    return { value: { isSet: true, version: 1 } } as never
+  })
+  on('ui.panes', () => ({ value: [] }) as never)
+  on('ui.status', () => ({ value: undefined }))
+  on('session.receive', (_$, e) => ({ text: e.text }))
+  const stdin: (string | undefined)[] = []
+  let isAsk = true
+  on('process.run', (_$, e) => {
+    if (e.argv.includes('--received')) {
+      stdin.push(e.init?.stdin)
+      return { value: ok(isAsk ? 'E-aaaaaaaa/P2\n' : '') }
+    }
+    seen.argv.push(e.argv)
+    return { value: ok('{"line":"","waiting":0}') }
+  })
+  await start($)
+  await clock.advance(3000)
+  const dataCalls = () => seen.argv.filter(a => !isEvents(a)).length
+  const n = dataCalls()
+  const input = { origin: { kind: 'peer' as const }, text: '[teams ask] P2 asks you: q', isVerified: true }
+  const r = await $.session.receive(input as never)
+  expect(r).toEqual({ consumed: 'teams ask' })
+  expect(stdin[0]).toBe(input.text)
+  expect(dataCalls()).toBe(n + 1)
+  isAsk = false
+  const other = await $.session.receive({ ...input, text: 'hello' } as never)
+  expect(other).toEqual({ text: 'hello' })
+  expect(dataCalls()).toBe(n + 1)
+})

@@ -137,14 +137,17 @@ function parkedOnPerson(raw) {
 // last 24 h, prefiltered from task.json alone before `collect` (collectTask) runs. A task waiting on a
 // person is live, never stalled, and stays listed past 24 h (a manager card is read from task.json).
 // Live first, then stalled, each newest created first. [{ m, live, age_ms }]
-export function floorTasks({ tasksDir, cwd, now = Date.now(), collect = collectTask }) {
-  const want = cwd ? samePath(cwd) : null;
+// `opener` (a session id) keeps only tasks whose raw task.json names it as opener, checked before `collect`,
+// and ignores `cwd`: the asks of one session span every project.
+export function floorTasks({ tasksDir, cwd, opener, now = Date.now(), collect = collectTask }) {
+  const want = cwd && !opener ? samePath(cwd) : null;
   const picked = [];
   for (const e of ls(tasksDir)) {
     if (!e.isDirectory()) continue;
     const raw = readJson(join(tasksDir, e.name, 'task.json'));
     if (!raw || typeof raw !== 'object') continue;
     if (want && (!raw.cwd || samePath(raw.cwd) !== want)) continue;
+    if (opener && !(raw.opener && raw.opener.session_id === opener)) continue;
     try { if (!OPEN.has(epicTicketState(raw))) continue; } catch { continue; }
     const marks = [Number(raw.created_at) || 0, mtimeOf(join(tasksDir, e.name, 'ledger.jsonl')) || 0];
     for (const f of ls(join(tasksDir, e.name, 'drivers'))) if (f.name.endsWith('.stream.jsonl')) marks.push(mtimeOf(join(tasksDir, e.name, 'drivers', f.name)) || 0);

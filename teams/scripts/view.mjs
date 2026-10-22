@@ -36,6 +36,8 @@ import { summarize, waitingCount } from './lib/view-summary.mjs';
 import { samePath, floorTasks, floorEntry } from './lib/view-floor-fs.mjs';
 import { reportPayload } from './lib/view-report.mjs';
 import { teamsView, decisionsView } from './lib/view-status.mjs';
+import { asksFor } from './lib/view-asks.mjs';
+import { receivedRows } from './lib/ask-log.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -57,6 +59,7 @@ function parseArgs(argv) {
     else if (arg === '--format') a.format = argv[++i];
     else if (arg === '--since') a.since = Number(argv[++i]) || 0;
     else if (arg === '--cwd') a.cwd = argv[++i];
+    else if (arg === '--session') a.session = argv[++i];
     else if (arg === '--card') a.card = argv[++i];
     else if (arg === '--help'|| arg === '-h') a.help = true;
   }
@@ -64,7 +67,7 @@ function parseArgs(argv) {
 }
 
 function usage() {
-  return 'usage: node view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n> (default: TEAMS_VIEW_PORT, else 7431, else a free port)] [--once] [--view pipeline|tickets|resources] [--once --format status|events|summary|teams [--since <ts>] [--cwd <dir>]] [--once --format report --task <id> [--cwd <dir>]] [--once --format decisions --task <id> [--card <id>]]\n';
+  return 'usage: node view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n> (default: TEAMS_VIEW_PORT, else 7431, else a free port)] [--once] [--view pipeline|tickets|resources] [--once --format status|events|summary|teams [--since <ts>] [--cwd <dir>] [--session <id>]] [--once --format report --task <id> [--cwd <dir>]] [--once --format decisions --task <id> [--card <id>]]\n';
 }
 
 // ---------- --once --format status|events|summary|teams|decisions (the teams-status mod's data) ----------
@@ -109,11 +112,20 @@ function runningModels(tasksDir, cwd) {
 
 // The ⚑ count reads every live open task (a card parked in a child run counts though no task runs),
 // the same rule summaryOutput applies, so --format status and summary.status always agree.
-function statusOutput(tasksDir, cwd) {
+function statusOutput(tasksDir, cwd, session) {
   const listed = floorTasks({ tasksDir, cwd, now: Date.now() });
   const status = JSON.parse(statusFrom(runningModels(tasksDir, cwd)));
   status.waiting = listed.filter((x) => x.live).reduce((s, x) => s + waitingCount(x.m), 0);
+  status.asks = asksOf(tasksDir, session);
   return JSON.stringify(status) + '\n';
+}
+
+// The questions waiting on one session, over every open task whatever its cwd (floorTasks filters on the
+// raw task.json opener before collecting); [] without a session. `via` is 'send' once a received row exists.
+function asksOf(tasksDir, session) {
+  if (!session) return [];
+  const entries = floorTasks({ tasksDir, opener: session, now: Date.now() });
+  return asksFor(entries, session, receivedRows(tasksDir, entries.map((x) => x.id)));
 }
 
 function statusFrom(models) {
@@ -134,12 +146,13 @@ function statusFrom(models) {
 // (floorTasks: live newest created first, then stalled under 24 h with age_ms), each the human summary
 // plus items, workers and handoffs; task is the human summary of --task, else of status.latest, else
 // null (nothing running, or the task file is unreadable).
-function summaryOutput(tasksDir, cwd, taskId) {
+function summaryOutput(tasksDir, cwd, taskId, session) {
   const now = Date.now();
   const listed = floorTasks({ tasksDir, cwd, now });
   const status = JSON.parse(statusFrom(listed.filter((x) => x.live && x.m.state === 'running').map((x) => x.m)));
   // the ⚑ count reads the collected model, so a card parked in a child run (its driver gone on purpose) counts
   status.waiting = listed.filter((x) => x.live).reduce((s, x) => s + waitingCount(x.m), 0);
+  status.asks = asksOf(tasksDir, session);
   const id = taskId || status.latest;
   const hit = id ? listed.find((x) => x.m.task_id === id) : null;
   const m = hit ? hit.m : (id ? collectTask(tasksDir, id) : null);
@@ -148,8 +161,8 @@ function summaryOutput(tasksDir, cwd, taskId) {
 }
 
 // summaryOutput (status, tasks) plus the per-team rows and Now lines of --task (the /teams-status pane while it is open).
-function teamsOutput(tasksDir, cwd, taskId) {
-  const base = JSON.parse(summaryOutput(tasksDir, cwd, taskId));
+function teamsOutput(tasksDir, cwd, taskId, session) {
+  const base = JSON.parse(summaryOutput(tasksDir, cwd, taskId, session));
   const id = taskId || base.status.latest;
   const m = id ? collectTask(tasksDir, id) : null;
   const ok = m && !m.error;
@@ -309,9 +322,9 @@ async function main() {
   const tasksDir = args.tasksDir ? args.tasksDir : tasksRoot();
 
   if (args.once) {
-    if (args.format === 'status') { process.stdout.write(statusOutput(tasksDir, args.cwd)); return; }
-    if (args.format === 'summary') { process.stdout.write(summaryOutput(tasksDir, args.cwd, args.task)); return; }
-    if (args.format === 'teams') { process.stdout.write(teamsOutput(tasksDir, args.cwd, args.task)); return; }
+    if (args.format === 'status') { process.stdout.write(statusOutput(tasksDir, args.cwd, args.session)); return; }
+    if (args.format === 'summary') { process.stdout.write(summaryOutput(tasksDir, args.cwd, args.task, args.session)); return; }
+    if (args.format === 'teams') { process.stdout.write(teamsOutput(tasksDir, args.cwd, args.task, args.session)); return; }
     if (args.format === 'decisions') { process.stdout.write(decisionsOutput(tasksDir, args.task, args.card)); return; }
     if (args.format === 'report') { process.stdout.write(reportOutput(tasksDir, args.task)); return; }
     if (args.format === 'events') { process.stdout.write(eventsOutput(tasksDir, args.cwd, args.since || 0)); return; }
