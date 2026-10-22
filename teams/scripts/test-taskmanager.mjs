@@ -5279,6 +5279,109 @@ test('a judge that could not judge is re-judged, not treated as a refusal: no re
   });
 });
 
+// A judge denied a Bash call it needed is blocked, not rejected (the worker adapter's rule, now in
+// the daemon's judge): claude -p reports the denial on the stream's last result event.
+const stream = (...events) => events.map((e) => JSON.stringify(e)).join('\n') + '\n';
+const DENIED_STREAM = stream(
+  { type: 'system', subtype: 'init', model: 'claude-sonnet-5-5' },
+  { type: 'result', result: '{"stage_ok":false}', permission_denials: [
+    { tool_name: 'Bash', tool_use_id: 't1', tool_input: { command: 'node --test teams/scripts/test-x.mjs' } },
+    { tool_name: 'Bash', tool_use_id: 't2', tool_input: { command: 'git commit -m x' } },
+    { tool_name: 'Read', tool_use_id: 't3', tool_input: { file_path: '/x' } },
+  ] },
+);
+
+test('judgeDenials lists the Bash commands a judge needed and was denied, and nothing for a clean stream', async () => {
+  const { judgeDenials } = await import('../mcp/daemon.mjs');
+  assert.deepEqual(judgeDenials(DENIED_STREAM), ['node --test teams/scripts/test-x.mjs'], 'a guard-blocked verb and a non-Bash tool are not needs');
+  assert.deepEqual(judgeDenials(stream({ type: 'result', result: '{"stage_ok":true}', permission_denials: [] })), []);
+  assert.deepEqual(judgeDenials(stream({ type: 'result', result: '{"stage_ok":true}' })), [], 'no field at all');
+  assert.deepEqual(judgeDenials('not json\n' + stream({ type: 'assistant' })), [], 'no result event');
+  // Only the LAST result event speaks for the call.
+  assert.deepEqual(judgeDenials(DENIED_STREAM + stream({ type: 'result', result: '{}', permission_denials: [] })), []);
+});
+
+test('a judge denied a tool ends blocked: no reject counted, no retry or repair opened, autoRejudge leaves it', async () => {
+  const { autoRejudge, autoRepair, autoRetryPackages } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    let nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) });
+    nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:1' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:P2:1', payload: ok({ accept: true, match_pct: 90 }) });
+    nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['integrate:1']);
+    // What the daemon's judge() settles with on a denial (no judge_failed).
+    const v = await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: { stage_ok: false, blocked: 'tool denied', reason: 'blocked: tool denied', denied: ['node --test x'] } });
+    assert.equal(v.state, 'failed');
+    const load = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    const withRoot = (fn) => { process.env.HARNESS_TASKS_DIR = root; try { return fn(); } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; } };
+    const n = load().nodes.find((x) => x.node_id === 'integrate:1');
+    assert.equal(n.state, 'failed');
+    assert.equal(n.result.blocked, 'tool denied');
+    assert.equal(n.result.reason, 'blocked: tool denied');
+    assert.notEqual(n.result.judge_failed, true);
+    const ledger = readFileSync(join(root, task_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    const verdicts = ledger.filter((e) => e.event === 'verdict' && e.node_id === 'integrate:1');
+    assert.deepEqual(verdicts.map((x) => x.verdict), ['blocked'], 'recorded blocked, not reject');
+    assert.match(verdicts[0].reason, /blocked: tool denied/);
+    assert.equal(withRoot(() => inTx(load(), autoRejudge, n.finished_at + 26 * 60 * 60 * 1000)), false, 'autoRejudge does not reopen it');
+    assert.equal(load().nodes.find((x) => x.node_id === 'integrate:1').state, 'failed');
+    assert.equal(withRoot(() => inTx(load(), autoRepair)), false, 'a blocked integrate opens no repair package');
+    assert.equal(withRoot(() => inTx(load(), autoRetryPackages)), false, 'and retries no package');
+    assert.ok(!load().nodes.some((x) => x.feedback), 'no reject feedback was composed anywhere');
+  });
+});
+
+test('the daemon settles a judge whose stream carries a denied tool as blocked, and a clean stream as before', async () => {
+  const run = async (resultEvent) => {
+    const cwd = repo();
+    const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+    const drv = mkdtempSync(join(tmpdir(), 'tm-drv-'));
+    const judgeJs = join(drv, 'judge.mjs');
+    writeFileSync(judgeJs, `process.stdout.write(${JSON.stringify(JSON.stringify(resultEvent))} + '\\n');\n`);
+    const hang = join(drv, 'hanging-driver.mjs');
+    writeFileSync(hang, 'setInterval(() => {}, 1000);\n');
+    const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_JUDGE_DRIVER: `node ${judgeJs}`, HARNESS_CHILD_DRIVER: `node ${hang}`, CLAUDECODE: '1' }).init();
+    try {
+      const open = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'a request whose size must be judged', cwd, vendor: 'self' });
+      let size = null;
+      await waitFor(async () => {
+        const st = await tm.call('tm_status', { task_id: open.task_id, full: true });
+        size = (st.nodes || []).find((x) => x.stage === 'size');
+        return size && (size.state === 'done' || size.state === 'failed');
+      }, 'the size judge to settle', 30000);
+      const stored = JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8')).nodes.find((x) => x.stage === 'size');
+      return stored;
+    } finally {
+      tm.close();
+      try {
+        for (const line of readFileSync(join(root, readdirSync(root)[0], 'ledger.jsonl'), 'utf8').split('\n')) {
+          const e = line.trim() ? JSON.parse(line) : null;
+          if (e && e.event === 'daemon_spawned') { try { process.kill(e.pid, 'SIGKILL'); } catch { /* gone */ } }
+        }
+      } catch { /* no ledger */ }
+      killDriversIn(drv);
+      rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+      rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+      rmSync(drv, { recursive: true, force: true });
+    }
+  };
+  const blocked = await run({ type: 'result', result: JSON.stringify({ stage_ok: true, size: 'S' }), permission_denials: [{ tool_name: 'Bash', tool_use_id: 't', tool_input: { command: 'node --test x' } }] });
+  assert.equal(blocked.state, 'failed');
+  assert.equal(blocked.result.blocked, 'tool denied');
+  assert.equal(blocked.result.reason, 'blocked: tool denied');
+  assert.notEqual(blocked.result.judge_failed, true, 'judge_failed would make autoRejudge ask again');
+  const clean = await run({ type: 'result', result: JSON.stringify({ stage_ok: true, size: 'S', reason: 'small' }), permission_denials: [] });
+  assert.equal(clean.state, 'done');
+  assert.equal(clean.result.blocked, undefined);
+});
+
 test('tm_events tails the ledger, newest last, filtered by since', async () => {
   await withTask(async ({ tm, task_id, root }) => {
     const all = await tm.call('tm_events', { task_id });
@@ -7541,6 +7644,57 @@ test('Card 39: an accept below the floor whose only gap fails on the base commit
       const b = nodeOf(onPackage, 'accept:P1:1');
       assert.equal(b.state, 'failed', 'a failure the base does not have still fails on the floor');
       assert.deepEqual(b.result.exclusions || [], []);
+    });
+  } finally {
+    __baseFail.run = prior;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// The pre-judge step: the daemon strikes a base failure before the judge is called, so the briefing
+// the judge receives never names it. Same seam, no suite on a real base; the judge is a stub.
+test('Card 39 (pre-judge): the judge briefing leaves out a failure the base commit also has, and keeps a control failure that is not on the base', async () => {
+  const { composeTaskPrompt, taskPath, __baseFail } = await import('../mcp/taskmanager.mjs');
+  const daemon = await import('../mcp/daemon.mjs');
+  const cwd = repo();
+  const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim();
+  const prior = __baseFail.run;
+  try {
+    await withBoxRoot(async () => {
+      const run_id = '0000aaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+      const checks = ['node --test the-suite.mjs -> not ok 1 - basefoo\nnot ok 2 - ctrlbar\n# fail 2'];
+      const child = { run_id: 'child1', nodes: [
+        { node_id: 'gate:goal:1', stage: 'gate', subgoal_id: null, state: 'done', result: { stage_ok: true, accept: false, match_pct: 72, gaps: ['test basefoo fails', 'test ctrlbar fails'], checks } },
+      ] };
+      mkdirSync(join(cwd, '.teams_output', 'broker', 'runs'), { recursive: true });
+      writeFileSync(join(cwd, '.teams_output', 'broker', 'runs', 'child1.json'), JSON.stringify(child));
+      const path = taskPath(run_id);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, JSON.stringify({
+        run_id, kind: 'task', store_path: path, cwd, request: 'r', created_at: Date.now(), max_retries: 2,
+        spec: { packages: [{ id: 'P1', title: 'a', acceptance: ['a'], deps: [] }] },
+        nodes: [
+          { node_id: 'dispatch:P1:1', stage: 'dispatch', subgoal_id: 'P1', deps: [], after: [], state: 'done', attempt: 1, base_commit: sha,
+            child: { cwd, run_id: 'child1', branch: 'HEAD' },
+            result: { stage_ok: true, accept: false, match_pct: 72, child_run_id: 'child1', child_cwd: cwd, branch: 'HEAD', child_state: 'done',
+              gaps: ['test basefoo fails', 'test ctrlbar fails'], report: 'built it\nsaw basefoo fail in the suite\nsaw ctrlbar fail in the suite' } },
+          { node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', deps: ['dispatch:P1:1'], after: [], state: 'pending', attempt: 1 },
+        ],
+      }));
+      // The base fails only basefoo (twice), so ctrlbar is the package's own.
+      __baseFail.run = () => ({ status: 1, stdout: 'not ok 1 - basefoo\n# fail 1\n', stderr: '' });
+      let briefing = null;
+      await daemon.stepOnce(run_id, { judge: async (task, node) => {
+        briefing = composeTaskPrompt(task, node);
+        return { stage_ok: false, reason: 'stub judge' };
+      } });
+      assert.ok(briefing, 'the stub judge was called');
+      assert.doesNotMatch(briefing, /test basefoo fails|saw basefoo fail/, 'the base failure is not in the judge briefing');
+      assert.match(briefing, /excluded \(also fails on base [0-9a-f]{7}\): basefoo/, 'it is listed apart, not dropped silently');
+      assert.match(briefing, /test ctrlbar fails/, 'a control failure that is not on the base is still briefed');
+      assert.match(briefing, /saw ctrlbar fail/);
+      const saved = JSON.parse(readFileSync(path, 'utf8'));
+      assert.deepEqual(saved.base_exclusions.P1.map((e) => e.test), ['basefoo'], 'persisted on the task');
     });
   } finally {
     __baseFail.run = prior;

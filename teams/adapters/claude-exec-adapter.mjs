@@ -7,6 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'nod
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
+import { DISALLOWED_BASH, neededDenials } from '../mcp/denials.mjs';
 
 const args = process.argv.slice(2);
 const opts = { sandbox: 'workspace-write', addDirs: [] };
@@ -37,26 +38,6 @@ const withWiki = Boolean(wikiRoot) && !opts['no-wiki'] && !opts.detect;
 const mcpConfig = withWiki
   ? JSON.stringify({ mcpServers: { 'teams-wiki': { command: process.execPath, args: [fileURLToPath(new URL('../mcp/wiki.mjs', import.meta.url)), '--root', wikiRoot] } } })
   : '{"mcpServers":{}}';
-
-// The Bash verbs a read-only --verify node must not run. One list for the CLI flag and for the
-// denial check: a denied command on it is the guard working, not a tool the node needed.
-const DISALLOWED_BASH = [
-  'Bash(git commit:*)', 'Bash(git push:*)', 'Bash(git add:*)', 'Bash(git rm:*)',
-  'Bash(git reset:*)', 'Bash(git checkout:*)', 'Bash(git merge:*)', 'Bash(git stash:*)',
-  'Bash(git apply:*)', 'Bash(rm:*)', 'Bash(mv:*)', 'Bash(cp:*)', 'Bash(chmod:*)',
-  'Bash(sed -i:*)',
-];
-const DISALLOWED_PREFIXES = DISALLOWED_BASH.map(p => p.match(/^Bash\((.*):\*\)$/)[1]);
-
-// Bash commands the claude -p json envelope reports denied that the node needed and this
-// adapter never blocked on purpose.
-function neededDenials(envelope) {
-  const denials = Array.isArray(envelope?.permission_denials) ? envelope.permission_denials : [];
-  return denials
-    .filter(d => d?.tool_name === 'Bash' && typeof d.tool_input?.command === 'string')
-    .map(d => d.tool_input.command)
-    .filter(cmd => !DISALLOWED_PREFIXES.some(p => cmd.trim() === p || cmd.trim().startsWith(`${p} `)));
-}
 
 async function invoke(prompt) {
   const readOnly = opts.sandbox === 'read-only';
