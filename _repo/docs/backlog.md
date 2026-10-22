@@ -11,15 +11,19 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
 
 ### Mods and naming — UI first (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
 
-46. **Tasks, branches and worktrees named in words a person can read**
-    - Why: user, 2026-10-17: "backlog harness의 티캣,을 4522629같은거 말고 자연어로 정하면 더 좋을 것
-      같음 사람이 알 수 있게", with an Orca sidebar screenshot: worktrees listed as
-      `harness/45422629/P2`, `harness/4607a6a6/PLAN-F3`, `harness/e4aa64a3/PLAN-F5` … — nothing says
-      what each is, and finished tasks' worktrees and branches pile up (17+ `harness/*` branches seen).
-    - Acceptance: an EPIC gets a short readable slug from its request (e.g. `skeleton-gaps-develop`)
-      used in the ticket key, branch and worktree names (`teams/skeleton-gaps-develop/P2-memo-pane`);
-      old `E-xxxxxxxx` keys still resolve; a finished task's worktrees and merged branches are
-      removed (or listed by `tm_clean`); tests cover naming, collisions and old-key lookup.
+46. **Readable names, follow-up: pane demo, collision scope, Korean slugs**
+    - Why: E-e32398ec (card 46, merged 2026-10-22) shipped `teams/<slug>/<Pid>-<pkg>` names and the
+      slug column; its report leaves: mod.md 0-4 not done for the slug column (live tmux 190/110,
+      README shot, demo approval); `uniqueSlug` counts same-cwd tasks, not the git common dir (a
+      linked worktree opening the same request gets the same slug and fails at dispatch); Korean
+      romanization keeps particles (`harness-ui-tikaet-eul-gateungeo`); a leftover
+      `teams/<slug>/PLAN-F1-*` branch survives `tm_clean` and pushes the next same request to `-2`.
+    - Demo 2026-10-22 (tmux, fictional fixture): the pane is ~78 cols at a 190 screen and ~46 at 110;
+      the slug column eats the title ("메모…", "Add…") at 190, and at 110 the title, state word and
+      count are all gone — the row is only key + slug. The slug repeats the title (rule 0).
+      Proposed: no slug column in the pane rows; the slug in the Report header and `view.mjs` only.
+    - Acceptance: the pane slug column demo approved; collisions counted per git common dir;
+      Korean particles dropped from slugs (test with the user's sentence).
 
 59. **Mod tests check the node logic, not a hand-copied mirror; size-S spec checks can fail**
     - Why: E-eccf9590 (card 58, merged `0b85840a`, 2026-10-22) report: `teams/hooks/mod.test.ts`
@@ -109,6 +113,14 @@ toasts).
         reaps the finished ones in one action.
 
 ### teams plugin bugs
+
+60. **A finished, cleaned size-S task reads `stalled · impl`; titles cut at a file name's dot**
+    - Why: 2026-10-22, `view.mjs --once` right after `tm_clean` of E-e32398ec (DONE a minute before):
+      it and every earlier merged size-S task (E-eccf9590, E-0b008dc4, E-a213de5b …) show
+      `stalled · impl`; titles stop at the first `.` even inside a path — "Backlog card 46
+      (_repo/docs/backlog". Cause unverified: the ledger still has `daemon_done state:complete`; it read DONE until the
+      worktree (and its `.harness-run/`) was removed, so the size-S state likely comes from there.
+    - Acceptance: a done task stays DONE after `tm_clean` (test); a title keeps `backlog.md` whole.
 
 39. **Finish card 39: tool denial in the task manager's own judges, base exclusion before scoring**
     - Why: E-64cda2b0 (merged by hand 2026-10-20, `2c160959`..`ebbe1787`) shipped subset integrate,
