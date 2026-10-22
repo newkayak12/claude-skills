@@ -171,11 +171,10 @@ toasts).
       per part (meta, problem, decision, result, learned, gaps, history). Nice to have later: knowledge
       can build over these folders. Order: "글감모으기부터 시작" — collection first.
     - Step 1 shipped 2026-10-21 (`portfolio:material`, `666b7283`): tests 17/17; real run on fictional
-      material made 2 items × 7 parts + index, re-run changed nothing. Left: item id repeats the title
-      (`retro-md-검색-api-지연--검색-api-지연`); index ids not linked to folders; `user-stated` vs
-      `근거 없음` applied inconsistently to a figure whose cited capture was not handed over; agents also
-      reported an unreliable open-gaps count in the summary, an empty result table for episodes with no
-      figures, add-on material from another file read as ambiguous. Next: write step.
+      material made 2 items × 7 parts + index, re-run changed nothing. Its six leftovers fixed
+      2026-10-22 (id no longer repeats the title, index links folders, a figure citing a document not
+      handed over is `근거 없음`, `gaps` counts open questions, `수치 없음` line for no-figure episodes,
+      a merged second source is recorded and matches `same`): tests 20/20, real run confirmed each.
     - Step 2 (user, 2026-10-21, with a PRD and session findings from real deck work kept outside the repo —
       real names in them): "이건 portfolio 작업하는건데 스킬로 빼버리고 deck-builder, portfolio-feedback
       등 사용해서 강화하게 하고" — a new `portfolio:manage` skill owns skeleton → deck.mdx, versions

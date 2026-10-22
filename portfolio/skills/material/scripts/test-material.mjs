@@ -142,10 +142,10 @@ test('index: every item once with status; N then N+1 rows; re-run is byte identi
   const r2 = run(cwd, ['index']).json;
   assert.equal(r2.rows.length, 4);
   assert.deepEqual(r2.skipped, ['nometa']);
-  const body = fs.readFileSync(idx, 'utf8').split('\n').filter((l) => /^\| [a-d] \|/.test(l));
+  const body = fs.readFileSync(idx, 'utf8').split('\n').filter((l) => /^\| \[[a-d]\]/.test(l));
   assert.equal(body.length, 4);
   assert.equal(new Set(body).size, 4);
-  assert.ok(body[0].startsWith('| a | T a | raw | resume.md#a |'));
+  assert.ok(body[0].startsWith('| [a](a/meta.md) | T a | raw | resume.md#a |'));
 });
 
 test('foreign: lists hand-made files; no subcommand modifies them', () => {
@@ -222,7 +222,39 @@ test('status guard: step 1 never changes status; --status needs --later-step, el
   run(cwd, ['log', '--id', 'a', '--note', 'step-1 note']);
   run(cwd, ['index']);
   assert.match(fs.readFileSync(path.join(mat, 'a/meta.md'), 'utf8'), /^status: raw$/m);
-  assert.match(fs.readFileSync(path.join(mat, 'index.md'), 'utf8'), /\| a \| T a \| raw \|/);
+  assert.match(fs.readFileSync(path.join(mat, 'index.md'), 'utf8'), /\| \[a\]\(a\/meta\.md\) \| T a \| raw \|/);
+});
+
+test('id: a source that already ends in the title does not repeat it', () => {
+  const { cwd } = project();
+  assert.equal(run(cwd, ['id', '--source', 'retro.md#검색 API 지연', '--title', '검색 API 지연']).json.id, 'retro-md--검색-api-지연');
+  assert.equal(run(cwd, ['id', '--source', 'retro.md', '--title', '검색 지연']).json.id, 'retro-md--검색-지연');
+});
+
+test('match: a linked index row still matches; a merged second source is same afterwards', () => {
+  const { cwd } = project();
+  init(cwd, 'a', 'Search latency', 'retro.md#a');
+  run(cwd, ['index']);
+  fs.rmSync(path.join(cwd, 'material/a/meta.md'));
+  assert.equal(run(cwd, ['match', '--id', 'a', '--source', 'retro.md#a', '--title', 'Search latency']).json.result, 'same');
+  const { cwd: c2 } = project();
+  init(c2, 'a', 'Search latency', 'retro.md#a');
+  assert.equal(run(c2, ['match', '--id', 'x', '--source', 'notes.md', '--title', 'Search latency']).json.result, 'ambiguous');
+  const added = run(c2, ['log', '--id', 'a', '--note', 'merged notes.md', '--add-source', 'notes.md']).json;
+  assert.match(added.line, /source added: notes\.md/);
+  assert.match(fs.readFileSync(path.join(c2, 'material/a/meta.md'), 'utf8'), /^source: retro\.md#a\nalso: notes\.md$/m);
+  assert.equal(run(c2, ['match', '--id', 'x', '--source', 'notes.md', '--title', 'Search latency']).json.result, 'same');
+  assert.equal(run(c2, ['log', '--id', 'a', '--note', 'merged notes.md', '--add-source', 'notes.md']).json.result, 'unchanged');
+});
+
+test('gaps: counts open and answered questions per item from gaps.md', () => {
+  const { cwd } = project();
+  init(cwd, 'a'); init(cwd, 'b');
+  fs.appendFileSync(path.join(cwd, 'material/a/gaps.md'), '- [result] 기준은?\n- [problem] 언제?\n');
+  run(cwd, ['answer', '--id', 'a', '--question', '[problem] 언제?', '--citation', 'notes.md#1']);
+  const r = run(cwd, ['gaps']).json;
+  assert.equal(r.open, 1);
+  assert.deepEqual(r.items, [{ id: 'a', open: 1, answered: 1 }, { id: 'b', open: 0, answered: 0 }]);
 });
 
 const QUESTION = '[result] 40% 단축은 무엇을 기준으로 측정했나요?';
