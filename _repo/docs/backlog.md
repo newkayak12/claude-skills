@@ -66,6 +66,23 @@ toasts).
       through `tm_submit`, works with `modules` removed; C: a STORY's question to the TeamLeader is
       answered or forwarded and recorded as `asked`/`answered` in `ledger.jsonl`, with tests; the
       Floor feed (card 41) shows both.
+    - B shipped on branch `card49b-ask-band` (2026-10-22): the poll delivers live (`RESULT LIVE-POLL`);
+      the send is held by Claude Code, see card 60. C is still open; keep this card.
+
+59. **tm_open records a stale opener after /clear**
+    - Why: live 2026-10-22 (card 49B check): after `/clear` the session id changed
+      (`~/.claude/sessions/<pid>.json`), but the taskmanager MCP keeps the pre-/clear
+      `CLAUDE_CODE_SESSION_ID`. A task opened after `/clear` records the dead id as `opener`, so its asks
+      never match the mod's `--session` and never reach the band.
+    - Acceptance: the opener follows the current session id (e.g. read `~/.claude/sessions/<ppid>.json`,
+      ppid == the claude pid, env as fallback), with a test.
+
+60. **A driver's ask message is held by Claude Code's cross-session permission check**
+    - Why: live 2026-10-22 (card 49B check): when driver and person differ in permission-mode class,
+      Claude Code holds the peer message (`crossSessionInbound`); a modal hides the band and Esc declines
+      it. The poll carried the ask (`RESULT LIVE-POLL`); `received` was never written.
+    - Acceptance: decide the policy (accept, or skip the send and rely on the poll); the receive side
+      verified live.
 
 ### Repo and rules
 
@@ -121,6 +138,12 @@ toasts).
       hot-patched until the next teams bump.
     - Acceptance: a task-manager judge denied Bash reads `blocked: tool denied` (test); excluded base
       failures are removed from the briefing before the judge scores.
+
+61. **Interactive L task ignores roles.planning:false and the human_gates card**
+    - Why: live 2026-10-22: in an interactive L task, `roles.planning:false` in `team.json` did not stop
+      the planning flow (PLAN-F1/F2 ran), and `human_gates: ["gate"]` did not produce the card. Cause
+      unverified.
+    - Acceptance: cause found; `planning:false` skips planning and a listed gate parks its card, with a test.
 
 ### knowledge plugin
 
