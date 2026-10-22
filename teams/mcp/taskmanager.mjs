@@ -422,6 +422,8 @@ function createTask(a) {
     // scheduling or execution ever reads it. null (the default) keeps every EPIC ungrouped,
     // exactly today's behaviour.
     initiative: T.initiative,
+    // Who opened the task: the person's session id, which drivers and the band need (§7 of _repo/docs/plans/mod/2026-10-17-subagent-communication.md); the MCP env is the only source.
+    opener: { session_id: process.env.CLAUDE_CODE_SESSION_ID || null, entrypoint: process.env.CLAUDE_CODE_ENTRYPOINT || null },
     request: withSharedAcceptance(requests ? composeBacklogRequest(requests) : String(a.request), a.shared_acceptance),
     requests, // null for the ordinary single-request task - the byte-for-byte compat case.
     context: [priorRetro.text, a.context || ''].filter(Boolean).join('\n\n'),
@@ -2816,6 +2818,12 @@ function childContext(task, pkg) {
 // graph loop to the end; the manager waits and folds the result. Manager context per package:
 // a few lines.
 
+// The person's session id for a child process, read from the task record, not this process's env.
+export function openerEnv(task) {
+  const id = task && task.opener && task.opener.session_id;
+  return id ? { TEAMS_OPENER_SESSION_ID: id, TEAMS_TASK_ID: task.run_id } : {};
+}
+
 export function driverArgv(task = null, o = {}) {
   // Tests (and anyone with a different CLI) replace the whole command line here; the prompt is
   // always appended as the last argument.
@@ -2889,6 +2897,7 @@ function spawnChildDriver(task, nodeIdLabel, child, opts = {}) {
     if (process.env.HARNESS_TASKS_DIR) env.HARNESS_TASKS_DIR = tasksRoot();
     // The project wiki lives in the main project, never in a worktree a child may run in.
     env.TEAMS_WIKI_ROOT = task.cwd;
+    Object.assign(env, openerEnv(task));
     if (opts.env) Object.assign(env, opts.env);
     const prompt = opts.prompt || driverPrompt(task, child, opts);
     const proc = spawn(argv[0], [...argv.slice(1), prompt], {
@@ -3200,6 +3209,7 @@ function spawnDaemonProcess(task, attempt) {
     delete env.CLAUDECODE; // a nested claude -p (the daemon's own judge calls) refuses to start with it set
     if (process.env.HARNESS_TASKS_DIR) env.HARNESS_TASKS_DIR = tasksRoot();
     env.TEAMS_WIKI_ROOT = task.cwd;
+    Object.assign(env, openerEnv(task)); // the drivers this daemon spawns inherit it
     const proc = spawn(argv[0], [...argv.slice(1)], { cwd: task.cwd, env, detached: true, stdio: ['ignore', out, err] });
     try {
       proc.on('exit', (code, signal) => {
