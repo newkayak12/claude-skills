@@ -263,6 +263,10 @@ export function harnessState(task) {
     const why = `the harness goal gate did not accept${v.match_pct != null ? ` (match ${v.match_pct})` : ''}${v.gaps.length ? `: ${v.gaps.slice(0, 3).join('; ')}` : ''}`;
     return { state: 'partial', partial: true, partial_reasons: [why], counts: {} };
   }
+  if ((!v || v.readable === false) && h.finished_at) {
+    if (h.accepted !== false) return { state: 'complete', counts: {} };
+    return { state: 'partial', partial: true, partial_reasons: ['the harness goal gate did not accept'], counts: {} };
+  }
   if (h.waiting_capacity || !h.driver || driverAlive(h.driver)) return { state: 'running', counts: {} };
   if (countedDriverRestarts(task, h.driver).length >= restartBudget(task)) {
     return { state: 'blocked', counts: {}, reason: 'the harness driver died past its restart budget with its run unfinished' };
