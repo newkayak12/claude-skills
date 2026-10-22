@@ -3,7 +3,7 @@
 //   node --test teams/scripts/test-view-events.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { notableEvents, statusLine } from './lib/view-events.mjs';
+import { notableEvents, statusLine, handoffs } from './lib/view-events.mjs';
 
 const L = (o) => JSON.stringify(o);
 const ID = 'E-1a2b3c4d5e6f';
@@ -404,4 +404,49 @@ test('--format events: a failed node_finish carries reason, next_step and severi
     // since inside the hold window of a held event: the file is still read (mtime window), the event comes out
     assert.deepEqual(lines(cli(f, '--format', 'events', '--since', '1100')).filter((e) => e.task_id === RUN_ID).map((e) => e.ts), [1003 + HOLD]);
   } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+// ---------- part C: the story-ask exchange as hand-offs (ledger lines in teams/mcp/storyask.mjs's shape) ----------
+const ASK_ID = '3f0c2a52-8d1e-4a6b-9a53-2d6c1c9d7e10';
+const asked = (ts, question) => L({ ts, event: 'asked', task_id: ID, key: 'E-1a2b3c4d/P3', node_id: 'dispatch:P3:1', question, ask_id: ASK_ID });
+const answered = (ts, by, answer, route = by === 'person' ? 'forward' : 'answer') => L({ ts, event: 'answered', task_id: ID, key: 'E-1a2b3c4d/P3', node_id: 'dispatch:P3:1', answer, by, route, ask_id: ASK_ID });
+const hand = (lines) => handoffs(lines).map(({ from, what, to }) => ({ from, what, to }));
+
+test('hand-offs: an asked line reads P3 -> TeamLeader "question"', () => {
+  assert.deepEqual(hand([asked(10, 'is amount in cents?')]), [{ from: 'P3', what: 'is amount in cents?', to: 'TeamLeader' }]);
+});
+
+test('hand-offs: an answer by the team leader reads TeamLeader -> P3', () => {
+  assert.deepEqual(hand([answered(10, 'teamleader', 'cents, see the plan')]), [{ from: 'TeamLeader', what: 'cents, see the plan', to: 'P3' }]);
+});
+
+test('hand-offs: an answer by the person reads you -> P3', () => {
+  assert.deepEqual(hand([answered(10, 'person', 'cents')]), [{ from: 'you', what: 'cents', to: 'P3' }]);
+});
+
+test('hand-offs: a question or answer past the clip limit ends in an ellipsis', () => {
+  const long = 'x'.repeat(200);
+  const [a, b] = hand([asked(10, long), answered(20, 'person', long)]).map((h) => h.what).reverse();
+  for (const w of [a, b]) {
+    assert.equal(w.length, 60);
+    assert.ok(w.endsWith('…'), w);
+  }
+});
+
+test('hand-offs: tm_submit_human with an ask_id yields no line; without one it is you -> card', () => {
+  const sub = (extra) => L({ ts: 10, event: 'tm_submit_human', task_id: ID, key: 'E-1a2b3c4d/P3/ask:P3:1', node_id: 'ask:P3:1', answer: 'keep it', ...extra });
+  assert.deepEqual(hand([sub({ ask_id: ASK_ID })]), []);
+  assert.deepEqual(hand([sub({})]), [{ from: 'you', what: 'keep it', to: 'P3' }]);
+});
+
+test('hand-offs: a forwarded answer is drawn once - the answered line, not the submit as well', () => {
+  const sub = L({ ts: 9, event: 'tm_submit_human', task_id: ID, key: 'E-1a2b3c4d/P3/ask:P3:1', node_id: 'ask:P3:1', answer: 'cents', ask_id: ASK_ID });
+  assert.deepEqual(hand([sub, answered(10, 'person', 'cents')]), [{ from: 'you', what: 'cents', to: 'P3' }]);
+});
+
+test('hand-offs: the waiting_human line is unchanged (literal from the code before part C)', () => {
+  const out = handoffs([L({ ts: 7000, event: 'waiting_human', task_id: ID, node_id: 'ask:P3:1' })]);
+  assert.equal(JSON.stringify(out[0]), JSON.stringify({ time: out[0].time, from: 'P3', what: 'asks you', to: 'you' }));
+  assert.deepEqual(Object.keys(out[0]), ['time', 'from', 'what', 'to']);
+  assert.deepEqual(hand([L({ ts: 7000, event: 'waiting_human', task_id: ID, node_id: 'ask:P3:1' })]), [{ from: 'P3', what: 'asks you', to: 'you' }]);
 });
