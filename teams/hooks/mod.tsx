@@ -760,7 +760,8 @@ export const register: Register = on => {
     }
 
     // a card waits on a person: ⚑ leads the row, with or without a running task
-    const flagged = (info?.waiting ?? 0) > 0 || (task?.you.count ?? 0) > 0
+    // status.asks is not cwd-scoped like waiting: a card from another repo's task can address this session
+    const flagged = (info?.waiting ?? 0) > 0 || (task?.you.count ?? 0) > 0 || (info?.asks?.length ?? 0) > 0
     const isRunning = info?.latest != null && task?.state === 'running'
     if (e.props.hasSurvey || (!flagged && !isRunning)) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
@@ -781,7 +782,7 @@ export const register: Register = on => {
           <Box>
             {flag}
             {asked}
-            <Box flexShrink={0}><Button key="inbox" label={inboxLabel(Math.max(info?.waiting ?? 0, task?.you.count ?? 0))} onPress={open} /></Box>
+            <Box flexShrink={0}><Button key="inbox" label={inboxLabel(Math.max(info?.waiting ?? 0, task?.you.count ?? 0, asks.length))} onPress={open} /></Box>
           </Box>
           {await next(e)}
         </Box>
@@ -798,8 +799,8 @@ export const register: Register = on => {
             <Text color="inactive">{'─'.repeat(10 - (task.total > 0 ? Math.round((10 * task.done) / task.total) : 0))}</Text>
             <Text dimColor>{` ${s('bandDone', { done: task.done, total: task.total })}`}</Text>
           </Box>
-          {(info?.waiting ?? 0) > 0
-            ? <Box flexShrink={0} marginLeft={1}><Button key="inbox" label={inboxLabel(info?.waiting ?? 0)} onPress={open} /></Box>
+          {Math.max(info?.waiting ?? 0, asks.length) > 0
+            ? <Box flexShrink={0} marginLeft={1}><Button key="inbox" label={inboxLabel(Math.max(info?.waiting ?? 0, asks.length))} onPress={open} /></Box>
             : <Box flexShrink={0} marginLeft={1}><Button key="board" label={s('board')} onPress={open} /></Box>}
         </Box>
         {await next(e)}

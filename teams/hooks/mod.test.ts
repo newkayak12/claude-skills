@@ -1814,6 +1814,14 @@ for (const surface of SURFACES) {
     expect(await labels(ui)).toContain('1 question for you')
   })
 
+  test(`${surface}: band ask from another repo (waiting 0, no task) still shows the ask row`, async ($, on) => {
+    await seeded($, on, { status: stat({ waiting: 0, latest: null, asks: [ASK] }), task: null }, surface)
+    const ui = await band($, surface)
+    expect(await ui.find({ type: 'Text', text: 'P2 asks you: Keep the legacy PDF route?' })).toBeDefined()
+    expect((await allTexts(ui))[0]).toBe('⚑')
+    expect(await labels(ui)).toContain('1 question for you')
+  })
+
   test(`${surface}: band ko label exact`, async ($, on) => {
     await seeded($, on, { status: stat({ waiting: 1, asks: [ASK] }), task: demo() }, surface, 'ko')
     expect(await (await band($, surface)).find({ type: 'Text', text: 'P2님이 묻습니다: Keep the legacy PDF route?' })).toBeDefined()
