@@ -192,17 +192,68 @@ test('an unanswered recap fork ends recap-failed:<reason>', async ($, on) => {
   expect(w.compacts()).toBe(0)
 })
 
-test('compact rejecting every attempt ends compact-failed', async ($, on) => {
+test('compact rejecting every attempt ends compact-failed:<error text>', async ($, on) => {
   const w = logWorld(on, {
     percent: 75,
     compact: () => {
-      throw new Error('turn still running')
+      throw new Error('turn still running\nsecond line')
     },
   })
   await $.turn.complete(TURN)
-  for (let i = 0; i < 40 && w.log()[0]?.outcome !== 'compact-failed'; i++) await w.clock.advance(500)
-  await until(() => w.log()[0]?.outcome === 'compact-failed', 'compact-failed')
-  expect(w.compacts()).toBe(20)
+  for (let i = 0; i < 40 && !w.log()[0]?.outcome?.startsWith('compact-failed'); i++) {
+    await w.clock.advance(500)
+    await new Promise(r => setTimeout(r, 2))
+  }
+  await until(() => w.log()[0]?.outcome?.startsWith('compact-failed'), 'compact-failed')
+  expect(w.log()[0].outcome).toMatch(/^compact-failed:[^\n]+$/)
+})
+
+const TOOL = { tool: 'Read', file_path: '/x' } as never
+
+test('a turn crossing the threshold mid-way recaps and compacts once', async ($, on) => {
+  let calls = 0
+  const w = logWorld(on, {
+    usage: () => ({ value: { startedAt: 0, context: { window: 100, tokens: 1, percent: ++calls === 2 ? 80 : 10 }, rateLimits: [] } }),
+  })
+  on('tool.call', () => ({ result: 'done', text: '' }) as never)
+  await $.tool.call(TOOL)
+  expect(w.forks()).toBe(0)
+  await $.tool.call(TOOL)
+  await until(() => w.compacts() === 1, 'mid-turn compact')
+  await $.turn.complete(TURN)
+  await until(() => w.log().some(l => l.outcome === 'compacted'), 'compacted')
+  await new Promise(r => setTimeout(r, 20))
+  expect(w.compacts()).toBe(1)
+  expect(w.forks()).toBe(1)
+})
+
+test('compact rejected while the turn runs is retried at turn end', async ($, on) => {
+  let turnOver = false
+  const w = logWorld(on, {
+    percent: 90,
+    compact: () => {
+      if (!turnOver) throw new Error('turn running')
+      return SUMMARY
+    },
+  })
+  on('tool.call', () => ({ result: 'done', text: '' }) as never)
+  await $.tool.call(TOOL)
+  await until(() => w.compacts() >= 1, 'first rejected compact')
+  const before = w.compacts()
+  for (let i = 0; i < 24; i++) {
+    await w.clock.advance(500)
+    await new Promise(r => setTimeout(r, 2))
+  }
+  expect(w.compacts()).toBe(before)
+  expect(w.log()[0].outcome).toBe('pending')
+  turnOver = true
+  await $.turn.complete(TURN)
+  for (let i = 0; i < 6 && w.log()[0]?.outcome !== 'compacted'; i++) {
+    await w.clock.advance(500)
+    await new Promise(r => setTimeout(r, 2))
+  }
+  await until(() => w.log()[0]?.outcome === 'compacted', 'compacted at turn end')
+  expect(w.compacts()).toBe(before + 1)
 })
 
 test('the log keeps the newest 50', async ($, on) => {

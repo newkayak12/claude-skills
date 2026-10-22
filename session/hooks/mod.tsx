@@ -22,7 +22,7 @@ import type { Done, Task } from './timer.ts'
 import { DENIALS_KEY, register as registerGuard } from './guard.tsx'
 import { register as registerMemo } from './memo.tsx'
 import { register as registerHint } from './hint.ts'
-import { register as registerCompact } from './compact.tsx'
+import { midTurnCheck, register as registerCompact, turnEnd } from './compact.tsx'
 import { aliveCount, register as registerAgents } from './agents.tsx'
 
 const tab = atom({ plugin: 'session', key: 'tab' } as const, 'retro' as 'retro' | 'orphans')
@@ -491,6 +491,7 @@ export const register: Register = (on, options) => {
       at = (await $.clock.now()) as number
     } catch {}
     const result = await next(e)
+    await midTurnCheck($, e, options)
     const r = result as { deny?: string; isError?: boolean; result?: { stdout?: string } }
     await track($, l => {
       let out = at > 0 ? addStep(l, at) : l
@@ -517,6 +518,7 @@ export const register: Register = (on, options) => {
   registerAgents(on, options)
 
   on('turn.complete', async ($, e, next) => {
+    turnEnd(e)
     if (e.agentId === undefined) {
       await track($, endTurn)
       if ((await $.session.surfaces()).length > 0) {

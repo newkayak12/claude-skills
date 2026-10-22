@@ -106,7 +106,7 @@ At a context % you choose, the session is first asked for a recap built around t
 | `/smart-compact <10-95>` | set it; `60` and `60%` both work |
 | `/smart-compact log` | the last 10 checks, newest first: `23% vs 10% → recapping → compacted` |
 
-The same value is the **Smart compact threshold (%)** row in `/config`. It runs after a main-loop turn that ended with an answer, in interactive sessions only; never for subagents. If the recap fails it does nothing and the built-in auto-compact takes over. Set it below the auto-compact point, or auto-compact fires first: the % is of the model's whole window as the status line shows it, so on a 1M window 70% is 700k tokens.
+The same value is the **Smart compact threshold (%)** row in `/config`. It runs after a main-loop turn that ended with an answer, and usage is also checked between tool calls inside a long turn; if compact is rejected mid-turn, it waits for the turn to end. Interactive sessions only; never for subagents. If the recap fails it does nothing and the built-in auto-compact takes over. Set it below the auto-compact point, or auto-compact fires first: the % is of the model's whole window as the status line shows it, so on a 1M window 70% is 700k tokens.
 
 Each check of an interactive main-loop turn is kept in a 50-entry log (raw %, threshold, decision, outcome) that `/smart-compact log` prints. Subagent and headless turns are only counted in the process, shown on `/smart-compact`, which also shows log write errors.
 
