@@ -85,18 +85,24 @@ function waitingOf(m, cards) {
 }
 
 // Each card waiting on a person with the question it asks (the ask card's text; blank when it has none).
+// `who` is the STORY label (E-aaaaaaaa/P2/U1 -> P2), the EPIC key for an EPIC-level card; `since` is
+// when the waiting node parked (ms) or null.
+const whoOf = (key) => (String(key).split('/')[1] || String(key));
+const sinceOf = (nodes) => nodes.map((n) => n.waiting_since).find((t) => typeof t === 'number') || null;
 function waitingCards(m, cards) {
   const out = [];
   for (const { c } of cards) {
     const nodes = [c.dispatch, c.accept, ...((c.child && c.child.nodes) || [])].filter((n) => n && n.state === 'waiting_human');
     if (!nodes.length) continue;
     const question = nodes.flatMap((n) => n.questions || [])[0] || '';
-    out.push({ key: c.ticket_key || String(c.id), title: c.title || 'a card', question });
+    const key = c.ticket_key || String(c.id);
+    out.push({ key, title: c.title || 'a card', question, who: whoOf(key), since: sinceOf(nodes) });
   }
+  const epic = (m.ticket && m.ticket.key) || '';
   for (const n of [...(m.manager_stages || []), ...((m.s_run && m.s_run.nodes) || [])]) {
-    if (n.state === 'waiting_human') out.push({ key: (m.ticket && m.ticket.key) || '', title: HUMAN_STAGE[stageOfNode(n.node_id)] || 'a step', question: (n.questions || [])[0] || '' });
+    if (n.state === 'waiting_human') out.push({ key: epic, title: HUMAN_STAGE[stageOfNode(n.node_id)] || 'a step', question: (n.questions || [])[0] || '', who: epic, since: sinceOf([n]) });
   }
-  for (let i = 0; i < ((m.harness && m.harness.waiting) || 0); i += 1) out.push({ key: (m.ticket && m.ticket.key) || '', title: 'a step', question: '' });
+  for (let i = 0; i < ((m.harness && m.harness.waiting) || 0); i += 1) out.push({ key: epic, title: 'a step', question: '', who: epic, since: null });
   return out;
 }
 

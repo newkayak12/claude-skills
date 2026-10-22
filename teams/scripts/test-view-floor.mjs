@@ -379,7 +379,7 @@ test('worker states: you, done, idle, judge acting', () => {
     const you = summarize(m).you;
     assert.equal(you.count, 1);
     assert.deepEqual(you.items, ['story P1']); // items stay plain titles (back-compat)
-    assert.deepEqual(you.cards, [{ key: 'E-aaaaaaaa/P1', title: 'story P1', question: 'Keep the legacy PDF route?' }]);
+    assert.deepEqual(you.cards, [{ key: 'E-aaaaaaaa/P1', title: 'story P1', question: 'Keep the legacy PDF route?', who: 'P1', since: null }]);
   } finally { w.cleanup(); }
 });
 
