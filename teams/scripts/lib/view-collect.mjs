@@ -670,6 +670,8 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     size: task.size || null,
     flow: task.flow && task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),
     kind: task.kind || 'task',
+    // who opened the task ({session_id, entrypoint}); null on a task created before tm_open recorded it
+    opener: task.opener || null,
     created_at: task.created_at || null,
     elapsed_ms: elapsedMs(task.created_at),
     state,
