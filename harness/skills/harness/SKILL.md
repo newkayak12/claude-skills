@@ -92,6 +92,14 @@ Workflow controller/fallback/report role, not the actor.
 4. **Relay the returned `report` to the user.** Surface `failed[]` and a failing
    `goal_gate` honestly. Eval and retry already happened inside the engine.
 
+## Output Template
+
+```
+Report: <the engine's report, verbatim>
+all_passed: <true|false>   goal_gate: <accept|reject> <match_pct>%
+failed: <none | each failed check, one per line>
+```
+
 ## What Claude Does / What You Do
 
 | Claude | You |
@@ -120,7 +128,7 @@ fits. None is required; the harness runs without them and each also works on its
 These are opt-in: SetGoal picks them by relevance from the whole catalogue, so they need no
 pre-wiring, and using none of them is a valid run.
 
-## Related
+## Related Skills
 - `harness/goal-spec.md` — spec schema (authored by the SetGoal stage) + authoring rules
 - `harness/skills/codex-control/SKILL.md` — adapter discovery contract for Codex CLI delegation
 - `graph:orchestrate` — default orchestration: the harness flow as a node graph owned by the local `graph-engineering` MCP (`graph/mcp/broker.mjs`)
