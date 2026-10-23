@@ -9,7 +9,7 @@ import { existsSync, readdirSync, readFileSync, readlinkSync, realpathSync } fro
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PS_ARGV, classify, parsePorcelain, parsePs, planReap, reportPath } from './reap-logic.mjs'
+import { PS_ARGV, classify, daemonTaskId, parsePorcelain, parsePs, planReap, reportPath } from './reap-logic.mjs'
 
 const USAGE = 'usage: node reap.mjs --list [--json] | --reap [--dry-run]\n'
 const KEEP_EVENT = /"event":"(tm_open|tm_retry|daemon_spawned|daemon_done|clean)"/
@@ -29,6 +29,13 @@ const defaults = () => ({
   readdir: p => readdirSync(p),
   realpath: p => { try { return realpathSync(p) } catch { return p } },
   cwdOf: pid => { try { return readlinkSync(`/proc/${pid}/cwd`) } catch { return '' } },
+  // HARNESS_TASKS_DIR of a process (the default root when unset), or null when /proc/<pid>/environ cannot be read.
+  environOf: pid => {
+    try {
+      const v = readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0').find(e => e.startsWith('HARNESS_TASKS_DIR='))
+      return (v && v.slice(18)) || join(homedir(), '.harness', 'tasks')
+    } catch { return null }
+  },
   now: () => Date.now(),
   pid: process.pid,
   cwd: process.cwd(),
@@ -71,6 +78,26 @@ function readTasks(d, worktrees, mainPath) {
     tasks.push(task)
   }
   return tasks
+}
+
+// A daemon's tasks root and what that root holds for its task: { tasksDir, exists, task }, or null
+// when its environ is unreadable. A root other than ours is read here so the logic stays pure.
+function procInfoOf(d, pid, id) {
+  const raw = d.environOf(pid)
+  if (!raw) return null
+  const root = d.realpath(raw)
+  if (root === d.realpath(d.tasksDir)) return { tasksDir: root }
+  const dir = join(raw, id)
+  const info = { tasksDir: root, exists: d.exists(dir), task: { id, ledger: '', hasReport: false } }
+  if (!info.exists) return info
+  try {
+    const t = JSON.parse(d.readFile(join(dir, 'task.json')))
+    const task = { id, run_id: (t && t.run_id) || id, cwd: (t && t.cwd) || '', docs_dir: t && t.team && t.team.opts && t.team.opts.docs_dir, ledger: '' }
+    try { task.ledger = d.readFile(join(dir, 'ledger.jsonl')).split('\n').filter(l => KEEP_EVENT.test(l)).join('\n') } catch { /* no ledger */ }
+    task.hasReport = d.exists(reportPath(task))
+    info.task = task
+  } catch { /* no task.json: stays unfinished */ }
+  return info
 }
 
 // Pids that belong to the task this process runs in: its live daemon and the drivers it spawned.
@@ -116,7 +143,11 @@ function gather(d) {
   if (current) for (const p of taskPids(d, current, rows)) if (!selfPids.includes(p)) selfPids.push(p)
   const selfCwds = [d.cwd, ...selfPids.map(p => d.cwdOf(p))].filter(Boolean)
 
-  const items = classify({ rows, worktrees, tasks, flags, selfPids, selfCwds, mainPath, now: d.now() })
+  // The caller and everything above it never appear in the listing; their command line can quote anything.
+  const listed = rows.filter(r => !chain.includes(r.pid))
+  const procInfo = {}
+  for (const r of listed) { const id = daemonTaskId(r.cmd); if (id) procInfo[r.pid] = procInfoOf(d, r.pid, id) }
+  const items = classify({ rows: listed, worktrees, tasks, flags, selfPids, selfCwds, mainPath, now: d.now(), tasksDir: d.realpath(d.tasksDir), procInfo })
   return { items, selfPids }
 }
 
@@ -152,7 +183,9 @@ export function run(argv, deps = {}) {
   }
 
   const fresh = parsePs(d.exec(PS_ARGV).stdout)
-  const plan = planReap(items, fresh, selfPids)
+  const freshRoots = {}
+  for (const it of items) if (it.state === 'orphan') { const raw = d.environOf(it.pid); if (raw) freshRoots[it.pid] = d.realpath(raw) }
+  const plan = planReap(items, fresh, selfPids, freshRoots)
   const killed = new Set(plan.kill.map(r => r.pid))
   const dry = a.has('--dry-run')
   let failed = 0

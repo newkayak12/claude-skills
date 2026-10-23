@@ -9,7 +9,7 @@
 
 // A test task must not land in the real run archive (mcp/runlog.mjs); spawned daemons inherit this.
 process.env.TEAMS_RUNS_DIR ??= 'off';
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, existsSync, readdirSync, realpathSync, symlinkSync, statSync, utimesSync } from 'node:fs';
@@ -4869,6 +4869,15 @@ test('a judge call that never returns is killed on its timeout instead of wedgin
     const st = await tm.call('tm_status', { task_id: open.task_id });
     assert.ok(st.state === 'running' || st.state === 'blocked', 'the daemon survives its own judge timing out');
   } finally {
+    // This test keeps a real daemon on purpose; stop it by pid and wait for it to exit, or it
+    // outlives the suite and is still writing into root while it is removed.
+    try {
+      const dpid = readdirSync(root).map((id) => { try { return readTask(root, id).daemon.pid; } catch { return null; } }).find(Boolean);
+      if (dpid) {
+        process.kill(dpid, 'SIGTERM');
+        await waitFor(() => !driverAliveLocal(dpid), 'the daemon to exit after SIGTERM', 10000);
+      }
+    } catch { /* gone */ }
     tm.close();
     rmSync(cwd, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
@@ -9112,4 +9121,37 @@ test('a slug is taken across a repo\'s linked worktrees: the same request opened
       rmSync(dirname(wt), { recursive: true, force: true });
     }
   });
+});
+
+// No-leak check: a test that opens a real task leaves a `daemon.mjs --task` process behind unless
+// it stops it. After the file's tests, no daemon started during this run may still hold a
+// /tmp/tm-root-* tasks dir. Skipped when /proc is unreadable (not Linux).
+after(async () => {
+  const procStart = (pid) => {
+    try { return Number(readFileSync(`/proc/${pid}/stat`, 'utf8').replace(/^.*\) /, '').split(' ')[19]); } catch { return null; }
+  };
+  const leaked = () => {
+    const mine = procStart(process.pid);
+    const out = [];
+    for (const pid of readdirSync('/proc').filter((n) => /^\d+$/.test(n)).map(Number)) {
+      let argv; let env;
+      try {
+        argv = readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0');
+        env = readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0');
+      } catch { continue; }
+      const i = argv.findIndex((a) => /(^|\/)daemon\.mjs$/.test(a));
+      if (i < 0 || argv[i + 1] !== '--task') continue;
+      const dir = (env.find((e) => e.startsWith('HARNESS_TASKS_DIR=')) || '').slice('HARNESS_TASKS_DIR='.length);
+      if (!dir.startsWith(join(tmpdir(), 'tm-root-'))) continue;
+      const st = procStart(pid);
+      if (mine !== null && st !== null && st < mine) continue; // started before this run
+      out.push({ pid, dir });
+    }
+    return out;
+  };
+  try { readdirSync('/proc/self'); readFileSync('/proc/self/stat'); } catch { return; } // /proc unreadable: skip
+  let found = leaked();
+  for (let n = 0; found.length && n < 30; n++) { await new Promise((r) => setTimeout(r, 100)); found = leaked(); }
+  for (const f of found) { try { process.kill(f.pid, 'SIGTERM'); } catch { /* gone */ } }
+  assert.deepEqual(found, [], `daemon.mjs --task left running after the suite: ${found.map((f) => `pid ${f.pid} (${f.dir})`).join(', ')}`);
 });
