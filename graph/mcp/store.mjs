@@ -11,6 +11,8 @@
 import { mkdirSync, readFileSync, writeFileSync, renameSync, rmSync, statSync, unlinkSync, linkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+// graph.mjs imports this file too; both use the other's bindings only inside functions.
+import { STAGES, readyNodes } from './graph.mjs';
 
 // An ownerless lock (a process killed between mkdir and writing owner.json, or a lock
 // from a broker that predates owner records) is broken once it is this old; so is a steal
@@ -307,4 +309,86 @@ export function mutateRun(a, b, c) {
   } finally {
     releaseLock(handle);
   }
+}
+
+// ---------- read-time views of a run: the `now` record and the run-list order ----------
+// Pure functions of a run file; nothing here is persisted, so an old file gets them too.
+
+const NOW_LAST_STEP_MAX = 120;
+
+// Earlier in STAGES first, then by node id, so several nodes at once always pick the same one.
+const stageOrder = (x, y) => (STAGES.indexOf(x.stage) - STAGES.indexOf(y.stage)) || (x.node_id < y.node_id ? -1 : x.node_id > y.node_id ? 1 : 0);
+
+const finishedAt = (n) => (Number.isFinite(n.finished_at) ? n.finished_at : 0);
+
+// The critique round: the highest critique:N whose node has left `pending` (critique is 1).
+function critiqueRound(nodes) {
+  let round = null;
+  for (const n of nodes) {
+    const m = n.stage === 'critique' && n.state !== 'pending' && /^critique(?::(\d+))?$/.exec(String(n.node_id));
+    if (m) round = Math.max(round || 0, m[1] ? Number(m[1]) : 1) || null;
+  }
+  return round;
+}
+
+// {stage, doing, round, last_step, next, waiting, cost_usd} for a run file.
+export function deriveNow(run) {
+  const nodes = Array.isArray(run.nodes) ? run.nodes : [];
+  const view = { ...run, nodes };
+  const running = nodes.filter((n) => n.state === 'running').sort(stageOrder);
+  const ready = readyNodes(view);
+  const done = nodes.filter((n) => n.state === 'done').sort((x, y) => finishedAt(x) - finishedAt(y));
+  const active = running[0] || [...ready].sort(stageOrder)[0] || done[done.length - 1] || null;
+
+  let doing = null;
+  if (running[0]) {
+    const n = running[0];
+    const subgoal = n.subgoal_id && ((run.spec && run.spec.subgoals) || []).find((s) => s.id === n.subgoal_id);
+    doing = n.executor ? (n.model ? `${n.executor}·${n.model}` : n.executor) : n.stage;
+    if (n.executor && subgoal && subgoal.title) doing += ` — ${subgoal.title}`;
+  }
+
+  const finished = nodes
+    .filter((n) => (n.state === 'done' || n.state === 'failed') && n.last_step)
+    .sort((x, y) => finishedAt(y) - finishedAt(x))[0];
+
+  let waiting = null;
+  if (run.routing_blocked && !running.length) {
+    const vendors = Object.keys(run.unavailable_vendors || {});
+    waiting = { who: 'you', what: vendors.length ? `routing blocked: ${vendors.join(', ')}` : 'routing blocked' };
+  }
+
+  return {
+    stage: active ? active.node_id : null,
+    doing,
+    round: critiqueRound(nodes),
+    last_step: finished ? String(finished.last_step).slice(0, NOW_LAST_STEP_MAX) : null,
+    next: ready.length ? ready.map((n) => n.node_id).sort().join(', ') : null,
+    waiting,
+    cost_usd: Number.isFinite(run.cost_usd) ? run.cost_usd : null,
+  };
+}
+
+// Newest finished_at of a failed node, or -1 for a run with none. A retry that later
+// succeeded does not clear it.
+const failedAt = (row) => (row.nodes || []).reduce((t, n) => (n.state === 'failed' ? Math.max(t, n.finished_at || 0) : t), -1);
+
+// Run rows (runs-readout.mjs runRow) as `runs --list` orders them: runs that wait on you
+// first, newest change first; then runs with a failed node, newest failure first; then
+// the rest, newest change first. Equal keys go to the lower run_id.
+export function compareRows(a, b) {
+  const wa = Boolean(a.now && a.now.waiting);
+  const wb = Boolean(b.now && b.now.waiting);
+  if (wa !== wb) return wa ? -1 : 1;
+  if (!wa) {
+    const d = failedAt(b) - failedAt(a);
+    if (d) return d;
+  }
+  const c = (b.last_change_ms || 0) - (a.last_change_ms || 0);
+  if (c) return c;
+  return a.run_id < b.run_id ? -1 : a.run_id > b.run_id ? 1 : 0;
+}
+
+export function orderRows(rows) {
+  return [...rows].sort(compareRows);
 }

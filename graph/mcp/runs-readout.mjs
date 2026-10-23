@@ -8,8 +8,10 @@
 //   routing_blocked, unavailable_vendors ({} when none)
 //   subgoals [{id,title}], last_step, acting, rejects
 //   nodes [{node_id,stage,subgoal_id,state,attempt,agent,started_at,finished_at,reason,feedback,last_step}]
+//   now {stage,doing,round,last_step,next,waiting,cost_usd}   derived at read time (store.mjs deriveNow)
 
 import { runState } from './graph.mjs';
+import { deriveNow } from './store.mjs';
 
 export const STALL_AFTER_MS = 2 * 60 * 60 * 1000;
 export const OPEN_UNDER_MS = 12 * 60 * 60 * 1000;
@@ -80,5 +82,6 @@ export function runRow(run, { file, mtimeMs, now = Date.now() }) {
     acting: Boolean(running),
     rejects: nodes.filter((n) => n.state === 'failed').length,
     nodes: nodes.map(nodeRow),
+    now: deriveNow(run),
   };
 }
