@@ -84,7 +84,7 @@ import { fileURLToPath } from 'node:url';
 import { node } from '../mcp/graph.mjs';
 import { floorTasks } from './lib/view-floor-fs.mjs';
 import { collectTask } from './lib/view-collect.mjs';
-import { askMessage, parseAskMessage } from './lib/ask-message.mjs';
+import { askMessage } from './lib/ask-message.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VIEW = join(HERE, 'view.mjs');
@@ -131,7 +131,6 @@ const askmsg = (w, args, { input = '', extra = {} } = {}) => {
   assert.equal(r.status, 0, r.stderr);
   return r.stdout;
 };
-const session = (w, over = {}) => writeFileSync(join(w.sessions, `${over.pid || process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: 's-1', kind: 'interactive', ...over }));
 
 test('view --session: poll ask, task cwd differs from session cwd', () => {
   const w = world();
@@ -191,49 +190,6 @@ test('ask-message --received turns via poll into via send', () => {
     assert.equal(rows.length, 1);
     assert.deepEqual({ ...rows[0], at: 0 }, { event: 'received', key: 'E-aaaaaaaa/P2', session: 's-1', at: 0 });
     assert.equal(view(w, 'status', '--session', 's-1').asks[0].via, 'send');
-  } finally { w.cleanup(); }
-});
-
-test('--send-plan: interactive live opener -> one entry; --sent --ok -> []', () => {
-  const w = world();
-  try {
-    task(w);
-    session(w);
-    const e = { TEAMS_OPENER_SESSION_ID: 's-1', TEAMS_TASK_ID: 'aaaaaaaa-0001' };
-    const plan = JSON.parse(askmsg(w, ['--send-plan', '--self', 'drv-9'], { extra: e }));
-    assert.equal(plan.length, 1);
-    assert.equal(plan[0].to, 's-1');
-    assert.equal(plan[0].key, 'E-aaaaaaaa/P2');
-    assert.equal(parseAskMessage(plan[0].text).question, Q);
-    assert.equal(askmsg(w, ['--sent', plan[0].key, '--ok'], { extra: e }), '');
-    const rows = readFileSync(join(w.tasks, 'aaaaaaaa-0001', 'asks.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-    assert.equal(rows[0].event, 'sent');
-    assert.equal(rows[0].to, 's-1');
-    assert.equal(rows[0].since, 4242);
-    assert.deepEqual(JSON.parse(askmsg(w, ['--send-plan', '--self', 'drv-9'], { extra: e })), []);
-  } finally { w.cleanup(); }
-});
-
-test('--send-plan: failed send is retried; sdk kind, dead pid, missing env -> []', () => {
-  const w = world();
-  try {
-    task(w);
-    const e = { TEAMS_OPENER_SESSION_ID: 's-1', TEAMS_TASK_ID: 'aaaaaaaa-0001' };
-    const plan = (x = e) => JSON.parse(askmsg(w, ['--send-plan', '--self', 'drv-9'], { extra: x }));
-    session(w, { kind: 'sdk' });
-    assert.deepEqual(plan(), []);
-    session(w, { kind: 'interactive', pid: 2 ** 22 + 12345 });
-    rmSync(join(w.sessions, `${process.pid}.json`));
-    assert.deepEqual(plan(), []);
-    session(w);
-    rmSync(join(w.sessions, `${2 ** 22 + 12345}.json`));
-    assert.equal(plan().length, 1);
-    assert.deepEqual(plan({}), []);
-    askmsg(w, ['--sent', 'E-aaaaaaaa/P2', '--error', 'boom'], { extra: e });
-    const row = JSON.parse(readFileSync(join(w.tasks, 'aaaaaaaa-0001', 'asks.jsonl'), 'utf8').trim());
-    assert.equal(row.event, 'send_failed');
-    assert.equal(row.error, 'boom');
-    assert.equal(plan().length, 1, 'send_failed does not dedupe');
   } finally { w.cleanup(); }
 });
 

@@ -286,5 +286,10 @@ export function resolveTeamOptions(args, fileConfig) {
   const fromArgs = Object.fromEntries(Object.entries(args || {}).filter(([k]) => k in TEAM_DEFAULTS));
   applyLayer(opts, sources, notes, fromArgs, 'args');
   opts.initiative = normalizeInitiative(opts.initiative);
+  // Card 64: a listed gate only parks for a person in an interactive run; otherwise promoteHumanGates
+  // auto-passes it. The engine keeps that (human_gates never implies interactive) - say so loudly.
+  if (opts.human_gates.length && opts.interactive !== true) {
+    notes.push(`human_gates ${JSON.stringify(opts.human_gates)} is set but interactive is false: these gates will auto-pass, never park for a person (set interactive: true to park them)`);
+  }
   return { opts, sources, notes };
 }

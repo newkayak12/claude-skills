@@ -23,10 +23,15 @@ function repo() {
 }
 
 // Spawn a TM server with env overrides (undefined deletes), call tm_open once, return task.json.
-async function openWith(envOver) {
+// The server reads <TEAMS_SESSIONS_DIR>/<its ppid>.json; its ppid is this process, so a fixture
+// (sessionFile, a string) is written as <process.pid>.json. The dir is a fresh temp one, so no
+// case reads the real ~/.claude/sessions.
+async function openWith(envOver, sessionFile) {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-opener-root-'));
-  const env = { ...process.env, TEAMS_VIEW: '0', HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' };
+  const sessions = mkdtempSync(join(tmpdir(), 'tm-opener-sessions-'));
+  if (sessionFile !== undefined) writeFileSync(join(sessions, `${process.pid}.json`), sessionFile);
+  const env = { ...process.env, TEAMS_VIEW: '0', HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_SESSIONS_DIR: sessions };
   for (const [k, v] of Object.entries(envOver)) { if (v === undefined) delete env[k]; else env[k] = v; }
   const proc = spawn('node', [TM], { stdio: ['pipe', 'pipe', 'inherit'], env });
   let buf = '';
@@ -57,6 +62,7 @@ async function openWith(envOver) {
     proc.kill();
     rmSync(cwd, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
+    rmSync(sessions, { recursive: true, force: true });
   }
 }
 
@@ -68,6 +74,27 @@ test('(a) tm_open records the opener from the MCP env', async () => {
 test('(b) no env -> opener fields are null', async () => {
   const task = await openWith({ CLAUDE_CODE_SESSION_ID: undefined, CLAUDE_CODE_ENTRYPOINT: undefined });
   assert.deepEqual(task.opener, { session_id: null, entrypoint: null });
+});
+
+test('(a2) the session file beats the spawn-time env', async () => {
+  const task = await openWith({ CLAUDE_CODE_SESSION_ID: 's-env', CLAUDE_CODE_ENTRYPOINT: 'cli' },
+    JSON.stringify({ pid: process.pid, sessionId: 's-file', kind: 'interactive' }));
+  assert.deepEqual(task.opener, { session_id: 's-file', entrypoint: 'cli' });
+});
+
+test('(b2) no session file -> the env id', async () => {
+  const task = await openWith({ CLAUDE_CODE_SESSION_ID: 's-env' });
+  assert.equal(task.opener.session_id, 's-env');
+});
+
+test('(c2) a malformed session file -> the env id', async () => {
+  const task = await openWith({ CLAUDE_CODE_SESSION_ID: 's-env' }, '{not json');
+  assert.equal(task.opener.session_id, 's-env');
+});
+
+test('(d2) no session file and no env -> null', async () => {
+  const task = await openWith({ CLAUDE_CODE_SESSION_ID: undefined });
+  assert.equal(task.opener.session_id, null);
 });
 
 test('(c) openerEnv reads task.opener and run_id', () => {

@@ -46,7 +46,7 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, readdirSync, openSync, closeSync, statSync, realpathSync } from 'node:fs';
-import { availableParallelism } from 'node:os';
+import { availableParallelism, homedir } from 'node:os';
 import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -456,7 +456,7 @@ function createTask(a) {
     // branch and worktree names. A task without one (opened before it existed) keeps harness/<id8>/*.
     slug: uniqueSlug(epicSlug(requests ? requests[0] : String(a.request)), takenSlugs(cwd)),
     // Who opened the task: the person's session id, which drivers and the band need (§7 of _repo/docs/plans/mod/2026-10-17-subagent-communication.md); the MCP env is the only source.
-    opener: { session_id: process.env.CLAUDE_CODE_SESSION_ID || null, entrypoint: process.env.CLAUDE_CODE_ENTRYPOINT || null },
+    opener: { session_id: currentSessionId(), entrypoint: process.env.CLAUDE_CODE_ENTRYPOINT || null },
     request: withSharedAcceptance(requests ? composeBacklogRequest(requests) : String(a.request), a.shared_acceptance),
     requests, // null for the ordinary single-request task - the byte-for-byte compat case.
     context: [priorRetro.text, a.context || ''].filter(Boolean).join('\n\n'),
@@ -2880,6 +2880,17 @@ function childContext(task, pkg) {
 // dispatch spawns its own headless session in the package worktree, which runs the ordinary
 // graph loop to the end; the manager waits and folds the result. Manager context per package:
 // a few lines.
+
+// The opening session's id, read live: /clear and /resume change it while this MCP process keeps
+// its spawn-time env. The client writes <ppid>.json (camelCase sessionId); env is the fallback.
+function currentSessionId() {
+  try {
+    const dir = process.env.TEAMS_SESSIONS_DIR || join(homedir(), '.claude', 'sessions');
+    const id = JSON.parse(readFileSync(join(dir, `${process.ppid}.json`), 'utf8')).sessionId;
+    if (typeof id === 'string' && id) return id;
+  } catch { /* missing, unreadable or not JSON: use the env */ }
+  return process.env.CLAUDE_CODE_SESSION_ID || null;
+}
 
 // The person's session id for a child process, read from the task record, not this process's env.
 export function openerEnv(task) {
@@ -6136,7 +6147,7 @@ function pinSize(task, view) {
 // instead - the daemon and package drivers do the rest.
 async function toolOpen(a) {
   const { task, delegated, view } = await openTaskAndMaybePin(a, 'tm_open');
-  const viewFields = { ...(view && view.url ? { view_url: view.url } : {}), ...(task.context_from_unresolved ? { context_from_unresolved: task.context_from_unresolved } : {}), ...(task.carryover_candidates ? { carryover_candidates: task.carryover_candidates } : {}) };
+  const viewFields = { ...(view && view.url ? { view_url: view.url } : {}), ...(task.context_from_unresolved ? { context_from_unresolved: task.context_from_unresolved } : {}), ...(task.carryover_candidates ? { carryover_candidates: task.carryover_candidates } : {}), ...(task.team && task.team.notes && task.team.notes.length ? { notes: task.team.notes } : {}) };
   if (delegated) return { ...delegated, docs_dir: docPaths(task).dir, ...viewFields };
   if (noDaemon()) return { ...toolNext({ task_id: task.run_id }), ...viewFields };
   return { task_id: task.run_id, state: managerState(task).state, docs_dir: docPaths(task).dir, ...viewFields };

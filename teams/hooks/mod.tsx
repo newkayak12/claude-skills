@@ -819,28 +819,6 @@ export const register: Register = on => {
     return r
   }).catch(($, e, next) => next(e))
 
-  // sender: a driver hands its asks to the opener session after submit/next; headless too, fail open,
-  // the result goes back unchanged (node decides what is sent; this only runs and transports)
-  on('tool.call', { tool: /__(team_submit|team_next)$/ }, async ($, e, next) => {
-    const r = await next(e)
-    try {
-      const ASK = `${$.plugin.root}/scripts/ask-message.mjs`
-      const plan = await $.process.run(['node', ASK, '--send-plan', '--self', await $.session.id()])
-      if (plan.exitCode !== 0) return r
-      for (const m of JSON.parse(plan.stdout) as { to: string; text: string; key: string }[]) {
-        try {
-          const sent = await $.session.send({ to: { sessionId: m.to }, text: m.text })
-          await $.process.run(['node', ASK, '--sent', m.key, ...(sent.isDelivered ? ['--ok'] : ['--error', sent.reason])])
-        } catch (err) {
-          await $.process.run(['node', ASK, '--sent', m.key, '--error', String((err as Error)?.message ?? err)])
-        }
-      }
-    } catch {
-      // a lost hand-off is the poll's job
-    }
-    return r
-  }).catch(($, e, next) => next(e))
-
   // receiver: a peer's message that node reads as a teams ask is taken here and the data refreshed once
   on('session.receive', { origin: { kind: 'peer' } }, async ($, e, next) => {
     const r = await $.process.run(['node', `${$.plugin.root}/scripts/ask-message.mjs`, '--received', '--session', await $.session.id()], { stdin: e.text })

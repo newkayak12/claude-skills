@@ -353,52 +353,19 @@ test('answerNode is handed the prompt: the question verbatim, the plan path and 
   assert.match(prompt, /wiki_search/);
 });
 
-// ---------- (5) headless: nothing is pushed to an unattached person; the card is still in tm_inbox ----------
-
-const ASKMSG = join(HERE, 'ask-message.mjs');
-function plan(env) {
-  const sessions = join(SCRATCH, 'sessions');
-  mkdirSync(sessions, { recursive: true });
-  const r = spawnSync(process.execPath, [ASKMSG, '--send-plan', '--self', 'drv-9'], {
-    encoding: 'utf8', env: { ...process.env, TEAMS_RUNS_DIR: 'off', HARNESS_TASKS_DIR: ROOT, TEAMS_SESSIONS_DIR: sessions, TEAMS_OPENER_SESSION_ID: '', TEAMS_TASK_ID: '', ...env },
-  });
-  assert.equal(r.status, 0, r.stderr);
-  return JSON.parse(r.stdout);
-}
-const session = (over = {}) => {
-  const dir = join(SCRATCH, 'sessions');
-  mkdirSync(dir, { recursive: true });
-  for (const f of ['live.json', 'dead.json']) rmSync(join(dir, f), { force: true });
-  writeFileSync(join(dir, over.pid === DEAD ? 'dead.json' : 'live.json'), JSON.stringify({ pid: process.pid, sessionId: 's-1', kind: 'interactive', ...over }));
-};
+// ---------- (5) headless: the card is still in tm_inbox ----------
 
 for (const route of ['answer', 'forward']) {
-  test(`unattached, route ${route}, fully headless: --send-plan prints [] for no opener id, an sdk-kind session and a dead pid`, async () => {
+  test(`route ${route}, fully headless: the forwarded card is in tm_inbox, an answered one is not`, async () => {
     const t = seedTask({ opener: { session_id: 's-1', entrypoint: 'cli' } });
     await ask(t);
     await step(t, route === 'answer' ? verdict({ verdict: 'answer', answer: 'cents' }) : verdict({ verdict: 'forward', reason: 'r' }));
     const cards = (await callTool('tm_inbox', { task_id: t.id })).cards;
     assert.equal(cards.length, route === 'forward' ? 1 : 0);
     if (route === 'forward') assert.equal(cards[0].questions[0].question, Q);
-    const env = { TEAMS_OPENER_SESSION_ID: 's-1', TEAMS_TASK_ID: t.id };
-    assert.deepEqual(plan({}), [], 'no TEAMS_OPENER_SESSION_ID');
-    session({ kind: 'sdk' });
-    assert.deepEqual(plan(env), [], 'an sdk-kind session');
-    session({ pid: DEAD });
-    assert.deepEqual(plan(env), [], 'a dead pid');
     assert.equal(events(t.id, 'asked').length, 1, 'both routes ran without any surface');
   });
 }
-
-test('control: with a live interactive opener the same card is planned for sending, so the [] above means something', async () => {
-  const t = seedTask({ opener: { session_id: 's-1', entrypoint: 'cli' } });
-  await ask(t);
-  await step(t, verdict({ verdict: 'forward', reason: 'r' }));
-  session({});
-  const sent = plan({ TEAMS_OPENER_SESSION_ID: 's-1', TEAMS_TASK_ID: t.id });
-  assert.equal(sent.length, 1);
-  assert.ok(sent[0].text.includes(Q));
-});
 
 // ---------- (6) one definition: storyask.mjs is imported, never redefined ----------
 

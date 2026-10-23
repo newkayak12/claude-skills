@@ -7101,6 +7101,74 @@ test('gate:human auto-passes the manager critique when not interactive, recorded
   }, { human_gates: ['critique'] });
 });
 
+// Card 64: a listed `gate` is the per-subgoal gate inside a package's CHILD run (gate:U1:1); the
+// manager's own and the child's goal gate are `gate:goal` and stay a distinct name. Drives the
+// real L path: tm_open -> task.child_opts -> createRun -> team_next -> promoteHumanGates.
+async function childAtGate(tm, g, task_id) {
+  await throughCritique(tm, task_id, SHAPE_SPLIT);
+  const nx = await tm.call('tm_next', { task_id });
+  const child = nx.children.find((c) => c.package_id === 'P2');
+  assert.ok(child, JSON.stringify(nx));
+  const { cwd, run_id } = child;
+  await throughChildSpec(g, child);
+  appendFileSync(join(cwd, 'b.txt'), 'changed by P2\n');
+  const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
+  assert.equal((await sub('implement:U1:1', { changed_files: ['b.txt'], handoff: 'built' })).state, 'done');
+  assert.equal((await sub('test:U1:1', { verified: true })).state, 'done');
+  return { child, sub };
+}
+
+test('card 64: a listed `gate` parks gate:U1:1 waiting_human for a person when the run is interactive', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    const { child } = await childAtGate(tm, g, task_id);
+    const { run_id, cwd } = child;
+    const next = await g.call('team_next', { run_id, cwd });
+    assert.ok(!(next.ready || []).some((n) => n.node_id === 'gate:U1:1'), `a gated gate is never offered to a driver: ${JSON.stringify(next.ready)}`);
+    const full = await g.call('team_status', { run_id, cwd, full: true });
+    const gate = full.nodes.find((n) => n.node_id === 'gate:U1:1');
+    assert.equal(gate.state, 'waiting_human', JSON.stringify(gate));
+    assert.equal(gate.assignment.executor, 'human');
+    assert.equal(gate.human_gate, true);
+  }, { interactive: true, human_gates: ['gate'] });
+});
+
+test('card 64: a listed `gate` auto-passes gate:U1:1 when the run is not interactive, recorded as decided-for-you', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    const { child } = await childAtGate(tm, g, task_id);
+    const { run_id, cwd } = child;
+    await g.call('team_next', { run_id, cwd });
+    const full = await g.call('team_status', { run_id, cwd, full: true });
+    const gate = full.nodes.find((n) => n.node_id === 'gate:U1:1');
+    assert.equal(gate.state, 'done', JSON.stringify(gate));
+    assert.equal(gate.result.accept, true);
+    assert.match(gate.auto_decided_pin.reason, /not interactive/);
+  }, { interactive: false, human_gates: ['gate'] });
+});
+
+test('card 64: gate and gate:goal are distinct names - listing `gate` leaves the manager gate:goal to a model', async () => {
+  const { humanGateIdentity } = await import('../mcp/graph.mjs');
+  assert.equal(humanGateIdentity({ node_id: 'gate:U1:1', stage: 'gate' }), 'gate');
+  assert.equal(humanGateIdentity({ node_id: 'gate:goal:1', stage: 'gate' }), 'gate:goal');
+});
+
+test('card 64: human_gates with interactive false warns that the gates will auto-pass - in the task notes and in the tm_open reply', async () => {
+  const WARN = /human_gates \["gate"\] is set but interactive is false: these gates will auto-pass, never park for a person/;
+  await withTask(async ({ root, task_id, open }) => {
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.ok(task.team.notes.some((x) => WARN.test(x)), JSON.stringify(task.team.notes));
+    assert.ok((open.notes || []).some((x) => WARN.test(x)), JSON.stringify(open));
+  }, { human_gates: ['gate'] });
+  await withTask(async ({ root, task_id, open }) => {
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.ok(!task.team.notes.some((x) => /auto-pass/.test(x)), 'interactive: no warning');
+    assert.ok(!(open.notes || []).some((x) => /auto-pass/.test(x)));
+  }, { interactive: true, human_gates: ['gate'] });
+  await withTask(async ({ root, task_id }) => {
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.ok(!task.team.notes.some((x) => /auto-pass/.test(x)), 'no gates listed: no warning');
+  }, {});
+});
+
 test('a card answered while the driver is dead still gets applied: the parked child is revived for its queue', async () => {
   // idol-beta-ask1 (2026-09-25). Three answers were accepted into the handoff queue, the child's
   // driver was killed before draining them, and nothing brought one back: serviceDeadDriver read

@@ -280,7 +280,7 @@ node teams/scripts/run.mjs --resume <task_id>
 | `roles` | `{planning:"auto", qa:true, audit:true}` | 기획 카드가 어떤 체인을 도는지(`true` 전체, `"light"`, `"auto"`는 인수 기준이 적혀 있으면 가벼운 체인), 그리고 QA 카드와 audit을 돌지. `planning: false`는 거부되고 노트로 남습니다. 기획은 항상 돕니다. |
 | `brainstorm` | `true` | `decisions`가 없을 때 엔진이 직접 brainstorm 단계를 돕니다. |
 | `interactive` | `false` | 질문, 지정, 사람 게이트가 사람을 기다릴지, 기본값으로 결정할지. |
-| `human_gates` | `[]` | 모델 대신 사람이 판정할 심사 단계(`"critique"`, `"accept"`, `"gate:goal"`, `"areas-critique"`, `"plan-integrate"` 등). `plan-integrate`를 거절하는 사람은 `resplit: true`를 함께 보낼 수 있습니다. |
+| `human_gates` | `[]` | 모델 대신 사람이 판정할 심사 단계(`"critique"`, `"accept"`, `"gate:goal"`, `"areas-critique"`, `"plan-integrate"` 등). `plan-integrate`를 거절하는 사람은 `resplit: true`를 함께 보낼 수 있습니다. `interactive: true`가 필요합니다. 아니면 적어 둔 게이트는 자동 통과하고 `tm_open`이 `notes`로 경고합니다. |
 | `ask_timeout` | `null` | 답 없는 `ask` 카드가 기본 답을 택하기까지의 밀리초. `null`이면 무한정 기다립니다. |
 | `max_parallel_teams` | `"auto"` | 동시에 돌리는 develop 패키지 수. `"auto"`는 사용량 제한과 크래시에 맞춰 조절합니다. |
 | `max_parallel_ceiling` | `null` | `"auto"` 조절기의 상한. `null`이면 CPU 수에서 계산합니다. |
