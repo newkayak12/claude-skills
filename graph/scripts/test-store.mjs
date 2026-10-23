@@ -13,8 +13,9 @@ import {
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mutateRun, writeAtomic, runFilePath, pidAlive } from '../mcp/store.mjs';
+import { mutateRun, writeAtomic, runFilePath, pidAlive, deriveNow, compareRows, orderRows } from '../mcp/store.mjs';
 import { createRun, loadRun, saveRun } from '../mcp/graph.mjs';
+import { runRow } from '../mcp/runs-readout.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MCP = join(HERE, '..', 'mcp');
@@ -606,6 +607,232 @@ test('(c) a claim with no owner recorded (older run file) keeps the time-based f
     await a.call('graph_status', { run_id, cwd });
     assert.equal(planOf(cwd, run_id).state, 'failed');
   });
+});
+
+// ---------- the derived `now` record and the run-list order (card 48, F2) ----------
+
+const NOW_KEYS = ['stage', 'doing', 'round', 'last_step', 'next', 'waiting', 'cost_usd'];
+
+// A node as graph.mjs writes it, with the stage read off the id (plan, critique:2, implement:S1:1).
+const nd = (id, state, extra = {}) => ({
+  node_id: id, stage: id.split(':')[0], deps: [], after: [], state, attempt: 1, ticket: null, result: null, ...extra,
+});
+const runOf = (nodes, extra = {}) => ({ run_id: 'r-0', request: 'r', created_at: 1000, nodes, ...extra });
+const nowOf = (nodes, extra) => deriveNow(runOf(nodes, extra));
+const rowOf = (runId, nodes, mtimeMs, extra = {}) =>
+  runRow(runOf(nodes, { run_id: runId, ...extra }), { file: `/x/${runId}.json`, mtimeMs, now: 10_000_000 });
+const ids = (rows) => rows.map((r) => r.run_id);
+
+test('F2-AC-1 a running plan node is the stage', () => {
+  assert.equal(nowOf([nd('plan', 'running')]).stage, 'plan');
+});
+
+test('F2-AC-2 of several running nodes the one earliest in STAGES is the stage', () => {
+  const n = nowOf([nd('test:S1:1', 'running', { subgoal_id: 'S1' }), nd('implement:S2:1', 'running', { subgoal_id: 'S2' })]);
+  assert.equal(n.stage, 'implement:S2:1');
+});
+
+test('F2-AC-3 with nothing running the first ready node is the stage, else the last done one', () => {
+  assert.equal(nowOf([nd('plan', 'done', { finished_at: 1 }), nd('critique:2', 'pending', { deps: ['setgoal:2'] }), nd('setgoal:2', 'pending', { deps: ['plan'] })]).stage, 'setgoal:2');
+  assert.equal(nowOf([nd('plan', 'done', { finished_at: 1 }), nd('report', 'done', { finished_at: 9 })]).stage, 'report');
+});
+
+test('F2-AC-4 doing is executor·model, then the subgoal title, else the stage name', () => {
+  assert.equal(nowOf([nd('critique', 'running', { executor: 'claude', model: 'opus' })]).doing, 'claude·opus');
+  const sub = nd('implement:S1:1', 'running', { subgoal_id: 'S1', executor: 'codex', model: 'gpt-5' });
+  assert.equal(nowOf([sub], { spec: { subgoals: [{ id: 'S1', title: 'Add the store' }] } }).doing, 'codex·gpt-5 — Add the store');
+  assert.equal(nowOf([nd('plan', 'running')]).doing, 'plan');
+});
+
+test('F2-AC-5 doing is null when no node runs', () => {
+  assert.equal(nowOf([nd('plan', 'pending')]).doing, null);
+});
+
+test('F2-AC-6 next is the ready node ids, sorted and joined, else null', () => {
+  const ready = [nd('implement:S2:1', 'pending', { subgoal_id: 'S2' }), nd('implement:S1:1', 'pending', { subgoal_id: 'S1' })];
+  assert.equal(nowOf(ready).next, 'implement:S1:1, implement:S2:1');
+  assert.equal(nowOf([nd('plan', 'running')]).next, null);
+});
+
+test('F2-AC-7 round is null before a critique starts', () => {
+  assert.equal(nowOf([nd('plan', 'done'), nd('setgoal', 'pending', { deps: ['plan'] }), nd('critique', 'pending', { deps: ['setgoal'] })]).round, null);
+});
+
+test('F2-AC-8 round counts the critique attempts started, a skipped first one included', () => {
+  const n = nowOf([
+    nd('critique', 'skipped', { result: { stage_ok: false, reason: 'superseded by spec attempt 2' } }),
+    nd('critique:2', 'running', { attempt: 2 }),
+  ]);
+  assert.equal(n.round, 2);
+  assert.equal(nowOf([nd('critique', 'running')]).round, 1);
+  assert.equal(nowOf([nd('critique', 'failed'), nd('critique:2', 'pending', { attempt: 2, deps: ['setgoal:2'] })]).round, 1);
+});
+
+test('F2-AC-9 round is a positive integer or null on every row', () => {
+  for (const nodes of [[nd('plan', 'running')], [nd('critique', 'done')], [nd('critique:3', 'running', { attempt: 3 })], []]) {
+    const r = nowOf(nodes).round;
+    assert.ok(r === null || (Number.isInteger(r) && r > 0), `round was ${JSON.stringify(r)}`);
+  }
+});
+
+test('F2-AC-10 last_step is the newest finished node\'s, a failed one included', () => {
+  const n = nowOf([
+    nd('plan', 'done', { finished_at: 100, last_step: 'plan written' }),
+    nd('test:S1:1', 'failed', { finished_at: 200, last_step: 'tests red' }),
+  ]);
+  assert.equal(n.last_step, 'tests red');
+  assert.equal(nowOf([nd('plan', 'running')]).last_step, null);
+});
+
+test('F2-AC-11 last_step is cut to 120 characters in now only', () => {
+  const long = 'x'.repeat(200);
+  const row = rowOf('r-1', [nd('plan', 'done', { finished_at: 5, last_step: long })], 1);
+  assert.equal(row.now.last_step, long.slice(0, 120));
+  assert.equal(row.last_step, long, 'the row\'s own last_step is left as it was');
+});
+
+test('F2-AC-12 a routing block with nothing running is a wait on you', () => {
+  const nodes = [nd('implement:S1:1', 'pending')];
+  assert.deepEqual(nowOf(nodes, { routing_blocked: true, unavailable_vendors: { codex: { reason: 'x' } } }).waiting, { who: 'you', what: 'routing blocked: codex' });
+  assert.deepEqual(nowOf(nodes, { routing_blocked: true }).waiting, { who: 'you', what: 'routing blocked' });
+});
+
+test('F2-AC-13 a node still running means no wait', () => {
+  assert.equal(nowOf([nd('plan', 'running')], { routing_blocked: true, unavailable_vendors: { codex: {} } }).waiting, null);
+  assert.equal(nowOf([nd('plan', 'pending')]).waiting, null);
+});
+
+test('F2-AC-14 cost_usd is a finite number or null', () => {
+  assert.equal(nowOf([nd('plan', 'pending')], { cost_usd: 1.5 }).cost_usd, 1.5);
+  assert.equal(nowOf([nd('plan', 'pending')], { cost_usd: null }).cost_usd, null);
+  assert.equal(nowOf([nd('plan', 'pending')], { cost_usd: '1.5' }).cost_usd, null);
+});
+
+test('F2-AC-15 a waiting run comes before a newer running run with a failed node, every now field asserted', () => {
+  const a = rowOf('A', [nd('plan', 'done', { finished_at: 50, last_step: 'plan written' }), nd('setgoal', 'pending', { deps: ['plan'] })], 1000,
+    { routing_blocked: true, unavailable_vendors: { codex: {} }, cost_usd: 2 });
+  const b = rowOf('B', [
+    nd('implement:S1:1', 'running', { subgoal_id: 'S1', executor: 'claude', model: 'sonnet' }),
+    nd('test:S1:1', 'failed', { subgoal_id: 'S1', finished_at: 300, last_step: 'tests red' }),
+  ], 9000, { spec: { subgoals: [{ id: 'S1', title: 'Build it' }] } });
+  assert.deepEqual(ids(orderRows([b, a])), ['A', 'B']);
+  assert.deepEqual(a.now, { stage: 'setgoal', doing: null, round: null, last_step: 'plan written', next: 'setgoal', waiting: { who: 'you', what: 'routing blocked: codex' }, cost_usd: 2 });
+  assert.deepEqual(b.now, { stage: 'implement:S1:1', doing: 'claude·sonnet — Build it', round: null, last_step: 'tests red', next: null, waiting: null, cost_usd: null });
+});
+
+test('F2-AC-16 with no wait a failed run comes before a newer clean one', () => {
+  const a = rowOf('A', [nd('test:S1:1', 'failed', { finished_at: 10 })], 1000);
+  const b = rowOf('B', [nd('plan', 'running')], 9000);
+  assert.deepEqual(ids(orderRows([b, a])), ['A', 'B']);
+});
+
+test('F2-AC-17 of two failed runs the one that failed later comes first', () => {
+  const a = rowOf('A', [nd('test:S1:1', 'failed', { finished_at: 900 })], 1000);
+  const b = rowOf('B', [nd('test:S1:1', 'failed', { finished_at: 100 })], 9000);
+  assert.deepEqual(ids(orderRows([b, a])), ['A', 'B']);
+});
+
+test('F2-AC-18 of two waiting runs the newer change comes first, equal changes go to the lower run_id', () => {
+  const blocked = { routing_blocked: true };
+  const old = rowOf('A', [nd('plan', 'pending')], 1000, blocked);
+  const fresh = rowOf('B', [nd('plan', 'pending')], 2000, blocked);
+  assert.deepEqual(ids(orderRows([old, fresh])), ['B', 'A']);
+  const x = rowOf('X', [nd('plan', 'pending')], 5000, blocked);
+  const y = rowOf('Y', [nd('plan', 'pending')], 5000, blocked);
+  assert.deepEqual(ids(orderRows([y, x])), ['X', 'Y']);
+});
+
+test('F2-AC-19 the text columns of a row are unchanged and compareRows is a usable sort comparator', () => {
+  const row = rowOf('abcdef0123', [nd('plan', 'running', { last_step: 's' })], 1);
+  for (const k of ['id8', 'state', 'owner', 'created_at', 'cost_usd', 'running']) assert.ok(k in row, k);
+  const rows = [rowOf('B', [nd('plan', 'running')], 1), rowOf('A', [nd('plan', 'running')], 1)];
+  assert.deepEqual(ids([...rows].sort(compareRows)), ['A', 'B']);
+  assert.equal(compareRows(rows[0], rows[0]), 0);
+});
+
+test('F2-AC-20 graph_status keeps its own order: runs-readout does not sort', () => {
+  const rows = [rowOf('B', [nd('plan', 'running')], 1), rowOf('A', [nd('plan', 'running')], 9)];
+  const copy = [...rows];
+  orderRows(rows);
+  assert.deepEqual(rows, copy, 'orderRows sorted its input in place');
+});
+
+test('F2-AC-21 with no failure and no wait the newer change comes first, equal changes go to the lower run_id', () => {
+  const old = rowOf('A', [nd('plan', 'running')], 1000);
+  const fresh = rowOf('B', [nd('plan', 'running')], 2000);
+  assert.deepEqual(ids(orderRows([old, fresh])), ['B', 'A']);
+  assert.equal(old.now.waiting, null);
+  assert.equal(fresh.now.waiting, null);
+  assert.deepEqual(ids(orderRows([rowOf('Y', [nd('plan', 'running')], 7), rowOf('X', [nd('plan', 'running')], 7)])), ['X', 'Y']);
+});
+
+test('F2-AC-22 a run just made by createRun has the fresh now', () => {
+  const cwd = scratch();
+  try {
+    const { run } = seed(cwd);
+    assert.deepEqual(deriveNow(run), { stage: 'plan', doing: null, round: null, last_step: null, next: 'plan', waiting: null, cost_usd: null });
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('F2-AC-23 now has exactly the seven keys, on every shape of run', () => {
+  const shapes = [[], [nd('plan', 'running')], [nd('plan', 'failed', { finished_at: 1 })], [nd('report', 'done', { finished_at: 1 })]];
+  for (const nodes of shapes) assert.deepEqual(Object.keys(nowOf(nodes)), NOW_KEYS);
+  assert.deepEqual(Object.keys(deriveNow({ run_id: 'r' })), NOW_KEYS, 'a run with no nodes array');
+  assert.deepEqual(Object.keys(rowOf('r', [nd('plan', 'running')], 1).now), NOW_KEYS);
+});
+
+// ---------- the CLI readout: spawned, read-only ----------
+
+const runsCli = (...args) => spawnSync('node', [BROKER, 'runs', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
+const runsSnapshot = (cwd) => {
+  const dir = dirname(runFilePath(cwd, 'x'));
+  return readdirSync(dir).sort().map((f) => [f, readFileSync(join(dir, f), 'utf8'), statSync(join(dir, f)).mtimeMs]);
+};
+
+test('F2-AC-24 an old run file with no now and no created_at gets a derived now in --show and ranks by the same rules', () => {
+  const cwd = scratch();
+  try {
+    const { run, path } = seed(cwd);
+    const old = JSON.parse(readFileSync(path, 'utf8'));
+    delete old.created_at;
+    delete old.now;
+    writeFileSync(path, JSON.stringify(old, null, 2));
+    const shown = runsCli('--show', path);
+    assert.equal(shown.status, 0, shown.stderr);
+    const row = JSON.parse(shown.stdout);
+    assert.equal(row.created_at, 'unknown');
+    assert.deepEqual(row.now, { stage: 'plan', doing: null, round: null, last_step: null, next: 'plan', waiting: null, cost_usd: null });
+    assert.ok(!('now' in JSON.parse(readFileSync(path, 'utf8'))), 'now was persisted');
+    const newer = { ...row, run_id: 'zzz', last_change_ms: row.last_change_ms + 1000 };
+    assert.deepEqual(ids(orderRows([row, newer])), ['zzz', run.run_id]);
+    const listed = JSON.parse(runsCli('--list', '--json', '--cwd', cwd).stdout);
+    assert.deepEqual(listed[0].now, row.now);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('F2-AC-25 runs --list --json and --show leave bytes, mtimes and the lock alone', () => {
+  const cwd = scratch();
+  try {
+    const { path } = seed(cwd);
+    seed(cwd);
+    const stamp = new Date(Date.now() - 3_600_000);
+    for (const f of readdirSync(dirname(path))) utimesSync(join(dirname(path), f), stamp, stamp);
+    const before = runsSnapshot(cwd);
+    assert.equal(runsCli('--list', '--json', '--cwd', cwd).status, 0);
+    assert.equal(runsCli('--show', path).status, 0);
+    assert.deepEqual(runsSnapshot(cwd), before);
+    assert.ok(!existsSync(path + '.lock'), 'a lock was left');
+    assert.ok(!readdirSync(dirname(path)).some((f) => f.endsWith('.lock') || f.endsWith('.tmp')));
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('F2-AC-26 a cwd with no runs directory lists []', () => {
+  const cwd = scratch();
+  try {
+    const out = runsCli('--list', '--json', '--cwd', cwd);
+    assert.equal(out.status, 0, out.stderr);
+    assert.deepEqual(JSON.parse(out.stdout), []);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
 const BOOT_FILE = '/proc/sys/kernel/random/boot_id';
