@@ -9,6 +9,15 @@
             "command": "node ${PLUGIN_ROOT}/hooks/node-gate.mjs"
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|apply_patch|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${PLUGIN_ROOT}/hooks/node-gate.mjs"
+          }
+        ]
       }
     ]
   }

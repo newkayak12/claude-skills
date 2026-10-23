@@ -51,3 +51,36 @@ export function rankCandidates(run, node, candidates) {
     return { vendor, score, index, reason: `stage=${node.stage}; preference=${preferred}; active=${active}; completed=${completed}; execution_errors=${errors}; same_actor=${Boolean(sameActor)}` };
   }).sort((a, b) => b.score - a.score || a.index - b.index);
 }
+
+// ---- Codex availability: which adapter answers, and when a node falls back to Claude ----
+// Both functions are pure: the caller passes the probe result it got from the adapter.
+import { join } from 'node:path';
+
+// The harness adapter is referenced by path, never copied; graph's own file is the standalone
+// fallback for a plugin installed without the sibling harness/ directory.
+const HARNESS_CODEX_ADAPTER = 'harness/engine/codex-exec-adapter.mjs';
+const GRAPH_CODEX_ADAPTER = 'adapters/codex-exec-adapter.mjs';
+const NESTED_CODEX = 'Codex hosts must use native agents; nested Codex CLI is disabled';
+
+// graphRoot is the graph plugin directory; exists(path) is injected so the choice is testable.
+export function codexAdapterPath(graphRoot, exists) {
+  const harness = join(graphRoot, '..', HARNESS_CODEX_ADAPTER);
+  if (exists(harness)) return { path: harness, source: 'harness', reason: '' };
+  return { path: join(graphRoot, GRAPH_CODEX_ADAPTER), source: 'graph', reason: 'harness/engine/codex-exec-adapter.mjs not present; using graph/adapters copy' };
+}
+
+// probe: {ready, reachable, adapter, reason}. Implement and test need a Codex that can write
+// (ready); a reasoning stage needs only a reachable one. Not executable, unreachable and
+// reachable-but-not-ready all leave Codex unavailable for the stage that needs more than it has.
+// A Codex host (host_vendor 'codex') or a set threadId (CODEX_THREAD_ID) never nests the CLI.
+export function routeCodex({ stage, probe, host_vendor, threadId, at = new Date().toISOString() } = {}) {
+  const p = probe || {};
+  const record = (reason) => ({
+    from: 'codex', to: 'claude', reason,
+    ready: Boolean(p.ready), reachable: Boolean(p.reachable), adapter: p.adapter ?? null, at,
+  });
+  if (host_vendor === 'codex' || threadId) return { executor: 'claude', fallback: record(NESTED_CODEX) };
+  const execution = ['implement', 'test'].includes(stage);
+  if (execution ? p.ready : p.reachable) return { executor: 'codex', fallback: null };
+  return { executor: 'claude', fallback: record(p.reason || 'codex unavailable') };
+}
