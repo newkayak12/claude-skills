@@ -33,7 +33,7 @@ test('interactive start registers /session and sets defaults', async ($, on) => 
 
   await $.session.start(start(true))
 
-  expect(registered).toEqual(['memo', 'session-denials', 'smart-compact', 'handoff', 'last-recap', 'lessons', 'task', 'reap', 'board', 'session'])
+  expect(registered).toEqual(['memo', 'session-denials', 'smart-compact', 'handoff', 'last-recap', 'lessons', 'task', 'reap', 'reap-list', 'board', 'session'])
   expect(cells.get('session.tab')).toBe('retro')
   expect(cells.get('session.band')).toBe(false)
 })
@@ -51,7 +51,7 @@ test('a refused name does not drop the commands after it', async ($, on) => {
 
   await $.session.start(start(true))
 
-  expect(registered).toEqual(['session-denials', 'smart-compact', 'handoff', 'last-recap', 'lessons', 'task', 'reap', 'board', 'session'])
+  expect(registered).toEqual(['session-denials', 'smart-compact', 'handoff', 'last-recap', 'lessons', 'task', 'reap', 'reap-list', 'board', 'session'])
 })
 
 test('a second start keeps what the first left', async ($, on) => {

@@ -439,6 +439,7 @@ export const register: Register = (on, options) => {
       { name: 'lessons', description: 'Corrections collected from recaps; /lessons clear empties them' },
       { name: 'task', description: 'Time a task: /task <name> starts, /task done stops, /task log shows today' },
       { name: 'reap', description: "Stop this session's unfinished agents and claude -p children (asks first)" },
+      { name: 'reap-list', description: 'Leftover teams processes and worktrees; Reap stops the finished ones and removes the merged or finished ones (asks first)' },
       { name: 'board', description: 'Open sessions: branch, context %, cost, task, harness/graph/teams runs; tabs for recap, lessons, today' },
     ]) {
       try {

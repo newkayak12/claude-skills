@@ -16,6 +16,7 @@ Then the plugin you touched:
 | a mod (`<plugin>/hooks/*.tsx`) | `cd <plugin> && claude plugin test .` |
 | teams / graph / harness / knowledge scripts | `node --test <plugin>/scripts/test-*.mjs` |
 | teams bench scripts | `node --test teams/scripts/bench/test-*.mjs` |
+| session scripts (`session/scripts/`) | `node --test session/scripts/test-*.mjs` |
 | harness plugin hooks | `node harness/scripts/test-goal-gate.mjs` (own runner, prints `all passed`) |
 | `write:diagram` | `node write/skills/diagram/scripts/test-diagram.mjs` (teams vendors its `diagram.mjs`) |
 | `write:tech-book` | `node --test write/skills/tech-book/scripts/test-*.mjs` |
