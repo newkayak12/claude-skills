@@ -283,7 +283,7 @@ explanation of every key is in [docs/configuration.md](docs/configuration.md#con
 | `roles` | `{planning:"auto", qa:true, audit:true}` | Which chain the planning cards run (`true` full, `"light"`, `"auto"` light when acceptance is declared), and whether the QA cards and the audit run. `planning: false` is refused with a note: planning always runs. |
 | `brainstorm` | `true` | Runs the engine's own brainstorm step when no `decisions` were passed. |
 | `interactive` | `false` | Whether questions, pins and human gates wait for a person or are decided by default. |
-| `human_gates` | `[]` | Judging stages (`"critique"`, `"accept"`, `"gate:goal"`, `"areas-critique"`, `"plan-integrate"`, ...) that a person decides instead of a model. A person refusing `plan-integrate` may pass `resplit: true`. |
+| `human_gates` | `[]` | Judging stages (`"critique"`, `"accept"`, `"gate:goal"`, `"areas-critique"`, `"plan-integrate"`, ...) that a person decides instead of a model. A person refusing `plan-integrate` may pass `resplit: true`. Needs `interactive: true`: otherwise the listed gates auto-pass, and `tm_open` warns in `notes`. |
 | `ask_timeout` | `null` | Milliseconds before an unanswered `ask` card takes its default answer; `null` waits forever. |
 | `max_parallel_teams` | `"auto"` | How many develop packages run at once; `"auto"` adapts to rate limits and crashes. |
 | `max_parallel_ceiling` | `null` | Upper limit for the `"auto"` controller; `null` derives one from the CPU count. |

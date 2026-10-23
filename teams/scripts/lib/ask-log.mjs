@@ -1,5 +1,5 @@
 // asks.jsonl: <tasksDir>/<task_id>/asks.jsonl, one JSON row per line, appended by ask-message.mjs
-// ({event:'sent'|'send_failed'|'received', key, ...}) and read by view.mjs. Missing/garbled = no rows.
+// ({event:'received', key, session, at}) and read by view.mjs. Missing/garbled = no rows.
 import { readFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 

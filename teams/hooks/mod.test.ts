@@ -2016,54 +2016,7 @@ test('tick: no surfaces, no tick even with a session id', async ($, on) => {
   expect(seen.argv).toHaveLength(0)
 })
 
-// sender and receiver: ask-message.mjs runs, the mod only transports
-function askWorld(on: On, answer: (argv: readonly string[]) => Run, sendResult: { isDelivered: boolean; reason?: string } | 'throw' = { isDelivered: true }) {
-  const seen = { argv: [] as (readonly string[])[], sent: [] as { to: unknown; text: string }[] }
-  const result = { content: [{ type: 'text', text: 'x' }], structuredContent: { ok: true } }
-  on('session.surfaces', () => ({ value: [] }))
-  sessionId(on)
-  on('tool.call', () => ({ result, text: '' }) as never)
-  on('process.run', (_$, e) => {
-    seen.argv.push(e.argv)
-    return { value: answer(e.argv) }
-  })
-  on('session.send', (_$, e) => {
-    seen.sent.push({ to: e.to, text: e.text })
-    if (sendResult === 'throw') throw new Error('gone')
-    return sendResult as never
-  })
-  return { seen, result }
-}
-const PLAN = JSON.stringify([{ to: 'opener-1', text: '[teams ask] P2 asks you: q', key: 'E-aaaaaaaa/P2' }])
-const planOr = (plan: string) => (argv: readonly string[]) => (argv.includes('--send-plan') ? ok(plan) : ok(''))
-
-test('sender: team_submit sends node\'s message headless, records --ok, returns the result unchanged', async ($, on) => {
-  const w = askWorld(on, planOr(PLAN))
-  const r = await call($, 'mcp__teams__team_submit', {})
-  expect(r).toEqual({ result: w.result, text: '' })
-  expect(w.seen.sent).toHaveLength(1)
-  expect(w.seen.sent[0]!.text).toBe('[teams ask] P2 asks you: q')
-  expect(JSON.stringify(w.seen.sent[0]!.to)).toContain('opener-1')
-  expect(w.seen.argv.some(a => a.includes('--send-plan') && a[a.indexOf('--self') + 1] === 'me')).toBe(true)
-  expect(w.seen.argv.some(a => a.includes('--sent') && a.includes('E-aaaaaaaa/P2') && a.includes('--ok'))).toBe(true)
-})
-
-test('sender: an empty plan sends nothing', async ($, on) => {
-  const w = askWorld(on, planOr('[]\n'))
-  await call($, 'mcp__teams__team_next', {})
-  expect(w.seen.sent).toEqual([])
-  expect(w.seen.argv.some(a => a.includes('--sent'))).toBe(false)
-})
-
-for (const refused of [{ isDelivered: false, reason: 'no such session' }, 'throw'] as const) {
-  test(`sender: a send that fails (${typeof refused === 'string' ? refused : 'not delivered'}) records --error and leaves the result unchanged`, async ($, on) => {
-    const w = askWorld(on, planOr(PLAN), refused)
-    const r = await call($, 'mcp__teams__team_submit', {})
-    expect(r).toEqual({ result: w.result, text: '' })
-    expect(w.seen.argv.some(a => a.includes('--sent') && a.includes('--error'))).toBe(true)
-  })
-}
-
+// receiver: ask-message.mjs runs, the mod only transports
 test('receiver: a teams ask is consumed and the data refreshed once; other text passes through', async ($, on) => {
   const clock = mock.clock(on, { now: 1000 })
   startWorld(on)

@@ -15,6 +15,8 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
     - Why: card 65 rest shipped 2026-10-22 (E-7e3a46f0: exit-code rule in the teams setgoal prompt,
       `markOf` form and all guidance markers pinned). The one-off failures (teams 1369/1, graph 198/1,
       plugin-test "Loading" 5000 ms) did not reproduce in 3+3 runs (1416/1416, 200/200, 206/206).
+    - Recurred 2026-10-23 (E-9f85c789): one "daemon/planning" test failed once under load, then passed
+      1471/1471; the report did not name it.
     - Acceptance: the next recurrence names the test and its cause; fixed or marked with that cause.
 
 Mods, in the user's words: "전체적으로 mod가 더 디테일해야할거 같아 일단 있다 그 이상 이하도 아니게보인다"
@@ -53,21 +55,6 @@ toasts).
       its retry budget spent; merged tree teams 1474/1474, mod 212/212; a forwarded answer gives one
       `you -> P3` line in the Floor feed). Left: B's band demo approval and README shot; a forwarded
       ask with nobody attached waits forever (decision U-5) — say so in the README; a `tm_open` live pass of C.
-
-62. **tm_open records a stale opener after /clear**
-    - Why: live 2026-10-22 (card 49B check): after `/clear` the session id changed
-      (`~/.claude/sessions/<pid>.json`), but the taskmanager MCP keeps the pre-/clear
-      `CLAUDE_CODE_SESSION_ID`. A task opened after `/clear` records the dead id as `opener`, so its asks
-      never match the mod's `--session` and never reach the band.
-    - Acceptance: the opener follows the current session id (e.g. read `~/.claude/sessions/<ppid>.json`,
-      ppid == the claude pid, env as fallback), with a test.
-
-63. **A driver's ask message is held by Claude Code's cross-session permission check**
-    - Why: live 2026-10-22 (card 49B check): when driver and person differ in permission-mode class,
-      Claude Code holds the peer message (`crossSessionInbound`); a modal hides the band and Esc declines
-      it. The poll carried the ask (`RESULT LIVE-POLL`); `received` was never written.
-    - Acceptance: decide the policy (accept, or skip the send and rely on the poll); the receive side
-      verified live.
 
 ### Repo and rules
 
@@ -109,12 +96,6 @@ toasts).
         reaps the finished ones in one action.
 
 ### teams plugin bugs
-
-64. **Interactive L task ignores roles.planning:false and the human_gates card**
-    - Why: live 2026-10-22: in an interactive L task, `roles.planning:false` in `team.json` did not stop
-      the planning flow (PLAN-F1/F2 ran), and `human_gates: ["gate"]` did not produce the card. Cause
-      unverified.
-    - Acceptance: cause found; `planning:false` skips planning and a listed gate parks its card, with a test.
 
 ### knowledge plugin
 
