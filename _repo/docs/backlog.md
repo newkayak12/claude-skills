@@ -151,10 +151,6 @@ toasts).
 
 ### Skeleton and length (one card per skill, next edit)
 
-24. **Remaining skeleton gap: harness:harness** — `node _repo/scripts/check-skeleton.mjs` lists 1 non-frozen
-    skill (2026-10-17, after merging E-6b073e8a and E-69f230a3: 20 → 1): `harness:harness` missing Output
-    Template and Related Skills. Acceptance: 0 skeleton problems; no mass rewrite.
-
 ## Frozen (do not pull)
 
 - `teams:orchestrate` (204 lines) and teams skills missing sections (`plan`, `qa`, `document`,
