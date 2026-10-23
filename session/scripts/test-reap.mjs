@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { parsePs, parsePorcelain, classify, planReap, fmtAge, reportPath, taskFinished } from './reap-logic.mjs'
+import { parsePs, parsePorcelain, classify, planReap, fmtAge, reportPath, taskFinished, daemonTaskId } from './reap-logic.mjs'
 
 const ps = (pid, ppid, cmd, start = 'Thu Oct 22 09:01:09 2026') => `${String(pid).padStart(7)} ${String(ppid).padStart(7)} ${start} ${cmd}`
 const row = (pid, ppid, cmd, start = 'Thu Oct 22 09:01:09 2026') => ({ pid, ppid, start, cmd })
@@ -254,9 +254,9 @@ const files = (ledger = ev('tm_open', 'daemon_spawned', 'daemon_done')) => ({
   [`/t/${TID}/task.json`]: JSON.stringify({ run_id: 'bbbbbbbb-2222', cwd: MAIN, daemon: { pid: 100 }, wt: WT }),
   [`/t/${TID}/ledger.jsonl`]: ledger,
 })
-function fake({ fs = files(), flags = { merged: true, dirty: false }, killThrows = false, removeFails = false, env = {} } = {}) {
+function fake({ fs = files(), flags = { merged: true, dirty: false }, killThrows = false, removeFails = false, env = {}, extraPs = [], environOf = () => null, pid = 50 } = {}) {
   const calls = { exec: [], kill: [], out: [], err: [] }
-  const psText = [ps(40, 1, '/usr/bin/claude'), ps(50, 40, 'node reap.mjs --reap'), ps(100, 1, D_CMD)].join('\n')
+  const psText = [ps(40, 1, '/usr/bin/claude'), ps(50, 40, 'node reap.mjs --reap'), ps(100, 1, D_CMD), ...extraPs].join('\n')
   const deps = {
     exec: (argv, opts = {}) => {
       calls.exec.push({ argv, cwd: opts.cwd })
@@ -274,8 +274,9 @@ function fake({ fs = files(), flags = { merged: true, dirty: false }, killThrows
     readdir: p => { if (p === '/t') return [TID]; throw new Error('ENOENT') },
     realpath: p => p,
     cwdOf: pid => (pid === 50 ? '/elsewhere' : ''),
+    environOf,
     now: () => Date.parse('Thu Oct 22 10:01:09 2026'),
-    pid: 50,
+    pid,
     cwd: '/elsewhere',
     env,
     tasksDir: '/t',
@@ -365,6 +366,76 @@ test('cli with no flag, both modes or a stray flag prints usage and exits 2', ()
     assert.deepEqual(calls.kill, [])
   }
 })
+test('cli --list hides the caller and its ancestors, still lists an unrelated sibling', () => {
+  const anc = ps(45, 40, 'sh -c claude -p E-bbbbbbbb go')
+  const sib = ps(60, 1, 'claude -p E-bbbbbbbb other job')
+  const { deps, calls } = fake({ extraPs: [anc, sib], pid: 50 })
+  deps.exec = (orig => (argv, o) => (argv[0] === 'ps' ? { code: 0, stdout: [ps(40, 1, '/usr/bin/claude'), ps(45, 40, 'claude -p E-bbbbbbbb go'), ps(50, 45, 'node reap.mjs --list'), ps(60, 1, 'claude -p E-bbbbbbbb other job'), ps(100, 1, D_CMD)].join('\n'), stderr: '' } : orig(argv, o)))(deps.exec)
+  assert.equal(run(['--list', '--json'], deps), 0)
+  const pids = JSON.parse(calls.out[0]).filter(i => i.type === 'proc').map(i => i.pid)
+  assert.equal(pids.includes(45), false)
+  assert.equal(pids.includes(50), false)
+  assert.ok(pids.includes(60)); assert.ok(pids.includes(100))
+})
+
+// ---- other-root orphan daemons ----
+const OTHER = '/tmp/tm-root-x'
+const info = (o = {}) => ({ tasksDir: OTHER, exists: false, task: { id: 'aaaaaaaa-1111', ledger: '', hasReport: false }, ...o })
+const orph = (ppid, i, tasks = []) => classify({ rows: [row(300, ppid, daemonCmd)], tasks, tasksDir: '/t', procInfo: { 300: i } })[0]
+test('daemonTaskId: argv token form only; a driver prompt quoting it is not a daemon', () => {
+  assert.equal(daemonTaskId(daemonCmd), 'aaaaaaaa-1111')
+  assert.equal(daemonTaskId('node --no-warnings /x/daemon.mjs --task abc'), 'abc')
+  assert.equal(daemonTaskId('claude -p Run node /x/daemon.mjs --task aaaaaaaa-1111 now'), null)
+  assert.equal(daemonTaskId('node /x/notdaemon.mjs --task abc'), null)
+  const items = classify({ rows: [row(5, 1, 'claude -p restart node /repo/teams/mcp/daemon.mjs --task aaaaaaaa-1111')], tasks: [task({ ledger: ev('daemon_done') })] })
+  assert.equal(items[0].kind, 'driver')
+})
+test('orphan: other root + ppid 1 + task dir gone', () => {
+  const d = orph(1, info())
+  assert.equal(d.state, 'orphan'); assert.equal(d.reapable, true); assert.equal(d.tasksDir, OTHER)
+})
+test('orphan: other root + ppid 1 + finished ledger', () => {
+  const d = orph(1, info({ exists: true, task: task({ ledger: ev('tm_open', 'daemon_done') }) }))
+  assert.equal(d.state, 'orphan'); assert.equal(d.reapable, true)
+})
+test('orphan: a running task in the other root is not orphan', () => {
+  const d = orph(1, info({ exists: true, task: task() }))
+  assert.equal(d.state, 'live'); assert.equal(d.reapable, false)
+})
+test('orphan: ppid != 1 (a subreaper-reparented daemon) is not orphan', () => {
+  const d = orph(777, info())
+  assert.notEqual(d.state, 'orphan'); assert.equal(d.reapable, false)
+})
+test('orphan: unreadable environ is skipped and not orphan', () => {
+  for (const i of [null, undefined, { tasksDir: null }]) {
+    const d = orph(1, i)
+    assert.equal(d.state, 'skipped'); assert.equal(d.reapable, false)
+  }
+})
+test('orphan: same tasks root keeps the existing classification', () => {
+  const d = orph(1, { tasksDir: '/t' })
+  assert.equal(d.state, 'other'); assert.equal(d.reapable, false)
+  const [live] = classify({ rows: [row(100, 1, daemonCmd)], tasks: [task()], tasksDir: '/t', procInfo: { 100: { tasksDir: '/t' } } })
+  assert.equal(live.state, 'live')
+})
+test('planReap: an orphan is stopped only while pid, start, cmd, ppid and root still match', () => {
+  const items = [orph(1, info())]
+  const fresh = [row(300, 1, daemonCmd)]
+  assert.deepEqual(planReap(items, fresh, [50], { 300: OTHER }).kill.map(r => r.pid), [300])
+  assert.deepEqual(planReap(items, [row(300, 1, daemonCmd, 'Fri Oct 23 01:00:00 2026')], [50], { 300: OTHER }).kill, [])
+  assert.deepEqual(planReap(items, [row(300, 1, 'claude -p other')], [50], { 300: OTHER }).kill, [])
+  assert.deepEqual(planReap(items, [row(300, 777, daemonCmd)], [50], { 300: OTHER }).kill, [])
+  assert.deepEqual(planReap(items, fresh, [50], { 300: '/t' }).kill, [])
+  assert.deepEqual(planReap(items, fresh, [50], {}).kill, [])
+})
+test('cli --reap SIGTERMs an orphan of another root and skips one whose environ is unreadable', () => {
+  const orphanPs = ps(300, 1, 'node /x/teams/mcp/daemon.mjs --task zzzzzzzz-9')
+  const unread = ps(301, 1, 'node /x/teams/mcp/daemon.mjs --task yyyyyyyy-8')
+  const { deps, calls } = fake({ extraPs: [orphanPs, unread], environOf: pid => (pid === 300 ? OTHER : null) })
+  assert.equal(run(['--reap'], deps), 0)
+  assert.deepEqual(calls.kill.filter(([p]) => p !== 100), [[300, 'SIGTERM']])
+})
+
 test('source: reap.mjs imports only reap-logic.mjs and node built-ins, and never forces or SIGKILLs', () => {
   const src = readFileSync(fileURLToPath(new URL('./reap.mjs', import.meta.url)), 'utf8')
   for (const m of src.matchAll(/^import\s.*?from\s+'([^']+)'/gm)) assert.ok(m[1].startsWith('node:') || m[1] === './reap-logic.mjs', `import ${m[1]}`)

@@ -75,17 +75,6 @@ toasts).
 
 ### Subagents and parallel runs — use and clean up (user, 2026-10-17)
 
-51. **Reap: orphan daemons from other task roots, and a test that leaks a daemon**
-    - Why: card 51's reap shipped 2026-10-23 (E-f979caf8: `session/scripts/reap.mjs --list|--reap`,
-      `/reap-list` pane; script tests 60/60, session mod 569/569). Its first real `--list` found 3 teams
-      daemons with parent pid 1 that it could only mark `other`: two bench daemons 26 and 28 days old
-      (`HARNESS_TASKS_DIR=/tmp/graph-bench/...`) and one a teams test leaked 50 min earlier
-      (`HARNESS_TASKS_DIR=/tmp/tm-root-*`, cwd `/tmp/tm-test-*`). Stopped by pid by hand. The listing
-      also shows the calling shell's own command line as a process.
-    - Acceptance: a daemon whose parent is pid 1 and whose `HARNESS_TASKS_DIR` task is gone or finished
-      is listed as orphan and reaped; the leaking teams test found and fixed (a test leaves no daemon,
-      checked with `ps` after the suite); the caller's own shell is not listed.
-
 ### teams plugin bugs
 
 ### knowledge plugin

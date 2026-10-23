@@ -6,7 +6,6 @@
 export const PS_ARGV = ['ps', '-A', '-o', 'pid=,ppid=,lstart=,command=']
 
 const CLAUDE_P = /\bclaude\b.*\s-p(\s|$)/
-const DAEMON = /\bdaemon\.mjs\s+--task\s+(\S+)/
 const JUDGE = /\bjudge\b/i
 const OWN = /^(ps -A |sh -c echo \$PPID)/
 const LINE = /^\s*(\d+)\s+(\d+)\s+(\w{3}\s+\w{3}\s+\d+\s+\d{1,2}:\d\d:\d\d\s+\d{4})\s+(.*)$/
@@ -77,13 +76,26 @@ export function taskFinished(task) {
   return !!(task && task.hasReport)
 }
 
-const kindOf = cmd => (DAEMON.test(cmd) ? 'daemon' : JUDGE.test(cmd) ? 'judge' : 'driver')
+// A teams daemon is argv `node [options] <path>/daemon.mjs --task <id>`: the command starts with
+// node and the script tokens follow. A driver whose prompt text merely mentions
+// 'daemon.mjs --task' starts with claude, so it is not a daemon. Returns the task id or null.
+export function daemonTaskId(cmd) {
+  const tokens = String(cmd ?? '').trim().split(/\s+/)
+  if (!['node', 'nodejs'].includes((tokens[0] || '').split('/').pop())) return null
+  let i = 1
+  while (i < tokens.length && tokens[i].startsWith('-')) i++
+  const script = (tokens[i] || '').split('/').pop()
+  if (script !== 'daemon.mjs' || tokens[i + 1] !== '--task' || !tokens[i + 2]) return null
+  return tokens[i + 2]
+}
+
+const kindOf = cmd => (daemonTaskId(cmd) ? 'daemon' : JUDGE.test(cmd) ? 'judge' : 'driver')
 
 // The tasks a process belongs to: a daemon names its id; a driver or judge carries the id, the run
 // prefix `E-xxxxxxxx`, or the path of one of the task's linked worktrees in its prompt.
 function tasksOf(cmd, tasks, mainPath) {
-  const d = DAEMON.exec(cmd)
-  if (d) return tasks.filter(t => t.id === d[1])
+  const d = daemonTaskId(cmd)
+  if (d) return tasks.filter(t => t.id === d)
   return tasks.filter(t => {
     if (t.id && cmd.includes(t.id)) return true
     const run = String(t.run_id || '').slice(0, 8)
@@ -99,21 +111,40 @@ function tasksOf(cmd, tasks, mainPath) {
 //   flags     { [worktree path]: { merged, dirty } }
 //   selfPids  this process and the session it runs in
 //   selfCwds  cwd of each selfPid
+//   tasksDir  the current tasks root
+//   procInfo  { [daemon pid]: { tasksDir, exists, task } | null } read by the caller from the
+//             daemon's /proc environ (HARNESS_TASKS_DIR); null or no tasksDir = unreadable.
+//             exists: its task dir under that root is there; task: that task record (as in tasks).
 // Returns items: { type: 'proc' | 'worktree', state, ... }. A process of no task here is 'other'.
+// A daemon of another tasks root is 'orphan' (reapable) only when its ppid is exactly 1 and its
+// task dir is gone or finished; a daemon whose environ could not be read is 'skipped'.
 export function classify(input) {
-  const { rows = [], worktrees = [], flags = {}, selfCwds = [], now } = input || {}
+  const { rows = [], worktrees = [], flags = {}, selfCwds = [], now, tasksDir, procInfo } = input || {}
   const tasks = (input && input.tasks ? input.tasks : []).filter(t => t && t.inRepo !== false)
   const mainPath = (input && input.mainPath) || (worktrees.find(w => w.main) || {}).path
   const items = []
   const fin = new Map(tasks.map(t => [t, taskFinished(t)]))
 
   for (const r of rows) {
-    if (!(CLAUDE_P.test(r.cmd) || DAEMON.test(r.cmd)) || OWN.test(r.cmd)) continue
+    const dId = daemonTaskId(r.cmd)
+    if (!(CLAUDE_P.test(r.cmd) || dId) || OWN.test(r.cmd)) continue
     const hit = tasksOf(r.cmd, tasks, mainPath)
     const item = { type: 'proc', pid: r.pid, ppid: r.ppid, start: r.start, cmd: r.cmd, age: fmtAge(r.start, now), kind: 'other', task: null, state: 'other', reapable: false }
     if (hit.length) {
       const done = hit.every(t => fin.get(t))
       Object.assign(item, { kind: kindOf(r.cmd), task: hit[0].id, state: done ? 'finished' : 'live', reapable: done })
+    } else if (dId && procInfo) {
+      const info = procInfo[r.pid]
+      item.kind = 'daemon'
+      item.task = dId
+      if (!info || !info.tasksDir) item.state = 'skipped'
+      else if (info.tasksDir !== tasksDir) {
+        item.tasksDir = info.tasksDir
+        // Only ppid exactly 1: a daemon reparented to a subreaper (ppid != 1) still has an owner.
+        const gone = !info.exists || taskFinished(info.task)
+        if (r.ppid === 1 && gone) Object.assign(item, { state: 'orphan', reapable: true })
+        else if (info.exists) item.state = 'live'
+      }
     }
     items.push(item)
   }
@@ -158,7 +189,9 @@ const below = (rows, root) => {
 // considered. A process is dropped when it is gone, was reused (start or cmd differs), is the
 // session, above the session, one of selfPids, or a helper of this plugin. A wrapper and its child
 // are one job: only the innermost is listed. Worktrees need `removable` from classify.
-export function planReap(items, freshPs, selfPids) {
+// An 'orphan' also needs ppid still 1 and its tasks root (freshRoots[pid], read again by the caller)
+// unchanged.
+export function planReap(items, freshPs, selfPids, freshRoots) {
   const fresh = freshPs || []
   const protect = new Set([0, 1])
   for (const p of selfPids || []) for (const a of ancestorsOf(fresh, p)) protect.add(a)
@@ -166,10 +199,11 @@ export function planReap(items, freshPs, selfPids) {
 
   const cands = []
   for (const it of items || []) {
-    if (!it || it.type !== 'proc' || it.state !== 'finished' || !it.reapable) continue
+    if (!it || it.type !== 'proc' || !it.reapable || (it.state !== 'finished' && it.state !== 'orphan')) continue
     const now = fresh.find(r => r.pid === it.pid)
     if (!now) continue
     if (now.cmd !== it.cmd || now.start !== it.start) continue
+    if (it.state === 'orphan' && (now.ppid !== 1 || !freshRoots || freshRoots[it.pid] !== it.tasksDir)) continue
     if (protect.has(it.pid) || OWN.test(now.cmd)) continue
     cands.push(now)
   }
