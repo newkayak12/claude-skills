@@ -78,3 +78,92 @@ test('concurrent saves retain capacity exclusions and explicit reset wins over s
     assert.equal(loadRun(cwd, original.run_id).capacity_epoch, 1);
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
+
+// ---- Codex adapter path and the Codex-unavailable-then-Claude route ----
+import { codexAdapterPath, routeCodex } from '../mcp/routing.mjs';
+import { readFileSync } from 'node:fs';
+
+test('the Codex adapter resolves to the harness file when present, else to the graph copy', () => {
+  const root = '/plug/graph';
+  const asked = [];
+  const both = codexAdapterPath(root, (p) => { asked.push(p); return true; });
+  assert.equal(both.source, 'harness');
+  assert.equal(both.path, '/plug/harness/engine/codex-exec-adapter.mjs');
+  assert.deepEqual(asked, ['/plug/harness/engine/codex-exec-adapter.mjs']);
+  const only = codexAdapterPath(root, (p) => !/harness\/engine/.test(p));
+  assert.equal(only.source, 'graph');
+  assert.equal(only.path, '/plug/graph/adapters/codex-exec-adapter.mjs');
+  assert.match(only.reason, /harness/);
+});
+
+const AT = '2026-10-23T00:00:00.000Z';
+const states = {
+  'not executable': { ready: false, reachable: false, adapter: '/h/a.mjs', reason: 'codex CLI is not executable' },
+  unreachable: { ready: false, reachable: false, adapter: '/h/a.mjs', reason: 'codex unreachable: 401 Unauthorized' },
+  'reachable, not ready': { ready: false, reachable: true, adapter: '/h/a.mjs', reason: 'write probe failed' },
+};
+const READY = { ready: true, reachable: true, adapter: '/h/a.mjs', reason: '' };
+
+for (const [state, probe] of Object.entries(states)) {
+  for (const stage of ['implement', 'test']) {
+    test(`Codex ${state}: ${stage} falls back to Claude with the adapter reason verbatim`, () => {
+      const r = routeCodex({ stage, probe, at: AT });
+      assert.equal(r.executor, 'claude');
+      assert.deepEqual(r.fallback, { from: 'codex', to: 'claude', reason: probe.reason, ready: probe.ready, reachable: probe.reachable, adapter: probe.adapter, at: AT });
+    });
+  }
+}
+
+test('critique and plan fall back when Codex is not executable or unreachable, and keep Codex when only reachable', () => {
+  for (const stage of ['plan', 'critique']) {
+    for (const state of ['not executable', 'unreachable']) {
+      const r = routeCodex({ stage, probe: states[state], at: AT });
+      assert.equal(r.executor, 'claude', `${stage} ${state}`);
+      assert.equal(r.fallback.reason, states[state].reason);
+    }
+    assert.deepEqual(routeCodex({ stage, probe: states['reachable, not ready'], at: AT }), { executor: 'codex', fallback: null });
+  }
+});
+
+test('a ready Codex keeps every stage', () => {
+  for (const stage of ['plan', 'critique', 'implement', 'test']) {
+    assert.deepEqual(routeCodex({ stage, probe: READY, at: AT }), { executor: 'codex', fallback: null });
+  }
+});
+
+test('a Codex host or a CODEX_THREAD_ID never routes to Codex and records the nested-CLI reason', () => {
+  for (const ctx of [{ host_vendor: 'codex' }, { host_vendor: 'claude', threadId: 't1' }, { threadId: 't1' }]) {
+    for (const stage of ['plan', 'implement']) {
+      const r = routeCodex({ stage, probe: READY, at: AT, ...ctx });
+      assert.equal(r.executor, 'claude');
+      assert.equal(r.fallback.from, 'codex');
+      assert.equal(r.fallback.to, 'claude');
+      assert.match(r.fallback.reason, /nested Codex CLI is disabled/);
+      assert.equal(r.fallback.ready, true);
+      assert.equal(r.fallback.at, AT);
+    }
+  }
+});
+
+test('routeCodex reads no environment: an ambient CODEX_THREAD_ID does not change the route', () => {
+  const before = process.env.CODEX_THREAD_ID;
+  process.env.CODEX_THREAD_ID = 'ambient';
+  try {
+    assert.deepEqual(routeCodex({ stage: 'implement', probe: READY, at: AT }), { executor: 'codex', fallback: null });
+  } finally { if (before === undefined) delete process.env.CODEX_THREAD_ID; else process.env.CODEX_THREAD_ID = before; }
+});
+
+test('an empty adapter reason still leaves a recorded reason, and a missing at is stamped', () => {
+  const r = routeCodex({ stage: 'implement', probe: { ready: false, reachable: false } });
+  assert.equal(r.executor, 'claude');
+  assert.ok(r.fallback.reason.length > 0);
+  assert.equal(r.fallback.adapter, null);
+  assert.ok(!Number.isNaN(Date.parse(r.fallback.at)));
+});
+
+
+test('routing.mjs points at the harness adapter and holds no adapter body or critique-round definition', () => {
+  const src = readFileSync(new URL('../mcp/routing.mjs', import.meta.url), 'utf8');
+  assert.match(src, /harness\/engine\/codex-exec-adapter\.mjs/);
+  assert.ok(!/detectCodex|runCodex|--detect|max_critique_rounds/.test(src));
+});
