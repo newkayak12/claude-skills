@@ -28,6 +28,14 @@ declare module 'claude-code' {
       }
       // id of the denial whose rule text the pane shows, '' when none
       guardCopy: string
+      // the /reap-list pane: the listing reap.mjs --list --json last gave (same shape as Item in hooks/reapview.ts) and why it could not be read, '' when it could
+      reapList: {
+        items: (
+          | { type: 'proc'; pid: number; age: string; kind: string; task: string | null; state: string; cmd: string; reapable: boolean }
+          | { type: 'worktree'; path: string; branch: string | null; task: string | null; state: string; reason: string; removable: boolean }
+        )[]
+        error: string
+      }
       // armed: the pinned-notes block has not yet gone to the model in this conversation
       // sentAt: epoch ms of the last send (from $.clock.now() at injection), 0 before the first one
       memo: { armed: boolean; sentAt: number }

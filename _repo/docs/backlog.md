@@ -75,25 +75,16 @@ toasts).
 
 ### Subagents and parallel runs — use and clean up (user, 2026-10-17)
 
-51. **Every subagent, driver and worktree started is reaped when its work ends, and a cap holds
-    the machine**
-    - Why: user, 2026-10-17: "서브에이전트 때문에 컴퓨터 문제가 있었던거 같음 왜 정리를 안하는거임?" —
-      "비상이라 지웠고"; "서브에이전트 쓰고 지우는 것에 대한 강화 내용 추가". Seen that day: 6 teams
-      EPICs (each a daemon plus up to 3 parallel `claude -p` drivers, each in its own worktree) and 3
-      background Agent subagents ran at once; the person had to delete worktrees and branches by hand.
-      After that the 5 daemons stayed alive, and every `tm_*` call respawned them, and the respawned
-      daemons started new drivers and judges into worktrees that no longer existed (verified: pids
-      14809/14868/48191 drivers, 50833 judge). The session took 40+ minutes to stop them.
-    - Acceptance:
-      - Rules (`maintaining.md` "Agents working in the repo"): a cap on what runs at once across the
-        session — teams EPICs plus Agent subagents (number stated); before opening another, count live
-        drivers (`ps`) and wait if at the cap; when an agent's result is taken, its worktree and branch
-        are removed in the same step; a session ends with `ps` showing no driver, daemon or judge it
-        started and `git worktree list` showing only main.
-      - teams part shipped 2026-10-18 (E-32e8068c, merged `8e3a7550`): `tm_cancel`, `max_live_drivers`
-        (default 4), stop on a gone worktree. Left: the session mod reap line below; the rules part is in.
-      - session mod (`agents.tsx` reap): lists live subagents, teams drivers and worktrees with age, and
-        reaps the finished ones in one action.
+51. **Reap: orphan daemons from other task roots, and a test that leaks a daemon**
+    - Why: card 51's reap shipped 2026-10-23 (E-f979caf8: `session/scripts/reap.mjs --list|--reap`,
+      `/reap-list` pane; script tests 60/60, session mod 569/569). Its first real `--list` found 3 teams
+      daemons with parent pid 1 that it could only mark `other`: two bench daemons 26 and 28 days old
+      (`HARNESS_TASKS_DIR=/tmp/graph-bench/...`) and one a teams test leaked 50 min earlier
+      (`HARNESS_TASKS_DIR=/tmp/tm-root-*`, cwd `/tmp/tm-test-*`). Stopped by pid by hand. The listing
+      also shows the calling shell's own command line as a process.
+    - Acceptance: a daemon whose parent is pid 1 and whose `HARNESS_TASKS_DIR` task is gone or finished
+      is listed as orphan and reaped; the leaking teams test found and fixed (a test leaves no daemon,
+      checked with `ps` after the suite); the caller's own shell is not listed.
 
 ### teams plugin bugs
 
