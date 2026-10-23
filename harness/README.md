@@ -305,6 +305,7 @@ The gate hook denying an Edit to a gated path before the harness is engaged.
 The mod also publishes each fallback run's outcome (`pass` on a report with no failure, `reject` on a failed goal gate after the report, `fail` on a failed subgoal; no ids) as the state value `harness.outcome`, for the `trophy` plugin's opt-in counts.
 
 ## Status
+- v1.38.1 — the `harness` skill page gains an Output Template and a Related Skills section; no engine change.
 - v1.38.0 — `/harness-status` says what the run is doing now, what it did last and whether it waits on you; the stage rail shows the critique loop with "round n of max", findings are listed by severity across rounds, and `[` `]` switch runs and stop at the ends. A run whose critique cap ran out no longer reads "critique" after it moved on. The band shows harness runs only and says the elapsed time once; the status line counts from the run's own stages. A failure toast says why and what happens next (`retry n/m`, `needs you`, `gave up`).
 - v1.37.0 — `/harness-status` (was `/harness-gate`): a Now line, Flow (stages, each reject's reason with the retry under it, a rejected critique too) and Detail (per-subgoal results, every gate verdict, goal-gate match, gate rules). Closes on Esc, q or the command again.
 - v1.36.0 — the mod publishes each run's outcome (pass, reject or fail, once per run and outcome) as its own `outcome` state for trophy to count; no ids, and the harness works the same without trophy.
