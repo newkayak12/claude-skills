@@ -32,12 +32,6 @@ not a read — each worker's state is one icon and colour (spinner while acting;
 Cards 40–43 and 50 shipped and approved 2026-10-22 (harness, teams, graph, session panes; failure
 toasts).
 
-53. **smart-compact mid-turn check: seen once live**
-    - Why: E-cf167033 (2026-10-22) shipped the check between tool calls and the retry that waits for
-      the turn to end, last error logged as `compact-failed:<first line>`; session mod 552/552. Not yet
-      seen live.
-    - Acceptance: one live session with a low threshold where a long turn compacts mid-way.
-
 49. **Mods put subagent-to-subagent communication to work**
     - Why: user, 2026-10-17: "mod 추가로 subagent 간 의사소통하는거 더 적극적으로 활용할 수 있는 방법
       찾아보자". Today teams workers are separate `claude -p` drivers that hand work over only through
