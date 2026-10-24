@@ -6,7 +6,7 @@
 // long loop impossible. The graph already holds all of it, so the broker writes the
 // prompt and the orchestrator never sees the payload.
 
-import { REASONING_STAGES } from './graph.mjs';
+import { REASONING_STAGES, roundCap } from './graph.mjs';
 
 const CONTRACT = {
   plan: `Return JSON: {"plan": "<the decomposition>", "handoff": "<what the next node needs>", "evidence": "<how you checked the request is actually satisfiable here>"}`,
@@ -16,9 +16,10 @@ Goal-level acceptance entries are AC-n. If a specs/<feature>/spec.md with AC-n e
 Proportional: if the request is behaviour-preserving (refactor, rename, move) or a one-line fix with a clear expected result, write ONE AC-1 ("Given the existing inputs, When ..., Then output is unchanged" / "the stated fix holds") with one piece of evidence (existing tests plus one equivalence or regression check), skip the unstated-criteria sweep and extra artifacts, and write "proportional: <reason>" in the spec.
 Make each subgoal self-contained: include applicable constraints in acceptance[], required paths in files[], and checks in test[]. Implement/Test will not receive the full request or requester conversation.
 Every subgoal must be a unit of WORK that changes files. Verification is not a subgoal: express it as that subgoal's test[] entries, which run as its own Test node. A subgoal whose only job is to check something already built has nothing for its Implement node to do and can only fail.`,
-  critique: `Return JSON: {"sound": true|false, "blocking": ["..."], "problems": ["..."], "handoff": "...", "evidence": "..."}
+  critique: `Return JSON: {"sound": true|false, "blocking": ["..."], "problems": [{"severity": "blocker|major|minor|nit", "text": "..."}], "handoff": "...", "evidence": "..."}
 Look for: wrong decomposition, unfalsifiable acceptance, a missing subgoal the goal needs, fake dependencies, unverifiable test entries, criteria that hinge on whole-repo state, and aspirational thresholds written as hard pass/fail bars.
-Set sound=false ONLY for defects in "blocking": something that makes the work impossible to do or impossible to verify as specified. Everything else goes in "problems" - it is carried into the next node as advice and does not stop the run.
+Give every problem a severity: blocker (makes the work impossible to do or impossible to verify as specified), major (a real defect the work should not start with), minor (worth fixing, changes nothing that gets built), nit (wording or style).
+A blocker or major problem makes sound false; a minor or nit never does. Set sound=false ONLY for a blocker or major problem, or a defect in "blocking" (something that makes the work impossible to do or impossible to verify as specified). Everything else goes in "problems" as minor or nit - it is carried into the next node as advice and does not stop the run.
 A spec you would merely improve is not a spec you should reject. Wording you would tighten, a check you would add, a scope note you would sharpen: those are problems, not blockers. An unbounded refutation always finds something, and a gate nothing can pass is not a gate - it is a dead end.`,
   implement: `Return JSON: {"stage_ok": true|false, "handoff": "<paths, names, interfaces the dependent work needs>", "changed_files": ["..."], "checks": ["what you ran and what it printed"], "evidence": "..."}
 stage_ok=false when required work or checks could not run. Do not report a file as changed unless you changed it.`,
@@ -183,6 +184,14 @@ export function composePrompt(run, n, briefing) {
       }
       if (u.handoff) lines.push(u.handoff);
       if (u.evidence) lines.push(`Evidence: ${u.evidence}`);
+      if (u.stage === 'critique') {
+        if (u.blocking.length) lines.push(`Blocking defects the critique raised:\n${bullets(u.blocking)}`);
+        if (u.problems.length) {
+          lines.push(u.sound === false
+            ? `Problems the critique raised. It rejected the spec at the round limit, so these are UNMET and the work goes on without a revision:\n${bullets(u.problems)}`
+            : `Problems the critique raised (advice, not a stop):\n${bullets(u.problems)}`);
+        }
+      }
       lines.push('');
     }
   }
@@ -197,6 +206,10 @@ export function composePrompt(run, n, briefing) {
   lines.push(`## Required output`);
   const contract = n.node_id.startsWith('gate:goal') ? CONTRACT['gate:goal'] : CONTRACT[n.stage];
   lines.push(contract || CONTRACT.implement);
+  if (n.stage === 'critique') {
+    const cap = roundCap(run);
+    lines.push(`This is critique round ${n.attempt || 1} of ${cap}. At round ${cap} a rejected spec still goes on to implement, with the unmet problems carried in the briefing: do not hold back a verdict to force another round.`);
+  }
   lines.push('');
   lines.push(`Return that JSON object and nothing else.`);
   return lines.join('\n');

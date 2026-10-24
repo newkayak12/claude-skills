@@ -108,7 +108,7 @@ test('spec retry: a critique reshaped by the real retrySpec reads retrying as se
 });
 
 test('a second spec retry: critique:2 names setgoal:3, the first reshape is still reported', () => {
-  const f = freshRun();
+  const f = freshRun({ max_critique_rounds: 3 }); // a third attempt is a third critique round
   byId(f.run, 'plan').state = 'done';
   byId(f.run, 'setgoal').state = 'done';
   fail(f.run, 'critique', 'first');
