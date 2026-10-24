@@ -25,7 +25,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, wri
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
-import { capacityFailure, selectModel, rankCandidates } from './routing.mjs';
+import { capacityFailure, selectModel, rankCandidates, routeCodex, codexAdapterPath } from './routing.mjs';
 import {
   STAGES,
   REASONING_STAGES,
@@ -43,12 +43,18 @@ import {
   unmetDeps,
   nodeBriefing,
   stagePolicy,
+  roundCap,
+  critiqueView,
+  goalGate,
+  statedFatalProblem,
+  formatProblems,
 } from './graph.mjs';
 import { composePrompt } from './prompts.mjs';
-import { mutateRun, writeAtomic, pidAlive, runFilePath } from './store.mjs';
+import { mutateRun, writeAtomic, pidAlive, runFilePath, orderRows } from './store.mjs';
 import { runRow, createdAtOf } from './runs-readout.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const GRAPH_ROOT = join(HERE, '..');
 const SERVER = { name: 'graph-engineering', version: '1.0.0' };
 const DEFAULT_PROTOCOL = '2025-06-18';
 
@@ -63,6 +69,10 @@ const DEFAULT_PROTOCOL = '2025-06-18';
 // `self` is the orchestrator: no adapter, it does the work and submits the result for
 // the same adjudication. Projects register more in <cwd>/.claude/broker-vendors.json.
 
+// {path, source: 'harness'|'graph', reason}: which adapter the builtin codex vendor runs,
+// decided once per broker process and recorded on every route that reaches codex.
+const CODEX_ADAPTER = codexAdapterPath(GRAPH_ROOT, existsSync);
+
 const BUILTIN_VENDORS = {
   claude: {
     command: 'node',
@@ -75,7 +85,9 @@ const BUILTIN_VENDORS = {
   },
   codex: {
     command: 'node',
-    args: [join(HERE, '..', 'adapters', 'codex-exec-adapter.mjs')],
+    // The harness adapter when the sibling harness/ directory is installed, spawned from where
+    // it lives and never copied; graph's own file is the standalone fallback (routing.mjs).
+    args: [CODEX_ADAPTER.path],
     sandboxes: ['read-only', 'workspace-write', 'danger-full-access'],
     default_sandbox: 'workspace-write',
     requires_binary: 'codex',
@@ -473,6 +485,16 @@ async function route(run, node) {
       : [want];
 
   const attempts = [];
+  // Set when "auto" tried codex and could not use it. It rides on whatever route is taken
+  // instead (never on a vendor-failure), so a degrade is recorded and not silent.
+  let fallback = null;
+  // Which adapter answered for codex; the builtin choice is CODEX_ADAPTER, a project's own wins.
+  let adapter = null;
+  const withRouting = (r) => ({
+    ...r,
+    ...(adapter ? { adapter } : {}),
+    ...(fallback && r.vendor !== 'vendor-failure' ? { fallback } : {}),
+  });
   const ranked = balanced && want === 'auto' ? rankCandidates(run, node, order)
     : order.map(vendor => ({ vendor, reason: 'explicit vendor/candidate order' }));
   for (const candidate of ranked) {
@@ -498,10 +520,13 @@ async function route(run, node) {
         continue;
       }
       const reason = resolved.fallback ? `${candidate.reason}; model ${model} not in native_models, host model used` : candidate.reason;
-      return { vendor: 'self', executor: name, sandbox: null, model: resolved.model, reason, attempts };
+      return withRouting({ vendor: 'self', executor: name, sandbox: null, model: resolved.model, reason, attempts });
     }
     if (name === 'codex' && (run.host_vendor === 'codex' || process.env.CODEX_THREAD_ID)) {
-      attempts.push({ vendor: name, ready: false, reason: 'Codex hosts must use native agents; nested Codex CLI is disabled' });
+      // The nested CLI is never started; routeCodex words the reason (routing.mjs).
+      const nested = routeCodex({ stage, probe: {}, host_vendor: run.host_vendor, threadId: process.env.CODEX_THREAD_ID });
+      attempts.push({ vendor: name, ready: false, reason: nested.fallback.reason });
+      if (want === 'auto') fallback = { ...nested.fallback, adapter: CODEX_ADAPTER.path };
       continue;
     }
     const v = vendors[name];
@@ -519,7 +544,16 @@ async function route(run, node) {
     }
     const epochAtProbe = run.capacity_epoch || 0;
     const p = await probe(name, v, run.cwd, sandbox, model);
-    const usable = REASONING_STAGES.has(stage) ? p.reachable : p.ready;
+    let usable = REASONING_STAGES.has(stage) ? p.reachable : p.ready;
+    if (name === 'codex') {
+      const used = (v.args || [])[0] ?? null;
+      adapter = used === CODEX_ADAPTER.path ? CODEX_ADAPTER : { path: used, source: 'project', reason: '' };
+      // routeCodex decides which Codex states are unavailable for this stage (routing.mjs);
+      // the adapter path rides in the probe so the record says which adapter answered.
+      const rc = routeCodex({ stage, probe: { ...p, adapter: used }, host_vendor: run.host_vendor, threadId: process.env.CODEX_THREAD_ID });
+      usable = rc.executor === 'codex';
+      if (!usable && want === 'auto') fallback = rc.fallback;
+    }
     // Spent capacity is recorded on the run so the operator sees why the vendor dropped
     // out, the run stops re-probing it, and graph_retry({reset_capacity:true}) is the way back.
     // An explicit reset that landed while this probe ran wins over its verdict.
@@ -530,11 +564,19 @@ async function route(run, node) {
       });
     }
     attempts.push({ vendor: name, ready: usable, reason: usable ? '' : p.reason });
-    if (usable) return { vendor: name, executor: name, sandbox, model, reason: candidate.reason, attempts };
+    if (usable) return withRouting({ vendor: name, executor: name, sandbox, model, reason: candidate.reason, attempts });
   }
   // "auto" degrades to self; a named vendor does not - silent degradation is what lets
   // a graph lie about who did the work.
-  return { vendor: isSelf || (!balanced && want === 'auto') ? 'self' : 'vendor-failure', sandbox: null, model: pol.model, attempts };
+  return withRouting({ vendor: isSelf || (!balanced && want === 'auto') ? 'self' : 'vendor-failure', sandbox: null, model: pol.model, attempts });
+}
+
+// What a node that considered codex keeps of its route: which adapter answered, the degrade
+// to Claude when there was one, and every candidate tried (attempts[] must outlive the route
+// call). null when codex never came into it, so those nodes' run files do not change.
+function routingOf(r) {
+  if (!r.fallback && !r.adapter) return null;
+  return { ...(r.adapter ? { adapter: r.adapter } : {}), ...(r.fallback ? { fallback: r.fallback } : {}), attempts: r.attempts };
 }
 
 // ---------- result normalization ----------
@@ -607,6 +649,7 @@ function verdict(run, n) {
     if (field && res[field] === undefined) out.missing_verdict = field;
   }
   if (res.killed_for) out.killed_for = res.killed_for;
+  if (n.routing) out.routing = n.routing;
   const reason = String(res.reason || res.verification_error || '');
   if (reason) out.reason = reason.slice(0, 300);
   out.detail_path = n.detail_path || null;
@@ -701,6 +744,20 @@ function withRejectionReason(n, result) {
   return synthesized ? { ...result, reason: synthesized.slice(0, 300) } : result;
 }
 
+// A critique that says sound:true while stating a blocker or major problem has contradicted
+// itself: the problem decides. Only a stated severity forces it - an unstated one counts as
+// major in the rounds view but never flips a verdict the critic gave (older critics keep working).
+function withSeverityVerdict(n, result) {
+  if (n.stage !== 'critique' || result.stage_ok !== true || result.sound !== true) return result;
+  const fatal = statedFatalProblem(result.problems);
+  if (!fatal) return result;
+  return {
+    ...result,
+    sound: false,
+    reason: [`${fatal.severity} problem: ${fatal.text}`, result.reason].filter(Boolean).join('; '),
+  };
+}
+
 const LAST_STEP_MAX = 120;
 
 // First non-empty of reason, handoff, last of checks, evidence; one line, cut to 120.
@@ -720,9 +777,17 @@ function finishNode(run, nodeId, result, vendorName, expect) {
       return late;
     }
     delete n.recovery; // historical interruptions remain in n.interruptions
-    const res = withJudgedOutcome(n, result);
+    const res = withSeverityVerdict(n, withJudgedOutcome(n, result));
     n.state = nodeSucceeded(n, res) ? 'done' : 'failed';
     n.result = withRejectionReason(n, res);
+    // The last round is not a dead end: a spec rejected at the round cap is settled `done`
+    // (its result still says sound:false) so the subgoals it produced can implement, and its
+    // unmet problems ride in their briefing. Only a stated rejection is settled this way - a
+    // critique that crashed or gave no verdict is still a failure.
+    if (n.stage === 'critique' && n.state === 'failed' && res.stage_ok === true && res.sound === false
+      && (n.attempt || 1) >= roundCap(fresh)) {
+      n.state = 'done';
+    }
     n.vendor = vendorName;
     n.finished_at = Date.now();
 
@@ -824,6 +889,7 @@ const VERDICT_SCHEMA = {
     reason: { type: 'string' },
     detail_path: { type: ['string', 'null'], description: 'read this for one node only; never pull a whole run into context' },
     superseded: { type: 'boolean', description: 'this call\'s outcome arrived after the node moved on and was dropped; the verdict shows the node as it now is' },
+    routing: { type: 'object', description: 'present when codex was considered: {adapter, fallback, attempts}; fallback is {from, to, reason, ready, reachable, adapter, at} when the node degraded to Claude' },
   },
   required: ['node_id', 'stage', 'state', 'stage_ok'],
 };
@@ -847,6 +913,8 @@ const READY_SCHEMA = {
           model: { type: 'string' },
           routing_reason: { type: 'string' },
           attempts: { type: 'array', items: { type: 'object' } },
+          adapter: { type: 'object', description: 'codex considered: {path, source: harness|graph|project, reason}' },
+          fallback: { type: 'object', description: 'codex unavailable and the node degraded: {from, to, reason, ready, reachable, adapter, at}' },
           briefing_path: { type: 'string', description: 'self-routed nodes only' },
           next: { type: 'string' },
         },
@@ -869,6 +937,10 @@ const STATUS_SCHEMA = {
     nodes: { type: 'array', items: { type: 'object' } },
     cwds: { type: 'array', items: { type: 'string' }, description: 'overview form only' },
     runs: { type: 'array', items: { type: 'object' }, description: 'overview form only: one row per run, newest first' },
+    max_critique_rounds: { type: 'number', description: 'run_id form: the critique round cap' },
+    severity: { type: 'object', description: 'run_id form: {blocker, major, minor, nit} counts over every critique round' },
+    rounds: { type: 'array', items: { type: 'object' }, description: 'run_id form: [{round, file, sound, problems:[{severity, text}]}], oldest first; file is the critique node id' },
+    goal_gate: { type: ['object', 'null'], description: 'run_id form: the gate:goal verdict {node_id, accept, match_pct, gaps, pass, critique}; pass needs accept and match_pct >= 90; null before the gate has a result' },
   },
 };
 
@@ -913,6 +985,7 @@ const TOOLS = [
         sandbox: { type: 'string' },
         isolated: { type: 'boolean', description: 'cwd is a private worktree with only this run in it' },
         max_retries: { type: 'number' },
+        max_critique_rounds: { type: 'number', description: 'cap on critique rounds, default 2, separate from max_retries; each critique node and each spec graph_retry is one round. At the cap a rejected critique no longer stops the run: it goes on to implement with the unmet problems carried in the briefing. Not an integer of at least 1 means 2.' },
         owner: {
           type: 'object',
           description: 'who this run belongs to, stored as given: key is the EPIC key E-xxxxxxxx for an S task, or the STORY key E-xxxxxxxx/Pn for an L package. Omit for a standalone run.',
@@ -1048,6 +1121,7 @@ async function toolGraphOpen(a) {
     // coercion, so there is no second value for the two sites to disagree on. Left as-is.
     isolated: a.isolated === true,
     max_retries: a.max_retries,
+    max_critique_rounds: a.max_critique_rounds,
     owner: a.owner,
   });
   record(cwd, { event: 'graph_open', run_id: run.run_id, vendor: run.vendor });
@@ -1083,13 +1157,17 @@ async function toolGraphNext(a) {
       const offered = [];
       for (const n of ready) {
       const r = await route(run, n);
-      if (run.allocation === 'balanced' && r.vendor !== 'vendor-failure') {
+      const routing = routingOf(r);
+      if ((run.allocation === 'balanced' && r.vendor !== 'vendor-failure') || routing) {
         transact(run, (fresh) => {
           const f = getNode(fresh, n.node_id);
           // Only a node still waiting gets an assignment; one another broker started keeps its own.
           if (!f || f.state !== 'pending') return;
-          f.assignment = r;
-          f.executor = r.executor || r.vendor;
+          if (run.allocation === 'balanced' && r.vendor !== 'vendor-failure') {
+            f.assignment = r;
+            f.executor = r.executor || r.vendor;
+          }
+          if (routing) f.routing = routing;
         });
       }
       const briefingPath = join(brokerDir(run.cwd), run.run_id, 'briefings', `${n.node_id.replace(/[^A-Za-z0-9._-]/g, '_')}.md`);
@@ -1108,7 +1186,9 @@ async function toolGraphNext(a) {
         vendor: r.vendor,
         executor: r.executor,
         routing_reason: r.reason,
-        attempts: r.vendor === 'vendor-failure' ? r.attempts : undefined,
+        attempts: r.vendor === 'vendor-failure' || r.fallback ? r.attempts : undefined,
+        adapter: r.adapter,
+        fallback: r.fallback,
         briefing_path: r.vendor === 'self' ? briefingPath : undefined,
         model: r.model || undefined,
         next: r.vendor === 'self' ? 'dispatch briefing_path to a fresh native agent at model, then graph_submit' : r.vendor === 'vendor-failure' ? 'no vendor is ready; see attempts' : 'call graph_run',
@@ -1124,7 +1204,7 @@ async function toolGraphNext(a) {
 }
 
 // The fields graph_run's claim stamps on a node; a released claim restores them.
-const CLAIM_FIELDS = ['ticket', 'executor', 'model', 'started_at', 'detail_path', 'owner_pid', 'owner_boot'];
+const CLAIM_FIELDS = ['ticket', 'executor', 'model', 'started_at', 'detail_path', 'owner_pid', 'owner_boot', 'routing'];
 
 async function toolGraphRun(a) {
   const run = mustFindRun(a);
@@ -1141,6 +1221,7 @@ async function toolGraphRun(a) {
       n.state = 'failed';
       n.result = { stage_ok: false, reason: r.attempts.map((x) => `${x.vendor}: ${x.reason}`).join(' | ') };
       n.vendor = 'vendor-failure';
+      if (routingOf(r)) n.routing = routingOf(r);
     });
     return verdict(run, getNode(run, nodeId));
   }
@@ -1168,6 +1249,7 @@ async function toolGraphRun(a) {
     n.state = 'running';
     n.started_at = Date.now();
     n.detail_path = outPath;
+    if (routingOf(r)) n.routing = routingOf(r);
   });
   syncOpenNodes(run);
   const activeKey = `${run.run_id}:${nodeId}`;
@@ -1376,7 +1458,7 @@ async function toolGraphRetry(a) {
         .pop() || fresh.nodes.filter((n) => n.stage === 'critique' && n.result).pop();
       const fb = source && source.result
         ? [source.result.reason || '', ...(source.result.blocking || []),
-           ...(source.result.spec_problems || []), ...(source.result.problems || [])]
+           ...(source.result.spec_problems || []), ...formatProblems(source.result.problems)]
             .filter(Boolean).join('\n- ')
         : '';
       const { attempt, reason, unreachable } = retrySpec(fresh, fb);
@@ -1491,8 +1573,13 @@ function toolGraphStatus(a) {
               elapsed_s: Math.round((Date.now() - (n.started_at || Date.now())) / 1000),
             }
             : {}),
+          ...(n.routing ? { routing: n.routing } : {}),
         }
         : verdict(run, n))),
+    // The harness row's keys, in its order (fallback-check.mjs --show --json); goal_gate carries
+    // the same critique object, read from this one view and never re-derived.
+    ...critiqueView(run),
+    goal_gate: goalGate(run),
   };
 }
 
@@ -1613,8 +1700,7 @@ async function handle(msg) {
 // `runs --list` is the non-mod readout. It runs before the stdin loop is attached, reads
 // run files only (no reclaim, no lock, no write) and exits.
 function runRows(cwd) {
-  return listRuns(cwd)
-    .sort((x, y) => (Number.isFinite(y.created_at) ? y.created_at : -1) - (Number.isFinite(x.created_at) ? x.created_at : -1))
+  return orderRows(listRuns(cwd)
     .flatMap((run) => {
       // a run file whose name differs from its run_id, or one that vanished since the listing, is skipped
       try {
@@ -1623,7 +1709,7 @@ function runRows(cwd) {
       } catch {
         return [];
       }
-    });
+    }));
 }
 
 // `runs --show <run-file>`: one row, same shape. Any failure is one stderr line, no stdout.

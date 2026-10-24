@@ -11,21 +11,24 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, utimesSync, chmodSync, readdirSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, utimesSync, chmodSync, readdirSync, statSync, cpSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { STALL_AFTER_MS, OPEN_UNDER_MS, runRow } from '../mcp/runs-readout.mjs';
 
 const BROKER = join(dirname(fileURLToPath(import.meta.url)), '..', 'mcp', 'broker.mjs');
+// A double: graph's own standalone adapter, spawned directly by the --detect test below. It is not
+// the path the broker's codex vendor uses; the broker resolves that with codexAdapterPath
+// (harness/engine when present), and the "resolves to harness/engine" tests assert the resolver.
 const CODEX_ADAPTER = join(dirname(fileURLToPath(import.meta.url)), '..', 'adapters', 'codex-exec-adapter.mjs');
 const CLAUDE_ADAPTER = join(dirname(fileURLToPath(import.meta.url)), '..', 'adapters', 'claude-exec-adapter.mjs');
 
 // ---------- a minimal MCP client ----------
 
 class Client {
-  constructor(env = {}) {
-    this.proc = spawn('node', [BROKER], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, ...env } });
+  constructor(env = {}, broker = BROKER) {
+    this.proc = spawn('node', [broker], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, ...env } });
     this.buf = '';
     this.id = 0;
     this.queue = [];
@@ -462,7 +465,8 @@ test('exhausting the spec retry settles the rebuilt graph and releases its repor
     const brief = readFileSync(r.ready[0].briefing_path, 'utf8');
     assert.match(brief, /critique:2 \(critique\) — failed .*sound=false/);
     assert.match(brief, /still vague/, 'the report must see why the spec died');
-  }, { max_retries: 1 });
+    // the round cap is raised so the retry budget is what binds here
+  }, { max_retries: 1, max_critique_rounds: 5 });
 });
 
 // ---------- routing ----------
@@ -598,7 +602,8 @@ test('the spec retry budget is finite', async () => {
     const second = await c.call('graph_retry', { run_id: runId, cwd });
     assert.equal(second.retried, false);
     assert.match(second.reason, /budget/);
-  }, { max_retries: 1 });
+    // the round cap is raised so the retry budget is what binds here
+  }, { max_retries: 1, max_critique_rounds: 5 });
 });
 
 // ---------- a spec retry that reuses subgoal ids ----------
@@ -2161,6 +2166,12 @@ test('runs --list prints one line per run and --json the same rows, with no stdi
     const stripped = readRun(cwd, legacy);
     delete stripped.created_at;
     writeFileSync(p, JSON.stringify(stripped, null, 2));
+    // The order is by last change (store.mjs orderRows), so the three mtimes are set outright:
+    // owned newest, then legacy, then standalone. A run of unknown age sorts by its mtime like any other.
+    const touch = (id, agoMs) => { const t = new Date(Date.now() - agoMs); utimesSync(runFile(cwd, id), t, t); };
+    touch(owned, 1000);
+    touch(legacy, 60 * 60 * 1000);
+    touch(standalone, 2 * 60 * 60 * 1000);
     const before = dirSnapshot(cwd);
 
     const run = (...args) => spawnSync('node', [BROKER, 'runs', '--list', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
@@ -2173,7 +2184,8 @@ test('runs --list prints one line per run and --json the same rows, with no stdi
     assert.equal(line(standalone), `${standalone.slice(0, 8)}  running  —  ${iso(standalone)}  —  —`);
     assert.equal(line(owned), `${owned.slice(0, 8)}  running  E-abcd1234/P2  ${iso(owned)}  —  setgoal: plan written`);
     assert.equal(line(legacy), `${legacy.slice(0, 8)}  running  —  unknown  —  —`);
-    assert.ok(lines[2].startsWith(legacy.slice(0, 8)), 'a run of unknown age is not listed last');
+    assert.deepEqual(lines.map((l) => l.slice(0, 8)), [owned, legacy, standalone].map((id) => id.slice(0, 8)),
+      'newest change first; a run of unknown age is placed by its mtime, not sunk last');
 
     const json = run('--json', '--cwd', cwd);
     assert.equal(json.status, 0, json.stderr);
@@ -2421,4 +2433,606 @@ test('runRow: the [teams-task <id>] prefix is not part of the request title; oth
   const row = (request) => runRow({ run_id: 'r1', request, nodes: [] }, { file: '/f', mtimeMs: 1000, now: 1000 }).request;
   assert.equal(row('[teams-task 97f05d73-860c-4538-8203-e9a0f925b366] Add a line\nmore'), 'Add a line');
   assert.equal(row('[fix] keep this'), '[fix] keep this');
+});
+
+// ---------- critique rounds with severity (card 48, F1) ----------
+// A critique:N node that recorded a result is a round; every problem carries blocker|major|minor|nit;
+// max_critique_rounds (default 2, apart from max_retries) ends the critiquing, not the run.
+
+const sub = (c, cwd, runId, node_id, payload) => c.call('graph_submit', { run_id: runId, cwd, node_id, payload });
+const statusOf = (c, cwd, runId) => c.call('graph_status', { run_id: runId, cwd });
+const toSpec = async (c, cwd, runId, spec = SPEC) => {
+  await sub(c, cwd, runId, 'plan', ok({ handoff: 'p' }));
+  await sub(c, cwd, runId, 'setgoal', ok({ spec, handoff: 's' }));
+};
+const briefOf = async (c, cwd, runId, nodeId) => {
+  const nx = await c.call('graph_next', { run_id: runId, cwd });
+  return readFileSync(nx.ready.find((n) => n.node_id === nodeId).briefing_path, 'utf8');
+};
+const SEV_KEYS = ['blocker', 'major', 'minor', 'nit'];
+
+test('a fresh run has one critique node, a cap of 2, no rounds and four zero counts', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    const st = await statusOf(c, cwd, runId);
+    assert.deepEqual(st.nodes.filter((n) => n.stage === 'critique').map((n) => n.node_id), ['critique']);
+    assert.equal(st.max_critique_rounds, 2);
+    assert.deepEqual(Object.keys(st.severity), SEV_KEYS);
+    assert.deepEqual(Object.values(st.severity), [0, 0, 0, 0]);
+    assert.deepEqual(st.rounds, []);
+    assert.equal(st.goal_gate, null);
+  });
+});
+
+test('a rejected-then-accepted critique is two rounds with their severities, in the harness key order', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await toSpec(c, cwd, runId);
+    await sub(c, cwd, runId, 'critique', ok({ sound: false, problems: [{ severity: 'blocker', text: 'AC-1 cannot be checked' }, 'Nit: wording'] }));
+    assert.equal((await c.call('graph_retry', { run_id: runId, cwd })).retried, true);
+    await sub(c, cwd, runId, 'setgoal:2', ok({ spec: SPEC }));
+    await sub(c, cwd, runId, 'critique:2', ok({ sound: true, problems: [{ severity: 'minor', text: 'a check to add' }] }));
+
+    const st = await statusOf(c, cwd, runId);
+    assert.equal(st.rounds.length, 2);
+    assert.deepEqual(st.rounds[0], {
+      round: 1, file: 'critique', sound: false,
+      problems: [{ severity: 'blocker', text: 'AC-1 cannot be checked' }, { severity: 'nit', text: 'Nit: wording' }],
+    });
+    assert.deepEqual(st.rounds[1], { round: 2, file: 'critique:2', sound: true, problems: [{ severity: 'minor', text: 'a check to add' }] });
+    assert.deepEqual(st.severity, { blocker: 1, major: 0, minor: 1, nit: 1 });
+    assert.deepEqual(Object.keys(st.severity), SEV_KEYS);
+    assert.deepEqual(Object.keys(st.rounds[0]), ['round', 'file', 'sound', 'problems']);
+    const keys = Object.keys(st);
+    assert.deepEqual(keys.slice(keys.indexOf('max_critique_rounds'), keys.indexOf('max_critique_rounds') + 3), ['max_critique_rounds', 'severity', 'rounds']);
+    assert.equal(st.nodes.find((n) => n.node_id === 'critique').state, 'skipped', 'round 1 was retired, and is still listed');
+  });
+});
+
+test('problem severity is normalised the harness way: field, prefix, unknown value, object keys', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await toSpec(c, cwd, runId);
+    await sub(c, cwd, runId, 'critique', ok({ sound: false, problems: [
+      { severity: ' Major ', text: 't' },
+      'Nit: reword the title', '[minor] m', 'Blocker - b', 'plain words',
+      { severity: 'high', text: 'h' },
+      { text: 'Nit: from an object' },
+      { problem: 'p' }, { description: 'd' }, { reason: 'r' }, { text: 'T', problem: 'P' },
+    ] }));
+    const got = (await statusOf(c, cwd, runId)).rounds[0].problems;
+    assert.deepEqual(got, [
+      { severity: 'major', text: 't' },
+      { severity: 'nit', text: 'Nit: reword the title' },
+      { severity: 'minor', text: '[minor] m' },
+      { severity: 'blocker', text: 'Blocker - b' },
+      { severity: 'major', text: 'plain words' },
+      { severity: 'major', text: 'h' },
+      { severity: 'nit', text: 'Nit: from an object' },
+      { severity: 'major', text: 'p' }, { severity: 'major', text: 'd' }, { severity: 'major', text: 'r' }, { severity: 'major', text: 'T' },
+    ]);
+    for (const p of got) assert.deepEqual(Object.keys(p), ['severity', 'text']);
+  });
+});
+
+test('problems that are not an array read as [] and do not fail the node; a missing sound reads null', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await toSpec(c, cwd, runId);
+    const v = await sub(c, cwd, runId, 'critique', ok({ sound: true, problems: 'not a list' }));
+    assert.equal(v.state, 'done');
+    assert.deepEqual((await statusOf(c, cwd, runId)).rounds[0].problems, []);
+  });
+  await withRun(async ({ c, cwd, runId }) => {
+    await toSpec(c, cwd, runId);
+    const v = await sub(c, cwd, runId, 'critique', ok({ problems: ['x'] }));
+    assert.equal(v.state, 'failed', 'a critique with no verdict still fails');
+    assert.equal((await statusOf(c, cwd, runId)).rounds[0].sound, null);
+  });
+});
+
+test('a critique node that never recorded a submission is not a round', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await toSpec(c, cwd, runId);
+    assert.deepEqual((await statusOf(c, cwd, runId)).rounds, [], 'pending');
+    await sub(c, cwd, runId, 'critique', ok({ sound: false, problems: ['x'] }));
+    await c.call('graph_retry', { run_id: runId, cwd });
+    let st = await statusOf(c, cwd, runId);
+    assert.equal(st.nodes.some((n) => n.node_id === 'critique:2'), true);
+    assert.deepEqual(st.rounds.map((r) => r.file), ['critique'], 'critique:2 is pending');
+    forceRunning(cwd, runId, 'setgoal:2', 1000);
+    st = await statusOf(c, cwd, runId);
+    assert.deepEqual(st.rounds.map((r) => r.file), ['critique']);
+    assert.deepEqual(Object.values(st.severity).reduce((a, b) => a + b, 0), 1);
+  });
+});
+
+test('a stated blocker or major forces sound:false; minor, nit and an unstated severity do not', async () => {
+  const verdictOf = async (payload) => {
+    let out;
+    await withRun(async ({ c, cwd, runId }) => {
+      await toSpec(c, cwd, runId);
+      out = { v: await sub(c, cwd, runId, 'critique', ok(payload)), run: readRun(cwd, runId) };
+    });
+    return out;
+  };
+  const major = await verdictOf({ sound: true, problems: [{ severity: 'major', text: 'the dep graph is fake' }] });
+  assert.equal(major.v.state, 'failed');
+  assert.equal(major.v.sound, false, 'the verdict returned to the caller agrees');
+  assert.match(major.v.reason, /the dep graph is fake/, 'the reason names the problem even with blocking empty');
+  assert.equal(major.run.nodes.find((n) => n.node_id === 'critique').result.sound, false);
+
+  const prefixed = await verdictOf({ sound: true, problems: ['[blocker] no way to verify AC-2'] });
+  assert.equal(prefixed.v.state, 'failed');
+  assert.match(prefixed.v.reason, /no way to verify AC-2/);
+
+  const advice = await verdictOf({ sound: true, problems: [{ severity: 'minor', text: 'add a check' }, 'Nit: wording'] });
+  assert.equal(advice.v.state, 'done');
+  assert.equal(advice.v.sound, true);
+  assert.equal(advice.run.nodes.find((n) => n.node_id === 'critique').result.problems.length, 2, 'the problems are kept');
+
+  const unstated = await verdictOf({ sound: true, problems: ['vague, but I did not say how bad'] });
+  assert.equal(unstated.v.state, 'done', 'only a severity the critic stated forces the verdict');
+
+  const withBlocking = await verdictOf({ sound: false, blocking: ['cannot run'], problems: [{ severity: 'nit', text: 'n' }] });
+  assert.deepEqual(withBlocking.run.nodes.find((n) => n.node_id === 'critique').result.blocking, ['cannot run'], 'blocking is its own list, untouched');
+});
+
+test('the spec-retry feedback and the gaps print each problem as severity and text, never [object Object]', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await toSpec(c, cwd, runId);
+    await sub(c, cwd, runId, 'critique', ok({ sound: false, blocking: ['plain blocking'], problems: [{ severity: 'blocker', text: 'AC-1 is vague' }, 'Nit: wording'] }));
+    await c.call('graph_retry', { run_id: runId, cwd });
+    const brief = await briefOf(c, cwd, runId, 'setgoal:2');
+    assert.match(brief, /plain blocking/);
+    assert.match(brief, /\[blocker\] AC-1 is vague/);
+    assert.match(brief, /\[nit\] Nit: wording/);
+    assert.doesNotMatch(brief, /\[object Object\]/);
+  });
+});
+
+test('max_critique_rounds: 2 unless given as an integer of at least 1', async () => {
+  for (const [given, want] of [[undefined, 2], [3, 3], [1, 1], [0, 2], [-1, 2], [1.5, 2], ['3', 2], [null, 2]]) {
+    await withRun(async ({ c, cwd, runId }) => {
+      assert.equal((await statusOf(c, cwd, runId)).max_critique_rounds, want, `given ${JSON.stringify(given)}`);
+    }, given === undefined ? {} : { max_critique_rounds: given });
+  }
+});
+
+test('at the cap a rejected critique is settled: no critique:3, the subgoals implement, the unmet problems ride in the briefings', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await toSpec(c, cwd, runId);
+    await sub(c, cwd, runId, 'critique', ok({ sound: false, problems: [{ severity: 'major', text: 'round one flaw' }] }));
+    assert.equal((await c.call('graph_retry', { run_id: runId, cwd })).retried, true, 'below the cap a spec retry is the next round');
+    await sub(c, cwd, runId, 'setgoal:2', ok({ spec: SPEC }));
+    const v = await sub(c, cwd, runId, 'critique:2', ok({
+      sound: false, blocking: ['no way to verify AC-1'],
+      problems: [{ severity: 'blocker', text: 'AC-1 is unfalsifiable' }, { severity: 'nit', text: 'reword the title' }],
+    }));
+    assert.equal(v.state, 'done', 'settled so its dependants can run');
+    assert.equal(v.sound, false, 'the verdict still says rejected');
+    assert.equal(v.stage_ok, true);
+
+    const st = await statusOf(c, cwd, runId);
+    assert.deepEqual(st.nodes.filter((n) => /^(critique|setgoal):3/.test(n.node_id)), []);
+    assert.deepEqual(st.rounds.map((r) => [r.round, r.sound]), [[1, false], [2, false]]);
+    const nx = await c.call('graph_next', { run_id: runId, cwd });
+    assert.equal(nx.state, 'running');
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['implement:U1:2']);
+    const brief = readFileSync(nx.ready[0].briefing_path, 'utf8');
+    assert.match(brief, /\[blocker\] AC-1 is unfalsifiable/);
+    assert.match(brief, /\[nit\] reword the title/);
+    assert.match(brief, /no way to verify AC-1/);
+    assert.match(brief, /UNMET/);
+
+    const again = await c.call('graph_retry', { run_id: runId, cwd });
+    assert.equal(again.retried, false);
+    assert.match(again.reason, /round limit/);
+    assert.deepEqual(again.unreachable, []);
+    assert.deepEqual((await statusOf(c, cwd, runId)).nodes.map((n) => n.node_id), st.nodes.map((n) => n.node_id), 'a further retry creates nothing');
+
+    // the report is briefed with them too
+    await passSubgoal(c, cwd, runId, 'U1', 2);
+    await passSubgoal(c, cwd, runId, 'U2', 2);
+    await sub(c, cwd, runId, 'gate:goal:2', ok({ accept: true, match_pct: 95 }));
+    assert.match(await briefOf(c, cwd, runId, 'report:2'), /\[blocker\] AC-1 is unfalsifiable/);
+  });
+});
+
+test('a cap of 1: the first rejection goes on to implement with no spec retry offered', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await toSpec(c, cwd, runId);
+    const v = await sub(c, cwd, runId, 'critique', ok({ sound: false, problems: [{ severity: 'blocker', text: 'b' }] }));
+    assert.equal(v.state, 'done');
+    const st = await statusOf(c, cwd, runId);
+    assert.equal(st.rounds.length, 1);
+    assert.equal(st.nodes.some((n) => n.node_id === 'critique:2'), false);
+    assert.deepEqual((await c.call('graph_next', { run_id: runId, cwd })).ready.map((n) => n.node_id), ['implement:U1:1']);
+    const r = await c.call('graph_retry', { run_id: runId, cwd });
+    assert.equal(r.retried, false);
+    assert.match(r.reason, /round limit/);
+  }, { max_critique_rounds: 1 });
+});
+
+test('the retry budget still bounds on top of the cap, and an accepted round 1 means one round', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await toSpec(c, cwd, runId);
+    await sub(c, cwd, runId, 'critique', ok({ sound: false, problems: ['x'] }));
+    await c.call('graph_retry', { run_id: runId, cwd });
+    await sub(c, cwd, runId, 'setgoal:2', ok({ spec: SPEC }));
+    await sub(c, cwd, runId, 'critique:2', ok({ sound: false, problems: ['y'] }));
+    const r = await c.call('graph_retry', { run_id: runId, cwd });
+    assert.equal(r.retried, false);
+    assert.equal(r.reason, 'retry budget exhausted');
+    assert.ok(r.unreachable.includes('implement:U1:2'));
+  }, { max_retries: 1, max_critique_rounds: 5 });
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    const st = await statusOf(c, cwd, runId);
+    assert.equal(st.rounds.length, 1);
+    assert.equal(st.nodes.some((n) => n.node_id === 'critique:2'), false);
+  });
+});
+
+test('an accepted critique carries its minor problems to the implement node as advice', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await toSpec(c, cwd, runId);
+    await sub(c, cwd, runId, 'critique', ok({ sound: true, problems: [{ severity: 'minor', text: 'tighten the scope note' }] }));
+    const brief = await briefOf(c, cwd, runId, 'implement:U1:1');
+    assert.match(brief, /\[minor\] tighten the scope note/);
+    assert.match(brief, /advice/);
+    assert.doesNotMatch(brief, /UNMET/);
+  });
+});
+
+test('the critique prompt asks for severity, states the rule, and says which round of how many', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await sub(c, cwd, runId, 'plan', ok({ handoff: 'p' }));
+    await sub(c, cwd, runId, 'setgoal', ok({ spec: SPEC }));
+    const one = await briefOf(c, cwd, runId, 'critique');
+    assert.match(one, /"severity": "blocker\|major\|minor\|nit"/);
+    for (const word of SEV_KEYS) assert.match(one, new RegExp(`\\b${word}\\b`));
+    assert.match(one, /A blocker or major problem makes sound false; a minor or nit never does/);
+    assert.match(one, /critique round 1 of 3/);
+    assert.match(one, /a rejected spec still goes on to implement/);
+    assert.match(one, /A spec you would merely improve is not a spec you should reject/);
+    assert.match(one, /unbounded refutation always finds something/i);
+    await sub(c, cwd, runId, 'critique', ok({ sound: false, problems: ['x'] }));
+    await c.call('graph_retry', { run_id: runId, cwd });
+    await sub(c, cwd, runId, 'setgoal:2', ok({ spec: SPEC }));
+    assert.match(await briefOf(c, cwd, runId, 'critique:2'), /critique round 2 of 3/);
+  }, { max_critique_rounds: 3 });
+});
+
+test('graph_status without run_id is unchanged by critique rounds and the goal gate', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritique(c, cwd, runId);
+    const overview = await c.call('graph_status', { cwd });
+    assert.deepEqual(Object.keys(overview), ['cwds', 'runs']);
+    for (const k of ['rounds', 'severity', 'max_critique_rounds', 'goal_gate']) assert.equal(k in overview.runs[0], false, k);
+  });
+});
+
+test('runs --list and --show read now.round 2 while critique:2 runs', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await toSpec(c, cwd, runId);
+    await sub(c, cwd, runId, 'critique', ok({ sound: false, problems: ['x'] }));
+    await c.call('graph_retry', { run_id: runId, cwd });
+    await sub(c, cwd, runId, 'setgoal:2', ok({ spec: SPEC }));
+    forceRunning(cwd, runId, 'critique:2', 1000);
+    assert.equal(listRows(cwd)[0].now.round, 2);
+    const shown = readout(['--show', runFile(cwd, runId), '--json']);
+    assert.equal(JSON.parse(shown.stdout).now.round, 2);
+    assert.equal(JSON.parse(shown.stdout).now.stage, 'critique:2');
+  });
+});
+
+// ---------- the run list order (store.mjs orderRows) ----------
+
+test('runs --list --json: waits on you first, then the newest failure, then the newest change', async () => {
+  const cwd = repo();
+  const c = await new Client().init();
+  try {
+    const plain = await openRun(c, cwd);
+    const failed = await openRun(c, cwd);
+    const waiting = await openRun(c, cwd);
+    const older = await openRun(c, cwd);
+    const edit = (id, fn, agoMs) => {
+      const run = readRun(cwd, id);
+      fn(run);
+      writeFileSync(runFile(cwd, id), JSON.stringify(run, null, 2));
+      const t = new Date(Date.now() - agoMs);
+      utimesSync(runFile(cwd, id), t, t);
+    };
+    edit(plain, () => {}, 1000);
+    edit(failed, (r) => { const n = r.nodes.find((x) => x.node_id === 'plan'); n.state = 'failed'; n.finished_at = Date.now() - 5000; }, 2 * HOUR_MS);
+    edit(waiting, (r) => { r.routing_blocked = true; }, 3 * HOUR_MS);
+    edit(older, () => {}, 30 * 60 * 1000);
+    const rows = JSON.parse(spawnSync('node', [BROKER, 'runs', '--list', '--json', '--cwd', cwd], { encoding: 'utf8' }).stdout);
+    assert.deepEqual(rows.map((r) => r.run_id), [waiting, failed, plain, older]);
+    assert.ok(rows[0].now.waiting, 'the first row is the one that waits on you');
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+const HOUR_MS = 60 * 60 * 1000;
+
+// ---------- the goal gate verdict on graph_status (card 48, F3) ----------
+
+async function toGoalGate(c, cwd, runId) {
+  await throughCritiqueWith(c, cwd, runId, INDEPENDENT);
+  await passSubgoal(c, cwd, runId, 'U1');
+  await passSubgoal(c, cwd, runId, 'U2');
+}
+
+test('goal_gate is null until gate:goal has a result, then {node_id, accept, match_pct, gaps, pass, critique}', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    assert.equal((await statusOf(c, cwd, runId)).goal_gate, null, 'before the spec');
+    await toGoalGate(c, cwd, runId);
+    assert.equal((await statusOf(c, cwd, runId)).goal_gate, null, 'the subgoal gates passed but the goal gate has not run');
+    await sub(c, cwd, runId, 'gate:goal:1', ok({ accept: true, match_pct: 92, gaps: [] }));
+    const st = await statusOf(c, cwd, runId);
+    assert.deepEqual(Object.keys(st.goal_gate), ['node_id', 'accept', 'match_pct', 'gaps', 'pass', 'critique']);
+    assert.deepEqual({ ...st.goal_gate, critique: undefined }, { node_id: 'gate:goal:1', accept: true, match_pct: 92, gaps: [], pass: true, critique: undefined });
+    assert.deepEqual(st.goal_gate.critique, { max_critique_rounds: st.max_critique_rounds, severity: st.severity, rounds: st.rounds },
+      'the critique inside goal_gate is the rounds view itself');
+  });
+});
+
+test('goal_gate.pass needs accept===true and match_pct>=90, and a failed gate carries its gaps', async () => {
+  const gateWith = async (payload) => {
+    let gg;
+    await withRun(async ({ c, cwd, runId }) => {
+      await toGoalGate(c, cwd, runId);
+      await sub(c, cwd, runId, 'gate:goal:1', ok(payload));
+      gg = (await statusOf(c, cwd, runId)).goal_gate;
+    });
+    return gg;
+  };
+  assert.equal((await gateWith({ accept: true, match_pct: 90 })).pass, true);
+  assert.equal((await gateWith({ accept: true, match_pct: 85 })).pass, false);
+  assert.equal((await gateWith({ accept: false, match_pct: 95 })).pass, false);
+  assert.equal((await gateWith({ accept: true })).pass, false, 'no match_pct is no pass');
+  const failed = await gateWith({ accept: false, match_pct: 40, gaps: ['U2 never wired to U1'] });
+  assert.equal(failed.pass, false);
+  assert.deepEqual(failed.gaps, ['U2 never wired to U1']);
+  assert.equal(failed.accept, false);
+});
+
+test('goal_gate is the gate:goal node, not a subgoal gate, even though the subgoal gates passed at 95', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await toGoalGate(c, cwd, runId);
+    await sub(c, cwd, runId, 'gate:goal:1', ok({ accept: false, match_pct: 55, gaps: ['g'] }));
+    const gg = (await statusOf(c, cwd, runId)).goal_gate;
+    assert.equal(gg.node_id, 'gate:goal:1');
+    assert.equal(gg.match_pct, 55);
+  });
+});
+
+test('goal_gate.critique shows two rounds when the critique was rejected then accepted, with a problem lacking severity as the rounds view shows it', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await toSpec(c, cwd, runId, INDEPENDENT);
+    await sub(c, cwd, runId, 'critique', ok({ sound: false, problems: [{ severity: 'blocker', text: 'b' }, 'unlabelled'] }));
+    await c.call('graph_retry', { run_id: runId, cwd });
+    await sub(c, cwd, runId, 'setgoal:2', ok({ spec: INDEPENDENT }));
+    await sub(c, cwd, runId, 'critique:2', ok({ sound: true, problems: [{ severity: 'minor', text: 'm' }] }));
+    await passSubgoal(c, cwd, runId, 'U1', 2);
+    await passSubgoal(c, cwd, runId, 'U2', 2);
+    await sub(c, cwd, runId, 'gate:goal:2', ok({ accept: true, match_pct: 95 }));
+    const st = await statusOf(c, cwd, runId);
+    assert.equal(st.goal_gate.node_id, 'gate:goal:2');
+    assert.equal(st.goal_gate.critique.rounds.length, 2);
+    assert.deepEqual(st.goal_gate.critique.rounds[0].problems.map((p) => p.severity), ['blocker', 'major']);
+    assert.deepEqual(st.goal_gate.critique, { max_critique_rounds: st.max_critique_rounds, severity: st.severity, rounds: st.rounds });
+  });
+});
+
+test('a run stopped at the round limit shows the limit and the unmet problem; pass follows accept and match_pct alone', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await toSpec(c, cwd, runId, INDEPENDENT);
+    await sub(c, cwd, runId, 'critique', ok({ sound: false, problems: [{ severity: 'blocker', text: 'unmet at the limit' }] }));
+    await passSubgoal(c, cwd, runId, 'U1');
+    await passSubgoal(c, cwd, runId, 'U2');
+    await sub(c, cwd, runId, 'gate:goal:1', ok({ accept: true, match_pct: 96 }));
+    const gg = (await statusOf(c, cwd, runId)).goal_gate;
+    assert.equal(gg.critique.max_critique_rounds, 1);
+    assert.deepEqual(gg.critique.rounds[0], { round: 1, file: 'critique', sound: false, problems: [{ severity: 'blocker', text: 'unmet at the limit' }] });
+    assert.equal(gg.pass, true, 'the unmet critique problem does not decide pass');
+  }, { max_critique_rounds: 1 });
+});
+
+// ---------- Codex availability: the adapter, and the fallback to Claude (card 48, F3) ----------
+
+// A stand-in codex adapter whose detect answer is a file in the run's cwd.
+function codexRepo(state, binary = null) {
+  const cwd = repo();
+  writeFileSync(join(cwd, 'codex-state.json'), JSON.stringify(state));
+  const adapter = join(cwd, 'fake-codex-adapter.mjs');
+  writeFileSync(adapter, `
+import { readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+import { join } from 'node:path';
+const a = process.argv.slice(2), get = (k) => a[a.indexOf(k) + 1];
+const cwd = get('--cwd');
+appendFileSync(join(cwd, 'codex-calls.log'), (a.includes('--detect') ? 'detect' : 'run') + '\\n');
+if (a.includes('--detect')) {
+  const s = JSON.parse(readFileSync(join(cwd, 'codex-state.json'), 'utf8'));
+  writeFileSync(get('--output'), JSON.stringify({ codex: s }));
+  process.exit(s.ready ? 0 : 1);
+}
+process.exit(1);
+`);
+  mkdirSync(join(cwd, '.claude'), { recursive: true });
+  writeFileSync(join(cwd, '.claude', 'broker-vendors.json'), JSON.stringify({
+    codex: { command: 'node', args: [adapter], requires_binary: binary, sandboxes: ['read-only', 'workspace-write'], default_sandbox: 'workspace-write' },
+  }));
+  return { cwd, adapter };
+}
+
+// Open an ordered "auto" run whose only candidate is codex, advance by submit to `stage`, and
+// return that stage's entry from graph_next.
+async function codexNode(c, cwd, stage, extra = {}) {
+  const open = await c.call('graph_open', { request: 'r', cwd, vendor: 'auto', candidates: ['codex'], ...extra });
+  const runId = open.run_id;
+  const find = async (id) => (await c.call('graph_next', { run_id: runId, cwd })).ready.find((n) => n.node_id === id);
+  if (stage === 'plan') return { runId, entry: open.ready.find((n) => n.node_id === 'plan') };
+  await sub(c, cwd, runId, 'plan', ok({ handoff: 'p' }));
+  await sub(c, cwd, runId, 'setgoal', ok({ spec: SPEC }));
+  if (stage === 'critique') return { runId, entry: await find('critique') };
+  await sub(c, cwd, runId, 'critique', ok({ sound: true }));
+  if (stage === 'implement') return { runId, entry: await find('implement:U1:1') };
+  await sub(c, cwd, runId, 'implement:U1:1', ok({ changed_files: [dirty(cwd)], handoff: 'h' }));
+  return { runId, entry: await find('test:U1:1') };
+}
+
+test('auto with codex unreachable (auth 401) on an Implement node: a Claude route with routing.fallback, attempts kept, readable on graph_status and in the run file', async () => {
+  const { cwd, adapter } = codexRepo({ ready: false, reachable: false, reason: '401 Unauthorized' });
+  const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+  try {
+    const { runId, entry } = await codexNode(c, cwd, 'implement');
+    assert.equal(entry.vendor, 'self', 'degraded off codex');
+    assert.equal(entry.fallback.from, 'codex');
+    assert.equal(entry.fallback.to, 'claude');
+    assert.equal(entry.fallback.reason, '401 Unauthorized', 'the adapter string verbatim');
+    assert.equal(entry.fallback.ready, false);
+    assert.equal(entry.fallback.reachable, false);
+    assert.equal(entry.fallback.adapter, adapter, 'which adapter answered');
+    assert.ok(!Number.isNaN(Date.parse(entry.fallback.at)));
+    assert.deepEqual(Object.keys(entry.fallback), ['from', 'to', 'reason', 'ready', 'reachable', 'adapter', 'at']);
+    assert.deepEqual(entry.attempts, [{ vendor: 'codex', ready: false, reason: '401 Unauthorized' }]);
+
+    const st = await statusOf(c, cwd, runId);
+    const node = st.nodes.find((n) => n.node_id === 'implement:U1:1');
+    assert.deepEqual(node.routing.fallback, entry.fallback);
+    assert.deepEqual(node.routing.attempts, entry.attempts);
+    const onDisk = readRun(cwd, runId).nodes.find((n) => n.node_id === 'implement:U1:1');
+    assert.deepEqual(onDisk.routing.fallback, entry.fallback);
+    assert.deepEqual(onDisk.routing.attempts, entry.attempts, 'attempts[] outlives the route call');
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
+for (const [name, state, binary, reasoningFalls] of [
+  ['not executable', { ready: false, reachable: false, reason: 'unused' }, 'no-such-binary-for-codex', true],
+  ['unreachable (auth)', { ready: false, reachable: false, reason: '401 Unauthorized' }, null, true],
+  ['reachable but not ready', { ready: false, reachable: true, reason: 'write probe failed' }, null, false],
+]) {
+  test(`codex ${name}: Implement and Test fall back to Claude; plan and critique ${reasoningFalls ? 'fall back too' : 'keep Codex'}`, async () => {
+    for (const stage of ['implement', 'test', 'plan', 'critique']) {
+      const { cwd } = codexRepo(state, binary);
+      const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+      try {
+        const { entry } = await codexNode(c, cwd, stage);
+        const execution = stage === 'implement' || stage === 'test';
+        if (execution || reasoningFalls) {
+          assert.equal(entry.vendor, 'self', `${name} / ${stage}`);
+          assert.equal(entry.fallback.to, 'claude');
+          assert.ok(entry.fallback.reason, 'a reason is always recorded');
+          assert.equal(entry.fallback.ready, false);
+        } else {
+          assert.equal(entry.vendor, 'codex', `${name} / ${stage}`);
+          assert.equal(entry.fallback, undefined);
+        }
+      } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+    }
+  });
+}
+
+test('codex ready: the node stays on codex, no fallback, the adapter is reported', async () => {
+  const { cwd, adapter } = codexRepo({ ready: true, reachable: true, reason: '' });
+  const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+  try {
+    const { entry } = await codexNode(c, cwd, 'implement');
+    assert.equal(entry.vendor, 'codex');
+    assert.equal(entry.fallback, undefined);
+    assert.equal(entry.adapter.path, adapter);
+    assert.equal(entry.adapter.source, 'project', 'a project vendor entry wins over the builtin adapter');
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('a named codex vendor that is not ready stays vendor-failure, with no fallback record', async () => {
+  const { cwd } = codexRepo({ ready: false, reachable: false, reason: '401 Unauthorized' });
+  const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+  try {
+    const open = await c.call('graph_open', { request: 'r', cwd, vendor: 'codex' });
+    assert.equal(open.ready[0].vendor, 'vendor-failure');
+    assert.match(JSON.stringify(open.ready[0].attempts), /401 Unauthorized/);
+    assert.equal(open.ready[0].fallback, undefined);
+    assert.equal(open.state, 'blocked');
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('a Codex thread never routes to Codex: Claude with the nested-CLI reason, and the adapter is not started', async () => {
+  const { cwd } = codexRepo({ ready: true, reachable: true, reason: '' });
+  const c = await new Client({ CODEX_THREAD_ID: 'thread-1' }).init();
+  try {
+    const { entry } = await codexNode(c, cwd, 'implement');
+    assert.equal(entry.vendor, 'self');
+    assert.equal(entry.fallback.to, 'claude');
+    assert.equal(entry.fallback.reason, 'Codex hosts must use native agents; nested Codex CLI is disabled');
+    assert.match(JSON.stringify(entry.attempts), /nested Codex CLI is disabled/);
+    assert.equal(existsSync(join(cwd, 'codex-calls.log')), false, 'the adapter was never started');
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
+// The builtin codex vendor runs harness/engine/codex-exec-adapter.mjs, in place; graph's own
+// copy only when the sibling harness/ directory is absent. PATH carries node alone so the real
+// codex CLI is never started: the probe stops at "requires codex on PATH".
+const NO_CODEX_PATH = dirname(process.execPath);
+
+test('the builtin codex vendor resolves to harness/engine/codex-exec-adapter.mjs, referenced in place', async () => {
+  const cwd = repo();
+  const c = await new Client({ CODEX_THREAD_ID: '', PATH: NO_CODEX_PATH }).init();
+  try {
+    const open = await c.call('graph_open', { request: 'r', cwd, vendor: 'auto', candidates: ['codex'] });
+    const harness = resolve(dirname(BROKER), '..', '..', 'harness', 'engine', 'codex-exec-adapter.mjs');
+    assert.equal(existsSync(harness), true);
+    assert.deepEqual(open.ready[0].adapter, { path: harness, source: 'harness', reason: '' });
+    assert.equal(open.ready[0].fallback.adapter, harness);
+    assert.match(open.ready[0].fallback.reason, /requires codex on PATH/);
+  } finally { c.close(); rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('without a sibling harness/ directory the builtin codex vendor falls back to graph/adapters, and says so', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'graph-alone-'));
+  const cwd = repo();
+  try {
+    cpSync(resolve(dirname(BROKER), '..'), join(root, 'graph'), { recursive: true, filter: (src) => !src.includes('node_modules') });
+    const c = await new Client({ CODEX_THREAD_ID: '', PATH: NO_CODEX_PATH }, join(root, 'graph', 'mcp', 'broker.mjs')).init();
+    try {
+      const open = await c.call('graph_open', { request: 'r', cwd, vendor: 'auto', candidates: ['codex'] });
+      assert.equal(open.ready[0].adapter.source, 'graph');
+      assert.equal(open.ready[0].adapter.path, join(root, 'graph', 'adapters', 'codex-exec-adapter.mjs'));
+      assert.match(open.ready[0].adapter.reason, /harness\/engine\/codex-exec-adapter\.mjs not present/);
+      assert.equal(open.ready[0].fallback.adapter, open.ready[0].adapter.path);
+    } finally { c.close(); }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// ---------- the same shape as the harness engine (fallback-check.mjs --show --json) ----------
+
+test('max_critique_rounds, severity and rounds equal the harness row for the same critique history', async () => {
+  const harness = resolve(dirname(BROKER), '..', '..', 'harness', 'engine', 'fallback-check.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'harness-run-'));
+  try {
+    writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ max_critique_rounds: 2 }));
+    writeFileSync(join(dir, '01-plan.md'), 'plan\n');
+    writeFileSync(join(dir, '02-critique.r1.json'), JSON.stringify({ sound: false, problems: [{ severity: 'major', text: 'm1' }, { severity: 'nit', text: 'n1' }] }));
+    writeFileSync(join(dir, '02-critique.json'), JSON.stringify({ sound: true, problems: [{ severity: 'minor', text: 'mi' }] }));
+    const shown = spawnSync('node', [harness, '--show', dir, '--json'], { encoding: 'utf8' });
+    assert.equal(shown.status, 0, shown.stderr);
+    const theirs = JSON.parse(shown.stdout);
+
+    await withRun(async ({ c, cwd, runId }) => {
+      await toSpec(c, cwd, runId);
+      await sub(c, cwd, runId, 'critique', ok({ sound: false, problems: [{ severity: 'major', text: 'm1' }, { severity: 'nit', text: 'n1' }] }));
+      await c.call('graph_retry', { run_id: runId, cwd });
+      await sub(c, cwd, runId, 'setgoal:2', ok({ spec: SPEC }));
+      await sub(c, cwd, runId, 'critique:2', ok({ sound: true, problems: [{ severity: 'minor', text: 'mi' }] }));
+      const ours = await statusOf(c, cwd, runId);
+
+      assert.equal(ours.max_critique_rounds, theirs.max_critique_rounds);
+      assert.deepEqual(ours.severity, theirs.severity);
+      assert.deepEqual(Object.keys(ours.severity), Object.keys(theirs.severity), 'key order');
+      assert.deepEqual(ours.rounds.map(({ file, ...r }) => r), theirs.rounds.map(({ file, ...r }) => r));
+      assert.deepEqual(Object.keys(ours.rounds[0]), Object.keys(theirs.rounds[0]), 'the file value differs by design (a node id here)');
+      const sharedKeys = Object.keys(theirs).filter((k) => ['max_critique_rounds', 'severity', 'rounds'].includes(k));
+      assert.deepEqual(Object.keys(ours).filter((k) => sharedKeys.includes(k)), sharedKeys, 'same key order');
+    });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

@@ -28,6 +28,95 @@ export const STAGES = [
 // worktree cross-check has nothing to contradict.
 export const REASONING_STAGES = new Set(['plan', 'setgoal', 'critique', 'gate', 'report']);
 
+// ---- critique rounds and problem severity ----
+// The shapes below are the harness's (engine/fallback-check.mjs --show --json): a reviewer
+// reads max_critique_rounds, severity and rounds the same way from either engine.
+
+export const SEVERITIES = ['blocker', 'major', 'minor', 'nit'];
+const DEFAULT_CRITIQUE_ROUNDS = 2;
+
+// An integer of at least 1; anything else is the default (the harness rule).
+export const capOf = (v) => (Number.isInteger(v) && v >= 1 ? v : DEFAULT_CRITIQUE_ROUNDS);
+export const roundCap = (run) => capOf(run && run.max_critique_rounds);
+
+// `stated` is true when the critic said the severity (a valid field, or a text prefix such
+// as "Nit:" / "[minor]"); an unrecognised one counts as major in the view but was not stated.
+function problemSeverity(p) {
+  const text = problemText(p);
+  const field = p && typeof p === 'object' ? p.severity : undefined;
+  if (typeof field === 'string' && SEVERITIES.includes(field.trim().toLowerCase())) {
+    return { severity: field.trim().toLowerCase(), stated: true };
+  }
+  if (typeof field !== 'string') {
+    const m = /^\s*\[?(blocker|major|minor|nit)\s*[:\]\-—–)]/i.exec(text);
+    if (m) return { severity: m[1].toLowerCase(), stated: true };
+  }
+  return { severity: 'major', stated: false };
+}
+
+function problemText(p) {
+  return p && typeof p === 'object' ? String(p.text ?? p.problem ?? p.description ?? p.reason ?? '') : String(p ?? '');
+}
+
+export function normalizeProblem(p) {
+  return { severity: problemSeverity(p).severity, text: problemText(p) };
+}
+
+export const normalizeProblems = (problems) => (Array.isArray(problems) ? problems.map(normalizeProblem) : []);
+
+// One line for a string-only consumer (feedback, gaps, briefing).
+export const formatProblem = (p) => { const n = normalizeProblem(p); return `[${n.severity}] ${n.text}`; };
+
+export const formatProblems = (problems) => (Array.isArray(problems) ? problems.map(formatProblem) : []);
+
+// The first problem the critic STATED as blocker or major, else null.
+export function statedFatalProblem(problems) {
+  if (!Array.isArray(problems)) return null;
+  for (const p of problems) {
+    const s = problemSeverity(p);
+    if (s.stated && (s.severity === 'blocker' || s.severity === 'major')) return normalizeProblem(p);
+  }
+  return null;
+}
+
+// {max_critique_rounds, severity, rounds[]} for graph_status. A round is a critique node that
+// recorded a submission (finished_at), numbered by its spec attempt; a retired one is still a round.
+export function critiqueView(run) {
+  const rounds = run.nodes
+    .map((n) => ({ n, m: n.stage === 'critique' && /^critique(?::(\d+))?$/.exec(String(n.node_id)) }))
+    .filter(({ n, m }) => m && Number.isFinite(n.finished_at))
+    .map(({ n, m }) => ({
+      round: m[1] ? Number(m[1]) : 1,
+      file: n.node_id,
+      sound: n.result && typeof n.result.sound === 'boolean' ? n.result.sound : null,
+      problems: normalizeProblems(n.result && n.result.problems),
+    }))
+    .sort((a, b) => a.round - b.round);
+  const severity = Object.fromEntries(SEVERITIES.map((s) => [s, 0]));
+  for (const r of rounds) for (const p of r.problems) severity[p.severity]++;
+  return { max_critique_rounds: roundCap(run), severity, rounds };
+}
+
+// The verdict of the goal gate (the latest gate:goal node that recorded a result), or null.
+// pass needs accept===true AND match_pct>=90; the node's own accept is unchanged.
+export const GOAL_GATE_PASS_PCT = 90;
+export function goalGate(run) {
+  const node = run.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id === null && /^gate:goal/.test(n.node_id)
+    && (n.state === 'done' || n.state === 'failed') && Number.isFinite(n.finished_at)).pop();
+  if (!node) return null;
+  const r = node.result || {};
+  const accept = r.accept === true;
+  const matchPct = Number.isFinite(r.match_pct) ? r.match_pct : null;
+  return {
+    node_id: node.node_id,
+    accept,
+    match_pct: matchPct,
+    gaps: Array.isArray(r.gaps) ? r.gaps : [],
+    pass: accept && matchPct !== null && matchPct >= GOAL_GATE_PASS_PCT,
+    critique: critiqueView(run),
+  };
+}
+
 function runsDir(cwd) {
   return join(cwd, '.harness-run', 'broker', 'runs');
 }
@@ -163,6 +252,10 @@ export function createRun(opts) {
     sandbox: opts.sandbox || null,
     isolated: opts.isolated === true,
     max_retries: Number.isInteger(opts.max_retries) ? opts.max_retries : 2,
+    // A cap on critique rounds, separate from the spec retry budget above: each critique
+    // node is a round, and so is each spec graph_retry. At the cap a rejected critique
+    // no longer stops the run (see finishNode in broker.mjs).
+    max_critique_rounds: capOf(opts.max_critique_rounds),
     created_at: Date.now(),
     owner: opts.owner || null,
     cost_usd: null,
@@ -425,6 +518,14 @@ export function retrySpec(run, feedback) {
     const unreachable = dead.flatMap((n) => settleFailure(run, n));
     return { run: saveRun(run), attempt: null, reason: 'retry budget exhausted', unreachable };
   }
+  // A spec retry is the next critique round. At the cap there is no next round: a critique
+  // rejected at it was already settled (broker finishNode) and the run goes on to implement.
+  // Only a spec that never reached its critique (a failed setgoal) is dead here.
+  if (attempt > roundCap(run)) {
+    const dead = run.nodes.filter((n) => (n.stage === 'setgoal' || n.stage === 'critique') && n.state === 'failed' && !n.final);
+    const unreachable = dead.flatMap((n) => settleFailure(run, n));
+    return { run: saveRun(run), attempt: null, reason: 'critique round limit reached', unreachable };
+  }
 
   for (const n of run.nodes) {
     if (n.stage === 'setgoal' || n.stage === 'critique' || n.subgoal_id || n.stage === 'report' || (n.stage === 'gate' && n.subgoal_id === null)) {
@@ -525,6 +626,11 @@ export function nodeBriefing(run, n) {
       commands: (x.result.event_evidence && x.result.event_evidence.commands) || [],
       commands_executed: x.result.event_evidence ? x.result.event_evidence.commands_executed : undefined,
       commands_failed: x.result.event_evidence ? x.result.event_evidence.commands_failed : undefined,
+      // A critique's findings travel to the node after it: advice below the cap, the unmet
+      // problems of a rejected spec at it.
+      ...(x.stage === 'critique'
+        ? { sound: x.result.sound, blocking: Array.isArray(x.result.blocking) ? x.result.blocking : [], problems: formatProblems(x.result.problems) }
+        : {}),
     }));
 
   const sg = run.spec && n.subgoal_id
@@ -563,7 +669,7 @@ export function nodeBriefing(run, n) {
           match_pct: x.result.match_pct,
           // A gate's gaps, or a critique's blocking defects and problems: whatever the
           // judging node said was wrong. The report cannot explain a dead spec otherwise.
-          gaps: x.result.gaps || [...(x.result.blocking || []), ...(x.result.problems || [])],
+          gaps: x.result.gaps || [...(x.result.blocking || []), ...formatProblems(x.result.problems)],
           reason: x.result.reason || x.result.verification_error || '',
         }))
     : null;
