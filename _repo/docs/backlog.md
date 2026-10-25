@@ -52,7 +52,7 @@ toasts).
 
 ### Repo and rules
 
-47. **Split write:plans into requirements, PRD and ADR skills, mounted in teams**
+47. **Split write:plans into requirements, PRD and ADR skills, mounted in teams** — in E-e80fea64
     - Why: user, 2026-10-17: "요건을 분석하고 분할하는 스킬도 하나 backlog에"; 2026-10-25: "write:plan을
       prd, adr, 요구사항 분석으로 나누고 각각 핏하게 해서 teams에 넣고"; approved "진행하자".
     - Design: `_repo/docs/plans/2026-10-25-split-write-plans.md` (all three in `write`).
@@ -64,7 +64,8 @@ toasts).
     - Acceptance: the plan's Tasks 1–9 with their pass bars; after UI cards (user priority).
     - Tasks 2–4 merged 2026-10-25 (E-c5c109e3): critique rounds with severity, per-run `now` and run
       list order, goal gate and Codex fallback in graph; graph 281/281 (main was 200), goal gate all
-      passed. Next: Tasks 5–6, the bench — ask the person about its cost first.
+      passed. Tasks 5–6 (axes, problems, arm, one-problem dry run) — in E-53b9426b (user, 2026-10-25:
+      "하자하자"); the full 3× matrix runs after it from the session, under the driver cap.
 
 ### Subagents and parallel runs — use and clean up (user, 2026-10-17)
 
