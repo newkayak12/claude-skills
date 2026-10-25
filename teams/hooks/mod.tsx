@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Decision, DecisionsPayload, Mark, PaneView, ReportPayload, StatusInfo, SummaryItem, SummaryTask, SummaryTaskEntry, TeamsEvent, TeamsView } from '../types'
-import { fallbackSelection, paneKey, paneSlash, stepClamp, storyRows } from './pane'
+import { askBandShown, fallbackSelection, paneKey, paneSlash, stepClamp, storyRows } from './pane'
 import { STORY_SHRINK, columnWidths, epicCells, epicState, handoffCells, renderLines, rowLine, since, storyCells, tabRowPlan, footerPlan, workerCells } from './teams-draw'
 import type { Line } from './teams-draw'
 
@@ -359,8 +359,15 @@ export const register: Register = on => {
               await update($, taskIds, () => ids)
             }
           }
-          // pinned only while a person must act (the engine draws it as a warning)
-          $.ui.status(info.waiting > 0 ? fmt(STRINGS[await read($, lang)].statusWaiting, { n: info.waiting }) : undefined)
+          // pinned only while a person must act (the engine draws it as a warning); the ask band already says so
+          // Known limits: (1) the poll cannot see e.props.hasSurvey, so while a survey hides the band the status
+          // line has no segment either. (2) The poll cannot see a dismissed band, so a dismissed band does not
+          // bring the segment back; it returns only when asks are empty or the end-of-run card replaces the band.
+          // With no asks (which includes no interactive surface) the segment is kept.
+          const cardId = cardTask(await read($, ended))
+          const held = await read($, cardReport)
+          const cardShown = cardId !== undefined && held?.task_id === cardId && held.payload.verdict !== 'running'
+          $.ui.status(info.waiting > 0 && !askBandShown(info.asks, cardShown) ? fmt(STRINGS[await read($, lang)].statusWaiting, { n: info.waiting }) : undefined)
         }
         // the Decisions tab refetches only while it is open, for the pane's task and picked card
         if (id !== undefined && (await read($, view)) === 'decisions') await fetchDecisions($, id)

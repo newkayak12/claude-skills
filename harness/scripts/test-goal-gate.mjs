@@ -12,6 +12,12 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const HOOK = join(HERE, '..', 'hooks', 'goal-gate.mjs');
+// The hook reads HARNESS_NODE; a caller's value must not leak into a case that does not set it.
+const cleanEnv = (extra = {}) => {
+  const e = { ...process.env, CLAUDE_PROJECT_DIR: '' };
+  delete e.HARNESS_NODE;
+  return { ...e, ...extra };
+};
 
 let failures = 0;
 function test(name, fn) {
@@ -48,7 +54,7 @@ const toolResult = (id, isError, text = '', ts = now()) => ({ type: 'user', time
 const prose = (text) => ({ type: 'assistant', timestamp: now(), message: { role: 'assistant', content: [{ type: 'text', text }] } });
 
 function run(input, env = {}) {
-  const r = spawnSync('node', [HOOK], { input: JSON.stringify(input), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: '', ...env } });
+  const r = spawnSync('node', [HOOK], { input: JSON.stringify(input), encoding: 'utf8', env: cleanEnv(env) });
   assert.equal(r.status, 0, r.stderr);
   if (!r.stdout.trim()) return 'allow';
   return JSON.parse(r.stdout).hookSpecificOutput.permissionDecision;
@@ -388,7 +394,7 @@ test('G4: Bash writes pass once engaged', () => {
 // ---- fail-open ----
 
 test('fail-open: bad JSON input, bad regex config', () => {
-  const r = spawnSync('node', [HOOK], { input: 'not json', encoding: 'utf8' });
+  const r = spawnSync('node', [HOOK], { input: 'not json', encoding: 'utf8', env: cleanEnv() });
   assert.equal(r.status, 0);
   assert.equal(r.stdout, '');
   const dir = project();
@@ -474,7 +480,7 @@ for (const [id, [cmd, rel]] of Object.entries(KEEP)) {
 
 const DECISION = (dir) => join(dir, '.claude', '.harness-last-decision.json');
 function rawRun(input) {
-  const r = spawnSync('node', [HOOK], { input: JSON.stringify(input), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: '' } });
+  const r = spawnSync('node', [HOOK], { input: JSON.stringify(input), encoding: 'utf8', env: cleanEnv() });
   return { stdout: r.stdout, status: r.status };
 }
 
@@ -536,7 +542,7 @@ test('last decision: the decision file never lands in .harness-markers', () => {
 const BYPASS = /running a script that touches a gated file/;
 
 function denyReason(input) {
-  const r = spawnSync('node', [HOOK], { input: JSON.stringify(input), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: '' } });
+  const r = spawnSync('node', [HOOK], { input: JSON.stringify(input), encoding: 'utf8', env: cleanEnv() });
   return r.stdout.trim() ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
 }
 
@@ -630,7 +636,7 @@ test('1.30 AC-3: no open run - a gated repo script, a /tmp script on /tmp, and a
 
 function routeReason(dir, env = {}) {
   const home = mkdtempSync(join(tmpdir(), 'route-home-'));
-  const r = spawnSync('node', [HOOK], { input: JSON.stringify(edit(dir, join(dir, 'a.js'))), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: '', HOME: home, ...env } });
+  const r = spawnSync('node', [HOOK], { input: JSON.stringify(edit(dir, join(dir, 'a.js'))), encoding: 'utf8', env: cleanEnv({ HOME: home, ...env }) });
   rmSync(home, { recursive: true, force: true });
   return r.stdout.trim() ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
 }
@@ -686,7 +692,7 @@ test('routing: a broken teams config still routes nothing wrong and the verdict 
 // ---- subagent recursion: a blocked subagent stops and reports ----
 
 function reasonOfInput(input) {
-  const r = spawnSync('node', [HOOK], { input: JSON.stringify(input), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: '' } });
+  const r = spawnSync('node', [HOOK], { input: JSON.stringify(input), encoding: 'utf8', env: cleanEnv() });
   return r.stdout.trim() ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
 }
 const skill = (dir, name, extra = {}) => ({ tool_name: 'Skill', cwd: dir, session_id: 's1', tool_input: { skill: name }, ...extra });
@@ -738,7 +744,7 @@ test('HARNESS_NODE=1: every entry skill is denied with no gate config; non-entry
 
 test('HARNESS_NODE=1: a gated edit gets the stop-and-report text', () => {
   const dir = project();
-  const r = spawnSync('node', [HOOK], { input: JSON.stringify(edit(dir, join(dir, 'a.js'))), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: '', HARNESS_NODE: '1' } });
+  const r = spawnSync('node', [HOOK], { input: JSON.stringify(edit(dir, join(dir, 'a.js'))), encoding: 'utf8', env: cleanEnv({ HARNESS_NODE: '1' }) });
   assert.match(JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason, /Stop and report this block/);
 });
 
@@ -753,7 +759,7 @@ function projectCopy(dir) {
 }
 
 function runAt(hook, input, env = {}) {
-  const r = spawnSync('node', [hook], { input: JSON.stringify(input), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: '', ...env } });
+  const r = spawnSync('node', [hook], { input: JSON.stringify(input), encoding: 'utf8', env: cleanEnv(env) });
   assert.equal(r.status, 0, r.stderr);
   return r.stdout.trim() ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'allow';
 }
