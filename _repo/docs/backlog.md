@@ -83,20 +83,6 @@ toasts).
 
 ### knowledge plugin
 
-34. **knowledge builds a second brain, not only a vault**
-    - Why: user, 2026-10-16: "knowledge가 저거랑 비슷할거고 그 활용이 vault, noah지" — reference
-      https://github.com/coleam00/second-brain-starter. Its pieces knowledge lacks today: a memory
-      layer (persona/soul, user profile, decisions·lessons, daily log), session hooks (SessionStart
-      loads memory, PreCompact/SessionEnd capture decisions), hybrid keyword+vector memory search,
-      a proactive heartbeat. vault and noah are hand-built instances of it.
-    - Acceptance: a design doc in `_repo/docs/plans/` first (brainstorm → approval) mapping each
-      reference piece to a knowledge skill (extend, not a new plugin); vault and noah could be
-      rebuilt from knowledge skills; nothing of vault or noah's content in this repo.
-    - Principle (user, same day): "외부에 노출되는 스킬을 줄이고 내부적으로 진행하면 좋을 듯" — few
-      user-facing entry skills; the builders run inside them, not as separate triggers.
-      The user must be able to use it easily without knowing the internals (user: "사용자는 내부를
-      모르고 편하게 써야만한다") — no internal skill, stage or file name is something they must know or say.
-
 ### portfolio plugin
 
 54. **portfolio runs one flow on managed material: collect → write → render → feedback**
