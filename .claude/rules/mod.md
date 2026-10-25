@@ -28,6 +28,12 @@ around the model: what a person sees, and what the client adds on top.
 7. **UI is Ink.** Anything a person reads is a `ui.render` tree (Pane or AbovePrompt). A command's
    `{ text }` is the headless answer only; interactive, it opens the pane and returns one line at most.
    No ASCII-art views in `{ text }`, no browser page.
+8. **Every surface.** Every pane, band, card and toast draws on `terminal`, `desktop`, `mobile` and
+   `vscode` (user, 2026-10-25: "모든 mod로 그리는 UI는 모바일, 데스크탑, 다 대응할 수 있어야 해요").
+   The tree uses only what all four carry (`Box`, `Text`, `Button`, `Link`, `Code`, `Markdown`);
+   `Input`, `Select`, `Client`, `Svg`, `Raster` or `Image` only behind a check of `e.surface`, with a
+   fallback on the others. Interactive means any surface, not only a terminal: a command opens the
+   pane wherever the session is drawn (the Claude app over Remote Control included).
 
 Test: `cd <plugin> && claude plugin test .`, and one live session where the pane opens and closes.
 
@@ -40,6 +46,8 @@ Test: `cd <plugin> && claude plugin test .`, and one live session where the pane
    The demo render is shown to the user and approved before the card closes.
 1. **Seen live.** In tmux, `claude --plugin-dir ./<plugin>`, open it by its command and its band
    line, close it by Esc, q and the command again.
+1b. **On every surface.** `claude plugin test` mounts each changed surface on `terminal`, `desktop`,
+   `mobile` and `vscode`; at least one live look in the Claude app (Remote Control) or Desktop.
 2. **Not broken at any width.** Capture at 190 and at 110 columns: no wrapped tab row, no label
    pushed under another, no cut glyph, long text ends in `…`. Fix before shipping, not after.
 3. **Shot for the README.** `python3 _repo/scripts/mod-shot.py <tmux-session> <plugin>/docs/images/<name>.png
