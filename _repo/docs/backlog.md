@@ -78,6 +78,15 @@ toasts).
     - Acceptance: patch.mjs bumps `<plugin>/.codex-plugin/plugin.json` when it exists (dry-run lists it),
       with a test; after a real run `python3 _repo/scripts/validate_plugins.py` passes.
 
+74. **`/teams-status` shows the board on an app surface (Remote Control from the Claude app), not only in the terminal**
+    - Why: user, 2026-10-25, watching this session from the Claude app over Remote Control: "claude app에서
+      rc로 보는데 teams-status는 노출이 안되는구조야?" — the command answered only "teams: pane opened /
+      closed" and nothing showed in the app. The mod API knows `desktop` and `mobile` surfaces
+      (`$.session.surfaces()`); whether the teams pane draws on them is unverified.
+    - Acceptance: with the session open in the app, `/teams-status` shows the EPIC list there (the pane on a
+      surface that draws it, else the `view.mjs --once` text as the command's answer); `claude plugin test`
+      mounts the pane on `desktop` and `mobile`; the terminal pane is unchanged.
+
 73. **The repo-rules push hold applies only to pushes of this repo, not to another repo pushed from this session**
     - Why: 2026-10-25, a `git push` of the noah repo (a different git dir) was refused by
       `.claude/hooks/repo-rules.mjs` because a teams task held claude-skills; it went through only after
