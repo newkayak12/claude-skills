@@ -52,7 +52,7 @@ toasts).
 
 ### Repo and rules
 
-47. **Split write:plans into requirements, PRD and ADR skills, mounted in teams** — in E-e80fea64
+47. **Split write:plans into requirements, PRD and ADR skills, mounted in teams** — E-e80fea64 partial (shape); F2 in E-c80fa0ea, then F1, F3
     - Why: user, 2026-10-17: "요건을 분석하고 분할하는 스킬도 하나 backlog에"; 2026-10-25: "write:plan을
       prd, adr, 요구사항 분석으로 나누고 각각 핏하게 해서 teams에 넣고"; approved "진행하자".
     - Design: `_repo/docs/plans/2026-10-25-split-write-plans.md` (all three in `write`).
@@ -70,6 +70,17 @@ toasts).
 ### Subagents and parallel runs — use and clean up (user, 2026-10-17)
 
 ### teams plugin bugs
+
+76. **A large PRD shapes into packages without dropping or double-owning anything**
+    - Why: 2026-10-25, card 47 failed at shape in two size-L tasks, 3 of 3 attempts each: E-c557fd66 left
+      F3-AC-37 in no package; E-e80fea64 left F3-AC-21 out, then gave two packages the same paths
+      (write plugin.json, marketplace.json, prd/SKILL.md, plans/SKILL.md, tech-book/SKILL.md, trophy
+      triggers). Its PRD's F2 stories carry placeholders ("the F2-AC ids listed under F2-US-1 in the
+      document, copied verbatim") instead of the criteria, and F3 stories bare ids — likely related,
+      unverified. Worked around by three size-S runs per area (E-c80fa0ea first).
+    - Acceptance: plan-integrate refuses a story whose acceptance is a placeholder or a bare id; shape gets
+      the full unassigned-AC and overlapping-path list in one retry message and a mechanical pre-check
+      (node, tested) before submit; a rerun of card 47's PRD shapes on the first or second attempt.
 
 71. **`teams/skills/patch/patch.mjs` moves `.codex-plugin/plugin.json` with the version**
     - Why: 2026-10-25, the batch bump to teams 0.59.2 was blocked by `validate_plugins.py`:
