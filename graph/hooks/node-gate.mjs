@@ -38,7 +38,8 @@ try {
 }
 
 // ---- write check: a gated path (.claude/harness-gate.json) outside a run is denied ----
-// Path and Bash analysis come from the exported helpers of harness/hooks/goal-gate.mjs, loaded
+// Path and Bash analysis come from the exported helpers of the vendored copy graph/hooks/vendor/goal-gate.mjs
+// (kept identical to harness/hooks/goal-gate.mjs by _repo/scripts/check-copies.mjs), loaded
 // at run time; absent or failing, the check exits 0. Inside a run (HARNESS_NODE=1 above) it is skipped.
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'apply_patch', 'Bash']);
 const SKEW_MS = 60 * 1000;
@@ -80,7 +81,7 @@ async function writeCheck() {
   if (!WRITE_TOOLS.has(tool)) return;
   const cwd = input.cwd || process.cwd();
   const ti = input.tool_input || {};
-  const gate = await import('../../harness/hooks/goal-gate.mjs');
+  const gate = await import('./vendor/goal-gate.mjs');
   let targets = [];
   if (tool === 'Bash') targets = gate.bashWriteTargets(ti.command, cwd);
   else if (tool === 'apply_patch') targets = patchTargets(ti.command, cwd);
