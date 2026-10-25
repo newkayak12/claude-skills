@@ -1070,6 +1070,14 @@ export const triggers = [
     ]
   },
   {
+    "skill": "write:requirements",
+    "plugin": "write",
+    "phrases": [
+      "split this requirement",
+      "기획서 쪼개줘"
+    ]
+  },
+  {
     "skill": "write:spec",
     "plugin": "write",
     "phrases": [
