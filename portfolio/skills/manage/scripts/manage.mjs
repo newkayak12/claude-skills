@@ -2,8 +2,9 @@
 // portfolio:manage engine. Run from the workspace root; every subcommand prints one JSON object.
 //   layout                         which workspace paths exist / are missing; touches nothing
 //   snapshot --kind skeleton|deck --level major|minor|patch --note <text> [--by <who>] [--date YYYY-MM-DD]
-//       copies the current file to snapshot/<kind>/<kind>-v<cur>/, bumps `version:` in skeleton.md,
-//       adds the `v<new> 변경(...)` line under it and one row to snapshot/README.md
+//       skeleton: copies it to snapshot/skeleton/skeleton-v<cur>/, bumps `version:`, adds the history
+//       line under it and one row to snapshot/README.md; deck: its own count (newest deck-v* + level),
+//       deck.mdx + assets/ + NOTES.md into snapshot/deck/deck-v<new>/, one row in the `## deck` table
 //   renumber --map "3:4,4:3" [--file skeleton.md] [--dry-run]
 //       one pass over headings `## N`, `N쪽`, `N·M쪽`, `N~M쪽` and every `쪽` table column, then moves
 //       the page sections into the new order and verifies; history lines (`vX.Y.Z 변경`, `vX.Y.Z(`,
@@ -14,7 +15,7 @@
 //       names every item that dropped and the verdict (better | worse | mixed | same)
 // A page heading is `## N`, `## N.`, `## N)` or `## N쪽`. A `# ` chapter heading bounds a block: pages
 // sort inside their block, and blocks holding pages sort by their first page; other sections stay put.
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const LAYOUT = ['skeleton.md', 'deck.mdx', 'template.pptx', 'deck.catalog.md', 'build', 'snapshot', 'sources', 'docs/확정사실.md']
@@ -65,25 +66,43 @@ export function snapshot(root, { kind, level, note, by = '본인', date }) {
   if (!m) throw new Error('skeleton.md has no `version: vX.Y.Z` line')
   const cur = [Number(m[1]), Number(m[2]), Number(m[3])]
   const curS = `v${cur.join('.')}`
-  const src = kind === 'skeleton' ? skelPath : join(root, 'deck.mdx')
+  const day = date || new Date().toISOString().slice(0, 10)
+  const readme = join(root, 'snapshot', 'README.md')
+  if (kind === 'deck') return deckSnapshot(root, { level, note, day, skelS: curS, readme })
   const dir = join(root, 'snapshot', kind, `${kind}-${curS}`)
   if (existsSync(dir)) throw new Error(`${dir} exists: snapshot of ${curS} already taken`)
   mkdirSync(dir, { recursive: true })
-  copyFileSync(src, join(dir, kind === 'skeleton' ? 'skeleton.md' : 'deck.mdx'))
-  if (kind === 'deck') return { kind, snapshot: dir, version: curS, bumped: false }
+  copyFileSync(skelPath, join(dir, 'skeleton.md'))
 
   const next = `v${bump(cur, level).join('.')}`
-  const day = date || new Date().toISOString().slice(0, 10)
   // the history line follows the file's own form: quoted `> vX.Y.Z(날짜, 누가): …` when it already uses it
   const quoted = /^>\s*v\d+\.\d+\.\d+\(/m.test(skel)
   const line = quoted ? `> ${next}(${day}, ${by} 결정): ${note}` : `${next} 변경(${day}, ${by} 결정): ${note}`
   const updated = skel.replace(VERSION, `version: ${next}\n${line}`)
   writeFileSync(skelPath, updated)
-  const readme = join(root, 'snapshot', 'README.md')
   const head = '| 버전 | 날짜 | 장수 | 바뀐 것 |\n|---|---|---|---|\n'
   const body = existsSync(readme) ? readFileSync(readme, 'utf8') : `# 스냅샷\n\n${head}`
   writeFileSync(readme, readmeRow(body, { cur: curS, next, day, pages: pageCount(skel), note }))
   return { kind, snapshot: dir, from: curS, to: next, level, readme }
+}
+
+// The deck counts its own versions, apart from skeleton: the next one after the newest
+// snapshot/deck/deck-vX.Y.Z (v1.0.0 when there is none). The folder holds that version: deck.mdx,
+// assets/ when there is one, and a NOTES.md with the note; the row goes into README's `## deck` table.
+function deckSnapshot(root, { level, note, day, skelS, readme }) {
+  const base = join(root, 'snapshot', 'deck')
+  let names = []
+  try { names = readdirSync(base) } catch { /* first deck snapshot */ }
+  const vers = names.map(n => n.match(/^deck-v(\d+)\.(\d+)\.(\d+)$/)).filter(Boolean).map(m => m.slice(1).map(Number))
+  const newest = vers.sort((x, y) => y[0] - x[0] || y[1] - x[1] || y[2] - x[2])[0]
+  const next = `v${(newest ? bump(newest, level) : [1, 0, 0]).join('.')}`
+  const dir = join(base, `deck-${next}`)
+  mkdirSync(dir, { recursive: true })
+  copyFileSync(join(root, 'deck.mdx'), join(dir, 'deck.mdx'))
+  if (existsSync(join(root, 'assets'))) cpSync(join(root, 'assets'), join(dir, 'assets'), { recursive: true })
+  writeFileSync(join(dir, 'NOTES.md'), `# deck-${next}\n\n${day}. skeleton ${skelS} 반영. ${note}\n`)
+  if (existsSync(readme)) writeFileSync(readme, readmeRow(readFileSync(readme, 'utf8'), { cur: next, day, note }, 'deck'))
+  return { kind: 'deck', snapshot: dir, from: newest ? `v${newest.join('.')}` : null, to: next, skeleton: skelS, readme }
 }
 
 // The page count the skeleton states in its head (`28장`), else the number of page headings.
@@ -92,11 +111,12 @@ export function pageCount(skel) {
   return m ? Number(m[1]) : headings(skel).length
 }
 
-// One row for the snapshot table: into the table under a `## skeleton` heading when there is one,
-// cells filled by that table's column names; else appended at the end of the file.
-export function readmeRow(body, { cur, next, day, pages, note }) {
+// One row for the snapshot table: into the table under a `## skeleton` (or `## deck`) heading when
+// there is one, cells filled by that table's column names; else appended at the end of the file.
+// A skeleton row says what the next version changes (`→ vB: …`); a deck row is that version's own note.
+export function readmeRow(body, { cur, next, day, pages, note }, kind = 'skeleton') {
   const lines = body.split('\n')
-  const sec = lines.findIndex(l => /^##\s+skeleton\b/i.test(l))
+  const sec = lines.findIndex(l => new RegExp(`^##\\s+${kind}\\b`, 'i').test(l))
   if (sec >= 0) {
     let h = sec + 1
     while (h < lines.length && !/^\s*\|/.test(lines[h]) && !/^#/.test(lines[h])) h++
@@ -105,8 +125,8 @@ export function readmeRow(body, { cur, next, day, pages, note }) {
       while (end + 1 < lines.length && /^\s*\|/.test(lines[end + 1])) end++
       const cols = lines[h].split('|').slice(1, -1).map(c => c.trim())
       const tick = end > h + 1 && lines[h + 2].includes('`')
-      const cell = c => (/버전/.test(c) ? (tick ? `\`skeleton-${cur}\`` : cur) : /날짜/.test(c) ? day : /장수/.test(c) ? String(pages)
-        : /바뀐|한 줄|메모|내용/.test(c) ? `→ ${next}: ${note}` : '')
+      const cell = c => (/버전/.test(c) ? (tick ? `\`${kind}-${cur}\`` : cur) : /날짜/.test(c) ? day : /장수/.test(c) ? String(pages)
+        : /바뀐|한 줄|메모|내용/.test(c) ? (next ? `→ ${next}: ${note}` : note) : '')
       // newest first when the table already reads that way (its first row is the higher version)
       const ver = l => (l || '').match(/v(\d+)\.(\d+)\.(\d+)/)?.slice(1).map(Number)
       const [a, b] = [ver(lines[h + 2]), ver(lines[h + 3])]
@@ -152,6 +172,9 @@ export function renumber(text, map) {
       // the heading's own number (and its `쪽`) is swapped once; references later in its text are swapped as refs
       pageCol = -1
       const own = h[0].length + (line.slice(h[0].length).startsWith('쪽') ? 1 : 0)
+      // a block order mark `(2/3)` in a moved heading is not renumbered: listed for a hand fix
+      const nth = line.match(/\((\d+)\/(\d+)\)/)
+      if (nth && to(Number(h[2])) !== Number(h[2])) warnings.push(`${Number(h[2])}쪽 → ${to(Number(h[2]))}쪽 heading keeps "${nth[0]}": check it by hand`)
       return `${h[1]}${swap(Number(h[2]))}${line.slice(h[0].length, own)}${refs(line.slice(own))}`
     }
     if (/^\s*\|/.test(line)) {
@@ -170,7 +193,8 @@ export function renumber(text, map) {
   function refs(line) {
     return line.replace(REF, (all, a, sep, b) => {
       if (!sep) return `${swap(Number(a))}쪽`
-      if (sep === '·') return `${swap(Number(a))}·${swap(Number(b))}쪽`
+      // a `·` pair is written in ascending order after the swap (7·8쪽 stays 7·8쪽, not 8·7쪽)
+      if (sep === '·') return `${[swap(Number(a)), swap(Number(b))].sort((x, y) => x - y).join('·')}쪽`
       // a range maps as the set of its pages: kept as min~max when that set is still contiguous
       const lo = Number(a), hi = Number(b)
       const pages = []
@@ -258,6 +282,10 @@ function main() {
     const r = renumber(readFileSync(file, 'utf8'), parseMap(args.map))
     if (!args['dry-run']) writeFileSync(file, r.text)
     out = { file, changes: r.changes, warnings: r.warnings, written: !args['dry-run'], ...verify(r.text) }
+    // renumber reads one file; the deck's own page numbers are fixed by hand and said so
+    if (!/deck\.mdx$/.test(file) && existsSync(join(root, 'deck.mdx'))) {
+      out.by_hand = ['deck.mdx: slide order, `<!-- N. … -->` comments and page cells (toc, appendix toc) are not renumbered']
+    }
   } else if (cmd === 'verify') {
     out = verify(readFileSync(file, 'utf8'))
   } else if (cmd === 'compare') {
