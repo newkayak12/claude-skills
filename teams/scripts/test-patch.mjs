@@ -70,6 +70,55 @@ test('refuses without summary_ko, and on a version mismatch', () => {
   } finally { rmSync(a, { recursive: true, force: true }); rmSync(b, { recursive: true, force: true }); }
 });
 
+function addCodex(root, version = '0.9.0') {
+  mkdirSync(join(root, 'teams', '.codex-plugin'), { recursive: true });
+  writeFileSync(join(root, 'teams', '.codex-plugin', 'plugin.json'), JSON.stringify({ name: 'teams', version }, null, 2) + '\n');
+}
+const codexFile = (root) => join(root, 'teams', '.codex-plugin', 'plugin.json');
+
+test('dry run lists the codex manifest and leaves it unchanged', () => {
+  const root = repo();
+  try {
+    addCodex(root);
+    const { status, report } = run(root, { summary: 'c', summary_ko: 'c', dryRun: true });
+    assert.equal(status, 0);
+    assert.ok(report.files.includes(codexFile(root)));
+    assert.equal(JSON.parse(readFileSync(codexFile(root), 'utf8')).version, '0.9.0');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('real run bumps the codex manifest to the plugin.json version', () => {
+  const root = repo();
+  try {
+    addCodex(root);
+    assert.equal(run(root, { summary: 'c', summary_ko: 'c' }).status, 0);
+    const codex = JSON.parse(readFileSync(codexFile(root), 'utf8'));
+    const main = JSON.parse(readFileSync(join(root, 'teams', '.claude-plugin', 'plugin.json'), 'utf8'));
+    assert.equal(codex.version, '0.9.1');
+    assert.equal(codex.version, main.version);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a plugin without .codex-plugin keeps working and lists no codex path', () => {
+  const root = repo();
+  try {
+    const { status, report } = run(root, { summary: 'c', summary_ko: 'c', dryRun: true });
+    assert.equal(status, 0);
+    assert.ok(!report.files.some((f) => f.includes('.codex-plugin')));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a codex manifest with another version refuses and writes nothing', () => {
+  const root = repo();
+  try {
+    addCodex(root, '0.8.0');
+    const r = run(root, { summary: 'c', summary_ko: 'c' });
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /codex-plugin/);
+    assert.equal(JSON.parse(readFileSync(join(root, 'teams', '.claude-plugin', 'plugin.json'), 'utf8')).version, '0.9.0');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('the plugin argument selects another plugin directory', () => {
   const root = repo();
   try {

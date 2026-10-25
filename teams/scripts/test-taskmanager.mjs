@@ -4049,10 +4049,27 @@ function killDriversIn(drv) {
   spawnSync('pkill', ['-KILL', '-f', drv]);
 }
 
+// Every tm-drv dir this run made, so the after() leak check judges only its own drivers.
+const DRV_DIRS = [];
+function mkDrvDir() {
+  const d = mkdtempSync(join(tmpdir(), 'tm-drv-'));
+  DRV_DIRS.push(d);
+  return d;
+}
+
+// The never-finishing driver a fixture hands the daemon. It ends on its own - when the test
+// process that wrote it is gone (a SIGKILLed or timed-out runner never reaches a finally), or
+// after ten minutes - so an aborted run leaves no `node /tmp/tm-drv-*/hanging-driver.mjs` behind.
+const HANGING_DRIVER_SRC = `const RUNNER = ${process.pid};
+const alive = () => { try { process.kill(RUNNER, 0); return true; } catch (e) { return !!(e && e.code === 'EPERM'); } };
+setInterval(() => { if (!alive()) process.exit(0); }, 1000);
+setTimeout(() => process.exit(0), 10 * 60 * 1000);
+`;
+
 function driverFixture(env = {}, script = FAKE_DRIVER) {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const drv = mkdtempSync(join(tmpdir(), 'tm-drv-'));
+  const drv = mkDrvDir();
   const scriptPath = join(drv, 'fake-driver.mjs');
   // Every task plans first now (cards-everywhere C2/C6), and a planning card's dispatch spawns a
   // driver like any package's. These fixtures are about a develop package's (or the S run's)
@@ -4803,7 +4820,7 @@ test('a dead daemon is respawned on any tm_* call up to driver_restarts, then re
 test('the daemon keeps a size-S harness task\'s driver and finishes once the harness run reports, with no external tm_next caller', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const drv = mkdtempSync(join(tmpdir(), 'tm-drv-'));
+  const drv = mkDrvDir();
   const scriptPath = join(drv, 'fake-driver.mjs');
   // The harness driver stays up while the test plays its run on disk.
   writeFileSync(scriptPath, 'setTimeout(() => process.exit(0), 30000);\n');
@@ -4837,13 +4854,13 @@ test('the daemon keeps a size-S harness task\'s driver and finishes once the har
 test('a judge call that never returns is killed on its timeout instead of wedging the daemon', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const drv = mkdtempSync(join(tmpdir(), 'tm-drv-'));
+  const drv = mkDrvDir();
   // A judge that hangs forever. Before JUDGE_TIMEOUT_MS existed this wedged the daemon on a
   // pending close event: it held no session, wrote no stream, and left the task 'running'
   // forever - one orphan survived 2h37m that way, still awaiting a task whose directory had
   // already been deleted.
   const hang = join(drv, 'hanging-judge.mjs');
-  writeFileSync(hang, 'setInterval(() => {}, 1000);\n');
+  writeFileSync(hang, HANGING_DRIVER_SRC);
   const tm = await new Client(TM, {
     HARNESS_TASKS_DIR: root,
     HARNESS_JUDGE_DRIVER: `node ${hang}`,
@@ -4888,14 +4905,14 @@ test('a judge call that never returns is killed on its timeout instead of wedgin
 test('a judge call leaves its stream under drivers/, so budget and the report count manager-level spend', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const drv = mkdtempSync(join(tmpdir(), 'tm-drv-'));
+  const drv = mkDrvDir();
   // A judge that answers size with one result event costing $1.25 - the shape a real
   // `claude -p --output-format stream-json` call ends with. Before keepJudgeLog this stdout was
   // parsed and dropped, so every manager-level call was invisible to budget_usd and the report.
   const judgeJs = join(drv, 'judge.mjs');
   writeFileSync(judgeJs, `process.stdout.write(JSON.stringify({ type: 'result', total_cost_usd: 1.25, num_turns: 2, result: JSON.stringify({ stage_ok: true, size: 'S', reason: 'small' }) }) + '\\n');\n`);
   const hang = join(drv, 'hanging-driver.mjs');
-  writeFileSync(hang, 'setInterval(() => {}, 1000);\n');
+  writeFileSync(hang, HANGING_DRIVER_SRC);
   const tm = await new Client(TM, {
     HARNESS_TASKS_DIR: root,
     HARNESS_JUDGE_DRIVER: `node ${judgeJs}`,
@@ -4931,7 +4948,7 @@ test('a judge call leaves its stream under drivers/, so budget and the report co
 test('a manager judge spawn gets TEAMS_WIKI_OFF=1 so it never sees the project wiki', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const drv = mkdtempSync(join(tmpdir(), 'tm-drv-'));
+  const drv = mkDrvDir();
   const seen = join(drv, 'judge-env.txt');
   const judgeJs = join(drv, 'judge.mjs');
   writeFileSync(judgeJs, `import { writeFileSync } from 'node:fs';
@@ -4939,7 +4956,7 @@ writeFileSync(${JSON.stringify(seen)}, String(process.env.TEAMS_WIKI_OFF));
 process.stdout.write(JSON.stringify({ type: 'result', result: JSON.stringify({ stage_ok: true, size: 'S', reason: 'small' }) }) + '\\n');
 `);
   const hang = join(drv, 'hanging-driver.mjs');
-  writeFileSync(hang, 'setInterval(() => {}, 1000);\n');
+  writeFileSync(hang, HANGING_DRIVER_SRC);
   const tm = await new Client(TM, {
     HARNESS_TASKS_DIR: root,
     HARNESS_JUDGE_DRIVER: `node ${judgeJs}`,
@@ -4968,14 +4985,14 @@ process.stdout.write(JSON.stringify({ type: 'result', result: JSON.stringify({ s
 test('the daemon stays alive while it only has a running child to wait on', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const drv = mkdtempSync(join(tmpdir(), 'tm-drv-'));
+  const drv = mkDrvDir();
   // A child driver that runs forever and writes nothing: the daemon has nothing to do but wait.
   // seam-beta-D1 (2026-09-21) died exactly here: waitForProgress held only an unref()'d fallback
   // timer and non-persistent fs.watch handles, so the event loop emptied and Node exited with
   // code 0 mid-await - one second after dispatching P1, and again on both restarts. The child
   // finished every node; nobody was left to fold it.
   const hang = join(drv, 'hanging-driver.mjs');
-  writeFileSync(hang, 'setInterval(() => {}, 1000);\n');
+  writeFileSync(hang, HANGING_DRIVER_SRC);
   const tm = await new Client(TM, {
     HARNESS_TASKS_DIR: root,
     HARNESS_CHILD_DRIVER: `node ${hang}`,
@@ -5351,11 +5368,11 @@ test('the daemon settles a judge whose stream carries a denied tool as blocked, 
   const run = async (resultEvent) => {
     const cwd = repo();
     const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-    const drv = mkdtempSync(join(tmpdir(), 'tm-drv-'));
+    const drv = mkDrvDir();
     const judgeJs = join(drv, 'judge.mjs');
     writeFileSync(judgeJs, `process.stdout.write(${JSON.stringify(JSON.stringify(resultEvent))} + '\\n');\n`);
     const hang = join(drv, 'hanging-driver.mjs');
-    writeFileSync(hang, 'setInterval(() => {}, 1000);\n');
+    writeFileSync(hang, HANGING_DRIVER_SRC);
     const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_JUDGE_DRIVER: `node ${judgeJs}`, HARNESS_CHILD_DRIVER: `node ${hang}`, CLAUDECODE: '1' }).init();
     try {
       const open = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'a request whose size must be judged', cwd, vendor: 'self' });
@@ -9154,4 +9171,27 @@ after(async () => {
   for (let n = 0; found.length && n < 30; n++) { await new Promise((r) => setTimeout(r, 100)); found = leaked(); }
   for (const f of found) { try { process.kill(f.pid, 'SIGTERM'); } catch { /* gone */ } }
   assert.deepEqual(found, [], `daemon.mjs --task left running after the suite: ${found.map((f) => `pid ${f.pid} (${f.dir})`).join(', ')}`);
+});
+
+// No-leak check for fixture drivers: after the file's tests, no `node /tmp/tm-drv-*/<driver>.mjs`
+// process from a tm-drv dir THIS run created may be alive. Another suite's tm-drv processes are not
+// in DRV_DIRS and are never judged or touched; task daemons are not touched either. A survivor is
+// killed by its exact pid so the failure does not itself leave an orphan.
+after(async () => {
+  try { readFileSync('/proc/self/stat'); } catch { return; } // /proc unreadable: skip
+  const leaked = () => {
+    const out = [];
+    for (const pid of readdirSync('/proc').filter((n) => /^\d+$/.test(n)).map(Number)) {
+      let argv;
+      try { argv = readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0'); } catch { continue; }
+      if (!/(^|\/)node$/.test(argv[0] || '')) continue;
+      const script = argv[1] || '';
+      if (DRV_DIRS.some((d) => script.startsWith(`${d}/`))) out.push({ pid, script });
+    }
+    return out;
+  };
+  let found = leaked();
+  for (let n = 0; found.length && n < 30; n++) { await new Promise((r) => setTimeout(r, 100)); found = leaked(); }
+  for (const f of found) { try { process.kill(f.pid, 'SIGKILL'); } catch { /* gone */ } }
+  assert.deepEqual(found, [], `fixture driver left running after the suite: ${found.map((f) => `pid ${f.pid} (${f.script})`).join(', ')}`);
 });

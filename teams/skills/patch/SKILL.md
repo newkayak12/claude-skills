@@ -52,6 +52,7 @@ a source checkout of this marketplace, not for refreshing files installed into a
 
 - `teams/.claude-plugin/plugin.json`
 - the `teams` entry in `.claude-plugin/marketplace.json`
+- `teams/.codex-plugin/plugin.json` when present: its version moves with the others (it must equal the old version, else the script refuses)
 - the first entry under `teams/CHANGELOG.md` → `## Status`
 - the first entry under `teams/CHANGELOG.KOR.md` → `## 상태`
 
