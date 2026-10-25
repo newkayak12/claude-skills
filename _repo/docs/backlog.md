@@ -52,7 +52,9 @@ toasts).
 
 ### Repo and rules
 
-47. **Split write:plans into requirements, PRD and ADR skills, mounted in teams** — E-e80fea64 partial (shape); F2 in E-c80fa0ea, then F1, F3
+47. **Split write:plans into requirements, PRD and ADR skills, mounted in teams** — E-e80fea64 partial (shape); F2 in E-c80fa0ea, F1 in E-1515b84f (ac84b75b), then F3
+    - F1 left open: the fictional brief and its full output are not kept inline in the run record; the
+      step-8 pointer to write:plans steps 4-5 was not exercised by a model with file tools.
     - Why: user, 2026-10-17: "요건을 분석하고 분할하는 스킬도 하나 backlog에"; 2026-10-25: "write:plan을
       prd, adr, 요구사항 분석으로 나누고 각각 핏하게 해서 teams에 넣고"; approved "진행하자".
     - Design: `_repo/docs/plans/2026-10-25-split-write-plans.md` (all three in `write`).
@@ -82,12 +84,18 @@ toasts).
       the full unassigned-AC and overlapping-path list in one retry message and a mechanical pre-check
       (node, tested) before submit; a rerun of card 47's PRD shapes on the first or second attempt.
 
-71. **`teams/skills/patch/patch.mjs` moves `.codex-plugin/plugin.json` with the version**
-    - Why: 2026-10-25, the batch bump to teams 0.59.2 was blocked by `validate_plugins.py`:
-      "[teams] .codex-plugin/plugin.json version '0.59.1' != plugin.json '0.59.2'". patch.mjs bumps
-      plugin.json and marketplace.json only; the Codex manifest was fixed by hand.
-    - Acceptance: patch.mjs bumps `<plugin>/.codex-plugin/plugin.json` when it exists (dry-run lists it),
-      with a test; after a real run `python3 _repo/scripts/validate_plugins.py` passes.
+77. **teams tests leave no daemon behind and do not flake**
+    - Why: 2026-10-25, E-2bb23da3 (card 72) fixed orphaned `hanging-driver.mjs`, but its goal gate noted the
+      task daemon can still outlive a SIGKILLed test runner. The same day `node --test
+      teams/scripts/test-taskmanager.mjs` failed 1 of 312 once, then passed 312/312 (test unverified).
+    - Acceptance: after a SIGKILLed `node --test teams/scripts/test-taskmanager.mjs`, no `daemon.mjs` of a
+      `/tmp/tm-*` fixture is alive within a minute; five runs in a row pass 312/312.
+
+78. **The push hold resolves compound push targets**
+    - Why: 2026-10-25, E-2bb23da3 (card 73) resolves a leading `cd` and `git -C`, but its gate noted
+      `cd <path> && git -C <rel> push`, `~` paths and other compound forms are not covered.
+    - Acceptance: `_repo/scripts/test-repo-rules.mjs` cases for those three forms, each held or allowed by
+      the repo it really pushes.
 
 75. **smart-compact fires on the same context % the person sees in the status line**
     - Why: user, 2026-10-25: "smart-compact 발동 시점 정리 한 번 더 하자 지금 이세션 40인거보면" — the
@@ -113,20 +121,6 @@ toasts).
     - Acceptance: with the session open in the app, `/teams-status` shows the EPIC list there (the pane on a
       surface that draws it, else the `view.mjs --once` text as the command's answer); `claude plugin test`
       mounts the pane on `desktop` and `mobile`; the terminal pane is unchanged.
-
-73. **The repo-rules push hold applies only to pushes of this repo, not to another repo pushed from this session**
-    - Why: 2026-10-25, a `git push` of the noah repo (a different git dir) was refused by
-      `.claude/hooks/repo-rules.mjs` because a teams task held claude-skills; it went through only after
-      the task closed. Cause unverified (cwd or `git -C` target not resolved before the git-dir check).
-    - Acceptance: a test in `_repo/scripts/test-repo-rules.mjs` where a push run in, or `-C` pointed at,
-      another repo passes while a claude-skills task is open, and a push of this repo is still held.
-
-72. **teams tests leave no `hanging-driver.mjs` fixture running**
-    - Why: 2026-10-25, 25 `node /tmp/tm-drv-*/hanging-driver.mjs` processes from teams test runs were
-      still alive, aged 6 hours to 3 days, and were killed by hand. Card 51's leak check did not catch them.
-      Cause unverified.
-    - Acceptance: after `node --test teams/scripts/test-*.mjs`, `pgrep -f hanging-driver.mjs` finds none,
-      and the suite fails when one survives.
 
 ### knowledge plugin
 
