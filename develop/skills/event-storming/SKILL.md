@@ -113,4 +113,4 @@ Hotspots Remaining: <question, both meanings quoted>
 
 - `develop:domain-driven-design` — deeper DDD for aggregates and context mapping
 - `develop:service-boundary-validator` — validate service boundaries once contexts are found
-- `write:plans` (ADR format) — record decisions that emerge from the workshop
+- `write:adr` — record decisions that emerge from the workshop

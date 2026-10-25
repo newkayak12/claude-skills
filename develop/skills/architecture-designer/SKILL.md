@@ -93,5 +93,5 @@ Tally: shape `<row>` · NFRs `<x>/<y>` with numbers · ADRs `<n>` · open `[확�
 - `develop:domain-driven-design` — the contexts this topology should follow
 - `develop:service-boundary-validator` — where to cut services and whether the cuts hold
 - `develop:clean-architecture` — layers inside each deployable
-- `write:plans` — a standalone ADR or design-review document
+- `write:adr` — a standalone ADR or design-review document
 - `write:diagram` — the design as a checked SVG + PNG figure or interactive HTML

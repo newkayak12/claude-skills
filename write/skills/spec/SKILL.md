@@ -90,6 +90,6 @@ stories n · decisions n · open n
 
 ## Related Skills
 
-- `write:plans` — a doc co-written from scratch, an ADR, a design review, or the implementation plan after this spec.
+- `write:prd` — a doc co-written from scratch; `write:adr` — an ADR or design review; `write:plans` — the implementation plan after this spec.
 - `develop:test-driven-development` — implementing the spec test-first at the named seam.
 - `think:brainstorming` — the conversation hasn't settled what to build yet.

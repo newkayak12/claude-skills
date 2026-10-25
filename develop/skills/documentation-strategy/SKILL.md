@@ -37,8 +37,8 @@ classified keep, update or delete; the closing tally recounts to both lists.
 
 # Documentation Strategy
 
-**Not for** writing one substantial document end to end (`write:spec`, `write:plans`), recording a single decision
-(`write:plans` ADR format), or running an incident review (`develop:incident-response-playbook`).
+**Not for** writing one substantial document end to end (`write:spec`, `write:prd`), recording a single decision
+(`write:adr`), or running an incident review (`develop:incident-response-playbook`).
 
 ## Process
 
@@ -93,4 +93,4 @@ Audited <n> (keep <k> · update <u> · delete <d>) · recommended <r> · missing
 - `develop:architecture-designer` — architecture docs and ADRs
 - `develop:incident-response-playbook` — RCA content to store and maintain
 - `write:spec` — drafting one substantial document
-- `write:plans` — ADR format for a single decision
+- `write:adr` — a single decision

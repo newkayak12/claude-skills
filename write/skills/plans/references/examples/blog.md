@@ -1,6 +1,6 @@
 # Example: technical blog post
 
-Purpose `blog` of `write:plans`. Runs the document path (`references/document.md`) with the reader set to developers arriving from search or a feed; this file supplies the arc, draft principles and checklist.
+Purpose `blog` of `write:plans`. Runs the document path (`../../../prd/references/document.md`) with the reader set to developers arriving from search or a feed; this file supplies the arc, draft principles and checklist.
 
 ## Why Technical Blogs Fail
 
