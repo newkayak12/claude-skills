@@ -82,13 +82,13 @@ test('snapshot copies the current skeleton, bumps and logs once', () => {
   assert.throws(() => snapshot(root, { kind: 'skeleton', level: 'patch', note: 'x' }), /already taken/)
 })
 
-test('deck snapshot copies deck.mdx without bumping', () => {
+test('the first deck snapshot is deck-v1.0.0 and leaves skeleton alone', () => {
   const root = mkdtempSync(join(tmpdir(), 'manage-'))
   writeFileSync(join(root, 'skeleton.md'), SKEL)
   writeFileSync(join(root, 'deck.mdx'), '---\noutput: build/deck.pptx\n---\n')
   const r = snapshot(root, { kind: 'deck', level: 'patch', note: 'x' })
-  assert.equal(r.bumped, false)
-  assert.ok(existsSync(join(root, 'snapshot/deck/deck-v4.0.0/deck.mdx')))
+  assert.equal(r.to, 'v1.0.0')
+  assert.ok(existsSync(join(root, 'snapshot/deck/deck-v1.0.0/deck.mdx')))
   assert.equal(readFileSync(join(root, 'skeleton.md'), 'utf8'), SKEL)
 })
 
@@ -241,4 +241,20 @@ test('compare lists items scored on one side only instead of comparing them', ()
   const r = compare({ a: 5, b: 6 }, { a: 5, c: 7 })
   assert.deepEqual(r.unmatched, ['b', 'c'])
   assert.equal(r.verdict, 'same')
+})
+
+test('real-shape workspace: a deck snapshot counts deck versions, carries assets and a NOTES.md, rows into `## deck`', () => {
+  const root = workspace()
+  const r = snapshot(root, { kind: 'deck', level: 'minor', note: '렌더 지침 적용', date: '2026-01-07' })
+  assert.deepEqual([r.from, r.to, r.skeleton], ['v1.0.0', 'v1.1.0', 'v3.1.0'])
+  assert.ok(existsSync(join(root, 'snapshot/deck/deck-v1.1.0/assets/s2.svg')))
+  assert.equal(readFileSync(join(root, 'snapshot/deck/deck-v1.1.0/NOTES.md'), 'utf8'), '# deck-v1.1.0\n\n2026-01-07. skeleton v3.1.0 반영. 렌더 지침 적용\n')
+  assert.match(readFileSync(join(root, 'snapshot/README.md'), 'utf8'), /\| `deck-v1\.0\.0` \| 2026-01-01 \| 첫 덱 \|\n\| `deck-v1\.1\.0` \| 2026-01-07 \| 렌더 지침 적용 \|\n\n## skeleton/)
+  assert.match(readFileSync(join(root, 'skeleton.md'), 'utf8'), /^version: v3\.1\.0$/m)
+})
+
+test('a `·` pair stays ascending after a swap, and a moved heading with `(n/N)` is listed for a hand fix', () => {
+  const r = renumber('## 7 a (1/2)\n## 8 b (2/2)\n7·8쪽', parseMap('7:8,8:7'))
+  assert.equal(r.text, '## 7 b (2/2)\n7·8쪽\n## 8 a (1/2)')
+  assert.deepEqual(r.warnings, ['7쪽 → 8쪽 heading keeps "(1/2)": check it by hand', '8쪽 → 7쪽 heading keeps "(2/2)": check it by hand'])
 })

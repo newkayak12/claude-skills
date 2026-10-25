@@ -48,5 +48,16 @@ appear) live in that workspace's `docs/확정사실.md`, not here.
 | Renumbering pages by hand or in two passes | `snapshot` first, then one `renumber` pass and `verify` |
 | Reading a vague answer broadly | Do the shared part, hold the rest, say so |
 | Exaggeration | No market claims |
+| Bringing back a placement the user already settled, again and again | One case once; a settled placement moves only when the user says |
+| Keeping two pages merged after the reason to merge is gone | Undo the merge when its reason disappears |
+| Filling a field that reads as empty talk (team of one, 100% share on solo work) | Change the label so the field means something |
+| Leaving picture slots empty so the template's picture repeats across pages | A new picture where the content differs |
+| Page references at the end of body sentences (`(16쪽)`) | No page numbers inside sentences; they read machine-made |
+| Reusing an older version's figure as is | Check the words inside it against the current text; redraw when they differ |
+| Taking a summary document's count as the fact | Check it against the raw record; held items are not counted |
+| Bold across a whole line or report | Template run formats (`[text]{n}`) in the deck; plain headings in reports |
+| Fixing a render problem on the spot | Note it in `다음렌더-지침.md`; fix at once only what the user said to fix |
+| Treating a question as an instruction ("질문! 바꾸란건 아님") | Answer with a judgment; change nothing |
+| Asking what the analysis folder already holds | Search first; ask only what only the user knows |
 
 Shell: in zsh an argument starting with `=` (`echo ====`) errors — use `---` or `[label]` separators.

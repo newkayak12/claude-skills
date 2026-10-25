@@ -37,10 +37,12 @@ run finds is added there as a test case before it is fixed.
 ```
 skeleton.md        the design: every wording change starts here (`version: vX.Y.Z` line at the top)
 deck.mdx           build source carried over from skeleton (output: build/deck.pptx)
-template.pptx      archetype catalog — never edited (or where deck.mdx `template:` points)
+template/         template.pptx (where deck.mdx `template:` points), NOTES.md (its quirks, checked only),
+                   다음렌더-지침.md (render fixes waiting for the next render)
 deck.catalog.md    slot ids and character budgets — regenerated only (deck-builder catalog)
 build/             deck.pptx, deck.pdf
-snapshot/          skeleton/skeleton-vX.Y.Z/, deck/deck-vX.Y.Z/, scores/, README.md (version table)
+snapshot/          skeleton/skeleton-vX.Y.Z/, deck/deck-vX.Y.Z/ (deck.mdx, assets/, NOTES.md), scores/,
+                   README.md (`## deck` and `## skeleton` tables)
 sources/           material: material/<id>/ items (`material` skill), or a ledger NN_프로젝트/A1….md read as it is
 docs/확정사실.md   settled facts, things never to use, corrections — read before any work
 _archive/          old plans and deck backups, moved here, never deleted
@@ -80,8 +82,10 @@ are never renumbered. The template is where deck.mdx's `template:` points.
    wait for the user. Wording and defaults you may settle — and list them in the report.
 6. **Renumber.** An order change is one `renumber --map "<old>:<new>,…"`: it renumbers headings and
    references, moves the page sections into the new order and verifies (never by hand or in two
-   passes). Report changes, warnings and problems. Numbers without `쪽` outside a `쪽` column are
-   fixed by hand and listed.
+   passes). Report changes, warnings and problems. By hand, and listed in the report: numbers
+   without `쪽` outside a `쪽` column, a block order mark `(n/N)` the warnings name, and everything
+   in deck.mdx (`by_hand`: slide order, `<!-- N. -->` comments, toc page cells). Two pages sharing
+   one description move apart badly: give each page its own first.
 7. **Corrections.** When the user corrects a fact, in the same turn: append to the material file
    `## 정정 — 본인 확인 YYYY-MM-DD` with their words verbatim; add one line to `확정사실.md`;
    `noah_collect` the words when noah is connected. The user's word beats the record.
@@ -89,7 +93,13 @@ are never renumbered. The template is where deck.mdx's `template:` points.
    (`본인 확인 대기` / `deck.mdx 반영 때` / `그림 작업 때` / `캡처 대기`); slots at their budget
    go in as `check` items.
 9. **Deck.** Carry skeleton into deck.mdx against `deck.catalog.md` budgets, then `deck-builder`
-   `check`. `build` and `render` only when the user says; `snapshot --kind deck` only when asked.
+   `check`. `build` and `render` only when the user says; `snapshot --kind deck --level … --note`
+   only when asked (the deck counts its own versions; the note says which skeleton it carries).
+   A problem seen in a render or in PowerPoint is not fixed on the spot: it goes into
+   `template/다음렌더-지침.md` (쪽 · 칸 · 증상 · 확인 · 적용) and all of them are applied before the
+   next render. Fixed at once only when the user says to fix it ("고쳐", "맞춰줘"); a symptom or a
+   capture alone is noted. A frame the deck cannot move is fixed in the template only on the user's
+   word: `references/template-edit.md`.
 9b. **Did it read better.** After a round's edits, score the round's snapshot and the new skeleton
     with the same rubric in the same turn: `feedback`'s five dimension scores and `pattern`'s items,
     each run as `{ "<item>": <score> }` into `snapshot/scores/skeleton-vX.Y.Z.json`, then
@@ -107,15 +117,25 @@ Mistakes this workflow exists to stop: `references/principles.md` § Never.
 ```
 [결론 한 줄 — 무엇을 바꿨고 무엇이 남았나] (skeleton vA → vB)
 
-**바꾼 것** (쪽별 한 줄)
-**기본값으로 정한 것** (다르면 말해 달라)
-**정하실 것** (본인만 답할 수 있는 것만, 번호 목록)
-**이번 라운드** <나아짐 | 나빠짐 | 섞임 | 그대로> — 항목: 이전 → 지금 (떨어진 항목은 이전 문구와 함께)
+바꾼 것
+- N쪽 칸: 무엇을 어떻게 (한 줄씩)
+
+기본값으로 정한 것 (다르면 말씀해 주세요)
+- …
+
+정하실 것
+1. 본인만 답할 수 있는 것만
+
+이번 라운드 <나아짐 | 나빠짐 | 섞임 | 그대로> — 항목: 이전 → 지금 (떨어진 항목은 이전 문구와 함께)
+확인한 것 (템플릿이나 원재료를 고쳤을 때: 백업 위치, check 결과)
 
 renumber/verify: <changes, warnings, problems | 안 함> · deck check: <warnings | 안 함> · build/render: <함 | 안 함>
 ```
 
-Korean, conclusion first; no invented names, debate codes or abstract labels.
+Korean, conclusion first; headings plain, no bold run through the report. No invented names,
+debate codes or abstract labels; a number says what it counts. Build or render not done → say the
+built files are the older state. A short remark read one way → say the reading and ask if another
+was meant. Held is said as held.
 
 ## What Claude Does / What You Do
 
