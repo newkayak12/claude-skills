@@ -41,7 +41,7 @@ template.pptx      archetype catalog — never edited (or where deck.mdx `templa
 deck.catalog.md    slot ids and character budgets — regenerated only (deck-builder catalog)
 build/             deck.pptx, deck.pdf
 snapshot/          skeleton/skeleton-vX.Y.Z/, deck/deck-vX.Y.Z/, scores/, README.md (version table)
-sources/           material: material/<id>/ items (`material` skill), one project per folder
+sources/           material: material/<id>/ items (`material` skill), or a ledger NN_프로젝트/A1….md read as it is
 docs/확정사실.md   settled facts, things never to use, corrections — read before any work
 _archive/          old plans and deck backups, moved here, never deleted
 ```
@@ -64,7 +64,9 @@ are never renumbered. The template is where deck.mdx's `template:` points.
    signal (`references/principles.md` § Composition), one project as why → the user's role and
    decision → result, each claim citing its material item; strengths chosen from the evidence.
    Propose the structure (blocks, order, body vs appendix) and wait before filling pages. A written
-   item is marked `material log --id <id> --note "skeleton <N>쪽" --status written --later-step manage`.
+   item is marked `material log --id <id> --note "skeleton <N>쪽" --status written --later-step manage`;
+   in a ledger workspace (`material ledger` lists items) `material ledger-log --item <NN_프로젝트/A1>`
+   with the same flags. The ledger is never moved or rewritten.
 2. **Feedback.** Run `feedback` on the skeleton (and `pattern` for how it reads); results become a
    numbered skeleton edit list with how to fix each. Never re-raise what `확정사실.md` settles.
 3. **Snapshot, then edit.** `snapshot --kind skeleton --level <major|minor|patch> --note "<what>"`

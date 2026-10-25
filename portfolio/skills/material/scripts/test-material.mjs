@@ -416,3 +416,45 @@ test('every subcommand prints exactly one JSON object; script imports only node:
   assert.ok(specs.every((s) => s.startsWith('node:')), specs.join());
   assert.ok(!/\brequire\(|import\(/.test(src));
 });
+
+// Card 69 (a): a workspace whose material is a per-project ledger, sources/NN_프로젝트/A1….md, is read as it is.
+function ledgerProject({ nfd = false } = {}) {
+  const { cwd } = project();
+  const n = (s) => (nfd ? s.normalize('NFD') : s);
+  fs.mkdirSync(path.join(cwd, 'sources', n('01_가상검색')), { recursive: true });
+  fs.mkdirSync(path.join(cwd, 'sources', n('02_가상알림')), { recursive: true });
+  fs.writeFileSync(path.join(cwd, 'sources', n('01_가상검색'), n('A1_검색개편.md')), '# 검색 개편\n\n- 문제: 느렸다\n');
+  fs.writeFileSync(path.join(cwd, 'sources', n('01_가상검색'), n('A2_캐시.md')), '- 제목 없는 글\n');
+  fs.writeFileSync(path.join(cwd, 'sources', n('02_가상알림'), n('A1_알림.md')), '# 알림 배치\n');
+  fs.writeFileSync(path.join(cwd, 'sources', 'README.md'), '# not an item\n');
+  return cwd;
+}
+
+test('ledger lists every A-file per project folder, NFC ids, title from the first heading', () => {
+  const cwd = ledgerProject({ nfd: true });
+  const r = run(cwd, ['ledger']);
+  assert.equal(r.code, 0);
+  assert.deepEqual(r.json.items.map((i) => [i.id, i.title, i.written]), [
+    ['01_가상검색/A1', '검색 개편', false], ['01_가상검색/A2', 'A2_캐시', false], ['02_가상알림/A1', '알림 배치', false],
+  ]);
+});
+
+test('ledger-log appends one line under ## 이력 at the end, once; the rest of the file is untouched', () => {
+  const cwd = ledgerProject();
+  const file = path.join(cwd, 'sources', '01_가상검색', 'A1_검색개편.md');
+  const before = fs.readFileSync(file, 'utf8');
+  const args = ['ledger-log', '--item', '01_가상검색/A1', '--note', 'skeleton 2쪽', '--status', 'written', '--later-step', 'manage'];
+  assert.equal(run(cwd, args).json.result, 'logged');
+  assert.equal(fs.readFileSync(file, 'utf8'), `${before}\n## 이력\n- ${DATE} skeleton 2쪽 (status: written, manage)\n`);
+  assert.equal(run(cwd, args).json.result, 'unchanged');
+  run(cwd, ['ledger-log', '--item', '01_가상검색/A1', '--note', '3쪽으로 이동']);
+  assert.match(fs.readFileSync(file, 'utf8'), /## 이력\n- .* \(status: written, manage\)\n- 2026-01-02 3쪽으로 이동\n$/);
+  assert.equal(run(cwd, ['ledger']).json.items[0].written, true);
+  assert.ok(!fs.existsSync(path.join(cwd, 'material')));
+});
+
+test('ledger-log refuses a status without its later step, and an unknown item', () => {
+  const cwd = ledgerProject();
+  assert.equal(run(cwd, ['ledger-log', '--item', '01_가상검색/A1', '--note', 'x', '--status', 'written']).code, 1);
+  assert.match(run(cwd, ['ledger-log', '--item', '09_없음/A1', '--note', 'x']).json.error, /no ledger item/);
+});

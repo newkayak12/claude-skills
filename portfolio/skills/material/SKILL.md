@@ -34,6 +34,8 @@ Script, run from the project root: `node ${CLAUDE_PLUGIN_ROOT}/skills/material/s
 | `gaps` | none | Open and answered question counts per item, from `gaps.md` |
 | `answer` | `--id --question --citation` | Marks the open gaps.md question `[답변됨]` with the citation of the answering material; the line stays |
 | `foreign` | none | Lists files in `material/` the flow did not write |
+| `ledger` | none | A workspace that keeps material as `sources/NN_프로젝트/A1….md`: lists each A-file as item `NN_프로젝트/A1`, its title and whether it is `written` |
+| `ledger-log` | `--item --note` (opt. `--status --later-step`) | Appends one line under `## 이력` at the end of that ledger file, nothing above it touched; a note already there is `unchanged` |
 
 `--status` (on `log` and `init`) is reserved for later steps: the script refuses it without `--later-step <name>`. Step 1 never passes either flag.
 

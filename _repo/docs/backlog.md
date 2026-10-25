@@ -88,13 +88,6 @@ toasts).
 
 ### portfolio plugin
 
-69. **material reads the user's `sources/NN_프로젝트/A1….md` ledger, or moves it, by decision**
-    - Why: 2026-10-25 workspace report: `sources/` is a per-project ledger (`NN_프로젝트/A1….md`), not
-      `material/<id>/`; manage step 1b (`material log … --status written`) cannot mark an item there.
-    - Acceptance: the user picks (a) material reads and logs into the ledger as it is, or (b) a
-      one-time move into `material/<id>/` with the ledger kept in `_archive/`; the chosen path has a
-      test and one run on the workspace shape.
-
 54. **portfolio runs one flow on managed material: collect → write → render → feedback**
     - Why: user, 2026-10-18: "포트폴리오 스킬에 매니징 있니? 그니까 글감을 모으고 관리하고 그걸 바탕으로
       내 문제로 쓰고 그걸 deckbuilder로 렌더링하고 다시 그걸 portfolio feedback으로 하고 이런 플로가

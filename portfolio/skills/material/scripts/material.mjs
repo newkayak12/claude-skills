@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Mechanical half of the material store (material/<id>/ per item + material/index.md).
-// Project root = cwd. Writes only under <cwd>/material/. Every subcommand prints exactly one
+// Project root = cwd. Writes only under <cwd>/material/, except ledger-log, which appends one
+// line to the end of a sources/ ledger file. Every subcommand prints exactly one
 // JSON object on stdout; bad usage exits 1 with {"error": "..."}.
 //
 //   node material.mjs id      --source S --title T
@@ -11,6 +12,8 @@
 //   node material.mjs answer  --id I --question Q --citation C
 //   node material.mjs gaps
 //   node material.mjs foreign
+//   node material.mjs ledger
+//   node material.mjs ledger-log --item NN_프로젝트/A1 --note N [--status S --later-step X]
 //
 // Step 1 (collection) creates status "raw" and never changes it. A status other than raw
 // (init --status, log --status) is reserved for later steps and refused unless the caller
@@ -27,10 +30,11 @@ import path from 'node:path';
 
 const PARTS = ['meta.md', 'problem.md', 'decision.md', 'result.md', 'learned.md', 'gaps.md', 'history.md'];
 const STATUSES = ['raw', 'shaped', 'written', 'rendered', 'reviewed'];
-const FLAGS = new Set(['id', 'source', 'title', 'period', 'role', 'tags', 'note', 'status', 'later-step', 'question', 'citation', 'add-source']);
+const FLAGS = new Set(['id', 'source', 'title', 'period', 'role', 'tags', 'note', 'status', 'later-step', 'question', 'citation', 'add-source', 'item']);
 const ANSWERED = '[답변됨]';
 const ID_RE = /^[\p{L}\p{N}][\p{L}\p{N}-]*$/u;
 const MAT = path.resolve(process.cwd(), 'material');
+const SRC = path.resolve(process.cwd(), 'sources');
 
 const fail = (msg) => { throw new Error(msg); };
 const one = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
@@ -104,6 +108,24 @@ function folderItems() {
     else skipped.push(name);
   }
   return { items, skipped };
+}
+// sources/<NN_프로젝트>/<A…>.md; folder and file names may be stored decomposed (NFD, from macOS)
+function ledgerItems() {
+  const ls = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }); } catch { return []; } };
+  const out = [];
+  for (const p of ls(SRC).filter((e) => e.isDirectory() && /^\d+_/.test(e.name)).sort((x, y) => x.name.localeCompare(y.name))) {
+    for (const f of ls(path.join(SRC, p.name)).filter((e) => e.isFile() && /^A\d+.*\.md$/.test(e.name)).sort((x, y) => x.name.localeCompare(y.name, undefined, { numeric: true }))) {
+      const file = `${p.name}/${f.name}`;
+      const text = fs.readFileSync(path.join(SRC, file), 'utf8');
+      out.push({
+        id: `${p.name.normalize('NFC')}/${f.name.match(/^A\d+/)[0]}`,
+        file,
+        title: (text.match(/^#[ \t]+(.+)$/m) || [, f.name.normalize('NFC').replace(/\.md$/, '')])[1].trim(),
+        written: /^- \d{4}-\d{2}-\d{2} .*\(status: written\b/m.test(text),
+      });
+    }
+  }
+  return out;
 }
 const cell = (s) => String(s).replace(/\|/g, '\\|');
 function indexItems() {
@@ -282,6 +304,28 @@ const cmd = {
     return { open: items.reduce((n, x) => n + x.open, 0), items };
   },
 
+  // A workspace that keeps its material as a per-project ledger (`sources/NN_프로젝트/A1….md`) is
+  // read as it is: each A-file is one item, id `NN_프로젝트/A1`.
+  ledger() {
+    return { items: ledgerItems().map(({ id, file, title, written }) => ({ id, file, title, written })) };
+  },
+
+  'ledger-log'(a) {
+    need(a, 'item', 'note');
+    const it = ledgerItems().find((x) => x.id === one(a.item).normalize('NFC'));
+    if (!it) fail(`no ledger item ${a.item}`);
+    if (a.status !== undefined) { needStatus(a.status); needLaterStep(a); }
+    const tag = a.status ? ` (status: ${a.status}, ${one(a['later-step'])})` : '';
+    const line = `- ${today()} ${one(a.note)}${tag}`;
+    const full = path.join(SRC, it.file);
+    const text = fs.readFileSync(full, 'utf8');
+    if (text.split(/\r?\n/).some((l) => l.slice(13) === line.slice(13))) return { result: 'unchanged', id: it.id };
+    // append-only: an `## 이력` section at the end of the user's own file, nothing above it touched
+    const head = /^## 이력[ \t]*$/m.test(text) ? '' : `${text.endsWith('\n') ? '' : '\n'}\n## 이력\n`;
+    fs.appendFileSync(full, `${head}${line}\n`);
+    return { result: 'logged', id: it.id, file: it.file };
+  },
+
   foreign() {
     const found = [];
     const walk = (dir, rel) => {
@@ -312,7 +356,7 @@ function parse(argv) {
 
 try {
   const [sub, ...rest] = process.argv.slice(2);
-  if (!Object.hasOwn(cmd, sub ?? '')) fail(`unknown subcommand: ${sub ?? ''} (id|match|init|index|log|answer|gaps|foreign)`);
+  if (!Object.hasOwn(cmd, sub ?? '')) fail(`unknown subcommand: ${sub ?? ''} (id|match|init|index|log|answer|gaps|foreign|ledger|ledger-log)`);
   process.stdout.write(JSON.stringify(cmd[sub](parse(rest))) + '\n');
 } catch (e) {
   process.stdout.write(JSON.stringify({ error: e.message }) + '\n');
