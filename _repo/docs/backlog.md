@@ -78,6 +78,16 @@ toasts).
     - Acceptance: patch.mjs bumps `<plugin>/.codex-plugin/plugin.json` when it exists (dry-run lists it),
       with a test; after a real run `python3 _repo/scripts/validate_plugins.py` passes.
 
+75. **smart-compact fires on the same context % the person sees in the status line**
+    - Why: user, 2026-10-25: "smart-compact 발동 시점 정리 한 번 더 하자 지금 이세션 40인거보면" — the
+      person read about 40 while smart-compact's own log for the session said 21% at 09:32 against a 30%
+      threshold, so it never fired. The last response's input was 225,153 tokens: smart-compact divides by
+      the model's 1M window (`$.session.usage().context.percent`, 23%), the status line script prints
+      `context_window.used_percentage`, a different base (cause of the exact number unverified).
+    - Acceptance: smart-compact compares the threshold with the number the status line shows (or the status
+      line shows smart-compact's number), checked in one live session where both read the same at a turn
+      end; `/smart-compact` prints the current %, the threshold and the token count behind them.
+
 74. **`/teams-status` shows the board on an app surface (Remote Control from the Claude app), not only in the terminal**
     - Why: user, 2026-10-25, watching this session from the Claude app over Remote Control: "claude app에서
       rc로 보는데 teams-status는 노출이 안되는구조야?" — the command answered only "teams: pane opened /
