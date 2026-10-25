@@ -70,12 +70,19 @@ toasts).
 
 ### teams plugin bugs
 
-67. **`harness/scripts/test-goal-gate.mjs` fails inside a teams node (HARNESS_NODE=1)**
-    - Why: 2026-10-25, E-c5c109e3's integrate gate read "82 ok, 19 failed" on main and on the
-      integration tree, failed, and its repair R1 blocked the Sprint; the same script prints `all passed`
-      with HARNESS_NODE unset (verified). Every teams integrate in this repo that runs it fails the same way.
-    - Acceptance: the test clears HARNESS_NODE for its own child runs (or the gate prompt runs it
-      with `env -u HARNESS_NODE`), and `HARNESS_NODE=1 node harness/scripts/test-goal-gate.mjs` prints `all passed`.
+71. **`teams/skills/patch/patch.mjs` moves `.codex-plugin/plugin.json` with the version**
+    - Why: 2026-10-25, the batch bump to teams 0.59.2 was blocked by `validate_plugins.py`:
+      "[teams] .codex-plugin/plugin.json version '0.59.1' != plugin.json '0.59.2'". patch.mjs bumps
+      plugin.json and marketplace.json only; the Codex manifest was fixed by hand.
+    - Acceptance: patch.mjs bumps `<plugin>/.codex-plugin/plugin.json` when it exists (dry-run lists it),
+      with a test; after a real run `python3 _repo/scripts/validate_plugins.py` passes.
+
+72. **teams tests leave no `hanging-driver.mjs` fixture running**
+    - Why: 2026-10-25, 25 `node /tmp/tm-drv-*/hanging-driver.mjs` processes from teams test runs were
+      still alive, aged 6 hours to 3 days, and were killed by hand. Card 51's leak check did not catch them.
+      Cause unverified.
+    - Acceptance: after `node --test teams/scripts/test-*.mjs`, `pgrep -f hanging-driver.mjs` finds none,
+      and the suite fails when one survives.
 
 ### knowledge plugin
 
