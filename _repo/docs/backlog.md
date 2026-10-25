@@ -78,6 +78,13 @@ toasts).
     - Acceptance: patch.mjs bumps `<plugin>/.codex-plugin/plugin.json` when it exists (dry-run lists it),
       with a test; after a real run `python3 _repo/scripts/validate_plugins.py` passes.
 
+73. **The repo-rules push hold applies only to pushes of this repo, not to another repo pushed from this session**
+    - Why: 2026-10-25, a `git push` of the noah repo (a different git dir) was refused by
+      `.claude/hooks/repo-rules.mjs` because a teams task held claude-skills; it went through only after
+      the task closed. Cause unverified (cwd or `git -C` target not resolved before the git-dir check).
+    - Acceptance: a test in `_repo/scripts/test-repo-rules.mjs` where a push run in, or `-C` pointed at,
+      another repo passes while a claude-skills task is open, and a push of this repo is still held.
+
 72. **teams tests leave no `hanging-driver.mjs` fixture running**
     - Why: 2026-10-25, 25 `node /tmp/tm-drv-*/hanging-driver.mjs` processes from teams test runs were
       still alive, aged 6 hours to 3 days, and were killed by hand. Card 51's leak check did not catch them.
