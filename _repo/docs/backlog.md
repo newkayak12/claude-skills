@@ -88,7 +88,13 @@ toasts).
       line shows smart-compact's number), checked in one live session where both read the same at a turn
       end; `/smart-compact` prints the current %, the threshold and the token count behind them.
 
-74. **`/teams-status` shows the board on an app surface (Remote Control from the Claude app), not only in the terminal**
+74. **Every mod's UI draws on terminal, desktop, mobile and vscode (`mod.md` rule 8) — teams first**
+    - Why (all mods): user, 2026-10-25: "얘 모든 mod로 그리는 UI는 모바일, 데스크탑, 다 대응할 수 있어야 해요".
+      Scan the same day: graph, harness, session, teams, think and trophy tests mount `terminal` and at
+      most `desktop`; none mounts `mobile` or `vscode` (6 of 6 mods).
+    - Acceptance (all mods): each mod's tests mount every pane, band, card and toast on all four
+      surfaces; elements outside the shared six are behind an `e.surface` check; one live look per
+      mod in the Claude app over Remote Control; README/KOR say the surfaces.
     - Why: user, 2026-10-25, watching this session from the Claude app over Remote Control: "claude app에서
       rc로 보는데 teams-status는 노출이 안되는구조야?" — the command answered only "teams: pane opened /
       closed" and nothing showed in the app. The mod API knows `desktop` and `mobile` surfaces
