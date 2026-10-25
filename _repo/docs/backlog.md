@@ -52,15 +52,11 @@ toasts).
 
 ### Repo and rules
 
-47. **A skill that analyses requirements and splits them**
-    - Why: user, 2026-10-17: "요건을 분석하고 분할하는 스킬도 하나 backlog에" (asked first: "요건을
-      decompose 하는 스킬 우리 있나?"). Today the job is spread: `write:plans` (tickets),
-      `develop:spec-driven-development` (US/AC, then code), `agents:agent-task-decomposer` (agent
-      subtasks; teams-mounted, frozen), teams' planning stage (internal).
-    - Acceptance: a short design first — extend one of these or a new skill (repo rule: no new skill
-      when one can be extended); input a raw requirement or 기획서, output analysed requirements
-      (actors, rules, open questions) split into independently deliverable items with acceptance;
-      one real run on a sample 기획서.
+47. **Split write:plans into requirements, PRD and ADR skills, mounted in teams**
+    - Why: user, 2026-10-17: "요건을 분석하고 분할하는 스킬도 하나 backlog에"; 2026-10-25: "write:plan을
+      prd, adr, 요구사항 분석으로 나누고 각각 핏하게 해서 teams에 넣고"; approved "진행하자".
+    - Design: `_repo/docs/plans/2026-10-25-split-write-plans.md` (all three in `write`).
+    - Acceptance: the design doc's done criteria 1-5.
 
 48. **graph + harness into teams (plan: `_repo/docs/plans/2026-10-17-graph-harness-into-teams.md`)**
     - Why: user, 2026-10-17: "결과적으로 하위호환을 위해서 harness, graph를 두지만 (stable) 장기적인
