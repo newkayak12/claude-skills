@@ -1,6 +1,6 @@
 # Format: ADR
 
-Format `ADR` of `write:plans`. Fixed template; stored under `docs/adr/`.
+Format `ADR` of `write:adr`. Fixed template; stored under `docs/adr/`.
 
 ## Standing Mandates
 
@@ -112,7 +112,7 @@ Sequential numbering. Never delete or rewrite an accepted ADR — supersede inst
 ## Related Skills
 
 - design review format (`references/formats/design-review.md`) — produce the upstream Design Review this ADR captures
-- document purpose (`references/document.md`) — section-by-section co-write mechanics for long Context
+- document purpose (`../../../prd/references/document.md`) — section-by-section co-write mechanics for long Context
 - `writer-verification` — final pass to catch hedging in Decision
 - `tradeoff-articulator` — frame Rationale as "accept X to gain Y"
 - `bias-auditor` — when the decision boundary is unclear or Negative is empty

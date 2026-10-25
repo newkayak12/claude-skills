@@ -1,13 +1,10 @@
 ---
 name: plans
-description: >-
-  Use when writing starts from a plan: implementation plan or ticket breakdown before code, PRD, design doc, RFC, ADR, tech blog, SBI feedback.
-  Triggers: "구현 계획 써줘", "PRD 작성". Not for running or gating a written plan; use planning:executing-plans.
+description: Use when writing an implementation plan, tickets, tech blog or feedback. Triggers: "구현 계획 써줘", "티켓으로 쪼개줘", "기술 블로그", "피드백 써줘", "write a plan", "break into tickets", "write a blog", "write feedback"
 scenarios:
   - "이 기능 구현 계획 작성해줘"
   - "Create an implementation plan for this new service"
-  - "이 기능에 대한 PRD 작성해야 해"
-  - "Help me write a design doc for this new service"
+  - "Break this feature into tickets"
   - "Kafka 도입 과정을 기술 블로그로 써줘"
   - "I need to give feedback but don't want it to sound mean"
 compatibility:
@@ -31,10 +28,7 @@ without a question.
 | Purpose | Signal | Path |
 |---|---|---|
 | implementation plan | code/migration/refactor work, breaking a plan or feature into tickets/issues, any plan hand-off | Overview → Process below |
-| document | PRD, design doc, RFC, proposal, decision doc, spec — including a teams briefing that names one | `references/document.md` (Stage 3 uses `agents/reader-agent.md`) |
-| design review | options still open, reviewers argue alternatives and trade-offs | `references/formats/design-review.md` (fixed 8 sections) |
-| ADR | a decision already made, to be recorded | `references/formats/adr.md` (fixed template, `docs/adr/NNNN-*.md`) |
-| blog | technical blog, 회고 글, tutorial | `references/document.md` + `references/examples/blog.md` |
+| blog | technical blog, 회고 글, tutorial | `../prd/references/document.md` + `references/examples/blog.md` |
 | feedback | feedback to a colleague, praise, peer review | `references/examples/sbi.md` (short form, no section loop) |
 
 ## Overview
@@ -144,8 +138,10 @@ task defines.
 | Runs gap/ambiguity checks in-line, stamps a pass bar per step | Flag any task that still reads ambiguous |
 | Builds the SetGoal goal-spec directly in harness mode | Route the finished plan onward |
 
-## Related
+## Related Skills
 
+- `write:prd` — PRDs, design docs, RFCs and proposals (moved out of this skill).
+- `write:adr` — ADRs and design reviews (moved out of this skill).
 - `planning:executing-plans` — owns execution routing and the
   staleness/drift check this skill leaves out on purpose (downstream).
 - `agents:subagent-driven-development` — likely executor once

@@ -155,4 +155,4 @@ Completion gates; the full 16-item list is in [references/retrieval-layout.md](r
 - `knowledge:graph-builder` - use when the goal is entity/relationship schema and graph-ready records.
 - `knowledge:query` - use when querying an existing vault, graph, RAG corpus, or mixed knowledge asset.
 - `develop:documentation-strategy` - use when planning a documentation system before producing notes.
-- `write:plans` (document purpose) - use when collaboratively drafting a specific document for readers.
+- `write:prd` (document purpose) - use when collaboratively drafting a specific document for readers.

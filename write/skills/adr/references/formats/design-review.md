@@ -1,6 +1,6 @@
 # Format: design review
 
-Format `design review` of `write:plans`. Fixed 8-section template; stored under `docs/design-reviews/`.
+Format `design review` of `write:adr`. Fixed 8-section template; stored under `docs/design-reviews/`.
 
 ## Standing Mandates
 
@@ -159,7 +159,7 @@ When the Design Review is Approved, switch to the ADR format (`references/format
 - `brainstorming`, `devils-advocate`, `redefine-problem` — divergence and stress testing
 - `architecture-designer` / `domain-driven-design` — produce §5 diagrams
 - `bias-auditor`, `tradeoff-articulator`, `assumption-extractor`, `second-order-thinker` — honest §7-§8
-- document purpose (`references/document.md`) — section-by-section co-write mechanics
+- document purpose (`../../../prd/references/document.md`) — section-by-section co-write mechanics
 - ADR format (`references/formats/adr.md`) — once Approved, convert to ADR
 
 Fallback if any related skill is not installed: see `references/formats/design-review-process.md`.

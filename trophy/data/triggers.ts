@@ -195,7 +195,12 @@ export const triggers = [
   {
     "skill": "develop:circuit-breaker-tuner",
     "plugin": "develop",
-    "phrases": []
+    "phrases": [
+      "cascading failure",
+      "circuit breaker tuning",
+      "서킷 브레이커 설정",
+      "서킷이 자주 열려"
+    ]
   },
   {
     "skill": "develop:clean-architecture",
@@ -221,7 +226,11 @@ export const triggers = [
   {
     "skill": "develop:cli-developer",
     "plugin": "develop",
-    "phrases": []
+    "phrases": [
+      "build a cli",
+      "cli 도구 만들어줘",
+      "서브커맨드 설계"
+    ]
   },
   {
     "skill": "develop:connection-pool-tuner",
@@ -276,8 +285,7 @@ export const triggers = [
       "도커 최적화",
       "빌드 시간",
       "이거 좀 봐줘",
-      "이미지 크기",
-      "컨테이너 최적화"
+      "이미지 크기"
     ]
   },
   {
@@ -326,7 +334,9 @@ export const triggers = [
     "skill": "develop:frontend-developer",
     "plugin": "develop",
     "phrases": [
-      "build a react component"
+      "build a react component",
+      "next.js 폼",
+      "react 컴포넌트"
     ]
   },
   {
@@ -345,7 +355,10 @@ export const triggers = [
     "skill": "develop:kotlin-specialist",
     "plugin": "develop",
     "phrases": [
-      "kotlin coroutines"
+      "flow 취소 처리",
+      "kotlin coroutines",
+      "코루틴",
+      "코틀린으로 전환"
     ]
   },
   {
@@ -426,7 +439,6 @@ export const triggers = [
     "skill": "develop:spec-driven-development",
     "plugin": "develop",
     "phrases": [
-      "acceptance criteria before code",
       "spec first",
       "spec-driven development",
       "명세부터 쓰고 구현",
@@ -437,7 +449,11 @@ export const triggers = [
   {
     "skill": "develop:spring-boot-engineer",
     "plugin": "develop",
-    "phrases": []
+    "phrases": [
+      "jpa 연동",
+      "spring boot api",
+      "스프링 시큐리티 설정"
+    ]
   },
   {
     "skill": "develop:sql-pro",
@@ -628,8 +644,7 @@ export const triggers = [
       "plan 리뷰하고 가자",
       "plan 실행",
       "계획 실행해줘",
-      "실행 전에 기준 잡아줘",
-      "이 계획 검토하고 진행"
+      "실행 전에 기준 잡아줘"
     ]
   },
   {
@@ -677,6 +692,20 @@ export const triggers = [
       "job search process",
       "이직 준비 전체",
       "취업 프로세스 시작"
+    ]
+  },
+  {
+    "skill": "portfolio:manage",
+    "plugin": "portfolio",
+    "phrases": []
+  },
+  {
+    "skill": "portfolio:material",
+    "plugin": "portfolio",
+    "phrases": [
+      "collect my material",
+      "글감 모아줘",
+      "회고로 포트폴리오 재료"
     ]
   },
   {
@@ -750,12 +779,10 @@ export const triggers = [
     "plugin": "skill",
     "phrases": [
       "description 개선해줘",
-      "description이 너무 keyword만 있어",
       "skill not firing",
-      "skill 발동 조건 점검",
+      "skill.md가 안 떠",
       "trigger coverage audit",
-      "스킬이 트리거 안 돼",
-      "한국어 트리거 추가해줘"
+      "스킬이 트리거 안 돼"
     ]
   },
   {
@@ -881,6 +908,8 @@ export const triggers = [
       "가정을 의심해봐",
       "기본부터 다시 생각해",
       "왜 이렇게 해야 해?",
+      "이 방식이 뭔가 잘못된 것 같아",
+      "이 제약이 진짜 필요한지",
       "처음부터 설계하면"
     ]
   },
@@ -949,11 +978,10 @@ export const triggers = [
     "skill": "think:redefine-problem",
     "plugin": "think",
     "phrases": [
-      "solutions feel off",
+      "the metric doesn't move",
       "wrong problem",
       "계속 이 문제가 반복돼",
-      "다른 각도로 봐야 할 것 같아",
-      "뭔가 잘못된 것 같아",
+      "문제를 다른 각도로 정의해야 할 것 같아",
       "이 문제 자체가 맞는 건지",
       "증상만 자꾸 잡는 느낌"
     ]
@@ -986,6 +1014,16 @@ export const triggers = [
     ]
   },
   {
+    "skill": "write:adr",
+    "plugin": "write",
+    "phrases": [
+      "adr 남겨줘",
+      "run a design review",
+      "write an adr",
+      "설계 리뷰 해줘"
+    ]
+  },
+  {
     "skill": "write:diagram",
     "plugin": "write",
     "phrases": [
@@ -1011,10 +1049,24 @@ export const triggers = [
     "skill": "write:plans",
     "plugin": "write",
     "phrases": [
-      "adr 써줘",
-      "prd 작성",
+      "break into tickets",
+      "write a blog",
+      "write a plan",
+      "write feedback",
       "구현 계획 써줘",
-      "티켓으로 쪼개줘"
+      "기술 블로그",
+      "티켓으로 쪼개줘",
+      "피드백 써줘"
+    ]
+  },
+  {
+    "skill": "write:prd",
+    "plugin": "write",
+    "phrases": [
+      "draft an rfc",
+      "prd 작성",
+      "write a design doc",
+      "기획서 써줘"
     ]
   },
   {
@@ -1058,7 +1110,6 @@ export const triggers = [
       "skill documentation",
       "skill 개선해줘",
       "skill.md 고쳐줘",
-      "skill이 안 떠",
       "스킬 문서 작성"
     ]
   }

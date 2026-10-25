@@ -105,4 +105,4 @@ Verdict: merge | split | convert to async | fix ownership | keep — <one line c
 - `develop:architecture-designer` — design the topology and communication once boundaries hold
 - `develop:event-storming` — discover bounded contexts to inform boundary decisions
 - `develop:transaction-boundary-reviewer` — fix cross-service transaction anti-patterns
-- `write:plans` (ADR format) — document the split or merge decision
+- `write:adr` — document the split or merge decision

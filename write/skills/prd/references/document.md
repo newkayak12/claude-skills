@@ -1,6 +1,6 @@
 # Document for readers
 
-Purpose `document` of `write:plans`: PRD, design doc, RFC, proposal, decision doc, spec. Paths below are relative to the skill root.
+Purpose `document` of `write:prd`: PRD, design doc, RFC, proposal. Paths below are relative to the skill root.
 
 ## Standing Mandates
 
@@ -16,8 +16,8 @@ This skill provides a structured workflow for guiding users through collaborativ
 ## When to Offer This Workflow
 
 **Trigger conditions:**
-- User mentions writing documentation: "write a doc", "draft a proposal", "create a spec", "write up"
-- User mentions specific doc types: "PRD", "design doc", "decision doc", "RFC"
+- User mentions writing documentation: "write a doc", "draft a proposal", "write up"
+- User mentions specific doc types: "PRD", "design doc", "RFC"
 - User seems to be starting a substantial writing task
 
 **Initial offer:**
@@ -39,7 +39,7 @@ If user declines, work freeform. If user accepts, proceed to Stage 1.
 
 Start by asking the user for meta-context about the document:
 
-1. What type of document is this? (e.g., technical spec, decision doc, proposal)
+1. What type of document is this? (e.g., PRD, design doc, RFC, proposal)
 2. Who's the primary audience?
 3. What's the desired impact when someone reads this?
 4. Is there a template or specific format to follow?
@@ -63,8 +63,7 @@ Encourage a full context dump: background, related discussions, why alternatives
 
 Use integrations (Slack, Drive, etc.) if available to pull context directly. If not, suggest enabling connectors in Claude settings or pasting content manually. Track what's learned and what remains unclear.
 
-When the dump is substantially done, generate 5–10 numbered clarifying questions. Accept shorthand answers (e.g., "1: yes, 2: see #channel"). See `references/context-gathering-tips.md` for detailed guidance on integration handling and context tracking.
-
+When the dump is substantially done, generate 5–10 numbered clarifying questions. Accept shorthand answers (e.g., "1: yes, 2: see #channel").
 **Exit condition:** Sufficient context when edge cases and trade-offs can be asked about without needing basics explained.
 
 When ready, proceed to Stage 2.
@@ -88,7 +87,7 @@ Start with whichever section has the most unknowns (usually the core decision/pr
 If the document structure is clear:
 Ask which section they'd like to start with.
 
-Use think-tool to reason explicitly about which section has the most unresolved questions given the context gathered in Stage 1, then suggest starting there. For decision docs, that's usually the core proposal. For specs, it's typically the technical approach. Summary sections are best left for last.
+Use think-tool to reason explicitly about which section has the most unresolved questions given the context gathered in Stage 1, then suggest starting there. For proposals, that's usually the core proposal. For design docs, it's typically the technical approach. Summary sections are best left for last.
 
 If user doesn't know what sections they need:
 Based on the type of document and template, suggest 3-5 sections appropriate for the doc type.

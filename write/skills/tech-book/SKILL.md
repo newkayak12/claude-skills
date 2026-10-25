@@ -43,7 +43,7 @@ Writes a book as files under `tmp/books/<slug>/`, ending in `book.pdf`; outside 
 tell the user before writing. Resume stages 0–2 from the highest on disk, a chapter from its latest file, a check or
 stage-6 step only if its file lacks `counts:` (tear down its labs by name; same pinned inputs).
 
-**Not for:** a single document, design doc, or blog post (`write:plans`); reviewing existing text
+**Not for:** a single document, design doc, or blog post (`write:prd`, `write:adr`, `write:plans`); reviewing existing text
 (`write:writer-verification`); a voice rewrite (`write:like-me`); a spec from a conversation (`write:spec`).
 
 ## Process
@@ -72,7 +72,7 @@ stage-6 step only if its file lacks `counts:` (tear down its labs by name; same 
    SME-vs-docs conflict is 🔴, docs win; unreachable → web.archive.org copy (URL + capture date), else `[확인 필요]`; labs by
    the printed method from N-1's `rebuild-end-state.sh` in an empty dir (`references/lab-recipe.md`), printed ≠ observed
    is 🔴. `cognition:epistemic-reasoner`: analogies and absolute claims. `write:writer-verification` review mode,
-   genre `doc`, its passes inline in the one check agent. `../plans/agents/reader-agent.md`, blind (1..N-1 by grep, N cut before `답안과 정리`): each learning goal at
+   genre `doc`, its passes inline in the one check agent. `../prd/agents/reader-agent.md`, blind (1..N-1 by grep, N cut before `답안과 정리`): each learning goal at
    its highest claimed level, at most 5 tests per round, taught, exercised, assessed; each teaching element present. Each check file pins N-1 by
    path + sha256; N's stopping round (zero or cap) counts only when pinned to `final/N-1.md` (learning-design).
 5. **Revise draft/NN.md.** A fresh reviser closes every 🔴🟡, text first, then changed labs in one script, replacing
@@ -121,5 +121,5 @@ re-measured since the last change names its round, e.g. `(r3)`. Do NOT paste cha
 
 - `references/learning-design.md` — book arc, chapter teaching sequence, examples, practice, and evidence;
   `references/teaching-elements.md` — the six required teaching elements and their shapes;
-  `references/skill-routing.md` — which skill runs at which stage, with what input; `write:plans` — a single document.
+  `references/skill-routing.md` — which skill runs at which stage, with what input; `write:prd` / `write:adr` — a single document.
 - `write:writer-verification` — review passes, stages 4 and 6; `write:like-me` — the user's voice, stage 6, with samples.
