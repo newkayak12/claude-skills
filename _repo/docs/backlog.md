@@ -66,10 +66,20 @@ toasts).
     - Why: user, 2026-10-17: "결과적으로 하위호환을 위해서 harness, graph를 두지만 (stable) 장기적인
       방향은 teams"; evaluation by a seeded matrix with repeated runs ("여러 번 돌려보는게 맞을거 같음").
     - Acceptance: the plan's Tasks 1–9 with their pass bars; after UI cards (user priority).
+    - Tasks 2–4 merged 2026-10-25 (E-c5c109e3): critique rounds with severity, per-run `now` and run
+      list order, goal gate and Codex fallback in graph; graph 281/281 (main was 200), goal gate all
+      passed. Next: Tasks 5–6, the bench — ask the person about its cost first.
 
 ### Subagents and parallel runs — use and clean up (user, 2026-10-17)
 
 ### teams plugin bugs
+
+67. **`harness/scripts/test-goal-gate.mjs` fails inside a teams node (HARNESS_NODE=1)**
+    - Why: 2026-10-25, E-c5c109e3's integrate gate read "82 ok, 19 failed" on main and on the
+      integration tree, failed, and its repair R1 blocked the Sprint; the same script prints `all passed`
+      with HARNESS_NODE unset (verified). Every teams integrate in this repo that runs it fails the same way.
+    - Acceptance: the test clears HARNESS_NODE for its own child runs (or the gate prompt runs it
+      with `env -u HARNESS_NODE`), and `HARNESS_NODE=1 node harness/scripts/test-goal-gate.mjs` prints `all passed`.
 
 ### knowledge plugin
 
