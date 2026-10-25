@@ -5,7 +5,8 @@
 //   bash:  `git push` and the version-bump scripts are denied while a teams task for this repo
 //          (main checkout or any linked worktree) holds the push, i.e. its daemon is not done, or
 //          is done without a report, and tm_clean has not run; otherwise they ask first, only in an attended session
-//          (CLAUDE_CODE_SESSION_ATTENDED=1); `git commit` with a staged README.md and no staged
+//          (CLAUDE_CODE_SESSION_ATTENDED=1); the repo checked is the one the push targets (a leading
+//          `cd <path> &&|;` and `git -C <path>` resolved from cwd, else cwd); `git commit` with a staged README.md and no staged
 //          KOR.md beside it gets a systemMessage.
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
@@ -14,7 +15,9 @@ import { join, resolve } from 'node:path'
 const git = (cwd, args, timeout = 10000) =>
   execFileSync('git', args, { cwd, timeout, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
 
-const ASK = /\bgit\s+push\b|patch-harness\.mjs|skills\/patch\/patch\.mjs/
+const ARG = String.raw`(?:"[^"]*"|'[^']*'|[^\s;&|]+)`
+const GIT_PUSH = String.raw`\bgit((?:\s+(?:-C|-c)\s+${ARG})*)\s+push\b`
+const ASK = new RegExp(`${GIT_PUSH}|patch-harness\\.mjs|skills/patch/patch\\.mjs`)
 const COMMIT = /\bgit\s+commit\b/
 
 // Ids of teams tasks for this repo that still hold a push. Tasks are the dirs under
@@ -72,6 +75,26 @@ function openTasks(root, env = process.env, run = git) {
   return open
 }
 
+// The directory a command works in: a leading `cd <path> &&|;` moves the base from cwd, then each
+// `git [-c k=v] -C <path> ... push` moves it again (relative to the previous). Paths in quotes or bare.
+const unquote = s => s.replace(/^(["'])(.*)\1$/, '$2')
+function targetDir(cmd, cwd) {
+  let dir = cwd
+  const cd = cmd.match(new RegExp(String.raw`^\s*cd\s+(${ARG})\s*(?:&&|;)`))
+  if (cd) dir = resolve(dir, unquote(cd[1]))
+  const g = cmd.match(new RegExp(GIT_PUSH))
+  if (g) for (const c of g[1].matchAll(new RegExp(String.raw`-C\s+(${ARG})`, 'g'))) dir = resolve(dir, unquote(c[1]))
+  return dir
+}
+
+// Top level of the repo a command targets. When that directory is not a git checkout (or git fails
+// there) it falls back to cwd's top level: the old behaviour, so the hold fails closed. A failure
+// on cwd itself throws and the caller fails open.
+function targetRoot(cmd, cwd, run) {
+  try { return run(targetDir(cmd, cwd), ['rev-parse', '--show-toplevel']).trim() || run(cwd, ['rev-parse', '--show-toplevel']).trim() } catch { /* fall back */ }
+  return run(cwd, ['rev-parse', '--show-toplevel']).trim()
+}
+
 export function decide(mode, input, env, run = git) {
   const cwd = input.cwd || process.cwd()
   if (mode === 'start') {
@@ -83,7 +106,7 @@ export function decide(mode, input, env, run = git) {
     const cmd = input.tool_input?.command
     if (input.tool_name !== 'Bash' || typeof cmd !== 'string') return {}
     if (ASK.test(cmd)) {
-      const held = openTasks(run(cwd, ['rev-parse', '--show-toplevel']).trim(), env, run)
+      const held = openTasks(targetRoot(cmd, cwd, run), env, run)
       if (held.length) {
         return {
           hookSpecificOutput: {

@@ -62,15 +62,22 @@ function main() {
   if (entry.version !== pluginJson.version) fail(`version mismatch: plugin.json=${pluginJson.version}, marketplace.json=${entry.version}`);
 
   const previousVersion = pluginJson.version;
+  const codexPath = join(pluginRoot, '.codex-plugin', 'plugin.json');
+  const codexJson = existsSync(codexPath) ? readJson(codexPath, `${plugin} codex plugin.json`) : null;
+  if (codexJson && codexJson.version !== previousVersion) fail(`version mismatch: plugin.json=${previousVersion}, .codex-plugin/plugin.json=${codexJson.version}`);
   const version = nextPatch(previousVersion);
   const nextReadme = prepend(readFileSync(readmePath, 'utf8'), '## Status', `- v${version} — ${summary}`, 'README');
   const nextKor = prepend(readFileSync(korPath, 'utf8'), '## 상태', `- v${version} — ${summaryKo}`, 'KOR.md');
   pluginJson.version = version;
   entry.version = version;
+  if (codexJson) codexJson.version = version;
 
-  const report = { plugin, repoRoot, previousVersion, version, summary, summary_ko: summaryKo, dryRun: args.dryRun === true, files: [pluginPath, marketplacePath, readmePath, korPath] };
+  const files = [pluginPath, marketplacePath, readmePath, korPath];
+  if (codexJson) files.push(codexPath);
+  const report = { plugin, repoRoot, previousVersion, version, summary, summary_ko: summaryKo, dryRun: args.dryRun === true, files };
   if (!report.dryRun) {
     writeFileSync(pluginPath, JSON.stringify(pluginJson, null, 2) + '\n');
+    if (codexJson) writeFileSync(codexPath, JSON.stringify(codexJson, null, 2) + '\n');
     writeFileSync(marketplacePath, JSON.stringify(marketplace, null, 2) + '\n');
     writeFileSync(readmePath, nextReadme);
     writeFileSync(korPath, nextKor);
