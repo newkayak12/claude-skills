@@ -35,7 +35,7 @@ Engine, run from the workspace root: `node ${CLAUDE_PLUGIN_ROOT}/skills/manage/s
 ```
 skeleton.md        the design: every wording change starts here (`version: vX.Y.Z` line at the top)
 deck.mdx           build source carried over from skeleton (output: build/deck.pptx)
-template.pptx      archetype catalog — never edited
+template.pptx      archetype catalog — never edited (or where deck.mdx `template:` points)
 deck.catalog.md    slot ids and character budgets — regenerated only (deck-builder catalog)
 build/             deck.pptx, deck.pdf
 snapshot/          skeleton/skeleton-vX.Y.Z/, deck/deck-vX.Y.Z/, README.md (version table)
@@ -46,7 +46,10 @@ _archive/          old plans and deck backups, moved here, never deleted
 
 Root holds only skeleton and deck. Tidying moves to `_archive/`; only a file proven to be a copy
 is deleted; a name clash goes into a subfolder, never a merge. Page headings in skeleton are
-`## N <title>`; references are `N쪽`, `N·M쪽`, `N~M쪽` and a table column named `쪽`.
+`## N <title>` or `## N쪽 · <title>`, one per page (an appendix page too); references are `N쪽`,
+`N·M쪽`, `N~M쪽` and a table column named `쪽`. A `# ` heading bounds a block: pages sort inside it
+and a block moves with its pages. History lines (`vX.Y.Z 변경…`, `vX.Y.Z(…`, quoted with `>` or not)
+are never renumbered. The template is where deck.mdx's `template:` points.
 
 ## Process
 

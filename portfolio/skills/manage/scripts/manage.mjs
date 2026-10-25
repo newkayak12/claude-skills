@@ -6,12 +6,26 @@
 //       adds the `v<new> 변경(...)` line under it and one row to snapshot/README.md
 //   renumber --map "3:4,4:3" [--file skeleton.md] [--dry-run]
 //       one pass over headings `## N`, `N쪽`, `N·M쪽`, `N~M쪽` and every `쪽` table column, then moves
-//       the page sections into the new order and verifies; `vX.Y.Z 변경` lines are left as written
+//       the page sections into the new order and verifies; history lines (`vX.Y.Z 변경`, `vX.Y.Z(`,
+//       and the same quoted with `>`) are left as written
 //   verify [--file skeleton.md]    heading numbers ascending; every page reference points at a heading
+// A page heading is `## N`, `## N.`, `## N)` or `## N쪽`. A `# ` chapter heading bounds a block: pages
+// sort inside their block, and blocks holding pages sort by their first page; other sections stay put.
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const LAYOUT = ['skeleton.md', 'deck.mdx', 'template.pptx', 'deck.catalog.md', 'build', 'snapshot', 'sources', 'docs/확정사실.md']
+
+// The template is where deck.mdx's front matter `template:` says, else the root template.pptx.
+export function layout(root) {
+  let template = 'template.pptx'
+  try {
+    const m = readFileSync(join(root, 'deck.mdx'), 'utf8').match(/^template:[ \t]*["']?([^"'\n]+?)["']?[ \t]*$/m)
+    if (m) template = m[1]
+  } catch { /* no deck.mdx: it is listed missing */ }
+  const paths = LAYOUT.map(p => (p === 'template.pptx' ? template : p))
+  return { present: paths.filter(p => existsSync(join(root, p))), missing: paths.filter(p => !existsSync(join(root, p))) }
+}
 
 export function parseArgs(argv) {
   const out = { _: [] }
@@ -27,7 +41,7 @@ export function parseArgs(argv) {
 }
 
 const VERSION = /^version:[ \t]*v(\d+)\.(\d+)\.(\d+)[ \t]*$/m
-const CHANGE_LINE = /^v\d+\.\d+\.\d+ 변경/
+const CHANGE_LINE = /^\s*(?:>\s*)?v\d+\.\d+\.\d+(?:\s*변경|\s*\()/
 
 export function bump(v, level) {
   const [a, b, c] = v
@@ -60,9 +74,36 @@ export function snapshot(root, { kind, level, note, by = '본인', date }) {
   const readme = join(root, 'snapshot', 'README.md')
   const head = '| 버전 | 날짜 | 장수 | 바뀐 것 |\n|---|---|---|---|\n'
   const body = existsSync(readme) ? readFileSync(readme, 'utf8') : `# 스냅샷\n\n${head}`
-  const pages = headings(skel).length
-  writeFileSync(readme, `${body.replace(/\n*$/, '\n')}| ${curS} | ${day} | ${pages} | → ${next}: ${note} |\n`)
+  writeFileSync(readme, readmeRow(body, { cur: curS, next, day, pages: pageCount(skel), note }))
   return { kind, snapshot: dir, from: curS, to: next, level, readme }
+}
+
+// The page count the skeleton states in its head (`28장`), else the number of page headings.
+export function pageCount(skel) {
+  const m = skel.split('\n').slice(0, 15).join('\n').match(/(\d+)\s*장/)
+  return m ? Number(m[1]) : headings(skel).length
+}
+
+// One row for the snapshot table: into the table under a `## skeleton` heading when there is one,
+// cells filled by that table's column names; else appended at the end of the file.
+export function readmeRow(body, { cur, next, day, pages, note }) {
+  const lines = body.split('\n')
+  const sec = lines.findIndex(l => /^##\s+skeleton\b/i.test(l))
+  if (sec >= 0) {
+    let h = sec + 1
+    while (h < lines.length && !/^\s*\|/.test(lines[h]) && !/^#/.test(lines[h])) h++
+    if (h < lines.length && /^\s*\|/.test(lines[h])) {
+      let end = h
+      while (end + 1 < lines.length && /^\s*\|/.test(lines[end + 1])) end++
+      const cols = lines[h].split('|').slice(1, -1).map(c => c.trim())
+      const tick = end > h + 1 && lines[h + 2].includes('`')
+      const cell = c => (/버전/.test(c) ? (tick ? `\`skeleton-${cur}\`` : cur) : /날짜/.test(c) ? day : /장수/.test(c) ? String(pages)
+        : /바뀐|한 줄|메모|내용/.test(c) ? `→ ${next}: ${note}` : '')
+      lines.splice(end + 1, 0, `| ${cols.map(cell).join(' | ')} |`)
+      return lines.join('\n')
+    }
+  }
+  return `${body.replace(/\n*$/, '\n')}| ${cur} | ${day} | ${pages} | → ${next}: ${note} |\n`
 }
 
 export function parseMap(s) {
@@ -78,7 +119,7 @@ export function parseMap(s) {
   return map
 }
 
-const HEADING = /^(##\s+)(\d+)(?=[.)\s])/
+const HEADING = /^(##\s+)(\d+)(?=쪽|[.)\s])/
 const REF = /(\d+)(?:([·~])(\d+))?쪽/g
 
 export function headings(text) {
@@ -95,7 +136,12 @@ export function renumber(text, map) {
   const lines = text.split('\n').map(line => {
     if (CHANGE_LINE.test(line)) return line
     const h = line.match(HEADING)
-    if (h) { pageCol = -1; return line.replace(HEADING, (_, p, n) => `${p}${swap(Number(n))}`) }
+    if (h) {
+      // the heading's own number (and its `쪽`) is swapped once; references later in its text are swapped as refs
+      pageCol = -1
+      const own = h[0].length + (line.slice(h[0].length).startsWith('쪽') ? 1 : 0)
+      return `${h[1]}${swap(Number(h[2]))}${line.slice(h[0].length, own)}${refs(line.slice(own))}`
+    }
     if (/^\s*\|/.test(line)) {
       const cells = line.split('|')
       if (cells.some(c => c.trim() === '쪽')) { pageCol = cells.findIndex(c => c.trim() === '쪽'); return line }
@@ -129,22 +175,39 @@ export function renumber(text, map) {
   return { text: reorder(lines).join('\n'), changes, warnings }
 }
 
-// Moves each `## N` page section (heading up to the next `## ` line) so pages read in ascending order;
-// sections without a number keep their place after the pages.
+const H1 = /^#\s/
+const pageOf = sec => { const m = sec[0].match(HEADING); return m ? Number(m[2]) : null }
+const blankTail = sec => { let n = 0; while (n < sec.length - 1 && sec[sec.length - 1 - n] === '') n++; return n }
+
+// Sorts the items whose key is not null into ascending key order, in the slots those items held;
+// each slot keeps its own trailing blank lines, so blank-line rhythm does not move with an item.
+function slotSort(items, key) {
+  const slots = items.map((it, i) => (key(it) === null ? -1 : i)).filter(i => i >= 0)
+  const sorted = slots.map(i => items[i]).sort((x, y) => key(x) - key(y))
+  const out = [...items]
+  slots.forEach((slot, k) => {
+    const c = [...sorted[k]]
+    while (c.length > 1 && c.at(-1) === '') c.pop()
+    out[slot] = [...c, ...Array(blankTail(items[slot])).fill('')]
+  })
+  return out
+}
+
+// Pages sort inside each `# ` block in the slots pages held (unnumbered `##` sections keep their
+// place); then blocks that hold pages sort by their first page, in the slots such blocks held.
 function reorder(lines) {
-  const starts = lines.map((l, i) => (/^##\s/.test(l) ? i : -1)).filter(i => i >= 0)
-  if (!starts.length) return lines
-  const pre = lines.slice(0, starts[0])
-  const sections = starts.map((s, k) => lines.slice(s, starts[k + 1] ?? lines.length))
-  const num = sec => { const m = sec[0].match(HEADING); return m ? Number(m[2]) : null }
-  const firstText = sections.findIndex(s => num(s) === null)
-  const run = firstText < 0 ? sections : sections.slice(0, firstText)
-  const rest = firstText < 0 ? [] : sections.slice(firstText)
-  // a section's trailing blank lines stay at the boundary, not with the moved page
-  const sorted = [...run].sort((x, y) => num(x) - num(y))
-  const tail = run.length && run[run.length - 1].at(-1) === '' ? [''] : []
-  const trimmed = sorted.map(s => { const c = [...s]; while (c.length > 1 && c.at(-1) === '') c.pop(); return c })
-  return [...pre, ...trimmed.flat(), ...tail, ...rest.flat()]
+  const h1s = lines.map((l, i) => (H1.test(l) ? i : -1)).filter(i => i >= 0)
+  const cuts = [0, ...h1s.filter(i => i > 0)]
+  const blocks = cuts.map((c, k) => lines.slice(c, cuts[k + 1] ?? lines.length)).map(block => {
+    const starts = block.map((l, i) => (/^##\s/.test(l) ? i : -1)).filter(i => i >= 0)
+    if (!starts.length) return { lines: block, first: null }
+    const head = block.slice(0, starts[0])
+    const secs = slotSort(starts.map((s, k) => block.slice(s, starts[k + 1] ?? block.length)), pageOf)
+    const pages = secs.map(pageOf).filter(n => n !== null)
+    return { lines: [...head, ...secs.flat()], first: pages.length ? Math.min(...pages) : null }
+  })
+  const movable = b => (H1.test(b.lines[0] || '') ? b.first : null)
+  return slotSort(blocks.map(b => Object.assign(b.lines, { first: movable(b) })), b => b.first).flat()
 }
 
 export function verify(text) {
@@ -152,7 +215,8 @@ export function verify(text) {
   const problems = []
   for (let i = 1; i < hs.length; i++) if (hs[i] <= hs[i - 1]) problems.push(`heading ${hs[i]} after ${hs[i - 1]}`)
   const known = new Set(hs)
-  for (const m of text.matchAll(REF)) {
+  const live = text.split('\n').filter(l => !CHANGE_LINE.test(l)).join('\n')
+  for (const m of live.matchAll(REF)) {
     for (const n of [m[1], m[3]].filter(Boolean).map(Number)) if (!known.has(n)) problems.push(`${m[0]} points at no heading`)
   }
   return { headings: hs, problems }
@@ -165,7 +229,7 @@ function main() {
   const file = join(root, args.file || 'skeleton.md')
   let out
   if (cmd === 'layout') {
-    out = { present: LAYOUT.filter(p => existsSync(join(root, p))), missing: LAYOUT.filter(p => !existsSync(join(root, p))) }
+    out = layout(root)
   } else if (cmd === 'snapshot') {
     out = snapshot(root, { kind: args.kind, level: args.level, note: args.note, by: args.by, date: args.date })
   } else if (cmd === 'renumber') {
