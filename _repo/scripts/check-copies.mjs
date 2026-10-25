@@ -2,6 +2,7 @@
 // Drift check for hand-maintained copies. Usage: node _repo/scripts/check-copies.mjs  (any cwd)
 // 1. Byte-identical groups: every top-level */hooks/ensure-trophy.sh (globbed, _repo excluded),
 //    harness/hooks vs graph/hooks draw.tsx and draw.test.ts,
+//    harness/hooks/goal-gate.mjs vs graph/hooks/vendor/goal-gate.mjs,
 //    teams/mcp/diagram.mjs vs write/skills/diagram/scripts/diagram.mjs.
 // 2. Plan-prompt plugin list: the "(plugins: …)" list in harness/engine/pipeline.js must equal the
 //    marketplace plugins that ship at least one skills/**/SKILL.md, minus harness, graph, teams, trophy.
@@ -20,6 +21,7 @@ const groups = [
   plugins.map((p) => `${p}/hooks/ensure-trophy.sh`).filter((f) => existsSync(join(root, f))),
   ['harness/hooks/draw.tsx', 'graph/hooks/draw.tsx'],
   ['harness/hooks/draw.test.ts', 'graph/hooks/draw.test.ts'],
+  ['harness/hooks/goal-gate.mjs', 'graph/hooks/vendor/goal-gate.mjs'],
   ['teams/mcp/diagram.mjs', 'write/skills/diagram/scripts/diagram.mjs'],
 ]
 
