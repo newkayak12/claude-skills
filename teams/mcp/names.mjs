@@ -8,12 +8,18 @@
 // once leading and trailing punctuation and symbols are stripped) gives no words. Hangul is romanized
 // (Revised Romanization, one syllable at a time, no liaison or assimilation) only when the text has
 // fewer than two ascii words, so a Korean sentence with one English term still reads as Korean.
+//
+// Card mode (see cardSlug): a request that matches "card N" / "cards N, M and K" uses only its first
+// sentence (. ! or ? followed by whitespace or the end). A plan path in it gives the plan topic's
+// words verbatim and nothing else; otherwise the words above minus instruction fillers (read, fully,
+// no version bump...). The prefix card-N, cards-a-b (3+ consecutive) or cards-a-b-c leads when a plan
+// topic was found or fewer than 2 words remain. Cap 32: prefix whole, words while they fit.
 import { createHash } from 'node:crypto';
 
 const SLUG_MAX = 32;
 const PACKAGE_SLUG_MAX = 24;
 const STOPWORDS = new Set(
-  'a an the and or of to in for on with by is be this that card backlog user'.split(' '));
+  'a an the and or of to in for on with by is be this that card cards backlog user'.split(' '));
 
 const INITIALS = ['g', 'kk', 'n', 'd', 'tt', 'r', 'm', 'b', 'pp', 's', 'ss', '', 'j', 'jj', 'ch', 'k', 't', 'p', 'h'];
 const VOWELS = ['a', 'ae', 'ya', 'yae', 'eo', 'e', 'yeo', 'ye', 'o', 'wa', 'wae', 'oe', 'yo', 'u', 'wo', 'we',
@@ -61,12 +67,16 @@ function wordsOf(text) {
   return out;
 }
 
-// Words joined by '-', cut at a word boundary to <= max (a first word longer than max is hard-cut).
-function slugOf(text, max) {
-  const words = wordsOf(text);
-  const use = words.filter((x) => x.ascii).length >= 2 ? words.filter((x) => x.ascii) : words;
-  let slug = '';
-  for (const { w } of use) {
+// Two or more ascii words win over Hangul; fewer keeps every word.
+function pickWords(words) {
+  const ascii = words.filter((x) => x.ascii);
+  return ascii.length >= 2 ? ascii : words;
+}
+
+// `slug` plus `words`, each joined by '-', stopping at the first word that would pass max (a first
+// word longer than an empty slug's max is hard-cut).
+function appendWords(slug, words, max) {
+  for (const w of words) {
     const next = slug ? `${slug}-${w}` : w.slice(0, max);
     if (next.length > max) break;
     slug = next;
@@ -74,8 +84,52 @@ function slugOf(text, max) {
   return slug;
 }
 
+// Words joined by '-', cut at a word boundary to <= max (a first word longer than max is hard-cut).
+function slugOf(text, max) {
+  return appendWords('', pickWords(wordsOf(text)).map((x) => x.w), max);
+}
+
+// Card mode: a request that names backlog cards ("card 48", "cards 62, 63 and 64") is slugged from
+// its first sentence only (. ! or ? followed by whitespace or the end, so a .md in a path does not
+// end it). A plan path there (plans/[subdirs/]YYYY-MM-DD-<topic>.md) gives the topic's words
+// verbatim in place of every other word; otherwise the words are wordsOf's minus CARD_FILLER. The
+// card prefix (card-48, cards-62-64 for 3+ consecutive numbers, else cards-5-9) leads when a plan
+// topic was found or fewer than 2 words remain; with 2+ plain words the words stand alone. Capped
+// at SLUG_MAX: the prefix whole, words only while they fit, never ending in '-'.
+const CARD_REF = /\bcards?\s+#?(\d+(?:\s*(?:,|and|&)\s*\d+)*)/i;
+const CARD_FILLER = new Set(
+  'read fully each no version bump only parts it plugin three'.split(' '));
+const PLAN_TOPIC = /plans\/(?:[^\s/`()]+\/)*\d{4}-\d{2}-\d{2}-([a-z0-9]+(?:-[a-z0-9]+)*)\.md/i;
+
+function cardPrefix(nums) {
+  if (nums.length === 1) return `card-${nums[0]}`;
+  const range = nums.length >= 3 && nums.every((n, i) => i === 0 || n === nums[i - 1] + 1);
+  return `cards-${range ? `${nums[0]}-${nums[nums.length - 1]}` : nums.join('-')}`;
+}
+
+function cardSlug(request, ref) {
+  const nums = [...new Set(ref[1].match(/\d+/g).map(Number))];
+  const text = String(request).normalize('NFC');
+  const end = /[.!?](?=\s|$)/.exec(text);
+  const sentence = end ? text.slice(0, end.index + 1) : text;
+  const topic = PLAN_TOPIC.exec(sentence);
+  const words = topic
+    ? topic[1].toLowerCase().split('-')
+    : pickWords(wordsOf(sentence)).map((x) => x.w).filter((w) => !CARD_FILLER.has(w));
+  let prefix = '';
+  if (topic || words.length < 2) {
+    prefix = cardPrefix(nums);
+    if (prefix.length > SLUG_MAX) {
+      const head = prefix.slice(0, SLUG_MAX + 1);
+      prefix = head.slice(0, head.lastIndexOf('-'));
+    }
+  }
+  return appendWords(prefix, words, SLUG_MAX).replace(/-+$/, '');
+}
+
 export function epicSlug(request) {
-  return slugOf(request, SLUG_MAX)
+  const ref = CARD_REF.exec(String(request ?? ''));
+  return (ref ? cardSlug(request, ref) : slugOf(request, SLUG_MAX))
     || `task-${createHash('sha1').update(String(request ?? '')).digest('hex').slice(0, 6)}`;
 }
 

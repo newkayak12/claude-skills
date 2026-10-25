@@ -14,7 +14,57 @@ const USER_SENTENCE = 'backlog harness의 티캣,을 4522629같은거 말고 자
 test('ascii request: stopwords dropped, words in order', () => {
   assert.equal(epicSlug('Fix skeleton gaps in develop skills'), 'fix-skeleton-gaps-develop-skills');
   assert.equal(epicSlug('Add the memo pane'), 'add-memo-pane');
-  assert.equal(epicSlug('card 46 backlog 2026 memo'), 'memo');
+  // a card reference turns card mode on: one word left, so the card number leads the slug
+  assert.equal(epicSlug('card 46 backlog 2026 memo'), 'card-46-memo');
+});
+
+// The three requests card 66 lists, as the 2026-10-23 board showed them (the real plan path for card 48).
+const CARD66 = [
+  ['Backlog card 48, plan `_repo/docs/plans/2026-10-17-graph-harness-into-teams.md` (graph + harness). '
+    + 'Read it fully, no version bump, tasks only.', 'card-48-graph-harness-into-teams'],
+  ['Backlog card 51: read it fully, no version bump, only parts. Then check the pane.', 'card-51'],
+  ['Backlog cards 62, 63, 64: read each teams plugin, no version bump. Parts only.', 'cards-62-64-teams'],
+];
+
+test('card mode: the three card-66 requests', () => {
+  for (const [request, slug] of CARD66) assert.equal(epicSlug(request), slug, request);
+  assert.equal(epicSlug(CARD66[0][0]).length, 32);
+});
+
+test('card mode: prefix shapes', () => {
+  assert.equal(epicSlug('Card 12: read it fully'), 'card-12');
+  assert.equal(epicSlug('Backlog card #7: fix'), 'card-7-fix');
+  assert.equal(epicSlug('Backlog cards 3 & 4 & 5 & 6: fix'), 'cards-3-6-fix'); // 3+ consecutive: a range
+  assert.equal(epicSlug('Backlog cards 5 and 6: fix'), 'cards-5-6-fix'); // two are listed, not a range
+  assert.equal(epicSlug('Backlog cards 1, 3, 4: fix'), 'cards-1-3-4-fix'); // not consecutive: all listed
+  assert.equal(epicSlug('Backlog cards 5 and 9: fix'), 'cards-5-9-fix');
+  assert.equal(epicSlug('Backlog cards 5 and 9: fix pane'), 'fix-pane'); // 2+ words and no plan topic: words only
+  assert.equal(epicSlug('Backlog card 12 (_repo/docs/backlog.md): fix pane'), 'fix-pane');
+});
+
+test('card mode: first sentence only; a .md inside a path does not end it', () => {
+  assert.equal(epicSlug('Backlog card 9: fix pane! Then rename things.'), 'fix-pane');
+  assert.equal(epicSlug('Backlog card 9 (_repo/docs/backlog.md) fix pane. Rename things'), 'fix-pane');
+  assert.equal(epicSlug('Card 9 fix pane layout?'), 'fix-pane-layout');
+});
+
+test('card mode: plan topic is verbatim, replaces other words, prefix kept whole at the cap', () => {
+  assert.equal(epicSlug('Card 3: plan _repo/docs/plans/done/2026-10-01-memo-pane.md, fix other things'), 'card-3-memo-pane');
+  const long = epicSlug('Backlog card 48: plan `_repo/docs/plans/mod/2026-10-23-graph-harness-into-teams-and-everything-else.md`');
+  assert.equal(long, 'card-48-graph-harness-into-teams');
+  assert.ok(long.length <= 32 && SHAPE.test(long));
+  // a prefix longer than 32 is cut back to its last '-' boundary
+  const cut = epicSlug('Backlog cards 1111, 2222, 3333, 4444, 5555, 6666, 7777: fix');
+  assert.equal(cut, 'cards-1111-2222-3333-4444-5555');
+  assert.ok(cut.length <= 32 && SHAPE.test(cut));
+});
+
+test('no card reference: unchanged, whole request, filler words kept', () => {
+  assert.equal(epicSlug('Read version notes'), 'read-version-notes');
+  assert.equal(epicSlug('Fix pane. Then rename things'), 'fix-pane-then-rename-things');
+  assert.equal(epicSlug('Fix the card layout'), 'fix-layout');
+  assert.equal(epicSlug('Fix cards layout'), 'fix-layout');
+  assert.equal(epicSlug('Edit view.mjs. rename things'), 'edit-rename-things');
 });
 
 test('path and file tokens give no words (card 46 request)', () => {
@@ -115,7 +165,7 @@ test('packageName', () => {
 
 test('every name is a legal git branch', () => {
   const slugs = [epicSlug(CARD46), epicSlug(USER_SENTENCE), epicSlug('메모 패널 개선'), epicSlug('🚀'),
-    epicSlug('Fix skeleton gaps in develop skills'), uniqueSlug(epicSlug('x'.repeat(40)), ['x'.repeat(32)])];
+    epicSlug('Fix skeleton gaps in develop skills'), ...CARD66.map(([request]) => epicSlug(request)), uniqueSlug(epicSlug('x'.repeat(40)), ['x'.repeat(32)])];
   const labels = [packageName('P2', 'Memo pane'), packageName('PLAN-F3', '메모'), packageName('AUDIT', ''),
     packageName('QA-F1', 'run the whole suite against staging environment'), 'integration', 'integration-2'];
   for (const s of slugs) {
