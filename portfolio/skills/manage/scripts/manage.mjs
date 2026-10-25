@@ -24,7 +24,9 @@ export function layout(root) {
     if (m) template = m[1]
   } catch { /* no deck.mdx: it is listed missing */ }
   const paths = LAYOUT.map(p => (p === 'template.pptx' ? template : p))
-  return { present: paths.filter(p => existsSync(join(root, p))), missing: paths.filter(p => !existsSync(join(root, p))) }
+  // a Korean name copied from macOS (zip, rsync) is stored decomposed (NFD); look for both forms
+  const has = p => existsSync(join(root, p.normalize('NFC'))) || existsSync(join(root, p.normalize('NFD')))
+  return { present: paths.filter(has), missing: paths.filter(p => !has(p)) }
 }
 
 export function parseArgs(argv) {
@@ -69,7 +71,10 @@ export function snapshot(root, { kind, level, note, by = '본인', date }) {
 
   const next = `v${bump(cur, level).join('.')}`
   const day = date || new Date().toISOString().slice(0, 10)
-  const updated = skel.replace(VERSION, `version: ${next}\n${next} 변경(${day}, ${by} 결정): ${note}`)
+  // the history line follows the file's own form: quoted `> vX.Y.Z(날짜, 누가): …` when it already uses it
+  const quoted = /^>\s*v\d+\.\d+\.\d+\(/m.test(skel)
+  const line = quoted ? `> ${next}(${day}, ${by} 결정): ${note}` : `${next} 변경(${day}, ${by} 결정): ${note}`
+  const updated = skel.replace(VERSION, `version: ${next}\n${line}`)
   writeFileSync(skelPath, updated)
   const readme = join(root, 'snapshot', 'README.md')
   const head = '| 버전 | 날짜 | 장수 | 바뀐 것 |\n|---|---|---|---|\n'
@@ -99,7 +104,11 @@ export function readmeRow(body, { cur, next, day, pages, note }) {
       const tick = end > h + 1 && lines[h + 2].includes('`')
       const cell = c => (/버전/.test(c) ? (tick ? `\`skeleton-${cur}\`` : cur) : /날짜/.test(c) ? day : /장수/.test(c) ? String(pages)
         : /바뀐|한 줄|메모|내용/.test(c) ? `→ ${next}: ${note}` : '')
-      lines.splice(end + 1, 0, `| ${cols.map(cell).join(' | ')} |`)
+      // newest first when the table already reads that way (its first row is the higher version)
+      const ver = l => (l || '').match(/v(\d+)\.(\d+)\.(\d+)/)?.slice(1).map(Number)
+      const [a, b] = [ver(lines[h + 2]), ver(lines[h + 3])]
+      const newestFirst = a && b && (a[0] - b[0] || a[1] - b[1] || a[2] - b[2]) > 0
+      lines.splice(newestFirst ? h + 2 : end + 1, 0, `| ${cols.map(cell).join(' | ')} |`)
       return lines.join('\n')
     }
   }

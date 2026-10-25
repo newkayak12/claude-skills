@@ -158,6 +158,13 @@ test('layout finds the template where deck.mdx says', () => {
   assert.ok(!l.missing.includes('template.pptx'))
 })
 
+test('layout finds a Korean file name stored decomposed (NFD, as macOS zips write it)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-'))
+  mkdirSync(join(root, 'docs'))
+  writeFileSync(join(root, 'docs', '확정사실.md'.normalize('NFD')), '')
+  assert.ok(layout(root).present.includes('docs/확정사실.md'))
+})
+
 test('snapshot writes its row into the `## skeleton` table by column name, with the stated page count', () => {
   const root = mkdtempSync(join(tmpdir(), 'manage-'))
   writeFileSync(join(root, 'skeleton.md'), REAL)
@@ -168,6 +175,16 @@ test('snapshot writes its row into the `## skeleton` table by column name, with 
   const out = readFileSync(join(root, 'snapshot/README.md'), 'utf8')
   assert.match(out, /\| `skeleton-v1\.0\.0` \| 2026-01-01 \| 5 \| 첫 판 \|\n\| `skeleton-v2\.0\.0` \| 2026-01-03 \| 6 \| → v2\.0\.1: 첨부 제목 추가 \|\n\n## 되돌리는 방법/)
   assert.match(out, /\| `deck-v1\.0\.0` \| 2026-01-01 \| 첫 덱 \|\n\n## skeleton/)
+})
+
+test('snapshot follows the workspace: quoted history line, newest-first table', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-'))
+  writeFileSync(join(root, 'skeleton.md'), REAL)
+  mkdirSync(join(root, 'snapshot'))
+  writeFileSync(join(root, 'snapshot/README.md'), '## skeleton\n| 버전 | 날짜 | 장수 | 한 줄 |\n|---|---|---|---|\n| `skeleton-v1.1.0` | 2026-01-02 | 6 | 둘째 |\n| `skeleton-v1.0.0` | 2026-01-01 | 5 | 첫 판 |\n')
+  snapshot(root, { kind: 'skeleton', level: 'patch', note: '검증', date: '2026-01-03' })
+  assert.match(readFileSync(join(root, 'skeleton.md'), 'utf8'), /^version: v2\.0\.1\n> v2\.0\.1\(2026-01-03, 본인 결정\): 검증\n> v1\.2\.0/m)
+  assert.match(readFileSync(join(root, 'snapshot/README.md'), 'utf8'), /\|---\|---\|---\|---\|\n\| `skeleton-v2\.0\.0` \| 2026-01-03 \| 6 \| → v2\.0\.1: 검증 \|\n\| `skeleton-v1\.1\.0`/)
 })
 
 test('snapshot needs a version line and a note', () => {
