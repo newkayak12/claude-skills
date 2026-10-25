@@ -71,13 +71,6 @@ toasts).
 
 ### teams plugin bugs
 
-66. **EPIC slugs come from filler words, not the request's subject**
-    - Why: 2026-10-23 board: `plan-read-it-fully-tasks-only` (card 48 Sprint), `read-no-version-bump-three-parts`
-      (card 51), `cards-read-each-teams-plugin-no` — the slug drops the card number and subject and keeps
-      instruction words ("read", "no version bump").
-    - Acceptance: instruction/filler words and paths are skipped; a request starting "Backlog card 48, plan …
-      graph + harness" gives a slug naming card 48 or graph-harness (test with these three requests).
-
 ### knowledge plugin
 
 34. **knowledge builds a second brain, not only a vault**
