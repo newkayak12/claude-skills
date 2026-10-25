@@ -4,7 +4,7 @@ import type { On } from 'claude-code'
 
 import { frame, draw, cells } from './demo-frames.ts'
 import { STRINGS } from './mod'
-import { paneKey, paneSlash } from './pane'
+import { askBandShown, paneKey, paneSlash } from './pane'
 import { clipText, columnWidths, footerPlan, padText, tabRowPlan, width } from './teams-draw'
 
 type Run = { exitCode: number; stdout: string; stderr: string }
@@ -657,6 +657,37 @@ test('status line: waiting 2 pins a text that does not start with teams', async 
   expect(text!.startsWith('teams')).toBe(false)
   expect(text!.includes('teams:')).toBe(false)
   expect(text!.includes('2')).toBe(true)
+})
+
+test('status line: an ask band is shown, so the waiting segment is dropped (no word said twice)', async ($, on) => {
+  const { seen } = await seeded($, on, { status: stat({ waiting: 1, asks: [ASK] }), task: demo() })
+  expect(seen.statuses.length > 0).toBe(true)
+  expect(seen.statuses[seen.statuses.length - 1]).toBeUndefined()
+  expect(await shown(await band($, 'terminal'))).toContain('asks you')
+})
+
+test('status line: waiting 2 and no asks still pins the line', async ($, on) => {
+  const { seen } = await seeded($, on, { status: stat({ waiting: 2, asks: [] }), task: demo() })
+  const text = seen.statuses[seen.statuses.length - 1]
+  expect(text === undefined).toBe(false)
+  expect(text!.includes('2')).toBe(true)
+})
+
+test('status line: asks but an ended card with a held report replaces the band, so the line stays pinned', async ($, on) => {
+  const data = { status: stat({ waiting: 1, asks: [ASK] }), task: demo(), events: [END('tee')], reports: { tee: T_PAYLOAD() } }
+  const { seen, tick } = await seeded($, on, data)
+  await tick()
+  expect(seen.store.get('ended')).toEqual({ tee: 'card' })
+  const text = seen.statuses[seen.statuses.length - 1]
+  expect(text === undefined).toBe(false)
+  expect(text!.includes('1')).toBe(true)
+})
+
+test('askBandShown: true only with at least one ask and no card', () => {
+  expect(askBandShown(undefined, false)).toBe(false)
+  expect(askBandShown([], false)).toBe(false)
+  expect(askBandShown([ASK], false)).toBe(true)
+  expect(askBandShown([ASK], true)).toBe(false)
 })
 
 // ---- tick cost: events + exactly one data call ----

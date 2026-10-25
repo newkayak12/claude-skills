@@ -396,6 +396,7 @@ teams는 작은 mod를 함께 제공합니다. 현재 세션의 실행을 보여
 
 ![status-band](docs/images/status-band.png)
 실행 중일 때의 밴드: 제목, 지금 하는 일, 진행률. 선택하면 `/teams-status`가 열립니다.
+사람에게 전달된 질문은 누군가 답할 때까지 기다리며, 연결된 사람이 없으면 무기한 기다립니다(결정 U-5).
 
 ![pane-epics](docs/images/pane-epics.png)
 패널 위쪽의 EPIC 목록: 열린 EPIC마다 한 줄 — 키, 제목, 상태, 진행, 경과 시간. 한글·영어 제목 모두 열이 맞고, 폭이 좁으면 제목을 자르기 전에 경과 시간과 개수부터 뺍니다.

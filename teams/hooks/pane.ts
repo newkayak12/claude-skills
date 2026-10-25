@@ -63,6 +63,11 @@ export function fallbackSelection(previous: readonly string[], ids: readonly str
   return ids[0]!
 }
 
+// the ⚑ ask band is drawn while an ask is addressed to this session and no end-of-run card replaces it
+export function askBandShown(asks: readonly unknown[] | undefined, cardShown: boolean): boolean {
+  return (asks?.length ?? 0) > 0 && !cardShown
+}
+
 // the STORY rows of every listed task, in list order, each with the task it belongs to
 export function storyRows<T extends { items: readonly I[] }, I>(tasks: readonly T[]): { entry: T; item: I }[] {
   return tasks.flatMap(entry => entry.items.map(item => ({ entry, item })))
