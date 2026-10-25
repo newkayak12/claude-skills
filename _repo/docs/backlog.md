@@ -113,7 +113,12 @@ toasts).
       E-6a0c881d cancelled; `.claude/teams-dispatch.json` now allows `portfolio/**`): `portfolio:manage`
       is the one entry; engine tests 9/9; a real run on a fictional workspace swapped two pages with
       every reference right and no hand fix (the first run found four engine bugs, fixed and tested).
-      Not yet: a run on the user's own workspace (PRD done criterion 3).
+      First run on the user's own workspace (2026-10-25, user report): the engine could not read it —
+      `## N쪽 ·` headings, a `## 구성` section before the pages, `#` block headings riding with the
+      previous page, quoted history lines renumbered, template under `template/`, the README's own
+      `## skeleton` table. Fixed in portfolio 2.9.3 (manage 15/15, fictional workspace run: block
+      swap, snapshot row by column name). Left for the user's workspace (v4.5.1): `version:` line,
+      one `## N` heading per appendix page 22-27; then re-run `verify` there.
 
 ### Skeleton and length (one card per skill, next edit)
 

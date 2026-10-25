@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { bump, parseMap, renumber, snapshot, verify } from './manage.mjs'
+import { bump, layout, parseMap, renumber, snapshot, verify } from './manage.mjs'
 
 const SKEL = `# 가상 포트폴리오
 version: v4.0.0
@@ -89,6 +89,85 @@ test('deck snapshot copies deck.mdx without bumping', () => {
   assert.equal(r.bumped, false)
   assert.ok(existsSync(join(root, 'snapshot/deck/deck-v4.0.0/deck.mdx')))
   assert.equal(readFileSync(join(root, 'skeleton.md'), 'utf8'), SKEL)
+})
+
+// The shape of a real workspace (fictional content): `## N쪽 ·` headings, a `## 구성` section before
+// the pages, `# 블록 (N~M쪽)` chapters, quoted history lines, a page count in the head.
+const REAL = `# 가상 포트폴리오 · 6장
+version: v2.0.0
+> v1.2.0(2026-01-01, 본인 지시): 3쪽 재작성, 5쪽 추가
+
+## 구성 — 왜 이렇게 바뀌었나
+블록 순서: 도입(1쪽) → 검색(2~3쪽) → 알림(4~5쪽).
+
+# 도입 (1쪽)
+## 1쪽 · 표지
+
+# 검색 개편 (2~3쪽)
+## 2쪽 · \`@s2\` · 문제
+## 3쪽 · \`@s3\` · 해결 — 근거 2쪽
+
+# 알림 배치 (4~5쪽)
+## 4쪽 · \`@s4\` · 문제
+## 5쪽 · \`@s5\` · 결과
+
+# 부록 (6쪽)
+## 6쪽 · 첨부
+
+## 맞춰야 할 것
+- 3쪽 그림
+`
+
+test('a `## N쪽 ·` heading is a page heading', () => {
+  const v = verify(REAL)
+  assert.deepEqual(v.headings, [1, 2, 3, 4, 5, 6])
+  assert.deepEqual(v.problems, [])
+})
+
+test('quoted history lines are neither renumbered nor verified', () => {
+  const r = renumber(REAL, parseMap('3:2,2:3'))
+  assert.match(r.text, /> v1\.2\.0\(2026-01-01, 본인 지시\): 3쪽 재작성, 5쪽 추가/)
+  assert.deepEqual(verify('## 1쪽 a\n> v1.0.0(2026-01-01, 본인 지시): 9쪽 삭제').problems, [])
+})
+
+test('a section before the pages does not stop the sort: swapping two pages moves them', () => {
+  const r = renumber(REAL, parseMap('2:3,3:2'))
+  assert.match(r.text, /# 검색 개편 \(2~3쪽\)\n## 2쪽 · `@s3` · 해결 — 근거 3쪽\n## 3쪽 · `@s2` · 문제\n/)
+  assert.match(r.text, /^## 구성 — 왜 이렇게 바뀌었나$/m)
+  assert.ok(r.text.indexOf('## 구성') < r.text.indexOf('# 도입'))
+  assert.deepEqual(verify(r.text).problems, [])
+})
+
+test('a block swap moves each `#` block with its pages, its title renumbered (regression: block order swap)', () => {
+  const r = renumber(REAL, parseMap('2:4,3:5,4:2,5:3'))
+  const order = [...r.text.matchAll(/^# (.+)$/gm)].map(m => m[1])
+  assert.deepEqual(order, ['가상 포트폴리오 · 6장', '도입 (1쪽)', '알림 배치 (2~3쪽)', '검색 개편 (4~5쪽)', '부록 (6쪽)'])
+  assert.match(r.text, /# 알림 배치 \(2~3쪽\)\n## 2쪽 · `@s4` · 문제\n## 3쪽 · `@s5` · 결과\n\n# 검색 개편/)
+  assert.match(r.text, /블록 순서: 도입\(1쪽\) → 검색\(4~5쪽\) → 알림\(2~3쪽\)\./)
+  assert.match(r.text, /## 맞춰야 할 것\n- 5쪽 그림\n$/)
+  assert.deepEqual(verify(r.text).problems, [])
+})
+
+test('layout finds the template where deck.mdx says', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-'))
+  mkdirSync(join(root, 'template'))
+  writeFileSync(join(root, 'template/template.pptx'), '')
+  writeFileSync(join(root, 'deck.mdx'), '---\ntemplate: template/template.pptx\noutput: build/deck.pptx\n---\n')
+  const l = layout(root)
+  assert.ok(l.present.includes('template/template.pptx'))
+  assert.ok(!l.missing.includes('template.pptx'))
+})
+
+test('snapshot writes its row into the `## skeleton` table by column name, with the stated page count', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-'))
+  writeFileSync(join(root, 'skeleton.md'), REAL)
+  mkdirSync(join(root, 'snapshot'))
+  const readme = '# 스냅샷\n\n## deck\n| 버전 | 날짜 | 한 줄 |\n|---|---|---|\n| `deck-v1.0.0` | 2026-01-01 | 첫 덱 |\n\n## skeleton\n| 버전 | 날짜 | 장수 | 한 줄 |\n|---|---|---|---|\n| `skeleton-v1.0.0` | 2026-01-01 | 5 | 첫 판 |\n\n## 되돌리는 방법\n복사해서 덮는다.\n'
+  writeFileSync(join(root, 'snapshot/README.md'), readme)
+  snapshot(root, { kind: 'skeleton', level: 'patch', note: '첨부 제목 추가', date: '2026-01-03' })
+  const out = readFileSync(join(root, 'snapshot/README.md'), 'utf8')
+  assert.match(out, /\| `skeleton-v1\.0\.0` \| 2026-01-01 \| 5 \| 첫 판 \|\n\| `skeleton-v2\.0\.0` \| 2026-01-03 \| 6 \| → v2\.0\.1: 첨부 제목 추가 \|\n\n## 되돌리는 방법/)
+  assert.match(out, /\| `deck-v1\.0\.0` \| 2026-01-01 \| 첫 덱 \|\n\n## skeleton/)
 })
 
 test('snapshot needs a version line and a note', () => {
