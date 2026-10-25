@@ -1,9 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { bump, layout, parseMap, renumber, snapshot, verify } from './manage.mjs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { bump, compare, layout, parseMap, renumber, snapshot, verify } from './manage.mjs'
 
 const SKEL = `# 가상 포트폴리오
 version: v4.0.0
@@ -193,4 +194,51 @@ test('snapshot needs a version line and a note', () => {
   writeFileSync(join(root, 'skeleton.md'), '# no version\n')
   assert.throws(() => snapshot(root, { kind: 'skeleton', level: 'patch', note: 'x' }), /version/)
   assert.throws(() => snapshot(root, { kind: 'skeleton', level: 'patch' }), /note/)
+})
+
+// fixtures/workspace has the shape of the user's real workspace with fictional content: `## N쪽 ·`
+// headings, `#` blocks, an appendix table, quoted history lines, the README's own tables, `template/`,
+// a `sources/NN_프로젝트/A1….md` ledger. A mismatch found in a real run is added here first (card 68).
+const WORKSPACE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'workspace')
+const workspace = () => { const root = mkdtempSync(join(tmpdir(), 'manage-ws-')); cpSync(WORKSPACE, root, { recursive: true }); return root }
+
+test('real-shape workspace: layout finds every part, verify finds no problem', () => {
+  assert.deepEqual(layout(WORKSPACE).missing, [])
+  assert.deepEqual(verify(readFileSync(join(WORKSPACE, 'skeleton.md'), 'utf8')).problems, [])
+})
+
+test('real-shape workspace: a block swap keeps the appendix table, align table and history right', () => {
+  const r = renumber(readFileSync(join(WORKSPACE, 'skeleton.md'), 'utf8'), parseMap('2:4,3:5,4:2,5:3'))
+  assert.deepEqual(r.warnings, [])
+  assert.deepEqual(verify(r.text).problems, [])
+  assert.match(r.text, /# 알림 배치 \(2~3쪽\)\n## 2쪽 · `@s4` · 문제\n## 3쪽 · `@s5` · 결과 \[v3\.1\.0 안\]\n2~3쪽 요약은 6쪽 회고로\.\n\n# 검색 개편 \(4~5쪽\)/)
+  assert.match(r.text, /\| A1 \| 검색 쿼리 세부 \| 7 \| 5쪽 \|\n\| A2 \| 응답 시간 그래프 \| 8 \| 4쪽 \|\n\| A3 \| 알림 흐름도 \| 9 \| 3쪽 \|/)
+  assert.match(r.text, /\| 1 \| 결과 표 \| 수치 출처 \| 본인 확인 대기 \| 5 \|/)
+  assert.match(r.text, /^> v3\.1\.0\(2026-01-05, 본인 지시\): 5쪽 결과 표 교체, 8쪽 부록 추가$/m)
+  assert.match(r.text, /^> v3\.0\.0\(2026-01-02, 본인 결정\): 알림 블록을 검색 뒤로 \(4~5쪽\)$/m)
+})
+
+test('real-shape workspace: snapshot follows its history form and newest-first table', () => {
+  const root = workspace()
+  const r = snapshot(root, { kind: 'skeleton', level: 'patch', note: '부록 제목 정리', date: '2026-01-06' })
+  assert.equal(r.to, 'v3.1.1')
+  assert.match(readFileSync(join(root, 'skeleton.md'), 'utf8'), /^version: v3\.1\.1\n> v3\.1\.1\(2026-01-06, 본인 결정\): 부록 제목 정리\n> v3\.1\.0/m)
+  assert.match(readFileSync(join(root, 'snapshot/README.md'), 'utf8'), /\|---\|---\|---\|---\|\n\| `skeleton-v3\.1\.0` \| 2026-01-06 \| 9 \| → v3\.1\.1: 부록 제목 정리 \|\n\| `skeleton-v3\.0\.0`/)
+})
+
+test('compare names each item that dropped and the verdict (card 70)', () => {
+  const before = { 'Technical Depth': 6, 'Impact and Results': 5, 'Portfolio Narrative': 7 }
+  const r = compare(before, { 'Technical Depth': 7, 'Impact and Results': 5, 'Portfolio Narrative': 6 })
+  assert.equal(r.verdict, 'mixed')
+  assert.deepEqual(r.dropped, ['Portfolio Narrative'])
+  assert.deepEqual(r.items.find(i => i.item === 'Technical Depth'), { item: 'Technical Depth', before: 6, after: 7, delta: 1 })
+  assert.equal(compare(before, { ...before, 'Impact and Results': 6 }).verdict, 'better')
+  assert.equal(compare(before, { ...before, 'Impact and Results': 4 }).verdict, 'worse')
+  assert.equal(compare(before, before).verdict, 'same')
+})
+
+test('compare lists items scored on one side only instead of comparing them', () => {
+  const r = compare({ a: 5, b: 6 }, { a: 5, c: 7 })
+  assert.deepEqual(r.unmatched, ['b', 'c'])
+  assert.equal(r.verdict, 'same')
 })

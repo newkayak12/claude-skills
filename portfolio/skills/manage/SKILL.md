@@ -28,7 +28,9 @@ the user never has to name them. **Not for** a one-off review of someone else's 
 (`feedback`) or a deck that is not a portfolio (`deck-builder`).
 
 Engine, run from the workspace root: `node ${CLAUDE_PLUGIN_ROOT}/skills/manage/scripts/manage.mjs <cmd>`
-(`layout`, `snapshot`, `renumber`, `verify`; each prints one JSON object).
+(`layout`, `snapshot`, `renumber`, `verify`, `compare`; each prints one JSON object). Its tests run
+on `scripts/fixtures/workspace`, a fictional workspace with the real one's shape; a mismatch a real
+run finds is added there as a test case before it is fixed.
 
 ## Workspace
 
@@ -38,7 +40,7 @@ deck.mdx           build source carried over from skeleton (output: build/deck.p
 template.pptx      archetype catalog — never edited (or where deck.mdx `template:` points)
 deck.catalog.md    slot ids and character budgets — regenerated only (deck-builder catalog)
 build/             deck.pptx, deck.pdf
-snapshot/          skeleton/skeleton-vX.Y.Z/, deck/deck-vX.Y.Z/, README.md (version table)
+snapshot/          skeleton/skeleton-vX.Y.Z/, deck/deck-vX.Y.Z/, scores/, README.md (version table)
 sources/           material: material/<id>/ items (`material` skill), one project per folder
 docs/확정사실.md   settled facts, things never to use, corrections — read before any work
 _archive/          old plans and deck backups, moved here, never deleted
@@ -86,6 +88,12 @@ are never renumbered. The template is where deck.mdx's `template:` points.
    go in as `check` items.
 9. **Deck.** Carry skeleton into deck.mdx against `deck.catalog.md` budgets, then `deck-builder`
    `check`. `build` and `render` only when the user says; `snapshot --kind deck` only when asked.
+9b. **Did it read better.** After a round's edits, score the round's snapshot and the new skeleton
+    with the same rubric in the same turn: `feedback`'s five dimension scores and `pattern`'s items,
+    each run as `{ "<item>": <score> }` into `snapshot/scores/skeleton-vX.Y.Z.json`, then
+    `compare --before <snapshot's> --after <new>`. Report every item's change; an item in `dropped`
+    is named with the snapshot's wording for it, offered back. `unmatched` means the rubric moved —
+    re-score, never compare across it.
 10. **Loop.** The next round starts at 2 with the new version. A vague answer ("바꾸고"): do the
     part every reading shares, hold the rest and say so.
 
@@ -100,6 +108,7 @@ Mistakes this workflow exists to stop: `references/principles.md` § Never.
 **바꾼 것** (쪽별 한 줄)
 **기본값으로 정한 것** (다르면 말해 달라)
 **정하실 것** (본인만 답할 수 있는 것만, 번호 목록)
+**이번 라운드** <나아짐 | 나빠짐 | 섞임 | 그대로> — 항목: 이전 → 지금 (떨어진 항목은 이전 문구와 함께)
 
 renumber/verify: <changes, warnings, problems | 안 함> · deck check: <warnings | 안 함> · build/render: <함 | 안 함>
 ```

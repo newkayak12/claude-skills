@@ -9,6 +9,9 @@
 //       the page sections into the new order and verifies; history lines (`vX.Y.Z 변경`, `vX.Y.Z(`,
 //       and the same quoted with `>`) are left as written
 //   verify [--file skeleton.md]    heading numbers ascending; every page reference points at a heading
+//   compare --before <scores.json> --after <scores.json>
+//       per-item change between two `{ "<item>": <score> }` files scored with the same rubric;
+//       names every item that dropped and the verdict (better | worse | mixed | same)
 // A page heading is `## N`, `## N.`, `## N)` or `## N쪽`. A `# ` chapter heading bounds a block: pages
 // sort inside their block, and blocks holding pages sort by their first page; other sections stay put.
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -231,6 +234,16 @@ export function verify(text) {
   return { headings: hs, problems }
 }
 
+// Items scored on only one side are listed apart: a rubric that changed between rounds is not a comparison.
+export function compare(before, after) {
+  const items = Object.keys(before).filter(k => k in after).map(item => ({ item, before: before[item], after: after[item], delta: after[item] - before[item] }))
+  const unmatched = [...Object.keys(before), ...Object.keys(after)].filter(k => !(k in before && k in after))
+  const dropped = items.filter(i => i.delta < 0).map(i => i.item)
+  const rose = items.filter(i => i.delta > 0).map(i => i.item)
+  const verdict = dropped.length && rose.length ? 'mixed' : dropped.length ? 'worse' : rose.length ? 'better' : 'same'
+  return { verdict, items, dropped, unmatched }
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2))
   const cmd = args._[0]
@@ -247,8 +260,12 @@ function main() {
     out = { file, changes: r.changes, warnings: r.warnings, written: !args['dry-run'], ...verify(r.text) }
   } else if (cmd === 'verify') {
     out = verify(readFileSync(file, 'utf8'))
+  } else if (cmd === 'compare') {
+    if (typeof args.before !== 'string' || typeof args.after !== 'string') throw new Error('--before and --after are required')
+    const load = p => JSON.parse(readFileSync(join(root, p), 'utf8'))
+    out = compare(load(args.before), load(args.after))
   } else {
-    throw new Error('usage: manage.mjs layout | snapshot | renumber | verify')
+    throw new Error('usage: manage.mjs layout | snapshot | renumber | verify | compare')
   }
   process.stdout.write(`${JSON.stringify(out)}\n`)
 }

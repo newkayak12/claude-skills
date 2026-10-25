@@ -88,27 +88,12 @@ toasts).
 
 ### portfolio plugin
 
-68. **manage is checked against the shape of a real workspace, not only an ideal fixture**
-    - Why: 2026-10-25, the first run on the user's workspace found 7 mismatches (card 54) after every
-      fictional run had passed; the fixtures were written to the engine, not taken from a workspace.
-    - Acceptance: a fixture with the user's workspace shape and no real content (headings, blocks,
-      appendix table, history lines, README tables, `template/`, `sources/` ledger) in the tests; `verify`
-      on it gives 0 problems; each later real-run mismatch adds a case to it first.
-
 69. **material reads the user's `sources/NN_프로젝트/A1….md` ledger, or moves it, by decision**
     - Why: 2026-10-25 workspace report: `sources/` is a per-project ledger (`NN_프로젝트/A1….md`), not
       `material/<id>/`; manage step 1b (`material log … --status written`) cannot mark an item there.
     - Acceptance: the user picks (a) material reads and logs into the ledger as it is, or (b) a
       one-time move into `material/<id>/` with the ledger kept in `_archive/`; the chosen path has a
       test and one run on the workspace shape.
-
-70. **manage shows whether an edit round made the deck read better, not only that it is consistent**
-    - Why: 2026-10-25 (user asked whether the skill helps): the engine keeps numbering, versions and
-      decisions straight, but episode choice and wording strength rest on the model; nothing compares
-      a round's result with the previous version.
-    - Acceptance: each round runs `feedback` (and `pattern`) on the snapshot and on the new version
-      with the same rubric and reports the per-item change; a round that scores lower on an item says
-      so and offers the previous wording; one real run on two fictional versions.
 
 54. **portfolio runs one flow on managed material: collect → write → render → feedback**
     - Why: user, 2026-10-18: "포트폴리오 스킬에 매니징 있니? 그니까 글감을 모으고 관리하고 그걸 바탕으로
