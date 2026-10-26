@@ -373,7 +373,9 @@ export const register: Register = on => {
             <Button key="close" role="dismiss" dimColor label={s('closeBtn')} hotkey="q" onPress={() => closePane($)} />
             <Text dimColor>{s('closeWord')}</Text>
           </Box>
-          <Box flexShrink={1} height={1} overflow="hidden"><Input key="keys" autoFocus value="" placeholder="" onInput={onKey} onSubmit={onSubmit} /></Box>
+          {(e.surface === 'terminal' || e.surface === 'desktop' || e.surface === 'vscode') && (
+            <Box flexShrink={1} height={1} overflow="hidden"><Input key="keys" autoFocus value="" placeholder="" onInput={onKey} onSubmit={onSubmit} /></Box>
+          )}
         </Box>
       </Box>
     )

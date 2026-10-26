@@ -4,14 +4,16 @@ import type { On } from 'claude-code'
 
 import { frame, draw, cells } from './demo-frames.ts'
 import { STRINGS } from './mod'
-import { askBandShown, paneKey, paneSlash } from './pane'
+import { askBandShown, carriesInput, paneKey, paneSlash, statusAnswer, wantsStatusText } from './pane'
 import { clipText, columnWidths, footerPlan, padText, tabRowPlan, width } from './teams-draw'
 
+const SURFACES = ['terminal', 'desktop', 'mobile', 'vscode'] as const
+type Surface = (typeof SURFACES)[number]
 type Run = { exitCode: number; stdout: string; stderr: string }
 const ok = (stdout: string): Run => ({ exitCode: 0, stdout, stderr: '' })
 
 // The engine beneath the plugin: surfaces, cwd, process.run, toast, status, command.register.
-function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], runs: (argv: readonly string[]) => Run) {
+function world(on: On, surfaces: readonly Surface[], runs: (argv: readonly string[]) => Run) {
   const seen = { argv: [] as (readonly string[])[], toasts: [] as string[], toastEvents: [] as { text: string; timeoutMs?: number }[], statuses: [] as (string | undefined)[], commands: [] as string[], inFlight: 0, maxInFlight: 0 }
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.surfaces', () => ({ value: surfaces }))
@@ -57,54 +59,56 @@ test('no surface: no timer, no command', async ($, on) => {
   expect(seen.commands).toEqual([])
 })
 
-test('terminal: /teams-status is registered and the tick runs view.mjs from the plugin root', async ($, on) => {
-  const clock = mock.clock(on, { now: 1000 })
-  const seen = world(on, ['terminal'], () => ok(''))
-  await start($)
-  expect(seen.commands).toEqual(['teams-status'])
-  await clock.advance(3000)
-  expect(seen.argv.length > 0).toBe(true)
-  expect(seen.argv.every(a => a[0] === 'node' && a[1].endsWith('/scripts/view.mjs') && !a[1].startsWith('${'))).toBe(true)
-  expect(seen.maxInFlight).toBe(1)
-})
+for (const surface of SURFACES) {
+  test(`${surface}: /teams-status is registered and the tick runs view.mjs from the plugin root`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1000 })
+    const seen = world(on, [surface], () => ok(''))
+    await start($)
+    expect(seen.commands).toEqual(['teams-status'])
+    await clock.advance(3000)
+    expect(seen.argv.length > 0).toBe(true)
+    expect(seen.argv.every(a => a[0] === 'node' && a[1].endsWith('/scripts/view.mjs') && !a[1].startsWith('${'))).toBe(true)
+    expect(seen.maxInFlight).toBe(1)
+  })
 
-test('two events: two toasts, cursor advances; the same events again: no toast', async ($, on) => {
-  const clock = mock.clock(on, { now: 1000 })
-  const seen = world(on, ['terminal'], argv => (isEvents(argv) ? ok(twoEvents) : ok('{"line":"","waiting":0}')))
-  await start($)
-  await clock.advance(3000)
-  expect(seen.toasts).toEqual([E1.text, E2.text])
-  await clock.advance(3000)
-  expect(seen.toasts).toHaveLength(2)
-  const sinces = seen.argv.filter(isEvents).map(sinceOf)
-  expect(sinces).toEqual(['1000', '1800'])
-})
+  test(`${surface}: two events: two toasts, cursor advances; the same events again: no toast`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1000 })
+    const seen = world(on, [surface], argv => (isEvents(argv) ? ok(twoEvents) : ok('{"line":"","waiting":0}')))
+    await start($)
+    await clock.advance(3000)
+    expect(seen.toasts).toEqual([E1.text, E2.text])
+    await clock.advance(3000)
+    expect(seen.toasts).toHaveLength(2)
+    const sinces = seen.argv.filter(isEvents).map(sinceOf)
+    expect(sinces).toEqual(['1000', '1800'])
+  })
 
-test('status line: pinned only while someone must act, then cleared', async ($, on) => {
-  const clock = mock.clock(on, { now: 1000 })
-  let body = '{"line":"teams: E-aaaaaaaa 1/4 P1 implement","waiting":2}'
-  const seen = world(on, ['terminal'], argv => (isEvents(argv) ? ok('') : ok(body)))
-  on('ui.panes', () => ({ value: [] }) as never)
-  await start($)
-  await clock.advance(3000)
-  expect(seen.statuses).toEqual(['needs you: 2 waiting - open /teams-status'])
-  body = '{"line":"teams: E-aaaaaaaa 1/4 P1 implement","waiting":0}'
-  await clock.advance(3000)
-  expect(seen.statuses[seen.statuses.length - 1]).toBeUndefined()
-})
+  test(`${surface}: status line: pinned only while someone must act, then cleared`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1000 })
+    let body = '{"line":"teams: E-aaaaaaaa 1/4 P1 implement","waiting":2}'
+    const seen = world(on, [surface], argv => (isEvents(argv) ? ok('') : ok(body)))
+    on('ui.panes', () => ({ value: [] }) as never)
+    await start($)
+    await clock.advance(3000)
+    expect(seen.statuses).toEqual(['needs you: 2 waiting - open /teams-status'])
+    body = '{"line":"teams: E-aaaaaaaa 1/4 P1 implement","waiting":0}'
+    await clock.advance(3000)
+    expect(seen.statuses[seen.statuses.length - 1]).toBeUndefined()
+  })
 
-test('a non-zero exit: no throw, no toast, status unchanged', async ($, on) => {
-  const clock = mock.clock(on, { now: 1000 })
-  const seen = world(on, ['terminal'], () => ({ exitCode: 1, stdout: twoEvents, stderr: 'boom' }))
-  await start($)
-  await clock.advance(6000)
-  expect(seen.toasts).toEqual([])
-  expect(seen.statuses).toEqual([])
-})
+  test(`${surface}: a non-zero exit: no throw, no toast, status unchanged`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1000 })
+    const seen = world(on, [surface], () => ({ exitCode: 1, stdout: twoEvents, stderr: 'boom' }))
+    await start($)
+    await clock.advance(6000)
+    expect(seen.toasts).toEqual([])
+    expect(seen.statuses).toEqual([])
+  })
+}
 
 // ---- tool.call: watch hook and team_status guard ----
 // Engine beneath: surfaces, a tool that answers `result`, and a state store the test reads back.
-function toolWorld(on: On, result: unknown, surfaces: readonly ('terminal' | 'desktop')[] = ['terminal'], isBroken = false) {
+function toolWorld(on: On, result: unknown, surfaces: readonly Surface[] = ['terminal'], isBroken = false) {
   const store = new Map<string, unknown>()
   on('session.surfaces', () => ({ value: surfaces }))
   on('tool.call', () => ({ result, text: '' }) as never)
@@ -171,7 +175,6 @@ test('team_status full:true with node_id, and {} pass', async ($, on) => {
 })
 
 // ---- pane and band ----
-const SURFACES = ['terminal', 'desktop'] as const
 
 const stage = (key: string, state: string) => ({ key, state })
 const card = (title: string, kind: string, state: string, over: Record<string, unknown> = {}) =>
@@ -228,8 +231,8 @@ const EN_UI = ['Now', 'You', 'Stages', 'Work', 'Cost', 'Summary', 'Log', 'needs 
 
 // Engine beneath: a Map-backed $.state, process.run for view.mjs (status and summary answer the same
 // fixture), ui.open and ui.status recorded.
-type Data = { status?: Record<string, unknown>; tasks?: unknown[]; task?: unknown; teams?: unknown; decisions?: (card: string | null) => unknown; reports?: Record<string, unknown>; events?: unknown[]; failReport?: boolean }
-function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly ('terminal' | 'desktop')[] = ['terminal'], data: Data = {}) {
+type Data = { status?: Record<string, unknown>; tasks?: unknown[]; task?: unknown; teams?: unknown; decisions?: (card: string | null) => unknown; reports?: Record<string, unknown>; events?: unknown[]; failReport?: boolean; isUnplaced?: boolean; plain?: Run }
+function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly Surface[] = ['terminal'], data: Data = {}) {
   const store = new Map<string, unknown>(Object.entries(init))
   const seen = { store, argv: [] as (readonly string[])[], opened: [] as string[], openArgs: [] as unknown[], statuses: [] as (string | undefined)[] }
   const status = () => data.status ?? { line: '', waiting: 0 }
@@ -242,6 +245,8 @@ function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly 
   on('process.run', (_$, e) => {
     seen.argv.push(e.argv)
     const format = e.argv[e.argv.indexOf('--format') + 1]
+    // `view.mjs --once` with no --format: the EPIC index the command answers with off the terminal
+    if (!e.argv.includes('--format')) return { value: data.plain ?? ok('') }
     if (format === 'report' && data.failReport) return { value: { exitCode: 1, stdout: '', stderr: 'boom' } }
     if (format === 'events') {
       const since = Number(e.argv[e.argv.indexOf('--since') + 1])
@@ -258,7 +263,7 @@ function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly 
   on('ui.open', (_$, e) => {
     seen.opened.push(e.id)
     seen.openArgs.push(e)
-    return { value: { isPlaced: true } } as never
+    return { value: data.isUnplaced ? { isPlaced: false, reason: 'no-surface' } : { isPlaced: true } } as never
   })
   on('ui.status', (_$, e) => {
     seen.statuses.push(e.text)
@@ -775,6 +780,88 @@ test('/teams-status answers and opens the pane; session start alone opens nothin
   expect(seen.opened).toEqual(['teams-status'])
   expect(JSON.stringify(r)).toContain('pane opened')
 })
+
+// ---- /teams-status off the terminal: the answer carries the view.mjs text ----
+const INDEX = 'tasks under /w/tasks:\n  E-3a3a3bb5  expense-tracker  IN_PROGRESS\n'
+const runStatus = ($: Engine) => $.command.run({ command: 'teams-status', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
+const textOf = (r: unknown) => String((r as { text?: string }).text)
+
+test('/teams-status: ui.open not placed: answers with the view.mjs text, run with the cwd', async ($, on) => {
+  const seen = uiWorld(on, {}, ['terminal'], { isUnplaced: true, plain: ok(INDEX) })
+  startWorld(on)
+  on('ui.panes', () => ({ value: [] }) as never)
+  await start($)
+  expect(textOf(await runStatus($))).toBe(INDEX)
+  const plain = seen.argv.find(a => !a.includes('--format'))!
+  expect(plain.slice(0, 1)).toEqual(['node'])
+  expect(plain[1]).toMatch(/\/scripts\/view\.mjs$/)
+  expect(plain.slice(2)).toEqual(['--once', '--cwd', '/proj'])
+})
+
+test('/teams-status: a desktop session (pane placed): answers with the view.mjs text', async ($, on) => {
+  uiWorld(on, {}, ['terminal', 'desktop'], { plain: ok(INDEX) })
+  startWorld(on)
+  on('ui.panes', () => ({ value: [] }) as never)
+  await start($)
+  expect(textOf(await runStatus($))).toBe(INDEX)
+})
+
+test('/teams-status: a terminal-only session with the pane placed answers pane opened and runs no view.mjs', async ($, on) => {
+  const seen = uiWorld(on, {}, ['terminal'], { plain: ok(INDEX) })
+  startWorld(on)
+  on('ui.panes', () => ({ value: [] }) as never)
+  await start($)
+  expect(textOf(await runStatus($))).toBe('pane opened')
+  expect(seen.argv.filter(a => !a.includes('--format'))).toEqual([])
+})
+
+for (const [why, plain] of [['fails', { exitCode: 1, stdout: INDEX, stderr: 'boom' }], ['prints nothing', ok('  \n')]] as const) {
+  test(`/teams-status: off the terminal, a view.mjs that ${why} falls back to pane opened`, async ($, on) => {
+    uiWorld(on, {}, ['terminal', 'mobile'], { plain })
+    startWorld(on)
+    on('ui.panes', () => ({ value: [] }) as never)
+    await start($)
+    expect(textOf(await runStatus($))).toBe('pane opened')
+  })
+}
+
+test('/teams-status: off the terminal, the second run still closes the pane', async ($, on) => {
+  const closed: string[] = []
+  on('ui.close', (_$, e) => { closed.push(e.id); return { value: undefined } })
+  const seen = uiWorld(on, {}, ['terminal', 'mobile'], { plain: ok(INDEX) })
+  startWorld(on)
+  on('ui.panes', () => ({ value: seen.opened.length > 0 ? [{ id: 'teams-status', title: 'Teams', isPlaced: true }] : [] }) as never)
+  await start($)
+  expect(textOf(await runStatus($))).toBe(INDEX)
+  expect(closed).toEqual([])
+  expect(textOf(await runStatus($))).toBe('pane closed')
+  expect(closed).toEqual(['teams-status'])
+  expect(seen.opened).toEqual(['teams-status'])
+})
+
+test('pane.ts: carriesInput and the status answer', () => {
+  expect(SURFACES.filter(carriesInput)).toEqual(['terminal', 'desktop', 'vscode'])
+  expect(wantsStatusText(true, ['terminal'])).toBe(false)
+  expect(wantsStatusText(true, [])).toBe(false)
+  expect(wantsStatusText(false, ['terminal'])).toBe(true)
+  expect(wantsStatusText(true, ['terminal', 'vscode'])).toBe(true)
+  expect(statusAnswer({ exitCode: 0, stdout: 'x\n' }, 'opened')).toBe('x\n')
+  expect(statusAnswer({ exitCode: 2, stdout: 'x' }, 'opened')).toBe('opened')
+  expect(statusAnswer({ exitCode: 0, stdout: ' ' }, 'opened')).toBe('opened')
+  expect(statusAnswer(null, 'opened')).toBe('opened')
+})
+
+// the footer's Input takes the keys; mobile draws none and keeps every Button
+for (const surface of SURFACES) {
+  test(`${surface}: footer Input ${surface === 'mobile' ? 'is absent and every Button stays' : 'is drawn beside the Buttons'}`, async ($, on) => {
+    await seeded($, on, { status: stat(), tasks: FULL, task: demo() }, surface, undefined, { epic: 'tA' })
+    const ui = await pane($, surface)
+    expect((await ui.find({ key: 'keys' })) !== undefined).toBe(surface !== 'mobile')
+    expect((await ui.findAll({ type: 'Input' })).length).toBe(surface === 'mobile' ? 0 : 1)
+    const keys = (await ui.findAll({ type: 'Button' })).map(b => String(b.props.key))
+    for (const k of ['floor', 'stories', 'decisions', 'log', 'report', 'prev', 'next', 'close']) expect(keys).toContain(k)
+  })
+}
 
 // ---- pane fallback: the newest running task of this cwd ----
 test('pane fallback: empty watch shows the cwd task from the status', async ($, on) => {
@@ -1443,8 +1530,10 @@ for (const surface of SURFACES) {
   test(`${surface}: bracket keys clamp at both ends`, async ($, on) => {
     const { tick } = await seeded($, on, { status: stat(), tasks: FULL, task: demo() }, surface, undefined, { epic: 'tA' })
     const ui = await pane($, surface)
+    // no Input on mobile: the prev and next Buttons step there
     const key = async (text: string) => {
-      await ui.input({ key: 'keys', text, kind: 'change' })
+      if (carriesInput(surface)) await ui.input({ key: 'keys', text, kind: 'change' })
+      else await ui.press({ key: text === ']' ? 'next' : 'prev' })
       await tick()
       await ui.redraw()
     }
@@ -1486,7 +1575,8 @@ for (const surface of SURFACES) {
     expect((await textsOf(ui, PICKED))[0]).toContain('E-3a3a3bb5')
   })
 
-  test(`${surface}: g opens graph-status with run file`, async ($, on) => {
+  // `g` is an Input key: only on the surfaces that carry an Input
+  if (carriesInput(surface)) test(`${surface}: g opens graph-status with run file`, async ($, on) => {
     const calls: { command: string; args: string }[] = []
     on('command.run', (_$, e) => {
       calls.push({ command: e.command, args: e.args })
@@ -1500,7 +1590,7 @@ for (const surface of SURFACES) {
     expect(calls.map(c => `${c.command} ${c.args}`)).toEqual(['graph-status open /w/runs/p1.json E-3a3a3bb5/P1'])
   })
 
-  test(`${surface}: g without run file makes no call`, async ($, on) => {
+  if (carriesInput(surface)) test(`${surface}: g without run file makes no call`, async ($, on) => {
     const calls: unknown[] = []
     on('command.run', (_$, e) => {
       calls.push(e)
