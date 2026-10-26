@@ -72,6 +72,8 @@ toasts).
       then `resume.sh: cd: …/gh-verified-1-graph-harness-r1: No such file`. bench.sh names the
       workspace `<case>-<sha256(arm-label)[0:10]>` (bench.sh:98) but drive.sh:199 looks for
       `<case>-<arm>-<label>`, so it reads no stream. Runs still record; a usage-limit stop is not resumed.
+      Seen 2026-10-26 11:23Z: the session limit hit after 25 real r1 runs ($86.53, ~$3.5/run); the other
+      137 jobs each ran 3 s with 0 tokens and recorded empty rows in `tmp/bench/2026-10-26/*.runs.jsonl`.
     - Acceptance: drive.sh and resume.sh resolve the same workspace bench.sh made; a test in
       `teams/scripts/bench/test-*.mjs` covers a gh-* job ending normally (no resume) and on a limit (resume).
 
