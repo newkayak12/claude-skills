@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Decision, DecisionsPayload, Mark, PaneView, ReportPayload, StatusInfo, SummaryItem, SummaryTask, SummaryTaskEntry, TeamsEvent, TeamsView } from '../types'
-import { askBandShown, fallbackSelection, paneKey, paneSlash, stepClamp, storyRows } from './pane'
+import { askBandShown, carriesInput, fallbackSelection, paneKey, paneSlash, statusAnswer, stepClamp, storyRows, wantsStatusText } from './pane'
 import { STORY_SHRINK, columnWidths, epicCells, epicState, handoffCells, renderLines, rowLine, since, storyCells, tabRowPlan, footerPlan, workerCells } from './teams-draw'
 import type { Line } from './teams-draw'
 
@@ -415,8 +415,16 @@ export const register: Register = on => {
       await $.ui.close({ id: PANE })
       return { text: STRINGS[await read($, lang)].paneClosed }
     }
-    await $.ui.open(OPEN)
-    return { text: STRINGS[await read($, lang)].paneOpened }
+    const opened = await $.ui.open(OPEN)
+    const paneOpened = STRINGS[await read($, lang)].paneOpened
+    if (!wantsStatusText(opened.isPlaced, await $.session.surfaces())) return { text: paneOpened }
+    let run: { exitCode: number; stdout: string } | null = null
+    try {
+      run = await $.process.run(['node', `${$.plugin.root}/scripts/view.mjs`, '--once', '--cwd', await $.session.cwd()])
+    } catch {
+      // a run that cannot start answers with the pane text
+    }
+    return { text: statusAnswer(run, paneOpened) }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -541,7 +549,7 @@ export const register: Register = on => {
       <Box columnGap={2}>
         {listed.length > 1 && <Button key="prev" plain label={s('prev')} onPress={() => cycle(-1)} />}
         {listed.length > 1 && <Button key="next" plain label={s('next')} onPress={() => cycle(1)} />}
-        <Box flexShrink={1} height={1} overflow="hidden"><Input key="keys" autoFocus value="" placeholder={footerHint} onInput={onKey} onSubmit={onSubmit} /></Box>
+        {carriesInput(e.surface) && <Box flexShrink={1} height={1} overflow="hidden"><Input key="keys" autoFocus value="" placeholder={footerHint} onInput={onKey} onSubmit={onSubmit} /></Box>}
         {openHint !== '' && <Text dimColor={!canOpen}>{openHint}</Text>}
         <Box flexShrink={0}>{close}</Box>
       </Box>

@@ -5,6 +5,10 @@ import type { On } from 'claude-code'
 const DIR = '.harness-run/broker/runs'
 const HOUR = 3_600_000
 const NOW = 10 * HOUR
+const SURFACES = ['terminal', 'desktop', 'mobile', 'vscode'] as const
+type Surface = (typeof SURFACES)[number]
+// the surfaces whose pane footer carries the Input (mobile keeps the Buttons only)
+const carriesInput = (surface: Surface) => surface !== 'mobile'
 
 type Spec = [id: string, state: string, extra?: Record<string, unknown>]
 
@@ -65,7 +69,7 @@ const rowOf = (f: File) => {
 }
 
 // The engine beneath: a Map-backed $.state, surfaces, the node readout (process.run), settings, ui.open.
-function world(on: On, files: File[], opts: { language?: string; surfaces?: readonly ('terminal' | 'desktop')[] } = {}) {
+function world(on: On, files: File[], opts: { language?: string; surfaces?: readonly Surface[] } = {}) {
   const store = new Map<string, unknown>()
   const seen = {
     opened: [] as string[], openArgs: [] as any[], closed: [] as string[], panes: [] as { id: string }[], commands: [] as string[], commandArgs: [] as any[],
@@ -127,24 +131,30 @@ function world(on: On, files: File[], opts: { language?: string; surfaces?: read
   return seen
 }
 
-const start = ($: Engine) => $.session.start({ cwd: '/proj', surface: 'terminal', isInteractive: true })
-const pane = ($: Engine, bodyColumns = 80) =>
-  $.ui.mount({ plugin: 'graph', surface: 'terminal', component: 'Pane', requestId: 'graph-status', props: { title: 'Graph', isFocused: false, bodyColumns, placement: 'dock' } } as never)
+const start = ($: Engine, surface: Surface = 'terminal') => $.session.start({ cwd: '/proj', surface, isInteractive: true })
+const pane = ($: Engine, surface: Surface, bodyColumns = 80) =>
+  $.ui.mount({ plugin: 'graph', surface, component: 'Pane', requestId: 'graph-status', props: { title: 'Graph', isFocused: false, bodyColumns, placement: 'dock' } } as never)
 type Ui = Awaited<ReturnType<typeof pane>>
 const shown = async (ui: Ui) => JSON.stringify(await ui.drawn())
-const band = ($: Engine, bodyColumns = 190, hasSurvey = false) =>
-  $.ui.mount({ plugin: 'graph', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey, bodyColumns } } as never)
+const band = ($: Engine, surface: Surface, bodyColumns = 190, hasSurvey = false) =>
+  $.ui.mount({ plugin: 'graph', surface, component: 'AbovePrompt', props: { hasSurvey, bodyColumns } } as never)
 const typeKey = async (ui: Ui, text: string) => {
   await ui.input({ key: 'keys', text, kind: 'change' })
   await ui.redraw()
 }
 
 // the session start runs the first tick over the mocked readout
-async function seeded($: Engine, on: On, files: File[], opts: { language?: string } = {}) {
+async function seeded($: Engine, on: On, files: File[], opts: { language?: string; surface?: Surface } = {}) {
   const clock = mock.clock(on, { now: NOW })
-  const seen = world(on, files, opts)
-  await start($)
+  const seen = world(on, files, { ...(opts.language !== undefined ? { language: opts.language } : {}), surfaces: [opts.surface ?? 'terminal'] })
+  await start($, opts.surface)
   return { seen, clock, tick: () => clock.advance(5000) }
+}
+
+// one test per surface (`${surface}: name`); `only` leaves out a surface the behaviour does not exist on
+type Body = Parameters<typeof test>[1]
+function eachSurface(name: string, body: (surface: Surface, ...args: Parameters<Body>) => ReturnType<Body>, only: (surface: Surface) => boolean = () => true) {
+  for (const surface of SURFACES) if (only(surface)) test(`${surface}: ${name}`, ($, on) => body(surface, $, on))
 }
 
 const LEAKS = ['implement:U1:1', 'test:U1:1', 'gate:U1:1', 'gate:goal', '/Users/', '/var/']
@@ -157,7 +167,7 @@ test('no surface: no command, no readout call, no timer, no band, no spinner', a
   expect(seen.commands).toEqual([])
   expect(seen.listCalls).toEqual([])
   expect(seen.store.get('spin')).toBeUndefined()
-  expect(await shown(await band($))).not.toContain('696f2f93')
+  expect(await shown(await band($, 'terminal'))).not.toContain('696f2f93')
 })
 
 test('the tick calls the node readout from the plugin root every 5 s, and the mod reads no run folder itself', async ($, on) => {
@@ -191,8 +201,8 @@ test('a readout that fails or prints garbage keeps the previous rows and throws 
 
 const run = ($: Engine, args = '') => $.command.run({ command: 'graph-status', args, origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
 
-test('/graph-status opens the pane and says so; the reply has no id', async ($, on) => {
-  const { seen } = await seeded($, on, [file(base())])
+eachSurface('/graph-status opens the pane and says so; the reply has no id', async (surface, $, on) => {
+  const { seen } = await seeded($, on, [file(base())], { surface })
   const r = JSON.stringify(await run($))
   expect(seen.opened).toEqual(['graph-status'])
   expect(r).toContain('pane opened')
@@ -200,23 +210,23 @@ test('/graph-status opens the pane and says so; the reply has no id', async ($, 
 })
 
 // close: Esc (closeOnEscape on the open), q (the dismiss button), the command again
-test('close 1/3: the pane is opened to close on Escape', async ($, on) => {
-  const { seen } = await seeded($, on, [file(base())])
+eachSurface('close 1/3: the pane is opened to close on Escape', async (surface, $, on) => {
+  const { seen } = await seeded($, on, [file(base())], { surface })
   await run($)
   expect(seen.openArgs[0]).toMatchObject({ id: 'graph-status', focus: true, closeOnEscape: true })
 })
 
-test('close 2/3: the q button dismisses the pane', async ($, on) => {
-  const { seen } = await seeded($, on, [file(base())])
-  const ui = await pane($)
+eachSurface('close 2/3: the q button dismisses the pane', async (surface, $, on) => {
+  const { seen } = await seeded($, on, [file(base())], { surface })
+  const ui = await pane($, surface)
   const btn = await ui.find({ key: 'close' })
   expect(btn?.props).toMatchObject({ role: 'dismiss', hotkey: 'q', label: 'q' })
   await ui.press({ key: 'close' })
   expect(seen.closed).toEqual(['graph-status'])
 })
 
-test('close 3/3: the command again closes an open pane', async ($, on) => {
-  const { seen } = await seeded($, on, [file(base())])
+eachSurface('close 3/3: the command again closes an open pane', async (surface, $, on) => {
+  const { seen } = await seeded($, on, [file(base())], { surface })
   await run($)
   const r = JSON.stringify(await run($))
   expect(seen.closed).toEqual(['graph-status'])
@@ -226,56 +236,64 @@ test('close 3/3: the command again closes an open pane', async ($, on) => {
   expect(seen.opened).toEqual(['graph-status', 'graph-status'])
 })
 
-test('the old command name is gone', async ($, on) => {
-  const { seen } = await seeded($, on, [file(base())])
+eachSurface('the old command name is gone', async (surface, $, on) => {
+  const { seen } = await seeded($, on, [file(base())], { surface })
   expect(seen.commands).not.toContain('graph-live')
 })
 
 // card 57: the pane's Input takes `[`/`]`, so typed slash text must still reach the host
-test('REQ-1 (a): ] then ]/graph-status typed into the pane closes it', async ($, on) => {
-  const { seen } = await seeded($, on, [file(base())])
+eachSurface('REQ-1 (a): ] then ]/graph-status typed into the pane closes it', async (surface, $, on) => {
+  const { seen } = await seeded($, on, [file(base())], { surface })
   await run($)
-  const ui = await pane($)
+  const ui = await pane($, surface)
   await typeKey(ui, ']')
   expect(seen.closed).toEqual([])
   await ui.input({ key: 'keys', text: ']/graph-status', kind: 'submit' })
   expect(seen.closed).toEqual(['graph-status'])
   expect(seen.panes).toEqual([])
-})
+}, carriesInput)
 
-test('REQ-1 (b): /graph-status typed into the pane closes it; the slash text presses no key', async ($, on) => {
-  const { seen } = await seeded($, on, [file(base())])
-  const ui = await pane($)
+eachSurface('REQ-1 (b): /graph-status typed into the pane closes it; the slash text presses no key', async (surface, $, on) => {
+  const { seen } = await seeded($, on, [file(base())], { surface })
+  const ui = await pane($, surface)
   await ui.input({ key: 'keys', text: '/graph-status', kind: 'change' })
   expect(seen.closed).toEqual([]) // the q inside slash text is not the close key
   await ui.input({ key: 'keys', text: '/graph-status', kind: 'submit' })
   expect(seen.closed).toEqual(['graph-status'])
-})
+}, carriesInput)
 
-test('REQ-1 (c): /other x runs that command once with exactly {command, args}, not awaited; no-slash text submits nothing', async ($, on) => {
+eachSurface('REQ-1 (c): /other x runs that command once with exactly {command, args}, not awaited; no-slash text submits nothing', async (surface, $, on) => {
   const ran: unknown[] = []
   // a command that never answers must not hold the handler
   on('command.run', { command: 'other' }, (_$, e) => {
     ran.push(e)
     return new Promise(() => {}) as never
   })
-  const { seen } = await seeded($, on, [file(base())])
-  const ui = await pane($)
+  const { seen } = await seeded($, on, [file(base())], { surface })
+  const ui = await pane($, surface)
   await ui.input({ key: 'keys', text: '/other x', kind: 'change' })
   await ui.input({ key: 'keys', text: '/other x', kind: 'submit' })
   await ui.input({ key: 'keys', text: 'x', kind: 'submit' })
   expect(ran).toHaveLength(1)
   expect(ran[0]).toMatchObject({ command: 'other', args: 'x' })
   expect(seen.closed).toEqual([])
+}, carriesInput)
+
+// the Input takes [ ] and typed slash text; mobile does not carry an Input, so its footer is the Buttons alone
+eachSurface('the pane footer: an Input on terminal, desktop and vscode; none on mobile, whose prev, next, tab and close Buttons still draw', async (surface, $, on) => {
+  await seeded($, on, two(), { surface })
+  const ui = await pane($, surface)
+  expect((await ui.find({ key: 'keys' })) !== undefined).toBe(surface !== 'mobile')
+  for (const key of ['prev', 'next', 'flow', 'detail', 'close']) expect(await ui.find({ key })).toBeDefined()
 })
 
-test('the pane: tabs Flow/Detail, id, request, subgoal title and the dim footer with a q button, no old close text', async ($, on) => {
-  await seeded($, on, [file(base())])
-  const ui = await pane($, 120)
+eachSurface('the pane: tabs Flow/Detail, id, request, subgoal title and the dim footer with a q button, no old close text', async (surface, $, on) => {
+  await seeded($, on, [file(base())], { surface })
+  const ui = await pane($, surface, 120)
   const text = await shown(ui)
   expect((await ui.find({ key: 'flow' }))?.props).toMatchObject({ plain: true, hotkey: '1', dimColor: false, label: '● Flow' })
   expect((await ui.find({ key: 'detail' }))?.props).toMatchObject({ plain: true, hotkey: '2', dimColor: true, label: 'Detail' })
-  expect(await ui.find({ key: 'keys' })).toBeDefined() // the Input that takes [ ] and typed slash text
+  if (carriesInput(surface)) expect(await ui.find({ key: 'keys' })).toBeDefined() // the Input that takes [ ] and typed slash text
   expect(text).toContain('696f2f93')
   expect(text).toContain('README에 한 줄 추가하는 작은 작업')
   expect(text).not.toContain('[teams-task')
@@ -285,15 +303,15 @@ test('the pane: tabs Flow/Detail, id, request, subgoal title and the dim footer 
   for (const leak of LEAKS) expect(text).not.toContain(leak)
 })
 
-test('Detail: one line per node with its agent, feedback and failure reason', async ($, on) => {
+eachSurface('Detail: one line per node with its agent, feedback and failure reason', async (surface, $, on) => {
   const retried = withNodes([
     node(['plan', 'done']),
     node(['implement:U1:1', 'done', { vendor: 'codex', model: 'gpt-5' }], ['plan']),
     node(['gate:U1:1', 'failed', { result: { stage_ok: false, reason: 'README line missing' } }], ['implement:U1:1']),
     node(['implement:U1:2', 'running', { vendor: 'claude', model: 'opus', feedback: 'Add the README line\nsecond line' }], ['plan']),
   ])
-  await seeded($, on, [file(retried)])
-  const ui = await pane($)
+  await seeded($, on, [file(retried)], { surface })
+  const ui = await pane($, surface)
   await ui.press({ key: 'detail' })
   await ui.redraw() // the stubbed $.state does not notify readers
   const text = await shown(ui)
@@ -304,23 +322,23 @@ test('Detail: one line per node with its agent, feedback and failure reason', as
   expect(text).toContain('README line missing')
 })
 
-test('Korean: the tab labels are Korean', async ($, on) => {
-  await seeded($, on, [file(base())], { language: 'Korean' })
-  const ui = await pane($)
+eachSurface('Korean: the tab labels are Korean', async (surface, $, on) => {
+  await seeded($, on, [file(base())], { language: 'Korean', surface })
+  const ui = await pane($, surface)
   expect((await ui.find({ key: 'flow' }))?.props.label).toBe('● 흐름')
   expect((await ui.find({ key: 'detail' }))?.props.label).toBe('상세')
   expect(await shown(ui)).not.toContain('Detail')
 })
 
-test('no run: the pane says there is no graph run', async ($, on) => {
-  await seeded($, on, [])
-  expect(await shown(await pane($))).toContain('No graph run in this folder.')
+eachSurface('no run: the pane says there is no graph run', async (surface, $, on) => {
+  await seeded($, on, [], { surface })
+  expect(await shown(await pane($, surface))).toContain('No graph run in this folder.')
 })
 
-test('read only: the mod calls the readout and the toast script, and nothing else', async ($, on) => {
-  const { seen, tick } = await seeded($, on, [file(base())])
+eachSurface('read only: the mod calls the readout and the toast script, and nothing else', async (surface, $, on) => {
+  const { seen, tick } = await seeded($, on, [file(base())], { surface })
   await tick()
-  const ui = await pane($)
+  const ui = await pane($, surface)
   await ui.press({ key: 'detail' })
   for (const argv of [...seen.listCalls, ...seen.runs]) expect(argv[0]).toBe('node')
 })
@@ -329,10 +347,10 @@ test('read only: the mod calls the readout and the toast script, and nothing els
 const two = () => [file(base(), NOW - 2000, 'a1.json'), file(base({ run_id: 'cafe0000-d3b1-43c1-9fdb-d49bbbd9bcce', request: 'second run' }), NOW - 1000, 'b2.json')]
 const header = async (ui: Ui) => (await shown(ui)).match(/run \d of \d/)?.[0]
 
-test('[ and ] walk the runs as key presses and stop at the ends; prev and next are buttons', async ($, on) => {
-  const { seen } = await seeded($, on, two())
+eachSurface('[ and ] walk the runs as key presses and stop at the ends; prev and next are buttons', async (surface, $, on) => {
+  const { seen } = await seeded($, on, two(), { surface })
   await run($)
-  const ui = await pane($)
+  const ui = await pane($, surface)
   expect(await header(ui)).toBe('run 1 of 2')
   await typeKey(ui, '[') // at the first run: nothing
   expect(await header(ui)).toBe('run 1 of 2')
@@ -347,19 +365,35 @@ test('[ and ] walk the runs as key presses and stop at the ends; prev and next a
   await ui.redraw()
   expect(await header(ui)).toBe('run 2 of 2')
   expect(seen.store.get('selected')).toBeDefined()
+}, carriesInput)
+
+eachSurface('prev and next buttons walk the runs and stop at the ends, with no Input needed', async (surface, $, on) => {
+  const { seen } = await seeded($, on, two(), { surface })
+  const ui = await pane($, surface)
+  expect(await header(ui)).toBe('run 1 of 2')
+  await ui.press({ key: 'next' })
+  await ui.redraw()
+  expect(await header(ui)).toBe('run 2 of 2')
+  await ui.press({ key: 'next' })
+  await ui.redraw()
+  expect(await header(ui)).toBe('run 2 of 2')
+  await ui.press({ key: 'prev' })
+  await ui.redraw()
+  expect(await header(ui)).toBe('run 1 of 2')
+  expect(seen.store.get('selected')).toBeDefined()
 })
 
-test('one run: no prev and next buttons', async ($, on) => {
-  await seeded($, on, [file(base())])
-  const ui = await pane($)
+eachSurface('one run: no prev and next buttons', async (surface, $, on) => {
+  await seeded($, on, [file(base())], { surface })
+  const ui = await pane($, surface)
   expect(await ui.find({ key: 'prev' })).toBeUndefined()
   expect(await ui.find({ key: 'next' })).toBeUndefined()
 })
 
 // ---- the band ----
-test('band: a standalone open run shows one graph row and an open button that opens the pane', async ($, on) => {
-  const { seen } = await seeded($, on, [file(base())])
-  const ui = await band($)
+eachSurface('band: a standalone open run shows one graph row and an open button that opens the pane', async (surface, $, on) => {
+  const { seen } = await seeded($, on, [file(base())], { surface })
+  const ui = await band($, surface)
   const text = await shown(ui)
   expect(text).toContain('graph')
   expect(text).toContain('696f2f93')
@@ -369,26 +403,26 @@ test('band: a standalone open run shows one graph row and an open button that op
   expect(seen.opened).toEqual(['graph-status'])
 })
 
-test('band: hidden with no open run, with only an owned or a finished run, and while a survey shows', async ($, on) => {
+eachSurface('band: hidden with no open run, with only an owned or a finished run, and while a survey shows', async (surface, $, on) => {
   const owned = base({ owner: { task_id: 't', key: 'E-abcd1234' } })
   const done = withNodes(base().nodes.map(n => ({ ...n, state: 'done' })))
-  const { seen, tick } = await seeded($, on, [file(owned, NOW - 1000, 'o.json'), file({ ...done, run_id: 'dead0000-0000-0000-0000-000000000000' }, NOW - 1000, 'd.json')])
-  expect(await (await band($)).find({ key: 'open' })).toBeUndefined()
+  const { seen, tick } = await seeded($, on, [file(owned, NOW - 1000, 'o.json'), file({ ...done, run_id: 'dead0000-0000-0000-0000-000000000000' }, NOW - 1000, 'd.json')], { surface })
+  expect(await (await band($, surface)).find({ key: 'open' })).toBeUndefined()
   seen.files.splice(0, 2, file(base()))
   await tick()
-  expect(await (await band($)).find({ key: 'open' })).toBeDefined()
-  expect(await (await band($, 190, true)).find({ key: 'open' })).toBeUndefined()
+  expect(await (await band($, surface)).find({ key: 'open' })).toBeDefined()
+  expect(await (await band($, surface, 190, true)).find({ key: 'open' })).toBeUndefined()
 })
 
 // ---- the spinner: a faster interval, only while a shown run acts ----
-test('spinner: while a run acts and the band shows it, a frame every 800 ms', async ($, on) => {
-  const { seen, clock } = await seeded($, on, [file(patch(base(), 'test:U1:1', 'running'))])
+eachSurface('spinner: while a run acts and the band shows it, a frame every 800 ms', async (surface, $, on) => {
+  const { seen, clock } = await seeded($, on, [file(patch(base(), 'test:U1:1', 'running'))], { surface })
   await clock.advance(1700)
   expect(Number(seen.store.get('spin') ?? 0)).toBe(2)
 })
 
-test('spinner: absent when nothing acts', async ($, on) => {
-  const { seen, clock } = await seeded($, on, [file(base())])
+eachSurface('spinner: absent when nothing acts', async (surface, $, on) => {
+  const { seen, clock } = await seeded($, on, [file(base())], { surface })
   await clock.advance(12_000)
   expect(seen.store.get('spin')).toBeUndefined()
 })
@@ -397,34 +431,34 @@ test('spinner: absent when nothing acts', async ($, on) => {
 const FILE = `/proj/${DIR}/a1.json`
 const owned = () => base({ owner: { task_id: 't', key: 'E-abcd1234' } })
 
-test('the command registers the open argument hint', async ($, on) => {
-  const { seen } = await seeded($, on, [])
+eachSurface('the command registers the open argument hint', async (surface, $, on) => {
+  const { seen } = await seeded($, on, [], { surface })
   expect(seen.commandArgs[0].argumentHint).toBe('[open <run-file> <owner-key>]')
 })
 
-test('open <file> <key>: the node shows that file, the pane opens on it under the key; it is not in the band', async ($, on) => {
-  const { seen } = await seeded($, on, [file(owned())])
+eachSurface('open <file> <key>: the node shows that file, the pane opens on it under the key; it is not in the band', async (surface, $, on) => {
+  const { seen } = await seeded($, on, [file(owned())], { surface })
   const r = JSON.stringify(await run($, `open ${FILE} E-abcd1234`))
   expect(r).toContain('pane opened')
   expect(seen.showCalls).toHaveLength(1)
   expect(seen.showCalls[0]!.slice(2)).toEqual(['runs', '--show', FILE, '--json'])
   expect(seen.opened).toEqual(['graph-status'])
-  const ui = await pane($)
+  const ui = await pane($, surface)
   const text = await shown(ui)
   expect(text).toContain('696f2f93')
   expect(text).toContain('under E-abcd1234')
   expect(await ui.find({ key: 'next' })).toBeUndefined() // the opened run is not part of a [ ] list
-  expect(await shown(await band($))).not.toContain('696f2f93')
+  expect(await shown(await band($, surface))).not.toContain('696f2f93')
 })
 
-test('open <relative file> <key>: the node and every refresh read the absolute path under the session cwd', async ($, on) => {
-  const { seen } = await seeded($, on, [file(owned())])
+eachSurface('open <relative file> <key>: the node and every refresh read the absolute path under the session cwd', async (surface, $, on) => {
+  const { seen } = await seeded($, on, [file(owned())], { surface })
   await run($, `open ${DIR}/a1.json E-abcd1234`)
   expect(seen.showCalls[0]!.slice(2)).toEqual(['runs', '--show', FILE, '--json'])
 })
 
-test('open with a missing key or file: the usage line, nothing opens', async ($, on) => {
-  const { seen } = await seeded($, on, [file(owned())])
+eachSurface('open with a missing key or file: the usage line, nothing opens', async (surface, $, on) => {
+  const { seen } = await seeded($, on, [file(owned())], { surface })
   for (const args of ['open', `open ${FILE}`, `open ${FILE} nope`, `open ${FILE} E-abcd1234 extra`, 'bogus']) {
     const r = JSON.stringify(await run($, args))
     expect(r).toContain('usage: /graph-status open')
@@ -433,15 +467,15 @@ test('open with a missing key or file: the usage line, nothing opens', async ($,
   expect(seen.showCalls).toEqual([])
 })
 
-test('open a file the node cannot read: one line, nothing opens', async ($, on) => {
-  const { seen } = await seeded($, on, [file(owned())])
+eachSurface('open a file the node cannot read: one line, nothing opens', async (surface, $, on) => {
+  const { seen } = await seeded($, on, [file(owned())], { surface })
   expect(JSON.stringify(await run($, 'open /proj/missing.json E-abcd1234'))).toContain('could not read')
   expect(seen.opened).toEqual([])
 })
 
 // run events: the failed / reshaped / blocked ones come from failure-events.mjs (stubbed in world()),
 // the finished run from the row. PushNotification's result is { message, pushSent?, localSent?, disabledReason? }
-async function pushed(push: (e: any) => unknown, files: File[], on: On, $: Engine) {
+async function pushed(push: (e: any) => unknown, files: File[], on: On, $: Engine, surface: Surface = 'terminal') {
   const seen = { pushes: [] as any[], toasts: [] as string[], toastArgs: [] as any[] }
   on('tool.call', (_$, e: any) => {
     seen.pushes.push(e)
@@ -452,7 +486,7 @@ async function pushed(push: (e: any) => unknown, files: File[], on: On, $: Engin
     seen.toastArgs.push(e)
     return { value: undefined } as never
   })
-  const s = await seeded($, on, files)
+  const s = await seeded($, on, files, { surface })
   return { ...seen, ...s }
 }
 const sentOk = () => ({ result: { message: 'm', pushSent: true, localSent: true }, text: '' })
@@ -614,9 +648,9 @@ test('what a run held before the session started is not shown or pushed', async 
   expect(toasts).toEqual([])
 })
 
-test('a finished run not sent (user at the terminal): the same line is a toast', async ($, on) => {
+eachSurface('a finished run not sent (user at the terminal): the same line is a toast', async (surface, $, on) => {
   const files = [file(base())]
-  const w = await pushed(() => ({ result: { message: 'm', pushSent: false, localSent: false, disabledReason: 'user_present' }, text: '' }), files, on, $)
+  const w = await pushed(() => ({ result: { message: 'm', pushSent: false, localSent: false, disabledReason: 'user_present' }, text: '' }), files, on, $, surface)
   await change(w, files, withNodes(base().nodes.map(n => ({ ...n, state: 'done' }))), [])
   expect(w.toasts).toEqual([`graph ${R}: complete — report (1/2)`])
 })

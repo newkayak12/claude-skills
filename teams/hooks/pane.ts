@@ -40,6 +40,22 @@ export function paneSlash(text: unknown): PaneSlash {
   return m[1] === 'teams-status' ? { kind: 'close' } : { kind: 'run', command: m[1]!, args: m[2]! }
 }
 
+// the surfaces that carry an Input; the others (mobile) keep the footer's Buttons only
+export function carriesInput(surface: string): boolean {
+  return surface === 'terminal' || surface === 'desktop' || surface === 'vscode'
+}
+
+// `/teams-status` also answers with the view.mjs text when the pane is not placed, or the session is drawn on a
+// surface besides the terminal (a person there may not see the pane)
+export function wantsStatusText(isPlaced: boolean, surfaces: readonly string[]): boolean {
+  return !isPlaced || surfaces.some(s => s !== 'terminal')
+}
+
+// the text the command answers with: the run's stdout, else `opened` when the run failed or printed nothing
+export function statusAnswer(run: { exitCode: number; stdout: string } | null, opened: string): string {
+  return run === null || run.exitCode !== 0 || run.stdout.trim() === '' ? opened : run.stdout
+}
+
 // one step inside 0..count-1: it stops at the ends, never wraps
 export function stepClamp(index: number, by: number, count: number): number {
   if (count <= 0) return 0

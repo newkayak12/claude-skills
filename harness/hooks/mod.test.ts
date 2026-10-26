@@ -14,6 +14,10 @@ const deny = (ts: number) => JSON.stringify({ ts, tool: 'Write', target: 'a/x.md
 
 type Files = Record<string, string | Error>
 
+// Every surface a pane, band or toast draws on (mod.md rule 8).
+type Surface = 'terminal' | 'desktop' | 'mobile' | 'vscode'
+const SURFACES = ['terminal', 'desktop', 'mobile', 'vscode'] as const satisfies readonly Surface[]
+
 // the engine resolves a relative path against the working directory
 // (the longest matching key wins: the project's .claude/hooks/x and the plugin's hooks/x both end in hooks/x)
 const key = (files: Files, path: string) =>
@@ -25,7 +29,7 @@ const key = (files: Files, path: string) =>
 type Dirs = Record<string, [string, 'dir' | 'file', number?][]>
 // `fallback-check --list --json`, as the test sets it: what it prints, its exit code, or that it throws (a timeout)
 type Listing = { stdout: string; exitCode: number; throws: boolean; calls: string[][] }
-function world(on: On, surfaces: readonly ('terminal' | 'desktop')[], files: Files, dirs: Dirs = {}, top?: string) {
+function world(on: On, surfaces: readonly Surface[], files: Files, dirs: Dirs = {}, top?: string) {
   const listing: Listing = { stdout: '[]', exitCode: 0, throws: false, calls: [] }
   const seen = { statuses: [] as (string | undefined)[], commands: [] as string[], opened: [] as string[], openArgs: [] as any[], closed: [] as string[], panes: [] as { id: string }[], reads: 0, toasts: [] as string[], toastMs: [] as (number | undefined)[], argv: [] as string[][], listed: [] as string[], outcomes: [] as any[], failSet: false, listing, shows: new Map<string, { stdout: string; exitCode: number }>(), showCalls: [] as string[][], store: new Map<string, unknown>(), commandArgs: [] as any[] }
   const store = seen.store
@@ -120,7 +124,7 @@ const youWait = { who: 'you', what: 'approve the goal spec' }
 const waiting = (slug: string) => rowJson(slug, { stage: 'setgoal', waiting: youWait, now: nowJson({ stage: 'setgoal', doing: 'SetGoal waits for approval', waiting: youWait }) })
 const list = (rows: object[]) => JSON.stringify(rows)
 
-const start = ($: Engine) => $.session.start({ cwd: '/proj', surface: 'terminal', isInteractive: true })
+const start = ($: Engine, surface: Surface = 'terminal') => $.session.start({ cwd: '/proj', surface, isInteractive: true })
 const lastStatus = (seen: { statuses: (string | undefined)[] }) => seen.statuses[seen.statuses.length - 1]
 
 test('surfaces []: no timer, no status, /harness-status not registered', async ($, on) => {
@@ -237,19 +241,21 @@ for (const [name, text] of [
   })
 }
 
-test('toast: first poll and old denies are silent; a newer deny toasts once', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const files: Files = { [CONFIG]: cfg, [DECISION]: deny(NOW - 1000) }
-  const seen = world(on, ['terminal'], files)
-  await start($)
-  await clock.advance(5000)
-  expect(seen.toasts).toEqual([])
-  files[DECISION] = deny(NOW + 1000)
-  await clock.advance(5000)
-  expect(seen.toasts).toEqual(["⛔ goal gate blocked Write: a/x.md — finish the harness run, don't script around it"])
-  await clock.advance(5000)
-  expect(seen.toasts.length).toBe(1)
-})
+for (const surface of SURFACES) {
+  test(`${surface}: toast: first poll and old denies are silent; a newer deny toasts once`, async ($, on) => {
+    const clock = mock.clock(on, { now: NOW })
+    const files: Files = { [CONFIG]: cfg, [DECISION]: deny(NOW - 1000) }
+    const seen = world(on, [surface], files)
+    await start($, surface)
+    await clock.advance(5000)
+    expect(seen.toasts).toEqual([])
+    files[DECISION] = deny(NOW + 1000)
+    await clock.advance(5000)
+    expect(seen.toasts).toEqual(["⛔ goal gate blocked Write: a/x.md — finish the harness run, don't script around it"])
+    await clock.advance(5000)
+    expect(seen.toasts.length).toBe(1)
+  })
+}
 
 test('toast: with teams installed too, one toast names the conflict and the route', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
@@ -304,10 +310,10 @@ test('read error: no throw, the gate state stays', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: 'Last decision: deny (Write a/x.md, 0 min ago)' })).toBeDefined()
 })
 
-const pane = ($: Engine, surface: 'terminal' | 'desktop', bodyColumns = 80) =>
+const pane = ($: Engine, surface: Surface, bodyColumns = 80) =>
   $.ui.mount({ plugin: 'harness', surface, component: 'Pane', requestId: 'harness-status', props: { title: 'Harness', isFocused: false, bodyColumns, placement: 'dock' } } as never)
 
-for (const surface of ['terminal', 'desktop'] as const) {
+for (const surface of SURFACES) {
   test(`${surface}: pane with no config says so`, async ($, on) => {
     mock.clock(on, { now: NOW })
     world(on, [surface], {})
@@ -356,6 +362,17 @@ test('close 1/3: the pane is opened to close on Escape', async ($, on) => {
   await start($)
   await cmd($)
   expect(seen.openArgs[0]).toMatchObject({ id: 'harness-status', focus: true, closeOnEscape: true })
+})
+
+test('footer Input: terminal, desktop and vscode have one; mobile has none and keeps its Buttons', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  world(on, [...SURFACES], { [CONFIG]: cfg })
+  await start($)
+  for (const surface of SURFACES) {
+    const ui = await pane($, surface)
+    expect([surface, (await ui.find({ type: 'Input' })) !== undefined]).toEqual([surface, surface !== 'mobile'])
+    expect([surface, (await ui.find({ key: 'close' })) !== undefined]).toEqual([surface, true])
+  }
 })
 
 test('close 2/3: the q button dismisses the pane', async ($, on) => {
@@ -551,7 +568,7 @@ const linesOf = (tree: unknown): string[] => {
 const textOf = async (ui: Ui) => linesOf(await ui.drawn()).join('\n')
 
 // rows: what `fallback-check --list --json` prints; the default is one open run, `demo`, whose files are `files`
-async function seeded($: Engine, on: On, files: Files, opts: { language?: string; surfaces?: readonly ('terminal' | 'desktop')[]; rows?: object[] } = {}) {
+async function seeded($: Engine, on: On, files: Files, opts: { language?: string; surfaces?: readonly Surface[]; rows?: object[] } = {}) {
   const clock = mock.clock(on, { now: NOW })
   const seen = Object.assign(world(on, opts.surfaces ?? ['terminal'], files, dirsOf(files)), { clock })
   seen.listing.stdout = list(opts.rows ?? [acting('demo', { passed: 1, total: 3 })])
@@ -579,7 +596,7 @@ const csv = (o: object = {}) => rowJson('demo', {
   ...o,
 })
 
-for (const surface of ['terminal', 'desktop'] as const) {
+for (const surface of SURFACES) {
   test(`${surface}: Now tab: tabs 1-4, Now with doing, round n of max and time in stage, last step with age, You, the rail with its loop`, async ($, on) => {
     await seeded($, on, demoRun(), { surfaces: [surface], rows: [csv()] })
     const ui = await pane($, surface, 194)
@@ -833,8 +850,8 @@ test('an invalid gate config says it could not be read, not that it is missing; 
   expect(JSON.stringify(r)).not.toContain('harness-status:')
 })
 
-const band = ($: Engine, on: On, hasSurvey = false, bodyColumns = 190) => {
-  return $.ui.mount({ plugin: 'harness', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey, bodyColumns } } as never)
+const band = ($: Engine, on: On, hasSurvey = false, bodyColumns = 190, surface: Surface = 'terminal') => {
+  return $.ui.mount({ plugin: 'harness', surface, component: 'AbovePrompt', props: { hasSurvey, bodyColumns } } as never)
 }
 
 test('band: hidden with no open runs', async ($, on) => {
@@ -852,9 +869,10 @@ test('band: hidden while a survey shows', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: 'harness' })).toBeUndefined()
 })
 
-test('band: three rows (doing and ⚑ / rail with subgoals n/m / cost and the latest finding), +N for the other runs', async ($, on) => {
-  await seeded($, on, {}, { rows: [csv(), acting('other')] })
-  const rows = linesOf(await (await band($, on)).drawn()).slice(0, 3)
+for (const surface of SURFACES) {
+test(`${surface}: band: three rows (doing and ⚑ / rail with subgoals n/m / cost and the latest finding), +N for the other runs`, async ($, on) => {
+  await seeded($, on, {}, { rows: [csv(), acting('other')], surfaces: [surface] })
+  const rows = linesOf(await (await band($, on, false, 190, surface)).drawn()).slice(0, 3)
   expect(rows).toHaveLength(3)
   expect(rows[0]).toMatch(/^[✎⌕▸] harness demo · SetGoal is rewriting the spec after critique round 1 rejected it · round 2 of 3 +\+1 run$/)
   expect(rows[0]).not.toMatch(/\b6m\b/)
@@ -864,6 +882,7 @@ test('band: three rows (doing and ⚑ / rail with subgoals n/m / cost and the la
   expect(rows[2]).toContain('$3.40')
   expect(rows[2]).toContain('top finding: "export button" has no check')
 })
+}
 
 test('band: a run that waits on you leads with ⚑, and cost reads — when now.json carries none', async ($, on) => {
   await seeded($, on, {}, { rows: [acting('a'), waiting('w')] })

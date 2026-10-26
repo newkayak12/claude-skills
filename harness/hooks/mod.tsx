@@ -767,7 +767,9 @@ export const register: Register = on => {
           {closeBtn}
           <Box flexShrink={0}><Text dimColor wrap="truncate-end">{s('keysTail')}</Text></Box>
           {steps}
-          <Box flexShrink={1} height={1} overflow="hidden"><Input key="keys" autoFocus value="" placeholder="" onInput={onKey} onSubmit={onSubmit} /></Box>
+          {(e.surface === 'terminal' || e.surface === 'desktop' || e.surface === 'vscode') && (
+            <Box flexShrink={1} height={1} overflow="hidden"><Input key="keys" autoFocus value="" placeholder="" onInput={onKey} onSubmit={onSubmit} /></Box>
+          )}
         </Box>
       </Box>
     )
