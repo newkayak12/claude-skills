@@ -132,6 +132,7 @@ Claude Code 2.1.293 터미널에서 실제로 캡처한 화면입니다 (영어 
 
 ## 상태 로그
 
+- v0.9.2 — 패널, 동의 카드, 밴드, 토스트가 터미널·데스크톱·모바일·vscode 모두에서 그려집니다. 화면이 있을 때만 시작하고, 대화형 시작마다 시작하지 않습니다.
 - v0.9.1 — 로컬 실패 기록 `subgoal_failed`·`goal_failed`는 harness mod가 발행하는 결과로만 남깁니다. trophy는 더 이상 harness 파일이나 게이트 출력을 읽지 않습니다(기록에 run slug가 빠집니다).
 - v0.9.0 — 텔레메트리 v3(선택, 기본 꺼짐): 집계마다 플러그인 버전, 하루 활동 표시, 우리 MCP 도구별 성공·오류(`tool.call` 기준), graph·teams·harness mod가 발행하는 run 결과, `/trophy-telemetry status`의 마지막 전송 줄, 동의 문구 v3.
 - v0.8.5 — Codex 매니페스트에 trophy가 Claude 전용이라고 적습니다.
