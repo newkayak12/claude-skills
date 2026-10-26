@@ -5,6 +5,7 @@
 `teams` 플러그인의 모든 릴리스를 최신순으로 적었습니다. 예전 KOR.md의 `## 상태` 절을 그대로 옮겨 온 것입니다. 새 릴리스 줄은 `teams:patch`가 아래 `## 상태` 맨 위에 추가합니다.
 
 ## 상태
+- v0.59.3 — 기획 조사 단계에서 write:requirements도 돌립니다. PRD 초안(planning, planning-light, document)은 write:plans 대신 write:prd를, ADR·설계 리뷰는 write:adr를 씁니다. `teams:patch`가 `.codex-plugin/plugin.json` 버전도 같이 올립니다. 테스트용 driver는 테스트가 끝나면 같이 끝나고, 하나라도 남으면 테스트가 실패합니다.
 - v0.59.2 — ask 밴드가 이미 질문을 보여 주는 동안에는 상태 줄의 대기 표시를 숨깁니다. EPIC slug는 군더더기 단어 대신 카드와 주제로 이름을 짓습니다(`card-48-graph-harness-into-teams`).
 - v0.59.1 — `/clear` 뒤에 연 작업도 현재 세션을 opener로 기록해 질문이 band에 닿습니다. driver의 질문은 poll로만 옵니다(권한 확인 창에 막히던 세션 간 전송을 뺐습니다). `interactive`가 false라 `human_gates`가 자동 통과될 때 `tm_open`이 알려 줍니다.
 - v0.59.0 — STORY가 TeamLeader에게 물을 수 있습니다(`tm_ask`). 답변 노드가 답하거나 질문 카드로 사람에게 넘기고, ledger에 `asked`/`answered`가 남아 Floor 피드에 보입니다. task manager의 판정기는 도구 거부를 `blocked: tool denied`로 읽고, 원래부터 실패하던 테스트는 점수 전에 뺍니다. 끝난 size-S 작업은 `tm_clean` 뒤에도 DONE이고, `tm_clean`은 그 작업이 만든 브랜치를 지웁니다. slug 충돌은 연결된 worktree까지 세고, 한글 slug는 조사를 빼며, 제목은 파일명의 점에서 잘리지 않습니다. driver는 자기 백그라운드 작업을 기다립니다. 패널은 slug 열을 빼고, 한글·영어 제목을 표시 폭으로 맞추며, 좁으면 제목을 자르기 전에 경과 시간과 개수부터 뺍니다. setgoal 프롬프트에 "검사는 종료 코드로 통과/실패" 규칙이 들어갔습니다.
