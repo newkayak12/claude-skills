@@ -1,6 +1,6 @@
 {
   "name": "session",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "description": "Claude Code session panes, guards, memo, compact, handoff, timing, and session board features. Its Claude hook module is disabled in Codex.",
   "author": {
     "name": "newkayak12"

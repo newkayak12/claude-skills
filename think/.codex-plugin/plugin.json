@@ -1,6 +1,6 @@
 {
   "name": "think",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Thinking and ideation skills: mentor, brainstorming (with opt-in persona debate mode), grill, devils-advocate, redefine-problem, back-to-basics, untangle-thoughts, and negotiate. Its Claude hook module (/brainstorming-status pane) is disabled in Codex.",
   "author": {
     "name": "newkayak12"

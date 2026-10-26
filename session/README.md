@@ -160,6 +160,7 @@ One row per `git worktree list --porcelain` entry of this repo: branch (or detac
 When a `git push` to `main` goes through in one session (`origin main`, `HEAD:main`, `x:main`, or a plain push while on main), every other open session of the same repository that was active in the last 30 minutes gets a message: `main moved to <sha> … Fetch before editing or bumping versions.` At most one message per session every 2 minutes; this session gets a toast `main moved: told N of M`. Headless runs send nothing.
 
 ## Status
+- `0.9.3`: every pane, band and toast draws on terminal, desktop, mobile and vscode; `/session` answers in text where no pane draws; memo and hint toasts only when a surface exists.
 - `0.9.2`: smart-compact computes its % from the tokens and the context window, the formula behind the status line's `used_percentage`; `/smart-compact` shows the current %, the threshold and the token count.
 - `0.9.1`: `/reap-list` also reaps orphan daemons whose task lives under another task root, and hides the session that runs it.
 - `0.9.0`: `/reap-list` lists the teams drivers, daemons, judges and worktrees this machine still has for the repo, with age and live/finished, and reaps the finished ones in one action (by pid, never an unmerged branch); `node session/scripts/reap.mjs --list|--reap` does the same without the mod.
