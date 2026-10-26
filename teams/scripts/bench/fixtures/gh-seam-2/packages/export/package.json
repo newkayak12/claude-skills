@@ -1,0 +1,5 @@
+{
+  "name": "@gh-seam-2/export",
+  "type": "module",
+  "main": "src/index.mjs"
+}

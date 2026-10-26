@@ -1,0 +1,8 @@
+[
+  {
+    "what": "Which duplicate survives when two items share a key: the first or the last?",
+    "choice": "last",
+    "who": "asked",
+    "why": "The person was asked and said the newest record should win, so the last duplicate is kept."
+  }
+]

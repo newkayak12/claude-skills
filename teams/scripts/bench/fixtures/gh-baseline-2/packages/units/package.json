@@ -1,0 +1,5 @@
+{
+  "name": "@gh-baseline-2/units",
+  "type": "module",
+  "main": "src/index.mjs"
+}

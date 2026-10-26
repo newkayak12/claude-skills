@@ -1,0 +1,1 @@
+This small Node 22 project has a `mean` function in src/stats.mjs and its tests in test/stats.test.mjs, and `npm test` is red. Make `npm test` pass. The tests under test/ are the agreed specification and must not be edited. `mean` must stay the arithmetic mean of the numbers it is given (0 for an empty list).

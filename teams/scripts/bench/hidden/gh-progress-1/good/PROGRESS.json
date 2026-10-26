@@ -1,0 +1,5 @@
+[
+  { "step": "slugify", "stage": "done", "owner": "implementer", "state": "done", "next": "truncate" },
+  { "step": "truncate", "stage": "done", "owner": "implementer", "state": "done", "next": "wordcount" },
+  { "step": "wordcount", "stage": "done", "owner": "implementer", "state": "done", "next": "none" }
+]

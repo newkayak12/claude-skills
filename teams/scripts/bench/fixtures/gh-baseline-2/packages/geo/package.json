@@ -1,0 +1,5 @@
+{
+  "name": "@gh-baseline-2/geo",
+  "type": "module",
+  "main": "src/index.mjs"
+}

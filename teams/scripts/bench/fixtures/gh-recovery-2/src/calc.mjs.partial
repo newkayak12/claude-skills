@@ -1,0 +1,9 @@
+import { tokenize } from "./tokenize.mjs";
+
+// interrupted draft: only the number case was written
+export function evaluate(expr) {
+  const t = tokenize(expr);
+  let i = 0;
+  function primary() {
+    const x = t[i++];
+    if (/^\d+$/.test(x)) return Number(x);

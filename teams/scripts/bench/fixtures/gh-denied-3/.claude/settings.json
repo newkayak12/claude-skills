@@ -1,0 +1,5 @@
+{
+  "permissions": {
+    "deny": ["Read(private/**)", "Bash(cat private/*)", "Bash(cat ./private/*)"]
+  }
+}
