@@ -52,13 +52,12 @@ toasts).
 
 ### Repo and rules
 
-47. **Split write:plans into requirements, PRD and ADR skills, mounted in teams** — E-e80fea64 partial (shape); F2 in E-c80fa0ea, F1 in E-1515b84f (ac84b75b), F3 — in E-0e4ef843
-    - F1 left open: the fictional brief and its full output are not kept inline in the run record; the
-      step-8 pointer to write:plans steps 4-5 was not exercised by a model with file tools.
-    - Why: user, 2026-10-17: "요건을 분석하고 분할하는 스킬도 하나 backlog에"; 2026-10-25: "write:plan을
-      prd, adr, 요구사항 분석으로 나누고 각각 핏하게 해서 teams에 넣고"; approved "진행하자".
-    - Design: `_repo/docs/plans/2026-10-25-split-write-plans.md` (all three in `write`).
-    - Acceptance: the design doc's done criteria 1-5.
+79. **write:requirements says which gap and ambiguity checks it ran**
+    - Why: 2026-10-26, card 47's real run (E-1fdeb52d, fictional 책 대여 기획서) found ambiguous rules and
+      missing exception paths, but never named the write:plans Process steps 4-5 its step 8 points to, so
+      whether it followed the pointer is inferred only.
+    - Acceptance: the Output Template has a line naming the checks run (gap, ambiguity) with their count;
+      one real run shows it.
 
 48. **graph + harness into teams (plan: `_repo/docs/plans/2026-10-17-graph-harness-into-teams.md`)**
     - Why: user, 2026-10-17: "결과적으로 하위호환을 위해서 harness, graph를 두지만 (stable) 장기적인
@@ -88,6 +87,7 @@ toasts).
     - Why: 2026-10-25, E-2bb23da3 (card 72) fixed orphaned `hanging-driver.mjs`, but its goal gate noted the
       task daemon can still outlive a SIGKILLed test runner. The same day `node --test
       teams/scripts/test-taskmanager.mjs` failed 1 of 312 once, then passed 312/312 (test unverified).
+      Recurred 2026-10-26 (E-1fdeb52d gate): full suite 1482/1483 once, then 1482/1482; test not captured.
     - Acceptance: after a SIGKILLed `node --test teams/scripts/test-taskmanager.mjs`, no `daemon.mjs` of a
       `/tmp/tm-*` fixture is alive within a minute; five runs in a row pass 312/312.
 
@@ -203,3 +203,6 @@ toasts).
 | E-32e8068c | 2026-10-18 | 51 (teams), 45 | shipped by hand `8e3a7550` (P1's gate could not re-run tests: card 39); teams suite 1265, 0 fail; $41 |
 | E-6ab58cc6 | 2026-10-18 | 40, 43 | running |
 | E-5ad30c36 → E-f169fb8c | 2026-10-18 → 21 | 54 step 1 | P1+P2 accepted; P3 (real run) failed 3× because the run's evidence was deleted before gates could read it; merged by hand `666b7283`, run by hand; $43.7 |
+| E-c80fa0ea, E-1515b84f, E-0e4ef843 → E-1fdeb52d | 2026-10-25 → 26 | 47 | shipped `f5d6cc63`, `ac84b75b`, `a2fdad3d`; size S ×4 (E-0e4ef843 stopped at implement, finished by E-1fdeb52d); teams 1482/1482; four routing probes match |
+| E-2bb23da3 | 2026-10-25 | 71, 72, 73 | shipped `d0b8f470`; size S; gaps → cards 77, 78 |
+| E-3f6657e7 | 2026-10-26 | 75 (part) | shipped `6d5809b2`; size S; large-context live check left on card 75 |
