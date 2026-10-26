@@ -26,12 +26,12 @@ Not for: a settled conversation to write down (`write:spec`); a spec with accept
 5. **Write the open questions.** Sources: "추후 협의", "TBD", "기획 확인 필요", an unstated rule, a missing exception from step 4. Each has an assumed default and a suggested owner. Wherever a criterion rests on one, it carries the same point as `[확인 필요] <assumed default>`.
 6. **Split into items.** Name them F1, F2, ... in item order. Each has a one-sentence outcome. The independence test: each item's criteria can be checked without another item's output. An item that needs another item's result names it in a `depends on` line.
 7. **Write the criteria.** Per item, `F<n>-AC-n: Given ... When ... Then ...`. Number F<n>-AC-1, F<n>-AC-2, ... unique across the whole analysis and in document order, so every full id matches `/\b(?:F\d+-)?AC-\d+\b/g`.
-8. **Gap and ambiguity check.** Run `write/skills/plans/SKILL.md` Process step 4 ("Gap check, in-line") and step 5 ("Ambiguity check, in-line") over the items and criteria; they are not restated here.
+8. **Gap and ambiguity check.** Run `write/skills/plans/SKILL.md` Process step 4 ("Gap check, in-line") and step 5 ("Ambiguity check, in-line") over the items and criteria; they are not restated here. Name both checks with the count each found (`0` when none) on the `Checks run:` line.
 9. **Stop at the analysis.** The item split is the only decomposition. Write no code, no implementation plan, no tasks and no tickets.
 
 ## Output Template
 
-In the input's language, with English section headings. Saved to the path the caller names, otherwise `docs/requirements/YYYY-MM-DD-<topic>.md`. Four parts, so a teams node can place them as one section of a findings file:
+In the input's language, with English section headings. Saved to the path the caller names, otherwise `docs/requirements/YYYY-MM-DD-<topic>.md`. Four parts and a closing `Checks run:` line, so a teams node can place them as one section of a findings file:
 
 ```markdown
 ## Actors
@@ -48,6 +48,8 @@ In the input's language, with English section headings. Saved to the path the ca
 depends on: <F<n> | none>
 - F1-AC-1: Given ... When ... Then ...
 - F1-AC-2: Given ... When ... Then ... [확인 필요] <assumed default>
+
+Checks run: gap (write:plans step 4) <n> found; ambiguity (write:plans step 5) <n> found
 ```
 
 ## What Claude Does / What You Do

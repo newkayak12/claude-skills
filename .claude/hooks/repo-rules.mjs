@@ -5,8 +5,9 @@
 //   bash:  `git push` and the version-bump scripts are denied while a teams task for this repo
 //          (main checkout or any linked worktree) holds the push, i.e. its daemon is not done, or
 //          is done without a report, and tm_clean has not run; otherwise they ask first, only in an attended session
-//          (CLAUDE_CODE_SESSION_ATTENDED=1); the repo checked is the one the push targets (a leading
-//          `cd <path> &&|;` and `git -C <path>` resolved from cwd, else cwd); `git commit` with a staged README.md and no staged
+//          (CLAUDE_CODE_SESSION_ATTENDED=1); the repo checked is the one the push targets (every
+//          `cd <path>` segment before the push, joined by `&&`, `||`, `;` or `|`, applied in order from cwd,
+//          then `git -C <path>` relative to that; `~` and `~/x` expanded with $HOME, else cwd); `git commit` with a staged README.md and no staged
 //          KOR.md beside it gets a systemMessage.
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
@@ -75,23 +76,48 @@ function openTasks(root, env = process.env, run = git) {
   return open
 }
 
-// The directory a command works in: a leading `cd <path> &&|;` moves the base from cwd, then each
-// `git [-c k=v] -C <path> ... push` moves it again (relative to the previous). Paths in quotes or bare.
+// The directory a command works in: the command is split at `&&`, `||`, `;`, `|` (outside quotes);
+// each `cd <path>` segment before the push moves the base from cwd, in order, then each
+// `git [-c k=v] -C <path> ... push` moves it again (relative to the previous). Paths in quotes or
+// bare; a leading `~` or `~/x` is expanded with env.HOME.
 const unquote = s => s.replace(/^(["'])(.*)\1$/, '$2')
-function targetDir(cmd, cwd) {
+const tilde = (s, env) => env.HOME && (s === '~' || s.startsWith('~/')) ? join(env.HOME, s.slice(1)) : s
+function segments(cmd) {
+  const out = []
+  let cur = '', q = ''
+  for (let i = 0; i < cmd.length; i++) {
+    const c = cmd[i]
+    if (q) { if (c === q) q = ''; cur += c; continue }
+    if (c === '"' || c === "'") { q = c; cur += c; continue }
+    if (c === ';' || c === '&' || c === '|') {
+      out.push(cur); cur = ''
+      if (cmd[i + 1] === c && c !== ';') i++
+      continue
+    }
+    cur += c
+  }
+  out.push(cur)
+  return out
+}
+function targetDir(cmd, cwd, env = process.env) {
   let dir = cwd
-  const cd = cmd.match(new RegExp(String.raw`^\s*cd\s+(${ARG})\s*(?:&&|;)`))
-  if (cd) dir = resolve(dir, unquote(cd[1]))
-  const g = cmd.match(new RegExp(GIT_PUSH))
-  if (g) for (const c of g[1].matchAll(new RegExp(String.raw`-C\s+(${ARG})`, 'g'))) dir = resolve(dir, unquote(c[1]))
+  for (const seg of segments(cmd)) {
+    const g = seg.match(new RegExp(GIT_PUSH))
+    if (g) {
+      for (const c of g[1].matchAll(new RegExp(String.raw`-C\s+(${ARG})`, 'g'))) dir = resolve(dir, tilde(unquote(c[1]), env))
+      break
+    }
+    const cd = seg.match(new RegExp(String.raw`^\s*cd\s+(${ARG})\s*$`))
+    if (cd) dir = resolve(dir, tilde(unquote(cd[1]), env))
+  }
   return dir
 }
 
 // Top level of the repo a command targets. When that directory is not a git checkout (or git fails
 // there) it falls back to cwd's top level: the old behaviour, so the hold fails closed. A failure
 // on cwd itself throws and the caller fails open.
-function targetRoot(cmd, cwd, run) {
-  try { return run(targetDir(cmd, cwd), ['rev-parse', '--show-toplevel']).trim() || run(cwd, ['rev-parse', '--show-toplevel']).trim() } catch { /* fall back */ }
+function targetRoot(cmd, cwd, run, env) {
+  try { return run(targetDir(cmd, cwd, env), ['rev-parse', '--show-toplevel']).trim() || run(cwd, ['rev-parse', '--show-toplevel']).trim() } catch { /* fall back */ }
   return run(cwd, ['rev-parse', '--show-toplevel']).trim()
 }
 
@@ -106,7 +132,7 @@ export function decide(mode, input, env, run = git) {
     const cmd = input.tool_input?.command
     if (input.tool_name !== 'Bash' || typeof cmd !== 'string') return {}
     if (ASK.test(cmd)) {
-      const held = openTasks(targetRoot(cmd, cwd, run), env, run)
+      const held = openTasks(targetRoot(cmd, cwd, run, env), env, run)
       if (held.length) {
         return {
           hookSpecificOutput: {
