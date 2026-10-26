@@ -12,7 +12,11 @@
 #                  so `skills_used` can be something other than the graceful "none" fallback —
 #                  measures whether the mounted skills change the outcome, not the engine itself
 #           stable graph 1.x (single graph run), skill graph:orchestrate
-#           none   no plugin — plain claude -p on the same request (baseline)
+#           graph-harness  the graph plugin at $REPO/graph (the checkout under test), skill
+#                  graph:orchestrate, same prompt as stable
+#           graph-base     graph as of commit 5abee21c, extracted by `git archive` into
+#                  $OUT/<case>-graph-base-<label>.plugin (outside the workspace), same prompt
+#           none  no plugin — plain claude -p on the same request (baseline)
 #           sprint teams, skill teams:sprint: the case's requests/<case>.backlog.txt (one item per
 #                  line, priority = line order) opened as requests[] with the box SPRINT_BOX names
 #                  in the user's words (default "a budget of 6 dollars"). SPRINT_FROM=<workspace of
@@ -41,6 +45,9 @@
 #                      exclusive rate-limit boundary, idempotent replay, a stable priority tie-break, an atomic
 #                      state-file write under a mid-write kill, invocation invariance, clock injection across a
 #                      DST transition, and an "already exists" success-not-error exit code; size L
+#           gh-<slug>-<n>  a row of cases.tsv (fixture, request file, hidden check): the workspace is
+#                      seeded from the row's fixture, the request text is REQ, and the result comes
+#                      from ghscore.mjs (hidden/ is never copied into the workspace)
 #
 # BENCH_VIA=run drives the teams arms (beta/betas/skills) through `teams run` (scripts/run.mjs
 #   --resume-on-limit) instead of a `claude -p` session: no session in the loop, usage limits
@@ -59,8 +66,8 @@
 # `timeout` is not available on macOS; a run ends when the session does.
 set -euo pipefail
 
-ARM=${1:?arm: beta|betas|skills|stable|none|sprint}
-CASE=${2:?case: code|docs|code-flat|docs-flat|goal-code|goal-docs|seam|seam-flat|seam-silent|trap|idol|awake}
+ARM=${1:?arm: beta|betas|skills|stable|graph-harness|graph-base|none|sprint}
+CASE=${2:?case: code|docs|code-flat|docs-flat|goal-code|goal-docs|seam|seam-flat|seam-silent|trap|idol|awake|gh-<slug>-<n>}
 LABEL=${3:-$(date +%Y%m%d-%H%M%S)}
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../../.." && pwd)
@@ -80,6 +87,15 @@ case "$CASE" in
   trap)      FIX=trap-mono ;;     # 3 workspace packages (core/queue/cli), 8 execution-only traps -> size L
   idol)      FIX=empty ;;         # empty repo, one-line product goal: planning -> shape -> critique
   awake)     FIX=empty-swift ;;   # empty repo, one-paragraph product ticket: planning -> Swift packages
+  gh-*)
+    # cases.tsv columns: id axis slug request fixture check status. The check lives under hidden/
+    # and is read by ghscore.mjs only; the workspace is seeded from the fixture alone.
+    GH_ROW=$(awk -F'\t' -v id="$CASE" '$1 == id {print $4 "\t" $5 "\t" $6; exit}' "$HERE/cases.tsv")
+    [ -n "$GH_ROW" ] || { echo "unknown case $CASE" >&2; exit 2; }
+    IFS=$'\t' read -r GH_REQ GH_FIX GH_CHECK <<< "$GH_ROW"
+    FIX=${GH_FIX#fixtures/}
+    # The judge's cwd is the workspace: its path must not name the arm. Opaque and stable per arm+label.
+    WS="$OUT/$CASE-$(printf '%s' "$ARM-$LABEL" | sha256sum | cut -c1-10)" ;;
   *) echo "unknown case $CASE" >&2; exit 2 ;;
 esac
 
@@ -117,7 +133,7 @@ git -C "$WS" add -A
 git -C "$WS" commit -q -m seed
 fi
 
-REQ=$(cat "$HERE/requests/$CASE.txt")
+if [[ "$CASE" == gh-* ]]; then REQ=$(cat "$HERE/$GH_REQ"); else REQ=$(cat "$HERE/requests/$CASE.txt"); fi
 ROUTING='Pass host_vendor "claude", the model you are actually running as host_model, and the native models you can select as native_models.'
 # The monorepo fixtures measure S on their own (one test script, one commit): the second
 # round's size agents said so with sound reasons. The beta arm therefore carries the user's
@@ -165,6 +181,17 @@ $BACKLOG"
   stable)
     PLUGIN=(--plugin-dir "$REPO/graph")
     PROMPT="Use the graph:orchestrate skill to run the following request through the harness. Follow the skill exactly: start with graph_open, drive the loop to the end, and end with the skill's output template. $ROUTING Request: $REQ" ;;
+  graph-harness)
+    PLUGIN=(--plugin-dir "$REPO/graph")
+    PROMPT="Use the graph:orchestrate skill to run the following request through the harness. Follow the skill exactly: start with graph_open, drive the loop to the end, and end with the skill's output template. $ROUTING Request: $REQ" ;;
+  graph-base)
+    # graph as of commit 5abee21c, outside the workspace and the plugin tree (Claude Code denies
+    # Write/Edit under a loaded --plugin-dir); one copy per run so parallel runs never share it.
+    BASE_DIR="$WS.plugin"
+    rm -rf "$BASE_DIR"; mkdir -p "$BASE_DIR"
+    git -C "$REPO" archive 5abee21c -- graph | tar -x -C "$BASE_DIR"
+    PLUGIN=(--plugin-dir "$BASE_DIR/graph")
+    PROMPT="Use the graph:orchestrate skill to run the following request through the harness. Follow the skill exactly: start with graph_open, drive the loop to the end, and end with the skill's output template. $ROUTING Request: $REQ" ;;
   none)
     PROMPT="Complete the following request in this repository. Work until it is fully done and verified; do not stop to ask questions. Request: $REQ" ;;
   *) echo "unknown arm $ARM" >&2; exit 2 ;;
@@ -176,6 +203,7 @@ OUTB=$WS; [ -n "${PRIOR_TASK:-}" ] && OUTB="$WS.next"
 # (graph v1.5.7's danger-full-access answer for a host whose bubblewrap cannot start) from here.
 [ -n "${BENCH_POLICY:-}" ] && PROMPT="$PROMPT The user asked for this routing: pass policy: $BENCH_POLICY in tm_open."
 echo "$(date -u +%FT%TZ) start $ARM/$CASE -> $WS" | tee "$OUTB.start.txt"
+T0=$(date +%s)
 set +e
 if [ "${BENCH_VIA:-session}" = run ] && [[ "$ARM" == beta || "$ARM" == betas || "$ARM" == skills ]]; then
   # BENCH_VIA=run (drive.sh's default for the teams arms): no model session in the loop at all
@@ -198,14 +226,21 @@ if [ "${BENCH_VIA:-session}" = run ] && [[ "$ARM" == beta || "$ARM" == betas || 
 else
 ( cd "$WS" && HARNESS_TASKS_DIR="$WS/.harness-tasks" env -u CLAUDECODE claude -p \
     --setting-sources project ${PLUGIN[@]+"${PLUGIN[@]}"} --dangerously-skip-permissions \
-    --output-format stream-json --verbose "$PROMPT" < /dev/null \
+    --model "${BENCH_MODEL:-sonnet}" --output-format stream-json --verbose "$PROMPT" < /dev/null \
     > "$OUTB.stream.jsonl" 2> "$OUTB.stderr.txt" )
 EXIT=$?
 fi
 set -e
 echo "$(date -u +%FT%TZ) exit $EXIT" >> "$OUTB.start.txt"
 
-node "$HERE/score.mjs" "$CASE" "$WS" "$OUTB.stream.jsonl" | tee "$OUTB.score.txt"
+if [[ "$CASE" == gh-* ]]; then
+  # One run is one arm; ghscore.mjs compares two arms per problem. Append this run's record to
+  # $OUT/$CASE.runs.jsonl and score the pair once both arms are in: node ghscore.mjs $OUT/$CASE.runs.jsonl
+  node "$HERE/ghscore.mjs" record "$CASE" "$ARM" "$LABEL" "$WS" "$OUTB.stream.jsonl" "$(( $(date +%s) - T0 ))" | tee -a "$OUT/$CASE.runs.jsonl" > "$OUTB.score.txt"
+  cat "$OUTB.score.txt"
+else
+  node "$HERE/score.mjs" "$CASE" "$WS" "$OUTB.stream.jsonl" | tee "$OUTB.score.txt"
+fi
 # Keep what the run found once /tmp is gone: summary + failure records under
 # ~/.local/share/teams-runs/<label>/ (TEAMS_RUNS_DIR), read across runs by triage.mjs.
 # Re-run harvest.mjs by hand if the daemon outlived this session.
