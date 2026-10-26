@@ -69,7 +69,10 @@ toasts).
 
 ### teams plugin bugs
 
-76. **A large PRD shapes into packages without dropping or double-owning anything**
+76. **A large PRD shapes into packages without dropping or double-owning anything** — part in ff3d9073
+    (E-d93aa063): placeholder/bare-id refusal, `teams/mcp/shapecheck.mjs` pre-check, one full retry list;
+    card 47's PRD through it reproduces all three shape failures. Left: a model-driven size-L rerun that
+    shapes on the first or second attempt (next size-L Sprint counts).
     - Why: 2026-10-25, card 47 failed at shape in two size-L tasks, 3 of 3 attempts each: E-c557fd66 left
       F3-AC-37 in no package; E-e80fea64 left F3-AC-21 out, then gave two packages the same paths
       (write plugin.json, marketplace.json, prd/SKILL.md, plans/SKILL.md, tech-book/SKILL.md, trophy
@@ -209,4 +212,6 @@ toasts).
 | E-23b35fe3, E-0baf8e75 | 2026-10-26 | 74 (tests) | shipped `55e2dcc3`, `bfe0022c`; size S ×2; part A blocked only on the shared-checkout scope check (card 81) |
 | E-d9a9ede4 | 2026-10-26 | 78, 79, 80 | shipped `dbade549`; size S; repo-rules 80 ok, teams mod 361; q closes the empty pane, seen live |
 | E-53a84277 | 2026-10-26 | 81 (part), 77 | shipped `747e9306`; size S; teams 1492/1492 (5× taskmanager 315/315); flaky test named: judge-stream cleanup `ENOTEMPTY` (cause inferred) |
+| E-82cdb580 | 2026-10-26 | 48 Task 5 | shipped `df102aa5`; size S; AXES.md sha256 9580dbfd…; 27 problems, bench 52/52 |
+| E-d93aa063 | 2026-10-26 | 76 (part) | shipped `ff3d9073`; size S; teams 1513/1513 |
 | E-3f6657e7 | 2026-10-26 | 75 (part) | shipped `6d5809b2`; size S; large-context live check left on card 75 |
