@@ -104,6 +104,9 @@ toasts).
       `used_percentage` leaves that formula at large context is unverified. Left: the live check at ≥ 200k
       tokens (steps in `~/.harness/tasks/3f6657e7-*/harness-report.md`, copied: compare `ctx:N%` with
       `/smart-compact` at a turn end, then `/smart-compact 10` and `/smart-compact log`).
+    - 2026-10-26 02:48, this session at 176,919 tokens: the status line's input read `used_percentage: 18`
+      on a 1,000,000 window — the formula holds at 177k; threshold 30, so no fire was correct. User said
+      "스마트 컴팩트 또안됐음"; which session and number they saw is unverified.
     - Why: user, 2026-10-25: "smart-compact 발동 시점 정리 한 번 더 하자 지금 이세션 40인거보면" — the
       person read about 40 while smart-compact's own log for the session said 21% at 09:32 against a 30%
       threshold, so it never fired. The last response's input was 225,153 tokens: smart-compact divides by
