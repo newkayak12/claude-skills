@@ -9,6 +9,9 @@
 
 // A test task must not land in the real run archive (mcp/runlog.mjs); spawned daemons inherit this.
 process.env.TEAMS_RUNS_DIR ??= 'off';
+// Fixture daemons are detached and outlive a SIGKILLed or timed-out runner; with this set, daemon.mjs
+// watches the pid and exits once it is gone. Inherited by every fixture spawn.
+process.env.HARNESS_TEST_RUNNER_PID = String(process.pid);
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
@@ -4939,7 +4942,10 @@ test('a judge call leaves its stream under drivers/, so budget and the report co
       }
     } catch { /* no ledger */ }
     killDriversIn(drv);
-    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    // Flaky cause (seen once in the full teams suite, ENOTEMPTY on this rmSync): the just-closed
+    // manager or the just-killed daemon is still writing into root for a moment when the machine is
+    // loaded by the other test files, so ten 200 ms retries ran out. A longer retry budget only.
+    rmSync(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
     rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     rmSync(drv, { recursive: true, force: true });
   }
@@ -9194,4 +9200,94 @@ after(async () => {
   for (let n = 0; found.length && n < 30; n++) { await new Promise((r) => setTimeout(r, 100)); found = leaked(); }
   for (const f of found) { try { process.kill(f.pid, 'SIGKILL'); } catch { /* gone */ } }
   assert.deepEqual(found, [], `fixture driver left running after the suite: ${found.map((f) => `pid ${f.pid} (${f.script})`).join(', ')}`);
+});
+
+// Scope baseline and the shared size-S checkout warning (card 81).
+test('S1 scope: a size-S open records the baseline of pre-dirty paths, and the harness prompt excludes them', async () => {
+  const f = driverFixture({}, FAKE_DRIVER_RESPAWN);
+  writeFileSync(join(f.cwd, 'pre-dirty.txt'), 'already here\n');
+  const tm = await f.client.init();
+  try {
+    const { task_id } = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small', cwd: f.cwd, vendor: 'self', size: 'S' });
+    const task = readTask(f.root, task_id);
+    const bp = task.harness_run.baseline_path;
+    assert.ok(bp && existsSync(bp), JSON.stringify(task.harness_run));
+    const base = JSON.parse(readFileSync(bp, 'utf8'));
+    assert.ok(Object.hasOwn(base, 'pre-dirty.txt'), JSON.stringify(base));
+    assert.equal(task.harness_run.baseline_count, Object.keys(base).length);
+    const ran = await waitFor(() => (existsSync(`${f.ran}.1`) ? JSON.parse(readFileSync(`${f.ran}.1`, 'utf8')) : null), 'the harness driver to run');
+    const prompt = ran.argv[ran.argv.length - 1];
+    assert.match(prompt, /counts only the paths you touched/);
+    assert.ok(prompt.includes(bp), 'the prompt names the baseline file');
+    // the scope result: the pre-dirty path is excluded, a new one is counted
+    writeFileSync(join(f.cwd, 'new-edit.txt'), 'mine\n');
+    const out = spawnSync('node', [join(dirname(fileURLToPath(import.meta.url)), 'scope.mjs'), 'touched', '--cwd', f.cwd, '--baseline', bp], { encoding: 'utf8' });
+    const paths = out.stdout.split('\n').filter(Boolean);
+    assert.ok(paths.includes('new-edit.txt'), out.stdout + out.stderr);
+    assert.ok(!paths.includes('pre-dirty.txt'), out.stdout);
+  } finally { tm.close(); rmSync(f.cwd, { recursive: true, force: true }); rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('S1 shared checkout: a second size-S open on one cwd warns naming the first, still opens; other cwd or a finished task does not warn', async () => {
+  const cwd = repo();
+  const other = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
+  const open = (c, tool = 'tm_open') => tm.call(tool, { roles: { qa: false }, brainstorm: false, request: 'small request', cwd: c, vendor: 'self', size: 'S' });
+  const warned = (r) => (r.notes || []).filter((n) => /share this checkout/.test(n));
+  try {
+    const first = await open(cwd);
+    assert.equal(warned(first).length, 0, 'the first open has nobody to share with');
+    const second = await open(cwd);
+    assert.ok(second.task_id, 'the open still succeeds');
+    assert.equal(warned(second).length, 1, JSON.stringify(second.notes));
+    assert.ok(warned(second)[0].includes(first.task_id), warned(second)[0]);
+    assert.ok(!warned(second)[0].includes(second.task_id));
+    const viaRun = await open(cwd, 'tm_run');
+    assert.ok(viaRun.task_id);
+    assert.ok(warned(viaRun)[0].includes(first.task_id) && warned(viaRun)[0].includes(second.task_id), JSON.stringify(viaRun.notes));
+    assert.equal(warned(await open(other)).length, 0, 'a different cwd does not warn');
+    for (const id of [first.task_id, second.task_id, viaRun.task_id]) {
+      const p = join(root, id, 'task.json');
+      writeFileSync(p, JSON.stringify({ ...JSON.parse(readFileSync(p, 'utf8')), cancelled: true }));
+    }
+    assert.equal(warned(await open(cwd)).length, 0, 'finished tasks do not warn');
+  } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(other, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a fixture daemon exits on its own once the test runner named in HARNESS_TEST_RUNNER_PID is gone', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const drv = mkDrvDir();
+  const hang = join(drv, 'hanging-driver.mjs');
+  writeFileSync(hang, HANGING_DRIVER_SRC);
+  // A pid that was a real process a moment ago: the "runner" that died without cleaning up.
+  const deadPid = spawnSync('node', ['-e', '0']).pid;
+  const tm = await new Client(TM, {
+    HARNESS_TASKS_DIR: root,
+    HARNESS_JUDGE_DRIVER: `node ${hang}`,
+    HARNESS_CHILD_DRIVER: `node ${hang}`,
+    HARNESS_TEST_RUNNER_PID: String(deadPid),
+    CLAUDECODE: '1',
+  }).init();
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return !!(e && e.code === 'EPERM'); } };
+  let daemonPid = null;
+  try {
+    await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'a request whose daemon outlives nothing', cwd, vendor: 'self' });
+    daemonPid = await waitFor(() => {
+      for (const line of readFileSync(join(root, readdirSync(root)[0], 'ledger.jsonl'), 'utf8').split('\n')) {
+        const e = line.trim() ? JSON.parse(line) : null;
+        if (e && e.event === 'daemon_spawned') return e.pid;
+      }
+      return null;
+    }, 'the daemon to be spawned', 30000);
+    await waitFor(() => !alive(daemonPid), 'the daemon to exit with its runner gone', 15000);
+  } finally {
+    tm.close();
+    if (daemonPid) { try { process.kill(daemonPid, 'SIGKILL'); } catch { /* gone */ } }
+    killDriversIn(drv);
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    rmSync(drv, { recursive: true, force: true });
+  }
 });
