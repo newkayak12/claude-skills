@@ -52,7 +52,7 @@ toasts).
 
 ### Repo and rules
 
-47. **Split write:plans into requirements, PRD and ADR skills, mounted in teams** — E-e80fea64 partial (shape); F2 in E-c80fa0ea, F1 in E-1515b84f (ac84b75b), then F3
+47. **Split write:plans into requirements, PRD and ADR skills, mounted in teams** — E-e80fea64 partial (shape); F2 in E-c80fa0ea, F1 in E-1515b84f (ac84b75b), F3 — in E-0e4ef843
     - F1 left open: the fictional brief and its full output are not kept inline in the run record; the
       step-8 pointer to write:plans steps 4-5 was not exercised by a model with file tools.
     - Why: user, 2026-10-17: "요건을 분석하고 분할하는 스킬도 하나 backlog에"; 2026-10-25: "write:plan을
@@ -97,7 +97,7 @@ toasts).
     - Acceptance: `_repo/scripts/test-repo-rules.mjs` cases for those three forms, each held or allowed by
       the repo it really pushes.
 
-75. **smart-compact fires on the same context % the person sees in the status line**
+75. **smart-compact fires on the same context % the person sees in the status line** — in E-3f6657e7
     - Why: user, 2026-10-25: "smart-compact 발동 시점 정리 한 번 더 하자 지금 이세션 40인거보면" — the
       person read about 40 while smart-compact's own log for the session said 21% at 09:32 against a 30%
       threshold, so it never fired. The last response's input was 225,153 tokens: smart-compact divides by
