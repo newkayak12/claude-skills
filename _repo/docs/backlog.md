@@ -156,6 +156,14 @@ toasts).
     - Acceptance: with the session open in the app, `/teams-status` shows the EPIC list there (the pane on a
       surface that draws it, else the `view.mjs --once` text as the command's answer); `claude plugin test`
       mounts the pane on `desktop` and `mobile`; the terminal pane is unchanged.
+    - Why: live look failed 2026-10-26, phone (Claude app over Remote Control). User: "씨발 안나오네",
+      "리모트로 안나오잖아", "제대로 안만든거 뭐냐". The phone shows only `teams: pane opened` — no pane, no board
+      text. The text fallback (`wantsStatusText`, `teams/hooks/pane.ts:50`) fires only when a non-terminal
+      surface is in `$.session.surfaces()`, and the app was not in that roster, so the same symptom as
+      2026-10-25 shipped unchanged. Why the app does not attach (no `session.attach`) is unverified.
+    - Acceptance: over Remote Control, `/teams-status` puts the board on the phone even when the app is
+      not an attached surface (the fallback does not hang on `surfaces()` alone); proved by a phone
+      screenshot, not by `claude plugin test` mounts.
 
 ### knowledge plugin
 
