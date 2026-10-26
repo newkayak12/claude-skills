@@ -21,6 +21,8 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
       center), revfactory.github.io/harness-animation (numbered stage pipeline, fan-out/fan-in, polished
       cards). Mod API 2.1.310: `desktop`, `mobile`, `vscode` carry `Svg`; terminal carries `Raster`/`Image`/`Client`.
       Prerequisite: the app must attach as a surface (`session.attach`); it did not over Remote Control (card 74).
+      User, same day: "캐릭터를 그리라는 소리는 아냐 무조건 내가 준것같은 퀄리티 높은 UI를 제공하란거야 기본으로" —
+      no avatars; the references' quality is the default bar for every mod UI, not an option.
     - Acceptance: a design doc with the demo render approved by the user first (`mod.md` UI rule 0);
       terminal pane = EPIC tabs, node pipeline with state and timers, STORY kanban, stats (cost, budget,
       drivers), activity log, waiting-ask line; desktop/mobile/vscode = the same data as an Svg pipeline
