@@ -5,6 +5,7 @@
 `teams` 플러그인의 모든 릴리스를 최신순으로 적었습니다. 예전 KOR.md의 `## 상태` 절을 그대로 옮겨 온 것입니다. 새 릴리스 줄은 `teams:patch`가 아래 `## 상태` 맨 위에 추가합니다.
 
 ## 상태
+- v0.60.1 — /teams-status가 항상 보드 텍스트로 답해 Remote Control로 Claude 앱에서도 보입니다
 - v0.60.0 — 작업 나누기(shape)를 받기 전에 node로 검사합니다. 모든 완료 기준은 정확히 한 패키지에 들어가야 하고, 두 패키지가 같은 경로를 맡을 수 없으며, 재시도에는 문제 목록 전체가 한 번에 갑니다. plan-integrate는 자리표시 문구나 번호만 있는 완료 기준을 받지 않습니다. size-S 실행의 범위 검사는 자기가 바꾼 경로만 셉니다. 같은 체크아웃에서 다른 size-S 작업이 돌고 있으면 tm_open과 tm_run이 알려 줍니다. `/teams-status`가 터미널·데스크톱·모바일·vscode에서 그려지고, 패널을 그릴 수 없는 곳에서는 EPIC 목록을 글로 답합니다. 빈 패널도 q로 닫힙니다. 비교 실험: 미리 정한 비교 항목, 문제 27개, graph-harness·graph-base 비교군, 항목별 점수.
 - v0.59.3 — 기획 조사 단계에서 write:requirements도 돌립니다. PRD 초안(planning, planning-light, document)은 write:plans 대신 write:prd를, ADR·설계 리뷰는 write:adr를 씁니다. `teams:patch`가 `.codex-plugin/plugin.json` 버전도 같이 올립니다. 테스트용 driver는 테스트가 끝나면 같이 끝나고, 하나라도 남으면 테스트가 실패합니다.
 - v0.59.2 — ask 밴드가 이미 질문을 보여 주는 동안에는 상태 줄의 대기 표시를 숨깁니다. EPIC slug는 군더더기 단어 대신 카드와 주제로 이름을 짓습니다(`card-48-graph-harness-into-teams`).
