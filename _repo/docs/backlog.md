@@ -58,8 +58,12 @@ toasts).
     - Acceptance: the plan's Tasks 1–9 with their pass bars; after UI cards (user priority).
     - Tasks 2–4 merged 2026-10-25 (E-c5c109e3): critique rounds with severity, per-run `now` and run
       list order, goal gate and Codex fallback in graph; graph 281/281 (main was 200), goal gate all
-      passed. Tasks 5–6 (axes, problems, arm, one-problem dry run) — in E-53b9426b (user, 2026-10-25:
-      "하자하자"); the full 3× matrix runs after it from the session, under the driver cap.
+      passed. Tasks 5–6 (axes, problems, arm, one-problem dry run) — E-53b9426b (user, 2026-10-25:
+      "하자하자") shipped nothing: plan-integrate failed 3× on F1/F2 contradictions (slug `denied` vs
+      `denied-blocked`, cases.tsv status column, median-of-runs vs per-problem win count, `limit_hit`);
+      $17.21. Next: Task 5 alone as size S, then Task 6's arm and dry run; the full 3× matrix from the
+      session under the driver cap. Minimum effect sizes still placeholders (1 of 3 problems for axes 1-6,
+      1 field for 7-8, 20% for 9) — the run takes them as defaults and the report names them.
 
 ### Subagents and parallel runs — use and clean up (user, 2026-10-17)
 
