@@ -37,8 +37,8 @@
     },
     {
       "name": "write",
-      "description": "Writing skills: plans (one entry, purpose chosen at step 0 — gate-ready implementation plans with production-time gap/ambiguity checks + per-step pass bars and dual-mode; reader documents co-written section by section with reader testing; fixed-template design reviews and ADRs; technical blog posts; SBI feedback), spec (a settled conversation synthesised into a spec, open points marked, no re-interview), skill writing, and writer verification (v2 — five passes incl. a humanizer for machine tells, draft loop that rewrites until 🔴🟡 = 0, PR descriptions from a diff as first-class input), and tech-book (performance-based book arc, cumulative examples, transfer practice, six required teaching elements within a chapter length budget, staged review loops with defined severities, lab-running fact checks, pinned chapter end states and a cap closure pass, and PDF in bundled NanumGothic), diagram (checked self-contained SVG + PNG figures: page layout, B-tree, lock timeline, ER, chart, architecture, sequence; moved from develop). Knowledge-base, graph, RAG, and query skills moved to the knowledge plugin.",
-      "version": "1.13.1",
+      "description": "Writing skills: plans (gate-ready implementation plans and ticket breakdowns with production-time gap/ambiguity checks + per-step pass bars; technical blog posts; SBI feedback), prd (PRDs, design docs, RFCs and proposals co-written section by section with reader testing), adr (ADRs and fixed-template design reviews), requirements (a requirement or 기획서 split into actors, rules, open questions with defaults, and items with Given/When/Then criteria),spec (a settled conversation synthesised into a spec, open points marked, no re-interview), skill writing, and writer verification (v2 — five passes incl. a humanizer for machine tells, draft loop that rewrites until 🔴🟡 = 0, PR descriptions from a diff as first-class input), and tech-book (performance-based book arc, cumulative examples, transfer practice, six required teaching elements within a chapter length budget, staged review loops with defined severities, lab-running fact checks, pinned chapter end states and a cap closure pass, and PDF in bundled NanumGothic), diagram (checked self-contained SVG + PNG figures: page layout, B-tree, lock timeline, ER, chart, architecture, sequence; moved from develop). Knowledge-base, graph, RAG, and query skills moved to the knowledge plugin.",
+      "version": "1.14.0",
       "author": {
         "name": "newkayak12"
       },
@@ -116,7 +116,7 @@
     {
       "name": "portfolio",
       "description": "Portfolio and career skills: manage (the portfolio deck as one workflow — material, skeleton, feedback, deck, versions), material (collect handed material), fit (JD or company type), portfolio feedback, rewriting and JD tailoring, pattern analysis, mock interview, interview plan, job-application-workflow (through a 자기소개서 step via write:writer-verification), and deck-builder (reference template.pptx + deck.mdx → pptx; recolors a pptx to a brand palette).",
-      "version": "2.9.4",
+      "version": "2.10.0",
       "author": {
         "name": "newkayak12"
       },
@@ -169,7 +169,7 @@
     {
       "name": "teams",
       "description": "A sibling of graph for requests too big for one pass: a TaskManager MCP (task-manager) sizes the request; size L is planned into a PRD and user stories, split into packages that each run the full harness in their own worktree, integrated, QA'd and gated by a background daemon; size S is handed to the development harness. Entry skills teams:orchestrate/develop/document/plan/qa/sprint, board and ticket views (tm_board, teams:board). Runs are kept under .teams_output/ and ~/.harness/tasks/. Zero runtime dependencies beyond Node 18+.",
-      "version": "0.59.2",
+      "version": "0.59.3",
       "author": {
         "name": "newkayak12"
       },
@@ -193,7 +193,7 @@
     {
       "name": "session",
       "description": "What a session left behind and a safety net: a /session pane with files changed, commits, denied calls and the longest gap, a retro band on the next start, a safe stop for stray claude -p children, guards that confirm destructive commands and secret-file writes, /memo notes pinned to the model's context, /smart-compact (recap at a set context %, then compact), /handoff, /recap and /lessons from that recap, a /task timer and the session cost in the status line, a /board of every open session with its harness, graph and teams runs, and a message to the other sessions of a repo when main moves.",
-      "version": "0.9.1",
+      "version": "0.9.2",
       "author": {
         "name": "newkayak12"
       },
