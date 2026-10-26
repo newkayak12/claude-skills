@@ -6,6 +6,7 @@ import { appendLog, asLog, fmtLastCheck, fmtLog, fmtStats, LOG_KEY, patchLog } f
 import type { LogEntry, LogStats } from './compact-log.ts'
 import { corrections, fmtAgo, isFresh, lessonsKey, makeRecap, mergeLessons, RECAP_PROMPT, recapKey } from './recap.ts'
 import type { Recap } from './recap.ts'
+import { fmtContext, statusLinePercent } from '../scripts/context-logic.mjs'
 import { statusLine } from './status.ts'
 import { BOARD_OPEN } from './board.ts'
 import type { BoardTab } from './board.ts'
@@ -21,6 +22,12 @@ const MIN = 10
 const MAX = 95
 
 const thresholdOf = (options: PluginOptions) => Number(options[THRESHOLD_FIELD] ?? DEFAULT_THRESHOLD)
+
+// The context the status line shows (window and tokens through context-logic.mjs), not usage().context.percent.
+async function readContext($: any) {
+  const c = (await $.session.usage()).context
+  return statusLinePercent({ context_window_size: c?.window, total_input_tokens: c?.tokens })
+}
 let isRunning = false
 
 // The decision log: writes run one after another on one chain, so a pending→outcome patch and the next
@@ -115,10 +122,15 @@ export const register = (on: On, options: PluginOptions) => {
     const arg = e.args.trim().replace(/%$/, '')
     if (arg === 'log') return { text: fmtLog(await readLog($), (await $.clock.now()) as number) }
     if (!arg) {
+      let context = 'context unknown'
+      try {
+        context = fmtContext(await readContext($), current)
+      } catch {}
       const lines = [
         `recap + compact at ${current}%. Change it with /smart-compact <${MIN}-${MAX}>; /smart-compact log lists the checks.`,
         fmtLastCheck(await readLog($), (await $.clock.now()) as number),
         fmtStats(stats),
+        context,
       ]
       return { text: lines.join('\n') }
     }
@@ -181,7 +193,7 @@ export const register = (on: On, options: PluginOptions) => {
 
     let raw: number | undefined
     try {
-      raw = (await $.session.usage()).context.percent
+      raw = (await readContext($)).percent ?? undefined
     } catch (err) {
       logDecision($, null, threshold, `usage-failed:${firstLine(err)}`)
       throw err
@@ -202,7 +214,7 @@ export async function midTurnCheck($: any, e: { agentId?: string }, options: Plu
   turnEnded = false
   try {
     if (isRunning || (await $.session.surfaces()).length === 0) return
-    const raw = (await $.session.usage()).context.percent
+    const raw = (await readContext($)).percent ?? undefined
     const threshold = thresholdOf(options)
     const percent = raw ?? 0
     if (shouldCompactNow(percent, threshold, { isRunning, surfaces: 1 }) === 'run') startRecapThenCompact($, raw, percent, threshold)

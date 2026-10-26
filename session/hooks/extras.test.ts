@@ -20,7 +20,7 @@ const world = (on: any, w: { store?: Record<string, unknown>; percent?: number; 
   on('turn.complete', (_$: any, e: any) => ({ text: e.answer }))
   on('session.id', () => ({ value: 'sess-1' }))
   on('session.usage', () => ({
-    value: { startedAt: 0, context: { window: 100, tokens: 0, percent: w.percent ?? 0 }, rateLimits: [{ kind: '5h', percentUsed: 42 }], cost: { usd: w.cost ?? 1.234 } },
+    value: { startedAt: 0, context: { window: 100, tokens: w.percent ?? 0, percent: w.percent ?? 0 }, rateLimits: [{ kind: '5h', percentUsed: 42 }], cost: { usd: w.cost ?? 1.234 } },
   }) as never)
   on('model.fork', () => ({ value: { isAnswered: true, text: RECAP, usage: USAGE } }) as never)
   on('session.send', (_$: any, e: any) => {
