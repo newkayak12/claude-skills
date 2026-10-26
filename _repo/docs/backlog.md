@@ -116,7 +116,25 @@ toasts).
       line shows smart-compact's number), checked in one live session where both read the same at a turn
       end; `/smart-compact` prints the current %, the threshold and the token count behind them.
 
-74. **Every mod's UI draws on terminal, desktop, mobile and vscode (`mod.md` rule 8) — teams first**
+80. **The teams pane's empty view closes on q**
+    - Why: 2026-10-26, tmux at 190 columns, `claude --plugin-dir ./teams`: with no run, `/teams-status` draws
+      "No teams run in this session. / q close"; Esc and the command close it, q types into the prompt
+      instead (the pane with a run closes on q). Unchanged by card 74 (same code before 55e2dcc3).
+    - Acceptance: a test where the empty view closes on q; seen live in tmux.
+
+81. **Two size-S runs in one checkout do not fail each other's scope check**
+    - Why: 2026-10-26, E-23b35fe3 (card 74 part A) failed its U4 clean-scope check three times because
+      E-0baf8e75 (part B) was editing session/think/trophy in the same main checkout; part A's own work
+      passed (teams 357, graph 175, harness 199) and was committed by hand. Size S writes into the
+      checkout, so two at once share `git status`.
+    - Acceptance: a size-S scope check counts only paths its own run touched (or tm_open refuses a second
+      size-S task on a checkout that already has one live), with a test.
+
+74. **Every mod's UI draws on terminal, desktop, mobile and vscode (`mod.md` rule 8) — teams first** — tests in
+    55e2dcc3 (teams 357, graph 175, harness 199) and bfe0022c (session 699, think 53, trophy 149), all four
+    surfaces mounted; tmux 190/110 seen for the teams pane. Left: the live look in the Claude app over
+    Remote Control (steps in `~/.harness/tasks/{23b35fe3,0baf8e75}-*/harness-report.md`), demo approval,
+    README/KOR surface lines and shots.
     - Why (all mods): user, 2026-10-25: "얘 모든 mod로 그리는 UI는 모바일, 데스크탑, 다 대응할 수 있어야 해요".
       Scan the same day: graph, harness, session, teams, think and trophy tests mount `terminal` and at
       most `desktop`; none mounts `mobile` or `vscode` (6 of 6 mods).
