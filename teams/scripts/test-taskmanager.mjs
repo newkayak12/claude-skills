@@ -2640,6 +2640,95 @@ test('sdd: shape must carry every PRD AC-n into an implementing package\'s accep
   assert.deepEqual(validateShape({ ...base, packages: [pkg('P1', ['US-1'], ['AC-7 whatever']), pkg('P2', ['US-2'], ['b'])] }, plain), []);
 });
 
+// E-e80fea64: shape:3 had P4 and P6 both carry F2-AC-26 and the engine never said so; every
+// pre-check problem now arrives in one validateShape call.
+test('shape pre-check: an AC carried by two packages is refused, naming both', async () => {
+  const { validateShape } = await import('../mcp/taskmanager.mjs');
+  const stories = [
+    { id: 'F2-US-4', title: 'a', acceptance: ['F2-AC-1: Given x, When y, Then z'] },
+    { id: 'F2-US-5', title: 'b', acceptance: ['F2-AC-2: Given p, When q, Then r'] },
+  ];
+  const pkg = (id, impl, acceptance, enables = []) => ({ id, title: id, brief: 'b', acceptance, implements: impl, enables, touches: [`src/${id}`], deps: [] });
+  const out = validateShape({ acceptance: ['x'], packages: [
+    pkg('P4', ['F2-US-5'], ['F2-AC-2: Given p, When q, Then r']),
+    pkg('P5', ['F2-US-4'], ['F2-AC-1: Given x, When y, Then z']),
+    pkg('P6', [], ['F2-AC-2: Given p, When q, Then r'], ['F2-US-5']),
+  ] }, stories);
+  assert.match(out.join('; '), /carried by more than one package: F2-AC-2 \(P4, P6\)/);
+  const msg = out.find((p) => /carried by more than one package/.test(p));
+  assert.match(msg, /^PRD acceptance criteria carried by more than one package/);
+  assert.match(msg, /each AC-n belongs to exactly one package; move it out of all but the package that implements or enables its story/);
+  assert.equal(out.filter((p) => /missing from every implementing package/.test(p)).length, 0, JSON.stringify(out));
+});
+
+test('shape pre-check: three unassigned ACs and two path overlaps all arrive in one validateShape call', async () => {
+  const { validateShape } = await import('../mcp/taskmanager.mjs');
+  const stories = [
+    { id: 'F1-US-1', title: 'a', acceptance: ['F1-AC-1: Given x, When y, Then z'] },
+    { id: 'F1-US-2', title: 'b', acceptance: ['F1-AC-2: Given x, When y, Then z', 'F1-AC-3: Given x, When y, Then z', 'F1-AC-4: Given x, When y, Then z'] },
+  ];
+  const pkg = (id, impl, acceptance, touches) => ({ id, title: id, brief: 'b', acceptance, implements: impl, touches, deps: [] });
+  const out = validateShape({ acceptance: ['x'], packages: [
+    pkg('P1', ['F1-US-1'], ['F1-AC-1: Given x, When y, Then z'], ['src/a', 'lib/x']),
+    pkg('P2', ['F1-US-2'], ['it works'], ['src/a/b.ts', 'lib/x']),
+  ] }, stories);
+  const missing = out.filter((p) => /missing from every implementing package/.test(p));
+  assert.equal(missing.length, 1, JSON.stringify(out));
+  for (const id of ['F1-AC-2', 'F1-AC-3', 'F1-AC-4']) assert.ok(missing[0].includes(id), `${id} in ${missing[0]}`);
+  assert.ok(!missing[0].includes('F1-AC-1:'), 'the carried AC is not listed');
+  assert.equal(out.filter((p) => /both touch/.test(p)).length, 2, JSON.stringify(out));
+});
+
+test('shape pre-check: a refused shape is reshaped with the whole list once, from autoReshape and from tm_retry alike', async () => {
+  const { autoReshape } = await import('../mcp/taskmanager.mjs');
+  const overlapping = { acceptance: ['x'], packages: [
+    { id: 'P1', title: 'a', flow: 'develop', brief: 'b', acceptance: ['a'], touches: ['src/a', 'lib/x'], deps: [] },
+    { id: 'P2', title: 'b', flow: 'develop', brief: 'b', acceptance: ['b'], touches: ['src/a/b.ts', 'lib/x'], deps: [] },
+  ] };
+  const feedbacks = [];
+  for (const how of ['auto', 'retry']) {
+    await withTask(async ({ tm, root, task_id }) => {
+      await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop' }) });
+      const v = await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...overlapping, handoff: 's' }) });
+      assert.equal(v.state, 'failed', JSON.stringify(v));
+      let task = readTask(root, task_id);
+      const problems = task.nodes.find((n) => n.node_id === 'shape').result.shape_problems;
+      assert.equal(problems.length, 2, JSON.stringify(problems));
+      if (how === 'auto') assert.ok(withTasksRoot(root, () => inTx(task, autoReshape)));
+      else assert.equal((await tm.call('tm_retry', { task_id })).retried, true);
+      task = readTask(root, task_id);
+      const fb = task.nodes.find((n) => n.node_id === 'shape:2').feedback;
+      for (const p of problems) assert.equal(fb.split(p).length - 1, 1, `${p} exactly once in ${fb}`);
+      assert.ok(!fb.includes('unusable shape:'), fb);
+      feedbacks.push(fb);
+    });
+  }
+  assert.equal(feedbacks[0], feedbacks[1], 'tm_retry builds the same feedback as the engine');
+});
+
+test('shape pre-check: the shape briefing names the mechanical check only when the stories carry AC ids', async () => {
+  const briefOf = async (stories) => {
+    let text = '';
+    await withTask(async ({ tm, g, cwd, task_id }) => {
+      await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['x'], handoff: 'h' }) });
+      await completePlanning(tm, g, task_id, cwd, stories);
+      const nx = await tm.call('tm_next', { task_id });
+      const shape = nx.ready.find((r) => r.node_id === 'shape');
+      assert.ok(shape, JSON.stringify(nx.ready));
+      text = readFileSync(shape.briefing_path, 'utf8');
+    }, { roles: { planning: true } });
+    return text;
+  };
+  const withAc = await briefOf([
+    { id: 'F1-US-1', title: 'a', acceptance: ['F1-AC-1: Given x, When y, Then z'] },
+    { id: 'F1-US-2', title: 'b', acceptance: ['F1-AC-2: Given x, When y, Then z'] },
+  ]);
+  assert.match(withAc, /checked mechanically for three things: each AC id in exactly one package, no AC left out, and no path in two packages' touches\[\]/);
+  assert.match(withAc, /node \S*shapecheck\.mjs --prd \S+ --shape <draft json>/);
+  const plain = await briefOf(['F1-US-1', 'F1-US-2']);
+  assert.ok(!plain.includes('checked mechanically'), 'a PRD without AC ids is told nothing about it');
+});
+
 test('m8: shape may not name a develop package after a card; tm_ticket\'s refusal lists the cards', async () => {
   const { validateShape } = await import('../mcp/taskmanager.mjs');
   const pkg = (id) => ({ id, title: id, brief: 'b', acceptance: ['a'], touches: [id], deps: [] });
@@ -8585,6 +8674,50 @@ test('C4: story ids that collide across planning cards refuse the merge whatever
     const short = await tm.call('tm_submit', { task_id, node_id: 'shape', payload: ok({ ...SHAPE, packages: SHAPE.packages.map((p, i) => ({ ...p, implements: [['US-1', 'US-2'][i]] })), handoff: 's' }) });
     assert.equal(short.state, 'failed');
     assert.match(short.reason, /user stories not implemented by any package: F2-US-1/, 'implements[] must cover every story from every card');
+  });
+});
+
+test('C4: a story whose acceptance is a placeholder or a bare id list refuses the merge whatever the judge said, and its card goes back with the story id and the instruction', async () => {
+  const REAL = ['F1-AC-1: Given a signed-in user, When they open settings, Then the form shows their name.'];
+  const cases = [
+    ['placeholder', ['The F2-AC ids listed under F2-US-1 in the document, copied verbatim.'], /F2-US-1/],
+    ['bare id list', ['F2-AC-1', 'F2-AC-2'], /F2-AC-1/],
+  ];
+  for (const [label, bad, quoted] of cases) {
+    await withTask(async ({ tm, g, root, task_id }) => {
+      await twoCardsAccepted(tm, g, task_id, (id) => (id === 'PLAN-F2'
+        ? [{ id: 'F2-US-1', title: 'second', acceptance: bad }, { id: 'F2-US-2', title: 'third', acceptance: REAL }]
+        : [{ id: 'F1-US-1', title: 'first', acceptance: REAL }]));
+      await tm.call('tm_next', { task_id });
+      const v = await tm.call('tm_submit', { task_id, node_id: 'plan-integrate:1', payload: ok({ accept: true }) });
+      assert.equal(v.state, 'failed', `${label}: ${JSON.stringify(v)}`);
+      assert.match(v.reason, /placeholder or a bare id/, label);
+      assert.match(v.reason, /F2-US-1/, label);
+      assert.doesNotMatch(v.reason, /F2-US-2|F1-US-1/, label);
+      const task = readTask(root, task_id);
+      const pi = task.nodes.find((n) => n.node_id === 'plan-integrate:1');
+      assert.equal(pi.state, 'failed');
+      assert.match(pi.result.reason, /placeholder or a bare id/);
+      assert.deepEqual([...new Set(pi.result.placeholder_acceptance.map((x) => `${x.story}@${x.card}`))], ['F2-US-1@PLAN-F2'], label);
+      assert.deepEqual(pi.result.placeholder_acceptance.map((x) => x.item), bad, label);
+      const retry = task.nodes.find((n) => n.node_id === 'dispatch:PLAN-F2:2');
+      assert.ok(retry, `${label}: the offending card is retried`);
+      assert.ok(task.nodes.some((n) => n.node_id === 'accept:PLAN-F2:2'), `${label}: with a new accept chain`);
+      assert.match(retry.feedback, quoted, label);
+      assert.match(retry.feedback, /story F2-US-1 has acceptance that is a placeholder or a bare id/, label);
+      assert.match(retry.feedback, /full criterion text of each AC \(F<n>-AC-n: Given \.\.\., When \.\.\., Then \.\.\.\)/, label);
+      assert.ok(!task.nodes.some((n) => n.node_id === 'dispatch:PLAN-F1:2'), `${label}: a clean card is left alone`);
+      const pi2 = task.nodes.find((n) => n.node_id === 'plan-integrate:2');
+      assert.equal(pi2.supersedes, 'plan-integrate:1');
+      assert.match(pi2.feedback, /placeholder or a bare id/, 'the refusal survives into the fresh integrate');
+      assert.match(pi2.feedback, /F2-US-1/);
+    });
+  }
+  await withTask(async ({ tm, g, task_id }) => {
+    await twoCardsAccepted(tm, g, task_id, (id) => [{ id: `${id.replace('PLAN-', '')}-US-1`, title: 't', acceptance: REAL }]);
+    await tm.call('tm_next', { task_id });
+    const v = await tm.call('tm_submit', { task_id, node_id: 'plan-integrate:1', payload: ok({ accept: true }) });
+    assert.equal(v.state, 'done', `real criteria still merge: ${JSON.stringify(v)}`);
   });
 });
 
