@@ -1,6 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 
-import { bash, guardWorld, texts } from './testkit.ts'
+import { bash, guardWorld, SURFACES, texts } from './testkit.ts'
+import type { Surface } from './testkit.ts'
 
 const PANE = {
   title: 'Denied calls', isFocused: true, bodyColumns: 80, placement: 'inline', scroll: { bodyRows: 20 }, view: {},
@@ -13,10 +14,11 @@ const THREE = [
   D('c', 3000, 'Bash', 'git reset --hard', 'declined'),
 ]
 
-const mount = ($: any, surface: 'terminal' | 'desktop') =>
+const mount = ($: any, surface: Surface) =>
   $.ui.mount({ plugin: 'session', surface, component: 'Pane', requestId: 'guard-denials', props: PANE })
 
-for (const surface of ['terminal', 'desktop'] as const) {
+// terminal, desktop, mobile and vscode
+for (const surface of SURFACES) {
   test(`${surface}: an empty log says no denials`, async ($, on) => {
     guardWorld(on)
     await $.session.start({ cwd: '/w', surface, isInteractive: true })

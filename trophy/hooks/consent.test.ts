@@ -78,7 +78,7 @@ test('a start with nothing unlocked asks nothing; the first unlock brings the qu
 
 test('nothing is asked in a non-interactive session', async ($, on) => {
   memoryStore(on)
-  sessionAt(on)
+  sessionAt(on).surfaces = []
   bottom(on)
   await $.session.start({ ...start, surface: null, isInteractive: false })
   const ui = await $.ui.mount({ plugin: 'trophy', surface: 'terminal', component: 'AbovePrompt', props: BAND })

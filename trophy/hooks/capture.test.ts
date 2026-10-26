@@ -52,6 +52,7 @@ const bottom = (on: On, w: World = {}) => {
 const boot = async ($: any, on: On, w: World = { home: '/Users/a' }, interactive = true) => {
   const store = memoryStore(on)
   const clock = sessionAt(on, Date.parse('2026-10-13T09:00:00Z'))
+  clock.surfaces = interactive ? ['terminal'] : []
   current = w
   bottom(on, w)
   await $.session.start({ ...START, isInteractive: interactive, surface: interactive ? 'terminal' : null })

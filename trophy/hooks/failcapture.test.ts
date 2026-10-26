@@ -53,7 +53,7 @@ const log = (store: Map<string, unknown>) => (store.get('trophy.failures') ?? []
 
 const boot = async ($: any, on: On, interactive = true, w: World = {}) => {
   const store = memoryStore(on)
-  sessionAt(on)
+  sessionAt(on).surfaces = interactive ? ['terminal'] : []
   bottom(on, w)
   await $.session.start(start(interactive))
   return store

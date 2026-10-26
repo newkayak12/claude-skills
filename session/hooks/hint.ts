@@ -16,7 +16,7 @@ let lastAt = -Infinity
 export const register = (on: On, options: PluginOptions) => {
   // Matched on the person's own typing, so it sits beside memo's unmatched prompt.submit hook.
   on('prompt.submit', { origin: { kind: 'composer' } }, async ($, e, next) => {
-    if (options.prompt_hint === true && needsHint(e.text)) {
+    if (options.prompt_hint === true && needsHint(e.text) && (await $.session.surfaces()).length > 0) {
       const now = (await $.clock.now()) as number
       if (now - lastAt >= GAP_MS) {
         lastAt = now

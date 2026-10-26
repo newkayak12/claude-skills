@@ -1,7 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { language, memoryStore, sessionAt } from './testkit.ts'
+import { language, memoryStore, onlyShared, sessionAt, SURFACES } from './testkit.ts'
 
 const NOW = Date.parse('2026-10-07T09:00:00Z')
 const PANE = {
@@ -42,7 +42,7 @@ test('by default the pane counts and labels in English', async ($, on) => {
   expect(texts(await ui.drawn()).some(l => l.includes('Most-missed skills'))).toBe(true)
 })
 
-for (const surface of ['terminal', 'desktop'] as const) {
+for (const surface of SURFACES) {
   test(`${surface}: an empty profile draws 0 / 80 and 80 locked rows with five ???`, async ($, on) => {
     memoryStore(on)
     sessionAt(on, NOW)
@@ -51,6 +51,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await $.session.start({ cwd: '/w', surface, isInteractive: true })
     const ui = await $.ui.mount({ plugin: 'trophy', surface, component: 'Pane', requestId: 'trophy', props: PANE })
 
+    onlyShared(await ui.drawn())
     const lines = texts(await ui.drawn())
 
     expect(lines.some(l => l.includes('0 / 80 해금'))).toBe(true)
@@ -71,6 +72,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
     expect(texts(await ui.drawn()).some(l => l.includes('🏆 First Blood · 2026-10-06'))).toBe(true)
     await ui.press({ key: 'tab-triggers' })
+    onlyShared(await ui.drawn())
     const lines = texts(await ui.drawn())
 
     expect(lines.some(l => l.includes('think:brainstorming') && l.includes('2'))).toBe(true)

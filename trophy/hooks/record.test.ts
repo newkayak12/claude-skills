@@ -47,6 +47,7 @@ test('a skill of another marketplace is not stored', async ($, on) => {
 test('an idle (non-interactive) session stores nothing', async ($, on) => {
   const store = memoryStore(on)
   const clock = sessionAt(on)
+  clock.surfaces = []
   bottom(on)
   await $.session.start(start(false))
 

@@ -129,6 +129,7 @@ test('dismiss removes the band and the key; a second start shows none', BOTH, as
 
 test('the band shows once: a second start without dismiss shows none, retro still works', BOTH, async ($, on) => {
   const { store } = world(on, { store: { 'session.last': LAST } })
+  on('session.surfaces', () => ({ value: ['terminal'] }))
   await start($)
   const first = await band($)
   expect(texts(await first.drawn()).length).toBeGreaterThan(0)
@@ -185,6 +186,7 @@ test('the Retro button opens the pane on the Retro tab', BOTH, async ($, on) => 
 
 test('/session retro shows the stored summary when the live ledger is empty', async ($, on) => {
   const { ui } = world(on, { store: { 'session.last': LAST } })
+  on('session.surfaces', () => ({ value: ['terminal'] }))
   await start($)
 
   const out = await $.command.run({ command: 'session', args: 'retro' } as any)

@@ -384,7 +384,7 @@ async function note($: EngineInterface, name: string): Promise<boolean> {
 export const register: Register = on => {
   // Non-interactive sessions (every `claude -p`, so every teams/graph adapter) stay idle.
   on('session.start', async ($, e, next) => {
-    if (!e.isInteractive) return next(e)
+    if ((await $.session.surfaces()).length === 0) return next(e)
 
     // The stored answer first: until then the band stays hidden, so a yes never flashes the question.
     const savedVersion = (await $.store.get('trophy.consentVersion')) as number | undefined
