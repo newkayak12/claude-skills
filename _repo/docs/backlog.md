@@ -80,14 +80,6 @@ toasts).
       the full unassigned-AC and overlapping-path list in one retry message and a mechanical pre-check
       (node, tested) before submit; a rerun of card 47's PRD shapes on the first or second attempt.
 
-77. **teams tests leave no daemon behind and do not flake**
-    - Why: 2026-10-25, E-2bb23da3 (card 72) fixed orphaned `hanging-driver.mjs`, but its goal gate noted the
-      task daemon can still outlive a SIGKILLed test runner. The same day `node --test
-      teams/scripts/test-taskmanager.mjs` failed 1 of 312 once, then passed 312/312 (test unverified).
-      Recurred 2026-10-26 (E-1fdeb52d gate): full suite 1482/1483 once, then 1482/1482; test not captured.
-    - Acceptance: after a SIGKILLed `node --test teams/scripts/test-taskmanager.mjs`, no `daemon.mjs` of a
-      `/tmp/tm-*` fixture is alive within a minute; five runs in a row pass 312/312.
-
 75. **smart-compact fires on the same context % the person sees in the status line** — part in E-3f6657e7 (6d5809b2)
     - 2026-10-26: smart-compact now computes `round((input + cache_creation + cache_read) / window * 100)`, the
       formula the status line's `used_percentage` matched at 6% (Claude Code 2.1.310), and `/smart-compact`
@@ -107,7 +99,10 @@ toasts).
       line shows smart-compact's number), checked in one live session where both read the same at a turn
       end; `/smart-compact` prints the current %, the threshold and the token count behind them.
 
-81. **Two size-S runs in one checkout do not fail each other's scope check**
+81. **Two size-S runs in one checkout do not fail each other's scope check** — part in 747e9306 (E-53a84277):
+    `teams/mcp/scope.mjs` baselines already-dirty paths, size-S prompts call `scope.mjs touched`, tm_open/tm_run
+    warn on a shared live size-S checkout. Left: the engine (not only the prompt) enforces the baseline; two
+    runs editing the same file are still not isolated.
     - Why: 2026-10-26, E-23b35fe3 (card 74 part A) failed its U4 clean-scope check three times because
       E-0baf8e75 (part B) was editing session/think/trophy in the same main checkout; part A's own work
       passed (teams 357, graph 175, harness 199) and was committed by hand. Size S writes into the
@@ -213,4 +208,5 @@ toasts).
 | E-2bb23da3 | 2026-10-25 | 71, 72, 73 | shipped `d0b8f470`; size S; gaps → cards 77, 78 |
 | E-23b35fe3, E-0baf8e75 | 2026-10-26 | 74 (tests) | shipped `55e2dcc3`, `bfe0022c`; size S ×2; part A blocked only on the shared-checkout scope check (card 81) |
 | E-d9a9ede4 | 2026-10-26 | 78, 79, 80 | shipped `dbade549`; size S; repo-rules 80 ok, teams mod 361; q closes the empty pane, seen live |
+| E-53a84277 | 2026-10-26 | 81 (part), 77 | shipped `747e9306`; size S; teams 1492/1492 (5× taskmanager 315/315); flaky test named: judge-stream cleanup `ENOTEMPTY` (cause inferred) |
 | E-3f6657e7 | 2026-10-26 | 75 (part) | shipped `6d5809b2`; size S; large-context live check left on card 75 |
