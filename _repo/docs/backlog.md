@@ -47,8 +47,7 @@ toasts).
     - B merged 2026-10-22 (E-73f703e6; band demo approval and README shot pending): the poll delivers live (`RESULT LIVE-POLL`);
       the send is held by Claude Code, see card 63. C merged 2026-10-22 (E-d1e2fa27 P1-P3, integrated by hand: P2's third attempt failed at plan with
       its retry budget spent; merged tree teams 1474/1474, mod 212/212; a forwarded answer gives one
-      `you -> P3` line in the Floor feed). Left: B's band demo approval and README shot; a forwarded
-      ask with nobody attached waits forever (decision U-5) — say so in the README; a `tm_open` live pass of C.
+      `you -> P3` line in the Floor feed). B's band demo approved by Claude on delegation 2026-10-26 (fixture render at 190/110: `⚑ P2 asks you: … +1`, title ends in `…`). Left: B's README shot from a live ask; a `tm_open` live pass of C (U-5 already in README/KOR).
 
 ### Repo and rules
 
@@ -130,9 +129,11 @@ toasts).
 
 74. **Every mod's UI draws on terminal, desktop, mobile and vscode (`mod.md` rule 8) — teams first** — tests in
     55e2dcc3 (teams 357, graph 175, harness 199) and bfe0022c (session 699, think 53, trophy 149), all four
-    surfaces mounted; tmux 190/110 seen for the teams pane. Left: the live look in the Claude app over
-    Remote Control (steps in `~/.harness/tasks/{23b35fe3,0baf8e75}-*/harness-report.md`), demo approval,
-    README/KOR surface lines and shots.
+    surfaces mounted; tmux 190/110 seen for the teams pane. README/KOR surface lines in all six (96ead92d
+    for teams, think); terminal shots unchanged, so none retaken. Demo approval delegated to Claude
+    2026-10-26 (user: "너가좀 하세여"). Left: the live look in the Claude app over Remote Control — this
+    machine has no app or signed-in browser, so it waits for the person (steps in
+    `~/.harness/tasks/{23b35fe3,0baf8e75}-*/harness-report.md`).
     - Why (all mods): user, 2026-10-25: "얘 모든 mod로 그리는 UI는 모바일, 데스크탑, 다 대응할 수 있어야 해요".
       Scan the same day: graph, harness, session, teams, think and trophy tests mount `terminal` and at
       most `desktop`; none mounts `mobile` or `vscode` (6 of 6 mods).
