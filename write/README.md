@@ -2,8 +2,9 @@
 
 **English** · [한국어](KOR.md)
 
-Writing skills for the things engineers actually have to write: design docs and PRDs, implementation
-plans, blog posts, peer feedback, and the SKILL.md files that drive other skills. Each one is a
+Writing skills for the things engineers actually have to write: requirements breakdowns, PRDs and
+design docs, ADRs and design reviews, implementation plans, blog posts, peer feedback, and the SKILL.md
+files that drive other skills. Each one is a
 process rather than a prompt — context first, structure second, prose last — and two of them
 (`plans`, `writing-skills`) are harness-aware: the same skill produces a document when you
 run it alone, and a machine-readable spec when a `harness:harness` run is driving.
@@ -21,7 +22,10 @@ run it alone, and a machine-readable spec when a `harness:harness` run is drivin
 
 | I want to… | Skill |
 |---|---|
-| Plan an implementation, co-write a doc others will read (PRD, design doc, RFC), write a design review or ADR, write a technical blog post, or give feedback that lands | `plans` |
+| Split a requirement or 기획서 into items with criteria, open questions and actors | `requirements` |
+| Co-write a doc others will read — PRD, design doc, RFC, proposal | `prd` |
+| Record a decision as an ADR, or write a design review | `adr` |
+| Plan an implementation or break it into tickets, write a technical blog post, or give feedback that lands | `plans` |
 | Turn a conversation that already settled what to build into a spec — no re-interview | `spec` |
 | Write or fix a SKILL.md | `writing-skills` |
 | Review text, or draft a PR description / post that reads as human-written | `writer-verification` |
@@ -34,43 +38,19 @@ plugin.
 
 ## Skills
 
-### `plans`
+### `requirements`
 
-One entry for writing that starts from a plan. Step 0 reads the purpose from the request and asks only when it is ambiguous; an implementation plan is the default, so hand-offs from `think:brainstorming`, `planning:executing-plans` and the harness never get a question.
-
-#### Implementation plan (default)
-
-Produces implementation plans — and never runs them. The gap check and ambiguity check that
-`planning:executing-plans` would otherwise do at hand-off happen here, at production time: every
-step gets one observable pass bar stamped on it before the plan counts as finished. Staleness/drift
-is deliberately out of scope; `planning:executing-plans` owns that check. Each task is one vertical slice — one
-behaviour working end to end, never "all backend, then all frontend" — and names what blocks it, so a ticket
-breakdown ("티켓으로 쪼개줘") lands here too. On a saved-search feature, a run without this rule split the work
-into Backend and Frontend sections with no blocking edges; with it, two runs gave 7 and 8 slices, each carrying `Blocked by` and a pass bar.
+Splits a requirement or 기획서 into checkable items — and stops there: no code, no implementation plan, no tickets. It reads all of the input, names the actors, and collects every rule with its place in the input (`inferred` when the input implies a rule but never states it). The missing exception handling (cancel, failure, duplicate, timeout, no-stock) becomes open questions, each with an assumed default and a suggested owner. Items F1, F2, … each get a one-sentence outcome and `F<n>-AC-n: Given … When … Then …` criteria numbered uniquely across the analysis, then the `plans` gap and ambiguity checks run over them. Not for a settled conversation to write down (`spec`) or a spec with acceptance and tasks before code (`develop:spec-driven-development`).
 
 ```
-결제 웹훅 재시도 로직 구현 계획 써줘. 기존 PaymentEventHandler 건드리는 범위까지 포함해서,
-태스크마다 어떤 테스트가 통과해야 끝인지 명시해줘.
+이 기획서 쪼개줘
 ```
 
-**Dual-mode.** The same process has two output shapes:
+Output has four parts — Actors, Rules, Open questions, Items — in the input's language, saved to the path the caller names, otherwise `docs/requirements/YYYY-MM-DD-<topic>.md`.
 
-| Mode | Produces | Consumed by |
-|---|---|---|
-| Solo | Plan doc at `docs/plans/YYYY-MM-DD-<feature>.md`, pass bar per step | `completion:verification-before-completion` |
-| Harness-engaged | A SetGoal goal-spec — subgoals with `acceptance[]` / `test[]` | The harness QualityGate, subgoal then goal level |
+### `prd`
 
-Per-task shape in solo mode:
-
-```markdown
-### Task N: [Component]
-**Files:** create/modify/test — exact paths.
-**Interfaces:** consumes [earlier tasks' signatures] / produces [names later tasks rely on].
-**Pass bar:** [the one observable check proving the step is done]
-
-- [ ] 1: failing test (full code) → 2: confirm it fails → 3: minimal implementation
-  (full code) → 4: confirm it passes → 5: commit
-```
+Writes a PRD, design doc, RFC or proposal for readers, section by section, following `references/document.md`. It detects the output format, asks who the primary reader is and what single question the document must answer, then runs the stages below.
 
 #### Document
 
@@ -88,6 +68,10 @@ never drafts all sections upfront and never starts before it knows who the prima
 Per document it produces: the document structure, the drafted sections, review comments on clarity
 and gaps, and a revision log. In Claude Code, Reader Testing runs the `agents/reader-agent.md`
 subagent; on claude.ai it falls back to `references/manual-reader-testing.md`.
+
+### `adr`
+
+Records a made decision as an ADR, or explores a decision in a design review before it is made. It picks the format by the signal: decision made → ADR, options open → design review. A review that ends Approved converts to an ADR, and the two cross-link in `Related:`.
 
 #### Design review
 
@@ -148,6 +132,44 @@ docs/adr/
   0007-supersede-0001-migrate-to-aurora.md
 ```
 
+### `plans`
+
+One entry for writing that starts from a plan. Step 0 reads the purpose from the request and asks only when it is ambiguous; an implementation plan is the default, so hand-offs from `think:brainstorming`, `planning:executing-plans` and the harness never get a question.
+
+#### Implementation plan (default)
+
+Produces implementation plans — and never runs them. The gap check and ambiguity check that
+`planning:executing-plans` would otherwise do at hand-off happen here, at production time: every
+step gets one observable pass bar stamped on it before the plan counts as finished. Staleness/drift
+is deliberately out of scope; `planning:executing-plans` owns that check. Each task is one vertical slice — one
+behaviour working end to end, never "all backend, then all frontend" — and names what blocks it, so a ticket
+breakdown ("티켓으로 쪼개줘") lands here too. On a saved-search feature, a run without this rule split the work
+into Backend and Frontend sections with no blocking edges; with it, two runs gave 7 and 8 slices, each carrying `Blocked by` and a pass bar.
+
+```
+결제 웹훅 재시도 로직 구현 계획 써줘. 기존 PaymentEventHandler 건드리는 범위까지 포함해서,
+태스크마다 어떤 테스트가 통과해야 끝인지 명시해줘.
+```
+
+**Dual-mode.** The same process has two output shapes:
+
+| Mode | Produces | Consumed by |
+|---|---|---|
+| Solo | Plan doc at `docs/plans/YYYY-MM-DD-<feature>.md`, pass bar per step | `completion:verification-before-completion` |
+| Harness-engaged | A SetGoal goal-spec — subgoals with `acceptance[]` / `test[]` | The harness QualityGate, subgoal then goal level |
+
+Per-task shape in solo mode:
+
+```markdown
+### Task N: [Component]
+**Files:** create/modify/test — exact paths.
+**Interfaces:** consumes [earlier tasks' signatures] / produces [names later tasks rely on].
+**Pass bar:** [the one observable check proving the step is done]
+
+- [ ] 1: failing test (full code) → 2: confirm it fails → 3: minimal implementation
+  (full code) → 4: confirm it passes → 5: commit
+```
+
 #### Blog
 
 Runs the document path with `references/examples/blog.md`.
@@ -203,7 +225,7 @@ points become `[확인 필요: …]` markers naming who decides; none is filled 
 default. The spec has problem, solution, user stories (only those the conversation supports),
 implementation decisions with their source, testing decisions at a named seam, out of scope, and open
 questions, closing on a recountable tally. Writing a PRD or design doc from scratch with reader testing
-stays with `plans`.
+stays with `prd`.
 
 On a coupon conversation (percentage discounts, cap, minimum order, rounding left to finance), a run
 without this skill wrote a reasonable spec in zero tool calls — it never opened the glossary or the
@@ -391,7 +413,10 @@ Every skill in this plugin lists MCP tools as optional or recommended, not requi
 
 | Skill | Tool | Used for |
 |---|---|---|
-| `plans` | sequential-thinking, think-tool | Dependency chains; judging whether a step is unambiguous; which document section holds the most unknowns |
+| `requirements` | think-tool | Judging which rule or exception the input leaves out |
+| `prd` | think-tool | Which document section holds the most unknowns |
+| `adr` | think-tool | Weighing options and consequences |
+| `plans` | sequential-thinking, think-tool | Dependency chains; judging whether a step is unambiguous |
 | `writing-skills` | think-tool | Framing the RED-phase pressure scenario |
 | `writer-verification` | think-tool, sequential-thinking, mcp-reasoner | Pass structuring; resolving conflicting findings; picking the summary lead |
 | `like-me` | think-tool | Separating recurring habits from one-off noise in samples |

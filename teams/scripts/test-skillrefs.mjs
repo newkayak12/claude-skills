@@ -228,3 +228,53 @@ test('validateSpec still pins a mixed=false run to its kind', async () => {
   assert.deepEqual(validateSpec(spec('qa'), { kind: 'qa', mixed: false, flow: 'qa' }), []);
   assert.ok(validateSpec(spec('document'), { kind: 'qa', mixed: false, flow: 'qa' }).some((p) => /kind document.*mixed=false/.test(p)));
 });
+
+// F3: write:requirements, write:prd and write:adr are mounted in the engine. These build the
+// briefing the model actually reads, in a cwd with no .claude/conventions.
+test('briefings carry the new write skills and not write:plans', async () => {
+  const { mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { composePrompt, CONTRACT, DOCUMENT_SETGOAL, SKILL_METHOD_DISCLAIMER } = await import('../mcp/prompts.mjs');
+  const cwd = mkdtempSync(join(tmpdir(), 'skillrefs-write-'));
+  const run = { run_id: 'r1', flow: 'plan', goal: 'Produce a PRD for X', cwd, allocation: 'balanced', nodes: [] };
+  const sgOf = (kind) => ({ id: 'U1', title: 'PRD', kind, acceptance: ['a'], files: ['docs/PRD.md'] });
+  const brief = (kind, stage, flow = 'plan') => composePrompt({ ...run, flow },
+    { node_id: `${stage}:U1:1`, stage, subgoal_id: 'U1', attempt: 1 },
+    { subgoal: sgOf(kind), upstream: [], problems: [] });
+
+  // (a) planning draft
+  const draft = brief('planning', 'draft');
+  assert.ok(draft.includes('write:prd'));
+  assert.ok(!draft.includes('write:plans'));
+  assert.ok(draft.includes(PRD_CONTRACT));
+  assert.ok(draft.includes(SKILL_METHOD_DISCLAIMER));
+
+  // (b) planning-light template-fill
+  const fill = brief('planning-light', 'template-fill');
+  assert.ok(fill.includes('write:prd'));
+  assert.ok(!fill.includes('write:plans'));
+
+  // (c) planning investigate
+  const inv = brief('planning', 'investigate');
+  assert.ok(inv.includes('write:requirements'));
+  assert.ok(inv.includes(SKILL_METHOD_DISCLAIMER));
+  assert.ok(inv.includes('-findings.md'));
+
+  // (d) only the document setgoal hears the ADR sentence
+  const setgoal = (flow, default_kind) => composePrompt({ ...run, flow }, { node_id: 'setgoal', stage: 'setgoal' },
+    { upstream: [], problems: [], flow, default_kind });
+  const doc = setgoal('document', 'document');
+  assert.ok(doc.includes(DOCUMENT_SETGOAL));
+  assert.ok(doc.includes('write:adr'));
+  for (const [flow, kind] of [['plan', 'planning'], ['develop', 'subgoal']]) {
+    const out = setgoal(flow, kind);
+    assert.ok(!out.includes(DOCUMENT_SETGOAL), `${flow} setgoal must not hear the document sentence`);
+    assert.ok(!out.includes('write:adr'), `${flow} setgoal must not name write:adr`);
+  }
+
+  // (e) the unknowns[] sentence is pinned
+  assert.ok(CONTRACT.investigate.includes('Each open question in the analysis is also returned in unknowns[].'));
+  assert.ok(CONTRACT.investigate.includes('## Requirements analysis'));
+  assert.ok(CONTRACT.investigate.includes('F<n>-AC-n'));
+  assert.ok(CONTRACT.investigate.includes('No second output file is written'));
+});

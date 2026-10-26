@@ -284,7 +284,7 @@ Add the remote SSE endpoints in Claude settings → MCP Servers.
 - `mentor` when the thing needing examination is your own judgment; once the question is stated
   right and a comparison is what's left, it hands over to `cognition:tradeoff-articulator`.
 - After a decision, feed it into `develop:architecture-workflow` (engineering handoff).
-- `write:plans` (design review format) turns the divergence and stress-test output into a
+- `write:adr` (design review format) turns the divergence and stress-test output into a
   reviewable design doc.
 
 ---

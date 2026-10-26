@@ -3683,9 +3683,28 @@ test('a subgoal that names no skills still gets its method from the kind', async
     // Live runs returned skills: [] every time when the spec was asked for them, so the
     // kind has to carry the method or nothing does.
     assert.match(brief('implement:U1:1'), /develop:clean-code/, 'code work gets the code family');
-    assert.match(brief('draft:D1:1'), /write:plans/, 'writing gets the writing family');
+    assert.match(brief('draft:D1:1'), /write:prd/, 'writing gets the writing family');
+    assert.doesNotMatch(brief('draft:D1:1'), /write:(?:plans)/, 'and not the retired skill');
     assert.doesNotMatch(brief('draft:D1:1'), /develop:clean-code/, 'and not the other kind\'s');
     // Not isolated: isolation offers one mutating node at a time, and this needs both at once.
+  });
+});
+
+test('a document subgoal whose setgoal named write:adr drafts with the ADR method, not the PRD one', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'plan', payload: ok({ handoff: 'p' }) });
+    await c.call('team_submit', {
+      run_id: runId, cwd, node_id: 'setgoal',
+      payload: ok({ handoff: 's', spec: { goal: 'G', acceptance: ['A'], subgoals: [
+        { id: 'D1', kind: 'document', title: 'adr', acceptance: ['b'], deps: [], skills: ['write:adr', 'develop:architecture-designer'] },
+      ] } }),
+    });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'critique', payload: ok({ sound: true }) });
+    const nx = await c.call('team_next', { run_id: runId, cwd });
+    const draft = readFileSync(nx.ready.find((x) => x.node_id === 'draft:D1:1').briefing_path, 'utf8');
+    assert.match(draft, /write:adr/);
+    assert.match(draft, /develop:architecture-designer/);
+    assert.doesNotMatch(draft, /write:prd/, 'sg.skills replaces the kind default');
   });
 });
 

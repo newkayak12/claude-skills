@@ -142,6 +142,7 @@ task defines.
 
 - `write:prd` — PRDs, design docs, RFCs and proposals (moved out of this skill).
 - `write:adr` — ADRs and design reviews (moved out of this skill).
+- `write:requirements` — split a requirement into items with criteria and open questions.
 - `planning:executing-plans` — owns execution routing and the
   staleness/drift check this skill leaves out on purpose (downstream).
 - `agents:subagent-driven-development` — likely executor once

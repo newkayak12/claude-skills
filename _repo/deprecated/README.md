@@ -12,7 +12,7 @@ Restore: run the command, then move the files where they belong (a plugin to the
 | `pm` (plugin, 22 skills) | product management; parts absorbed by planning, think, develop | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/pm` |
 | `harness-beta` (plugin) | classifier choosing Agent Team vs. Dynamic Workflow; routing idea absorbed into `graph` | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/harness-beta` |
 | `mods` (plugin) | retired at 0.3.0; features moved to `session` and `trophy` | `eba3ff3a` | `git checkout eba3ff3a -- _repo/deprecated/mods` |
-| `technique-write` (plugin) | Design Review and ADR templates; now formats of `write:plans` | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/technique-write` |
+| `technique-write` (plugin) | Design Review and ADR templates; now formats of `write:adr` | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/technique-write` |
 | `assist` (plugin) | beta decision assistance, unpublished 2026-10-12 | `7e299e97` | `git checkout 7e299e97 -- assist` |
 | `portfolio/skills/feedback-beta` | beta lane closed 2026-09-02, promoted into `feedback` 1.13.0 | `63142c35` | `git checkout 63142c35 -- portfolio/skills/feedback-beta` |
 | `planning/skills/roadmap-planning` | quarterly roadmap workflow with roadmap-coordinator agent; retired 2026-10-17: never invoked in any session log, no skill or agent depends on it, 241 lines over the 200 target | `08247eb7` | `git checkout 08247eb7 -- planning/skills/roadmap-planning` |
@@ -23,7 +23,7 @@ Restore: run the command, then move the files where they belong (a plugin to the
 | `think/skills/microinteractions` | UI micro-moment design | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/think/skills/microinteractions` |
 | `think/skills/deep-thinking-workflow` | staged ideate-critique-converge workflow | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/think/skills/deep-thinking-workflow` |
 | `cognition/skills/thinking-style-profiler` | personal thinking-pattern profile | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/cognition/skills/thinking-style-profiler` |
-| `write/skills/doc-coauthoring` | merged into `write:plans` (document purpose) | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/write/skills/doc-coauthoring` |
+| `write/skills/doc-coauthoring` | merged into `write:prd` (document purpose) | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/write/skills/doc-coauthoring` |
 | `write/skills/technical-blog-writer` | merged into `write:plans` (blog purpose) | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/write/skills/technical-blog-writer` |
 | `write/skills/sbi-writer` | merged into `write:plans` (feedback purpose) | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/write/skills/sbi-writer` |
 | `artifacts/think-devils-advocate-workspace` | generated benchmark output of devils-advocate iteration 1 | `c2c26bd9` | `git checkout c2c26bd9 -- _repo/deprecated/artifacts` |

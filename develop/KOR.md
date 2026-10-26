@@ -115,7 +115,7 @@ Not-for 한 줄, 입력에 없는 사실은 `[확인 필요]`, 판정·개수 �
 도메인 발견부터 결정 문서화까지 7단계: `event-storming`(도메인이 이미 명확하면 생략) →
 `domain-driven-design` → `service-boundary-validator` → `clean-architecture` →
 `architecture-designer`(분산 토폴로지 섹션, 모놀리스 유지면 생략) →
-`write:plans` (ADR format). 마지막 ADR 단계만은 절대 건너뛰지 않습니다. 신규 시스템이나
+`write:adr` (ADR format). 마지막 ADR 단계만은 절대 건너뛰지 않습니다. 신규 시스템이나
 모놀리스 → MSA 검토용이고, 안정된 기존 아키텍처 안에서 반복 작업할 때는 개별 스킬을 쓰세요.
 
 ```
