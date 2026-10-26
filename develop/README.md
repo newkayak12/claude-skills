@@ -115,7 +115,7 @@ Template that ends in a verdict or count line; examples and templates moved to `
 Seven steps from domain discovery to documented decision: `event-storming` (optional if the domain
 is well understood) → `domain-driven-design` → `service-boundary-validator` → `clean-architecture`
 → `architecture-designer` (its Distributed Topology section, optional if staying on a monolith) →
-`write:plans` (ADR format), which is the one step never skipped. Use it for a new system or a
+`write:adr` (ADR format), which is the one step never skipped. Use it for a new system or a
 monolith-to-MSA evaluation; for iterating inside an existing stable architecture, call the
 individual skill instead.
 

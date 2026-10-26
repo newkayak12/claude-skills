@@ -137,7 +137,7 @@ case "$ARM" in
       # develop:testing-workflow, think:devils-advocate, cognition:assumption-extractor,
       # cognition:epistemic-reasoner, cognition:second-order-thinker,
       # cognition:critical-thinking-workflow, completion:verification-before-completion,
-      # write:plans, write:writer-verification) plus `agents`, named explicitly by the
+      # write:requirements, write:prd, write:adr, write:writer-verification) plus `agents`, named explicitly by the
       # round that asked for this arm. Without these mounted every one of those Skill() calls
       # misses and the run falls back silently — round 3's `skills_used: ["none"]` on every
       # manager stage was this, not a bug: the arms before `skills` never mounted anything but

@@ -2,8 +2,8 @@
 
 [English](README.md) · **한국어**
 
-엔지니어가 실제로 써야 하는 것들을 위한 글쓰기 스킬입니다 — design doc과 PRD, 구현 계획, 블로그
-글, 동료 피드백, 그리고 다른 스킬을 움직이는 SKILL.md. 전부 프롬프트가 아니라 프로세스입니다.
+엔지니어가 실제로 써야 하는 것들을 위한 글쓰기 스킬입니다 — 요구사항 분해, PRD와 design doc, ADR과
+디자인 리뷰, 구현 계획, 블로그 글, 동료 피드백, 그리고 다른 스킬을 움직이는 SKILL.md. 전부 프롬프트가 아니라 프로세스입니다.
 컨텍스트 먼저, 구조 다음, 문장은 마지막. 그중 둘(`plans`, `writing-skills`)은
 harness-aware입니다 — 혼자 돌리면 문서를 내고, `harness:harness` 실행이 몰고 있으면 기계가 읽는
 스펙을 냅니다.
@@ -21,7 +21,10 @@ harness-aware입니다 — 혼자 돌리면 문서를 내고, `harness:harness` 
 
 | 하고 싶은 것 | 스킬 |
 |---|---|
-| 구현 계획 세우기, 남이 읽을 문서(PRD, design doc, RFC) 같이 쓰기, 디자인 리뷰·ADR 쓰기, 기술 블로그 쓰기, 닿는 피드백 쓰기 | `plans` |
+| 기획서·요구사항을 기준, 열린 질문, 행위자가 붙은 항목으로 쪼개기 | `requirements` |
+| 남이 읽을 문서 같이 쓰기 — PRD, design doc, RFC, 제안서 | `prd` |
+| 결정을 ADR로 남기기, 디자인 리뷰 쓰기 | `adr` |
+| 구현 계획 세우기·티켓으로 쪼개기, 기술 블로그 쓰기, 닿는 피드백 쓰기 | `plans` |
 | 무엇을 만들지 이미 정한 대화를 다시 묻지 않고 spec으로 정리 | `spec` |
 | SKILL.md 쓰거나 고치기 | `writing-skills` |
 | 글 검토, 또는 사람이 쓴 것처럼 읽히는 PR 설명·글 초안 | `writer-verification` |
@@ -34,43 +37,19 @@ knowledge-base, knowledge-graph, RAG corpus, query 스킬은 이제 `knowledge` 
 
 ## 스킬
 
-### `plans`
+### `requirements`
 
-계획에서 시작하는 글쓰기의 단일 진입점입니다. Step 0에서 요청으로 목적을 읽고, 애매할 때만 묻습니다. 기본값은 구현 계획이라 `think:brainstorming`, `planning:executing-plans`, harness에서 넘어오면 질문 없이 진행합니다.
-
-#### 구현 계획 (기본)
-
-구현 계획만 만들고 실행은 절대 하지 않습니다. `planning:executing-plans`가 인계 시점에 하던 갭
-체크와 모호성 체크를 여기서, 작성 시점에 합니다 — 계획이 완성되려면 모든 단계에 관측 가능한 pass
-bar가 하나씩 찍혀 있어야 합니다. staleness/drift는 일부러 범위 밖입니다. 그건
-`planning:executing-plans`가 맡습니다. 작업 하나는 세로 조각 하나입니다. 기능 하나가 끝에서 끝까지 동작하게 만들고,
-"백엔드 다 하고 프론트 다 하기" 식으로 나누지 않습니다. 작업마다 무엇에 막혀 있는지(`Blocked by`)도 적으므로
-티켓 분해("티켓으로 쪼개줘")도 여기로 옵니다. 저장된 검색 기능으로 비교했을 때, 이 규칙 없이는 백엔드/프론트
-섹션으로 나뉘고 선후 관계가 없었고, 규칙을 넣으면 두 번 실행에서 조각 7개, 8개가 나왔고 각각 `Blocked by`와 pass bar를 가졌습니다.
+요구사항이나 기획서를 확인 가능한 항목으로 쪼갭니다 — 분석에서 멈추고, 코드도 구현 계획도 티켓도 쓰지 않습니다. 입력을 끝까지 읽고, 등장하는 행위자를 적고, 모든 규칙을 입력 속 위치와 함께 모읍니다(입력이 암시만 하고 적지 않은 규칙은 `inferred`). 빠진 예외 처리(취소, 실패, 중복, 타임아웃, 재고 없음)는 열린 질문이 되고, 각각 가정한 기본값과 정할 사람 후보가 붙습니다. 항목 F1, F2, …는 한 문장 결과와 분석 전체에서 고유하게 번호 매긴 `F<n>-AC-n: Given … When … Then …` 기준을 갖고, 그 위에 `plans`의 갭·모호성 체크가 돌아갑니다. 이미 정해진 대화를 옮겨 적는 일(`spec`)이나 코드 전에 acceptance와 작업을 갖춘 spec(`develop:spec-driven-development`)에는 쓰지 마세요.
 
 ```
-결제 웹훅 재시도 로직 구현 계획 써줘. 기존 PaymentEventHandler 건드리는 범위까지 포함해서,
-태스크마다 어떤 테스트가 통과해야 끝인지 명시해줘.
+이 기획서 쪼개줘
 ```
 
-**Dual-mode.** 같은 프로세스, 두 가지 산출 형태:
+산출물은 행위자·규칙·열린 질문·항목 네 부분이며, 입력의 언어로 쓰고 호출자가 정한 경로에, 없으면 `docs/requirements/YYYY-MM-DD-<topic>.md`에 저장합니다.
 
-| 모드 | 산출물 | 소비처 |
-|---|---|---|
-| Solo | `docs/plans/YYYY-MM-DD-<feature>.md` 계획 문서, 단계별 pass bar | `completion:verification-before-completion` |
-| Harness-engaged | SetGoal goal-spec — `acceptance[]` / `test[]`를 가진 subgoal | harness QualityGate (subgoal → goal 레벨) |
+### `prd`
 
-Solo 모드의 태스크 형태:
-
-```markdown
-### Task N: [Component]
-**Files:** create/modify/test — exact paths.
-**Interfaces:** consumes [earlier tasks' signatures] / produces [names later tasks rely on].
-**Pass bar:** [이 단계가 끝났음을 증명하는 관측 가능한 검사 하나]
-
-- [ ] 1: failing test (full code) → 2: confirm it fails → 3: minimal implementation
-  (full code) → 4: confirm it passes → 5: commit
-```
+PRD, design doc, RFC, 제안서를 독자를 위해 섹션 하나씩 씁니다. `references/document.md`를 따릅니다. 출력 형식을 정하고, 주 독자가 누구인지와 문서가 답해야 할 질문 하나를 물은 뒤 아래 단계를 진행합니다.
 
 #### 문서
 
@@ -87,6 +66,10 @@ Solo 모드의 태스크 형태:
 문서마다 나오는 것: 문서 구조, 섹션별 초안, 명확성·누락에 대한 리뷰 코멘트, 수정 로그. Claude
 Code에서는 Reader Testing이 `agents/reader-agent.md` 서브에이전트로 돌고, claude.ai에서는
 `references/manual-reader-testing.md`로 대체됩니다.
+
+### `adr`
+
+내려진 결정을 ADR로 남기거나, 결정 전에 디자인 리뷰로 탐색합니다. 신호로 형식을 고릅니다: 결정이 났으면 ADR, 선택지가 열려 있으면 디자인 리뷰. 리뷰가 Approved로 끝나면 ADR로 바뀌고 두 문서는 `Related:`로 서로 링크합니다.
 
 #### 디자인 리뷰
 
@@ -145,6 +128,44 @@ docs/adr/
   0007-supersede-0001-migrate-to-aurora.md
 ```
 
+### `plans`
+
+계획에서 시작하는 글쓰기의 단일 진입점입니다. Step 0에서 요청으로 목적을 읽고, 애매할 때만 묻습니다. 기본값은 구현 계획이라 `think:brainstorming`, `planning:executing-plans`, harness에서 넘어오면 질문 없이 진행합니다.
+
+#### 구현 계획 (기본)
+
+구현 계획만 만들고 실행은 절대 하지 않습니다. `planning:executing-plans`가 인계 시점에 하던 갭
+체크와 모호성 체크를 여기서, 작성 시점에 합니다 — 계획이 완성되려면 모든 단계에 관측 가능한 pass
+bar가 하나씩 찍혀 있어야 합니다. staleness/drift는 일부러 범위 밖입니다. 그건
+`planning:executing-plans`가 맡습니다. 작업 하나는 세로 조각 하나입니다. 기능 하나가 끝에서 끝까지 동작하게 만들고,
+"백엔드 다 하고 프론트 다 하기" 식으로 나누지 않습니다. 작업마다 무엇에 막혀 있는지(`Blocked by`)도 적으므로
+티켓 분해("티켓으로 쪼개줘")도 여기로 옵니다. 저장된 검색 기능으로 비교했을 때, 이 규칙 없이는 백엔드/프론트
+섹션으로 나뉘고 선후 관계가 없었고, 규칙을 넣으면 두 번 실행에서 조각 7개, 8개가 나왔고 각각 `Blocked by`와 pass bar를 가졌습니다.
+
+```
+결제 웹훅 재시도 로직 구현 계획 써줘. 기존 PaymentEventHandler 건드리는 범위까지 포함해서,
+태스크마다 어떤 테스트가 통과해야 끝인지 명시해줘.
+```
+
+**Dual-mode.** 같은 프로세스, 두 가지 산출 형태:
+
+| 모드 | 산출물 | 소비처 |
+|---|---|---|
+| Solo | `docs/plans/YYYY-MM-DD-<feature>.md` 계획 문서, 단계별 pass bar | `completion:verification-before-completion` |
+| Harness-engaged | SetGoal goal-spec — `acceptance[]` / `test[]`를 가진 subgoal | harness QualityGate (subgoal → goal 레벨) |
+
+Solo 모드의 태스크 형태:
+
+```markdown
+### Task N: [Component]
+**Files:** create/modify/test — exact paths.
+**Interfaces:** consumes [earlier tasks' signatures] / produces [names later tasks rely on].
+**Pass bar:** [이 단계가 끝났음을 증명하는 관측 가능한 검사 하나]
+
+- [ ] 1: failing test (full code) → 2: confirm it fails → 3: minimal implementation
+  (full code) → 4: confirm it passes → 5: commit
+```
+
 #### 블로그
 
 `references/examples/blog.md`를 얹어 문서 경로로 진행합니다.
@@ -198,7 +219,7 @@ Kafka consumer lag를 40초에서 2초로 줄인 과정을 기술 블로그로 �
 열림으로 나눕니다. 열린 논점은 누가 정할지까지 적은 `[확인 필요: …]`로 남기고, 그럴듯한 기본값으로
 채우지 않습니다. spec은 문제, 해결, 사용자 스토리(대화가 뒷받침하는 것만), 출처가 붙은 구현 결정,
 정해진 테스트 지점의 테스트 결정, 범위 밖, 열린 질문으로 구성되고, 다시 셀 수 있는 합계 줄로 끝납니다.
-리더 테스트를 거치며 PRD나 design doc을 처음부터 같이 쓰는 일은 `plans`가 맡습니다.
+리더 테스트를 거치며 PRD나 design doc을 처음부터 같이 쓰는 일은 `prd`가 맡습니다.
 
 쿠폰 대화(정률 할인, 상한, 최소 주문 금액, 반올림은 재무팀 확인)로 비교했을 때, 이 스킬 없이 돌리면
 도구 호출 0번으로 무난한 spec을 썼지만 용어집도 쿠폰 코드도 열어보지 않았습니다. 스킬을 쓰면 저장소
@@ -374,7 +395,10 @@ shape가 패키지 맵을 이 IR로 돌려주면 매니저가 문서 옆에 렌�
 
 | 스킬 | 도구 | 용도 |
 |---|---|---|
-| `plans` | sequential-thinking, think-tool | 의존성 사슬 추적, 단계가 정말 모호하지 않은지 판정, 어느 섹션에 미지수가 가장 많은지 판단 |
+| `requirements` | think-tool | 입력이 빠뜨린 규칙이나 예외 판단 |
+| `prd` | think-tool | 어느 섹션에 미지수가 가장 많은지 판단 |
+| `adr` | think-tool | 선택지와 결과 저울질 |
+| `plans` | sequential-thinking, think-tool | 의존성 사슬 추적, 단계가 정말 모호하지 않은지 판정 |
 | `writing-skills` | think-tool | RED 단계 압박 시나리오 설계 |
 | `writer-verification` | think-tool, sequential-thinking, mcp-reasoner | 패스 구조화, 상충하는 지적 조정, Summary 선두 고르기 |
 | `like-me` | think-tool | 샘플에서 반복 습관과 일회성 노이즈 구분 |

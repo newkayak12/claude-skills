@@ -178,6 +178,10 @@ Which chain a subgoal gets depends on the run's **flow**: `develop` → code, `d
 document, `plan` → planning (or planning-light), `qa` → qa, and the post-QA audit →
 planning-audit.
 
+Writing skills mount by stage: planning `investigate` mounts `write:requirements`; planning `draft`
+and template-fill mount `write:prd`; document `draft` mounts `write:prd` by default and `write:adr`
+when the setgoal names it.
+
 Planning and QA run on cards, and every card is a full run like this one: a planning card
 (`PLAN-F1`, ...) in a worktree of its own, a QA card (`QA-F1`, ...) on the integration tree. The
 task itself runs the same six stages around its cards - `areas` is its plan, `plan-integrate`,

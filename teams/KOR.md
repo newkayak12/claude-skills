@@ -175,6 +175,10 @@ flowchart LR
 어떤 체인을 쓸지는 런의 **flow**가 정합니다. `develop` → code, `document` → document,
 `plan` → planning(또는 planning-light), `qa` → qa, 그리고 QA 뒤의 audit → planning-audit입니다.
 
+글쓰기 스킬은 단계별로 붙습니다. planning `investigate`는 `write:requirements`, planning `draft`와
+템플릿 채우기는 `write:prd`를 붙입니다. document `draft`는 기본으로 `write:prd`를, setgoal이 지정하면
+`write:adr`를 붙입니다.
+
 기획과 QA도 카드로 돌고, 카드는 모두 위와 같은 전체 런입니다. 기획 카드(`PLAN-F1`, ...)는 자기
 워크트리에서, QA 카드(`QA-F1`, ...)는 통합 트리에서 돕니다. 태스크 자신도 카드들을 둘러싸고 같은
 여섯 단계를 돕니다. `areas`가 태스크의 plan이고, `plan-integrate`, `accept`, `gate:goal`이 게이트입니다.

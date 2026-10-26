@@ -37,5 +37,6 @@ The finished document in the format agreed in Stage 1 (artifact or markdown), wi
 
 ## Related Skills
 
+- `write:requirements` — split a requirement into items with criteria and open questions
 - `write:adr` — record a made decision or run a design review
 - `write:plans` — implementation plans, blog, feedback

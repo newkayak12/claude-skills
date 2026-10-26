@@ -36,8 +36,13 @@ test('subgoal kind: chain and skills by stage - clean-code on implement and gate
 test('planning kind: chain, no reasoning stage, and skills by stage', () => {
   assert.deepEqual(KINDS.planning.chain, ['investigate', 'draft', 'revise', 'gate']);
   assert.deepEqual(KINDS.planning.reasoning, []);
-  assert.deepEqual(kindSkills('planning', 'investigate'), ['develop:domain-driven-design', 'cognition:assumption-extractor']);
-  assert.deepEqual(kindSkills('planning', 'draft'), ['write:plans', 'develop:architecture-designer'], 'the implementation-lead persona draws what the PRD builds');
+  assert.deepEqual(kindSkills('planning', 'investigate'), ['develop:domain-driven-design', 'cognition:assumption-extractor', 'write:requirements']);
+  assert.deepEqual(kindSkills('planning', 'draft'), ['write:prd', 'develop:architecture-designer'], 'the implementation-lead persona draws what the PRD builds');
+  assert.ok(kindSkills('planning', 'investigate').includes('write:requirements'), 'investigate carries the requirements method');
+  assert.deepEqual(KINDS['planning-light'].skills.investigate, KINDS.planning.skills.investigate);
+  assert.ok(Array.isArray(KINDS.document.skills.draft), 'document draft is static, not request-dependent');
+  assert.deepEqual(KINDS.document.skills.draft, ['write:prd', 'develop:architecture-designer']);
+  assert.deepEqual(kindSkills('planning-light', 'template-fill'), ['write:prd']);
   assert.deepEqual(kindSkills('planning', 'revise'), ['write:writer-verification', 'think:devils-advocate']);
   assert.deepEqual(kindSkills('planning', 'gate'), ['think:devils-advocate']);
   // investigate leads the chain but does not author the document; revise must be independent
