@@ -123,6 +123,7 @@ fewer than two agents left it finishes in normal mode and says so.
 newest debate log: tabs Timeline (↑↓ scroll, Tab onto a persona to filter, who is speaking now),
 Options (for/against per option), Result. A band line shows the debate while it runs
 (`Brainstorming · 2/3 · speaking: X`), an end card after. Closes on Esc, q, or the command again.
+Pane, band and card draw on terminal, desktop, mobile and vscode (the Claude app over Remote Control included).
 
 ![status-band](docs/images/status-band.png)
 The band while a debate runs: which round and who is speaking.
