@@ -846,6 +846,15 @@ async function main() {
 // test that disables driver spawning does not want a real judge call either, and HARNESS_JUDGE_DRIVER
 // is there for the narrower case of a test that wants the daemon to run but with a fake judge.
 if (RUN_AS_MAIN) {
+  // Test-only: a fixture daemon is detached, so a SIGKILLed or timed-out test runner never reaches
+  // its cleanup. When the suite names its runner pid, the daemon leaves once that process is gone.
+  // Unset in production, so nothing here runs.
+  const runnerPid = Number(process.env.HARNESS_TEST_RUNNER_PID);
+  if (Number.isInteger(runnerPid) && runnerPid > 0) {
+    setInterval(() => {
+      try { process.kill(runnerPid, 0); } catch (e) { if (e && e.code === 'ESRCH') process.exit(0); }
+    }, 1000).unref();
+  }
   if (noDriver() && !process.env.HARNESS_JUDGE_DRIVER) {
     process.stderr.write('daemon.mjs: HARNESS_TEST_NO_DRIVER is set with no HARNESS_JUDGE_DRIVER override; exiting without driving anything.\n');
     process.exit(0);

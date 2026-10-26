@@ -62,6 +62,7 @@ import { resolveBase, failingTests, compareOnBase, exclusionLine } from './basef
 import { writeDocs, renderPrd, cardDocuments, questionLine } from './docs.mjs';
 import { mode as wikiMode } from './wikibridge.mjs';
 import { harnessVerdict, taskTag } from './harnessrun.mjs';
+import { baseline as scopeBaseline } from './scope.mjs';
 import { logReply, renderStreamLine, renderLedgerLine } from './tasklog.mjs';
 import { validate as validateDiagram, renderToFile as renderDiagram } from './diagram.mjs';
 import { conventionsBlock } from './conventions.mjs';
@@ -386,6 +387,33 @@ function priorRetroContext(contextFrom) {
   } catch (e) {
     return { text: '', unresolved: `retro.json of ${prior.run_id} could not be read: ${String((e && e.message) || e)}` };
   }
+}
+
+// Other live size-S tasks on the same cwd as `task` (two of them share one checkout, so their
+// scope checks can see each other's edits). Live = status not complete/partial/failed/cancelled/
+// cleaned. Returns their task ids; best-effort, never throws.
+export function sharedSizeSLive(task) {
+  const out = [];
+  if (!task || task.size !== 'S' || !task.cwd) return out;
+  let ids = [];
+  try { ids = readdirSync(tasksRoot()); } catch { return out; }
+  const cwd = resolve(String(task.cwd));
+  for (const id of ids) {
+    if (id === task.run_id) continue;
+    try {
+      const t = loadRunAt(taskPath(id));
+      if (!t || t.size !== 'S' || !t.cwd || resolve(String(t.cwd)) !== cwd) continue;
+      if (lastRelevantEvent(id) === 'clean') continue;
+      if (['done', 'complete', 'partial', 'failed', 'cancelled'].includes(taskState(t).state)) continue;
+      out.push(id);
+    } catch { /* unreadable task: not counted */ }
+  }
+  return out;
+}
+
+function sharedSizeSNote(task) {
+  const ids = sharedSizeSLive(task);
+  return ids.length ? `warning: other live size-S task(s) share this checkout (${ids.join(', ')}); their edits and yours mix in one working tree, so the scope check may count paths the other run touched` : null;
 }
 
 // Slugs a new EPIC in `cwd` must not take: those of the repo's other tasks, and any teams/<slug>/
@@ -6147,7 +6175,9 @@ function pinSize(task, view) {
 // instead - the daemon and package drivers do the rest.
 async function toolOpen(a) {
   const { task, delegated, view } = await openTaskAndMaybePin(a, 'tm_open');
-  const viewFields = { ...(view && view.url ? { view_url: view.url } : {}), ...(task.context_from_unresolved ? { context_from_unresolved: task.context_from_unresolved } : {}), ...(task.carryover_candidates ? { carryover_candidates: task.carryover_candidates } : {}), ...(task.team && task.team.notes && task.team.notes.length ? { notes: task.team.notes } : {}) };
+  const shared = sharedSizeSNote(task);
+  const notes = [...((task.team && task.team.notes) || []), ...(shared ? [shared] : [])];
+  const viewFields = { ...(view && view.url ? { view_url: view.url } : {}), ...(task.context_from_unresolved ? { context_from_unresolved: task.context_from_unresolved } : {}), ...(task.carryover_candidates ? { carryover_candidates: task.carryover_candidates } : {}), ...(notes.length ? { notes } : {}) };
   if (delegated) return { ...delegated, docs_dir: docPaths(task).dir, ...viewFields };
   if (noDaemon()) return { ...toolNext({ task_id: task.run_id }), ...viewFields };
   return { task_id: task.run_id, state: managerState(task).state, docs_dir: docPaths(task).dir, ...viewFields };
@@ -6161,6 +6191,9 @@ async function toolOpen(a) {
 async function toolRun(a) {
   const { task, delegated, view } = await openTaskAndMaybePin(a, 'tm_run');
   const viewFields = { ...(view && view.url ? { view_url: view.url } : {}), ...(task.context_from_unresolved ? { context_from_unresolved: task.context_from_unresolved } : {}), ...(task.carryover_candidates ? { carryover_candidates: task.carryover_candidates } : {}) };
+  const shared = sharedSizeSNote(task);
+  const notes = [...((task.team && task.team.notes) || []), ...(shared ? [shared] : [])];
+  if (shared) viewFields.notes = notes;
   return {
     task_id: task.run_id,
     run_id: task.run_id,
@@ -6224,6 +6257,7 @@ function harnessPrompt(task, opts = {}) {
     `Route 2, only when the graph MCP is not available: the harness skill's Agent Team fallback (harness/engine/fallback.md), codex through codex-exec-adapter.mjs with codex_provider "auto" (a fallback to Claude is recorded as such). Its manifest.json carries "teams_task": "${task.run_id}". Do not use the Workflow route.`,
     `As soon as the run exists, write ${h.pointer} as {"route":"graph","run_id":"<id>","cwd":"${h.cwd}"} or {"route":"fallback","run_dir":"<absolute run dir>"}.`,
     `When the run has written its report, copy that report to ${h.report_path}. The task's verdict is read from the run itself, not from anything you write.`,
+    h.baseline_path ? `Scope: this checkout may already hold uncommitted work (${h.baseline_count} dirty path(s) recorded in ${h.baseline_path} before the run). Your scope check counts only the paths you touched; the baseline's dirty paths, left as they were, are excluded (node ${join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'scope.mjs')} touched --cwd ${h.cwd} --baseline ${h.baseline_path}).` : '',
     `Never end a turn while your own background agent or test run is still running; wait for it to finish first.`,
     '',
     'Request:',
@@ -6246,6 +6280,15 @@ export function openHarnessRun(task) {
     cwd: task.cwd, opened_at: Date.now(), route: null, run: null,
     pointer: join(dir, 'harness-run.json'), report_path: join(dir, 'harness-report.md'),
   };
+  // Baseline of what is already dirty, so the run's scope check counts only what it touches.
+  try {
+    const base = scopeBaseline(task.cwd);
+    mkdirSync(dir, { recursive: true });
+    const bp = join(dir, 'scope-baseline.json');
+    writeFileSync(bp, JSON.stringify(base, null, 1) + '\n');
+    task.harness_run.baseline_path = bp;
+    task.harness_run.baseline_count = Object.keys(base).length;
+  } catch { /* not a git checkout: no baseline */ }
   excludeMarkers(task.cwd);
   touchMarker(task.cwd, task.run_id);
   record(task, { event: 'harness_open', task_id: task.run_id, cwd: task.cwd });
