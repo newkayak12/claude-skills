@@ -470,6 +470,12 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column">
           <Text>{id === undefined ? s('noRun') : s('loading')}</Text>
+          {/* the empty view has no tabs to pick: its Input takes `q` only, so the pane closes on the key as it does elsewhere */}
+          {id === undefined && carriesInput(e.surface) && (
+            <Box height={1} overflow="hidden">
+              <Input key="keys" autoFocus value="" placeholder="" onInput={async (text: string) => { if (paneKey(text)?.kind === 'close') await $.ui.close({ id: PANE }) }} onSubmit={async () => {}} />
+            </Box>
+          )}
           {close}
         </Box>
       )

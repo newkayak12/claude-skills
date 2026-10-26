@@ -408,6 +408,25 @@ for (const surface of SURFACES) {
     expect(seen.argv).toHaveLength(0)
   })
 
+  test(`${surface}: the no-run view closes on q where an Input is carried; no keys Input on mobile`, async ($, on) => {
+    const closed: string[] = []
+    on('ui.close', (_$, e) => { closed.push(e.id); return { value: undefined } })
+    uiWorld(on)
+    const ui = await pane($, surface)
+    expect((await ui.find({ key: 'close' })) !== undefined).toBe(true)
+    if (!carriesInput(surface)) {
+      expect(await ui.find({ key: 'keys' })).toBeUndefined()
+      return
+    }
+    expect((await ui.find({ key: 'keys' }))?.props.autoFocus).toBe(true)
+    await ui.input({ key: 'keys', text: 'j', kind: 'change' } as never)
+    await ui.redraw()
+    expect(closed).toEqual([])
+    await ui.input({ key: 'keys', text: 'q', kind: 'change' } as never)
+    await ui.redraw()
+    expect(closed).toEqual(['teams-status'])
+  })
+
   for (const why of ['no status yet', 'a survey']) {
     test(`${surface}: band yields with ${why} (regression guard)`, async ($, on) => {
       if (why === 'a survey') await seeded($, on, { status: stat(), task: demo() }, surface)
