@@ -11,6 +11,22 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
 
 ### Mods and naming — UI first (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
 
+84. **The teams pane is a real dashboard on every surface: Ink on the terminal, Svg on desktop, mobile and vscode**
+    - Why: user, 2026-10-26, after `/teams-status` over Remote Control showed a 42-row text dump on the phone:
+      "이따위로 나올거면 뭣하러 하냐", "Claude desktop app에서 UI 그릴 수 있는걸로 아는데", "mobile도 그렇고",
+      "씨발 못해? terminal도, claude app, desktop도". References given: a Grafana-style metrics board
+      (tiles + time series), a harness diagram (stages as columns of cards), a terminal agent dashboard
+      (EPIC tabs with %, agent tree with timers, task list, session stats, activity log, approval prompt),
+      github.com/HarnessMD/munder-difflin (agents as live avatars, envelopes between them, kanban command
+      center), revfactory.github.io/harness-animation (numbered stage pipeline, fan-out/fan-in, polished
+      cards). Mod API 2.1.310: `desktop`, `mobile`, `vscode` carry `Svg`; terminal carries `Raster`/`Image`/`Client`.
+      Prerequisite: the app must attach as a surface (`session.attach`); it did not over Remote Control (card 74).
+    - Acceptance: a design doc with the demo render approved by the user first (`mod.md` UI rule 0);
+      terminal pane = EPIC tabs, node pipeline with state and timers, STORY kanban, stats (cost, budget,
+      drivers), activity log, waiting-ask line; desktop/mobile/vscode = the same data as an Svg pipeline
+      (fan-out packages, fan-in integrate) with metric tiles; every field from node (`view.mjs`/engine), none
+      inferred in tsx; seen live on terminal and in the app (phone screenshot), 190/110 columns, README shots.
+
 65. **Flaky tests under load: name them when they recur**
     - Why: card 65 rest shipped 2026-10-22 (E-7e3a46f0: exit-code rule in the teams setgoal prompt,
       `markOf` form and all guidance markers pinned). The one-off failures (teams 1369/1, graph 198/1,
