@@ -2014,10 +2014,11 @@ test('collect(): a harness_run task with no ledger file gets none created by loo
   } finally { f.cleanup(); }
 });
 
-test('deriveTitle(): requests[] with N>1 reads "N items"; a single request reads as its item; no requests[] is unchanged', () => {
+test('deriveTitle(): requests[] with N>1 reads as its backlog cards, else its first item +N; a single request reads as its item; no requests[] is unchanged', () => {
   const backlog = ['[backlog priority 0] one', '[backlog priority 1] two', '[backlog priority 2] three'];
-  assert.equal(deriveTitle('[backlog priority 0] one\n\n[backlog priority 1] two', ['one', 'two', 'three']), '3 items');
-  assert.equal(deriveTitle(backlog.join('\n\n'), ['one', 'two']), '2 items');
+  assert.equal(deriveTitle('[backlog priority 0] one\n\n[backlog priority 1] two', ['one', 'two', 'three']), 'one +2');
+  assert.equal(deriveTitle(backlog.join('\n\n'), ['one', 'two']), 'one +1');
+  assert.equal(deriveTitle('x', ['Backlog card 74 remainder: reach a remote surface. See card 83.', { request: 'Backlog card 84: a real dashboard.' }]), 'Backlog cards 74, 84', 'the first card each item names');
   assert.equal(deriveTitle('[backlog priority 0] Fix the login bug. Then more.', ['Fix the login bug. Then more.']), 'Fix the login bug');
   assert.equal(deriveTitle('x', [{ request: 'Fix the login bug', acceptance: ['a'] }]), 'Fix the login bug', 'an {request, acceptance} item reads as its request');
   assert.equal(deriveTitle('Fix the login bug. Also docs.', []), 'Fix the login bug');
@@ -2025,12 +2026,12 @@ test('deriveTitle(): requests[] with N>1 reads "N items"; a single request reads
   assert.equal(deriveTitle('Fix the login bug. Also docs.'), 'Fix the login bug');
 });
 
-test('collect()/listTasks(): a three-item backlog task is titled "3 items" in the EPIC header and in the index', () => {
+test('collect()/listTasks(): a three-item backlog task is titled by its first item +2 in the EPIC header and in the index', () => {
   const f = harnessTask({ task: { request: '[backlog priority 0] a\n\n[backlog priority 1] b\n\n[backlog priority 2] c', requests: ['a', 'b', 'c'] } });
   try {
-    assert.equal(f.collect().ticket.title, '3 items');
-    assert.equal(listTasks(f.root)[0].title, '3 items');
-    assert.match(renderTicketsText(f.collect()), /3 items/);
+    assert.equal(f.collect().ticket.title, 'a +2');
+    assert.equal(listTasks(f.root)[0].title, 'a +2');
+    assert.match(renderTicketsText(f.collect()), /a \+2/);
   } finally { f.cleanup(); }
 });
 
@@ -2049,7 +2050,7 @@ test('renderText()/renderResourcesText(): a harness_run task draws its stages fr
   } finally { f.cleanup(); }
 });
 
-test('view.mjs --once on a harness_run task fixture prints state running, the plan stage filled and the title "3 items"', () => {
+test('view.mjs --once on a harness_run task fixture prints state running, the plan stage filled and the title "a +2"', () => {
   const f = harnessTask({ live: true, task: { request: '[backlog priority 0] a\n\n[backlog priority 1] b\n\n[backlog priority 2] c', requests: ['a', 'b', 'c'] } });
   try {
     harnessFallbackRun(f, { '01-plan.md': '# plan' });
@@ -2059,6 +2060,6 @@ test('view.mjs --once on a harness_run task fixture prints state running, the pl
     assert.match(pipeline.stdout, /state=running/);
     assert.match(pipeline.stdout, /\[v\] plan/);
     const tickets = run('--view', 'tickets');
-    assert.match(tickets.stdout, /3 items/);
+    assert.match(tickets.stdout, /a \+2/);
   } finally { f.cleanup(); }
 });

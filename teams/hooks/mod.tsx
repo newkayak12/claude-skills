@@ -1,19 +1,20 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Decision, DecisionsPayload, Mark, PaneView, ReportPayload, StatusInfo, SummaryItem, SummaryTask, SummaryTaskEntry, TeamsEvent, TeamsView } from '../types'
+import type { Dash, Decision, DecisionsPayload, Mark, PaneView, ReportPayload, StatusInfo, SummaryItem, SummaryTask, SummaryTaskEntry, TeamsEvent, TeamsView } from '../types'
 import { askBandShown, carriesInput, fallbackSelection, paneKey, paneSlash, statusAnswer, stepClamp, storyRows } from './pane'
-import { STORY_SHRINK, columnWidths, epicCells, epicState, handoffCells, renderLines, rowLine, since, storyCells, tabRowPlan, footerPlan, workerCells } from './teams-draw'
+import { STORY_SHRINK, clipText, columnWidths, epicCells, epicState, handoffCells, renderLines, rowLine, since, storyCells, tabRowPlan, footerPlan, workerCells } from './teams-draw'
 import type { Line } from './teams-draw'
 
 const cursor = atom({ plugin: 'teams', key: 'cursor' } as const, 0)
 const status = atom({ plugin: 'teams', key: 'status' } as const, null as StatusInfo | null)
 const summary = atom({ plugin: 'teams', key: 'summary' } as const, null as SummaryTask | null)
 const teams = atom({ plugin: 'teams', key: 'teams' } as const, null as TeamsView | null)
+const dash = atom({ plugin: 'teams', key: 'dash' } as const, null as Dash | null)
 const decisions = atom({ plugin: 'teams', key: 'decisions' } as const, null as { task_id: string; card: string | null; payload: DecisionsPayload } | null)
 const selected = atom({ plugin: 'teams', key: 'selected' } as const, null as string | null)
 const watch = atom({ plugin: 'teams', key: 'watch' } as const, [] as string[])
-const view = atom({ plugin: 'teams', key: 'view' } as const, 'floor' as PaneView)
+const view = atom({ plugin: 'teams', key: 'view' } as const, 'dash' as PaneView)
 // every listed EPIC (live first, then stalled), the ids of the tick before, the one the pane shows, and the STORY row `g` opens
 const tasks = atom({ plugin: 'teams', key: 'tasks' } as const, [] as SummaryTaskEntry[])
 const taskIds = atom({ plugin: 'teams', key: 'taskIds' } as const, [] as string[])
@@ -39,7 +40,7 @@ const PANE = 'teams-status'
 const OPEN = { id: PANE, title: 'Teams', focus: true, closeOnEscape: true } as const
 
 const en = {
-  tabFloor: 'Floor', tabStories: 'STORYs', tabDecisions: 'Decisions', tabLog: 'Log', tabReport: 'Report', close: 'q close',
+  tabDash: 'Home', tabFloor: 'Floor', tabStories: 'STORYs', tabDecisions: 'Decisions', tabLog: 'Log', tabReport: 'Report', close: 'q close',
   teamPlanning: 'Planning', teamDevelop: 'Develop', teamQa: 'QA', teamAudit: 'Audit', teamEpic: 'EPIC', nodeWaiting: 'waiting for you',
   decAll: 'all cards', decCard: 'Card {c}', decNone: 'No decisions recorded yet.',
   kindProposal: 'proposed', kindRetry: 'retry', kindRejudge: 're-judge', kindResplit: 're-split', kindDefect: 'defect filed', kindAnswer: 'answered', kindDecision: 'decided',
@@ -62,14 +63,14 @@ const en = {
   asksYou: '{who} asks you: {q}',
   board: 'board', inboxOne: '{n} question for you', inboxMany: '{n} questions for you', statusWaiting: 'needs you: {n} waiting - open /teams-status',
   pushRejected: 'rejected', pushNeedsYou: 'needs you', pushEnded: 'run ended', nodeFailed: 'failed',
-  prev: '◀', next: '▶', keysHint: '[ ] EPIC · j k row · 1-5 tabs', openHint: 'g open run', noStories: 'No STORY at work.',
+  prev: '◀', next: '▶', keysHint: '[ ] EPIC · j k row · 0-5 tabs', openHint: 'g open run', noStories: 'No STORY at work.',
 }
 
 // one table, two languages; the type keeps the keys identical
 export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
   en,
   ko: {
-    tabFloor: '현장', tabStories: '스토리', tabDecisions: '결정', tabLog: '기록', tabReport: '보고서', close: 'q 닫기',
+    tabDash: '홈', tabFloor: '현장', tabStories: '스토리', tabDecisions: '결정', tabLog: '기록', tabReport: '보고서', close: 'q 닫기',
     teamPlanning: '기획', teamDevelop: '개발', teamQa: 'QA', teamAudit: '감사', teamEpic: '에픽', nodeWaiting: '답변 대기',
     decAll: '전체 카드', decCard: '카드 {c}', decNone: '아직 기록된 결정이 없습니다.',
     kindProposal: '제안', kindRetry: '재시도', kindRejudge: '재판정', kindResplit: '재분할', kindDefect: '결함 등록', kindAnswer: '답변', kindDecision: '결정',
@@ -92,7 +93,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     asksYou: '{who}님이 묻습니다: {q}',
     board: '보드', inboxOne: '질문 {n}건', inboxMany: '질문 {n}건', statusWaiting: '확인 필요: {n}건 대기 - /teams-status 열기',
     pushRejected: '반려', pushNeedsYou: '확인 필요', pushEnded: '실행 종료', nodeFailed: '실패',
-    prev: '◀', next: '▶', keysHint: '[ ] 에픽 · j k 행 · 1-5 탭', openHint: 'g 실행 열기', noStories: '진행 중인 스토리가 없습니다.',
+    prev: '◀', next: '▶', keysHint: '[ ] 에픽 · j k 행 · 0-5 탭', openHint: 'g 실행 열기', noStories: '진행 중인 스토리가 없습니다.',
   },
 }
 
@@ -342,11 +343,12 @@ export const register: Register = on => {
           ...(sid === undefined ? [] : ['--session', sid]),
         ])
         if (data.exitCode === 0) {
-          const parsed = JSON.parse(data.stdout) as { status: StatusInfo; tasks?: SummaryTaskEntry[]; task: SummaryTask | null; teams?: TeamsView | null } & StatusInfo
+          const parsed = JSON.parse(data.stdout) as { status: StatusInfo; tasks?: SummaryTaskEntry[]; task: SummaryTask | null; teams?: TeamsView | null; dash?: Dash | null } & StatusInfo
           const info: StatusInfo = isSummary ? parsed.status : parsed
           await update($, status, () => info)
           await update($, summary, () => (isSummary ? parsed.task ?? null : null))
           await update($, teams, () => parsed.teams ?? null)
+          await update($, dash, () => parsed.dash ?? null)
           if (isSummary) {
             // the listed EPICs; a selection that left the list moves to the nearest and the pane stays open
             const list = parsed.tasks ?? []
@@ -409,6 +411,18 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // a phone or the desktop app joined: an open pane is offered to it too (Remote Control attaches after the pane opened)
+  on('session.attach', async ($, e, next) => {
+    const r = await next(e)
+    try {
+      $.ui.log(`teams: ${e.surface} attached (${e.clientId})`, { to: 'debug' })
+      if ((await $.ui.panes()).some(p => p.id === PANE)) await $.ui.open(OPEN)
+    } catch {
+      // a pane that cannot be offered leaves the session as it was
+    }
+    return r
+  })
+
   // asked for by the person: the pane seats at any width; the command again closes it
   on('command.run', { command: 'teams-status' }, async $ => {
     if ((await $.ui.panes()).some(p => p.id === PANE)) {
@@ -419,7 +433,7 @@ export const register: Register = on => {
     const paneOpened = STRINGS[await read($, lang)].paneOpened
     let run: { exitCode: number; stdout: string } | null = null
     try {
-      run = await $.process.run(['node', `${$.plugin.root}/scripts/view.mjs`, '--once', '--cwd', await $.session.cwd()])
+      run = await $.process.run(['node', `${$.plugin.root}/scripts/view.mjs`, '--once', '--format', 'board', '--cwd', await $.session.cwd()])
     } catch {
       // a run that cannot start answers with the pane text
     }
@@ -447,7 +461,7 @@ export const register: Register = on => {
     // (no Button hotkey: the pane's Input holds the focus and takes `q` and `1`-`5` as text, see onKey)
     const close = <Button key="close" role="dismiss" plain dimColor label={s('close')} onPress={() => $.ui.close({ id: PANE })} />
     // plain tabs on one line: the selected one in full strength with a dot, the rest dim; `1`-`5` pick them
-    const TABS = ['floor', 'stories', 'decisions', 'log', 'report'] as const
+    const TABS = ['dash', 'floor', 'stories', 'decisions', 'log', 'report'] as const
     const pickTab = async (one: (typeof TABS)[number]) => {
       await update($, view, () => one)
       if (one === 'report' && id !== undefined) {
@@ -559,6 +573,21 @@ export const register: Register = on => {
         <Box flexShrink={0}>{close}</Box>
       </Box>
     )
+    // the Dashboard: node's model (view-dashboard.mjs) for the EPIC the pane shows. An Svg surface draws node's own
+    // SVG; the terminal draws the same model in Ink — header, tiles, numbered pipeline with Build's packages, lanes, activity
+    const dv = await read($, dash)
+    const dm = dv !== null && dv.model.key === (task?.key ?? entry?.key) ? dv.model : null
+    // Svg is every surface's but the terminal's (mod.md rule 8: behind an e.surface check)
+    const Svg = e.surface === 'terminal' ? undefined : (ui as { Svg?: any }).Svg
+    if (task === null && kind === 'dash' && dm !== null) {
+      return (
+        <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
+          <Box marginY={1}>{tabs}</Box>
+          {drawDash()}
+          {footer}
+        </Box>
+      )
+    }
     if (task === null) {
       return (
         <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
@@ -658,8 +687,92 @@ export const register: Register = on => {
       </Box>
     )
 
+    // hoisted: the task-less view above draws it too
+    function drawDash() {
+    let dashBody
+    if (dm === null) {
+      dashBody = <Text dimColor>{s('loading')}</Text>
+    } else if (Svg !== undefined) {
+      dashBody = <Svg source={dv!.svg} alt={dv!.alt} />
+    } else {
+      // the state word, a space, the bar, ' 100%': one row at any width
+      const barW = Math.max(4, Math.min(60, inner - clipText(dm.state.toUpperCase(), 12).length - 6))
+      const fill = Math.round((barW * dm.pct) / 100)
+      const tileW = Math.max(12, Math.floor((inner - (dm.tiles.length - 1)) / dm.tiles.length))
+      const laneW = Math.max(14, Math.floor((inner - 3) / 4))
+      // boxes only where each keeps a readable width; a narrow pane lists them one per line
+      const tilesFit = inner >= dm.tiles.length * 15
+      const lanesFit = inner >= 4 * 18
+      const LANE_TINT: Record<string, string> = { running: 'claude', you: 'warning', pending: 'inactive', done: 'success' }
+      const ACT_TINT: Record<string, string> = { failed: 'error', passed: 'success', finished: 'success', integrated: 'success', waiting: 'warning' }
+      const STAGE_GLYPH: Record<Mark, string> = { done: '✔', running: '◉', pending: '○', failed: '✘' }
+      dashBody = (
+        <Box flexDirection="column">
+          <Box>
+            <Text color={TINT[(dm.state === 'complete' ? 'done' : dm.state === 'blocked' ? 'failed' : 'running') as Mark]} bold>{`${clipText(dm.state.toUpperCase(), 12)} `}</Text>
+            <Text color="claude">{'█'.repeat(fill)}</Text><Text color="inactive">{'░'.repeat(barW - fill)}</Text>
+            <Text bold>{` ${dm.pct}%`}</Text>
+          </Box>
+          {dm.now !== '' && <Text dimColor wrap="truncate-end">{`▸ ${dm.now}`}</Text>}
+          {!tilesFit && (
+            <Box marginTop={1} flexDirection="column">
+              {dm.tiles.map(t => (
+                <Text key={`tile-${t.key}`} wrap="truncate-end"><Text dimColor>{t.label.toUpperCase().padEnd(10)}</Text><Text bold color={t.alert ? 'warning' : undefined}>{t.value}</Text><Text dimColor>{`  ${t.sub}`}</Text></Text>
+              ))}
+            </Box>
+          )}
+          {tilesFit && <Box marginTop={1} columnGap={1}>
+            {dm.tiles.map(t => (
+              <Box key={`tile-${t.key}`} width={tileW} flexDirection="column" borderStyle="round" borderColor={t.alert ? 'warning' : 'inactive'} paddingX={1}>
+                <Text dimColor>{clipText(t.label.toUpperCase(), tileW - 4)}</Text>
+                <Text bold color={t.alert ? 'warning' : undefined}>{clipText(t.value, tileW - 4)}</Text>
+                <Text dimColor>{clipText(t.sub, tileW - 4)}</Text>
+              </Box>
+            ))}
+          </Box>}
+          <Box marginTop={1} flexWrap="wrap">
+            {dm.stages.map((g, i) => (
+              <Box key={`ds-${g.key}`}>
+                <Text color={TINT[g.state]} bold={g.state === 'running'}>{`${STAGE_GLYPH[g.state]} ${g.n} ${g.label}`}</Text>
+                {i < dm.stages.length - 1 && <Text color={dm.stages[i + 1]!.state === 'pending' ? 'inactive' : 'success'}>{dm.stages[i + 1]!.state === 'pending' ? ' ┄┄ ' : ' ━━ '}</Text>}
+              </Box>
+            ))}
+          </Box>
+          {dm.packages.slice(0, 6).map((p, i, all) => (
+            <Text key={`dp-${i}`} wrap="truncate-end"><Text color="inactive">{i === all.length - 1 ? '  └─ ' : '  ├─ '}</Text><Text color={TINT[p.state]}>{`${MARK[p.state]} `}</Text>{clipText(p.title, inner - 8)}</Text>
+          ))}
+          {!lanesFit && (
+            <Box marginTop={1} flexDirection="column">
+              {dm.lanes.map(l => (
+                <Text key={`lane-${l.key}`} wrap="truncate-end"><Text color={LANE_TINT[l.key]}>● </Text><Text bold>{l.label}</Text><Text dimColor>{` ${l.count}  `}</Text>{l.cards.map(c => `${c.failed ? '✘ ' : ''}${c.title}`).join(' · ')}</Text>
+              ))}
+            </Box>
+          )}
+          {lanesFit && <Box marginTop={1} columnGap={1}>
+            {dm.lanes.map(l => (
+              <Box key={`lane-${l.key}`} width={laneW} flexDirection="column" borderStyle="round" borderColor="inactive" paddingX={1}>
+                <Text><Text color={LANE_TINT[l.key]}>● </Text><Text bold>{clipText(l.label, laneW - 6 - String(l.count).length)}</Text><Text dimColor>{` ${l.count}`}</Text></Text>
+                {l.cards.map((c, j) => <Text key={`lc-${j}`} color={c.failed ? 'error' : undefined}>{clipText(`${c.failed ? '✘ ' : ''}${c.title}`, laneW - 4)}</Text>)}
+                {l.more > 0 && <Text dimColor>{`+${l.more}`}</Text>}
+              </Box>
+            ))}
+          </Box>}
+          <Box marginTop={1} flexDirection="column">
+            {dm.activity.map((a, i) => (
+              <Text key={`da-${i}`} wrap="truncate-end"><Text dimColor>{`${a.time}  `}</Text><Text color={ACT_TINT[a.kind] ?? 'inactive'}>{`● ${a.kind.padEnd(10)}`}</Text>{` ${a.subject ?? ''}`}</Text>
+            ))}
+          </Box>
+        </Box>
+      )
+    }
+    return dashBody
+    }
+    const dashBody = drawDash()
+
     let body
-    if (kind === 'floor') {
+    if (kind === 'dash') {
+      body = dashBody
+    } else if (kind === 'floor') {
       body = floorLines
     } else if (kind === 'stories') {
       body = <Box flexDirection="column">{rail}{storiesBody}</Box>

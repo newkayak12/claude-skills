@@ -36,6 +36,7 @@ import { summarize, waitingCount } from './lib/view-summary.mjs';
 import { samePath, floorTasks, floorEntry } from './lib/view-floor-fs.mjs';
 import { reportPayload } from './lib/view-report.mjs';
 import { teamsView, decisionsView } from './lib/view-status.mjs';
+import { dashboardModel, dashboardSvg, dashboardAlt, dashboardText } from './lib/view-dashboard.mjs';
 import { asksFor } from './lib/view-asks.mjs';
 import { receivedRows } from './lib/ask-log.mjs';
 
@@ -67,7 +68,7 @@ function parseArgs(argv) {
 }
 
 function usage() {
-  return 'usage: node view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n> (default: TEAMS_VIEW_PORT, else 7431, else a free port)] [--once] [--view pipeline|tickets|resources] [--once --format status|events|summary|teams [--since <ts>] [--cwd <dir>] [--session <id>]] [--once --format report --task <id> [--cwd <dir>]] [--once --format decisions --task <id> [--card <id>]]\n';
+  return 'usage: node view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n> (default: TEAMS_VIEW_PORT, else 7431, else a free port)] [--once] [--view pipeline|tickets|resources] [--once --format status|events|summary|teams|board [--since <ts>] [--cwd <dir>] [--session <id>]] [--once --format report --task <id> [--cwd <dir>]] [--once --format decisions --task <id> [--card <id>]]\n';
 }
 
 // ---------- --once --format status|events|summary|teams|decisions (the teams-status mod's data) ----------
@@ -166,7 +167,26 @@ function teamsOutput(tasksDir, cwd, taskId, session) {
   const id = taskId || base.status.latest;
   const m = id ? collectTask(tasksDir, id) : null;
   const ok = m && !m.error;
-  return JSON.stringify({ status: base.status, tasks: base.tasks, task: ok ? summarize(m) : null, teams: ok ? teamsView(m) : null }) + '\n';
+  const task = ok ? summarize(m) : null;
+  const model = dashboardModel(task);
+  const dash = model ? { model, svg: dashboardSvg(model), alt: dashboardAlt(model) } : null;
+  return JSON.stringify({ status: base.status, tasks: base.tasks, task, teams: ok ? teamsView(m) : null, dash }) + '\n';
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// The board as plain lines (/teams-status's answer where no pane is drawn); with no task, the status line.
+function boardOutput(tasksDir, cwd, taskId, session) {
+  const base = JSON.parse(summaryOutput(tasksDir, cwd, taskId, session));
+  // nothing running: the newest EPIC of this cwd opened in the last day, whatever its end
+  let task = base.task || (base.tasks[0] || null);
+  if (!task && cwd) {
+    const recent = listTasks(tasksDir).filter((r) => Date.now() - (r.created_at || 0) < DAY_MS);
+    const hit = recent.find((r) => { try { return JSON.parse(readFileSync(join(tasksDir, r.task_id, 'task.json'), 'utf8')).cwd === cwd; } catch { return false; } });
+    const m = hit ? collectTask(tasksDir, hit.task_id) : null;
+    task = m && !m.error ? summarize(m) : null;
+  }
+  return dashboardText(dashboardModel(task)) || `${base.status.line || 'teams: no task running'}\n`;
 }
 
 // The decision timeline of --task (one card's with --card), from task.json and the ledger tail.
@@ -324,6 +344,7 @@ async function main() {
   if (args.once) {
     if (args.format === 'status') { process.stdout.write(statusOutput(tasksDir, args.cwd, args.session)); return; }
     if (args.format === 'summary') { process.stdout.write(summaryOutput(tasksDir, args.cwd, args.task, args.session)); return; }
+    if (args.format === 'board') { process.stdout.write(boardOutput(tasksDir, args.cwd, args.task, args.session)); return; }
     if (args.format === 'teams') { process.stdout.write(teamsOutput(tasksDir, args.cwd, args.task, args.session)); return; }
     if (args.format === 'decisions') { process.stdout.write(decisionsOutput(tasksDir, args.task, args.card)); return; }
     if (args.format === 'report') { process.stdout.write(reportOutput(tasksDir, args.task)); return; }

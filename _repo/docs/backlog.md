@@ -28,8 +28,16 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
       drivers), activity log, waiting-ask line; desktop/mobile/vscode = the same data as an Svg pipeline
       (fan-out packages, fan-in integrate) with metric tiles; every field from node (`view.mjs`/engine), none
       inferred in tsx; seen live on terminal and in the app (phone screenshot), 190/110 columns, README shots.
+    - Done 2026-10-26 (teams 0.61.0): Home tab first (key `0`); terminal Ink board seen live in tmux at 190
+      and 110 columns (narrow pane lists tiles and lanes one per line); Svg board for desktop/mobile/vscode,
+      mounted in tests and rendered in Chromium; README shots `pane-home.png`, `pane-home-app.png`; EPIC
+      titled by its backlog cards. Left: no design doc; the Svg not yet seen in the Claude desktop app (this
+      machine has none); the phone gets text only until the app attaches (card 74); demo approval by the user.
 
 65. **Flaky tests under load: name them when they recur**
+    - Recurred 2026-10-26: `teams/scripts/test-taskmanager.mjs` file-level after-hook, 2 of 4 runs:
+      "fixture driver left running after the suite: pid … (/tmp/tm-drv-*/hanging-driver.mjs)"; 320/0 on the
+      other runs. Unrelated change (teams 0.61.0 touched no taskmanager code). Cause unverified.
     - Why: card 65 rest shipped 2026-10-22 (E-7e3a46f0: exit-code rule in the teams setgoal prompt,
       `markOf` form and all guidance markers pinned). The one-off failures (teams 1369/1, graph 198/1,
       plugin-test "Loading" 5000 ms) did not reproduce in 3+3 runs (1416/1416, 200/200, 206/206).
@@ -182,6 +190,12 @@ toasts).
     - Acceptance: over Remote Control, `/teams-status` puts the board on the phone even when the app is
       not an attached surface (the fallback does not hang on `surfaces()` alone); proved by a phone
       screenshot, not by `claude plugin test` mounts.
+    - Proof 2026-10-26 (teams 0.61.0 session, Remote Control on, the person on the phone): at `/teams-status`
+      `$.session.surfaces()` read `["terminal"]` and `session.attach` never fired — the Claude app over Remote
+      Control is not a mod surface on 2.1.310, so no pane or Svg can reach it; only the command's `{ text }`
+      does. 0.61.0 answers with the board as text (`view.mjs --once --format board`). Left: a phone
+      screenshot of that text; whether a later Claude Code build attaches the app (then the Svg board
+      shows there) — a Claude Code gap, not fixable in the mod.
 
 ### knowledge plugin
 
