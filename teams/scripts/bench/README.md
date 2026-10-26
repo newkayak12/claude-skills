@@ -9,6 +9,8 @@ by what the arm left in the tree and what the session cost.
 | `betas` | teams 0.x without those words: `size` measures (S on these fixtures) and delegates to one graph run — the same topology as `stable`, with the `document` kind and `flow` | same |
 | `skills` | `betas`, with `--plugin-dir` for every plugin any `STAGE_SKILLS` (taskmanager.mjs) or `kindSkills` (graph.mjs) entry actually names — `develop`, `think`, `cognition`, `completion`, `write` — plus `agents`, mounted only when the directory exists | same as `betas` |
 | `stable` | graph 1.x: one graph run for the whole request | `graph:orchestrate` |
+| `graph-harness` | graph at the checkout under test (`$REPO/graph`), same prompt as `stable` | `graph:orchestrate` |
+| `graph-base` | graph as of commit `5abee21c` (`git archive` into `$OUT`, outside the workspace), same prompt as `stable` | `graph:orchestrate` |
 | `none` | plain `claude -p` on the same request, no plugin | — |
 
 Without the `skills` arm's extra `--plugin-dir`s, every `Skill()` call the mounted-skills tables
@@ -92,7 +94,7 @@ GRAPH_BENCH_OUT=... (default $TMPDIR/graph-bench)
 node scripts/bench/score.mjs <case> <workspace> [a.jsonl,b.jsonl]  # re-score; streams add up
 ```
 
-`<arm>` is `beta | betas | skills | stable | none`; `<case>` is `code | docs | code-flat |
+`<arm>` is `beta | betas | skills | stable | graph-harness | graph-base | none`; `<case>` is `code | docs | code-flat |
 docs-flat | goal-code | goal-docs | seam | seam-flat | seam-silent | trap`.
 
 A headless session on a plan with a usage limit dies mid-run — three rounds of this bench did,
