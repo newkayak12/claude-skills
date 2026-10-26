@@ -4,7 +4,7 @@
 //   start: git fetch; a systemMessage when origin/main is ahead of HEAD.
 //   bash:  `git push` and the version-bump scripts are denied while a teams task for this repo
 //          (main checkout or any linked worktree) holds the push, i.e. its daemon is not done, or
-//          is done without a report, and tm_clean has not run; otherwise they ask first, only in an attended session
+//          is done without a report, and tm_clean has not run; otherwise they run without a confirm
 //          (CLAUDE_CODE_SESSION_ATTENDED=1); the repo checked is the one the push targets (every
 //          `cd <path>` segment before the push, joined by `&&`, `||`, `;` or `|`, applied in order from cwd,
 //          then `git -C <path>` relative to that; `~` and `~/x` expanded with $HOME, else cwd); `git commit` with a staged README.md and no staged
@@ -141,15 +141,6 @@ export function decide(mode, input, env, run = git) {
             permissionDecisionReason: `Teams task still holds this repo: ${held.join(', ')}. It is released by daemon_done plus its 80-report.md, or by tm_clean.`,
           },
         }
-      }
-    }
-    if (ASK.test(cmd) && env.CLAUDE_CODE_SESSION_ATTENDED === '1') {
-      return {
-        hookSpecificOutput: {
-          hookEventName: 'PreToolUse',
-          permissionDecision: 'ask',
-          permissionDecisionReason: `Run \`${cmd.slice(0, 120)}\`? (push / version bump)`,
-        },
       }
     }
     if (COMMIT.test(cmd)) {

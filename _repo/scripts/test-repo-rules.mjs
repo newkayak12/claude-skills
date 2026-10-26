@@ -47,10 +47,11 @@ sh(clone, 'pull', '-q')
 check('start: up to date -> silent', Object.keys(run('start', { cwd: clone }).out).length === 0)
 check('start: not a repo -> fail open', run('start', { cwd: root }).code === 0)
 
-check('git push attended -> ask', decision(bash('git push origin main', clone, ATT)) === 'ask')
+// no confirm on push or bump (user, 2026-10-26: "github 관련해서 그냥 하라고 묻지말고"); only an open task holds them
+check('git push attended -> pass', decision(bash('git push origin main', clone, ATT)) === undefined)
 check('git push unattended -> pass', decision(bash('git push origin main', clone)) === undefined)
-check('patch-harness attended -> ask', decision(bash('node _repo/scripts/patch-harness.mjs x', clone, ATT)) === 'ask')
-check('teams patch attended -> ask', decision(bash("node teams/skills/patch/patch.mjs '{}'", clone, ATT)) === 'ask')
+check('patch-harness attended -> pass', decision(bash('node _repo/scripts/patch-harness.mjs x', clone, ATT)) === undefined)
+check('teams patch attended -> pass', decision(bash("node teams/skills/patch/patch.mjs '{}'", clone, ATT)) === undefined)
 check('git status attended -> pass', decision(bash('git status', clone, ATT)) === undefined)
 check('non-Bash tool -> pass', Object.keys(run('bash', { tool_name: 'Write', tool_input: { command: 'git push' } }, ATT).out).length === 0)
 
@@ -92,7 +93,7 @@ check('prepush: open task -> exit 1 naming the id', held.status === 1 && /t-open
 writeFileSync(join(tasks, 't-open/ledger.jsonl'), '{"event":"tm_open"}\n{"event":"daemon_spawned"}\n{"event":"daemon_done"}\n')
 check('daemon_done without a report -> deny', denied(bash('git push origin main', clone), 't-open') && prepush().status === 1)
 report('t-open', unresolved)
-check('daemon_done last -> push unattended pass, attended ask', decision(bash('git push origin main', clone)) === undefined && decision(bash('git push origin main', clone, ATT)) === 'ask')
+check('daemon_done last -> push pass, attended or not', decision(bash('git push origin main', clone)) === undefined && decision(bash('git push origin main', clone, ATT)) === undefined)
 check('prepush: daemon_done -> exit 0', prepush().status === 0)
 writeFileSync(join(tasks, 't-open/ledger.jsonl'), '{"event":"tm_open"}\n{"event":"daemon_done"}\n{"event":"tm_retry"}\n')
 check('retry after daemon_done -> deny', denied(bash('git push origin main', clone), 't-open'))
@@ -167,7 +168,7 @@ check('target: git -C worktree from an unrelated cwd -> deny', denied(bash(`git 
 check('target: git -C ../main (relative) from an unrelated cwd -> deny', denied(bash('git -C ../main push', unrelated), 't-wt'))
 check('target: cd worktree && push from an unrelated cwd -> deny', denied(bash(`cd ${linked} && git push`, unrelated), 't-wt'))
 check('target: git -C not a checkout -> falls back to cwd, held', denied(bash(`git -C ${join(wtRoot, 'nope')} push`, main), 't-wt'))
-check('target: git -C other-repo attended -> still asks', decision(bash(`git -C ${unrelated} push`, main, ATT)) === 'ask')
+check('target: git -C other-repo attended -> pass', decision(bash(`git -C ${unrelated} push`, main, ATT)) === undefined)
 // compound targets: cd segments applied in order, `git -C` relative to them, `~` from env HOME
 const home = { HOME: wtRoot }
 check('target: cd main && git -C ../unrelated push -> no deny', free(bash(`cd ${main} && git -C ../unrelated push`, unrelated)))
