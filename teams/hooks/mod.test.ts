@@ -231,9 +231,10 @@ const EN_UI = ['Now', 'You', 'Stages', 'Work', 'Cost', 'Summary', 'Log', 'needs 
 
 // Engine beneath: a Map-backed $.state, process.run for view.mjs (status and summary answer the same
 // fixture), ui.open and ui.status recorded.
-type Data = { status?: Record<string, unknown>; tasks?: unknown[]; task?: unknown; teams?: unknown; decisions?: (card: string | null) => unknown; reports?: Record<string, unknown>; events?: unknown[]; failReport?: boolean; isUnplaced?: boolean; plain?: Run }
+type Data = { status?: Record<string, unknown>; tasks?: unknown[]; task?: unknown; teams?: unknown; dash?: unknown; decisions?: (card: string | null) => unknown; reports?: Record<string, unknown>; events?: unknown[]; failReport?: boolean; isUnplaced?: boolean; plain?: Run }
 function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly Surface[] = ['terminal'], data: Data = {}) {
-  const store = new Map<string, unknown>(Object.entries(init))
+  // the pane opens on the Dashboard; the older tests read the Floor and say so here unless they pick a tab
+  const store = new Map<string, unknown>(Object.entries({ view: 'floor', ...init }))
   const seen = { store, argv: [] as (readonly string[])[], opened: [] as string[], openArgs: [] as unknown[], statuses: [] as (string | undefined)[] }
   const status = () => data.status ?? { line: '', waiting: 0 }
   on('session.surfaces', () => ({ value: surfaces }))
@@ -246,7 +247,7 @@ function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly 
     seen.argv.push(e.argv)
     const format = e.argv[e.argv.indexOf('--format') + 1]
     // `view.mjs --once` with no --format: the EPIC index the command answers with off the terminal
-    if (!e.argv.includes('--format')) return { value: data.plain ?? ok('') }
+    if (!e.argv.includes('--format') || e.argv.includes('board')) return { value: data.plain ?? ok('') }
     if (format === 'report' && data.failReport) return { value: { exitCode: 1, stdout: '', stderr: 'boom' } }
     if (format === 'events') {
       const since = Number(e.argv[e.argv.indexOf('--since') + 1])
@@ -257,7 +258,7 @@ function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly 
       const card = e.argv.includes('--card') ? e.argv[e.argv.indexOf('--card') + 1]! : null
       return { value: ok(JSON.stringify(data.decisions?.(card) ?? { card, entries: [] })) }
     }
-    if (format === 'teams') return { value: ok(JSON.stringify({ status: status(), tasks: data.tasks, task: data.task ?? null, teams: data.teams ?? null })) }
+    if (format === 'teams') return { value: ok(JSON.stringify({ status: status(), tasks: data.tasks, task: data.task ?? null, teams: data.teams ?? null, dash: data.dash ?? null })) }
     return { value: ok(format === 'status' ? JSON.stringify(status()) : format === 'summary' ? JSON.stringify({ status: status(), tasks: data.tasks, task: data.task ?? null }) : '') }
   })
   on('ui.open', (_$, e) => {
@@ -640,7 +641,7 @@ test('tabRowPlan: the cost text goes first, then the gap, then the longest label
   expect(tight.cost).toBeNull()
   expect(total(tight)).toBeLessThanOrEqual(34)
   expect(tight.labels.some(l => l.endsWith('…'))).toBe(true)
-  const hint = '[ ] EPIC · j k row · 1-5 tabs'
+  const hint = '[ ] EPIC · j k row · 0-5 tabs'
   expect(footerPlan({ steps: 0, open: '', close: 'q close', hint }, 80).hint).toBe(hint)
   const cut = footerPlan({ steps: 2, open: '', close: 'q close', hint }, 42).hint
   expect(cut.endsWith('…')).toBe(true)
@@ -811,10 +812,10 @@ test('/teams-status: ui.open not placed: answers with the view.mjs text, run wit
   on('ui.panes', () => ({ value: [] }) as never)
   await start($)
   expect(textOf(await runStatus($))).toBe(INDEX)
-  const plain = seen.argv.find(a => !a.includes('--format'))!
+  const plain = seen.argv.find(a => a.includes('board'))!
   expect(plain.slice(0, 1)).toEqual(['node'])
   expect(plain[1]).toMatch(/\/scripts\/view\.mjs$/)
-  expect(plain.slice(2)).toEqual(['--once', '--cwd', '/proj'])
+  expect(plain.slice(2)).toEqual(['--once', '--format', 'board', '--cwd', '/proj'])
 })
 
 test('/teams-status: a desktop session (pane placed): answers with the view.mjs text', async ($, on) => {
@@ -832,7 +833,7 @@ test('/teams-status: a terminal-only session with the pane placed answers with t
   await start($)
   expect(textOf(await runStatus($))).toBe(INDEX)
   expect(seen.opened).toEqual(['teams-status'])
-  expect(seen.argv.filter(a => !a.includes('--format'))).toHaveLength(1)
+  expect(seen.argv.filter(a => a.includes('board'))).toHaveLength(1)
 })
 
 test('/teams-status: an empty roster answers with the view.mjs text', async ($, on) => {
@@ -2200,4 +2201,41 @@ test('receiver: a teams ask is consumed and the data refreshed once; other text 
   const other = await $.session.receive({ ...input, text: 'hello' } as never)
   expect(other).toEqual({ text: 'hello' })
   expect(dataCalls()).toBe(n + 1)
+})
+
+// the Home tab draws node's dashboard: node's SVG where the surface has Svg, the same model in Ink on the terminal
+const DASH = {
+  model: {
+    key: 'E-3a3a3bb5', title: 'Build the expense tracker', state: 'running', pct: 33, now: 'Build · Receipts upload',
+    stages: [{ n: 1, key: 'plan', label: 'Plan', state: 'done' }, { n: 2, key: 'build', label: 'Build', state: 'running' }, { n: 3, key: 'integrate', label: 'Integrate', state: 'pending' }],
+    packages: [{ title: 'Receipts upload', state: 'running' }],
+    lanes: [{ key: 'running', label: 'In progress', count: 1, cards: [{ title: 'Receipts upload', kind: 'package', failed: false, reason: null }], more: 0 }],
+    tiles: [{ key: 'progress', label: 'Progress', value: '33%', sub: '1/3 stages' }, { key: 'cost', label: 'Cost', value: '$1.20', sub: '30 turns' }],
+    activity: [{ time: '10:02', kind: 'dispatched', subject: 'Receipts upload' }],
+    waiting: [], at: 0,
+  },
+  svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>',
+  alt: 'E-3a3a3bb5 Build the expense tracker: running, 33%',
+}
+for (const surface of SURFACES) {
+  test(`${surface}: Home draws ${surface === 'terminal' ? 'the Ink dashboard, no Svg' : "node's Svg"}`, async ($, on) => {
+    await seeded($, on, { status: stat(), task: demo(), dash: DASH }, surface, undefined, { view: 'dash' })
+    const ui = await pane($, surface)
+    const svg = await ui.find({ type: 'Svg' })
+    if (surface === 'terminal') {
+      expect(svg).toBeUndefined()
+      const text = await shown(ui)
+      const rows = frame((await ui.drawn()) as any, 'Teams', 84)
+      for (const l of rows) expect(cells(l)).toBeLessThanOrEqual(84)
+      for (const word of ['33%', '2 Build', 'PROGRESS', 'Receipts upload', 'In progress', 'dispatched']) expect(text).toContain(word)
+    } else {
+      expect(svg?.props.source).toBe(DASH.svg)
+      expect(svg?.props.alt).toBe(DASH.alt)
+    }
+  })
+}
+
+test('the pane opens on Home; 0 picks it, 1 the Floor', async () => {
+  expect(paneKey('0')).toEqual({ kind: 'tab', tab: 'dash' })
+  expect(paneKey('1')).toEqual({ kind: 'tab', tab: 'floor' })
 })

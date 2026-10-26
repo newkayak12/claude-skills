@@ -45,7 +45,20 @@ export type SummaryTaskEntry = SummaryTask & {
 export type SummaryOutput = { status: StatusInfo; tasks: SummaryTaskEntry[]; task: SummaryTask | null }
 
 // the pane's tabs, in key order
-export type PaneView = 'floor' | 'stories' | 'decisions' | 'log' | 'report'
+export type PaneView = 'dash' | 'floor' | 'stories' | 'decisions' | 'log' | 'report'
+
+// `view.mjs --once --format teams` dash part (teams/scripts/lib/view-dashboard.mjs): the Dashboard tab
+export type DashStage = { n: number; key: string; label: string; state: Mark }
+export type DashLane = { key: string; label: string; count: number; cards: { title: string; kind: string; failed: boolean; reason: string | null }[]; more: number }
+export type DashModel = {
+  key: string; title: string; state: string; pct: number; now: string
+  stages: DashStage[]; packages: { title: string; state: Mark }[]; lanes: DashLane[]
+  tiles: { key: string; label: string; value: string; sub: string; alert?: boolean }[]
+  activity: { time: string; kind: string; subject: string | null }[]
+  waiting: { who: string; title: string; question: string }[]
+  at: number
+}
+export type Dash = { model: DashModel; svg: string; alt: string }
 
 // `view.mjs --once --format teams` teams part (teams/scripts/lib/view-status.mjs teamsView)
 export type NowLine = { team: string; key: string; node: string; agent: string | null; elapsed_ms: number | null }
@@ -91,6 +104,8 @@ declare module 'claude-code' {
       // the Floor spinner frame, advanced every ~800 ms while a worker acts
       frame: number
       teams: TeamsView | null
+      // the Dashboard tab: node's model and the Svg desktop, mobile and vscode draw
+      dash: Dash | null
       // the Decisions tab: fetched for one task, and one card when one was picked
       decisions: { task_id: string; card: string | null; payload: DecisionsPayload } | null
       selected: string | null

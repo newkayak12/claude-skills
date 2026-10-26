@@ -701,16 +701,19 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
 // truncates. The full `request` is never lost: view.mjs's per-task page (and --task <id>) still
 // show it in full - this is only the index's headline.
 //
-// A backlog (tm_open requests[], the raw items in task.requests) reads "N items" past one item;
+// A backlog (tm_open requests[], the raw items in task.requests) past one item reads as the backlog
+// cards its items name ("Backlog cards 74, 84"), else as its first item and how many more ("Fix X +2");
 // one item reads as itself, not as the composed "[backlog priority 0] ..." request string.
 const TITLE_MAX = 72;
+const itemText = (r) => (r && typeof r === 'object' ? (r.request ?? r.text ?? r.title ?? '') : r);
 export function deriveTitle(request, requests) {
   let text = request;
-  if (Array.isArray(requests) && requests.length > 1) return `${requests.length} items`;
-  if (Array.isArray(requests) && requests.length === 1) {
-    const r = requests[0];
-    text = r && typeof r === 'object' ? (r.request ?? r.text ?? r.title ?? '') : r;
+  if (Array.isArray(requests) && requests.length > 1) {
+    const cards = [...new Set(requests.map((r) => (/\bcard (\d+)/i.exec(String(itemText(r) || '')) || [])[1]).filter(Boolean))];
+    if (cards.length) return `Backlog card${cards.length > 1 ? 's' : ''} ${cards.join(', ')}`;
+    return `${deriveTitle(itemText(requests[0]))} +${requests.length - 1}`;
   }
+  if (Array.isArray(requests) && requests.length === 1) text = itemText(requests[0]);
   const s = String(text || '').trim();
   if (!s) return '(no request)';
   const clause = (s.match(/^[\s\S]*?[.!?](?=\s|$)/) || [s])[0].replace(/[.!?]+$/, '').trim();

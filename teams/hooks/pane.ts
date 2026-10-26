@@ -3,10 +3,10 @@
  * its task leaves the list. No engine, no drawing: mod.tsx reads state and calls these.
  */
 
-export type PaneTabKey = 'floor' | 'stories' | 'decisions' | 'log' | 'report'
-const KEY_TABS: Record<string, PaneTabKey> = { '1': 'floor', '2': 'stories', '3': 'decisions', '4': 'log', '5': 'report' }
+export type PaneTabKey = 'dash' | 'floor' | 'stories' | 'decisions' | 'log' | 'report'
+const KEY_TABS: Record<string, PaneTabKey> = { '0': 'dash', '1': 'floor', '2': 'stories', '3': 'decisions', '4': 'log', '5': 'report' }
 
-// `[` / `]` step the EPIC, `j` / `k` the STORY row, `g` opens the row's run, `1`-`5` pick a tab, `q` closes. The pane's
+// `[` / `]` step the EPIC, `j` / `k` the STORY row, `g` opens the row's run, `0`-`5` pick a tab, `q` closes. The pane's
 // Input holds the focus, so these keys reach it as text, never a Button hotkey. Text holding a `/` is a slash command
 // being typed (`/teams-status`): held, no key fires until submit (paneSlash). Any other text, none, or a non-string is no key.
 export type PaneKey =
