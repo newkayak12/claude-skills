@@ -64,6 +64,17 @@ toasts).
       $17.21. Next: Task 5 alone as size S, then Task 6's arm and dry run; the full 3× matrix from the
       session under the driver cap. Minimum effect sizes still placeholders (1 of 3 problems for axes 1-6,
       1 field for 7-8, 20% for 9) — the run takes them as defaults and the report names them.
+    - Task 6 first half shipped (eac1f097, E-27be4005): graph-harness/graph-base arms, ghscore.mjs,
+      authors pinned to sonnet. Full 162-run matrix started 2026-10-26 08:52Z; a real run costs
+      ~$1.5 and ~6 min per arm (dry run was $0.36), so the matrix is ~$240 and ~16 h.
+
+82. **drive.sh finds the anonymized gh-* workspace, so a usage-limit stop resumes**
+    - Why: 2026-10-26 bench log: every gh-* job ends "session killed with no result event; resuming"
+      then `resume.sh: cd: …/gh-verified-1-graph-harness-r1: No such file`. bench.sh names the
+      workspace `<case>-<sha256(arm-label)[0:10]>` (bench.sh:98) but drive.sh:199 looks for
+      `<case>-<arm>-<label>`, so it reads no stream. Runs still record; a usage-limit stop is not resumed.
+    - Acceptance: drive.sh and resume.sh resolve the same workspace bench.sh made; a test in
+      `teams/scripts/bench/test-*.mjs` covers a gh-* job ending normally (no resume) and on a limit (resume).
 
 ### Subagents and parallel runs — use and clean up (user, 2026-10-17)
 
@@ -215,3 +226,4 @@ toasts).
 | E-82cdb580 | 2026-10-26 | 48 Task 5 | shipped `df102aa5`; size S; AXES.md sha256 9580dbfd…; 27 problems, bench 52/52 |
 | E-d93aa063 | 2026-10-26 | 76 (part) | shipped `ff3d9073`; size S; teams 1513/1513 |
 | E-3f6657e7 | 2026-10-26 | 75 (part) | shipped `6d5809b2`; size S; large-context live check left on card 75 |
+| E-27be4005 | 2026-10-26 | 48 Task 6 (first half) | shipped `eac1f097`; size S; dry run gh-defect-2 ~$0.36 per arm; batch bump `f4d455a1` |
