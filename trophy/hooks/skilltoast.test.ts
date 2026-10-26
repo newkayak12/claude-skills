@@ -9,7 +9,7 @@ const SKILLS: Record<string, string[]> = { develop: ['clean-code'], think: ['gri
 // The engine's own answers beneath the plugin; returns the toasts raised.
 const boot = async ($: any, on: On, interactive = true) => {
   memoryStore(on)
-  sessionAt(on)
+  sessionAt(on).surfaces = interactive ? ['terminal'] : []
   const toasts: string[] = []
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))

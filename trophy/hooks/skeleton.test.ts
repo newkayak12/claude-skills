@@ -10,6 +10,7 @@ const start = (isInteractive: boolean) => ({
 
 test('a non-interactive session registers nothing and writes nothing', async ($, on) => {
   const store = memoryStore(on)
+  on('session.surfaces', () => ({ value: [] }))
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   const registered: string[] = []
   on('command.register', (_$, e) => {
@@ -25,6 +26,7 @@ test('a non-interactive session registers nothing and writes nothing', async ($,
 
 test('an interactive session registers both commands and keeps one install id', async ($, on) => {
   const store = memoryStore(on)
+  on('session.surfaces', () => ({ value: ['terminal'] }))
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   const registered: string[] = []
   on('command.register', (_$, e) => {

@@ -592,6 +592,7 @@ export const register: Register = (on, options) => {
 
   // The pane opens only from its command.
   on('command.run', { command: 'session' }, async ($, e) => {
+    if ((await $.session.surfaces()).length === 0) return { text: '/session opens a pane in interactive sessions only.' }
     if (e.args.trim() === 'retro') await update($, tab, () => 'retro')
     await openPane($)
     return { text: 'Session pane opened.' }

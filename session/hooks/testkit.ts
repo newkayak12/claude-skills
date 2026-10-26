@@ -53,7 +53,23 @@ export const clockAt = (on: On, now = Date.parse('2026-10-08T09:00:00Z')) => moc
 
 type Run = { exitCode: number; stdout: string; stderr: string }
 export const ran = (stdout: string, exitCode = 0): Run => ({ exitCode, stdout, stderr: '' })
-type Surface = 'terminal' | 'desktop'
+export type Surface = 'terminal' | 'desktop' | 'mobile' | 'vscode'
+// Every surface a pane, band or toast draws on (mod.md rule 8).
+export const SURFACES = ['terminal', 'desktop', 'mobile', 'vscode'] as const satisfies readonly Surface[]
+
+const SHARED = new Set(['Box', 'Text', 'Button', 'Link', 'Code', 'Markdown'])
+// Fails if a drawn tree holds a node type the four surfaces do not all carry.
+export const onlyShared = (tree: any) => {
+  const types = new Set<string>()
+  const walk = (n: any): void => {
+    if (Array.isArray(n)) return n.forEach(walk)
+    if (n === null || typeof n !== 'object') return
+    if (typeof n.type === 'string') types.add(n.type)
+    walk(n.children)
+  }
+  walk(tree)
+  expect([...types].filter(t => !SHARED.has(t))).toEqual([])
+}
 
 export type GuardWorld = {
   surfaces?: readonly Surface[]

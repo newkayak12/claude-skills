@@ -45,7 +45,7 @@ test('a thrown fetch does not break session start', async ($, on) => {
 
 test('a non-interactive session never fetches, writes a profile or stores', async ($, on) => {
   const store = memoryStore(on, { 'trophy.consent': 'yes', 'trophy.installId': 'i' })
-  sessionAt(on)
+  sessionAt(on).surfaces = []
   bottom(on)
   const calls: string[] = []
   on('http.fetch', () => {

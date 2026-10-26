@@ -56,7 +56,7 @@ export const register: Register = (on, _options) => {
         const why = refusal(g, p, cmd.text)
         if (why) {
           try {
-            $.ui.toast(`memo: ${why}`, { timeoutMs: 6000 })
+            if (((await $.session.surfaces()) as unknown[]).length > 0) $.ui.toast(`memo: ${why}`, { timeoutMs: 6000 })
           } catch {}
           return { text: why }
         }

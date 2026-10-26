@@ -1,7 +1,8 @@
 import { test, expect } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { clockAt, memoryState, memoryStore, texts } from './testkit.ts'
+import { clockAt, memoryState, memoryStore, SURFACES, texts } from './testkit.ts'
+import type { Surface } from './testkit.ts'
 
 const PANE = {
   title: 'Session', isFocused: true, bodyColumns: 80, placement: 'inline', scroll: { bodyRows: 20 }, view: {},
@@ -30,6 +31,7 @@ const world = (on: On, seed: Record<string, unknown> = { 'session.ledger': LEDGE
   })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('session.surfaces', () => ({ value: ['terminal'] }))
   const opened: string[] = []
   on('ui.open', (_$, e) => {
     opened.push(e.id)
@@ -38,10 +40,11 @@ const world = (on: On, seed: Record<string, unknown> = { 'session.ledger': LEDGE
   return { cells, procs, opened }
 }
 
-const mount = ($: any, surface: 'terminal' | 'desktop') =>
+const mount = ($: any, surface: Surface) =>
   $.ui.mount({ plugin: 'session', surface, component: 'Pane', requestId: 'session', props: PANE })
 
-for (const surface of ['terminal', 'desktop'] as const) {
+// terminal, desktop, mobile and vscode
+for (const surface of SURFACES) {
   test(`${surface}: Retro shows files with stats, commit, denied and longest gap`, async ($, on) => {
     const { procs } = world(on)
     await $.session.start({ cwd: '/w', surface, isInteractive: true })
