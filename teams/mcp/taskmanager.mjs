@@ -66,6 +66,7 @@ import { baseline as scopeBaseline } from './scope.mjs';
 import { logReply, renderStreamLine, renderLedgerLine } from './tasklog.mjs';
 import { validate as validateDiagram, renderToFile as renderDiagram } from './diagram.mjs';
 import { conventionsBlock } from './conventions.mjs';
+import { placeholderAcceptance, touchScope, scopesOverlap, pathOverlapProblems, shapePrecheck, formatShapeFeedback } from './shapecheck.mjs';
 import {
   tasksRoot, taskDir, taskPath, record, beginEffectLedger, takeEffectLedger, driverAlive,
   restartBudget, countedDriverRestarts, unfinishedWork, resolveHarnessRun, harnessState,
@@ -874,6 +875,10 @@ function replanPlanning(task, n) {
   for (const d of r.duplicate_ids || []) {
     for (const c of d.cards.slice(1)) add(c, `story id ${d.id} is also defined by ${d.cards[0]}: renumber this card's stories with its own prefix (${String(c).replace(/^PLAN-/, '')}-US-n)`);
   }
+  // Every offender of a card lands in one gap set, so one retry message lists all its bad stories.
+  for (const p of r.placeholder_acceptance || []) {
+    add(String(p.card), `story ${p.story} has acceptance that is a placeholder or a bare id, not a criterion: "${String(p.item).slice(0, 160)}" - write the full criterion text of each AC (F<n>-AC-n: Given ..., When ..., Then ...) in that story's acceptance[], not a pointer to the document and not an id`);
+  }
   for (const x of Array.isArray(r.retry) ? r.retry : []) {
     const card = x && x.card != null ? String(x.card) : '';
     const gaps = Array.isArray(x && x.gaps) ? x.gaps.map(String) : [];
@@ -1013,18 +1018,8 @@ function planningStoryLines(stories) {
 // (tickets.mjs's planningStories) - passed by finish(), so this stays a pure function of what it
 // is handed. undefined/null skips the check entirely (a caller with no planning to check against;
 // the engine itself always passes the list now that planning always runs).
-// A touches entry as the path it claims: a trailing /** or /* claims the directory, so
-// "src/a/**", "src/a/*" and "src/a" are one scope. Any other wildcard is left as written and
-// only ever matches itself - guessing what "src/*.test.ts" covers would fail good shapes.
-function touchScope(t) {
-  return t.replace(/\/\*\*?$/, '');
-}
-
-function scopesOverlap(a, b) {
-  if (a === b) return true;
-  if (/[*?[]/.test(a) || /[*?[]/.test(b)) return false;
-  return a.startsWith(b + '/') || b.startsWith(a + '/');
-}
+// touchScope / scopesOverlap / pathOverlapProblems / shapePrecheck live in shapecheck.mjs, which
+// the shape stage can also run on a draft (node shapecheck.mjs --prd ... --shape ...).
 
 // Two packages claim a path in common, by the rule validateShape uses for shape's packages.
 function touchesOverlap(a, b) {
@@ -1038,9 +1033,6 @@ function touchesOverlap(a, b) {
 function knownIds(task) {
   return [...planningPkgs(task), ...((task.spec && task.spec.packages) || []), ...qaPkgs(task), ...(task.audit_pkg ? [task.audit_pkg] : [])].map((p) => String(p.id));
 }
-
-// An acceptance ID as the PRD writes it ("F1-AC-2") or a model shortens it ("AC-2").
-const AC_ID = /\b(?:F\d+-)?AC-\d+\b/g;
 
 export function validateShape(spec, userStories) {
   const problems = [];
@@ -1077,20 +1069,7 @@ export function validateShape(spec, userStories) {
   // Overlapping touches is what integration conflicts are made of; say so before dispatch.
   // Containment counts, not only equality: idol-pm-4 (2026-09-23) passed with P1 owning
   // src/identity/module.ts and P2 owning src/identity/**, one file claimed twice in two spellings.
-  const claimsOf = new Map();
-  for (const p of packages) {
-    for (const t of (p && p.touches) || []) {
-      const raw = String(t).replace(/\/+$/, '');
-      const key = touchScope(raw);
-      for (const [other, [oid, oraw]] of claimsOf) {
-        if (oid === String(p.id) || !scopesOverlap(key, other)) continue;
-        problems.push(raw === oraw
-          ? `packages ${oid} and ${p.id} both touch ${raw}`
-          : `packages ${oid} and ${p.id} both touch ${key.length >= other.length ? raw : oraw}: ${oid}'s ${oraw} and ${p.id}'s ${raw} overlap - narrow one so each path has one owner`);
-      }
-      if (!claimsOf.has(key)) claimsOf.set(key, [String(p.id), raw]);
-    }
-  }
+  problems.push(...pathOverlapProblems(packages));
   const edges = new Map(packages.map((p) => [String(p.id), ((p.deps || []).map(String)).filter((d) => ids.has(d))]));
   const state = new Map();
   const walk = (id, path) => {
@@ -1129,35 +1108,10 @@ export function validateShape(spec, userStories) {
     // Acceptance IDs ride under their story (sdd step 3, option A: no new field): a package that
     // implements a story carries that story's AC-n, ID-prefixed, in its own acceptance[]. Only
     // checked when the PRD wrote AC-n at all, so a PRD without them is untouched.
-    const prdAc = new Map(); // AC id -> the story that owns it
-    for (const u of userStories) {
-      const sid = storyId(u);
-      const acc = u && typeof u === 'object' && Array.isArray(u.acceptance) ? u.acceptance : [];
-      for (const x of acc) for (const m of String(x).match(AC_ID) || []) if (!prdAc.has(m)) prdAc.set(m, sid);
-    }
-    if (prdAc.size) {
-      const resolve = (t) => {
-        if (prdAc.has(t)) return t;
-        if (/^F\d+-/.test(t)) return null;
-        const hits = [...prdAc.keys()].filter((k) => k.endsWith(`-${t}`));
-        return hits.length === 1 ? hits[0] : null;
-      };
-      const carried = new Set();
-      const unknown = new Set();
-      for (const p of packages) {
-        const owns = new Set([...(Array.isArray(p && p.implements) ? p.implements : []), ...(Array.isArray(p && p.enables) ? p.enables : [])].map(String));
-        for (const x of Array.isArray(p && p.acceptance) ? p.acceptance : []) {
-          for (const t of String(x).match(AC_ID) || []) {
-            const k = resolve(t);
-            if (!k) unknown.add(t);
-            else if (owns.has(String(prdAc.get(k)))) carried.add(k);
-          }
-        }
-      }
-      const lost = [...prdAc.keys()].filter((k) => !carried.has(k));
-      if (lost.length) problems.push(`PRD acceptance criteria missing from every implementing package's acceptance[]: ${lost.join(', ')} - copy each AC-n item verbatim, ID-prefixed, into the acceptance[] of the package that implements (or enables) its story`);
-      if (unknown.size) problems.push(`acceptance IDs not in the PRD: ${[...unknown].join(', ')} - a package may cite only the AC-n its stories wrote`);
-    }
+    // shapecheck.mjs reads who carries which AC: missing, carried by two packages, unknown. Its
+    // path overlaps are already in problems above, so they are not added a second time.
+    const pre = shapePrecheck({ packages }, userStories);
+    problems.push(...pre.problems.filter((x) => !pre.overlaps.includes(x)));
   }
   return problems;
 }
@@ -1271,6 +1225,17 @@ export function qaCards(task, integrateId) {
       deps: [], touches: [],
     };
   });
+}
+
+// The feedback a reshape carries from the node that failed. A shape refused by the mechanical
+// pre-check already says everything in shape_problems (its `reason` is the same list joined after
+// "unusable shape:"), so the list goes once, every problem on its own line.
+function shapeFeedback(source) {
+  const r = (source && source.result) || {};
+  if (source && source.stage === 'shape' && Array.isArray(r.shape_problems) && r.shape_problems.length) {
+    return formatShapeFeedback([...r.shape_problems, ...(r.blocking || []), ...(r.problems || [])]);
+  }
+  return [r.reason || '', ...(r.blocking || []), ...(r.shape_problems || []), ...(r.problems || [])].filter(Boolean).join('\n- ');
 }
 
 function retryShape(task, feedback) {
@@ -1626,9 +1591,7 @@ export function autoReshape(task) {
   if (!source) return false;
   // Nothing else may still be moving: a live dispatch belongs to the shape being replaced.
   if (task.nodes.some((n) => n.state === 'running')) return false;
-  const fb = [source.result.reason || '', ...(source.result.blocking || []), ...(source.result.shape_problems || []), ...(source.result.problems || [])]
-    .filter(Boolean).join('\n- ');
-  const out = retryShape(task, fb);
+  const out = retryShape(task, shapeFeedback(source));
   record(task, { event: out.attempt ? 'auto_reshape' : 'tm_settle', task_id: task.run_id, target: 'shape', attempt: out.attempt, from: source.node_id });
   return !!out.attempt;
 }
@@ -4131,6 +4094,7 @@ export function composeTaskPrompt(task, n) {
     L.push(bullets(userStories.map((u) => `${storyLabel(u)}${u.card ? ` (${u.card})` : ''}`)));
     if (userStories.some((u) => u && Array.isArray(u.acceptance) && u.acceptance.some((x) => /\bAC-\d+\b/.test(String(x))))) {
       L.push(`Their acceptance (AC-n) - copy each item verbatim, ID-prefixed, into the acceptance[] of the package that implements (or enables) its story; the shape is refused if one is left out:\n${planningStoryLines(userStories)}`);
+      L.push(`The shape is checked mechanically for three things: each AC id in exactly one package, no AC left out, and no path in two packages' touches[]. If you can run commands, check a draft first: node ${join(dirname(fileURLToPath(import.meta.url)), 'shapecheck.mjs')} --prd ${docPaths(task).prd} --shape <draft json>`);
     }
     // What the judges said while letting it through. A gap named on an ACCEPTED node used to go
     // nowhere at all - gaps travelled only on rejection - so accept:PLAN calling the PRD "a
@@ -4868,6 +4832,16 @@ export function finish(task, n, result) {
         n.result = { ...n.result, accept: false, reason: `story ids collide across planning cards: ${dupText}` };
       }
       n.result = { ...n.result, duplicate_ids: dups, duplicates: [...new Set([...(n.result.duplicates || []), ...dups.map((x) => `${x.id} -> ${x.cards.join(', ')}`)])] };
+    }
+    // Acceptance that is a pointer or an id list is no criterion: mechanical like the duplicates.
+    const placeholders = placeholderAcceptance(planningStories(task));
+    if (placeholders.length) {
+      if (n.state === 'done') {
+        const ids = [...new Set(placeholders.map((x) => x.story))].join(', ');
+        n.state = 'failed';
+        n.result = { ...n.result, accept: false, reason: `story acceptance is a placeholder or a bare id list, not criteria: ${ids}` };
+      }
+      n.result = { ...n.result, placeholder_acceptance: placeholders };
     }
     if (n.state === 'failed' && n.result.judge_failed !== true) {
       if (n.result.resplit === true) resplitPlanning(task, n);
@@ -8138,10 +8112,7 @@ function retryTask(task, a) {
       return { task_id: task.run_id, target: 'areas', retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable };
     }
     const source = task.nodes.filter((n) => (n.stage === 'critique' || n.stage === 'shape') && n.state === 'failed' && n.result).pop();
-    const fb = source && source.result
-      ? [source.result.reason || '', ...(source.result.blocking || []), ...(source.result.shape_problems || []), ...(source.result.problems || [])].filter(Boolean).join('\n- ')
-      : '';
-    const out = retryShape(task, fb);
+    const out = retryShape(task, source && source.result ? shapeFeedback(source) : '');
     record(task, { event: out.attempt ? 'tm_retry' : 'tm_settle', task_id: task.run_id, target: 'shape', attempt: out.attempt });
     return { task_id: task.run_id, target: 'shape', retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable };
   }
