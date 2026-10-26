@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Decision, DecisionsPayload, Mark, PaneView, ReportPayload, StatusInfo, SummaryItem, SummaryTask, SummaryTaskEntry, TeamsEvent, TeamsView } from '../types'
-import { askBandShown, carriesInput, fallbackSelection, paneKey, paneSlash, statusAnswer, stepClamp, storyRows, wantsStatusText } from './pane'
+import { askBandShown, carriesInput, fallbackSelection, paneKey, paneSlash, statusAnswer, stepClamp, storyRows } from './pane'
 import { STORY_SHRINK, columnWidths, epicCells, epicState, handoffCells, renderLines, rowLine, since, storyCells, tabRowPlan, footerPlan, workerCells } from './teams-draw'
 import type { Line } from './teams-draw'
 
@@ -415,9 +415,8 @@ export const register: Register = on => {
       await $.ui.close({ id: PANE })
       return { text: STRINGS[await read($, lang)].paneClosed }
     }
-    const opened = await $.ui.open(OPEN)
+    await $.ui.open(OPEN)
     const paneOpened = STRINGS[await read($, lang)].paneOpened
-    if (!wantsStatusText(opened.isPlaced, await $.session.surfaces())) return { text: paneOpened }
     let run: { exitCode: number; stdout: string } | null = null
     try {
       run = await $.process.run(['node', `${$.plugin.root}/scripts/view.mjs`, '--once', '--cwd', await $.session.cwd()])

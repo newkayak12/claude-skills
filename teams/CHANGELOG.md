@@ -5,6 +5,7 @@
 Every release of the `teams` plugin, newest first. Moved here verbatim from the README's old `## Status` section. `teams:patch` prepends new release lines under `## Status` below.
 
 ## Status
+- v0.60.1 — /teams-status always answers with the board text, so it shows in the Claude app over Remote Control
 - v0.60.0 — shape is checked in node before it is accepted (every AC in exactly one package, no path owned twice) and a retry gets the whole list; plan-integrate refuses placeholder or bare-id acceptance. A size-S run's scope check counts only paths it touched, and tm_open/tm_run warn when another live size-S task shares the checkout. `/teams-status` draws on terminal, desktop, mobile and vscode and answers with the EPIC list where the pane does not draw; the empty pane closes on q. Bench: pre-registered axes, 27 seeded problems, graph-harness and graph-base arms, per-axis scoring.
 - v0.59.3 — planning investigate also runs write:requirements; PRD drafts (planning, planning-light, document) use write:prd and an ADR or design review uses write:adr, in place of write:plans. `teams:patch` moves `.codex-plugin/plugin.json` with the version. Test drivers exit with their runner, and the suite fails when one survives.
 - v0.59.2 — the status line's waiting segment hides while the ask band already shows the ask; EPIC slugs name the card and subject (`card-48-graph-harness-into-teams`), not filler words.

@@ -4,7 +4,7 @@ import type { On } from 'claude-code'
 
 import { frame, draw, cells } from './demo-frames.ts'
 import { STRINGS } from './mod'
-import { askBandShown, carriesInput, paneKey, paneSlash, statusAnswer, wantsStatusText } from './pane'
+import { askBandShown, carriesInput, paneKey, paneSlash, statusAnswer } from './pane'
 import { clipText, columnWidths, footerPlan, padText, tabRowPlan, width } from './teams-draw'
 
 const SURFACES = ['terminal', 'desktop', 'mobile', 'vscode'] as const
@@ -825,13 +825,22 @@ test('/teams-status: a desktop session (pane placed): answers with the view.mjs 
   expect(textOf(await runStatus($))).toBe(INDEX)
 })
 
-test('/teams-status: a terminal-only session with the pane placed answers pane opened and runs no view.mjs', async ($, on) => {
+test('/teams-status: a terminal-only session with the pane placed answers with the view.mjs text', async ($, on) => {
   const seen = uiWorld(on, {}, ['terminal'], { plain: ok(INDEX) })
   startWorld(on)
   on('ui.panes', () => ({ value: [] }) as never)
   await start($)
-  expect(textOf(await runStatus($))).toBe('pane opened')
-  expect(seen.argv.filter(a => !a.includes('--format'))).toEqual([])
+  expect(textOf(await runStatus($))).toBe(INDEX)
+  expect(seen.opened).toEqual(['teams-status'])
+  expect(seen.argv.filter(a => !a.includes('--format'))).toHaveLength(1)
+})
+
+test('/teams-status: an empty roster answers with the view.mjs text', async ($, on) => {
+  uiWorld(on, {}, [], { plain: ok(INDEX) })
+  startWorld(on)
+  on('ui.panes', () => ({ value: [] }) as never)
+  await start($)
+  expect(textOf(await runStatus($))).toBe(INDEX)
 })
 
 for (const [why, plain] of [['fails', { exitCode: 1, stdout: INDEX, stderr: 'boom' }], ['prints nothing', ok('  \n')]] as const) {
@@ -860,10 +869,6 @@ test('/teams-status: off the terminal, the second run still closes the pane', as
 
 test('pane.ts: carriesInput and the status answer', () => {
   expect(SURFACES.filter(carriesInput)).toEqual(['terminal', 'desktop', 'vscode'])
-  expect(wantsStatusText(true, ['terminal'])).toBe(false)
-  expect(wantsStatusText(true, [])).toBe(false)
-  expect(wantsStatusText(false, ['terminal'])).toBe(true)
-  expect(wantsStatusText(true, ['terminal', 'vscode'])).toBe(true)
   expect(statusAnswer({ exitCode: 0, stdout: 'x\n' }, 'opened')).toBe('x\n')
   expect(statusAnswer({ exitCode: 2, stdout: 'x' }, 'opened')).toBe('opened')
   expect(statusAnswer({ exitCode: 0, stdout: ' ' }, 'opened')).toBe('opened')
