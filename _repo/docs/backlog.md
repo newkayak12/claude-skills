@@ -104,6 +104,10 @@ toasts).
     - 2026-10-26 02:48, this session at 176,919 tokens: the status line's input read `used_percentage: 18`
       on a 1,000,000 window — the formula holds at 177k; threshold 30, so no fire was correct. User said
       "스마트 컴팩트 또안됐음"; which session and number they saw is unverified.
+    - 2026-10-26 09:41, session a2af697f (Opus 5.5, process started 2026-10-25 03:13, threshold 30): user
+      "이세션 30%인데 40%넘음". Last response's input 83,641 tokens (2 + 959 + 82,680) = 42% of 200k, 8% of
+      1M — the status line is on a 200k base, smart-compact's window is 1M (or the process still runs the
+      pre-6d5809b2 module loaded on 10-25). Cause unverified; `/smart-compact` in that session shows which.
     - Why: user, 2026-10-25: "smart-compact 발동 시점 정리 한 번 더 하자 지금 이세션 40인거보면" — the
       person read about 40 while smart-compact's own log for the session said 21% at 09:32 against a 30%
       threshold, so it never fired. The last response's input was 225,153 tokens: smart-compact divides by
