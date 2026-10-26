@@ -52,13 +52,6 @@ toasts).
 
 ### Repo and rules
 
-79. **write:requirements says which gap and ambiguity checks it ran**
-    - Why: 2026-10-26, card 47's real run (E-1fdeb52d, fictional 책 대여 기획서) found ambiguous rules and
-      missing exception paths, but never named the write:plans Process steps 4-5 its step 8 points to, so
-      whether it followed the pointer is inferred only.
-    - Acceptance: the Output Template has a line naming the checks run (gap, ambiguity) with their count;
-      one real run shows it.
-
 48. **graph + harness into teams (plan: `_repo/docs/plans/2026-10-17-graph-harness-into-teams.md`)**
     - Why: user, 2026-10-17: "결과적으로 하위호환을 위해서 harness, graph를 두지만 (stable) 장기적인
       방향은 teams"; evaluation by a seeded matrix with repeated runs ("여러 번 돌려보는게 맞을거 같음").
@@ -91,12 +84,6 @@ toasts).
     - Acceptance: after a SIGKILLed `node --test teams/scripts/test-taskmanager.mjs`, no `daemon.mjs` of a
       `/tmp/tm-*` fixture is alive within a minute; five runs in a row pass 312/312.
 
-78. **The push hold resolves compound push targets**
-    - Why: 2026-10-25, E-2bb23da3 (card 73) resolves a leading `cd` and `git -C`, but its gate noted
-      `cd <path> && git -C <rel> push`, `~` paths and other compound forms are not covered.
-    - Acceptance: `_repo/scripts/test-repo-rules.mjs` cases for those three forms, each held or allowed by
-      the repo it really pushes.
-
 75. **smart-compact fires on the same context % the person sees in the status line** — part in E-3f6657e7 (6d5809b2)
     - 2026-10-26: smart-compact now computes `round((input + cache_creation + cache_read) / window * 100)`, the
       formula the status line's `used_percentage` matched at 6% (Claude Code 2.1.310), and `/smart-compact`
@@ -115,12 +102,6 @@ toasts).
     - Acceptance: smart-compact compares the threshold with the number the status line shows (or the status
       line shows smart-compact's number), checked in one live session where both read the same at a turn
       end; `/smart-compact` prints the current %, the threshold and the token count behind them.
-
-80. **The teams pane's empty view closes on q**
-    - Why: 2026-10-26, tmux at 190 columns, `claude --plugin-dir ./teams`: with no run, `/teams-status` draws
-      "No teams run in this session. / q close"; Esc and the command close it, q types into the prompt
-      instead (the pane with a run closes on q). Unchanged by card 74 (same code before 55e2dcc3).
-    - Acceptance: a test where the empty view closes on q; seen live in tmux.
 
 81. **Two size-S runs in one checkout do not fail each other's scope check**
     - Why: 2026-10-26, E-23b35fe3 (card 74 part A) failed its U4 clean-scope check three times because
@@ -226,4 +207,6 @@ toasts).
 | E-5ad30c36 → E-f169fb8c | 2026-10-18 → 21 | 54 step 1 | P1+P2 accepted; P3 (real run) failed 3× because the run's evidence was deleted before gates could read it; merged by hand `666b7283`, run by hand; $43.7 |
 | E-c80fa0ea, E-1515b84f, E-0e4ef843 → E-1fdeb52d | 2026-10-25 → 26 | 47 | shipped `f5d6cc63`, `ac84b75b`, `a2fdad3d`; size S ×4 (E-0e4ef843 stopped at implement, finished by E-1fdeb52d); teams 1482/1482; four routing probes match |
 | E-2bb23da3 | 2026-10-25 | 71, 72, 73 | shipped `d0b8f470`; size S; gaps → cards 77, 78 |
+| E-23b35fe3, E-0baf8e75 | 2026-10-26 | 74 (tests) | shipped `55e2dcc3`, `bfe0022c`; size S ×2; part A blocked only on the shared-checkout scope check (card 81) |
+| E-d9a9ede4 | 2026-10-26 | 78, 79, 80 | shipped `dbade549`; size S; repo-rules 80 ok, teams mod 361; q closes the empty pane, seen live |
 | E-3f6657e7 | 2026-10-26 | 75 (part) | shipped `6d5809b2`; size S; large-context live check left on card 75 |
