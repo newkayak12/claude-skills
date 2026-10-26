@@ -97,7 +97,13 @@ toasts).
     - Acceptance: `_repo/scripts/test-repo-rules.mjs` cases for those three forms, each held or allowed by
       the repo it really pushes.
 
-75. **smart-compact fires on the same context % the person sees in the status line** — in E-3f6657e7
+75. **smart-compact fires on the same context % the person sees in the status line** — part in E-3f6657e7 (6d5809b2)
+    - 2026-10-26: smart-compact now computes `round((input + cache_creation + cache_read) / window * 100)`, the
+      formula the status line's `used_percentage` matched at 6% (Claude Code 2.1.310), and `/smart-compact`
+      shows %, threshold and tokens. The ~40 vs 21 gap was not reproduced at small context; whether
+      `used_percentage` leaves that formula at large context is unverified. Left: the live check at ≥ 200k
+      tokens (steps in `~/.harness/tasks/3f6657e7-*/harness-report.md`, copied: compare `ctx:N%` with
+      `/smart-compact` at a turn end, then `/smart-compact 10` and `/smart-compact log`).
     - Why: user, 2026-10-25: "smart-compact 발동 시점 정리 한 번 더 하자 지금 이세션 40인거보면" — the
       person read about 40 while smart-compact's own log for the session said 21% at 09:32 against a 30%
       threshold, so it never fired. The last response's input was 225,153 tokens: smart-compact divides by
