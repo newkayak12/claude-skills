@@ -106,7 +106,7 @@ const logWorld = (on: any, o: LogOpts = {}) => {
   on('turn.complete', (_$: any, e: any) => ({ text: e.answer }))
   on(
     'session.usage',
-    o.usage ?? (() => ({ value: { startedAt: 0, context: { window: 100, tokens: 1, percent: o.percent ?? undefined }, rateLimits: [] } })),
+    o.usage ?? (() => ({ value: { startedAt: 0, context: { window: o.percent == null ? 0 : 100, tokens: o.percent ?? 0, percent: o.percent ?? undefined }, rateLimits: [] } })),
   )
   on('session.id', () => ({ value: 'sess-1234abcd' }))
   on('model.fork', () => {
@@ -135,6 +135,27 @@ test('a turn below the threshold logs one below entry with the raw percent', asy
   await until(() => w.log().length === 1, 'entry')
   expect(w.log()[0]).toMatchObject({ percent: 12, threshold: 70, decision: 'below', outcome: 'below', session: 'sess-1234abcd' })
   expect(typeof w.log()[0].ts).toBe('number')
+})
+
+test('the threshold fires on the status-line percent, not usage().context.percent', async ($, on) => {
+  const w = logWorld(on, { usage: () => ({ value: { startedAt: 0, context: { window: 200, tokens: 150, percent: 15 }, rateLimits: [] } }) })
+  await $.turn.complete(TURN)
+  await until(() => w.log().some(l => l.outcome === 'compacted'), 'compacted')
+  expect(w.log()[0]).toMatchObject({ percent: 75, threshold: 70, decision: 'recapping' })
+})
+
+test('below the threshold on the status-line percent it does not fire, whatever usage().context.percent says', async ($, on) => {
+  const w = logWorld(on, { usage: () => ({ value: { startedAt: 0, context: { window: 200, tokens: 100, percent: 95 }, rateLimits: [] } }) })
+  await $.turn.complete(TURN)
+  await until(() => w.log().length === 1, 'entry')
+  expect(w.log()[0]).toMatchObject({ percent: 50, decision: 'below' })
+  expect(w.forks()).toBe(0)
+})
+
+test('/smart-compact with no argument carries the percent, the threshold and the tokens', async ($, on) => {
+  logWorld(on, { usage: () => ({ value: { startedAt: 0, context: { window: 200000, tokens: 57877, percent: 3 }, rateLimits: [] } }) })
+  const text = (await run($, '')).text!
+  expect(text).toContain('context 29% (57,877 tokens of 200,000) · threshold 70%')
 })
 
 test('a null percent is logged as null, decided as below', async ($, on) => {
@@ -213,7 +234,7 @@ const TOOL = { tool: 'Read', file_path: '/x' } as never
 test('a turn crossing the threshold mid-way recaps and compacts once', async ($, on) => {
   let calls = 0
   const w = logWorld(on, {
-    usage: () => ({ value: { startedAt: 0, context: { window: 100, tokens: 1, percent: ++calls === 2 ? 80 : 10 }, rateLimits: [] } }),
+    usage: () => ({ value: { startedAt: 0, context: { window: 100, tokens: ++calls === 2 ? 80 : 10, percent: 1 }, rateLimits: [] } }),
   })
   on('tool.call', () => ({ result: 'done', text: '' }) as never)
   await $.tool.call(TOOL)
