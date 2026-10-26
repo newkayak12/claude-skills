@@ -1,0 +1,5 @@
+{
+  "name": "@gh-seam-3/topics",
+  "type": "module",
+  "main": "src/index.mjs"
+}

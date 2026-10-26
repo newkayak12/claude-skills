@@ -1,0 +1,8 @@
+[
+  {
+    "what": "How does an exact tie round, for example 0.125 to two decimals?",
+    "choice": "half-even",
+    "who": "auto",
+    "why": "The request did not say; half to even avoids a systematic upward bias when many amounts are summed."
+  }
+]

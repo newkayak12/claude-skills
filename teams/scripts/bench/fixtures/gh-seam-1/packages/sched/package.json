@@ -1,0 +1,5 @@
+{
+  "name": "@gh-seam-1/sched",
+  "type": "module",
+  "main": "src/index.mjs"
+}

@@ -1,0 +1,6 @@
+[
+  {
+    "what": "Which duplicate survives when two items share a key: the first or the last?",
+    "choice": "first"
+  }
+]

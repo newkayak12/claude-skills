@@ -1,0 +1,5 @@
+{
+  "name": "@gh-seam-1/report",
+  "type": "module",
+  "main": "src/index.mjs"
+}

@@ -1,0 +1,5 @@
+{
+  "permissions": {
+    "deny": ["Bash(node scripts/gen.mjs*)", "Bash(node ./scripts/gen.mjs*)", "Bash(npm run gen*)"]
+  }
+}

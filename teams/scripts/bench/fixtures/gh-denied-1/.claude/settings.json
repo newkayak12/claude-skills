@@ -1,0 +1,5 @@
+{
+  "permissions": {
+    "deny": ["Edit(vendor/**)", "Write(vendor/**)", "MultiEdit(vendor/**)"]
+  }
+}

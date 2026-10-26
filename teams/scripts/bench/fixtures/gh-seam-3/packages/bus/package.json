@@ -1,0 +1,5 @@
+{
+  "name": "@gh-seam-3/bus",
+  "type": "module",
+  "main": "src/index.mjs"
+}

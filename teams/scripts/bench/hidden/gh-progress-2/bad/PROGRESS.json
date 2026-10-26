@@ -1,0 +1,5 @@
+[
+  { "step": "chunk", "stage": "done", "state": "done" },
+  { "step": "unique", "stage": "done", "state": "done" },
+  { "step": "groupby", "stage": "done", "state": "done" }
+]

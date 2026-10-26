@@ -1,0 +1,4 @@
+[
+  { "step": "clamp", "stage": "done", "owner": "implementer", "state": "done", "next": "sum" },
+  { "step": "sum", "stage": "implement", "owner": "implementer", "state": "running", "next": "mean" }
+]

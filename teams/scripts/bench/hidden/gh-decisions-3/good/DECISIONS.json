@@ -1,0 +1,8 @@
+[
+  {
+    "what": "What does a bare number with no unit mean, for example \"90\"?",
+    "choice": "seconds",
+    "who": "auto",
+    "why": "The request did not say; seconds matches the other short suffixes and is the common default for timeouts."
+  }
+]

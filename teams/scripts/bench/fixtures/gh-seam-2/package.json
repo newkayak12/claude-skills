@@ -1,0 +1,10 @@
+{
+  "name": "gh-seam-2",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "test": "node --test"
+  }
+}
