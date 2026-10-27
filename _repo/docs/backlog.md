@@ -11,7 +11,7 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
 
 ### Mods and naming — UI first (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
 
-84. **The teams pane is a real dashboard on every surface: Ink on the terminal, Svg on desktop, mobile and vscode** — defects in E-fa84630b
+84. **The teams pane is a real dashboard on every surface: Ink on the terminal, Svg on desktop, mobile and vscode** — defects: E-fa84630b stopped (card 87), retried
     - Why: user, 2026-10-26, after `/teams-status` over Remote Control showed a 42-row text dump on the phone:
       "이따위로 나올거면 뭣하러 하냐", "Claude desktop app에서 UI 그릴 수 있는걸로 아는데", "mobile도 그렇고",
       "씨발 못해? terminal도, claude app, desktop도". References given: a Grafana-style metrics board
@@ -107,6 +107,41 @@ toasts).
 ### Subagents and parallel runs — use and clean up (user, 2026-10-17)
 
 ### teams plugin bugs
+
+87. **A planning card's own criteria about the PRD document stay out of the user stories' acceptance**
+    - Why: E-fa84630b (2026-10-27) stopped at critique:3. PLAN-F1's child wrote goal-level AC-1..AC-4 about
+      the PRD section itself ("Given the PRD section for F1, When a reader opens it, Then it states its goal…")
+      and the merged `10-prd.md` repeats them under both F1 stories. shapecheck (`teams/mcp/shapecheck.mjs`
+      `acAssignment`) then demands them in a package (shape:2 refused: "AC-1 (no package cites it)"), shape:3
+      copied them into P1, and critique rejected P1 as unjudgeable (code package carrying document criteria).
+      No retry can pass: the PRD itself carries the bad criteria. Which step folds the child's goal ACs into
+      `user_stories[]` (prompts.mjs line ~113 vs ~197) is unverified.
+    - Acceptance: a test where a planning child's spec has document ACs and its stories have behaviour ACs;
+      the merged PRD's `user_stories[].acceptance` holds only the behaviour ones; one real L run whose PRD
+      has no "Given the PRD section" criterion.
+
+88. **QA and audit file a defect only with a run that proves it** (from cursor/plugins pstack `/interrogate`)
+    - Why: 2026-10-27 benchmark of pstack and gstack (user: "둘 다 벤치마킹할 점 찾기위해 분석", "가져올 점
+      정리해서"). pstack keeps a finding only when its command, rerun, prints the failure; E-57170ac9 filed
+      11 defects (D1-D11) that were work missing because of the tool-denied bug, not product failures.
+    - Acceptance: a QA/audit defect without `repro` (command + observed output + expected) is refused by the
+      engine (test in `test-taskmanager.mjs`); the engine reruns `repro` on the integration tree and drops a
+      defect whose command passes; the report lists dropped ones with the reason.
+
+89. **The gate names every hunk that weakens a test** (from garrytan/gstack `review/gate-integrity.md`)
+    - Why: same benchmark, 2026-10-27. gstack tags a removed or skipped test, a snapshot regenerated without
+      its test, a placeholder committed (RH-1..), and a person decides each. teams' gate checks that tests
+      pass, so a node that deletes or `.skip`s a failing test reads green.
+    - Acceptance: a node script (like `scope.mjs verdict`) lists removed `test(`/`it(`, added `.skip`/`.only`/
+      `todo`, and a lower test count against the baseline; gate:goal gets the list and an unexplained hunk is
+      a gap; tests cover each tag and a clean diff.
+
+90. **Each rule in `.claude/rules/` names what enforces it** (from pstack `/correct`, `principle-encode-lessons-in-structure`)
+    - Why: same benchmark, 2026-10-27. pstack keeps a table pairing each rule with its check and moves a
+      rule corrected twice into architecture, a lint or a test. Here corrections repeat in prose only (sed
+      instead of Edit, a bare `$VAR` in rm, claiming without a live look).
+    - Acceptance: a table rule -> enforcement (hook, validator, engine check, or "prose only"); every
+      "prose only" rule corrected twice gets a check that fails on the real past mistake, or a reason why not.
 
 75. **smart-compact fires on the same context % the person sees in the status line** — part in E-3f6657e7 (6d5809b2)
     - 2026-10-26: smart-compact now computes `round((input + cache_creation + cache_read) / window * 100)`, the
@@ -266,3 +301,4 @@ toasts).
 | E-57170ac9 | 2026-10-27 | 83, 82 (76 closed: shape passed on attempt 2) | P2 shipped `91f32cf4` (bench 80/80); P1 judged accept 3× but settled blocked on a denied extra command (card 85), taken by hand `21a52358` (teams 1530/1530); cancelled at QA-F1's 11 defects |
 | E-7d212456 | 2026-10-27 | 85 | shipped `d8d9eebb`; size L, every stage first try; teams 1541/1541; QA's top-level `test/` scratch left out (card 86) |
 | E-398db286 | 2026-10-27 | 86, 81 | shipped `88cf55ed` by hand (cancelled in Build): P1 (86) accepted on attempt 2; P2 (81, part) judged accept 90 but settled blocked by the installed 0.60.1 engine (card 85 fix not installed yet); teams 1561/1561; ~$19 |
+| E-fa84630b | 2026-10-27 | 84 (two defects) | nothing shipped: both PRD cards accepted, critique:3 rejected P1 for carrying the planning card's document criteria the PRD folded into its stories (card 87); $5.97 |
