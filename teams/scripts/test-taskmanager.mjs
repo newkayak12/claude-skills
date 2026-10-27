@@ -4137,8 +4137,15 @@ async function waitFor(fn, what, ms = 15000) {
 // Drivers are spawned detached + unref()'d so they outlive a daemon restart - which also means they
 // outlive a test that only kills the daemon. Kill every process started from the test's own fake
 // driver dir; call it after the daemon is dead, or the daemon spawns the next one.
+// pkill until three checks in a row find none: a daemon or manager torn down a moment ago can
+// still have a driver spawn in flight, which one pkill misses and the after() leak check then finds.
 function killDriversIn(drv) {
-  spawnSync('pkill', ['-KILL', '-f', drv]);
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  for (let quiet = 0, n = 0; quiet < 3 && n < 30; n++) {
+    spawnSync('pkill', ['-KILL', '-f', drv]);
+    Atomics.wait(pause, 0, 0, 100);
+    quiet = spawnSync('pgrep', ['-f', drv]).status === 1 ? quiet + 1 : 0;
+  }
 }
 
 // Every tm-drv dir this run made, so the after() leak check judges only its own drivers.
