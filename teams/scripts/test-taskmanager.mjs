@@ -26,6 +26,7 @@ import { hasDeclaredAcceptance, detectDeclaredAcceptance, resolvePlanningMode, r
 import { hasDeclaredAcceptance as tmHasDeclaredAcceptance, prepareReadyIntegrations, readyToJudge, composeTaskPrompt, __storeHooks } from '../mcp/taskmanager.mjs';
 import { afterTmCall, beforeTmCall, drivePlanning, completePlanningChild } from './lib/planning-drive.mjs';
 import { mutateTask } from '../mcp/store.mjs';
+import { SCRATCH_RULE } from '../mcp/layout-guard.mjs';
 
 // An in-process saving helper (autoReshape, autoRetryPackages, enforceBudget, finish, ...) run the
 // way the daemon and the tm_* handlers run it: inside mutateTask on the task's own file, since a
@@ -9414,6 +9415,142 @@ test('S1 scope: a size-S open records the baseline of pre-dirty paths, and the h
     assert.ok(paths.includes('new-edit.txt'), out.stdout + out.stderr);
     assert.ok(!paths.includes('pre-dirty.txt'), out.stdout);
   } finally { tm.close(); rmSync(f.cwd, { recursive: true, force: true }); rmSync(f.root, { recursive: true, force: true }); }
+});
+
+// Card 86 (E-7d212456): QA/audit/repair scratch stays out of the project.
+test('S1 scope prompt: the size-S driver is told to compute its verdict with scope.mjs verdict and use its exit status, and where scratch goes', async () => {
+  const f = driverFixture({}, FAKE_DRIVER_RESPAWN);
+  const tm = await f.client.init();
+  try {
+    const { task_id } = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small', cwd: f.cwd, vendor: 'self', size: 'S' });
+    const bp = readTask(f.root, task_id).harness_run.baseline_path;
+    const ran = await waitFor(() => (existsSync(`${f.ran}.1`) ? JSON.parse(readFileSync(`${f.ran}.1`, 'utf8')) : null), 'the harness driver to run');
+    const prompt = ran.argv[ran.argv.length - 1];
+    assert.match(prompt, /scope\.mjs verdict --cwd \S+ --baseline \S+ --scope <comma-separated/);
+    assert.ok(prompt.includes(`--baseline ${bp}`), 'the verdict command names the recorded baseline file');
+    assert.match(prompt, /never from git status read by you/);
+    assert.match(prompt, /exit status is the result: 0 = pass; 1 = out-of-scope paths, printed one per line/);
+    assert.ok(prompt.includes(SCRATCH_RULE), 'the size-S run is told where scratch goes');
+  } finally { tm.close(); rmSync(f.cwd, { recursive: true, force: true }); rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('the execute-stage contract, the QA card and the audit card carry the one shared SCRATCH_RULE; none says "Write only to test/"', async () => {
+  const { CONTRACT } = await import('../mcp/prompts.mjs');
+  assert.ok(CONTRACT.execute.includes(SCRATCH_RULE), 'prompts.mjs execute');
+  assert.ok(!/test\//.test(CONTRACT.execute), CONTRACT.execute);
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const qa1 = (await tm.call('tm_next', { task_id })).children[0];
+    const qaCtx = JSON.parse(readFileSync(join(qa1.cwd, '.teams_output', 'broker', 'runs', `${qa1.run_id}.json`), 'utf8')).context;
+    assert.ok(qaCtx.includes(SCRATCH_RULE), 'QA card');
+    assert.ok(!/Write only to test\//.test(qaCtx), qaCtx);
+  }, { roles: { qa: true } });
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    await toIntegrateWithPlanning(tm, g, task_id, cwd);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const audit = (await tm.call('tm_next', { task_id })).children[0];
+    assert.equal(audit.package_id, 'AUDIT');
+    const auditCtx = JSON.parse(readFileSync(join(audit.cwd, '.teams_output', 'broker', 'runs', `${audit.run_id}.json`), 'utf8')).context;
+    assert.ok(auditCtx.includes(SCRATCH_RULE), 'audit card');
+  }, { roles: { planning: true } });
+});
+
+test('a QA package whose commit adds a new top-level directory is refused: paths named, no defects, files left on disk, and the ordinary retry runs', async () => {
+  const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const qa1 = (await tm.call('tm_next', { task_id })).children[0];
+    assert.equal(qa1.package_id, 'QA-F1');
+    const headBefore = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: qa1.cwd, encoding: 'utf8' }).stdout.trim();
+    // what the E-7d212456 QA package did: throwaway scripts under a new top-level directory
+    mkdirSync(join(qa1.cwd, 'scratch', 'deep'), { recursive: true });
+    writeFileSync(join(qa1.cwd, 'scratch', 'probe.mjs'), 'export {};\n');
+    writeFileSync(join(qa1.cwd, 'scratch', 'deep', 'adapter.mjs'), 'export {};\n');
+    await completeQaChild(g, qa1, { accept: true, match_pct: 95 }, {
+      verified: false, stage_ok: true, handoff: 'cases run', defects: ['checkout crashes on an empty cart -> hit /checkout with 0 items'],
+    });
+    const folded = await tm.call('tm_submit', { task_id, node_id: 'dispatch:QA-F1:1' });
+    assert.equal(folded.state, 'failed', JSON.stringify(folded));
+
+    const taskPath = join(root, task_id, 'task.json');
+    const load = () => JSON.parse(readFileSync(taskPath, 'utf8'));
+    const res = load().nodes.find((n) => n.node_id === 'dispatch:QA-F1:1').result;
+    assert.equal(res.accept, false);
+    assert.equal(res.defects, undefined, 'no defects: autoRetryPackages would file them instead of retrying');
+    assert.match(res.reason, /scratch\//);
+    assert.match(res.reason, /scratch\/probe\.mjs/);
+    assert.match(res.reason, /scratch\/deep\/adapter\.mjs/);
+    assert.match(res.reason, /delete them/);
+    assert.ok(res.reason.includes(SCRATCH_RULE));
+    assert.ok(res.gaps.includes('delete scratch/probe.mjs'), JSON.stringify(res.gaps));
+    assert.ok(existsSync(join(qa1.cwd, 'scratch', 'probe.mjs')), 'the files stay on disk for the retry to delete');
+    assert.equal(spawnSync('git', ['rev-parse', 'HEAD'], { cwd: qa1.cwd, encoding: 'utf8' }).stdout.trim(), headBefore, 'nothing was committed');
+    assert.equal(spawnSync('git', ['diff', '--cached', '--name-only'], { cwd: qa1.cwd, encoding: 'utf8' }).stdout.trim(), '', 'the index is put back');
+
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    process.env.HARNESS_TASKS_DIR = root;
+    try { assert.equal(inTx(load(), autoRetryPackages), true, 'the daemon acts on the failed dispatch'); } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; }
+    const after = load();
+    assert.ok(after.nodes.some((n) => n.node_id === 'dispatch:QA-F1:2'), 'the ordinary retry opens a second QA attempt');
+    assert.deepEqual(after.spec.packages.map((p) => p.id), ['P1', 'P2'], 'no defect STORY was filed');
+  }, { roles: { qa: true } });
+});
+
+test('a QA package whose commit adds only root files passes and commits', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const qa1 = (await tm.call('tm_next', { task_id })).children[0];
+    writeFileSync(join(qa1.cwd, 'qa-report.md'), 'report\n');
+    await completeQaChild(g, qa1, { accept: true, match_pct: 95 });
+    const folded = await tm.call('tm_submit', { task_id, node_id: 'dispatch:QA-F1:1' });
+    assert.equal(folded.state, 'done', JSON.stringify(folded));
+    assert.ok(folded.child.commit, 'committed');
+  }, { roles: { qa: true } });
+});
+
+test('commitWorktree layoutGuard: files under an existing directory pass; a plugin manifest and a dot-dir are exempt; a bare new dir is refused; an unguarded (develop) commit is never checked', async () => {
+  const { commitWorktree } = await import('../mcp/taskmanager.mjs');
+  const cwd = repo();
+  const git = (...a) => spawnSync('git', a, { cwd, encoding: 'utf8' });
+  const put = (rel, body = 'z\n') => { mkdirSync(dirname(join(cwd, rel)), { recursive: true }); writeFileSync(join(cwd, rel), body); };
+  try {
+    put('src/a.js');
+    assert.equal(commitWorktree(cwd, 'seed src').ok, true);
+
+    // (b) only under an existing top-level directory, plus a root file
+    put('src/b.js'); put('notes.txt');
+    const ok1 = commitWorktree(cwd, 'existing dirs', { layoutGuard: true });
+    assert.equal(ok1.ok, true, JSON.stringify(ok1));
+    assert.ok(ok1.commit);
+
+    // (c) a new plugin directory with its manifest, and a dot-dir
+    put('newplug/.claude-plugin/plugin.json', '{}\n'); put('newplug/skills/s/SKILL.md'); put('.github/ci.yml');
+    const ok2 = commitWorktree(cwd, 'plugin and dot-dir', { layoutGuard: true });
+    assert.equal(ok2.ok, true, JSON.stringify(ok2));
+    assert.ok(ok2.commit);
+
+    // (a) a new directory with no manifest: refused, nothing committed, files stay, index clean
+    put('test/probe.mjs'); put('src/c.js');
+    const head = git('rev-parse', 'HEAD').stdout.trim();
+    const bad = commitWorktree(cwd, 'scratch', { layoutGuard: true });
+    assert.equal(bad.ok, false);
+    assert.deepEqual(bad.layout, ['test']);
+    assert.deepEqual(bad.paths, ['test/probe.mjs']);
+    assert.match(bad.reason, /test\/.*test\/probe\.mjs/);
+    assert.equal(git('rev-parse', 'HEAD').stdout.trim(), head);
+    assert.equal(git('diff', '--cached', '--name-only').stdout.trim(), '');
+    assert.ok(existsSync(join(cwd, 'test', 'probe.mjs')));
+
+    // a develop package is not checked: the same tree commits without the guard
+    const dev = commitWorktree(cwd, 'develop package');
+    assert.equal(dev.ok, true, JSON.stringify(dev));
+    assert.ok(dev.commit);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test('S1 shared checkout: a second size-S open on one cwd warns naming the first, still opens; other cwd or a finished task does not warn', async () => {

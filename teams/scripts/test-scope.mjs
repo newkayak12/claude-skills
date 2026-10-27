@@ -3,11 +3,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync, unlinkSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { baseline, touched, parsePorcelain } from '../mcp/scope.mjs';
+import { baseline, touched, parsePorcelain, inScope, verdict } from '../mcp/scope.mjs';
 
 const cli = join(dirname(fileURLToPath(import.meta.url)), 'scope.mjs');
 const git = (cwd, ...a) => execFileSync('git', a, { cwd, encoding: 'utf8' });
@@ -77,6 +77,79 @@ test('deleted path is counted; one deleted before the baseline is not', () => {
     assert.deepEqual(touched(d, base), []);
     unlinkSync(join(d, 'b.txt'));
     assert.deepEqual(touched(d, base), ['b.txt']);
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});
+
+test('inScope: exact path, directory, and globs', () => {
+  assert.equal(inScope('a.txt', ['a.txt']), true);
+  assert.equal(inScope('src/x/y.js', ['src']), true);
+  assert.equal(inScope('src/x/y.js', ['src/']), true);
+  assert.equal(inScope('srcx/y.js', ['src']), false);
+  assert.equal(inScope('src/x/y.js', ['src/**/*.js']), true);
+  assert.equal(inScope('src/y.js', ['src/**/*.js']), true);
+  assert.equal(inScope('src/x/y.md', ['src/**/*.js']), false);
+  assert.equal(inScope('src/x/y.js', ['src/*.js']), false);
+  assert.equal(inScope('a.txt', ['b.txt', 'a.*']), true);
+  assert.equal(inScope('a.txt', []), false);
+});
+
+test('verdict (a): another run\'s dirty files at the baseline pass', () => {
+  const d = repo();
+  try {
+    writeFileSync(join(d, 'a.txt'), 'foreign dirty\n');
+    writeFileSync(join(d, 'foreign-new.txt'), 'f\n');
+    const base = baseline(d);
+    writeFileSync(join(d, 'mine.txt'), 'm\n');
+    assert.deepEqual(verdict({ cwd: d, baseline: base, scope: ['mine.txt'] }), { ok: true, outOfScope: [] });
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});
+
+test('verdict (b): a foreign dirty file inside the scope after the baseline passes (partly met: attributed to this run)', () => {
+  const d = repo();
+  try {
+    const base = baseline(d);
+    writeFileSync(join(d, 'mine.txt'), 'm\n');
+    mkdirSync(join(d, 'src'));
+    writeFileSync(join(d, 'src', 'foreign.js'), 'f\n'); // another run's write, indistinguishable from ours
+    assert.deepEqual(verdict({ cwd: d, baseline: base, scope: ['mine.txt', 'src/**'] }), { ok: true, outOfScope: [] });
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});
+
+test('verdict (c): a path this run touched outside the scope fails and is named; CLI exits 1', () => {
+  const d = repo();
+  try {
+    writeFileSync(join(d, 'a.txt'), 'foreign dirty\n');
+    const f = join(d, '..', `${Date.now()}-vbase.json`);
+    assert.equal(spawnSync('node', [cli, 'baseline', '--cwd', d, '--out', f], { encoding: 'utf8' }).status, 0);
+    writeFileSync(join(d, 'mine.txt'), 'm\n');
+    writeFileSync(join(d, 'b.txt'), 'stray edit\n');
+    assert.deepEqual(verdict({ cwd: d, baseline: JSON.parse(readFileSync(f, 'utf8')), scope: ['mine.txt'] }),
+      { ok: false, outOfScope: ['b.txt'] });
+    const r = spawnSync('node', [cli, 'verdict', '--cwd', d, '--baseline', f, '--scope', 'mine.txt'], { encoding: 'utf8' });
+    assert.equal(r.status, 1, r.stderr);
+    assert.equal(r.stdout, 'b.txt\n');
+    const ok = spawnSync('node', [cli, 'verdict', '--cwd', d, '--baseline', f, '--scope', 'mine.txt,b.txt'], { encoding: 'utf8' });
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.equal(ok.stdout, '');
+    rmSync(f, { force: true });
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});
+
+test('verdict (d): KNOWN LIMIT - a foreign write after the baseline outside the scope still fails', () => {
+  const d = repo();
+  try {
+    const base = baseline(d);
+    writeFileSync(join(d, 'mine.txt'), 'm\n');
+    writeFileSync(join(d, 'other-run.txt'), 'x\n'); // another run, after our baseline: counted as ours
+    assert.deepEqual(verdict({ cwd: d, baseline: base, scope: ['mine.txt'] }), { ok: false, outOfScope: ['other-run.txt'] });
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});
+
+test('CLI verdict without --baseline or --scope exits 2', () => {
+  const d = repo();
+  try {
+    assert.equal(spawnSync('node', [cli, 'verdict', '--cwd', d, '--scope', 'a'], { encoding: 'utf8' }).status, 2);
+    assert.equal(spawnSync('node', [cli, 'verdict', '--cwd', d, '--baseline', 'x.json'], { encoding: 'utf8' }).status, 2);
   } finally { rmSync(d, { recursive: true, force: true }); }
 });
 

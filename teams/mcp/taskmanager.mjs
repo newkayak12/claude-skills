@@ -63,6 +63,7 @@ import { writeDocs, renderPrd, cardDocuments, questionLine } from './docs.mjs';
 import { mode as wikiMode } from './wikibridge.mjs';
 import { harnessVerdict, taskTag } from './harnessrun.mjs';
 import { baseline as scopeBaseline } from './scope.mjs';
+import { SCRATCH_RULE, newTopLevelDirs, manifestPathOf } from './layout-guard.mjs';
 import { logReply, renderStreamLine, renderLedgerLine } from './tasklog.mjs';
 import { validate as validateDiagram, renderToFile as renderDiagram } from './diagram.mjs';
 import { conventionsBlock } from './conventions.mjs';
@@ -2430,7 +2431,14 @@ function gitIndexed(cwd, args) {
   return r;
 }
 
-export function commitWorktree(cwd, message) {
+// opts.layoutGuard (card 86): refuse the commit when it adds a top-level directory the pre-commit
+// HEAD does not have (layout-guard.mjs: dot-dirs and a directory carrying its own
+// .claude-plugin/plugin.json are exempt). Nothing is committed, the index is put back, and the
+// files stay on disk so the retried node can delete them: {ok:false, layout:[dirs], paths:[files], reason}.
+// foldChild passes it only for qa, audit and repair packages - a develop package legitimately
+// creates src/ in a greenfield project. The same check at integrate, as a backstop for a develop
+// package that adds one anyway, is an open question and not done here.
+export function commitWorktree(cwd, message, opts = {}) {
   const add = gitIndexed(cwd, ['add', '-A', '--', '.']);
   if (!add.ok) return { ok: false, reason: add.err || 'git add failed' };
   // .claude/.harness-markers/ gets the same treatment for the same reason, plus one of its own:
@@ -2441,6 +2449,23 @@ export function commitWorktree(cwd, message) {
   if (!drop.ok) return { ok: false, reason: drop.err || 'could not leave the harness state out of the commit' };
   const staged = git(cwd, ['diff', '--cached', '--quiet']);
   if (staged.ok) return { ok: true, commit: null }; // nothing to commit is not an error
+  if (opts.layoutGuard) {
+    const tops = git(cwd, ['ls-tree', '-d', '--name-only', '-z', 'HEAD']);
+    if (tops.ok) { // no HEAD (an unborn branch) has no layout to compare with
+      const paths = git(cwd, ['diff', '--cached', '--name-only', '-z']).out.split('\0').filter(Boolean);
+      const baseDirs = tops.out.split('\0').filter(Boolean);
+      const layout = newTopLevelDirs(paths, baseDirs, (d) => paths.includes(manifestPathOf(d)));
+      if (layout.length) {
+        const reset = gitIndexed(cwd, ['reset', '-q']);
+        if (!reset.ok) return { ok: false, reason: reset.err || 'could not unstage the refused commit' };
+        const offending = paths.filter((p) => layout.includes(p.split('/')[0]) && p.includes('/'));
+        return {
+          ok: false, layout, paths: offending,
+          reason: `new top-level director${layout.length === 1 ? 'y' : 'ies'} ${layout.map((d) => `${d}/`).join(', ')} (${offending.length} file(s): ${offending.join(', ')})`,
+        };
+      }
+    }
+  }
   const c = gitIndexed(cwd, ['commit', '-q', '-m', message]);
   if (!c.ok) return { ok: false, reason: c.err || 'git commit failed' };
   return { ok: true, commit: git(cwd, ['rev-parse', 'HEAD']).out };
@@ -2798,11 +2823,11 @@ function childContext(task, pkg) {
       ? `This is QA card ${pkg.id}, one of ${qaPkgs(task).length} run in parallel over the same integrated result - one per feature area (${qaPkgs(task).map((q) => q.id).join(', ')}). Yours is feature area ${pkg.area || '?'}: exercise its user stories (in your request above) the way a user would and report what you find.`
       : `This is the goal-level QA pass over the integrated result. Exercise it the way a user would and report what you find.`);
     lines.push(`Where the result is model instructions - a skill, a prompt, an agent definition - using it the way a user would means running it: hand a fresh model (a subagent, or \`claude -p\`) the changed file and a realistic input, and read the output; run the pre-change version (git show <base>:<path>) on the same input and report what changed, better or worse. Reading the file is a review, not QA.`);
-    lines.push(`Write only to test/ and your own report - src/ and every package's delivered files are read-only here. This is a review, not a repair: a defect you find is reported, not fixed.`);
+    lines.push(`Write only your own report - src/ and every package's delivered files are read-only here. ${SCRATCH_RULE} This is a review, not a repair: a defect you find is reported, not fixed.`);
   } else if (pkg.phase === 'audit') {
     lines.push(`This worktree is the COMBINED tree of every package in this task: all of their branches are already merged here, on the integration branch itself.`);
     lines.push(`This is planning's own second pass over this EPIC, taken after integration. Read the tree against the PRD's user stories in your request above and judge each one: satisfied, partially satisfied, or missing.`);
-    lines.push(`You have no edit rights here - not over the tree and not over the PRD. Change no files. An unmet story is reported, not fixed: the manager files it as its own STORY.`);
+    lines.push(`You have no edit rights here - not over the tree and not over the PRD. Change no files. ${SCRATCH_RULE} An unmet story is reported, not fixed: the manager files it as its own STORY.`);
   } else {
     lines.push(task.base_ref
       ? `The worktree is private to this package and branched from ${task.base_ref} - the prior Sprint's integrated work, which this task builds on; integration happens later, elsewhere.`
@@ -3816,7 +3841,19 @@ export function foldChild(task, n) {
   // retry continues there.
   let commit = null;
   if (g.accept === true) {
-    const c = commitWorktree(n.child.cwd, `harness: package ${n.subgoal_id} attempt ${n.attempt || 1} (${child.run_id})`);
+    const guarded = !!pkg && (pkg.repair || pkg.phase === 'qa' || pkg.phase === 'audit');
+    const c = commitWorktree(n.child.cwd, `harness: package ${n.subgoal_id} attempt ${n.attempt || 1} (${child.run_id})`, guarded ? { layoutGuard: true } : {});
+    if (!c.ok && c.layout) {
+      // No `defects`: autoRetryPackages files a qa dispatch that carries them instead of retrying
+      // it, and this package has to be redone, not reported. The files stay on disk (retry_policy
+      // continue keeps the tree); the feedback names them so the retry deletes them.
+      const { defects: _defects, ...rest } = base;
+      return {
+        ...rest, stage_ok: false, accept: false,
+        gaps: [...(g.gaps || []), ...c.paths.map((p) => `delete ${p}`)],
+        reason: `child passed but its commit was refused: it added ${c.reason}. These files are still on disk in ${n.child.cwd}; delete them, move what you need under the run dir or the OS temp dir, and finish again. ${SCRATCH_RULE}`,
+      };
+    }
     if (!c.ok) return { ...base, stage_ok: false, accept: false, reason: `child passed but its worktree could not be committed: ${c.reason}` };
     commit = c.commit;
   }
@@ -6231,7 +6268,7 @@ function harnessPrompt(task, opts = {}) {
     `Route 2, only when the graph MCP is not available: the harness skill's Agent Team fallback (harness/engine/fallback.md), codex through codex-exec-adapter.mjs with codex_provider "auto" (a fallback to Claude is recorded as such). Its manifest.json carries "teams_task": "${task.run_id}". Do not use the Workflow route.`,
     `As soon as the run exists, write ${h.pointer} as {"route":"graph","run_id":"<id>","cwd":"${h.cwd}"} or {"route":"fallback","run_dir":"<absolute run dir>"}.`,
     `When the run has written its report, copy that report to ${h.report_path}. The task's verdict is read from the run itself, not from anything you write.`,
-    h.baseline_path ? `Scope: this checkout may already hold uncommitted work (${h.baseline_count} dirty path(s) recorded in ${h.baseline_path} before the run). Your scope check counts only the paths you touched; the baseline's dirty paths, left as they were, are excluded (node ${join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'scope.mjs')} touched --cwd ${h.cwd} --baseline ${h.baseline_path}).` : '',
+    h.baseline_path ? `Scope: this checkout may already hold uncommitted work (${h.baseline_count} dirty path(s) recorded in ${h.baseline_path} before the run). Your scope check counts only the paths you touched; the baseline's dirty paths, left as they were, are excluded. Compute your scope verdict with the CLI, never from git status read by you: node ${join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts')}/scope.mjs verdict --cwd ${h.cwd} --baseline ${h.baseline_path} --scope <comma-separated list of the files your plan names>. Its exit status is the result: 0 = pass; 1 = out-of-scope paths, printed one per line. ${SCRATCH_RULE}` : '',
     `Never end a turn while your own background agent or test run is still running; wait for it to finish first.`,
     '',
     'Request:',
