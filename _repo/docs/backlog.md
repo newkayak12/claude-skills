@@ -33,7 +33,13 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
       mounted in tests and rendered in Chromium; README shots `pane-home.png`, `pane-home-app.png`; EPIC
       titled by its backlog cards. Seen live 2026-10-27 (E-398db286 in Build, both PRDs, plan-integrate,
       shape and critique done): stage 1 Plan still shows ◉ running and the bar 0%, "0/6 stages" — the
-      Plan stage is not marked done once Build starts (`dashboardModel` stages, unverified which field). Left: no design doc; the Svg not yet seen in the Claude desktop app (this
+      Plan stage is not marked done once Build starts. Cause verified: a retried manager node leaves its
+      first attempt `skipped` (`shape`, `critique` beside done `shape:2`, `critique:2`), and `nodeState`
+      (`teams/scripts/lib/view-stages.mjs`) maps `skipped` to pending, so `stagesOf` (view-summary.mjs)
+      merges Plan to running; a superseded attempt must not count. Same look, 08:17: the STORYs tab lists
+      only P2 (`rejected 3/3`), not P1 which passed; a digit pressed to switch tabs is also echoed in the
+      footer input (`1 ⏎ submit`, `12 ⏎ submit`). Causes unverified.
+      Terminal render approved 2026-10-27 on the live shots (Home, Floor, STORYs), user: "훨깔끔 좋아". Left: no design doc; the Svg not yet seen in the Claude desktop app (this
       machine has none); the phone gets text only until the app attaches (card 74); demo approval by the user.
 
 65. **Flaky tests under load: name them when they recur**
