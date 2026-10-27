@@ -100,16 +100,12 @@ toasts).
 
 ### teams plugin bugs
 
-85. **A judge that returns a verdict is not thrown away because one of its extra commands was denied** — in E-7d212456
-    - Why: 2026-10-27, E-57170ac9 P1 attempt 1: the child run's `gate:goal` judge returned `accept`,
-      `match_pct` 95, checks re-run (8/8), but two of its attack commands outside the worktree (`cd /tmp …
-      view.mjs`) were denied by the sandbox; `teams/mcp/daemon.mjs:280` settles any judge with a denial as
-      `blocked: tool denied`, so the dispatch failed and P1 re-ran from scratch (~$2).
-    - Acceptance: a judge whose last result parses to a full verdict is settled on that verdict, its denied
-      commands recorded beside it (e.g. `denied` on the result); only a judge with no parseable verdict is
-      `blocked: tool denied`; a test in `teams/scripts/test-*.mjs` covers both.
-    - Same EPIC: attempts 2 and 3 the same (accept 93, a denied `/tmp` attack); P1 then exhausted, and
-      QA-F1 filed 11 defects (D1–D11) for the work that was missing only because of it; cancelled there.
+86. **QA and audit nodes write their scratch inside their own run dir, never at the repo top level**
+    - Why: 2026-10-27, E-7d212456 QA-F1 committed 6 scratch files on the integration branch under a new
+      top-level `test/` (`test/base/teams/…`, `test/qa-f1-*.mjs`, `test/qa-f1-report.md`); the report itself
+      said they break `repo.md`'s layout rule. Left out of main by hand (only the 4 real files taken).
+    - Acceptance: a QA/audit package's commit holds no path outside the files its stories name (or the
+      integrate/accept step refuses a new top-level directory that is not a plugin); a test covers it.
 
 75. **smart-compact fires on the same context % the person sees in the status line** — part in E-3f6657e7 (6d5809b2)
     - 2026-10-26: smart-compact now computes `round((input + cache_creation + cache_read) / window * 100)`, the
@@ -265,3 +261,4 @@ toasts).
 | E-3f6657e7 | 2026-10-26 | 75 (part) | shipped `6d5809b2`; size S; large-context live check left on card 75 |
 | E-27be4005 | 2026-10-26 | 48 Task 6 (first half) | shipped `eac1f097`; size S; dry run gh-defect-2 ~$0.36 per arm; batch bump `f4d455a1` |
 | E-57170ac9 | 2026-10-27 | 83, 82 (76 closed: shape passed on attempt 2) | P2 shipped `91f32cf4` (bench 80/80); P1 judged accept 3× but settled blocked on a denied extra command (card 85), taken by hand `21a52358` (teams 1530/1530); cancelled at QA-F1's 11 defects |
+| E-7d212456 | 2026-10-27 | 85 | shipped `d8d9eebb`; size L, every stage first try; teams 1541/1541; QA's top-level `test/` scratch left out (card 86) |
