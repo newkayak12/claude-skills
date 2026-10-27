@@ -100,7 +100,7 @@ toasts).
 
 ### teams plugin bugs
 
-85. **A judge that returns a verdict is not thrown away because one of its extra commands was denied**
+85. **A judge that returns a verdict is not thrown away because one of its extra commands was denied** — in E-7d212456
     - Why: 2026-10-27, E-57170ac9 P1 attempt 1: the child run's `gate:goal` judge returned `accept`,
       `match_pct` 95, checks re-run (8/8), but two of its attack commands outside the worktree (`cd /tmp …
       view.mjs`) were denied by the sandbox; `teams/mcp/daemon.mjs:280` settles any judge with a denial as
