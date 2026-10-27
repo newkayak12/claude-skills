@@ -110,6 +110,15 @@ toasts).
 
 ### teams plugin bugs
 
+85. **A judge that returns a verdict is not thrown away because one of its extra commands was denied**
+    - Why: 2026-10-27, E-57170ac9 P1 attempt 1: the child run's `gate:goal` judge returned `accept`,
+      `match_pct` 95, checks re-run (8/8), but two of its attack commands outside the worktree (`cd /tmp …
+      view.mjs`) were denied by the sandbox; `teams/mcp/daemon.mjs:280` settles any judge with a denial as
+      `blocked: tool denied`, so the dispatch failed and P1 re-ran from scratch (~$2).
+    - Acceptance: a judge whose last result parses to a full verdict is settled on that verdict, its denied
+      commands recorded beside it (e.g. `denied` on the result); only a judge with no parseable verdict is
+      `blocked: tool denied`; a test in `teams/scripts/test-*.mjs` covers both.
+
 83. **taskmanager reaps the `view.mjs` children it spawns** — in E-57170ac9
     - Why: 2026-10-26 12:50Z, 22 `teams/0.59.1/scripts/view.mjs --tasks-dir …` processes under one session's
       taskmanager (pid 999474), ages up to 1 d 10 h; 20 older than 1 h killed by hand. Which call spawns them
