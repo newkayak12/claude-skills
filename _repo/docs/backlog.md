@@ -108,13 +108,6 @@ toasts).
 
 ### teams plugin bugs
 
-86. **QA and audit nodes write their scratch inside their own run dir, never at the repo top level** — in E-398db286
-    - Why: 2026-10-27, E-7d212456 QA-F1 committed 6 scratch files on the integration branch under a new
-      top-level `test/` (`test/base/teams/…`, `test/qa-f1-*.mjs`, `test/qa-f1-report.md`); the report itself
-      said they break `repo.md`'s layout rule. Left out of main by hand (only the 4 real files taken).
-    - Acceptance: a QA/audit package's commit holds no path outside the files its stories name (or the
-      integrate/accept step refuses a new top-level directory that is not a plugin); a test covers it.
-
 75. **smart-compact fires on the same context % the person sees in the status line** — part in E-3f6657e7 (6d5809b2)
     - 2026-10-26: smart-compact now computes `round((input + cache_creation + cache_read) / window * 100)`, the
       formula the status line's `used_percentage` matched at 6% (Claude Code 2.1.310), and `/smart-compact`
@@ -138,10 +131,12 @@ toasts).
       line shows smart-compact's number), checked in one live session where both read the same at a turn
       end; `/smart-compact` prints the current %, the threshold and the token count behind them.
 
-81. **Two size-S runs in one checkout do not fail each other's scope check** — in E-398db286; part in 747e9306 (E-53a84277):
-    `teams/mcp/scope.mjs` baselines already-dirty paths, size-S prompts call `scope.mjs touched`, tm_open/tm_run
-    warn on a shared live size-S checkout. Left: the engine (not only the prompt) enforces the baseline; two
-    runs editing the same file are still not isolated.
+81. **Two size-S runs in one checkout do not fail each other's scope check** — part in 747e9306 (E-53a84277)
+    and 88cf55ed (E-398db286): `teams/mcp/scope.mjs` baselines already-dirty paths; `scope.mjs verdict --baseline
+    --scope` computes pass/fail in node (exit 0/1, out-of-scope paths listed; real run: a foreign path dirty
+    before the baseline passes, a new out-of-scope path fails) and the size-S prompt makes its exit status the
+    scope result. Left: the engine runs the verdict itself (today the model runs the CLI); another run's write
+    AFTER this run's baseline outside its scope still fails it; two runs editing the same file not isolated.
     - Why: 2026-10-26, E-23b35fe3 (card 74 part A) failed its U4 clean-scope check three times because
       E-0baf8e75 (part B) was editing session/think/trophy in the same main checkout; part A's own work
       passed (teams 357, graph 175, harness 199) and was committed by hand. Size S writes into the
@@ -270,3 +265,4 @@ toasts).
 | E-27be4005 | 2026-10-26 | 48 Task 6 (first half) | shipped `eac1f097`; size S; dry run gh-defect-2 ~$0.36 per arm; batch bump `f4d455a1` |
 | E-57170ac9 | 2026-10-27 | 83, 82 (76 closed: shape passed on attempt 2) | P2 shipped `91f32cf4` (bench 80/80); P1 judged accept 3× but settled blocked on a denied extra command (card 85), taken by hand `21a52358` (teams 1530/1530); cancelled at QA-F1's 11 defects |
 | E-7d212456 | 2026-10-27 | 85 | shipped `d8d9eebb`; size L, every stage first try; teams 1541/1541; QA's top-level `test/` scratch left out (card 86) |
+| E-398db286 | 2026-10-27 | 86, 81 | shipped `88cf55ed` by hand (cancelled in Build): P1 (86) accepted on attempt 2; P2 (81, part) judged accept 90 but settled blocked by the installed 0.60.1 engine (card 85 fix not installed yet); teams 1561/1561; ~$19 |
