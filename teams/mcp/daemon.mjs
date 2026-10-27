@@ -275,18 +275,19 @@ async function judge(task, n, { slot = null } = {}) {
     proc.stderr.on('data', (d) => { err += d; });
     proc.on('close', () => {
       keepJudgeLog(task, n, out);
-      // A judge denied a tool it needed judged nothing: blocked, not a reject, and not judge_failed
-      // (autoRejudge would ask again and be denied again).
+      // A judge that worked around a denied command and still returned a verdict judged: that verdict
+      // stands (accept or reject) with the denied commands on result.denied. A judge denied a tool it
+      // needed that gave no verdict (nothing parseable, or an unexplained refusal) judged nothing:
+      // blocked, not a reject, and not judge_failed (autoRejudge would ask again and be denied again).
       const denied = judgeDenials(out);
-      if (denied.length) {
-        settle({ stage_ok: false, blocked: 'tool denied', reason: 'blocked: tool denied', denied, judged_by: judgedBy(out, extra) });
-        return;
-      }
       const text = lastResultText(out);
+      const blocked = () => settle({ stage_ok: false, blocked: 'tool denied', reason: 'blocked: tool denied', denied, judged_by: judgedBy(out, extra) });
       try {
         const parsed = extractJson(text);
-        settle({ ...(unexplainedRefusal(parsed) || parsed), judged_by: judgedBy(out, extra) });
+        if (denied.length && unexplainedRefusal(parsed)) { blocked(); return; }
+        settle({ ...(unexplainedRefusal(parsed) || parsed), judged_by: judgedBy(out, extra), ...(denied.length ? { denied } : {}) });
       } catch (e) {
+        if (denied.length) { blocked(); return; }
         settle({
           stage_ok: false,
           judge_failed: true,
