@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Continue an interrupted bench workspace in a fresh headless session.
 #
-#   resume.sh <workspace> [n]
+#   resume.sh <case> <arm> <label> [n]     the workspace is bench_ws's (lib/workspace.sh); drive.sh's form
+#   resume.sh <workspace> [n]               a non gh-* workspace named <case>-<arm>-<label>
 #
-# A session that dies mid-run (a usage limit, a crash) leaves the task under
+# A gh-* workspace has an opaque name that cannot be turned back into case, arm and label, so it
+# is only reachable through the first form. A session that dies mid-run (a usage limit, a crash) leaves the task under
 # <ws>/.harness-tasks and every run file under .teams_output (or .harness-run for the stable
 # graph arm) — all of it resumable. This opens a
 # new session at the same cwd and tells the skill to continue what is there instead of opening
@@ -15,16 +17,32 @@
 # `node teams/scripts/run.mjs --resume <task_id> --resume-on-limit` - no session at all.
 set -euo pipefail
 
-WS=${1:?workspace}
-N=${2:-1}
-WS=$(cd "$WS" && pwd)
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../../.." && pwd)
-NAME=$(basename "$WS")            # <case>-<arm>-<label>; a case may carry a hyphen
-REST=${NAME%-*}                   # drop <label>
-ARM=${REST##*-}
-CASE=${REST%-*}
-REQ=$(cat "$HERE/requests/$CASE.txt")
+OUT=${GRAPH_BENCH_OUT:-${TMPDIR:-/tmp}/graph-bench}
+. "$HERE/lib/workspace.sh"
+if [ $# -ge 3 ]; then
+  CASE=$1 ARM=$2 LABEL=$3
+  N=${4:-1}
+  WS=$(bench_ws "$OUT" "$CASE" "$ARM" "$LABEL")
+  [ -d "$WS" ] || { echo "no workspace $WS for $CASE $ARM $LABEL" >&2; exit 2; }
+  if [[ "$CASE" == gh-* ]]; then   # cases.tsv column 4, as bench.sh reads it
+    GH_REQ=$(awk -F'\t' -v id="$CASE" '$1 == id {print $4; exit}' "$HERE/cases.tsv")
+    [ -n "$GH_REQ" ] || { echo "unknown case $CASE" >&2; exit 2; }
+    REQ=$(cat "$HERE/$GH_REQ")
+  else
+    REQ=$(cat "$HERE/requests/$CASE.txt")
+  fi
+else
+  WS=${1:?workspace}
+  N=${2:-1}
+  WS=$(cd "$WS" && pwd)
+  NAME=$(basename "$WS")            # <case>-<arm>-<label>; a case may carry a hyphen
+  REST=${NAME%-*}                   # drop <label>
+  ARM=${REST##*-}
+  CASE=${REST%-*}
+  REQ=$(cat "$HERE/requests/$CASE.txt")
+fi
 ROUTING='Pass host_vendor "claude", the model you are actually running as host_model, and the native models you can select as native_models — the same routing the task was opened with.'
 
 case "$ARM" in
