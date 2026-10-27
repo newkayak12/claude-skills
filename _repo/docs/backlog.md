@@ -37,7 +37,10 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
 65. **Flaky tests under load: name them when they recur**
     - Recurred 2026-10-26: `teams/scripts/test-taskmanager.mjs` file-level after-hook, 2 of 4 runs:
       "fixture driver left running after the suite: pid … (/tmp/tm-drv-*/hanging-driver.mjs)"; 320/0 on the
-      other runs. Unrelated change (teams 0.61.0 touched no taskmanager code). Cause unverified.
+      other runs. Unrelated change (teams 0.61.0 touched no taskmanager code). Likely cause: one
+      `pkill` in `killDriversIn` misses a driver spawned a moment later by the daemon or manager just torn
+      down; fixed 2026-10-27 to pkill until three checks in a row find none — 6 of 6 runs 320/0 after.
+      Close if it does not recur.
     - Why: card 65 rest shipped 2026-10-22 (E-7e3a46f0: exit-code rule in the teams setgoal prompt,
       `markOf` form and all guidance markers pinned). The one-off failures (teams 1369/1, graph 198/1,
       plugin-test "Loading" 5000 ms) did not reproduce in 3+3 runs (1416/1416, 200/200, 206/206).
