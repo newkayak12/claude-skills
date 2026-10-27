@@ -96,7 +96,7 @@ toasts).
       authors pinned to sonnet. Full 162-run matrix started 2026-10-26 08:52Z; a real run costs
       ~$1.5 and ~6 min per arm (dry run was $0.36), so the matrix is ~$240 and ~16 h.
 
-82. **drive.sh finds the anonymized gh-* workspace, so a usage-limit stop resumes**
+82. **drive.sh finds the anonymized gh-* workspace, so a usage-limit stop resumes** — in E-57170ac9
     - Why: 2026-10-26 bench log: every gh-* job ends "session killed with no result event; resuming"
       then `resume.sh: cd: …/gh-verified-1-graph-harness-r1: No such file`. bench.sh names the
       workspace `<case>-<sha256(arm-label)[0:10]>` (bench.sh:98) but drive.sh:199 looks for
@@ -110,7 +110,7 @@ toasts).
 
 ### teams plugin bugs
 
-83. **taskmanager reaps the `view.mjs` children it spawns**
+83. **taskmanager reaps the `view.mjs` children it spawns** — in E-57170ac9
     - Why: 2026-10-26 12:50Z, 22 `teams/0.59.1/scripts/view.mjs --tasks-dir …` processes under one session's
       taskmanager (pid 999474), ages up to 1 d 10 h; 20 older than 1 h killed by hand. Which call spawns them
       (tm_wait, tm_status, board) is unverified.
