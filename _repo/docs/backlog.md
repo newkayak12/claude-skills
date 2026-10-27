@@ -31,7 +31,9 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
     - Done 2026-10-26 (teams 0.61.0): Home tab first (key `0`); terminal Ink board seen live in tmux at 190
       and 110 columns (narrow pane lists tiles and lanes one per line); Svg board for desktop/mobile/vscode,
       mounted in tests and rendered in Chromium; README shots `pane-home.png`, `pane-home-app.png`; EPIC
-      titled by its backlog cards. Left: no design doc; the Svg not yet seen in the Claude desktop app (this
+      titled by its backlog cards. Seen live 2026-10-27 (E-398db286 in Build, both PRDs, plan-integrate,
+      shape and critique done): stage 1 Plan still shows ◉ running and the bar 0%, "0/6 stages" — the
+      Plan stage is not marked done once Build starts (`dashboardModel` stages, unverified which field). Left: no design doc; the Svg not yet seen in the Claude desktop app (this
       machine has none); the phone gets text only until the app attaches (card 74); demo approval by the user.
 
 65. **Flaky tests under load: name them when they recur**
