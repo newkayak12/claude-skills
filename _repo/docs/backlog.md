@@ -11,7 +11,7 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
 
 ### Mods and naming — UI first (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
 
-84. **The teams pane is a real dashboard on every surface: Ink on the terminal, Svg on desktop, mobile and vscode** — defects: E-fa84630b stopped (card 87), retried
+84. **The teams pane is a real dashboard on every surface: Ink on the terminal, Svg on desktop, mobile and vscode** — defects: E-fa84630b stopped (card 87), retried in E-8b9c417d
     - Why: user, 2026-10-26, after `/teams-status` over Remote Control showed a 42-row text dump on the phone:
       "이따위로 나올거면 뭣하러 하냐", "Claude desktop app에서 UI 그릴 수 있는걸로 아는데", "mobile도 그렇고",
       "씨발 못해? terminal도, claude app, desktop도". References given: a Grafana-style metrics board
@@ -108,7 +108,7 @@ toasts).
 
 ### teams plugin bugs
 
-87. **A planning card's own criteria about the PRD document stay out of the user stories' acceptance**
+87. **A planning card's own criteria about the PRD document stay out of the user stories' acceptance** — in E-77926c5f
     - Why: E-fa84630b (2026-10-27) stopped at critique:3. PLAN-F1's child wrote goal-level AC-1..AC-4 about
       the PRD section itself ("Given the PRD section for F1, When a reader opens it, Then it states its goal…")
       and the merged `10-prd.md` repeats them under both F1 stories. shapecheck (`teams/mcp/shapecheck.mjs`
@@ -128,7 +128,7 @@ toasts).
       engine (test in `test-taskmanager.mjs`); the engine reruns `repro` on the integration tree and drops a
       defect whose command passes; the report lists dropped ones with the reason.
 
-89. **The gate names every hunk that weakens a test** (from garrytan/gstack `review/gate-integrity.md`)
+89. **The gate names every hunk that weakens a test** (from garrytan/gstack `review/gate-integrity.md`) — in E-77926c5f
     - Why: same benchmark, 2026-10-27. gstack tags a removed or skipped test, a snapshot regenerated without
       its test, a placeholder committed (RH-1..), and a person decides each. teams' gate checks that tests
       pass, so a node that deletes or `.skip`s a failing test reads green.
