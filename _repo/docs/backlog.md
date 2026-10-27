@@ -108,7 +108,7 @@ toasts).
 
 ### teams plugin bugs
 
-87. **A planning card's own criteria about the PRD document stay out of the user stories' acceptance** — in E-77926c5f
+87. **A planning card's own criteria about the PRD document stay out of the user stories' acceptance**
     - Why: E-fa84630b (2026-10-27) stopped at critique:3. PLAN-F1's child wrote goal-level AC-1..AC-4 about
       the PRD section itself ("Given the PRD section for F1, When a reader opens it, Then it states its goal…")
       and the merged `10-prd.md` repeats them under both F1 stories. shapecheck (`teams/mcp/shapecheck.mjs`
@@ -120,6 +120,23 @@ toasts).
       the merged PRD's `user_stories[].acceptance` holds only the behaviour ones; one real L run whose PRD
       has no "Given the PRD section" criterion.
 
+91. **A package's accept judges only that package's acceptance, not an item shape gave another package** — in E-22c3af14
+    - Why: E-8b9c417d (2026-10-27), accept:P2:1 and accept:P2:2 both rejected at 88 (threshold 90): "Both A2.1
+      and A2.2 are met … The one open item is the live host confirmation, which belongs to P3." The judge
+      itself says the item is P3's and still takes it off P2's score. accept:P2:3 the same at 85 ("Only the
+      live tmux look is missing, and that criterion belongs to P3"), so P2 ran out of retries with its own
+      acceptance met. User, 2026-10-27: "저거 또실패하면 백로그에 넣고 엔진 다시 고치고" — next Sprint, first.
+    - Acceptance: the accept prompt or engine scores against the package's own `acceptance[]`; an item the
+      judge names as another package's is an observation, not a gap (test in `test-taskmanager.mjs`).
+
+92. **A size-L task whose PRD has one user story has a shape that can pass**
+    - Why: E-22c3af14 (2026-10-27, card 91, size pinned L) blocked at shape:3. shapecheck refused one package
+      ("shape has one package: a request that fits one run is size S") and two packages ("package P1 claims
+      every user story (F1-US-1) … the whole job, not a package"), since the PRD had one story. With L pinned
+      and one story no shape passes; three attempts spent, $~3.
+    - Acceptance: either one package passes when the size is pinned L, or the engine falls back to S for a
+      one-story PRD and says so; a test in `test-taskmanager.mjs` (or the shapecheck test) for that case.
+
 88. **QA and audit file a defect only with a run that proves it** (from cursor/plugins pstack `/interrogate`)
     - Why: 2026-10-27 benchmark of pstack and gstack (user: "둘 다 벤치마킹할 점 찾기위해 분석", "가져올 점
       정리해서"). pstack keeps a finding only when its command, rerun, prints the failure; E-57170ac9 filed
@@ -128,7 +145,7 @@ toasts).
       engine (test in `test-taskmanager.mjs`); the engine reruns `repro` on the integration tree and drops a
       defect whose command passes; the report lists dropped ones with the reason.
 
-89. **The gate names every hunk that weakens a test** (from garrytan/gstack `review/gate-integrity.md`) — in E-77926c5f
+89. **The gate names every hunk that weakens a test** (from garrytan/gstack `review/gate-integrity.md`)
     - Why: same benchmark, 2026-10-27. gstack tags a removed or skipped test, a snapshot regenerated without
       its test, a placeholder committed (RH-1..), and a person decides each. teams' gate checks that tests
       pass, so a node that deletes or `.skip`s a failing test reads green.
@@ -302,3 +319,5 @@ toasts).
 | E-7d212456 | 2026-10-27 | 85 | shipped `d8d9eebb`; size L, every stage first try; teams 1541/1541; QA's top-level `test/` scratch left out (card 86) |
 | E-398db286 | 2026-10-27 | 86, 81 | shipped `88cf55ed` by hand (cancelled in Build): P1 (86) accepted on attempt 2; P2 (81, part) judged accept 90 but settled blocked by the installed 0.60.1 engine (card 85 fix not installed yet); teams 1561/1561; ~$19 |
 | E-fa84630b | 2026-10-27 | 84 (two defects) | nothing shipped: both PRD cards accepted, critique:3 rejected P1 for carrying the planning card's document criteria the PRD folded into its stories (card 87); $5.97 |
+| E-77926c5f | 2026-10-27 | 87, 89 | nothing shipped: both PRD cards accepted; shape failed 3× (P1 and P3 both touch `teams/mcp/taskmanager.mjs`; one owner per path by design). Cards touching the same engine file go in separate Sprints |
+| E-22c3af14 | 2026-10-27 | 91 | nothing shipped: pinned L, PRD with one story; shape refused 1 package (fits S) and 2 packages (one claims every story) (card 92); reopened unpinned |
