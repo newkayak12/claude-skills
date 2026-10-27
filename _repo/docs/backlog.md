@@ -11,7 +11,7 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
 
 ### Mods and naming — UI first (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
 
-84. **The teams pane is a real dashboard on every surface: Ink on the terminal, Svg on desktop, mobile and vscode**
+84. **The teams pane is a real dashboard on every surface: Ink on the terminal, Svg on desktop, mobile and vscode** — defects in E-fa84630b
     - Why: user, 2026-10-26, after `/teams-status` over Remote Control showed a 42-row text dump on the phone:
       "이따위로 나올거면 뭣하러 하냐", "Claude desktop app에서 UI 그릴 수 있는걸로 아는데", "mobile도 그렇고",
       "씨발 못해? terminal도, claude app, desktop도". References given: a Grafana-style metrics board
