@@ -100,7 +100,7 @@ toasts).
 
 ### teams plugin bugs
 
-86. **QA and audit nodes write their scratch inside their own run dir, never at the repo top level**
+86. **QA and audit nodes write their scratch inside their own run dir, never at the repo top level** — in E-398db286
     - Why: 2026-10-27, E-7d212456 QA-F1 committed 6 scratch files on the integration branch under a new
       top-level `test/` (`test/base/teams/…`, `test/qa-f1-*.mjs`, `test/qa-f1-report.md`); the report itself
       said they break `repo.md`'s layout rule. Left out of main by hand (only the 4 real files taken).
@@ -130,7 +130,7 @@ toasts).
       line shows smart-compact's number), checked in one live session where both read the same at a turn
       end; `/smart-compact` prints the current %, the threshold and the token count behind them.
 
-81. **Two size-S runs in one checkout do not fail each other's scope check** — part in 747e9306 (E-53a84277):
+81. **Two size-S runs in one checkout do not fail each other's scope check** — in E-398db286; part in 747e9306 (E-53a84277):
     `teams/mcp/scope.mjs` baselines already-dirty paths, size-S prompts call `scope.mjs touched`, tm_open/tm_run
     warn on a shared live size-S checkout. Left: the engine (not only the prompt) enforces the baseline; two
     runs editing the same file are still not isolated.
