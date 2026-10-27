@@ -28,6 +28,17 @@ function parse(text) {
   try { return JSON.parse(text); } catch { return null; }
 }
 
+// Verbatim copy of unexplainedRefusal in mcp/daemon.mjs (about lines 189-201): importing the daemon
+// would run its startup in this short-lived child. test-claude-adapter.mjs pins the two together.
+function unexplainedRefusal(result) {
+  if (!result || typeof result !== 'object' || result.judge_failed) return null;
+  const refused = result.stage_ok === false || result.accept === false || result.verified === false || result.sound === false;
+  if (!refused) return null;
+  const said = (v) => (Array.isArray(v) ? v.some((x) => String(x == null ? '' : (typeof x === 'object' ? JSON.stringify(x) : x)).trim()) : String(v == null ? '' : v).trim() !== '');
+  if (['reason', 'gaps', 'problems', 'blocking', 'unowned', 'evidence', 'conflicts', 'retry', 'contradictions', 'uncovered', 'duplicates', 'new_areas'].some((k) => said(result[k]))) return null;
+  return { ...result, stage_ok: false, judge_failed: true, reason: 'the judge refused without a reason or gaps - a refusal nobody can act on; asked again' };
+}
+
 // The project wiki: when the engine sets TEAMS_WIKI_ROOT (task.cwd, never a worktree) a worker
 // gets exactly one MCP server, teams-wiki, rooted there, and its tools are allowed by name so
 // writes need no approval. --tools only limits built-ins, so MCP tools are named in
@@ -134,14 +145,22 @@ try {
       last_message: message, error: envelope?.error, errors: envelope?.errors, stderr: proc.stderr, usage: envelope?.usage, model_usage: envelope?.modelUsage,
       verification_error: ok && usable ? '' : proc.stderr || message || 'Claude returned no valid stage JSON' };
     process.exitCode = ok && usable ? 0 : 1;
-    // A node denied a Bash call it needed judged nothing: not a reject. Exit 0, because the broker
-    // drops the report of a non-zero exit (transportOk) and with it the blocked marker.
+    // A node denied a Bash call it needed. If its last reply is still a usable result (the same
+    // parse the non-denied path accepts, and not an unexplained refusal) it judged despite the
+    // denial: the result stands with the denied commands attached, and stage_ok, verification_error
+    // and the exit code stay as computed (E-57170ac9: a denied optional command blocked a node that
+    // had answered). With no usable result it judged nothing: not a reject. Exit 0, because the
+    // broker drops the report of a non-zero exit (transportOk) and with it the blocked marker.
     const denied = neededDenials(envelope);
     if (denied.length && proc.status === 0 && !proc.stopped) {
-      report.stage_ok = false;
-      report.result = { stage_ok: false, blocked: 'tool denied', reason: 'blocked: tool denied', denied };
-      report.verification_error = 'blocked: tool denied';
-      process.exitCode = 0;
+      if (ok && usable && !unexplainedRefusal(result)) {
+        report.result = { ...result, denied };
+      } else {
+        report.stage_ok = false;
+        report.result = { stage_ok: false, blocked: 'tool denied', reason: 'blocked: tool denied', denied };
+        report.verification_error = 'blocked: tool denied';
+        process.exitCode = 0;
+      }
     }
   }
   writeFileSync(opts.output, JSON.stringify(report, null, 2) + '\n');

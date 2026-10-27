@@ -5466,48 +5466,96 @@ test('a judge denied a tool ends blocked: no reject counted, no retry or repair 
   });
 });
 
-test('the daemon settles a judge whose stream carries a denied tool as blocked, and a clean stream as before', async () => {
-  const run = async (resultEvent) => {
-    const cwd = repo();
-    const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-    const drv = mkDrvDir();
-    const judgeJs = join(drv, 'judge.mjs');
-    writeFileSync(judgeJs, `process.stdout.write(${JSON.stringify(JSON.stringify(resultEvent))} + '\\n');\n`);
-    const hang = join(drv, 'hanging-driver.mjs');
-    writeFileSync(hang, HANGING_DRIVER_SRC);
-    const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_JUDGE_DRIVER: `node ${judgeJs}`, HARNESS_CHILD_DRIVER: `node ${hang}`, CLAUDECODE: '1' }).init();
+// Runs the daemon's size judge against a mock judge process that prints one result event; returns the
+// stored size node.
+async function settleSizeJudge(resultEvent) {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const drv = mkDrvDir();
+  const judgeJs = join(drv, 'judge.mjs');
+  writeFileSync(judgeJs, `process.stdout.write(${JSON.stringify(JSON.stringify(resultEvent))} + '\\n');\n`);
+  const hang = join(drv, 'hanging-driver.mjs');
+  writeFileSync(hang, HANGING_DRIVER_SRC);
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_JUDGE_DRIVER: `node ${judgeJs}`, HARNESS_CHILD_DRIVER: `node ${hang}`, CLAUDECODE: '1' }).init();
+  try {
+    const open = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'a request whose size must be judged', cwd, vendor: 'self' });
+    let size = null;
+    await waitFor(async () => {
+      const st = await tm.call('tm_status', { task_id: open.task_id, full: true });
+      size = (st.nodes || []).find((x) => x.stage === 'size');
+      return size && (size.state === 'done' || size.state === 'failed');
+    }, 'the size judge to settle', 30000);
+    return JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8')).nodes.find((x) => x.stage === 'size');
+  } finally {
+    tm.close();
     try {
-      const open = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'a request whose size must be judged', cwd, vendor: 'self' });
-      let size = null;
-      await waitFor(async () => {
-        const st = await tm.call('tm_status', { task_id: open.task_id, full: true });
-        size = (st.nodes || []).find((x) => x.stage === 'size');
-        return size && (size.state === 'done' || size.state === 'failed');
-      }, 'the size judge to settle', 30000);
-      const stored = JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8')).nodes.find((x) => x.stage === 'size');
-      return stored;
-    } finally {
-      tm.close();
-      try {
-        for (const line of readFileSync(join(root, readdirSync(root)[0], 'ledger.jsonl'), 'utf8').split('\n')) {
-          const e = line.trim() ? JSON.parse(line) : null;
-          if (e && e.event === 'daemon_spawned') { try { process.kill(e.pid, 'SIGKILL'); } catch { /* gone */ } }
-        }
-      } catch { /* no ledger */ }
-      killDriversIn(drv);
-      rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-      rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-      rmSync(drv, { recursive: true, force: true });
-    }
-  };
-  const blocked = await run({ type: 'result', result: JSON.stringify({ stage_ok: true, size: 'S' }), permission_denials: [{ tool_name: 'Bash', tool_use_id: 't', tool_input: { command: 'node --test x' } }] });
+      for (const line of readFileSync(join(root, readdirSync(root)[0], 'ledger.jsonl'), 'utf8').split('\n')) {
+        const e = line.trim() ? JSON.parse(line) : null;
+        if (e && e.event === 'daemon_spawned') { try { process.kill(e.pid, 'SIGKILL'); } catch { /* gone */ } }
+      }
+    } catch { /* no ledger */ }
+    killDriversIn(drv);
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    rmSync(drv, { recursive: true, force: true });
+  }
+}
+
+// A denial no longer discards a verdict: the daemon settles on the judge's parseable verdict and keeps
+// the denied commands on result.denied; only a denial with no usable verdict is blocked.
+test('the daemon settles a judge whose stream carries a denied tool as blocked when it gave no verdict, and a clean stream as before', async () => {
+  const denial = [{ tool_name: 'Bash', tool_use_id: 't', tool_input: { command: 'node --test x' } }];
+  // Denied and no parseable verdict: judged nothing, so blocked (not judge_failed).
+  const blocked = await settleSizeJudge({ type: 'result', result: 'I could not run node --test x, so I have no verdict.', permission_denials: denial });
   assert.equal(blocked.state, 'failed');
   assert.equal(blocked.result.blocked, 'tool denied');
   assert.equal(blocked.result.reason, 'blocked: tool denied');
+  assert.deepEqual(blocked.result.denied, ['node --test x']);
   assert.notEqual(blocked.result.judge_failed, true, 'judge_failed would make autoRejudge ask again');
-  const clean = await run({ type: 'result', result: JSON.stringify({ stage_ok: true, size: 'S', reason: 'small' }), permission_denials: [] });
+  const clean = await settleSizeJudge({ type: 'result', result: JSON.stringify({ stage_ok: true, size: 'S', reason: 'small' }), permission_denials: [] });
   assert.equal(clean.state, 'done');
   assert.equal(clean.result.blocked, undefined);
+  assert.ok(!('denied' in clean.result), 'a clean stream leaves no denied key');
+});
+
+test('the daemon settles a denied judge that still returned a parseable verdict on that verdict, denied kept', async () => {
+  const denial = [{ tool_name: 'Bash', tool_use_id: 't', tool_input: { command: 'node --test x' } }];
+  const accepted = await settleSizeJudge({ type: 'result', result: JSON.stringify({ stage_ok: true, size: 'S', reason: 'small' }), permission_denials: denial });
+  assert.equal(accepted.state, 'done');
+  assert.equal(accepted.result.blocked, undefined);
+  assert.equal(accepted.result.size, 'S');
+  assert.deepEqual(accepted.result.denied, ['node --test x']);
+  const rejected = await settleSizeJudge({ type: 'result', result: JSON.stringify({ stage_ok: false, reason: 'could not re-run the tests' }), permission_denials: denial });
+  assert.equal(rejected.state, 'failed');
+  assert.equal(rejected.result.blocked, undefined, 'a reject verdict is a verdict, not blocked');
+  assert.equal(rejected.result.reason, 'could not re-run the tests');
+  assert.deepEqual(rejected.result.denied, ['node --test x']);
+});
+
+test('the daemon settles a denied judge whose parsed reply is an unexplained refusal as blocked, denied listed', async () => {
+  const denial = [{ tool_name: 'Bash', tool_use_id: 't', tool_input: { command: 'node --test x' } }];
+  const refused = await settleSizeJudge({ type: 'result', result: JSON.stringify({ stage_ok: false }), permission_denials: denial });
+  assert.equal(refused.state, 'failed');
+  assert.equal(refused.result.blocked, 'tool denied');
+  assert.equal(refused.result.reason, 'blocked: tool denied');
+  assert.deepEqual(refused.result.denied, ['node --test x']);
+  assert.notEqual(refused.result.judge_failed, true);
+});
+
+test('a result carrying denied and no blocked keeps its verdict: the broker does not treat it as tool denied', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    const v = await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90, denied: ['node --test x'] }) });
+    assert.equal(v.state, 'done');
+    const n = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8')).nodes.find((x) => x.node_id === 'accept:P1:1');
+    assert.equal(n.result.accept, true, 'accept not stripped');
+    assert.equal(n.result.match_pct, 90, 'match_pct not stripped');
+    assert.deepEqual(n.result.denied, ['node --test x']);
+    assert.notEqual(n.result.reason, 'blocked: tool denied');
+  });
 });
 
 test('tm_events tails the ledger, newest last, filtered by since', async () => {
