@@ -72,7 +72,8 @@ LABEL=${3:-$(date +%Y%m%d-%H%M%S)}
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../../.." && pwd)
 OUT=${GRAPH_BENCH_OUT:-${TMPDIR:-/tmp}/graph-bench}
-WS="$OUT/$CASE-$ARM-$LABEL"
+. "$HERE/lib/workspace.sh"
+WS=$(bench_ws "$OUT" "$CASE" "$ARM" "$LABEL")
 
 case "$CASE" in
   code)      FIX=ledger-mono ;;   # 4 workspace packages -> size L
@@ -93,9 +94,7 @@ case "$CASE" in
     GH_ROW=$(awk -F'\t' -v id="$CASE" '$1 == id {print $4 "\t" $5 "\t" $6; exit}' "$HERE/cases.tsv")
     [ -n "$GH_ROW" ] || { echo "unknown case $CASE" >&2; exit 2; }
     IFS=$'\t' read -r GH_REQ GH_FIX GH_CHECK <<< "$GH_ROW"
-    FIX=${GH_FIX#fixtures/}
-    # The judge's cwd is the workspace: its path must not name the arm. Opaque and stable per arm+label.
-    WS="$OUT/$CASE-$(printf '%s' "$ARM-$LABEL" | sha256sum | cut -c1-10)" ;;
+    FIX=${GH_FIX#fixtures/} ;;
   *) echo "unknown case $CASE" >&2; exit 2 ;;
 esac
 

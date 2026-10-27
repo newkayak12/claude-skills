@@ -25,6 +25,7 @@ set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=${GRAPH_BENCH_OUT:-${TMPDIR:-/tmp}/graph-bench}
 MAX=${MAX_RESUMES:-6}
+. "$HERE/lib/workspace.sh"
 
 stream_end() {  # newest stream of a workspace -> "killed", or "ended\t<result text>"
   local ws=$1 f
@@ -196,7 +197,7 @@ run_job() {
 
 for job in "$@"; do
   read -r arm case label <<<"$job"
-  ws="$OUT/$case-$arm-$label"
+  ws=$(bench_ws "$OUT" "$case" "$arm" "$label")
   if [ "${DRIVE_VIA:-run}" = run ] && [[ "$arm" == beta || "$arm" == betas || "$arm" == skills ]]; then
     run_job "$job" "$arm" "$case" "$label" "$ws"
     continue
@@ -229,7 +230,7 @@ for job in "$@"; do
       n=$((n + 1))
       echo "$(date -u +%FT%TZ) resume $n of $job"
       before=$(ls "$ws".stream*.jsonl 2>/dev/null | wc -l)
-      "$HERE/resume.sh" "$ws" "$n"
+      "$HERE/resume.sh" "$case" "$arm" "$label" "$n"
       # resume.sh that never opened a session (bad arguments, a missing request file) leaves the
       # streams untouched: the loop would read the same "killed" and spin. Stop the job instead.
       if [ "$(ls "$ws".stream*.jsonl 2>/dev/null | wc -l)" = "$before" ]; then
