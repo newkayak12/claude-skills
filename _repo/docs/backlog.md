@@ -96,16 +96,6 @@ toasts).
       authors pinned to sonnet. Full 162-run matrix started 2026-10-26 08:52Z; a real run costs
       ~$1.5 and ~6 min per arm (dry run was $0.36), so the matrix is ~$240 and ~16 h.
 
-82. **drive.sh finds the anonymized gh-* workspace, so a usage-limit stop resumes** — in E-57170ac9
-    - Why: 2026-10-26 bench log: every gh-* job ends "session killed with no result event; resuming"
-      then `resume.sh: cd: …/gh-verified-1-graph-harness-r1: No such file`. bench.sh names the
-      workspace `<case>-<sha256(arm-label)[0:10]>` (bench.sh:98) but drive.sh:199 looks for
-      `<case>-<arm>-<label>`, so it reads no stream. Runs still record; a usage-limit stop is not resumed.
-      Seen 2026-10-26 11:23Z: the session limit hit after 25 real r1 runs ($86.53, ~$3.5/run); the other
-      137 jobs each ran 3 s with 0 tokens and recorded empty rows in `tmp/bench/2026-10-26/*.runs.jsonl`.
-    - Acceptance: drive.sh and resume.sh resolve the same workspace bench.sh made; a test in
-      `teams/scripts/bench/test-*.mjs` covers a gh-* job ending normally (no resume) and on a limit (resume).
-
 ### Subagents and parallel runs — use and clean up (user, 2026-10-17)
 
 ### teams plugin bugs
@@ -118,33 +108,8 @@ toasts).
     - Acceptance: a judge whose last result parses to a full verdict is settled on that verdict, its denied
       commands recorded beside it (e.g. `denied` on the result); only a judge with no parseable verdict is
       `blocked: tool denied`; a test in `teams/scripts/test-*.mjs` covers both.
-
-83. **taskmanager reaps the `view.mjs` children it spawns** — in E-57170ac9
-    - Why: 2026-10-26 12:50Z, 22 `teams/0.59.1/scripts/view.mjs --tasks-dir …` processes under one session's
-      taskmanager (pid 999474), ages up to 1 d 10 h; 20 older than 1 h killed by hand. Which call spawns them
-      (tm_wait, tm_status, board) is unverified.
-    - 2026-10-27: 79 `view.mjs --tasks-dir … --port …` servers alive, all but one with ppid 1, ages up to 30 d;
-      55 serve a tasks dir that no longer exists (`/tmp/…` test and bench roots). Cause verified:
-      `ensureViewer` (`teams/mcp/viewserver.mjs:133`, tm_open/tm_run) spawns the viewer detached on
-      purpose so it outlives the MCP server, and the viewer never exits on its own — not even when its
-      tasks dir is deleted. Not a tm_wait/tm_status/tm_board child.
-    - Acceptance: a viewer exits by itself when its tasks dir is gone, and when it has had no HTTP request
-      and no live task for a set idle time (ensureViewer starts a new one on the next tm_open); a test in
-      `teams/scripts/test-*.mjs` starts a viewer, deletes its tasks dir and sees the process exit.
-
-76. **A large PRD shapes into packages without dropping or double-owning anything** — part in ff3d9073
-    (E-d93aa063): placeholder/bare-id refusal, `teams/mcp/shapecheck.mjs` pre-check, one full retry list;
-    card 47's PRD through it reproduces all three shape failures. Left: a model-driven size-L rerun that
-    shapes on the first or second attempt (next size-L Sprint counts).
-    - Why: 2026-10-25, card 47 failed at shape in two size-L tasks, 3 of 3 attempts each: E-c557fd66 left
-      F3-AC-37 in no package; E-e80fea64 left F3-AC-21 out, then gave two packages the same paths
-      (write plugin.json, marketplace.json, prd/SKILL.md, plans/SKILL.md, tech-book/SKILL.md, trophy
-      triggers). Its PRD's F2 stories carry placeholders ("the F2-AC ids listed under F2-US-1 in the
-      document, copied verbatim") instead of the criteria, and F3 stories bare ids — likely related,
-      unverified. Worked around by three size-S runs per area (E-c80fa0ea first).
-    - Acceptance: plan-integrate refuses a story whose acceptance is a placeholder or a bare id; shape gets
-      the full unassigned-AC and overlapping-path list in one retry message and a mechanical pre-check
-      (node, tested) before submit; a rerun of card 47's PRD shapes on the first or second attempt.
+    - Same EPIC: attempts 2 and 3 the same (accept 93, a denied `/tmp` attack); P1 then exhausted, and
+      QA-F1 filed 11 defects (D1–D11) for the work that was missing only because of it; cancelled there.
 
 75. **smart-compact fires on the same context % the person sees in the status line** — part in E-3f6657e7 (6d5809b2)
     - 2026-10-26: smart-compact now computes `round((input + cache_creation + cache_read) / window * 100)`, the
@@ -299,3 +264,4 @@ toasts).
 | E-d93aa063 | 2026-10-26 | 76 (part) | shipped `ff3d9073`; size S; teams 1513/1513 |
 | E-3f6657e7 | 2026-10-26 | 75 (part) | shipped `6d5809b2`; size S; large-context live check left on card 75 |
 | E-27be4005 | 2026-10-26 | 48 Task 6 (first half) | shipped `eac1f097`; size S; dry run gh-defect-2 ~$0.36 per arm; batch bump `f4d455a1` |
+| E-57170ac9 | 2026-10-27 | 83, 82 (76 closed: shape passed on attempt 2) | P2 shipped `91f32cf4` (bench 80/80); P1 judged accept 3× but settled blocked on a denied extra command (card 85), taken by hand `21a52358` (teams 1530/1530); cancelled at QA-F1's 11 defects |
