@@ -114,8 +114,14 @@ toasts).
     - Why: 2026-10-26 12:50Z, 22 `teams/0.59.1/scripts/view.mjs --tasks-dir …` processes under one session's
       taskmanager (pid 999474), ages up to 1 d 10 h; 20 older than 1 h killed by hand. Which call spawns them
       (tm_wait, tm_status, board) is unverified.
-    - Acceptance: after a tm_wait / tm_status / tm_board call returns, no `view.mjs` child of taskmanager is
-      left; a test in `teams/scripts/test-*.mjs` counts the children.
+    - 2026-10-27: 79 `view.mjs --tasks-dir … --port …` servers alive, all but one with ppid 1, ages up to 30 d;
+      55 serve a tasks dir that no longer exists (`/tmp/…` test and bench roots). Cause verified:
+      `ensureViewer` (`teams/mcp/viewserver.mjs:133`, tm_open/tm_run) spawns the viewer detached on
+      purpose so it outlives the MCP server, and the viewer never exits on its own — not even when its
+      tasks dir is deleted. Not a tm_wait/tm_status/tm_board child.
+    - Acceptance: a viewer exits by itself when its tasks dir is gone, and when it has had no HTTP request
+      and no live task for a set idle time (ensureViewer starts a new one on the next tm_open); a test in
+      `teams/scripts/test-*.mjs` starts a viewer, deletes its tasks dir and sees the process exit.
 
 76. **A large PRD shapes into packages without dropping or double-owning anything** — part in ff3d9073
     (E-d93aa063): placeholder/bare-id refusal, `teams/mcp/shapecheck.mjs` pre-check, one full retry list;
