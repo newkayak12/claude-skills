@@ -296,8 +296,26 @@ function defaultPort() {
   return Number.isInteger(pinned) && pinned > 0 ? { port: pinned, fixed: true } : { port: DEFAULT_VIEW_PORT, fixed: false };
 }
 
+// The viewer is spawned detached (mcp/viewserver.mjs), so nothing else ever stops it. It ends itself:
+// when its tasks dir is gone (checked every DIR_CHECK_MS, no grace for a dir missing at startup), or
+// once IDLE_MS has passed with no HTTP request (GET /state.json included) and no live task. Live is
+// the set view-floor-fs.mjs calls OPEN (not exported there); BLOCKED, stalled, unknown and error rows
+// are not live. The record <root>/.view.json is left as it is - a dead pid already reads as no record.
+const DIR_CHECK_MS = 2000;
+const IDLE_DEFAULT_MS = 30 * 60 * 1000;
+const EXIT_GRACE_MS = 1000;
+const LIVE = new Set(['READY', 'IN_PROGRESS', 'IN_REVIEW']);
+
+// TEAMS_VIEW_IDLE_MS; unset, non-numeric or non-positive falls back to the default.
+function idleMs() {
+  const n = Number(process.env.TEAMS_VIEW_IDLE_MS);
+  return Number.isFinite(n) && n > 0 ? n : IDLE_DEFAULT_MS;
+}
+
 function startServer(tasksDir, taskId, port) {
+  let lastRequest = Date.now();
   const server = createServer((req, res) => {
+    lastRequest = Date.now();
     const url = new URL(req.url, 'http://localhost');
     if (url.pathname === '/state.json') {
       const ref = url.searchParams.get('task');
@@ -327,6 +345,25 @@ function startServer(tasksDir, taskId, port) {
     console.log(`teams view listening on http://127.0.0.1:${addr.port}${taskId ? `/${viewKey(taskId)}` : ''}`);
     console.log(`tasks dir: ${tasksDir}`);
   });
+
+  let ending = false;
+  const end = () => {
+    if (ending) return;
+    ending = true;
+    clearInterval(watch);
+    // The timer is not unref'd: a close that never completes (a held connection) still ends the process.
+    setTimeout(() => process.exit(0), EXIT_GRACE_MS);
+    server.close();
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+  };
+  const watch = setInterval(() => {
+    if (!existsSync(tasksDir)) { end(); return; }
+    if (Date.now() - lastRequest < idleMs()) return;
+    let rows;
+    try { rows = listTasks(tasksDir); } catch { return; }
+    if (!rows.some((r) => LIVE.has(r.state))) end();
+  }, DIR_CHECK_MS);
+  watch.unref();
   return server;
 }
 
