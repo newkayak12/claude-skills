@@ -126,7 +126,7 @@ function lastResultText(stdout) {
 // permission_denials (same shape as the json envelope the worker adapter reads; probed live on
 // claude 2.1.308 under --dangerously-skip-permissions with --disallowedTools). The judge skips
 // permissions, so this event field is the only signal. [] when nothing was denied.
-export function judgeDenials(stdout) {
+export function judgeDenials(stdout, cwd) {
   let last = null;
   for (const line of String(stdout || '').split('\n')) {
     if (!line.trim()) continue;
@@ -134,7 +134,7 @@ export function judgeDenials(stdout) {
     try { e = JSON.parse(line); } catch { continue; }
     if (e && e.type === 'result') last = e;
   }
-  return neededDenials(last);
+  return neededDenials(last, cwd);
 }
 
 // Who a judge call ran as: `claude`, and the model its stream's init event names (else the
@@ -279,7 +279,7 @@ async function judge(task, n, { slot = null } = {}) {
       // stands (accept or reject) with the denied commands on result.denied. A judge denied a tool it
       // needed that gave no verdict (nothing parseable, or an unexplained refusal) judged nothing:
       // blocked, not a reject, and not judge_failed (autoRejudge would ask again and be denied again).
-      const denied = judgeDenials(out);
+      const denied = judgeDenials(out, task.cwd);
       const text = lastResultText(out);
       const blocked = () => settle({ stage_ok: false, blocked: 'tool denied', reason: 'blocked: tool denied', denied, judged_by: judgedBy(out, extra) });
       try {
@@ -366,7 +366,7 @@ export function answerNode(task, ask, { slot = null } = {}) {
     proc.on('close', (code) => {
       keepJudgeLog(task, { node_id: `answer-${ask.ask_id.slice(0, 8)}` }, out);
       const text = lastResultText(out);
-      if (judgeDenials(out).length) settle({ crashed: true, error: `tool denied: ${err.slice(-200)}` });
+      if (judgeDenials(out, task.cwd).length) settle({ crashed: true, error: `tool denied: ${err.slice(-200)}` });
       else if (!text && code) settle({ crashed: true, error: `exited ${code}: ${err.slice(-200)}` });
       else settle(text);
     });
