@@ -8,10 +8,11 @@
 //          (CLAUDE_CODE_SESSION_ATTENDED=1); the repo checked is the one the push targets (every
 //          `cd <path>` segment before the push, joined by `&&`, `||`, `;` or `|`, applied in order from cwd,
 //          then `git -C <path>` relative to that; `~` and `~/x` expanded with $HOME, else cwd); `git commit` with a staged README.md and no staged
-//          KOR.md beside it gets a systemMessage.
+//          KOR.md beside it gets a systemMessage. An unquoted `$NAME` argument to `rm` and an in-place write
+//          to a repo file (sed -i, redirect, inline code) are denied; see bashDeny.
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
 const git = (cwd, args, timeout = 10000) =>
   execFileSync('git', args, { cwd, timeout, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
@@ -76,7 +77,7 @@ function openTasks(root, env = process.env, run = git) {
   return open
 }
 
-// The directory a command works in: the command is split at `&&`, `||`, `;`, `|` (outside quotes);
+// The directory a command works in: the command is split at `&&`, `||`, `;`, `|`, newline (outside quotes);
 // each `cd <path>` segment before the push moves the base from cwd, in order, then each
 // `git [-c k=v] -C <path> ... push` moves it again (relative to the previous). Paths in quotes or
 // bare; a leading `~` or `~/x` is expanded with env.HOME.
@@ -94,6 +95,7 @@ function segments(cmd) {
       if (cmd[i + 1] === c && c !== ';') i++
       continue
     }
+    if (c === '\n') { out.push(cur); cur = ''; continue }
     cur += c
   }
   out.push(cur)
@@ -121,6 +123,162 @@ function targetRoot(cmd, cwd, run, env) {
   return run(cwd, ['rev-parse', '--show-toplevel']).trim()
 }
 
+// Two denies on a simple command, parsed with segments(); anything not parsed is allowed. Claude Code only.
+//   rm:    an unquoted `$NAME` / `${NAME}` without `:?` as an argument of a command whose first word is rm.
+//   write: sed/perl in place, tee, a `>` / `>>` target, or inline node/python code (-e/-c or a heredoc)
+//          with a write call, naming a repo path: inside the git top level of the (cd-applied) dir,
+//          not under tmp/, not gitignored. `git` commands, /dev/*, and targets with `$` or backticks pass.
+//   A heredoc body is data (cat, tee, git) unless it feeds a shell (scanned as a command) or an interpreter.
+const SHELLS = /^(?:ba|z|da|k)?sh$/
+const INTERP = /^(?:node(?:js)?|python[\d.]*)$/
+const UNQUOTED_VAR = /\$(?:\{([A-Za-z_]\w*)(?![^}]*:\?)[^}]*\}|([A-Za-z_]\w*))/
+const IN_PLACE = /^(?:-[nEeprlsazw0-9]*i|--in-place)/
+const CODE_FLAG = /^(?:-[a-z]*[ecp]|--eval|--print)$/
+const LITERAL = String.raw`\(\s*(['"` + '`' + String.raw`])([^'"` + '`' + String.raw`]+)\1`
+const WRITE_CALLS = [
+  new RegExp(String.raw`\b(?:writeFile|appendFile|createWriteStream|truncate|unlink|rm|rmdir|mkdir|rename)(?:Sync)?${LITERAL}`, 'g'),
+  new RegExp(String.raw`\bcopyFile(?:Sync)?\([^,()]+,\s*(['"` + '`' + String.raw`])([^'"` + '`' + String.raw`]+)\1`, 'g'),
+  /\bopen\(\s*(['"])([^'"]+)\1\s*,\s*(?:mode\s*=\s*)?['"][rbt]*[wax+]/g,
+  /\bPath\(\s*(['"])([^'"]+)\1\s*\)\s*\.\s*(?:write_text|write_bytes|unlink|touch)\b/g,
+  /\bos\.(?:remove|unlink|rename|replace|makedirs|mkdir|rmdir)\(\s*(['"])([^'"]+)\1/g,
+  /\bshutil\.(?:rmtree|move)\(\s*(['"])([^'"]+)\1/g,
+]
+
+// Words of one segment, quotes removed: `text` is the value, `bare` only its unquoted part.
+// `>` / `<` outside quotes are { op } tokens.
+function words(seg) {
+  const out = []
+  let text = '', bare = '', q = '', has = false
+  const flush = () => { if (has) out.push({ text, bare }); text = bare = ''; has = false }
+  for (let i = 0; i < seg.length; i++) {
+    const c = seg[i]
+    if (q) { if (c === q) q = ''; else text += c; continue }
+    if (c === '"' || c === "'") { q = c; has = true; continue }
+    if (c === '\\' && i + 1 < seg.length) { text += seg[++i]; has = true; continue }
+    if (/\s/.test(c)) { flush(); continue }
+    if (c === '>' || c === '<') {
+      flush()
+      let op = c
+      while (seg[i + 1] === c || (c === '>' && seg[i + 1] === '|')) op += seg[++i]
+      out.push({ op })
+      continue
+    }
+    text += c; bare += c; has = true
+  }
+  flush()
+  return out
+}
+
+// A segment's argument words and its `>` / `>>` target words (a heredoc delimiter or `<` target is neither).
+function parse(seg) {
+  const toks = words(seg), args = [], writes = []
+  for (let i = 0; i < toks.length; i++) {
+    if (!toks[i].op) { args.push(toks[i]); continue }
+    const t = toks[++i]
+    if (t && !t.op && toks[i - 1].op.startsWith('>')) writes.push(t)
+  }
+  return { args, writes }
+}
+
+// The command without its heredoc bodies, and each body with the line whose command reads it.
+function heredocs(cmd) {
+  const lines = cmd.split('\n'), head = [], docs = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    head.push(line)
+    for (const m of line.matchAll(/(?<!<)<<(?!<)(-?)\s*(['"]?)([\w.-]+)\2/g)) {
+      const body = []
+      for (i++; i < lines.length; i++) {
+        if ((m[1] ? lines[i].trim() : lines[i]) === m[3]) break
+        body.push(lines[i])
+      }
+      docs.push({ line, body: body.join('\n') })
+    }
+  }
+  return { head: head.join('\n'), docs }
+}
+
+const codePaths = code => WRITE_CALLS.flatMap(re => [...code.matchAll(re)].map(m => m[2]))
+
+function rmDeny(name, rest) {
+  if (name !== 'rm') return null
+  for (const a of rest) {
+    const v = UNQUOTED_VAR.exec(a.bare)
+    if (v) return `rm with an unquoted $${v[1] ?? v[2]}: empty or split, it deletes the wrong files. Quote and guard it: "\${${v[1] ?? v[2]}:?}".`
+  }
+  return null
+}
+
+// Files an in-place sed/perl edits: its non-option words, minus the script when no -e/-f gives it.
+function inPlaceFiles(rest) {
+  const files = []
+  let script = false
+  for (let i = 0; i < rest.length; i++) {
+    const t = rest[i].text
+    if (/^-[a-zA-Z]*[ef]$/.test(t) || /^--(?:expression|file)$/.test(t)) { script = true; i++ }
+    else if (/^--(?:expression|file)=/.test(t)) script = true
+    else if (!t.startsWith('-')) files.push(t)
+  }
+  if (!script) files.shift()
+  return files
+}
+
+function writeTargets(name, rest, writes) {
+  const out = writes.map(w => w.text)
+  if (name === 'tee') out.push(...rest.filter(a => !a.text.startsWith('-')).map(a => a.text))
+  else if ((name === 'sed' || name === 'perl') && rest.some(a => IN_PLACE.test(a.text))) out.push(...inPlaceFiles(rest))
+  else if (INTERP.test(name)) rest.forEach((a, i) => { if (CODE_FLAG.test(a.text) && rest[i + 1]) out.push(...codePaths(rest[i + 1].text)) })
+  return out
+}
+
+function bashDeny(cmd, cwd, env, run) {
+  const tops = new Map()
+  const top = dir => {
+    if (!tops.has(dir)) {
+      let d = dir
+      while (!existsSync(d) && dirname(d) !== d) d = dirname(d)
+      try { tops.set(dir, run(d, ['rev-parse', '--show-toplevel']).trim() || null) } catch { tops.set(dir, null) }
+    }
+    return tops.get(dir)
+  }
+  const repoPath = (p, dir) => {
+    if (/[$`]/.test(p) || p.startsWith('/dev/')) return false
+    const t = top(dir)
+    if (!t) return false
+    const abs = resolve(dir, tilde(p, env))
+    const rel = relative(t, join(samePath(dirname(abs)), basename(abs)))
+    if (!rel || rel === '..' || rel.startsWith('../') || isAbsolute(rel) || rel === 'tmp' || rel.startsWith('tmp/')) return false
+    try { run(t, ['check-ignore', '-q', '--', rel]); return false } catch (e) { return e?.status === 1 }
+  }
+  const writeDeny = (p, name) => `Bash ${name} writes ${p}, a repo file, in place. Use Read/Edit/Write for repo files; Bash is for git, checks and tests.`
+  const scan = (text, dir) => {
+    const { head, docs } = heredocs(text)
+    for (const seg of segments(head.replace(/\d*[<>]&(?:\d+|-)/g, ' ').replace(/&>>?/g, '>'))) {
+      const { args, writes } = parse(seg)
+      while (args.length && /^\w+=/.test(args[0].text)) args.shift()
+      const name = args.length ? basename(args[0].text) : ''
+      const rest = args.slice(1)
+      if (name === 'git') continue
+      if (name === 'cd' && rest.length === 1) { dir = resolve(dir, tilde(rest[0].text, env)); continue }
+      const hit = rmDeny(name, rest) ?? writeTargets(name, rest, writes).filter(p => repoPath(p, dir)).map(p => writeDeny(p, name || 'redirect'))[0]
+      if (hit) return hit
+    }
+    for (const d of docs) {
+      const seg = segments(d.line).find(s => s.includes('<<')) ?? ''
+      const name = basename(parse(seg).args[0]?.text ?? '')
+      if (SHELLS.test(name)) {
+        const hit = scan(d.body, dir)
+        if (hit) return hit
+      } else if (INTERP.test(name)) {
+        const p = codePaths(d.body).find(p => repoPath(p, dir))
+        if (p) return writeDeny(p, name)
+      }
+    }
+    return null
+  }
+  return scan(cmd, samePath(cwd))
+}
+
 export function decide(mode, input, env, run = git) {
   const cwd = input.cwd || process.cwd()
   if (mode === 'start') {
@@ -143,6 +301,9 @@ export function decide(mode, input, env, run = git) {
         }
       }
     }
+    let reason = null
+    try { reason = bashDeny(cmd, cwd, env, run) } catch { /* fail open */ }
+    if (reason) return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }
     if (COMMIT.test(cmd)) {
       const files = new Set(run(cwd, ['diff', '--cached', '--name-only']).split('\n').filter(Boolean))
       const lonely = [...files].filter(f => f.endsWith('/README.md') && !files.has(f.replace(/README\.md$/, 'KOR.md')))
