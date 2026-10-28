@@ -1103,7 +1103,8 @@ export function validateShape(spec, userStories) {
         // told the truth (P1 and P7 with no story) this check rejected it.
         const enables = new Set((Array.isArray(p && p.enables) ? p.enables : []).map(String).filter((u) => ids.includes(u)));
         if (!mine.size && !enables.size) problems.push(`package ${p.id} implements no user story: every package in a planned task delivers some part of the PRD, or it is not in this shape - a package that owns only shared artifacts other packages build on lists the stories it makes possible in enables[] instead`);
-        else if (ids.every((u) => mine.has(u))) problems.push(`package ${p.id} claims every user story (${ids.join(', ')}): implements[] is what this package delivers, not what it touches - a package that delivers all of them is the whole job, not a package`);
+        // With one story the claim cannot be told from "delivers the story"; other packages may enable it.
+        else if (ids.length > 1 && ids.every((u) => mine.has(u))) problems.push(`package ${p.id} claims every user story (${ids.join(', ')}): implements[] is what this package delivers, not what it touches - a package that delivers all of them is the whole job, not a package`);
       }
     }
     // Acceptance IDs ride under their story (sdd step 3, option A: no new field): a package that
