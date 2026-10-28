@@ -59,6 +59,7 @@ import {
   planningPkgs, livePlanningPkgs, qaPkgs, phaseOfId, planningStories, storyId, storyLabel,
 } from './tickets.mjs';
 import { resolveBase, failingTests, compareOnBase, exclusionLine } from './basefail.mjs';
+import { gateIntegrity, formatList } from './gateintegrity.mjs';
 import { writeDocs, renderPrd, cardDocuments, questionLine } from './docs.mjs';
 import { mode as wikiMode } from './wikibridge.mjs';
 import { harnessVerdict, taskTag } from './harnessrun.mjs';
@@ -4485,6 +4486,24 @@ export function composeTaskPrompt(task, n) {
     L.push(n.stage === 'report'
       ? 'List this under what did not ship or was not verified. Do not describe the Sprint as fully QA-verified.'
       : `Record "${names}: QA reached no verdict" in gaps. The absence of that verdict is not a pass.`);
+  }
+  // The goal gate judges the merged tree: list where it weakened a test or a guard against the
+  // base. An inventory only - best-effort, no section when there is no tree, no git or no finding.
+  if (String(n.node_id).startsWith('gate:goal')) {
+    try {
+      const integ = task.nodes.filter((x) => x.stage === 'integrate' && x.state === 'done' && x.integration && x.integration.cwd && x.integration.branch).pop();
+      if (integ) {
+        const sha = resolveBase({ cwd: integ.integration.cwd, branch: integ.integration.branch, baseRef: task.base_ref });
+        const findings = gateIntegrity({ cwd: integ.integration.cwd, baseline: sha });
+        if (findings.length) {
+          L.push('');
+          L.push('## Gate integrity');
+          L.push(`The merged tree weakens these places against the base ${sha.slice(0, 12)} (tag, file:line, text):`);
+          L.push(formatList(findings).trimEnd());
+          L.push('A listed hunk with no reason in the diff or in the packages\' reports is a gap: name it in gaps, and it weighs against accept. A justified hunk (e.g. a test deleted together with its source, the reason in the report) is not a gap. The list is an inventory and does not by itself refuse the merge.');
+        }
+      }
+    } catch { /* best-effort: no integrate node, not git, git error */ }
   }
   // The same facts tm_status/tm_wait/daemon_done carry as partial_reasons once this report is done.
   const partial = n.stage === 'report' ? unfinishedWork(task) : null;
