@@ -1778,7 +1778,7 @@ test('--once --format summary prints { status, task }: status is --format status
     const out = JSON.parse(r.stdout);
     assert.deepEqual(Object.keys(out).sort(), ['status', 'task', 'tasks']);
     assert.deepEqual(out.status, JSON.parse(run('--format', 'status').stdout));
-    assert.deepEqual(Object.keys(out.task).sort(), ['cost', 'day', 'done', 'key', 'log', 'now', 'slug', 'stages', 'state', 'title', 'total', 'work', 'you']);
+    assert.deepEqual(Object.keys(out.task).sort(), ['cost', 'day', 'done', 'key', 'log', 'metrics', 'now', 'slug', 'stages', 'state', 'title', 'total', 'work', 'you']);
 
     const text = JSON.stringify(out.task);
     for (const tok of ['verdict', 'match_pct', 'dispatch:', 'gate:goal', 'accept:', '/Users/', '/var/', '/tmp/']) {
@@ -2062,4 +2062,77 @@ test('view.mjs --once on a harness_run task fixture prints state running, the pl
     const tickets = run('--view', 'tickets');
     assert.match(tickets.stdout, /a \+2/);
   } finally { f.cleanup(); }
+});
+
+test('collect(): a node with only finished_at (broker.mjs\'s field) gets elapsed_ms > 0, and a blocked or scoped-out node says so', () => {
+  const root = mkdtempSync(join(tmpdir(), 'view-test-finished-'));
+  try {
+    const taskId = 'ffffffff-0000-0000-0000-000000000000';
+    const taskPath = join(root, taskId, 'task.json');
+    mkdirSync(join(root, taskId), { recursive: true });
+    const task = {
+      run_id: taskId, cwd: root, request: 'r', created_at: Date.now(), store_path: taskPath, spec: { packages: [] },
+      nodes: [
+        node('size', 'size', [], { state: 'done', started_at: 1000, finished_at: 4000 }),
+        node('shape', 'shape', [], { state: 'done', started_at: 1000, ended_at: 2500, finished_at: 9000 }),
+        node('critique', 'critique', [], { state: 'failed', started_at: 1000, result: { blocked: 'tool denied', reason: 'blocked: tool denied' } }),
+        node('gate:goal:1', 'gate', [], { state: 'done', result: { scoped_out: [{ gap: 'the export path is not exercised', belongs_to: 'P3' }] } }),
+      ],
+    };
+    writeFileSync(taskPath, JSON.stringify(task));
+    const by = Object.fromEntries(collectTask(root, taskId).manager_stages.map((n) => [n.node_id, n]));
+    assert.equal(by.size.elapsed_ms, 3000);
+    assert.equal(by.shape.elapsed_ms, 1500, 'ended_at still wins when both are present');
+    assert.equal(by.critique.blocked, true);
+    assert.equal(by.size.blocked, false);
+    assert.deepEqual(by['gate:goal:1'].scoped_out, [{ gap: 'the export path is not exercised', belongs_to: 'P3' }]);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('collect(): telemetry carries the last accept score, out-of-retries, spend rows per story, filed and dropped defects, blocked judges', () => {
+  const root = mkdtempSync(join(tmpdir(), 'view-test-telemetry-'));
+  try {
+    const taskId = 'abababab-0000-0000-0000-000000000000';
+    const dir = join(root, taskId);
+    const taskPath = join(dir, 'task.json');
+    mkdirSync(join(dir, 'drivers'), { recursive: true });
+    const res = (cost, ms) => JSON.stringify({ type: 'result', total_cost_usd: cost, num_turns: 1, duration_ms: ms }) + '\n';
+    writeFileSync(join(dir, 'drivers', 'dispatch_P1_1.stream.jsonl'), res(1, 100));
+    writeFileSync(join(dir, 'drivers', 'dispatch_P1_2.stream.jsonl'), res(2, 200));
+    writeFileSync(join(dir, 'drivers', 'judge_accept_P1_2.stream.jsonl'), res(0.5, 50));
+    writeFileSync(join(dir, 'drivers', 'judge_critique.stream.jsonl'), res(0.25, 25));
+    const ev = (o) => JSON.stringify({ ts: 1, task_id: taskId, ...o });
+    writeFileSync(join(dir, 'ledger.jsonl'), [
+      ev({ event: 'verdict', node_id: 'dispatch:P1:2', stage: 'dispatch', subgoal_id: 'P1', attempt: 2, verdict: 'accept', score: 99, reason: null }),
+      ev({ event: 'verdict', node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', attempt: 1, verdict: 'reject', score: 70, reason: 'first' }),
+      ev({ event: 'verdict', node_id: 'accept:P1:2', stage: 'accept', subgoal_id: 'P1', attempt: 2, verdict: 'reject', score: 88, reason: 'second' }),
+      ev({ event: 'verdict', node_id: 'critique', stage: 'critique', attempt: 1, verdict: 'blocked', score: null, reason: null }),
+      ev({ event: 'daemon_retry_settled', package_id: 'P1', reason: 'retry budget exhausted' }),
+      ev({ event: 'daemon_retry_settled', package_id: 'QA-F1', reason: 'qa_rounds exhausted with unresolved defects' }),
+      ev({ event: 'exhausted_reintegrated', not_done: ['P1', 'P3'] }),
+      ev({ event: 'defects_filed', filed: ['D1', 'D2'] }),
+      ev({ event: 'tm_file', filed: ['D2'] }),
+    ].join('\n') + '\n');
+    const task = {
+      run_id: taskId, cwd: root, request: 'r', created_at: Date.now(), store_path: taskPath,
+      goal_threshold: 90, max_retries: 2, stall_minutes: 20,
+      team: { opts: { budget_usd: 10 } },
+      dropped_defects: [{ id: 'D9', title: 't', reason: 'no repro' }],
+      spec: { packages: [{ id: 'P1', title: 'p' }] },
+      nodes: [node('dispatch:P1:2', 'dispatch', [], { subgoal_id: 'P1', attempt: 2, state: 'failed' })],
+    };
+    writeFileSync(taskPath, JSON.stringify(task));
+    const t = collectTask(root, taskId).telemetry;
+    assert.equal(t.goal_threshold, 90);
+    assert.equal(t.max_attempts, 3);
+    assert.equal(t.budget_usd, 10);
+    assert.equal(t.spent_usd, 3.75);
+    assert.deepEqual(t.judge.P1, { score: 88, reason: 'second', attempt: 2 }, 'the accept judge, not the dispatch self-score');
+    assert.deepEqual([...t.out_of_retries].sort(), ['P1', 'P3']);
+    assert.deepEqual(t.defects.filed.sort(), ['D1', 'D2']);
+    assert.equal(t.defects.dropped.length, 1);
+    assert.equal(t.denials.judges, 1);
+    const rows = t.spend.map((r) => `${r.story}/${r.attempt}/${r.stage}/${r.cost_usd}`).sort();
+    assert.deepEqual(rows, ['P1/1/null/1', 'P1/2/null/0.5', 'P1/2/null/2', 'null/1/plan/0.25']);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

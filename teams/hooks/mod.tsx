@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Dash, Decision, DecisionsPayload, Mark, PaneView, ReportPayload, StatusInfo, SummaryItem, SummaryTask, SummaryTaskEntry, TeamsEvent, TeamsView } from '../types'
 import { askBandShown, carriesInput, fallbackSelection, paneKey, paneSlash, statusAnswer, stepClamp, storyRows } from './pane'
-import { STORY_SHRINK, clipText, columnWidths, epicCells, epicState, handoffCells, renderLines, rowLine, since, storyCells, tabRowPlan, footerPlan, workerCells } from './teams-draw'
+import { STORY_SHRINK, clipText, columnWidths, epicCells, epicState, handoffCells, renderLines, rowLine, runCells, since, storyCells, tabRowPlan, footerPlan, workerCells } from './teams-draw'
 import type { Line } from './teams-draw'
 
 const cursor = atom({ plugin: 'teams', key: 'cursor' } as const, 0)
@@ -66,6 +66,9 @@ const en = {
   board: 'board', inboxOne: '{n} question for you', inboxMany: '{n} questions for you', statusWaiting: 'needs you: {n} waiting - open /teams-status',
   pushRejected: 'rejected', pushNeedsYou: 'needs you', pushEnded: 'run ended', nodeFailed: 'failed',
   prev: '◀', next: '▶', keysHint: '[ ] EPIC · j k row · 0-5 tabs', openHint: 'g open run', noStories: 'No STORY at work.',
+  runBudget: 'Budget', runBudgetOf: '{spent} of {limit}', runDrivers: 'Drivers', runLive: '{n} live', runLiveCap: '{n}/{cap} live',
+  runStalled: 'Stalled', runStalledOne: '{id} {m}m', runDenials: 'Denials', runDefects: 'Defects', runDefectsOf: '{filed} filed · {dropped} dropped',
+  runOutOfRetries: 'Out of retries', runScopedOut: 'Scoped out', storyJudge: 'judge {score} vs {threshold}', storyJudgeBare: 'judge {score}',
 }
 
 // one table, two languages; the type keeps the keys identical
@@ -96,6 +99,9 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     board: '보드', inboxOne: '질문 {n}건', inboxMany: '질문 {n}건', statusWaiting: '확인 필요: {n}건 대기 - /teams-status 열기',
     pushRejected: '반려', pushNeedsYou: '확인 필요', pushEnded: '실행 종료', nodeFailed: '실패',
     prev: '◀', next: '▶', keysHint: '[ ] 에픽 · j k 행 · 0-5 탭', openHint: 'g 실행 열기', noStories: '진행 중인 스토리가 없습니다.',
+    runBudget: '예산', runBudgetOf: '{spent} / {limit}', runDrivers: '드라이버', runLive: '{n}개 동작 중', runLiveCap: '{n}/{cap} 동작 중',
+    runStalled: '멈춤', runStalledOne: '{id} {m}분', runDenials: '거부', runDefects: '결함', runDefectsOf: '등록 {filed} · 폐기 {dropped}',
+    runOutOfRetries: '재시도 소진', runScopedOut: '범위 밖', storyJudge: '판정 {score} / 기준 {threshold}', storyJudgeBare: '판정 {score}',
   },
 }
 
@@ -535,7 +541,8 @@ export const register: Register = on => {
     const verdictText = (v: string | null) => (v === null ? '' : VERDICT_WORD[v] === undefined ? v : s(VERDICT_WORD[v]!))
     const harnessText = (t: SummaryTaskEntry) => t.harness === null ? ''
       : `${t.stages.map(g => `${MARK[g.state]}${s(`stage${cap(g.key)}` as keyof typeof en)}`).join(' ')}${t.harness.slug ? ` · ${t.harness.slug}` : ''}${t.harness.moving ? ' ▸' : ''}`
-    const storyOf = rows.map(({ entry: t, item }, i) => storyCells(item, verdictText(item.last_verdict), harnessText(t), i === pick, fixedWord))
+    const judgeText = (score: number, threshold: number | null) => (threshold === null ? s('storyJudgeBare', { score }) : s('storyJudge', { score, threshold }))
+    const storyOf = rows.map(({ entry: t, item }, i) => storyCells(item, verdictText(item.last_verdict), harnessText(t), i === pick, fixedWord, judgeText))
     const storyWidths = columnWidths(storyOf.map(r => r.cells), inner, 2, STORY_SHRINK)
     const storiesBody = rows.length === 0 ? <Text dimColor>{s('noStories')}</Text>
       : renderLines(ui, storyOf.map(r => rowLine(r.cells, storyWidths, 2, r.tints)), 's')
@@ -720,6 +727,9 @@ export const register: Register = on => {
       const LANE_TINT: Record<string, string> = { running: 'claude', you: 'warning', pending: 'inactive', done: 'success' }
       const ACT_TINT: Record<string, string> = { failed: 'error', passed: 'success', finished: 'success', integrated: 'success', waiting: 'warning' }
       const STAGE_GLYPH: Record<Mark, string> = { done: '✔', running: '◉', pending: '○', failed: '✘' }
+      // the run's numbers, label · value on one line each, columns at one offset
+      const runOf = dm.run ? runCells(dm.run, (key, vars) => s(key as keyof typeof en, vars)) : []
+      const runWidths = columnWidths(runOf.map(r => r.cells), inner, 2, [1])
       dashBody = (
         <Box flexDirection="column">
           <Box>
@@ -744,6 +754,7 @@ export const register: Register = on => {
               </Box>
             ))}
           </Box>}
+          {runOf.length > 0 && <Box marginTop={1}>{renderLines(ui, runOf.map(r => rowLine(r.cells, runWidths, 2, r.tints)), 'r')}</Box>}
           <Box marginTop={1} flexWrap="wrap">
             {dm.stages.map((g, i) => (
               <Box key={`ds-${g.key}`}>

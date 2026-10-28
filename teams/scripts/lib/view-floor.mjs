@@ -2,7 +2,7 @@
 // STORYs and Floor tabs): one item per STORY at work, one worker per desk, the recorded hand-offs.
 // No fs: view-floor-fs.mjs reads the streams, costs and run files and hands them in as `facts`;
 // the ledger is read through view-events.mjs, which owns what a ledger line means.
-import { cardsOf, waitingNode } from './view-summary.mjs';
+import { cardsOf, waitingNode, metrics } from './view-summary.mjs';
 import { handoffs, lastVerdicts } from './view-events.mjs';
 
 const attemptOf = (nodeId) => {
@@ -45,8 +45,14 @@ export function markOf(state, doing = '') {
 }
 
 // facts: { stories: { [id]: { live, doing, cost_usd, cost_estimated, run_file } }, judge: { live, doing }, ledger: [lines] }
-export function floorOf(model, facts = {}, { now = Date.now() } = {}) {
+// The STORY's own numbers (view-summary.mjs metrics()) carried on its item; null for a desk with none.
+const NUMBERS = ['attempt', 'max_attempts', 'judge', 'cost_usd', 'retry_cost_usd', 'wall_ms', 'out_of_retries'];
+const numbersOf = (s) => (s ? Object.fromEntries(NUMBERS.map((k) => [k, s[k] ?? null])) : null);
+
+// `metrics` (summarize(model).metrics) is passed by a caller that already has it; else it is computed here.
+export function floorOf(model, facts = {}, { now = Date.now(), metrics: given = null } = {}) {
   const m = model;
+  const numbers = new Map(((given || metrics(m, { now })).stories || []).map((s) => [s.id, s]));
   const stalled = m.state === 'stalled' || (m.ticket && m.ticket.state === 'stalled');
   const epic = (m.ticket && m.ticket.key) || String(m.task_id || '');
   const story = (id) => (facts.stories && facts.stories[id]) || {};
@@ -63,6 +69,7 @@ export function floorOf(model, facts = {}, { now = Date.now() } = {}) {
       ...base, state: itemState, doing, ...markOf(itemState, doing),
       cost_usd: f.cost_usd ?? null, cost_estimated: !!f.cost_estimated,
       live: !!f.live || state === 'you', run_file: f.run_file ?? null,
+      metrics: numbersOf(numbers.get(String(base.key).split(':')[0])),
     });
   };
 

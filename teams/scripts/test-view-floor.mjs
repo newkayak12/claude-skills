@@ -131,7 +131,7 @@ test('L EPIC with three packages', () => {
     assert.equal(p1.max, 3);
     assert.equal(p1.owner_key, 'E-aaaaaaaa/P1');
     assert.ok(typeof p1.elapsed_ms === 'number' || p1.elapsed_ms === null);
-    assert.deepEqual(Object.keys(p1).sort(), ['cost_estimated', 'cost_usd', 'doing', 'elapsed_ms', 'key', 'last_verdict', 'live', 'max', 'owner_key', 'run_file', 'state', 'title', 'try', 'icon', 'word', 'word_key'].sort());
+    assert.deepEqual(Object.keys(p1).sort(), ['cost_estimated', 'cost_usd', 'doing', 'elapsed_ms', 'key', 'last_verdict', 'live', 'max', 'metrics', 'owner_key', 'run_file', 'state', 'title', 'try', 'icon', 'word', 'word_key'].sort());
     assert.deepEqual(t.workers.map((x) => x.id), ['P1', 'P2', 'P3', 'judge']);
     assert.deepEqual(t.workers.slice(0, 3).map((x) => x.state), ['acting', 'acting', 'acting']);
     assert.equal(t.workers[3].state, 'idle');
@@ -590,4 +590,49 @@ test('icon and word agree for every state (floorOf items and workers)', () => {
   // stalled: it was working and nothing is alive
   const st = run([pkg('A', { state: 'running' })], { stories: { A: { doing: 'x', live: false } } }, { state: 'stalled' });
   is(st.items[0], 'stalled'); is(st.workers[0], 'stalled');
+});
+
+test('a STORY item carries its numbers as metrics; the existing try, max and cost_usd stay', () => {
+  const card = (id, dispatch, over = {}) => ({ id, title: `story ${id}`, dispatch, child: { max_retries: 2 }, ...over });
+  const m = { task_id: 't', state: 'running', ticket: { key: 'E-t' },
+    packages: [
+      card('P2', { state: 'running', started_at: 1 }, { attempt: 3 }),
+      card('P3', { state: 'pending' }, { attempt: 1 }),
+    ],
+    telemetry: {
+      goal_threshold: 90, max_attempts: 3, out_of_retries: ['P2', 'P3'],
+      judge: { P2: { score: 85, reason: 'the footer is not cleared', attempt: 3 } },
+      spend: [
+        { story: 'P2', attempt: 1, stage: null, cost_usd: 1.25, duration_ms: 60000 },
+        { story: 'P2', attempt: 3, stage: null, cost_usd: 2.5, duration_ms: 120000 },
+      ],
+    } };
+  const f = floorOf(m, { stories: { P2: { cost_usd: 3.75 } } });
+  const by = Object.fromEntries(f.items.map((i) => [i.key, i]));
+  assert.deepEqual(by.P2.metrics, {
+    attempt: 3, max_attempts: 3, judge: { score: 85, threshold: 90, reason: 'the footer is not cleared' },
+    cost_usd: 1.25, retry_cost_usd: 2.5, wall_ms: 180000, out_of_retries: true,
+  });
+  assert.equal(by.P2.cost_usd, 3.75, 'the desk cost the item already had is unchanged');
+  assert.equal(by.P2.max, 3);
+  assert.equal(by.P3, undefined, 'a pending STORY is not on the floor yet');
+  assert.ok(!JSON.stringify(f.items).match(/NaN|undefined/));
+});
+
+test('--once summary: items carry metrics read from the ledger (accept judge, never a dispatch self-score)', () => {
+  const w = world();
+  try {
+    lTask(w, { pkgs: [{ id: 'P1', streamAgeMs: 1000 }], ledger: [
+      { event: 'verdict', stage: 'dispatch', subgoal_id: 'P1', score: 99, verdict: 'accepted', attempt: 1 },
+      { event: 'verdict', stage: 'accept', subgoal_id: 'P1', score: 85, reason: 'the footer is not cleared', verdict: 'rejected', attempt: 1 },
+    ] });
+    const p1 = summary(w).tasks[0].items[0];
+    assert.equal(p1.metrics.judge.score, 85);
+    assert.equal(p1.metrics.judge.reason, 'the footer is not cleared');
+    assert.equal(p1.metrics.attempt, 1);
+    assert.equal(p1.try, 1, 'try is the child run\'s and unchanged');
+    assert.equal(p1.max, 3);
+    assert.equal(p1.metrics.out_of_retries, false);
+    assert.equal(p1.metrics.retry_cost_usd, 0);
+  } finally { w.cleanup(); }
 });

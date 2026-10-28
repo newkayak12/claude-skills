@@ -26,10 +26,18 @@ export type SummaryTask = {
 
 // `view.mjs --once --format summary` floor part (teams/scripts/lib/view-floor.mjs): per listed task
 export type WorkState = 'acting' | 'idle' | 'you' | 'done' | 'stalled'
+// one STORY's recorded numbers (view-summary.mjs metrics()): attempt n of max, the last judge score against the threshold
+// and why, spend with the retries' spend apart, wall time; null on an item with no STORY behind it (an S task)
+export type StoryMetrics = {
+  attempt: number | null; max_attempts: number | null
+  judge: { score: number; threshold: number | null; reason: string | null } | null
+  cost_usd: number | null; retry_cost_usd: number | null; wall_ms: number | null; out_of_retries: boolean | null
+}
 export type SummaryItem = {
   key: string; title: string; state: WorkState | 'failed'; doing: string; icon: string; word: string; word_key: string; last_verdict: string | null
   cost_usd: number | null; cost_estimated: boolean; try: number | null; max: number | null
   live: boolean; elapsed_ms: number | null; run_file: string | null; owner_key: string
+  metrics?: StoryMetrics | null
 }
 // icon, word, word_key: node's one state -> mark (view-floor.mjs markOf); word_key is '' for a live word, else the state to localize
 export type SummaryWorker = { id: string; state: WorkState; doing: string; icon: string; word: string; word_key: string }
@@ -50,12 +58,19 @@ export type PaneView = 'dash' | 'floor' | 'stories' | 'decisions' | 'log' | 'rep
 // `view.mjs --once --format teams` dash part (teams/scripts/lib/view-dashboard.mjs): the Dashboard tab
 export type DashStage = { n: number; key: string; label: string; state: Mark }
 export type DashLane = { key: string; label: string; count: number; cards: { title: string; kind: string; failed: boolean; reason: string | null }[]; more: number }
+// the run's task-level numbers (view-dashboard.mjs runOf); budget is null when the task sets none
+export type RunNumbers = {
+  budget: { limit_usd: number; spent_usd: number } | null
+  drivers: { live: number | null; cap: number | null; stalled: { id: string | null; minutes: number }[] }
+  denials: number; out_of_retries: string[]; defects: { filed: number; dropped: number }; scoped_out: number
+}
 export type DashModel = {
   key: string; title: string; state: string; pct: number; now: string
   stages: DashStage[]; packages: { title: string; state: Mark }[]; lanes: DashLane[]
   tiles: { key: string; label: string; value: string; sub: string; alert?: boolean }[]
   activity: { time: string; kind: string; subject: string | null }[]
   waiting: { who: string; title: string; question: string }[]
+  run?: RunNumbers | null
   at: number
 }
 export type Dash = { model: DashModel; svg: string; alt: string }

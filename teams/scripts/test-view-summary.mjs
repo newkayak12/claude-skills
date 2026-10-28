@@ -5,7 +5,7 @@ process.env.TZ = 'UTC';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { summarize } from './lib/view-summary.mjs';
+import { summarize, metrics } from './lib/view-summary.mjs';
 import { stageOfNode, STAGE_KEYS } from './lib/view-stages.mjs';
 import { dashboardModel } from './lib/view-dashboard.mjs';
 
@@ -243,4 +243,122 @@ test('stageOfNode lives once, in view-stages.mjs: view-summary.mjs and view-coll
     assert.ok(!/function stageOfNode/.test(src), `${f} defines its own stageOfNode`);
     assert.match(src, /from '\.\/view-stages\.mjs'/);
   }
+});
+
+// ---- metrics(): the run's numbers, from a model with telemetry (collect fills it; fixtures here) ----
+
+const MIN = 60000;
+function withTelemetry(telemetry, over = {}) {
+  return demo({
+    packages: [
+      card('P1', 'module a', 'done', { ticket_key: 'E-3a3a3bb5/P1', attempt: 1 }),
+      {
+        ...card('P2', 'module b', 'failed', { ticket_key: 'E-3a3a3bb5/P2', attempt: 5 }),
+        dispatch: ms('dispatch:P2:3', 'failed'), accept: ms('accept:P2:3', 'failed', { scoped_out: [{ gap: 'export path not exercised', belongs_to: 'P3' }] }),
+      },
+      { ...card('P3', 'module c', 'pending', { ticket_key: 'E-3a3a3bb5/P3', attempt: 1 }), dispatch: ms('dispatch:P3:1', 'pending'), accept: null },
+    ],
+    audit: null,
+    telemetry: { goal_threshold: 90, max_attempts: 3, stall_minutes: 20, budget_usd: null, spent_usd: 0, ...telemetry },
+    ...over,
+  });
+}
+const story = (m, id) => m.stories.find((s) => s.id === id);
+
+test('metrics: attempt n of max, capped at max_retries + 1; a never-run STORY is 0 with no judge', () => {
+  const x = metrics(withTelemetry({}), { now: NOW });
+  assert.equal(x.max_attempts, 3);
+  assert.equal(story(x, 'P1').attempt, 1);
+  assert.equal(story(x, 'P2').attempt, 3, 'attempt 5 is capped at 3');
+  assert.equal(story(x, 'P3').attempt, 0, 'a pending dispatch has not begun its attempt');
+  assert.equal(story(x, 'P3').judge, null);
+  assert.ok(!JSON.stringify(x).match(/NaN|undefined/));
+});
+
+test('metrics: the last judge score against the threshold, and its reason without node ids or paths', () => {
+  const x = metrics(withTelemetry({ judge: { P2: { score: 85, reason: 'accept:P2:3 failed in /tmp/x/y: the footer is not cleared', attempt: 3 } } }), { now: NOW });
+  assert.deepEqual(story(x, 'P2').judge, { score: 85, threshold: 90, reason: 'failed in the footer is not cleared' });
+  assert.equal(x.threshold, 90);
+});
+
+test('metrics: cost and wall time per STORY and per stage, with retry spend apart from cost_usd', () => {
+  const spend = [
+    { story: 'P2', attempt: 1, stage: null, cost_usd: 1, duration_ms: 1000 },
+    { story: 'P2', attempt: 2, stage: null, cost_usd: 2, duration_ms: 3000 },
+    { story: 'P2', attempt: 2, stage: 'gate', cost_usd: 0.5, duration_ms: 500 },
+    { story: null, attempt: 1, stage: 'plan', cost_usd: 0.25, duration_ms: 250 },
+  ];
+  const x = metrics(withTelemetry({ spend, spent_usd: 3.75 }), { now: NOW });
+  const p2 = story(x, 'P2');
+  assert.equal(p2.cost_usd, 1);
+  assert.equal(p2.retry_cost_usd, 2.5);
+  assert.equal(p2.wall_ms, 4500);
+  const at = (rows, stage) => rows.find((r) => r.stage === stage);
+  assert.deepEqual(at(p2.stages, 'build'), { stage: 'build', cost_usd: 1, retry_cost_usd: 2, wall_ms: 4000 });
+  assert.deepEqual(at(p2.stages, 'gate'), { stage: 'gate', cost_usd: 0, retry_cost_usd: 0.5, wall_ms: 500 });
+  assert.equal(at(p2.stages, 'plan'), undefined);
+  assert.deepEqual(at(x.stages, 'build'), { stage: 'build', cost_usd: 1, retry_cost_usd: 2, wall_ms: 4000 });
+  assert.deepEqual(at(x.stages, 'plan'), { stage: 'plan', cost_usd: 0.25, retry_cost_usd: 0, wall_ms: 250 }, 'a manager judge counts to the task, not to a STORY');
+  assert.equal(story(x, 'P1').cost_usd, 0);
+});
+
+test('metrics: the budget when the task sets one, null when it does not', () => {
+  const set = metrics(withTelemetry({ budget_usd: 10, spent_usd: 2.5 }), { now: NOW });
+  assert.deepEqual(set.budget, { limit_usd: 10, spent_usd: 2.5 });
+  const unset = metrics(withTelemetry({ spent_usd: 2.5 }), { now: NOW });
+  assert.equal(unset.budget, null);
+});
+
+test('metrics: a stalled driver is one alive with no progress for stall_minutes; stall_minutes 0 turns it off', () => {
+  const drivers = [{ story: 'P2', progress_at: NOW - 25 * MIN }, { story: 'P1', progress_at: NOW - 5 * MIN }, { story: null, progress_at: null }];
+  const x = metrics(withTelemetry({ drivers }), { now: NOW });
+  assert.deepEqual(x.drivers.stalled, [{ id: 'P2', minutes: 25 }]);
+  assert.deepEqual(metrics(withTelemetry({ drivers, stall_minutes: 0 }), { now: NOW }).drivers.stalled, []);
+});
+
+test('metrics: live drivers against the cap, null when unknown', () => {
+  const d = (live) => { const { stalled, ...rest } = metrics(withTelemetry({ live }), { now: NOW }).drivers; return rest; };
+  assert.deepEqual(d({ live: 3, cap: 4 }), { live: 3, cap: 4 });
+  assert.deepEqual(d({ live: 2, cap: null }), { live: 2, cap: null });
+  assert.deepEqual(d(undefined), { live: null, cap: null });
+});
+
+test('metrics: tool denials are manager judges plus worker nodes', () => {
+  assert.deepEqual(metrics(withTelemetry({ denials: { judges: 2, workers: 1 } }), { now: NOW }).denials, 3);
+  assert.equal(metrics(withTelemetry({}), { now: NOW }).denials, 0);
+});
+
+test('metrics: out-of-retries STORYs, including one that never ran', () => {
+  const x = metrics(withTelemetry({ out_of_retries: ['P2', 'P3'] }), { now: NOW });
+  assert.deepEqual(x.out_of_retries, ['P2', 'P3']);
+  assert.equal(story(x, 'P2').out_of_retries, true);
+  assert.equal(story(x, 'P3').out_of_retries, true);
+  assert.equal(story(x, 'P1').out_of_retries, false);
+});
+
+test('metrics: defects filed (unique ids) against defects dropped, with the drop reason', () => {
+  const x = metrics(withTelemetry({ defects: { filed: ['D1', 'D2', 'D2'], dropped: [{ id: 'D9', title: 'no repro given', reason: 'no repro' }] } }), { now: NOW });
+  assert.equal(x.defects.filed, 2);
+  assert.equal(x.defects.dropped, 1);
+  assert.deepEqual(x.defects.dropped_items, [{ id: 'D9', title: 'no repro given', reason: 'no repro' }]);
+  assert.deepEqual(metrics(withTelemetry({}), { now: NOW }).defects, { filed: 0, dropped: 0, dropped_items: [] });
+});
+
+test('metrics: scoped_out gaps (the only out-of-scope record, so partial) per STORY and in all', () => {
+  const x = metrics(withTelemetry({}), { now: NOW });
+  assert.deepEqual(story(x, 'P2').scoped_out, [{ gap: 'export path not exercised', belongs_to: 'P3' }]);
+  assert.deepEqual(x.scoped_out, [{ story: 'P2', gap: 'export path not exercised', belongs_to: 'P3' }]);
+  assert.deepEqual(story(x, 'P1').scoped_out, []);
+});
+
+test('summarize() carries metrics, a model with no telemetry gives empty numbers, and neither touches the fs', () => {
+  const s = summarize(withTelemetry({ budget_usd: 4, spent_usd: 1 }), { now: NOW });
+  assert.deepEqual(s.metrics.budget, { limit_usd: 4, spent_usd: 1 });
+  const bare = summarize(demo(), { now: NOW }).metrics;
+  assert.equal(bare.budget, null);
+  assert.equal(bare.max_attempts, null);
+  assert.deepEqual(bare.drivers.stalled, []);
+  clean(withTelemetry({ judge: { P2: { score: 85, reason: 'accept:P2:3 said no', attempt: 3 } } }));
+  const src = readFileSync(new URL('./lib/view-summary.mjs', import.meta.url), 'utf8');
+  assert.ok(!/node:fs|node:child_process/.test(src));
 });

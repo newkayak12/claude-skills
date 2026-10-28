@@ -22,6 +22,24 @@ export function lanesOf(task) {
   return LANES.map((key) => ({ key, label: LANE_LABEL[key], count: lanes[key].length, cards: lanes[key].slice(0, LANE_MAX), more: Math.max(0, lanes[key].length - LANE_MAX) }));
 }
 
+// The run's numbers (view-summary.mjs metrics()) as plain fields; null when the task carries none.
+function runOf(mt) {
+  if (!mt) return null;
+  const dr = mt.drivers || {};
+  return {
+    budget: mt.budget || null,
+    drivers: { live: dr.live ?? null, cap: dr.cap ?? null, stalled: dr.stalled || [] },
+    denials: mt.denials || 0,
+    out_of_retries: mt.out_of_retries || [],
+    defects: { filed: (mt.defects && mt.defects.filed) || 0, dropped: (mt.defects && mt.defects.dropped) || 0 },
+    scoped_out: (mt.scoped_out || []).length,
+  };
+}
+const storiesOf = (mt) => ((mt && mt.stories) || []).map((s) => ({
+  id: s.id, attempt: s.attempt || 0, max_attempts: s.max_attempts ?? null, judge: s.judge || null,
+  cost_usd: s.cost_usd || 0, retry_cost_usd: s.retry_cost_usd || 0, wall_ms: s.wall_ms || 0, out_of_retries: !!s.out_of_retries,
+}));
+
 export function dashboardModel(task, { now = Date.now(), drivers = null } = {}) {
   if (!task) return null;
   // a stopped EPIC (cancelled, failed, blocked) has no stage at work: the one it stopped in reads failed
@@ -43,9 +61,80 @@ export function dashboardModel(task, { now = Date.now(), drivers = null } = {}) 
   return {
     key: task.key, title: task.title, state: task.state, pct, now: nowLine,
     stages, packages, lanes: lanesOf(task), tiles, activity,
+    run: runOf(task.metrics), stories: storiesOf(task.metrics),
     waiting: waiting.map((c) => ({ who: c.who, title: c.title, question: c.question })),
     at: now,
   };
+}
+
+// ---- the run's numbers as lines: the text board and the SVG print the same strings ---------------
+const REASON_MAX = 60;
+const STORY_LINES_MAX = 12;
+
+function wall(ms) {
+  const s = Math.round((Number(ms) || 0) / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m${String(s % 60).padStart(2, '0')}s`;
+  return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}m`;
+}
+
+// One STORY: id, attempt n/max, judge score vs threshold and its reason, cost with the retry spend
+// apart, wall time. A part with no data is left out, never printed as a blank or a NaN.
+const SEP = '  ·  ';
+function storyParts(s) {
+  const head = [s.id, `attempt ${s.attempt}${s.max_attempts != null ? `/${s.max_attempts}` : ''}`];
+  let judge = null;
+  const j = s.judge;
+  if (j && Number.isFinite(j.score)) {
+    const reason = j.reason ? (j.reason.length > REASON_MAX ? `${j.reason.slice(0, REASON_MAX - 1)}…` : j.reason) : '';
+    judge = `judge ${j.score}${Number.isFinite(j.threshold) ? ` vs ${j.threshold}` : ''}${reason ? ` — ${reason}` : ''}`;
+  }
+  const tail = [];
+  if (s.cost_usd > 0 || s.retry_cost_usd > 0) tail.push(`cost ${usd(s.cost_usd)}${s.retry_cost_usd > 0 ? ` + retry ${usd(s.retry_cost_usd)}` : ''}`);
+  if (s.wall_ms > 0) tail.push(`wall ${wall(s.wall_ms)}`);
+  if (s.out_of_retries) tail.push('out of retries');
+  return { head, judge, tail };
+}
+
+export function storyLine(s) {
+  const { head, judge, tail } = storyParts(s);
+  return [...head, ...(judge ? [judge] : []), ...tail].join(SEP);
+}
+
+// The task-level lines: budget, drivers live/cap and stalled, denials, out of retries, defects, scoped out.
+export function runLines(run) {
+  if (!run) return [];
+  const a = [];
+  if (run.budget) a.push(`Budget ${usd(run.budget.spent_usd)} of ${usd(run.budget.limit_usd)}`);
+  const d = run.drivers;
+  if (d.live != null) a.push(`Drivers ${d.live}${d.cap != null ? `/${d.cap}` : ''} live`);
+  if (d.stalled.length) a.push(`Stalled ${d.stalled.map((x) => `${x.id || 'run'} ${x.minutes}m`).join(', ')}`);
+  const b = [`Denials ${run.denials}`, `Defects filed ${run.defects.filed} · dropped ${run.defects.dropped}`];
+  if (run.out_of_retries.length) b.push(`Out of retries ${run.out_of_retries.join(', ')}`);
+  if (run.scoped_out) b.push(`Scoped out ${run.scoped_out}`);
+  return [a.join('  ·  '), b.join('  ·  ')].filter(Boolean);
+}
+
+const storiesShown = (model) => (model.stories || []).slice(0, STORY_LINES_MAX);
+const storiesMore = (model) => Math.max(0, (model.stories || []).length - STORY_LINES_MAX);
+
+export function storyLines(model) {
+  const lines = storiesShown(model).map(storyLine);
+  if (storiesMore(model)) lines.push(`+${storiesMore(model)} more`);
+  return lines;
+}
+
+// The SVG's rows, narrower than a line of text: a STORY's judge and reason sit on a second row.
+function svgRows(model) {
+  const rows = runLines(model.run).map((t) => ({ t, dim: true }));
+  for (const s of storiesShown(model)) {
+    const { head, judge, tail } = storyParts(s);
+    rows.push({ t: [...head, ...tail].join(SEP) });
+    if (judge) rows.push({ t: `↳ ${judge}`, dim: true });
+  }
+  if (storiesMore(model)) rows.push({ t: `+${storiesMore(model)} more`, dim: true });
+  return rows;
 }
 
 // ---- SVG ----------------------------------------------------------------------------------------
@@ -185,6 +274,15 @@ export function dashboardSvg(model) {
   });
   y += kh + 20;
 
+  // the run's numbers: task-level lines, then one line per STORY (the same strings the text board prints)
+  const numbers = svgRows(model);
+  if (numbers.length) {
+    parts.push(text(P, y + 4, 'NUMBERS', { size: 10, fill: C.dim, weight: 600 }));
+    y += 12;
+    numbers.forEach((r, i) => parts.push(text(P, y + 6 + i * 18 + 12, fit(r.t, W - 2 * P, 11), { size: 11, fill: r.dim ? C.dim : C.text })));
+    y += 12 + numbers.length * 18;
+  }
+
   // needs-you then activity
   if (model.waiting.length) {
     model.waiting.slice(0, 3).forEach((w) => {
@@ -240,6 +338,8 @@ export function dashboardText(model) {
     const l = lane(k);
     if (l && l.count) out.push(`${l.label} ${l.count}: ${titles(l)}`);
   }
+  const numbers = [...runLines(model.run), ...storyLines(model)];
+  if (numbers.length) out.push('', ...numbers);
   if (model.activity.length) {
     out.push('', 'Recent');
     for (const a of model.activity.slice(0, 4)) out.push(`${a.time}  ${a.kind}  ${a.subject ?? ''}`.trimEnd());

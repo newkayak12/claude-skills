@@ -2288,3 +2288,85 @@ test('the pane opens on Home; 0 picks it, 1 the Floor', async () => {
   expect(paneKey('0')).toEqual({ kind: 'tab', tab: 'dash' })
   expect(paneKey('1')).toEqual({ kind: 'tab', tab: 'floor' })
 })
+
+// ---- U3: the run's numbers on Home and the STORYs tab, at 190 and 110 columns (fictional data) ----
+const REASON = 'All code and test acceptance for the parser is met and verified by the final run of the whole suite across every supported locale'
+const numbers = (over: Record<string, unknown> = {}) => ({
+  attempt: 3, max_attempts: 3, judge: { score: 85, threshold: 90, reason: REASON }, cost_usd: 1.27, retry_cost_usd: 2.35, wall_ms: 1521000, out_of_retries: true, ...over,
+})
+const NEVER = numbers({ attempt: 0, judge: null, cost_usd: 0, retry_cost_usd: 0, wall_ms: 0 })
+const RUN = {
+  budget: { limit_usd: 5, spent_usd: 3.62 }, drivers: { live: 2, cap: 4, stalled: [{ id: 'P2', minutes: 25 }] },
+  denials: 1, out_of_retries: ['P2', 'P3'], defects: { filed: 2, dropped: 1 }, scoped_out: 1,
+}
+const NUMBERED = [
+  epicOf('tA', 'E-3a3a3bb5', [
+    story('E-3a3a3bb5/P2', 'report writer', { state: 'failed', last_verdict: 'reject', metrics: numbers() }),
+    story('E-3a3a3bb5/P3', 'cache layer', { state: 'idle', metrics: NEVER }),
+    story('E-3a3a3bb5/P4', 'parser module', { doing: 'editing parser.ts', metrics: numbers({ attempt: 1, judge: { score: 94, threshold: 90, reason: 'sound' }, retry_cost_usd: 0, cost_usd: 0.42, wall_ms: 240000, out_of_retries: false }) }),
+  ]),
+]
+const longRun = { ...RUN, out_of_retries: Array.from({ length: 60 }, (_, i) => `QA-F${i}`) }
+const inPane = async ($: Engine, cols: number, tab?: string) => {
+  const ui = await $.ui.mount({ plugin: 'teams', surface: 'terminal', component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: cols - 4, placement: 'dock' } } as never)
+  if (tab !== undefined) {
+    await ui.press({ key: tab })
+    await ui.redraw()
+  }
+  return bodyOf(frame((await ui.drawn()) as any, 'Teams', cols))
+}
+// no line wider than the pane, no cut glyph, no `…` alone in a cell or doubled, nothing undefined
+const sound = (lines: string[], cols: number) => {
+  for (const l of lines) {
+    expect(cells(l)).toBeLessThanOrEqual(cols - 4)
+    expect(l).not.toContain('�')
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(l)).toBe(false)
+    expect(l).not.toContain('……')
+    expect(/(^|\s\s)…/.test(l)).toBe(false)
+    for (const bad of ['NaN', 'undefined', 'null']) expect(l).not.toContain(bad)
+  }
+}
+
+for (const cols of WIDTHS) {
+  test(`Home shows the run's numbers at ${cols} columns`, async ($, on) => {
+    await seeded($, on, { status: stat(), tasks: NUMBERED, task: demo(), dash: { ...DASH, model: { ...DASH.model, run: RUN } } }, 'terminal', undefined, { epic: 'tA', view: 'dash' }, true)
+    const lines = await inPane($, cols)
+    sound(lines, cols)
+    const text = lines.join('\n')
+    for (const part of ['Budget', '$3.62 of $5.00', '2/4 live', 'Stalled', 'P2 25m', 'Denials', 'Defects', '2 filed · 1 dropped', 'Out of retries', 'P2, P3', 'Scoped out']) expect(text).toContain(part)
+    // label · value, one per line: the values start at one column (the longest label is 14 wide, then a 2-cell gap)
+    const rows = lines.filter(l => /^(Budget|Drivers|Stalled|Denials|Defects|Out of retries|Scoped out) /.test(l))
+    expect(rows).toHaveLength(7)
+    for (const l of rows) {
+      expect(l.slice(14, 16)).toBe('  ')
+      expect(l[16]).not.toBe(' ')
+    }
+  })
+  test(`Home cuts a long list with … at ${cols} columns`, async ($, on) => {
+    await seeded($, on, { status: stat(), tasks: NUMBERED, task: demo(), dash: { ...DASH, model: { ...DASH.model, run: longRun } } }, 'terminal', undefined, { epic: 'tA', view: 'dash' }, true)
+    const lines = await inPane($, cols)
+    sound(lines, cols)
+    const cut = lines.find(l => l.startsWith('Out of retries'))!
+    expect(cut.endsWith('…')).toBe(true)
+  })
+  test(`STORYs shows attempt, judge, cost with retry, wall, one line each at ${cols} columns`, async ($, on) => {
+    await seeded($, on, { status: stat(), tasks: NUMBERED, task: demo() }, 'terminal', undefined, { epic: 'tA' }, true)
+    const lines = await inPane($, cols, 'stories')
+    sound(lines, cols)
+    const rows = lines.filter(l => /^[▸ ] +[●◌⚑✔✘⊘]  \S/.test(l) && !EPIC_LINE.test(l))
+    expect(rows).toHaveLength(3)
+    const [p2, p3, p4] = rows as [string, string, string]
+    for (const part of ['report writer', '3/3', 'judge 85 vs 90', '$1.27', '+$2.35', '25m']) expect(p2).toContain(part)
+    expect(p2).toContain('All code')
+    expect(p3).toContain('0/3')
+    expect(p3).not.toContain('judge')
+    for (const part of ['1/3', 'judge 94 vs 90', '$0.42', '4m']) expect(p4).toContain(part)
+    expect(p4).not.toContain('+$')
+    // the long reason is cut with …, never run on
+    if (cols === 110) expect(/…/.test(p2)).toBe(true)
+    // icons first: ✘ for the failed STORY, columns at one offset on every row
+    expect(p2.replace(/^▸ */, '').trimStart()[0]).toBe('✘')
+    const judgeAt = rows.map(l => l.indexOf('judge')).filter(i => i >= 0)
+    expect(new Set(judgeAt).size).toBe(1)
+  })
+}
