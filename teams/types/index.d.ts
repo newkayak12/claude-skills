@@ -101,6 +101,8 @@ declare module 'claude-code' {
       epic: string | null
       // the STORYs tab: the row `g` opens and `j`/`k` move, an index into every listed task's rows
       row: number
+      // the pane Input's text, as the host holds it; '' after a handled key (a typed `/command` stays until Enter)
+      typed: string
       // the Floor spinner frame, advanced every ~800 ms while a worker acts
       frame: number
       teams: TeamsView | null

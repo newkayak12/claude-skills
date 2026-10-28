@@ -428,6 +428,55 @@ for (const surface of SURFACES) {
     expect(closed).toEqual(['teams-status'])
   })
 
+  // the host keeps what a person typed in an Input until the hook draws another value: a handled key must draw the empty one
+  test(`${surface}: the no-run Input holds a typed /command and is empty after a handled key; q still closes`, async ($, on) => {
+    if (!carriesInput(surface)) return
+    const closed: string[] = []
+    on('ui.close', (_$, e) => { closed.push(e.id); return { value: undefined } })
+    uiWorld(on, {}, [surface])
+    const ui = await pane($, surface)
+    const typed = async (text: string) => {
+      await ui.input({ key: 'keys', text, kind: 'change' } as never)
+      await ui.redraw()
+      return (await ui.find({ key: 'keys' }))?.props.value
+    }
+    expect(await typed('/x')).toBe('/x') // text holding `/` is no key: held
+    expect(await typed('/xq')).toBe('/xq')
+    expect(closed).toEqual([])
+    expect(await typed('j')).toBe('') // a handled key that does nothing here
+    expect(await typed('1')).toBe('')
+    expect(closed).toEqual([])
+    expect(await typed('q')).toBe('')
+    expect(closed).toEqual(['teams-status'])
+  })
+
+  test(`${surface}: the footer Input holds a typed /command; every handled key leaves it empty again; Enter on /teams-status closes`, async ($, on) => {
+    if (!carriesInput(surface)) return
+    const closed: string[] = []
+    on('ui.close', (_$, e) => { closed.push(e.id); return { value: undefined } })
+    await seeded($, on, { status: stat(), task: demo(), teams: TEAMS }, surface)
+    const ui = await pane($, surface)
+    const typed = async (text: string, kind: 'change' | 'submit' = 'change') => {
+      await ui.input({ key: 'keys', text, kind } as never)
+      await ui.redraw()
+      return (await ui.find({ key: 'keys' }))?.props.value
+    }
+    // a slash command being typed is held: no key fires, the text stays in the Input
+    expect(await typed('/teams-status')).toBe('/teams-status')
+    expect(await typed('/xq')).toBe('/xq') // `/x` then q: paneKey is null on a `/`, so q is held
+    expect(closed).toEqual([])
+    // digits 1, 2, 0 (0 is no tab) then j, k, [, ] and g with no run file: the buffer is cleared every time, whole
+    for (const key of ['1', '2', '0', 'j', 'k', '[', ']', 'g', 'x1']) {
+      expect(await typed(key)).toBe('')
+      expect(closed).toEqual([])
+    }
+    expect(await typed('/teams-status')).toBe('/teams-status')
+    expect(await typed('/teams-status', 'submit')).toBe('')
+    expect(closed).toEqual(['teams-status'])
+    expect(await typed('q')).toBe('')
+    expect(closed).toEqual(['teams-status', 'teams-status'])
+  })
+
   for (const why of ['no status yet', 'a survey']) {
     test(`${surface}: band yields with ${why} (regression guard)`, async ($, on) => {
       if (why === 'a survey') await seeded($, on, { status: stat(), task: demo() }, surface)

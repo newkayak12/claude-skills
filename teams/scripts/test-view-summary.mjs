@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { summarize } from './lib/view-summary.mjs';
 import { stageOfNode, STAGE_KEYS } from './lib/view-stages.mjs';
+import { dashboardModel } from './lib/view-dashboard.mjs';
 
 const NOW = Date.UTC(2026, 9, 7, 12, 0, 0);
 const ms = (id, state, extra = {}) => ({ node_id: id, stage: id.split(':')[0], state, ...extra });
@@ -209,6 +210,29 @@ test('harness: skipped areas and areas-critique nodes never read blocked or fail
   const plain = demo();
   plain.manager_stages.push(ms('areas', 'skipped'), ms('areas-critique', 'skipped'));
   assert.ok(!barOf(summarize(plain, { now: NOW })).some((x) => x.endsWith(':failed')));
+});
+
+// ---------- a retried manager node leaves its first attempt 'skipped': not work, so it holds nothing back ----------
+
+test('plain: skipped first attempts of shape and critique do not hold Plan at running once Build starts', () => {
+  const m = demo({
+    state: 'running', packages: [card('P1', 'module a', 'running')], audit: null,
+    manager_stages: [ms('size', 'done'), ms('shape', 'skipped'), ms('critique', 'skipped'), ms('shape:2', 'done'), ms('critique:2', 'done')],
+  });
+  const s = summarize(m, { now: NOW });
+  assert.deepEqual(barOf(s), ['plan:done', 'build:running', 'integrate:pending', 'qa:pending', 'gate:pending', 'report:pending']);
+  const dash = dashboardModel(s, { now: NOW }); // the Home bar counts the same stages: 1 of 6, not 0 of 6
+  assert.equal(dash.tiles.find((t) => t.key === 'progress').sub, '1/6 stages');
+  assert.equal(dash.pct, 17);
+  clean(m);
+});
+
+test('plain: a stage with only skipped attempts and no later stage moved reads pending, not done', () => {
+  const m = demo({
+    state: 'pending', packages: [], audit: null,
+    manager_stages: [ms('shape', 'skipped'), ms('critique', 'skipped')],
+  });
+  assert.deepEqual(barOf(summarize(m, { now: NOW })), ['plan:pending', 'build:pending', 'integrate:pending', 'qa:pending', 'gate:pending', 'report:pending']);
 });
 
 test('stageOfNode lives once, in view-stages.mjs: view-summary.mjs and view-collect.mjs import it', () => {

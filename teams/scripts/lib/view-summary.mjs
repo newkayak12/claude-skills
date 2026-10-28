@@ -51,6 +51,7 @@ function stagesOf(m, cards) {
     for (const s of m.harness.stages || []) if (by[s.key] && s.state !== 'pending') by[s.key].push(idleIfCancelled(m, s.state));
   } else {
     for (const n of [...(m.manager_stages || []), ...((m.s_run && m.s_run.nodes) || [])]) {
+      if (n.state === 'skipped') continue; // a retried node's first attempt: not work
       const k = stageOfNode(n.node_id);
       if (k) by[k].push(idleIfCancelled(m, nodeState(n.state)));
     }
