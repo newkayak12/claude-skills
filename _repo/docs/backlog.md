@@ -123,15 +123,7 @@ toasts).
     - Acceptance (left): one real L run whose PRD has no "Given the PRD section" criterion; a paraphrase case
       either caught or named as a limit in the PRD gate.
 
-92. **A size-L task whose PRD has one user story has a shape that can pass**
-    - Why: E-22c3af14 (2026-10-27, card 91, size pinned L) blocked at shape:3. shapecheck refused one package
-      ("shape has one package: a request that fits one run is size S") and two packages ("package P1 claims
-      every user story (F1-US-1) … the whole job, not a package"), since the PRD had one story. With L pinned
-      and one story no shape passes; three attempts spent, $~3.
-    - Acceptance: either one package passes when the size is pinned L, or the engine falls back to S for a
-      one-story PRD and says so; a test in `test-taskmanager.mjs` (or the shapecheck test) for that case.
-
-88. **QA and audit file a defect only with a run that proves it** (from cursor/plugins pstack `/interrogate`)
+88. **QA and audit file a defect only with a run that proves it** (from cursor/plugins pstack `/interrogate`) — in E-0ad09a55
     - Why: 2026-10-27 benchmark of pstack and gstack (user: "둘 다 벤치마킹할 점 찾기위해 분석", "가져올 점
       정리해서"). pstack keeps a finding only when its command, rerun, prints the failure; E-57170ac9 filed
       11 defects (D1-D11) that were work missing because of the tool-denied bug, not product failures.
@@ -317,3 +309,4 @@ toasts).
 | E-22c3af14 | 2026-10-27 | 91 | nothing shipped: pinned L, PRD with one story; shape refused 1 package (fits S) and 2 packages (one claims every story) (card 92); reopened unpinned |
 | E-b1aee623 | 2026-10-28 | 91 | shipped `e0032b0f`; size S (unpinned); goal gate 95; accept scores only the package's own acceptance (`scopeGaps`, `out_of_scope[]`); teams 1565/1565; ~$3.5 |
 | E-861e1089 | 2026-10-28 | 87 (part) | shipped `eb3a1c49`; size S; document criteria filtered from the PRD stories by exact text; teams 1567/1567; ~$3 |
+| E-db523454 | 2026-10-28 | 92 | shipped `f5a54fe8`; size S; goal gate 96; "claims every user story" needs 2+ stories; teams 1568/1568; ~$2 |
