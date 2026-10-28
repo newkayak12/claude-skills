@@ -227,7 +227,7 @@ function sRunPhase(run) {
 // gate accepted, else SETTLED (finished, not delivered); the driver exhausted -> BLOCKED.
 function harnessTicketState(task) {
   const h = task.harness_run;
-  const v = h.run ? harnessVerdict(h.run) : null;
+  const v = h.run ? harnessVerdict(h.run, task.goal_threshold) : null;
   if (v && v.finished) return v.accept ? 'DONE' : 'SETTLED';
   if ((!v || v.readable === false) && h.finished_at) return h.accepted === false ? 'SETTLED' : 'DONE';
   if (h.exhausted) return 'BLOCKED';

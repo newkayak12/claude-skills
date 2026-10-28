@@ -76,7 +76,16 @@ export function findTaggedRun(cwd, taskId, openedAt) {
 
 // What the harness run itself says: {readable, finished, accept, match_pct, gaps, report_text}.
 // finished = its report stage wrote a report; accept = its latest goal gate passed.
-export function harnessVerdict(pointer) {
+// An accept whose numeric match_pct is below `floor` (the task's goal_threshold, default 90) is
+// not an accepted verdict; a missing match_pct keeps the gate's own word.
+function acceptAtFloor(accepted, matchPct, floor) {
+  if (!accepted || matchPct == null) return accepted;
+  const f = floor == null || floor === '' || !Number.isFinite(Number(floor)) ? 90 : Number(floor);
+  const m = Number(matchPct);
+  return Number.isFinite(m) ? m >= f : accepted;
+}
+
+export function harnessVerdict(pointer, floor = 90) {
   if (!pointer) return null;
   if (pointer.route === 'graph') {
     const run = readJson(graphRunPath(pointer.cwd, pointer.run_id));
@@ -89,7 +98,7 @@ export function harnessVerdict(pointer) {
     return {
       readable: true,
       finished: !!report,
-      accept: !!(last && last.state === 'done' && r.accept === true),
+      accept: acceptAtFloor(!!(last && last.state === 'done' && r.accept === true), r.match_pct, floor),
       match_pct: r.match_pct != null ? r.match_pct : null,
       gaps: Array.isArray(r.gaps) ? r.gaps.map(String) : [],
       report_text: report && report.result ? String(report.result.handoff || report.result.summary || '') : '',
@@ -105,7 +114,7 @@ export function harnessVerdict(pointer) {
   return {
     readable: true,
     finished,
-    accept: !!(gate && gate.pass === true),
+    accept: acceptAtFloor(!!(gate && gate.pass === true), gate && gate.match_pct, floor),
     match_pct: gate && gate.match_pct != null ? gate.match_pct : null,
     gaps: gate && gate.reason ? [String(gate.reason)] : [],
     report_text: text,

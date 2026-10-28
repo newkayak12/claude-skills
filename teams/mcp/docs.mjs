@@ -416,7 +416,7 @@ function sRunShipped(task) {
 function harnessOutcome(task) {
   const h = task.harness_run;
   if (!h || !h.run) return null;
-  return harnessVerdict(h.run);
+  return harnessVerdict(h.run, task.goal_threshold);
 }
 
 function harnessShipped(task) {
