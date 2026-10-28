@@ -437,7 +437,8 @@ export function buildRetro(task) {
   const retries = packageIds
     .map((id) => ({ package_id: id, attempts: task.nodes.filter((n) => n.stage === 'dispatch' && n.subgoal_id === id).length }))
     .filter((r) => r.attempts > 1);
-  const defectsLeft = (task.unresolved_defects || []).map((d) => ({ title: d.title, evidence: d.evidence || '', reporter: d.reporter || '' }));
+  const defectsLeft = (task.unresolved_defects || []).map((d) => ({ title: d.title, evidence: d.evidence || '', reporter: d.reporter || '', ...(d.repro_unverified ? { repro_unverified: true } : {}) }));
+  const droppedDefects = (task.dropped_defects || []).map((d) => ({ id: d.id || null, title: d.title || '', reason: d.reason || '', source: d.source || '' }));
   const unaccepted = [];
   for (const id of packageIds) {
     const accepts = task.nodes.filter((n) => n.stage === 'accept' && n.subgoal_id === id);
@@ -516,6 +517,7 @@ export function buildRetro(task) {
       what_failed: whatFailed,
       retries,
       defects_left: defectsLeft,
+      ...(droppedDefects.length ? { dropped_defects: droppedDefects } : {}),
       ...(task.budget_stopped ? { budget_stopped: task.budget_stopped } : {}),
       // What the box left undone (unfinishedWork) - the next Sprint's context_from reads this.
       ...((() => { const p = unfinishedWork(task); return p ? { partial_reasons: p.partial_reasons } : {}; })()),
@@ -569,6 +571,8 @@ function wikiSection(task) {
   return ['', '## Wiki 변경', '', `mode: ${wikiMode()}`, '', 'Pages modified while this task ran:', bullets(rows)];
 }
 
+const defectLine = (d) => (d.repro_unverified ? `${d.title} (repro_unverified)` : d.title);
+
 export function renderReport(task) {
   const n = task.nodes.find((x) => x.stage === 'report' && x.state === 'done');
   const key = epicKey(task.run_id);
@@ -578,14 +582,15 @@ export function renderReport(task) {
   L.push('', '## Retrospective', '', 'What failed and why:');
   L.push(bullets(retro.retrospective.what_failed.map((f) => `${f.node_id} (${f.stage}): ${f.reason}`)));
   L.push('', 'Retries:', bullets(retro.retrospective.retries.map((r) => `${r.package_id}: ${r.attempts} attempts`)));
-  L.push('', 'Defects left:', bullets(retro.retrospective.defects_left.map((d) => d.title)));
+  L.push('', 'Defects left:', bullets(retro.retrospective.defects_left.map(defectLine)));
+  if (retro.retrospective.dropped_defects) L.push('', 'Dropped defects:', bullets(retro.retrospective.dropped_defects.map((d) => `${d.id ? `${d.id} ` : ''}${d.title}: ${d.reason}`.trim())));
   if (retro.integration_branch) L.push('', `The accepted work is on branch \`${retro.integration_branch}\`. Nothing has merged it into the project's own branch - merge it to keep it; a follow-up Sprint opened with context_from builds on it either way.`);
   L.push('', '## Next backlog', '');
   if (retro.next_backlog.unshipped_requests) L.push('Backlog items not shipped:', bullets(retro.next_backlog.unshipped_requests.map((r) => `[${r.priority}] ${r.request}`)), '');
   L.push('User stories not shipped (carry into the next Sprint):', bullets(retro.next_backlog.unfinished_stories.map((u) => `${u.id}${u.title ? ` ${u.title}` : ''}`)), '');
   L.push('Unaccepted packages:');
   L.push(bullets(retro.next_backlog.unaccepted_packages.map((p) => `${p.id} (${p.title}): ${p.reason}`)));
-  L.push('', 'Unresolved defects:', bullets(retro.next_backlog.unresolved_defects.map((d) => d.title)));
+  L.push('', 'Unresolved defects:', bullets(retro.next_backlog.unresolved_defects.map(defectLine)));
   L.push('', 'Open questions:', bullets(retro.next_backlog.open_questions.map(questionLine)));
   L.push(...wikiSection(task));
   return L.join('\n') + '\n';

@@ -23,10 +23,12 @@ import { viewRecordPath, readViewRecord } from '../mcp/viewserver.mjs';
 import { docPaths } from '../mcp/tickets.mjs';
 import { collectDriverCosts } from './bench/lib/drivercost.mjs';
 import { hasDeclaredAcceptance, detectDeclaredAcceptance, resolvePlanningMode, renderAcceptanceTemplate } from '../mcp/acceptance.mjs';
-import { hasDeclaredAcceptance as tmHasDeclaredAcceptance, prepareReadyIntegrations, readyToJudge, composeTaskPrompt, stripDocumentAcceptance, __storeHooks } from '../mcp/taskmanager.mjs';
+import { hasDeclaredAcceptance as tmHasDeclaredAcceptance, reproGate, prepareReadyIntegrations, readyToJudge, composeTaskPrompt, stripDocumentAcceptance, __storeHooks } from '../mcp/taskmanager.mjs';
 import { afterTmCall, beforeTmCall, drivePlanning, completePlanningChild } from './lib/planning-drive.mjs';
 import { mutateTask } from '../mcp/store.mjs';
 import { SCRATCH_RULE } from '../mcp/layout-guard.mjs';
+// A defect's repro (the repro gate): the command exits non-zero while the defect exists.
+const REPRO = { command: 'exit 1', observed: 'it fails', expected: 'it passes' };
 
 // An in-process saving helper (autoReshape, autoRetryPackages, enforceBudget, finish, ...) run the
 // way the daemon and the tm_* handlers run it: inside mutateTask on the task's own file, since a
@@ -1634,7 +1636,7 @@ test('a QA execute that runs and finds a real defect completes the child normall
 
     const accepted = await tm.call('tm_submit', { task_id, node_id: 'accept:QA-F1:1', payload: ok({
       accept: true, match_pct: 95,
-      defects: [{ title: 'POST /reset accepts an unknown CLI flag and silently starts the real app', touches: [], deps: [], evidence: defectText, severity: 'high' }],
+      defects: [{ title: 'POST /reset accepts an unknown CLI flag and silently starts the real app', touches: [], deps: [], evidence: defectText, repro: REPRO, severity: 'high' }],
     }) });
     assert.equal(accepted.state, 'done', JSON.stringify(accepted));
 
@@ -1681,7 +1683,7 @@ test('an accept:QA below the floor that files a defect still finishes done and f
 
     const accepted = await tm.call('tm_submit', { task_id, node_id: 'accept:QA-F1:1', payload: ok({
       accept: true, match_pct: 72, gaps: ['the menu was never exercised live'],
-      defects: [{ title: 'POST /reset accepts an unknown CLI flag and silently starts the real app', touches: [], deps: [], evidence: defectText, severity: 'high' }],
+      defects: [{ title: 'POST /reset accepts an unknown CLI flag and silently starts the real app', touches: [], deps: [], evidence: defectText, repro: REPRO, severity: 'high' }],
     }) });
     assert.equal(accepted.state, 'done', JSON.stringify(accepted));
 
@@ -1705,7 +1707,7 @@ test('a failed QA dispatch whose child recorded defects files them instead of bl
     assert.equal(qa1.package_id, 'QA-F1');
     const defectText = 'checkout crashes on an empty cart -> hit /checkout with 0 items';
     await completeQaChild(g, qa1, { accept: true, match_pct: 95 }, {
-      verified: false, stage_ok: true, handoff: 'cases run', defects: [defectText],
+      verified: false, stage_ok: true, handoff: 'cases run', defects: [{ title: defectText, repro: REPRO }],
     });
     const folded = await tm.call('tm_submit', { task_id, node_id: 'dispatch:QA-F1:1' });
     assert.equal(folded.state, 'done', JSON.stringify(folded));
@@ -2025,7 +2027,7 @@ test('a QA-found defect files a develop STORY and reroutes gate:goal to a fresh 
 
     const accepted1 = await tm.call('tm_submit', { task_id, node_id: 'accept:QA-F1:1', payload: ok({
       accept: true, match_pct: 95,
-      defects: [{ title: 'checkout crashes on empty cart', touches: ['d.txt'], deps: [], evidence: 'run checkout with 0 items -> 500', severity: 'high' }],
+      defects: [{ title: 'checkout crashes on empty cart', touches: ['d.txt'], deps: [], evidence: 'run checkout with 0 items -> 500', repro: REPRO, severity: 'high' }],
     }) });
     assert.equal(accepted1.state, 'done', JSON.stringify(accepted1));
 
@@ -2071,13 +2073,13 @@ test('a QA-found defect files a develop STORY and reroutes gate:goal to a fresh 
     // cap, so a second defect is recorded rather than filed as D2.
     const accepted2 = await tm.call('tm_submit', { task_id, node_id: 'accept:QA-F1:2', payload: ok({
       accept: true, match_pct: 95,
-      defects: [{ title: 'second defect', touches: [], deps: [], evidence: 'e2', severity: 'low' }],
+      defects: [{ title: 'second defect', touches: [], deps: [], evidence: 'e2', repro: REPRO, severity: 'low' }],
     }) });
     assert.equal(accepted2.state, 'done', JSON.stringify(accepted2));
 
     const final = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
     assert.deepEqual(final.spec.packages.map((p) => p.id), ['P1', 'P2', 'D1'], 'qa_rounds:1 caps the loop - no D2 is filed');
-    assert.deepEqual(final.unresolved_defects, [{ title: 'second defect', touches: [], deps: [], evidence: 'e2', severity: 'low', round: 2 }]);
+    assert.deepEqual(final.unresolved_defects, [{ title: 'second defect', touches: [], deps: [], evidence: 'e2', repro: REPRO, severity: 'low', round: 2 }]);
     assert.deepEqual(final.nodes.find((n) => n.node_id === 'gate:goal:1').deps, ['accept:QA-F1:2'], 'unaffected by the cap - already wired there');
 
     const after = await tm.call('tm_next', { task_id });
@@ -2102,13 +2104,13 @@ test('tm_file lets a user file a STORY directly, reporter: "user" / origin: "tm_
     await tm.call('tm_submit', { task_id, node_id: 'dispatch:QA-F1:1' });
     const accepted1 = await tm.call('tm_submit', { task_id, node_id: 'accept:QA-F1:1', payload: ok({
       accept: true, match_pct: 95,
-      defects: [{ title: 'checkout crashes on empty cart', touches: [], deps: [], evidence: 'e', severity: 'high' }],
+      defects: [{ title: 'checkout crashes on empty cart', touches: [], deps: [], evidence: 'e', repro: REPRO, severity: 'high' }],
     }) });
     assert.equal(accepted1.state, 'done', JSON.stringify(accepted1));
 
     let task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
     assert.deepEqual(task.spec.packages.map((p) => p.id), ['P1', 'P2'], 'qa_rounds:0 caps the very first QA round - no defect package is filed from it');
-    assert.deepEqual(task.unresolved_defects, [{ title: 'checkout crashes on empty cart', touches: [], deps: [], evidence: 'e', severity: 'high', round: 1 }]);
+    assert.deepEqual(task.unresolved_defects, [{ title: 'checkout crashes on empty cart', touches: [], deps: [], evidence: 'e', repro: REPRO, severity: 'high', round: 1 }]);
 
     nx = await tm.call('tm_next', { task_id });
     assert.deepEqual(nx.ready.map((n) => n.node_id), ['gate:goal:1'], 'the capped QA round still lets the EPIC proceed to the goal gate');
@@ -2222,8 +2224,8 @@ test('a QA round\'s defects whose touches contain one another are ordered: src/x
     const accepted = await tm.call('tm_submit', { task_id, node_id: 'accept:QA-F1:1', payload: ok({
       accept: true, match_pct: 95,
       defects: [
-        { title: 'x module drops rows', touches: ['src/x/**'], deps: [], evidence: 'e1', severity: 'high' },
-        { title: 'y helper off by one', touches: ['src/x/y.mjs'], deps: [], evidence: 'e2', severity: 'high' },
+        { title: 'x module drops rows', touches: ['src/x/**'], deps: [], evidence: 'e1', repro: REPRO, severity: 'high' },
+        { title: 'y helper off by one', touches: ['src/x/y.mjs'], deps: [], evidence: 'e2', repro: REPRO, severity: 'high' },
       ],
     }) });
     assert.equal(accepted.state, 'done', JSON.stringify(accepted));
@@ -2409,7 +2411,7 @@ test('with both roles on the audit follows QA, consumes its report, and an unmet
 
     const accepted = await tm.call('tm_submit', { task_id, node_id: 'accept:AUDIT:1', payload: ok({
       accept: true, match_pct: 91, checks: ['reread the PRD against the tree -> US-2 unmet'],
-      unmet: ['US-2 -> b.txt was never wired to the exported path'],
+      unmet: [{ title: 'US-2 -> b.txt was never wired to the exported path', repro: REPRO }],
     }) });
     assert.equal(accepted.state, 'done', JSON.stringify(accepted));
 
@@ -2487,14 +2489,98 @@ test('an audit round is capped like a QA round: past qa_rounds an unmet story is
     await tm.call('tm_submit', { task_id, node_id: 'dispatch:AUDIT:1' });
     // qa_rounds: 0 - the very first audit round is already past the cap, so nothing is filed.
     await tm.call('tm_submit', { task_id, node_id: 'accept:AUDIT:1', payload: ok({
-      accept: true, match_pct: 91, unmet: ['US-2 -> never wired'],
+      accept: true, match_pct: 91, unmet: [{ title: 'US-2 -> never wired', repro: REPRO }],
     }) });
     const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
     assert.deepEqual(task.spec.packages.map((p) => p.id), ['P1', 'P2'], 'the cap holds - no STORY is filed');
-    assert.deepEqual(task.unresolved_defects, [{ title: 'US-2 -> never wired', evidence: '', reporter: 'audit', origin: 'planning-audit', round: 1 }]);
+    assert.deepEqual(task.unresolved_defects, [{ title: 'US-2 -> never wired', repro: REPRO, reporter: 'audit', origin: 'planning-audit', round: 1 }]);
     const after = await tm.call('tm_next', { task_id });
     assert.deepEqual(after.ready.map((n) => n.node_id), ['gate:goal:1'], 'the EPIC proceeds past a capped audit');
   }, { roles: { planning: true }, qa_rounds: 0 });
+});
+
+
+// ---------- the repro gate (QA's join and the audit hook) ----------
+
+const reproTask = (cwd) => ({ nodes: [{ stage: 'integrate', node_id: 'integrate:1', integration: { cwd } }] });
+const rp = (command) => ({ command, observed: 'it fails', expected: 'it passes' });
+
+test('reproGate: no repro (missing, or an empty command/observed/expected) is refused with reason "no repro" and recorded', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'rg-'));
+  const task = reproTask(cwd);
+  const kept = reproGate(task, [
+    { title: 'a' }, { title: 'b', repro: { command: 'false', observed: 'x' } }, { title: 'c', repro: { command: ' ', observed: 'x', expected: 'y' } }, { title: 'd', repro: 'false' },
+  ], 'qa');
+  assert.deepEqual(kept, []);
+  assert.deepEqual(task.dropped_defects.map((d) => [d.title, d.reason]), [['a', 'no repro'], ['b', 'no repro'], ['c', 'no repro'], ['d', 'no repro']]);
+  rmSync(cwd, { recursive: true, force: true });
+});
+
+test('reproGate: a command that exits 0 on the integration tree is dropped with its reason and repro; one that exits non-zero is filed', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'rg-'));
+  const task = reproTask(cwd);
+  const kept = reproGate(task, [{ title: 'gone', repro: rp('true') }, { title: 'real', repro: rp('false') }], 'qa');
+  assert.deepEqual(kept.map((d) => d.title), ['real']);
+  assert.equal(kept[0].repro_unverified, undefined, 'a rerun that failed is verified');
+  assert.deepEqual(task.dropped_defects.map((d) => [d.title, d.reason, d.repro.command]), [['gone', 'repro passes on integration tree', 'true']]);
+  rmSync(cwd, { recursive: true, force: true });
+});
+
+test('reproGate: a rerun that cannot run (exit 127, timeout, no tree) is filed with repro_unverified, never dropped', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'rg-'));
+  const prev = process.env.TEAMS_REPRO_TIMEOUT_MS;
+  process.env.TEAMS_REPRO_TIMEOUT_MS = '300';
+  try {
+    const task = reproTask(cwd);
+    const kept = reproGate(task, [{ title: 'nf', repro: rp('no-such-command-xyz') }, { title: 'slow', repro: rp('sleep 5') }], 'qa');
+    assert.deepEqual(kept.map((d) => [d.title, d.repro_unverified]), [['nf', true], ['slow', true]]);
+    assert.equal(task.dropped_defects, undefined);
+    const noTree = reproGate({ nodes: [] }, [{ title: 'x', repro: rp('true') }], 'qa');
+    assert.deepEqual(noTree.map((d) => d.repro_unverified), [true]);
+  } finally {
+    if (prev === undefined) delete process.env.TEAMS_REPRO_TIMEOUT_MS; else process.env.TEAMS_REPRO_TIMEOUT_MS = prev;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('repro gate on the QA join: only the defect whose repro still fails is filed; a no-repro and a passing-repro defect go to dropped_defects', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const nx = await tm.call('tm_next', { task_id });
+    await completeQaChild(g, nx.children[0], { accept: true, match_pct: 95 });
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:QA-F1:1' });
+    const accepted = await tm.call('tm_submit', { task_id, node_id: 'accept:QA-F1:1', payload: ok({
+      accept: true, match_pct: 95,
+      defects: [
+        { title: 'no repro given', touches: [], deps: [], evidence: 'e' },
+        { title: 'already fixed', touches: [], deps: [], evidence: 'e', repro: rp('true') },
+        { title: 'still broken', touches: [], deps: [], evidence: 'e', repro: rp('false') },
+      ],
+    }) });
+    assert.equal(accepted.state, 'done', JSON.stringify(accepted));
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.deepEqual(task.spec.packages.map((p) => p.id), ['P1', 'P2', 'D1'], 'only one package is filed');
+    assert.equal(task.spec.packages.find((p) => p.id === 'D1').title, 'still broken');
+    assert.deepEqual(task.dropped_defects.map((d) => [d.title, d.reason]), [['no repro given', 'no repro'], ['already fixed', 'repro passes on integration tree']]);
+  }, { roles: { qa: true } });
+});
+
+test('repro gate on the audit hook: an unmet story with no repro, or a passing one, is dropped and nothing is filed', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    await toIntegrateWithPlanning(tm, g, task_id, cwd);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children[0].package_id, 'AUDIT');
+    await completeAuditChild(g, nx.children[0], { accept: true, match_pct: 95 });
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:AUDIT:1' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:AUDIT:1', payload: ok({
+      accept: true, match_pct: 91, unmet: ['US-2 -> a bare string has no repro', { title: 'US-3 -> fixed', repro: rp('true') }],
+    }) });
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.deepEqual(task.spec.packages.map((p) => p.id), ['P1', 'P2'], 'nothing is filed');
+    assert.deepEqual(task.dropped_defects.map((d) => [d.title, d.reason]), [['US-2 -> a bare string has no repro', 'no repro'], ['US-3 -> fixed', 'repro passes on integration tree']]);
+  }, { roles: { planning: true } });
 });
 
 
@@ -9262,7 +9348,7 @@ test('M3: a QA card spent past its retries does not take the round down - its si
       await sub('report', { handoff: 'QA report' });
       await tm.call('tm_submit', { task_id, node_id: `dispatch:${id}:1` });
       return tm.call('tm_submit', { task_id, node_id: `accept:${id}:1`, payload: ok(defect
-        ? { accept: true, match_pct: 90, defects: [{ title: defect, evidence: defect, touches: [], deps: [] }] }
+        ? { accept: true, match_pct: 90, defects: [{ title: defect, evidence: defect, touches: [], deps: [], repro: REPRO }] }
         : { accept: false, match_pct: 30, reason: 'the QA report does not show the cases ran', gaps: ['no evidence'] }) });
     };
     assert.equal((await finishQa('QA-F1', 'a.txt loses its newline')).state, 'done');
@@ -9321,7 +9407,7 @@ test('C7: QA runs one card per feature area in parallel, each a full-harness run
       await g.call('team_next', { run_id: qa[id].run_id, cwd: qa[id].cwd });
       await sub('report', { handoff: 'QA report' });
       await tm.call('tm_submit', { task_id, node_id: `dispatch:${id}:1` });
-      return tm.call('tm_submit', { task_id, node_id: `accept:${id}:1`, payload: ok({ accept: true, match_pct: 90, defects: [{ title: defect, evidence: defect, touches: [], deps: [] }] }) });
+      return tm.call('tm_submit', { task_id, node_id: `accept:${id}:1`, payload: ok({ accept: true, match_pct: 90, defects: [{ title: defect, evidence: defect, touches: [], deps: [], repro: REPRO }] }) });
     };
     assert.equal((await qaRun('QA-F1', 'a.txt loses its newline')).state, 'done');
     task = readTask(root, task_id);
@@ -9363,8 +9449,8 @@ test('C7: past qa_rounds a whole round\'s defects are recorded unresolved, and a
     // QA-F1 accepted with a defect; QA-F2's dispatch failed, but its execute had found one.
     const t = readTask(root, task_id);
     Object.assign(t.nodes.find((n) => n.node_id === 'dispatch:QA-F1:1'), { state: 'done', result: { stage_ok: true, accept: true, defects: ['a broke'] } });
-    Object.assign(t.nodes.find((n) => n.node_id === 'accept:QA-F1:1'), { state: 'done', result: { stage_ok: true, accept: true, checks: ['ok'], defects: [{ title: 'a broke', evidence: 'a broke' }] } });
-    Object.assign(t.nodes.find((n) => n.node_id === 'dispatch:QA-F2:1'), { state: 'failed', result: { stage_ok: false, accept: false, reason: 'blocked', defects: ['b broke'] } });
+    Object.assign(t.nodes.find((n) => n.node_id === 'accept:QA-F1:1'), { state: 'done', result: { stage_ok: true, accept: true, checks: ['ok'], defects: [{ title: 'a broke', evidence: 'a broke', repro: REPRO }] } });
+    Object.assign(t.nodes.find((n) => n.node_id === 'dispatch:QA-F2:1'), { state: 'failed', result: { stage_ok: false, accept: false, reason: 'blocked', defects: ['b broke'], defect_repros: { 'b broke': REPRO } } });
     writeFileSync(join(root, task_id, 'task.json'), JSON.stringify(t));
     const task = readTask(root, task_id);
     assert.ok(withTasksRoot(root, () => inTx(task, autoRetryPackages)));

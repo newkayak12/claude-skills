@@ -314,6 +314,26 @@ test('slack-list: a size-S task reports from its run, not BLOCKED off the skippe
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
+test('Dropped defects: the report lists each dropped defect with its reason, and marks repro_unverified; none -> no section', async () => {
+  const { renderReport } = await import('../mcp/docs.mjs');
+  const cwd = mkdtempSync(join(tmpdir(), 'docs-dropped-'));
+  try {
+    const base = fixtureTask(cwd);
+    assert.ok(!renderReport(base).includes('Dropped defects'));
+    const task = {
+      ...base,
+      dropped_defects: [
+        { id: 'D1', title: 'login 500s', reason: 'no repro', repro: null, source: 'qa' },
+        { title: 'already fixed', reason: 'repro passes on integration tree', repro: { command: 'true' }, source: 'qa' },
+      ],
+      unresolved_defects: [{ title: 'flaky run', repro_unverified: true }],
+    };
+    const out = renderReport(task);
+    assert.match(out, /Dropped defects:\n- D1 login 500s: no repro\n- already fixed: repro passes on integration tree/);
+    assert.match(out, /Defects left:\n- flaky run \(repro_unverified\)/);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
 test('Wiki 변경: every report variant lists the pages modified inside [created_at, end]; before/after pages, INDEX, _proposed and _rejected are left out; no .teams_wiki -> no section and none created', async () => {
   const { createRun, saveRun } = await import('../mcp/graph.mjs');
   const { mkdirSync, utimesSync, existsSync } = await import('node:fs');
