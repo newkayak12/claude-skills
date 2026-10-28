@@ -17,10 +17,12 @@
 | Never remove a stage, a gate, or a principle for cost or simplicity without the user's approval | repo.md § Design changes | prose only |
 | `<plugin>/` top level holds one plugin (`.claude-plugin/plugin.json`, `skills/`, `hooks/`, README.md + KOR.md), never notes, plans, reports | repo.md § Layout | validate_plugins.py (pre-commit + CI) checks the manifest, skills and version; the "never holds" part is prose only |
 | `_repo/docs/plans/` holds dated design docs, never code | repo.md § Layout | prose only |
-| `_repo/hooks/` holds git hooks, `_repo/scripts/` holds repo-wide checks, never plugin code | repo.md § Layout | prose only |
+| `_repo/hooks/` holds git hooks, never plugin code | repo.md § Layout | prose only |
+| `_repo/scripts/` holds repo-wide checks, never plugin code | repo.md § Layout | prose only |
 | `_repo/deprecated/` holds a README only, never files of retired items | repo.md § Layout | prose only |
 | `.claude/` holds this repo's own hook, teams config and rules, never plugin code | repo.md § Layout | prose only |
-| `tmp/` is gitignored scratch, never anything to keep; `.harness-run/` is gitignored, written by a teams size-S pass | repo.md § Layout | .gitignore (git) |
+| `tmp/` is gitignored scratch, never anything to keep | repo.md § Layout | .gitignore (git) ignores it; "nothing to keep" is prose only |
+| `.harness-run/` is gitignored, written by a teams size-S pass | repo.md § Layout | .gitignore (git) |
 | A new top-level directory is a new plugin, or it does not exist (also maintaining.md § Leaving it clean, item 5) | repo.md § Layout | teams/mcp/layout-guard.mjs (teams engine: refuses staged new top-level dirs in a package commit); prose only in a plain session |
 | A note worth keeping goes in `_repo/docs/`; one that isn't is not written to the repo | repo.md § Layout | prose only |
 | Always run `validate_plugins.py` before a commit | maintaining.md § Checks before a commit | _repo/hooks/pre-commit (git hook; only when a SKILL.md, plugin.json or marketplace.json is staged) and validate_plugins.py (CI) |
@@ -29,7 +31,7 @@
 | Paths in `.claude/teams-dispatch.json` are denied to the driving session until a task is open (`tm_open`) | maintaining.md § Checks before a commit | teams/hooks/dispatch-gate.mjs (teams plugin hook) |
 | Report the counts you saw; "tests pass" without a number is not a check | maintaining.md § Checks before a commit | prose only |
 | Releases are batched: fixes land on main without a bump; one bump per plugin per batch, one README/KOR status line per plugin per batch | maintaining.md § Versions and release | prose only |
-| A batch bump touches `plugin.json` and its `.claude-plugin/marketplace.json` entry (and `.codex-plugin/`); patch for a fix, minor for new behaviour, major for a breaking rename | maintaining.md § Versions and release | validate_plugins.py (pre-commit + CI) checks that the marketplace, plugin.json and Codex versions agree; the level is prose only |
+| A batch bump touches `plugin.json` and its `.claude-plugin/marketplace.json` entry (and `.codex-plugin/`); patch for a fix, minor for new behaviour, major for a breaking rename | maintaining.md § Versions and release | validate_plugins.py (pre-commit + CI) warns when the marketplace and plugin.json versions differ and errors when the Codex manifest name or version differs; the level is prose only |
 | README.md and KOR.md move together in the same commit | maintaining.md § Versions and release | repo-rules.mjs (warning): a `git commit` with a staged `*/README.md` and no staged KOR.md beside it gets a systemMessage |
 | Bump tools are maintainer tools: `patch-harness.mjs` and `teams/skills/patch/patch.mjs` (dry-run first); minor/major by hand | maintaining.md § Versions and release | repo-rules.mjs: denies both bump scripts while a teams task holds the repo |
 | Remote is `origin`: `git pull --rebase origin main`, then `git push origin main` | maintaining.md § Versions and release | prose only |
@@ -51,12 +53,12 @@
 | Blind means: arms anonymized, judge on a different model tier than the authors, each judgment tied to the done criteria | maintaining.md § Benches and experiments | prose only |
 | Bench output lives in `tmp/` and is deleted when the result is recorded | maintaining.md § Benches and experiments | prose only; `tmp/` is ignored by .gitignore (git) |
 | Docker in a bench: unique names, no host ports, tear down by exact name; never `prune` anything | maintaining.md § Benches and experiments | prose only |
-| `rm` with a bare unquoted `$VAR` is refused: an unquoted `$NAME` or `${NAME}` without `:?` as an argument of `rm` | maintaining.md § Leaving it clean | repo-rules.mjs, Claude Code only, not Codex (hook; Codex sessions are not covered): denies a simple command whose first word is `rm` with an unquoted `$NAME` or `${NAME}` (no `:?`) argument; quoted, guarded, `$(cmd)`, `$1`/`$@`, `find -exec`, `xargs` and text inside a quoted string pass |
 | Leaving it clean 1: `git status` is clean and `main` equals `origin/main` | maintaining.md § Leaving it clean | prose only (repo-rules.mjs shows a systemMessage at session start when origin/main is ahead) |
 | Leaving it clean 2: every teams task you opened has finished and its report is written; a held task refuses `git push` and the bump tools | maintaining.md § Leaving it clean | repo-rules.mjs: denies `git push` and the bump scripts while a teams task holds the repo; _repo/hooks/pre-push (git hook) refuses the push for Codex and a plain terminal; `--no-verify` and bump scripts outside Claude Code are not covered |
 | Leaving it clean 3: no containers, volumes, or background processes you started are left running | maintaining.md § Leaving it clean | prose only |
 | Leaving it clean 4: `tmp/` holds nothing you are done with | maintaining.md § Leaving it clean | prose only |
-| A skill owns the artifacts (files, ledgers, run records) as the source of truth; enforcement a person must not skip is in a form every client sees (engine check, MCP refusal, plain command hook) | skill.md § What a skill owns | prose only |
+| A skill owns the artifacts (files, ledgers, run records) as the source of truth | skill.md § What a skill owns | prose only |
+| Enforcement a person must not skip is in a form every client sees (engine check, MCP refusal, plain command hook) | skill.md § What a skill owns | prose only |
 | Parsing and decisions live in node/python with their own tests, never only in prose | skill.md § What a skill owns | prose only |
 | A skill does not draw UI, wait on a pane, or depend on a mod being installed | skill.md § What a skill does not do | prose only |
 | A skill does not leave out a record a viewer would need; the engine writes that field | skill.md § What a skill does not do | prose only |
@@ -116,3 +118,14 @@ rule stated in two files has one row, anchored in one and cited in the Rule cell
 hook in `.claude/hooks/repo-rules.mjs`, a check in `_repo/scripts/`, a git hook in `_repo/hooks/`, a
 teams engine check, `prose only`, or a concrete enforcer with its kind in parentheses. Git hooks run
 after `git config core.hooksPath _repo/hooks`.
+
+## Decided in card 90 (Sprint brainstorm), not yet stated in a rule file
+
+No rule file states this rule, so it has no `file § section` anchor; it is not counted against any
+rule file. When a rule file gains the statement, move the row up and anchor it. Like the Read/Edit/Write row
+above, it is enforced by a refusal in `repo-rules.mjs` that another package builds; until that merges,
+no code in this tree backs either row (default - revisit with newkayak12).
+
+| Rule | Anchor | Enforcement |
+|---|---|---|
+| `rm` with a bare unquoted `$VAR` is refused: an unquoted `$NAME` or `${NAME}` without `:?` as an argument of `rm` | card 90 / Sprint brainstorm (no rule file yet) | repo-rules.mjs hook (Claude Code only, not Codex): denies a simple command whose first word is `rm` with an unquoted `$NAME` or `${NAME}` (no `:?`) argument; quoted, guarded, `$(cmd)`, `$1`/`$@`, `find -exec`, `xargs` and text inside a quoted string pass |
