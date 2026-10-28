@@ -11,7 +11,7 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
 
 ### Mods and naming — UI first (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
 
-84. **The teams pane is a real dashboard on every surface: Ink on the terminal, Svg on desktop, mobile and vscode** — defects: E-fa84630b stopped (card 87), retried in E-8b9c417d
+84. **The teams pane is a real dashboard on every surface: Ink on the terminal, Svg on desktop, mobile and vscode** — both terminal defects fixed `7e051a4b` (E-8b9c417d; live look 2026-10-28: Plan ✔, no digits after 2 1 0); left: phone/desktop look
     - Why: user, 2026-10-26, after `/teams-status` over Remote Control showed a 42-row text dump on the phone:
       "이따위로 나올거면 뭣하러 하냐", "Claude desktop app에서 UI 그릴 수 있는걸로 아는데", "mobile도 그렇고",
       "씨발 못해? terminal도, claude app, desktop도". References given: a Grafana-style metrics board
@@ -310,3 +310,4 @@ toasts).
 | E-b1aee623 | 2026-10-28 | 91 | shipped `e0032b0f`; size S (unpinned); goal gate 95; accept scores only the package's own acceptance (`scopeGaps`, `out_of_scope[]`); teams 1565/1565; ~$3.5 |
 | E-861e1089 | 2026-10-28 | 87 (part) | shipped `eb3a1c49`; size S; document criteria filtered from the PRD stories by exact text; teams 1567/1567; ~$3 |
 | E-db523454 | 2026-10-28 | 92 | shipped `f5a54fe8`; size S; goal gate 96; "claims every user story" needs 2+ stories; teams 1568/1568; ~$2 |
+| E-8b9c417d | 2026-10-28 | 84 (two defects) | shipped `7e051a4b`; P1 accepted; P2 met its own acceptance but rejected 3× for P3's live look (card 91), taken from its branch; live look done in session; integration branch held QA scratch under `test/` (0.60.1 engine, card 86 fix not installed) — not merged; teams 1570/1570, plugin test 375/375; $27.5 |
