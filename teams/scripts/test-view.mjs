@@ -807,7 +807,7 @@ async function driveToQaDefectFound(tm, g, task_id) {
   await tm.call('tm_submit', { task_id, node_id: 'dispatch:QA-F1:1' });
   await tm.call('tm_submit', { task_id, node_id: 'accept:QA-F1:1', payload: ok({
     accept: true, match_pct: 95,
-    defects: [{ title: 'checkout crashes on empty cart', touches: ['d.txt'], deps: [], evidence: 'run checkout with 0 items -> 500', severity: 'high' }],
+    defects: [{ title: 'checkout crashes on empty cart', touches: ['d.txt'], deps: [], evidence: 'run checkout with 0 items -> 500', severity: 'high', repro: { command: 'exit 1', observed: 'it fails', expected: 'it passes' } }],
   }) });
 }
 
@@ -867,7 +867,7 @@ async function driveToAuditUnmetFound(tm, g, task_id) {
   await completeAuditChild(g, nx.children[0], { accept: true, match_pct: 95 });
   await tm.call('tm_submit', { task_id, node_id: 'dispatch:AUDIT:1' });
   await tm.call('tm_submit', { task_id, node_id: 'accept:AUDIT:1', payload: ok({
-    accept: true, match_pct: 91, unmet: ['F1-US-2 -> b.txt was never wired to the exported path'],
+    accept: true, match_pct: 91, unmet: [{ title: 'F1-US-2 -> b.txt was never wired to the exported path', repro: { command: 'exit 1', observed: 'it fails', expected: 'it passes' } }],
   }) });
 }
 

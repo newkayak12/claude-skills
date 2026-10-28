@@ -870,3 +870,14 @@ test('accept prompt for a single-package task has no Other packages section', as
   };
   assert.doesNotMatch(composeTaskPrompt(task, node), /Other packages/);
 });
+
+import { ACCEPT_EXTRA } from '../mcp/stagecontract.mjs';
+
+test('the repro gate: the execute and audit contracts and the QA/audit accept contracts require repro {command, observed, expected}', () => {
+  for (const [name, text] of [['execute', CONTRACT.execute], ['audit', CONTRACT.audit], ['accept qa', ACCEPT_EXTRA.qa], ['accept audit', ACCEPT_EXTRA.audit]]) {
+    assert.match(text, /repro/, `${name} names repro`);
+    assert.match(text, /command/, `${name} names the command`);
+  }
+  assert.match(CONTRACT.execute, /non-zero while the defect exists/);
+  assert.match(ACCEPT_EXTRA.qa, /non-zero while the defect exists/);
+});

@@ -1643,7 +1643,7 @@ export function autoRetryPackages(task) {
       // data dep is a failed dispatch, and `settled` (graph.mjs) never counts a plain `failed`
       // as done. Retire it in place, carrying the defects, so the QA round's join (settleQaRound)
       // files them together with every sibling QA card's once the whole round has settled (C7).
-      const records = failed.result.defects.map((d) => ({ title: d.length > 120 ? `${d.slice(0, 117)}...` : d, evidence: d }));
+      const records = failed.result.defects.map((d) => ({ title: d.length > 120 ? `${d.slice(0, 117)}...` : d, evidence: d, ...(failed.result.defect_repros && failed.result.defect_repros[d] ? { repro: failed.result.defect_repros[d] } : {}) }));
       for (const sib of latest) {
         if (sib.state === 'pending') {
           sib.state = 'skipped';
@@ -1929,8 +1929,10 @@ function settleQaRound(task) {
   const settledCard = (x) => x.state === 'done' || (x.state === 'skipped' && x.result && x.result.qa_direct);
   if (!round.every(settledCard)) return null;
   const fresh = round.filter((x) => x.result && !x.result.defects_settled);
-  const defects = fresh.flatMap((x) => (Array.isArray(x.result.defects) ? x.result.defects : [])
-    .map((d) => (d && typeof d === 'object' ? d : { title: String(d), evidence: String(d) })));
+  // Gated once: the card is marked defects_settled below, so a rescue or retry that re-enters this
+  // join never sees a dropped defect again.
+  const defects = reproGate(task, fresh.flatMap((x) => (Array.isArray(x.result.defects) ? x.result.defects : [])
+    .map((d) => (d && typeof d === 'object' ? d : { title: String(d), evidence: String(d) }))), 'qa');
   for (const x of fresh) x.result = { ...x.result, defects_settled: true };
   if (!defects.length) return { defects: [] };
   const qaRound = Math.max(1, ...qaPkgs(task).map((q) => task.nodes.filter((x) => x.stage === 'dispatch' && x.subgoal_id === String(q.id)).length));
@@ -1947,6 +1949,38 @@ function settleQaRound(task) {
   }
   const out = fileDefects(task, defects, { reporter: 'qa', origin: 'qa' });
   return { filed: out.filed, defects };
+}
+
+// The repro gate (QA's join and the audit hook, before fileDefects). A defect names a repro
+// {command, observed, expected}; the command exits non-zero while the defect exists. Refused:
+// no repro, or a missing/empty command, observed or expected ('no repro'). Rerun on the latest
+// integration tree: exit 0 means the failure is gone, so it is dropped ('repro passes on
+// integration tree'); non-zero is filed. A rerun that cannot run (spawn error, exit 127, timeout,
+// no tree) is filed with repro_unverified: true, never dropped. Refused and dropped defects are
+// kept on task.dropped_defects as {id, title, reason, repro, source}. Only the exit code is judged.
+const REPRO_TIMEOUT_MS = 60000;
+export function reproGate(task, defects, source) {
+  const text = (v) => typeof v === 'string' && v.trim() !== '';
+  const timeout = Number(process.env.TEAMS_REPRO_TIMEOUT_MS) > 0 ? Number(process.env.TEAMS_REPRO_TIMEOUT_MS) : REPRO_TIMEOUT_MS;
+  const tree = integrationTrees(task).map((t) => t.cwd).filter((c) => existsSync(c)).pop() || null;
+  const kept = [];
+  for (const d of defects) {
+    const r = d && d.repro;
+    const drop = (reason) => {
+      task.dropped_defects = (task.dropped_defects || []).concat([{
+        id: (d && d.id) || null, title: (d && d.title) || '', reason, repro: r && typeof r === 'object' ? r : null, source,
+      }]);
+    };
+    if (!r || typeof r !== 'object' || !text(r.command) || !text(r.observed) || !text(r.expected)) { drop('no repro'); continue; }
+    let unverified = true;
+    if (tree) {
+      const run = spawnSync('sh', ['-c', r.command], { cwd: tree, timeout, stdio: 'ignore' });
+      if (!run.error && !run.signal && run.status === 0) { drop('repro passes on integration tree'); continue; }
+      unverified = Boolean(run.error || run.signal || run.status === 127 || run.status === null);
+    }
+    kept.push(unverified ? { ...d, repro_unverified: true } : d);
+  }
+  return kept;
 }
 
 // A QA card spent past its retries (M3, _repo/docs/plans/2026-09-28-teams-adversarial-fixes.md): its
@@ -2049,6 +2083,8 @@ function fileDefects(task, defects, opts) {
       acceptance: [evidence ? `the reproduction below no longer reproduces the defect:\n${evidence}` : `"${title}" no longer reproduces`],
       touches: ((d && d.touches) || []).map(String),
       deps: ((d && d.deps) || []).map(String),
+      ...(d && d.repro ? { repro: d.repro } : {}),
+      ...(d && d.repro_unverified ? { repro_unverified: true } : {}),
     };
     // The filer's own deps first: dispatch branches from the first dep, so the base stays the same.
     pkg.deps = [...new Set([...pkg.deps, ...overlapDeps(pkg)])];
@@ -3721,10 +3757,18 @@ export function foldChild(task, n) {
   // failure, then a clean rerun) can otherwise report the same defect twice. This is what
   // autoRetryPackages (below) reads to decide "file it" over "retry the whole QA package",
   // and what composeTaskPrompt shows the accept:QA agent as "Defects it reported".
+  // An execute defect is {title, evidence, repro} (a bare string is still read); the string is its
+  // display form and its repro rides in defectRepros, keyed by that string, for the repro gate.
+  const defectRepros = {};
   const defectsFound = [...new Set(
     child.nodes
       .filter((x) => x.stage === 'execute' && x.result && Array.isArray(x.result.defects))
-      .flatMap((x) => x.result.defects.map((d) => String(d).trim()))
+      .flatMap((x) => x.result.defects.map((d) => {
+        if (!d || typeof d !== 'object') return String(d).trim();
+        const str = [d.title, d.evidence].filter((v) => typeof v === 'string' && v.trim()).join(' -> ') || JSON.stringify(d);
+        if (d.repro) defectRepros[str] = d.repro;
+        return str;
+      }))
       .filter(Boolean),
   )];
   // §upstream_defects: a defect this package's own implement/test/gate found OUTSIDE its own
@@ -3761,6 +3805,7 @@ export function foldChild(task, n) {
     child_counts: cs.counts,
     changed_files: changed,
     ...(defectsFound.length ? { defects: defectsFound } : {}),
+    ...(Object.keys(defectRepros).length ? { defect_repros: defectRepros } : {}),
     ...(upstreamDefectsFound.length ? { upstream_defects: upstreamDefectsFound } : {}),
     ...(setFindings ? { set_findings: setFindings } : {}),
     // §6.2-3/4: what an execution-phase package could not decide by default - finish() parks it
@@ -5046,8 +5091,8 @@ export function finish(task, n, result) {
   // qa_rounds knob for the same reason: a pass that can file work which reopens the pass needs a
   // bound, and a second knob for the second such pass would only be two numbers to keep in step.
   if (n.stage === 'accept' && n.subgoal_id === 'AUDIT' && n.state === 'done') {
-    const unmet = (Array.isArray(result.unmet) ? result.unmet : [])
-      .map((u) => (u && typeof u === 'object' ? u : { title: String(u), evidence: '' }));
+    const unmet = reproGate(task, (Array.isArray(result.unmet) ? result.unmet : [])
+      .map((u) => (u && typeof u === 'object' ? u : { title: String(u), evidence: '' })), 'audit');
     if (unmet.length) {
       const rounds = task.nodes.filter((x) => x.stage === 'accept' && x.subgoal_id === 'AUDIT').length;
       const cap = Number.isInteger(task.team && task.team.opts && task.team.opts.qa_rounds)
