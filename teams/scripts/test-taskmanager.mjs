@@ -2087,6 +2087,45 @@ test('a QA-found defect files a develop STORY and reroutes gate:goal to a fresh 
   }, { roles: { qa: true }, qa_rounds: 1 });
 });
 
+test('a QA-filed defect package records the integration branch and its worktree branches from it; a shape-original package keeps task.base_ref/HEAD', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const nx = await tm.call('tm_next', { task_id });
+    await completeQaChild(g, nx.children[0], { accept: true, match_pct: 95 });
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:QA-F1:1' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:QA-F1:1', payload: ok({
+      accept: true, match_pct: 95,
+      defects: [{ title: 'checkout crashes on empty cart', touches: ['d.txt'], deps: [], evidence: 'run checkout with 0 items -> 500', repro: REPRO, severity: 'high' }],
+    }) });
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const integ = task.nodes.find((n) => n.node_id === 'integrate:1');
+    const d1 = task.spec.packages.find((p) => p.id === 'D1');
+    assert.equal(d1.base_branch, integ.integration.branch, 'the QA-filed package records the integration branch of the pass');
+    for (const p of task.spec.packages.filter((q) => q.id !== 'D1')) assert.equal(p.base_branch, undefined, 'a shape-original package has no base_branch');
+    const integTip = gitOut(cwd, 'rev-parse', integ.integration.branch);
+    assert.notEqual(integTip, gitOut(cwd, 'rev-parse', 'HEAD'), 'the integration commit differs from main HEAD');
+    const next = await tm.call('tm_next', { task_id });
+    const child = next.children.find((c) => c.package_id === 'D1');
+    assert.ok(child, 'D1 is opened');
+    assert.equal(gitOut(child.cwd, 'rev-parse', 'HEAD'), integTip, 'the defect worktree starts from the integration branch commit');
+    const p1 = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8')).nodes.find((n) => n.node_id === 'dispatch:P1:1');
+    assert.equal(gitOut(p1.child.cwd, 'rev-parse', 'HEAD~0') === integTip, false, 'P1 did not start from the integration branch');
+  }, { roles: { qa: true } });
+});
+
+test('a tm_file STORY records no base_branch', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    await tm.call('tm_file', { task_id, stories: [{ title: 'user story', touches: [], deps: [], evidence: 'e', repro: REPRO }] });
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const filed = task.spec.packages.find((p) => p.origin === 'tm_file');
+    assert.ok(filed, 'a tm_file package exists');
+    assert.equal(filed.base_branch, undefined);
+  }, { roles: { qa: true } });
+});
+
 test('tm_file lets a user file a STORY directly, reporter: "user" / origin: "tm_file", never checked against qa_rounds (§5b, C-9)', async () => {
   await withTask(async ({ tm, g, root, task_id }) => {
     await toIntegrate(tm, g, task_id);
