@@ -59,3 +59,4 @@ A new top-level directory is a new plugin, or it does not exist. A note worth ke
 | `compat-claude.md` | older Claude Code builds |
 | `compat-codex.md` | Codex |
 | `backlog.md` | where work waits; the Sprint loop |
+| `enforcement.md` | who checks each rule: hook, script, git hook, engine, or prose only |

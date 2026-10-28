@@ -16,6 +16,7 @@ instructions and rules Claude Code loads:
 | `.claude/rules/compat-claude.md` | older Claude Code builds |
 | `.claude/rules/compat-codex.md` | Codex: cross-client behaviour, harness paths, running inside a Codex session |
 | `.claude/rules/backlog.md` | where work waits; the Sprint loop |
+| `.claude/rules/enforcement.md` | who checks each rule: hook, script, git hook, engine, or prose only |
 
 ## Repository Shape
 

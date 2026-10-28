@@ -15,6 +15,7 @@ The rules live in `.claude/rules/` (Claude Code loads them; Codex reads them via
 | `compat-claude.md` | older Claude Code builds |
 | `compat-codex.md` | Codex |
 | `backlog.md` | where work waits; the Sprint loop |
+| `enforcement.md` | who checks each rule: hook, script, git hook, engine, or prose only |
 
 @_repo/coding-guidelines.md
 
