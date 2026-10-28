@@ -219,6 +219,92 @@ for (const [label, id, branch] of [
   drop(id)
 }
 
+// unquoted variable as an rm argument: refused; every other shape passes (the hook only classifies `rm` as a simple command's first word)
+const rmReason = r => r.out.hookSpecificOutput?.permissionDecisionReason ?? ''
+const rmDenied = r => decision(r) === 'deny' && rmReason(r).includes('"${S:?}"')
+check('rm: rm -f $S/*.p2 -> deny, reason names "${S:?}"', rmDenied(bash('rm -f $S/*.p2', clone)))
+check('rm: rm -rf ${S}/x -> deny', rmDenied(bash('rm -rf ${S}/x', clone)))
+check('rm: unquoted var after && in a chain -> deny', rmDenied(bash('cd d && rm -f $S/*.p2', clone)))
+check('rm: unquoted var on the second line of a command -> deny', rmDenied(bash('ls\nrm -f $S/*.p2', clone)))
+for (const c of ['rm -f "${S:?}"/*.p2', 'rm "$S"', 'rm ${S:?}/x', 'rm $(cmd)', 'rm $1', 'rm $@', 'rm -f x.p2',
+  'find . -exec rm {} +', 'find . -name x | xargs rm', 'git rm $F', 'git commit -m "rm -f $S"', 'echo "rm $S"', "echo 'rm $S'"]) {
+  check(`rm: ${c} -> no deny`, free(bash(c, clone)))
+}
+
+// in-place write to a repo file: refused with a pointer to Read/Edit/Write. A repo path resolves inside the
+// git top level of the (cd-applied) working dir and is neither under tmp/ nor gitignored.
+writeFileSync(join(clone, '.gitignore'), 'build/\n')
+const writeDenied = r => decision(r) === 'deny' && rmReason(r).includes('Read/Edit/Write')
+const EOF = 'EOF'
+for (const [name, c] of [
+  ['sed -i on a repo file', "sed -i 's/a/b/' teams/mcp/x.mjs"],
+  ['sed -i.bak', "sed -i.bak 's/a/b/' teams/mcp/x.mjs"],
+  ['sed -e script then file', "sed -i -e 's/a/b/' teams/mcp/x.mjs"],
+  ['perl -pi -e', "perl -pi -e 's/a/b/' teams/mcp/x.mjs"],
+  ['K1 cat > file <<EOF', `cat > teams/mcp/x.mjs <<'${EOF}'\nbody\n${EOF}`],
+  ['K2 bash <<EOF with sed -i', `bash <<'${EOF}'\nsed -i s/a/b/ teams/mcp/x.mjs\n${EOF}`],
+  ['K3 node -e writeFileSync', `node -e "require('fs').writeFileSync('teams/mcp/x.mjs','')"`],
+  ['K5 write-then-run, script in the repo', `cat > go.sh <<'${EOF}'\nrm teams/mcp/x.mjs\n${EOF}\nbash go.sh`],
+  ['node --eval appendFileSync', `node --eval "require('fs').appendFileSync('teams/mcp/x.mjs','x')"`],
+  ['python3 -c open(...,w)', `python3 -c "open('teams/x.py','w').write('')"`],
+  ['python heredoc write', `python3 - <<'${EOF}'\nopen('teams/x.py', 'w').write('x')\n${EOF}`],
+  ['python heredoc Path.write_text', `python3 <<'${EOF}'\nfrom pathlib import Path\nPath('teams/x.py').write_text('x')\n${EOF}`],
+  ['echo > file', 'echo x > teams/a.md'],
+  ['echo >> file', 'echo x >> teams/a.md'],
+  ['echo >file (no space)', 'echo x>teams/a.md'],
+  ['printf | tee file', 'printf x | tee teams/a.md'],
+  ['tee -a file', 'echo x | tee -a teams/a.md'],
+  ['tee file <<EOF', `tee teams/a.md <<'${EOF}'\nbody\n${EOF}`],
+  ['redirect after cd', 'cd teams && echo x > a.md'],
+  ['absolute repo path', `echo x > ${clone}/teams/a.md`],
+]) {
+  check(`write: ${name} -> deny, reason names Read/Edit/Write`, writeDenied(bash(c, clone)))
+}
+check('write: cd into the repo from outside it -> deny', writeDenied(bash(`cd ${clone} && sed -i 's/a/b/' teams/mcp/x.mjs`, root)))
+check('write: sed -i in a linked worktree -> deny', writeDenied(bash("sed -i 's/a/b/' teams/mcp/x.mjs", main)))
+for (const [name, c] of [
+  ['R1 data heredoc into tmp/ naming repo paths', `mkdir -p tmp/d && cat > tmp/d/request.md <<'${EOF}'\ninstall patch rm packages/csv/src/record.mjs\n${EOF}`],
+  ['R2 git commit -F - <<EOF', `git commit -F - <<'${EOF}'\nharness/skills/install/SKILL.md: install patch rm\n${EOF}`],
+  ['R3 pgrep with a repo path', "pgrep -af 'teams/mcp/taskmanager.mjs'"],
+  ['R3 ps with $(pgrep ...)', "ps -o pid,cmd -p $(pgrep -f 'teams/mcp/taskmanager.mjs')"],
+  ['git commit -m "$(cat <<EOF ...)"', `git commit -m "$(cat <<'${EOF}'\nfix teams/mcp/x.mjs\n${EOF}\n)"`],
+  ['git apply, git mv', 'git apply p.diff && git mv a.md b.md'],
+  ['sed without -i', "sed 's/a/b/' teams/mcp/x.mjs"],
+  ['sed -n', "sed -n '1,5p' teams/mcp/x.mjs"],
+  ['cat a repo file', 'cat teams/mcp/x.mjs'],
+  ['pipe to stdout', 'cat teams/mcp/x.mjs | grep a | head -3'],
+  ['grep a repo path', 'grep -n foo teams/mcp/x.mjs'],
+  ['echo mentioning a repo path', 'echo "teams/mcp/x.mjs"'],
+  ['redirect under tmp/', 'echo x > tmp/o.txt'],
+  ['redirect to /tmp', 'echo x > /tmp/o.txt'],
+  ['redirect to a scratchpad outside the repo', `echo x > ${root}/scratch/o.txt`],
+  ['sed -i under tmp/', 'sed -i s/a/b/ tmp/x.txt'],
+  ['sed -i on /tmp', "sed -i 's/a/b/' /tmp/x.txt"],
+  ['sed -i on a gitignored path', "sed -i 's/a/b/' build/out.js"],
+  ['redirect to a gitignored path', 'echo x > build/out.js'],
+  ['check command', 'node _repo/scripts/test-repo-rules.mjs'],
+  ['script run by path', 'node scripts/run.mjs'],
+  ['>/dev/null', 'ls >/dev/null'],
+  ['2>&1', 'ls teams 2>&1'],
+  ['&>/dev/null', 'ls teams &>/dev/null'],
+  ['> /dev/null 2>&1', 'ls teams > /dev/null 2>&1'],
+  ['tee to /tmp', 'ls | tee /tmp/ls.txt'],
+  ['node -e reading a repo file', `node -e "console.log(require('fs').readFileSync('teams/mcp/x.mjs','utf8'))"`],
+  ['node -e writing /tmp from a repo read', `node -e "require('fs').writeFileSync('/tmp/o', require('fs').readFileSync('teams/x','utf8'))"`],
+  ['python -c writing /tmp', `python3 -c "open('/tmp/o','w').write('x')"`],
+  ['python -c reading a repo file', `python3 -c "print(open('teams/x.py').read())"`],
+  ['python heredoc writing tmp/', `python3 - <<'${EOF}'\nopen('tmp/o', 'w').write('x')\n${EOF}`],
+  ['bash heredoc that only reads', `bash <<'${EOF}'\ncat teams/mcp/x.mjs\n${EOF}`],
+]) {
+  check(`write: ${name} -> no deny`, free(bash(c, clone)))
+}
+check('write: sed -i with cwd outside any repo -> no deny', free(bash("sed -i 's/a/b/' teams/mcp/x.mjs", root)))
+check('write: redirect with cwd outside any repo -> no deny', free(bash('echo x > out.txt', root)))
+check('write: cd out of the repo, then sed -i -> no deny', free(bash(`cd ${root} && sed -i 's/a/b/' teams/mcp/x.mjs`, clone)))
+check('write: nonexistent cwd -> fail open', free(bash("sed -i 's/a/b/' teams/mcp/x.mjs", '/nonexistent')))
+check('write: redirect to an unresolved variable -> no deny', free(bash('echo x > "$OUT"', clone)))
+check('write/rm: unbalanced quote -> exit 0', bash("sed -i 's/a/b teams/mcp/x.mjs", clone).code === 0 && bash('rm "$S', clone).code === 0)
+
 check('garbage stdin -> fail open', run('bash', 'not json').code === 0 && Object.keys(run('bash', 'not json').out).length === 0)
 check('bad cwd -> fail open', run('bash', { tool_name: 'Bash', tool_input: { command: 'git commit' }, cwd: '/nonexistent' }).code === 0)
 
