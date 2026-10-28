@@ -3868,8 +3868,13 @@ export function foldChild(task, n) {
   let planningStories = pkg && pkg.phase === 'planning'
     ? (Array.isArray(g.user_stories) ? g.user_stories : []).filter((u) => storyId(u))
     : null;
+  // The goal-level AC-n a PRD run sets (about the document itself) are not a story's behaviour:
+  // a child that copies them into each story's acceptance[] is stripped of them here.
+  const docAcceptance = child.spec && Array.isArray(child.spec.acceptance) ? child.spec.acceptance.filter((x) => typeof x === 'string') : [];
+  const declaredAcceptance = pkg && Array.isArray(pkg.acceptance) ? pkg.acceptance : [];
+  if (planningStories) planningStories = stripDocumentAcceptance(planningStories, docAcceptance, declaredAcceptance);
   if (planningStories && g.accept === true && !planningStories.length) {
-    planningStories = prdStories(n.child ? n.child.cwd : task.cwd, prdPaths());
+    planningStories = stripDocumentAcceptance(prdStories(n.child ? n.child.cwd : task.cwd, prdPaths()), docAcceptance, declaredAcceptance);
   }
   // Same principle as the story check: a structural requirement the contract states in words is
   // verified here rather than trusted to a judge that accepted a PRD missing three of them.
@@ -5549,6 +5554,19 @@ export function prdStories(cwd, paths) {
     if (b) { cur.all.push(b[1].trim()); if (inAcc) cur.acceptance.push(b[1].trim()); }
   }
   return stories.map(({ all, ...st }) => ({ ...st, acceptance: st.acceptance.length ? st.acceptance : all, source: 'prd' }));
+}
+
+// Drops from each story's acceptance[] the criteria that are the run's own goal-level document
+// acceptance (copied verbatim from spec.acceptance), unless the request declared that same text.
+// Pure; stories are mapped, never removed, and one without an acceptance array is left as it is.
+const docAcNorm = (s) => String(s).replace(/^\s*(?:[A-Za-z]\d+-)?AC-\d+(?:\s*\[[^\]]*\])?\s*[:\-–—]?\s*/i, '').replace(/\s+/g, ' ').trim().toLowerCase();
+export function stripDocumentAcceptance(stories, docAcceptance, declared) {
+  const docSet = new Set((docAcceptance || []).map(docAcNorm));
+  const declaredSet = new Set((declared || []).map(docAcNorm));
+  return (stories || []).map((s) => {
+    if (!s || typeof s !== 'object' || !Array.isArray(s.acceptance)) return s;
+    return { ...s, acceptance: s.acceptance.filter((x) => !(docSet.has(docAcNorm(x)) && !declaredSet.has(docAcNorm(x)))) };
+  });
 }
 
 // The floor every planning card's section meets whatever its mode (C3): goal, scope and
