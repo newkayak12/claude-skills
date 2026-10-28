@@ -23,7 +23,7 @@ import { viewRecordPath, readViewRecord } from '../mcp/viewserver.mjs';
 import { docPaths } from '../mcp/tickets.mjs';
 import { collectDriverCosts } from './bench/lib/drivercost.mjs';
 import { hasDeclaredAcceptance, detectDeclaredAcceptance, resolvePlanningMode, renderAcceptanceTemplate } from '../mcp/acceptance.mjs';
-import { hasDeclaredAcceptance as tmHasDeclaredAcceptance, prepareReadyIntegrations, readyToJudge, composeTaskPrompt, __storeHooks } from '../mcp/taskmanager.mjs';
+import { hasDeclaredAcceptance as tmHasDeclaredAcceptance, prepareReadyIntegrations, readyToJudge, composeTaskPrompt, stripDocumentAcceptance, __storeHooks } from '../mcp/taskmanager.mjs';
 import { afterTmCall, beforeTmCall, drivePlanning, completePlanningChild } from './lib/planning-drive.mjs';
 import { mutateTask } from '../mcp/store.mjs';
 import { SCRATCH_RULE } from '../mcp/layout-guard.mjs';
@@ -754,6 +754,60 @@ test("planning cards' PRD sections and user_stories are merged into 10-prd.md an
     assert.doesNotMatch(briefing, /Executive Summary/, 'the PRD body must never be pasted into the briefing - a link only');
     assert.match(briefing, /criterion is OWNERSHIP/, 'shape is told its split is the second one');
   });
+});
+
+test("a planning card's folded user stories lose the goal-level document acceptance the child copied into them, and keep their own behaviour criteria", async () => {
+  const AC1 = 'AC-1: Given the PRD section for feature area F1, When a reader opens it, Then it states its goal, scope and user stories.';
+  const AC2 = 'AC-2: Given the F1 section, When a reader looks for settled rules, Then they appear as rules.';
+  const OWN = 'F1-AC-1: Given a visitor signs up, When they submit the form, Then an account exists';
+  await withTask(async ({ tm, g, root, task_id }) => {
+    let v = await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['ls -> 2 modules'], handoff: 'two modules' }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    v = await tm.call('tm_submit', { task_id, node_id: 'areas', payload: ok({ areas: [{ title: 'sign-up', brief: 'a visitor signs up' }] }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    const nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.children.map((c) => c.package_id), ['PLAN-F1'], JSON.stringify(nx));
+    const child = nx.children[0];
+    const sub = (node_id, payload) => g.call('team_submit', { run_id: child.run_id, cwd: child.cwd, node_id, payload: ok(payload) });
+    await sub('plan', { handoff: 'p', flow: 'plan', size: 'S' });
+    await sub('setgoal', { spec: { goal: 'PRD', acceptance: [AC1, AC2], subgoals: [{ id: 'U1', title: 'draft PRD', acceptance: ['PRD written'], deps: [] }] } });
+    await sub('critique', { sound: true });
+    mkdirSync(join(child.cwd, 'docs'), { recursive: true });
+    writeFileSync(join(child.cwd, 'docs', 'PRD.md'), `# PRD\n\n${PRD_FIXTURE}\n`);
+    await sub('investigate:U1:1', { changed_files: [], handoff: 'findings' });
+    await sub('draft:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'drafted' });
+    await sub('revise:U1:1', { changed_files: ['docs/PRD.md'], handoff: 'revised' });
+    await sub('gate:U1:1', { accept: true, match_pct: 95 });
+    await sub('gate:goal:1', { accept: true, match_pct: 95, user_stories: [
+      { id: 'F1-US-1', title: 'sign up', acceptance: [AC1, AC2, OWN] },
+      { id: 'F1-US-2', title: 'sign in', acceptance: [AC1, AC2, 'F1-AC-2: Given an account, When they sign in, Then a session starts'] },
+    ] });
+    await sub('report', { handoff: 'PRD complete' });
+    const folded = await tm.call('tm_submit', { task_id, node_id: `dispatch:${child.package_id}:1` });
+    assert.equal(folded.state, 'done', JSON.stringify(folded));
+    const foldedTask = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const stories = foldedTask.nodes.find((n) => n.node_id === 'dispatch:PLAN-F1:1').result.user_stories;
+    assert.deepEqual(stories.map((u) => u.id), ['F1-US-1', 'F1-US-2']);
+    assert.deepEqual(stories[0].acceptance, [OWN], 'only the behaviour criterion is left');
+    assert.deepEqual(stories[1].acceptance, ['F1-AC-2: Given an account, When they sign in, Then a session starts']);
+  });
+});
+
+test('stripDocumentAcceptance keeps a declared criterion that repeats a document one, and leaves an all-document story with an empty acceptance array', () => {
+  const doc = ['AC-1: Given the PRD, When read, Then it has a goal.', 'AC-2 [x]: Given the F1  section, When read, Then rules appear.', 'A1.1: Given a visitor, When they sign up, Then an account exists'];
+  const declared = ['A1.1: Given a visitor, When they sign up, Then an account exists'];
+  const out = stripDocumentAcceptance([
+    { id: 'F1-US-1', title: 't', acceptance: ['F1-AC-1: Given the PRD, When read, Then it has a goal.', 'AC-2 - given the f1 section, when read, then rules appear.', declared[0], 'Given a x, When y, Then z'] },
+    { id: 'F1-US-2', title: 'u', acceptance: ['AC-1: Given the PRD, When read, Then it has a goal.'] },
+    { id: 'F1-US-3', title: 'v' },
+    'F1-US-4',
+  ], doc, declared);
+  assert.deepEqual(out[0].acceptance, [declared[0], 'Given a x, When y, Then z'], 'a declared entry survives, a document one goes');
+  assert.deepEqual(out[1], { id: 'F1-US-2', title: 'u', acceptance: [] }, 'the story stays, its acceptance array is empty');
+  assert.deepEqual(out[2], { id: 'F1-US-3', title: 'v' }, 'no acceptance array: unchanged');
+  assert.equal(out[3], 'F1-US-4', 'a non-object story is unchanged');
+  assert.equal(out.length, 4, 'stories are mapped, never removed');
+  assert.deepEqual(stripDocumentAcceptance([{ id: 'F1-US-1', acceptance: ['AC-1: a'] }], [], []), [{ id: 'F1-US-1', acceptance: ['AC-1: a'] }]);
 });
 
 test('tm_open({size}) pins the size: L opens the plan stage without measuring, S goes straight to the development harness (S1)', async () => {
