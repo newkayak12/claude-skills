@@ -41,6 +41,10 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
       nodes out of retries; QA defects filed vs dropped (card 88), test count baseline → now, out-of-scope
       writes. Each shows on the Home/STORYs tabs at 190 and 110 columns without wrapping; tests in
       `test-view-summary.mjs`; one live look approved by the user.
+    - Shipped `110de5ff` (E-692f3092, 2026-10-28; teams 1610/1610, plugin test 381/381). Live look on E-fa72c6e8
+      (pane 86 cols) found three defects, not yet approved: (1) STORYs title cut to ~10 chars plus a stray
+      "->…", reason cut to 3 chars ("Eve…"); (2) a story re-run after `tm_retry` repackage reads "rejected 3/3"
+      on STORYs while Home lists it "In progress"; (3) "judge 93 vs 90" with "rejected" and no visible why.
 
 84. **The teams pane is a real dashboard on every surface: Ink on the terminal, Svg on desktop, mobile and vscode** — both terminal defects fixed `7e051a4b` (E-8b9c417d; live look 2026-10-28: Plan ✔, no digits after 2 1 0); left: phone/desktop look
     - Why: user, 2026-10-26, after `/teams-status` over Remote Control showed a 42-row text dump on the phone:
@@ -166,6 +170,9 @@ toasts).
       implement:U1:1 and :2 could not reproduce the defect and the node asked a person which base to use
       (answered: merge `teams/priority-rule-names-what/integration`). D1-D4 passed, likely because their
       fixes did not need P2's code (unverified).
+    - Same Sprint, integrate:2 then failed: "merge of D2 conflicts on .claude/hooks/repo-rules.mjs,
+      _repo/scripts/test-repo-rules.mjs with P2" — D2 fixed P2's code from a main-based worktree. Retried with
+      `tm_retry({repackage: ["D2","P2"]})`, $~38 spent by then.
     - Acceptance: a QA/audit-filed defect package's worktree branches from the integration commit QA ran on
       (test in `test-taskmanager.mjs`).
 
