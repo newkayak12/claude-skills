@@ -169,6 +169,22 @@ function words(seg) {
   return out
 }
 
+// Wrapper words that run the next command, with the options that take a value; `command -v/-V` only looks up.
+const WRAPPERS = { sudo: /^-[ughpCDRTU]$/, env: /^-[uCS]$/, exec: /^-a$/, time: /^-[fo]$/, command: null, nohup: null }
+// Drops leading `VAR=` words, shell keywords (`do rm`, `then sed -i`), a `(` / `{` group opener and wrapper
+// words with their own options, so args[0] is the wrapped command.
+const KEYWORDS = /^(?:if|then|else|elif|do|while|until|!)$/
+function unwrap(args) {
+  for (;;) {
+    while (args.length && (/^\w+=/.test(args[0].text) || KEYWORDS.test(args[0].text) || /^[({]+$/.test(args[0].text))) args.shift()
+    if (args.length && /^[({]+./.test(args[0].text)) args[0] = { ...args[0], text: args[0].text.replace(/^[({]+/, '') }
+    const w = args.length ? basename(args[0].text) : ''
+    if (!Object.hasOwn(WRAPPERS, w) || (w === 'command' && args.some(a => /^-[a-z]*[vV]/.test(a.text)))) return
+    args.shift()
+    while (args.length && args[0].text.startsWith('-')) args.splice(0, WRAPPERS[w]?.test(args[0].text) ? 2 : 1)
+  }
+}
+
 // A segment's argument words and its `>` / `>>` target words (a heredoc delimiter or `<` target is neither).
 function parse(seg) {
   const toks = words(seg), args = [], writes = []
@@ -200,6 +216,7 @@ function heredocs(cmd) {
 
 const codePaths = code => WRITE_CALLS.flatMap(re => [...code.matchAll(re)].map(m => m[2]))
 
+// The reason names the fix with the variable's own name, e.g. "${S:?}" for $S.
 function rmDeny(name, rest) {
   if (name !== 'rm') return null
   for (const a of rest) {
@@ -255,7 +272,7 @@ function bashDeny(cmd, cwd, env, run) {
     const { head, docs } = heredocs(text)
     for (const seg of segments(head.replace(/\d*[<>]&(?:\d+|-)/g, ' ').replace(/&>>?/g, '>'))) {
       const { args, writes } = parse(seg)
-      while (args.length && /^\w+=/.test(args[0].text)) args.shift()
+      unwrap(args)
       const name = args.length ? basename(args[0].text) : ''
       const rest = args.slice(1)
       if (name === 'git') continue
