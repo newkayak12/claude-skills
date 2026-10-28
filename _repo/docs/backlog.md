@@ -11,6 +11,34 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
 
 ### Mods and naming — UI first (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
 
+93. **teams web viewer gets a Town tab: an isometric pixel office where each node works as a character**
+    - Why: user, 2026-10-28: "https://github.com/rafapetter/agent-town 이거 느낌 UI로 visualiazation",
+      "teams에 할 수 있지 않아?", and a reference image (isometric pixel office: people at desks with CRT
+      monitors, coffee bar, speech bubbles `</>!`, `λ→`, 💡) — "teams에 이런 느낌으로". agent-town: one
+      `<canvas>`, procedural pixel art (no sprite sheets), integer zoom with smoothing off, rAF loop, BFS
+      walking between rooms, speech bubbles. Supersedes for this view the 2026-10-26 "캐릭터를 그리라는 소리는
+      아냐" (that was the mod pane; the user asks for characters here).
+    - Where: the `view.mjs` server page (`view_url`), a Town tab beside the existing views; data from the
+      same `/state.json`. The terminal pane stays Ink (no pixels in a terminal); the Remote Control app is not a
+      mod surface (card 74), so no pane there.
+    - Acceptance: isometric floor with one desk zone per stage (Plan, Build, Integrate, QA, Gate, Report) and
+      a coffee corner for idle; each live node (size/shape/critique, PLAN-Fn, Pn, QA, AUDIT, judge) is a
+      procedurally coloured pixel character that walks to its stage's desk when it starts, types while running,
+      shows a bubble with what it does (`</>` build, `λ→` plan, 🔍 QA, ⚖ judge), ✔/✘ on accept/reject, 💤 when
+      stalled, and leaves when done; crisp at any size (integer zoom); no runtime dependency, no external image;
+      a node-side test of the scene model (who sits where from a state.json fixture) and one live look with a
+      screenshot of a real running task. Quality bar: the reference image — not boxes with names.
+
+94. **teams-status shows the numbers that explain a run: attempts and judge scores, cost and time, stalls, quality**
+    - Why: user, 2026-10-28: "teams-status 조금 더 의미있는 지표 노출해서 개선해야겠더라". In E-8b9c417d the
+      pane showed P2 "failed" three times; why (judge 88/90, "belongs to P3") was only in the ledger.
+    - Acceptance (computed in node, `view-summary.mjs`; the mod renders it): per STORY attempt n/max, last judge
+      score vs threshold and its one-line reason; cost and wall time per STORY and stage, retry spend apart,
+      spend vs budget when set; stalled drivers (minutes since progress), live drivers vs cap, tool denials,
+      nodes out of retries; QA defects filed vs dropped (card 88), test count baseline → now, out-of-scope
+      writes. Each shows on the Home/STORYs tabs at 190 and 110 columns without wrapping; tests in
+      `test-view-summary.mjs`; one live look approved by the user.
+
 84. **The teams pane is a real dashboard on every surface: Ink on the terminal, Svg on desktop, mobile and vscode** — both terminal defects fixed `7e051a4b` (E-8b9c417d; live look 2026-10-28: Plan ✔, no digits after 2 1 0); left: phone/desktop look
     - Why: user, 2026-10-26, after `/teams-status` over Remote Control showed a 42-row text dump on the phone:
       "이따위로 나올거면 뭣하러 하냐", "Claude desktop app에서 UI 그릴 수 있는걸로 아는데", "mobile도 그렇고",
