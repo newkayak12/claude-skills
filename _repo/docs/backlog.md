@@ -158,6 +158,12 @@ toasts).
     - Acceptance (left): one real L run whose PRD has no "Given the PRD section" criterion; a paraphrase case
       either caught or named as a limit in the PRD gate.
 
+99. **The repo hook's write refusal applies to this repo only, not any git repo**
+    - Why: E-fa72c6e8 (2026-10-28) D11 built a scratch git repo under `/tmp` and `printf … > notes.txt` there
+      was refused ("notes.txt, a repo file"); replayed against the current hook on 2026-10-28, still a deny.
+      The rule governs claude-skills files; a scratch repo is not one.
+    - Acceptance: a write into a git repo whose common dir is not this repo's passes (test in
+      `_repo/scripts/test-repo-rules.mjs`); writes into this repo and its linked worktrees still deny.
 
 75. **smart-compact fires on the same context % the person sees in the status line** — part in E-3f6657e7 (6d5809b2)
     - 2026-10-26: smart-compact now computes `round((input + cache_creation + cache_read) / window * 100)`, the
