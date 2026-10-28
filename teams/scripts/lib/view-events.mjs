@@ -148,13 +148,13 @@ export function handoffs(lines, { limit = 5 } = {}) {
   return out.sort((a, b) => b.ts - a.ts).slice(0, limit).map(({ ts, ...h }) => h);
 }
 
-// The newest verdict recorded for each card (by subgoal_id): { P1: { verdict, ts } }.
+// The newest verdict recorded for each card (by subgoal_id): { P1: { verdict, ts, attempt } }.
 export function lastVerdicts(lines) {
   const out = {};
   for (const e of parsed(lines)) {
     if (e.event !== 'verdict' || e.subgoal_id == null) continue;
     const id = String(e.subgoal_id);
-    if (!out[id] || e.ts >= out[id].ts) out[id] = { verdict: e.verdict ?? null, ts: e.ts };
+    if (!out[id] || e.ts >= out[id].ts) out[id] = { verdict: e.verdict ?? null, ts: e.ts, attempt: typeof e.attempt === 'number' ? e.attempt : null };
   }
   return out;
 }

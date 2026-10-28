@@ -277,8 +277,32 @@ test('metrics: attempt n of max, capped at max_retries + 1; a never-run STORY is
 
 test('metrics: the last judge score against the threshold, and its reason without node ids or paths', () => {
   const x = metrics(withTelemetry({ judge: { P2: { score: 85, reason: 'accept:P2:3 failed in /tmp/x/y: the footer is not cleared', attempt: 3 } } }), { now: NOW });
-  assert.deepEqual(story(x, 'P2').judge, { score: 85, threshold: 90, reason: 'failed in the footer is not cleared' });
+  assert.deepEqual(story(x, 'P2').judge, { score: 85, threshold: 90, reason: 'failed in the footer is not cleared', gap: null });
   assert.equal(x.threshold, 90);
+});
+
+test('metrics: a repackaged story counts its attempt from the new shape and its old verdict is stale', () => {
+  const repackaged = {
+    ...card('P2', 'module b', 'running', { ticket_key: 'E-3a3a3bb5/P2', attempt: 4, round_first_attempt: 4 }),
+    dispatch: ms('dispatch:P2:4', 'running', { started_at: NOW - MIN }), accept: ms('accept:P2:4', 'pending'),
+  };
+  const m = withTelemetry({ judge: { P2: { score: 60, reason: 'old shape', attempt: 3, verdict: 'reject' } } });
+  m.packages[1] = repackaged;
+  const p2 = story(metrics(m, { now: NOW }), 'P2');
+  assert.equal(p2.attempt, 1, 'dispatch :4 after a 3-attempt shape is attempt 1');
+  assert.equal(p2.state, 'running');
+  assert.equal(p2.judge, null, 'a verdict before round_first_attempt is stale');
+  // a verdict of the current shape still shows
+  m.telemetry.judge.P2.attempt = 4;
+  assert.equal(story(metrics(m, { now: NOW }), 'P2').judge.score, 60);
+});
+
+test('metrics: a reject at or above the threshold carries the deciding gap, scrubbed; below it gap is null', () => {
+  const m = withTelemetry({ judge: { P2: { score: 90, reason: 'close', attempt: 3, verdict: 'reject' } } });
+  m.packages[1].accept.gaps = ['accept:P2:3 export at /tmp/x/y is not cleared', 'second gap'];
+  assert.equal(story(metrics(m, { now: NOW }), 'P2').judge.gap, 'export at is not cleared');
+  m.telemetry.judge.P2.score = 85;
+  assert.equal(story(metrics(m, { now: NOW }), 'P2').judge.gap, null);
 });
 
 test('metrics: cost and wall time per STORY and per stage, with retry spend apart from cost_usd', () => {

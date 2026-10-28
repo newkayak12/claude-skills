@@ -151,15 +151,20 @@ export const handoffCells = (feed: readonly Handoff[]): string[][] => feed.slice
 
 export type StoryCells = { cells: string[]; tints: (Tint | 'dim' | undefined)[] }
 
-const REASON_MAX = 60
+export type StoryRow = StoryCells & { note: string }
 
-// marker · icon · title · doing · verdict · attempt n/max · judge score vs threshold · cost · retry spend · wall · reason ·
-// harness (an S task's stages and run). The recorded numbers (item.metrics) win over the live ones; an item with none
-// (an S task) keeps its try/max, elapsed and cost. `judge` words the score (localized by the caller).
+const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim()
+
+// Line 1: marker · icon · title · doing · verdict · attempt n/max · judge score vs threshold · cost · retry spend · wall ·
+// harness (an S task's stages and run). Line 2 (`note`): the gap the judge named when it rejected at or above the
+// threshold (`gapWord` words it), else its reason; whole, the caller clips it. The recorded numbers (item.metrics) win
+// over the live ones; an item with none (an S task) keeps its try/max, elapsed and cost. `judge` words the score
+// (localized by the caller).
 export function storyCells(
   item: SummaryItem, verdict: string, harness: string, selected: boolean, fixed: (key: string) => string,
   judge: (score: number, threshold: number | null) => string = (score, threshold) => `judge ${score}${threshold === null ? '' : ` vs ${threshold}`}`,
-): StoryCells {
+  gapWord: (gap: string) => string = gap => `own gap: ${gap}`,
+): StoryRow {
   const m = item.metrics ?? null
   const j = m?.judge ?? null
   const retry = m?.retry_cost_usd ?? 0
@@ -174,14 +179,14 @@ export function storyCells(
       recorded ? costText(m.cost_usd ?? 0, false) : costText(item.cost_usd, item.cost_estimated),
       retry > 0 ? `+${costText(retry, false)}` : '',
       since(m !== null && (m.wall_ms ?? 0) > 0 ? m.wall_ms : item.elapsed_ms),
-      j?.reason ? clipText(j.reason.replace(/\s+/g, ' ').trim(), REASON_MAX) : '',
       harness,
     ],
-    tints: [undefined, TINT[item.state], undefined, undefined, undefined, m?.out_of_retries ? 'error' : undefined, over, 'dim', 'dim', 'dim', 'dim', 'dim'],
+    tints: [undefined, TINT[item.state], undefined, undefined, undefined, m?.out_of_retries ? 'error' : undefined, over, 'dim', 'dim', 'dim', 'dim'],
+    note: j?.gap ? gapWord(oneLine(j.gap)) : j?.reason ? oneLine(j.reason) : '',
   }
 }
-// the harness text gives way first, then doing, then the reason, then the title
-export const STORY_SHRINK = [11, 3, 10, 2] as const
+// the harness text gives way first, then doing, then the title; the second line (note) is clipped by the caller
+export const STORY_SHRINK = [10, 3, 2] as const
 
 export type Say = (key: string, vars?: Record<string, string | number>) => string
 
