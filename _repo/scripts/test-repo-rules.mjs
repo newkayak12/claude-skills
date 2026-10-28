@@ -226,6 +226,15 @@ check('rm: rm -f $S/*.p2 -> deny, reason names "${S:?}"', rmDenied(bash('rm -f $
 check('rm: rm -rf ${S}/x -> deny', rmDenied(bash('rm -rf ${S}/x', clone)))
 check('rm: unquoted var after && in a chain -> deny', rmDenied(bash('cd d && rm -f $S/*.p2', clone)))
 check('rm: unquoted var on the second line of a command -> deny', rmDenied(bash('ls\nrm -f $S/*.p2', clone)))
+check('rm: rm -f ${S}/*.p2 -> deny', rmDenied(bash('rm -f ${S}/*.p2', clone)))
+for (const c of ['true; rm -f $S/*.p2', 'S=1 rm -f $S/x', 'sudo rm -f $S/x', 'sudo -u root rm -f $S/x', 'command rm -f $S/x',
+  'env A=1 rm -f $S/x', 'nohup rm -f $S/x', 'time rm -f $S/x', 'exec rm -f $S/x', 'A=1 sudo env B=2 rm -f $S/x',
+  'for f in a b; do rm -f $S/$f; done', 'if true; then rm -f $S/x; fi', '(rm -f $S/x)', '{ rm -f $S/x; }', '! rm -f $S/x']) {
+  check(`rm: ${c} -> deny`, rmDenied(bash(c, clone)))
+}
+for (const c of ['sudo rm -f "${S:?}"/x', 'env A=1 rm "${S:?}"/x', 'command -v rm', 'sudo rm $(cmd)', 'S=1 rm -f "$S"/x']) {
+  check(`rm: ${c} -> no deny`, free(bash(c, clone)))
+}
 for (const c of ['rm -f "${S:?}"/*.p2', 'rm "$S"', 'rm ${S:?}/x', 'rm $(cmd)', 'rm $1', 'rm $@', 'rm -f x.p2',
   'find . -exec rm {} +', 'find . -name x | xargs rm', 'git rm $F', 'git commit -m "rm -f $S"', 'echo "rm $S"', "echo 'rm $S'"]) {
   check(`rm: ${c} -> no deny`, free(bash(c, clone)))
@@ -257,6 +266,26 @@ for (const [name, c] of [
   ['tee file <<EOF', `tee teams/a.md <<'${EOF}'\nbody\n${EOF}`],
   ['redirect after cd', 'cd teams && echo x > a.md'],
   ['absolute repo path', `echo x > ${clone}/teams/a.md`],
+  ['perl -i -pe', "perl -i -pe 's/a/b/' teams/mcp/x.mjs"],
+  ['cd x && sed -i', "cd teams && sed -i 's/a/b/' mcp/x.mjs"],
+  ['true; sed -i', "true; sed -i 's/a/b/' teams/mcp/x.mjs"],
+  ['VAR=1 sed -i', "A=1 sed -i 's/a/b/' teams/mcp/x.mjs"],
+  ['sudo sed -i', "sudo sed -i 's/a/b/' teams/mcp/x.mjs"],
+  ['sudo -u root sed -i', "sudo -u root sed -i 's/a/b/' teams/mcp/x.mjs"],
+  ['command sed -i', "command sed -i 's/a/b/' teams/mcp/x.mjs"],
+  ['env A=1 sed -i', "env A=1 sed -i 's/a/b/' teams/mcp/x.mjs"],
+  ['nohup sed -i', "nohup sed -i 's/a/b/' teams/mcp/x.mjs"],
+  ['time sed -i', "time sed -i 's/a/b/' teams/mcp/x.mjs"],
+  ['exec sed -i', "exec sed -i 's/a/b/' teams/mcp/x.mjs"],
+  ['VAR=1 env sed -i', "A=1 env B=2 sed -i 's/a/b/' teams/mcp/x.mjs"],
+  ['env python3 -c write', `env A=1 python3 -c "open('teams/x.py','w').write('')"`],
+  ['cat <<EOF > file', `cat <<'${EOF}' > teams/mcp/x.mjs\nbody\n${EOF}`],
+  ['echo | tee file', 'echo x | tee teams/mcp/x.mjs'],
+  ['echo >> file', 'echo x >> teams/mcp/x.mjs'],
+  ['sudo tee file', 'echo x | sudo tee teams/mcp/x.mjs'],
+  ['do sed -i in a loop', "for f in a; do sed -i 's/a/b/' teams/mcp/x.mjs; done"],
+  ['then redirect', 'if true; then echo x > teams/a.md; fi'],
+  ['subshell sed -i', "(sed -i 's/a/b/' teams/mcp/x.mjs)"],
 ]) {
   check(`write: ${name} -> deny, reason names Read/Edit/Write`, writeDenied(bash(c, clone)))
 }
@@ -271,6 +300,10 @@ for (const [name, c] of [
   ['git apply, git mv', 'git apply p.diff && git mv a.md b.md'],
   ['sed without -i', "sed 's/a/b/' teams/mcp/x.mjs"],
   ['sed -n', "sed -n '1,5p' teams/mcp/x.mjs"],
+  ['sudo sed -i under tmp/', "sudo sed -i 's/a/b/' tmp/x.txt"],
+  ['env sed -i on /tmp', "env A=1 sed -i 's/a/b/' /tmp/x.txt"],
+  ['sudo sed without -i', "sudo sed 's/a/b/' teams/mcp/x.mjs"],
+  ['command -v sed', 'command -v sed'],
   ['cat a repo file', 'cat teams/mcp/x.mjs'],
   ['pipe to stdout', 'cat teams/mcp/x.mjs | grep a | head -3'],
   ['grep a repo path', 'grep -n foo teams/mcp/x.mjs'],
@@ -304,6 +337,14 @@ check('write: cd out of the repo, then sed -i -> no deny', free(bash(`cd ${root}
 check('write: nonexistent cwd -> fail open', free(bash("sed -i 's/a/b/' teams/mcp/x.mjs", '/nonexistent')))
 check('write: redirect to an unresolved variable -> no deny', free(bash('echo x > "$OUT"', clone)))
 check('write/rm: unbalanced quote -> exit 0', bash("sed -i 's/a/b teams/mcp/x.mjs", clone).code === 0 && bash('rm "$S', clone).code === 0)
+
+{
+  const { decide } = await import(hook)
+  const boom = () => { throw new Error('git broke') }
+  const d = c => decide('bash', { tool_name: 'Bash', tool_input: { command: c }, cwd: clone }, process.env, boom)
+  check('write: git failing inside the detector -> fail open', Object.keys(d("sed -i 's/a/b/' teams/mcp/x.mjs")).length === 0)
+  check('rm: the rm deny needs no git (still denies when git fails)', d('rm -f $S/x').hookSpecificOutput?.permissionDecision === 'deny')
+}
 
 check('garbage stdin -> fail open', run('bash', 'not json').code === 0 && Object.keys(run('bash', 'not json').out).length === 0)
 check('bad cwd -> fail open', run('bash', { tool_name: 'Bash', tool_input: { command: 'git commit' }, cwd: '/nonexistent' }).code === 0)
