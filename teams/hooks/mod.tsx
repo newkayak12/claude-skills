@@ -20,6 +20,8 @@ const tasks = atom({ plugin: 'teams', key: 'tasks' } as const, [] as SummaryTask
 const taskIds = atom({ plugin: 'teams', key: 'taskIds' } as const, [] as string[])
 const epic = atom({ plugin: 'teams', key: 'epic' } as const, null as string | null)
 const row = atom({ plugin: 'teams', key: 'row' } as const, 0)
+// the pane Input's text: drawn as its value, so a handled key can draw '' and the host drops what was typed
+const typed = atom({ plugin: 'teams', key: 'typed' } as const, '')
 // the spinner frame beside an acting worker; moved by the 800 ms clock only while a worker acts
 const frame = atom({ plugin: 'teams', key: 'frame' } as const, 0)
 // the report of one task: keyed to the task it was fetched for, so a card or tab never draws another's
@@ -456,6 +458,18 @@ export const register: Register = on => {
     const task = held !== null && entry !== undefined && held.key !== entry.key ? null : held
     const info = await read($, status)
     const inner = Math.max(20, (e.props.bodyColumns ?? 80) - 4)
+    // the Input draws what it holds: every edit is stored, and a handled key stores '' so the host drops the whole
+    // buffer (text holding a `/` is no key: it stays until Enter). The store is a state update, so the pane redraws.
+    const buffer = await read($, typed)
+    const keep = (handle: (text: string) => Promise<void>) => async (text: string) => {
+      await update($, typed, () => text)
+      if (paneKey(text) === null) return
+      try {
+        await handle(text)
+      } finally {
+        await update($, typed, () => '')
+      }
+    }
 
     // said once, as the footer's last item
     // (no Button hotkey: the pane's Input holds the focus and takes `q` and `1`-`5` as text, see onKey)
@@ -486,7 +500,7 @@ export const register: Register = on => {
           {/* the empty view has no tabs to pick: its Input takes `q` only, so the pane closes on the key as it does elsewhere */}
           {id === undefined && carriesInput(e.surface) && (
             <Box height={1} overflow="hidden">
-              <Input key="keys" autoFocus value="" placeholder="" onInput={async (text: string) => { if (paneKey(text)?.kind === 'close') await $.ui.close({ id: PANE }) }} onSubmit={async () => {}} />
+              <Input key="keys" autoFocus value={buffer} placeholder="" onInput={keep(async text => { if (paneKey(text)?.kind === 'close') await $.ui.close({ id: PANE }) })} onSubmit={async () => {}} />
             </Box>
           )}
           {close}
@@ -568,7 +582,7 @@ export const register: Register = on => {
       <Box columnGap={2}>
         {listed.length > 1 && <Button key="prev" plain label={s('prev')} onPress={() => cycle(-1)} />}
         {listed.length > 1 && <Button key="next" plain label={s('next')} onPress={() => cycle(1)} />}
-        {carriesInput(e.surface) && <Box flexShrink={1} height={1} overflow="hidden"><Input key="keys" autoFocus value="" placeholder={footerHint} onInput={onKey} onSubmit={onSubmit} /></Box>}
+        {carriesInput(e.surface) && <Box flexShrink={1} height={1} overflow="hidden"><Input key="keys" autoFocus value={buffer} placeholder={footerHint} onInput={keep(onKey)} onSubmit={async (text: string) => { await onSubmit(text); await update($, typed, () => '') }} /></Box>}
         {openHint !== '' && <Text dimColor={!canOpen}>{openHint}</Text>}
         <Box flexShrink={0}>{close}</Box>
       </Box>
