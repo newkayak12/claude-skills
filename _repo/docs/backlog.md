@@ -123,13 +123,12 @@ toasts).
     - Acceptance (left): one real L run whose PRD has no "Given the PRD section" criterion; a paraphrase case
       either caught or named as a limit in the PRD gate.
 
-88. **QA and audit file a defect only with a run that proves it** (from cursor/plugins pstack `/interrogate`) — in E-0ad09a55
-    - Why: 2026-10-27 benchmark of pstack and gstack (user: "둘 다 벤치마킹할 점 찾기위해 분석", "가져올 점
-      정리해서"). pstack keeps a finding only when its command, rerun, prints the failure; E-57170ac9 filed
-      11 defects (D1-D11) that were work missing because of the tool-denied bug, not product failures.
-    - Acceptance: a QA/audit defect without `repro` (command + observed output + expected) is refused by the
-      engine (test in `test-taskmanager.mjs`); the engine reruns `repro` on the integration tree and drops a
-      defect whose command passes; the report lists dropped ones with the reason.
+88. **Audit unmet items carry a runnable repro too; a dropped defect stays dropped on rescue/retry** (rest of card 88)
+    - Why: E-0ad09a55 (2026-10-28) shipped the repro gate (`reproGate`, 12668c8f) for QA defects and audit
+      unmet items; its report: "Nothing in the engine requires audit unmet items to be runnable, and no test
+      covers a dropped defect re-entering through rescue or retry."
+    - Acceptance: an audit unmet item without a runnable repro is refused like a QA defect (test); a test that
+      a dropped defect does not come back through rescue or retry.
 
 89. **The gate names every hunk that weakens a test** (from garrytan/gstack `review/gate-integrity.md`)
     - Why: same benchmark, 2026-10-27. gstack tags a removed or skipped test, a snapshot regenerated without
@@ -311,3 +310,4 @@ toasts).
 | E-861e1089 | 2026-10-28 | 87 (part) | shipped `eb3a1c49`; size S; document criteria filtered from the PRD stories by exact text; teams 1567/1567; ~$3 |
 | E-db523454 | 2026-10-28 | 92 | shipped `f5a54fe8`; size S; goal gate 96; "claims every user story" needs 2+ stories; teams 1568/1568; ~$2 |
 | E-8b9c417d | 2026-10-28 | 84 (two defects) | shipped `7e051a4b`; P1 accepted; P2 met its own acceptance but rejected 3× for P3's live look (card 91), taken from its branch; live look done in session; integration branch held QA scratch under `test/` (0.60.1 engine, card 86 fix not installed) — not merged; teams 1570/1570, plugin test 375/375; $27.5 |
+| E-0ad09a55 | 2026-10-28 | 88 (part) | shipped `12668c8f`; size S; goal gate 90; repro gate for QA defects and audit unmet (rerun in the integration tree, a passing one dropped); teams 1577/1577; $3.72 |
