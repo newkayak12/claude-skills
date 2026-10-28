@@ -6101,6 +6101,35 @@ test('implements[] must be an ownership claim: not empty, and not all of them', 
   assert.deepEqual(validateShape({ ...base, packages: [pkg('P1', []), pkg('P2', [])] }, null), []);
 });
 
+// With one story the sole implementer always "claims every story", so the rule could not be told
+// from "delivers the story" and refused a shape whose other package only enables it. It holds
+// for two or more stories.
+test('claims-every-story needs two or more stories; one story is not a claim of everything', async () => {
+  const { validateShape } = await import('../mcp/taskmanager.mjs');
+  const one = [{ id: 'US-1', title: 'a', acceptance: ['x'] }];
+  const three = [{ id: 'US-1', title: 'a', acceptance: ['x'] }, { id: 'US-2', title: 'b', acceptance: ['y'] }, { id: 'US-3', title: 'c', acceptance: ['z'] }];
+  const pkg = (id, impl, enables) => ({ id, title: id, brief: 'b', acceptance: ['a'], implements: impl, enables, deps: [] });
+  const base = { acceptance: ['the integrated app boots'] };
+
+  // (a) the one story is delivered by P1, P2 only enables it
+  assert.deepEqual(validateShape({ ...base, packages: [pkg('P1', ['US-1']), pkg('P2', [], ['US-1'])] }, one), []);
+
+  // (b) one package is still refused
+  const single = validateShape({ ...base, packages: [pkg('P1', ['US-1'])] }, one);
+  assert.equal(single.filter((x) => /shape has one package/.test(x)).length, 1, JSON.stringify(single));
+
+  // (c) the other ownership rules still hold with one story
+  const none = validateShape({ ...base, packages: [pkg('P1', ['US-1']), pkg('P2', [])] }, one);
+  assert.equal(none.filter((x) => /P2 implements no user story/.test(x)).length, 1, JSON.stringify(none));
+  const unclaimed = validateShape({ ...base, packages: [pkg('P1', [], ['US-1']), pkg('P2', [], ['US-1'])] }, one);
+  assert.equal(unclaimed.filter((x) => /user stories not implemented by any package: US-1/.test(x)).length, 1, JSON.stringify(unclaimed));
+
+  // (d) three stories: claiming all three is refused once, a subset draws nothing
+  const all = validateShape({ ...base, packages: [pkg('P1', ['US-1', 'US-2', 'US-3']), pkg('P2', ['US-3'])] }, three);
+  assert.equal(all.filter((x) => /P1 claims every user story/.test(x)).length, 1, JSON.stringify(all));
+  assert.equal(all.filter((x) => /P2/.test(x)).length, 0, 'a package that claims a subset is the normal case');
+});
+
 // Rule one asks for a package that owns the composition root; the coverage check then refused
 // it for delivering no story. idol-pm-4 (2026-09-23): shape pinned US-7 on its foundation to
 // pass, and shape:2, which did not, was rejected for P1 and P7 having no story.
