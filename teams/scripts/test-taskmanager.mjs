@@ -6368,6 +6368,108 @@ test('an accept under the floor fails only when the judge named a gap', async ()
   assert.equal(succeeded(task, { stage: 'gate', node_id: 'gate:goal:1' }, r({ match_pct: 88, gaps: [] })), false, 'the goal gate keeps the plain floor');
 });
 
+// A gap that belongs to another package is not this package's shortfall: scopeGaps moves it to
+// observations before the floor decision, so an 88 with only that gap settles accepted. Rules:
+// belongs_to is 'none' (nobody's, e.g. out of the goal) or a sibling package id; self, an unknown
+// id, or a phase/repair package are invalid and the gap stays; a gap text shorter than 8 characters
+// is too loose to match on and stays. match_pct and accept are never touched.
+test('scopeGaps: a gap that belongs to a sibling or to none moves to observations; anything else stays', async () => {
+  const { succeeded, scopeGaps } = await import('../mcp/taskmanager.mjs');
+  const task = {
+    goal_threshold: 90,
+    spec: { packages: [{ id: 'P2', deps: ['P1'] }, { id: 'P3', deps: [] }, { id: 'PLAN-F1', phase: 'planning' }, { id: 'R1', repair: true }] },
+  };
+  const n = { stage: 'accept', node_id: 'accept:P2:1', subgoal_id: 'P2' };
+  const r = (extra) => ({ stage_ok: true, accept: true, match_pct: 88, checks: ['npm test -> 79/79'], ...extra });
+  const settle = (res) => succeeded(task, n, scopeGaps(task, n, res));
+
+  const sibling = r({ gaps: ['the export path is not exercised end to end'], out_of_scope: [{ gap: 'the export path is not exercised', belongs_to: 'P3' }] });
+  const moved = scopeGaps(task, n, sibling);
+  assert.equal(settle(sibling), true, 'a sibling-owned gap alone no longer blocks an 88');
+  assert.deepEqual(moved.gaps, []);
+  assert.deepEqual(moved.observations, ['out of scope (belongs to P3): the export path is not exercised end to end']);
+  assert.deepEqual(moved.scoped_out, [{ gap: 'the export path is not exercised', belongs_to: 'P3' }]);
+  assert.equal(moved.match_pct, 88, 'match_pct is not recomputed');
+  assert.equal(moved.accept, true);
+  assert.deepEqual(sibling.gaps, ['the export path is not exercised end to end'], 'the input is not mutated');
+  assert.equal(sibling.observations, undefined);
+
+  assert.equal(settle(r({ gaps: ['nobody owns the legacy importer'], out_of_scope: [{ gap: 'nobody owns the legacy importer', belongs_to: 'none' }] })), true, "belongs_to 'none' settles too");
+  assert.equal(settle(r({ gaps: ['own unmet criterion: no retry on 5xx'] })), false, 'an own gap with no out_of_scope rejects');
+  assert.equal(settle(r({ gaps: ['own unmet criterion: no retry on 5xx'], out_of_scope: [] })), false, 'an empty out_of_scope changes nothing');
+
+  for (const [why, belongs_to] of [['self', 'P2'], ['an unknown id', 'P9'], ['a phase package', 'PLAN-F1'], ['a repair package', 'R1']]) {
+    const bad = r({ gaps: ['own unmet criterion: no retry on 5xx'], out_of_scope: [{ gap: 'own unmet criterion', belongs_to }] });
+    assert.equal(settle(bad), false, `belongs_to ${why} is invalid and the gap stays`);
+    assert.deepEqual(scopeGaps(task, n, bad).gaps, ['own unmet criterion: no retry on 5xx']);
+  }
+  assert.equal(settle(r({ gaps: ['a short gap'], out_of_scope: [{ gap: 'short', belongs_to: 'P3' }] })), false, 'a gap text under 8 characters is ignored');
+  assert.equal(settle(r({ gaps: ['own unmet criterion: no retry on 5xx'], out_of_scope: [{ gap: '', belongs_to: 'P3' }, { gap: 7, belongs_to: 'P3' }, null, 'x'] })), false, 'malformed entries are ignored');
+
+  const mix = r({
+    gaps: ['the export path is not exercised end to end', 'own unmet criterion: no retry on 5xx'],
+    out_of_scope: [{ gap: 'the export path is not exercised', belongs_to: 'P3' }],
+  });
+  assert.equal(settle(mix), false, 'one own gap left still rejects');
+  assert.deepEqual(scopeGaps(task, n, mix).gaps, ['own unmet criterion: no retry on 5xx']);
+
+  const gate = { stage: 'gate', node_id: 'gate:goal:1' };
+  assert.equal(scopeGaps(task, gate, sibling), sibling, 'only accept scopes');
+  assert.equal(scopeGaps(task, n, { ...sibling, stage_ok: false }).gaps.length, 1, 'a failed stage is left alone');
+  assert.equal(scopeGaps(null, n, sibling), sibling, 'a throw returns the original result');
+});
+
+test('an accept whose only gap belongs to a sibling settles accepted; an own gap still fails and travels into the retry', async () => {
+  const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    let nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' })).state, 'done');
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) })).state, 'done');
+    nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:1' })).state, 'done');
+
+    const read = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const sibling = 'a.txt is never read back by the loader';
+    const own = await tm.call('tm_submit', { task_id, node_id: 'accept:P2:1', payload: ok({
+      accept: true, match_pct: 88, gaps: [sibling, 'b.txt has no error path'],
+      out_of_scope: [{ gap: sibling, belongs_to: 'P1' }],
+    }) });
+    assert.equal(own.state, 'failed', `an own gap remains: ${JSON.stringify(own)}`);
+    let task = read();
+    assert.deepEqual(task.nodes.find((n) => n.node_id === 'accept:P2:1').result.gaps, ['b.txt has no error path']);
+    assert.ok(inTx(task, autoRetryPackages), 'the failed accept buys a retry');
+    const retry = read().nodes.find((n) => n.node_id === 'dispatch:P2:2');
+    assert.ok(retry, 'a second attempt opens');
+    assert.match(String(retry.feedback || ''), /b\.txt has no error path/, 'the own gap travels into the retry');
+    assert.doesNotMatch(String(retry.feedback || ''), /never read back by the loader/, 'the sibling gap does not');
+  });
+
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    let nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' })).state, 'done');
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) })).state, 'done');
+    nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:1' })).state, 'done');
+
+    const sibling = 'a.txt is never read back by the loader';
+    const v = await tm.call('tm_submit', { task_id, node_id: 'accept:P2:1', payload: ok({
+      accept: true, match_pct: 88, gaps: [sibling], out_of_scope: [{ gap: sibling, belongs_to: 'P1' }],
+    }) });
+    assert.equal(v.state, 'done', JSON.stringify(v));
+    const node = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8')).nodes.find((n) => n.node_id === 'accept:P2:1');
+    assert.equal(node.state, 'done');
+    assert.equal(node.result.match_pct, 88);
+    assert.deepEqual(node.result.gaps, []);
+    assert.deepEqual(node.result.observations, [`out of scope (belongs to P1): ${sibling}`]);
+  });
+});
+
 test('a planning fold returning no user stories is rejected, and says why', async () => {
   await withTask(async ({ tm, g, cwd, root, task_id }) => {
     await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', handoff: 'x' }) });

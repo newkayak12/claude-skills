@@ -4264,6 +4264,21 @@ export function composeTaskPrompt(task, n) {
         L.push(`The plan's critique noted this about ${pkg.id} (the child was told the same). These are advisory - the package is judged against its Acceptance above. Name any left unaddressed without a reason in "observations"; do not reject for them alone:`);
         L.push(bullets(notes));
       }
+      // Scoping only: an unmet criterion that is a sibling's is out_of_scope here (CONTRACT.accept),
+      // so the judge needs each sibling's id, title and acceptance to answer belongs_to. A normal
+      // package alone: phase and repair packages are judged against the whole task or their own fix.
+      const siblings = (!pkg.phase && !pkg.repair)
+        ? ((task.spec && task.spec.packages) || []).filter((p) => String(p.id) !== String(pkg.id) && !p.phase && !p.repair)
+        : [];
+      if (siblings.length) {
+        L.push('');
+        L.push(`## Other packages (judged by their own accept, not here)`);
+        for (const p of siblings) {
+          L.push(`### ${p.id} — ${p.title}`);
+          L.push(bullets(p.acceptance));
+        }
+        L.push(`${pkg.id} is judged only against its own Acceptance above, never against these.`);
+      }
     }
     // QA and AUDIT judge the INTEGRATED result against the whole task, not one package of their
     // own - pkg.acceptance above is deliberately a generic one-liner ("exercise it end to end")
@@ -4274,9 +4289,10 @@ export function composeTaskPrompt(task, n) {
     // and what the develop packages themselves claimed they would deliver - the same facts
     // critique/integrate/gate already see (line ~1871), scoped here to QA/AUDIT alone rather than
     // widening that stage gate onto every accept: an ordinary package's own accept (P1, a repair)
-    // is already handed exactly the package it is judging and needs nothing about its siblings to
-    // do that job, and accept is the highest-frequency node type in this task - drowning all of
-    // them in a full sibling-package dump would make each judge less, not more.
+    // is already handed exactly the package it is judging and needs nothing about its siblings'
+    // verdicts or dispatch state to do that job (it is shown their id, title and acceptance above,
+    // for scoping only), and accept is the highest-frequency node type in this task - drowning all
+    // of them in a full sibling-package dump would make each judge less, not more.
     // Deliberately NOT included: every package's branch/child_run_id/dispatch state (routing
     // plumbing, not a check the judge can act on), other accept nodes' own verdicts (one judge's
     // opinion is not evidence for another), and critique's or integrate's full transcripts (a
@@ -4583,6 +4599,45 @@ export function succeeded(task, n, result) {
   return true;
 }
 
+// A gap the judge says belongs to another package (or to nobody) is not this package's shortfall:
+// the accept's out_of_scope[] = [{gap, belongs_to}] moves those gaps to observations before the
+// floor decision, so an 88 whose only gap is a sibling's settles accepted. belongs_to is 'none' or
+// the id of another ordinary package in task.spec.packages (not this one, not a phase or repair
+// package); a gap text under 8 characters is too loose to match on. An invalid entry is ignored and
+// its gap stays. match_pct and accept are never touched. Fails closed: any throw leaves the gap.
+export function scopeGaps(task, n, result) {
+  try {
+    if (n.stage !== 'accept' || result.stage_ok !== true) return result;
+    if (!Array.isArray(result.out_of_scope) || !result.out_of_scope.length || !Array.isArray(result.gaps)) return result;
+    const packages = (task.spec && Array.isArray(task.spec.packages)) ? task.spec.packages : [];
+    const valid = result.out_of_scope.filter((e) => {
+      if (!e || typeof e.gap !== 'string' || e.gap.trim().length < 8 || typeof e.belongs_to !== 'string') return false;
+      if (e.belongs_to === 'none') return true;
+      if (e.belongs_to === String(n.subgoal_id)) return false;
+      const pkg = packages.find((p) => String(p.id) === e.belongs_to);
+      return !!pkg && !pkg.phase && !pkg.repair;
+    });
+    if (!valid.length) return result;
+    const moved = [];
+    const hit = new Set();
+    const gaps = result.gaps.filter((g) => {
+      const e = valid.find((x) => String(g) === x.gap || String(g).includes(x.gap));
+      if (!e) return true;
+      hit.add(e);
+      moved.push(`out of scope (belongs to ${e.belongs_to}): ${String(g)}`);
+      return false;
+    });
+    if (!moved.length) return result;
+    return {
+      ...result, gaps,
+      observations: [...(Array.isArray(result.observations) ? result.observations : []), ...moved],
+      scoped_out: [...hit].map((e) => ({ gap: e.gap, belongs_to: e.belongs_to })),
+    };
+  } catch {
+    return result;
+  }
+}
+
 // Test seam only: the runner compareOnBase uses for the base side. null runs the real command.
 export const __baseFail = { run: null };
 
@@ -4786,7 +4841,7 @@ export function finish(task, n, result) {
     result = { ...result, integration_branch: n.integration.branch, integration_cwd: n.integration.cwd,
       merged: (n.integration.merged || []).map((m) => `${m.package} ${m.branch} -> ${m.commit}`) };
   }
-  if (n.stage === 'accept') result = excludeBaseFailures(task, n, result);
+  if (n.stage === 'accept') result = excludeBaseFailures(task, n, scopeGaps(task, n, result));
   const reviewerIndependence = managerReviewerIndependence(task, n);
   if (reviewerIndependence) result = { ...result, reviewer_independence: reviewerIndependence };
   const f = VERDICT[n.stage];
