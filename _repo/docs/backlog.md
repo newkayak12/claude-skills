@@ -28,6 +28,9 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
       stalled, and leaves when done; crisp at any size (integer zoom); no runtime dependency, no external image;
       a node-side test of the scene model (who sits where from a state.json fixture) and one live look with a
       screenshot of a real running task. Quality bar: the reference image — not boxes with names.
+    - Parked 2026-10-28, user: "아..애매하다 안되지", "애매하다 skill 레벨로 하기에는 너무 애매하네". The reference
+      quality needs drawn sprite assets (procedural canvas gives agent-town level, not the image); not pulled
+      until the person decides where the art comes from.
 
 94. **teams-status shows the numbers that explain a run: attempts and judge scores, cost and time, stalls, quality**
     - Why: user, 2026-10-28: "teams-status 조금 더 의미있는 지표 노출해서 개선해야겠더라". In E-8b9c417d the
@@ -158,13 +161,19 @@ toasts).
     - Acceptance: an audit unmet item without a runnable repro is refused like a QA defect (test); a test that
       a dropped defect does not come back through rescue or retry.
 
-89. **The gate names every hunk that weakens a test** (from garrytan/gstack `review/gate-integrity.md`)
-    - Why: same benchmark, 2026-10-27. gstack tags a removed or skipped test, a snapshot regenerated without
-      its test, a placeholder committed (RH-1..), and a person decides each. teams' gate checks that tests
-      pass, so a node that deletes or `.skip`s a failing test reads green.
-    - Acceptance: a node script (like `scope.mjs verdict`) lists removed `test(`/`it(`, added `.skip`/`.only`/
-      `todo`, and a lower test count against the baseline; gate:goal gets the list and an unexplained hunk is
-      a gap; tests cover each tag and a clean diff.
+95. **A defect package starts from the integration tree QA tested, not from main**
+    - Why: E-fa72c6e8 (2026-10-28) D5's worktree was at main HEAD 736fd010 without P2's merged detector, so
+      implement:U1:1 and :2 could not reproduce the defect and the node asked a person which base to use
+      (answered: merge `teams/priority-rule-names-what/integration`). D1-D4 passed, likely because their
+      fixes did not need P2's code (unverified).
+    - Acceptance: a QA/audit-filed defect package's worktree branches from the integration commit QA ran on
+      (test in `test-taskmanager.mjs`).
+
+96. **gate integrity: record the baseline commit; the harness (size S) gate gets the list too** (rest of card 89)
+    - Why: E-f27382fa (2026-10-28) shipped `gateintegrity.mjs` and the gate:goal section (cf13b16a); left as
+      carryover: the size-S harness prompt sentence and base_commit recording. Its report also notes an
+      implement node appended tests with a shell heredoc (card 90's rule).
+    - Acceptance: a size-S run's gate sees the inventory; the task records the baseline it was taken against.
 
 90. **Each rule in `.claude/rules/` names what enforces it** (from pstack `/correct`, `principle-encode-lessons-in-structure`)
     - Why: same benchmark, 2026-10-27. pstack keeps a table pairing each rule with its check and moves a
@@ -339,3 +348,4 @@ toasts).
 | E-db523454 | 2026-10-28 | 92 | shipped `f5a54fe8`; size S; goal gate 96; "claims every user story" needs 2+ stories; teams 1568/1568; ~$2 |
 | E-8b9c417d | 2026-10-28 | 84 (two defects) | shipped `7e051a4b`; P1 accepted; P2 met its own acceptance but rejected 3× for P3's live look (card 91), taken from its branch; live look done in session; integration branch held QA scratch under `test/` (0.60.1 engine, card 86 fix not installed) — not merged; teams 1570/1570, plugin test 375/375; $27.5 |
 | E-0ad09a55 | 2026-10-28 | 88 (part) | shipped `12668c8f`; size S; goal gate 90; repro gate for QA defects and audit unmet (rerun in the integration tree, a passing one dropped); teams 1577/1577; $3.72 |
+| E-f27382fa | 2026-10-28 | 89 | shipped `cf13b16a`; size S; goal gate 90; `gateintegrity.mjs` + gate:goal section; real run `--baseline HEAD~30` lists card 85's two replaced tests; teams 1591/1591 |
