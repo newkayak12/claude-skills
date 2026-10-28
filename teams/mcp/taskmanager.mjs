@@ -1921,7 +1921,23 @@ export function autoRepair(task) {
 // phase-Team cards rests on the two never overlapping). qa_rounds caps the rounds exactly as it
 // capped the single QA pass: the round number is the most attempts any one QA card has had.
 // Returns null while the round is still open, else {filed?, unresolved?, defects}.
-function settleQaRound(task) {
+// Returns a predicate that is true for a defect already seen in this pass: equal trimmed title, or
+// equal non-empty trimmed repro.command. The first of a kind is remembered and passes.
+function sameDefectSeen() {
+  const titles = new Set();
+  const commands = new Set();
+  const trim = (v) => (typeof v === 'string' ? v.trim() : '');
+  return (d) => {
+    const title = trim(d && d.title);
+    const command = trim(d && d.repro && d.repro.command);
+    const dup = (title && titles.has(title)) || (command && commands.has(command));
+    if (title) titles.add(title);
+    if (command) commands.add(command);
+    return Boolean(dup);
+  };
+}
+
+export function settleQaRound(task) {
   if (task.s_run) return null; // S2: a legacy size-S task's QA cards are read, never settled
   const goal = task.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id == null).pop();
   if (!goal) return null;
@@ -1932,8 +1948,12 @@ function settleQaRound(task) {
   const fresh = round.filter((x) => x.result && !x.result.defects_settled);
   // Gated once: the card is marked defects_settled below, so a rescue or retry that re-enters this
   // join never sees a dropped defect again.
+  // Card 97: one filing holds each defect once even when several cards/attempts reported it
+  // (first wins); never compared against rounds filed earlier.
+  const sameDefect = sameDefectSeen();
   const defects = reproGate(task, fresh.flatMap((x) => (Array.isArray(x.result.defects) ? x.result.defects : [])
-    .map((d) => (d && typeof d === 'object' ? d : { title: String(d), evidence: String(d) }))), 'qa');
+    .map((d) => (d && typeof d === 'object' ? d : { title: String(d), evidence: String(d) }))
+    .filter((d) => !sameDefect(d))), 'qa');
   for (const x of fresh) x.result = { ...x.result, defects_settled: true };
   if (!defects.length) return { defects: [] };
   const qaRound = Math.max(1, ...qaPkgs(task).map((q) => task.nodes.filter((x) => x.stage === 'dispatch' && x.subgoal_id === String(q.id)).length));
@@ -3769,11 +3789,15 @@ export function foldChild(task, n) {
   // An execute defect is {title, evidence, repro} (a bare string is still read); the string is its
   // display form and its repro rides in defectRepros, keyed by that string, for the repro gate.
   const defectRepros = {};
+  // Card 97: the same defect across gate attempts (equal trimmed title, or equal non-empty trimmed
+  // repro.command) is kept once, first wins.
+  const sameDefect = sameDefectSeen();
   const defectsFound = [...new Set(
     child.nodes
       .filter((x) => x.stage === 'execute' && x.result && Array.isArray(x.result.defects))
       .flatMap((x) => x.result.defects.map((d) => {
         if (!d || typeof d !== 'object') return String(d).trim();
+        if (sameDefect(d)) return '';
         const str = [d.title, d.evidence].filter((v) => typeof v === 'string' && v.trim()).join(' -> ') || JSON.stringify(d);
         if (d.repro) defectRepros[str] = d.repro;
         return str;
@@ -6398,6 +6422,7 @@ function harnessPrompt(task, opts = {}) {
   const tag = taskTag(task.run_id);
   const routing = [
     'isolated: false', 'allocation: "balanced"',
+    `goal_threshold: ${Number.isFinite(Number(task.goal_threshold)) && task.goal_threshold != null ? Number(task.goal_threshold) : 90}`,
     `host_vendor: "${o.host_vendor || 'claude'}"`,
     o.host_model ? `host_model: "${o.host_model}"` : '',
     Array.isArray(o.native_models) && o.native_models.length ? `native_models: ${JSON.stringify(o.native_models)}` : '',
@@ -6475,7 +6500,7 @@ export function serviceHarnessRun(task) {
   applySuspends(task);
   const before = JSON.stringify([h.run || null, h.refused_pointer || null, !!h.finished_at, !!h.exhausted, h.accepted]);
   const run = resolveHarnessRun(task);
-  const v = run ? harnessVerdict(run) : null;
+  const v = run ? harnessVerdict(run, task.goal_threshold) : null;
   if (v && v.finished && !h.finished_at) { h.finished_at = Date.now(); h.accepted = !!v.accept; }
   if (h.finished_at && h.accepted === undefined && v && v.finished) h.accepted = !!v.accept;
   const changed = () => JSON.stringify([h.run || null, h.refused_pointer || null, !!h.finished_at, !!h.exhausted, h.accepted]) !== before;
@@ -6546,7 +6571,7 @@ function toolNextHarness(task) {
   if (ts.state === 'complete' || ts.state === 'partial') {
     let report = '';
     try { report = readFileSync(h.report_path, 'utf8'); } catch { /* the driver did not copy it */ }
-    const v = h.run ? harnessVerdict(h.run) : null;
+    const v = h.run ? harnessVerdict(h.run, task.goal_threshold) : null;
     out.report = report || (v && v.report_text) || '';
     out.next = 'this task is finished: relay the harness report to the requester, exactly as the entry skill\'s output template asks';
   } else if (ts.state === 'blocked') {

@@ -839,12 +839,12 @@ test('tm_open({size}) pins the size: L opens the plan stage without measuring, S
 
 // S1 (_repo/docs/plans/2026-09-28-teams-long-loop.md): size S goes to the development harness - no
 // planning card, feature split, shape, critique, worktree or teams child run.
-function graphRunFixture(cwd, taskId, { report = false, accept = null, tagged = true, createdAt = Date.now(), runId } = {}) {
+function graphRunFixture(cwd, taskId, { report = false, accept = null, tagged = true, createdAt = Date.now(), runId, matchPct } = {}) {
   const run_id = runId || `g-${Math.random().toString(16).slice(2, 10)}`;
   const nodes = [{ node_id: 'plan', stage: 'plan', state: 'done', deps: [], result: { stage_ok: true } }];
   if (accept !== null) {
     nodes.push({ node_id: 'gate:goal:1', stage: 'gate', subgoal_id: null, state: accept ? 'done' : 'failed', deps: [],
-      result: { stage_ok: accept, accept, match_pct: accept ? 95 : 60, gaps: accept ? [] : ['the export is missing'] } });
+      result: { stage_ok: accept, accept, match_pct: matchPct !== undefined ? matchPct : accept ? 95 : 60, gaps: accept ? [] : ['the export is missing'] } });
   }
   nodes.push({ node_id: 'report', stage: 'report', state: report ? 'done' : 'pending', deps: [], result: report ? { stage_ok: true, handoff: 'harness run report' } : null });
   const dir = join(cwd, '.harness-run', 'broker', 'runs');
@@ -930,6 +930,17 @@ test('S1a: the graph route - a run that reported past a refused goal gate reads 
     const retro = JSON.parse(readFileSync(docPaths(readTask(root, task_id)).retro, 'utf8'));
     assert.match(retro.retrospective.partial_reasons[0], /did not accept/);
   });
+});
+
+test('S1a: a size S gate accept below goal_threshold is not accepted; at the threshold or with no match_pct it stays accepted', async () => {
+  for (const [matchPct, want] of [[85, 'partial'], [90, 'complete'], [null, 'complete']]) {
+    await withSizeS(async ({ tm, cwd, root, task_id }) => {
+      writePointer(root, task_id, graphRunFixture(cwd, task_id, { accept: true, report: true, matchPct }));
+      const st = await tm.call('tm_status', { task_id });
+      assert.equal(st.state, want, `match_pct ${matchPct}`);
+      if (want === 'partial') assert.match(st.partial_reasons[0], /did not accept \(match 85\)/);
+    }, { goal_threshold: 90 });
+  }
 });
 
 test('S1a: the fallback route reads the run\'s own 05-report.md and 04-goal-gate.json - not anything the driver says', async () => {
@@ -2264,7 +2275,7 @@ test('a QA round\'s defects whose touches contain one another are ordered: src/x
       accept: true, match_pct: 95,
       defects: [
         { title: 'x module drops rows', touches: ['src/x/**'], deps: [], evidence: 'e1', repro: REPRO, severity: 'high' },
-        { title: 'y helper off by one', touches: ['src/x/y.mjs'], deps: [], evidence: 'e2', repro: REPRO, severity: 'high' },
+        { title: 'y helper off by one', touches: ['src/x/y.mjs'], deps: [], evidence: 'e2', repro: { ...REPRO, command: 'exit 2' }, severity: 'high' },
       ],
     }) });
     assert.equal(accepted.state, 'done', JSON.stringify(accepted));
@@ -9446,7 +9457,7 @@ test('C7: QA runs one card per feature area in parallel, each a full-harness run
       await g.call('team_next', { run_id: qa[id].run_id, cwd: qa[id].cwd });
       await sub('report', { handoff: 'QA report' });
       await tm.call('tm_submit', { task_id, node_id: `dispatch:${id}:1` });
-      return tm.call('tm_submit', { task_id, node_id: `accept:${id}:1`, payload: ok({ accept: true, match_pct: 90, defects: [{ title: defect, evidence: defect, touches: [], deps: [], repro: REPRO }] }) });
+      return tm.call('tm_submit', { task_id, node_id: `accept:${id}:1`, payload: ok({ accept: true, match_pct: 90, defects: [{ title: defect, evidence: defect, touches: [], deps: [], repro: { ...REPRO, command: `exit ${id === 'QA-F1' ? 1 : 2}` } }] }) });
     };
     assert.equal((await qaRun('QA-F1', 'a.txt loses its newline')).state, 'done');
     task = readTask(root, task_id);
@@ -9489,7 +9500,7 @@ test('C7: past qa_rounds a whole round\'s defects are recorded unresolved, and a
     const t = readTask(root, task_id);
     Object.assign(t.nodes.find((n) => n.node_id === 'dispatch:QA-F1:1'), { state: 'done', result: { stage_ok: true, accept: true, defects: ['a broke'] } });
     Object.assign(t.nodes.find((n) => n.node_id === 'accept:QA-F1:1'), { state: 'done', result: { stage_ok: true, accept: true, checks: ['ok'], defects: [{ title: 'a broke', evidence: 'a broke', repro: REPRO }] } });
-    Object.assign(t.nodes.find((n) => n.node_id === 'dispatch:QA-F2:1'), { state: 'failed', result: { stage_ok: false, accept: false, reason: 'blocked', defects: ['b broke'], defect_repros: { 'b broke': REPRO } } });
+    Object.assign(t.nodes.find((n) => n.node_id === 'dispatch:QA-F2:1'), { state: 'failed', result: { stage_ok: false, accept: false, reason: 'blocked', defects: ['b broke'], defect_repros: { 'b broke': { ...REPRO, command: 'exit 2' } } } });
     writeFileSync(join(root, task_id, 'task.json'), JSON.stringify(t));
     const task = readTask(root, task_id);
     assert.ok(withTasksRoot(root, () => inTx(task, autoRetryPackages)));
@@ -9500,6 +9511,36 @@ test('C7: past qa_rounds a whole round\'s defects are recorded unresolved, and a
     assert.deepEqual(task.nodes.find((n) => n.node_id === 'gate:goal:1').deps, ['accept:QA-F1:1'], 'the goal gate judges without the retired card rather than wait on it forever');
   }, { roles: { qa: true }, qa_rounds: 0 });
 });
+
+for (const [name, build, expected] of [
+  ['card 97: a QA child whose three gate attempts report the same five defects files five packages, not fifteen',
+    () => [1, 2, 3].flatMap((attempt) => [1, 2, 3, 4, 5].map((i) => ({
+      // attempt 2 matches by title alone, attempt 3 by repro command alone
+      title: attempt === 3 ? `renamed ${attempt}-${i}` : `defect ${i}`,
+      evidence: `seen on attempt ${attempt}`,
+      repro: { ...REPRO, command: attempt === 2 ? `exit ${10 + attempt}${i}` : `exit ${i}` },
+    }))), ['D1', 'D2', 'D3', 'D4', 'D5']],
+  ['card 97: distinct defects (different title and different repro) are all still filed',
+    () => [1, 2, 3].map((i) => ({ title: `distinct ${i}`, evidence: 'e', repro: { ...REPRO, command: `exit ${i}` } })), ['D1', 'D2', 'D3']],
+]) {
+  test(name, async () => {
+    await withTask(async ({ tm, g, root, task_id }) => {
+      await twoAreasIntegrated(tm, g, task_id);
+      await tm.call('tm_next', { task_id });
+      const t = readTask(root, task_id);
+      Object.assign(t.nodes.find((n) => n.node_id === 'dispatch:QA-F1:1'), { state: 'done', result: { stage_ok: true, accept: true } });
+      Object.assign(t.nodes.find((n) => n.node_id === 'accept:QA-F1:1'), { state: 'done', result: { stage_ok: true, accept: true, checks: ['ok'], defects: build() } });
+      Object.assign(t.nodes.find((n) => n.node_id === 'dispatch:QA-F2:1'), { state: 'done', result: { stage_ok: true, accept: true } });
+      Object.assign(t.nodes.find((n) => n.node_id === 'accept:QA-F2:1'), { state: 'done', result: { stage_ok: true, accept: true, checks: ['ok'] } });
+      writeFileSync(join(root, task_id, 'task.json'), JSON.stringify(t));
+      const { settleQaRound } = await import('../mcp/taskmanager.mjs');
+      const task = readTask(root, task_id);
+      const out = withTasksRoot(root, () => inTx(task, settleQaRound));
+      assert.ok(out && out.filed, 'the round filed');
+      assert.deepEqual(task.spec.packages.filter((p) => p.reporter).map((p) => p.id), expected);
+    }, { roles: { qa: true } });
+  });
+}
 
 test('C7: a budget stop with two QA cards unfinished puts the goal gate back on the integrate and names both passes as not run', async () => {
   const { enforceBudget } = await import('../mcp/taskmanager.mjs');

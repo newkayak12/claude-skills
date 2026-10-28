@@ -171,19 +171,12 @@ toasts).
       implement node appended tests with a shell heredoc (card 90's rule).
     - Acceptance: a size-S run's gate sees the inventory; the task records the baseline it was taken against.
 
-97. **QA files each defect once, not once per gate attempt**
-    - Why: E-fa72c6e8 (2026-10-28) QA-F1:2's gate:U1 was "blocked: tool denied" three times and the same five
-      defects came back as D1-D5, D6-D10 and D11-D15, 15 packages queued (~$30 more). The denial is likely
-      the new repo hook refusing a QA command in the integration tree (unverified).
-    - Acceptance: a QA round whose child retried files a defect seen in several attempts once (test in
-      `test-taskmanager.mjs`); the denied QA command is named and either allowed or rewritten.
-
-98. **A size-S goal gate below goal_threshold does not accept**
-    - Why: E-a0b849a2 (2026-10-28, card 95) report: "gate:U1:1 accept, 85%" and "gate:goal:1 accept, 85%"
-      while team.json goal_threshold is 90 and the run state is complete. Cause unverified (threshold not
-      passed to the size-S run, or the gate's accept not checked against it).
-    - Acceptance: a size-S run whose gate reports accept with match_pct under the threshold reads as not
-      accepted (test); the report names the threshold next to the score.
+97. **Name the QA command the repo hook denied, and allow or rewrite it** (rest of card 97)
+    - Why: E-fa72c6e8 (2026-10-28) QA-F1:2's gate:U1 was "blocked: tool denied" three times. The duplicate
+      filing it caused is fixed (E-ca39279f); which command was denied is not known. Likely the repo hook
+      refusing a QA command in the integration tree (unverified).
+    - Acceptance: the denied command is named from that run's stream logs; the QA prompt or the hook is
+      changed so it passes, with a test.
 
 75. **smart-compact fires on the same context % the person sees in the status line** — part in E-3f6657e7 (6d5809b2)
     - 2026-10-26: smart-compact now computes `round((input + cache_creation + cache_read) / window * 100)`, the
@@ -351,6 +344,7 @@ toasts).
 | E-db523454 | 2026-10-28 | 92 | shipped `f5a54fe8`; size S; goal gate 96; "claims every user story" needs 2+ stories; teams 1568/1568; ~$2 |
 | E-8b9c417d | 2026-10-28 | 84 (two defects) | shipped `7e051a4b`; P1 accepted; P2 met its own acceptance but rejected 3× for P3's live look (card 91), taken from its branch; live look done in session; integration branch held QA scratch under `test/` (0.60.1 engine, card 86 fix not installed) — not merged; teams 1570/1570, plugin test 375/375; $27.5 |
 | E-0ad09a55 | 2026-10-28 | 88 (part) | shipped `12668c8f`; size S; goal gate 90; repro gate for QA defects and audit unmet (rerun in the integration tree, a passing one dropped); teams 1577/1577; $3.72 |
+| E-ca39279f | 2026-10-28 | 97, 98 | size S; one filing holds a defect once (same trimmed title or repro.command); `harnessVerdict` refuses an accept under goal_threshold (the graph's floor-5 band let 85 pass at 90) and the size-S prompt passes the threshold; teams 1618/1618 |
 | E-a0b849a2 | 2026-10-28 | 95 | size S; goal gate 85 (under threshold 90, card 98); a QA/audit-filed package records `base_branch` = the filing pass's integration branch and branches from it; teams 1615/1615 |
 | E-f69222d8 | 2026-10-28 | 90 rest | size S; goal gate 93; `>|`, absolute repo targets from outside, bare `cd`/`cd -`/`pushd`/`popd`/subshell tracking; repo-rules 217/217; live hook run: 4 deny, 2 pass as listed |
 | E-a193d3ec | 2026-10-28 | 94 defects | shipped `bd8e0702`; STORYs reason on its own line, a repackaged story shows its current attempt; teams 1613/1613, plugin test 396/396 |

@@ -257,7 +257,7 @@ export function resolveHarnessRun(task) {
 export function harnessState(task) {
   const h = task.harness_run;
   const run = resolveHarnessRun(task);
-  const v = run ? harnessVerdict(run) : null;
+  const v = run ? harnessVerdict(run, task.goal_threshold) : null;
   if (v && v.finished) {
     if (v.accept) return { state: 'complete', counts: {} };
     const why = `the harness goal gate did not accept${v.match_pct != null ? ` (match ${v.match_pct})` : ''}${v.gaps.length ? `: ${v.gaps.slice(0, 3).join('; ')}` : ''}`;
