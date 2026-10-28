@@ -158,19 +158,6 @@ toasts).
     - Acceptance (left): one real L run whose PRD has no "Given the PRD section" criterion; a paraphrase case
       either caught or named as a limit in the PRD gate.
 
-88. **Audit unmet items carry a runnable repro too; a dropped defect stays dropped on rescue/retry** (rest of card 88)
-    - Why: E-0ad09a55 (2026-10-28) shipped the repro gate (`reproGate`, 12668c8f) for QA defects and audit
-      unmet items; its report: "Nothing in the engine requires audit unmet items to be runnable, and no test
-      covers a dropped defect re-entering through rescue or retry."
-    - Acceptance: an audit unmet item without a runnable repro is refused like a QA defect (test); a test that
-      a dropped defect does not come back through rescue or retry.
-
-96. **gate integrity: record the baseline commit; the harness (size S) gate gets the list too** (rest of card 89)
-    - Why: E-f27382fa (2026-10-28) shipped `gateintegrity.mjs` and the gate:goal section (cf13b16a); left as
-      carryover: the size-S harness prompt sentence and base_commit recording. Its report also notes an
-      implement node appended tests with a shell heredoc (card 90's rule).
-    - Acceptance: a size-S run's gate sees the inventory; the task records the baseline it was taken against.
-
 97. **Name the QA command the repo hook denied, and allow or rewrite it** (rest of card 97)
     - Why: E-fa72c6e8 (2026-10-28) QA-F1:2's gate:U1 was "blocked: tool denied" three times. The duplicate
       filing it caused is fixed (E-ca39279f); which command was denied is not known. Likely the repo hook

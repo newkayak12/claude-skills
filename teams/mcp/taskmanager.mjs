@@ -495,6 +495,8 @@ function createTask(a) {
     ...(priorRetro.carryover && priorRetro.carryover.length ? { carryover_candidates: priorRetro.carryover } : {}),
     // Where package and integration worktrees branch from (see priorRetroContext). null = HEAD.
     base_ref: priorRetro.base_ref || null,
+    // HEAD of the project when the task opened: the baseline the gate-integrity list is judged against.
+    base_commit: (() => { const r = git(cwd, ['rev-parse', 'HEAD']); return r.ok && r.out ? r.out : null; })(),
     flow: FLOWS[a.flow] ? a.flow : 'auto',
     flow_chosen: null,
     size: null,
@@ -6440,6 +6442,7 @@ function harnessPrompt(task, opts = {}) {
     `As soon as the run exists, write ${h.pointer} as {"route":"graph","run_id":"<id>","cwd":"${h.cwd}"} or {"route":"fallback","run_dir":"<absolute run dir>"}.`,
     `When the run has written its report, copy that report to ${h.report_path}. The task's verdict is read from the run itself, not from anything you write.`,
     h.baseline_path ? `Scope: this checkout may already hold uncommitted work (${h.baseline_count} dirty path(s) recorded in ${h.baseline_path} before the run). Your scope check counts only the paths you touched; the baseline's dirty paths, left as they were, are excluded. Compute your scope verdict with the CLI, never from git status read by you: node ${join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts')}/scope.mjs verdict --cwd ${h.cwd} --baseline ${h.baseline_path} --scope <comma-separated list of the files your plan names>. Its exit status is the result: 0 = pass; 1 = out-of-scope paths, printed one per line. ${SCRATCH_RULE}` : '',
+    task.base_commit ? `Gate integrity: before you report, list the files this run changed that make up the gate itself with the CLI, never from your own reading: node ${join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts')}/gateintegrity.mjs --cwd ${h.cwd} --baseline ${task.base_commit} (the same script under the plugin root's scripts/ directory may be used). Judge the printed list as the L gate does. Its exit status: 0 = no test weakening found; 1 = weakened tests found, printed one per line; 2 = usage error (git cannot resolve the baseline).` : '',
     `Never end a turn while your own background agent or test run is still running; wait for it to finish first.`,
     '',
     'Request:',
