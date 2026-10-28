@@ -120,15 +120,6 @@ toasts).
       the merged PRD's `user_stories[].acceptance` holds only the behaviour ones; one real L run whose PRD
       has no "Given the PRD section" criterion.
 
-91. **A package's accept judges only that package's acceptance, not an item shape gave another package** — in E-22c3af14
-    - Why: E-8b9c417d (2026-10-27), accept:P2:1 and accept:P2:2 both rejected at 88 (threshold 90): "Both A2.1
-      and A2.2 are met … The one open item is the live host confirmation, which belongs to P3." The judge
-      itself says the item is P3's and still takes it off P2's score. accept:P2:3 the same at 85 ("Only the
-      live tmux look is missing, and that criterion belongs to P3"), so P2 ran out of retries with its own
-      acceptance met. User, 2026-10-27: "저거 또실패하면 백로그에 넣고 엔진 다시 고치고" — next Sprint, first.
-    - Acceptance: the accept prompt or engine scores against the package's own `acceptance[]`; an item the
-      judge names as another package's is an observation, not a gap (test in `test-taskmanager.mjs`).
-
 92. **A size-L task whose PRD has one user story has a shape that can pass**
     - Why: E-22c3af14 (2026-10-27, card 91, size pinned L) blocked at shape:3. shapecheck refused one package
       ("shape has one package: a request that fits one run is size S") and two packages ("package P1 claims
@@ -321,3 +312,4 @@ toasts).
 | E-fa84630b | 2026-10-27 | 84 (two defects) | nothing shipped: both PRD cards accepted, critique:3 rejected P1 for carrying the planning card's document criteria the PRD folded into its stories (card 87); $5.97 |
 | E-77926c5f | 2026-10-27 | 87, 89 | nothing shipped: both PRD cards accepted; shape failed 3× (P1 and P3 both touch `teams/mcp/taskmanager.mjs`; one owner per path by design). Cards touching the same engine file go in separate Sprints |
 | E-22c3af14 | 2026-10-27 | 91 | nothing shipped: pinned L, PRD with one story; shape refused 1 package (fits S) and 2 packages (one claims every story) (card 92); reopened unpinned |
+| E-b1aee623 | 2026-10-28 | 91 | shipped `e0032b0f`; size S (unpinned); goal gate 95; accept scores only the package's own acceptance (`scopeGaps`, `out_of_scope[]`); teams 1565/1565; ~$3.5 |
