@@ -9887,3 +9887,52 @@ test('a fixture daemon exits on its own once the test runner named in HARNESS_TE
     rmSync(drv, { recursive: true, force: true });
   }
 });
+
+// U2: the goal gate's prompt carries the gate-integrity inventory of the merged tree.
+function gateIntegrityTask(dirty) {
+  const dir = mkdtempSync(join(tmpdir(), 'tm-gint-'));
+  const git = (...a) => execFileSync('git', ['-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { encoding: 'utf8' });
+  git('init', '-q');
+  writeFileSync(join(dir, 'a.test.mjs'), "import test from 'node:test';\ntest('keeps', () => {});\ntest('goes', () => {});\n");
+  git('add', '-A');
+  git('commit', '-qm', 'first');
+  const first = git('rev-parse', 'HEAD').trim();
+  writeFileSync(join(dir, 'a.test.mjs'), dirty
+    ? "import test from 'node:test';\ntest('keeps', () => {});\n"
+    : "import test from 'node:test';\ntest('keeps', () => {});\ntest('goes', () => {});\nconsole.log('more');\n");
+  git('commit', '-qam', 'second');
+  const task = {
+    cwd: dir, request: 'r', base_ref: first,
+    nodes: [{ node_id: 'integrate:1', stage: 'integrate', state: 'done', deps: [], integration: { cwd: dir, branch: 'HEAD' } }],
+  };
+  return { dir, task };
+}
+const goalNode = { node_id: 'gate:goal:1', stage: 'gate', deps: [] };
+
+test('U2 gate integrity: a removed test shows in the gate:goal prompt with the gap instruction', () => {
+  const { dir, task } = gateIntegrityTask(true);
+  try {
+    const p = composeTaskPrompt(task, goalNode);
+    assert.match(p, /## Gate integrity/);
+    assert.match(p, /removed-test\ta\.test\.mjs:3\ttest\('goes'/);
+    assert.match(p, /is a gap: name it in gaps/);
+    assert.match(p, /does not by itself refuse the merge/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('U2 gate integrity: a clean diff, a non-gate:goal node and a task with no integrate node get no section', () => {
+  const { dir, task } = gateIntegrityTask(false);
+  const dirty = gateIntegrityTask(true);
+  try {
+    assert.doesNotMatch(composeTaskPrompt(task, goalNode), /## Gate integrity/);
+    assert.doesNotMatch(composeTaskPrompt(dirty.task, { node_id: 'gate:U1:1', stage: 'gate', deps: [] }), /## Gate integrity/);
+    assert.doesNotMatch(composeTaskPrompt(dirty.task, { node_id: 'integrate:1', stage: 'integrate', deps: [] }), /## Gate integrity/);
+    const bare = { ...dirty.task, nodes: [] };
+    let p;
+    assert.doesNotThrow(() => { p = composeTaskPrompt(bare, goalNode); });
+    assert.doesNotMatch(p, /## Gate integrity/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(dirty.dir, { recursive: true, force: true });
+  }
+});
