@@ -84,3 +84,60 @@ test('stopped EPIC: the stage it stopped in reads failed, no now line', () => {
   assert.deepEqual(m.stages.map((s) => s.state), ['done', 'failed', 'pending']);
   assert.equal(m.now, '');
 });
+
+// ---- the run's numbers: the text board and the SVG print the same ones --------------------------------
+const numbers = () => ({
+  max_attempts: 3, threshold: 90,
+  budget: { limit_usd: 10, spent_usd: 4.21 },
+  drivers: { live: 3, cap: 4, stalled: [{ id: 'P2', minutes: 25 }] },
+  stories: [
+    { id: 'P2', attempt: 3, max_attempts: 3, judge: { score: 85, threshold: 90, reason: 'All code and test acceptance for P2 is met and verified by a fresh run of every check' }, cost_usd: 1.27, retry_cost_usd: 2.35, wall_ms: 1521000, out_of_retries: true },
+    { id: 'P3', attempt: 0, max_attempts: 3, judge: null, cost_usd: 0, retry_cost_usd: 0, wall_ms: 0, out_of_retries: true },
+  ],
+  denials: 2, out_of_retries: ['P2', 'P3'], defects: { filed: 5, dropped: 1, dropped_items: [] },
+  scoped_out: [{ story: 'P2', gap: 'export path', belongs_to: 'P3' }],
+});
+
+test('metrics: the model carries the task-level numbers and each STORY', () => {
+  const m = dashboardModel(task({ metrics: numbers() }), { now: 0 });
+  assert.deepEqual(m.run, {
+    budget: { limit_usd: 10, spent_usd: 4.21 }, drivers: { live: 3, cap: 4, stalled: [{ id: 'P2', minutes: 25 }] },
+    denials: 2, out_of_retries: ['P2', 'P3'], defects: { filed: 5, dropped: 1 }, scoped_out: 1,
+  });
+  assert.deepEqual(m.stories.map((s) => [s.id, s.attempt, s.max_attempts]), [['P2', 3, 3], ['P3', 0, 3]]);
+});
+
+test('metrics: dashboardText prints every number, one STORY per line, the reason ends in an ellipsis', () => {
+  const lines = dashboardText(dashboardModel(task({ metrics: numbers() }), { now: 0 })).split('\n');
+  const all = lines.join('\n');
+  for (const s of ['Budget $4.21 of $10.00', 'Drivers 3/4 live', 'Stalled P2 25m', 'Denials 2', 'Defects filed 5 · dropped 1', 'Out of retries P2, P3', 'Scoped out 1']) assert.ok(all.includes(s), s);
+  const p2 = lines.filter((l) => l.startsWith('P2  ·'));
+  assert.equal(p2.length, 1);
+  assert.match(p2[0], /attempt 3\/3/);
+  assert.match(p2[0], /judge 85 vs 90 — All code and test acceptance .*…/);
+  assert.match(p2[0], /cost \$1\.27 \+ retry \$2\.35/);
+  assert.match(p2[0], /wall 25m21s/);
+  assert.match(p2[0], /out of retries/);
+  const p3 = lines.find((l) => l.startsWith('P3  ·'));
+  assert.equal(p3, 'P3  ·  attempt 0/3  ·  out of retries', 'a never-run STORY prints no judge, cost or wall');
+  assert.ok(!all.match(/NaN|undefined|null/));
+});
+
+test('metrics: the SVG shows the same numbers', () => {
+  const svg = dashboardSvg(dashboardModel(task({ metrics: numbers() }), { now: 0 }));
+  for (const s of ['Budget $4.21 of $10.00', 'Drivers 3/4 live', 'Stalled P2 25m', 'Denials 2', 'Defects filed 5 · dropped 1', 'attempt 3/3', 'judge 85 vs 90', 'cost $1.27 + retry $2.35', 'wall 25m21s', 'attempt 0/3']) assert.ok(svg.includes(s), s);
+  assert.ok(svg.length < 131072);
+  assert.ok(!svg.match(/NaN|undefined/));
+});
+
+test('metrics: absent data prints nothing misleading', () => {
+  const bare = { ...numbers(), budget: null, drivers: { live: null, cap: null, stalled: [] }, stories: [{ id: 'P1', attempt: 1, max_attempts: null, judge: { score: null, threshold: null, reason: null }, cost_usd: 0, retry_cost_usd: 0, wall_ms: 0, out_of_retries: false }], out_of_retries: [], scoped_out: [], denials: 0, defects: { filed: 0, dropped: 0 } };
+  const t = dashboardText(dashboardModel(task({ metrics: bare }), { now: 0 }));
+  assert.ok(!t.match(/NaN|undefined|null|Budget|Drivers|Stalled|Out of retries|Scoped out/));
+  assert.ok(t.includes('P1  ·  attempt 1\n'));
+  assert.ok(t.includes('Denials 0  ·  Defects filed 0 · dropped 0'));
+  assert.ok(!dashboardSvg(dashboardModel(task({ metrics: bare }), { now: 0 })).match(/NaN|undefined/));
+  // a task with no metrics at all prints none of it
+  const none = dashboardText(dashboardModel(task(), { now: 0 }));
+  assert.ok(!none.match(/Denials|Budget|attempt/));
+});

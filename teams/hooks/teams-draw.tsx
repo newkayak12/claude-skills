@@ -4,7 +4,7 @@
  * strings and a width; mod.tsx decides what to show. Width is counted in display cells (Hangul, CJK and emoji
  * take two; combining marks, ZWJ and variation selectors none; the icons and the spinner one).
  */
-import type { Handoff, SummaryItem, SummaryTaskEntry, SummaryWorker, WorkState } from '../types'
+import type { Handoff, RunNumbers, SummaryItem, SummaryTaskEntry, SummaryWorker, WorkState } from '../types'
 
 export type Tint = 'success' | 'claude' | 'inactive' | 'error' | 'warning'
 export type Seg = { t: string; tint?: Tint; dim?: boolean; bold?: boolean }
@@ -151,18 +151,56 @@ export const handoffCells = (feed: readonly Handoff[]): string[][] => feed.slice
 
 export type StoryCells = { cells: string[]; tints: (Tint | 'dim' | undefined)[] }
 
-// icon · title · doing · verdict · try/max · elapsed · cost · harness (an S task's stages and run)
-export function storyCells(item: SummaryItem, verdict: string, harness: string, selected: boolean, fixed: (key: string) => string): StoryCells {
+const REASON_MAX = 60
+
+// marker · icon · title · doing · verdict · attempt n/max · judge score vs threshold · cost · retry spend · wall · reason ·
+// harness (an S task's stages and run). The recorded numbers (item.metrics) win over the live ones; an item with none
+// (an S task) keeps its try/max, elapsed and cost. `judge` words the score (localized by the caller).
+export function storyCells(
+  item: SummaryItem, verdict: string, harness: string, selected: boolean, fixed: (key: string) => string,
+  judge: (score: number, threshold: number | null) => string = (score, threshold) => `judge ${score}${threshold === null ? '' : ` vs ${threshold}`}`,
+): StoryCells {
+  const m = item.metrics ?? null
+  const j = m?.judge ?? null
+  const retry = m?.retry_cost_usd ?? 0
+  const recorded = m !== null && ((m.cost_usd ?? 0) > 0 || retry > 0)
+  const threshold = j?.threshold ?? null
+  const over = j !== null && threshold !== null ? (j.score >= threshold ? 'success' : 'warning') : undefined
   return {
     cells: [
-      selected ? '▸' : '', item.icon, item.title, item.word_key ? fixed(item.word_key) : item.word, verdict, tryText(item.try, item.max),
-      since(item.elapsed_ms), costText(item.cost_usd, item.cost_estimated), harness,
+      selected ? '▸' : '', item.icon, item.title, item.word_key ? fixed(item.word_key) : item.word, verdict,
+      m === null ? tryText(item.try, item.max) : tryText(m.attempt, m.max_attempts),
+      j === null ? '' : judge(j.score, threshold),
+      recorded ? costText(m.cost_usd ?? 0, false) : costText(item.cost_usd, item.cost_estimated),
+      retry > 0 ? `+${costText(retry, false)}` : '',
+      since(m !== null && (m.wall_ms ?? 0) > 0 ? m.wall_ms : item.elapsed_ms),
+      j?.reason ? clipText(j.reason.replace(/\s+/g, ' ').trim(), REASON_MAX) : '',
+      harness,
     ],
-    tints: [undefined, TINT[item.state], undefined, undefined, undefined, 'dim', 'dim', 'dim', 'dim'],
+    tints: [undefined, TINT[item.state], undefined, undefined, undefined, m?.out_of_retries ? 'error' : undefined, over, 'dim', 'dim', 'dim', 'dim', 'dim'],
   }
 }
-// the harness text gives way first, then doing, then the title
-export const STORY_SHRINK = [8, 3, 2] as const
+// the harness text gives way first, then doing, then the reason, then the title
+export const STORY_SHRINK = [11, 3, 10, 2] as const
+
+export type Say = (key: string, vars?: Record<string, string | number>) => string
+
+// The Home tab's task-level numbers, one per line as label · value: budget, drivers live/cap, stalled drivers, denials,
+// defects, STORYs out of retries, scoped out. Lines with nothing to say (no budget, no stall, none out of retries) are left out.
+export function runCells(run: RunNumbers, say: Say): StoryCells[] {
+  const usd = (n: number) => `$${n.toFixed(2)}`
+  const out: StoryCells[] = []
+  const add = (label: string, value: string, tint?: Tint) => out.push({ cells: [label, value], tints: ['dim', tint] })
+  if (run.budget !== null) add(say('runBudget'), say('runBudgetOf', { spent: usd(run.budget.spent_usd), limit: usd(run.budget.limit_usd) }), run.budget.spent_usd >= run.budget.limit_usd ? 'warning' : undefined)
+  const d = run.drivers
+  if (d.live !== null) add(say('runDrivers'), d.cap === null ? say('runLive', { n: d.live }) : say('runLiveCap', { n: d.live, cap: d.cap }))
+  if (d.stalled.length > 0) add(say('runStalled'), d.stalled.map(x => say('runStalledOne', { id: x.id ?? '·', m: x.minutes })).join(', '), 'warning')
+  add(say('runDenials'), String(run.denials))
+  add(say('runDefects'), say('runDefectsOf', { filed: run.defects.filed, dropped: run.defects.dropped }))
+  if (run.out_of_retries.length > 0) add(say('runOutOfRetries'), run.out_of_retries.join(', '), 'error')
+  if (run.scoped_out > 0) add(say('runScopedOut'), String(run.scoped_out))
+  return out
+}
 
 // The EPIC row is the title block: marker · icon · key · title · state word · done/total · age. The slug is not a pane
 // column (the Report header and view.mjs show it). A live task's age runs

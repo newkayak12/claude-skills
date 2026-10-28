@@ -130,6 +130,114 @@ function logOf(events, titleOf) {
   return out.slice(-20);
 }
 
+const r4 = (x) => Math.round((Number(x) || 0) * 10000) / 10000;
+const MIN_MS = 60000;
+
+// The run's numbers for the status board, from the collected model (view-collect's `telemetry`
+// plus the cards). Pure: no fs, `now` is injected. A model with no telemetry reads as empty
+// numbers, never NaN.
+//
+//   { max_attempts, threshold, stall_minutes,
+//     budget: {limit_usd, spent_usd} | null,          // null when the task sets no budget
+//     drivers: {live, cap, stalled: [{id, minutes}]}, // live/cap null when unknown; minutes since progress
+//     stories: [{ id, key, title, kind, state, attempt, max_attempts,
+//                 judge: {score, threshold, reason} | null,
+//                 cost_usd, retry_cost_usd, wall_ms,
+//                 stages: [{stage, cost_usd, retry_cost_usd, wall_ms}],
+//                 out_of_retries, scoped_out: [{gap, belongs_to}] }],
+//     stages: [{stage, cost_usd, retry_cost_usd, wall_ms}],   // task-wide, manager judges included
+//     denials: <number>,                                      // manager judges + worker nodes
+//     out_of_retries: [id],
+//     defects: {filed, dropped, dropped_items}, scoped_out: [{story, gap, belongs_to}] }
+//
+// cost_usd is the spend of each card's first attempt; every attempt after the first is
+// retry_cost_usd, so a retry's price is read apart from the work's.
+//
+// Out of scope is PARTIAL: only the gaps a judge moved with out_of_scope[] (a node's `scoped_out`)
+// are recorded. A defect the QA or audit round judged to be out of scope, or a skipped STORY,
+// leaves no such record and is not counted here.
+export function metrics(model, { now = Date.now() } = {}) {
+  const m = model || {};
+  const t = m.telemetry || {};
+  const maxAttempts = Number.isInteger(t.max_attempts) ? t.max_attempts : null;
+  const threshold = Number.isFinite(t.goal_threshold) ? t.goal_threshold : null;
+  const outSet = new Set((t.out_of_retries || []).map(String));
+
+  const byId = new Map();
+  for (const { c, kind, stage, state } of cardsOf(m)) {
+    const id = String(c.id).split(':')[0];
+    let s = byId.get(id);
+    if (!s) {
+      s = {
+        id, key: c.ticket_key || null, title: c.title || '', kind, state, stage, attempt: 0, max_attempts: maxAttempts,
+        judge: null, cost_usd: 0, retry_cost_usd: 0, wall_ms: 0, stages: {},
+        out_of_retries: outSet.has(id), scoped_out: [],
+      };
+      byId.set(id, s);
+    }
+    s.state = state; // the latest round's
+    // attempts begun: a dispatch that never started (pending, or unreachable behind a failed
+    // dependency) has not begun its attempt, so a never-run STORY reads 0
+    const d = c.dispatch;
+    const idle = d && !d.started_at && ['pending', 'unreachable', 'skipped'].includes(d.state);
+    const begun = (Number(c.attempt) || 0) - (idle ? 1 : 0);
+    s.attempt = Math.max(s.attempt, begun, 0);
+    for (const e of (c.accept && c.accept.scoped_out) || []) s.scoped_out.push({ gap: e.gap, belongs_to: e.belongs_to });
+  }
+
+  const stages = {};
+  const add = (bag, stage, row) => {
+    const b = bag[stage] || (bag[stage] = { cost_usd: 0, retry_cost_usd: 0, wall_ms: 0 });
+    if (row.attempt > 1) b.retry_cost_usd += row.cost_usd; else b.cost_usd += row.cost_usd;
+    b.wall_ms += row.duration_ms;
+  };
+  for (const row of t.spend || []) {
+    const s = row.story != null ? byId.get(String(row.story)) : null;
+    const stage = row.stage || (s && s.stage) || 'other';
+    add(stages, stage, row);
+    if (!s) continue;
+    add(s.stages, stage, row);
+    if (row.attempt > 1) s.retry_cost_usd += row.cost_usd; else s.cost_usd += row.cost_usd;
+    s.wall_ms += row.duration_ms;
+  }
+  const rows = (bag) => Object.entries(bag).map(([stage, b]) => ({ stage, cost_usd: r4(b.cost_usd), retry_cost_usd: r4(b.retry_cost_usd), wall_ms: b.wall_ms }));
+
+  const stories = [...byId.values()].map((s) => {
+    const j = (t.judge || {})[s.id];
+    const judge = j ? { score: j.score, threshold, reason: scrub(j.reason) || null } : null;
+    if (maxAttempts != null) s.attempt = Math.min(s.attempt, maxAttempts);
+    const { stage, ...out } = s;
+    return { ...out, judge, cost_usd: r4(s.cost_usd), retry_cost_usd: r4(s.retry_cost_usd), stages: rows(s.stages) };
+  });
+
+  const limit = Number.isFinite(t.budget_usd) ? t.budget_usd : null;
+  const spent = r4(t.spent_usd != null ? t.spent_usd : (m.cost && m.cost.usd));
+  const stall = Number.isInteger(t.stall_minutes) ? t.stall_minutes : null;
+  const stalled = !stall ? [] : (t.drivers || [])
+    .filter((d) => typeof d.progress_at === 'number' && now - d.progress_at >= stall * MIN_MS)
+    .map((d) => ({ id: d.story || null, minutes: Math.floor((now - d.progress_at) / MIN_MS) }));
+  const den = t.denials || {};
+  const dropped = t.defects && Array.isArray(t.defects.dropped) ? t.defects.dropped : [];
+
+  return {
+    max_attempts: maxAttempts,
+    threshold,
+    budget: limit == null ? null : { limit_usd: limit, spent_usd: spent },
+    drivers: { live: t.live ? t.live.live : null, cap: t.live ? t.live.cap : null, stalled },
+    stall_minutes: stall,
+    stories,
+    stages: rows(stages),
+    denials: (den.judges || 0) + (den.workers || 0),
+    out_of_retries: [...outSet],
+    defects: {
+      filed: new Set(((t.defects && t.defects.filed) || []).map(String)).size,
+      dropped: dropped.length,
+      dropped_items: dropped.map((d) => ({ id: d.id, title: scrub(d.title), reason: scrub(d.reason) })),
+    },
+    scoped_out: stories.flatMap((s) => s.scoped_out.map((e) => ({ story: s.id, gap: e.gap, belongs_to: e.belongs_to }))),
+  };
+}
+
 export function summarize(model, { now = Date.now() } = {}) {
   const m = model;
   const cards = cardsOf(m);
@@ -179,5 +287,6 @@ export function summarize(model, { now = Date.now() } = {}) {
     stages, work,
     cost: { usd: (m.cost && m.cost.usd) || 0, turns: (m.cost && m.cost.turns) || 0 },
     log: logOf(m.events, titleOf),
+    metrics: metrics(m, { now }),
   };
 }

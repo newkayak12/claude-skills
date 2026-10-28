@@ -13,6 +13,7 @@ import { loadRunAt, runState } from '../../mcp/graph.mjs';
 import { readPointer, ownsRun, findTaggedRun, harnessVerdict, graphRunPath } from '../../mcp/harnessrun.mjs';
 import { countedDriverRestarts, restartBudget } from '../../mcp/taskstate.mjs';
 import { driverCostOf, collectTaskCosts } from '../bench/lib/drivercost.mjs';
+import { peek } from '../../mcp/livecap.mjs';
 import { STAGE_KEYS, stageOfNode, nodeState, mergeStates } from './view-stages.mjs';
 // listTasks()'s card model speaks tickets.mjs's own vocabulary (EPIC key, ticket state, phase,
 // STORY rows) rather than inventing a second one - the same words tm_board and tm_ticket already
@@ -106,7 +107,14 @@ function nodeSummary(n) {
     state: n.state,
     subgoal_id: n.subgoal_id || null,
     started_at: n.started_at || null,
-    elapsed_ms: elapsedMs(n.started_at, n.ended_at),
+    // broker.mjs writes finished_at, an older run file ended_at: either ends the node's clock.
+    elapsed_ms: elapsedMs(n.started_at, n.ended_at || n.finished_at),
+    // gaps a judge moved to a sibling or to nobody (taskmanager.mjs scopeGaps)
+    scoped_out: Array.isArray(r.scoped_out)
+      ? r.scoped_out.slice(0, 10).map((e) => ({ gap: String((e && e.gap) || ''), belongs_to: String((e && e.belongs_to) || 'none') }))
+      : [],
+    // a node denied a tool it needed (broker.mjs finishNode / daemon.mjs judge)
+    blocked: r.blocked === 'tool denied' || r.reason === 'blocked: tool denied',
   };
   // A dispatch claimed and not yet applied (taskmanager.mjs's claim): running with no child run
   // yet - the same predicate tickets.mjs's board uses for its own `opening` flag.
@@ -529,6 +537,116 @@ function collectHarness(task, taskId, tasksDir) {
   };
 }
 
+// ---------- the run's numbers (model.telemetry; view-summary's metrics() reads it) ----------
+//
+// Everything here is read from files collect already has: the whole ledger, the driver streams
+// (driverTotal) and the cards. Nothing is judged; view-summary.mjs turns it into the shapes a
+// person reads. Costs are rows {story, attempt, stage, cost_usd, duration_ms}: story is the
+// card id (null for a manager judge), stage is null when the card's own stage applies.
+
+const DISPATCH_STREAM = /^dispatch_(.+)_(\d+)$/;
+const JUDGE_ACCEPT_STREAM = /^judge_accept_(.+)_(\d+)$/;
+
+// judge_integrate_2 -> integrate:2, judge_gate_goal_1 -> gate:goal:1: the stage of the node judged.
+function stageOfJudgeStream(rest) {
+  return stageOfNode(rest.replace(/_/g, ':')) || (/^(plan|areas|brainstorm)/.test(rest) ? 'plan' : 'other');
+}
+
+function spendRows(driverTotal, task) {
+  const rows = [];
+  const row = (story, attempt, stage, s) => rows.push({ story, attempt, stage, cost_usd: s.cost_usd || 0, duration_ms: s.duration_ms || 0 });
+  for (const s of driverTotal.streams || []) {
+    const name = basename(String(s.stream)).replace(/\.(?:stream\.)?jsonl$/, '');
+    const d = DISPATCH_STREAM.exec(name) || JUDGE_ACCEPT_STREAM.exec(name);
+    if (d) row(d[1], Number(d[2]), null, s);
+    else if (name.startsWith('judge_')) row(null, 1, stageOfJudgeStream(name.slice(6)), s);
+    else row(null, 1, 'other', s);
+  }
+  // a child run's node sessions belong to the STORY whose dispatch opened that run
+  const runStory = new Map();
+  for (const n of task.nodes || []) {
+    if (n.stage === 'dispatch' && n.child && n.child.run_id) runStory.set(String(n.child.run_id), { story: n.subgoal_id || null, attempt: n.attempt || 1 });
+  }
+  for (const s of driverTotal.node_streams || []) {
+    const [runId, node] = String(s.stream).split('/');
+    const own = runStory.get(runId);
+    row(own ? own.story : null, own ? own.attempt : 1, stageOfNode(node || '') || 'build', s);
+  }
+  return rows;
+}
+
+const storyId = (p) => String(p.id).split(':')[0];
+
+function telemetryOf({ task, tasksDir, depth, ledger, driverTotal, harness, sRun, cards }) {
+  const opts = (task.team && task.team.opts) || {};
+  const int = (a, b) => (Number.isInteger(a) ? a : (Number.isInteger(b) ? b : null));
+  const maxRetries = int(task.max_retries, opts.max_retries);
+
+  // the last judge score and reason per STORY: the accept judge's, never a dispatch self-score
+  const judge = {};
+  let judgeDenials = 0;
+  const outOfRetries = new Set();
+  const filed = new Set();
+  for (const e of ledger) {
+    if (e.event === 'verdict') {
+      if (e.verdict === 'blocked') judgeDenials += 1;
+      if (e.stage === 'accept' && e.subgoal_id) {
+        judge[String(e.subgoal_id)] = { score: Number.isFinite(e.score) ? e.score : null, reason: e.reason || null, attempt: e.attempt || null };
+      }
+    } else if (e.event === 'daemon_retry_settled' && /retry budget exhausted/.test(String(e.reason || '')) && e.package_id) {
+      outOfRetries.add(String(e.package_id));
+    } else if (e.event === 'exhausted_reintegrated' && Array.isArray(e.not_done)) {
+      for (const id of e.not_done) outOfRetries.add(String(id));
+    } else if (['defects_filed', 'tm_file', 'daemon_defects_filed', 'daemon_upstream_defects_filed'].includes(e.event)) {
+      for (const f of Array.isArray(e.filed) ? e.filed : []) filed.add(String((f && f.id) || f));
+    }
+  }
+
+  // live drivers and how long since each wrote: a stalled driver is alive with no progress
+  const drivers = [];
+  const seen = new Set();
+  const addDriver = (story, d) => {
+    if (!d || !d.alive || !d.log || seen.has(d.pid)) return;
+    seen.add(d.pid);
+    drivers.push({ story, progress_at: mtimeOf(d.log) });
+  };
+  for (const p of cards) addDriver(storyId(p), p.child && p.child.driver);
+  addDriver(null, harness && harness.driver);
+  addDriver(null, sRun && sRun.driver);
+
+  const workers = new Set();
+  for (const p of cards) {
+    for (const n of (p.child && p.child.nodes) || []) if (n.blocked) workers.add(`${p.child.run_id}/${n.node_id}`);
+  }
+
+  let live = null;
+  if (depth === 0) {
+    try {
+      const pk = peek(task, { root: tasksDir });
+      live = { live: pk.live, cap: Number.isFinite(pk.cap) ? pk.cap : null };
+    } catch { /* no process table: say nothing */ }
+  }
+
+  return {
+    goal_threshold: Number.isFinite(task.goal_threshold) ? task.goal_threshold : (Number.isFinite(opts.goal_threshold) ? opts.goal_threshold : null),
+    max_attempts: maxRetries == null ? null : maxRetries + 1,
+    stall_minutes: int(task.stall_minutes, opts.stall_minutes),
+    budget_usd: Number.isFinite(opts.budget_usd) ? opts.budget_usd : (Number.isFinite(task.budget_usd) ? task.budget_usd : null),
+    spent_usd: driverTotal.cost_usd,
+    judge,
+    out_of_retries: [...outOfRetries],
+    spend: spendRows(driverTotal, task),
+    drivers,
+    live,
+    denials: { judges: judgeDenials, workers: workers.size },
+    defects: {
+      filed: [...filed],
+      dropped: (Array.isArray(task.dropped_defects) ? task.dropped_defects : [])
+        .map((d) => ({ id: (d && d.id) || null, title: String((d && d.title) || ''), reason: String((d && d.reason) || '') })),
+    },
+  };
+}
+
 function collectTaskFromValue(tasksDir, taskId, task, opts) {
   // Every level adds ITS OWN id/path before recursing into its own packages/s_run, so a nested
   // task discovered one level down already sees its immediate parent as an ancestor, not only
@@ -650,7 +768,12 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
   }
 
   const ledgerPath = join(tasksDir, taskId, 'ledger.jsonl');
-  const events = readJsonl(ledgerPath, 50);
+  const ledger = readJsonl(ledgerPath);
+  const events = ledger.slice(-50);
+  const telemetry = telemetryOf({
+    task, tasksDir, depth: visiting.depth, ledger, driverTotal, harness, sRun,
+    cards: [...packages, ...qaRounds, ...auditRounds],
+  });
   // flow_metrics: Kanban's other half (tickets.mjs's own flowMetrics) - board.jsonl's transition
   // log read once here, the one place this file already reads a task's own JSONL evidence
   // (ledger.jsonl, one line up), and handed to a pure function rather than re-derived from
@@ -691,6 +814,7 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     harness,
     events,
     flow_metrics,
+    telemetry,
     error: null,
   };
 }
