@@ -2029,6 +2029,13 @@ function fileDefects(task, defects, opts) {
   const reporter = (opts && opts.reporter) || 'user';
   const origin = (opts && opts.origin) || 'tm_file';
   const packages = task.spec.packages;
+  // A QA or audit filing is made on the integrated tree of the pass that found it; the fix
+  // branches from that integration branch, not from the project's HEAD. Read before
+  // reintegrateBehind rewrites integration_of to the fresh integrate.
+  const filingPkg = origin === 'qa' ? qaPkgs(task)[0] : origin === 'planning-audit' ? task.audit_pkg : null;
+  const filingInteg = filingPkg && filingPkg.integration_of != null
+    ? task.nodes.find((x) => x.node_id === String(filingPkg.integration_of) && x.integration)
+    : null;
   const goal = task.nodes.filter((n) => n.stage === 'gate' && n.subgoal_id == null).pop();
   if (!goal) throw new Error('this task has not reached goal level yet - there is no gate:goal to reroute a filed STORY behind');
   // Every node the goal gate waits on - one integrate, one audit accept, or a whole round of QA
@@ -2086,6 +2093,7 @@ function fileDefects(task, defects, opts) {
       deps: ((d && d.deps) || []).map(String),
       ...(d && d.repro ? { repro: d.repro } : {}),
       ...(d && d.repro_unverified ? { repro_unverified: true } : {}),
+      ...(filingInteg && filingInteg.integration.branch ? { base_branch: filingInteg.integration.branch } : {}),
     };
     // The filer's own deps first: dispatch branches from the first dep, so the base stays the same.
     pkg.deps = [...new Set([...pkg.deps, ...overlapDeps(pkg)])];
@@ -3524,7 +3532,7 @@ function openChildOnSlot(task, n, progress, reservation) {
   const wt = pkg.s_snapshot ? ensureWorktree(task, String(pkg.id), pkg.s_snapshot, pkg.title)
     : pkg.repair || pkg.phase === 'qa' || pkg.phase === 'audit'
       ? repairWorktree(task, pkg)
-      : ensureWorktree(task, String(pkg.id), depBranches[0] || task.base_ref || 'HEAD', pkg.title);
+      : ensureWorktree(task, String(pkg.id), pkg.base_branch || depBranches[0] || task.base_ref || 'HEAD', pkg.title);
   // A tree that existed and is gone is the daemon's stop, not this node's failure: the node goes
   // back to pending and the next tick's worktreeGoneStop (advanceDispatches, the daemon step) names
   // it. It reaches here only when the tree vanished after that look.

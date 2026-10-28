@@ -165,17 +165,6 @@ toasts).
     - Acceptance: an audit unmet item without a runnable repro is refused like a QA defect (test); a test that
       a dropped defect does not come back through rescue or retry.
 
-95. **A defect package starts from the integration tree QA tested, not from main** — in E-a0b849a2
-    - Why: E-fa72c6e8 (2026-10-28) D5's worktree was at main HEAD 736fd010 without P2's merged detector, so
-      implement:U1:1 and :2 could not reproduce the defect and the node asked a person which base to use
-      (answered: merge `teams/priority-rule-names-what/integration`). D1-D4 passed, likely because their
-      fixes did not need P2's code (unverified).
-    - Same Sprint, integrate:2 then failed: "merge of D2 conflicts on .claude/hooks/repo-rules.mjs,
-      _repo/scripts/test-repo-rules.mjs with P2" — D2 fixed P2's code from a main-based worktree. Retried with
-      `tm_retry({repackage: ["D2","P2"]})`, $~38 spent by then.
-    - Acceptance: a QA/audit-filed defect package's worktree branches from the integration commit QA ran on
-      (test in `test-taskmanager.mjs`).
-
 96. **gate integrity: record the baseline commit; the harness (size S) gate gets the list too** (rest of card 89)
     - Why: E-f27382fa (2026-10-28) shipped `gateintegrity.mjs` and the gate:goal section (cf13b16a); left as
       carryover: the size-S harness prompt sentence and base_commit recording. Its report also notes an
@@ -188,6 +177,13 @@ toasts).
       the new repo hook refusing a QA command in the integration tree (unverified).
     - Acceptance: a QA round whose child retried files a defect seen in several attempts once (test in
       `test-taskmanager.mjs`); the denied QA command is named and either allowed or rewritten.
+
+98. **A size-S goal gate below goal_threshold does not accept**
+    - Why: E-a0b849a2 (2026-10-28, card 95) report: "gate:U1:1 accept, 85%" and "gate:goal:1 accept, 85%"
+      while team.json goal_threshold is 90 and the run state is complete. Cause unverified (threshold not
+      passed to the size-S run, or the gate's accept not checked against it).
+    - Acceptance: a size-S run whose gate reports accept with match_pct under the threshold reads as not
+      accepted (test); the report names the threshold next to the score.
 
 75. **smart-compact fires on the same context % the person sees in the status line** — part in E-3f6657e7 (6d5809b2)
     - 2026-10-26: smart-compact now computes `round((input + cache_creation + cache_read) / window * 100)`, the
@@ -355,6 +351,7 @@ toasts).
 | E-db523454 | 2026-10-28 | 92 | shipped `f5a54fe8`; size S; goal gate 96; "claims every user story" needs 2+ stories; teams 1568/1568; ~$2 |
 | E-8b9c417d | 2026-10-28 | 84 (two defects) | shipped `7e051a4b`; P1 accepted; P2 met its own acceptance but rejected 3× for P3's live look (card 91), taken from its branch; live look done in session; integration branch held QA scratch under `test/` (0.60.1 engine, card 86 fix not installed) — not merged; teams 1570/1570, plugin test 375/375; $27.5 |
 | E-0ad09a55 | 2026-10-28 | 88 (part) | shipped `12668c8f`; size S; goal gate 90; repro gate for QA defects and audit unmet (rerun in the integration tree, a passing one dropped); teams 1577/1577; $3.72 |
+| E-a0b849a2 | 2026-10-28 | 95 | size S; goal gate 85 (under threshold 90, card 98); a QA/audit-filed package records `base_branch` = the filing pass's integration branch and branches from it; teams 1615/1615 |
 | E-f69222d8 | 2026-10-28 | 90 rest | size S; goal gate 93; `>|`, absolute repo targets from outside, bare `cd`/`cd -`/`pushd`/`popd`/subshell tracking; repo-rules 217/217; live hook run: 4 deny, 2 pass as listed |
 | E-a193d3ec | 2026-10-28 | 94 defects | shipped `bd8e0702`; STORYs reason on its own line, a repackaged story shows its current attempt; teams 1613/1613, plugin test 396/396 |
 | E-692f3092 | 2026-10-28 | 94 | shipped `110de5ff`; teams-status attempts, judge score vs threshold, cost and retry spend, drivers, denials, defects filed/dropped; teams 1610/1610, plugin test 381/381 |
