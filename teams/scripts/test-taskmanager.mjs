@@ -2633,6 +2633,167 @@ test('repro gate on the audit hook: an unmet story with no repro, or a passing o
   }, { roles: { planning: true } });
 });
 
+test('repro gate on the audit hook: an object with only title/evidence, a bare string, and a partial repro are all refused "no repro", source audit, nothing filed', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    await toIntegrateWithPlanning(tm, g, task_id, cwd);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const nx = await tm.call('tm_next', { task_id });
+    await completeAuditChild(g, nx.children[0], { accept: true, match_pct: 95 });
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:AUDIT:1' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:AUDIT:1', payload: ok({
+      accept: true, match_pct: 91,
+      unmet: [
+        { title: 'obj', evidence: 'only evidence' }, 'bare string',
+        { title: 'partial', repro: { command: 'false', observed: 'x' } },
+      ],
+    }) });
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.deepEqual(task.spec.packages.map((p) => p.id), ['P1', 'P2'], 'nothing is filed');
+    assert.deepEqual(task.dropped_defects.map((d) => [d.title, d.reason, d.source]),
+      [['obj', 'no repro', 'audit'], ['bare string', 'no repro', 'audit'], ['partial', 'no repro', 'audit']]);
+  }, { roles: { planning: true } });
+});
+
+test('a defect dropped by reproGate does not re-enter through tm_retry of the QA or the audit accept node', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    const read = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    await toIntegrateWithPlanning(tm, g, task_id, cwd);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    let nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children[0].package_id, 'QA-F1');
+    await completeQaChild(g, nx.children[0], { accept: true, match_pct: 95 });
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:QA-F1:1' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:QA-F1:1', payload: ok({
+      accept: true, match_pct: 95, defects: [{ title: 'qa no repro', touches: [], deps: [], evidence: 'e' }],
+    }) });
+    let task = read();
+    assert.deepEqual(task.spec.packages.map((p) => p.id), ['P1', 'P2']);
+    const qaDropped = task.dropped_defects.length;
+    assert.equal(qaDropped, 1);
+
+    const rt = await tm.call('tm_retry', { task_id, package_id: 'QA-F1' });
+    assert.equal(rt.retried, true, JSON.stringify(rt));
+    task = read();
+    assert.ok(task.nodes.some((n) => n.node_id === 'accept:QA-F1:2'), 'the retry opened a new attempt');
+    assert.deepEqual(task.spec.packages.map((p) => p.id), ['P1', 'P2'], 'retry filed no defect');
+    assert.equal(task.dropped_defects.length, qaDropped, 'the dropped defect is not gated again');
+  }, { roles: { planning: true, qa: true } });
+
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    const read = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    await toIntegrateWithPlanning(tm, g, task_id, cwd);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const nx = await tm.call('tm_next', { task_id });
+    await completeAuditChild(g, nx.children[0], { accept: true, match_pct: 95 });
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:AUDIT:1' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:AUDIT:1', payload: ok({
+      accept: true, match_pct: 91, unmet: [{ title: 'audit no repro', evidence: 'e' }],
+    }) });
+    let task = read();
+    assert.deepEqual(task.spec.packages.map((p) => p.id), ['P1', 'P2']);
+    const dropped = task.dropped_defects.length;
+    assert.equal(dropped, 1);
+
+    const rt = await tm.call('tm_retry', { task_id, package_id: 'AUDIT' });
+    assert.equal(rt.retried, true, JSON.stringify(rt));
+    task = read();
+    assert.ok(task.nodes.some((n) => n.node_id === 'accept:AUDIT:2'), 'the retry opened a new attempt');
+    assert.deepEqual(task.spec.packages.map((p) => p.id), ['P1', 'P2'], 'retry filed no defect');
+    assert.equal(task.dropped_defects.length, dropped, 'the dropped defect is not gated again');
+  }, { roles: { planning: true } });
+});
+
+test('repro gate on the audit hook: no-repro and partial-repro unmet items are dropped with reason "no repro"; a full rp() repro in the same result is still filed', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    await toIntegrateWithPlanning(tm, g, task_id, cwd);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const nx = await tm.call('tm_next', { task_id });
+    await completeAuditChild(g, nx.children[0], { accept: true, match_pct: 95 });
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:AUDIT:1' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:AUDIT:1', payload: ok({
+      accept: true, match_pct: 91,
+      unmet: [
+        { title: 'US-1 -> no repro at all', evidence: 'e' },
+        { title: 'US-2 -> missing expected', repro: { command: 'false', observed: 'x' } },
+        { title: 'US-3 -> missing observed', repro: { command: 'false', expected: 'y' } },
+        { title: 'US-4 -> full repro', repro: rp('false') },
+      ],
+    }) });
+    const task = readTask(root, task_id);
+    assert.deepEqual(task.spec.packages.filter((p) => p.reporter === 'audit').map((p) => p.title), ['US-4 -> full repro'], 'only the full repro is filed');
+    assert.deepEqual(task.dropped_defects.map((d) => [d.title, d.reason, d.source]), [
+      ['US-1 -> no repro at all', 'no repro', 'audit'], ['US-2 -> missing expected', 'no repro', 'audit'], ['US-3 -> missing observed', 'no repro', 'audit'],
+    ]);
+  }, { roles: { planning: true } });
+});
+
+test('dropped audit defect: tm_retry re-runs the audit hook (node_finish count rises) and the same no-repro item is judged afresh, filing nothing', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    const finishes = () => readFileSync(join(root, task_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+      .filter((e) => e.event === 'node_finish' && e.stage === 'accept' && e.subgoal_id === 'AUDIT').length;
+    await toIntegrateWithPlanning(tm, g, task_id, cwd);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    let nx = await tm.call('tm_next', { task_id });
+    await completeAuditChild(g, nx.children[0], { accept: true, match_pct: 95 });
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:AUDIT:1' });
+    const unmet = [{ title: 'audit no repro', evidence: 'e' }];
+    await tm.call('tm_submit', { task_id, node_id: 'accept:AUDIT:1', payload: ok({ accept: true, match_pct: 91, unmet }) });
+    const before = finishes();
+    assert.equal(before, 1);
+    assert.equal(readTask(root, task_id).dropped_defects.length, 1);
+
+    const rt = await tm.call('tm_retry', { task_id, package_id: 'AUDIT' });
+    assert.equal(rt.retried, true, JSON.stringify(rt));
+    nx = await tm.call('tm_next', { task_id });
+    await completeAuditChild(g, nx.children[0], { accept: true, match_pct: 95 });
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:AUDIT:2' });
+    await tm.call('tm_submit', { task_id, node_id: 'accept:AUDIT:2', payload: ok({ accept: true, match_pct: 91, unmet }) });
+    assert.equal(finishes(), before + 1, 'the audit hook ran again for the retried attempt');
+    const task = readTask(root, task_id);
+    assert.deepEqual(task.spec.packages.map((p) => p.id), ['P1', 'P2'], 'nothing is filed after the retry');
+    assert.deepEqual(task.dropped_defects.map((d) => [d.title, d.reason]), [['audit no repro', 'no repro'], ['audit no repro', 'no repro']],
+      'the re-reported item is gated afresh and dropped again');
+  }, { roles: { planning: true } });
+});
+
+test('dropped QA defect: rescueQaRound runs (qa_card_dropped recorded), files nothing, and a second settleQaRound does not gate it again', async () => {
+  const { autoRetryPackages, settleQaRound } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await twoAreasIntegrated(tm, g, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    const qa = Object.fromEntries(nx.children.map((c) => [c.package_id, c]));
+    const finishQa = async (id, accept) => {
+      const sub = (node_id, payload) => g.call('team_submit', { run_id: qa[id].run_id, cwd: qa[id].cwd, node_id, payload: ok(payload) });
+      await sub('plan', { handoff: 'p', flow: 'qa', size: 'S' });
+      await sub('setgoal', { spec: { goal: 'QA', acceptance: ['cases run'], subgoals: [{ id: 'Q1', title: 'run cases', acceptance: ['cases run'], deps: [] }] } });
+      await sub('critique', { sound: true });
+      await sub('cases:Q1:1', { changed_files: [], handoff: 'cases' });
+      await sub('execute:Q1:1', { verified: true, handoff: 'ran' });
+      await sub('gate:Q1:1', { accept: true, match_pct: 95 });
+      await sub('gate:goal:1', { accept: true, match_pct: 95 });
+      await g.call('team_next', { run_id: qa[id].run_id, cwd: qa[id].cwd });
+      await sub('report', { handoff: 'QA report' });
+      await tm.call('tm_submit', { task_id, node_id: `dispatch:${id}:1` });
+      return tm.call('tm_submit', { task_id, node_id: `accept:${id}:1`, payload: ok(accept
+        ? { accept: true, match_pct: 90, defects: [{ title: 'qa no repro', evidence: 'e', touches: [], deps: [] }] }
+        : { accept: false, match_pct: 30, reason: 'the QA report does not show the cases ran', gaps: ['no evidence'] }) });
+    };
+    assert.equal((await finishQa('QA-F1', true)).state, 'done');
+    assert.equal((await finishQa('QA-F2', false)).state, 'failed');
+    const events = () => readFileSync(join(root, task_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.event === 'qa_card_dropped').length;
+    assert.equal(events(), 0, 'rescue has not run yet');
+    assert.ok(withTasksRoot(root, () => inTx(readTask(root, task_id), autoRetryPackages)));
+    assert.equal(events(), 1, 'rescueQaRound ran');
+    let t = readTask(root, task_id);
+    assert.deepEqual(t.spec.packages.map((p) => p.id), ['P1', 'P2'], 'rescue filed nothing');
+    assert.deepEqual(t.dropped_defects.map((d) => [d.title, d.reason]), [['qa no repro', 'no repro']]);
+    withTasksRoot(root, () => inTx(t, settleQaRound));
+    t = readTask(root, task_id);
+    assert.deepEqual(t.spec.packages.map((p) => p.id), ['P1', 'P2'], 'a second join filed nothing');
+    assert.equal(t.dropped_defects.length, 1, 'the dropped defect is not gated again');
+  }, { roles: { qa: true }, max_retries: 0 });
+});
+
 
 // ---------- budget / timebox (§B.1: the Sprint's own missing box) ----------
 
@@ -9782,6 +9943,46 @@ test('S1 scope prompt: the size-S driver is told to compute its verdict with sco
     assert.match(prompt, /never from git status read by you/);
     assert.match(prompt, /exit status is the result: 0 = pass; 1 = out-of-scope paths, printed one per line/);
     assert.ok(prompt.includes(SCRATCH_RULE), 'the size-S run is told where scratch goes');
+  } finally { tm.close(); rmSync(f.cwd, { recursive: true, force: true }); rmSync(f.root, { recursive: true, force: true }); }
+});
+
+// Card 96: base_commit at tm_open, and the size-S driver is told to run gateintegrity against it.
+test('base_commit: tm_open in a git repo records the repo HEAD', async () => {
+  const f = driverFixture({}, FAKE_DRIVER_RESPAWN);
+  const tm = await f.client.init();
+  try {
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: f.cwd, encoding: 'utf8' }).trim();
+    const { task_id } = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small', cwd: f.cwd, vendor: 'self', size: 'S' });
+    assert.equal(readTask(f.root, task_id).base_commit, head);
+  } finally { tm.close(); rmSync(f.cwd, { recursive: true, force: true }); rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('base_commit: a cwd outside any git work tree records null and the size-S prompt has no gateintegrity sentence', async (t) => {
+  const plain = mkdtempSync(join(tmpdir(), 'tm-nogit-'));
+  const inside = spawnSync('git', ['-C', plain, 'rev-parse', '--is-inside-work-tree'], { encoding: 'utf8' });
+  if (inside.status === 0) { rmSync(plain, { recursive: true, force: true }); t.skip(`${plain} is inside a git work tree on this machine`); return; }
+  const g = driverFixture({}, FAKE_DRIVER_RESPAWN);
+  const tm = await g.client.init();
+  try {
+    const { task_id } = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small', cwd: plain, vendor: 'self', size: 'S' });
+    assert.equal(readTask(g.root, task_id).base_commit, null);
+    const ran = await waitFor(() => (existsSync(`${g.ran}.1`) ? JSON.parse(readFileSync(`${g.ran}.1`, 'utf8')) : null), 'the harness driver to run');
+    assert.ok(!ran.argv[ran.argv.length - 1].includes('gateintegrity'));
+  } finally { tm.close(); rmSync(plain, { recursive: true, force: true }); rmSync(g.cwd, { recursive: true, force: true }); rmSync(g.root, { recursive: true, force: true }); }
+});
+
+test('base_commit: the size-S driver prompt names gateintegrity.mjs, the recorded base_commit and the exit statuses', async () => {
+  const f = driverFixture({}, FAKE_DRIVER_RESPAWN);
+  const tm = await f.client.init();
+  try {
+    const { task_id } = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small', cwd: f.cwd, vendor: 'self', size: 'S' });
+    const sha = readTask(f.root, task_id).base_commit;
+    assert.match(sha, /^[0-9a-f]{40}$/);
+    const ran = await waitFor(() => (existsSync(`${f.ran}.1`) ? JSON.parse(readFileSync(`${f.ran}.1`, 'utf8')) : null), 'the harness driver to run');
+    const prompt = ran.argv[ran.argv.length - 1];
+    assert.ok(prompt.includes('gateintegrity.mjs'));
+    assert.ok(prompt.includes(sha), 'the recorded base_commit sha');
+    assert.match(prompt, /exit status[^.]*\b1 = /);
   } finally { tm.close(); rmSync(f.cwd, { recursive: true, force: true }); rmSync(f.root, { recursive: true, force: true }); }
 });
 
