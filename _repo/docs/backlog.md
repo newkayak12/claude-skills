@@ -182,12 +182,21 @@ toasts).
       implement node appended tests with a shell heredoc (card 90's rule).
     - Acceptance: a size-S run's gate sees the inventory; the task records the baseline it was taken against.
 
-90. **Each rule in `.claude/rules/` names what enforces it** (from pstack `/correct`, `principle-encode-lessons-in-structure`)
-    - Why: same benchmark, 2026-10-27. pstack keeps a table pairing each rule with its check and moves a
-      rule corrected twice into architecture, a lint or a test. Here corrections repeat in prose only (sed
-      instead of Edit, a bare `$VAR` in rm, claiming without a live look).
-    - Acceptance: a table rule -> enforcement (hook, validator, engine check, or "prose only"); every
-      "prose only" rule corrected twice gets a check that fails on the real past mistake, or a reason why not.
+90. **Repo-hook write detector: the four shapes QA round 2 left** (rest of card 90)
+    - Why: E-fa72c6e8 (2026-10-28) shipped `enforcement.md` and the rm / in-place-write refusals; cancelled by
+      the user in QA round 2 ("지금까지한서부터 반영해") with these open:
+      `echo x >| README.md` is allowed (segments() splits at the `|` of `>|`); an absolute repo path is allowed
+      when the cwd or a `cd` target is outside any repo; cd tracking mishandles `pushd`, bare `cd`, `cd -`,
+      `(cd /tmp);`, `cd /tmp ||` (`pushd /tmp && echo hi > x.txt` is a false deny); the subgoal's checks 5-6
+      left out the `bash` mode argument.
+    - Acceptance: each shape is a test in `_repo/scripts/test-repo-rules.mjs` (deny or pass, as listed).
+
+97. **QA files each defect once, not once per gate attempt**
+    - Why: E-fa72c6e8 (2026-10-28) QA-F1:2's gate:U1 was "blocked: tool denied" three times and the same five
+      defects came back as D1-D5, D6-D10 and D11-D15, 15 packages queued (~$30 more). The denial is likely
+      the new repo hook refusing a QA command in the integration tree (unverified).
+    - Acceptance: a QA round whose child retried files a defect seen in several attempts once (test in
+      `test-taskmanager.mjs`); the denied QA command is named and either allowed or rewritten.
 
 75. **smart-compact fires on the same context % the person sees in the status line** — part in E-3f6657e7 (6d5809b2)
     - 2026-10-26: smart-compact now computes `round((input + cache_creation + cache_read) / window * 100)`, the
@@ -355,4 +364,5 @@ toasts).
 | E-db523454 | 2026-10-28 | 92 | shipped `f5a54fe8`; size S; goal gate 96; "claims every user story" needs 2+ stories; teams 1568/1568; ~$2 |
 | E-8b9c417d | 2026-10-28 | 84 (two defects) | shipped `7e051a4b`; P1 accepted; P2 met its own acceptance but rejected 3× for P3's live look (card 91), taken from its branch; live look done in session; integration branch held QA scratch under `test/` (0.60.1 engine, card 86 fix not installed) — not merged; teams 1570/1570, plugin test 375/375; $27.5 |
 | E-0ad09a55 | 2026-10-28 | 88 (part) | shipped `12668c8f`; size S; goal gate 90; repro gate for QA defects and audit unmet (rerun in the integration tree, a passing one dropped); teams 1577/1577; $3.72 |
+| E-fa72c6e8 | 2026-10-28 | 90 | cancelled by the user in QA round 2, integration-3 taken; `enforcement.md` + repo hook refuses unquoted `rm $VAR` and in-place Bash writes; repo-rules 204/204; rest is card 90, duplicate filing card 97; ~$79 |
 | E-f27382fa | 2026-10-28 | 89 | shipped `cf13b16a`; size S; goal gate 90; `gateintegrity.mjs` + gate:goal section; real run `--baseline HEAD~30` lists card 85's two replaced tests; teams 1591/1591 |

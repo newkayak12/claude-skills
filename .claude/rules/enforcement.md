@@ -123,8 +123,7 @@ after `git config core.hooksPath _repo/hooks`.
 
 No rule file states this rule, so it has no `file § section` anchor; it is not counted against any
 rule file. When a rule file gains the statement, move the row up and anchor it. Like the Read/Edit/Write row
-above, it is enforced by a refusal in `repo-rules.mjs` that another package builds; until that merges,
-no code in this tree backs either row (default - revisit with newkayak12).
+above, it is enforced by a refusal in `repo-rules.mjs`.
 
 | Rule | Anchor | Enforcement |
 |---|---|---|
