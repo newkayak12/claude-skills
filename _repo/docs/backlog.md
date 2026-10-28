@@ -165,7 +165,7 @@ toasts).
     - Acceptance: an audit unmet item without a runnable repro is refused like a QA defect (test); a test that
       a dropped defect does not come back through rescue or retry.
 
-95. **A defect package starts from the integration tree QA tested, not from main**
+95. **A defect package starts from the integration tree QA tested, not from main** — in E-a0b849a2
     - Why: E-fa72c6e8 (2026-10-28) D5's worktree was at main HEAD 736fd010 without P2's merged detector, so
       implement:U1:1 and :2 could not reproduce the defect and the node asked a person which base to use
       (answered: merge `teams/priority-rule-names-what/integration`). D1-D4 passed, likely because their
@@ -181,15 +181,6 @@ toasts).
       carryover: the size-S harness prompt sentence and base_commit recording. Its report also notes an
       implement node appended tests with a shell heredoc (card 90's rule).
     - Acceptance: a size-S run's gate sees the inventory; the task records the baseline it was taken against.
-
-90. **Repo-hook write detector: the four shapes QA round 2 left** (rest of card 90)
-    - Why: E-fa72c6e8 (2026-10-28) shipped `enforcement.md` and the rm / in-place-write refusals; cancelled by
-      the user in QA round 2 ("지금까지한서부터 반영해") with these open:
-      `echo x >| README.md` is allowed (segments() splits at the `|` of `>|`); an absolute repo path is allowed
-      when the cwd or a `cd` target is outside any repo; cd tracking mishandles `pushd`, bare `cd`, `cd -`,
-      `(cd /tmp);`, `cd /tmp ||` (`pushd /tmp && echo hi > x.txt` is a false deny); the subgoal's checks 5-6
-      left out the `bash` mode argument.
-    - Acceptance: each shape is a test in `_repo/scripts/test-repo-rules.mjs` (deny or pass, as listed).
 
 97. **QA files each defect once, not once per gate attempt**
     - Why: E-fa72c6e8 (2026-10-28) QA-F1:2's gate:U1 was "blocked: tool denied" three times and the same five
@@ -364,6 +355,7 @@ toasts).
 | E-db523454 | 2026-10-28 | 92 | shipped `f5a54fe8`; size S; goal gate 96; "claims every user story" needs 2+ stories; teams 1568/1568; ~$2 |
 | E-8b9c417d | 2026-10-28 | 84 (two defects) | shipped `7e051a4b`; P1 accepted; P2 met its own acceptance but rejected 3× for P3's live look (card 91), taken from its branch; live look done in session; integration branch held QA scratch under `test/` (0.60.1 engine, card 86 fix not installed) — not merged; teams 1570/1570, plugin test 375/375; $27.5 |
 | E-0ad09a55 | 2026-10-28 | 88 (part) | shipped `12668c8f`; size S; goal gate 90; repro gate for QA defects and audit unmet (rerun in the integration tree, a passing one dropped); teams 1577/1577; $3.72 |
+| E-f69222d8 | 2026-10-28 | 90 rest | size S; goal gate 93; `>|`, absolute repo targets from outside, bare `cd`/`cd -`/`pushd`/`popd`/subshell tracking; repo-rules 217/217; live hook run: 4 deny, 2 pass as listed |
 | E-a193d3ec | 2026-10-28 | 94 defects | shipped `bd8e0702`; STORYs reason on its own line, a repackaged story shows its current attempt; teams 1613/1613, plugin test 396/396 |
 | E-692f3092 | 2026-10-28 | 94 | shipped `110de5ff`; teams-status attempts, judge score vs threshold, cost and retry spend, drivers, denials, defects filed/dropped; teams 1610/1610, plugin test 381/381 |
 | E-fa72c6e8 | 2026-10-28 | 90 | cancelled by the user in QA round 2, integration-3 taken; `enforcement.md` + repo hook refuses unquoted `rm $VAR` and in-place Bash writes; repo-rules 204/204; rest is card 90, duplicate filing card 97; ~$79 |
