@@ -355,6 +355,26 @@ test('last_verdict and hand-offs come from the ledger tail', () => {
   } finally { w.cleanup(); }
 });
 
+test('last_verdict ignores a verdict from before the current shape (round_first_attempt)', () => {
+  const w = world();
+  try {
+    const l = lTask(w, {
+      pkgs: [{ id: 'P1', streamAgeMs: 1000 }],
+      ledger: [{ ts: 1000, event: 'verdict', task_id: 'aaaaaaaa-0001', node_id: 'accept:P1:3', subgoal_id: 'P1', attempt: 3, actor: 'judge', verdict: 'reject' }],
+    });
+    assert.equal(entryOf(w, l.id).floor.items[0].last_verdict, 'reject', 'no round_first_attempt above 1: shown');
+    // repackaged: the only dispatch is :4, whose deps hold the live critique
+    const tp = join(l.dir, 'task.json');
+    const t = JSON.parse(readFileSync(tp, 'utf8'));
+    t.nodes = t.nodes.filter((n) => n.node_id !== 'accept:P1:1');
+    const d = t.nodes.find((n) => n.node_id === 'dispatch:P1:1');
+    d.node_id = 'dispatch:P1:4'; d.attempt = 4;
+    writeFileSync(tp, JSON.stringify(t));
+    const item = entryOf(w, l.id).floor.items[0];
+    assert.equal(item.last_verdict, null, 'a reject of attempt 3 judged the old shape');
+  } finally { w.cleanup(); }
+});
+
 test('owner_key per kind', () => {
   const w = world();
   try {
@@ -610,7 +630,7 @@ test('a STORY item carries its numbers as metrics; the existing try, max and cos
   const f = floorOf(m, { stories: { P2: { cost_usd: 3.75 } } });
   const by = Object.fromEntries(f.items.map((i) => [i.key, i]));
   assert.deepEqual(by.P2.metrics, {
-    attempt: 3, max_attempts: 3, judge: { score: 85, threshold: 90, reason: 'the footer is not cleared' },
+    attempt: 3, max_attempts: 3, judge: { score: 85, threshold: 90, reason: 'the footer is not cleared', gap: null },
     cost_usd: 1.25, retry_cost_usd: 2.5, wall_ms: 180000, out_of_retries: true,
   });
   assert.equal(by.P2.cost_usd, 3.75, 'the desk cost the item already had is unchanged');

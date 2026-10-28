@@ -90,7 +90,9 @@ export function floorOf(model, facts = {}, { now = Date.now(), metrics: given = 
       const t = tryOf(c);
       // one planning card is PLAN; several are PLAN, PLAN2, ... so worker ids stay distinct
       const label = c.phase === 'planning' ? `PLAN${++plans > 1 ? plans : ''}` : id;
-      const v = verdicts[id.split(':')[0]];
+      const v0 = verdicts[id.split(':')[0]];
+      // a verdict from before this shape's first dispatch judged a discarded shape: not the current attempt's
+      const v = v0 && !(v0.attempt != null && c.round_first_attempt != null && v0.attempt < c.round_first_attempt) ? v0 : null;
       add(label, {
         key: id, title: c.title || '', last_verdict: v ? v.verdict : null, try: t.try, max: t.max,
         elapsed_ms: (c.dispatch && c.dispatch.elapsed_ms) ?? null,

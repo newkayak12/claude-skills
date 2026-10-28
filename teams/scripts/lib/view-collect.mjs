@@ -238,6 +238,17 @@ function collectNestedTasks(cwd, visiting) {
   return out;
 }
 
+// The first dispatch attempt of this package's CURRENT shape round: a read-only mirror of the
+// engine's roundDispatch (mcp/taskmanager.mjs) that retryPackage counts `attempt - first.attempt`
+// from. A repackage numbers the new dispatch on (e.g. :4), so the story's own attempt count starts
+// here, and a verdict recorded before it belongs to the discarded shape. null with no dispatch.
+function roundFirstAttempt(task, pkgId) {
+  const critique = task.nodes.filter((n) => n.stage === 'critique' && n.state !== 'skipped').pop();
+  const mine = task.nodes.filter((x) => x.subgoal_id === pkgId && x.stage === 'dispatch');
+  const first = (critique && mine.find((x) => (x.deps || []).includes(critique.node_id))) || mine[0] || null;
+  return first ? (first.attempt || 1) : null;
+}
+
 // `links` is tickets.mjs's own storyLinks(task, pkg.id) - the one source of truth for "blocked
 // by / blocks / implements / filed by" (see that function's comment). Read here, not
 // re-derived: a second computation of the same relations from pkg.deps is exactly the kind of
@@ -329,6 +340,8 @@ function packageModel(task, pkg, dispatchNode, acceptNode, visiting) {
     // attempt count (pushChain/openRepair increment it in place; see tickets.mjs's
     // latestBySubgoal), not something this file has to count nodes to derive.
     attempt: dispatchNode ? (dispatchNode.attempt || 1) : null,
+    // the attempt number the current shape's first dispatch carries (see roundFirstAttempt)
+    round_first_attempt: roundFirstAttempt(task, pkg.id),
     assignee,
   };
 }
@@ -591,7 +604,7 @@ function telemetryOf({ task, tasksDir, depth, ledger, driverTotal, harness, sRun
     if (e.event === 'verdict') {
       if (e.verdict === 'blocked') judgeDenials += 1;
       if (e.stage === 'accept' && e.subgoal_id) {
-        judge[String(e.subgoal_id)] = { score: Number.isFinite(e.score) ? e.score : null, reason: e.reason || null, attempt: e.attempt || null };
+        judge[String(e.subgoal_id)] = { score: Number.isFinite(e.score) ? e.score : null, reason: e.reason || null, attempt: e.attempt || null, verdict: e.verdict || null };
       }
     } else if (e.event === 'daemon_retry_settled' && /retry budget exhausted/.test(String(e.reason || '')) && e.package_id) {
       outOfRetries.add(String(e.package_id));

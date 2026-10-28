@@ -30,7 +30,8 @@ export type WorkState = 'acting' | 'idle' | 'you' | 'done' | 'stalled'
 // and why, spend with the retries' spend apart, wall time; null on an item with no STORY behind it (an S task)
 export type StoryMetrics = {
   attempt: number | null; max_attempts: number | null
-  judge: { score: number; threshold: number | null; reason: string | null } | null
+  // gap: the judge's first accept gap when it rejected at or above the threshold, else null
+  judge: { score: number; threshold: number | null; reason: string | null; gap: string | null } | null
   cost_usd: number | null; retry_cost_usd: number | null; wall_ms: number | null; out_of_retries: boolean | null
 }
 export type SummaryItem = {

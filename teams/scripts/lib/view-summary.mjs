@@ -177,11 +177,15 @@ export function metrics(model, { now = Date.now() } = {}) {
     }
     s.state = state; // the latest round's
     // attempts begun: a dispatch that never started (pending, or unreachable behind a failed
-    // dependency) has not begun its attempt, so a never-run STORY reads 0
+    // dependency) has not begun its attempt, so a never-run STORY reads 0. A repackage numbers its
+    // new dispatch on (:4), so the count starts from the current shape's first dispatch.
     const d = c.dispatch;
     const idle = d && !d.started_at && ['pending', 'unreachable', 'skipped'].includes(d.state);
-    const begun = (Number(c.attempt) || 0) - (idle ? 1 : 0);
+    const rfa = Number.isInteger(c.round_first_attempt) && c.round_first_attempt > 1 ? c.round_first_attempt : null;
+    const begun = (Number(c.attempt) || 0) - (rfa ? rfa - 1 : 0) - (idle ? 1 : 0);
     s.attempt = Math.max(s.attempt, begun, 0);
+    s.rfa = rfa;
+    s.gap = (c.accept && Array.isArray(c.accept.gaps) && c.accept.gaps.length) ? c.accept.gaps[0] : null;
     for (const e of (c.accept && c.accept.scoped_out) || []) s.scoped_out.push({ gap: e.gap, belongs_to: e.belongs_to });
   }
 
@@ -204,9 +208,16 @@ export function metrics(model, { now = Date.now() } = {}) {
 
   const stories = [...byId.values()].map((s) => {
     const j = (t.judge || {})[s.id];
-    const judge = j ? { score: j.score, threshold, reason: scrub(j.reason) || null } : null;
+    // a verdict recorded before the current shape's first dispatch judged a discarded shape: stale
+    const stale = !!(j && s.rfa && j.attempt != null && j.attempt < s.rfa);
+    let judge = null;
+    if (j && !stale) {
+      const deciding = j.verdict === 'reject' && j.score != null && threshold != null && j.score >= threshold;
+      const g = deciding && s.gap != null ? scrub(typeof s.gap === 'object' ? (s.gap.text || JSON.stringify(s.gap)) : s.gap) : '';
+      judge = { score: j.score, threshold, reason: scrub(j.reason) || null, gap: g || null };
+    }
     if (maxAttempts != null) s.attempt = Math.min(s.attempt, maxAttempts);
-    const { stage, ...out } = s;
+    const { stage, rfa, gap, ...out } = s;
     return { ...out, judge, cost_usd: r4(s.cost_usd), retry_cost_usd: r4(s.retry_cost_usd), stages: rows(s.stages) };
   });
 

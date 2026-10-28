@@ -2357,16 +2357,63 @@ for (const cols of WIDTHS) {
     expect(rows).toHaveLength(3)
     const [p2, p3, p4] = rows as [string, string, string]
     for (const part of ['report writer', '3/3', 'judge 85 vs 90', '$1.27', '+$2.35', '25m']) expect(p2).toContain(part)
-    expect(p2).toContain('All code')
+    // the reason is the line under its row, not on it
+    expect(p2).not.toContain('All code')
+    expect(lines[lines.indexOf(p2) + 1]).toContain('All code')
     expect(p3).toContain('0/3')
     expect(p3).not.toContain('judge')
     for (const part of ['1/3', 'judge 94 vs 90', '$0.42', '4m']) expect(p4).toContain(part)
     expect(p4).not.toContain('+$')
     // the long reason is cut with …, never run on
-    if (cols === 110) expect(/…/.test(p2)).toBe(true)
+    if (cols === 110) expect(lines[lines.indexOf(p2) + 1]!.trimEnd().endsWith('…')).toBe(true)
     // icons first: ✘ for the failed STORY, columns at one offset on every row
     expect(p2.replace(/^▸ */, '').trimStart()[0]).toBe('✘')
     const judgeAt = rows.map(l => l.indexOf('judge')).filter(i => i >= 0)
     expect(new Set(judgeAt).size).toBe(1)
   })
+}
+
+// ---- U2: a STORY is two lines — the numbers, then the reason or the judge's gap — at 86, 110 and 190 columns ----
+const TWO = [
+  epicOf('tA', 'E-3a3a3bb5', [
+    story('E-3a3a3bb5/P2', 'report writer with a deliberately long title', { state: 'failed', last_verdict: 'reject', metrics: numbers({ judge: { score: 85, threshold: 90, reason: REASON, gap: null } }) }),
+    story('E-3a3a3bb5/P3', 'cache layer', { doing: 'editing cache.ts', metrics: numbers({ attempt: 1, judge: { score: 93, threshold: 90, reason: 'sound', gap: 'the retry path has no test' }, retry_cost_usd: 0, out_of_retries: false }) }),
+    story('E-3a3a3bb5/P4', 'parser', { state: 'idle', metrics: NEVER }),
+  ]),
+]
+for (const cols of [86, 110, 190]) {
+  test(`STORY rows are two lines with the title cut only at its end at ${cols} columns`, async ($, on) => {
+    await seeded($, on, { status: stat(), tasks: TWO, task: demo() }, 'terminal', undefined, { epic: 'tA' }, true)
+    const lines = await inPane($, cols, 'stories')
+    sound(lines, cols)
+    for (const l of lines) expect(l).not.toContain('->')
+    const at = (re: RegExp) => lines.findIndex(l => re.test(l) && !EPIC_LINE.test(l))
+    const p2 = at(/^[▸ ] +✘  report/)
+    const p3 = at(/^[▸ ] +●  cache/)
+    expect(p2).toBeGreaterThanOrEqual(0)
+    expect(p3).toBeGreaterThan(p2)
+    // the title: whole while room is free (never a stub), else a long prefix and a single … at its end
+    const title = lines[p2]!.replace(/^[▸ ] +✘  /, '').split(/ {2,}/)[0]!
+    expect(title.startsWith('report writer')).toBe(true)
+    expect(title.indexOf('…') === -1 || title.indexOf('…') === title.length - 1).toBe(true)
+    if (cols >= 190) expect(title).toBe('report writer with a deliberately long title')
+    // line 2: the reason on its own line, indented under the title, clipped with … only at its end
+    const note = lines[p2 + 1]!
+    expect(note.startsWith('    ')).toBe(true)
+    expect(note.trim().startsWith('All code and test acceptance')).toBe(true)
+    expect(lines[p2]).not.toContain('All code')
+    if (cols < 190) expect(note.trimEnd().endsWith('…')).toBe(true)
+    // the judge's gap replaces the reason
+    expect(lines[p3 + 1]!.trim().startsWith('own gap: the retry path has no test')).toBe(true)
+    expect(lines.join('\n')).not.toContain('sound')
+  })
+  for (const surface of SURFACES) {
+    test(`${surface}: two-line STORY rows mount at ${cols} columns`, async ($, on) => {
+      await seeded($, on, { status: stat(), tasks: TWO, task: demo() }, surface, undefined, { epic: 'tA', view: 'stories' }, true)
+      const ui = await $.ui.mount({ plugin: 'teams', surface, component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: cols - 4, placement: 'dock' } } as never)
+      const text = (await ui.findAll({ type: 'Text' })).map(t => String(t.text)).join('\n')
+      expect(text).toContain('report writer')
+      expect(text).not.toContain('->')
+    })
+  }
 }

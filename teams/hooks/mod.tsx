@@ -68,7 +68,7 @@ const en = {
   prev: '◀', next: '▶', keysHint: '[ ] EPIC · j k row · 0-5 tabs', openHint: 'g open run', noStories: 'No STORY at work.',
   runBudget: 'Budget', runBudgetOf: '{spent} of {limit}', runDrivers: 'Drivers', runLive: '{n} live', runLiveCap: '{n}/{cap} live',
   runStalled: 'Stalled', runStalledOne: '{id} {m}m', runDenials: 'Denials', runDefects: 'Defects', runDefectsOf: '{filed} filed · {dropped} dropped',
-  runOutOfRetries: 'Out of retries', runScopedOut: 'Scoped out', storyJudge: 'judge {score} vs {threshold}', storyJudgeBare: 'judge {score}',
+  runOutOfRetries: 'Out of retries', runScopedOut: 'Scoped out', storyJudge: 'judge {score} vs {threshold}', storyJudgeBare: 'judge {score}', storyGap: 'own gap: {gap}',
 }
 
 // one table, two languages; the type keeps the keys identical
@@ -101,7 +101,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     prev: '◀', next: '▶', keysHint: '[ ] 에픽 · j k 행 · 0-5 탭', openHint: 'g 실행 열기', noStories: '진행 중인 스토리가 없습니다.',
     runBudget: '예산', runBudgetOf: '{spent} / {limit}', runDrivers: '드라이버', runLive: '{n}개 동작 중', runLiveCap: '{n}/{cap} 동작 중',
     runStalled: '멈춤', runStalledOne: '{id} {m}분', runDenials: '거부', runDefects: '결함', runDefectsOf: '등록 {filed} · 폐기 {dropped}',
-    runOutOfRetries: '재시도 소진', runScopedOut: '범위 밖', storyJudge: '판정 {score} / 기준 {threshold}', storyJudgeBare: '판정 {score}',
+    runOutOfRetries: '재시도 소진', runScopedOut: '범위 밖', storyJudge: '판정 {score} / 기준 {threshold}', storyJudgeBare: '판정 {score}', storyGap: '자체 결함: {gap}',
   },
 }
 
@@ -542,10 +542,16 @@ export const register: Register = on => {
     const harnessText = (t: SummaryTaskEntry) => t.harness === null ? ''
       : `${t.stages.map(g => `${MARK[g.state]}${s(`stage${cap(g.key)}` as keyof typeof en)}`).join(' ')}${t.harness.slug ? ` · ${t.harness.slug}` : ''}${t.harness.moving ? ' ▸' : ''}`
     const judgeText = (score: number, threshold: number | null) => (threshold === null ? s('storyJudgeBare', { score }) : s('storyJudge', { score, threshold }))
-    const storyOf = rows.map(({ entry: t, item }, i) => storyCells(item, verdictText(item.last_verdict), harnessText(t), i === pick, fixedWord, judgeText))
-    const storyWidths = columnWidths(storyOf.map(r => r.cells), inner, 2, STORY_SHRINK)
+    const storyOf = rows.map(({ entry: t, item }, i) => storyCells(item, verdictText(item.last_verdict), harnessText(t), i === pick, fixedWord, judgeText, gap => s('storyGap', { gap })))
+    const storyWidths = columnWidths(storyOf.map(r => r.cells), inner, 2, STORY_SHRINK, 4, [10])
+    // line 2 sits under the title: the marker and icon columns and their gaps, then the note up to the pane's edge
+    const noteAt = storyWidths.slice(0, 2).reduce((n, w) => n + (w > 0 ? w + 2 : 0), 0)
+    const storyLines: Line[] = storyOf.flatMap(r => [
+      rowLine(r.cells, storyWidths, 2, r.tints),
+      ...(r.note === '' ? [] : [[{ t: ' '.repeat(noteAt) }, { t: clipText(r.note, Math.max(4, inner - noteAt)), dim: true }] as Line]),
+    ])
     const storiesBody = rows.length === 0 ? <Text dimColor>{s('noStories')}</Text>
-      : renderLines(ui, storyOf.map(r => rowLine(r.cells, storyWidths, 2, r.tints)), 's')
+      : renderLines(ui, storyLines, 's')
 
     // `[` `]` step the EPIC and stop at the ends; `j` `k` move the STORY row; `g` opens its run. The Input takes the
     // keys (a Button hotkey is one digit or lowercase letter), prev / next are Buttons for the pointer
