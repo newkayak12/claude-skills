@@ -116,9 +116,12 @@ toasts).
       copied them into P1, and critique rejected P1 as unjudgeable (code package carrying document criteria).
       No retry can pass: the PRD itself carries the bad criteria. Which step folds the child's goal ACs into
       `user_stories[]` (prompts.mjs line ~113 vs ~197) is unverified.
-    - Acceptance: a test where a planning child's spec has document ACs and its stories have behaviour ACs;
-      the merged PRD's `user_stories[].acceptance` holds only the behaviour ones; one real L run whose PRD
-      has no "Given the PRD section" criterion.
+    - Shipped part (eb3a1c49, E-861e1089, 2026-10-28): cause `foldChild` (taskmanager.mjs ~3868-3873) passed
+      the child gate's stories unfiltered; `stripDocumentAcceptance` drops an exact-text (normalized) match of
+      a document criterion; prompts.mjs:197 clause; 2 tests. Left: a paraphrased document criterion still
+      gets through, and the real L run below.
+    - Acceptance (left): one real L run whose PRD has no "Given the PRD section" criterion; a paraphrase case
+      either caught or named as a limit in the PRD gate.
 
 92. **A size-L task whose PRD has one user story has a shape that can pass**
     - Why: E-22c3af14 (2026-10-27, card 91, size pinned L) blocked at shape:3. shapecheck refused one package
@@ -313,3 +316,4 @@ toasts).
 | E-77926c5f | 2026-10-27 | 87, 89 | nothing shipped: both PRD cards accepted; shape failed 3× (P1 and P3 both touch `teams/mcp/taskmanager.mjs`; one owner per path by design). Cards touching the same engine file go in separate Sprints |
 | E-22c3af14 | 2026-10-27 | 91 | nothing shipped: pinned L, PRD with one story; shape refused 1 package (fits S) and 2 packages (one claims every story) (card 92); reopened unpinned |
 | E-b1aee623 | 2026-10-28 | 91 | shipped `e0032b0f`; size S (unpinned); goal gate 95; accept scores only the package's own acceptance (`scopeGaps`, `out_of_scope[]`); teams 1565/1565; ~$3.5 |
+| E-861e1089 | 2026-10-28 | 87 (part) | shipped `eb3a1c49`; size S; document criteria filtered from the PRD stories by exact text; teams 1567/1567; ~$3 |
