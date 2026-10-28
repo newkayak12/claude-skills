@@ -837,3 +837,36 @@ test('wiki: a node pinned to a person gets neither the paragraph nor the line', 
   const p = wikiPrompt({ executor: 'human', vendor: 'human', assignment: { executor: 'human' } }, { host_vendor: 'claude' });
   assert.ok(!p.includes(WIKI_HEAD) && !p.includes(NO_WIKI_LINE));
 });
+
+// A package's accept is told its scope: the siblings are listed (id, title, acceptance) so
+// belongs_to can be answered, and the contract carries the out_of_scope field.
+test('accept prompt for a package in a two-package task lists the sibling and the out_of_scope contract', async () => {
+  const { composeTaskPrompt } = await import('../mcp/taskmanager.mjs');
+  const node = { node_id: 'accept:P2:1', stage: 'accept', subgoal_id: 'P2', attempt: 1, deps: [], after: [], state: 'pending' };
+  const task = {
+    run_id: 't1', cwd: '/tmp/x', request: 'r', nodes: [node],
+    spec: { acceptance: ['goal'], packages: [
+      { id: 'P2', title: 'second', acceptance: ['own criterion'], deps: [] },
+      { id: 'P3', title: 'third', acceptance: ['sibling criterion'], deps: [] },
+    ] },
+  };
+  const prompt = composeTaskPrompt(task, node);
+  assert.match(prompt, /## Other packages \(judged by their own accept, not here\)/);
+  assert.ok(prompt.includes('Judge and score match_pct against THIS package\'s acceptance[] only'));
+  assert.ok(prompt.includes('P2 is judged only against its own Acceptance above'));
+  assert.ok(prompt.includes('P3'));
+  assert.ok(prompt.includes('sibling criterion'));
+  assert.ok(prompt.includes('out_of_scope'));
+  const siblings = prompt.slice(prompt.indexOf('## Other packages'));
+  assert.ok(!/###\s+P2\b/.test(siblings), 'the package under judgment is not in its own sibling list');
+});
+
+test('accept prompt for a single-package task has no Other packages section', async () => {
+  const { composeTaskPrompt } = await import('../mcp/taskmanager.mjs');
+  const node = { node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', attempt: 1, deps: [], after: [], state: 'pending' };
+  const task = {
+    run_id: 't1', cwd: '/tmp/x', request: 'r', nodes: [node],
+    spec: { acceptance: ['goal'], packages: [{ id: 'P1', title: 'only', acceptance: ['own criterion'], deps: [] }] },
+  };
+  assert.doesNotMatch(composeTaskPrompt(task, node), /Other packages/);
+});
