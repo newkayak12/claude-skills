@@ -83,24 +83,29 @@ function openTasks(root, env = process.env, run = git) {
 // bare; a leading `~` or `~/x` is expanded with env.HOME.
 const unquote = s => s.replace(/^(["'])(.*)\1$/, '$2')
 const tilde = (s, env) => env.HOME && (s === '~' || s.startsWith('~/')) ? join(env.HOME, s.slice(1)) : s
-function segments(cmd) {
+// split() returns { text, op } per segment, op being the separator after it ('' for the last).
+// The `|` of `>|` (clobber redirect) is not a separator.
+function split(cmd) {
   const out = []
   let cur = '', q = ''
   for (let i = 0; i < cmd.length; i++) {
     const c = cmd[i]
     if (q) { if (c === q) q = ''; cur += c; continue }
     if (c === '"' || c === "'") { q = c; cur += c; continue }
+    if (c === '|' && cur.endsWith('>')) { cur += c; continue }
     if (c === ';' || c === '&' || c === '|') {
-      out.push(cur); cur = ''
-      if (cmd[i + 1] === c && c !== ';') i++
+      let op = c
+      if (cmd[i + 1] === c && c !== ';') { op += c; i++ }
+      out.push({ text: cur, op }); cur = ''
       continue
     }
-    if (c === '\n') { out.push(cur); cur = ''; continue }
+    if (c === '\n') { out.push({ text: cur, op: '\n' }); cur = ''; continue }
     cur += c
   }
-  out.push(cur)
+  out.push({ text: cur, op: '' })
   return out
 }
+const segments = cmd => split(cmd).map(s => s.text)
 function targetDir(cmd, cwd, env = process.env) {
   let dir = cwd
   for (const seg of segments(cmd)) {
@@ -126,7 +131,7 @@ function targetRoot(cmd, cwd, run, env) {
 // Two denies on a simple command, parsed with segments(); anything not parsed is allowed. Claude Code only.
 //   rm:    an unquoted `$NAME` / `${NAME}` without `:?` as an argument of a command whose first word is rm.
 //   write: sed/perl in place, tee, a `>` / `>>` target, or inline node/python code (-e/-c or a heredoc)
-//          with a write call, naming a repo path: inside the git top level of the (cd-applied) dir,
+//          with a write call, naming a repo path: inside the git top level of the target path itself (resolved against the cd-applied dir),
 //          not under tmp/, not gitignored. `git` commands, /dev/*, and targets with `$` or backticks pass.
 //   A heredoc body is data (cat, tee, git) unless it feeds a shell (scanned as a command) or an interpreter.
 const SHELLS = /^(?:ba|z|da|k)?sh$/
@@ -260,40 +265,72 @@ function bashDeny(cmd, cwd, env, run) {
   }
   const repoPath = (p, dir) => {
     if (/[$`]/.test(p) || p.startsWith('/dev/')) return false
-    const t = top(dir)
-    if (!t) return false
     const abs = resolve(dir, tilde(p, env))
+    const t = top(dirname(abs))
+    if (!t) return false
     const rel = relative(t, join(samePath(dirname(abs)), basename(abs)))
     if (!rel || rel === '..' || rel.startsWith('../') || isAbsolute(rel) || rel === 'tmp' || rel.startsWith('tmp/')) return false
     try { run(t, ['check-ignore', '-q', '--', rel]); return false } catch (e) { return e?.status === 1 }
   }
   const writeDeny = (p, name) => `Bash ${name} writes ${p}, a repo file, in place. Use Read/Edit/Write for repo files; Bash is for git, checks and tests.`
-  const scan = (text, dir) => {
+  // cd state { dir, prev, stack }: bare cd goes to $HOME, `cd -` to prev, pushd pushes the old dir
+  // and cds, popd pops, options (-P, -L) are dropped. A cd next to `||`, `|` or `&` may not run and
+  // is discarded. `(cd x)` restores the outer state at its closing `)`.
+  const CD_SKIP = new Set(['||', '|', '&'])
+  const scan = (text, st) => {
     const { head, docs } = heredocs(text)
-    for (const seg of segments(head.replace(/\d*[<>]&(?:\d+|-)/g, ' ').replace(/&>>?/g, '>'))) {
+    const subs = []
+    let prevOp = ''
+    for (const { text: seg, op } of split(head.replace(/\d*[<>]&(?:\d+|-)/g, ' ').replace(/&>>?/g, '>'))) {
+      const before = prevOp
+      prevOp = op
+      for (let n = seg.match(/^\s*\(*/)[0].replace(/\s/g, '').length; n > 0; n--) subs.push({ dir: st.dir, prev: st.prev, stack: [...st.stack] })
+      const closes = subs.length ? (seg.match(/\)+\s*$/)?.[0].replace(/\s/g, '').length ?? 0) : 0
+      const restore = () => { for (let n = Math.min(closes, subs.length); n > 0; n--) Object.assign(st, subs.pop()) }
       const { args, writes } = parse(seg)
       unwrap(args)
       const name = args.length ? basename(args[0].text) : ''
-      const rest = args.slice(1)
-      if (name === 'git') continue
-      if (name === 'cd' && rest.length === 1) { dir = resolve(dir, tilde(rest[0].text, env)); continue }
+      let rest = args.slice(1)
+      if (name === 'git') { restore(); continue }
+      if (name === 'cd' || name === 'pushd' || name === 'popd') {
+        rest = rest.map((a, i) => i === rest.length - 1 && closes ? { ...a, text: a.text.replace(/\)+$/, '') } : a).filter(a => a.text !== '')
+        if (!CD_SKIP.has(before) && !CD_SKIP.has(op)) {
+          const opts = rest.filter(a => /^-[A-Za-z@]+$/.test(a.text)).length
+          const operands = rest.slice(opts)
+          if (name === 'popd') {
+            if (!operands.length && st.stack.length) { st.prev = st.dir; st.dir = st.stack.pop() }
+          } else if (operands.length <= 1 && (operands.length || name === 'cd')) {
+            const to = !operands.length ? env.HOME : operands[0].text === '-' ? st.prev : resolve(st.dir, tilde(operands[0].text, env))
+            if (to) {
+              if (name === 'pushd') st.stack.push(st.dir)
+              st.prev = st.dir
+              st.dir = resolve(st.dir, to)
+            }
+          }
+        }
+        restore()
+        continue
+      }
+      const dir = st.dir
       const hit = rmDeny(name, rest) ?? writeTargets(name, rest, writes).filter(p => repoPath(p, dir)).map(p => writeDeny(p, name || 'redirect'))[0]
       if (hit) return hit
+      restore()
     }
     for (const d of docs) {
       const seg = segments(d.line).find(s => s.includes('<<')) ?? ''
       const name = basename(parse(seg).args[0]?.text ?? '')
       if (SHELLS.test(name)) {
-        const hit = scan(d.body, dir)
+        const hit = scan(d.body, { ...st, stack: [...st.stack] })
         if (hit) return hit
       } else if (INTERP.test(name)) {
-        const p = codePaths(d.body).find(p => repoPath(p, dir))
+        const p = codePaths(d.body).find(p => repoPath(p, st.dir))
         if (p) return writeDeny(p, name)
       }
     }
     return null
   }
-  return scan(cmd, samePath(cwd))
+  const start = samePath(cwd)
+  return scan(cmd, { dir: start, prev: start, stack: [] })
 }
 
 export function decide(mode, input, env, run = git) {
