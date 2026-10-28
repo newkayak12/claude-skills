@@ -151,7 +151,7 @@ try {
     // and the exit code stay as computed (E-57170ac9: a denied optional command blocked a node that
     // had answered). With no usable result it judged nothing: not a reject. Exit 0, because the
     // broker drops the report of a non-zero exit (transportOk) and with it the blocked marker.
-    const denied = neededDenials(envelope);
+    const denied = neededDenials(envelope, opts.cwd);
     if (denied.length && proc.status === 0 && !proc.stopped) {
       if (ok && usable && !unexplainedRefusal(result)) {
         report.result = { ...result, denied };
