@@ -543,7 +543,7 @@ export const register: Register = on => {
       : `${t.stages.map(g => `${MARK[g.state]}${s(`stage${cap(g.key)}` as keyof typeof en)}`).join(' ')}${t.harness.slug ? ` · ${t.harness.slug}` : ''}${t.harness.moving ? ' ▸' : ''}`
     const judgeText = (score: number, threshold: number | null) => (threshold === null ? s('storyJudgeBare', { score }) : s('storyJudge', { score, threshold }))
     const storyOf = rows.map(({ entry: t, item }, i) => storyCells(item, verdictText(item.last_verdict), harnessText(t), i === pick, fixedWord, judgeText, gap => s('storyGap', { gap })))
-    const storyWidths = columnWidths(storyOf.map(r => r.cells), inner, 2, STORY_SHRINK, 4, [10])
+    const storyWidths = columnWidths(storyOf.map(r => r.cells), inner, 2, STORY_SHRINK, 4, [9, 7, 8, 6], 24)
     // line 2 sits under the title: the marker and icon columns and their gaps, then the note up to the pane's edge
     const noteAt = storyWidths.slice(0, 2).reduce((n, w) => n + (w > 0 ? w + 2 : 0), 0)
     const storyLines: Line[] = storyOf.flatMap(r => [
