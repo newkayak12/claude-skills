@@ -210,6 +210,23 @@ toasts).
       screenshot of that text; whether a later Claude Code build attaches the app (then the Svg board
       shows there) — a Claude Code gap, not fixable in the mod.
 
+### write plugin
+
+100. **write:diagram draws figures that look finished, not merely checked**
+    - Why: user, 2026-10-29: "write:diagram 퀄리티 떨어짐"; asked what, they picked all four: 투박함, 배치가
+      엉성함, 내용이 틀리거나 부족, 유형 선택이 별로. Seen in the last figures it drew (fig-9-2 roll-pointer
+      chain, fig-13-1 two-session lock wait): every box the same grey/white with one stroke and no type
+      hierarchy; timeline boxes stretched to the full lane width whatever their text; the point of fig-13-1
+      (A's X lock makes B wait until A's COMMIT) has no line from the lock to the wait, the wait is a thin
+      dotted stub, and "UPDATE 재개 · 0행" is unexplained; nothing marks the one thing the caption claims.
+    - Acceptance: (1) a style layer: colour roles (the claim's elements in one accent, context muted),
+      corner radius, two stroke weights, title/label/sub-label type scale, boxes sized to their text;
+      (2) the IR names the claim's elements and `check` refuses a figure where none is accented; timeline
+      draws the cause edge (holder's lock → waiter) and the wait span to the release; (3) the type choice
+      is written with its reason in the Output Template and refused when the point is parallel attributes;
+      (4) fig-9-2 and fig-13-1 redrawn, before/after shown to the user and approved;
+      `node write/skills/diagram/scripts/test-diagram.mjs` passes with the count reported.
+
 ### knowledge plugin
 
 ### portfolio plugin
