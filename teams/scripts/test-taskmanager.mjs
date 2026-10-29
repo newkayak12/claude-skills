@@ -9930,7 +9930,7 @@ test('S1 scope: a size-S open records the baseline of pre-dirty paths, and the h
 });
 
 // Card 86 (E-7d212456): QA/audit/repair scratch stays out of the project.
-test('S1 scope prompt: the size-S driver is told to compute its verdict with scope.mjs verdict and use its exit status, and where scratch goes', async () => {
+test('S1 scope prompt: the size-S driver is told the engine computes its scope verdict, not to run the CLI, and where scratch goes', async () => {
   const f = driverFixture({}, FAKE_DRIVER_RESPAWN);
   const tm = await f.client.init();
   try {
@@ -9938,10 +9938,11 @@ test('S1 scope prompt: the size-S driver is told to compute its verdict with sco
     const bp = readTask(f.root, task_id).harness_run.baseline_path;
     const ran = await waitFor(() => (existsSync(`${f.ran}.1`) ? JSON.parse(readFileSync(`${f.ran}.1`, 'utf8')) : null), 'the harness driver to run');
     const prompt = ran.argv[ran.argv.length - 1];
-    assert.match(prompt, /scope\.mjs verdict --cwd \S+ --baseline \S+ --scope <comma-separated/);
-    assert.ok(prompt.includes(`--baseline ${bp}`), 'the verdict command names the recorded baseline file');
-    assert.match(prompt, /never from git status read by you/);
-    assert.match(prompt, /exit status is the result: 0 = pass; 1 = out-of-scope paths, printed one per line/);
+    assert.doesNotMatch(prompt, /scope\.mjs verdict/, 'no step tells the model to run the verdict CLI');
+    assert.ok(prompt.includes(bp), 'the prompt names the recorded baseline file');
+    assert.match(prompt, /The engine computes your scope verdict itself when the run finishes/);
+    assert.match(prompt, /counts only the paths your own nodes wrote/);
+    assert.match(prompt, /You do not compute or report a scope verdict/);
     assert.ok(prompt.includes(SCRATCH_RULE), 'the size-S run is told where scratch goes');
   } finally { tm.close(); rmSync(f.cwd, { recursive: true, force: true }); rmSync(f.root, { recursive: true, force: true }); }
 });
@@ -10120,6 +10121,8 @@ test('S1 shared checkout: a second size-S open on one cwd warns naming the first
     assert.equal(warned(second).length, 1, JSON.stringify(second.notes));
     assert.ok(warned(second)[0].includes(first.task_id), warned(second)[0]);
     assert.ok(!warned(second)[0].includes(second.task_id));
+    assert.doesNotMatch(warned(second)[0], /may count paths the other run touched/, 'the warning no longer says something false');
+    assert.match(warned(second)[0], /counts only the paths your own run wrote/);
     const viaRun = await open(cwd, 'tm_run');
     assert.ok(viaRun.task_id);
     assert.ok(warned(viaRun)[0].includes(first.task_id) && warned(viaRun)[0].includes(second.task_id), JSON.stringify(viaRun.notes));
@@ -10130,6 +10133,90 @@ test('S1 shared checkout: a second size-S open on one cwd warns naming the first
     }
     assert.equal(warned(await open(cwd)).length, 0, 'finished tasks do not warn');
   } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(other, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
+});
+
+// Card 81 rest: the engine computes the size-S scope verdict on the finish read, from the run's
+// plan/setgoal scope, its baseline and its own-write record (.harness-run/writes/<run_id>.jsonl).
+test('S1 scope verdict: two runs on one checkout - B\'s write outside A\'s scope never fails A; A\'s own stray write fails A naming it; engine-computed, no model step', async () => {
+  const { serviceHarnessRun } = await import('../mcp/taskmanager.mjs');
+  const { baseline } = await import('../mcp/scope.mjs');
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const prevRoot = process.env.HARNESS_TASKS_DIR;
+  process.env.HARNESS_TASKS_DIR = root;
+  const runs = join(cwd, '.harness-run', 'broker', 'runs');
+  mkdirSync(runs, { recursive: true });
+  mkdirSync(join(cwd, '.harness-run', 'writes'), { recursive: true });
+  const node = (node_id, stage, result) => ({ node_id, stage, state: 'done', result });
+  // A finished graph run tagged with the task, whose plan and setgoal name `files`.
+  const mkTask = (id, files) => {
+    const dir = join(root, id);
+    mkdirSync(dir, { recursive: true });
+    const bp = join(dir, 'scope-baseline.json');
+    writeFileSync(bp, JSON.stringify(baseline(cwd)));
+    const opened_at = Date.now();
+    writeFileSync(join(runs, `r-${id}.json`), JSON.stringify({
+      run_id: `r-${id}`, cwd, request: `[teams-task ${id}] edit`, created_at: opened_at + 1,
+      nodes: [
+        node('plan', 'plan', { plan: files === null ? 'nothing concrete' : `Edit \`${files}\` and its tests.` }),
+        node('setgoal', 'setgoal', { spec: { goal: 'g', acceptance: ['done'], subgoals: [] } }),
+        node('report', 'report', { handoff: 'done' }),
+        node('gate:goal:1', 'gate', { accept: true, match_pct: 95, gaps: [] }),
+      ],
+    }));
+    return { run_id: id, cwd, nodes: [], harness_run: { cwd, opened_at, pointer: join(dir, 'harness-run.json'), report_path: join(dir, 'report.md'), baseline_path: bp, accepted: undefined } };
+  };
+  const own = (id, ...paths) => appendFileSync(join(cwd, '.harness-run', 'writes', `r-${id}.jsonl`), paths.map((p) => JSON.stringify({ ts: Date.now(), run_id: `r-${id}`, node_id: 'implement:U1:1', path: p })).join('\n') + '\n');
+  const ledger = (id) => readFileSync(join(root, id, 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  try {
+    const A = mkTask('tA', 'a.txt');
+    const B = mkTask('tB', 'b-only.txt');
+    // after both baselines: A edits its scoped file, B writes outside A's scope
+    writeFileSync(join(cwd, 'a.txt'), 'edited by A\n'); own('tA', 'a.txt');
+    writeFileSync(join(cwd, 'b-only.txt'), 'written by B\n'); own('tB', 'b-only.txt');
+    assert.equal(serviceHarnessRun(A), true);
+    assert.equal(A.harness_run.scope.ok, true, JSON.stringify(A.harness_run.scope));
+    assert.deepEqual(A.harness_run.scope.outOfScope, []);
+    assert.equal(A.harness_run.scope.own_record, true);
+    assert.deepEqual(A.harness_run.scope.scope, ['a.txt']);
+    const ev = ledger('tA').filter((e) => e.event === 'scope_verdict');
+    assert.equal(ev.length, 1);
+    assert.equal(ev[0].ok, true);
+    // B's own verdict, same checkout: b-only.txt is inside B's scope, A's edit of a.txt is not B's
+    assert.equal(serviceHarnessRun(B), true);
+    assert.equal(B.harness_run.scope.ok, true, JSON.stringify(B.harness_run.scope));
+    // the verdict is taken once: a second read adds no event and changes nothing
+    assert.equal(serviceHarnessRun(A), false);
+    assert.equal(ledger('tA').filter((e) => e.event === 'scope_verdict').length, 1);
+
+    // A's own stray write (outside its scope) fails A and names the path; B's write stays uncounted
+    const A2 = mkTask('tA2', 'a.txt');
+    writeFileSync(join(cwd, 'a-stray.txt'), 'A wrote this outside its scope\n'); own('tA2', 'a-stray.txt');
+    writeFileSync(join(cwd, 'b-late.txt'), 'B again\n'); own('tB', 'b-late.txt');
+    serviceHarnessRun(A2);
+    assert.equal(A2.harness_run.scope.ok, false);
+    assert.equal(A2.harness_run.scope.reason, 'out_of_scope');
+    assert.ok(A2.harness_run.scope.outOfScope.includes('a-stray.txt'), JSON.stringify(A2.harness_run.scope));
+    assert.ok(!A2.harness_run.scope.outOfScope.includes('b-late.txt') && !A2.harness_run.scope.outOfScope.includes('b-only.txt'), JSON.stringify(A2.harness_run.scope));
+    assert.deepEqual(ledger('tA2').find((e) => e.event === 'scope_verdict').out_of_scope, A2.harness_run.scope.outOfScope);
+
+    // no own-write record (an older run): the git-only verdict is used, so a foreign write counts
+    const A3 = mkTask('tA3', 'a.txt');
+    writeFileSync(join(cwd, 'b-after-a3.txt'), 'B\n');
+    serviceHarnessRun(A3);
+    assert.equal(A3.harness_run.scope.own_record, false);
+    assert.equal(A3.harness_run.scope.ok, false);
+    assert.ok(A3.harness_run.scope.outOfScope.includes('b-after-a3.txt'), JSON.stringify(A3.harness_run.scope));
+
+    // no scope named by plan/setgoal: ok null / no_scope, not a pass
+    const A4 = mkTask('tA4', null);
+    serviceHarnessRun(A4);
+    assert.equal(A4.harness_run.scope.ok, null);
+    assert.equal(A4.harness_run.scope.reason, 'no_scope');
+  } finally {
+    if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot;
+    rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('a fixture daemon exits on its own once the test runner named in HARNESS_TEST_RUNNER_PID is gone', async () => {

@@ -12,11 +12,12 @@
 //   (b) a foreign dirty path INSIDE the declared scope that appears after the baseline is
 //       attributed to this run and passes. This is only a partial answer: it is not told apart
 //       from this run's own write.
-//   (d) a foreign write AFTER the baseline OUTSIDE the declared scope still fails the verdict.
-//       Known limit, not hidden: another run's new write is counted as this run's.
+//   (d) a foreign write AFTER the baseline OUTSIDE the declared scope: verdict() still fails it
+//       (git cannot tell who wrote it); ownVerdict() with the run's own-write record ignores it.
 //   Two runs editing the same file are out of scope: the second run's baseline hashes the first
 //   run's edit, and any later change to that file is attributed to the second run.
-// The engine does not run this itself; a prompt tells the model to run the CLI.
+// ownVerdict({cwd, baseline, scope, own}) is what the engine computes on the finish read: only
+// touched paths in `own` (this run's own node writes) count; without `own` it is verdict().
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -95,5 +96,15 @@ export function inScope(path, scope) {
 // Engine verdict for a size-S run: the touched set (see above) must lie inside `scope`.
 export function verdict({ cwd, baseline: base = {}, scope = [] }) {
   const outOfScope = touched(cwd, base).filter((p) => !inScope(p, scope));
+  return { ok: outOfScope.length === 0, outOfScope };
+}
+
+// Own-paths verdict: the same rules as verdict(), but only touched paths this run itself wrote
+// (`own`, the run's write record) count. Another run's, a human's or an untracked write after the
+// baseline is never counted. Without an own-write list (an older run, no record) it is verdict().
+export function ownVerdict({ cwd, baseline: base = {}, scope = [], own }) {
+  if (!Array.isArray(own)) return verdict({ cwd, baseline: base, scope });
+  const mine = new Set(own.map((p) => String(p).trim().replace(/^\.\//, '')));
+  const outOfScope = touched(cwd, base).filter((p) => mine.has(p) && !inScope(p, scope));
   return { ok: outOfScope.length === 0, outOfScope };
 }

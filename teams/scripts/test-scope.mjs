@@ -7,7 +7,7 @@ import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, unlinkSync
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { baseline, touched, parsePorcelain, inScope, verdict } from '../mcp/scope.mjs';
+import { baseline, touched, parsePorcelain, inScope, verdict, ownVerdict } from '../mcp/scope.mjs';
 
 const cli = join(dirname(fileURLToPath(import.meta.url)), 'scope.mjs');
 const git = (cwd, ...a) => execFileSync('git', a, { cwd, encoding: 'utf8' });
@@ -135,13 +135,29 @@ test('verdict (c): a path this run touched outside the scope fails and is named;
   } finally { rmSync(d, { recursive: true, force: true }); }
 });
 
-test('verdict (d): KNOWN LIMIT - a foreign write after the baseline outside the scope still fails', () => {
+test('verdict (d): a foreign write after the baseline outside the scope, not in the own-write list, passes', () => {
   const d = repo();
   try {
     const base = baseline(d);
     writeFileSync(join(d, 'mine.txt'), 'm\n');
-    writeFileSync(join(d, 'other-run.txt'), 'x\n'); // another run, after our baseline: counted as ours
+    writeFileSync(join(d, 'other-run.txt'), 'x\n'); // another run, after our baseline: not in our record
+    assert.deepEqual(ownVerdict({ cwd: d, baseline: base, scope: ['mine.txt'], own: ['mine.txt'] }), { ok: true, outOfScope: [] });
+    // without a record (older run) the old rule holds
+    assert.deepEqual(ownVerdict({ cwd: d, baseline: base, scope: ['mine.txt'] }), { ok: false, outOfScope: ['other-run.txt'] });
     assert.deepEqual(verdict({ cwd: d, baseline: base, scope: ['mine.txt'] }), { ok: false, outOfScope: ['other-run.txt'] });
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});
+
+test('ownVerdict: this run\'s own stray write outside the scope fails and is named', () => {
+  const d = repo();
+  try {
+    const base = baseline(d);
+    writeFileSync(join(d, 'mine.txt'), 'm\n');
+    writeFileSync(join(d, 'stray.txt'), 's\n');
+    writeFileSync(join(d, 'other-run.txt'), 'x\n');
+    assert.deepEqual(ownVerdict({ cwd: d, baseline: base, scope: ['mine.txt'], own: ['./mine.txt', 'stray.txt'] }),
+      { ok: false, outOfScope: ['stray.txt'] });
+    assert.deepEqual(ownVerdict({ cwd: d, baseline: base, scope: ['mine.txt'], own: [] }), { ok: true, outOfScope: [] });
   } finally { rmSync(d, { recursive: true, force: true }); }
 });
 

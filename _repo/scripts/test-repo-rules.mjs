@@ -1,13 +1,25 @@
 #!/usr/bin/env node
 // Feeds JSON stdin cases to .claude/hooks/repo-rules.mjs and checks its output.
 import { spawnSync, execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, dirname } from 'node:path'
+import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const hook = join(dirname(fileURLToPath(import.meta.url)), '../../.claude/hooks/repo-rules.mjs')
+// The write refusal applies only to the hook's own repo (its git common dir, found from the script's
+// location). A write-deny fixture is therefore its own hook repo: it carries a copy of the hook and runs
+// it. `hook` is the script the next run executes; the real one unless a section switches it to a copy.
+const realHook = join(dirname(fileURLToPath(import.meta.url)), '../../.claude/hooks/repo-rules.mjs')
+let hook = realHook
+const copyHook = repo => {
+  const dir = join(repo, '.claude/hooks')
+  mkdirSync(dir, { recursive: true })
+  copyFileSync(realHook, join(dir, 'repo-rules.mjs'))
+  return join(dir, 'repo-rules.mjs')
+}
 const sh = (cwd, ...a) => execFileSync('git', a, { cwd, stdio: 'ignore' })
+const gitOut = (cwd, ...a) => execFileSync('git', a, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+const commonOf = cwd => realpathSync(resolve(cwd, gitOut(cwd, 'rev-parse', '--git-common-dir')))
 
 // a repo with an origin one commit ahead of the clone, to exercise start and commit
 const root = mkdtempSync(join(tmpdir(), 'repo-rules-'))
@@ -243,6 +255,9 @@ for (const c of ['rm -f "${S:?}"/*.p2', 'rm "$S"', 'rm ${S:?}/x', 'rm $(cmd)', '
 // in-place write to a repo file: refused with a pointer to Read/Edit/Write. A repo path resolves inside the
 // git top level of the (cd-applied) working dir and is neither under tmp/ nor gitignored.
 writeFileSync(join(clone, '.gitignore'), 'build/\n')
+const cloneHook = copyHook(clone)
+const mainHook = copyHook(main)
+hook = cloneHook
 const writeDenied = r => decision(r) === 'deny' && rmReason(r).includes('Read/Edit/Write')
 const EOF = 'EOF'
 for (const [name, c] of [
@@ -290,7 +305,18 @@ for (const [name, c] of [
   check(`write: ${name} -> deny, reason names Read/Edit/Write`, writeDenied(bash(c, clone)))
 }
 check('write: cd into the repo from outside it -> deny', writeDenied(bash(`cd ${clone} && sed -i 's/a/b/' teams/mcp/x.mjs`, root)))
+hook = mainHook
 check('write: sed -i in a linked worktree -> deny', writeDenied(bash("sed -i 's/a/b/' teams/mcp/x.mjs", main)))
+{
+  // a real linked worktree of `main`, running main's hook copy: same common dir, so it still denies
+  const linked2 = join(wtRoot, 'linked2')
+  sh(main, 'worktree', 'add', '-q', linked2, '-b', 'side2')
+  check('write: main checkout and its linked worktree report the same git common dir', commonOf(main) === commonOf(linked2))
+  check('write: sed -i in a git worktree add worktree, main hook copy -> deny', writeDenied(bash("sed -i 's/a/b/' teams/mcp/x.mjs", linked2)))
+  check('write: redirect in a git worktree add worktree, main hook copy -> deny', writeDenied(bash('echo x > teams/a.md', linked2)))
+  check('write: absolute path into main from the linked worktree -> deny', writeDenied(bash(`echo x > ${main}/README.md`, linked2)))
+}
+hook = cloneHook
 for (const [name, c] of [
   ['R1 data heredoc into tmp/ naming repo paths', `mkdir -p tmp/d && cat > tmp/d/request.md <<'${EOF}'\ninstall patch rm packages/csv/src/record.mjs\n${EOF}`],
   ['R2 git commit -F - <<EOF', `git commit -F - <<'${EOF}'\nharness/skills/install/SKILL.md: install patch rm\n${EOF}`],
@@ -359,6 +385,40 @@ check('write/rm: unbalanced quote -> exit 0', bash("sed -i 's/a/b teams/mcp/x.mj
   const d = c => decide('bash', { tool_name: 'Bash', tool_input: { command: c }, cwd: clone }, process.env, boom)
   check('write: git failing inside the detector -> fail open', Object.keys(d("sed -i 's/a/b/' teams/mcp/x.mjs")).length === 0)
   check('rm: the rm deny needs no git (still denies when git fails)', d('rm -f $S/x').hookSpecificOutput?.permissionDecision === 'deny')
+  // commonDir null on one side: real git everywhere except the --git-common-dir lookup of one side
+  const own = dirname(cloneHook)
+  const realGit = (cwd, args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+  const failing = pick => (cwd, args) => {
+    if (args.includes('--git-common-dir') && pick(cwd)) throw new Error('common dir lookup failed')
+    return realGit(cwd, args)
+  }
+  const e = (c, run) => decide('bash', { tool_name: 'Bash', tool_input: { command: c }, cwd: clone }, process.env, run)
+  const sed = "sed -i 's/a/b/' teams/mcp/x.mjs"
+  check('write: common dir lookups working (control) -> deny', e(sed, failing(() => false)).hookSpecificOutput?.permissionDecision === 'deny')
+  check('write: commonDir null for the target -> fail open', Object.keys(e(sed, failing(cwd => cwd !== own))).length === 0)
+  check('write: commonDir null for the hook own location -> fail open', Object.keys(e(sed, failing(cwd => cwd === own))).length === 0)
+  check('write: commonDir null on both sides -> fail open', Object.keys(e(sed, failing(() => true))).length === 0)
+}
+
+// a git repo outside this repo: no path exemption is involved, the scratch repo is a real `git init`
+// in the OS temp dir. The real hook (this repo's location) sees a different common dir and lets it pass;
+// the same repo carrying its own hook copy is its own hook repo and denies.
+{
+  const scratch = mkdtempSync(join(tmpdir(), 'repo-rules-scratch-'))
+  sh(scratch, 'init', '-q', '-b', 'main')
+  writeFileSync(join(scratch, 'notes.txt'), 'a\n')
+  sh(scratch, 'add', 'notes.txt')
+  sh(scratch, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'one')
+  check('write: scratch repo common dir differs from this repo', commonOf(scratch) !== commonOf(dirname(realHook)))
+  hook = realHook
+  check('write: echo > file in a scratch repo outside this repo -> pass', free(bash('echo x > notes.txt', scratch)))
+  check('write: sed -i in a scratch repo outside this repo -> pass', free(bash("sed -i 's/a/b/' notes.txt", scratch)))
+  check('write: tracked file, absolute path, scratch repo outside this repo -> pass', free(bash(`echo x > ${scratch}/notes.txt`, scratch)))
+  hook = copyHook(scratch)
+  check('write: echo > file in a repo that carries its own hook copy -> deny', writeDenied(bash('echo x > notes.txt', scratch)))
+  check('write: sed -i in a repo that carries its own hook copy -> deny', writeDenied(bash("sed -i 's/a/b/' notes.txt", scratch)))
+  hook = cloneHook
+  rmSync(scratch, { recursive: true, force: true })
 }
 
 check('garbage stdin -> fail open', run('bash', 'not json').code === 0 && Object.keys(run('bash', 'not json').out).length === 0)

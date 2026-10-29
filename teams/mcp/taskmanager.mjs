@@ -62,8 +62,8 @@ import { resolveBase, failingTests, compareOnBase, exclusionLine } from './basef
 import { gateIntegrity, formatList } from './gateintegrity.mjs';
 import { writeDocs, renderPrd, cardDocuments, questionLine } from './docs.mjs';
 import { mode as wikiMode } from './wikibridge.mjs';
-import { harnessVerdict, taskTag } from './harnessrun.mjs';
-import { baseline as scopeBaseline } from './scope.mjs';
+import { harnessVerdict, taskTag, graphRunPath } from './harnessrun.mjs';
+import { baseline as scopeBaseline, ownVerdict } from './scope.mjs';
 import { SCRATCH_RULE, newTopLevelDirs, manifestPathOf } from './layout-guard.mjs';
 import { logReply, renderStreamLine, renderLedgerLine } from './tasklog.mjs';
 import { validate as validateDiagram, renderToFile as renderDiagram } from './diagram.mjs';
@@ -393,8 +393,8 @@ function priorRetroContext(contextFrom) {
 }
 
 // Other live size-S tasks on the same cwd as `task` (two of them share one checkout, so their
-// scope checks can see each other's edits). Live = status not complete/partial/failed/cancelled/
-// cleaned. Returns their task ids; best-effort, never throws.
+// edits mix in one working tree; the engine's scope verdict counts only each run's own writes).
+// Live = status not complete/partial/failed/cancelled/cleaned. Returns their task ids; best-effort, never throws.
 export function sharedSizeSLive(task) {
   const out = [];
   if (!task || task.size !== 'S' || !task.cwd) return out;
@@ -416,7 +416,7 @@ export function sharedSizeSLive(task) {
 
 function sharedSizeSNote(task) {
   const ids = sharedSizeSLive(task);
-  return ids.length ? `warning: other live size-S task(s) share this checkout (${ids.join(', ')}); their edits and yours mix in one working tree, so the scope check may count paths the other run touched` : null;
+  return ids.length ? `warning: other live size-S task(s) share this checkout (${ids.join(', ')}); their edits and yours mix in one working tree; the engine's scope verdict counts only the paths your own run wrote, so theirs never fail yours` : null;
 }
 
 // Slugs a new EPIC in `cwd` must not take: those of the repo's other tasks, and any teams/<slug>/
@@ -6441,7 +6441,7 @@ function harnessPrompt(task, opts = {}) {
     `Route 2, only when the graph MCP is not available: the harness skill's Agent Team fallback (harness/engine/fallback.md), codex through codex-exec-adapter.mjs with codex_provider "auto" (a fallback to Claude is recorded as such). Its manifest.json carries "teams_task": "${task.run_id}". Do not use the Workflow route.`,
     `As soon as the run exists, write ${h.pointer} as {"route":"graph","run_id":"<id>","cwd":"${h.cwd}"} or {"route":"fallback","run_dir":"<absolute run dir>"}.`,
     `When the run has written its report, copy that report to ${h.report_path}. The task's verdict is read from the run itself, not from anything you write.`,
-    h.baseline_path ? `Scope: this checkout may already hold uncommitted work (${h.baseline_count} dirty path(s) recorded in ${h.baseline_path} before the run). Your scope check counts only the paths you touched; the baseline's dirty paths, left as they were, are excluded. Compute your scope verdict with the CLI, never from git status read by you: node ${join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts')}/scope.mjs verdict --cwd ${h.cwd} --baseline ${h.baseline_path} --scope <comma-separated list of the files your plan names>. Its exit status is the result: 0 = pass; 1 = out-of-scope paths, printed one per line. ${SCRATCH_RULE}` : '',
+    h.baseline_path ? `Scope: this checkout may already hold uncommitted work (${h.baseline_count} dirty path(s) recorded in ${h.baseline_path} before the run). Your scope check counts only the paths you touched; the baseline's dirty paths, left as they were, are excluded. The engine computes your scope verdict itself when the run finishes: it takes the scope from the files your plan and setgoal results name (so name every file you will edit there) and counts only the paths your own nodes wrote. You do not compute or report a scope verdict. ${SCRATCH_RULE}` : '',
     task.base_commit ? `Gate integrity: before you report, list the files this run changed that make up the gate itself with the CLI, never from your own reading: node ${join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts')}/gateintegrity.mjs --cwd ${h.cwd} --baseline ${task.base_commit} (the same script under the plugin root's scripts/ directory may be used). Judge the printed list as the L gate does. Its exit status: 0 = no test weakening found; 1 = weakened tests found, printed one per line; 2 = usage error (git cannot resolve the baseline).` : '',
     `Never end a turn while your own background agent or test run is still running; wait for it to finish first.`,
     '',
@@ -6494,6 +6494,71 @@ export function openHarnessRun(task) {
   });
 }
 
+// ---- the engine's own scope verdict (card 81 rest) ----
+
+// Strings anywhere inside a node result value.
+function resultStrings(v, out = []) {
+  if (typeof v === 'string') out.push(v);
+  else if (Array.isArray(v)) for (const x of v) resultStrings(x, out);
+  else if (v && typeof v === 'object') for (const x of Object.values(v)) resultStrings(x, out);
+  return out;
+}
+
+// The scope list of a graph run: the file paths its done plan and setgoal node results name
+// (result.plan text; result.spec goal/acceptance/subgoals). A token is a path when it has a '/'
+// or a file extension; trailing punctuation is dropped.
+export function scopePathsFromRun(runFile) {
+  const found = new Set();
+  const nodes = runFile && Array.isArray(runFile.nodes) ? runFile.nodes : [];
+  for (const n of nodes) {
+    if (!n || n.state !== 'done' || !n.result || (n.stage !== 'plan' && n.stage !== 'setgoal')) continue;
+    const parts = n.stage === 'plan' ? resultStrings(n.result.plan) : resultStrings(n.result.spec);
+    for (const text of parts) {
+      for (const m of text.matchAll(/(?:[\w@.-]+\/)+[\w@.*?-]*|[\w-]+\.[A-Za-z][\w]{0,7}\b/g)) {
+        const p = m[0].replace(/^\.\//, '').replace(/[.,;:]+$/, '');
+        if (p && !/^\.+$/.test(p) && !p.startsWith('//')) found.add(p);
+      }
+    }
+  }
+  return [...found].sort();
+}
+
+// <cwd>/.harness-run/writes/<graph run_id>.jsonl, one {ts, run_id, node_id, path} per write made
+// by that run's own nodes (cwd-relative). null when no record exists: an older run, or an adapter
+// that does not write one - the verdict then falls back to the git-only check.
+export function ownWritesPath(cwd, runId) { return join(cwd, '.harness-run', 'writes', `${runId}.jsonl`); }
+export function readOwnWrites(cwd, runId) {
+  let text;
+  try { text = readFileSync(ownWritesPath(cwd, runId), 'utf8'); } catch { return null; }
+  const out = new Set();
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const p = JSON.parse(line).path;
+      if (typeof p !== 'string' || !p) continue;
+      out.add(isAbsolute(p) ? relative(cwd, p) : p.replace(/^\.\//, ''));
+    } catch { /* a torn line is skipped */ }
+  }
+  return [...out];
+}
+
+// The verdict the engine computes on the finish read of a size-S run: no model step. null when it
+// cannot be computed (not a graph run, no baseline file). Empty scope is ok:null / no_scope.
+export function computeScopeVerdict(h, run) {
+  if (!run || run.route !== 'graph' || !h.baseline_path) return null;
+  let base; let runFile;
+  try { base = JSON.parse(readFileSync(h.baseline_path, 'utf8')); runFile = JSON.parse(readFileSync(graphRunPath(run.cwd, run.run_id), 'utf8')); } catch { return null; }
+  const scope = scopePathsFromRun(runFile);
+  if (!scope.length) return { ok: null, reason: 'no_scope', outOfScope: [], scope, own_record: false };
+  const own = readOwnWrites(h.cwd, run.run_id);
+  try {
+    const r = ownVerdict({ cwd: h.cwd, baseline: base, scope, own });
+    return { ok: r.ok, reason: r.ok ? 'pass' : 'out_of_scope', outOfScope: r.outOfScope, scope, own_record: own !== null };
+  } catch (e) {
+    return { ok: null, reason: `verdict_error: ${String((e && e.message) || e).slice(0, 120)}`, outOfScope: [], scope, own_record: own !== null };
+  }
+}
+
 // Keeps the harness driver alive: a usage-limit death parks on waiting_capacity (no restart
 // spent), any other death is respawned with a resume prompt naming the recorded run, up to the
 // restart budget. Returns true when it changed the task.
@@ -6501,12 +6566,22 @@ export function serviceHarnessRun(task) {
   const h = task.harness_run;
   if (!h) return false;
   applySuspends(task);
-  const before = JSON.stringify([h.run || null, h.refused_pointer || null, !!h.finished_at, !!h.exhausted, h.accepted]);
+  const snap = () => JSON.stringify([h.run || null, h.refused_pointer || null, !!h.finished_at, !!h.exhausted, h.accepted, !!h.scope]);
+  const before = snap();
   const run = resolveHarnessRun(task);
   const v = run ? harnessVerdict(run, task.goal_threshold) : null;
   if (v && v.finished && !h.finished_at) { h.finished_at = Date.now(); h.accepted = !!v.accept; }
   if (h.finished_at && h.accepted === undefined && v && v.finished) h.accepted = !!v.accept;
-  const changed = () => JSON.stringify([h.run || null, h.refused_pointer || null, !!h.finished_at, !!h.exhausted, h.accepted]) !== before;
+  // The finish read: the engine computes the scope verdict once, from the run's plan/setgoal
+  // scope, its baseline and its own-write record.
+  if (v && v.finished && !h.scope) {
+    const s = computeScopeVerdict(h, run);
+    if (s) {
+      h.scope = { ok: s.ok, reason: s.reason, outOfScope: s.outOfScope, scope: s.scope, own_record: s.own_record, at: Date.now() };
+      record(task, { event: 'scope_verdict', task_id: task.run_id, ok: s.ok, reason: s.reason, out_of_scope: s.outOfScope, scope: s.scope, own_record: s.own_record });
+    }
+  }
+  const changed = () => snap() !== before;
   const d = h.driver;
   // The first driver deferred at max_live_drivers (openHarnessRun): no driver exists to restart,
   // so the wait ends here, by spawning that first driver once a slot is free.
