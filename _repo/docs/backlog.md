@@ -247,6 +247,13 @@ toasts).
       is written with its reason in the Output Template and refused when the point is parallel attributes;
       (4) fig-9-2 and fig-13-1 redrawn, before/after shown to the user and approved;
       `node write/skills/diagram/scripts/test-diagram.mjs` passes with the count reported.
+    - Partly shipped 2026-10-29 in E-eb3d399f (`13b988d5`, test-diagram 60/60): (1) style layer, (2) `claim`
+      accent and its refusal, wait span, `holder`/`resume` fields, (3) type with reason and the table
+      refusal. Left: the `holder` cause edge is drawn as a straight line from holder to waiter, so `check`
+      refuses it whenever steps lie in the rows between (fig-13-1: through A@t5 and B@t6) — route it along
+      the lane gap instead; the wait span stops short of the holder's COMMIT with nothing tying the two;
+      a lane's text wraps early once a `resume` takes its gutter ("UPDATE 205 · X 잠금 획득" on two lines);
+      then (4): fig-9-2 and fig-13-1 shown to the user and approved (rebuilt IRs kept outside the repo).
 
 ### knowledge plugin
 
@@ -305,6 +312,7 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-eb3d399f | 2026-10-29 | 100 | partial: P2 + D1 shipped and P1 taken by hand from its worktree (`13b988d5`); P1 'blocked: tool denied' ×3 on the 0.60.1 engine, P3/P4 unreachable; $48.72 |
 | E-124098e5 | 2026-10-15 | 10–13 | shipped `72f0c818`; size S (one harness pass); goal gate 91; $17.74 |
 | E-c313c8f1 | 2026-10-15 | 2 | shipped (rules say `origin`); size S; $3.89 |
 | E-e9a37754 | 2026-10-16 | 1 | shipped `03c69989`; size S; $6.81 |
