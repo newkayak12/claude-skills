@@ -1523,14 +1523,16 @@ for (const surface of SURFACES) {
     expect(rows).toHaveLength(3)
     const [a, b, c] = rows as [string, string, string]
     // every fact on its row, `~` kept, a missing cost blank
-    for (const part of ['module b', 'editing a.ts', 'rejected', '2/3', '4m', '~$0.42']) expect(a).toContain(part)
+    for (const part of ['module b', 'rejected', '2/3', '4m', '~$0.42']) expect(a).toContain(part)
+    // one status word per row: the verdict wins over what the item is doing
+    expect(a).not.toContain('editing a.ts')
     expect(b).toContain('idle')
     expect(b).toContain('1h 2m')
     expect(b).not.toContain('$')
     for (const part of ['small thing', 'reading', '35s', '$1.50', 'run-7', '▸']) expect(c).toContain(part)
     // the same column starts at the same character on every row
-    expect(a.indexOf('editing a.ts')).toBe(b.indexOf('idle'))
-    expect(a.indexOf('editing a.ts')).toBe(c.indexOf('reading'))
+    expect(a.indexOf('rejected')).toBe(b.indexOf('idle'))
+    expect(a.indexOf('rejected')).toBe(c.indexOf('reading'))
     expect(a.indexOf('4m')).toBe(b.indexOf('1h 2m'))
     expect(a.indexOf('4m')).toBe(c.indexOf('35s'))
     // the icon leads each row
@@ -1918,6 +1920,9 @@ for (const variant of Object.keys(DEMO)) {
             expect(Object.keys(PAIRS6)).toContain(icon)
             if (PAIRS6[icon] === null) expect(['idle', 'done', 'stalled', 'failed']).not.toContain(word)
             else expect(word).toBe(PAIRS6[icon])
+            // one status word per row: no second state (whole or cut, e.g. 'fai…') in any other cell
+            const rest = l.trim().replace(/^▸\s*/, '').split(/\s{2,}/).filter((_, i) => i !== 2).join('  ')
+            expect(/\b(rejected|accepted|failed|stalled|idle|done|fai…|sta…)(?=\s|$)/.test(rest)).toBe(false)
           }
           if (variant === 'full') for (const i of ['●', '◌', '⚑', '⊘']) expect(prows.map(l => l.trim().replace(/^▸\s*/, '')[0])).toContain(i)
           if (variant === 'full') expect(body.some(l => /◌.*idle/.test(l)) && body.some(l => /⊘.*stalled/.test(l))).toBe(true)
@@ -2406,6 +2411,33 @@ for (const cols of [86, 110, 190]) {
     // the judge's gap replaces the reason
     expect(lines[p3 + 1]!.trim().startsWith('own gap: the retry path has no test')).toBe(true)
     expect(lines.join('\n')).not.toContain('sound')
+  })
+  test(`STORY rows keep a long title and show one status word at ${cols} columns`, async ($, on) => {
+    const T40 = 'importer for the quarterly ledger export' // 40 characters
+    expect(T40).toHaveLength(40)
+    const tasks = [epicOf('tA', 'E-3a3a3bb5', [
+      story('E-3a3a3bb5/P2', T40, { state: 'failed', last_verdict: 'reject', metrics: numbers() }),
+      story('E-3a3a3bb5/P3', 'cache layer', { state: 'done', last_verdict: 'accept', metrics: numbers({ attempt: 1, judge: { score: 94, threshold: 90, reason: 'sound' }, retry_cost_usd: 0, out_of_retries: false }) }),
+      story('E-3a3a3bb5/P4', 'parser', { state: 'idle', metrics: NEVER }),
+    ])]
+    await seeded($, on, { status: stat(), tasks, task: demo() }, 'terminal', undefined, { epic: 'tA' }, true)
+    const lines = await inPane($, cols, 'stories')
+    sound(lines, cols)
+    const rows = lines.filter(l => /^[▸ ] +[●◌⚑✔✘⊘]  \S/.test(l) && !EPIC_LINE.test(l))
+    expect(rows).toHaveLength(3)
+    // title: whole at 190; at least 30 characters before … at 110, 24 at 86 (rows at 86 may drop retry or wall; the title is kept)
+    const title = rows[0]!.replace(/^[▸ ] +✘  /, '').split(/ {2,}/)[0]!
+    const visible = title.replace(/…$/, '')
+    expect(T40.startsWith(visible)).toBe(true)
+    if (cols >= 190) expect(title).toBe(T40)
+    if (cols === 110) expect(visible.length).toBeGreaterThanOrEqual(30)
+    if (cols === 86) expect(visible.length).toBeGreaterThanOrEqual(24)
+    // exactly one status word per row, and no cut second state beside it
+    const STATE = /\b(rejected|accepted|failed|stalled|idle|done|reject|accept|fai|sta|rej|acc)(…)?(?=\s|$)/g
+    const words = rows.map(l => l.replace(/^[▸ ] +[●◌⚑✔✘⊘]  /, '').split(/ {2,}/).slice(1).join('  ').match(STATE) ?? [])
+    expect(words[0]).toEqual(['rejected'])
+    expect(words[1]).toEqual(['accepted'])
+    expect(words[2]).toEqual(['idle'])
   })
   for (const surface of SURFACES) {
     test(`${surface}: two-line STORY rows mount at ${cols} columns`, async ($, on) => {
