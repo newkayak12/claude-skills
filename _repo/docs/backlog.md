@@ -8,6 +8,27 @@ never retire them as duplicates, and never reference superpowers.
 ## Ready
 
 Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — the UI cards below come first.
+Card 101 comes before them (user, 2026-10-29: "최우선").
+
+### teams parallelism — first
+
+101. **teams runs ready packages at the width shape allows; a token count is not vendor pushback**
+    - Why: user, 2026-10-29: "harness, graph, teams 각 phase를 병렬로 할 수는 없는건가?", then "네네 그리고
+      최우선". Seen in E-eb3d399f: `auto_parallel_decreased` 2→1 at `dispatch:P2:1`, so the ready retry
+      `dispatch:P2:2` waited ~24 min (opened 1793251891209, dispatched 1793253304717) until P1 finished.
+      Cause (verified): `PUSHBACK_RE` in `teams/mcp/taskmanager.mjs` (~L7084) has `\b429\b`, which matched
+      `"cache_creation_input_tokens":429` in that driver's stream log — every usage block's numbers can
+      trip it, and `\b529\b` the same. Also: AIMD starts at 2 whatever shape's `max_parallel_width` is,
+      and a retry waits behind the cap like a new package.
+    - Acceptance: (1) pushback is read only from error-shaped fields (a `result` event with `is_error`,
+      a non-null `api_error_status`, a `rate_limit_event` whose status is not `allowed`, stderr), never
+      from bare numbers inside usage objects; a test with the E-eb3d399f line
+      (`"cache_creation_input_tokens":429`) gives no decrease; a real 429/overloaded error still halves.
+      (2) The start width is `min(shape.max_parallel_width, ceiling)`, not a fixed 2; tested.
+      (3) Phases that can overlap do: a package whose deps accepted starts while others run (kept), and
+      the report states the width used per tick so a wait like P2:2's is visible in tm_status.
+      (4) `node --test teams/scripts/test-*.mjs` passes with the count reported; one real Sprint
+      shows two ready packages running at once.
 
 ### Mods and naming — UI first (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
 
