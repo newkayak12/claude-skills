@@ -129,27 +129,11 @@ toasts).
 
 ### teams plugin bugs
 
-87. **A planning card's own criteria about the PRD document stay out of the user stories' acceptance**
-    - Why: E-fa84630b (2026-10-27) stopped at critique:3. PLAN-F1's child wrote goal-level AC-1..AC-4 about
-      the PRD section itself ("Given the PRD section for F1, When a reader opens it, Then it states its goal…")
-      and the merged `10-prd.md` repeats them under both F1 stories. shapecheck (`teams/mcp/shapecheck.mjs`
-      `acAssignment`) then demands them in a package (shape:2 refused: "AC-1 (no package cites it)"), shape:3
-      copied them into P1, and critique rejected P1 as unjudgeable (code package carrying document criteria).
-      No retry can pass: the PRD itself carries the bad criteria. Which step folds the child's goal ACs into
-      `user_stories[]` (prompts.mjs line ~113 vs ~197) is unverified.
-    - Shipped part (eb3a1c49, E-861e1089, 2026-10-28): cause `foldChild` (taskmanager.mjs ~3868-3873) passed
-      the child gate's stories unfiltered; `stripDocumentAcceptance` drops an exact-text (normalized) match of
-      a document criterion; prompts.mjs:197 clause; 2 tests. Left: a paraphrased document criterion still
-      gets through, and the real L run below.
-    - Acceptance (left): one real L run whose PRD has no "Given the PRD section" criterion; a paraphrase case
-      either caught or named as a limit in the PRD gate.
-
-99. **The repo hook's write refusal applies to this repo only, not any git repo**
-    - Why: E-fa72c6e8 (2026-10-28) D11 built a scratch git repo under `/tmp` and `printf … > notes.txt` there
-      was refused ("notes.txt, a repo file"); replayed against the current hook on 2026-10-28, still a deny.
-      The rule governs claude-skills files; a scratch repo is not one.
-    - Acceptance: a write into a git repo whose common dir is not this repo's passes (test in
-      `_repo/scripts/test-repo-rules.mjs`); writes into this repo and its linked worktrees still deny.
+87. **A paraphrased document criterion still gets into user stories** (rest of card 87)
+    - Why: `stripDocumentAcceptance` (eb3a1c49) drops only an exact-text match. The real L run E-11f56074
+      (2026-10-29) had none in its PRD (0 "Given the PRD section" lines; its F2 judge noted a repeated bullet
+      "a card-87 check could trip on"), so the exact-match fix holds on a real run; a paraphrase is untested.
+    - Acceptance: a paraphrase case caught (test) or named as a limit in the PRD gate prompt.
 
 75. **smart-compact fires on the same context % the person sees in the status line** — part in E-3f6657e7 (6d5809b2)
     - 2026-10-26: smart-compact now computes `round((input + cache_creation + cache_read) / window * 100)`, the
@@ -178,8 +162,12 @@ toasts).
     and 88cf55ed (E-398db286): `teams/mcp/scope.mjs` baselines already-dirty paths; `scope.mjs verdict --baseline
     --scope` computes pass/fail in node (exit 0/1, out-of-scope paths listed; real run: a foreign path dirty
     before the baseline passes, a new out-of-scope path fails) and the size-S prompt makes its exit status the
-    scope result. Left: the engine runs the verdict itself (today the model runs the CLI); another run's write
-    AFTER this run's baseline outside its scope still fails it; two runs editing the same file not isolated.
+    scope result. E-11f56074 (2026-10-29, taken from P1's worktree; its gate was blocked by the card 97
+    denial defect): the engine computes the verdict on the finish read (`computeScopeVerdict`, scope from the
+    plan/setgoal paths, `ownVerdict` over `.harness-run/writes/<run>.jsonl`) and records a `scope_verdict`
+    event; the model no longer runs the CLI, so a foreign write no longer fails the run. Left: nothing writes
+    the own-write record yet (the verdict falls back to git-only, recorded not gating); two runs editing the
+    same file not isolated.
     - Why: 2026-10-26, E-23b35fe3 (card 74 part A) failed its U4 clean-scope check three times because
       E-0baf8e75 (part B) was editing session/think/trophy in the same main checkout; part A's own work
       passed (teams 357, graph 175, harness 199) and was committed by hand. Size S writes into the
@@ -317,6 +305,8 @@ toasts).
 | E-db523454 | 2026-10-28 | 92 | shipped `f5a54fe8`; size S; goal gate 96; "claims every user story" needs 2+ stories; teams 1568/1568; ~$2 |
 | E-8b9c417d | 2026-10-28 | 84 (two defects) | shipped `7e051a4b`; P1 accepted; P2 met its own acceptance but rejected 3× for P3's live look (card 91), taken from its branch; live look done in session; integration branch held QA scratch under `test/` (0.60.1 engine, card 86 fix not installed) — not merged; teams 1570/1570, plugin test 375/375; $27.5 |
 | E-0ad09a55 | 2026-10-28 | 88 (part) | shipped `12668c8f`; size S; goal gate 90; repro gate for QA defects and audit unmet (rerun in the integration tree, a passing one dropped); teams 1577/1577; $3.72 |
+| E-11f56074 | 2026-10-29 | 81 rest, 99 (87 check) | partial, size L, ~$24: both packages' gates "blocked: tool denied" (installed engine lacks e9fc32eb); work taken from the worktrees by hand. 99: hook refuses writes only in this repo's common dir, repo-rules 231/231, live: scratch repo pass, repo deny. 81: engine scope verdict recorded on finish. teams 1633/1633. PRD had no document criteria (87) |
+| E-f2173f01 | 2026-10-29 | 94 rest | size S; one status word per STORYs row, title shrinks last (≥24 at 86 cols); live look 84-col pane, shot sent; plugin test 399/399, teams 1631/1631; awaiting the user's approval |
 | E-fa72c6e8 D11 | 2026-10-28 | 97 rest | taken from the cancelled Sprint's D11 branch (`rescue/fa72c6e8-D11`): a command the project's PreToolUse hook refuses (QA probing `rm -f $QAF1_UNSET/…`) is not a needed denial, so it no longer blocks a node; live probe doc `_repo/docs/2026-10-28-hook-deny-permission-denials.md`; teams 1631/1631 |
 | E-75270ef1 | 2026-10-28 | 88 rest, 96 | shipped `fc9ea16c` (committed by the run); audit unmet items need a runnable repro; a dropped defect stays dropped on rescue/retry; task.base_commit at tm_open; size-S prompt names gateintegrity; teams 1626/1626 |
 | E-ca39279f | 2026-10-28 | 97, 98 | size S; one filing holds a defect once (same trimmed title or repro.command); `harnessVerdict` refuses an accept under goal_threshold (the graph's floor-5 band let 85 pass at 90) and the size-S prompt passes the threshold; teams 1618/1618 |

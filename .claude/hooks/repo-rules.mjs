@@ -9,10 +9,11 @@
 //          `cd <path>` segment before the push, joined by `&&`, `||`, `;` or `|`, applied in order from cwd,
 //          then `git -C <path>` relative to that; `~` and `~/x` expanded with $HOME, else cwd); `git commit` with a staged README.md and no staged
 //          KOR.md beside it gets a systemMessage. An unquoted `$NAME` argument to `rm` and an in-place write
-//          to a repo file (sed -i, redirect, inline code) are denied; see bashDeny.
+//          to a file of this repo (sed -i, redirect, inline code) are denied; see bashDeny and ownRepo.
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const git = (cwd, args, timeout = 10000) =>
   execFileSync('git', args, { cwd, timeout, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
@@ -263,6 +264,15 @@ function bashDeny(cmd, cwd, env, run) {
     }
     return tops.get(dir)
   }
+  // "This repo" is the one this script lives in: a target counts only when its git common dir equals the
+  // script's own (linked worktrees share it). A lookup that fails on either side counts as not this repo.
+  let ownCommon
+  const commons = new Map()
+  const ownRepo = t => {
+    if (ownCommon === undefined) ownCommon = commonDir(dirname(fileURLToPath(import.meta.url)), run)
+    if (!commons.has(t)) commons.set(t, commonDir(t, run))
+    return ownCommon !== null && commons.get(t) !== null && commons.get(t) === ownCommon
+  }
   const repoPath = (p, dir) => {
     if (/[$`]/.test(p) || p.startsWith('/dev/')) return false
     const abs = resolve(dir, tilde(p, env))
@@ -270,6 +280,7 @@ function bashDeny(cmd, cwd, env, run) {
     if (!t) return false
     const rel = relative(t, join(samePath(dirname(abs)), basename(abs)))
     if (!rel || rel === '..' || rel.startsWith('../') || isAbsolute(rel) || rel === 'tmp' || rel.startsWith('tmp/')) return false
+    if (!ownRepo(t)) return false
     try { run(t, ['check-ignore', '-q', '--', rel]); return false } catch (e) { return e?.status === 1 }
   }
   const writeDeny = (p, name) => `Bash ${name} writes ${p}, a repo file, in place. Use Read/Edit/Write for repo files; Bash is for git, checks and tests.`
