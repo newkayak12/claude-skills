@@ -43,7 +43,8 @@ parallel attributes (a markdown table); join pictures (a table of rows, not a Ve
 ## Process
 
 1. **Figure or table** - per the first mandate. Write the one sentence the figure must show; it becomes the caption.
-2. **Pick the type**
+   **Gate:** if the point is parallel attributes (the same fields compared across items), stop here. End the run by recommending a markdown table and name its columns; write no IR and no figure, and skip the remaining steps. Use the `Table:` line of the Output Template.
+2. **Pick the type** and write the reason it fits the one sentence from step 1 (`Type: <type> because <reason>`)
 
    | The point | type | IR reference |
    |-----------|------|--------------|
@@ -69,12 +70,18 @@ Known limit: the font is an embedded `@font-face`. Browsers and the book's PDF r
 
 ```
 Figure: fig-9-2 - <the one claim it shows, used as the caption>
-Type: layout (schematic, stamped 축척 아님)
+Type: <type> because <reason>, e.g. layout because the point is where bytes sit (schematic, stamped 축척 아님)
 Files: fig-9-2.json · fig-9-2.svg (NN KB) · fig-9-2.png (W x H, 2x)
 Check: ok in round N of 3 - repairs applied: <list, or none>
 Viewed: <what the PNG shows; anything still wrong>
 Sources: <URL per fact> · [확인 필요]: <items, or none>
 Markdown: ![<caption>](fig-9-2.svg)
+```
+
+Parallel attributes (step 1 gate) - the run ends with this line instead:
+
+```
+Table: recommended - columns <col, col, ...> (no figure, no IR)
 ```
 
 ## What Claude Does / What You Do

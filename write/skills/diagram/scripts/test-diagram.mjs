@@ -290,6 +290,70 @@ test('a refused figure writes neither file and leaves the previous good pair unt
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+// A node script standing in for Chrome: --dump-dom answers the viewport probe with the window minus a frame
+// of (fw, fh) px (a full Chrome keeps 87 px of height; `fixedH` pins the viewport height whatever the window),
+// --screenshot writes an RGB PNG of the window x 2 whose row i is filled with i % 256.
+function fakeBrowser(dir, { fw = 0, fh = 0, fixedH = 0 } = {}) {
+  const p = join(dir, `fake-chrome-${fw}-${fh}-${fixedH}`);
+  writeFileSync(p, `#!${process.execPath}
+const { writeFileSync } = require('node:fs'), z = require('node:zlib');
+const a = process.argv.slice(2), [w, h] = a.find((x) => x.startsWith('--window-size=')).slice(14).split(',').map(Number);
+if (a.includes('--dump-dom')) { console.log('<html><body>VP ' + (w - ${fw}) + 'x' + (${fixedH} || h - ${fh}) + '</body></html>'); process.exit(0); }
+const shot = a.find((x) => x.startsWith('--screenshot='));
+if (!shot) process.exit(1);
+const W = 2 * w, H = 2 * h, rows = [];
+for (let y = 0; y < H; y++) rows.push(Buffer.concat([Buffer.from([0]), Buffer.alloc(W * 3, y % 256)]));
+const chunk = (t, d) => { const n = Buffer.alloc(4); n.writeUInt32BE(d.length); const b = Buffer.concat([Buffer.from(t), d]), c = Buffer.alloc(4); c.writeUInt32BE(z.crc32(b)); return Buffer.concat([n, b, c]); };
+const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(W, 0); ihdr.writeUInt32BE(H, 4); ihdr[8] = 8; ihdr[9] = 2;
+writeFileSync(shot.slice(13), Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', z.deflateSync(Buffer.concat(rows))), chunk('IEND', Buffer.alloc(0))]));
+`, { mode: 0o755 });
+  return p;
+}
+
+test('rasterize: a viewport shorter than the window (full Chrome) is compensated, the PNG is exactly 2W x 2H with every row', () => {
+  const dir = scratch();
+  try {
+    const out = join(dir, 'o.png');
+    const r = fig.rasterize(join(dir, 'x.svg'), 300, 200, out, { CHROME: fakeBrowser(dir, { fh: 87 }) });
+    assert.equal(r.code, 0, r.msg);
+    const png = readFileSync(out);
+    assert.deepEqual(fig.pngSize(png), [600, 400]);
+    const raw = fig.pngPixels(png), stride = 1 + 600 * 3;
+    assert.equal(raw.length, 400 * stride);
+    assert.equal(raw[399 * stride + 1], 399 % 256, 'the last row is the figure\'s last row, not blank');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('rasterize: a normal viewport passes unchanged; a viewport that cannot be enlarged is refused naming it, leaving no PNG', () => {
+  const dir = scratch();
+  try {
+    const out = join(dir, 'o.png');
+    assert.equal(fig.rasterize(join(dir, 'x.svg'), 300, 200, out, { CHROME: fakeBrowser(dir) }).code, 0);
+    assert.deepEqual(fig.pngSize(readFileSync(out)), [600, 400]);
+    rmSync(out);
+    for (const [name, opts] of [['pinned height', { fixedH: 120 }], ['narrow width', { fw: 40 }]]) {
+      const r = fig.rasterize(join(dir, 'x.svg'), 300, 200, out, { CHROME: fakeBrowser(dir, opts) });
+      assert.equal(r.code, 1, name);
+      assert.match(r.msg, /viewport is \d+x\d+ for a \d+x\d+ window/, name);
+      assert.ok(!existsSync(out), `${name}: no PNG left`);
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('rasterize with the real browser: a figure taller than a full Chrome\'s frame keeps its last rows (2W x 2H)', needsBrowser, () => {
+  const dir = scratch();
+  try {
+    const r = fig.writeFigure(LOCKWAIT, join(dir, 't'));
+    assert.equal(r.code, 0, r.msg);
+    const [w, h] = svgSize(readFileSync(join(dir, 't.svg'), 'utf8'));
+    const png = readFileSync(join(dir, 't.png'));
+    assert.deepEqual(fig.pngSize(png), [2 * w, 2 * h]);
+    const raw = fig.pngPixels(png), stride = 1 + 2 * w * (png[25] === 6 ? 4 : 3);
+    // the rows a full Chrome used to leave blank: below the 87 px its frame takes off the window
+    assert.ok(raw.subarray(2 * (h - 87) * stride).some((b, i) => i % stride !== 0 && b !== 255), 'the rows below the old crop line are not all white');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('no browser: the SVG is written, the PNG is not, exit 3 with a CHROME= hint', () => {
   const dir = scratch();
   try {
@@ -337,7 +401,7 @@ const edit = (ir, fn) => { const c = clone(ir); fn(c); return c; };
 // layout
 
 const LAYOUT = {
-  type: 'layout', title: 'InnoDB 페이지 구조', scale: 'schematic',
+  type: 'layout', title: 'InnoDB 페이지 구조', scale: 'schematic', claim: ['dir'],
   strips: [
     { id: 'page', label: '16KB 페이지', cells: [
       { id: 'fh', label: 'File Header', sublabel: '38 B', kind: 'meta' },
@@ -353,7 +417,7 @@ const LAYOUT = {
   marks: [{ strip: 'page', at: 'rec', label: '레코드 시작' }, { strip: 'page', at: 'dir', label: '디렉터리 시작' }],
 };
 const LAYOUT_BYTES = {
-  type: 'layout', title: '행 헤더 바이트', scale: 'bytes', unit: 'B',
+  type: 'layout', title: '행 헤더 바이트', scale: 'bytes', unit: 'B', claim: ['trx'],
   strips: [{ id: 'row', label: '행', total: 40, cells: [{ id: 'h', label: '헤더', size: 10 }, { id: 'trx', label: 'DB_TRX_ID', size: 12 }, { id: 'roll', label: 'ROLL_PTR', size: 18 }] }],
   marks: [{ strip: 'row', at: 10, label: '10' }, { strip: 'row', at: 22, label: '22' }],
 };
@@ -381,7 +445,7 @@ test('layout refuses: marks out of order, pointer to an unknown cell or without 
 // tree
 
 const BTREE = {
-  type: 'tree', title: 'B-tree 탐색', ordered: true, roots: ['r'],
+  type: 'tree', title: 'B-tree 탐색', ordered: true, roots: ['r'], claim: ['b'],
   nodes: [
     { id: 'r', keys: [20, 40], kind: 'internal' },
     { id: 'a', parent: 'r', keys: [5, 10], kind: 'leaf' },
@@ -391,7 +455,7 @@ const BTREE = {
   links: [{ from: 'a', to: 'b', both: true }, { from: 'b', to: 'c', both: true }],
 };
 const TWO_TREES = {
-  type: 'tree', title: '보조 인덱스에서 클러스터드 인덱스로', ordered: true, roots: ['s', 'p'],
+  type: 'tree', title: '보조 인덱스에서 클러스터드 인덱스로', ordered: true, roots: ['s', 'p'], claim: ['s1'],
   nodes: [
     { id: 's', label: '보조 인덱스 (name, id)', keys: [['kim', 7], ['park', 3]], kind: 'internal' },
     { id: 's1', parent: 's', keys: [['kim', 7], ['lee', 12]], kind: 'leaf' },
@@ -403,7 +467,7 @@ const TWO_TREES = {
   links: [{ from: 's1', to: 'p', label: 'PK로 다시 찾기', style: 'async' }],
 };
 const PLAN = {
-  type: 'tree', title: '실행 계획', ordered: false, roots: ['join'],
+  type: 'tree', title: '실행 계획', ordered: false, roots: ['join'], claim: ['c'],
   nodes: [
     { id: 'join', label: 'Nested loop', kind: 'op' },
     { id: 'o', parent: 'join', label: 'orders 범위 스캔', kind: 'op' },
@@ -442,7 +506,7 @@ test('tree refuses ordered keys: not ascending, wrong key count, a child key out
 // timeline
 
 const LOCKWAIT = {
-  type: 'timeline', title: '같은 재고 행을 두 세션이 갱신', lanes: [{ id: 'A', label: '세션 A' }, { id: 'B', label: '세션 B' }],
+  type: 'timeline', title: '같은 재고 행을 두 세션이 갱신', claim: ['B@t3'], lanes: [{ id: 'A', label: '세션 A' }, { id: 'B', label: '세션 B' }],
   steps: [
     { t: 1, lane: 'A', label: 'BEGIN', kind: 'stmt' },
     { t: 1, lane: 'B', label: 'BEGIN', kind: 'stmt' },
@@ -455,7 +519,7 @@ const LOCKWAIT = {
   waits: [{ lane: 'B', from: 3, until: 5, on: 'A', label: 'id=1 행 X 잠금 대기' }],
 };
 const DEADLOCK = {
-  type: 'timeline', title: '교착 상태', lanes: [{ id: 'A', label: '세션 A' }, { id: 'B', label: '세션 B' }],
+  type: 'timeline', title: '교착 상태', claim: ['B@t6'], lanes: [{ id: 'A', label: '세션 A' }, { id: 'B', label: '세션 B' }],
   steps: [
     { t: 1, lane: 'A', label: 'UPDATE … id=1', kind: 'stmt' },
     { t: 2, lane: 'B', label: 'UPDATE … id=2', kind: 'stmt' },
@@ -484,10 +548,83 @@ test('timeline refuses: two steps at one (lane, t), a step inside a wait, a bad 
   expectRefused(edit(LOCKWAIT, (ir) => { ir.waits[0].from = 1; ir.steps[0].kind = 'note'; ir.waits[0].lane = 'A'; ir.waits[0].on = 'B'; ir.waits[0].until = 6; }), /waits\[0\]: "from" t=1 must be a stmt step of lane A/);
 });
 
+// claim, holder, resume
+
+// LOCKWAIT with the cause edge (A took the lock at t2) and the outcome after the wait.
+const CAUSE = edit(LOCKWAIT, (ir) => {
+  ir.claim = ['A@t2', 'B@t3'];
+  ir.waits[0].holder = 2;
+  ir.waits[0].resume = 'UPDATE 재개 · 0행';
+});
+
+test('claim: a book-type IR with no claim, an empty claim or an unknown claim id is refused with one repair line', () => {
+  for (const ir of [LAYOUT, BTREE, LOCKWAIT, ER, CHART]) {
+    const none = edit(ir, (c) => { delete c.claim; });
+    assert.equal(fig.checkFigure(none).length, 1, ir.type);
+    expectRefused(none, /add a top-level "claim"/);
+    const empty = edit(ir, (c) => { c.claim = []; });
+    assert.equal(fig.checkFigure(empty).length, 1, ir.type);
+    expectRefused(empty, /"claim" is empty/);
+    const bad = edit(ir, (c) => { c.claim = [...c.claim, 'nope']; });
+    assert.equal(fig.checkFigure(bad).length, 1, ir.type);
+    expectRefused(bad, /"claim" names "nope", which is no element of this/);
+  }
+  expectRefused(edit(LOCKWAIT, (c) => { c.claim = ['A@4']; }), /"claim" names "A@4"/);
+  assert.deepEqual(fig.checkFigure(edit(LOCKWAIT, (c) => { c.claim = ['A@t5']; })), []);
+});
+
+test('claim: the check lives in figure.mjs - the grid types and diagram.mjs validate() need no claim', () => {
+  assert.deepEqual(fig.checkFigure(STORE), []);
+  assert.deepEqual(diagram.validate(KO_ARCH), []);
+});
+
+test('claim: elements in the claim draw in the accent fill with the heavy stroke, the rest stay muted', () => {
+  const ACC = fig.PALETTE.fills.accent;
+  const fills = (ir) => [...fig.renderFigure(ir).svg.matchAll(/<rect [^>]*fill="([^"]+)"[^>]*stroke-width="([^"]+)"/g)].filter((m) => m[1] === ACC).map((m) => m[2]);
+  for (const ir of [LAYOUT, BTREE, PLAN, LOCKWAIT, BARS]) {
+    const w = fills(ir);
+    assert.ok(w.length >= 1, `${ir.type}: accent drawn`);
+    assert.ok(w.every((x) => x === '2.5'), `${ir.type}: accent carries the heavy stroke`);
+  }
+  assert.ok(fig.renderFigure(ER).svg.includes(`fill="${ACC}"`));
+  assert.ok(fig.renderFigure(CHART).svg.includes(`fill="${ACC}"`));
+  assert.equal(fig.renderFigure(edit(LOCKWAIT, (c) => { c.claim = ['A@t1']; })).svg.split(`fill="${ACC}"`).length - 1, 1);
+});
+
+test('timeline refuses a holder that is not a stmt of the "on" lane, and a resume with no step after until', () => {
+  expectPass(CAUSE, 'UPDATE 재개');
+  expectRefused(edit(CAUSE, (ir) => { ir.waits[0].holder = 5; }), /waits\[0\]: "holder" t=5 must be a stmt step of lane A/);
+  expectRefused(edit(CAUSE, (ir) => { ir.waits[0].holder = 9; }), /waits\[0\]: "holder" t=9 must be a stmt step of lane A/);
+  expectRefused(edit(CAUSE, (ir) => { ir.waits[0].holder = 3; }), /waits\[0\]: "holder" t=3 must be a stmt step of lane A/);
+  const noStep = edit(CAUSE, (ir) => { ir.steps = ir.steps.filter((s) => !(s.lane === 'B' && s.t > 5)); });
+  assert.equal(fig.checkFigure(noStep).length, 1);
+  expectRefused(noStep, /waits\[0\]: "resume" needs a step of lane B after t=5/);
+});
+
+test('timeline with a cause edge passes check; the svg has the accent line, the wait span and the resume text as given', () => {
+  assert.deepEqual(fig.checkFigure(CAUSE), []);
+  const { svg } = fig.renderFigure(CAUSE);
+  const its = itemsOf(CAUSE);
+  const cause = its.find((i) => i.id === 'cause 0'), span = its.find((i) => i.id === 'wait 0');
+  assert.ok(cause && span);
+  assert.equal(cause.from, 'step A@2');
+  assert.equal(cause.to, 'step B@3');
+  assert.ok(svg.includes(`stroke="${fig.PALETTE.fills.accent}" stroke-width="2.5" marker-end="url(#arrow-accent)"`));
+  const from = its.find((i) => i.id === 'step B@3').box, release = its.find((i) => i.id === 'step A@5').box;
+  assert.ok(span.box.h > 40 && Math.abs(span.box.y - (from.y + from.h)) < 0.5, 'the span runs down from the waiting statement');
+  assert.ok(span.box.y + span.box.h > release.y - 20 && span.box.y + span.box.h < release.y + release.h + 20, 'the span ends at the release row');
+  assert.ok(svg.includes('>UPDATE 재개 · 0행</text>'));
+  const rs = its.find((i) => i.kind === 'text' && i.text === 'UPDATE 재개 · 0행'), next = its.find((i) => i.id === 'step B@6').box;
+  assert.ok(rs.box.x >= next.x + next.w && rs.box.y < next.y + next.h && rs.box.y + rs.box.h > next.y, 'drawn beside the resume step');
+  // without holder and resume nothing is drawn for them
+  const plain = fig.renderFigure(edit(CAUSE, (ir) => { delete ir.waits[0].holder; delete ir.waits[0].resume; })).svg;
+  assert.ok(!plain.includes('arrow-accent') && !plain.includes('UPDATE 재개'));
+});
+
 // er
 
 const ER = {
-  type: 'er', title: '주문 스키마', level: 'physical',
+  type: 'er', title: '주문 스키마', level: 'physical', claim: ['item'],
   entities: [
     { id: 'customer', label: '고객', row: 0, col: 0, attrs: [{ name: 'id', type: 'BIGINT', pk: true }, { name: 'name', type: 'VARCHAR(50)' }] },
     { id: 'orders', label: '주문', row: 0, col: 1, attrs: [{ name: 'id', type: 'BIGINT', pk: true }, { name: 'customer_id', type: 'BIGINT', fk: 'customer.id' }, { name: 'ordered_at', type: 'DATETIME' }] },
@@ -518,7 +655,7 @@ test('er refuses: no pk, fk to a missing or non-key target, physical N:M, fk on 
 
 test('er: a logical model may draw N:M directly; the same relation at physical level is refused', () => {
   const ir = {
-    type: 'er', title: '저자와 도서', level: 'logical',
+    type: 'er', title: '저자와 도서', level: 'logical', claim: ['author'],
     entities: [
       { id: 'author', label: '저자', row: 0, col: 0, attrs: [{ name: '저자 번호', pk: true }, { name: '이름' }] },
       { id: 'book', label: '도서', row: 0, col: 1, attrs: [{ name: 'ISBN', pk: true }, { name: '제목' }] },
@@ -532,7 +669,7 @@ test('er: a logical model may draw N:M directly; the same relation at physical l
 // chart
 
 const CHART = {
-  type: 'chart', title: '인덱스 전후 응답 시간', mark: 'dot', illustrative: true,
+  type: 'chart', title: '인덱스 전후 응답 시간', mark: 'dot', illustrative: true, claim: ['runs'],
   x: { label: '조건', categories: ['인덱스 전', '인덱스 후'] },
   y: { label: '응답 시간', unit: 'ms' },
   series: [{ id: 'runs', label: '5회 반복', points: [
@@ -541,7 +678,7 @@ const CHART = {
   ] }],
 };
 const BARS = {
-  type: 'chart', title: '버퍼 풀 적중률', mark: 'bar', illustrative: true,
+  type: 'chart', title: '버퍼 풀 적중률', mark: 'bar', illustrative: true, claim: ['hit'],
   x: { label: '설정', categories: ['128MB', '1GB'] }, y: { label: '적중률', unit: '%' },
   series: [{ id: 'hit', label: '적중률', points: [{ x: '128MB', y: 71, lo: 68, hi: 74 }, { x: '1GB', y: 97, lo: 96, hi: 98 }] }],
 };
@@ -639,9 +776,41 @@ test('timeline: the lifeline is checked as a line and does not run through a not
   assert.deepEqual(fig.checkFigure(LOCKWAIT), []);
 });
 
+test('style layer: a timeline svg has one rx, two shape stroke widths and three text sizes at most; the accent is the darkest fill', () => {
+  const { svg } = fig.renderFigure(DEADLOCK);
+  const rects = [...svg.matchAll(/<rect [^>]*\/>/g)].map((m) => m[0]).filter((r) => /stroke-width=/.test(r));
+  assert.ok(rects.length >= 4);
+  assert.equal(new Set(rects.map((r) => /rx="([^"]+)"/.exec(r)[1])).size, 1);
+  assert.equal(new Set(rects.map((r) => /stroke-width="([^"]+)"/.exec(r)[1])).size, 2);
+  const sizes = new Set([...svg.matchAll(/<text [^>]*font-size="([^"]+)"/g)].map((m) => m[1]));
+  assert.ok(sizes.size <= 3, [...sizes].join(','));
+  const Y = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).reduce((a, v, k) => a + v * [0.2126, 0.7152, 0.0722][k], 0);
+  const { accent, ...rest } = fig.PALETTE.fills;
+  assert.ok(Object.values(rest).every((h) => Y(h) > Y(accent)), 'accent is the darkest fill');
+});
+
+test('style layer: every figure type draws well-formed attributes and one rx on all rects that carry one', () => {
+  for (const ir of [DEADLOCK, LAYOUT, BTREE, ER, CHART, BARS, PLAN, KO_ARCH]) {
+    const { svg } = fig.renderFigure(ir);
+    assert.ok(!/"[a-z-]+="/.test(svg.replace(/>[^<]*</g, '><')), `${ir.type}: attribute glued to the previous one`);
+    const rx = new Set([...svg.matchAll(/<rect [^>]*\brx="([^"]+)"/g)].map((m) => m[1]));
+    assert.ok(rx.size <= 1, `${ir.type}: rx ${[...rx].join(',')}`);
+  }
+});
+
+test('style layer: timeline steps and lane headers are sized to their text, never the lane width', () => {
+  const ir = edit(LOCKWAIT, (c) => { c.steps[2].label = 'UPDATE stock SET qty = qty - 1'; c.steps[3].label = 'UPDATE'; });
+  const its = itemsOf(ir), LW = (640 - 48 - 34) / 2;
+  const w = (id) => its.find((i) => i.id === id).box.w;
+  const long = w('step A@2'), short = w('step B@3');
+  assert.ok(long > short + 20, `${long} vs ${short}`);
+  for (const i of its.filter((i) => /^(step|lane) /.test(i.id) && i.box)) assert.ok(i.box.w < LW, `${i.id} is ${i.box.w} wide`);
+  assert.ok(w('lane A') < LW - 12);
+});
+
 test('chart: a median label that would clip at the right edge goes left (2 series x 3 categories)', () => {
   const ir = {
-    type: 'chart', title: '읽기와 쓰기', mark: 'dot', illustrative: true,
+    type: 'chart', title: '읽기와 쓰기', mark: 'dot', illustrative: true, claim: ['write'],
     x: { label: '변형', categories: ['A1 인덱스 없음', 'B 인덱스', 'A2 인덱스 없음'] }, y: { label: '실행 시간', unit: 'µs', min: 0 },
     series: [
       { id: 'read', label: '읽기', points: [{ x: 'A1 인덱스 없음', y: 1630, lo: 1609, hi: 1662 }, { x: 'B 인덱스', y: 764, lo: 751, hi: 844 }, { x: 'A2 인덱스 없음', y: 1509, lo: 1505, hi: 1534 }] },
@@ -667,7 +836,7 @@ test('legend renames the style keys; a key no edge uses, or an empty label, is r
 // er: per-end optionality (card "<end>:<end>", end = 1 | 0..1 | 0..* | 1..*) and the UK marker
 
 const ER_OPT = {
-  type: 'er', title: '서점 다중성', level: 'logical',
+  type: 'er', title: '서점 다중성', level: 'logical', claim: ['book'],
   entities: [
     { id: 'customer', label: '고객', row: 0, col: 0, attrs: [{ name: '고객번호', pk: true }, { name: '이메일', unique: true }] },
     { id: 'order', label: '주문', row: 0, col: 1, attrs: [{ name: '주문번호', pk: true }, { name: '고객번호', fk: 'customer.고객번호' }] },

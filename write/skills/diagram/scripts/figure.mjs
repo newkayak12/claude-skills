@@ -11,7 +11,7 @@ import { join, resolve, delimiter } from 'node:path';
 import { tmpdir, homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { inflateSync } from 'node:zlib';
+import { inflateSync, deflateSync, crc32 } from 'node:zlib';
 import { TYPES, validate } from './diagram.mjs';
 import { loadFont, measure, missingChars, subsetFont } from './font.mjs';
 
@@ -22,7 +22,7 @@ const MIN_PT = 7.5;
 // style differs by its dash pattern, not only by colour.
 export const PALETTE = {
   ink: '#1f1f1c', muted: '#55544e', line: '#34332f', paper: '#ffffff',
-  fills: { paper: '#ffffff', soft: '#c9d1dc', mid: '#98a5b8', strong: '#6c7a90' },
+  fills: { paper: '#ffffff', soft: '#c9d1dc', mid: '#98a5b8', strong: '#6c7a90', accent: '#2a3447' },
   edges: {
     sync: { dash: 'none', color: '#34332f' },
     async: { dash: '7 4', color: '#34332f' },
@@ -30,7 +30,12 @@ export const PALETTE = {
     fail: { dash: '2 3', color: '#b03d0a' },
   },
 };
-const SIZE = 13, TITLE = 15, LINE_H = 16;
+// The style layer: one corner radius, two stroke weights, a three-size type scale. The claim's
+// elements take the accent role (darkest fill, heavy stroke, light text); the rest stays muted.
+const RX = 6;
+const SW_LIGHT = 1.25, SW_HEAVY = 2.5;
+const TITLE = 15, SIZE = 13, SUB = 12.5, LINE_H = 16;
+const ON_ACCENT = '#ffffff';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const f1 = (n) => +n.toFixed(1);
@@ -38,7 +43,7 @@ const f1 = (n) => +n.toFixed(1);
 // ---------- canvas: SVG parts + geometry records ----------
 
 class Canvas {
-  constructor() { this.parts = []; this.items = []; this.used = { Regular: '', Bold: '' }; this.defs = new Set(); this.n = 0; }
+  constructor() { this.parts = []; this.items = []; this.used = { Regular: '', Bold: '' }; this.defs = new Set(); this.n = 0; this.accent = new Set(); }
   // (x, y) is the baseline anchor. owner: what the text labels; within: the shape it must fit
   // inside; room: the width it may take before it would have to be cut.
   text(str, x, y, o = {}) {
@@ -77,7 +82,7 @@ class Canvas {
   path(points, style = 'sync', o = {}) {
     const e = PALETTE.edges[style] || PALETTE.edges.sync, m = this.marker(style);
     const d = points.map((p, i) => `${i ? 'L' : 'M'}${f1(p[0])} ${f1(p[1])}`).join(' ');
-    return `<path d="${d}" fill="none" stroke="${e.color}" stroke-width="${o.width || 1.5}"${e.dash !== 'none' ? ` stroke-dasharray="${e.dash}"` : ''}${o.head === false ? '' : ` marker-end="${m}"`}${o.both ? ` marker-start="${m}"` : ''}/>`;
+    return `<path d="${d}" fill="none" stroke="${e.color}" stroke-width="${o.width || SW_LIGHT}"${e.dash !== 'none' ? ` stroke-dasharray="${e.dash}"` : ''}${o.head === false ? '' : ` marker-end="${m}"`}${o.both ? ` marker-start="${m}"` : ''}/>`;
   }
 }
 
@@ -151,7 +156,7 @@ const PADX = 24, TOP = 44;
 function title(c, ir, W, stamp) {
   let room = W - 2 * PADX;
   if (stamp) {
-    const sb = c.text(stamp, W - PADX, 26, { anchor: 'end', size: 12.5, fill: PALETTE.muted, owner: 'stamp' });
+    const sb = c.text(stamp, W - PADX, 26, { anchor: 'end', size: SUB, fill: PALETTE.muted, owner: 'stamp' });
     room -= sb.w + 12;
   }
   c.text(ir.title, PADX, 26, { bold: true, size: TITLE, owner: 'title', room });
@@ -179,16 +184,16 @@ function storeArcs(x, y, w, h, ry = STORE_RY) {
 }
 
 function nodeShape(kind, x, y, w, h) {
-  const st = `fill="${PALETTE.fills.paper}" stroke="${PALETTE.line}" stroke-width="1.4"`;
+  const st = `fill="${PALETTE.fills.paper}" stroke="${PALETTE.line}" stroke-width="${SW_LIGHT}"`;
   if (kind === 'store') {
     const ry = STORE_RY;
-    return `<path d="M${x} ${y + ry} a${w / 2} ${ry} 0 0 1 ${w} 0 v${h - 2 * ry} a${w / 2} ${ry} 0 0 1 ${-w} 0 z" ${st}/><path d="M${x} ${y + ry} a${w / 2} ${ry} 0 0 0 ${w} 0" fill="none" stroke="${PALETTE.line}" stroke-width="1.2"/>`;
+    return `<path d="M${x} ${y + ry} a${w / 2} ${ry} 0 0 1 ${w} 0 v${h - 2 * ry} a${w / 2} ${ry} 0 0 1 ${-w} 0 z" ${st}/><path d="M${x} ${y + ry} a${w / 2} ${ry} 0 0 0 ${w} 0" fill="none" stroke="${PALETTE.line}" stroke-width="${SW_LIGHT}"/>`;
   }
   if (kind === 'decision') return `<path d="M${x + w / 2} ${y - 6} L${x + w + 8} ${y + h / 2} L${x + w / 2} ${y + h + 6} L${x - 8} ${y + h / 2} Z" ${st}/>`;
-  if (kind === 'queue') return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" ${st}/><path d="M${x + w - 14} ${y} v${h} M${x + w - 24} ${y} v${h}" stroke="${PALETTE.line}" stroke-width="1.2"/>`;
-  if (kind === 'actor' || kind === 'state') return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${h / 2}" ${st}/>`;
-  if (kind === 'external') return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" ${st} stroke-dasharray="5 4"/>`;
-  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" ${st}/>`;
+  if (kind === 'queue') return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${RX}" ${st}/><path d="M${x + w - 14} ${y} v${h} M${x + w - 24} ${y} v${h}" stroke="${PALETTE.line}" stroke-width="${SW_LIGHT}"/>`;
+  if (kind === 'actor' || kind === 'state') return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${RX}" ${st}/>`;
+  if (kind === 'external') return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${RX}" ${st} stroke-dasharray="5 4"/>`;
+  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${RX}" ${st}/>`;
 }
 
 // The point where the line from a box's centre toward (tx, ty) leaves the box (plus a gap).
@@ -229,7 +234,7 @@ function staticGrid(ir, c) {
     const bs = g.nodes.map((m) => box(byId.get(m)));
     const x0 = Math.min(...bs.map((b) => b.x)) - 14, y0 = Math.min(...bs.map((b) => b.y)) - 26;
     const x1 = Math.max(...bs.map((b) => b.x + b.w)) + 14, y1 = Math.max(...bs.map((b) => b.y + b.h)) + 12;
-    c.shape(`<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" rx="10" fill="${PALETTE.fills.soft}" stroke="${PALETTE.muted}" stroke-dasharray="4 4"/>`, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, { id: `group ${g.id}`, container: true });
+    c.shape(`<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" rx="${RX}" fill="${PALETTE.fills.soft}" stroke="${PALETTE.muted}" stroke-width="${SW_LIGHT}" stroke-dasharray="4 4"/>`, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, { id: `group ${g.id}`, container: true });
     c.text(g.label, x0 + 10, y0 + 17, { bold: true, fill: PALETTE.muted, owner: `group ${g.id}`, room: x1 - x0 - 20 });
   }
   const styles = [];
@@ -385,7 +390,7 @@ BOOK_TYPES.layout = {
       let widths;
       if (bytes) widths = s.cells.map((cell) => (cell.size / s.total) * CWD);
       else {
-        const nat = s.cells.map((cell) => Math.min(150, Math.max(44, c.width(cell.label) + 16, subOf(cell) ? c.width(subOf(cell), { size: 12.5 }) + 16 : 0)));
+        const nat = s.cells.map((cell) => Math.min(150, Math.max(44, c.width(cell.label) + 16, subOf(cell) ? c.width(subOf(cell), { size: SUB }) + 16 : 0)));
         const sum = nat.reduce((a, b) => a + b, 0);
         widths = nat.map((w) => (w * CWD) / sum);
       }
@@ -401,18 +406,18 @@ BOOK_TYPES.layout = {
       slAll.forEach((l, k) => c.text(l.t, PADX, y + h / 2 - ((slAll.length - 1) * 16) / 2 + 5 + k * 16, { bold: l.bold, fill: l.bold ? PALETTE.ink : PALETTE.muted, owner: `strip ${s.id}`, room: LBL - 12 }));
       let x = x0;
       s.cells.forEach((cell, k) => {
-        const w = widths[k], b = { x, y, w, h };
+        const w = widths[k], b = { x, y, w, h }, hot = c.accent.has(cell.id) || c.accent.has(s.id);
         box.set(cell.id, b);
-        c.shape(`<rect x="${f1(x)}" y="${f1(y)}" width="${f1(w)}" height="${h}" fill="${cellFill(cell.kind)}" stroke="${PALETTE.line}" stroke-width="1.2"${cell.kind === 'free' ? ' stroke-dasharray="4 3"' : ''}/>`, b, { id: cell.id });
+        c.shape(`<rect x="${f1(x)}" y="${f1(y)}" width="${f1(w)}" height="${h}" rx="${RX}" fill="${hot ? PALETTE.fills.accent : cellFill(cell.kind)}" stroke="${PALETTE.line}" stroke-width="${hot ? SW_HEAVY : SW_LIGHT}"${cell.kind === 'free' ? ' stroke-dasharray="4 3"' : ''}/>`, b, { id: cell.id });
         const all = [...lines[k].map((t) => ({ t, sub: false })), ...(subOf(cell) ? [{ t: subOf(cell), sub: true }] : [])];
         const top = y + h / 2 - ((all.length - 1) * 15) / 2 + 5;
-        all.forEach((l, j) => c.text(l.t, x + w / 2, top + j * 15, { anchor: 'middle', size: l.sub ? 12.5 : SIZE, fill: l.sub ? PALETTE.muted : PALETTE.ink, owner: cell.id, within: cell.id, room: w - 4 }));
+        all.forEach((l, j) => c.text(l.t, x + w / 2, top + j * 15, { anchor: 'middle', size: l.sub ? SUB : SIZE, fill: hot ? ON_ACCENT : l.sub ? PALETTE.muted : PALETTE.ink, owner: cell.id, within: cell.id, room: w - 4 }));
         x += w;
       });
       for (const m of marks) {
         const mx = typeof m.at === 'number' ? x0 + (m.at / s.total) * CWD : box.get(m.at).x;
-        c.guide(`<path d="M${f1(mx)} ${y - 8} v8" stroke="${PALETTE.ink}" stroke-width="1.6"/>`);
-        c.text(m.label, mx, y - 12, { anchor: 'middle', size: 12.5, fill: PALETTE.muted, owner: `mark ${m.label}` });
+        c.guide(`<path d="M${f1(mx)} ${y - 8} v8" stroke="${PALETTE.ink}" stroke-width="${SW_HEAVY}"/>`);
+        c.text(m.label, mx, y - 12, { anchor: 'middle', size: SUB, fill: PALETTE.muted, owner: `mark ${m.label}` });
       }
       y += h;
       bottoms[i] = y;
@@ -425,8 +430,8 @@ BOOK_TYPES.layout = {
       const aEdge = p.a > p.b ? A.y : A.y + A.h, bEdge = p.b > p.a ? B.y - 2 : B.y + B.h + 2;
       const pts = Math.abs(ax - bx) < 2 && p.a !== p.b ? [[ax, aEdge], [bx, bEdge]] : [[ax, aEdge], [ax, ly], [bx, ly], [bx, bEdge]];
       c.edge(c.path(pts, 'sync'), pts, { id, from: p.from, to: p.to });
-      if (pts.length === 2) c.text(p.label, ax + 6, (aEdge + bEdge) / 2 + 4, { size: 12.5, owner: id, halo: true });
-      else c.text(p.label, (ax + bx) / 2, ly + 15, { anchor: 'middle', size: 12.5, owner: id, halo: true });
+      if (pts.length === 2) c.text(p.label, ax + 6, (aEdge + bEdge) / 2 + 4, { size: SUB, owner: id, halo: true });
+      else c.text(p.label, (ax + bx) / 2, ly + 15, { anchor: 'middle', size: SUB, owner: id, halo: true });
     }
     return { W, H: y - 10 };
   },
@@ -532,7 +537,7 @@ BOOK_TYPES.tree = {
       if (n.ellipsis) { size.set(n.id, { w: 40, h: 30, keys: [] }); continue; }
       if (ir.ordered) {
         let keys = n.keys.map((k) => Math.max(28, c.width(fmtKey(k)) + 14));
-        const kw = keys.reduce((a, b) => a + b, 0), lw = n.label ? c.width(n.label, { size: 12.5 }) + 16 : 0;
+        const kw = keys.reduce((a, b) => a + b, 0), lw = n.label ? c.width(n.label, { size: SUB }) + 16 : 0;
         if (lw > kw) keys = keys.map((w) => (w * lw) / kw); // a wider label stretches the key cells, not the margins
         size.set(n.id, { w: Math.max(kw, lw), h: 30 + (n.label ? 22 : 0), keys });
       } else {
@@ -584,31 +589,32 @@ BOOK_TYPES.tree = {
           ax = n.keys.length === cs.length - 1 ? kx[i] : (kx[i] + kx[i + 1]) / 2;
         }
         const q = pos.get(ch.id), pts = [[ax, p.y + p.h], [q.x + q.w / 2, q.y]];
-        c.edge(`<path d="M${f1(pts[0][0])} ${f1(pts[0][1])} L${f1(pts[1][0])} ${f1(pts[1][1])}" stroke="${PALETTE.line}" stroke-width="1.3" fill="none"/>`, pts, { id: `line ${n.id}->${ch.id}`, from: n.id, to: ch.id });
+        c.edge(`<path d="M${f1(pts[0][0])} ${f1(pts[0][1])} L${f1(pts[1][0])} ${f1(pts[1][1])}" stroke="${PALETTE.line}" stroke-width="${SW_LIGHT}" fill="none"/>`, pts, { id: `line ${n.id}->${ch.id}`, from: n.id, to: ch.id });
       });
     }
     for (const n of ir.nodes) {
       const p = pos.get(n.id), s = size.get(n.id);
-      const fill = n.kind === 'internal' ? PALETTE.fills.soft : PALETTE.fills.paper;
+      const hot = c.accent.has(n.id), ink = hot ? ON_ACCENT : PALETTE.ink, rule = hot ? ON_ACCENT : PALETTE.line;
+      const fill = hot ? PALETTE.fills.accent : n.kind === 'internal' ? PALETTE.fills.soft : PALETTE.fills.paper;
       if (n.ellipsis) {
-        c.shape(`<rect x="${f1(p.x)}" y="${f1(p.y)}" width="${p.w}" height="${p.h}" rx="6" fill="${PALETTE.fills.paper}" stroke="${PALETTE.muted}" stroke-dasharray="3 3"/>`, p, { id: n.id });
+        c.shape(`<rect x="${f1(p.x)}" y="${f1(p.y)}" width="${p.w}" height="${p.h}" rx="${RX}" fill="${PALETTE.fills.paper}" stroke="${PALETTE.muted}" stroke-width="${SW_LIGHT}" stroke-dasharray="3 3"/>`, p, { id: n.id });
         c.text('…', p.x + p.w / 2, p.y + p.h / 2 + 5, { anchor: 'middle', owner: n.id, within: n.id });
         continue;
       }
-      let svg = `<rect x="${f1(p.x)}" y="${f1(p.y)}" width="${f1(p.w)}" height="${p.h}" rx="${ir.ordered ? 3 : 8}" fill="${fill}" stroke="${PALETTE.line}" stroke-width="1.3"/>`;
+      let svg = `<rect x="${f1(p.x)}" y="${f1(p.y)}" width="${f1(p.w)}" height="${p.h}" rx="${RX}" fill="${fill}" stroke="${PALETTE.line}" stroke-width="${hot ? SW_HEAVY : SW_LIGHT}"/>`;
       if (ir.ordered) {
         const ky = p.y + (n.label ? 22 : 0);
         let kx = p.x + (p.w - s.keys.reduce((a, b) => a + b, 0)) / 2;
-        if (n.label) svg += `<path d="M${f1(p.x)} ${f1(ky)} h${f1(p.w)}" stroke="${PALETTE.line}" stroke-width="1"/>`;
-        s.keys.forEach((w, i) => { if (i) svg += `<path d="M${f1(kx)} ${f1(ky)} v30" stroke="${PALETTE.line}" stroke-width="1"/>`; kx += w; });
+        if (n.label) svg += `<path d="M${f1(p.x)} ${f1(ky)} h${f1(p.w)}" stroke="${rule}" stroke-width="${SW_LIGHT}"/>`;
+        s.keys.forEach((w, i) => { if (i) svg += `<path d="M${f1(kx)} ${f1(ky)} v30" stroke="${rule}" stroke-width="${SW_LIGHT}"/>`; kx += w; });
         c.shape(svg, p, { id: n.id });
-        if (n.label) c.text(n.label, p.x + p.w / 2, p.y + 16, { anchor: 'middle', size: 12.5, fill: PALETTE.muted, owner: n.id, within: n.id });
+        if (n.label) c.text(n.label, p.x + p.w / 2, p.y + 16, { anchor: 'middle', size: SUB, fill: hot ? ON_ACCENT : PALETTE.muted, owner: n.id, within: n.id });
         kx = p.x + (p.w - s.keys.reduce((a, b) => a + b, 0)) / 2;
-        n.keys.forEach((k, i) => { c.text(fmtKey(k), kx + s.keys[i] / 2, ky + 20, { anchor: 'middle', owner: n.id, within: n.id }); kx += s.keys[i]; });
+        n.keys.forEach((k, i) => { c.text(fmtKey(k), kx + s.keys[i] / 2, ky + 20, { anchor: 'middle', fill: ink, owner: n.id, within: n.id }); kx += s.keys[i]; });
       } else {
         c.shape(svg, p, { id: n.id });
         const all = [...s.lines.map((t) => ({ t, sub: false })), ...(n.sublabel ? [{ t: n.sublabel, sub: true }] : [])];
-        all.forEach((l, i) => c.text(l.t, p.x + p.w / 2, p.y + 21 + i * 16, { anchor: 'middle', bold: !l.sub && n.kind === 'op', fill: l.sub ? PALETTE.muted : PALETTE.ink, owner: n.id, within: n.id, room: p.w - 8 }));
+        all.forEach((l, i) => c.text(l.t, p.x + p.w / 2, p.y + 21 + i * 16, { anchor: 'middle', bold: !l.sub && n.kind === 'op', fill: hot ? ON_ACCENT : l.sub ? PALETTE.muted : PALETTE.ink, owner: n.id, within: n.id, room: p.w - 8 }));
       }
     }
     for (const [i, l] of (ir.links || []).entries()) {
@@ -666,6 +672,14 @@ BOOK_TYPES.timeline = {
       if (!(rel && ['commit', 'rollback', 'error'].includes(rel.kind)) && !(own && own.kind === 'error')) errs.push(`waits[${i}]: at t=${w.until} lane ${w.on} neither commits, rolls back nor errors, and lane ${w.lane} does not error - end the wait where the lock is released (or where the waiter times out)`);
       if (w.until - w.from < 2) errs.push(`waits[${i}]: the wait t=${w.from}..${w.until} leaves no empty step to draw it in - leave at least one t between "from" and "until"`);
       for (const s of steps) if (s && s.lane === w.lane && s.t > w.from && s.t < w.until) errs.push(`lane ${w.lane} has a step at t=${s.t} while it waits (t=${w.from}..${w.until}) - a blocked session runs nothing; move the step after the wait`);
+      if (w.holder != null) {
+        const hs = at.get(`${w.on}@${w.holder}`);
+        if (!hs || hs.kind !== 'stmt') errs.push(`waits[${i}]: "holder" t=${JSON.stringify(w.holder)} must be a stmt step of lane ${w.on} - the statement where ${w.on} took the lock`);
+      }
+      if (w.resume != null) {
+        if (!isStr(w.resume)) errs.push(`waits[${i}]: "resume" must be the text to draw at the resume step`);
+        else if (!steps.some((s) => s && s.lane === w.lane && s.t > w.until)) errs.push(`waits[${i}]: "resume" needs a step of lane ${w.lane} after t=${w.until} to draw it beside - add that step or drop "resume"`);
+      }
       edges.push([w.lane, w.on]);
     });
     // a cycle of waits is a deadlock: one lane in it must show the error that ends it
@@ -689,13 +703,16 @@ BOOK_TYPES.timeline = {
     return errs;
   },
   render(ir, c) {
-    const W = 640, TW = 34, n = ir.lanes.length, LW = (W - 2 * PADX - TW) / n;
+    // A resume text sits right of its step: the lanes give up a gutter for the longest one.
+    const W = 640, TW = 34, n = ir.lanes.length;
+    const resumeW = Math.max(0, ...(ir.waits || []).filter((w) => w.resume).map((w) => c.width(w.resume, { size: SUB }) + 16));
+    const LW = (W - 2 * PADX - TW - resumeW) / n;
     title(c, ir, W);
     const colX = new Map(ir.lanes.map((l, i) => [l.id, PADX + TW + i * LW]));
     const ts = ir.steps.map((s) => s.t), t0 = Math.min(...ts), t1 = Math.max(...ts, ...(ir.waits || []).map((w) => w.until));
     const stepAt = new Map(ir.steps.map((s) => [`${s.lane}@${s.t}`, s]));
     const lines = new Map(ir.steps.map((s) => [`${s.lane}@${s.t}`, c.wrap(s.label, LW - 24, 2, { bold: s.kind === 'commit' || s.kind === 'error' })]));
-    const waitLines = (ir.waits || []).map((w) => c.wrap(w.label, LW - 40, 2, { size: 12.5 }));
+    const waitLines = (ir.waits || []).map((w) => c.wrap(w.label, LW - 48, 2, { size: SUB }));
     const rowH = new Map();
     for (let t = t0; t <= t1; t++) {
       let h = 26;
@@ -707,32 +724,43 @@ BOOK_TYPES.timeline = {
     let y = hy + 30 + 12;
     for (let t = t0; t <= t1; t++) { rowY.set(t, y); y += rowH.get(t); }
     for (const l of ir.lanes) {
-      const x = colX.get(l.id), b = { x: x + 6, y: hy, w: LW - 12, h: 30 };
-      c.shape(`<rect x="${f1(b.x)}" y="${b.y}" width="${f1(b.w)}" height="30" rx="6" fill="${PALETTE.fills.soft}" stroke="${PALETTE.line}" stroke-width="1.3"/>`, b, { id: `lane ${l.id}` });
+      const x = colX.get(l.id), hw = Math.min(LW - 12, c.width(l.label, { bold: true }) + 24), b = { x: x + LW / 2 - hw / 2, y: hy, w: hw, h: 30 };
+      c.shape(`<rect x="${f1(b.x)}" y="${b.y}" width="${f1(b.w)}" height="30" rx="${RX}" fill="${PALETTE.fills.soft}" stroke="${PALETTE.line}" stroke-width="${SW_LIGHT}"/>`, b, { id: `lane ${l.id}` });
       c.text(l.label, x + LW / 2, hy + 20, { anchor: 'middle', bold: true, owner: `lane ${l.id}`, within: `lane ${l.id}`, room: LW - 20 });
     }
     const lifeAt = c.parts.length;
-    for (let t = t0; t <= t1; t++) c.text(`t${t}`, PADX, rowY.get(t) + rowH.get(t) / 2 + 4, { size: 12.5, fill: PALETTE.muted, owner: 'time' });
+    for (let t = t0; t <= t1; t++) c.text(`t${t}`, PADX, rowY.get(t) + rowH.get(t) / 2 + 4, { size: SUB, fill: PALETTE.muted, owner: 'time' });
     const boxOf = new Map();
     for (const s of ir.steps) {
       const k = `${s.lane}@${s.t}`, ls = lines.get(k), x = colX.get(s.lane), h = ls.length * 16 + 10;
-      const b = { x: x + 8, y: rowY.get(s.t) + (rowH.get(s.t) - h) / 2, w: LW - 16, h };
-      const id = `step ${k}`, bold = s.kind === 'commit' || s.kind === 'error';
+      const id = `step ${k}`, bold = s.kind === 'commit' || s.kind === 'error', hot = c.accent.has(`${s.lane}@t${s.t}`);
+      const w = Math.max(...ls.map((l) => c.width(l, { bold }))) + 16;
+      const b = { x: x + LW / 2 - w / 2, y: rowY.get(s.t) + (rowH.get(s.t) - h) / 2, w, h };
       boxOf.set(k, b);
       if (s.kind !== 'note') {
-        const fill = { commit: PALETTE.fills.soft, rollback: PALETTE.fills.soft, error: PALETTE.fills.mid }[s.kind] || PALETTE.fills.paper;
+        const fill = hot ? PALETTE.fills.accent : { commit: PALETTE.fills.soft, rollback: PALETTE.fills.soft, error: PALETTE.fills.mid }[s.kind] || PALETTE.fills.paper;
         const dash = s.kind === 'rollback' || s.kind === 'wait' ? ' stroke-dasharray="4 3"' : '';
-        c.shape(`<rect x="${f1(b.x)}" y="${f1(b.y)}" width="${f1(b.w)}" height="${h}" rx="4" fill="${fill}" stroke="${PALETTE.line}" stroke-width="${s.kind === 'error' ? 2 : 1.2}"${dash}/>`, b, { id });
+        c.shape(`<rect x="${f1(b.x)}" y="${f1(b.y)}" width="${f1(b.w)}" height="${h}" rx="${RX}" fill="${fill}" stroke="${PALETTE.line}" stroke-width="${hot || s.kind === 'error' ? SW_HEAVY : SW_LIGHT}"${dash}/>`, b, { id });
       } else c.shape('', b, { id, container: true });
-      ls.forEach((l, i) => c.text(l, b.x + b.w / 2, b.y + 17 + i * 16, { anchor: 'middle', bold, fill: s.kind === 'note' ? PALETTE.muted : PALETTE.ink, owner: id, within: id, room: b.w - 8 }));
+      ls.forEach((l, i) => c.text(l, b.x + b.w / 2, b.y + 17 + i * 16, { anchor: 'middle', bold, fill: hot ? ON_ACCENT : s.kind === 'note' ? PALETTE.muted : PALETTE.ink, owner: id, within: id, room: b.w - 8 }));
     }
     (ir.waits || []).forEach((w, i) => {
-      const x = colX.get(w.lane) + 18, from = boxOf.get(`${w.lane}@${w.from}`), end = boxOf.get(`${w.lane}@${w.until}`);
-      const y2 = end ? end.y - 2 : rowY.get(w.until) + 4, id = `wait ${i}`;
-      const pts = [[x, from.y + from.h], [x, y2]];
-      c.edge(`<path d="M${x} ${f1(pts[0][1])} V${f1(y2)}" stroke="${PALETTE.edges.fail.color}" stroke-width="3" stroke-dasharray="${PALETTE.edges.fail.dash}" fill="none"/>`, pts, { id, from: `step ${w.lane}@${w.from}`, to: end ? `step ${w.lane}@${w.until}` : undefined });
+      const from = boxOf.get(`${w.lane}@${w.from}`), x = from.x + 8, end = boxOf.get(`${w.lane}@${w.until}`), BW = 12;
+      const y1 = from.y + from.h, y2 = end ? end.y : rowY.get(w.until) + 4, id = `wait ${i}`;
+      // the wait is a filled span from its statement down to the step that ends it
+      c.shape(`<rect x="${f1(x)}" y="${f1(y1)}" width="${BW}" height="${f1(y2 - y1)}" rx="${RX}" fill="${PALETTE.fills.soft}" stroke="${PALETTE.edges.fail.color}" stroke-width="${SW_LIGHT}"/>`, { x, y: y1, w: BW, h: y2 - y1 }, { id });
       const ry = rowY.get(w.from + 1);
-      waitLines[i].forEach((l, j) => c.text(l, x + 10, ry + 17 + j * 16, { size: 12.5, fill: PALETTE.edges.fail.color, owner: id, room: LW - 36 }));
+      waitLines[i].forEach((l, j) => c.text(l, x + BW + 6, ry + 17 + j * 16, { size: SUB, fill: PALETTE.edges.fail.color, owner: id, room: LW - 42 }));
+      if (w.holder != null) {
+        const hb = boxOf.get(`${w.on}@${w.holder}`), mid = (b) => [b.x + b.w / 2, b.y + b.h / 2];
+        const pts = [exitPoint(hb, ...mid(from), 3), exitPoint(from, ...mid(hb), 3)];
+        c.defs.add(`<marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="${PALETTE.fills.accent}"/></marker>`);
+        c.edge(`<path d="M${f1(pts[0][0])} ${f1(pts[0][1])} L${f1(pts[1][0])} ${f1(pts[1][1])}" fill="none" stroke="${PALETTE.fills.accent}" stroke-width="${SW_HEAVY}" marker-end="url(#arrow-accent)"/>`, pts, { id: `cause ${i}`, from: `step ${w.on}@${w.holder}`, to: `step ${w.lane}@${w.from}` });
+      }
+      if (w.resume) {
+        const rs = ir.steps.filter((s) => s.lane === w.lane && s.t > w.until).sort((a, b) => a.t - b.t)[0], rb = boxOf.get(`${rs.lane}@${rs.t}`), rx0 = rb.x + rb.w + 8;
+        c.text(w.resume, rx0, rb.y + 17, { size: SUB, owner: id, room: W - PADX - rx0 });
+      }
     });
     // Each lane's dotted lifeline stops 3 px short of every step box and text it would run through
     // (a note has no box, so this is what keeps its text clear), and every piece is a checked line.
@@ -840,7 +868,7 @@ BOOK_TYPES.er = {
       if (oy1 - oy0 > 20 && (A.x + A.w <= B.x || B.x + B.w <= A.x)) { const y = (oy0 + oy1) / 2, ab = A.x < B.x; s = [ab ? A.x + A.w : A.x, y]; t = [ab ? B.x : B.x + B.w, y]; }
       else if (ox1 - ox0 > 20 && (A.y + A.h <= B.y || B.y + B.h <= A.y)) { const x = (ox0 + ox1) / 2, ab = A.y < B.y; s = [x, ab ? A.y + A.h : A.y]; t = [x, ab ? B.y : B.y + B.h]; }
       else { s = exitPoint(A, B.x + B.w / 2, B.y + B.h / 2, 0); t = exitPoint(B, A.x + A.w / 2, A.y + A.h / 2, 0); }
-      c.edge(`<path d="M${f1(s[0])} ${f1(s[1])} L${f1(t[0])} ${f1(t[1])}" stroke="${PALETTE.line}" stroke-width="1.4" fill="none"/>`, [s, t], { id, from: r.from, to: r.to });
+      c.edge(`<path d="M${f1(s[0])} ${f1(s[1])} L${f1(t[0])} ${f1(t[1])}" stroke="${PALETTE.line}" stroke-width="${SW_LIGHT}" fill="none"/>`, [s, t], { id, from: r.from, to: r.to });
       const [endA, endB] = r.card.split(':');
       for (const [p, q, end, ent] of [[s, t, endA, r.from], [t, s, endB, r.to]]) {
         const len = Math.hypot(q[0] - p[0], q[1] - p[1]), ux = (q[0] - p[0]) / len, uy = (q[1] - p[1]) / len, px = -uy, py = ux;
@@ -851,28 +879,28 @@ BOOK_TYPES.er = {
         const many = isMany(end), optional = end.startsWith('0..');
         if (many) {
           const ax = p[0] + ux * 14, ay = p[1] + uy * 14;
-          c.guide(`<path d="M${f1(ax)} ${f1(ay)} L${f1(p[0] + px * 8)} ${f1(p[1] + py * 8)} M${f1(ax)} ${f1(ay)} L${f1(p[0])} ${f1(p[1])} M${f1(ax)} ${f1(ay)} L${f1(p[0] - px * 8)} ${f1(p[1] - py * 8)}" stroke="${PALETTE.line}" stroke-width="1.4" fill="none"/>`);
+          c.guide(`<path d="M${f1(ax)} ${f1(ay)} L${f1(p[0] + px * 8)} ${f1(p[1] + py * 8)} M${f1(ax)} ${f1(ay)} L${f1(p[0])} ${f1(p[1])} M${f1(ax)} ${f1(ay)} L${f1(p[0] - px * 8)} ${f1(p[1] - py * 8)}" stroke="${PALETTE.line}" stroke-width="${SW_LIGHT}" fill="none"/>`);
           mark('foot', [at(0, 8), at(0, -8), at(14, 0)]);
-          if (end === '1..*') { c.guide(`<path d="${barD(19)}" stroke="${PALETTE.line}" stroke-width="1.4" fill="none"/>`); mark('bar', [at(19, 7), at(19, -7)]); }
+          if (end === '1..*') { c.guide(`<path d="${barD(19)}" stroke="${PALETTE.line}" stroke-width="${SW_LIGHT}" fill="none"/>`); mark('bar', [at(19, 7), at(19, -7)]); }
         } else if (optional) {
-          c.guide(`<path d="${barD(7)}" stroke="${PALETTE.line}" stroke-width="1.4" fill="none"/>`);
+          c.guide(`<path d="${barD(7)}" stroke="${PALETTE.line}" stroke-width="${SW_LIGHT}" fill="none"/>`);
           mark('bar', [at(7, 7), at(7, -7)]);
         } else {
-          c.guide(`<path d="${barD(7)} ${barD(12)}" stroke="${PALETTE.line}" stroke-width="1.4" fill="none"/>`);
+          c.guide(`<path d="${barD(7)} ${barD(12)}" stroke="${PALETTE.line}" stroke-width="${SW_LIGHT}" fill="none"/>`);
           mark('bar1', [at(7, 7), at(7, -7)]); mark('bar2', [at(12, 7), at(12, -7)]);
         }
         if (optional) {
           const d = many ? 20.5 : 17, [cx, cy] = at(d, 0);
-          c.guide(`<circle cx="${f1(cx)}" cy="${f1(cy)}" r="4.5" fill="${PALETTE.paper}" stroke="${PALETTE.line}" stroke-width="1.4"/>`);
+          c.guide(`<circle cx="${f1(cx)}" cy="${f1(cy)}" r="4.5" fill="${PALETTE.paper}" stroke="${PALETTE.line}" stroke-width="${SW_LIGHT}"/>`);
           mark('circle', [at(d - 4.5, 4.5), at(d + 4.5, -4.5)]);
         }
       }
       if (r.label) edgeLabel(c, r.label, s, t, id, GX + 40, 9, [...box.values()]);
     }
     for (const e of ir.entities) {
-      const b = box.get(e.id), d = dims.get(e.id);
-      c.shape(`<rect x="${f1(b.x)}" y="${b.y}" width="${f1(b.w)}" height="${b.h}" rx="4" fill="${PALETTE.fills.paper}" stroke="${PALETTE.line}" stroke-width="1.4"/><path d="M${f1(b.x + 0.7)} ${b.y + 0.7} h${f1(b.w - 1.4)} v${HEAD - 0.7} h${f1(-(b.w - 1.4))} z" fill="${PALETTE.fills.soft}"/><path d="M${f1(b.x)} ${b.y + HEAD} h${f1(b.w)}" stroke="${PALETTE.line}" stroke-width="1"/>`, b, { id: e.id });
-      c.text(e.label, b.x + b.w / 2, b.y + 19, { anchor: 'middle', bold: true, owner: e.id, within: e.id, room: b.w - 12 });
+      const b = box.get(e.id), d = dims.get(e.id), hot = c.accent.has(e.id);
+      c.shape(`<rect x="${f1(b.x)}" y="${b.y}" width="${f1(b.w)}" height="${b.h}" rx="${RX}" fill="${PALETTE.fills.paper}" stroke="${PALETTE.line}" stroke-width="${hot ? SW_HEAVY : SW_LIGHT}"/><path d="M${f1(b.x + 0.7)} ${b.y + 0.7} h${f1(b.w - 1.4)} v${HEAD - 0.7} h${f1(-(b.w - 1.4))} z" fill="${hot ? PALETTE.fills.accent : PALETTE.fills.soft}"/><path d="M${f1(b.x)} ${b.y + HEAD} h${f1(b.w)}" stroke="${PALETTE.line}" stroke-width="${SW_LIGHT}"/>`, b, { id: e.id });
+      c.text(e.label, b.x + b.w / 2, b.y + 19, { anchor: 'middle', bold: true, fill: hot ? ON_ACCENT : PALETTE.ink, owner: e.id, within: e.id, room: b.w - 12 });
       e.attrs.forEach((a, k) => {
         const ay = b.y + HEAD + 15 + k * ROW;
         if (marker(a)) c.text(marker(a), b.x + 8, ay, { bold: true, fill: PALETTE.muted, owner: e.id, within: e.id });
@@ -889,8 +917,8 @@ BOOK_TYPES.er = {
 const MARKS = ['bar', 'line', 'dot'];
 const SERIES_FILLS = [PALETTE.fills.paper, PALETTE.fills.soft, PALETTE.fills.mid, PALETTE.fills.strong, 'url(#hatch)', 'url(#dots)'];
 const SERIES_DASH = ['none', '7 4', '2 3', '12 3 2 3', '4 2', '10 5'];
-function markerSvg(k, x, y, r = 4.2) {
-  const st = `fill="${k % 2 ? PALETTE.fills.paper : PALETTE.ink}" stroke="${PALETTE.ink}" stroke-width="1.3"`;
+function markerSvg(k, x, y, r = 4.2, hot = false) {
+  const st = `fill="${hot ? PALETTE.fills.accent : k % 2 ? PALETTE.fills.paper : PALETTE.ink}" stroke="${PALETTE.ink}" stroke-width="${hot ? SW_HEAVY : SW_LIGHT}"`;
   switch (k % 6) {
     case 0: case 1: return `<circle cx="${f1(x)}" cy="${f1(y)}" r="${r}" ${st}/>`;
     case 2: case 3: return `<rect x="${f1(x - r)}" y="${f1(y - r)}" width="${2 * r}" height="${2 * r}" ${st}/>`;
@@ -944,13 +972,14 @@ BOOK_TYPES.chart = {
   render(ir, c) {
     const W = 600, H = 380, cats = ir.x.categories || null, series = ir.series;
     title(c, ir, W, ir.illustrative ? '예시 값 (illustrative)' : null);
-    c.defs.add(`<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#ffffff"/><path d="M0 0 V6" stroke="${PALETTE.ink}" stroke-width="1.4"/></pattern><pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#ffffff"/><circle cx="3" cy="3" r="1.2" fill="${PALETTE.ink}"/></pattern>`);
+    c.defs.add(`<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#ffffff"/><path d="M0 0 V6" stroke="${PALETTE.ink}" stroke-width="${SW_LIGHT}"/></pattern><pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#ffffff"/><circle cx="3" cy="3" r="1.2" fill="${PALETTE.ink}"/></pattern>`);
     // legend
     let lx = PADX;
     series.forEach((s, k) => {
       const ly = 54;
-      if (ir.mark === 'bar') c.guide(`<rect x="${lx}" y="${ly - 10}" width="14" height="12" fill="${SERIES_FILLS[k]}" stroke="${PALETTE.ink}" stroke-width="1.2"/>`);
-      else c.guide((ir.mark === 'line' ? `<path d="M${lx - 2} ${ly - 4} h18" stroke="${PALETTE.ink}" stroke-width="1.5"${SERIES_DASH[k] !== 'none' ? ` stroke-dasharray="${SERIES_DASH[k]}"` : ''}/>` : '') + markerSvg(k, lx + 7, ly - 4));
+      const hot = c.accent.has(s.id);
+      if (ir.mark === 'bar') c.guide(`<rect x="${lx}" y="${ly - 10}" width="14" height="12" rx="${RX}" fill="${hot ? PALETTE.fills.accent : SERIES_FILLS[k]}" stroke="${PALETTE.ink}" stroke-width="${hot ? SW_HEAVY : SW_LIGHT}"/>`);
+      else c.guide((ir.mark === 'line' ? `<path d="M${lx - 2} ${ly - 4} h18" stroke="${PALETTE.ink}" stroke-width="${hot ? SW_HEAVY : SW_LIGHT}"${SERIES_DASH[k] !== 'none' ? ` stroke-dasharray="${SERIES_DASH[k]}"` : ''}/>` : '') + markerSvg(k, lx + 7, ly - 4, 4.2, hot));
       const b = c.text(s.label, lx + 20, ly, { owner: 'legend' });
       lx = b.x + b.w + 18;
     });
@@ -962,16 +991,16 @@ BOOK_TYPES.chart = {
     hi = Math.ceil(hi / step) * step;
     const ticks = [];
     for (let v = lo; v <= hi + step / 1e6; v += step) ticks.push(+v.toFixed(10));
-    const tw = Math.max(...ticks.map((v) => c.width(num(v), { size: 12.5 })));
+    const tw = Math.max(...ticks.map((v) => c.width(num(v), { size: SUB })));
     const left = PADX + tw + 10, right = W - PADX, top = 96, bottom = H - 58;
     const Y = (v) => bottom - ((v - lo) / (hi - lo)) * (bottom - top);
     c.shape('', { x: left, y: top, w: right - left, h: bottom - top }, { id: 'plot', container: true });
     for (const v of ticks) {
-      c.guide(`<path d="M${left} ${f1(Y(v))} H${right}" stroke="#e3e6ea" stroke-width="1"/>`);
-      c.text(num(v), left - 6, Y(v) + 4, { anchor: 'end', size: 12.5, fill: PALETTE.muted, owner: 'axis' });
+      c.guide(`<path d="M${left} ${f1(Y(v))} H${right}" stroke="#e3e6ea" stroke-width="${SW_LIGHT}"/>`);
+      c.text(num(v), left - 6, Y(v) + 4, { anchor: 'end', size: SUB, fill: PALETTE.muted, owner: 'axis' });
     }
-    c.guide(`<path d="M${left} ${top - 6} V${bottom} H${right}" stroke="${PALETTE.ink}" stroke-width="1.3" fill="none"/>`);
-    c.text(`${ir.y.label} (${ir.y.unit})`, left - tw - 10, top - 14, { size: 12.5, fill: PALETTE.muted, owner: 'axis' });
+    c.guide(`<path d="M${left} ${top - 6} V${bottom} H${right}" stroke="${PALETTE.ink}" stroke-width="${SW_LIGHT}" fill="none"/>`);
+    c.text(`${ir.y.label} (${ir.y.unit})`, left - tw - 10, top - 14, { size: SUB, fill: PALETTE.muted, owner: 'axis' });
     let X;
     if (cats) {
       const band = (right - left) / cats.length;
@@ -982,30 +1011,31 @@ BOOK_TYPES.chart = {
       const xs = series.flatMap((s) => s.points.map((p) => p.x)), x0 = Math.min(...xs), x1 = Math.max(...xs) === x0 ? x0 + 1 : Math.max(...xs);
       X = (v) => left + 12 + ((v - x0) / (x1 - x0)) * (right - left - 24);
       const xs2 = niceStep(x1 - x0);
-      for (let v = Math.ceil(x0 / xs2) * xs2; v <= x1 + xs2 / 1e6; v += xs2) c.text(num(v), X(v), bottom + 20, { anchor: 'middle', size: 12.5, fill: PALETTE.muted, owner: 'axis' });
+      for (let v = Math.ceil(x0 / xs2) * xs2; v <= x1 + xs2 / 1e6; v += xs2) c.text(num(v), X(v), bottom + 20, { anchor: 'middle', size: SUB, fill: PALETTE.muted, owner: 'axis' });
       X.band = 60;
     }
-    c.text(ir.x.unit ? `${ir.x.label} (${ir.x.unit})` : ir.x.label, (left + right) / 2, bottom + 44, { anchor: 'middle', size: 12.5, fill: PALETTE.muted, owner: 'axis' });
+    c.text(ir.x.unit ? `${ir.x.label} (${ir.x.unit})` : ir.x.label, (left + right) / 2, bottom + 44, { anchor: 'middle', size: SUB, fill: PALETTE.muted, owner: 'axis' });
     const errBar = (x, p, owner) => {
       if (p.lo == null) return;
       const pts = [[x, Y(p.hi)], [x, Y(p.lo)]];
-      c.edge(`<path d="M${f1(x)} ${f1(Y(p.hi))} V${f1(Y(p.lo))} M${f1(x - 5)} ${f1(Y(p.hi))} h10 M${f1(x - 5)} ${f1(Y(p.lo))} h10" stroke="${PALETTE.ink}" stroke-width="1.3" fill="none"/>`, pts, { id: `range ${owner}`, from: owner, to: owner });
+      c.edge(`<path d="M${f1(x)} ${f1(Y(p.hi))} V${f1(Y(p.lo))} M${f1(x - 5)} ${f1(Y(p.hi))} h10 M${f1(x - 5)} ${f1(Y(p.lo))} h10" stroke="${PALETTE.ink}" stroke-width="${SW_LIGHT}" fill="none"/>`, pts, { id: `range ${owner}`, from: owner, to: owner });
     };
     const ns = series.length;
     series.forEach((s, k) => {
+      const hot = c.accent.has(s.id);
       if (ir.mark === 'bar') {
         const bw = Math.min(40, (X.band * 0.7) / ns);
         for (const p of s.points) {
           const x = X(p.x) + (k - (ns - 1) / 2) * bw, id = `bar ${s.id}@${p.x}`, b = { x: x - bw / 2, y: Y(p.y), w: bw, h: bottom - Y(p.y) };
-          c.shape(`<rect x="${f1(b.x)}" y="${f1(b.y)}" width="${f1(bw)}" height="${f1(b.h)}" fill="${SERIES_FILLS[k]}" stroke="${PALETTE.ink}" stroke-width="1.2"/>`, b, { id });
+          c.shape(`<rect x="${f1(b.x)}" y="${f1(b.y)}" width="${f1(bw)}" height="${f1(b.h)}" rx="${RX}" fill="${hot ? PALETTE.fills.accent : SERIES_FILLS[k]}" stroke="${PALETTE.ink}" stroke-width="${hot ? SW_HEAVY : SW_LIGHT}"/>`, b, { id });
           errBar(x, p, id);
         }
       } else if (ir.mark === 'line') {
         const pts = s.points.map((p) => [X(p.x), Y(p.y)]);
-        c.edge(`<path d="${pts.map((q, i) => `${i ? 'L' : 'M'}${f1(q[0])} ${f1(q[1])}`).join(' ')}" fill="none" stroke="${PALETTE.ink}" stroke-width="1.6"${SERIES_DASH[k] !== 'none' ? ` stroke-dasharray="${SERIES_DASH[k]}"` : ''}/>`, pts, { id: `line ${s.id}`, owner: s.id });
+        c.edge(`<path d="${pts.map((q, i) => `${i ? 'L' : 'M'}${f1(q[0])} ${f1(q[1])}`).join(' ')}" fill="none" stroke="${PALETTE.ink}" stroke-width="${hot ? SW_HEAVY : SW_LIGHT}"${SERIES_DASH[k] !== 'none' ? ` stroke-dasharray="${SERIES_DASH[k]}"` : ''}/>`, pts, { id: `line ${s.id}`, owner: s.id });
         s.points.forEach((p, i) => {
           const id = `point ${s.id}@${p.x}`;
-          c.shape(markerSvg(k, pts[i][0], pts[i][1]), { x: pts[i][0] - 5, y: pts[i][1] - 5, w: 10, h: 10 }, { id, mark: true });
+          c.shape(markerSvg(k, pts[i][0], pts[i][1], 4.2, hot), { x: pts[i][0] - 5, y: pts[i][1] - 5, w: 10, h: 10 }, { id, mark: true });
           errBar(pts[i][0], p, id);
         });
       } else {
@@ -1016,22 +1046,45 @@ BOOK_TYPES.chart = {
           const cx = X(cat) + off;
           ps.forEach((p, j) => {
             const x = cx + (j - (ps.length - 1) / 2) * 9, id = `point ${s.id}@${cat}#${j}`;
-            c.shape(markerSvg(k, x, Y(p.y), 3.6), { x: x - 4, y: Y(p.y) - 4, w: 8, h: 8 }, { id, mark: true });
+            c.shape(markerSvg(k, x, Y(p.y), 3.6, hot), { x: x - 4, y: Y(p.y) - 4, w: 8, h: 8 }, { id, mark: true });
             errBar(x, p, id);
           });
           // the median is the renderer's, computed from the plotted points
           const v = ps.map((p) => p.y).sort((a, b) => a - b), m = v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
           const half = ((ps.length - 1) / 2) * 9 + 9, id = `median ${s.id}@${cat}`, pts = [[cx - half, Y(m)], [cx + half, Y(m)]];
-          c.edge(`<path d="M${f1(cx - half)} ${f1(Y(m))} H${f1(cx + half)}" stroke="${PALETTE.ink}" stroke-width="2.4"/>`, pts, { id, owner: s.id });
+          c.edge(`<path d="M${f1(cx - half)} ${f1(Y(m))} H${f1(cx + half)}" stroke="${PALETTE.ink}" stroke-width="${SW_HEAVY}"/>`, pts, { id, owner: s.id });
           // right of the median line, or left of it when the right side would run past the plot
-          const ml = `중앙값 ${num(m)}`, left2 = cx + half + 6 + c.width(ml, { size: 12.5 }) > right;
-          c.text(ml, left2 ? cx - half - 6 : cx + half + 6, Y(m) + 4, { size: 12.5, owner: id, halo: true, anchor: left2 ? 'end' : 'start' });
+          const ml = `중앙값 ${num(m)}`, left2 = cx + half + 6 + c.width(ml, { size: SUB }) > right;
+          c.text(ml, left2 ? cx - half - 6 : cx + half + 6, Y(m) + 4, { size: SUB, owner: id, halo: true, anchor: left2 ? 'end' : 'start' });
         }
       }
     });
     return { W, H };
   },
 };
+
+// ---------- claim: the elements the figure's point rests on, drawn in the accent ----------
+
+// The ids a claim may name, per book type (the IR already passed the type's own validate).
+const CLAIM_IDS = {
+  layout: (ir) => ir.strips.flatMap((s) => [s.id, ...s.cells.map((c) => c.id)]),
+  tree: (ir) => ir.nodes.map((n) => n.id),
+  timeline: (ir) => ir.steps.map((s) => `${s.lane}@t${s.t}`),
+  er: (ir) => ir.entities.map((e) => e.id),
+  chart: (ir) => ir.series.map((s) => s.id),
+};
+function claimErrs(ir, known) {
+  const e = 'e.g. ' + JSON.stringify(known[0]);
+  if (!Array.isArray(ir.claim)) return [`add a top-level "claim": the ids of the elements the caption's point rests on (${e}) - the figure draws them in the accent`];
+  if (!ir.claim.length) return [`"claim" is empty - list the ids of the elements the caption's point rests on (${e})`];
+  const bad = ir.claim.filter((id) => !known.includes(id));
+  return bad.length ? [`"claim" names ${bad.map((id) => JSON.stringify(id)).join(', ')}, which ${bad.length > 1 ? 'are' : 'is'} no element of this ${ir.type} - use ids like ${known.slice(0, 3).map((id) => JSON.stringify(id)).join(', ')}`] : [];
+}
+// The refusal sits here, not in diagram.mjs validate(): teams imports that one.
+for (const [type, t] of Object.entries(BOOK_TYPES)) {
+  const own = t.validate;
+  t.validate = (ir, opts) => { const errs = own(ir, opts); return errs.length ? errs : claimErrs(ir, CLAIM_IDS[type](ir)); };
+}
 
 // ---------- build: validate -> lay out -> measure ----------
 
@@ -1042,6 +1095,7 @@ function build(ir, opts = {}) {
   const errs = book ? book.validate(ir, opts) : validate(ir);
   if (errs.length) return { errs };
   const c = new Canvas();
+  if (book) c.accent = new Set(ir.claim);
   const laid = book ? book.render(ir, c, opts) : ir.type === 'sequence' ? staticSequence(ir, c) : staticGrid(ir, c);
   if (laid.errs && laid.errs.length) return { errs: laid.errs };
   const W = Math.ceil(laid.W), H = Math.ceil(laid.H);
@@ -1138,6 +1192,38 @@ export function pngPixels(buf) {
   return inflateSync(Buffer.concat(chunks));
 }
 
+// A full Chrome's headless window keeps some of --window-size for its own frame (measured: Chromium 140
+// gives a 640x376 window a 640x289 viewport), so the page is laid out short and the rows below the viewport
+// come out blank while the PNG still has the window's size. The viewport is probed, never assumed.
+const probePage = '<!doctype html><body><script>document.body.textContent="VP "+innerWidth+"x"+innerHeight</script>';
+
+function probeViewport(browser, dir, w, h) {
+  const page = join(dir, 'probe.html');
+  writeFileSync(page, probePage);
+  const r = spawnSync(browser, ['--headless', '--no-sandbox', '--disable-gpu', '--allow-file-access-from-files',
+    `--window-size=${w},${h}`, '--force-device-scale-factor=2', '--dump-dom', pathToFileURL(page).href], { encoding: 'utf8', timeout: 60000 });
+  const m = /VP (\d+)x(\d+)/.exec(r.stdout || '');
+  return m ? [Number(m[1]), Number(m[2])] : null;
+}
+
+const pngChunk = (type, data) => {
+  const head = Buffer.alloc(4); head.writeUInt32BE(data.length);
+  const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+  const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(body));
+  return Buffer.concat([head, body, crc]);
+};
+
+// The first `rows` pixel rows of an 8-bit RGB/RGBA non-interlaced PNG (a row's filter looks only up and left,
+// so dropping the bottom rows keeps the rest valid), or null for any other PNG.
+function cropPngRows(buf, rows) {
+  const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20), depth = buf[24], color = buf[25], interlace = buf[28];
+  if (depth !== 8 || (color !== 2 && color !== 6) || interlace !== 0 || rows > h) return null;
+  const raw = pngPixels(buf), stride = 1 + w * (color === 2 ? 3 : 4);
+  if (raw.length !== h * stride) return null;
+  const ihdr = Buffer.from(buf.subarray(16, 29)); ihdr.writeUInt32BE(rows, 4);
+  return Buffer.concat([buf.subarray(0, 8), pngChunk('IHDR', ihdr), pngChunk('IDAT', deflateSync(raw.subarray(0, rows * stride))), pngChunk('IEND', Buffer.alloc(0))]);
+}
+
 export function rasterize(svgPath, W, H, pngPath, env = process.env) {
   const browser = findBrowser(env);
   if (!browser) return { code: 3, msg: 'no Chrome-family browser found - set CHROME=<path to Chrome/Chromium/Edge> to write the PNG' };
@@ -1145,13 +1231,27 @@ export function rasterize(svgPath, W, H, pngPath, env = process.env) {
   try {
     const page = join(dir, 'page.html'), shot = join(dir, 'shot.png');
     writeFileSync(page, rasterPage(svgPath, W, H));
+    // The window is enlarged by the viewport's shortfall (the extra bottom rows are cropped below), then
+    // probed again: a viewport still under W x H would crop the figure, so it is refused.
+    let [ww, wh] = [W, H];
+    const vp = probeViewport(browser, dir, W, H);
+    if (!vp) return { code: 1, msg: `cannot probe the viewport of ${browser}: the page script did not run, so a cropped figure cannot be ruled out` };
+    if (vp[0] < W || vp[1] < H) {
+      if (vp[0] < W) return { code: 1, msg: `viewport is ${vp[0]}x${vp[1]} for a ${W}x${H} window (${browser}): narrower than the figure, so the PNG would be cropped` };
+      wh = H + (H - vp[1]);
+      const vp2 = probeViewport(browser, dir, ww, wh);
+      if (!vp2 || vp2[0] < W || vp2[1] < H) return { code: 1, msg: `viewport is ${vp2 ? vp2.join('x') : 'unknown'} for a ${ww}x${wh} window (${browser}): smaller than the ${W}x${H} figure, so the PNG would be cropped` };
+    }
     const r = spawnSync(browser, ['--headless', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--allow-file-access-from-files',
-      `--screenshot=${shot}`, `--window-size=${W},${H}`, '--force-device-scale-factor=2', '--default-background-color=ffffffff', pathToFileURL(page).href],
+      `--screenshot=${shot}`, `--window-size=${ww},${wh}`, '--force-device-scale-factor=2', '--default-background-color=ffffffff', pathToFileURL(page).href],
     { encoding: 'utf8', timeout: 120000 });
     if (!existsSync(shot)) return { code: 1, msg: `screenshot failed (${browser}): ${(r.stderr || r.error?.message || '').trim().slice(-400)}` };
-    const [pw, ph] = pngSize(readFileSync(shot));
-    if (pw !== 2 * W || ph !== 2 * H) return { code: 1, msg: `screenshot is ${pw}x${ph}, expected ${2 * W}x${2 * H}` };
-    atomicWrite(pngPath, readFileSync(shot));
+    let png = readFileSync(shot);
+    const [pw, ph] = pngSize(png);
+    if (wh !== H && pw === 2 * ww && ph === 2 * wh) png = cropPngRows(png, 2 * H) || png;
+    const [cw, ch] = pngSize(png);
+    if (cw !== 2 * W || ch !== 2 * H) return { code: 1, msg: `screenshot is ${pw}x${ph}, expected ${2 * W}x${2 * H}` };
+    atomicWrite(pngPath, png);
     return { code: 0, msg: `ok ${pngPath}` };
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }

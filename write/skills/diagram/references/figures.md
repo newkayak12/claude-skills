@@ -10,6 +10,14 @@ node scripts/diagram.mjs check  fig-9-2.json            # "ok", or one repair pe
 node scripts/diagram.mjs figure fig-9-2.json fig-9-2    # fig-9-2.svg + fig-9-2.png; exit 3 = no browser (set CHROME=)
 ```
 
+## The claim - what the figure is about
+
+Every book figure names the elements its caption's point rests on in a top-level `claim` array.
+They are drawn in one accent (the darkest fill, the heavy stroke, light text); everything else is
+muted context. `check` refuses an IR with no `claim`, an empty one, or an id that names no element,
+with one repair line. The ids: `layout` a strip or cell id (a strip accents all its cells), `tree`
+a node id, `timeline` a step as `<lane>@t<t>` (`"A@t4"`), `er` an entity id, `chart` a series id.
+
 ## What every figure is checked for
 
 The check lays the figure out, measures every text with the font's real advance widths, and
@@ -38,6 +46,7 @@ version chain. Strips stack top to bottom; each is a row of cells.
   "type": "layout",
   "title": "PostgreSQL 힙 페이지",
   "scale": "schematic",
+  "claim": ["lp1", "tup1"],
   "strips": [
     { "id": "page", "label": "8KB 페이지", "cells": [
       { "id": "hdr", "label": "PageHeader", "sublabel": "24 B", "kind": "meta" },
@@ -81,6 +90,7 @@ index, joined by a labelled link.
   "title": "B+tree 리프 탐색",
   "ordered": true,
   "roots": ["root"],
+  "claim": ["m"],
   "nodes": [
     { "id": "root", "keys": [30, 60], "kind": "internal" },
     { "id": "a", "parent": "root", "keys": [10, 20], "kind": "leaf" },
@@ -112,6 +122,7 @@ One lane per session (1-4), one row per step `t` (whole numbers; leave gaps wher
 {
   "type": "timeline",
   "title": "교착 상태와 희생 트랜잭션",
+  "claim": ["B@t6"],
   "lanes": [{ "id": "A", "label": "세션 A" }, { "id": "B", "label": "세션 B" }],
   "steps": [
     { "t": 1, "lane": "A", "label": "UPDATE … id=1", "kind": "stmt" },
@@ -122,8 +133,8 @@ One lane per session (1-4), one row per step `t` (whole numbers; leave gaps wher
     { "t": 7, "lane": "A", "label": "id=2 갱신 완료", "kind": "note" }
   ],
   "waits": [
-    { "lane": "A", "from": 3, "until": 6, "on": "B", "label": "id=2 X 잠금 대기" },
-    { "lane": "B", "from": 4, "until": 6, "on": "A", "label": "id=1 X 잠금 대기" }
+    { "lane": "A", "from": 3, "until": 6, "on": "B", "holder": 2, "label": "id=2 X 잠금 대기", "resume": "UPDATE 재개" },
+    { "lane": "B", "from": 4, "until": 6, "on": "A", "holder": 1, "label": "id=1 X 잠금 대기" }
   ]
 }
 ```
@@ -131,11 +142,18 @@ One lane per session (1-4), one row per step `t` (whole numbers; leave gaps wher
 - `kind`: `stmt` · `commit` · `rollback` · `error` · `wait` · `note`. A `note` has no box; the
   lane's dotted lifeline breaks around it (and around any other text on it) and is checked as a line.
 - A wait starts at a `stmt` the waiting lane issued and ends where the holder (`on`) commits,
-  rolls back or errors - or where the waiter errors (timeout, deadlock victim).
+  rolls back or errors - or where the waiter errors (timeout, deadlock victim). It is drawn as a
+  filled span from the `from` step down to the `until` step.
+- `holder` (optional): the `t` of the `stmt` on lane `on` that took the lock. An accent line runs from
+  that step to the waiter's `from` step - the cause of the wait.
+- `resume` (optional): short text drawn beside the waiter's next step after `until`, as written -
+  the outcome the caption claims (`"UPDATE 재개 · 0행"`). The renderer adds no wording.
+- A step is addressed in `claim` as `<lane>@t<t>` (`"B@t6"`).
 - Refused: two steps at one (lane, t); a step of the waiting lane inside its wait; a wait that
   ends where no lock is released; a cycle of waits with no error step naming the deadlock; a wait
   without a label (which lock, which row); a wait not starting at a `stmt`; a wait with no empty
-  step between `from` and `until` to draw it in.
+  step between `from` and `until` to draw it in; a `holder` that is not a `stmt` of lane `on`; a
+  `resume` on a wait whose lane has no step after `until`.
 
 ## er - entities and relations
 
@@ -144,6 +162,7 @@ One lane per session (1-4), one row per step `t` (whole numbers; leave gaps wher
   "type": "er",
   "title": "저자와 도서",
   "level": "logical",
+  "claim": ["book"],
   "entities": [
     { "id": "author", "label": "저자", "row": 0, "col": 0, "attrs": [{ "name": "저자 번호", "pk": true }, { "name": "이름" }] },
     { "id": "book", "label": "도서", "row": 0, "col": 1, "attrs": [{ "name": "ISBN", "pk": true }, { "name": "제목" }, { "name": "출판사 번호", "fk": "publisher.id" }] },
@@ -178,6 +197,7 @@ labels the median - the IR cannot supply one).
   "title": "동시 세션 수와 처리량",
   "mark": "line",
   "illustrative": true,
+  "claim": ["ssd"],
   "x": { "label": "동시 세션", "unit": "개" },
   "y": { "label": "처리량", "unit": "TPS" },
   "series": [
@@ -204,6 +224,7 @@ labels the median - the IR cannot supply one).
   "title": "인덱스 전후 응답 시간",
   "mark": "dot",
   "illustrative": true,
+  "claim": ["runs"],
   "x": { "label": "조건", "categories": ["인덱스 전", "인덱스 후"] },
   "y": { "label": "응답 시간", "unit": "ms", "min": 0 },
   "series": [
