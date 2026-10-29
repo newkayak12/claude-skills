@@ -259,6 +259,48 @@ toasts).
 
 ### portfolio plugin
 
+Order (user, 2026-10-29: "네네 하시져" to A → C → B from the 10-persona + noah debate): 102, then
+103, then card 54's loop.
+
+102. **portfolio checks the deck's claims against the material in an engine, both ways**
+    - Why: debate 2026-10-29 (10 personas + noah), verified in code: material marks `근거 없음` /
+      `user-stated` (material/SKILL.md:49, parts.md:31-32) but manage's skeleton step only says "each
+      claim citing its material item" (manage/SKILL.md:65-67); `verify` checks only heading order and
+      page refs (manage.mjs:249-259); feedback counts "30분 → 4분" as a complete claim by shape alone
+      (claim-and-consistency.md:66-67); 9b compares scores only (manage.mjs:262-269); the decision
+      gate and "plausible cause → `[확인 필요]`" are prose only (manage/SKILL.md:76-80, principles.md).
+      The user's own rejections in real deck work: sentences giving a reason or solution they never
+      said ("얘기한 적이 없어"), judgment lines with no ground ("왜?!"), AI tone; and the other way,
+      real work left out because it had no document ("기록을 안 남긴 것뿐").
+    - Acceptance: an engine check (node, tested) over skeleton/deck.mdx and `material/`:
+      1. every claim line names a material id; a number not in that item, or marked `근거 없음`, fails;
+      2. a third state `본인 확인(기록 없음)` passes and is listed, never dropped as unsupported;
+      3. a reason/cause/solution sentence with no source in the item is listed `[확인 필요]`;
+      4. the reverse list: results in included material items that no page carries;
+      5. 9b `compare` reports a claim that lost its ground as worse, whatever the score;
+      6. a narrow tone check (AI-tone phrases and judgment lines not in the material), not a full rewrite;
+      7. structure decisions in `확정사실.md` (blocks never mixed, a writing basis such as "write the
+         in-progress chapter as if done") are not re-raised by feedback or drift checks.
+      Fictional fixtures only; manage tests with counts; one real run on a fictional workspace.
+
+103. **portfolio engine bugs: renumber fences and write order, material path, untouched chart samples**
+    - Why: debate 2026-10-29, each reproduced in the scratchpad against the repo scripts:
+      - renumber double-replaces a page-column cell: `| 1 | 3쪽 |` stays `3쪽` after a 3:4,4:3 swap,
+        with no warning (manage.mjs:184-186, REF :155);
+      - renumber does not track ``` fences (a `# comment` inside one is taken as H1, the block is cut)
+        and writes the file before `verify` (manage.mjs:282-283): `--map 3:4` on `## 3 / ## 4` writes
+        two `## 4.`; parseMap does not check a target against headings outside the map;
+      - material writes `<cwd>/material/` and reads `<cwd>/sources/` (material.mjs:36-37) while manage
+        expects items under `sources/` and only `sources` in LAYOUT (manage.mjs:21): run from the
+        root it makes a stray `material/`, run from `sources/` it looks for `sources/sources/`;
+      - a chart slot deck.mdx leaves untouched keeps the template's sample numbers silently: the
+        untouched-slot warning skips charts (deck.py:3486-3489), the chart warning fires only when a
+        value was written (:3395-3397); limits.md:42 says build reports it.
+    - Acceptance: a failing test first for each; renumber skips fenced lines, refuses a map whose
+      target collides, and writes only when `verify` passes (or with an explicit flag); material and
+      manage agree on one items path; `check`/`build` warn on every untouched chart slot. manage,
+      material and `test_deck.py` counts; one real run on a fictional workspace.
+
 54. **portfolio runs one flow on managed material: collect → write → render → feedback**
     - Why: user, 2026-10-18: "포트폴리오 스킬에 매니징 있니? 그니까 글감을 모으고 관리하고 그걸 바탕으로
       내 문제로 쓰고 그걸 deckbuilder로 렌더링하고 다시 그걸 portfolio feedback으로 하고 이런 플로가
@@ -297,6 +339,14 @@ toasts).
       `## skeleton` table. Fixed in portfolio 2.9.3 (manage 15/15, fictional workspace run: block
       swap, snapshot row by column name). Left for the user's workspace (v4.5.1): `version:` line,
       one `## N` heading per appendix page 22-27; then re-run `verify` there.
+    - Left (debate 2026-10-29, after 102 and 103): the loop back. A claim feedback or a mock interview
+      found indefensible goes back onto its material item's `gaps`; a real result the user restores
+      goes onto the item as `본인 확인(기록 없음)`. Kept small (no three-level follow-up tree: "과한데?").
+      Also from the debate: feedback does not propose cutting or merging pages without a ground ("왜
+      줄여야 하는거야?"), and never cites market generalities as evidence ("과장하지마"). First-page
+      numbers (V1, user 2026-10-29): the summary line need not carry a number; measured numbers sit in
+      the evidence lines; small-scale numbers are dropped. feedback stops counting a number-free first
+      line as a defect.
 
 ### Skeleton and length (one card per skill, next edit)
 
