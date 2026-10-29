@@ -13,6 +13,16 @@ node scripts/diagram.mjs figure arch.json arch        # arch.svg (font embedded)
 `check` measures the figure as `figure` will draw it (see `figures.md` for the geometry rules and
 the five book types); `render` to HTML needs only the IR checks below.
 
+The five book types (`layout`, `tree`, `timeline`, `er`, `chart`) also carry a top-level `claim`:
+an array of the element ids the caption's point rests on (a timeline step is `<lane>@t<t>`, e.g.
+`"A@t4"`). `figure` draws those in one accent and the rest muted; `check` refuses a missing, empty or
+unknown `claim`. A timeline wait may add `holder` (the `t` of the `stmt` on lane `on` that took the
+lock - an accent line runs from it to the waiter's first waiting step) and `resume` (the author's
+text, drawn as written beside the waiter's next step after `until`; it needs such a step). `check`
+refuses a `holder` that is not a `stmt` of the `on` lane, and a `resume` on a wait with no step after
+`until`. The renderer adds no wording of its own: every word drawn is the author's. The grid types and
+`sequence` take none of these. See `figures.md`.
+
 ## Pick the type
 
 | type | Shows | Nodes are |
