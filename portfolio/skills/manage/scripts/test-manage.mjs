@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
-import { bump, claims, compare, headings, keepRender, layout, parseMap, readMaterial, renumber, scaffold, selection, settled, snapshot, verify } from './manage.mjs'
+import { bump, claims, compare, deckPages, headings, keepRender, layout, parseMap, readMaterial, renumber, scaffold, selection, settled, snapshot, verify } from './manage.mjs'
 
 const SKEL = `# 가상 포트폴리오
 version: v4.0.0
@@ -416,6 +416,17 @@ test('claims: a sentence already marked [확인 필요] is not raised again, and
   const r = claims(clean, readMaterial(root))
   assert.deepEqual(r.problems, [])
   assert.equal(r.ok, true)
+})
+
+test('claims reads deck.mdx: one page per slide, cites from the slide comment, slot values as lines', () => {
+  const root = claimsWorkspace()
+  const deck = '---\ntemplate: t.pptx\n---\n\n## @s1 표지\ntitle: 가상 인물\n\n## @s3 2쪽 · 글감: retro--검색-지연\ntitle: 검색이 느렸다\ntext1:\n  - 응답 시간 820ms → 210ms\n  - 조회 비용 40% 감소\npic1: assets/a.svg\nnotes: 99% 말로\n\n## @s3\ntitle: 알림\ntext1: 대기 5분 감소\n'
+  const pages = deckPages(deck)
+  assert.match(pages, /^## 1쪽\n가상 인물/m)
+  assert.match(pages, /## 2쪽\n글감: retro--검색-지연\n검색이 느렸다\n응답 시간 820ms → 210ms\n조회 비용 40% 감소/)
+  assert.ok(!pages.includes('99%') && !pages.includes('a.svg'))
+  const r = claims(pages, readMaterial(root))
+  assert.deepEqual(r.problems.map(p => `${p.page}:${p.kind}`), ['2:unsupported', '3:uncited'])
 })
 
 test('claims reads a ledger workspace: a figure on a ledger line, `근거 없음` on that line', () => {

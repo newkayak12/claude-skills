@@ -14,7 +14,8 @@ The portfolio flow comes before everything (user, 2026-10-30: "전체적으로 �
 Card 103 (portfolio engine bugs) shipped and closed 2026-10-30 by hand: renumber fences, `쪽`-cell
 double replace, collision refusal, write only after verify; material items in `sources/material/`;
 untouched chart warnings in check and build (manage 33/33, material 24/24, test_deck 226 ok).
-Card 54's flow shipped 2026-10-30 by hand (see the card); then 104.
+Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is urgent (user,
+2026-10-30: "portfolio urgent로"): its cards go before every other card, 101 included.
 
 ### portfolio flow — first (design: `_repo/docs/plans/2026-10-30-portfolio-flow.md`)
 
@@ -40,8 +41,9 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104.
       Fictional fixtures only; manage tests with counts; one real run on a fictional workspace.
     - Shipped 2026-10-30 by hand (`manage claims`, `compare --claims-before/--claims-after`, material
       label `본인 확인`): manage 29/29, material 23/23; real CLI run on a fictional workspace copy found
-      the `근거 없음` figure, the reason the item does not give, and the item no page cites. Left:
-      the check reads skeleton only (deck.mdx carries it, not checked); a feedback finding against a
+      the `근거 없음` figure, the reason the item does not give, and the item no page cites. deck.mdx
+      checked too since 2026-10-30 (`claims --file deck.mdx`, cites in the slide comment; manage 37/37;
+      real CLI run caught the `근거 없음` figure on slide 2). Left: a feedback finding against a
       `settled` line is dropped by the SKILL step, not by the engine; reason grounding is a word-stem
       share (≥ half), a heuristic.
 
