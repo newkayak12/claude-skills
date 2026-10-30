@@ -254,6 +254,14 @@ toasts).
 
 ### teams plugin bugs
 
+106. **One teams web viewer on one port; a task is a path, not a port**
+    - Why: 2026-10-30, two tasks open at once got two servers: E-f64c3884 at `127.0.0.1:7431`, E-4f12f406
+      at `127.0.0.1:51125` (7431 taken, so `viewserver.mjs` fell back to a free port). User: "포트가 아니라
+      카드 번호로 분기하면 될텐데??? 브라우저".
+    - Acceptance: a second task reuses the live server on 7431 (or `TEAMS_VIEW_PORT`) instead of opening
+      another; `/` lists every task; `/E-xxxxxxxx` and a readable path (slug or backlog card) open one
+      task; the server outlives the task that started it while others run, and stops when none do; test.
+
 105. **`/teams-status` finds the repo's tasks running in its linked worktrees**
     - Why: 2026-10-30, user: "teams로 하는거 맞음??" — `/teams-status` in the main checkout answered
       "teams: no task running" while E-f64c3884 and E-4f12f406 ran (2 drivers, `view.mjs --once` lists
