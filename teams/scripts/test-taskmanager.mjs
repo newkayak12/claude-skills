@@ -3841,17 +3841,34 @@ test('critique and accept record reviewer_independence: unverifiable-self - the 
 // max_parallel_ceiling is pinned: left null the ceiling is derived from the host
 // (min(availableParallelism()/2, 6), floored at the start value 2), so on a 4-core machine it is
 // 2 and the +1 this test asserts can never happen - the test measured the host, not the wiring.
-test('max_parallel_teams "auto": two clean develop-STORY dispatch folds (toIntegrate: P1 then P2) advance the real task from 2 to 3, and the ledger records it', async () => {
+test('max_parallel_teams "auto": two clean develop-STORY dispatch folds (toIntegrate: P1 then P2) advance the real task from 1 to 2 (the serial shape starts at width 1), and the ledger records it', async () => {
   await withTask(async ({ tm, g, root, task_id }) => {
     await toIntegrate(tm, g, task_id);
     const st = await tm.call('tm_status', { task_id });
-    assert.equal(st.auto_parallel.current, 3, 'one full window (2 clean STORY folds) completed: 2 -> 3');
+    assert.equal(st.auto_parallel.current, 2, 'one full window (2 clean STORY folds) completed: 1 -> 2');
     assert.equal(st.auto_parallel.streak, 0);
     const ledger = readFileSync(join(root, task_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     const inc = ledger.find((e) => e.event === 'auto_parallel_increased');
     assert.ok(inc, 'the increase must be recorded in the ledger, not just reflected in task.json');
-    assert.equal(inc.from, 2);
-    assert.equal(inc.to, 3);
+    assert.equal(inc.from, 1);
+    assert.equal(inc.to, 2);
+  }, { max_parallel_ceiling: 6 });
+});
+
+test('tm_status/tm_next start width: three independent packages start auto_parallel at 3 (start_width 3) and open three children', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    await throughCritique(tm, task_id, {
+      acceptance: ['all three modules build'],
+      packages: ['a', 'b', 'c'].map((m, i) => ({ id: `P${i + 1}`, title: `module ${m}`, flow: 'develop', brief: `change ${m}.txt`, acceptance: [m], touches: [`${m}.txt`], deps: [] })),
+    });
+    const st = await tm.call('tm_status', { task_id });
+    assert.equal(st.auto_parallel.current, 3);
+    assert.equal(st.auto_parallel.start_width, 3);
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children.length, 3, 'the shape allows three at once and auto opens three');
+    const again = await tm.call('tm_status', { task_id });
+    assert.equal(again.auto_parallel.current, 3, 'tm_status and the tick agree on the start');
+    assert.equal(again.auto_parallel.start_width, 3);
   }, { max_parallel_ceiling: 6 });
 });
 
