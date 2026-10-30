@@ -116,7 +116,7 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104.
 
 ### teams parallelism — first
 
-101. **teams runs ready packages at the width shape allows; a token count is not vendor pushback**
+101. **teams runs ready packages at the width shape allows; a token count is not vendor pushback** — in E-f64c3884
     - Why: user, 2026-10-29: "harness, graph, teams 각 phase를 병렬로 할 수는 없는건가?", then "네네 그리고
       최우선". Seen in E-eb3d399f: `auto_parallel_decreased` 2→1 at `dispatch:P2:1`, so the ready retry
       `dispatch:P2:2` waited ~24 min (opened 1793251891209, dispatched 1793253304717) until P1 finished.
@@ -157,7 +157,7 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104.
       quality needs drawn sprite assets (procedural canvas gives agent-town level, not the image); not pulled
       until the person decides where the art comes from.
 
-94. **teams-status shows the numbers that explain a run: attempts and judge scores, cost and time, stalls, quality**
+94. **teams-status shows the numbers that explain a run: attempts and judge scores, cost and time, stalls, quality** — three defects in E-4f12f406
     - Why: user, 2026-10-28: "teams-status 조금 더 의미있는 지표 노출해서 개선해야겠더라". In E-8b9c417d the
       pane showed P2 "failed" three times; why (judge 88/90, "belongs to P3") was only in the ledger.
     - Acceptance (computed in node, `view-summary.mjs`; the mod renders it): per STORY attempt n/max, last judge
