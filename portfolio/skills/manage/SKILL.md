@@ -121,7 +121,7 @@ Eight steps, in order; a round may start again at 2 or 4 (step 8 says where).
    colours. A figure drawn with `write:diagram` takes its colours from `## 그림 색`.
 6. **Deck.** Carry skeleton into deck.mdx against `deck.catalog.md` budgets and `template/분석.md`,
    then `deck-builder` `check` (an untouched chart slot is warned: its numbers are the template's
-   sample). Fine style changes go through the template's run formats, never by hand in the pptx.
+   sample) and `claims --file deck.mdx` (each slide cites in its comment: `## @s3 2쪽 · 글감: <id>`). Fine style changes go through the template's run formats, never by hand in the pptx.
    `snapshot --kind deck --level … --note` only when asked (the deck counts its own versions; the
    note says which skeleton it carries).
 7. **Render, review, re-render.** `build` and `render` only when the user says. After a render,
