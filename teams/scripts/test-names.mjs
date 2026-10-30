@@ -78,6 +78,12 @@ test('a possessive \'s drops; a plural possessive stays a word', () => {
   assert.equal(epicSlug('Fix the users\' pane'), 'fix-users-pane');
 });
 
+test('a contraction keeps its word: only the apostrophe drops', () => {
+  assert.equal(epicSlug('It\'s broken'), 'its-broken');
+  assert.equal(epicSlug('Let\'s go'), 'lets-go');
+  assert.equal(epicSlug('What’s new here'), 'whats-new-here');
+});
+
 test('path and file tokens give no words (card 46 request)', () => {
   assert.equal(epicSlug(CARD46), 'tasks-branches-worktrees-named');
   const a = epicSlug('Backlog card 12 (_repo/docs/backlog.md): fix pane');
