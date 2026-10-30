@@ -252,6 +252,30 @@ test('decrease: an error-shaped result event (is_error true, 429 text) halves on
   assert.equal(task.auto_parallel.current, 2, 'one halving for the fold, not three');
 });
 
+test('decrease (BOM): a UTF-8 BOM before an is_error result event does not hide it - the width halves as it does without the BOM', () => {
+  const event = '{"type":"result","is_error":true,"result":"API Error: 429 overloaded"}\n';
+  const fold = (log) => {
+    const task = makeTask({ max_parallel_ceiling: 6 });
+    ensureAutoParallel(task).current = 4;
+    updateAutoParallel(task, dispatchNode('dispatch:P1:1', 'P1', { driver: driverWithLog(log) }), { stage_ok: false });
+    return task.auto_parallel.current;
+  };
+  assert.equal(fold(event), 2, 'control: the same line without the BOM halves 4 -> 2');
+  assert.equal(fold('\uFEFF' + event), 2, 'with the BOM it halves exactly the same');
+  const benign = '{"type":"assistant","message":"working"}\n';
+  assert.equal(fold(benign + '\uFEFF' + event), 2, 'a BOM-prefixed error line after a clean line is still judged');
+});
+
+test('no decrease (BOM): a BOM-prefixed rate_limit_event with status allowed, or a clean result with usage 429 counters, adds no false pushback', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 });
+  ensureAutoParallel(task).current = 4;
+  const log = '\uFEFF{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"}}\n'
+    + '\uFEFF{"type":"result","is_error":false,"api_error_status":null,"usage":{"cache_creation_input_tokens":429}}\n';
+  updateAutoParallel(task, dispatchNode('dispatch:P1:1', 'P1', { driver: driverWithLog(log) }), { stage_ok: true });
+  assert.equal(task.auto_parallel.current, 4, 'the width does not decrease');
+  assert.equal(task.auto_parallel.streak, 1, 'and the fold counts as clean');
+});
+
 test('floor: never drops below 1, even on repeated pushback', () => {
   const task = makeTask({ max_parallel_ceiling: 6 });
   ensureAutoParallel(task).current = 2;
