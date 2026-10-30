@@ -124,28 +124,35 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
       준거 올리지 말라구" — `.gitignore` takes `*.docx`, `*.pptx`, `*.pdf`; resume.py refuses a template,
       resume.md or output a git repository would carry (tested); no real material was ever in the repo
       (history checked: the one tracked `template.pptx` is an empty fixture). Defaults taken: 2 pages,
-      Korean only. Left: the user's own template and one real run on their workspace; the
+      Korean only. User, same day: "like-me 쓰고 똑같이" — skeleton, deck.mdx and resume.md lines all go
+      through `write:like-me` (`78da36b3`, SKILL only). Left: the user's own template, two texts they
+      wrote alone, and one real run on their workspace; the
       resume-conventions check is the model's (feedback), not an engine check.
 
 ### teams parallelism — first
 
-101. **teams runs ready packages at the width shape allows; a token count is not vendor pushback** — in E-ea14c9c4
+101. **teams runs ready packages at the width shape allows — rest: the first tick, and one real Sprint at width 2+**
     - Why: user, 2026-10-29: "harness, graph, teams 각 phase를 병렬로 할 수는 없는건가?", then "네네 그리고
-      최우선". Seen in E-eb3d399f: `auto_parallel_decreased` 2→1 at `dispatch:P2:1`, so the ready retry
-      `dispatch:P2:2` waited ~24 min (opened 1793251891209, dispatched 1793253304717) until P1 finished.
-      Cause (verified): `PUSHBACK_RE` in `teams/mcp/taskmanager.mjs` (~L7084) has `\b429\b`, which matched
-      `"cache_creation_input_tokens":429` in that driver's stream log — every usage block's numbers can
-      trip it, and `\b529\b` the same. Also: AIMD starts at 2 whatever shape's `max_parallel_width` is,
-      and a retry waits behind the cap like a new package.
-    - Acceptance: (1) pushback is read only from error-shaped fields (a `result` event with `is_error`,
-      a non-null `api_error_status`, a `rate_limit_event` whose status is not `allowed`, stderr), never
-      from bare numbers inside usage objects; a test with the E-eb3d399f line
-      (`"cache_creation_input_tokens":429`) gives no decrease; a real 429/overloaded error still halves.
-      (2) The start width is `min(shape.max_parallel_width, ceiling)`, not a fixed 2; tested.
-      (3) Phases that can overlap do: a package whose deps accepted starts while others run (kept), and
-      the report states the width used per tick so a wait like P2:2's is visible in tm_status.
-      (4) `node --test teams/scripts/test-*.mjs` passes with the count reported; one real Sprint
-      shows two ready packages running at once.
+      최우선". Shipped in teams 0.61.5 (`e4502d68`, E-ea14c9c4): pushback only from error-shaped events
+      (`allowed_warning` and a leading BOM handled), start width from the shape, `auto_parallel_ticks` in
+      tm_status, `parallel_width_changed` on a width or `ready_waiting` change; teams 1660/1660.
+      Left: QA's D9/D14/D15 also asked that the first tick write an event when packages already wait
+      (`recordAutoParallelTick` writes nothing without a previous tick) — not taken. E-ea14c9c4 itself ran
+      on the 0.61.4 engine: it halved 2→1 at `dispatch:P1:1` (a judge reason text matched) and never ran
+      two dispatches at once.
+    - Acceptance: the first tick with `ready_waiting > 0` writes one `parallel_width_changed` (tested);
+      one real Sprint on teams 0.61.5+ shows two ready packages running at once (ledger: two `dispatch`
+      open together, no `auto_parallel_decreased` from a usage number or a reason text).
+
+105. **teams QA files one defect once, and integrate takes overlapping fixes instead of blocking**
+    - Why: E-ea14c9c4, 2026-10-30: QA-F1 filed 15 defects for 4 findings (docs D4/D6/D8/D11, ready_waiting
+      D5/D7/D9/D12/D14/D15, release D10 = P2); every one was built and accepted (~$61 for the Sprint),
+      then `integrate:3` stopped `blocked` on a conflict between the docs duplicates. Taken by hand:
+      P1, D1–D5, D13 and P2; the duplicates dropped. Cause unverified (0.61.3 says "a defect is filed
+      once per QA filing"; these came from one `defects_filed` event).
+    - Acceptance: a QA filing whose findings name the same file and AC files one defect (test with the
+      E-ea14c9c4 titles); integrate drops a package whose diff is already in the integration tree, or
+      settles one conflict as a repair package instead of `blocked`; tested.
 
 ### Mods and naming — UI first (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
 
@@ -400,6 +407,7 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-ea14c9c4 | 2026-10-30 | 101 | partial: teams 0.61.5 `e4502d68` taken by hand (P1, D1–D5, D13, P2; teams 1660/1660); integrate:3 blocked on duplicate QA defects (card 105); first tick and a real width-2 run left (101); $61.49 |
 | E-eb3d399f | 2026-10-29 | 100 | partial: P2 + D1 shipped and P1 taken by hand from its worktree (`13b988d5`); P1 'blocked: tool denied' ×3 on the 0.60.1 engine, P3/P4 unreachable; $48.72 |
 | E-124098e5 | 2026-10-15 | 10–13 | shipped `72f0c818`; size S (one harness pass); goal gate 91; $17.74 |
 | E-c313c8f1 | 2026-10-15 | 2 | shipped (rules say `origin`); size S; $3.89 |
