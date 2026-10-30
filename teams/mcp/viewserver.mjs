@@ -5,10 +5,11 @@
 // minutes and the only way to see it was to already know the command. This starts it for you
 // the moment tm_open/tm_run creates a task, and hands the URL back in the tool reply.
 //
-// ONE viewer per tasks root, not one per task. The page already indexes every task under the
-// root and serves one task at /E-<first 8 of its id> (the old /?task=<id> link still works), so a
-// second server would be a second port for the same data. The running one is recorded in
-// <tasksRoot>/.view.json ({pid, port, started_at}).
+// ONE viewer per port, not one per task or per root. The page indexes every task of every root the
+// viewer holds and serves one task at /E-<first 8 of its id> or /<slug>, so a second server would be
+// a second port for the same data. A second tasks root joins the viewer already on the preferred
+// port (POST /register) and its record says so: <tasksRoot>/.view.json ({pid, port, started_at},
+// plus shared: true when joined). A viewer that lost a bind race is joined the same way.
 //
 // A record is reused only when its pid is alive AND its port answers an HTTP GET of /state.json
 // (retried for about 2s): a live pid alone proves nothing, because the OS recycles pids and the
@@ -23,14 +24,15 @@
 // task that could not open because its window would not start.
 //
 //   TEAMS_VIEW=0          do not start a viewer at all (and do not reuse one)
-//   TEAMS_VIEW_PORT=<n>   pin the port instead of the default 7431 (DEFAULT_VIEW_PORT); when
-//                         7431 is taken a free port is used and recorded
+//   TEAMS_VIEW_PORT=<n>   pin the port instead of the default 7431 (DEFAULT_VIEW_PORT); a teams
+//                         viewer there is joined, anything else there gives null. Unpinned, only a
+//                         non-teams holder of 7431 moves the viewer to a free port, which is recorded
 import { pidAlive } from './proc.mjs';
 import { spawn } from 'node:child_process';
-import { get as httpGet } from 'node:http';
+import { get as httpGet, request as httpRequest } from 'node:http';
 import { createServer } from 'node:net';
-import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { readFileSync, writeFileSync, unlinkSync, realpathSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -120,12 +122,77 @@ async function answers(port, deadlineMs, gone) {
 
 const REUSE_PROBE_MS = 2000;
 const SPAWN_WAIT_MS = 5000;
+const ADOPT_PROBE_MS = 1000;
+const ADOPT_WAIT_MS = 3000;
+
+function httpJson(port, path, timeout, method = 'GET', body = null) {
+  return new Promise((resolve) => {
+    const headers = body === null ? {} : { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) };
+    const req = httpRequest({ host: '127.0.0.1', port, path, method, headers, timeout }, (res) => {
+      let buf = '';
+      res.setEncoding('utf8');
+      res.on('data', (d) => { buf += d; });
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, json: JSON.parse(buf) }); } catch { resolve({ status: res.statusCode, json: null }); }
+      });
+    });
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.on('error', () => resolve(null));
+    req.end(body);
+  });
+}
+
+// Is a teams viewer listening on `port`? {pid, roots} from GET /teams-view.json. An older viewer
+// has no such route and answers only /state.json: {pid: null, roots: [its tasks_dir], legacy: true}
+// (it cannot be registered into). null when the port is closed or something else holds it.
+export async function viewerAt(port, deadlineMs) {
+  const id = await httpJson(port, '/teams-view.json', deadlineMs);
+  if (id && id.status === 200 && id.json && id.json.teams_view === 1) return { pid: id.json.pid, roots: id.json.roots };
+  if (!id) return null;
+  const st = await httpJson(port, '/state.json', deadlineMs);
+  if (st && st.status === 200 && st.json && typeof st.json.tasks_dir === 'string' && st.json.mode) return { pid: null, roots: [st.json.tasks_dir], legacy: true };
+  return null;
+}
+
+// POST /register: the roots the viewer now serves, or null when it refused or is not there.
+export async function registerRoot(port, tasksDir) {
+  const r = await httpJson(port, '/register', ADOPT_PROBE_MS, 'POST', JSON.stringify({ tasks_dir: resolve(tasksDir) }));
+  return r && r.status === 200 && r.json && r.json.ok && Array.isArray(r.json.roots) ? r.json.roots : null;
+}
+
+function real(p) {
+  try { return realpathSync(p); } catch { return resolve(p); }
+}
+
+function writeRecord(tasksDir, rec) {
+  writeFileSync(viewRecordPath(tasksDir), `${JSON.stringify(rec, null, 2)}\n`);
+}
+
+// Joins the teams viewer on `port`, if there is one: this root is already among its roots or
+// registers into it. The record points at it ({shared: true}); nothing is started.
+async function adopt(tasksDir, taskId, port) {
+  const v = await viewerAt(port, ADOPT_PROBE_MS);
+  if (!v || v.legacy || !Number.isInteger(v.pid)) return null;
+  if (!v.roots.some((r) => real(r) === real(tasksDir)) && !(await registerRoot(port, tasksDir))) return null;
+  writeRecord(tasksDir, { pid: v.pid, port, started_at: Date.now(), shared: true });
+  return { url: viewUrl(port, taskId), port, pid: v.pid, started: false };
+}
+
+// adopt, retried for a while: the viewer that won a bind race may not answer yet.
+async function adoptWithin(tasksDir, taskId, port, ms) {
+  const end = Date.now() + ms;
+  while (true) {
+    const a = await adopt(tasksDir, taskId, port);
+    if (a || Date.now() >= end) return a;
+    await sleep(100);
+  }
+}
 
 // Spawns the viewer on a chosen port and waits for it to answer. A child that exits first lost
 // the race for the port (another viewer took it between the bind probe and the child's own
-// listen) - the caller picks again. Returns {child, port} or null.
-async function spawnViewer(tasksDir) {
-  const port = await choosePort();
+// listen) - the caller adopts the winner or picks again. Returns {child, port} or null.
+async function spawnViewer(tasksDir, preferred) {
+  const port = await choosePort(preferred);
   if (!port) return null;
   // Detached with every stdio ignored: the viewer has to outlive whichever short-lived MCP
   // server process happened to answer this tm_open, and an inherited pipe nobody drains is
@@ -140,24 +207,41 @@ async function spawnViewer(tasksDir) {
   const up = await answers(port, SPAWN_WAIT_MS, () => exited);
   // Not answering after the wait but still running: a slow start, recorded as before.
   if (!up && exited) return { child: null, port };
+  // The port answering is not proof it is this child: the winner of a bind race answers too.
+  const at = up ? await viewerAt(port, ADOPT_PROBE_MS) : null;
+  if (at && Number.isInteger(at.pid) && at.pid !== child.pid) {
+    try { process.kill(child.pid, 'SIGKILL'); } catch { /* already gone */ }
+    return { child: null, port };
+  }
   return { child, port };
 }
 
 // Returns {url, port, pid, started} or null. `started` false means an already-running viewer
-// was reused - the caller can say "watch it here" either way, and should not say "started".
-export async function ensureViewer(tasksDir, taskId) {
+// was reused or joined - the caller can say "watch it here" either way, and should not say "started".
+export async function ensureViewer(tasksDir, taskId, { preferred } = {}) {
   if (viewDisabled()) return null;
   const existing = readViewRecord(tasksDir);
   if (existing && await answers(existing.port, REUSE_PROBE_MS)) {
     return { url: viewUrl(existing.port, taskId), port: existing.port, pid: existing.pid, started: false };
   }
   try {
-    let spawned = await spawnViewer(tasksDir);
-    if (spawned && !spawned.child) spawned = await spawnViewer(tasksDir);
+    const pin = Number(process.env.TEAMS_VIEW_PORT);
+    const pinned = Number.isInteger(pin) && pin > 0;
+    const want = preferred || (pinned ? pin : DEFAULT_VIEW_PORT);
+    const joined = await adopt(tasksDir, taskId, want);
+    if (joined) return joined;
+    let spawned = await spawnViewer(tasksDir, want);
+    if (spawned && !spawned.child) {
+      // Lost the bind race: the winner is a teams viewer to join; anything else on a pinned port is final.
+      const won = await adoptWithin(tasksDir, taskId, want, ADOPT_WAIT_MS);
+      if (won) return won;
+      if (pinned) return null;
+      spawned = await spawnViewer(tasksDir, want);
+    }
     if (!spawned || !spawned.child) return null;
     const { child, port } = spawned;
     try {
-      writeFileSync(viewRecordPath(tasksDir), `${JSON.stringify({ pid: child.pid, port, started_at: Date.now() }, null, 2)}\n`);
+      writeRecord(tasksDir, { pid: child.pid, port, started_at: Date.now() });
     } catch (e) {
       // An unrecordable viewer is worse than none: nothing can find it to reuse it, and nothing
       // can find it to stop it, so it holds a port until the machine reboots. Take it down.

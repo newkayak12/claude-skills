@@ -2501,3 +2501,24 @@ for (const surface of SURFACES) {
     })
   }
 }
+
+// ---- card 105: a task in a linked worktree of this repo is marked ⑂ <worktree>; the mod only renders the field ----
+const WT = [epicOf('tW', 'E-wwwwwwww', [], { title: 'in a worktree', worktree: 'wt' }), epicOf('tM', 'E-mmmmmmmm', [], { title: 'own checkout', worktree: null })]
+for (const surface of SURFACES) {
+  test(`${surface}: pane EPIC row shows ⑂ wt for a worktree task, none for null`, async ($, on) => {
+    await seeded($, on, { status: stat(), tasks: WT, task: WT[0] }, surface, undefined, { watch: [] })
+    const ui = await wide($, surface)
+    const text = await shown(ui)
+    expect(text).toContain('in a worktree · ⑂ wt')
+    expect(text).toContain('own checkout')
+    expect(text.split('⑂').length).toBe(2)
+  })
+  test(`${surface}: band shows ⑂ wt for a worktree task; null shows no ⑂`, async ($, on) => {
+    await seeded($, on, { status: stat(), task: demo({ worktree: 'wt' }) }, surface)
+    expect(await shown(await band($, surface))).toContain('· ⑂ wt')
+  })
+  test(`${surface}: band with worktree null shows no ⑂`, async ($, on) => {
+    await seeded($, on, { status: stat(), task: demo({ worktree: null }) }, surface)
+    expect(await shown(await band($, surface))).not.toContain('⑂')
+  })
+}

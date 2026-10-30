@@ -148,6 +148,35 @@ test('TEAMS_VIEW_IDLE_MS: non-numeric and non-positive values fall back to the 3
   }
 });
 
+// A viewer started on `a` with `b` registered into it.
+async function startTwo(a, b) {
+  const v = await start(a, IDLE_MS);
+  const res = await fetch(`http://127.0.0.1:${v.port}/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tasks_dir: b }) });
+  assert.equal(res.status, 200);
+  return v;
+}
+
+test('two roots: a live task in B keeps the viewer past idle, losing the starting root A does not end it, losing B does', async () => {
+  const a = scratch();
+  const b = scratch();
+  seedTask(a, 'T-blocked');
+  seedTask(b, 'T-live', { nodes: [node('size', 'size', [])] });
+  assert.equal(listTasks(b)[0].state, 'READY', 'fixture: B holds a live task');
+  const v = await startTwo(a, b);
+  assert.equal(await exitsWithin(v.exited, 2 * IDLE_MS + 2500), false, 'B is live: still up past idle');
+  rmSync(a, { recursive: true, force: true });
+  assert.equal(await exitsWithin(v.exited, EXIT_WITHIN_MS), false, 'A is gone but B is live: still up');
+  rmSync(b, { recursive: true, force: true });
+  assert.equal(await exitsWithin(v.exited, EXIT_WITHIN_MS), true, 'no root left: it ends');
+});
+
+test('two roots with no live task end at idle', async () => {
+  const a = scratch();
+  const b = scratch();
+  const v = await startTwo(a, b);
+  assert.equal(await exitsWithin(v.exited, EXIT_WITHIN_MS), true);
+});
+
 test('nothing a test here started is left in ps', async () => {
   killAll();
   await sleep(300);

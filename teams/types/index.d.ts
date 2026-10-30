@@ -12,6 +12,7 @@ export type SummaryTask = {
   key: string
   slug: string | null
   title: string
+  worktree?: string | null // set when the task runs in a linked worktree of this repo
   state: string
   day: number
   done: number

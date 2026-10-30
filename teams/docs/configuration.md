@@ -121,10 +121,15 @@ node teams/scripts/view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--on
 ```
 
 With no `--once`, it starts a local HTTP server on `127.0.0.1` and prints the URL (default port
-`7431`; `TEAMS_VIEW_PORT` or `--port` overrides it, and a taken `7431` falls back to a free port
-that is recorded in `<tasksRoot>/.view.json`). A task's page is `/E-<first 8 of its id>`, the old
-`/?task=<id>` link still works, and an unknown key shows the index. `tm_open`/`tm_run` reuse a
-recorded viewer only when its port answers `GET /state.json` (about 2s of retries), else they
+`7431`; `TEAMS_VIEW_PORT` or `--port` overrides it, and the port is recorded in
+`<tasksRoot>/.view.json`). One teams viewer runs per port: a second tasks root (another worktree
+or repo) registers into the running viewer (`POST /register`) instead of starting another, and
+only a non-teams holder of `7431` moves the viewer to a free port. `/` (and `/state.json` with no
+task) is the index of every registered root's tasks; `/E-<first 8 of its id>` or `/<slug>` opens
+one task, the old `/?task=<id>` link still works, and an unknown key shows the index. The viewer
+stops when no registered root has a live task and no request has come for 30 minutes
+(`TEAMS_VIEW_IDLE_MS`), or when every registered root's tasks dir is gone. `tm_open`/`tm_run` reuse a
+recorded viewer only when its port answers (about 2s of retries), else they
 start a new one and rewrite `.view.json`; `tm_status` only checks the pid. Open it for a
 live page that polls every ~3s, with three views (a tab strip switches between them instantly,
 no extra request — all three read the same poll):

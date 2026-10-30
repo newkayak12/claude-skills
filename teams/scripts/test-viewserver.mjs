@@ -13,7 +13,7 @@
 process.env.TEAMS_RUNS_DIR ??= 'off';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync, realpathSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -33,10 +33,11 @@ function closedPort() {
   });
 }
 
-// A port something (this process) is listening on, and the handle to release it.
+// A port something (this process) is listening on, and the handle to release it. Sockets are
+// resumed so a client that gives up (viewerAt's probe) is seen closing and release() can finish.
 function heldPort() {
   return new Promise((resolve) => {
-    const s = createServer();
+    const s = createServer((c) => c.resume());
     s.listen(0, '127.0.0.1', () => resolve({ port: s.address().port, release: () => new Promise((r) => s.close(r)) }));
   });
 }
@@ -66,10 +67,19 @@ function scratch() {
 }
 
 // Every test that may spawn registers the pid here; nothing is left listening after the run.
-async function viewer(dir, taskId) {
-  const v = await ensureViewer(dir, taskId);
-  if (v && v.started) spawned.push(v.pid);
-  return v;
+// Never the default port: unless the test pinned TEAMS_VIEW_PORT itself (or passes `opts`, which
+// carries its own preferred port) the call is pinned to a fresh closed one, so ensureViewer cannot
+// adopt - or register into - a real viewer on 7431.
+async function viewer(dir, taskId, opts) {
+  const prev = process.env.TEAMS_VIEW_PORT;
+  if (!opts && prev === undefined) process.env.TEAMS_VIEW_PORT = String(await closedPort());
+  try {
+    const v = await ensureViewer(dir, taskId, opts);
+    if (v && v.started) spawned.push(v.pid);
+    return v;
+  } finally {
+    if (prev === undefined) delete process.env.TEAMS_VIEW_PORT; else process.env.TEAMS_VIEW_PORT = prev;
+  }
 }
 
 function killAll() {
@@ -130,7 +140,7 @@ test('the first call starts a viewer that actually serves the page and /state.js
   assert.ok(served, `nothing answered on ${v.url} within 5s`);
   assert.equal(served.status, 200);
   const state = JSON.parse(served.body);
-  assert.equal(state.tasks_dir, dir);
+  assert.equal(state.tasks_dir, realpathSync(dir), 'roots are kept samePath\'d');
   assert.equal(state.mode, 'index', 'an empty tasks root shows the index, not a task');
   assert.deepEqual(state.tasks, [], 'no tasks have been opened under this root');
 
@@ -217,7 +227,7 @@ test('an unwritable tasks root returns null, and leaves no orphan holding a port
   // ENOENT, which is exactly the class of failure that must not reach the caller.
   const missing = join(tmpdir(), 'teams-viewserver-does-not-exist', 'nested');
   const before = await viewerPids(missing);
-  const v = await ensureViewer(missing, 'E-z');
+  const v = await viewer(missing, 'E-z');
   assert.equal(v, null);
   // The spawn itself succeeds - only the record write fails - so without the kill on that path
   // a viewer nothing can name is left listening forever. Give it time to bind before counting.
@@ -335,12 +345,81 @@ test('an ambiguous E-key prefix serves the newest task by listTasks order', asyn
   rmSync(dir, { recursive: true, force: true });
 });
 
+// a root B joins the viewer already serving root A; the helper's `preferred` is the scratch port.
+test('a second root is registered into the running viewer: started false, same pid and port, both roots in the index (unpinned and pinned)', async () => {
+  for (const pinned of [false, true]) {
+    const a = tasksWith([['aaaa1111-x', 100]]);
+    const b = tasksWith([['bbbb2222-y', 200]]);
+    const port = await closedPort();
+    const prev = process.env.TEAMS_VIEW_PORT;
+    if (pinned) process.env.TEAMS_VIEW_PORT = String(port); else delete process.env.TEAMS_VIEW_PORT;
+    try {
+      const first = await viewer(a, 'E-aaaa1111', { preferred: port });
+      assert.ok(first && first.started && first.port === port);
+      const second = await viewer(b, 'E-bbbb2222', { preferred: port });
+      assert.equal(second.started, false);
+      assert.equal(second.pid, first.pid);
+      assert.equal(second.port, port);
+      assert.equal(second.url, `http://127.0.0.1:${port}/E-bbbb2222`);
+      const rec = JSON.parse(readFileSync(viewRecordPath(b), 'utf8'));
+      assert.equal(rec.pid, first.pid);
+      assert.equal(rec.port, port);
+      const idx = JSON.parse((await get(`http://127.0.0.1:${port}/state.json`)).body);
+      assert.deepEqual(idx.tasks.map((t) => t.task_id).sort(), ['aaaa1111-x', 'bbbb2222-y']);
+    } finally {
+      if (prev === undefined) delete process.env.TEAMS_VIEW_PORT; else process.env.TEAMS_VIEW_PORT = prev;
+      killAll();
+      rmSync(a, { recursive: true, force: true });
+      rmSync(b, { recursive: true, force: true });
+    }
+  }
+});
+
+test('two roots racing for the same free port end on one viewer: one pid, one port, equal records', async () => {
+  const a = tasksWith([['aaaa1111-x', 100]]);
+  const b = tasksWith([['bbbb2222-y', 200]]);
+  const port = await closedPort();
+  try {
+    const [x, y] = await Promise.all([viewer(a, 'E-aaaa1111', { preferred: port }), viewer(b, 'E-bbbb2222', { preferred: port })]);
+    assert.ok(x && y);
+    assert.equal(x.pid, y.pid, 'the loser of the bind race adopts the winner');
+    assert.equal(x.port, port);
+    assert.equal(y.port, port);
+    const ra = JSON.parse(readFileSync(viewRecordPath(a), 'utf8'));
+    const rb = JSON.parse(readFileSync(viewRecordPath(b), 'utf8'));
+    assert.equal(ra.pid, rb.pid);
+    assert.equal(ra.port, rb.port);
+    const idx = JSON.parse((await get(`http://127.0.0.1:${port}/state.json`)).body);
+    assert.deepEqual(idx.tasks.map((t) => t.task_id).sort(), ['aaaa1111-x', 'bbbb2222-y'], 'both roots served on that port');
+  } finally {
+    killAll();
+    rmSync(a, { recursive: true, force: true });
+    rmSync(b, { recursive: true, force: true });
+  }
+});
+
+test('a non-teams holder of the preferred port moves an unpinned viewer to a free port', async () => {
+  const dir = tasksWith([['aaaa1111-x', 100]]);
+  const held = await heldPort();
+  try {
+    const v = await viewer(dir, 'E-aaaa1111', { preferred: held.port });
+    assert.ok(v && v.started);
+    assert.notEqual(v.port, held.port);
+    assert.ok(await waitAnswer(v.port));
+  } finally {
+    killAll();
+    await held.release();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // view.mjs on its own, no --port, no TEAMS_VIEW_PORT: it asks for 7431 and takes a free port when
-// 7431 is held. Held here only if nothing else has it - when something does, that is the same
-// situation for the viewer, and the test runs against it without disturbing it.
-test('view.mjs without --port prefers 7431 and falls back to a free port when it is taken', async () => {
+// 7431 is held. The test binds 7431 itself only when it is free; when something else holds it the
+// test is skipped - it never registers into, or signals, a viewer it did not start.
+test('view.mjs without --port prefers 7431 and falls back to a free port when it is taken', async (t) => {
   const holder = createServer();
   const gotDefault = await new Promise((r) => { holder.once('error', () => r(false)); holder.listen(DEFAULT_VIEW_PORT, '127.0.0.1', () => r(true)); });
+  if (!gotDefault) { t.skip('7431 is held by something else; not touching it'); return; }
   const dir = tasksWith([]);
   const env = { ...process.env }; delete env.TEAMS_VIEW_PORT;
   const child = spawn(process.execPath, [VIEW_SCRIPT, '--tasks-dir', dir], { env, stdio: ['ignore', 'pipe', 'ignore'] });
@@ -358,6 +437,67 @@ test('view.mjs without --port prefers 7431 and falls back to a free port when it
     if (gotDefault) await new Promise((r) => holder.close(r));
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// view.mjs --tasks-dir <dir> --port 0, resolved with its base URL once it prints it.
+function startView(dir) {
+  const child = spawn(process.execPath, [VIEW_SCRIPT, '--tasks-dir', dir, '--port', '0'], { stdio: ['ignore', 'pipe', 'ignore'] });
+  spawned.push(child.pid);
+  return new Promise((resolve, reject) => {
+    let buf = '';
+    child.on('exit', () => reject(new Error(`view.mjs exited early: ${buf}`)));
+    child.stdout.on('data', (d) => { buf += d; const m = buf.match(/listening on http:\/\/127\.0\.0\.1:(\d+)/); if (m) resolve(`http://127.0.0.1:${m[1]}`); });
+  });
+}
+
+const post = (url, body, type = 'application/json') => fetch(url, { method: 'POST', headers: type ? { 'content-type': type } : {}, body }).then(async (r) => ({ status: r.status, body: await r.json() }));
+
+test('one view server, many roots: / state is the index even for one task; a task is E-key, slug or ?task=; /teams-view.json names the server', async () => {
+  const dir = tasksWith([['aaaa1111-x', 100]]);
+  const doc = JSON.parse(readFileSync(join(dir, 'aaaa1111-x', 'task.json'), 'utf8'));
+  writeFileSync(join(dir, 'aaaa1111-x', 'task.json'), JSON.stringify({ ...doc, slug: 'fix-bob-pane' }));
+  const base = await startView(dir);
+  const state = async (q = '') => JSON.parse((await get(`${base}/state.json${q}`)).body);
+  const idx = await state();
+  assert.equal(idx.mode, 'index', 'a lone task still gives the index');
+  assert.equal(idx.tasks.length, 1);
+  assert.equal(idx.tasks[0].tasks_dir, idx.tasks_dir);
+  assert.deepEqual(idx.tasks_dirs, [idx.tasks_dir]);
+  assert.equal((await state('?task=E-aaaa1111')).model.task_id, 'aaaa1111-x');
+  assert.equal((await state('?task=fix-bob-pane')).model.task_id, 'aaaa1111-x', 'a slug selects the task');
+  assert.equal((await state('?task=no-such-slug')).mode, 'index');
+  assert.equal((await get(`${base}/fix-bob-pane`)).status, 200);
+  const id = JSON.parse((await get(`${base}/teams-view.json`)).body);
+  assert.equal(id.teams_view, 1);
+  assert.equal(id.pid, spawned[spawned.length - 1]);
+  assert.deepEqual(id.roots, [idx.tasks_dir]);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('POST /register: relative, missing, non-JSON and oversize bodies are 400 and change nothing; a valid root is 200 and its tasks join the index', async () => {
+  const a = tasksWith([['aaaa1111-x', 100]]);
+  const b = tasksWith([['bbbb2222-y', 200]]);
+  const base = await startView(a);
+  const roots = async () => JSON.parse((await get(`${base}/teams-view.json`)).body).roots;
+  const before = await roots();
+  assert.equal((await post(`${base}/register`, JSON.stringify({ tasks_dir: 'relative/dir' }))).status, 400);
+  assert.equal((await post(`${base}/register`, JSON.stringify({}))).status, 400);
+  assert.equal((await post(`${base}/register`, JSON.stringify({ tasks_dir: join(a, 'nope') }))).status, 400);
+  assert.equal((await post(`${base}/register`, JSON.stringify({ tasks_dir: b }), 'text/plain')).status, 400);
+  assert.equal((await post(`${base}/register`, JSON.stringify({ tasks_dir: b }), null)).status, 400);
+  assert.equal((await post(`${base}/register`, '{not json')).status, 400);
+  assert.equal((await post(`${base}/register`, JSON.stringify({ tasks_dir: b, pad: 'x'.repeat(5000) }))).status, 400, 'over 4 KB');
+  assert.deepEqual(await roots(), before, 'every 400 left the roots as they were');
+  const ok = await post(`${base}/register`, JSON.stringify({ tasks_dir: b }));
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.ok, true);
+  assert.equal(ok.body.roots.length, 2);
+  assert.equal((await post(`${base}/register`, JSON.stringify({ tasks_dir: b }))).body.roots.length, 2, 'registering twice does not duplicate');
+  const idx = JSON.parse((await get(`${base}/state.json`)).body);
+  assert.deepEqual(idx.tasks.map((t) => t.task_id), ['bbbb2222-y', 'aaaa1111-x'], 'both roots, newest first');
+  assert.equal(JSON.parse((await get(`${base}/state.json?task=E-bbbb2222`)).body).model.task_id, 'bbbb2222-y', 'a task of the registered root resolves');
+  rmSync(a, { recursive: true, force: true });
+  rmSync(b, { recursive: true, force: true });
 });
 
 test('clearViewRecord removes the record and is silent when there is none', async () => {

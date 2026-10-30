@@ -18,22 +18,24 @@
 //                         one that bound)
 //     --once              print a text tree to stdout and exit; no server
 //
-// The page for a task is /E-<first 8 of its id>; the older /?task=<id> link resolves too. An E-key
-// that is a prefix of several ids serves the newest, and one that matches nothing serves the index.
+// The page for a task is /E-<first 8 of its id> or /<slug>; the older /?task=<id> link resolves too.
+// An E-key that is a prefix of several ids serves the newest, and one that matches nothing serves the
+// index. One server holds many tasks roots (POST /register adds one); / is always the index.
 //
 // Both the HTML page's /state.json and --once's text tree come from ONE collect() function
 // (teams/scripts/lib/view-collect.mjs) - this file only renders it two ways.
 import { createServer } from 'node:http';
 import { readFileSync, existsSync, openSync, readSync, fstatSync, closeSync, statSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tasksRoot } from '../mcp/taskmanager.mjs';
-import { DEFAULT_VIEW_PORT, viewKey } from '../mcp/viewserver.mjs';
+import { DEFAULT_VIEW_PORT, viewKey, viewerAt, registerRoot as registerAt } from '../mcp/viewserver.mjs';
 import { collectTask, listTasks } from './lib/view-collect.mjs';
 import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './lib/view-render-text.mjs';
 import { notableEvents, statusLine, HOLD_MS } from './lib/view-events.mjs';
 import { summarize, waitingCount } from './lib/view-summary.mjs';
-import { samePath, floorTasks, floorEntry } from './lib/view-floor-fs.mjs';
+import { floorTasks, floorEntry, samePath } from './lib/view-floor-fs.mjs';
+import { repoMatcher } from './lib/view-repo.mjs';
 import { reportPayload } from './lib/view-report.mjs';
 import { teamsView, decisionsView } from './lib/view-status.mjs';
 import { dashboardModel, dashboardSvg, dashboardAlt, dashboardText } from './lib/view-dashboard.mjs';
@@ -97,19 +99,23 @@ function tailLines(path) {
 
 // Running tasks, decided by collectTask(): state 'running' (a dead daemon reads 'stalled'). A
 // task.json-less dir is never listed, and an unreadable one carries `error`, so unknown = not running.
-// Same directory through different paths (/var -> /private/var, any symlink) must match. A path
-// that no longer exists (a deleted temp repo) falls back to resolve().
+// With a cwd, the tasks of its repo (main checkout and linked worktrees; lib/view-repo.mjs).
+// [{ m, worktree }], worktree null for a task in the cwd's own checkout.
 function runningModels(tasksDir, cwd) {
-  const want = cwd ? samePath(cwd) : null;
+  const repo = repoMatcher(cwd);
   const out = [];
   for (const row of listTasks(tasksDir)) {
     const m = collectTask(tasksDir, row.task_id);
     if (m.error || m.state !== 'running') continue;
-    if (want && (!m.cwd || samePath(m.cwd) !== want)) continue;
-    out.push(m);
+    const at = cwd ? repo(m.cwd) : { match: true, worktree: null };
+    if (at.match) out.push({ m, worktree: at.worktree });
   }
   return out;
 }
+
+// The single `task` object names its worktree only when it is another checkout (the `tasks` rows
+// always carry the field, null for the cwd's own).
+const marked = (worktree) => (worktree ? { worktree } : {});
 
 // The ⚑ count reads every live open task (a card parked in a child run counts though no task runs),
 // the same rule summaryOutput applies, so --format status and summary.status always agree.
@@ -129,13 +135,14 @@ function asksOf(tasksDir, session) {
   return asksFor(entries, session, receivedRows(tasksDir, entries.map((x) => x.id)));
 }
 
-function statusFrom(models) {
-  const rows = models.map((m) => {
+function statusFrom(entries) {
+  const models = entries.map((x) => x.m);
+  const rows = entries.map(({ m, worktree }) => {
     const c = m.counts || {};
     const total = Object.values(c).reduce((s, n) => s + (Number(n) || 0), 0);
     const cur = (m.manager_stages || []).find((n) => n.state === 'running')
       || (m.packages || []).find((p) => p.state === 'running');
-    return { id: 'E-' + String(m.task_id).replace(/^E-/, '').slice(0, 8), state: m.state, done: c.done || 0, total, current: cur ? (cur.node_id || cur.id || '') : '' };
+    return { id: 'E-' + String(m.task_id).replace(/^E-/, '').slice(0, 8), state: m.state, done: c.done || 0, total, current: cur ? (cur.node_id || cur.id || '') : '', worktree };
   });
   // waiting = nodes in state waiting_human, counted from task.json (no ledger records that event).
   const waiting = models.reduce((s, m) => s + ((m.counts && m.counts.waiting_human) || 0), 0);
@@ -150,7 +157,7 @@ function statusFrom(models) {
 function summaryOutput(tasksDir, cwd, taskId, session) {
   const now = Date.now();
   const listed = floorTasks({ tasksDir, cwd, now });
-  const status = JSON.parse(statusFrom(listed.filter((x) => x.live && x.m.state === 'running').map((x) => x.m)));
+  const status = JSON.parse(statusFrom(listed.filter((x) => x.live && x.m.state === 'running')));
   // the ⚑ count reads the collected model, so a card parked in a child run (its driver gone on purpose) counts
   status.waiting = listed.filter((x) => x.live).reduce((s, x) => s + waitingCount(x.m), 0);
   status.asks = asksOf(tasksDir, session);
@@ -158,7 +165,7 @@ function summaryOutput(tasksDir, cwd, taskId, session) {
   const hit = id ? listed.find((x) => x.m.task_id === id) : null;
   const m = hit ? hit.m : (id ? collectTask(tasksDir, id) : null);
   const tasks = listed.map((x) => floorEntry(x, tasksDir, { now }));
-  return JSON.stringify({ status, tasks, task: m && !m.error ? summarize(m) : null }) + '\n';
+  return JSON.stringify({ status, tasks, task: m && !m.error ? { ...summarize(m), ...marked(hit && hit.worktree) } : null }) + '\n';
 }
 
 // summaryOutput (status, tasks) plus the per-team rows and Now lines of --task (the /teams-status pane while it is open).
@@ -167,7 +174,8 @@ function teamsOutput(tasksDir, cwd, taskId, session) {
   const id = taskId || base.status.latest;
   const m = id ? collectTask(tasksDir, id) : null;
   const ok = m && !m.error;
-  const task = ok ? summarize(m) : null;
+  const listedTask = base.tasks.find((t) => t.task_id === id);
+  const task = ok ? { ...summarize(m), ...marked(listedTask && listedTask.worktree) } : null;
   const model = dashboardModel(task);
   const dash = model ? { model, svg: dashboardSvg(model), alt: dashboardAlt(model) } : null;
   return JSON.stringify({ status: base.status, tasks: base.tasks, task, teams: ok ? teamsView(m) : null, dash }) + '\n';
@@ -182,9 +190,17 @@ function boardOutput(tasksDir, cwd, taskId, session) {
   let task = base.task || (base.tasks[0] || null);
   if (!task && cwd) {
     const recent = listTasks(tasksDir).filter((r) => Date.now() - (r.created_at || 0) < DAY_MS);
-    const hit = recent.find((r) => { try { return JSON.parse(readFileSync(join(tasksDir, r.task_id, 'task.json'), 'utf8')).cwd === cwd; } catch { return false; } });
+    const repo = repoMatcher(cwd);
+    let worktree = null;
+    const hit = recent.find((r) => {
+      try {
+        const at = repo(JSON.parse(readFileSync(join(tasksDir, r.task_id, 'task.json'), 'utf8')).cwd);
+        worktree = at.worktree;
+        return at.match;
+      } catch { return false; }
+    });
     const m = hit ? collectTask(tasksDir, hit.task_id) : null;
-    task = m && !m.error ? summarize(m) : null;
+    task = m && !m.error ? { ...summarize(m), ...marked(worktree) } : null;
   }
   return dashboardText(dashboardModel(task)) || `${base.status.line || 'teams: no task running'}\n`;
 }
@@ -219,15 +235,15 @@ function taskFacts(tasksDir, taskId) {
 // 256 KiB tail; a verdict older than the tail is not seen and the reason is task.json's
 // result.reason for the node, else `no reason recorded`.
 function eventsOutput(tasksDir, cwd, since) {
-  const want = cwd ? samePath(cwd) : null;
+  const repo = repoMatcher(cwd);
   const out = [];
   for (const row of listTasks(tasksDir)) {
     if (row.error) continue;
     const ledger = join(tasksDir, row.task_id, 'ledger.jsonl');
     try { if (statSync(ledger).mtimeMs <= Math.max(0, since - HOLD_MS)) continue; } catch { continue; }
-    if (want) {
+    if (cwd) {
       const m = collectTask(tasksDir, row.task_id);
-      if (m.error || !m.cwd || samePath(m.cwd) !== want) continue;
+      if (m.error || !m.cwd || !repo(m.cwd).match) continue;
     }
     out.push(...notableEvents(tailLines(ledger), since, { now: Date.now(), ...taskFacts(tasksDir, row.task_id) }));
   }
@@ -253,39 +269,89 @@ function pageHtml() {
   return readFileSync(join(HERE, 'lib', 'view-page.html'), 'utf8');
 }
 
-// A task reference from the URL - a full task id (the old /?task=<uuid> link) or an E-<prefix> key
-// (/E-xxxxxxxx) - to the task id it names, or null. A full id wins; otherwise the first task whose
-// id starts with the key, and listTasks is newest first, so an ambiguous prefix serves the newest.
-// Read-only: it only lists the tasks root.
-function resolveTaskRef(tasksDir, ref) {
+// A task reference from the URL - a full task id (the old /?task=<uuid> link), an E-<prefix> key
+// (/E-xxxxxxxx) or a task's slug (/<slug>) - to { root, id } across every registered root, or null.
+// Tiers in order: a full id, an id starting with the key, an exact slug; inside a tier the newest
+// created_at wins. Read-only: it only lists the tasks roots.
+function findTask(roots, ref) {
   if (!ref || /[\\/]/.test(ref) || ref.includes('..')) return null;
   const bare = ref.replace(/^E-/, '');
   if (!bare) return null;
-  for (const id of [ref, bare]) {
-    if (existsSync(join(tasksDir, id, 'task.json'))) return id;
+  const rows = roots.flatMap((root) => listTasks(root).map((r) => ({ ...r, root })));
+  const tiers = [
+    (r) => r.task_id === ref || r.task_id === bare,
+    (r) => String(r.task_id).replace(/^E-/, '').startsWith(bare),
+    (r) => r.slug === ref,
+  ];
+  for (const is of tiers) {
+    const hits = rows.filter(is);
+    if (hits.length) {
+      const top = hits.reduce((x, y) => ((y.created_at || 0) > (x.created_at || 0) ? y : x));
+      return { root: top.root, id: top.task_id };
+    }
   }
-  const hit = listTasks(tasksDir).find((r) => String(r.task_id).replace(/^E-/, '').startsWith(bare));
-  return hit ? hit.task_id : null;
+  return null;
 }
 
-// `unresolved`: the page asked for a task that is not there - show the index, whatever the
-// number of tasks, rather than an error model or the lone task standing in for it.
-function stateJson(tasksDir, taskId, unresolved) {
-  if (taskId) {
-    return JSON.stringify({ mode: 'task', tasks_dir: tasksDir, model: collectTask(tasksDir, taskId) });
-  }
-  const rows = listTasks(tasksDir);
-  if (rows.length === 1 && !unresolved) {
-    return JSON.stringify({ mode: 'task', tasks_dir: tasksDir, model: collectTask(tasksDir, rows[0].task_id) });
-  }
-  return JSON.stringify({ mode: 'index', tasks_dir: tasksDir, tasks: rows });
+// The index over every root, newest first, each row naming its tasks_dir; `tasks_dir` stays the first root.
+function indexJson(roots) {
+  const tasks = roots.flatMap((root) => listTasks(root).map((r) => ({ ...r, tasks_dir: root })));
+  tasks.sort((x, y) => (y.created_at || 0) - (x.created_at || 0));
+  return JSON.stringify({ mode: 'index', tasks_dir: roots[0], tasks_dirs: roots, tasks });
+}
+
+// A pinned task, else the task `ref` names, else (no ref, or one that is not there) the index: the
+// lone-task shortcut is --once's only.
+function stateJson(roots, taskId, ref) {
+  if (taskId) return JSON.stringify({ mode: 'task', tasks_dir: roots[0], model: collectTask(roots[0], taskId) });
+  const hit = ref ? findTask(roots, ref) : null;
+  if (hit) return JSON.stringify({ mode: 'task', tasks_dir: hit.root, model: collectTask(hit.root, hit.id) });
+  return indexJson(roots);
+}
+
+// POST /register { tasks_dir }: adds a tasks root. JSON only (a cross-site form cannot send it, and
+// application/json forces a preflight nobody answers), at most 4 KB, an absolute existing directory.
+function registerRoot(req, res, roots) {
+  const reply = (code, ok) => {
+    res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+    res.end(JSON.stringify({ ok, roots }));
+  };
+  if (!/^application\/json(;|$)/i.test(req.headers['content-type'] || '')) { reply(400, false); req.resume(); return; }
+  const chunks = [];
+  let size = 0;
+  let over = false;
+  req.on('data', (c) => {
+    size += c.length;
+    if (size > 4096) { if (!over) reply(400, false); over = true; return; }
+    chunks.push(c);
+  });
+  req.on('end', () => {
+    if (over) return;
+    try {
+      const dir = JSON.parse(Buffer.concat(chunks).toString('utf8')).tasks_dir;
+      if (typeof dir !== 'string' || !isAbsolute(dir) || !statSync(dir).isDirectory()) throw new Error('not a directory');
+      const root = samePath(dir);
+      if (!roots.includes(root)) roots.push(root);
+      reply(200, true);
+    } catch { reply(400, false); }
+  });
 }
 
 // Binds `port` (explicit, TEAMS_VIEW_PORT, or the default). Only the default gives way: if it is
 // taken the server listens on a free port instead, and the printed URL is the one that bound.
-function listenOn(server, port, fixed, onListening) {
-  server.once('error', (e) => {
-    if (!fixed && e && e.code === 'EADDRINUSE') { server.listen(0, '127.0.0.1', onListening); return; }
+// A teams viewer holding the default is joined, not dodged: this root is registered into it and
+// this process exits 0. Only a non-teams holder (or an older viewer with no /register) moves it.
+function listenOn(server, port, fixed, tasksDir, onListening) {
+  server.once('error', async (e) => {
+    if (!fixed && e && e.code === 'EADDRINUSE') {
+      const v = await viewerAt(port, 1000);
+      if (v && !v.legacy && await registerAt(port, tasksDir)) {
+        console.log(`teams view already running on http://127.0.0.1:${port}/`);
+        process.exit(0);
+      }
+      server.listen(0, '127.0.0.1', onListening);
+      return;
+    }
     throw e;
   });
   server.listen(port, '127.0.0.1', onListening);
@@ -312,24 +378,34 @@ function idleMs() {
   return Number.isFinite(n) && n > 0 ? n : IDLE_DEFAULT_MS;
 }
 
+function newest(roots) {
+  const rows = roots.flatMap((root) => listTasks(root).map((r) => ({ root, id: r.task_id, at: r.created_at || 0 })));
+  return rows.length ? rows.reduce((x, y) => (y.at > x.at ? y : x)) : null;
+}
+
 function startServer(tasksDir, taskId, port) {
+  const roots = [samePath(tasksDir)];
   let lastRequest = Date.now();
   const server = createServer((req, res) => {
     lastRequest = Date.now();
     const url = new URL(req.url, 'http://localhost');
     if (url.pathname === '/state.json') {
-      const ref = url.searchParams.get('task');
-      const resolved = taskId ? null : ref ? resolveTaskRef(tasksDir, ref) : null;
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-      res.end(stateJson(tasksDir, taskId || resolved, !taskId && !!ref && !resolved));
+      res.end(stateJson(roots, taskId, url.searchParams.get('task')));
       return;
     }
+    if (url.pathname === '/teams-view.json') {
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(JSON.stringify({ teams_view: 1, pid: process.pid, roots }));
+      return;
+    }
+    if (url.pathname === '/register' && req.method === 'POST') { registerRoot(req, res, roots); return; }
     // The task's own package map (shape's diagram, or the dependency map). The path comes from
     // the task file, never from the query, so this serves nothing but that one drawing.
     if (url.pathname === '/package-map') {
       const ref = url.searchParams.get('task');
-      const id = taskId || (ref ? resolveTaskRef(tasksDir, ref) : (listTasks(tasksDir)[0] || {}).task_id);
-      const m = id ? collectTask(tasksDir, id) : null;
+      const hit = taskId ? { root: roots[0], id: taskId } : ref ? findTask(roots, ref) : newest(roots);
+      const m = hit ? collectTask(hit.root, hit.id) : null;
       const p = m && m.package_map && m.package_map.path;
       if (!p || !existsSync(p)) { res.writeHead(404, { 'content-type': 'text/plain' }); res.end('no package map yet - it is drawn when shape finishes'); return; }
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
@@ -340,7 +416,7 @@ function startServer(tasksDir, taskId, port) {
     res.end(pageHtml());
   });
   const chosen = port === undefined ? defaultPort() : { port, fixed: true };
-  listenOn(server, chosen.port, chosen.fixed, () => {
+  listenOn(server, chosen.port, chosen.fixed, tasksDir, () => {
     const addr = server.address();
     console.log(`teams view listening on http://127.0.0.1:${addr.port}${taskId ? `/${viewKey(taskId)}` : ''}`);
     console.log(`tasks dir: ${tasksDir}`);
@@ -357,10 +433,11 @@ function startServer(tasksDir, taskId, port) {
     if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
   };
   const watch = setInterval(() => {
-    if (!existsSync(tasksDir)) { end(); return; }
+    for (let i = roots.length - 1; i >= 0; i--) if (!existsSync(roots[i])) roots.splice(i, 1);
+    if (!roots.length) { end(); return; }
     if (Date.now() - lastRequest < idleMs()) return;
     let rows;
-    try { rows = listTasks(tasksDir); } catch { return; }
+    try { rows = roots.flatMap((root) => listTasks(root)); } catch { return; }
     if (!rows.some((r) => LIVE.has(r.state))) end();
   }, DIR_CHECK_MS);
   watch.unref();

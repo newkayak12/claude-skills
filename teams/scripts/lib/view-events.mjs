@@ -161,5 +161,5 @@ export function lastVerdicts(lines) {
 
 export function statusLine(rows) {
   if (!rows.length) return '';
-  return 'teams: ' + rows.map((r) => `${r.id} ${r.done}/${r.total} ${r.current}`).join(' · ');
+  return 'teams: ' + rows.map((r) => `${r.id} ${r.done}/${r.total} ${r.current}${r.worktree ? ` @${r.worktree}` : ''}`).join(' · ');
 }
