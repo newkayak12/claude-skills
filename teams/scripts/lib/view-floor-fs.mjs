@@ -1,8 +1,10 @@
 // The reads behind the floor part of `view.mjs --once --format summary`: which tasks of a cwd are
 // listed, and the file facts view-floor.mjs turns into items and workers (a card's current action
 // from its stream, its cost, the graph run file it can open). Read-only; every read fails soft.
-import { existsSync, readFileSync, readdirSync, statSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, realpathSync, mkdirSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
 import { readLogTail, renderStreamLine } from '../../mcp/tasklog.mjs';
 import { graphRunPath } from '../../mcp/harnessrun.mjs';
 import { epicTicketState } from '../../mcp/tickets.mjs';
@@ -140,13 +142,69 @@ function parkedOnPerson(raw) {
 // The parsed task.json of every task dir the floor or the live count can need: [{ name, raw }]; a dir
 // without a readable object is left out. One read per call, shared by the cwd filter, the opener filter
 // and the live count.
+//
+// A task that task.json alone proves finished (cancelled, worktree gone, or its report done on the plain
+// node path: not an S or harness run, whose state reads another file) never opens again, so its facts
+// (cwd, opener, recorded processes) are kept in a cache under the OS temp dir, keyed by task.json's mtime
+// and size. A later call stats it instead of reading and parsing ~10 KB, and gets a stub that
+// epicTicketState reads as finished (`cancelled`) and floorTasks, liveCounter use as they used the raw.
+// The tasks dir itself is never written; any cache trouble falls back to the full read.
+const CACHE_V = 1;
+const cacheDir = () => join(tmpdir(), 'teams-view-finished');
+const cacheFile = (tasksDir) => join(cacheDir(), createHash('sha1').update(resolve(tasksDir)).digest('hex').slice(0, 16) + '.json');
+
+function readCache(file, tasksDir) {
+  const c = readJson(file);
+  return c && c.v === CACHE_V && c.dir === resolve(tasksDir) && c.t && typeof c.t === 'object' ? c.t : {};
+}
+
+function writeCache(file, tasksDir, t) {
+  try {
+    mkdirSync(cacheDir(), { recursive: true });
+    const tmp = `${file}.${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify({ v: CACHE_V, dir: resolve(tasksDir), t }));
+    renameSync(tmp, file);
+    // a cache whose tasks dir is gone (a test fixture, a removed worktree) is dropped
+    for (const f of readdirSync(cacheDir())) {
+      if (!f.endsWith('.json') || join(cacheDir(), f) === file) continue;
+      const o = readJson(join(cacheDir(), f));
+      if (!o || !o.dir || !existsSync(o.dir)) try { unlinkSync(join(cacheDir(), f)); } catch { /* raced */ }
+    }
+  } catch { /* the cache is an optimisation */ }
+}
+
+const finishedFacts = (raw) => {
+  if (raw.harness_run || raw.s_run) return null;
+  let sure = !!raw.cancelled || !!raw.worktree_gone;
+  if (!sure) { try { sure = ['DONE', 'SETTLED'].includes(epicTicketState(raw)); } catch { return null; } }
+  return sure ? [raw.cwd || null, raw.opener && raw.opener.session_id ? raw.opener.session_id : null, recordedProcesses(raw), raw.created_at || 0] : null;
+};
+
 export function scanRaws(tasksDir) {
   const out = [];
+  const file = cacheFile(tasksDir);
+  const old = readCache(file, tasksDir);
+  const next = {};
   for (const e of ls(tasksDir)) {
     if (!e.isDirectory()) continue;
-    const raw = readJson(join(tasksDir, e.name, 'task.json'));
-    if (raw && typeof raw === 'object') out.push({ name: e.name, raw });
+    const p = join(tasksDir, e.name, 'task.json');
+    let st = null;
+    try { st = statSync(p); } catch { continue; }
+    const hit = old[e.name];
+    if (hit && hit[0] === st.mtimeMs && hit[1] === st.size) {
+      const [, , cwd, sid, procs, created] = hit;
+      next[e.name] = hit;
+      out.push({ name: e.name, raw: { run_id: e.name, cwd, created_at: created, cancelled: true, nodes: [], ...(sid ? { opener: { session_id: sid } } : {}), recorded: procs } });
+      continue;
+    }
+    const raw = readJson(p);
+    if (!raw || typeof raw !== 'object') continue;
+    out.push({ name: e.name, raw });
+    const f = finishedFacts(raw);
+    if (f) next[e.name] = [st.mtimeMs, st.size, ...f];
   }
+  const a = Object.keys(old), b = Object.keys(next);
+  if (a.length !== b.length || b.some((k) => old[k] !== next[k] && (!old[k] || old[k][0] !== next[k][0] || old[k][1] !== next[k][1]))) writeCache(file, tasksDir, next);
   return out;
 }
 
@@ -164,7 +222,7 @@ export function liveCounter(tasksDir, raws) {
     }
     for (const { name, raw } of raws) {
       if (name.startsWith('.')) continue;
-      for (const p of recordedProcesses(raw)) if (!live.has(p.pid) && sameProcess(p)) live.add(p.pid);
+      for (const p of raw.recorded || recordedProcesses(raw)) if (!live.has(p.pid) && sameProcess(p)) live.add(p.pid);
     }
     return live.size;
   };
