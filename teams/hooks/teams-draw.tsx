@@ -216,7 +216,7 @@ export function runCells(run: RunNumbers, say: Say): StoryCells[] {
 // from its creation, a stalled one's is how long it has stood; a stalled row is dim throughout.
 export function epicCells(t: SummaryTaskEntry, state: WorkState, selected: boolean, now: number, stateWord: string): StoryCells {
   const cells = [
-    selected ? '▸' : '', ICON[state], t.key, t.worktree ? `${t.title} · ⑂ ${t.worktree}` : t.title, stateWord, `${t.done}/${t.total}`,
+    selected ? '▸' : '', ICON[state], t.key, t.worktree ? `⑂ ${t.worktree} · ${t.title}` : t.title, stateWord, `${t.done}/${t.total}`,
     since(t.live ? (t.created_at === null ? null : Math.max(0, now - t.created_at)) : t.age_ms),
   ]
   return { cells, tints: t.live ? [undefined, TINT[state], undefined, undefined, 'dim', undefined, 'dim'] : cells.map(() => 'dim' as const) }
