@@ -3945,6 +3945,27 @@ test('auto width: tm_status carries recent ticks {ts, width, running, ready_wait
   }, { max_parallel_ceiling: 6 });
 });
 
+test('auto width: a ready_waiting change at an unchanged width writes one parallel_width_changed event; an identical tick writes none', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_WIDE);
+    await tm.call('tm_next', { task_id });
+    const events = () => readLedger(root, task_id).filter((e) => e.event === 'parallel_width_changed');
+    assert.equal(events().length, 0);
+    // The previous tick says one package was waiting; the next real tick has none (width stays 2).
+    const raw = readTask(root, task_id);
+    raw.auto_parallel_ticks[raw.auto_parallel_ticks.length - 1].ready_waiting = 1;
+    writeFileSync(join(root, task_id, 'task.json'), JSON.stringify(raw));
+    await tm.call('tm_next', { task_id });
+    const changed = events();
+    assert.equal(changed.length, 1, 'a ready_waiting change alone writes an event');
+    assert.equal(changed[0].from, changed[0].to, 'the width did not change');
+    assert.equal(changed[0].from_ready_waiting, 1);
+    assert.equal(changed[0].ready_waiting, 0);
+    await tm.call('tm_next', { task_id });
+    assert.equal(events().length, 1, 'two ticks with the same width and ready_waiting write nothing');
+  }, { max_parallel_ceiling: 6 });
+});
+
 // portfolio-consolidate-8518d5dd: integrate:6 came back verified:false with checks/evidence/
 // unowned and no reason or gaps - the ledger, the report and triage all showed "integrate:6: "
 // with nothing after the colon. The manager now synthesizes one the way the broker does for a
