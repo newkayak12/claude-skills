@@ -136,7 +136,9 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
       (E-2694667a: open tasks only, finished ones indexed; 7.96 s → 0.40 s a call); the overlap guard
       in the pane/status-line poll was not taken.
     - Acceptance: with a `--once` call slowed past the poll interval, the pane and status line start no
-      second one until it exits (tested).
+      second one until it exits (tested). Also: `test-view-once-perf.mjs` "large fixture: … the second
+      call is fast" fails in the full teams suite at load ~250 (2026-10-31: 1710 tests, 1708 pass, 1 fail);
+      a wall-clock bar runs opt-in or asserts CPU so the suite is green at any load.
 
 101. **teams runs ready packages at the width shape allows — rest: the first tick, and one real Sprint at width 2+**
     - Why: user, 2026-10-29: "harness, graph, teams 각 phase를 병렬로 할 수는 없는건가?", then "네네 그리고
