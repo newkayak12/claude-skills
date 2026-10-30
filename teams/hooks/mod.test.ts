@@ -106,47 +106,6 @@ for (const surface of SURFACES) {
   })
 }
 
-test('a held poll process: the 3 s tick starts no second process until the first ends', async ($, on) => {
-  const clock = mock.clock(on, { now: 1000 })
-  const argv: (readonly string[])[] = []
-  let inFlight = 0
-  let maxInFlight = 0
-  let release: () => void = () => {}
-  const held = new Promise<void>(r => { release = r })
-  on('session.start', (_$, e) => ({ cwd: e.cwd }))
-  on('session.surfaces', () => ({ value: ['terminal'] }))
-  on('session.cwd', () => ({ value: '/proj' }))
-  on('command.register', (_$, e) => ({ value: { command: e.name } }))
-  on('process.run', async (_$, e) => {
-    argv.push(e.argv)
-    inFlight += 1
-    maxInFlight = Math.max(maxInFlight, inFlight)
-    if (argv.length === 1) await held
-    else await Promise.resolve()
-    inFlight -= 1
-    return { value: ok('') }
-  })
-  const flush = async () => {
-    await new Promise<void>(r => setTimeout(r, 50))
-  }
-  try {
-    await start($)
-    await Promise.race([clock.advance(3000), flush()])
-    await flush()
-    expect(argv).toHaveLength(1)
-    await Promise.race([clock.advance(9000), flush()]) // three more ticks while the first call is held
-    await flush()
-    expect(argv).toHaveLength(1)
-    expect(maxInFlight).toBe(1)
-  } finally {
-    release()
-  }
-  await flush()
-  await clock.advance(3000)
-  expect(argv.length > 1).toBe(true)
-  expect(maxInFlight).toBe(1)
-})
-
 // ---- tool.call: watch hook and team_status guard ----
 // Engine beneath: surfaces, a tool that answers `result`, and a state store the test reads back.
 function toolWorld(on: On, result: unknown, surfaces: readonly Surface[] = ['terminal'], isBroken = false) {

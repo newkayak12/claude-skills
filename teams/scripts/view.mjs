@@ -26,8 +26,8 @@
 // Both the HTML page's /state.json and --once's text tree come from ONE collect() function
 // (teams/scripts/lib/view-collect.mjs) - this file only renders it two ways.
 import { createServer } from 'node:http';
-import { readFileSync, readdirSync, existsSync, openSync, readSync, fstatSync, closeSync, statSync } from 'node:fs';
-import { dirname, join, isAbsolute, resolve } from 'node:path';
+import { readFileSync, existsSync, openSync, readSync, fstatSync, closeSync, statSync } from 'node:fs';
+import { dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tasksRoot } from '../mcp/taskmanager.mjs';
 import { DEFAULT_VIEW_PORT, viewKey, viewerAt, registerRoot as registerAt } from '../mcp/viewserver.mjs';
@@ -35,7 +35,7 @@ import { collectTask, listTasks } from './lib/view-collect.mjs';
 import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './lib/view-render-text.mjs';
 import { notableEvents, statusLine, HOLD_MS } from './lib/view-events.mjs';
 import { summarize, waitingCount } from './lib/view-summary.mjs';
-import { floorTasks, floorEntry, samePath, scanRaws, liveCounter } from './lib/view-floor-fs.mjs';
+import { floorTasks, floorEntry, samePath } from './lib/view-floor-fs.mjs';
 import { repoMatcher } from './lib/view-repo.mjs';
 import { reportPayload } from './lib/view-report.mjs';
 import { teamsView, decisionsView } from './lib/view-status.mjs';
@@ -98,6 +98,22 @@ function tailLines(path) {
   }
 }
 
+// Running tasks, decided by collectTask(): state 'running' (a dead daemon reads 'stalled'). A
+// task.json-less dir is never listed, and an unreadable one carries `error`, so unknown = not running.
+// With a cwd, the tasks of its repo (main checkout and linked worktrees; lib/view-repo.mjs).
+// [{ m, worktree }], worktree null for a task in the cwd's own checkout.
+function runningModels(tasksDir, cwd) {
+  const repo = repoMatcher(cwd);
+  const out = [];
+  for (const row of listTasks(tasksDir)) {
+    const m = collectTask(tasksDir, row.task_id);
+    if (m.error || m.state !== 'running') continue;
+    const at = cwd ? repo(m.cwd) : { match: true, worktree: null };
+    if (at.match) out.push({ m, worktree: at.worktree });
+  }
+  return out;
+}
+
 // The single `task` object names its worktree only when it is another checkout (the `tasks` rows
 // always carry the field, null for the cwd's own).
 const marked = (worktree) => (worktree ? { worktree } : {});
@@ -105,25 +121,20 @@ const marked = (worktree) => (worktree ? { worktree } : {});
 // The ⚑ count reads every live open task (a card parked in a child run counts though no task runs),
 // the same rule summaryOutput applies, so --format status and summary.status always agree.
 function statusOutput(tasksDir, cwd, session) {
-  const raws = scanRaws(tasksDir);
-  const listed = floorTasks({ tasksDir, cwd, now: Date.now(), raws, collect: collectNoLive });
-  const status = JSON.parse(statusFrom(listed.filter((x) => x.live && x.m.state === 'running')));
+  const listed = floorTasks({ tasksDir, cwd, now: Date.now() });
+  const status = JSON.parse(statusFrom(runningModels(tasksDir, cwd)));
   status.waiting = listed.filter((x) => x.live).reduce((s, x) => s + waitingCount(x.m), 0);
-  status.asks = asksOf(tasksDir, session, raws);
+  status.asks = asksOf(tasksDir, session);
   return JSON.stringify(status) + '\n';
 }
 
 // The questions waiting on one session, over every open task whatever its cwd (floorTasks filters on the
 // raw task.json opener before collecting); [] without a session. `via` is 'send' once a received row exists.
-function asksOf(tasksDir, session, raws) {
+function asksOf(tasksDir, session) {
   if (!session) return [];
-  const entries = floorTasks({ tasksDir, opener: session, now: Date.now(), raws, collect: collectNoLive });
+  const entries = floorTasks({ tasksDir, opener: session, now: Date.now() });
   return asksFor(entries, session, receivedRows(tasksDir, entries.map((x) => x.id)));
 }
-
-// What a row prints from collectTask never includes the live-driver count (livecap.peek: every task.json
-// again plus ps), so a caller that does not print it skips it.
-const collectNoLive = (dir, id) => collectTask(dir, id, { live: false });
 
 function statusFrom(entries) {
   const models = entries.map((x) => x.m);
@@ -144,34 +155,31 @@ function statusFrom(entries) {
 // (floorTasks: live newest created first, then stalled under 24 h with age_ms), each the human summary
 // plus items, workers and handoffs; task is the human summary of --task, else of status.latest, else
 // null (nothing running, or the task file is unreadable).
-function summaryParts(tasksDir, cwd, taskId, session) {
+function summaryOutput(tasksDir, cwd, taskId, session) {
   const now = Date.now();
-  const raws = scanRaws(tasksDir);
-  const live = liveCounter(tasksDir, raws);
-  const listed = floorTasks({ tasksDir, cwd, now, raws, collect: (dir, id) => collectTask(dir, id, { live }) });
+  const listed = floorTasks({ tasksDir, cwd, now });
   const status = JSON.parse(statusFrom(listed.filter((x) => x.live && x.m.state === 'running')));
   // the ⚑ count reads the collected model, so a card parked in a child run (its driver gone on purpose) counts
   status.waiting = listed.filter((x) => x.live).reduce((s, x) => s + waitingCount(x.m), 0);
-  status.asks = asksOf(tasksDir, session, raws);
+  status.asks = asksOf(tasksDir, session);
   const id = taskId || status.latest;
   const hit = id ? listed.find((x) => x.m.task_id === id) : null;
-  const m = hit ? hit.m : (id ? collectTask(tasksDir, id, { live }) : null);
+  const m = hit ? hit.m : (id ? collectTask(tasksDir, id) : null);
   const tasks = listed.map((x) => floorEntry(x, tasksDir, { now }));
-  return { status, tasks, m, task: m && !m.error ? { ...summarize(m), ...marked(hit && hit.worktree) } : null };
-}
-
-function summaryOutput(tasksDir, cwd, taskId, session) {
-  const { status, tasks, task } = summaryParts(tasksDir, cwd, taskId, session);
-  return JSON.stringify({ status, tasks, task }) + '\n';
+  return JSON.stringify({ status, tasks, task: m && !m.error ? { ...summarize(m), ...marked(hit && hit.worktree) } : null }) + '\n';
 }
 
 // summaryOutput (status, tasks) plus the per-team rows and Now lines of --task (the /teams-status pane while it is open).
 function teamsOutput(tasksDir, cwd, taskId, session) {
-  const { status, tasks, m, task } = summaryParts(tasksDir, cwd, taskId, session);
+  const base = JSON.parse(summaryOutput(tasksDir, cwd, taskId, session));
+  const id = taskId || base.status.latest;
+  const m = id ? collectTask(tasksDir, id) : null;
   const ok = m && !m.error;
+  const listedTask = base.tasks.find((t) => t.task_id === id);
+  const task = ok ? { ...summarize(m), ...marked(listedTask && listedTask.worktree) } : null;
   const model = dashboardModel(task);
   const dash = model ? { model, svg: dashboardSvg(model), alt: dashboardAlt(model) } : null;
-  return JSON.stringify({ status, tasks, task, teams: ok ? teamsView(m) : null, dash }) + '\n';
+  return JSON.stringify({ status: base.status, tasks: base.tasks, task, teams: ok ? teamsView(m) : null, dash }) + '\n';
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -208,7 +216,9 @@ function decisionsOutput(tasksDir, taskId, card) {
 
 // What notableEvents reads from task.json: max_retries and each node's result.reason. An unreadable
 // task.json leaves them out and the events fall back to the defaults.
-function taskFacts(raw) {
+function taskFacts(tasksDir, taskId) {
+  let raw;
+  try { raw = JSON.parse(readFileSync(join(tasksDir, taskId, 'task.json'), 'utf8')); } catch { return {}; }
   const reasons = {};
   for (const n of Array.isArray(raw.nodes) ? raw.nodes : []) {
     if (n && n.node_id && n.result && typeof n.result.reason === 'string') reasons[n.node_id] = n.result.reason;
@@ -225,31 +235,19 @@ function taskFacts(raw) {
 // HOLD_MS before `since`: the mtime skip is widened by that. Its reason is the latest verdict in the
 // 256 KiB tail; a verdict older than the tail is not seen and the reason is task.json's
 // result.reason for the node, else `no reason recorded`.
-//
-// Per dir, cheapest check first: ledger mtime, raw task.json, the notable events after `since`, and only
-// a dir with such an event reaches repo() (git), so git runs for no task that has nothing to tell, and
-// once per distinct cwd at most (repoMatcher memoises). A dir with a notable event pays its 256 KiB tail
-// whatever its cwd. Dirs are visited newest raw created_at first (ties keep directory order), which is the
-// order of equal-ts events after the stable ts sort. A task.json torn by a writer is skipped for that poll.
 function eventsOutput(tasksDir, cwd, since) {
   const repo = repoMatcher(cwd);
-  const found = [];
-  let dirs;
-  try { dirs = readdirSync(tasksDir, { withFileTypes: true }).filter((e) => e.isDirectory()); } catch { dirs = []; }
-  for (const e of dirs) {
-    const ledger = join(tasksDir, e.name, 'ledger.jsonl');
+  const out = [];
+  for (const row of listTasks(tasksDir)) {
+    if (row.error) continue;
+    const ledger = join(tasksDir, row.task_id, 'ledger.jsonl');
     try { if (statSync(ledger).mtimeMs <= Math.max(0, since - HOLD_MS)) continue; } catch { continue; }
-    let raw;
-    try { raw = JSON.parse(readFileSync(join(tasksDir, e.name, 'task.json'), 'utf8')); } catch { continue; }
-    if (!raw || typeof raw !== 'object') continue;
-    const events = notableEvents(tailLines(ledger), since, { now: Date.now(), ...taskFacts(raw) });
-    if (!events.length) continue;
-    // a cwd that no longer exists and is not the session's cannot match: no git for it
-    if (cwd && !(raw.cwd && (existsSync(raw.cwd) || resolve(raw.cwd) === resolve(cwd)) && repo(raw.cwd).match)) continue;
-    found.push({ created: raw.created_at || 0, events });
+    if (cwd) {
+      const m = collectTask(tasksDir, row.task_id);
+      if (m.error || !m.cwd || !repo(m.cwd).match) continue;
+    }
+    out.push(...notableEvents(tailLines(ledger), since, { now: Date.now(), ...taskFacts(tasksDir, row.task_id) }));
   }
-  found.sort((a, b) => b.created - a.created);
-  const out = found.flatMap((f) => f.events);
   out.sort((a, b) => a.ts - b.ts);
   return out.map((e) => JSON.stringify(e) + '\n').join('');
 }
