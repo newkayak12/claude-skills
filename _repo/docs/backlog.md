@@ -34,6 +34,12 @@ The portfolio flow comes before everything (user, 2026-10-30: "전체적으로 �
       7. structure decisions in `확정사실.md` (blocks never mixed, a writing basis such as "write the
          in-progress chapter as if done") are not re-raised by feedback or drift checks.
       Fictional fixtures only; manage tests with counts; one real run on a fictional workspace.
+    - Shipped 2026-10-30 by hand (`manage claims`, `compare --claims-before/--claims-after`, material
+      label `본인 확인`): manage 29/29, material 23/23; real CLI run on a fictional workspace copy found
+      the `근거 없음` figure, the reason the item does not give, and the item no page cites. Left:
+      the check reads skeleton only (deck.mdx carries it, not checked); a feedback finding against a
+      `settled` line is dropped by the SKILL step, not by the engine; reason grounding is a word-stem
+      share (≥ half), a heuristic.
 
 103. **portfolio engine bugs: renumber fences and write order, material path, untouched chart samples**
     - Why: debate 2026-10-29, each reproduced in the scratchpad against the repo scripts:

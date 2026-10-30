@@ -28,7 +28,7 @@ the user never has to name them. **Not for** a one-off review of someone else's 
 (`feedback`) or a deck that is not a portfolio (`deck-builder`).
 
 Engine, run from the workspace root: `node ${CLAUDE_PLUGIN_ROOT}/skills/manage/scripts/manage.mjs <cmd>`
-(`layout`, `snapshot`, `renumber`, `verify`, `compare`; each prints one JSON object). Its tests run
+(`layout`, `snapshot`, `renumber`, `verify`, `compare`, `claims`; each prints one JSON object). Its tests run
 on `scripts/fixtures/workspace`, a fictional workspace with the real one's shape; a mismatch a real
 run finds is added there as a test case before it is fixed.
 
@@ -64,13 +64,23 @@ are never renumbered. The template is where deck.mdx's `template:` points.
    the user can answer; everything else stays `[확인 필요: …]`.
 1b. **Write.** No skeleton yet, or a new project → write it from material only: pick episodes by
    signal (`references/principles.md` § Composition), one project as why → the user's role and
-   decision → result, each claim citing its material item; strengths chosen from the evidence.
+   decision → result; strengths chosen from the evidence. Each page that carries a figure or a
+   reason cites its items on one line under its heading, `글감: <id>, <id>` (a ledger item is
+   `NN_프로젝트/A1`); a reason the item does not give is written `[확인 필요: …]`, never filled in.
    Propose the structure (blocks, order, body vs appendix) and wait before filling pages. A written
    item is marked `material log --id <id> --note "skeleton <N>쪽" --status written --later-step manage`;
    in a ledger workspace (`material ledger` lists items) `material ledger-log --item <NN_프로젝트/A1>`
    with the same flags. The ledger is never moved or rewritten.
-2. **Feedback.** Run `feedback` on the skeleton (and `pattern` for how it reads); results become a
-   numbered skeleton edit list with how to fix each. Never re-raise what `확정사실.md` settles.
+2. **Feedback.** First `claims`: every page's figures and reason sentences against the items its
+   `글감:` line cites. Each problem is an edit: `uncited`/`unknown_id` → cite the item; `unsupported`
+   (`근거 없음`) and `not_in_material` → drop the figure or ask the user for its source;
+   `to_confirm` → the user's words or `[확인 필요: …]`. `listed.self_confirmed` (the user's
+   `본인 확인`: real work with no record) stays and is never cut as unsupported; `listed.tone` lines
+   are reworded in the material's words; `unused_results` and `uncited_items` are offered to the
+   user (a real result left out is a gap too), never added silently. Then `feedback` on the
+   skeleton (and `pattern` for how it reads), handed `claims`' `settled` lines; results become a
+   numbered skeleton edit list with how to fix each. Never re-raise what `확정사실.md` settles: a
+   finding against a `settled` line (a writing basis, a structure decision) is dropped.
 3. **Snapshot, then edit.** `snapshot --kind skeleton --level <major|minor|patch> --note "<what>"`
    before the first edit of a round (major = structure: page count, blocks, order; minor =
    content; patch = wording). Mark edited cells `[vX]`, unconfirmed wording `[vX 안]`. Lines are
@@ -103,7 +113,9 @@ are never renumbered. The template is where deck.mdx's `template:` points.
 9b. **Did it read better.** After a round's edits, score the round's snapshot and the new skeleton
     with the same rubric in the same turn: `feedback`'s five dimension scores and `pattern`'s items,
     each run as `{ "<item>": <score> }` into `snapshot/scores/skeleton-vX.Y.Z.json`, then
-    `compare --before <snapshot's> --after <new>`. Report every item's change; an item in `dropped`
+    `compare --before <snapshot's> --after <new>`, with both rounds' `claims` saved beside them
+    (`skeleton-vX.Y.Z.claims.json`) as `--claims-before`/`--claims-after`: a claim that lost its
+    ground (`lost_ground`) makes the round worse whatever the scores. Report every item's change; an item in `dropped`
     is named with the snapshot's wording for it, offered back. `unmatched` means the rubric moved —
     re-score, never compare across it.
 10. **Loop.** The next round starts at 2 with the new version. A vague answer ("바꾸고"): do the
@@ -129,6 +141,7 @@ Mistakes this workflow exists to stop: `references/principles.md` § Never.
 이번 라운드 <나아짐 | 나빠짐 | 섞임 | 그대로> — 항목: 이전 → 지금 (떨어진 항목은 이전 문구와 함께)
 확인한 것 (템플릿이나 원재료를 고쳤을 때: 백업 위치, check 결과)
 
+claims: 문제 <n> (근거 없음 n · 글감에 없음 n · 확인 필요 n · 인용 없음 n) · 본인 확인 <n> · 덱에 없는 성과 <n>
 renumber/verify: <changes, warnings, problems | 안 함> · deck check: <warnings | 안 함> · build/render: <함 | 안 함>
 ```
 

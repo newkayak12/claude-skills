@@ -12,7 +12,13 @@
 //   verify [--file skeleton.md]    heading numbers ascending; every page reference points at a heading
 //   compare --before <scores.json> --after <scores.json>
 //       per-item change between two `{ "<item>": <score> }` files scored with the same rubric;
-//       names every item that dropped and the verdict (better | worse | mixed | same)
+//       names every item that dropped and the verdict (better | worse | mixed | same);
+//       with --claims-before/--claims-after (two `claims` outputs) a claim that lost its ground makes it worse
+//   claims [--file skeleton.md]
+//       each page's figures and reason sentences against the material its `글감:` line cites:
+//       problems (uncited, unknown_id, not_in_material, unsupported = `근거 없음`, to_confirm = a reason
+//       the items do not say), listed (본인 확인, user-stated, tone phrases), unused_results (figures in
+//       cited items no page carries), uncited_items, settled (확정사실.md `## 서술 기준`/`## 구조` lines)
 // A page heading is `## N`, `## N.`, `## N)` or `## N쪽`. A `# ` chapter heading bounds a block: pages
 // sort inside their block, and blocks holding pages sort by their first page; other sections stay put.
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -259,13 +265,135 @@ export function verify(text) {
 }
 
 // Items scored on only one side are listed apart: a rubric that changed between rounds is not a comparison.
-export function compare(before, after) {
+// With two `claims` results, a claim that lost its ground (a problem the earlier round did not have)
+// makes the round worse whatever the scores say.
+export function compare(before, after, claimsBefore, claimsAfter) {
   const items = Object.keys(before).filter(k => k in after).map(item => ({ item, before: before[item], after: after[item], delta: after[item] - before[item] }))
   const unmatched = [...Object.keys(before), ...Object.keys(after)].filter(k => !(k in before && k in after))
   const dropped = items.filter(i => i.delta < 0).map(i => i.item)
   const rose = items.filter(i => i.delta > 0).map(i => i.item)
-  const verdict = dropped.length && rose.length ? 'mixed' : dropped.length ? 'worse' : rose.length ? 'better' : 'same'
-  return { verdict, items, dropped, unmatched }
+  let verdict = dropped.length && rose.length ? 'mixed' : dropped.length ? 'worse' : rose.length ? 'better' : 'same'
+  if (!claimsBefore || !claimsAfter) return { verdict, items, dropped, unmatched }
+  const key = p => `${p.kind}|${p.text}`
+  const had = new Set(claimsBefore.problems.map(key))
+  const lostGround = claimsAfter.problems.filter(p => !had.has(key(p)))
+  if (lostGround.length) verdict = 'worse'
+  return { verdict, items, dropped, unmatched, lost_ground: lostGround }
+}
+
+// ── claims: the skeleton's claims checked against the material, both ways ──
+// A page cites its material with one line `글감: <id>, <id>` (an item folder under sources/material/
+// or material/, or a ledger item `NN_프로젝트/A1`). A figure is a number with a unit or a percentage.
+// (a Korean particle may follow the unit: `3배가`; `12만 건` is one figure)
+const FIG = /(\d[\d,]*(?:\.\d+)?)\s*((?:[만억천]\s*)?(?:%|ms|초|분|시간|개월|일|주|배|건|명|회|개|대|원|GB|MB|KB|TB|TPS|QPS|RPS|x)|[만억천])(?![A-Za-z])/gu
+const CITE = /^\s*(?:[-*]\s*)?글감\s*:\s*(.+)$/
+// a sentence that gives a reason, cause or solution; grounded only when the cited items say it
+const REASON = /때문|위해|위한|그래서|따라서|덕분|인해|원인|해결|선택했|결정했|판단했/
+// phrases the user rejected as machine-written; listed, not failed
+const TONE = ['효율적으로', '획기적', '극대화', '성공적으로', '원활한', '원활하게', '시너지', '견고한', '혁신적', '함으로써', '다양한 ', '핵심적인', '도모']
+const figs = s => [...String(s).matchAll(FIG)].map(m => `${m[1].replace(/,/g, '')}${m[2].replace(/\s+/g, '')}`)
+const stems = s => (String(s).match(/[\p{L}\p{N}]+/gu) || [])
+  .filter(w => w.length >= 2 && !REASON.test(w))
+  .map(w => (/^[\p{Script=Hangul}]/u.test(w) ? w.slice(0, 2) : w.toLowerCase()))
+
+// result.md rows: `| number | evidence source | label |`
+function resultRows(text) {
+  return text.split('\n').filter(l => /^\s*\|/.test(l) && !/^\s*\|[\s:|-]+\|\s*$/.test(l))
+    .map(l => l.split('|').slice(1, -1).map(c => c.trim()))
+    .filter(c => c.length >= 3 && c[0] && c[0] !== 'number')
+    .map(([number, evidence, label]) => ({ figs: figs(number), evidence, label }))
+}
+
+export function readMaterial(root) {
+  const items = new Map()
+  const read = p => { try { return readFileSync(p, 'utf8') } catch { return '' } }
+  const ls = d => { try { return readdirSync(d, { withFileTypes: true }) } catch { return [] } }
+  for (const base of [join(root, 'sources', 'material'), join(root, 'material')]) {
+    for (const e of ls(base).filter(e => e.isDirectory())) {
+      if (items.has(e.name)) continue
+      const parts = ['problem', 'decision', 'result', 'learned', 'meta'].map(p => read(join(base, e.name, `${p}.md`)))
+      const result = parts[2]
+      items.set(e.name, { id: e.name, text: parts.join('\n'), rows: resultRows(result), cited: false })
+    }
+  }
+  for (const p of ls(join(root, 'sources')).filter(e => e.isDirectory() && /^\d+_/.test(e.name))) {
+    for (const f of ls(join(root, 'sources', p.name)).filter(e => e.isFile() && /^A\d+.*\.md$/.test(e.name))) {
+      const text = read(join(root, 'sources', p.name, f.name))
+      // a ledger has no result table: each line holding a figure is its row, `근거 없음` on that line marks it
+      const rows = text.split('\n').filter(l => figs(l).length)
+        .map(l => ({ figs: figs(l), evidence: /근거 없음/.test(l) ? '근거 없음' : l, label: /본인 확인/.test(l) ? '본인 확인' : '' }))
+      items.set(`${p.name.normalize('NFC')}/${f.name.match(/^A\d+/)[0]}`, { id: `${p.name.normalize('NFC')}/${f.name.match(/^A\d+/)[0]}`, text, rows, cited: false })
+    }
+  }
+  return items
+}
+
+// Settled writing bases and structure decisions the checks must not raise again: the lines under
+// `## 서술 기준` and `## 구조` in docs/확정사실.md, handed to feedback and drift checks as they are.
+export function settled(root) {
+  let text = ''
+  try { text = readFileSync(join(root, 'docs', '확정사실.md'), 'utf8') } catch { return [] }
+  const out = []
+  let on = false
+  for (const l of text.split('\n')) {
+    if (/^##\s/.test(l)) on = /^##\s+(서술 기준|구조)/.test(l)
+    else if (on && /^\s*-\s+\S/.test(l)) out.push(l.replace(/^\s*-\s+/, '').trim())
+  }
+  return out
+}
+
+export function claims(text, items, settledLines = []) {
+  const problems = [], listed = { self_confirmed: [], user_stated: [], tone: [] }
+  const carried = new Map()   // item id → figures some page carries
+  const lines = text.split('\n')
+  const pages = []
+  let cur = null
+  for (const l of lines) {
+    const h = l.match(HEADING)
+    if (h) { cur = { page: Number(h[2]), body: [], ids: [] }; pages.push(cur); continue }
+    if (/^#{1,2}\s/.test(l)) { cur = null; continue }
+    if (!cur || CHANGE_LINE.test(l)) continue
+    const c = l.match(CITE)
+    if (c) cur.ids.push(...c[1].split(/[,;]/).map(s => s.trim()).filter(Boolean))
+    else if (l.trim()) cur.body.push(l.trim())
+  }
+  for (const p of pages) {
+    const known = p.ids.filter(id => items.has(id))
+    for (const id of p.ids.filter(id => !items.has(id))) problems.push({ page: p.page, kind: 'unknown_id', text: id })
+    for (const id of known) items.get(id).cited = true
+    const ground = known.map(id => items.get(id))
+    for (const line of p.body) {
+      for (const t of TONE) if (line.includes(t)) listed.tone.push({ page: p.page, phrase: t.trim(), text: line })
+      const fs = figs(line)
+      const reason = REASON.test(line) && !/\[확인 필요/.test(line)
+      if ((fs.length || reason) && !known.length) { problems.push({ page: p.page, kind: 'uncited', text: line }); continue }
+      for (const f of fs) {
+        const hit = ground.map(it => ({ it, row: it.rows.find(r => r.figs.includes(f)) })).find(x => x.row)
+        if (!hit) { problems.push({ page: p.page, kind: 'not_in_material', text: `${f} — ${line}` }); continue }
+        if (!carried.has(hit.it.id)) carried.set(hit.it.id, new Set())
+        carried.get(hit.it.id).add(f)
+        const { evidence, label } = hit.row
+        if (/근거 없음/.test(evidence)) problems.push({ page: p.page, kind: 'unsupported', text: `${f} — ${line}` })
+        else if (/본인 확인/.test(label)) listed.self_confirmed.push({ page: p.page, id: hit.it.id, text: `${f} — ${line}` })
+        else if (/user-stated/.test(label)) listed.user_stated.push({ page: p.page, id: hit.it.id, text: `${f} — ${line}` })
+      }
+      if (reason) {
+        // grounded when at least half of the sentence's word stems appear in the cited items
+        const own = stems(line)
+        const pool = new Set(stems(ground.map(it => it.text).join('\n')))
+        const share = own.length ? own.filter(s => pool.has(s)).length / own.length : 1
+        if (share < 0.5) problems.push({ page: p.page, kind: 'to_confirm', text: line })
+      }
+    }
+  }
+  // the other way: figures in cited items no page carries, and items no page cites
+  const unused = []
+  for (const it of items.values()) {
+    if (!it.cited) continue
+    for (const r of it.rows) for (const f of r.figs) if (!carried.get(it.id)?.has(f) && !/근거 없음/.test(r.evidence)) unused.push({ id: it.id, figure: f })
+  }
+  const uncitedItems = [...items.values()].filter(it => !it.cited).map(it => it.id)
+  return { ok: problems.length === 0, pages: pages.length, problems, listed, unused_results: unused, uncited_items: uncitedItems, settled: settledLines }
 }
 
 function main() {
@@ -291,9 +419,12 @@ function main() {
   } else if (cmd === 'compare') {
     if (typeof args.before !== 'string' || typeof args.after !== 'string') throw new Error('--before and --after are required')
     const load = p => JSON.parse(readFileSync(join(root, p), 'utf8'))
-    out = compare(load(args.before), load(args.after))
+    const both = typeof args['claims-before'] === 'string' && typeof args['claims-after'] === 'string'
+    out = compare(load(args.before), load(args.after), both ? load(args['claims-before']) : undefined, both ? load(args['claims-after']) : undefined)
+  } else if (cmd === 'claims') {
+    out = claims(readFileSync(file, 'utf8'), readMaterial(root), settled(root))
   } else {
-    throw new Error('usage: manage.mjs layout | snapshot | renumber | verify | compare')
+    throw new Error('usage: manage.mjs layout | snapshot | renumber | verify | compare | claims')
   }
   process.stdout.write(`${JSON.stringify(out)}\n`)
 }
