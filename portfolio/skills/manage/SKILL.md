@@ -73,8 +73,7 @@ Nine steps, in order; a round may start again at 2 or 4 (step 8 says where); 9 o
    in `확정사실.md`. `selection` reads the table back; a 쓰임 outside the three is a problem.
 3. **Draft.** No skeleton yet, or a new project → write it from the `본문`/`부록` items only: one
    project as why → the user's role and decision → result; strengths chosen from the evidence.
-   Each page that carries a figure or a
-   reason cites its items on one line under its heading, `글감: <id>, <id>` (a ledger item is
+   Each page that carries a figure or a reason cites its items on one line under its heading, `글감: <id>, <id>` (a ledger item is
    `NN_프로젝트/A1`); a reason the item does not give is written `[확인 필요: …]`, never filled in.
    Propose the structure (blocks, order, body vs appendix) and wait before filling pages. A written
    item is marked `material log --id <id> --note "skeleton <N>쪽" --status written --later-step manage`;
@@ -122,8 +121,7 @@ Nine steps, in order; a round may start again at 2 or 4 (step 8 says where); 9 o
 6. **Deck.** Carry skeleton into deck.mdx against `deck.catalog.md` budgets and `template/분석.md`,
    then `deck-builder` `check` (an untouched chart slot is warned: its numbers are the template's
    sample) and `claims --file deck.mdx` (each slide cites in its comment: `## @s3 2쪽 · 글감: <id>`). Fine style changes go through the template's run formats, never by hand in the pptx.
-   `snapshot --kind deck --level … --note` only when asked (the deck counts its own versions; the
-   note says which skeleton it carries).
+   `snapshot --kind deck --level … --note` only when asked (the note names its skeleton).
 7. **Render, review, re-render.** `build` and `render` only when the user says. After a render,
    `keep-render --version <deck version>` keeps the previews under `snapshot/render/deck-vX.Y.Z/`
    with a `검토.md` row per page (쪽 · 본 것 · 문제 · 다음렌더-지침): look at every page and fill it.
@@ -143,6 +141,8 @@ Nine steps, in order; a round may start again at 2 or 4 (step 8 says where); 9 o
    template, deck, resume, PDFs — never goes to git: the engine refuses a workspace git would carry.
 
 Always:
+- **In the user's voice.** Every sentence written into skeleton, deck.mdx or resume.md goes through
+  `write:like-me` the same way, samples being what the user wrote alone in `sources/`; then `claims`.
 - **Corrections.** When the user corrects a fact, in the same turn: append to the material file
   `## 정정 — 본인 확인 YYYY-MM-DD` with their words verbatim; add one line to `확정사실.md`;
   `noah_collect` the words when noah is connected. The user's word beats the record.
@@ -195,6 +195,6 @@ reading and ask. Held is said as held.
 ## Related Skills
 
 - `material` — step 1, collects material into `sources/material/`; its status follows steps 2-3
-- `feedback`, `pattern`, `rewrite`, `mock-interview` — steps 4 and 8, judge and strengthen
+- `feedback`, `pattern`, `rewrite`, `mock-interview` — steps 4 and 8; `write:like-me` — the voice
 - `deck-builder` — steps 5-7 (and its renderer for step 9's PDF); `write:diagram` — figures
 - `job-application-workflow` — the whole application; its deck step is this workflow
