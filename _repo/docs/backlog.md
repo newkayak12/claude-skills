@@ -157,7 +157,7 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104.
       quality needs drawn sprite assets (procedural canvas gives agent-town level, not the image); not pulled
       until the person decides where the art comes from.
 
-94. **teams-status shows the numbers that explain a run: attempts and judge scores, cost and time, stalls, quality** — three defects in E-db7e3226
+94. **teams-status shows the numbers that explain a run: attempts and judge scores, cost and time, stalls, quality** — three defects fixed in E-db7e3226 (`15a95196`, plugin test 411/411, teams 1638 pass); awaiting the user's approval of the 190/110 captures
     - Why: user, 2026-10-28: "teams-status 조금 더 의미있는 지표 노출해서 개선해야겠더라". In E-8b9c417d the
       pane showed P2 "failed" three times; why (judge 88/90, "belongs to P3") was only in the ledger.
     - Acceptance (computed in node, `view-summary.mjs`; the mod renders it): per STORY attempt n/max, last judge
@@ -264,7 +264,7 @@ toasts).
       kill the parent MCP process, the daemon still ticks); a task whose daemon died is resumed by
       `tm_retry` on its own run dir without a re-plan.
 
-106. **One teams web viewer on one port; a task is a path, not a port**
+106. **One teams web viewer on one port; a task is a path, not a port** — in E-f53a8434
     - Why: 2026-10-30, two tasks open at once got two servers: E-f64c3884 at `127.0.0.1:7431`, E-4f12f406
       at `127.0.0.1:51125` (7431 taken, so `viewserver.mjs` fell back to a free port). User: "포트가 아니라
       카드 번호로 분기하면 될텐데??? 브라우저".
@@ -272,7 +272,7 @@ toasts).
       another; `/` lists every task; `/E-xxxxxxxx` and a readable path (slug or backlog card) open one
       task; the server outlives the task that started it while others run, and stops when none do; test.
 
-105. **`/teams-status` finds the repo's tasks running in its linked worktrees**
+105. **`/teams-status` finds the repo's tasks running in its linked worktrees** — in E-f53a8434
     - Why: 2026-10-30, user: "teams로 하는거 맞음??" — `/teams-status` in the main checkout answered
       "teams: no task running" while E-f64c3884 and E-4f12f406 ran (2 drivers, `view.mjs --once` lists
       both). Each was opened isolated in its own worktree (`../claude-skills-c101`, `-c94`); the pane and
