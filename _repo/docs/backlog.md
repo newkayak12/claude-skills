@@ -116,7 +116,7 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104.
 
 ### teams parallelism — first
 
-101. **teams runs ready packages at the width shape allows; a token count is not vendor pushback**
+101. **teams runs ready packages at the width shape allows; a token count is not vendor pushback** — in E-ea14c9c4
     - Why: user, 2026-10-29: "harness, graph, teams 각 phase를 병렬로 할 수는 없는건가?", then "네네 그리고
       최우선". Seen in E-eb3d399f: `auto_parallel_decreased` 2→1 at `dispatch:P2:1`, so the ready retry
       `dispatch:P2:2` waited ~24 min (opened 1793251891209, dispatched 1793253304717) until P1 finished.
@@ -337,7 +337,7 @@ toasts).
 
 ### write plugin
 
-100. **write:diagram draws figures that look finished, not merely checked**
+100. **write:diagram draws figures that look finished, not merely checked** — rest in E-f673c006
     - Why: user, 2026-10-29: "write:diagram 퀄리티 떨어짐"; asked what, they picked all four: 투박함, 배치가
       엉성함, 내용이 틀리거나 부족, 유형 선택이 별로. Seen in the last figures it drew (fig-9-2 roll-pointer
       chain, fig-13-1 two-session lock wait): every box the same grey/white with one stroke and no type
