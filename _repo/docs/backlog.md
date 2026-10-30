@@ -275,12 +275,6 @@ toasts).
       contractions kept (`it-s` or `its`, tested); a slug match wins over an id prefix (tested); the join
       branch tested on a scratch default port; `node -e '… => …'` checked against repo-rules.
 
-87. **A paraphrased document criterion still gets into user stories** (rest of card 87) — in E-a7996a31
-    - Why: `stripDocumentAcceptance` (eb3a1c49) drops only an exact-text match. The real L run E-11f56074
-      (2026-10-29) had none in its PRD (0 "Given the PRD section" lines; its F2 judge noted a repeated bullet
-      "a card-87 check could trip on"), so the exact-match fix holds on a real run; a paraphrase is untested.
-    - Acceptance: a paraphrase case caught (test) or named as a limit in the PRD gate prompt.
-
 75. **smart-compact fires on the same context % the person sees in the status line** — part in E-3f6657e7 (6d5809b2)
     - 2026-10-26: smart-compact now computes `round((input + cache_creation + cache_read) / window * 100)`, the
       formula the status line's `used_percentage` matched at 6% (Claude Code 2.1.310), and `/smart-compact`
@@ -395,6 +389,11 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-a7996a31 | 2026-10-30 | 87 rest | shipped `5639b260`; size S; goal gate 91; limit named in the PRD gate prompt (a Jaccard ≥ 0.63 rule passed both tests but missed the one real paraphrase, J=0.38, so declined); teams 1681/1682 |
+| E-233f8dca | 2026-10-30 | 81 rest | shipped `2fc9e26c`; size S; goal gate 90; own-write hook + fallback-route verdict gates; teams 1679/1680, plugin test 411/411 |
+| E-f53a8434 | 2026-10-30 | 105, 106 | shipped `236eae3d`; size S; goal gate 92; teams 1658/1660, plugin test 423/423; UI look left on card 105 |
+| E-ce2bcff4 | 2026-10-30 | 101 | shipped `9d4bd6a2`; size S (resumed from E-f64c3884); goal gate 92; teams 1660/1661, plugin test 399/399; leftovers card 108 |
+| E-db7e3226 | 2026-10-30 | 94 defects | shipped `15a95196`; size S (resumed from E-4f12f406); goal gate 91; plugin test 411/411; captures awaiting approval |
 | E-eb3d399f | 2026-10-29 | 100 | partial: P2 + D1 shipped and P1 taken by hand from its worktree (`13b988d5`); P1 'blocked: tool denied' ×3 on the 0.60.1 engine, P3/P4 unreachable; $48.72 |
 | E-124098e5 | 2026-10-15 | 10–13 | shipped `72f0c818`; size S (one harness pass); goal gate 91; $17.74 |
 | E-c313c8f1 | 2026-10-15 | 2 | shipped (rules say `origin`); size S; $3.89 |
