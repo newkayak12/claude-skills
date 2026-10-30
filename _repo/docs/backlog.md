@@ -271,9 +271,12 @@ toasts).
       test skips when 7431 is held; `listenOn` turns a non-EADDRINUSE error into an unhandled rejection;
       stale comment in `view.mjs` ~356; no Host-header check on `/register`; a long title plus `⑂` mark not
       tested for `…`. The run also saw repo-rules refuse `node -e` containing `=>` (unverified false positive).
-    - Acceptance: live look at 190/110 with a task in a linked worktree, shown to the user and approved;
-      contractions kept (`it-s` or `its`, tested); a slug match wins over an id prefix (tested); the join
-      branch tested on a scratch default port; `node -e '… => …'` checked against repo-rules.
+    - Code defects fixed 2026-10-31 in E-03e2e513 (`cf509f67`; goal gate 93; teams 1704/1705, 1 skip):
+      contractions keep their word (`its-broken`), exact slug beats id prefix, join and fallback tested on
+      a scratch default port, listen errors exit 1 with one line, stop-rule comment fixed, `⑂` tail cut to
+      `…` tested on 4 surfaces.
+    - Acceptance (left): live look at 190/110 with a task in a linked worktree, shown to the user and
+      approved; `node -e '… => …'` checked against repo-rules.
 
 75. **smart-compact fires on the same context % the person sees in the status line** — part in E-3f6657e7 (6d5809b2)
     - 2026-10-26: smart-compact now computes `round((input + cache_creation + cache_read) / window * 100)`, the
