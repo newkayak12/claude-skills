@@ -2515,7 +2515,9 @@ for (const surface of SURFACES) {
   })
   test(`${surface}: band shows ⑂ wt for a worktree task; null shows no ⑂`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo({ worktree: 'wt' }) }, surface)
-    expect(await shown(await band($, surface))).toContain('teams · ⑂ wt · ')
+    const b = await shown(await band($, surface))
+    expect(b).toContain('teams · ⑂ wt · ')
+    expect(b).toMatch(/teams · ⑂ wt · .+ — \S/)
   })
   test(`${surface}: band with a long title keeps ⑂ <worktree> before the title`, async ($, on) => {
     const long = 'Migrate every legacy report exporter to the new streaming writer and keep each output file identical across all supported locales'
@@ -2524,7 +2526,9 @@ for (const surface of SURFACES) {
   })
   test(`${surface}: band with worktree null shows no ⑂`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo({ worktree: null }) }, surface)
-    expect(await shown(await band($, surface))).not.toContain('⑂')
+    const b = await shown(await band($, surface))
+    expect(b).not.toContain('⑂')
+    expect(b).toMatch(/teams · .+ — \S/)
   })
   // the title cell (⑂ worktree · title) is cut from its end at 110 columns: the title tail goes, the ⑂ mark stays, the row keeps its cells
   test(`${surface}: a long title with a worktree is cut to … at 110 columns, the ⑂ mark stays`, async ($, on) => {
