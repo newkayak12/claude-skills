@@ -9942,6 +9942,18 @@ test('card 109: different AC, area or file stays separate', async () => {
   }, ({ filed }) => assert.deepEqual(filed.map((p) => p.id), ['D1', 'D2'], 'two QA cards are two findings'));
 });
 
+test('card 109: a defect naming two files and one naming only one of them stay two defects', async () => {
+  const d = (n, title) => ({ title, evidence: 'e', touches: [], repro: failing(n) });
+  await settleQaFiling({ 'QA-F1': [
+    d(1, 'teams/mcp/a.mjs and teams/mcp/b.mjs disagree (AC-1)'),
+    d(2, 'teams/mcp/a.mjs alone is wrong (AC-1)'),
+  ] }, ({ filed }) => assert.deepEqual(filed.map((p) => p.id), ['D1', 'D2'], 'different file sets are two findings'));
+  await settleQaFiling({ 'QA-F1': [
+    d(1, 'teams/mcp/a.mjs and teams/mcp/b.mjs disagree (AC-1)'),
+    d(2, 'b.mjs and a.mjs again disagree (AC-1)'),
+  ] }, ({ filed }) => assert.equal(filed.length, 1, 'the same set, one bare, is one finding'));
+});
+
 test('card 109: a test file named only by the repro command does not merge two source files', async () => {
   const run = (pattern) => ({ ...REPRO, command: `node --test teams/scripts/test-x.mjs --test-name-pattern ${pattern}` });
   const base = { touches: [], evidence: 'e' };
@@ -10788,7 +10800,7 @@ async function toDeferredConflict(tm, g, root, task_id) {
   return task.nodes.find((n) => n.node_id === 'integrate:2');
 }
 
-test('card 109: a filed package\'s conflict settles as one repair, not left blocked', async () => {
+test("card 109: a filed package's conflict settles as one repair, not left blocked", async () => {
   const { autoRepair } = await import('../mcp/taskmanager.mjs');
   await withTask(async ({ tm, g, root, task_id }) => {
     const integ = await toDeferredConflict(tm, g, root, task_id);
