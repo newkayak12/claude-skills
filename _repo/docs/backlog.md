@@ -131,19 +131,12 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
 
 ### teams parallelism — first
 
-108. **teams view `--once` reads only open tasks, not every task ever run**
-    - Why: 2026-10-30, the machine (12 cores) was saturated: view.mjs ~540% CPU. Verified: one
-      `view.mjs --once --format status --cwd <repo>` takes 7.8 s wall / 6.1 s CPU, because
-      `runningModels` (`teams/scripts/view.mjs` L102) runs `collectTask` on every one of the 2098 dirs
-      in `~/.harness/tasks` (239 MB, never pruned) before filtering on state and cwd; `floorTasks`
-      does the same walk. 22 open sessions' status lines and panes spawn ~30 of these every 20 s, so the
-      cost grows with every task ever run. Also seen: 43 detached `--tasks-dir` viewers (ppid 1, up to
-      38 days old, ~2.6 GB RSS, idle CPU), all from teams 0.60.x or the repo copy before `21a52358`
-      (card 83's idle exit) — none from 0.61.x, so the leak is fixed and only the old processes remain.
-    - Acceptance: `--once --format status|events|summary` reads `task.json` state and cwd first and
-      builds a model only for a matching open task (or keeps an index of open tasks); on a fixture
-      tasks dir with 2000 finished tasks one call stays under 0.3 s (tested); a status-line poll does
-      not start a new process while the previous one still runs.
+108. **teams view `--once` — rest: a status-line poll does not start a new process while the previous one still runs**
+    - Why: 2026-10-30, view.mjs ~540% CPU from 22 sessions' polls. The walk is fixed in teams 0.62.1
+      (E-2694667a: open tasks only, finished ones indexed; 7.96 s → 0.40 s a call); the overlap guard
+      in the pane/status-line poll was not taken.
+    - Acceptance: with a `--once` call slowed past the poll interval, the pane and status line start no
+      second one until it exits (tested).
 
 101. **teams runs ready packages at the width shape allows — rest: the first tick, and one real Sprint at width 2+**
     - Why: user, 2026-10-29: "harness, graph, teams 각 phase를 병렬로 할 수는 없는건가?", then "네네 그리고
@@ -443,6 +436,7 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-2694667a | 2026-10-30 | 108 | partial: teams 0.62.1, `--once` filters before collecting and indexes finished tasks (`.view-index.json`), rebased onto 0.62.0's repo-wide matcher; real status call 7.96 s → 0.40 s; 300 ms fixture test is best-of-10 (single calls flaked 306–399 ms under suite load); poll overlap guard left (108) |
 | E-a7996a31 | 2026-10-30 | 87 rest | shipped `5639b260`; size S; goal gate 91; limit named in the PRD gate prompt (a Jaccard ≥ 0.63 rule passed both tests but missed the one real paraphrase, J=0.38, so declined); teams 1681/1682 |
 | E-233f8dca | 2026-10-30 | 81 rest | shipped `2fc9e26c`; size S; goal gate 90; own-write hook + fallback-route verdict gates; teams 1679/1680, plugin test 411/411 |
 | E-f53a8434 | 2026-10-30 | 105, 106 | shipped `236eae3d`; size S; goal gate 92; teams 1658/1660, plugin test 423/423; UI look left on card 105 |

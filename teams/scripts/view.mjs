@@ -37,6 +37,7 @@ import { notableEvents, statusLine, HOLD_MS } from './lib/view-events.mjs';
 import { summarize, waitingCount } from './lib/view-summary.mjs';
 import { floorTasks, floorEntry, samePath } from './lib/view-floor-fs.mjs';
 import { repoMatcher } from './lib/view-repo.mjs';
+import { openTasks } from './lib/view-index.mjs';
 import { reportPayload } from './lib/view-report.mjs';
 import { teamsView, decisionsView } from './lib/view-status.mjs';
 import { dashboardModel, dashboardSvg, dashboardAlt, dashboardText } from './lib/view-dashboard.mjs';
@@ -105,8 +106,10 @@ function tailLines(path) {
 function runningModels(tasksDir, cwd) {
   const repo = repoMatcher(cwd);
   const out = [];
-  for (const row of listTasks(tasksDir)) {
-    const m = collectTask(tasksDir, row.task_id);
+  for (const { id, raw } of openTasks(tasksDir, { running: true })) {
+    if (!raw && !existsSync(join(tasksDir, id, 'task.json'))) continue;
+    if (raw && cwd && !raw.cwd) continue;
+    const m = collectTask(tasksDir, id);
     if (m.error || m.state !== 'running') continue;
     const at = cwd ? repo(m.cwd) : { match: true, worktree: null };
     if (at.match) out.push({ m, worktree: at.worktree });
