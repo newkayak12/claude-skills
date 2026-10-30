@@ -5,7 +5,7 @@ process.env.TZ = 'UTC';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { summarize, metrics } from './lib/view-summary.mjs';
+import { summarize, metrics, storyNow } from './lib/view-summary.mjs';
 import { stageOfNode, STAGE_KEYS } from './lib/view-stages.mjs';
 import { dashboardModel } from './lib/view-dashboard.mjs';
 
@@ -298,11 +298,58 @@ test('metrics: a repackaged story counts its attempt from the new shape and its 
 });
 
 test('metrics: a reject at or above the threshold carries the deciding gap, scrubbed; below it gap is null', () => {
-  const m = withTelemetry({ judge: { P2: { score: 90, reason: 'close', attempt: 3, verdict: 'reject' } } });
-  m.packages[1].accept.gaps = ['accept:P2:3 export at /tmp/x/y is not cleared', 'second gap'];
+  const m = withTelemetry({ judge: { P2: { score: 90, reason: 'close', attempt: 3, verdict: 'reject', cause: 'accept:P2:3 export at /tmp/x/y is not cleared' } } });
   assert.equal(story(metrics(m, { now: NOW }), 'P2').judge.gap, 'export at is not cleared');
   m.telemetry.judge.P2.score = 85;
   assert.equal(story(metrics(m, { now: NOW }), 'P2').judge.gap, null);
+});
+
+test('card94 own cause: 93 vs 90 reject whose current accept node is a pending retry still shows the judged node\'s gap; below threshold null', () => {
+  const retry = {
+    ...card('P2', 'module b', 'running', { ticket_key: 'E-3a3a3bb5/P2', attempt: 3 }),
+    dispatch: ms('dispatch:P2:3', 'running', { started_at: NOW - MIN }), accept: ms('accept:P2:3', 'pending'), // no gaps on the retry node
+  };
+  const m = withTelemetry({ judge: { P2: { score: 93, reason: 'close', attempt: 2, verdict: 'reject', cause: 'accept:P2:2 tenant cap at /tmp/x/y is skipped' } } });
+  m.packages[1] = retry;
+  const j = story(metrics(m, { now: NOW }), 'P2').judge;
+  assert.deepEqual(j, { score: 93, threshold: 90, reason: 'close', gap: 'tenant cap at is skipped' });
+  m.telemetry.judge.P2.score = 85;
+  assert.equal(story(metrics(m, { now: NOW }), 'P2').judge.gap, null);
+  m.telemetry.judge.P2.score = 93;
+  m.telemetry.judge.P2.verdict = 'accept';
+  assert.equal(story(metrics(m, { now: NOW }), 'P2').judge.gap, null, 'only a reject carries a gap');
+});
+
+test('card94 storyNow: in-round retry running, repackage third attempt, settled, attempt-less, cancelled', () => {
+  const p2 = (dispatchId, dState, acceptId, aState, extra = {}) => ({
+    ...card('P2', 'module b', 'failed', { ticket_key: 'E-3a3a3bb5/P2', ...extra }),
+    dispatch: ms(dispatchId, dState), accept: ms(acceptId, aState),
+  });
+  const run = (c, verdict, over = {}) => {
+    const m = withTelemetry({ judge: { P2: { score: 93, reason: 'close', ...verdict } } }, over);
+    m.packages[1] = c;
+    return { m, home: summarize(m, { now: NOW }).work.find((w) => w.id === 'P2' || w.title === 'module b') };
+  };
+  // in-round retry: :3 running, reject of attempt 2 -> running, no verdict, score still kept by metrics()
+  let r = run(p2('dispatch:P2:3', 'running', 'accept:P2:3', 'pending', { attempt: 3 }), { attempt: 2, verdict: 'reject' });
+  assert.equal(r.home.state, 'running');
+  let now = storyNow(r.m, r.m.packages[1], { attempt: 2, verdict: 'reject' });
+  assert.deepEqual(now, { state: 'running', attempt: 3, verdict: null });
+  assert.deepEqual(story(metrics(r.m, { now: NOW }), 'P2').judge, { score: 93, threshold: 90, reason: 'close', gap: null }, 'the round-level score stays visible');
+  // repackage third attempt: :6 running, round_first_attempt 4, reject of attempt 5
+  r = run(p2('dispatch:P2:6', 'running', 'accept:P2:6', 'pending', { attempt: 6, round_first_attempt: 4 }), { attempt: 5, verdict: 'reject' });
+  assert.equal(r.home.state, 'running');
+  assert.equal(storyNow(r.m, r.m.packages[1], { attempt: 5, verdict: 'reject' }).verdict, null);
+  // settled :3 failed, verdict of attempt 3
+  r = run(p2('dispatch:P2:3', 'done', 'accept:P2:3', 'failed', { attempt: 3 }), { attempt: 3, verdict: 'reject' });
+  assert.equal(storyNow(r.m, r.m.packages[1], { attempt: 3, verdict: 'reject' }).verdict, 'reject');
+  // failed :2 holding only an attempt-less verdict
+  r = run(p2('dispatch:P2:2', 'done', 'accept:P2:2', 'failed', { attempt: 2 }), { verdict: 'reject' });
+  assert.equal(storyNow(r.m, r.m.packages[1], { verdict: 'reject' }).verdict, null);
+  // cancelled task: what was running reads as pending
+  r = run(p2('dispatch:P2:3', 'running', 'accept:P2:3', 'pending', { attempt: 3 }), { attempt: 2, verdict: 'reject' }, { state: 'cancelled' });
+  assert.equal(r.home.state, 'pending');
+  assert.equal(storyNow(r.m, r.m.packages[1], null).state, 'pending');
 });
 
 test('metrics: cost and wall time per STORY and per stage, with retry spend apart from cost_usd', () => {

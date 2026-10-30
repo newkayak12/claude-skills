@@ -2,7 +2,7 @@
 // STORYs and Floor tabs): one item per STORY at work, one worker per desk, the recorded hand-offs.
 // No fs: view-floor-fs.mjs reads the streams, costs and run files and hands them in as `facts`;
 // the ledger is read through view-events.mjs, which owns what a ledger line means.
-import { cardsOf, waitingNode, metrics } from './view-summary.mjs';
+import { cardsOf, storyNow, waitingNode, metrics } from './view-summary.mjs';
 import { handoffs, lastVerdicts } from './view-events.mjs';
 
 const attemptOf = (nodeId) => {
@@ -44,6 +44,11 @@ export function markOf(state, doing = '') {
   return { icon: MARKS[state], word: live ? doing : FIXED[state], word_key: live ? '' : state };
 }
 
+// A STORY row's status is one fixed word for every state (acting and you too), never the driver's `doing`
+// (that stays a field on the item; the Floor tab shows it). `word_key` is the state, for the pane to localize.
+const ITEM_WORD = { ...FIXED, acting: 'working', you: 'needs you' };
+const itemMarkOf = (state) => ({ icon: MARKS[state], word: ITEM_WORD[state], word_key: state });
+
 // facts: { stories: { [id]: { live, doing, cost_usd, cost_estimated, run_file } }, judge: { live, doing }, ledger: [lines] }
 // The STORY's own numbers (view-summary.mjs metrics()) carried on its item; null for a desk with none.
 const NUMBERS = ['attempt', 'max_attempts', 'judge', 'cost_usd', 'retry_cost_usd', 'wall_ms', 'out_of_retries'];
@@ -66,7 +71,7 @@ export function floorOf(model, facts = {}, { now = Date.now(), metrics: given = 
     if (mark === 'done' || mark === 'pending') return;
     const itemState = mark === 'failed' && state !== 'you' ? 'failed' : state;
     items.push({
-      ...base, state: itemState, doing, ...markOf(itemState, doing),
+      ...base, state: itemState, doing, ...itemMarkOf(itemState),
       cost_usd: f.cost_usd ?? null, cost_estimated: !!f.cost_estimated,
       live: !!f.live || state === 'you', run_file: f.run_file ?? null,
       metrics: numbersOf(numbers.get(String(base.key).split(':')[0])),
@@ -91,10 +96,9 @@ export function floorOf(model, facts = {}, { now = Date.now(), metrics: given = 
       // one planning card is PLAN; several are PLAN, PLAN2, ... so worker ids stay distinct
       const label = c.phase === 'planning' ? `PLAN${++plans > 1 ? plans : ''}` : id;
       const v0 = verdicts[id.split(':')[0]];
-      // a verdict from before this shape's first dispatch judged a discarded shape: not the current attempt's
-      const v = v0 && !(v0.attempt != null && c.round_first_attempt != null && v0.attempt < c.round_first_attempt) ? v0 : null;
+      // only a settled card's verdict for its own attempt is its status (storyNow)
       add(label, {
-        key: id, title: c.title || '', last_verdict: v ? v.verdict : null, try: t.try, max: t.max,
+        key: id, title: c.title || '', last_verdict: storyNow(m, c, v0).verdict, try: t.try, max: t.max,
         elapsed_ms: (c.dispatch && c.dispatch.elapsed_ms) ?? null,
         owner_key: c.ticket_key || `${epic}/${id.split(':')[0]}`,
       }, f, mark, isWaiting(c));
