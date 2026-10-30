@@ -21,6 +21,7 @@ Then the plugin you touched:
 | `write:diagram` | `node write/skills/diagram/scripts/test-diagram.mjs` (teams vendors its `diagram.mjs`) |
 | `write:tech-book` | `node --test write/skills/tech-book/scripts/test-*.mjs` |
 | `portfolio:deck-builder` | in its `scripts/`: `python3 test_deck.py`, `DECK_RENDER_DOCKER=deck-render python3 test_render.py` |
+| `portfolio:manage` | `node --test portfolio/skills/manage/scripts/test-manage.mjs`, `python3 portfolio/skills/manage/scripts/test_resume.py` |
 | a SKILL.md only | the validator above; a behaviour change also needs one real run |
 | `.claude/hooks/repo-rules.mjs` | `node _repo/scripts/test-repo-rules.mjs` |
 | a SKILL.md's shape | `node _repo/scripts/check-skeleton.mjs` (report only, always exit 0; frozen teams skills listed apart); its test `node --test _repo/scripts/test-check-skeleton.mjs` |
