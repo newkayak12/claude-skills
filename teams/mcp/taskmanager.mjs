@@ -7120,15 +7120,23 @@ function pushbackFromEvent(e) {
   return '';
 }
 
+// Drops JSON-style usage counters (`"cache_creation_input_tokens":429`) so a bare number in one
+// is never read as an HTTP status.
+function stripUsageCounters(text) {
+  return text.replace(/\\?"[A-Za-z0-9_]*_tokens\\?"\s*:\s*\d+/g, '');
+}
+
 // stderr is the vendor/host error channel, so PUSHBACK_RE runs over its tail as plain text (a
-// driver SIGKILLed before its stream closed leaves its evidence only there). The stream log is
-// walked line by line and only a line that parses as a JSON event is judged, by pushbackFromEvent;
-// plain text in the stream log (a tool result that mentions "overloaded_error") is intentionally
-// not pushback.
+// driver SIGKILLed before its stream closed leaves its evidence only there). Usage counters in
+// that tail are removed before matching (card 101 / E-eb3d399f: a driver printing a usage object
+// to stderr halved the width on `"cache_creation_input_tokens":429`); the original tail is what
+// is returned. The stream log is walked line by line and only a line that parses as a JSON event
+// is judged, by pushbackFromEvent; plain text in the stream log (a tool result that mentions
+// "overloaded_error") is intentionally not pushback.
 function dispatchPushbackText(driver) {
   if (!driver) return '';
   const tail = driverStderrTail(driver, 2000);
-  if (PUSHBACK_RE.test(tail)) return tail;
+  if (PUSHBACK_RE.test(stripUsageCounters(tail))) return tail;
   if (!driver.log) return '';
   try {
     if (!existsSync(driver.log)) return '';

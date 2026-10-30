@@ -212,6 +212,25 @@ for (const [label, line] of [
   });
 }
 
+const USAGE_OBJECT = '{"usage":{"cache_creation_input_tokens":429,"output_tokens":4290,"input_tokens":529}}';
+
+for (const [label, lines, halves] of [
+  ['a usage object alone', [USAGE_OBJECT], false],
+  ['a usage object beside "HTTP 429 Too Many Requests"', [USAGE_OBJECT, 'HTTP 429 Too Many Requests'], true],
+  ['a usage object beside a real overloaded_error', [USAGE_OBJECT, 'API Error: overloaded_error, retry later'], true],
+]) {
+  test(`stderr (card 101): ${label} ${halves ? 'still halves the width once' : 'is a clean fold, the width does not change'}`, () => {
+    const task = makeTask({ max_parallel_ceiling: 6 });
+    ensureAutoParallel(task).current = 4;
+    const stderr = join(SCRATCH, `${Math.random().toString(36).slice(2)}.stderr`);
+    writeFileSync(stderr, lines.join('\n'));
+    const n = dispatchNode('dispatch:P1:1', 'P1', { driver: { pid: 1, stderr } });
+    updateAutoParallel(task, n, { stage_ok: true });
+    assert.equal(task.auto_parallel.current, halves ? 2 : 4);
+    assert.equal(task.auto_parallel.streak, halves ? 0 : 1);
+  });
+}
+
 test('no decrease (card 101): "cache_creation_input_tokens":429 in the stream log is a usage counter, not an HTTP 429', () => {
   const task = makeTask({ max_parallel_ceiling: 6 });
   ensureAutoParallel(task).current = 2;
