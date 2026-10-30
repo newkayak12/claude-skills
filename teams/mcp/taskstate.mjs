@@ -252,6 +252,14 @@ export function resolveHarnessRun(task) {
   return run;
 }
 
+// The run's own record shows a write outside its planned scope: gates only on an own record
+// (own_record true), never on the git-only verdict or ok:null.
+function ownScopeFailure(h) {
+  const s = h.scope;
+  if (!s || s.ok !== false || s.own_record !== true) return null;
+  return `scope: own write(s) outside the planned scope: ${(s.outOfScope || []).join(', ')}`;
+}
+
 // S1a: running while the driver lives or will be respawned; complete/partial once the run's own
 // report is written, by its own goal gate; blocked when the driver died past its budget unfinished.
 export function harnessState(task) {
@@ -259,13 +267,15 @@ export function harnessState(task) {
   const run = resolveHarnessRun(task);
   const v = run ? harnessVerdict(run, task.goal_threshold) : null;
   if (v && v.finished) {
-    if (v.accept) return { state: 'complete', counts: {} };
+    const scopeWhy = ownScopeFailure(h);
+    if (v.accept && !scopeWhy) return { state: 'complete', counts: {} };
     const why = `the harness goal gate did not accept${v.match_pct != null ? ` (match ${v.match_pct})` : ''}${v.gaps.length ? `: ${v.gaps.slice(0, 3).join('; ')}` : ''}`;
-    return { state: 'partial', partial: true, partial_reasons: [why], counts: {} };
+    return { state: 'partial', partial: true, partial_reasons: [...(v.accept ? [] : [why]), ...(scopeWhy ? [scopeWhy] : [])], counts: {} };
   }
   if ((!v || v.readable === false) && h.finished_at) {
-    if (h.accepted !== false) return { state: 'complete', counts: {} };
-    return { state: 'partial', partial: true, partial_reasons: ['the harness goal gate did not accept'], counts: {} };
+    const scopeWhy = ownScopeFailure(h);
+    if (h.accepted !== false && !scopeWhy) return { state: 'complete', counts: {} };
+    return { state: 'partial', partial: true, partial_reasons: [...(h.accepted !== false ? [] : ['the harness goal gate did not accept']), ...(scopeWhy ? [scopeWhy] : [])], counts: {} };
   }
   if (h.waiting_capacity || !h.driver || driverAlive(h.driver)) return { state: 'running', counts: {} };
   if (countedDriverRestarts(task, h.driver).length >= restartBudget(task)) {
