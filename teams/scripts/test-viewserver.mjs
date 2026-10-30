@@ -13,7 +13,7 @@
 process.env.TEAMS_RUNS_DIR ??= 'off';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync, realpathSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -130,7 +130,7 @@ test('the first call starts a viewer that actually serves the page and /state.js
   assert.ok(served, `nothing answered on ${v.url} within 5s`);
   assert.equal(served.status, 200);
   const state = JSON.parse(served.body);
-  assert.equal(state.tasks_dir, dir);
+  assert.equal(state.tasks_dir, realpathSync(dir), 'roots are kept samePath\'d');
   assert.equal(state.mode, 'index', 'an empty tasks root shows the index, not a task');
   assert.deepEqual(state.tasks, [], 'no tasks have been opened under this root');
 
@@ -358,6 +358,67 @@ test('view.mjs without --port prefers 7431 and falls back to a free port when it
     if (gotDefault) await new Promise((r) => holder.close(r));
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// view.mjs --tasks-dir <dir> --port 0, resolved with its base URL once it prints it.
+function startView(dir) {
+  const child = spawn(process.execPath, [VIEW_SCRIPT, '--tasks-dir', dir, '--port', '0'], { stdio: ['ignore', 'pipe', 'ignore'] });
+  spawned.push(child.pid);
+  return new Promise((resolve, reject) => {
+    let buf = '';
+    child.on('exit', () => reject(new Error(`view.mjs exited early: ${buf}`)));
+    child.stdout.on('data', (d) => { buf += d; const m = buf.match(/listening on http:\/\/127\.0\.0\.1:(\d+)/); if (m) resolve(`http://127.0.0.1:${m[1]}`); });
+  });
+}
+
+const post = (url, body, type = 'application/json') => fetch(url, { method: 'POST', headers: type ? { 'content-type': type } : {}, body }).then(async (r) => ({ status: r.status, body: await r.json() }));
+
+test('one view server, many roots: / state is the index even for one task; a task is E-key, slug or ?task=; /teams-view.json names the server', async () => {
+  const dir = tasksWith([['aaaa1111-x', 100]]);
+  const doc = JSON.parse(readFileSync(join(dir, 'aaaa1111-x', 'task.json'), 'utf8'));
+  writeFileSync(join(dir, 'aaaa1111-x', 'task.json'), JSON.stringify({ ...doc, slug: 'fix-bob-pane' }));
+  const base = await startView(dir);
+  const state = async (q = '') => JSON.parse((await get(`${base}/state.json${q}`)).body);
+  const idx = await state();
+  assert.equal(idx.mode, 'index', 'a lone task still gives the index');
+  assert.equal(idx.tasks.length, 1);
+  assert.equal(idx.tasks[0].tasks_dir, idx.tasks_dir);
+  assert.deepEqual(idx.tasks_dirs, [idx.tasks_dir]);
+  assert.equal((await state('?task=E-aaaa1111')).model.task_id, 'aaaa1111-x');
+  assert.equal((await state('?task=fix-bob-pane')).model.task_id, 'aaaa1111-x', 'a slug selects the task');
+  assert.equal((await state('?task=no-such-slug')).mode, 'index');
+  assert.equal((await get(`${base}/fix-bob-pane`)).status, 200);
+  const id = JSON.parse((await get(`${base}/teams-view.json`)).body);
+  assert.equal(id.teams_view, 1);
+  assert.equal(id.pid, spawned[spawned.length - 1]);
+  assert.deepEqual(id.roots, [idx.tasks_dir]);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('POST /register: relative, missing, non-JSON and oversize bodies are 400 and change nothing; a valid root is 200 and its tasks join the index', async () => {
+  const a = tasksWith([['aaaa1111-x', 100]]);
+  const b = tasksWith([['bbbb2222-y', 200]]);
+  const base = await startView(a);
+  const roots = async () => JSON.parse((await get(`${base}/teams-view.json`)).body).roots;
+  const before = await roots();
+  assert.equal((await post(`${base}/register`, JSON.stringify({ tasks_dir: 'relative/dir' }))).status, 400);
+  assert.equal((await post(`${base}/register`, JSON.stringify({}))).status, 400);
+  assert.equal((await post(`${base}/register`, JSON.stringify({ tasks_dir: join(a, 'nope') }))).status, 400);
+  assert.equal((await post(`${base}/register`, JSON.stringify({ tasks_dir: b }), 'text/plain')).status, 400);
+  assert.equal((await post(`${base}/register`, JSON.stringify({ tasks_dir: b }), null)).status, 400);
+  assert.equal((await post(`${base}/register`, '{not json')).status, 400);
+  assert.equal((await post(`${base}/register`, JSON.stringify({ tasks_dir: b, pad: 'x'.repeat(5000) }))).status, 400, 'over 4 KB');
+  assert.deepEqual(await roots(), before, 'every 400 left the roots as they were');
+  const ok = await post(`${base}/register`, JSON.stringify({ tasks_dir: b }));
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.ok, true);
+  assert.equal(ok.body.roots.length, 2);
+  assert.equal((await post(`${base}/register`, JSON.stringify({ tasks_dir: b }))).body.roots.length, 2, 'registering twice does not duplicate');
+  const idx = JSON.parse((await get(`${base}/state.json`)).body);
+  assert.deepEqual(idx.tasks.map((t) => t.task_id), ['bbbb2222-y', 'aaaa1111-x'], 'both roots, newest first');
+  assert.equal(JSON.parse((await get(`${base}/state.json?task=E-bbbb2222`)).body).model.task_id, 'bbbb2222-y', 'a task of the registered root resolves');
+  rmSync(a, { recursive: true, force: true });
+  rmSync(b, { recursive: true, force: true });
 });
 
 test('clearViewRecord removes the record and is silent when there is none', async () => {
