@@ -20,15 +20,16 @@ process.env.HARNESS_TASKS_DIR = SCRATCH;
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ensureAutoParallel, updateAutoParallel } from '../mcp/taskmanager.mjs';
+import { ensureAutoParallel, updateAutoParallel, vendorPushbackText } from '../mcp/taskmanager.mjs';
 
 test.after(() => rmSync(SCRATCH, { recursive: true, force: true }));
 
 let seq = 0;
-// A minimal dispatch-shaped task: one develop STORY package (P1, no `phase`, so it is an
-// ordinary STORY - not exempt), 'auto' unless overridden. Each call gets a fresh run_id so the
-// ledger writes from different tests never collide on the same file.
-function makeTask(teamOpts = {}, packages = [{ id: 'P1' }]) {
+// A minimal dispatch-shaped task: two independent develop STORY packages (P1, P2, no `phase`, so
+// ordinary STORYs - not exempt; shape width 2, so the controller starts at 2), 'auto' unless
+// overridden. Each call gets a fresh run_id so the ledger writes from different tests never
+// collide on the same file.
+function makeTask(teamOpts = {}, packages = [{ id: 'P1' }, { id: 'P2' }]) {
   seq += 1;
   return {
     run_id: `test-autoparallel-${seq}`,
@@ -128,7 +129,7 @@ for (const [label, text] of [
     const state = ensureAutoParallel(task);
     state.current = 4;
     state.streak = 1; // mid-window when the pushback arrives
-    const n = dispatchNode('dispatch:P1:3', 'P1', { driver: driverWithLog(`{"type":"result","result":"${text}"}`) });
+    const n = dispatchNode('dispatch:P1:3', 'P1', { driver: driverWithLog(`{"type":"result","is_error":true,"result":"${text}"}`) });
     updateAutoParallel(task, n, { stage_ok: false });
     assert.equal(task.auto_parallel.current, 2, 'halved from 4');
     assert.equal(task.auto_parallel.streak, 0, 'a pushback resets whatever streak was building toward an increase');
@@ -406,4 +407,205 @@ test('rough wall-time: auto (growing from 2) finishes the same 8 packages faster
   // ballpark, the gap being real dispatch-open/accept overhead this model does not simulate.
   const realObservedMin = 50.00 - 20.26;
   assert.ok(Math.abs(fixed - realObservedMin) < 3, 'the simulated fixed-cap makespan should track the real observed wall time reasonably closely');
+});
+
+// ---------- card 101 (1): pushback is read from error-shaped fields only ----------
+//
+// E-eb3d399f: an assistant line's usage block carried "cache_creation_input_tokens":429 and the
+// raw-text PUSHBACK_RE read the 429 as an HTTP status, halving the cap on a healthy run. A real
+// stream line is never read for bare numbers; only the shapes below count as the vendor saying no.
+
+// Folds one dispatch whose driver log is `log` on a task whose cap is 4; returns the task.
+function foldLog(log, { stderr } = {}) {
+  const task = makeTask({ max_parallel_ceiling: 6 });
+  ensureAutoParallel(task).current = 4;
+  const driver = driverWithLog(log);
+  if (stderr !== undefined) {
+    driver.stderr = join(SCRATCH, `${Math.random().toString(36).slice(2)}.stderr`);
+    writeFileSync(driver.stderr, stderr);
+  }
+  updateAutoParallel(task, dispatchNode('dispatch:P1:1', 'P1', { driver }), { stage_ok: true });
+  return task;
+}
+
+const USAGE_429 = '{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}],'
+  + '"usage":{"input_tokens":6,"cache_creation_input_tokens":429,"cache_read_input_tokens":91000,"output_tokens":55}}}\n';
+
+test('E-eb3d399f: a usage block with "cache_creation_input_tokens":429 is not pushback - no false decrease', () => {
+  const task = foldLog(USAGE_429);
+  assert.equal(task.auto_parallel.current, 4);
+  assert.equal(task.auto_parallel.streak, 1, 'the fold counts as clean');
+  assert.equal(vendorPushbackText(USAGE_429), '');
+});
+
+test('E-eb3d399f: a 529 inside a usage block is not pushback - no false decrease', () => {
+  const log = USAGE_429.replace('"cache_creation_input_tokens":429', '"cache_read_input_tokens":529');
+  assert.ok(log.includes('529'));
+  assert.equal(foldLog(log).auto_parallel.current, 4);
+});
+
+test('E-eb3d399f: a top-level result with is_error:false whose usage carries 429 is not pushback - no false decrease', () => {
+  const log = '{"type":"result","subtype":"success","is_error":false,"api_error_status":null,"result":"done",'
+    + '"usage":{"cache_creation_input_tokens":429,"output_tokens":9}}\n';
+  assert.equal(foldLog(log).auto_parallel.current, 4);
+});
+
+test('E-eb3d399f: a truncated line starting with "{" that holds 429 (driver SIGKILLed mid-write) is not pushback - no false decrease', () => {
+  const log = '{"type":"assistant","message":{"usage":{"cache_creation_input_tokens":429';
+  assert.equal(foldLog(log).auto_parallel.current, 4);
+  assert.equal(vendorPushbackText(log), '');
+});
+
+test('E-eb3d399f: a user event whose tool_result is_error:true says 429 is a tool failure, not pushback - no false decrease', () => {
+  const log = '{"type":"user","message":{"content":[{"type":"tool_result","is_error":true,"content":"curl: (22) HTTP 429 from the project\'s own API"}]}}\n';
+  assert.equal(foldLog(log).auto_parallel.current, 4);
+});
+
+test('real 429: a result event with is_error:true and api_error_status 429 halves', () => {
+  const log = '{"type":"result","subtype":"error_during_execution","is_error":true,"api_error_status":429,"result":"API Error: 429 rate_limit_error"}\n';
+  const task = foldLog(log);
+  assert.equal(task.auto_parallel.current, 2);
+  assert.equal(task.auto_parallel.streak, 0);
+});
+
+test('real overloaded: a result event with is_error:true and "API Error: 529 overloaded_error" text (no status field) halves', () => {
+  const log = '{"type":"result","subtype":"success","is_error":true,"api_error_status":null,"result":"API Error: 529 overloaded_error"}\n';
+  assert.equal(foldLog(log).auto_parallel.current, 2);
+});
+
+test('real pushback in a result is read from result and subtype only: a 429 usage number beside an is_error result with plain text does not halve', () => {
+  const log = '{"type":"result","subtype":"error_during_execution","is_error":true,"api_error_status":null,"result":"tests failed","usage":{"cache_creation_input_tokens":429}}\n';
+  assert.equal(foldLog(log).auto_parallel.current, 4);
+});
+
+test('allowed_warning: a rate_limit_event served with a utilization notice is not pushback (it repeats every turn near a window)', () => {
+  const log = '{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning","rateLimitType":"five_hour","utilization":0.91}}\n';
+  const task = foldLog(log);
+  assert.equal(task.auto_parallel.current, 4);
+  assert.equal(task.auto_parallel.streak, 1, 'and it counts as a clean fold');
+});
+
+test('rejected: a rate_limit_event with status "rejected", or an unknown status, halves', () => {
+  for (const status of ['rejected', 'blocked']) {
+    const log = `{"type":"rate_limit_event","rate_limit_info":{"status":"${status}","rateLimitType":"five_hour"}}\n`;
+    assert.equal(foldLog(log).auto_parallel.current, 2, `status ${status}`);
+  }
+});
+
+test('error_max_turns: an is_error result with api_error_status null and no pushback wording is a package outcome, not pushback', () => {
+  const log = '{"type":"result","subtype":"error_max_turns","is_error":true,"api_error_status":null,"num_turns":50}\n';
+  assert.equal(foldLog(log).auto_parallel.current, 4);
+});
+
+test('plain-text error lines: a non-JSON line naming 429 or overloaded halves, even among JSON events', () => {
+  const log = `${USAGE_429}claude: request failed with 429 Too Many Requests\n`;
+  assert.equal(foldLog(log).auto_parallel.current, 2);
+  assert.equal(foldLog('Error: overloaded, retry later\n').auto_parallel.current, 2);
+});
+
+test('stderr tail: pushback text in stderr halves while the log holds only a usage 429', () => {
+  const task = foldLog(USAGE_429, { stderr: 'API Error: 529 overloaded_error' });
+  assert.equal(task.auto_parallel.current, 2);
+});
+
+// api_retry: claude -p's own retry signal. A 429/529 the CLI retries and then recovers from never
+// becomes an is_error result and writes nothing to stderr - this event is the only trace.
+const apiRetry = (status, error) => `{"type":"system","subtype":"api_retry","attempt":1,"max_retries":10,"error_status":${status},"error":"${error}"}\n`;
+
+test('api_retry: error_status 429 or 529 (a retried throttle) halves', () => {
+  assert.equal(foldLog(apiRetry(429, 'rate_limit')).auto_parallel.current, 2);
+  assert.equal(foldLog(apiRetry(529, 'overloaded')).auto_parallel.current, 2);
+});
+
+test('api_retry: an error naming rate_limit or overloaded with error_status null halves', () => {
+  assert.equal(foldLog(apiRetry('null', 'rate_limit_error')).auto_parallel.current, 2);
+  assert.equal(foldLog(apiRetry('null', 'overloaded_error')).auto_parallel.current, 2);
+});
+
+test('api_retry: a non-pushback error_status (500) or a null status with an unrelated error does not decrease', () => {
+  assert.equal(foldLog(apiRetry(500, 'server_error')).auto_parallel.current, 4);
+  assert.equal(foldLog(apiRetry('null', 'unknown')).auto_parallel.current, 4);
+  assert.equal(foldLog(apiRetry('null', 'unknown').replace('"attempt":1', '"attempt":1,"usage":{"cache_creation_input_tokens":429}')).auto_parallel.current, 4);
+});
+
+test('vendorPushbackText: per-rule cases return an evidence string or empty', () => {
+  const json = (o) => `${JSON.stringify(o)}\n`;
+  assert.equal(vendorPushbackText(''), '');
+  assert.equal(vendorPushbackText(undefined), '');
+  assert.match(vendorPushbackText(json({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected' } })), /rejected/);
+  assert.equal(vendorPushbackText(json({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed' } })), '');
+  assert.equal(vendorPushbackText(json({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed_warning' } })), '');
+  assert.match(vendorPushbackText(json({ type: 'result', is_error: true, api_error_status: 429, result: 'x' })), /429/);
+  assert.match(vendorPushbackText(json({ type: 'result', is_error: true, result: 'API Error: 529 overloaded_error' })), /overloaded/);
+  assert.equal(vendorPushbackText(json({ type: 'result', is_error: false, result: 'fine 429', usage: { n: 429 } })), '');
+  assert.equal(vendorPushbackText(json({ type: 'assistant', message: { usage: { n: 429 } } })), '');
+  assert.equal(vendorPushbackText(json({ type: 'user', message: { content: [{ type: 'tool_result', is_error: true, content: '429' }] } })), '');
+  assert.equal(vendorPushbackText('{"truncated 429'), '');
+  assert.match(vendorPushbackText('upstream said 429'), /429/);
+  assert.match(vendorPushbackText(apiRetry(429, 'rate_limit')), /429|rate_limit/);
+  assert.equal(vendorPushbackText(apiRetry(500, 'server_error')), '');
+});
+
+// ---------- card 101 (2): the start width is the shape's width, capped by the ceiling ----------
+
+const indep = (n) => Array.from({ length: n }, (_, i) => ({ id: `P${i + 1}`, deps: [] }));
+
+test('start width: 3 independent packages with ceiling 6 start at 3, recorded as start_width', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 }, indep(3));
+  const state = ensureAutoParallel(task);
+  assert.equal(state.current, 3);
+  assert.equal(state.start_width, 3);
+});
+
+test('start width: 5 independent packages with ceiling 2 start at 2 (the ceiling caps it)', () => {
+  assert.equal(ensureAutoParallel(makeTask({ max_parallel_ceiling: 2 }, indep(5))).current, 2);
+});
+
+test('start width: a chain P1 -> P2 starts at 1', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 }, [{ id: 'P1' }, { id: 'P2', deps: ['P1'] }]);
+  assert.equal(ensureAutoParallel(task).current, 1);
+});
+
+test('start width: before a shape exists (no spec, or no packages) the placeholder 2 applies, capped by the ceiling', () => {
+  const noSpec = makeTask({ max_parallel_ceiling: 6 });
+  noSpec.spec = null;
+  const s = ensureAutoParallel(noSpec);
+  assert.equal(s.current, 2);
+  assert.equal(s.start_width, null);
+  const empty = makeTask({ max_parallel_ceiling: 6 }, []);
+  assert.equal(ensureAutoParallel(empty).current, 2);
+  const one = makeTask({ max_parallel_ceiling: 1 });
+  one.spec = null;
+  assert.equal(ensureAutoParallel(one).current, 1, 'ceiling 1 caps the placeholder');
+});
+
+test('start width: state seeded before the shape re-seeds once, when packages appear', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 });
+  task.spec = null;
+  assert.equal(ensureAutoParallel(task).current, 2);
+  task.spec = { packages: indep(3) };
+  const state = ensureAutoParallel(task);
+  assert.equal(state.current, 3);
+  assert.equal(state.start_width, 3);
+});
+
+test('start width: calling ensureAutoParallel twice on the same task agrees (tm_status and advanceDispatches see one value)', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 });
+  task.spec = null;
+  ensureAutoParallel(task);
+  task.spec = { packages: indep(3) };
+  const a = { ...ensureAutoParallel(task) };
+  const b = { ...ensureAutoParallel(task) };
+  assert.deepEqual(a, b);
+  assert.equal(b.start_width, 3);
+});
+
+test('start width: after the controller\'s first STORY fold a width change does not re-seed', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 }, indep(3));
+  ensureAutoParallel(task);
+  updateAutoParallel(task, dispatchNode('dispatch:P1:1', 'P1'), { stage_ok: true });
+  task.spec = { packages: indep(5) };
+  const state = ensureAutoParallel(task);
+  assert.equal(state.current, 3, 'AIMD owns the cap from the first fold');
+  assert.equal(state.start_width, 3);
 });
