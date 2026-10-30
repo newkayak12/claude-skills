@@ -87,7 +87,9 @@ function storyParts(s) {
   let judge = null;
   const j = s.judge;
   if (j && Number.isFinite(j.score)) {
-    const reason = j.reason ? (j.reason.length > REASON_MAX ? `${j.reason.slice(0, REASON_MAX - 1)}…` : j.reason) : '';
+    // a reject at or above the threshold shows the judged node's own gap in place of the reason
+    const text = j.gap ? `own gap: ${j.gap}` : (j.reason || '');
+    const reason = text.length > REASON_MAX ? `${text.slice(0, REASON_MAX - 1)}…` : text;
     judge = `judge ${j.score}${Number.isFinite(j.threshold) ? ` vs ${j.threshold}` : ''}${reason ? ` — ${reason}` : ''}`;
   }
   const tail = [];

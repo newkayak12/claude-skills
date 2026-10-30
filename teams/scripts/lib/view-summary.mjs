@@ -27,9 +27,18 @@ export function cardState(c) {
 // a cancelled task nothing is running, and what was in flight reads as not started.
 const idleIfCancelled = (m, s) => (m.state === 'cancelled' && s === 'running' ? 'pending' : s);
 
+// A story's status as of its current attempt. A verdict counts only once the card has settled and
+// only when it judged this attempt; during a retry the old verdict says nothing about what runs now.
+export function storyNow(m, c, v) {
+  const state = idleIfCancelled(m, cardState(c));
+  const settled = state === 'failed' || state === 'done';
+  const judged = !!v && (v.attempt != null ? v.attempt === c.attempt : c.attempt == null || c.attempt <= 1);
+  return { state, attempt: c.attempt, verdict: settled && judged ? v.verdict : null };
+}
+
 export function cardsOf(m) {
   const out = [];
-  const add = (c, kind, stage) => out.push({ c, kind, stage, state: idleIfCancelled(m, cardState(c)) });
+  const add = (c, kind, stage) => out.push({ c, kind, stage, state: storyNow(m, c, null).state });
   for (const p of m.packages || []) {
     if (p.phase === 'planning') add(p, 'plan', 'plan');
     else if (p.origin) add(p, 'defect', 'qa');
@@ -185,7 +194,6 @@ export function metrics(model, { now = Date.now() } = {}) {
     const begun = (Number(c.attempt) || 0) - (rfa ? rfa - 1 : 0) - (idle ? 1 : 0);
     s.attempt = Math.max(s.attempt, begun, 0);
     s.rfa = rfa;
-    s.gap = (c.accept && Array.isArray(c.accept.gaps) && c.accept.gaps.length) ? c.accept.gaps[0] : null;
     for (const e of (c.accept && c.accept.scoped_out) || []) s.scoped_out.push({ gap: e.gap, belongs_to: e.belongs_to });
   }
 
@@ -213,11 +221,11 @@ export function metrics(model, { now = Date.now() } = {}) {
     let judge = null;
     if (j && !stale) {
       const deciding = j.verdict === 'reject' && j.score != null && threshold != null && j.score >= threshold;
-      const g = deciding && s.gap != null ? scrub(typeof s.gap === 'object' ? (s.gap.text || JSON.stringify(s.gap)) : s.gap) : '';
+      const g = deciding && j.cause != null ? scrub(j.cause) : '';
       judge = { score: j.score, threshold, reason: scrub(j.reason) || null, gap: g || null };
     }
     if (maxAttempts != null) s.attempt = Math.min(s.attempt, maxAttempts);
-    const { stage, rfa, gap, ...out } = s;
+    const { stage, rfa, ...out } = s;
     return { ...out, judge, cost_usd: r4(s.cost_usd), retry_cost_usd: r4(s.retry_cost_usd), stages: rows(s.stages) };
   });
 

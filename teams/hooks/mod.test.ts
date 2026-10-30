@@ -1490,6 +1490,8 @@ const story = (key: string, title: string, over: Record<string, unknown> = {}) =
   return {
     key, title, last_verdict: null, cost_usd: null, cost_estimated: false, try: null, max: null,
     live: true, elapsed_ms: null, run_file: null, owner_key: key, ...over, ...markOf(base.state, base.doing),
+    // a STORY item's status is one fixed word for every state (view-floor.mjs itemMarkOf); `doing` stays a field
+    word_key: base.state, word: base.state === 'acting' ? 'working' : base.state === 'you' ? 'needs you' : base.state,
   }
 }
 const epicOf = (id: string, key: string, items: unknown[], over: Record<string, unknown> = {}) => ({
@@ -1529,10 +1531,11 @@ for (const surface of SURFACES) {
     expect(b).toContain('idle')
     expect(b).toContain('1h 2m')
     expect(b).not.toContain('$')
-    for (const part of ['small thing', 'reading', '35s', '$1.50', 'run-7', '▸']) expect(c).toContain(part)
+    for (const part of ['small thing', 'working', '35s', '$1.50', 'run-7', '▸']) expect(c).toContain(part)
+    expect(c).not.toContain('reading')
     // the same column starts at the same character on every row
     expect(a.indexOf('rejected')).toBe(b.indexOf('idle'))
-    expect(a.indexOf('rejected')).toBe(c.indexOf('reading'))
+    expect(a.indexOf('rejected')).toBe(c.indexOf('working'))
     expect(a.indexOf('4m')).toBe(b.indexOf('1h 2m'))
     expect(a.indexOf('4m')).toBe(c.indexOf('35s'))
     // the icon leads each row
@@ -2446,6 +2449,55 @@ for (const cols of [86, 110, 190]) {
       const text = (await ui.findAll({ type: 'Text' })).map(t => String(t.text)).join('\n')
       expect(text).toContain('report writer')
       expect(text).not.toContain('->')
+    })
+  }
+}
+
+// ---- card94: one fixed status word per STORY row, no '->', the title and the reason get the room ----
+// the widths the host gives: pane frame 86 = bodyColumns 82, and the side pane of a 190- and a 110-column screen = 78 and 46
+const T40 = 'Retry queue drains stale jobs on restart' // 40 characters
+const R120 = 'The tenant cap is skipped when two workers claim one job at the same moment, so a burst of claims can exceed the limit.'
+const DOING = '-> Bash node --test teams/scripts/test-view-summary.mjs teams/scripts/test-view-floor.mjs teams/scripts/test-view.mjs'
+const CARD94 = [
+  epicOf('tA', 'E-3a3a3bb5', [
+    story('E-3a3a3bb5/P2', T40, { doing: DOING, metrics: numbers({ attempt: 2, judge: null, retry_cost_usd: 0, out_of_retries: false }) }),
+    story('E-3a3a3bb5/P3', 'Billing export batches by tenant', { state: 'failed', last_verdict: 'reject', metrics: numbers({ attempt: 1, judge: { score: 70, threshold: 90, reason: R120, gap: null }, retry_cost_usd: 0, out_of_retries: false }) }),
+    story('E-3a3a3bb5/P4', 'Webhook signer rotates keys nightly', { state: 'failed', last_verdict: 'reject', metrics: numbers({ attempt: 1, judge: { score: 93, threshold: 90, reason: 'sound', gap: R120 }, retry_cost_usd: 0, out_of_retries: false }) }),
+  ]),
+]
+for (const surface of SURFACES) {
+  for (const bodyColumns of [82, 78, 46]) {
+    test(`card94 ${surface} at ${bodyColumns} body columns: STORY rows have one status word, no '->', the title and the reason keep their room`, async ($, on) => {
+      await seeded($, on, { status: stat(), tasks: CARD94, task: demo() }, surface, undefined, { epic: 'tA', view: 'stories' }, true)
+      const ui = await $.ui.mount({ plugin: 'teams', surface, component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns, placement: 'dock' } } as never)
+      const all = (await ui.findAll({ type: 'Text' })).map(t => String(t.text))
+      if (surface === 'terminal') sound(bodyOf(frame((await ui.drawn()) as any, 'Teams', bodyColumns + 4)), bodyColumns + 4)
+      for (const l of all) {
+        expect(l).not.toContain('->')
+        expect(cells(l)).toBeLessThanOrEqual(bodyColumns - 4)
+      }
+      const rows = all.filter(l => /^[▸ ] +[●◌⚑✔✘⊘]  \S/.test(l) && !EPIC_LINE.test(l))
+      expect(rows).toHaveLength(3)
+      const parts = rows.map(l => l.replace(/^[▸ ] +[●◌⚑✔✘⊘]  /, '').split(/ {2,}/))
+      // the title shows its first words
+      const title = parts[0]![0]!.replace(/…$/, '')
+      expect(T40.startsWith(title)).toBe(true)
+      expect(cells(title)).toBeGreaterThanOrEqual(bodyColumns === 46 ? 16 : 24)
+      expect(title).toContain(bodyColumns === 46 ? 'Retry queue' : 'Retry queue drains')
+      // one fixed word per row: the acting row says working, the rejected rows rejected, nothing else beside it
+      expect(parts[0]![1]).toBe('working')
+      expect(parts[1]![1]).toBe('rejected')
+      expect(parts[2]![1]).toBe('rejected')
+      // the 120-char reason (the gap of the 93 vs 90 row) is the line under its row: >= 40 cells, ends in …
+      const notes = [/^\s+The tenant cap/, /^\s+own gap: The tenant cap/].map(re => all.find(l => re.test(l))!)
+      for (const note of notes) {
+        expect(note).toBeDefined()
+        expect(cells(note.trim())).toBeGreaterThanOrEqual(40)
+        expect(note.trimEnd().endsWith('…')).toBe(true)
+      }
+      const note1 = notes[0]!
+      if (bodyColumns === 46) expect(note1.startsWith('  ') && !note1.startsWith('   ')).toBe(true)
+      else expect(rows[2]).toContain('judge 93 vs 90')
     })
   }
 }
