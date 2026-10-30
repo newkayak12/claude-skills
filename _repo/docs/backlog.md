@@ -153,7 +153,7 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
       one real Sprint on teams 0.61.5+ shows two ready packages running at once (ledger: two `dispatch`
       open together, no `auto_parallel_decreased` from a usage number or a reason text).
 
-109. **teams QA files one defect once, and integrate takes overlapping fixes instead of blocking**
+109. **teams QA files one defect once, and integrate takes overlapping fixes instead of blocking** — in E-7e44f783
     - Why: E-ea14c9c4, 2026-10-30: QA-F1 filed 15 defects for 4 findings (docs D4/D6/D8/D11, ready_waiting
       D5/D7/D9/D12/D14/D15, release D10 = P2); every one was built and accepted (~$61 for the Sprint),
       then `integrate:3` stopped `blocked` on a conflict between the docs duplicates. Taken by hand:
@@ -319,8 +319,12 @@ toasts).
       band now list the worktree task (was "no task running"); q, Esc and the command again close it.
       Defect: the `⑂ <worktree>` mark is appended after the title (`teams-draw.tsx:219`, `mod.tsx:962`),
       so it is cut off first and never shows at 190 (row `Backlog card 108 (teams plugin), in…`) or 110.
-    - Acceptance (left): the mark shows at 190 and 110 (e.g. before the title, short), shown to the user
-      and approved; `node -e '… => …'` checked against repo-rules.
+    - Fixed 2026-10-31 in E-d19daa16 (`e9b1d5b0`; goal gate 95; plugin test 431/431): the mark is drawn
+      before the title. Live look (E-7e44f783 running in `../claude-skills-c109`): 190 row
+      `E-7e44f783  ⑂ claude-skills-c109 · Backlog card…   running  0/0  34s`, band
+      `teams · ⑂ claude-skills-c109 · Backlog card 109 …`; 110 row `⑂ claude-sk…`, band `⑂ claude-skills-c…`.
+      `node -e '[1,2].map(x => x*2)'` runs, not refused (the earlier refusal not reproduced).
+    - Acceptance (left): the user approves the 190/110 captures.
 
 75. **smart-compact fires on the same context % the person sees in the status line** — part in E-3f6657e7 (6d5809b2)
     - 2026-10-26: smart-compact now computes `round((input + cache_creation + cache_read) / window * 100)`, the
