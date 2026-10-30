@@ -116,7 +116,7 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104.
 
 ### teams parallelism — first
 
-101. **teams runs ready packages at the width shape allows; a token count is not vendor pushback** — in E-f64c3884
+101. **teams runs ready packages at the width shape allows; a token count is not vendor pushback** — in E-ce2bcff4
     - Why: user, 2026-10-29: "harness, graph, teams 각 phase를 병렬로 할 수는 없는건가?", then "네네 그리고
       최우선". Seen in E-eb3d399f: `auto_parallel_decreased` 2→1 at `dispatch:P2:1`, so the ready retry
       `dispatch:P2:2` waited ~24 min (opened 1793251891209, dispatched 1793253304717) until P1 finished.
@@ -157,7 +157,7 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104.
       quality needs drawn sprite assets (procedural canvas gives agent-town level, not the image); not pulled
       until the person decides where the art comes from.
 
-94. **teams-status shows the numbers that explain a run: attempts and judge scores, cost and time, stalls, quality** — three defects in E-4f12f406
+94. **teams-status shows the numbers that explain a run: attempts and judge scores, cost and time, stalls, quality** — three defects in E-db7e3226
     - Why: user, 2026-10-28: "teams-status 조금 더 의미있는 지표 노출해서 개선해야겠더라". In E-8b9c417d the
       pane showed P2 "failed" three times; why (judge 88/90, "belongs to P3") was only in the ledger.
     - Acceptance (computed in node, `view-summary.mjs`; the mod renders it): per STORY attempt n/max, last judge
@@ -253,6 +253,16 @@ toasts).
 ### Subagents and parallel runs — use and clean up (user, 2026-10-17)
 
 ### teams plugin bugs
+
+107. **A task's daemon and driver survive the session that opened it**
+    - Why: 2026-10-30, E-f64c3884 (card 101) and E-4f12f406 (card 94), both size S, ~10 min in: when the
+      opening Claude Code session restarted, both drivers and daemons were gone (0 `claude -p`), no
+      `daemon_done`, nothing committed; `view.mjs` read them `stalled · impl`. Cancelled, cleaned and
+      reopened by hand from their `.harness-run/*-run1` plans (E-ce2bcff4, E-db7e3226). Cause unverified
+      (processes not detached from the MCP server's process group, or the restart killed the tree).
+    - Acceptance: a task opened from a session keeps running after that session exits (test: spawn,
+      kill the parent MCP process, the daemon still ticks); a task whose daemon died is resumed by
+      `tm_retry` on its own run dir without a re-plan.
 
 106. **One teams web viewer on one port; a task is a path, not a port**
     - Why: 2026-10-30, two tasks open at once got two servers: E-f64c3884 at `127.0.0.1:7431`, E-4f12f406
