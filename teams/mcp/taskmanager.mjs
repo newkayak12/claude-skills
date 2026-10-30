@@ -63,7 +63,7 @@ import { gateIntegrity, formatList } from './gateintegrity.mjs';
 import { writeDocs, renderPrd, cardDocuments, questionLine } from './docs.mjs';
 import { mode as wikiMode } from './wikibridge.mjs';
 import { harnessVerdict, taskTag, graphRunPath } from './harnessrun.mjs';
-import { baseline as scopeBaseline, ownVerdict } from './scope.mjs';
+import { baseline as scopeBaseline, ownVerdict, inScope } from './scope.mjs';
 import { SCRATCH_RULE, newTopLevelDirs, manifestPathOf } from './layout-guard.mjs';
 import { logReply, renderStreamLine, renderLedgerLine } from './tasklog.mjs';
 import { validate as validateDiagram, renderToFile as renderDiagram } from './diagram.mjs';
@@ -3062,6 +3062,10 @@ function spawnChildDriver(task, nodeIdLabel, child, opts = {}) {
     // A nested claude refuses to start inside a claude session, and resolving the tasks dir
     // keeps a relative HARNESS_TASKS_DIR pointing at the same place from the child's cwd.
     delete env.CLAUDECODE;
+    // The own-write record is the size-S driver's alone (spawnHarnessDriver sets it via opts.env);
+    // a package driver never inherits it from the parent.
+    delete env.TEAMS_OWN_WRITES;
+    delete env.TEAMS_OWN_RUN;
     if (process.env.HARNESS_TASKS_DIR) env.HARNESS_TASKS_DIR = tasksRoot();
     // The project wiki lives in the main project, never in a worktree a child may run in.
     env.TEAMS_WIKI_ROOT = task.cwd;
@@ -6455,6 +6459,8 @@ function harnessPrompt(task, opts = {}) {
 function spawnHarnessDriver(task, opts = {}) {
   return spawnChildDriver(task, 'S', task.harness_run, {
     prompt: harnessPrompt(task, opts), harness: true,
+    // The hook (hooks/own-writes.mjs) records this driver's writes only when it sees these two.
+    env: { TEAMS_OWN_WRITES: ownWritesPath(task.cwd, task.run_id), TEAMS_OWN_RUN: task.run_id },
     ...(Number.isInteger(opts.attempt) ? { attempt: opts.attempt } : {}),
   });
 }
@@ -6464,6 +6470,7 @@ export function openHarnessRun(task) {
   task.harness_run = {
     cwd: task.cwd, opened_at: Date.now(), route: null, run: null,
     pointer: join(dir, 'harness-run.json'), report_path: join(dir, 'harness-report.md'),
+    writes_path: ownWritesPath(task.cwd, task.run_id),
   };
   // Baseline of what is already dirty, so the run's scope check counts only what it touches.
   try {
@@ -6542,18 +6549,47 @@ export function readOwnWrites(cwd, runId) {
   return [...out];
 }
 
+// A fallback run has no run file: its plan and setgoal are RUN/01-plan.md and RUN/02-goal-spec.json.
+// The same shape scopePathsFromRun reads from a graph run.
+function fallbackScopeRun(runDir) {
+  const text = (f) => { try { return readFileSync(join(runDir, f), 'utf8'); } catch { return ''; } };
+  return { nodes: [
+    { stage: 'plan', state: 'done', result: { plan: text('01-plan.md') } },
+    { stage: 'setgoal', state: 'done', result: { spec: text('02-goal-spec.json') } },
+  ] };
+}
+
 // The verdict the engine computes on the finish read of a size-S run: no model step. null when it
-// cannot be computed (not a graph run, no baseline file). Empty scope is ok:null / no_scope.
-export function computeScopeVerdict(h, run) {
-  if (!run || run.route !== 'graph' || !h.baseline_path) return null;
+// cannot be computed (a route it does not read, no baseline file). Empty scope is ok:null / no_scope.
+// own = the union of the task-id record (the size-S driver's, written by hooks/own-writes.mjs) and,
+// on the graph route, the graph run-id record; null only when both are missing. With task.base_commit
+// the paths the run committed (base..HEAD) count as touched too, still only those in the own record.
+export function computeScopeVerdict(h, run, task) {
+  if (!run || (run.route !== 'graph' && run.route !== 'fallback') || !h.baseline_path) return null;
   let base; let runFile;
-  try { base = JSON.parse(readFileSync(h.baseline_path, 'utf8')); runFile = JSON.parse(readFileSync(graphRunPath(run.cwd, run.run_id), 'utf8')); } catch { return null; }
+  try {
+    base = JSON.parse(readFileSync(h.baseline_path, 'utf8'));
+    runFile = run.route === 'graph' ? JSON.parse(readFileSync(graphRunPath(run.cwd, run.run_id), 'utf8')) : fallbackScopeRun(run.run_dir);
+  } catch { return null; }
   const scope = scopePathsFromRun(runFile);
   if (!scope.length) return { ok: null, reason: 'no_scope', outOfScope: [], scope, own_record: false };
-  const own = readOwnWrites(h.cwd, run.run_id);
+  const records = [];
+  if (task && task.run_id) records.push(readOwnWrites(h.cwd, task.run_id));
+  if (run.route === 'graph') records.push(readOwnWrites(h.cwd, run.run_id));
+  const found = records.filter((r) => r !== null);
+  const own = found.length ? [...new Set(found.flat())] : null;
   try {
     const r = ownVerdict({ cwd: h.cwd, baseline: base, scope, own });
-    return { ok: r.ok, reason: r.ok ? 'pass' : 'out_of_scope', outOfScope: r.outOfScope, scope, own_record: own !== null };
+    let outOfScope = r.outOfScope;
+    if (own && task && task.base_commit) {
+      const c = git(h.cwd, ['diff', '--name-only', `${task.base_commit}..HEAD`]);
+      if (c.ok) {
+        const committed = c.out.split('\n').filter((p) => p && own.includes(p) && !inScope(p, scope));
+        outOfScope = [...new Set([...outOfScope, ...committed])].sort();
+      }
+    }
+    const ok = outOfScope.length === 0;
+    return { ok, reason: ok ? 'pass' : 'out_of_scope', outOfScope, scope, own_record: own !== null };
   } catch (e) {
     return { ok: null, reason: `verdict_error: ${String((e && e.message) || e).slice(0, 120)}`, outOfScope: [], scope, own_record: own !== null };
   }
@@ -6575,10 +6611,10 @@ export function serviceHarnessRun(task) {
   // The finish read: the engine computes the scope verdict once, from the run's plan/setgoal
   // scope, its baseline and its own-write record.
   if (v && v.finished && !h.scope) {
-    const s = computeScopeVerdict(h, run);
+    const s = computeScopeVerdict(h, run, task);
     if (s) {
       h.scope = { ok: s.ok, reason: s.reason, outOfScope: s.outOfScope, scope: s.scope, own_record: s.own_record, at: Date.now() };
-      record(task, { event: 'scope_verdict', task_id: task.run_id, ok: s.ok, reason: s.reason, out_of_scope: s.outOfScope, scope: s.scope, own_record: s.own_record });
+      record(task, { event: 'scope_verdict', task_id: task.run_id, ok: s.ok, reason: s.reason, out_of_scope: s.outOfScope, scope: s.scope, own_record: s.own_record, route: run.route, gates: s.own_record === true && s.ok === false });
     }
   }
   const changed = () => snap() !== before;

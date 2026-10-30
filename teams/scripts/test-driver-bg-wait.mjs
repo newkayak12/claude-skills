@@ -28,7 +28,7 @@ writeFileSync(join(STUB_DIR, 'driver.mjs'), [
   "import { writeFileSync } from 'node:fs';",
   "import { join } from 'node:path';",
   "const [dir, tag, prompt] = process.argv.slice(2);",
-  "writeFileSync(join(dir, tag + '.json'), JSON.stringify({ env: process.env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS ?? null, prompt }));",
+  "writeFileSync(join(dir, tag + '.json'), JSON.stringify({ env: process.env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS ?? null, prompt, own: [process.env.TEAMS_OWN_WRITES ?? null, process.env.TEAMS_OWN_RUN ?? null] }));",
 ].join('\n') + '\n');
 
 const tm = await import(join(HERE, '..', 'mcp', 'taskmanager.mjs'));
@@ -104,4 +104,29 @@ test('a size-S harness driver gets the wait ceiling 0 and the never-end-a-turn s
   const got = await seen('harness');
   assert.equal(got.env, '0');
   assert.match(got.prompt, SENTENCE);
+});
+
+test('TEAMS_OWN_* reach the size-S driver only: a package driver gets neither even when the parent env has them', async () => {
+  process.env.TEAMS_OWN_WRITES = '/parent/.harness-run/writes/leak.jsonl';
+  process.env.TEAMS_OWN_RUN = 'leak';
+  try {
+    process.env.HARNESS_CHILD_DRIVER = `node ${join(STUB_DIR, 'driver.mjs')} ${OUT_DIR} package-own`;
+    const pkg = seedTask(repo(), [
+      done('size', 'size', []), done('shape', 'shape', ['size']), done('critique', 'critique', ['shape']),
+      graph.node('dispatch:P1:1', 'dispatch', ['critique'], { subgoal_id: 'P1' }),
+      graph.node('accept:P1:1', 'accept', ['dispatch:P1:1'], { subgoal_id: 'P1' }),
+    ]);
+    tm.advanceDispatches(pkg);
+    assert.deepEqual((await seen('package-own')).own, [null, null]);
+
+    process.env.HARNESS_CHILD_DRIVER = `node ${join(STUB_DIR, 'driver.mjs')} ${OUT_DIR} harness-own`;
+    const cwd = repo();
+    const id = seedTask(cwd, [graph.node('size', 'size', []), graph.node('shape', 'shape', ['size']), graph.node('critique', 'critique', ['shape'])],
+      { size: null, spec: null });
+    const r = await tm.callTool('tm_submit', { task_id: id, node_id: 'size', payload: { stage_ok: true, size: 'S', flow: 'develop', sizing: ['wc -l -> small'], handoff: 'h', evidence: 'e' } });
+    assert.equal(r.task_state, 'harness', JSON.stringify(r));
+    const got = await seen('harness-own');
+    assert.deepEqual(got.own, [join(cwd, '.harness-run', 'writes', `${id}.jsonl`), id]);
+    assert.equal(JSON.parse(readFileSync(tm.taskPath(id), 'utf8')).harness_run.writes_path, got.own[0]);
+  } finally { delete process.env.TEAMS_OWN_WRITES; delete process.env.TEAMS_OWN_RUN; }
 });
