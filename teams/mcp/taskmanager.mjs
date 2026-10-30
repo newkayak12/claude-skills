@@ -7711,9 +7711,23 @@ export function advanceDispatches(taskRef) {
         const pb = packageOf(task, b.subgoal_id);
         return (Number.isInteger(pa && pa.priority) ? pa.priority : 0) - (Number.isInteger(pb && pb.priority) ? pb.priority : 0);
       });
+    const opened = [];
+    const waiting = [];
     for (const n of storyReady) {
-      if (slots <= 0) break;
-      if (take(n)) slots--;
+      if (slots <= 0) { waiting.push(n.node_id); continue; }
+      if (take(n)) { slots--; opened.push(n.node_id); }
+    }
+    // Record the width this tick used. Bookkeeping only: nothing here gates readiness. Rewritten
+    // (and the ledger line added) only when cap|running|waiting changes or something opened, so
+    // the daemon's idle polls leave task.json alone.
+    const running = runningStories + opened.length;
+    const sig = `${maxParallel}|${running}|${waiting.join(',')}`;
+    const prev = task.dispatch_width;
+    if (opened.length || !prev || prev.sig !== sig) {
+      task.dispatch_width = { cap: maxParallel, policy: Number.isInteger(configuredMax) ? 'fixed' : 'auto', running, opened, waiting, at: Date.now(), sig };
+      if ((opened.length || waiting.length) && (!prev || prev.sig !== sig)) {
+        record(task, { event: 'dispatch_width', task_id: task.run_id, cap: maxParallel, policy: task.dispatch_width.policy, running, opened, waiting });
+      }
     }
     return out;
   });
@@ -8596,6 +8610,8 @@ function toolStatus(a) {
       : verdict(task, n))),
     daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon), log: task.daemon.log, stderr: task.daemon.stderr, spawn_count: task.daemon.spawn_count, restarts: task.daemon.restarts || 0, exhausted: !!task.daemon.exhausted, stderr_tail: driverStderrTail(task.daemon) } : null,
     team: task.team || null,
+    // The width the last dispatch tick used (advanceDispatches); null before any tick.
+    dispatch_width: task.dispatch_width || null,
     // Only present when max_parallel_teams is actually 'auto' - a task pinned to a fixed number
     // reads exactly as it did before this controller existed. `current` is the effective cap
     // advanceDispatches is using RIGHT NOW; `reason` names why it last moved (a clean-streak

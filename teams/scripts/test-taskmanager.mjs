@@ -3872,6 +3872,55 @@ test('tm_status/tm_next start width: three independent packages start auto_paral
   }, { max_parallel_ceiling: 6 });
 });
 
+const widthPkgs = (specs) => specs.map(([id, deps]) => ({ id, title: `module ${id}`, flow: 'develop', brief: `change ${id}.txt`, acceptance: [id], touches: [`${id}.txt`], deps }));
+
+test('dispatch_width: a fixed cap of 1 records cap/policy/running/waiting in tm_status and one deduped ledger line', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    assert.ok('dispatch_width' in await tm.call('tm_status', { task_id }), 'the key is always there, null or an object');
+    await throughCritique(tm, task_id, { acceptance: ['both build'], packages: widthPkgs([['P1', []], ['P2', []]]) });
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.children.length, 1);
+    const dw = (await tm.call('tm_status', { task_id })).dispatch_width;
+    assert.equal(dw.cap, 1);
+    assert.equal(dw.policy, 'fixed');
+    assert.equal(dw.running, 1);
+    assert.deepEqual(dw.opened, ['dispatch:P1:1']);
+    assert.deepEqual(dw.waiting, ['dispatch:P2:1']);
+    await tm.call('tm_next', { task_id });
+    const lines = readFileSync(join(root, task_id, 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.event === 'dispatch_width');
+    assert.equal(lines.length, 1, 'the second tick changed nothing, so no second line');
+    assert.equal(lines[0].cap, 1);
+    assert.deepEqual(lines[0].waiting, ['dispatch:P2:1']);
+  }, { max_parallel_teams: 1 });
+});
+
+test('dispatch_width: present under auto too, with policy auto and the cap in force', async () => {
+  await withTask(async ({ tm, task_id }) => {
+    await throughCritique(tm, task_id, { acceptance: ['both build'], packages: widthPkgs([['P1', []], ['P2', []]]) });
+    await tm.call('tm_next', { task_id });
+    const st = await tm.call('tm_status', { task_id });
+    assert.equal(st.dispatch_width.policy, 'auto');
+    assert.equal(st.dispatch_width.cap, st.auto_parallel.current);
+    assert.equal(st.dispatch_width.running, 2);
+    assert.deepEqual(st.dispatch_width.waiting, []);
+  }, { max_parallel_ceiling: 6 });
+});
+
+test('overlap kept: P3 (deps P1 accepted) opens while P2 is still running', async () => {
+  await withTask(async ({ tm, g, task_id }) => {
+    await throughCritique(tm, task_id, { acceptance: ['all build'], packages: widthPkgs([['P1', []], ['P2', []], ['P3', ['P1']]]) });
+    const nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.children.map((c) => c.node_id).sort(), ['dispatch:P1:1', 'dispatch:P2:1']);
+    await completeChild(g, nx.children.find((c) => c.node_id === 'dispatch:P1:1'));
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' })).state, 'done');
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) })).state, 'done');
+    const n2 = await tm.call('tm_next', { task_id });
+    assert.ok(n2.children.some((c) => c.node_id === 'dispatch:P3:1'), JSON.stringify(n2.children));
+    const st = await tm.call('tm_status', { task_id });
+    assert.equal(st.nodes.find((n) => n.node_id === 'dispatch:P2:1').state, 'running');
+  }, { max_parallel_ceiling: 6, max_parallel_teams: 3 });
+});
+
 // portfolio-consolidate-8518d5dd: integrate:6 came back verified:false with checks/evidence/
 // unowned and no reason or gaps - the ledger, the report and triage all showed "integrate:6: "
 // with nothing after the colon. The manager now synthesizes one the way the broker does for a
