@@ -30,7 +30,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const PARTS = ['meta.md', 'problem.md', 'decision.md', 'result.md', 'learned.md', 'gaps.md', 'history.md'];
-const STATUSES = ['raw', 'shaped', 'written', 'rendered', 'reviewed'];
+// selected / excluded: manage's step 2 (sources/선정.md); written: its draft step
+const STATUSES = ['raw', 'shaped', 'selected', 'excluded', 'written', 'rendered', 'reviewed'];
 const FLAGS = new Set(['id', 'source', 'title', 'period', 'role', 'tags', 'note', 'status', 'later-step', 'question', 'citation', 'add-source', 'item']);
 const ANSWERED = '[답변됨]';
 const ID_RE = /^[\p{L}\p{N}][\p{L}\p{N}-]*$/u;
