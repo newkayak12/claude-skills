@@ -7064,14 +7064,29 @@ function autoParallelCeiling(task) {
   return Math.max(AIMD_START, Math.min(Math.floor(cores / 2) || 1, 6));
 }
 
-// Lazily initializes task.auto_parallel the first time anything asks for it - a task opened
-// before this existed, or one whose max_parallel_teams is a fixed number and never needed it, has
-// no such field until (if ever) it does. Idempotent: calling it again after saveRun has already
-// persisted a state leaves that state alone.
+// Lazily initializes task.auto_parallel the first time anything asks for it once spec.packages
+// exists - before that there is no shape to size the start width from, so it returns null and every
+// caller treats that as "no controller state yet". The start width is the DAG's own widest round
+// (shapeAnalysis.max_parallel_width) capped by the ceiling; a missing shape or width 0 falls back to
+// AIMD_START. `max` is the most the width may grow to again (min(shape width, ceiling), or the
+// ceiling alone with no shape width). A stored state is kept; only its `max` follows the packages
+// when tm_file adds some that widen the DAG (never shrinks it, never moves `current`).
 export function ensureAutoParallel(task) {
-  if (!task.auto_parallel || !Number.isInteger(task.auto_parallel.current)) {
-    task.auto_parallel = { current: AIMD_START, streak: 0, ceiling: autoParallelCeiling(task), updated_at: Date.now() };
+  const packages = task.spec && task.spec.packages;
+  const stored = task.auto_parallel;
+  if (stored && Number.isInteger(stored.current)) {
+    if (Array.isArray(packages) && Number.isInteger(stored.max)) {
+      const w = shapeAnalysis(packages).max_parallel_width;
+      if (w > 0) stored.max = Math.max(stored.max, Math.min(w, stored.ceiling));
+    }
+    return stored;
   }
+  if (!Array.isArray(packages)) return null;
+  const ceiling = autoParallelCeiling(task);
+  const shapeWidth = shapeAnalysis(packages).max_parallel_width;
+  const max = shapeWidth > 0 ? Math.min(shapeWidth, ceiling) : ceiling;
+  const current = shapeWidth > 0 ? max : Math.min(AIMD_START, ceiling);
+  task.auto_parallel = { current, streak: 0, ceiling, max, updated_at: Date.now() };
   return task.auto_parallel;
 }
 
@@ -7083,50 +7098,43 @@ export function ensureAutoParallel(task) {
 // wording either reader should catch never has to be taught to just one of them.
 const PUSHBACK_RE = /rate[_ -]?limit|\b429\b|\b529\b|overloaded|api_error|insufficient_quota|usage_limit_reached|quota (?:exceeded|exhausted)|hit your (?:usage )?limit|exceeded your current quota/i;
 
-// Two of PUSHBACK_RE's own terms are also substrings of routine claude -p stream-json telemetry
-// that appears on EVERY session regardless of health - verified against the portfolio-refresh
-// run's real driver logs (0.34.0, fixed cap 2, so the controller never saw them, but 'auto'
-// would): every dispatch's stream.jsonl carries at least one `{"type":"rate_limit_event",
-// "rate_limit_info":{"status":"allowed",...}}` usage ping (`rate_limit` alone would match it),
-// and every `result` event carries `"api_error_status":null` (`api_error` alone would match the
-// FIELD NAME regardless of its null value) - together they made PUSHBACK_RE true on 9/9 real
-// STORY dispatch folds in that run, none of which had anything actually wrong. Left unfixed,
-// 'auto' would halve on its very first fold, forever, against any real claude driver. Both are
-// stripped before PUSHBACK_RE ever sees the text; a rate_limit_event whose status is NOT
-// "allowed" (a throttled or exhausted window) and an api_error_status that is NOT null are left
-// alone and still read as real pushback.
-function stripRoutineTelemetryNoise(text) {
-  if (!text) return text;
-  let out = text;
-  if (out.includes('rate_limit_event')) {
-    out = out.split('\n').filter((line) => {
-      if (!line.includes('rate_limit_event')) return true;
-      try {
-        const parsed = JSON.parse(line);
-        return !(parsed && parsed.type === 'rate_limit_event' && parsed.rate_limit_info && parsed.rate_limit_info.status === 'allowed');
-      } catch {
-        return true; // not one clean JSON line - leave it for PUSHBACK_RE to judge
-      }
-    }).join('\n');
+// Pushback is read from error-shaped fields of PARSED stream-json events, never from a regex over
+// the raw log. A claude -p stream carries routine telemetry on every session - a rate_limit_event
+// with status "allowed", `"api_error_status":null` on every result, and usage counters such as
+// `"cache_creation_input_tokens":429` (which a \b429\b match once read as a 429 and halved the
+// width in E-eb3d399f). What counts: a result event with is_error true, a non-null
+// api_error_status, a rate_limit_event whose status is not "allowed". Returns a short reason, or ''.
+function pushbackFromEvent(e) {
+  if (!e || typeof e !== 'object' || Array.isArray(e)) return '';
+  if (e.type === 'rate_limit_event') {
+    const status = e.rate_limit_info && e.rate_limit_info.status;
+    return typeof status === 'string' && status !== 'allowed' ? `rate_limit_event status ${status}` : '';
   }
-  return out.replace(/"api_error_status"\s*:\s*null/g, '');
+  if (e.api_error_status != null) return `api_error_status ${JSON.stringify(e.api_error_status)}`;
+  if (e.type === 'result' && e.is_error === true) return `result is_error${typeof e.result === 'string' ? `: ${e.result.slice(0, 200)}` : ''}`;
+  return '';
 }
 
-// Reads a dispatch's own driver log the same way driverUsageLimitText does (existence check,
-// plain readFileSync, no second NDJSON walk) rather than re-parsing the stream event-by-event -
-// PUSHBACK_RE runs over the raw text, which catches the same evidence whether it surfaces as a
-// `result` event's own text, a stderr line from a driver SIGKILLed before its stream closed, or
-// any other shape a vendor's error happens to take. driverStderrTail is checked first since it is
-// small and always available; the full log is only read when the tail alone said nothing.
+// stderr is the vendor/host error channel, so PUSHBACK_RE runs over its tail as plain text (a
+// driver SIGKILLed before its stream closed leaves its evidence only there). The stream log is
+// walked line by line and only a line that parses as a JSON event is judged, by pushbackFromEvent;
+// plain text in the stream log (a tool result that mentions "overloaded_error") is intentionally
+// not pushback.
 function dispatchPushbackText(driver) {
   if (!driver) return '';
-  const tail = stripRoutineTelemetryNoise(driverStderrTail(driver, 2000));
+  const tail = driverStderrTail(driver, 2000);
   if (PUSHBACK_RE.test(tail)) return tail;
   if (!driver.log) return '';
   try {
     if (!existsSync(driver.log)) return '';
-    const text = stripRoutineTelemetryNoise(readFileSync(driver.log, 'utf8'));
-    return PUSHBACK_RE.test(text) ? text.slice(-2000) : '';
+    for (const line of readFileSync(driver.log, 'utf8').split('\n')) {
+      if (!line.trim()) continue;
+      let e;
+      try { e = JSON.parse(line); } catch { continue; }
+      const reason = pushbackFromEvent(e);
+      if (reason) return reason;
+    }
+    return '';
   } catch {
     return '';
   }
@@ -7149,6 +7157,21 @@ function crashesClustered(task) {
     .sort((a, b) => a - b);
   for (let i = 1; i < restarts.length; i++) if (restarts[i] - restarts[i - 1] <= CLUSTER_WINDOW_MS) return true;
   return false;
+}
+
+// One entry per advanceDispatches pass (the daemon's tick, or a tm_next poll) in a fixed-length
+// list on task.auto_parallel_ticks, so tm_status can show what width the scheduler ran at, how many
+// STORYs held a slot and how many were ready but waiting. The ledger gets an event only when the
+// width differs from the previous tick's - not one line per tick.
+const AIMD_TICKS_KEEP = 30;
+function recordAutoParallelTick(task, state, { running, ready_waiting }) {
+  const ticks = Array.isArray(task.auto_parallel_ticks) ? task.auto_parallel_ticks : [];
+  const prev = ticks.length ? ticks[ticks.length - 1] : null;
+  ticks.push({ ts: Date.now(), width: state.current, running, ready_waiting });
+  task.auto_parallel_ticks = ticks.slice(-AIMD_TICKS_KEEP);
+  if (prev && prev.width !== state.current) {
+    record(task, { event: 'parallel_width_changed', task_id: task.run_id, from: prev.width, to: state.current, running, ready_waiting });
+  }
 }
 
 // Called once per develop-STORY dispatch fold - both toolSubmit and the daemon's own loop call
@@ -7176,6 +7199,7 @@ export function updateAutoParallel(task, n, result) {
   const pkg = packageOf(task, n.subgoal_id);
   if (pkg && (pkg.phase === 'planning' || pkg.phase === 'qa' || pkg.phase === 'audit')) return;
   const state = ensureAutoParallel(task);
+  if (!state) return; // no spec.packages yet - nothing to size a width from
   const pushback = dispatchPushbackText(n.child && n.child.driver) || (crashesClustered(task) ? '(clustered driver restarts across dispatches)' : '');
   if (pushback) {
     const before = state.current;
@@ -7195,9 +7219,10 @@ export function updateAutoParallel(task, n, result) {
   // flips does not lose a clean window it already earned - it is only ever spent on a +1 while
   // budget_warned is NOT set. Growth resumes on its own if a future run clears the flag (it never
   // does today; enforceBudget sets it once and it stays), never needs its own decrease/reset.
-  if (state.streak >= AIMD_WINDOW && state.current < state.ceiling && !task.budget_warned) {
+  const cap = Number.isInteger(state.max) ? state.max : state.ceiling; // a state stored before `max` existed grows to its ceiling
+  if (state.streak >= AIMD_WINDOW && state.current < cap && !task.budget_warned) {
     const before = state.current;
-    state.current = Math.min(state.ceiling, state.current + 1);
+    state.current = Math.min(cap, state.current + 1);
     state.streak = 0;
     state.updated_at = Date.now();
     state.reason = `${AIMD_WINDOW} clean dispatches since the last change`;
@@ -7673,10 +7698,15 @@ export function advanceDispatches(taskRef) {
     // caller, not a suggestion this controller is free to override. Anything else - 'auto' (the
     // default now), or a task.json written before task.team existed at all (createTask has set
     // task.team on every task since taskmanager.mjs:187, so only a pre-existing file on disk still
-    // reaches this) - falls through to the AIMD controller above, which self-initializes at
-    // AIMD_START the first time it is asked, the same number this cap used to be pinned at forever.
+    // reaches this) - falls through to the AIMD controller above, which self-initializes from the
+    // shape's widest round once spec.packages exists (AIMD_START, the number this cap used to be
+    // pinned at forever, until then or when the shape has no width).
     const configuredMax = task.team && task.team.opts && task.team.opts.max_parallel_teams;
-    const maxParallel = Number.isInteger(configuredMax) ? configuredMax : ensureAutoParallel(task).current;
+    const autoState = Number.isInteger(configuredMax) ? null : ensureAutoParallel(task);
+    // (test-defaults.mjs pins the last arm's exact text, so the null case is its own arm above it.)
+    const maxParallel = Number.isInteger(configuredMax) ? configuredMax
+      : !autoState ? AIMD_START
+        : ensureAutoParallel(task).current;
     // A STORY still opening (claimed, no child yet) is running and holds its slot.
     const runningStories = task.nodes.filter((n) => n.stage === 'dispatch' && n.state === 'running' && !isPhaseTeam(n)).length;
     let slots = Math.max(0, maxParallel - runningStories);
@@ -7689,6 +7719,12 @@ export function advanceDispatches(taskRef) {
     for (const n of storyReady) {
       if (slots <= 0) break;
       if (take(n)) slots--;
+    }
+    if (autoState) {
+      recordAutoParallelTick(task, autoState, {
+        running: task.nodes.filter((n) => n.stage === 'dispatch' && n.state === 'running' && !isPhaseTeam(n)).length,
+        ready_waiting: storyReady.filter((n) => n.state !== 'running').length,
+      });
     }
     return out;
   });
@@ -8575,7 +8611,14 @@ function toolStatus(a) {
     // reads exactly as it did before this controller existed. `current` is the effective cap
     // advanceDispatches is using RIGHT NOW; `reason` names why it last moved (a clean-streak
     // window, or the pushback text/cluster that halved it - updateAutoParallel).
-    ...((task.team && task.team.opts && task.team.opts.max_parallel_teams === 'auto') ? { auto_parallel: ensureAutoParallel(task) } : {}),
+    // Both stay absent until spec.packages exists (no shape, no width yet). The ticks are the last
+    // AIMD_TICKS_KEEP advanceDispatches passes: {ts, width, running, ready_waiting}.
+    ...(() => {
+      if (!(task.team && task.team.opts && task.team.opts.max_parallel_teams === 'auto')) return {};
+      const ap = ensureAutoParallel(task);
+      if (!ap) return {};
+      return { auto_parallel: ap, auto_parallel_ticks: Array.isArray(task.auto_parallel_ticks) ? task.auto_parallel_ticks : [] };
+    })(),
     // Only present when either knob is actually set - a task that never asked for a budget or
     // timebox reads exactly as it did before this existed.
     ...((task.team && task.team.opts && (task.team.opts.budget_usd != null || task.team.opts.timebox_minutes != null)) ? { budget: budgetStatus(task) } : {}),
