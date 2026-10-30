@@ -8,7 +8,8 @@
 // once leading and trailing punctuation and symbols are stripped) gives no words. Hangul is romanized
 // (Revised Romanization, one syllable at a time, no liaison or assimilation) only when the text has
 // fewer than two ascii words, so a Korean sentence with one English term still reads as Korean.
-// A trailing possessive 's / ’s is dropped from a token before its punctuation is trimmed.
+// A trailing possessive 's / ’s is dropped from a token before its punctuation is trimmed; after
+// it let that what there here he she who it is a contraction and only the apostrophe goes (it's -> its).
 //
 // Card mode (see cardSlug): a request that matches "card N" / "cards N, M and K" uses only its first
 // sentence (. ! or ? followed by whitespace or the end). A plan path in it gives the plan topic's
@@ -50,11 +51,14 @@ function stripParticle(word) {
 
 const isPathLike = (tok) => tok.includes('/') || /\.[a-z][a-z0-9]{0,4}$/i.test(tok);
 
+const CONTRACTIONS = new Set('it let that what there here he she who'.split(' '));
+const dropS = (m, at, str) => (CONTRACTIONS.has(str.slice(0, at).replace(/^[\p{P}\p{S}]+/u, '')) ? 's' : '');
+
 // Words of `text` in order, each { ascii: boolean, w }, path tokens, stopwords and numbers dropped.
 function wordsOf(text) {
   const out = [];
   for (const raw of String(text ?? '').normalize('NFC').toLowerCase().split(/\s+/)) {
-    const tok = raw.replace(/['’]s(?=[\p{P}\p{S}]*$)/u, '').replace(/^[\p{P}\p{S}]+/u, '').replace(/[\p{P}\p{S}]+$/u, '');
+    const tok = raw.replace(/['’]s(?=[\p{P}\p{S}]*$)/u, dropS).replace(/^[\p{P}\p{S}]+/u, '').replace(/[\p{P}\p{S}]+$/u, '');
     if (!tok || isPathLike(tok)) continue;
     for (const m of tok.match(/[a-z0-9]+|[가-힣]+/g) ?? []) {
       if (/^[a-z0-9]/.test(m)) {

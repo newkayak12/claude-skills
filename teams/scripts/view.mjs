@@ -15,7 +15,8 @@
 //     --task <id>         a specific task id; omitted shows an index of every task found
 //     --port <n>          HTTP port; 0 picks a free one. Without it: TEAMS_VIEW_PORT, else the fixed
 //                         default 7431 (a free port when 7431 is taken - the URL printed is the
-//                         one that bound)
+//                         one that bound). TEAMS_VIEW_DEFAULT_PORT replaces 7431 as that default
+//                         (a test override, not a user knob)
 //     --once              print a text tree to stdout and exit; no server
 //
 // The page for a task is /E-<first 8 of its id> or /<slug>; the older /?task=<id> link resolves too.
@@ -70,7 +71,7 @@ function parseArgs(argv) {
 }
 
 function usage() {
-  return 'usage: node view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n> (default: TEAMS_VIEW_PORT, else 7431, else a free port)] [--once] [--view pipeline|tickets|resources] [--once --format status|events|summary|teams|board [--since <ts>] [--cwd <dir>] [--session <id>]] [--once --format report --task <id> [--cwd <dir>]] [--once --format decisions --task <id> [--card <id>]]\n';
+  return 'usage: node view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n> (default: TEAMS_VIEW_PORT, else 7431, else a free port; TEAMS_VIEW_DEFAULT_PORT replaces 7431, test override)] [--once] [--view pipeline|tickets|resources] [--once --format status|events|summary|teams|board [--since <ts>] [--cwd <dir>] [--session <id>]] [--once --format report --task <id> [--cwd <dir>]] [--once --format decisions --task <id> [--card <id>]]\n';
 }
 
 // ---------- --once --format status|events|summary|teams|decisions (the teams-status mod's data) ----------
@@ -271,7 +272,7 @@ function pageHtml() {
 
 // A task reference from the URL - a full task id (the old /?task=<uuid> link), an E-<prefix> key
 // (/E-xxxxxxxx) or a task's slug (/<slug>) - to { root, id } across every registered root, or null.
-// Tiers in order: a full id, an id starting with the key, an exact slug; inside a tier the newest
+// Tiers in order: a full id, an exact slug, an id starting with the key; inside a tier the newest
 // created_at wins. Read-only: it only lists the tasks roots.
 function findTask(roots, ref) {
   if (!ref || /[\\/]/.test(ref) || ref.includes('..')) return null;
@@ -280,8 +281,8 @@ function findTask(roots, ref) {
   const rows = roots.flatMap((root) => listTasks(root).map((r) => ({ ...r, root })));
   const tiers = [
     (r) => r.task_id === ref || r.task_id === bare,
-    (r) => String(r.task_id).replace(/^E-/, '').startsWith(bare),
     (r) => r.slug === ref,
+    (r) => String(r.task_id).replace(/^E-/, '').startsWith(bare),
   ];
   for (const is of tiers) {
     const hits = rows.filter(is);
@@ -342,6 +343,10 @@ function registerRoot(req, res, roots) {
 // A teams viewer holding the default is joined, not dodged: this root is registered into it and
 // this process exits 0. Only a non-teams holder (or an older viewer with no /register) moves it.
 function listenOn(server, port, fixed, tasksDir, onListening) {
+  const fail = (e) => {
+    process.stderr.write(`teams view: cannot listen on 127.0.0.1:${port}: ${(e && (e.code || e.message)) || e}\n`);
+    process.exit(1);
+  };
   server.once('error', async (e) => {
     if (!fixed && e && e.code === 'EADDRINUSE') {
       const v = await viewerAt(port, 1000);
@@ -349,22 +354,26 @@ function listenOn(server, port, fixed, tasksDir, onListening) {
         console.log(`teams view already running on http://127.0.0.1:${port}/`);
         process.exit(0);
       }
+      server.once('error', fail);
       server.listen(0, '127.0.0.1', onListening);
       return;
     }
-    throw e;
+    fail(e);
   });
   server.listen(port, '127.0.0.1', onListening);
 }
 
 function defaultPort() {
   const pinned = Number(process.env.TEAMS_VIEW_PORT);
-  return Number.isInteger(pinned) && pinned > 0 ? { port: pinned, fixed: true } : { port: DEFAULT_VIEW_PORT, fixed: false };
+  if (Number.isInteger(pinned) && pinned > 0) return { port: pinned, fixed: true };
+  const def = Number(process.env.TEAMS_VIEW_DEFAULT_PORT); // test override of the default, still unfixed (join/fallback)
+  return { port: Number.isInteger(def) && def > 0 ? def : DEFAULT_VIEW_PORT, fixed: false };
 }
 
 // The viewer is spawned detached (mcp/viewserver.mjs), so nothing else ever stops it. It ends itself:
-// when its tasks dir is gone (checked every DIR_CHECK_MS, no grace for a dir missing at startup), or
-// once IDLE_MS has passed with no HTTP request (GET /state.json included) and no live task. Live is
+// every DIR_CHECK_MS each registered root whose dir is gone is dropped; it ends when no registered root
+// is left (a root missing at startup counts at the first check, no grace), or once IDLE_MS has passed
+// with no HTTP request (GET /state.json included) and no live task in any remaining root. Live is
 // the set view-floor-fs.mjs calls OPEN (not exported there); BLOCKED, stalled, unknown and error rows
 // are not live. The record <root>/.view.json is left as it is - a dead pid already reads as no record.
 const DIR_CHECK_MS = 2000;

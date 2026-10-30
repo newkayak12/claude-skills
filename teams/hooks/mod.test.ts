@@ -2521,4 +2521,24 @@ for (const surface of SURFACES) {
     await seeded($, on, { status: stat(), task: demo({ worktree: null }) }, surface)
     expect(await shown(await band($, surface))).not.toContain('⑂')
   })
+  // the title cell (title · ⑂ worktree) is cut from its end at 110 columns: the tail goes first, the row keeps its cells
+  test(`${surface}: a long title with a worktree is cut to … at 110 columns, the ⑂ tail gives way`, async ($, on) => {
+    const long = 'Migrate every legacy report exporter to the new streaming writer and keep each output file identical across all supported locales'
+    const tasks = [
+      epicOf('tW', 'E-aaaaaaaa', [], { title: long, worktree: 'feature-worktree' }),
+      epicOf('tS', 'E-bbbbbbbb', [], { title: 'short', worktree: null }),
+    ]
+    await seeded($, on, { status: stat(), tasks, task: tasks[0] }, surface, undefined, { epic: 'tW' })
+    const ui = await $.ui.mount({ plugin: 'teams', surface, component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: 106, placement: 'dock' } } as never)
+    const lines = await textsOf(ui, EPIC_LINE)
+    expect(lines).toHaveLength(2)
+    const [w, s] = lines as [string, string]
+    expect(w).toContain('…')
+    expect(w).not.toContain('⑂')
+    expect(w).not.toContain('feature-worktree')
+    expect(w).toMatch(/\d+\/\d+/)
+    expect(s).toMatch(/\d+\/\d+/)
+    expect(w.indexOf('Migrate')).toBe(s.indexOf('short'))
+    for (const l of lines) expect(cells(l)).toBeLessThanOrEqual(106)
+  })
 }
