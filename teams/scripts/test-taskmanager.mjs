@@ -10285,6 +10285,117 @@ test('S1 scope verdict: two runs on one checkout - B\'s write outside A\'s scope
   }
 });
 
+// Card 81 rest, U2: the fallback route, the task-id record, committed own writes, gating.
+test('S1 fallback route + task-id record + committed + git-only + same call + writes_path: own-write gating', async () => {
+  const { serviceHarnessRun, openHarnessRun, taskState } = await import('../mcp/taskmanager.mjs');
+  const { baseline } = await import('../mcp/scope.mjs');
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const prevRoot = process.env.HARNESS_TASKS_DIR;
+  const prevNo = process.env.HARNESS_TEST_NO_DRIVER;
+  process.env.HARNESS_TASKS_DIR = root;
+  const git = (...a) => spawnSync('git', a, { cwd, encoding: 'utf8' });
+  mkdirSync(join(cwd, '.harness-run', 'writes'), { recursive: true });
+  const ledger = (id) => readFileSync(join(root, id, 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const own = (id, ...paths) => appendFileSync(join(cwd, '.harness-run', 'writes', `${id}.jsonl`), paths.map((p) => JSON.stringify({ ts: Date.now(), run_id: id, node_id: 'S', path: p })).join('\n') + '\n');
+  const base_commit = git('rev-parse', 'HEAD').stdout.trim();
+  // A finished fallback run: 01-plan.md + 02-goal-spec.json name the scope, 05-report.md ends it.
+  const mkFallback = (id, files, extra = {}) => {
+    const dir = join(root, id);
+    mkdirSync(dir, { recursive: true });
+    const bp = join(dir, 'scope-baseline.json');
+    writeFileSync(bp, JSON.stringify(baseline(cwd)));
+    const run_dir = join(cwd, '.harness-run', `fb-${id}`);
+    mkdirSync(run_dir, { recursive: true });
+    writeFileSync(join(run_dir, '01-plan.md'), `Edit \`${files}\`.\n`);
+    writeFileSync(join(run_dir, '02-goal-spec.json'), JSON.stringify({ goal: 'g', acceptance: ['done'] }));
+    writeFileSync(join(run_dir, '04-goal-gate.json'), JSON.stringify({ pass: true, match_pct: 95 }));
+    writeFileSync(join(run_dir, '05-report.md'), 'done\n');
+    const opened_at = Date.now();
+    writeFileSync(join(dir, 'harness-run.json'), JSON.stringify({ route: 'fallback', run_dir }));
+    writeFileSync(join(run_dir, 'manifest.json'), JSON.stringify({ teams_task: id }));
+    return { run_id: id, cwd, nodes: [], ...extra, harness_run: { cwd, opened_at, pointer: join(dir, 'harness-run.json'), report_path: join(dir, 'report.md'), baseline_path: bp } };
+  };
+  try {
+    // two tasks on one checkout, each with its own record: B's write never fails A
+    const A = mkFallback('fbA', 'a.txt');
+    const B = mkFallback('fbB', 'b-only.txt');
+    writeFileSync(join(cwd, 'a.txt'), 'A\n'); own('fbA', 'a.txt');
+    writeFileSync(join(cwd, 'b-only.txt'), 'B\n'); own('fbB', 'b-only.txt');
+    assert.equal(serviceHarnessRun(A), true);
+    assert.equal(A.harness_run.scope.ok, true, JSON.stringify(A.harness_run.scope));
+    assert.equal(A.harness_run.scope.own_record, true);
+    assert.equal(taskState(A).state, 'complete');
+    const ev = ledger('fbA').find((e) => e.event === 'scope_verdict');
+    assert.equal(ev.route, 'fallback');
+    assert.equal(ev.gates, false);
+    serviceHarnessRun(B);
+    assert.equal(taskState(B).state, 'complete');
+
+    // A's own stray write: partial naming the path, the event gates
+    const A2 = mkFallback('fbA2', 'a.txt');
+    writeFileSync(join(cwd, 'stray-A.txt'), 's\n'); own('fbA2', 'stray-A.txt');
+    serviceHarnessRun(A2);
+    const ts = taskState(A2);
+    assert.equal(ts.state, 'partial');
+    assert.ok(ts.partial_reasons.some((r) => r.startsWith('scope: own write(s) outside the planned scope:') && r.includes('stray-A.txt')), JSON.stringify(ts));
+    const ev2 = ledger('fbA2').find((e) => e.event === 'scope_verdict');
+    assert.equal(ev2.gates, true);
+    assert.equal(ev2.route, 'fallback');
+
+    // same call: one serviceHarnessRun on a finished run with an own stray, no tick before taskState
+    const A3 = mkFallback('fbA3', 'a.txt');
+    writeFileSync(join(cwd, 'stray-3.txt'), 's\n'); own('fbA3', 'stray-3.txt');
+    assert.equal(A3.harness_run.scope, undefined);
+    serviceHarnessRun(A3);
+    assert.equal(taskState(A3).state, 'partial');
+
+    // git-only: no own record, ok:false never gates, gates:false
+    const A4 = mkFallback('fbA4', 'a.txt');
+    writeFileSync(join(cwd, 'foreign.txt'), 'f\n');
+    serviceHarnessRun(A4);
+    assert.equal(A4.harness_run.scope.own_record, false);
+    assert.equal(A4.harness_run.scope.ok, false);
+    assert.equal(taskState(A4).state, 'complete');
+    assert.equal(ledger('fbA4').find((e) => e.event === 'scope_verdict').gates, false);
+
+    // committed: an own stray committed before the finish read still counts; a committed foreign path does not
+    const A5 = mkFallback('fbA5', 'a.txt', { base_commit });
+    writeFileSync(join(cwd, 'c-own.txt'), 'c\n'); own('fbA5', 'c-own.txt');
+    writeFileSync(join(cwd, 'c-foreign.txt'), 'c\n');
+    git('add', 'c-own.txt', 'c-foreign.txt'); git('commit', '-qm', 'commit strays');
+    serviceHarnessRun(A5);
+    assert.deepEqual(A5.harness_run.scope.outOfScope, ['c-own.txt'], JSON.stringify(A5.harness_run.scope));
+    assert.equal(taskState(A5).state, 'partial');
+
+    // task-id record on the graph route: <task id>.jsonl is read next to <graph run id>.jsonl
+    const runs = join(cwd, '.harness-run', 'broker', 'runs');
+    mkdirSync(runs, { recursive: true });
+    const G = mkFallback('tG', 'a.txt');
+    writeFileSync(join(G.harness_run.pointer), JSON.stringify({ route: 'graph', run_id: 'r-tG', cwd }));
+    const node = (node_id, stage, result) => ({ node_id, stage, state: 'done', result });
+    writeFileSync(join(runs, 'r-tG.json'), JSON.stringify({
+      run_id: 'r-tG', cwd, request: '[teams-task tG] edit', created_at: G.harness_run.opened_at + 1,
+      nodes: [node('plan', 'plan', { plan: 'Edit `a.txt`.' }), node('setgoal', 'setgoal', { spec: { goal: 'g', acceptance: ['d'], subgoals: [] } }),
+        node('report', 'report', { handoff: 'done' }), node('gate:goal:1', 'gate', { accept: true, match_pct: 95, gaps: [] })],
+    }));
+    writeFileSync(join(cwd, 'g-stray.txt'), 's\n'); own('tG', 'g-stray.txt');
+    serviceHarnessRun(G);
+    assert.deepEqual(G.harness_run.scope.outOfScope, ['g-stray.txt'], JSON.stringify(G.harness_run.scope));
+    assert.equal(ledger('tG').find((e) => e.event === 'scope_verdict').route, 'graph');
+
+    // writes_path: openHarnessRun stores it
+    process.env.HARNESS_TEST_NO_DRIVER = '1';
+    const T = { run_id: 'tW', cwd, nodes: [] };
+    openHarnessRun(T);
+    assert.equal(T.harness_run.writes_path, join(cwd, '.harness-run', 'writes', 'tW.jsonl'));
+  } finally {
+    if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot;
+    if (prevNo === undefined) delete process.env.HARNESS_TEST_NO_DRIVER; else process.env.HARNESS_TEST_NO_DRIVER = prevNo;
+    rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('a fixture daemon exits on its own once the test runner named in HARNESS_TEST_RUNNER_PID is gone', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
