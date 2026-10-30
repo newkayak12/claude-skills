@@ -26,7 +26,7 @@ Then: "전체적으로 계획 한거 백로그로 넣고 우선순위 최상으�
 | 4 | Revise | manage + `feedback`/`pattern`/`rewrite`/`mock-interview` | snapshots, `snapshot/scores/` |
 | 5 | Template | `deck-builder catalog` + manage | `deck.catalog.md`, `template/분석.md` |
 | 6 | Deck | manage + `deck-builder check` | `deck.mdx` |
-| 7 | Render | `deck-builder render` | `build/`, `build/preview/`, `build/검토.md`, `template/다음렌더-지침.md` |
+| 7 | Render | `deck-builder render` + manage `keep-render` | `build/` (pages/ previews), `snapshot/render/deck-vX.Y.Z/` (pages/, 검토.md), `template/다음렌더-지침.md` |
 | 8 | Feedback | `feedback` on the deck | `snapshot/feedback/deck-vX.Y.Z.md`; back onto `gaps` |
 
 ## Decisions
@@ -44,14 +44,15 @@ Then: "전체적으로 계획 한거 백로그로 넣고 우선순위 최상으�
 4. **Template analysis is a step, written once:** `template/분석.md` = catalog's Palette, Type and
    Voice plus the style rules a deck must keep (spacing, alignment, figure colours). Figures made with
    `write:diagram` take their colours from it.
-5. **Render review is recorded:** each render writes PNG previews under `build/preview/` and a
-   `build/검토.md` row per page (쪽 · 본 것 · 문제 · → 다음렌더-지침). Re-render applies every
+5. **Render review is recorded:** `render` already writes previews to `build/pages/`, but `build/`
+   is regenerated in full, so `keep-render --version` copies them to `snapshot/render/deck-vX.Y.Z/`
+   with a `검토.md` row per page (쪽 · 본 것 · 문제 · → 다음렌더-지침). Re-render applies every
    지침 row first.
 6. **Deck feedback closes the loop (card 54):** `feedback` on the rendered PDF (first three pages,
    figure meaning, page flow) saved per deck version; an indefensible claim goes onto its item's
    `gaps`; the next round starts at 2 or 4.
-7. **Layout check covers the new files:** `layout` lists `sources/선정.md`, `template/분석.md`,
-   `build/검토.md` as missing (created on request, not silently).
+7. **Layout check covers the new files:** `layout` lists `sources/선정.md` and `template/분석.md`
+   as missing; `scaffold` creates them and the render/feedback folders on request, never overwriting.
 
 ## Not doing
 

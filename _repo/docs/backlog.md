@@ -13,7 +13,8 @@ The portfolio flow comes before everything (user, 2026-10-30: "전체적으로 �
 우선순위 최상으로 두고 해주세요"): 102, then 103, then 54 (A → C → B, user 2026-10-29: "네네 하시져").
 Card 103 (portfolio engine bugs) shipped and closed 2026-10-30 by hand: renumber fences, `쪽`-cell
 double replace, collision refusal, write only after verify; material items in `sources/material/`;
-untouched chart warnings in check and build (manage 33/33, material 24/24, test_deck 227 ok).
+untouched chart warnings in check and build (manage 33/33, material 24/24, test_deck 226 ok).
+Card 54's flow shipped 2026-10-30 by hand (see the card); then 104.
 
 ### portfolio flow — first (design: `_repo/docs/plans/2026-10-30-portfolio-flow.md`)
 
@@ -90,6 +91,28 @@ untouched chart warnings in check and build (manage 33/33, material 24/24, test_
       First-page numbers (V1, user 2026-10-29): the summary line need not carry a number; measured
       numbers sit in the evidence lines; small-scale numbers are dropped; feedback stops counting a
       number-free first line as a defect.
+    - Flow shipped 2026-10-30 by hand: manage Process is the eight steps; `scaffold`, `selection`,
+      `keep-render` (previews live in `build/pages/`, regenerated per build, so they are kept under
+      `snapshot/render/deck-vX.Y.Z/` with `검토.md`, not `build/`), claims reads `선정.md`
+      (`excluded`, `unselected`); material statuses `selected`/`excluded`; feedback: no cut without a
+      ground, no market generalities, no number required on a deck's first line. manage 36/36,
+      material 24/24; real CLI run on a fictional scratch workspace (scaffold → material init and
+      `selected` → selection → keep-render). Left: one run end to end on the user's own workspace
+      (v4.5.1 `version:` line and appendix headings first, as above); viewpoints, template analysis
+      and deck feedback are SKILL steps, run by the model, not engine checks.
+
+104. **portfolio writes a resume from the built deck and its sources: a Word template, docx, then pdf**
+    - Why: user, 2026-10-30: "deck build 된거 기준으로 source랑 같이 resume로 가는 것도 만들면 좋을 듯
+      똑같이 template 바탕으로 word 형식으로 쓰고 pdf로 내보내는". Today the deck flow ends at
+      deck.pptx/pdf; a resume is written apart, from scratch, with no tie to the deck's settled
+      claims or the material.
+    - Acceptance: a design note first (brainstorm → approval: one skill or a manage step, what the
+      resume carries from the deck vs from `sources/`); the user's own `.docx` template is the base,
+      as `template.pptx` is for the deck (catalog its styles, never a built-in look); every resume
+      claim cites its material item and passes the same `claims` check (`선정.md` decides what goes
+      in); `resume.docx` written into `build/`, exported to `resume.pdf` (LibreOffice, as `render`);
+      the resume conventions in `feedback/references/resume-conventions.md` checked; tests with
+      counts on a fictional template and workspace; one real run end to end.
 
 ### teams parallelism — first
 

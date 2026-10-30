@@ -13,7 +13,8 @@ page one, titles/companies/dates, first bullet per role, summary first line. Evi
 in bullet 4 of role 2 does not exist in this pass.
 
 Verdict inputs: standard title recognizable in one glance · current company/tenure legible ·
-summary first line carries a concrete signal (not filler) · dates scannable, gaps visible but
+summary first line carries a concrete signal (not filler; on a portfolio deck a structural why
+counts, a number is not required) · dates scannable, gaps visible but
 explained · overall layout parses at a glance (no wall of text).
 
 ## Engineer pass — the 30-second skim

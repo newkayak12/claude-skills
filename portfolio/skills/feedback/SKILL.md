@@ -31,6 +31,8 @@ compatibility:
 - ALWAYS detect the format first — 이력서 vs 포트폴리오 덱/문서 — and apply only the measures that fit it (§0 of `references/claim-and-consistency.md`). A resume denominator on a 36-slide deck frightens without diagnosing.
 - ALWAYS make an improvement specific about *where* and *what shape* — and NEVER supply the fact. When the number, cause, or context is not in the document, write `[확인 필요: ○○]` and stop. No 역산, no candidate values, no plausible-sounding reason written as if it were the candidate's experience.
 - NEVER fire a tally-based red flag on a boundary value. Within 10 points of a provisional threshold, or when one entry moving would cross it, the tally line says `경계 (58%, 기준 ~60%)` and no flag is raised.
+- NEVER propose cutting, merging or shortening pages without a ground in the document ("왜 줄여야 하는거야?"), and NEVER cite market generalities ("면접 단골 질문", "요즘 채용 트렌드") as evidence — a finding rests on what the document says.
+- NEVER count a portfolio deck's number-free summary or first-page line as a defect: on a deck the first page may lead with the structural why; measured numbers belong in the evidence lines, and a small-scale number weakens more than it shows.
 - NEVER reopen a settled decision. In a continuing session keep a `[확정]` list (excluded items, kept items, numbers already judged over-claimed) and check every proposal against it before making it.
 - NEVER carry the reviewer posture into writing. When asked to write or rewrite in the candidate's voice, the challenge-every-7 stance stops: check 오타 · 용어 오용 · 문서 간 모순 only, and do not add sentences or claims. Real rewriting is `rewrite`.
 - NEVER treat a Skills list as evidence. Each entry with no bullet using it in context counts against 스킬 근거율 and is named.

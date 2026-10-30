@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 // portfolio:manage engine. Run from the workspace root; every subcommand prints one JSON object.
 //   layout                         which workspace paths exist / are missing; touches nothing
+//   scaffold                       creates what the eight-step flow needs and the workspace lacks:
+//       sources/선정.md, template/분석.md (catalog's Palette/Type/Voice), snapshot/render/, snapshot/feedback/
+//   selection                      sources/선정.md rows (글감 · 쓰임 본문|부록|제외 · 쪽 · 이유 · 대표)
+//   keep-render --version vX.Y.Z   build/pages/*.png → snapshot/render/deck-vX.Y.Z/pages/ + 검토.md
 //   snapshot --kind skeleton|deck --level major|minor|patch --note <text> [--by <who>] [--date YYYY-MM-DD]
 //       skeleton: copies it to snapshot/skeleton/skeleton-v<cur>/, bumps `version:`, adds the history
 //       line under it and one row to snapshot/README.md; deck: its own count (newest deck-v* + level),
@@ -26,7 +30,8 @@
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const LAYOUT = ['skeleton.md', 'deck.mdx', 'template.pptx', 'deck.catalog.md', 'build', 'snapshot', 'sources', 'docs/확정사실.md']
+const LAYOUT = ['skeleton.md', 'deck.mdx', 'template.pptx', 'deck.catalog.md', 'build', 'snapshot', 'sources', 'docs/확정사실.md',
+  'sources/선정.md', 'template/분석.md']
 
 // The template is where deck.mdx's front matter `template:` says, else the root template.pptx.
 export function layout(root) {
@@ -39,6 +44,65 @@ export function layout(root) {
   // a Korean name copied from macOS (zip, rsync) is stored decomposed (NFD); look for both forms
   const has = p => existsSync(join(root, p.normalize('NFC'))) || existsSync(join(root, p.normalize('NFD')))
   return { present: paths.filter(has), missing: paths.filter(p => !has(p)) }
+}
+
+// The parts of the eight-step flow a workspace may still lack, created empty and never overwritten:
+// step 2's selection table, step 5's template analysis (catalog's Palette, Type and Voice copied in),
+// and the folders steps 7 and 8 keep per deck version.
+const SELECTION_HEAD = '# 선정\n\n| 글감 | 쓰임 | 쪽 | 이유 | 대표 |\n|---|---|---|---|---|\n'
+export function scaffold(root) {
+  const created = []
+  const make = (rel, body) => {
+    const p = join(root, rel)
+    if (existsSync(p)) return
+    mkdirSync(join(p, '..'), { recursive: true })
+    if (body === null) mkdirSync(p, { recursive: true })
+    else writeFileSync(p, body)
+    created.push(rel)
+  }
+  make('sources/선정.md', SELECTION_HEAD)
+  let catalog = ''
+  try { catalog = readFileSync(join(root, 'deck.catalog.md'), 'utf8') } catch { /* no catalog yet */ }
+  const section = name => (catalog.match(new RegExp(`^## ${name}\\b[^\\n]*\\n[\\s\\S]*?(?=^## |(?![\\s\\S]))`, 'm')) || [''])[0].trimEnd()
+  const fromCatalog = ['Palette', 'Type', 'Voice'].map(section).filter(Boolean)
+  make('template/분석.md', ['# 템플릿 분석', '',
+    ...(fromCatalog.length ? fromCatalog.flatMap(s => [s, '']) : ['(deck-builder catalog를 먼저 돌리면 Palette · Type · Voice가 여기 들어온다)', '']),
+    '## 스타일 규칙', '', '- 간격 · 정렬 · 강조 방식 (템플릿에서 본 것만)', '',
+    '## 그림 색', '', '- 그림(write:diagram)이 쓰는 색: Palette에서 고른다', ''].join('\n'))
+  make('snapshot/render', null)
+  make('snapshot/feedback', null)
+  return { created }
+}
+
+// sources/선정.md rows: 글감 · 쓰임 (본문 | 부록 | 제외) · 쪽 · 이유 · 대표.
+export function selection(root) {
+  let text = ''
+  try { text = readFileSync(join(root, 'sources', '선정.md'), 'utf8') } catch { return null }
+  const rows = text.split('\n').filter(l => /^\s*\|/.test(l) && !/^\s*\|[\s:|-]+\|\s*$/.test(l))
+    .map(l => l.split('|').slice(1, -1).map(c => c.trim()))
+    .filter(c => c[0] && c[0] !== '글감')
+    .map(([id, use, page, why, lead]) => ({ id, use, page, why, lead }))
+  const bad = rows.filter(r => !['본문', '부록', '제외'].includes(r.use)).map(r => `${r.id}: 쓰임 "${r.use}" is not 본문 | 부록 | 제외`)
+  return { rows, problems: bad }
+}
+
+// After a render: build/pages/*.png kept under snapshot/render/deck-<v>/pages/ (build/ is regenerated
+// in full), with a 검토.md holding one row per page to fill (쪽 · 본 것 · 문제 · 다음렌더-지침).
+export function keepRender(root, version) {
+  if (!/^v\d+\.\d+\.\d+$/.test(String(version))) throw new Error('--version vX.Y.Z (the deck version rendered) is required')
+  const src = join(root, 'build', 'pages')
+  let pages = []
+  try { pages = readdirSync(src).filter(f => /\.png$/.test(f)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })) } catch { /* none */ }
+  if (!pages.length) throw new Error('build/pages has no previews: run deck-builder render first')
+  const dir = join(root, 'snapshot', 'render', `deck-${version}`)
+  mkdirSync(join(dir, 'pages'), { recursive: true })
+  for (const f of pages) copyFileSync(join(src, f), join(dir, 'pages', f))
+  const review = join(dir, '검토.md')
+  if (!existsSync(review)) {
+    writeFileSync(review, [`# 렌더 검토 · deck-${version}`, '', '| 쪽 | 본 것 | 문제 | 다음렌더-지침 |', '|---|---|---|---|',
+      ...pages.map((_, i) => `| ${i + 1} | | | |`), ''].join('\n'))
+  }
+  return { kept: pages.length, dir, review }
 }
 
 export function parseArgs(argv) {
@@ -366,7 +430,10 @@ export function settled(root) {
   return out
 }
 
-export function claims(text, items, settledLines = []) {
+// With a selection (sources/선정.md), a page citing an item marked 제외 is a problem, the reverse
+// lists cover only 본문/부록 items, and items the table does not name are listed `unselected`.
+export function claims(text, items, settledLines = [], sel = null) {
+  const use = new Map((sel?.rows || []).map(r => [r.id, r.use]))
   const problems = [], listed = { self_confirmed: [], user_stated: [], tone: [] }
   const carried = new Map()   // item id → figures some page carries
   const lines = text.split('\n')
@@ -385,6 +452,7 @@ export function claims(text, items, settledLines = []) {
     const known = p.ids.filter(id => items.has(id))
     for (const id of p.ids.filter(id => !items.has(id))) problems.push({ page: p.page, kind: 'unknown_id', text: id })
     for (const id of known) items.get(id).cited = true
+    for (const id of known.filter(id => use.get(id) === '제외')) problems.push({ page: p.page, kind: 'excluded', text: id })
     const ground = known.map(id => items.get(id))
     for (const line of p.body) {
       for (const t of TONE) if (line.includes(t)) listed.tone.push({ page: p.page, phrase: t.trim(), text: line })
@@ -416,8 +484,11 @@ export function claims(text, items, settledLines = []) {
     if (!it.cited) continue
     for (const r of it.rows) for (const f of r.figs) if (!carried.get(it.id)?.has(f) && !/근거 없음/.test(r.evidence)) unused.push({ id: it.id, figure: f })
   }
-  const uncitedItems = [...items.values()].filter(it => !it.cited).map(it => it.id)
-  return { ok: problems.length === 0, pages: pages.length, problems, listed, unused_results: unused, uncited_items: uncitedItems, settled: settledLines }
+  const chosen = it => !use.size || ['본문', '부록'].includes(use.get(it.id))
+  const uncitedItems = [...items.values()].filter(it => !it.cited && chosen(it)).map(it => it.id)
+  const out = { ok: problems.length === 0, pages: pages.length, problems, listed, unused_results: unused.filter(u => chosen(items.get(u.id))), uncited_items: uncitedItems, settled: settledLines }
+  if (use.size) out.unselected = [...items.keys()].filter(id => !use.has(id))
+  return out
 }
 
 function main() {
@@ -449,9 +520,15 @@ function main() {
     const both = typeof args['claims-before'] === 'string' && typeof args['claims-after'] === 'string'
     out = compare(load(args.before), load(args.after), both ? load(args['claims-before']) : undefined, both ? load(args['claims-after']) : undefined)
   } else if (cmd === 'claims') {
-    out = claims(readFileSync(file, 'utf8'), readMaterial(root), settled(root))
+    out = claims(readFileSync(file, 'utf8'), readMaterial(root), settled(root), selection(root))
+  } else if (cmd === 'scaffold') {
+    out = scaffold(root)
+  } else if (cmd === 'selection') {
+    out = selection(root) || { error: 'no sources/선정.md: run scaffold' }
+  } else if (cmd === 'keep-render') {
+    out = keepRender(root, args.version)
   } else {
-    throw new Error('usage: manage.mjs layout | snapshot | renumber | verify | compare | claims')
+    throw new Error('usage: manage.mjs layout | scaffold | selection | snapshot | renumber | verify | compare | claims | keep-render')
   }
   process.stdout.write(`${JSON.stringify(out)}\n`)
 }

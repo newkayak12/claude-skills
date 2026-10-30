@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
-import { bump, claims, compare, headings, layout, parseMap, readMaterial, renumber, settled, snapshot, verify } from './manage.mjs'
+import { bump, claims, compare, headings, keepRender, layout, parseMap, readMaterial, renumber, scaffold, selection, settled, snapshot, verify } from './manage.mjs'
 
 const SKEL = `# 가상 포트폴리오
 version: v4.0.0
@@ -293,6 +293,48 @@ test('renumber writes the file only when the result verifies (--force writes any
   assert.equal(cli('renumber', '--map', '1:2,2:1', '--force').written, true)
   writeFileSync(join(root, 'skeleton.md'), before)
   assert.equal(cli('renumber', '--map', '1:2,2:1').written, true)
+})
+
+// card 54: the eight-step flow's new parts
+test('scaffold creates the selection table, template analysis and render/feedback folders, never overwriting', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-scaffold-'))
+  writeFileSync(join(root, 'deck.catalog.md'), '# Catalog\n\n## Voice\n\n- 했다 60%\n\n## Palette\n\n- 10243F\n\n## Type\n\n- 본문 18pt\n\n## @s1 · 표지\n')
+  const r = scaffold(root)
+  assert.deepEqual(r.created, ['sources/선정.md', 'template/분석.md', 'snapshot/render', 'snapshot/feedback'])
+  const analysis = readFileSync(join(root, 'template/분석.md'), 'utf8')
+  assert.match(analysis, /## Palette\n\n- 10243F\n\n## Type\n\n- 본문 18pt\n\n## Voice\n\n- 했다 60%\n\n## 스타일 규칙/)
+  assert.ok(!analysis.includes('@s1'))
+  writeFileSync(join(root, 'sources/선정.md'), '내 표')
+  assert.deepEqual(scaffold(root).created, [])
+  assert.equal(readFileSync(join(root, 'sources/선정.md'), 'utf8'), '내 표')
+})
+
+test('selection reads the table; claims refuses an excluded item and lists only chosen ones the other way', () => {
+  const root = claimsWorkspace()
+  writeFileSync(join(root, 'sources/선정.md'), '# 선정\n\n| 글감 | 쓰임 | 쪽 | 이유 | 대표 |\n|---|---|---|---|---|\n| retro--검색-지연 | 본문 | 2~3 | 강한 신호 | 응답 시간 |\n| retro--알림-배치 | 제외 | | 다른 일 | |\n| retro--미사용 | 보류 | | | |\n')
+  const sel = selection(root)
+  assert.deepEqual(sel.rows.map(r => r.use), ['본문', '제외', '보류'])
+  assert.deepEqual(sel.problems, ['retro--미사용: 쓰임 "보류" is not 본문 | 부록 | 제외'])
+  const r = claims(CLAIMS_SKEL, readMaterial(root), [], sel)
+  assert.ok(r.problems.some(p => p.kind === 'excluded' && p.page === 4 && p.text === 'retro--알림-배치'))
+  assert.deepEqual(r.uncited_items, [])
+  assert.deepEqual(r.unselected, [])
+  assert.equal(selection(mkdtempSync(join(tmpdir(), 'manage-nosel-'))), null)
+})
+
+test('keep-render copies the previews under the deck version with one review row per page', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-render-'))
+  assert.throws(() => keepRender(root, 'v1.0.0'), /no previews/)
+  mkdirSync(join(root, 'build/pages'), { recursive: true })
+  for (const n of [1, 2, 10]) writeFileSync(join(root, `build/pages/p-${n}.png`), 'png')
+  const r = keepRender(root, 'v1.2.0')
+  assert.equal(r.kept, 3)
+  assert.ok(existsSync(join(root, 'snapshot/render/deck-v1.2.0/pages/p-10.png')))
+  assert.equal(readFileSync(r.review, 'utf8'), '# 렌더 검토 · deck-v1.2.0\n\n| 쪽 | 본 것 | 문제 | 다음렌더-지침 |\n|---|---|---|---|\n| 1 | | | |\n| 2 | | | |\n| 3 | | | |\n')
+  writeFileSync(r.review, '채운 검토')
+  keepRender(root, 'v1.2.0')
+  assert.equal(readFileSync(r.review, 'utf8'), '채운 검토')
+  assert.throws(() => keepRender(root, '1.2'), /--version/)
 })
 
 // card 102: a fictional workspace with two material items, the skeleton citing them by `글감:`
