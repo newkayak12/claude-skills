@@ -3966,6 +3966,33 @@ test('auto width: a ready_waiting change at an unchanged width writes one parall
   }, { max_parallel_ceiling: 6 });
 });
 
+test('auto width: a ready package that waits for a slot (width 1, P1 running) shows ready_waiting >= 1 in the tick and in the ledger entry for the drop', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_WIDE);
+    // Width pinned to 1 with a previous tick at width 2 (what a halving between two ticks leaves),
+    // so the pass below both leaves P2 waiting and writes the parallel_width_changed entry.
+    const raw = readTask(root, task_id);
+    raw.auto_parallel = { current: 1, streak: 0, ceiling: 6, max: 2, updated_at: Date.now(), reason: 'test' };
+    raw.auto_parallel_ticks = [{ ts: Date.now(), width: 2, running: 2, ready_waiting: 0 }];
+    writeFileSync(join(root, task_id, 'task.json'), JSON.stringify(raw));
+    const first = await tm.call('tm_next', { task_id });
+    assert.deepEqual(first.children.map((c) => c.package_id), ['P1'], 'one slot: P1 opens, the independent P2 is ready but waits');
+    assert.equal(readTask(root, task_id).nodes.find((n) => n.node_id === 'dispatch:P2:1').state, 'pending', 'P2 holds no slot');
+    const ticks = (await tm.call('tm_status', { task_id })).auto_parallel_ticks;
+    const last = ticks[ticks.length - 1];
+    assert.equal(last.width, 1);
+    assert.equal(last.running, 1, 'P1 holds the only slot');
+    assert.ok(last.ready_waiting >= 1, `P2 is ready and waiting, got ready_waiting ${last.ready_waiting}`);
+    const changed = readLedger(root, task_id).filter((e) => e.event === 'parallel_width_changed');
+    assert.equal(changed.length, 1, 'the 2 -> 1 drop is written once');
+    assert.equal(changed[0].from, 2);
+    assert.equal(changed[0].to, 1);
+    assert.equal(changed[0].running, last.running);
+    assert.equal(changed[0].ready_waiting, last.ready_waiting, 'the ledger entry carries the same waiting count as the tick');
+    assert.ok(changed[0].ready_waiting >= 1);
+  }, { max_parallel_ceiling: 6 });
+});
+
 // portfolio-consolidate-8518d5dd: integrate:6 came back verified:false with checks/evidence/
 // unowned and no reason or gaps - the ledger, the report and triage all showed "integrate:6: "
 // with nothing after the colon. The manager now synthesizes one the way the broker does for a
