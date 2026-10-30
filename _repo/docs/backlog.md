@@ -131,6 +131,20 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
 
 ### teams parallelism — first
 
+106. **teams view `--once` reads only open tasks, not every task ever run**
+    - Why: 2026-10-30, the machine (12 cores) was saturated: view.mjs ~540% CPU. Verified: one
+      `view.mjs --once --format status --cwd <repo>` takes 7.8 s wall / 6.1 s CPU, because
+      `runningModels` (`teams/scripts/view.mjs` L102) runs `collectTask` on every one of the 2098 dirs
+      in `~/.harness/tasks` (239 MB, never pruned) before filtering on state and cwd; `floorTasks`
+      does the same walk. 22 open sessions' status lines and panes spawn ~30 of these every 20 s, so the
+      cost grows with every task ever run. Also seen: 43 detached `--tasks-dir` viewers (ppid 1, up to
+      38 days old, ~2.6 GB RSS, idle CPU), all from teams 0.60.x or the repo copy before `21a52358`
+      (card 83's idle exit) — none from 0.61.x, so the leak is fixed and only the old processes remain.
+    - Acceptance: `--once --format status|events|summary` reads `task.json` state and cwd first and
+      builds a model only for a matching open task (or keeps an index of open tasks); on a fixture
+      tasks dir with 2000 finished tasks one call stays under 0.3 s (tested); a status-line poll does
+      not start a new process while the previous one still runs.
+
 101. **teams runs ready packages at the width shape allows — rest: the first tick, and one real Sprint at width 2+**
     - Why: user, 2026-10-29: "harness, graph, teams 각 phase를 병렬로 할 수는 없는건가?", then "네네 그리고
       최우선". Shipped in teams 0.61.5 (`e4502d68`, E-ea14c9c4): pushback only from error-shaped events
