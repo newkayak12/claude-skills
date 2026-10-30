@@ -33,7 +33,8 @@ import { collectTask, listTasks } from './lib/view-collect.mjs';
 import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './lib/view-render-text.mjs';
 import { notableEvents, statusLine, HOLD_MS } from './lib/view-events.mjs';
 import { summarize, waitingCount } from './lib/view-summary.mjs';
-import { samePath, floorTasks, floorEntry } from './lib/view-floor-fs.mjs';
+import { floorTasks, floorEntry } from './lib/view-floor-fs.mjs';
+import { repoMatcher } from './lib/view-repo.mjs';
 import { reportPayload } from './lib/view-report.mjs';
 import { teamsView, decisionsView } from './lib/view-status.mjs';
 import { dashboardModel, dashboardSvg, dashboardAlt, dashboardText } from './lib/view-dashboard.mjs';
@@ -97,19 +98,23 @@ function tailLines(path) {
 
 // Running tasks, decided by collectTask(): state 'running' (a dead daemon reads 'stalled'). A
 // task.json-less dir is never listed, and an unreadable one carries `error`, so unknown = not running.
-// Same directory through different paths (/var -> /private/var, any symlink) must match. A path
-// that no longer exists (a deleted temp repo) falls back to resolve().
+// With a cwd, the tasks of its repo (main checkout and linked worktrees; lib/view-repo.mjs).
+// [{ m, worktree }], worktree null for a task in the cwd's own checkout.
 function runningModels(tasksDir, cwd) {
-  const want = cwd ? samePath(cwd) : null;
+  const repo = repoMatcher(cwd);
   const out = [];
   for (const row of listTasks(tasksDir)) {
     const m = collectTask(tasksDir, row.task_id);
     if (m.error || m.state !== 'running') continue;
-    if (want && (!m.cwd || samePath(m.cwd) !== want)) continue;
-    out.push(m);
+    const at = cwd ? repo(m.cwd) : { match: true, worktree: null };
+    if (at.match) out.push({ m, worktree: at.worktree });
   }
   return out;
 }
+
+// The single `task` object names its worktree only when it is another checkout (the `tasks` rows
+// always carry the field, null for the cwd's own).
+const marked = (worktree) => (worktree ? { worktree } : {});
 
 // The ⚑ count reads every live open task (a card parked in a child run counts though no task runs),
 // the same rule summaryOutput applies, so --format status and summary.status always agree.
@@ -129,13 +134,14 @@ function asksOf(tasksDir, session) {
   return asksFor(entries, session, receivedRows(tasksDir, entries.map((x) => x.id)));
 }
 
-function statusFrom(models) {
-  const rows = models.map((m) => {
+function statusFrom(entries) {
+  const models = entries.map((x) => x.m);
+  const rows = entries.map(({ m, worktree }) => {
     const c = m.counts || {};
     const total = Object.values(c).reduce((s, n) => s + (Number(n) || 0), 0);
     const cur = (m.manager_stages || []).find((n) => n.state === 'running')
       || (m.packages || []).find((p) => p.state === 'running');
-    return { id: 'E-' + String(m.task_id).replace(/^E-/, '').slice(0, 8), state: m.state, done: c.done || 0, total, current: cur ? (cur.node_id || cur.id || '') : '' };
+    return { id: 'E-' + String(m.task_id).replace(/^E-/, '').slice(0, 8), state: m.state, done: c.done || 0, total, current: cur ? (cur.node_id || cur.id || '') : '', worktree };
   });
   // waiting = nodes in state waiting_human, counted from task.json (no ledger records that event).
   const waiting = models.reduce((s, m) => s + ((m.counts && m.counts.waiting_human) || 0), 0);
@@ -150,7 +156,7 @@ function statusFrom(models) {
 function summaryOutput(tasksDir, cwd, taskId, session) {
   const now = Date.now();
   const listed = floorTasks({ tasksDir, cwd, now });
-  const status = JSON.parse(statusFrom(listed.filter((x) => x.live && x.m.state === 'running').map((x) => x.m)));
+  const status = JSON.parse(statusFrom(listed.filter((x) => x.live && x.m.state === 'running')));
   // the ⚑ count reads the collected model, so a card parked in a child run (its driver gone on purpose) counts
   status.waiting = listed.filter((x) => x.live).reduce((s, x) => s + waitingCount(x.m), 0);
   status.asks = asksOf(tasksDir, session);
@@ -158,7 +164,7 @@ function summaryOutput(tasksDir, cwd, taskId, session) {
   const hit = id ? listed.find((x) => x.m.task_id === id) : null;
   const m = hit ? hit.m : (id ? collectTask(tasksDir, id) : null);
   const tasks = listed.map((x) => floorEntry(x, tasksDir, { now }));
-  return JSON.stringify({ status, tasks, task: m && !m.error ? summarize(m) : null }) + '\n';
+  return JSON.stringify({ status, tasks, task: m && !m.error ? { ...summarize(m), ...marked(hit && hit.worktree) } : null }) + '\n';
 }
 
 // summaryOutput (status, tasks) plus the per-team rows and Now lines of --task (the /teams-status pane while it is open).
@@ -167,7 +173,8 @@ function teamsOutput(tasksDir, cwd, taskId, session) {
   const id = taskId || base.status.latest;
   const m = id ? collectTask(tasksDir, id) : null;
   const ok = m && !m.error;
-  const task = ok ? summarize(m) : null;
+  const listedTask = base.tasks.find((t) => t.task_id === id);
+  const task = ok ? { ...summarize(m), ...marked(listedTask && listedTask.worktree) } : null;
   const model = dashboardModel(task);
   const dash = model ? { model, svg: dashboardSvg(model), alt: dashboardAlt(model) } : null;
   return JSON.stringify({ status: base.status, tasks: base.tasks, task, teams: ok ? teamsView(m) : null, dash }) + '\n';
@@ -182,9 +189,17 @@ function boardOutput(tasksDir, cwd, taskId, session) {
   let task = base.task || (base.tasks[0] || null);
   if (!task && cwd) {
     const recent = listTasks(tasksDir).filter((r) => Date.now() - (r.created_at || 0) < DAY_MS);
-    const hit = recent.find((r) => { try { return JSON.parse(readFileSync(join(tasksDir, r.task_id, 'task.json'), 'utf8')).cwd === cwd; } catch { return false; } });
+    const repo = repoMatcher(cwd);
+    let worktree = null;
+    const hit = recent.find((r) => {
+      try {
+        const at = repo(JSON.parse(readFileSync(join(tasksDir, r.task_id, 'task.json'), 'utf8')).cwd);
+        worktree = at.worktree;
+        return at.match;
+      } catch { return false; }
+    });
     const m = hit ? collectTask(tasksDir, hit.task_id) : null;
-    task = m && !m.error ? summarize(m) : null;
+    task = m && !m.error ? { ...summarize(m), ...marked(worktree) } : null;
   }
   return dashboardText(dashboardModel(task)) || `${base.status.line || 'teams: no task running'}\n`;
 }
@@ -219,15 +234,15 @@ function taskFacts(tasksDir, taskId) {
 // 256 KiB tail; a verdict older than the tail is not seen and the reason is task.json's
 // result.reason for the node, else `no reason recorded`.
 function eventsOutput(tasksDir, cwd, since) {
-  const want = cwd ? samePath(cwd) : null;
+  const repo = repoMatcher(cwd);
   const out = [];
   for (const row of listTasks(tasksDir)) {
     if (row.error) continue;
     const ledger = join(tasksDir, row.task_id, 'ledger.jsonl');
     try { if (statSync(ledger).mtimeMs <= Math.max(0, since - HOLD_MS)) continue; } catch { continue; }
-    if (want) {
+    if (cwd) {
       const m = collectTask(tasksDir, row.task_id);
-      if (m.error || !m.cwd || samePath(m.cwd) !== want) continue;
+      if (m.error || !m.cwd || !repo(m.cwd).match) continue;
     }
     out.push(...notableEvents(tailLines(ledger), since, { now: Date.now(), ...taskFacts(tasksDir, row.task_id) }));
   }
