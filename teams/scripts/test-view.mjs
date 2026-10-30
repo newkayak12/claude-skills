@@ -2127,7 +2127,7 @@ test('collect(): telemetry carries the last accept score, out-of-retries, spend 
     assert.equal(t.max_attempts, 3);
     assert.equal(t.budget_usd, 10);
     assert.equal(t.spent_usd, 3.75);
-    assert.deepEqual(t.judge.P1, { score: 88, reason: 'second', attempt: 2, verdict: 'reject' }, 'the accept judge, not the dispatch self-score');
+    assert.deepEqual(t.judge.P1, { score: 88, reason: 'second', attempt: 2, verdict: 'reject', cause: 'second' }, 'the accept judge, not the dispatch self-score');
     assert.deepEqual([...t.out_of_retries].sort(), ['P1', 'P3']);
     assert.deepEqual(t.defects.filed.sort(), ['D1', 'D2']);
     assert.equal(t.defects.dropped.length, 1);

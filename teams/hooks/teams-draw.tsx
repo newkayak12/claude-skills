@@ -160,6 +160,9 @@ const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim()
 // threshold (`gapWord` words it), else its reason; whole, the caller clips it. The recorded numbers (item.metrics) win
 // over the live ones; an item with none (an S task) keeps its try/max, elapsed and cost. `judge` words the score
 // (localized by the caller).
+// The status cell is one fixed word (the verdict, else the item's word_key, never the driver's `doing`); a raw verdict
+// string with no localized word is cut to STATUS_MAX so the title keeps its room at a narrow pane.
+const STATUS_MAX = 10
 export function storyCells(
   item: SummaryItem, verdict: string, harness: string, selected: boolean, fixed: (key: string) => string,
   judge: (score: number, threshold: number | null) => string = (score, threshold) => `judge ${score}${threshold === null ? '' : ` vs ${threshold}`}`,
@@ -173,7 +176,7 @@ export function storyCells(
   const over = j !== null && threshold !== null ? (j.score >= threshold ? 'success' : 'warning') : undefined
   return {
     cells: [
-      selected ? '▸' : '', item.icon, item.title, verdict !== '' ? verdict : item.word_key ? fixed(item.word_key) : item.word,
+      selected ? '▸' : '', item.icon, item.title, verdict !== '' ? clipText(verdict, STATUS_MAX) : fixed(item.word_key),
       m === null ? tryText(item.try, item.max) : tryText(m.attempt, m.max_attempts),
       j === null ? '' : judge(j.score, threshold),
       recorded ? costText(m.cost_usd ?? 0, false) : costText(item.cost_usd, item.cost_estimated),

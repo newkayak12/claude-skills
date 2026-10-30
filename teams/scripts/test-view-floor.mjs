@@ -339,6 +339,14 @@ test('hand-offs newest 5 recorded only', () => {
   assert.deepEqual(handoffs([]), []);
 });
 
+// A settled card: its dispatch failed, so its verdict is its status.
+const failDispatch = (l) => {
+  const tp = join(l.dir, 'task.json');
+  const t = JSON.parse(readFileSync(tp, 'utf8'));
+  t.nodes.find((n) => n.node_id === 'dispatch:P1:1').state = 'failed';
+  writeFileSync(tp, JSON.stringify(t));
+};
+
 test('last_verdict and hand-offs come from the ledger tail', () => {
   const w = world();
   try {
@@ -349,6 +357,7 @@ test('last_verdict and hand-offs come from the ledger tail', () => {
         { ts: 2000, event: 'verdict', task_id: 'aaaaaaaa-0001', node_id: 'accept:P1:2', subgoal_id: 'P1', actor: 'judge', verdict: 'accept' },
       ],
     });
+    failDispatch(l);
     const f = entryOf(w, l.id).floor;
     assert.equal(f.items[0].last_verdict, 'accept');
     assert.equal(f.handoffs.length, 2);
@@ -362,7 +371,7 @@ test('last_verdict ignores a verdict from before the current shape (round_first_
       pkgs: [{ id: 'P1', streamAgeMs: 1000 }],
       ledger: [{ ts: 1000, event: 'verdict', task_id: 'aaaaaaaa-0001', node_id: 'accept:P1:3', subgoal_id: 'P1', attempt: 3, actor: 'judge', verdict: 'reject' }],
     });
-    assert.equal(entryOf(w, l.id).floor.items[0].last_verdict, 'reject', 'no round_first_attempt above 1: shown');
+    assert.equal(entryOf(w, l.id).floor.items[0].last_verdict, null, 'a running :1 is not attempt 3');
     // repackaged: the only dispatch is :4, whose deps hold the live critique
     const tp = join(l.dir, 'task.json');
     const t = JSON.parse(readFileSync(tp, 'utf8'));
@@ -372,6 +381,63 @@ test('last_verdict ignores a verdict from before the current shape (round_first_
     writeFileSync(tp, JSON.stringify(t));
     const item = entryOf(w, l.id).floor.items[0];
     assert.equal(item.last_verdict, null, 'a reject of attempt 3 judged the old shape');
+  } finally { w.cleanup(); }
+});
+
+test('card94: a running retry has no last_verdict from the attempt before it', () => {
+  const w = world();
+  try {
+    const l = lTask(w, {
+      pkgs: [{ id: 'P1', streamAgeMs: 1000 }],
+      ledger: [{ ts: 1000, event: 'verdict', task_id: 'aaaaaaaa-0001', node_id: 'accept:P1:1', subgoal_id: 'P1', attempt: 1, actor: 'judge', verdict: 'reject' }],
+    });
+    const tp = join(l.dir, 'task.json');
+    const t = JSON.parse(readFileSync(tp, 'utf8'));
+    // in-round retry: :1 stays (failed, its accept:P1:1 kept), :2 runs; round_first_attempt stays 1
+    const d1 = t.nodes.find((n) => n.node_id === 'dispatch:P1:1');
+    d1.state = 'failed'; d1.attempt = 1;
+    t.nodes.push({ ...d1, node_id: 'dispatch:P1:2', state: 'running', attempt: 2 });
+    writeFileSync(tp, JSON.stringify(t));
+    const item = entryOf(w, l.id).floor.items[0];
+    assert.equal(item.state, 'acting');
+    assert.equal(item.last_verdict, null, 'dispatch :2 running, the verdict judged attempt 1');
+  } finally { w.cleanup(); }
+});
+
+test('card94: an acting STORY item has word_key acting and a fixed word without an arrow; doing stays a field', () => {
+  const doing = '-> Bash node --test teams/scripts/test-view-summary.mjs teams/scripts/test-view-floor.mjs teams/scripts/test-view.mjs';
+  const f = floorOf(
+    { task_id: 't', state: 'running', ticket: { key: 'E-t' }, packages: [{ id: 'A', title: 'A', dispatch: { state: 'running' }, child: {} }] },
+    { stories: { A: { doing, live: true } } },
+  );
+  const item = f.items[0];
+  assert.equal(item.word_key, 'acting');
+  assert.equal(item.word, 'working');
+  assert.ok(!item.word.includes('->'));
+  assert.equal(item.doing, doing);
+  assert.equal(f.workers[0].word, doing, 'the Floor worker keeps the live word');
+});
+
+test('card94 own cause: collectTask reads judge cause from the judged accept node by node_id, gaps then blocking then problems then the ledger reason', () => {
+  const w = world();
+  try {
+    const verdict = (reason) => ({ ts: 1000, event: 'verdict', task_id: 'aaaaaaaa-0001', node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', attempt: 1, actor: 'judge', verdict: 'reject', score: 93, reason });
+    const l = lTask(w, { pkgs: [{ id: 'P1', streamAgeMs: 1000 }], ledger: [verdict('ledger reason')] });
+    const tp = join(l.dir, 'task.json');
+    const t = JSON.parse(readFileSync(tp, 'utf8'));
+    const acc = t.nodes.find((n) => n.node_id === 'accept:P1:1');
+    const cause = (result) => {
+      acc.state = 'failed'; acc.result = result;
+      writeFileSync(tp, JSON.stringify(t));
+      return collectTask(w.tasks, l.id).telemetry.judge.P1.cause;
+    };
+    // a pending retry node has no gaps; the judged node keeps its own
+    t.nodes.push({ ...acc, node_id: 'accept:P1:2', state: 'pending', attempt: 2, result: undefined });
+    assert.equal(cause({ gaps: ['gap one', 'gap two'], blocking: ['block'] }), 'gap one');
+    assert.equal(cause({ gaps: [{ text: 'gap obj' }] }), 'gap obj');
+    assert.equal(cause({ blocking: ['block one'], problems: ['p'] }), 'block one');
+    assert.equal(cause({ problems: [{ text: 'problem one' }] }), 'problem one');
+    assert.equal(cause({ accept: false }), 'ledger reason');
   } finally { w.cleanup(); }
 });
 
@@ -597,8 +663,9 @@ test('icon and word agree for every state (floorOf items and workers)', () => {
   const item = Object.fromEntries(f.items.map((i) => [i.key, i]));
   const worker = Object.fromEntries(f.workers.map((x) => [x.id, x]));
   const is = (x, state) => { const [icon, word, key] = PAIRS[state]; assert.equal(x.icon, icon); assert.equal(x.word, word); assert.equal(x.word_key, key); };
-  is(item.A, 'acting'); is(worker.A, 'acting');
-  is(item.B, 'you'); is(worker.B, 'you');
+  // a STORY item says one fixed word for acting and you too (card94); the Floor worker keeps the live `doing` word
+  assert.deepEqual([item.A.icon, item.A.word, item.A.word_key, item.A.doing], ['●', 'working', 'acting', 'editing a.ts']); is(worker.A, 'acting');
+  assert.deepEqual([item.B.icon, item.B.word, item.B.word_key, item.B.doing], ['⚑', 'needs you', 'you', 'asks a question']); is(worker.B, 'you');
   is(item.C, 'idle'); is(worker.C, 'idle');
   is(worker.F, 'done'); assert.equal(item.F, undefined);
   // failed with a live driver and a doing word: the row says failed, not the live word; state and doing keep their meaning

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dashboardModel, dashboardSvg, dashboardAlt, dashboardText, lanesOf, fit } from './lib/view-dashboard.mjs';
+import { dashboardModel, dashboardSvg, dashboardAlt, dashboardText, lanesOf, fit, storyLine } from './lib/view-dashboard.mjs';
 
 const task = (over = {}) => ({
   key: 'E-4a1c9e02', title: 'Checkout: refund flow', state: 'running', done: 1, total: 3,
@@ -105,6 +105,15 @@ test('metrics: the model carries the task-level numbers and each STORY', () => {
     denials: 2, out_of_retries: ['P2', 'P3'], defects: { filed: 5, dropped: 1 }, scoped_out: 1,
   });
   assert.deepEqual(m.stories.map((s) => [s.id, s.attempt, s.max_attempts]), [['P2', 3, 3], ['P3', 0, 3]]);
+});
+
+test('card94 own cause: storyLine prints "own gap:" in place of the reason when the judge carries a gap, cut at the reason limit', () => {
+  const base = { id: 'P3', attempt: 2, max_attempts: 3, cost_usd: 0, retry_cost_usd: 0, wall_ms: 0, out_of_retries: false };
+  const line = storyLine({ ...base, judge: { score: 93, threshold: 90, reason: 'the old reason', gap: 'Tenant cap is skipped when two workers claim one job at the same time' } });
+  assert.match(line, /judge 93 vs 90 — own gap: Tenant cap is skipped/);
+  assert.ok(!line.includes('the old reason'));
+  assert.match(line, /…$/);
+  assert.match(storyLine({ ...base, judge: { score: 85, threshold: 90, reason: 'the old reason', gap: null } }), /— the old reason$/);
 });
 
 test('metrics: dashboardText prints every number, one STORY per line, the reason ends in an ellipsis', () => {

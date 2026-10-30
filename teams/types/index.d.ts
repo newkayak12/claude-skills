@@ -40,7 +40,8 @@ export type SummaryItem = {
   live: boolean; elapsed_ms: number | null; run_file: string | null; owner_key: string
   metrics?: StoryMetrics | null
 }
-// icon, word, word_key: node's one state -> mark (view-floor.mjs markOf); word_key is '' for a live word, else the state to localize
+// icon, word, word_key: node's one state -> mark (view-floor.mjs markOf); word_key is '' for a live Floor worker's word, else the
+// state to localize; it is never '' on a STORY item (a fixed word per row, `doing` stays a field)
 export type SummaryWorker = { id: string; state: WorkState; doing: string; icon: string; word: string; word_key: string }
 export type Handoff = { time: string; from: string; what: string; to: string }
 export type SummaryTaskEntry = SummaryTask & {
