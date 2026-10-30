@@ -413,16 +413,24 @@ test('a non-teams holder of the preferred port moves an unpinned viewer to a fre
   }
 });
 
-// view.mjs on its own, no --port, no TEAMS_VIEW_PORT: it asks for 7431 and takes a free port when
-// 7431 is held. The test binds 7431 itself only when it is free; when something else holds it the
-// test is skipped - it never registers into, or signals, a viewer it did not start.
-test('view.mjs without --port prefers 7431 and falls back to a free port when it is taken', async (t) => {
-  const holder = createServer();
-  const gotDefault = await new Promise((r) => { holder.once('error', () => r(false)); holder.listen(DEFAULT_VIEW_PORT, '127.0.0.1', () => r(true)); });
-  if (!gotDefault) { t.skip('7431 is held by something else; not touching it'); return; }
+// A no --port spawn of view.mjs asks for the default port. Tests move that default to a scratch
+// port with TEAMS_VIEW_DEFAULT_PORT, so they never touch the user's own viewer. The guard checks
+// the code reads the override (not just the doc), and that the value is not the real default.
+function defaultEnv(port) {
+  assert.match(readFileSync(VIEW_SCRIPT, 'utf8'), /process\.env\.TEAMS_VIEW_DEFAULT_PORT/, 'view.mjs reads the default-port override');
+  assert.notEqual(port, DEFAULT_VIEW_PORT, 'a scratch port, never the real default');
+  const env = { ...process.env, TEAMS_VIEW_DEFAULT_PORT: String(port) };
+  delete env.TEAMS_VIEW_PORT;
+  return env;
+}
+
+// view.mjs on its own, no --port, no TEAMS_VIEW_PORT: it asks for the default and takes a free port
+// when that is held. The default is a scratch port held here.
+test('view.mjs without --port falls back to a free port when the default is taken', async () => {
+  const held = await heldPort();
   const dir = tasksWith([]);
-  const env = { ...process.env }; delete env.TEAMS_VIEW_PORT;
-  const child = spawn(process.execPath, [VIEW_SCRIPT, '--tasks-dir', dir], { env, stdio: ['ignore', 'pipe', 'ignore'] });
+  const child = spawn(process.execPath, [VIEW_SCRIPT, '--tasks-dir', dir], { env: defaultEnv(held.port), stdio: ['ignore', 'pipe', 'ignore'] });
+  spawned.push(child.pid);
   try {
     const line = await new Promise((resolve, reject) => {
       let buf = '';
@@ -430,11 +438,69 @@ test('view.mjs without --port prefers 7431 and falls back to a free port when it
       child.on('exit', () => reject(new Error(`view.mjs exited early: ${buf}`)));
       setTimeout(() => reject(new Error('view.mjs printed no URL in 8s')), 8000);
     });
-    assert.notEqual(line, DEFAULT_VIEW_PORT, gotDefault ? 'the default was held, so the viewer must have moved' : 'something else holds the default, so the viewer must have moved');
+    assert.notEqual(line, held.port, 'the default was held, so the viewer must have moved');
     assert.ok(await waitAnswer(line));
   } finally {
     child.kill('SIGKILL');
-    if (gotDefault) await new Promise((r) => holder.close(r));
+    await held.release();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// A second view.mjs on a held-by-a-teams-viewer default joins it: registers its root and exits 0.
+test('view.mjs without --port joins a teams viewer already on the default', async () => {
+  const port = await closedPort();
+  const env = defaultEnv(port);
+  const a = tasksWith([['aaaa1111-x', 100]]);
+  const b = tasksWith([['bbbb2222-y', 200]]);
+  const first = spawn(process.execPath, [VIEW_SCRIPT, '--tasks-dir', a], { env, stdio: ['ignore', 'pipe', 'ignore'] });
+  spawned.push(first.pid);
+  try {
+    await new Promise((resolve, reject) => {
+      let buf = '';
+      first.stdout.on('data', (d) => { buf += d; if (buf.includes(`listening on http://127.0.0.1:${port}`)) resolve(); });
+      first.on('exit', () => reject(new Error(`viewer A exited early: ${buf}`)));
+      setTimeout(() => reject(new Error('viewer A printed no URL in 8s')), 8000);
+    });
+    const second = spawn(process.execPath, [VIEW_SCRIPT, '--tasks-dir', b], { env, stdio: ['ignore', 'pipe', 'ignore'] });
+    spawned.push(second.pid);
+    let out = '';
+    second.stdout.on('data', (d) => { out += d; });
+    const code = await new Promise((resolve, reject) => {
+      second.on('exit', resolve);
+      setTimeout(() => reject(new Error(`viewer B did not exit in 8s: ${out}`)), 8000);
+    });
+    assert.equal(code, 0);
+    assert.ok(out.includes(`teams view already running on http://127.0.0.1:${port}/`), out);
+    const roots = JSON.parse((await get(`http://127.0.0.1:${port}/teams-view.json`)).body).roots;
+    assert.deepEqual([...roots].sort(), [realpathSync(a), realpathSync(b)].sort(), 'both roots are served');
+    assert.equal(JSON.parse((await get(`http://127.0.0.1:${port}/state.json?task=E-bbbb2222`)).body).model.task_id, 'bbbb2222-y', 'B\'s task resolves');
+  } finally {
+    first.kill('SIGKILL');
+    rmSync(a, { recursive: true, force: true });
+    rmSync(b, { recursive: true, force: true });
+  }
+});
+
+// A fixed port that is taken is not an unhandled rejection: one stderr line, exit 1.
+test('view.mjs on a fixed port that is taken: cannot listen on 127.0.0.1, exit 1, no stack', async () => {
+  const held = await heldPort();
+  const dir = tasksWith([]);
+  const child = spawn(process.execPath, [VIEW_SCRIPT, '--tasks-dir', dir, '--port', String(held.port)], { stdio: ['ignore', 'ignore', 'pipe'] });
+  spawned.push(child.pid);
+  try {
+    let err = '';
+    child.stderr.on('data', (d) => { err += d; });
+    const code = await new Promise((resolve, reject) => {
+      child.on('exit', resolve);
+      setTimeout(() => reject(new Error(`view.mjs did not exit in 8s: ${err}`)), 8000);
+    });
+    assert.equal(code, 1);
+    assert.match(err, /cannot listen on 127\.0\.0\.1:\d+: EADDRINUSE/);
+    assert.doesNotMatch(err, /UnhandledPromiseRejection|^\s+at /m);
+  } finally {
+    child.kill('SIGKILL');
+    await held.release();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -472,6 +538,24 @@ test('one view server, many roots: / state is the index even for one task; a tas
   assert.equal(id.pid, spawned[spawned.length - 1]);
   assert.deepEqual(id.roots, [idx.tasks_dir]);
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('an exact slug wins over an id prefix: a hex-only slug opens its task, an E-key still resolves by id prefix', async () => {
+  const dir = tasksWith([['cafe0001-x', 100], ['bbbb2222-y', 50], ['add00000-z', 90], ['cccc3333-w', 80]]);
+  for (const [id, slug] of [['cafe0001-x', 'other'], ['bbbb2222-y', 'cafe'], ['add00000-z', null], ['cccc3333-w', 'add']]) {
+    const doc = JSON.parse(readFileSync(join(dir, id, 'task.json'), 'utf8'));
+    writeFileSync(join(dir, id, 'task.json'), JSON.stringify({ ...doc, slug }));
+  }
+  try {
+    const base = await startView(dir);
+    const pick = async (q) => JSON.parse((await get(`${base}/state.json?task=${q}`)).body).model.task_id;
+    assert.equal(await pick('cafe'), 'bbbb2222-y', 'the exact slug beats the newer id prefix');
+    assert.equal(await pick('add'), 'cccc3333-w', 'the exact slug beats an id prefix');
+    assert.equal(await pick('E-cafe'), 'cafe0001-x', 'an E-key is still an id prefix');
+    assert.equal(await pick('cafe0001-x'), 'cafe0001-x', 'a full id still wins');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('POST /register: relative, missing, non-JSON and oversize bodies are 400 and change nothing; a valid root is 200 and its tasks join the index', async () => {
