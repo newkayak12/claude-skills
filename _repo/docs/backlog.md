@@ -305,22 +305,17 @@ toasts).
       line shows smart-compact's number), checked in one live session where both read the same at a turn
       end; `/smart-compact` prints the current %, the threshold and the token count behind them.
 
-81. **Two size-S runs in one checkout do not fail each other's scope check** — rest in E-233f8dca; part in 747e9306 (E-53a84277)
-    and 88cf55ed (E-398db286): `teams/mcp/scope.mjs` baselines already-dirty paths; `scope.mjs verdict --baseline
-    --scope` computes pass/fail in node (exit 0/1, out-of-scope paths listed; real run: a foreign path dirty
-    before the baseline passes, a new out-of-scope path fails) and the size-S prompt makes its exit status the
-    scope result. E-11f56074 (2026-10-29, taken from P1's worktree; its gate was blocked by the card 97
-    denial defect): the engine computes the verdict on the finish read (`computeScopeVerdict`, scope from the
-    plan/setgoal paths, `ownVerdict` over `.harness-run/writes/<run>.jsonl`) and records a `scope_verdict`
-    event; the model no longer runs the CLI, so a foreign write no longer fails the run. Left: nothing writes
-    the own-write record yet (the verdict falls back to git-only, recorded not gating); two runs editing the
-    same file not isolated.
-    - Why: 2026-10-26, E-23b35fe3 (card 74 part A) failed its U4 clean-scope check three times because
-      E-0baf8e75 (part B) was editing session/think/trophy in the same main checkout; part A's own work
-      passed (teams 357, graph 175, harness 199) and was committed by hand. Size S writes into the
-      checkout, so two at once share `git status`.
-    - Acceptance: a size-S scope check counts only paths its own run touched (or tm_open refuses a second
-      size-S task on a checkout that already has one live), with a test.
+81. **Size-S scope check: the limits left after the own-write record** — main part shipped 2026-10-30 in
+    E-233f8dca (`2fc9e26c`; goal gate 90; teams 1679/1680 with 1 skip, plugin test 411/411)
+    - Why: card 81's own-write record shipped: a PostToolUse hook (`teams/hooks/own-writes.mjs`) writes each
+      Write/Edit of the size-S driver to `.harness-run/writes/<task>.jsonl`; the fallback route now gets a
+      verdict, and an own out-of-scope write makes the run `partial`. Real run: three `claude -p` sessions in
+      one scratch checkout, A partial on `stray-A.txt`, B complete. Its report names the limits: two runs
+      editing the same file; Bash-made files unrecorded; Codex `apply_patch` recording unproven; scope taken
+      from path tokens in plan/spec text can be broad; a subdirectory cwd can miss strays; the live
+      `spawnHarnessDriver` env path not exercised live.
+    - Acceptance: the next real size-S task's ledger shows `scope_verdict` with `own_record: true`; a Codex
+      run records an `apply_patch` write (or the limit stays named in the docs).
 
 74. **Every mod's UI draws on terminal, desktop, mobile and vscode (`mod.md` rule 8) — teams first** — tests in
     55e2dcc3 (teams 357, graph 175, harness 199) and bfe0022c (session 699, think 53, trophy 149), all four
