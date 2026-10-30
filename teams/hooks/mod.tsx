@@ -959,7 +959,7 @@ export const register: Register = on => {
         <Box>
           {flag}
           {asked}
-          <Box flexShrink={1}><Text dimColor wrap="truncate-end">{`teams · ${task.title} — ${nowSentence(s, task)}`}</Text></Box>
+          <Box flexShrink={1}><Text dimColor wrap="truncate-end">{`teams · ${task.title}${task.worktree ? ` · ⑂ ${task.worktree}` : ''} — ${nowSentence(s, task)}`}</Text></Box>
           <Box flexShrink={0} marginLeft={1}>
             <Text color="success">{'━'.repeat(task.total > 0 ? Math.round((10 * task.done) / task.total) : 0)}</Text>
             <Text color="inactive">{'─'.repeat(10 - (task.total > 0 ? Math.round((10 * task.done) / task.total) : 0))}</Text>
