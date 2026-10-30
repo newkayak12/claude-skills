@@ -7098,17 +7098,22 @@ export function ensureAutoParallel(task) {
 // wording either reader should catch never has to be taught to just one of them.
 const PUSHBACK_RE = /rate[_ -]?limit|\b429\b|\b529\b|overloaded|api_error|insufficient_quota|usage_limit_reached|quota (?:exceeded|exhausted)|hit your (?:usage )?limit|exceeded your current quota/i;
 
+// rate_limit_event statuses that are routine telemetry: "allowed_warning" is the near-limit notice
+// the CLI emits while capacity is still granted (454 of them against 27 "rejected" in real logs).
+const RATE_LIMIT_OK_STATUS = new Set(['allowed', 'allowed_warning']);
+
 // Pushback is read from error-shaped fields of PARSED stream-json events, never from a regex over
 // the raw log. A claude -p stream carries routine telemetry on every session - a rate_limit_event
 // with status "allowed", `"api_error_status":null` on every result, and usage counters such as
 // `"cache_creation_input_tokens":429` (which a \b429\b match once read as a 429 and halved the
 // width in E-eb3d399f). What counts: a result event with is_error true, a non-null
-// api_error_status, a rate_limit_event whose status is not "allowed". Returns a short reason, or ''.
+// api_error_status, a rate_limit_event whose status is not "allowed" or "allowed_warning".
+// Returns a short reason, or ''.
 function pushbackFromEvent(e) {
   if (!e || typeof e !== 'object' || Array.isArray(e)) return '';
   if (e.type === 'rate_limit_event') {
     const status = e.rate_limit_info && e.rate_limit_info.status;
-    return typeof status === 'string' && status !== 'allowed' ? `rate_limit_event status ${status}` : '';
+    return typeof status === 'string' && !RATE_LIMIT_OK_STATUS.has(status) ? `rate_limit_event status ${status}` : '';
   }
   if (e.api_error_status != null) return `api_error_status ${JSON.stringify(e.api_error_status)}`;
   if (e.type === 'result' && e.is_error === true) return `result is_error${typeof e.result === 'string' ? `: ${e.result.slice(0, 200)}` : ''}`;
