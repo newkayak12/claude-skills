@@ -500,6 +500,20 @@ test('gate:goal contract requires user_stories[] (ids + acceptance[]) back in it
   }
 });
 
+test('gate:goal contract names the exact-text limit of document-criterion stripping for a planning-kind run', () => {
+  assert.match(CONTRACT['gate:goal'], /only when it is copied character for character/);
+  assert.match(CONTRACT['gate:goal'], /reworded one/);
+  const cwd = tmpProject();
+  try {
+    const n = baseNode({ node_id: 'gate:goal:1', stage: 'gate' });
+    const prompt = composePrompt(baseRun(cwd), n, baseBriefing());
+    assert.match(prompt, /only when it is copied character for character/);
+    assert.match(prompt, /reworded one/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 // A PRD governs the whole tree, so selecting conventions by the paths a subgoal touches was the
 // wrong filter for it: a rule about how a domain works matches no source path, so it appeared as
 // a title only. idol-pm-1 (2026-09-22) produced a domain-empty PRD with the mechanism right
