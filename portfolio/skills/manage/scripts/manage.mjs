@@ -442,6 +442,19 @@ export function deckPages(text) {
   return out.join('\n')
 }
 
+// resume.md read as pages for `claims`: every `##`/`###` heading (a section, a company entry) is the
+// next page; its `글감:` lines cite, its bullets are the lines.
+export function resumePages(text) {
+  const out = []
+  let page = 0
+  for (const l of text.replace(/^---\n[\s\S]*?\n---\n/, '').split('\n')) {
+    if (/^#{2,3}\s/.test(l)) { out.push(`## ${++page}쪽`); continue }
+    if (/^#\s/.test(l) || !page) continue
+    if (l.trim()) out.push(l.trim().replace(/^[-*]\s+/, ''))
+  }
+  return out.join('\n')
+}
+
 // Settled writing bases and structure decisions the checks must not raise again: the lines under
 // `## 서술 기준` and `## 구조` in docs/확정사실.md, handed to feedback and drift checks as they are.
 export function settled(root) {
@@ -547,7 +560,8 @@ function main() {
     out = compare(load(args.before), load(args.after), both ? load(args['claims-before']) : undefined, both ? load(args['claims-after']) : undefined)
   } else if (cmd === 'claims') {
     const text = readFileSync(file, 'utf8')
-    out = claims(/^##\s+@s\d+/m.test(text) ? deckPages(text) : text, readMaterial(root), settled(root), selection(root))
+    const pages = /^##\s+@s\d+/m.test(text) ? deckPages(text) : /resume\.md$/.test(file) ? resumePages(text) : text
+    out = claims(pages, readMaterial(root), settled(root), selection(root))
   } else if (cmd === 'scaffold') {
     out = scaffold(root)
   } else if (cmd === 'selection') {

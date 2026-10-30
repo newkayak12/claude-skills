@@ -117,6 +117,15 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
       in); `resume.docx` written into `build/`, exported to `resume.pdf` (LibreOffice, as `render`);
       the resume conventions in `feedback/references/resume-conventions.md` checked; tests with
       counts on a fictional template and workspace; one real run end to end.
+    - Shipped 2026-10-30 by hand (design `_repo/docs/plans/2026-10-30-portfolio-resume.md`, approved
+      "확인"): `scripts/resume.py` catalog / build / render (deck-builder's renderer), `claims --file
+      resume.md`; test_resume 17/17 with the PDF rendered in docker (deck-render-kr), manage 38/38.
+      User, same day: "docx를 올리면 안된다고", "내가 준 실제 자료를 올리면 안된다고", "pptx도 이전에
+      준거 올리지 말라구" — `.gitignore` takes `*.docx`, `*.pptx`, `*.pdf`; resume.py refuses a template,
+      resume.md or output a git repository would carry (tested); no real material was ever in the repo
+      (history checked: the one tracked `template.pptx` is an empty fixture). Defaults taken: 2 pages,
+      Korean only. Left: the user's own template and one real run on their workspace; the
+      resume-conventions check is the model's (feedback), not an engine check.
 
 ### teams parallelism — first
 
