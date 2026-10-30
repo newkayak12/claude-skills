@@ -7130,7 +7130,7 @@ function dispatchPushbackText(driver) {
     for (const line of readFileSync(driver.log, 'utf8').split('\n')) {
       if (!line.trim()) continue;
       let e;
-      try { e = JSON.parse(line); } catch { continue; }
+      try { e = JSON.parse(line.replace(/^\uFEFF/, '')); } catch { continue; }
       const reason = pushbackFromEvent(e);
       if (reason) return reason;
     }
