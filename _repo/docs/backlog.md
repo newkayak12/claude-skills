@@ -305,7 +305,7 @@ toasts).
       line shows smart-compact's number), checked in one live session where both read the same at a turn
       end; `/smart-compact` prints the current %, the threshold and the token count behind them.
 
-81. **Two size-S runs in one checkout do not fail each other's scope check** — part in 747e9306 (E-53a84277)
+81. **Two size-S runs in one checkout do not fail each other's scope check** — rest in E-233f8dca; part in 747e9306 (E-53a84277)
     and 88cf55ed (E-398db286): `teams/mcp/scope.mjs` baselines already-dirty paths; `scope.mjs verdict --baseline
     --scope` computes pass/fail in node (exit 0/1, out-of-scope paths listed; real run: a foreign path dirty
     before the baseline passes, a new out-of-scope path fails) and the size-S prompt makes its exit status the
