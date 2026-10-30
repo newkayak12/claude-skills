@@ -258,7 +258,7 @@ toasts).
       kill the parent MCP process, the daemon still ticks); a task whose daemon died is resumed by
       `tm_retry` on its own run dir without a re-plan.
 
-105. **Repo-wide pane and one viewer: UI look and the loose ends** — cards 105 and 106 shipped 2026-10-30 in
+105. **Repo-wide pane and one viewer: UI look and the loose ends** — code defects in E-03e2e513; cards 105 and 106 shipped 2026-10-30 in
     E-f53a8434 (`236eae3d`; goal gate 92; teams 1658/1660 with 2 skips, plugin test 423/423; real run: two
     scratch tasks, one viewer port, 31 ok)
     - Why: shipped: `view-repo.mjs` matches tasks by git common dir, the pane row and band mark another
