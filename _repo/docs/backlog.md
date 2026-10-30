@@ -258,23 +258,22 @@ toasts).
       kill the parent MCP process, the daemon still ticks); a task whose daemon died is resumed by
       `tm_retry` on its own run dir without a re-plan.
 
-106. **One teams web viewer on one port; a task is a path, not a port** — in E-f53a8434
-    - Why: 2026-10-30, two tasks open at once got two servers: E-f64c3884 at `127.0.0.1:7431`, E-4f12f406
-      at `127.0.0.1:51125` (7431 taken, so `viewserver.mjs` fell back to a free port). User: "포트가 아니라
-      카드 번호로 분기하면 될텐데??? 브라우저".
-    - Acceptance: a second task reuses the live server on 7431 (or `TEAMS_VIEW_PORT`) instead of opening
-      another; `/` lists every task; `/E-xxxxxxxx` and a readable path (slug or backlog card) open one
-      task; the server outlives the task that started it while others run, and stops when none do; test.
-
-105. **`/teams-status` finds the repo's tasks running in its linked worktrees** — in E-f53a8434
-    - Why: 2026-10-30, user: "teams로 하는거 맞음??" — `/teams-status` in the main checkout answered
-      "teams: no task running" while E-f64c3884 and E-4f12f406 ran (2 drivers, `view.mjs --once` lists
-      both). Each was opened isolated in its own worktree (`../claude-skills-c101`, `-c94`); the pane and
-      band match a task's `cwd` to the session cwd exactly. Same run: card 94's slug came out
-      `s-open-defects-teams-status` (the `'s` of "card 94's" became a word).
-    - Acceptance: the pane and band include tasks whose cwd shares the session's git common dir (the
-      rule repo-rules.mjs already uses for the push hold), marked with their worktree; test; slugs drop
-      a possessive `'s`.
+105. **Repo-wide pane and one viewer: UI look and the loose ends** — cards 105 and 106 shipped 2026-10-30 in
+    E-f53a8434 (`236eae3d`; goal gate 92; teams 1658/1660 with 2 skips, plugin test 423/423; real run: two
+    scratch tasks, one viewer port, 31 ok)
+    - Why: shipped: `view-repo.mjs` matches tasks by git common dir, the pane row and band mark another
+      worktree's task `⑂ <worktree>`; one `view.mjs` serves many task roots (`/` index, `/E-xxxxxxxx`,
+      `/<slug>`, `POST /register`), a second task joins it. User's words: "teams로 하는거 맞음??", "포트가
+      아니라 카드 번호로 분기하면 될텐데??? 브라우저". Its report leaves: mod.md UI-done not done (live tmux
+      look, 190/110 captures, demo approval); the possessive strip also eats contractions ("It's broken" →
+      `it-broken`); `findTask` tries the id prefix before the slug, so a hex-only slug (`cafe`, `add`) opens
+      a task by id; the join branch (second standalone `view.mjs`) has no automated test, and the fallback
+      test skips when 7431 is held; `listenOn` turns a non-EADDRINUSE error into an unhandled rejection;
+      stale comment in `view.mjs` ~356; no Host-header check on `/register`; a long title plus `⑂` mark not
+      tested for `…`. The run also saw repo-rules refuse `node -e` containing `=>` (unverified false positive).
+    - Acceptance: live look at 190/110 with a task in a linked worktree, shown to the user and approved;
+      contractions kept (`it-s` or `its`, tested); a slug match wins over an id prefix (tested); the join
+      branch tested on a scratch default port; `node -e '… => …'` checked against repo-rules.
 
 87. **A paraphrased document criterion still gets into user stories** (rest of card 87) — in E-a7996a31
     - Why: `stripDocumentAcceptance` (eb3a1c49) drops only an exact-text match. The real L run E-11f56074
