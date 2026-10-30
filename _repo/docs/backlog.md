@@ -320,8 +320,12 @@ toasts).
       contractions keep their word (`its-broken`), exact slug beats id prefix, join and fallback tested on
       a scratch default port, listen errors exit 1 with one line, stop-rule comment fixed, `⑂` tail cut to
       `…` tested on 4 surfaces.
-    - Acceptance (left): live look at 190/110 with a task in a linked worktree, shown to the user and
-      approved; `node -e '… => …'` checked against repo-rules.
+    - Live look 2026-10-31 (main checkout, E-7970d4b5 running in `../claude-skills-c108`): the pane and
+      band now list the worktree task (was "no task running"); q, Esc and the command again close it.
+      Defect: the `⑂ <worktree>` mark is appended after the title (`teams-draw.tsx:219`, `mod.tsx:962`),
+      so it is cut off first and never shows at 190 (row `Backlog card 108 (teams plugin), in…`) or 110.
+    - Acceptance (left): the mark shows at 190 and 110 (e.g. before the title, short), shown to the user
+      and approved; `node -e '… => …'` checked against repo-rules.
 
 75. **smart-compact fires on the same context % the person sees in the status line** — part in E-3f6657e7 (6d5809b2)
     - 2026-10-26: smart-compact now computes `round((input + cache_creation + cache_read) / window * 100)`, the
