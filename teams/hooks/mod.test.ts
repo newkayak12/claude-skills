@@ -2509,20 +2509,29 @@ for (const surface of SURFACES) {
     await seeded($, on, { status: stat(), tasks: WT, task: WT[0] }, surface, undefined, { watch: [] })
     const ui = await wide($, surface)
     const text = await shown(ui)
-    expect(text).toContain('in a worktree · ⑂ wt')
+    expect(text).toContain('⑂ wt · in a worktree')
     expect(text).toContain('own checkout')
     expect(text.split('⑂').length).toBe(2)
   })
   test(`${surface}: band shows ⑂ wt for a worktree task; null shows no ⑂`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo({ worktree: 'wt' }) }, surface)
-    expect(await shown(await band($, surface))).toContain('· ⑂ wt')
+    const b = await shown(await band($, surface))
+    expect(b).toContain('teams · ⑂ wt · ')
+    expect(b).toMatch(/teams · ⑂ wt · .+ — \S/)
+  })
+  test(`${surface}: band with a long title keeps ⑂ <worktree> before the title`, async ($, on) => {
+    const long = 'Migrate every legacy report exporter to the new streaming writer and keep each output file identical across all supported locales'
+    await seeded($, on, { status: stat(), task: demo({ worktree: 'feature-worktree', title: long }) }, surface)
+    expect(await shown(await band($, surface))).toContain('teams · ⑂ feature-worktree · Migrate')
   })
   test(`${surface}: band with worktree null shows no ⑂`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo({ worktree: null }) }, surface)
-    expect(await shown(await band($, surface))).not.toContain('⑂')
+    const b = await shown(await band($, surface))
+    expect(b).not.toContain('⑂')
+    expect(b).toMatch(/teams · .+ — \S/)
   })
-  // the title cell (title · ⑂ worktree) is cut from its end at 110 columns: the tail goes first, the row keeps its cells
-  test(`${surface}: a long title with a worktree is cut to … at 110 columns, the ⑂ tail gives way`, async ($, on) => {
+  // the title cell (⑂ worktree · title) is cut from its end at 110 columns: the title tail goes, the ⑂ mark stays, the row keeps its cells
+  test(`${surface}: a long title with a worktree is cut to … at 110 columns, the ⑂ mark stays`, async ($, on) => {
     const long = 'Migrate every legacy report exporter to the new streaming writer and keep each output file identical across all supported locales'
     const tasks = [
       epicOf('tW', 'E-aaaaaaaa', [], { title: long, worktree: 'feature-worktree' }),
@@ -2534,11 +2543,11 @@ for (const surface of SURFACES) {
     expect(lines).toHaveLength(2)
     const [w, s] = lines as [string, string]
     expect(w).toContain('…')
-    expect(w).not.toContain('⑂')
-    expect(w).not.toContain('feature-worktree')
+    expect(w).toContain('⑂ feature-worktree · Migrate')
+    expect(w).not.toContain('all supported locales')
     expect(w).toMatch(/\d+\/\d+/)
     expect(s).toMatch(/\d+\/\d+/)
-    expect(w.indexOf('Migrate')).toBe(s.indexOf('short'))
+    expect(w.indexOf('⑂')).toBe(s.indexOf('short'))
     for (const l of lines) expect(cells(l)).toBeLessThanOrEqual(106)
   })
 }
