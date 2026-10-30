@@ -9,6 +9,96 @@ never retire them as duplicates, and never reference superpowers.
 
 Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — the UI cards below come first.
 Card 101 comes before them (user, 2026-10-29: "최우선").
+The portfolio flow comes before everything (user, 2026-10-30: "전체적으로 계획 한거 백로그로 넣고
+우선순위 최상으로 두고 해주세요"): 102, then 103, then 54 (A → C → B, user 2026-10-29: "네네 하시져").
+
+### portfolio flow — first (design: `_repo/docs/plans/2026-10-30-portfolio-flow.md`)
+
+102. **portfolio checks the deck's claims against the material in an engine, both ways**
+    - Why: debate 2026-10-29 (10 personas + noah), verified in code: material marks `근거 없음` /
+      `user-stated` (material/SKILL.md:49, parts.md:31-32) but manage's skeleton step only says "each
+      claim citing its material item" (manage/SKILL.md:65-67); `verify` checks only heading order and
+      page refs (manage.mjs:249-259); feedback counts "30분 → 4분" as a complete claim by shape alone
+      (claim-and-consistency.md:66-67); 9b compares scores only (manage.mjs:262-269); the decision
+      gate and "plausible cause → `[확인 필요]`" are prose only (manage/SKILL.md:76-80, principles.md).
+      The user's own rejections in real deck work: sentences giving a reason or solution they never
+      said ("얘기한 적이 없어"), judgment lines with no ground ("왜?!"), AI tone; and the other way,
+      real work left out because it had no document ("기록을 안 남긴 것뿐").
+    - Acceptance: an engine check (node, tested) over skeleton/deck.mdx and `material/`:
+      1. every claim line names a material id; a number not in that item, or marked `근거 없음`, fails;
+      2. a third state `본인 확인(기록 없음)` passes and is listed, never dropped as unsupported;
+      3. a reason/cause/solution sentence with no source in the item is listed `[확인 필요]`;
+      4. the reverse list: results in included material items that no page carries;
+      5. 9b `compare` reports a claim that lost its ground as worse, whatever the score;
+      6. a narrow tone check (AI-tone phrases and judgment lines not in the material), not a full rewrite;
+      7. structure decisions in `확정사실.md` (blocks never mixed, a writing basis such as "write the
+         in-progress chapter as if done") are not re-raised by feedback or drift checks.
+      Fictional fixtures only; manage tests with counts; one real run on a fictional workspace.
+
+103. **portfolio engine bugs: renumber fences and write order, material path, untouched chart samples**
+    - Why: debate 2026-10-29, each reproduced in the scratchpad against the repo scripts:
+      - renumber double-replaces a page-column cell: `| 1 | 3쪽 |` stays `3쪽` after a 3:4,4:3 swap,
+        with no warning (manage.mjs:184-186, REF :155);
+      - renumber does not track ``` fences (a `# comment` inside one is taken as H1, the block is cut)
+        and writes the file before `verify` (manage.mjs:282-283): `--map 3:4` on `## 3 / ## 4` writes
+        two `## 4.`; parseMap does not check a target against headings outside the map;
+      - material writes `<cwd>/material/` and reads `<cwd>/sources/` (material.mjs:36-37) while manage
+        expects items under `sources/` and only `sources` in LAYOUT (manage.mjs:21): run from the
+        root it makes a stray `material/`, run from `sources/` it looks for `sources/sources/`;
+      - a chart slot deck.mdx leaves untouched keeps the template's sample numbers silently: the
+        untouched-slot warning skips charts (deck.py:3486-3489), the chart warning fires only when a
+        value was written (:3395-3397); limits.md:42 says build reports it.
+    - Acceptance: a failing test first for each; renumber skips fenced lines, refuses a map whose
+      target collides, and writes only when `verify` passes (or with an explicit flag); material and
+      manage agree on one items path; `check`/`build` warn on every untouched chart slot. manage,
+      material and `test_deck.py` counts; one real run on a fictional workspace.
+
+54. **portfolio runs one flow on managed material: collect → write → render → feedback**
+    - Why: user, 2026-10-18: "포트폴리오 스킬에 매니징 있니? 그니까 글감을 모으고 관리하고 그걸 바탕으로
+      내 문제로 쓰고 그걸 deckbuilder로 렌더링하고 다시 그걸 portfolio feedback으로 하고 이런 플로가
+      있어야 할거 같은데 글감 관리 못하고 그냥 무작위로 하니까 계속 헛짓거리를 하던데". Today portfolio
+      has deck-builder, feedback, fit, rewrite, pattern, interview skills but nothing keeps the material
+      (episodes, problems, numbers, evidence) between sessions, and no skill chains the four steps.
+    - Acceptance: a design doc first (brainstorm → approval); material is collected and kept in one
+      store the later steps read (no re-asking, no random picks); writing draws each problem from that
+      store; deck-builder renders it; feedback findings go back onto the material and the loop repeats;
+      one user-facing entry, internals hidden (card 34 principle); one real run end to end.
+    - Decided (user, 2026-10-18): "내가 준 재료를 바탕으로 글감 모으고 각 글감을 기록하는 형식을 만들자
+      포트폴리오 온리니까" — material comes only from what the user hands over; one record format per
+      material item; the store belongs to portfolio, not knowledge.
+    - Format (user, same day): "글감마다 폴더, 세부 내용마다 md로" — `material/<id>/` per item, one md
+      per part (meta, problem, decision, result, learned, gaps, history). Nice to have later: knowledge
+      can build over these folders. Order: "글감모으기부터 시작" — collection first.
+    - Step 1 shipped 2026-10-21 (`portfolio:material`, `666b7283`): tests 17/17; real run on fictional
+      material made 2 items × 7 parts + index, re-run changed nothing. Its six leftovers fixed
+      2026-10-22 (id no longer repeats the title, index links folders, a figure citing a document not
+      handed over is `근거 없음`, `gaps` counts open questions, `수치 없음` line for no-figure episodes,
+      a merged second source is recorded and matches `same`): tests 20/20, real run confirmed each.
+    - Step 2 shipped 2026-10-21 (`portfolio:manage`, the one entry; history in git) and fixed for the
+      user's own workspace in portfolio 2.9.3 (manage 15/15). Left for the user's workspace (v4.5.1):
+      `version:` line, one `## N` heading per appendix page 22-27; then re-run `verify` there.
+    - Flow (user, 2026-10-30, design doc above): "1. 글감 수집 2. 글감 정리(뭘 쓰고 안쓰고 각 글감의
+      대표를 뭘로 잡을거고) 3. 초안 작성(skeleton) 4. 퇴고(다양한 시점에서 퇴고 진행) 5. template분석
+      (palette, style …) 6. deck으로 작성(세부 스타일 조정) 7. 렌더(pptx + pdf: 검토, 재렌더) 8. 피드백
+      진행". Missing today and added here:
+      - step 2 `select`: `sources/선정.md` (글감 · 쓰임 본문/부록/제외 · 쪽 · 이유 · 대표), material
+        status `raw → selected | excluded`; exclusions live only there, not in `확정사실.md`; draft reads
+        only selected items;
+      - step 4: viewpoints in order (recruiter 6초 → engineer 30초 → interviewer attack via
+        `mock-interview` → the user's bar via noah), each a numbered edit list;
+      - step 5: `template/분석.md` from catalog's Palette/Type/Voice plus style rules; `write:diagram`
+        figures take its colours;
+      - step 7: PNG previews under `build/preview/`, `build/검토.md` per page (쪽 · 본 것 · 문제 →
+        다음렌더-지침); a re-render applies every 지침 row first;
+      - step 8: `feedback` on the rendered PDF saved to `snapshot/feedback/deck-vX.Y.Z.md`; an
+        indefensible claim goes onto its item's `gaps`, a restored real result onto the item as
+        `본인 확인(기록 없음)`; the next round starts at 2 or 4. Kept small (no three-level follow-up
+        tree: "과한데?"). feedback proposes no cut or merge without a ground ("왜 줄여야 하는거야?") and
+        cites no market generalities ("과장하지마");
+      - `layout` lists the new files as missing (created on request); manage's Process renumbered 1–8.
+      First-page numbers (V1, user 2026-10-29): the summary line need not carry a number; measured
+      numbers sit in the evidence lines; small-scale numbers are dropped; feedback stops counting a
+      number-free first line as a defect.
 
 ### teams parallelism — first
 
@@ -259,94 +349,7 @@ toasts).
 
 ### portfolio plugin
 
-Order (user, 2026-10-29: "네네 하시져" to A → C → B from the 10-persona + noah debate): 102, then
-103, then card 54's loop.
-
-102. **portfolio checks the deck's claims against the material in an engine, both ways**
-    - Why: debate 2026-10-29 (10 personas + noah), verified in code: material marks `근거 없음` /
-      `user-stated` (material/SKILL.md:49, parts.md:31-32) but manage's skeleton step only says "each
-      claim citing its material item" (manage/SKILL.md:65-67); `verify` checks only heading order and
-      page refs (manage.mjs:249-259); feedback counts "30분 → 4분" as a complete claim by shape alone
-      (claim-and-consistency.md:66-67); 9b compares scores only (manage.mjs:262-269); the decision
-      gate and "plausible cause → `[확인 필요]`" are prose only (manage/SKILL.md:76-80, principles.md).
-      The user's own rejections in real deck work: sentences giving a reason or solution they never
-      said ("얘기한 적이 없어"), judgment lines with no ground ("왜?!"), AI tone; and the other way,
-      real work left out because it had no document ("기록을 안 남긴 것뿐").
-    - Acceptance: an engine check (node, tested) over skeleton/deck.mdx and `material/`:
-      1. every claim line names a material id; a number not in that item, or marked `근거 없음`, fails;
-      2. a third state `본인 확인(기록 없음)` passes and is listed, never dropped as unsupported;
-      3. a reason/cause/solution sentence with no source in the item is listed `[확인 필요]`;
-      4. the reverse list: results in included material items that no page carries;
-      5. 9b `compare` reports a claim that lost its ground as worse, whatever the score;
-      6. a narrow tone check (AI-tone phrases and judgment lines not in the material), not a full rewrite;
-      7. structure decisions in `확정사실.md` (blocks never mixed, a writing basis such as "write the
-         in-progress chapter as if done") are not re-raised by feedback or drift checks.
-      Fictional fixtures only; manage tests with counts; one real run on a fictional workspace.
-
-103. **portfolio engine bugs: renumber fences and write order, material path, untouched chart samples**
-    - Why: debate 2026-10-29, each reproduced in the scratchpad against the repo scripts:
-      - renumber double-replaces a page-column cell: `| 1 | 3쪽 |` stays `3쪽` after a 3:4,4:3 swap,
-        with no warning (manage.mjs:184-186, REF :155);
-      - renumber does not track ``` fences (a `# comment` inside one is taken as H1, the block is cut)
-        and writes the file before `verify` (manage.mjs:282-283): `--map 3:4` on `## 3 / ## 4` writes
-        two `## 4.`; parseMap does not check a target against headings outside the map;
-      - material writes `<cwd>/material/` and reads `<cwd>/sources/` (material.mjs:36-37) while manage
-        expects items under `sources/` and only `sources` in LAYOUT (manage.mjs:21): run from the
-        root it makes a stray `material/`, run from `sources/` it looks for `sources/sources/`;
-      - a chart slot deck.mdx leaves untouched keeps the template's sample numbers silently: the
-        untouched-slot warning skips charts (deck.py:3486-3489), the chart warning fires only when a
-        value was written (:3395-3397); limits.md:42 says build reports it.
-    - Acceptance: a failing test first for each; renumber skips fenced lines, refuses a map whose
-      target collides, and writes only when `verify` passes (or with an explicit flag); material and
-      manage agree on one items path; `check`/`build` warn on every untouched chart slot. manage,
-      material and `test_deck.py` counts; one real run on a fictional workspace.
-
-54. **portfolio runs one flow on managed material: collect → write → render → feedback**
-    - Why: user, 2026-10-18: "포트폴리오 스킬에 매니징 있니? 그니까 글감을 모으고 관리하고 그걸 바탕으로
-      내 문제로 쓰고 그걸 deckbuilder로 렌더링하고 다시 그걸 portfolio feedback으로 하고 이런 플로가
-      있어야 할거 같은데 글감 관리 못하고 그냥 무작위로 하니까 계속 헛짓거리를 하던데". Today portfolio
-      has deck-builder, feedback, fit, rewrite, pattern, interview skills but nothing keeps the material
-      (episodes, problems, numbers, evidence) between sessions, and no skill chains the four steps.
-    - Acceptance: a design doc first (brainstorm → approval); material is collected and kept in one
-      store the later steps read (no re-asking, no random picks); writing draws each problem from that
-      store; deck-builder renders it; feedback findings go back onto the material and the loop repeats;
-      one user-facing entry, internals hidden (card 34 principle); one real run end to end.
-    - Decided (user, 2026-10-18): "내가 준 재료를 바탕으로 글감 모으고 각 글감을 기록하는 형식을 만들자
-      포트폴리오 온리니까" — material comes only from what the user hands over; one record format per
-      material item; the store belongs to portfolio, not knowledge.
-    - Format (user, same day): "글감마다 폴더, 세부 내용마다 md로" — `material/<id>/` per item, one md
-      per part (meta, problem, decision, result, learned, gaps, history). Nice to have later: knowledge
-      can build over these folders. Order: "글감모으기부터 시작" — collection first.
-    - Step 1 shipped 2026-10-21 (`portfolio:material`, `666b7283`): tests 17/17; real run on fictional
-      material made 2 items × 7 parts + index, re-run changed nothing. Its six leftovers fixed
-      2026-10-22 (id no longer repeats the title, index links folders, a figure citing a document not
-      handed over is `근거 없음`, `gaps` counts open questions, `수치 없음` line for no-figure episodes,
-      a merged second source is recorded and matches `same`): tests 20/20, real run confirmed each.
-    - Step 2 (user, 2026-10-21, with a PRD and session findings from real deck work kept outside the repo —
-      real names in them): "이건 portfolio 작업하는건데 스킬로 빼버리고 deck-builder, portfolio-feedback
-      등 사용해서 강화하게 하고" — a new `portfolio:manage` skill owns skeleton → deck.mdx, versions
-      (snapshot before every edit), evidence order and the user's corrections, a decision gate, a page-
-      reference renumber engine (tested, incl. the double-replace regression), the "to align" table; it
-      calls `material`, `feedback`/`pattern`/`rewrite` and `deck-builder` (check; build/render only when
-      told) to strengthen the deck. Fixtures fictional; no real names or employer data in the repo.
-    - Step 2 shipped 2026-10-21 by hand (user: "portfolio는 바로 해줘요", "manage를 하나의 wf로";
-      E-6a0c881d cancelled; `.claude/teams-dispatch.json` now allows `portfolio/**`): `portfolio:manage`
-      is the one entry; engine tests 9/9; a real run on a fictional workspace swapped two pages with
-      every reference right and no hand fix (the first run found four engine bugs, fixed and tested).
-      First run on the user's own workspace (2026-10-25, user report): the engine could not read it —
-      `## N쪽 ·` headings, a `## 구성` section before the pages, `#` block headings riding with the
-      previous page, quoted history lines renumbered, template under `template/`, the README's own
-      `## skeleton` table. Fixed in portfolio 2.9.3 (manage 15/15, fictional workspace run: block
-      swap, snapshot row by column name). Left for the user's workspace (v4.5.1): `version:` line,
-      one `## N` heading per appendix page 22-27; then re-run `verify` there.
-    - Left (debate 2026-10-29, after 102 and 103): the loop back. A claim feedback or a mock interview
-      found indefensible goes back onto its material item's `gaps`; a real result the user restores
-      goes onto the item as `본인 확인(기록 없음)`. Kept small (no three-level follow-up tree: "과한데?").
-      Also from the debate: feedback does not propose cutting or merging pages without a ground ("왜
-      줄여야 하는거야?"), and never cites market generalities as evidence ("과장하지마"). First-page
-      numbers (V1, user 2026-10-29): the summary line need not carry a number; measured numbers sit in
-      the evidence lines; small-scale numbers are dropped. feedback stops counting a number-free first
-      line as a defect.
+(cards 102, 103 and 54 moved to the top, 2026-10-30)
 
 ### Skeleton and length (one card per skill, next edit)
 
