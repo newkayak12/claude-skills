@@ -131,19 +131,18 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
 
 ### teams parallelism — first
 
-108. **teams view `--once` reads only open tasks, not every task ever run** — in E-7970d4b5
-    - Why: 2026-10-30, the machine (12 cores) was saturated: view.mjs ~540% CPU. Verified: one
-      `view.mjs --once --format status --cwd <repo>` takes 7.8 s wall / 6.1 s CPU, because
-      `runningModels` (`teams/scripts/view.mjs` L102) runs `collectTask` on every one of the 2098 dirs
-      in `~/.harness/tasks` (239 MB, never pruned) before filtering on state and cwd; `floorTasks`
-      does the same walk. 22 open sessions' status lines and panes spawn ~30 of these every 20 s, so the
-      cost grows with every task ever run. Also seen: 43 detached `--tasks-dir` viewers (ppid 1, up to
-      38 days old, ~2.6 GB RSS, idle CPU), all from teams 0.60.x or the repo copy before `21a52358`
-      (card 83's idle exit) — none from 0.61.x, so the leak is fixed and only the old processes remain.
-    - Acceptance: `--once --format status|events|summary` reads `task.json` state and cwd first and
-      builds a model only for a matching open task (or keeps an index of open tasks); on a fixture
-      tasks dir with 2000 finished tasks one call stays under 0.3 s (tested); a status-line poll does
-      not start a new process while the previous one still runs.
+108. **teams view `--once` fast path — rest: wall-clock tests that go red under load, and the cache's loose ends**
+    - Why: shipped in E-7970d4b5 (`cba67113`): a real `--once --format status` went from 32.3 s to
+      0.38 s (969 task dirs); finished tasks are cached under `os.tmpdir()`. Left: the wall-clock
+      subtests in `teams/scripts/test-view-perf.mjs` (best of 5 < 300 ms) fail in the full teams
+      suite at load ~250 (2026-10-31: 1719 tests, 1716 pass, 2 fail, 1 skip; 13/13 alone). The cold
+      first call per tasks dir is still 0.6–0.76 s. `view-floor-fs.mjs`'s header ("Read-only") and the
+      `scanRaws` comment are now wrong (it writes a cache, returns stub raws for cached finished tasks).
+      A stale `<file>.<pid>.tmp` from a crash is never pruned. The poll overlap check (no new process
+      while the previous runs) was not shown.
+    - Acceptance: the wall-clock subtests run only with an opt-in env (or assert CPU) so the teams
+      suite is green at any load; the two comments say what the code does; stale `.tmp` files pruned;
+      a status-line poll does not start a new process while the previous one still runs (tested).
 
 101. **teams runs ready packages at the width shape allows — rest: the first tick, and one real Sprint at width 2+**
     - Why: user, 2026-10-29: "harness, graph, teams 각 phase를 병렬로 할 수는 없는건가?", then "네네 그리고
@@ -449,6 +448,7 @@ toasts).
 |---|---|---|---|
 | E-a7996a31 | 2026-10-30 | 87 rest | shipped `5639b260`; size S; goal gate 91; limit named in the PRD gate prompt (a Jaccard ≥ 0.63 rule passed both tests but missed the one real paraphrase, J=0.38, so declined); teams 1681/1682 |
 | E-233f8dca | 2026-10-30 | 81 rest | shipped `2fc9e26c`; size S; goal gate 90; own-write hook + fallback-route verdict gates; teams 1679/1680, plugin test 411/411 |
+| E-7970d4b5 | 2026-10-31 | 108 | shipped `cba67113`; size S; real `--once` 32.3 s → 0.38 s; teams 1716/1719 (2 wall-clock fails under load ~250, left on 108); codex 401, ran on Sonnet |
 | E-f53a8434 | 2026-10-30 | 105, 106 | shipped `236eae3d`; size S; goal gate 92; teams 1658/1660, plugin test 423/423; UI look left on card 105 |
 | E-ce2bcff4 | 2026-10-30 | 101 | merged `9d4bd6a2` locally, then reverted `0cb18fbf`: another session shipped card 101 first as teams 0.61.5 (E-ea14c9c4), kept that one; size S, goal gate 92 |
 | E-db7e3226 | 2026-10-30 | 94 defects | shipped `15a95196`; size S (resumed from E-4f12f406); goal gate 91; plugin test 411/411; captures awaiting approval |
