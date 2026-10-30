@@ -20,7 +20,7 @@
 //       per-item change between two `{ "<item>": <score> }` files scored with the same rubric;
 //       names every item that dropped and the verdict (better | worse | mixed | same);
 //       with --claims-before/--claims-after (two `claims` outputs) a claim that lost its ground makes it worse
-//   claims [--file skeleton.md]
+//   claims [--file skeleton.md | --file deck.mdx]   (deck.mdx: one page per `## @sN`, cites in its comment)
 //       each page's figures and reason sentences against the material its `글감:` line cites:
 //       problems (uncited, unknown_id, not_in_material, unsupported = `근거 없음`, to_confirm = a reason
 //       the items do not say), listed (본인 확인, user-stated, tone phrases), unused_results (figures in
@@ -416,6 +416,45 @@ export function readMaterial(root) {
   return items
 }
 
+// deck.mdx read as pages for `claims`: each `## @sN <comment>` slide is the next page (or the `N쪽`
+// its comment names), its `글감: <id>, …` cites from the comment, and every slot value is a body line
+// (`notes:`, pictures and `!drop` are not claims).
+export function deckPages(text) {
+  const out = []
+  let page = 0
+  for (const l of text.replace(/^---\n[\s\S]*?\n---\n/, '').split('\n')) {
+    const s = l.match(/^##\s+@s\d+\b(.*)$/)
+    if (s) {
+      page = Number(s[1].match(/(\d+)쪽/)?.[1] ?? page + 1)
+      out.push(`## ${page}쪽`)
+      const c = s[1].match(/글감\s*:\s*([^·|]+)/)
+      if (c) out.push(`글감: ${c[1].trim()}`)
+      continue
+    }
+    if (/^#\s/.test(l)) { out.push(l); continue }
+    if (!out.length) continue
+    const kv = l.match(/^([A-Za-z_][\w]*):\s*(.*)$/)
+    if (kv) {
+      if (kv[1] === 'notes' || /^!drop$|\.(png|jpe?g|svg|gif)(\s*\|.*)?$/i.test(kv[2])) continue
+      if (kv[2]) out.push(kv[2])
+    } else if (l.trim()) out.push(l.trim().replace(/^[-|]\s*/, ''))
+  }
+  return out.join('\n')
+}
+
+// resume.md read as pages for `claims`: every `##`/`###` heading (a section, a company entry) is the
+// next page; its `글감:` lines cite, its bullets are the lines.
+export function resumePages(text) {
+  const out = []
+  let page = 0
+  for (const l of text.replace(/^---\n[\s\S]*?\n---\n/, '').split('\n')) {
+    if (/^#{2,3}\s/.test(l)) { out.push(`## ${++page}쪽`); continue }
+    if (/^#\s/.test(l) || !page) continue
+    if (l.trim()) out.push(l.trim().replace(/^[-*]\s+/, ''))
+  }
+  return out.join('\n')
+}
+
 // Settled writing bases and structure decisions the checks must not raise again: the lines under
 // `## 서술 기준` and `## 구조` in docs/확정사실.md, handed to feedback and drift checks as they are.
 export function settled(root) {
@@ -520,7 +559,9 @@ function main() {
     const both = typeof args['claims-before'] === 'string' && typeof args['claims-after'] === 'string'
     out = compare(load(args.before), load(args.after), both ? load(args['claims-before']) : undefined, both ? load(args['claims-after']) : undefined)
   } else if (cmd === 'claims') {
-    out = claims(readFileSync(file, 'utf8'), readMaterial(root), settled(root), selection(root))
+    const text = readFileSync(file, 'utf8')
+    const pages = /^##\s+@s\d+/m.test(text) ? deckPages(text) : /resume\.md$/.test(file) ? resumePages(text) : text
+    out = claims(pages, readMaterial(root), settled(root), selection(root))
   } else if (cmd === 'scaffold') {
     out = scaffold(root)
   } else if (cmd === 'selection') {

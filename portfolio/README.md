@@ -138,10 +138,13 @@ skeleton.md → deck.mdx → build/        design, build source, output
 snapshot/  sources/  docs/확정사실.md   versions, material, settled facts
 ```
 
-Eight steps (2.11.0): collect → select (`sources/선정.md`: 본문 / 부록 / 제외 and what each item
+Nine steps (2.12.0): collect → select (`sources/선정.md`: 본문 / 부록 / 제외 and what each item
 leads with) → draft → revise from several viewpoints → template analysis (`template/분석.md`) →
 deck → render and review (previews kept per deck version under `snapshot/render/`) → feedback on
-the deck, back onto the material.
+the deck, back onto the material. Step 9 writes the resume from the same settled claims into your
+own Word template (`resume.py build`, then a PDF). Every line written into the skeleton, deck or
+resume goes through `write:like-me`, in your voice from texts you wrote yourself. Your material — templates, decks, resumes, PDFs —
+never goes to git: the engine refuses a workspace a git repository would carry.
 
 - Every page cites its material (`글감: <id>`); `claims` checks each figure and reason against it
   both ways — a number with no ground, a reason the material never gives, a result left out of

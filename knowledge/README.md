@@ -410,6 +410,7 @@ some 22.x builds lack FTS5. The bundled Docker image is a known-good path:
 docker compose -f knowledge/compose.yaml run --rm knowledge-index
 ```
 
+- v1.21.4 — skills gain their Process and Output Template sections (no behaviour change); references point at write:prd / write:adr after the write:plans split.
 - v1.21.3 — Codex: MCP servers register under Codex (`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`); Claude reads them from plugin.json.
 
 ## Roadmap

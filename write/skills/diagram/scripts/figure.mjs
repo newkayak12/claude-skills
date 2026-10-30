@@ -52,14 +52,14 @@ class Canvas {
     const anchor = o.anchor || 'start';
     const x0 = anchor === 'middle' ? x - w / 2 : anchor === 'end' ? x - w : x;
     const box = { x: x0, y: y - asc, w, h: asc + desc };
-    this.items.push({ id: o.id || `text${this.n++}`, kind: 'text', text: s, size, box, owner: o.owner, within: o.within, room: o.room });
+    this.items.push({ id: o.id || `text${this.n++}`, kind: 'text', text: s, size, box, owner: o.owner, within: o.within, room: o.room, what: o.what });
     this.used[weight] += s;
     this.parts.push(`<text x="${f1(x)}" y="${f1(y)}" font-size="${size}"${o.bold ? ' font-weight="700"' : ''}${anchor !== 'start' ? ` text-anchor="${anchor}"` : ''} fill="${o.fill || PALETTE.ink}"${o.halo ? ' stroke="#ffffff" stroke-width="4" paint-order="stroke"' : ''}>${esc(s)}</text>`);
     return box;
   }
   width(str, o = {}) { return measure(loadFont(o.bold ? 'Bold' : 'Regular'), String(str), o.size || SIZE); }
   shape(svg, box, o = {}) { this.parts.push(svg); this.items.push({ id: o.id || `shape${this.n++}`, kind: 'shape', box, owner: o.owner, container: o.container, mark: o.mark }); }
-  edge(svg, points, o = {}) { this.parts.push(svg); this.items.push({ id: o.id || `edge${this.n++}`, kind: 'edge', points, from: o.from, to: o.to, owner: o.owner, hint: o.hint }); }
+  edge(svg, points, o = {}) { this.parts.push(svg); this.items.push({ id: o.id || `edge${this.n++}`, kind: 'edge', points, from: o.from, to: o.to, owner: o.owner, hint: o.hint, exclusive: o.exclusive }); }
   guide(svg) { this.parts.push(svg); }
   // Lines of at most `room` px, broken at spaces or slashes; past `max` lines the rest stays on the
   // last line, so it overflows and the checker names it instead of the renderer cutting it.
@@ -116,7 +116,7 @@ const segments = (pts) => pts.slice(1).map((q, i) => [pts[i], q]);
 // (h) edge or arrowhead over any text - its own label included (a label sits beside its line, not on it).
 export function checkGeometry(items, { W, H, printWidth = PRINT_WIDTH }) {
   const errs = [];
-  const name = (i) => (i.kind === 'text' ? `"${i.text}"` : i.id);
+  const name = (i) => (i.kind === 'text' ? `${i.what ? `${i.what} ` : ''}"${i.text}"` : i.id);
   const byId = new Map(items.filter((i) => i.kind === 'shape').map((i) => [i.id, i]));
   const texts = items.filter((i) => i.kind === 'text'), shapes = items.filter((i) => i.kind === 'shape' && !i.container), edges = items.filter((i) => i.kind === 'edge');
   for (const it of items) {
@@ -133,10 +133,13 @@ export function checkGeometry(items, { W, H, printWidth = PRINT_WIDTH }) {
     const box = t.within && byId.get(t.within);
     if (box && !contains(box.box, t.box)) errs.push(`${name(t)} overflows its box ${t.within} - shorten it or put the rest in "note"`);
   }
+  // A named text (the resume note) that is already refused for its width is not refused again for what it
+  // runs over: that is the same fault, and one message names it.
+  const moot = (t) => t.what && t.room != null && t.box.w > t.room + 0.5;
   for (let i = 0; i < texts.length; i++) for (let j = i + 1; j < texts.length; j++)
-    if (overlap(texts[i].box, texts[j].box)) errs.push(`${name(texts[i])} and ${name(texts[j])} overlap - move one or shorten it`);
+    if (!moot(texts[i]) && !moot(texts[j]) && overlap(texts[i].box, texts[j].box)) errs.push(`${name(texts[i])} and ${name(texts[j])} overlap - move one or shorten it`);
   for (const t of texts) for (const s of shapes)
-    if (s.id !== t.owner && s.id !== t.within && overlap(t.box, s.box)) errs.push(`${name(t)} sits over ${s.id} - move the text or the shape`);
+    if (!moot(t) && s.id !== t.owner && s.id !== t.within && overlap(t.box, s.box)) errs.push(`${name(t)} sits over ${s.id} - move the text or the shape`);
   for (const e of edges) {
     const segs = segments(e.points);
     for (const s of shapes) {
@@ -144,8 +147,14 @@ export function checkGeometry(items, { W, H, printWidth = PRINT_WIDTH }) {
       if (segs.some(([p, q]) => crosses(p, q, s.box))) errs.push(`edge ${e.id} passes through ${s.id} - move ${s.id} off the line, or move an end so the line runs clear`);
     }
     for (const t of texts)
-      if (segs.some(([p, q]) => crosses(p, q, t.box))) errs.push(`edge ${e.id} runs over the text ${name(t)} - ${e.hint || 'move the text or the line'}`);
+      if (!moot(t) && segs.some(([p, q]) => crosses(p, q, t.box))) errs.push(`edge ${e.id} runs over the text ${name(t)} - ${e.hint || 'move the text or the line'}`);
   }
+  // (i) two edges that own their line (cause edges) never run along the same straight stretch.
+  const own = edges.filter((e) => e.exclusive);
+  const along = (s, t) => [0, 1].some((k) => Math.abs(s[0][k] - s[1][k]) < 0.5 && Math.abs(t[0][k] - t[1][k]) < 0.5 && Math.abs(s[0][k] - t[0][k]) < 1
+    && Math.min(Math.max(s[0][1 - k], s[1][1 - k]), Math.max(t[0][1 - k], t[1][1 - k])) - Math.max(Math.min(s[0][1 - k], s[1][1 - k]), Math.min(t[0][1 - k], t[1][1 - k])) > 1);
+  for (let i = 0; i < own.length; i++) for (let j = i + 1; j < own.length; j++)
+    if (segments(own[i].points).some((s) => segments(own[j].points).some((t) => along(s, t)))) errs.push(`edge ${own[i].id} and ${own[j].id} run along the same line - move an end so each edge has its own x`);
   return [...new Set(errs)];
 }
 
@@ -639,6 +648,7 @@ function order(level, kids, byId) {
 
 // ----- timeline: 1-4 sessions over discrete steps, lock waits between them -----
 
+const CAUSE_SEP = 3; // least px between the vertical legs of two cause edges in one lane gap
 const STEP_KINDS = ['stmt', 'wait', 'commit', 'rollback', 'error', 'note'];
 
 BOOK_TYPES.timeline = {
@@ -675,6 +685,8 @@ BOOK_TYPES.timeline = {
       if (w.holder != null) {
         const hs = at.get(`${w.on}@${w.holder}`);
         if (!hs || hs.kind !== 'stmt') errs.push(`waits[${i}]: "holder" t=${JSON.stringify(w.holder)} must be a stmt step of lane ${w.on} - the statement where ${w.on} took the lock`);
+        else if (w.holder >= w.from) errs.push(`waits[${i}]: "holder" t=${w.holder} must come before "from" t=${w.from} - ${w.on} takes the lock before ${w.lane} asks for it`);
+        if (Math.abs(lanes.findIndex((l) => l && l.id === w.on) - lanes.findIndex((l) => l && l.id === w.lane)) !== 1) errs.push(`waits[${i}]: "holder" needs lane ${w.on} and lane ${w.lane} to be adjacent - the cause edge runs through the gap between two neighbouring lanes; reorder "lanes" or drop "holder"`);
       }
       if (w.resume != null) {
         if (!isStr(w.resume)) errs.push(`waits[${i}]: "resume" must be the text to draw at the resume step`);
@@ -703,39 +715,84 @@ BOOK_TYPES.timeline = {
     return errs;
   },
   render(ir, c) {
-    // A resume text sits right of its step: the lanes give up a gutter for the longest one.
+    // Every lane is LW wide and every step label wraps at LW - 24: a resume note never narrows a text.
     const W = 640, TW = 34, n = ir.lanes.length;
-    const resumeW = Math.max(0, ...(ir.waits || []).filter((w) => w.resume).map((w) => c.width(w.resume, { size: SUB }) + 16));
-    const LW = (W - 2 * PADX - TW - resumeW) / n;
+    const LW = (W - 2 * PADX - TW) / n;
     title(c, ir, W);
     const colX = new Map(ir.lanes.map((l, i) => [l.id, PADX + TW + i * LW]));
     const ts = ir.steps.map((s) => s.t), t0 = Math.min(...ts), t1 = Math.max(...ts, ...(ir.waits || []).map((w) => w.until));
     const stepAt = new Map(ir.steps.map((s) => [`${s.lane}@${s.t}`, s]));
-    const lines = new Map(ir.steps.map((s) => [`${s.lane}@${s.t}`, c.wrap(s.label, LW - 24, 2, { bold: s.kind === 'commit' || s.kind === 'error' })]));
+    const isBold = (s) => s.kind === 'commit' || s.kind === 'error';
+    const lines = new Map(ir.steps.map((s) => [`${s.lane}@${s.t}`, c.wrap(s.label, LW - 24, 2, { bold: isBold(s) })]));
+    const boxW = new Map(ir.steps.map((s) => { const k = `${s.lane}@${s.t}`; return [k, Math.max(...lines.get(k).map((l) => c.width(l, { bold: isBold(s) }))) + 16]; }));
     const waitLines = (ir.waits || []).map((w) => c.wrap(w.label, LW - 48, 2, { size: SUB }));
+    // A resume note sits right of its step. When it does not fit beside a centred lifeline, only that
+    // lane's lifeline moves left (as far as its widest box allows) and the note wraps in what is left.
+    const cxOf = new Map(ir.lanes.map((l) => [l.id, colX.get(l.id) + LW / 2]));
+    const resumeStep = (w) => ir.steps.filter((s) => s.lane === w.lane && s.t > w.until).sort((a, b) => a.t - b.t)[0];
+    const noteLines = new Map(), noteRoom = new Map();
+    // How far right a note of lane l may run: the left edge of the nearest lane to its right that has a step,
+    // a wait span or a cause edge in the note's row, else the figure's edge.
+    const spillTo = (l, w) => {
+      const k = ir.lanes.indexOf(l), tr = resumeStep(w).t;
+      let lim = W - 8;
+      for (let j = k + 1; j < n; j++) {
+        const id = ir.lanes[j].id;
+        const busy = stepAt.has(`${id}@${tr}`) || (ir.waits || []).some((o) => (o.lane === id && o.from <= tr && tr <= o.until) || (o.holder != null && (o.lane === id || o.on === id) && o.holder <= tr && tr <= o.from));
+        if (busy) lim = Math.min(lim, colX.get(id));
+      }
+      return lim;
+    };
+    for (const l of ir.lanes) {
+      const rws = (ir.waits || []).map((w, i) => [w, i]).filter(([w]) => w.resume && w.lane === l.id);
+      if (!rws.length) continue;
+      const x = colX.get(l.id), right = x + LW;
+      const reach = ([w]) => { const rs = resumeStep(w); return boxW.get(`${rs.lane}@${rs.t}`) / 2 + 8; };
+      if (!rws.every((rw) => right - (cxOf.get(l.id) + reach(rw)) - 4 >= c.width(rw[0].resume, { size: SUB }))) {
+        const half = Math.max(...ir.steps.filter((s) => s.lane === l.id).map((s) => boxW.get(`${s.lane}@${s.t}`) / 2), Math.min(LW - 12, c.width(l.label, { bold: true }) + 24) / 2) + 4;
+        cxOf.set(l.id, x + Math.min(LW / 2, half));
+      }
+      for (const rw of rws) {
+        const [w, i] = rw, wrapIn = (room) => c.wrap(w.resume, room, 3, { size: SUB }), tooWide = (ls, room) => ls.some((ln) => c.width(ln, { size: SUB }) > room + 0.5);
+        let room = right - (cxOf.get(l.id) + reach(rw)) - 4, nl = wrapIn(room);
+        if (tooWide(nl, room)) {
+          // A word of the note does not fit in the lane: let it run on past the lane's edge up to the next
+          // lane's first item in these rows (default - revisit), else draw it as one line, so check names
+          // the note once instead of one message per word.
+          room = Math.max(room, spillTo(l, w) - (cxOf.get(l.id) + reach(rw)) - 4);
+          nl = wrapIn(room);
+          if (tooWide(nl, room)) nl = [w.resume];
+        }
+        noteLines.set(i, nl);
+        noteRoom.set(i, room);
+      }
+    }
     const rowH = new Map();
     for (let t = t0; t <= t1; t++) {
       let h = 26;
       for (const l of ir.lanes) { const ls = lines.get(`${l.id}@${t}`); if (ls) h = Math.max(h, ls.length * 16 + 12); }
-      (ir.waits || []).forEach((w, i) => { if (t === w.from + 1) h = Math.max(h, waitLines[i].length * 16 + 10); });
+      (ir.waits || []).forEach((w, i) => {
+        if (t === w.from + 1) h = Math.max(h, waitLines[i].length * 16 + 10);
+        if (w.resume && t === resumeStep(w).t) h = Math.max(h, noteLines.get(i).length * 16 + 12);
+      });
       rowH.set(t, h + 10);
     }
     const hy = TOP + 4, rowY = new Map();
     let y = hy + 30 + 12;
     for (let t = t0; t <= t1; t++) { rowY.set(t, y); y += rowH.get(t); }
     for (const l of ir.lanes) {
-      const x = colX.get(l.id), hw = Math.min(LW - 12, c.width(l.label, { bold: true }) + 24), b = { x: x + LW / 2 - hw / 2, y: hy, w: hw, h: 30 };
+      const x = cxOf.get(l.id), hw = Math.min(LW - 12, c.width(l.label, { bold: true }) + 24), b = { x: x - hw / 2, y: hy, w: hw, h: 30 };
       c.shape(`<rect x="${f1(b.x)}" y="${b.y}" width="${f1(b.w)}" height="30" rx="${RX}" fill="${PALETTE.fills.soft}" stroke="${PALETTE.line}" stroke-width="${SW_LIGHT}"/>`, b, { id: `lane ${l.id}` });
-      c.text(l.label, x + LW / 2, hy + 20, { anchor: 'middle', bold: true, owner: `lane ${l.id}`, within: `lane ${l.id}`, room: LW - 20 });
+      c.text(l.label, x, hy + 20, { anchor: 'middle', bold: true, owner: `lane ${l.id}`, within: `lane ${l.id}`, room: LW - 20 });
     }
     const lifeAt = c.parts.length;
     for (let t = t0; t <= t1; t++) c.text(`t${t}`, PADX, rowY.get(t) + rowH.get(t) / 2 + 4, { size: SUB, fill: PALETTE.muted, owner: 'time' });
     const boxOf = new Map();
     for (const s of ir.steps) {
-      const k = `${s.lane}@${s.t}`, ls = lines.get(k), x = colX.get(s.lane), h = ls.length * 16 + 10;
-      const id = `step ${k}`, bold = s.kind === 'commit' || s.kind === 'error', hot = c.accent.has(`${s.lane}@t${s.t}`);
-      const w = Math.max(...ls.map((l) => c.width(l, { bold }))) + 16;
-      const b = { x: x + LW / 2 - w / 2, y: rowY.get(s.t) + (rowH.get(s.t) - h) / 2, w, h };
+      const k = `${s.lane}@${s.t}`, ls = lines.get(k), cx = cxOf.get(s.lane), h = ls.length * 16 + 10;
+      const id = `step ${k}`, bold = isBold(s), hot = c.accent.has(`${s.lane}@t${s.t}`);
+      const w = boxW.get(k);
+      const b = { x: cx - w / 2, y: rowY.get(s.t) + (rowH.get(s.t) - h) / 2, w, h };
       boxOf.set(k, b);
       if (s.kind !== 'note') {
         const fill = hot ? PALETTE.fills.accent : { commit: PALETTE.fills.soft, rollback: PALETTE.fills.soft, error: PALETTE.fills.mid }[s.kind] || PALETTE.fills.paper;
@@ -745,28 +802,53 @@ BOOK_TYPES.timeline = {
       ls.forEach((l, i) => c.text(l, b.x + b.w / 2, b.y + 17 + i * 16, { anchor: 'middle', bold, fill: hot ? ON_ACCENT : s.kind === 'note' ? PALETTE.muted : PALETTE.ink, owner: id, within: id, room: b.w - 8 }));
     }
     (ir.waits || []).forEach((w, i) => {
-      const from = boxOf.get(`${w.lane}@${w.from}`), x = from.x + 8, end = boxOf.get(`${w.lane}@${w.until}`), BW = 12;
+      const from = boxOf.get(`${w.lane}@${w.from}`), x = from.x + 8, end = boxOf.get(`${w.on}@${w.until}`) || boxOf.get(`${w.lane}@${w.until}`), BW = 12;
       const y1 = from.y + from.h, y2 = end ? end.y : rowY.get(w.until) + 4, id = `wait ${i}`;
-      // the wait is a filled span from its statement down to the step that ends it
+      // the wait is a filled span from its statement down to the top edge of the step that releases it
+      // (the on lane's step at until, else the waiter's own), with no connector
       c.shape(`<rect x="${f1(x)}" y="${f1(y1)}" width="${BW}" height="${f1(y2 - y1)}" rx="${RX}" fill="${PALETTE.fills.soft}" stroke="${PALETTE.edges.fail.color}" stroke-width="${SW_LIGHT}"/>`, { x, y: y1, w: BW, h: y2 - y1 }, { id });
       const ry = rowY.get(w.from + 1);
       waitLines[i].forEach((l, j) => c.text(l, x + BW + 6, ry + 17 + j * 16, { size: SUB, fill: PALETTE.edges.fail.color, owner: id, room: LW - 42 }));
-      if (w.holder != null) {
-        const hb = boxOf.get(`${w.on}@${w.holder}`), mid = (b) => [b.x + b.w / 2, b.y + b.h / 2];
-        const pts = [exitPoint(hb, ...mid(from), 3), exitPoint(from, ...mid(hb), 3)];
-        c.defs.add(`<marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="${PALETTE.fills.accent}"/></marker>`);
-        c.edge(`<path d="M${f1(pts[0][0])} ${f1(pts[0][1])} L${f1(pts[1][0])} ${f1(pts[1][1])}" fill="none" stroke="${PALETTE.fills.accent}" stroke-width="${SW_HEAVY}" marker-end="url(#arrow-accent)"/>`, pts, { id: `cause ${i}`, from: `step ${w.on}@${w.holder}`, to: `step ${w.lane}@${w.from}` });
-      }
       if (w.resume) {
-        const rs = ir.steps.filter((s) => s.lane === w.lane && s.t > w.until).sort((a, b) => a.t - b.t)[0], rb = boxOf.get(`${rs.lane}@${rs.t}`), rx0 = rb.x + rb.w + 8;
-        c.text(w.resume, rx0, rb.y + 17, { size: SUB, owner: id, room: W - PADX - rx0 });
+        const rs = resumeStep(w), rb = boxOf.get(`${rs.lane}@${rs.t}`), rx0 = rb.x + rb.w + 8, nl = noteLines.get(i);
+        nl.forEach((l, j) => c.text(l, rx0, rb.y + rb.h / 2 + 4 - (nl.length - 1) * 8 + j * 16, { size: SUB, owner: id, room: noteRoom.get(i), what: 'the resume note' }));
       }
     });
+    // A cause edge is a right-angle polyline in the gap between the holder's lane and the waiter's lane
+    // (validate keeps them neighbours): out of the holder box's side, down the gap, into the waiter's side.
+    // The gap is what is free between the two lanes' items over the rows the edges span; each edge of one
+    // gap takes its own x in it, the arrowhead's side leaving room for the head.
+    const gaps = new Map();
+    (ir.waits || []).forEach((w, i) => {
+      if (w.holder == null) return;
+      const k = Math.min(ir.lanes.findIndex((l) => l.id === w.on), ir.lanes.findIndex((l) => l.id === w.lane));
+      gaps.set(k, [...(gaps.get(k) || []), i]);
+    });
+    for (const [k, idx] of gaps) {
+      const left = ir.lanes[k].id, right = ir.lanes[k + 1].id;
+      const ends = idx.flatMap((i) => [boxOf.get(`${ir.waits[i].on}@${ir.waits[i].holder}`), boxOf.get(`${ir.waits[i].lane}@${ir.waits[i].from}`)]);
+      const y0 = Math.min(...ends.map((b) => b.y)), y1 = Math.max(...ends.map((b) => b.y + b.h));
+      const seen = c.items.filter((it) => it.box && it.kind !== 'edge' && !String(it.id).startsWith('lane ') && it.box.y < y1 && it.box.y + it.box.h > y0);
+      const inLane = (it, id) => { const m = it.box.x + it.box.w / 2; return m >= colX.get(id) && m < colX.get(id) + LW; };
+      const xl = Math.max(...seen.filter((it) => inLane(it, left)).map((it) => it.box.x + it.box.w));
+      const xr = Math.min(...seen.filter((it) => inLane(it, right)).map((it) => it.box.x));
+      idx.forEach((i, j) => {
+        const w = ir.waits[i], hb = boxOf.get(`${w.on}@${w.holder}`), from = boxOf.get(`${w.lane}@${w.from}`), toRight = w.lane === right;
+        const lo = toRight ? xl + 4 : xl + 20, hi = toRight ? xr - 20 : xr - 4;
+        // When the free stretch cannot give each edge CAUSE_SEP, the edges fan out CAUSE_SEP apart around
+        // the middle of the gap; if that leaves the gap, the edge crosses a step box and check says so.
+        const narrow = (hi - lo) / (idx.length + 1) < CAUSE_SEP;
+        const gx = narrow ? (xl + xr) / 2 + (j - (idx.length - 1) / 2) * CAUSE_SEP : lo + ((hi - lo) * (j + 1)) / (idx.length + 1), yh = hb.y + hb.h / 2, yw = from.y + from.h / 2;
+        const pts = [[toRight ? hb.x + hb.w : hb.x, yh], [gx, yh], [gx, yw], [toRight ? from.x - 2 : from.x + from.w + 2, yw]];
+        c.defs.add(`<marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="${PALETTE.fills.accent}"/></marker>`);
+        c.edge(`<path d="${pts.map((p, q) => `${q ? 'L' : 'M'}${f1(p[0])} ${f1(p[1])}`).join(' ')}" fill="none" stroke="${PALETTE.fills.accent}" stroke-width="${SW_HEAVY}" marker-end="url(#arrow-accent)"/>`, pts, { exclusive: true, id: `cause ${i}`, from: `step ${w.on}@${w.holder}`, to: `step ${w.lane}@${w.from}` });
+      });
+    }
     // Each lane's dotted lifeline stops 3 px short of every step box and text it would run through
     // (a note has no box, so this is what keeps its text clear), and every piece is a checked line.
     const life = [];
     for (const l of ir.lanes) {
-      const lx = colX.get(l.id) + LW / 2;
+      const lx = cxOf.get(l.id);
       const cuts = c.items.filter((it) => it.box && !String(it.id).startsWith('lane ') && it.id !== 'plot' && it.box.x < lx && it.box.x + it.box.w > lx)
         .map((it) => [it.box.y - 3, it.box.y + it.box.h + 3]).sort((a, b) => a[0] - b[0]);
       let from = hy + 30, k = 0;
