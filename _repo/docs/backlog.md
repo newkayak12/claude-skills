@@ -254,6 +254,16 @@ toasts).
 
 ### teams plugin bugs
 
+105. **`/teams-status` finds the repo's tasks running in its linked worktrees**
+    - Why: 2026-10-30, user: "teams로 하는거 맞음??" — `/teams-status` in the main checkout answered
+      "teams: no task running" while E-f64c3884 and E-4f12f406 ran (2 drivers, `view.mjs --once` lists
+      both). Each was opened isolated in its own worktree (`../claude-skills-c101`, `-c94`); the pane and
+      band match a task's `cwd` to the session cwd exactly. Same run: card 94's slug came out
+      `s-open-defects-teams-status` (the `'s` of "card 94's" became a word).
+    - Acceptance: the pane and band include tasks whose cwd shares the session's git common dir (the
+      rule repo-rules.mjs already uses for the push hold), marked with their worktree; test; slugs drop
+      a possessive `'s`.
+
 87. **A paraphrased document criterion still gets into user stories** (rest of card 87)
     - Why: `stripDocumentAcceptance` (eb3a1c49) drops only an exact-text match. The real L run E-11f56074
       (2026-10-29) had none in its PRD (0 "Given the PRD section" lines; its F2 judge noted a repeated bullet
