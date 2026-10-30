@@ -39,7 +39,7 @@ Stated here rather than discovered in a PDF. Report the ones that bite on a give
 | An SVG at the wrong aspect ratio | `check`, as a warning |
 | An SVG with no renderer | `check`, as an error |
 | A template that moved under the deck | `check` and `build`, via `template_hash` |
-| A chart slot | `catalog` lists it; `build` says it left the numbers alone |
+| A chart slot | `catalog` lists it; `check` and `build` warn on every chart slot, named or not: its numbers are the template's sample |
 | An image `fill` would crop | `check` warns with the percentage; `build` repeats it |
 | An image too low- or high-resolution for its frame | `check`, as a warning with the effective dpi |
 | Generated art off the template's palette | `check`, naming each stray hex and its nearest template color |

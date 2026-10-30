@@ -458,3 +458,18 @@ test('ledger-log refuses a status without its later step, and an unknown item', 
   assert.equal(run(cwd, ['ledger-log', '--item', '01_가상검색/A1', '--note', 'x', '--status', 'written']).code, 1);
   assert.match(run(cwd, ['ledger-log', '--item', '09_없음/A1', '--note', 'x']).json.error, /no ledger item/);
 });
+
+test('a manage workspace (sources/ at the root) keeps items in sources/material/, run from the root (card 103)', () => {
+  const { cwd } = project();
+  fs.mkdirSync(path.join(cwd, 'sources'));
+  assert.equal(init(cwd, 'a').json.result, 'created');
+  assert.ok(fs.existsSync(path.join(cwd, 'sources/material/a/meta.md')));
+  assert.ok(!fs.existsSync(path.join(cwd, 'material')), 'no stray material/ at the root');
+  assert.deepEqual(run(cwd, ['index']).json.rows.map((r) => r.id), ['a']);
+  // a project that already keeps ./material/ goes on using it
+  const other = project().cwd;
+  fs.mkdirSync(path.join(other, 'sources'));
+  fs.mkdirSync(path.join(other, 'material'));
+  init(other, 'b');
+  assert.ok(fs.existsSync(path.join(other, 'material/b/meta.md')));
+});

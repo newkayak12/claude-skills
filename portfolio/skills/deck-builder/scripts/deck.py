@@ -3043,6 +3043,12 @@ def cmd_build(args):
                                    ", ".join(slots) or "none"))
                 continue
             apply_value(spTree, slots[slot_id], kind, value, imgctx, problems, where)
+        # A chart the deck never named still shows the template's sample numbers.
+        written = {v[0] for v in spec.values}
+        for sid, slot in slots.items():
+            if slot.type == "chart" and sid not in written:
+                problems.append("@%s: chart '%s' keeps the template's sample numbers — "
+                                "replace or delete it in PowerPoint" % (spec.archetype, sid))
 
         part = "ppt/slides/slide%d.xml" % i
         if note_text is not None:
@@ -3487,6 +3493,10 @@ def cmd_check(args):
                      and (s.type == "picture" or (spec.archetype, s.id) in own_values)]
         if untouched:
             warns.append("%s: keeps template content for %s" % (tag, ", ".join(untouched)))
+        charts = [s.id for s in slots if s.id not in seen and s.type == "chart"]
+        if charts:
+            warns.append("%s: chart %s keeps the template's sample numbers — replace or delete "
+                         "it in PowerPoint" % (tag, ", ".join(charts)))
 
     def own(w):
         m = re.match(r"line (\d+):", w)

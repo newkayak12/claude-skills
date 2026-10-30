@@ -5,7 +5,9 @@
 //       skeleton: copies it to snapshot/skeleton/skeleton-v<cur>/, bumps `version:`, adds the history
 //       line under it and one row to snapshot/README.md; deck: its own count (newest deck-v* + level),
 //       deck.mdx + assets/ + NOTES.md into snapshot/deck/deck-v<new>/, one row in the `## deck` table
-//   renumber --map "3:4,4:3" [--file skeleton.md] [--dry-run]
+//   renumber --map "3:4,4:3" [--file skeleton.md] [--dry-run] [--force]
+//       (written only when verify finds no problem, or with --force; fenced code is left alone;
+//       a target page the map leaves in place is refused)
 //       one pass over headings `## N`, `N쪽`, `N·M쪽`, `N~M쪽` and every `쪽` table column, then moves
 //       the page sections into the new order and verifies; history lines (`vX.Y.Z 변경`, `vX.Y.Z(`,
 //       and the same quoted with `>`) are left as written
@@ -160,19 +162,38 @@ export function parseMap(s) {
 const HEADING = /^(##\s+)(\d+)(?=쪽|[.)\s])/
 const REF = /(\d+)(?:([·~])(\d+))?쪽/g
 
+// Lines inside a ``` or ~~~ fence are code, never a heading or a reference.
+export function fenced(lines) {
+  let open = null
+  return lines.map(l => {
+    const m = l.match(/^\s*(```|~~~)/)
+    if (m && (!open || m[1] === open)) { const inside = !!open; open = open ? null : m[1]; return inside || !!open }
+    return !!open
+  })
+}
+
 export function headings(text) {
-  return text.split('\n').map(l => l.match(HEADING)).filter(Boolean).map(m => Number(m[2]))
+  const lines = text.split('\n')
+  const code = fenced(lines)
+  return lines.map((l, i) => !code[i] && l.match(HEADING)).filter(Boolean).map(m => Number(m[2]))
 }
 
 // Every number is looked up once against the original map, so a 3→4 and 4→3 swap cannot apply twice.
+// A target that is a page the map leaves in place would make two pages share a number: refused.
 export function renumber(text, map) {
+  const present = new Set(headings(text))
+  for (const [from, target] of map) {
+    if (target !== from && present.has(target) && !map.has(target)) throw new Error(`page ${from} → ${target}: page ${target} stays, add it to the map`)
+  }
   const to = n => (map.has(n) ? map.get(n) : n)
   const warnings = []
   let changes = 0
   const swap = n => { const v = to(n); if (v !== n) changes++; return v }
   let pageCol = -1
-  const lines = text.split('\n').map(line => {
-    if (CHANGE_LINE.test(line)) return line
+  const src = text.split('\n')
+  const code = fenced(src)
+  const lines = src.map((line, i) => {
+    if (code[i] || CHANGE_LINE.test(line)) return line
     const h = line.match(HEADING)
     if (h) {
       // the heading's own number (and its `쪽`) is swapped once; references later in its text are swapped as refs
@@ -188,8 +209,8 @@ export function renumber(text, map) {
       if (cells.some(c => c.trim() === '쪽')) { pageCol = cells.findIndex(c => c.trim() === '쪽'); return line }
       if (/^\s*\|[\s:|-]+\|\s*$/.test(line)) return line
       if (pageCol >= 0 && cells[pageCol] !== undefined) {
-        cells[pageCol] = cells[pageCol].replace(/\d+/g, n => String(swap(Number(n))))
-        return refs(cells.join('|'))
+        // the `쪽` cell is swapped once as a column; refs run on the other cells only (`3쪽` in it is not swapped twice)
+        return cells.map((c, k) => (k === pageCol ? c.replace(/\d+/g, n => String(swap(Number(n)))) : refs(c))).join('|')
       }
       return refs(line)
     }
@@ -238,10 +259,11 @@ function slotSort(items, key) {
 // Pages sort inside each `# ` block in the slots pages held (unnumbered `##` sections keep their
 // place); then blocks that hold pages sort by their first page, in the slots such blocks held.
 function reorder(lines) {
-  const h1s = lines.map((l, i) => (H1.test(l) ? i : -1)).filter(i => i >= 0)
+  const code = fenced(lines)
+  const h1s = lines.map((l, i) => (!code[i] && H1.test(l) ? i : -1)).filter(i => i >= 0)
   const cuts = [0, ...h1s.filter(i => i > 0)]
-  const blocks = cuts.map((c, k) => lines.slice(c, cuts[k + 1] ?? lines.length)).map(block => {
-    const starts = block.map((l, i) => (/^##\s/.test(l) ? i : -1)).filter(i => i >= 0)
+  const blocks = cuts.map((c, k) => [lines.slice(c, cuts[k + 1] ?? lines.length), code.slice(c, cuts[k + 1] ?? lines.length)]).map(([block, bcode]) => {
+    const starts = block.map((l, i) => (!bcode[i] && /^##\s/.test(l) ? i : -1)).filter(i => i >= 0)
     if (!starts.length) return { lines: block, first: null }
     const head = block.slice(0, starts[0])
     const secs = slotSort(starts.map((s, k) => block.slice(s, starts[k + 1] ?? block.length)), pageOf)
@@ -257,7 +279,9 @@ export function verify(text) {
   const problems = []
   for (let i = 1; i < hs.length; i++) if (hs[i] <= hs[i - 1]) problems.push(`heading ${hs[i]} after ${hs[i - 1]}`)
   const known = new Set(hs)
-  const live = text.split('\n').filter(l => !CHANGE_LINE.test(l)).join('\n')
+  const all = text.split('\n')
+  const code = fenced(all)
+  const live = all.filter((l, i) => !code[i] && !CHANGE_LINE.test(l)).join('\n')
   for (const m of live.matchAll(REF)) {
     for (const n of [m[1], m[3]].filter(Boolean).map(Number)) if (!known.has(n)) problems.push(`${m[0]} points at no heading`)
   }
@@ -408,8 +432,11 @@ function main() {
     out = snapshot(root, { kind: args.kind, level: args.level, note: args.note, by: args.by, date: args.date })
   } else if (cmd === 'renumber') {
     const r = renumber(readFileSync(file, 'utf8'), parseMap(args.map))
-    if (!args['dry-run']) writeFileSync(file, r.text)
-    out = { file, changes: r.changes, warnings: r.warnings, written: !args['dry-run'], ...verify(r.text) }
+    // written only when the result verifies (or with --force); a broken result leaves the file as it was
+    const v = verify(r.text)
+    const write = !args['dry-run'] && (!v.problems.length || args.force === true)
+    if (write) writeFileSync(file, r.text)
+    out = { file, changes: r.changes, warnings: r.warnings, written: write, ...v }
     // renumber reads one file; the deck's own page numbers are fixed by hand and said so
     if (!/deck\.mdx$/.test(file) && existsSync(join(root, 'deck.mdx'))) {
       out.by_hand = ['deck.mdx: slide order, `<!-- N. … -->` comments and page cells (toc, appendix toc) are not renumbered']

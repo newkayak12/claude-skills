@@ -11,6 +11,9 @@ Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — 
 Card 101 comes before them (user, 2026-10-29: "최우선").
 The portfolio flow comes before everything (user, 2026-10-30: "전체적으로 계획 한거 백로그로 넣고
 우선순위 최상으로 두고 해주세요"): 102, then 103, then 54 (A → C → B, user 2026-10-29: "네네 하시져").
+Card 103 (portfolio engine bugs) shipped and closed 2026-10-30 by hand: renumber fences, `쪽`-cell
+double replace, collision refusal, write only after verify; material items in `sources/material/`;
+untouched chart warnings in check and build (manage 33/33, material 24/24, test_deck 227 ok).
 
 ### portfolio flow — first (design: `_repo/docs/plans/2026-10-30-portfolio-flow.md`)
 
@@ -40,24 +43,6 @@ The portfolio flow comes before everything (user, 2026-10-30: "전체적으로 �
       the check reads skeleton only (deck.mdx carries it, not checked); a feedback finding against a
       `settled` line is dropped by the SKILL step, not by the engine; reason grounding is a word-stem
       share (≥ half), a heuristic.
-
-103. **portfolio engine bugs: renumber fences and write order, material path, untouched chart samples**
-    - Why: debate 2026-10-29, each reproduced in the scratchpad against the repo scripts:
-      - renumber double-replaces a page-column cell: `| 1 | 3쪽 |` stays `3쪽` after a 3:4,4:3 swap,
-        with no warning (manage.mjs:184-186, REF :155);
-      - renumber does not track ``` fences (a `# comment` inside one is taken as H1, the block is cut)
-        and writes the file before `verify` (manage.mjs:282-283): `--map 3:4` on `## 3 / ## 4` writes
-        two `## 4.`; parseMap does not check a target against headings outside the map;
-      - material writes `<cwd>/material/` and reads `<cwd>/sources/` (material.mjs:36-37) while manage
-        expects items under `sources/` and only `sources` in LAYOUT (manage.mjs:21): run from the
-        root it makes a stray `material/`, run from `sources/` it looks for `sources/sources/`;
-      - a chart slot deck.mdx leaves untouched keeps the template's sample numbers silently: the
-        untouched-slot warning skips charts (deck.py:3486-3489), the chart warning fires only when a
-        value was written (:3395-3397); limits.md:42 says build reports it.
-    - Acceptance: a failing test first for each; renumber skips fenced lines, refuses a map whose
-      target collides, and writes only when `verify` passes (or with an explicit flag); material and
-      manage agree on one items path; `check`/`build` warn on every untouched chart slot. manage,
-      material and `test_deck.py` counts; one real run on a fictional workspace.
 
 54. **portfolio runs one flow on managed material: collect → write → render → feedback**
     - Why: user, 2026-10-18: "포트폴리오 스킬에 매니징 있니? 그니까 글감을 모으고 관리하고 그걸 바탕으로

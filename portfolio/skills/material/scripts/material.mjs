@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Mechanical half of the material store (material/<id>/ per item + material/index.md).
-// Project root = cwd. Writes only under <cwd>/material/, except ledger-log, which appends one
+// Project root = cwd. Writes only under the items folder (<cwd>/sources/material/ in a workspace
+// with sources/, else <cwd>/material/), except ledger-log, which appends one
 // line to the end of a sources/ ledger file. Every subcommand prints exactly one
 // JSON object on stdout; bad usage exits 1 with {"error": "..."}.
 //
@@ -33,8 +34,11 @@ const STATUSES = ['raw', 'shaped', 'written', 'rendered', 'reviewed'];
 const FLAGS = new Set(['id', 'source', 'title', 'period', 'role', 'tags', 'note', 'status', 'later-step', 'question', 'citation', 'add-source', 'item']);
 const ANSWERED = '[답변됨]';
 const ID_RE = /^[\p{L}\p{N}][\p{L}\p{N}-]*$/u;
-const MAT = path.resolve(process.cwd(), 'material');
 const SRC = path.resolve(process.cwd(), 'sources');
+// A manage workspace (one with sources/) keeps its items in sources/material/, run from the root;
+// elsewhere, or where ./material/ already holds items, they live in ./material/.
+const MAT = fs.existsSync(SRC) && !fs.existsSync(path.resolve(process.cwd(), 'material'))
+  ? path.join(SRC, 'material') : path.resolve(process.cwd(), 'material');
 
 const fail = (msg) => { throw new Error(msg); };
 const one = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
