@@ -24,8 +24,8 @@ import { join } from 'node:path';
 // cause of slowness (_repo/docs/plans/2026-09-21-teams-server-owns-the-loop.md §0/§7), left in place
 // until "a capacity-based rule (same plan, §7)" replaced it. This is that rule: 'auto' (the
 // default since 2026-09-28) hands the cap to an AIMD controller (taskmanager.mjs's
-// ensureAutoParallel/updateAutoParallel, applied in advanceDispatches) that starts at
-// min(shape max_parallel_width, ceiling) (2 before a shape exists) and adjusts it per develop-STORY
+// ensureAutoParallel/updateAutoParallel, applied in advanceDispatches) that starts at 2 - the
+// same number this used to be pinned at forever - and adjusts it from there per develop-STORY
 // dispatch outcome: +1 after a window of clean settles, halved the moment a dispatch's own
 // driver shows the vendor/host pushing back. A project that still wants a fixed number sets one
 // (an integer here, in team.json, or as a tm_open argument) exactly as before; only the DEFAULT

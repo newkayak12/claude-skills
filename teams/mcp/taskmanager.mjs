@@ -7104,24 +7104,9 @@ function autoParallelCeiling(task) {
 // before this existed, or one whose max_parallel_teams is a fixed number and never needed it, has
 // no such field until (if ever) it does. Idempotent: calling it again after saveRun has already
 // persisted a state leaves that state alone.
-//
-// The start is the width the shape allows, min(shape max_parallel_width, ceiling) - not a guess;
-// AIMD_START is only the placeholder before a shape exists. A state seeded before the shape (a
-// tm_status or tick during planning) re-seeds once the packages appear, or when a reshape changes
-// the width, until the controller has moved (updateAutoParallel's first STORY fold sets `moved`);
-// after that AIMD owns the number. Idempotent: a second call with the same shape changes nothing.
 export function ensureAutoParallel(task) {
-  const ceiling = autoParallelCeiling(task);
-  const packages = task.spec && Array.isArray(task.spec.packages) ? task.spec.packages : [];
-  const width = packages.length ? shapeAnalysis(packages).max_parallel_width : 0;
-  const start = width ? Math.max(AIMD_FLOOR, Math.min(width, ceiling)) : Math.min(AIMD_START, ceiling);
   if (!task.auto_parallel || !Number.isInteger(task.auto_parallel.current)) {
-    task.auto_parallel = { current: start, streak: 0, ceiling, start_width: width || null, updated_at: Date.now() };
-  } else if (width && !task.auto_parallel.moved && task.auto_parallel.start_width !== undefined && task.auto_parallel.start_width !== width) {
-    // (start_width undefined = a state persisted before this field existed: leave it alone)
-    task.auto_parallel.current = start;
-    task.auto_parallel.start_width = width;
-    task.auto_parallel.streak = 0;
+    task.auto_parallel = { current: AIMD_START, streak: 0, ceiling: autoParallelCeiling(task), updated_at: Date.now() };
   }
   return task.auto_parallel;
 }
@@ -7134,59 +7119,50 @@ export function ensureAutoParallel(task) {
 // wording either reader should catch never has to be taught to just one of them.
 const PUSHBACK_RE = /rate[_ -]?limit|\b429\b|\b529\b|overloaded|api_error|insufficient_quota|usage_limit_reached|quota (?:exceeded|exhausted)|hit your (?:usage )?limit|exceeded your current quota/i;
 
-// A claude -p stream-json log is read line by line and PUSHBACK_RE is applied only to the fields
-// that say "the vendor refused" - never to the raw text. Raw-text matching read a usage number
-// ("cache_creation_input_tokens":429, E-eb3d399f) or the routine `"api_error_status":null` /
-// `rate_limit_event` status "allowed" telemetry as a throttle and halved a healthy run. Per line:
-//  - rate_limit_event: pushback when rate_limit_info.status is not "allowed" / "allowed_warning"
-//    (the latter is a served-request quota-window notice that repeats every turn near a window);
-//  - top-level result: pushback when api_error_status is non-null, or when it is_error and
-//    PUSHBACK_RE matches its result + subtype text (never its usage);
-//  - system/api_retry (the CLI retrying a failed API call): pushback when error_status is 429 or
-//    529, or its error names rate_limit/overloaded - a throttle the CLI retried and recovered
-//    from leaves no error result and nothing on stderr, so this is its only trace;
-//  - every other JSON event (assistant, user, tool_result, usage blocks): ignored;
-//  - a non-JSON line starting with "{" (a stream line cut short by SIGKILL): ignored;
-//  - any other non-JSON line (a plain-text error): PUSHBACK_RE.
-// Returns '' or the evidence line.
-const API_RETRY_RE = /rate[_ -]?limit|overloaded/i;
-export function vendorPushbackText(logText) {
-  if (!logText) return '';
-  for (const raw of String(logText).split('\n')) {
-    const line = raw.trim();
-    if (!line) continue;
-    let e = null;
-    if (line.startsWith('{')) {
-      try { e = JSON.parse(line); } catch { continue; }
-    } else {
-      if (PUSHBACK_RE.test(line)) return line.slice(0, 2000);
-      continue;
-    }
-    if (!e || typeof e !== 'object') continue;
-    if (e.type === 'rate_limit_event') {
-      const status = e.rate_limit_info && e.rate_limit_info.status;
-      if (status !== undefined && status !== null && status !== 'allowed' && status !== 'allowed_warning') return line.slice(0, 2000);
-    } else if (e.type === 'result') {
-      if (e.api_error_status != null) return line.slice(0, 2000);
-      if (e.is_error === true && PUSHBACK_RE.test(`${e.result == null ? '' : e.result} ${e.subtype == null ? '' : e.subtype}`)) return line.slice(0, 2000);
-    } else if (e.type === 'system' && e.subtype === 'api_retry') {
-      if (e.error_status === 429 || e.error_status === 529 || API_RETRY_RE.test(String(e.error == null ? '' : e.error))) return line.slice(0, 2000);
-    }
+// Two of PUSHBACK_RE's own terms are also substrings of routine claude -p stream-json telemetry
+// that appears on EVERY session regardless of health - verified against the portfolio-refresh
+// run's real driver logs (0.34.0, fixed cap 2, so the controller never saw them, but 'auto'
+// would): every dispatch's stream.jsonl carries at least one `{"type":"rate_limit_event",
+// "rate_limit_info":{"status":"allowed",...}}` usage ping (`rate_limit` alone would match it),
+// and every `result` event carries `"api_error_status":null` (`api_error` alone would match the
+// FIELD NAME regardless of its null value) - together they made PUSHBACK_RE true on 9/9 real
+// STORY dispatch folds in that run, none of which had anything actually wrong. Left unfixed,
+// 'auto' would halve on its very first fold, forever, against any real claude driver. Both are
+// stripped before PUSHBACK_RE ever sees the text; a rate_limit_event whose status is NOT
+// "allowed" (a throttled or exhausted window) and an api_error_status that is NOT null are left
+// alone and still read as real pushback.
+function stripRoutineTelemetryNoise(text) {
+  if (!text) return text;
+  let out = text;
+  if (out.includes('rate_limit_event')) {
+    out = out.split('\n').filter((line) => {
+      if (!line.includes('rate_limit_event')) return true;
+      try {
+        const parsed = JSON.parse(line);
+        return !(parsed && parsed.type === 'rate_limit_event' && parsed.rate_limit_info && parsed.rate_limit_info.status === 'allowed');
+      } catch {
+        return true; // not one clean JSON line - leave it for PUSHBACK_RE to judge
+      }
+    }).join('\n');
   }
-  return '';
+  return out.replace(/"api_error_status"\s*:\s*null/g, '');
 }
 
-// Pushback evidence for one dispatch: the driver's stderr tail (small, always available, and
-// error-shaped as a whole - checked first, it catches a driver SIGKILLed before its stream
-// closed) and then its stream log through vendorPushbackText.
+// Reads a dispatch's own driver log the same way driverUsageLimitText does (existence check,
+// plain readFileSync, no second NDJSON walk) rather than re-parsing the stream event-by-event -
+// PUSHBACK_RE runs over the raw text, which catches the same evidence whether it surfaces as a
+// `result` event's own text, a stderr line from a driver SIGKILLed before its stream closed, or
+// any other shape a vendor's error happens to take. driverStderrTail is checked first since it is
+// small and always available; the full log is only read when the tail alone said nothing.
 function dispatchPushbackText(driver) {
   if (!driver) return '';
-  const tail = driverStderrTail(driver, 2000);
+  const tail = stripRoutineTelemetryNoise(driverStderrTail(driver, 2000));
   if (PUSHBACK_RE.test(tail)) return tail;
   if (!driver.log) return '';
   try {
     if (!existsSync(driver.log)) return '';
-    return vendorPushbackText(readFileSync(driver.log, 'utf8'));
+    const text = stripRoutineTelemetryNoise(readFileSync(driver.log, 'utf8'));
+    return PUSHBACK_RE.test(text) ? text.slice(-2000) : '';
   } catch {
     return '';
   }
@@ -7236,7 +7212,6 @@ export function updateAutoParallel(task, n, result) {
   const pkg = packageOf(task, n.subgoal_id);
   if (pkg && (pkg.phase === 'planning' || pkg.phase === 'qa' || pkg.phase === 'audit')) return;
   const state = ensureAutoParallel(task);
-  state.moved = true; // the start width is seeded once; from the first STORY fold AIMD owns the number
   const pushback = dispatchPushbackText(n.child && n.child.driver) || (crashesClustered(task) ? '(clustered driver restarts across dispatches)' : '');
   if (pushback) {
     const before = state.current;
@@ -7747,23 +7722,9 @@ export function advanceDispatches(taskRef) {
         const pb = packageOf(task, b.subgoal_id);
         return (Number.isInteger(pa && pa.priority) ? pa.priority : 0) - (Number.isInteger(pb && pb.priority) ? pb.priority : 0);
       });
-    const opened = [];
-    const waiting = [];
     for (const n of storyReady) {
-      if (slots <= 0) { waiting.push(n.node_id); continue; }
-      if (take(n)) { slots--; opened.push(n.node_id); }
-    }
-    // Record the width this tick used. Bookkeeping only: nothing here gates readiness. Rewritten
-    // (and the ledger line added) only when cap|running|waiting changes or something opened, so
-    // the daemon's idle polls leave task.json alone.
-    const running = runningStories + opened.length;
-    const sig = `${maxParallel}|${running}|${waiting.join(',')}`;
-    const prev = task.dispatch_width;
-    if (opened.length || !prev || prev.sig !== sig) {
-      task.dispatch_width = { cap: maxParallel, policy: Number.isInteger(configuredMax) ? 'fixed' : 'auto', running, opened, waiting, at: Date.now(), sig };
-      if ((opened.length || waiting.length) && (!prev || prev.sig !== sig)) {
-        record(task, { event: 'dispatch_width', task_id: task.run_id, cap: maxParallel, policy: task.dispatch_width.policy, running, opened, waiting });
-      }
+      if (slots <= 0) break;
+      if (take(n)) slots--;
     }
     return out;
   });
@@ -8646,8 +8607,6 @@ function toolStatus(a) {
       : verdict(task, n))),
     daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon), log: task.daemon.log, stderr: task.daemon.stderr, spawn_count: task.daemon.spawn_count, restarts: task.daemon.restarts || 0, exhausted: !!task.daemon.exhausted, stderr_tail: driverStderrTail(task.daemon) } : null,
     team: task.team || null,
-    // The width the last dispatch tick used (advanceDispatches); null before any tick.
-    dispatch_width: task.dispatch_width || null,
     // Only present when max_parallel_teams is actually 'auto' - a task pinned to a fixed number
     // reads exactly as it did before this controller existed. `current` is the effective cap
     // advanceDispatches is using RIGHT NOW; `reason` names why it last moved (a clean-streak
