@@ -116,23 +116,14 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104.
 
 ### teams parallelism — first
 
-101. **teams runs ready packages at the width shape allows; a token count is not vendor pushback** — in E-ce2bcff4
-    - Why: user, 2026-10-29: "harness, graph, teams 각 phase를 병렬로 할 수는 없는건가?", then "네네 그리고
-      최우선". Seen in E-eb3d399f: `auto_parallel_decreased` 2→1 at `dispatch:P2:1`, so the ready retry
-      `dispatch:P2:2` waited ~24 min (opened 1793251891209, dispatched 1793253304717) until P1 finished.
-      Cause (verified): `PUSHBACK_RE` in `teams/mcp/taskmanager.mjs` (~L7084) has `\b429\b`, which matched
-      `"cache_creation_input_tokens":429` in that driver's stream log — every usage block's numbers can
-      trip it, and `\b529\b` the same. Also: AIMD starts at 2 whatever shape's `max_parallel_width` is,
-      and a retry waits behind the cap like a new package.
-    - Acceptance: (1) pushback is read only from error-shaped fields (a `result` event with `is_error`,
-      a non-null `api_error_status`, a `rate_limit_event` whose status is not `allowed`, stderr), never
-      from bare numbers inside usage objects; a test with the E-eb3d399f line
-      (`"cache_creation_input_tokens":429`) gives no decrease; a real 429/overloaded error still halves.
-      (2) The start width is `min(shape.max_parallel_width, ceiling)`, not a fixed 2; tested.
-      (3) Phases that can overlap do: a package whose deps accepted starts while others run (kept), and
-      the report states the width used per tick so a wait like P2:2's is visible in tm_status.
-      (4) `node --test teams/scripts/test-*.mjs` passes with the count reported; one real Sprint
-      shows two ready packages running at once.
+108. **teams `dispatch_width` loose ends from card 101**
+    - Why: card 101 shipped 2026-10-30 in E-ce2bcff4 (`9d4bd6a2`, goal gate 92, teams 1660/1661 with 1
+      skip, plugin test 399/399; real check on fake drivers: 3 packages at once). Its report left: tm_status
+      `dispatch_width` exposes the internal dedup key `sig` (`"3|3|"`); no ledger line when the width drops
+      with nothing opened or waiting; "null before any tick" not asserted; the real check ran fake drivers,
+      not a real Sprint.
+    - Acceptance: `sig` not in tm_status; decide and test the drop-with-nothing-waiting line; assert null
+      before the first tick; the next real L Sprint's ledger shows two packages dispatched at once.
 
 ### Mods and naming — UI first (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
 
@@ -170,6 +161,9 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104.
       (pane 86 cols) found three defects, not yet approved: (1) STORYs title cut to ~10 chars plus a stray
       "->…", reason cut to 3 chars ("Eve…"); (2) a story re-run after `tm_retry` repackage reads "rejected 3/3"
       on STORYs while Home lists it "In progress"; (3) "judge 93 vs 90" with "rejected" and no visible why.
+    - E-db7e3226 (2026-10-30) left: Home kanban lane header cut to `● In progre…` in the real 78-col frame
+      (lanes 15 cells wide; pre-existing); an unexplained `order` line under a STORY at both widths (fixture
+      deleted, cause unverified); status words `working` / `needs you` are an assumed default until approved.
 
 84. **The teams pane is a real dashboard on every surface: Ink on the terminal, Svg on desktop, mobile and vscode** — both terminal defects fixed `7e051a4b` (E-8b9c417d; live look 2026-10-28: Plan ✔, no digits after 2 1 0); left: phone/desktop look
     - Why: user, 2026-10-26, after `/teams-status` over Remote Control showed a 42-row text dump on the phone:
