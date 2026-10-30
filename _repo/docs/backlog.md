@@ -131,7 +131,7 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
 
 ### teams parallelism — first
 
-108. **teams view `--once` reads only open tasks, not every task ever run**
+108. **teams view `--once` reads only open tasks, not every task ever run** — in E-7970d4b5
     - Why: 2026-10-30, the machine (12 cores) was saturated: view.mjs ~540% CPU. Verified: one
       `view.mjs --once --format status --cwd <repo>` takes 7.8 s wall / 6.1 s CPU, because
       `runningModels` (`teams/scripts/view.mjs` L102) runs `collectTask` on every one of the 2098 dirs
