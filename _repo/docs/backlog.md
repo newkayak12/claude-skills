@@ -362,6 +362,12 @@ toasts).
       the lane gap instead; the wait span stops short of the holder's COMMIT with nothing tying the two;
       a lane's text wraps early once a `resume` takes its gutter ("UPDATE 205 · X 잠금 획득" on two lines);
       then (4): fig-9-2 and fig-13-1 shown to the user and approved (rebuilt IRs kept outside the repo).
+    - Rest shipped 2026-10-30 from E-f673c006 (blocked at goal gate 86/90, integration-2 taken by hand;
+      test-diagram 69/69): the holder edge is a right-angle path along the lane gap, the wait span ends
+      at the release step's box edge, a resume note no longer wraps other labels. Left: `check` tests
+      only the first line of a wrapped resume note, so an edge through its second line passes; a
+      backward cause edge in a narrow lane gap (QA D1b) is not routed clear; then (4) the user's
+      approval of the two after-PNGs.
 
 ### knowledge plugin
 
