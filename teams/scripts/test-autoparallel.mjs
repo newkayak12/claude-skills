@@ -25,10 +25,14 @@ import { ensureAutoParallel, updateAutoParallel } from '../mcp/taskmanager.mjs';
 test.after(() => rmSync(SCRATCH, { recursive: true, force: true }));
 
 let seq = 0;
-// A minimal dispatch-shaped task: one develop STORY package (P1, no `phase`, so it is an
-// ordinary STORY - not exempt), 'auto' unless overridden. Each call gets a fresh run_id so the
-// ledger writes from different tests never collide on the same file.
-function makeTask(teamOpts = {}, packages = [{ id: 'P1' }]) {
+// n independent develop STORY packages (P1..Pn, no `phase`, so ordinary STORYs - not exempt): the
+// shape's widest round is n.
+const wide = (n) => Array.from({ length: n }, (_, i) => ({ id: `P${i + 1}` }));
+// A minimal dispatch-shaped task: six independent develop STORY packages (shape width 6, so the
+// start width and the growth cap are the ceiling unless a test passes its own packages), 'auto'
+// unless overridden. Each call gets a fresh run_id so the ledger writes from different tests never
+// collide on the same file.
+function makeTask(teamOpts = {}, packages = wide(6)) {
   seq += 1;
   return {
     run_id: `test-autoparallel-${seq}`,
@@ -50,13 +54,59 @@ function driverWithLog(text) {
 
 // ---------- ensureAutoParallel: bootstrap and the ceiling formula ----------
 
-test('ensureAutoParallel starts at 2, no streak, ceiling from max_parallel_ceiling when pinned', () => {
-  const task = makeTask({ max_parallel_ceiling: 5 });
+test('ensureAutoParallel starts at min(shape width, ceiling), no streak, ceiling from max_parallel_ceiling when pinned', () => {
+  const task = makeTask({ max_parallel_ceiling: 5 }); // shape width 6 > ceiling 5
   const state = ensureAutoParallel(task);
-  assert.equal(state.current, 2);
+  assert.equal(state.current, 5);
   assert.equal(state.streak, 0);
   assert.equal(state.ceiling, 5);
+  assert.equal(state.max, 5);
   assert.equal(task.auto_parallel, state, 'the state is stored on task.auto_parallel, not recomputed each call');
+});
+
+for (const [label, ceiling, packages, start, max] of [
+  ['shape width below the ceiling', 5, wide(3), 3, 3],
+  ['shape width equal to the ceiling', 4, wide(4), 4, 4],
+  ['shape width above the ceiling', 3, wide(5), 3, 3],
+  ['a serial shape (width 1)', 5, [{ id: 'P1' }, { id: 'P2', deps: ['P1'] }], 1, 1],
+  ['no packages (width 0): the AIMD_START default, growth up to the ceiling', 5, [], 2, 5],
+  ['no packages and a ceiling of 1: min(AIMD_START, ceiling)', 1, [], 1, 1],
+]) {
+  test(`start width: ${label} -> starts at ${start}`, () => {
+    const task = makeTask({ max_parallel_ceiling: ceiling }, packages);
+    const state = ensureAutoParallel(task);
+    assert.equal(state.current, start);
+    assert.equal(state.max, max, 'growth is capped here, never past min(shape width, ceiling)');
+  });
+}
+
+test('start width: spec.packages missing -> no state at all (null), nothing is created on the task', () => {
+  for (const spec of [undefined, {}, { packages: null }]) {
+    const task = makeTask();
+    if (spec === undefined) delete task.spec; else task.spec = spec;
+    assert.equal(ensureAutoParallel(task), null);
+    assert.equal(task.auto_parallel, undefined, 'tm_status and advanceDispatches must see no width before the shape exists');
+  }
+});
+
+test('updateAutoParallel with no spec.packages yet is a no-op: no state, and pushback text cannot create one', () => {
+  const task = makeTask();
+  delete task.spec;
+  const n = dispatchNode('dispatch:P1:1', 'P1', { driver: driverWithLog('{"type":"result","is_error":true,"result":"429"}') });
+  updateAutoParallel(task, n, { stage_ok: false });
+  assert.equal(task.auto_parallel, undefined);
+});
+
+test('a stored state\'s max follows the packages when tm_file widens the DAG, and never shrinks or moves current', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 }, [{ id: 'P1' }, { id: 'P2', deps: ['P1'] }]);
+  const state = ensureAutoParallel(task);
+  assert.deepEqual([state.current, state.max], [1, 1]);
+  task.spec.packages.push({ id: 'D1', deps: ['P2'] }, { id: 'D2', deps: ['P2'] });
+  ensureAutoParallel(task);
+  assert.deepEqual([state.current, state.max], [1, 2], 'two filed packages ready together widen the cap, not the current width');
+  task.spec.packages.length = 1;
+  ensureAutoParallel(task);
+  assert.equal(state.max, 2, 'a smaller shape never lowers the cap');
 });
 
 test('ensureAutoParallel is idempotent: a second call returns the SAME object, not a fresh bootstrap', () => {
@@ -90,7 +140,7 @@ test('numeric max_parallel_teams: updateAutoParallel is a no-op, task.auto_paral
 
 test('increase: current climbs by 1 after AIMD_WINDOW (2) consecutive clean develop-STORY folds', () => {
   const task = makeTask({ max_parallel_ceiling: 6 });
-  ensureAutoParallel(task);
+  ensureAutoParallel(task).current = 2; // a halved width, recovering
   updateAutoParallel(task, dispatchNode('dispatch:P1:1', 'P1'), { stage_ok: true });
   assert.equal(task.auto_parallel.current, 2, 'one clean fold alone is not a full window yet');
   assert.equal(task.auto_parallel.streak, 1);
@@ -104,6 +154,7 @@ test('increase: a rejected-but-not-pushed-back dispatch (stage_ok:false, an ordi
   // A ordinary accept:false is the package's own outcome, not the vendor pushing back, and must
   // not stall the probe-up the way a real capacity signal does.
   const task = makeTask({ max_parallel_ceiling: 6 });
+  ensureAutoParallel(task).current = 2;
   updateAutoParallel(task, dispatchNode('dispatch:P1:1', 'P1'), { stage_ok: false, reason: 'accept rejected: gaps remain' });
   updateAutoParallel(task, dispatchNode('dispatch:P1:2', 'P1'), { stage_ok: false, reason: 'accept rejected again' });
   assert.equal(task.auto_parallel.current, 3, 'a plain rejection is not a capacity signal - the window still completes');
@@ -111,8 +162,18 @@ test('increase: a rejected-but-not-pushed-back dispatch (stage_ok:false, an ordi
 
 test('increase: never exceeds the ceiling, even with many more clean windows than it takes to reach it', () => {
   const task = makeTask({ max_parallel_ceiling: 3 });
+  ensureAutoParallel(task).current = 1;
   for (let i = 0; i < 10; i++) updateAutoParallel(task, dispatchNode(`dispatch:P1:${i}`, 'P1'), { stage_ok: true });
   assert.equal(task.auto_parallel.current, 3, 'capped at the ceiling regardless of how many more clean folds arrive');
+});
+
+test('increase: never exceeds the shape width either - recovery after a halving stops at min(shape width, ceiling)', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 }, wide(3)); // shape width 3 < ceiling 6
+  const state = ensureAutoParallel(task);
+  assert.equal(state.current, 3);
+  state.current = 1; // a pushback halved it
+  for (let i = 0; i < 12; i++) updateAutoParallel(task, dispatchNode(`dispatch:P1:${i}`, 'P1'), { stage_ok: true });
+  assert.equal(task.auto_parallel.current, 3, 'it grows back +1 per window to the shape width and no further, though the ceiling is 6');
 });
 
 // ---------- decrease: multiplicative, immediate, on a pushback or driver-crash-cluster signal ----------
@@ -128,27 +189,73 @@ for (const [label, text] of [
     const state = ensureAutoParallel(task);
     state.current = 4;
     state.streak = 1; // mid-window when the pushback arrives
-    const n = dispatchNode('dispatch:P1:3', 'P1', { driver: driverWithLog(`{"type":"result","result":"${text}"}`) });
+    // An error-shaped result event: is_error true, the vendor's wording in its text.
+    const n = dispatchNode('dispatch:P1:3', 'P1', { driver: driverWithLog(`{"type":"result","is_error":true,"result":"${text}"}`) });
     updateAutoParallel(task, n, { stage_ok: false });
     assert.equal(task.auto_parallel.current, 2, 'halved from 4');
     assert.equal(task.auto_parallel.streak, 0, 'a pushback resets whatever streak was building toward an increase');
   });
 }
 
-test('decrease: pushback text in stderr alone (no log, driver SIGKILLed before its stream closed) is still caught', () => {
+for (const [label, line] of [
+  ['a stderr line with 429', 'fetch failed: 429 rate limited by the provider'],
+  ['a stderr line with overloaded', 'API Error: overloaded_error, retry later'],
+]) {
+  test(`decrease: ${label} alone (no log, driver SIGKILLed before its stream closed) is still caught`, () => {
+    const task = makeTask({ max_parallel_ceiling: 6 });
+    ensureAutoParallel(task).current = 4;
+    const stderr = join(SCRATCH, `${Math.random().toString(36).slice(2)}.stderr`);
+    writeFileSync(stderr, line);
+    const n = dispatchNode('dispatch:P1:4', 'P1', { driver: { pid: 1, stderr } });
+    updateAutoParallel(task, n, { stage_ok: false });
+    assert.equal(task.auto_parallel.current, 2);
+  });
+}
+
+test('no decrease (card 101): "cache_creation_input_tokens":429 in the stream log is a usage counter, not an HTTP 429', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 });
+  ensureAutoParallel(task).current = 2;
+  // The shape that halved the width 2 -> 1 in E-eb3d399f: bare numbers inside usage objects.
+  const log = '{"type":"assistant","message":{"usage":{"input_tokens":3,"cache_creation_input_tokens":429,'
+    + '"cache_read_input_tokens":52900,"output_tokens":529}}}\n'
+    + '{"type":"result","subtype":"success","is_error":false,"api_error_status":null,'
+    + '"usage":{"cache_creation_input_tokens":429,"output_tokens":4290},"result":"done"}\n';
+  const n = dispatchNode('dispatch:P1:1', 'P1', { driver: driverWithLog(log) });
+  updateAutoParallel(task, n, { stage_ok: true });
+  assert.equal(task.auto_parallel.current, 2, 'the width does not decrease');
+  assert.equal(task.auto_parallel.streak, 1, 'and the fold counts as clean');
+});
+
+test('no decrease (card 101, intentional): plain text in the stream log - overloaded_error, 429, rate_limit - is not pushback; only stderr is matched as plain text', () => {
+  // Pushback is read from parsed, error-shaped events and from stderr. A stream log line that is
+  // not a JSON event (a tool's output, a quoted error in a transcript), or a result event that
+  // names 429/overloaded with is_error false, says nothing about capacity. The tests that used a
+  // bare 'overloaded_error' log to halve the width were changed to error-shaped events or stderr on
+  // purpose: this non-count is the rule, not a regression.
   const task = makeTask({ max_parallel_ceiling: 6 });
   ensureAutoParallel(task).current = 4;
-  const stderr = join(SCRATCH, 'p1.stderr');
-  writeFileSync(stderr, 'fetch failed: 429 rate limited by the provider');
-  const n = dispatchNode('dispatch:P1:4', 'P1', { driver: { pid: 1, stderr } });
-  updateAutoParallel(task, n, { stage_ok: false });
-  assert.equal(task.auto_parallel.current, 2);
+  const log = 'overloaded_error\n'
+    + 'HTTP 429 rate_limit_error from a tool run\n'
+    + '{"type":"result","is_error":false,"result":"the docs mention 429 and overloaded_error handling"}\n'
+    + '{"type":"user","message":"{\\"error\\":\\"overloaded_error\\"} 529"}\n';
+  const n = dispatchNode('dispatch:P1:1', 'P1', { driver: driverWithLog(log) });
+  updateAutoParallel(task, n, { stage_ok: true });
+  assert.equal(task.auto_parallel.current, 4);
+  assert.equal(task.auto_parallel.streak, 1);
+});
+
+test('decrease: an error-shaped result event (is_error true, 429 text) halves once per fold, however many error lines the log holds', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 });
+  ensureAutoParallel(task).current = 4;
+  const line = '{"type":"result","is_error":true,"result":"API Error: 429 overloaded"}\n';
+  updateAutoParallel(task, dispatchNode('dispatch:P1:1', 'P1', { driver: driverWithLog(line.repeat(3)) }), { stage_ok: false });
+  assert.equal(task.auto_parallel.current, 2, 'one halving for the fold, not three');
 });
 
 test('floor: never drops below 1, even on repeated pushback', () => {
   const task = makeTask({ max_parallel_ceiling: 6 });
   ensureAutoParallel(task).current = 2;
-  const pushback = () => dispatchNode('dispatch:P1:x', 'P1', { driver: driverWithLog('overloaded_error') });
+  const pushback = () => dispatchNode('dispatch:P1:x', 'P1', { driver: driverWithLog('{"type":"result","is_error":true,"result":"overloaded_error"}') });
   updateAutoParallel(task, pushback(), { stage_ok: false });
   assert.equal(task.auto_parallel.current, 1, '2 halves to 1');
   updateAutoParallel(task, pushback(), { stage_ok: false });
@@ -201,7 +308,7 @@ for (const phase of ['planning', 'qa', 'audit']) {
     const cleanBefore = { ...task.auto_parallel };
     updateAutoParallel(task, dispatchNode(`dispatch:${phase.toUpperCase()}:1`, phase.toUpperCase()), { stage_ok: true });
     assert.deepEqual(task.auto_parallel, cleanBefore, 'a clean phase-Team fold must not advance the streak or the cap');
-    const n = dispatchNode(`dispatch:${phase.toUpperCase()}:2`, phase.toUpperCase(), { driver: driverWithLog('overloaded_error') });
+    const n = dispatchNode(`dispatch:${phase.toUpperCase()}:2`, phase.toUpperCase(), { driver: driverWithLog('{"type":"result","is_error":true,"result":"overloaded_error"}') });
     updateAutoParallel(task, n, { stage_ok: false });
     assert.deepEqual(task.auto_parallel, cleanBefore, 'a pushed-back phase-Team fold must not halve the cap either');
   });
@@ -306,7 +413,7 @@ test('a pushback still halves even while budget_warned is set - capacity signals
   const task = makeTask({ max_parallel_ceiling: 6 });
   ensureAutoParallel(task).current = 4;
   task.budget_warned = true;
-  const n = dispatchNode('dispatch:P1:1', 'P1', { driver: driverWithLog('overloaded_error') });
+  const n = dispatchNode('dispatch:P1:1', 'P1', { driver: driverWithLog('{"type":"result","is_error":true,"result":"overloaded_error"}') });
   updateAutoParallel(task, n, { stage_ok: false });
   assert.equal(task.auto_parallel.current, 2, 'budget_warned freezes growth, never the emergency brake');
 });
@@ -336,6 +443,7 @@ const BUDGET_WARNING_AT_MIN = 44.72;
 
 test('replay: the real fold sequence drives current 2 -> 3 -> 4 -> 5, then freezes at budget_warning', () => {
   const task = makeTask({ max_parallel_ceiling: 6 });
+  ensureAutoParallel(task).current = 2; // that run's fixed start; a fresh task now starts at the shape width
   const trajectory = [];
   for (const fold of REAL_FOLD_SEQUENCE) {
     if (fold.end_min >= BUDGET_WARNING_AT_MIN) task.budget_warned = true;
