@@ -29,7 +29,7 @@ import { readFileSync, existsSync, openSync, readSync, fstatSync, closeSync, sta
 import { dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tasksRoot } from '../mcp/taskmanager.mjs';
-import { DEFAULT_VIEW_PORT, viewKey } from '../mcp/viewserver.mjs';
+import { DEFAULT_VIEW_PORT, viewKey, viewerAt, registerRoot as registerAt } from '../mcp/viewserver.mjs';
 import { collectTask, listTasks } from './lib/view-collect.mjs';
 import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './lib/view-render-text.mjs';
 import { notableEvents, statusLine, HOLD_MS } from './lib/view-events.mjs';
@@ -339,9 +339,19 @@ function registerRoot(req, res, roots) {
 
 // Binds `port` (explicit, TEAMS_VIEW_PORT, or the default). Only the default gives way: if it is
 // taken the server listens on a free port instead, and the printed URL is the one that bound.
-function listenOn(server, port, fixed, onListening) {
-  server.once('error', (e) => {
-    if (!fixed && e && e.code === 'EADDRINUSE') { server.listen(0, '127.0.0.1', onListening); return; }
+// A teams viewer holding the default is joined, not dodged: this root is registered into it and
+// this process exits 0. Only a non-teams holder (or an older viewer with no /register) moves it.
+function listenOn(server, port, fixed, tasksDir, onListening) {
+  server.once('error', async (e) => {
+    if (!fixed && e && e.code === 'EADDRINUSE') {
+      const v = await viewerAt(port, 1000);
+      if (v && !v.legacy && await registerAt(port, tasksDir)) {
+        console.log(`teams view already running on http://127.0.0.1:${port}/`);
+        process.exit(0);
+      }
+      server.listen(0, '127.0.0.1', onListening);
+      return;
+    }
     throw e;
   });
   server.listen(port, '127.0.0.1', onListening);
@@ -406,7 +416,7 @@ function startServer(tasksDir, taskId, port) {
     res.end(pageHtml());
   });
   const chosen = port === undefined ? defaultPort() : { port, fixed: true };
-  listenOn(server, chosen.port, chosen.fixed, () => {
+  listenOn(server, chosen.port, chosen.fixed, tasksDir, () => {
     const addr = server.address();
     console.log(`teams view listening on http://127.0.0.1:${addr.port}${taskId ? `/${viewKey(taskId)}` : ''}`);
     console.log(`tasks dir: ${tasksDir}`);
