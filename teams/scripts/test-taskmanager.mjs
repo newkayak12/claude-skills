@@ -812,6 +812,16 @@ test('stripDocumentAcceptance keeps a declared criterion that repeats a document
   assert.deepEqual(stripDocumentAcceptance([{ id: 'F1-US-1', acceptance: ['AC-1: a'] }], [], []), [{ id: 'F1-US-1', acceptance: ['AC-1: a'] }]);
 });
 
+test('stripDocumentAcceptance drops an exact copy but keeps a reworded document criterion (the limit the gate:goal prompt names)', () => {
+  const doc = ['AC-1: Given the PRD section for F1 When a reader opens it Then it has headed parts Goal, Scope, Out of scope, User stories, Open questions.'];
+  const reword = 'F1-AC-2: Given the F1 section of the PRD, When read, Then it has Goal, Scope, Out of scope, User stories and Open questions headings.';
+  const real = 'F1-AC-3: Given a visitor, When they sign up, Then an account exists';
+  const out = stripDocumentAcceptance([
+    { id: 'F1-US-1', title: 'sections', acceptance: ['F1-AC-1: Given the PRD section for F1 When a reader opens it Then it has headed parts Goal, Scope, Out of scope, User stories, Open questions.', reword, real] },
+  ], doc, []);
+  assert.deepEqual(out[0].acceptance, [reword, real], 'exact copy dropped; the reword and the real criterion are kept');
+});
+
 test('tm_open({size}) pins the size: L opens the plan stage without measuring, S goes straight to the development harness (S1)', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
