@@ -131,18 +131,12 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
 
 ### teams parallelism — first
 
-108. **teams view `--once` fast path — rest: wall-clock tests that go red under load, and the cache's loose ends**
-    - Why: shipped in E-7970d4b5 (`cba67113`): a real `--once --format status` went from 32.3 s to
-      0.38 s (969 task dirs); finished tasks are cached under `os.tmpdir()`. Left: the wall-clock
-      subtests in `teams/scripts/test-view-perf.mjs` (best of 5 < 300 ms) fail in the full teams
-      suite at load ~250 (2026-10-31: 1719 tests, 1716 pass, 2 fail, 1 skip; 13/13 alone). The cold
-      first call per tasks dir is still 0.6–0.76 s. `view-floor-fs.mjs`'s header ("Read-only") and the
-      `scanRaws` comment are now wrong (it writes a cache, returns stub raws for cached finished tasks).
-      A stale `<file>.<pid>.tmp` from a crash is never pruned. The poll overlap check (no new process
-      while the previous runs) was not shown.
-    - Acceptance: the wall-clock subtests run only with an opt-in env (or assert CPU) so the teams
-      suite is green at any load; the two comments say what the code does; stale `.tmp` files pruned;
-      a status-line poll does not start a new process while the previous one still runs (tested).
+108. **teams view `--once` — rest: a status-line poll does not start a new process while the previous one still runs**
+    - Why: 2026-10-30, view.mjs ~540% CPU from 22 sessions' polls. The walk is fixed in teams 0.62.1
+      (E-2694667a: open tasks only, finished ones indexed; 7.96 s → 0.40 s a call); the overlap guard
+      in the pane/status-line poll was not taken.
+    - Acceptance: with a `--once` call slowed past the poll interval, the pane and status line start no
+      second one until it exits (tested).
 
 101. **teams runs ready packages at the width shape allows — rest: the first tick, and one real Sprint at width 2+**
     - Why: user, 2026-10-29: "harness, graph, teams 각 phase를 병렬로 할 수는 없는건가?", then "네네 그리고
@@ -446,9 +440,10 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-2694667a | 2026-10-30 | 108 | partial: teams 0.62.1, `--once` filters before collecting and indexes finished tasks (`.view-index.json`), rebased onto 0.62.0's repo-wide matcher; real status call 7.96 s → 0.40 s; 300 ms fixture test is best-of-10 (single calls flaked 306–399 ms under suite load); poll overlap guard left (108) |
 | E-a7996a31 | 2026-10-30 | 87 rest | shipped `5639b260`; size S; goal gate 91; limit named in the PRD gate prompt (a Jaccard ≥ 0.63 rule passed both tests but missed the one real paraphrase, J=0.38, so declined); teams 1681/1682 |
 | E-233f8dca | 2026-10-30 | 81 rest | shipped `2fc9e26c`; size S; goal gate 90; own-write hook + fallback-route verdict gates; teams 1679/1680, plugin test 411/411 |
-| E-7970d4b5 | 2026-10-31 | 108 | shipped `cba67113`; size S; real `--once` 32.3 s → 0.38 s; teams 1716/1719 (2 wall-clock fails under load ~250, left on 108); codex 401, ran on Sonnet |
+| E-7970d4b5 | 2026-10-31 | 108 | merged `cba67113` locally, then reverted: another session shipped card 108 first as teams 0.62.1 (E-2694667a), kept that one; size S; 32.3 s → 0.38 s, but its wall-clock tests went red under load |
 | E-f53a8434 | 2026-10-30 | 105, 106 | shipped `236eae3d`; size S; goal gate 92; teams 1658/1660, plugin test 423/423; UI look left on card 105 |
 | E-ce2bcff4 | 2026-10-30 | 101 | merged `9d4bd6a2` locally, then reverted `0cb18fbf`: another session shipped card 101 first as teams 0.61.5 (E-ea14c9c4), kept that one; size S, goal gate 92 |
 | E-db7e3226 | 2026-10-30 | 94 defects | shipped `15a95196`; size S (resumed from E-4f12f406); goal gate 91; plugin test 411/411; captures awaiting approval |

@@ -11,6 +11,7 @@ import { collectTask, driverLive } from './view-collect.mjs';
 import { summarize, cardsOf, waitingCount } from './view-summary.mjs';
 import { floorOf } from './view-floor.mjs';
 import { repoMatcher } from './view-repo.mjs';
+import { openTasks } from './view-index.mjs';
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
 // A judge has no pid: its newest stream says it is working while it was written this recently.
@@ -143,21 +144,19 @@ function parkedOnPerson(raw) {
 export function floorTasks({ tasksDir, cwd, opener, now = Date.now(), collect = collectTask }) {
   const repo = cwd && !opener ? repoMatcher(cwd) : null;
   const picked = [];
-  for (const e of ls(tasksDir)) {
-    if (!e.isDirectory()) continue;
-    const raw = readJson(join(tasksDir, e.name, 'task.json'));
+  for (const { id: name, raw } of openTasks(tasksDir)) {
     if (!raw || typeof raw !== 'object') continue;
     if (repo && !raw.cwd) continue;
     if (opener && !(raw.opener && raw.opener.session_id === opener)) continue;
     try { if (!OPEN.has(epicTicketState(raw))) continue; } catch { continue; }
-    const marks = [Number(raw.created_at) || 0, mtimeOf(join(tasksDir, e.name, 'ledger.jsonl')) || 0];
-    for (const f of ls(join(tasksDir, e.name, 'drivers'))) if (f.name.endsWith('.stream.jsonl')) marks.push(mtimeOf(join(tasksDir, e.name, 'drivers', f.name)) || 0);
+    const marks = [Number(raw.created_at) || 0, mtimeOf(join(tasksDir, name, 'ledger.jsonl')) || 0];
+    for (const f of ls(join(tasksDir, name, 'drivers'))) if (f.name.endsWith('.stream.jsonl')) marks.push(mtimeOf(join(tasksDir, name, 'drivers', f.name)) || 0);
     const at = Math.max(...marks);
     if (now - at > DAY_MS && !parkedOnPerson(raw)) continue;
     // the repo compare comes last: it may spawn git
     const worktree = repo ? repo(raw.cwd) : { match: true, worktree: null };
     if (!worktree.match) continue;
-    picked.push({ id: e.name, age_ms: Math.max(0, now - at), worktree: worktree.worktree });
+    picked.push({ id: name, age_ms: Math.max(0, now - at), worktree: worktree.worktree });
   }
   const out = [];
   for (const { id, age_ms, worktree } of picked) {
