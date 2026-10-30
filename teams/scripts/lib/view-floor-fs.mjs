@@ -10,6 +10,7 @@ import { findDriverStreams, collectDriverCosts, collectNodeCosts } from '../benc
 import { collectTask, driverLive } from './view-collect.mjs';
 import { summarize, cardsOf, waitingCount } from './view-summary.mjs';
 import { floorOf } from './view-floor.mjs';
+import { repoMatcher } from './view-repo.mjs';
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
 // A judge has no pid: its newest stream says it is working while it was written this recently.
@@ -133,48 +134,52 @@ function parkedOnPerson(raw) {
   return !!(g && g.route === 'graph' && waits(readJson(graphRunPath(g.cwd, g.run_id))));
 }
 
-// The tasks of `cwd` the pane lists: open ones (READY/IN_PROGRESS/IN_REVIEW) with a sign of life in the
+// The tasks of `cwd`'s repo (its main checkout and linked worktrees, see view-repo.mjs) the pane lists: open ones (READY/IN_PROGRESS/IN_REVIEW) with a sign of life in the
 // last 24 h, prefiltered from task.json alone before `collect` (collectTask) runs. A task waiting on a
 // person is live, never stalled, and stays listed past 24 h (a manager card is read from task.json).
 // Live first, then stalled, each newest created first. [{ m, live, age_ms }]
 // `opener` (a session id) keeps only tasks whose raw task.json names it as opener, checked before `collect`,
 // and ignores `cwd`: the asks of one session span every project.
 export function floorTasks({ tasksDir, cwd, opener, now = Date.now(), collect = collectTask }) {
-  const want = cwd && !opener ? samePath(cwd) : null;
+  const repo = cwd && !opener ? repoMatcher(cwd) : null;
   const picked = [];
   for (const e of ls(tasksDir)) {
     if (!e.isDirectory()) continue;
     const raw = readJson(join(tasksDir, e.name, 'task.json'));
     if (!raw || typeof raw !== 'object') continue;
-    if (want && (!raw.cwd || samePath(raw.cwd) !== want)) continue;
+    if (repo && !raw.cwd) continue;
     if (opener && !(raw.opener && raw.opener.session_id === opener)) continue;
     try { if (!OPEN.has(epicTicketState(raw))) continue; } catch { continue; }
     const marks = [Number(raw.created_at) || 0, mtimeOf(join(tasksDir, e.name, 'ledger.jsonl')) || 0];
     for (const f of ls(join(tasksDir, e.name, 'drivers'))) if (f.name.endsWith('.stream.jsonl')) marks.push(mtimeOf(join(tasksDir, e.name, 'drivers', f.name)) || 0);
     const at = Math.max(...marks);
     if (now - at > DAY_MS && !parkedOnPerson(raw)) continue;
-    picked.push({ id: e.name, age_ms: Math.max(0, now - at) });
+    // the repo compare comes last: it may spawn git
+    const worktree = repo ? repo(raw.cwd) : { match: true, worktree: null };
+    if (!worktree.match) continue;
+    picked.push({ id: e.name, age_ms: Math.max(0, now - at), worktree: worktree.worktree });
   }
   const out = [];
-  for (const { id, age_ms } of picked) {
+  for (const { id, age_ms, worktree } of picked) {
     const m = collect(tasksDir, id);
     if (!m || m.error) continue;
     // decided from the collected model: a card parked on a person is live whatever its driver says
     // (the package driver exits on purpose while it waits) and is listed however old it is
     const parked = (m.state === 'running' || m.state === 'stalled' || m.state === 'waiting_human') && waitingCount(m) > 0;
-    if (parked) out.push({ m, id, live: true, waiting: true, age_ms: null });
-    else if (m.state === 'stalled') { if (age_ms <= DAY_MS) out.push({ m, id, live: false, age_ms }); }
-    else if (m.state === 'running' || m.state === 'waiting_human') out.push({ m, id, live: true, age_ms: null });
+    if (parked) out.push({ m, id, live: true, waiting: true, age_ms: null, worktree });
+    else if (m.state === 'stalled') { if (age_ms <= DAY_MS) out.push({ m, id, live: false, age_ms, worktree }); }
+    else if (m.state === 'running' || m.state === 'waiting_human') out.push({ m, id, live: true, age_ms: null, worktree });
   }
   const created = (x) => x.m.created_at || 0;
   return [...out.filter((x) => x.live).sort((a, b) => created(b) - created(a)), ...out.filter((x) => !x.live).sort((a, b) => created(b) - created(a))];
 }
 
 // One listed task as the summary prints it: summarize()'s fields plus identity, liveness, age and the floor.
-export function floorEntry({ m, id, live, age_ms, waiting }, tasksDir, { now = Date.now() } = {}) {
+export function floorEntry({ m, id, live, age_ms, waiting, worktree = null }, tasksDir, { now = Date.now() } = {}) {
   const summary = summarize(m, { now });
   return {
     ...summary,
+    worktree,
     ...(waiting ? { state: 'waiting_human' } : {}),
     task_id: m.task_id, created_at: m.created_at || null, live, age_ms,
     // an S task's harness run: the slug it is known by and whether it moved lately (the row's liveness is item.live)

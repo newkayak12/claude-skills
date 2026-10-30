@@ -67,6 +67,17 @@ test('no card reference: unchanged, whole request, filler words kept', () => {
   assert.equal(epicSlug('Edit view.mjs. rename things'), 'edit-rename-things');
 });
 
+test('a possessive \'s drops; a plural possessive stays a word', () => {
+  const card94 = 'Backlog card 94\'s three open defects (_repo/docs/backlog.md, "teams-status shows …"; …).';
+  assert.equal(epicSlug(card94), 'open-defects-teams-status-shows');
+  for (const r of [card94, 'Fix the user\'s pane', 'Fix Bob’s pane']) {
+    assert.ok(!/(^|-)s(-|$)/.test(epicSlug(r)), r);
+  }
+  assert.equal(epicSlug('Fix the user\'s pane'), 'fix-pane');
+  assert.equal(epicSlug('Fix Bob’s pane'), 'fix-bob-pane');
+  assert.equal(epicSlug('Fix the users\' pane'), 'fix-users-pane');
+});
+
 test('path and file tokens give no words (card 46 request)', () => {
   assert.equal(epicSlug(CARD46), 'tasks-branches-worktrees-named');
   const a = epicSlug('Backlog card 12 (_repo/docs/backlog.md): fix pane');

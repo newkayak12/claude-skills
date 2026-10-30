@@ -16,6 +16,7 @@ import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, existsSync, readdirSync, realpathSync, symlinkSync, statSync, utimesSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -110,6 +111,15 @@ class Client {
     this.proc.stdin.end();
     this.proc.kill();
   }
+}
+
+// A port nothing listens on right now. The TEAMS_VIEW: '1' tests pin TEAMS_VIEW_PORT to one so
+// the viewer they start never registers into, or is mistaken for, a real viewer on 7431.
+function closedPort() {
+  return new Promise((resolve) => {
+    const s = createServer();
+    s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); });
+  });
 }
 
 function repo() {
@@ -3719,7 +3729,7 @@ test('tm_open no longer accepts notify: dropped from the tool schema and never s
 test('tm_open starts one viewer per tasks root and hands back its URL; .view.json records a live pid', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '1' }).init();
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '1', TEAMS_VIEW_PORT: String(await closedPort()) }).init();
   const pids = [];
   try {
     const open = await tm.call('tm_open', { request: 'r', cwd, vendor: 'self', roles: { qa: false }, brainstorm: false });
@@ -3739,7 +3749,7 @@ test('tm_open starts one viewer per tasks root and hands back its URL; .view.jso
 test('a second tm_open under the same tasks root reuses the first viewer - one window per root, not one per task', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '1' }).init();
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '1', TEAMS_VIEW_PORT: String(await closedPort()) }).init();
   const pids = [];
   try {
     const open1 = await tm.call('tm_open', { request: 'r1', cwd, vendor: 'self', roles: { qa: false }, brainstorm: false });
