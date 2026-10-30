@@ -4,7 +4,8 @@ import { cpSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { bump, claims, compare, layout, parseMap, readMaterial, renumber, settled, snapshot, verify } from './manage.mjs'
+import { spawnSync } from 'node:child_process'
+import { bump, claims, compare, headings, layout, parseMap, readMaterial, renumber, settled, snapshot, verify } from './manage.mjs'
 
 const SKEL = `# 가상 포트폴리오
 version: v4.0.0
@@ -257,6 +258,41 @@ test('a `·` pair stays ascending after a swap, and a moved heading with `(n/N)`
   const r = renumber('## 7 a (1/2)\n## 8 b (2/2)\n7·8쪽', parseMap('7:8,8:7'))
   assert.equal(r.text, '## 7 b (2/2)\n7·8쪽\n## 8 a (1/2)')
   assert.deepEqual(r.warnings, ['7쪽 → 8쪽 heading keeps "(1/2)": check it by hand', '8쪽 → 7쪽 heading keeps "(2/2)": check it by hand'])
+})
+
+// card 103: each reproduced against the engine before the fix
+test('a `N쪽` in a `쪽` column cell is swapped once (double-replace regression)', () => {
+  const r = renumber('## 3 a\n## 4 b\n\n| 번호 | 쪽 |\n|---|---|\n| 1 | 3쪽 |\n| 2 | 4쪽 · 7쪽 |\n', parseMap('3:4,4:3'))
+  assert.match(r.text, /\| 1 \| 4쪽 \|\n\| 2 \| 3쪽 · 7쪽 \|/)
+})
+
+test('fenced code is neither a heading, a block nor a reference', () => {
+  const text = '# Part A\n## 1. Intro\n```bash\n# comment\n## 2 not heading\n3쪽\n```\n## 2. Second'
+  const r = renumber(text, parseMap('1:2,2:1'))
+  assert.equal(r.text, '# Part A\n## 1. Second\n## 2. Intro\n```bash\n# comment\n## 2 not heading\n3쪽\n```')
+  assert.deepEqual(verify(r.text).problems, [])
+  assert.deepEqual(headings(text), [1, 2])
+})
+
+test('a map whose target is a page left in place is refused', () => {
+  assert.throws(() => renumber('## 3 a\n## 4 b', parseMap('3:4')), /page 4 stays/)
+  assert.doesNotThrow(() => renumber('## 3 a\n## 5 b', parseMap('3:4')))
+})
+
+test('renumber writes the file only when the result verifies (--force writes anyway)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-write-'))
+  const before = '## 1 a\n2쪽에서 이어진다.\n## 2 b\n'
+  writeFileSync(join(root, 'skeleton.md'), before)
+  const cli = (...a) => JSON.parse(spawnSync(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), 'manage.mjs'), ...a], { cwd: root, encoding: 'utf8' }).stdout)
+  // a dangling reference makes the result fail verify: the file stays as it was
+  writeFileSync(join(root, 'skeleton.md'), '## 1 a\n9쪽 참고.\n## 2 b\n')
+  const r = cli('renumber', '--map', '1:2,2:1')
+  assert.equal(r.written, false)
+  assert.deepEqual(r.problems, ['9쪽 points at no heading'])
+  assert.equal(readFileSync(join(root, 'skeleton.md'), 'utf8'), '## 1 a\n9쪽 참고.\n## 2 b\n')
+  assert.equal(cli('renumber', '--map', '1:2,2:1', '--force').written, true)
+  writeFileSync(join(root, 'skeleton.md'), before)
+  assert.equal(cli('renumber', '--map', '1:2,2:1').written, true)
 })
 
 // card 102: a fictional workspace with two material items, the skeleton citing them by `글감:`

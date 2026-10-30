@@ -110,7 +110,16 @@ def make_png(path, w, h, rgb=(30, 120, 220)):
         + chunk(b"IEND", b""))
 
 
-def make_template(path, media):
+def _chart(name):
+    return (
+        '<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="70" name="%s"/>'
+        '<p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>'
+        '<p:xfrm><a:off x="6500000" y="0"/><a:ext cx="4000000" cy="3000000"/></p:xfrm>'
+        '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"/>'
+        '</a:graphic></p:graphicFrame>' % name)
+
+
+def make_template(path, media, extra2=()):
     slide1 = _slide([
         _sp("Title 1", "ctrTitle", [(0, "Template Title")], cx=6000000),
         _sp("Subtitle 2", "subTitle", [(0, "Template subtitle")]),
@@ -121,6 +130,7 @@ def make_template(path, media):
         _sp("Title 1", "title", [(0, "Agenda")]),
         _sp("Body 2", "body", [(0, "one"), (0, "two"), (1, "nested")]),
         _tbl("Table 3", 3, 2),
+        *extra2,
     ])
     parts = {
         "[Content_Types].xml":
@@ -754,6 +764,25 @@ def run_cmd(argv):
         except SystemExit as e:
             buf.write(str(e))
     return buf.getvalue()
+
+
+def untouched_charts(tmp):
+    """A chart slot the deck never names keeps the template's sample numbers: check and build say so."""
+    print("untouched charts")
+    d = tmp / "charts"
+    d.mkdir()
+    img = d / "shot.png"
+    make_png(img, 400, 400)
+    make_template(d / "template.pptx", img, extra2=[_chart("Chart 5")])
+    (d / "deck.mdx").write_text(
+        "---\ntemplate: template.pptx\noutput: out.pptx\n---\n\n"
+        "## @s2\ntitle: 결과\ntext1:\n  - 하나\n", encoding="utf-8")
+    out = run_cmd(["check", "--deck", str(d / "deck.mdx")])
+    check("chart chart1 keeps the template's sample numbers" in out,
+          "check warns on an untouched chart — got: %s" % out[-200:])
+    out = run_cmd(["build", "--deck", str(d / "deck.mdx")])
+    check("chart 'chart1' keeps the template's sample numbers" in out,
+          "build warns on an untouched chart — got: %s" % out[-200:])
 
 
 def make_split_png(path, w, h, left=(20, 20, 20), right=(240, 240, 240)):
@@ -1572,6 +1601,7 @@ def main():
         svg_assets(tmp)
         guards(tmp)
         voice(tmp)
+        untouched_charts(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     print()

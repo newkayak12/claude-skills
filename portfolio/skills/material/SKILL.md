@@ -22,7 +22,7 @@ compatibility:
 
 Collection only: material in, `material/<id>/` items out. **Not for** writing the portfolio, rendering a deck, or feedback loop-back (later steps).
 
-Script, run from the project root: `node ${CLAUDE_PLUGIN_ROOT}/skills/material/scripts/material.mjs <subcommand> [flags]`. Each prints one JSON object.
+Script, run from the project root: `node ${CLAUDE_PLUGIN_ROOT}/skills/material/scripts/material.mjs <subcommand> [flags]`. Each prints one JSON object. In a `manage` workspace (a root with `sources/`) the items folder is `sources/material/`; a root that already has `material/` keeps it.
 
 | Subcommand | Flags | Does |
 |---|---|---|
