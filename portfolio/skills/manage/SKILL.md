@@ -55,7 +55,7 @@ block that moves with its pages. History lines (`vX.Y.Z 변경…`, `vX.Y.Z(…`
 
 ## Process
 
-Eight steps, in order; a round may start again at 2 or 4 (step 8 says where).
+Nine steps, in order; a round may start again at 2 or 4 (step 8 says where); 9 once the deck is done.
 
 0. **Open.** `layout`; read `docs/확정사실.md` and the "맞춰야 할 것" table at the end of skeleton.
    Missing workspace parts are created on request, not silently: `scaffold` makes the flow's new
@@ -127,16 +127,20 @@ Eight steps, in order; a round may start again at 2 or 4 (step 8 says where).
 7. **Render, review, re-render.** `build` and `render` only when the user says. After a render,
    `keep-render --version <deck version>` keeps the previews under `snapshot/render/deck-vX.Y.Z/`
    with a `검토.md` row per page (쪽 · 본 것 · 문제 · 다음렌더-지침): look at every page and fill it.
-   A problem seen in a render or in PowerPoint is not fixed on the spot: it goes into
-   `template/다음렌더-지침.md` (쪽 · 칸 · 증상 · 확인 · 적용) and all of them are applied before the
-   next render. Fixed at once only when the user says to fix it ("고쳐", "맞춰줘"); a symptom or a
-   capture alone is noted. A frame the deck cannot move is fixed in the template only on the user's
-   word: `references/template-edit.md`.
+   A problem seen in a render or in PowerPoint goes into `template/다음렌더-지침.md` (쪽 · 칸 · 증상 ·
+   확인 · 적용), all applied before the next render; fixed at once only when the user says ("고쳐",
+   "맞춰줘"). A frame the deck cannot move is fixed in the template only on the user's word
+   (`references/template-edit.md`).
 8. **Feedback on the deck.** `feedback` on the rendered PDF (first three pages, what each figure
    means, page flow), saved to `snapshot/feedback/deck-vX.Y.Z.md`. Each finding goes back to
    material: a claim the deck cannot defend → its item's `gaps.md`; a real result the user restores
    → the item's `result.md` labelled `본인 확인`. The next round starts at 2 (selection changed) or 4
    (wording). Kept small: no follow-up question trees.
+9. **Resume.** From the built deck and `선정.md`: `resume.md` (front matter maps name · section ·
+   entry · bullet · body to the user's `template/resume.docx` styles, `resume.py catalog` lists them),
+   every bullet citing `글감:`, then `claims --file resume.md`, `python3 scripts/resume.py build` and,
+   when told, `render` (PDF, pages against `pages:`). Never a built-in look. The user's material —
+   template, deck, resume, PDFs — never goes to git: the engine refuses a workspace git would carry.
 
 Always:
 - **Corrections.** When the user corrects a fact, in the same turn: append to the material file
@@ -147,13 +151,11 @@ Always:
   each run as `{ "<item>": <score> }` into `snapshot/scores/skeleton-vX.Y.Z.json`, then
   `compare --before <snapshot's> --after <new>`, with both rounds' `claims` saved beside them
   (`skeleton-vX.Y.Z.claims.json`) as `--claims-before`/`--claims-after`: a claim that lost its
-  ground (`lost_ground`) makes the round worse whatever the scores. Report every item's change;
-  an item in `dropped` is named with the snapshot's wording for it, offered back. `unmatched`
-  means the rubric moved — re-score, never compare across it.
+  ground (`lost_ground`) makes the round worse whatever the scores. Report every change; a `dropped`
+  item comes with the snapshot's wording, offered back; `unmatched` means re-score.
 - **A vague answer** ("바꾸고"): do the part every reading shares, hold the rest and say so.
 
-Composition and writing principles that hold for any candidate: `references/principles.md`.
-Mistakes this workflow exists to stop: `references/principles.md` § Never.
+Principles for any candidate, and the mistakes this flow stops: `references/principles.md`.
 
 ## Output Template
 
@@ -176,10 +178,9 @@ claims: 문제 <n> (근거 없음 n · 글감에 없음 n · 확인 필요 n · 
 renumber/verify: <changes, warnings, problems | 안 함> · deck check: <warnings | 안 함> · build/render: <함 | 안 함>
 ```
 
-Korean, conclusion first; headings plain, no bold run through the report. No invented names,
-debate codes or abstract labels; a number says what it counts. Build or render not done → say the
-built files are the older state. A short remark read one way → say the reading and ask if another
-was meant. Held is said as held.
+Korean, conclusion first, plain headings, no bold runs, no invented names or labels; a number says
+what it counts. Not built → the built files are older. A short remark read one way → say the
+reading and ask. Held is said as held.
 
 ## What Claude Does / What You Do
 
@@ -195,6 +196,5 @@ was meant. Held is said as held.
 
 - `material` — step 1, collects material into `sources/material/`; its status follows steps 2-3
 - `feedback`, `pattern`, `rewrite`, `mock-interview` — steps 4 and 8, judge and strengthen
-- `deck-builder` — steps 5-7, catalog, check, build, render
-- `write:diagram` — figures, coloured from `template/분석.md`
+- `deck-builder` — steps 5-7 (and its renderer for step 9's PDF); `write:diagram` — figures
 - `job-application-workflow` — the whole application; its deck step is this workflow

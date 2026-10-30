@@ -24,3 +24,12 @@ INSTRUCT.md
 _reference/
 .teams_output/
 .claude/.harness-markers/
+
+# The user's real material never goes to git (user, 2026-10-30: "내가 준 실제 자료를 올리면 안된다고",
+# "pptx도 이전에 준거 올리지 말라구"): templates, decks, resumes, their PDFs. Tests build theirs in a
+# temp dir; the one tracked template.pptx fixture is an empty placeholder.
+*.docx
+~$*.docx
+*.pptx
+~$*.pptx
+*.pdf
