@@ -621,6 +621,233 @@ test('timeline with a cause edge passes check; the svg has the accent line, the 
   assert.ok(!plain.includes('arrow-accent') && !plain.includes('UPDATE 재개'));
 });
 
+// card 100: the cause edge through the lane gap, the span ending at the release box, the resume note
+
+// Steps in both lanes sit in the rows between the holder (A@2) and the waiter (B@6).
+const GAPPED = {
+  type: 'timeline', title: '사이 행이 있는 잠금 대기', claim: ['A@t2', 'B@t6'], lanes: [{ id: 'A', label: '세션 A' }, { id: 'B', label: '세션 B' }],
+  steps: [
+    { t: 1, lane: 'A', label: 'BEGIN', kind: 'stmt' },
+    { t: 1, lane: 'B', label: 'BEGIN', kind: 'stmt' },
+    { t: 2, lane: 'A', label: 'UPDATE stock … id=1', kind: 'stmt' },
+    { t: 3, lane: 'A', label: 'INSERT audit', kind: 'stmt' },
+    { t: 3, lane: 'B', label: 'SELECT stock', kind: 'stmt' },
+    { t: 4, lane: 'A', label: 'INSERT item', kind: 'stmt' },
+    { t: 5, lane: 'B', label: 'INSERT log', kind: 'stmt' },
+    { t: 6, lane: 'B', label: 'UPDATE stock … id=1', kind: 'stmt' },
+    { t: 8, lane: 'A', label: 'COMMIT', kind: 'commit' },
+    { t: 9, lane: 'B', label: 'COMMIT', kind: 'commit' },
+  ],
+  waits: [{ lane: 'B', from: 6, until: 8, on: 'A', holder: 2, label: 'id=1 행 X 잠금 대기' }],
+};
+// Two waits of B on A: both cause edges run through the one gap between lanes A and B.
+const TWO_CAUSES = {
+  type: 'timeline', title: '두 번 기다리는 세션 B', claim: ['A@t1', 'B@t6'], lanes: [{ id: 'A', label: '세션 A' }, { id: 'B', label: '세션 B' }],
+  steps: [
+    { t: 1, lane: 'A', label: 'UPDATE a', kind: 'stmt' },
+    { t: 2, lane: 'B', label: 'UPDATE a', kind: 'stmt' },
+    { t: 4, lane: 'A', label: 'COMMIT', kind: 'commit' },
+    { t: 5, lane: 'A', label: 'UPDATE b', kind: 'stmt' },
+    { t: 6, lane: 'B', label: 'UPDATE b', kind: 'stmt' },
+    { t: 8, lane: 'A', label: 'COMMIT', kind: 'commit' },
+    { t: 9, lane: 'B', label: 'COMMIT', kind: 'commit' },
+  ],
+  waits: [
+    { lane: 'B', from: 2, until: 4, on: 'A', holder: 1, label: 'a 행 대기' },
+    { lane: 'B', from: 6, until: 8, on: 'A', holder: 5, label: 'b 행 대기' },
+  ],
+};
+// The rebuilt figure of card 100 (fig-13-1): a long resume note beside B's resume step.
+const FIG131 = {
+  type: 'timeline', title: '같은 재고 행을 갱신하는 두 세션: B는 A의 커밋까지 기다린다', claim: ['A@t4', 'B@t7', 'B@t10'],
+  lanes: [{ id: 'A', label: '세션 A' }, { id: 'B', label: '세션 B' }],
+  steps: [
+    { t: 1, lane: 'A', label: 'START TRANSACTION', kind: 'stmt' },
+    { t: 1, lane: 'B', label: 'START TRANSACTION', kind: 'stmt' },
+    { t: 2, lane: 'B', label: 'SELECT 재고 → 2', kind: 'stmt' },
+    { t: 3, lane: 'A', label: '주문 2002 삽입', kind: 'stmt' },
+    { t: 4, lane: 'A', label: 'UPDATE 205 · X 잠금 획득', kind: 'stmt' },
+    { t: 5, lane: 'A', label: '2002 항목 삽입', kind: 'stmt' },
+    { t: 6, lane: 'B', label: '주문 2003 삽입', kind: 'stmt' },
+    { t: 7, lane: 'B', label: 'UPDATE 205 (-2)', kind: 'stmt' },
+    { t: 9, lane: 'A', label: 'COMMIT', kind: 'commit' },
+    { t: 10, lane: 'B', label: 'UPDATE 재개 · 0행 (3.41 s)', kind: 'stmt' },
+    { t: 11, lane: 'B', label: 'ROW_COUNT() → 0', kind: 'stmt' },
+    { t: 12, lane: 'B', label: 'SELECT 재고 → 2', kind: 'stmt' },
+    { t: 13, lane: 'B', label: 'ROLLBACK', kind: 'rollback' },
+  ],
+  waits: [{ lane: 'B', from: 7, until: 9, on: 'A', holder: 4, label: '205 행 X 잠금 대기', resume: 'A가 커밋한 재고로는 조건에 맞는 행이 없다' }],
+};
+
+// Does an axis-parallel or slanted segment p-q run through the inside of box b?
+const hitsBox = (p, q, b, m = 1) => {
+  for (let k = 0; k <= 200; k++) {
+    const x = p[0] + ((q[0] - p[0]) * k) / 200, y = p[1] + ((q[1] - p[1]) * k) / 200;
+    if (x > b.x + m && x < b.x + b.w - m && y > b.y + m && y < b.y + b.h - m) return true;
+  }
+  return false;
+};
+
+test('timeline cause edge: a right-angle polyline through the lane gap, crossing no step box, with steps in the rows between', () => {
+  assert.deepEqual(fig.checkFigure(GAPPED), []);
+  const its = itemsOf(GAPPED), cause = its.find((i) => i.id === 'cause 0');
+  const p = cause.points;
+  assert.equal(p.length, 4, 'out of the holder, down the gap, into the waiter');
+  assert.equal(p[0][1], p[1][1], 'first leg is horizontal');
+  assert.equal(p[1][0], p[2][0], 'second leg is vertical, down the gap');
+  assert.equal(p[2][1], p[3][1], 'last leg is horizontal');
+  assert.ok(p[2][1] > p[1][1], 'runs down from the holder row to the waiter row');
+  const hb = its.find((i) => i.id === 'step A@2').box, wb = its.find((i) => i.id === 'step B@6').box;
+  assert.ok(Math.abs(p[0][0] - (hb.x + hb.w)) < 4 && p[0][1] > hb.y && p[0][1] < hb.y + hb.h, 'leaves the holder box by its side');
+  assert.ok(Math.abs(p[3][0] - wb.x) < 4 && p[3][1] > wb.y && p[3][1] < wb.y + wb.h, 'enters the waiter box by its side');
+  const steps = its.filter((i) => /^step /.test(i.id) && i.kind === 'shape');
+  assert.ok(steps.some((s) => s.box.y > hb.y + hb.h && s.box.y < wb.y), 'there are steps in the rows between holder and waiter');
+  for (const [a, b] of [[p[0], p[1]], [p[1], p[2]], [p[2], p[3]]]) for (const s of steps) {
+    if (s.id === 'step A@2' || s.id === 'step B@6') continue;
+    assert.ok(!hitsBox(a, b, s.box), `the cause edge crosses ${s.id}`);
+  }
+  const gapL = Math.max(...steps.filter((s) => /^step A@[2-6]$/.test(s.id)).map((s) => s.box.x + s.box.w));
+  const gapR = Math.min(...steps.filter((s) => /^step B@[3-6]$/.test(s.id)).map((s) => s.box.x));
+  assert.ok(p[1][0] >= gapL && p[1][0] <= gapR, `the vertical leg x=${p[1][0]} lies in the gap ${gapL}..${gapR}`);
+});
+
+test('timeline cause edges that share one lane gap each get their own x', () => {
+  assert.deepEqual(fig.checkFigure(TWO_CAUSES), []);
+  const its = itemsOf(TWO_CAUSES), a = its.find((i) => i.id === 'cause 0').points, b = its.find((i) => i.id === 'cause 1').points;
+  assert.equal(a.length, 4);
+  assert.equal(b.length, 4);
+  assert.ok(Math.abs(a[1][0] - b[1][0]) >= 3, `vertical legs at ${a[1][0]} and ${b[1][0]}`);
+});
+
+// Holders A@1 and A@2 with stmt labels about 255 px wide: the lane gap is a few px, so both edges used to run down x=337.
+const NARROW_LABEL = 'UPDATE stock SET qty = qty - 1 WHERE id = ';
+const NARROW = {
+  type: 'timeline', title: 'narrow lane gap', claim: ['A@t1', 'B@t7'], lanes: [{ id: 'A', label: 'Session A' }, { id: 'B', label: 'Session B' }],
+  steps: [
+    { t: 1, lane: 'A', label: `${NARROW_LABEL}1`, kind: 'stmt' },
+    { t: 2, lane: 'A', label: `${NARROW_LABEL}2`, kind: 'stmt' },
+    { t: 3, lane: 'B', label: `${NARROW_LABEL}3`, kind: 'stmt' },
+    { t: 5, lane: 'A', label: 'ROLLBACK', kind: 'rollback' },
+    { t: 7, lane: 'B', label: `${NARROW_LABEL}4`, kind: 'stmt' },
+    { t: 9, lane: 'A', label: 'COMMIT', kind: 'commit' },
+  ],
+  waits: [
+    { lane: 'B', from: 3, until: 5, on: 'A', holder: 1, label: 'row 1 lock wait' },
+    { lane: 'B', from: 7, until: 9, on: 'A', holder: 2, label: 'row 2 lock wait' },
+  ],
+};
+
+test('timeline cause edges in a lane gap too narrow for the spread still run at distinct x, clear of every step box', () => {
+  const its = itemsOf(NARROW), a = its.find((i) => i.id === 'cause 0').points, b = its.find((i) => i.id === 'cause 1').points;
+  const wide = its.filter((i) => /^step /.test(i.id) && i.kind === 'shape').map((i) => i.box.w);
+  assert.ok(Math.max(...wide) > 255, 'the stmt boxes are about 255 px wide, so the gap between the lanes is narrow');
+  assert.ok(Math.abs(a[1][0] - b[1][0]) >= 3, `vertical legs at ${a[1][0]} and ${b[1][0]}`);
+  const steps = its.filter((i) => /^step /.test(i.id) && i.kind === 'shape');
+  for (const p of [a, b]) for (const s of steps) {
+    if (s.id === 'step A@1' || s.id === 'step A@2' || s.id === 'step B@3' || s.id === 'step B@7') {
+      assert.ok(!hitsBox(p[1], p[2], s.box), `a vertical leg runs through ${s.id}`);
+    }
+  }
+  assert.deepEqual(fig.checkFigure(NARROW), []);
+});
+
+test('checkGeometry refuses two cause edges that run along the same line', () => {
+  const edge = (id, x, y = 10) => ({ id, kind: 'edge', exclusive: true, points: [[x - 20, y], [x, y], [x, y + 70], [x + 20, y + 70]] });
+  assert.deepEqual(geo([edge('cause 0', 100), edge('cause 1', 103, 20)]), []);
+  assert.ok(geo([edge('cause 0', 100), edge('cause 1', 100.4, 20)]).some((e) => /cause 0 and cause 1 run along the same line/.test(e)));
+  // lines that merely cross, or that only touch end to end, are not the same line
+  const cross = { id: 'cause 2', kind: 'edge', exclusive: true, points: [[60, 40], [140, 40]] };
+  assert.deepEqual(geo([edge('cause 0', 100), cross]), []);
+});
+
+test('timeline refuses a holder on a lane that is not next to the waiter,and a holder at or below the waiter\'s from row', () => {
+  const three = edit(GAPPED, (ir) => {
+    ir.lanes.push({ id: 'C', label: '세션 C' });
+    ir.waits[0].lane = 'C'; ir.waits[0].on = 'A'; ir.claim = ['A@t2', 'C@t6'];
+    ir.steps = ir.steps.filter((s) => s.lane !== 'B' || s.t === 1).concat([{ t: 6, lane: 'C', label: 'UPDATE stock … id=1', kind: 'stmt' }]);
+  });
+  expectRefused(three, /waits\[0\]: "holder" needs lane A and lane C to be adjacent/);
+  expectPass(edit(three, (ir) => { delete ir.waits[0].holder; }), '세션 C');
+  const same = edit(GAPPED, (ir) => { ir.steps.push({ t: 7, lane: 'A', label: 'UPDATE stock … id=2', kind: 'stmt' }); ir.waits[0].holder = 7; });
+  expectRefused(same, /waits\[0\]: "holder" t=7 must come before "from" t=6/);
+  const equal = edit(GAPPED, (ir) => { ir.steps.push({ t: 6, lane: 'A', label: 'UPDATE stock … id=2', kind: 'stmt' }); ir.waits[0].holder = 6; });
+  expectRefused(equal, /waits\[0\]: "holder" t=6 must come before "from" t=6/);
+});
+
+test('timeline wait span ends at the top edge of the release step box, or the waiter\'s own box when the on lane has none', () => {
+  for (const ir of [GAPPED, FIG131, TWO_CAUSES]) {
+    const its = itemsOf(ir);
+    ir.waits.forEach((w, i) => {
+      const span = its.find((x) => x.id === `wait ${i}`), rel = its.find((x) => x.id === `step ${w.on}@${w.until}`).box;
+      assert.ok(Math.abs(span.box.y + span.box.h - rel.y) < 0.01, `${ir.title}: wait ${i} ends at ${span.box.y + span.box.h}, release top is ${rel.y}`);
+    });
+  }
+  // the waiter's own box wins nothing when the release box exists, even where the waiter has a taller step at until
+  const own = edit(GAPPED, (ir) => { ir.steps.push({ t: 8, lane: 'B', label: '갱신을 마치고 나서 남기는 아주 긴 메모 한 줄을 두 줄로 나눠 적는다', kind: 'note' }); });
+  const o = itemsOf(own), rel = o.find((x) => x.id === 'step A@8').box;
+  assert.ok(Math.abs(o.find((x) => x.id === 'wait 0').box.y + o.find((x) => x.id === 'wait 0').box.h - rel.y) < 0.01);
+  // a timeout: lane A has no step at until, so the span ends at the waiter's own error box
+  const timeout = edit(GAPPED, (ir) => {
+    ir.steps = ir.steps.filter((s) => !(s.lane === 'A' && s.t === 8));
+    ir.steps = ir.steps.filter((s) => !(s.lane === 'B' && s.t === 9)).concat([{ t: 8, lane: 'B', label: 'ERROR 1205 시간 초과', kind: 'error' }]);
+    ir.claim = ['A@t2', 'B@t8'];
+  });
+  assert.deepEqual(fig.checkFigure(timeout), []);
+  const t = itemsOf(timeout), eb = t.find((x) => x.id === 'step B@8').box, sp = t.find((x) => x.id === 'wait 0').box;
+  assert.ok(Math.abs(sp.y + sp.h - eb.y) < 0.01, `ends at ${sp.y + sp.h}, own box top ${eb.y}`);
+});
+
+test('timeline resume note: drawn right of its step, and no other step label in the lanes wraps when it fits on one line', () => {
+  assert.deepEqual(fig.checkFigure(FIG131), []);
+  const its = itemsOf(FIG131), LW0 = (640 - 48 - 34) / 2;
+  for (const s of FIG131.steps) {
+    const texts = its.filter((i) => i.kind === 'text' && i.owner === `step ${s.lane}@${s.t}`);
+    assert.equal(texts.length, 1, `${s.lane}@t${s.t} "${s.label}" wrapped into ${texts.length} lines`);
+    assert.ok(texts[0].box.w <= LW0 - 24, 'a label that fits the un-narrowed lane');
+  }
+  const note = its.find((i) => i.kind === 'text' && i.owner === 'wait 0' && i.text.startsWith('A가')), rs = its.find((i) => i.id === 'step B@10').box;
+  assert.ok(note && note.box.x >= rs.x + rs.w, 'the note starts right of its step');
+  const lines = its.filter((i) => i.kind === 'text' && i.owner === 'wait 0' && /커밋|조건|없다|재고로/.test(i.text) && i.box.x >= rs.x + rs.w);
+  assert.ok(lines.length >= 1 && lines.every((l) => l.box.y < rs.y + 3 * 20 + rs.h), 'the note stays in the resume step\'s rows');
+  // the other lane keeps its un-narrowed width: its header is centred on the plain lane middle
+  const la = its.find((i) => i.id === 'lane A').box;
+  assert.ok(Math.abs(la.x + la.w / 2 - (24 + 34 + LW0 / 2)) < 0.6, `lane A header centre ${la.x + la.w / 2}`);
+});
+
+// card 100: a short resume note in a 4-lane timeline whose resume lane has a full-width step box
+const FOUR_LANES = {
+  type: 'timeline', title: '네 세션이 같은 재고 행을 갱신한다', claim: ['A@t2', 'B@t5'],
+  lanes: [{ id: 'A', label: '세션 A' }, { id: 'B', label: '세션 B' }, { id: 'C', label: '세션 C' }, { id: 'D', label: '세션 D' }],
+  steps: [
+    { t: 1, lane: 'A', label: 'START TRANSACTION', kind: 'stmt' },
+    { t: 2, lane: 'A', label: 'UPDATE 재고 SET 수량 = 수량 - 2', kind: 'stmt' },
+    { t: 3, lane: 'B', label: 'START TRANSACTION', kind: 'stmt' },
+    { t: 4, lane: 'C', label: 'SELECT 재고 → 2', kind: 'stmt' },
+    { t: 5, lane: 'B', label: 'UPDATE 재고 SET 수량 = 수량 - 2', kind: 'stmt' },
+    { t: 7, lane: 'A', label: 'COMMIT', kind: 'commit' },
+    { t: 8, lane: 'B', label: 'UPDATE 재고 SET 수량 = 수량 - 2', kind: 'stmt' },
+    { t: 9, lane: 'D', label: 'SELECT 재고 → 0', kind: 'stmt' },
+  ],
+  waits: [{ lane: 'B', from: 5, until: 7, on: 'A', label: '205 행 X 잠금 대기', resume: 'UPDATE 재개 · 0행' }],
+};
+
+test('timeline 4 lanes: a short resume note beside a full-width step is drawn right of it, with no per-word refusal', () => {
+  assert.deepEqual(fig.checkFigure(FOUR_LANES), []);
+  const its = itemsOf(FOUR_LANES), rs = its.find((i) => i.id === 'step B@8').box;
+  const note = its.filter((i) => i.kind === 'text' && i.owner === 'wait 0' && /재개|0행|UPDATE/.test(i.text));
+  assert.ok(note.length >= 1 && note.every((t) => t.box.x >= rs.x + rs.w), 'the note is right of its step');
+  // all lanes keep the same width: the other lane headers stay on their plain lane middles
+  const LW0 = (640 - 48 - 34) / 4;
+  [0, 2, 3].forEach((k) => { const h = its.find((i) => i.id === `lane ${'ABCD'[k]}`).box; assert.ok(Math.abs(h.x + h.w / 2 - (24 + 34 + k * LW0 + LW0 / 2)) < 0.6, `lane ${'ABCD'[k]}`); });
+});
+
+test('timeline 4 lanes: when the note cannot run on past its lane either, check gives one message that names the resume note', () => {
+  const blocked = edit(FOUR_LANES, (ir) => { ir.steps.push({ t: 8, lane: 'C', label: 'SELECT 재고 → 0', kind: 'stmt' }); });
+  const errs = fig.checkFigure(blocked);
+  assert.equal(errs.length, 1, errs.join('\n'));
+  assert.match(errs[0], /the resume note "UPDATE 재개 · 0행" needs \d+ px but has \d+ px/);
+});
+
 // er
 
 const ER = {

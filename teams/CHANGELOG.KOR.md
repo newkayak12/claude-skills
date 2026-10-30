@@ -5,6 +5,7 @@
 `teams` 플러그인의 모든 릴리스를 최신순으로 적었습니다. 예전 KOR.md의 `## 상태` 절을 그대로 옮겨 온 것입니다. 새 릴리스 줄은 `teams:patch`가 아래 `## 상태` 맨 위에 추가합니다.
 
 ## 상태
+- v0.61.5 — 수정: `max_parallel_teams: auto`가 2가 아니라 `min(shape.max_parallel_width, ceiling)`에서 시작하고, 그 상태는 `spec.packages`가 생긴 뒤에야 만들어집니다. 용량 신호는 에러 모양의 필드(`is_error`인 `result`, null이 아닌 `api_error_status`, 상태가 `allowed`도 `allowed_warning`도 아닌 `rate_limit_event`, stderr의 `PUSHBACK_RE`)에서만 읽고, 줄 앞의 BOM 때문에 이벤트를 놓치지 않으므로 `cache_creation_input_tokens:429` 같은 usage 숫자가 너비를 절반으로 줄이지 않습니다. `tm_status`에 `auto_parallel_ticks`(최근 데몬 틱 30개, `{ts, width, running, ready_waiting}`)가 생기고, 원장에는 너비나 `ready_waiting`이 바뀔 때 `parallel_width_changed`가 남습니다
 - v0.61.4 — 수정: 프로젝트 PreToolUse 훅이 막은 명령은 더 이상 필요한 도구 거부로 세지 않습니다. 그래서 QA나 판정이 거부 규칙을 시험해도 멈추지 않습니다. S 크기 실행의 범위 판정은 모델 대신 엔진이 실행 종료 때 계산합니다. teams-status STORYs 탭은 한 줄에 상태 단어 하나만 보여 주고, 스토리 이름은 가장 나중에 줄어듭니다
 - v0.61.3 — 수정: QA·audit가 올린 결함 패키지는 결함을 찾은 통합 브랜치에서 시작합니다. 한 번 올릴 때 같은 결함은 하나만 올라갑니다. S 크기 실행에서 점수가 goal_threshold보다 낮으면 accept로 보지 않습니다. audit 미충족 항목도 재현 명령이 있어야 하고, 버린 결함은 재시도해도 돌아오지 않습니다. task가 시작 커밋(base_commit)을 기록하고, S 크기 판정도 테스트를 약하게 만든 변경 목록을 받습니다
 - v0.61.2 — QA 결함은 다시 돌릴 수 있는 재현 명령이 있어야 하고, 돌려서 통과하면 버립니다. accept는 범위 밖 gap을 그 일을 맡은 패키지로 넘깁니다. 문서 수용 기준은 스토리에 섞이지 않습니다. 스토리 하나짜리 L 고정 shape를 허용합니다. gate:goal이 테스트를 약하게 만든 hunk 목록을 받습니다. teams-status가 시도 횟수, 판정 점수와 기준, 비용과 재시도 비용, 드라이버, 거부, 등록·폐기된 결함을 보여 줍니다. 재시도된 노드의 첫 시도는 작업으로 세지 않습니다

@@ -16,11 +16,17 @@ the five book types); `render` to HTML needs only the IR checks below.
 The five book types (`layout`, `tree`, `timeline`, `er`, `chart`) also carry a top-level `claim`:
 an array of the element ids the caption's point rests on (a timeline step is `<lane>@t<t>`, e.g.
 `"A@t4"`). `figure` draws those in one accent and the rest muted; `check` refuses a missing, empty or
-unknown `claim`. A timeline wait may add `holder` (the `t` of the `stmt` on lane `on` that took the
-lock - an accent line runs from it to the waiter's first waiting step) and `resume` (the author's
-text, drawn as written beside the waiter's next step after `until`; it needs such a step). `check`
-refuses a `holder` that is not a `stmt` of the `on` lane, and a `resume` on a wait with no step after
-`until`. The renderer adds no wording of its own: every word drawn is the author's. The grid types and
+unknown `claim`. A timeline wait spans from its `from` statement down to the top edge of the step
+that releases it (the `on` lane's step at `until`, else the waiter's own step there), with no
+connector. It may add `holder` (the `t` of the `stmt` on lane `on` that took the lock - an accent
+right-angle line leaves that box by its side, runs down the gap between the two lanes and enters the
+waiter's first waiting step by its side; two edges in one gap each take their own x) and `resume`
+(the author's text, drawn as written right of the waiter's next step after `until`, wrapped to at most
+three lines; it needs such a step; only that lane's lifeline moves left to make room, no step label
+wraps for it). `check` refuses a `holder` that is not a `stmt` of the `on` lane, a `holder` whose lane
+is not adjacent to the waiter's lane in `lanes`, a `holder` at or after the waiter's `from`, and a
+`resume` on a wait with no step after `until`. The renderer adds no wording of its own: every word
+drawn is the author's. The grid types and
 `sequence` take none of these. See `figures.md`.
 
 ## Pick the type

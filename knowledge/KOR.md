@@ -393,6 +393,7 @@ Node 24+(플래그 없는 `node:sqlite` + FTS5). Node 22.5–23은 `--experiment
 docker compose -f knowledge/compose.yaml run --rm knowledge-index
 ```
 
+- v1.21.4 — 각 스킬에 Process와 Output Template 절이 생겼습니다(동작 변화 없음). write:plans가 나뉜 뒤로 참조는 write:prd / write:adr을 가리킵니다.
 - v1.21.3 — Codex: MCP 서버가 Codex에서도 등록됩니다(`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`). Claude는 plugin.json에서 읽습니다.
 
 ## 로드맵

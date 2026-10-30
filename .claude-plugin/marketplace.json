@@ -12,7 +12,7 @@
     {
       "name": "develop",
       "description": "Engineering skills: SQL, clean architecture, clean code, DDD, database optimization, chaos engineering, Spring Boot, Kotlin, TDD, testing, bug diagnosis, security audit, architecture review, deprecation & migration, SRE, performance profiling & optimization, incident response, documentation strategy, like-my-code (a repo's style as harness conventions, each rule with evidence and a cited source). ADR drafting moved to write:plans (ADR format); diagram moved to write:diagram.",
-      "version": "2.0.0",
+      "version": "2.0.1",
       "author": {
         "name": "newkayak12"
       },
@@ -25,7 +25,7 @@
     {
       "name": "think",
       "description": "Thinking and ideation skills: mentor (any-field mentoring — takes a position, tests yours, hands over the judgment rule), brainstorming (≥3 options before judgment, kill-criteria convergence, hands off to write:plans), grill (a held plan interrogated: repo read first, one numbered round with recommended answers), devils-advocate (steel-man first, core vulnerability + reversibility), redefine-problem, back-to-basics, untangle-thoughts, and negotiate (counsel on your side).",
-      "version": "1.6.1",
+      "version": "1.6.2",
       "author": {
         "name": "newkayak12"
       },
@@ -38,7 +38,7 @@
     {
       "name": "write",
       "description": "Writing skills: plans (gate-ready implementation plans and ticket breakdowns with production-time gap/ambiguity checks + per-step pass bars; technical blog posts; SBI feedback), prd (PRDs, design docs, RFCs and proposals co-written section by section with reader testing), adr (ADRs and fixed-template design reviews), requirements (a requirement or 기획서 split into actors, rules, open questions with defaults, and items with Given/When/Then criteria),spec (a settled conversation synthesised into a spec, open points marked, no re-interview), skill writing, and writer verification (v2 — five passes incl. a humanizer for machine tells, draft loop that rewrites until 🔴🟡 = 0, PR descriptions from a diff as first-class input), and tech-book (performance-based book arc, cumulative examples, transfer practice, six required teaching elements within a chapter length budget, staged review loops with defined severities, lab-running fact checks, pinned chapter end states and a cap closure pass, and PDF in bundled NanumGothic), diagram (checked self-contained SVG + PNG figures: page layout, B-tree, lock timeline, ER, chart, architecture, sequence; moved from develop). Knowledge-base, graph, RAG, and query skills moved to the knowledge plugin.",
-      "version": "1.14.1",
+      "version": "1.15.0",
       "author": {
         "name": "newkayak12"
       },
@@ -51,7 +51,7 @@
     {
       "name": "knowledge",
       "description": "Answerability-gated knowledge skills and local MCP: linked Markdown, relation-aware graph extraction, graph visualization, RAG preparation, SQLite index building, and source-grounded retrieval.",
-      "version": "1.21.3",
+      "version": "1.21.4",
       "author": {
         "name": "newkayak12"
       },
@@ -64,7 +64,7 @@
     {
       "name": "agents",
       "description": "Agent orchestration skills: dispatching parallel agents as a persona allocator (fan out independent jobs, match each to a best-fit specialist), subagent-driven development, and task decomposition.",
-      "version": "1.2.4",
+      "version": "1.2.5",
       "author": {
         "name": "newkayak12"
       },
@@ -76,8 +76,8 @@
     },
     {
       "name": "planning",
-      "description": "Planning skills: executing-plans (pre-flight plan gate — critically review a plan, set a QualityGate pass-bar per step, then route to the right executor) and roadmap planning.",
-      "version": "1.3.3",
+      "description": "Planning skills: executing-plans (pre-flight plan gate — critically review a plan, set a QualityGate pass-bar per step, then route to the right executor).",
+      "version": "1.4.0",
       "author": {
         "name": "newkayak12"
       },
@@ -90,7 +90,7 @@
     {
       "name": "skill",
       "description": "Skill management: create skills in the repo's house identity, quality-assure them (6-dimension QA), audit trigger coverage, audit a workspace for what it already has before installing, and retro (a session's repeated mistakes turned into checks).",
-      "version": "1.5.1",
+      "version": "1.5.2",
       "author": {
         "name": "newkayak12"
       },
@@ -103,7 +103,7 @@
     {
       "name": "completion",
       "description": "Verification before completion: stand up a verify-level (pass bar), then confirm it with an isolated subagent so the check is independent of the context that did the work.",
-      "version": "1.1.6",
+      "version": "1.1.7",
       "author": {
         "name": "newkayak12"
       },
@@ -116,7 +116,7 @@
     {
       "name": "portfolio",
       "description": "Portfolio and career skills: manage (the portfolio deck as one workflow — material, skeleton, feedback, deck, versions), material (collect handed material), fit (JD or company type), portfolio feedback, rewriting and JD tailoring, pattern analysis, mock interview, interview plan, job-application-workflow (through a 자기소개서 step via write:writer-verification), and deck-builder (reference template.pptx + deck.mdx → pptx; recolors a pptx to a brand palette).",
-      "version": "2.11.0",
+      "version": "2.12.0",
       "author": {
         "name": "newkayak12"
       },
@@ -169,7 +169,7 @@
     {
       "name": "teams",
       "description": "A sibling of graph for requests too big for one pass: a TaskManager MCP (task-manager) sizes the request; size L is planned into a PRD and user stories, split into packages that each run the full harness in their own worktree, integrated, QA'd and gated by a background daemon; size S is handed to the development harness. Entry skills teams:orchestrate/develop/document/plan/qa/sprint, board and ticket views (tm_board, teams:board). Runs are kept under .teams_output/ and ~/.harness/tasks/. Zero runtime dependencies beyond Node 18+.",
-      "version": "0.61.4",
+      "version": "0.61.5",
       "author": {
         "name": "newkayak12"
       },

@@ -2251,7 +2251,7 @@ test('tm_file after integrate:1: a filed STORY depends on every earlier package 
     assertAcyclic(task);
     const nx = await tm.call('tm_next', { task_id });
     assert.deepEqual(nx.children.map((c) => c.package_id).sort(), ['D1', 'D3'], 'D2 is not dispatched beside D1');
-  });
+  }, { max_parallel_teams: 3 }); // pinned: this test is about the overlap edges, not the auto start width (1 here, from the serial P1->P2 shape)
 });
 
 test('an earlier filed defect whose accept ends final-failed settles the later overlapping defect unreachable, not pending (N5)', async () => {
@@ -3490,13 +3490,20 @@ test('max_parallel_teams:1 opens only the lowest-priority ready dispatch; the re
   }, { max_parallel_teams: 1 });
 });
 
-test('tm_status: auto_parallel is surfaced when max_parallel_teams is "auto" (the default), and absent when pinned to a fixed number', async () => {
+test('tm_status: auto_parallel is surfaced once spec.packages exists when max_parallel_teams is "auto" (the default), and absent when pinned to a fixed number', async () => {
   await withTask(async ({ tm, task_id }) => {
-    const st = await tm.call('tm_status', { task_id });
+    let st = await tm.call('tm_status', { task_id });
     assert.equal(st.team.opts.max_parallel_teams, 'auto');
-    assert.ok(st.auto_parallel, 'auto_parallel must be present when max_parallel_teams is "auto"');
-    assert.equal(st.auto_parallel.current, 2, 'starts at 2, the same number this cap used to be pinned at forever');
+    // Card 101: before spec.packages exists there is no shape to size a width from, so tm_status
+    // shows no width (it used to create one at 2 here).
+    assert.equal(st.auto_parallel, undefined, 'no auto_parallel state before spec.packages exists');
+    assert.equal(st.auto_parallel_ticks, undefined, 'no ticks before spec.packages exists either');
+    await throughCritique(tm, task_id); // SHAPE: P2 deps P1, so the widest round is 1
+    st = await tm.call('tm_status', { task_id });
+    assert.ok(st.auto_parallel, 'auto_parallel must be present once the shape is in');
+    assert.equal(st.auto_parallel.current, 1, 'starts at min(shape max_parallel_width 1, ceiling)');
     assert.equal(st.auto_parallel.streak, 0);
+    assert.deepEqual(st.auto_parallel_ticks, [], 'the tick list is present (empty until the first advanceDispatches pass)');
   });
   await withTask(async ({ tm, task_id }) => {
     const st = await tm.call('tm_status', { task_id });
@@ -3861,17 +3868,148 @@ test('critique and accept record reviewer_independence: unverifiable-self - the 
 // max_parallel_ceiling is pinned: left null the ceiling is derived from the host
 // (min(availableParallelism()/2, 6), floored at the start value 2), so on a 4-core machine it is
 // 2 and the +1 this test asserts can never happen - the test measured the host, not the wiring.
-test('max_parallel_teams "auto": two clean develop-STORY dispatch folds (toIntegrate: P1 then P2) advance the real task from 2 to 3, and the ledger records it', async () => {
+test('max_parallel_teams "auto": two clean develop-STORY dispatch folds (toIntegrate: P1 then P2) reach updateAutoParallel, but growth is capped by the shape width (1), so no increase', async () => {
   await withTask(async ({ tm, g, root, task_id }) => {
     await toIntegrate(tm, g, task_id);
     const st = await tm.call('tm_status', { task_id });
-    assert.equal(st.auto_parallel.current, 3, 'one full window (2 clean STORY folds) completed: 2 -> 3');
-    assert.equal(st.auto_parallel.streak, 0);
+    // Card 101: the start width and the growth cap are min(shape max_parallel_width, ceiling). The
+    // toIntegrate shape is serial (P2 deps P1, width 1), so the width stays 1 however many clean
+    // windows pass; the streak (2 = one full window, not spent) proves both call sites ran.
+    assert.equal(st.auto_parallel.current, 1, 'capped at the shape width, not raised to 3');
+    assert.equal(st.auto_parallel.max, 1);
+    assert.equal(st.auto_parallel.streak, 2, 'one full window of clean STORY folds was counted but could not be spent');
     const ledger = readFileSync(join(root, task_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-    const inc = ledger.find((e) => e.event === 'auto_parallel_increased');
-    assert.ok(inc, 'the increase must be recorded in the ledger, not just reflected in task.json');
-    assert.equal(inc.from, 2);
-    assert.equal(inc.to, 3);
+    assert.equal(ledger.find((e) => e.event === 'auto_parallel_increased'), undefined, 'no increase past the shape width');
+  }, { max_parallel_ceiling: 6 });
+});
+
+// Card 101 scenarios below. SHAPE_WIDE: P1 and P2 are independent (the widest round is 2); P3 and
+// P4 both wait on P1 only.
+const SHAPE_WIDE = {
+  acceptance: ['all modules build'],
+  packages: [
+    { id: 'P1', title: 'module a', flow: 'develop', brief: 'change a.txt', acceptance: ['a'], touches: ['a.txt'], deps: [] },
+    { id: 'P2', title: 'module b', flow: 'develop', brief: 'change b.txt', acceptance: ['b'], touches: ['b.txt'], deps: [] },
+    { id: 'P3', title: 'module c', flow: 'develop', brief: 'change c.txt', acceptance: ['c'], touches: ['c.txt'], deps: ['P1'] },
+    { id: 'P4', title: 'module d', flow: 'develop', brief: 'change d.txt', acceptance: ['d'], touches: ['d.txt'], deps: ['P1'] },
+  ],
+};
+const readLedger = (root, task_id) => readFileSync(join(root, task_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+
+test('auto width: a package whose deps are accepted dispatches while another runs, and the width (2) is not exceeded', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_WIDE);
+    const first = await tm.call('tm_next', { task_id });
+    assert.deepEqual(first.children.map((c) => c.package_id).sort(), ['P1', 'P2'], 'the shape width is 2: P1 and P2 open together, P3/P4 wait on P1');
+    const p1 = first.children.find((c) => c.package_id === 'P1');
+    await completeChild(g, p1);
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' })).state, 'done');
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 90 }) })).state, 'done');
+    await tm.call('tm_next', { task_id });
+    const running = readTask(root, task_id).nodes.filter((n) => n.stage === 'dispatch' && n.state === 'running').map((n) => n.subgoal_id).sort();
+    assert.deepEqual(running, ['P2', 'P3'], 'P3 (dep P1 accepted) takes the free slot while P2 still runs; P4 waits: width 2 holds');
+    assert.equal(readTask(root, task_id).nodes.find((n) => n.node_id === 'dispatch:P4:1').state, 'pending');
+  }, { max_parallel_ceiling: 6 });
+});
+
+test('auto width: a retry (dispatch:P1:2) takes a free slot once the width has recovered after a halving', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_WIDE);
+    // A halved state: width 1 of a possible 2 (the shape width), one clean fold into the window.
+    const taskPath = join(root, task_id, 'task.json');
+    const raw = readTask(root, task_id);
+    raw.auto_parallel = { current: 1, streak: 1, ceiling: 6, max: 2, updated_at: Date.now(), reason: 'rate_limit_event status rejected' };
+    writeFileSync(taskPath, JSON.stringify(raw));
+    const first = await tm.call('tm_next', { task_id });
+    assert.deepEqual(first.children.map((c) => c.package_id), ['P1'], 'at width 1 only one package opens, P2 waits');
+    await completeChild(g, first.children[0], { accept: false });
+    const v = await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+    assert.equal(v.state, 'failed');
+    const st = await tm.call('tm_status', { task_id });
+    assert.equal(st.auto_parallel.current, 2, 'the second clean fold completed the window: 1 -> 2, capped by the shape width');
+    const rt = await tm.call('tm_retry', { task_id, package_id: 'P1' });
+    assert.equal(rt.retried, true);
+    const opened = readTask(root, task_id).nodes.filter((n) => n.stage === 'dispatch' && n.state === 'running').map((n) => n.node_id).sort();
+    assert.deepEqual(opened, ['dispatch:P1:2', 'dispatch:P2:1'], 'the retry and the waiting package both run now that the width is back to 2');
+  }, { auto_reassign: false, max_parallel_ceiling: 6 });
+});
+
+test('auto width: tm_status carries recent ticks {ts, width, running, ready_waiting} in a fixed-length list, and the ledger gets parallel_width_changed only when the width changes', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_WIDE);
+    await tm.call('tm_next', { task_id });
+    let ticks = (await tm.call('tm_status', { task_id })).auto_parallel_ticks;
+    assert.ok(ticks.length >= 1);
+    const last = ticks[ticks.length - 1];
+    assert.deepEqual(Object.keys(last).sort(), ['ready_waiting', 'running', 'ts', 'width']);
+    assert.equal(last.width, 2);
+    assert.equal(last.running, 2, 'P1 and P2 hold a slot each');
+    assert.equal(last.ready_waiting, 0, 'P3/P4 are not ready (their dep is not accepted)');
+    assert.ok(Number.isInteger(last.ts));
+    for (let i = 0; i < 34; i++) await tm.call('tm_next', { task_id });
+    ticks = (await tm.call('tm_status', { task_id })).auto_parallel_ticks;
+    assert.equal(ticks.length, 30, 'the list is trimmed to a fixed length (AIMD_TICKS_KEEP = 30)');
+    assert.equal(readLedger(root, task_id).filter((e) => e.event === 'parallel_width_changed').length, 0, 'a steady width writes no ledger entry however many ticks pass');
+    // The width halves between two ticks (what a pushback fold does): one entry, not one per tick.
+    const raw = readTask(root, task_id);
+    raw.auto_parallel.current = 1;
+    writeFileSync(join(root, task_id, 'task.json'), JSON.stringify(raw));
+    await tm.call('tm_next', { task_id });
+    await tm.call('tm_next', { task_id });
+    const changed = readLedger(root, task_id).filter((e) => e.event === 'parallel_width_changed');
+    assert.equal(changed.length, 1);
+    assert.equal(changed[0].from, 2);
+    assert.equal(changed[0].to, 1);
+    ticks = (await tm.call('tm_status', { task_id })).auto_parallel_ticks;
+    assert.equal(ticks[ticks.length - 1].width, 1);
+  }, { max_parallel_ceiling: 6 });
+});
+
+test('auto width: a ready_waiting change at an unchanged width writes one parallel_width_changed event; an identical tick writes none', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_WIDE);
+    await tm.call('tm_next', { task_id });
+    const events = () => readLedger(root, task_id).filter((e) => e.event === 'parallel_width_changed');
+    assert.equal(events().length, 0);
+    // The previous tick says one package was waiting; the next real tick has none (width stays 2).
+    const raw = readTask(root, task_id);
+    raw.auto_parallel_ticks[raw.auto_parallel_ticks.length - 1].ready_waiting = 1;
+    writeFileSync(join(root, task_id, 'task.json'), JSON.stringify(raw));
+    await tm.call('tm_next', { task_id });
+    const changed = events();
+    assert.equal(changed.length, 1, 'a ready_waiting change alone writes an event');
+    assert.equal(changed[0].from, changed[0].to, 'the width did not change');
+    assert.equal(changed[0].from_ready_waiting, 1);
+    assert.equal(changed[0].ready_waiting, 0);
+    await tm.call('tm_next', { task_id });
+    assert.equal(events().length, 1, 'two ticks with the same width and ready_waiting write nothing');
+  }, { max_parallel_ceiling: 6 });
+});
+
+test('auto width: a ready package that waits for a slot (width 1, P1 running) shows ready_waiting >= 1 in the tick and in the ledger entry for the drop', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_WIDE);
+    // Width pinned to 1 with a previous tick at width 2 (what a halving between two ticks leaves),
+    // so the pass below both leaves P2 waiting and writes the parallel_width_changed entry.
+    const raw = readTask(root, task_id);
+    raw.auto_parallel = { current: 1, streak: 0, ceiling: 6, max: 2, updated_at: Date.now(), reason: 'test' };
+    raw.auto_parallel_ticks = [{ ts: Date.now(), width: 2, running: 2, ready_waiting: 0 }];
+    writeFileSync(join(root, task_id, 'task.json'), JSON.stringify(raw));
+    const first = await tm.call('tm_next', { task_id });
+    assert.deepEqual(first.children.map((c) => c.package_id), ['P1'], 'one slot: P1 opens, the independent P2 is ready but waits');
+    assert.equal(readTask(root, task_id).nodes.find((n) => n.node_id === 'dispatch:P2:1').state, 'pending', 'P2 holds no slot');
+    const ticks = (await tm.call('tm_status', { task_id })).auto_parallel_ticks;
+    const last = ticks[ticks.length - 1];
+    assert.equal(last.width, 1);
+    assert.equal(last.running, 1, 'P1 holds the only slot');
+    assert.ok(last.ready_waiting >= 1, `P2 is ready and waiting, got ready_waiting ${last.ready_waiting}`);
+    const changed = readLedger(root, task_id).filter((e) => e.event === 'parallel_width_changed');
+    assert.equal(changed.length, 1, 'the 2 -> 1 drop is written once');
+    assert.equal(changed[0].from, 2);
+    assert.equal(changed[0].to, 1);
+    assert.equal(changed[0].running, last.running);
+    assert.equal(changed[0].ready_waiting, last.ready_waiting, 'the ledger entry carries the same waiting count as the tick');
+    assert.ok(changed[0].ready_waiting >= 1);
   }, { max_parallel_ceiling: 6 });
 });
 

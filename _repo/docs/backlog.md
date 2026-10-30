@@ -14,7 +14,8 @@ The portfolio flow comes before everything (user, 2026-10-30: "전체적으로 �
 Card 103 (portfolio engine bugs) shipped and closed 2026-10-30 by hand: renumber fences, `쪽`-cell
 double replace, collision refusal, write only after verify; material items in `sources/material/`;
 untouched chart warnings in check and build (manage 33/33, material 24/24, test_deck 226 ok).
-Card 54's flow shipped 2026-10-30 by hand (see the card); then 104.
+Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is urgent (user,
+2026-10-30: "portfolio urgent로"): its cards go before every other card, 101 included.
 
 ### portfolio flow — first (design: `_repo/docs/plans/2026-10-30-portfolio-flow.md`)
 
@@ -40,8 +41,9 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104.
       Fictional fixtures only; manage tests with counts; one real run on a fictional workspace.
     - Shipped 2026-10-30 by hand (`manage claims`, `compare --claims-before/--claims-after`, material
       label `본인 확인`): manage 29/29, material 23/23; real CLI run on a fictional workspace copy found
-      the `근거 없음` figure, the reason the item does not give, and the item no page cites. Left:
-      the check reads skeleton only (deck.mdx carries it, not checked); a feedback finding against a
+      the `근거 없음` figure, the reason the item does not give, and the item no page cites. deck.mdx
+      checked too since 2026-10-30 (`claims --file deck.mdx`, cites in the slide comment; manage 37/37;
+      real CLI run caught the `근거 없음` figure on slide 2). Left: a feedback finding against a
       `settled` line is dropped by the SKILL step, not by the engine; reason grounding is a word-stem
       share (≥ half), a heuristic.
 
@@ -106,24 +108,65 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104.
       똑같이 template 바탕으로 word 형식으로 쓰고 pdf로 내보내는". Today the deck flow ends at
       deck.pptx/pdf; a resume is written apart, from scratch, with no tie to the deck's settled
       claims or the material.
-    - Acceptance: a design note first (brainstorm → approval: one skill or a manage step, what the
+    - Decided (user, 2026-10-30: "manage 네"): a `manage` step 9, not a separate skill; it reuses the
+      material, `선정.md` and `claims`.
+    - Acceptance: a design note first (brainstorm → approval: what the
       resume carries from the deck vs from `sources/`); the user's own `.docx` template is the base,
       as `template.pptx` is for the deck (catalog its styles, never a built-in look); every resume
       claim cites its material item and passes the same `claims` check (`선정.md` decides what goes
       in); `resume.docx` written into `build/`, exported to `resume.pdf` (LibreOffice, as `render`);
       the resume conventions in `feedback/references/resume-conventions.md` checked; tests with
       counts on a fictional template and workspace; one real run end to end.
+    - Shipped 2026-10-30 by hand (design `_repo/docs/plans/2026-10-30-portfolio-resume.md`, approved
+      "확인"): `scripts/resume.py` catalog / build / render (deck-builder's renderer), `claims --file
+      resume.md`; test_resume 17/17 with the PDF rendered in docker (deck-render-kr), manage 38/38.
+      User, same day: "docx를 올리면 안된다고", "내가 준 실제 자료를 올리면 안된다고", "pptx도 이전에
+      준거 올리지 말라구" — `.gitignore` takes `*.docx`, `*.pptx`, `*.pdf`; resume.py refuses a template,
+      resume.md or output a git repository would carry (tested); no real material was ever in the repo
+      (history checked: the one tracked `template.pptx` is an empty fixture). Defaults taken: 2 pages,
+      Korean only. User, same day: "like-me 쓰고 똑같이" — skeleton, deck.mdx and resume.md lines all go
+      through `write:like-me` (`78da36b3`, SKILL only). Left: the user's own template, two texts they
+      wrote alone, and one real run on their workspace; the
+      resume-conventions check is the model's (feedback), not an engine check.
 
 ### teams parallelism — first
 
-108. **teams `dispatch_width` loose ends from card 101**
-    - Why: card 101 shipped 2026-10-30 in E-ce2bcff4 (`9d4bd6a2`, goal gate 92, teams 1660/1661 with 1
-      skip, plugin test 399/399; real check on fake drivers: 3 packages at once). Its report left: tm_status
-      `dispatch_width` exposes the internal dedup key `sig` (`"3|3|"`); no ledger line when the width drops
-      with nothing opened or waiting; "null before any tick" not asserted; the real check ran fake drivers,
-      not a real Sprint.
-    - Acceptance: `sig` not in tm_status; decide and test the drop-with-nothing-waiting line; assert null
-      before the first tick; the next real L Sprint's ledger shows two packages dispatched at once.
+108. **teams view `--once` reads only open tasks, not every task ever run**
+    - Why: 2026-10-30, the machine (12 cores) was saturated: view.mjs ~540% CPU. Verified: one
+      `view.mjs --once --format status --cwd <repo>` takes 7.8 s wall / 6.1 s CPU, because
+      `runningModels` (`teams/scripts/view.mjs` L102) runs `collectTask` on every one of the 2098 dirs
+      in `~/.harness/tasks` (239 MB, never pruned) before filtering on state and cwd; `floorTasks`
+      does the same walk. 22 open sessions' status lines and panes spawn ~30 of these every 20 s, so the
+      cost grows with every task ever run. Also seen: 43 detached `--tasks-dir` viewers (ppid 1, up to
+      38 days old, ~2.6 GB RSS, idle CPU), all from teams 0.60.x or the repo copy before `21a52358`
+      (card 83's idle exit) — none from 0.61.x, so the leak is fixed and only the old processes remain.
+    - Acceptance: `--once --format status|events|summary` reads `task.json` state and cwd first and
+      builds a model only for a matching open task (or keeps an index of open tasks); on a fixture
+      tasks dir with 2000 finished tasks one call stays under 0.3 s (tested); a status-line poll does
+      not start a new process while the previous one still runs.
+
+101. **teams runs ready packages at the width shape allows — rest: the first tick, and one real Sprint at width 2+**
+    - Why: user, 2026-10-29: "harness, graph, teams 각 phase를 병렬로 할 수는 없는건가?", then "네네 그리고
+      최우선". Shipped in teams 0.61.5 (`e4502d68`, E-ea14c9c4): pushback only from error-shaped events
+      (`allowed_warning` and a leading BOM handled), start width from the shape, `auto_parallel_ticks` in
+      tm_status, `parallel_width_changed` on a width or `ready_waiting` change; teams 1660/1660.
+      Left: QA's D9/D14/D15 also asked that the first tick write an event when packages already wait
+      (`recordAutoParallelTick` writes nothing without a previous tick) — not taken. E-ea14c9c4 itself ran
+      on the 0.61.4 engine: it halved 2→1 at `dispatch:P1:1` (a judge reason text matched) and never ran
+      two dispatches at once.
+    - Acceptance: the first tick with `ready_waiting > 0` writes one `parallel_width_changed` (tested);
+      one real Sprint on teams 0.61.5+ shows two ready packages running at once (ledger: two `dispatch`
+      open together, no `auto_parallel_decreased` from a usage number or a reason text).
+
+109. **teams QA files one defect once, and integrate takes overlapping fixes instead of blocking**
+    - Why: E-ea14c9c4, 2026-10-30: QA-F1 filed 15 defects for 4 findings (docs D4/D6/D8/D11, ready_waiting
+      D5/D7/D9/D12/D14/D15, release D10 = P2); every one was built and accepted (~$61 for the Sprint),
+      then `integrate:3` stopped `blocked` on a conflict between the docs duplicates. Taken by hand:
+      P1, D1–D5, D13 and P2; the duplicates dropped. Cause unverified (0.61.3 says "a defect is filed
+      once per QA filing"; these came from one `defects_filed` event).
+    - Acceptance: a QA filing whose findings name the same file and AC files one defect (test with the
+      E-ea14c9c4 titles); integrate drops a package whose diff is already in the integration tree, or
+      settles one conflict as a repair package instead of `blocked`; tested.
 
 ### Mods and naming — UI first (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
 
@@ -225,6 +268,8 @@ toasts).
       the send is held by Claude Code, see card 63. C merged 2026-10-22 (E-d1e2fa27 P1-P3, integrated by hand: P2's third attempt failed at plan with
       its retry budget spent; merged tree teams 1474/1474, mod 212/212; a forwarded answer gives one
       `you -> P3` line in the Floor feed). B's band demo approved by Claude on delegation 2026-10-26 (fixture render at 190/110: `⚑ P2 asks you: … +1`, title ends in `…`). Left: B's README shot from a live ask; a `tm_open` live pass of C (U-5 already in README/KOR).
+    - User, 2026-10-30: "mod 서브에이전트 통신 네" — go ahead with what is left. Town (93) is still being
+      thought over ("Town고민 중"); 48 waits ("나머지 대기").
 
 ### Repo and rules
 
@@ -350,7 +395,7 @@ toasts).
 
 ### write plugin
 
-100. **write:diagram draws figures that look finished, not merely checked**
+100. **write:diagram draws figures that look finished, not merely checked** — rest in E-f673c006
     - Why: user, 2026-10-29: "write:diagram 퀄리티 떨어짐"; asked what, they picked all four: 투박함, 배치가
       엉성함, 내용이 틀리거나 부족, 유형 선택이 별로. Seen in the last figures it drew (fig-9-2 roll-pointer
       chain, fig-13-1 two-session lock wait): every box the same grey/white with one stroke and no type
@@ -371,6 +416,12 @@ toasts).
       the lane gap instead; the wait span stops short of the holder's COMMIT with nothing tying the two;
       a lane's text wraps early once a `resume` takes its gutter ("UPDATE 205 · X 잠금 획득" on two lines);
       then (4): fig-9-2 and fig-13-1 shown to the user and approved (rebuilt IRs kept outside the repo).
+    - Rest shipped 2026-10-30 from E-f673c006 (blocked at goal gate 86/90, integration-2 taken by hand;
+      test-diagram 69/69): the holder edge is a right-angle path along the lane gap, the wait span ends
+      at the release step's box edge, a resume note no longer wraps other labels. Left: `check` tests
+      only the first line of a wrapped resume note, so an edge through its second line passes; a
+      backward cause edge in a narrow lane gap (QA D1b) is not routed clear; then (4) the user's
+      approval of the two after-PNGs.
 
 ### knowledge plugin
 
@@ -395,8 +446,9 @@ toasts).
 | E-a7996a31 | 2026-10-30 | 87 rest | shipped `5639b260`; size S; goal gate 91; limit named in the PRD gate prompt (a Jaccard ≥ 0.63 rule passed both tests but missed the one real paraphrase, J=0.38, so declined); teams 1681/1682 |
 | E-233f8dca | 2026-10-30 | 81 rest | shipped `2fc9e26c`; size S; goal gate 90; own-write hook + fallback-route verdict gates; teams 1679/1680, plugin test 411/411 |
 | E-f53a8434 | 2026-10-30 | 105, 106 | shipped `236eae3d`; size S; goal gate 92; teams 1658/1660, plugin test 423/423; UI look left on card 105 |
-| E-ce2bcff4 | 2026-10-30 | 101 | shipped `9d4bd6a2`; size S (resumed from E-f64c3884); goal gate 92; teams 1660/1661, plugin test 399/399; leftovers card 108 |
+| E-ce2bcff4 | 2026-10-30 | 101 | merged `9d4bd6a2` locally, then reverted `0cb18fbf`: another session shipped card 101 first as teams 0.61.5 (E-ea14c9c4), kept that one; size S, goal gate 92 |
 | E-db7e3226 | 2026-10-30 | 94 defects | shipped `15a95196`; size S (resumed from E-4f12f406); goal gate 91; plugin test 411/411; captures awaiting approval |
+| E-ea14c9c4 | 2026-10-30 | 101 | partial: teams 0.61.5 `e4502d68` taken by hand (P1, D1–D5, D13, P2; teams 1660/1660); integrate:3 blocked on duplicate QA defects (card 109); first tick and a real width-2 run left (101); $61.49 |
 | E-eb3d399f | 2026-10-29 | 100 | partial: P2 + D1 shipped and P1 taken by hand from its worktree (`13b988d5`); P1 'blocked: tool denied' ×3 on the 0.60.1 engine, P3/P4 unreachable; $48.72 |
 | E-124098e5 | 2026-10-15 | 10–13 | shipped `72f0c818`; size S (one harness pass); goal gate 91; $17.74 |
 | E-c313c8f1 | 2026-10-15 | 2 | shipped (rules say `origin`); size S; $3.89 |
