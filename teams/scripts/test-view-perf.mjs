@@ -7,7 +7,7 @@
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, utimesSync, existsSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, utimesSync, existsSync, chmodSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -238,5 +238,109 @@ describe('view --once --format events, late events', { concurrency: false }, () 
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+// The finished-task facts cache (lib/view-floor-fs.mjs scanRaws): kept under os.tmpdir(), pointed at a scratch
+// TMPDIR here so these tests never touch the real temp cache.
+describe('view --once finished-task facts cache', { concurrency: false }, () => {
+  let root, tmp, cwd;
+  const CACHE = () => join(tmp, 'teams-view-finished');
+  const cacheFiles = () => (existsSync(CACHE()) ? readdirSync(CACHE()).filter((f) => f.endsWith('.json')) : []);
+  const latest = (tasks) => {
+    const r = view(tasks, ['--format', 'status', '--cwd', cwd], { env: { TMPDIR: tmp } });
+    assert.equal(r.status, 0, r.err);
+    return JSON.parse(r.out);
+  };
+  const setTime = (p, ms) => utimesSync(p, ms / 1000, ms / 1000);
+  // The same open task as a cancelled one and as a live one; `sameSize` pads the live body to the cancelled one's length.
+  const bodies = (tasks, id, sameSize) => {
+    const obj = JSON.parse(readFileSync(join(tasks, id, 'task.json'), 'utf8'));
+    const done = JSON.stringify({ ...obj, cancelled: true, pad: '' });
+    const live = JSON.stringify({ ...obj, pad: '' });
+    return { done, live: sameSize ? JSON.stringify({ ...obj, pad: 'p'.repeat(done.length - live.length) }) : live };
+  };
+
+  before(() => {
+    root = mkdtempSync(join(tmpdir(), 'teams-view-perf-'));
+    tmp = join(root, 'tmp');
+    cwd = join(root, 'proj');
+    mkdirSync(tmp, { recursive: true });
+    gitInit(cwd);
+  });
+  after(() => rmSync(root, { recursive: true, force: true }));
+
+  test('a cached finished task whose task.json is rewritten as open is read again and listed', () => {
+    const tasks = join(root, 'tasks-reopen');
+    mkdirSync(tasks, { recursive: true });
+    finished(tasks, 'aaaaaaaa-0001', { kind: 'cancelled', cwd, ageMs: H });
+    assert.equal(latest(tasks).latest, null);
+    assert.equal(cacheFiles().length, 1);
+    assert.ok(readFileSync(join(CACHE(), cacheFiles()[0]), 'utf8').includes('aaaaaaaa-0001'), 'the finished task is cached');
+    openTask(root, tasks, cwd, 'aaaaaaaa-0001');
+    assert.equal(latest(tasks).latest, 'aaaaaaaa-0001');
+  });
+
+  test('a rewrite with the same size and a new mtime, and one with a new size and the old mtime, are both read again', () => {
+    const tasks = join(root, 'tasks-stat');
+    mkdirSync(tasks, { recursive: true });
+    openTask(root, tasks, cwd, 'bbbbbbbb-0001');
+    const p = join(tasks, 'bbbbbbbb-0001', 'task.json');
+    const T = Date.now() - 5000;
+    const same = bodies(tasks, 'bbbbbbbb-0001', true);
+    const shorter = bodies(tasks, 'bbbbbbbb-0001', false).live;
+    writeFileSync(p, same.done);
+    setTime(p, T);
+    assert.equal(latest(tasks).latest, null);
+    writeFileSync(p, same.live); // same size, new mtime
+    setTime(p, T + 2000);
+    assert.equal(latest(tasks).latest, 'bbbbbbbb-0001');
+    writeFileSync(p, same.done);
+    setTime(p, T);
+    assert.equal(latest(tasks).latest, null);
+    writeFileSync(p, shorter); // new size, old mtime
+    setTime(p, T);
+    assert.equal(latest(tasks).latest, 'bbbbbbbb-0001');
+  });
+
+  test('a corrupt or missing cache file falls back to a full read with the same output', () => {
+    const tasks = join(root, 'tasks-corrupt');
+    mkdirSync(tasks, { recursive: true });
+    for (let i = 0; i < 5; i++) finished(tasks, `f-${i}`, { kind: i % 2 ? 'gone' : 'cancelled', cwd, ageMs: 2 * H });
+    openTask(root, tasks, cwd, 'cccccccc-0001');
+    const want = latest(tasks);
+    assert.equal(want.latest, 'cccccccc-0001');
+    const file = join(CACHE(), cacheFiles().find((f) => readFileSync(join(CACHE(), f), 'utf8').includes('"f-0"')));
+    // a cache that claims the open task finished must not be believed either when it is for another dir or version
+    const lie = (extra) => JSON.stringify({ v: 1, dir: tasks, t: { 'cccccccc-0001': [0, 0, cwd, null, [], 0] }, ...extra });
+    for (const junk of ['{not json', '', '[]', '{"v":99,"t":{}}', lie({ dir: '/elsewhere' }), lie({ v: 2 })]) {
+      writeFileSync(file, junk);
+      assert.deepEqual(latest(tasks), want, `cache content ${junk}`);
+    }
+    rmSync(file);
+    assert.deepEqual(latest(tasks), want);
+    assert.ok(readFileSync(file, 'utf8').includes('"f-0"'), 'the cache is written again after a full read');
+  });
+
+  test('the cache is keyed per tasks dir: a same-named task of the same size and mtime in another dir is not taken for finished', () => {
+    const a = join(root, 'tasks-key-a');
+    const b = join(root, 'tasks-key-b');
+    mkdirSync(a, { recursive: true });
+    mkdirSync(b, { recursive: true });
+    openTask(root, b, cwd, 'dddddddd-0001');
+    const { done, live } = bodies(b, 'dddddddd-0001', true);
+    const pa = join(a, 'dddddddd-0001', 'task.json');
+    const pb = join(b, 'dddddddd-0001', 'task.json');
+    write(pa, done);
+    writeFileSync(pb, live);
+    setTime(pa, Date.now() - 5000);
+    setTime(pb, Date.now() - 5000);
+    assert.equal(statSync(pa).size, statSync(pb).size);
+    assert.equal(statSync(pa).mtimeMs, statSync(pb).mtimeMs);
+    const n = cacheFiles().length;
+    assert.equal(latest(a).latest, null);
+    assert.equal(cacheFiles().length, n + 1, 'dir A has its own cache file');
+    assert.equal(latest(b).latest, 'dddddddd-0001');
+    assert.equal(latest(a).latest, null);
   });
 });
