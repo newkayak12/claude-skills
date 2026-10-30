@@ -106,7 +106,9 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104.
       똑같이 template 바탕으로 word 형식으로 쓰고 pdf로 내보내는". Today the deck flow ends at
       deck.pptx/pdf; a resume is written apart, from scratch, with no tie to the deck's settled
       claims or the material.
-    - Acceptance: a design note first (brainstorm → approval: one skill or a manage step, what the
+    - Decided (user, 2026-10-30: "manage 네"): a `manage` step 9, not a separate skill; it reuses the
+      material, `선정.md` and `claims`.
+    - Acceptance: a design note first (brainstorm → approval: what the
       resume carries from the deck vs from `sources/`); the user's own `.docx` template is the base,
       as `template.pptx` is for the deck (catalog its styles, never a built-in look); every resume
       claim cites its material item and passes the same `claims` check (`선정.md` decides what goes
@@ -231,6 +233,8 @@ toasts).
       the send is held by Claude Code, see card 63. C merged 2026-10-22 (E-d1e2fa27 P1-P3, integrated by hand: P2's third attempt failed at plan with
       its retry budget spent; merged tree teams 1474/1474, mod 212/212; a forwarded answer gives one
       `you -> P3` line in the Floor feed). B's band demo approved by Claude on delegation 2026-10-26 (fixture render at 190/110: `⚑ P2 asks you: … +1`, title ends in `…`). Left: B's README shot from a live ask; a `tm_open` live pass of C (U-5 already in README/KOR).
+    - User, 2026-10-30: "mod 서브에이전트 통신 네" — go ahead with what is left. Town (93) is still being
+      thought over ("Town고민 중"); 48 waits ("나머지 대기").
 
 ### Repo and rules
 
