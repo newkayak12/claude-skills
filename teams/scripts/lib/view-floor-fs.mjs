@@ -1,10 +1,8 @@
 // The reads behind the floor part of `view.mjs --once --format summary`: which tasks of a cwd are
 // listed, and the file facts view-floor.mjs turns into items and workers (a card's current action
 // from its stream, its cost, the graph run file it can open). Read-only; every read fails soft.
-import { existsSync, readFileSync, readdirSync, statSync, realpathSync, mkdirSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, realpathSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
-import { tmpdir } from 'node:os';
-import { createHash } from 'node:crypto';
 import { readLogTail, renderStreamLine } from '../../mcp/tasklog.mjs';
 import { graphRunPath } from '../../mcp/harnessrun.mjs';
 import { epicTicketState } from '../../mcp/tickets.mjs';
@@ -13,13 +11,10 @@ import { collectTask, driverLive } from './view-collect.mjs';
 import { summarize, cardsOf, waitingCount } from './view-summary.mjs';
 import { floorOf } from './view-floor.mjs';
 import { repoMatcher } from './view-repo.mjs';
-import { recordedProcesses, sameProcess, capOf } from '../../mcp/livecap.mjs';
-import { pidAlive } from '../../mcp/proc.mjs';
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
 // A judge has no pid: its newest stream says it is working while it was written this recently.
 export const JUDGE_FRESH_MS = 2 * 60 * 1000;
-const RESERVE_TTL_MS = 5 * 60 * 1000; // livecap's own: a reservation with no pid yet
 const OPEN = new Set(['READY', 'IN_PROGRESS', 'IN_REVIEW']);
 const DOING_MAX = 120;
 
@@ -139,108 +134,19 @@ function parkedOnPerson(raw) {
   return !!(g && g.route === 'graph' && waits(readJson(graphRunPath(g.cwd, g.run_id))));
 }
 
-// The parsed task.json of every task dir the floor or the live count can need: [{ name, raw }]; a dir
-// without a readable object is left out. One read per call, shared by the cwd filter, the opener filter
-// and the live count.
-//
-// A task that task.json alone proves finished (cancelled, worktree gone, or its report done on the plain
-// node path: not an S or harness run, whose state reads another file) never opens again, so its facts
-// (cwd, opener, recorded processes) are kept in a cache under the OS temp dir, keyed by task.json's mtime
-// and size. A later call stats it instead of reading and parsing ~10 KB, and gets a stub that
-// epicTicketState reads as finished (`cancelled`) and floorTasks, liveCounter use as they used the raw.
-// The tasks dir itself is never written; any cache trouble falls back to the full read.
-const CACHE_V = 1;
-const cacheDir = () => join(tmpdir(), 'teams-view-finished');
-const cacheFile = (tasksDir) => join(cacheDir(), createHash('sha1').update(resolve(tasksDir)).digest('hex').slice(0, 16) + '.json');
-
-function readCache(file, tasksDir) {
-  const c = readJson(file);
-  return c && c.v === CACHE_V && c.dir === resolve(tasksDir) && c.t && typeof c.t === 'object' ? c.t : {};
-}
-
-function writeCache(file, tasksDir, t) {
-  try {
-    mkdirSync(cacheDir(), { recursive: true });
-    const tmp = `${file}.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify({ v: CACHE_V, dir: resolve(tasksDir), t }));
-    renameSync(tmp, file);
-    // a cache whose tasks dir is gone (a test fixture, a removed worktree) is dropped
-    for (const f of readdirSync(cacheDir())) {
-      if (!f.endsWith('.json') || join(cacheDir(), f) === file) continue;
-      const o = readJson(join(cacheDir(), f));
-      if (!o || !o.dir || !existsSync(o.dir)) try { unlinkSync(join(cacheDir(), f)); } catch { /* raced */ }
-    }
-  } catch { /* the cache is an optimisation */ }
-}
-
-const finishedFacts = (raw) => {
-  if (raw.harness_run || raw.s_run) return null;
-  let sure = !!raw.cancelled || !!raw.worktree_gone;
-  if (!sure) { try { sure = ['DONE', 'SETTLED'].includes(epicTicketState(raw)); } catch { return null; } }
-  return sure ? [raw.cwd || null, raw.opener && raw.opener.session_id ? raw.opener.session_id : null, recordedProcesses(raw), raw.created_at || 0] : null;
-};
-
-export function scanRaws(tasksDir) {
-  const out = [];
-  const file = cacheFile(tasksDir);
-  const old = readCache(file, tasksDir);
-  const next = {};
-  for (const e of ls(tasksDir)) {
-    if (!e.isDirectory()) continue;
-    const p = join(tasksDir, e.name, 'task.json');
-    let st = null;
-    try { st = statSync(p); } catch { continue; }
-    const hit = old[e.name];
-    if (hit && hit[0] === st.mtimeMs && hit[1] === st.size) {
-      const [, , cwd, sid, procs, created] = hit;
-      next[e.name] = hit;
-      out.push({ name: e.name, raw: { run_id: e.name, cwd, created_at: created, cancelled: true, nodes: [], ...(sid ? { opener: { session_id: sid } } : {}), recorded: procs } });
-      continue;
-    }
-    const raw = readJson(p);
-    if (!raw || typeof raw !== 'object') continue;
-    out.push({ name: e.name, raw });
-    const f = finishedFacts(raw);
-    if (f) next[e.name] = [st.mtimeMs, st.size, ...f];
-  }
-  const a = Object.keys(old), b = Object.keys(next);
-  if (a.length !== b.length || b.some((k) => old[k] !== next[k] && (!old[k] || old[k][0] !== next[k][0] || old[k][1] !== next[k][1]))) writeCache(file, tasksDir, next);
-  return out;
-}
-
-// livecap.peek's count over already-parsed task.jsons, for collectTask's `live` option: the registry's
-// live entries plus each task's recorded processes that are still the process recorded (same rule as
-// livecap.liveProcesses, read-only). Computed on first use, so a call with no open task asks ps nothing.
-export function liveCounter(tasksDir, raws) {
-  let n = null;
-  const count = () => {
-    const live = new Set();
-    let entries = [];
-    try { const r = JSON.parse(readFileSync(join(tasksDir, '.livecap', 'registry.json'), 'utf8')); if (Array.isArray(r.entries)) entries = r.entries; } catch { /* none */ }
-    for (const e of entries) {
-      if (e.pid ? sameProcess(e) : (pidAlive(e.owner) && Date.now() - e.at < RESERVE_TTL_MS)) live.add(e.pid || `reservation:${e.token}`);
-    }
-    for (const { name, raw } of raws) {
-      if (name.startsWith('.')) continue;
-      for (const p of raw.recorded || recordedProcesses(raw)) if (!live.has(p.pid) && sameProcess(p)) live.add(p.pid);
-    }
-    return live.size;
-  };
-  return (task) => ({ live: n === null ? (n = count()) : n, cap: capOf(task) });
-}
-
 // The tasks of `cwd`'s repo (its main checkout and linked worktrees, see view-repo.mjs) the pane lists: open ones (READY/IN_PROGRESS/IN_REVIEW) with a sign of life in the
 // last 24 h, prefiltered from task.json alone before `collect` (collectTask) runs. A task waiting on a
 // person is live, never stalled, and stays listed past 24 h (a manager card is read from task.json).
 // Live first, then stalled, each newest created first. [{ m, live, age_ms }]
 // `opener` (a session id) keeps only tasks whose raw task.json names it as opener, checked before `collect`,
 // and ignores `cwd`: the asks of one session span every project.
-// `raws` (scanRaws' result) is the one read of every task.json a caller shares between several calls.
-export function floorTasks({ tasksDir, cwd, opener, now = Date.now(), collect = collectTask, raws = scanRaws(tasksDir) }) {
+export function floorTasks({ tasksDir, cwd, opener, now = Date.now(), collect = collectTask }) {
   const repo = cwd && !opener ? repoMatcher(cwd) : null;
   const picked = [];
-  for (const { name, raw } of raws) {
-    const e = { name };
+  for (const e of ls(tasksDir)) {
+    if (!e.isDirectory()) continue;
+    const raw = readJson(join(tasksDir, e.name, 'task.json'));
+    if (!raw || typeof raw !== 'object') continue;
     if (repo && !raw.cwd) continue;
     if (opener && !(raw.opener && raw.opener.session_id === opener)) continue;
     try { if (!OPEN.has(epicTicketState(raw))) continue; } catch { continue; }

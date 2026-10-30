@@ -590,7 +590,7 @@ function spendRows(driverTotal, task) {
 
 const storyId = (p) => String(p.id).split(':')[0];
 
-function telemetryOf({ task, tasksDir, depth, ledger, driverTotal, harness, sRun, cards, liveOpt = true }) {
+function telemetryOf({ task, tasksDir, depth, ledger, driverTotal, harness, sRun, cards }) {
   const opts = (task.team && task.team.opts) || {};
   const int = (a, b) => (Number.isInteger(a) ? a : (Number.isInteger(b) ? b : null));
   const maxRetries = int(task.max_retries, opts.max_retries);
@@ -640,11 +640,9 @@ function telemetryOf({ task, tasksDir, depth, ledger, driverTotal, harness, sRun
   }
 
   let live = null;
-  // liveOpt: true = livecap.peek (walks every task.json and asks ps); false = skip (the caller prints
-  // nothing from it); a function (task) => { live, cap } = the caller's own count.
-  if (depth === 0 && liveOpt !== false) {
+  if (depth === 0) {
     try {
-      const pk = typeof liveOpt === 'function' ? liveOpt(task) : peek(task, { root: tasksDir });
+      const pk = peek(task, { root: tasksDir });
       live = { live: pk.live, cap: Number.isFinite(pk.cap) ? pk.cap : null };
     } catch { /* no process table: say nothing */ }
   }
@@ -794,7 +792,7 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
   const events = ledger.slice(-50);
   const telemetry = telemetryOf({
     task, tasksDir, depth: visiting.depth, ledger, driverTotal, harness, sRun,
-    cards: [...packages, ...qaRounds, ...auditRounds], liveOpt: opts.live,
+    cards: [...packages, ...qaRounds, ...auditRounds],
   });
   // flow_metrics: Kanban's other half (tickets.mjs's own flowMetrics) - board.jsonl's transition
   // log read once here, the one place this file already reads a task's own JSONL evidence
