@@ -22,6 +22,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { viewRecordPath, readViewRecord } from '../mcp/viewserver.mjs';
 import { docPaths } from '../mcp/tickets.mjs';
+import { shippedPackages } from '../mcp/docs.mjs';
 import { collectDriverCosts } from './bench/lib/drivercost.mjs';
 import { hasDeclaredAcceptance, detectDeclaredAcceptance, resolvePlanningMode, renderAcceptanceTemplate } from '../mcp/acceptance.mjs';
 import { hasDeclaredAcceptance as tmHasDeclaredAcceptance, reproGate, prepareReadyIntegrations, readyToJudge, composeTaskPrompt, stripDocumentAcceptance, __storeHooks } from '../mcp/taskmanager.mjs';
@@ -9861,6 +9862,140 @@ for (const [name, build, expected] of [
   });
 }
 
+// Card 109: a QA filing holds one defect per finding. cards = {'QA-F1': [defects], 'QA-F2': [...]};
+// settles the round the way the accept hook does and returns what was filed.
+async function settleQaFiling(cards, check) {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await twoAreasIntegrated(tm, g, task_id);
+    await tm.call('tm_next', { task_id });
+    const t = readTask(root, task_id);
+    for (const id of ['QA-F1', 'QA-F2']) {
+      Object.assign(t.nodes.find((n) => n.node_id === `dispatch:${id}:1`), { state: 'done', result: { stage_ok: true, accept: true } });
+      Object.assign(t.nodes.find((n) => n.node_id === `accept:${id}:1`), { state: 'done', result: { stage_ok: true, accept: true, checks: ['ok'], ...(cards[id] ? { defects: cards[id] } : {}) } });
+    }
+    writeFileSync(join(root, task_id, 'task.json'), JSON.stringify(t));
+    const { settleQaRound } = await import('../mcp/taskmanager.mjs');
+    const task = readTask(root, task_id);
+    const out = withTasksRoot(root, () => inTx(task, settleQaRound));
+    const ledger = readFileSync(join(root, task_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    await check({ task, out, ledger, filed: task.spec.packages.filter((p) => p.reporter) });
+  }, { roles: { qa: true } });
+}
+const failing = (n) => ({ ...REPRO, command: `exit ${n}` });
+
+test('card 109: E-ea14c9c4 shape - 15 defects for 4 findings from one QA card file 4 packages', async () => {
+  // RECONSTRUCTED: the E-ea14c9c4 ledger and QA result were cleaned, so these titles are rebuilt from
+  // the card 109 grouping (D1-D3,D13 pushback AC-1; D4,D6,D8,D11 docs AC-2; D5,D7,D9,D12,D14,D15
+  // ready_waiting AC-3; D10 release AC-4). Titles and per-case repro commands all differ; the file
+  // and the AC are named in different places per copy (title, evidence, repro, bare README.md).
+  const pushback = 'teams/mcp/taskmanager.mjs';
+  const waiting = 'teams/mcp/taskmanager.mjs';
+  const d = (n, title, evidence, extra = {}) => ({ title, evidence, touches: [], repro: failing(n), ...extra });
+  const defects = [
+    d(1, `pushback halves on a usage number (AC-1, ${pushback})`, 'pushback ran on a token count'),
+    d(2, `AC-1: PUSHBACK_RE in ${pushback} matches a token count`, 'case 2 saw the width drop'),
+    d(3, `${pushback} reads 429 from usage, breaks AC-1`, 'case 3'),
+    d(4, 'README does not document the shape start width (AC-2, teams/README.md)', 'AC-2 is the docs criterion'),
+    d(5, 'first tick with ready_waiting>0 writes no parallel_width_changed (AC-3)', `AC-3 not met in ${waiting}`),
+    d(6, 'teams/README.md: max_parallel_teams start width missing - AC-2', 'the start width is absent'),
+    d(7, `recordAutoParallelTick in ${waiting} is silent without a previous tick - AC-3`, 'case 7'),
+    d(8, 'start width from shape is absent in the docs', 'README.md says width starts at 2', { repro: { ...failing(8), observed: 'AC-2 not met' } }),
+    d(9, 'a silent first tick leaves the band stale', 'AC-3 first tick', { repro: { ...failing(9), command: `grep -q width ${waiting}; exit 9` } }),
+    d(10, 'AC-4: teams/.claude-plugin/plugin.json version not bumped', 'version still 0.61.4'),
+    d(11, 'docs: width section missing from the teams README', 'AC-2: see README.md'),
+    d(12, `auto width stays 2 while ready_waiting is set - AC-3 (${waiting})`, 'case 12'),
+    d(13, 'width collapses when a reason mentions 429', 'case 13, AC-1 again', { touches: [pushback] }),
+    d(14, 'no parallel_width_changed on the first ready_waiting tick', 'AC-3', { touches: [waiting] }),
+    d(15, `ready_waiting tick 1 is not logged - AC-3 - ${waiting}`, 'case 15'),
+  ];
+  assert.equal(defects.length, 15);
+  await settleQaFiling({ 'QA-F1': defects }, ({ task, filed, ledger }) => {
+    assert.deepEqual(filed.map((p) => p.id), ['D1', 'D2', 'D3', 'D4'], 'four findings, four packages');
+    const filedEvents = ledger.filter((e) => e.event === 'defects_filed');
+    assert.equal(filedEvents.length, 1, 'one filing');
+    assert.equal(filedEvents[0].filed.length, 4);
+    const dropped = task.dropped_defects.filter((x) => /same file and AC/.test(x.reason));
+    assert.equal(dropped.length, 11);
+    assert.ok(dropped.every((x) => x.source === 'qa'));
+    for (const [i, ac] of ['AC-1', 'AC-2', 'AC-3', 'AC-4'].entries()) assert.match(`${filed[i].title}\n${filed[i].brief}`, new RegExp(ac), `D${i + 1} carries ${ac}`);
+    assert.match(dropped[0].reason, /pushback halves on a usage number/, 'names the kept defect');
+    const docs = filed.find((p) => /AC-2/.test(p.title));
+    for (const t of [defects[5].title, defects[7].title, defects[10].title]) assert.ok(docs.brief.includes(t), `the kept docs defect names merged copy "${t}"`);
+    for (const n of [6, 8, 11]) assert.ok(docs.brief.includes(`repro: exit ${n}`), `the kept docs defect carries merged copy ${n}'s repro command`);
+  });
+});
+
+test('card 109: different AC, area or file stays separate', async () => {
+  const d = (n, title, evidence = 'e', extra = {}) => ({ title, evidence, touches: [], repro: failing(n), ...extra });
+  const f = 'teams/mcp/taskmanager.mjs';
+  await settleQaFiling({
+    'QA-F1': [
+      d(1, `${f} one (AC-1)`), d(2, `${f} three (AC-3)`), // same file, other AC
+      d(3, `${f} area one (F1-AC-2)`), d(4, `${f} area two (F2-AC-2)`), // same AC number, other area
+      d(5, 'teams/README.md says x (AC-5)'), d(6, 'teams/KOR.md says x (AC-5)'), // same AC, other file
+      d(7, `${f} has no criterion named, first`), d(8, `${f} has no criterion named, second`), // no AC
+    ],
+  }, ({ filed }) => assert.deepEqual(filed.map((p) => p.id), ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8'], 'none merged'));
+  await settleQaFiling({
+    'QA-F1': [d(1, `${f} one (AC-1)`)],
+    'QA-F2': [d(2, `${f} one again (AC-1)`)],
+  }, ({ filed }) => assert.deepEqual(filed.map((p) => p.id), ['D1', 'D2'], 'two QA cards are two findings'));
+});
+
+test('card 109: a test file named only by the repro command does not merge two source files', async () => {
+  const run = (pattern) => ({ ...REPRO, command: `node --test teams/scripts/test-x.mjs --test-name-pattern ${pattern}` });
+  const base = { touches: [], evidence: 'e' };
+  await settleQaFiling({ 'QA-F1': [
+    { ...base, title: 'teams/mcp/a.mjs breaks AC-1', repro: run('a') },
+    { ...base, title: 'teams/mcp/b.mjs breaks AC-1', repro: run('b') },
+  ] }, ({ filed }) => assert.equal(filed.length, 2, 'different source files stay two findings'));
+  await settleQaFiling({ 'QA-F1': [
+    { ...base, title: 'first wording breaks AC-1', repro: run('a') },
+    { ...base, title: 'second wording breaks AC-1', repro: run('b') },
+  ] }, ({ filed }) => assert.equal(filed.length, 1, 'no file named elsewhere: the command file counts'));
+});
+
+test('card 109: foldChild does not fold a refused copy over its failing twin (direct filing)', async () => {
+  const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const qa1 = (await tm.call('tm_next', { task_id })).children[0];
+    const f = 'teams/mcp/taskmanager.mjs';
+    await completeQaChild(g, qa1, { accept: true, match_pct: 95 }, {
+      verified: false, stage_ok: true, handoff: 'cases run',
+      defects: [{ title: `${f} breaks AC-1, copy 1` }, { title: `AC-1 broken in ${f}, copy 2`, repro: failing(2) }],
+    });
+    await tm.call('tm_submit', { task_id, node_id: 'dispatch:QA-F1:1' });
+    const taskPath = join(root, task_id, 'task.json');
+    const raw = JSON.parse(readFileSync(taskPath, 'utf8'));
+    const dispatchNode = raw.nodes.find((n) => n.node_id === 'dispatch:QA-F1:1');
+    assert.equal(dispatchNode.result.defects.length, 2, 'foldChild keeps both copies for the repro gate');
+    dispatchNode.state = 'failed';
+    dispatchNode.result = { ...dispatchNode.result, accept: false, reason: 'an unrelated integration conflict on this attempt' };
+    writeFileSync(taskPath, JSON.stringify(raw));
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    process.env.HARNESS_TASKS_DIR = root;
+    try { inTx(JSON.parse(readFileSync(taskPath, 'utf8')), autoRetryPackages); } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; }
+    const filed = JSON.parse(readFileSync(taskPath, 'utf8')).spec.packages.filter((p) => p.reporter);
+    assert.equal(filed.length, 1, 'the finding is filed once');
+    assert.match(filed[0].title, /copy 2/, 'from the copy with a failing repro');
+  }, { roles: { qa: true } });
+});
+
+test('card 109: a refused first copy does not lose the finding', async () => {
+  const f = 'teams/mcp/taskmanager.mjs';
+  const base = { touches: [], evidence: 'e' };
+  for (const first of [
+    { ...base, title: `${f} breaks AC-1, copy 1` }, // no repro: refused
+    { ...base, title: `${f} breaks AC-1, copy 1`, repro: { ...REPRO, command: 'exit 0' } }, // passes on the tree: dropped
+  ]) {
+    await settleQaFiling({ 'QA-F1': [first, { ...base, title: `AC-1 broken in ${f}, copy 2`, repro: failing(2) }] }, ({ filed }) => {
+      assert.deepEqual(filed.map((p) => p.title), [`AC-1 broken in ${f}, copy 2`]);
+    });
+  }
+});
+
 test('C7: a budget stop with two QA cards unfinished puts the goal gate back on the integrate and names both passes as not run', async () => {
   const { enforceBudget } = await import('../mcp/taskmanager.mjs');
   await withTask(async ({ tm, g, root, task_id }) => {
@@ -10572,4 +10707,148 @@ test('U2 gate integrity: a clean diff, a non-gate:goal node and a task with no i
     rmSync(dir, { recursive: true, force: true });
     rmSync(dirty.dir, { recursive: true, force: true });
   }
+});
+
+// ---------- card 109: integrate takes overlapping filed fixes instead of blocking ----------
+//
+// E-ea14c9c4 (2026-10-30): filed duplicates were all built and accepted, then integrate:3 stopped
+// `blocked` on a conflict between them. Two filed stories with touches [] have no overlap edge, so
+// they run in parallel from the project's HEAD; their children here each run edit(cwd) and report
+// what it changed. (P1/P2 from toIntegrate append to a.txt, so the filed edits use other files.)
+async function completeFiledChild(g, child, edit) {
+  const { cwd, run_id } = child;
+  const sub = (node_id, payload) => g.call('team_submit', { run_id, cwd, node_id, payload: ok(payload) });
+  await sub('plan', { handoff: 'p', flow: 'develop', size: 'S' });
+  await sub('setgoal', { spec: CHILD_SPEC });
+  await sub('critique', { sound: true });
+  const changed = await edit(cwd, child.package_id);
+  await sub('implement:U1:1', { changed_files: changed, handoff: 'fixed' });
+  await sub('test:U1:1', { verified: true });
+  await sub('gate:U1:1', { accept: true, match_pct: 95 });
+  await sub('gate:goal:1', { accept: true, match_pct: 95 });
+  await g.call('team_next', { run_id, cwd });
+  await sub('report', { handoff: 'fix report' });
+}
+
+async function acceptChildPackage(tm, g, task_id, child, edit) {
+  await completeFiledChild(g, child, edit);
+  const folded = await tm.call('tm_submit', { task_id, node_id: child.node_id });
+  assert.equal(folded.state, 'done', JSON.stringify(folded));
+  assert.equal((await tm.call('tm_submit', { task_id, node_id: `accept:${child.package_id}:1`, payload: ok({ accept: true, match_pct: 92 }) })).state, 'done');
+}
+
+// Files D1 and D2 after integrate:1, runs both children with their edit, returns once both accepted.
+async function twoFiledAccepted(tm, g, task_id, editD1, editD2) {
+  await toIntegrate(tm, g, task_id);
+  await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+  const filed = await tm.call('tm_file', { task_id, stories: [
+    { title: 'fix one', touches: [], deps: [], evidence: 'e1', repro: { command: 'exit 1', observed: 'o', expected: 'e' } },
+    { title: 'fix two', touches: [], deps: [], evidence: 'e2', repro: { command: 'exit 2', observed: 'o', expected: 'e' } },
+  ] });
+  assert.deepEqual(filed.filed, ['D1', 'D2']);
+  const nx = await tm.call('tm_next', { task_id });
+  assert.deepEqual(nx.children.map((c) => c.package_id).sort(), ['D1', 'D2'], 'no overlap edge: both dispatch together');
+  for (const c of nx.children) await acceptChildPackage(tm, g, task_id, c, c.package_id === 'D1' ? editD1 : editD2);
+}
+
+const writeBoth = (name, text) => (cwd) => { writeFileSync(join(cwd, name), text); return [name]; };
+
+test('card 109: integrate drops a package whose diff is already applied', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    const same = writeBoth('dup.txt', 'same fix\n');
+    await twoFiledAccepted(tm, g, task_id, same, same);
+    const nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['integrate:2'], 'the integrate is ready, not failed');
+    const load = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const integ = load().nodes.find((n) => n.node_id === 'integrate:2');
+    assert.equal(integ.state, 'pending');
+    assert.deepEqual(integ.integration.merged.map((m) => m.package), ['P1', 'P2', 'D1'], 'D1 merged; D2 is not merged again');
+    assert.deepEqual(integ.integration.already_applied.map((m) => m.package), ['D2']);
+    assert.match(integ.integration.already_applied[0].branch, /D2/);
+    const ev = (await tm.call('tm_events', { task_id })).events;
+    const le = ev.find((e) => e.event === 'integrate_already_applied');
+    assert.ok(le && le.node_id === 'integrate:2' && JSON.stringify(le).includes('D2'), 'the ledger says D2 was already applied');
+    const briefing = readFileSync(nx.ready[0].briefing_path, 'utf8');
+    assert.match(briefing, /Already in the tree[^\n]*\n- D2: /, 'the judge is told D2 is in the tree, not missing');
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'integrate:2', payload: ok({ verified: true, checks: ['build -> ok'] }) })).state, 'done');
+    const shipped = shippedPackages(load());
+    assert.ok(shipped.has('D1') && shipped.has('D2'), `both count as shipped: ${[...shipped]}`);
+  }, { max_parallel_teams: 3 });
+});
+
+// Two filed fixes writing one file differently: D1 merges, D2 conflicts with it.
+const d1Line = writeBoth('b.txt', 'y\nfix one line\n');
+const d2Line = writeBoth('b.txt', 'y\nfix two line\n');
+
+async function toDeferredConflict(tm, g, root, task_id) {
+  await twoFiledAccepted(tm, g, task_id, d1Line, d2Line);
+  const nx = await tm.call('tm_next', { task_id });
+  assert.equal(nx.state, 'blocked', 'by node state alone the failed integrate leaves the graph blocked');
+  const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+  return task.nodes.find((n) => n.node_id === 'integrate:2');
+}
+
+test('card 109: a filed package\'s conflict settles as one repair, not left blocked', async () => {
+  const { autoRepair } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    const integ = await toDeferredConflict(tm, g, root, task_id);
+    const load = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.equal(integ.state, 'failed');
+    assert.equal(integ.result.deferred_conflicts[0].package, 'D2');
+    assert.ok(integ.result.deferred_conflicts[0].with.includes('D1'));
+    assert.deepEqual(integ.result.deferred_conflicts[0].conflicts, ['b.txt']);
+    assert.ok(!('conflicts' in integ.result), 'no conflicts key: that key is the shape-failure route');
+    assert.ok(integ.integration && integ.integration.cwd, 'the combined tree exists for the repair');
+    assert.deepEqual(integ.integration.merged.map((m) => m.package), ['P1', 'P2', 'D1']);
+    assert.ok((await tm.call('tm_events', { task_id })).events.some((e) => e.event === 'integrate_conflict' && e.deferred === true));
+
+    assert.equal(withTasksRoot(root, () => inTx(load(), autoRepair)), true, 'a deferred conflict is a repair');
+    const task = load();
+    const repairs = task.spec.packages.filter((p) => p.repair);
+    assert.equal(repairs.length, 1, 'exactly one repair package');
+    const r1 = repairs[0];
+    assert.deepEqual(r1.settles, ['D2']);
+    assert.ok(r1.brief.includes(integ.result.deferred_conflicts[0].branch) && /b\.txt/.test(r1.brief), r1.brief);
+    assert.ok(r1.acceptance.some((a) => a.includes('exit 2')), 'D2\'s repro command is in the repair\'s acceptance');
+    assert.equal((await tm.call('tm_status', { task_id })).state, 'running');
+    assert.equal(withTasksRoot(root, () => inTx(load(), autoRepair)), false, 'no second repair for the same integrate');
+
+    // The repair child merges D2 into the tree, keeping both fixes.
+    const nx = await tm.call('tm_next', { task_id });
+    const rc = nx.children.find((c) => c.package_id === r1.id);
+    assert.ok(rc, 'the repair dispatches');
+    await acceptChildPackage(tm, g, task_id, rc, (cwd) => {
+      spawnSync('git', ['merge', '--no-commit', '--no-ff', integ.result.deferred_conflicts[0].branch], { cwd, stdio: 'pipe' });
+      writeFileSync(join(cwd, 'b.txt'), 'y\nfix one line\nfix two line\n');
+      execFileSync('git', ['add', 'b.txt'], { cwd });
+      return ['b.txt'];
+    });
+    const nx2 = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx2.ready.map((n) => n.node_id), ['integrate:3']);
+    const i3 = load().nodes.find((n) => n.node_id === 'integrate:3');
+    assert.equal(i3.state, 'pending', 'not failed');
+    assert.deepEqual(i3.integration.already_applied.map((m) => m.package), ['D2'], 'D2 is not merged again');
+    assert.deepEqual(i3.integration.merged.map((m) => m.package), [r1.id]);
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'integrate:3', payload: ok({ verified: true, checks: ['build -> ok'] }) })).state, 'done');
+    const shipped = shippedPackages(load());
+    assert.ok(shipped.has('D1') && shipped.has('D2'), `both count as shipped: ${[...shipped]}`);
+  }, { max_parallel_teams: 3 });
+});
+
+test('card 109: a repair that ignores a settled package does not drop it', async () => {
+  const { autoRepair } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await toDeferredConflict(tm, g, root, task_id);
+    const load = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    assert.equal(withTasksRoot(root, () => inTx(load(), autoRepair)), true);
+    const nx = await tm.call('tm_next', { task_id });
+    const rc = nx.children.find((c) => c.package_id === 'R1');
+    await acceptChildPackage(tm, g, task_id, rc, writeBoth('unrelated.txt', 'nothing to do with D2\n'));
+    await tm.call('tm_next', { task_id });
+    const i3 = load().nodes.find((n) => n.node_id === 'integrate:3');
+    assert.equal(i3.state, 'failed', 'D2 was tried again, not silently skipped');
+    assert.equal(i3.result.deferred_conflicts[0].package, 'D2');
+    assert.ok(!(i3.integration.already_applied || []).some((m) => m.package === 'D2'), 'D2 is not listed as applied');
+    assert.ok(!('conflicts' in i3.result));
+  }, { max_parallel_teams: 3 });
 });
