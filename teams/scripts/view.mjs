@@ -18,14 +18,15 @@
 //                         one that bound)
 //     --once              print a text tree to stdout and exit; no server
 //
-// The page for a task is /E-<first 8 of its id>; the older /?task=<id> link resolves too. An E-key
-// that is a prefix of several ids serves the newest, and one that matches nothing serves the index.
+// The page for a task is /E-<first 8 of its id> or /<slug>; the older /?task=<id> link resolves too.
+// An E-key that is a prefix of several ids serves the newest, and one that matches nothing serves the
+// index. One server holds many tasks roots (POST /register adds one); / is always the index.
 //
 // Both the HTML page's /state.json and --once's text tree come from ONE collect() function
 // (teams/scripts/lib/view-collect.mjs) - this file only renders it two ways.
 import { createServer } from 'node:http';
 import { readFileSync, existsSync, openSync, readSync, fstatSync, closeSync, statSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tasksRoot } from '../mcp/taskmanager.mjs';
 import { DEFAULT_VIEW_PORT, viewKey } from '../mcp/viewserver.mjs';
@@ -33,7 +34,7 @@ import { collectTask, listTasks } from './lib/view-collect.mjs';
 import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './lib/view-render-text.mjs';
 import { notableEvents, statusLine, HOLD_MS } from './lib/view-events.mjs';
 import { summarize, waitingCount } from './lib/view-summary.mjs';
-import { floorTasks, floorEntry } from './lib/view-floor-fs.mjs';
+import { floorTasks, floorEntry, samePath } from './lib/view-floor-fs.mjs';
 import { repoMatcher } from './lib/view-repo.mjs';
 import { reportPayload } from './lib/view-report.mjs';
 import { teamsView, decisionsView } from './lib/view-status.mjs';
@@ -268,32 +269,72 @@ function pageHtml() {
   return readFileSync(join(HERE, 'lib', 'view-page.html'), 'utf8');
 }
 
-// A task reference from the URL - a full task id (the old /?task=<uuid> link) or an E-<prefix> key
-// (/E-xxxxxxxx) - to the task id it names, or null. A full id wins; otherwise the first task whose
-// id starts with the key, and listTasks is newest first, so an ambiguous prefix serves the newest.
-// Read-only: it only lists the tasks root.
-function resolveTaskRef(tasksDir, ref) {
+// A task reference from the URL - a full task id (the old /?task=<uuid> link), an E-<prefix> key
+// (/E-xxxxxxxx) or a task's slug (/<slug>) - to { root, id } across every registered root, or null.
+// Tiers in order: a full id, an id starting with the key, an exact slug; inside a tier the newest
+// created_at wins. Read-only: it only lists the tasks roots.
+function findTask(roots, ref) {
   if (!ref || /[\\/]/.test(ref) || ref.includes('..')) return null;
   const bare = ref.replace(/^E-/, '');
   if (!bare) return null;
-  for (const id of [ref, bare]) {
-    if (existsSync(join(tasksDir, id, 'task.json'))) return id;
+  const rows = roots.flatMap((root) => listTasks(root).map((r) => ({ ...r, root })));
+  const tiers = [
+    (r) => r.task_id === ref || r.task_id === bare,
+    (r) => String(r.task_id).replace(/^E-/, '').startsWith(bare),
+    (r) => r.slug === ref,
+  ];
+  for (const is of tiers) {
+    const hits = rows.filter(is);
+    if (hits.length) {
+      const top = hits.reduce((x, y) => ((y.created_at || 0) > (x.created_at || 0) ? y : x));
+      return { root: top.root, id: top.task_id };
+    }
   }
-  const hit = listTasks(tasksDir).find((r) => String(r.task_id).replace(/^E-/, '').startsWith(bare));
-  return hit ? hit.task_id : null;
+  return null;
 }
 
-// `unresolved`: the page asked for a task that is not there - show the index, whatever the
-// number of tasks, rather than an error model or the lone task standing in for it.
-function stateJson(tasksDir, taskId, unresolved) {
-  if (taskId) {
-    return JSON.stringify({ mode: 'task', tasks_dir: tasksDir, model: collectTask(tasksDir, taskId) });
-  }
-  const rows = listTasks(tasksDir);
-  if (rows.length === 1 && !unresolved) {
-    return JSON.stringify({ mode: 'task', tasks_dir: tasksDir, model: collectTask(tasksDir, rows[0].task_id) });
-  }
-  return JSON.stringify({ mode: 'index', tasks_dir: tasksDir, tasks: rows });
+// The index over every root, newest first, each row naming its tasks_dir; `tasks_dir` stays the first root.
+function indexJson(roots) {
+  const tasks = roots.flatMap((root) => listTasks(root).map((r) => ({ ...r, tasks_dir: root })));
+  tasks.sort((x, y) => (y.created_at || 0) - (x.created_at || 0));
+  return JSON.stringify({ mode: 'index', tasks_dir: roots[0], tasks_dirs: roots, tasks });
+}
+
+// A pinned task, else the task `ref` names, else (no ref, or one that is not there) the index: the
+// lone-task shortcut is --once's only.
+function stateJson(roots, taskId, ref) {
+  if (taskId) return JSON.stringify({ mode: 'task', tasks_dir: roots[0], model: collectTask(roots[0], taskId) });
+  const hit = ref ? findTask(roots, ref) : null;
+  if (hit) return JSON.stringify({ mode: 'task', tasks_dir: hit.root, model: collectTask(hit.root, hit.id) });
+  return indexJson(roots);
+}
+
+// POST /register { tasks_dir }: adds a tasks root. JSON only (a cross-site form cannot send it, and
+// application/json forces a preflight nobody answers), at most 4 KB, an absolute existing directory.
+function registerRoot(req, res, roots) {
+  const reply = (code, ok) => {
+    res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+    res.end(JSON.stringify({ ok, roots }));
+  };
+  if (!/^application\/json(;|$)/i.test(req.headers['content-type'] || '')) { reply(400, false); req.resume(); return; }
+  const chunks = [];
+  let size = 0;
+  let over = false;
+  req.on('data', (c) => {
+    size += c.length;
+    if (size > 4096) { if (!over) reply(400, false); over = true; return; }
+    chunks.push(c);
+  });
+  req.on('end', () => {
+    if (over) return;
+    try {
+      const dir = JSON.parse(Buffer.concat(chunks).toString('utf8')).tasks_dir;
+      if (typeof dir !== 'string' || !isAbsolute(dir) || !statSync(dir).isDirectory()) throw new Error('not a directory');
+      const root = samePath(dir);
+      if (!roots.includes(root)) roots.push(root);
+      reply(200, true);
+    } catch { reply(400, false); }
+  });
 }
 
 // Binds `port` (explicit, TEAMS_VIEW_PORT, or the default). Only the default gives way: if it is
@@ -327,24 +368,34 @@ function idleMs() {
   return Number.isFinite(n) && n > 0 ? n : IDLE_DEFAULT_MS;
 }
 
+function newest(roots) {
+  const rows = roots.flatMap((root) => listTasks(root).map((r) => ({ root, id: r.task_id, at: r.created_at || 0 })));
+  return rows.length ? rows.reduce((x, y) => (y.at > x.at ? y : x)) : null;
+}
+
 function startServer(tasksDir, taskId, port) {
+  const roots = [samePath(tasksDir)];
   let lastRequest = Date.now();
   const server = createServer((req, res) => {
     lastRequest = Date.now();
     const url = new URL(req.url, 'http://localhost');
     if (url.pathname === '/state.json') {
-      const ref = url.searchParams.get('task');
-      const resolved = taskId ? null : ref ? resolveTaskRef(tasksDir, ref) : null;
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-      res.end(stateJson(tasksDir, taskId || resolved, !taskId && !!ref && !resolved));
+      res.end(stateJson(roots, taskId, url.searchParams.get('task')));
       return;
     }
+    if (url.pathname === '/teams-view.json') {
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(JSON.stringify({ teams_view: 1, pid: process.pid, roots }));
+      return;
+    }
+    if (url.pathname === '/register' && req.method === 'POST') { registerRoot(req, res, roots); return; }
     // The task's own package map (shape's diagram, or the dependency map). The path comes from
     // the task file, never from the query, so this serves nothing but that one drawing.
     if (url.pathname === '/package-map') {
       const ref = url.searchParams.get('task');
-      const id = taskId || (ref ? resolveTaskRef(tasksDir, ref) : (listTasks(tasksDir)[0] || {}).task_id);
-      const m = id ? collectTask(tasksDir, id) : null;
+      const hit = taskId ? { root: roots[0], id: taskId } : ref ? findTask(roots, ref) : newest(roots);
+      const m = hit ? collectTask(hit.root, hit.id) : null;
       const p = m && m.package_map && m.package_map.path;
       if (!p || !existsSync(p)) { res.writeHead(404, { 'content-type': 'text/plain' }); res.end('no package map yet - it is drawn when shape finishes'); return; }
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
@@ -372,10 +423,11 @@ function startServer(tasksDir, taskId, port) {
     if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
   };
   const watch = setInterval(() => {
-    if (!existsSync(tasksDir)) { end(); return; }
+    for (let i = roots.length - 1; i >= 0; i--) if (!existsSync(roots[i])) roots.splice(i, 1);
+    if (!roots.length) { end(); return; }
     if (Date.now() - lastRequest < idleMs()) return;
     let rows;
-    try { rows = listTasks(tasksDir); } catch { return; }
+    try { rows = roots.flatMap((root) => listTasks(root)); } catch { return; }
     if (!rows.some((r) => LIVE.has(r.state))) end();
   }, DIR_CHECK_MS);
   watch.unref();
