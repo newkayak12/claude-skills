@@ -103,7 +103,7 @@ File names are English, the headings inside are Korean, and the content stays in
 your material. Every filled line is a short paraphrase plus a verbatim quote or pointer, cited by
 file and heading (for pasted or chat text: a message index, a timestamp or the first words).
 
-Each item has a status: `raw`, `shaped`, `written`, `rendered`, `reviewed`. This step creates
+Each item has a status: `raw`, `shaped`, `selected`, `excluded`, `written`, `rendered`, `reviewed`. This step creates
 only `raw` and never changes it; later steps own every other transition and log it in
 `history.md`.
 
@@ -121,7 +121,8 @@ and the question stays visible, marked `[답변됨]`. A re-run whose material ad
 nothing, `history.md` included.
 
 Personal or confidential data in your material (names, employer details) is kept as given and
-stored only in your project, under `material/` in the current working directory. Files in
+stored only in your project, under `material/` in the current working directory (`sources/material/`
+in a `manage` workspace). Files in
 `material/` that this step did not write are left alone and listed in its summary.
 
 ### `manage`
@@ -137,10 +138,19 @@ skeleton.md → deck.mdx → build/        design, build source, output
 snapshot/  sources/  docs/확정사실.md   versions, material, settled facts
 ```
 
+Eight steps (2.11.0): collect → select (`sources/선정.md`: 본문 / 부록 / 제외 and what each item
+leads with) → draft → revise from several viewpoints → template analysis (`template/분석.md`) →
+deck → render and review (previews kept per deck version under `snapshot/render/`) → feedback on
+the deck, back onto the material.
+
+- Every page cites its material (`글감: <id>`); `claims` checks each figure and reason against it
+  both ways — a number with no ground, a reason the material never gives, a result left out of
+  the deck. Real work you confirm with no record (`본인 확인`) is kept, never cut.
 - Every wording change starts in `skeleton.md`; before the first edit of a round the current
   version is snapshotted and the version moves (major = structure, minor = content, patch = wording).
 - Structure changes (page count, blocks, order) are proposed and wait for you.
-- Reordering pages renumbers every `N쪽` reference and `쪽` column in one pass, then verifies them.
+- Reordering pages renumbers every `N쪽` reference and `쪽` column in one pass, then verifies them;
+  the file is written only when the result verifies.
 - A correction you give is kept in your words in the material file, in `docs/확정사실.md`, and in
   noah when connected — so the next session does not repeat the mistake.
 - It stops at deck-builder `check`; build and render happen when you say.
