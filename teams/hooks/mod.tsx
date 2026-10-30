@@ -53,7 +53,7 @@ const en = {
   reportMissing: 'No report yet: {path}', reportTruncated: 'Shortened: {n} more lines in the file.',
   stages: 'Stages', work: 'Work', cost: 'Cost',
   youOthers: '{n} more in other runs', costLine: '{usd} · {turns} turns',
-  headLine: '{state} · {done}/{total}', wordIdle: 'idle', wordDone: 'done', wordStalled: 'stalled', wordFailed: 'failed', bandDone: '{done}/{total} done',
+  headLine: '{state} · {done}/{total}', wordIdle: 'idle', wordDone: 'done', wordStalled: 'stalled', wordFailed: 'failed', wordActing: 'working', wordYou: 'needs you', bandDone: '{done}/{total} done',
   stateRunning: 'running', stateStalled: 'stalled', stateComplete: 'finished', stateFailed: 'failed',
   stagePlan: 'Plan', stageBuild: 'Build', stageIntegrate: 'Integrate', stageQa: 'QA', stageGate: 'Final gate', stageReport: 'Report',
   nowFix: 'Fixing defect', nowFixnext: 'Waiting to fix defect', nowBuild: 'Building', nowPlan: 'Planning', nowQa: 'QA', nowAnswer: 'Waiting for your answer',
@@ -86,7 +86,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     reportMissing: '아직 보고서가 없습니다: {path}', reportTruncated: '일부만 표시: 파일에 {n}줄 더 있습니다.',
     stages: '단계', work: '작업', cost: '비용',
     youOthers: '다른 실행에 {n}건 더', costLine: '{usd} · {turns}턴',
-    headLine: '{state} · {done}/{total}', wordIdle: '유휴', wordDone: '완료', wordStalled: '멈춤', wordFailed: '실패', bandDone: '{done}/{total} 완료',
+    headLine: '{state} · {done}/{total}', wordIdle: '유휴', wordDone: '완료', wordStalled: '멈춤', wordFailed: '실패', wordActing: '작업 중', wordYou: '확인 필요', bandDone: '{done}/{total} 완료',
     stateRunning: '진행 중', stateStalled: '멈춤', stateComplete: '완료', stateFailed: '실패',
     stagePlan: '계획', stageBuild: '구현', stageIntegrate: '통합', stageQa: 'QA', stageGate: '최종 관문', stageReport: '보고',
     nowFix: '결함 수정 중', nowFixnext: '결함 수정 대기', nowBuild: '구현 중', nowPlan: '계획 중', nowQa: 'QA 중', nowAnswer: '답변 대기 중',
@@ -543,9 +543,10 @@ export const register: Register = on => {
       : `${t.stages.map(g => `${MARK[g.state]}${s(`stage${cap(g.key)}` as keyof typeof en)}`).join(' ')}${t.harness.slug ? ` · ${t.harness.slug}` : ''}${t.harness.moving ? ' ▸' : ''}`
     const judgeText = (score: number, threshold: number | null) => (threshold === null ? s('storyJudgeBare', { score }) : s('storyJudge', { score, threshold }))
     const storyOf = rows.map(({ entry: t, item }, i) => storyCells(item, verdictText(item.last_verdict), harnessText(t), i === pick, fixedWord, judgeText, gap => s('storyGap', { gap })))
-    const storyWidths = columnWidths(storyOf.map(r => r.cells), inner, 2, STORY_SHRINK, 4, [9, 7, 8, 6], 24)
-    // line 2 sits under the title: the marker and icon columns and their gaps, then the note up to the pane's edge
-    const noteAt = storyWidths.slice(0, 2).reduce((n, w) => n + (w > 0 ? w + 2 : 0), 0)
+    const storyWidths = columnWidths(storyOf.map(r => r.cells), inner, 2, STORY_SHRINK, 4, [9, 7, 8, 6, 5], 24)
+    // line 2 sits under the title: the marker and icon columns and their gaps, then the note up to the pane's edge;
+    // in a narrow pane (inner < 60) it is indented 2 cells instead, so the reason keeps the room
+    const noteAt = inner < 60 ? 2 : storyWidths.slice(0, 2).reduce((n, w) => n + (w > 0 ? w + 2 : 0), 0)
     const storyLines: Line[] = storyOf.flatMap(r => [
       rowLine(r.cells, storyWidths, 2, r.tints),
       ...(r.note === '' ? [] : [[{ t: ' '.repeat(noteAt) }, { t: clipText(r.note, Math.max(4, inner - noteAt)), dim: true }] as Line]),

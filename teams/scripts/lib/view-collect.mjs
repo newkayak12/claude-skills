@@ -604,7 +604,14 @@ function telemetryOf({ task, tasksDir, depth, ledger, driverTotal, harness, sRun
     if (e.event === 'verdict') {
       if (e.verdict === 'blocked') judgeDenials += 1;
       if (e.stage === 'accept' && e.subgoal_id) {
-        judge[String(e.subgoal_id)] = { score: Number.isFinite(e.score) ? e.score : null, reason: e.reason || null, attempt: e.attempt || null, verdict: e.verdict || null };
+        // cause: the judged accept node's own first gap, read by e.node_id so a later retry node
+        // (pending, no gaps) cannot replace it. Gaps come before blocking and problems on purpose:
+        // the board names the gap the judge left open, where the ledger reason lists blocking first.
+        const jn = (task.nodes || []).find((n) => n && n.node_id === e.node_id);
+        const jr = (jn && jn.result) || {};
+        const first = [jr.gaps, jr.blocking, jr.problems].map((x) => (Array.isArray(x) && x.length ? x[0] : null)).find((x) => x != null);
+        const cause = first != null ? (typeof first === 'object' ? (first.text || JSON.stringify(first)) : String(first)) : (e.reason || null);
+        judge[String(e.subgoal_id)] = { score: Number.isFinite(e.score) ? e.score : null, reason: e.reason || null, attempt: e.attempt || null, verdict: e.verdict || null, cause };
       }
     } else if (e.event === 'daemon_retry_settled' && /retry budget exhausted/.test(String(e.reason || '')) && e.package_id) {
       outOfRetries.add(String(e.package_id));
