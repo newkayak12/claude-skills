@@ -11,7 +11,7 @@
 // updateAutoParallel calls record(task, ...), which appends to
 // ~/.harness/tasks/<run_id>/ledger.jsonl unless this is set - the same reason
 // test-taskmanager.mjs sets TEAMS_RUNS_DIR before importing anything.
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir, availableParallelism } from 'node:os';
 import { join } from 'node:path';
 
@@ -345,6 +345,41 @@ test('decrease still fires: a rate_limit_event whose status is NOT "allowed" is 
   const n = dispatchNode('dispatch:P1:1', 'P1', { driver: driverWithLog(log) });
   updateAutoParallel(task, n, { stage_ok: false });
   assert.equal(task.auto_parallel.current, 2, 'a non-"allowed" status is the vendor actually throttling - still halves');
+});
+
+const rateLimitLine = (status) => `{"type":"rate_limit_event","rate_limit_info":{"status":"${status}","rateLimitType":"five_hour"}}\n`;
+const decreasedEvents = (task) => {
+  let text = '';
+  try { text = readFileSync(join(SCRATCH, task.run_id, 'ledger.jsonl'), 'utf8'); } catch { /* no ledger written */ }
+  return text.split('\n').filter((l) => l.includes('auto_parallel_decreased'));
+};
+
+test('no false decrease: rate_limit_event status "allowed_warning" (near-limit telemetry) keeps the width and writes no auto_parallel_decreased', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 });
+  ensureAutoParallel(task).current = 4;
+  const n = dispatchNode('dispatch:P1:1', 'P1', { driver: driverWithLog(rateLimitLine('allowed_warning')) });
+  updateAutoParallel(task, n, { stage_ok: true });
+  assert.equal(task.auto_parallel.current, 4, 'allowed_warning still grants capacity - must not halve');
+  assert.equal(task.auto_parallel.streak, 1, 'and it counts as a clean fold toward growth');
+  assert.equal(decreasedEvents(task).length, 0, 'no auto_parallel_decreased ledger event');
+});
+
+test('decrease still fires: rate_limit_event status "rejected" halves 4 to 2 and writes auto_parallel_decreased', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 });
+  ensureAutoParallel(task).current = 4;
+  const n = dispatchNode('dispatch:P1:1', 'P1', { driver: driverWithLog(rateLimitLine('rejected')) });
+  updateAutoParallel(task, n, { stage_ok: false });
+  assert.equal(task.auto_parallel.current, 2);
+  assert.equal(decreasedEvents(task).length, 1);
+});
+
+test('allowed_warning does not mask real pushback: followed by a result with is_error true it still halves', () => {
+  const task = makeTask({ max_parallel_ceiling: 6 });
+  ensureAutoParallel(task).current = 4;
+  const log = rateLimitLine('allowed_warning') + '{"type":"result","is_error":true,"result":"overloaded_error"}\n';
+  const n = dispatchNode('dispatch:P1:1', 'P1', { driver: driverWithLog(log) });
+  updateAutoParallel(task, n, { stage_ok: false });
+  assert.equal(task.auto_parallel.current, 2);
 });
 
 test('no false decrease: the routine "api_error_status":null field on every result event is not pushback', () => {
