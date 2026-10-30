@@ -276,7 +276,7 @@ toasts).
       rule repo-rules.mjs already uses for the push hold), marked with their worktree; test; slugs drop
       a possessive `'s`.
 
-87. **A paraphrased document criterion still gets into user stories** (rest of card 87)
+87. **A paraphrased document criterion still gets into user stories** (rest of card 87) — in E-a7996a31
     - Why: `stripDocumentAcceptance` (eb3a1c49) drops only an exact-text match. The real L run E-11f56074
       (2026-10-29) had none in its PRD (0 "Given the PRD section" lines; its F2 judge noted a repeated bullet
       "a card-87 check could trip on"), so the exact-match fix holds on a real run; a paraphrase is untested.
