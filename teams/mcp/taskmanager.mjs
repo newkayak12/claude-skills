@@ -1933,7 +1933,7 @@ export function autoRepair(task) {
 // Returns null while the round is still open, else {filed?, unresolved?, defects}.
 // Returns a predicate (d, card) that is truthy for a defect already seen in this pass: equal trimmed
 // title, or equal non-empty trimmed repro.command (true); or, card 109, the same finding worded
-// again: same QA card, an AC token in common and a file in common (the first such defect, so the
+// again: same QA card, an AC token in common and the same set of files (the first such defect, so the
 // caller can fold the copy into it). The first of a kind is remembered and passes.
 // E-ea14c9c4 (2026-10-30): one QA card listed 4 findings as 15 defects, each copy with its own
 // title and its own per-case repro command, so the title/command keys missed every one and each
@@ -1968,7 +1968,8 @@ function sameDefectSeen({ fileAc = true } = {}) {
     if (dup || !fileAc) return Boolean(dup);
     const t = tokens(d);
     const first = kept.find((k) => k.card === card && [...t.acs].some((a) => k.acs.has(a))
-      && t.files.some((f) => k.files.some((g) => sameFile(f, g))));
+      && t.files.length && t.files.every((f) => k.files.some((g) => sameFile(f, g)))
+      && k.files.every((g) => t.files.some((f) => sameFile(f, g))));
     if (first) return first.defect;
     kept.push({ defect: d, card, ...t });
     return false;
