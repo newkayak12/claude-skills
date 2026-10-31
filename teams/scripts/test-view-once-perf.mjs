@@ -1,16 +1,19 @@
 // The --once read path with the finished-task index (lib/view-index.mjs): output equals the goldens in
 // fixtures/view-once-golden.json, which were generated with the pre-index code (git HEAD before the
-// index) from the same fixtures; a second call over 2000 finished tasks is fast; a task that goes from
-// running to done is not served stale; a corrupt index is a full read. Fixtures are temp dirs.
+// index) from the same fixtures; a task that goes from running to done is not served stale; a corrupt
+// index is a full read. Fixtures are temp dirs.
+// The default large-fixture test proves the index by making every finished task.json unreadable (chmod 000)
+// before the second call; the wall-clock bar (300 ms, best of 10) is opt-in via VIEW_ONCE_PERF=1.
 //
 //   node --test teams/scripts/test-view-once-perf.mjs
+//   VIEW_ONCE_PERF=1 node --test teams/scripts/test-view-once-perf.mjs   (also run the 300 ms timing test)
 //   VIEW_ONCE_VIEW=<view.mjs> VIEW_ONCE_REGEN=1 node teams/scripts/test-view-once-perf.mjs   (rewrite goldens from that view.mjs)
 process.env.TEAMS_RUNS_DIR ??= 'off';
 process.env.TZ = 'UTC';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, utimesSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, utimesSync, existsSync, readdirSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -115,7 +118,30 @@ if (REGEN) {
   process.exit(0);
 }
 
-test('large fixture: status equals the golden, and the second call is fast', () => {
+test('large fixture: status equals the golden, and the second call reads no finished task.json', { skip: process.getuid?.() === 0 ? 'root ignores file modes, so chmod 000 cannot make task.json unreadable' : false }, () => {
+  const w = world();
+  const locked = [];
+  try {
+    large(w);
+    const args = CALLS.status(w);
+    const first = scrub(view(w, args));
+    assert.equal(first, golden().large.status, 'first call (no index yet)');
+    for (const id of readdirSync(w.tasks)) {
+      const p = join(w.tasks, id, 'task.json');
+      if (id === 'aaaaaaaa-0001' || !existsSync(p)) continue;
+      chmodSync(p, 0o000);
+      locked.push(p);
+    }
+    assert.equal(locked.length, 1800, 'every finished task.json is made unreadable');
+    const second = scrub(view(w, args));
+    assert.equal(second, golden().large.status, 'second call (finished tasks unreadable: served from the index)');
+  } finally {
+    for (const p of locked) chmodSync(p, 0o644);
+    w.cleanup();
+  }
+});
+
+test('large fixture: the indexed call is under 300 ms (opt-in: VIEW_ONCE_PERF=1)', { skip: process.env.VIEW_ONCE_PERF === '1' ? false : 'wall-clock bar is opt-in: set VIEW_ONCE_PERF=1' }, () => {
   const w = world();
   try {
     large(w);

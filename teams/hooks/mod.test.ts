@@ -106,6 +106,32 @@ for (const surface of SURFACES) {
   })
 }
 
+test('the poll does not overlap: a slow view.mjs holds the next ticks off until it returns', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('session.surfaces', () => ({ value: ['terminal'] as const }))
+  on('session.cwd', () => ({ value: '/proj' }))
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('ui.status', () => ({ value: undefined }))
+  const calls: (readonly string[])[] = []
+  let release: () => void = () => {}
+  const held = new Promise<void>(resolve => {
+    release = resolve
+  })
+  on('process.run', async (_$, e) => {
+    calls.push(e.argv)
+    await held
+    return { value: ok('') }
+  })
+  await start($)
+  await clock.advance(30000)
+  expect(calls).toHaveLength(1)
+  release()
+  await clock.advance(3000)
+  expect(calls.length > 1).toBe(true)
+})
+
 // ---- tool.call: watch hook and team_status guard ----
 // Engine beneath: surfaces, a tool that answers `result`, and a state store the test reads back.
 function toolWorld(on: On, result: unknown, surfaces: readonly Surface[] = ['terminal'], isBroken = false) {
