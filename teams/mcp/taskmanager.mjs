@@ -7332,15 +7332,16 @@ function crashesClustered(task) {
 // One entry per advanceDispatches pass (the daemon's tick, or a tm_next poll) in a fixed-length
 // list on task.auto_parallel_ticks, so tm_status can show what width the scheduler ran at, how many
 // STORYs held a slot and how many were ready but waiting. The ledger gets an event only when the
-// width or ready_waiting differs from the previous tick's - not one line per tick.
+// width or ready_waiting differs from the previous tick's - not one line per tick. The first tick
+// (no previous one) writes one when packages already wait.
 const AIMD_TICKS_KEEP = 30;
 function recordAutoParallelTick(task, state, { running, ready_waiting }) {
   const ticks = Array.isArray(task.auto_parallel_ticks) ? task.auto_parallel_ticks : [];
   const prev = ticks.length ? ticks[ticks.length - 1] : null;
   ticks.push({ ts: Date.now(), width: state.current, running, ready_waiting });
   task.auto_parallel_ticks = ticks.slice(-AIMD_TICKS_KEEP);
-  if (prev && (prev.width !== state.current || prev.ready_waiting !== ready_waiting)) {
-    record(task, { event: 'parallel_width_changed', task_id: task.run_id, from: prev.width, to: state.current, from_ready_waiting: prev.ready_waiting, running, ready_waiting });
+  if (prev ? (prev.width !== state.current || prev.ready_waiting !== ready_waiting) : ready_waiting > 0) {
+    record(task, { event: 'parallel_width_changed', task_id: task.run_id, from: prev ? prev.width : null, to: state.current, from_ready_waiting: prev ? prev.ready_waiting : null, running, ready_waiting });
   }
 }
 

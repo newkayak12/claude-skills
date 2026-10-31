@@ -4014,6 +4014,29 @@ test('auto width: a ready package that waits for a slot (width 1, P1 running) sh
   }, { max_parallel_ceiling: 6 });
 });
 
+test('auto width: the first tick with a package already waiting writes one parallel_width_changed event (width, running, ready_waiting)', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id, SHAPE_WIDE);
+    const raw = readTask(root, task_id);
+    raw.auto_parallel = { current: 1, streak: 0, ceiling: 6, max: 2, updated_at: Date.now(), reason: 'test' };
+    delete raw.auto_parallel_ticks;
+    writeFileSync(join(root, task_id, 'task.json'), JSON.stringify(raw));
+    await tm.call('tm_next', { task_id });
+    const ticks = (await tm.call('tm_status', { task_id })).auto_parallel_ticks;
+    assert.equal(ticks.length, 1, 'the first tick is the only one');
+    const last = ticks[0];
+    assert.ok(last.ready_waiting >= 1, `P2 is ready and waiting, got ready_waiting ${last.ready_waiting}`);
+    const events = () => readLedger(root, task_id).filter((e) => e.event === 'parallel_width_changed');
+    assert.equal(events().length, 1, 'the first tick with a package waiting is written once');
+    assert.equal(events()[0].to, 1);
+    assert.equal(events()[0].from, null, 'no previous tick');
+    assert.equal(events()[0].running, last.running);
+    assert.equal(events()[0].ready_waiting, last.ready_waiting);
+    await tm.call('tm_next', { task_id });
+    assert.equal(events().length, 1, 'a second tick at the same width and waiting count writes nothing');
+  }, { max_parallel_ceiling: 6 });
+});
+
 // portfolio-consolidate-8518d5dd: integrate:6 came back verified:false with checks/evidence/
 // unowned and no reason or gaps - the ledger, the report and triage all showed "integrate:6: "
 // with nothing after the colon. The manager now synthesizes one the way the broker does for a
