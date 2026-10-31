@@ -46,6 +46,10 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
       real CLI run caught the `근거 없음` figure on slide 2). Left: a feedback finding against a
       `settled` line is dropped by the SKILL step, not by the engine; reason grounding is a word-stem
       share (≥ half), a heuristic.
+    - E-54884e0c P2 (2026-10-31, `manage settle`, not taken): QA found short settled lines give false
+      `settled` hits that hide real findings, and bad finding shapes / absolute paths are not refused
+      clearly (AC-4/5). Kept on branch `rescue/e54884e0c-integration` (P3's runbook too); redo with a
+      minimum match length.
 
 54. **portfolio runs one flow on managed material: collect → write → render → feedback**
     - Why: user, 2026-10-18: "포트폴리오 스킬에 매니징 있니? 그니까 글감을 모으고 관리하고 그걸 바탕으로
@@ -245,6 +249,8 @@ toasts).
       `you -> P3` line in the Floor feed). B's band demo approved by Claude on delegation 2026-10-26 (fixture render at 190/110: `⚑ P2 asks you: … +1`, title ends in `…`). Left: B's README shot from a live ask; a `tm_open` live pass of C (U-5 already in README/KOR).
     - User, 2026-10-30: "mod 서브에이전트 통신 네" — go ahead with what is left. Town (93) is still being
       thought over ("Town고민 중"); 48 waits ("나머지 대기").
+    - E-54884e0c P3 (2026-10-31) wrote a runbook for C's live pass but did not run it (QA-F3 blocked);
+      not taken. Left as before: B's README shot, a `tm_open` live pass of C.
 
 ### Repo and rules
 
@@ -275,6 +281,10 @@ toasts).
       true when any task under `~/.harness/tasks` is open for the cwd, or any `.teams_output/broker/runs`
       file is fresh — another session's open task unlocks every session on the project. (Edits under
       `min_chars` passing is by design.)
+    - E-8c671fd9 (2026-10-31, partial, nothing built): critique failed shape 3 with no retry left. Plan
+      found: compare the open task's `opener.session_id` with the payload's; drivers already get
+      `TEAMS_OPENER_SESSION_ID` via `openerEnv`; five gate tests flip. Re-run with P1/P2/P3 parallel (no
+      P2→P3 edge), `teams/mcp/taskmanager.mjs` owned by 107's package alone.
     - Acceptance: a driving session is allowed only while a task it opened (opener session id) or a node it
       runs is live; another session's open task on the same cwd still denies it; teams nodes and drivers
       still pass (tested in the gate's test file).
@@ -288,6 +298,10 @@ toasts).
     - Acceptance: a task opened from a session keeps running after that session exits (test: spawn,
       kill the parent MCP process, the daemon still ticks); a task whose daemon died is resumed by
       `tm_retry` on its own run dir without a re-plan.
+    - E-8c671fd9 plan (2026-10-31): spawns are already `detached` + `unref()`; exit survey of
+      ~/.harness/tasks shows no session-kill signature, so the cause stays unverified. Real gap found: after
+      the restart budget `daemon.exhausted` stays set and a bare `tm_retry` on size L re-plans. Check
+      callers relying on bare `tm_retry` re-planning before changing it.
 
 105. **Repo-wide pane and one viewer: UI look and the loose ends** — code defects in E-03e2e513; cards 105 and 106 shipped 2026-10-30 in
     E-f53a8434 (`236eae3d`; goal gate 92; teams 1658/1660 with 2 skips, plugin test 423/423; real run: two
@@ -351,6 +365,9 @@ toasts).
       `spawnHarnessDriver` env path not exercised live.
     - Acceptance: the next real size-S task's ledger shows `scope_verdict` with `own_record: true`; a Codex
       run records an `apply_patch` write (or the limit stays named in the docs).
+    - E-8c671fd9 plan (2026-10-31): `own_record:false` in 2694667a/d50a6887 is explained: both drivers ran
+      teams 0.61.4 from the opener session's plugin cache (hook shipped in 0.62.0). Next size-S task from
+      a session started on ≥ 0.62.0 proves it; Codex limit still to name in docs.
 
 74. **Every mod's UI draws on terminal, desktop, mobile and vscode (`mod.md` rule 8) — teams first** — tests in
     55e2dcc3 (teams 357, graph 175, harness 199) and bfe0022c (session 699, think 53, trophy 149), all four
@@ -416,6 +433,12 @@ toasts).
       only the first line of a wrapped resume note, so an edge through its second line passes; a
       backward cause edge in a narrow lane gap (QA D1b) is not routed clear; then (4) the user's
       approval of the two after-PNGs.
+    - Colour shipped 2026-10-31 from E-54884e0c (blocked at goal gate 82/90, P1 attempt 4 taken by hand;
+      test-diagram 92/92): colour roles in code with a 4.5:1 pair test (light and dark), lanes in their own
+      hue (A blue, B teal), wait band from the blocked step to the resume, green dashed release edge from
+      the holder's COMMIT, version ramp on record chains, pointer edges in their source field's hue, dark
+      SVG beside the light pair, `check` refuses two backward cause edges in a too-narrow gap. Left: the
+      user's approval of fig-13-1/fig-9-2 v3 (user, 2026-10-31: "색상 등은요??? 저개 저 도식의 최선??").
 
 ### knowledge plugin
 
@@ -437,6 +460,8 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-54884e0c | 2026-10-31 | 100, 102 rest, 49 rest | blocked (goal gate 82/90); 100's colour work taken by hand (test-diagram 92/92), 102's `settle` and 49's runbook not taken |
+| E-8c671fd9 | 2026-10-31 | 110, 107, 81 rest | partial: planning only, critique failed shape 3; findings on the cards |
 | E-d50a6887 | 2026-10-31 | 108 | tests only, no version bump: poll non-overlap test (`mod.test.ts`: no second `--once` while the first runs) and a load-independent perf test (`test-view-once-perf.mjs`: second call reads only the open task, 300 ms bar opt-in via `VIEW_ONCE_PERF=1`) |
 | E-2694667a | 2026-10-30 | 108 | partial: teams 0.62.1, `--once` filters before collecting and indexes finished tasks (`.view-index.json`), rebased onto 0.62.0's repo-wide matcher; real status call 7.96 s → 0.40 s; 300 ms fixture test is best-of-10 (single calls flaked 306–399 ms under suite load); poll overlap guard left (108) |
 | E-a7996a31 | 2026-10-30 | 87 rest | shipped `5639b260`; size S; goal gate 91; limit named in the PRD gate prompt (a Jaccard ≥ 0.63 rule passed both tests but missed the one real paraphrase, J=0.38, so declined); teams 1681/1682 |

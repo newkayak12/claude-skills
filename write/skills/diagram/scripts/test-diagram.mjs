@@ -206,6 +206,67 @@ test('static palette: fills used together differ by >= 15 L*, every edge style h
   assert.equal(new Set(dashes).size, dashes.length);
 });
 
+// ---- colour roles (card 100): a light set and a dark set, text on every fill >= 4.5:1 ----
+const lum = (hex) => {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+const wcag = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
+const lstar = (hex) => { const y = lum(hex); return y > 216 / 24389 ? 116 * Math.cbrt(y) - 16 : (24389 / 27) * y; };
+const roleNames = ['cause', 'wait', 'release', 'context'];
+
+test('colour roles: a light and a dark set each name lane hues A blue and B teal, cause, wait, release, context and a three-step ramp', () => {
+  assert.deepEqual(Object.keys(fig.ROLES).sort(), ['dark', 'light']);
+  for (const mode of ['light', 'dark']) {
+    const set = fig.ROLES[mode];
+    assert.equal(set.lanes.length, 2, `${mode} lanes`);
+    assert.equal(set.ramp.length, 3, `${mode} ramp`);
+    for (const r of [...set.lanes, ...roleNames.map((n) => set[n])]) for (const k of ['fill', 'stroke', 'ink']) assert.match(r[k], /^#[0-9a-f]{6}$/, `${mode} ${k}`);
+    const hue = (hex) => { const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)); const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; return mx === r ? (60 * (((g - b) / d) % 6) + 360) % 360 : mx === g ? 60 * ((b - r) / d + 2) : 60 * ((r - g) / d + 4); };
+    assert.ok(hue(set.lanes[0].stroke) > 205 && hue(set.lanes[0].stroke) < 240, `${mode} lane A is blue`);
+    assert.ok(hue(set.lanes[1].stroke) > 160 && hue(set.lanes[1].stroke) < 185, `${mode} lane B is teal`);
+    assert.ok(hue(set.release.stroke) > 100 && hue(set.release.stroke) < 160, `${mode} release is green`);
+    assert.ok(hue(set.wait.stroke) > 35 && hue(set.wait.stroke) < 50, `${mode} wait is amber`);
+    assert.ok(hue(set.cause.stroke) < 15 || hue(set.cause.stroke) > 340, `${mode} cause is amber-red`);
+  }
+});
+
+test('colour roles: text on every role fill and ramp step is >= 4.5:1, every stroke >= 3:1 on the surface, in both sets', () => {
+  for (const mode of ['light', 'dark']) {
+    const set = fig.ROLES[mode];
+    for (const [name, r] of [['laneA', set.lanes[0]], ['laneB', set.lanes[1]], ...roleNames.map((n) => [n, set[n]])]) {
+      assert.ok(wcag(r.ink, r.fill) >= 4.5, `${mode} ${name}: ink ${r.ink} on ${r.fill} is ${wcag(r.ink, r.fill).toFixed(2)}`);
+      assert.ok(wcag(r.stroke, set.surface) >= 3, `${mode} ${name}: stroke ${r.stroke} on ${set.surface} is ${wcag(r.stroke, set.surface).toFixed(2)}`);
+    }
+    for (const n of [1, 2, 3, 4, 7, 12]) fig.rampSteps(mode, n).forEach((s, i) => assert.ok(wcag(s.ink, s.fill) >= 4.5, `${mode} ramp of ${n}, step ${i}: ${s.ink} on ${s.fill} is ${wcag(s.ink, s.fill).toFixed(2)}`));
+    assert.ok(wcag(set.ink, set.surface) >= 4.5 && wcag(set.muted, set.surface) >= 4.5, `${mode} ink and muted text on the surface`);
+  }
+});
+
+test('colour roles: the ramp runs strongest to lightest, a chain longer than three is interpolated between the same ends, three fills differ by >= 15 L*', () => {
+  for (const mode of ['light', 'dark']) {
+    const set = fig.ROLES[mode], dist = (s) => Math.abs(lstar(s.fill) - lstar(set.surface));
+    const three = fig.rampSteps(mode, 3);
+    assert.deepEqual(three.map((s) => s.fill), set.ramp.map((s) => s.fill));
+    for (const n of [2, 3, 5, 9]) {
+      const steps = fig.rampSteps(mode, n);
+      assert.equal(steps.length, n);
+      assert.equal(steps[0].fill, set.ramp[0].fill, 'the first step is the strongest ramp end');
+      for (let i = 1; i < n; i++) assert.ok(dist(steps[i]) < dist(steps[i - 1]) - 1e-6, `${mode} n=${n}: step ${i} is lighter than step ${i - 1}`);
+    }
+    assert.equal(new Set(fig.rampSteps(mode, 9).map((s) => s.fill)).size, 9, 'interpolated steps are all different');
+    for (let i = 0; i < 3; i++) for (let j = i + 1; j < 3; j++) assert.ok(Math.abs(lstar(three[i].fill) - lstar(three[j].fill)) >= 15, `${mode} ramp ${i} vs ${j}`);
+  }
+});
+
+test('colour roles: laneRole takes the lane hue by lane order and wraps past the second lane', () => {
+  for (const mode of ['light', 'dark']) {
+    assert.equal(fig.laneRole(mode, 0), fig.ROLES[mode].lanes[0]);
+    assert.equal(fig.laneRole(mode, 1), fig.ROLES[mode].lanes[1]);
+    assert.equal(fig.laneRole(mode, 2), fig.ROLES[mode].lanes[0]);
+  }
+});
+
 test('a character NanumGothic lacks is refused at check time, naming it, and nothing is written', () => {
   const ir = { ...ARCH3, nodes: ARCH3.nodes.map((n) => (n.id === 'a' ? { ...n, label: '클라이언트 🙂' } : n)) };
   const errs = fig.checkFigure(ir);
@@ -609,10 +670,11 @@ test('timeline with a cause edge passes check; the svg has the accent line, the 
   assert.ok(cause && span);
   assert.equal(cause.from, 'step A@2');
   assert.equal(cause.to, 'step B@3');
-  assert.ok(svg.includes(`stroke="${fig.PALETTE.fills.accent}" stroke-width="2.5" marker-end="url(#arrow-accent)"`));
-  const from = its.find((i) => i.id === 'step B@3').box, release = its.find((i) => i.id === 'step A@5').box;
+  // card 100 U2: the cause edge is drawn in the cause role (amber-red), no longer the navy accent
+  assert.ok(svg.includes(`stroke="${fig.ROLES.light.cause.stroke}" stroke-width="2.5" marker-end="url(#arrow-accent)"`));
+  const from = its.find((i) => i.id === 'step B@3').box, resumeBox = its.find((i) => i.id === 'step B@6').box;
   assert.ok(span.box.h > 40 && Math.abs(span.box.y - (from.y + from.h)) < 0.5, 'the span runs down from the waiting statement');
-  assert.ok(span.box.y + span.box.h > release.y - 20 && span.box.y + span.box.h < release.y + release.h + 20, 'the span ends at the release row');
+  assert.ok(Math.abs(span.box.y + span.box.h - resumeBox.y) < 0.5, 'the span ends at the resume step (this wait names a resume)');
   assert.ok(svg.includes('>UPDATE 재개 · 0행</text>'));
   const rs = its.find((i) => i.kind === 'text' && i.text === 'UPDATE 재개 · 0행'), next = its.find((i) => i.id === 'step B@6').box;
   assert.ok(rs.box.x >= next.x + next.w && rs.box.y < next.y + next.h && rs.box.y + rs.box.h > next.y, 'drawn beside the resume step');
@@ -778,7 +840,9 @@ test('timeline wait span ends at the top edge of the release step box, or the wa
   for (const ir of [GAPPED, FIG131, TWO_CAUSES]) {
     const its = itemsOf(ir);
     ir.waits.forEach((w, i) => {
-      const span = its.find((x) => x.id === `wait ${i}`), rel = its.find((x) => x.id === `step ${w.on}@${w.until}`).box;
+      // card 100: a wait that names a resume runs on to the resume step's top (the first step of the waiter after until)
+      const span = its.find((x) => x.id === `wait ${i}`), resume = w.resume ? ir.steps.filter((s) => s.lane === w.lane && s.t > w.until).sort((a, b) => a.t - b.t)[0] : null;
+      const rel = its.find((x) => x.id === (resume ? `step ${resume.lane}@${resume.t}` : `step ${w.on}@${w.until}`)).box;
       assert.ok(Math.abs(span.box.y + span.box.h - rel.y) < 0.01, `${ir.title}: wait ${i} ends at ${span.box.y + span.box.h}, release top is ${rel.y}`);
     });
   }
@@ -1133,4 +1197,295 @@ test('er refuses: an unknown end, an optional/many N:M at physical level, an fk 
   expectRefused(edit(ER_OPT, (ir) => { ir.rels[0].card = '1:2..*'; }), /rels\[0\]: set "card" to .*0\.\.1/);
   expectRefused(edit(ER_OPT, (ir) => { ir.level = 'physical'; ir.rels.push({ from: 'customer', to: 'book', card: '0..*:1..*' }); }), /rels\[4\]: a physical model has no N:M/);
   expectRefused(edit(ER_OPT, (ir) => { ir.rels[0] = { from: 'order', to: 'customer', card: '1:0..*' }; }), /the foreign key order\.고객번호 sits on the 1 side of order 1:0\.\.\* customer/);
+});
+
+// card 100 U2: the wait band reaches the resume step; a green release edge runs from the holder's release to it
+const RELEASED = edit(GAPPED, (ir) => { ir.waits[0].resume = 'UPDATE 재개'; });
+
+test('timeline: an amber wait band runs from the blocked step to the resume step; the cause edge is the cause red', () => {
+  assert.deepEqual(fig.checkFigure(RELEASED), []);
+  const L = fig.ROLES.light, { svg } = fig.renderFigure(RELEASED), its = itemsOf(RELEASED);
+  const band = its.find((i) => i.id === 'wait 0'), from = its.find((i) => i.id === 'step B@6').box, resume = its.find((i) => i.id === 'step B@9').box;
+  assert.ok(svg.includes(`fill="${L.wait.fill}" stroke="${L.wait.stroke}"`), 'the band is drawn in the wait role');
+  assert.ok(Math.abs(band.box.y - (from.y + from.h)) < 0.5, 'starts under the blocked step');
+  assert.ok(Math.abs(band.box.y + band.box.h - resume.y) < 0.5, `ends at the resume step's top (${band.box.y + band.box.h} vs ${resume.y})`);
+  assert.ok(svg.includes(`stroke="${L.cause.stroke}" stroke-width="2.5" marker-end="url(#arrow-accent)"`), 'the cause edge keeps the cause colour');
+});
+
+test('timeline: a green release edge runs from the holder\'s release step to the resume step, derived from waits.until; none without a resume', () => {
+  const L = fig.ROLES.light, its = itemsOf(RELEASED), rel = its.find((i) => i.id === 'release 0');
+  assert.ok(rel, 'a release edge exists');
+  assert.equal(rel.from, 'step A@8');
+  assert.equal(rel.to, 'step B@9');
+  const a = its.find((i) => i.id === 'step A@8').box, b = its.find((i) => i.id === 'step B@9').box, p = rel.points;
+  assert.ok(Math.abs(p[0][0] - (a.x + a.w)) < 4 && p[0][1] > a.y && p[0][1] < a.y + a.h, 'leaves the holder\'s release step by its side');
+  assert.ok(Math.abs(p[p.length - 1][0] - b.x) < 4 && p[p.length - 1][1] > b.y && p[p.length - 1][1] < b.y + b.h, 'enters the resume step by its side');
+  assert.ok(fig.renderFigure(RELEASED).svg.includes(`stroke="${L.release.stroke}"`), 'drawn in the release role');
+  assert.ok(!itemsOf(GAPPED).some((i) => i.id === 'release 0'), 'no resume, no release edge');
+  assert.deepEqual(fig.checkFigure(FIG131), []);
+});
+
+// card 100 U3: the record chain - the first strip is current and strongest, older strips lighten; a pointer takes its source field's hue
+const CHAIN = {
+  type: 'layout', title: 'A row points at its older versions', scale: 'schematic', claim: ['r_rp'],
+  strips: [
+    { id: 'row', label: 'Current row', cells: [{ id: 'r_pk', label: 'id 205' }, { id: 'r_rp', label: 'ROLL_PTR', kind: 'meta' }, { id: 'r_q', label: 'qty' }] },
+    { id: 'u1', label: 'Undo 1', cells: [{ id: 'u1_trx', label: 'prev TRX', kind: 'meta' }, { id: 'u1_rp', label: 'prev PTR', kind: 'meta' }] },
+    { id: 'u2', label: 'Undo 2', cells: [{ id: 'u2_trx', label: 'prev TRX', kind: 'meta' }, { id: 'u2_q', label: 'qty' }] },
+  ],
+  pointers: [{ from: 'r_rp', to: 'u1_trx', label: 'roll pointer' }, { from: 'u1_rp', to: 'u2_trx', label: 'older version' }],
+};
+const rectOf = (svg, box) => {
+  const m = svg.match(new RegExp(`<rect x="${+box.x.toFixed(1)}" y="${+box.y.toFixed(1)}"[^>]*?fill="([^"]+)" stroke="([^"]+)"`));
+  assert.ok(m, `no rect at ${box.x},${box.y}`);
+  return { fill: m[1], stroke: m[2] };
+};
+const pathStroke = (svg, p) => {
+  const m = svg.match(new RegExp(`<path d="M${+p[0][0].toFixed(1)} ${+p[0][1].toFixed(1)}[^"]*"[^>]*?stroke="([^"]+)"`));
+  assert.ok(m, 'no path at the pointer start');
+  return m[1];
+};
+
+test('layout record chain: the first strip has the strongest fill, later strips lighten along the ramp', () => {
+  assert.deepEqual(fig.checkFigure(CHAIN), []);
+  const { svg } = fig.renderFigure(CHAIN), its = itemsOf(CHAIN), steps = fig.rampSteps('light', 3);
+  const fillOf = (id) => rectOf(svg, its.find((i) => i.id === id).box).fill;
+  assert.equal(fillOf('r_pk'), steps[0].fill);
+  assert.equal(fillOf('u1_trx'), steps[1].fill);
+  assert.equal(fillOf('u2_trx'), steps[2].fill);
+  const dist = (h) => Math.abs(lstar(h) - lstar('#ffffff'));
+  assert.ok(dist(fillOf('r_pk')) > dist(fillOf('u1_trx')) && dist(fillOf('u1_trx')) > dist(fillOf('u2_trx')), 'strongest to lightest');
+  for (const [id, strip] of [['r_pk', 0], ['u1_trx', 1], ['u2_trx', 2]]) assert.ok(wcag(steps[strip].ink, fillOf(id)) >= 4.5, `${id} ink`);
+  assert.ok(svg.includes(`fill="${steps[0].ink}"`), 'the current strip draws its text in the ramp ink');
+});
+
+test('layout record chain: a pointer edge and its arrowhead take the hue of the field it leaves, not the neutral line', () => {
+  const { svg } = fig.renderFigure(CHAIN), its = itemsOf(CHAIN);
+  for (const e of its.filter((i) => i.kind === 'edge')) {
+    const src = rectOf(svg, its.find((i) => i.id === e.from).box), stroke = pathStroke(svg, e.points);
+    assert.notEqual(stroke, fig.PALETTE.line, `${e.id} is not the neutral line colour`);
+    assert.equal(stroke, src.stroke, `${e.id} stroke equals its source field's stroke`);
+    assert.ok(svg.includes(`fill="${stroke}"`), 'an arrowhead in the same hue');
+  }
+});
+
+test('layout record chain: a chain of four strips (the most a layout holds) interpolates the ramp, still strongest first', () => {
+  const ir = edit(CHAIN, (c) => { c.strips.push({ id: 'u3', label: 'Undo 3', cells: [{ id: 'u3_a', label: 'qty' }] }); });
+  const { svg } = fig.renderFigure(ir), its = itemsOf(ir), steps = fig.rampSteps('light', 4);
+  ['r_pk', 'u1_trx', 'u2_trx', 'u3_a'].forEach((id, i) => assert.equal(rectOf(svg, its.find((x) => x.id === id).box).fill, steps[i].fill, id));
+});
+
+// card 100 U4: check tests every line of a wrapped resume note, and refuses a backward cause edge whose gap is too narrow for the spread
+test('checkGeometry refuses a cause edge through the second line of a wrapped resume note, not only the first', () => {
+  const line = (id, y) => ({ id, kind: 'text', text: id, box: { x: 150, y, w: 100, h: 12 }, size: 11, owner: 'wait 0', what: 'the resume note', room: 120 });
+  const items = (x) => [line('first line', 40), line('second line', 56), { id: 'cause 0', kind: 'edge', points: [[x, 20], [x, 90]], exclusive: true }];
+  assert.deepEqual(geo(items(100)), [], 'an edge left of the note is clean');
+  const errs = geo(items(200));
+  assert.ok(errs.some((e) => /edge cause 0 runs over the text the resume note "first line"/.test(e)), 'first line refused');
+  assert.ok(errs.some((e) => /edge cause 0 runs over the text the resume note "second line"/.test(e)), 'second line refused');
+  const only2 = geo([line('first line', 40), line('second line', 56), { id: 'cause 0', kind: 'edge', points: [[200, 55], [200, 90]], exclusive: true }]);
+  assert.ok(only2.some((e) => /"second line"/.test(e)) && !only2.some((e) => /"first line"/.test(e)), 'an edge reaching only the second line is refused for it');
+});
+
+const BACK_LABEL = 'UPDATE stock SET qty = qty - 1 WHERE id = ';
+const backward = (label) => ({
+  type: 'timeline', title: 'backward cause edges', claim: ['H@t1', 'W@t3'], lanes: [{ id: 'W', label: 'Session W' }, { id: 'H', label: 'Session H' }],
+  steps: [
+    { t: 1, lane: 'H', label: `${label}1`, kind: 'stmt' },
+    { t: 2, lane: 'H', label: `${label}2`, kind: 'stmt' },
+    { t: 3, lane: 'W', label: `${label}3`, kind: 'stmt' },
+    { t: 5, lane: 'H', label: 'ROLLBACK', kind: 'rollback' },
+    { t: 7, lane: 'W', label: `${label}4`, kind: 'stmt' },
+    { t: 9, lane: 'H', label: 'COMMIT', kind: 'commit' },
+  ],
+  waits: [
+    { lane: 'W', from: 3, until: 5, on: 'H', holder: 1, label: 'row 1 lock wait' },
+    { lane: 'W', from: 7, until: 9, on: 'H', holder: 2, label: 'row 2 lock wait' },
+  ],
+});
+test('timeline: two backward cause edges (waiter left of holder) in a gap too narrow for the spread are refused with a repair line', () => {
+  assert.deepEqual(fig.checkFigure(backward('UPDATE stock SET qty = ')), [], 'a wide gap stays clean');
+  const errs = fig.checkFigure(backward(BACK_LABEL));
+  assert.ok(errs.some((e) => /cause edges/.test(e) && /narrow/.test(e) && /shorten|reorder/.test(e)), `refused with a repair line, got ${JSON.stringify(errs)}`);
+  const fwd = backward(BACK_LABEL); fwd.lanes.reverse();
+  assert.deepEqual(fig.checkFigure(fwd), [], 'the forward case is unchanged (NARROW at :763 keeps its fan-out)');
+});
+
+// card 100 U1 rework: lane hues are drawn (by lane order), and the release edge exists for every lane arrangement
+test('timeline: lane A is drawn in the blue lane role and lane B in the teal one - header and steps, read from the svg', () => {
+  for (const ir of [GAPPED, RELEASED, FIG131]) {
+    assert.deepEqual(fig.checkFigure(ir), []);
+    const { svg } = fig.renderFigure(ir), its = itemsOf(ir), L = [fig.laneRole('light', 0), fig.laneRole('light', 1)];
+    assert.notEqual(L[0].fill, L[1].fill);
+    ir.lanes.forEach((lane, k) => {
+      const head = rectOf(svg, its.find((i) => i.id === `lane ${lane.id}`).box);
+      assert.deepEqual(head, { fill: L[k].fill, stroke: L[k].stroke }, `${ir.title}: lane ${lane.id} header`);
+      const plain = ir.steps.filter((s) => s.lane === lane.id && s.kind === 'stmt' && !ir.claim.includes(`${s.lane}@t${s.t}`));
+      assert.ok(plain.length >= 1, 'there is a plain statement step to read');
+      for (const s of plain) assert.deepEqual(rectOf(svg, its.find((i) => i.id === `step ${s.lane}@${s.t}`).box), { fill: L[k].fill, stroke: L[k].stroke }, `${ir.title}: step ${s.lane}@${s.t}`);
+    });
+  }
+});
+
+test('timeline: lane hues follow lane order, not the lane id (lanes listed B then A put B in blue)', () => {
+  const ir = edit(RELEASED, (c) => { c.lanes.reverse(); });
+  const { svg } = fig.renderFigure(ir), its = itemsOf(ir);
+  assert.equal(rectOf(svg, its.find((i) => i.id === 'lane B').box).fill, fig.laneRole('light', 0).fill);
+  assert.equal(rectOf(svg, its.find((i) => i.id === 'lane A').box).fill, fig.laneRole('light', 1).fill);
+});
+
+// one release edge, green, from the on lane's step at "until" to the step the waiter resumes at
+const lane3 = (order) => order.map((id) => ({ id, label: id === 'M' ? '세션 M' : `세션 ${id}` }));
+const RIGHT_FAR = {
+  type: 'timeline', title: '떨어진 두 세션', claim: ['A@t2', 'B@t6'], lanes: lane3(['A', 'M', 'B']),
+  steps: [
+    { t: 1, lane: 'A', label: 'BEGIN', kind: 'stmt' }, { t: 1, lane: 'B', label: 'BEGIN', kind: 'stmt' },
+    { t: 2, lane: 'A', label: 'UPDATE stock', kind: 'stmt' }, { t: 3, lane: 'M', label: 'SELECT 1', kind: 'stmt' },
+    { t: 6, lane: 'B', label: 'UPDATE stock', kind: 'stmt' },
+    { t: 8, lane: 'A', label: 'COMMIT', kind: 'commit' }, { t: 9, lane: 'B', label: 'COMMIT', kind: 'commit' },
+  ],
+  waits: [{ lane: 'B', from: 6, until: 8, on: 'A', label: '행 잠금 대기', resume: 'UPDATE 재개' }],
+};
+const reversed = (ir) => edit(ir, (c) => { c.lanes.reverse(); });
+const LEFT_ADJ = reversed(RELEASED);
+const LEFT_FAR = reversed(RIGHT_FAR);
+const MIDDLE_BUSY = edit(RIGHT_FAR, (c) => { c.steps.push({ t: 8, lane: 'M', label: 'SELECT 2', kind: 'stmt' }); });
+
+const releaseOf = (ir) => {
+  const its = itemsOf(ir), w = ir.waits[0], rs = ir.steps.filter((s) => s.lane === w.lane && s.t > w.until).sort((a, b) => a.t - b.t)[0];
+  const edges = its.filter((i) => i.kind === 'edge' && /^release /.test(i.id));
+  assert.equal(edges.length, 1, 'exactly one release edge');
+  assert.equal(edges[0].from, `step ${w.on}@${w.until}`);
+  assert.equal(edges[0].to, `step ${rs.lane}@${rs.t}`);
+  return { e: edges[0], a: its.find((i) => i.id === edges[0].from).box, b: its.find((i) => i.id === edges[0].to).box, its };
+};
+const onSide = (p, box, side) => (side === 'right' ? Math.abs(p[0] - (box.x + box.w)) < 4 : side === 'left' ? Math.abs(p[0] - box.x) < 4 : false) && p[1] > box.y && p[1] < box.y + box.h;
+
+test('timeline release edge: waiter right of the holder, adjacent and not adjacent - leaves the holder\'s right side, enters the resume step\'s left side, green', () => {
+  for (const ir of [RELEASED, RIGHT_FAR]) {
+    assert.deepEqual(fig.checkFigure(ir), [], ir.title);
+    const { e, a, b } = releaseOf(ir), p = e.points;
+    assert.ok(onSide(p[0], a, 'right'), `${ir.title}: leaves the holder's release step by its right side`);
+    assert.ok(onSide(p[p.length - 1], b, 'left'), `${ir.title}: enters the resume step by its left side`);
+    assert.ok(fig.renderFigure(ir).svg.includes(`stroke="${fig.ROLES.light.release.stroke}"`), 'green');
+  }
+});
+
+test('timeline release edge: waiter left of the holder, adjacent and not adjacent - leaves the holder\'s left side, lands on the resume step\'s top clear of its note', () => {
+  for (const ir of [LEFT_ADJ, LEFT_FAR]) {
+    assert.deepEqual(fig.checkFigure(ir), [], ir.title);
+    const { e, a, b, its } = releaseOf(ir), p = e.points, last = p[p.length - 1];
+    assert.ok(onSide(p[0], a, 'left'), `${ir.title}: leaves the holder's release step by its left side`);
+    assert.ok(Math.abs(last[1] - b.y) < 4 && last[0] > b.x && last[0] < b.x + b.w, `${ir.title}: lands on the top edge of the resume step (${last} vs ${JSON.stringify(b)})`);
+    assert.ok(last[0] === p[p.length - 2][0] && last[1] > p[p.length - 2][1] + 8, 'the last leg is vertical and runs down into the box');
+    const note = its.filter((i) => i.kind === 'text' && i.what === 'the resume note');
+    assert.ok(note.length >= 1, 'the note is drawn');
+    assert.ok(fig.renderFigure(ir).svg.includes(`stroke="${fig.ROLES.light.release.stroke}"`), 'green');
+  }
+});
+
+test('timeline release edge: a release edge with no clear route is refused by check, naming the step in the way and a repair', () => {
+  const errs = fig.checkFigure(MIDDLE_BUSY);
+  assert.ok(errs.some((e) => /release 0 passes through step M@8/.test(e) && /move/.test(e)), `refused, got ${JSON.stringify(errs)}`);
+  assert.deepEqual(fig.checkFigure(RIGHT_FAR), [], 'the same figure with a free middle lane is clean');
+});
+
+// ---- card 100 U2: the dark SVG variant - the light SVG with every colour swapped for its dark-set counterpart ----
+const hexesOf = (svg) => [...svg.matchAll(/#[0-9a-fA-F]{6}\b/g)].map((m) => m[0].toLowerCase());
+const attrsOf = (tag) => Object.fromEntries([...tag.matchAll(/([\w-]+)="([^"]*)"/g)].map((m) => [m[1], m[2]]));
+// every text with the fill of the last rect drawn under its anchor (null when none: the page), as the SVG paints it
+function textOnFills(svg) {
+  const rects = [], out = [];
+  for (const m of svg.matchAll(/<(rect|text)\b([^>]*)>/g)) {
+    const a = attrsOf(m[2]);
+    if (m[1] === 'rect') { if (a.x != null && a.y != null && /^#/.test(a.fill || '')) rects.push({ x: +a.x, y: +a.y, w: +a.width, h: +a.height, fill: a.fill }); continue; }
+    const px = +a.x + (a['text-anchor'] === 'end' ? -2 : a['text-anchor'] === 'middle' ? 0 : 2), py = +a.y - 4;
+    const under = [...rects].reverse().find((r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h);
+    out.push({ ink: a.fill, fill: under ? under.fill : null, x: +a.x, y: +a.y });
+  }
+  return out;
+}
+const CHAIN4 = edit(CHAIN, (c) => { c.strips.push({ id: 'u3', label: 'Undo 3', cells: [{ id: 'u3_a', label: 'qty' }] }); });
+const DARK_PLAN = [['timeline', FIG131], ['timeline released', RELEASED], ['timeline left', LEFT_FAR], ['record chain', CHAIN], ['record four', CHAIN4], ['layout', LAYOUT], ['btree', BTREE], ['architecture', ARCH3], ['sequence', SEQ4], ['er', ER], ['chart', CHART], ['bars', BARS], ['store', STORE]];
+const LIGHT_SHA = ['4e8c7a38200cf11bd1d02bcbcfbaedf6e30952f6db305ea55f92852c8874a5f9', '701144cd4c5cb9904d6e635b34e8654522acf4a3d2189abfdfdb7858301937f7', '9129400a099be1b721ef13650f59f3c4923430081c27fe5769206c6cebb3a6d5']; // taken at b725ac1b, before the dark variant
+
+test('dark map: every light hex the renderers draw maps to one dark-set hex, no two light hexes share one, and no light hex is a dark value', () => {
+  const m = fig.DARK_HEX, keys = Object.keys(m), vals = Object.values(m);
+  assert.ok(keys.length >= 28, `${keys.length} hexes mapped`);
+  assert.equal(new Set(vals).size, vals.length, 'one-to-one');
+  assert.ok(keys.every((k) => /^#[0-9a-f]{6}$/.test(k)) && vals.every((v) => /^#[0-9a-f]{6}$/.test(v)));
+  assert.ok(vals.every((v) => !(v in m)), 'no dark value is itself a light hex');
+  const L = fig.ROLES.light, D = fig.ROLES.dark;
+  const pair = (l, d, what) => assert.equal(m[l], d, `${what}: ${l} -> ${d}`);
+  pair(L.surface, D.surface, 'surface'); pair(L.ink, D.ink, 'ink'); pair(L.muted, D.muted, 'muted');
+  L.lanes.forEach((r, i) => { for (const k of ['stroke', 'fill']) pair(r[k], D.lanes[i][k], `lane ${i} ${k}`); });
+  for (const n of ['cause', 'wait', 'release', 'context']) for (const k of ['stroke', 'fill']) pair(L[n][k], D[n][k], `${n} ${k}`);
+  L.ramp.forEach((r, i) => pair(r.fill, D.ramp[i].fill, `ramp ${i}`));
+  fig.rampSteps('light', 4).forEach((s, i) => pair(s.fill, fig.rampSteps('dark', 4)[i].fill, `ramp of 4, step ${i}`)); // a layout holds at most 4 strips
+  for (const k of Object.keys(fig.PALETTE.fills)) assert.ok(fig.PALETTE.fills[k] in m, `PALETTE.fills.${k}`);
+  for (const k of Object.keys(fig.PALETTE.edges)) assert.ok(fig.PALETTE.edges[k].color in m, `PALETTE.edges.${k}`);
+});
+
+test('dark svg: for every figure type the dark variant draws only dark-set hexes, none of the light set, and keeps the light structure', () => {
+  const dv = new Set([...Object.values(fig.DARK_HEX), ...fig.DARK_INKS]);
+  for (const [name, ir] of DARK_PLAN) {
+    assert.deepEqual(fig.checkFigure(ir), [], name);
+    const { svg } = fig.renderFigure(ir), dark = fig.darkSvg(svg);
+    assert.notEqual(dark, svg, `${name}: the dark variant differs`);
+    assert.deepEqual([...new Set(hexesOf(dark).filter((h) => !dv.has(h)))], [], `${name}: hexes that are not in the dark set`);
+    assert.deepEqual([...new Set(hexesOf(dark).filter((h) => h in fig.DARK_HEX))], [], `${name}: a light-set hex is left`);
+    assert.equal(dark.replace(/#[0-9a-f]{6}/gi, '#'), svg.replace(/#[0-9a-f]{6}/gi, '#'), `${name}: same shapes, same text, only the colours changed`);
+  }
+});
+
+test('dark svg: text on every fill it sits on is >= 4.5:1, including the record strips and the dark ramp', () => {
+  for (const [name, ir] of DARK_PLAN) {
+    const pairs = textOnFills(fig.darkSvg(fig.renderFigure(ir).svg));
+    assert.ok(pairs.length > 0, name);
+    for (const p of pairs) {
+      const back = p.fill || fig.ROLES.dark.surface;
+      assert.ok(wcag(p.ink, back) >= 4.5, `${name}: text at ${p.x},${p.y} ${p.ink} on ${back} is ${wcag(p.ink, back).toFixed(2)}`);
+    }
+  }
+});
+
+test('dark svg: the timeline draws lane A in the dark blue lane role and lane B in the dark teal one, and the other roles in their dark values', () => {
+  const D = fig.ROLES.dark, { svg } = fig.renderFigure(RELEASED), dark = fig.darkSvg(svg), its = itemsOf(RELEASED);
+  const a = rectOf(dark, its.find((i) => i.id === 'lane A').box), b = rectOf(dark, its.find((i) => i.id === 'lane B').box);
+  assert.deepEqual(a, { fill: D.lanes[0].fill, stroke: D.lanes[0].stroke });
+  assert.deepEqual(b, { fill: D.lanes[1].fill, stroke: D.lanes[1].stroke });
+  assert.notEqual(a.fill, b.fill);
+  assert.ok(dark.includes(`fill="${D.wait.fill}" stroke="${D.wait.stroke}"`), 'the wait band in the dark wait role');
+  assert.ok(dark.includes(`stroke="${D.cause.stroke}" stroke-width="2.5"`), 'the cause edge in the dark cause role');
+  assert.ok(dark.includes(`stroke="${D.release.stroke}"`), 'the release edge in the dark release role');
+  assert.ok(dark.includes(`<rect width="${svg.match(/ width="(\d+)"/)[1]}" height="${svg.match(/ height="(\d+)"/)[1]}" fill="${D.surface}"/>`), 'the page is the dark surface');
+});
+
+test('dark svg: the record chain runs strongest to lightest on the dark side too, and a pointer takes its source field\'s dark hue', () => {
+  const D = fig.ROLES.dark, dark = fig.darkSvg(fig.renderFigure(CHAIN).svg), its = itemsOf(CHAIN), steps = fig.rampSteps('dark', 3);
+  const fillOf = (id) => rectOf(dark, its.find((i) => i.id === id).box);
+  assert.equal(fillOf('r_pk').fill, steps[0].fill); assert.equal(fillOf('u1_trx').fill, steps[1].fill); assert.equal(fillOf('u2_trx').fill, steps[2].fill);
+  const dist = (h) => Math.abs(lstar(h) - lstar(D.surface));
+  assert.ok(dist(steps[0].fill) > dist(steps[1].fill) && dist(steps[1].fill) > dist(steps[2].fill), 'strongest to lightest against the dark surface');
+  for (const e of its.filter((i) => i.kind === 'edge')) assert.equal(pathStroke(dark, e.points), fillOf(e.from).stroke, `${e.id} in its source field's dark hue`);
+});
+
+test('dark svg: the light output is byte-identical to before (sha256 of the light SVG of three figures)', () => {
+  assert.deepEqual([FIG131, CHAIN, ARCH3].map((ir) => sha256(fig.renderFigure(ir).svg)), LIGHT_SHA);
+});
+
+test('writeFigure writes <base>.dark.svg beside the light pair; it is the dark substitution of the light file; a refused figure writes none', needsBrowser, () => {
+  const dir = scratch();
+  try {
+    const r = fig.writeFigure(RELEASED, join(dir, 'f'));
+    assert.equal(r.code, 0, r.msg);
+    assert.ok(existsSync(join(dir, 'f.dark.svg')), 'f.dark.svg exists');
+    const light = readFileSync(join(dir, 'f.svg'), 'utf8');
+    assert.equal(light, fig.renderFigure(RELEASED).svg, 'the light file is the light render, unchanged');
+    assert.equal(readFileSync(join(dir, 'f.dark.svg'), 'utf8'), fig.darkSvg(light));
+    assert.ok(/f\.dark\.svg/.test(r.msg), 'the message names it');
+    const bad = fig.writeFigure({ ...ARCH3, nodes: ARCH3.nodes.map((n) => (n.id === 'a' ? { ...n, label: '클라이언트 🙂' } : n)) }, join(dir, 'g'));
+    assert.equal(bad.code, 1);
+    assert.ok(!existsSync(join(dir, 'g.dark.svg')));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
