@@ -30,6 +30,124 @@ export const PALETTE = {
     fail: { dash: '2 3', color: '#b03d0a' },
   },
 };
+
+// Colour carries meaning (card 100): each role has a fill, a stroke and the ink that sits on its fill.
+// lanes: actor hues by lane order (A blue, B teal); cause: the lock or the hold that blocks (amber-red);
+// wait: the span a lane is blocked (amber); release: the holder lets go / the commit (green);
+// context: what is only there for reading (muted grey); ramp: the record chain, current step strongest,
+// older ones lighter. Light and dark are two selected sets, not one set stretched: every ink on its
+// fill is >= 4.5:1 and every stroke >= 3:1 on the surface (test-diagram.mjs), and the lane pair and the
+// cause/wait/release trio each pass dataviz validate_palette.js --mode light / --mode dark. All five
+// hues cannot be told apart by hue alone for every reader (red/green under protan, teal/green), so a
+// role is never colour only: cause is a solid heavy edge, the wait a filled band, the release a dashed
+// edge, and each carries its words.
+export const ROLES = {
+  light: {
+    surface: '#ffffff', ink: '#1f1f1c', muted: '#55544e', inkInverse: '#ffffff',
+    lanes: [
+      { stroke: '#2f6fd0', fill: '#d5e3f8', ink: '#1f1f1c' },
+      { stroke: '#0f9d8a', fill: '#cdeee8', ink: '#1f1f1c' },
+    ],
+    cause: { stroke: '#b3261e', fill: '#f6d5d1', ink: '#1f1f1c' },
+    wait: { stroke: '#b87d00', fill: '#f8e4b0', ink: '#1f1f1c' },
+    release: { stroke: '#1e7a45', fill: '#cfeadb', ink: '#1f1f1c' },
+    context: { stroke: '#8a8983', fill: '#ececea', ink: '#55544e' },
+    ramp: [{ fill: '#1f4e8c' }, { fill: '#8fb0dc' }, { fill: '#d6e3f4' }],
+  },
+  dark: {
+    surface: '#1a1a19', ink: '#ecebe6', muted: '#b8b7b0', inkInverse: '#101418',
+    lanes: [
+      { stroke: '#4a82e8', fill: '#1f3354', ink: '#ecebe6' },
+      { stroke: '#12a58f', fill: '#15403a', ink: '#ecebe6' },
+    ],
+    cause: { stroke: '#e4476a', fill: '#4a2028', ink: '#ecebe6' },
+    wait: { stroke: '#b38c00', fill: '#4a3a0a', ink: '#ecebe6' },
+    release: { stroke: '#2c9f78', fill: '#173d2a', ink: '#ecebe6' },
+    context: { stroke: '#7c7b75', fill: '#2b2b29', ink: '#b8b7b0' },
+    ramp: [{ fill: '#9db9f0' }, { fill: '#43619a' }, { fill: '#2a3e63' }],
+  },
+};
+export const laneRole = (mode, i) => ROLES[mode].lanes[i % ROLES[mode].lanes.length];
+export function contrastRatio(a, b) {
+  const y = (hex) => {
+    const [r, g, bl] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [hi, lo] = [y(a), y(b)].sort((p, q) => q - p);
+  return (hi + 0.05) / (lo + 0.05);
+}
+// n record strips, strongest first: up to three take the ramp steps as they are; a longer chain is
+// interpolated between the same ends, so the first is still the strongest and the last the lightest.
+export function rampSteps(mode, n) {
+  const set = ROLES[mode], stops = set.ramp.map((s) => s.fill);
+  const mix = (a, b, f) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) + (parseInt(b.slice(i, i + 2), 16) - parseInt(a.slice(i, i + 2), 16)) * f).toString(16).padStart(2, '0')).join('');
+  const fills = n <= 3 ? stops.slice(0, n) : Array.from({ length: n }, (_, i) => {
+    const p = (i / (n - 1)) * 2, k = Math.min(1, Math.floor(p));
+    return mix(stops[k], stops[k + 1], p - k);
+  });
+  // the set's own ink if one reads on the fill; in the mid tones where neither does, pure black or white
+  const inkOn = (fill) => [set.ink, set.inkInverse, '#000000', '#ffffff'].find((c) => contrastRatio(c, fill) >= 4.5) || ['#000000', '#ffffff'].sort((p, q) => contrastRatio(q, fill) - contrastRatio(p, fill))[0];
+  return fills.map((fill) => ({ fill, ink: inkOn(fill) }));
+}
+// The dark variant (<base>.dark.svg): the light SVG with each colour swapped for its counterpart in the
+// dark set. The roles pair with ROLES.dark; the neutral PALETTE (node fills, edge colours, chart guide)
+// pairs with DARK_PALETTE. A strong fill is dark in the light set and light in the dark one, so the
+// accent keeps the "darkest against the page" meaning: light fill, dark ink. hi and lo are the two
+// inks left for a mid-tone fill (a chain longer than three) where neither ink of the set reads.
+export const DARK_PALETTE = {
+  ink: ROLES.dark.ink, muted: ROLES.dark.muted, line: '#c9c8c1', paper: ROLES.dark.surface,
+  fills: { paper: ROLES.dark.surface, soft: '#2a303b', mid: '#3b475e', strong: '#546483', accent: '#dbe5f5' },
+  edges: { sync: '#c9c8c1', async: '#c9c8c1', data: '#5fd08f', fail: '#ff8f66' },
+  guide: '#33383f', hi: '#fdfdfb', lo: '#010101',
+};
+export const DARK_INKS = [ROLES.dark.ink, ROLES.dark.inkInverse, DARK_PALETTE.hi, DARK_PALETTE.lo];
+function darkMaps() {
+  const L = ROLES.light, D = ROLES.dark, shape = {}, text = {};
+  const put = (m, l, d) => { if (m[l] && m[l] !== d) throw new Error(`dark set: ${l} maps to both ${m[l]} and ${d}`); m[l] = d; };
+  for (const [l, d] of [
+    [PALETTE.paper, DARK_PALETTE.paper], [PALETTE.ink, DARK_PALETTE.ink], [PALETTE.muted, DARK_PALETTE.muted], [PALETTE.line, DARK_PALETTE.line],
+    ['#e3e6ea', DARK_PALETTE.guide], [L.surface, D.surface], [L.ink, D.ink], [L.muted, D.muted],
+    ...Object.keys(PALETTE.fills).map((k) => [PALETTE.fills[k], DARK_PALETTE.fills[k]]),
+    ...Object.keys(PALETTE.edges).map((k) => [PALETTE.edges[k].color, DARK_PALETTE.edges[k]]),
+    ...L.lanes.flatMap((r, i) => [[r.stroke, D.lanes[i].stroke], [r.fill, D.lanes[i].fill]]),
+    ...['cause', 'wait', 'release', 'context'].flatMap((n) => [[L[n].stroke, D[n].stroke], [L[n].fill, D[n].fill]]),
+    ...L.ramp.map((r, i) => [r.fill, D.ramp[i].fill]),
+    // a layout holds at most 4 strips (checked), so the chain is the ramp or its 4-step interpolation
+    ...rampSteps('light', 4).map((s, i) => [s.fill, rampSteps('dark', 4)[i].fill]),
+  ]) put(shape, l, d);
+  // text colours: white ink sits on a strong light-set fill, which is a light fill in the dark set
+  for (const [l, d] of [[PALETTE.ink, D.ink], [PALETTE.muted, D.muted], [PALETTE.edges.fail.color, DARK_PALETTE.edges.fail], [L.inkInverse, D.inkInverse], ['#000000', D.inkInverse]]) put(text, l, d);
+  return { shape, text };
+}
+const DARK = darkMaps();
+export const DARK_HEX = DARK.shape;
+export function darkSvg(svg) {
+  const D = ROLES.dark, rects = [];
+  return svg.replace(/<(\w+)([^>]*)>/g, (tag, name, attrs) => {
+    const num = (k) => { const m = attrs.match(new RegExp(`\\s${k}="(-?[\\d.]+)"`)); return m ? +m[1] : null; };
+    const colour = (k) => { const m = attrs.match(new RegExp(`\\s${k}="(#[0-9a-fA-F]{6})"`)); return m ? m[1].toLowerCase() : null; };
+    let out = tag;
+    if (name === 'text') {
+      // the fill of the last rect drawn under the text's anchor (the page when none) decides which ink reads
+      const x = num('x'), y = num('y'), anchor = (attrs.match(/text-anchor="(\w+)"/) || [])[1];
+      const px = x + (anchor === 'end' ? -2 : anchor === 'middle' ? 0 : 2), py = y - 4;
+      const under = [...rects].reverse().find((r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h);
+      const back = under ? under.fill : D.surface, want = colour('fill');
+      if (want) {
+        const cand = DARK.text[want] || DARK.shape[want] || want;
+        const pick = [cand, ...DARK_INKS].find((c) => contrastRatio(c, back) >= 4.5) || [cand, ...DARK_INKS].sort((p, q) => contrastRatio(q, back) - contrastRatio(p, back))[0];
+        out = out.replace(`fill="${want}"`, `fill="${pick}"`);
+      }
+      const halo = colour('stroke');
+      if (halo) out = out.replace(`stroke="${halo}"`, `stroke="${DARK.shape[halo] || halo}"`);
+      return out;
+    }
+    out = out.replace(/(fill|stroke)="(#[0-9a-fA-F]{6})"/g, (m, k, h) => `${k}="${DARK.shape[h.toLowerCase()] || h}"`);
+    const fill = colour('fill'), x = num('x'), y = num('y'), w = num('width'), h = num('height');
+    if (name === 'rect' && fill && x != null && y != null && w != null && h != null) rects.push({ x, y, w, h, fill: DARK.shape[fill] || fill });
+    return out;
+  });
+}
 // The style layer: one corner radius, two stroke weights, a three-size type scale. The claim's
 // elements take the accent role (darkest fill, heavy stroke, light text); the rest stays muted.
 const RX = 6;
@@ -73,16 +191,17 @@ class Canvas {
     const lines = raw.length > max ? [...raw.slice(0, max - 1), raw.slice(max - 1).join('')] : raw;
     return lines.map((l) => l.trim()).filter(Boolean);
   }
-  marker(style) {
-    const e = PALETTE.edges[style] || PALETTE.edges.sync;
-    this.defs.add(`<marker id="arrow-${style}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="${e.color}"/></marker>`);
-    return `url(#arrow-${style})`;
+  marker(style, color) {
+    const e = PALETTE.edges[style] || PALETTE.edges.sync, col = color || e.color, id = color ? `arrow-${style}-${color.slice(1)}` : `arrow-${style}`;
+    this.defs.add(`<marker id="${id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="${col}"/></marker>`);
+    return `url(#${id})`;
   }
   // A line (or polyline) in an edge style, with an arrowhead at its end (and start when both).
+  // o.color replaces the style's colour (a pointer takes its source field's hue); the dash stays the style's.
   path(points, style = 'sync', o = {}) {
-    const e = PALETTE.edges[style] || PALETTE.edges.sync, m = this.marker(style);
+    const e = PALETTE.edges[style] || PALETTE.edges.sync, m = this.marker(style, o.color);
     const d = points.map((p, i) => `${i ? 'L' : 'M'}${f1(p[0])} ${f1(p[1])}`).join(' ');
-    return `<path d="${d}" fill="none" stroke="${e.color}" stroke-width="${o.width || SW_LIGHT}"${e.dash !== 'none' ? ` stroke-dasharray="${e.dash}"` : ''}${o.head === false ? '' : ` marker-end="${m}"`}${o.both ? ` marker-start="${m}"` : ''}/>`;
+    return `<path d="${d}" fill="none" stroke="${o.color || e.color}" stroke-width="${o.width || SW_LIGHT}"${e.dash !== 'none' ? ` stroke-dasharray="${e.dash}"` : ''}${o.head === false ? '' : ` marker-end="${m}"`}${o.both ? ` marker-start="${m}"` : ''}/>`;
   }
 }
 
@@ -388,6 +507,8 @@ BOOK_TYPES.layout = {
     const strips = ir.strips, idx = new Map(), box = new Map(), errs = [];
     strips.forEach((s, i) => s.cells.forEach((cell) => idx.set(cell.id, i)));
     const ptrs = (ir.pointers || []).map((p, i) => ({ ...p, i, a: idx.get(p.from), b: idx.get(p.to) }));
+    const chain = strips.length > 1 ? rampSteps('light', strips.length) : null, ptrFrom = new Set(ptrs.map((p) => p.from));
+    const PTR_HUE = ROLES.light.ramp[0].fill;
     const lanes = strips.map(() => 0);
     for (const p of ptrs) { p.gap = Math.min(p.a, p.b); p.lane = lanes[p.gap]++; }
     const bottoms = [];
@@ -417,10 +538,14 @@ BOOK_TYPES.layout = {
       s.cells.forEach((cell, k) => {
         const w = widths[k], b = { x, y, w, h }, hot = c.accent.has(cell.id) || c.accent.has(s.id);
         box.set(cell.id, b);
-        c.shape(`<rect x="${f1(x)}" y="${f1(y)}" width="${f1(w)}" height="${h}" rx="${RX}" fill="${hot ? PALETTE.fills.accent : cellFill(cell.kind)}" stroke="${PALETTE.line}" stroke-width="${hot ? SW_HEAVY : SW_LIGHT}"${cell.kind === 'free' ? ' stroke-dasharray="4 3"' : ''}/>`, b, { id: cell.id });
+        // A record chain (more than one strip): the strip's ramp step fills its cells, the first strip strongest.
+        // A field a pointer leaves is outlined in the pointer hue; a free cell stays paper and dashed.
+        const step = chain && cell.kind !== 'free' ? chain[i] : null, fromPtr = ptrFrom.has(cell.id);
+        const fill = hot ? PALETTE.fills.accent : step ? step.fill : cellFill(cell.kind), ink = hot ? ON_ACCENT : step ? step.ink : PALETTE.ink;
+        c.shape(`<rect x="${f1(x)}" y="${f1(y)}" width="${f1(w)}" height="${h}" rx="${RX}" fill="${fill}" stroke="${fromPtr ? PTR_HUE : PALETTE.line}" stroke-width="${hot || fromPtr ? SW_HEAVY : SW_LIGHT}"${cell.kind === 'free' ? ' stroke-dasharray="4 3"' : ''}/>`, b, { id: cell.id });
         const all = [...lines[k].map((t) => ({ t, sub: false })), ...(subOf(cell) ? [{ t: subOf(cell), sub: true }] : [])];
         const top = y + h / 2 - ((all.length - 1) * 15) / 2 + 5;
-        all.forEach((l, j) => c.text(l.t, x + w / 2, top + j * 15, { anchor: 'middle', size: l.sub ? SUB : SIZE, fill: hot ? ON_ACCENT : l.sub ? PALETTE.muted : PALETTE.ink, owner: cell.id, within: cell.id, room: w - 4 }));
+        all.forEach((l, j) => c.text(l.t, x + w / 2, top + j * 15, { anchor: 'middle', size: l.sub ? SUB : SIZE, fill: step || hot ? ink : l.sub ? PALETTE.muted : PALETTE.ink, owner: cell.id, within: cell.id, room: w - 4 }));
         x += w;
       });
       for (const m of marks) {
@@ -438,7 +563,7 @@ BOOK_TYPES.layout = {
       const ax = A.x + A.w / 2, bx = B.x + B.w / 2, ly = bottoms[p.gap] + 14 + p.lane * 32;
       const aEdge = p.a > p.b ? A.y : A.y + A.h, bEdge = p.b > p.a ? B.y - 2 : B.y + B.h + 2;
       const pts = Math.abs(ax - bx) < 2 && p.a !== p.b ? [[ax, aEdge], [bx, bEdge]] : [[ax, aEdge], [ax, ly], [bx, ly], [bx, bEdge]];
-      c.edge(c.path(pts, 'sync'), pts, { id, from: p.from, to: p.to });
+      c.edge(c.path(pts, 'sync', { color: PTR_HUE }), pts, { id, from: p.from, to: p.to });
       if (pts.length === 2) c.text(p.label, ax + 6, (aEdge + bEdge) / 2 + 4, { size: SUB, owner: id, halo: true });
       else c.text(p.label, (ax + bx) / 2, ly + 15, { anchor: 'middle', size: SUB, owner: id, halo: true });
     }
@@ -780,9 +905,11 @@ BOOK_TYPES.timeline = {
     const hy = TOP + 4, rowY = new Map();
     let y = hy + 30 + 12;
     for (let t = t0; t <= t1; t++) { rowY.set(t, y); y += rowH.get(t); }
+    // Lane hue by lane order (A blue, B teal): the header and the lane's steps carry it.
+    const hueOf = (id) => laneRole('light', ir.lanes.findIndex((l) => l.id === id));
     for (const l of ir.lanes) {
-      const x = cxOf.get(l.id), hw = Math.min(LW - 12, c.width(l.label, { bold: true }) + 24), b = { x: x - hw / 2, y: hy, w: hw, h: 30 };
-      c.shape(`<rect x="${f1(b.x)}" y="${b.y}" width="${f1(b.w)}" height="30" rx="${RX}" fill="${PALETTE.fills.soft}" stroke="${PALETTE.line}" stroke-width="${SW_LIGHT}"/>`, b, { id: `lane ${l.id}` });
+      const x = cxOf.get(l.id), hw = Math.min(LW - 12, c.width(l.label, { bold: true }) + 24), b = { x: x - hw / 2, y: hy, w: hw, h: 30 }, hue = hueOf(l.id);
+      c.shape(`<rect x="${f1(b.x)}" y="${b.y}" width="${f1(b.w)}" height="30" rx="${RX}" fill="${hue.fill}" stroke="${hue.stroke}" stroke-width="${SW_LIGHT}"/>`, b, { id: `lane ${l.id}` });
       c.text(l.label, x, hy + 20, { anchor: 'middle', bold: true, owner: `lane ${l.id}`, within: `lane ${l.id}`, room: LW - 20 });
     }
     const lifeAt = c.parts.length;
@@ -795,18 +922,22 @@ BOOK_TYPES.timeline = {
       const b = { x: cx - w / 2, y: rowY.get(s.t) + (rowH.get(s.t) - h) / 2, w, h };
       boxOf.set(k, b);
       if (s.kind !== 'note') {
-        const fill = hot ? PALETTE.fills.accent : { commit: PALETTE.fills.soft, rollback: PALETTE.fills.soft, error: PALETTE.fills.mid }[s.kind] || PALETTE.fills.paper;
+        // a plain statement takes its lane's fill and stroke; a claim step keeps the darkest accent fill, a
+        // commit, rollback or error its grey (the end of the transaction), all with the lane's stroke
+        const hue = hueOf(s.lane), fill = hot ? PALETTE.fills.accent : { commit: PALETTE.fills.soft, rollback: PALETTE.fills.soft, error: PALETTE.fills.mid }[s.kind] || hue.fill;
         const dash = s.kind === 'rollback' || s.kind === 'wait' ? ' stroke-dasharray="4 3"' : '';
-        c.shape(`<rect x="${f1(b.x)}" y="${f1(b.y)}" width="${f1(b.w)}" height="${h}" rx="${RX}" fill="${fill}" stroke="${PALETTE.line}" stroke-width="${hot || s.kind === 'error' ? SW_HEAVY : SW_LIGHT}"${dash}/>`, b, { id });
+        c.shape(`<rect x="${f1(b.x)}" y="${f1(b.y)}" width="${f1(b.w)}" height="${h}" rx="${RX}" fill="${fill}" stroke="${hue.stroke}" stroke-width="${hot || s.kind === 'error' ? SW_HEAVY : SW_LIGHT}"${dash}/>`, b, { id });
       } else c.shape('', b, { id, container: true });
       ls.forEach((l, i) => c.text(l, b.x + b.w / 2, b.y + 17 + i * 16, { anchor: 'middle', bold, fill: hot ? ON_ACCENT : s.kind === 'note' ? PALETTE.muted : PALETTE.ink, owner: id, within: id, room: b.w - 8 }));
     }
     (ir.waits || []).forEach((w, i) => {
       const from = boxOf.get(`${w.lane}@${w.from}`), x = from.x + 8, end = boxOf.get(`${w.on}@${w.until}`) || boxOf.get(`${w.lane}@${w.until}`), BW = 12;
-      const y1 = from.y + from.h, y2 = end ? end.y : rowY.get(w.until) + 4, id = `wait ${i}`;
-      // the wait is a filled span from its statement down to the top edge of the step that releases it
+      const rsStep = w.resume != null ? resumeStep(w) : null, rsBox = rsStep && boxOf.get(`${rsStep.lane}@${rsStep.t}`);
+      const y1 = from.y + from.h, y2 = rsBox ? rsBox.y : end ? end.y : rowY.get(w.until) + 4, id = `wait ${i}`;
+      // the wait is a filled amber span from its statement down to the top edge of the step the waiter
+      // resumes at (when the wait names a resume), else of the step that releases it
       // (the on lane's step at until, else the waiter's own), with no connector
-      c.shape(`<rect x="${f1(x)}" y="${f1(y1)}" width="${BW}" height="${f1(y2 - y1)}" rx="${RX}" fill="${PALETTE.fills.soft}" stroke="${PALETTE.edges.fail.color}" stroke-width="${SW_LIGHT}"/>`, { x, y: y1, w: BW, h: y2 - y1 }, { id });
+      c.shape(`<rect x="${f1(x)}" y="${f1(y1)}" width="${BW}" height="${f1(y2 - y1)}" rx="${RX}" fill="${ROLES.light.wait.fill}" stroke="${ROLES.light.wait.stroke}" stroke-width="${SW_LIGHT}"/>`, { x, y: y1, w: BW, h: y2 - y1 }, { id });
       const ry = rowY.get(w.from + 1);
       waitLines[i].forEach((l, j) => c.text(l, x + BW + 6, ry + 17 + j * 16, { size: SUB, fill: PALETTE.edges.fail.color, owner: id, room: LW - 42 }));
       if (w.resume) {
@@ -818,7 +949,7 @@ BOOK_TYPES.timeline = {
     // (validate keeps them neighbours): out of the holder box's side, down the gap, into the waiter's side.
     // The gap is what is free between the two lanes' items over the rows the edges span; each edge of one
     // gap takes its own x in it, the arrowhead's side leaving room for the head.
-    const gaps = new Map();
+    const gaps = new Map(), causeErrs = new Set();
     (ir.waits || []).forEach((w, i) => {
       if (w.holder == null) return;
       const k = Math.min(ir.lanes.findIndex((l) => l.id === w.on), ir.lanes.findIndex((l) => l.id === w.lane));
@@ -838,12 +969,50 @@ BOOK_TYPES.timeline = {
         // When the free stretch cannot give each edge CAUSE_SEP, the edges fan out CAUSE_SEP apart around
         // the middle of the gap; if that leaves the gap, the edge crosses a step box and check says so.
         const narrow = (hi - lo) / (idx.length + 1) < CAUSE_SEP;
+        // A backward edge (waiter left of holder) ends in the arrowhead on the gap's left side; when the gap
+        // cannot give each edge CAUSE_SEP, the fan-out would put the head on the box, so it is refused.
+        if (narrow && !toRight && idx.length > 1) causeErrs.add(`waits ${idx.join(' and ')}: the ${idx.length} cause edges run backward (lane ${right} holds, lane ${left} waits) through a gap between lane ${left} and lane ${right} that is too narrow for them - shorten the step labels on those rows, or reorder "lanes" so the waiter is right of the holder`);
         const gx = narrow ? (xl + xr) / 2 + (j - (idx.length - 1) / 2) * CAUSE_SEP : lo + ((hi - lo) * (j + 1)) / (idx.length + 1), yh = hb.y + hb.h / 2, yw = from.y + from.h / 2;
         const pts = [[toRight ? hb.x + hb.w : hb.x, yh], [gx, yh], [gx, yw], [toRight ? from.x - 2 : from.x + from.w + 2, yw]];
-        c.defs.add(`<marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="${PALETTE.fills.accent}"/></marker>`);
-        c.edge(`<path d="${pts.map((p, q) => `${q ? 'L' : 'M'}${f1(p[0])} ${f1(p[1])}`).join(' ')}" fill="none" stroke="${PALETTE.fills.accent}" stroke-width="${SW_HEAVY}" marker-end="url(#arrow-accent)"/>`, pts, { exclusive: true, id: `cause ${i}`, from: `step ${w.on}@${w.holder}`, to: `step ${w.lane}@${w.from}` });
+        c.defs.add(`<marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="${ROLES.light.cause.stroke}"/></marker>`);
+        c.edge(`<path d="${pts.map((p, q) => `${q ? 'L' : 'M'}${f1(p[0])} ${f1(p[1])}`).join(' ')}" fill="none" stroke="${ROLES.light.cause.stroke}" stroke-width="${SW_HEAVY}" marker-end="url(#arrow-accent)"/>`, pts, { exclusive: true, id: `cause ${i}`, from: `step ${w.on}@${w.holder}`, to: `step ${w.lane}@${w.from}` });
       });
     }
+    // The release edge, derived from the wait with no IR field: out of the on lane's step at "until" (where
+    // the lock is let go), across to the gap beside the waiter's lane, into the step the waiter resumes at.
+    // Drawn for every wait that names a resume, whichever side of the on lane the waiter is and however far
+    // it is. A waiter right of the holder is entered by the side facing the holder; a waiter left of it is
+    // entered from above, because the side facing the holder is the side the resume note sits on. A lane
+    // between the two that has a step on the release row is crossed, and check refuses that with the step named.
+    const releaseErrs = [];
+    (ir.waits || []).forEach((w, i) => {
+      if (w.resume == null) return;
+      const rs = resumeStep(w), ub = boxOf.get(`${w.on}@${w.until}`), rb = rs && boxOf.get(`${rs.lane}@${rs.t}`);
+      if (!ub || !rb) return;
+      const ko = ir.lanes.findIndex((l) => l.id === w.on), kw = ir.lanes.findIndex((l) => l.id === w.lane);
+      const toRight = kw > ko, near = toRight ? kw - 1 : kw, left = ir.lanes[near].id, right = ir.lanes[near + 1].id;
+      const yu = ub.y + ub.h / 2, yr = rb.y + rb.h / 2;
+      // a waiter on the left lands on the resume step's top: the horizontal run sits above the box and its note
+      const noteTop = Math.min(rb.y, ...c.items.filter((it) => it.kind === 'text' && it.owner === `wait ${i}` && it.what === 'the resume note').map((it) => it.box.y));
+      const yt = Math.max(noteTop - 12, yu + 6), yEnd = toRight ? rb.y + rb.h : yt;
+      const seen = c.items.filter((it) => it.box && it.kind !== 'edge' && !String(it.id).startsWith('lane ') && it.box.y < yEnd && it.box.y + it.box.h > ub.y);
+      const inLane = (it, id) => { const m = it.box.x + it.box.w / 2; return m >= colX.get(id) && m < colX.get(id) + LW; };
+      const lo = seen.filter((it) => inLane(it, left)).map((it) => it.box.x + it.box.w), hi = seen.filter((it) => inLane(it, right)).map((it) => it.box.x);
+      // the corridor runs from the right edge of the left lane's items to the left edge of the right lane's;
+      // a lane with nothing in these rows gives its own boundary. Left of its lifeline the waiter lane is not a corridor.
+      const xl = Math.max(colX.get(right) - 10, ...lo, ...(toRight ? [] : [cxOf.get(left) + 6])), xr = Math.min(colX.get(right) + LW, ...hi);
+      if (xr - xl < 6) { releaseErrs.push(`waits[${i}]: the release edge from lane ${w.on} (t=${w.until}) to lane ${w.lane} (t=${rs.t}) has no room between lane ${left} and lane ${right} - shorten the step labels on those rows, or move lane ${w.lane} next to lane ${w.on}`); return; }
+      const gx = (xl + xr) / 2;
+      let pts;
+      if (toRight) pts = [[ub.x + ub.w, yu], [gx, yu], [gx, yr], [rb.x - 2, yr]];
+      else {
+        // clear of the wait band, which ends on the box's top near its left end
+        const fb = boxOf.get(`${w.lane}@${w.from}`), ex = Math.max(rb.x + rb.w - 14, rb.x + rb.w / 2, fb.x + 8 + 12 + 6);
+        pts = [[ub.x, yu], [gx, yu], [gx, yt], [Math.min(ex, rb.x + rb.w - 4), yt], [Math.min(ex, rb.x + rb.w - 4), rb.y - 2]];
+      }
+      c.defs.add(`<marker id="arrow-release" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="${ROLES.light.release.stroke}"/></marker>`);
+      c.edge(`<path d="${pts.map((p, q) => `${q ? 'L' : 'M'}${f1(p[0])} ${f1(p[1])}`).join(' ')}" fill="none" stroke="${ROLES.light.release.stroke}" stroke-width="${SW_LIGHT}" stroke-dasharray="6 3" marker-end="url(#arrow-release)"/>`, pts, { exclusive: true, id: `release ${i}`, from: `step ${w.on}@${w.until}`, to: `step ${rs.lane}@${rs.t}` });
+    });
     // Each lane's dotted lifeline stops 3 px short of every step box and text it would run through
     // (a note has no box, so this is what keeps its text clear), and every piece is a checked line.
     const life = [];
@@ -862,7 +1031,7 @@ BOOK_TYPES.timeline = {
       piece(y);
     }
     c.parts.splice(lifeAt, 0, ...life);
-    return { W, H: y + 8 };
+    return { W, H: y + 8, errs: [...causeErrs, ...releaseErrs] };
   },
 };
 
@@ -1343,10 +1512,12 @@ export function writeFigure(ir, base, opts = {}) {
   const b = build(ir, opts);
   if (b.errs.length) return { code: 1, msg: b.errs.map((e) => `- ${e}`).join('\n') };
   const svgPath = `${base}.svg`, pngPath = `${base}.png`;
-  atomicWrite(svgPath, toSvg(ir, b));
+  const light = toSvg(ir, b), darkPath = `${base}.dark.svg`;
+  atomicWrite(svgPath, light);
+  atomicWrite(darkPath, darkSvg(light)); // the same figure in the dark set; the PNG stays light
   rmSync(pngPath, { force: true }); // a stale PNG must not pass for this SVG
   const r = rasterize(svgPath, b.W, b.H, pngPath, opts.env || process.env);
   if (r.code) return { code: r.code, msg: `${svgPath} written; ${r.msg}` };
-  return { code: 0, msg: `ok ${svgPath} ${pngPath} (${b.W}x${b.H}, PNG ${2 * b.W}x${2 * b.H}) - now Read the PNG` };
+  return { code: 0, msg: `ok ${svgPath} ${pngPath} ${darkPath} (${b.W}x${b.H}, PNG ${2 * b.W}x${2 * b.H}, light) - now Read the PNG` };
 }
 

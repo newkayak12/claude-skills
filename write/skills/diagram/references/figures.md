@@ -36,6 +36,17 @@ Fills that appear together differ by >= 15 L* and every line style has its own d
 a grayscale print keeps them apart. Labels may be Korean. Put the source of a fact (a size, an
 offset, a default) or `[확인 필요]` in the IR's `note`.
 
+Colour carries meaning, set by the renderer (`ROLES` in `figure.mjs`; no IR field): a timeline's
+lanes take blue (A) then teal (B) by lane order, drawn on the lane header and on its plain steps
+(swap the order of `lanes` and the hues swap); a cause edge is amber-red; a wait band is amber; a
+release edge is green; context is muted grey; a layout's strips run from the strongest blue (the first
+strip, the current row) to lighter blues (older ones, interpolated past three), and a pointer edge takes
+the hue of its source field. Every ink on its fill is >= 4.5:1 in the light and the dark set (tested).
+
+`figure` also writes `<base>.dark.svg`: the same figure with every colour swapped for its counterpart in
+the dark set (a one-to-one map built from `ROLES`; no light-set colour is left in it). It is written
+only when the figure passes `check`. The `<base>.png` and `<base>.svg` are drawn with the light set only.
+
 ## layout - where bytes sit, what points where
 
 Page layouts (InnoDB 16 KB page, PostgreSQL 8 KB page), a row next to its undo record, a
@@ -147,13 +158,20 @@ One lane per session (1-4), one row per step `t` (whole numbers; leave gaps wher
 - `holder` (optional): the `t` of the `stmt` on lane `on` that took the lock. An accent line runs from
   that step to the waiter's `from` step - the cause of the wait.
 - `resume` (optional): short text drawn beside the waiter's next step after `until`, as written -
-  the outcome the caption claims (`"UPDATE 재개 · 0행"`). The renderer adds no wording.
+  the outcome the caption claims (`"UPDATE 재개 · 0행"`). The renderer adds no wording. With a
+  `resume`, the amber wait band runs on to that step, and a green dashed release edge runs from the
+  `on` lane's step at `until` to it (derived, no field). The edge is drawn for every lane arrangement:
+  the waiter right of the holder or left of it, next to it or not. Right of the holder it enters the
+  resume step's left side; left of the holder it lands on the step's top, clear of the note.
 - A step is addressed in `claim` as `<lane>@t<t>` (`"B@t6"`).
 - Refused: two steps at one (lane, t); a step of the waiting lane inside its wait; a wait that
   ends where no lock is released; a cycle of waits with no error step naming the deadlock; a wait
   without a label (which lock, which row); a wait not starting at a `stmt`; a wait with no empty
   step between `from` and `until` to draw it in; a `holder` that is not a `stmt` of lane `on`; a
-  `resume` on a wait whose lane has no step after `until`.
+  `resume` on a wait whose lane has no step after `until`; a release edge with no clear route (it passes
+  through a step in a lane between holder and waiter, or the lane gap is under 6 px; the message names
+  the step and says to move it, shorten the labels, or move the waiter lane next to the holder); two backward cause edges (waiter lane left
+  of the holder lane) in a lane gap too narrow for their spread (the message gives the repair).
 
 ## er - entities and relations
 
