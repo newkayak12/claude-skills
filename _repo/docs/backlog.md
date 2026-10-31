@@ -140,7 +140,7 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
       call is fast" fails in the full teams suite at load ~250 (2026-10-31: 1710 tests, 1708 pass, 1 fail);
       a wall-clock bar runs opt-in or asserts CPU so the suite is green at any load.
 
-101. **teams runs ready packages at the width shape allows — rest: the first tick, and one real Sprint at width 2+**
+101. **teams runs ready packages at the width shape allows — rest: one real Sprint at width 2+**
     - Why: user, 2026-10-29: "harness, graph, teams 각 phase를 병렬로 할 수는 없는건가?", then "네네 그리고
       최우선". Shipped in teams 0.61.5 (`e4502d68`, E-ea14c9c4): pushback only from error-shaped events
       (`allowed_warning` and a leading BOM handled), start width from the shape, `auto_parallel_ticks` in
@@ -148,9 +148,8 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
       Left: QA's D9/D14/D15 also asked that the first tick write an event when packages already wait
       (`recordAutoParallelTick` writes nothing without a previous tick) — not taken. E-ea14c9c4 itself ran
       on the 0.61.4 engine: it halved 2→1 at `dispatch:P1:1` (a judge reason text matched) and never ran
-      two dispatches at once.
-    - Acceptance: the first tick with `ready_waiting > 0` writes one `parallel_width_changed` (tested);
-      one real Sprint on teams 0.61.5+ shows two ready packages running at once (ledger: two `dispatch`
+      two dispatches at once. First tick done 2026-10-31 in E-0a2ab67f (goal gate 95; test red on base).
+    - Acceptance: one real Sprint on teams 0.61.5+ shows two ready packages running at once (ledger: two `dispatch`
       open together, no `auto_parallel_decreased` from a usage number or a reason text).
 
 ### Mods and naming — UI first (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
@@ -439,6 +438,7 @@ toasts).
 | E-2694667a | 2026-10-30 | 108 | partial: teams 0.62.1, `--once` filters before collecting and indexes finished tasks (`.view-index.json`), rebased onto 0.62.0's repo-wide matcher; real status call 7.96 s → 0.40 s; 300 ms fixture test is best-of-10 (single calls flaked 306–399 ms under suite load); poll overlap guard left (108) |
 | E-a7996a31 | 2026-10-30 | 87 rest | shipped `5639b260`; size S; goal gate 91; limit named in the PRD gate prompt (a Jaccard ≥ 0.63 rule passed both tests but missed the one real paraphrase, J=0.38, so declined); teams 1681/1682 |
 | E-233f8dca | 2026-10-30 | 81 rest | shipped `2fc9e26c`; size S; goal gate 90; own-write hook + fallback-route verdict gates; teams 1679/1680, plugin test 411/411 |
+| E-0a2ab67f | 2026-10-31 | 101 first tick | shipped (merge of `1945e0d2`); size S; goal gate 95; test-taskmanager 371/371 in run; real width-2 Sprint left |
 | E-7e44f783 | 2026-10-31 | 109 | shipped `8b001fe1`; size S; goal gate 93 (r1 82); cause verified by test, not ledger (E-ea14c9c4 cleaned): `settleQaRound` deduped by title and repro only; teams 1717/1719 (1 load wall-clock fail, card 108) |
 | E-d19daa16 | 2026-10-31 | 105 ⑂ mark | shipped `e9b1d5b0`; size S; goal gate 95; plugin test 431/431; captures awaiting approval |
 | E-7970d4b5 | 2026-10-31 | 108 | merged `cba67113` locally, then reverted: another session shipped card 108 first as teams 0.62.1 (E-2694667a), kept that one; size S; 32.3 s → 0.38 s, but its wall-clock tests went red under load |
