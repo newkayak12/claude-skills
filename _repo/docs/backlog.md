@@ -153,16 +153,6 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
       one real Sprint on teams 0.61.5+ shows two ready packages running at once (ledger: two `dispatch`
       open together, no `auto_parallel_decreased` from a usage number or a reason text).
 
-109. **teams QA files one defect once, and integrate takes overlapping fixes instead of blocking** — in E-7e44f783
-    - Why: E-ea14c9c4, 2026-10-30: QA-F1 filed 15 defects for 4 findings (docs D4/D6/D8/D11, ready_waiting
-      D5/D7/D9/D12/D14/D15, release D10 = P2); every one was built and accepted (~$61 for the Sprint),
-      then `integrate:3` stopped `blocked` on a conflict between the docs duplicates. Taken by hand:
-      P1, D1–D5, D13 and P2; the duplicates dropped. Cause unverified (0.61.3 says "a defect is filed
-      once per QA filing"; these came from one `defects_filed` event).
-    - Acceptance: a QA filing whose findings name the same file and AC files one defect (test with the
-      E-ea14c9c4 titles); integrate drops a package whose diff is already in the integration tree, or
-      settles one conflict as a repair package instead of `blocked`; tested.
-
 ### Mods and naming — UI first (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
 
 93. **teams web viewer gets a Town tab: an isometric pixel office where each node works as a character**
@@ -449,6 +439,8 @@ toasts).
 | E-2694667a | 2026-10-30 | 108 | partial: teams 0.62.1, `--once` filters before collecting and indexes finished tasks (`.view-index.json`), rebased onto 0.62.0's repo-wide matcher; real status call 7.96 s → 0.40 s; 300 ms fixture test is best-of-10 (single calls flaked 306–399 ms under suite load); poll overlap guard left (108) |
 | E-a7996a31 | 2026-10-30 | 87 rest | shipped `5639b260`; size S; goal gate 91; limit named in the PRD gate prompt (a Jaccard ≥ 0.63 rule passed both tests but missed the one real paraphrase, J=0.38, so declined); teams 1681/1682 |
 | E-233f8dca | 2026-10-30 | 81 rest | shipped `2fc9e26c`; size S; goal gate 90; own-write hook + fallback-route verdict gates; teams 1679/1680, plugin test 411/411 |
+| E-7e44f783 | 2026-10-31 | 109 | shipped `8b001fe1`; size S; goal gate 93 (r1 82); cause verified by test, not ledger (E-ea14c9c4 cleaned): `settleQaRound` deduped by title and repro only; teams 1717/1719 (1 load wall-clock fail, card 108) |
+| E-d19daa16 | 2026-10-31 | 105 ⑂ mark | shipped `e9b1d5b0`; size S; goal gate 95; plugin test 431/431; captures awaiting approval |
 | E-7970d4b5 | 2026-10-31 | 108 | merged `cba67113` locally, then reverted: another session shipped card 108 first as teams 0.62.1 (E-2694667a), kept that one; size S; 32.3 s → 0.38 s, but its wall-clock tests went red under load |
 | E-f53a8434 | 2026-10-30 | 105, 106 | shipped `236eae3d`; size S; goal gate 92; teams 1658/1660, plugin test 423/423; UI look left on card 105 |
 | E-ce2bcff4 | 2026-10-30 | 101 | merged `9d4bd6a2` locally, then reverted `0cb18fbf`: another session shipped card 101 first as teams 0.61.5 (E-ea14c9c4), kept that one; size S, goal gate 92 |
