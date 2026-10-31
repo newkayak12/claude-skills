@@ -368,6 +368,8 @@ export function shippedPackages(task, unaccepted = []) {
     const merged = integ.integration && Array.isArray(integ.integration.merged) ? integ.integration.merged : null;
     if (merged) {
       for (const m of merged) held.add(String(m.package));
+      // A package whose change was already in the tree is held too (card 109).
+      for (const m of integ.integration.already_applied || []) held.add(String(m.package));
       if (integ.integration.based_on === 'repair') {
         const rp = pkgs.find((p) => String(p.id) === String(integ.integration.repair_package));
         collect(rp && byId.get(rp.integration_of));

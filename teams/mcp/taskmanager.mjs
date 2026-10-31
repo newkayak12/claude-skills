@@ -1506,6 +1506,7 @@ function openRepair(task, integ) {
   const round = Number(String(integ.node_id).split(':')[1] || 1);
   const id = `R${priors.length + 1}`;
   const r = integ.result || {};
+  const deferred = Array.isArray(r.deferred_conflicts) ? r.deferred_conflicts : [];
   const brief = [
     `This package works on the COMBINED tree of every package in this task - its worktree is the integration worktree, with all package branches already merged - and its whole job is to make the integration checks below pass.`,
     '',
@@ -1514,6 +1515,9 @@ function openRepair(task, integ) {
     (r.gaps || []).length ? `Gaps it named:\n${bullets(r.gaps)}` : '',
     (r.checks || []).length ? `Checks it ran:\n${bullets(r.checks)}` : '',
     r.evidence ? `Evidence:\n${r.evidence}` : '',
+    // Card 109: filed packages whose merge conflicted were left out of this tree for the repair
+    // to settle (prepareIntegration's deferral); the repair's job is to leave both fixes holding.
+    deferred.length ? `Packages left out because their merge conflicted:\n${bullets(deferred.map((d) => `${d.package}: branch ${d.branch}, conflicts on ${d.conflicts.join(', ')}${(d.with || []).length ? ` (with ${d.with.join(', ')})` : ''}. Merge it into this tree (\`git merge ${d.branch}\`) resolving the conflict so both fixes hold, or leave it out when its change is already here.`))}` : '',
   ].filter(Boolean).join('\n');
   packages.push({
     id,
@@ -1522,7 +1526,11 @@ function openRepair(task, integ) {
     integration_of: integ.node_id,
     flow: task.flow_chosen || 'auto',
     brief,
-    acceptance: ((task.spec && task.spec.acceptance) || []).slice(),
+    ...(deferred.length ? { settles: deferred.map((d) => String(d.package)) } : {}),
+    acceptance: [
+      ...((task.spec && task.spec.acceptance) || []),
+      ...deferred.map((d) => { const c = (packageOf(task, d.package) || {}).repro; return c && c.command ? `${d.package}'s reproduction no longer reproduces its defect: ${c.command}` : ''; }).filter(Boolean),
+    ],
     // Every path any package claimed: the seam is between them, so none of them is out of bounds.
     touches: [...new Set(packages.flatMap((p) => (p.touches || []).map(String)))],
     deps: packages.filter((p) => !p.repair && !notDoneIds(task).includes(String(p.id))).map((p) => String(p.id)),
@@ -1923,19 +1931,48 @@ export function autoRepair(task) {
 // phase-Team cards rests on the two never overlapping). qa_rounds caps the rounds exactly as it
 // capped the single QA pass: the round number is the most attempts any one QA card has had.
 // Returns null while the round is still open, else {filed?, unresolved?, defects}.
-// Returns a predicate that is true for a defect already seen in this pass: equal trimmed title, or
-// equal non-empty trimmed repro.command. The first of a kind is remembered and passes.
-function sameDefectSeen() {
+// Returns a predicate (d, card) that is truthy for a defect already seen in this pass: equal trimmed
+// title, or equal non-empty trimmed repro.command (true); or, card 109, the same finding worded
+// again: same QA card, an AC token in common and the same set of files (the first such defect, so the
+// caller can fold the copy into it). The first of a kind is remembered and passes.
+// E-ea14c9c4 (2026-10-30): one QA card listed 4 findings as 15 defects, each copy with its own
+// title and its own per-case repro command, so the title/command keys missed every one and each
+// was built, accepted and integrated. A defect naming no AC or no file is never merged by the
+// file+AC rule. fileAc: false keeps the title/command rule alone.
+const DEFECT_AC_RE = /\b(?:[A-Za-z0-9]+(?:[-/][A-Za-z0-9]+)*[-/])?AC-\d+\b/gi;
+const DEFECT_FILE_RE = /[\w.@-]+(?:\/[\w.@-]+)*\.(?:mjs|cjs|js|jsx|ts|tsx|json|md|txt|py|sh|ya?ml|toml|css|html|csv)(?!\w)/gi;
+function sameDefectSeen({ fileAc = true } = {}) {
   const titles = new Set();
   const commands = new Set();
+  const kept = [];
   const trim = (v) => (typeof v === 'string' ? v.trim() : '');
-  return (d) => {
+  const sameFile = (a, b) => a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+  const tokens = (d) => {
+    const r = (d && d.repro && typeof d.repro === 'object') ? d.repro : {};
+    const text = [d && d.title, d && d.evidence, r.observed, r.expected].filter((v) => typeof v === 'string').join('\n');
+    const cmd = typeof r.command === 'string' ? r.command : '';
+    const acs = new Set((`${text}\n${cmd}`.match(DEFECT_AC_RE) || []).map((t) => t.toUpperCase()));
+    // The repro command names a file only when nothing else does: `node --test test-x.mjs` runs a
+    // test file, not the defect's source file, and must not merge two defects of different sources.
+    const named = [...((d && Array.isArray(d.touches)) ? d.touches.map(String) : []), ...(text.match(DEFECT_FILE_RE) || [])];
+    const files = new Set((named.length ? named : (cmd.match(DEFECT_FILE_RE) || []))
+      .map((f) => f.trim().replace(/^\.\//, '').toLowerCase()).filter(Boolean));
+    return { acs, files: [...files] };
+  };
+  return (d, card) => {
     const title = trim(d && d.title);
     const command = trim(d && d.repro && d.repro.command);
     const dup = (title && titles.has(title)) || (command && commands.has(command));
     if (title) titles.add(title);
     if (command) commands.add(command);
-    return Boolean(dup);
+    if (dup || !fileAc) return Boolean(dup);
+    const t = tokens(d);
+    const first = kept.find((k) => k.card === card && [...t.acs].some((a) => k.acs.has(a))
+      && t.files.length && t.files.every((f) => k.files.some((g) => sameFile(f, g)))
+      && k.files.every((g) => t.files.some((f) => sameFile(f, g))));
+    if (first) return first.defect;
+    kept.push({ defect: d, card, ...t });
+    return false;
   };
 }
 
@@ -1952,10 +1989,25 @@ export function settleQaRound(task) {
   // join never sees a dropped defect again.
   // Card 97: one filing holds each defect once even when several cards/attempts reported it
   // (first wins); never compared against rounds filed earlier.
-  const sameDefect = sameDefectSeen();
-  const defects = reproGate(task, fresh.flatMap((x) => (Array.isArray(x.result.defects) ? x.result.defects : [])
-    .map((d) => (d && typeof d === 'object' ? d : { title: String(d), evidence: String(d) }))
+  // Card 109: the file+AC rule runs on the repro gate's survivors, so a copy the gate refused never
+  // stands in for a finding another copy proves; each folded copy is listed on dropped_defects and
+  // its title and command join the kept defect's evidence (the fix sees every wording).
+  const sameDefect = sameDefectSeen({ fileAc: false });
+  const sameFinding = sameDefectSeen();
+  const gated = reproGate(task, fresh.flatMap((x) => (Array.isArray(x.result.defects) ? x.result.defects : [])
+    .map((d) => ({ ...(d && typeof d === 'object' ? d : { title: String(d), evidence: String(d) }), qa_card: x.subgoal_id }))
     .filter((d) => !sameDefect(d))), 'qa');
+  const defects = [];
+  for (const { qa_card: card, ...d } of gated) {
+    const first = sameFinding(d, card);
+    if (!first) { defects.push(d); continue; }
+    if (first === true) continue;
+    task.dropped_defects = (task.dropped_defects || []).concat([{
+      id: d.id || null, title: d.title || '', reason: `same file and AC as "${first.title || ''}"`, repro: d.repro && typeof d.repro === 'object' ? d.repro : null, source: 'qa',
+    }]);
+    const also = `Also reported as "${d.title || ''}"${d.repro && d.repro.command ? ` (repro: ${d.repro.command})` : ''}`;
+    first.evidence = first.evidence ? `${first.evidence}\n${also}` : also;
+  }
   for (const x of fresh) x.result = { ...x.result, defects_settled: true };
   if (!defects.length) return { defects: [] };
   const qaRound = Math.max(1, ...qaPkgs(task).map((q) => task.nodes.filter((x) => x.stage === 'dispatch' && x.subgoal_id === String(q.id)).length));
@@ -2799,6 +2851,34 @@ function repairBase(task, n) {
 // package branch the repair was made on from one a retry delivered while the repair ran.
 function containsBranch(cwd, branch) {
   return git(cwd, ['merge-base', '--is-ancestor', branch, 'HEAD']).ok;
+}
+
+// The base a package's own diff is read from: the commit its latest dispatch opened on when that
+// is still behind the branch, else the merge-base with this tree.
+function packageDiffBase(task, cwd, pkgId, branch) {
+  const d = task.nodes.filter((x) => x.stage === 'dispatch' && x.subgoal_id === String(pkgId) && x.base_commit).pop();
+  if (d && git(cwd, ['merge-base', '--is-ancestor', d.base_commit, branch]).ok) return d.base_commit;
+  const mb = git(cwd, ['merge-base', 'HEAD', branch]);
+  return mb.ok && mb.out ? mb.out : null;
+}
+
+// Is a package's own change already in this tree? Its diff is empty, or reverse-applies cleanly
+// (a commit that is not an ancestor can still carry text the tree already has). E-ea14c9c4 (card
+// 109): filed duplicates of one fix were built and accepted, and merging the second one again
+// ended integrate `blocked`. Fails open: any git error reads "not applied" and the merge runs.
+function alreadyApplied(task, cwd, pkgId, branch) {
+  const base = packageDiffBase(task, cwd, pkgId, branch);
+  if (!base) return false;
+  const d = spawnSync('git', ['diff', '--binary', base, branch], { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  if (d.status !== 0) return false;
+  if (!d.stdout) return true;
+  return spawnSync('git', ['apply', '--check', '--reverse', '-'], { cwd, input: d.stdout, encoding: 'utf8' }).status === 0;
+}
+
+// The files a package branch changes on its own, for naming who a deferred conflict is with.
+function packageDiffFiles(task, cwd, pkgId, branch) {
+  const base = packageDiffBase(task, cwd, pkgId, branch);
+  return base ? git(cwd, ['diff', '--name-only', base, branch]).out.split('\n').filter(Boolean) : [];
 }
 
 // Array.isArray rather than a truthiness check: a shape that returns "skills":
@@ -3796,8 +3876,9 @@ export function foldChild(task, n) {
   // display form and its repro rides in defectRepros, keyed by that string, for the repro gate.
   const defectRepros = {};
   // Card 97: the same defect across gate attempts (equal trimmed title, or equal non-empty trimmed
-  // repro.command) is kept once, first wins.
-  const sameDefect = sameDefectSeen();
+  // repro.command) is kept once, first wins. Card 109's same-file-and-AC rule is not applied here: it
+  // runs once in settleQaRound, after the repro gate, so a refused copy cannot hide a failing one.
+  const sameDefect = sameDefectSeen({ fileAc: false });
   const defectsFound = [...new Set(
     child.nodes
       .filter((x) => x.stage === 'execute' && x.result && Array.isArray(x.result.defects))
@@ -4048,6 +4129,13 @@ export function prepareIntegration(task, n) {
   // A spent retry budget (reintegrateExhausted) leaves the same hole: the not-done packages never deliver.
   const undeliverable = (id) => skippedForBudget(id) || (task.budget_stopped && !deliveredBranch(task, id)) || notDoneIds(task).includes(String(id));
   const ordered = dependencyOrder((task.spec.packages || []).filter((p) => !p.repair && !undeliverable(p.id)));
+  // Card 109: a package whose change is already in the tree is not merged again, and a FILED
+  // package (reporter) that conflicts is deferred to one repair package instead of ending the
+  // integrate `blocked` (E-ea14c9c4: duplicates of one fix, all accepted). A shape package's
+  // conflict is a shape failure and keeps the repackage route below.
+  const settled = repair ? ((packageOf(task, repair.package) || {}).settles || []).map(String) : [];
+  const alreadyIn = [];
+  const deferred = [];
   for (const p of ordered) {
     const branch = deliveredBranch(task, p.id);
     if (!branch) {
@@ -4058,8 +4146,20 @@ export function prepareIntegration(task, n) {
     // A package branch the repair was made on is already in this tree. Only one delivered
     // since - a retry that landed while the repair ran - is outside it, and it is merged in
     // dependency order like any other.
-    if (repair && containsBranch(wt.path, branch)) continue;
+    if (repair && containsBranch(wt.path, branch)) {
+      if (settled.includes(String(p.id))) alreadyIn.push({ package: String(p.id), branch });
+      continue;
+    }
+    if (alreadyApplied(task, wt.path, p.id, branch)) {
+      alreadyIn.push({ package: String(p.id), branch });
+      continue;
+    }
     const m = mergeInto(wt.path, branch, `harness: integrate ${p.id} (${branch})`);
+    if (!m.ok && p.reporter) {
+      const withPkgs = merged.filter((x) => { const q = packageOf(task, x.package); return q && !q.repair && packageDiffFiles(task, wt.path, x.package, x.branch).some((f) => m.conflicts.includes(f)); }).map((x) => x.package);
+      deferred.push({ package: String(p.id), branch, conflicts: m.conflicts, with: withPkgs });
+      continue;
+    }
     if (!m.ok) {
       const owners = ownersOf(ordered.filter((q) => merged.some((x) => x.package === String(q.id))), m.conflicts);
       n.state = 'failed';
@@ -4077,8 +4177,25 @@ export function prepareIntegration(task, n) {
     }
     merged.push({ package: String(p.id), branch, commit: m.commit });
   }
+  for (const a of alreadyIn) record(task, { event: 'integrate_already_applied', task_id: task.run_id, node_id: n.node_id, package: a.package, branch: a.branch });
+  const base = { cwd: wt.path, branch: wt.branch, merged, ...(alreadyIn.length ? { already_applied: alreadyIn } : {}), ...(repair ? { based_on: 'repair', repair_package: repair.package } : (task.base_ref ? { based_on: 'base_ref', base_ref: task.base_ref } : {})) };
+  if (deferred.length) {
+    // No `conflicts` key: that is what integrateToRepair refuses as a shape failure. The tree
+    // exists, holds everything that merged, and the daemon's autoRepair opens one repair on it.
+    n.state = 'failed';
+    n.integration = base;
+    n.result = {
+      stage_ok: false, verified: false,
+      integration_branch: wt.branch, merged: merged.map((x) => `${x.package} ${x.branch} -> ${x.commit}`),
+      deferred_conflicts: deferred,
+      reason: deferred.map((d) => `merge of ${d.package} conflicts on ${d.conflicts.join(', ')}${d.with.length ? ` with ${d.with.join(', ')}` : ''}`).join('; ')
+        + '; settled as one repair package on the integration tree',
+    };
+    record(task, { event: 'integrate_conflict', task_id: task.run_id, node_id: n.node_id, deferred: true, conflicts: [...new Set(deferred.flatMap((d) => d.conflicts))], packages: deferred.map((d) => d.package) });
+    return;
+  }
   const packageTests = runPackageTests(task, wt.path, merged.map((m) => m.package));
-  n.integration = { cwd: wt.path, branch: wt.branch, merged, ...(repair ? { based_on: 'repair', repair_package: repair.package } : (task.base_ref ? { based_on: 'base_ref', base_ref: task.base_ref } : {})), ...(packageTests.length ? { package_tests: packageTests } : {}) };
+  n.integration = { ...base, ...(packageTests.length ? { package_tests: packageTests } : {}) };
   record(task, { event: 'integrated', task_id: task.run_id, node_id: n.node_id, merged: merged.length, ...(repair ? { based_on: 'repair' } : {}), ...(packageTests.length ? { package_tests: packageTests.map((t) => `${t.package}:${t.exit}`) } : {}) });
 }
 
@@ -4463,6 +4580,10 @@ export function composeTaskPrompt(task, n) {
     L.push(`${n.integration.cwd} on branch ${n.integration.branch}, created from ${n.integration.based_on === 'repair' ? `the repaired integration branch of package ${n.integration.repair_package}` : n.integration.based_on === 'base_ref' ? `${n.integration.base_ref}, the prior Sprint's integrated work` : `the project's HEAD`}.`);
     L.push(`Already merged, in dependency order:`);
     L.push(bullets((n.integration.merged || []).map((m) => `${m.package}: ${m.branch} -> ${m.commit}`)));
+    if ((n.integration.already_applied || []).length) {
+      L.push(`Already in the tree (their change is present, so they were not merged again; not missing):`);
+      L.push(bullets(n.integration.already_applied.map((m) => `${m.package}: ${m.branch}`)));
+    }
     if ((n.integration.package_tests || []).length) {
       L.push(`Each package's own test command, run by the manager in this combined tree before you were called - facts, not claims. A package whose own tests fail here is not integrated, whatever the root runner says:`);
       L.push(bullets(n.integration.package_tests.map((t) => `${t.package}: \`${t.command}\` -> exit ${t.exit}${t.summary ? ` (${t.summary})` : ''}`)));
