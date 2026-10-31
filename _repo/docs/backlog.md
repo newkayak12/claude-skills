@@ -131,15 +131,6 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
 
 ### teams parallelism — first
 
-108. **teams view `--once` — rest: a status-line poll does not start a new process while the previous one still runs**
-    - Why: 2026-10-30, view.mjs ~540% CPU from 22 sessions' polls. The walk is fixed in teams 0.62.1
-      (E-2694667a: open tasks only, finished ones indexed; 7.96 s → 0.40 s a call); the overlap guard
-      in the pane/status-line poll was not taken.
-    - Acceptance: with a `--once` call slowed past the poll interval, the pane and status line start no
-      second one until it exits (tested). Also: `test-view-once-perf.mjs` "large fixture: … the second
-      call is fast" fails in the full teams suite at load ~250 (2026-10-31: 1710 tests, 1708 pass, 1 fail);
-      a wall-clock bar runs opt-in or asserts CPU so the suite is green at any load.
-
 101. **teams runs ready packages at the width shape allows — rest: one real Sprint at width 2+**
     - Why: user, 2026-10-29: "harness, graph, teams 각 phase를 병렬로 할 수는 없는건가?", then "네네 그리고
       최우선". Shipped in teams 0.61.5 (`e4502d68`, E-ea14c9c4): pushback only from error-shaped events
@@ -276,6 +267,17 @@ toasts).
 ### Subagents and parallel runs — use and clean up (user, 2026-10-17)
 
 ### teams plugin bugs
+
+110. **The dispatch gate opens for the session whose task is open, not for every session on the project**
+    - Why: 2026-10-31, this repo: the driving session (no task of its own open) wrote 850 chars into
+      `teams/hooks/mod.test.ts` and was then denied on `teams/scripts/test-view-once-perf.mjs` minutes
+      later. Cause (read in `teams/hooks/dispatch-gate.mjs` L73–97, L222): `harnessEngaged(cwd)` returns
+      true when any task under `~/.harness/tasks` is open for the cwd, or any `.teams_output/broker/runs`
+      file is fresh — another session's open task unlocks every session on the project. (Edits under
+      `min_chars` passing is by design.)
+    - Acceptance: a driving session is allowed only while a task it opened (opener session id) or a node it
+      runs is live; another session's open task on the same cwd still denies it; teams nodes and drivers
+      still pass (tested in the gate's test file).
 
 107. **A task's daemon and driver survive the session that opened it**
     - Why: 2026-10-30, E-f64c3884 (card 101) and E-4f12f406 (card 94), both size S, ~10 min in: when the
@@ -435,6 +437,7 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-d50a6887 | 2026-10-31 | 108 | tests only, no version bump: poll non-overlap test (`mod.test.ts`: no second `--once` while the first runs) and a load-independent perf test (`test-view-once-perf.mjs`: second call reads only the open task, 300 ms bar opt-in via `VIEW_ONCE_PERF=1`) |
 | E-2694667a | 2026-10-30 | 108 | partial: teams 0.62.1, `--once` filters before collecting and indexes finished tasks (`.view-index.json`), rebased onto 0.62.0's repo-wide matcher; real status call 7.96 s → 0.40 s; 300 ms fixture test is best-of-10 (single calls flaked 306–399 ms under suite load); poll overlap guard left (108) |
 | E-a7996a31 | 2026-10-30 | 87 rest | shipped `5639b260`; size S; goal gate 91; limit named in the PRD gate prompt (a Jaccard ≥ 0.63 rule passed both tests but missed the one real paraphrase, J=0.38, so declined); teams 1681/1682 |
 | E-233f8dca | 2026-10-30 | 81 rest | shipped `2fc9e26c`; size S; goal gate 90; own-write hook + fallback-route verdict gates; teams 1679/1680, plugin test 411/411 |
