@@ -283,19 +283,6 @@ toasts).
      shared: one server for all tasks, reused by later opens); a test opens two tasks and counts one
      live server after both finish → zero; idle CPU of a live server under 5% with 2000 finished tasks.
 
-111. **shape's acceptance check resolves `AC-n` per story, so stories that each start at AC-1 can be shaped**
-   - Why: 2026-10-31, E-8c671fd9: shape attempts 1 and 2 were both rejected because P1 (card 110) and P3
-     (card 81) each carried `AC-1..AC-6`; two of the three shape attempts went on an id clash, and the
-     third failed on content with no retry left (user, 2026-11-01: "계획이 반려된 이유").
-   - 2026-11-01, E-da411582 (card 100) died the same way: all three shapes refused, "AC-1 (P1, P2, P3) …".
-     Cause verified in `teams/mcp/shapecheck.mjs` `acAssignment` (L88-126): PRD AC ids are keyed bare
-     (`AC-1`), first story wins, so when every story numbers its own AC-1.. (what planning writes) each
-     package citing its own story's AC-1 counts as carrying the same AC. Repro: two stories each with
-     AC-1/AC-2, P1 implements story 1 and cites its ACs, P2 likewise → refused "AC-1 (P1, P2)".
-   - Acceptance: AC ids resolve per story (a package's bare `AC-n` resolves inside the stories it
-     implements or enables); the repro above passes, a real double-carry is still refused (test in
-     `test-shapecheck*`); teams suite with counts.
-
 112. **An area critique's file-ownership overlap blocks instead of passing as soft**
    - Why: 2026-10-31, E-8c671fd9: `areas-critique` saw F2 and F3 both planning the spawn env edit in
      `teams/mcp/taskmanager.mjs` and said "overlap (soft) … Name one owner", verdict `sound`; the
@@ -303,35 +290,6 @@ toasts).
    - Acceptance: an overlap on the same file and lines between areas is a blocking finding that sends
      the areas back with one owner named; a test with two areas claiming one function fails at
      areas-critique, not at critique.
-
-110. **The dispatch gate opens for the session whose task is open, not for every session on the project**
-    - Why: 2026-10-31, this repo: the driving session (no task of its own open) wrote 850 chars into
-      `teams/hooks/mod.test.ts` and was then denied on `teams/scripts/test-view-once-perf.mjs` minutes
-      later. Cause (read in `teams/hooks/dispatch-gate.mjs` L73–97, L222): `harnessEngaged(cwd)` returns
-      true when any task under `~/.harness/tasks` is open for the cwd, or any `.teams_output/broker/runs`
-      file is fresh — another session's open task unlocks every session on the project. (Edits under
-      `min_chars` passing is by design.)
-    - E-8c671fd9 (2026-10-31, partial, nothing built): critique failed shape 3 with no retry left. Plan
-      found: compare the open task's `opener.session_id` with the payload's; drivers already get
-      `TEAMS_OPENER_SESSION_ID` via `openerEnv`; five gate tests flip. Re-run with P1/P2/P3 parallel (no
-      P2→P3 edge), `teams/mcp/taskmanager.mjs` owned by 107's package alone.
-    - Acceptance: a driving session is allowed only while a task it opened (opener session id) or a node it
-      runs is live; another session's open task on the same cwd still denies it; teams nodes and drivers
-      still pass (tested in the gate's test file).
-
-107. **A task's daemon and driver survive the session that opened it**
-    - Why: 2026-10-30, E-f64c3884 (card 101) and E-4f12f406 (card 94), both size S, ~10 min in: when the
-      opening Claude Code session restarted, both drivers and daemons were gone (0 `claude -p`), no
-      `daemon_done`, nothing committed; `view.mjs` read them `stalled · impl`. Cancelled, cleaned and
-      reopened by hand from their `.harness-run/*-run1` plans (E-ce2bcff4, E-db7e3226). Cause unverified
-      (processes not detached from the MCP server's process group, or the restart killed the tree).
-    - Acceptance: a task opened from a session keeps running after that session exits (test: spawn,
-      kill the parent MCP process, the daemon still ticks); a task whose daemon died is resumed by
-      `tm_retry` on its own run dir without a re-plan.
-    - E-8c671fd9 plan (2026-10-31): spawns are already `detached` + `unref()`; exit survey of
-      ~/.harness/tasks shows no session-kill signature, so the cause stays unverified. Real gap found: after
-      the restart budget `daemon.exhausted` stays set and a bare `tm_retry` on size L re-plans. Check
-      callers relying on bare `tm_retry` re-planning before changing it.
 
 105. **Repo-wide pane and one viewer: UI look and the loose ends** — code defects in E-03e2e513; cards 105 and 106 shipped 2026-10-30 in
     E-f53a8434 (`236eae3d`; goal gate 92; teams 1658/1660 with 2 skips, plugin test 423/423; real run: two
@@ -397,7 +355,10 @@ toasts).
       run records an `apply_patch` write (or the limit stays named in the docs).
     - E-8c671fd9 plan (2026-10-31): `own_record:false` in 2694667a/d50a6887 is explained: both drivers ran
       teams 0.61.4 from the opener session's plugin cache (hook shipped in 0.62.0). Next size-S task from
-      a session started on ≥ 0.62.0 proves it; Codex limit still to name in docs.
+      a session started on ≥ 0.62.0 proves it.
+    - 2026-11-01 (E-6e771dea, `edfad21d`): chained test env → hook → verdict (9/9); both limits named in
+      teams README/KOR/CHANGELOG. Its own run again recorded `own_record:false` (opener on 0.61.4). Left:
+      one size-S task from a session started after the batch bump shows `own_record: true`.
 
 74. **Every mod's UI draws on terminal, desktop, mobile and vscode (`mod.md` rule 8) — teams first** — tests in
     55e2dcc3 (teams 357, graph 175, harness 199) and bfe0022c (session 699, think 53, trophy 149), all four
@@ -499,6 +460,12 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-6e771dea | 2026-11-01 | 81 rest | shipped `edfad21d`; size S; goal gate 94; chained own-write test 9/9, limits in README/KOR/CHANGELOG; live `own_record:true` left (needs a session on the bumped teams) |
+| E-7d6199b9 | 2026-11-01 | 107 | shipped `69b2015e`; size S; goal gate 92; bare `tm_retry` resumes an exhausted dead daemon on its run dir; parent-kill survival test; test-taskmanager 373/373, teams 1736/1737 (1 skip); cause of the session-exit kill still unverified |
+| E-e6f71ab7 | 2026-11-01 | 110 | shipped `2e5da3c4`; size S; goal gate 90; gate 29/29 with env cleared and inherited (the 15/6 split was inherited `HARNESS_NODE=1`); real hook run: other session DENY, opener ALLOW; a task with no opener id still unlocks (legacy) |
+| E-51309bd7 | 2026-11-01 | 111 | shipped `c0b3808e`; size S; goal gate 93; shapecheck 22/22, teams 1726/1727 (1 skip) |
+| E-15aeadfe | 2026-11-01 | 110, 107, 81 rest | partial, $22.98, planning only: plan-integrate refused F2/F3 both owning the teams docs; PRD reused by the three size-S runs above |
+| E-da411582, E-7626467d, E-b0b206cc | 2026-11-01 | 100, 49 | stopped in planning: 100 on the card-111 AC clash (reopened as E-eb930c1a with unique AC numbering); 49 sized too small, then the AC check again (rerun after the bump) |
 | E-54884e0c | 2026-10-31 | 100, 102 rest, 49 rest | blocked (goal gate 82/90); 100's colour work taken by hand (test-diagram 92/92), 102's `settle` and 49's runbook not taken |
 | E-8c671fd9 | 2026-10-31 | 110, 107, 81 rest | partial: planning only, critique failed shape 3; findings on the cards |
 | E-d50a6887 | 2026-10-31 | 108 | tests only, no version bump: poll non-overlap test (`mod.test.ts`: no second `--once` while the first runs) and a load-independent perf test (`test-view-once-perf.mjs`: second call reads only the open task, 300 ms bar opt-in via `VIEW_ONCE_PERF=1`) |
