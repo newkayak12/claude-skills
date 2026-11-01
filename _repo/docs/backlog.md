@@ -439,6 +439,15 @@ toasts).
       the holder's COMMIT, version ramp on record chains, pointer edges in their source field's hue, dark
       SVG beside the light pair, `check` refuses two backward cause edges in a too-narrow gap. Left: the
       user's approval of fig-13-1/fig-9-2 v3 (user, 2026-10-31: "색상 등은요??? 저개 저 도식의 최선??").
+    - User, 2026-11-01, on v3: "좋은데 색상은 문서 톤앤매너에 맞추는게 1순위". Today the hues are fixed in
+      `figure.mjs` (`PALETTE`, `ROLES`), whatever document the figure goes into.
+    - Acceptance (document tone first): a figure takes its colours from the document it belongs to — a
+      theme (ink, paper, muted, accent and a few hues, light and dark) given by the IR or a `--theme`
+      file, read from the document where it has one (e.g. deck/book CSS variables); the meaning roles
+      (lanes, lock/cause, wait, release, ramp) are mapped onto that theme, not onto fixed hues; with no
+      theme the current default stays. The 4.5:1 test runs on the mapped colours and a theme that cannot
+      meet it is refused with the pair named. fig-13-1 and fig-9-2 rendered under two fictional themes
+      (one muted print-like, one with a strong brand accent) and the default, shown to the user and approved.
 
 ### knowledge plugin
 
