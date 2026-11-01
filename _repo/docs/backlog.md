@@ -439,6 +439,13 @@ toasts).
       theme the current default stays. The 4.5:1 test runs on the mapped colours and a theme that cannot
       meet it is refused with the pair named. fig-13-1 and fig-9-2 rendered under two fictional themes
       (one muted print-like, one with a strong brand accent) and the default, shown to the user and approved.
+    - Theme shipped 2026-11-01 from E-eb930c1a (blocked at integrate: D2 and P1 both edited
+      test-diagram.mjs; merged by hand, `38c416b1`, test-diagram 112/112, teams 1745/1746 with 1 skip):
+      theme from the IR, `--theme` JSON or a CSS `:root` file (dark from `prefers-color-scheme`), every
+      role mapped, failing pair refused by name, no theme byte-identical, CSS reader bounded. Seen in the
+      renders: under the brand theme the release edge stays green (not from the theme) and lane A takes
+      the accent, so lane A and the claim share one hue; under the print theme the roles differ by shade
+      and line style only. Left: the user's approval of the four theme PNGs.
 
 ### knowledge plugin
 
@@ -460,6 +467,7 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-eb930c1a | 2026-11-01 | 100 (theme) | blocked at integrate (D2/P1 conflict in test-diagram.mjs); merged by hand `38c416b1`, test-diagram 112/112; P2's renders partial (print theme roles by shade only); approval of the theme PNGs left |
 | E-6e771dea | 2026-11-01 | 81 rest | shipped `edfad21d`; size S; goal gate 94; chained own-write test 9/9, limits in README/KOR/CHANGELOG; live `own_record:true` left (needs a session on the bumped teams) |
 | E-7d6199b9 | 2026-11-01 | 107 | shipped `69b2015e`; size S; goal gate 92; bare `tm_retry` resumes an exhausted dead daemon on its run dir; parent-kill survival test; test-taskmanager 373/373, teams 1736/1737 (1 skip); cause of the session-exit kill still unverified |
 | E-e6f71ab7 | 2026-11-01 | 110 | shipped `2e5da3c4`; size S; goal gate 90; gate 29/29 with env cleared and inherited (the 15/6 split was inherited `HARNESS_NODE=1`); real hook run: other session DENY, opener ALLOW; a task with no opener id still unlocks (legacy) |
