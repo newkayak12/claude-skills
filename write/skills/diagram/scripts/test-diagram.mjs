@@ -3,7 +3,7 @@
 //   node --test write/skills/diagram/scripts/test-diagram.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync, copyFileSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync, existsSync, copyFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -1488,4 +1488,484 @@ test('writeFigure writes <base>.dark.svg beside the light pair; it is the dark s
     assert.equal(bad.code, 1);
     assert.ok(!existsSync(join(dir, 'g.dark.svg')));
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ---------- card 100: a theme from the document (IR "theme", --theme file, CSS :root) - fictional themes only ----------
+
+const BRAND = {
+  light: { ink: '#1b1a2e', paper: '#f7f5ff', box: '#fdfcff', muted: '#4a4766', accent: '#6d28d9', hues: ['#0e7490', '#c2410c', '#15803d'] },
+  dark: { ink: '#ece9fb', paper: '#14122b', box: '#1e1b3f', muted: '#b5b0d8', accent: '#a78bfa', hues: ['#22d3ee', '#fb923c', '#4ade80'] },
+};
+const PRINT = { light: { ink: '#2a2723', paper: '#e6e1d6', box: '#f1ede4', muted: '#4d4840', accent: '#3d3a36', hues: [] } };
+const BRAND_CSS = `/* a fictional deck stylesheet */
+:root {
+  --ink-base: #1b1a2e;
+  --bg: hsl(250, 100%, 98%);
+  --fg: var(--ink-base);
+  --box: #fdfcff;
+  --muted: rgb(74 71 102);
+  --accent: #6d28d9;
+  --hue-1: #0e7490;
+  --hue-2: #c2410c;
+  --hue-3: #15803d;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #14122b; --fg: #ece9fb; --box: #1e1b3f; --muted: #b5b0d8; --accent: #a78bfa; --hue-1: #22d3ee; --hue-2: #fb923c; --hue-3: #4ade80; }
+}
+`;
+// ink 3.4:1 on its paper: refused on the ink bar and, as every stroke is drawn toward that ink, on the stroke bar too
+const LOWINK = { light: { ink: '#8a867f', paper: '#f4f1ea', muted: '#5a5750', accent: '#8a867f', hues: [] } };
+const FAINT = { light: { ink: '#a39e95', paper: '#f4f1ea', muted: '#5a5750', accent: '#a39e95', hues: [] } };
+// ink that reads on the paper (4.9:1) but is too pale for the claim fill to sit 64 L* from the box
+const PALEINK = { light: { ink: '#707070', paper: '#f6f6f6', muted: '#606060', accent: '#808080', hues: [] } };
+const ACCENT_ONLY = { light: { ink: '#111827', paper: '#fbfaf5', muted: '#3b4252', accent: '#1d4ed8', hues: [] } };
+const PALE_HUE = { light: { ink: '#1c2b2a', paper: '#fbf9f4', muted: '#44514f', accent: '#0b5d57', hues: ['#e8c547'] } };
+
+// the figure and its dark variant, plus the page for a type the HTML path draws; sha256 of all of it. NOTHEME holds what
+// the code before this change produced (taken from the base commit with `git show`, run on these same IRs).
+const NOTHEME_PLAN = [...DARK_PLAN, ['deadlock', DEADLOCK], ['korean architecture', KO_ARCH], ['plan tree', PLAN], ['lock wait', LOCKWAIT], ['gapped', GAPPED]];
+const NOTHEME = {
+  'timeline': 'c8db4ae2863921470713ae9b002cd5544cd03ca3fde88496c46ea68887e321a4',
+  'timeline released': '8272cbf9c2095e1fe9c6dbe59442bbdc2dc407241bde7a1e3bdeb7c08d7fd189',
+  'timeline left': '100eb26a63996f6c43083c7ff0c670be97071d1e0d4c4da9c3f037c6c2539309',
+  'record chain': 'eb43e16f9dc7e8bcb57863c1d2a8764ba2e7b3fbcc8e20446d24b6133a48b228',
+  'record four': '6c0f56c98b6f831f1d6602940fc9b7f69a4978f7161ddbf3f8465837869e75d7',
+  'layout': 'd921269522bcb02956e9d2d9ccf7920ae9fe2b0c3fccf9f99d0d96ece2f00c95',
+  'btree': 'a0e86aa1675def28b0cb418d5e23bd7e6adb5e715a86ff3e06bdd6e92851f231',
+  'architecture': '767555ade5c0bcb4a7ca4f9e0c4e08d68a7e076ca6a6f15be760e2527f20716a',
+  'sequence': '53a5a3cf40b70134e2517f8205d92c6cb788c4037cd184e04a283197a6b41842',
+  'er': '759f2f9a6aaa000178971e37dc9ebc94a5af5c12bfe40e989f0abdd3839aa8e8',
+  'chart': '22792e4a9ee09a7bdb5eed7ebfbf35e4e03ad2d0f1728d5b9d46b25073ff3554',
+  'bars': '38a978c99a200dad77a36c034cad2cfb8d4d48a11c607b3394646893899b9c08',
+  'store': '594ff52e182e4fa0faeb0733d2f1208e976baf674c304f2e64e4e3124eeb1c76',
+  'deadlock': 'c84fcc447f86c52b4b5cb3d4651f91f69731f0eeb1474ff125ca6e00e5b71bd8',
+  'korean architecture': 'e11c97099347864987d9b5c182630bc5958d32d8f31655255e60f4aba2c838f9',
+  'plan tree': 'de7bd4ceed3fe58c40cd5e74c17bd1dccf52701d1064d04771c12d8ae7d2cff6',
+  'lock wait': 'f011ca2b0c6d8fc9b0e205204253cc58cc009203d9c494e2949aca8a314f3ea2',
+  'gapped': 'd5594e8fc6483d48934c3060ff923fe131985c02a6c6934b20feda835505b329',
+};
+function digest(ir) {
+  const { svg } = fig.renderFigure(ir);
+  let all = `${svg}\n${fig.darkSvg(svg)}`;
+  if (diagram.TYPES.includes(ir.type)) all += `\n${diagram.render(ir)}`;
+  else { const d = scratch(); try { fig.renderFigureHtmlToFile(ir, join(d, 'p.html')); all += `\n${readFileSync(join(d, 'p.html'), 'utf8')}`; } finally { rmSync(d, { recursive: true, force: true }); } }
+  return sha256(all);
+}
+const DEFAULT_HEXES = new Set(hexesOf(JSON.stringify([fig.PALETTE, fig.ROLES.light])));
+const hueDeg = (hex) => { const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)), mx = Math.max(r, g, b), d = mx - Math.min(r, g, b); return mx === r ? (60 * (((g - b) / d) % 6) + 360) % 360 : mx === g ? 60 * ((b - r) / d + 2) : 60 * ((r - g) / d + 4); };
+const angle = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d); };
+const mixT = (a, b, f) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) + (parseInt(b.slice(i, i + 2), 16) - parseInt(a.slice(i, i + 2), 16)) * f).toString(16).padStart(2, '0')).join('');
+const near = (a, b) => [1, 3, 5].every((i) => Math.abs(parseInt(a.slice(i, i + 2), 16) - parseInt(b.slice(i, i + 2), 16)) <= 1);
+const themeErrs = (fn) => { try { fn(); } catch (e) { assert.ok(e instanceof fig.ThemeError, e.stack); return e.errs; } assert.fail('expected a ThemeError'); };
+const writeJson = (dir, name, v) => { const p = join(dir, name); writeFileSync(p, typeof v === 'string' ? v : JSON.stringify(v)); return p; };
+
+test('theme: with no theme the svg, the dark svg and the html of 18 figures are byte-identical to the output before this change', () => {
+  assert.equal(NOTHEME_PLAN.length, Object.keys(NOTHEME).length);
+  for (const [name, ir] of NOTHEME_PLAN) assert.equal(digest(ir), NOTHEME[name], name);
+});
+
+test('theme from the IR: every figure type is drawn in theme-derived colours only - none of the default palette\'s hexes - and still passes check', () => {
+  const plan = [['timeline', FIG131], ['released', RELEASED], ['deadlock', DEADLOCK], ['record chain', CHAIN], ['layout', LAYOUT], ['btree', BTREE], ['plan tree', PLAN], ['architecture', KO_ARCH], ['sequence', SEQ4], ['er', ER], ['chart', CHART], ['bars', BARS], ['store', STORE]];
+  for (const th of [BRAND, PRINT]) for (const [name, ir] of plan) {
+    const themed = { ...ir, theme: th };
+    assert.deepEqual(fig.checkFigure(themed), [], name);
+    const { svg } = fig.renderFigure(themed);
+    assert.deepEqual([...new Set(hexesOf(svg).filter((h) => DEFAULT_HEXES.has(h)))], [], `${name}: a default hex is left`);
+    assert.ok(svg.includes(th.light.paper), `${name}: the page is the theme's paper`);
+    assert.notEqual(svg, fig.renderFigure(ir).svg, name);
+  }
+});
+
+test('theme roles: lane A and B, cause, wait, release, the claim accent, the pointer edges, the version ramp, the data/fail edges and the wait-label ink are read from the svg in theme colours', () => {
+  const ctx = fig.themeContext(BRAND), L = ctx.ROLES.light, P = ctx.PALETTE;
+  const { svg } = fig.renderFigure({ ...FIG131, theme: BRAND }), its = itemsOf(FIG131);
+  FIG131.lanes.forEach((lane, k) => assert.deepEqual(rectOf(svg, its.find((i) => i.id === `lane ${lane.id}`).box), { fill: L.lanes[k].fill, stroke: L.lanes[k].stroke }, `lane ${lane.id}`));
+  assert.ok(svg.includes(`fill="${L.wait.fill}" stroke="${L.wait.stroke}"`), 'the wait band');
+  assert.ok(svg.includes(`stroke="${L.cause.stroke}" stroke-width="2.5" marker-end="url(#arrow-accent)"`), 'the cause edge');
+  assert.ok(svg.includes(`stroke="${L.release.stroke}" stroke-width="1.25" stroke-dasharray="6 3"`), 'the release edge');
+  assert.ok(svg.includes(`fill="${P.edges.fail.color}">205 행 X 잠금 대기`), 'the wait label is written in the fail colour');
+  assert.ok(svg.includes(`fill="${P.fills.accent}" stroke=`) && svg.includes(`fill="${ctx.onAccent}">UPDATE 205`), 'the claim step: accent fill, light text');
+  assert.deepEqual([P.fills.accent, L.cause.stroke, L.release.stroke].filter((h) => DEFAULT_HEXES.has(h)), []);
+  const chain = fig.renderFigure({ ...CHAIN, theme: BRAND }).svg, cits = itemsOf(CHAIN), steps = fig.rampSteps('light', 3, ctx.ROLES);
+  const fillOf = (id) => rectOf(chain, cits.find((i) => i.id === id).box);
+  assert.deepEqual(['r_pk', 'u1_trx', 'u2_trx'].map((id) => fillOf(id).fill), steps.map((s) => s.fill), 'the version ramp');
+  for (const e of cits.filter((i) => i.kind === 'edge')) {
+    assert.equal(pathStroke(chain, e.points), L.ramp[0].fill, `${e.id} takes the pointer hue`);
+    assert.equal(fillOf(e.from).stroke, L.ramp[0].fill);
+  }
+  const arch = fig.renderFigure({ ...KO_ARCH, theme: BRAND }).svg;
+  for (const c of [P.edges.fail.color, P.edges.data.color, P.edges.sync.color, P.muted]) assert.ok(arch.includes(`"${c}"`), `the architecture draws ${c}`);
+  assert.equal(L.context.ink, BRAND.light.muted);
+  assert.ok(wcag(L.context.ink, L.context.fill) >= 4.5 && wcag(L.context.stroke, L.surface) >= 3, 'the muted context role');
+});
+
+test('theme expansion: stroke = hue pushed to 3:1, fill = hue toward paper at L* 90, ink = the theme ink, hues in order accent, hue 1, 2 ..., then the accent hue turned', () => {
+  const { light } = BRAND, L = fig.themeContext(BRAND).ROLES.light;
+  assert.deepEqual([L.lanes[0].stroke, L.lanes[1].stroke, L.cause.stroke, L.wait.stroke], [light.accent, ...light.hues], 'hues that already pass keep their value, in the supply order');
+  for (const r of [...L.lanes, L.cause, L.wait, L.release]) { assert.ok(Math.abs(lstar(r.fill) - 90) < 2, `fill ${r.fill} is ${lstar(r.fill).toFixed(1)} L*`); assert.equal(r.ink, light.ink); }
+  // a pale hue is pushed toward the ink until it reaches 3:1, no further
+  const pale = fig.themeContext(PALE_HUE).ROLES.light.lanes[1];
+  assert.notEqual(pale.stroke, '#e8c547');
+  assert.ok(wcag(pale.stroke, PALE_HUE.light.paper) >= 3 && wcag(pale.stroke, PALE_HUE.light.paper) < 3.4, `stroke ${pale.stroke} is ${wcag(pale.stroke, PALE_HUE.light.paper).toFixed(2)}:1`);
+  assert.ok(angle(hueDeg(pale.fill), hueDeg('#e8c547')) < 8, 'the fill keeps the hue');
+  // roles past the supply turn the accent hue 137.5 degrees per role
+  const only = fig.themeContext(ACCENT_ONLY).ROLES.light, h0 = hueDeg(ACCENT_ONLY.light.accent);
+  assert.equal(only.lanes[0].stroke, ACCENT_ONLY.light.accent);
+  [only.lanes[1], only.cause, only.wait, only.release].forEach((r, k) => assert.ok(angle(hueDeg(r.fill), h0 + 137.5 * (k + 1)) < 12, `role ${k + 1} fill ${r.fill}: ${hueDeg(r.fill).toFixed(0)} vs ${((h0 + 137.5 * (k + 1)) % 360).toFixed(0)}`));
+  assert.equal(new Set([only.lanes[0], only.lanes[1], only.cause, only.wait, only.release].map((r) => r.stroke)).size, 5, 'five roles, five strokes');
+  // claim fill, neutral fills and the ramp
+  const ctx = fig.themeContext(BRAND), P = ctx.PALETTE, paper = BRAND.light.paper;
+  assert.ok(wcag(paper, P.fills.accent) >= 4.5 && lstar(P.fills.paper) - lstar(P.fills.accent) >= 64);
+  const fills = Object.values(P.fills).map(lstar).sort((a, b) => b - a);
+  for (let i = 1; i < fills.length; i++) assert.ok(Math.abs(fills[i - 1] - fills[i] - (fills[0] - fills[4]) / 4) < 1, 'neutral fills are evenly spaced in L*');
+  assert.equal(L.ramp[0].fill, P.fills.accent);
+  assert.ok(near(L.ramp[1].fill, mixT(P.fills.accent, paper, 0.55)) && near(L.ramp[2].fill, mixT(P.fills.accent, paper, 0.85)), 'the ramp is the claim fill mixed toward paper at 55% and 85%');
+  // explicit --data / --fail hues take the edges
+  const e = fig.themeContext({ light: { ...BRAND.light, data: '#2f6f1f', fail: '#a31515' } }).PALETTE.edges;
+  assert.equal(e.data.color, '#2f6f1f'); assert.equal(e.fail.color, '#a31515');
+});
+
+test('theme --theme file: figure and render apply it; the file wins over the IR\'s own theme; both a JSON theme and a .css one work', () => {
+  const dir = scratch();
+  try {
+    const tl = writeJson(dir, 'tl.json', { ...FIG131, theme: PRINT }), arch = writeJson(dir, 'arch.json', { ...ARCH3, theme: PRINT });
+    const jsonT = writeJson(dir, 'brand.json', BRAND), cssT = writeJson(dir, 'brand.css', BRAND_CSS);
+    // a book type: the static svg inline
+    let r = cli(['render', tl, join(dir, 'tl.html'), '--theme', jsonT]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    const page = readFileSync(join(dir, 'tl.html'), 'utf8');
+    assert.ok(page.includes('background:#f7f5ff') && !page.includes(PRINT.light.paper), 'the file\'s theme, not the IR\'s');
+    fig.renderFigureHtmlToFile(FIG131, join(dir, 'x.html'), { theme: BRAND });
+    assert.equal(page, readFileSync(join(dir, 'x.html'), 'utf8'), 'the page is the themed static svg');
+    // the five grid types: the theme goes into :root and the dark media block
+    r = cli(['render', arch, join(dir, 'a.html'), '--theme', jsonT]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    const html = readFileSync(join(dir, 'a.html'), 'utf8');
+    assert.match(html, /:root\{--bg:#f7f5ff;--fg:#1b1a2e;--muted:#4a4766;--box:#fdfcff;--line:#1b1a2f;--accent:#6d28d9;--data:#[0-9a-f]{6};--fail:#[0-9a-f]{6};--group:#[0-9a-f]{6}\}\n@media \(prefers-color-scheme:dark\)\{:root\{--bg:#14122b;--fg:#ece9fb;--muted:#b5b0d8;--box:#1e1b3f;/);
+    assert.ok(!html.includes('#2f6fdb') && !html.includes('#fbfaf7'), 'no default colour in the page\'s variables');
+    assert.equal(html, diagram.render(ARCH3, { vars: fig.themeContext(BRAND).vars }), 'the CLI and render(ir, {vars}) agree');
+    // the stylesheet is the source: the same page as the JSON theme
+    r = cli(['render', arch, join(dir, 'c.html'), '--theme', cssT]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(readFileSync(join(dir, 'c.html'), 'utf8'), html, 'brand.css renders as brand.json');
+    // a light-only theme writes no dark-media block; the IR's own theme is used when there is no flag
+    r = cli(['render', arch, join(dir, 'p.html')]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    const print = readFileSync(join(dir, 'p.html'), 'utf8');
+    assert.ok(print.includes(':root{--bg:#e6e1d6;') && !print.includes('prefers-color-scheme'), 'the IR theme, light only');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('theme --theme on figure writes svg, png and the dark svg from the theme\'s dark half; a light-only theme writes no dark svg, leaves an existing one in place and says it is stale', needsBrowser, () => {
+  const dir = scratch();
+  try {
+    const ir = writeJson(dir, 'tl.json', FIG131), brand = writeJson(dir, 'brand.json', BRAND), print = writeJson(dir, 'print.json', PRINT);
+    let r = cli(['figure', ir, join(dir, 'f'), '--theme', brand]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    const light = readFileSync(join(dir, 'f.svg'), 'utf8'), ctx = fig.themeContext(BRAND);
+    assert.equal(light, fig.renderFigure(FIG131, { theme: BRAND }).svg);
+    assert.equal(readFileSync(join(dir, 'f.dark.svg'), 'utf8'), fig.darkSvg(light, ctx.dark), 'the dark svg is built from the dark half');
+    assert.ok(existsSync(join(dir, 'f.png')));
+    const darkBefore = readFileSync(join(dir, 'f.dark.svg'));
+    r = cli(['figure', ir, join(dir, 'f'), '--theme', print]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.ok(readFileSync(join(dir, 'f.dark.svg')).equals(darkBefore), 'the existing dark svg is left as it was');
+    assert.equal(readFileSync(join(dir, 'f.svg'), 'utf8'), fig.renderFigure(FIG131, { theme: PRINT }).svg, 'the light svg is rewritten');
+    assert.ok(existsSync(join(dir, 'f.png')));
+    assert.match(r.stdout, /no dark half, so .*f\.dark\.svg was not written/);
+    assert.match(r.stdout, /f\.dark\.svg is from an earlier run, not this theme: it was left in place and is stale/);
+    // no dark file before: none is created and the short message is unchanged
+    const dir2 = scratch();
+    try {
+      const ir2 = writeJson(dir2, 'tl.json', FIG131), print2 = writeJson(dir2, 'print.json', PRINT);
+      r = cli(['figure', ir2, join(dir2, 'f'), '--theme', print2]);
+      assert.equal(r.status, 0, r.stderr + r.stdout);
+      assert.ok(!existsSync(join(dir2, 'f.dark.svg')), 'no dark svg is created');
+      assert.match(r.stdout, /no dark half, so .*f\.dark\.svg was not written - now Read the PNG/);
+      assert.ok(!/left in place|stale/.test(r.stdout), r.stdout);
+    } finally { rmSync(dir2, { recursive: true, force: true }); }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('theme dark half: the dark svg draws only the dark half\'s colours, text reads at 4.5:1 on its fill, and no light hex is left', () => {
+  const ctx = fig.themeContext(BRAND), D = ctx.ROLES.dark, dv = new Set([...Object.values(ctx.dark.maps.shape), ...ctx.dark.inks]);
+  for (const [name, ir] of [['timeline', FIG131], ['record chain', CHAIN], ['architecture', KO_ARCH], ['er', ER], ['chart', CHART], ['bars', BARS]]) {
+    const { svg } = fig.renderFigure({ ...ir, theme: BRAND }), dark = fig.darkSvg(svg, ctx.dark);
+    assert.notEqual(dark, svg, name);
+    assert.deepEqual([...new Set(hexesOf(dark).filter((h) => !dv.has(h)))], [], `${name}: a hex outside the dark half`);
+    assert.deepEqual([...new Set(hexesOf(dark).filter((h) => h in ctx.dark.maps.shape))], [], `${name}: a light hex is left`);
+    for (const p of textOnFills(dark)) assert.ok(wcag(p.ink, p.fill || D.surface) >= 4.5, `${name}: text ${p.ink} on ${p.fill || D.surface}`);
+    assert.equal(dark.replace(/#[0-9a-f]{6}/gi, '#'), svg.replace(/#[0-9a-f]{6}/gi, '#'), `${name}: only the colours changed`);
+  }
+  assert.ok(fig.darkSvg(fig.renderFigure({ ...FIG131, theme: BRAND }).svg, ctx.dark).includes(`fill="${D.surface}"`), 'the page is the dark half\'s paper');
+  assert.equal(fig.themeContext(PRINT).dark, null, 'no dark block, light only');
+  const nobox = { ...BRAND.light }; delete nobox.box;
+  const errs = themeErrs(() => fig.themeContext({ light: nobox, dark: BRAND.dark }));
+  assert.equal(errs.length, 1);
+  assert.match(errs[0], /one-to-one/);
+  for (const hex of ['#f7f5ff', '#14122b', '#1e1b3f']) assert.ok(errs[0].includes(hex), `names ${hex}: ${errs[0]}`);
+  // the message names the two roles, says which half to edit, and the fix is the light half's box - not the dark half
+  assert.match(errs[0], /\bpaper\b/);
+  assert.match(errs[0], /\bbox\b/);
+  assert.match(errs[0], /light half/);
+  assert.match(errs[0], /give the light half a box/);
+  assert.ok(!/(give|edit|change|fix)[^-]*the dark half/.test(errs[0]) && !/make the light colours differ/.test(errs[0]), `does not send the person to the dark half: ${errs[0]}`);
+});
+
+test('theme refusal: a light half with ink equal to muted, against a dark half where they differ, is refused naming ink and muted, both hexes and the light half', () => {
+  const same = { ...BRAND.light, muted: BRAND.light.ink };
+  const errs = themeErrs(() => fig.themeContext({ light: same, dark: BRAND.dark }));
+  assert.equal(errs.length, 1);
+  assert.match(errs[0], /one-to-one/);
+  assert.match(errs[0], /\bink\b/);
+  assert.match(errs[0], /\bmuted\b/);
+  for (const hex of [BRAND.light.ink, BRAND.dark.ink, BRAND.dark.muted]) assert.ok(errs[0].includes(hex), `names ${hex}: ${errs[0]}`);
+  assert.match(errs[0], /light half/);
+  assert.match(errs[0], /give the light half a muted that differs from its ink/);
+  assert.ok(!/(give|edit|change|fix)[^-]*the dark half/.test(errs[0]) && !/make the light colours differ/.test(errs[0]), `does not send the person to the dark half: ${errs[0]}`);
+});
+
+test('theme refusal: a theme that misses 4.5:1 for ink, 3:1 for a stroke, or the 15 L* spacing of fills is refused naming the pair, the hexes and the ratio', () => {
+  const low = themeErrs(() => fig.themeContext(LOWINK));
+  assert.ok(low.some((m) => /^light half: ink #8a867f on paper #f4f1ea is 3\.\d\d:1, needs 4\.5:1$/.test(m)), low[0]);
+  assert.ok(low.some((m) => /^light half: lane A ink #[0-9a-f]{6} on lane A fill #[0-9a-f]{6} is \d\.\d\d:1, needs 4\.5:1$/.test(m)), 'a role ink on its fill');
+  assert.ok(low.some((m) => /^light half: fail edge \(the wait label ink\) #[0-9a-f]{6} on paper #f4f1ea is \d\.\d\d:1, needs 4\.5:1$/.test(m)), 'the wait label ink');
+  // a stroke is pushed toward the ink, so the 3:1 stroke bar only bites when the ink itself is under 3:1
+  const faint = themeErrs(() => fig.themeContext(FAINT));
+  assert.ok(faint.some((m) => /^light half: lane B stroke #[0-9a-f]{6} on paper #f4f1ea is [12]\.\d\d:1, needs 3:1$/.test(m)), 'a stroke on the paper (3:1)');
+  assert.ok(faint.some((m) => /^light half: line #[0-9a-f]{6} on paper #f4f1ea is [12]\.\d\d:1, needs 3:1$/.test(m)), 'the line colour on the paper (3:1)');
+  const pale = themeErrs(() => fig.themeContext(PALEINK));
+  assert.ok(pale.some((m) => /^light half: \w+ fill #[0-9a-f]{6} and \w+ fill #[0-9a-f]{6} are \d+\.\d L\* apart, need 15 for a grayscale print$/.test(m)), pale.join('\n'));
+  // the dark half is held to the same bars, and named as such
+  const dim = themeErrs(() => fig.themeContext({ ...BRAND, dark: { ...BRAND.dark, ink: '#4a4766' } }));
+  assert.ok(dim.some((m) => /^dark half: ink #4a4766 on paper #14122b is \d\.\d\d:1, needs 4\.5:1$/.test(m)), dim.join('\n'));
+  // the same refusal through check, render and the CLI; nothing is written
+  assert.ok(fig.checkFigure({ ...FIG131, theme: LOWINK }).some((m) => /ink #8a867f on paper #f4f1ea is 3\.\d\d:1, needs 4\.5:1/.test(m)));
+  assert.throws(() => fig.renderFigure({ ...FIG131, theme: LOWINK }), /ink #8a867f on paper #f4f1ea is 3\.\d\d:1, needs 4\.5:1/);
+  const dir = scratch();
+  try {
+    const ir = writeJson(dir, 'tl.json', FIG131), arch = writeJson(dir, 'arch.json', ARCH3), th = writeJson(dir, 'low.json', LOWINK);
+    for (const [args, out] of [[['figure', ir, join(dir, 'f')], 'f.svg'], [['render', ir, join(dir, 'tl.html')], 'tl.html'], [['render', arch, join(dir, 'a.html')], 'a.html'], [['check', ir], null]]) {
+      const r = cli([...args, '--theme', th]);
+      assert.equal(r.status, 1, args[0]);
+      assert.match(r.stderr, /light half: ink #8a867f on paper #f4f1ea is 3\.\d\d:1, needs 4\.5:1/, args[0]);
+      if (out) assert.ok(!existsSync(join(dir, out)), `${args[0]} wrote nothing`);
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('theme --theme file that is missing or malformed exits non-zero on figure and render, naming the file and what is wrong', () => {
+  const dir = scratch();
+  try {
+    const ir = writeJson(dir, 'tl.json', FIG131), arch = writeJson(dir, 'arch.json', ARCH3);
+    const files = [
+      [join(dir, 'missing.json'), /cannot be read \(ENOENT\)/],
+      [writeJson(dir, 'broken.json', '{"light": '), /not valid JSON/],
+      [writeJson(dir, 'named.json', { light: { ...BRAND.light, ink: 'navy' } }), /light\.ink: "navy" is a named colour/],
+      [writeJson(dir, 'nokey.json', { light: { ink: '#111111', paper: '#ffffff', muted: '#333333' } }), /light\.accent: missing/],
+      [writeJson(dir, 'named.css', ':root{--bg:#fff;--fg:navy;--muted:#333;--accent:#00f}'), /--fg: "navy" is a named colour/],
+    ];
+    for (const [file, why] of files) for (const args of [['figure', ir, join(dir, 'o')], ['render', ir, join(dir, 'o.html')], ['render', arch, join(dir, 'a.html')]]) {
+      const r = cli([...args, '--theme', file]);
+      assert.equal(r.status, 1, `${args[0]} ${file}`);
+      assert.ok(r.stderr.includes(file), `stderr names ${file}: ${r.stderr}`);
+      assert.match(r.stderr, why);
+    }
+    assert.ok(!existsSync(join(dir, 'o.svg')) && !existsSync(join(dir, 'o.html')));
+    assert.equal(cli(['render', arch, join(dir, 'a.html'), '--theme']).status, 2, '--theme without a file is a usage error');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('theme --theme=<file> (equals form) on render is byte-identical to --theme <file>, differs from no theme, and an "=" inside the value is kept', () => {
+  const dir = scratch();
+  try {
+    const tl = writeJson(dir, 'tl.json', FIG131), arch = writeJson(dir, 'arch.json', ARCH3), jsonT = writeJson(dir, 'brand.json', BRAND);
+    for (const [name, ir] of [['tl', tl], ['arch', arch]]) {
+      const [sp, eq, none] = ['sp', 'eq', 'none'].map((k) => join(dir, `${name}.${k}.html`));
+      let r = cli(['render', ir, sp, '--theme', jsonT]); assert.equal(r.status, 0, r.stderr + r.stdout);
+      r = cli(['render', ir, eq, `--theme=${jsonT}`]); assert.equal(r.status, 0, r.stderr + r.stdout);
+      r = cli([`--theme=${jsonT}`, 'render', ir, join(dir, `${name}.lead.html`)]); assert.equal(r.status, 0, 'the flag may lead');
+      r = cli(['render', ir, none]); assert.equal(r.status, 0, r.stderr + r.stdout);
+      assert.equal(readFileSync(eq, 'utf8'), readFileSync(sp, 'utf8'), `${name}: equals form equals space form`);
+      assert.equal(readFileSync(join(dir, `${name}.lead.html`), 'utf8'), readFileSync(sp, 'utf8'), `${name}: position does not matter`);
+      assert.notEqual(readFileSync(eq, 'utf8'), readFileSync(none, 'utf8'), `${name}: the theme was applied`);
+    }
+    // only the first "=" splits: a file name holding "=" is read, not cut at the second one
+    const eqDir = join(dir, 'a=b'); mkdirSync(eqDir);
+    const odd = writeJson(eqDir, 'brand.json', BRAND);
+    const r = cli(['render', tl, join(dir, 'odd.html'), `--theme=${odd}`]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(readFileSync(join(dir, 'odd.html'), 'utf8'), readFileSync(join(dir, 'tl.sp.html'), 'utf8'));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('theme --theme=<file> on figure writes the same svg as --theme <file> and differs from no theme', needsBrowser, () => {
+  const dir = scratch();
+  try {
+    const ir = writeJson(dir, 'tl.json', FIG131), brand = writeJson(dir, 'brand.json', BRAND);
+    let r = cli(['figure', ir, join(dir, 'sp'), '--theme', brand]); assert.equal(r.status, 0, r.stderr + r.stdout);
+    r = cli(['figure', ir, join(dir, 'eq'), `--theme=${brand}`]); assert.equal(r.status, 0, r.stderr + r.stdout);
+    r = cli(['figure', ir, join(dir, 'none')]); assert.equal(r.status, 0, r.stderr + r.stdout);
+    for (const ext of ['svg', 'dark.svg']) assert.equal(readFileSync(join(dir, `eq.${ext}`), 'utf8'), readFileSync(join(dir, `sp.${ext}`), 'utf8'), ext);
+    assert.notEqual(readFileSync(join(dir, 'eq.svg'), 'utf8'), readFileSync(join(dir, 'none.svg'), 'utf8'));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('theme --theme given twice in any mix of forms, or an empty --theme=, exits 2 naming the flag and writes nothing; a refused theme still exits 1', () => {
+  const dir = scratch();
+  try {
+    const ir = writeJson(dir, 'tl.json', FIG131), arch = writeJson(dir, 'arch.json', ARCH3);
+    const a = writeJson(dir, 'a.json', BRAND), b = writeJson(dir, 'b.json', PRINT), low = writeJson(dir, 'low.json', LOWINK);
+    const twice = [['--theme', a, '--theme', b], [`--theme=${a}`, `--theme=${b}`], ['--theme', a, `--theme=${b}`], [`--theme=${a}`, '--theme', b], ['--theme', a, '--theme', a]];
+    for (const [cmd, src, out, file] of [['render', ir, 'o.html', 'o.html'], ['render', arch, 'a.html', 'a.html'], ['figure', ir, 'o', 'o.svg']]) {
+      for (const flags of twice) {
+        const r = cli([cmd, src, join(dir, out), ...flags]);
+        assert.equal(r.status, 2, `${cmd} ${flags.join(' ')}`);
+        assert.match(r.stderr, /--theme was given more than once/);
+        assert.ok(!existsSync(join(dir, file)), `${cmd} wrote nothing`);
+      }
+      const r = cli([cmd, src, join(dir, out), '--theme=']);
+      assert.equal(r.status, 2, `${cmd} --theme=`);
+      assert.ok(r.stderr.length > 0 && !existsSync(join(dir, file)), 'an empty value is a usage error, not a default');
+      assert.equal(cli([cmd, src, join(dir, out), `--theme=${low}`]).status, 1, 'a refused theme exits 1 in the equals form too');
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// A hostile or accidental theme is refused with one bounded line naming the file, fast, under a small heap: the
+// pre-limit reader ran out of heap on --hue-99999999 and a var() fan-out, overflowed the stack on a deep chain and
+// printed ~99999 lines for --hue-100000.
+test('theme file limits: a huge --hue-N, a var() fan-out, a deep var() chain, too many hues and a missing or broken file are each refused in one line naming the file, within 2 s', () => {
+  const dir = scratch();
+  try {
+    const ir = writeJson(dir, 'tl.json', FIG131), arch = writeJson(dir, 'arch.json', ARCH3);
+    const base = '--bg:#fff;--fg:#111;--muted:#444;--accent:#036;';
+    const fan = Array.from({ length: 30 }, (_, i) => `--t${i + 1}:var(--t${i}) var(--t${i});`).join('');
+    const chain = Array.from({ length: 3000 }, (_, i) => `--c${i + 1}:var(--c${i});`).join('');
+    const files = [
+      [writeJson(dir, 'hue-big.css', `:root{${base}--hue-99999999:#123456}`), /at most \d+ hues/],
+      [writeJson(dir, 'hue-many.css', `:root{${base}--hue-100000:#123456}`), /at most \d+ hues/],
+      [writeJson(dir, 'fan.css', `:root{${base}--t0:#fff;${fan}--hue-1:var(--t30)}`), /--t\d+: value (grows past|is longer than) \d+ characters/],
+      [writeJson(dir, 'chain.css', `:root{${base}--c0:#fff;${chain}--hue-1:var(--c3000)}`), /var\(\) chain is deeper than \d+ levels/],
+      [join(dir, 'missing.css'), /cannot be read \(ENOENT\)/],
+      [writeJson(dir, 'broken.json', '{"light": '), /not valid JSON/],
+    ];
+    for (const [file, why] of files) for (const args of [['figure', ir, join(dir, 'o')], ['render', ir, join(dir, 'o.html')], ['render', arch, join(dir, 'a.html')]]) {
+      const t0 = Date.now();
+      const r = spawnSync(process.execPath, ['--max-old-space-size=128', CLI, ...args, '--theme', file], { encoding: 'utf8', timeout: 20000 });
+      const took = Date.now() - t0;
+      const lines = r.stderr.split('\n').filter(Boolean);
+      assert.equal(r.status, 1, `${args[0]} ${file}: ${r.stderr.slice(0, 300)}`);
+      assert.equal(lines.length, 1, `${file}: one stderr line, got ${lines.length}`);
+      assert.ok(lines[0].length <= 302, `${file}: line of ${lines[0].length} characters`);
+      assert.ok(lines[0].startsWith(`- theme file ${file}: `), lines[0]);
+      assert.match(lines[0], why);
+      assert.ok(!/Maximum call stack|heap/i.test(r.stderr), r.stderr.slice(0, 300));
+      assert.ok(took < 2000, `${args[0]} ${file}: ${took} ms`);
+    }
+    assert.ok(!existsSync(join(dir, 'o.svg')) && !existsSync(join(dir, 'o.html')));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('theme file limits: the reader itself is bounded - hues up to the limit read, one more is refused; the error list ends in "... and N more"; a file over the size limit is refused unread', () => {
+  const base = '--bg:#fff;--fg:#111;--muted:#444;--accent:#036;';
+  const hues = (n) => Array.from({ length: n }, (_, i) => `--hue-${i + 1}:#${String(100000 + i).slice(-6)};`).join('');
+  assert.equal(fig.readThemeCss(`:root{${base}${hues(64)}}`).light.hues.length, 64);
+  assert.match(themeErrs(() => fig.readThemeCss(`:root{${base}${hues(65)}}`)).join('|'), /^--hue-65: at most 64 hues are read/);
+  assert.match(themeErrs(() => fig.readThemeCss(`:root{${base}--hue-9${'9'.repeat(40)}:#123456}`)).join('|'), /at most 64 hues/);
+  const gaps = themeErrs(() => fig.readThemeCss(`:root{${base}--hue-60:#123456}`));
+  assert.equal(gaps.length, 11, 'ten lines and the rest counted');
+  assert.equal(gaps[10], '... and 49 more');
+  assert.match(themeErrs(() => fig.normalizeTheme({ light: { ink: '#111', paper: '#fff', muted: '#444', accent: '#036', hues: Array(65).fill('#123456') } })).join('|'), /light\.hues: 65 hues - at most 64/);
+  const dir = scratch();
+  try {
+    const big = writeJson(dir, 'big.css', `:root{${base}}\n/* ${'x'.repeat(300000)} */`);
+    const errs = themeErrs(() => fig.loadThemeFile(big));
+    assert.equal(errs.length, 1);
+    assert.match(errs[0], new RegExp(`^theme file ${big.replace(/[.]/g, '\\.')}: is over \\d+ bytes`));
+    const nest = writeJson(dir, 'nest.css', `:root{${base}}` + '@media (prefers-color-scheme: dark){'.repeat(5000) + '}'.repeat(5000));
+    assert.match(themeErrs(() => fig.loadThemeFile(nest))[0], /@media blocks nest deeper than \d+ levels/);
+    const deep = writeJson(dir, 'deep.json', '['.repeat(100000) + ']'.repeat(100000));
+    assert.match(themeErrs(() => fig.loadThemeFile(deep))[0], /^theme file .*deep\.json: (is nested too deeply to read|the theme must be an object)/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('theme CSS reader: a :root block of fictional tokens reads as the equivalent JSON theme; hex3, rgb(), hsl() and var() are accepted', () => {
+  assert.deepEqual(fig.readThemeCss(BRAND_CSS), BRAND, 'the stylesheet reads as the JSON theme');
+  assert.deepEqual(fig.normalizeTheme(fig.readThemeCss(BRAND_CSS)), fig.normalizeTheme(BRAND));
+  const forms = fig.readThemeCss(':root{--base:#123;--bg:#ffffff;--fg:var(--base);--muted:rgb(51, 51, 51);--accent:hsl(220, 80%, 40%);--hue-1:rgb(10% 20% 30%);--hue-2:hsl(0 100% 25%)}').light;
+  assert.deepEqual(forms, { paper: '#ffffff', ink: '#112233', muted: '#333333', accent: '#144bb8', hues: ['#1a334d', '#800000'] });
+  assert.deepEqual(fig.normalizeTheme({ light: { ink: '#123', paper: 'rgb(255,255,255)', muted: 'hsl(0, 0%, 20%)', accent: '#00f' } }).light, { ink: '#112233', paper: '#ffffff', muted: '#333333', accent: '#0000ff', hues: [], box: '#ffffff', line: '#112233' }, 'the JSON form takes the same notations; box defaults to paper, line to ink');
+  // later :root blocks lay over earlier ones, as the cascade does
+  assert.equal(fig.readThemeCss(':root{--bg:#fff;--fg:#000;--muted:#333;--accent:#00f} :root{--fg:#111}').light.ink, '#111111');
+});
+
+test('theme CSS reader: a missing token, a named colour, a var() that does not resolve or loops, a hue gap and a stylesheet with no :root are refused naming the token', () => {
+  const ok = '--fg:#000;--muted:#333;--accent:#00f';
+  const cases = [
+    [`:root{--bg:navy;${ok}}`, /^--bg: "navy" is a named colour/],
+    [':root{--fg:#000;--muted:#333;--accent:#00f}', /^--bg: missing - it is the page colour/],
+    [`:root{--bg:#fff;--fg:#000;--muted:#333}`, /^--accent: missing/],
+    [`:root{--bg:var(--paper);${ok}}`, /^--bg: var\(--paper\) is not defined in :root/],
+    [`:root{--bg:var(--a);--a:var(--bg);${ok}}`, /^--bg: var\(\) loops: --bg -> --a -> --bg/],
+    [`:root{--bg:#fff;${ok};--hue-2:#f00}`, /^--hue-1: missing - hues run --hue-1 to --hue-2 with no gap/],
+    [`:root{--bg:#ffff;${ok}}`, /^--bg: "#ffff" is not a colour/],
+    ['body{color:#000}', /no :root\{--\.\.\.\} block/],
+  ];
+  for (const [css, re] of cases) { const errs = themeErrs(() => fig.readThemeCss(css)); assert.match(errs[0], re, css); }
+  // every bad token is named, not only the first
+  assert.equal(themeErrs(() => fig.readThemeCss(':root{--bg:navy;--fg:red;--muted:#333;--accent:#00f}')).length, 2);
+});
+
+test('theme CSS reader: the dark half is the :root of a prefers-color-scheme: dark block or of a [data-theme=dark] rule, laid over the light tokens; with none the theme is light-only', () => {
+  const light = ':root{--bg:#ffffff;--fg:#111111;--muted:#444444;--accent:#0044cc;--box:#f4f4f4;--hue-1:#aa3300}';
+  const byMedia = fig.readThemeCss(`${light} @media (min-width: 600px){:root{--bg:#eee}} @media (prefers-color-scheme: dark){:root{--bg:#101010;--fg:#f0f0f0}}`);
+  assert.deepEqual(byMedia.dark, { paper: '#101010', ink: '#f0f0f0', muted: '#444444', accent: '#0044cc', box: '#f4f4f4', hues: ['#aa3300'] }, 'tokens the dark block leaves out keep their light value');
+  assert.equal(byMedia.light.paper, '#ffffff', 'a media block that is not the dark scheme is not the dark half');
+  for (const sel of ['[data-theme=dark]', ':root[data-theme="dark"]', 'html[data-theme=\'dark\']']) assert.equal(fig.readThemeCss(`${light} ${sel}{--bg:#101010}`).dark.paper, '#101010', sel);
+  assert.equal('dark' in fig.readThemeCss(light), false, 'light only');
+});
+
+test('theme CSS reader: a :root inside @layer or @supports, a :root.light base block and a .dark class block are read; an unterminated block is refused naming it', () => {
+  const base = ':root{--bg:#fafafa;--fg:#111111;--muted:#444444;--accent:#0044cc}';
+  const want = { light: { paper: '#fafafa', ink: '#111111', muted: '#444444', accent: '#0044cc', hues: [] } };
+  assert.deepEqual(fig.readThemeCss(base), want);
+  assert.deepEqual(fig.readThemeCss(`@layer tokens{${base}}`), want, ':root in @layer');
+  assert.deepEqual(fig.readThemeCss(`@layer a, b; @layer b{${base}}`), want, 'an @layer name list has no block');
+  assert.deepEqual(fig.readThemeCss(`@supports (color: red){${base}}`), want, ':root in @supports');
+  const nested = fig.readThemeCss(`@layer tokens{${base} @media (prefers-color-scheme: dark){:root{--bg:#101010}} @media (min-width: 600px){:root{--bg:#eee}}}`);
+  assert.equal(nested.light.paper, '#fafafa', 'a plain @media inside @layer is left out');
+  assert.equal(nested.dark.paper, '#101010', 'a dark @media nested in @layer is the dark half');
+  assert.equal(fig.readThemeCss(`@font-face{font-family:x} @media (min-width: 600px){${base}} ${base.replace('#fafafa', '#eeeeee')}`).light.paper, '#eeeeee', 'other at-rules stay out');
+  for (const sel of [':root.light', 'html.light', ':root[data-theme=light]', ':root[data-theme="light"]']) assert.deepEqual(fig.readThemeCss(base.replace(':root', sel)), want, sel);
+  for (const sel of ['.dark', ':root.dark', 'html.dark', 'body.dark', 'body.dark, .x']) {
+    const t = fig.readThemeCss(`:root.light{--bg:#fafafa;--fg:#111111;--muted:#444444;--accent:#0044cc} ${sel}{--bg:#101010}`);
+    assert.equal(t.dark.paper, '#101010', sel);
+    assert.equal(t.dark.ink, '#111111', `${sel}: tokens the dark block leaves out keep their light value`);
+    assert.equal(t.light.paper, '#fafafa', sel);
+  }
+  // unterminated: refused, never read as a cut value
+  for (const css of [':root{--bg:#fff;--fg:#000;--muted:#333;--accent:#000', '@layer base{:root{--bg:#fff;--fg:#000;--muted:#333;--accent:#000}']) {
+    const errs = themeErrs(() => fig.readThemeCss(css));
+    assert.equal(errs.length, 1, css);
+    assert.match(errs[0], /^unterminated block: "(:root|@layer base)" opens a \{ that is never closed/, css);
+    assert.doesNotMatch(errs[0], /"#00"/);
+  }
+  assert.match(themeErrs(() => fig.readThemeCss('body{color:#000}'))[0], /^no :root\{--\.\.\.\} block found/, 'no :root of any form is unchanged');
+});
+
+test('theme from the IR must be an inline object and --theme (opts.theme) wins over it; a theme in one build never leaks into the next', () => {
+  assert.ok(fig.checkFigure({ ...FIG131, theme: 'brand.json' }).some((m) => /"theme" in the IR must be an inline object/.test(m)));
+  assert.ok(fig.checkFigure({ ...FIG131, theme: [BRAND] }).some((m) => /inline object/.test(m)));
+  assert.ok(fig.checkFigure({ ...FIG131, theme: { light: { ...BRAND.light, ink: 'navy' } } }).some((m) => /light\.ink: "navy" is a named colour/.test(m)));
+  assert.equal(fig.renderFigure({ ...FIG131, theme: PRINT }, { theme: BRAND }).svg, fig.renderFigure(FIG131, { theme: BRAND }).svg, '--theme wins');
+  assert.notEqual(fig.renderFigure({ ...FIG131, theme: PRINT }).svg, fig.renderFigure(FIG131, { theme: BRAND }).svg);
+  const state = () => [fig.PALETTE.paper, fig.ROLES.light.surface, fig.PALETTE.fills.accent].join();
+  const before = state();
+  fig.renderFigure({ ...FIG131, theme: BRAND });
+  assert.equal(state(), before, 'restored after a themed render');
+  assert.throws(() => fig.renderFigure({ ...FIG131, theme: LOWINK }));
+  fig.checkFigure({ ...FIG131, theme: BRAND, steps: [] });
+  assert.equal(state(), before, 'restored after a refused build');
+  assert.equal(sha256(fig.renderFigure(FIG131).svg), LIGHT_SHA[0], 'and the next default render is the default');
 });
