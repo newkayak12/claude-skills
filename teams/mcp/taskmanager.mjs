@@ -3428,25 +3428,34 @@ export function noDaemon() {
 // outlive the session that opened the task, because closing that session must not stop the run.
 // Reserved inside the caller's transaction (task.daemon.spawning) and spawned after it commits
 // (reserveSpawn). A task.daemon holding only a reservation is not a prior daemon: no restart.
-function spawnDaemon(task) {
+// { reset: true } is tm_retry's fresh budget for an exhausted dead daemon: the respawn counts
+// restarts: 0 (not prior+1) and its daemon_restarted event carries reason: 'reset'.
+function spawnDaemon(task, { reset = false } = {}) {
   const prior = !!(task.daemon && task.daemon.started_at);
   const attempt = prior ? (task.daemon.spawn_count || 0) : 0;
   const priorRestarts = prior ? (task.daemon.restarts || 0) : 0;
-  const restarts = prior ? priorRestarts + 1 : 0;
+  const restarts = reset ? 0 : prior ? priorRestarts + 1 : 0;
   if (!task.daemon) task.daemon = {};
   return reserveSpawn(task, 'daemon', task.daemon, {
-    attempt, reason: prior ? 'restart' : 'spawn', restarts,
+    attempt, reason: reset ? 'reset' : prior ? 'restart' : 'spawn', restarts,
     spawn: (t) => spawnDaemonProcess(t, attempt),
     apply: (t, _h, d) => {
       if (d.error) {
-        t.daemon = { ...d, spawn_count: attempt + 1, restarts: priorRestarts, exhausted: false };
+        t.daemon = { ...d, spawn_count: attempt + 1, restarts: reset ? 0 : priorRestarts, exhausted: false };
         record(t, { event: 'daemon_spawn_failed', task_id: t.run_id, error: d.error });
         return;
       }
       t.daemon = { ...d, spawn_count: attempt + 1, restarts, exhausted: false };
-      record(t, { event: prior ? 'daemon_restarted' : 'daemon_spawned', task_id: t.run_id, pid: d.pid, log: d.log });
+      record(t, { event: prior ? 'daemon_restarted' : 'daemon_spawned', task_id: t.run_id, pid: d.pid, log: d.log, ...(reset ? { reason: 'reset' } : {}) });
     },
   });
+}
+
+// The size-L state a dead daemon past its restart budget leaves: nothing respawns it, so the
+// caller is told the way out (tm_retry's bare route, retryTask). Null while the daemon is fine.
+function daemonExhaustedNext(task) {
+  if (!(task.daemon && task.daemon.exhausted) || driverAlive(task.daemon) || managerState(task).state !== 'running') return null;
+  return 'the task daemon died past its restart budget (driver_restarts); tm_retry({task_id}) gives it a fresh daemon on the same run';
 }
 
 function spawnDaemonProcess(task, attempt) {
@@ -8103,6 +8112,7 @@ function toolNext(a) {
     flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),
     ready,
     children: [...children, ...opening],
+    ...(daemonExhaustedNext(task) ? { next: daemonExhaustedNext(task) } : {}),
   };
 }
 
@@ -8562,6 +8572,20 @@ function retryTask(task, a) {
     saveRun(task);
     return { task_id: task.run_id, retried: true };
   }
+  // A size-L task whose daemon died past driver_restarts with its manager graph still running:
+  // nothing is wrong with the shape, so a bare tm_retry gives the daemon a fresh budget on the
+  // same run instead of re-planning. A graph that is itself blocked falls through to retryShape.
+  const noSelector = a.package_id == null && a.repair !== true && !(Array.isArray(a.repackage) && a.repackage.length);
+  if (noSelector && !task.s_run && !task.harness_run && task.daemon && task.daemon.exhausted === true
+    && !driverAlive(task.daemon) && managerState(task).state === 'running') {
+    task.daemon.exhausted = false;
+    task.daemon.restarts = 0;
+    const spawned = noDaemon() ? false : spawnDaemon(task, { reset: true });
+    saveRun(task);
+    if (!spawned && !noDaemon()) return { task_id: task.run_id, target: 'daemon', retried: false, reason: 'the daemon could not be started (task directory gone or a spawn already under way)' };
+    record(task, { event: 'tm_retry', task_id: task.run_id, target: 'daemon' });
+    return { task_id: task.run_id, target: 'daemon', retried: true };
+  }
   // Two children pass and the merge fails: that is nobody's failure but the shape's. The
   // packages that collided go back to shape as one instruction - make them one package, or
   // order them so the later one builds on the earlier - with the conflicting files as the
@@ -8743,6 +8767,7 @@ function toolStatus(a) {
     cwd: task.cwd,
     state: state.state,
     ...(state.partial ? { partial: true, partial_reasons: state.partial_reasons } : {}),
+    ...(daemonExhaustedNext(task) ? { next: daemonExhaustedNext(task) } : {}),
     counts: state.counts,
     size: task.size,
     flow: task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),

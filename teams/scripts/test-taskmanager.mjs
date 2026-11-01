@@ -5447,7 +5447,122 @@ test('a dead daemon is respawned on any tm_* call up to driver_restarts, then re
     const ledger = readFileSync(join(root, open.task_id, 'ledger.jsonl'), 'utf8');
     assert.match(ledger, /"event":"daemon_restarted"/);
     assert.match(ledger, /"event":"daemon_exhausted"/);
+    assert.match(s.next, /tm_retry\(\{task_id\}\)/, 'tm_status names the way out of an exhausted daemon');
+    // An explicit selector is not the bare route: reset_capacity leaves the daemon exhausted and dead.
+    await tm.call('tm_retry', { task_id: open.task_id, reset_capacity: true });
+    await new Promise((r) => setTimeout(r, 400));
+    const after = await tm.call('tm_status', { task_id: open.task_id });
+    assert.equal(after.daemon.exhausted, true, 'reset_capacity does not revive an exhausted daemon');
+    assert.equal(after.daemon.pid, s.daemon.pid);
+    assert.equal(after.daemon.spawn_count, s.daemon.spawn_count, 'and spawns nothing');
   } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
+});
+
+// A bare tm_retry on a task whose daemon is exhausted and dead, with the manager graph still
+// running, resumes the daemon on the same run - it does not re-plan (no shape:/critique: node).
+// Drives the real MCP server child: tm_open -> exhausted dead daemon -> tm_retry.
+test('a bare tm_retry resumes an exhausted dead daemon on the same run with a fresh budget, no re-plan', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const fake = join(root, 'fake-daemon.mjs');
+  // Exits at once unless the marker <root>/stay exists (HARNESS_TASKS_DIR is <root>), then stays up ~30 s.
+  writeFileSync(fake, [
+    "import { existsSync } from 'node:fs';",
+    "import { join } from 'node:path';",
+    "if (!existsSync(join(process.env.HARNESS_TASKS_DIR, 'stay'))) { console.error('fake daemon exits'); process.exit(1); }",
+    "setTimeout(() => process.exit(0), 30000);",
+  ].join('\n'));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_DAEMON: `node ${fake}` }).init();
+  let newPid;
+  try {
+    const open = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'resume me', cwd, vendor: 'self', size: 'L', driver_restarts: 1 });
+    const id = open.task_id;
+    const s0 = await waitFor(async () => {
+      const s = await tm.call('tm_status', { task_id: id });
+      return s.daemon && s.daemon.exhausted === true && s.state === 'blocked' ? s : null;
+    }, 'the daemon to be exhausted');
+    const oldPid = s0.daemon.pid;
+    const nodeIds = s0.nodes.map((n) => n.node_id);
+    assert.ok(!nodeIds.some((n) => /^(shape|critique)/.test(n)), 'the exhausted task has no shape yet');
+    const ledgerPath = join(root, id, 'ledger.jsonl');
+    const linesBefore = readFileSync(ledgerPath, 'utf8').split('\n').filter(Boolean).length;
+    writeFileSync(join(root, 'stay'), '');
+
+    const r = await tm.call('tm_retry', { task_id: id });
+    assert.equal(r.target, 'daemon', JSON.stringify(r));
+    assert.equal(r.retried, true);
+    const s1 = await waitFor(async () => {
+      const s = await tm.call('tm_status', { task_id: id });
+      if (s.daemon && s.daemon.pid !== oldPid) newPid = s.daemon.pid; // so finally kills it even if a later wait fails
+      return s.daemon && s.daemon.pid !== oldPid && s.daemon.alive === true ? s : null;
+    }, 'a new live daemon');
+    assert.notEqual(s1.daemon.pid, oldPid);
+    assert.ok(driverAliveLocal(newPid), 'the new daemon pid is alive');
+    assert.equal(s1.daemon.exhausted, false);
+    assert.equal(s1.daemon.restarts, 0);
+    assert.notEqual(s1.state, 'blocked');
+    assert.deepEqual(s1.nodes.map((n) => n.node_id), nodeIds, 'same nodes: no shape:/critique: node was added');
+    assert.ok(existsSync(join(root, id)), 'the run dir is unchanged');
+
+    const events = readFileSync(ledgerPath, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    const after = events.slice(linesBefore);
+    assert.ok(after.some((e) => e.event === 'tm_retry' && e.target === 'daemon'), 'tm_retry target daemon recorded');
+    assert.ok(after.some((e) => e.event === 'daemon_restarted' && e.reason === 'reset'), 'daemon_restarted reason reset recorded');
+    assert.ok(!after.some((e) => /plan|shape|critique/.test(`${e.event} ${e.node_id || ''} ${e.target || ''}`)), 'no plan/shape/critique after the retry');
+  } finally {
+    if (newPid) { try { process.kill(newPid, 'SIGKILL'); } catch { /* gone */ } }
+    tm.close();
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// Proves the in-repo spawn (detached + unref) lets the daemon survive a SIGKILLed parent. tm.proc is
+// the MCP server stand-in. It does NOT prove survival of a Claude Code process-tree or cgroup kill.
+test('the daemon survives a SIGKILL of its parent MCP server and keeps ticking its ledger', async () => {
+  const cwd = repo();
+  const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
+  const fake = join(root, 'fake-ticking-daemon.mjs');
+  writeFileSync(fake, [
+    "import { appendFileSync } from 'node:fs';",
+    "import { join } from 'node:path';",
+    "const id = process.argv[process.argv.indexOf('--task') + 1];",
+    "const ledger = join(process.env.HARNESS_TASKS_DIR, id, 'ledger.jsonl');",
+    "setInterval(() => { try { appendFileSync(ledger, JSON.stringify({ ts: Date.now(), event: 'fake_tick', pid: process.pid }) + '\\n'); } catch {} }, 30);",
+    "setTimeout(() => process.exit(0), 120000);",
+  ].join('\n'));
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_DAEMON: `node ${fake}` }).init();
+  const parentPid = tm.proc.pid;
+  const lines = (id) => { try { return readFileSync(join(root, id, 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).length; } catch { return 0; } };
+  let daemonPid;
+  try {
+    const open = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'survive a killed parent', cwd, vendor: 'self', size: 'L' });
+    const s0 = await waitFor(async () => {
+      const s = await tm.call('tm_status', { task_id: open.task_id });
+      return s.daemon && Number.isInteger(s.daemon.pid) ? s : null;
+    }, 'the fake daemon to start');
+    daemonPid = s0.daemon.pid;
+    assert.ok(driverAliveLocal(daemonPid), 'the daemon is alive before the kill');
+    const before = lines(open.task_id);
+    await waitFor(() => lines(open.task_id) > before + 2, 'the ledger to grow while the parent lives');
+
+    const exited = new Promise((r) => tm.proc.once('exit', r));
+    process.kill(parentPid, 'SIGKILL'); // the stand-in MCP server only; never the runner or the daemon
+    await exited;
+    await new Promise((r) => setTimeout(r, 200));
+
+    const t0 = lines(open.task_id);
+    await new Promise((r) => setTimeout(r, 600));
+    const t1 = lines(open.task_id);
+    assert.ok(driverAliveLocal(daemonPid), 'the daemon is still alive after its parent was killed');
+    assert.ok(t1 > t0, `the ledger must keep growing after the kill (t0=${t0}, t1=${t1})`);
+    assert.equal(driverAliveLocal(parentPid), false, 'the stand-in parent is gone');
+  } finally {
+    if (daemonPid) { try { process.kill(daemonPid, 'SIGKILL'); } catch { /* gone */ } }
+    try { tm.close(); } catch { /* the proc is already dead */ }
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('the daemon keeps a size-S harness task\'s driver and finishes once the harness run reports, with no external tm_next caller', async () => {
