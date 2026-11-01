@@ -274,12 +274,18 @@ toasts).
 
 ### teams plugin bugs
 
-111. **shape numbers acceptance ids per package, so two packages never share `AC-1`**
+111. **shape's acceptance check resolves `AC-n` per story, so stories that each start at AC-1 can be shaped**
    - Why: 2026-10-31, E-8c671fd9: shape attempts 1 and 2 were both rejected because P1 (card 110) and P3
      (card 81) each carried `AC-1..AC-6`; two of the three shape attempts went on an id clash, and the
      third failed on content with no retry left (user, 2026-11-01: "계획이 반려된 이유").
-   - Acceptance: ids are prefixed or renumbered by the engine (e.g. `P1-AC-1`) before critique; a test
-     with two packages that both write `AC-1` produces distinct ids and no shape rejection.
+   - 2026-11-01, E-da411582 (card 100) died the same way: all three shapes refused, "AC-1 (P1, P2, P3) …".
+     Cause verified in `teams/mcp/shapecheck.mjs` `acAssignment` (L88-126): PRD AC ids are keyed bare
+     (`AC-1`), first story wins, so when every story numbers its own AC-1.. (what planning writes) each
+     package citing its own story's AC-1 counts as carrying the same AC. Repro: two stories each with
+     AC-1/AC-2, P1 implements story 1 and cites its ACs, P2 likewise → refused "AC-1 (P1, P2)".
+   - Acceptance: AC ids resolve per story (a package's bare `AC-n` resolves inside the stories it
+     implements or enables); the repro above passes, a real double-carry is still refused (test in
+     `test-shapecheck*`); teams suite with counts.
 
 112. **An area critique's file-ownership overlap blocks instead of passing as soft**
    - Why: 2026-10-31, E-8c671fd9: `areas-critique` saw F2 and F3 both planning the spawn env edit in
