@@ -88,20 +88,30 @@ export function placeholderAcceptance(stories) {
 export function acAssignment(packages, userStories) {
   const empty = { unassigned: [], multi: [], unknown: [] };
   if (!Array.isArray(userStories)) return empty;
-  const prdAc = new Map(); // AC id -> the story that owns it
+  // A criterion is a (story, id) pair: stories may each number their own AC-1.., so a bare id
+  // can name several criteria. A cite resolves to the pairs of the stories the package owns.
+  const pairs = new Map(); // "story\0id" -> { story, id }
+  const writers = new Map(); // AC id -> stories that wrote it
   for (const u of userStories) {
     const sid = storyIdOf(u);
     const acc = u && typeof u === 'object' && Array.isArray(u.acceptance) ? u.acceptance : [];
-    for (const x of acc) for (const m of String(x).match(AC_ID) || []) if (!prdAc.has(m)) prdAc.set(m, sid);
+    for (const x of acc) {
+      for (const m of String(x).match(AC_ID) || []) {
+        const key = `${sid}\0${m}`;
+        if (pairs.has(key)) continue;
+        pairs.set(key, { story: sid, id: m });
+        writers.set(m, [...(writers.get(m) || []), sid]);
+      }
+    }
   }
-  if (!prdAc.size) return empty;
+  if (!pairs.size) return empty;
   const resolve1 = (t) => {
-    if (prdAc.has(t)) return t;
+    if (writers.has(t)) return t;
     if (/^F\d+-/.test(t)) return null;
-    const hits = [...prdAc.keys()].filter((k) => k.endsWith(`-${t}`));
+    const hits = [...writers.keys()].filter((k) => k.endsWith(`-${t}`));
     return hits.length === 1 ? hits[0] : null;
   };
-  const citedBy = new Map(); // AC id -> package ids, first cite first
+  const citedBy = new Map(); // pair key -> package ids, first cite first
   const assigned = new Set();
   const unknown = [];
   for (const p of Array.isArray(packages) ? packages : []) {
@@ -109,21 +119,27 @@ export function acAssignment(packages, userStories) {
     const owns = new Set([...(Array.isArray(p && p.implements) ? p.implements : []), ...(Array.isArray(p && p.enables) ? p.enables : [])].map(String));
     for (const x of Array.isArray(p && p.acceptance) ? p.acceptance : []) {
       for (const t of String(x).match(AC_ID) || []) {
-        const k = resolve1(t);
-        if (!k) { if (!unknown.includes(t)) unknown.push(t); continue; }
-        const list = citedBy.get(k) || [];
-        if (!list.includes(pid)) list.push(pid);
-        citedBy.set(k, list);
-        if (owns.has(String(prdAc.get(k)))) assigned.add(k);
+        const id = resolve1(t);
+        if (!id) { if (!unknown.includes(t)) unknown.push(t); continue; }
+        const all = writers.get(id);
+        const own = all.filter((s) => owns.has(s));
+        for (const s of own.length ? own : all) {
+          const key = `${s}\0${id}`;
+          const list = citedBy.get(key) || [];
+          if (!list.includes(pid)) list.push(pid);
+          citedBy.set(key, list);
+          if (own.length) assigned.add(key);
+        }
       }
     }
   }
-  const unassigned = [...prdAc.keys()].filter((k) => !assigned.has(k)).map((k) => ({
-    ac: k,
-    story: prdAc.get(k),
+  const label = ({ story: s, id }) => (writers.get(id).length > 1 ? `${s}/${id}` : id);
+  const unassigned = [...pairs].filter(([k]) => !assigned.has(k)).map(([k, v]) => ({
+    ac: label(v),
+    story: v.story,
     nonOwners: citedBy.get(k) || [],
   }));
-  const multi = [...citedBy].filter(([, ids]) => ids.length > 1).map(([ac, ids]) => ({ ac, story: prdAc.get(ac), packages: ids }));
+  const multi = [...citedBy].filter(([, ids]) => ids.length > 1).map(([k, ids]) => ({ ac: label(pairs.get(k)), story: pairs.get(k).story, packages: ids }));
   return { unassigned, multi, unknown };
 }
 
