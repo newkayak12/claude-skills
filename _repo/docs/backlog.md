@@ -274,6 +274,15 @@ toasts).
 
 ### teams plugin bugs
 
+113. **The web viewer a `tm_open` starts exits when its task is done**
+   - Why: 2026-11-01, this session (MCP on teams 0.61.4): eight `view.mjs --tasks-dir ~/.harness/tasks
+     --port N` servers, one per `tm_open` (ports match each `view_url`), were still running 4–5 h later,
+     each at 80–90% CPU, long after their tasks ended; load 15 on 12 cores. Killed by hand. Unverified
+     whether 0.62.x's `.view-index.json` lowers the cost per server; the servers are orphaned either way.
+   - Acceptance: a viewer started by `tm_open` exits within a minute of its task's `daemon_done` (or is
+     shared: one server for all tasks, reused by later opens); a test opens two tasks and counts one
+     live server after both finish → zero; idle CPU of a live server under 5% with 2000 finished tasks.
+
 111. **shape's acceptance check resolves `AC-n` per story, so stories that each start at AC-1 can be shaped**
    - Why: 2026-10-31, E-8c671fd9: shape attempts 1 and 2 were both rejected because P1 (card 110) and P3
      (card 81) each carried `AC-1..AC-6`; two of the three shape attempts went on an id clash, and the
