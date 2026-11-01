@@ -376,6 +376,12 @@ Mermaid나 ASCII 그림 대신 검사를 통과한 그림을 그립니다. 에�
 edge 라벨은 자기 선과 겹치지 않는 자리를 고릅니다. grid 유형과 sequence는 `render fig.json fig.html`로
 예전처럼 인터랙티브 HTML(마우스 올림 강조, 라이트/다크)도 씁니다.
 
+색은 문서를 먼저 따릅니다. IR의 `theme` 필드나 `figure`·`render`의 `--theme <파일>`로 테마(글자색, 바탕,
+흐린 색, 강조색, 색 몇 개, 라이트와 선택으로 다크)를 줍니다. 파일은 테마 JSON이거나 문서의 CSS
+(`:root{--...}`, 다크는 `prefers-color-scheme`)입니다. 레인, 잠금과 원인, 대기, 해제, 버전 단계, 포인터,
+주장, 흐린 맥락 같은 의미 역할이 모두 테마에 매핑되고, 대비 4.5:1을 못 맞추는 테마는 어느 짝인지 밝히며
+거부합니다. 테마가 없으면 기본 색 그대로입니다.
+
 스킬에 NanumGothic Regular + Bold(SIL OFL 1.1, 라이선스는 tech-book의 `assets/fonts/`, 공유)가 들어 있어 플러그인이 약
 4 MB 커집니다. 브라우저가 아닌 SVG 렌더러(librsvg, Inkscape, QuickLook)는 `@font-face`를 무시할 수
 있으니 그런 곳에는 PNG를 쓰세요.

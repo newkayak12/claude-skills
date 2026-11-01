@@ -394,6 +394,12 @@ found; set `CHROME=`). The agent reads the PNG before calling it done, at most 3
 own line. `render fig.json fig.html` still writes the interactive HTML (hover, light/dark) for the
 grid and sequence types.
 
+Colours follow the document first: give a theme (ink, paper, muted, accent, a few hues; light and
+optionally dark) in the IR's `theme` field or with `--theme <file>` on `figure` and `render`, where the
+file is theme JSON or the document's own CSS (`:root{--...}`, dark from `prefers-color-scheme`). Every
+meaning role (lanes, lock and cause, wait, release, version ramp, pointers, claim, muted context) maps
+onto it; a theme that misses 4.5:1 contrast is refused naming the pair. No theme keeps the default.
+
 The skill ships NanumGothic Regular + Bold (SIL OFL 1.1, licence in tech-book's `assets/fonts/`, shared), about 4 MB of
 the plugin. Non-browser SVG renderers (librsvg, Inkscape, QuickLook) may ignore `@font-face`; the PNG
 is the copy for those.
