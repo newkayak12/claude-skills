@@ -397,55 +397,17 @@ toasts).
 
 ### write plugin
 
-100. **write:diagram draws figures that look finished, not merely checked** — rest in E-f673c006
-    - Why: user, 2026-10-29: "write:diagram 퀄리티 떨어짐"; asked what, they picked all four: 투박함, 배치가
-      엉성함, 내용이 틀리거나 부족, 유형 선택이 별로. Seen in the last figures it drew (fig-9-2 roll-pointer
-      chain, fig-13-1 two-session lock wait): every box the same grey/white with one stroke and no type
-      hierarchy; timeline boxes stretched to the full lane width whatever their text; the point of fig-13-1
-      (A's X lock makes B wait until A's COMMIT) has no line from the lock to the wait, the wait is a thin
-      dotted stub, and "UPDATE 재개 · 0행" is unexplained; nothing marks the one thing the caption claims.
-    - Acceptance: (1) a style layer: colour roles (the claim's elements in one accent, context muted),
-      corner radius, two stroke weights, title/label/sub-label type scale, boxes sized to their text;
-      (2) the IR names the claim's elements and `check` refuses a figure where none is accented; timeline
-      draws the cause edge (holder's lock → waiter) and the wait span to the release; (3) the type choice
-      is written with its reason in the Output Template and refused when the point is parallel attributes;
-      (4) fig-9-2 and fig-13-1 redrawn, before/after shown to the user and approved;
+114. **write:diagram themes: every role from the theme, lanes apart from the claim**
+    - Why: seen 2026-11-01 in E-eb930c1a's renders (fig-13-1 under a fictional brand theme): the release
+      edge stays green, a colour the theme does not have; lane A takes the theme's accent, so lane A and
+      the claim boxes share one hue. Under a one-ink print theme the roles differ by shade and line style
+      only (stated, not a defect). User approved the renders ("굿").
+    - Acceptance: with a theme given, no role draws a default hue (a test greps the themed SVG for the
+      default palette's hex); lanes take `hues` before the accent, and a theme whose hues run out says so;
       `node write/skills/diagram/scripts/test-diagram.mjs` passes with the count reported.
-    - Partly shipped 2026-10-29 in E-eb3d399f (`13b988d5`, test-diagram 60/60): (1) style layer, (2) `claim`
-      accent and its refusal, wait span, `holder`/`resume` fields, (3) type with reason and the table
-      refusal. Left: the `holder` cause edge is drawn as a straight line from holder to waiter, so `check`
-      refuses it whenever steps lie in the rows between (fig-13-1: through A@t5 and B@t6) — route it along
-      the lane gap instead; the wait span stops short of the holder's COMMIT with nothing tying the two;
-      a lane's text wraps early once a `resume` takes its gutter ("UPDATE 205 · X 잠금 획득" on two lines);
-      then (4): fig-9-2 and fig-13-1 shown to the user and approved (rebuilt IRs kept outside the repo).
-    - Rest shipped 2026-10-30 from E-f673c006 (blocked at goal gate 86/90, integration-2 taken by hand;
-      test-diagram 69/69): the holder edge is a right-angle path along the lane gap, the wait span ends
-      at the release step's box edge, a resume note no longer wraps other labels. Left: `check` tests
-      only the first line of a wrapped resume note, so an edge through its second line passes; a
-      backward cause edge in a narrow lane gap (QA D1b) is not routed clear; then (4) the user's
-      approval of the two after-PNGs.
-    - Colour shipped 2026-10-31 from E-54884e0c (blocked at goal gate 82/90, P1 attempt 4 taken by hand;
-      test-diagram 92/92): colour roles in code with a 4.5:1 pair test (light and dark), lanes in their own
-      hue (A blue, B teal), wait band from the blocked step to the resume, green dashed release edge from
-      the holder's COMMIT, version ramp on record chains, pointer edges in their source field's hue, dark
-      SVG beside the light pair, `check` refuses two backward cause edges in a too-narrow gap. Left: the
-      user's approval of fig-13-1/fig-9-2 v3 (user, 2026-10-31: "색상 등은요??? 저개 저 도식의 최선??").
-    - User, 2026-11-01, on v3: "좋은데 색상은 문서 톤앤매너에 맞추는게 1순위". Today the hues are fixed in
-      `figure.mjs` (`PALETTE`, `ROLES`), whatever document the figure goes into.
-    - Acceptance (document tone first): a figure takes its colours from the document it belongs to — a
-      theme (ink, paper, muted, accent and a few hues, light and dark) given by the IR or a `--theme`
-      file, read from the document where it has one (e.g. deck/book CSS variables); the meaning roles
-      (lanes, lock/cause, wait, release, ramp) are mapped onto that theme, not onto fixed hues; with no
-      theme the current default stays. The 4.5:1 test runs on the mapped colours and a theme that cannot
-      meet it is refused with the pair named. fig-13-1 and fig-9-2 rendered under two fictional themes
-      (one muted print-like, one with a strong brand accent) and the default, shown to the user and approved.
-    - Theme shipped 2026-11-01 from E-eb930c1a (blocked at integrate: D2 and P1 both edited
-      test-diagram.mjs; merged by hand, `38c416b1`, test-diagram 112/112, teams 1745/1746 with 1 skip):
-      theme from the IR, `--theme` JSON or a CSS `:root` file (dark from `prefers-color-scheme`), every
-      role mapped, failing pair refused by name, no theme byte-identical, CSS reader bounded. Seen in the
-      renders: under the brand theme the release edge stays green (not from the theme) and lane A takes
-      the accent, so lane A and the claim share one hue; under the print theme the roles differ by shade
-      and line style only. Left: the user's approval of the four theme PNGs.
+    - Carried from card 100 (closed 2026-11-01, user approved the theme renders): E-f673c006 left `check`
+      testing only the first line of a wrapped resume note, so an edge through its second line passes;
+      whether a later Sprint fixed it is unverified — add a test that proves it either way.
 
 ### knowledge plugin
 
