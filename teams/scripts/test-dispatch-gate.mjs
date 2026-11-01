@@ -18,14 +18,33 @@ function project(config) {
   return dir;
 }
 
-function run(cwd, tool_input, tool_name = 'Write', env = {}) {
+// The caller's driver env must not decide a test: a test sets these explicitly or not at all.
+function cleanEnv(env = {}) {
+  const base = { ...process.env };
+  delete base.HARNESS_NODE;
+  delete base.TEAMS_TASK_ID;
+  delete base.TEAMS_OPENER_SESSION_ID;
+  return { ...base, ...env };
+}
+
+function run(cwd, tool_input, tool_name = 'Write', env = {}, extra = {}) {
   const r = spawnSync(process.execPath, [gate], {
-    input: JSON.stringify({ cwd, tool_name, tool_input }),
+    input: JSON.stringify({ cwd, tool_name, tool_input, ...extra }),
     encoding: 'utf8',
     // A stray tasks dir from the developer's own machine must not decide a test.
-    env: { ...process.env, HARNESS_TASKS_DIR: join(cwd, '.no-tasks'), ...env },
+    env: cleanEnv({ HARNESS_TASKS_DIR: join(cwd, '.no-tasks'), ...env }),
   });
   return { status: r.status, stderr: r.stderr };
+}
+
+const BIG = { content: 'x'.repeat(5000) };
+const gatedInput = (dir) => ({ file_path: join(dir, 'src/a.mjs'), ...BIG });
+
+// An open task (no daemon_done) in tasksRoot; opener null leaves opener.session_id null.
+function openTask(tasksRoot, id, { cwd, opener = null, run_id = id }) {
+  mkdirSync(join(tasksRoot, id), { recursive: true });
+  writeFileSync(join(tasksRoot, id, 'task.json'), JSON.stringify({ cwd, run_id, opener: { session_id: opener } }));
+  writeFileSync(join(tasksRoot, id, 'ledger.jsonl'), JSON.stringify({ event: 'tm_open' }) + '\n');
 }
 
 test('Codex registers dispatch-gate for apply_patch without Claude modules', () => {
@@ -98,7 +117,7 @@ test('Skill: a node or subagent calling an entry skill is denied; others and mai
     const r = spawnSync(process.execPath, [gate], {
       input: JSON.stringify({ cwd: d, tool_name: 'Skill', tool_input: { skill }, ...extra }),
       encoding: 'utf8',
-      env: { ...process.env, HARNESS_NODE: '', ...env },
+      env: cleanEnv({ HARNESS_NODE: '', ...env }),
     });
     return r.status;
   };
@@ -222,6 +241,96 @@ test('a task opened through a symlink of this project counts as open, both ways'
     rmSync(dir, { recursive: true, force: true });
     rmSync(linkDir, { recursive: true, force: true });
   }
+});
+
+// ---- ownership: a main session with a session_id is unlocked only by what it owns ----
+
+test('ownership: another session\'s open task on the cwd denies; the opener is allowed', () => {
+  const dir = project({ paths: ['src/**'] });
+  const tasks = join(dir, '.tasks');
+  try {
+    openTask(tasks, 'a', { cwd: dir, opener: 'sess-A' });
+    const env = { HARNESS_TASKS_DIR: tasks };
+    assert.equal(run(dir, gatedInput(dir), 'Write', env, { session_id: 'sess-B' }).status, 2, 'another session');
+    assert.equal(run(dir, gatedInput(dir), 'Write', env, { session_id: 'sess-A' }).status, 0, 'the opener');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('ownership: a fresh runs file does not unlock a main session that has a session_id', () => {
+  const dir = project({ paths: ['src/**'] });
+  try {
+    mkdirSync(join(dir, '.teams_output', 'broker', 'runs'), { recursive: true });
+    writeFileSync(join(dir, '.teams_output', 'broker', 'runs', 'r.json'), '{}');
+    assert.equal(run(dir, gatedInput(dir), 'Write', {}, { session_id: 'sess-B' }).status, 2);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('ownership: another session\'s marker denies; the writer\'s own marker allows', () => {
+  const dir = project({ paths: ['src/**'] });
+  try {
+    mkdirSync(join(dir, '.claude', '.harness-markers'), { recursive: true });
+    writeFileSync(join(dir, '.claude', '.harness-markers', 'sess-A'), String(Date.now()));
+    assert.equal(run(dir, gatedInput(dir), 'Write', {}, { session_id: 'sess-B' }).status, 2, 'marker of another session');
+    assert.equal(run(dir, gatedInput(dir), 'Write', {}, { session_id: 'sess-A' }).status, 0, 'own marker');
+    writeFileSync(join(dir, '.claude', '.harness-markers', 'sess-A'), String(Date.now() - 3 * 60 * 60 * 1000));
+    assert.equal(run(dir, gatedInput(dir), 'Write', {}, { session_id: 'sess-A' }).status, 2, 'own marker, stale');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('ownership: TEAMS_TASK_ID naming an open task unlocks without a cwd match', () => {
+  const dir = project({ paths: ['src/**'] });
+  const tasks = join(dir, '.tasks');
+  try {
+    openTask(tasks, 'a', { cwd: '/elsewhere', opener: 'sess-A', run_id: 'run-1' });
+    const env = { HARNESS_TASKS_DIR: tasks, TEAMS_TASK_ID: 'run-1' };
+    assert.equal(run(dir, gatedInput(dir), 'Write', env, { session_id: 'sess-B' }).status, 0);
+    assert.equal(run(dir, gatedInput(dir), 'Write', { HARNESS_TASKS_DIR: tasks }, { session_id: 'sess-B' }).status, 2, 'without the env it is not ours');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('ownership: TEAMS_TASK_ID with a mismatching TEAMS_OPENER_SESSION_ID denies', () => {
+  const dir = project({ paths: ['src/**'] });
+  const tasks = join(dir, '.tasks');
+  try {
+    openTask(tasks, 'a', { cwd: '/elsewhere', opener: 'sess-A', run_id: 'run-1' });
+    const env = { HARNESS_TASKS_DIR: tasks, TEAMS_TASK_ID: 'run-1', TEAMS_OPENER_SESSION_ID: 'sess-X' };
+    assert.equal(run(dir, gatedInput(dir), 'Write', env, { session_id: 'sess-B' }).status, 2);
+    assert.equal(run(dir, gatedInput(dir), 'Write', { ...env, TEAMS_OPENER_SESSION_ID: 'sess-A' }, { session_id: 'sess-B' }).status, 0, 'matching opener');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('ownership: an open task with a null opener.session_id unlocks any session', () => {
+  const dir = project({ paths: ['src/**'] });
+  const tasks = join(dir, '.tasks');
+  try {
+    openTask(tasks, 'a', { cwd: dir, opener: null });
+    assert.equal(run(dir, gatedInput(dir), 'Write', { HARNESS_TASKS_DIR: tasks }, { session_id: 'sess-B' }).status, 0);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('ownership: a payload with no session_id keeps the old any-signal rule', () => {
+  const dir = project({ paths: ['src/**'] });
+  const tasks = join(dir, '.tasks');
+  try {
+    openTask(tasks, 'a', { cwd: dir, opener: 'sess-A' });
+    assert.equal(run(dir, gatedInput(dir), 'Write', { HARNESS_TASKS_DIR: tasks }).status, 0, 'any open task on the cwd');
+    mkdirSync(join(dir, '.teams_output', 'broker', 'runs'), { recursive: true });
+    writeFileSync(join(dir, '.teams_output', 'broker', 'runs', 'r.json'), '{}');
+    assert.equal(run(dir, gatedInput(dir)).status, 0, 'a fresh runs file');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('ownership: a node kind keeps its behaviour (session_id does not matter)', () => {
+  const dir = project({ paths: ['src/**'] });
+  const tasks = join(dir, '.tasks');
+  try {
+    openTask(tasks, 'a', { cwd: dir, opener: 'sess-A' });
+    const env = { HARNESS_NODE: '1', HARNESS_TASKS_DIR: tasks };
+    assert.equal(run(dir, gatedInput(dir), 'Write', env, { session_id: 'sess-B' }).status, 0, 'node with an open task on the cwd');
+    const none = run(dir, gatedInput(dir), 'Write', { HARNESS_NODE: '1' }, { session_id: 'sess-B' });
+    assert.equal(none.status, 2, 'node with nothing open');
+    assert.match(none.stderr, /Stop and report this block/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 // ---- gate routing (_repo/docs/plans/2026-10-12-gate-routing.md) ----

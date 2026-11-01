@@ -53,14 +53,26 @@ function matches(pattern, path) {
 // was true forever after a machine's first task, and the gate never fired again.
 const RUN_FRESH_MS = 2 * 60 * 60 * 1000;
 function samePath(p) { try { return realpathSync(p); } catch { return resolve(p); } }
-function taskOpenFor(cwd, tasksRoot) {
+// owner is null (any open task on cwd counts) or { sid }: a main session (kind '') with a session_id
+// is unlocked only by a task it opened, or one its driver env names (TEAMS_TASK_ID / TEAMS_OPENER_SESSION_ID).
+// A task whose opener.session_id is null or absent unlocks any session, as before.
+function taskOpenFor(cwd, tasksRoot, owner) {
   let ids = [];
   try { ids = readdirSync(tasksRoot); } catch { return false; }
   const here = samePath(cwd);
+  const envTask = process.env.TEAMS_TASK_ID || '';
+  const envOpener = process.env.TEAMS_OPENER_SESSION_ID || '';
   for (const id of ids) {
     let task;
     try { task = JSON.parse(readFileSync(join(tasksRoot, id, 'task.json'), 'utf8')); } catch { continue; }
-    if (!task || samePath(String(task.cwd || '')) !== here) continue;
+    if (!task) continue;
+    const opener = task.opener && typeof task.opener.session_id === 'string' ? task.opener.session_id : '';
+    const onCwd = samePath(String(task.cwd || '')) === here;
+    if (owner) {
+      const byEnv = Boolean(envTask) && task.run_id === envTask && (!envOpener || envOpener === opener);
+      const mine = onCwd && (!opener || opener === owner.sid || (Boolean(envOpener) && envOpener === opener));
+      if (!byEnv && !mine) continue;
+    } else if (!onCwd) continue;
     let ledger = '';
     try { ledger = readFileSync(join(tasksRoot, id, 'ledger.jsonl'), 'utf8'); } catch { /* no ledger yet: just opened */ }
     const last = ledger.trim().split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
@@ -70,11 +82,21 @@ function taskOpenFor(cwd, tasksRoot) {
   return false;
 }
 
-function harnessEngaged(cwd) {
+function harnessEngaged(cwd, owner) {
   const tasksRoot = process.env.HARNESS_TASKS_DIR
     ? resolve(process.env.HARNESS_TASKS_DIR)
     : join(process.env.HOME || '', '.harness', 'tasks');
-  if (taskOpenFor(cwd, tasksRoot)) return true;
+  if (taskOpenFor(cwd, tasksRoot, owner)) return true;
+  if (owner) {
+    // A fresh run file is not owned by anyone; only this session's own marker counts.
+    try {
+      const ts = parseInt(readFileSync(join(cwd, '.claude', '.harness-markers', owner.sid.replace(/[^A-Za-z0-9._-]/g, '_')), 'utf8'), 10) || 0;
+      if (Date.now() - ts <= RUN_FRESH_MS) return true;
+    } catch {
+      /* no marker for this session */
+    }
+    return false;
+  }
   try {
     const runs = join(cwd, '.teams_output', 'broker', 'runs');
     const now = Date.now();
@@ -219,7 +241,8 @@ function main() {
   const min = Number.isFinite(cfg.min_chars) ? cfg.min_chars : 0;
   if (sizeOf(hook.tool_input) < min) return ALLOW;
 
-  if (harnessEngaged(cwd)) return ALLOW; // nodes are running; they are the ones writing
+  const sid = typeof hook.session_id === 'string' ? hook.session_id : '';
+  if (harnessEngaged(cwd, !kind && sid ? { sid } : null)) return ALLOW; // nodes are running; they are the ones writing
 
   // The instruction is a skill, not a bare tm_open: the entry skill is what sizes the request,
   // picks the flow, drives the run and ends with its report - a bare tm_open skips all of that.
