@@ -134,6 +134,57 @@ test('acAssignment: a PRD with no AC ids, or no stories array, yields nothing', 
   assert.deepEqual(acAssignment(p, null), { unassigned: [], multi: [], unknown: [] });
 });
 
+const OWN = [
+  { id: 'US-1', acceptance: ['AC-1: Given a, When b, Then c', 'AC-2: Given d, When e, Then f'] },
+  { id: 'US-2', acceptance: ['AC-1: Given g, When h, Then i'] },
+];
+
+test('acAssignment: stories that each number their own AC-1 pass when each package cites its own (card 111)', () => {
+  const r = acAssignment([pkg('P1', ['US-1'], ['AC-1: x', 'AC-2: y']), pkg('P2', ['US-2'], ['AC-1: z'])], OWN);
+  assert.deepEqual(r, { unassigned: [], multi: [], unknown: [] });
+  assert.equal(shapePrecheck({ packages: [pkg('P1', ['US-1'], ['AC-1', 'AC-2']), pkg('P2', ['US-2'], ['AC-1'])] }, OWN).ok, true);
+});
+
+test('acAssignment: two packages citing the same story AC-1 are still multi, labelled with the story', () => {
+  const r = acAssignment([
+    pkg('P1', ['US-1'], ['AC-1', 'AC-2']),
+    pkg('P3', [], ['AC-1'], { enables: ['US-1'] }),
+    pkg('P2', ['US-2'], ['AC-1']),
+  ], OWN);
+  assert.deepEqual(r.multi, [{ ac: 'US-1/AC-1', story: 'US-1', packages: ['P1', 'P3'] }]);
+  assert.deepEqual(r.unassigned, []);
+  assert.match(shapePrecheck({ packages: [pkg('P1', ['US-1'], ['AC-1', 'AC-2']), pkg('P3', [], ['AC-1'], { enables: ['US-1'] }), pkg('P2', ['US-2'], ['AC-1'])] }, OWN).problems[0], /carried by more than one package/);
+});
+
+test('acAssignment: with a shared bare id, an unassigned AC and an unknown id are still reported', () => {
+  const r = acAssignment([pkg('P1', ['US-1'], ['AC-1', 'AC-9']), pkg('P2', ['US-2'], [])], OWN);
+  assert.deepEqual(r.unknown, ['AC-9']);
+  assert.deepEqual(r.unassigned, [
+    { ac: 'AC-2', story: 'US-1', nonOwners: [] },
+    { ac: 'US-2/AC-1', story: 'US-2', nonOwners: [] },
+  ]);
+});
+
+test('acAssignment: a bare id the package stories do not contain is non-owner; an unknown id is unknown', () => {
+  const r = acAssignment([pkg('P1', ['US-1'], ['AC-1', 'AC-2', 'AC-7']), pkg('P2', ['US-3'], ['AC-1'])], OWN);
+  assert.deepEqual(r.unknown, ['AC-7']);
+  assert.deepEqual(r.unassigned, [{ ac: 'US-2/AC-1', story: 'US-2', nonOwners: ['P2'] }]);
+});
+
+test('acAssignment: a package spanning two stories with the same AC id carries both; enables-only owns too', () => {
+  const r = acAssignment([pkg('P1', ['US-1', 'US-2'], ['AC-1', 'AC-2'])], OWN);
+  assert.deepEqual(r, { unassigned: [], multi: [], unknown: [] });
+  const e = acAssignment([pkg('P1', ['US-1'], ['AC-1', 'AC-2']), pkg('P2', [], ['AC-1'], { enables: ['US-2'] })], OWN);
+  assert.deepEqual(e, { unassigned: [], multi: [], unknown: [] });
+});
+
+test('acAssignment: a story-qualified cite resolves to that story and a prefixed id keeps its meaning', () => {
+  const r = acAssignment([pkg('P1', ['US-1'], ['US-1/AC-1', 'AC-2']), pkg('P2', ['US-2'], ['US-2/AC-1'])], OWN);
+  assert.deepEqual(r, { unassigned: [], multi: [], unknown: [] });
+  const f = acAssignment([pkg('P1', ['F2-US-4'], ['F2-AC-22', 'F2-AC-23']), pkg('P2', ['F2-US-5'], ['F2-AC-26']), pkg('P3', ['F3-US-4'], ['AC-21'])], PRD);
+  assert.deepEqual(f, { unassigned: [], multi: [], unknown: [] });
+});
+
 test('shapePrecheck: a clean shape is ok with empty problems', () => {
   const r = shapePrecheck({ packages: [
     pkg('P1', ['F2-US-4'], ['F2-AC-22', 'F2-AC-23']),
