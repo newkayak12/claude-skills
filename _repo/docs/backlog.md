@@ -274,6 +274,21 @@ toasts).
 
 ### teams plugin bugs
 
+111. **shape numbers acceptance ids per package, so two packages never share `AC-1`**
+   - Why: 2026-10-31, E-8c671fd9: shape attempts 1 and 2 were both rejected because P1 (card 110) and P3
+     (card 81) each carried `AC-1..AC-6`; two of the three shape attempts went on an id clash, and the
+     third failed on content with no retry left (user, 2026-11-01: "계획이 반려된 이유").
+   - Acceptance: ids are prefixed or renumbered by the engine (e.g. `P1-AC-1`) before critique; a test
+     with two packages that both write `AC-1` produces distinct ids and no shape rejection.
+
+112. **An area critique's file-ownership overlap blocks instead of passing as soft**
+   - Why: 2026-10-31, E-8c671fd9: `areas-critique` saw F2 and F3 both planning the spawn env edit in
+     `teams/mcp/taskmanager.mjs` and said "overlap (soft) … Name one owner", verdict `sound`; the
+     contradiction reached shape and `critique:3` rejected it as unrunnable, ending the task.
+   - Acceptance: an overlap on the same file and lines between areas is a blocking finding that sends
+     the areas back with one owner named; a test with two areas claiming one function fails at
+     areas-critique, not at critique.
+
 110. **The dispatch gate opens for the session whose task is open, not for every session on the project**
     - Why: 2026-10-31, this repo: the driving session (no task of its own open) wrote 850 chars into
       `teams/hooks/mod.test.ts` and was then denied on `teams/scripts/test-view-once-perf.mjs` minutes
