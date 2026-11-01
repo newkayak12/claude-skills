@@ -38,7 +38,7 @@
     {
       "name": "write",
       "description": "Writing skills: plans (gate-ready implementation plans and ticket breakdowns with production-time gap/ambiguity checks + per-step pass bars; technical blog posts; SBI feedback), prd (PRDs, design docs, RFCs and proposals co-written section by section with reader testing), adr (ADRs and fixed-template design reviews), requirements (a requirement or 기획서 split into actors, rules, open questions with defaults, and items with Given/When/Then criteria),spec (a settled conversation synthesised into a spec, open points marked, no re-interview), skill writing, and writer verification (v2 — five passes incl. a humanizer for machine tells, draft loop that rewrites until 🔴🟡 = 0, PR descriptions from a diff as first-class input), and tech-book (performance-based book arc, cumulative examples, transfer practice, six required teaching elements within a chapter length budget, staged review loops with defined severities, lab-running fact checks, pinned chapter end states and a cap closure pass, and PDF in bundled NanumGothic), diagram (checked self-contained SVG + PNG figures: page layout, B-tree, lock timeline, ER, chart, architecture, sequence; moved from develop). Knowledge-base, graph, RAG, and query skills moved to the knowledge plugin.",
-      "version": "1.15.0",
+      "version": "1.16.0",
       "author": {
         "name": "newkayak12"
       },
@@ -169,7 +169,7 @@
     {
       "name": "teams",
       "description": "A sibling of graph for requests too big for one pass: a TaskManager MCP (task-manager) sizes the request; size L is planned into a PRD and user stories, split into packages that each run the full harness in their own worktree, integrated, QA'd and gated by a background daemon; size S is handed to the development harness. Entry skills teams:orchestrate/develop/document/plan/qa/sprint, board and ticket views (tm_board, teams:board). Runs are kept under .teams_output/ and ~/.harness/tasks/. Zero runtime dependencies beyond Node 18+.",
-      "version": "0.62.2",
+      "version": "0.62.3",
       "author": {
         "name": "newkayak12"
       },
