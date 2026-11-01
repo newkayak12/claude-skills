@@ -100,7 +100,7 @@ What each step does:
 
 | Step | What happens | Switch |
 |---|---|---|
-| `size` | A judge decides S (one run is enough) or L (split it). You can pin it with `size`. A size-S task stops here in teams: it is handed to the development harness (the graph MCP, or the harness skill's Agent Team fallback), claude and codex taking part, which plans, sets goals, critiques, implements, tests and gates it with its own stages. No planning card, split, shape, worktree or QA card. The run is tagged with the task id; its own goal gate decides `complete` or `partial`, and its report is relayed. | — |
+| `size` | A judge decides S (one run is enough) or L (split it). You can pin it with `size`. A size-S task stops here in teams: it is handed to the development harness (the graph MCP, or the harness skill's Agent Team fallback), claude and codex taking part, which plans, sets goals, critiques, implements, tests and gates it with its own stages. No planning card, split, shape, worktree or QA card. The run is tagged with the task id; its own goal gate decides `complete` or `partial`, and its report is relayed. Known limits: a task opened from a session started before teams 0.62.0 records no own writes, so `scope_verdict` shows `own_record:false` (restart the session); Codex `apply_patch` recording is registered and parser-tested but unproven against a real Codex run. | — |
 | `brainstorm` | Restates intent, scope and approach; asks you questions only when `interactive`. Skipped when your session already passed `decisions`. | `brainstorm` |
 | `areas` | The EPIC's plan stage splits the request by **feature**: what a user must be able to do, grouped into feature areas. Each area becomes a planning card. | — |
 | `areas-critique` | **New.** A judge attacks the split before any card runs: a feature in no area, two areas planning the same feature, an area cut by module or layer instead of by what a user does, padded or merged areas. A refusal splits again with the defects as feedback. | `max_retries`, `human_gates` |
@@ -207,7 +207,7 @@ stateDiagram-v2
 |---|---|
 | `running` | The daemon is working on it. |
 | `waiting_human` | A card needs you: an `ask` question, a stage you took with `teams:take`, or a `human_gates` verdict. See `teams:inbox`. |
-| `blocked` | It stopped with work left and nothing it can run on its own, for example a spent retry budget, a driver that kept dying, or a usage limit. `tm_retry` opens a fresh attempt. |
+| `blocked` | It stopped with work left and nothing it can run on its own, for example a spent retry budget, a driver that kept dying, or a usage limit. `tm_retry` opens a fresh attempt. When the task daemon itself died and used up its restarts (`driver_restarts`), a bare `tm_retry({task_id})` resets the budget and starts the daemon again on the same run: nothing is re-planned and no shape is re-run. |
 | `complete` | The report is written and everything was delivered. |
 | `partial` | **New.** The report is written but something was not delivered: a package not accepted or never dispatched, integrate failed, QA or audit gave no verdict, `gate:goal` did not pass, or nodes were settled/unreachable. `partial_reasons: [...]` says what. |
 
