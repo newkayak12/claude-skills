@@ -29,6 +29,7 @@ compatibility:
 - ALWAYS run `check`, apply every repair line it prints, then `figure`. A refused figure writes nothing and leaves the last good pair as it was.
 - ALWAYS Read the PNG that `figure` wrote and judge it: overlap, legibility, does it show the one thing the caption claims. At most 3 rounds, then report what is still wrong.
 - ALWAYS give every fact drawn (a size, an offset, a default, a lock behaviour) a source, or `[확인 필요]`, in the IR's `note`.
+- ALWAYS take the colours from the document the figure goes into, before choosing any: pass its theme (step 2); NEVER write a fixed hex for a figure role when a theme exists.
 - NEVER hand over Mermaid or ASCII art as a book or document figure, or a figure whose PNG you did not view - the Postgres book shipped hand-drawn SVGs nobody checked, and the MySQL drafts 01-09 shipped with zero figures. (Mermaid inline in a design doc or PR stays fine.)
 - Goal: a figure a reader understands at book width in one look, with its `.json` source next to it and nothing in it the check or your eyes found wrong.
 
@@ -56,9 +57,15 @@ parallel attributes (a markdown table); join pictures (a table of rows, not a Ve
    | tables and their relations | `er` | `references/figures.md` |
    | measured numbers: repeated runs, before/after | `chart` | `references/figures.md` |
 
+   **Colour - the document's tone first.** Before any colour, read the stylesheet or theme of the book, deck or page the figure goes into and name its tone (paper, ink, accent); with no values to read, ask for them or mark them `[확인 필요]` in `note` and point `--theme` at the document's file or CSS; never write a stand-in hex of your own, for a token or a role. Pass the document's values as a theme by one route; the meaning roles (lanes, cause, wait, release, ramp, claim) are then mapped onto it:
+   - the IR's `"theme"` field: an inline object `{"light": {ink, paper, muted, accent, hues: [...]}, "dark": {...}}`, `dark` optional
+   - `--theme <file>` on `check`, `figure` and `render`: that JSON, or a `.css` file whose `:root{--bg --fg --muted --box --line --accent --hue-1..n}` is read (dark half from `@media (prefers-color-scheme: dark)` or `[data-theme=dark]`); it wins over the IR field
+
+   A theme that fails the contrast guard is refused, the failing pair named (`ink #8a867f on paper #f4f1ea is 3.21:1, needs 4.5:1`, a fictional example); fix the token, nothing is written. With no theme the colours are today's default, byte for byte. Detail: `references/figures.md`.
+
 3. **Write the IR** as `fig-N-M.json`. Korean labels are fine; keep labels short and put detail and sources in `note`.
 4. **Check** - `node scripts/diagram.mjs check fig-N-M.json`. It measures every label with the embedded font and refuses overflow, overlap, a line through a box or over a label, clipping, a label that would be cut, text under 7.5 pt at book width, a character the font lacks, and each type's own misleading cases (sizes that do not add up, keys out of order, a wait no lock explains, a bar axis not from 0, a value missing from its source). Apply every repair; re-check until `ok`.
-5. **Draw** - `node scripts/diagram.mjs figure fig-N-M.json fig-N-M` writes `fig-N-M.svg` and `fig-N-M.png`. Exit 3 means no Chrome-family browser was found: the SVG is written, set `CHROME=<path>` for the PNG.
+5. **Draw** - `node scripts/diagram.mjs figure fig-N-M.json fig-N-M` writes `fig-N-M.svg` and `fig-N-M.png` (`--theme <file>` here and on `check` when the document gave a file). Exit 3 means no Chrome-family browser was found: the SVG is written, set `CHROME=<path>` for the PNG.
 6. **View** - Read `fig-N-M.png`. Fix the IR and repeat 4-6, at most 3 rounds; after that, report what is still wrong instead of calling it done.
 7. **Ship** `.json` + `.svg` + `.png` together; the `.json` is what the next edit starts from.
 
@@ -89,6 +96,7 @@ Table: recommended - columns <col, col, ...> (no figure, no IR)
 | Claude | You |
 |--------|-----|
 | Decides figure or table, picks the type, writes and places the IR | Say what the figure must show and where it goes |
+| Takes the document's colours as a theme (IR field, `--theme`) before any role colour | Point to the stylesheet or theme file the figure belongs to |
 | Runs check and figure, reads the PNG, fixes it in up to 3 rounds | Judge whether the claim is the one you meant |
 | Cites a source or marks `[확인 필요]` for every fact drawn | Settle the `[확인 필요]` items |
 

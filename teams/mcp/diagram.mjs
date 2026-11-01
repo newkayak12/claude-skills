@@ -5,6 +5,8 @@
 //   node diagram.mjs check  <ir.json>              -> exit 0 and "ok", or exit 1 and one repair per line
 //   node diagram.mjs render <ir.json> <out.html>   -> checks first; writes out.html only when it passes
 //   node diagram.mjs figure <ir.json> <out-base>   -> checks first; writes out-base.svg (font embedded) + out-base.png (2x)
+//   ... --theme <file.json|file.css>               -> the document's colours (figure, render, check); wins over the IR's "theme" object.
+//                                                     A theme is read by ./figure.mjs, which the teams copy of this file does not carry.
 //
 // check and figure, and every type beyond the five below, go through ./figure.mjs, loaded with a
 // dynamic import() only on that path - so this file alone still validates and renders the five
@@ -242,7 +244,17 @@ function renderSequence(ir) {
   return { W, H, body: out.join('\n') };
 }
 
-export function render(ir) {
+// The page's colours: the defaults, or opts.vars = {light, dark?} of --bg --fg --muted --box --line --accent --data
+// --fail --group values (figure.mjs themeContext(...).vars). A themed page without `dark` has no dark-media block.
+const ROOT_DEFAULT = ':root{--bg:#fbfaf7;--fg:#1d1d1b;--muted:#6b6a64;--box:#ffffff;--line:#3b3a36;--accent:#2f6fdb;--data:#1f8a5b;--fail:#c2410c;--group:#e9e6de}\n'
+  + '@media (prefers-color-scheme:dark){:root{--bg:#171714;--fg:#ecebe6;--muted:#9a988f;--box:#22221e;--line:#cfcdc4;--accent:#7aa7ff;--data:#4cc38a;--fail:#fb923c;--group:#2c2b26}}';
+function rootCss(vars) {
+  if (!vars) return ROOT_DEFAULT;
+  const decl = (v) => Object.entries(v).map(([k, x]) => `--${k}:${x}`).join(';');
+  return `:root{${decl(vars.light)}}` + (vars.dark ? `\n@media (prefers-color-scheme:dark){:root{${decl(vars.dark)}}}` : '');
+}
+
+export function render(ir, opts = {}) {
   const errs = validate(ir);
   if (errs.length) throw new Error(`diagram IR does not validate:\n- ${errs.join('\n- ')}`);
   const { W, H, body } = ir.type === 'sequence' ? renderSequence(ir) : renderGrid(ir);
@@ -253,8 +265,7 @@ export function render(ir) {
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(ir.title)}</title>
 <style>
-:root{--bg:#fbfaf7;--fg:#1d1d1b;--muted:#6b6a64;--box:#ffffff;--line:#3b3a36;--accent:#2f6fdb;--data:#1f8a5b;--fail:#c2410c;--group:#e9e6de}
-@media (prefers-color-scheme:dark){:root{--bg:#171714;--fg:#ecebe6;--muted:#9a988f;--box:#22221e;--line:#cfcdc4;--accent:#7aa7ff;--data:#4cc38a;--fail:#fb923c;--group:#2c2b26}}
+${rootCss(opts.vars)}
 body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
 header{padding:16px 16px 4px;max-width:1200px;margin:0 auto}h1{font-size:18px;margin:0 0 4px}p.desc{margin:0;color:var(--muted)}
 .wrap{overflow:auto;padding:8px 16px 24px;max-width:100%}svg.d{display:block;margin:0 auto;max-width:100%;height:auto}
@@ -288,8 +299,8 @@ ns.forEach(function(n){n.addEventListener('mouseenter',function(){on(n.dataset.i
 
 // Writes only a passing render, and atomically: a reader never sees half a file, and a failed
 // revision never replaces the last good one.
-export function renderToFile(ir, outPath) {
-  const html = render(ir);
+export function renderToFile(ir, outPath, opts) {
+  const html = render(ir, opts);
   const tmp = `${outPath}.${process.pid}.tmp`;
   writeFileSync(tmp, html);
   renameSync(tmp, outPath);
@@ -297,24 +308,48 @@ export function renderToFile(ir, outPath) {
 }
 
 async function main(argv) {
-  const [cmd, input, out] = argv;
-  if (!['check', 'render', 'figure'].includes(cmd) || !input || (cmd !== 'check' && !out)) {
-    process.stderr.write('usage: diagram.mjs check <ir.json> | render <ir.json> <out.html> | figure <ir.json> <out-base>\n');
+  // --theme <file> and --theme=<file> (split on the first "=" only) are the same flag; a second one is refused.
+  const args = [];
+  let themePath, themeGiven = false;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a !== '--theme' && !a.startsWith('--theme=')) { args.push(a); continue; }
+    if (themeGiven) { process.stderr.write('--theme was given more than once; give one theme file\n'); return 2; }
+    themeGiven = true;
+    themePath = a === '--theme' ? argv[++i] : a.slice('--theme='.length);
+  }
+  const [cmd, input, out] = args;
+  if (!['check', 'render', 'figure'].includes(cmd) || !input || (cmd !== 'check' && !out) || (themeGiven && (!themePath || themePath.startsWith('--')))) {
+    process.stderr.write('usage: diagram.mjs check <ir.json> | render <ir.json> <out.html> | figure <ir.json> <out-base>   [--theme <file.json|file.css> | --theme=<file>]\n');
     return 2;
   }
   let ir;
   try { ir = JSON.parse(readFileSync(input, 'utf8')); } catch (e) { process.stdout.write(`the IR is not readable JSON: ${e.message}\n`); return 1; }
   const fail = (errs) => { process.stdout.write(errs.map((e) => `- ${e}`).join('\n') + '\n'); return 1; };
+  // A theme (--theme <file>, which wins over the IR's inline "theme" object) is read and checked by figure.mjs;
+  // a refused theme or an unreadable file prints to stderr and exits 1 before anything is drawn.
+  let fig, theme, ctx;
+  if (themePath !== undefined || (ir && ir.theme != null)) {
+    try { fig = await import('./figure.mjs'); } catch (e) { process.stderr.write(`a theme needs figure.mjs beside diagram.mjs (${e.code || e.message}) - the teams copy of this file does not carry it\n`); return 1; }
+    try {
+      theme = themePath !== undefined ? fig.loadThemeFile(themePath) : ir.theme;
+      ctx = fig.themeContext(theme);
+    } catch (e) {
+      if (!(e instanceof fig.ThemeError)) throw e;
+      process.stderr.write(e.errs.map((m) => `- ${m}`).join('\n') + '\n');
+      return 1;
+    }
+  }
+  const opts = { baseDir: dirname(resolve(input)), ...(theme ? { theme } : {}) };
   if (cmd === 'render' && TYPES.includes(ir && ir.type)) {
     const errs = validate(ir);
     if (errs.length) return fail(errs);
-    renderToFile(ir, out);
+    renderToFile(ir, out, ctx && { vars: ctx.vars });
     process.stdout.write(`ok ${out}\n`);
     return 0;
   }
   // The static path (check, figure) and the book types: measured with the embedded font.
-  const fig = await import('./figure.mjs');
-  const opts = { baseDir: dirname(resolve(input)) };
+  fig = fig || await import('./figure.mjs');
   if (cmd === 'figure') {
     const r = fig.writeFigure(ir, out, opts);
     process.stdout.write(`${r.msg}\n`);

@@ -20,8 +20,10 @@ const MIN_PT = 7.5;
 
 // Fills that appear together differ by >= 15 L* so a grayscale print keeps them apart; every edge
 // style differs by its dash pattern, not only by colour.
-export const PALETTE = {
-  ink: '#1f1f1c', muted: '#55544e', line: '#34332f', paper: '#ffffff',
+// PALETTE and ROLES are live bindings: the renderers read them, and a theme swaps them for the length
+// of one build (withTheme below); with no theme they are these defaults, untouched.
+const DEFAULT_PALETTE = {
+  ink: '#1f1f1c', muted: '#55544e', line: '#34332f', paper: '#ffffff', guide: '#e3e6ea',
   fills: { paper: '#ffffff', soft: '#c9d1dc', mid: '#98a5b8', strong: '#6c7a90', accent: '#2a3447' },
   edges: {
     sync: { dash: 'none', color: '#34332f' },
@@ -30,6 +32,7 @@ export const PALETTE = {
     fail: { dash: '2 3', color: '#b03d0a' },
   },
 };
+export let PALETTE = DEFAULT_PALETTE;
 
 // Colour carries meaning (card 100): each role has a fill, a stroke and the ink that sits on its fill.
 // lanes: actor hues by lane order (A blue, B teal); cause: the lock or the hold that blocks (amber-red);
@@ -41,7 +44,7 @@ export const PALETTE = {
 // hues cannot be told apart by hue alone for every reader (red/green under protan, teal/green), so a
 // role is never colour only: cause is a solid heavy edge, the wait a filled band, the release a dashed
 // edge, and each carries its words.
-export const ROLES = {
+const DEFAULT_ROLES = {
   light: {
     surface: '#ffffff', ink: '#1f1f1c', muted: '#55544e', inkInverse: '#ffffff',
     lanes: [
@@ -67,6 +70,7 @@ export const ROLES = {
     ramp: [{ fill: '#9db9f0' }, { fill: '#43619a' }, { fill: '#2a3e63' }],
   },
 };
+export let ROLES = DEFAULT_ROLES;
 export const laneRole = (mode, i) => ROLES[mode].lanes[i % ROLES[mode].lanes.length];
 export function contrastRatio(a, b) {
   const y = (hex) => {
@@ -78,8 +82,8 @@ export function contrastRatio(a, b) {
 }
 // n record strips, strongest first: up to three take the ramp steps as they are; a longer chain is
 // interpolated between the same ends, so the first is still the strongest and the last the lightest.
-export function rampSteps(mode, n) {
-  const set = ROLES[mode], stops = set.ramp.map((s) => s.fill);
+export function rampSteps(mode, n, roles = ROLES) {
+  const set = roles[mode], stops = set.ramp.map((s) => s.fill);
   const mix = (a, b, f) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) + (parseInt(b.slice(i, i + 2), 16) - parseInt(a.slice(i, i + 2), 16)) * f).toString(16).padStart(2, '0')).join('');
   const fills = n <= 3 ? stops.slice(0, n) : Array.from({ length: n }, (_, i) => {
     const p = (i / (n - 1)) * 2, k = Math.min(1, Math.floor(p));
@@ -95,34 +99,48 @@ export function rampSteps(mode, n) {
 // accent keeps the "darkest against the page" meaning: light fill, dark ink. hi and lo are the two
 // inks left for a mid-tone fill (a chain longer than three) where neither ink of the set reads.
 export const DARK_PALETTE = {
-  ink: ROLES.dark.ink, muted: ROLES.dark.muted, line: '#c9c8c1', paper: ROLES.dark.surface,
-  fills: { paper: ROLES.dark.surface, soft: '#2a303b', mid: '#3b475e', strong: '#546483', accent: '#dbe5f5' },
+  ink: DEFAULT_ROLES.dark.ink, muted: DEFAULT_ROLES.dark.muted, line: '#c9c8c1', paper: DEFAULT_ROLES.dark.surface,
+  fills: { paper: DEFAULT_ROLES.dark.surface, soft: '#2a303b', mid: '#3b475e', strong: '#546483', accent: '#dbe5f5' },
   edges: { sync: '#c9c8c1', async: '#c9c8c1', data: '#5fd08f', fail: '#ff8f66' },
   guide: '#33383f', hi: '#fdfdfb', lo: '#010101',
 };
-export const DARK_INKS = [ROLES.dark.ink, ROLES.dark.inkInverse, DARK_PALETTE.hi, DARK_PALETTE.lo];
-function darkMaps() {
-  const L = ROLES.light, D = ROLES.dark, shape = {}, text = {};
-  const put = (m, l, d) => { if (m[l] && m[l] !== d) throw new Error(`dark set: ${l} maps to both ${m[l]} and ${d}`); m[l] = d; };
-  for (const [l, d] of [
-    [PALETTE.paper, DARK_PALETTE.paper], [PALETTE.ink, DARK_PALETTE.ink], [PALETTE.muted, DARK_PALETTE.muted], [PALETTE.line, DARK_PALETTE.line],
-    ['#e3e6ea', DARK_PALETTE.guide], [L.surface, D.surface], [L.ink, D.ink], [L.muted, D.muted],
-    ...Object.keys(PALETTE.fills).map((k) => [PALETTE.fills[k], DARK_PALETTE.fills[k]]),
-    ...Object.keys(PALETTE.edges).map((k) => [PALETTE.edges[k].color, DARK_PALETTE.edges[k]]),
-    ...L.lanes.flatMap((r, i) => [[r.stroke, D.lanes[i].stroke], [r.fill, D.lanes[i].fill]]),
-    ...['cause', 'wait', 'release', 'context'].flatMap((n) => [[L[n].stroke, D[n].stroke], [L[n].fill, D[n].fill]]),
-    ...L.ramp.map((r, i) => [r.fill, D.ramp[i].fill]),
+export const DARK_INKS = [DEFAULT_ROLES.dark.ink, DEFAULT_ROLES.dark.inkInverse, DARK_PALETTE.hi, DARK_PALETTE.lo];
+// PL/L: the light palette and roles; PD/D: their dark counterparts (PD.edges are colours, not styles).
+function darkMaps(PL, L, PD, D, roles) {
+  const shape = {}, text = {}, firstRole = new Map();
+  // a pair is [light hex, dark hex, role]; the first writer's role is kept so a collision names both roles
+  const put = (m, l, d, role) => {
+    if (m[l] && m[l] !== d) {
+      const a = firstRole.get(m), e = new Error(`dark set: light ${a[l]} and light ${role} are both ${l}, which maps to both dark ${a[l]} ${m[l]} and dark ${role} ${d}`);
+      e.collision = { light: l, a: { role: a[l], dark: m[l] }, b: { role, dark: d } };
+      throw e;
+    }
+    if (!firstRole.has(m)) firstRole.set(m, {});
+    const seen = firstRole.get(m);
+    if (!m[l]) seen[l] = role;
+    m[l] = d;
+  };
+  for (const [l, d, role] of [
+    [PL.paper, PD.paper, 'paper'], [PL.ink, PD.ink, 'ink'], [PL.muted, PD.muted, 'muted'], [PL.line, PD.line, 'line'],
+    [PL.guide, PD.guide, 'guide'], [L.surface, D.surface, 'surface'], [L.ink, D.ink, 'ink'], [L.muted, D.muted, 'muted'],
+    ...Object.keys(PL.fills).map((k) => [PL.fills[k], PD.fills[k], k === 'paper' ? 'box' : `${k} fill`]),
+    ...Object.keys(PL.edges).map((k) => [PL.edges[k].color, PD.edges[k], `${k} edge`]),
+    ...L.lanes.flatMap((r, i) => [[r.stroke, D.lanes[i].stroke, `lane ${'AB'[i] || i + 1} stroke`], [r.fill, D.lanes[i].fill, `lane ${'AB'[i] || i + 1} fill`]]),
+    ...['cause', 'wait', 'release', 'context'].flatMap((n) => [[L[n].stroke, D[n].stroke, `${n} stroke`], [L[n].fill, D[n].fill, `${n} fill`]]),
+    ...L.ramp.map((r, i) => [r.fill, D.ramp[i].fill, `ramp step ${i + 1}`]),
     // a layout holds at most 4 strips (checked), so the chain is the ramp or its 4-step interpolation
-    ...rampSteps('light', 4).map((s, i) => [s.fill, rampSteps('dark', 4)[i].fill]),
-  ]) put(shape, l, d);
+    ...rampSteps('light', 4, roles).map((s, i) => [s.fill, rampSteps('dark', 4, roles)[i].fill, `ramp chain step ${i + 1} of 4`]),
+  ]) put(shape, l, d, role);
   // text colours: white ink sits on a strong light-set fill, which is a light fill in the dark set
-  for (const [l, d] of [[PALETTE.ink, D.ink], [PALETTE.muted, D.muted], [PALETTE.edges.fail.color, DARK_PALETTE.edges.fail], [L.inkInverse, D.inkInverse], ['#000000', D.inkInverse]]) put(text, l, d);
+  for (const [l, d, role] of [[PL.ink, D.ink, 'ink'], [PL.muted, D.muted, 'muted'], [PL.edges.fail.color, PD.edges.fail, 'fail edge'], [L.inkInverse, D.inkInverse, 'claim ink'], ['#000000', D.inkInverse, 'black text']]) put(text, l, d, role);
   return { shape, text };
 }
-const DARK = darkMaps();
+const DARK = darkMaps(DEFAULT_PALETTE, DEFAULT_ROLES.light, DARK_PALETTE, DEFAULT_ROLES.dark, DEFAULT_ROLES);
 export const DARK_HEX = DARK.shape;
-export function darkSvg(svg) {
-  const D = ROLES.dark, rects = [];
+// What darkSvg substitutes with: the maps, the dark page, and the inks a mid-tone fill may take.
+const DEFAULT_DARK = { maps: DARK, surface: DEFAULT_ROLES.dark.surface, inks: DARK_INKS };
+export function darkSvg(svg, dk = DEFAULT_DARK) {
+  const maps = dk.maps, rects = [];
   return svg.replace(/<(\w+)([^>]*)>/g, (tag, name, attrs) => {
     const num = (k) => { const m = attrs.match(new RegExp(`\\s${k}="(-?[\\d.]+)"`)); return m ? +m[1] : null; };
     const colour = (k) => { const m = attrs.match(new RegExp(`\\s${k}="(#[0-9a-fA-F]{6})"`)); return m ? m[1].toLowerCase() : null; };
@@ -132,28 +150,354 @@ export function darkSvg(svg) {
       const x = num('x'), y = num('y'), anchor = (attrs.match(/text-anchor="(\w+)"/) || [])[1];
       const px = x + (anchor === 'end' ? -2 : anchor === 'middle' ? 0 : 2), py = y - 4;
       const under = [...rects].reverse().find((r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h);
-      const back = under ? under.fill : D.surface, want = colour('fill');
+      const back = under ? under.fill : dk.surface, want = colour('fill');
       if (want) {
-        const cand = DARK.text[want] || DARK.shape[want] || want;
-        const pick = [cand, ...DARK_INKS].find((c) => contrastRatio(c, back) >= 4.5) || [cand, ...DARK_INKS].sort((p, q) => contrastRatio(q, back) - contrastRatio(p, back))[0];
+        const cand = maps.text[want] || maps.shape[want] || want;
+        const pick = [cand, ...dk.inks].find((c) => contrastRatio(c, back) >= 4.5) || [cand, ...dk.inks].sort((p, q) => contrastRatio(q, back) - contrastRatio(p, back))[0];
         out = out.replace(`fill="${want}"`, `fill="${pick}"`);
       }
       const halo = colour('stroke');
-      if (halo) out = out.replace(`stroke="${halo}"`, `stroke="${DARK.shape[halo] || halo}"`);
+      if (halo) out = out.replace(`stroke="${halo}"`, `stroke="${maps.shape[halo] || halo}"`);
       return out;
     }
-    out = out.replace(/(fill|stroke)="(#[0-9a-fA-F]{6})"/g, (m, k, h) => `${k}="${DARK.shape[h.toLowerCase()] || h}"`);
+    out = out.replace(/(fill|stroke)="(#[0-9a-fA-F]{6})"/g, (m, k, h) => `${k}="${maps.shape[h.toLowerCase()] || h}"`);
     const fill = colour('fill'), x = num('x'), y = num('y'), w = num('width'), h = num('height');
-    if (name === 'rect' && fill && x != null && y != null && w != null && h != null) rects.push({ x, y, w, h, fill: DARK.shape[fill] || fill });
+    if (name === 'rect' && fill && x != null && y != null && w != null && h != null) rects.push({ x, y, w, h, fill: maps.shape[fill] || fill });
     return out;
   });
 }
+// ---------- theme: the document's own colours, expanded onto the meaning roles (card 100) ----------
+//
+// A theme is {light:{ink, paper, box?, muted, accent, line?, data?, fail?, hues:[...]}, dark?:{same}}. It comes from the
+// IR's inline "theme" object, from --theme <file> (JSON, or a .css file read by readThemeCss) or from opts.theme; when
+// both the IR and --theme give one, --theme wins. With no theme nothing below runs and the output is the default's.
+//
+// readThemeCss reads the custom properties of a stylesheet's :root{--...} block (several :root blocks merge, as the
+// cascade does). Token -> theme key:
+//   --bg paper (page)   --fg ink   --muted   --accent   --box node fill, default --bg   --line default --fg
+//   --hue-1..n hues, no gap   --data, --fail optional edge hues
+// A value is #rgb, #rrggbb, rgb() or hsl(), or var(--x) of the same :root; a named colour, a missing required token
+// (--bg --fg --muted --accent), a var() that does not resolve or loops, and a gap in --hue-n are refused naming the
+// token. The dark half is the :root of an @media (prefers-color-scheme: dark) block or of a [data-theme=dark] rule,
+// laid over the light tokens; with none the theme is light-only and no dark SVG or dark HTML block is written.
+//
+// Expansion, per half (expandHalf). L* is CIE lightness, "mix" is sRGB interpolation:
+//   hues      supply = accent, hue 1, hue 2 ...; lane A, lane B, cause, wait, release take them in that order; a role
+//             past the supply takes the accent hue turned ROT degrees per role (saturation at least ROT_MIN_S, so a
+//             grey accent still gives tints that tell apart). Cause is a solid heavy edge, the wait
+//             a filled band, the release a dashed edge, so they stay apart by geometry when two share a hue.
+//   stroke    the hue, mixed toward ink until it reaches 3:1 on paper
+//   fill      the hue, mixed toward paper to a fixed L* (90 on a light page, 24 on a dark one, never within 4 L* of paper)
+//   ink       the theme ink, on every role fill
+//   edges     data takes release's hue (or --data), fail takes cause's (or --fail), mixed toward ink to 4.5:1 on paper
+//             because the wait label is written in the fail colour; sync and async are --line
+//   context   muted for ink; its stroke and fill are muted mixed toward paper (3:1 stroke, fixed-L* fill)
+//   claim     the accent mixed toward ink until paper reads on it at 4.5:1 and it is 64 L* from box; soft, mid and
+//             strong are evenly spaced in L* between box and it, so the five fills differ by >= 15 L* and the claim
+//             fill stands out from the paper most
+//   ramp      the claim fill, then it mixed toward paper 55% and 85% (the pointer hue is the claim fill)
+//   guide     paper mixed 12% toward ink
+// Two roles that land on one hex are told apart by one blue step (the dark substitution is by hex). The guard then
+// refuses the theme, naming the pair, when ink misses 4.5:1 on paper, box or a text-bearing fill, a stroke or edge
+// misses 3:1 on paper (the fail edge 4.5:1), fills sit < 15 L* apart, the claim fill is not the strongest, or a dark
+// half does not map one-to-one onto the light half. The fixed hue families (A blue, B teal ...) are the default's only.
+export class ThemeError extends Error {
+  constructor(errs) { super(errs.join('\n')); this.errs = errs; }
+}
+const ROT = 137.5, ROT_MIN_S = 0.3, FILL_L = { light: 90, dark: 24 }, RAMP_MIX = [0.55, 0.85], SPACE = 15, CLAIM_GAP = 4 * SPACE + 4;
+// Limits on what a theme file may ask of the reader; a theme past one is refused with one line, never walked.
+// MAX_VALUE_LEN bounds a token's raw and resolved text, so a var() fan-out cannot double its way to a heap abort;
+// MAX_VAR_DEPTH bounds the var() chain (and the nesting of @media blocks); MAX_ERRS bounds the lines of a refusal.
+const MAX_THEME_BYTES = 256 * 1024, MAX_HUES = 64, MAX_VAR_DEPTH = 32, MAX_VALUE_LEN = 200, MAX_ERRS = 10, MAX_LINE = 300;
+class ThemeLimit extends Error {}
+const clipLine = (m) => { const s = String(m).replace(/\s*[\r\n]+\s*/g, ' '); return s.length > MAX_LINE ? s.slice(0, MAX_LINE - 1) + '…' : s; };
+const capErrs = (errs) => (errs.length > MAX_ERRS ? [...errs.slice(0, MAX_ERRS), `... and ${errs.length - MAX_ERRS} more`] : errs);
+
+const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+const hexOf = (r, g, b) => '#' + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+const mixHex = (a, b, f) => { const [p, q] = [rgbOf(a), rgbOf(b)]; return hexOf(...p.map((v, i) => v + (q[i] - v) * f)); };
+const bump = (hex) => { const [r, g, b] = rgbOf(hex); return hexOf(r, g, b < 255 ? b + 1 : b - 1); };
+const lstar = (hex) => {
+  const lin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const y = rgbOf(hex).reduce((a, v, k) => a + lin(v / 255) * [0.2126, 0.7152, 0.0722][k], 0);
+  return y > 216 / 24389 ? 116 * Math.cbrt(y) - 16 : (24389 / 27) * y;
+};
+function hslHex(h, s, l) {
+  const hh = ((h % 360) + 360) % 360, a = s * Math.min(l, 1 - l);
+  const f = (n) => { const k = (n + hh / 30) % 12; return (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))) * 255; };
+  return hexOf(f(0), f(8), f(4));
+}
+function rotateHue(hex, deg) {
+  const [r, g, b] = rgbOf(hex).map((v) => v / 255), mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+  const h = d ? (mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4) * 60 : 0;
+  // a grey accent has no hue to turn: the turned hue gets at least ROT_MIN_S saturation so the roles still tell apart
+  return hslHex(h + deg, Math.max(d ? d / (1 - Math.abs(2 * l - 1)) : 0, ROT_MIN_S), l);
+}
+// #rgb, #rrggbb, rgb() or hsl() as #rrggbb; null for anything else (a named colour included)
+export function parseColour(value) {
+  if (typeof value !== 'string') return null;
+  const v = value.trim().toLowerCase();
+  let m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/.exec(v);
+  if (m) return m[1].length === 3 ? '#' + [...m[1]].map((c) => c + c).join('') : v;
+  const parts = (fn) => { const p = new RegExp(`^${fn}\\(\\s*([^)]*?)\\s*\\)$`).exec(v); const q = p && p[1].split(/\s*,\s*|\s+/).filter(Boolean); return q && q.length === 3 ? q : null; };
+  const num = (x, pct) => (new RegExp(`^\\d+(\\.\\d+)?${pct ? '%' : ''}$`).test(x) ? parseFloat(x) : NaN);
+  if ((m = parts('rgb'))) {
+    const c = m.map((x) => (x.endsWith('%') ? num(x, true) * 2.55 : num(x)));
+    return c.every((x) => x >= 0 && x <= 255.001) ? hexOf(...c) : null;
+  }
+  if ((m = parts('hsl'))) {
+    const h = /^-?\d+(\.\d+)?(deg)?$/.test(m[0]) ? parseFloat(m[0]) : NaN, s = num(m[1], true) / 100, l = num(m[2], true) / 100;
+    return [h, s, l].every(Number.isFinite) && s <= 1 && l <= 1 ? hslHex(h, s, l) : null;
+  }
+  return null;
+}
+const colourProblem = (v) => (typeof v === 'string' && /^[a-z]+$/i.test(v.trim()) ? `"${v}" is a named colour - write it as #rrggbb, rgb() or hsl()` : `${JSON.stringify(v)} is not a colour - write #rgb, #rrggbb, rgb() or hsl()`);
+
+// the JSON form (or what readThemeCss returns), every colour as #rrggbb, box and line defaulted; ThemeError names each bad key
+export function normalizeTheme(raw) {
+  const errs = [];
+  const colour = (v, where) => { const hex = parseColour(v); if (!hex) errs.push(`${where}: ${colourProblem(v)}`); return hex; };
+  const half = (h, where) => {
+    if (!h || typeof h !== 'object' || Array.isArray(h)) { errs.push(`${where}: give an object of ink, paper, muted, accent and hues`); return null; }
+    const out = {};
+    for (const k of ['ink', 'paper', 'muted', 'accent']) { if (h[k] == null) errs.push(`${where}.${k}: missing - the theme needs it`); else out[k] = colour(h[k], `${where}.${k}`); }
+    for (const k of ['box', 'line', 'data', 'fail']) if (h[k] != null) out[k] = colour(h[k], `${where}.${k}`);
+    if (h.hues != null && !Array.isArray(h.hues)) errs.push(`${where}.hues: give a list of colours`);
+    if (Array.isArray(h.hues) && h.hues.length > MAX_HUES) errs.push(`${where}.hues: ${h.hues.length} hues - at most ${MAX_HUES} are read`);
+    out.hues = (Array.isArray(h.hues) && h.hues.length <= MAX_HUES ? h.hues : []).map((x, i) => colour(x, `${where}.hues[${i}]`));
+    out.box = out.box || out.paper;
+    out.line = out.line || out.ink;
+    return out;
+  };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new ThemeError(['the theme must be an object {light:{ink, paper, muted, accent, hues}, dark?:{...}}']);
+  const theme = { light: half(raw.light, 'light') };
+  if (raw.dark != null) theme.dark = half(raw.dark, 'dark');
+  if (errs.length) throw new ThemeError(capErrs(errs));
+  return theme;
+}
+
+// [{sel, dark, body}] of a stylesheet; dark: inside an @media (prefers-color-scheme: dark) block. @layer and @supports
+// bodies are read as if they were not there; a rule inside any other @media block is left out: it is not the base
+// theme. A block that never closes is refused, naming it.
+function cssRules(src, dark = false, out = [], level = 0) {
+  if (level > MAX_VAR_DEPTH) throw new ThemeLimit(`@media blocks nest deeper than ${MAX_VAR_DEPTH} levels`);
+  for (let i = 0; i < src.length;) {
+    const open = src.indexOf('{', i);
+    if (open < 0) break;
+    let depth = 1, j = open + 1;
+    while (j < src.length && depth) { if (src[j] === '{') depth++; else if (src[j] === '}') depth--; j++; }
+    const head = src.slice(i, open).split(';').pop().trim();
+    if (depth) throw new ThemeError([`unterminated block: "${head || '{'}" opens a { that is never closed - add the closing }`]);
+    const body = src.slice(open + 1, j - 1);
+    if (!head.startsWith('@')) out.push({ sel: head, dark, body });
+    else if (/^@(layer|supports)\b/i.test(head)) cssRules(body, dark, out, level + 1);
+    else if (/^@media\b/i.test(head) && /prefers-color-scheme\s*:\s*dark/i.test(head)) cssRules(body, true, out, level + 1);
+    i = j;
+  }
+  return out;
+}
+// which half a whitespace-stripped selector sets: 'dark', 'light' or null
+function themeSide(s, inDark) {
+  if (/^(?::root|html)?\[data-theme=(["']?)dark\1\]$/.test(s) || /^(?::root|html|body)?\.dark$/.test(s) || (inDark && s === ':root')) return 'dark';
+  if (!inDark && (s === ':root' || /^(?::root|html)(?:\.light|\[data-theme=(["']?)light\1\])$/.test(s))) return 'light';
+  return null;
+}
+const CSS_TOKEN = { paper: 'bg', ink: 'fg', muted: 'muted', accent: 'accent', box: 'box', line: 'line', data: 'data', fail: 'fail' };
+const CSS_WHAT = { paper: 'the page colour', ink: 'the text colour', muted: 'the quiet text colour', accent: 'the accent colour' };
+export function readThemeCss(css) {
+  try { return readCss(css); } catch (e) { throw e instanceof ThemeLimit ? new ThemeError([e.message]) : e; }
+}
+function readCss(css) {
+  if (String(css).length > MAX_THEME_BYTES) throw new ThemeLimit(`the stylesheet is over ${MAX_THEME_BYTES} bytes - give only the :root tokens`);
+  const rules = cssRules(String(css).replace(/\/\*[\s\S]*?\*\//g, ''));
+  const props = (r) => Object.fromEntries([...r.body.matchAll(/--([\w-]+)\s*:\s*([^;]+)/g)].map((m) => [m[1], m[2].trim()]));
+  const light = {}, dark = {};
+  let sawLight = false, sawDark = false;
+  for (const r of rules) for (const s of r.sel.split(',').map((x) => x.replace(/\s+/g, ''))) {
+    const side = themeSide(s, r.dark);
+    if (side === 'dark') { Object.assign(dark, props(r)); sawDark = true; }
+    else if (side === 'light') { Object.assign(light, props(r)); sawLight = true; }
+  }
+  if (!sawLight) throw new ThemeError(['no :root{--...} block found - put --bg, --fg, --muted, --accent and --hue-1..n in :root']);
+  const errs = [];
+  const half = (map, tag) => {
+    const out = {}, memo = new Map();
+    // var() depth is capped and the text of a token, raw or resolved, is capped, so a long chain or a fan-out
+    // (each token naming the one before twice) is refused at the cap; memo resolves each token once
+    const resolve = (name, trail = []) => {
+      if (trail.includes(name)) throw new Error(`var() loops: ${[...trail, name].map((n) => `--${n}`).join(' -> ')}`);
+      if (map[name] === undefined) throw new Error(`var(--${name}) is not defined in :root`);
+      if (memo.has(name)) return memo.get(name);
+      if (trail.length >= MAX_VAR_DEPTH) throw new ThemeLimit(`${tag}--${trail[0]}: var() chain is deeper than ${MAX_VAR_DEPTH} levels`);
+      if (map[name].length > MAX_VALUE_LEN) throw new ThemeLimit(`${tag}--${name}: value is longer than ${MAX_VALUE_LEN} characters`);
+      const v = map[name].replace(/var\(\s*--([\w-]+)\s*\)/g, (_, n) => resolve(n, [...trail, name]));
+      if (v.length > MAX_VALUE_LEN) throw new ThemeLimit(`${tag}--${name}: value grows past ${MAX_VALUE_LEN} characters once its var() are filled in`);
+      memo.set(name, v);
+      return v;
+    };
+    const read = (name, why) => {
+      if (map[name] === undefined) { if (why) errs.push(`${tag}--${name}: missing - it is ${why}, the theme needs it`); return undefined; }
+      try {
+        const v = resolve(name), hex = parseColour(v);
+        if (!hex) errs.push(`${tag}--${name}: ${colourProblem(v)}`);
+        return hex || undefined;
+      } catch (e) { if (e instanceof ThemeLimit) throw e; errs.push(`${tag}--${name}: ${e.message}`); return undefined; }
+    };
+    // the highest --hue-n is found, and refused above MAX_HUES, before any loop runs to it
+    let last = 0;
+    for (const k of Object.keys(map)) { const m = /^hue-(\d+)$/.exec(k); if (m) last = Math.max(last, +m[1]); }
+    if (last > MAX_HUES) throw new ThemeLimit(`${tag}--hue-${last}: at most ${MAX_HUES} hues are read (--hue-1 to --hue-${MAX_HUES})`);
+    for (const [key, name] of Object.entries(CSS_TOKEN)) { const hex = read(name, CSS_WHAT[key]); if (hex) out[key] = hex; }
+    out.hues = [];
+    for (let n = 1; n <= last; n++) {
+      if (map[`hue-${n}`] === undefined) errs.push(`${tag}--hue-${n}: missing - hues run --hue-1 to --hue-${last} with no gap`);
+      else { const hex = read(`hue-${n}`); if (hex) out.hues.push(hex); }
+    }
+    return out;
+  };
+  const theme = { light: half(light, '') };
+  if (sawDark) theme.dark = half({ ...light, ...dark }, 'dark: ');
+  if (errs.length) throw new ThemeError(capErrs(errs));
+  return theme;
+}
+
+// --theme <file>: JSON, or a stylesheet when the name ends in .css; every problem is one line per message,
+// at most MAX_LINE characters, prefixed `theme file <path>:`
+export function loadThemeFile(path) {
+  const refuse = (errs) => { throw new ThemeError(errs.map((m) => clipLine(`theme file ${path}: ${m}`))); };
+  let text;
+  try {
+    if (statSync(path).size > MAX_THEME_BYTES) refuse([`is over ${MAX_THEME_BYTES} bytes - give only the theme tokens`]);
+    text = readFileSync(path, 'utf8');
+  } catch (e) {
+    if (e instanceof ThemeError) throw e;
+    refuse([`cannot be read (${e.code || e.message})`]);
+  }
+  try { return normalizeTheme(/\.css$/i.test(path) ? readThemeCss(text) : JSON.parse(text)); } catch (e) {
+    if (e instanceof ThemeError) refuse(e.errs);
+    refuse([e instanceof SyntaxError ? `not valid JSON (${e.message})` : e instanceof RangeError ? 'is nested too deeply to read' : `cannot be read (${e.message})`]);
+  }
+}
+
+// from -> to in 2% steps until ok(colour); the first colour that passes (from itself when it does), else to
+function reach(from, to, ok) {
+  for (let i = 0; i <= 50; i++) { const c = mixHex(from, to, i / 50); if (ok(c)) return c; }
+  return to;
+}
+// the mix of a and b whose L* is `target` (L* runs monotonically from a to b)
+function along(a, b, target) {
+  const dir = Math.sign(lstar(b) - lstar(a));
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 32; i++) { const mid = (lo + hi) / 2; if ((lstar(mixHex(a, b, mid)) - target) * dir < 0) lo = mid; else hi = mid; }
+  return mixHex(a, b, (lo + hi) / 2);
+}
+
+function expandHalf(h) {
+  const { ink, paper, box, muted, accent } = h, used = new Map();
+  const take = (key, hex) => { if (!used.has(hex)) used.set(hex, key); return hex; };
+  const claim = (key, hex) => { while (used.has(hex) && used.get(hex) !== key) hex = bump(hex); used.set(hex, key); return hex; };
+  take('paper', paper); take('ink', ink); take('muted', muted); take('box', box);
+  const Lp = lstar(paper), Lb = lstar(box), lightPage = Lp >= 50;
+  const stroke = (hue, need = 3) => reach(hue, ink, (c) => contrastRatio(c, paper) >= need);
+  const tint = (hue) => {
+    const target = lightPage ? Math.min(FILL_L.light, Lp - 4) : Math.max(FILL_L.dark, Lp + 4), L = lstar(hue);
+    return (lightPage ? L >= target : L <= target) ? hue : along(hue, paper, target);
+  };
+  const line = claim('line', h.line);
+  const supply = [accent, ...h.hues], hueAt = (r) => (r < supply.length ? supply[r] : rotateHue(accent, ROT * (r - supply.length + 1)));
+  const role = (key, hue) => ({ stroke: claim(`${key}.stroke`, stroke(hue)), fill: claim(`${key}.fill`, tint(hue)), ink });
+  const lanes = [role('laneA', hueAt(0)), role('laneB', hueAt(1))], cause = role('cause', hueAt(2)), wait = role('wait', hueAt(3)), release = role('release', hueAt(4));
+  const context = { stroke: claim('context.stroke', reach(mixHex(muted, paper, 0.4), muted, (c) => contrastRatio(c, paper) >= 3)), fill: claim('context.fill', tint(muted)), ink: muted };
+  const data = h.data ? claim('data', stroke(h.data)) : release.stroke, fail = claim('fail', stroke(h.fail || hueAt(2), 4.5));
+  const claimFill = reach(accent, ink, (c) => contrastRatio(paper, c) >= 4.5 && Math.abs(lstar(c) - Lb) >= CLAIM_GAP);
+  const step = (i) => along(box, claimFill, Lb + ((lstar(claimFill) - Lb) * i) / 4);
+  const fills = { paper: box, soft: claim('soft', step(1)), mid: claim('mid', step(2)), strong: claim('strong', step(3)), accent: claim('accent', claimFill) };
+  const ramp = [fills.accent, claim('ramp1', mixHex(fills.accent, paper, RAMP_MIX[0])), claim('ramp2', mixHex(fills.accent, paper, RAMP_MIX[1]))];
+  const colours = { sync: line, async: line, data, fail };
+  const pal = {
+    ink, muted, line, paper, guide: claim('guide', mixHex(paper, ink, 0.12)), fills,
+    edges: Object.fromEntries(Object.entries(DEFAULT_PALETTE.edges).map(([k, e]) => [k, { dash: e.dash, color: colours[k] }])),
+  };
+  return { pal, roles: { surface: paper, ink, muted, inkInverse: paper, lanes, cause, wait, release, context, ramp: ramp.map((fill) => ({ fill })) } };
+}
+
+// Every bar below is checked on the mapped colours of one half; a miss names the pair, both hexes and the ratio.
+function guardHalf(name, { pal: P, roles: R }) {
+  const errs = [], floor2 = (x, n) => (Math.floor(x * 10 ** n) / 10 ** n).toFixed(n);
+  const bar = (fgName, fg, bgName, bg, need) => {
+    const r = contrastRatio(fg, bg);
+    if (r < need) errs.push(`${name} half: ${fgName} ${fg} on ${bgName} ${bg} is ${floor2(r, 2)}:1, needs ${need}:1`);
+  };
+  for (const [what, bg] of [['paper', P.paper], ['box', P.fills.paper]]) { bar('ink', P.ink, what, bg, 4.5); bar('muted', P.muted, what, bg, 4.5); }
+  for (const [n, r] of [['lane A', R.lanes[0]], ['lane B', R.lanes[1]], ['cause', R.cause], ['wait', R.wait], ['release', R.release], ['context', R.context]]) {
+    bar(`${n} ink`, r.ink, `${n} fill`, r.fill, 4.5);
+    bar(`${n} stroke`, r.stroke, 'paper', P.paper, 3);
+  }
+  bar('line', P.line, 'paper', P.paper, 3);
+  bar('data edge', P.edges.data.color, 'paper', P.paper, 3);
+  bar('fail edge (the wait label ink)', P.edges.fail.color, 'paper', P.paper, 4.5);
+  bar('ink', P.ink, 'soft fill', P.fills.soft, 4.5);
+  bar('ink', P.ink, 'mid fill', P.fills.mid, 4.5);
+  bar('muted', P.muted, 'soft fill', P.fills.soft, 4.5);
+  bar('claim ink', R.inkInverse, 'claim fill', P.fills.accent, 4.5);
+  for (const n of [3, 4]) rampSteps(name, n, { [name]: R }).forEach((s, i) => bar(`ramp ink (${i + 1} of ${n})`, s.ink, `ramp fill (${i + 1} of ${n})`, s.fill, 4.5));
+  // grayscale print: every pair of fills used together >= 15 L* apart, and the claim fill the strongest against the paper
+  const apart = (list) => {
+    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+      const d = Math.abs(lstar(list[i][1]) - lstar(list[j][1]));
+      if (d < SPACE) errs.push(`${name} half: ${list[i][0]} ${list[i][1]} and ${list[j][0]} ${list[j][1]} are ${floor2(d, 1)} L* apart, need ${SPACE} for a grayscale print`);
+    }
+  };
+  apart(Object.entries(P.fills).map(([k, v]) => [`${k} fill`, v]));
+  apart(R.ramp.map((s, i) => [`ramp step ${i + 1}`, s.fill]));
+  const away = (hex) => Math.abs(lstar(hex) - lstar(P.paper));
+  for (const [k, v] of Object.entries(P.fills)) if (k !== 'accent' && away(v) >= away(P.fills.accent)) errs.push(`${name} half: the claim fill ${P.fills.accent} is not the strongest fill - ${k} fill ${v} stands out from the paper as much`);
+  return errs;
+}
+
+const darkPalette = (p) => ({ ...p, edges: Object.fromEntries(Object.entries(p.edges).map(([k, e]) => [k, e.color])), hi: DARK_PALETTE.hi, lo: DARK_PALETTE.lo });
+
+// A normalized, expanded, guarded theme: what the renderers swap in (PALETTE, ROLES, onAccent), the dark substitution
+// (null for a light-only theme) and the CSS variables of the HTML page. Throws ThemeError, naming the failing pair.
+export function themeContext(raw) {
+  const theme = normalizeTheme(raw), L = expandHalf(theme.light), D = theme.dark ? expandHalf(theme.dark) : null;
+  const errs = [...new Set([...guardHalf('light', L), ...(D ? guardHalf('dark', D) : [])])];
+  if (errs.length) throw new ThemeError(errs);
+  const roles = { light: L.roles, dark: D && D.roles };
+  let dark = null;
+  if (D) {
+    try { dark = { maps: darkMaps(L.pal, L.roles, darkPalette(D.pal), D.roles, roles), surface: D.roles.surface, inks: [D.roles.ink, D.roles.inkInverse, DARK_PALETTE.hi, DARK_PALETTE.lo] }; } catch (e) {
+      const c = e.collision;
+      if (!c) throw new ThemeError([`the dark half does not map one-to-one onto the light half (${e.message}) - give the dark half a token for each light one, or make the light colours differ`]);
+      const pair = `${c.a.role} and ${c.b.role}`;
+      throw new ThemeError([`light half: does not map one-to-one onto the dark half - ${pair} are both ${c.light}, but the dark set gives ${c.a.role} ${c.a.dark} and ${c.b.role} ${c.b.dark} - give the light half ${/^[aeiou]/.test(c.b.role) ? 'an' : 'a'} ${c.b.role} that differs from its ${c.a.role}`]);
+    }
+  }
+  const vars = (x) => ({ bg: x.pal.paper, fg: x.pal.ink, muted: x.pal.muted, box: x.pal.fills.paper, line: x.pal.line, accent: x.roles.lanes[0].stroke, data: x.pal.edges.data.color, fail: x.pal.edges.fail.color, group: x.pal.fills.soft });
+  return { theme, PALETTE: L.pal, ROLES: roles, onAccent: L.roles.inkInverse, dark, vars: { light: vars(L), dark: D ? vars(D) : null } };
+}
+
+// The renderers read PALETTE, ROLES and ON_ACCENT as they are while one build runs; this is the only place they change.
+function withTheme(ctx, fn) {
+  const saved = [PALETTE, ROLES, ON_ACCENT];
+  [PALETTE, ROLES, ON_ACCENT] = [ctx.PALETTE, ctx.ROLES, ctx.onAccent];
+  try { return fn(); } finally { [PALETTE, ROLES, ON_ACCENT] = saved; }
+}
+const inTheme = (b, fn) => (b.theme ? withTheme(b.theme, fn) : fn());
+
+// --theme (opts.theme) wins over the IR's inline "theme" object
+function themeOf(ir, opts) {
+  if (opts.theme == null && ir.theme == null) return null;
+  if (opts.theme == null && (typeof ir.theme !== 'object' || Array.isArray(ir.theme))) throw new ThemeError(['"theme" in the IR must be an inline object {light:{ink, paper, muted, accent, hues}, dark?:{...}} - pass a file with --theme']);
+  return themeContext(opts.theme != null ? opts.theme : ir.theme);
+}
+
 // The style layer: one corner radius, two stroke weights, a three-size type scale. The claim's
 // elements take the accent role (darkest fill, heavy stroke, light text); the rest stays muted.
 const RX = 6;
 const SW_LIGHT = 1.25, SW_HEAVY = 2.5;
 const TITLE = 15, SIZE = 13, SUB = 12.5, LINE_H = 16;
-const ON_ACCENT = '#ffffff';
+let ON_ACCENT = '#ffffff';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const f1 = (n) => +n.toFixed(1);
@@ -172,7 +516,7 @@ class Canvas {
     const box = { x: x0, y: y - asc, w, h: asc + desc };
     this.items.push({ id: o.id || `text${this.n++}`, kind: 'text', text: s, size, box, owner: o.owner, within: o.within, room: o.room, what: o.what });
     this.used[weight] += s;
-    this.parts.push(`<text x="${f1(x)}" y="${f1(y)}" font-size="${size}"${o.bold ? ' font-weight="700"' : ''}${anchor !== 'start' ? ` text-anchor="${anchor}"` : ''} fill="${o.fill || PALETTE.ink}"${o.halo ? ' stroke="#ffffff" stroke-width="4" paint-order="stroke"' : ''}>${esc(s)}</text>`);
+    this.parts.push(`<text x="${f1(x)}" y="${f1(y)}" font-size="${size}"${o.bold ? ' font-weight="700"' : ''}${anchor !== 'start' ? ` text-anchor="${anchor}"` : ''} fill="${o.fill || PALETTE.ink}"${o.halo ? ` stroke="${PALETTE.paper}" stroke-width="4" paint-order="stroke"` : ''}>${esc(s)}</text>`);
     return box;
   }
   width(str, o = {}) { return measure(loadFont(o.bold ? 'Bold' : 'Regular'), String(str), o.size || SIZE); }
@@ -1166,7 +1510,7 @@ BOOK_TYPES.er = {
 // ----- chart: bar / line / dot, every value from a source file or stamped illustrative -----
 
 const MARKS = ['bar', 'line', 'dot'];
-const SERIES_FILLS = [PALETTE.fills.paper, PALETTE.fills.soft, PALETTE.fills.mid, PALETTE.fills.strong, 'url(#hatch)', 'url(#dots)'];
+const seriesFills = () => [PALETTE.fills.paper, PALETTE.fills.soft, PALETTE.fills.mid, PALETTE.fills.strong, 'url(#hatch)', 'url(#dots)'];
 const SERIES_DASH = ['none', '7 4', '2 3', '12 3 2 3', '4 2', '10 5'];
 function markerSvg(k, x, y, r = 4.2, hot = false) {
   const st = `fill="${hot ? PALETTE.fills.accent : k % 2 ? PALETTE.fills.paper : PALETTE.ink}" stroke="${PALETTE.ink}" stroke-width="${hot ? SW_HEAVY : SW_LIGHT}"`;
@@ -1223,13 +1567,13 @@ BOOK_TYPES.chart = {
   render(ir, c) {
     const W = 600, H = 380, cats = ir.x.categories || null, series = ir.series;
     title(c, ir, W, ir.illustrative ? '예시 값 (illustrative)' : null);
-    c.defs.add(`<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#ffffff"/><path d="M0 0 V6" stroke="${PALETTE.ink}" stroke-width="${SW_LIGHT}"/></pattern><pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#ffffff"/><circle cx="3" cy="3" r="1.2" fill="${PALETTE.ink}"/></pattern>`);
+    c.defs.add(`<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="${PALETTE.fills.paper}"/><path d="M0 0 V6" stroke="${PALETTE.ink}" stroke-width="${SW_LIGHT}"/></pattern><pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="${PALETTE.fills.paper}"/><circle cx="3" cy="3" r="1.2" fill="${PALETTE.ink}"/></pattern>`);
     // legend
     let lx = PADX;
     series.forEach((s, k) => {
       const ly = 54;
       const hot = c.accent.has(s.id);
-      if (ir.mark === 'bar') c.guide(`<rect x="${lx}" y="${ly - 10}" width="14" height="12" rx="${RX}" fill="${hot ? PALETTE.fills.accent : SERIES_FILLS[k]}" stroke="${PALETTE.ink}" stroke-width="${hot ? SW_HEAVY : SW_LIGHT}"/>`);
+      if (ir.mark === 'bar') c.guide(`<rect x="${lx}" y="${ly - 10}" width="14" height="12" rx="${RX}" fill="${hot ? PALETTE.fills.accent : seriesFills()[k]}" stroke="${PALETTE.ink}" stroke-width="${hot ? SW_HEAVY : SW_LIGHT}"/>`);
       else c.guide((ir.mark === 'line' ? `<path d="M${lx - 2} ${ly - 4} h18" stroke="${PALETTE.ink}" stroke-width="${hot ? SW_HEAVY : SW_LIGHT}"${SERIES_DASH[k] !== 'none' ? ` stroke-dasharray="${SERIES_DASH[k]}"` : ''}/>` : '') + markerSvg(k, lx + 7, ly - 4, 4.2, hot));
       const b = c.text(s.label, lx + 20, ly, { owner: 'legend' });
       lx = b.x + b.w + 18;
@@ -1247,7 +1591,7 @@ BOOK_TYPES.chart = {
     const Y = (v) => bottom - ((v - lo) / (hi - lo)) * (bottom - top);
     c.shape('', { x: left, y: top, w: right - left, h: bottom - top }, { id: 'plot', container: true });
     for (const v of ticks) {
-      c.guide(`<path d="M${left} ${f1(Y(v))} H${right}" stroke="#e3e6ea" stroke-width="${SW_LIGHT}"/>`);
+      c.guide(`<path d="M${left} ${f1(Y(v))} H${right}" stroke="${PALETTE.guide}" stroke-width="${SW_LIGHT}"/>`);
       c.text(num(v), left - 6, Y(v) + 4, { anchor: 'end', size: SUB, fill: PALETTE.muted, owner: 'axis' });
     }
     c.guide(`<path d="M${left} ${top - 6} V${bottom} H${right}" stroke="${PALETTE.ink}" stroke-width="${SW_LIGHT}" fill="none"/>`);
@@ -1278,7 +1622,7 @@ BOOK_TYPES.chart = {
         const bw = Math.min(40, (X.band * 0.7) / ns);
         for (const p of s.points) {
           const x = X(p.x) + (k - (ns - 1) / 2) * bw, id = `bar ${s.id}@${p.x}`, b = { x: x - bw / 2, y: Y(p.y), w: bw, h: bottom - Y(p.y) };
-          c.shape(`<rect x="${f1(b.x)}" y="${f1(b.y)}" width="${f1(bw)}" height="${f1(b.h)}" rx="${RX}" fill="${hot ? PALETTE.fills.accent : SERIES_FILLS[k]}" stroke="${PALETTE.ink}" stroke-width="${hot ? SW_HEAVY : SW_LIGHT}"/>`, b, { id });
+          c.shape(`<rect x="${f1(b.x)}" y="${f1(b.y)}" width="${f1(bw)}" height="${f1(b.h)}" rx="${RX}" fill="${hot ? PALETTE.fills.accent : seriesFills()[k]}" stroke="${PALETTE.ink}" stroke-width="${hot ? SW_HEAVY : SW_LIGHT}"/>`, b, { id });
           errBar(x, p, id);
         }
       } else if (ir.mark === 'line') {
@@ -1339,7 +1683,18 @@ for (const [type, t] of Object.entries(BOOK_TYPES)) {
 
 // ---------- build: validate -> lay out -> measure ----------
 
+// With a theme the build runs under it and the result carries it (`theme`), so toSvg and darkSvg run under it too.
 function build(ir, opts = {}) {
+  let ctx = null;
+  if (ir && typeof ir === 'object' && !Array.isArray(ir)) {
+    try { ctx = themeOf(ir, opts); } catch (e) { if (e instanceof ThemeError) return { errs: e.errs }; throw e; }
+  }
+  if (!ctx) return buildPlain(ir, opts);
+  const b = withTheme(ctx, () => buildPlain(ir, opts));
+  return b.c ? { ...b, theme: ctx } : b;
+}
+
+function buildPlain(ir, opts) {
   if (!ir || typeof ir !== 'object' || Array.isArray(ir)) return { errs: ['the IR must be a JSON object'] };
   const book = BOOK_TYPES[ir.type];
   if (!TYPES.includes(ir.type) && !book) return { errs: [`set "type" to one of ${[...TYPES, ...Object.keys(BOOK_TYPES)].join(', ')} (got ${JSON.stringify(ir.type)})`] };
@@ -1378,7 +1733,7 @@ ${c.parts.join('\n')}
 export function renderFigure(ir, opts) {
   const b = build(ir, opts);
   if (b.errs.length) throw new Error(`figure does not pass the check:\n- ${b.errs.join('\n- ')}`);
-  return { svg: toSvg(ir, b), W: b.W, H: b.H };
+  return { svg: inTheme(b, () => toSvg(ir, b)), W: b.W, H: b.H, paper: inTheme(b, () => PALETTE.paper) };
 }
 
 function atomicWrite(path, data) {
@@ -1389,9 +1744,9 @@ function atomicWrite(path, data) {
 
 // The HTML page for a book type: the same static SVG, inline.
 export function renderFigureHtmlToFile(ir, outPath, opts) {
-  const { svg } = renderFigure(ir, opts);
+  const { svg, paper } = renderFigure(ir, opts);
   atomicWrite(outPath, `<!doctype html>\n<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(ir.title)}</title>
-<style>body{margin:0;background:#ffffff;padding:16px}svg{display:block;max-width:100%;height:auto;margin:0 auto}</style></head><body>
+<style>body{margin:0;background:${paper};padding:16px}svg{display:block;max-width:100%;height:auto;margin:0 auto}</style></head><body>
 ${svg}</body></html>\n`);
   return outPath;
 }
@@ -1512,12 +1867,16 @@ export function writeFigure(ir, base, opts = {}) {
   const b = build(ir, opts);
   if (b.errs.length) return { code: 1, msg: b.errs.map((e) => `- ${e}`).join('\n') };
   const svgPath = `${base}.svg`, pngPath = `${base}.png`;
-  const light = toSvg(ir, b), darkPath = `${base}.dark.svg`;
+  const light = inTheme(b, () => toSvg(ir, b)), darkPath = `${base}.dark.svg`;
   atomicWrite(svgPath, light);
-  atomicWrite(darkPath, darkSvg(light)); // the same figure in the dark set; the PNG stays light
+  // the same figure in the dark set; the PNG stays light. A theme with no dark half writes no dark svg and leaves an existing
+  // one alone: a dark look nobody gave it is not invented, and a file this run did not make is not its to delete.
+  const noDark = b.theme && !b.theme.dark, staleDark = noDark && existsSync(darkPath);
+  if (!noDark) atomicWrite(darkPath, darkSvg(light, b.theme ? b.theme.dark : undefined));
   rmSync(pngPath, { force: true }); // a stale PNG must not pass for this SVG
   const r = rasterize(svgPath, b.W, b.H, pngPath, opts.env || process.env);
   if (r.code) return { code: r.code, msg: `${svgPath} written; ${r.msg}` };
-  return { code: 0, msg: `ok ${svgPath} ${pngPath} ${darkPath} (${b.W}x${b.H}, PNG ${2 * b.W}x${2 * b.H}, light) - now Read the PNG` };
+  const files = noDark ? `${svgPath} ${pngPath}` : `${svgPath} ${pngPath} ${darkPath}`;
+  return { code: 0, msg: `ok ${files} (${b.W}x${b.H}, PNG ${2 * b.W}x${2 * b.H}, light)${noDark ? ` - the theme has no dark half, so ${darkPath} was not written${staleDark ? `; the existing ${darkPath} is from an earlier run, not this theme: it was left in place and is stale` : ''}` : ''} - now Read the PNG` };
 }
 

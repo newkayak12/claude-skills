@@ -18,6 +18,43 @@ muted context. `check` refuses an IR with no `claim`, an empty one, or an id tha
 with one repair line. The ids: `layout` a strip or cell id (a strip accents all its cells), `tree`
 a node id, `timeline` a step as `<lane>@t<t>` (`"A@t4"`), `er` an entity id, `chart` a series id.
 
+## Colour - the document's tone first
+
+A figure takes the colours of the book, deck or page it goes into. Read that document's stylesheet
+(or ask for its tone) before choosing anything, and write down its paper, ink, one accent and, if it
+has them, a few hues. Pass them as a theme; the meaning roles are then mapped onto it (below). You
+write no hex of your own, for a role or a token: every value comes from the document or the user's
+file. When none is given, ask, or mark the tokens `[확인 필요]` and point `--theme` at the document's
+file or CSS. Pass the theme by one route:
+
+- **IR field** - `"theme"` at the top level of the IR, an inline object only (a path is refused):
+  `{"light": {"paper", "ink", "muted", "accent", "hues": [...]}, "dark": {...}}`. `box` (node fill,
+  default `paper`), `line` (default `ink`), `data` and `fail` are optional; `dark` is optional.
+- **`--theme <file.json>`** on `check`, `figure` and `render` - the same object in a file. When both
+  this and the IR field are given, `--theme` wins.
+- **A CSS source** - `--theme <file>.css`: the `:root{--...}` blocks of a stylesheet. Tokens: `--bg`
+  (paper), `--fg` (ink), `--muted`, `--accent` (required); `--box`, `--line`, `--data`, `--fail`
+  (optional); `--hue-1`, `--hue-2` ... (no gap). A value is `#rgb`, `#rrggbb`, `rgb()`, `hsl()` or a
+  `var(--x)` of the same `:root`; a named colour (`navy`) is refused. The dark half is the `:root` of an
+  `@media (prefers-color-scheme: dark)` block or of a `[data-theme=dark]` rule, laid over the light tokens.
+
+Fictional example, a warm grey page with one dark accent (use the document's own values, never these):
+`{"theme": {"light": {"paper": "#f4f1ea", "ink": "#1c1b19", "muted": "#46423b", "accent": "#3a3631", "hues": []}}}`
+
+Then the roles. Hues are dealt in the order accent, hue 1, hue 2 ...: lane A, lane B, cause, wait,
+release. A role past the supply takes the accent hue turned; cause (a solid heavy edge), wait (a filled
+band) and release (a dashed edge) stay apart by shape when they share a hue. A stroke is the hue
+darkened to 3:1 on the paper, a fill is the hue lightened toward the paper, the text on every fill is
+the theme ink, and the claim and the layout ramp come from the accent. `figure` also writes
+`<base>.dark.svg` from the dark half; a theme with none writes no dark file and says so (the PNG is
+always the light set).
+
+A theme that fails the checks below is refused, with the failing pair named, and nothing is written
+(`light half: ink #2b2a27 on mid fill #918d88 is 4.35:1, needs 4.5:1`; an unreadable file, bad JSON, a
+missing token, a named colour and a dark half that does not map one-to-one onto the light one are
+refused too). Fix the token: darken the ink or the muted, or move the accent. With no theme the colours
+are today's default, byte for byte. `render` takes `--theme` for the grid and sequence types as well.
+
 ## What every figure is checked for
 
 The check lays the figure out, measures every text with the font's real advance widths, and
@@ -36,16 +73,20 @@ Fills that appear together differ by >= 15 L* and every line style has its own d
 a grayscale print keeps them apart. Labels may be Korean. Put the source of a fact (a size, an
 offset, a default) or `[확인 필요]` in the IR's `note`.
 
-Colour carries meaning, set by the renderer (`ROLES` in `figure.mjs`; no IR field): a timeline's
+Colour carries meaning. With no theme it is the default set by the renderer (`ROLES` in `figure.mjs`);
+under a theme (above) each role is mapped onto the theme's colours and the hues below are the default's
+only. The default: a timeline's
 lanes take blue (A) then teal (B) by lane order, drawn on the lane header and on its plain steps
 (swap the order of `lanes` and the hues swap); a cause edge is amber-red; a wait band is amber; a
 release edge is green; context is muted grey; a layout's strips run from the strongest blue (the first
 strip, the current row) to lighter blues (older ones, interpolated past three), and a pointer edge takes
-the hue of its source field. Every ink on its fill is >= 4.5:1 in the light and the dark set (tested).
+the hue of its source field. Every ink on its fill is >= 4.5:1 in the light and the dark set (tested),
+and the same bars (and a 3:1 stroke on the paper) are the check that refuses a theme.
 
 `figure` also writes `<base>.dark.svg`: the same figure with every colour swapped for its counterpart in
 the dark set (a one-to-one map built from `ROLES`; no light-set colour is left in it). It is written
 only when the figure passes `check`. The `<base>.png` and `<base>.svg` are drawn with the light set only.
+Under a theme with no dark half, `figure` writes no `<base>.dark.svg`; an existing one from an earlier run is left in place, not deleted, and the message reports it as stale.
 
 ## layout - where bytes sit, what points where
 
