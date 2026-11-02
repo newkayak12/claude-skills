@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { composePrompt } from '../mcp/prompts.mjs';
 import {
   KINDS, VERDICT_FIELD, REASONING_STAGES, FLOWS, kindSkills, kindOf, authorStage,
-  createRun, runState, retrySubgoal, retrySpec, getNode, readyNodes,
+  createRun, runState, retrySubgoal, retryReport, retrySpec, getNode, readyNodes,
   validateSpec,
   expandSubgoals, node,
   applyHumanPin, releaseHumanPin, currentAttempt, promoteWaitingHuman, openAsk,
@@ -400,6 +400,56 @@ test('retrySubgoal on a package run opens a fresh chain attempt, and the goal ga
     assert.equal(out.attempt, 2);
     assert.deepEqual(readyNodes(out.run).map((n) => n.node_id), ['implement:U1:2']);
     assert.ok(getNode(out.run, 'gate:goal:1').deps.includes('gate:U1:2'), 'the package\'s goal gate judges the live attempt');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('retryReport re-pends only a failed report, carries reason and gaps, and refuses everything else untouched', () => {
+  const cwd = scratchCwd();
+  try {
+    const run = packageRun(cwd);
+    const report = getNode(run, 'report');
+    report.state = 'failed';
+    report.final = true;
+    report.executor = 'claude';
+    report.assignment = { vendor: 'claude', executor: 'claude' };
+    report.result = { stage_ok: false, reason: 'no evidence recorded', gaps: ['missing ledger'] };
+    const before = JSON.stringify(run.nodes.filter((n) => n.node_id !== 'report'));
+    const out = retryReport(run, '', { node_id: 'report', different_vendor: true });
+    assert.equal(out.attempt, 1);
+    const n = getNode(out.run, 'report');
+    assert.equal(n.state, 'pending');
+    assert.equal(n.ticket, null);
+    assert.equal(n.result, null);
+    assert.equal(n.assignment, undefined);
+    assert.equal(n.final, undefined);
+    assert.equal(n.report_attempts, 1);
+    assert.deepEqual(n.avoid_executors, ['claude']);
+    assert.match(n.feedback, /no evidence recorded/);
+    assert.match(n.feedback, /missing ledger/);
+    assert.equal(JSON.stringify(out.run.nodes.filter((x) => x.node_id !== 'report')), before, 'every other node is byte-identical');
+
+    // not a failed report: refused, nothing mutated
+    const gate = getNode(run, 'gate:U1:1');
+    gate.state = 'failed';
+    gate.result = { stage_ok: false, reason: 'x' };
+    const snap = JSON.stringify(run.nodes);
+    assert.equal(retryReport(run, '', { node_id: 'gate:U1:1' }).refused, true);
+    n.state = 'done';
+    n.result = { stage_ok: true };
+    assert.equal(retryReport(run, '', { node_id: 'report' }).refused, true, 'a done report is not retried');
+    assert.equal(JSON.stringify(run.nodes.filter((x) => x.node_id !== 'report')), JSON.stringify(JSON.parse(snap).filter((x) => x.node_id !== 'report')));
+
+    // budget: max_retries + 1 retries, then it settles
+    n.state = 'failed';
+    n.result = { stage_ok: false, reason: 'again' };
+    n.report_attempts = run.max_retries + 1;
+    const spent = retryReport(run, '', { node_id: 'report' });
+    assert.equal(spent.attempt, null);
+    assert.equal(spent.reason, 'retry budget exhausted');
+    assert.equal(getNode(spent.run, 'report').state, 'failed');
+    assert.equal(getNode(spent.run, 'report').final, true);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

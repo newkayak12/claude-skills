@@ -122,6 +122,16 @@ export function demoteAuthors(ranked, authors, modelOf = () => null) {
   return [...ranked.filter((c) => !isAuthor(c)), ...ranked.filter(isAuthor).map(mark)];
 }
 
+// A retried node asked not to run on the executors named (the vendor that just failed it): the
+// same stable reorder as demoteAuthors, by vendor only. Still tried last, never dropped, so the
+// node runs on the avoided executor when nothing else is ready.
+export function demoteExecutors(ranked, avoid) {
+  if (!avoid || !avoid.length) return ranked;
+  const isAvoided = (c) => avoid.includes(c.vendor);
+  const mark = (c) => ({ ...c, reason: `${c.reason}; asked to avoid this executor on retry - tried last` });
+  return [...ranked.filter((c) => !isAvoided(c)), ...ranked.filter(isAvoided).map(mark)];
+}
+
 export function rankCandidates(run, node, candidates) {
   const execution = EXECUTION_STAGES.has(node.stage);
   const cross = CROSS_VENDOR_STAGES.has(node.stage);

@@ -4228,3 +4228,131 @@ process.exit(0);
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+// ---------- a failed report is retried alone ----------
+
+// Drive INDEPENDENT through both subgoals and the goal gate so only `report` is left.
+async function toReport(c, cwd, runId) {
+  await throughCritiqueWith(c, cwd, runId, INDEPENDENT);
+  for (const sg of ['U1', 'U2']) await passSubgoal(c, cwd, runId, sg);
+  await c.call('team_submit', { run_id: runId, cwd, node_id: 'reduce', payload: ok({ changed_files: [], handoff: 'set folded' }) });
+  await c.call('team_submit', { run_id: runId, cwd, node_id: 'gate:goal:1', payload: ok({ accept: true, match_pct: 95 }) });
+}
+const failReport = (c, cwd, runId, node_id = 'report') => c.call('team_submit', { run_id: runId, cwd, node_id,
+  payload: { stage_ok: false, reason: 'report had no evidence of the ledger', gaps: ['cite the gate verdicts'] } });
+const nodesExceptReport = (cwd, runId) =>
+  JSON.stringify(loadRun(cwd, runId).nodes.filter((n) => n.node_id !== 'report'));
+
+test('team_retry refuses a report node until it has failed; then reruns only the report with the old gaps as feedback', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await toReport(c, cwd, runId);
+    const early = await c.call('team_retry', { run_id: runId, cwd, node_id: 'report' });
+    assert.match(early.error, /currently interrupted pending node/, 'a pending report is not retryable');
+
+    const failed = await failReport(c, cwd, runId);
+    assert.equal(failed.state, 'failed', JSON.stringify(failed));
+    const before = nodesExceptReport(cwd, runId);
+
+    const r = await c.call('team_retry', { run_id: runId, cwd, node_id: 'report' });
+    assert.equal(r.error, undefined, JSON.stringify(r));
+    assert.equal(r.retried, true);
+    assert.equal(r.target, 'report');
+    assert.deepEqual(r.ready.map((n) => n.node_id), ['report']);
+    assert.equal(nodesExceptReport(cwd, runId), before, 'subgoal, gate and reduce nodes are byte-identical');
+
+    const brief = readFileSync(r.ready[0].briefing_path, 'utf8');
+    assert.match(brief, /report had no evidence of the ledger/);
+    assert.match(brief, /cite the gate verdicts/);
+
+    const v = await c.call('team_submit', { run_id: runId, cwd, node_id: 'report', payload: ok({ handoff: 'done' }) });
+    assert.equal(v.state, 'done');
+    assert.equal((await c.call('team_status', { run_id: runId, cwd })).state, 'complete');
+    const done = await c.call('team_retry', { run_id: runId, cwd, node_id: 'report' });
+    assert.match(done.error, /currently interrupted pending node/, 'a done report is not reopened');
+  });
+});
+
+test('team_retry still refuses a failed node that is not a report', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await throughCritiqueWith(c, cwd, runId, INDEPENDENT);
+    const f = dirty(cwd);
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'implement:U1:1', payload: ok({ changed_files: [f] }) });
+    await c.call('team_submit', { run_id: runId, cwd, node_id: 'test:U1:1', payload: ok({ verified: true }) });
+    const g = await c.call('team_submit', { run_id: runId, cwd, node_id: 'gate:U1:1', payload: ok({ accept: false, gaps: ['no'] }) });
+    assert.equal(g.state, 'failed');
+    for (const node_id of ['gate:U1:1', 'implement:U1:1']) {
+      const r = await c.call('team_retry', { run_id: runId, cwd, node_id });
+      assert.match(r.error, /currently interrupted pending node/, node_id);
+    }
+  });
+});
+
+test('a failed report is retried at most max_retries + 1 times, then the failure settles', async () => {
+  await withRun(async ({ c, cwd, runId }) => {
+    await toReport(c, cwd, runId);
+    await failReport(c, cwd, runId);
+    const r1 = await c.call('team_retry', { run_id: runId, cwd, node_id: 'report' });
+    assert.equal(r1.retried, true, JSON.stringify(r1));
+    await failReport(c, cwd, runId);
+    const r2 = await c.call('team_retry', { run_id: runId, cwd, node_id: 'report' });
+    assert.equal(r2.retried, false, JSON.stringify(r2));
+    assert.equal(r2.reason, 'retry budget exhausted');
+    const st = await c.call('team_status', { run_id: runId, cwd });
+    assert.equal(st.nodes.find((n) => n.node_id === 'report').state, 'failed');
+  }, { max_retries: 0 });
+});
+
+// Ordered allocation over two ready stand-in vendors: the report runs on whichever ranks first;
+// a retry that names it must land on the other.
+async function reportRerouted(retryArgs, allocation) {
+  const cwd = balancedRepo();
+  const c = await new Client({ CODEX_THREAD_ID: '' }).init();
+  try {
+    const { run_id } = await c.call('team_open', { request: 'r', cwd, host_vendor: 'claude', host_model: 'driving-model', goal_judges: 1, max_retries: 1, ...(allocation ? { allocation } : {}) });
+    // A balanced run records who a node was routed to only when team_next assigned it, and refuses
+    // a submit before that; an ordered one records nothing, so the caller names the executor.
+    const submit = async (node_id, payload) => {
+      if (allocation === 'balanced') await c.call('team_next', { run_id, cwd });
+      return c.call('team_submit', { run_id, cwd, node_id, payload });
+    };
+    await submit('plan', ok({ handoff: 'p' }));
+    await submit('setgoal', ok({ spec: SPEC }));
+    await submit('critique', ok({ sound: false, blocking: ['x'] }));
+    await submit('setgoal:2', ok({ spec: SPEC }));
+    await submit('critique:2', ok({ sound: false, blocking: ['y'] }));
+    const first = (await c.call('team_next', { run_id, cwd })).ready.find((n) => n.node_id === 'report:2');
+    assert.ok(first, 'the settled run releases report:2');
+    const was = first.executor || first.vendor;
+    if (allocation === 'balanced') {
+      // The report was assigned to the peer vendor, which team_submit refuses to answer for; the
+      // failure a vendor run would leave is written as the engine would have (state, result).
+      const run = loadRun(cwd, run_id);
+      const rep = getNode(run, 'report:2');
+      assert.ok(rep.assignment && rep.executor, 'balanced team_next persisted who the report went to');
+      rep.state = 'failed';
+      rep.result = { stage_ok: false, reason: 'bad report', gaps: ['cite the gate verdicts'] };
+      saveRun(run);
+    } else {
+      const failed = await failReport(c, cwd, run_id, 'report:2');
+      assert.equal(failed.state, 'failed', JSON.stringify(failed));
+    }
+    const r = await c.call('team_retry', { run_id, cwd, node_id: 'report:2', ...retryArgs(was) });
+    assert.equal(r.retried, true, JSON.stringify(r));
+    const again = r.ready.find((n) => n.node_id === 'report:2');
+    assert.ok(again, 'the report is ready again');
+    return { was, now: again.executor || again.vendor };
+  } finally {
+    c.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+test('team_retry avoid_executors re-routes a failed report away from the executor named', async () => {
+  const { was, now } = await reportRerouted((w) => ({ avoid_executors: [w] }));
+  assert.ok(now && was && now !== was, `rerun left ${was}, ran on ${now}`);
+});
+
+test('team_retry different_vendor re-routes a failed report away from the executor that failed it', async () => {
+  const { was, now } = await reportRerouted(() => ({ different_vendor: true }), 'balanced');
+  assert.ok(now && was && now !== was, `rerun left ${was}, ran on ${now}`);
+});

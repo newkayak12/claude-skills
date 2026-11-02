@@ -277,6 +277,9 @@ export function harnessState(task) {
     if (h.accepted !== false && !scopeWhy) return { state: 'complete', counts: {} };
     return { state: 'partial', partial: true, partial_reasons: [...(h.accepted !== false ? [] : ['the harness goal gate did not accept']), ...(scopeWhy ? [scopeWhy] : [])], counts: {} };
   }
+  if (h.stuck && !(h.driver && driverAlive(h.driver))) {
+    return { state: 'blocked', counts: {}, reason: `${h.stuck.node} node failed (${h.stuck.reason}); retry it with tm_retry or graph_retry node_id=${h.stuck.node}` };
+  }
   if (h.waiting_capacity || !h.driver || driverAlive(h.driver)) return { state: 'running', counts: {} };
   if (countedDriverRestarts(task, h.driver).length >= restartBudget(task)) {
     return { state: 'blocked', counts: {}, reason: 'the harness driver died past its restart budget with its run unfinished' };

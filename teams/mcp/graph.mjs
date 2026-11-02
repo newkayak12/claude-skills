@@ -1494,6 +1494,54 @@ export function settleFailure(run, root) {
   return touched;
 }
 
+// A failed report is retried alone: the report writes from the ledger and nothing upstream
+// depends on it, so re-pending that one node (not rebuilding a subgoal chain) is the whole
+// repair. Pure like the rest of this file. It spends report_attempts against the same budget a
+// subgoal has (run.max_retries + 1 retries), and settles the failure when that is gone. A node
+// that is not a failed, non-interrupted report is refused without being touched.
+// opts: node_id (which report; default the latest failed one), avoid_executors (executors the
+// re-route tries last), different_vendor (avoid whoever ran the failed attempt).
+export function retryReport(run, feedback, opts = {}) {
+  const refuse = (reason) => ({ run, attempt: null, refused: true, reason });
+  const n = opts.node_id
+    ? getNode(run, String(opts.node_id))
+    : run.nodes.filter((x) => x.stage === 'report' && x.state === 'failed').at(-1);
+  if (!n || n.stage !== 'report') return refuse('node_id must identify a failed report node');
+  if (n.state !== 'failed' || !n.result || n.result.stage_ok !== false || n.recovery) {
+    return refuse('node_id must identify a failed report node');
+  }
+  const attempts = n.report_attempts || 0;
+  if (attempts >= run.max_retries + 1) {
+    const unreachable = settleFailure(run, n);
+    return { run: saveRun(run), attempt: null, reason: 'retry budget exhausted', unreachable };
+  }
+
+  const prev = n.result;
+  const gaps = Array.isArray(prev.gaps) ? prev.gaps : [];
+  const fb = [feedback, prev.reason || prev.verification_error, ...gaps].filter(Boolean).join('\n- ');
+  const asg = n.assignment || {};
+  const ranBy = n.executor || asg.executor || n.vendor;
+  const avoid = [...new Set([
+    ...(Array.isArray(opts.avoid_executors) ? opts.avoid_executors.map(String) : []),
+    ...(opts.different_vendor && ranBy && ranBy !== 'self' && ranBy !== 'human' ? [ranBy] : []),
+  ])];
+
+  n.state = 'pending';
+  n.ticket = null;
+  n.result = null;
+  delete n.assignment;
+  delete n.final;
+  delete n.executor;
+  delete n.model;
+  delete n.finished_at;
+  n.feedback = fb;
+  n.report_attempts = attempts + 1;
+  if (avoid.length) n.avoid_executors = avoid; else delete n.avoid_executors;
+  // mergeOnto refuses failed -> pending unless `reopened` outruns the disk copy.
+  n.reopened = (n.reopened || 0) + 1;
+  return { run: saveRun(run), attempt: n.report_attempts, node_id: n.node_id };
+}
+
 // A rejected subgoal gets a fresh attempt rather than a retried node: the old attempt
 // stays in the graph as evidence of what was tried and why it failed.
 export function retrySubgoal(run, subgoalId, feedback) {
