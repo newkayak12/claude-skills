@@ -27,12 +27,12 @@
 // (teams/scripts/lib/view-collect.mjs) - this file only renders it two ways.
 import { createServer } from 'node:http';
 import { connect as netConnect } from 'node:net';
-import { readFileSync, existsSync, openSync, readSync, fstatSync, closeSync, statSync, unlinkSync } from 'node:fs';
+import { readFileSync, existsSync, openSync, readSync, fstatSync, closeSync, statSync, unlinkSync, readdirSync } from 'node:fs';
 import { dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tasksRoot } from '../mcp/taskmanager.mjs';
 import { DEFAULT_VIEW_PORT, viewKey, viewerAt, registerRoot as registerAt } from '../mcp/viewserver.mjs';
-import { collectTask, listTasks } from './lib/view-collect.mjs';
+import { collectTask, listTasks, readJsonRetry } from './lib/view-collect.mjs';
 import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './lib/view-render-text.mjs';
 import { notableEvents, statusLine, HOLD_MS } from './lib/view-events.mjs';
 import { summarize, waitingCount } from './lib/view-summary.mjs';
@@ -231,7 +231,7 @@ function taskFacts(tasksDir, taskId) {
   return { reasons, ...(Number.isInteger(raw.max_retries) ? { maxRetries: raw.max_retries } : {}) };
 }
 
-// Ledgers whose file changed after `since` (mtime, ms), whatever the task's state: daemon_done and
+// Ledgers whose file changed after `since` (mtime, ms; stat'd first, task.json is read only for those), whatever the task's state: daemon_done and
 // daemon_exhausted are written after a task stops running, so a running-only filter would never
 // deliver them. A task.json-less dir is not listed and an unreadable one carries `error`; both skipped.
 //
@@ -243,15 +243,24 @@ function taskFacts(tasksDir, taskId) {
 function eventsOutput(tasksDir, cwd, since) {
   const repo = repoMatcher(cwd);
   const out = [];
-  for (const row of listTasks(tasksDir)) {
-    if (row.error) continue;
-    const ledger = join(tasksDir, row.task_id, 'ledger.jsonl');
-    try { if (statSync(ledger).mtimeMs <= Math.max(0, since - HOLD_MS)) continue; } catch { continue; }
+  let ids = [];
+  try { ids = readdirSync(tasksDir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch { return ''; }
+  const live = [];
+  for (const id of ids) {
+    try {
+      if (statSync(join(tasksDir, id, 'ledger.jsonl')).mtimeMs <= Math.max(0, since - HOLD_MS)) continue;
+    } catch { continue; }
+    const read = readJsonRetry(join(tasksDir, id, 'task.json'));
+    if (!read.ok || !read.value || typeof read.value !== 'object') continue;
+    live.push({ id, created_at: read.value.created_at || 0 });
+  }
+  live.sort((a, b) => b.created_at - a.created_at);
+  for (const { id } of live) {
     if (cwd) {
-      const m = collectTask(tasksDir, row.task_id);
+      const m = collectTask(tasksDir, id);
       if (m.error || !m.cwd || !repo(m.cwd).match) continue;
     }
-    out.push(...notableEvents(tailLines(ledger), since, { now: Date.now(), ...taskFacts(tasksDir, row.task_id) }));
+    out.push(...notableEvents(tailLines(join(tasksDir, id, 'ledger.jsonl')), since, { now: Date.now(), ...taskFacts(tasksDir, id) }));
   }
   out.sort((a, b) => a.ts - b.ts);
   return out.map((e) => JSON.stringify(e) + '\n').join('');

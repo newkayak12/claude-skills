@@ -406,6 +406,69 @@ test('--format events: a failed node_finish carries reason, next_step and severi
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 
+// ---------- eventsOutput stats each ledger first and reads task.json only for the ones that pass ----------
+const ev = (r) => { assert.equal(r.status, 0, r.stderr); return r.stdout; };
+const PINNED = [
+  '{"ts":6,"task_id":"E-aaaaaaaa1111","kind":"daemon_exhausted","text":"E-aaaaaaaa stopped: daemon restarts used up"}',
+  '{"ts":7,"task_id":"E-aaaaaaaa1111","kind":"child_driver_capacity","text":"E-aaaaaaaa paused: provider limit"}',
+  '{"ts":9,"task_id":"E-bbbbbbbb2222","kind":"daemon_exhausted","text":"E-bbbbbbbb stopped: daemon restarts used up"}',
+];
+
+test('--format events: the lines for --since 0 are exactly the pinned ones (output of the listTasks-based version)', () => {
+  const f = fixture();
+  try {
+    assert.equal(ev(cli(f, '--format', 'events', '--since', '0')), PINNED.map((l) => l + '\n').join(''));
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('--format events: a --since in the middle prints only the later events; one past every ledger prints nothing', () => {
+  const f = fixture();
+  try {
+    assert.equal(ev(cli(f, '--format', 'events', '--since', '6')), PINNED.slice(1).map((l) => l + '\n').join(''));
+    assert.equal(ev(cli(f, '--format', 'events', '--since', String(Date.now() + 10 * HOLD))), '');
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('--format events: a ledger older than --since is never opened beyond its stat (task.json a directory or a FIFO)', () => {
+  const f = fixture();
+  try {
+    for (const id of [RUN_ID, DONE_ID]) {
+      utimesSync(join(f.tasks, id, 'ledger.jsonl'), 0, 0);
+      rmSync(join(f.tasks, id, 'task.json'));
+    }
+    mkdirSync(join(f.tasks, RUN_ID, 'task.json'));
+    spawnSync('mkfifo', [join(f.tasks, DONE_ID, 'task.json')]); // a read of it would block; without mkfifo the directory case still runs
+    const r = spawnSync(process.execPath, [VIEW, '--once', '--tasks-dir', f.tasks, '--cwd', f.cwd, '--format', 'events', '--since', '10'], { encoding: 'utf8', timeout: 15000 });
+    assert.equal(r.error, undefined, 'view.mjs hung or failed');
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout, '');
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('--format events: a ledger last written up to HOLD_MS before --since is still collected; at exactly HOLD_MS it is not', () => {
+  const f = fixture();
+  try {
+    utimesSync(join(f.tasks, RUN_ID, 'ledger.jsonl'), 0, 0);
+    const T = 2000000; // seconds
+    const since = T * 1000 + HOLD;
+    writeFileSync(join(f.tasks, DONE_ID, 'ledger.jsonl'), JSON.stringify({ ts: since + 5, event: 'daemon_exhausted', task_id: DONE_ID }) + '\n');
+    utimesSync(join(f.tasks, DONE_ID, 'ledger.jsonl'), T, T);
+    assert.equal(ev(cli(f, '--format', 'events', '--since', String(since))), '');
+    const inside = ev(cli(f, '--format', 'events', '--since', String(since - 1))).trim().split('\n').map((l) => JSON.parse(l));
+    assert.deepEqual(inside.map((e) => [e.task_id, e.ts]), [[DONE_ID, since + 5]]);
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('--format events: a torn task.json with a fresh ledger is skipped, the others still come out', () => {
+  const f = fixture();
+  try {
+    writeFileSync(join(f.tasks, DONE_ID, 'task.json'), '{"run_id":"E-bbb');
+    const r = cli(f, '--format', 'events', '--since', '0');
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout, PINNED.slice(0, 2).map((l) => l + '\n').join(''));
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
 // ---------- part C: the story-ask exchange as hand-offs (ledger lines in teams/mcp/storyask.mjs's shape) ----------
 const ASK_ID = '3f0c2a52-8d1e-4a6b-9a53-2d6c1c9d7e10';
 const asked = (ts, question) => L({ ts, event: 'asked', task_id: ID, key: 'E-1a2b3c4d/P3', node_id: 'dispatch:P3:1', question, ask_id: ASK_ID });

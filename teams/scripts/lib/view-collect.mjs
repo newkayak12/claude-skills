@@ -30,7 +30,7 @@ import {
 
 // ---------- small read helpers, all fail soft ----------
 
-function readJsonRetry(path, tries = 3) {
+export function readJsonRetry(path, tries = 3) {
   for (let i = 0; i < tries; i++) {
     try {
       return { ok: true, value: JSON.parse(readFileSync(path, 'utf8')) };
