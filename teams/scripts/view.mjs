@@ -312,20 +312,17 @@ function eventsOutput(tasksDir, cwd, since, shared) {
   const live = [];
   for (const { id, mtimeMs } of swept) {
     if (mtimeMs <= Math.max(0, since - HOLD_MS)) continue;
-    const created = memo(ctx, ['created', tasksDir, id], () => {
+    const head = memo(ctx, ['created', tasksDir, id], () => {
       const read = readJsonRetry(join(tasksDir, id, 'task.json'));
-      return !read.ok || !read.value || typeof read.value !== 'object' ? null : read.value.created_at || 0;
+      return !read.ok || !read.value || typeof read.value !== 'object' ? null : { created_at: read.value.created_at || 0, cwd: read.value.cwd };
     });
-    if (created === null) continue;
-    live.push({ id, created_at: created });
+    if (head === null) continue;
+    live.push({ id, created_at: head.created_at, cwd: head.cwd });
   }
   live.sort((a, b) => b.created_at - a.created_at);
-  for (const { id } of live) {
+  for (const { id, cwd: taskCwd } of live) {
     if (cwd) {
-      const inCwd = memo(ctx, ['incwd', tasksDir, cwd, id], () => {
-        const m = collectTask(tasksDir, id);
-        return !(m.error || !m.cwd || !repo(m.cwd).match);
-      });
+      const inCwd = memo(ctx, ['incwd', tasksDir, cwd, id], () => !!taskCwd && repo(taskCwd).match);
       if (!inCwd) continue;
     }
     const facts = memo(ctx, ['facts', tasksDir, id], () => taskFacts(tasksDir, id));

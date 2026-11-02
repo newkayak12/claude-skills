@@ -301,6 +301,26 @@ for (const [name, c] of [
   ['do sed -i in a loop', "for f in a; do sed -i 's/a/b/' teams/mcp/x.mjs; done"],
   ['then redirect', 'if true; then echo x > teams/a.md; fi'],
   ['subshell sed -i', "(sed -i 's/a/b/' teams/mcp/x.mjs)"],
+  // a write call whose path is a variable bound to a repo path (card 119)
+  ['node -e bare reassignment of f (E-db189f56 shape)', `node -e "const fs=require('fs');let f,s;f='teams/scripts/view.mjs';s=fs.readFileSync(f,'utf8');fs.writeFileSync(f,s)"`],
+  ['node heredoc const f then writeFileSync(f)', `node <<'${EOF}'\nconst fs = require('fs')\nconst f = 'teams/scripts/view.mjs'\nfs.writeFileSync(f, 'x')\n${EOF}`],
+  ['node -e let f reassigned to a repo path', `node -e "const fs=require('fs');let f='tmp/o.txt';f='teams/mcp/x.mjs';fs.writeFileSync(f,'x')"`],
+  ['node -e fs.promises.writeFile, literal path', `node -e "require('fs').promises.writeFile('teams/mcp/x.mjs','x')"`],
+  ['node -e fs.promises.writeFile, variable path', `node -e "const f='teams/mcp/x.mjs';require('fs').promises.writeFile(f,'x')"`],
+  ['node --eval writeFileSync, literal path', `node --eval "require('fs').writeFileSync('teams/mcp/x.mjs','x')"`],
+  ['node --eval writeFileSync, variable path', `node --eval "const f='teams/mcp/x.mjs';require('fs').writeFileSync(f,'x')"`],
+  ['node --eval fs.promises.writeFile, variable path', `node --eval "const f='teams/mcp/x.mjs';require('fs').promises.writeFile(f,'x')"`],
+  ['python heredoc p = Path(...) then p.write_text', `python3 - <<'${EOF}'\nfrom pathlib import Path\np = Path('teams/scripts/x.mjs')\ns = p.read_text()\np.write_text(s)\n${EOF}`],
+  ['python heredoc p = repo path then open(p, w)', `python3 - <<'${EOF}'\np = 'teams/x.py'\nopen(p, 'w').write('x')\n${EOF}`],
+  ['python3 -c p = repo path then open(p, w)', `python3 -c "p='teams/x.py';open(p,'w').write('x')"`],
+  ['python3 -c open(p, a) on a bound path', `python3 -c "p='teams/x.py';open(p,'a').write('x')"`],
+  ['python3 -c open(p, mode=w) on a bound path', `python3 -c "p='teams/x.py';open(p, mode='w').write('x')"`],
+  ['python3 -c Path(p).write_text on a bound path', `python3 -c "from pathlib import Path;p='teams/x.py';Path(p).write_text('x')"`],
+  ['perl -e open with > to a literal', `perl -e 'open(my $h, ">", "teams/x.txt"); print $h 1'`],
+  ['perl -e open with >> to a literal', `perl -e 'open(my $h, ">>", "teams/x.txt"); print $h 1'`],
+  ['perl -e two-argument open with > to a literal', `perl -e 'open(H, ">teams/x.txt"); print H 1'`],
+  ['perl -e open with > to $f bound to a repo path', `perl -e 'my $f = "teams/x.txt"; open(my $h, ">", $f); print $h 1'`],
+  ['perl -e open with >> to $f bound to a repo path', `perl -e 'my $f = "teams/x.txt"; open(my $h, ">>", $f); print $h 1'`],
 ]) {
   check(`write: ${name} -> deny, reason names Read/Edit/Write`, writeDenied(bash(c, clone)))
 }
@@ -354,6 +374,20 @@ for (const [name, c] of [
   ['python -c reading a repo file', `python3 -c "print(open('teams/x.py').read())"`],
   ['python heredoc writing tmp/', `python3 - <<'${EOF}'\nopen('tmp/o', 'w').write('x')\n${EOF}`],
   ['bash heredoc that only reads', `bash <<'${EOF}'\ncat teams/mcp/x.mjs\n${EOF}`],
+  // a variable path: read-only, or bound to a path outside the repo, or not bound at all (card 119)
+  ['node -e repo path read into a variable, output to /tmp', `node -e "const fs=require('fs');const f='teams/mcp/x.mjs';fs.writeFileSync('/tmp/o',fs.readFileSync(f,'utf8'))"`],
+  ['node -e variable bound to tmp/', `node -e "const f='tmp/o.txt';require('fs').writeFileSync(f,'x')"`],
+  ['node -e variable bound to /tmp', `node -e "let f;f='/tmp/o.txt';require('fs').writeFileSync(f,'x')"`],
+  ['node -e variable bound to a scratchpad outside the repo', `node -e "const f='${root}/scratch/o.txt';require('fs').writeFileSync(f,'x')"`],
+  ['python heredoc p = Path(tmp/...) then p.write_text', `python3 - <<'${EOF}'\nfrom pathlib import Path\np = Path('tmp/o.txt')\np.write_text('x')\n${EOF}`],
+  ['python3 -c open(p) read of a bound repo path', `python3 -c "p='teams/x.py';print(open(p).read())"`],
+  ['perl -e open with < read of a literal', `perl -e 'open(my $h, "<", "teams/x.txt"); print <$h>'`],
+  ['perl -e open with < read of $f bound to a repo path', `perl -e 'my $f = "teams/x.txt"; open(my $h, "<", $f); print <$h>'`],
+  ['perl -e open with >> to /tmp', `perl -e 'open(my $h, ">>", "/tmp/x.txt"); print $h 1'`],
+  ['perl -e open with >> to an unbound $ARGV[0]', `perl -e 'open(my $h, ">>", $ARGV[0]); print $h 1'`],
+  ['perl -pe without -i on a repo file', "perl -pe 's/a/b/' teams/mcp/x.mjs"],
+  ['node -e writeFileSync to an unbound identifier', `node -e "require('fs').writeFileSync(f,'x')"`],
+  ['python3 -c open(p, w) on an unbound identifier', `python3 -c "open(p,'w').write('x')"`],
 ]) {
   check(`write: ${name} -> no deny`, free(bash(c, clone)))
 }
