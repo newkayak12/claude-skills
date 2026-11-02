@@ -278,22 +278,13 @@ toasts).
 
 ### teams plugin bugs
 
-118. **A size-S run whose report node fails itself on missing evidence can be retried, not blocked**
-    - Why: E-1476d4db, 2026-11-02 (teams 0.61.4): 13/14 nodes done, gate:goal accepted 90%, then the
-      `report` node (codex) returned `stage_ok: false` because no upstream node quoted the real CLI
-      run's output. `graph_retry` on `report` refused ("node_id must identify a currently interrupted
-      pending node"); the driver was respawned twice, each restart re-read the same blocked run and
-      exited, and the task ended `blocked` with no report. The session ran the CLI check by hand.
-    - Acceptance: a report node that fails on its own verdict can be retried (or re-routed to
-      another vendor) without discarding the subgoals; a driver restart on an unchanged blocked run
-      is not spent; a test reproduces the refusal first.
-
 119. **The view server's per-tick caches get their own tests, and a wide first `events` read is cheap**
     - Why: E-db189f56 (card 117), 2026-11-02: the liveProcesses 2 s cache and the openTasks /
       collectTask per-tick memo have no dedicated tests (the suite passes); an `events` ask with an old
       `--since` (all events) took ~3.4 s and pegged the server near 99% (the mod's cursor starts at now,
       so polls never do this today). Its U4 node edited `view.mjs` through a node script, against the
-      Read/Edit/Write rule (the hook did not catch it).
+      Read/Edit/Write rule (the hook did not catch it); E-3a668d18's U3 node did the same with an
+      inline python script into `test-taskmanager.mjs` (2026-11-02).
     - Acceptance: tests that a cached count or memo is not reused past its tick; an `events` ask with
       `since=0` answers under 0.5 s on the real tasks dir; the script-edit path is refused by
       `repo-rules.mjs` (a test reproduces it first).
@@ -454,6 +445,7 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-3a668d18 | 2026-11-02 | 118 | shipped in teams 0.62.7; size S; goal gate 91; `retryReport` reruns only a failed report (avoid_executors, different_vendor), size-S driver not respawned on an unchanged blocked run (`harness_run_stuck`), tm_retry retries it; red-first tests; teams 1776/1777 (1 skip); no live end-to-end run of a failing report yet |
 | E-db189f56 | 2026-11-02 | 117 | shipped `68eabfac` in teams 0.62.6; size S; goal gate 85 (partial: thin CPU margin, caches untested → card 119); incremental ledger store, per-tick shared bases, `view-once-<version>.sock`; 3 sessions 60 s: 4 s CPU over 62 s (~6.5%, was ~45%), 114 asks, 0 non-200; teams 1767/1768 (1 skip), mod 442/442 |
 | E-1476d4db | 2026-11-02 | 102 (settle) | shipped `608cbe82`; size S; run blocked at its report node (card 118), CLI check run by hand; manage 48/48 |
 | E-bd74d6ca, E-6a0d66eb | 2026-11-02 | 116 | shipped `3bb316f0`, `16fd5a62` in teams 0.62.5; size S; goal gates 88 (partial: `teams` format compared with its render time masked) and 95; one shared server on `~/.harness/view-once.sock`; `events` 2.4 s → 0.17 s (stats ledgers first); live, 3 sessions: one server in 60/60 samples, no `--once` spawns, server ~45% of a core (was ~80% for one session before the events fix); teams 1756/1757 (1 skip), mod 441/441; sharing across sessions left for card 117 |
