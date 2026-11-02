@@ -132,23 +132,36 @@ function targetRoot(cmd, cwd, run, env) {
 // Two denies on a simple command, parsed with segments(); anything not parsed is allowed. Claude Code only.
 //   rm:    an unquoted `$NAME` / `${NAME}` without `:?` as an argument of a command whose first word is rm.
 //   write: sed/perl in place, tee, a `>` / `>>` target, or inline node/python code (-e/-c or a heredoc)
-//          with a write call, naming a repo path: inside the git top level of the target path itself (resolved against the cd-applied dir),
+//          with a write call (node writeFile, python open(...,'w') / Path.write_text, perl open '>' / '>>') whose
+//          path is a literal or an identifier bound to a literal in the same code (const/let/var, a bare
+//          `name=` reassignment, `name = Path('..')`; every bound literal counts, an unbound identifier passes),
+//          naming a repo path: inside the git top level of the target path itself (resolved against the cd-applied dir),
 //          not under tmp/, not gitignored. `git` commands, /dev/*, and targets with `$` or backticks pass.
 //   A heredoc body is data (cat, tee, git) unless it feeds a shell (scanned as a command) or an interpreter.
 const SHELLS = /^(?:ba|z|da|k)?sh$/
-const INTERP = /^(?:node(?:js)?|python[\d.]*)$/
+const INTERP = /^(?:node(?:js)?|python[\d.]*|perl)$/
 const UNQUOTED_VAR = /\$(?:\{([A-Za-z_]\w*)(?![^}]*:\?)[^}]*\}|([A-Za-z_]\w*))/
 const IN_PLACE = /^(?:-[nEeprlsazw0-9]*i|--in-place)/
 const CODE_FLAG = /^(?:-[a-z]*[ecp]|--eval|--print)$/
-const LITERAL = String.raw`\(\s*(['"` + '`' + String.raw`])([^'"` + '`' + String.raw`]+)\1`
+// A write call's path argument is a string literal (group `lit`) or an identifier (group `id`, perl `$name` too);
+// pathArg(n) takes the number n of the quote group it opens. An identifier is resolved by bindings().
+const Q = '`'
+const pathArg = n => String.raw`(?:(['"${Q}])(?<lit>[^'"${Q}]+)` + '\\' + n + String.raw`|(?<id>[A-Za-z_$][\w$]*)(?=\s*(?:[,);]|$)))`
 const WRITE_CALLS = [
-  new RegExp(String.raw`\b(?:writeFile|appendFile|createWriteStream|truncate|unlink|rm|rmdir|mkdir|rename)(?:Sync)?${LITERAL}`, 'g'),
-  new RegExp(String.raw`\bcopyFile(?:Sync)?\([^,()]+,\s*(['"` + '`' + String.raw`])([^'"` + '`' + String.raw`]+)\1`, 'g'),
-  /\bopen\(\s*(['"])([^'"]+)\1\s*,\s*(?:mode\s*=\s*)?['"][rbt]*[wax+]/g,
-  /\bPath\(\s*(['"])([^'"]+)\1\s*\)\s*\.\s*(?:write_text|write_bytes|unlink|touch)\b/g,
-  /\bos\.(?:remove|unlink|rename|replace|makedirs|mkdir|rmdir)\(\s*(['"])([^'"]+)\1/g,
-  /\bshutil\.(?:rmtree|move)\(\s*(['"])([^'"]+)\1/g,
+  new RegExp(String.raw`\b(?:writeFile|appendFile|createWriteStream|truncate|unlink|rm|rmdir|mkdir|rename)(?:Sync)?\(\s*${pathArg(1)}`, 'g'),
+  new RegExp(String.raw`\bcopyFile(?:Sync)?\([^,()]+,\s*${pathArg(1)}`, 'g'),
+  new RegExp(String.raw`\bopen\(\s*${pathArg(1)}\s*,\s*(?:mode\s*=\s*)?['"][rbt]*[wax+]`, 'g'),
+  new RegExp(String.raw`\bPath\(\s*${pathArg(1)}\s*\)\s*\.\s*(?:write_text|write_bytes|unlink|touch)\b`, 'g'),
+  /(?<![\w.$])(?<id>[A-Za-z_]\w*)\s*\.\s*(?:(?:write_text|write_bytes|unlink|touch)\b|open\(\s*(?:mode\s*=\s*)?['"][rbt]*[wax+])/g,
+  new RegExp(String.raw`\bos\.(?:remove|unlink|rename|replace|makedirs|mkdir|rmdir)\(\s*${pathArg(1)}`, 'g'),
+  new RegExp(String.raw`\bshutil\.(?:rmtree|move)\(\s*${pathArg(1)}`, 'g'),
+  // perl: open(FH, '>' | '>>', path) and the two-argument open(FH, '>path')
+  new RegExp(String.raw`\bopen\s*\(?\s*(?:my\s+)?[$\w]+\s*,\s*(['"])\s*\+?>>?[^'"]*\1\s*,\s*${pathArg(2)}`, 'g'),
+  new RegExp(String.raw`\bopen\s*\(?\s*(?:my\s+)?[$\w]+\s*,\s*(['"])\s*\+?>>?\s*(?<lit>[^'"$>][^'"$]*)\1`, 'g'),
 ]
+// name = 'lit' / name = Path('lit') / let|const|var name = 'lit' / perl $name = "lit": every literal bound to a name
+// in the code (a reassignment adds to it), without the `$`.
+const BIND = /(?<![\w$.])(\$?[A-Za-z_]\w*)\s*=(?!=)\s*(?:(?:\w+\.)?Path\(\s*)?(['"`])([^'"`]+)\2/g
 
 // Words of one segment, quotes removed: `text` is the value, `bare` only its unquoted part.
 // `>` / `<` outside quotes are { op } tokens.
@@ -220,7 +233,17 @@ function heredocs(cmd) {
   return { head: head.join('\n'), docs }
 }
 
-const codePaths = code => WRITE_CALLS.flatMap(re => [...code.matchAll(re)].map(m => m[2]))
+// Paths a write call in the inline code may write: its literals, and for an identifier every literal bound
+// to it in the same code (the union, so a reassignment to a repo path counts); an unbound identifier is none.
+function codePaths(code) {
+  const bound = new Map()
+  for (const m of code.matchAll(BIND)) {
+    const k = m[1].replace(/^\$/, '')
+    bound.set(k, [...(bound.get(k) ?? []), m[3]])
+  }
+  return WRITE_CALLS.flatMap(re => [...code.matchAll(re)].flatMap(m =>
+    m.groups.lit ? [m.groups.lit] : bound.get(m.groups.id?.replace(/^\$/, '')) ?? []))
+}
 
 // The reason names the fix with the variable's own name, e.g. "${S:?}" for $S.
 function rmDeny(name, rest) {
