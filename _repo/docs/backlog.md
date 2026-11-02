@@ -449,9 +449,15 @@ toasts).
          plugins, missing tests for parsing/decisions; fixes with tests;
       5. the plugin's checks from `maintaining.md` with counts, one real run of one changed skill, one
          batch bump per plugin.
-    - Order: largest first by total lines — develop (36), write, portfolio, cognition, think,
-      knowledge, skill, harness, agents, graph, then the single-skill plugins; teams last (only its
-      unfrozen skills).
+    - Order: teams first (user, same day: "teams가 주 대상인데") — its 15 skills (1,647 lines,
+      frozen ones included: the user decides for teams) and the teams-mounted skills
+      (`agents:agent-task-decomposer`, `cognition:critical-thinking-workflow`, `develop:testing-workflow`),
+      and its code: `teams/mcp` 22,232 lines (`taskmanager.mjs` 9,028, `broker.mjs` 2,479, `graph.mjs`
+      2,120), `teams/scripts` 43,035 lines over 96 files. Then largest first by lines — develop (36),
+      write, portfolio, cognition, think, knowledge, skill, harness, agents, graph, the rest.
+    - teams split into Sprints: (a) skills + descriptions, (b) `taskmanager.mjs` split by concern with
+      no behaviour change (the test suite is the oracle), (c) broker/graph duplication with
+      `graph/mcp`, (d) script speed on the hot paths (`tm_*` calls, `view.mjs`, daemon tick).
 
 ## Frozen (do not pull)
 
