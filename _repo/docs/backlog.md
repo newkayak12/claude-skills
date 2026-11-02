@@ -433,6 +433,26 @@ toasts).
 
 ### Skeleton and length (one card per skill, next edit)
 
+120. **Every skill optimized: length, trigger accuracy, script speed, code quality — one plugin per Sprint**
+    - Why: user, 2026-11-02: "전체적으로 최적화가 필요해보임 모든 스킬", asked what by: "셋 다 + 코드
+      퀄리티". This lifts `skill.md`'s "no mass rewrite" for this card. Measured the same day: 115
+      skills, 11 frozen (teams-mounted), average 120 lines (target 70% ≈ 84), 2 over 200; descriptions
+      loaded each session 25,777 chars (avg 224); plugin descriptions: harness 2,897 chars, write 1,038.
+    - Acceptance, per plugin (frozen skills stay out; behaviour kept):
+      1. length: each SKILL.md at or under ~84 lines or the reason it is not; background prose and
+         repeats moved to `references/` or cut; check-skeleton clean;
+      2. trigger: description and plugin description trimmed, each changed description run through a
+         routing probe (should-fire and should-not-fire prompts, EN + KR) with before/after counts;
+      3. speed: each skill's scripts timed on their tests and a typical call; anything over 1 s
+         profiled and fixed or noted;
+      4. code quality: scripts reviewed (`develop:clean-code` gate) for dead code, duplication across
+         plugins, missing tests for parsing/decisions; fixes with tests;
+      5. the plugin's checks from `maintaining.md` with counts, one real run of one changed skill, one
+         batch bump per plugin.
+    - Order: largest first by total lines — develop (36), write, portfolio, cognition, think,
+      knowledge, skill, harness, agents, graph, then the single-skill plugins; teams last (only its
+      unfrozen skills).
+
 ## Frozen (do not pull)
 
 - `teams:orchestrate` (204 lines) and teams skills missing sections (`plan`, `qa`, `document`,
