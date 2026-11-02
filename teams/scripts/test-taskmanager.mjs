@@ -860,14 +860,19 @@ test('tm_open({size}) pins the size: L opens the plan stage without measuring, S
 
 // S1 (_repo/docs/plans/2026-09-28-teams-long-loop.md): size S goes to the development harness - no
 // planning card, feature split, shape, critique, worktree or teams child run.
-function graphRunFixture(cwd, taskId, { report = false, accept = null, tagged = true, createdAt = Date.now(), runId, matchPct } = {}) {
+// failedReport: the report node failed (stage_ok false) with a reason - the run stopped there, nothing ready.
+function graphRunFixture(cwd, taskId, { report = false, accept = null, tagged = true, createdAt = Date.now(), runId, matchPct, failedReport = false } = {}) {
   const run_id = runId || `g-${Math.random().toString(16).slice(2, 10)}`;
   const nodes = [{ node_id: 'plan', stage: 'plan', state: 'done', deps: [], result: { stage_ok: true } }];
   if (accept !== null) {
     nodes.push({ node_id: 'gate:goal:1', stage: 'gate', subgoal_id: null, state: accept ? 'done' : 'failed', deps: [],
       result: { stage_ok: accept, accept, match_pct: matchPct !== undefined ? matchPct : accept ? 95 : 60, gaps: accept ? [] : ['the export is missing'] } });
   }
-  nodes.push({ node_id: 'report', stage: 'report', state: report ? 'done' : 'pending', deps: [], result: report ? { stage_ok: true, handoff: 'harness run report' } : null });
+  if (failedReport) {
+    nodes.push({ node_id: 'report', stage: 'report', state: 'failed', deps: [], result: { stage_ok: false, reason: 'no upstream node quoted the CLI output', gaps: [] } });
+  } else {
+    nodes.push({ node_id: 'report', stage: 'report', state: report ? 'done' : 'pending', deps: [], result: report ? { stage_ok: true, handoff: 'harness run report' } : null });
+  }
   const dir = join(cwd, '.harness-run', 'broker', 'runs');
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${run_id}.json`), JSON.stringify({ run_id, request: `${tagged ? `[teams-task ${taskId}] ` : ''}small request`, created_at: createdAt, nodes }));
@@ -5276,6 +5281,116 @@ test('S1: one harness driver in the project cwd; a dead one is respawned with a 
     assert.equal((await tm.call('tm_status', { task_id })).state, 'complete');
   } finally {
     tm.close();
+    rmSync(f.cwd, { recursive: true, force: true });
+    rmSync(f.root, { recursive: true, force: true });
+    rmSync(f.drv, { recursive: true, force: true });
+  }
+});
+
+// Every spawn writes "<FAKE_DRIVER_OUT>.<n>" and exits at once - the spawn stub the stuck tests count.
+const FAKE_DRIVER_DIES = FAKE_DRIVER_RESPAWN.replace('if (n < 2) { process.exit(0); } else { setTimeout(() => process.exit(0), 5000); }', 'process.exit(0);');
+
+test('S1: a dead harness driver on an unchanged run that stopped on a failed report is not respawned - the task blocks once, naming the report node and how to retry', async () => {
+  const f = driverFixture({}, FAKE_DRIVER_DIES);
+  const tm = await f.client.init();
+  try {
+    const { task_id } = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small request', cwd: f.cwd, vendor: 'self', size: 'S', driver_restarts: 2 });
+    await waitFor(() => existsSync(`${f.ran}.1`), 'the first driver');
+    const run = graphRunFixture(f.cwd, task_id, { failedReport: true });
+    writePointer(f.root, task_id, run);
+    await waitFor(async () => { const t = readTask(f.root, task_id); return !driverAliveLocal(t.harness_run.driver.pid); }, 'the first driver to exit');
+    for (let i = 0; i < 4; i++) {
+      const nx = await tm.call('tm_next', { task_id });
+      assert.equal(nx.state, 'blocked', JSON.stringify(nx));
+      assert.match(nx.reason, /report node failed \(no upstream node quoted the CLI output\); retry it with tm_retry or graph_retry node_id=report/);
+    }
+    const t = readTask(f.root, task_id);
+    assert.deepEqual(t.harness_run.driver.restarts || [], [], 'no restart spent');
+    assert.equal(existsSync(`${f.ran}.2`), false, 'no second driver was spawned');
+    assert.equal(readFileSync(f.counter, 'utf8'), '1');
+    assert.equal(t.harness_run.stuck.node, 'report');
+    assert.equal(t.harness_run.stuck.reason, 'no upstream node quoted the CLI output');
+    assert.ok(t.harness_run.stuck.fingerprint && Number.isInteger(t.harness_run.stuck.at), JSON.stringify(t.harness_run.stuck));
+    const ledger = readFileSync(join(f.root, task_id, 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    assert.equal(ledger.filter((e) => e.event === 'harness_run_stuck').length, 1);
+    assert.equal(ledger.filter((e) => e.event === 'child_driver_restarted').length, 0);
+  } finally {
+    tm.close();
+    killDriversIn(f.drv);
+    rmSync(f.cwd, { recursive: true, force: true });
+    rmSync(f.root, { recursive: true, force: true });
+    rmSync(f.drv, { recursive: true, force: true });
+  }
+});
+
+test('S1: once stuck on a failed report, a changed run clears the block and the dead driver is respawned as before', async () => {
+  const f = driverFixture({}, FAKE_DRIVER_DIES);
+  const tm = await f.client.init();
+  try {
+    const { task_id } = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small request', cwd: f.cwd, vendor: 'self', size: 'S', driver_restarts: 2 });
+    await waitFor(() => existsSync(`${f.ran}.1`), 'the first driver');
+    const run = graphRunFixture(f.cwd, task_id, { failedReport: true });
+    writePointer(f.root, task_id, run);
+    await waitFor(async () => { const t = readTask(f.root, task_id); return !driverAliveLocal(t.harness_run.driver.pid); }, 'the first driver to exit');
+    assert.equal((await tm.call('tm_next', { task_id })).state, 'blocked');
+    assert.ok(readTask(f.root, task_id).harness_run.stuck);
+    // The report is re-pended (a retry happened): the run changed, so the dead driver is restarted.
+    graphRunFixture(f.cwd, task_id, { runId: run.run_id });
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.state, 'running', JSON.stringify(nx));
+    await waitFor(() => existsSync(`${f.ran}.2`), 'the respawned driver');
+    const t = readTask(f.root, task_id);
+    assert.equal(t.harness_run.stuck, undefined);
+    assert.equal(t.harness_run.driver.restarts.length, 1);
+  } finally {
+    tm.close();
+    killDriversIn(f.drv);
+    rmSync(f.cwd, { recursive: true, force: true });
+    rmSync(f.root, { recursive: true, force: true });
+    rmSync(f.drv, { recursive: true, force: true });
+  }
+});
+
+test('S1: tm_retry on a task stuck on a failed report re-pends only that report node (with feedback), clears the block, and starts one new driver on the same run', async () => {
+  const f = driverFixture({}, FAKE_DRIVER_RESPAWN);
+  const tm = await f.client.init();
+  try {
+    const { task_id } = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small request', cwd: f.cwd, vendor: 'self', size: 'S', driver_restarts: 2 });
+    await waitFor(() => existsSync(`${f.ran}.1`), 'the first driver');
+    const run = graphRunFixture(f.cwd, task_id, { failedReport: true, accept: false });
+    writePointer(f.root, task_id, run);
+    await waitFor(async () => { const t = readTask(f.root, task_id); return !driverAliveLocal(t.harness_run.driver.pid); }, 'the first driver to exit');
+    assert.equal((await tm.call('tm_next', { task_id })).state, 'blocked');
+    assert.equal(readTask(f.root, task_id).harness_run.stuck.node, 'report');
+    const runPath = join(f.cwd, '.harness-run', 'broker', 'runs', `${run.run_id}.json`);
+    const before = JSON.parse(readFileSync(runPath, 'utf8'));
+    const rt = await tm.call('tm_retry', { task_id, avoid_executors: ['codex'] });
+    assert.equal(rt.retried, true, JSON.stringify(rt));
+    assert.equal(rt.state, 'running', JSON.stringify(rt));
+    await waitFor(() => existsSync(`${f.ran}.2`), 'the new driver');
+    const after = JSON.parse(readFileSync(runPath, 'utf8'));
+    const rep = after.nodes.find((n) => n.node_id === 'report');
+    assert.equal(rep.state, 'pending');
+    assert.equal(rep.report_attempts, 1);
+    assert.match(rep.feedback, /no upstream node quoted the CLI output/);
+    assert.deepEqual(rep.avoid_executors, ['codex']);
+    for (const n of before.nodes.filter((x) => x.node_id !== 'report')) {
+      assert.deepEqual(after.nodes.find((x) => x.node_id === n.node_id), n, `${n.node_id} is untouched`);
+    }
+    const t = readTask(f.root, task_id);
+    assert.equal(t.harness_run.stuck, undefined);
+    assert.equal(t.harness_run.exhausted, undefined);
+    assert.equal(existsSync(`${f.ran}.3`), false, 'exactly one new driver');
+    assert.equal(readFileSync(f.counter, 'utf8'), '2');
+    const ledger = readFileSync(join(f.root, task_id, 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    const spawns = ledger.filter((e) => e.event === 'tm_retry_harness');
+    assert.equal(spawns.length, 1);
+    assert.equal(spawns[0].node, 'report');
+    assert.equal(ledger.filter((e) => e.event === 'child_driver_restarted').length, 0);
+    assert.equal((await tm.call('tm_next', { task_id })).state, 'running');
+  } finally {
+    tm.close();
+    killDriversIn(f.drv);
     rmSync(f.cwd, { recursive: true, force: true });
     rmSync(f.root, { recursive: true, force: true });
     rmSync(f.drv, { recursive: true, force: true });

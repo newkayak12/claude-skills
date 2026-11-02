@@ -49,7 +49,7 @@ import { existsSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmS
 import { availableParallelism, homedir } from 'node:os';
 import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { touchMarker } from './engage.mjs';
 import { epicSlug, packageName, uniqueSlug } from './names.mjs';
 import {
@@ -92,6 +92,7 @@ import {
   unmetDeps,
   runState,
   settleFailure,
+  retryReport,
   FLOWS,
   KINDS,
   DEFAULT_KIND,
@@ -5507,8 +5508,8 @@ const TOOLS = [
   },
   {
     name: 'tm_retry',
-    description: 'Open a fresh attempt. With package_id: a new dispatch in the same worktree, carrying the rejection forward into the child request. With repackage: [ids] after an integration conflict, reshape with those packages told to become one or to depend on each other. With repair: true after an integrate came back verified=false with no conflicts: a repair package whose worktree IS the integration tree, for a seam no package can reproduce alone. With reset_capacity: true, clears every child (or just package_id\'s, or the size-S run) parked waiting_capacity after a usage-limit death and respawns its driver - this spends no restart. Without any of them: reshape (shape + critique) and discard the package graph. When the budget is gone the failure is settled and the report is released over the unreachable set.',
-    inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, package_id: { type: 'string' }, repackage: { type: 'array', items: { type: 'string' }, description: 'the conflicting_packages an integrate or dispatch failure named' }, repair: { type: 'boolean', description: 'the last integrate failed with verified=false and no conflicts: open a package that runs IN the integration worktree, where every package branch is merged and the defect is visible. package_id: "integration" is an alias for it.' }, reset_capacity: { type: 'boolean', description: 'a driver is parked on waiting_capacity after a usage-limit death (see tm_next\'s children[].waiting_capacity, or the top-level one for a size-S task). Clears it and respawns a driver on the same run_id, spending no restart. Combine with package_id to target just that package.' } }, required: ['task_id'] },
+    description: 'Open a fresh attempt. With package_id: a new dispatch in the same worktree, carrying the rejection forward into the child request. With repackage: [ids] after an integration conflict, reshape with those packages told to become one or to depend on each other. With repair: true after an integrate came back verified=false with no conflicts: a repair package whose worktree IS the integration tree, for a seam no package can reproduce alone. With reset_capacity: true, clears every child (or just package_id\'s, or the size-S run) parked waiting_capacity after a usage-limit death and respawns its driver - this spends no restart. A blocked size-S task whose run stopped on a failed report node is retried with this call alone: only that report is re-pended (with its failure as feedback; avoid_executors / different_vendor route it away from the executor that failed it) and a fresh driver continues the same run. Without any of them: reshape (shape + critique) and discard the package graph. When the budget is gone the failure is settled and the report is released over the unreachable set.',
+    inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, package_id: { type: 'string' }, repackage: { type: 'array', items: { type: 'string' }, description: 'the conflicting_packages an integrate or dispatch failure named' }, repair: { type: 'boolean', description: 'the last integrate failed with verified=false and no conflicts: open a package that runs IN the integration worktree, where every package branch is merged and the defect is visible. package_id: "integration" is an alias for it.' }, reset_capacity: { type: 'boolean', description: 'a driver is parked on waiting_capacity after a usage-limit death (see tm_next\'s children[].waiting_capacity, or the top-level one for a size-S task). Clears it and respawns a driver on the same run_id, spending no restart. Combine with package_id to target just that package.' }, avoid_executors: { type: 'array', items: { type: 'string' }, description: 'a blocked size-S task whose run stopped on a failed report node (tm_next names it): executors (vendors) the report rerun is routed away from - tried last, never dropped. A bare tm_retry({task_id}) already retries that report.' }, different_vendor: { type: 'boolean', description: 'same blocked size-S failed-report case: avoid the executor that ran the failed report (shorthand for naming it in avoid_executors).' } }, required: ['task_id'] },
     outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, retried: { type: 'boolean' }, attempt: { type: 'number' }, resumed: { type: 'array', items: { type: 'string' } }, reason: { type: 'string' }, unreachable: { type: 'array', items: { type: 'string' } } }, required: ['task_id', 'retried'] },
   },
   {
@@ -6725,14 +6726,35 @@ export function computeScopeVerdict(h, run, task) {
   }
 }
 
+// A size-S graph run that stopped for good on a failed report: the graph reads blocked (nothing
+// ready, nothing running) and its latest report node failed. A fresh driver cannot move it - it
+// opens no second run and the report is only re-pended by an explicit retry - so respawning one
+// on the same run loops. Returns { node, reason, fingerprint } or null; the fingerprint is the
+// node states, so any retry of the run changes it. runFile: the graph run file's JSON.
+export function terminalBlocked(runFile) {
+  if (!runFile || !Array.isArray(runFile.nodes) || runState(runFile).state !== 'blocked') return null;
+  const failed = runFile.nodes.filter((n) => n && n.stage === 'report' && n.state === 'failed').pop();
+  if (!failed) return null;
+  const r = failed.result || {};
+  const reason = String(r.reason || r.verification_error || (Array.isArray(r.gaps) && r.gaps[0]) || 'no reason recorded').slice(0, 300);
+  const states = runFile.nodes.map((n) => `${n.node_id}:${n.state}:${n.final ? 1 : 0}:${n.report_attempts || 0}:${n.reopened || 0}`).join('|');
+  return { node: failed.node_id, reason, fingerprint: createHash('sha1').update(states).digest('hex').slice(0, 16) };
+}
+
+function terminalBlockedRun(run) {
+  if (!run || run.route !== 'graph') return null;
+  try { return terminalBlocked(JSON.parse(readFileSync(graphRunPath(run.cwd, run.run_id), 'utf8'))); } catch { return null; }
+}
+
 // Keeps the harness driver alive: a usage-limit death parks on waiting_capacity (no restart
 // spent), any other death is respawned with a resume prompt naming the recorded run, up to the
-// restart budget. Returns true when it changed the task.
+// restart budget - unless the run is terminal-blocked on a failed report and unchanged, which
+// blocks the task once (h.stuck) instead. Returns true when it changed the task.
 export function serviceHarnessRun(task) {
   const h = task.harness_run;
   if (!h) return false;
   applySuspends(task);
-  const snap = () => JSON.stringify([h.run || null, h.refused_pointer || null, !!h.finished_at, !!h.exhausted, h.accepted, !!h.scope]);
+  const snap = () => JSON.stringify([h.run || null, h.refused_pointer || null, !!h.finished_at, !!h.exhausted, h.accepted, !!h.scope, h.stuck ? h.stuck.fingerprint : null]);
   const before = snap();
   const run = resolveHarnessRun(task);
   const v = run ? harnessVerdict(run, task.goal_threshold) : null;
@@ -6749,6 +6771,7 @@ export function serviceHarnessRun(task) {
   }
   const changed = () => snap() !== before;
   const d = h.driver;
+  if (h.stuck && d && driverAlive(d)) delete h.stuck; // a driver was started again (tm_retry): the block is over
   // The first driver deferred at max_live_drivers (openHarnessRun): no driver exists to restart,
   // so the wait ends here, by spawning that first driver once a slot is free.
   if (!d && h.waiting_cap && !(v && v.finished) && !task.budget_stopped && !spawning(h) && !noDriver()) {
@@ -6763,6 +6786,15 @@ export function serviceHarnessRun(task) {
   if (usage) {
     h.waiting_capacity = { reason: usage.slice(0, 500), since: Date.now() };
     record(task, { event: 'child_driver_capacity', task_id: task.run_id, node_id: 'S', pid: d.pid, reason: usage.slice(0, 300) });
+    return true;
+  }
+  const tb = terminalBlockedRun(run);
+  if (h.stuck) {
+    if (tb && tb.fingerprint === h.stuck.fingerprint) return changed(); // unchanged: blocked already, said once
+    delete h.stuck; // the run changed: the normal restart path
+  } else if (tb) {
+    h.stuck = { node: tb.node, reason: tb.reason, fingerprint: tb.fingerprint, at: Date.now() };
+    record(task, { event: 'harness_run_stuck', task_id: task.run_id, node_id: tb.node, reason: tb.reason, fingerprint: tb.fingerprint, pid: d.pid });
     return true;
   }
   if (countedDriverRestarts(task, d).length >= restartBudget(task)) {
@@ -8556,7 +8588,26 @@ function retryTask(task, a) {
     const h = task.harness_run;
     const st = taskState(task);
     if (st.state !== 'blocked') return { task_id: task.run_id, retried: false, reason: `the harness run is ${st.state}` };
+    if (a.avoid_executors != null && !Array.isArray(a.avoid_executors)) throw new Error('avoid_executors must be an array of executor names');
+    // Stuck on a failed report: re-pend just that node on the run (the graph run file is the
+    // source of truth), then give it a driver. Subgoal nodes are not touched.
+    let retriedNode = null;
+    if (h.stuck && h.stuck.node) {
+      const stuckRun = resolveHarnessRun(task);
+      if (stuckRun && stuckRun.route === 'graph') {
+        const path = graphRunPath(stuckRun.cwd, stuckRun.run_id);
+        const out = mutateRun(path, (disk) => {
+          disk.store_path = path; // retryReport's saveRun accepts the transaction's own object
+          try { return retryReport(disk, '', { node_id: h.stuck.node, avoid_executors: a.avoid_executors, different_vendor: a.different_vendor === true }); } finally { delete disk.store_path; }
+        });
+        if (!out.refused && !out.attempt) {
+          return { task_id: task.run_id, retried: false, reason: out.reason };
+        }
+        if (!out.refused) retriedNode = h.stuck.node;
+      }
+    }
     delete h.exhausted;
+    delete h.stuck; // the person asked for another driver on this run
     if (!noDriver()) {
       // tm_retry_harness is recorded by the apply, with the new driver's pid.
       const run = resolveHarnessRun(task);
@@ -8564,10 +8615,10 @@ function retryTask(task, a) {
       respawnDriver(task, 'S', h, {
         attempt, reason: 'tm_retry', restarts: [],
         spawn: (t) => spawnHarnessDriver(t, { resume: true, run, attempt }),
-        event: (t, fresh) => ({ event: 'tm_retry_harness', task_id: t.run_id, pid: fresh.pid }),
+        event: (t, fresh) => ({ event: 'tm_retry_harness', task_id: t.run_id, pid: fresh.pid, ...(retriedNode ? { node: retriedNode } : {}) }),
       });
     } else {
-      record(task, { event: 'tm_retry_harness', task_id: task.run_id, pid: h.driver && h.driver.pid });
+      record(task, { event: 'tm_retry_harness', task_id: task.run_id, pid: h.driver && h.driver.pid, ...(retriedNode ? { node: retriedNode } : {}) });
     }
     saveRun(task);
     return { task_id: task.run_id, retried: true };

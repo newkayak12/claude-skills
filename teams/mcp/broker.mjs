@@ -25,7 +25,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, rmS
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
-import { capacityFailure, capacityNotice, selectModel, rankCandidates, authorIdentities, demoteAuthors, JUDGING_STAGES } from './routing.mjs';
+import { capacityFailure, capacityNotice, selectModel, rankCandidates, authorIdentities, demoteAuthors, demoteExecutors, JUDGING_STAGES } from './routing.mjs';
 import {
   STAGES,
   REASONING_STAGES,
@@ -40,6 +40,7 @@ import {
   routeExecutionQuestions,
   validateSpec,
   retrySubgoal,
+  retryReport,
   retrySpec,
   readyNodes,
   runState,
@@ -746,8 +747,8 @@ async function route(run, node) {
   // author, and the ordered one never looked - critique ran on setgoal's own vendor. A judging
   // node's author goes last; it still runs there when nothing else is ready.
   const predictModel = (name) => (balanced ? selectModel(run, node, name, pol.model) : pol.model) || null;
-  const ranked = demoteAuthors(balanced && want === 'auto' ? rankCandidates(run, node, order)
-    : order.map(vendor => ({ vendor, reason: 'explicit vendor/candidate order' })), authorIdentities(run, node), predictModel);
+  const ranked = demoteExecutors(demoteAuthors(balanced && want === 'auto' ? rankCandidates(run, node, order)
+    : order.map(vendor => ({ vendor, reason: 'explicit vendor/candidate order' })), authorIdentities(run, node), predictModel), node.avoid_executors);
   for (const candidate of ranked) {
     const name = candidate.vendor;
     if ((run.unavailable_vendors || {})[name]) {
@@ -1643,13 +1644,15 @@ const TOOLS = [
   {
     name: 'team_retry',
     description:
-      'Open a fresh attempt, carrying the rejection feedback forward. With subgoal_id, retries that subgoal. Without it, retries the spec itself (setgoal + critique) and discards the subgoal graph the rejected spec produced. The failed attempt stays in the graph as evidence. When the retry budget is gone the failure is settled instead: every node that needed its output becomes `unreachable`, and the report - which only waits for the goal gate to finish, not to pass - becomes ready to write the partial account.',
+      'Open a fresh attempt, carrying the rejection feedback forward. With subgoal_id, retries that subgoal. With node_id naming a failed report node, reruns just that report (optionally away from avoid_executors). Without it, retries the spec itself (setgoal + critique) and discards the subgoal graph the rejected spec produced. The failed attempt stays in the graph as evidence. When the retry budget is gone the failure is settled instead: every node that needed its output becomes `unreachable`, and the report - which only waits for the goal gate to finish, not to pass - becomes ready to write the partial account.',
     inputSchema: {
       type: 'object',
       properties: {
         run_id: { type: 'string' },
         subgoal_id: { type: 'string', description: 'omit to retry the spec after a critique rejected it' },
-        node_id: { type: 'string', description: 'Resume an interrupted/quota-exhausted node, retaining files and checkpoint. Does not reopen a completed or gate-rejected node.' },
+        node_id: { type: 'string', description: 'Resume an interrupted/quota-exhausted node, retaining files and checkpoint. Does not reopen a completed or gate-rejected node. Also accepts a FAILED report node (its own stage_ok false): only that node reruns, carrying its previous reason and gaps as feedback, within the same retry budget; the other nodes are untouched.' },
+        avoid_executors: { type: 'array', items: { type: 'string' }, description: 'With a failed report node_id: executors (vendors) the rerun is routed away from - tried last, never dropped.' },
+        different_vendor: { type: 'boolean', description: 'With a failed report node_id: avoid the executor that ran the failed attempt (shorthand for naming it in avoid_executors).' },
         reset_capacity: { type: 'boolean', description: 'Retry vendors after the caller confirms their quota is available again. With node_id it also reopens that interrupted node; alone it clears exclusions - including ones recorded at probe time, where no node was ever interrupted - re-ranks undispatched work and returns the next ready nodes.' },
         repair: { type: 'boolean', description: 'Force a repair round over the most recent settled goal-gate round, the same move auto_reassign makes on its own when consensus rejects. Use it when auto_reassign is off, or when a stalled round (two repairs closing the same gaps) needs a deliberate third try.' },
         cwd: { type: 'string' },
@@ -2130,8 +2133,16 @@ async function toolGraphRetry(a) {
   // already spent the capacity reset. The node itself is looked up again below, after the
   // reset has saved - saveRun rebuilds run.nodes, so a reference taken here can go stale.
   const retryable = (n) => n && n.state === 'pending' && n.recovery;
-  if (a.node_id && !retryable(getNode(run, String(a.node_id)))) {
+  // A failed report (its own stage_ok false, not interrupted) is the one other node team_retry
+  // reopens: it rewrites from the ledger, so only that node reruns.
+  const failedReport = (n) => n && n.stage === 'report' && n.state === 'failed' && n.result
+    && n.result.stage_ok === false && !n.recovery;
+  const target = a.node_id ? getNode(run, String(a.node_id)) : null;
+  if (a.node_id && !retryable(target) && !failedReport(target)) {
     throw new Error('node_id must identify a currently interrupted pending node');
+  }
+  if (a.avoid_executors != null && !Array.isArray(a.avoid_executors)) {
+    throw new Error('avoid_executors must be an array of executor names');
   }
 
   // A vendor can be excluded before it ever runs a node, so a capacity reset cannot
@@ -2152,6 +2163,16 @@ async function toolGraphRetry(a) {
 
   if (a.node_id) {
     const n = getNode(run, String(a.node_id));
+    if (failedReport(n)) {
+      const out = retryReport(run, '', { node_id: n.node_id, avoid_executors: a.avoid_executors, different_vendor: a.different_vendor === true });
+      if (out.refused) throw new Error(out.reason);
+      if (!out.attempt) {
+        record(run.cwd, { event: 'team_settle', run_id: run.run_id, target: n.node_id, unreachable: out.unreachable.length });
+        return { run_id: run.run_id, target: n.node_id, retried: false, reason: out.reason, unreachable: out.unreachable, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
+      }
+      record(run.cwd, { event: 'team_retry', run_id: run.run_id, target: n.node_id, attempt: out.attempt });
+      return { run_id: run.run_id, target: n.node_id, retried: true, attempt: out.attempt, ...(await toolGraphNext({ run_id: run.run_id, cwd: run.cwd })) };
+    }
     n.state = 'pending';
     n.ticket = null;
     delete n.assignment;
