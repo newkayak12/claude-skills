@@ -288,15 +288,15 @@ toasts).
       another vendor) without discarding the subgoals; a driver restart on an unchanged blocked run
       is not spent; a test reproduces the refusal first.
 
-117. **The view server shares one answer across sessions and reads events incrementally**
-    - Why: seen 2026-11-02 after card 116: with 3 live sessions on one folder the shared server used
-      ~45% of a core (~15% each). Its 2 s cache key holds `--session` and each session's own `--since`,
-      so no answer is shared; every tick re-reads the moved ledgers from the top. A server built by an
-      older teams keeps answering sessions of a newer one (one socket name for every version).
-    - Acceptance: the server keeps per-ledger read offsets and answers `events` from what it already
-      read; the session-independent part of status/summary is computed once per tick per cwd; the socket
-      name carries the plugin version (or the server exits when `view.mjs` changes); 3 live sessions on
-      one folder keep the server under 10% of a core (measured with `top`).
+119. **The view server's per-tick caches get their own tests, and a wide first `events` read is cheap**
+    - Why: E-db189f56 (card 117), 2026-11-02: the liveProcesses 2 s cache and the openTasks /
+      collectTask per-tick memo have no dedicated tests (the suite passes); an `events` ask with an old
+      `--since` (all events) took ~3.4 s and pegged the server near 99% (the mod's cursor starts at now,
+      so polls never do this today). Its U4 node edited `view.mjs` through a node script, against the
+      Read/Edit/Write rule (the hook did not catch it).
+    - Acceptance: tests that a cached count or memo is not reused past its tick; an `events` ask with
+      `since=0` answers under 0.5 s on the real tasks dir; the script-edit path is refused by
+      `repo-rules.mjs` (a test reproduces it first).
 
 
 113. **The web viewer a `tm_open` starts exits when its task is done**
@@ -454,6 +454,8 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-db189f56 | 2026-11-02 | 117 | shipped `68eabfac` in teams 0.62.6; size S; goal gate 85 (partial: thin CPU margin, caches untested → card 119); incremental ledger store, per-tick shared bases, `view-once-<version>.sock`; 3 sessions 60 s: 4 s CPU over 62 s (~6.5%, was ~45%), 114 asks, 0 non-200; teams 1767/1768 (1 skip), mod 442/442 |
+| E-1476d4db | 2026-11-02 | 102 (settle) | shipped `608cbe82`; size S; run blocked at its report node (card 118), CLI check run by hand; manage 48/48 |
 | E-bd74d6ca, E-6a0d66eb | 2026-11-02 | 116 | shipped `3bb316f0`, `16fd5a62` in teams 0.62.5; size S; goal gates 88 (partial: `teams` format compared with its render time masked) and 95; one shared server on `~/.harness/view-once.sock`; `events` 2.4 s → 0.17 s (stats ledgers first); live, 3 sessions: one server in 60/60 samples, no `--once` spawns, server ~45% of a core (was ~80% for one session before the events fix); teams 1756/1757 (1 skip), mod 441/441; sharing across sessions left for card 117 |
 | E-0b44dd5c | 2026-11-02 | 115 | shipped `61b4b681` as hotfix teams 0.62.4; size S; goal gate 93; mod tests 439/439, teams 1745/1746 (1 skip); live: plain home folder 0/60 samples with `view.mjs`, this repo 59/60; a stray `/tmp/.teams_output` (2026-09-23) makes every folder under `/tmp` count as teams |
 | E-eb930c1a | 2026-11-01 | 100 (theme) | blocked at integrate (D2/P1 conflict in test-diagram.mjs); merged by hand `38c416b1`, test-diagram 112/112; P2's renders partial (print theme roles by shade only); approval of the theme PNGs left |
