@@ -256,6 +256,8 @@ async function pushEvent($: EngineInterface, one: TeamsEvent, sent: Set<string>)
 
 const TICK_MS = 3000
 const SPIN_MS = 800
+const MARKER_RECHECK_MS = 30000
+const TEAMS_MARKERS = ['.claude/team.json', '.teams_output', '.harness-run']
 const WORK_MAX = 6
 
 export const register: Register = on => {
@@ -293,10 +295,36 @@ export const register: Register = on => {
       }
     }
 
+    // no spawn in a folder that does not use teams: a watched EPIC, the open pane, or a marker in cwd or a parent
+    let markerAt = 0
+    let markerHit = false
+    async function usesTeams() {
+      try {
+        if ((await read($, watch)).length > 0) return true
+        if ((await $.ui.panes()).some(p => p.id === PANE)) return true
+        const now = await $.clock.now()
+        if (markerAt > 0 && now - markerAt < MARKER_RECHECK_MS) return markerHit
+        let found = false
+        let dir = await $.session.cwd()
+        for (;;) {
+          const base = dir === '/' ? '' : dir
+          for (const m of TEAMS_MARKERS) if (await $.fs.exists(`${base}/${m}`)) found = true
+          if (found || dir === '/' || dir === '') break
+          dir = dir.slice(0, dir.lastIndexOf('/')) || '/'
+        }
+        markerHit = found
+        markerAt = now
+        return found
+      } catch {
+        return true
+      }
+    }
+
     async function tick() {
       if (isRunning) return
       isRunning = true
       try {
+        if (!(await usesTeams())) return
         const cwd = await $.session.cwd()
         const since = await read($, cursor)
 
