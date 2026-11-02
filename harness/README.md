@@ -2,6 +2,8 @@
 
 **English** · [한국어](KOR.md)
 
+> **Stable (2026-11-02, v1.38.2):** no further changes, fixes included. New work goes to `teams`.
+
 A reasoning floor for substantial requests. Not a quality maximizer — a filter that removes
 **repetition** and **below-threshold answers** by forcing every request through six staged roles
 with the judge separated from the actor. Planning and judging are pinned to Opus; code execution

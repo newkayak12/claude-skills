@@ -2,6 +2,8 @@
 
 **English** · [한국어](KOR.md)
 
+> **Stable (2026-11-02, v1.17.1):** no further changes, fixes included. New work goes to `teams`.
+
 Graph engineering for the harness flow, mediated by a local MCP server. The main
 session orchestrates; the graph engine owns state, routing, execution, and adjudication.
 
