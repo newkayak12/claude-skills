@@ -150,6 +150,8 @@ function nowSentence(s: (key: keyof typeof en) => string, task: SummaryTask): st
 // A cache a reload may lose: when the view server was last started (at most once per 30 s)
 const SERVE_RETRY_MS = 30_000
 let serveStartedAt = 0
+// The teams version, read once from plugin.json: the socket name the server (view.mjs) computes too
+let pluginVersion = ''
 
 // What `node view.mjs --once <args>` prints: asked of the view server over its Unix socket first
 // (args become query parameters); on any failure the server is started detached (throttled, interactive
@@ -161,7 +163,8 @@ async function viewOnce($: EngineInterface, args: string[]): Promise<{ exitCode:
     const tasks = await $.env.get('HARNESS_TASKS_DIR')
     const home = await $.env.get('HOME')
     const dir = tasks ? tasks.replace(/\/+$/, '').replace(/\/[^/]*$/, '') || '/' : home ? `${home}/.harness` : ''
-    sock = dir ? `${dir}/view-once.sock` : ''
+    if (pluginVersion === '') pluginVersion = String(JSON.parse(await $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`)).version || '')
+    sock = dir && pluginVersion ? `${dir}/view-once-${pluginVersion}.sock` : ''
     if (sock) {
       const q = new URLSearchParams()
       for (let i = 0; i < args.length; i += 2) q.set(args[i].replace(/^--/, ''), args[i + 1] ?? '')

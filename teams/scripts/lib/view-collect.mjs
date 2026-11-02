@@ -13,7 +13,19 @@ import { loadRunAt, runState } from '../../mcp/graph.mjs';
 import { readPointer, ownsRun, findTaggedRun, harnessVerdict, graphRunPath } from '../../mcp/harnessrun.mjs';
 import { countedDriverRestarts, restartBudget } from '../../mcp/taskstate.mjs';
 import { driverCostOf, collectTaskCosts } from '../bench/lib/drivercost.mjs';
-import { peek } from '../../mcp/livecap.mjs';
+import { capOf, liveProcesses } from '../../mcp/livecap.mjs';
+
+// The live-process count scans every task.json and runs ps per recorded pid; one answer per root is
+// reused for 2 s (the shared server's answer window), so a sweep over many running tasks pays it once.
+const LIVE_TTL_MS = 2000;
+const liveCounts = new Map();
+function liveCount(root) {
+  const hit = liveCounts.get(root);
+  if (hit && Date.now() - hit.at < LIVE_TTL_MS) return hit.n;
+  const n = liveProcesses(root).length;
+  liveCounts.set(root, { at: Date.now(), n });
+  return n;
+}
 import { STAGE_KEYS, stageOfNode, nodeState, mergeStates } from './view-stages.mjs';
 // listTasks()'s card model speaks tickets.mjs's own vocabulary (EPIC key, ticket state, phase,
 // STORY rows) rather than inventing a second one - the same words tm_board and tm_ticket already
@@ -642,8 +654,8 @@ function telemetryOf({ task, tasksDir, depth, ledger, driverTotal, harness, sRun
   let live = null;
   if (depth === 0) {
     try {
-      const pk = peek(task, { root: tasksDir });
-      live = { live: pk.live, cap: Number.isFinite(pk.cap) ? pk.cap : null };
+      const cap = capOf(task);
+      live = { live: liveCount(tasksDir), cap: Number.isFinite(cap) ? cap : null };
     } catch { /* no process table: say nothing */ }
   }
 

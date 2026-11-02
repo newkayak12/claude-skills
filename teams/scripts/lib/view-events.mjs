@@ -107,7 +107,11 @@ function failure(evs, i, ctx, now) {
 // reasons: { node_id: result.reason from task.json }, now (ms; default the newest ts in the lines) }.
 // Without ctx the ledger is told as before: no reason, no hold.
 export function notableEvents(lines, sinceTs, ctx) {
-  const evs = parsed(lines);
+  return notableFromEvents(parsed(lines), sinceTs, ctx);
+}
+
+// The same over events already parsed (objects with a numeric ts), for a caller that caches them.
+export function notableFromEvents(evs, sinceTs, ctx) {
   const now = ctx ? Math.max(typeof ctx.now === 'number' ? ctx.now : -Infinity, ...evs.map((e) => e.ts)) : null;
   const out = [];
   evs.forEach((e, i) => {
