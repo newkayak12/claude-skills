@@ -274,6 +274,18 @@ toasts).
 
 ### teams plugin bugs
 
+115. **The teams mod polls only in a session whose folder uses teams**
+    - Why: user, 2026-11-02: "view.mjs는 고아가 아니라서 정리해도 의미가 없습니다. 지워도 3초 안에 다시
+      뜹니다." `teams/hooks/mod.tsx` `tick` runs every `TICK_MS` (3 s) in every interactive session and
+      starts `node view.mjs --once` twice per tick (events, then status/summary), 130–166 MB each while
+      it runs. 21 sessions were polling; only 2 folders used teams.
+    - Acceptance: a tick starts no node process unless one holds: the pane is open, this session opened
+      a task (`watch` non-empty), or the cwd or a parent holds `.claude/team.json`, `.teams_output/` or
+      `.harness-run/` (checked with `$.fs.exists`, no spawn); a session that later calls `tm_open`
+      starts polling on the next tick; a test in `teams/hooks/*.test.ts` proves no `$.process.run` in a
+      plain folder and the poll in a teams folder; `cd teams && claude plugin test .` passes with the
+      count reported; one live look: a session in a non-teams folder shows no `view.mjs` in `ps` over 30 s.
+
 113. **The web viewer a `tm_open` starts exits when its task is done**
    - Why: 2026-11-01, this session (MCP on teams 0.61.4): eight `view.mjs --tasks-dir ~/.harness/tasks
      --port N` servers, one per `tm_open` (ports match each `view_url`), were still running 4–5 h later,
