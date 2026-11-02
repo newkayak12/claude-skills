@@ -12,9 +12,14 @@ type Surface = (typeof SURFACES)[number]
 type Run = { exitCode: number; stdout: string; stderr: string }
 const ok = (stdout: string): Run => ({ exitCode: 0, stdout, stderr: '' })
 
+// the files fs.exists reports as present; a test changes it and puts the default back
+const DEFAULT_MARKERS = ['/proj/.claude/team.json']
+let markers = new Set(DEFAULT_MARKERS)
+
 // The engine beneath the plugin: surfaces, cwd, process.run, toast, status, command.register.
 function world(on: On, surfaces: readonly Surface[], runs: (argv: readonly string[]) => Run) {
   const seen = { argv: [] as (readonly string[])[], toasts: [] as string[], toastEvents: [] as { text: string; timeoutMs?: number }[], statuses: [] as (string | undefined)[], commands: [] as string[], inFlight: 0, maxInFlight: 0 }
+  on('fs.exists', (_$, e) => ({ value: markers.has(e.path) }) as never)
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.surfaces', () => ({ value: surfaces }))
   on('session.cwd', () => ({ value: '/proj' }))
@@ -57,6 +62,73 @@ test('no surface: no timer, no command', async ($, on) => {
   await clock.advance(10000)
   expect(seen.argv).toHaveLength(0)
   expect(seen.commands).toEqual([])
+})
+
+// the no-spawn gate: a folder that does not use teams never runs view.mjs
+async function gated(on: On, files: string[], watched: string[] = []) {
+  markers = new Set(files)
+  const clock = mock.clock(on, { now: 1000 })
+  const seen = world(on, ['terminal'], () => ok(''))
+  on('ui.panes', () => ({ value: [] }) as never)
+  if (watched.length > 0) on('state.get', (_$, e) => ({ value: { value: e.key === 'watch' ? watched : undefined, version: 0 } }) as never)
+  return { clock, seen }
+}
+
+test('gate: no marker, pane closed, nothing watched: no spawn', async ($, on) => {
+  try {
+    const { clock, seen } = await gated(on, [])
+    await start($)
+    await clock.advance(15000)
+    expect(seen.argv).toHaveLength(0)
+  } finally {
+    markers = new Set(DEFAULT_MARKERS)
+  }
+})
+
+test('gate: .claude/team.json in cwd runs the poll', async ($, on) => {
+  const { clock, seen } = await gated(on, ['/proj/.claude/team.json'])
+  await start($)
+  await clock.advance(3000)
+  expect(seen.argv.some(isEvents)).toBe(true)
+})
+
+for (const parent of ['/.claude/team.json', '/.harness-run', '/proj/.teams_output']) {
+  test(`gate: a marker at ${parent} runs the poll`, async ($, on) => {
+    try {
+      const { clock, seen } = await gated(on, [parent])
+      await start($)
+      await clock.advance(3000)
+      expect(seen.argv.some(isEvents)).toBe(true)
+    } finally {
+      markers = new Set(DEFAULT_MARKERS)
+    }
+  })
+}
+
+test('gate: a watched EPIC runs the poll without a marker', async ($, on) => {
+  try {
+    const { clock, seen } = await gated(on, [], ['abc'])
+    await start($)
+    await clock.advance(3000)
+    expect(seen.argv.some(isEvents)).toBe(true)
+  } finally {
+    markers = new Set(DEFAULT_MARKERS)
+  }
+})
+
+test('gate: a marker added later is seen after the 30 s cache window, not within it', async ($, on) => {
+  try {
+    const { clock, seen } = await gated(on, [])
+    await start($)
+    await clock.advance(3000)
+    markers = new Set(['/proj/.claude/team.json'])
+    await clock.advance(15000)
+    expect(seen.argv).toHaveLength(0)
+    await clock.advance(15000)
+    expect(seen.argv.some(isEvents)).toBe(true)
+  } finally {
+    markers = new Set(DEFAULT_MARKERS)
+  }
 })
 
 for (const surface of SURFACES) {
@@ -300,6 +372,7 @@ function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly 
 }
 // what session.start needs besides uiWorld; `language` answers $.settings.read()
 function startWorld(on: On, language?: string) {
+  on('fs.exists', (_$, e) => ({ value: markers.has(e.path) }) as never)
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: '/proj' }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
