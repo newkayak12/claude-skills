@@ -2650,3 +2650,45 @@ for (const surface of SURFACES) {
     for (const l of lines) expect(cells(l)).toBeLessThanOrEqual(106)
   })
 }
+
+// ---- the view server: data calls go to its Unix socket first, `--once` is the fallback ----
+// A clock far from the others: the 30 s start throttle is a module-level timestamp shared by the file.
+const SERVE_CLOCK = 5_000_000_000
+const isServeStart = (argv: readonly string[]) => argv[0] === 'sh'
+
+function socketWorld(on: On, answer: () => { status: number; text: string } | 'fail') {
+  const clock = mock.clock(on, { now: SERVE_CLOCK })
+  const seen = world(on, ['terminal'], () => ok(''))
+  on('ui.panes', () => ({ value: [] }) as never)
+  on('env.get', (_$, e) => ({ value: e.name === 'HARNESS_TASKS_DIR' ? '/w/tasks' : e.name === 'HOME' ? '/home/u' : undefined }) as never)
+  const urls: string[] = []
+  on('http.fetch', (_$, e) => {
+    urls.push(String(e.url))
+    const a = answer()
+    if (a === 'fail') return { deny: 'no socket' } as never
+    return { value: { status: a.status, ok: a.status === 200, headers: {}, text: a.text } } as never
+  })
+  return { clock, seen, urls }
+}
+
+test('view server: with the socket answering 200 a tick spawns no data process', async ($, on) => {
+  const { clock, seen, urls } = socketWorld(on, () => ({ status: 200, text: '' }))
+  await start($)
+  await clock.advance(9000)
+  expect(urls.length > 0).toBe(true)
+  expect(urls.every(u => u.includes('format='))).toBe(true)
+  expect(seen.argv.filter(a => !isServeStart(a))).toHaveLength(0)
+  expect(seen.argv.filter(isServeStart)).toHaveLength(0)
+})
+
+test('view server: with fetch failing the tick falls back to --once and starts the server once per 30 s', async ($, on) => {
+  const { clock, seen } = socketWorld(on, () => 'fail')
+  await start($)
+  await clock.advance(3000)
+  expect(seen.argv.some(a => a.includes('--once') && isEvents(a))).toBe(true)
+  expect(seen.argv.filter(isServeStart)).toHaveLength(1)
+  expect(seen.argv.filter(isServeStart)[0]?.join(' ')).toContain('--serve-once-socket')
+  await clock.advance(15000)
+  expect(seen.argv.filter(a => a.includes('--once')).length > 1).toBe(true)
+  expect(seen.argv.filter(isServeStart)).toHaveLength(1)
+})
