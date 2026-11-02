@@ -90,11 +90,11 @@ Nine steps, in order; a round may start again at 2 or 4 (step 8 says where); 9 o
    order, each its own numbered edit list with how to fix each: recruiter 6초 and engineer 30초
    (`feedback`, and `pattern` for how it reads) → interviewer attack (`mock-interview`'s questions
    on the page claims; a claim the user cannot defend goes to its item's `gaps.md`) → the user's
-   own bar (noah, when connected: their stated standards, quoted). Every viewpoint is handed
-   `claims`' `settled` lines: a finding against one (a writing basis, a structure decision) is
-   dropped. No viewpoint proposes cutting or merging pages without a ground, or cites market
-   generalities ("면접 단골 질문") as evidence. The first-page summary line need not carry a
-   number: measured numbers sit in the evidence lines, small-scale numbers are dropped.
+   own bar (noah, when connected: their stated standards, quoted). Each viewpoint's findings go to a
+   workspace file as `[{id,text}]`; run `manage.mjs settle --findings <file>`, continue with `kept`,
+   show the user `settled` (finding, line, share). No viewpoint proposes cutting or merging pages
+   without a ground, or cites market generalities ("면접 단골 질문") as evidence. The first-page
+   summary line need not carry a number: measured numbers sit in evidence lines, small ones drop.
    - **Snapshot, then edit.** `snapshot --kind skeleton --level <major|minor|patch> --note "<what>"`
      before the first edit of a round (major = structure: page count, blocks, order; minor =
      content; patch = wording). Mark edited cells `[vX]`, unconfirmed wording `[vX 안]`. Lines are

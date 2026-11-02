@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
-import { bump, claims, compare, deckPages, headings, resumePages, keepRender, layout, parseMap, readMaterial, renumber, scaffold, selection, settled, snapshot, verify } from './manage.mjs'
+import { bump, claims, compare, deckPages, headings, resumePages, keepRender, layout, parseMap, readMaterial, renumber, scaffold, selection, settle, settled, snapshot, verify } from './manage.mjs'
 
 const SKEL = `# 가상 포트폴리오
 version: v4.0.0
@@ -456,4 +456,103 @@ test('compare: a claim that lost its ground makes the round worse whatever the s
   assert.deepEqual(r.lost_ground.map(p => p.kind), ['unsupported'])
   assert.equal(compare({ Impact: 5 }, { Impact: 7 }, before, before).verdict, 'better')
   assert.equal(compare({ Impact: 5 }, { Impact: 7 }).lost_ground, undefined)
+})
+
+// ── settle: findings that re-raise a 확정사실.md line (card 102); all names invented ──
+const SETTLE_DOC = '# 확정사실\n\n## 서술 기준\n- 진행 중인 장은 완료했을 때 기준으로 쓴다\n\n## 구조\n- 서로 다른 일은 한 블록에 섞지 않는다\n\n## 정정\n- 2026-01-03 본인: 팀장 직함은 파트장으로 바로잡는다\n'
+const F_BASIS = { id: 'f1', text: '진행 중인 장은 완료한 시점 기준으로 서술해야 한다' }
+const F_OTHER = { id: 'f2', text: '표지 제목의 글꼴이 작아서 눈에 띄지 않는다' }
+const F_STRUCT = { id: 'f3', text: '서로 다른 일은 한 블록에 섞어 쓰면 안 된다' }
+const F_FIX = { id: 'f4', text: '팀장 직함은 파트장으로 바로잡는다고 2026-01-03에 본인이 말했다' }
+const settleRoot = doc => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-settle-'))
+  if (doc !== undefined) { mkdirSync(join(root, 'docs')); writeFileSync(join(root, 'docs/확정사실.md'), doc) }
+  return root
+}
+const settleCli = (root, ...a) => spawnSync(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), 'manage.mjs'), 'settle', ...a], { cwd: root, encoding: 'utf8' })
+
+test('settle: a paraphrase of a 서술 기준 or 구조 line is settled with its line and share; the rest stays kept in input order', () => {
+  const lines = settled(settleRoot(SETTLE_DOC))
+  const r = settle([F_OTHER, F_BASIS, F_FIX, F_STRUCT], lines)
+  assert.deepEqual(r.kept, [F_OTHER, F_FIX])
+  assert.deepEqual(r.settled.map(s => s.finding), [F_BASIS, F_STRUCT])
+  assert.equal(r.settled[0].line, '진행 중인 장은 완료했을 때 기준으로 쓴다')
+  assert.equal(r.settled[1].line, '서로 다른 일은 한 블록에 섞지 않는다')
+  for (const s of r.settled) { assert.equal(typeof s.share, 'number'); assert.ok(s.share >= 0.5 && s.share <= 1) }
+})
+
+test('settle: a finding echoing the 정정 line is kept (corrections are never matched)', () => {
+  const root = settleRoot(SETTLE_DOC)
+  assert.ok(!settled(root).some(l => l.includes('파트장')))
+  assert.deepEqual(settle([F_FIX], settled(root)), { kept: [F_FIX], settled: [] })
+})
+
+test('settle: no settled lines keeps everything; an empty array is empty both ways', () => {
+  assert.deepEqual(settle([F_BASIS, F_OTHER], settled(settleRoot())), { kept: [F_BASIS, F_OTHER], settled: [] })
+  assert.deepEqual(settle([], ['진행 중인 장은 완료했을 때 기준으로 쓴다']), { kept: [], settled: [] })
+})
+
+test('settle: a 2-stem line under 서술 기준 never settles a finding that contains both stems', () => {
+  const lines = settled(settleRoot('# 확정사실\n\n## 서술 기준\n- 배포 점검\n'))
+  assert.deepEqual(lines, ['배포 점검'])
+  const f = { id: 'g1', text: '배포 점검을 매번 하지 않아서 문제다' }
+  assert.deepEqual(settle([f], lines), { kept: [f], settled: [] })
+})
+
+test('settle: a finding sharing exactly 2 stems with a 4-stem line is kept (share 0.5 but under the 3-stem minimum)', () => {
+  const lines = ['달빛 상점 주문 처리']
+  const f = { id: 'g2', text: '주문 처리 속도가 느리다' }
+  assert.deepEqual(settle([f], lines), { kept: [f], settled: [] })
+  const f3 = { id: 'g3', text: '달빛 상점 주문 흐름이 느리다' } // 3 of 4 stems: settled
+  assert.equal(settle([f3], lines).settled.length, 1)
+})
+
+test('settle CLI: one JSON line {kept, settled}', () => {
+  const root = settleRoot(SETTLE_DOC)
+  writeFileSync(join(root, 'findings.json'), JSON.stringify([F_BASIS, F_OTHER]))
+  const r = settleCli(root, '--findings', 'findings.json')
+  assert.equal(r.status, 0)
+  const rows = r.stdout.trim().split('\n')
+  assert.equal(rows.length, 1)
+  const out = JSON.parse(rows[0])
+  assert.deepEqual(out.kept, [F_OTHER])
+  assert.deepEqual(out.settled.map(s => s.finding), [F_BASIS])
+  assert.deepEqual(Object.keys(out.settled[0]).sort(), ['finding', 'line', 'share'])
+})
+
+test('settle CLI: no docs/확정사실.md keeps every finding; an empty file array gives empty lists', () => {
+  const root = settleRoot()
+  writeFileSync(join(root, 'findings.json'), JSON.stringify([F_BASIS, F_OTHER]))
+  assert.deepEqual(JSON.parse(settleCli(root, '--findings', 'findings.json').stdout), { kept: [F_BASIS, F_OTHER], settled: [] })
+  writeFileSync(join(root, 'none.json'), '[]')
+  assert.deepEqual(JSON.parse(settleCli(root, '--findings', 'none.json').stdout), { kept: [], settled: [] })
+})
+
+test('settle CLI: a missing flag, a missing file and a non-array file are errors naming --findings', () => {
+  const root = settleRoot(SETTLE_DOC)
+  writeFileSync(join(root, 'obj.json'), '{"id":"f1"}')
+  for (const a of [[], ['--findings', 'missing.json'], ['--findings', 'obj.json']]) {
+    const r = settleCli(root, ...a)
+    assert.notEqual(r.status, 0)
+    assert.match(JSON.parse(r.stdout).error, /--findings/)
+  }
+})
+
+test('settle CLI: a findings entry without string text exits non-zero and names its index', () => {
+  const root = settleRoot(SETTLE_DOC)
+  writeFileSync(join(root, 'bad.json'), JSON.stringify([F_OTHER, { id: 'x2' }]))
+  const r = settleCli(root, '--findings', 'bad.json')
+  assert.notEqual(r.status, 0)
+  assert.match(JSON.parse(r.stdout).error, /findings\[1\]/)
+})
+
+test('settle CLI: an absolute --findings path and a ../ path are refused', () => {
+  const root = settleRoot(SETTLE_DOC)
+  writeFileSync(join(root, 'findings.json'), JSON.stringify([F_OTHER]))
+  writeFileSync(join(root, '..', 'manage-outside-findings.json'), JSON.stringify([F_OTHER]))
+  for (const p of [join(root, 'findings.json'), '../manage-outside-findings.json']) {
+    const r = settleCli(root, '--findings', p)
+    assert.notEqual(r.status, 0, p)
+    assert.match(JSON.parse(r.stdout).error, /inside the workspace/, p)
+  }
 })

@@ -25,10 +25,14 @@
 //       problems (uncited, unknown_id, not_in_material, unsupported = `근거 없음`, to_confirm = a reason
 //       the items do not say), listed (본인 확인, user-stated, tone phrases), unused_results (figures in
 //       cited items no page carries), uncited_items, settled (확정사실.md `## 서술 기준`/`## 구조` lines)
+//   settle --findings <file>       feedback findings against 확정사실.md: <file> is a JSON array of {id, text}
+//       inside the workspace; {kept, settled}: a finding is settled ({finding, line, share}) when it shares
+//       >= 3 word stems with a `## 서술 기준`/`## 구조` line of >= 3 stems and >= half of that line's stems;
+//       `## 정정` lines are never matched; no 확정사실.md → all kept
 // A page heading is `## N`, `## N.`, `## N)` or `## N쪽`. A `# ` chapter heading bounds a block: pages
 // sort inside their block, and blocks holding pages sort by their first page; other sections stay put.
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 const LAYOUT = ['skeleton.md', 'deck.mdx', 'template.pptx', 'deck.catalog.md', 'build', 'snapshot', 'sources', 'docs/확정사실.md',
   'sources/선정.md', 'template/분석.md']
@@ -469,6 +473,29 @@ export function settled(root) {
   return out
 }
 
+// A finding re-raises a settled line when it shares >= SETTLE_MIN word stems with it and at least half
+// of the line's stems; a line of fewer than SETTLE_MIN stems never matches. The best line per finding
+// decides; `kept` keeps the input order and the original objects.
+const SETTLE_SHARE = 0.5
+const SETTLE_MIN = 3
+export function settle(findings, lines) {
+  const sets = lines.map(line => ({ line, st: [...new Set(stems(line))] })).filter(l => l.st.length >= SETTLE_MIN)
+  const kept = []
+  const out = []
+  for (const finding of findings) {
+    const have = new Set(stems(finding?.text ?? ''))
+    let best = null
+    for (const { line, st } of sets) {
+      const shared = st.filter(w => have.has(w)).length
+      const share = shared / st.length
+      if (shared >= SETTLE_MIN && share >= SETTLE_SHARE && (!best || share > best.share)) best = { line, share }
+    }
+    if (best) out.push({ finding, line: best.line, share: Math.round(best.share * 100) / 100 })
+    else kept.push(finding)
+  }
+  return { kept, settled: out }
+}
+
 // With a selection (sources/선정.md), a page citing an item marked 제외 is a problem, the reverse
 // lists cover only 본문/부록 items, and items the table does not name are listed `unselected`.
 export function claims(text, items, settledLines = [], sel = null) {
@@ -562,6 +589,22 @@ function main() {
     const text = readFileSync(file, 'utf8')
     const pages = /^##\s+@s\d+/m.test(text) ? deckPages(text) : /resume\.md$/.test(file) ? resumePages(text) : text
     out = claims(pages, readMaterial(root), settled(root), selection(root))
+  } else if (cmd === 'settle') {
+    if (typeof args.findings !== 'string') throw new Error('--findings <file> is required: a JSON array of {id, text}')
+    const path = resolve(root, args.findings)
+    const rel = relative(resolve(root), path)
+    if (isAbsolute(args.findings) || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+      throw new Error(`--findings ${args.findings} must be a path inside the workspace root ${root}`)
+    }
+    let findings
+    try { findings = JSON.parse(readFileSync(path, 'utf8')) } catch (e) { throw new Error(`--findings ${args.findings} cannot be read as JSON: ${e.message}`) }
+    if (!Array.isArray(findings)) throw new Error(`--findings ${args.findings} must be a JSON array of {id, text}`)
+    findings.forEach((f, i) => {
+      if (!f || typeof f !== 'object' || Array.isArray(f) || typeof f.id !== 'string' || typeof f.text !== 'string') {
+        throw new Error(`findings[${i}] must be an object with string id and string text`)
+      }
+    })
+    out = settle(findings, settled(root))
   } else if (cmd === 'scaffold') {
     out = scaffold(root)
   } else if (cmd === 'selection') {
@@ -569,7 +612,7 @@ function main() {
   } else if (cmd === 'keep-render') {
     out = keepRender(root, args.version)
   } else {
-    throw new Error('usage: manage.mjs layout | scaffold | selection | snapshot | renumber | verify | compare | claims | keep-render')
+    throw new Error('usage: manage.mjs layout | scaffold | selection | snapshot | renumber | verify | compare | claims | settle --findings <file> | keep-render')
   }
   process.stdout.write(`${JSON.stringify(out)}\n`)
 }

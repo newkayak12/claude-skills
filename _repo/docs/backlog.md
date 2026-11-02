@@ -46,10 +46,14 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
       real CLI run caught the `근거 없음` figure on slide 2). Left: a feedback finding against a
       `settled` line is dropped by the SKILL step, not by the engine; reason grounding is a word-stem
       share (≥ half), a heuristic.
-    - E-54884e0c P2 (2026-10-31, `manage settle`, not taken): QA found short settled lines give false
-      `settled` hits that hide real findings, and bad finding shapes / absolute paths are not refused
-      clearly (AC-4/5). Kept on branch `rescue/e54884e0c-integration` (P3's runbook too); redo with a
-      minimum match length.
+    - `manage settle --findings <file>` shipped 2026-11-02 (E-1476d4db, redo of E-54884e0c P2): a
+      line of under 3 stems never matches, settled needs >= 3 shared stems and >= half the line;
+      bad entries error with their index, a path outside the workspace is refused; manage 48/48; real
+      CLI run on a fictional workspace settled two paraphrases, kept the unrelated, the 2-stem-line and
+      the `## 정정` findings. Left: a finding that reports the deck *breaking* a settled rule ("두 업무가
+      한 블록에 섞여 있다") is settled too, since stems cannot tell a violation from a re-raise; the
+      SKILL shows `settled` to the user so it can be put back. P3's runbook stays on
+      `rescue/e54884e0c-integration` (card 49).
 
 54. **portfolio runs one flow on managed material: collect → write → render → feedback**
     - Why: user, 2026-10-18: "포트폴리오 스킬에 매니징 있니? 그니까 글감을 모으고 관리하고 그걸 바탕으로
