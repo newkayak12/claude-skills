@@ -411,6 +411,10 @@ toasts).
       퀄리티". This lifts `skill.md`'s "no mass rewrite" for this card. Measured the same day: 115
       skills, 11 frozen (teams-mounted), average 120 lines (target 70% ≈ 84), 2 over 200; descriptions
       loaded each session 25,777 chars (avg 224); plugin descriptions: harness 2,897 chars, write 1,038.
+    - Usage survey, same day (Skill calls and `/<plugin>:<skill>` commands in 4,832 local transcripts):
+      27 skills used in 3+ sessions, 19 in 1–2, 69 never. Retiring the unused was proposed and
+      rejected (user: "은퇴는 반려"): every skill stays; the survey only orders the work (used skills
+      first inside a plugin). `harness`/`graph` are out (stable, `repo.md`).
     - Acceptance, per plugin (frozen skills stay out; behaviour kept):
       1. length: each SKILL.md at or under ~84 lines or the reason it is not; background prose and
          repeats moved to `references/` or cut; check-skeleton clean;
