@@ -26,7 +26,8 @@
 // Both the HTML page's /state.json and --once's text tree come from ONE collect() function
 // (teams/scripts/lib/view-collect.mjs) - this file only renders it two ways.
 import { createServer } from 'node:http';
-import { readFileSync, existsSync, openSync, readSync, fstatSync, closeSync, statSync } from 'node:fs';
+import { connect as netConnect } from 'node:net';
+import { readFileSync, existsSync, openSync, readSync, fstatSync, closeSync, statSync, unlinkSync } from 'node:fs';
 import { dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tasksRoot } from '../mcp/taskmanager.mjs';
@@ -36,7 +37,7 @@ import { renderText, renderIndexText, renderTicketsText, renderResourcesText } f
 import { notableEvents, statusLine, HOLD_MS } from './lib/view-events.mjs';
 import { summarize, waitingCount } from './lib/view-summary.mjs';
 import { floorTasks, floorEntry, samePath } from './lib/view-floor-fs.mjs';
-import { repoMatcher } from './lib/view-repo.mjs';
+import { repoMatcher, clearGitFacts } from './lib/view-repo.mjs';
 import { openTasks } from './lib/view-index.mjs';
 import { reportPayload } from './lib/view-report.mjs';
 import { teamsView, decisionsView } from './lib/view-status.mjs';
@@ -60,6 +61,7 @@ function parseArgs(argv) {
     else if (arg === '--task') a.task = argv[++i];
     else if (arg === '--port') a.port = Number(argv[++i]) || 0;
     else if (arg === '--once') a.once = true;
+    else if (arg === '--serve-once-socket') a.serveOnceSocket = argv[++i] || join(dirname(tasksRoot()), 'view-once.sock');
     else if (arg === '--view') a.view = argv[++i];
     else if (arg === '--format') a.format = argv[++i];
     else if (arg === '--since') a.since = Number(argv[++i]) || 0;
@@ -456,6 +458,90 @@ function startServer(tasksDir, taskId, port) {
   return server;
 }
 
+// What `--once` prints for these args; the --serve-once-socket server answers with the same function.
+function onceOutput(args, tasksDir, render) {
+  if (args.format === 'status') return statusOutput(tasksDir, args.cwd, args.session);
+  if (args.format === 'summary') return summaryOutput(tasksDir, args.cwd, args.task, args.session);
+  if (args.format === 'board') return boardOutput(tasksDir, args.cwd, args.task, args.session);
+  if (args.format === 'teams') return teamsOutput(tasksDir, args.cwd, args.task, args.session);
+  if (args.format === 'decisions') return decisionsOutput(tasksDir, args.task, args.card);
+  if (args.format === 'report') return reportOutput(tasksDir, args.task);
+  if (args.format === 'events') return eventsOutput(tasksDir, args.cwd, args.since || 0);
+  if (args.task) return render(collectTask(tasksDir, args.task));
+  const rows = listTasks(tasksDir);
+  if (rows.length === 1) return render(collectTask(tasksDir, rows[0].task_id));
+  // tickets/resources need one specific task to draw a board/tree for - an index of several
+  // tasks falls back to the same plain task list every --view does, rather than a board with
+  // nothing on it.
+  return renderIndexText(rows, tasksDir);
+}
+
+// ---------- --serve-once-socket <path>: the --once answers over HTTP on a Unix socket ----------
+// GET /?format=&cwd=&task=&session=&since=&card=&view= answers like `--once` with the same args. One server
+// per socket, answers cached 2 s per argument set, ends itself after TEAMS_VIEW_ONCE_IDLE_MS (10 min).
+const ONCE_CACHE_MS = 2000;
+const ONCE_IDLE_DEFAULT_MS = 10 * 60 * 1000;
+
+function onceIdleMs() {
+  const n = Number(process.env.TEAMS_VIEW_ONCE_IDLE_MS);
+  return Number.isFinite(n) && n > 0 ? n : ONCE_IDLE_DEFAULT_MS;
+}
+
+function socketAlive(path) {
+  return new Promise((resolve) => {
+    const c = netConnect(path);
+    c.once('connect', () => { c.destroy(); resolve(true); });
+    c.once('error', () => resolve(false));
+  });
+}
+
+async function serveOnceSocket(path, tasksDir) {
+  if (await socketAlive(path)) process.exit(0);
+  try { unlinkSync(path); } catch { /* none, or not ours to remove */ }
+  const cache = new Map();
+  let lastRequest = Date.now();
+  const server = createServer((req, res) => {
+    lastRequest = Date.now();
+    try {
+      const q = new URL(req.url, 'http://localhost').searchParams;
+      const args = { view: q.get('view') || 'pipeline' };
+      for (const k of ['format', 'cwd', 'task', 'session', 'card']) if (q.has(k)) args[k] = q.get(k);
+      if (q.has('since')) args.since = Number(q.get('since')) || 0;
+      const render = VIEWS[args.view];
+      if (!render) throw new Error('unknown view');
+      const key = JSON.stringify([tasksDir, args.view, args.format, args.cwd, args.task, args.session, args.since, args.card]);
+      let hit = cache.get(key);
+      if (!hit || Date.now() - hit.at >= ONCE_CACHE_MS) {
+        clearGitFacts();
+        hit = { at: Date.now(), body: onceOutput(args, tasksDir, render) };
+        cache.set(key, hit);
+        for (const [k, v] of cache) if (Date.now() - v.at >= ONCE_CACHE_MS) cache.delete(k);
+      }
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(hit.body);
+    } catch {
+      res.writeHead(500, { 'content-type': 'text/plain' });
+      res.end('render failed');
+    }
+  });
+  let ending = false;
+  const end = () => {
+    if (ending) return;
+    ending = true;
+    try { unlinkSync(path); } catch { /* already gone */ }
+    process.exit(0);
+  };
+  server.once('error', (e) => {
+    process.stderr.write(`teams view: cannot listen on ${path}: ${(e && (e.code || e.message)) || e}\n`);
+    process.exit(1);
+  });
+  server.listen(path);
+  const watch = setInterval(() => { if (Date.now() - lastRequest >= onceIdleMs()) end(); }, Math.max(50, Math.min(1000, Math.floor(onceIdleMs() / 4))));
+  watch.unref();
+  process.on('SIGTERM', end);
+  process.on('SIGINT', end);
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) { process.stdout.write(usage()); return; }
@@ -467,27 +553,10 @@ async function main() {
   }
   const tasksDir = args.tasksDir ? args.tasksDir : tasksRoot();
 
+  if (args.serveOnceSocket) { serveOnceSocket(args.serveOnceSocket, tasksDir); return; }
+
   if (args.once) {
-    if (args.format === 'status') { process.stdout.write(statusOutput(tasksDir, args.cwd, args.session)); return; }
-    if (args.format === 'summary') { process.stdout.write(summaryOutput(tasksDir, args.cwd, args.task, args.session)); return; }
-    if (args.format === 'board') { process.stdout.write(boardOutput(tasksDir, args.cwd, args.task, args.session)); return; }
-    if (args.format === 'teams') { process.stdout.write(teamsOutput(tasksDir, args.cwd, args.task, args.session)); return; }
-    if (args.format === 'decisions') { process.stdout.write(decisionsOutput(tasksDir, args.task, args.card)); return; }
-    if (args.format === 'report') { process.stdout.write(reportOutput(tasksDir, args.task)); return; }
-    if (args.format === 'events') { process.stdout.write(eventsOutput(tasksDir, args.cwd, args.since || 0)); return; }
-    if (args.task) {
-      process.stdout.write(render(collectTask(tasksDir, args.task)));
-      return;
-    }
-    const rows = listTasks(tasksDir);
-    if (rows.length === 1) {
-      process.stdout.write(render(collectTask(tasksDir, rows[0].task_id)));
-      return;
-    }
-    // tickets/resources need one specific task to draw a board/tree for - an index of several
-    // tasks falls back to the same plain task list every --view does, rather than a board with
-    // nothing on it.
-    process.stdout.write(renderIndexText(rows, tasksDir));
+    process.stdout.write(onceOutput(args, tasksDir, render));
     return;
   }
 

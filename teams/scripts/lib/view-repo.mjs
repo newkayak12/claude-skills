@@ -29,6 +29,11 @@ export function gitFacts(dir, run = git) {
   return facts;
 }
 
+// Forgets the default runner's memo, so a long-lived process re-reads git facts.
+export function clearGitFacts() {
+  memos.delete(git);
+}
+
 // (taskCwd) => { match, worktree }. worktree is the basename of the task's checkout when it is a
 // different checkout of the session's repo, else null. The session's facts are read on first need,
 // so a task in the session's own directory costs no git call.

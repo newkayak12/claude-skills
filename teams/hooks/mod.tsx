@@ -147,12 +147,48 @@ function nowSentence(s: (key: keyof typeof en) => string, task: SummaryTask): st
   return task.now.subject ? `${label}: ${task.now.subject}` : label
 }
 
+// A cache a reload may lose: when the view server was last started (at most once per 30 s)
+const SERVE_RETRY_MS = 30_000
+let serveStartedAt = 0
+
+// What `node view.mjs --once <args>` prints: asked of the view server over its Unix socket first
+// (args become query parameters); on any failure the server is started detached (throttled, interactive
+// sessions only) and this call runs the unchanged `--once` spawn.
+async function viewOnce($: EngineInterface, args: string[]): Promise<{ exitCode: number; stdout: string }> {
+  const VIEW = `${$.plugin.root}/scripts/view.mjs`
+  let sock = ''
+  try {
+    const tasks = await $.env.get('HARNESS_TASKS_DIR')
+    const home = await $.env.get('HOME')
+    const dir = tasks ? tasks.replace(/\/+$/, '').replace(/\/[^/]*$/, '') || '/' : home ? `${home}/.harness` : ''
+    sock = dir ? `${dir}/view-once.sock` : ''
+    if (sock) {
+      const q = new URLSearchParams()
+      for (let i = 0; i < args.length; i += 2) q.set(args[i].replace(/^--/, ''), args[i + 1] ?? '')
+      const r = await $.http.fetch(`http://view/?${q.toString()}`, { socketPath: sock })
+      if (r.status === 200) return { exitCode: 0, stdout: r.text }
+    }
+  } catch {
+    // no socket, refused, or a host that cannot reach it: start the server and spawn once
+  }
+  try {
+    const now = await $.clock.now()
+    if (sock && (await $.session.surfaces()).length > 0 && (serveStartedAt === 0 || now - serveStartedAt >= SERVE_RETRY_MS)) {
+      serveStartedAt = now
+      await $.process.run(['sh', '-c', 'nohup node "$1" --serve-once-socket "$2" >/dev/null 2>&1 </dev/null &', 'sh', VIEW, sock])
+    }
+  } catch {
+    // the spawn below still answers
+  }
+  return $.process.run(['node', VIEW, '--once', ...args])
+}
+
 // One report call for a task: the payload is stored under that task's id. A failed call or
 // unreadable output leaves what was stored.
 async function fetchReport($: EngineInterface, taskId: string, forCard = false): Promise<void> {
   try {
     const cwd = await $.session.cwd()
-    const r = await $.process.run(['node', `${$.plugin.root}/scripts/view.mjs`, '--once', '--format', 'report', '--task', taskId, '--cwd', cwd])
+    const r = await viewOnce($, ['--format', 'report', '--task', taskId, '--cwd', cwd])
     if (r.exitCode !== 0) return
     const payload = JSON.parse(r.stdout.trim().split('\n').pop() ?? '') as ReportPayload
     if (forCard) await update($, cardReport, () => ({ task_id: taskId, payload }))
@@ -167,7 +203,7 @@ async function fetchDecisions($: EngineInterface, taskId: string): Promise<void>
   try {
     const cwd = await $.session.cwd()
     const card = await read($, selected)
-    const r = await $.process.run(['node', `${$.plugin.root}/scripts/view.mjs`, '--once', '--format', 'decisions', '--task', taskId, '--cwd', cwd, ...(card === null ? [] : ['--card', card])])
+    const r = await viewOnce($, ['--format', 'decisions', '--task', taskId, '--cwd', cwd, ...(card === null ? [] : ['--card', card])])
     if (r.exitCode !== 0) return
     const payload = JSON.parse(r.stdout.trim().split('\n').pop() ?? '') as DecisionsPayload
     await update($, decisions, () => ({ task_id: taskId, card, payload }))
@@ -269,8 +305,6 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     if ((await $.session.surfaces()).length === 0) return next(e)
 
-    const VIEW = `${$.plugin.root}/scripts/view.mjs`
-
     // the spinner clock runs only while the pane is open and a worker of the shown EPIC acts
     let spinner: { cancel: () => void } | null = null
     async function wantsSpin() {
@@ -330,9 +364,7 @@ export const register: Register = on => {
 
         const fetched = new Set<string>()
         const cardFetched = new Set<string>()
-        const ev = await $.process.run([
-          'node', VIEW, '--once', '--format', 'events', '--since', String(since), '--cwd', cwd,
-        ])
+        const ev = await viewOnce($, ['--format', 'events', '--since', String(since), '--cwd', cwd])
         if (ev.exitCode === 0) {
           const fresh: TeamsEvent[] = []
           for (const line of ev.stdout.split('\n')) {
@@ -373,8 +405,8 @@ export const register: Register = on => {
         } catch {
           // no session id: the call goes without --session
         }
-        const data = await $.process.run([
-          'node', VIEW, '--once', '--format', isOpen ? 'teams' : isSummary ? 'summary' : 'status', '--cwd', cwd,
+        const data = await viewOnce($, [
+          '--format', isOpen ? 'teams' : isSummary ? 'summary' : 'status', '--cwd', cwd,
           ...(id === undefined ? [] : ['--task', id]),
           ...(sid === undefined ? [] : ['--session', sid]),
         ])
@@ -469,7 +501,7 @@ export const register: Register = on => {
     const paneOpened = STRINGS[await read($, lang)].paneOpened
     let run: { exitCode: number; stdout: string } | null = null
     try {
-      run = await $.process.run(['node', `${$.plugin.root}/scripts/view.mjs`, '--once', '--format', 'board', '--cwd', await $.session.cwd()])
+      run = await viewOnce($, ['--format', 'board', '--cwd', await $.session.cwd()])
     } catch {
       // a run that cannot start answers with the pane text
     }
