@@ -274,17 +274,15 @@ toasts).
 
 ### teams plugin bugs
 
-116. **One shared view server answers every session's poll; started if missing**
-    - Why: user, 2026-11-02: "view.mjs 가 여러 개 컨트롤 못해? 없으면 뜨고". After card 115 each teams
-      session still spawns `node view.mjs --once` twice every 3 s (130–166 MB each); sessions on the same
-      folder compute the same answer separately.
-    - Acceptance: one long-lived `view.mjs` process per user serves the `--once` formats over a Unix
-      socket under `~/.harness/` (one per machine: a second start finds the socket alive and exits); the
-      mod asks it with `$.http.fetch(..., { socketPath })` and spawns nothing while it answers; when the
-      socket is missing or dead the mod starts it detached once and falls back to `--once` for that tick;
-      the server caches an answer per (format, cwd, task) for one tick so N sessions on one folder cost one
-      read; it exits after 10 min with no request; the output is byte-identical to `--once` for each format
-      (test); with 3 sessions open, `ps` shows one `view.mjs` and no `--once` over 30 s (live look).
+117. **The view server shares one answer across sessions and reads events incrementally**
+    - Why: seen 2026-11-02 after card 116: with 3 live sessions on one folder the shared server used
+      ~45% of a core (~15% each). Its 2 s cache key holds `--session` and each session's own `--since`,
+      so no answer is shared; every tick re-reads the moved ledgers from the top. A server built by an
+      older teams keeps answering sessions of a newer one (one socket name for every version).
+    - Acceptance: the server keeps per-ledger read offsets and answers `events` from what it already
+      read; the session-independent part of status/summary is computed once per tick per cwd; the socket
+      name carries the plugin version (or the server exits when `view.mjs` changes); 3 live sessions on
+      one folder keep the server under 10% of a core (measured with `top`).
 
 
 113. **The web viewer a `tm_open` starts exits when its task is done**
@@ -442,6 +440,7 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-bd74d6ca, E-6a0d66eb | 2026-11-02 | 116 | shipped `3bb316f0`, `16fd5a62` in teams 0.62.5; size S; goal gates 88 (partial: `teams` format compared with its render time masked) and 95; one shared server on `~/.harness/view-once.sock`; `events` 2.4 s → 0.17 s (stats ledgers first); live, 3 sessions: one server in 60/60 samples, no `--once` spawns, server ~45% of a core (was ~80% for one session before the events fix); teams 1756/1757 (1 skip), mod 441/441; sharing across sessions left for card 117 |
 | E-0b44dd5c | 2026-11-02 | 115 | shipped `61b4b681` as hotfix teams 0.62.4; size S; goal gate 93; mod tests 439/439, teams 1745/1746 (1 skip); live: plain home folder 0/60 samples with `view.mjs`, this repo 59/60; a stray `/tmp/.teams_output` (2026-09-23) makes every folder under `/tmp` count as teams |
 | E-eb930c1a | 2026-11-01 | 100 (theme) | blocked at integrate (D2/P1 conflict in test-diagram.mjs); merged by hand `38c416b1`, test-diagram 112/112; P2's renders partial (print theme roles by shade only); approval of the theme PNGs left |
 | E-6e771dea | 2026-11-01 | 81 rest | shipped `edfad21d`; size S; goal gate 94; chained own-write test 9/9, limits in README/KOR/CHANGELOG; live `own_record:true` left (needs a session on the bumped teams) |
