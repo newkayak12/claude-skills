@@ -15,6 +15,7 @@
 | Before changing plugin behaviour: 3. critique against the doc's principles inside the Sprint | repo.md § Design changes | teams/mcp/graph.mjs (teams engine: `critique` stage) |
 | Before changing plugin behaviour: 4. implement, then gate: show the result against the done-criteria | repo.md § Design changes | teams/mcp/graph.mjs (teams engine: `gate` stage) |
 | Never remove a stage, a gate, or a principle for cost or simplicity without the user's approval | repo.md § Design changes | prose only |
+| `harness/` and `graph/` are stable: no change to either plugin unless the user reopens one | repo.md § Design changes | prose only |
 | `<plugin>/` top level holds one plugin (`.claude-plugin/plugin.json`, `skills/`, `hooks/`, README.md + KOR.md), never notes, plans, reports | repo.md § Layout | validate_plugins.py (pre-commit + CI) checks the manifest, skills and version; the "never holds" part is prose only |
 | `_repo/docs/plans/` holds dated design docs, never code | repo.md § Layout | prose only |
 | `_repo/hooks/` holds git hooks, never plugin code | repo.md § Layout | prose only |
