@@ -286,17 +286,6 @@ toasts).
       read; it exits after 10 min with no request; the output is byte-identical to `--once` for each format
       (test); with 3 sessions open, `ps` shows one `view.mjs` and no `--once` over 30 s (live look).
 
-115. **The teams mod polls only in a session whose folder uses teams**
-    - Why: user, 2026-11-02: "view.mjs는 고아가 아니라서 정리해도 의미가 없습니다. 지워도 3초 안에 다시
-      뜹니다." `teams/hooks/mod.tsx` `tick` runs every `TICK_MS` (3 s) in every interactive session and
-      starts `node view.mjs --once` twice per tick (events, then status/summary), 130–166 MB each while
-      it runs. 21 sessions were polling; only 2 folders used teams.
-    - Acceptance: a tick starts no node process unless one holds: the pane is open, this session opened
-      a task (`watch` non-empty), or the cwd or a parent holds `.claude/team.json`, `.teams_output/` or
-      `.harness-run/` (checked with `$.fs.exists`, no spawn); a session that later calls `tm_open`
-      starts polling on the next tick; a test in `teams/hooks/*.test.ts` proves no `$.process.run` in a
-      plain folder and the poll in a teams folder; `cd teams && claude plugin test .` passes with the
-      count reported; one live look: a session in a non-teams folder shows no `view.mjs` in `ps` over 30 s.
 
 113. **The web viewer a `tm_open` starts exits when its task is done**
    - Why: 2026-11-01, this session (MCP on teams 0.61.4): eight `view.mjs --tasks-dir ~/.harness/tasks
@@ -453,6 +442,7 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-0b44dd5c | 2026-11-02 | 115 | shipped `61b4b681` as hotfix teams 0.62.4; size S; goal gate 93; mod tests 439/439, teams 1745/1746 (1 skip); live: plain home folder 0/60 samples with `view.mjs`, this repo 59/60; a stray `/tmp/.teams_output` (2026-09-23) makes every folder under `/tmp` count as teams |
 | E-eb930c1a | 2026-11-01 | 100 (theme) | blocked at integrate (D2/P1 conflict in test-diagram.mjs); merged by hand `38c416b1`, test-diagram 112/112; P2's renders partial (print theme roles by shade only); approval of the theme PNGs left |
 | E-6e771dea | 2026-11-01 | 81 rest | shipped `edfad21d`; size S; goal gate 94; chained own-write test 9/9, limits in README/KOR/CHANGELOG; live `own_record:true` left (needs a session on the bumped teams) |
 | E-7d6199b9 | 2026-11-01 | 107 | shipped `69b2015e`; size S; goal gate 92; bare `tm_retry` resumes an exhausted dead daemon on its run dir; parent-kill survival test; test-taskmanager 373/373, teams 1736/1737 (1 skip); cause of the session-exit kill still unverified |
