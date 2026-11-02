@@ -2661,15 +2661,29 @@ function socketWorld(on: On, answer: () => { status: number; text: string } | 'f
   const seen = world(on, ['terminal'], () => ok(''))
   on('ui.panes', () => ({ value: [] }) as never)
   on('env.get', (_$, e) => ({ value: e.name === 'HARNESS_TASKS_DIR' ? '/w/tasks' : e.name === 'HOME' ? '/home/u' : undefined }) as never)
+  on('fs.read', (_$, e) => {
+    if (e.path.endsWith('/.claude-plugin/plugin.json')) return { value: JSON.stringify({ version: '9.9.9' }) } as never
+    throw new Error('ENOENT')
+  })
   const urls: string[] = []
+  const sockets: string[] = []
   on('http.fetch', (_$, e) => {
     urls.push(String(e.url))
+    sockets.push(String((e as { init?: { socketPath?: string } }).init?.socketPath ?? ''))
     const a = answer()
     if (a === 'fail') return { deny: 'no socket' } as never
     return { value: { status: a.status, ok: a.status === 200, headers: {}, text: a.text } } as never
   })
-  return { clock, seen, urls }
+  return { clock, seen, urls, sockets }
 }
+
+test('view server: the socket path carries the plugin version', async ($, on) => {
+  const { clock, sockets } = socketWorld(on, () => ({ status: 200, text: '' }))
+  await start($)
+  await clock.advance(3000)
+  expect(sockets.length > 0).toBe(true)
+  expect(sockets.every(s => s === '/w/view-once-9.9.9.sock')).toBe(true)
+})
 
 test('view server: with the socket answering 200 a tick spawns no data process', async ($, on) => {
   const { clock, seen, urls } = socketWorld(on, () => ({ status: 200, text: '' }))

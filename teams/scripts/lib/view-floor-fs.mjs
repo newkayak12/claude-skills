@@ -141,10 +141,10 @@ function parkedOnPerson(raw) {
 // Live first, then stalled, each newest created first. [{ m, live, age_ms }]
 // `opener` (a session id) keeps only tasks whose raw task.json names it as opener, checked before `collect`,
 // and ignores `cwd`: the asks of one session span every project.
-export function floorTasks({ tasksDir, cwd, opener, now = Date.now(), collect = collectTask }) {
+export function floorTasks({ tasksDir, cwd, opener, now = Date.now(), collect = collectTask, open = openTasks }) {
   const repo = cwd && !opener ? repoMatcher(cwd) : null;
   const picked = [];
-  for (const { id: name, raw } of openTasks(tasksDir)) {
+  for (const { id: name, raw } of open(tasksDir)) {
     if (!raw || typeof raw !== 'object') continue;
     if (repo && !raw.cwd) continue;
     if (opener && !(raw.opener && raw.opener.session_id === opener)) continue;

@@ -34,7 +34,8 @@ import { tasksRoot } from '../mcp/taskmanager.mjs';
 import { DEFAULT_VIEW_PORT, viewKey, viewerAt, registerRoot as registerAt } from '../mcp/viewserver.mjs';
 import { collectTask, listTasks, readJsonRetry } from './lib/view-collect.mjs';
 import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './lib/view-render-text.mjs';
-import { notableEvents, statusLine, HOLD_MS } from './lib/view-events.mjs';
+import { notableEvents, notableFromEvents, statusLine, HOLD_MS } from './lib/view-events.mjs';
+import { createLedgerStore } from './lib/view-ledger-store.mjs';
 import { summarize, waitingCount } from './lib/view-summary.mjs';
 import { floorTasks, floorEntry, samePath } from './lib/view-floor-fs.mjs';
 import { repoMatcher, clearGitFacts } from './lib/view-repo.mjs';
@@ -53,6 +54,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // this file has always shown, unchanged for anyone not passing the flag.
 const VIEWS = { pipeline: renderText, tickets: renderTicketsText, resources: renderResourcesText };
 
+// The teams version, so a new release starts its own socket instead of joining an older server.
+function pluginVersion() {
+  try { return String(JSON.parse(readFileSync(join(HERE, '..', '.claude-plugin', 'plugin.json'), 'utf8')).version || 'unknown'); } catch { return 'unknown'; }
+}
+
 function parseArgs(argv) {
   const a = { view: 'pipeline' };
   for (let i = 0; i < argv.length; i++) {
@@ -61,7 +67,7 @@ function parseArgs(argv) {
     else if (arg === '--task') a.task = argv[++i];
     else if (arg === '--port') a.port = Number(argv[++i]) || 0;
     else if (arg === '--once') a.once = true;
-    else if (arg === '--serve-once-socket') a.serveOnceSocket = argv[++i] || join(dirname(tasksRoot()), 'view-once.sock');
+    else if (arg === '--serve-once-socket') a.serveOnceSocket = argv[++i] || join(dirname(tasksRoot()), `view-once-${pluginVersion()}.sock`);
     else if (arg === '--view') a.view = argv[++i];
     else if (arg === '--format') a.format = argv[++i];
     else if (arg === '--since') a.since = Number(argv[++i]) || 0;
@@ -105,13 +111,13 @@ function tailLines(path) {
 // task.json-less dir is never listed, and an unreadable one carries `error`, so unknown = not running.
 // With a cwd, the tasks of its repo (main checkout and linked worktrees; lib/view-repo.mjs).
 // [{ m, worktree }], worktree null for a task in the cwd's own checkout.
-function runningModels(tasksDir, cwd) {
+function runningModels(tasksDir, cwd, collect = collectTask, open = openTasks) {
   const repo = repoMatcher(cwd);
   const out = [];
-  for (const { id, raw } of openTasks(tasksDir, { running: true })) {
+  for (const { id, raw } of open(tasksDir, { running: true })) {
     if (!raw && !existsSync(join(tasksDir, id, 'task.json'))) continue;
     if (raw && cwd && !raw.cwd) continue;
-    const m = collectTask(tasksDir, id);
+    const m = collect(tasksDir, id);
     if (m.error || m.state !== 'running') continue;
     const at = cwd ? repo(m.cwd) : { match: true, worktree: null };
     if (at.match) out.push({ m, worktree: at.worktree });
@@ -125,20 +131,41 @@ const marked = (worktree) => (worktree ? { worktree } : {});
 
 // The ⚑ count reads every live open task (a card parked in a child run counts though no task runs),
 // the same rule summaryOutput applies, so --format status and summary.status always agree.
-function statusOutput(tasksDir, cwd, session) {
-  const listed = floorTasks({ tasksDir, cwd, now: Date.now() });
-  const status = JSON.parse(statusFrom(runningModels(tasksDir, cwd)));
-  status.waiting = listed.filter((x) => x.live).reduce((s, x) => s + waitingCount(x.m), 0);
-  status.asks = asksOf(tasksDir, session);
+//
+// `ctx` (the shared server only) is the tick's memo: the session-independent parts below are computed
+// once per tick and cwd and shared by every session's ask; the session's `asks` is applied last.
+const memo = (ctx, key, fn) => (ctx ? ctx.memo(JSON.stringify(key), fn) : fn());
+
+// One collectTask per task per tick: the listing, the running set and every session's asks read the same model.
+const collectOf = (ctx) => (dir, id) => memo(ctx, ['collect', dir, id], () => collectTask(dir, id));
+
+const openOf = (ctx) => (dir, o = {}) => memo(ctx, ['open', dir, !!o.running], () => openTasks(dir, o));
+
+const listedOf = (tasksDir, cwd, ctx) => memo(ctx, ['listed', tasksDir, cwd], () => floorTasks({ tasksDir, cwd, now: Date.now(), collect: collectOf(ctx), open: openOf(ctx) }));
+
+function statusBase(tasksDir, cwd, ctx) {
+  return memo(ctx, ['status', tasksDir, cwd], () => {
+    const listed = listedOf(tasksDir, cwd, ctx);
+    const status = JSON.parse(statusFrom(runningModels(tasksDir, cwd, collectOf(ctx), openOf(ctx))));
+    status.waiting = listed.filter((x) => x.live).reduce((s, x) => s + waitingCount(x.m), 0);
+    return status;
+  });
+}
+
+function statusOutput(tasksDir, cwd, session, ctx) {
+  const status = { ...statusBase(tasksDir, cwd, ctx) };
+  status.asks = asksOf(tasksDir, session, ctx);
   return JSON.stringify(status) + '\n';
 }
 
 // The questions waiting on one session, over every open task whatever its cwd (floorTasks filters on the
 // raw task.json opener before collecting); [] without a session. `via` is 'send' once a received row exists.
-function asksOf(tasksDir, session) {
+function asksOf(tasksDir, session, ctx) {
   if (!session) return [];
-  const entries = floorTasks({ tasksDir, opener: session, now: Date.now() });
-  return asksFor(entries, session, receivedRows(tasksDir, entries.map((x) => x.id)));
+  return memo(ctx, ['asks', tasksDir, session], () => {
+    const entries = floorTasks({ tasksDir, opener: session, now: Date.now(), collect: collectOf(ctx), open: openOf(ctx) });
+    return asksFor(entries, session, receivedRows(tasksDir, entries.map((x) => x.id)));
+  });
 }
 
 function statusFrom(entries) {
@@ -160,38 +187,62 @@ function statusFrom(entries) {
 // (floorTasks: live newest created first, then stalled under 24 h with age_ms), each the human summary
 // plus items, workers and handoffs; task is the human summary of --task, else of status.latest, else
 // null (nothing running, or the task file is unreadable).
-function summaryOutput(tasksDir, cwd, taskId, session) {
-  const now = Date.now();
-  const listed = floorTasks({ tasksDir, cwd, now });
-  const status = JSON.parse(statusFrom(listed.filter((x) => x.live && x.m.state === 'running')));
-  // the ⚑ count reads the collected model, so a card parked in a child run (its driver gone on purpose) counts
-  status.waiting = listed.filter((x) => x.live).reduce((s, x) => s + waitingCount(x.m), 0);
-  status.asks = asksOf(tasksDir, session);
-  const id = taskId || status.latest;
-  const hit = id ? listed.find((x) => x.m.task_id === id) : null;
-  const m = hit ? hit.m : (id ? collectTask(tasksDir, id) : null);
-  const tasks = listed.map((x) => floorEntry(x, tasksDir, { now }));
-  return JSON.stringify({ status, tasks, task: m && !m.error ? { ...summarize(m), ...marked(hit && hit.worktree) } : null }) + '\n';
+function summaryParts(tasksDir, cwd, taskId, ctx) {
+  return memo(ctx, ['summary', tasksDir, cwd, taskId], () => {
+    const now = Date.now();
+    const listed = listedOf(tasksDir, cwd, ctx);
+    const status = JSON.parse(statusFrom(listed.filter((x) => x.live && x.m.state === 'running')));
+    // the ⚑ count reads the collected model, so a card parked in a child run (its driver gone on purpose) counts
+    status.waiting = listed.filter((x) => x.live).reduce((s, x) => s + waitingCount(x.m), 0);
+    const id = taskId || status.latest;
+    const hit = id ? listed.find((x) => x.m.task_id === id) : null;
+    const m = hit ? hit.m : (id ? collectTask(tasksDir, id) : null);
+    const tasks = listed.map((x) => floorEntry(x, tasksDir, { now }));
+    return { status, tasks, task: m && !m.error ? { ...summarize(m), ...marked(hit && hit.worktree) } : null };
+  });
+}
+
+// summaryParts with the session's asks applied last, as the parsed object --format summary prints.
+function summaryBase(tasksDir, cwd, taskId, session, ctx) {
+  const p = summaryParts(tasksDir, cwd, taskId, ctx);
+  return { status: { ...p.status, asks: asksOf(tasksDir, session, ctx) }, tasks: p.tasks, task: p.task };
+}
+
+function summaryOutput(tasksDir, cwd, taskId, session, ctx) {
+  return JSON.stringify(summaryBase(tasksDir, cwd, taskId, session, ctx)) + '\n';
 }
 
 // summaryOutput (status, tasks) plus the per-team rows and Now lines of --task (the /teams-status pane while it is open).
-function teamsOutput(tasksDir, cwd, taskId, session) {
-  const base = JSON.parse(summaryOutput(tasksDir, cwd, taskId, session));
-  const id = taskId || base.status.latest;
-  const m = id ? collectTask(tasksDir, id) : null;
-  const ok = m && !m.error;
-  const listedTask = base.tasks.find((t) => t.task_id === id);
-  const task = ok ? { ...summarize(m), ...marked(listedTask && listedTask.worktree) } : null;
-  const model = dashboardModel(task);
-  const dash = model ? { model, svg: dashboardSvg(model), alt: dashboardAlt(model) } : null;
-  return JSON.stringify({ status: base.status, tasks: base.tasks, task, teams: ok ? teamsView(m) : null, dash }) + '\n';
+function teamsParts(tasksDir, cwd, taskId, ctx) {
+  return memo(ctx, ['teams', tasksDir, cwd, taskId], () => {
+    const base = summaryParts(tasksDir, cwd, taskId, ctx);
+    const id = taskId || base.status.latest;
+    const m = id ? collectTask(tasksDir, id) : null;
+    const ok = m && !m.error;
+    const listedTask = base.tasks.find((t) => t.task_id === id);
+    const task = ok ? { ...summarize(m), ...marked(listedTask && listedTask.worktree) } : null;
+    const model = dashboardModel(task);
+    const dash = model ? { model, svg: dashboardSvg(model), alt: dashboardAlt(model) } : null;
+    return { task, teams: ok ? teamsView(m) : null, dash };
+  });
+}
+
+function teamsOutput(tasksDir, cwd, taskId, session, ctx) {
+  const base = summaryBase(tasksDir, cwd, taskId, session, ctx);
+  const p = teamsParts(tasksDir, cwd, taskId, ctx);
+  return JSON.stringify({ status: base.status, tasks: base.tasks, task: p.task, teams: p.teams, dash: p.dash }) + '\n';
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // The board as plain lines (/teams-status's answer where no pane is drawn); with no task, the status line.
-function boardOutput(tasksDir, cwd, taskId, session) {
-  const base = JSON.parse(summaryOutput(tasksDir, cwd, taskId, session));
+// The board never shows asks, so it is the same text for every session and is memoized whole.
+function boardOutput(tasksDir, cwd, taskId, session, ctx) {
+  return memo(ctx, ['board', tasksDir, cwd, taskId], () => boardText(tasksDir, cwd, taskId, ctx));
+}
+
+function boardText(tasksDir, cwd, taskId, ctx) {
+  const base = summaryParts(tasksDir, cwd, taskId, ctx);
   // nothing running: the newest EPIC of this cwd opened in the last day, whatever its end
   let task = base.task || (base.tasks[0] || null);
   if (!task && cwd) {
@@ -240,27 +291,47 @@ function taskFacts(tasksDir, taskId) {
 // HOLD_MS before `since`: the mtime skip is widened by that. Its reason is the latest verdict in the
 // 256 KiB tail; a verdict older than the tail is not seen and the reason is task.json's
 // result.reason for the node, else `no reason recorded`.
-function eventsOutput(tasksDir, cwd, since) {
+//
+// With `shared` ({ store, ctx }, the shared server) the ledgers come from the incremental store and the
+// session-independent sweeps (ledger mtimes, task.json, the cwd match, task facts) are memoized for the
+// tick; `since` and the failure hold are applied here per caller, from now.
+function eventsOutput(tasksDir, cwd, since, shared) {
+  const ctx = shared && shared.ctx;
   const repo = repoMatcher(cwd);
   const out = [];
-  let ids = [];
-  try { ids = readdirSync(tasksDir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch { return ''; }
+  const swept = memo(ctx, ['ledgers', tasksDir], () => {
+    let ids;
+    try { ids = readdirSync(tasksDir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch { return null; }
+    const rows = [];
+    for (const id of ids) {
+      try { rows.push({ id, mtimeMs: statSync(join(tasksDir, id, 'ledger.jsonl')).mtimeMs }); } catch { /* no ledger */ }
+    }
+    return rows;
+  });
+  if (!swept) return '';
   const live = [];
-  for (const id of ids) {
-    try {
-      if (statSync(join(tasksDir, id, 'ledger.jsonl')).mtimeMs <= Math.max(0, since - HOLD_MS)) continue;
-    } catch { continue; }
-    const read = readJsonRetry(join(tasksDir, id, 'task.json'));
-    if (!read.ok || !read.value || typeof read.value !== 'object') continue;
-    live.push({ id, created_at: read.value.created_at || 0 });
+  for (const { id, mtimeMs } of swept) {
+    if (mtimeMs <= Math.max(0, since - HOLD_MS)) continue;
+    const created = memo(ctx, ['created', tasksDir, id], () => {
+      const read = readJsonRetry(join(tasksDir, id, 'task.json'));
+      return !read.ok || !read.value || typeof read.value !== 'object' ? null : read.value.created_at || 0;
+    });
+    if (created === null) continue;
+    live.push({ id, created_at: created });
   }
   live.sort((a, b) => b.created_at - a.created_at);
   for (const { id } of live) {
     if (cwd) {
-      const m = collectTask(tasksDir, id);
-      if (m.error || !m.cwd || !repo(m.cwd).match) continue;
+      const inCwd = memo(ctx, ['incwd', tasksDir, cwd, id], () => {
+        const m = collectTask(tasksDir, id);
+        return !(m.error || !m.cwd || !repo(m.cwd).match);
+      });
+      if (!inCwd) continue;
     }
-    out.push(...notableEvents(tailLines(join(tasksDir, id, 'ledger.jsonl')), since, { now: Date.now(), ...taskFacts(tasksDir, id) }));
+    const facts = memo(ctx, ['facts', tasksDir, id], () => taskFacts(tasksDir, id));
+    const path = join(tasksDir, id, 'ledger.jsonl');
+    if (shared) out.push(...notableFromEvents(shared.store.read(path), since, { now: Date.now(), ...facts }));
+    else out.push(...notableEvents(tailLines(path), since, { now: Date.now(), ...facts }));
   }
   out.sort((a, b) => a.ts - b.ts);
   return out.map((e) => JSON.stringify(e) + '\n').join('');
@@ -468,14 +539,15 @@ function startServer(tasksDir, taskId, port) {
 }
 
 // What `--once` prints for these args; the --serve-once-socket server answers with the same function.
-function onceOutput(args, tasksDir, render) {
-  if (args.format === 'status') return statusOutput(tasksDir, args.cwd, args.session);
-  if (args.format === 'summary') return summaryOutput(tasksDir, args.cwd, args.task, args.session);
-  if (args.format === 'board') return boardOutput(tasksDir, args.cwd, args.task, args.session);
-  if (args.format === 'teams') return teamsOutput(tasksDir, args.cwd, args.task, args.session);
+function onceOutput(args, tasksDir, render, shared) {
+  const ctx = shared && shared.ctx;
+  if (args.format === 'status') return statusOutput(tasksDir, args.cwd, args.session, ctx);
+  if (args.format === 'summary') return summaryOutput(tasksDir, args.cwd, args.task, args.session, ctx);
+  if (args.format === 'board') return boardOutput(tasksDir, args.cwd, args.task, args.session, ctx);
+  if (args.format === 'teams') return teamsOutput(tasksDir, args.cwd, args.task, args.session, ctx);
   if (args.format === 'decisions') return decisionsOutput(tasksDir, args.task, args.card);
   if (args.format === 'report') return reportOutput(tasksDir, args.task);
-  if (args.format === 'events') return eventsOutput(tasksDir, args.cwd, args.since || 0);
+  if (args.format === 'events') return eventsOutput(tasksDir, args.cwd, args.since || 0, shared);
   if (args.task) return render(collectTask(tasksDir, args.task));
   const rows = listTasks(tasksDir);
   if (rows.length === 1) return render(collectTask(tasksDir, rows[0].task_id));
@@ -508,6 +580,13 @@ async function serveOnceSocket(path, tasksDir) {
   if (await socketAlive(path)) process.exit(0);
   try { unlinkSync(path); } catch { /* none, or not ours to remove */ }
   const cache = new Map();
+  const store = createLedgerStore();
+  // One tick = the 2 s answer window: the memo of the session-independent parts lives as long as it.
+  let tick = { at: 0, memo: new Map() };
+  const newTick = () => {
+    const m = new Map();
+    return { at: Date.now(), memo: m, ctx: { memo: (k, fn) => { if (!m.has(k)) m.set(k, fn()); return m.get(k); } } };
+  };
   let lastRequest = Date.now();
   const server = createServer((req, res) => {
     lastRequest = Date.now();
@@ -521,8 +600,8 @@ async function serveOnceSocket(path, tasksDir) {
       const key = JSON.stringify([tasksDir, args.view, args.format, args.cwd, args.task, args.session, args.since, args.card]);
       let hit = cache.get(key);
       if (!hit || Date.now() - hit.at >= ONCE_CACHE_MS) {
-        clearGitFacts();
-        hit = { at: Date.now(), body: onceOutput(args, tasksDir, render) };
+        if (Date.now() - tick.at >= ONCE_CACHE_MS) { clearGitFacts(); tick = newTick(); }
+        hit = { at: Date.now(), body: onceOutput(args, tasksDir, render, { store, ctx: tick.ctx }) };
         cache.set(key, hit);
         for (const [k, v] of cache) if (Date.now() - v.at >= ONCE_CACHE_MS) cache.delete(k);
       }

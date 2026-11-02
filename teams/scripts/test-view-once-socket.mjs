@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { request } from 'node:http';
 import { createServer } from 'node:net';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, utimesSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -182,4 +182,47 @@ test('a repeat request inside the 2 s TTL is served from the cache, then it rend
     assert.notEqual(c.body, a.body, 'rendered again after the TTL');
     assert.equal(c.body, once([]));
   } finally { await kill(h); }
+});
+
+test('two sessions with different --session and --since share one base per tick and each gets its own --once answer', async () => {
+  const path = sockPath();
+  const h = serve(path);
+  const extra = join(tasks, 'E-dddddddd4');
+  try {
+    await ready(path);
+    await sleep(2200); // a fresh tick, whatever ready() cached
+    const sessA = ['--format', 'events', '--since', '0', '--cwd', cwd, '--session', 's1'];
+    const sessB = ['--format', 'events', '--since', '1', '--cwd', cwd, '--session', 's2'];
+    const sumB = ['--format', 'summary', '--cwd', cwd, '--session', 's2'];
+    const teamsB = ['--format', 'teams', '--cwd', cwd, '--session', 's2', '--task', 'E-aaaaaaaa1'];
+    const mask = (s) => s.replace(/"at":\d+/g, '"at":0');
+    const a = await get(path, query(sessA));
+    assert.equal(a.body, once(sessA));
+    // a task that appears mid-tick is not in the shared sweep: the other session's answer is the same base
+    addReported('E-dddddddd4');
+    const b = await get(path, query(sessB));
+    assert.equal(b.body, a.body, "the second session reads the first session's base");
+    await sleep(2200);
+    const b2 = await get(path, query(sessB));
+    assert.equal(b2.body, once(sessB), 'next tick: byte-equal to its own --once');
+    assert.notEqual(b2.body, a.body);
+    assert.equal((await get(path, query(sumB))).body, once(sumB));
+    assert.equal(mask((await get(path, query(teamsB))).body), mask(once(teamsB)));
+  } finally { rmSync(extra, { recursive: true, force: true }); await kill(h); }
+});
+
+test('the default socket name carries the teams version and an explicit path is still honoured', async () => {
+  const version = JSON.parse(readFileSync(join(HERE, '..', '.claude-plugin', 'plugin.json'), 'utf8')).version;
+  const home = mkdtempSync(join(tmpdir(), 'view-sock-name-'));
+  const dir = join(home, 'tasks');
+  mkdirSync(dir, { recursive: true });
+  const want = join(home, `view-once-${version}.sock`);
+  sockets.add(want);
+  const c = spawn('node', [VIEW, '--tasks-dir', dir, '--serve-once-socket'], { env: { ...process.env, HARNESS_TASKS_DIR: dir }, stdio: 'ignore' });
+  children.add(c);
+  try {
+    for (let i = 0; i < 100 && !existsSync(want); i++) await sleep(50);
+    assert.ok(existsSync(want), `socket ${want}`);
+    assert.equal((await get(want, query(['--format', 'status', '--cwd', cwd]))).status, 200);
+  } finally { c.kill('SIGKILL'); rmSync(home, { recursive: true, force: true }); }
 });
