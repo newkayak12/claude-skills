@@ -278,6 +278,16 @@ toasts).
 
 ### teams plugin bugs
 
+118. **A size-S run whose report node fails itself on missing evidence can be retried, not blocked**
+    - Why: E-1476d4db, 2026-11-02 (teams 0.61.4): 13/14 nodes done, gate:goal accepted 90%, then the
+      `report` node (codex) returned `stage_ok: false` because no upstream node quoted the real CLI
+      run's output. `graph_retry` on `report` refused ("node_id must identify a currently interrupted
+      pending node"); the driver was respawned twice, each restart re-read the same blocked run and
+      exited, and the task ended `blocked` with no report. The session ran the CLI check by hand.
+    - Acceptance: a report node that fails on its own verdict can be retried (or re-routed to
+      another vendor) without discarding the subgoals; a driver restart on an unchanged blocked run
+      is not spent; a test reproduces the refusal first.
+
 117. **The view server shares one answer across sessions and reads events incrementally**
     - Why: seen 2026-11-02 after card 116: with 3 live sessions on one folder the shared server used
       ~45% of a core (~15% each). Its 2 s cache key holds `--session` and each session's own `--since`,
