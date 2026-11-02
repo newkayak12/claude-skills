@@ -258,36 +258,9 @@ toasts).
 
 ### Repo and rules
 
-48. **graph + harness into teams (plan: `_repo/docs/plans/2026-10-17-graph-harness-into-teams.md`)**
-    - Why: user, 2026-10-17: "결과적으로 하위호환을 위해서 harness, graph를 두지만 (stable) 장기적인
-      방향은 teams"; evaluation by a seeded matrix with repeated runs ("여러 번 돌려보는게 맞을거 같음").
-    - Acceptance: the plan's Tasks 1–9 with their pass bars; after UI cards (user priority).
-    - Tasks 2–4 merged 2026-10-25 (E-c5c109e3): critique rounds with severity, per-run `now` and run
-      list order, goal gate and Codex fallback in graph; graph 281/281 (main was 200), goal gate all
-      passed. Tasks 5–6 (axes, problems, arm, one-problem dry run) — E-53b9426b (user, 2026-10-25:
-      "하자하자") shipped nothing: plan-integrate failed 3× on F1/F2 contradictions (slug `denied` vs
-      `denied-blocked`, cases.tsv status column, median-of-runs vs per-problem win count, `limit_hit`);
-      $17.21. Next: Task 5 alone as size S, then Task 6's arm and dry run; the full 3× matrix from the
-      session under the driver cap. Minimum effect sizes still placeholders (1 of 3 problems for axes 1-6,
-      1 field for 7-8, 20% for 9) — the run takes them as defaults and the report names them.
-    - Task 6 first half shipped (eac1f097, E-27be4005): graph-harness/graph-base arms, ghscore.mjs,
-      authors pinned to sonnet. Full 162-run matrix started 2026-10-26 08:52Z; a real run costs
-      ~$1.5 and ~6 min per arm (dry run was $0.36), so the matrix is ~$240 and ~16 h.
-
 ### Subagents and parallel runs — use and clean up (user, 2026-10-17)
 
 ### teams plugin bugs
-
-119. **The view server's per-tick caches get their own tests, and a wide first `events` read is cheap**
-    - Why: E-db189f56 (card 117), 2026-11-02: the liveProcesses 2 s cache and the openTasks /
-      collectTask per-tick memo have no dedicated tests (the suite passes); an `events` ask with an old
-      `--since` (all events) took ~3.4 s and pegged the server near 99% (the mod's cursor starts at now,
-      so polls never do this today). Its U4 node edited `view.mjs` through a node script, against the
-      Read/Edit/Write rule (the hook did not catch it); E-3a668d18's U3 node did the same with an
-      inline python script into `test-taskmanager.mjs` (2026-11-02).
-    - Acceptance: tests that a cached count or memo is not reused past its tick; an `events` ask with
-      `since=0` answers under 0.5 s on the real tasks dir; the script-edit path is refused by
-      `repo-rules.mjs` (a test reproduces it first).
 
 
 113. **The web viewer a `tm_open` starts exits when its task is done**
@@ -461,6 +434,12 @@ toasts).
 
 ## Frozen (do not pull)
 
+- `harness` and `graph` plugins are stable: no more changes (user, 2026-11-02: "harness, graph 는
+  stable로 더이상 수정 금지"). Card 48 (graph + harness into teams) stops here: Tasks 2–4 (graph
+  critique rounds, goal gate, Codex fallback; E-c5c109e3) and Task 6's first half (eac1f097) shipped,
+  Tasks 5–9 and the 162-run matrix are not run. teams keeps its own engine copies; the long-term
+  direction stays teams (user, 2026-10-17).
+
 - `teams:orchestrate` (204 lines) and teams skills missing sections (`plan`, `qa`, `document`,
   `develop`) — frozen until teams decides.
 - `cognition:critical-thinking-workflow` — teams mounts it.
@@ -471,6 +450,7 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-c4d76843 | 2026-11-02 | 119 | shipped `cf910d02`; size S; goal gate 94; cache/memo tests 2/2 (falsified), `events` with an old `--since` 2.9 s → 0.18 s byte-identical; repo-rules refuses inline-script repo writes (263 ok); teams 1778/1779 (1 skip); a perl `>>` false positive fixed after the gate; `--cwd` now includes a task whose collect fails but task.json reads (untested) |
 | E-3a668d18 | 2026-11-02 | 118 | shipped in teams 0.62.7; size S; goal gate 91; `retryReport` reruns only a failed report (avoid_executors, different_vendor), size-S driver not respawned on an unchanged blocked run (`harness_run_stuck`), tm_retry retries it; red-first tests; teams 1776/1777 (1 skip); no live end-to-end run of a failing report yet |
 | E-db189f56 | 2026-11-02 | 117 | shipped `68eabfac` in teams 0.62.6; size S; goal gate 85 (partial: thin CPU margin, caches untested → card 119); incremental ledger store, per-tick shared bases, `view-once-<version>.sock`; 3 sessions 60 s: 4 s CPU over 62 s (~6.5%, was ~45%), 114 asks, 0 non-200; teams 1767/1768 (1 skip), mod 442/442 |
 | E-1476d4db | 2026-11-02 | 102 (settle) | shipped `608cbe82`; size S; run blocked at its report node (card 118), CLI check run by hand; manage 48/48 |
