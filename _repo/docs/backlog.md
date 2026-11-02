@@ -274,6 +274,18 @@ toasts).
 
 ### teams plugin bugs
 
+116. **One shared view server answers every session's poll; started if missing**
+    - Why: user, 2026-11-02: "view.mjs 가 여러 개 컨트롤 못해? 없으면 뜨고". After card 115 each teams
+      session still spawns `node view.mjs --once` twice every 3 s (130–166 MB each); sessions on the same
+      folder compute the same answer separately.
+    - Acceptance: one long-lived `view.mjs` process per user serves the `--once` formats over a Unix
+      socket under `~/.harness/` (one per machine: a second start finds the socket alive and exits); the
+      mod asks it with `$.http.fetch(..., { socketPath })` and spawns nothing while it answers; when the
+      socket is missing or dead the mod starts it detached once and falls back to `--once` for that tick;
+      the server caches an answer per (format, cwd, task) for one tick so N sessions on one folder cost one
+      read; it exits after 10 min with no request; the output is byte-identical to `--once` for each format
+      (test); with 3 sessions open, `ps` shows one `view.mjs` and no `--once` over 30 s (live look).
+
 115. **The teams mod polls only in a session whose folder uses teams**
     - Why: user, 2026-11-02: "view.mjs는 고아가 아니라서 정리해도 의미가 없습니다. 지워도 3초 안에 다시
       뜹니다." `teams/hooks/mod.tsx` `tick` runs every `TICK_MS` (3 s) in every interactive session and
