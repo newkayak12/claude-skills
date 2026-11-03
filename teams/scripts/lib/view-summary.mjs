@@ -16,8 +16,9 @@ const scrub = (s) => String(s || '').replace(/\S*\/(?:Users|var|tmp)\/\S*/g, '')
 const reasonLine = (s) => { const t = scrub(s); return /\s/.test(t) ? t : ''; };
 
 // The Home kanban's lane headers: one fixed short label per lane, drawn as "● label count" inside a bordered box with
-// 1 cell of padding (4 cells) and a gap before the count. The tsx draws these labels as they are. LANE_LABEL_MAX is the
-// longest label that still fits whole with a 2-digit count in a 15-cell box, narrower than any box the pane draws.
+// 1 cell of padding (4 cells) and a gap before the count. The tsx draws these as they are (the lane's `short`);
+// the lane `label` keeps its full text for the text board and the SVG. LANE_LABEL_MAX is the longest label that still
+// fits whole with a 2-digit count in a 15-cell box, narrower than any box the pane draws.
 export const LANE_KEYS = ['running', 'you', 'pending', 'done'];
 export const LANE_LABEL = { running: 'Active', you: 'On you', pending: 'Next', done: 'Done' };
 export const LANE_LABEL_MAX = 6;
@@ -25,6 +26,10 @@ export const LANE_LABEL_MAX = 6;
 export function laneBox(inner) {
   return { fit: inner >= 4 * 18, width: Math.max(14, Math.floor((inner - 3) / 4)) };
 }
+// The same geometry as a lookup the tsx indexes by `inner` (0-LANE_BOX_MAX; a wider pane reads the last entry, a box
+// that is never too wide): the lane width when the boxes fit, 0 when they do not. Node decides, the tsx only reads.
+export const LANE_BOX_MAX = 240;
+export const laneBoxes = () => Array.from({ length: LANE_BOX_MAX + 1 }, (_, inner) => { const b = laneBox(inner); return b.fit ? b.width : 0; });
 // cells left for the label in a lane header: box minus border and padding (4), the dot and its space (2), the space and count
 export const laneHeaderRoom = (width, count) => width - 4 - 2 - 1 - String(count).length;
 
