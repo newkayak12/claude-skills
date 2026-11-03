@@ -13,7 +13,8 @@
 process.env.TEAMS_RUNS_DIR ??= 'off';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync, realpathSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:net';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -287,6 +288,77 @@ test('a record whose pid is alive but is not a viewer, and whose port is closed,
   assert.equal(rec.port, v.port, 'and the new port');
   assert.ok(await waitAnswer(v.port), 'the new viewer answers');
   rmSync(dir, { recursive: true, force: true });
+});
+
+// A stub teams viewer: a process whose command line is `<root>/scripts/view.mjs --tasks-dir <dir> --port <n>`
+// (so it reads as a viewer to `ps` and to viewerPids). `mode` 'slow' listens and answers every
+// request after `delayMs`; 'refuse' stays alive and never listens. Its pid is recorded in
+// <dir>/.view.json the way ensureViewer would have written it.
+function stubViewer(dir, port, mode, delayMs = 3500) {
+  const stubRoot = scratch();
+  mkdirSync(join(stubRoot, 'scripts'));
+  const script = join(stubRoot, 'scripts', 'view.mjs');
+  writeFileSync(script, mode === 'slow'
+    ? `import { createServer } from 'node:http';
+       const port = Number(process.argv[process.argv.indexOf('--port') + 1]);
+       createServer((req, res) => setTimeout(() => { res.writeHead(200, { 'content-type': 'application/json' }); res.end('{}'); }, ${delayMs})).listen(port, '127.0.0.1');`
+    : 'setInterval(() => {}, 1000);');
+  const child = spawn(process.execPath, [script, '--tasks-dir', dir, '--port', String(port)], { stdio: 'ignore' });
+  spawned.push(child.pid);
+  writeFileSync(viewRecordPath(dir), JSON.stringify({ pid: child.pid, port, started_at: 1 }, null, 2));
+  return { child, stubRoot };
+}
+
+const fingerprint = (p) => ({ sha: createHash('sha256').update(readFileSync(p)).digest('hex'), mtime: statSync(p).mtimeMs });
+
+test('a live viewer that answers slower than the reuse probe is reused: two opens, one port, two /E- paths, one process, record untouched', async () => {
+  const dir = scratch();
+  const port = await closedPort();
+  const { stubRoot } = stubViewer(dir, port, 'slow');
+  try {
+    assert.ok((await viewerPids(dir)).size === 1, 'fixture: exactly the stub is running for the root');
+    const before = fingerprint(viewRecordPath(dir));
+    await new Promise((r) => setTimeout(r, 30));
+    const one = await viewer(dir, 'E-slow1');
+    const two = await viewer(dir, 'E-slow2');
+    assert.ok(one && two, 'a slow viewer is still a viewer');
+    assert.equal(one.started, false);
+    assert.equal(two.started, false);
+    assert.equal(one.port, port);
+    assert.equal(two.port, port, 'the same port both times');
+    assert.equal(one.pid, two.pid);
+    assert.equal(one.url, `http://127.0.0.1:${port}/E-slow1`);
+    assert.equal(two.url, `http://127.0.0.1:${port}/E-slow2`, 'a different ticket is a different path, not a different server');
+    assert.equal((await viewerPids(dir)).size, 1, 'the process list shows one viewer for the root');
+    assert.deepEqual(fingerprint(viewRecordPath(dir)), before, '.view.json is never rewritten while its pid lives (bytes and mtime)');
+  } finally {
+    killAll();
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(stubRoot, { recursive: true, force: true });
+  }
+});
+
+test('a live viewer whose port refuses connections is reused as is: the record stays unchanged and nothing is spawned', async () => {
+  const dir = scratch();
+  const port = await closedPort();
+  const { stubRoot } = stubViewer(dir, port, 'refuse');
+  try {
+    const before = fingerprint(viewRecordPath(dir));
+    await new Promise((r) => setTimeout(r, 30));
+    for (const key of ['E-ref1', 'E-ref2', 'E-ref3']) {
+      const v = await viewer(dir, key);
+      assert.ok(v, 'the recorded viewer is returned, not null');
+      assert.equal(v.started, false);
+      assert.equal(v.port, port);
+      assert.equal(v.url, `http://127.0.0.1:${port}/${key}`);
+    }
+    assert.equal((await viewerPids(dir)).size, 1, 'no second viewer was spawned');
+    assert.deepEqual(fingerprint(viewRecordPath(dir)), before, 'bytes and mtime of .view.json are unchanged');
+  } finally {
+    killAll();
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(stubRoot, { recursive: true, force: true });
+  }
 });
 
 test('a record whose port answers is reused', async () => {
