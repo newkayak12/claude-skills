@@ -174,7 +174,7 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
       quality needs drawn sprite assets (procedural canvas gives agent-town level, not the image); not pulled
       until the person decides where the art comes from.
 
-94. **teams-status shows the numbers that explain a run: attempts and judge scores, cost and time, stalls, quality** — three defects fixed in E-db7e3226 (`15a95196`, plugin test 411/411, teams 1638 pass); awaiting the user's approval of the 190/110 captures; rest in E-96699aa4 (approval waived, user 2026-11-03)
+94. **teams-status shows the numbers that explain a run: attempts and judge scores, cost and time, stalls, quality** — three defects fixed in E-db7e3226 (`15a95196`, plugin test 411/411, teams 1638 pass); awaiting the user's approval of the 190/110 captures; rest in E-bf0527b7 (approval waived, user 2026-11-03)
     - Why: user, 2026-10-28: "teams-status 조금 더 의미있는 지표 노출해서 개선해야겠더라". In E-8b9c417d the
       pane showed P2 "failed" three times; why (judge 88/90, "belongs to P3") was only in the ledger.
     - Acceptance (computed in node, `view-summary.mjs`; the mod renders it): per STORY attempt n/max, last judge
@@ -191,7 +191,7 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
       (lanes 15 cells wide; pre-existing); an unexplained `order` line under a STORY at both widths (fixture
       deleted, cause unverified); status words `working` / `needs you` are an assumed default until approved.
 
-84. **The teams pane is a real dashboard on every surface: Ink on the terminal, Svg on desktop, mobile and vscode** — both terminal defects fixed `7e051a4b` (E-8b9c417d; live look 2026-10-28: Plan ✔, no digits after 2 1 0); left: phone/desktop look; design doc in E-96699aa4
+84. **The teams pane is a real dashboard on every surface: Ink on the terminal, Svg on desktop, mobile and vscode** — both terminal defects fixed `7e051a4b` (E-8b9c417d; live look 2026-10-28: Plan ✔, no digits after 2 1 0); left: phone/desktop look; design doc in E-bf0527b7
     - Why: user, 2026-10-26, after `/teams-status` over Remote Control showed a 42-row text dump on the phone:
       "이따위로 나올거면 뭣하러 하냐", "Claude desktop app에서 UI 그릴 수 있는걸로 아는데", "mobile도 그렇고",
       "씨발 못해? terminal도, claude app, desktop도". References given: a Grafana-style metrics board
@@ -235,7 +235,7 @@ not a read — each worker's state is one icon and colour (spinner while acting;
 Cards 40–43 and 50 shipped and approved 2026-10-22 (harness, teams, graph, session panes; failure
 toasts).
 
-49. **Mods put subagent-to-subagent communication to work** — rest in E-96699aa4
+49. **Mods put subagent-to-subagent communication to work** — rest in E-bf0527b7
     - Why: user, 2026-10-17: "mod 추가로 subagent 간 의사소통하는거 더 적극적으로 활용할 수 있는 방법
       찾아보자". Today teams workers are separate `claude -p` drivers that hand work over only through
       files (ledger, reports); the session sees none of it live, and workers cannot ask each other.
@@ -263,7 +263,12 @@ toasts).
 ### teams plugin bugs
 
 
-113. **The web viewer a `tm_open` starts exits when its task is done** — in E-96699aa4
+113. **The web viewer a `tm_open` starts exits when its task is done** — in E-bf0527b7 (E-96699aa4 cancelled in PLAN to pin the design)
+   - Decided 2026-11-03, user: "포트가 아니라 티켓 번호가 다르면 될거 같은데", "저렇게 동작하게 변경해버려" —
+     one viewer per tasks root, tickets by path `/E-<ticket>`; a live recorded pid is reused, never replaced.
+   - Seen twice 2026-11-03 (teams 0.62.5): tm_opens got 7431 then 52309 (7431 orphaned, `.view.json`
+     overwritten); after 7431 was stopped, the next tm_open spawned 7431 again while 52309 was alive and
+     answering in 0.01 s — so the reuse check fails without load; cause in `ensureViewer` unverified.
    - Why: 2026-11-01, this session (MCP on teams 0.61.4): eight `view.mjs --tasks-dir ~/.harness/tasks
      --port N` servers, one per `tm_open` (ports match each `view_url`), were still running 4–5 h later,
      each at 80–90% CPU, long after their tasks ended; load 15 on 12 cores. Killed by hand. Unverified
