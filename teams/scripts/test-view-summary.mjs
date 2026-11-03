@@ -304,6 +304,18 @@ test('metrics: a reject at or above the threshold carries the deciding gap, scru
   assert.equal(story(metrics(m, { now: NOW }), 'P2').judge.gap, null);
 });
 
+// card 94 rest, the stray `order` line. The pane's line 2 under a STORY is `judge.reason` (or the gap) printed as it
+// comes: teams-draw.tsx storyCells `note: j?.gap ? gapWord(..) : j?.reason ? oneLine(j.reason) : ''`, drawn by mod.tsx
+// (`r.note === '' ? [] : [...]`). Only a gap carries a label ("own gap: ..."); a reason is bare. view-summary.mjs
+// metrics() `reason: scrub(j.reason) || null` lets a one-word reason through, so `order` prints alone and says nothing.
+test('order line: a one-word judge reason is no note, so no bare `order` line shows under a STORY; a sentence stays', () => {
+  const at = (reason) => story(metrics(withTelemetry({ judge: { P2: { score: 85, reason, attempt: 3, verdict: 'reject' } } }), { now: NOW }), 'P2').judge;
+  assert.equal(at('order').reason, null, 'one bare word: the pane would print `order` alone under the STORY');
+  assert.equal(at('accept:P2:3 order').reason, null, 'what is left after the node id is scrubbed is one bare word');
+  assert.equal(at('the order of the footer rows is not cleared').reason, 'the order of the footer rows is not cleared');
+  assert.equal(at('order').score, 85, 'the score still shows');
+});
+
 test('card94 own cause: 93 vs 90 reject whose current accept node is a pending retry still shows the judged node\'s gap; below threshold null', () => {
   const retry = {
     ...card('P2', 'module b', 'running', { ticket_key: 'E-3a3a3bb5/P2', attempt: 3 }),
