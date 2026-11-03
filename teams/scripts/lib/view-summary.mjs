@@ -14,6 +14,20 @@ const scrub = (s) => String(s || '').replace(/\S*\/(?:Users|var|tmp)\/\S*/g, '')
 // A judge reason is a line under a STORY only when it says something: one bare word (what is left of "accept:P2:3 order"
 // once the node id is scrubbed) reads as a stray line, so it is dropped. The score still shows. (card 94 rest)
 const reasonLine = (s) => { const t = scrub(s); return /\s/.test(t) ? t : ''; };
+
+// The Home kanban's lane headers: one fixed short label per lane, drawn as "● label count" inside a bordered box with
+// 1 cell of padding (4 cells) and a gap before the count. The tsx draws these labels as they are. LANE_LABEL_MAX is the
+// longest label that still fits whole with a 2-digit count in a 15-cell box, narrower than any box the pane draws.
+export const LANE_KEYS = ['running', 'you', 'pending', 'done'];
+export const LANE_LABEL = { running: 'Active', you: 'On you', pending: 'Next', done: 'Done' };
+export const LANE_LABEL_MAX = 6;
+// the box geometry for a pane of `inner` cells: boxes only from 4 x 18 cells, else one lane per line
+export function laneBox(inner) {
+  return { fit: inner >= 4 * 18, width: Math.max(14, Math.floor((inner - 3) / 4)) };
+}
+// cells left for the label in a lane header: box minus border and padding (4), the dot and its space (2), the space and count
+export const laneHeaderRoom = (width, count) => width - 4 - 2 - 1 - String(count).length;
+
 // A node parked on a person (a node state word, not a ledger event).
 export const waitingNode = (n) => !!n && n.state === 'waiting_human';
 

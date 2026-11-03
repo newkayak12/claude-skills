@@ -846,7 +846,7 @@ export const register: Register = on => {
           {lanesFit && <Box marginTop={1} columnGap={1}>
             {dm.lanes.map(l => (
               <Box key={`lane-${l.key}`} width={laneW} flexDirection="column" borderStyle="round" borderColor="inactive" paddingX={1}>
-                <Text><Text color={LANE_TINT[l.key]}>● </Text><Text bold>{clipText(l.label, laneW - 6 - String(l.count).length)}</Text><Text dimColor>{` ${l.count}`}</Text></Text>
+                <Text><Text color={LANE_TINT[l.key]}>● </Text><Text bold>{l.label}</Text><Text dimColor>{` ${l.count}`}</Text></Text>
                 {l.cards.map((c, j) => <Text key={`lc-${j}`} color={c.failed ? 'error' : undefined}>{clipText(`${c.failed ? '✘ ' : ''}${c.title}`, laneW - 4)}</Text>)}
                 {l.more > 0 && <Text dimColor>{`+${l.more}`}</Text>}
               </Box>

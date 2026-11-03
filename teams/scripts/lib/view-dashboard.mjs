@@ -2,9 +2,9 @@
 // one plain model the terminal draws as Ink, and one SVG document desktop, mobile and vscode draw.
 // No fs, no clock of its own (`now` is passed); every field the pane shows is decided here.
 
+import { LANE_KEYS, LANE_LABEL } from './view-summary.mjs';
+
 const STAGE_LABEL = { plan: 'Plan', build: 'Build', integrate: 'Integrate', qa: 'QA', gate: 'Gate', report: 'Report' };
-const LANES = ['running', 'you', 'pending', 'done'];
-const LANE_LABEL = { running: 'In progress', you: 'Needs you', pending: 'Up next', done: 'Done' };
 const LANE_MAX = 5;
 const ACTIVITY_MAX = 6;
 
@@ -14,12 +14,12 @@ const usd = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 // card stays in progress with `failed` set, so the board shows it where the work stopped.
 export function lanesOf(task) {
   const waiting = new Set(((task.you && task.you.cards) || []).map((c) => c.title));
-  const lanes = Object.fromEntries(LANES.map((k) => [k, []]));
+  const lanes = Object.fromEntries(LANE_KEYS.map((k) => [k, []]));
   for (const w of task.work || []) {
     const lane = waiting.has(w.title) ? 'you' : w.state === 'failed' ? 'running' : (lanes[w.state] ? w.state : 'pending');
     lanes[lane].push({ title: w.title, kind: w.kind, failed: w.state === 'failed', reason: w.reason || null });
   }
-  return LANES.map((key) => ({ key, label: LANE_LABEL[key], count: lanes[key].length, cards: lanes[key].slice(0, LANE_MAX), more: Math.max(0, lanes[key].length - LANE_MAX) }));
+  return LANE_KEYS.map((key) => ({ key, label: LANE_LABEL[key], count: lanes[key].length, cards: lanes[key].slice(0, LANE_MAX), more: Math.max(0, lanes[key].length - LANE_MAX) }));
 }
 
 // The run's numbers (view-summary.mjs metrics()) as plain fields; null when the task carries none.
