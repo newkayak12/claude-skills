@@ -404,17 +404,12 @@ toasts).
 
 ### write plugin
 
-114. **write:diagram themes: every role from the theme, lanes apart from the claim** — in E-16e58ff6
-    - Why: seen 2026-11-01 in E-eb930c1a's renders (fig-13-1 under a fictional brand theme): the release
-      edge stays green, a colour the theme does not have; lane A takes the theme's accent, so lane A and
-      the claim boxes share one hue. Under a one-ink print theme the roles differ by shade and line style
-      only (stated, not a defect). User approved the renders ("굿").
-    - Acceptance: with a theme given, no role draws a default hue (a test greps the themed SVG for the
-      default palette's hex); lanes take `hues` before the accent, and a theme whose hues run out says so;
-      `node write/skills/diagram/scripts/test-diagram.mjs` passes with the count reported.
-    - Carried from card 100 (closed 2026-11-01, user approved the theme renders): E-f673c006 left `check`
-      testing only the first line of a wrapped resume note, so an edge through its second line passes;
-      whether a later Sprint fixed it is unverified — add a test that proves it either way.
+122. **write:diagram tests take under a minute — `test-diagram.mjs` is 148 s, one headless Chrome per figure**
+    - Why: 2026-11-03, card 114's merged tree: 118 tests in 147.8 s (user 182 s, sys 86 s); E-16e58ff6's
+      P1/P2 drivers sat 20+ min in it and were flagged stalled, and its Chrome spawns pushed the load to
+      ~80 with other Sprints. Card 120 (speed) covers write later; this is the measured case.
+   - Acceptance: one browser reused across a run (or renders batched); `node write/skills/diagram/scripts/test-diagram.mjs`
+     under 60 s with the same test count, timed before and after.
 
 ### knowledge plugin
 
@@ -472,6 +467,7 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-16e58ff6 | 2026-11-03 | 114 | shipped `0cdfee82` by hand (task blocked): P1 accepted; P2 rejected 3× only for touching P1's test-diagram.mjs (pixel window 420x40→420x100); merged tree test-diagram 118/118, check-copies ok, validate 15/15; 2 usage-limit parks; test-diagram 148 s (card 122) |
 | E-c4d76843 | 2026-11-02 | 119 | shipped `cf910d02`; size S; goal gate 94; cache/memo tests 2/2 (falsified), `events` with an old `--since` 2.9 s → 0.18 s byte-identical; repo-rules refuses inline-script repo writes (263 ok); teams 1778/1779 (1 skip); a perl `>>` false positive fixed after the gate; `--cwd` now includes a task whose collect fails but task.json reads (untested) |
 | E-3a668d18 | 2026-11-02 | 118 | shipped in teams 0.62.7; size S; goal gate 91; `retryReport` reruns only a failed report (avoid_executors, different_vendor), size-S driver not respawned on an unchanged blocked run (`harness_run_stuck`), tm_retry retries it; red-first tests; teams 1776/1777 (1 skip); no live end-to-end run of a failing report yet |
 | E-db189f56 | 2026-11-02 | 117 | shipped `68eabfac` in teams 0.62.6; size S; goal gate 85 (partial: thin CPU margin, caches untested → card 119); incremental ledger store, per-tick shared bases, `view-once-<version>.sock`; 3 sessions 60 s: 4 s CPU over 62 s (~6.5%, was ~45%), 114 asks, 0 non-200; teams 1767/1768 (1 skip), mod 442/442 |
