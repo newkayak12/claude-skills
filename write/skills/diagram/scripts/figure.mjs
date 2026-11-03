@@ -125,7 +125,7 @@ function darkMaps(PL, L, PD, D, roles) {
     [PL.guide, PD.guide, 'guide'], [L.surface, D.surface, 'surface'], [L.ink, D.ink, 'ink'], [L.muted, D.muted, 'muted'],
     ...Object.keys(PL.fills).map((k) => [PL.fills[k], PD.fills[k], k === 'paper' ? 'box' : `${k} fill`]),
     ...Object.keys(PL.edges).map((k) => [PL.edges[k].color, PD.edges[k], `${k} edge`]),
-    ...L.lanes.flatMap((r, i) => [[r.stroke, D.lanes[i].stroke, `lane ${'AB'[i] || i + 1} stroke`], [r.fill, D.lanes[i].fill, `lane ${'AB'[i] || i + 1} fill`]]),
+    ...L.lanes.flatMap((r, i) => [[r.stroke, D.lanes[i].stroke, `lane ${'ABC'[i] || i + 1} stroke`], [r.fill, D.lanes[i].fill, `lane ${'ABC'[i] || i + 1} fill`]]),
     ...['cause', 'wait', 'release', 'context'].flatMap((n) => [[L[n].stroke, D[n].stroke, `${n} stroke`], [L[n].fill, D[n].fill, `${n} fill`]]),
     ...L.ramp.map((r, i) => [r.fill, D.ramp[i].fill, `ramp step ${i + 1}`]),
     // a layout holds at most 4 strips (checked), so the chain is the ramp or its 4-step interpolation
@@ -168,31 +168,35 @@ export function darkSvg(svg, dk = DEFAULT_DARK) {
 }
 // ---------- theme: the document's own colours, expanded onto the meaning roles (card 100) ----------
 //
-// A theme is {light:{ink, paper, box?, muted, accent, line?, data?, fail?, hues:[...]}, dark?:{same}}. It comes from the
+// A theme is {light:{ink, paper, box?, muted, accent?, line?, data?, fail?, hues:[...]}, dark?:{same}}. It comes from the
 // IR's inline "theme" object, from --theme <file> (JSON, or a .css file read by readThemeCss) or from opts.theme; when
 // both the IR and --theme give one, --theme wins. With no theme nothing below runs and the output is the default's.
+// The accent may be left out when the half has a hue: the claim then takes hue 1 (and a warning says so).
 //
 // readThemeCss reads the custom properties of a stylesheet's :root{--...} block (several :root blocks merge, as the
 // cascade does). Token -> theme key:
 //   --bg paper (page)   --fg ink   --muted   --accent   --box node fill, default --bg   --line default --fg
 //   --hue-1..n hues, no gap   --data, --fail optional edge hues
 // A value is #rgb, #rrggbb, rgb() or hsl(), or var(--x) of the same :root; a named colour, a missing required token
-// (--bg --fg --muted --accent), a var() that does not resolve or loops, and a gap in --hue-n are refused naming the
-// token. The dark half is the :root of an @media (prefers-color-scheme: dark) block or of a [data-theme=dark] rule,
-// laid over the light tokens; with none the theme is light-only and no dark SVG or dark HTML block is written.
+// (--bg --fg --muted, and --accent when there is no --hue-1), a var() that does not resolve or loops, and a gap in
+// --hue-n are refused naming the token. The dark half is the :root of an @media (prefers-color-scheme: dark) block or
+// of a [data-theme=dark] rule, laid over the light tokens; with none the theme is light-only and no dark SVG or dark
+// HTML block is written.
 //
 // Expansion, per half (expandHalf). L* is CIE lightness, "mix" is sRGB interpolation:
-//   hues      supply = accent, hue 1, hue 2 ...; lane A, lane B, cause, wait, release take them in that order; a role
-//             past the supply takes the accent hue turned ROT degrees per role (saturation at least ROT_MIN_S, so a
-//             grey accent still gives tints that tell apart). Cause is a solid heavy edge, the wait
-//             a filled band, the release a dashed edge, so they stay apart by geometry when two share a hue.
+//   hues      supply = hue 1, hue 2 ..., accent. The roles the figure draws (hueRolesOf: lane A, lane B, lane C, cause,
+//             wait, release, in that order) take the supply in turn, so lanes take hues before the accent. A role past
+//             the supply takes the supply again from its start: no hue the theme lacks is made up, and every such
+//             role is named in a warning (themeWarnings). A role the figure does not draw takes no hue from the supply.
+//             Cause is a solid heavy edge, the wait a filled band, the release a dashed edge, so they stay apart by
+//             geometry when two share a hue. A fourth lane wraps onto lane A's colours.
 //   stroke    the hue, mixed toward ink until it reaches 3:1 on paper
 //   fill      the hue, mixed toward paper to a fixed L* (90 on a light page, 24 on a dark one, never within 4 L* of paper)
 //   ink       the theme ink, on every role fill
 //   edges     data takes release's hue (or --data), fail takes cause's (or --fail), mixed toward ink to 4.5:1 on paper
 //             because the wait label is written in the fail colour; sync and async are --line
 //   context   muted for ink; its stroke and fill are muted mixed toward paper (3:1 stroke, fixed-L* fill)
-//   claim     the accent mixed toward ink until paper reads on it at 4.5:1 and it is 64 L* from box; soft, mid and
+//   claim     the accent (hue 1 when there is none) mixed toward ink until paper reads on it at 4.5:1 and it is 64 L* from box; soft, mid and
 //             strong are evenly spaced in L* between box and it, so the five fills differ by >= 15 L* and the claim
 //             fill stands out from the paper most
 //   ramp      the claim fill, then it mixed toward paper 55% and 85% (the pointer hue is the claim fill)
@@ -204,7 +208,7 @@ export function darkSvg(svg, dk = DEFAULT_DARK) {
 export class ThemeError extends Error {
   constructor(errs) { super(errs.join('\n')); this.errs = errs; }
 }
-const ROT = 137.5, ROT_MIN_S = 0.3, FILL_L = { light: 90, dark: 24 }, RAMP_MIX = [0.55, 0.85], SPACE = 15, CLAIM_GAP = 4 * SPACE + 4;
+const FILL_L = { light: 90, dark: 24 }, RAMP_MIX = [0.55, 0.85], SPACE = 15, CLAIM_GAP = 4 * SPACE + 4;
 // Limits on what a theme file may ask of the reader; a theme past one is refused with one line, never walked.
 // MAX_VALUE_LEN bounds a token's raw and resolved text, so a var() fan-out cannot double its way to a heap abort;
 // MAX_VAR_DEPTH bounds the var() chain (and the nesting of @media blocks); MAX_ERRS bounds the lines of a refusal.
@@ -216,7 +220,8 @@ const capErrs = (errs) => (errs.length > MAX_ERRS ? [...errs.slice(0, MAX_ERRS),
 const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
 const hexOf = (r, g, b) => '#' + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
 const mixHex = (a, b, f) => { const [p, q] = [rgbOf(a), rgbOf(b)]; return hexOf(...p.map((v, i) => v + (q[i] - v) * f)); };
-const bump = (hex) => { const [r, g, b] = rgbOf(hex); return hexOf(r, g, b < 255 ? b + 1 : b - 1); };
+// the k-th blue step off hex: up to 255, then down from the start; no two k give one colour, so a claim always ends
+const bump = (hex, k = 1) => { const [r, g, b] = rgbOf(hex); return hexOf(r, g, b + k <= 255 ? b + k : b - (k - (255 - b))); };
 const lstar = (hex) => {
   const lin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
   const y = rgbOf(hex).reduce((a, v, k) => a + lin(v / 255) * [0.2126, 0.7152, 0.0722][k], 0);
@@ -226,12 +231,6 @@ function hslHex(h, s, l) {
   const hh = ((h % 360) + 360) % 360, a = s * Math.min(l, 1 - l);
   const f = (n) => { const k = (n + hh / 30) % 12; return (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))) * 255; };
   return hexOf(f(0), f(8), f(4));
-}
-function rotateHue(hex, deg) {
-  const [r, g, b] = rgbOf(hex).map((v) => v / 255), mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
-  const h = d ? (mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4) * 60 : 0;
-  // a grey accent has no hue to turn: the turned hue gets at least ROT_MIN_S saturation so the roles still tell apart
-  return hslHex(h + deg, Math.max(d ? d / (1 - Math.abs(2 * l - 1)) : 0, ROT_MIN_S), l);
 }
 // #rgb, #rrggbb, rgb() or hsl() as #rrggbb; null for anything else (a named colour included)
 export function parseColour(value) {
@@ -260,7 +259,9 @@ export function normalizeTheme(raw) {
   const half = (h, where) => {
     if (!h || typeof h !== 'object' || Array.isArray(h)) { errs.push(`${where}: give an object of ink, paper, muted, accent and hues`); return null; }
     const out = {};
-    for (const k of ['ink', 'paper', 'muted', 'accent']) { if (h[k] == null) errs.push(`${where}.${k}: missing - the theme needs it`); else out[k] = colour(h[k], `${where}.${k}`); }
+    // the accent may be left out when a hue can stand in for it (the claim then takes hue 1)
+    const spare = Array.isArray(h.hues) && h.hues.length > 0;
+    for (const k of ['ink', 'paper', 'muted', 'accent']) { if (h[k] == null) { if (k !== 'accent' || !spare) errs.push(`${where}.${k}: missing - the theme needs it`); } else out[k] = colour(h[k], `${where}.${k}`); }
     for (const k of ['box', 'line', 'data', 'fail']) if (h[k] != null) out[k] = colour(h[k], `${where}.${k}`);
     if (h.hues != null && !Array.isArray(h.hues)) errs.push(`${where}.hues: give a list of colours`);
     if (Array.isArray(h.hues) && h.hues.length > MAX_HUES) errs.push(`${where}.hues: ${h.hues.length} hues - at most ${MAX_HUES} are read`);
@@ -347,7 +348,7 @@ function readCss(css) {
     let last = 0;
     for (const k of Object.keys(map)) { const m = /^hue-(\d+)$/.exec(k); if (m) last = Math.max(last, +m[1]); }
     if (last > MAX_HUES) throw new ThemeLimit(`${tag}--hue-${last}: at most ${MAX_HUES} hues are read (--hue-1 to --hue-${MAX_HUES})`);
-    for (const [key, name] of Object.entries(CSS_TOKEN)) { const hex = read(name, CSS_WHAT[key]); if (hex) out[key] = hex; }
+    for (const [key, name] of Object.entries(CSS_TOKEN)) { const hex = read(name, key === 'accent' && last >= 1 ? undefined : CSS_WHAT[key]); if (hex) out[key] = hex; }
     out.hues = [];
     for (let n = 1; n <= last; n++) {
       if (map[`hue-${n}`] === undefined) errs.push(`${tag}--hue-${n}: missing - hues run --hue-1 to --hue-${last} with no gap`);
@@ -392,10 +393,20 @@ function along(a, b, target) {
   return mixHex(a, b, (lo + hi) / 2);
 }
 
-function expandHalf(h) {
+// The roles that take a hue of the theme, in the order they take them; a figure draws some of them (hueRolesOf).
+// Only the timeline draws any: the lanes (three roles, a fourth lane wraps onto lane A), the cause edge, the wait band
+// and the release edge.
+const HUE_ROLES = ['lane A', 'lane B', 'lane C', 'cause', 'wait', 'release'];
+export function hueRolesOf(ir) {
+  if (!ir || typeof ir !== 'object' || ir.type !== 'timeline') return [];
+  const lanes = Array.isArray(ir.lanes) ? ir.lanes.length : 0, waits = (Array.isArray(ir.waits) ? ir.waits : []).filter((w) => w && typeof w === 'object');
+  return [...HUE_ROLES.slice(0, Math.min(lanes, 3)), ...(waits.some((w) => w.holder != null) ? ['cause'] : []), ...(waits.length ? ['wait'] : []), ...(waits.some((w) => w.resume != null) ? ['release'] : [])];
+}
+
+function expandHalf(h, drawn) {
   const { ink, paper, box, muted, accent } = h, used = new Map();
   const take = (key, hex) => { if (!used.has(hex)) used.set(hex, key); return hex; };
-  const claim = (key, hex) => { while (used.has(hex) && used.get(hex) !== key) hex = bump(hex); used.set(hex, key); return hex; };
+  const claim = (key, want) => { let hex = want; for (let k = 1; used.has(hex) && used.get(hex) !== key; k++) hex = bump(want, k); used.set(hex, key); return hex; };
   take('paper', paper); take('ink', ink); take('muted', muted); take('box', box);
   const Lp = lstar(paper), Lb = lstar(box), lightPage = Lp >= 50;
   const stroke = (hue, need = 3) => reach(hue, ink, (c) => contrastRatio(c, paper) >= need);
@@ -404,12 +415,16 @@ function expandHalf(h) {
     return (lightPage ? L >= target : L <= target) ? hue : along(hue, paper, target);
   };
   const line = claim('line', h.line);
-  const supply = [accent, ...h.hues], hueAt = (r) => (r < supply.length ? supply[r] : rotateHue(accent, ROT * (r - supply.length + 1)));
-  const role = (key, hue) => ({ stroke: claim(`${key}.stroke`, stroke(hue)), fill: claim(`${key}.fill`, tint(hue)), ink });
-  const lanes = [role('laneA', hueAt(0)), role('laneB', hueAt(1))], cause = role('cause', hueAt(2)), wait = role('wait', hueAt(3)), release = role('release', hueAt(4));
+  // The drawn roles take the supply in turn; one past it starts the supply again, so every hue is the theme's own.
+  // A role not drawn takes the place its own order gives it, for the data and fail edges that follow cause and release.
+  const supply = [...h.hues, ...(accent ? [accent] : [])], order = HUE_ROLES.filter((r) => drawn.includes(r));
+  const hueAt = (name) => supply[(order.includes(name) ? order.indexOf(name) : HUE_ROLES.indexOf(name)) % supply.length];
+  const role = (name) => { const key = name.replace(' ', ''), hue = hueAt(name); return { stroke: claim(`${key}.stroke`, stroke(hue)), fill: claim(`${key}.fill`, tint(hue)), ink }; };
+  const lanes = ['lane A', 'lane B', 'lane C'].map(role), cause = role('cause'), wait = role('wait'), release = role('release');
   const context = { stroke: claim('context.stroke', reach(mixHex(muted, paper, 0.4), muted, (c) => contrastRatio(c, paper) >= 3)), fill: claim('context.fill', tint(muted)), ink: muted };
-  const data = h.data ? claim('data', stroke(h.data)) : release.stroke, fail = claim('fail', stroke(h.fail || hueAt(2), 4.5));
-  const claimFill = reach(accent, ink, (c) => contrastRatio(paper, c) >= 4.5 && Math.abs(lstar(c) - Lb) >= CLAIM_GAP);
+  const data = h.data ? claim('data', stroke(h.data)) : release.stroke, fail = claim('fail', stroke(h.fail || hueAt('cause'), 4.5));
+  const claimHue = accent || h.hues[0];
+  const claimFill = reach(claimHue, ink, (c) => contrastRatio(paper, c) >= 4.5 && Math.abs(lstar(c) - Lb) >= CLAIM_GAP);
   const step = (i) => along(box, claimFill, Lb + ((lstar(claimFill) - Lb) * i) / 4);
   const fills = { paper: box, soft: claim('soft', step(1)), mid: claim('mid', step(2)), strong: claim('strong', step(3)), accent: claim('accent', claimFill) };
   const ramp = [fills.accent, claim('ramp1', mixHex(fills.accent, paper, RAMP_MIX[0])), claim('ramp2', mixHex(fills.accent, paper, RAMP_MIX[1]))];
@@ -418,7 +433,19 @@ function expandHalf(h) {
     ink, muted, line, paper, guide: claim('guide', mixHex(paper, ink, 0.12)), fills,
     edges: Object.fromEntries(Object.entries(DEFAULT_PALETTE.edges).map(([k, e]) => [k, { dash: e.dash, color: colours[k] }])),
   };
-  return { pal, roles: { surface: paper, ink, muted, inkInverse: paper, lanes, cause, wait, release, context, ramp: ramp.map((fill) => ({ fill })) } };
+  return {
+    pal, roles: { surface: paper, ink, muted, inkInverse: paper, lanes, cause, wait, release, context, ramp: ramp.map((fill) => ({ fill })) },
+    accent: stroke(claimHue), hues: h.hues.length, drawn: order, fell: order.slice(h.hues.length), claimHue, noAccent: !accent,
+  };
+}
+
+// What a half had to settle for, as sentences: the roles the figure draws that found no hue of their own, and a claim
+// that took hue 1 for want of an accent.
+function halfWarnings(x) {
+  const out = [];
+  if (x.fell.length) out.push(`the hues ran out: the theme has ${x.hues} hue${x.hues === 1 ? '' : 's'} for the ${x.drawn.length} hue roles this figure draws - ${x.fell.join(', ')} reuse the accent or a hue already given`);
+  if (x.noAccent) out.push(`the theme has no accent, so the claim takes its first hue ${x.claimHue}`);
+  return out;
 }
 
 // Every bar below is checked on the mapped colours of one half; a miss names the pair, both hexes and the ratio.
@@ -429,7 +456,7 @@ function guardHalf(name, { pal: P, roles: R }) {
     if (r < need) errs.push(`${name} half: ${fgName} ${fg} on ${bgName} ${bg} is ${floor2(r, 2)}:1, needs ${need}:1`);
   };
   for (const [what, bg] of [['paper', P.paper], ['box', P.fills.paper]]) { bar('ink', P.ink, what, bg, 4.5); bar('muted', P.muted, what, bg, 4.5); }
-  for (const [n, r] of [['lane A', R.lanes[0]], ['lane B', R.lanes[1]], ['cause', R.cause], ['wait', R.wait], ['release', R.release], ['context', R.context]]) {
+  for (const [n, r] of [...R.lanes.map((r, i) => [`lane ${'ABC'[i]}`, r]), ['cause', R.cause], ['wait', R.wait], ['release', R.release], ['context', R.context]]) {
     bar(`${n} ink`, r.ink, `${n} fill`, r.fill, 4.5);
     bar(`${n} stroke`, r.stroke, 'paper', P.paper, 3);
   }
@@ -458,9 +485,11 @@ function guardHalf(name, { pal: P, roles: R }) {
 const darkPalette = (p) => ({ ...p, edges: Object.fromEntries(Object.entries(p.edges).map(([k, e]) => [k, e.color])), hi: DARK_PALETTE.hi, lo: DARK_PALETTE.lo });
 
 // A normalized, expanded, guarded theme: what the renderers swap in (PALETTE, ROLES, onAccent), the dark substitution
-// (null for a light-only theme) and the CSS variables of the HTML page. Throws ThemeError, naming the failing pair.
-export function themeContext(raw) {
-  const theme = normalizeTheme(raw), L = expandHalf(theme.light), D = theme.dark ? expandHalf(theme.dark) : null;
+// (null for a light-only theme), the CSS variables of the HTML page and `warnings` (string[], [] when no role fell back).
+// `drawn` is the hue roles of the figure (hueRolesOf); with none given every hue role counts as drawn. Throws ThemeError,
+// naming the failing pair.
+export function themeContext(raw, drawn = HUE_ROLES) {
+  const theme = normalizeTheme(raw), L = expandHalf(theme.light, drawn), D = theme.dark ? expandHalf(theme.dark, drawn) : null;
   const errs = [...new Set([...guardHalf('light', L), ...(D ? guardHalf('dark', D) : [])])];
   if (errs.length) throw new ThemeError(errs);
   const roles = { light: L.roles, dark: D && D.roles };
@@ -473,8 +502,10 @@ export function themeContext(raw) {
       throw new ThemeError([`light half: does not map one-to-one onto the dark half - ${pair} are both ${c.light}, but the dark set gives ${c.a.role} ${c.a.dark} and ${c.b.role} ${c.b.dark} - give the light half ${/^[aeiou]/.test(c.b.role) ? 'an' : 'a'} ${c.b.role} that differs from its ${c.a.role}`]);
     }
   }
-  const vars = (x) => ({ bg: x.pal.paper, fg: x.pal.ink, muted: x.pal.muted, box: x.pal.fills.paper, line: x.pal.line, accent: x.roles.lanes[0].stroke, data: x.pal.edges.data.color, fail: x.pal.edges.fail.color, group: x.pal.fills.soft });
-  return { theme, PALETTE: L.pal, ROLES: roles, onAccent: L.roles.inkInverse, dark, vars: { light: vars(L), dark: D ? vars(D) : null } };
+  const vars = (x) => ({ bg: x.pal.paper, fg: x.pal.ink, muted: x.pal.muted, box: x.pal.fills.paper, line: x.pal.line, accent: x.accent, data: x.pal.edges.data.color, fail: x.pal.edges.fail.color, group: x.pal.fills.soft });
+  // the dark half speaks only where it differs from the light half
+  const warnings = halfWarnings(L), darkOnly = D ? halfWarnings(D).filter((m) => !warnings.includes(m)).map((m) => `dark half: ${m}`) : [];
+  return { theme, PALETTE: L.pal, ROLES: roles, onAccent: L.roles.inkInverse, dark, vars: { light: vars(L), dark: D ? vars(D) : null }, warnings: [...warnings, ...darkOnly] };
 }
 
 // The renderers read PALETTE, ROLES and ON_ACCENT as they are while one build runs; this is the only place they change.
@@ -489,7 +520,7 @@ const inTheme = (b, fn) => (b.theme ? withTheme(b.theme, fn) : fn());
 function themeOf(ir, opts) {
   if (opts.theme == null && ir.theme == null) return null;
   if (opts.theme == null && (typeof ir.theme !== 'object' || Array.isArray(ir.theme))) throw new ThemeError(['"theme" in the IR must be an inline object {light:{ink, paper, muted, accent, hues}, dark?:{...}} - pass a file with --theme']);
-  return themeContext(opts.theme != null ? opts.theme : ir.theme);
+  return themeContext(opts.theme != null ? opts.theme : ir.theme, hueRolesOf(ir));
 }
 
 // The style layer: one corner radius, two stroke weights, a three-size type scale. The claim's
@@ -1683,7 +1714,8 @@ for (const [type, t] of Object.entries(BOOK_TYPES)) {
 
 // ---------- build: validate -> lay out -> measure ----------
 
-// With a theme the build runs under it and the result carries it (`theme`), so toSvg and darkSvg run under it too.
+// With a theme the build runs under it and the result carries it (`theme`), so toSvg and darkSvg run under it too, and
+// its `warnings` (the theme's, once the IR is known to draw: a figure that does not validate has none).
 function build(ir, opts = {}) {
   let ctx = null;
   if (ir && typeof ir === 'object' && !Array.isArray(ir)) {
@@ -1691,7 +1723,7 @@ function build(ir, opts = {}) {
   }
   if (!ctx) return buildPlain(ir, opts);
   const b = withTheme(ctx, () => buildPlain(ir, opts));
-  return b.c ? { ...b, theme: ctx } : b;
+  return b.c ? { ...b, theme: ctx, warnings: ctx.warnings } : b;
 }
 
 function buildPlain(ir, opts) {
@@ -1715,6 +1747,9 @@ function buildPlain(ir, opts) {
 }
 
 export const checkFigure = (ir, opts) => build(ir, opts).errs;
+// What the theme could not give the figure: the same string[] writeFigure returns as `warnings`, [] with no theme, with
+// nothing fallen back or for a figure that is refused. It writes nothing to stdout or stderr; the caller reports.
+export const figureWarnings = (ir, opts) => build(ir, opts).warnings || [];
 // The laid-out geometry records (texts, shapes, edges) the check measures; null for an IR that does not validate.
 export const figureItems = (ir, opts) => { const b = build(ir, opts); return b.c ? b.c.items : null; };
 
@@ -1862,10 +1897,11 @@ export function rasterize(svgPath, W, H, pngPath, env = process.env) {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
-// <base>.svg + <base>.png, or nothing: a refused figure leaves the previous pair as it was.
+// <base>.svg + <base>.png, or nothing: a refused figure leaves the previous pair as it was. `warnings` is figureWarnings'
+// string[] on every return, for the caller to report (nothing is printed here).
 export function writeFigure(ir, base, opts = {}) {
-  const b = build(ir, opts);
-  if (b.errs.length) return { code: 1, msg: b.errs.map((e) => `- ${e}`).join('\n') };
+  const b = build(ir, opts), warnings = b.warnings || [];
+  if (b.errs.length) return { code: 1, msg: b.errs.map((e) => `- ${e}`).join('\n'), warnings };
   const svgPath = `${base}.svg`, pngPath = `${base}.png`;
   const light = inTheme(b, () => toSvg(ir, b)), darkPath = `${base}.dark.svg`;
   atomicWrite(svgPath, light);
@@ -1875,8 +1911,8 @@ export function writeFigure(ir, base, opts = {}) {
   if (!noDark) atomicWrite(darkPath, darkSvg(light, b.theme ? b.theme.dark : undefined));
   rmSync(pngPath, { force: true }); // a stale PNG must not pass for this SVG
   const r = rasterize(svgPath, b.W, b.H, pngPath, opts.env || process.env);
-  if (r.code) return { code: r.code, msg: `${svgPath} written; ${r.msg}` };
+  if (r.code) return { code: r.code, msg: `${svgPath} written; ${r.msg}`, warnings };
   const files = noDark ? `${svgPath} ${pngPath}` : `${svgPath} ${pngPath} ${darkPath}`;
-  return { code: 0, msg: `ok ${files} (${b.W}x${b.H}, PNG ${2 * b.W}x${2 * b.H}, light)${noDark ? ` - the theme has no dark half, so ${darkPath} was not written${staleDark ? `; the existing ${darkPath} is from an earlier run, not this theme: it was left in place and is stale` : ''}` : ''} - now Read the PNG` };
+  return { code: 0, msg: `ok ${files} (${b.W}x${b.H}, PNG ${2 * b.W}x${2 * b.H}, light)${noDark ? ` - the theme has no dark half, so ${darkPath} was not written${staleDark ? `; the existing ${darkPath} is from an earlier run, not this theme: it was left in place and is stale` : ''}` : ''} - now Read the PNG`, warnings };
 }
 

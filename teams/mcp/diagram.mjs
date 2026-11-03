@@ -350,13 +350,17 @@ async function main(argv) {
   }
   // The static path (check, figure) and the book types: measured with the embedded font.
   fig = fig || await import('./figure.mjs');
+  // A theme that runs out of hues still draws; the run says so on stderr and the exit code stays as it was.
+  const warn = (ws) => { for (const w of ws) process.stderr.write(`- ${w}\n`); };
   if (cmd === 'figure') {
     const r = fig.writeFigure(ir, out, opts);
     process.stdout.write(`${r.msg}\n`);
+    warn(r.warnings);
     return r.code;
   }
   const errs = fig.checkFigure(ir, opts);
   if (errs.length) return fail(errs);
+  if (theme) warn(fig.figureWarnings(ir, opts));
   if (cmd === 'check') { process.stdout.write('ok\n'); return 0; }
   fig.renderFigureHtmlToFile(ir, out, opts);
   process.stdout.write(`ok ${out}\n`);
