@@ -94,9 +94,7 @@ function view(w, args) {
 }
 
 // Wall-clock fields differ between runs; blank them so the golden is stable.
-// The lane `short` label and the `laneBoxes` lookup (card 94 rest) are additive fields of the dashboard model: node's
-// lane-width table is checked in test-view-summary.mjs, so the golden of the older output ignores them.
-const scrub = (s) => s.replace(/"(age_ms|day|at)":\d+/g, '"$1":0').replace(/,"laneBoxes":\[[\d,]*\]/g, '').replace(/,"short":"[^"]*"/g, '');
+const scrub = (s) => s.replace(/"(age_ms|day|at)":\d+/g, '"$1":0');
 
 const CALLS = {
   status: (w) => ['--format', 'status', '--cwd', w.cwd],
