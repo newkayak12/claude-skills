@@ -11,6 +11,9 @@ const HUMAN_STAGE = { plan: 'plan', build: 'build', integrate: 'integration', qa
 // A free-text reason may carry a path or a node id; drop both.
 const scrub = (s) => String(s || '').replace(/\S*\/(?:Users|var|tmp)\/\S*/g, '').replace(/\b[\w-]+:[\w-]+(?::\d+)+/g, '').replace(/\s+/g, ' ').trim();
 
+// A judge reason is a line under a STORY only when it says something: one bare word (what is left of "accept:P2:3 order"
+// once the node id is scrubbed) reads as a stray line, so it is dropped. The score still shows. (card 94 rest)
+const reasonLine = (s) => { const t = scrub(s); return /\s/.test(t) ? t : ''; };
 // A node parked on a person (a node state word, not a ledger event).
 export const waitingNode = (n) => !!n && n.state === 'waiting_human';
 
@@ -222,7 +225,7 @@ export function metrics(model, { now = Date.now() } = {}) {
     if (j && !stale) {
       const deciding = j.verdict === 'reject' && j.score != null && threshold != null && j.score >= threshold;
       const g = deciding && j.cause != null ? scrub(j.cause) : '';
-      judge = { score: j.score, threshold, reason: scrub(j.reason) || null, gap: g || null };
+      judge = { score: j.score, threshold, reason: reasonLine(j.reason) || null, gap: g || null };
     }
     if (maxAttempts != null) s.attempt = Math.min(s.attempt, maxAttempts);
     const { stage, rfa, ...out } = s;
