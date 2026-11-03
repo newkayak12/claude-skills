@@ -3,10 +3,10 @@
 // index) from the same fixtures; a task that goes from running to done is not served stale; a corrupt
 // index is a full read. Fixtures are temp dirs.
 // The default large-fixture test proves the index by making every finished task.json unreadable (chmod 000)
-// before the second call; the wall-clock bar (300 ms, best of 10) is opt-in via VIEW_ONCE_PERF=1.
+// before the second call; the wall-clock bar (a warm status and summary call under 200 ms, best of 15) runs
+// by default. The index key is the mtime and size of task.json and ledger.jsonl.
 //
 //   node --test teams/scripts/test-view-once-perf.mjs
-//   VIEW_ONCE_PERF=1 node --test teams/scripts/test-view-once-perf.mjs   (also run the 300 ms timing test)
 //   VIEW_ONCE_VIEW=<view.mjs> VIEW_ONCE_REGEN=1 node teams/scripts/test-view-once-perf.mjs   (rewrite goldens from that view.mjs)
 process.env.TEAMS_RUNS_DIR ??= 'off';
 process.env.TZ = 'UTC';
@@ -78,12 +78,12 @@ function small(w) {
   runningTask(w, 'aaaaaaaa-0001', w.cwd);
 }
 
-function large(w) {
+function large(w, { running = true } = {}) {
   for (let i = 0; i < 800; i++) cancelled(w, `c${String(i).padStart(7, '0')}-0001`, i % 2 ? w.cwd : w.other);
   for (let i = 0; i < 600; i++) reported(w, `d${String(i).padStart(7, '0')}-0001`, i % 2 ? w.cwd : w.other);
   for (let i = 0; i < 400; i++) stoppedDaemon(w, `e${String(i).padStart(7, '0')}-0001`, w.cwd);
   for (let i = 0; i < 200; i++) ledgerOnly(w, `f${String(i).padStart(7, '0')}-0001`);
-  runningTask(w, 'aaaaaaaa-0001', w.cwd);
+  if (running) runningTask(w, 'aaaaaaaa-0001', w.cwd);
 }
 
 // The temp root differs per run: replace it so a golden is the same text everywhere.
@@ -159,25 +159,91 @@ test('large fixture (2001 tasks): status, summary and events equal the golden by
   } finally { w.cleanup(); }
 });
 
-test('large fixture: the indexed call is under 300 ms (opt-in: VIEW_ONCE_PERF=1)', { skip: process.env.VIEW_ONCE_PERF === '1' ? false : 'wall-clock bar is opt-in: set VIEW_ONCE_PERF=1' }, () => {
+// The wall-clock bar on a warm call (the index written), by default. The full suite runs files in parallel and
+// one call can land on a busy machine, so a format is timed up to BEST_OF times, 200 ms apart, and the best
+// must be under the bound; the samples are printed as a diagnostic (best, median, worst) for the record.
+// The bound is held on 2000 finished tasks. A summary that lists a running task also counts the live driver
+// processes, which scans every task.json of the root (mcp/livecap.mjs liveProcesses): that run is timed and
+// printed with the golden's running task in, not bounded.
+const WARM_BOUND_MS = 200;
+const BEST_OF = 15;
+const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+function warmCalls(w, args, { bound, expected }) {
+  const ms = [];
+  for (let i = 0; i < BEST_OF && !(ms.length && i >= 5 && (!bound || Math.min(...ms) < bound)); i++) {
+    pause(200);
+    const at = performance.now();
+    const out = scrub(view(w, args));
+    ms.push(performance.now() - at);
+    if (expected) assert.equal(out, expected, `call ${i + 2} (index written)`);
+  }
+  const sorted = ms.sort((a, b) => a - b);
+  return { best: sorted[0], text: `best ${sorted[0].toFixed(0)} ms, median ${sorted[sorted.length >> 1].toFixed(0)} ms, worst ${sorted.at(-1).toFixed(0)} ms over ${sorted.length} warm calls` };
+}
+
+test(`2000 finished tasks: a warm --once status and summary call is under ${WARM_BOUND_MS} ms (best of ${BEST_OF})`, (t) => {
+  const w = world();
+  try {
+    large(w, { running: false });
+    for (const k of ['status', 'summary']) {
+      const args = CALLS[k](w);
+      view(w, args); // writes the index
+      const { best, text } = warmCalls(w, args, { bound: WARM_BOUND_MS });
+      t.diagnostic(`--once ${k}, 2000 finished: ${text}`);
+      assert.ok(best < WARM_BOUND_MS, `${k}: best warm call took ${best.toFixed(0)} ms, bound ${WARM_BOUND_MS} ms`);
+    }
+  } finally { w.cleanup(); }
+});
+
+test('2001 tasks with one running: the warm --once status and summary stay byte-equal to the golden, timed for the record', (t) => {
   const w = world();
   try {
     large(w);
-    const args = CALLS.status(w);
-    const first = scrub(view(w, args));
-    assert.equal(first, golden().large.status, 'first call (no index yet)');
-    // Bound 0.3 s, generous: ~9.6 s without the index on 2000+ tasks, ~0.1 s with it (mostly node start-up).
-    // The full suite runs files in parallel and one call can land on a busy machine (306-399 ms seen), so the
-    // call is timed up to 10 times (all served from the index, 200 ms apart) and the best must be under the bound.
-    let ms = Infinity;
-    for (let i = 0; i < 10 && ms >= 300; i++) {
-      if (i) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
-      const t = performance.now();
-      const out = scrub(view(w, args));
-      ms = Math.min(ms, performance.now() - t);
-      assert.equal(out, golden().large.status, `call ${i + 2} (index written)`);
+    for (const k of ['status', 'summary']) {
+      const args = CALLS[k](w);
+      assert.equal(scrub(view(w, args)), golden().large[k], `${k}: first call (no index yet)`);
+      t.diagnostic(`--once ${k}, 2000 finished + 1 running: ${warmCalls(w, args, { expected: golden().large[k] }).text}`);
     }
-    assert.ok(ms < 300, `best indexed call took ${ms.toFixed(0)} ms, bound 300 ms`);
+  } finally { w.cleanup(); }
+});
+
+test('index key is mtime and size: a task.json rewritten with the same mtime but another size is read again', () => {
+  const w = world();
+  try {
+    small(w);
+    assert.doesNotMatch(JSON.parse(view(w, CALLS.status(w))).line, /E-cccccccc/);
+    view(w, CALLS.status(w)); // the index holds the cancelled task
+    // the cancelled task comes back to life, the file keeps its mtime: only its size says it changed
+    write(join(w.tasks, 'cccccccc-0001', 'task.json'), JSON.stringify(base('cccccccc-0001', w.cwd, { nodes: [node('size', 'size', 'running')], padding: 'x'.repeat(64) })), T0);
+    write(join(w.tasks, 'cccccccc-0001', 'ledger.jsonl'), jl([{ ts: Date.now(), event: 'node_start', node_id: 'size' }]));
+    assert.match(JSON.parse(view(w, CALLS.status(w))).line, /E-cccccccc/, 'listed as running');
+  } finally { w.cleanup(); }
+});
+
+test('listTasks keeps a finished task\'s row while its task.json and ledger.jsonl are unchanged, and reads it again when either changes', async () => {
+  const { listTasks } = await import('./lib/view-collect.mjs');
+  const w = world();
+  try {
+    small(w);
+    const strip = (rows) => rows.map(({ elapsed_ms, ...r }) => r);
+    const first = listTasks(w.tasks);
+    const done = join(w.tasks, 'dddddddd-0001', 'task.json');
+    chmodSync(done, 0o000); // unreadable: only a cache can still answer for it
+    try {
+      if (process.getuid?.() !== 0) assert.deepEqual(strip(listTasks(w.tasks)), strip(first), 'unchanged files: served without a read');
+    } finally { chmodSync(done, 0o644); }
+    // a different size (same mtime) says the task changed
+    write(done, JSON.stringify(base('dddddddd-0001', w.cwd, { nodes: [node('size', 'size', 'running')], title: 'changed' })), T0);
+    const row = listTasks(w.tasks).find((r) => r.task_id === 'dddddddd-0001');
+    assert.notEqual(row.state, 'DONE', 'task.json changed: read again');
+    // the ledger alone changing also reads the task again: its task.json is unreadable, so a read shows as an error row
+    const other = join(w.tasks, 'dddddddd-0002', 'task.json');
+    write(join(w.tasks, 'dddddddd-0002', 'ledger.jsonl'), jl([{ ts: T0, event: 'node_finish', node_id: 'report' }, { ts: T0 + 1, event: 'daemon_done' }, { ts: T0 + 2, event: 'clean' }]), T0);
+    chmodSync(other, 0o000);
+    try {
+      if (process.getuid?.() !== 0) assert.ok(listTasks(w.tasks).find((r) => r.task_id === 'dddddddd-0002').error, 'ledger.jsonl changed: read again');
+    } finally { chmodSync(other, 0o644); }
   } finally { w.cleanup(); }
 });
 
