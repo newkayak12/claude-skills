@@ -14,6 +14,7 @@ import { readPointer, ownsRun, findTaggedRun, harnessVerdict, graphRunPath } fro
 import { countedDriverRestarts, restartBudget } from '../../mcp/taskstate.mjs';
 import { driverCostOf, collectTaskCosts } from '../bench/lib/drivercost.mjs';
 import { capOf, liveProcesses } from '../../mcp/livecap.mjs';
+import { statSig } from './view-index.mjs';
 
 // The live-process count scans every task.json and runs ps per recorded pid; one answer per root is
 // reused for 2 s (the shared server's answer window), so a sweep over many running tasks pays it once.
@@ -651,13 +652,21 @@ function telemetryOf({ task, tasksDir, depth, ledger, driverTotal, harness, sRun
     for (const n of (p.child && p.child.nodes) || []) if (n.blocked) workers.add(`${p.child.run_id}/${n.node_id}`);
   }
 
-  let live = null;
-  if (depth === 0) {
-    try {
-      const cap = capOf(task);
-      live = { live: liveCount(tasksDir), cap: Number.isFinite(cap) ? cap : null };
-    } catch { /* no process table: say nothing */ }
-  }
+  // The process count scans every task.json under the root, and --format status never reads it: it is
+  // taken on the first read of `live`, not on every collect.
+  let live;
+  const liveOnce = () => {
+    if (live === undefined) {
+      live = null;
+      if (depth === 0) {
+        try {
+          const cap = capOf(task);
+          live = { live: liveCount(tasksDir), cap: Number.isFinite(cap) ? cap : null };
+        } catch { /* no process table: say nothing */ }
+      }
+    }
+    return live;
+  };
 
   return {
     goal_threshold: Number.isFinite(task.goal_threshold) ? task.goal_threshold : (Number.isFinite(opts.goal_threshold) ? opts.goal_threshold : null),
@@ -669,7 +678,7 @@ function telemetryOf({ task, tasksDir, depth, ledger, driverTotal, harness, sRun
     out_of_retries: [...outOfRetries],
     spend: spendRows(driverTotal, task),
     drivers,
-    live,
+    get live() { return liveOnce(); },
     denials: { judges: judgeDenials, workers: workers.size },
     defects: {
       filed: [...filed],
@@ -904,11 +913,28 @@ function storyProgress(task) {
   };
 }
 
+// A finished task's index row, kept while the mtime and size of its task.json and ledger.jsonl are
+// unchanged, so a long-lived reader (the viewer's 2 s watch, the --serve-once-socket server) does not
+// re-read every task ever run on each call. Finished = a terminal state decided from task.json alone
+// (the rule lib/view-index.mjs applies); anything else, and a read that failed, is always read again.
+// elapsed_ms is the one field that moves with the clock and is recomputed on a hit.
+const FINISHED = new Set(['DONE', 'SETTLED', 'CANCELLED']);
+const finishedRows = new Map();
+
 export function listTasks(tasksDir) {
   const ids = listTaskIds(tasksDir);
   const rows = [];
+  const known = finishedRows.get(tasksDir) || new Map();
+  const kept = new Map();
   for (const id of ids) {
     const key = epicKey(id);
+    const sig = `${statSig(taskPathOf(tasksDir, id))}|${statSig(join(tasksDir, id, 'ledger.jsonl'))}`;
+    const hit = known.get(id);
+    if (hit && hit.sig === sig) {
+      kept.set(id, hit);
+      rows.push({ ...hit.row, elapsed_ms: elapsedMs(hit.row.created_at) });
+      continue;
+    }
     const read = readJsonRetry(taskPathOf(tasksDir, id));
     if (!read.ok) { rows.push({ task_id: id, epic_key: key, error: read.error }); continue; }
     const task = read.value;
@@ -924,7 +950,7 @@ export function listTasks(tasksDir) {
       if (!task.s_run) stories = storyProgress(task);
     } catch { /* leave 'unknown' / no progress - a torn task.json should not crash the index */ }
     const driverTotal = collectTaskCosts(join(tasksDir, id), task);
-    rows.push({
+    const row = {
       task_id: id,
       epic_key: key,
       slug: task.slug || null,
@@ -944,8 +970,11 @@ export function listTasks(tasksDir) {
       stories_done: stories.storiesDone,
       stories_total: stories.storiesTotal,
       open_defects: stories.openDefects,
-    });
+    };
+    rows.push(row);
+    if (FINISHED.has(state) && (task.cancelled || !(task.s_run || task.harness_run || task.worktree_gone))) kept.set(id, { sig, row });
   }
+  finishedRows.set(tasksDir, kept);
   rows.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
   return rows;
 }

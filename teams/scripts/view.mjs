@@ -30,7 +30,8 @@ import { connect as netConnect } from 'node:net';
 import { readFileSync, existsSync, openSync, readSync, fstatSync, closeSync, statSync, unlinkSync, readdirSync } from 'node:fs';
 import { dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { tasksRoot } from '../mcp/taskmanager.mjs';
+// tasksRoot is taskmanager.mjs's own re-export of this one; taskmanager itself is the whole server, ~50 ms to load on every call.
+import { tasksRoot } from '../mcp/taskstate.mjs';
 import { DEFAULT_VIEW_PORT, viewKey, viewerAt, registerRoot as registerAt } from '../mcp/viewserver.mjs';
 import { collectTask, listTasks, readJsonRetry } from './lib/view-collect.mjs';
 import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './lib/view-render-text.mjs';
@@ -39,7 +40,7 @@ import { createLedgerStore } from './lib/view-ledger-store.mjs';
 import { summarize, waitingCount } from './lib/view-summary.mjs';
 import { floorTasks, floorEntry, samePath } from './lib/view-floor-fs.mjs';
 import { repoMatcher, clearGitFacts } from './lib/view-repo.mjs';
-import { openTasks } from './lib/view-index.mjs';
+import { openTasks, statSig } from './lib/view-index.mjs';
 import { reportPayload } from './lib/view-report.mjs';
 import { teamsView, decisionsView } from './lib/view-status.mjs';
 import { dashboardModel, dashboardSvg, dashboardAlt, dashboardText } from './lib/view-dashboard.mjs';
@@ -282,6 +283,26 @@ function taskFacts(tasksDir, taskId) {
   return { reasons, ...(Number.isInteger(raw.max_retries) ? { maxRetries: raw.max_retries } : {}) };
 }
 
+// What the events sweep reads from one task.json: the head (created_at, cwd; null when unreadable) and,
+// on demand, the task facts. Kept per tasks dir while the file's mtime and size are unchanged, so a task
+// that has not been written since the last call is not re-read (a long-lived --serve-once-socket server
+// asks about every task on every tick). An unreadable file is not kept. A task gone from the dir is dropped.
+const headCache = new Map();
+
+function headOf(tasksDir, id) {
+  let dirCache = headCache.get(tasksDir);
+  if (!dirCache) headCache.set(tasksDir, dirCache = new Map());
+  const path = join(tasksDir, id, 'task.json');
+  const sig = statSig(path);
+  const hit = dirCache.get(id);
+  if (hit && hit.sig === sig) return hit;
+  const read = readJsonRetry(path);
+  const head = !read.ok || !read.value || typeof read.value !== 'object' ? null : { created_at: read.value.created_at || 0, cwd: read.value.cwd };
+  const entry = { sig, head, factsMemo: undefined, facts() { return this.factsMemo ??= taskFacts(tasksDir, id); } };
+  if (head !== null) dirCache.set(id, entry); else dirCache.delete(id);
+  return entry;
+}
+
 // Ledgers whose file changed after `since` (mtime, ms; stat'd first, task.json is read only for those), whatever the task's state: daemon_done and
 // daemon_exhausted are written after a task stops running, so a running-only filter would never
 // deliver them. A task.json-less dir is not listed and an unreadable one carries `error`; both skipped.
@@ -306,16 +327,15 @@ function eventsOutput(tasksDir, cwd, since, shared) {
     for (const id of ids) {
       try { rows.push({ id, mtimeMs: statSync(join(tasksDir, id, 'ledger.jsonl')).mtimeMs }); } catch { /* no ledger */ }
     }
+    const kept = headCache.get(tasksDir);
+    if (kept) { const present = new Set(ids); for (const id of kept.keys()) if (!present.has(id)) kept.delete(id); }
     return rows;
   });
   if (!swept) return '';
   const live = [];
   for (const { id, mtimeMs } of swept) {
     if (mtimeMs <= Math.max(0, since - HOLD_MS)) continue;
-    const head = memo(ctx, ['created', tasksDir, id], () => {
-      const read = readJsonRetry(join(tasksDir, id, 'task.json'));
-      return !read.ok || !read.value || typeof read.value !== 'object' ? null : { created_at: read.value.created_at || 0, cwd: read.value.cwd };
-    });
+    const head = memo(ctx, ['created', tasksDir, id], () => headOf(tasksDir, id).head);
     if (head === null) continue;
     live.push({ id, created_at: head.created_at, cwd: head.cwd });
   }
@@ -325,7 +345,7 @@ function eventsOutput(tasksDir, cwd, since, shared) {
       const inCwd = memo(ctx, ['incwd', tasksDir, cwd, id], () => !!taskCwd && repo(taskCwd).match);
       if (!inCwd) continue;
     }
-    const facts = memo(ctx, ['facts', tasksDir, id], () => taskFacts(tasksDir, id));
+    const facts = memo(ctx, ['facts', tasksDir, id], () => headOf(tasksDir, id).facts());
     const path = join(tasksDir, id, 'ledger.jsonl');
     if (shared) out.push(...notableFromEvents(shared.store.read(path), since, { now: Date.now(), ...facts }));
     else out.push(...notableEvents(tailLines(path), since, { now: Date.now(), ...facts }));
@@ -558,6 +578,9 @@ function onceOutput(args, tasksDir, render, shared) {
 // ---------- --serve-once-socket <path>: the --once answers over HTTP on a Unix socket ----------
 // GET /?format=&cwd=&task=&session=&since=&card=&view= answers like `--once` with the same args. One server
 // per socket, answers cached 2 s per argument set, ends itself after TEAMS_VIEW_ONCE_IDLE_MS (10 min).
+// The 2 s window only lets sessions asking within one tick share an answer. A tick that misses it (the
+// mod asks every 3 s) is cheap because what it reads of finished tasks is kept by file mtime and size
+// (lib/view-index.mjs, listTasks, the events sweep), not by the clock: only a task whose files changed is read again.
 const ONCE_CACHE_MS = 2000;
 const ONCE_IDLE_DEFAULT_MS = 10 * 60 * 1000;
 
