@@ -407,6 +407,9 @@ Captured from a real Claude Code 2.1.293 session on a scratch repo (a size-L tas
 The band while a run is going: title, what it is doing now and progress; select it to open `/teams-status`.
 A question forwarded to the person waits until someone answers it; with nobody attached it waits indefinitely (decision U-5).
 
+![status-band-ask](docs/images/status-band-ask.png)
+The band when a running STORY's question is forwarded to you (fictional data): the question leads the row with a `⚑` until you answer it with `tm_submit`, and the STORY's driver is parked, at no cost, until then.
+
 ![pane-epics](docs/images/pane-epics.png)
 The EPIC list at the top of the pane: one row per open EPIC — key, title, state, progress and age, columns aligned for Korean and English titles; at a narrow width the age and count drop before the title is cut.
 
