@@ -73,8 +73,8 @@ test('text: key and title first, bar and percent, stages in order, waiting and l
   assert.match(lines[1], /^RUNNING  ▰{3}▱{7} 33%$/);
   assert.ok(t.includes('✔ Plan → ◉ Build → ○ Integrate'));
   assert.ok(t.includes('⚑ Receipt copy — Brand or plain?'));
-  assert.ok(t.includes('On you 1: Receipt copy'));
-  assert.ok(t.includes('Active 2: Refund API · ✘ Webhooks'));
+  assert.ok(t.includes('Needs you 1: Receipt copy'));
+  assert.ok(t.includes('In progress 2: Refund API · ✘ Webhooks'));
   assert.ok(lines.length <= 20);
   assert.equal(dashboardText(null), '');
 });

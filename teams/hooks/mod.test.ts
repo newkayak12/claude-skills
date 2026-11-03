@@ -2365,7 +2365,9 @@ const DASH = {
     key: 'E-3a3a3bb5', title: 'Build the expense tracker', state: 'running', pct: 33, now: 'Build · Receipts upload',
     stages: [{ n: 1, key: 'plan', label: 'Plan', state: 'done' }, { n: 2, key: 'build', label: 'Build', state: 'running' }, { n: 3, key: 'integrate', label: 'Integrate', state: 'pending' }],
     packages: [{ title: 'Receipts upload', state: 'running' }],
-    lanes: [{ key: 'running', label: 'Active', count: 1, cards: [{ title: 'Receipts upload', kind: 'package', failed: false, reason: null }], more: 0 }],
+    lanes: [{ key: 'running', label: 'In progress', short: 'Active', count: 1, cards: [{ title: 'Receipts upload', kind: 'package', failed: false, reason: null }], more: 0 }],
+    // node's laneBoxes() (view-summary.mjs): the lane width per pane width, 0 where the boxes do not fit
+    laneBoxes: Array.from({ length: 241 }, (_, i) => (i >= 72 ? Math.max(14, Math.floor((i - 3) / 4)) : 0)),
     tiles: [{ key: 'progress', label: 'Progress', value: '33%', sub: '1/3 stages' }, { key: 'cost', label: 'Cost', value: '$1.20', sub: '30 turns' }],
     activity: [{ time: '10:02', kind: 'dispatched', subject: 'Receipts upload' }],
     waiting: [], at: 0,
@@ -2393,14 +2395,15 @@ for (const surface of SURFACES) {
 // card 94 rest: the lane headers node returns (view-summary.mjs LANE_LABEL) are drawn whole in a box at 190, 110 and 78 columns
 for (const cols of [190, 110, 78]) {
   test(`terminal: Home lane headers read whole at ${cols} columns, none cut by …`, async ($, on) => {
-    const lane = (key: string, label: string) => ({ key, label, count: 12, cards: [{ title: `${label} card`, kind: 'package', failed: false, reason: null }], more: 0 })
+    const lane = (key: string, label: string) => ({ key, label: `${label} long`, short: label, count: 12, cards: [{ title: `${label} card`, kind: 'package', failed: false, reason: null }], more: 0 })
     const lanes = [lane('running', 'Active'), lane('you', 'On you'), lane('pending', 'Next'), lane('done', 'Done')]
     await seeded($, on, { status: stat(), task: demo(), dash: { ...DASH, model: { ...DASH.model, lanes } } }, 'terminal', undefined, { view: 'dash' })
     const ui = await $.ui.mount({ plugin: 'teams', surface: 'terminal', component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: cols, placement: 'dock' } } as never)
     const text = await shown(ui)
     for (const l of lanes) {
-      expect(text).toContain(l.label)
-      expect(text).not.toContain(`${l.label}…`)
+      expect(text).toContain(l.short)
+      expect(text).not.toContain(`${l.short}…`)
+      expect(text).not.toContain(l.label)
     }
     expect(text).not.toMatch(/Activ…|On yo…|Nex…|Don…/)
   })

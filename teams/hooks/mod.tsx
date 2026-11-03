@@ -790,10 +790,10 @@ export const register: Register = on => {
       const barW = Math.max(4, Math.min(60, inner - clipText(dm.state.toUpperCase(), 12).length - 6))
       const fill = Math.round((barW * dm.pct) / 100)
       const tileW = Math.max(12, Math.floor((inner - (dm.tiles.length - 1)) / dm.tiles.length))
-      const laneW = Math.max(14, Math.floor((inner - 3) / 4))
+      // lane box width from node (view-summary.mjs laneBoxes): 0 = a pane too narrow for boxes, which lists them one per line
+      const laneBox: number = dm.laneBoxes[Math.min(inner, dm.laneBoxes.length - 1)]
       // boxes only where each keeps a readable width; a narrow pane lists them one per line
       const tilesFit = inner >= dm.tiles.length * 15
-      const lanesFit = inner >= 4 * 18
       const LANE_TINT: Record<string, string> = { running: 'claude', you: 'warning', pending: 'inactive', done: 'success' }
       const ACT_TINT: Record<string, string> = { failed: 'error', passed: 'success', finished: 'success', integrated: 'success', waiting: 'warning' }
       const STAGE_GLYPH: Record<Mark, string> = { done: '✔', running: '◉', pending: '○', failed: '✘' }
@@ -836,18 +836,18 @@ export const register: Register = on => {
           {dm.packages.slice(0, 6).map((p, i, all) => (
             <Text key={`dp-${i}`} wrap="truncate-end"><Text color="inactive">{i === all.length - 1 ? '  └─ ' : '  ├─ '}</Text><Text color={TINT[p.state]}>{`${MARK[p.state]} `}</Text>{clipText(p.title, inner - 8)}</Text>
           ))}
-          {!lanesFit && (
+          {laneBox === 0 && (
             <Box marginTop={1} flexDirection="column">
               {dm.lanes.map(l => (
-                <Text key={`lane-${l.key}`} wrap="truncate-end"><Text color={LANE_TINT[l.key]}>● </Text><Text bold>{l.label}</Text><Text dimColor>{` ${l.count}  `}</Text>{l.cards.map(c => `${c.failed ? '✘ ' : ''}${c.title}`).join(' · ')}</Text>
+                <Text key={`lane-${l.key}`} wrap="truncate-end"><Text color={LANE_TINT[l.key]}>● </Text><Text bold>{l.short}</Text><Text dimColor>{` ${l.count}  `}</Text>{l.cards.map(c => `${c.failed ? '✘ ' : ''}${c.title}`).join(' · ')}</Text>
               ))}
             </Box>
           )}
-          {lanesFit && <Box marginTop={1} columnGap={1}>
+          {laneBox > 0 && <Box marginTop={1} columnGap={1}>
             {dm.lanes.map(l => (
-              <Box key={`lane-${l.key}`} width={laneW} flexDirection="column" borderStyle="round" borderColor="inactive" paddingX={1}>
-                <Text><Text color={LANE_TINT[l.key]}>● </Text><Text bold>{l.label}</Text><Text dimColor>{` ${l.count}`}</Text></Text>
-                {l.cards.map((c, j) => <Text key={`lc-${j}`} color={c.failed ? 'error' : undefined}>{clipText(`${c.failed ? '✘ ' : ''}${c.title}`, laneW - 4)}</Text>)}
+              <Box key={`lane-${l.key}`} width={laneBox} flexDirection="column" borderStyle="round" borderColor="inactive" paddingX={1}>
+                <Text><Text color={LANE_TINT[l.key]}>● </Text><Text bold>{l.short}</Text><Text dimColor>{` ${l.count}`}</Text></Text>
+                {l.cards.map((c, j) => <Text key={`lc-${j}`} color={c.failed ? 'error' : undefined}>{clipText(`${c.failed ? '✘ ' : ''}${c.title}`, laneBox - 4)}</Text>)}
                 {l.more > 0 && <Text dimColor>{`+${l.more}`}</Text>}
               </Box>
             ))}

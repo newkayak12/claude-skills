@@ -2,9 +2,10 @@
 // one plain model the terminal draws as Ink, and one SVG document desktop, mobile and vscode draw.
 // No fs, no clock of its own (`now` is passed); every field the pane shows is decided here.
 
-import { LANE_KEYS, LANE_LABEL } from './view-summary.mjs';
+import { LANE_KEYS, LANE_LABEL, laneBoxes } from './view-summary.mjs';
 
 const STAGE_LABEL = { plan: 'Plan', build: 'Build', integrate: 'Integrate', qa: 'QA', gate: 'Gate', report: 'Report' };
+const LANE_TITLE = { running: 'In progress', you: 'Needs you', pending: 'Up next', done: 'Done' };
 const LANE_MAX = 5;
 const ACTIVITY_MAX = 6;
 
@@ -19,7 +20,7 @@ export function lanesOf(task) {
     const lane = waiting.has(w.title) ? 'you' : w.state === 'failed' ? 'running' : (lanes[w.state] ? w.state : 'pending');
     lanes[lane].push({ title: w.title, kind: w.kind, failed: w.state === 'failed', reason: w.reason || null });
   }
-  return LANE_KEYS.map((key) => ({ key, label: LANE_LABEL[key], count: lanes[key].length, cards: lanes[key].slice(0, LANE_MAX), more: Math.max(0, lanes[key].length - LANE_MAX) }));
+  return LANE_KEYS.map((key) => ({ key, label: LANE_TITLE[key], short: LANE_LABEL[key], count: lanes[key].length, cards: lanes[key].slice(0, LANE_MAX), more: Math.max(0, lanes[key].length - LANE_MAX) }));
 }
 
 // The run's numbers (view-summary.mjs metrics()) as plain fields; null when the task carries none.
@@ -60,7 +61,7 @@ export function dashboardModel(task, { now = Date.now(), drivers = null } = {}) 
   const nowLine = !stopped && task.now && task.now.kind && task.now.kind !== 'idle' ? [STAGE_LABEL[task.now.kind] || task.now.kind, task.now.subject].filter(Boolean).join(' · ') : '';
   return {
     key: task.key, title: task.title, state: task.state, pct, now: nowLine,
-    stages, packages, lanes: lanesOf(task), tiles, activity,
+    stages, packages, lanes: lanesOf(task), laneBoxes: laneBoxes(), tiles, activity,
     run: runOf(task.metrics), stories: storiesOf(task.metrics),
     waiting: waiting.map((c) => ({ who: c.who, title: c.title, question: c.question })),
     at: now,

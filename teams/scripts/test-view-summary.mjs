@@ -5,7 +5,7 @@ process.env.TZ = 'UTC';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { summarize, metrics, storyNow, LANE_KEYS, LANE_LABEL, LANE_LABEL_MAX, laneBox, laneHeaderRoom } from './lib/view-summary.mjs';
+import { summarize, metrics, storyNow, LANE_KEYS, LANE_LABEL, LANE_LABEL_MAX, LANE_BOX_MAX, laneBox, laneHeaderRoom } from './lib/view-summary.mjs';
 import { floorOf } from './lib/view-floor.mjs';
 import { stageOfNode, STAGE_KEYS } from './lib/view-stages.mjs';
 import { dashboardModel } from './lib/view-dashboard.mjs';
@@ -448,22 +448,31 @@ test('summarize() carries metrics, a model with no telemetry gives empty numbers
 });
 
 // card 94 rest: the Home kanban lane headers. The label table and the box geometry are node's (view-summary.mjs);
-// lanesOf is fed from them and the tsx draws `● label count` as it is, so a header never needs a clip.
-const lanesAt = (count) => dashboardModel(summarize(demo(), { now: NOW }), { now: NOW }).lanes.map((l) => ({ ...l, count }));
-test('lane headers: every label fits its lane whole at 190, 110 and 78 columns (and a 15-cell lane), none ends in `…`', () => {
-  const lanes = dashboardModel(summarize(demo(), { now: NOW }), { now: NOW }).lanes;
+// lanesOf is fed from them (`short` per lane, `laneBoxes` on the model) and the tsx only looks them up, drawing
+// `● short count` as it is, so a header never needs a clip. The lane `label` keeps its full text (text board, SVG).
+const modelOf = () => dashboardModel(summarize(demo(), { now: NOW }), { now: NOW });
+const lanesAt = (count) => modelOf().lanes.map((l) => ({ ...l, count }));
+test('lane headers: every short label fits its lane whole at 190, 110 and 78 columns (and a 15-cell lane), none ends in `…`', () => {
+  const model = modelOf();
+  const lanes = model.lanes;
   assert.deepEqual(lanes.map((l) => l.key), LANE_KEYS);
-  assert.deepEqual(lanes.map((l) => l.label), LANE_KEYS.map((k) => LANE_LABEL[k]), 'lanesOf takes its labels from the node table');
+  assert.deepEqual(lanes.map((l) => l.short), LANE_KEYS.map((k) => LANE_LABEL[k]), 'lanesOf takes `short` from the node table');
+  assert.deepEqual(lanes.map((l) => l.label), ['In progress', 'Needs you', 'Up next', 'Done'], '`label` keeps its text (the golden and the SVG read it)');
+  assert.equal(model.laneBoxes.length, LANE_BOX_MAX + 1);
+  for (let inner = 0; inner <= LANE_BOX_MAX; inner++) {
+    const b = laneBox(inner);
+    assert.equal(model.laneBoxes[inner], b.fit ? b.width : 0, `laneBoxes[${inner}] agrees with laneBox`);
+  }
   for (const cols of [190, 110, 78]) {
-    const { fit, width } = laneBox(cols - 4);
-    assert.ok(fit, `${cols} columns draw the boxes`);
+    const width = model.laneBoxes[cols - 4];
+    assert.ok(width > 0, `${cols} columns draw the boxes`);
     for (const l of lanesAt(88)) {
       const room = laneHeaderRoom(width, l.count);
-      assert.ok(l.label.length <= room, `${cols} cols: "${l.label}" (${l.label.length}) must fit ${room} cells in a ${width}-cell lane`);
-      assert.ok(!l.label.includes('…'), l.label);
+      assert.ok(l.short.length <= room, `${cols} cols: "${l.short}" (${l.short.length}) must fit ${room} cells in a ${width}-cell lane`);
+      assert.ok(!l.short.includes('…'), l.short);
     }
   }
-  for (const l of lanesAt(88)) assert.ok(l.label.length <= laneHeaderRoom(15, l.count), `"${l.label}" fits a 15-cell lane with a 2-digit count`);
+  for (const l of lanesAt(88)) assert.ok(l.short.length <= laneHeaderRoom(15, l.count), `"${l.short}" fits a 15-cell lane with a 2-digit count`);
   assert.ok(Object.values(LANE_LABEL).every((x) => x.length <= LANE_LABEL_MAX));
   assert.equal(new Set(Object.values(LANE_LABEL)).size, 4, 'four labels, none said twice');
 });
@@ -471,6 +480,8 @@ test('lane headers: every label fits its lane whole at 190, 110 and 78 columns (
 test('lane headers: a pane narrower than 4 x 18 cells draws no boxes, so no header is clipped there either', () => {
   assert.equal(laneBox(71).fit, false);
   assert.equal(laneBox(72).fit, true);
+  assert.equal(modelOf().laneBoxes[71], 0);
+  assert.ok(modelOf().laneBoxes[72] > 0);
 });
 
 test('status words: a working STORY says `working` and one parked on a person says `needs you`, by default', () => {
