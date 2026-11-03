@@ -174,24 +174,7 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
       quality needs drawn sprite assets (procedural canvas gives agent-town level, not the image); not pulled
       until the person decides where the art comes from.
 
-94. **teams-status shows the numbers that explain a run: attempts and judge scores, cost and time, stalls, quality** — three defects fixed in E-db7e3226 (`15a95196`, plugin test 411/411, teams 1638 pass); awaiting the user's approval of the 190/110 captures; rest in E-bf0527b7 (approval waived, user 2026-11-03)
-    - Why: user, 2026-10-28: "teams-status 조금 더 의미있는 지표 노출해서 개선해야겠더라". In E-8b9c417d the
-      pane showed P2 "failed" three times; why (judge 88/90, "belongs to P3") was only in the ledger.
-    - Acceptance (computed in node, `view-summary.mjs`; the mod renders it): per STORY attempt n/max, last judge
-      score vs threshold and its one-line reason; cost and wall time per STORY and stage, retry spend apart,
-      spend vs budget when set; stalled drivers (minutes since progress), live drivers vs cap, tool denials,
-      nodes out of retries; QA defects filed vs dropped (card 88), test count baseline → now, out-of-scope
-      writes. Each shows on the Home/STORYs tabs at 190 and 110 columns without wrapping; tests in
-      `test-view-summary.mjs`; one live look approved by the user.
-    - Shipped `110de5ff` (E-692f3092, 2026-10-28; teams 1610/1610, plugin test 381/381). Live look on E-fa72c6e8
-      (pane 86 cols) found three defects, not yet approved: (1) STORYs title cut to ~10 chars plus a stray
-      "->…", reason cut to 3 chars ("Eve…"); (2) a story re-run after `tm_retry` repackage reads "rejected 3/3"
-      on STORYs while Home lists it "In progress"; (3) "judge 93 vs 90" with "rejected" and no visible why.
-    - E-db7e3226 (2026-10-30) left: Home kanban lane header cut to `● In progre…` in the real 78-col frame
-      (lanes 15 cells wide; pre-existing); an unexplained `order` line under a STORY at both widths (fixture
-      deleted, cause unverified); status words `working` / `needs you` are an assumed default until approved.
-
-84. **The teams pane is a real dashboard on every surface: Ink on the terminal, Svg on desktop, mobile and vscode** — both terminal defects fixed `7e051a4b` (E-8b9c417d; live look 2026-10-28: Plan ✔, no digits after 2 1 0); left: phone/desktop look; design doc in E-bf0527b7
+84. **The teams pane is a real dashboard on every surface: Ink on the terminal, Svg on desktop, mobile and vscode** — both terminal defects fixed `7e051a4b` (E-8b9c417d; live look 2026-10-28: Plan ✔, no digits after 2 1 0); left: phone/desktop look, and the design doc (E-bf0527b7's P4 never ran; PRD section F4 in `.teams_output/team/E-bf0527b7/10-prd.md`)
     - Why: user, 2026-10-26, after `/teams-status` over Remote Control showed a 42-row text dump on the phone:
       "이따위로 나올거면 뭣하러 하냐", "Claude desktop app에서 UI 그릴 수 있는걸로 아는데", "mobile도 그렇고",
       "씨발 못해? terminal도, claude app, desktop도". References given: a Grafana-style metrics board
@@ -235,27 +218,6 @@ not a read — each worker's state is one icon and colour (spinner while acting;
 Cards 40–43 and 50 shipped and approved 2026-10-22 (harness, teams, graph, session panes; failure
 toasts).
 
-49. **Mods put subagent-to-subagent communication to work** — rest in E-bf0527b7
-    - Why: user, 2026-10-17: "mod 추가로 subagent 간 의사소통하는거 더 적극적으로 활용할 수 있는 방법
-      찾아보자". Today teams workers are separate `claude -p` drivers that hand work over only through
-      files (ledger, reports); the session sees none of it live, and workers cannot ask each other.
-    - Design approved 2026-10-17: `_repo/docs/plans/mod/2026-10-17-subagent-communication.md` §6
-      (user: "Agent 같 메시징 통로를 적극적으로 사용", B now, questions through the TeamLeader, no
-      mid-turn nudge, nothing to the person when unattached).
-    - Acceptance: spike settles delivery to a `claude -p` session by id mid-turn (report in the
-      doc); B: a run's ask reaches the person's band as `⚑ P2 asks you…` within one tick, answered
-      through `tm_submit`, works with `modules` removed; C: a STORY's question to the TeamLeader is
-      answered or forwarded and recorded as `asked`/`answered` in `ledger.jsonl`, with tests; the
-      Floor feed (card 41) shows both.
-    - B merged 2026-10-22 (E-73f703e6; band demo approval and README shot pending): the poll delivers live (`RESULT LIVE-POLL`);
-      the send is held by Claude Code, see card 63. C merged 2026-10-22 (E-d1e2fa27 P1-P3, integrated by hand: P2's third attempt failed at plan with
-      its retry budget spent; merged tree teams 1474/1474, mod 212/212; a forwarded answer gives one
-      `you -> P3` line in the Floor feed). B's band demo approved by Claude on delegation 2026-10-26 (fixture render at 190/110: `⚑ P2 asks you: … +1`, title ends in `…`). Left: B's README shot from a live ask; a `tm_open` live pass of C (U-5 already in README/KOR).
-    - User, 2026-10-30: "mod 서브에이전트 통신 네" — go ahead with what is left. Town (93) is still being
-      thought over ("Town고민 중"); 48 waits ("나머지 대기").
-    - E-54884e0c P3 (2026-10-31) wrote a runbook for C's live pass but did not run it (QA-F3 blocked);
-      not taken. Left as before: B's README shot, a `tm_open` live pass of C.
-
 ### Repo and rules
 
 ### Subagents and parallel runs — use and clean up (user, 2026-10-17)
@@ -271,24 +233,6 @@ toasts).
    - Acceptance: every teams test that creates a task sets its own tasks root (env or option) under a
      temp dir; a check run of `node --test teams/scripts/test-*.mjs` leaves `~/.harness/tasks` with
      the same entry count before and after.
-
-113. **The web viewer a `tm_open` starts exits when its task is done** — in E-bf0527b7 (E-96699aa4 cancelled in PLAN to pin the design)
-   - Decided 2026-11-03, user: "포트가 아니라 티켓 번호가 다르면 될거 같은데", "저렇게 동작하게 변경해버려" —
-     one viewer per tasks root, tickets by path `/E-<ticket>`; a live recorded pid is reused, never replaced.
-   - Seen twice 2026-11-03 (teams 0.62.5): tm_opens got 7431 then 52309 (7431 orphaned, `.view.json`
-     overwritten); after 7431 was stopped, the next tm_open spawned 7431 again while 52309 was alive and
-     answering in 0.01 s — so the reuse check fails without load; cause in `ensureViewer` unverified.
-   - Why: 2026-11-01, this session (MCP on teams 0.61.4): eight `view.mjs --tasks-dir ~/.harness/tasks
-     --port N` servers, one per `tm_open` (ports match each `view_url`), were still running 4–5 h later,
-     each at 80–90% CPU, long after their tasks ended; load 15 on 12 cores. Killed by hand. Unverified
-     whether 0.62.x's `.view-index.json` lowers the cost per server; the servers are orphaned either way.
-   - Acceptance: a viewer started by `tm_open` exits within a minute of its task's `daemon_done` (or is
-     shared: one server for all tasks, reused by later opens); a test opens two tasks and counts one
-     live server after both finish → zero; idle CPU of a live server under 5% with 2000 finished tasks.
-   - Also seen 2026-11-03 14:05 (load 12 on 8 cores, no `claude -p` driver live): short-lived
-     `view.mjs --once --format events --since …` children of other sessions' mods (installed 0.62.3) at
-     45–70% CPU each, respawned every few seconds, and a `view.mjs --serve-once-socket` (0.62.5) up 24 h
-     at 60%. Acceptance adds: a mod's events poll with nothing new costs under 5% of one core.
 
 112. **An area critique's file-ownership overlap blocks instead of passing as soft**
    - Why: 2026-10-31, E-8c671fd9: `areas-critique` saw F2 and F3 both planning the spawn env edit in
@@ -467,6 +411,7 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-bf0527b7 | 2026-11-03 | 113, 49 rest, 94 rest, 84 rest | shipped `45251683..e93a5b31` by hand (cancelled in Build, ~$80): P1 (113) accepted 92 — one viewer per tasks root reused by live pid, finished tasks cached by mtime/size, 5 min idle exit; P2 (49) live forwarded STORY ask in the ledger and the band shot, stalled twice in a tmux wait (taken from attempt 3); P3 (94) 85 at retry 4, its one gap (P1's golden test scrubbed instead of recut) fixed by hand; P4 (84 design doc) never ran. teams 1792/1793 (1 skip), plugin test 445/445; 3 usage-limit parks. E-96699aa4 cancelled in PLAN to pin the viewer design |
 | E-16e58ff6 | 2026-11-03 | 114 | shipped `0cdfee82` by hand (task blocked): P1 accepted; P2 rejected 3× only for touching P1's test-diagram.mjs (pixel window 420x40→420x100); merged tree test-diagram 118/118, check-copies ok, validate 15/15; 2 usage-limit parks; test-diagram 148 s (card 122) |
 | E-c4d76843 | 2026-11-02 | 119 | shipped `cf910d02`; size S; goal gate 94; cache/memo tests 2/2 (falsified), `events` with an old `--since` 2.9 s → 0.18 s byte-identical; repo-rules refuses inline-script repo writes (263 ok); teams 1778/1779 (1 skip); a perl `>>` false positive fixed after the gate; `--cwd` now includes a task whose collect fails but task.json reads (untested) |
 | E-3a668d18 | 2026-11-02 | 118 | shipped in teams 0.62.7; size S; goal gate 91; `retryReport` reruns only a failed report (avoid_executors, different_vendor), size-S driver not respawned on an unchanged blocked run (`harness_run_stuck`), tm_retry retries it; red-first tests; teams 1776/1777 (1 skip); no live end-to-end run of a failing report yet |
