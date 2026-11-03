@@ -5,7 +5,8 @@ process.env.TZ = 'UTC';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { summarize, metrics, storyNow } from './lib/view-summary.mjs';
+import { summarize, metrics, storyNow, LANE_KEYS, LANE_LABEL, LANE_LABEL_MAX, laneBox, laneHeaderRoom } from './lib/view-summary.mjs';
+import { floorOf } from './lib/view-floor.mjs';
 import { stageOfNode, STAGE_KEYS } from './lib/view-stages.mjs';
 import { dashboardModel } from './lib/view-dashboard.mjs';
 
@@ -444,4 +445,41 @@ test('summarize() carries metrics, a model with no telemetry gives empty numbers
   clean(withTelemetry({ judge: { P2: { score: 85, reason: 'accept:P2:3 said no', attempt: 3 } } }));
   const src = readFileSync(new URL('./lib/view-summary.mjs', import.meta.url), 'utf8');
   assert.ok(!/node:fs|node:child_process/.test(src));
+});
+
+// card 94 rest: the Home kanban lane headers. The label table and the box geometry are node's (view-summary.mjs);
+// lanesOf is fed from them and the tsx draws `● label count` as it is, so a header never needs a clip.
+const lanesAt = (count) => dashboardModel(summarize(demo(), { now: NOW }), { now: NOW }).lanes.map((l) => ({ ...l, count }));
+test('lane headers: every label fits its lane whole at 190, 110 and 78 columns (and a 15-cell lane), none ends in `…`', () => {
+  const lanes = dashboardModel(summarize(demo(), { now: NOW }), { now: NOW }).lanes;
+  assert.deepEqual(lanes.map((l) => l.key), LANE_KEYS);
+  assert.deepEqual(lanes.map((l) => l.label), LANE_KEYS.map((k) => LANE_LABEL[k]), 'lanesOf takes its labels from the node table');
+  for (const cols of [190, 110, 78]) {
+    const { fit, width } = laneBox(cols - 4);
+    assert.ok(fit, `${cols} columns draw the boxes`);
+    for (const l of lanesAt(88)) {
+      const room = laneHeaderRoom(width, l.count);
+      assert.ok(l.label.length <= room, `${cols} cols: "${l.label}" (${l.label.length}) must fit ${room} cells in a ${width}-cell lane`);
+      assert.ok(!l.label.includes('…'), l.label);
+    }
+  }
+  for (const l of lanesAt(88)) assert.ok(l.label.length <= laneHeaderRoom(15, l.count), `"${l.label}" fits a 15-cell lane with a 2-digit count`);
+  assert.ok(Object.values(LANE_LABEL).every((x) => x.length <= LANE_LABEL_MAX));
+  assert.equal(new Set(Object.values(LANE_LABEL)).size, 4, 'four labels, none said twice');
+});
+
+test('lane headers: a pane narrower than 4 x 18 cells draws no boxes, so no header is clipped there either', () => {
+  assert.equal(laneBox(71).fit, false);
+  assert.equal(laneBox(72).fit, true);
+});
+
+test('status words: a working STORY says `working` and one parked on a person says `needs you`, by default', () => {
+  const pkg = (id, dispatch) => ({ id, title: id, dispatch, child: {} });
+  const f = floorOf(
+    { task_id: 't', state: 'running', ticket: { key: 'E-t' }, packages: [pkg('A', { state: 'running' }), pkg('B', { state: 'waiting_human' })] },
+    { stories: { A: { doing: 'editing a.ts', live: true }, B: { doing: 'asks a question', live: false } } },
+  );
+  const word = Object.fromEntries(f.items.map((i) => [i.key, [i.word, i.word_key]]));
+  assert.deepEqual(word.A, ['working', 'acting']);
+  assert.deepEqual(word.B, ['needs you', 'you']);
 });
