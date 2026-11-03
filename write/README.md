@@ -399,6 +399,9 @@ optionally dark) in the IR's `theme` field or with `--theme <file>` on `figure` 
 file is theme JSON or the document's own CSS (`:root{--...}`, dark from `prefers-color-scheme`). Every
 meaning role (lanes, lock and cause, wait, release, version ramp, pointers, claim, muted context) maps
 onto it; a theme that misses 4.5:1 contrast is refused naming the pair. No theme keeps the default.
+Under a theme no role keeps a default hue, lanes take the theme's `hues` before its accent (so a lane and
+the claim boxes never share one colour), and when the hues run out the run says so on stderr while the
+exit code stays the same (write 1.17.0).
 
 The skill ships NanumGothic Regular + Bold (SIL OFL 1.1, licence in tech-book's `assets/fonts/`, shared), about 4 MB of
 the plugin. Non-browser SVG renderers (librsvg, Inkscape, QuickLook) may ignore `@font-face`; the PNG
