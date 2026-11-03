@@ -262,6 +262,15 @@ toasts).
 
 ### teams plugin bugs
 
+121. **teams tests write their fixture tasks under a temp tasks root, never `~/.harness/tasks`**
+   - Why: 2026-11-03, `tm_clean` sweep listed tasks `3a3a3bb5`, `d0ee9043` (2026-09-22), `97f05d73`
+     (2026-10-07) as running with dead daemons, cwd `$TMPDIR/view-test-repo-*`, and a live `eb955b62`
+     (cwd `$TMPDIR/teams-ask-fixture.*`) made by a test run of E-bf0527b7 P2 the same day; the first
+     three cancelled by hand. Leaked fixtures sit in every real viewer's and status scan's list. Which
+     tests leak is unverified.
+   - Acceptance: every teams test that creates a task sets its own tasks root (env or option) under a
+     temp dir; a check run of `node --test teams/scripts/test-*.mjs` leaves `~/.harness/tasks` with
+     the same entry count before and after.
 
 113. **The web viewer a `tm_open` starts exits when its task is done** — in E-bf0527b7 (E-96699aa4 cancelled in PLAN to pin the design)
    - Decided 2026-11-03, user: "포트가 아니라 티켓 번호가 다르면 될거 같은데", "저렇게 동작하게 변경해버려" —
