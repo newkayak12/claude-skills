@@ -105,10 +105,14 @@ const CALLS = {
 };
 
 const golden = () => JSON.parse(readFileSync(GOLDEN, 'utf8'));
+// The formats the mod's 3 s tick reads, all held at 2000 finished tasks.
+const LARGE_FORMATS = ['status', 'summary', 'events'];
 
 if (REGEN) {
   const out = { large: {}, small: {} };
-  const L = world(); large(L); out.large.status = scrub(view(L, CALLS.status(L))); L.cleanup();
+  const L = world(); large(L);
+  for (const k of LARGE_FORMATS) out.large[k] = scrub(view(L, CALLS[k](L)));
+  L.cleanup();
   const S = world(); small(S);
   for (const k of Object.keys(CALLS)) out.small[k] = scrub(view(S, CALLS[k](S)));
   S.cleanup();
@@ -139,6 +143,20 @@ test('large fixture: status equals the golden, and the second call reads no fini
     for (const p of locked) chmodSync(p, 0o644);
     w.cleanup();
   }
+});
+
+test('large fixture (2001 tasks): status, summary and events equal the golden byte for byte, first and second call', () => {
+  const w = world();
+  try {
+    large(w);
+    for (const pass of ['first', 'second']) {
+      for (const k of LARGE_FORMATS) {
+        const out = scrub(view(w, CALLS[k](w)));
+        assert.ok(out.length > 80, `${k} is not an empty answer`);
+        assert.equal(out, golden().large[k], `${k}, ${pass} call`);
+      }
+    }
+  } finally { w.cleanup(); }
 });
 
 test('large fixture: the indexed call is under 300 ms (opt-in: VIEW_ONCE_PERF=1)', { skip: process.env.VIEW_ONCE_PERF === '1' ? false : 'wall-clock bar is opt-in: set VIEW_ONCE_PERF=1' }, () => {
