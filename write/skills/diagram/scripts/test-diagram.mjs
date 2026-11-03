@@ -327,10 +327,10 @@ test('pixel identity: the subset renders exactly like the full NanumGothic (Regu
     for (const weight of ['Regular', 'Bold']) {
       const full = readFileSync(join(SKILL, '..', 'tech-book', 'assets', 'fonts', `NanumGothic-${weight}.ttf`));
       const shots = [full, subsetFont(loadFont(weight), text)].map((font, i) => {
-        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="40" viewBox="0 0 420 40"><style>@font-face{font-family:'F';src:url(data:font/ttf;base64,${font.toString('base64')}) format('truetype')}text{font-family:'F';font-kerning:none;font-variant-ligatures:none}</style><rect width="420" height="40" fill="#fff"/><text x="6" y="26" font-size="16">${text}</text></svg>`;
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="100" viewBox="0 0 420 100"><style>@font-face{font-family:'F';src:url(data:font/ttf;base64,${font.toString('base64')}) format('truetype')}text{font-family:'F';font-kerning:none;font-variant-ligatures:none}</style><rect width="420" height="100" fill="#fff"/><text x="6" y="26" font-size="16">${text}</text></svg>`;
         const p = join(dir, `${weight}-${i}`);
         writeFileSync(`${p}.svg`, svg);
-        assert.equal(fig.rasterize(`${p}.svg`, 420, 40, `${p}.png`).code, 0);
+        assert.equal(fig.rasterize(`${p}.svg`, 420, 100, `${p}.png`).code, 0);
         return fig.pngPixels(readFileSync(`${p}.png`));
       });
       assert.ok(shots[0].equals(shots[1]), `${weight}: subset and full font render different pixels`);
@@ -1287,6 +1287,37 @@ test('checkGeometry refuses a cause edge through the second line of a wrapped re
   assert.ok(only2.some((e) => /"second line"/.test(e)) && !only2.some((e) => /"first line"/.test(e)), 'an edge reaching only the second line is refused for it');
 });
 
+// card 100 carry-over: through checkFigure on a timeline, not synthetic items. The resume step of wait 0 (A@11) is also
+// where wait 1 starts, so wait 1's cause edge ends in a horizontal leg at that row's centre: it runs through the middle
+// line of the three-line note and clears the first and the third.
+const NOTE_RESUME = '한 줄이 길어서 두 번째 줄로 넘어가는 재개 메모 A가 커밋한 재고로는 조건에 맞는 행이 없다';
+const NOTE_LINE2 = {
+  type: 'timeline', title: 'a wrapped resume note', claim: ['B@t4'], lanes: [{ id: 'A', label: 'SA' }, { id: 'B', label: 'SB' }],
+  steps: [
+    { t: 4, lane: 'B', label: 'UPDATE h', kind: 'stmt' }, { t: 6, lane: 'A', label: 'UPDATE x', kind: 'stmt' },
+    { t: 9, lane: 'B', label: 'UPDATE h', kind: 'stmt' }, { t: 10, lane: 'B', label: 'COMMIT', kind: 'commit' },
+    { t: 11, lane: 'A', label: 'resume stmt', kind: 'stmt' }, { t: 13, lane: 'B', label: 'COMMIT', kind: 'commit' },
+    { t: 14, lane: 'A', label: 'resume stmt', kind: 'stmt' },
+  ],
+  waits: [
+    { lane: 'A', from: 6, until: 10, on: 'B', label: 'row lock wait', resume: NOTE_RESUME },
+    { lane: 'A', from: 11, until: 13, on: 'B', label: 'row lock wait', resume: NOTE_RESUME, holder: 9 },
+  ],
+};
+test('checkFigure on a timeline: a cause edge that crosses only the second line of a wrapped resume note is refused, naming that line', () => {
+  const lines = itemsOf(NOTE_LINE2).filter((i) => i.kind === 'text' && i.what === 'the resume note' && i.owner === 'wait 0');
+  assert.equal(lines.length, 3, 'the note wraps to three lines');
+  const cause = itemsOf(NOTE_LINE2).find((i) => i.id === 'cause 1'), ys = cause.points.map((p) => p[1]);
+  const hit = (t) => cause.points.slice(1).some((q, k) => hitsBox(cause.points[k], q, t.box));
+  assert.deepEqual(lines.map(hit), [false, true, false], 'the edge reaches the second line and neither of the others');
+  assert.ok(ys.some((y) => y > lines[1].box.y && y < lines[1].box.y + lines[1].box.h), 'its leg runs at the height of the second line');
+  const errs = fig.checkFigure(NOTE_LINE2);
+  assert.equal(errs.length, 1, errs.join('\n'));
+  assert.ok(errs[0].startsWith(`edge cause 1 runs over the text the resume note "${lines[1].text}"`), errs[0]);
+  assert.ok(!errs[0].includes(lines[0].text) && !errs[0].includes(lines[2].text), 'only the second line is named');
+  assert.deepEqual(fig.checkFigure(edit(NOTE_LINE2, (c) => { delete c.waits[1].holder; })), [], 'without that cause edge the figure is clean');
+});
+
 const BACK_LABEL = 'UPDATE stock SET qty = qty - 1 WHERE id = ';
 const backward = (label) => ({
   type: 'timeline', title: 'backward cause edges', claim: ['H@t1', 'W@t3'], lanes: [{ id: 'W', label: 'Session W' }, { id: 'H', label: 'Session H' }],
@@ -1551,7 +1582,27 @@ function digest(ir) {
   else { const d = scratch(); try { fig.renderFigureHtmlToFile(ir, join(d, 'p.html')); all += `\n${readFileSync(join(d, 'p.html'), 'utf8')}`; } finally { rmSync(d, { recursive: true, force: true }); } }
   return sha256(all);
 }
-const DEFAULT_HEXES = new Set(hexesOf(JSON.stringify([fig.PALETTE, fig.ROLES.light])));
+// Every hex the no-theme renderer can draw: the light and dark sets, the dark edge colours, the data/fail defaults (in
+// PALETTE.edges) and the claim ink. DARK_PALETTE.hi and lo are left out: the dark substitution may pick them as the ink
+// of a mid-tone fill whatever the theme.
+const { hi: _hi, lo: _lo, ...DARK_DEFAULTS } = fig.DARK_PALETTE;
+const DEFAULT_HEXES = new Set(hexesOf(JSON.stringify([fig.PALETTE, fig.ROLES.light, fig.ROLES.dark, DARK_DEFAULTS, '#ffffff'])));
+// the default hexes a theme does not supply itself
+const defaultsIn = (svg, theme) => { const own = new Set(hexesOf(JSON.stringify(theme))); return [...new Set(hexesOf(svg).filter((h) => DEFAULT_HEXES.has(h) && !own.has(h)))]; };
+const VIOLET = {
+  light: { ink: '#1e1b2e', paper: '#fbfaff', muted: '#4a4766', accent: '#6d28d9', hues: [] },
+  dark: { ink: '#ece9fb', paper: '#14122b', muted: '#b5b0d8', accent: '#a78bfa', hues: [] },
+};
+const HUES6 = ['#0e7490', '#c2410c', '#15803d', '#a16207', '#be123c', '#1d4ed8'];
+const NO_PNG = { env: { CHROME: '/nonexistent/chrome' } }; // writeFigure writes the svg and reports code 3 at the PNG, no browser started
+const lane3Holder = edit(RIGHT_FAR, (c) => { c.lanes = lane3(['A', 'B', 'M']); c.waits[0].holder = 2; });
+// the writes to stdout and stderr while fn runs
+function quiet(fn) {
+  const wrote = [], so = process.stdout.write, se = process.stderr.write;
+  process.stdout.write = (s) => { wrote.push(String(s)); return true; };
+  process.stderr.write = (s) => { wrote.push(String(s)); return true; };
+  try { return { value: fn(), wrote }; } finally { process.stdout.write = so; process.stderr.write = se; }
+}
 const hueDeg = (hex) => { const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)), mx = Math.max(r, g, b), d = mx - Math.min(r, g, b); return mx === r ? (60 * (((g - b) / d) % 6) + 360) % 360 : mx === g ? 60 * ((b - r) / d + 2) : 60 * ((r - g) / d + 4); };
 const angle = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d); };
 const mixT = (a, b, f) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) + (parseInt(b.slice(i, i + 2), 16) - parseInt(a.slice(i, i + 2), 16)) * f).toString(16).padStart(2, '0')).join('');
@@ -1564,20 +1615,35 @@ test('theme: with no theme the svg, the dark svg and the html of 18 figures are 
   for (const [name, ir] of NOTHEME_PLAN) assert.equal(digest(ir), NOTHEME[name], name);
 });
 
-test('theme from the IR: every figure type is drawn in theme-derived colours only - none of the default palette\'s hexes - and still passes check', () => {
-  const plan = [['timeline', FIG131], ['released', RELEASED], ['deadlock', DEADLOCK], ['record chain', CHAIN], ['layout', LAYOUT], ['btree', BTREE], ['plan tree', PLAN], ['architecture', KO_ARCH], ['sequence', SEQ4], ['er', ER], ['chart', CHART], ['bars', BARS], ['store', STORE]];
-  for (const th of [BRAND, PRINT]) for (const [name, ir] of plan) {
+test('theme from the IR: every figure type, light and dark, is drawn in theme-derived colours only - none of the default palette\'s hexes - and still passes check', () => {
+  const plan = [['timeline', FIG131], ['released', RELEASED], ['deadlock', DEADLOCK], ['record chain', CHAIN], ['layout', LAYOUT], ['btree', BTREE], ['plan tree', PLAN], ['architecture', KO_ARCH], ['sequence', SEQ4], ['er', ER], ['chart', CHART], ['bars', BARS], ['store', STORE], ['three lanes', lane3Holder]];
+  for (const th of [BRAND, PRINT, VIOLET]) for (const [name, ir] of plan) {
     const themed = { ...ir, theme: th };
-    assert.deepEqual(fig.checkFigure(themed), [], name);
+    assert.deepEqual(fig.checkFigure(themed), [], `${th.light.accent} ${name}`);
     const { svg } = fig.renderFigure(themed);
-    assert.deepEqual([...new Set(hexesOf(svg).filter((h) => DEFAULT_HEXES.has(h)))], [], `${name}: a default hex is left`);
+    assert.deepEqual(defaultsIn(svg, th), [], `${th.light.accent} ${name}: a default hex is left`);
     assert.ok(svg.includes(th.light.paper), `${name}: the page is the theme's paper`);
     assert.notEqual(svg, fig.renderFigure(ir).svg, name);
+    if (th.dark) assert.deepEqual(defaultsIn(fig.darkSvg(svg, fig.themeContext(th, fig.hueRolesOf(ir)).dark), th), [], `${th.light.accent} ${name}: a default hex is left in the dark svg`);
   }
 });
 
+test('theme roles: under a violet accent with no hues the release stroke and its arrow, the data edge and the fail stroke are the accent or derived from it - no hue the theme lacks, no default hex', () => {
+  const h0 = hueDeg(VIOLET.light.accent), violet = (hex, what) => { assert.ok(angle(hueDeg(hex), h0) < 25, `${what} ${hex} is ${hueDeg(hex).toFixed(0)} deg, the accent is ${h0.toFixed(0)}`); assert.ok(!DEFAULT_HEXES.has(hex), `${what} ${hex} is a default hex`); };
+  const rel = { ...RELEASED, theme: VIOLET }, ctx = fig.themeContext(VIOLET, fig.hueRolesOf(RELEASED));
+  const { svg } = fig.renderFigure(rel), R = ctx.ROLES.light.release.stroke;
+  assert.notEqual(R, '#629d35');
+  violet(R, 'release stroke');
+  assert.ok(svg.includes(`stroke="${R}" stroke-width="1.25" stroke-dasharray="6 3" marker-end="url(#arrow-release)"`), 'the release edge is drawn in it');
+  assert.ok(svg.includes(`<marker id="arrow-release"`) && svg.includes(`fill="${R}"/></marker>`), 'and so is its arrow');
+  const arch = fig.renderFigure({ ...KO_ARCH, theme: VIOLET }).svg, e = fig.themeContext(VIOLET, fig.hueRolesOf(KO_ARCH)).PALETTE.edges;
+  violet(e.data.color, 'data edge'); violet(e.fail.color, 'fail stroke');
+  assert.ok(arch.includes(`stroke="${e.data.color}"`) && arch.includes(`stroke="${e.fail.color}"`), 'the architecture draws both edges in them');
+  assert.equal(ctx.PALETTE.edges.data.color, R, 'the data edge takes the release hue');
+});
+
 test('theme roles: lane A and B, cause, wait, release, the claim accent, the pointer edges, the version ramp, the data/fail edges and the wait-label ink are read from the svg in theme colours', () => {
-  const ctx = fig.themeContext(BRAND), L = ctx.ROLES.light, P = ctx.PALETTE;
+  const ctx = fig.themeContext(BRAND, fig.hueRolesOf(FIG131)), L = ctx.ROLES.light, P = ctx.PALETTE;
   const { svg } = fig.renderFigure({ ...FIG131, theme: BRAND }), its = itemsOf(FIG131);
   FIG131.lanes.forEach((lane, k) => assert.deepEqual(rectOf(svg, its.find((i) => i.id === `lane ${lane.id}`).box), { fill: L.lanes[k].fill, stroke: L.lanes[k].stroke }, `lane ${lane.id}`));
   assert.ok(svg.includes(`fill="${L.wait.fill}" stroke="${L.wait.stroke}"`), 'the wait band');
@@ -1593,26 +1659,27 @@ test('theme roles: lane A and B, cause, wait, release, the claim accent, the poi
     assert.equal(pathStroke(chain, e.points), L.ramp[0].fill, `${e.id} takes the pointer hue`);
     assert.equal(fillOf(e.from).stroke, L.ramp[0].fill);
   }
-  const arch = fig.renderFigure({ ...KO_ARCH, theme: BRAND }).svg;
-  for (const c of [P.edges.fail.color, P.edges.data.color, P.edges.sync.color, P.muted]) assert.ok(arch.includes(`"${c}"`), `the architecture draws ${c}`);
+  const arch = fig.renderFigure({ ...KO_ARCH, theme: BRAND }).svg, AP = fig.themeContext(BRAND, fig.hueRolesOf(KO_ARCH)).PALETTE;
+  for (const c of [AP.edges.fail.color, AP.edges.data.color, AP.edges.sync.color, AP.muted]) assert.ok(arch.includes(`"${c}"`), `the architecture draws ${c}`);
   assert.equal(L.context.ink, BRAND.light.muted);
   assert.ok(wcag(L.context.ink, L.context.fill) >= 4.5 && wcag(L.context.stroke, L.surface) >= 3, 'the muted context role');
 });
 
-test('theme expansion: stroke = hue pushed to 3:1, fill = hue toward paper at L* 90, ink = the theme ink, hues in order accent, hue 1, 2 ..., then the accent hue turned', () => {
+test('theme expansion: stroke = hue pushed to 3:1, fill = hue toward paper at L* 90, ink = the theme ink, hues in order hue 1, 2 ..., then the accent, then none turned', () => {
   const { light } = BRAND, L = fig.themeContext(BRAND).ROLES.light;
-  assert.deepEqual([L.lanes[0].stroke, L.lanes[1].stroke, L.cause.stroke, L.wait.stroke], [light.accent, ...light.hues], 'hues that already pass keep their value, in the supply order');
+  assert.equal(L.lanes.length, 3, 'a themed set has lanes A, B and C');
+  assert.deepEqual([L.lanes[0].stroke, L.lanes[1].stroke, L.lanes[2].stroke, L.cause.stroke], [...light.hues, light.accent], 'hues that already pass keep their value, in the supply order');
   for (const r of [...L.lanes, L.cause, L.wait, L.release]) { assert.ok(Math.abs(lstar(r.fill) - 90) < 2, `fill ${r.fill} is ${lstar(r.fill).toFixed(1)} L*`); assert.equal(r.ink, light.ink); }
   // a pale hue is pushed toward the ink until it reaches 3:1, no further
-  const pale = fig.themeContext(PALE_HUE).ROLES.light.lanes[1];
+  const pale = fig.themeContext(PALE_HUE).ROLES.light.lanes[0];
   assert.notEqual(pale.stroke, '#e8c547');
   assert.ok(wcag(pale.stroke, PALE_HUE.light.paper) >= 3 && wcag(pale.stroke, PALE_HUE.light.paper) < 3.4, `stroke ${pale.stroke} is ${wcag(pale.stroke, PALE_HUE.light.paper).toFixed(2)}:1`);
   assert.ok(angle(hueDeg(pale.fill), hueDeg('#e8c547')) < 8, 'the fill keeps the hue');
-  // roles past the supply turn the accent hue 137.5 degrees per role
-  const only = fig.themeContext(ACCENT_ONLY).ROLES.light, h0 = hueDeg(ACCENT_ONLY.light.accent);
+  // roles past the supply keep a hue the theme has: no hue is turned, each role stays within 25 degrees of the accent
+  const only = fig.themeContext(ACCENT_ONLY).ROLES.light, h0 = hueDeg(ACCENT_ONLY.light.accent), all = [...only.lanes, only.cause, only.wait, only.release];
   assert.equal(only.lanes[0].stroke, ACCENT_ONLY.light.accent);
-  [only.lanes[1], only.cause, only.wait, only.release].forEach((r, k) => assert.ok(angle(hueDeg(r.fill), h0 + 137.5 * (k + 1)) < 12, `role ${k + 1} fill ${r.fill}: ${hueDeg(r.fill).toFixed(0)} vs ${((h0 + 137.5 * (k + 1)) % 360).toFixed(0)}`));
-  assert.equal(new Set([only.lanes[0], only.lanes[1], only.cause, only.wait, only.release].map((r) => r.stroke)).size, 5, 'five roles, five strokes');
+  all.forEach((r, k) => assert.ok(angle(hueDeg(r.fill), h0) < 25 && angle(hueDeg(r.stroke), h0) < 25, `role ${k} ${r.stroke} / ${r.fill} is ${hueDeg(r.fill).toFixed(0)} deg, the accent is ${h0.toFixed(0)}`));
+  assert.equal(new Set(all.map((r) => r.stroke)).size, 6, 'six roles, six strokes (a shared hue is told apart by one blue step)');
   // claim fill, neutral fills and the ramp
   const ctx = fig.themeContext(BRAND), P = ctx.PALETTE, paper = BRAND.light.paper;
   assert.ok(wcag(paper, P.fills.accent) >= 4.5 && lstar(P.fills.paper) - lstar(P.fills.accent) >= 64);
@@ -1623,6 +1690,82 @@ test('theme expansion: stroke = hue pushed to 3:1, fill = hue toward paper at L*
   // explicit --data / --fail hues take the edges
   const e = fig.themeContext({ light: { ...BRAND.light, data: '#2f6f1f', fail: '#a31515' } }).PALETTE.edges;
   assert.equal(e.data.color, '#2f6f1f'); assert.equal(e.fail.color, '#a31515');
+});
+
+const TWO_HUES = { light: { ...BRAND.light, hues: BRAND.light.hues.slice(0, 2) } };
+const RICH = { light: { ...BRAND.light, hues: HUES6 } };
+const NO_ACCENT = { light: { ink: BRAND.light.ink, paper: BRAND.light.paper, box: BRAND.light.box, muted: BRAND.light.muted, hues: ['#0e7490', '#c2410c'] } };
+
+test('theme lanes: with 2 hues and 3 lanes, lane A takes hue 1, lane B hue 2 and lane C the accent; writeFigure and figureWarnings both report that the hues ran out, naming the roles', () => {
+  const ir = { ...lane3Holder, theme: TWO_HUES }, dir = scratch();
+  try {
+    assert.deepEqual(fig.checkFigure(ir), []);
+    const { svg } = fig.renderFigure(ir), its = itemsOf(ir);
+    assert.deepEqual(ir.lanes.map((l) => rectOf(svg, its.find((i) => i.id === `lane ${l.id}`).box).stroke), [...TWO_HUES.light.hues, TWO_HUES.light.accent], 'lanes take the hues first, the accent after them');
+    const L = fig.themeContext(TWO_HUES, fig.hueRolesOf(ir)).ROLES.light;
+    assert.equal(new Set(L.lanes.map((r) => r.fill)).size, 3, 'three lanes, three fills: lane C no longer wraps onto lane A');
+    const w = quiet(() => fig.writeFigure(ir, join(dir, 'f'), NO_PNG)), listed = quiet(() => fig.figureWarnings(ir));
+    assert.equal(w.value.code, 3, 'the svg is written, the PNG needs a browser');
+    assert.ok(existsSync(join(dir, 'f.svg')));
+    assert.deepEqual(w.wrote.concat(listed.wrote), [], 'neither writes to stdout or stderr');
+    assert.deepEqual(w.value.warnings, listed.value, 'the same list on the figure path and the check path');
+    assert.equal(w.value.warnings.length, 1, w.value.warnings.join('\n'));
+    assert.match(w.value.warnings[0], /hues ran out/);
+    assert.match(w.value.warnings[0], /2 hues for the 6 hue roles/);
+    assert.match(w.value.warnings[0], /lane C, cause, wait, release/, 'the roles that fell back, by the figure\'s own names');
+    assert.ok(!/lane A|lane B/.test(w.value.warnings[0]), 'lane A and lane B kept their hues');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('theme lanes: with enough hues lane A\'s hue differs from the claim fill, which comes from the accent; --accent stays the theme\'s accent and warnings is empty - so it is for no theme', () => {
+  const ir = { ...lane3Holder, theme: RICH }, ctx = fig.themeContext(RICH, fig.hueRolesOf(ir)), dir = scratch();
+  try {
+    const { svg } = fig.renderFigure(ir), its = itemsOf(ir), a = rectOf(svg, its.find((i) => i.id === 'lane A').box);
+    assert.equal(a.stroke, HUES6[0], 'lane A is hue 1');
+    assert.ok(angle(hueDeg(a.stroke), hueDeg(ctx.PALETTE.fills.accent)) > 40, `lane A ${a.stroke} and the claim fill ${ctx.PALETTE.fills.accent} are different hues`);
+    assert.ok(angle(hueDeg(ctx.PALETTE.fills.accent), hueDeg(RICH.light.accent)) < 25, 'the claim fill is the accent turned toward the ink');
+    assert.ok(svg.includes(`fill="${ctx.PALETTE.fills.accent}" stroke=`), 'the claim step draws it');
+    assert.equal(ctx.vars.light.accent, RICH.light.accent, 'the HTML --accent var is the theme\'s accent, not lane A');
+    assert.deepEqual(quiet(() => fig.writeFigure(ir, join(dir, 'f'), NO_PNG)).value.warnings, []);
+    assert.deepEqual(fig.figureWarnings(ir), []);
+    assert.deepEqual(quiet(() => fig.writeFigure(lane3Holder, join(dir, 'n'), NO_PNG)).value.warnings, [], 'no theme');
+    assert.deepEqual(fig.figureWarnings(lane3Holder), [], 'no theme');
+    assert.deepEqual(fig.writeFigure({ type: 'timeline' }, join(dir, 'bad'), { ...NO_PNG, theme: RICH }).warnings, [], 'a refused figure');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('theme warnings: only the roles the figure draws are counted - a wait with no holder and no resume needs three hues, a theme with none warns for a timeline and not for an architecture', () => {
+  const waitOnly = edit(GAPPED, (c) => { delete c.waits[0].holder; });
+  assert.deepEqual(fig.hueRolesOf(waitOnly), ['lane A', 'lane B', 'wait']);
+  assert.deepEqual(fig.hueRolesOf(FIG131), ['lane A', 'lane B', 'cause', 'wait', 'release']);
+  assert.deepEqual(fig.hueRolesOf(KO_ARCH), []);
+  assert.deepEqual(fig.checkFigure({ ...waitOnly, theme: BRAND }), []);
+  assert.deepEqual(fig.figureWarnings({ ...waitOnly, theme: BRAND }), [], 'BRAND has 3 hues for the 3 roles drawn; cause, release and lane C are not drawn');
+  const print = fig.figureWarnings({ ...FIG131, theme: PRINT });
+  assert.equal(print.length, 1, print.join('\n'));
+  assert.match(print[0], /0 hues for the 5 hue roles/);
+  assert.match(print[0], /lane A, lane B, cause, wait, release/);
+  assert.ok(!/lane C/.test(print[0]), 'lane C is not drawn');
+  assert.deepEqual(fig.figureWarnings({ ...KO_ARCH, theme: PRINT }), [], 'an architecture draws no hue role');
+  const brand = fig.figureWarnings({ ...FIG131, theme: BRAND });
+  assert.equal(brand.length, 1);
+  assert.match(brand[0], /3 hues for the 5 hue roles/);
+  assert.match(brand[0], /wait, release/, 'with the accent as supply the last two roles fall back');
+});
+
+test('theme claim: a theme with no accent gives the claim its first hue and warnings says so; a theme with neither accent nor hues is still refused', () => {
+  const ctx = fig.themeContext(NO_ACCENT), first = NO_ACCENT.light.hues[0];
+  const named = fig.themeContext({ light: { ...NO_ACCENT.light, accent: first } });
+  assert.equal(ctx.PALETTE.fills.accent, named.PALETTE.fills.accent, 'the claim fill is the first hue\'s');
+  assert.equal(ctx.vars.light.accent, first, 'the HTML --accent var is the claim\'s hue');
+  const w = fig.figureWarnings({ ...FIG131, theme: NO_ACCENT });
+  assert.ok(w.some((m) => /no accent/.test(m) && /claim/.test(m) && m.includes(first)), w.join('\n'));
+  assert.deepEqual(fig.figureWarnings({ ...FIG131, theme: named.theme }).filter((m) => /no accent/.test(m)), [], 'a theme with an accent has no such warning');
+  const { svg } = fig.renderFigure({ ...FIG131, theme: NO_ACCENT });
+  assert.ok(svg.includes(`fill="${ctx.PALETTE.fills.accent}" stroke=`), 'the claim step draws it');
+  assert.equal(themeErrs(() => fig.themeContext({ light: { ink: '#111111', paper: '#ffffff', muted: '#333333', hues: [] } })).length, 1);
+  assert.match(fig.readThemeCss(':root{--bg:#fff;--fg:#111;--muted:#444;--hue-1:#036}').light.hues[0], /#003366/, 'a stylesheet with a hue and no --accent is read');
+  themeErrs(() => fig.readThemeCss(':root{--bg:#fff;--fg:#111;--muted:#444}'));
 });
 
 test('theme --theme file: figure and render apply it; the file wins over the IR\'s own theme; both a JSON theme and a .css one work', () => {
@@ -1662,7 +1805,7 @@ test('theme --theme on figure writes svg, png and the dark svg from the theme\'s
     const ir = writeJson(dir, 'tl.json', FIG131), brand = writeJson(dir, 'brand.json', BRAND), print = writeJson(dir, 'print.json', PRINT);
     let r = cli(['figure', ir, join(dir, 'f'), '--theme', brand]);
     assert.equal(r.status, 0, r.stderr + r.stdout);
-    const light = readFileSync(join(dir, 'f.svg'), 'utf8'), ctx = fig.themeContext(BRAND);
+    const light = readFileSync(join(dir, 'f.svg'), 'utf8'), ctx = fig.themeContext(BRAND, fig.hueRolesOf(FIG131));
     assert.equal(light, fig.renderFigure(FIG131, { theme: BRAND }).svg);
     assert.equal(readFileSync(join(dir, 'f.dark.svg'), 'utf8'), fig.darkSvg(light, ctx.dark), 'the dark svg is built from the dark half');
     assert.ok(existsSync(join(dir, 'f.png')));
@@ -1688,12 +1831,14 @@ test('theme --theme on figure writes svg, png and the dark svg from the theme\'s
 });
 
 test('theme dark half: the dark svg draws only the dark half\'s colours, text reads at 4.5:1 on its fill, and no light hex is left', () => {
-  const ctx = fig.themeContext(BRAND), D = ctx.ROLES.dark, dv = new Set([...Object.values(ctx.dark.maps.shape), ...ctx.dark.inks]);
+  const ctx = fig.themeContext(BRAND, fig.hueRolesOf(FIG131)), D = ctx.ROLES.dark;
   for (const [name, ir] of [['timeline', FIG131], ['record chain', CHAIN], ['architecture', KO_ARCH], ['er', ER], ['chart', CHART], ['bars', BARS]]) {
-    const { svg } = fig.renderFigure({ ...ir, theme: BRAND }), dark = fig.darkSvg(svg, ctx.dark);
+    // the dark set belongs to the roles the figure draws
+    const fc = fig.themeContext(BRAND, fig.hueRolesOf(ir)), dv = new Set([...Object.values(fc.dark.maps.shape), ...fc.dark.inks]);
+    const { svg } = fig.renderFigure({ ...ir, theme: BRAND }), dark = fig.darkSvg(svg, fc.dark);
     assert.notEqual(dark, svg, name);
     assert.deepEqual([...new Set(hexesOf(dark).filter((h) => !dv.has(h)))], [], `${name}: a hex outside the dark half`);
-    assert.deepEqual([...new Set(hexesOf(dark).filter((h) => h in ctx.dark.maps.shape))], [], `${name}: a light hex is left`);
+    assert.deepEqual([...new Set(hexesOf(dark).filter((h) => h in fc.dark.maps.shape))], [], `${name}: a light hex is left`);
     for (const p of textOnFills(dark)) assert.ok(wcag(p.ink, p.fill || D.surface) >= 4.5, `${name}: text ${p.ink} on ${p.fill || D.surface}`);
     assert.equal(dark.replace(/#[0-9a-f]{6}/gi, '#'), svg.replace(/#[0-9a-f]{6}/gi, '#'), `${name}: only the colours changed`);
   }
