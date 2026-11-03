@@ -454,12 +454,14 @@ function defaultPort() {
 
 // The viewer is spawned detached (mcp/viewserver.mjs), so nothing else ever stops it. It ends itself:
 // every DIR_CHECK_MS each registered root whose dir is gone is dropped; it ends when no registered root
-// is left (a root missing at startup counts at the first check, no grace), or once IDLE_MS has passed
-// with no HTTP request (GET /state.json included) and no live task in any remaining root. Live is
+// is left (a root missing at startup counts at the first check, no grace), or once the idle window has
+// passed since a live task was last seen in any remaining root (since the start when none ever was).
+// HTTP requests, GET /state.json included, do not extend it: the viewer is shared per tasks root, and a
+// browser tab left open must not keep it alive. Live is
 // the set view-floor-fs.mjs calls OPEN (not exported there); BLOCKED, stalled, unknown and error rows
 // are not live. The record <root>/.view.json is left as it is - a dead pid already reads as no record.
 const DIR_CHECK_MS = 2000;
-const IDLE_DEFAULT_MS = 30 * 60 * 1000;
+const IDLE_DEFAULT_MS = 5 * 60 * 1000;
 const EXIT_GRACE_MS = 1000;
 const LIVE = new Set(['READY', 'IN_PROGRESS', 'IN_REVIEW']);
 
@@ -476,9 +478,8 @@ function newest(roots) {
 
 function startServer(tasksDir, taskId, port) {
   const roots = [samePath(tasksDir)];
-  let lastRequest = Date.now();
+  let lastLive = Date.now(); // the last check that saw a live task, or the start; HTTP requests never move it
   const server = createServer((req, res) => {
-    lastRequest = Date.now();
     const url = new URL(req.url, 'http://localhost');
     if (url.pathname === '/state.json') {
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
@@ -526,10 +527,10 @@ function startServer(tasksDir, taskId, port) {
   const watch = setInterval(() => {
     for (let i = roots.length - 1; i >= 0; i--) if (!existsSync(roots[i])) roots.splice(i, 1);
     if (!roots.length) { end(); return; }
-    if (Date.now() - lastRequest < idleMs()) return;
     let rows;
     try { rows = roots.flatMap((root) => listTasks(root)); } catch { return; }
-    if (!rows.some((r) => LIVE.has(r.state))) end();
+    if (rows.some((r) => LIVE.has(r.state))) { lastLive = Date.now(); return; }
+    if (Date.now() - lastLive >= idleMs()) end();
   }, DIR_CHECK_MS);
   watch.unref();
   return server;

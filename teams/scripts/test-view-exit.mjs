@@ -1,7 +1,7 @@
 // A viewer that ends itself: view.mjs server mode is spawned detached (mcp/viewserver.mjs), so nothing
 // else ever stops it. It exits when its --tasks-dir is gone (checked every 2 s, no grace for a dir
-// missing at startup), or once TEAMS_VIEW_IDLE_MS has passed with no HTTP request and no live task
-// (READY, IN_PROGRESS, IN_REVIEW). Each test runs the real script as a child process.
+// missing at startup), or once TEAMS_VIEW_IDLE_MS (default 5 min) has passed since a live task (READY,
+// IN_PROGRESS, IN_REVIEW) was last seen. HTTP requests do not extend life. Each test runs the real script as a child process.
 //
 //   node --test teams/scripts/test-view-exit.mjs
 
@@ -9,7 +9,7 @@
 process.env.TEAMS_RUNS_DIR ??= 'off';
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -112,18 +112,38 @@ test('a viewer whose tasks are all CANCELLED or BLOCKED is idle: it ends', async
   assert.equal(await exitsWithin(v.exited, EXIT_WITHIN_MS), true);
 });
 
-test('GET /state.json resets the idle clock: a polled viewer outlives two idle periods, then ends once polling stops', async () => {
+test('GET /state.json does not extend life: a polled viewer with no live task still ends once the idle time has passed', async () => {
   const dir = scratch();
   const v = await start(dir, IDLE_MS);
-  const until = Date.now() + 2 * IDLE_MS + 1500;
-  while (Date.now() < until) {
-    const res = await fetch(`http://127.0.0.1:${v.port}/state.json`);
-    assert.equal(res.status, 200);
-    await res.text();
-    await sleep(300);
-  }
-  assert.ok(alive(v.child), 'polled more often than the idle time, past two idle periods: still up');
-  assert.equal(await exitsWithin(v.exited, EXIT_WITHIN_MS), true, 'polling stopped: the same viewer now ends');
+  let polling = true;
+  const poller = (async () => {
+    while (polling) {
+      try { const res = await fetch(`http://127.0.0.1:${v.port}/state.json`); await res.text(); } catch { /* the viewer ended */ }
+      await sleep(300);
+    }
+  })();
+  const gone = await exitsWithin(v.exited, EXIT_WITHIN_MS);
+  polling = false;
+  await poller;
+  assert.equal(gone, true, 'polled every 300 ms, far more often than the idle time: the viewer must end anyway');
+  assert.equal(v.child.exitCode, 0);
+});
+
+test('the shared viewer ends after the last live task finishes and the idle window passes, and not before; none is left in ps', async () => {
+  const dir = scratch();
+  const window = 5000;
+  seedTask(dir, 'T-run', { nodes: [node('size', 'size', [])] });
+  assert.equal(listTasks(dir)[0].state, 'READY', 'fixture: the task is live');
+  const v = await start(dir, window);
+  assert.equal(await exitsWithin(v.exited, window + 3000), false, 'a live task keeps the viewer up past the window');
+  seedTask(dir, 'T-run', { cancelled: true });
+  assert.equal(listTasks(dir)[0].state, 'CANCELLED', 'fixture: the task has finished');
+  const t0 = Date.now();
+  assert.equal(await exitsWithin(v.exited, window + EXIT_WITHIN_MS), true, 'the last live task is done and the window has passed: the viewer ends');
+  assert.ok(Date.now() - t0 >= window - 2500, `it waited out the window after the task ended (${Date.now() - t0} ms), it did not end at the next check`);
+  assert.equal(v.child.exitCode, 0);
+  const r = spawnSync('pgrep', ['-f', `scripts/view.mjs --tasks-dir ${dir} `], { encoding: 'utf8' });
+  assert.equal((r.stdout || '').trim(), '', 'no viewer process is left for the root');
 });
 
 test('a viewer with a live task stays up past the idle time with no request at all', async () => {
@@ -138,7 +158,8 @@ test('a viewer with a live task stays up past the idle time with no request at a
   assert.equal(await exitsWithin(v.exited, EXIT_WITHIN_MS), true, 'a live task does not keep a viewer whose dir is gone');
 });
 
-test('TEAMS_VIEW_IDLE_MS: non-numeric and non-positive values fall back to the 30 min default', async () => {
+test('TEAMS_VIEW_IDLE_MS: non-numeric and non-positive values fall back to the 5 min default', async () => {
+  assert.match(readFileSync(VIEW_SCRIPT, 'utf8'), /const IDLE_DEFAULT_MS = 5 \* 60 \* 1000;/, 'the default window is 5 minutes');
   for (const bad of ['abc', '0', '-5']) {
     const dir = scratch();
     const v = await start(dir, bad);

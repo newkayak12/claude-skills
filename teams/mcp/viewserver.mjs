@@ -11,12 +11,13 @@
 // port (POST /register) and its record says so: <tasksRoot>/.view.json ({pid, port, started_at},
 // plus shared: true when joined). A viewer that lost a bind race is joined the same way.
 //
-// A record is reused only when its pid is alive AND its port answers an HTTP GET of /state.json
-// (retried for about 2s): a live pid alone proves nothing, because the OS recycles pids and the
-// fixed port can be taken by anything. A record that does not answer is replaced - a new viewer
-// is spawned and .view.json rewritten. Only ensureViewer (tm_open/tm_run) makes that check;
-// readViewRecord stays pid-only and tm_status, which uses it and never spawns, hands out the
-// recorded link without probing the port.
+// A record is reused whenever its pid is alive AND is a teams viewer (isViewer: its command line
+// runs view.mjs, or its port names that pid at /teams-view.json). A live viewer is never replaced:
+// one that is slow to answer, or whose port refuses connections, is still the one viewer of the
+// root, and .view.json is not rewritten while it lives. The OS recycles pids, so a live pid that
+// is provably not a viewer counts as dead: a new viewer is spawned and .view.json rewritten, and
+// only then. Only ensureViewer (tm_open/tm_run) makes that check; readViewRecord stays pid-only
+// and tm_status, which uses it and never spawns, hands out the recorded link without probing.
 //
 // Nothing here may break tm_open. Every failure path - a port that will not bind, a spawn that
 // throws, an unreadable or corrupt .view.json, a node binary that is not there - returns null
@@ -28,7 +29,7 @@
 //                         viewer there is joined, anything else there gives null. Unpinned, only a
 //                         non-teams holder of 7431 moves the viewer to a free port, which is recorded
 import { pidAlive } from './proc.mjs';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { get as httpGet, request as httpRequest } from 'node:http';
 import { createServer } from 'node:net';
 import { readFileSync, writeFileSync, unlinkSync, realpathSync } from 'node:fs';
@@ -216,12 +217,32 @@ async function spawnViewer(tasksDir, preferred) {
   return { child, port };
 }
 
+// The command line of `pid`, or null when it cannot be read (no ps, no such process).
+function commandLine(pid) {
+  try {
+    const r = spawnSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8', timeout: 2000 });
+    return r.status === 0 ? r.stdout.trim() : null;
+  } catch { return null; }
+}
+
+// Is the live pid of this record a teams viewer? Yes when its command line runs view.mjs (the
+// spawn in spawnViewer), or its port answers /teams-view.json with that same pid. An unreadable
+// command line proves nothing against it, so it stays a viewer; only a readable line that does not
+// name view.mjs plus a port that does not name this pid says "some other process holds the pid".
+// The answer never depends on /state.json being quick: a viewer that is slow or hung is still one.
+async function isViewer(rec) {
+  const cmd = commandLine(rec.pid);
+  if (cmd === null || /(^|[\s/\\])view\.mjs(\s|$)/.test(cmd)) return true;
+  const id = await httpJson(rec.port, '/teams-view.json', REUSE_PROBE_MS);
+  return !!(id && id.status === 200 && id.json && id.json.teams_view === 1 && id.json.pid === rec.pid);
+}
+
 // Returns {url, port, pid, started} or null. `started` false means an already-running viewer
 // was reused or joined - the caller can say "watch it here" either way, and should not say "started".
 export async function ensureViewer(tasksDir, taskId, { preferred } = {}) {
   if (viewDisabled()) return null;
   const existing = readViewRecord(tasksDir);
-  if (existing && await answers(existing.port, REUSE_PROBE_MS)) {
+  if (existing && await isViewer(existing)) {
     return { url: viewUrl(existing.port, taskId), port: existing.port, pid: existing.pid, started: false };
   }
   try {
