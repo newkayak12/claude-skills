@@ -271,6 +271,10 @@ toasts).
    - Acceptance: a viewer started by `tm_open` exits within a minute of its task's `daemon_done` (or is
      shared: one server for all tasks, reused by later opens); a test opens two tasks and counts one
      live server after both finish → zero; idle CPU of a live server under 5% with 2000 finished tasks.
+   - Also seen 2026-11-03 14:05 (load 12 on 8 cores, no `claude -p` driver live): short-lived
+     `view.mjs --once --format events --since …` children of other sessions' mods (installed 0.62.3) at
+     45–70% CPU each, respawned every few seconds, and a `view.mjs --serve-once-socket` (0.62.5) up 24 h
+     at 60%. Acceptance adds: a mod's events poll with nothing new costs under 5% of one core.
 
 112. **An area critique's file-ownership overlap blocks instead of passing as soft**
    - Why: 2026-10-31, E-8c671fd9: `areas-critique` saw F2 and F3 both planning the spawn env edit in
