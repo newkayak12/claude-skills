@@ -7,8 +7,10 @@ n times. The record's schema belongs to `scripts/manage.mjs`: read the header co
 ## n
 
 n comes from the user; the default is 2. The `round` input's `n` is the last round number this loop
-reaches (the highest `snapshot/rounds/round-N.json` already there, plus the user's n); round
-numbers continue from that file and never overwrite one.
+reaches (the highest `snapshot/rounds/round-N.json` already there, plus the user's n when a loop
+resumes after an earlier one finished). n is fixed for the rounds of one loop: every round's `n`
+equals the previous record's, and `round` is never past `n`. Round numbers run in order from 1
+(round N>1 needs `round-(N-1).json`) and never overwrite one (default - revisit with the manage skill owner).
 
 ## The pass, in order
 
@@ -32,7 +34,10 @@ numbers continue from that file and never overwrite one.
 6. **Record.** One `round` call per round, after the last step (or after the step that ended
    it). Write the input to `snapshot/rounds/in-N.json` and run
    `manage.mjs round --input snapshot/rounds/in-N.json` (that folder is left out of `changed`).
-   `steps` holds exactly seven entries, one per step 1-7, never two for one step. A step with a
+   `steps` holds exactly seven entries, one per step 1-7, never two for one step; `round` refuses
+   any other list (empty, partial, a step twice), a `round-N.json` that exists, a missing or
+   malformed `round-(N-1).json` (it errs with `previous record malformed`), an `n` that differs
+   from the previous record's, and `round` past `n`, and writes nothing. A step with a
    part that could not run (step 4's interviewer or noah viewpoint headless) is one entry:
    `skipped`, the reason naming the part that did not run and what did run.
    Never fill a derived field (gaps, diff, `changed`, `started_from`, `stop_reason`, `continue`).
