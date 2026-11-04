@@ -11,7 +11,7 @@ import { collectTask, driverLive } from './view-collect.mjs';
 import { summarize, cardsOf, waitingCount } from './view-summary.mjs';
 import { floorOf } from './view-floor.mjs';
 import { repoMatcher } from './view-repo.mjs';
-import { openTasks } from './view-index.mjs';
+import { openTasks, statSig } from './view-index.mjs';
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
 // A judge has no pid: its newest stream says it is working while it was written this recently.
@@ -34,8 +34,11 @@ const cache = new Map();
 const stats = { hits: 0, misses: 0 };
 export const cacheStats = () => ({ ...stats });
 
-function memo(key, files, compute) {
-  const sig = files.map((f) => { try { const s = statSync(f); return `${f}:${s.mtimeMs}:${s.size}`; } catch { return `${f}:gone`; } }).join('|');
+// `over` (the state server) replaces the file-stat signature: the caller's own key for when the value is
+// rebuilt (its task.json|ledger.jsonl signature), so a stream that grows between two changes of those is
+// not read in full again on every call.
+function memo(key, files, compute, over) {
+  const sig = over ?? files.map((f) => { try { const s = statSync(f); return `${f}:${s.mtimeMs}:${s.size}`; } catch { return `${f}:gone`; } }).join('|');
   const hit = cache.get(key);
   if (hit && hit.sig === sig) { stats.hits += 1; return hit.value; }
   stats.misses += 1;
@@ -44,12 +47,31 @@ function memo(key, files, compute) {
   return value;
 }
 
-const taskCosts = (taskDir) => memo(`d:${taskDir}`, findDriverStreams(taskDir).sort(), () => collectDriverCosts(taskDir));
+const taskCosts = (taskDir, over) => memo(`d:${taskDir}`, over ? [] : findDriverStreams(taskDir).sort(), () => collectDriverCosts(taskDir), over);
 
-function nodeSessions(runDir) {
+function nodeSessions(runDir, over) {
   const files = [];
-  for (const nd of ls(runDir)) if (nd.isDirectory()) for (const at of ls(join(runDir, nd.name))) if (at.isDirectory()) files.push(join(runDir, nd.name, at.name, 'events.jsonl'));
-  return memo(`n:${runDir}`, files, () => collectNodeCosts([runDir]));
+  if (!over) for (const nd of ls(runDir)) if (nd.isDirectory()) for (const at of ls(join(runDir, nd.name))) if (at.isDirectory()) files.push(join(runDir, nd.name, at.name, 'events.jsonl'));
+  return memo(`n:${runDir}`, files, () => collectNodeCosts([runDir]), over);
+}
+
+// What a file's tail parses to, kept while its mtime and size are unchanged (the state server only: a
+// stream's last lines are read again only when the stream grew).
+const tails = new Map();
+function byStat(kind, path, compute) {
+  const key = `${kind}:${path}`;
+  const sig = statSig(path);
+  const hit = tails.get(key);
+  if (hit && hit.sig === sig) { hit.seen = Date.now(); return hit.value; }
+  const value = compute();
+  tails.set(key, { sig, value, seen: Date.now() });
+  return value;
+}
+
+// Drops tail memos not used for maxAgeMs (called by the state server next to its task-cache forget).
+export function pruneTails(maxAgeMs) {
+  const t = Date.now();
+  for (const [k, e] of tails) if (t - e.seen > maxAgeMs) tails.delete(k);
 }
 
 // A driver stream's desk: the file name without restart and attempt suffixes, so every attempt and
@@ -58,10 +80,10 @@ const group = (name) => name.replace(/(\.restart\d+)?\.stream\.jsonl$/, '').repl
 
 // { cost_usd, cost_estimated } for the desk whose driver wrote `log`, plus the node sessions of its
 // child run; cost_usd null when no stream of it has a reading.
-function storyCost(taskDir, log, childRunDir) {
+function storyCost(taskDir, log, childRunDir, over) {
   const g = log ? group(basename(log)) : null;
-  const streams = g ? taskCosts(taskDir).streams.filter((s) => group(basename(s.path)) === g) : [];
-  const nodes = childRunDir ? nodeSessions(childRunDir) : [];
+  const streams = g ? taskCosts(taskDir, over).streams.filter((s) => group(basename(s.path)) === g) : [];
+  const nodes = childRunDir ? nodeSessions(childRunDir, over) : [];
   if (!streams.length && !nodes.length) return { cost_usd: null, cost_estimated: false };
   const usd = streams.reduce((a, s) => a + s.cost_usd, 0) + nodes.reduce((a, s) => a + s.cost_usd, 0);
   return { cost_usd: +usd.toFixed(4), cost_estimated: streams.some((s) => s.estimated) };
@@ -85,16 +107,20 @@ const runFile = (cwd, runId) => {
 };
 
 // The facts floorOf takes, for one collected task model.
-export function floorFacts(m, tasksDir, taskId, { now = Date.now() } = {}) {
+// `raw` (the task.json already parsed) and `sig` (the task's task.json|ledger.jsonl signature) come from the
+// state server: with them nothing is parsed from task.json again, costs are rebuilt only when `sig`
+// changes, and a stream or the ledger is read for its tail only when its own mtime or size changed.
+export function floorFacts(m, tasksDir, taskId, { now = Date.now(), raw: given, sig } = {}) {
   const dir = join(tasksDir, taskId);
-  const raw = readJson(join(dir, 'task.json')) || {};
+  const raw = given || readJson(join(dir, 'task.json')) || {};
+  const doing = sig ? (log) => byStat('doing', log, () => doingOf(log)) : doingOf;
   const stories = {};
   const desk = (id, driver, childCwd, childRunId, file) => {
     const log = driver && driver.log;
     const live = !!driver && driverLive({ ...driver, log }, now);
     stories[id] = {
-      live, doing: live ? doingOf(log) : '', run_file: file,
-      ...storyCost(dir, log, childCwd && childRunId ? join(childCwd, '.teams_output', 'broker', String(childRunId)) : null),
+      live, doing: live ? doing(log) : '', run_file: file,
+      ...storyCost(dir, log, childCwd && childRunId ? join(childCwd, '.teams_output', 'broker', String(childRunId)) : null, sig),
     };
   };
   if (m.s_run || m.harness) {
@@ -115,8 +141,9 @@ export function floorFacts(m, tasksDir, taskId, { now = Date.now() } = {}) {
   let judge = { live: false, doing: '' };
   const judgeLogs = ls(join(dir, 'drivers')).filter((e) => e.name.startsWith('judge_') && e.name.endsWith('.stream.jsonl'))
     .map((e) => join(dir, 'drivers', e.name)).map((p) => ({ p, t: mtimeOf(p) || 0 })).sort((a, b) => b.t - a.t);
-  if (judgeLogs.length && now - judgeLogs[0].t <= JUDGE_FRESH_MS) judge = { live: true, doing: doingOf(judgeLogs[0].p) };
-  return { stories, judge, ledger: readLogTail(join(dir, 'ledger.jsonl'), 500).lines };
+  if (judgeLogs.length && now - judgeLogs[0].t <= JUDGE_FRESH_MS) judge = { live: true, doing: doing(judgeLogs[0].p) };
+  const ledgerPath = join(dir, 'ledger.jsonl');
+  return { stories, judge, ledger: sig ? byStat('ledger', ledgerPath, () => readLogTail(ledgerPath, 500).lines) : readLogTail(ledgerPath, 500).lines };
 }
 
 // A cheap read, for a task past 24 h, of whether a card still waits on a person: task.json's own nodes,
@@ -133,6 +160,18 @@ function parkedOnPerson(raw) {
   if (s && s.cwd && s.run_id && waits(readJson(join(s.cwd, '.teams_output', 'broker', 'runs', `${s.run_id}.json`)))) return true;
   const g = raw.harness_run && raw.harness_run.run;
   return !!(g && g.route === 'graph' && waits(readJson(graphRunPath(g.cwd, g.run_id))));
+}
+
+// parkedOnPerson reads run files; for the same parsed task.json (a long-lived reader hands the same
+// object back while the file is unchanged) the answer is kept for a minute.
+const PARKED_TTL_MS = 60 * 1000;
+const parked = new WeakMap();
+function parkedMemo(raw, now) {
+  const hit = parked.get(raw);
+  if (hit && now - hit.at < PARKED_TTL_MS) return hit.value;
+  const value = parkedOnPerson(raw);
+  parked.set(raw, { at: now, value });
+  return value;
 }
 
 // The tasks of `cwd`'s repo (its main checkout and linked worktrees, see view-repo.mjs) the pane lists: open ones (READY/IN_PROGRESS/IN_REVIEW) with a sign of life in the
@@ -152,7 +191,7 @@ export function floorTasks({ tasksDir, cwd, opener, now = Date.now(), collect = 
     const marks = [Number(raw.created_at) || 0, mtimeOf(join(tasksDir, name, 'ledger.jsonl')) || 0];
     for (const f of ls(join(tasksDir, name, 'drivers'))) if (f.name.endsWith('.stream.jsonl')) marks.push(mtimeOf(join(tasksDir, name, 'drivers', f.name)) || 0);
     const at = Math.max(...marks);
-    if (now - at > DAY_MS && !parkedOnPerson(raw)) continue;
+    if (now - at > DAY_MS && !parkedMemo(raw, now)) continue;
     // the repo compare comes last: it may spawn git
     const worktree = repo ? repo(raw.cwd) : { match: true, worktree: null };
     if (!worktree.match) continue;
@@ -174,7 +213,7 @@ export function floorTasks({ tasksDir, cwd, opener, now = Date.now(), collect = 
 }
 
 // One listed task as the summary prints it: summarize()'s fields plus identity, liveness, age and the floor.
-export function floorEntry({ m, id, live, age_ms, waiting, worktree = null }, tasksDir, { now = Date.now() } = {}) {
+export function floorEntry({ m, id, live, age_ms, waiting, worktree = null }, tasksDir, { now = Date.now(), ...reuse } = {}) {
   const summary = summarize(m, { now });
   return {
     ...summary,
@@ -184,6 +223,6 @@ export function floorEntry({ m, id, live, age_ms, waiting, worktree = null }, ta
     // an S task's harness run: the slug it is known by and whether it moved lately (the row's liveness is item.live)
     harness: m.harness ? { slug: m.harness.slug || null, moving: !!m.harness.moving } : null,
     // each STORY's numbers (attempt, judge, cost, wall, out of retries) ride on its item as `metrics`
-    ...floorOf(m, floorFacts(m, tasksDir, id, { now }), { now, metrics: summary.metrics }),
+    ...floorOf(m, floorFacts(m, tasksDir, id, { now, ...reuse }), { now, metrics: summary.metrics }),
   };
 }

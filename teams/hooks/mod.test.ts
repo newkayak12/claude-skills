@@ -2674,15 +2674,11 @@ for (const surface of SURFACES) {
 const SERVE_CLOCK = 5_000_000_000
 const isServeStart = (argv: readonly string[]) => argv[0] === 'sh'
 
-function socketWorld(on: On, answer: () => { status: number; text: string } | 'fail') {
-  const clock = mock.clock(on, { now: SERVE_CLOCK })
-  const seen = world(on, ['terminal'], () => ok(''))
+function socketWorld(on: On, answer: () => { status: number; text: string } | 'fail', opts: { now?: number; tasks?: string; sockPath?: string } = {}) {
+  const clock = mock.clock(on, { now: opts.now ?? SERVE_CLOCK })
+  const seen = world(on, ['terminal'], argv => ok(argv.includes('--sock-path') ? (opts.sockPath ?? '') : ''))
   on('ui.panes', () => ({ value: [] }) as never)
-  on('env.get', (_$, e) => ({ value: e.name === 'HARNESS_TASKS_DIR' ? '/w/tasks' : e.name === 'HOME' ? '/home/u' : undefined }) as never)
-  on('fs.read', (_$, e) => {
-    if (e.path.endsWith('/.claude-plugin/plugin.json')) return { value: JSON.stringify({ version: '9.9.9' }) } as never
-    throw new Error('ENOENT')
-  })
+  on('env.get', (_$, e) => ({ value: e.name === 'HARNESS_TASKS_DIR' ? (opts.tasks ?? '/w/tasks/') : e.name === 'HOME' ? '/home/u' : undefined }) as never)
   const urls: string[] = []
   const sockets: string[] = []
   on('http.fetch', (_$, e) => {
@@ -2695,12 +2691,30 @@ function socketWorld(on: On, answer: () => { status: number; text: string } | 'f
   return { clock, seen, urls, sockets }
 }
 
-test('view server: the socket path carries the plugin version', async ($, on) => {
+test('view server: the socket is the tasks root\'s .state.sock, no version in it', async ($, on) => {
   const { clock, sockets } = socketWorld(on, () => ({ status: 200, text: '' }))
   await start($)
   await clock.advance(3000)
   expect(sockets.length > 0).toBe(true)
-  expect(sockets.every(s => s === '/w/view-once-9.9.9.sock')).toBe(true)
+  expect(sockets.every(s => s === '/w/tasks/.state.sock')).toBe(true)
+})
+
+test('view server: without HARNESS_TASKS_DIR the socket is under ~/.harness/tasks', async ($, on) => {
+  const { clock, sockets } = socketWorld(on, () => ({ status: 200, text: '' }), { tasks: '' })
+  await start($)
+  await clock.advance(3000)
+  expect(sockets.length > 0).toBe(true)
+  expect(sockets.every(s => s === '/home/u/.harness/tasks/.state.sock')).toBe(true)
+})
+
+test('view server: a root whose socket path is over 103 bytes uses the --sock-path answer, asked once', async ($, on) => {
+  const tasks = `/w/${'d'.repeat(110)}`
+  const { clock, seen, sockets } = socketWorld(on, () => ({ status: 200, text: '' }), { tasks, sockPath: '/tmp/teams-state-abc.sock\n' })
+  await start($)
+  await clock.advance(9000)
+  expect(sockets.length > 1).toBe(true)
+  expect(sockets.every(s => s === '/tmp/teams-state-abc.sock')).toBe(true)
+  expect(seen.argv.filter(a => a.includes('--sock-path'))).toHaveLength(1)
 })
 
 test('view server: with the socket answering 200 a tick spawns no data process', async ($, on) => {
@@ -2708,8 +2722,17 @@ test('view server: with the socket answering 200 a tick spawns no data process',
   await start($)
   await clock.advance(9000)
   expect(urls.length > 0).toBe(true)
-  expect(urls.every(u => u.includes('format='))).toBe(true)
+  expect(urls.every(u => u.includes('format=') && new URL(u).searchParams.get('proto') === '1')).toBe(true)
   expect(seen.argv.filter(a => !isServeStart(a))).toHaveLength(0)
+  expect(seen.argv.filter(isServeStart)).toHaveLength(0)
+})
+
+test('view server: a 409 answers with --once and starts no server over 9 s', async ($, on) => {
+  const { clock, seen, urls } = socketWorld(on, () => ({ status: 409, text: '{"error":"proto"}' }), { now: SERVE_CLOCK + 1e9 })
+  await start($)
+  await clock.advance(9000)
+  expect(urls.length > 0).toBe(true)
+  expect(seen.argv.some(a => a.includes('--once') && isEvents(a))).toBe(true)
   expect(seen.argv.filter(isServeStart)).toHaveLength(0)
 })
 
@@ -2719,7 +2742,8 @@ test('view server: with fetch failing the tick falls back to --once and starts t
   await clock.advance(3000)
   expect(seen.argv.some(a => a.includes('--once') && isEvents(a))).toBe(true)
   expect(seen.argv.filter(isServeStart)).toHaveLength(1)
-  expect(seen.argv.filter(isServeStart)[0]?.join(' ')).toContain('--serve-once-socket')
+  expect(seen.argv.filter(isServeStart)[0]?.join(' ')).toContain('mcp/stateserver.mjs')
+  expect(seen.argv.filter(isServeStart)[0]?.join(' ')).toContain('--tasks-dir')
   await clock.advance(15000)
   expect(seen.argv.filter(a => a.includes('--once')).length > 1).toBe(true)
   expect(seen.argv.filter(isServeStart)).toHaveLength(1)
