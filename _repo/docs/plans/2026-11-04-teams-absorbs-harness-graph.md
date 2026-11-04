@@ -9,8 +9,10 @@ either plugin.
 - "S 사이즈 harness 실행(내장+codex가 있다면 codex쪽에도 위임(graph)) / L 사이즈부터 teams engine 실행 /
   기존 mod 통합 / 이후 관리포인트는 harness, graph stable로 두고 teams만 유지보수할거임".
 - "harness에서 codex-integration만 넣은게 graph고 / 어디서 fire할지 codex, claude 안정한 상태에서
-  integration에 위임해서 돌게 한다는 아이디어" — graph is not a second engine to merge; it is harness plus
-  one choice: where each node fires.
+  integration에 위임해서 돌게 한다는 아이디어", "graph 자체가 이거일텐데 하네스 플로우에" — graph *is* the
+  harness flow with per-node firing on Codex or Claude. teams already carries a superset fork of it
+  (`teams/mcp/graph.mjs`, `broker.mjs`), so S runs as one graph run on that fork: no harness copy, no
+  second engine.
 - Ends the staged engine refactor (analysis 2026-11-04): its targets are folded in where this work touches
   them, not run as their own Sprints.
 - harness and graph stay installed and stable, untouched. teams owns its copies from here; they may diverge.
@@ -19,7 +21,7 @@ either plugin.
 
 | Size | Runs on | Where a node fires |
 |---|---|---|
-| S | the harness procedure inside teams (plan → setgoal → critique rounds with severity → implement → test → gate → report, `now.json` progress) — the driver no longer loads the harness plugin | per node: Codex when the provider probe says it is ready for that stage, else Claude; the reason is recorded on the node |
+| S | one graph run on teams' own broker: the harness flow (plan → setgoal → critique rounds with severity → implement → test → gate → report, `now.json` progress), what card 48 Tasks 2–4 put into graph brought into the fork where it lacks them; the driver no longer loads the harness plugin (`harnessrun.mjs` already reads a `route: 'graph'` pointer) | per node: Codex when the provider probe says it is ready for that stage, else Claude; the reason is recorded on the node |
 | L and up | the teams engine, as today | the same per-node choice, the same probe |
 
 - One provider probe and one routing rule, in teams (`teams/mcp/routing.mjs` already holds the routing; the
@@ -38,7 +40,7 @@ unchanged; teams does not depend on them.
 ## Order
 
 1. Land the two running tasks (E-0ad41780 socket, E-6ff25a30 test isolation).
-2. Sprint: S on the built-in harness procedure with per-node fire routing; drop the harness plugin from the
+2. Sprint: S as one graph run on teams' broker with per-node fire routing; drop the harness plugin from the
    S driver; the copy checks in `_repo/scripts/check-copies.mjs` that tie teams to harness (ROUTE/NODE
    blocks) become teams-only.
 3. Sprint: the pane (card 125 pane scope + viewer URL removal) drawing S and L.
