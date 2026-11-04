@@ -119,7 +119,7 @@ Before/after tally table (`revision-diff.md` + §C rows) · one line on verdict 
 
 **부록 / Appendix** — evidence, each finding once, with an ID. Every appendix line starts with its ID and a space (`C1 `, `A1 `, `L1 `, `R1 `, `F1 `) — no bullet, no bold before it.
 
-**[충돌 / Clashes]** — the only record of the debate. First a panel line: `패널 / Panel: A Staff · B EM · C Tech Lead · D OSS/DevTools — sonnet, <n> rounds`. Then one line per contested finding: `<finding ID> — <who disagreed> — survived|dropped`, where who-disagreed carries each attack's steel-man, type, severity and precedent (`panel.md`). A dropped finding appears here and nowhere else. No contest: `충돌 없음 / no clashes`. Panel not run: `패널 미실행 / panel could not run — single-context review`. Detail: `references/panel.md`.
+**[충돌 / Clashes]** — the only record of the debate. First a panel line: `패널 / Panel: A Staff · B EM · C Tech Lead · D OSS/DevTools — sonnet, <n> rounds`. Then one line per contested finding: `<finding ID> — <who disagreed> — survived|dropped` (the ID is always `[CALRF]\d+`), where who-disagreed carries each attack's steel-man, type, severity and precedent (`panel.md`). A dropped finding appears here and nowhere else. No contest: `충돌 없음 / no clashes`. Panel not run: `패널 미실행 / panel could not run — single-context review`. Detail: `references/panel.md`.
 
 **[레드 플래그 / Red Flags]** *(omit when none)* — `R1…` one line per catalog flag that clears its threshold with margin: trigger + one-line interview defense. Tally-backed flags cite the tally.
 
