@@ -211,6 +211,12 @@ toasts).
      and computes a task's state only when that task's files changed (no full re-read per poll); it exits
      when no session is connected; a test with two clients on one socket, and `ps` showing one server
      with two sessions open; idle CPU of the server under 1% with one running task, measured.
+   - The viewer link, now and unconditionally (user, 2026-11-04, on a `http://127.0.0.1:7431/E-478d5e95` in a
+     reply: "이렇게 내보이는거 굳이 하지말자"): no tm_* reply carries a viewer URL — `view_url` leaves
+     tm_open, tm_run and tm_status (`teams/mcp/taskmanager.mjs`), and the skills that tell Claude to show it
+     (`teams/skills/{orchestrate,develop,plan,qa,document}/SKILL.md`) and `teams/docs/configuration*.md`
+     stop doing so. Not gated on the pane condition above. Acceptance: `grep -rn 'view_url\|7431' teams`
+     hits only `viewserver.mjs`/`view.mjs` (until they retire) and tests asserting its absence.
    - The pane's quality pass (user, 2026-11-04, on the panel doc): "HOME에 돌고 있는 EPIC, STORY 계층으로
      뿌리고 / STORY 선택 시 전체 FLOW, 진행도, subagent 참가 수, 참가 종류 / FLOOR 에 각 Phase에서 돌고 있는
      상세 / Decisions는 Phase 상세에 / Log, Report는 Story 선택시 / 에초에 계층이 잘못됐음 / 조작 키도 wasd,
