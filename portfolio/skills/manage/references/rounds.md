@@ -46,8 +46,8 @@ reasoning, and its verdict is `pass` or `fail` per criterion with the line it re
   available (pass `model` on the Agent call).
 - No subagent available (no Agent tool, or the calls fail): the actor judges in context, `by` says
   `judge:in-context`, and the report says so. A step the in-context judge passes is named in the report.
-- A step no command and no judge can check is recorded `skipped` with the reason `could not be
-  checked`, counted as a gap, never `pass` and never `fail`.
+- A step no command and no judge can check is recorded `skipped`, reason `could not be checked`,
+  counted as a gap, never `pass` and never `fail`.
 
 ## Feedback each round
 
