@@ -202,6 +202,15 @@ toasts).
      no `view.mjs` server process starts from any teams path (a test and a `ps` check after a real task);
      the pane's quality pass is named in its own acceptance lines, approved on the demo render (`mod.md`
      UI rule 0).
+   - The mod's state socket (user, same day): "--serve-once-socket -> 이건 그냥 써야하니 무조건 소켓 하나로만",
+     "scripts/view.mjs 이게 너무 무겁고 자꾸 CPU 점유를 높혀", "엔진 에 통합하되". Seen 2026-11-04: every
+     session with a surface starts its own `view.mjs --serve-once-socket` (0.63.0 at 6% CPU, a 0.62.5 one at
+     66–95%), beside its own taskmanager/broker/wiki. Acceptance: exactly one state socket per machine
+     (per tasks root), shared by every session's mod — a second session connects to it, never starts
+     another; it is served by the engine (task-manager / daemon side), not by a separate `view.mjs` process,
+     and computes a task's state only when that task's files changed (no full re-read per poll); it exits
+     when no session is connected; a test with two clients on one socket, and `ps` showing one server
+     with two sessions open; idle CPU of the server under 1% with one running task, measured.
 
 126. **teams agents talk over a per-task message bus (topic = the task key), the pane draws it as threads**
    - Why: user, 2026-11-04: "agent 간 대화는? teams 내에서", then "지금은 mod로 가능하지 않나? 가능하더라도
