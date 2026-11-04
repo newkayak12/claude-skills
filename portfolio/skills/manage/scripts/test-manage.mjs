@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
-import { bump, claims, compare, deckPages, headings, resumePages, keepRender, layout, parseMap, readMaterial, renumber, round, scaffold, selection, settle, settled, snapshot, verify } from './manage.mjs'
+import { bump, claims, compare, deckPages, headings, resumePages, keepRender, layout, parseMap, readMaterial, renumber, round, scaffold, selection, settle, settled, snapshot, step, verify } from './manage.mjs'
 
 const SKEL = `# 가상 포트폴리오
 version: v4.0.0
@@ -621,6 +621,58 @@ test('a criterion id must be a non-empty string without a slash or whitespace', 
   for (const id of ['', ' ', 'a/b', 'a b', 3]) {
     assert.throws(() => round(workspace(), roundIn(1, { steps: [{ ...st(6, 'fail'), id }] })), /steps\[\d\]\.id/, JSON.stringify(id))
   }
+})
+
+// ── step: the engine records each step as it happens, so the order is read from the record ──
+const stepAll = (root, r, verdicts = {}) => {
+  for (let k = 1; k <= 7; k++) {
+    step(root, { round: r, step: k, id: `c${k}`, criteria: `기준 ${k}` })
+    step(root, { round: r, step: k, verdict: verdicts[k] ?? 'pass', by: 'judge', reason: 'r' })
+  }
+}
+
+test('step records criteria then verdict per step with engine times; round without steps reads them, order recorded', () => {
+  const root = workspace()
+  stepAll(root, 1, { 4: 'fail' })
+  const r = round(root, { round: 1, n: 3, feedback: [] })
+  assert.deepEqual(r.gaps, ['s4/c4'])
+  const rec = recOf(root, 1)
+  assert.equal(rec.gate.order, 'recorded')
+  assert.equal(rec.steps.length, 7)
+  for (const [i, s] of rec.steps.entries()) {
+    assert.ok(s.criteria_at <= s.verdict_at, `step ${s.step}`)
+    if (i > 0) assert.ok(rec.steps[i - 1].verdict_at <= s.criteria_at, `gate before step ${s.step}`)
+  }
+})
+
+test('step refuses a verdict before criteria, and criteria for step s+1 before step s has its verdict', () => {
+  const root = workspace()
+  assert.throws(() => step(root, { round: 1, step: 1, verdict: 'pass', by: 'judge' }), /step 1 has no criteria/)
+  step(root, { round: 1, step: 1, criteria: 'a' })
+  assert.throws(() => step(root, { round: 1, step: 2, criteria: 'b' }), /step 1 has no verdict/)
+  step(root, { round: 1, step: 1, verdict: 'pass', by: 'judge' })
+  assert.throws(() => step(root, { round: 1, step: 3, criteria: 'b' }), /next step is 2/)
+  assert.throws(() => step(root, { round: 1, step: 1, verdict: 'fail', by: 'judge' }), /already has its verdict/)
+})
+
+test('round with steps given in the input records order: caller (not proven by the engine)', () => {
+  const root = workspace()
+  round(root, roundIn(1))
+  assert.equal(recOf(root, 1).gate.order, 'caller')
+})
+
+test('round without steps and with fewer than seven recorded verdicts is refused, nothing written', () => {
+  const root = workspace()
+  step(root, { round: 1, step: 1, criteria: 'a' })
+  assert.throws(() => round(root, { round: 1, n: 3, feedback: [] }), /steps-1\.json.*seven verdicts/)
+  assert.ok(!existsSync(join(root, 'snapshot/rounds/round-1.json')))
+})
+
+test('step CLI: --input - records one entry and prints the step list so far', () => {
+  const root = workspace()
+  const r = spawnSync(process.execPath, [MANAGE, 'step', '--input', '-'], { cwd: root, input: JSON.stringify({ round: 1, step: 1, criteria: 'a' }), encoding: 'utf8' })
+  assert.equal(r.status, 0, r.stdout)
+  assert.deepEqual(JSON.parse(r.stdout).next, { step: 1, needs: 'verdict' })
 })
 
 test('skipped is a gap, never a pass', () => {
