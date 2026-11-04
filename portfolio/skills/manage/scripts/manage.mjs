@@ -29,9 +29,32 @@
 //       inside the workspace; {kept, settled}: a finding is settled ({finding, line, share}) when it shares
 //       >= 3 word stems with a `## 서술 기준`/`## 구조` line of >= 3 stems and >= half of that line's stems;
 //       `## 정정` lines are never matched; no 확정사실.md → all kept
+//   round --input <file | ->       records one round of the collect → build loop as snapshot/rounds/round-N.json
+//       (the schema's one owner; SKILL.md cites this block). <file> is a path inside the workspace, `-` is stdin.
+//       input  { round: N>=1, n: >=1, steps: [{ step: 1-7, criteria: non-empty, verdict: pass|fail|skipped,
+//                by: actor | judge | command name, reason? }], feedback?: [{ id, text }] (the kept findings after
+//                settle), waiting_user?: question, blocked?: reason }; empty criteria or `by` refuse the whole input
+//       the caller never supplies a derived field; node computes them from round-(N-1).json and the workspace:
+//       record { round, n, started_from: { gaps, feedback }  (round N-1's gate.gaps and feedback ids; empty in
+//                round 1 and when round-(N-1).json is missing),
+//                steps (as given, criteria trimmed),
+//                gate: { verdict: { "<step>": fail > skipped > pass },
+//                        gaps: ["s<step>/<criteria>"] for every fail or skipped step, deduplicated; skipped is never pass,
+//                        diff: { resolved: in N-1 not now, carried: in both, new: now only },
+//                        clauses: { no_new_gap, no_new_feedback, no_file_changed } | null },
+//                changed: workspace files (sorted, relative) whose mtime is later than round-(N-1).json's, leaving out
+//                         snapshot/rounds/ and the --input file; [] when there is no round-(N-1).json,
+//                stop_reason, continue, feedback, waiting_user?, blocked? }
+//       clauses are evaluated only from round 2 on (null in round 1, or when round-(N-1).json is missing):
+//       no_new_gap = diff.new is empty; no_new_feedback = every feedback id was already in N-1; no_file_changed =
+//       changed is empty. nothing_new fires only when ALL THREE hold (not any one of them); the gate records each.
+//       stop_reason, first match wins: blocked > waiting_user > nothing_new > n_reached (round >= n) > null
+//       continue: false for blocked, nothing_new, n_reached; true for null; for waiting_user true, unless every step
+//       was skipped (nothing could proceed) or round >= n (so waiting_user at the last round still ends the loop)
+//       prints { round, rounds: count of round-*.json, stop_reason, continue, gaps }
 // A page heading is `## N`, `## N.`, `## N)` or `## N쪽`. A `# ` chapter heading bounds a block: pages
 // sort inside their block, and blocks holding pages sort by their first page; other sections stay put.
-import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 const LAYOUT = ['skeleton.md', 'deck.mdx', 'template.pptx', 'deck.catalog.md', 'build', 'snapshot', 'sources', 'docs/확정사실.md',
@@ -557,6 +580,96 @@ export function claims(text, items, settledLines = [], sel = null) {
   return out
 }
 
+// ── round: the record is described in the header (`round --input`) ──
+const ROUNDS_DIR = 'snapshot/rounds'
+const VERDICTS = ['pass', 'skipped', 'fail'] // worst last: a step's gate verdict is its worst entry
+const isInt = v => Number.isInteger(v) && v >= 1
+const isText = v => typeof v === 'string' && v.trim() !== ''
+
+function checkRoundInput(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('round input must be a JSON object')
+  if (!isInt(input.round)) throw new Error('round must be a positive integer')
+  if (!isInt(input.n)) throw new Error('n must be a positive integer')
+  if (!Array.isArray(input.steps)) throw new Error('steps must be an array')
+  input.steps.forEach((s, i) => {
+    if (!s || typeof s !== 'object' || Array.isArray(s)) throw new Error(`steps[${i}] must be an object`)
+    if (!Number.isInteger(s.step) || s.step < 1 || s.step > 7) throw new Error(`steps[${i}].step must be an integer 1-7`)
+    if (!isText(s.criteria)) throw new Error(`steps[${i}].criteria must be a non-empty string`)
+    if (!VERDICTS.includes(s.verdict)) throw new Error(`steps[${i}].verdict must be pass, fail or skipped`)
+    if (!isText(s.by)) throw new Error(`steps[${i}].by must be a non-empty string`)
+    if (s.reason !== undefined && typeof s.reason !== 'string') throw new Error(`steps[${i}].reason must be a string`)
+  })
+  const feedback = input.feedback ?? []
+  if (!Array.isArray(feedback)) throw new Error('feedback must be an array of {id, text}')
+  feedback.forEach((f, i) => {
+    if (!f || typeof f !== 'object' || Array.isArray(f) || typeof f.id !== 'string' || typeof f.text !== 'string') {
+      throw new Error(`feedback[${i}] must be an object with string id and string text`)
+    }
+  })
+  for (const k of ['waiting_user', 'blocked']) {
+    if (input[k] !== undefined && input[k] !== null && !isText(input[k])) throw new Error(`${k} must be a non-empty string when given`)
+  }
+}
+
+// Files under root (never following a symlink) whose mtime is later than `since`, minus the rounds folder.
+function changedSince(root, since, skip) {
+  const out = []
+  const walk = rel => {
+    for (const e of readdirSync(join(root, rel), { withFileTypes: true })) {
+      const r = rel ? `${rel}/${e.name}` : e.name
+      if (r === ROUNDS_DIR || skip.has(r) || e.isSymbolicLink()) continue
+      if (e.isDirectory()) walk(r)
+      else if (e.isFile() && statSync(join(root, r)).mtimeMs > since) out.push(r)
+    }
+  }
+  walk('')
+  return out.sort()
+}
+
+export function round(root, input, { skip = [] } = {}) {
+  checkRoundInput(input)
+  const feedback = input.feedback ?? []
+  const prevPath = join(root, ROUNDS_DIR, `round-${input.round - 1}.json`)
+  let prev = null
+  if (input.round > 1 && existsSync(prevPath)) {
+    try { prev = JSON.parse(readFileSync(prevPath, 'utf8')) } catch (e) { throw new Error(`${relative(root, prevPath)} cannot be read as JSON: ${e.message}`) }
+  }
+  const startedFrom = { gaps: prev?.gate?.gaps ?? [], feedback: (prev?.feedback ?? []).map(f => f.id) }
+  const steps = input.steps.map(s => ({ step: s.step, criteria: s.criteria.trim(), verdict: s.verdict, by: s.by.trim(), ...(s.reason !== undefined && { reason: s.reason }) }))
+  const gaps = [...new Set(steps.filter(s => s.verdict !== 'pass').map(s => `s${s.step}/${s.criteria}`))]
+  const verdict = {}
+  for (const s of steps) {
+    if (VERDICTS.indexOf(s.verdict) > VERDICTS.indexOf(verdict[s.step] ?? 'pass')) verdict[s.step] = s.verdict
+    verdict[s.step] ??= 'pass'
+  }
+  const diff = {
+    resolved: startedFrom.gaps.filter(g => !gaps.includes(g)),
+    carried: gaps.filter(g => startedFrom.gaps.includes(g)),
+    new: gaps.filter(g => !startedFrom.gaps.includes(g)),
+  }
+  const changed = prev ? changedSince(root, statSync(prevPath).mtimeMs, new Set(skip)) : []
+  const clauses = prev ? {
+    no_new_gap: diff.new.length === 0,
+    no_new_feedback: feedback.every(f => startedFrom.feedback.includes(f.id)),
+    no_file_changed: changed.length === 0,
+  } : null
+  const nothingNew = clauses !== null && Object.values(clauses).every(Boolean)
+  const last = input.round >= input.n
+  const waiting = isText(input.waiting_user)
+  const blocked = isText(input.blocked)
+  const stopReason = blocked ? 'blocked' : waiting ? 'waiting_user' : nothingNew ? 'nothing_new' : last ? 'n_reached' : null
+  const cont = stopReason === null || (stopReason === 'waiting_user' && !last && !steps.every(s => s.verdict === 'skipped'))
+  const record = {
+    round: input.round, n: input.n, started_from: startedFrom, steps,
+    gate: { verdict, gaps, diff, clauses }, changed, stop_reason: stopReason, continue: cont, feedback,
+    ...(waiting && { waiting_user: input.waiting_user }), ...(blocked && { blocked: input.blocked }),
+  }
+  mkdirSync(join(root, ROUNDS_DIR), { recursive: true })
+  writeFileSync(join(root, ROUNDS_DIR, `round-${input.round}.json`), `${JSON.stringify(record, null, 2)}\n`)
+  const rounds = readdirSync(join(root, ROUNDS_DIR)).filter(f => /^round-\d+\.json$/.test(f)).length
+  return { round: input.round, rounds, stop_reason: stopReason, continue: cont, gaps }
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2))
   const cmd = args._[0]
@@ -605,6 +718,23 @@ function main() {
       }
     })
     out = settle(findings, settled(root))
+  } else if (cmd === 'round') {
+    if (typeof args.input !== 'string') throw new Error('--input <file | -> is required: the round input JSON (path inside the workspace, or - for stdin)')
+    let text
+    let skip = []
+    if (args.input === '-') text = readFileSync(0, 'utf8')
+    else {
+      const path = resolve(root, args.input)
+      const rel = relative(resolve(root), path)
+      if (isAbsolute(args.input) || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+        throw new Error(`--input ${args.input} must be a path inside the workspace root ${root}`)
+      }
+      try { text = readFileSync(path, 'utf8') } catch (e) { throw new Error(`--input ${args.input} cannot be read: ${e.message}`) }
+      skip = [rel.split(sep).join('/')]
+    }
+    let input
+    try { input = JSON.parse(text) } catch (e) { throw new Error(`--input ${args.input} cannot be read as JSON: ${e.message}`) }
+    out = round(root, input, { skip })
   } else if (cmd === 'scaffold') {
     out = scaffold(root)
   } else if (cmd === 'selection') {
@@ -612,7 +742,7 @@ function main() {
   } else if (cmd === 'keep-render') {
     out = keepRender(root, args.version)
   } else {
-    throw new Error('usage: manage.mjs layout | scaffold | selection | snapshot | renumber | verify | compare | claims | settle --findings <file> | keep-render')
+    throw new Error('usage: manage.mjs layout | scaffold | selection | snapshot | renumber | verify | compare | claims | settle --findings <file> | round --input <file | -> | keep-render')
   }
   process.stdout.write(`${JSON.stringify(out)}\n`)
 }
