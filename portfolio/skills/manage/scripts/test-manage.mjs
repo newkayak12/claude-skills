@@ -867,6 +867,24 @@ test('round CLI: stdin and a file inside the workspace both work; an outside pat
   }
 })
 
+test('round --read prints every recorded round from the files alone: verdicts, gate, changed, stop_reason, feedback', () => {
+  const root = workspace()
+  const empty = spawnSync(process.execPath, [MANAGE, 'round', '--read'], { cwd: root, encoding: 'utf8' })
+  assert.equal(empty.status, 0, empty.stdout)
+  assert.deepEqual(JSON.parse(empty.stdout), { rounds: 0, last: null, items: [] })
+  round(root, roundIn(1, { n: 2, feedback: [{ id: 'f1', text: 'x' }], feedback_mode: 'panel' })); afterRound(root, 1)
+  round(root, roundIn(2, { n: 2, steps: [st(4, 'fail'), st(6, 'fail')] }))
+  const r = spawnSync(process.execPath, [MANAGE, 'round', '--read'], { cwd: root, encoding: 'utf8' })
+  assert.equal(r.status, 0, r.stdout)
+  const out = JSON.parse(r.stdout)
+  assert.equal(out.rounds, 2)
+  assert.deepEqual(out.last, { round: 2, stop_reason: 'nothing_new', continue: false })
+  assert.deepEqual(out.items.map(i => i.round), [1, 2])
+  const two = recOf(root, 2)
+  assert.deepEqual(out.items[1], { round: 2, n: 2, verdict: two.gate.verdict, gaps: two.gate.gaps, diff: two.gate.diff, clauses: two.gate.clauses, changed: two.changed, stop_reason: 'nothing_new', continue: false, feedback: two.feedback })
+  assert.deepEqual(out.items[0].feedback, { mode: 'panel', ids: ['f1'] })
+})
+
 test('rounds counts the round-*.json files and the shared fixture is left alone', () => {
   const root = workspace()
   round(root, roundIn(1)); round(root, roundIn(2))
