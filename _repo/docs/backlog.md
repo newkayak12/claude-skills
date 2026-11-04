@@ -137,20 +137,6 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
       wrote alone, and one real run on their workspace; the
       resume-conventions check is the model's (feedback), not an engine check.
 
-### teams parallelism — first
-
-101. **teams runs ready packages at the width shape allows — rest: one real Sprint at width 2+**
-    - Why: user, 2026-10-29: "harness, graph, teams 각 phase를 병렬로 할 수는 없는건가?", then "네네 그리고
-      최우선". Shipped in teams 0.61.5 (`e4502d68`, E-ea14c9c4): pushback only from error-shaped events
-      (`allowed_warning` and a leading BOM handled), start width from the shape, `auto_parallel_ticks` in
-      tm_status, `parallel_width_changed` on a width or `ready_waiting` change; teams 1660/1660.
-      Left: QA's D9/D14/D15 also asked that the first tick write an event when packages already wait
-      (`recordAutoParallelTick` writes nothing without a previous tick) — not taken. E-ea14c9c4 itself ran
-      on the 0.61.4 engine: it halved 2→1 at `dispatch:P1:1` (a judge reason text matched) and never ran
-      two dispatches at once. First tick done 2026-10-31 in E-0a2ab67f (goal gate 95; test red on base).
-    - Acceptance: one real Sprint on teams 0.61.5+ shows two ready packages running at once (ledger: two `dispatch`
-      open together, no `auto_parallel_decreased` from a usage number or a reason text).
-
 ### Mods and naming — UI first (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
 
 93. **teams web viewer gets a Town tab: an isometric pixel office where each node works as a character**
@@ -270,24 +256,6 @@ toasts).
       `node -e '[1,2].map(x => x*2)'` runs, not refused (the earlier refusal not reproduced).
     - Acceptance (left): the user approves the 190/110 captures.
 
-81. **Size-S scope check: the limits left after the own-write record** — main part shipped 2026-10-30 in
-    E-233f8dca (`2fc9e26c`; goal gate 90; teams 1679/1680 with 1 skip, plugin test 411/411)
-    - Why: card 81's own-write record shipped: a PostToolUse hook (`teams/hooks/own-writes.mjs`) writes each
-      Write/Edit of the size-S driver to `.harness-run/writes/<task>.jsonl`; the fallback route now gets a
-      verdict, and an own out-of-scope write makes the run `partial`. Real run: three `claude -p` sessions in
-      one scratch checkout, A partial on `stray-A.txt`, B complete. Its report names the limits: two runs
-      editing the same file; Bash-made files unrecorded; Codex `apply_patch` recording unproven; scope taken
-      from path tokens in plan/spec text can be broad; a subdirectory cwd can miss strays; the live
-      `spawnHarnessDriver` env path not exercised live.
-    - Acceptance: the next real size-S task's ledger shows `scope_verdict` with `own_record: true`; a Codex
-      run records an `apply_patch` write (or the limit stays named in the docs).
-    - E-8c671fd9 plan (2026-10-31): `own_record:false` in 2694667a/d50a6887 is explained: both drivers ran
-      teams 0.61.4 from the opener session's plugin cache (hook shipped in 0.62.0). Next size-S task from
-      a session started on ≥ 0.62.0 proves it.
-    - 2026-11-01 (E-6e771dea, `edfad21d`): chained test env → hook → verdict (9/9); both limits named in
-      teams README/KOR/CHANGELOG. Its own run again recorded `own_record:false` (opener on 0.61.4). Left:
-      one size-S task from a session started after the batch bump shows `own_record: true`.
-
 74. **Every mod's UI draws on terminal, desktop, mobile and vscode (`mod.md` rule 8) — teams first** — tests in
     55e2dcc3 (teams 357, graph 175, harness 199) and bfe0022c (session 699, think 53, trophy 149), all four
     surfaces mounted; tmux 190/110 seen for the teams pane. README/KOR surface lines in all six (96ead92d
@@ -381,6 +349,7 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| — | 2026-11-04 | 101, 81 closed on evidence | 101: E-bf0527b7 (teams 0.62.7) ran `dispatch:P1:2` and `dispatch:P2:2` together from 05:45 (spawned 1 s apart) and P3:2 with P2:3 from 07:19, no `auto_parallel_decreased`; 81: E-a9953265 (size S, teams 0.63.0) `scope_verdict` `own_record: true`, Codex `apply_patch` limit stays named in teams README/KOR |
 | E-a9953265 | 2026-11-04 | 122 (75 closed without code) | shipped `4761717a`; size S; goal gate 93; test-diagram 118/118 in 34 s (was 148 s on the card, 210–323 s under load); one Chrome shared over CDP only in the suite, the CLI path unchanged |
 | E-bf0527b7 | 2026-11-03 | 113, 49 rest, 94 rest, 84 rest | shipped `45251683..e93a5b31` by hand (cancelled in Build, ~$80): P1 (113) accepted 92 — one viewer per tasks root reused by live pid, finished tasks cached by mtime/size, 5 min idle exit; P2 (49) live forwarded STORY ask in the ledger and the band shot, stalled twice in a tmux wait (taken from attempt 3); P3 (94) 85 at retry 4, its one gap (P1's golden test scrubbed instead of recut) fixed by hand; P4 (84 design doc) never ran. teams 1792/1793 (1 skip), plugin test 445/445; 3 usage-limit parks. E-96699aa4 cancelled in PLAN to pin the viewer design |
 | E-16e58ff6 | 2026-11-03 | 114 | shipped `0cdfee82` by hand (task blocked): P1 accepted; P2 rejected 3× only for touching P1's test-diagram.mjs (pixel window 420x40→420x100); merged tree test-diagram 118/118, check-copies ok, validate 15/15; 2 usage-limit parks; test-diagram 148 s (card 122) |
