@@ -17,11 +17,12 @@ session model for merge, cut (rule S), scoring and the final blocks.
 2. **Diverge (round 1).** Start four subagents in one message, one per roster row, each with its
    own persona text from `personas.md`. Each gets the document and the ledger, never another
    reviewer's output, and returns, in its persona's voice:
-   - up to 5 findings: the ledger ID it supports (or `new`), a quoted document line, what that
+   - up to 5 findings: the ledger ID it supports (or `new:<C|A|L|R|F>`, naming the block it belongs to), a quoted document line, what that
      line shows or fails to show, no criticism of other reviewers;
    - a score per rubric dimension with the quoted evidence for it.
-3. **Merge.** Claude dedupes the findings across reviewers. A `new` finding gets the next ID in
-   the appendix block it belongs to (`C` / `A` / `L` / `R` / `F`). A finding no reviewer can tie
+3. **Merge.** Claude dedupes the findings across reviewers. Claude gives every `new:<X>` finding
+   the next free ID in block X (`C` / `A` / `L` / `R` / `F`) here, before the attack rounds; the ID
+   stays through attack, cut and the Clashes block. A finding no reviewer can tie
    to a quoted line is cut here. Order: severity, then the focus persona's findings first when
    the user named one.
 4. **Attack / rebut (rounds 2–3, at most 2).** Each reviewer again as its own `sonnet` subagent,
@@ -54,6 +55,7 @@ Format, one literal line per contested finding, three fields separated by ` — 
 <finding ID> — <who disagreed> — survived|dropped
 ```
 
+`<finding ID>` always matches `^[CALRF]\d+$`; `new`, `신규` labels and `N<n>` are never written.
 `<who disagreed>` names reviewer letters and the move, and each attack keeps its parts:
 `B attacked (execution, high; steel-man: <one line>; precedent: speculative), A rebutted`.
 It carries no ` — `. A finding no attack touched has no entry. Above the entries one panel line:
