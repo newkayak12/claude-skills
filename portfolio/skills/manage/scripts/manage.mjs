@@ -33,11 +33,13 @@
 //       (the schema's one owner; SKILL.md cites this block). <file> is a path inside the workspace, `-` is stdin.
 //       input  { round: N>=1, n: >=1 (round <= n), steps: [{ step: 1-7, criteria: non-empty, verdict: pass|fail|skipped,
 //                by: actor | judge | command name, reason? }] (exactly seven entries, steps 1-7 once each),
-//                feedback?: [{ id, text }] (the kept findings after settle), waiting_user?: question, blocked?: reason }
+//                feedback?: [{ id, text }] (the kept findings after settle), feedback_mode: panel | single-context
+//                (required when feedback is non-empty, how `feedback` ran; null or absent otherwise),
+//                waiting_user?: question, blocked?: reason }
 //       refused before anything is written: empty criteria or `by`, steps other than 1-7 once each, round > n, an
 //       existing round-N.json (never overwritten), N>1 with no round-(N-1).json, a round-(N-1).json that is not a
-//       record (object with round N-1, integer n, steps array, gate.gaps array of strings, feedback array of {id}),
-//       and an n different from round-(N-1).json's (n is fixed across the rounds of one loop)
+//       record (object with round N-1, integer n, steps array, gate.gaps array of strings, feedback { mode, ids }
+//       or the legacy array of {id}), and an n different from round-(N-1).json's (n is fixed across one loop)
 //       the caller never supplies a derived field; node computes them from round-(N-1).json and the workspace:
 //       record { round, n, started_from: { gaps, feedback }  (round N-1's gate.gaps and feedback ids; empty in
 //                round 1),
@@ -48,7 +50,9 @@
 //                        clauses: { no_new_gap, no_new_feedback, no_file_changed } | null },
 //                changed: workspace files (sorted, relative) whose mtime is later than round-(N-1).json's, leaving out
 //                         snapshot/rounds/ and the --input file; [] in round 1,
-//                stop_reason, continue, feedback, waiting_user?, blocked? }
+//                stop_reason, continue, feedback: { mode: panel | single-context | null, ids: [finding ids in
+//                input order] } (round N-1 written as the legacy [{ id, text }] array is read the same),
+//                waiting_user?, blocked? }
 //       clauses are evaluated only from round 2 on (null in round 1):
 //       no_new_gap = diff.new is empty; no_new_feedback = every feedback id was already in N-1; no_file_changed =
 //       changed is empty. nothing_new fires when ANY ONE of the three holds; the gate records each.
@@ -618,6 +622,7 @@ export function claims(text, items, settledLines = [], sel = null) {
 // ── round: the record is described in the header (`round --input`) ──
 const ROUNDS_DIR = 'snapshot/rounds'
 const VERDICTS = ['pass', 'skipped', 'fail'] // worst last: a step's gate verdict is its worst entry
+const FEEDBACK_MODES = ['panel', 'single-context']
 const isInt = v => Number.isInteger(v) && v >= 1
 const isText = v => typeof v === 'string' && v.trim() !== ''
 
@@ -641,6 +646,12 @@ function checkRoundInput(input) {
       throw new Error(`feedback[${i}] must be an object with string id and string text`)
     }
   })
+  if (feedback.length > 0 && !FEEDBACK_MODES.includes(input.feedback_mode)) {
+    throw new Error(`feedback_mode must be ${FEEDBACK_MODES.join(' or ')} when feedback is not empty`)
+  }
+  if (feedback.length === 0 && input.feedback_mode != null && !FEEDBACK_MODES.includes(input.feedback_mode)) {
+    throw new Error(`feedback_mode must be ${FEEDBACK_MODES.join(' or ')} when given`)
+  }
   for (const k of ['waiting_user', 'blocked']) {
     if (input[k] !== undefined && input[k] !== null && !isText(input[k])) throw new Error(`${k} must be a non-empty string when given`)
   }
@@ -665,11 +676,14 @@ function readPrevRecord(root, input) {
   if (!Array.isArray(prev.steps)) throw bad('field steps must be an array')
   if (!prev.gate || typeof prev.gate !== 'object' || Array.isArray(prev.gate)) throw bad('field gate must be an object')
   if (!Array.isArray(prev.gate.gaps) || prev.gate.gaps.some(g => typeof g !== 'string')) throw bad('field gate.gaps must be an array of strings')
-  if (!Array.isArray(prev.feedback) || prev.feedback.some(f => !f || typeof f !== 'object' || typeof f.id !== 'string')) {
-    throw bad('field feedback must be an array of objects with a string id')
+  // feedback is `{ mode, ids }`, or the legacy `[{ id, text }]` array
+  const legacy = Array.isArray(prev.feedback)
+  const prevIds = legacy ? prev.feedback.map(f => f?.id) : prev.feedback?.ids
+  if (!Array.isArray(prevIds) || prevIds.some(id => typeof id !== 'string')) {
+    throw bad('field feedback must be { mode, ids: [string] } or an array of objects with a string id')
   }
   if (prev.n !== input.n) throw new Error(`n ${input.n} differs from n ${prev.n} in ${rel}: n is fixed across the rounds of one loop`)
-  return { prev, prevPath }
+  return { prev, prevPath, prevIds }
 }
 
 // Files under root (never following a symlink) whose mtime is later than `since`, minus the rounds folder.
@@ -695,8 +709,8 @@ export function round(root, input, { skip = [] } = {}) {
   const feedback = input.feedback ?? []
   const target = join(root, ROUNDS_DIR, `round-${input.round}.json`)
   if (existsSync(target)) throw new Error(`${relative(root, target)} already exists: rounds never overwrite`)
-  const { prev, prevPath } = input.round > 1 ? readPrevRecord(root, input) : {}
-  const startedFrom = prev ? { gaps: prev.gate.gaps, feedback: prev.feedback.map(f => f.id) } : { gaps: [], feedback: [] }
+  const { prev, prevPath, prevIds } = input.round > 1 ? readPrevRecord(root, input) : {}
+  const startedFrom = prev ? { gaps: prev.gate.gaps, feedback: prevIds } : { gaps: [], feedback: [] }
   const steps = input.steps.map(s => ({ step: s.step, criteria: s.criteria.trim(), verdict: s.verdict, by: s.by.trim(), ...(s.reason !== undefined && { reason: s.reason }) }))
   const gaps = [...new Set(steps.filter(s => s.verdict !== 'pass').map(s => `s${s.step}/${s.criteria}`))]
   const verdict = {}
@@ -723,7 +737,8 @@ export function round(root, input, { skip = [] } = {}) {
   const cont = stopReason === null || (stopReason === 'waiting_user' && !last && !steps.every(s => s.verdict === 'skipped'))
   const record = {
     round: input.round, n: input.n, started_from: startedFrom, steps,
-    gate: { verdict, gaps, diff, clauses }, changed, stop_reason: stopReason, continue: cont, feedback,
+    gate: { verdict, gaps, diff, clauses }, changed, stop_reason: stopReason, continue: cont,
+    feedback: { mode: feedback.length > 0 ? input.feedback_mode : null, ids: feedback.map(f => f.id) },
     ...(waiting && { waiting_user: input.waiting_user }), ...(blocked && { blocked: input.blocked }),
   }
   mkdirSync(join(root, ROUNDS_DIR), { recursive: true })
