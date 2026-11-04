@@ -19,6 +19,20 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
 
 ### portfolio flow — first (design: `_repo/docs/plans/2026-10-30-portfolio-flow.md`)
 
+123. **portfolio:feedback runs a fixed reviewer panel of subagents, argued out with brainstorming's debate mode and devils-advocate**
+    - Why: user, 2026-11-04: "feedback 스킬에서 쓸 여러 subagent를 구성하자 랜덤 구성하지 말고",
+      "거기서 `/think:brainstorming`의 --debate 쓰고 devil's advocate 도 같이 쓰도록하고". Today feedback
+      runs in one context and picks one of the four personas in `feedback/references/personas.md` (step 2,
+      "present the four … and ask, or choose if told 'you decide'"); no subagents, no clash between readers.
+    - Acceptance: the panel is a fixed, named roster written in the skill (each reviewer: persona from
+      `personas.md`, what it reads for, model), the same roster every run, never chosen at random or
+      improvised per run; each reviewer runs as its own subagent on the same document; their findings are
+      argued out through `think:brainstorming`'s debate mode (`think/skills/brainstorming/references/debate.md`:
+      diverge → merge → attack/rebut, max 2 rounds) with `think:devils-advocate` as the attack step's method;
+      the output adds a `[충돌 / Clashes]` block (who disagreed on which finding, whether it survived) and keeps
+      the current Output Template; fewer than 2 subagents alive → the single-context run, said so; one real run
+      on a fictional portfolio shows the roster, the clashes and the merged priorities.
+
 102. **portfolio checks the deck's claims against the material in an engine, both ways**
     - Why: debate 2026-10-29 (10 personas + noah), verified in code: material marks `근거 없음` /
       `user-stated` (material/SKILL.md:49, parts.md:31-32) but manage's skeleton step only says "each
