@@ -68,7 +68,7 @@ import { SCRATCH_RULE, newTopLevelDirs, manifestPathOf } from './layout-guard.mj
 import { logReply, renderStreamLine, renderLedgerLine } from './tasklog.mjs';
 import { validate as validateDiagram, renderToFile as renderDiagram } from './diagram.mjs';
 import { conventionsBlock } from './conventions.mjs';
-import { placeholderAcceptance, touchScope, scopesOverlap, pathOverlapProblems, shapePrecheck, formatShapeFeedback } from './shapecheck.mjs';
+import { placeholderAcceptance, touchScope, scopesOverlap, pathOverlapProblems, shapePrecheck, formatShapeFeedback, areaClaims, areaOwnershipOverlaps } from './shapecheck.mjs';
 import {
   tasksRoot, taskDir, taskPath, record, beginEffectLedger, takeEffectLedger, driverAlive,
   restartBudget, countedDriverRestarts, unfinishedWork, resolveHarnessRun, harnessState,
@@ -940,6 +940,19 @@ function retryAreas(task, feedback) {
   task.nodes.push(node(id, 'areas', first ? first.deps.slice() : ['size'], { attempt, feedback: feedback || '' }));
   task.nodes.push(node(`areas-critique:${attempt}`, 'areas-critique', [id], { attempt }));
   return { attempt, reason: '' };
+}
+
+// Ownership overlaps the manager counts itself: the mechanical pairs (areaOwnershipOverlaps) plus
+// the judge's own "overlap ..." problems that name a file and a call-shaped function, a file-tied
+// line range, or two area ids and an owner. A problem that only says "same file" stays advice.
+function areaOverlapBlocking(areas, result, have) {
+  const soft = (Array.isArray(result.problems) ? result.problems : []).map(String).filter((p) => {
+    if (!/^\s*overlap\b/i.test(p)) return false;
+    const c = areaClaims({ brief: p });
+    if (!c.files.size) return false;
+    return c.fns.size > 0 || c.ranges.length > 0 || (new Set(p.match(/\bF\d+\b/g) || []).size >= 2 && /\bowner\b/i.test(p));
+  });
+  return [...areaOwnershipOverlaps(areas), ...soft].filter((x) => !have.includes(x));
 }
 
 // The split an areas-critique judged: the areas node it waits on.
@@ -5094,6 +5107,13 @@ export function finish(task, n, result) {
   }
   const noEvidence = EVIDENCED.has(n.stage) && f && result[f] === true
     && !(Array.isArray(result.checks) && result.checks.length > 0);
+  // Two areas planning the same edit is a collision, not advice: a model judge's sound:true does
+  // not outrank it (a person's gate does - D3). The existing re-split path carries the lines.
+  if (n.stage === 'areas-critique' && !n.human_gate && result.stage_ok === true) {
+    const split = areasOf(task, n);
+    const added = areaOverlapBlocking(split && split.result && split.result.areas, result, [...(result.blocking || [])]);
+    if (added.length) result = { ...result, sound: false, blocking: [...(result.blocking || []), ...added], reason: `file ownership overlap between areas: ${added.join('; ')}` };
+  }
   n.state = succeeded(task, n, result) ? 'done' : 'failed';
   if (n.state === 'failed' && belowFloor) {
     // The judging itself worked - it is the number that overrules the word, exactly as
