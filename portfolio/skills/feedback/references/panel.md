@@ -62,6 +62,23 @@ It carries no ` — `. A finding no attack touched has no entry. Above the entri
 `패널 / Panel: A Staff · B EM · C Tech Lead · D OSS/DevTools — sonnet, <n> rounds`; it is not an entry. `survived` and `dropped` are the
 only closing words, lower case.
 
+Entry rules, panel run and revision mode alike:
+
+- `<finding ID>` is the bare ID (`F2`): no parenthetical, note or annotation on it.
+- The closing word is the last token of the line: nothing follows `survived` or `dropped`, no
+  reason in parentheses.
+- Reason text and any 판정 sentence go inside `<who disagreed>` or are left out; never between it
+  and the closing word. A 판정 sentence is not an entry.
+
+```
+wrong: C1 — B attacked, A rebutted — survived (reason text)
+wrong: C1 (note) — B attacked — 인용문이 근거를 뒷받침하지 않음 — survived
+right: C1 — B attacked (execution, high; steel-man: <one line>; precedent: speculative), A rebutted; the quoted line still carries it — survived
+```
+
+Before Write, check every entry line against `^[A-Z]+[0-9]+ — [^—]+ — (survived|dropped)$` and
+fix any line that fails.
+
 - No contested finding: `충돌 없음 / no clashes`.
 - Appendix lines start with their ID and a space: `C1 `, `A1 `, `L1 `, `R1 `, `F1 `.
 - Each 우선순위 item ends `근거: <appendix ID>` naming one surviving finding.
