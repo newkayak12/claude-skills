@@ -576,6 +576,7 @@ const recOf = (root, n) => JSON.parse(readFileSync(join(root, `snapshot/rounds/r
 const future = 4_000_000_000
 const stamp = (root, rel, t) => utimesSync(join(root, rel), t, t)
 const afterRound = (root, n, t = future) => stamp(root, `snapshot/rounds/round-${n}.json`, t)
+const edit = (root, rel) => writeFileSync(join(root, rel), `${readFileSync(join(root, rel), 'utf8')}\n<!-- edited -->\n`)
 
 test('round 1, no previous file: empty started_from, no clauses, diff.new is every gap, record and summary written', () => {
   const root = workspace()
@@ -611,18 +612,30 @@ test('skipped is a gap, never a pass', () => {
   assert.equal(round(workspace(), roundIn(1, { steps: [st(7, 'skipped')] })).gaps.length, 1)
 })
 
-test('changed lists files newer than round N-1, sorted and relative, and leaves snapshot/rounds/ out', () => {
+test('changed lists files that differ from round N-1, sorted and relative, and leaves snapshot/rounds/ out', () => {
   const root = workspace()
   round(root, roundIn(1, { n: 9 }))
   afterRound(root, 1)
   assert.deepEqual(round(root, roundIn(2, { n: 9 })).stop_reason, 'nothing_new')
   assert.deepEqual(recOf(root, 2).changed, [])
-  writeFileSync(join(root, 'snapshot/rounds/note.json'), '{}'); stamp(root, 'snapshot/rounds/note.json', future + 50)
-  stamp(root, 'skeleton.md', future + 20); stamp(root, 'docs/확정사실.md', future + 10)
-  mkdirSync(join(root, 'sources/새'), { recursive: true }); writeFileSync(join(root, 'sources/새/a.md'), 'a'); stamp(root, 'sources/새/a.md', future + 30)
+  writeFileSync(join(root, 'snapshot/rounds/note.json'), '{}')
+  edit(root, 'skeleton.md'); edit(root, 'docs/확정사실.md')
+  mkdirSync(join(root, 'sources/새'), { recursive: true }); writeFileSync(join(root, 'sources/새/a.md'), 'a')
   round(root, roundIn(3, { n: 9 }))
   assert.deepEqual(recOf(root, 3).changed, ['docs/확정사실.md', 'skeleton.md', 'sources/새/a.md'])
   assert.equal(recOf(root, 3).gate.clauses.no_file_changed, false)
+})
+
+test('changed is by content: a touch with the same bytes is not a change, an edit, a new file and a removed file are', () => {
+  const root = workspace()
+  round(root, roundIn(1, { n: 9 })); afterRound(root, 1)
+  stamp(root, 'skeleton.md', future + 20)
+  round(root, roundIn(2, { n: 9 }))
+  assert.deepEqual(recOf(root, 2).changed, [])
+  assert.equal(recOf(root, 2).gate.clauses.no_file_changed, true)
+  edit(root, 'skeleton.md'); writeFileSync(join(root, 'sources/new.md'), 'n'); rmSync(join(root, 'docs/확정사실.md'))
+  round(root, roundIn(3, { n: 9 }))
+  assert.deepEqual(recOf(root, 3).changed, ['docs/확정사실.md', 'skeleton.md', 'sources/new.md'])
 })
 
 test('the --input file itself is not a change', () => {
@@ -641,7 +654,7 @@ test('nothing_new fires when any one clause holds; only all three failing keeps 
   const newFb = [{ id: 'f1', text: 'x' }, { id: 'f2', text: 'y' }]
   const prep = () => { const root = workspace(); round(root, roundIn(1, same)); afterRound(root, 1); return root }
   const run = (input, touch) => {
-    const root = prep(); if (touch) stamp(root, 'skeleton.md', future + 9)
+    const root = prep(); if (touch) edit(root, 'skeleton.md')
     const r = round(root, roundIn(2, input))
     return [r.stop_reason, r.continue, recOf(root, 2).gate.clauses]
   }
@@ -666,7 +679,7 @@ test('clauses are not evaluated in round 1: nothing_new never fires there', () =
 test('n_reached at round >= n, null before it', () => {
   const root = workspace()
   assert.deepEqual(round(root, roundIn(1, { n: 2 })), { round: 1, rounds: 1, stop_reason: null, continue: true, gaps: ['s4/기준 4'] })
-  afterRound(root, 1); stamp(root, 'skeleton.md', future + 9)
+  afterRound(root, 1); edit(root, 'skeleton.md')
   const r = round(root, roundIn(2, { n: 2, steps: [st(4, 'fail'), st(6, 'fail')], feedback: [{ id: 'f9', text: 'z' }], feedback_mode: 'panel' }))
   assert.deepEqual([r.stop_reason, r.continue], ['n_reached', false])
 })
@@ -700,7 +713,7 @@ test('precedence: blocked > waiting_user > nothing_new > n_reached', () => {
   assert.equal(round(prep(), roundIn(2, { ...same, blocked: 'b' })).stop_reason, 'blocked')
   assert.equal(round(prep(), roundIn(2, { ...same, blocked: 'b', waiting_user: 'q' })).stop_reason, 'blocked')
   // all three clauses failing (new gap, new feedback id, a changed file) removes nothing_new, so n_reached is what is left
-  const changed = prep(); stamp(changed, 'skeleton.md', future + 9)
+  const changed = prep(); edit(changed, 'skeleton.md')
   assert.equal(round(changed, roundIn(2, { ...same, steps: [st(4, 'fail', 'k'), st(5, 'fail', 'z')], feedback: [{ id: 'f9', text: 'z' }], feedback_mode: 'panel' })).stop_reason, 'n_reached')
 })
 
@@ -803,7 +816,7 @@ test('n must equal the previous record n, and round may not pass n', () => {
 test('a valid input with a valid predecessor still writes the record and gives the same stop_reason', () => {
   const root = workspace()
   round(root, roundIn(1, { n: 2 }))
-  afterRound(root, 1); stamp(root, 'skeleton.md', future + 9)
+  afterRound(root, 1); edit(root, 'skeleton.md')
   const r = round(root, roundIn(2, { n: 2, steps: [st(4, 'fail'), st(6, 'fail')], feedback: [{ id: 'f9', text: 'z' }], feedback_mode: 'panel' }))
   assert.deepEqual([r.stop_reason, r.continue, r.rounds], ['n_reached', false, 2])
   assert.equal(recOf(root, 2).steps.length, 7)
@@ -889,7 +902,7 @@ test('rounds counts the round-*.json files and the shared fixture is left alone'
   const root = workspace()
   round(root, roundIn(1)); round(root, roundIn(2))
   assert.equal(round(root, roundIn(3)).rounds, 3)
-  assert.deepEqual(readdirSync(join(root, 'snapshot/rounds')).sort(), ['round-1.json', 'round-2.json', 'round-3.json'])
+  assert.deepEqual(readdirSync(join(root, 'snapshot/rounds')).sort(), ['end-1.json', 'end-2.json', 'end-3.json', 'round-1.json', 'round-2.json', 'round-3.json'])
   assert.ok(!existsSync(join(WORKSPACE, 'snapshot/rounds')))
 })
 
