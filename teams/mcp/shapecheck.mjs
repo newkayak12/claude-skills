@@ -42,6 +42,87 @@ export function pathOverlapProblems(packages) {
   return problems;
 }
 
+// What an area's title + brief claims: files (path-like tokens with an extension, "./" dropped),
+// call-shaped names (`name()`; a bare name is not a function) and line ranges tied to a file
+// ("file:12-40", or "lines 12-40" within 60 characters of a file mention). Pure.
+export function areaClaims(area) {
+  const text = `${area && area.title != null ? area.title : ''}\n${area && area.brief != null ? area.brief : ''}`;
+  const files = new Set();
+  const mentions = [];
+  const ranges = [];
+  for (const m of text.matchAll(/[\w@.\-/]+\.[A-Za-z][A-Za-z0-9]{1,4}\b(?::(\d+)(?:\s*[-–]\s*(\d+))?)?/g)) {
+    const file = m[0].replace(/:[\d\s\-–]*$/, '').replace(/^(?:\.\/)+/, '');
+    if (/^[A-Z][a-z]+\.(?:js|ts)$/.test(file)) continue; // a product name ("Node.js"), not a path
+    files.add(file);
+    mentions.push({ file, at: m.index });
+    if (m[1]) ranges.push({ file, a: +m[1], b: +(m[2] || m[1]) });
+  }
+  for (const m of text.matchAll(/\blines?\s+(\d+)\s*[-–]\s*(\d+)/gi)) {
+    let best = null;
+    for (const f of mentions) {
+      const d = Math.abs(f.at - m.index);
+      if (d <= 60 && (!best || d < best.d)) best = { d, file: f.file };
+    }
+    if (best) ranges.push({ file: best.file, a: +m[1], b: +m[2] });
+  }
+  const fns = new Set([...text.matchAll(/\b([A-Za-z_$][\w$]*)\(\)/g)].map((m) => m[1]));
+  return { files, fns, ranges: ranges.map((r) => (r.a <= r.b ? r : { ...r, a: r.b, b: r.a })) };
+}
+
+// The claims an area makes to EDIT: only sentences that pair an edit verb with the file and the
+// function/lines in the same sentence, and do not disclaim ("F1 owns f(), F2 does not touch it",
+// "only calls f()"). A mention, a call or a handed-over owner is not a claim.
+const EDIT_VERB = /\b(?:change|changes|rewrite|rewrites|edit|edits|modify|modifies|add to|touch|touches|reshape|reshapes|update|updates|replace|replaces|refactor|refactors|rename|renames|fix|fixes|extend|extends|patch|patches|remove|removes)\b/i;
+const DISCLAIM = /\b(?:owns?|owned by|does not|doesn't|do not|don't|not touch|never|untouched|unchanged|leaves?|only (?:calls?|reads?|uses?))\b/i;
+function areaEditClaims(area) {
+  const text = `${area && area.title != null ? area.title : ''}\n${area && area.brief != null ? area.brief : ''}`;
+  const out = { files: new Set(), fnsOf: new Map(), ranges: [] };
+  for (const s of text.split(/\n|;|[.!?](?=\s)/)) {
+    if (!EDIT_VERB.test(s) || DISCLAIM.test(s)) continue;
+    const c = areaClaims({ brief: s });
+    for (const f of c.files) {
+      out.files.add(f);
+      if (!out.fnsOf.has(f)) out.fnsOf.set(f, new Set());
+      c.fns.forEach((n) => out.fnsOf.get(f).add(n)); // a function is tied to the files of its own sentence
+    }
+    out.ranges.push(...c.ranges);
+  }
+  return out;
+}
+
+// Two areas overlap when both plan to EDIT (see areaEditClaims) one file AND (a function name OR an
+// intersecting line range). One string per pair; the earlier area by position owns the edit. Same
+// file alone is not an overlap: that stays the judge's call.
+export function areaOwnershipOverlaps(areas) {
+  const list = Array.isArray(areas) ? areas.filter((a) => a && typeof a === 'object') : [];
+  const claims = list.map(areaEditClaims);
+  const idOf = (a, i) => (a.id != null && String(a.id) !== '' ? String(a.id) : `#${i + 1}`);
+  const out = [];
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      const A = claims[i];
+      const B = claims[j];
+      let what = null;
+      for (const file of A.files) {
+        if (!B.files.has(file)) continue;
+        const bf = B.fnsOf.get(file);
+        const fn = [...A.fnsOf.get(file)].find((f) => bf.has(f));
+        if (fn) { what = `${fn}() in ${file}`; break; }
+        for (const x of A.ranges.filter((r) => r.file === file)) {
+          const y = B.ranges.find((r) => r.file === file && r.a <= x.b && x.a <= r.b);
+          if (y) { what = `lines ${Math.max(x.a, y.a)}-${Math.min(x.b, y.b)} in ${file}`; break; }
+        }
+        if (what) break;
+      }
+      if (!what) continue;
+      const a = idOf(list[i], i);
+      const b = idOf(list[j], j);
+      out.push(`overlap - ${a} and ${b} both plan the edit to ${what}; one owner: ${a} - take it out of ${b}'s brief`);
+    }
+  }
+  return out;
+}
+
 // An acceptance ID as the PRD writes it ("F1-AC-2") or a model shortens it ("AC-2").
 const AC_ID = /\b(?:F\d+-)?AC-\d+\b/g;
 const LEAD_AC = /^\s*(?:F\d+-)?AC-\d+\s*[:.)—–-]*\s*/;

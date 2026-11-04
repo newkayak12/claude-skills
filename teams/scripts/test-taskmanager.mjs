@@ -276,6 +276,11 @@ async function withTask(fn, extra) {
   }
 }
 
+// In-process record() writes the ledger under tasksRoot(), not task.store_path: give the whole suite its own root.
+const SUITE_TASKS_ROOT = mkdtempSync(join(tmpdir(), 'tm-suite-tasks-'));
+process.env.HARNESS_TASKS_DIR = SUITE_TASKS_ROOT;
+after(() => rmSync(SUITE_TASKS_ROOT, { recursive: true, force: true }));
+
 test('serves the MCP handshake and the seventeen manager tools', async () => {
   const c = await new Client(TM).init();
   try {
@@ -9859,6 +9864,110 @@ test('M4: areas-critique judges the split before any card opens; a refusal re-sp
     assert.deepEqual(nx.ready.map((r) => r.node_id), ['report'], 'M2 closes it to a report');
     assert.equal(readTask(root, task_id).planning_failed.stage, 'areas-critique');
   }, { max_retries: 1 });
+});
+
+const OVERLAP_AREAS = [
+  { id: 'F1', title: 'spawn env', brief: 'change spawnEnv() in teams/mcp/taskmanager.mjs to pass the home dir' },
+  { id: 'F2', title: 'driver env', brief: 'also rewrite spawnEnv() in teams/mcp/taskmanager.mjs for drivers' },
+];
+const DIFF_FN_AREAS = [
+  { id: 'F1', title: 'spawn env', brief: 'change spawnEnv() in teams/mcp/taskmanager.mjs' },
+  { id: 'F2', title: 'retry', brief: 'change retryAreas() in teams/mcp/taskmanager.mjs' },
+];
+
+async function areasCritiqueWith(areas, payload, extra) {
+  let out;
+  await withTask(async ({ tm, root, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['x'] }) });
+    await tm.rawCall('tm_submit', { task_id, node_id: 'areas', payload: ok({ areas }) });
+    const v = await tm.rawCall('tm_submit', { task_id, node_id: 'areas-critique', payload: ok(payload) });
+    out = { v, task: readTask(root, task_id), root, task_id };
+  }, extra);
+  return out;
+}
+
+test('ownership overlap: two areas claiming spawnEnv() fail areas-critique under a sound judge, and the re-split is told who owns it', async () => {
+  const { autoReshape } = await import('../mcp/taskmanager.mjs');
+  const { v, task, root } = await areasCritiqueWith(OVERLAP_AREAS, { sound: true, checks: ['read both briefs'] });
+  assert.equal(v.state, 'failed');
+  const node = task.nodes.find((n) => n.node_id === 'areas-critique');
+  assert.equal(node.result.sound, false);
+  assert.match(node.result.reason, /^file ownership overlap between areas: /);
+  const line = node.result.blocking.join('\n');
+  assert.match(line, /F1/);
+  assert.match(line, /F2/);
+  assert.match(line, /spawnEnv/);
+  assert.match(line, /teams\/mcp\/taskmanager\.mjs/);
+  assert.match(line, /one owner: F1/);
+  assert.deepEqual(task.planning_pkgs, []);
+  assert.ok(withTasksRoot(root, () => inTx(task, autoReshape)));
+  const again = readTask(root, task.run_id).nodes.find((n) => n.node_id === 'areas:2');
+  assert.ok(again, 'the split is split again');
+  assert.match(again.feedback, /one owner: F1/);
+});
+
+test('ownership overlap: a re-split that names F1 as owner and F2 as not touching spawnEnv() settles done (card 112 convergence)', async () => {
+  const { v, task } = await areasCritiqueWith([
+    { id: 'F1', title: 'spawn env', brief: 'change spawnEnv() in teams/mcp/taskmanager.mjs to pass the home dir' },
+    { id: 'F2', title: 'driver env', brief: 'F1 owns spawnEnv() in teams/mcp/taskmanager.mjs, F2 does not touch it; F2 only calls it' },
+  ], { sound: true, checks: ['read both briefs'] });
+  assert.equal(v.state, 'done');
+  assert.deepEqual(task.planning_pkgs.map((p) => p.id), ['PLAN-F1', 'PLAN-F2']);
+});
+
+test('ownership overlap: two areas that only call tm_status() in one file are no overlap', async () => {
+  const { v } = await areasCritiqueWith([
+    { id: 'F1', title: 'board', brief: 'Call tm_status() via teams/mcp/taskmanager.mjs for the board' },
+    { id: 'F2', title: 'inbox', brief: 'Read tm_status() from teams/mcp/taskmanager.mjs for the inbox' },
+  ], { sound: true, checks: ['read both briefs'] });
+  assert.equal(v.state, 'done');
+});
+
+test('ownership overlap: a judge\'s own soft "overlap" problem naming a file and two areas with an owner blocks', async () => {
+  const { v, task } = await areasCritiqueWith(TWO_AREAS, {
+    sound: true, checks: ['read both briefs'],
+    problems: ['overlap (soft) - F2 and F3 both plan the spawn env edit in teams/mcp/taskmanager.mjs. Name one owner.'],
+  });
+  assert.equal(v.state, 'failed');
+  const node = task.nodes.find((n) => n.node_id === 'areas-critique');
+  assert.ok(node.result.blocking.some((b) => /F2 and F3 both plan the spawn env edit/.test(b)));
+});
+
+test('ownership overlap: a soft problem naming a file but no function, lines or owner stays advice', async () => {
+  const { v, task } = await areasCritiqueWith(TWO_AREAS, {
+    sound: true, checks: ['read both briefs'],
+    problems: ['overlap - both areas touch teams/mcp/taskmanager.mjs but in different tests; fine'],
+  });
+  assert.equal(v.state, 'done');
+  assert.deepEqual(task.planning_pkgs.map((p) => p.id), ['PLAN-F1', 'PLAN-F2']);
+});
+
+test('ownership overlap: a soft problem with no file path stays advice', async () => {
+  const { v } = await areasCritiqueWith(TWO_AREAS, {
+    sound: true, checks: ['read both briefs'],
+    problems: ['overlap - F1 and F2 both plan the login flow. Name one owner.'],
+  });
+  assert.equal(v.state, 'done');
+});
+
+test('ownership overlap: the same file with different functions is no overlap, and the cards open', async () => {
+  const { v, task } = await areasCritiqueWith(DIFF_FN_AREAS, { sound: true, checks: ['read both briefs'] });
+  assert.equal(v.state, 'done');
+  assert.deepEqual(task.planning_pkgs.map((p) => p.id), ['PLAN-F1', 'PLAN-F2']);
+});
+
+test('ownership overlap: a person\'s gate on two areas claiming spawnEnv() is not refused (D3)', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['x'] }) });
+    await tm.rawCall('tm_submit', { task_id, node_id: 'areas', payload: ok({ areas: OVERLAP_AREAS }) });
+    await tm.rawCall('tm_next', { task_id });
+    const inbox = await tm.rawCall('tm_inbox', { task_id });
+    const card = inbox.cards.find((c) => c.node_id === 'areas-critique');
+    assert.ok(card, JSON.stringify(inbox));
+    const out = await tm.rawCall('tm_submit', { task_id, key: card.key, payload: { accept: true, reason: 'one story each; the owner is settled in the PRD' } });
+    assert.equal(out.state, 'done');
+    assert.deepEqual(readTask(root, task_id).planning_pkgs.map((p) => p.id), ['PLAN-F1', 'PLAN-F2']);
+  }, { interactive: true, human_gates: ['areas-critique'] });
 });
 
 test('M4: a planning integrate that asks for resplit retires the cards and re-splits; the new cards open behind a fresh integrate that shape now waits on', async () => {

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import {
   touchScope, scopesOverlap, pathOverlapProblems, placeholderAcceptance,
-  acAssignment, shapePrecheck, formatShapeFeedback,
+  acAssignment, shapePrecheck, formatShapeFeedback, areaOwnershipOverlaps, areaClaims,
 } from '../mcp/shapecheck.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -265,4 +265,99 @@ test('CLI: a shape with a missing AC and an overlap exits 1 naming both; a clean
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+const area = (id, brief, title = 'area') => ({ id, title, brief });
+const areaOverlapsOf = (a, b) => areaOwnershipOverlaps([area('F1', a), area('F2', b)]);
+
+test('areaOwnershipOverlaps: the same function in the same file names both ids, the function, the file and the earlier owner', () => {
+  const r = areaOwnershipOverlaps([
+    area('F1', 'Change `spawnEnv()` in teams/mcp/taskmanager.mjs to pass the root.'),
+    area('F2', 'Also reshape spawnEnv() in teams/mcp/taskmanager.mjs for the judge.'),
+  ]);
+  assert.deepEqual(r, ["overlap - F1 and F2 both plan the edit to spawnEnv() in teams/mcp/taskmanager.mjs; one owner: F1 - take it out of F2's brief"]);
+});
+
+test('areaOwnershipOverlaps: intersecting line ranges on one file are an overlap', () => {
+  const r = areaOwnershipOverlaps([
+    area('F1', 'Rewrite teams/mcp/x.mjs:12-40.'),
+    area('F2', 'Rewrite lines 30-60 of teams/mcp/x.mjs.'),
+  ]);
+  assert.equal(r.length, 1);
+  assert.match(r[0], /F1 and F2 both plan the edit to lines 30-40 in teams\/mcp\/x\.mjs; one owner: F1 - take it out of F2's brief/);
+});
+
+test('areaOwnershipOverlaps: same file with different functions or disjoint lines is []', () => {
+  assert.deepEqual(areaOwnershipOverlaps([
+    area('F1', 'Edit a() in teams/mcp/x.mjs.'),
+    area('F2', 'Edit b() in teams/mcp/x.mjs.'),
+  ]), []);
+  assert.deepEqual(areaOwnershipOverlaps([
+    area('F1', 'Edit teams/mcp/x.mjs:1-10.'),
+    area('F2', 'Edit teams/mcp/x.mjs:11-20.'),
+  ]), []);
+});
+
+test('areaOwnershipOverlaps: the same function in different files is []', () => {
+  assert.deepEqual(areaOwnershipOverlaps([
+    area('F1', 'Edit run() in teams/mcp/a.mjs.'),
+    area('F2', 'Edit run() in teams/mcp/b.mjs.'),
+  ]), []);
+});
+
+test('areaOwnershipOverlaps: `spawnEnv()` in one brief and spawnEnv() in the other is an overlap', () => {
+  const r = areaOwnershipOverlaps([
+    area('F1', 'Touch `spawnEnv()` in teams/mcp/t.mjs.'),
+    area('F2', 'Touch spawnEnv() in teams/mcp/t.mjs.'),
+  ]);
+  assert.equal(r.length, 1);
+  assert.match(r[0], /spawnEnv\(\)/);
+});
+
+test('areaOwnershipOverlaps: the same file plus a shared bare backticked token is []', () => {
+  assert.deepEqual(areaOwnershipOverlaps([
+    area('F1', 'Edit teams/mcp/t.mjs so `sound` is checked.'),
+    area('F2', 'Edit teams/mcp/t.mjs; `sound` stays as is.'),
+  ]), []);
+});
+
+test('areaOwnershipOverlaps: a leading ./ does not hide the same file', () => {
+  const r = areaOwnershipOverlaps([
+    area('F1', 'Edit f() in ./teams/mcp/x.mjs.'),
+    area('F2', 'Edit f() in teams/mcp/x.mjs.'),
+  ]);
+  assert.equal(r.length, 1);
+  assert.match(r[0], / in teams\/mcp\/x\.mjs;/);
+});
+
+test('areaOwnershipOverlaps: a re-split that names one owner and disclaims in the other brief is []', () => {
+  assert.deepEqual(areaOwnershipOverlaps([
+    area('F1', 'Change spawnEnv() in teams/mcp/taskmanager.mjs.'),
+    area('F2', 'F1 owns spawnEnv() in teams/mcp/taskmanager.mjs, F2 does not touch it.'),
+  ]), []);
+  assert.deepEqual(areaOwnershipOverlaps([
+    area('F1', 'Edit spawnEnv() in teams/mcp/taskmanager.mjs.'),
+    area('F2', 'Rewrite the retry path. spawnEnv() in teams/mcp/taskmanager.mjs is owned by F1.'),
+  ]), []);
+});
+
+test('areaOwnershipOverlaps: areas that only call or mention a function in one file are []', () => {
+  assert.deepEqual(areaOverlapsOf('Call tm_status() via teams/mcp/taskmanager.mjs.', 'Read tm_status() output from teams/mcp/taskmanager.mjs.'), []);
+  assert.deepEqual(areaOverlapsOf('Edit teams/mcp/taskmanager.mjs so retry works; it only calls spawnEnv().', 'Change teams/mcp/taskmanager.mjs; spawnEnv() in teams/mcp/taskmanager.mjs stays as is. Update docs.'), []);
+});
+
+test('areaOwnershipOverlaps: a product name like Node.js is not a file', () => {
+  assert.deepEqual(areaClaims({ brief: 'Change f() for Node.js and Vue.js users.' }).files.size, 0);
+  assert.deepEqual(areaOverlapsOf('Change f() on Node.js.', 'Rewrite f() on Node.js.'), []);
+});
+
+test('areaOwnershipOverlaps: a function in a different sentence than the file is not tied to it', () => {
+  assert.deepEqual(areaOverlapsOf('Change teams/mcp/x.mjs. Also rewrite f() elsewhere.', 'Change f() in teams/mcp/x.mjs.'), []);
+});
+
+test('areaOwnershipOverlaps: one area, a non-array or a missing brief is []', () => {
+  assert.deepEqual(areaOwnershipOverlaps([area('F1', 'Edit f() in x/a.mjs.')]), []);
+  assert.deepEqual(areaOwnershipOverlaps(undefined), []);
+  assert.deepEqual(areaOwnershipOverlaps('nope'), []);
+  assert.deepEqual(areaOwnershipOverlaps([{ id: 'F1' }, { id: 'F2', title: 'f() in x/a.mjs' }, null]), []);
 });
