@@ -604,6 +604,25 @@ test('round 2: started_from comes from round 1, and the diff names resolved, car
   assert.deepEqual([r.rounds, r.gaps], [2, ['s3/b', 's5/c']])
 })
 
+test('a gap id is s<step>/<criterion id>: rewording a criterion with the same id carries the gap, never resolved plus new', () => {
+  const root = workspace()
+  round(root, roundIn(1, { n: 9, steps: [{ ...st(6, 'fail', 'deck check'), id: 'c-check' }] })); afterRound(root, 1)
+  round(root, roundIn(2, { n: 9, steps: [{ ...st(6, 'fail', 'deck-builder check passes on deck.mdx'), id: 'c-check' }] }))
+  assert.deepEqual(recOf(root, 2).gate.gaps, ['s6/c-check'])
+  assert.deepEqual(recOf(root, 2).gate.diff, { resolved: [], carried: ['s6/c-check'], new: [] })
+})
+
+test('a gap id without a criterion id never holds a newline: whitespace runs collapse to one space', () => {
+  const r = round(workspace(), roundIn(1, { steps: [st(6, 'fail', 'deck\n  check')] }))
+  assert.deepEqual(r.gaps, ['s6/deck check'])
+})
+
+test('a criterion id must be a non-empty string without a slash or whitespace', () => {
+  for (const id of ['', ' ', 'a/b', 'a b', 3]) {
+    assert.throws(() => round(workspace(), roundIn(1, { steps: [{ ...st(6, 'fail'), id }] })), /steps\[\d\]\.id/, JSON.stringify(id))
+  }
+})
+
 test('skipped is a gap, never a pass', () => {
   const root = workspace()
   const r = round(root, roundIn(1, { steps: [st(7, 'skipped', '쪽 읽기'), st(6, 'fail', '쪽 읽기'), st(1, 'pass', '쪽 읽기')] }))

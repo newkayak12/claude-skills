@@ -32,7 +32,8 @@
 //   round --input <file | ->       records one round of the collect → build loop as snapshot/rounds/round-N.json
 //       (the schema's one owner; SKILL.md cites this block). <file> is a path inside the workspace, `-` is stdin.
 //       input  { round: N>=1, n: >=1 (round <= n), steps: [{ step: 1-7, criteria: non-empty, verdict: pass|fail|skipped,
-//                by: actor | judge | command name, reason? }] (exactly seven entries, steps 1-7 once each),
+//                by: actor | judge | command name, reason?, id?: criterion id (no slash, no whitespace; the same
+//                id every round for the same criterion) }] (exactly seven entries, steps 1-7 once each),
 //                feedback?: [{ id, text }] (the kept findings after settle), feedback_mode: panel | single-context
 //                (required when feedback is non-empty, how `feedback` ran; null or absent otherwise),
 //                waiting_user?: question, blocked?: reason }
@@ -45,7 +46,8 @@
 //                round 1),
 //                steps (as given, criteria trimmed),
 //                gate: { verdict: { "<step>": fail > skipped > pass },
-//                        gaps: ["s<step>/<criteria>"] for every fail or skipped step, deduplicated; skipped is never pass,
+//                        gaps: ["s<step>/<id>"] (or s<step>/<criteria, whitespace collapsed> when no id) for every
+//                        fail or skipped step, deduplicated; skipped is never pass,
 //                        diff: { resolved: in N-1 not now, carried: in both, new: now only },
 //                        clauses: { no_new_gap, no_new_feedback, no_file_changed } | null },
 //                changed: workspace files (sorted, relative) added, removed or with other bytes (sha256) than in
@@ -645,6 +647,9 @@ function checkRoundInput(input) {
     if (!VERDICTS.includes(s.verdict)) throw new Error(`steps[${i}].verdict must be pass, fail or skipped`)
     if (!isText(s.by)) throw new Error(`steps[${i}].by must be a non-empty string`)
     if (s.reason !== undefined && typeof s.reason !== 'string') throw new Error(`steps[${i}].reason must be a string`)
+    if (s.id !== undefined && (typeof s.id !== 'string' || !/^[^\s/]+$/.test(s.id))) {
+      throw new Error(`steps[${i}].id must be a non-empty string without a slash or whitespace (the criterion id)`)
+    }
   })
   const feedback = input.feedback ?? []
   if (!Array.isArray(feedback)) throw new Error('feedback must be an array of {id, text}')
@@ -739,8 +744,8 @@ export function round(root, input, { skip = [] } = {}) {
   if (existsSync(target)) throw new Error(`${relative(root, target)} already exists: rounds never overwrite`)
   const { prev, prevPath, prevIds } = input.round > 1 ? readPrevRecord(root, input) : {}
   const startedFrom = prev ? { gaps: prev.gate.gaps, feedback: prevIds } : { gaps: [], feedback: [] }
-  const steps = input.steps.map(s => ({ step: s.step, criteria: s.criteria.trim(), verdict: s.verdict, by: s.by.trim(), ...(s.reason !== undefined && { reason: s.reason }) }))
-  const gaps = [...new Set(steps.filter(s => s.verdict !== 'pass').map(s => `s${s.step}/${s.criteria}`))]
+  const steps = input.steps.map(s => ({ step: s.step, ...(s.id !== undefined && { id: s.id }), criteria: s.criteria.trim(), verdict: s.verdict, by: s.by.trim(), ...(s.reason !== undefined && { reason: s.reason }) }))
+  const gaps = [...new Set(steps.filter(s => s.verdict !== 'pass').map(s => `s${s.step}/${s.id ?? s.criteria.replace(/\s+/g, ' ')}`))]
   const verdict = {}
   for (const s of steps) {
     if (VERDICTS.indexOf(s.verdict) > VERDICTS.indexOf(verdict[s.step] ?? 'pass')) verdict[s.step] = s.verdict
