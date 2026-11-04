@@ -45,6 +45,9 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
       the round count, each gate's verdict and what changed per round are written under the workspace's
       `snapshot/` (a record a later session reads); runs headless and without a mod; one real run on a
       fictional workspace with n = 2 shows two rounds, their gates and the diff between them.
+    - Scope (user, same day): "manage 이후에는 작게 작게 micro로 수정하고 처리할 예정이니까" — the n-round
+      loop is for the first collect → build only; once a deck is built, later changes are micro edits (one
+      item, one page, one fix) that run only the step they touch and its gate, not a full round.
 
 102. **portfolio checks the deck's claims against the material in an engine, both ways**
     - Why: debate 2026-10-29 (10 personas + noah), verified in code: material marks `근거 없음` /
