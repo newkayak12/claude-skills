@@ -107,4 +107,7 @@ unchanged; teams does not depend on them.
   Claude and the node records why. Both seen in one real run each.
 - `node --test teams/scripts/test-*.mjs` at the pre-change count or higher with 0 failures;
   `claude plugin test` in teams; `harness/` and `graph/` show no diff.
+- `/teams-status` alone shows S and L runs side by side in one HOME tree, live, with no harness or graph
+  mod loaded (user, 2026-11-04: "내재화했을 떄 teams-status로 S,L 다 볼 수 있어야 하고") — seen in tmux with
+  one S and one L task running.
 - The pane shows an S run's findings in full on ⏎, at 190 and 110 columns, approved on the demo render.
