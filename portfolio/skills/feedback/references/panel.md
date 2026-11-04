@@ -1,0 +1,79 @@
+# Reviewer panel — detail
+
+Step 2 of `SKILL.md`. The roster (A–D) is in the SKILL.md table and never changes. The debate
+follows think:brainstorming's debate mode (`think/skills/brainstorming/references/debate.md`),
+adapted from design options to review findings. The Clashes block is the only record: no debate
+log file is written.
+
+## Models
+
+`sonnet` for every reviewer and every attack (pass `model: "sonnet"` on each Agent call). The
+session model for merge, cut (rule S), scoring and the final blocks.
+
+## Steps
+
+1. **Ledger first.** Steps 0–1 of `SKILL.md` run once in the main context: format, tallies,
+   the numbered C/A/L/R/F lists. That ledger is what reviewers cite.
+2. **Diverge (round 1).** Start four subagents in one message, one per roster row, each with its
+   own persona text from `personas.md`. Each gets the document and the ledger, never another
+   reviewer's output, and returns, in its persona's voice:
+   - up to 5 findings: the ledger ID it supports (or `new`), a quoted document line, what that
+     line shows or fails to show, no criticism of other reviewers;
+   - a score per rubric dimension with the quoted evidence for it.
+3. **Merge.** Claude dedupes the findings across reviewers. A `new` finding gets the next ID in
+   the appendix block it belongs to (`C` / `A` / `L` / `R` / `F`). A finding no reviewer can tie
+   to a quoted line is cut here. Order: severity, then the focus persona's findings first when
+   the user named one.
+4. **Attack / rebut (rounds 2–3, at most 2).** Each reviewer again as its own `sonnet` subagent,
+   reading the merged list with the other reviewers' findings, using `think:devils-advocate` as
+   the attack method. Per finding it opposes it writes one attack; per attack on a finding it
+   backs it writes one rebuttal. An attack carries:
+
+   ```
+   <finding ID> · steel-man: <the finding at its strongest, one line>
+   objection: <why the document contradicts it, quoting the contradicting line, or why the quote does not carry it>
+   type: structural | assumption | execution | timing · severity: low | medium | high | critical
+   precedent: <a real failure pattern this resembles> | speculative
+   ```
+
+   Never invent a precedent: write `speculative`. An attack carries no core vulnerability and no
+   reversibility; those are written once, by Claude, in 핵심 취약점. Stop after round 2, or
+   earlier when a round adds no new objection.
+5. **Rule S (cut).** A finding survives if it still points to a quoted document line and no
+   attack showed the document contradicts it. Claude applies the rule; reviewers do not vote, and
+   a count of attackers never decides. A dropped finding leaves the appendix and every front block.
+6. **Score.** Claude sets one score per dimension by `scoring-rubric.md` from the surviving
+   findings; reviewer scores and their evidence are inputs, not averaged.
+7. **Write.** The Output Template of `SKILL.md`, plus the Clashes block.
+
+## Clashes and ID contract
+
+Format, one literal line per contested finding, three fields separated by ` — `:
+
+```
+<finding ID> — <who disagreed> — survived|dropped
+```
+
+`<who disagreed>` names reviewer letters and the move, and each attack keeps its parts:
+`B attacked (execution, high; steel-man: <one line>; precedent: speculative), A rebutted`.
+It carries no ` — `. A finding no attack touched has no entry. Above the entries one panel line:
+`패널 / Panel: A Staff · B EM · C Tech Lead · D OSS/DevTools — sonnet, <n> rounds`; it is not an entry. `survived` and `dropped` are the
+only closing words, lower case.
+
+- No contested finding: `충돌 없음 / no clashes`.
+- Appendix lines start with their ID and a space: `C1 `, `A1 `, `L1 `, `R1 `, `F1 `.
+- Each 우선순위 item ends `근거: <appendix ID>` naming one surviving finding.
+- Core vulnerability and reversibility appear only in 핵심 취약점.
+
+## Fallback
+
+Fewer than 2 subagents alive — no Agent tool, the calls fail, or fewer than 2 reviewers return —
+means no panel. Run the single-context review as one interviewer reading for all four rows'
+concerns (steps 1 and 3 of `SKILL.md`), and write the Clashes block as
+`패널 미실행 / panel could not run — single-context review` plus the reason. With 2 or 3 reviewers
+back, continue and add a line naming the missing reviewer to the Clashes block.
+
+## Revision mode
+
+The v1/v2 diff stays single-context (step 1). The same four reviewers get the new version only;
+their findings are debated as above and the diff rows are not argued.
