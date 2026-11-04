@@ -37,6 +37,20 @@ small work (S): the same harness run, once, with no decomposition around it
 So there is one unit of work — a harness run on teams' graph fork — and teams decides how many, in what
 order, and with what goal. S is not a different engine; it is that unit with no EPIC/STORY layer.
 
+Two layers, named apart: the **manager** (`taskmanager.mjs`: size, planning, EPIC/STORY, integrate, QA
+cards) and the **run** (`graph.mjs` + `broker.mjs`: one harness flow, nodes fired on Codex or Claude). S uses
+the run only, never the manager (user: "S는 team 엔진 안쓸거야 graph(harness나 마찬가지지)").
+
+Today S leaves teams: `harnessPrompt` (`taskmanager.mjs`, `HARNESS_SKILLS = ['graph:orchestrate',
+'harness:harness']`) tells a driver to use the graph plugin's MCP, else the harness plugin's Agent Team
+fallback; the driver loads only the harness plugin, so both S tasks of 2026-11-04 ran `route: fallback`.
+That dependency comes inside ("이 fallback으로 외부로 의존성을 돌리는걸 안으로 가져올거고"), and the
+cleanup covers every tie from teams to the two plugins ("정리 작업을 전체적으로"): the S prompt and
+`HARNESS_SKILLS`, the harness plugin dir on drivers, skill mounts of `graph:*` / `harness:*`, the
+teams ↔ harness pairs in `check-copies.mjs`, and docs/README lines that send teams users to either plugin.
+Done when `grep -rn "graph:orchestrate\|harness:harness\|plugins/cache/.*/\(harness\|graph\)/" teams`
+finds nothing outside tests that assert the absence.
+
 | Size | Runs on | Where a node fires |
 |---|---|---|
 | S | one graph run on teams' own broker: the harness flow (plan → setgoal → critique rounds with severity → implement → test → gate → report, `now.json` progress), what card 48 Tasks 2–4 put into graph brought into the fork where it lacks them; the driver no longer loads the harness plugin (`harnessrun.mjs` already reads a `route: 'graph'` pointer) | per node: Codex when the provider probe says it is ready for that stage, else Claude; the reason is recorded on the node |
