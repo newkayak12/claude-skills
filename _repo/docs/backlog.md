@@ -325,13 +325,6 @@ toasts).
 
 ### write plugin
 
-122. **write:diagram tests take under a minute — `test-diagram.mjs` is 148 s, one headless Chrome per figure** — in E-a9953265
-    - Why: 2026-11-03, card 114's merged tree: 118 tests in 147.8 s (user 182 s, sys 86 s); E-16e58ff6's
-      P1/P2 drivers sat 20+ min in it and were flagged stalled, and its Chrome spawns pushed the load to
-      ~80 with other Sprints. Card 120 (speed) covers write later; this is the measured case.
-   - Acceptance: one browser reused across a run (or renders batched); `node write/skills/diagram/scripts/test-diagram.mjs`
-     under 60 s with the same test count, timed before and after.
-
 ### knowledge plugin
 
 ### portfolio plugin
@@ -388,6 +381,7 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-a9953265 | 2026-11-04 | 122 (75 closed without code) | shipped `4761717a`; size S; goal gate 93; test-diagram 118/118 in 34 s (was 148 s on the card, 210–323 s under load); one Chrome shared over CDP only in the suite, the CLI path unchanged |
 | E-bf0527b7 | 2026-11-03 | 113, 49 rest, 94 rest, 84 rest | shipped `45251683..e93a5b31` by hand (cancelled in Build, ~$80): P1 (113) accepted 92 — one viewer per tasks root reused by live pid, finished tasks cached by mtime/size, 5 min idle exit; P2 (49) live forwarded STORY ask in the ledger and the band shot, stalled twice in a tmux wait (taken from attempt 3); P3 (94) 85 at retry 4, its one gap (P1's golden test scrubbed instead of recut) fixed by hand; P4 (84 design doc) never ran. teams 1792/1793 (1 skip), plugin test 445/445; 3 usage-limit parks. E-96699aa4 cancelled in PLAN to pin the viewer design |
 | E-16e58ff6 | 2026-11-03 | 114 | shipped `0cdfee82` by hand (task blocked): P1 accepted; P2 rejected 3× only for touching P1's test-diagram.mjs (pixel window 420x40→420x100); merged tree test-diagram 118/118, check-copies ok, validate 15/15; 2 usage-limit parks; test-diagram 148 s (card 122) |
 | E-c4d76843 | 2026-11-02 | 119 | shipped `cf910d02`; size S; goal gate 94; cache/memo tests 2/2 (falsified), `events` with an old `--since` 2.9 s → 0.18 s byte-identical; repo-rules refuses inline-script repo writes (263 ok); teams 1778/1779 (1 skip); a perl `>>` false positive fixed after the gate; `--cwd` now includes a task whose collect fails but task.json reads (untested) |
