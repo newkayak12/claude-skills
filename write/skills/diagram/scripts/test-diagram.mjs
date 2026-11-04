@@ -1,7 +1,7 @@
 // write:diagram - the IR, its HTML renderer (shared with teams/mcp/diagram.mjs) and the static
 // figure path (figure.mjs + font.mjs): self-contained SVG with an embedded NanumGothic subset + 2x PNG.
 //   node --test write/skills/diagram/scripts/test-diagram.mjs
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync, existsSync, copyFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -99,6 +99,21 @@ const BROWSER = fig.findBrowser();
 const needsBrowser = { skip: !BROWSER && 'no Chrome-family browser (set CHROME=)' };
 const CLI = join(HERE, 'diagram.mjs');
 const { spawnSync } = await import('node:child_process');
+// One headless Chrome for the whole run: rasterize (in-process and in cli() children) renders through it
+// via DIAGRAM_CHROME_WS instead of starting a Chrome per PNG. The two one-shot tests pin the var to ''.
+let sharedClosed = !BROWSER;
+if (BROWSER) {
+  const { launchBrowser } = await import('./cdp-shot.mjs');
+  const shared = await launchBrowser(BROWSER);
+  process.env.DIAGRAM_CHROME_WS = shared.ws;
+  after(async () => { sharedClosed = true; await shared.close(); });
+  // fallback if after() never ran: ask the browser to quit (it is not our child's pid we hold, only its socket)
+  process.on('exit', () => {
+    if (sharedClosed) return;
+    spawnSync(process.execPath, ['--input-type=module', '-e',
+      `const w=new WebSocket(process.argv[1]);w.onopen=()=>{w.send('{"id":1,"method":"Browser.close"}');setTimeout(()=>process.exit(0),1500)};w.onerror=()=>process.exit(0);setTimeout(()=>process.exit(0),5000)`, shared.ws], { timeout: 8000 });
+  });
+}
 const cli = (args, env = {}) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', env: { ...process.env, ...env } });
 const svgSize = (svg) => svg.match(/<svg[^>]* width="(\d+)" height="(\d+)"/).slice(1).map(Number);
 
@@ -290,7 +305,7 @@ test('figure CLI writes a self-contained SVG and a 2x PNG rasterized through an 
   try {
     const irPath = join(dir, 'ko.json');
     writeFileSync(irPath, JSON.stringify(KO_ARCH));
-    const r = cli(['figure', irPath, join(dir, 'ko')]);
+    const r = cli(['figure', irPath, join(dir, 'ko')], { DIAGRAM_CHROME_WS: '' }); // the one-shot path a user gets
     assert.equal(r.status, 0, r.stdout + r.stderr);
     const svg = readFileSync(join(dir, 'ko.svg'), 'utf8');
     assert.match(svg, /@font-face\{font-family:'FigNanum'[^}]*data:font\/ttf;base64,/);
@@ -302,6 +317,9 @@ test('figure CLI writes a self-contained SVG and a 2x PNG rasterized through an 
     assert.deepEqual(fig.pngSize(readFileSync(join(dir, 'ko.png'))), [2 * w, 2 * h]);
     const page = fig.rasterPage(join(dir, 'ko.svg'), w, h);
     assert.match(page, new RegExp(`<img src="${pathToFileURL(join(dir, 'ko.svg')).href}"`));
+    // the shared browser draws the same pixels as the one-shot path
+    assert.equal(fig.rasterize(join(dir, 'ko.svg'), w, h, join(dir, 'ko-shared.png'), { ...process.env, DIAGRAM_CHROME_WS: process.env.DIAGRAM_CHROME_WS }).code, 0);
+    assert.ok(fig.pngPixels(readFileSync(join(dir, 'ko-shared.png'))).equals(fig.pngPixels(readFileSync(join(dir, 'ko.png')))), 'shared PNG pixels equal the one-shot PNG');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -404,10 +422,13 @@ test('rasterize: a normal viewport passes unchanged; a viewport that cannot be e
 test('rasterize with the real browser: a figure taller than a full Chrome\'s frame keeps its last rows (2W x 2H)', needsBrowser, () => {
   const dir = scratch();
   try {
-    const r = fig.writeFigure(LOCKWAIT, join(dir, 't'));
+    const r = fig.writeFigure(LOCKWAIT, join(dir, 't'), { env: { ...process.env, DIAGRAM_CHROME_WS: '' } }); // one-shot: window enlarged, then cropped
     assert.equal(r.code, 0, r.msg);
     const [w, h] = svgSize(readFileSync(join(dir, 't.svg'), 'utf8'));
     const png = readFileSync(join(dir, 't.png'));
+    // the shared browser draws the same pixels for a figure taller than a full Chrome's frame
+    assert.equal(fig.rasterize(join(dir, 't.svg'), w, h, join(dir, 't-shared.png')).code, 0);
+    assert.ok(fig.pngPixels(readFileSync(join(dir, 't-shared.png'))).equals(fig.pngPixels(png)), 'shared PNG pixels equal the one-shot PNG');
     assert.deepEqual(fig.pngSize(png), [2 * w, 2 * h]);
     const raw = fig.pngPixels(png), stride = 1 + 2 * w * (png[25] === 6 ? 4 : 3);
     // the rows a full Chrome used to leave blank: below the 87 px its frame takes off the window
