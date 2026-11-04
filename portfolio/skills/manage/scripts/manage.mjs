@@ -65,6 +65,12 @@
 //       was skipped (nothing could proceed) or round >= n (so waiting_user at the last round still ends the loop)
 //       also writes snapshot/rounds/end-N.json ({ path: sha256 } of the workspace as the round left it)
 //       prints { round, rounds: count of round-*.json, stop_reason, continue, gaps }
+//   intake --feedback <file> [--round N]   the findings one portfolio:feedback output gives the round, parsed in node:
+//       ids from the 개선 우선순위 items' `근거: <ID>` and (panel mode) the Clashes entries marked survived, text from
+//       the appendix line starting with the ID; id is `<ID>#<sha256(text)[0:8]>` (IDs restart every run, the hash
+//       keeps a reworded finding new). A dropped clash is not consumed; a priority citing no ID is in not_consumed.
+//       mode: single-context when the Clashes block says 패널 미실행 or is absent, else panel. With --round N also
+//       writes snapshot/rounds/findings-N.json (the `settle --findings` input). Prints { mode, findings, not_consumed, written? }.
 //   step --input -                 records one step entry as it happens into snapshot/rounds/steps-N.json, stamped with
 //       the engine's time: { round, step, criteria, id? } (criteria phase) then { round, step, verdict, by, reason? }
 //       (verdict phase). Refused: a verdict before its criteria or twice, criteria for step s+1 before step s's
@@ -740,6 +746,48 @@ function changedSince(root, since, skip) {
   return out.sort()
 }
 
+// The findings one feedback run gives the round (rounds.md § Feedback each round), parsed from its text:
+// ids from the 개선 우선순위 items' `근거: <ID>` and the Clashes entries marked survived, text from the
+// appendix line that starts with the ID. The id carries a hash of that text, so an ID reused with new text
+// (IDs restart every run) is a new finding. A dropped clash and a priority citing no ID are not consumed.
+const FINDING_ID = /[CALRF]\d+/
+export function intake(text) {
+  const lines = text.split('\n')
+  const blockOf = title => {
+    const at = lines.findIndex(l => l.includes(`**[${title}`))
+    if (at < 0) return null
+    const end = lines.findIndex((l, i) => i > at && (/^\*\*\[/.test(l.trim()) || /^\*\*부록/.test(l.trim()) || l.trim() === '---'))
+    return lines.slice(at + 1, end < 0 ? undefined : end).filter(l => l.trim() !== '')
+  }
+  const prio = blockOf('개선 우선순위')
+  if (!prio) throw new Error('no [개선 우선순위 / Improvement Priorities] block: not a portfolio:feedback output')
+  const clashes = blockOf('충돌') ?? []
+  const mode = clashes.some(l => l.includes('패널 미실행')) || clashes.length === 0 ? 'single-context' : 'panel'
+  const appendix = new Map()
+  for (const l of lines) {
+    const m = l.match(new RegExp(`^(${FINDING_ID.source})\\s+(.+)$`))
+    if (m && !m[2].startsWith('—') && !appendix.has(m[1])) appendix.set(m[1], m[2].trim()) // `ID — who — survived` is a clash line
+  }
+  const ids = []
+  const notConsumed = []
+  for (const l of prio) {
+    const m = l.match(new RegExp(`근거:\\s*(${FINDING_ID.source})`))
+    if (m && appendix.has(m[1])) ids.push(m[1])
+    else if (/^\s*\d+[.)]/.test(l)) notConsumed.push(l.trim())
+  }
+  if (mode === 'panel') {
+    for (const l of clashes) {
+      const m = l.match(new RegExp(`^(${FINDING_ID.source})\\s+—.*—\\s*survived\\s*$`))
+      if (m && appendix.has(m[1])) ids.push(m[1])
+    }
+  }
+  const findings = [...new Set(ids)].map(id => {
+    const t = appendix.get(id)
+    return { id: `${id}#${createHash('sha256').update(t).digest('hex').slice(0, 8)}`, text: t }
+  })
+  return { mode, findings, not_consumed: notConsumed }
+}
+
 // One step entry as it happens: criteria first, then its verdict, steps 1-7 in order. The engine stamps
 // each with its own time into snapshot/rounds/steps-N.json, so the order is read from the record.
 export function step(root, input) {
@@ -906,6 +954,23 @@ function main() {
       }
     })
     out = settle(findings, settled(root))
+  } else if (cmd === 'intake') {
+    if (typeof args.feedback !== 'string') throw new Error('--feedback <file> is required: the feedback output this round produced')
+    const path = resolve(root, args.feedback)
+    const rel = relative(resolve(root), path)
+    if (isAbsolute(args.feedback) || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel) || !insideRoot(root, path)) {
+      throw new Error(`--feedback ${args.feedback} must be a path inside the workspace root ${root}`)
+    }
+    out = intake(readFileSync(path, 'utf8'))
+    if (args.round !== undefined) {
+      const n = Number(args.round)
+      if (!isInt(n)) throw new Error('--round must be a positive integer')
+      const target = join(root, ROUNDS_DIR, `findings-${n}.json`)
+      assertInside(root, target)
+      mkdirSync(join(root, ROUNDS_DIR), { recursive: true })
+      writeFileSync(target, `${JSON.stringify(out.findings, null, 2)}\n`)
+      out.written = relative(root, target).split(sep).join('/')
+    }
   } else if (cmd === 'step') {
     if (args.input !== '-') throw new Error('--input - is required: one step entry as JSON on stdin')
     let input
@@ -937,7 +1002,7 @@ function main() {
   } else if (cmd === 'keep-render') {
     out = keepRender(root, args.version)
   } else {
-    throw new Error('usage: manage.mjs layout | scaffold | selection | snapshot | renumber | verify | compare | claims | settle --findings <file> | step --input - | round --input <file | -> | round --read | keep-render')
+    throw new Error('usage: manage.mjs layout | scaffold | selection | snapshot | renumber | verify | compare | claims | settle --findings <file> | intake --feedback <file> [--round N] | step --input - | round --input <file | -> | round --read | keep-render')
   }
   process.stdout.write(`${JSON.stringify(out)}\n`)
 }
