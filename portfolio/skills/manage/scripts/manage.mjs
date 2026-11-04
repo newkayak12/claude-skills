@@ -47,7 +47,7 @@
 //                stop_reason, continue, feedback, waiting_user?, blocked? }
 //       clauses are evaluated only from round 2 on (null in round 1, or when round-(N-1).json is missing):
 //       no_new_gap = diff.new is empty; no_new_feedback = every feedback id was already in N-1; no_file_changed =
-//       changed is empty. nothing_new fires only when ALL THREE hold (not any one of them); the gate records each.
+//       changed is empty. nothing_new fires when ANY ONE of the three holds; the gate records each.
 //       stop_reason, first match wins: blocked > waiting_user > nothing_new > n_reached (round >= n) > null
 //       continue: false for blocked, nothing_new, n_reached; true for null; for waiting_user true, unless every step
 //       was skipped (nothing could proceed) or round >= n (so waiting_user at the last round still ends the loop)
@@ -653,7 +653,7 @@ export function round(root, input, { skip = [] } = {}) {
     no_new_feedback: feedback.every(f => startedFrom.feedback.includes(f.id)),
     no_file_changed: changed.length === 0,
   } : null
-  const nothingNew = clauses !== null && Object.values(clauses).every(Boolean)
+  const nothingNew = clauses !== null && Object.values(clauses).some(Boolean)
   const last = input.round >= input.n
   const waiting = isText(input.waiting_user)
   const blocked = isText(input.blocked)
