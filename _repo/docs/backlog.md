@@ -325,7 +325,7 @@ toasts).
 
 ### write plugin
 
-122. **write:diagram tests take under a minute — `test-diagram.mjs` is 148 s, one headless Chrome per figure**
+122. **write:diagram tests take under a minute — `test-diagram.mjs` is 148 s, one headless Chrome per figure** — in E-a9953265
     - Why: 2026-11-03, card 114's merged tree: 118 tests in 147.8 s (user 182 s, sys 86 s); E-16e58ff6's
       P1/P2 drivers sat 20+ min in it and were flagged stalled, and its Chrome spawns pushed the load to
       ~80 with other Sprints. Card 120 (speed) covers write later; this is the measured case.
