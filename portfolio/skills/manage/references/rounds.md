@@ -104,8 +104,8 @@ values are `n_reached`, `nothing_new`, `waiting_user` and `blocked`, first match
 precedence: blocked, waiting_user, nothing_new, n_reached. `blocked` (input `blocked`) is for work
 that cannot continue at all, with the reason.
 
-`nothing_new` fires only when all three clauses hold: no gap id absent from the previous round,
-no new kept feedback id after settle, and no file changed since it. Round 1 has no clauses.
+`nothing_new` fires when any one of three clauses holds: no gap id absent from the previous round,
+no new kept feedback id after settle, or no file changed since it. Round 1 has no clauses.
 
 ## Report
 

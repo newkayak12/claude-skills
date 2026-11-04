@@ -638,25 +638,28 @@ test('the --input file itself is not a change', () => {
   assert.equal(JSON.parse(r.stdout).stop_reason, 'nothing_new')
 })
 
-test('nothing_new fires only when all three clauses hold; any one clause failing keeps the loop going', () => {
+test('nothing_new fires when any one clause holds; only all three failing keeps the loop going', () => {
   const same = { steps: [st(4, 'fail', 'k')], feedback: [{ id: 'f1', text: 'x' }], n: 9 }
+  const newGap = [st(4, 'fail', 'k'), st(5, 'fail', 'm')]
+  const newFb = [{ id: 'f1', text: 'x' }, { id: 'f2', text: 'y' }]
   const prep = () => { const root = workspace(); round(root, roundIn(1, same)); afterRound(root, 1); return root }
-  let root = prep()
-  let r = round(root, roundIn(2, same))
-  assert.deepEqual([r.stop_reason, r.continue], ['nothing_new', false])
-  assert.deepEqual(recOf(root, 2).gate.clauses, { no_new_gap: true, no_new_feedback: true, no_file_changed: true })
-  root = prep()
-  r = round(root, roundIn(2, { ...same, steps: [st(4, 'fail', 'k'), st(5, 'fail', 'm')] }))
-  assert.deepEqual([r.stop_reason, r.continue], [null, true])
-  assert.deepEqual(recOf(root, 2).gate.clauses, { no_new_gap: false, no_new_feedback: true, no_file_changed: true })
-  root = prep()
-  r = round(root, roundIn(2, { ...same, feedback: [{ id: 'f1', text: 'x' }, { id: 'f2', text: 'y' }] }))
-  assert.deepEqual([r.stop_reason, r.continue], [null, true])
-  assert.deepEqual(recOf(root, 2).gate.clauses, { no_new_gap: true, no_new_feedback: false, no_file_changed: true })
-  root = prep(); stamp(root, 'skeleton.md', future + 9)
-  r = round(root, roundIn(2, same))
-  assert.deepEqual([r.stop_reason, r.continue], [null, true])
-  assert.deepEqual(recOf(root, 2).gate.clauses, { no_new_gap: true, no_new_feedback: true, no_file_changed: false })
+  const run = (input, touch) => {
+    const root = prep(); if (touch) stamp(root, 'skeleton.md', future + 9)
+    const r = round(root, roundIn(2, input))
+    return [r.stop_reason, r.continue, recOf(root, 2).gate.clauses]
+  }
+  // all three true
+  assert.deepEqual(run(same), ['nothing_new', false, { no_new_gap: true, no_new_feedback: true, no_file_changed: true }])
+  // only no_new_gap
+  assert.deepEqual(run({ ...same, feedback: newFb }, true), ['nothing_new', false, { no_new_gap: true, no_new_feedback: false, no_file_changed: false }])
+  // only no_new_feedback
+  assert.deepEqual(run({ ...same, steps: newGap }, true), ['nothing_new', false, { no_new_gap: false, no_new_feedback: true, no_file_changed: false }])
+  // only no_file_changed
+  assert.deepEqual(run({ ...same, steps: newGap, feedback: newFb }), ['nothing_new', false, { no_new_gap: false, no_new_feedback: false, no_file_changed: true }])
+  // reproduction: same gaps, a new feedback id, no file changed
+  assert.deepEqual(run({ ...same, feedback: newFb }), ['nothing_new', false, { no_new_gap: true, no_new_feedback: false, no_file_changed: true }])
+  // none true
+  assert.deepEqual(run({ ...same, steps: newGap, feedback: newFb }, true), [null, true, { no_new_gap: false, no_new_feedback: false, no_file_changed: false }])
 })
 
 test('clauses are not evaluated in round 1: nothing_new never fires there', () => {
@@ -666,7 +669,8 @@ test('clauses are not evaluated in round 1: nothing_new never fires there', () =
 test('n_reached at round >= n, null before it', () => {
   const root = workspace()
   assert.deepEqual(round(root, roundIn(1, { n: 2 })), { round: 1, rounds: 1, stop_reason: null, continue: true, gaps: ['s4/기준 4'] })
-  const r = round(root, roundIn(2, { n: 2, steps: [st(4, 'fail'), st(6, 'fail')] }))
+  afterRound(root, 1); stamp(root, 'skeleton.md', future + 9)
+  const r = round(root, roundIn(2, { n: 2, steps: [st(4, 'fail'), st(6, 'fail')], feedback: [{ id: 'f9', text: 'z' }] }))
   assert.deepEqual([r.stop_reason, r.continue], ['n_reached', false])
 })
 
@@ -696,8 +700,9 @@ test('precedence: blocked > waiting_user > nothing_new > n_reached', () => {
   assert.equal(round(prep(), roundIn(2, { ...same, waiting_user: 'q' })).stop_reason, 'waiting_user')
   assert.equal(round(prep(), roundIn(2, { ...same, blocked: 'b' })).stop_reason, 'blocked')
   assert.equal(round(prep(), roundIn(2, { ...same, blocked: 'b', waiting_user: 'q' })).stop_reason, 'blocked')
-  // a new gap removes nothing_new, so n_reached is what is left
-  assert.equal(round(prep(), roundIn(2, { ...same, steps: [st(4, 'fail', 'k'), st(5, 'fail', 'z')] })).stop_reason, 'n_reached')
+  // all three clauses failing (new gap, new feedback id, a changed file) removes nothing_new, so n_reached is what is left
+  const changed = prep(); stamp(changed, 'skeleton.md', future + 9)
+  assert.equal(round(changed, roundIn(2, { ...same, steps: [st(4, 'fail', 'k'), st(5, 'fail', 'z')], feedback: [{ id: 'f9', text: 'z' }] })).stop_reason, 'n_reached')
 })
 
 test('empty or blank criteria are refused: exit 1, an error object, nothing written', () => {
