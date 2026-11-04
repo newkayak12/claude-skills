@@ -188,6 +188,21 @@ toasts).
 
 ### teams plugin bugs
 
+125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality**
+   - Why: user, 2026-11-04, after the 190/110 captures of card 105: "만약 된다면 view.mjs(web으로 보여주는 것)
+     은 퇴역시켜도 될거 같아", "저 *-stats view만 더 퀄리티 높히면 될거 같고". Condition ("만약 된다면"): the
+     pane handles several EPICs at once (`]`/`[` step EPIC, `j`/`k` STORY row, `g` open) — seen live with
+     two running tasks first. The web server is also the stale-process source: teams 0.62.5 sessions kept
+     respawning `view.mjs --serve-once-socket` at ~95% CPU (killed three times 2026-11-03, again 2026-11-04).
+   - Acceptance: live look with two running EPICs at 190 and 110 shows stepping and row moves work (the
+     condition; if it fails, fix the pane before retiring anything); then the browser server goes —
+     `view.mjs` HTTP/socket serving, `/register`, `view_url` in tm_open/tm_run replies, the viewer spawn in
+     `taskmanager.mjs`, and their mentions in teams skills, README/KOR, CHANGELOG — while `view.mjs --once`
+     (the CLI text every non-mod client and the command's `{ text }` read, `compat-claude.md`) stays;
+     no `view.mjs` server process starts from any teams path (a test and a `ps` check after a real task);
+     the pane's quality pass is named in its own acceptance lines, approved on the demo render (`mod.md`
+     UI rule 0).
+
 121. **teams tests write their fixture tasks under a temp tasks root, never `~/.harness/tasks`**
    - Why: 2026-11-03, `tm_clean` sweep listed tasks `3a3a3bb5`, `d0ee9043` (2026-09-22), `97f05d73`
      (2026-10-07) as running with dead daemons, cwd `$TMPDIR/view-test-repo-*`, and a live `eb955b62`
