@@ -27,11 +27,14 @@ numbers continue from that file and never overwrite one.
    splitting, step 5 style rules, step 7 page reading) a judge checks it, and the judge is not
    the actor.
 5. **Gate.** The next step starts only when the step's verdict is recorded. `fail` is fixed and
-   re-checked before moving on, or recorded `fail` with the reason when it cannot be fixed this
-   round. The verdict values are `pass`, `fail`, `skipped`.
+   re-checked before moving on, or left `fail` with the reason when the fix does not fit this
+   round (a step that ran and missed a criterion). The verdict values are `pass`, `fail`, `skipped`.
 6. **Record.** One `round` call per round, after the last step (or after the step that ended
    it). Write the input to `snapshot/rounds/in-N.json` and run
    `manage.mjs round --input snapshot/rounds/in-N.json` (that folder is left out of `changed`).
+   `steps` holds exactly seven entries, one per step 1-7, never two for one step. A step with a
+   part that could not run (step 4's interviewer or noah viewpoint headless) is one entry:
+   `skipped`, the reason naming the part that did not run and what did run.
    Never fill a derived field (gaps, diff, `changed`, `started_from`, `stop_reason`, `continue`).
    `by` names who decided the verdict: a command, `judge:subagent` or `judge:in-context`.
 
@@ -43,7 +46,8 @@ reasoning, and its verdict is `pass` or `fail` per criterion with the line it re
   available (pass `model` on the Agent call).
 - No subagent available (no Agent tool, or the calls fail): the actor judges in context, `by` says
   `judge:in-context`, and the report says so. A step the in-context judge passes is named in the report.
-- A step no command and no judge can check is recorded `fail` with the reason, not `pass`.
+- A step no command and no judge can check is recorded `skipped` with the reason `could not be
+  checked`, counted as a gap, never `pass` and never `fail`.
 
 ## Feedback each round
 
@@ -66,10 +70,14 @@ with `kept`, show the user `settled`. The `kept` array is the `feedback` of the 
 ## Skipped, never pass
 
 A step that could not run is recorded `skipped` with its reason in `reason`, and `round` counts it
-as a gap. A step is never recorded `pass` without running. Cases:
-- step 5: `deck.catalog.md` or `template/분석.md` missing;
+as a gap. A step is never recorded `pass` without running. An unusable tool (a missing, 0-byte or
+unreadable file, a missing renderer or catalog) gives `skipped` with its reason, never `fail`;
+`fail` is only for a step that ran and missed a criterion. Cases:
+- step 5: `deck.catalog.md` or `template/분석.md` missing, `template.pptx` 0-byte or unreadable,
+  or no renderer;
 - step 6: runs when `deck.catalog.md`, `template/분석.md` and `skeleton.md` all exist (the fixture
-  workspace has them). A missing one is named in the reason;
+  workspace has them). A missing one, or a checker that cannot open the template (0-byte or
+  unreadable `template.pptx`), is `skipped` and named in the reason;
 - step 7: `build`/`render` only when the user said so for this loop. Without that word the step is
   skipped with the reason `not requested`; it is never `waiting_user`. With the word and no
   renderer, skipped with the reason `no renderer`;
