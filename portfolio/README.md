@@ -188,8 +188,12 @@ Tell me which gaps are fatal, and be honest about whether I'd pass screening.
 ### `feedback`
 
 Reads your portfolio as an interviewer who has seen a hundred this week — pattern-matching on
-what's *missing*, not just what's present. You pick one of four reviewer personas (Staff Engineer /
-Startup EM / Enterprise Tech Lead / OSS-DevTools Lead) and it stays in that persona throughout.
+what's *missing*, not just what's present. A fixed panel of four reviewers (Staff Engineer /
+Startup EM / Enterprise Tech Lead / OSS-DevTools Lead), each its own subagent, reads the same
+document; their findings are debated (diverge, merge, attack and rebut, at most two rounds) and a
+finding survives only if it still points to a quoted line and no attack showed the document
+contradicts it. Name a persona and it becomes the focus that orders the fixes, never who reviews.
+The output adds a Clashes block saying who disagreed on which finding and whether it survived.
 Scores five dimensions, then challenges every score of 7 or above with the objection a skeptical
 interviewer would raise; only scores that survive stay high. Not for rewriting sentences
 (`rewrite`) or JD matching (`fit`).
@@ -201,7 +205,7 @@ Be harsh — I'd rather hear it now than in the interview.
 
 Five dimensions: Technical Depth · System Design · Impact and Results · Leadership/Ownership ·
 Portfolio Narrative. Score is the highest level *fully* satisfied — partial evidence does not round
-up. Output includes the single core vulnerability, the top five questions this persona will ask,
+up. Output includes the single core vulnerability, the top five questions the panel will ask,
 and three prioritized fixes. Rubric and persona details: `references/scoring-rubric.md`,
 `references/personas.md`.
 
