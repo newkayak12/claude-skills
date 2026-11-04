@@ -211,6 +211,11 @@ toasts).
      and computes a task's state only when that task's files changed (no full re-read per poll); it exits
      when no session is connected; a test with two clients on one socket, and `ps` showing one server
      with two sessions open; idle CPU of the server under 1% with one running task, measured.
+     Shipped `595d5d1b` (E-0ad41780) except the CPU bar on the real root: one server per root, idle-out,
+     detached from the starting session; measured 2026-11-04 18:30 on `~/.harness/tasks` (1108 entries):
+     no clients 0.07%, one session's 3 s events + status poll ~4% (synthetic root 0.85%). Left: the
+     real-root poll under 1% (status recomputes over every entry), a log for the detached server, a
+     relative `HARNESS_TASKS_DIR` resolved in the mod, a default-on loose CPU guard in the suite.
    - The viewer link, now and unconditionally (user, 2026-11-04, on a `http://127.0.0.1:7431/E-478d5e95` in a
      reply: "이렇게 내보이는거 굳이 하지말자"): no tm_* reply carries a viewer URL — `view_url` leaves
      tm_open, tm_run and tm_status (`teams/mcp/taskmanager.mjs`), and the skills that tell Claude to show it
@@ -369,6 +374,7 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-0ad41780 | 2026-11-04 | 125 (socket part) | shipped `595d5d1b`; size S; goal gate 90; `teams/mcp/stateserver.mjs` one socket per tasks root, mod dials it (proto=1, 409 → `--once`), `view.mjs --serve-once-socket` removed, `--once` unchanged (view tests 334/334); s1 and s3 each needed a second attempt (flaky CPU test → opt-in `TEAMS_STATE_PERF=1`; server died with its tmux session → detached, SIGHUP ignored); teams 1827/1829 (2 skip), plugin test 448/448 (re-run by hand); real-root CPU ~4% per polling session, not <1% — left on card 125; critique ended at its 2-round cap with 3 majors open; driver paused 1 h on the 5-hour limit; Codex unreachable |
 | E-6ff25a30 | 2026-11-04 | 121, 112 | shipped `e014fb10`; size S; goal gate 82 fail → one repair (edit-claim overlap only) → 91; `test-taskmanager.mjs` file-level temp tasks root (temp-HOME suite leaves 0 entries; a real-HOME run went 1105 → 1108 with other tasks live, not attributed); `areas-critique` blocks an edit-ownership overlap naming one owner; teams 1813/1814 (1 skip, 0 fail, re-run by hand), plugin test 445/445 (task's count); last critique round's fixes not re-critiqued; Codex unreachable, Claude did all nodes |
 | — | 2026-11-04 | 101, 81 closed on evidence | 101: E-bf0527b7 (teams 0.62.7) ran `dispatch:P1:2` and `dispatch:P2:2` together from 05:45 (spawned 1 s apart) and P3:2 with P2:3 from 07:19, no `auto_parallel_decreased`; 81: E-a9953265 (size S, teams 0.63.0) `scope_verdict` `own_record: true`, Codex `apply_patch` limit stays named in teams README/KOR |
 | E-a9953265 | 2026-11-04 | 122 (75 closed without code) | shipped `4761717a`; size S; goal gate 93; test-diagram 118/118 in 34 s (was 148 s on the card, 210–323 s under load); one Chrome shared over CDP only in the suite, the CLI path unchanged |
