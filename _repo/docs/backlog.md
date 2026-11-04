@@ -263,6 +263,26 @@ toasts).
      the name's first word, then `⑂`); tests at 190, 110 and a narrow pane on four surfaces; the demo render
      approved by the user (`mod.md` UI rule 0).
 
+128. **teams serves one MCP server, its internals split into modules by concern**
+   - Why: user, 2026-11-04: "teams의 mcp 하나의 서버로 통합 및 노출 내부 mjs 코드 스플릿으로 가독성 및
+     유지보수성 증가". Today `teams/.claude-plugin/plugin.json` starts three servers per session —
+     `teams-engineering` (`mcp/broker.mjs`, 2,479 lines), `task-manager` (`mcp/taskmanager.mjs`, 9,028 lines,
+     280 top-level functions, 97 exports) and `teams-wiki` (`mcp/wiki.mjs`) — each with its own copy of the
+     stdio loop (`handle`/`callTool`/`emit`, broker 2327–2440, taskmanager 8924–9028, wiki 627–631), and the
+     copies have drifted (broker handles `notifications/cancelled` and progress, taskmanager does not).
+     Engine analysis of the same day ranked the splits: the manager prompts (`composeTaskPrompt` 4305–4788),
+     `finish` per stage (5059–5359), the tool schema table + `dispatch` (5404–5654, 8891), the worktree/git
+     cluster (2388–2913), the driver/daemon process cluster (3051–3500), one verdict-field map (five copies).
+     Supersedes card 120's teams parts (b) and (c); goes with the absorb plan
+     (`_repo/docs/plans/2026-11-04-teams-absorbs-harness-graph.md`), whose run layer is the broker.
+   - Acceptance: one `mcpServers` entry in teams; every tool now reachable (`tm_*`, `team_*`, `wiki_*`) is
+     listed by it under its current name (a test compares the tool list before and after); one stdio loop
+     with cancel and progress for every tool; `taskmanager.mjs` and `broker.mjs` reduced to wiring, each
+     concern in its own module with its own test file, no file over ~1,500 lines; no behaviour change —
+     `node --test teams/scripts/test-*.mjs` at the pre-change count with 0 failures, `claude plugin test`,
+     and one real S and one real L task run on the merged server; `ps` shows one teams MCP process per
+     session.
+
 121. **teams tests write their fixture tasks under a temp tasks root, never `~/.harness/tasks`**
    - Why: 2026-11-03, `tm_clean` sweep listed tasks `3a3a3bb5`, `d0ee9043` (2026-09-22), `97f05d73`
      (2026-10-07) as running with dead daemons, cwd `$TMPDIR/view-test-repo-*`, and a live `eb955b62`
