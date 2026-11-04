@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
-import { bump, claims, compare, deckPages, headings, resumePages, keepRender, layout, parseMap, readMaterial, renumber, round, scaffold, selection, settle, settled, snapshot, step, verify } from './manage.mjs'
+import { bump, claims, compare, deckPages, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, renumber, round, scaffold, selection, settle, settled, snapshot, step, verify } from './manage.mjs'
 
 const SKEL = `# 가상 포트폴리오
 version: v4.0.0
@@ -621,6 +621,53 @@ test('a criterion id must be a non-empty string without a slash or whitespace', 
   for (const id of ['', ' ', 'a/b', 'a b', 3]) {
     assert.throws(() => round(workspace(), roundIn(1, { steps: [{ ...st(6, 'fail'), id }] })), /steps\[\d\]\.id/, JSON.stringify(id))
   }
+})
+
+// ── intake: the findings a round consumes, parsed from the feedback text in node ──
+const FB = (clashes, prio = '1. **무엇을** 3쪽 · **왜** x · **어떻게** y · `근거: A1`\n2. **무엇을** 5쪽 · `근거: C1`\n3. **무엇을** 7쪽 · 근거 없음') => [
+  '**[총평 / First Impression]**', '좋음', '', '**[개선 우선순위 / Improvement Priorities]**', prio, '',
+  '**[예상 인터뷰 질문 / Expected Interview Questions]**', '- A: 왜?', '', '---', '', '**부록 / Appendix**', '',
+  '**[충돌 / Clashes]**', ...clashes, '', '**[주장 감사 / Claim Audit]**',
+  'A1 "30분 → 4분" — 기준선 없음', 'A2 "안정화" — 수치 없음', '**[정합성 / Consistency]**', 'C1 3쪽과 9쪽 기간 다름', 'C2 스킬 근거 없음',
+].join('\n')
+
+test('intake takes priorities and survived clashes, text from the appendix; dropped and uncited are not consumed', () => {
+  const r = intake(FB(['패널 / Panel: A Staff · B EM · C Tech Lead · D OSS/DevTools — sonnet, 2 rounds', 'A2 — B: 기준선 있음 — survived', 'C2 — D: 근거 있음 — dropped']))
+  assert.equal(r.mode, 'panel')
+  assert.deepEqual(r.findings.map(f => f.id.split('#')[0]), ['A1', 'C1', 'A2'])
+  assert.deepEqual(r.findings.map(f => f.text), ['"30분 → 4분" — 기준선 없음', '3쪽과 9쪽 기간 다름', '"안정화" — 수치 없음'])
+  assert.deepEqual(r.not_consumed, ['3. **무엇을** 7쪽 · 근거 없음'])
+})
+
+test('intake with the panel not run is single-context and takes the priorities only', () => {
+  const r = intake(FB(['패널 미실행 / panel could not run — single-context review']))
+  assert.equal(r.mode, 'single-context')
+  assert.deepEqual(r.findings.map(f => f.id.split('#')[0]), ['A1', 'C1'])
+})
+
+test('intake ids carry a content hash: the same appendix id with other text is another finding', () => {
+  const a = intake(FB(['충돌 없음 / no clashes'])).findings[0].id
+  const b = intake(FB(['충돌 없음 / no clashes']).replace('기준선 없음', '비교 대상 없음')).findings[0].id
+  assert.match(a, /^A1#[0-9a-f]{8}$/)
+  assert.notEqual(a, b)
+  assert.equal(a, intake(FB(['충돌 없음 / no clashes'])).findings[0].id)
+})
+
+test('intake CLI: --feedback inside the workspace, --round N writes snapshot/rounds/findings-N.json; outside is refused', () => {
+  const root = workspace()
+  writeFileSync(join(root, 'fb.md'), FB(['충돌 없음 / no clashes']))
+  const r = spawnSync(process.execPath, [MANAGE, 'intake', '--feedback', 'fb.md', '--round', '2'], { cwd: root, encoding: 'utf8' })
+  assert.equal(r.status, 0, r.stdout)
+  const out = JSON.parse(r.stdout)
+  assert.equal(out.written, 'snapshot/rounds/findings-2.json')
+  assert.deepEqual(JSON.parse(readFileSync(join(root, out.written), 'utf8')), out.findings)
+  const e = spawnSync(process.execPath, [MANAGE, 'intake', '--feedback', '../fb.md'], { cwd: root, encoding: 'utf8' })
+  assert.equal(e.status, 1)
+  assert.match(JSON.parse(e.stdout).error, /inside the workspace/)
+})
+
+test('intake refuses a text with no priorities block', () => {
+  assert.throws(() => intake('**[총평 / First Impression]**\nx'), /개선 우선순위/)
 })
 
 // ── step: the engine records each step as it happens, so the order is read from the record ──
