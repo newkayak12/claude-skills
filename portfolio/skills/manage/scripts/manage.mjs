@@ -65,6 +65,12 @@
 //       was skipped (nothing could proceed) or round >= n (so waiting_user at the last round still ends the loop)
 //       also writes snapshot/rounds/end-N.json ({ path: sha256 } of the workspace as the round left it)
 //       prints { round, rounds: count of round-*.json, stop_reason, continue, gaps }
+//   step --input -                 records one step entry as it happens into snapshot/rounds/steps-N.json, stamped with
+//       the engine's time: { round, step, criteria, id? } (criteria phase) then { round, step, verdict, by, reason? }
+//       (verdict phase). Refused: a verdict before its criteria or twice, criteria for step s+1 before step s's
+//       verdict, a step out of 1-7 order, a round already recorded. Prints { round, steps, next: { step, needs } | null }.
+//       `round` with no `steps` in its input reads steps-N.json (seven verdicts required) and records gate.order
+//       'recorded' with each step's criteria_at and verdict_at; steps given in the input record gate.order 'caller'.
 //   round --read                   the read form: { rounds, last: { round, stop_reason, continue } | null, items: [one per
 //       round-N.json in round order: { round, n, verdict, gaps, diff, clauses, changed, stop_reason, continue,
 //       feedback, waiting_user?, blocked? }] }, from the files alone; writes nothing
@@ -734,7 +740,52 @@ function changedSince(root, since, skip) {
   return out.sort()
 }
 
+// One step entry as it happens: criteria first, then its verdict, steps 1-7 in order. The engine stamps
+// each with its own time into snapshot/rounds/steps-N.json, so the order is read from the record.
+export function step(root, input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('step input must be a JSON object')
+  if (!isInt(input.round)) throw new Error('round must be a positive integer')
+  if (!Number.isInteger(input.step) || input.step < 1 || input.step > 7) throw new Error('step must be an integer 1-7')
+  const path = join(root, ROUNDS_DIR, `steps-${input.round}.json`)
+  assertInside(root, path)
+  if (existsSync(join(root, ROUNDS_DIR, `round-${input.round}.json`))) throw new Error(`round ${input.round} is already recorded`)
+  const list = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : []
+  const cur = list.at(-1)
+  const at = new Date().toISOString()
+  if (input.verdict !== undefined) {
+    const entry = list.find(s => s.step === input.step)
+    if (!entry) throw new Error(`step ${input.step} has no criteria yet: criteria come before the verdict`)
+    if (entry.verdict !== undefined) throw new Error(`step ${input.step} already has its verdict`)
+    if (!VERDICTS.includes(input.verdict)) throw new Error('verdict must be pass, fail or skipped')
+    if (!isText(input.by)) throw new Error('by must be a non-empty string')
+    if (input.reason !== undefined && typeof input.reason !== 'string') throw new Error('reason must be a string')
+    Object.assign(entry, { verdict: input.verdict, by: input.by.trim(), ...(input.reason !== undefined && { reason: input.reason }), verdict_at: at })
+  } else {
+    const expected = cur ? cur.step + 1 : 1
+    if (cur && cur.verdict === undefined) throw new Error(`step ${cur.step} has no verdict yet: the gate comes before step ${input.step}`)
+    if (input.step !== expected) throw new Error(`next step is ${expected}: steps run 1-7 in order`)
+    if (!isText(input.criteria)) throw new Error('criteria must be a non-empty string')
+    if (input.id !== undefined && (typeof input.id !== 'string' || !/^[^\s/]+$/.test(input.id))) throw new Error('id must be a non-empty string without a slash or whitespace')
+    list.push({ step: input.step, ...(input.id !== undefined && { id: input.id }), criteria: input.criteria.trim(), criteria_at: at })
+  }
+  mkdirSync(join(root, ROUNDS_DIR), { recursive: true })
+  writeFileSync(path, `${JSON.stringify(list, null, 2)}\n`)
+  const last = list.at(-1)
+  const next = last.verdict === undefined ? { step: last.step, needs: 'verdict' } : last.step < 7 ? { step: last.step + 1, needs: 'criteria' } : null
+  return { round: input.round, steps: list.map(s => ({ step: s.step, verdict: s.verdict ?? null })), next }
+}
+
 export function round(root, input, { skip = [] } = {}) {
+  let recorded = null
+  if (input && typeof input === 'object' && !Array.isArray(input) && input.steps === undefined && isInt(input.round)) {
+    const path = join(root, ROUNDS_DIR, `steps-${input.round}.json`)
+    assertInside(root, path)
+    recorded = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : []
+    if (recorded.length !== 7 || recorded.some(s => s.verdict === undefined)) {
+      throw new Error(`no steps in the input and ${relative(root, path)} does not hold seven verdicts: record each step with \`step\` first`)
+    }
+    input = { ...input, steps: recorded.map(({ criteria_at, verdict_at, ...s }) => s) }
+  }
   checkRoundInput(input)
   const roundsDir = join(root, ROUNDS_DIR)
   assertInside(root, roundsDir)
@@ -744,7 +795,11 @@ export function round(root, input, { skip = [] } = {}) {
   if (existsSync(target)) throw new Error(`${relative(root, target)} already exists: rounds never overwrite`)
   const { prev, prevPath, prevIds } = input.round > 1 ? readPrevRecord(root, input) : {}
   const startedFrom = prev ? { gaps: prev.gate.gaps, feedback: prevIds } : { gaps: [], feedback: [] }
-  const steps = input.steps.map(s => ({ step: s.step, ...(s.id !== undefined && { id: s.id }), criteria: s.criteria.trim(), verdict: s.verdict, by: s.by.trim(), ...(s.reason !== undefined && { reason: s.reason }) }))
+  const steps = input.steps.map((s, i) => ({
+    step: s.step, ...(s.id !== undefined && { id: s.id }), criteria: s.criteria.trim(), verdict: s.verdict, by: s.by.trim(),
+    ...(s.reason !== undefined && { reason: s.reason }),
+    ...(recorded && { criteria_at: recorded[i].criteria_at, verdict_at: recorded[i].verdict_at }),
+  }))
   const gaps = [...new Set(steps.filter(s => s.verdict !== 'pass').map(s => `s${s.step}/${s.id ?? s.criteria.replace(/\s+/g, ' ')}`))]
   const verdict = {}
   for (const s of steps) {
@@ -775,7 +830,7 @@ export function round(root, input, { skip = [] } = {}) {
   const cont = stopReason === null || (stopReason === 'waiting_user' && !last && !steps.every(s => s.verdict === 'skipped'))
   const record = {
     round: input.round, n: input.n, started_from: startedFrom, steps,
-    gate: { verdict, gaps, diff, clauses }, changed, stop_reason: stopReason, continue: cont,
+    gate: { verdict, gaps, diff, clauses, order: recorded ? 'recorded' : 'caller' }, changed, stop_reason: stopReason, continue: cont,
     feedback: { mode: feedback.length > 0 ? input.feedback_mode : null, ids: feedback.map(f => f.id) },
     ...(waiting && { waiting_user: input.waiting_user }), ...(blocked && { blocked: input.blocked }),
   }
@@ -851,6 +906,11 @@ function main() {
       }
     })
     out = settle(findings, settled(root))
+  } else if (cmd === 'step') {
+    if (args.input !== '-') throw new Error('--input - is required: one step entry as JSON on stdin')
+    let input
+    try { input = JSON.parse(readFileSync(0, 'utf8')) } catch (e) { throw new Error(`step input cannot be read as JSON: ${e.message}`) }
+    out = step(root, input)
   } else if (cmd === 'round' && args.read === true) {
     out = readRounds(root)
   } else if (cmd === 'round') {
@@ -877,7 +937,7 @@ function main() {
   } else if (cmd === 'keep-render') {
     out = keepRender(root, args.version)
   } else {
-    throw new Error('usage: manage.mjs layout | scaffold | selection | snapshot | renumber | verify | compare | claims | settle --findings <file> | round --input <file | -> | round --read | keep-render')
+    throw new Error('usage: manage.mjs layout | scaffold | selection | snapshot | renumber | verify | compare | claims | settle --findings <file> | step --input - | round --input <file | -> | round --read | keep-render')
   }
   process.stdout.write(`${JSON.stringify(out)}\n`)
 }
