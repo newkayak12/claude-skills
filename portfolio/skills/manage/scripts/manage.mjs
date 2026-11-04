@@ -31,21 +31,25 @@
 //       `## 정정` lines are never matched; no 확정사실.md → all kept
 //   round --input <file | ->       records one round of the collect → build loop as snapshot/rounds/round-N.json
 //       (the schema's one owner; SKILL.md cites this block). <file> is a path inside the workspace, `-` is stdin.
-//       input  { round: N>=1, n: >=1, steps: [{ step: 1-7, criteria: non-empty, verdict: pass|fail|skipped,
-//                by: actor | judge | command name, reason? }], feedback?: [{ id, text }] (the kept findings after
-//                settle), waiting_user?: question, blocked?: reason }; empty criteria or `by` refuse the whole input
+//       input  { round: N>=1, n: >=1 (round <= n), steps: [{ step: 1-7, criteria: non-empty, verdict: pass|fail|skipped,
+//                by: actor | judge | command name, reason? }] (exactly seven entries, steps 1-7 once each),
+//                feedback?: [{ id, text }] (the kept findings after settle), waiting_user?: question, blocked?: reason }
+//       refused before anything is written: empty criteria or `by`, steps other than 1-7 once each, round > n, an
+//       existing round-N.json (never overwritten), N>1 with no round-(N-1).json, a round-(N-1).json that is not a
+//       record (object with round N-1, integer n, steps array, gate.gaps array of strings, feedback array of {id}),
+//       and an n different from round-(N-1).json's (n is fixed across the rounds of one loop)
 //       the caller never supplies a derived field; node computes them from round-(N-1).json and the workspace:
 //       record { round, n, started_from: { gaps, feedback }  (round N-1's gate.gaps and feedback ids; empty in
-//                round 1 and when round-(N-1).json is missing),
+//                round 1),
 //                steps (as given, criteria trimmed),
 //                gate: { verdict: { "<step>": fail > skipped > pass },
 //                        gaps: ["s<step>/<criteria>"] for every fail or skipped step, deduplicated; skipped is never pass,
 //                        diff: { resolved: in N-1 not now, carried: in both, new: now only },
 //                        clauses: { no_new_gap, no_new_feedback, no_file_changed } | null },
 //                changed: workspace files (sorted, relative) whose mtime is later than round-(N-1).json's, leaving out
-//                         snapshot/rounds/ and the --input file; [] when there is no round-(N-1).json,
+//                         snapshot/rounds/ and the --input file; [] in round 1,
 //                stop_reason, continue, feedback, waiting_user?, blocked? }
-//       clauses are evaluated only from round 2 on (null in round 1, or when round-(N-1).json is missing):
+//       clauses are evaluated only from round 2 on (null in round 1):
 //       no_new_gap = diff.new is empty; no_new_feedback = every feedback id was already in N-1; no_file_changed =
 //       changed is empty. nothing_new fires only when ALL THREE hold (not any one of them); the gate records each.
 //       stop_reason, first match wins: blocked > waiting_user > nothing_new > n_reached (round >= n) > null
@@ -609,6 +613,32 @@ function checkRoundInput(input) {
   for (const k of ['waiting_user', 'blocked']) {
     if (input[k] !== undefined && input[k] !== null && !isText(input[k])) throw new Error(`${k} must be a non-empty string when given`)
   }
+  const seen = input.steps.map(s => s.step).sort((a, b) => a - b)
+  if (seen.length !== 7 || seen.some((s, i) => s !== i + 1)) {
+    throw new Error(`steps must be exactly seven entries, one for each of steps 1-7 (rounds.md: the seven-step rule); got [${seen.join(', ')}]`)
+  }
+  if (input.round > input.n) throw new Error(`round ${input.round} is past n ${input.n}: a loop has no round beyond n`)
+}
+
+// The predecessor is read as a record, never as "whatever parses": a wrong shape is refused before any .map.
+function readPrevRecord(root, input) {
+  const prevPath = join(root, ROUNDS_DIR, `round-${input.round - 1}.json`)
+  const rel = relative(root, prevPath)
+  if (!existsSync(prevPath)) throw new Error(`round ${input.round} needs ${rel} and it is missing: rounds run in order, never skipping one`)
+  const bad = why => new Error(`previous record malformed: ${rel} ${why}`)
+  let prev
+  try { prev = JSON.parse(readFileSync(prevPath, 'utf8')) } catch (e) { throw bad(`cannot be read as JSON: ${e.message}`) }
+  if (!prev || typeof prev !== 'object' || Array.isArray(prev)) throw bad('must be a JSON object')
+  if (prev.round !== input.round - 1) throw bad(`field round must be ${input.round - 1}`)
+  if (!isInt(prev.n)) throw bad('field n must be a positive integer')
+  if (!Array.isArray(prev.steps)) throw bad('field steps must be an array')
+  if (!prev.gate || typeof prev.gate !== 'object' || Array.isArray(prev.gate)) throw bad('field gate must be an object')
+  if (!Array.isArray(prev.gate.gaps) || prev.gate.gaps.some(g => typeof g !== 'string')) throw bad('field gate.gaps must be an array of strings')
+  if (!Array.isArray(prev.feedback) || prev.feedback.some(f => !f || typeof f !== 'object' || typeof f.id !== 'string')) {
+    throw bad('field feedback must be an array of objects with a string id')
+  }
+  if (prev.n !== input.n) throw new Error(`n ${input.n} differs from n ${prev.n} in ${rel}: n is fixed across the rounds of one loop`)
+  return { prev, prevPath }
 }
 
 // Files under root (never following a symlink) whose mtime is later than `since`, minus the rounds folder.
@@ -629,12 +659,10 @@ function changedSince(root, since, skip) {
 export function round(root, input, { skip = [] } = {}) {
   checkRoundInput(input)
   const feedback = input.feedback ?? []
-  const prevPath = join(root, ROUNDS_DIR, `round-${input.round - 1}.json`)
-  let prev = null
-  if (input.round > 1 && existsSync(prevPath)) {
-    try { prev = JSON.parse(readFileSync(prevPath, 'utf8')) } catch (e) { throw new Error(`${relative(root, prevPath)} cannot be read as JSON: ${e.message}`) }
-  }
-  const startedFrom = { gaps: prev?.gate?.gaps ?? [], feedback: (prev?.feedback ?? []).map(f => f.id) }
+  const target = join(root, ROUNDS_DIR, `round-${input.round}.json`)
+  if (existsSync(target)) throw new Error(`${relative(root, target)} already exists: rounds never overwrite`)
+  const { prev, prevPath } = input.round > 1 ? readPrevRecord(root, input) : {}
+  const startedFrom = prev ? { gaps: prev.gate.gaps, feedback: prev.feedback.map(f => f.id) } : { gaps: [], feedback: [] }
   const steps = input.steps.map(s => ({ step: s.step, criteria: s.criteria.trim(), verdict: s.verdict, by: s.by.trim(), ...(s.reason !== undefined && { reason: s.reason }) }))
   const gaps = [...new Set(steps.filter(s => s.verdict !== 'pass').map(s => `s${s.step}/${s.criteria}`))]
   const verdict = {}
@@ -665,7 +693,7 @@ export function round(root, input, { skip = [] } = {}) {
     ...(waiting && { waiting_user: input.waiting_user }), ...(blocked && { blocked: input.blocked }),
   }
   mkdirSync(join(root, ROUNDS_DIR), { recursive: true })
-  writeFileSync(join(root, ROUNDS_DIR, `round-${input.round}.json`), `${JSON.stringify(record, null, 2)}\n`)
+  writeFileSync(target, `${JSON.stringify(record, null, 2)}\n`)
   const rounds = readdirSync(join(root, ROUNDS_DIR)).filter(f => /^round-\d+\.json$/.test(f)).length
   return { round: input.round, rounds, stop_reason: stopReason, continue: cont, gaps }
 }
