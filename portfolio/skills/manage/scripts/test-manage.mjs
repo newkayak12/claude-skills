@@ -803,7 +803,8 @@ test('n must equal the previous record n, and round may not pass n', () => {
 test('a valid input with a valid predecessor still writes the record and gives the same stop_reason', () => {
   const root = workspace()
   round(root, roundIn(1, { n: 2 }))
-  const r = round(root, roundIn(2, { n: 2, steps: [st(4, 'fail'), st(6, 'fail')] }))
+  afterRound(root, 1); stamp(root, 'skeleton.md', future + 9)
+  const r = round(root, roundIn(2, { n: 2, steps: [st(4, 'fail'), st(6, 'fail')], feedback: [{ id: 'f9', text: 'z' }] }))
   assert.deepEqual([r.stop_reason, r.continue, r.rounds], ['n_reached', false, 2])
   assert.equal(recOf(root, 2).steps.length, 7)
 })
@@ -915,6 +916,7 @@ test('symlink: run through a link to the script from a cwd reached by a link, it
   assert.equal(s.status, 0)
   assert.deepEqual(JSON.parse(s.stdout).kept, [F_OTHER])
   // a link that stays inside the workspace is fine
-  symlinkSync(join(root, 'in.json'), join(root, 'in-link.json'))
+  writeFileSync(join(root, 'in2.json'), JSON.stringify(roundIn(2)))
+  symlinkSync(join(root, 'in2.json'), join(root, 'in-link.json'))
   assert.equal(manageCli(MANAGE, wsLink, 'round', '--input', 'in-link.json').status, 0)
 })
