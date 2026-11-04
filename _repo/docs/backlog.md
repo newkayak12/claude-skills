@@ -203,7 +203,23 @@ toasts).
      the pane's quality pass is named in its own acceptance lines, approved on the demo render (`mod.md`
      UI rule 0).
 
-121. **teams tests write their fixture tasks under a temp tasks root, never `~/.harness/tasks`**
+126. **teams agents talk over a per-task message bus (topic = the task key), the pane draws it as threads**
+   - Why: user, 2026-11-04: "agent 간 대화는? teams 내에서", then "지금은 mod로 가능하지 않나? 가능하더라도
+     별도 bus가 필요할거 같고(message queue 같이 topic은 task 번호로하면 될거 같고)". Today the only
+     agent-to-agent path is a STORY's `tm_ask` to the TeamLeader (card 49), parked until answered or
+     forwarded to the person; verdicts, QA defects and integrate results show as one-line hand-offs
+     (`teams/scripts/lib/view-events.mjs`); packages never talk to each other. A mod cannot carry it: the
+     drivers are headless `claude -p` runs where mods do not start (`mod.md` rule 2), and a mod never
+     holds the source of truth (rule "does not hold the source of truth").
+   - Acceptance: an engine-side bus — append-only per topic under the task (topic `E-xxxxxxxx`, sub-topic
+     per STORY or `all`), one message = {ts, from, to, topic, body, reply_to}; publish and read through
+     task-manager MCP tools every driver already loads (`tm_ask` becomes one kind of message, not a second
+     path); a reader gets only messages after its cursor, so a driver is never re-fed the whole log; who may
+     post to whom is written down (package ↔ package on the same EPIC, TeamLeader, person) and a message to
+     a parked STORY wakes it like an answer does; the pane shows a thread per STORY (`from → to`, body,
+     time) and the band names an unread message to the person; `view.mjs --once` prints the same; tests
+     for publish/read/cursor/wake, and one real L task where two packages exchange a message that changes
+     what one of them builds.**teams tests write their fixture tasks under a temp tasks root, never `~/.harness/tasks`**
    - Why: 2026-11-03, `tm_clean` sweep listed tasks `3a3a3bb5`, `d0ee9043` (2026-09-22), `97f05d73`
      (2026-10-07) as running with dead daemons, cwd `$TMPDIR/view-test-repo-*`, and a live `eb955b62`
      (cwd `$TMPDIR/teams-ask-fixture.*`) made by a test run of E-bf0527b7 P2 the same day; the first
