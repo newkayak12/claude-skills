@@ -283,24 +283,6 @@ toasts).
      and one real S and one real L task run on the merged server; `ps` shows one teams MCP process per
      session.
 
-121. **teams tests write their fixture tasks under a temp tasks root, never `~/.harness/tasks`**
-   - Why: 2026-11-03, `tm_clean` sweep listed tasks `3a3a3bb5`, `d0ee9043` (2026-09-22), `97f05d73`
-     (2026-10-07) as running with dead daemons, cwd `$TMPDIR/view-test-repo-*`, and a live `eb955b62`
-     (cwd `$TMPDIR/teams-ask-fixture.*`) made by a test run of E-bf0527b7 P2 the same day; the first
-     three cancelled by hand. Leaked fixtures sit in every real viewer's and status scan's list. Which
-     tests leak is unverified.
-   - Acceptance: every teams test that creates a task sets its own tasks root (env or option) under a
-     temp dir; a check run of `node --test teams/scripts/test-*.mjs` leaves `~/.harness/tasks` with
-     the same entry count before and after.
-
-112. **An area critique's file-ownership overlap blocks instead of passing as soft**
-   - Why: 2026-10-31, E-8c671fd9: `areas-critique` saw F2 and F3 both planning the spawn env edit in
-     `teams/mcp/taskmanager.mjs` and said "overlap (soft) … Name one owner", verdict `sound`; the
-     contradiction reached shape and `critique:3` rejected it as unrunnable, ending the task.
-   - Acceptance: an overlap on the same file and lines between areas is a blocking finding that sends
-     the areas back with one owner named; a test with two areas claiming one function fails at
-     areas-critique, not at critique.
-
 105. **Repo-wide pane and one viewer: UI look and the loose ends** — code defects in E-03e2e513; cards 105 and 106 shipped 2026-10-30 in
     E-f53a8434 (`236eae3d`; goal gate 92; teams 1658/1660 with 2 skips, plugin test 423/423; real run: two
     scratch tasks, one viewer port, 31 ok)
@@ -387,6 +369,7 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-6ff25a30 | 2026-11-04 | 121, 112 | shipped `e014fb10`; size S; goal gate 82 fail → one repair (edit-claim overlap only) → 91; `test-taskmanager.mjs` file-level temp tasks root (temp-HOME suite leaves 0 entries; a real-HOME run went 1105 → 1108 with other tasks live, not attributed); `areas-critique` blocks an edit-ownership overlap naming one owner; teams 1813/1814 (1 skip, 0 fail, re-run by hand), plugin test 445/445 (task's count); last critique round's fixes not re-critiqued; Codex unreachable, Claude did all nodes |
 | — | 2026-11-04 | 101, 81 closed on evidence | 101: E-bf0527b7 (teams 0.62.7) ran `dispatch:P1:2` and `dispatch:P2:2` together from 05:45 (spawned 1 s apart) and P3:2 with P2:3 from 07:19, no `auto_parallel_decreased`; 81: E-a9953265 (size S, teams 0.63.0) `scope_verdict` `own_record: true`, Codex `apply_patch` limit stays named in teams README/KOR |
 | E-a9953265 | 2026-11-04 | 122 (75 closed without code) | shipped `4761717a`; size S; goal gate 93; test-diagram 118/118 in 34 s (was 148 s on the card, 210–323 s under load); one Chrome shared over CDP only in the suite, the CLI path unchanged |
 | E-bf0527b7 | 2026-11-03 | 113, 49 rest, 94 rest, 84 rest | shipped `45251683..e93a5b31` by hand (cancelled in Build, ~$80): P1 (113) accepted 92 — one viewer per tasks root reused by live pid, finished tasks cached by mtime/size, 5 min idle exit; P2 (49) live forwarded STORY ask in the ledger and the band shot, stalled twice in a tmux wait (taken from attempt 3); P3 (94) 85 at retry 4, its one gap (P1's golden test scrubbed instead of recut) fixed by hand; P4 (84 design doc) never ran. teams 1792/1793 (1 skip), plugin test 445/445; 3 usage-limit parks. E-96699aa4 cancelled in PLAN to pin the viewer design |
