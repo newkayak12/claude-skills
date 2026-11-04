@@ -211,6 +211,21 @@ toasts).
      and computes a task's state only when that task's files changed (no full re-read per poll); it exits
      when no session is connected; a test with two clients on one socket, and `ps` showing one server
      with two sessions open; idle CPU of the server under 1% with one running task, measured.
+   - The pane's quality pass (user, 2026-11-04, on the panel doc): "HOME에 돌고 있는 EPIC, STORY 계층으로
+     뿌리고 / STORY 선택 시 전체 FLOW, 진행도, subagent 참가 수, 참가 종류 / FLOOR 에 각 Phase에서 돌고 있는
+     상세 / Decisions는 Phase 상세에 / Log, Report는 Story 선택시 / 에초에 계층이 잘못됐음 / 조작 키도 wasd,
+     enter", then on the mocks "전체적으로 훨씬 나음", "좌우는 필요 없어", "진행합시다". Chosen: F1 of
+     `_repo/docs/plans/mod/2026-11-04-teams-pane-panels.md` § 확정안 (mocks beside it in `images/`), no split
+     view. Acceptance: the six tabs give way to a page stack — HOME (EPIC → STORY tree, ⚑ zone on top) →
+     FLOOR (the EPIC's six phases) → phase detail (running workers, hand-offs, that phase's decisions);
+     HOME → STORY detail (node flow, progress, subagents joined and live by kind, attempt × node table) →
+     Log / Report; keys `w`/`s` move, `d`/⏎ open, `a` back, `n` next ⚑, `q`/Esc close, ⏎ on a ⚑ opens an
+     answer mode where letters are text; mobile gets the same as Buttons; breadcrumb on the first line;
+     the selection per level is kept on `a`; ended EPICs stay as folded rows; `⏸` with minutes since the
+     last driver output on worker rows, from the engine's stall verdict (not a second rule in the view);
+     the last rejection reason and score on STORY rows; a STORY report written by the engine (the pane
+     reads it, never composes one); `pane.ts` key tests for every key; demo render of each page at 190 and
+     110 approved before the card closes. Not in: split view, retry/cancel keys (the pane stays read-only).
 
 126. **teams agents talk over a per-task message bus (topic = the task key), the pane draws it as threads**
    - Why: user, 2026-11-04: "agent 간 대화는? teams 내에서", then "지금은 mod로 가능하지 않나? 가능하더라도
