@@ -59,7 +59,7 @@ export function readJsonRetry(path, tries = 3) {
   return { ok: false, error: 'unreadable' };
 }
 
-function readJsonl(path, limit) {
+export function readJsonl(path, limit) {
   let text;
   try { text = readFileSync(path, 'utf8'); } catch { return []; }
   const lines = text.split('\n').filter((l) => l.trim());
@@ -181,7 +181,7 @@ function nodeSummary(n) {
 // builds a top-level packageModel passes it; a recursive call for a nested sub-EPIC's own child
 // run does not (that run's TASK children belong to ITS OWN ticket board, not this one's).
 function collectChildRun(cwd, runId, visiting, ticketCtx) {
-  const run = loadRunAt(join(cwd, '.teams_output', 'broker', 'runs', `${runId}.json`));
+  const run = (visiting.io ? visiting.io.loadRun : loadRunAt)(join(cwd, '.teams_output', 'broker', 'runs', `${runId}.json`));
   if (!run) return { run_id: runId, cwd, missing: true };
   const state = runState(run);
   const nested = collectNestedTasks(cwd, visiting);
@@ -477,6 +477,17 @@ export function collectTask(tasksDir, taskId, opts = {}) {
   }
 }
 
+// collectTask over an already parsed task.json, with `io` ({ loadRun, jsonl, costs, live }): the state
+// server's per-file readers, kept by file stat, so a rebuild that follows only the clock or a pid reads
+// no ledger, driver stream or unchanged run file again. Without `io` it is collectTask.
+export function collectFromRaw(tasksDir, taskId, raw, io) {
+  try {
+    return collectTaskFromValue(tasksDir, taskId, raw, { io });
+  } catch (e) {
+    return { task_id: taskId, tasks_dir: tasksDir, error: `collect failed: ${String(e && e.message || e)}` };
+  }
+}
+
 // ---------- a size-S task on the development harness (task.harness_run) ----------
 //
 // taskstate.harnessState reads this state through resolveHarnessRun, which records a refused
@@ -511,10 +522,10 @@ function readJsonFile(path) {
 // stageOfNode (a skipped node is not work), a fallback run dir's 01-plan.md / 02-* (plan),
 // 04-goal-gate.json (gate) and 05-report.md (report). A stage nothing says anything about stays
 // pending - the stream log is never read here.
-function harnessStages(run) {
+function harnessStages(run, loadRun = loadRunAt) {
   const by = Object.fromEntries(STAGE_KEYS.map((k) => [k, []]));
   if (run && run.route === 'graph') {
-    const g = loadRunAt(graphRunPath(run.cwd, run.run_id));
+    const g = loadRun(graphRunPath(run.cwd, run.run_id));
     for (const n of (g && Array.isArray(g.nodes) ? g.nodes : [])) {
       if (!n || n.state === 'skipped') continue;
       const k = stageOfNode(n.node_id);
@@ -534,7 +545,7 @@ function harnessStages(run) {
 // taskstate.harnessState's judgement, read-only: the run's written report is complete (its goal
 // gate accepted) or partial; else running while the driver lives, is parked on capacity, or its
 // stream is still moving; blocked once it is dead past its restart budget.
-function collectHarness(task, taskId, tasksDir) {
+function collectHarness(task, taskId, tasksDir, loadRun = loadRunAt) {
   const h = task.harness_run;
   const run = findHarnessRun(task, taskId);
   const v = run ? harnessVerdict(run) : null;
@@ -547,7 +558,7 @@ function collectHarness(task, taskId, tasksDir) {
   else if ((!v || v.readable === false) && h.finished_at) state = h.accepted === false ? 'partial' : 'complete';
   else if (!(h.waiting_capacity || !h.driver || (driver && driver.alive) || moving)
     && countedDriverRestarts(task, h.driver).length >= restartBudget(task)) state = 'blocked';
-  const stages = harnessStages(run);
+  const stages = harnessStages(run, loadRun);
   const counts = { pending: 0, running: 0, done: 0, failed: 0 };
   for (const s of stages) counts[s.state] += 1;
   return {
@@ -558,7 +569,7 @@ function collectHarness(task, taskId, tasksDir) {
       graph: run && run.route === 'graph' ? { run_id: run.run_id, cwd: run.cwd } : null,
       // graph-route nodes parked on a person (the stage bar folds waiting into running)
       waiting: run && run.route === 'graph'
-        ? ((loadRunAt(graphRunPath(run.cwd, run.run_id)) || {}).nodes || []).filter((n) => n && n.state === 'waiting_human').length : 0,
+        ? ((loadRun(graphRunPath(run.cwd, run.run_id)) || {}).nodes || []).filter((n) => n && n.state === 'waiting_human').length : 0,
     },
   };
 }
@@ -603,7 +614,7 @@ function spendRows(driverTotal, task) {
 
 const storyId = (p) => String(p.id).split(':')[0];
 
-function telemetryOf({ task, tasksDir, depth, ledger, driverTotal, harness, sRun, cards }) {
+function telemetryOf({ task, tasksDir, depth, ledger, driverTotal, harness, sRun, cards, io }) {
   const opts = (task.team && task.team.opts) || {};
   const int = (a, b) => (Number.isInteger(a) ? a : (Number.isInteger(b) ? b : null));
   const maxRetries = int(task.max_retries, opts.max_retries);
@@ -661,7 +672,7 @@ function telemetryOf({ task, tasksDir, depth, ledger, driverTotal, harness, sRun
       if (depth === 0) {
         try {
           const cap = capOf(task);
-          live = { live: liveCount(tasksDir), cap: Number.isFinite(cap) ? cap : null };
+          live = { live: io ? io.live(tasksDir) : liveCount(tasksDir), cap: Number.isFinite(cap) ? cap : null };
         } catch { /* no process table: say nothing */ }
       }
     }
@@ -694,17 +705,20 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
   // the ones further up - see collectNestedTasks' own comment for what this catches.
   const visiting = {
     depth: opts.depth || 0,
+    io: opts.io || null,
     seen: opts.seen || new Set(),
     ancestorIds: new Set([...(opts.ancestorIds || []), taskId]),
     ancestorPaths: new Set([...(opts.ancestorPaths || []), resolve(taskPathOf(tasksDir, taskId))]),
   };
   const isH = !!task.harness_run;
   const isS = !isH && !!task.s_run;
+  const io = visiting.io;
+  const loadRun = io ? io.loadRun : loadRunAt;
   let state, counts, sRun = null, harness = null;
   if (isH) {
-    ({ state, counts, harness } = collectHarness(task, taskId, tasksDir));
+    ({ state, counts, harness } = collectHarness(task, taskId, tasksDir, loadRun));
   } else if (isS) {
-    const run = loadRunAt(join(task.s_run.cwd, '.teams_output', 'broker', 'runs', `${task.s_run.run_id}.json`));
+    const run = loadRun(join(task.s_run.cwd, '.teams_output', 'broker', 'runs', `${task.s_run.run_id}.json`));
     const cs = run ? runState(run) : { state: 'missing', counts: {} };
     state = cs.state === 'complete' ? 'complete' : (cs.state === 'running' ? 'running' : 'blocked');
     counts = cs.counts || {};
@@ -754,7 +768,7 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
 
   const managerStages = task.nodes.filter((n) => !['dispatch', 'accept'].includes(n.stage)).map(nodeSummary);
 
-  const driverTotal = collectTaskCosts(join(tasksDir, taskId), task);
+  const driverTotal = io ? io.costs(join(tasksDir, taskId), task) : collectTaskCosts(join(tasksDir, taskId), task);
   const daemon = task.daemon ? {
     pid: task.daemon.pid,
     alive: pidAlive(task.daemon.pid),
@@ -809,17 +823,18 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
   }
 
   const ledgerPath = join(tasksDir, taskId, 'ledger.jsonl');
-  const ledger = readJsonl(ledgerPath);
+  const ledger = io ? io.jsonl(ledgerPath) : readJsonl(ledgerPath);
   const events = ledger.slice(-50);
   const telemetry = telemetryOf({
-    task, tasksDir, depth: visiting.depth, ledger, driverTotal, harness, sRun,
+    task, tasksDir, depth: visiting.depth, ledger, driverTotal, harness, sRun, io,
     cards: [...packages, ...qaRounds, ...auditRounds],
   });
   // flow_metrics: Kanban's other half (tickets.mjs's own flowMetrics) - board.jsonl's transition
   // log read once here, the one place this file already reads a task's own JSONL evidence
   // (ledger.jsonl, one line up), and handed to a pure function rather than re-derived from
   // task.nodes, which only ever knows "now".
-  const boardEntries = readJsonl(join(tasksDir, taskId, 'board.jsonl'));
+  const boardPath = join(tasksDir, taskId, 'board.jsonl');
+  const boardEntries = io ? io.jsonl(boardPath) : readJsonl(boardPath);
   const flow_metrics = flowMetrics(task, boardEntries);
 
   return {
@@ -914,7 +929,7 @@ function storyProgress(task) {
 }
 
 // A finished task's index row, kept while the mtime and size of its task.json and ledger.jsonl are
-// unchanged, so a long-lived reader (the viewer's 2 s watch, the --serve-once-socket server) does not
+// unchanged, so a long-lived reader (the viewer's 2 s watch, the engine's state server) does not
 // re-read every task ever run on each call. Finished = a terminal state decided from task.json alone
 // (the rule lib/view-index.mjs applies); anything else, and a read that failed, is always read again.
 // elapsed_ms is the one field that moves with the clock and is recomputed on a hit.

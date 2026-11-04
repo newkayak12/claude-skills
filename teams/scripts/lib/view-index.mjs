@@ -1,7 +1,7 @@
 // A small index of finished tasks under the tasks dir (<tasksDir>/.view-index.json), so the status
 // reads do not re-open and re-collect every task ever run. Keyed by task dir name plus the mtime and
 // size of task.json and ledger.jsonl: a finished task whose files are unchanged is never re-read, any
-// other task is always re-read. A long-lived reader (the --serve-once-socket server) also keeps the
+// other task is always re-read. A long-lived reader (the engine's state server) also keeps the
 // parsed index between calls, valid while the index file's own mtime and size are.
 //
 // Two kinds of finished, both stored with state, cwd and opener:
@@ -21,7 +21,9 @@ const TERMINAL = new Set(['DONE', 'SETTLED', 'CANCELLED']);
 const LEDGER_END = new Set(['daemon_done', 'clean']);
 
 const readJson = (p) => { try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; } };
-const statOf = (p) => { try { const s = statSync(p); return { mtime: s.mtimeMs, size: s.size }; } catch { return null; } };
+// throwIfNoEntry: false, because a missing file is the common case here (a task with no ledger, a dir with no
+// task.json) and a thrown ENOENT costs far more than the stat itself on a root of thousands of tasks.
+const statOf = (p) => { try { const s = statSync(p, { throwIfNoEntry: false }); return s ? { mtime: s.mtimeMs, size: s.size } : null; } catch { return null; } };
 
 // "<mtimeMs>:<size>" of a file, null when it is absent: the key a cache entry holds for that file.
 export function statSig(p) {
@@ -70,31 +72,46 @@ function entryOf(tasksDir, id, raw, t, l) {
 
 // [{ id, raw }] for every task dir that is not a known-finished one: raw is task.json parsed (null when
 // absent or unreadable, as a plain listing would give). `running: true` also skips 'ledger' finishes.
-export function openTasks(tasksDir, { running = false } = {}) {
+//
+// `settledMs` (a long-lived reader): a 'task' finish is checked against its task.json at most once per
+// settledMs, not on every call, so a root of thousands of finished tasks costs a readdir between full checks.
+// A finished task that is rewritten is found at the next check.
+const sweptAt = new Map();
+
+export function openTasks(tasksDir, { running = false, settledMs = 0 } = {}) {
   let dirs;
   try { dirs = readdirSync(tasksDir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch { return []; }
   const known = loadIndex(tasksDir);
   const next = {};
   const out = [];
+  const settled = settledMs > 0 && Date.now() - (sweptAt.get(tasksDir) || 0) < settledMs;
+  if (!settled) sweptAt.set(tasksDir, Date.now());
   for (const id of dirs) {
-    const t = statOf(join(tasksDir, id, 'task.json'));
     const hit = known[id];
+    if (settled && hit && hit.kind === 'task') { next[id] = hit; continue; }
+    const t = statOf(join(tasksDir, id, 'task.json'));
     // A 'task' finish is decided from task.json alone, so its ledger is not even stat'd.
     if (hit && hit.kind === 'task' && t && hit.mtime === t.mtime && hit.size === t.size) { next[id] = hit; continue; }
     const l = statOf(join(tasksDir, id, 'ledger.jsonl'));
     const fresh = hit && t && hit.mtime === t.mtime && hit.size === t.size
       && (l ? hit.lmtime === l.mtime && hit.lsize === l.size : hit.lmtime === null);
     if (fresh && running) { next[id] = hit; continue; }
-    // A 'ledger' finish is still listed for readers that are not `running`, so they get its task.json:
-    // the parsed copy from the last call stands while the file's mtime and size do.
-    const kept = fresh ? keptRaw.get(`${tasksDir}\0${id}`) : null;
+    // A task still listed (an open one, or a 'ledger' finish for readers that are not `running`) hands out
+    // its task.json: the parsed copy from the last call stands while the file's mtime and size do, so a
+    // long-lived reader does not parse a running task's file again on every call.
+    const kept = t ? keptRaw.get(`${tasksDir}\0${id}`) : null;
     const raw = kept && kept.mtime === t.mtime && kept.size === t.size ? kept.raw : (t === null ? null : readJson(join(tasksDir, id, 'task.json')));
     const entry = fresh ? hit : entryOf(tasksDir, id, raw, t, l);
     if (entry) next[id] = entry;
-    if (entry && entry.kind === 'ledger') keptRaw.set(`${tasksDir}\0${id}`, { mtime: t.mtime, size: t.size, raw });
+    if (raw && t) keptRaw.set(`${tasksDir}\0${id}`, { mtime: t.mtime, size: t.size, raw });
     if (!entry || (entry.kind === 'ledger' && !running)) out.push({ id, raw });
   }
-  for (const k of keptRaw.keys()) if (k.startsWith(`${tasksDir}\0`) && !(k.slice(tasksDir.length + 1) in next)) keptRaw.delete(k);
+  const present = new Set(dirs);
+  for (const k of keptRaw.keys()) {
+    if (!k.startsWith(`${tasksDir}\0`)) continue;
+    const id = k.slice(tasksDir.length + 1);
+    if (!present.has(id) || (next[id] && next[id].kind === 'task')) keptRaw.delete(k);
+  }
   const ids = Object.keys(next);
   if (ids.length !== Object.keys(known).length || ids.some((id) => known[id] !== next[id])) saveIndex(tasksDir, next);
   return out;

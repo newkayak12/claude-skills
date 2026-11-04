@@ -150,35 +150,49 @@ function nowSentence(s: (key: keyof typeof en) => string, task: SummaryTask): st
 // A cache a reload may lose: when the view server was last started (at most once per 30 s)
 const SERVE_RETRY_MS = 30_000
 let serveStartedAt = 0
-// The teams version, read once from plugin.json: the socket name the server (view.mjs) computes too
-let pluginVersion = ''
+// The socket path of a tasks root too long for sun_path, asked of the server once per root
+const longSocks = new Map<string, string>()
 
-// What `node view.mjs --once <args>` prints: asked of the view server over its Unix socket first
-// (args become query parameters); on any failure the server is started detached (throttled, interactive
-// sessions only) and this call runs the unchanged `--once` spawn.
+// What `node view.mjs --once <args>` prints: asked of the tasks root's state socket first (args become
+// query parameters, proto=1); on a 409 (another protocol) this call runs `--once` and starts nothing; on
+// any other failure the state server is started (throttled, interactive sessions only) and this call runs
+// the unchanged `--once` spawn. The server leaves this session itself (own session, ignores SIGHUP), so
+// the backgrounding `&` is only so the call does not wait; nohup alone would not survive a closed pane.
 async function viewOnce($: EngineInterface, args: string[]): Promise<{ exitCode: number; stdout: string }> {
   const VIEW = `${$.plugin.root}/scripts/view.mjs`
-  let sock = ''
+  const SERVER = `${$.plugin.root}/mcp/stateserver.mjs`
+  let tasksDir = ''
+  let refused = false
   try {
     const tasks = await $.env.get('HARNESS_TASKS_DIR')
     const home = await $.env.get('HOME')
-    const dir = tasks ? tasks.replace(/\/+$/, '').replace(/\/[^/]*$/, '') || '/' : home ? `${home}/.harness` : ''
-    if (pluginVersion === '') pluginVersion = String(JSON.parse(await $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`)).version || '')
-    sock = dir && pluginVersion ? `${dir}/view-once-${pluginVersion}.sock` : ''
+    tasksDir = tasks ? tasks.replace(/\/+$/, '') : home ? `${home}/.harness/tasks` : ''
+    let sock = tasksDir ? `${tasksDir}/.state.sock` : ''
+    if (sock && new TextEncoder().encode(sock).length > 103) {
+      let long = longSocks.get(tasksDir)
+      if (long === undefined) {
+        const r = await $.process.run(['node', SERVER, '--sock-path', '--tasks-dir', tasksDir])
+        long = r.exitCode === 0 ? r.stdout.trim() : ''
+        longSocks.set(tasksDir, long)
+      }
+      sock = long
+    }
     if (sock) {
       const q = new URLSearchParams()
       for (let i = 0; i < args.length; i += 2) q.set(args[i].replace(/^--/, ''), args[i + 1] ?? '')
+      q.set('proto', '1')
       const r = await $.http.fetch(`http://view/?${q.toString()}`, { socketPath: sock })
       if (r.status === 200) return { exitCode: 0, stdout: r.text }
+      refused = r.status === 409
     }
   } catch {
     // no socket, refused, or a host that cannot reach it: start the server and spawn once
   }
   try {
     const now = await $.clock.now()
-    if (sock && (await $.session.surfaces()).length > 0 && (serveStartedAt === 0 || now - serveStartedAt >= SERVE_RETRY_MS)) {
+    if (tasksDir && !refused && (await $.session.surfaces()).length > 0 && (serveStartedAt === 0 || now - serveStartedAt >= SERVE_RETRY_MS)) {
       serveStartedAt = now
-      await $.process.run(['sh', '-c', 'nohup node "$1" --serve-once-socket "$2" >/dev/null 2>&1 </dev/null &', 'sh', VIEW, sock])
+      await $.process.run(['sh', '-c', 'nohup node "$1" --tasks-dir "$2" >/dev/null 2>&1 </dev/null &', 'sh', SERVER, tasksDir])
     }
   } catch {
     // the spawn below still answers

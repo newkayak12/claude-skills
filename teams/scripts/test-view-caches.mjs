@@ -1,9 +1,9 @@
 // The two view caches get their own tests, each written to fail when its cache is broken:
 //  - liveCount (lib/view-collect.mjs): the live-process count of a tasks root is reused for 2 s;
-//  - the shared server's per-tick memo (view.mjs --serve-once-socket): the session-independent parts of
+//  - the shared server's per-tick memo (mcp/stateserver.mjs): the session-independent parts of
 //    an answer are computed once per tick, so a state change inside the tick is not seen by a second
 //    ask under another cache key (another session); after the tick the socket answers like --once.
-// view.mjs and its libs are found relative to this file, so a copy of teams/ under tmp/ tests the copy.
+// view.mjs, the state server and their libs are found relative to this file, so a copy of teams/ under tmp/ tests the copy.
 //
 //   node --test teams/scripts/test-view-caches.mjs
 process.env.TEAMS_RUNS_DIR ??= 'off';
@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VIEW = join(HERE, 'view.mjs');
+const STATE = join(HERE, '..', 'mcp', 'stateserver.mjs');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const root = mkdtempSync(join(tmpdir(), 'view-caches-'));
@@ -78,15 +79,15 @@ test('memo: a state change inside the tick is not seen under another cache key, 
   put(join(tasks, id, 'task.json'), task(cwd, id, running));
   put(ledger, JSON.stringify({ ts: Date.now(), event: 'node_start', node_id: 'size' }) + '\n');
 
-  const sock = join(root, `memo-${process.pid}.sock`);
-  const c = spawn('node', [VIEW, '--tasks-dir', tasks, '--serve-once-socket', sock], { env: { ...process.env, TEAMS_VIEW_ONCE_IDLE_MS: '30000' }, stdio: 'ignore' });
+  const sock = join(tasks, '.state.sock');
+  const c = spawn('node', [STATE, '--tasks-dir', tasks], { env: { ...process.env, TEAMS_STATE_IDLE_MS: '30000' }, stdio: 'ignore' });
   children.add(c);
-  const q = (session) => `/?format=status&cwd=${encodeURIComponent(cwd)}&session=${session}`;
+  const q = (session) => `/?proto=1&format=status&cwd=${encodeURIComponent(cwd)}&session=${session}`;
   const once = (session) => spawnSync('node', [VIEW, '--tasks-dir', tasks, '--once', '--format', 'status', '--cwd', cwd, '--session', session], { encoding: 'utf8' }).stdout;
 
   let up = false;
   for (let i = 0; i < 100 && !up; i++) {
-    if (existsSync(sock)) { try { await get(sock, '/?format=board&cwd=' + encodeURIComponent(cwd)); up = true; } catch { /* not listening yet */ } }
+    if (existsSync(sock)) { try { await get(sock, '/?proto=1&format=board&cwd=' + encodeURIComponent(cwd)); up = true; } catch { /* not listening yet */ } }
     if (!up) await sleep(50);
   }
   assert.ok(up, 'server came up');
