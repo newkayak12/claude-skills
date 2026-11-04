@@ -70,7 +70,10 @@ Findings the round consumes, written as the `[{id,text}]` array step 4 already u
 
 A 우선순위 item that cites no appendix ID is not consumed: the report names it as not consumed.
 Write the array to `snapshot/rounds/findings-N.json`, run `manage.mjs settle --findings` on it, continue
-with `kept`, show the user `settled`. The `kept` array is the `feedback` of the `round` input.
+with `kept`, show the user `settled`. The `kept` array is the `feedback` of the `round` input, and the
+input's `feedback_mode` is `panel` when the four-reviewer panel ran and `single-context` when it fell
+back to one context. `feedback_mode` is required when `kept` is not empty; without findings leave it out.
+`round` records `feedback: {mode, ids}` (the mode and the kept ids), not the finding text.
 
 ## Skipped, never pass
 
@@ -110,7 +113,8 @@ precedence: blocked, waiting_user, nothing_new, n_reached. `blocked` (input `blo
 that cannot continue at all, with the reason.
 
 `nothing_new` fires when any one of three clauses holds: no gap id absent from the previous round,
-no new kept feedback id after settle, or no file changed since it. Round 1 has no clauses.
+no new kept feedback id after settle (compared with round N-1's `feedback.ids`, or its ids when it was
+written as the older `[{id,text}]` array), or no file changed since it. Round 1 has no clauses.
 
 ## Report
 

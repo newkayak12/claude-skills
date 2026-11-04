@@ -579,7 +579,7 @@ const afterRound = (root, n, t = future) => stamp(root, `snapshot/rounds/round-$
 
 test('round 1, no previous file: empty started_from, no clauses, diff.new is every gap, record and summary written', () => {
   const root = workspace()
-  const r = round(root, roundIn(1, { steps: [st(1, 'pass'), st(4, 'fail', '표 정렬'), st(7, 'skipped', '쪽 읽기')], feedback: [{ id: 'f1', text: 'x' }] }))
+  const r = round(root, roundIn(1, { steps: [st(1, 'pass'), st(4, 'fail', '표 정렬'), st(7, 'skipped', '쪽 읽기')], feedback: [{ id: 'f1', text: 'x' }], feedback_mode: 'panel' }))
   assert.deepEqual(r, { round: 1, rounds: 1, stop_reason: null, continue: true, gaps: ['s4/표 정렬', 's7/쪽 읽기'] })
   const rec = recOf(root, 1)
   assert.deepEqual(rec.started_from, { gaps: [], feedback: [] })
@@ -587,15 +587,15 @@ test('round 1, no previous file: empty started_from, no clauses, diff.new is eve
   assert.equal(rec.gate.clauses, null)
   assert.deepEqual(rec.gate.diff, { resolved: [], carried: [], new: ['s4/표 정렬', 's7/쪽 읽기'] })
   assert.deepEqual(rec.gate.verdict, { 1: 'pass', 2: 'pass', 3: 'pass', 4: 'fail', 5: 'pass', 6: 'pass', 7: 'skipped' })
-  assert.deepEqual(rec.feedback, [{ id: 'f1', text: 'x' }])
+  assert.deepEqual(rec.feedback, { mode: 'panel', ids: ['f1'] })
   assert.deepEqual(rec.steps[1], { step: 4, criteria: '표 정렬', verdict: 'fail', by: 'judge', reason: 'r' })
   assert.deepEqual([rec.round, rec.stop_reason, rec.continue], [1, null, true])
 })
 
 test('round 2: started_from comes from round 1, and the diff names resolved, carried and new', () => {
   const root = workspace()
-  round(root, roundIn(1, { steps: [st(2, 'fail', 'a'), st(3, 'fail', 'b')], feedback: [{ id: 'f1', text: 'x' }, { id: 'f2', text: 'y' }] }))
-  const r = round(root, roundIn(2, { steps: [st(2, 'pass', 'a'), st(3, 'fail', 'b'), st(5, 'skipped', 'c')], feedback: [{ id: 'f2', text: 'y' }, { id: 'f9', text: 'z' }] }))
+  round(root, roundIn(1, { steps: [st(2, 'fail', 'a'), st(3, 'fail', 'b')], feedback: [{ id: 'f1', text: 'x' }, { id: 'f2', text: 'y' }], feedback_mode: 'panel' }))
+  const r = round(root, roundIn(2, { steps: [st(2, 'pass', 'a'), st(3, 'fail', 'b'), st(5, 'skipped', 'c')], feedback: [{ id: 'f2', text: 'y' }, { id: 'f9', text: 'z' }], feedback_mode: 'panel' }))
   const rec = recOf(root, 2)
   assert.deepEqual(rec.started_from, { gaps: ['s2/a', 's3/b'], feedback: ['f1', 'f2'] })
   assert.deepEqual(rec.gate.diff, { resolved: ['s2/a'], carried: ['s3/b'], new: ['s5/c'] })
@@ -636,7 +636,7 @@ test('the --input file itself is not a change', () => {
 })
 
 test('nothing_new fires when any one clause holds; only all three failing keeps the loop going', () => {
-  const same = { steps: [st(4, 'fail', 'k')], feedback: [{ id: 'f1', text: 'x' }], n: 9 }
+  const same = { steps: [st(4, 'fail', 'k')], feedback: [{ id: 'f1', text: 'x' }], feedback_mode: 'panel', n: 9 }
   const newGap = [st(4, 'fail', 'k'), st(5, 'fail', 'm')]
   const newFb = [{ id: 'f1', text: 'x' }, { id: 'f2', text: 'y' }]
   const prep = () => { const root = workspace(); round(root, roundIn(1, same)); afterRound(root, 1); return root }
@@ -667,7 +667,7 @@ test('n_reached at round >= n, null before it', () => {
   const root = workspace()
   assert.deepEqual(round(root, roundIn(1, { n: 2 })), { round: 1, rounds: 1, stop_reason: null, continue: true, gaps: ['s4/기준 4'] })
   afterRound(root, 1); stamp(root, 'skeleton.md', future + 9)
-  const r = round(root, roundIn(2, { n: 2, steps: [st(4, 'fail'), st(6, 'fail')], feedback: [{ id: 'f9', text: 'z' }] }))
+  const r = round(root, roundIn(2, { n: 2, steps: [st(4, 'fail'), st(6, 'fail')], feedback: [{ id: 'f9', text: 'z' }], feedback_mode: 'panel' }))
   assert.deepEqual([r.stop_reason, r.continue], ['n_reached', false])
 })
 
@@ -701,7 +701,7 @@ test('precedence: blocked > waiting_user > nothing_new > n_reached', () => {
   assert.equal(round(prep(), roundIn(2, { ...same, blocked: 'b', waiting_user: 'q' })).stop_reason, 'blocked')
   // all three clauses failing (new gap, new feedback id, a changed file) removes nothing_new, so n_reached is what is left
   const changed = prep(); stamp(changed, 'skeleton.md', future + 9)
-  assert.equal(round(changed, roundIn(2, { ...same, steps: [st(4, 'fail', 'k'), st(5, 'fail', 'z')], feedback: [{ id: 'f9', text: 'z' }] })).stop_reason, 'n_reached')
+  assert.equal(round(changed, roundIn(2, { ...same, steps: [st(4, 'fail', 'k'), st(5, 'fail', 'z')], feedback: [{ id: 'f9', text: 'z' }], feedback_mode: 'panel' })).stop_reason, 'n_reached')
 })
 
 test('empty or blank criteria are refused: exit 1, an error object, nothing written', () => {
@@ -804,9 +804,50 @@ test('a valid input with a valid predecessor still writes the record and gives t
   const root = workspace()
   round(root, roundIn(1, { n: 2 }))
   afterRound(root, 1); stamp(root, 'skeleton.md', future + 9)
-  const r = round(root, roundIn(2, { n: 2, steps: [st(4, 'fail'), st(6, 'fail')], feedback: [{ id: 'f9', text: 'z' }] }))
+  const r = round(root, roundIn(2, { n: 2, steps: [st(4, 'fail'), st(6, 'fail')], feedback: [{ id: 'f9', text: 'z' }], feedback_mode: 'panel' }))
   assert.deepEqual([r.stop_reason, r.continue, r.rounds], ['n_reached', false, 2])
   assert.equal(recOf(root, 2).steps.length, 7)
+})
+
+test('feedback is recorded as {mode, ids}: the mode the input names, ids in input order', () => {
+  for (const mode of ['panel', 'single-context']) {
+    const root = workspace()
+    round(root, roundIn(1, { feedback: [{ id: 'f2', text: 'y' }, { id: 'f1', text: 'x' }], feedback_mode: mode }))
+    assert.deepEqual(recOf(root, 1).feedback, { mode, ids: ['f2', 'f1'] })
+  }
+})
+
+test('empty feedback is recorded as {mode: null, ids: []}, with feedback_mode absent or null', () => {
+  for (const o of [{}, { feedback_mode: null }, { feedback: undefined }]) {
+    const root = workspace()
+    round(root, roundIn(1, o))
+    assert.deepEqual(recOf(root, 1).feedback, { mode: null, ids: [] })
+  }
+})
+
+test('feedback without a valid feedback_mode is refused naming it, and no file is written', () => {
+  const fb = [{ id: 'f1', text: 'x' }]
+  for (const o of [{ feedback: fb }, { feedback: fb, feedback_mode: 'x' }, { feedback: fb, feedback_mode: '' }, { feedback: fb, feedback_mode: null }, { feedback: [], feedback_mode: 'x' }]) {
+    const root = workspace()
+    assert.throws(() => round(root, roundIn(1, o)), /feedback_mode/, JSON.stringify(o))
+    assert.ok(!existsSync(join(root, 'snapshot/rounds')))
+  }
+})
+
+test('round 2 reads round 1 the same whether it holds {mode, ids} or the legacy [{id, text}] array', () => {
+  const run = legacy => {
+    const root = workspace()
+    round(root, roundIn(1, { feedback: [{ id: 'f1', text: 'x' }, { id: 'f2', text: 'y' }], feedback_mode: 'panel', n: 9 }))
+    if (legacy) writeFileSync(join(root, 'snapshot/rounds/round-1.json'), JSON.stringify({ ...recOf(root, 1), feedback: [{ id: 'f1', text: 'x' }, { id: 'f2', text: 'y' }] }))
+    afterRound(root, 1)
+    round(root, roundIn(2, { feedback: [{ id: 'f2', text: 'y' }, { id: 'f9', text: 'z' }], feedback_mode: 'panel', n: 9 }))
+    return recOf(root, 2)
+  }
+  const [obj, old] = [run(false), run(true)]
+  assert.deepEqual(obj.started_from.feedback, ['f1', 'f2'])
+  assert.deepEqual(old.started_from.feedback, obj.started_from.feedback)
+  assert.equal(obj.gate.clauses.no_new_feedback, false)
+  assert.deepEqual(old.gate.clauses, obj.gate.clauses)
 })
 
 test('round CLI: stdin and a file inside the workspace both work; an outside path and a missing --input are errors', () => {
