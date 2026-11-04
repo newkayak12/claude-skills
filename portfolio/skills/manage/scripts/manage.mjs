@@ -48,8 +48,10 @@
 //                        gaps: ["s<step>/<criteria>"] for every fail or skipped step, deduplicated; skipped is never pass,
 //                        diff: { resolved: in N-1 not now, carried: in both, new: now only },
 //                        clauses: { no_new_gap, no_new_feedback, no_file_changed } | null },
-//                changed: workspace files (sorted, relative) whose mtime is later than round-(N-1).json's, leaving out
-//                         snapshot/rounds/ and the --input file; [] in round 1,
+//                changed: workspace files (sorted, relative) added, removed or with other bytes (sha256) than in
+//                         snapshot/rounds/end-(N-1).json, the manifest written when round N-1 was recorded; a touch
+//                         is not a change; leaves out snapshot/rounds/ and the --input file; [] in round 1 (a
+//                         round N-1 recorded before end manifests existed falls back to mtime),
 //                stop_reason, continue, feedback: { mode: panel | single-context | null, ids: [finding ids in
 //                input order] } (round N-1 written as the legacy [{ id, text }] array is read the same),
 //                waiting_user?, blocked? }
@@ -59,12 +61,14 @@
 //       stop_reason, first match wins: blocked > waiting_user > nothing_new > n_reached (round >= n) > null
 //       continue: false for blocked, nothing_new, n_reached; true for null; for waiting_user true, unless every step
 //       was skipped (nothing could proceed) or round >= n (so waiting_user at the last round still ends the loop)
+//       also writes snapshot/rounds/end-N.json ({ path: sha256 } of the workspace as the round left it)
 //       prints { round, rounds: count of round-*.json, stop_reason, continue, gaps }
 //   round --read                   the read form: { rounds, last: { round, stop_reason, continue } | null, items: [one per
 //       round-N.json in round order: { round, n, verdict, gaps, diff, clauses, changed, stop_reason, continue,
 //       feedback, waiting_user?, blocked? }] }, from the files alone; writes nothing
 // A page heading is `## N`, `## N.`, `## N)` or `## N쪽`. A `# ` chapter heading bounds a block: pages
 // sort inside their block, and blocks holding pages sort by their first page; other sections stay put.
+import { createHash } from 'node:crypto'
 import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -689,7 +693,28 @@ function readPrevRecord(root, input) {
   return { prev, prevPath, prevIds }
 }
 
-// Files under root (never following a symlink) whose mtime is later than `since`, minus the rounds folder.
+// sha256 of every file under root (never following a symlink), minus the rounds folder and `skip`.
+function manifest(root, skip) {
+  const out = {}
+  const walk = rel => {
+    for (const e of readdirSync(join(root, rel), { withFileTypes: true })) {
+      const r = rel ? `${rel}/${e.name}` : e.name
+      if (r === ROUNDS_DIR || skip.has(r) || e.isSymbolicLink()) continue
+      if (e.isDirectory()) walk(r)
+      else if (e.isFile()) out[r] = createHash('sha256').update(readFileSync(join(root, r))).digest('hex')
+    }
+  }
+  walk('')
+  return out
+}
+
+// Files added, removed or with other bytes than in `before` (a touch is not a change).
+function changedFrom(before, now, skip) {
+  const paths = new Set([...Object.keys(before), ...Object.keys(now)])
+  return [...paths].filter(p => !skip.has(p) && before[p] !== now[p]).sort()
+}
+
+// Legacy fallback for a round N-1 recorded before end-N manifests: files whose mtime is later than `since`.
 function changedSince(root, since, skip) {
   const out = []
   const walk = rel => {
@@ -726,7 +751,12 @@ export function round(root, input, { skip = [] } = {}) {
     carried: gaps.filter(g => startedFrom.gaps.includes(g)),
     new: gaps.filter(g => !startedFrom.gaps.includes(g)),
   }
-  const changed = prev ? changedSince(root, statSync(prevPath).mtimeMs, new Set(skip)) : []
+  const skipSet = new Set(skip)
+  const now = manifest(root, new Set())
+  const prevManifest = join(root, ROUNDS_DIR, `end-${input.round - 1}.json`)
+  const changed = !prev ? []
+    : existsSync(prevManifest) ? changedFrom(JSON.parse(readFileSync(prevManifest, 'utf8')), now, skipSet)
+    : changedSince(root, statSync(prevPath).mtimeMs, skipSet)
   const clauses = prev ? {
     no_new_gap: diff.new.length === 0,
     no_new_feedback: feedback.every(f => startedFrom.feedback.includes(f.id)),
@@ -746,6 +776,10 @@ export function round(root, input, { skip = [] } = {}) {
   }
   mkdirSync(join(root, ROUNDS_DIR), { recursive: true })
   writeFileSync(target, `${JSON.stringify(record, null, 2)}\n`)
+  // the workspace as this round left it: round N+1's `changed` is measured against it
+  const endPath = join(root, ROUNDS_DIR, `end-${input.round}.json`)
+  assertInside(root, endPath)
+  writeFileSync(endPath, `${JSON.stringify(now)}\n`)
   const rounds = readdirSync(join(root, ROUNDS_DIR)).filter(f => /^round-\d+\.json$/.test(f)).length
   return { round: input.round, rounds, stop_reason: stopReason, continue: cont, gaps }
 }
