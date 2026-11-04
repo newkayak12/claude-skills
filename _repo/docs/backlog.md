@@ -228,7 +228,21 @@ toasts).
      a parked STORY wakes it like an answer does; the pane shows a thread per STORY (`from → to`, body,
      time) and the band names an unread message to the person; `view.mjs --once` prints the same; tests
      for publish/read/cursor/wake, and one real L task where two packages exchange a message that changes
-     what one of them builds.**teams tests write their fixture tasks under a temp tasks root, never `~/.harness/tasks`**
+     what one of them builds.
+
+127. **Every EPIC row reads as its key plus a short natural-language name, never the key alone**
+   - Why: user, 2026-11-04, on a pane screenshot with rows `● E-0ad41780 ⑂ c…` and `● E-6ff25a30 ⑂ c…`:
+     "EPIC 이름 이렇게 못알아보게 하지 말고 EPIC + 자연어 설명으로". The row's title is the request's first
+     words ("Backlog card 125, the state-socket part only…"), and at a narrow pane the key and the `⑂`
+     worktree mark take the width, so the name is cut to nothing.
+   - Acceptance: the engine writes one short name per EPIC (a few words in the request's language, e.g.
+     `mod 상태 소켓 하나로`, `테스트 fixture 격리 · 영역 겹침 차단`) at open, kept in task.json and returned by
+     tm_board/tm_status; every surface (pane row, band, board, `view.mjs --once`) shows `E-xxxxxxxx · <name>`;
+     when width runs out the name keeps priority over the worktree mark and state columns (key, then at least
+     the name's first word, then `⑂`); tests at 190, 110 and a narrow pane on four surfaces; the demo render
+     approved by the user (`mod.md` UI rule 0).
+
+121. **teams tests write their fixture tasks under a temp tasks root, never `~/.harness/tasks`**
    - Why: 2026-11-03, `tm_clean` sweep listed tasks `3a3a3bb5`, `d0ee9043` (2026-09-22), `97f05d73`
      (2026-10-07) as running with dead daemons, cwd `$TMPDIR/view-test-repo-*`, and a live `eb955b62`
      (cwd `$TMPDIR/teams-ask-fixture.*`) made by a test run of E-bf0527b7 P2 the same day; the first
