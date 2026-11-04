@@ -144,3 +144,40 @@ Home 한 화면에 "행동이 필요한가 → 누가 뭘 하나 → 어디까�
 
 빼는 것: 진행 막대, PROGRESS·STORIES·NEEDS YOU 타일(위로 흡수), 평소 0인 Denials/Defects 줄, Drivers(머신 전체 값).
 탭: Home · STORYs · Log · Report(끝난 뒤) 넷으로 — Floor는 Home으로, Decisions는 Report로.
+
+---
+
+## 확정안 (2026-11-04, 사람 결정) — 위 항목별 `결정:`을 대신한다
+
+사람의 결정: "HOME에 돌고 있는 EPIC, STORY 계층으로 뿌리고 / STORY 선택 시 전체 FLOW, 진행도, subagent 참가 수,
+참가 종류 / FLOOR 에 각 Phase에서 돌고 있는 상세 / Decisions는 Phase 상세에 보여주면 될거고 / Log, Report는 Story
+선택시 / 에초에 계층이 잘못됐음 / 조작 키도 wasd, enter". 페르소나 토론(운영자 · 사후 분석가 · 좁은 화면 UX, sonnet)의
+후보 F1(드릴다운) / F2(F1 + 좌우 미리보기) 중 **F1**, 좌우 분할 없음 ("전체적으로 훨씬 나음", "좌우는 필요 없어").
+
+탭 6개 대신 페이지 스택. 첫 줄은 breadcrumb.
+
+```
+HOME ─ EPIC 행 ⏎ ─▶ FLOOR (EPIC의 6 Phase) ─ ⏎ ─▶ Phase 상세 (돌고 있음 · 넘겨준 일 · 결정)
+     └ STORY 행 ⏎ ─▶ STORY 상세 (FLOW · 진행 · 참가 · 시도×노드) ─ ⏎ ─▶ Log / Report
+```
+
+| 키 | 동작 |
+|---|---|
+| `w` `s` | 행 이동 (Log·Report·Phase 상세에서는 스크롤) |
+| `d` `⏎` | 열기 |
+| `a` | 한 단계 뒤로 (그 단계에서 고른 행은 기억) |
+| `n` | 다음 ⚑ (어느 화면에서든) |
+| `q` `Esc` | 닫기 (mod.md) |
+| ⚑에서 `⏎` | 답변 모드: 글자가 텍스트, ⏎ 보내기, 빈 ⏎ 취소 |
+
+mobile: 같은 동작을 `[▲] [▼] [열기] [뒤로] [⚑] [닫기]` 버튼으로.
+
+함께 넣는 것: ⚑ 구역(질문 · 멈춘 드라이버 · 재시도 소진, 있을 때만) · 끝난 EPIC은 접힌 행으로 남김 ·
+worker 행의 `⏸ n분`(엔진의 stall 판정을 읽음, view가 따로 판정하지 않음) · STORY 행의 직전 거절 사유와 점수 ·
+STORY Report는 엔진이 쓰고 pane은 읽기만 · Report 끝 줄에 `tm_log`/`tm_retry` 다시 보기.
+빼는 것: 좌우 분할, 재시도/중단 키(pane은 읽기 전용), 진행 막대·타일 4개·평소 0인 수치 줄.
+
+Phase = EPIC의 6단계(Plan/Build/Integrate/QA/Gate/Report). STORY 안의 노드(plan…gate)는 STORY 상세의 FLOW.
+
+Mock (가상 데이터): `images/teams-pane-01-home.png` · `02-story` · `03-floor` · `04-phase` · `05-log` ·
+`06-report` · `08-mobile` · `09-answer`. 구현은 카드 125의 pane 품질 범위.
