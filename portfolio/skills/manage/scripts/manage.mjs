@@ -60,6 +60,9 @@
 //       continue: false for blocked, nothing_new, n_reached; true for null; for waiting_user true, unless every step
 //       was skipped (nothing could proceed) or round >= n (so waiting_user at the last round still ends the loop)
 //       prints { round, rounds: count of round-*.json, stop_reason, continue, gaps }
+//   round --read                   the read form: { rounds, last: { round, stop_reason, continue } | null, items: [one per
+//       round-N.json in round order: { round, n, verdict, gaps, diff, clauses, changed, stop_reason, continue,
+//       feedback, waiting_user?, blocked? }] }, from the files alone; writes nothing
 // A page heading is `## N`, `## N.`, `## N)` or `## N쪽`. A `# ` chapter heading bounds a block: pages
 // sort inside their block, and blocks holding pages sort by their first page; other sections stay put.
 import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
@@ -747,6 +750,20 @@ export function round(root, input, { skip = [] } = {}) {
   return { round: input.round, rounds, stop_reason: stopReason, continue: cont, gaps }
 }
 
+// The read form: every snapshot/rounds/round-N.json in round order, summarised from the files alone.
+export function readRounds(root) {
+  const dir = join(root, ROUNDS_DIR)
+  assertInside(root, dir)
+  const files = existsSync(dir) ? readdirSync(dir).filter(f => /^round-\d+\.json$/.test(f)) : []
+  const items = files.map(f => JSON.parse(readFileSync(join(dir, f), 'utf8'))).sort((a, b) => a.round - b.round).map(r => ({
+    round: r.round, n: r.n, verdict: r.gate.verdict, gaps: r.gate.gaps, diff: r.gate.diff, clauses: r.gate.clauses,
+    changed: r.changed, stop_reason: r.stop_reason, continue: r.continue, feedback: r.feedback,
+    ...(r.waiting_user && { waiting_user: r.waiting_user }), ...(r.blocked && { blocked: r.blocked }),
+  }))
+  const l = items.at(-1)
+  return { rounds: items.length, last: l ? { round: l.round, stop_reason: l.stop_reason, continue: l.continue } : null, items }
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2))
   const cmd = args._[0]
@@ -795,6 +812,8 @@ function main() {
       }
     })
     out = settle(findings, settled(root))
+  } else if (cmd === 'round' && args.read === true) {
+    out = readRounds(root)
   } else if (cmd === 'round') {
     if (typeof args.input !== 'string') throw new Error('--input <file | -> is required: the round input JSON (path inside the workspace, or - for stdin)')
     let text
@@ -819,7 +838,7 @@ function main() {
   } else if (cmd === 'keep-render') {
     out = keepRender(root, args.version)
   } else {
-    throw new Error('usage: manage.mjs layout | scaffold | selection | snapshot | renumber | verify | compare | claims | settle --findings <file> | round --input <file | -> | keep-render')
+    throw new Error('usage: manage.mjs layout | scaffold | selection | snapshot | renumber | verify | compare | claims | settle --findings <file> | round --input <file | -> | round --read | keep-render')
   }
   process.stdout.write(`${JSON.stringify(out)}\n`)
 }
