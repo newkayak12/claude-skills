@@ -33,6 +33,19 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
       the current Output Template; fewer than 2 subagents alive → the single-context run, said so; one real run
       on a fictional portfolio shows the roster, the clashes and the merged priorities.
 
+124. **portfolio:manage runs collect → build like the harness: staged, gated, looped n times**
+    - Why: user, 2026-11-04: "manage 처리할 때 최초 수집 ~ 빌드까지를 harness 스킬 유사하게 처리할 수 있도록
+      하자", "n회 돌게 해서". Today manage's Process is eight steps the model walks in prose (card 54);
+      nothing sets done-criteria per step, checks them before the next, or repeats the round.
+    - Acceptance: steps 1 (collect) through 7 (build/render) run as one harness-shaped pass — plan the round,
+      set checkable done-criteria per step, do the step, check it with `manage.mjs`/`material` commands where
+      one exists (judge ≠ actor otherwise), gate before the next step, report the round; the pass repeats n
+      times (n given by the user, a default stated in the skill), each round starting from the previous
+      round's gate gaps and feedback findings, and stops early when a round's gate finds nothing new;
+      the round count, each gate's verdict and what changed per round are written under the workspace's
+      `snapshot/` (a record a later session reads); runs headless and without a mod; one real run on a
+      fictional workspace with n = 2 shows two rounds, their gates and the diff between them.
+
 102. **portfolio checks the deck's claims against the material in an engine, both ways**
     - Why: debate 2026-10-29 (10 personas + noah), verified in code: material marks `근거 없음` /
       `user-stated` (material/SKILL.md:49, parts.md:31-32) but manage's skeleton step only says "each
