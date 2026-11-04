@@ -19,10 +19,28 @@ either plugin.
 
 ## Shape
 
+teams is one flow, and inside it a chain of harness runs (user, 2026-11-04: "teams가 받고 요건 분석하고 작게
+나누고 목표 세우고 각 dev 등에 맡기고 처리(harness), qa처리(harness)", "dev도 dev1, 2, 3 여러 개 뜰 수도
+있고", "teams는 요건을 분해하고 EPIC, STORY화해서 기획부터 쭉 하는 하나의 통합 플로우니까 내부적으로는
+harness의 연속이고"):
+
+```
+request → teams: 요건 분석 → EPIC / STORY 분해 → 목표
+            ├─ dev1  STORY ─┐
+            ├─ dev2  STORY ─┼─ each one harness run (graph run, per-node Codex/Claude)
+            ├─ dev3  STORY ─┘
+            ├─ integrate
+            └─ QA            ─  one harness run per QA card
+small work (S): the same harness run, once, with no decomposition around it
+```
+
+So there is one unit of work — a harness run on teams' graph fork — and teams decides how many, in what
+order, and with what goal. S is not a different engine; it is that unit with no EPIC/STORY layer.
+
 | Size | Runs on | Where a node fires |
 |---|---|---|
 | S | one graph run on teams' own broker: the harness flow (plan → setgoal → critique rounds with severity → implement → test → gate → report, `now.json` progress), what card 48 Tasks 2–4 put into graph brought into the fork where it lacks them; the driver no longer loads the harness plugin (`harnessrun.mjs` already reads a `route: 'graph'` pointer) | per node: Codex when the provider probe says it is ready for that stage, else Claude; the reason is recorded on the node |
-| L and up | the teams engine, as today | the same per-node choice, the same probe |
+| L and up | teams decomposes (planning → EPIC/STORY → goals), then each STORY (dev1…devN, in parallel) and each QA card is one harness run of the same kind as S; teams integrates between them | the same per-node choice, the same probe |
 
 - One provider probe and one routing rule, in teams (`teams/mcp/routing.mjs` already holds the routing; the
   probe is what `providers.json` records today: available, ready, reachable, implement, test, reason).
