@@ -1872,6 +1872,15 @@ export function rasterize(svgPath, W, H, pngPath, env = process.env) {
   try {
     const page = join(dir, 'page.html'), shot = join(dir, 'shot.png');
     writeFileSync(page, rasterPage(svgPath, W, H));
+    // Only the test suite sets DIAGRAM_CHROME_WS: its launched browser renders instead of a fresh Chrome (env.CHROME only decides whether a browser exists).
+    if (typeof env.DIAGRAM_CHROME_WS === 'string' && env.DIAGRAM_CHROME_WS) {
+      const r = spawnSync(process.execPath, [join(import.meta.dirname, 'cdp-shot.mjs'), env.DIAGRAM_CHROME_WS, page, String(W), String(H), shot], { encoding: 'utf8', timeout: 110000 });
+      if (r.status !== 0 || !existsSync(shot)) return { code: 1, msg: `shared browser screenshot failed: ${(r.stderr || r.error?.message || '').trim().slice(-400)}` };
+      const png = readFileSync(shot), [pw, ph] = pngSize(png);
+      if (pw !== 2 * W || ph !== 2 * H) return { code: 1, msg: `screenshot is ${pw}x${ph}, expected ${2 * W}x${2 * H}` };
+      atomicWrite(pngPath, png);
+      return { code: 0, msg: `ok ${pngPath}` };
+    }
     // The window is enlarged by the viewport's shortfall (the extra bottom rows are cropped below), then
     // probed again: a viewport still under W x H would crop the figure, so it is refused.
     let [ww, wh] = [W, H];
