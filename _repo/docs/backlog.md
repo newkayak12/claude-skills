@@ -139,58 +139,6 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
 
 ### Mods and naming — UI first (design: `_repo/docs/plans/mod/2026-10-16-mod-detail-and-parallel-runs.md`)
 
-93. **teams web viewer gets a Town tab: an isometric pixel office where each node works as a character**
-    - Why: user, 2026-10-28: "https://github.com/rafapetter/agent-town 이거 느낌 UI로 visualiazation",
-      "teams에 할 수 있지 않아?", and a reference image (isometric pixel office: people at desks with CRT
-      monitors, coffee bar, speech bubbles `</>!`, `λ→`, 💡) — "teams에 이런 느낌으로". agent-town: one
-      `<canvas>`, procedural pixel art (no sprite sheets), integer zoom with smoothing off, rAF loop, BFS
-      walking between rooms, speech bubbles. Supersedes for this view the 2026-10-26 "캐릭터를 그리라는 소리는
-      아냐" (that was the mod pane; the user asks for characters here).
-    - Where: the `view.mjs` server page (`view_url`), a Town tab beside the existing views; data from the
-      same `/state.json`. The terminal pane stays Ink (no pixels in a terminal); the Remote Control app is not a
-      mod surface (card 74), so no pane there.
-    - Acceptance: isometric floor with one desk zone per stage (Plan, Build, Integrate, QA, Gate, Report) and
-      a coffee corner for idle; each live node (size/shape/critique, PLAN-Fn, Pn, QA, AUDIT, judge) is a
-      procedurally coloured pixel character that walks to its stage's desk when it starts, types while running,
-      shows a bubble with what it does (`</>` build, `λ→` plan, 🔍 QA, ⚖ judge), ✔/✘ on accept/reject, 💤 when
-      stalled, and leaves when done; crisp at any size (integer zoom); no runtime dependency, no external image;
-      a node-side test of the scene model (who sits where from a state.json fixture) and one live look with a
-      screenshot of a real running task. Quality bar: the reference image — not boxes with names.
-    - Parked 2026-10-28, user: "아..애매하다 안되지", "애매하다 skill 레벨로 하기에는 너무 애매하네". The reference
-      quality needs drawn sprite assets (procedural canvas gives agent-town level, not the image); not pulled
-      until the person decides where the art comes from.
-
-84. **The teams pane is a real dashboard on every surface: Ink on the terminal, Svg on desktop, mobile and vscode** — both terminal defects fixed `7e051a4b` (E-8b9c417d; live look 2026-10-28: Plan ✔, no digits after 2 1 0); left: phone/desktop look, and the design doc (E-bf0527b7's P4 never ran; PRD section F4 in `.teams_output/team/E-bf0527b7/10-prd.md`)
-    - Why: user, 2026-10-26, after `/teams-status` over Remote Control showed a 42-row text dump on the phone:
-      "이따위로 나올거면 뭣하러 하냐", "Claude desktop app에서 UI 그릴 수 있는걸로 아는데", "mobile도 그렇고",
-      "씨발 못해? terminal도, claude app, desktop도". References given: a Grafana-style metrics board
-      (tiles + time series), a harness diagram (stages as columns of cards), a terminal agent dashboard
-      (EPIC tabs with %, agent tree with timers, task list, session stats, activity log, approval prompt),
-      github.com/HarnessMD/munder-difflin (agents as live avatars, envelopes between them, kanban command
-      center), revfactory.github.io/harness-animation (numbered stage pipeline, fan-out/fan-in, polished
-      cards). Mod API 2.1.310: `desktop`, `mobile`, `vscode` carry `Svg`; terminal carries `Raster`/`Image`/`Client`.
-      Prerequisite: the app must attach as a surface (`session.attach`); it did not over Remote Control (card 74).
-      User, same day: "캐릭터를 그리라는 소리는 아냐 무조건 내가 준것같은 퀄리티 높은 UI를 제공하란거야 기본으로" —
-      no avatars; the references' quality is the default bar for every mod UI, not an option.
-    - Acceptance: a design doc with the demo render approved by the user first (`mod.md` UI rule 0);
-      terminal pane = EPIC tabs, node pipeline with state and timers, STORY kanban, stats (cost, budget,
-      drivers), activity log, waiting-ask line; desktop/mobile/vscode = the same data as an Svg pipeline
-      (fan-out packages, fan-in integrate) with metric tiles; every field from node (`view.mjs`/engine), none
-      inferred in tsx; seen live on terminal and in the app (phone screenshot), 190/110 columns, README shots.
-    - Done 2026-10-26 (teams 0.61.0): Home tab first (key `0`); terminal Ink board seen live in tmux at 190
-      and 110 columns (narrow pane lists tiles and lanes one per line); Svg board for desktop/mobile/vscode,
-      mounted in tests and rendered in Chromium; README shots `pane-home.png`, `pane-home-app.png`; EPIC
-      titled by its backlog cards. Seen live 2026-10-27 (E-398db286 in Build, both PRDs, plan-integrate,
-      shape and critique done): stage 1 Plan still shows ◉ running and the bar 0%, "0/6 stages" — the
-      Plan stage is not marked done once Build starts. Cause verified: a retried manager node leaves its
-      first attempt `skipped` (`shape`, `critique` beside done `shape:2`, `critique:2`), and `nodeState`
-      (`teams/scripts/lib/view-stages.mjs`) maps `skipped` to pending, so `stagesOf` (view-summary.mjs)
-      merges Plan to running; a superseded attempt must not count. Same look, 08:17: the STORYs tab lists
-      only P2 (`rejected 3/3`), not P1 which passed; a digit pressed to switch tabs is also echoed in the
-      footer input (`1 ⏎ submit`, `12 ⏎ submit`). Causes unverified.
-      Terminal render approved 2026-10-27 on the live shots (Home, Floor, STORYs), user: "훨깔끔 좋아". Left: no design doc; the Svg not yet seen in the Claude desktop app (this
-      machine has none); the phone gets text only until the app attaches (card 74); demo approval by the user.
-
 Mods, in the user's words: "전체적으로 mod가 더 디테일해야할거 같아 일단 있다 그 이상 이하도 아니게보인다"
 (2026-10-15); "각 스킬에 특화되도록 사용자 친화적으로!"; "팀즈 하네스 그래프 병렬 실행 시 모드 어떻게
 그릴지 고민하기"; "실제 사용 유아이같이 고도로 발달하고 사람이 보기좋게가 가장 중요 정보도 다
@@ -255,41 +203,6 @@ toasts).
       `teams · ⑂ claude-skills-c109 · Backlog card 109 …`; 110 row `⑂ claude-sk…`, band `⑂ claude-skills-c…`.
       `node -e '[1,2].map(x => x*2)'` runs, not refused (the earlier refusal not reproduced).
     - Acceptance (left): the user approves the 190/110 captures.
-
-74. **Every mod's UI draws on terminal, desktop, mobile and vscode (`mod.md` rule 8) — teams first** — tests in
-    55e2dcc3 (teams 357, graph 175, harness 199) and bfe0022c (session 699, think 53, trophy 149), all four
-    surfaces mounted; tmux 190/110 seen for the teams pane. README/KOR surface lines in all six (96ead92d
-    for teams, think); terminal shots unchanged, so none retaken. Demo approval delegated to Claude
-    2026-10-26 (user: "너가좀 하세여"). Left: the live look in the Claude app over Remote Control — this
-    machine has no app or signed-in browser, so it waits for the person (steps in
-    `~/.harness/tasks/{23b35fe3,0baf8e75}-*/harness-report.md`).
-    - Why (all mods): user, 2026-10-25: "얘 모든 mod로 그리는 UI는 모바일, 데스크탑, 다 대응할 수 있어야 해요".
-      Scan the same day: graph, harness, session, teams, think and trophy tests mount `terminal` and at
-      most `desktop`; none mounts `mobile` or `vscode` (6 of 6 mods).
-    - Acceptance (all mods): each mod's tests mount every pane, band, card and toast on all four
-      surfaces; elements outside the shared six are behind an `e.surface` check; one live look per
-      mod in the Claude app over Remote Control; README/KOR say the surfaces.
-    - Why: user, 2026-10-25, watching this session from the Claude app over Remote Control: "claude app에서
-      rc로 보는데 teams-status는 노출이 안되는구조야?" — the command answered only "teams: pane opened /
-      closed" and nothing showed in the app. The mod API knows `desktop` and `mobile` surfaces
-      (`$.session.surfaces()`); whether the teams pane draws on them is unverified.
-    - Acceptance: with the session open in the app, `/teams-status` shows the EPIC list there (the pane on a
-      surface that draws it, else the `view.mjs --once` text as the command's answer); `claude plugin test`
-      mounts the pane on `desktop` and `mobile`; the terminal pane is unchanged.
-    - Why: live look failed 2026-10-26, phone (Claude app over Remote Control). User: "씨발 안나오네",
-      "리모트로 안나오잖아", "제대로 안만든거 뭐냐". The phone shows only `teams: pane opened` — no pane, no board
-      text. The text fallback (`wantsStatusText`, `teams/hooks/pane.ts:50`) fires only when a non-terminal
-      surface is in `$.session.surfaces()`, and the app was not in that roster, so the same symptom as
-      2026-10-25 shipped unchanged. Why the app does not attach (no `session.attach`) is unverified.
-    - Acceptance: over Remote Control, `/teams-status` puts the board on the phone even when the app is
-      not an attached surface (the fallback does not hang on `surfaces()` alone); proved by a phone
-      screenshot, not by `claude plugin test` mounts.
-    - Proof 2026-10-26 (teams 0.61.0 session, Remote Control on, the person on the phone): at `/teams-status`
-      `$.session.surfaces()` read `["terminal"]` and `session.attach` never fired — the Claude app over Remote
-      Control is not a mod surface on 2.1.310, so no pane or Svg can reach it; only the command's `{ text }`
-      does. 0.61.0 answers with the board as text (`view.mjs --once --format board`). Left: a phone
-      screenshot of that text; whether a later Claude Code build attaches the app (then the Svg board
-      shows there) — a Claude Code gap, not fixable in the mod.
 
 ### write plugin
 
