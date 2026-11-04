@@ -61,6 +61,28 @@ finds nothing outside tests that assert the absence.
   A provider that turns unready mid-run moves the next node to the other, recorded; never a silent switch.
 - The S result is read the way it is now (goal gate + report), from teams' own run files.
 
+## Where a run fires
+
+| Host | Run goes to |
+|---|---|
+| Claude only | DW (the Workflow tool, harness's `pipeline.js` route) |
+| Codex ready | teams' broker MCP, each node on Codex or Claude by the probe |
+
+User, 2026-11-04: "claude만 있으면 DW를 쓸거고 codex가 있으면 별도 MCP로 위임해서 각각 맞게 호출하겠지".
+Condition: the DW route writes the same run files as the broker route (`now.json`, critique rounds,
+`04-goal-gate.json`, `05-report.md`) — today's S prompt forbids Workflow because it left no goal-gate
+verdict on disk; the manager and the pane read one contract, whichever route ran.
+
+## One entry
+
+The person no longer picks harness, graph or teams (user: "내가 harness, graph, teams를 쓸지 안골라도
+되고"). They hand the request to teams; size decides S (one run) or L (decomposition), and the probe decides
+where each run fires. The routing tables that send people to `harness:harness` or `graph:orchestrate`
+for new work (this repo's `CLAUDE.md` Workflow Entry Points, teams skills) point to teams only.
+
+Figures: `images/teams-before.png` (S leaves teams today) · `images/teams-after.png` (one run unit, one
+fire choice, one file contract, one pane); sources `images/teams-{before,after}.json`.
+
 ## Mods
 
 One teams pane (the F1 page stack of `mod/2026-11-04-teams-pane-panels.md` § 확정안) draws S and L runs.

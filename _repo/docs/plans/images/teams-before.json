@@ -1,0 +1,27 @@
+{
+  "type": "architecture",
+  "title": "지금: S는 바깥 플러그인으로 나간다",
+  "description": "S 드라이버가 graph MCP 또는 harness fallback에 맡기고, 실제로는 harness fallback으로 빠진다",
+  "nodes": [
+    { "id": "req", "label": "요청", "kind": "actor", "row": 0, "col": 1 },
+    { "id": "size", "label": "manager: size", "kind": "decision", "row": 1, "col": 1, "note": "taskmanager.mjs delegateIfSmall" },
+    { "id": "sdrv", "label": "S 드라이버", "sublabel": "harnessPrompt", "kind": "service", "row": 2, "col": 0, "note": "HARNESS_SKILLS = graph:orchestrate, harness:harness" },
+    { "id": "lmgr", "label": "L: 분해", "sublabel": "EPIC · STORY · 목표", "kind": "service", "row": 2, "col": 2 },
+    { "id": "gmcp", "label": "graph 플러그인 MCP", "sublabel": "외부 · 미로드", "kind": "external", "row": 3, "col": 0, "note": "드라이버 plugin-dir 목록에 graph 없음 (2026-11-04 tm_status)" },
+    { "id": "lrun", "label": "STORY · QA run", "sublabel": "teams graph fork", "kind": "package", "row": 3, "col": 2 },
+    { "id": "hfb", "label": "harness fallback", "sublabel": "외부 플러그인", "kind": "external", "row": 4, "col": 0, "note": "두 S 작업 모두 route: fallback" },
+    { "id": "hpane", "label": "harness pane", "sublabel": "S 화면", "kind": "external", "row": 5, "col": 0 },
+    { "id": "tpane", "label": "teams pane", "sublabel": "L 화면", "kind": "service", "row": 5, "col": 2 }
+  ],
+  "edges": [
+    { "from": "req", "to": "size" },
+    { "from": "size", "to": "sdrv", "label": "S" },
+    { "from": "size", "to": "lmgr", "label": "L" },
+    { "from": "sdrv", "to": "gmcp", "label": "있으면", "style": "async" },
+    { "from": "gmcp", "to": "hfb", "label": "없으면", "style": "fail" },
+    { "from": "lmgr", "to": "lrun" },
+    { "from": "hfb", "to": "hpane", "style": "data" },
+    { "from": "lrun", "to": "tpane", "style": "data" }
+  ],
+  "legend": { "sync": "호출", "async": "선택 경로", "fail": "실제로 빠지는 경로", "data": "화면이 읽음" }
+}

@@ -1,0 +1,154 @@
+{
+ "type": "architecture",
+ "title": "바꾼 뒤: 모든 일은 run 하나, 실행처만 고른다",
+ "description": "S는 run 하나, L은 manager가 STORY·QA마다 run을 연다. run은 Claude만이면 DW, Codex가 준비되면 broker MCP",
+ "nodes": [
+  {
+   "id": "req",
+   "label": "요청",
+   "kind": "actor",
+   "row": 0,
+   "col": 1
+  },
+  {
+   "id": "size",
+   "label": "manager: size",
+   "kind": "decision",
+   "row": 1,
+   "col": 1
+  },
+  {
+   "id": "srun",
+   "label": "S: run 1개",
+   "sublabel": "manager 안 거침",
+   "kind": "package",
+   "row": 2,
+   "col": 0
+  },
+  {
+   "id": "lmgr",
+   "label": "L: 분해",
+   "sublabel": "EPIC · STORY · 목표",
+   "kind": "service",
+   "row": 2,
+   "col": 2
+  },
+  {
+   "id": "lrun",
+   "label": "dev1…N STORY run",
+   "sublabel": "병렬, worktree 각자",
+   "kind": "package",
+   "row": 3,
+   "col": 2
+  },
+  {
+   "id": "qrun",
+   "label": "integrate → QA run",
+   "kind": "package",
+   "row": 4,
+   "col": 2
+  },
+  {
+   "id": "fire",
+   "label": "run 실행처",
+   "sublabel": "provider probe",
+   "kind": "decision",
+   "row": 5,
+   "col": 1,
+   "note": "providers.json: available · ready · implement · test"
+  },
+  {
+   "id": "dw",
+   "label": "DW (Workflow)",
+   "sublabel": "Claude만",
+   "kind": "service",
+   "row": 6,
+   "col": 0
+  },
+  {
+   "id": "mcp",
+   "label": "broker MCP",
+   "sublabel": "노드별 Codex · Claude",
+   "kind": "service",
+   "row": 6,
+   "col": 2
+  },
+  {
+   "id": "disk",
+   "label": "run 파일 계약",
+   "kind": "store",
+   "row": 7,
+   "col": 1,
+   "note": "now.json, critique 라운드, 04-goal-gate.json, 05-report.md"
+  },
+  {
+   "id": "pane",
+   "label": "teams pane 하나",
+   "sublabel": "S · L 같이",
+   "kind": "service",
+   "row": 8,
+   "col": 1
+  }
+ ],
+ "edges": [
+  {
+   "from": "req",
+   "to": "size"
+  },
+  {
+   "from": "size",
+   "to": "srun",
+   "label": "S"
+  },
+  {
+   "from": "size",
+   "to": "lmgr",
+   "label": "L"
+  },
+  {
+   "from": "lmgr",
+   "to": "lrun"
+  },
+  {
+   "from": "lrun",
+   "to": "qrun"
+  },
+  {
+   "from": "srun",
+   "to": "fire"
+  },
+  {
+   "from": "qrun",
+   "to": "fire"
+  },
+  {
+   "from": "fire",
+   "to": "dw",
+   "label": "Claude만"
+  },
+  {
+   "from": "fire",
+   "to": "mcp",
+   "label": "Codex 준비"
+  },
+  {
+   "from": "dw",
+   "to": "disk",
+   "style": "data"
+  },
+  {
+   "from": "mcp",
+   "to": "disk",
+   "style": "data"
+  },
+  {
+   "from": "disk",
+   "to": "pane",
+   "style": "data"
+  }
+ ],
+ "legend": {
+  "sync": "흐름",
+  "data": "기록 · 읽기"
+ }
+}
