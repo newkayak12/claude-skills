@@ -54,8 +54,36 @@
 //       prints { round, rounds: count of round-*.json, stop_reason, continue, gaps }
 // A page heading is `## N`, `## N.`, `## N)` or `## N쪽`. A `# ` chapter heading bounds a block: pages
 // sort inside their block, and blocks holding pages sort by their first page; other sections stay put.
-import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+// Containment on real paths: a symlink inside the workspace that points out is outside. A path that does
+// not exist yet resolves through its nearest existing ancestor; a dangling symlink counts as outside.
+function realPath(p) {
+  const rest = []
+  let cur = resolve(p)
+  for (;;) {
+    try { return join(realpathSync(cur), ...rest.reverse()) } catch {
+      let link = false
+      try { link = lstatSync(cur).isSymbolicLink() } catch { /* not there */ }
+      const up = dirname(cur)
+      if (link || up === cur) return null
+      rest.push(basename(cur))
+      cur = up
+    }
+  }
+}
+function insideRoot(root, p) {
+  const base = realPath(root)
+  const real = realPath(p)
+  if (base === null || real === null) return false
+  const rel = relative(base, real)
+  return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
+}
+function assertInside(root, p) {
+  if (!insideRoot(root, p)) throw new Error(`${relative(root, resolve(p))} must be a path inside the workspace root ${root}`)
+}
 
 const LAYOUT = ['skeleton.md', 'deck.mdx', 'template.pptx', 'deck.catalog.md', 'build', 'snapshot', 'sources', 'docs/확정사실.md',
   'sources/선정.md', 'template/분석.md']
@@ -169,6 +197,7 @@ export function snapshot(root, { kind, level, note, by = '본인', date }) {
   const readme = join(root, 'snapshot', 'README.md')
   if (kind === 'deck') return deckSnapshot(root, { level, note, day, skelS: curS, readme })
   const dir = join(root, 'snapshot', kind, `${kind}-${curS}`)
+  for (const p of [dir, skelPath, readme]) assertInside(root, p)
   if (existsSync(dir)) throw new Error(`${dir} exists: snapshot of ${curS} already taken`)
   mkdirSync(dir, { recursive: true })
   copyFileSync(skelPath, join(dir, 'skeleton.md'))
@@ -196,6 +225,8 @@ function deckSnapshot(root, { level, note, day, skelS, readme }) {
   const newest = vers.sort((x, y) => y[0] - x[0] || y[1] - x[1] || y[2] - x[2])[0]
   const next = `v${(newest ? bump(newest, level) : [1, 0, 0]).join('.')}`
   const dir = join(base, `deck-${next}`)
+  assertInside(root, dir)
+  assertInside(root, readme)
   mkdirSync(dir, { recursive: true })
   copyFileSync(join(root, 'deck.mdx'), join(dir, 'deck.mdx'))
   if (existsSync(join(root, 'assets'))) cpSync(join(root, 'assets'), join(dir, 'assets'), { recursive: true })
@@ -628,6 +659,9 @@ function changedSince(root, since, skip) {
 
 export function round(root, input, { skip = [] } = {}) {
   checkRoundInput(input)
+  const roundsDir = join(root, ROUNDS_DIR)
+  assertInside(root, roundsDir)
+  assertInside(root, join(roundsDir, `round-${input.round}.json`))
   const feedback = input.feedback ?? []
   const prevPath = join(root, ROUNDS_DIR, `round-${input.round - 1}.json`)
   let prev = null
@@ -673,7 +707,7 @@ export function round(root, input, { skip = [] } = {}) {
 function main() {
   const args = parseArgs(process.argv.slice(2))
   const cmd = args._[0]
-  const root = process.cwd()
+  const root = realpathSync(process.cwd())
   const file = join(root, args.file || 'skeleton.md')
   let out
   if (cmd === 'layout') {
@@ -706,7 +740,7 @@ function main() {
     if (typeof args.findings !== 'string') throw new Error('--findings <file> is required: a JSON array of {id, text}')
     const path = resolve(root, args.findings)
     const rel = relative(resolve(root), path)
-    if (isAbsolute(args.findings) || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    if (isAbsolute(args.findings) || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel) || !insideRoot(root, path)) {
       throw new Error(`--findings ${args.findings} must be a path inside the workspace root ${root}`)
     }
     let findings
@@ -726,7 +760,7 @@ function main() {
     else {
       const path = resolve(root, args.input)
       const rel = relative(resolve(root), path)
-      if (isAbsolute(args.input) || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+      if (isAbsolute(args.input) || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel) || !insideRoot(root, path)) {
         throw new Error(`--input ${args.input} must be a path inside the workspace root ${root}`)
       }
       try { text = readFileSync(path, 'utf8') } catch (e) { throw new Error(`--input ${args.input} cannot be read: ${e.message}`) }
@@ -747,6 +781,9 @@ function main() {
   process.stdout.write(`${JSON.stringify(out)}\n`)
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+const invokedDirectly = () => {
+  try { return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]) } catch { return false }
+}
+if (invokedDirectly()) {
   try { main() } catch (e) { process.stdout.write(`${JSON.stringify({ error: e.message })}\n`); process.exit(1) }
 }

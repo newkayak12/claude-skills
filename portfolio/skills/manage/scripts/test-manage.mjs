@@ -1,6 +1,6 @@
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -746,4 +746,90 @@ test('rounds counts the round-*.json files and the shared fixture is left alone'
   assert.equal(round(root, roundIn(3)).rounds, 3)
   assert.deepEqual(readdirSync(join(root, 'snapshot/rounds')).sort(), ['round-1.json', 'round-2.json', 'round-3.json'])
   assert.ok(!existsSync(join(WORKSPACE, 'snapshot/rounds')))
+})
+
+// ── containment follows symlinks: a link inside the workspace that points out is outside ──
+const outsideDir = () => { const d = mkdtempSync(join(tmpdir(), 'manage-out-')); copies.push(d); return d }
+const manageCli = (script, root, ...a) => spawnSync(process.execPath, [script, ...a], { cwd: root, input: '', encoding: 'utf8' })
+
+test('symlink: round --input and settle --findings through a link to an outside file are refused, the outside file is not read', () => {
+  const root = workspace()
+  const out = outsideDir()
+  writeFileSync(join(out, 'in.json'), JSON.stringify(roundIn(1)))
+  writeFileSync(join(out, 'findings.json'), JSON.stringify([F_OTHER]))
+  symlinkSync(join(out, 'in.json'), join(root, 'in.json'))
+  symlinkSync(join(out, 'findings.json'), join(root, 'findings.json'))
+  const r = manageCli(MANAGE, root, 'round', '--input', 'in.json')
+  assert.equal(r.status, 1)
+  assert.match(JSON.parse(r.stdout).error, /must be a path inside the workspace root/)
+  assert.ok(!existsSync(join(root, 'snapshot/rounds/round-1.json')), 'the outside file was read and acted on')
+  const s = manageCli(MANAGE, root, 'settle', '--findings', 'findings.json')
+  assert.equal(s.status, 1)
+  assert.match(JSON.parse(s.stdout).error, /must be a path inside the workspace root/)
+  assert.ok(!s.stdout.includes(F_OTHER.id), 'the outside file was read')
+})
+
+test('symlink: a link to an outside directory inside the path is refused too', () => {
+  const root = workspace()
+  const out = outsideDir()
+  writeFileSync(join(out, 'in.json'), JSON.stringify(roundIn(1)))
+  symlinkSync(out, join(root, 'docs-link'))
+  const r = manageCli(MANAGE, root, 'round', '--input', 'docs-link/in.json')
+  assert.equal(r.status, 1)
+  assert.match(JSON.parse(r.stdout).error, /must be a path inside the workspace root/)
+})
+
+test('symlink: snapshot/rounds linked out writes nothing outside; a snapshot dir linked out does the same', () => {
+  const root = workspace()
+  const out = outsideDir()
+  symlinkSync(out, join(root, 'snapshot/rounds'))
+  assert.throws(() => round(root, roundIn(1)), /must be a path inside the workspace root/)
+  const r = roundCli(root, roundIn(1))
+  assert.equal(r.status, 1)
+  assert.match(JSON.parse(r.stdout).error, /must be a path inside the workspace root/)
+  assert.deepEqual(readdirSync(out), [])
+
+  const root2 = workspace()
+  const out2 = outsideDir()
+  rmSync(join(root2, 'snapshot/skeleton'), { recursive: true })
+  symlinkSync(out2, join(root2, 'snapshot/skeleton'))
+  assert.throws(() => snapshot(root2, { kind: 'skeleton', level: 'patch', note: 'x' }), /must be a path inside the workspace root/)
+  assert.deepEqual(readdirSync(out2), [])
+  rmSync(join(root2, 'snapshot/deck'), { recursive: true })
+  symlinkSync(out2, join(root2, 'snapshot/deck'))
+  assert.throws(() => snapshot(root2, { kind: 'deck', level: 'patch', note: 'x' }), /must be a path inside the workspace root/)
+  assert.deepEqual(readdirSync(out2), [])
+})
+
+test('symlink: a dangling link in the round-file position is refused', () => {
+  const root = workspace()
+  const out = outsideDir()
+  mkdirSync(join(root, 'snapshot/rounds'), { recursive: true })
+  symlinkSync(join(out, 'gone.json'), join(root, 'snapshot/rounds/round-1.json'))
+  assert.throws(() => round(root, roundIn(1)), /must be a path inside the workspace root/)
+  assert.deepEqual(readdirSync(out), [])
+})
+
+test('symlink: run through a link to the script from a cwd reached by a link, it still prints and accepts in-workspace paths', () => {
+  const root = workspace()
+  const holder = outsideDir()
+  const scriptLink = join(holder, 'manage-link.mjs')
+  symlinkSync(MANAGE, scriptLink)
+  const wsLink = join(holder, 'ws-link')
+  symlinkSync(root, wsLink)
+  const l = manageCli(scriptLink, wsLink, 'layout')
+  assert.equal(l.status, 0)
+  assert.deepEqual(JSON.parse(l.stdout).missing, [])
+  writeFileSync(join(root, 'in.json'), JSON.stringify(roundIn(1)))
+  writeFileSync(join(root, 'findings.json'), JSON.stringify([F_OTHER]))
+  const r = manageCli(scriptLink, wsLink, 'round', '--input', 'in.json')
+  assert.equal(r.status, 0)
+  assert.equal(JSON.parse(r.stdout).round, 1)
+  assert.ok(existsSync(join(root, 'snapshot/rounds/round-1.json')))
+  const s = manageCli(scriptLink, wsLink, 'settle', '--findings', 'findings.json')
+  assert.equal(s.status, 0)
+  assert.deepEqual(JSON.parse(s.stdout).kept, [F_OTHER])
+  // a link that stays inside the workspace is fine
+  symlinkSync(join(root, 'in.json'), join(root, 'in-link.json'))
+  assert.equal(manageCli(MANAGE, wsLink, 'round', '--input', 'in-link.json').status, 0)
 })
