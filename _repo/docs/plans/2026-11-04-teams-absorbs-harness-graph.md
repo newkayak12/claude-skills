@@ -104,7 +104,10 @@ unchanged; teams does not depend on them.
 - An S task runs with no harness plugin dir on its driver (`ps` / task.json command), and its report and
   goal gate are read from teams' run files.
 - With Codex ready, an implement/test node fires on Codex; with Codex unready, the same node fires on
-  Claude and the node records why. Both seen in one real run each.
+  Claude and the node records why. The Codex-ready half passes on what graph already proved (card 48
+  Tasks 2–4, E-c5c109e3: graph's routing and Codex fallback tests) carried into teams with those tests
+  (user, 2026-11-04: "codex는 graph 때 헀으니 그걸로 잘 pass"); the unready half is seen in one real run
+  on this machine (Codex probe `unreachable` today).
 - `node --test teams/scripts/test-*.mjs` at the pre-change count or higher with 0 failures;
   `claude plugin test` in teams; `harness/` and `graph/` show no diff.
 - `/teams-status` alone shows S and L runs side by side in one HOME tree, live, with no harness or graph
