@@ -559,6 +559,13 @@ test('the manager stages are told to judge and shape against the project rules',
   }
 });
 
+test('the areas-critique prompt says two areas planning the same edit is an overlap that always blocks', async () => {
+  const { CONTRACT: managerContract } = await import('../mcp/stagecontract.mjs');
+  const text = managerContract['areas-critique'];
+  assert.match(text, /same edit \(the same file and lines, or the same function\) is an overlap and always blocking, never a soft problem/);
+  assert.match(text, /names the one area that owns it/);
+});
+
 // A seven-section PRD took 81 minutes because setgoal copied the product's story dependencies
 // (U1 -> U3 -> U2 -> U4 -> U6) onto the sections that describe them, turning a set that could
 // have been written at once into a chain (2026-09-22).
