@@ -342,6 +342,9 @@ toasts).
      - confirm `roles.planning: "auto"` ran the light PLAN chain when every request declared acceptance
        (E-258fa3e5 did); if not, fix and test;
      - a default `budget_usd` in this repo's `.claude/team.json` (today `null`);
+     - `budget_usd` also bounds a size-S run: E-1140cdb9 (S, budget $20, on Sonnet) spent $40.94 and
+       `budget_stopped` fired only at the end, since the stop only holds back new packages and S has
+       none; the S driver is stopped at the budget like a package, with a test;
      - node prompts point at file regions (line ranges, symbols) instead of whole large files where the
        stage allows;
      - one real L task's cost compared to E-258fa3e5's per-stage cost, numbers in the report.
