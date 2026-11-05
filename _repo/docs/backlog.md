@@ -228,6 +228,8 @@ toasts).
      stages (1 of 6 = 17%), so Build reads 17% until all eight packages pass. Acceptance: progress counts
      work inside the running stage (accepted packages / packages for Build, QA cards for QA), shown as
      stage and package count (`Build 3/8`); a test with 3 of 8 packages accepted reads above 17%.
+     Same for a size-S task (seen 2026-11-05 on E-1140cdb9: 17% while SG1 was implemented and under
+     test): progress comes from the harness run's `now.json` and subgoals (`SG1 test · 1/2`), with a test.
 
 126. **teams agents talk over a per-task message bus (topic = the task key), the pane draws it as threads**
    - Why: user, 2026-11-04: "agent 간 대화는? teams 내에서", then "지금은 mod로 가능하지 않나? 가능하더라도
