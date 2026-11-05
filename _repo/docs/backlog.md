@@ -261,7 +261,14 @@ toasts).
      the name's first word, then `⑂`); tests at 190, 110 and a narrow pane on four surfaces; the demo render
      approved by the user (`mod.md` UI rule 0).
 
-128. **teams serves one MCP server, its internals split into modules by concern** — P1–P3 merged `189c74d4` (E-258fa3e5, cancelled after P4 blocked); rest in E-8b2f2880
+128. **teams serves one MCP server, its internals split into modules by concern** — shipped on main, unreleased: P1–P3 `189c74d4` (E-258fa3e5), taskmanager facade + 14 modules
+   `24d57811` (E-1140cdb9, gate 95), one server `teams/mcp/server.mjs` `14d94112` (E-d26f7a29, gate 91;
+   suite 2140/2137, plugin test 448/448, real `claude -p --plugin-dir` lists 33 tools from one server).
+   Left: `tm_wait` polls with `sleepSync` (up to 300 s) and now stalls `team_*`/`wiki_*` in the same
+   server — make it async; stale "one process per server" comments (`taskmanager-handlers.mjs:36-38`,
+   `daemon.mjs:231`, `view.mjs:33`); release note on the tool prefix change
+   (`mcp__plugin_teams_task-manager__*` → `mcp__plugin_teams_teams__*`, allowlists stop matching); one real
+   S and one real L task on the installed merged server after the batch bump; `ps` one teams process.
    - Why: user, 2026-11-04: "teams의 mcp 하나의 서버로 통합 및 노출 내부 mjs 코드 스플릿으로 가독성 및
      유지보수성 증가". Today `teams/.claude-plugin/plugin.json` starts three servers per session —
      `teams-engineering` (`mcp/broker.mjs`, 2,479 lines), `task-manager` (`mcp/taskmanager.mjs`, 9,028 lines,
