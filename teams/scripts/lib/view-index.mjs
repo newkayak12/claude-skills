@@ -23,7 +23,41 @@ const LEDGER_END = new Set(['daemon_done', 'clean']);
 const readJson = (p) => { try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; } };
 // throwIfNoEntry: false, because a missing file is the common case here (a task with no ledger, a dir with no
 // task.json) and a thrown ENOENT costs far more than the stat itself on a root of thousands of tasks.
-const statOf = (p) => { try { const s = statSync(p, { throwIfNoEntry: false }); return s ? { mtime: s.mtimeMs, size: s.size } : null; } catch { return null; } };
+const statNow = (p) => { try { const s = statSync(p, { throwIfNoEntry: false }); return s ? { mtime: s.mtimeMs, size: s.size } : null; } catch { return null; } };
+
+// The shared server renders every call of one tick (2 s) inside withTickStats(map, fn): a path is stat'd once
+// per tick, whoever asks (this file, the task cache, the events sweep), so the tick reads one snapshot of the root.
+let tickStats = null;
+export function withTickStats(map, fn) {
+  const prev = tickStats;
+  tickStats = map;
+  try { return fn(); } finally { tickStats = prev; }
+}
+// fn() once per tick (and every time outside one): a fact several tasks of the tick ask for.
+export function tickMemo(key, fn) {
+  if (!tickStats) return fn();
+  if (tickStats.has(key)) return tickStats.get(key);
+  const v = fn();
+  tickStats.set(key, v);
+  return v;
+}
+
+// The names of the directories under a tasks dir (null when it cannot be read), read once per tick likewise.
+export function listDirs(tasksDir) {
+  const key = `dirs\0${tasksDir}`;
+  if (tickStats && tickStats.has(key)) return tickStats.get(key);
+  let names = null;
+  try { names = readdirSync(tasksDir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch { /* unreadable */ }
+  if (tickStats) tickStats.set(key, names);
+  return names;
+}
+export function statOf(p) {
+  if (!tickStats) return statNow(p);
+  if (tickStats.has(p)) return tickStats.get(p);
+  const s = statNow(p);
+  tickStats.set(p, s);
+  return s;
+}
 
 // "<mtimeMs>:<size>" of a file, null when it is absent: the key a cache entry holds for that file.
 export function statSig(p) {
@@ -52,7 +86,9 @@ function saveIndex(tasksDir, tasks) {
   try {
     writeFileSync(tmp, JSON.stringify({ tasks }));
     renameSync(tmp, join(tasksDir, INDEX));
-    loaded.set(tasksDir, { sig: statSig(join(tasksDir, INDEX)), tasks });
+    const written = statNow(join(tasksDir, INDEX));
+    if (tickStats) tickStats.set(join(tasksDir, INDEX), written);
+    loaded.set(tasksDir, { sig: written ? `${written.mtime}:${written.size}` : null, tasks });
   } catch { /* unwritable: the next call reads in full */ }
 }
 
@@ -75,21 +111,47 @@ function entryOf(tasksDir, id, raw, t, l) {
 //
 // `settledMs` (a long-lived reader): a 'task' finish is checked against its task.json at most once per
 // settledMs, not on every call, so a root of thousands of finished tasks costs a readdir between full checks.
-// A finished task that is rewritten is found at the next check.
+// A finished task that is rewritten is found at the next check. The same holds, between checks, for a
+// 'ledger' finish whose ledger was last written over an hour ago and for a dir with no task.json (a ledger
+// and nothing else) that nothing has touched for a minute. A dir with no task.json is otherwise kept by its
+// own mtime: a task.json created in it moves that mtime, so one stat of the dir replaces the stats of both
+// files and the existence check; an mtime under BARE_QUIET_MS old is not trusted (a coarse file-system clock).
+// Such an entry comes back as { id, raw: null, absent: true }.
 const sweptAt = new Map();
+const bareDirs = new Map();
+const QUIET_MS = 60 * 60 * 1000;
+const BARE_QUIET_MS = 2000;
+const BARE_SETTLED_MS = 60 * 1000;
 
 export function openTasks(tasksDir, { running = false, settledMs = 0 } = {}) {
-  let dirs;
-  try { dirs = readdirSync(tasksDir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch { return []; }
+  const dirs = listDirs(tasksDir);
+  if (!dirs) return [];
   const known = loadIndex(tasksDir);
   const next = {};
   const out = [];
-  const settled = settledMs > 0 && Date.now() - (sweptAt.get(tasksDir) || 0) < settledMs;
-  if (!settled) sweptAt.set(tasksDir, Date.now());
+  const nowMs = Date.now();
+  const settled = settledMs > 0 && nowMs - (sweptAt.get(tasksDir) || 0) < settledMs;
+  if (!settled) sweptAt.set(tasksDir, nowMs);
+  const bare = bareDirs.get(tasksDir) || new Map();
+  const nextBare = new Map();
+  bareDirs.set(tasksDir, nextBare);
   for (const id of dirs) {
     const hit = known[id];
     if (settled && hit && hit.kind === 'task') { next[id] = hit; continue; }
+    if (settled && hit && hit.kind === 'ledger' && hit.lmtime && nowMs - hit.lmtime > QUIET_MS) {
+      const kept = running ? null : keptRaw.get(`${tasksDir}\0${id}`);
+      if (running || kept) { next[id] = hit; if (kept) out.push({ id, raw: kept.raw }); continue; }
+    }
+    const was = bare.get(id);
+    if (was) {
+      const d = settled && nowMs - was > BARE_SETTLED_MS ? { mtime: was } : statOf(join(tasksDir, id));
+      if (d && d.mtime === was) { nextBare.set(id, was); out.push({ id, raw: null, absent: true }); continue; }
+    }
     const t = statOf(join(tasksDir, id, 'task.json'));
+    if (t === null && !hit) {
+      const d = statOf(join(tasksDir, id));
+      if (d && nowMs - d.mtime > BARE_QUIET_MS) nextBare.set(id, d.mtime);
+    }
     // A 'task' finish is decided from task.json alone, so its ledger is not even stat'd.
     if (hit && hit.kind === 'task' && t && hit.mtime === t.mtime && hit.size === t.size) { next[id] = hit; continue; }
     const l = statOf(join(tasksDir, id, 'ledger.jsonl'));
@@ -101,10 +163,13 @@ export function openTasks(tasksDir, { running = false, settledMs = 0 } = {}) {
     // long-lived reader does not parse a running task's file again on every call.
     const kept = t ? keptRaw.get(`${tasksDir}\0${id}`) : null;
     const raw = kept && kept.mtime === t.mtime && kept.size === t.size ? kept.raw : (t === null ? null : readJson(join(tasksDir, id, 'task.json')));
-    const entry = fresh ? hit : entryOf(tasksDir, id, raw, t, l);
+    // A task found not finished stays so while both files' mtime and size do (`open`): its ledger tail is not read again.
+    const lsig = l ? `${l.mtime}:${l.size}` : '';
+    const same = kept && t && kept.mtime === t.mtime && kept.size === t.size;
+    const entry = fresh ? hit : (same && kept.open === lsig ? null : entryOf(tasksDir, id, raw, t, l));
     if (entry) next[id] = entry;
-    if (raw && t) keptRaw.set(`${tasksDir}\0${id}`, { mtime: t.mtime, size: t.size, raw });
-    if (!entry || (entry.kind === 'ledger' && !running)) out.push({ id, raw });
+    if (raw && t) keptRaw.set(`${tasksDir}\0${id}`, { mtime: t.mtime, size: t.size, raw, open: entry ? null : lsig });
+    if (!entry || (entry.kind === 'ledger' && !running)) out.push(nextBare.has(id) ? { id, raw, absent: true } : { id, raw });
   }
   const present = new Set(dirs);
   for (const k of keptRaw.keys()) {

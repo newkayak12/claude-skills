@@ -2,10 +2,11 @@
 // No stdin and no entry-point guard: importing this binds nothing, so daemon.mjs reads ALL_TOOLS too.
 //
 //   team_*  broker-tools.mjs   concurrent; ctx (cancel, progress) reaches the handler
-//   tm_*    taskmanager-tools  one serial queue, request order
+//   tm_*    taskmanager-tools  one serial queue, request order, except tm_wait
 //   wiki_*  wiki.mjs           the same queue (one SQLite handle, one lock)
 //
-// tm_* and wiki_* ignore ctx: their old loops were serial and never read a cancellation. Progress is
+// tm_wait is a long poll: it runs outside the serial queue, with ctx.signal, so a cancel stops it
+// and it never holds back another call. Every other tm_* and wiki_* ignores ctx. Progress is
 // still sent by stdio.mjs for any call that carries a progressToken.
 
 import { BROKER_TOOLS, callBrokerTool } from './broker-tools.mjs';
@@ -31,6 +32,7 @@ export function makeCall({ wikiOff = false } = {}) {
   return (name, args, ctx) => {
     if (typeof name === 'string') {
       if (name.startsWith('team_')) return callBrokerTool(name, args, ctx);
+      if (name === 'tm_wait') return callTmTool(name, args, ctx);
       if (name.startsWith('tm_')) return serial(() => callTmTool(name, args));
       if (name.startsWith('wiki_')) {
         if (wikiOff) return Promise.reject(new Error(WIKI_OFF_MESSAGE));

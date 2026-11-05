@@ -5,7 +5,7 @@
 // `shared` ({ store, ctx }, the state server only) carries the tick memo (`ctx.memo`) and, optionally,
 // `ctx.collect(dir, id)` (a per-task cache replacing collectTask) and `ctx.floorOpts(dir, id)` (what
 // floorEntry may reuse instead of re-reading). `--once` passes no `shared` and reads everything directly.
-import { readFileSync, existsSync, openSync, readSync, fstatSync, closeSync, statSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync, openSync, readSync, fstatSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 import { collectTask, listTasks, readJsonRetry } from './view-collect.mjs';
 import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './view-render-text.mjs';
@@ -13,7 +13,7 @@ import { notableEvents, notableFromEvents, statusLine, HOLD_MS } from './view-ev
 import { summarize, waitingCount } from './view-summary.mjs';
 import { floorTasks, floorEntry } from './view-floor-fs.mjs';
 import { repoMatcher } from './view-repo.mjs';
-import { openTasks, statSig } from './view-index.mjs';
+import { openTasks, statSig, statOf, listDirs } from './view-index.mjs';
 import { reportPayload } from './view-report.mjs';
 import { teamsView, decisionsView } from './view-status.mjs';
 import { dashboardModel, dashboardSvg, dashboardAlt, dashboardText } from './view-dashboard.mjs';
@@ -57,8 +57,8 @@ function tailLines(path) {
 function runningModels(tasksDir, cwd, collect = collectTask, open = openTasks) {
   const repo = repoMatcher(cwd);
   const out = [];
-  for (const { id, raw } of open(tasksDir, { running: true })) {
-    if (!raw && !existsSync(join(tasksDir, id, 'task.json'))) continue;
+  for (const { id, raw, absent } of open(tasksDir, { running: true })) {
+    if (!raw && (absent || !existsSync(join(tasksDir, id, 'task.json')))) continue;
     if (raw && cwd && !raw.cwd) continue;
     const m = collect(tasksDir, id);
     if (m.error || m.state !== 'running') continue;
@@ -85,11 +85,45 @@ const collectOf = (ctx) => (dir, id) => memo(ctx, ['collect', dir, id], () => (c
 
 const openOf = (ctx) => (dir, o = {}) => memo(ctx, ['open', dir, !!o.running], () => openTasks(dir, ctx && ctx.settledMs ? { ...o, settledMs: ctx.settledMs } : o));
 
-const listedOf = (tasksDir, cwd, ctx) => memo(ctx, ['listed', tasksDir, cwd], () => floorTasks({ tasksDir, cwd, now: Date.now(), collect: collectOf(ctx), open: openOf(ctx) }));
+// The shared server (ctx.settledMs) hands floorTasks every open task, each of which it checks against the disk
+// (newest stream, ledger, repo). A task created over a day ago that the floor did not list stays unlisted until
+// the next full pass, once per settledMs: between passes it is not offered. Anything younger, or listed, is
+// offered on every tick, so a new task or a stalled one coming back to life shows within the answer window.
+const unlisted = new Map();
+
+//
+// `liveOnly` (the status line, which counts the waiting cards of live tasks only): a task whose model reads
+// stalled with no card waiting is never live, so the shared server does not offer it to floorTasks at all.
+function listedOf(tasksDir, cwd, ctx, liveOnly = false) {
+  return memo(ctx, ['listed', tasksDir, cwd, liveOnly], () => {
+    const settledMs = ctx && ctx.settledMs;
+    const key = `${tasksDir}\0${cwd}\0${liveOnly}`;
+    const prior = settledMs ? unlisted.get(key) : null;
+    const full = !prior || Date.now() - prior.at >= settledMs;
+    const offered = new Map();
+    const collect = collectOf(ctx);
+    const open = (dir, o) => {
+      let all = openOf(ctx)(dir, o);
+      if (!settledMs) return all;
+      if (!full) all = all.filter((x) => !prior.ids.has(x.id));
+      if (liveOnly) all = all.filter((x) => { const m = x.raw && collect(dir, x.id); return !(m && !m.error && m.state === 'stalled' && waitingCount(m) === 0); });
+      if (full) for (const x of all) offered.set(x.id, x.raw);
+      return all;
+    };
+    const listed = floorTasks({ tasksDir, cwd, now: Date.now(), collect, open });
+    if (settledMs && full) {
+      const shown = new Set(listed.map((x) => x.id));
+      const ids = new Set();
+      for (const [id, raw] of offered) if (!shown.has(id) && raw && typeof raw === 'object' && Date.now() - (Number(raw.created_at) || Date.now()) > DAY_MS) ids.add(id);
+      unlisted.set(key, { at: Date.now(), ids });
+    }
+    return listed;
+  });
+}
 
 function statusBase(tasksDir, cwd, ctx) {
   return memo(ctx, ['status', tasksDir, cwd], () => {
-    const listed = listedOf(tasksDir, cwd, ctx);
+    const listed = listedOf(tasksDir, cwd, ctx, true);
     const status = JSON.parse(statusFrom(runningModels(tasksDir, cwd, collectOf(ctx), openOf(ctx))));
     status.waiting = listed.filter((x) => x.live).reduce((s, x) => s + waitingCount(x.m), 0);
     return status;
@@ -261,28 +295,61 @@ function headOf(tasksDir, id) {
 // With `shared` ({ store, ctx }, the shared server) the ledgers come from the incremental store and the
 // session-independent sweeps (ledger mtimes, task.json, the cwd match, task facts) are memoized for the
 // tick; `since` and the failure hold are applied here per caller, from now.
+// Whether a task's cwd belongs to the session's repo (a realpath per task, and git for another checkout). The
+// shared server keeps the answer for a task cwd for ctx.settledMs instead of asking again on every tick.
+const cwdMatched = new Map();
+function cwdMatches(ctx, key, taskCwd, repo) {
+  if (!ctx || !ctx.settledMs) return !!taskCwd && repo(taskCwd).match;
+  const now = Date.now();
+  const hit = cwdMatched.get(key);
+  if (hit && hit.taskCwd === taskCwd && now - hit.at < ctx.settledMs) return hit.match;
+  const match = !!taskCwd && repo(taskCwd).match;
+  cwdMatched.set(key, { taskCwd, match, at: now });
+  return match;
+}
+
+// A ledger's events from the shared store, which opens the file on every read: while the ledger's own mtime
+// and size (one stat per tick, shared with the sweep above) stand, the events last read are the answer.
+const storedLedgers = new Map();
+function storedEvents(store, path) {
+  const sig = statSig(path);
+  const hit = storedLedgers.get(path);
+  if (hit && hit.store === store && hit.sig === sig && sig !== null) return hit.events;
+  const events = store.read(path);
+  storedLedgers.set(path, { store, sig, events });
+  return events;
+}
+
 function eventsOutput(tasksDir, cwd, since, shared) {
   const ctx = shared && shared.ctx;
   const repo = repoMatcher(cwd);
   const out = [];
   const swept = memo(ctx, ['ledgers', tasksDir], () => {
-    let ids;
-    try { ids = readdirSync(tasksDir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch { return null; }
+    const ids = listDirs(tasksDir);
+    if (!ids) return null;
     const rows = [];
-    // The shared server stats a ledger last written over an hour ago only once per `ctx.settledMs`.
+    const known = new Map(); // id -> its row, or null when it has no ledger
+    const now = Date.now();
+    // The shared server stats a ledger last written over an hour ago, or none, only once per `ctx.settledMs`.
     const prior = ctx && ctx.settledMs ? ledgerSweeps.get(tasksDir) : null;
-    const recheck = !prior || Date.now() - prior.at >= ctx.settledMs;
+    const recheck = !prior || now - prior.at >= ctx.settledMs;
     for (const id of ids) {
       const was = prior && prior.rows.get(id);
-      if (!recheck && was !== undefined && Date.now() - was > HOUR_MS) { rows.push({ id, mtimeMs: was }); continue; }
-      try {
-        const s = statSync(join(tasksDir, id, 'ledger.jsonl'), { throwIfNoEntry: false }); // no ledger: skipped, and no thrown ENOENT per task
-        if (s) rows.push({ id, mtimeMs: s.mtimeMs });
-      } catch { /* unreadable */ }
+      if (!recheck && was !== undefined && (was === null || now - was.mtimeMs > HOUR_MS)) { known.set(id, was); if (was) rows.push(was); continue; }
+      const s = statOf(join(tasksDir, id, 'ledger.jsonl')); // no ledger: skipped, and no thrown ENOENT per task
+      const row = s ? { id, mtimeMs: s.mtime } : null;
+      known.set(id, row);
+      if (row) rows.push(row);
     }
-    if (ctx && ctx.settledMs) ledgerSweeps.set(tasksDir, { at: recheck ? Date.now() : prior.at, rows: new Map(rows.map((r) => [r.id, r.mtimeMs])) });
-    const kept = headCache.get(tasksDir);
-    if (kept) { const present = new Set(ids); for (const id of kept.keys()) if (!present.has(id)) kept.delete(id); }
+    if (ctx && ctx.settledMs) ledgerSweeps.set(tasksDir, { at: recheck ? now : prior.at, rows: known });
+    if (recheck) {
+      const kept = headCache.get(tasksDir);
+      const present = new Set(ids);
+      if (kept) for (const id of kept.keys()) if (!present.has(id)) kept.delete(id);
+      const prefix = join(tasksDir, '/');
+      for (const [k, v] of cwdMatched) if (now - v.at > 10 * 60 * 1000) cwdMatched.delete(k);
+      for (const p of storedLedgers.keys()) if (p.startsWith(prefix) && !present.has(p.slice(prefix.length).split('/')[0])) storedLedgers.delete(p);
+    }
     return rows;
   });
   if (!swept) return '';
@@ -296,12 +363,12 @@ function eventsOutput(tasksDir, cwd, since, shared) {
   live.sort((a, b) => b.created_at - a.created_at);
   for (const { id, cwd: taskCwd } of live) {
     if (cwd) {
-      const inCwd = memo(ctx, ['incwd', tasksDir, cwd, id], () => !!taskCwd && repo(taskCwd).match);
+      const inCwd = memo(ctx, ['incwd', tasksDir, cwd, id], () => cwdMatches(ctx, `${tasksDir}\0${cwd}\0${id}`, taskCwd, repo));
       if (!inCwd) continue;
     }
     const facts = memo(ctx, ['facts', tasksDir, id], () => headOf(tasksDir, id).facts());
     const path = join(tasksDir, id, 'ledger.jsonl');
-    if (shared) out.push(...notableFromEvents(shared.store.read(path), since, { now: Date.now(), ...facts }));
+    if (shared) out.push(...notableFromEvents(storedEvents(shared.store, path), since, { now: Date.now(), ...facts }));
     else out.push(...notableEvents(tailLines(path), since, { now: Date.now(), ...facts }));
   }
   out.sort((a, b) => a.ts - b.ts);
