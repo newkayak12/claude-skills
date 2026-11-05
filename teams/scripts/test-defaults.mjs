@@ -69,6 +69,15 @@ function src(key) {
       .map((f) => readFileSync(join(dir, f), 'utf8'))
       .join('\n');
   }
+  // taskmanager.mjs is the same: a facade over taskmanager-*.mjs (card 128), read as one text.
+  if (key === 'teamsTaskmanager') {
+    const dir = join(REPO_ROOT, 'teams/mcp');
+    return readdirSync(dir)
+      .filter((f) => f === 'taskmanager.mjs' || /^taskmanager-.+\.mjs$/.test(f))
+      .sort()
+      .map((f) => readFileSync(join(dir, f), 'utf8'))
+      .join('\n');
+  }
   return [].concat(FILES[key]).map((f) => readFileSync(f, 'utf8')).join('\n');
 }
 

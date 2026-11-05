@@ -20,7 +20,7 @@ delete process.env.HARNESS_ANSWER_DRIVER;
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -370,7 +370,9 @@ for (const route of ['answer', 'forward']) {
 // ---------- (6) one definition: storyask.mjs is imported, never redefined ----------
 
 test('storyask.mjs owns askedEvent, answeredEvent, answerPrompt, parseVerdict, validateAsk and newAskId: no second definition in the engine files', () => {
-  for (const f of ['taskmanager.mjs', 'daemon.mjs', 'graph.mjs', 'broker.mjs', 'prompts.mjs']) {
+  const tmFiles = readdirSync(join(HERE, '..', 'mcp')).filter((x) => x === 'taskmanager.mjs' || /^taskmanager-.+\.mjs$/.test(x));
+  assert.ok(tmFiles.length >= 15, `taskmanager facade + modules found: ${tmFiles.length}`);
+  for (const f of [...tmFiles, 'daemon.mjs', 'graph.mjs', 'broker.mjs', 'prompts.mjs']) {
     const src = readFileSync(join(HERE, '..', 'mcp', f), 'utf8');
     for (const name of ['askedEvent', 'answeredEvent', 'answerPrompt', 'parseVerdict', 'validateAsk', 'newAskId']) {
       assert.ok(!new RegExp(`(function|const|let)\\s+${name}\\b`).test(src), `${f} redefines ${name}`);
