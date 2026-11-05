@@ -1,0 +1,2669 @@
+[
+  {
+    "description": "Ask which node to run next. Returns node ids, stages, and their routing - never the goal-spec, handoffs, or evidence. For a node routed to \"self\" it returns a briefing_path to read; for a vendor node you do not need to read anything.",
+    "inputSchema": {
+      "properties": {
+        "cwd": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id"
+      ],
+      "type": "object"
+    },
+    "name": "team_next",
+    "outputSchema": {
+      "properties": {
+        "counts": {
+          "type": "object"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "flow": {
+          "description": "the flow the run is in: fixed by the entry, chosen by plan, or still \"auto\" before plan ran",
+          "type": "string"
+        },
+        "ready": {
+          "items": {
+            "properties": {
+              "attempts": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "briefing_path": {
+                "description": "self-routed nodes only",
+                "type": "string"
+              },
+              "executor": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "next": {
+                "type": "string"
+              },
+              "node_id": {
+                "type": "string"
+              },
+              "routing_reason": {
+                "type": "string"
+              },
+              "stage": {
+                "type": "string"
+              },
+              "vendor": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "node_id",
+              "stage",
+              "vendor"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "size": {
+          "description": "what plan measured; absent before plan ran or when it did not say",
+          "enum": [
+            "S",
+            "L"
+          ],
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "running",
+            "blocked",
+            "complete"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "state",
+        "ready"
+      ],
+      "type": "object"
+    },
+    "server": "teams-engineering"
+  },
+  {
+    "description": "Throw a raw request at the broker. It builds the harness flow as a node graph on disk and returns a run_id plus the first ready node. Nothing else about the run enters your context.",
+    "inputSchema": {
+      "properties": {
+        "allocation": {
+          "description": "balanced discovers Claude/Codex, scores stage fit, review independence, load and execution errors; ordered preserves legacy candidate order",
+          "enum": [
+            "ordered",
+            "balanced"
+          ],
+          "type": "string"
+        },
+        "auto_reassign": {
+          "description": "default true: a rejected subgoal gate, review or test opens the next attempt itself, carrying the rejection feedback, and settles when the budget is gone. false leaves the next attempt to team_retry, which makes a rejection advisory - a caller that never retries simply stops.",
+          "type": "boolean"
+        },
+        "candidates": {
+          "description": "vendor preference order for \"auto\"",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "context": {
+          "type": "string"
+        },
+        "cwd": {
+          "description": "absolute working directory for the whole run",
+          "type": "string"
+        },
+        "flow": {
+          "description": "auto (default): plan decides from the request. develop: subgoals default to code work. document: subgoals default to written artifacts. Set by the entry skill, not by the user.",
+          "enum": [
+            "auto",
+            "develop",
+            "document"
+          ],
+          "type": "string"
+        },
+        "goal_judges": {
+          "description": "default 2: independent judges on the goal gate. Each round opens that many sibling gate nodes (gate:goal:<round>, gate:goal:<round>b, ...) over the same subgoal gates, routed to different identities where possible. The run accepts only if EVERY judge accepts at or above goal_threshold; gaps and spec_drift are the union. 1 reproduces the single-judge behaviour every earlier run had. A rejected round opens a repair pass over the assembled result (team_retry({repair:true}) forces one) rather than reassigning a subgoal.",
+          "type": "integer"
+        },
+        "goal_threshold": {
+          "description": "default 90: the goal gate must report match_pct at or above this to accept. A gate that says accept with 70% match is reporting a partial result as a pass; the number it already returns is made to mean something. 0 accepts on the verdict alone.",
+          "type": "integer"
+        },
+        "host_model": {
+          "description": "Current driving model, used for reasoning on the host. Fable/Astra require explicit model policy; they are not inherited automatically.",
+          "type": "string"
+        },
+        "host_vendor": {
+          "description": "Host with fresh native agents; selected host work returns self with executor identity. Omit if native role isolation is unavailable.",
+          "enum": [
+            "claude",
+            "codex"
+          ],
+          "type": "string"
+        },
+        "interactive": {
+          "description": "default false, also settable in .claude/team.json. When a planning subgoal's investigate stage returns an unknown that names candidate answers, true opens an `ask` card (ask:<subgoal>:<attempt>) between investigate and draft and parks the run in waiting_human until a person picks - tm_inbox lists it, tm_submit({key, payload:{decisions}}) answers it, exactly like any other human card. false decides by default and records what it would have asked on run.unasked instead, so the report can show the questions nobody was asked.",
+          "type": "boolean"
+        },
+        "isolated": {
+          "description": "cwd is a private worktree with only this run in it",
+          "type": "boolean"
+        },
+        "max_retries": {
+          "type": "number"
+        },
+        "mixed": {
+          "description": "default true. false: every subgoal must be the flow's kind; a spec that mixes kinds fails at setgoal.",
+          "type": "boolean"
+        },
+        "model": {
+          "description": "default model for every stage; a policy entry overrides it",
+          "type": "string"
+        },
+        "mounts": {
+          "description": "Advisory MCP tools per engine stage, overriding the defaults: {\"plan\": [\"mcp__sequential-thinking__sequentialthinking\"]}. Keys are plan, setgoal, plus the optional gate:goal. false offers none of them. A tool named here that is not connected is skipped in silence, never searched for."
+        },
+        "native_models": {
+          "description": "Models selectable by fresh native agents. Omit only if the host can select all requested models; unsupported assignments fail visibly.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "policy": {
+          "description": "Per-stage routing: {\"plan\":{\"vendor\":\"self\",\"model\":\"opus\"},\"implement\":{\"vendor\":\"codex\"},\"report\":{\"model\":\"sonnet\"}}. Keys are stage names (plan, setgoal, critique, implement, test, draft, review, gate, report) plus the optional \"gate:goal\". A document subgoal review must not run on the identity that drafted it; give review its own vendor or model here. Each entry may set vendor, candidates, sandbox, model. A stage entry wins over the run-level setting.",
+          "type": "object"
+        },
+        "request": {
+          "description": "the raw request, verbatim",
+          "type": "string"
+        },
+        "retry_policy": {
+          "description": "default \"continue\", also settable in .claude/team.json. What team_retry (or autoReassign's own automatic retry) does with the worktree a rejected implement/draft/cases/audit attempt left. \"continue\" (default, today's only behavior) builds the next attempt on top of it. \"rollback\" resets the worktree to the checkpoint broker.mjs recorded before that subgoal's OWN FIRST attempt touched it, then re-runs with the failed gate's gaps as feedback - only when this run has exactly one subgoal (a shared worktree with a sibling subgoal still working in it cannot be reset for one of them without discarding the other's progress too; team_retry's reply names why it fell back to continue when that guard trips). _repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §5 measured two real runs before defaulting to continue: both showed a retried implement CONVERGING on gate feedback across attempts (52%->60%->78%) rather than repeating the same mistake.",
+          "enum": [
+            "continue",
+            "rollback"
+          ],
+          "type": "string"
+        },
+        "sandbox": {
+          "type": "string"
+        },
+        "skills": {
+          "description": "Method per engine stage, overriding the defaults: {\"plan\": [\"agents:agent-task-decomposer\"], \"critique\": []}. Keys are plan, critique, test, review, gate, plus the optional gate:goal. false runs every one of those stages on its contract alone. A skill named here must be analytic and non-dialogic - a node runs headless and cannot answer a skill that asks it something."
+        },
+        "vendor": {
+          "description": "\"auto\" (default, stays on self unless candidates are given), a vendor name to require it, or \"self\"",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request",
+        "cwd"
+      ],
+      "type": "object"
+    },
+    "name": "team_open",
+    "outputSchema": {
+      "properties": {
+        "counts": {
+          "type": "object"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "flow": {
+          "description": "the flow the run is in: fixed by the entry, chosen by plan, or still \"auto\" before plan ran",
+          "type": "string"
+        },
+        "ready": {
+          "items": {
+            "properties": {
+              "attempts": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "briefing_path": {
+                "description": "self-routed nodes only",
+                "type": "string"
+              },
+              "executor": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "next": {
+                "type": "string"
+              },
+              "node_id": {
+                "type": "string"
+              },
+              "routing_reason": {
+                "type": "string"
+              },
+              "stage": {
+                "type": "string"
+              },
+              "vendor": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "node_id",
+              "stage",
+              "vendor"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "size": {
+          "description": "what plan measured; absent before plan ran or when it did not say",
+          "enum": [
+            "S",
+            "L"
+          ],
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "running",
+            "blocked",
+            "complete"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "state",
+        "ready"
+      ],
+      "type": "object"
+    },
+    "server": "teams-engineering"
+  },
+  {
+    "description": "Open a fresh attempt, carrying the rejection feedback forward. With subgoal_id, retries that subgoal. With node_id naming a failed report node, reruns just that report (optionally away from avoid_executors). Without it, retries the spec itself (setgoal + critique) and discards the subgoal graph the rejected spec produced. The failed attempt stays in the graph as evidence. When the retry budget is gone the failure is settled instead: every node that needed its output becomes `unreachable`, and the report - which only waits for the goal gate to finish, not to pass - becomes ready to write the partial account.",
+    "inputSchema": {
+      "properties": {
+        "avoid_executors": {
+          "description": "With a failed report node_id: executors (vendors) the rerun is routed away from - tried last, never dropped.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "different_vendor": {
+          "description": "With a failed report node_id: avoid the executor that ran the failed attempt (shorthand for naming it in avoid_executors).",
+          "type": "boolean"
+        },
+        "node_id": {
+          "description": "Resume an interrupted/quota-exhausted node, retaining files and checkpoint. Does not reopen a completed or gate-rejected node. Also accepts a FAILED report node (its own stage_ok false): only that node reruns, carrying its previous reason and gaps as feedback, within the same retry budget; the other nodes are untouched.",
+          "type": "string"
+        },
+        "repair": {
+          "description": "Force a repair round over the most recent settled goal-gate round, the same move auto_reassign makes on its own when consensus rejects. Use it when auto_reassign is off, or when a stalled round (two repairs closing the same gaps) needs a deliberate third try.",
+          "type": "boolean"
+        },
+        "reset_capacity": {
+          "description": "Retry vendors after the caller confirms their quota is available again. With node_id it also reopens that interrupted node; alone it clears exclusions - including ones recorded at probe time, where no node was ever interrupted - re-ranks undispatched work and returns the next ready nodes.",
+          "type": "boolean"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "subgoal_id": {
+          "description": "omit to retry the spec after a critique rejected it",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id"
+      ],
+      "type": "object"
+    },
+    "name": "team_retry",
+    "outputSchema": {
+      "properties": {
+        "attempt": {
+          "type": "number"
+        },
+        "ready": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "repair_id": {
+          "description": "present when target is \"goal_gate\": the repair node opened",
+          "type": "string"
+        },
+        "retried": {
+          "type": "boolean"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "target": {
+          "description": "a subgoal id, \"spec\", or \"goal_gate\"",
+          "type": "string"
+        },
+        "unreachable": {
+          "description": "retried=false with the budget gone: nodes that can never run now, so the report is released",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "run_id",
+        "retried"
+      ],
+      "type": "object"
+    },
+    "server": "teams-engineering"
+  },
+  {
+    "description": "Execute one node with its routed vendor and return a one-line verdict. The broker composes the prompt from graph state - you do not pass one. Blocks until the vendor exits: do not background it, do not poll.",
+    "inputSchema": {
+      "properties": {
+        "add_dirs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "node_id": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "node_id"
+      ],
+      "type": "object"
+    },
+    "name": "team_run",
+    "outputSchema": {
+      "properties": {
+        "accept": {
+          "description": "gate nodes",
+          "type": "boolean"
+        },
+        "change_attribution": {
+          "enum": [
+            "isolated",
+            "shared-worktree",
+            "no-git",
+            "document-unchanged",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "changed_files_verified": {
+          "description": "null means could not attribute - not a pass",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "checkpoint_path": {
+          "type": "string"
+        },
+        "contradicted_files": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "detail_path": {
+          "description": "read this for one node only; never pull a whole run into context",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "executor": {
+          "description": "assigned AI vendor, including native host execution",
+          "type": "string"
+        },
+        "gap_count": {
+          "description": "gate nodes",
+          "type": "number"
+        },
+        "killed_for": {
+          "enum": [
+            "timeout",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "match_pct": {
+          "description": "gate nodes",
+          "type": "number"
+        },
+        "missing_verdict": {
+          "description": "the verdict field the node failed to return",
+          "type": "string"
+        },
+        "model": {
+          "description": "assigned model",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "next": {
+          "type": "string"
+        },
+        "node_id": {
+          "type": "string"
+        },
+        "observation_count": {
+          "description": "gate nodes: non-blocking weaknesses",
+          "type": "number"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "recoverable": {
+          "type": "boolean"
+        },
+        "reviewer_independence": {
+          "description": "review and revise nodes: whether the broker could see that the reviewer is not the draft author",
+          "enum": [
+            "distinct-identity",
+            "unverifiable-self"
+          ],
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "self_reported_stage_ok": {
+          "description": "present (false) when an authoring node reported stage_ok:false with no reason and no failing check, and the broker let the chain judge the work instead",
+          "type": "boolean"
+        },
+        "sound": {
+          "description": "critique nodes",
+          "type": "boolean"
+        },
+        "spec_drift_count": {
+          "description": "goal gate: where the spec asked less than the request",
+          "type": "number"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "stage_ok": {
+          "type": "boolean"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "running",
+            "done",
+            "failed",
+            "skipped",
+            "unreachable"
+          ],
+          "type": "string"
+        },
+        "submitted_stage_ok": {
+          "description": "present when the broker overruled the executor",
+          "type": "boolean"
+        },
+        "vendor": {
+          "type": "string"
+        },
+        "verified": {
+          "description": "test nodes",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "node_id",
+        "stage",
+        "state",
+        "stage_ok"
+      ],
+      "type": "object"
+    },
+    "server": "teams-engineering"
+  },
+  {
+    "description": "Compact run state: node counts, per-node state and verdict. Omit run_id to see every run in cwd instead - state, counts, and which node is running right now with its vendor and elapsed seconds. Pass full:true only when you actually need a payload - it is large by design and normally stays out of your context.",
+    "inputSchema": {
+      "properties": {
+        "cwd": {
+          "type": "string"
+        },
+        "full": {
+          "type": "boolean"
+        },
+        "node_id": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "team_status",
+    "outputSchema": {
+      "properties": {
+        "config_notes": {
+          "description": "present only when .claude/team.json had an unrecognized key or a value that failed its validator - each note names the key and what was wrong with it",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "counts": {
+          "type": "object"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "cwds": {
+          "description": "overview form only",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "goal_verdict": {
+          "description": "the most recent goal-gate round's consensus, once every judge has settled: {accept, match_pct (min across judges), judges: [{node_id, state, accept, match_pct, identity}], gaps, spec_drift}",
+          "type": "object"
+        },
+        "has_spec": {
+          "type": "boolean"
+        },
+        "nodes": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "runs": {
+          "description": "overview form only: one row per run, newest first",
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "state": {
+          "enum": [
+            "running",
+            "blocked",
+            "complete"
+          ],
+          "type": "string"
+        },
+        "subgoals": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "server": "teams-engineering"
+  },
+  {
+    "description": "Record a node you executed yourself. Same adjudication a vendor result gets: claimed changed_files are cross-checked against the worktree, and stage_ok comes back adjudicated, never raised. Idempotent per {run_id, node_id, attempt}: a node_id already carries its attempt number in most stages (implement:U1:2), so a duplicate call for a node that has already finished - the same request arriving twice, a retried MCP call - is a no-op that returns the stored verdict (`idempotent: true`) instead of erroring or re-adjudicating. Pass `attempt` when you have it for a stricter check (rejected if it does not match the node's own attempt).",
+    "inputSchema": {
+      "properties": {
+        "attempt": {
+          "description": "this node's attempt number, for the idempotency check above. Optional - node_id already disambiguates attempts for every retryable stage.",
+          "type": "integer"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "node_id": {
+          "type": "string"
+        },
+        "payload": {
+          "description": "the stage JSON contract for this node (implement/test/gate/etc). Passed through to the graph and never echoed back to you.",
+          "type": "object"
+        },
+        "run_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "node_id",
+        "payload"
+      ],
+      "type": "object"
+    },
+    "name": "team_submit",
+    "outputSchema": {
+      "properties": {
+        "accept": {
+          "description": "gate nodes",
+          "type": "boolean"
+        },
+        "change_attribution": {
+          "enum": [
+            "isolated",
+            "shared-worktree",
+            "no-git",
+            "document-unchanged",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "changed_files_verified": {
+          "description": "null means could not attribute - not a pass",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "checkpoint_path": {
+          "type": "string"
+        },
+        "contradicted_files": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "detail_path": {
+          "description": "read this for one node only; never pull a whole run into context",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "executor": {
+          "description": "assigned AI vendor, including native host execution",
+          "type": "string"
+        },
+        "gap_count": {
+          "description": "gate nodes",
+          "type": "number"
+        },
+        "killed_for": {
+          "enum": [
+            "timeout",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "match_pct": {
+          "description": "gate nodes",
+          "type": "number"
+        },
+        "missing_verdict": {
+          "description": "the verdict field the node failed to return",
+          "type": "string"
+        },
+        "model": {
+          "description": "assigned model",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "next": {
+          "type": "string"
+        },
+        "node_id": {
+          "type": "string"
+        },
+        "observation_count": {
+          "description": "gate nodes: non-blocking weaknesses",
+          "type": "number"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "recoverable": {
+          "type": "boolean"
+        },
+        "reviewer_independence": {
+          "description": "review and revise nodes: whether the broker could see that the reviewer is not the draft author",
+          "enum": [
+            "distinct-identity",
+            "unverifiable-self"
+          ],
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "self_reported_stage_ok": {
+          "description": "present (false) when an authoring node reported stage_ok:false with no reason and no failing check, and the broker let the chain judge the work instead",
+          "type": "boolean"
+        },
+        "sound": {
+          "description": "critique nodes",
+          "type": "boolean"
+        },
+        "spec_drift_count": {
+          "description": "goal gate: where the spec asked less than the request",
+          "type": "number"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "stage_ok": {
+          "type": "boolean"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "running",
+            "done",
+            "failed",
+            "skipped",
+            "unreachable"
+          ],
+          "type": "string"
+        },
+        "submitted_stage_ok": {
+          "description": "present when the broker overruled the executor",
+          "type": "boolean"
+        },
+        "vendor": {
+          "type": "string"
+        },
+        "verified": {
+          "description": "test nodes",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "node_id",
+        "stage",
+        "state",
+        "stage_ok"
+      ],
+      "type": "object"
+    },
+    "server": "teams-engineering"
+  },
+  {
+    "description": "For a running STORY's own driver: ask the TeamLeader a question the briefing and the plan do not settle. Records `asked` on the task's ledger and parks the driver - end your turn right after the call; you are resumed, at no cost while you wait, with the answer in your prompt. A fresh answer node reads the plan and the wiki and either answers, or forwards the question to the person as an ask card (tm_inbox) that tm_submit answers. There is no timeout, no cap on questions and no de-dupe. Refused for an empty question, a key that is not a STORY of this task, or a STORY that is not running.",
+    "inputSchema": {
+      "properties": {
+        "key": {
+          "description": "your own STORY key (E-xxxxxxxx/Pn), as your prompt gives it",
+          "type": "string"
+        },
+        "question": {
+          "description": "the whole question, in your own words",
+          "type": "string"
+        },
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "key",
+        "question"
+      ],
+      "type": "object"
+    },
+    "name": "tm_ask",
+    "outputSchema": {
+      "properties": {
+        "ask_id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "key",
+        "ask_id",
+        "state"
+      ],
+      "type": "object"
+    },
+    "server": "task-manager"
+  },
+  {
+    "description": "Pin a card to a human, or release it back to auto. `key` is a STORY (E-xxxxxxxx/Pn, every subgoal in that package's child run) or TASK (E-xxxxxxxx/Pn/subgoalId, just that one) ticket key. `to: \"human\"` (optionally `who`, or `to: {executor: \"human\", who}`) pins the subgoal's AUTHOR stage only (implement/draft/cases - see graph.mjs's authorStage) - a judging stage (test/review/gate/critique) is never assigned to the human who did the work. `to: \"auto\"` releases it: a card already parked waiting_human goes back to pending and dispatches normally on the next team_next. The pin lives on the child run's own spec (the same `assignee` field setgoal itself may write), so a rejected human-authored subgoal's next attempt is pinned again automatically. Called here, by the user, the pin always parks the node in waiting_human regardless of the run's interactive setting - the user is present by definition. The SAME field, written by a shape/setgoal instead, only parks when the run is interactive; otherwise it is auto-decided (dispatched to an AI, recorded, listed in tm_inbox's `decided`) - see graph.mjs's applyHumanPin. A STORY may be taken before it dispatches: the pin rides on the package and reaches its child run when it opens. A TASK key needs the child run to exist.",
+    "inputSchema": {
+      "properties": {
+        "key": {
+          "description": "E-xxxxxxxx/Pn (STORY) or E-xxxxxxxx/Pn/subgoalId (TASK)",
+          "type": "string"
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "to": {
+          "description": "\"human\", {executor: \"human\", who: \"<name>\"}, or \"auto\" to release"
+        },
+        "who": {
+          "description": "shorthand for to: {executor: \"human\", who}",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "key",
+        "to"
+      ],
+      "type": "object"
+    },
+    "name": "tm_assign",
+    "outputSchema": {
+      "properties": {
+        "assigned": {
+          "items": {
+            "properties": {
+              "assignment": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "node_id": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              },
+              "subgoal_id": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "STORY",
+            "TASK"
+          ],
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "who": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "kind",
+        "to",
+        "assigned"
+      ],
+      "type": "object"
+    },
+    "server": "task-manager"
+  },
+  {
+    "description": "Ticket-shaped board (§4/§8 of the design doc). Omit task_id for every EPIC this manager knows (key, state, phase) - grouped by `initiative` (a `groups: [{initiative, key: \"I-<slug>\", epics}]` array, an initiative-less `null` group included) whenever at least one task has one set; with none set anywhere, exactly the flat `{epics}` list this always returned. With task_id: the EPIC header plus its STORY kanban - one row per package, its state derived from task.json the same way tm_status is, never a second source of truth - and a doc_path to the human-readable INDEX.md (which may not exist on disk yet; see tm_docs). task_id accepts a full run id or the ticket key E-xxxxxxxx (the same 8-hex-prefix resolution tm_ticket uses). Read-only.",
+    "inputSchema": {
+      "properties": {
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "tm_board",
+    "outputSchema": {
+      "type": "object"
+    },
+    "server": "task-manager"
+  },
+  {
+    "description": "Stop a running, blocked or partial task for good. In order: saves a cancel marker on task.json in the same commit that clears spawning reservations and in-flight open claims; kills the task's daemon, drivers and judges and confirms every pid dead before anything is appended; retires the task's own child graph runs; writes a report stub at <docs_dir>/E-<task8>/80-report.md; appends daemon_done {state:\"cancelled\"} and then `clean` as the last ledger event (which releases the repo push hold). The task then reads `cancelled` (terminal); tm_status, tm_clean, tm_wait and tm_next spawn nothing on it, and tm_retry and tm_submit refuse it. Worktrees and branches are left for a later tm_clean. On a complete, cancelled or already-cleaned task it is a no-op that reports the current state.",
+    "inputSchema": {
+      "properties": {
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
+    "name": "tm_cancel",
+    "outputSchema": {
+      "properties": {
+        "killed": {
+          "items": {
+            "properties": {
+              "pid": {
+                "type": "integer"
+              },
+              "role": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "noop": {
+          "type": "boolean"
+        },
+        "note": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "report": {
+          "type": "string"
+        },
+        "retired_runs": {
+          "type": "integer"
+        },
+        "state": {
+          "type": "string"
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "was": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "server": "task-manager"
+  },
+  {
+    "description": "EPIC teardown (§14 C-11): removes the git worktrees and local branches a task's packages created, once the task is done. With task_id: refused (throws) while the task is still running - a live daemon or dispatch means there is nothing settled yet to clean, check tm_status/tm_wait first. dry_run defaults false here - naming one task is already the decision to act. Without task_id: sweeps every task under the tasks root, silently skipping any still running rather than refusing the whole call; dry_run defaults true (list what each terminal task would lose, change nothing) since no single task was chosen. Never touches the integration worktree/branch - teams never merges it into the project's own branch, so it is the only place a task's accepted work survives once package branches are gone; a repair/qa/audit package's \"worktree\" already IS that tree and is filtered out the same way. A package branch is deleted only once every commit on it is reachable from an integration branch or the project's own HEAD (git merge-base --is-ancestor, actually checked, never assumed) - one that is not is reported under kept_branches with why, and only its worktree directory is removed (the branch ref alone still holds every commit). task.json, docs and driver logs are left alone; a `clean` event is appended to the task's own ledger. Idempotent: a worktree or branch already gone from an earlier call reads as already_clean.",
+    "inputSchema": {
+      "properties": {
+        "dry_run": {
+          "description": "default false with task_id (an explicit target), true without one (a sweep lists candidates by default). true reports removed_worktrees/removed_branches as a plan and touches no git state.",
+          "type": "boolean"
+        },
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "tm_clean",
+    "outputSchema": {
+      "properties": {
+        "already_clean": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "dry_run": {
+          "type": "boolean"
+        },
+        "kept": {
+          "items": {
+            "properties": {
+              "branch": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "cwd": {
+                "type": "string"
+              },
+              "node_id": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "kept_branches": {
+          "items": {
+            "properties": {
+              "branch": {
+                "type": "string"
+              },
+              "package_id": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "removed_branches": {
+          "items": {
+            "properties": {
+              "branch": {
+                "type": "string"
+              },
+              "package_id": {
+                "type": "string"
+              },
+              "reachable_via": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "removed_worktrees": {
+          "items": {
+            "properties": {
+              "branch": {
+                "type": "string"
+              },
+              "cwd": {
+                "type": "string"
+              },
+              "package_id": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "tasks": {
+          "description": "present only when task_id is omitted - one entry per task under the tasks root",
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "server": "task-manager"
+  },
+  {
+    "description": "(Re)render the phase markdown under <docs_dir>/E-<task8>/ from task.json - INDEX, request, shape, critique, one page per STORY, integrate, goal gate and report, whichever already have data (§7c). rebuild:true DELETES THE ENTIRE EPIC DOCS DIRECTORY FIRST, then writes every file fresh; without it (the default), existing files are simply overwritten and a stale file from a dropped package survives. The engine never reads these back - md is a rendered view, not a second source of truth.",
+    "inputSchema": {
+      "properties": {
+        "rebuild": {
+          "description": "default false. true deletes <docs_dir>/E-<task8>/ recursively before re-rendering - destructive, use to clear stale files left by a dropped package.",
+          "type": "boolean"
+        },
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
+    "name": "tm_docs",
+    "outputSchema": {
+      "properties": {
+        "rebuild": {
+          "type": "boolean"
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "written": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "server": "task-manager"
+  },
+  {
+    "description": "Tail the task ledger: what the manager and its drivers did, newest last. since: a ts to start after; limit: default 50. Read-only; safe from any session.",
+    "inputSchema": {
+      "properties": {
+        "limit": {
+          "type": "integer"
+        },
+        "since": {
+          "type": "number"
+        },
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
+    "name": "tm_events",
+    "outputSchema": {
+      "type": "object"
+    },
+    "server": "task-manager"
+  },
+  {
+    "description": "File one or more develop STORYs directly against a task that has already reached goal level (a gate:goal node exists) - the same path a QA-found defect takes (§5b: a fresh package per story, its own dispatch/accept chain, a fresh integrate opened behind it, gate:goal - and a fresh QA round if roles.qa is on - rerouted there), but reporter: \"user\" / origin: \"tm_file\" on the board instead of reporter: \"qa\" / origin: \"qa\". Never checked against qa_rounds: a user filing a STORY is not a QA round, so this always proceeds regardless of how many QA rounds this task has already run.",
+    "inputSchema": {
+      "properties": {
+        "stories": {
+          "items": {
+            "properties": {
+              "deps": {
+                "description": "sibling package ids this STORY builds on - resolved to their current accept.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "evidence": {
+                "type": "string"
+              },
+              "severity": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "touches": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "title"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "stories"
+      ],
+      "type": "object"
+    },
+    "name": "tm_file",
+    "outputSchema": {
+      "properties": {
+        "filed": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "integrate": {
+          "type": "string"
+        },
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "filed"
+      ],
+      "type": "object"
+    },
+    "server": "task-manager"
+  },
+  {
+    "description": "Two sections (design §7): `cards` is every waiting_human card, across every task (or one, with task_id) - a headless driver cannot reach a human, so this is how the main session finds work a human pinned to themselves (tm_assign, always honoured) or that this run is interactive about. For each: its TASK ticket key, title, what is asked (acceptance criteria and a briefing_path with the full brief), who it is assigned to, and since when. Complete one with tm_submit({task_id, key, payload}). `decided` is every card a MODEL tried to pin (a shape package or setgoal subgoal writing its own assignee) that this run auto-decided instead of parking, because the run is not interactive - dispatched to an AI as normal, with why recorded; object to one by tm_assign-ing it to a human yourself. Read-only; safe from any session.",
+    "inputSchema": {
+      "properties": {
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "tm_inbox",
+    "outputSchema": {
+      "properties": {
+        "cards": {
+          "items": {
+            "properties": {
+              "acceptance": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "briefing_path": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "key": {
+                "type": "string"
+              },
+              "node_id": {
+                "type": "string"
+              },
+              "since": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "task_id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "who": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "decided": {
+          "items": {
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "node_id": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "since": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "task_id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "who": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "cards",
+        "decided"
+      ],
+      "type": "object"
+    },
+    "server": "task-manager"
+  },
+  {
+    "description": "Follow one ticket's own log as readable lines, newest last (design §8). key E-xxxxxxxx/Pn: the STORY's latest dispatch driver stream (child.driver.log - drivers/<node>.stream.jsonl; E-xxxxxxxx/S for a size-S task's single run), one line per stream event (init, assistant text, -> tool call, <- tool result, result with turns/cost). key E-xxxxxxxx: the task ledger (the same records tm_events returns as JSON), one \"HH:MM:SS event k=v\" line each. Only the last `tail` lines are read (default 50, max 500) - the file is read from its end, never whole. since: pass the previous reply's `cursor` (a byte offset) to get only lines appended after it. raw:true returns the exact log lines instead. Read-only; safe from any session.",
+    "inputSchema": {
+      "properties": {
+        "key": {
+          "description": "E-xxxxxxxx (EPIC ledger) or E-xxxxxxxx/Pn (STORY driver log)",
+          "type": "string"
+        },
+        "raw": {
+          "description": "default false",
+          "type": "boolean"
+        },
+        "since": {
+          "description": "byte cursor from a previous reply",
+          "type": "integer"
+        },
+        "tail": {
+          "description": "default 50, max 500",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    },
+    "name": "tm_log",
+    "outputSchema": {
+      "properties": {
+        "alive": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "count": {
+          "type": "integer"
+        },
+        "cursor": {
+          "type": "integer"
+        },
+        "exists": {
+          "type": "boolean"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "EPIC",
+            "STORY"
+          ],
+          "type": "string"
+        },
+        "lines": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "log": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "node_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "enum": [
+            "ledger",
+            "driver"
+          ],
+          "type": "string"
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "kind",
+        "source",
+        "lines",
+        "cursor"
+      ],
+      "type": "object"
+    },
+    "server": "task-manager"
+  },
+  {
+    "description": "Which manager nodes are ready, each with a briefing_path for a fresh agent, plus every running child as {cwd, run_id, driver}. A ready dispatch node is executed here and now: its worktree is created, its child graph run opened, and a headless driver process spawned to run that child to the end. Also where a dead driver is serviced: respawned on the same run_id (driver.restarts) if the budget allows, or parked on waiting_capacity after a usage-limit death - neither needs you to do anything but poll again. A size-S task under s_driver \"process\" has no manager nodes at all; tm_next instead returns {run_id, cwd, driver, nodes, report} for the one run it is driving, ready for the entry skill's output template once state is complete or blocked. Poll tm_next while a driver is alive; do not drive that child yourself. tm_submit the dispatch node once the child is no longer running. A task opened with a daemon in play (tm_open/tm_run when not under a test seam) is normally left to the daemon - call tm_next only to drive by hand or to inspect a node's briefing_path.",
+    "inputSchema": {
+      "properties": {
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
+    "name": "tm_next",
+    "outputSchema": {
+      "properties": {
+        "children": {
+          "description": "running dispatch nodes and their child runs",
+          "items": {
+            "properties": {
+              "branch": {
+                "type": "string"
+              },
+              "child_state": {
+                "type": "string"
+              },
+              "cwd": {
+                "type": "string"
+              },
+              "next": {
+                "type": "string"
+              },
+              "node_id": {
+                "type": "string"
+              },
+              "package_id": {
+                "type": "string"
+              },
+              "run_id": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "counts": {
+          "type": "object"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "flow": {
+          "type": "string"
+        },
+        "ready": {
+          "items": {
+            "properties": {
+              "briefing_path": {
+                "type": "string"
+              },
+              "next": {
+                "type": "string"
+              },
+              "node_id": {
+                "type": "string"
+              },
+              "stage": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "node_id",
+              "stage"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "size": {
+          "enum": [
+            "S",
+            "L"
+          ],
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "running",
+            "blocked",
+            "complete",
+            "partial"
+          ],
+          "type": "string"
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "view_url": {
+          "description": "the one browser window for this tasks root (scripts/view.mjs, ensureViewer): open it to watch the run. Absent when TEAMS_VIEW=0 or the viewer could not start - never required, a task opens the same either way.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "state"
+      ],
+      "type": "object"
+    },
+    "server": "task-manager"
+  },
+  {
+    "description": "Open a task for a request that may be too large for one graph run. Builds size -> shape -> critique on disk under ~/.harness/tasks/<task_id>/ and spawns a daemon process that drives the whole task to completion by itself - size, shape, critique, every package dispatch and fold, integrate, the goal gate, the report. The caller never drives a node: watch with tm_status/tm_board/tm_events, or block for a bounded stretch with tm_wait. Routing arguments are passed through to every child run. Prefer tm_run for a caller that does not also want tm_next's node-by-node reply.",
+    "inputSchema": {
+      "properties": {
+        "allocation": {
+          "enum": [
+            "ordered",
+            "balanced"
+          ],
+          "type": "string"
+        },
+        "ask_timeout": {
+          "description": "default null (wait forever), also settable in .claude/team.json. Milliseconds an interactive `ask` card may wait on a person; once it expires the engine answers it itself with each question's `default` (else its first, recommended option), recorded `by: \"timeout\"` and listed in tm_inbox's `decided`. Checked by the task daemon (and on any tm_* call for this task), so expiry lands within ~15s of the deadline.",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "brainstorm": {
+          "description": "default true, also settable in .claude/team.json. With no decisions[], the engine holds the brainstorm itself: a `brainstorm` node after size, ahead of PLAN/shape, restates intent/scope/approach/assumptions from the request and asks the requester one card of questions when interactive (defaults otherwise). Its result becomes task.decisions (source \"self-brainstorm\", or \"ask\" where a person chose) and the report leads with what the engine decided on its own. false skips the node.",
+          "type": "boolean"
+        },
+        "budget_grace_minutes": {
+          "description": "default 5, also settable in .claude/team.json. See budget_grace_usd - whichever of the two limits a still-running, still-needed dispatch reaches first stops it.",
+          "type": "integer"
+        },
+        "budget_grace_usd": {
+          "description": "default null (10% of budget_usd when budget_usd is set, else no dollar grace), also settable in .claude/team.json. At 100% a dispatch already running whose accept the closing path still needs (a package, PLAN, or a size-S run) is let finish, but not forever: past this much MORE spend since the stop (or budget_grace_minutes, whichever first) it is killed too (killDriver, the same stop retryPackage/serviceStalledDriver already use) and its accept is skipped like a package that never ran. A phase-Team pass (QA, AUDIT) gets none of this grace - it is killed the moment the box trips, since the goal-gate rewire already never reads its accept once stopped.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "budget_usd": {
+          "description": "default null (unlimited), also settable in .claude/team.json. Spend is the task's full cost (collectTaskCosts, taskSpend): every driver's own stream log under this task (drivers/*.stream.jsonl result events' total_cost_usd) PLUS every child graph run's own node adapter sessions (each worktree's .teams_output/broker/<run_id>/<node>/<attempt>/events.jsonl), summed each daemon tick. At 80% of this a warning is recorded once (tm_status shows it); at 100% no NEW package is dispatched - a package already running finishes - and once nothing is left running, a fresh integrate opens over just what accepted, naming the rest \"not done\" in the report rather than dropping them silently. Whichever of budget_usd/timebox_minutes is closer to its own limit decides; either alone is a real stop. The stop never kills a running dispatch, and a stopped task still owes its goal gate and report - both continue to spend past the 100% mark. This is by design (a truncated report with no gate/retro is worse than a few dollars over), but it is real: budget a reserve above your real target for the in-flight package finishing plus goal-gate+report, and read the harvested summary's budget.post_stop_usd after the fact to see exactly how much that reserve needed to be.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "candidates": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "context": {
+          "type": "string"
+        },
+        "context_from": {
+          "description": "A prior task_id (or its ticket key). Its retro.json - the Retrospective and Next backlog a finished task's report stage writes - is read and folded into this task's own context: what failed and why, retries, defects left, and any unaccepted packages or unresolved questions the prior task ran out of budget/timebox to reach. The prior task's own Next backlog is NOT auto-added to `requests` - naming it here is a decision this task's own request should still make in its own words. tm_open returns carryover_candidates (backlog items and user stories the prior Sprint did not ship) for the person to choose from.",
+          "type": "string"
+        },
+        "cwd": {
+          "description": "the project root: child worktrees branch from its HEAD, and a size-S run under s_driver \"process\" opens directly here",
+          "type": "string"
+        },
+        "decisions": {
+          "description": "What the entry skill settled with the user in its brainstorm before calling tm_open: [{question, chose, because?}]. Written as the first entries of task.decisions (source \"brainstorm\", decided_in \"session\"); PLAN and every package read them as settled rules, and an ask about the same question is never opened again. Passing it (even []) skips the engine's own brainstorm node.",
+          "items": {
+            "properties": {
+              "because": {
+                "type": "string"
+              },
+              "chose": {
+                "type": "string"
+              },
+              "question": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "question",
+              "chose"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "driver_restarts": {
+          "description": "default 2: how many times a package or size-S driver that died mid-run is respawned on the SAME run_id before the dispatch folds blocked. A usage-limit death never spends this - it parks on waiting_capacity for tm_retry({reset_capacity:true}) instead.",
+          "type": "integer"
+        },
+        "flow": {
+          "enum": [
+            "auto",
+            "develop",
+            "document"
+          ],
+          "type": "string"
+        },
+        "goal_judges": {
+          "description": "default 1: independent judges on EVERY child run's own goal gate (each package's dispatch, and the one run a size-S task opens). >1 opens that many sibling gate nodes per round, routed to different identities where possible, and accepts only if every judge accepts at or above goal_threshold - the same mechanism team_open documents (default 2 there). The default stays 1 here, matching every run this manager has ever opened, so an existing project sees no change in judge count or cost unless it asks for more. This is the child run's own gate, not the manager's own top-level gate:goal, which is a separate, single-judge mechanism unaffected by this option.",
+          "type": "integer"
+        },
+        "goal_threshold": {
+          "description": "default 90: the manager's own goal gate must report match_pct at or above this to accept, and it is passed through to every child run as its own goal_threshold. A gate that says accept with 40% match is reporting a partial result as a pass. 0 accepts on the verdict alone.",
+          "type": "integer"
+        },
+        "host_model": {
+          "type": "string"
+        },
+        "host_vendor": {
+          "type": "string"
+        },
+        "initiative": {
+          "description": "default null, also settable in .claude/team.json. An optional label ABOVE this EPIC - several EPICs toward one outcome (a slug-normalized \"I-<slug>\" key: lowercased, non-alphanumeric runs collapsed to one \"-\"). Display/grouping only: tm_board groups every EPIC by it once any task has one, and tm_ticket(\"I-<slug>\") lists that group's EPICs with state and cost. Never read by scheduling or execution, and never nests a task inside another - EPICs under the same initiative are still independent tasks.",
+          "type": "string"
+        },
+        "interactive": {
+          "description": "default false, also settable in .claude/team.json. Passed to every child run. When a planning subgoal's investigate stage comes back with a decision it could not settle from any source but CAN name candidates for, true opens an `ask` card between investigate and draft and parks that run in waiting_human until a person picks - tm_inbox lists it (with its questions and options), tm_submit({key, payload:{decisions}}) answers it. false decides by default and records the questions on the run instead, so the report can show what nobody was asked.",
+          "type": "boolean"
+        },
+        "isolated": {
+          "description": "Passed to the graph run this task opens (the single run of a size-S request, or each package child run). true only when you created or were handed a private worktree holding this run alone.",
+          "type": "boolean"
+        },
+        "max_live_drivers": {
+          "description": "default 4, also settable in .claude/team.json. A machine-wide cap on live teams-spawned `claude -p` drivers and judges across every task under the tasks root. At or over it a spawn site spawns nothing: the node stays ready, one waiting_cap ledger event is written, and the daemon re-checks within 15 s (no timeout).",
+          "type": "integer"
+        },
+        "max_retries": {
+          "type": "number"
+        },
+        "mixed": {
+          "description": "Passed the same way isolated is, to the same size-S run. Default true. false forbids the other kind of work entirely - a develop-flow request with a document subgoal fails at setgoal instead of quietly running one. Has no effect on an L task: every package is already mixed:true.",
+          "type": "boolean"
+        },
+        "model": {
+          "type": "string"
+        },
+        "native_models": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "policy": {
+          "type": "object"
+        },
+        "request": {
+          "type": "string"
+        },
+        "requests": {
+          "description": "A backlog instead of one request: several EPIC-level items, priority = array order (first is highest). An item may be {request, acceptance: [\"...\"]} to declare that item's own acceptance criteria - when every item declares them (or shared_acceptance is given), roles.planning \"auto\" runs the light PLAN chain (investigate -> template-fill -> gate) instead of the full one. shape treats each as its own story set; with budget_usd/timebox_minutes in play, the lowest-priority items still unshaped or undispatched when the stop trips are exactly what the report names \"Next backlog\". Mutually exclusive with `request` - send one or the other, never both.",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "acceptance": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "request": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "request"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "restart_period_minutes": {
+          "description": "default 0 (a flat, forever counter - today's behavior), also settable in .claude/team.json. >0 turns driver_restarts into a sliding window in minutes: only restarts within the last restart_period_minutes count toward the budget, so a driver that dies rarely never exhausts a budget sized for \"how many deaths in a row\".",
+          "type": "integer"
+        },
+        "retry_policy": {
+          "description": "default \"continue\", also settable in .claude/team.json. What a retried attempt does with the worktree the failed one left: \"continue\" (default, today's only behavior) builds the next attempt on top of it. \"rollback\" resets the worktree first - a subgoal's own implement/draft to the checkpoint recorded before ITS first attempt touched it (single-subgoal child runs only; a shared worktree with a sibling subgoal still in flight cannot be reset for one of them, so it falls back to continue and says why), a package's own retry (tm_retry/retryPackage) to its last ACCEPTED commit, or the worktree's base commit if none of its attempts ever passed - then re-runs with the failed gate's gaps as feedback either way. _repo/docs/plans/2026-09-23-teams-reducer-human-rollback.md §5 measured two real runs before defaulting to continue: both showed a retried implement CONVERGING on gate feedback across attempts rather than repeating the same mistake, so there is no evidence yet that discarding an attempt's work helps more than it loses.",
+          "enum": [
+            "continue",
+            "rollback"
+          ],
+          "type": "string"
+        },
+        "sandbox": {
+          "type": "string"
+        },
+        "shared_acceptance": {
+          "description": "Acceptance criteria that apply to EVERY backlog item (or to the single request) - the structured form of an \"Acceptance for every item:\" block. Written into the request text and, when non-empty, makes roles.planning \"auto\" pick the light PLAN chain (_repo/docs/plans/2026-09-28-teams-light-plan.md). roles.planning itself (team.json or a roles argument) takes true (full chain), \"light\" (force light) or \"auto\" (default: light when acceptance is declared - structured fields, or a numbered backlog with an \"Acceptance:\" heading and bullets - else full). false is refused with a note: planning always runs, one card per feature area, and every task gets a PRD and user stories.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "size": {
+          "description": "Pin the size instead of measuring it: L when the user said in their own words that the request must be split into packages, S when they said one run must carry it. The size node is recorded as pinned.",
+          "enum": [
+            "S",
+            "L"
+          ],
+          "type": "string"
+        },
+        "skills": {
+          "description": "Method per manager stage, overriding the defaults: {\"shape\": [\"develop:domain-driven-design\"], \"critique\": []}. false runs every stage on its contract alone. A skill named here must be analytic and non-dialogic - a node runs headless and cannot answer a skill that asks it something."
+        },
+        "stall_minutes": {
+          "description": "default 20, also settable in .claude/team.json. A driver can be alive (its pid answers) and still be making no progress - this is the \"no progress\" signal, read against the mtime of the files this child's own run writes. Idle this long flags the dispatch once (stalled_since, cleared the moment progress resumes); idle 3x this long kills the driver and lets the ordinary dead-driver path respawn it, spending a restart. 0 disables the whole check.",
+          "type": "integer"
+        },
+        "timebox_minutes": {
+          "description": "default null (unlimited), also settable in .claude/team.json. Minutes since tm_open, the same stop condition budget_usd is, on the same clock - see its own description for exactly what 80% and 100% do.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "vendor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "request",
+        "cwd"
+      ],
+      "type": "object"
+    },
+    "name": "tm_open",
+    "outputSchema": {
+      "properties": {
+        "children": {
+          "description": "running dispatch nodes and their child runs",
+          "items": {
+            "properties": {
+              "branch": {
+                "type": "string"
+              },
+              "child_state": {
+                "type": "string"
+              },
+              "cwd": {
+                "type": "string"
+              },
+              "next": {
+                "type": "string"
+              },
+              "node_id": {
+                "type": "string"
+              },
+              "package_id": {
+                "type": "string"
+              },
+              "run_id": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "counts": {
+          "type": "object"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "flow": {
+          "type": "string"
+        },
+        "ready": {
+          "items": {
+            "properties": {
+              "briefing_path": {
+                "type": "string"
+              },
+              "next": {
+                "type": "string"
+              },
+              "node_id": {
+                "type": "string"
+              },
+              "stage": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "node_id",
+              "stage"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "size": {
+          "enum": [
+            "S",
+            "L"
+          ],
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "running",
+            "blocked",
+            "complete",
+            "partial"
+          ],
+          "type": "string"
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "view_url": {
+          "description": "the one browser window for this tasks root (scripts/view.mjs, ensureViewer): open it to watch the run. Absent when TEAMS_VIEW=0 or the viewer could not start - never required, a task opens the same either way.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "state"
+      ],
+      "type": "object"
+    },
+    "server": "task-manager"
+  },
+  {
+    "description": "Open a fresh attempt. With package_id: a new dispatch in the same worktree, carrying the rejection forward into the child request. With repackage: [ids] after an integration conflict, reshape with those packages told to become one or to depend on each other. With repair: true after an integrate came back verified=false with no conflicts: a repair package whose worktree IS the integration tree, for a seam no package can reproduce alone. With reset_capacity: true, clears every child (or just package_id's, or the size-S run) parked waiting_capacity after a usage-limit death and respawns its driver - this spends no restart. A blocked size-S task whose run stopped on a failed report node is retried with this call alone: only that report is re-pended (with its failure as feedback; avoid_executors / different_vendor route it away from the executor that failed it) and a fresh driver continues the same run. Without any of them: reshape (shape + critique) and discard the package graph. When the budget is gone the failure is settled and the report is released over the unreachable set.",
+    "inputSchema": {
+      "properties": {
+        "avoid_executors": {
+          "description": "a blocked size-S task whose run stopped on a failed report node (tm_next names it): executors (vendors) the report rerun is routed away from - tried last, never dropped. A bare tm_retry({task_id}) already retries that report.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "different_vendor": {
+          "description": "same blocked size-S failed-report case: avoid the executor that ran the failed report (shorthand for naming it in avoid_executors).",
+          "type": "boolean"
+        },
+        "package_id": {
+          "type": "string"
+        },
+        "repackage": {
+          "description": "the conflicting_packages an integrate or dispatch failure named",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "repair": {
+          "description": "the last integrate failed with verified=false and no conflicts: open a package that runs IN the integration worktree, where every package branch is merged and the defect is visible. package_id: \"integration\" is an alias for it.",
+          "type": "boolean"
+        },
+        "reset_capacity": {
+          "description": "a driver is parked on waiting_capacity after a usage-limit death (see tm_next's children[].waiting_capacity, or the top-level one for a size-S task). Clears it and respawns a driver on the same run_id, spending no restart. Combine with package_id to target just that package.",
+          "type": "boolean"
+        },
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
+    "name": "tm_retry",
+    "outputSchema": {
+      "properties": {
+        "attempt": {
+          "type": "number"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "resumed": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "retried": {
+          "type": "boolean"
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "unreachable": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "task_id",
+        "retried"
+      ],
+      "type": "object"
+    },
+    "server": "task-manager"
+  },
+  {
+    "description": "Open a task exactly like tm_open, and spawn the same daemon to drive it - but never self-drive and never return a node table: just {task_id, run_id, docs_dir}. This is the entry point for a caller that wants to hand off a whole request and walk away (§4-B of the design doc); follow up with tm_wait for a bounded look at progress, or tm_status/tm_board any time, or nothing at all if only the final docs matter.",
+    "inputSchema": {
+      "properties": {
+        "allocation": {
+          "enum": [
+            "ordered",
+            "balanced"
+          ],
+          "type": "string"
+        },
+        "brainstorm": {
+          "description": "Same meaning as tm_open({brainstorm}).",
+          "type": "boolean"
+        },
+        "budget_usd": {
+          "description": "Same meaning as tm_open({budget_usd}).",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "candidates": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "context": {
+          "type": "string"
+        },
+        "context_from": {
+          "description": "Same meaning as tm_open({context_from}).",
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "decisions": {
+          "description": "Same meaning as tm_open({decisions}).",
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "driver_restarts": {
+          "type": "integer"
+        },
+        "flow": {
+          "enum": [
+            "auto",
+            "develop",
+            "document"
+          ],
+          "type": "string"
+        },
+        "goal_judges": {
+          "type": "integer"
+        },
+        "goal_threshold": {
+          "type": "integer"
+        },
+        "host_model": {
+          "type": "string"
+        },
+        "host_vendor": {
+          "type": "string"
+        },
+        "initiative": {
+          "description": "Same meaning as tm_open({initiative}).",
+          "type": "string"
+        },
+        "isolated": {
+          "type": "boolean"
+        },
+        "max_retries": {
+          "type": "number"
+        },
+        "mixed": {
+          "type": "boolean"
+        },
+        "model": {
+          "type": "string"
+        },
+        "native_models": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "policy": {
+          "type": "object"
+        },
+        "request": {
+          "type": "string"
+        },
+        "requests": {
+          "description": "Same meaning as tm_open({requests}) - mutually exclusive with `request`.",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "acceptance": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "request": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "request"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "restart_period_minutes": {
+          "type": "integer"
+        },
+        "sandbox": {
+          "type": "string"
+        },
+        "shared_acceptance": {
+          "description": "Same meaning as tm_open({shared_acceptance}).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "size": {
+          "enum": [
+            "S",
+            "L"
+          ],
+          "type": "string"
+        },
+        "skills": {
+          "description": "Same meaning as tm_open({skills})."
+        },
+        "stall_minutes": {
+          "type": "integer"
+        },
+        "timebox_minutes": {
+          "description": "Same meaning as tm_open({timebox_minutes}).",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "vendor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "request",
+        "cwd"
+      ],
+      "type": "object"
+    },
+    "name": "tm_run",
+    "outputSchema": {
+      "properties": {
+        "docs_dir": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "view_url": {
+          "description": "see tm_open({view_url}) - same viewer, same tasks root.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "run_id",
+        "docs_dir"
+      ],
+      "type": "object"
+    },
+    "server": "task-manager"
+  },
+  {
+    "description": "Compact task state: counts, per-node state and verdict, child pointers. Omit task_id to list every task the manager knows. full:true returns the whole task file - large by design.",
+    "inputSchema": {
+      "properties": {
+        "full": {
+          "type": "boolean"
+        },
+        "node_id": {
+          "type": "string"
+        },
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "tm_status",
+    "outputSchema": {
+      "type": "object"
+    },
+    "server": "task-manager"
+  },
+  {
+    "description": "Record a manager node. For size/shape/critique/accept/integrate/gate/report pass the payload the fresh agent returned. For a dispatch node pass no payload: the manager reads the child run file and folds its goal-gate verdict and report into the node. Refused while the child is still running and its driver alive, or waiting_capacity (a usage-limit death; use tm_retry({reset_capacity:true})); a child whose driver died mid-run and spent its whole restart budget folds as blocked, with every attempt's stderr. Pass `key` (a TASK ticket key from tm_inbox) instead of node_id to submit a human's own answer for a waiting_human card - the flow continues exactly as if a driver had submitted it (its child run's driver resumes automatically); a later gate rejection sends the next attempt back to waiting_human for the same human, never to a model. Idempotent per {task_id, node_id, attempt}: node_id already carries the round for every retryable stage (dispatch:P1:2, shape:2), so a duplicate submit of a node that already finished is a no-op returning the stored verdict (`idempotent: true`) - it does not re-fold a dispatch (no second git commit) or re-run finish()'s side effects. Pass `attempt` for a stricter check.",
+    "inputSchema": {
+      "properties": {
+        "attempt": {
+          "description": "this node's attempt number, for the idempotency check above. Optional - node_id already disambiguates attempts for every retryable stage.",
+          "type": "integer"
+        },
+        "key": {
+          "description": "a TASK key (E-xxxxxxxx/Pn/subgoalId) naming a waiting_human card, in place of node_id",
+          "type": "string"
+        },
+        "node_id": {
+          "type": "string"
+        },
+        "payload": {
+          "type": "object"
+        },
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
+    "name": "tm_submit",
+    "outputSchema": {
+      "properties": {
+        "accept": {
+          "type": "boolean"
+        },
+        "child": {
+          "type": "object"
+        },
+        "conflicting_packages": {
+          "description": "pass to tm_retry({repackage})",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "conflicts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "flow": {
+          "type": "string"
+        },
+        "gap_count": {
+          "type": "number"
+        },
+        "integration": {
+          "type": "object"
+        },
+        "match_pct": {
+          "type": "number"
+        },
+        "missing_verdict": {
+          "type": "string"
+        },
+        "node_id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "size": {
+          "type": "string"
+        },
+        "sound": {
+          "type": "boolean"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "stage_ok": {
+          "type": "boolean"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "running",
+            "done",
+            "failed",
+            "skipped",
+            "unreachable"
+          ],
+          "type": "string"
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "task_state": {
+          "description": "present, and always \"harness\", on the reply that sizes a task S (tm_submit of `size`, or tm_open/tm_run with size \"S\"): the task handed the request to one headless development-harness driver and this reply already carries tm_next's own fields (harness, driver, state) for it. Absent for every other node and for a size-L task.",
+          "enum": [
+            "harness"
+          ],
+          "type": "string"
+        },
+        "verified": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "task_id",
+        "node_id",
+        "stage",
+        "state",
+        "stage_ok"
+      ],
+      "type": "object"
+    },
+    "server": "task-manager"
+  },
+  {
+    "description": "One ticket by key: I-<slug> for an initiative (every EPIC under it, with state and cost - see tm_open({initiative})), E-xxxxxxxx for the EPIC, E-xxxxxxxx/Pn for a STORY. State, worktree/branch, task progress (x/y) and the last accept verdict, plus a doc_path (EPIC/STORY only) and reporter/origin/link (STORY only - reporter is the issuing team, origin the stage that filed it, link only set for an upstream fix). Read-only; a doc_path is always returned for an EPIC/STORY, even before tm_docs has written anything there.",
+    "inputSchema": {
+      "properties": {
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    },
+    "name": "tm_ticket",
+    "outputSchema": {
+      "type": "object"
+    },
+    "server": "task-manager"
+  },
+  {
+    "description": "Bounded long-poll on a task the daemon is driving: blocks up to max_ms, returning the node transitions (finished nodes, newest last) recorded since `cursor`, or an empty list on timeout - never the full state. Pass the previous reply's `cursor` back in to continue watching without re-reading anything already seen; omit it (or pass 0) to start from the beginning. This is the way to watch a tm_run/tm_open task without accumulating its payload in your own context: call again with the returned `cursor` while `state` is \"running\", stop when it is \"complete\" or \"blocked\".",
+    "inputSchema": {
+      "properties": {
+        "cursor": {
+          "description": "a ts from a previous tm_wait reply; 0 or omitted to start from the beginning",
+          "type": "number"
+        },
+        "max_ms": {
+          "description": "default 60000, capped at 300000 - the same cap tm_next's old wait_ms used, measured to return cleanly through Claude Code's MCP client",
+          "type": "number"
+        },
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
+    "name": "tm_wait",
+    "outputSchema": {
+      "properties": {
+        "counts": {
+          "type": "object"
+        },
+        "cursor": {
+          "description": "pass this back as the next call's cursor",
+          "type": "number"
+        },
+        "state": {
+          "type": "string"
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "timed_out": {
+          "type": "boolean"
+        },
+        "transitions": {
+          "items": {
+            "properties": {
+              "node_id": {
+                "type": "string"
+              },
+              "stage": {
+                "type": "string"
+              },
+              "stage_ok": {
+                "type": "boolean"
+              },
+              "state": {
+                "type": "string"
+              },
+              "ts": {
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "task_id",
+        "state",
+        "cursor",
+        "transitions"
+      ],
+      "type": "object"
+    },
+    "server": "task-manager"
+  },
+  {
+    "description": "Turn a proposal into a page (re-index, INDEX.md, mark superseded page).",
+    "inputSchema": {
+      "properties": {
+        "proposal_id": {
+          "description": "from wiki_propose",
+          "type": "string"
+        }
+      },
+      "required": [
+        "proposal_id"
+      ],
+      "type": "object"
+    },
+    "name": "wiki_accept",
+    "outputSchema": null,
+    "server": "teams-wiki"
+  },
+  {
+    "description": "Full page plus outgoing links and backlinks (id + title).",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "description": "<space>/<slug>",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "name": "wiki_get",
+    "outputSchema": null,
+    "server": "teams-wiki"
+  },
+  {
+    "description": "Pages grouped by space.",
+    "inputSchema": {
+      "properties": {
+        "space": {
+          "description": "limit to a space",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "name": "wiki_list",
+    "outputSchema": null,
+    "server": "teams-wiki"
+  },
+  {
+    "description": "Write a proposal to _proposed/ (never a page). Returns proposal_id, diff vs the existing page, isolation warnings.",
+    "inputSchema": {
+      "properties": {
+        "body": {
+          "description": "md body; link pages with [[space/slug]]",
+          "type": "string"
+        },
+        "slug": {
+          "description": "slug",
+          "type": "string"
+        },
+        "source": {
+          "description": "who/what produced it, e.g. an EPIC id",
+          "type": "string"
+        },
+        "space": {
+          "description": "space",
+          "type": "string"
+        },
+        "supersedes": {
+          "description": "id of an accepted page this replaces",
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "description": "title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space",
+        "slug",
+        "title",
+        "body",
+        "source"
+      ],
+      "type": "object"
+    },
+    "name": "wiki_propose",
+    "outputSchema": null,
+    "server": "teams-wiki"
+  },
+  {
+    "description": "Move a proposal to _rejected/ with the reason.",
+    "inputSchema": {
+      "properties": {
+        "proposal_id": {
+          "description": "from wiki_propose",
+          "type": "string"
+        },
+        "reason": {
+          "description": "why",
+          "type": "string"
+        }
+      },
+      "required": [
+        "proposal_id",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "name": "wiki_reject",
+    "outputSchema": null,
+    "server": "teams-wiki"
+  },
+  {
+    "description": "Session start: the k most recent log/* pages with their 1-hop linked pages.",
+    "inputSchema": {
+      "properties": {
+        "k": {
+          "type": "number"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "name": "wiki_resume",
+    "outputSchema": null,
+    "server": "teams-wiki"
+  },
+  {
+    "description": "Keyword search (FTS5, or an md scan without it; Korean + English). Returns id, title, snippet, status. Superseded pages are excluded unless include_superseded.",
+    "inputSchema": {
+      "properties": {
+        "include_superseded": {
+          "type": "boolean"
+        },
+        "k": {
+          "type": "number"
+        },
+        "query": {
+          "description": "search text",
+          "type": "string"
+        },
+        "space": {
+          "description": "limit to a space",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "wiki_search",
+    "outputSchema": null,
+    "server": "teams-wiki"
+  },
+  {
+    "description": "Page count, pending proposals, index freshness, broken [[links]].",
+    "inputSchema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "wiki_status",
+    "outputSchema": null,
+    "server": "teams-wiki"
+  },
+  {
+    "description": "Save a page directly, no approval (lock, re-index, INDEX.md). Same space/slug again = update. Returns id, path, created|updated.",
+    "inputSchema": {
+      "properties": {
+        "body": {
+          "description": "md body; link pages with [[space/slug]]",
+          "type": "string"
+        },
+        "slug": {
+          "description": "slug",
+          "type": "string"
+        },
+        "source": {
+          "description": "who/what produced it",
+          "type": "string"
+        },
+        "space": {
+          "description": "space",
+          "type": "string"
+        },
+        "supersedes": {
+          "description": "id of an accepted page this replaces",
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "description": "title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space",
+        "slug",
+        "title",
+        "body"
+      ],
+      "type": "object"
+    },
+    "name": "wiki_write",
+    "outputSchema": null,
+    "server": "teams-wiki"
+  }
+]

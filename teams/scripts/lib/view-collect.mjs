@@ -10,6 +10,7 @@ import { pidAlive } from '../../mcp/proc.mjs';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { loadRunAt, runState } from '../../mcp/graph.mjs';
+import { REASONING_VERDICT } from '../../mcp/verdictfields.mjs';
 import { readPointer, ownsRun, findTaggedRun, harnessVerdict, graphRunPath } from '../../mcp/harnessrun.mjs';
 import { countedDriverRestarts, restartBudget } from '../../mcp/taskstate.mjs';
 import { driverCostOf, collectTaskCosts } from '../bench/lib/drivercost.mjs';
@@ -137,7 +138,7 @@ function nodeSummary(n) {
   }
   if (r.match_pct !== undefined) out.match_pct = r.match_pct;
   if (Array.isArray(r.gaps) && r.gaps.length) out.gaps = r.gaps.slice(0, 5);
-  const verdictField = { critique: 'sound', dispatch: 'accept', accept: 'accept', integrate: 'verified', gate: 'accept' }[n.stage];
+  const verdictField = REASONING_VERDICT[n.stage];
   if (verdictField && r[verdictField] !== undefined) out.verdict = r[verdictField];
   // executor/model: set on a child run's own chain node once it actually ran (broker.mjs's
   // finish()/submit() write n.executor/n.model off the routing decision - see stagePolicy).

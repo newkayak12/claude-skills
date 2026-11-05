@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const src = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
 test('workers are marked: the broker adapter spawn and the judge spawn', () => {
-  assert.match(src('../mcp/broker.mjs'), /env: \{ \.\.\.process\.env, HARNESS_NODE: '1' \}/);
+  assert.match(src('../mcp/broker-vendors.mjs'), /env: \{ \.\.\.process\.env, HARNESS_NODE: '1' \}/);
   assert.match(src('../mcp/daemon.mjs'), /HARNESS_NODE: '1' \}, stdio/);
 });
 

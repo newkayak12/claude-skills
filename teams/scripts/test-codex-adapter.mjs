@@ -11,7 +11,7 @@ import { join, dirname, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const CLAUDE_ADAPTER = join(dirname(fileURLToPath(import.meta.url)), '..', 'adapters', 'claude-exec-adapter.mjs');
-const BROKER_SRC = join(dirname(fileURLToPath(import.meta.url)), '..', 'mcp', 'broker.mjs');
+const BROKER_SRC = join(dirname(fileURLToPath(import.meta.url)), '..', 'mcp', 'broker-tools.mjs');
 const ADAPTER = join(dirname(fileURLToPath(import.meta.url)), '..', 'adapters', 'codex-exec-adapter.mjs');
 
 // Every object node strict: additionalProperties false, required === every property key.

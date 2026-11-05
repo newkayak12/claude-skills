@@ -15,7 +15,7 @@ import { graphStageSkills } from '../../mcp/mounts.mjs';
 import { STAGE_SKILLS } from '../../mcp/stagecontract.mjs';
 import { epicKey, storyKey, epicTicketState, storyTicketState, planningPkgs, qaPkgs } from '../../mcp/tickets.mjs';
 
-const REASONING_VERDICT = { critique: 'sound', dispatch: 'accept', accept: 'accept', integrate: 'verified', gate: 'accept' };
+import { REASONING_VERDICT } from '../../mcp/verdictfields.mjs';
 
 function readJson(path) {
   try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; }
