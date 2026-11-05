@@ -95,7 +95,7 @@ const verdict = (v) => async () => JSON.stringify(v);
 
 test('tm_ask is registered with exactly task_id, key and question - no sibling or driver field', async () => {
   const listed = await new Promise((resolve) => {
-    const r = spawnSync(process.execPath, [join(HERE, '..', 'mcp', 'taskmanager.mjs')], {
+    const r = spawnSync(process.execPath, [join(HERE, '..', 'mcp', 'server.mjs')], {
       input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) + '\n', encoding: 'utf8', env: { ...process.env },
     });
     resolve(JSON.parse(r.stdout.trim().split('\n')[0]).result.tools);
@@ -305,14 +305,19 @@ test('an ordinary ask card keeps its tm_submit path: no answered, no ask_id on i
 
 // ---------- (4) the answer node: limits, tools, the seam ----------
 
-test('answerArgv: read tools only (Read, Grep, Glob, wiki_search, wiki_get), the other servers denied, and HARNESS_ANSWER_DRIVER replaces the whole line', () => {
+test('answerArgv: read tools only (Read, Grep, Glob, wiki_search, wiki_get), every other teams tool denied, and HARNESS_ANSWER_DRIVER replaces the whole line', async () => {
   const argv = daemon.answerArgv({ stage_skills: null });
   assert.equal(argv[0], 'claude');
   assert.ok(argv.includes('-p'));
   assert.ok(argv.includes('--tools=Read,Grep,Glob'), '--tools in its `=` form: the variadic flag must not swallow the prompt');
   const denied = argv.find((x) => x.startsWith('--disallowedTools=')).slice('--disallowedTools='.length);
-  for (const d of ['mcp__plugin_teams_task-manager', 'mcp__plugin_teams_teams-engineering', 'mcp__plugin_teams_teams-wiki__wiki_write', 'mcp__plugin_teams_teams-wiki__wiki_propose', 'mcp__plugin_teams_teams-wiki__wiki_accept']) {
-    assert.ok(denied.split(/[ ,]/).includes(d), `${d} is denied`);
+  const deniedList = denied.split(/[ ,]/);
+  const { ALL_TOOLS } = await import(join(HERE, '..', 'mcp', 'server-tools.mjs'));
+  const expected = ALL_TOOLS.map((t) => t.name).filter((n) => n !== 'wiki_search' && n !== 'wiki_get').map((n) => `mcp__plugin_teams_teams__${n}`);
+  assert.equal(expected.length, 31);
+  assert.deepEqual(deniedList, expected, 'all 31 non-read tools are denied by name');
+  for (const d of ['mcp__plugin_teams_teams__tm_open', 'mcp__plugin_teams_teams__team_open', 'mcp__plugin_teams_teams__wiki_write', 'mcp__plugin_teams_teams__wiki_propose', 'mcp__plugin_teams_teams__wiki_accept']) {
+    assert.ok(deniedList.includes(d), `${d} is denied`);
   }
   assert.ok(!/wiki_search|wiki_get/.test(denied), 'the two wiki read tools are not denied');
   process.env.HARNESS_ANSWER_DRIVER = 'node /x/stub.mjs a';

@@ -150,13 +150,13 @@ test('workspace-write still defers to the project permission layer', () => {
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
 
-// The project wiki: TEAMS_WIKI_ROOT hands a worker exactly one MCP server (teams-wiki) and names
+// The project wiki: TEAMS_WIKI_ROOT hands a worker exactly one MCP server (teams, --only wiki) and names
 // its tools in --allowedTools (--tools only limits built-ins). --no-wiki or no root: the old empty config.
-const WIKI_SERVER = fileURLToPath(new URL('../mcp/wiki.mjs', import.meta.url));
+const WIKI_SERVER = fileURLToPath(new URL('../mcp/server.mjs', import.meta.url));
 const argvOf = f => JSON.parse(readFileSync(join(f.dir, 'observed.json'))).args;
 const withoutRoot = { TEAMS_WIKI_ROOT: '' };
 
-test('TEAMS_WIKI_ROOT set: one teams-wiki server rooted there, its six tools allowed, strict config kept', () => {
+test('TEAMS_WIKI_ROOT set: one teams server (--only wiki) rooted there, its six tools allowed, strict config kept', () => {
   const f = fixture();
   try {
     const r = f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'implement'], { TEAMS_WIKI_ROOT: '/proj/main' });
@@ -164,10 +164,10 @@ test('TEAMS_WIKI_ROOT set: one teams-wiki server rooted there, its six tools all
     const args = argvOf(f);
     assert.ok(args.includes('--strict-mcp-config'));
     assert.deepEqual(JSON.parse(args[args.indexOf('--mcp-config') + 1]), {
-      mcpServers: { 'teams-wiki': { command: process.execPath, args: [WIKI_SERVER, '--root', '/proj/main'] } },
+      mcpServers: { teams: { command: process.execPath, args: [WIKI_SERVER, '--only', 'wiki', '--root', '/proj/main'] } },
     });
     assert.equal(args[args.indexOf('--allowedTools') + 1],
-      'mcp__teams-wiki__wiki_search,mcp__teams-wiki__wiki_get,mcp__teams-wiki__wiki_resume,mcp__teams-wiki__wiki_list,mcp__teams-wiki__wiki_status,mcp__teams-wiki__wiki_write');
+      'mcp__teams__wiki_search,mcp__teams__wiki_get,mcp__teams__wiki_resume,mcp__teams__wiki_list,mcp__teams__wiki_status,mcp__teams__wiki_write');
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
 

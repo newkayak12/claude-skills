@@ -12,7 +12,7 @@ scenarios:
   - "문서 말고 코드 흐름으로 고정해서 돌려"
 compatibility:
   required:
-    - teams-engineering
+    - teams
 related:
   - orchestrate
   - document

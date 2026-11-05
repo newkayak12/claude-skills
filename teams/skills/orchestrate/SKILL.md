@@ -1,7 +1,7 @@
 ---
 name: orchestrate
 description: >-
-  Use when running a whole request through the teams-engineering MCP and driving
+  Use when running a whole request through the teams MCP and driving
   its harness nodes without holding the payload yourself. Triggers on: "그래프 돌려줘",
   "노드 단위로 돌려줘", "run it through the MCP", "orchestrate this run". Not for installation.
 effort: high
@@ -12,7 +12,7 @@ scenarios:
   - "결과가 메인에 쌓이지 않게 그래프를 끝까지 돌려줘"
 compatibility:
   required:
-    - teams-engineering
+    - teams
 related:
   - harness
   - install
@@ -32,9 +32,9 @@ expands accordingly. A user who wants to decide that themselves has `teams:devel
 ## Running without install
 
 `install` is optional. This skill, `develop`, `document`, `plan`, and `qa` all run through
-`tm_open`/`tm_run` against the `teams-engineering`/`task-manager` MCP servers alone; none of
-them needs `.claude/team.json` to exist first. The one prerequisite that is not optional: those
-two MCP servers must be connected. If any `tm_*`/`team_*` tool is missing, that is a stop —
+`tm_open`/`tm_run` against the `teams` MCP server alone; none of
+them needs `.claude/team.json` to exist first. The one prerequisite that is not optional: that
+MCP server must be connected. If any `tm_*`/`team_*` tool is missing, that is a stop —
 install or update the `teams@newkayak12-claude-skills` plugin and reload Claude Code. This is a
 session-connection problem, not a missing `team.json`, and running `install` will not fix it.
 
@@ -198,7 +198,7 @@ call `team_next` for the alternate route.
 - `develop` — the same loop with the flow pinned to code work
 - `document` — the same loop with the flow pinned to written artifacts
 - `harness` — the six-stage contract this flow implements
-- `install` — connect or verify the teams-engineering MCP before running this flow
+- `install` — connect or verify the teams MCP before running this flow
 - `inbox` — what's waiting on a human, across every run this session can see
 - `take` — claim a card for yourself
 - `submit` — record your answer once you've done a card's work

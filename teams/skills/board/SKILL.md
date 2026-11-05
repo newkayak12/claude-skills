@@ -11,7 +11,7 @@ scenarios:
   - "E-a1b2c3d4 스토리 칸반 좀 보여줘"
 compatibility:
   required:
-    - task-manager
+    - teams
 related:
   - ticket
   - orchestrate

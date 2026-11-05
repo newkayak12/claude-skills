@@ -11,7 +11,7 @@ scenarios:
   - "이 EPIC에서 자동으로 결정돼버린 카드도 같이 보여줘"
 compatibility:
   required:
-    - task-manager
+    - teams
 related:
   - take
   - submit

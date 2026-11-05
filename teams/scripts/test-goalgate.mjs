@@ -16,7 +16,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stagePolicy } from '../mcp/graph.mjs';
 
-const BROKER = join(dirname(fileURLToPath(import.meta.url)), '..', 'mcp', 'broker.mjs');
+const BROKER = join(dirname(fileURLToPath(import.meta.url)), '..', 'mcp', 'server.mjs');
 
 // ---------- routing bias for a second judge's identity (pure, no broker needed) ----------
 

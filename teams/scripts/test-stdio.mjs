@@ -308,6 +308,16 @@ test('cancelling one call leaves a concurrent call alone', async () => {
   });
 });
 
+test('on stdin end an in-flight call replies before the process exits 0', async () => {
+  const c = new Client();
+  const code = new Promise((resolve) => c.proc.on('exit', resolve));
+  const call = c.callTool('quiet', {});
+  await c.request('ping', {}, 'sync');
+  c.proc.stdin.end();
+  assert.deepEqual((await call.reply).result.structuredContent, { done: true });
+  assert.equal(await code, 0);
+});
+
 test('the process exits 0 when stdin ends', async () => {
   const c = new Client();
   const code = new Promise((resolve) => c.proc.on('exit', resolve));

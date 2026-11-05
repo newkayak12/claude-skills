@@ -3,7 +3,7 @@
 # session on the case's request, then score what it left behind.
 #
 #   bench.sh <arm> <case> [label]
-#     arm   beta   teams (task-manager + teams-engineering), skills develop/orchestrate;
+#     arm   beta   teams (the teams MCP server), skills develop/orchestrate;
 #                  the prompt carries the user's words that the work must be split -> size pinned L
 #           betas  teams without those words: size measures on its own (S on these fixtures),
 #                  one graph run through the delegate path - the same topology as `stable`

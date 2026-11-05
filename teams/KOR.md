@@ -17,7 +17,7 @@
 | | `graph` | `teams` |
 |---|---|---|
 | 잘 맞는 일 | 코드 요청 하나, 런 하나 | 크기를 재고 쪼개야 하는 요청, 문서, PRD, QA, 백로그 |
-| MCP 서버 | `graph-engineering` (`graph_*`) | `teams-engineering` (`team_*`) + `task-manager` (`tm_*`) + `teams-wiki` (`wiki_*`) |
+| MCP 서버 | `graph-engineering` (`graph_*`) | `teams` (`team_*` + `tm_*` + `wiki_*`) |
 | 누가 이끄나 | 내 세션 | 백그라운드 데몬 (세션은 지켜보기만 함) |
 | 런 파일 | `.harness-run/broker/` | `.teams_output/broker/` (런), `~/.harness/tasks/` (태스크) |
 | 버전 | 1.x | 0.x |
@@ -29,7 +29,7 @@
 ```mermaid
 flowchart TB
   U["You, in a Claude Code session"] --> SK["Entry skill: orchestrate, develop, document, plan, qa, sprint"]
-  SK -->|"tm_open / tm_run"| TM["task-manager MCP server, tm_* tools"]
+  SK -->|"tm_open / tm_run"| TM["teams MCP server, tm_* tools"]
   CLI["scripts/run.mjs, headless"] -->|"same open and wait"| TM
   TM -->|"spawns, detached"| DM["Task daemon"]
   DM <--> TJ[("task.json and ledger in ~/.harness/tasks")]
@@ -37,11 +37,11 @@ flowchart TB
   DM -->|"per package: worktree + driver"| P1
   DM -->|"per package: worktree + driver"| P2
   subgraph P1["Package P1: own worktree and branch"]
-    D1["claude -p driver"] -->|"team_* tools"| B1["teams-engineering broker"]
+    D1["claude -p driver"] -->|"team_* tools"| B1["teams MCP server, team_* tools"]
     B1 --> R1["child graph run"]
   end
   subgraph P2["Package P2: own worktree and branch"]
-    D2["claude -p driver"] -->|"team_* tools"| B2["teams-engineering broker"]
+    D2["claude -p driver"] -->|"team_* tools"| B2["teams MCP server, team_* tools"]
     B2 --> R2["child graph run"]
   end
   P1 -->|"accepted branch"| IT["Integration worktree"]
@@ -49,14 +49,14 @@ flowchart TB
   IT --> RP["Report, retro.json, phase docs"]
 ```
 
-- **task-manager**(`mcp/taskmanager.mjs`)는 *태스크*를 관리합니다. 노드 그래프, 패키지,
+- **태스크 매니저**(`teams` 서버의 `tm_*` 도구)는 *태스크*를 관리합니다. 노드 그래프, 패키지,
   워크트리, 판정이 모두 여기 있습니다. 실제 작업은 하지 않고, 자식 런 파일은 읽기만 할 뿐 절대
   쓰지 않습니다.
 - **데몬**(`mcp/daemon.mjs`)은 `tm_open`이 띄우며 세션이 끝나도 살아 있습니다. 태스크를 앞으로
   진행시키고, 판단이 필요한 단계마다 일회성 `claude -p` 심사를 호출하고, 죽거나 멈춘 드라이버를
   다시 띄웁니다.
-- **드라이버**는 헤드리스 `claude -p` 세션입니다. `teams-engineering` 브로커(`mcp/broker.mjs`,
-  `team_*` 도구)를 통해 패키지 하나의 자식 런을 끝까지 몰고 갑니다. 브로커는 `graph`와 같은 엔진
+- **드라이버**는 헤드리스 `claude -p` 세션입니다. `teams` 서버의 `team_*` 도구(브로커,
+  `mcp/broker.mjs`)를 통해 패키지 하나의 자식 런을 끝까지 몰고 갑니다. 브로커는 `graph`와 같은 엔진
   계보입니다.
 - **통합**은 받아들여진 패키지 브랜치들을 별도의 통합 워크트리에 합칩니다. teams는 내 브랜치에
   절대 머지하지 않으므로, 완성된 결과물은 그 통합 트리에 있습니다.
@@ -212,7 +212,7 @@ stateDiagram-v2
 
 > **trophy 함께 설치.** 이 버전부터 이 플러그인을 설치하거나 업데이트한 뒤 첫 대화형 세션에서, trophy가 없으면 [trophy](../trophy/KOR.md)(업적)를 user 범위로 한 번 설치합니다. 동의하기 전에는 아무것도 보내지 않으며, trophy를 지우면 다시 설치하지 않습니다. 미리 거부하려면: `mkdir -p ~/.claude/plugins/.newkayak12-trophy-ride.done`. `sh`가 필요합니다(sh가 없는 Windows는 해당 없음).
 
-**설치.** `teams@newkayak12-claude-skills`를 설치하면 세 MCP 서버가 등록됩니다(`tm_*`/`team_*`/`wiki_*`
+**설치.** `teams@newkayak12-claude-skills`를 설치하면 `teams` MCP 서버 하나가 등록됩니다(`tm_*`/`team_*`/`wiki_*`
 도구가 안 보이면 Claude Code를 다시 불러오세요). `teams:install`은 선택입니다. 프로젝트 기본값을
 `.claude/team.json`에 고정하고, 디스패치 게이트와 `.claude/conventions/`를 추가합니다(참고할 프로젝트가 있으면
 `develop:like-my-code`로 채울 수 있음). 설치하지
@@ -303,9 +303,9 @@ node teams/scripts/run.mjs --resume <task_id>
 
 `goal_judges`와 `auto_reassign`은 호출 인자로만 줄 수 있고 `team.json` 키가 아닙니다.
 
-## 위키 메모리 (teams-wiki)
+## 위키 메모리 (wiki 도구)
 
-`teams-wiki`는 이 플러그인의 세 번째 MCP 서버로, 서브에이전트(claude·codex 노드 워커와 드라이버)가 메인 프로젝트의
+`teams` MCP 서버의 `wiki_*` 도구는 서브에이전트(claude·codex 노드 워커와 드라이버)가 메인 프로젝트의
 `.teams_wiki`에 문서로 소통하는 곳이자, 세션보다 오래 가는 프로젝트 메모리입니다. 태스크 엔진 없이도 서버는
 동작하며, 엔진은 아래 "태스크 엔진에서"처럼 위키를 씁니다.
 
@@ -354,7 +354,7 @@ flowchart LR
 메인 프로젝트(`task.cwd`)입니다.
 
 **태스크 엔진에서.** 엔진은 위키를 쓰지 않고, 태스크 context에 넣지도 않습니다.
-claude와 codex 노드 워커와 드라이버는 위키 도구를 받습니다(codex는 `-c mcp_servers.teams-wiki` 오버라이드).
+claude와 codex 노드 워커와 드라이버는 위키 도구를 받습니다(같은 서버의 위키 전용 엔트리 `server.mjs --only wiki`로, codex는 `-c mcp_servers.teams` 오버라이드).
 맥락이 필요하면 `wiki_search` / `wiki_get`으로 찾고, 일하면서 나중에 기억할 가치가 있는 것만 `wiki_write`로
 씁니다. 판정 단계(review, gate, accept, critique, test, audit, qa execute)와 매니저의 judge는 어느 벤더에서도
 위키를 보지 못합니다. report에는 "Wiki 변경" 절이 붙습니다. 모드와, 태스크가 도는 동안 수정된 프로젝트

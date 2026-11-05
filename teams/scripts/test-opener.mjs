@@ -8,7 +8,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openerEnv } from '../mcp/taskmanager.mjs';
 
-const TM = join(dirname(fileURLToPath(import.meta.url)), '..', 'mcp', 'taskmanager.mjs');
+const TM = join(dirname(fileURLToPath(import.meta.url)), '..', 'mcp', 'server.mjs');
 
 function repo() {
   const dir = mkdtempSync(join(tmpdir(), 'tm-opener-'));

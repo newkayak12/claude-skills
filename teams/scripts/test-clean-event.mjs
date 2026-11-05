@@ -20,14 +20,16 @@ import { fileURLToPath } from 'node:url';
 import { afterTmCall, beforeTmCall } from './lib/planning-drive.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const TM = join(HERE, '..', 'mcp', 'taskmanager.mjs');
-const BROKER = join(HERE, '..', 'mcp', 'broker.mjs');
+const SERVER = join(HERE, '..', 'mcp', 'server.mjs');
+// Client roles: both spawn the one teams server; the role picks the planning-drive wrapping.
+const TM = 'tm';
+const BROKER = 'broker';
 
 // Same stdio JSON-RPC client test-clean.mjs uses.
 class Client {
   constructor(script, env = {}) {
     this.script = script;
-    this.proc = spawn('node', [script], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, TEAMS_VIEW: '0', ...env } });
+    this.proc = spawn('node', [SERVER], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, TEAMS_VIEW: '0', ...env } });
     this.buf = '';
     this.id = 0;
     this.queue = [];

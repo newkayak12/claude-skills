@@ -1,4 +1,4 @@
-// collect() builds one plain-JSON model of a task-manager task for a human to look at.
+// collect() builds one plain-JSON model of a teams task for a human to look at.
 // Both renderers (the HTML page's /state.json and the --once text tree in view.mjs) draw from
 // this single function - it is the only place that reads task.json, a child run file, or a
 // driver stream. Read-only: nothing here ever writes a file.
@@ -173,8 +173,8 @@ function nodeSummary(n) {
 
 // A child run's own node chain (plan -> setgoal -> critique -> implement:* -> test:* -> gate:*
 // -> gate:goal -> report, or the cases/execute KIND for a test-writing flow) plus, recursively,
-// any nested task-manager task found under <cwd>/.harness-tasks/ - a package worktree that
-// itself opened a task-manager task rather than a plain graph run.
+// any nested teams task found under <cwd>/.harness-tasks/ - a package worktree that
+// itself opened a teams task rather than a plain graph run.
 //
 // `ticketCtx` ({taskRunId, pkgId}), when given, also derives this STORY's TASK children -
 // E-xxxxxxxx/Pn/Un keyed rows (id/key/title/state) for the TICKET view's board card - straight

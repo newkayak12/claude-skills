@@ -11,7 +11,7 @@ scenarios:
   - "E-a1b2c3d4/P3/U2 카드 나한테 pin 해줘"
 compatibility:
   required:
-    - task-manager
+    - teams
 related:
   - inbox
   - submit

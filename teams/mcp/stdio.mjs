@@ -17,6 +17,7 @@
 //
 // Dispatch is concurrent: a long call never stops the server answering ping, status or a
 // cancellation for that very call. Importing this module binds nothing; only serve() does.
+// End of input cancels nothing: every in-flight call settles and replies, then the process exits 0.
 
 // One line out per message, never interleaved.
 function emit(obj) {
@@ -118,6 +119,7 @@ export function serve({ serverInfo, protocolVersion, tools, call }) {
     }
   }
 
+  const pending = new Set(); // every dispatched message until its reply is written
   let buf = '';
   const input = process.stdin;
   input.setEncoding('utf8');
@@ -136,15 +138,19 @@ export function serve({ serverInfo, protocolVersion, tools, call }) {
       }
       // Dispatch without awaiting: a node run must not stop the server from answering
       // ping, status, or a cancellation for that very node.
-      Promise.resolve()
+      const job = Promise.resolve()
         .then(() => handle(msg))
         .catch((e) =>
           !msg || typeof msg.id === 'undefined'
             ? null
             : { jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: String((e && e.message) || e) } },
         )
-        .then((out) => { if (out) emit(out); });
+        .then((out) => { if (out) emit(out); })
+        .finally(() => pending.delete(job));
+      pending.add(job);
     }
   });
-  input.on('end', () => process.exit(0));
+  input.on('end', () => {
+    Promise.allSettled([...pending]).then(() => process.exit(0));
+  });
 }

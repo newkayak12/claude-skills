@@ -40,14 +40,14 @@ function unexplainedRefusal(result) {
 }
 
 // The project wiki: when the engine sets TEAMS_WIKI_ROOT (task.cwd, never a worktree) a worker
-// gets exactly one MCP server, teams-wiki, rooted there, and its tools are allowed by name so
+// gets exactly one MCP server, teams (server.mjs --only wiki), rooted there, and its tools are allowed by name so
 // writes need no approval. --tools only limits built-ins, so MCP tools are named in
 // --allowedTools. Judging stages arrive with --no-wiki (broker.mjs) and get the empty config.
-const WIKI_TOOLS = ['wiki_search', 'wiki_get', 'wiki_resume', 'wiki_list', 'wiki_status', 'wiki_write'].map(t => `mcp__teams-wiki__${t}`);
+const WIKI_TOOLS = ['wiki_search', 'wiki_get', 'wiki_resume', 'wiki_list', 'wiki_status', 'wiki_write'].map(t => `mcp__teams__${t}`);
 const wikiRoot = process.env.TEAMS_WIKI_ROOT;
 const withWiki = Boolean(wikiRoot) && !opts['no-wiki'] && !opts.detect;
 const mcpConfig = withWiki
-  ? JSON.stringify({ mcpServers: { 'teams-wiki': { command: process.execPath, args: [fileURLToPath(new URL('../mcp/wiki.mjs', import.meta.url)), '--root', wikiRoot] } } })
+  ? JSON.stringify({ mcpServers: { teams: { command: process.execPath, args: [fileURLToPath(new URL('../mcp/server.mjs', import.meta.url)), '--only', 'wiki', '--root', wikiRoot] } } })
   : '{"mcpServers":{}}';
 
 async function invoke(prompt) {

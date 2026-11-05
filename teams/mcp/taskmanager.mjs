@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// task-manager - local stdio MCP server for requests too large for one graph run.
+// taskmanager - the tm_* tools, for requests too large for one graph run.
 //
 // A graph run is bound to one working directory and one spec. A medium or large request
 // spans modules, worktrees, sometimes repositories: it has to be split into packages, each
@@ -34,18 +34,15 @@
 //      {cwd, run_id}, the session drives the child with team_next/team_run/team_submit,
 //      and calls `tm_submit` on the dispatch node when the child's report is done. Importing
 //      broker.mjs as a library for computeSubmitResult (below) is not that channel - it is a
-//      pure, read-only function call, made possible only because broker.mjs is import-safe
-//      (isEntryPoint guards its stdio loop the same way this file's own `isMain` does).
+//      pure, read-only function call, made possible only because broker.mjs binds no stdin.
 //
 // The child run is opened HERE, by the server, on a dispatch node - never by a model inside
 // a node. The "do not re-enter the harness" rule in every node prompt stays true.
 //
 // State lives under ~/.harness/tasks/<task_id>/ (HARNESS_TASKS_DIR overrides), never under a
 // project cwd: a task's packages live in several worktrees and belong to none of them.
-// Zero dependencies: MCP's stdio transport is newline-delimited JSON-RPC 2.0.
-
-import { isEntryPoint } from './pluginroots.mjs';
-import { TOOLS, callTool } from './taskmanager-tools.mjs';
+// A library: served over stdio by server.mjs (the one teams MCP server), imported directly by
+// daemon.mjs. It binds no stdin.
 
 // Light PLAN mode (_repo/docs/plans/2026-09-28-teams-light-plan.md): the structural "is acceptance
 // already declared?" check and the roles.planning resolution it drives. Re-exported so a caller
@@ -72,78 +69,3 @@ export { taskSpend, taskElapsedMinutes, budgetStatus, closeFailedPlanning, enfor
 export { __storeHooks, liveClaim, claimNode, applyClaim, readyToJudge, refreshTask, advanceDispatches, serviceRunningDispatches, prepareReadyIntegrations, foldDispatch, promoteManagerHumanGates } from './taskmanager-claims.mjs';
 export { storyAsksOf, claimableStoryAsks, claimStoryAsk, settleStoryAsk, nextAskDeadline, expireAsks } from './taskmanager-asks.mjs';
 
-const SERVER = { name: 'task-manager', version: '0.7.0' };
-const DEFAULT_PROTOCOL = '2025-06-18';
-
-function emit(obj) {
-  process.stdout.write(JSON.stringify(obj) + '\n');
-}
-
-async function handle(msg) {
-  const { id, method, params } = msg;
-  const reply = (result) => ({ jsonrpc: '2.0', id, result });
-  switch (method) {
-    case 'initialize':
-      return reply({
-        protocolVersion: params && typeof params.protocolVersion === 'string' ? params.protocolVersion : DEFAULT_PROTOCOL,
-        capabilities: { tools: { listChanged: false } },
-        serverInfo: SERVER,
-      });
-    case 'ping': return reply({});
-    case 'tools/list': return reply({ tools: TOOLS });
-    case 'tools/call': {
-      try {
-        const out = await callTool(params && params.name, params && params.arguments);
-        return reply({ content: [{ type: 'text', text: JSON.stringify(out, null, 2) }], structuredContent: out, isError: false });
-      } catch (e) {
-        return reply({ content: [{ type: 'text', text: String((e && e.message) || e) }], isError: true });
-      }
-    }
-    default:
-      if (typeof id === 'undefined') return null;
-      return { jsonrpc: '2.0', id, error: { code: -32601, message: 'method not found: ' + method } };
-  }
-}
-
-// Only run the stdio server when this file is the process entry point. daemon.mjs imports this
-// module as a plain library - advanceDispatches, finish, foldChild, and the rest of the exports
-// above - to drive a task's graph directly, without a JSON-RPC layer in between. Its own stdin is
-// closed (spawnDaemon's stdio: ['ignore', ...]), and an ignored stream emits 'end' as soon as
-// Node looks at it - so without this guard, importing taskmanager.mjs would call process.exit(0)
-// on the daemon within its first tick, before it ever read the task it was told to drive.
-//
-// isEntryPoint (pluginroots.mjs) realpath-resolves both sides of the comparison rather than
-// comparing raw strings - a symlinked plugin path (macOS's $TMPDIR -> /private/var, or an
-// installed-marketplace layout) must still count as "this file is argv[1]" when it names the
-// same real file. The raw-string version of this guard shipped in 3c5ad0c8 and exited silently,
-// starting nothing, the first time a real path actually went through a symlink.
-const isMain = isEntryPoint(import.meta.url);
-
-if (isMain) {
-  let buf = '';
-  // handle() is async (tools/call can now await callTool -> dispatch -> tm_open/tm_run's own
-  // await on ensureViewer). Chaining each line onto `queue` keeps replies in the same order
-  // requests arrived - the same guarantee the old fully-synchronous loop gave for free - instead
-  // of however their individual promises happen to settle.
-  let queue = Promise.resolve();
-  process.stdin.setEncoding('utf8');
-  process.stdin.on('data', (chunk) => {
-    buf += chunk;
-    let nl;
-    while ((nl = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
-      if (!line) continue;
-      queue = queue.then(async () => {
-        let msg;
-        try { msg = JSON.parse(line); } catch { return; }
-        let out;
-        try { out = await handle(msg); } catch (e) {
-          out = typeof msg.id === 'undefined' ? null : { jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: String((e && e.message) || e) } };
-        }
-        if (out) emit(out);
-      });
-    }
-  });
-  process.stdin.on('end', () => { queue.then(() => process.exit(0)); });
-}

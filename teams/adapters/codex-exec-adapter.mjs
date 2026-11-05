@@ -79,16 +79,16 @@ if (opts.stage && !['implement', 'test'].includes(opts.stage)) usage();
 const cwd = resolve(opts.cwd);
 
 // The project wiki: when the engine sets TEAMS_WIKI_ROOT (task.cwd, never a worktree) a worker gets
-// exactly one MCP server, teams-wiki, rooted there, through two -c overrides (value parsed as TOML;
+// exactly one MCP server, teams (server.mjs --only wiki), rooted there, through two -c overrides (value parsed as TOML;
 // JSON.stringify gives valid TOML basic strings and a valid inline array). Judging stages arrive
 // with --no-wiki and the write/smoke probes are separate argv lists: neither gets it.
 function wikiConfigArgs() {
   const root = process.env.TEAMS_WIKI_ROOT;
   if (!root || opts.noWiki || opts.detect) return [];
-  const server = fileURLToPath(new URL('../mcp/wiki.mjs', import.meta.url));
+  const server = fileURLToPath(new URL('../mcp/server.mjs', import.meta.url));
   return [
-    '-c', `mcp_servers.teams-wiki.command=${JSON.stringify(process.execPath)}`,
-    '-c', `mcp_servers.teams-wiki.args=${JSON.stringify([server, '--root', root])}`,
+    '-c', `mcp_servers.teams.command=${JSON.stringify(process.execPath)}`,
+    '-c', `mcp_servers.teams.args=${JSON.stringify([server, '--only', 'wiki', '--root', root])}`,
   ];
 }
 const outputPath = resolve(opts.output);

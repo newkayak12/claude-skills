@@ -10,7 +10,7 @@ scenarios:
   - "이 EPIC 이벤트 로그 새로 생긴 것만 이어서 보여줘"
 compatibility:
   required:
-    - task-manager
+    - teams
 related:
   - ticket
   - board

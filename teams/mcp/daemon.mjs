@@ -42,6 +42,7 @@ import {
 } from './taskmanager.mjs';
 import { ticketSnapshot, docPaths } from './tickets.mjs';
 import { answerPrompt, parseVerdict } from './storyask.mjs';
+import { ALL_TOOLS } from './server-tools.mjs';
 import { harvestTask } from './runlog.mjs';
 import { pluginDirArgs, isEntryPoint, teamsPluginRoot } from './pluginroots.mjs';
 import { reserveSlot, noteWaiting, clearWaiting } from './livecap.mjs';
@@ -304,17 +305,16 @@ async function judge(task, n, { slot = null } = {}) {
 // One fresh single-shot `claude -p` per question, run like a judge - the same run limit
 // (JUDGE_TIMEOUT_MS, SIGTERM then SIGKILL), a livecap slot, its log kept beside the judges' - but
 // with the plan and the wiki to read and nothing else: Read, Grep, Glob and the two wiki read
-// tools. The other task-manager, engineering and wiki-write tools are denied by name. Its reply is
+// tools. Every other tool of the teams server is denied by name. Its reply is
 // storyask.mjs's verdict (parseVerdict); a crash or a timeout is a forward, so a question is never
 // dropped.
 //
 // Test seams: stepOnce's `answer` option replaces this function; HARNESS_ANSWER_DRIVER replaces the
 // whole command line (a stub, exactly like HARNESS_JUDGE_DRIVER), the prompt still appended last.
 
-const ANSWER_DENIED = [
-  'mcp__plugin_teams_task-manager', 'mcp__plugin_teams_teams-engineering',
-  ...['accept', 'list', 'propose', 'reject', 'resume', 'status', 'write'].map((t) => `mcp__plugin_teams_teams-wiki__wiki_${t}`),
-];
+// Every tool of the one teams server except the two wiki read tools, by name.
+const ANSWER_ALLOWED = ['wiki_search', 'wiki_get'];
+const answerDenied = () => ALL_TOOLS.map((t) => t.name).filter((n) => !ANSWER_ALLOWED.includes(n)).map((n) => `mcp__plugin_teams_teams__${n}`);
 
 export function answerArgv(task = null) {
   const override = String(process.env.HARNESS_ANSWER_DRIVER || '').trim();
@@ -323,7 +323,7 @@ export function answerArgv(task = null) {
   return ['claude', '-p', '--output-format', 'stream-json', '--verbose',
     '--dangerously-skip-permissions', '--setting-sources', 'project',
     '--plugin-dir', teamsPluginRoot(),
-    '--tools=Read,Grep,Glob', `--disallowedTools=${ANSWER_DENIED.join(',')}`];
+    '--tools=Read,Grep,Glob', `--disallowedTools=${answerDenied().join(',')}`];
 }
 
 export function answerNode(task, ask, { slot = null } = {}) {

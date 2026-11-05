@@ -13,7 +13,7 @@ scenarios:
   - "이번 스프린트 마무리하고 남은 걸로 다음 스프린트 열어줘"
 compatibility:
   required:
-    - task-manager
+    - teams
 related:
   - orchestrate
   - board
