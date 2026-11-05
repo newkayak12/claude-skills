@@ -289,6 +289,31 @@ toasts).
      5. `tm_retry` on an ended blocked task starts its daemon and continues from the blocked node;
      then one real L task where a fix wave and a QA pass complete with no hand merge.
 
+130. **teams spends less per task: model per stage, lean driver sessions, a default budget**
+   - Why: E-258fa3e5 (cards 128 + 125 leftovers, opened 2026-11-05 09:25) cost $14.4 over 28 sessions
+     before shape started (planning only). Cost sources named in the session (2026-11-05), checked where
+     marked:
+     1. Every node is a fresh `claude -p` session that re-reads the rule files and the global CLAUDE.md
+        (@MCP.md, ORCHESTRATOR.md, …); planning alone runs investigate, draft, gate and integrate per card
+        (unverified which files load).
+     2. Judges are separate sessions too — judge, each critique round, goal gate — each re-reading the same docs.
+     3. Nearly everything runs on Opus: 6 of 9 ledger actors read `claude·claude-opus-5-5` (checked).
+        Implement and test on Opus multiply the cost.
+     4. Large files read whole: card 128's 9,000-line `taskmanager.mjs` re-read by every node.
+     5. Identical retries (card 129: QA failing three times for one reason) are spent cost.
+   - Acceptance:
+     - model per stage in `team.json` / tm_open (implement and test on Sonnet, plan and judges on Opus by
+       default), recorded per node in the ledger; a test that an implement node starts with the Sonnet model;
+     - drivers start without the user's global CLAUDE.md and unrelated plugins (only teams' own skills and
+       the project's rules); a test on the spawn command, and a before/after of input tokens per session on
+       one real S task;
+     - confirm `roles.planning: "auto"` ran the light PLAN chain when every request declared acceptance
+       (E-258fa3e5 did); if not, fix and test;
+     - a default `budget_usd` in this repo's `.claude/team.json` (today `null`);
+     - node prompts point at file regions (line ranges, symbols) instead of whole large files where the
+       stage allows;
+     - one real L task's cost compared to E-258fa3e5's per-stage cost, numbers in the report.
+
 105. **Repo-wide pane and one viewer: UI look and the loose ends** — code defects in E-03e2e513; cards 105 and 106 shipped 2026-10-30 in
     E-f53a8434 (`236eae3d`; goal gate 92; teams 1658/1660 with 2 skips, plugin test 423/423; real run: two
     scratch tasks, one viewer port, 31 ok)
