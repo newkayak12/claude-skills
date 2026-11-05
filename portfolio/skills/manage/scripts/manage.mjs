@@ -7,7 +7,7 @@
 //   keep-render --version vX.Y.Z   build/pages/*.png → snapshot/render/deck-vX.Y.Z/pages/ + 검토.md
 //   snapshot --kind skeleton|deck --level major|minor|patch --note <text> [--by <who>] [--date YYYY-MM-DD]
 //       skeleton: copies it to snapshot/skeleton/skeleton-v<cur>/, bumps `version:`, adds the history
-//       line under it and one row to snapshot/README.md; deck: its own count (newest deck-v* + level),
+//       line under it (`(date, <by> 결정)` with --by, `(date)` without: it never names a decider not given) and one row to snapshot/README.md; deck: its own count (newest deck-v* + level),
 //       deck.mdx + assets/ + NOTES.md into snapshot/deck/deck-v<new>/, one row in the `## deck` table
 //   renumber --map "3:4,4:3" [--file skeleton.md] [--dry-run] [--force]
 //       (written only when verify finds no problem, or with --force; fenced code is left alone;
@@ -23,8 +23,10 @@
 //   claims [--file skeleton.md | --file deck.mdx]   (deck.mdx: one page per `## @sN`, cites in its comment)
 //       each page's figures and reason sentences against the material its `글감:` line cites:
 //       problems (uncited, unknown_id, not_in_material, unsupported = `근거 없음`, to_confirm = a reason
-//       the items do not say), listed (본인 확인, user-stated, tone phrases), unused_results (figures in
-//       cited items no page carries), uncited_items, settled (확정사실.md `## 서술 기준`/`## 구조` lines)
+//       the items do not say; a leading slot label such as `해결:` is not a reason), listed (본인 확인,
+//       user-stated, tone phrases, confirmed = a figure only a 확정사실.md line states), unused_results (figures
+//       in cited items no page carries), uncited_items, settled (확정사실.md `## 서술 기준`/`## 구조` lines),
+//       settled_note when 확정사실.md has neither section (settle prints it too). Ledger items: any grade (A1, B2, C3)
 //   settle --findings <file>       feedback findings against 확정사실.md: <file> is a JSON array of {id, text}
 //       inside the workspace; {kept, settled}: a finding is settled ({finding, line, share}) when it shares
 //       >= 3 word stems with a `## 서술 기준`/`## 구조` line of >= 3 stems and >= half of that line's stems;
@@ -212,7 +214,7 @@ export function bump(v, level) {
   throw new Error(`level must be major|minor|patch, got ${level}`)
 }
 
-export function snapshot(root, { kind, level, note, by = '본인', date }) {
+export function snapshot(root, { kind, level, note, by, date }) {
   if (kind !== 'skeleton' && kind !== 'deck') throw new Error('kind must be skeleton|deck')
   if (!note) throw new Error('--note is required')
   const skelPath = join(root, 'skeleton.md')
@@ -233,7 +235,9 @@ export function snapshot(root, { kind, level, note, by = '본인', date }) {
   const next = `v${bump(cur, level).join('.')}`
   // the history line follows the file's own form: quoted `> vX.Y.Z(날짜, 누가): …` when it already uses it
   const quoted = /^>\s*v\d+\.\d+\.\d+\(/m.test(skel)
-  const line = quoted ? `> ${next}(${day}, ${by} 결정): ${note}` : `${next} 변경(${day}, ${by} 결정): ${note}`
+  // `--by` names who decided; without it the line names no one (never a 본인 결정 the user did not make)
+  const when = typeof by === 'string' && by.trim() ? `${day}, ${by.trim()} 결정` : day
+  const line = quoted ? `> ${next}(${when}): ${note}` : `${next} 변경(${when}): ${note}`
   const updated = skel.replace(VERSION, `version: ${next}\n${line}`)
   writeFileSync(skelPath, updated)
   const head = '| 버전 | 날짜 | 장수 | 바뀐 것 |\n|---|---|---|---|\n'
@@ -463,6 +467,7 @@ const FIG = /(\d[\d,]*(?:\.\d+)?)\s*((?:[만억천]\s*)?(?:%|ms|초|분|시간|�
 const CITE = /^\s*(?:[-*]\s*)?글감\s*:\s*(.+)$/
 // a sentence that gives a reason, cause or solution; grounded only when the cited items say it
 const REASON = /때문|위해|위한|그래서|따라서|덕분|인해|원인|해결|선택했|결정했|판단했/
+const LABEL = /^\s*[^\s:：]{1,6}\s*[:：]\s*/
 // phrases the user rejected as machine-written; listed, not failed
 const TONE = ['효율적으로', '획기적', '극대화', '성공적으로', '원활한', '원활하게', '시너지', '견고한', '혁신적', '함으로써', '다양한 ', '핵심적인', '도모']
 const figs = s => [...String(s).matchAll(FIG)].map(m => `${m[1].replace(/,/g, '')}${m[2].replace(/\s+/g, '')}`)
@@ -491,12 +496,14 @@ export function readMaterial(root) {
     }
   }
   for (const p of ls(join(root, 'sources')).filter(e => e.isDirectory() && /^\d+_/.test(e.name))) {
-    for (const f of ls(join(root, 'sources', p.name)).filter(e => e.isFile() && /^A\d+.*\.md$/.test(e.name))) {
+    // every grade's file (A1, B2, C3 …), not only A: a page may cite any of them
+    for (const f of ls(join(root, 'sources', p.name)).filter(e => e.isFile() && /^[A-Z]\d+.*\.md$/.test(e.name))) {
       const text = read(join(root, 'sources', p.name, f.name))
       // a ledger has no result table: each line holding a figure is its row, `근거 없음` on that line marks it
       const rows = text.split('\n').filter(l => figs(l).length)
         .map(l => ({ figs: figs(l), evidence: /근거 없음/.test(l) ? '근거 없음' : l, label: /본인 확인/.test(l) ? '본인 확인' : '' }))
-      items.set(`${p.name.normalize('NFC')}/${f.name.match(/^A\d+/)[0]}`, { id: `${p.name.normalize('NFC')}/${f.name.match(/^A\d+/)[0]}`, text, rows, cited: false })
+      const id = `${p.name.normalize('NFC')}/${f.name.match(/^[A-Z]\d+/)[0]}`
+      items.set(id, { id, text, rows, cited: false })
     }
   }
   return items
@@ -555,6 +562,22 @@ export function settled(root) {
   return out
 }
 
+// A 확정사실.md that has neither section leaves every settled decision unread: said, never silent.
+export function settledNote(root) {
+  let text
+  try { text = readFileSync(join(root, 'docs', '확정사실.md'), 'utf8') } catch { return undefined }
+  return /^##\s+(서술 기준|구조)/m.test(text) ? undefined
+    : 'docs/확정사실.md has no `## 서술 기준` or `## 구조` section: no settled decision is read; write them there'
+}
+
+// The lines of docs/확정사실.md holding a figure: facts the user confirmed, ground for a page figure
+// its cited items do not carry (listed as confirmed, never not_in_material).
+export function confirmedFacts(root) {
+  let text = ''
+  try { text = readFileSync(join(root, 'docs', '확정사실.md'), 'utf8') } catch { return [] }
+  return text.split('\n').filter(l => figs(l).length).map(l => ({ figs: figs(l), text: l.trim() }))
+}
+
 // A finding re-raises a settled line when it shares >= SETTLE_MIN word stems with it and at least half
 // of the line's stems; a line of fewer than SETTLE_MIN stems never matches. The best line per finding
 // decides; `kept` keeps the input order and the original objects.
@@ -580,9 +603,9 @@ export function settle(findings, lines) {
 
 // With a selection (sources/선정.md), a page citing an item marked 제외 is a problem, the reverse
 // lists cover only 본문/부록 items, and items the table does not name are listed `unselected`.
-export function claims(text, items, settledLines = [], sel = null) {
+export function claims(text, items, settledLines = [], sel = null, confirmed = []) {
   const use = new Map((sel?.rows || []).map(r => [r.id, r.use]))
-  const problems = [], listed = { self_confirmed: [], user_stated: [], tone: [] }
+  const problems = [], listed = { self_confirmed: [], user_stated: [], tone: [], confirmed: [] }
   const carried = new Map()   // item id → figures some page carries
   const lines = text.split('\n')
   const pages = []
@@ -605,11 +628,17 @@ export function claims(text, items, settledLines = [], sel = null) {
     for (const line of p.body) {
       for (const t of TONE) if (line.includes(t)) listed.tone.push({ page: p.page, phrase: t.trim(), text: line })
       const fs = figs(line)
-      const reason = REASON.test(line) && !/\[확인 필요/.test(line)
+      // a template label (`해결:`, `문제:`) is a slot name, not a reason: read what follows it
+      const reason = REASON.test(line.replace(LABEL, '')) && !/\[확인 필요/.test(line)
       if ((fs.length || reason) && !known.length) { problems.push({ page: p.page, kind: 'uncited', text: line }); continue }
       for (const f of fs) {
         const hit = ground.map(it => ({ it, row: it.rows.find(r => r.figs.includes(f)) })).find(x => x.row)
-        if (!hit) { problems.push({ page: p.page, kind: 'not_in_material', text: `${f} — ${line}` }); continue }
+        if (!hit) {
+          const fact = confirmed.find(c => c.figs.includes(f))
+          if (fact) listed.confirmed.push({ page: p.page, text: `${f} — ${line}`, fact: fact.text })
+          else problems.push({ page: p.page, kind: 'not_in_material', text: `${f} — ${line}` })
+          continue
+        }
         if (!carried.has(hit.it.id)) carried.set(hit.it.id, new Set())
         carried.get(hit.it.id).add(f)
         const { evidence, label } = hit.row
@@ -949,7 +978,9 @@ function main() {
   } else if (cmd === 'claims') {
     const text = readFileSync(file, 'utf8')
     const pages = /^##\s+@s\d+/m.test(text) ? deckPages(text) : /resume\.md$/.test(file) ? resumePages(text) : text
-    out = claims(pages, readMaterial(root), settled(root), selection(root))
+    out = claims(pages, readMaterial(root), settled(root), selection(root), confirmedFacts(root))
+    const note = settledNote(root)
+    if (note) out.settled_note = note
   } else if (cmd === 'settle') {
     if (typeof args.findings !== 'string') throw new Error('--findings <file> is required: a JSON array of {id, text}')
     const path = resolve(root, args.findings)
@@ -966,6 +997,8 @@ function main() {
       }
     })
     out = settle(findings, settled(root))
+    const note = settledNote(root)
+    if (note) out.settled_note = note
   } else if (cmd === 'intake') {
     if (typeof args.feedback !== 'string') throw new Error('--feedback <file> is required: the feedback output this round produced')
     const path = resolve(root, args.feedback)
