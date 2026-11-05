@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
-import { bump, claims, compare, deckPages, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, renumber, round, scaffold, selection, settle, settled, snapshot, step, verify } from './manage.mjs'
+import { bump, claims, compare, deckPages, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, readRounds, renumber, round, scaffold, selection, settle, settled, snapshot, step, verify } from './manage.mjs'
 
 const SKEL = `# 가상 포트폴리오
 version: v4.0.0
@@ -802,34 +802,50 @@ test('n_reached at round >= n, null before it', () => {
   assert.deepEqual([r.stop_reason, r.continue], ['n_reached', false])
 })
 
-test('blocked and waiting_user are recorded with their text; waiting_user keeps continue true', () => {
-  let root = workspace()
-  let r = round(root, roundIn(1, { waiting_user: '2쪽 구성을 바꿀까요?' }))
-  assert.deepEqual([r.stop_reason, r.continue], ['waiting_user', true])
-  assert.equal(recOf(root, 1).waiting_user, '2쪽 구성을 바꿀까요?')
-  root = workspace()
-  r = round(root, roundIn(1, { blocked: 'renderer missing' }))
+test('blocked is recorded with its text and ends the loop', () => {
+  const root = workspace()
+  const r = round(root, roundIn(1, { blocked: 'renderer missing' }))
   assert.deepEqual([r.stop_reason, r.continue], ['blocked', false])
   assert.equal(recOf(root, 1).blocked, 'renderer missing')
 })
 
-test('waiting_user ends the loop when every step is skipped or the round is the last', () => {
-  let r = round(workspace(), roundIn(1, { steps: [1, 2, 3, 4, 5, 6, 7].map(k => st(k, 'skipped')), waiting_user: 'q' }))
-  assert.deepEqual([r.stop_reason, r.continue], ['waiting_user', false])
+test('waiting_user is refused: a user-wait is answered by the user, noah or the proposal, nothing written', () => {
   const root = workspace()
-  round(root, roundIn(1, { n: 2 }))
-  r = round(root, roundIn(2, { n: 2, waiting_user: 'q' }))
-  assert.deepEqual([r.stop_reason, r.continue], ['waiting_user', false])
+  assert.throws(() => round(root, roundIn(1, { waiting_user: '2쪽 구성을 바꿀까요?' })), /answered_by/)
+  assert.equal(existsSync(join(root, 'snapshot/rounds/round-1.json')), false)
 })
 
-test('precedence: blocked > waiting_user > nothing_new > n_reached', () => {
+test('answered_by on steps 2-4 is kept by step and round and listed by the read form', () => {
+  const root = workspace()
+  for (let k = 1; k <= 7; k++) {
+    step(root, { round: 1, step: k, id: `c${k}`, criteria: `기준 ${k}` })
+    const answered = { 2: 'proposal', 3: 'noah' }[k]
+    step(root, { round: 1, step: k, verdict: 'pass', by: 'judge', ...(answered && { answered_by: answered }) })
+  }
+  round(root, { round: 1, n: 2, feedback: [] })
+  const rec = recOf(root, 1)
+  assert.equal(rec.steps[1].answered_by, 'proposal')
+  assert.equal(rec.steps[2].answered_by, 'noah')
+  assert.equal(rec.steps[0].answered_by, undefined)
+  assert.deepEqual(readRounds(root).items[0].answered, { 2: 'proposal', 3: 'noah' })
+})
+
+test('answered_by is refused on steps other than 2-4 and for values other than user, noah, proposal', () => {
+  const root = workspace()
+  step(root, { round: 1, step: 1, id: 'c1', criteria: '기준 1' })
+  assert.throws(() => step(root, { round: 1, step: 1, verdict: 'pass', by: 'judge', answered_by: 'user' }), /steps 2-4/)
+  step(root, { round: 1, step: 1, verdict: 'pass', by: 'judge' })
+  step(root, { round: 1, step: 2, id: 'c2', criteria: '기준 2' })
+  assert.throws(() => step(root, { round: 1, step: 2, verdict: 'pass', by: 'judge', answered_by: 'me' }), /user, noah or proposal/)
+  assert.throws(() => round(workspace(), roundIn(1, { steps: [{ ...st(5, 'pass'), answered_by: 'user' }] })), /steps 2-4/)
+})
+
+test('precedence: blocked > nothing_new > n_reached', () => {
   const same = { steps: [st(4, 'fail', 'k')], feedback: [], n: 2 }
   const prep = () => { const root = workspace(); round(root, roundIn(1, same)); afterRound(root, 1); return root }
   // round 2 of n=2 with nothing new: nothing_new beats n_reached
   assert.equal(round(prep(), roundIn(2, same)).stop_reason, 'nothing_new')
-  assert.equal(round(prep(), roundIn(2, { ...same, waiting_user: 'q' })).stop_reason, 'waiting_user')
   assert.equal(round(prep(), roundIn(2, { ...same, blocked: 'b' })).stop_reason, 'blocked')
-  assert.equal(round(prep(), roundIn(2, { ...same, blocked: 'b', waiting_user: 'q' })).stop_reason, 'blocked')
   // all three clauses failing (new gap, new feedback id, a changed file) removes nothing_new, so n_reached is what is left
   const changed = prep(); edit(changed, 'skeleton.md')
   assert.equal(round(changed, roundIn(2, { ...same, steps: [st(4, 'fail', 'k'), st(5, 'fail', 'z')], feedback: [{ id: 'f9', text: 'z' }], feedback_mode: 'panel' })).stop_reason, 'n_reached')

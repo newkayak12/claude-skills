@@ -59,7 +59,7 @@ Steps 1-7 run as one harness-shaped pass, n times (n from the user, default n = 
 → criteria per step (`step`) → do → check (a command, else a judge that is not the actor) → gate
 (`step`) → `round`. `feedback` runs every round after step 7 from the main context, `intake` takes its
 findings; the loop stops at `round`'s `continue: false`. A step that could not run is `skipped` with its reason, a gap, never pass; build/render without
-the user's word is skipped `not requested`; a headless user-wait ends the round (`waiting_user`).
+the user's word is skipped `not requested`; a user-wait is answered by the user, else noah, else the proposal (`answered_by`), never a stop.
 Mechanics: `references/rounds.md`.
 
 0. **Open.** `layout`; read `docs/확정사실.md` and the "맞춰야 할 것" table at the end of skeleton.
