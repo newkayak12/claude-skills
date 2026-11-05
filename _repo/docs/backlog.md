@@ -188,9 +188,9 @@ toasts).
      with two sessions open; idle CPU of the server under 1% with one running task, measured.
      Shipped `595d5d1b` (E-0ad41780) except the CPU bar on the real root: one server per root, idle-out,
      detached from the starting session; measured 2026-11-04 18:30 on `~/.harness/tasks` (1108 entries):
-     no clients 0.07%, one session's 3 s events + status poll ~4% (synthetic root 0.85%). Left: the
-     real-root poll under 1% (status recomputes over every entry), a log for the detached server, a
-     relative `HARNESS_TASKS_DIR` resolved in the mod, a default-on loose CPU guard in the suite — in E-8b2f2880 (E-258fa3e5 cancelled).
+     no clients 0.07%, one session's 3 s events + status poll ~4% (synthetic root 0.85%). The rest shipped
+     `67f1e347` (E-066abb46, gate 91): real-root poll 1.55% → 0.38%, server log, relative
+     `HARNESS_TASKS_DIR` in the mod, default-on CPU guard. Socket part done.
    - The viewer link, now and unconditionally (user, 2026-11-04, on a `http://127.0.0.1:7431/E-478d5e95` in a
      reply: "이렇게 내보이는거 굳이 하지말자"): no tm_* reply carries a viewer URL — `view_url` leaves
      tm_open, tm_run and tm_status (`teams/mcp/taskmanager.mjs`), and the skills that tell Claude to show it
@@ -264,9 +264,8 @@ toasts).
 128. **teams serves one MCP server, its internals split into modules by concern** — shipped on main, unreleased: P1–P3 `189c74d4` (E-258fa3e5), taskmanager facade + 14 modules
    `24d57811` (E-1140cdb9, gate 95), one server `teams/mcp/server.mjs` `14d94112` (E-d26f7a29, gate 91;
    suite 2140/2137, plugin test 448/448, real `claude -p --plugin-dir` lists 33 tools from one server).
-   Left: `tm_wait` polls with `sleepSync` (up to 300 s) and now stalls `team_*`/`wiki_*` in the same
-   server — make it async; stale "one process per server" comments (`taskmanager-handlers.mjs:36-38`,
-   `daemon.mjs:231`, `view.mjs:33`); release note on the tool prefix change
+   Async abortable `tm_wait` and the stale comments shipped `67f1e347` (E-066abb46).
+   Left: release note on the tool prefix change
    (`mcp__plugin_teams_task-manager__*` → `mcp__plugin_teams_teams__*`, allowlists stop matching); one real
    S and one real L task on the installed merged server after the batch bump; `ps` one teams process.
    - Why: user, 2026-11-04: "teams의 mcp 하나의 서버로 통합 및 노출 내부 mjs 코드 스플릿으로 가독성 및
@@ -330,7 +329,8 @@ toasts).
 
 130. **teams spends less per task: model per stage, lean driver sessions, a default budget**
    - Why: E-258fa3e5 (cards 128 + 125 leftovers, opened 2026-11-05 09:25) cost $14.4 over 28 sessions
-     before shape started (planning only). Cost sources named in the session (2026-11-05), checked where
+     before shape started (planning only). Again 2026-11-05: E-066abb46 (size S, Sonnet) spent $48.39 of a
+     $25 budget, `budget_stopped` only after the gate passed (197 min). Cost sources named in the session (2026-11-05), checked where
      marked:
      1. Every node is a fresh `claude -p` session that re-reads the rule files and the global CLAUDE.md
         (@MCP.md, ORCHESTRATOR.md, …); planning alone runs investigate, draft, gate and integrate per card
@@ -459,6 +459,8 @@ toasts).
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-066abb46 | 2026-11-05 | 125 (socket rest), 128 (tm_wait, comments) | shipped `67f1e347`; size S on Sonnet; goal gate 91; state server skips unchanged tasks (fixture 2.10% → 0.90%, real root 1.55% → 0.38%), server log, mod resolves relative tasks dir, CPU guard default-on passed 3 suites of 2154 (only fail W2 hygiene from a stray `.teams_wiki/`); `tm_wait` awaited + abortable, `team_status`/`wiki_list` answer behind it (red on baseline); plugin test 453/453, view/server tests 386/387 (1 skip); spend $48 of $25 budget (card 130); thin CPU margin, 60 s safety-net rebuild |
+| E-d26f7a29 | 2026-11-05 | 128 step 2 | shipped `14d94112`; one MCP server `teams/mcp/server.mjs`, 33 tools; gate 91 |
 | E-0ad41780 | 2026-11-04 | 125 (socket part) | shipped `595d5d1b`; size S; goal gate 90; `teams/mcp/stateserver.mjs` one socket per tasks root, mod dials it (proto=1, 409 → `--once`), `view.mjs --serve-once-socket` removed, `--once` unchanged (view tests 334/334); s1 and s3 each needed a second attempt (flaky CPU test → opt-in `TEAMS_STATE_PERF=1`; server died with its tmux session → detached, SIGHUP ignored); teams 1827/1829 (2 skip), plugin test 448/448 (re-run by hand); real-root CPU ~4% per polling session, not <1% — left on card 125; critique ended at its 2-round cap with 3 majors open; driver paused 1 h on the 5-hour limit; Codex unreachable |
 | E-6ff25a30 | 2026-11-04 | 121, 112 | shipped `e014fb10`; size S; goal gate 82 fail → one repair (edit-claim overlap only) → 91; `test-taskmanager.mjs` file-level temp tasks root (temp-HOME suite leaves 0 entries; a real-HOME run went 1105 → 1108 with other tasks live, not attributed); `areas-critique` blocks an edit-ownership overlap naming one owner; teams 1813/1814 (1 skip, 0 fail, re-run by hand), plugin test 445/445 (task's count); last critique round's fixes not re-critiqued; Codex unreachable, Claude did all nodes |
 | — | 2026-11-04 | 101, 81 closed on evidence | 101: E-bf0527b7 (teams 0.62.7) ran `dispatch:P1:2` and `dispatch:P2:2` together from 05:45 (spawned 1 s apart) and P3:2 with P2:3 from 07:19, no `auto_parallel_decreased`; 81: E-a9953265 (size S, teams 0.63.0) `scope_verdict` `own_record: true`, Codex `apply_patch` limit stays named in teams README/KOR |
