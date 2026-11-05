@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
-import { bump, claims, compare, deckPages, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, readRounds, renumber, round, scaffold, selection, settle, settled, snapshot, step, verify } from './manage.mjs'
+import { bump, claims, compare, confirmedFacts, deckPages, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, readRounds, renumber, round, scaffold, selection, settle, settled, snapshot, step, verify } from './manage.mjs'
 
 const SKEL = `# 가상 포트폴리오
 version: v4.0.0
@@ -76,7 +76,8 @@ test('snapshot copies the current skeleton, bumps and logs once', () => {
   assert.equal(r.to, 'v4.1.0')
   assert.equal(readFileSync(join(root, 'snapshot/skeleton/skeleton-v4.0.0/skeleton.md'), 'utf8'), SKEL)
   const now = readFileSync(join(root, 'skeleton.md'), 'utf8')
-  assert.match(now, /version: v4\.1\.0\nv4\.1\.0 변경\(2026-01-02, 본인 결정\): 검색 블록 두 장 순서 교환\n\n## 1 표지/)
+  // no --by: the line names no decider (it never claims the user decided)
+  assert.match(now, /version: v4\.1\.0\nv4\.1\.0 변경\(2026-01-02\): 검색 블록 두 장 순서 교환\n\n## 1 표지/)
   assert.match(readFileSync(join(root, 'snapshot/README.md'), 'utf8'), /\| v4\.0\.0 \| 2026-01-02 \| 5 \| → v4\.1\.0: 검색 블록/)
   // the next snapshot is of v4.1.0; the same version cannot be taken twice
   writeFileSync(join(root, 'skeleton.md'), SKEL)
@@ -184,7 +185,7 @@ test('snapshot follows the workspace: quoted history line, newest-first table', 
   writeFileSync(join(root, 'skeleton.md'), REAL)
   mkdirSync(join(root, 'snapshot'))
   writeFileSync(join(root, 'snapshot/README.md'), '## skeleton\n| 버전 | 날짜 | 장수 | 한 줄 |\n|---|---|---|---|\n| `skeleton-v1.1.0` | 2026-01-02 | 6 | 둘째 |\n| `skeleton-v1.0.0` | 2026-01-01 | 5 | 첫 판 |\n')
-  snapshot(root, { kind: 'skeleton', level: 'patch', note: '검증', date: '2026-01-03' })
+  snapshot(root, { kind: 'skeleton', level: 'patch', note: '검증', by: '본인', date: '2026-01-03' })
   assert.match(readFileSync(join(root, 'skeleton.md'), 'utf8'), /^version: v2\.0\.1\n> v2\.0\.1\(2026-01-03, 본인 결정\): 검증\n> v1\.2\.0/m)
   assert.match(readFileSync(join(root, 'snapshot/README.md'), 'utf8'), /\|---\|---\|---\|---\|\n\| `skeleton-v2\.0\.0` \| 2026-01-03 \| 6 \| → v2\.0\.1: 검증 \|\n\| `skeleton-v1\.1\.0`/)
 })
@@ -225,7 +226,7 @@ test('real-shape workspace: snapshot follows its history form and newest-first t
   const root = workspace()
   const r = snapshot(root, { kind: 'skeleton', level: 'patch', note: '부록 제목 정리', date: '2026-01-06' })
   assert.equal(r.to, 'v3.1.1')
-  assert.match(readFileSync(join(root, 'skeleton.md'), 'utf8'), /^version: v3\.1\.1\n> v3\.1\.1\(2026-01-06, 본인 결정\): 부록 제목 정리\n> v3\.1\.0/m)
+  assert.match(readFileSync(join(root, 'skeleton.md'), 'utf8'), /^version: v3\.1\.1\n> v3\.1\.1\(2026-01-06\): 부록 제목 정리\n> v3\.1\.0/m)
   assert.match(readFileSync(join(root, 'snapshot/README.md'), 'utf8'), /\|---\|---\|---\|---\|\n\| `skeleton-v3\.1\.0` \| 2026-01-06 \| 9 \| → v3\.1\.1: 부록 제목 정리 \|\n\| `skeleton-v3\.0\.0`/)
 })
 
@@ -446,6 +447,48 @@ test('claims reads a ledger workspace: a figure on a ledger line, `근거 없음
   writeFileSync(join(root, 'sources/01_가상검색/A1_검색개편.md'), '# A1 검색 개편\n\n- 결과: 응답 50% 단축 (측정 문서)\n- 비용: 30% 절감 근거 없음\n')
   const r = claims('## 1 검색\n글감: 01_가상검색/A1\n응답이 50% 줄었다.\n비용이 30% 줄었다.\n', readMaterial(root))
   assert.deepEqual(r.problems.map(p => p.kind), ['unsupported'])
+})
+
+test('claims reads B- and C-grade ledger files as items, not only A', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-ledger-'))
+  mkdirSync(join(root, 'sources/01_가상검색'), { recursive: true })
+  writeFileSync(join(root, 'sources/01_가상검색/B1_캐시.md'), '# B1 캐시\n\n- 결과: 응답 2.7초 → 0.4초 (측정 문서)\n')
+  writeFileSync(join(root, 'sources/01_가상검색/C2_로그.md'), '# C2 로그\n\n- 로그 12건 정리\n')
+  const items = readMaterial(root)
+  assert.deepEqual([...items.keys()].sort(), ['01_가상검색/B1', '01_가상검색/C2'])
+  const r = claims('## 1 검색\n글감: 01_가상검색/B1, 01_가상검색/C2\n응답이 2.7초에서 줄었다.\n로그 12건을 정리했다.\n', items)
+  assert.deepEqual(r.problems, [])
+})
+
+test('claims: a figure only docs/확정사실.md states is listed as confirmed, not not_in_material', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-ledger-'))
+  mkdirSync(join(root, 'sources/01_가상검색'), { recursive: true })
+  writeFileSync(join(root, 'sources/01_가상검색/A1_검색.md'), '# A1 검색\n\n- 결과: 응답 50% 단축\n')
+  mkdirSync(join(root, 'docs'))
+  writeFileSync(join(root, 'docs/확정사실.md'), '# 확정사실\n\n## 사실\n- 근속 9개월, 배포 47초\n')
+  const r = claims('## 1 검색\n글감: 01_가상검색/A1\n9개월 동안 배포를 47초로 줄였다.\n응답이 80% 줄었다.\n', readMaterial(root), [], null, confirmedFacts(root))
+  assert.deepEqual(r.problems.map(p => p.text.split(' ')[0]), ['80%'])
+  assert.deepEqual(r.listed.confirmed.map(x => x.text.split(' ')[0]), ['9개월', '47초'])
+})
+
+test('claims: a template label (`해결:`) is not read as a reason sentence', () => {
+  const root = claimsWorkspace()
+  const r = claims('## 1 검색\n글감: retro--검색-지연\n해결: 카나리 배포 도입\n', readMaterial(root))
+  assert.deepEqual(r.problems.filter(p => p.kind === 'to_confirm'), [])
+  const why = claims('## 1 검색\n글감: retro--검색-지연\n해결: 장애가 잦았기 때문에 카나리 배포 도입\n', readMaterial(root))
+  assert.deepEqual(why.problems.map(p => p.kind), ['to_confirm'])
+})
+
+test('claims and settle CLI say so when docs/확정사실.md has no 서술 기준 or 구조 section', () => {
+  const root = workspace()
+  writeFileSync(join(root, 'docs/확정사실.md'), '# 확정사실\n\n## 사실\n- 근속 9개월\n')
+  const out = JSON.parse(spawnSync(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), 'manage.mjs'), 'claims'], { cwd: root, encoding: 'utf8' }).stdout)
+  assert.match(out.settled_note, /서술 기준.*구조/)
+  writeFileSync(join(root, 'f.json'), '[]')
+  const s = JSON.parse(settleCli(root, '--findings', 'f.json').stdout)
+  assert.match(s.settled_note, /서술 기준.*구조/)
+  writeFileSync(join(root, 'docs/확정사실.md'), '# 확정사실\n\n## 구조\n- 서로 다른 일은 한 블록에 섞지 않는다\n')
+  assert.equal(JSON.parse(settleCli(root, '--findings', 'f.json').stdout).settled_note, undefined)
 })
 
 test('compare: a claim that lost its ground makes the round worse whatever the scores (card 102)', () => {
