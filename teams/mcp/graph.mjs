@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { DEFAULT_MODELS } from './routing.mjs';
 import { applyMerge, writeScopeFindings } from './reducers.mjs';
 import { acquireLock as acquire, releaseLock as release, transactionObject, mutateRun } from './store.mjs';
+import { VERDICT_FIELD, HUMAN_GATE_VERDICT_FIELD } from './verdictfields.mjs';
 
 export const STAGES = [
   'plan',      // decompose the raw request
@@ -193,7 +194,8 @@ export const REASONING_STAGES = new Set([
 // The field that carries a judging node's verdict. stage_ok on these nodes means only
 // "the judging itself worked"; the verdict must be present and affirmative for the node
 // to count as done. A stage absent here has no verdict beyond stage_ok.
-export const VERDICT_FIELD = { gate: 'accept', critique: 'sound', test: 'verified', review: 'verified', execute: 'verified' };
+// The map lives in verdictfields.mjs; this is its engine view.
+export { VERDICT_FIELD };
 
 // Why a judging node said no, when it never said so in a `reason`. review's and test's schema
 // have no reason field at all, and a manager integrate/accept/critique can come back
@@ -1774,7 +1776,8 @@ export function promoteWaitingHuman(run) {
 // so every downstream hook that already reads a stage's result (autoReassign's retry, shape's
 // expandPackages, a package's own accept feeding the manager) keeps working unmodified - a
 // human's verdict and a model's verdict are the same shape once they land on the node.
-export const HUMAN_GATE_VERDICT_FIELD = { gate: 'accept', critique: 'sound', accept: 'accept', integrate: 'verified', 'areas-critique': 'sound', 'plan-integrate': 'accept' };
+// The map lives in verdictfields.mjs; this is its humanGate view.
+export { HUMAN_GATE_VERDICT_FIELD };
 
 // gate:goal is `stage: 'gate'` with `subgoal_id: null` on both the child-run graph
 // (expandSubgoals' pushGoalGateRound) and the manager graph (taskmanager.mjs's own
