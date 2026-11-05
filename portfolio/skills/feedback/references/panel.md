@@ -25,10 +25,14 @@ session model for merge, cut (rule S), scoring and the final blocks.
    stays through attack, cut and the Clashes block. A finding no reviewer can tie
    to a quoted line is cut here. Order: severity, then the focus persona's findings first when
    the user named one.
-4. **Attack / rebut (rounds 2–3, at most 2).** Each reviewer again as its own `sonnet` subagent,
-   reading the merged list with the other reviewers' findings, using `think:devils-advocate` as
-   the attack method. Per finding it opposes it writes one attack; per attack on a finding it
-   backs it writes one rebuttal. An attack carries:
+4. **Attack / rebut (rounds 2–3, at most 2).** Start four subagents in one message again, one per
+   reviewer, each its own `sonnet` Agent call with its own persona text, reading the merged list
+   with the other reviewers' findings, using `think:devils-advocate` as the attack method. One
+   subagent playing several reviewers is not the panel: a reviewer whose own call does not return
+   is missing for that round, named in the Clashes block. Per finding it opposes it writes one
+   attack; per attack on a finding it backs it writes one rebuttal. A reviewer never rebuts its own
+   attack and never both attacks and backs one finding; a rebuttal by the attacker is discarded.
+   An attack carries:
 
    ```
    <finding ID> · steel-man: <the finding at its strongest, one line>
@@ -76,8 +80,13 @@ wrong: C1 (note) — B attacked — 인용문이 근거를 뒷받침하지 않�
 right: C1 — B attacked (execution, high; steel-man: <one line>; precedent: speculative), A rebutted; the quoted line still carries it — survived
 ```
 
-Before Write, check every entry line against `^[A-Z]+[0-9]+ — [^—]+ — (survived|dropped)$` and
-fix any line that fails.
+Before Write, check and fix:
+
+- every entry line against `^[A-Z]+[0-9]+ — [^—]+ — (survived|dropped)$`;
+- no entry names one letter as both attacker and rebutter (`B attacked …, B rebutted` is wrong);
+- every appendix line against `^[CALRF][0-9]+ ` — no `- `, `* `, number or bold before the ID;
+- every block heading written exactly as in the Output Template, both halves
+  (`**[충돌 / Clashes]**`, never `[충돌]` or `[Clashes]`).
 
 - No contested finding: `충돌 없음 / no clashes`.
 - Appendix lines start with their ID and a space: `C1 `, `A1 `, `L1 `, `R1 `, `F1 `.
