@@ -78,7 +78,7 @@ test('the map: each stage has one field, and every scope names a known view', ()
 });
 
 test('taskmanager.mjs still holds the literal this test pins (or imports the view)', () => {
-  const src = readFileSync(join(MCP, 'taskmanager.mjs'), 'utf8');
+  const src = readFileSync(join(MCP, 'taskmanager-stages.mjs'), 'utf8');
   const m = src.match(/^const VERDICT = (\{.*\});$/m);
   if (m) assert.deepStrictEqual(new Function(`return ${m[1]}`)(), TASKMANAGER_VERDICT);
   else assert.match(src, /TASKMANAGER_VERDICT/);

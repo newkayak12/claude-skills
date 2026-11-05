@@ -672,7 +672,7 @@ test('portfolio-refresh: model instructions are run, not grepped - setgoal requi
 
 test('portfolio-refresh: the manager shape, critique, accept and QA carry the same rule', async () => {
   const tm = await import('../mcp/taskmanager.mjs');
-  const src = (await import('node:fs')).readFileSync(new URL('../mcp/taskmanager.mjs', import.meta.url), 'utf8');
+  const src = (await import('node:fs')).readFileSync(new URL('../mcp/taskmanager-prompts.mjs', import.meta.url), 'utf8');
   assert.ok(tm.CONTRACT.shape.includes(EXERCISE_RULE));
   assert.match(tm.CONTRACT.critique, /no acceptance item that runs them/);
   assert.match(tm.CONTRACT.accept, /a grep that the words are there is absent evidence for it/);
@@ -764,8 +764,11 @@ test('QUESTIONS_CONTRACT: exported once from prompts.mjs, imported (not copied) 
   assert.equal(typeof prompts.QUESTIONS_CONTRACT, 'string');
   assert.match(prompts.QUESTIONS_CONTRACT, /^Optional: "questions": \[/);
   const { readFileSync } = await import('node:fs');
-  const src = readFileSync(new URL('../mcp/taskmanager.mjs', import.meta.url), 'utf8');
-  assert.doesNotMatch(src, /const QUESTIONS_CONTRACT\b/, 'no local copy in taskmanager.mjs');
+  const { readdirSync } = await import('node:fs');
+  const mcpDir = new URL('../mcp/', import.meta.url);
+  for (const f of readdirSync(mcpDir).filter((x) => x === 'taskmanager.mjs' || /^taskmanager-.+\.mjs$/.test(x))) {
+    assert.doesNotMatch(readFileSync(new URL(f, mcpDir), 'utf8'), /const QUESTIONS_CONTRACT\b/, `no local copy in ${f}`);
+  }
   const contractSrc = readFileSync(new URL('../mcp/stagecontract.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(contractSrc, /const QUESTIONS_CONTRACT\b/, 'no local copy in stagecontract.mjs');
   assert.match(contractSrc, /^import \{[^}]*\bQUESTIONS_CONTRACT\b[^}]*\} from '\.\/prompts\.mjs';$/m);

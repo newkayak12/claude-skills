@@ -1,7 +1,7 @@
 // Run nodes (workers and judges) carry HARNESS_NODE=1; the processes that drive a run do not.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const src = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
@@ -12,7 +12,7 @@ test('workers are marked: the broker adapter spawn and the judge spawn', () => {
 });
 
 test('drivers are not marked: the child driver and the daemon itself legitimately run entry skills and tm_*', () => {
-  assert.ok(!src('../mcp/taskmanager.mjs').includes('HARNESS_NODE'));
+  for (const f of readdirSync(fileURLToPath(new URL('../mcp/', import.meta.url))).filter((x) => x === 'taskmanager.mjs' || /^taskmanager-.+\.mjs$/.test(x))) assert.ok(!src(`../mcp/${f}`).includes('HARNESS_NODE'), f);
 });
 
 test('hooks.json matches Skill', () => {
