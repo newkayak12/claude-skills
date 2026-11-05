@@ -14,12 +14,12 @@ import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { request } from 'node:http';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, utimesSync, existsSync, chmodSync, appendFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, utimesSync, existsSync, chmodSync, appendFileSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTaskCache, statePaths, PROTO } from '../mcp/stateserver.mjs';
-import { collectFromRaw } from './lib/view-collect.mjs';
+import { collectFromRaw, STALL_MS } from './lib/view-collect.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VIEW = join(HERE, 'view.mjs');
@@ -571,6 +571,216 @@ test('black box: the collects header rises by exactly one after one ledger appen
   } finally { sl.c.kill('SIGKILL'); await kill(h); }
 });
 
+// A task whose daemon is dead and that no driver records: reads stalled while its files are young.
+function stalledTask(dir, id) {
+  mkdirSync(join(dir, id), { recursive: true });
+  writeFileSync(join(dir, id, 'task.json'), taskJson(id, { nodes: [node('size', 'size', 'done'), node('shape', 'shape', 'running')], daemon: { pid: 2147483645, started_at: Date.now(), restarts: 0 } }));
+  writeFileSync(join(dir, id, 'ledger.jsonl'), jl([{ ts: Date.now(), event: 'node_start', node_id: 'shape' }]));
+}
+
+// One running task (live sleeper, a stream nobody writes during the test), one stalled, one finished.
+function threeTasks(prefix) {
+  const dir = join(mkdtempSync(join(tmpdir(), prefix)), 'tasks');
+  mkdirSync(dir, { recursive: true });
+  extraRoots.add(dirname(dir));
+  const sl = sleeper();
+  const log = join(dir, 'E-run00011', 'drivers', 'dispatch_P1_1.stream.jsonl');
+  stream(log);
+  runningTask(dir, 'E-run00011', { driverPid: sl.c.pid, log });
+  stalledTask(dir, 'E-stall001');
+  addReported('E-done0001', dir);
+  return { dir, sl, ids: ['E-run00011', 'E-stall001', 'E-done0001'] };
+}
+
+const ANSWER_WINDOW_MS = 2000;
+const snap = (s) => JSON.parse(JSON.stringify(s));
+
+test('createTaskCache: two polls past the window with no file change collect, rebuild and read nothing again; one ledger append collects that task only', async () => {
+  const { dir, sl, ids } = threeTasks('state-two-');
+  try {
+    const cache = createTaskCache();
+    const [run, stall] = ids.map((id) => cache.get(dir, id));
+    assert.equal(run.state, 'running');
+    assert.equal(stall.state, 'stalled');
+    const a = snap(cache.stats);
+    await sleep(ANSWER_WINDOW_MS + 300);
+    for (const id of ids) cache.get(dir, id);
+    const b = snap(cache.stats);
+    assert.equal(b.collects, a.collects);
+    assert.deepEqual(b.byId, a.byId);
+    assert.equal(b.rebuilds, a.rebuilds, 'no task was built again: no pid, stream or run file moved');
+    assert.deepEqual(b.reads, a.reads);
+    appendFileSync(join(dir, 'E-run00011', 'ledger.jsonl'), jl([{ ts: Date.now(), event: 'node_finish', node_id: 'x' }]));
+    for (const id of ids) cache.get(dir, id);
+    assert.equal(cache.stats.collects, a.collects + 1);
+    assert.deepEqual(cache.stats.byId, { ...a.byId, 'E-run00011': a.byId['E-run00011'] + 1 });
+  } finally { sl.c.kill('SIGKILL'); await sl.exited; }
+});
+
+test('createTaskCache: clock fields move without a rebuild for a running and a stalled task', async () => {
+  const { dir, sl, ids } = threeTasks('state-clk-');
+  try {
+    const built = {};
+    const cache = createTaskCache({ build: (d, id, ...a) => { built[id] = (built[id] || 0) + 1; return collectFromRaw(d, id, ...a); } });
+    const first = Object.fromEntries(ids.map((id) => [id, cache.get(dir, id).elapsed_ms]));
+    const was = snap(built);
+    const t0 = Date.now();
+    await sleep(ANSWER_WINDOW_MS + 300);
+    const wall = Date.now() - t0;
+    for (const id of ids) {
+      const moved = cache.get(dir, id).elapsed_ms - first[id];
+      assert.ok(Math.abs(moved - wall) <= ANSWER_WINDOW_MS + 250, `${id}: elapsed_ms moved ${moved} ms over ${wall} ms of wall time`);
+    }
+    assert.deepEqual(built, was, 'no task was built again');
+    assert.equal(cache.stats.rebuilds, 0);
+  } finally { sl.c.kill('SIGKILL'); await sl.exited; }
+});
+
+test('createTaskCache: a quiet stream crosses STALL_MS and reads stalled with no file change', async () => {
+  const dir = join(mkdtempSync(join(tmpdir(), 'state-cross-')), 'tasks');
+  mkdirSync(dir, { recursive: true });
+  extraRoots.add(dirname(dir));
+  const sl = sleeper();
+  const id = 'E-cross001';
+  const log = join(dir, id, 'drivers', 'dispatch_P1_1.stream.jsonl');
+  stream(log);
+  const at = (Date.now() - STALL_MS + 2500) / 1000;
+  utimesSync(log, at, at);
+  runningTask(dir, id, { driverPid: sl.c.pid, log });
+  try {
+    const cache = createTaskCache();
+    assert.equal(cache.get(dir, id).state, 'running');
+    const collects = cache.stats.collects;
+    await sleep(3500);
+    const m = cache.get(dir, id);
+    const fresh = collectFromRaw(dir, id, JSON.parse(readFileSync(join(dir, id, 'task.json'), 'utf8')));
+    assert.equal(fresh.state, 'stalled');
+    assert.equal(m.state, fresh.state, 'the cached model flipped with the clock');
+    assert.equal(m.ticket.state, fresh.ticket.state);
+    assert.equal(cache.stats.collects, collects, 'no full collect for the flip');
+  } finally { sl.c.kill('SIGKILL'); await sl.exited; }
+});
+
+test('status and events over a running, a stalled and a finished task answer byte for byte like --once, tick after tick', async () => {
+  const { dir, sl } = threeTasks('state-live-');
+  const path = sock(dir);
+  const h = serve(dir);
+  try {
+    await ready(path);
+    const events = ['--format', 'events', '--since', '0', '--cwd', cwd];
+    const status = ['--format', 'status', '--cwd', cwd, '--session', 's1'];
+    for (let i = 0; i < 2; i++) {
+      await sleep(ANSWER_WINDOW_MS + 300);
+      for (const args of [events, status]) assert.equal((await get(path, query(args))).body, once(args, dir), `${args[1]}, tick ${i}`);
+    }
+    assert.match(once(status, dir), /"line":"[^"]*E-run00011/, 'the running task is in the status line');
+  } finally { sl.c.kill('SIGKILL'); await kill(h); }
+});
+
+test('openTasks: a dir with only a ledger is kept by its own mtime, and a task.json created in it is found on the next call', async () => {
+  const { openTasks } = await import('./lib/view-index.mjs');
+  const dir = newRoot('state-bare-');
+  const id = 'E-bare0001';
+  mkdirSync(join(dir, id), { recursive: true });
+  writeFileSync(join(dir, id, 'ledger.jsonl'), jl([{ ts: T0, event: 'node_start', node_id: 'size' }]));
+  const old = Date.now() / 1000 - 3600;
+  utimesSync(join(dir, id), old, old);
+  assert.deepEqual(openTasks(dir, { running: true }), [{ id, raw: null, absent: true }]);
+  assert.deepEqual(openTasks(dir, { running: true }), [{ id, raw: null, absent: true }], 'kept by the dir mtime');
+  writeFileSync(join(dir, id, 'task.json'), taskJson(id));
+  const [found] = openTasks(dir, { running: true });
+  assert.equal(found.id, id);
+  assert.equal(found.raw.run_id, id);
+  assert.equal(found.absent, undefined);
+});
+
+// ---------- the log under the tasks root ----------
+
+const logOf = (dir) => readFileSync(join(dir, '.state.log'), 'utf8');
+const newRoot = (prefix) => {
+  const dir = join(mkdtempSync(join(tmpdir(), prefix)), 'tasks');
+  mkdirSync(dir, { recursive: true });
+  extraRoots.add(dirname(dir));
+  return dir;
+};
+
+test('log: a detached start leaves start and listening lines, and SIGTERM adds its own', async () => {
+  const dir = newRoot('state-log-');
+  const starter = spawn('node', [STATE, '--tasks-dir', dir], { stdio: 'ignore', env: { ...process.env, HARNESS_TASKS_DIR: dir } });
+  pids.add(starter.pid);
+  await ready(sock(dir));
+  const spid = JSON.parse(readFileSync(statePaths(dir).lock, 'utf8')).pid;
+  pids.add(spid);
+  assert.equal((await q200(dir)).status, 200);
+  process.kill(spid, 'SIGTERM');
+  for (let i = 0; i < 60 && alive(spid); i++) await sleep(50);
+  assert.equal(alive(spid), false);
+  const lines = logOf(dir).trim().split('\n');
+  const iso = '\\d{4}-\\d\\d-\\d\\dT[\\d:.]+Z';
+  assert.match(lines[0], new RegExp(`^${iso} ${spid} start$`));
+  assert.match(lines[1], new RegExp(`^${iso} ${spid} listening ${sock(dir).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
+  assert.match(lines.at(-1), new RegExp(`^${iso} ${spid} SIGTERM$`));
+});
+
+test('log: a foreground server that goes idle writes idle-exit', async () => {
+  const dir = newRoot('state-logidle-');
+  const h = serve(dir, { TEAMS_STATE_IDLE_MS: '400' });
+  await ready(sock(dir));
+  assert.equal(await exitsWithin(h, 5000), 0);
+  assert.match(logOf(dir), / \d+ idle-exit\n$/);
+});
+
+test('log: SIGINT is logged like SIGTERM', async () => {
+  const dir = newRoot('state-logint-');
+  const h = serve(dir);
+  await ready(sock(dir));
+  h.c.kill('SIGINT');
+  assert.equal(await exitsWithin(h, 5000), 0);
+  assert.match(logOf(dir), / \d+ SIGINT\n$/);
+});
+
+test('log: a socket path that cannot be listened on writes an error line and exits 1', async () => {
+  const dir = newRoot('state-logerr-');
+  mkdirSync(sock(dir), { recursive: true });
+  const h = serve(dir);
+  assert.equal(await exitsWithin(h, 5000), 1);
+  const lines = logOf(dir).trim().split('\n');
+  assert.match(lines[0], / \d+ start$/);
+  assert.match(lines.at(-1), / \d+ error \S+$/);
+});
+
+test('log: a log at 1 MiB is rotated to .state.log.1 and stays under 1 MiB plus one line', async () => {
+  const dir = newRoot('state-logcap-');
+  const MiB = 1024 * 1024;
+  writeFileSync(join(dir, '.state.log'), `${'x'.repeat(99)}\n`.repeat(Math.ceil(MiB / 100)));
+  const h = serve(dir);
+  await ready(sock(dir));
+  await kill(h);
+  assert.ok(existsSync(join(dir, '.state.log.1')), 'the full log was kept as .state.log.1');
+  assert.ok(statSync(join(dir, '.state.log.1')).size >= MiB);
+  assert.ok(statSync(join(dir, '.state.log')).size <= MiB + 200);
+  assert.match(logOf(dir), / \d+ start\n/);
+});
+
+test('log: format=summary and format=status list neither .state.log nor .state.log.1 as a task', async () => {
+  const dir = newRoot('state-lognot-');
+  addReported('E-aaaaaaaa1', dir);
+  writeFileSync(join(dir, '.state.log.1'), 'old\n');
+  const h = serve(dir);
+  const path = sock(dir);
+  try {
+    await ready(path);
+    assert.ok(existsSync(join(dir, '.state.log')));
+    for (const fmt of ['summary', 'status']) {
+      const r = await get(path, query(['--format', fmt, '--cwd', cwd]));
+      assert.equal(r.status, 200);
+      assert.ok(!r.body.includes('.state'), `${fmt}: no .state file named in the answer`);
+    }
+    const j = JSON.parse((await get(path, query(['--format', 'summary', '--cwd', cwd]))).body);
+    assert.ok(j.tasks.every((t) => String(t.task_id).startsWith('E-')));
+  } finally { await kill(h); }
+});
+
 // ---------- the mod's 3 s tick over many finished tasks ----------
 
 // A tasks root of 2000 tasks: 800 cancelled, 600 reported, 400 whose daemon died, 200 with only a ledger,
@@ -705,6 +915,34 @@ test('60 s idle: events and summary every 3 s on 2001 tasks (one running, with a
     const pct = (100 * (cpuSeconds(h.c.pid) - cpu0)) / wall;
     t.diagnostic(`state server tick: ${pct.toFixed(2)}% of one core over ${wall.toFixed(1)} s (${ms.length} calls; ${spread(ms)}); rss ${rss0} -> ${rssKb(h.c.pid)} kB, max ${rssMax} kB`);
     assert.ok(pct < 1, `${pct.toFixed(2)}% of one core, bound 1%`);
+  } finally { big.sleeper?.c.kill('SIGKILL'); await kill(h); }
+});
+
+// A loose bound on CPU time (not a percentage: it barely moves with machine load): at least 4x the highest of
+// three measurements after the fix on this fixture (0.13, 0.10 and 0.07 under a full-suite run, ps resolves 0.01 s).
+const CPU_GUARD_S = 0.6;
+test(`CPU guard (default on): events and status every 3 s on 2001 tasks stay under ${CPU_GUARD_S} CPU s over 15 s`, async (t) => {
+  const big = bigRoot();
+  const path = sock(big.tasks);
+  const h = serve(big.tasks);
+  try {
+    await ready(path);
+    const events = ['--format', 'events', '--since', String(Date.now()), '--cwd', big.cwd];
+    const status = ['--format', 'status', '--cwd', big.cwd, '--session', 's1'];
+    await timed(path, events);
+    await timed(path, status);
+    await sleep(500); // start-up and the first render are not part of the idle cost
+    const cpu0 = cpuSeconds(h.c.pid);
+    const t0 = Date.now();
+    while (Date.now() - t0 < 15 * 1000) {
+      const at = Date.now();
+      await timed(path, events);
+      await timed(path, status);
+      await sleep(Math.max(0, 3000 - (Date.now() - at)));
+    }
+    const used = cpuSeconds(h.c.pid) - cpu0;
+    t.diagnostic(`state server: ${used.toFixed(2)} CPU s over ${((Date.now() - t0) / 1000).toFixed(1)} s, bound ${CPU_GUARD_S} s`);
+    assert.ok(used < CPU_GUARD_S, `${used.toFixed(2)} CPU s, bound ${CPU_GUARD_S} s`);
   } finally { big.sleeper?.c.kill('SIGKILL'); await kill(h); }
 });
 

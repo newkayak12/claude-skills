@@ -228,7 +228,7 @@ async function judge(task, n, { slot = null } = {}) {
     writeFileSync(p, prompt);
   } catch { /* tm_status full is the fallback view */ }
   const argv = judgeArgv(task);
-  // Judges never see the project wiki (wiki.mjs answers an empty tool list under this).
+  // Judges never see the project wiki: TEAMS_WIKI_OFF=1 hides wiki_* from the judge's teams server.
   const extra = [];
   if (task.child_opts && task.child_opts.model) extra.push('--model', task.child_opts.model);
   return new Promise((resolve) => {

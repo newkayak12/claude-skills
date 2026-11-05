@@ -260,11 +260,53 @@ test('cancelling an in-flight tm_wait: the reply still arrives, not an error, pi
   });
 });
 
+test('while tm_wait polls, team_status and wiki_list on the same server answer within 1 s', async () => {
+  const cwd = repo();
+  await withClient([], baseEnv(), async (c) => {
+    const task_id = await openTask(c, cwd);
+    const ctlStatus = (await c.start('team_status', {}).reply).result;
+    const ctlList = (await c.start('wiki_list', {}).reply).result;
+    const { cursor } = await c.call('tm_wait', { task_id, max_ms: 50 });
+    const w = c.start('tm_wait', { task_id, cursor, max_ms: 5000 });
+    let waitReplied = false;
+    w.reply.then(() => { waitReplied = true; });
+    await sleep(300);
+    for (const [name, ctl] of [['team_status', ctlStatus], ['wiki_list', ctlList]]) {
+      const t0 = Date.now();
+      const r = (await c.start(name, {}).reply).result;
+      assert.ok(Date.now() - t0 < 1000, `${name} took ${Date.now() - t0} ms behind tm_wait`);
+      assert.equal(r.isError, ctl.isError, `${name} isError as the control's`);
+    }
+    assert.equal(waitReplied, false, 'tm_wait was still polling');
+    const reply = (await w.reply).result;
+    assert.equal(reply.isError, false);
+    assert.equal(reply.structuredContent.timed_out, true);
+  });
+});
+
+test('cancelling tm_wait ends it within one poll interval', async () => {
+  const cwd = repo();
+  await withClient([], baseEnv(), async (c) => {
+    const task_id = await openTask(c, cwd);
+    const { cursor } = await c.call('tm_wait', { task_id, max_ms: 50 });
+    const w = c.start('tm_wait', { task_id, cursor, max_ms: 10000 });
+    await sleep(300);
+    const t0 = Date.now();
+    c.cancel(w.id);
+    const reply = (await w.reply).result;
+    assert.ok(Date.now() - t0 < 2500, `tm_wait ended ${Date.now() - t0} ms after the cancel`);
+    assert.equal(reply.isError, false);
+    const s = reply.structuredContent;
+    for (const k of ['state', 'counts', 'cursor', 'timed_out']) assert.ok(k in s, `${k} present`);
+  });
+});
+
 test('tm_* replies come back in request order when pipelined', async () => {
   const cwd = repo();
   await withClient([], baseEnv(), async (c) => {
     const task_id = await openTask(c, cwd);
-    const first = c.start('tm_wait', { task_id, max_ms: 300 });
+    // tm_wait left the serial queue (it runs with ctx, so it can be cancelled), so the head is a serial tm_*.
+    const first = c.start('tm_events', { task_id });
     const second = c.start('tm_board', {});
     const third = c.start('wiki_status', {});
     await Promise.all([first.reply, second.reply, third.reply]);

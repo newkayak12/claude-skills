@@ -167,6 +167,18 @@ async function viewOnce($: EngineInterface, args: string[]): Promise<{ exitCode:
     const tasks = await $.env.get('HARNESS_TASKS_DIR')
     const home = await $.env.get('HOME')
     tasksDir = tasks ? tasks.replace(/\/+$/, '') : home ? `${home}/.harness/tasks` : ''
+    // a relative root means the session's cwd, not this process's; no cwd keeps the value as is
+    if (tasks && !tasks.startsWith('/')) {
+      const cwd = await $.session.cwd().catch(() => '')
+      if (cwd && cwd.startsWith('/')) {
+        const parts: string[] = []
+        for (const p of `${cwd}/${tasks}`.split('/')) {
+          if (p === '..') parts.pop()
+          else if (p !== '' && p !== '.') parts.push(p)
+        }
+        tasksDir = `/${parts.join('/')}`
+      }
+    }
     let sock = tasksDir ? `${tasksDir}/.state.sock` : ''
     if (sock && new TextEncoder().encode(sock).length > 103) {
       let long = longSocks.get(tasksDir)

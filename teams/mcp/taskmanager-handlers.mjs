@@ -33,12 +33,15 @@ function toolEvents(a) {
   return { task_id: task.run_id, count: events.length, events: events.slice(-limit) };
 }
 
-// Synchronous on purpose, exactly like the old leader-era one this replaces: this whole server
-// is one synchronous stdin loop (see the bottom of this file), and each client session has its
-// own server process, so blocking here blocks nothing but the one tm_wait call that asked for it.
-function sleepSync(ms) {
-  if (!(ms > 0)) return;
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+// An awaited sleep that ends early when `signal` aborts (the client's notifications/cancelled).
+// The listener is removed whichever way it ends.
+function abortableSleep(ms, signal) {
+  if (!(ms > 0) || signal?.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => { clearTimeout(timer); signal?.removeEventListener('abort', done); resolve(); };
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener('abort', done, { once: true });
+  });
 }
 
 // tm_wait's own read of the ledger: every `node_finish` record() emits (finish(), above) is
@@ -58,14 +61,14 @@ const WAIT_MS_MAX = 300000;
 // replaces, this never drives anything itself - it only reads the ledger and re-raises a dead
 // daemon (serviceDaemon, the same call every other tm_* entry makes) so a caller that keeps
 // calling tm_wait is enough, on its own, to keep a task alive across a daemon crash.
-function toolWait(a) {
+async function toolWait(a, signal) {
   const budget = Math.min(Math.max(Number(a.max_ms) || 60000, 0), WAIT_MS_MAX);
   const since = Number(a.cursor) || 0;
   const until = Date.now() + budget;
   let task = mustFindTask(a);
   let events = nodeTransitionsSince(task, since);
-  while (!events.length && Date.now() < until && taskState(task).state === 'running') {
-    sleepSync(Math.min(2000, until - Date.now()));
+  while (!events.length && Date.now() < until && !signal?.aborted && taskState(task).state === 'running') {
+    await abortableSleep(Math.min(2000, until - Date.now()), signal);
     // A fresh read each iteration (the daemon writes task.json from its own process), and the lock
     // only for this one serviceDaemon - never across the sleep.
     task = withTask(a, (fresh) => { serviceDaemon(fresh); return fresh; });

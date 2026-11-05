@@ -17,6 +17,19 @@ import { driverCostOf, collectTaskCosts } from '../bench/lib/drivercost.mjs';
 import { capOf, liveProcesses } from '../../mcp/livecap.mjs';
 import { statSig } from './view-index.mjs';
 
+// Clock fields: values derived from "now" and a start time (elapsed_ms, waiting_elapsed_ms, elapsed_minutes,
+// timebox_pct, a blocked reason's elapsed_ms, flow_metrics). While a model is built inside captureClock(),
+// each one registers a function (now) that recomputes it in place from facts already in the model, so a
+// long-lived reader (the state server) moves them forward without building the task again.
+let clockSink = null;
+const onClock = (fn) => { if (clockSink) clockSink.push(fn); };
+export function captureClock(fn) {
+  const prev = clockSink;
+  const clock = [];
+  clockSink = clock;
+  try { return { value: fn(), clock }; } finally { clockSink = prev; }
+}
+
 // The live-process count scans every task.json and runs ps per recorded pid; one answer per root is
 // reused for 2 s (the shared server's answer window), so a sweep over many running tasks pays it once.
 const LIVE_TTL_MS = 2000;
@@ -130,6 +143,7 @@ function nodeSummary(n) {
     // a node denied a tool it needed (broker.mjs finishNode / daemon.mjs judge)
     blocked: r.blocked === 'tool denied' || r.reason === 'blocked: tool denied',
   };
+  if (n.started_at && !(n.ended_at || n.finished_at)) onClock((now) => { out.elapsed_ms = now - n.started_at; });
   // A dispatch claimed and not yet applied (taskmanager.mjs's claim): running with no child run
   // yet - the same predicate tickets.mjs's board uses for its own `opening` flag.
   if (n.stage === 'dispatch' && n.state === 'running' && !n.child) out.opening = true;
@@ -167,6 +181,7 @@ function nodeSummary(n) {
   if (n.state === 'waiting_human' && n.waiting_since) {
     out.waiting_since = n.waiting_since;
     out.waiting_elapsed_ms = elapsedMs(n.waiting_since);
+    onClock((now) => { out.waiting_elapsed_ms = now - n.waiting_since; });
   }
   return out;
 }
@@ -300,7 +315,11 @@ function packageModel(task, pkg, dispatchNode, acceptNode, visiting) {
       // "how long has this STORY been parked" is exactly what a person watching WAITING_CAPACITY
       // wants and today's board never showed.
       waiting_capacity: childSource.child.waiting_capacity
-        ? { ...childSource.child.waiting_capacity, elapsed_ms: elapsedMs(childSource.child.waiting_capacity.since) }
+        ? (() => {
+          const wc = { ...childSource.child.waiting_capacity, elapsed_ms: elapsedMs(childSource.child.waiting_capacity.since) };
+          if (wc.since) onClock((now) => { wc.elapsed_ms = now - wc.since; });
+          return wc;
+        })()
         : null,
       driver: driverInfo(childSource.child.driver, pidAliveFromDriver),
       ...collectChildRun(childSource.child.cwd, childSource.child.run_id, visiting, { taskRunId: task.run_id, pkgId: pkg.id }),
@@ -349,7 +368,11 @@ function packageModel(task, pkg, dispatchNode, acceptNode, visiting) {
     // storyTicketState already makes (unmet deps' node ids, a capacity/human park's since, a
     // spent restart budget's count) named instead of thrown away. null for anything not
     // actually blocked - a STORY merely queued (READY) or moving (IN_PROGRESS) has none.
-    blocked_reason: storyBlockedReason(task, String(pkg.id)),
+    blocked_reason: (() => {
+      const why = storyBlockedReason(task, String(pkg.id));
+      if (why && why.since && why.elapsed_ms != null) onClock((now) => { why.elapsed_ms = now - why.since; });
+      return why;
+    })(),
     // attempt: the latest dispatch node's own `.attempt` - a retried STORY's Nth dispatch IS the
     // attempt count (pushChain/openRepair increment it in place; see tickets.mjs's
     // latestBySubgoal), not something this file has to count nodes to derive.
@@ -453,13 +476,15 @@ function sprintBox(task, spend) {
   const timebox = Number.isFinite(o.timebox_minutes) ? o.timebox_minutes : null;
   if (budget == null && timebox == null) return null;
   const elapsedMin = elapsedMs(task.created_at) / 60000;
-  return {
+  const box = {
     budget_usd: budget, spend_usd: spend, timebox_minutes: timebox, elapsed_minutes: elapsedMin,
     budget_pct: budget ? spend / budget : null,
     timebox_pct: timebox ? elapsedMin / timebox : null,
     warned: !!task.budget_warned,
     stopped: task.budget_stopped ? { skipped_packages: task.budget_stopped.skipped_packages || [] } : null,
   };
+  if (task.created_at) onClock((now) => { box.elapsed_minutes = (now - task.created_at) / 60000; box.timebox_pct = timebox ? box.elapsed_minutes / timebox : null; });
+  return box;
 }
 
 export function collectTask(tasksDir, taskId, opts = {}) {
@@ -497,7 +522,7 @@ export function collectFromRaw(tasksDir, taskId, raw, io) {
 // findTaggedRun, harnessVerdict) and the pid / restart budget taskstate already exports.
 
 // A stream line newer than this says the driver is still moving.
-const MOVING_MS = 2 * 60 * 1000;
+export const MOVING_MS = 2 * 60 * 1000;
 
 // The run this task owns: the one already recorded, else the driver's pointer when the run it
 // names carries this task's tag, else the tagged run found on disk. Nothing is recorded.
@@ -838,7 +863,7 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
   const boardEntries = io ? io.jsonl(boardPath) : readJsonl(boardPath);
   const flow_metrics = flowMetrics(task, boardEntries);
 
-  return {
+  const model = {
     task_id: task.run_id || taskId,
     tasks_dir: tasksDir,
     cwd: task.cwd,
@@ -874,6 +899,9 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     telemetry,
     error: null,
   };
+  if (task.created_at) onClock((now) => { model.elapsed_ms = now - task.created_at; });
+  onClock((now) => { model.flow_metrics = flowMetrics(task, boardEntries, { now }); });
+  return model;
 }
 
 // A short, human-quotable headline for a card - there is no title field on a task, only

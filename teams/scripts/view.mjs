@@ -30,7 +30,7 @@ import { createServer } from 'node:http';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { dirname, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-// tasksRoot is taskmanager.mjs's own re-export of this one; taskmanager itself is the whole server, ~50 ms to load on every call.
+// tasksRoot is taskmanager.mjs's own re-export of this one; taskmanager.mjs pulls in the whole task layer, ~50 ms to load on every call.
 import { tasksRoot } from '../mcp/taskstate.mjs';
 import { DEFAULT_VIEW_PORT, viewKey, viewerAt, registerRoot as registerAt } from '../mcp/viewserver.mjs';
 import { collectTask, listTasks } from './lib/view-collect.mjs';

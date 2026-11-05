@@ -311,12 +311,12 @@ const BOARD_TOOLS = new Set(['tm_open', 'tm_run', 'tm_next', 'tm_submit', 'tm_re
 
 // ---------- JSON-RPC / MCP plumbing ----------
 
-function dispatch(name, a) {
+function dispatch(name, a, signal) {
   switch (name) {
     case 'tm_open': return toolOpen(a);
     case 'tm_run': return toolRun(a);
     case 'tm_next': return toolNext(a);
-    case 'tm_wait': return toolWait(a);
+    case 'tm_wait': return toolWait(a, signal);
     case 'tm_submit': return toolSubmit(a);
     case 'tm_retry': return toolRetry(a);
     case 'tm_file': return toolFile(a);
@@ -344,7 +344,7 @@ function dispatch(name, a) {
 // the JSON-RPC surface below calls for tools/call, rather than re-implementing tm_run's
 // open+spawn or tm_wait's poll loop a second time. Same reuse daemon.mjs already relies on for
 // advanceDispatches/finish/foldChild - one path, in-process, no stdio layer in between.
-export async function callTool(name, args) {
+export async function callTool(name, args, ctx) {
   const a = args || {};
   // Re-raise a dead daemon before doing anything else, on every tool that already has a task to
   // raise one for. No gate here beyond that: any caller may read or mutate the task at any time -
@@ -363,9 +363,9 @@ export async function callTool(name, args) {
     });
   }
   // board.jsonl: taken as a before/after diff of the tools that can move a ticket.
-  if (!BOARD_TOOLS.has(name)) return dispatch(name, a);
+  if (!BOARD_TOOLS.has(name)) return dispatch(name, a, ctx?.signal);
   const before = a.task_id ? ticketSnapshot(mustFindTask(a)) : {};
-  const out = await dispatch(name, a);
+  const out = await dispatch(name, a, ctx?.signal);
   const taskId = (out && out.task_id) || a.task_id;
   if (taskId) {
     try { syncTickets(mustFindTask({ task_id: taskId }), before, a.node_id || name); } catch { /* best-effort, like record() */ }

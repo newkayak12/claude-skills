@@ -15,14 +15,22 @@ const ok = (stdout: string): Run => ({ exitCode: 0, stdout, stderr: '' })
 // the files fs.exists reports as present; a test changes it and puts the default back
 const DEFAULT_MARKERS = ['/proj/.claude/team.json']
 let markers = new Set(DEFAULT_MARKERS)
+// armed by the HARNESS_TASKS_DIR read, so the next session.cwd read (the one inside viewOnce) throws once
+const cwdFails = { armed: false }
 
 // The engine beneath the plugin: surfaces, cwd, process.run, toast, status, command.register.
-function world(on: On, surfaces: readonly Surface[], runs: (argv: readonly string[]) => Run) {
+function world(on: On, surfaces: readonly Surface[], runs: (argv: readonly string[]) => Run, cwd = '/proj') {
   const seen = { argv: [] as (readonly string[])[], toasts: [] as string[], toastEvents: [] as { text: string; timeoutMs?: number }[], statuses: [] as (string | undefined)[], commands: [] as string[], inFlight: 0, maxInFlight: 0 }
   on('fs.exists', (_$, e) => ({ value: markers.has(e.path) }) as never)
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.surfaces', () => ({ value: surfaces }))
-  on('session.cwd', () => ({ value: '/proj' }))
+  on('session.cwd', () => {
+    if (cwdFails.armed) {
+      cwdFails.armed = false
+      throw new Error('cwd gone')
+    }
+    return { value: cwd }
+  })
   on('command.register', (_$, e) => {
     seen.commands.push(e.name)
     return { value: { command: e.name } }
@@ -2674,11 +2682,17 @@ for (const surface of SURFACES) {
 const SERVE_CLOCK = 5_000_000_000
 const isServeStart = (argv: readonly string[]) => argv[0] === 'sh'
 
-function socketWorld(on: On, answer: () => { status: number; text: string } | 'fail', opts: { now?: number; tasks?: string; sockPath?: string } = {}) {
+function socketWorld(on: On, answer: () => { status: number; text: string } | 'fail', opts: { now?: number; tasks?: string; sockPath?: string; cwd?: string; cwdThrowsInView?: boolean } = {}) {
   const clock = mock.clock(on, { now: opts.now ?? SERVE_CLOCK })
-  const seen = world(on, ['terminal'], argv => ok(argv.includes('--sock-path') ? (opts.sockPath ?? '') : ''))
+  // the no-spawn gate looks for team.json under the session cwd
+  markers = new Set(opts.cwd !== undefined ? [...DEFAULT_MARKERS, `${opts.cwd}/.claude/team.json`] : DEFAULT_MARKERS)
+  cwdFails.armed = false
+  const seen = world(on, ['terminal'], argv => ok(argv.includes('--sock-path') ? (opts.sockPath ?? '') : ''), opts.cwd)
   on('ui.panes', () => ({ value: [] }) as never)
-  on('env.get', (_$, e) => ({ value: e.name === 'HARNESS_TASKS_DIR' ? (opts.tasks ?? '/w/tasks/') : e.name === 'HOME' ? '/home/u' : undefined }) as never)
+  on('env.get', (_$, e) => {
+    if (opts.cwdThrowsInView && e.name === 'HARNESS_TASKS_DIR') cwdFails.armed = true
+    return { value: e.name === 'HARNESS_TASKS_DIR' ? (opts.tasks ?? '/w/tasks/') : e.name === 'HOME' ? '/home/u' : undefined } as never
+  })
   const urls: string[] = []
   const sockets: string[] = []
   on('http.fetch', (_$, e) => {
@@ -2715,6 +2729,52 @@ test('view server: a root whose socket path is over 103 bytes uses the --sock-pa
   expect(sockets.length > 1).toBe(true)
   expect(sockets.every(s => s === '/tmp/teams-state-abc.sock')).toBe(true)
   expect(seen.argv.filter(a => a.includes('--sock-path'))).toHaveLength(1)
+})
+
+test('view server: a relative HARNESS_TASKS_DIR resolves against the session cwd', async ($, on) => {
+  const { clock, seen, sockets } = socketWorld(on, () => 'fail', { tasks: 'rel/tasks', cwd: '/w/proj' })
+  await start($)
+  await clock.advance(3000)
+  expect(sockets.length > 0).toBe(true)
+  expect(sockets.every(s => s === '/w/proj/rel/tasks/.state.sock')).toBe(true)
+  expect(seen.argv.filter(isServeStart)[0]).toContain('/w/proj/rel/tasks')
+})
+
+test('view server: a relative HARNESS_TASKS_DIR over 103 bytes asks --sock-path with the resolved dir', async ($, on) => {
+  const cwd = `/w/${'d'.repeat(110)}`
+  const { clock, seen } = socketWorld(on, () => ({ status: 200, text: '' }), { tasks: 'rel', cwd, sockPath: '/tmp/teams-state-abc.sock\n' })
+  await start($)
+  await clock.advance(3000)
+  const ask = seen.argv.find(a => a.includes('--sock-path'))!
+  expect(ask[ask.indexOf('--tasks-dir') + 1]).toBe(`${cwd}/rel`)
+})
+
+test('view server: a relative HARNESS_TASKS_DIR with a cwd that throws inside viewOnce fails open', async ($, on) => {
+  const { clock, seen, sockets } = socketWorld(on, () => 'fail', { tasks: 'rel/tasks', cwd: '/w/proj', cwdThrowsInView: true })
+  await start($)
+  await clock.advance(3000)
+  expect(sockets.length > 0).toBe(true)
+  expect(sockets.every(s => s === 'rel/tasks/.state.sock')).toBe(true)
+  expect(seen.argv.filter(isServeStart)).toHaveLength(1)
+})
+
+// an empty cwd: today's dial and fallback
+test('view server: a relative HARNESS_TASKS_DIR with no session cwd fails open', async ($, on) => {
+  const { clock, seen, sockets } = socketWorld(on, () => 'fail', { tasks: 'rel/tasks', cwd: '' })
+  await start($)
+  await clock.advance(3000)
+  expect(sockets.length > 0).toBe(true)
+  expect(sockets.every(s => s === 'rel/tasks/.state.sock')).toBe(true)
+  expect(seen.argv.some(a => a.includes('--once'))).toBe(true)
+  expect(seen.argv.filter(isServeStart)).toHaveLength(1)
+})
+
+test('view server: ./ and ../ in a relative HARNESS_TASKS_DIR are normalized', async ($, on) => {
+  const { clock, sockets } = socketWorld(on, () => ({ status: 200, text: '' }), { tasks: './a/../tasks/', cwd: '/w/proj' })
+  await start($)
+  await clock.advance(3000)
+  expect(sockets.length > 0).toBe(true)
+  expect(sockets.every(s => s === '/w/proj/tasks/.state.sock')).toBe(true)
 })
 
 test('view server: with the socket answering 200 a tick spawns no data process', async ($, on) => {
