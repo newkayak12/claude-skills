@@ -1,11 +1,11 @@
-import { test } from 'node:test'
+import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
-import { bump, claims, compare, deckPages, headings, resumePages, keepRender, layout, parseMap, readMaterial, renumber, scaffold, selection, settle, settled, snapshot, verify } from './manage.mjs'
+import { bump, claims, compare, deckPages, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, renumber, round, scaffold, selection, settle, settled, snapshot, step, verify } from './manage.mjs'
 
 const SKEL = `# 가상 포트폴리오
 version: v4.0.0
@@ -201,7 +201,9 @@ test('snapshot needs a version line and a note', () => {
 // headings, `#` blocks, an appendix table, quoted history lines, the README's own tables, `template/`,
 // a `sources/NN_프로젝트/A1….md` ledger. A mismatch found in a real run is added here first (card 68).
 const WORKSPACE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'workspace')
-const workspace = () => { const root = mkdtempSync(join(tmpdir(), 'manage-ws-')); cpSync(WORKSPACE, root, { recursive: true }); return root }
+const copies = []
+after(() => { for (const d of copies) rmSync(d, { recursive: true, force: true }) })
+const workspace = () => { const root = mkdtempSync(join(tmpdir(), 'manage-ws-')); copies.push(root); cpSync(WORKSPACE, root, { recursive: true }); return root }
 
 test('real-shape workspace: layout finds every part, verify finds no problem', () => {
   assert.deepEqual(layout(WORKSPACE).missing, [])
@@ -555,4 +557,556 @@ test('settle CLI: an absolute --findings path and a ../ path are refused', () =>
     assert.notEqual(r.status, 0, p)
     assert.match(JSON.parse(r.stdout).error, /inside the workspace/, p)
   }
+})
+
+// ── round: one record of the collect → build loop (card 124); all names invented ──
+const MANAGE = join(dirname(fileURLToPath(import.meta.url)), 'manage.mjs')
+const st = (step, verdict, criteria = `기준 ${step}`, by = 'judge') => ({ step, criteria, verdict, by, reason: 'r' })
+// a round input needs exactly steps 1-7: the steps a test names are kept in order, the rest are filled in as pass;
+// `raw: true` leaves the steps as given, for the cases that are refused for their step list
+const full = steps => [...steps, ...[1, 2, 3, 4, 5, 6, 7].filter(k => !steps.some(s => s.step === k)).map(k => st(k, 'pass'))]
+const roundIn = (r, o = {}) => {
+  const { raw, ...rest } = o
+  const input = { round: r, n: 3, steps: [st(1, 'pass'), st(4, 'fail')], feedback: [], ...rest }
+  return raw || !Array.isArray(input.steps) ? input : { ...input, steps: full(input.steps) }
+}
+const roundCli = (root, input, ...a) => spawnSync(process.execPath, [MANAGE, 'round', ...(a.length ? a : ['--input', '-'])], { cwd: root, input: JSON.stringify(input), encoding: 'utf8' })
+const recOf = (root, n) => JSON.parse(readFileSync(join(root, `snapshot/rounds/round-${n}.json`), 'utf8'))
+// mtimes are set, never raced: the copied fixture is "now"; a round file stamped in the future leaves it older
+const future = 4_000_000_000
+const stamp = (root, rel, t) => utimesSync(join(root, rel), t, t)
+const afterRound = (root, n, t = future) => stamp(root, `snapshot/rounds/round-${n}.json`, t)
+const edit = (root, rel) => writeFileSync(join(root, rel), `${readFileSync(join(root, rel), 'utf8')}\n<!-- edited -->\n`)
+
+test('round 1, no previous file: empty started_from, no clauses, diff.new is every gap, record and summary written', () => {
+  const root = workspace()
+  const r = round(root, roundIn(1, { steps: [st(1, 'pass'), st(4, 'fail', '표 정렬'), st(7, 'skipped', '쪽 읽기')], feedback: [{ id: 'f1', text: 'x' }], feedback_mode: 'panel' }))
+  assert.deepEqual(r, { round: 1, rounds: 1, stop_reason: null, continue: true, gaps: ['s4/표 정렬', 's7/쪽 읽기'] })
+  const rec = recOf(root, 1)
+  assert.deepEqual(rec.started_from, { gaps: [], feedback: [] })
+  assert.deepEqual(rec.changed, [])
+  assert.equal(rec.gate.clauses, null)
+  assert.deepEqual(rec.gate.diff, { resolved: [], carried: [], new: ['s4/표 정렬', 's7/쪽 읽기'] })
+  assert.deepEqual(rec.gate.verdict, { 1: 'pass', 2: 'pass', 3: 'pass', 4: 'fail', 5: 'pass', 6: 'pass', 7: 'skipped' })
+  assert.deepEqual(rec.feedback, { mode: 'panel', ids: ['f1'] })
+  assert.deepEqual(rec.steps[1], { step: 4, criteria: '표 정렬', verdict: 'fail', by: 'judge', reason: 'r' })
+  assert.deepEqual([rec.round, rec.stop_reason, rec.continue], [1, null, true])
+})
+
+test('round 2: started_from comes from round 1, and the diff names resolved, carried and new', () => {
+  const root = workspace()
+  round(root, roundIn(1, { steps: [st(2, 'fail', 'a'), st(3, 'fail', 'b')], feedback: [{ id: 'f1', text: 'x' }, { id: 'f2', text: 'y' }], feedback_mode: 'panel' }))
+  const r = round(root, roundIn(2, { steps: [st(2, 'pass', 'a'), st(3, 'fail', 'b'), st(5, 'skipped', 'c')], feedback: [{ id: 'f2', text: 'y' }, { id: 'f9', text: 'z' }], feedback_mode: 'panel' }))
+  const rec = recOf(root, 2)
+  assert.deepEqual(rec.started_from, { gaps: ['s2/a', 's3/b'], feedback: ['f1', 'f2'] })
+  assert.deepEqual(rec.gate.diff, { resolved: ['s2/a'], carried: ['s3/b'], new: ['s5/c'] })
+  assert.deepEqual(rec.gate.clauses, { no_new_gap: false, no_new_feedback: false, no_file_changed: true })
+  assert.deepEqual([r.rounds, r.gaps], [2, ['s3/b', 's5/c']])
+})
+
+test('a gap id is s<step>/<criterion id>: rewording a criterion with the same id carries the gap, never resolved plus new', () => {
+  const root = workspace()
+  round(root, roundIn(1, { n: 9, steps: [{ ...st(6, 'fail', 'deck check'), id: 'c-check' }] })); afterRound(root, 1)
+  round(root, roundIn(2, { n: 9, steps: [{ ...st(6, 'fail', 'deck-builder check passes on deck.mdx'), id: 'c-check' }] }))
+  assert.deepEqual(recOf(root, 2).gate.gaps, ['s6/c-check'])
+  assert.deepEqual(recOf(root, 2).gate.diff, { resolved: [], carried: ['s6/c-check'], new: [] })
+})
+
+test('a gap id without a criterion id never holds a newline: whitespace runs collapse to one space', () => {
+  const r = round(workspace(), roundIn(1, { steps: [st(6, 'fail', 'deck\n  check')] }))
+  assert.deepEqual(r.gaps, ['s6/deck check'])
+})
+
+test('a criterion id must be a non-empty string without a slash or whitespace', () => {
+  for (const id of ['', ' ', 'a/b', 'a b', 3]) {
+    assert.throws(() => round(workspace(), roundIn(1, { steps: [{ ...st(6, 'fail'), id }] })), /steps\[\d\]\.id/, JSON.stringify(id))
+  }
+})
+
+// ── intake: the findings a round consumes, parsed from the feedback text in node ──
+const FB = (clashes, prio = '1. **무엇을** 3쪽 · **왜** x · **어떻게** y · `근거: A1`\n2. **무엇을** 5쪽 · `근거: C1`\n3. **무엇을** 7쪽 · 근거 없음') => [
+  '**[총평 / First Impression]**', '좋음', '', '**[개선 우선순위 / Improvement Priorities]**', prio, '',
+  '**[예상 인터뷰 질문 / Expected Interview Questions]**', '- A: 왜?', '', '---', '', '**부록 / Appendix**', '',
+  '**[충돌 / Clashes]**', ...clashes, '', '**[주장 감사 / Claim Audit]**',
+  'A1 "30분 → 4분" — 기준선 없음', 'A2 "안정화" — 수치 없음', '**[정합성 / Consistency]**', 'C1 3쪽과 9쪽 기간 다름', 'C2 스킬 근거 없음',
+].join('\n')
+
+test('intake takes priorities and survived clashes, text from the appendix; dropped and uncited are not consumed', () => {
+  const r = intake(FB(['패널 / Panel: A Staff · B EM · C Tech Lead · D OSS/DevTools — sonnet, 2 rounds', 'A2 — B: 기준선 있음 — survived', 'C2 — D: 근거 있음 — dropped']))
+  assert.equal(r.mode, 'panel')
+  assert.deepEqual(r.findings.map(f => f.id.split('#')[0]), ['A1', 'C1', 'A2'])
+  assert.deepEqual(r.findings.map(f => f.text), ['"30분 → 4분" — 기준선 없음', '3쪽과 9쪽 기간 다름', '"안정화" — 수치 없음'])
+  assert.deepEqual(r.not_consumed, ['3. **무엇을** 7쪽 · 근거 없음'])
+})
+
+test('intake with the panel not run is single-context and takes the priorities only', () => {
+  const r = intake(FB(['패널 미실행 / panel could not run — single-context review']))
+  assert.equal(r.mode, 'single-context')
+  assert.deepEqual(r.findings.map(f => f.id.split('#')[0]), ['A1', 'C1'])
+})
+
+test('intake ids carry a content hash: the same appendix id with other text is another finding', () => {
+  const a = intake(FB(['충돌 없음 / no clashes'])).findings[0].id
+  const b = intake(FB(['충돌 없음 / no clashes']).replace('기준선 없음', '비교 대상 없음')).findings[0].id
+  assert.match(a, /^A1#[0-9a-f]{8}$/)
+  assert.notEqual(a, b)
+  assert.equal(a, intake(FB(['충돌 없음 / no clashes'])).findings[0].id)
+})
+
+test('intake CLI: --feedback inside the workspace, --round N writes snapshot/rounds/findings-N.json; outside is refused', () => {
+  const root = workspace()
+  writeFileSync(join(root, 'fb.md'), FB(['충돌 없음 / no clashes']))
+  const r = spawnSync(process.execPath, [MANAGE, 'intake', '--feedback', 'fb.md', '--round', '2'], { cwd: root, encoding: 'utf8' })
+  assert.equal(r.status, 0, r.stdout)
+  const out = JSON.parse(r.stdout)
+  assert.equal(out.written, 'snapshot/rounds/findings-2.json')
+  assert.deepEqual(JSON.parse(readFileSync(join(root, out.written), 'utf8')), out.findings)
+  const e = spawnSync(process.execPath, [MANAGE, 'intake', '--feedback', '../fb.md'], { cwd: root, encoding: 'utf8' })
+  assert.equal(e.status, 1)
+  assert.match(JSON.parse(e.stdout).error, /inside the workspace/)
+})
+
+test('intake refuses a text with no priorities block', () => {
+  assert.throws(() => intake('**[총평 / First Impression]**\nx'), /개선 우선순위/)
+})
+
+// ── step: the engine records each step as it happens, so the order is read from the record ──
+const stepAll = (root, r, verdicts = {}) => {
+  for (let k = 1; k <= 7; k++) {
+    step(root, { round: r, step: k, id: `c${k}`, criteria: `기준 ${k}` })
+    step(root, { round: r, step: k, verdict: verdicts[k] ?? 'pass', by: 'judge', reason: 'r' })
+  }
+}
+
+test('step records criteria then verdict per step with engine times; round without steps reads them, order recorded', () => {
+  const root = workspace()
+  stepAll(root, 1, { 4: 'fail' })
+  const r = round(root, { round: 1, n: 3, feedback: [] })
+  assert.deepEqual(r.gaps, ['s4/c4'])
+  const rec = recOf(root, 1)
+  assert.equal(rec.gate.order, 'recorded')
+  assert.equal(rec.steps.length, 7)
+  for (const [i, s] of rec.steps.entries()) {
+    assert.ok(s.criteria_at <= s.verdict_at, `step ${s.step}`)
+    if (i > 0) assert.ok(rec.steps[i - 1].verdict_at <= s.criteria_at, `gate before step ${s.step}`)
+  }
+})
+
+test('step refuses a verdict before criteria, and criteria for step s+1 before step s has its verdict', () => {
+  const root = workspace()
+  assert.throws(() => step(root, { round: 1, step: 1, verdict: 'pass', by: 'judge' }), /step 1 has no criteria/)
+  step(root, { round: 1, step: 1, criteria: 'a' })
+  assert.throws(() => step(root, { round: 1, step: 2, criteria: 'b' }), /step 1 has no verdict/)
+  step(root, { round: 1, step: 1, verdict: 'pass', by: 'judge' })
+  assert.throws(() => step(root, { round: 1, step: 3, criteria: 'b' }), /next step is 2/)
+  assert.throws(() => step(root, { round: 1, step: 1, verdict: 'fail', by: 'judge' }), /already has its verdict/)
+})
+
+test('round with steps given in the input records order: caller (not proven by the engine)', () => {
+  const root = workspace()
+  round(root, roundIn(1))
+  assert.equal(recOf(root, 1).gate.order, 'caller')
+})
+
+test('round without steps and with fewer than seven recorded verdicts is refused, nothing written', () => {
+  const root = workspace()
+  step(root, { round: 1, step: 1, criteria: 'a' })
+  assert.throws(() => round(root, { round: 1, n: 3, feedback: [] }), /steps-1\.json.*seven verdicts/)
+  assert.ok(!existsSync(join(root, 'snapshot/rounds/round-1.json')))
+})
+
+test('step CLI: --input - records one entry and prints the step list so far', () => {
+  const root = workspace()
+  const r = spawnSync(process.execPath, [MANAGE, 'step', '--input', '-'], { cwd: root, input: JSON.stringify({ round: 1, step: 1, criteria: 'a' }), encoding: 'utf8' })
+  assert.equal(r.status, 0, r.stdout)
+  assert.deepEqual(JSON.parse(r.stdout).next, { step: 1, needs: 'verdict' })
+})
+
+test('skipped is a gap, never a pass', () => {
+  const root = workspace()
+  const r = round(root, roundIn(1, { steps: [st(7, 'skipped', '쪽 읽기'), st(6, 'fail', '쪽 읽기'), st(1, 'pass', '쪽 읽기')] }))
+  assert.deepEqual(r.gaps, ['s7/쪽 읽기', 's6/쪽 읽기'])
+  assert.deepEqual([recOf(root, 1).gate.verdict[7], recOf(root, 1).gate.verdict[6]], ['skipped', 'fail'])
+  assert.equal(round(workspace(), roundIn(1, { steps: [st(7, 'skipped')] })).gaps.length, 1)
+})
+
+test('changed lists files that differ from round N-1, sorted and relative, and leaves snapshot/rounds/ out', () => {
+  const root = workspace()
+  round(root, roundIn(1, { n: 9 }))
+  afterRound(root, 1)
+  assert.deepEqual(round(root, roundIn(2, { n: 9 })).stop_reason, 'nothing_new')
+  assert.deepEqual(recOf(root, 2).changed, [])
+  writeFileSync(join(root, 'snapshot/rounds/note.json'), '{}')
+  edit(root, 'skeleton.md'); edit(root, 'docs/확정사실.md')
+  mkdirSync(join(root, 'sources/새'), { recursive: true }); writeFileSync(join(root, 'sources/새/a.md'), 'a')
+  round(root, roundIn(3, { n: 9 }))
+  assert.deepEqual(recOf(root, 3).changed, ['docs/확정사실.md', 'skeleton.md', 'sources/새/a.md'])
+  assert.equal(recOf(root, 3).gate.clauses.no_file_changed, false)
+})
+
+test('changed is by content: a touch with the same bytes is not a change, an edit, a new file and a removed file are', () => {
+  const root = workspace()
+  round(root, roundIn(1, { n: 9 })); afterRound(root, 1)
+  stamp(root, 'skeleton.md', future + 20)
+  round(root, roundIn(2, { n: 9 }))
+  assert.deepEqual(recOf(root, 2).changed, [])
+  assert.equal(recOf(root, 2).gate.clauses.no_file_changed, true)
+  edit(root, 'skeleton.md'); writeFileSync(join(root, 'sources/new.md'), 'n'); rmSync(join(root, 'docs/확정사실.md'))
+  round(root, roundIn(3, { n: 9 }))
+  assert.deepEqual(recOf(root, 3).changed, ['docs/확정사실.md', 'skeleton.md', 'sources/new.md'])
+})
+
+test('the --input file itself is not a change', () => {
+  const root = workspace()
+  round(root, roundIn(1, { n: 9 })); afterRound(root, 1)
+  writeFileSync(join(root, 'in.json'), JSON.stringify(roundIn(2, { n: 9 }))); stamp(root, 'in.json', future + 5)
+  const r = roundCli(root, null, '--input', 'in.json')
+  assert.equal(r.status, 0, r.stdout)
+  assert.deepEqual(recOf(root, 2).changed, [])
+  assert.equal(JSON.parse(r.stdout).stop_reason, 'nothing_new')
+})
+
+test('nothing_new fires when any one clause holds; only all three failing keeps the loop going', () => {
+  const same = { steps: [st(4, 'fail', 'k')], feedback: [{ id: 'f1', text: 'x' }], feedback_mode: 'panel', n: 9 }
+  const newGap = [st(4, 'fail', 'k'), st(5, 'fail', 'm')]
+  const newFb = [{ id: 'f1', text: 'x' }, { id: 'f2', text: 'y' }]
+  const prep = () => { const root = workspace(); round(root, roundIn(1, same)); afterRound(root, 1); return root }
+  const run = (input, touch) => {
+    const root = prep(); if (touch) edit(root, 'skeleton.md')
+    const r = round(root, roundIn(2, input))
+    return [r.stop_reason, r.continue, recOf(root, 2).gate.clauses]
+  }
+  // all three true
+  assert.deepEqual(run(same), ['nothing_new', false, { no_new_gap: true, no_new_feedback: true, no_file_changed: true }])
+  // only no_new_gap
+  assert.deepEqual(run({ ...same, feedback: newFb }, true), ['nothing_new', false, { no_new_gap: true, no_new_feedback: false, no_file_changed: false }])
+  // only no_new_feedback
+  assert.deepEqual(run({ ...same, steps: newGap }, true), ['nothing_new', false, { no_new_gap: false, no_new_feedback: true, no_file_changed: false }])
+  // only no_file_changed
+  assert.deepEqual(run({ ...same, steps: newGap, feedback: newFb }), ['nothing_new', false, { no_new_gap: false, no_new_feedback: false, no_file_changed: true }])
+  // reproduction: same gaps, a new feedback id, no file changed
+  assert.deepEqual(run({ ...same, feedback: newFb }), ['nothing_new', false, { no_new_gap: true, no_new_feedback: false, no_file_changed: true }])
+  // none true
+  assert.deepEqual(run({ ...same, steps: newGap, feedback: newFb }, true), [null, true, { no_new_gap: false, no_new_feedback: false, no_file_changed: false }])
+})
+
+test('clauses are not evaluated in round 1: nothing_new never fires there', () => {
+  assert.equal(round(workspace(), roundIn(1, { steps: [], n: 9 })).stop_reason, null)
+})
+
+test('n_reached at round >= n, null before it', () => {
+  const root = workspace()
+  assert.deepEqual(round(root, roundIn(1, { n: 2 })), { round: 1, rounds: 1, stop_reason: null, continue: true, gaps: ['s4/기준 4'] })
+  afterRound(root, 1); edit(root, 'skeleton.md')
+  const r = round(root, roundIn(2, { n: 2, steps: [st(4, 'fail'), st(6, 'fail')], feedback: [{ id: 'f9', text: 'z' }], feedback_mode: 'panel' }))
+  assert.deepEqual([r.stop_reason, r.continue], ['n_reached', false])
+})
+
+test('blocked and waiting_user are recorded with their text; waiting_user keeps continue true', () => {
+  let root = workspace()
+  let r = round(root, roundIn(1, { waiting_user: '2쪽 구성을 바꿀까요?' }))
+  assert.deepEqual([r.stop_reason, r.continue], ['waiting_user', true])
+  assert.equal(recOf(root, 1).waiting_user, '2쪽 구성을 바꿀까요?')
+  root = workspace()
+  r = round(root, roundIn(1, { blocked: 'renderer missing' }))
+  assert.deepEqual([r.stop_reason, r.continue], ['blocked', false])
+  assert.equal(recOf(root, 1).blocked, 'renderer missing')
+})
+
+test('waiting_user ends the loop when every step is skipped or the round is the last', () => {
+  let r = round(workspace(), roundIn(1, { steps: [1, 2, 3, 4, 5, 6, 7].map(k => st(k, 'skipped')), waiting_user: 'q' }))
+  assert.deepEqual([r.stop_reason, r.continue], ['waiting_user', false])
+  const root = workspace()
+  round(root, roundIn(1, { n: 2 }))
+  r = round(root, roundIn(2, { n: 2, waiting_user: 'q' }))
+  assert.deepEqual([r.stop_reason, r.continue], ['waiting_user', false])
+})
+
+test('precedence: blocked > waiting_user > nothing_new > n_reached', () => {
+  const same = { steps: [st(4, 'fail', 'k')], feedback: [], n: 2 }
+  const prep = () => { const root = workspace(); round(root, roundIn(1, same)); afterRound(root, 1); return root }
+  // round 2 of n=2 with nothing new: nothing_new beats n_reached
+  assert.equal(round(prep(), roundIn(2, same)).stop_reason, 'nothing_new')
+  assert.equal(round(prep(), roundIn(2, { ...same, waiting_user: 'q' })).stop_reason, 'waiting_user')
+  assert.equal(round(prep(), roundIn(2, { ...same, blocked: 'b' })).stop_reason, 'blocked')
+  assert.equal(round(prep(), roundIn(2, { ...same, blocked: 'b', waiting_user: 'q' })).stop_reason, 'blocked')
+  // all three clauses failing (new gap, new feedback id, a changed file) removes nothing_new, so n_reached is what is left
+  const changed = prep(); edit(changed, 'skeleton.md')
+  assert.equal(round(changed, roundIn(2, { ...same, steps: [st(4, 'fail', 'k'), st(5, 'fail', 'z')], feedback: [{ id: 'f9', text: 'z' }], feedback_mode: 'panel' })).stop_reason, 'n_reached')
+})
+
+test('empty or blank criteria are refused: exit 1, an error object, nothing written', () => {
+  for (const criteria of ['', '   ']) {
+    const root = workspace()
+    const r = roundCli(root, roundIn(1, { steps: [st(1, 'pass'), { step: 2, criteria, verdict: 'fail', by: 'judge' }] }))
+    assert.equal(r.status, 1)
+    assert.match(JSON.parse(r.stdout).error, /steps\[1\].*criteria/)
+    assert.ok(!existsSync(join(root, 'snapshot/rounds')))
+  }
+})
+
+test('round input is validated: step range, verdict, by, round, n, feedback; nothing is written', () => {
+  const bad = [
+    roundIn(1, { steps: [st(0, 'pass')] }), roundIn(1, { steps: [st(8, 'pass')] }), roundIn(1, { steps: [st(1, 'maybe')] }),
+    roundIn(1, { steps: [st(1, 'pass', 'c', '')] }), roundIn(0), roundIn(1.5), roundIn(1, { n: 0 }), roundIn(1, { feedback: [{ id: 'a' }] }),
+    roundIn(1, { steps: 'x' }),
+  ]
+  for (const input of bad) {
+    const root = workspace()
+    assert.throws(() => round(root, input), undefined, JSON.stringify(input))
+    assert.ok(!existsSync(join(root, 'snapshot/rounds')))
+  }
+})
+
+// A refused round: exit 1, a plain error naming the rule, and snapshot/rounds/ exactly as it was before the call.
+const roundsDir = root => (existsSync(join(root, 'snapshot/rounds')) ? readdirSync(join(root, 'snapshot/rounds')).sort() : null)
+const refused = (root, input, message) => {
+  const before = roundsDir(root)
+  const r = roundCli(root, input)
+  assert.equal(r.status, 1, r.stdout)
+  const { error, ...rest } = JSON.parse(r.stdout)
+  assert.match(error, message)
+  assert.doesNotMatch(error, /is not a function|undefined/)
+  assert.deepEqual(rest, {}, 'no summary: stop_reason is not recorded')
+  assert.deepEqual(roundsDir(root), before)
+}
+const prevFile = (root, content) => {
+  mkdirSync(join(root, 'snapshot/rounds'), { recursive: true })
+  writeFileSync(join(root, 'snapshot/rounds/round-1.json'), typeof content === 'string' ? content : JSON.stringify(content))
+}
+
+test('a steps list that is not exactly steps 1-7 once each is refused: empty, partial, step 3 twice', () => {
+  const seven = /exactly seven.*steps 1-7/
+  refused(workspace(), roundIn(1, { raw: true, steps: [] }), seven)
+  refused(workspace(), roundIn(1, { raw: true, steps: [st(1, 'pass'), st(4, 'fail')] }), seven)
+  refused(workspace(), roundIn(1, { raw: true, steps: [1, 2, 3, 3, 5, 6, 7].map(k => st(k, 'pass')) }), seven)
+  refused(workspace(), roundIn(1, { raw: true, steps: [1, 2, 3, 4, 5, 6, 7, 7].map(k => st(k, 'pass')) }), seven)
+})
+
+test('round N>1 with no round-(N-1).json is refused and writes nothing', () => {
+  const root = workspace()
+  refused(root, roundIn(3, { n: 9 }), /round-2\.json.*missing/)
+  round(root, roundIn(1, { n: 9 }))
+  refused(root, roundIn(3, { n: 9 }), /round-2\.json.*missing/)
+})
+
+test('an existing round-N.json is never overwritten: refused, the file byte-identical', () => {
+  const root = workspace()
+  round(root, roundIn(1)); round(root, roundIn(2))
+  for (const r of [1, 2]) {
+    const before = readFileSync(join(root, `snapshot/rounds/round-${r}.json`))
+    refused(root, roundIn(r, { steps: [st(2, 'fail', 'else')] }), /round-\d\.json already exists.*never overwrite/)
+    assert.ok(readFileSync(join(root, `snapshot/rounds/round-${r}.json`)).equals(before))
+  }
+})
+
+test('a previous record of the wrong shape is refused as malformed, never read as an empty round', () => {
+  const cases = [
+    [{}, /field round/], [[1, 2], /must be a JSON object/], ['null', /must be a JSON object/], ['{not json', /cannot be read as JSON/],
+    [{ gate: { gaps: 'oops' }, feedback: 7 }, /field round/],
+    [{ round: 1, n: 3, steps: [], gate: { gaps: 'oops' }, feedback: 7 }, /gate\.gaps/],
+    [{ round: 1, n: 3, steps: [], gate: { gaps: [] }, feedback: 7 }, /feedback/],
+    [{ round: 1, n: 3, steps: [], gate: { gaps: [] }, feedback: [{ text: 'no id' }] }, /feedback/],
+    [{ round: 1, n: 3, steps: 'x', gate: { gaps: [] }, feedback: [] }, /steps/],
+    [{ round: 1, n: 3, steps: [], gate: [], feedback: [] }, /gate/],
+    [{ round: 1, n: 'three', steps: [], gate: { gaps: [] }, feedback: [] }, /field n/],
+  ]
+  for (const [content, why] of cases) {
+    const root = workspace()
+    prevFile(root, content)
+    const before = readFileSync(join(root, 'snapshot/rounds/round-1.json'))
+    refused(root, roundIn(2), new RegExp(`previous record malformed: snapshot/rounds/round-1\\.json .*${why.source}`))
+    assert.ok(readFileSync(join(root, 'snapshot/rounds/round-1.json')).equals(before))
+  }
+})
+
+test('n must equal the previous record n, and round may not pass n', () => {
+  const root = workspace()
+  round(root, roundIn(1, { n: 3 }))
+  refused(root, roundIn(2, { n: 4 }), /n 4 differs from n 3 in snapshot\/rounds\/round-1\.json/)
+  refused(root, roundIn(2, { n: 2 }), /n 2 differs from n 3/)
+  refused(workspace(), roundIn(3, { n: 2 }), /round 3 is past n 2/)
+  const late = workspace()
+  round(late, roundIn(1, { n: 1 }))
+  refused(late, roundIn(2, { n: 1 }), /round 2 is past n 1/)
+})
+
+test('a valid input with a valid predecessor still writes the record and gives the same stop_reason', () => {
+  const root = workspace()
+  round(root, roundIn(1, { n: 2 }))
+  afterRound(root, 1); edit(root, 'skeleton.md')
+  const r = round(root, roundIn(2, { n: 2, steps: [st(4, 'fail'), st(6, 'fail')], feedback: [{ id: 'f9', text: 'z' }], feedback_mode: 'panel' }))
+  assert.deepEqual([r.stop_reason, r.continue, r.rounds], ['n_reached', false, 2])
+  assert.equal(recOf(root, 2).steps.length, 7)
+})
+
+test('feedback is recorded as {mode, ids}: the mode the input names, ids in input order', () => {
+  for (const mode of ['panel', 'single-context']) {
+    const root = workspace()
+    round(root, roundIn(1, { feedback: [{ id: 'f2', text: 'y' }, { id: 'f1', text: 'x' }], feedback_mode: mode }))
+    assert.deepEqual(recOf(root, 1).feedback, { mode, ids: ['f2', 'f1'] })
+  }
+})
+
+test('empty feedback is recorded as {mode: null, ids: []}, with feedback_mode absent or null', () => {
+  for (const o of [{}, { feedback_mode: null }, { feedback: undefined }]) {
+    const root = workspace()
+    round(root, roundIn(1, o))
+    assert.deepEqual(recOf(root, 1).feedback, { mode: null, ids: [] })
+  }
+})
+
+test('feedback without a valid feedback_mode is refused naming it, and no file is written', () => {
+  const fb = [{ id: 'f1', text: 'x' }]
+  for (const o of [{ feedback: fb }, { feedback: fb, feedback_mode: 'x' }, { feedback: fb, feedback_mode: '' }, { feedback: fb, feedback_mode: null }, { feedback: [], feedback_mode: 'x' }]) {
+    const root = workspace()
+    assert.throws(() => round(root, roundIn(1, o)), /feedback_mode/, JSON.stringify(o))
+    assert.ok(!existsSync(join(root, 'snapshot/rounds')))
+  }
+})
+
+test('round 2 reads round 1 the same whether it holds {mode, ids} or the legacy [{id, text}] array', () => {
+  const run = legacy => {
+    const root = workspace()
+    round(root, roundIn(1, { feedback: [{ id: 'f1', text: 'x' }, { id: 'f2', text: 'y' }], feedback_mode: 'panel', n: 9 }))
+    if (legacy) writeFileSync(join(root, 'snapshot/rounds/round-1.json'), JSON.stringify({ ...recOf(root, 1), feedback: [{ id: 'f1', text: 'x' }, { id: 'f2', text: 'y' }] }))
+    afterRound(root, 1)
+    round(root, roundIn(2, { feedback: [{ id: 'f2', text: 'y' }, { id: 'f9', text: 'z' }], feedback_mode: 'panel', n: 9 }))
+    return recOf(root, 2)
+  }
+  const [obj, old] = [run(false), run(true)]
+  assert.deepEqual(obj.started_from.feedback, ['f1', 'f2'])
+  assert.deepEqual(old.started_from.feedback, obj.started_from.feedback)
+  assert.equal(obj.gate.clauses.no_new_feedback, false)
+  assert.deepEqual(old.gate.clauses, obj.gate.clauses)
+})
+
+test('round CLI: stdin and a file inside the workspace both work; an outside path and a missing --input are errors', () => {
+  const root = workspace()
+  const r = roundCli(root, roundIn(1))
+  assert.equal(r.status, 0)
+  assert.deepEqual(JSON.parse(r.stdout), { round: 1, rounds: 1, stop_reason: null, continue: true, gaps: ['s4/기준 4'] })
+  assert.ok(existsSync(join(root, 'snapshot/rounds/round-1.json')))
+  writeFileSync(join(root, 'in.json'), JSON.stringify(roundIn(2)))
+  const f = roundCli(root, null, '--input', 'in.json')
+  assert.equal(f.status, 0)
+  assert.equal(JSON.parse(f.stdout).rounds, 2)
+  for (const a of [['--input', '../x.json'], ['--input', join(root, 'in.json')], []]) {
+    const e = spawnSync(process.execPath, [MANAGE, 'round', ...a], { cwd: root, input: '', encoding: 'utf8' })
+    assert.equal(e.status, 1, a.join(' '))
+    assert.ok(JSON.parse(e.stdout).error)
+  }
+})
+
+test('round --read prints every recorded round from the files alone: verdicts, gate, changed, stop_reason, feedback', () => {
+  const root = workspace()
+  const empty = spawnSync(process.execPath, [MANAGE, 'round', '--read'], { cwd: root, encoding: 'utf8' })
+  assert.equal(empty.status, 0, empty.stdout)
+  assert.deepEqual(JSON.parse(empty.stdout), { rounds: 0, last: null, items: [] })
+  round(root, roundIn(1, { n: 2, feedback: [{ id: 'f1', text: 'x' }], feedback_mode: 'panel' })); afterRound(root, 1)
+  round(root, roundIn(2, { n: 2, steps: [st(4, 'fail'), st(6, 'fail')] }))
+  const r = spawnSync(process.execPath, [MANAGE, 'round', '--read'], { cwd: root, encoding: 'utf8' })
+  assert.equal(r.status, 0, r.stdout)
+  const out = JSON.parse(r.stdout)
+  assert.equal(out.rounds, 2)
+  assert.deepEqual(out.last, { round: 2, stop_reason: 'nothing_new', continue: false })
+  assert.deepEqual(out.items.map(i => i.round), [1, 2])
+  const two = recOf(root, 2)
+  assert.deepEqual(out.items[1], { round: 2, n: 2, verdict: two.gate.verdict, gaps: two.gate.gaps, diff: two.gate.diff, clauses: two.gate.clauses, changed: two.changed, stop_reason: 'nothing_new', continue: false, feedback: two.feedback })
+  assert.deepEqual(out.items[0].feedback, { mode: 'panel', ids: ['f1'] })
+})
+
+test('rounds counts the round-*.json files and the shared fixture is left alone', () => {
+  const root = workspace()
+  round(root, roundIn(1)); round(root, roundIn(2))
+  assert.equal(round(root, roundIn(3)).rounds, 3)
+  assert.deepEqual(readdirSync(join(root, 'snapshot/rounds')).sort(), ['end-1.json', 'end-2.json', 'end-3.json', 'round-1.json', 'round-2.json', 'round-3.json'])
+  assert.ok(!existsSync(join(WORKSPACE, 'snapshot/rounds')))
+})
+
+// ── containment follows symlinks: a link inside the workspace that points out is outside ──
+const outsideDir = () => { const d = mkdtempSync(join(tmpdir(), 'manage-out-')); copies.push(d); return d }
+const manageCli = (script, root, ...a) => spawnSync(process.execPath, [script, ...a], { cwd: root, input: '', encoding: 'utf8' })
+
+test('symlink: round --input and settle --findings through a link to an outside file are refused, the outside file is not read', () => {
+  const root = workspace()
+  const out = outsideDir()
+  writeFileSync(join(out, 'in.json'), JSON.stringify(roundIn(1)))
+  writeFileSync(join(out, 'findings.json'), JSON.stringify([F_OTHER]))
+  symlinkSync(join(out, 'in.json'), join(root, 'in.json'))
+  symlinkSync(join(out, 'findings.json'), join(root, 'findings.json'))
+  const r = manageCli(MANAGE, root, 'round', '--input', 'in.json')
+  assert.equal(r.status, 1)
+  assert.match(JSON.parse(r.stdout).error, /must be a path inside the workspace root/)
+  assert.ok(!existsSync(join(root, 'snapshot/rounds/round-1.json')), 'the outside file was read and acted on')
+  const s = manageCli(MANAGE, root, 'settle', '--findings', 'findings.json')
+  assert.equal(s.status, 1)
+  assert.match(JSON.parse(s.stdout).error, /must be a path inside the workspace root/)
+  assert.ok(!s.stdout.includes(F_OTHER.id), 'the outside file was read')
+})
+
+test('symlink: a link to an outside directory inside the path is refused too', () => {
+  const root = workspace()
+  const out = outsideDir()
+  writeFileSync(join(out, 'in.json'), JSON.stringify(roundIn(1)))
+  symlinkSync(out, join(root, 'docs-link'))
+  const r = manageCli(MANAGE, root, 'round', '--input', 'docs-link/in.json')
+  assert.equal(r.status, 1)
+  assert.match(JSON.parse(r.stdout).error, /must be a path inside the workspace root/)
+})
+
+test('symlink: snapshot/rounds linked out writes nothing outside; a snapshot dir linked out does the same', () => {
+  const root = workspace()
+  const out = outsideDir()
+  symlinkSync(out, join(root, 'snapshot/rounds'))
+  assert.throws(() => round(root, roundIn(1)), /must be a path inside the workspace root/)
+  const r = roundCli(root, roundIn(1))
+  assert.equal(r.status, 1)
+  assert.match(JSON.parse(r.stdout).error, /must be a path inside the workspace root/)
+  assert.deepEqual(readdirSync(out), [])
+
+  const root2 = workspace()
+  const out2 = outsideDir()
+  rmSync(join(root2, 'snapshot/skeleton'), { recursive: true })
+  symlinkSync(out2, join(root2, 'snapshot/skeleton'))
+  assert.throws(() => snapshot(root2, { kind: 'skeleton', level: 'patch', note: 'x' }), /must be a path inside the workspace root/)
+  assert.deepEqual(readdirSync(out2), [])
+  rmSync(join(root2, 'snapshot/deck'), { recursive: true })
+  symlinkSync(out2, join(root2, 'snapshot/deck'))
+  assert.throws(() => snapshot(root2, { kind: 'deck', level: 'patch', note: 'x' }), /must be a path inside the workspace root/)
+  assert.deepEqual(readdirSync(out2), [])
+})
+
+test('symlink: a dangling link in the round-file position is refused', () => {
+  const root = workspace()
+  const out = outsideDir()
+  mkdirSync(join(root, 'snapshot/rounds'), { recursive: true })
+  symlinkSync(join(out, 'gone.json'), join(root, 'snapshot/rounds/round-1.json'))
+  assert.throws(() => round(root, roundIn(1)), /must be a path inside the workspace root/)
+  assert.deepEqual(readdirSync(out), [])
+})
+
+test('symlink: run through a link to the script from a cwd reached by a link, it still prints and accepts in-workspace paths', () => {
+  const root = workspace()
+  const holder = outsideDir()
+  const scriptLink = join(holder, 'manage-link.mjs')
+  symlinkSync(MANAGE, scriptLink)
+  const wsLink = join(holder, 'ws-link')
+  symlinkSync(root, wsLink)
+  const l = manageCli(scriptLink, wsLink, 'layout')
+  assert.equal(l.status, 0)
+  assert.deepEqual(JSON.parse(l.stdout).missing, [])
+  writeFileSync(join(root, 'in.json'), JSON.stringify(roundIn(1)))
+  writeFileSync(join(root, 'findings.json'), JSON.stringify([F_OTHER]))
+  const r = manageCli(scriptLink, wsLink, 'round', '--input', 'in.json')
+  assert.equal(r.status, 0)
+  assert.equal(JSON.parse(r.stdout).round, 1)
+  assert.ok(existsSync(join(root, 'snapshot/rounds/round-1.json')))
+  const s = manageCli(scriptLink, wsLink, 'settle', '--findings', 'findings.json')
+  assert.equal(s.status, 0)
+  assert.deepEqual(JSON.parse(s.stdout).kept, [F_OTHER])
+  // a link that stays inside the workspace is fine
+  writeFileSync(join(root, 'in2.json'), JSON.stringify(roundIn(2)))
+  symlinkSync(join(root, 'in2.json'), join(root, 'in-link.json'))
+  assert.equal(manageCli(MANAGE, wsLink, 'round', '--input', 'in-link.json').status, 0)
 })

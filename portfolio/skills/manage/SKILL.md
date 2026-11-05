@@ -28,9 +28,8 @@ skills as its steps. **Not for** a one-off review of someone else's document (`f
 that is not a portfolio (`deck-builder`).
 
 Engine, run from the workspace root: `node ${CLAUDE_PLUGIN_ROOT}/skills/manage/scripts/manage.mjs <cmd>`
-(`layout`, `scaffold`, `selection`, `snapshot`, `renumber`, `verify`, `compare`, `claims`,
-`keep-render`; one JSON object each). Tests run on `scripts/fixtures/workspace` (fictional, the real
-one's shape); a mismatch a real run finds is added there as a test first.
+(`layout`, `scaffold`, `selection`, `snapshot`, `renumber`, `verify`, `compare`, `claims`, `settle`,
+`intake`, `step`, `round`, `keep-render`; one JSON object each). A real run's mismatch becomes a fixture test first.
 
 ## Workspace
 
@@ -56,6 +55,12 @@ block that moves with its pages. History lines (`vX.Y.Z 변경…`, `vX.Y.Z(…`
 ## Process
 
 Nine steps, in order; a round may start again at 2 or 4 (step 8 says where); 9 once the deck is done.
+Steps 1-7 run as one harness-shaped pass, n times (n from the user, default n = 2): plan the round
+→ criteria per step (`step`) → do → check (a command, else a judge that is not the actor) → gate
+(`step`) → `round`. `feedback` runs every round after step 7 from the main context, `intake` takes its
+findings; the loop stops at `round`'s `continue: false`. A step that could not run is `skipped` with its reason, a gap, never pass; build/render without
+the user's word is skipped `not requested`; a headless user-wait ends the round (`waiting_user`).
+Mechanics: `references/rounds.md`.
 
 0. **Open.** `layout`; read `docs/확정사실.md` and the "맞춰야 할 것" table at the end of skeleton.
    Missing workspace parts are created on request, not silently: `scaffold` makes the flow's new
@@ -93,8 +98,8 @@ Nine steps, in order; a round may start again at 2 or 4 (step 8 says where); 9 o
    own bar (noah, when connected: their stated standards, quoted). Each viewpoint's findings go to a
    workspace file as `[{id,text}]`; run `manage.mjs settle --findings <file>`, continue with `kept`,
    show the user `settled` (finding, line, share). No viewpoint proposes cutting or merging pages
-   without a ground, or cites market generalities ("면접 단골 질문") as evidence. The first-page
-   summary line need not carry a number: measured numbers sit in evidence lines, small ones drop.
+   without a ground, or cites market generalities ("면접 단골 질문"); the first-page summary line
+   need not carry a number (measured ones sit in evidence lines, small ones drop).
    - **Snapshot, then edit.** `snapshot --kind skeleton --level <major|minor|patch> --note "<what>"`
      before the first edit of a round (major = structure: page count, blocks, order; minor =
      content; patch = wording). Mark edited cells `[vX]`, unconfirmed wording `[vX 안]`. Lines are
@@ -133,7 +138,7 @@ Nine steps, in order; a round may start again at 2 or 4 (step 8 says where); 9 o
    means, page flow), saved to `snapshot/feedback/deck-vX.Y.Z.md`. Each finding goes back to
    material: a claim the deck cannot defend → its item's `gaps.md`; a real result the user restores
    → the item's `result.md` labelled `본인 확인`. The next round starts at 2 (selection changed) or 4
-   (wording). Kept small: no follow-up question trees.
+   (wording); no follow-up question trees.
 9. **Resume.** From the built deck and `선정.md`: `resume.md` (front matter maps name · section ·
    entry · bullet · body to the user's `template/resume.docx` styles, `resume.py catalog` lists them),
    every bullet citing `글감:`, then `claims --file resume.md`, `python3 scripts/resume.py build` and,
@@ -146,13 +151,8 @@ Always:
 - **Corrections.** When the user corrects a fact, in the same turn: append to the material file
   `## 정정 — 본인 확인 YYYY-MM-DD` with their words verbatim; add one line to `확정사실.md`;
   `noah_collect` the words when noah is connected. The user's word beats the record.
-- **Did it read better.** After a round's edits, score the round's snapshot and the new skeleton
-  with the same rubric in the same turn: `feedback`'s five dimension scores and `pattern`'s items,
-  each run as `{ "<item>": <score> }` into `snapshot/scores/skeleton-vX.Y.Z.json`, then
-  `compare --before <snapshot's> --after <new>`, with both rounds' `claims` saved beside them
-  (`skeleton-vX.Y.Z.claims.json`) as `--claims-before`/`--claims-after`: a claim that lost its
-  ground (`lost_ground`) makes the round worse whatever the scores. Report every change; a `dropped`
-  item comes with the snapshot's wording, offered back; `unmatched` means re-score.
+- **Did it read better.** After a round's edits, score the snapshot and the new skeleton with the
+  same rubric, then `compare` (`lost_ground` = worse): `references/rounds.md` § Did it read better.
 - **A vague answer** ("바꾸고"): do the part every reading shares, hold the rest and say so.
 
 Principles for any candidate, and the mistakes this flow stops: `references/principles.md`.
@@ -176,11 +176,12 @@ Principles for any candidate, and the mistakes this flow stops: `references/prin
 
 claims: 문제 <n> (근거 없음 n · 글감에 없음 n · 확인 필요 n · 인용 없음 n) · 본인 확인 <n> · 덱에 없는 성과 <n>
 renumber/verify: <changes, warnings, problems | 안 함> · deck check: <warnings | 안 함> · build/render: <함 | 안 함>
+라운드: <n>회 중 <k>회 · 종료 <stop_reason> · 게이트 gap <n> (건너뛴 단계: 이유) · 패널 <4인 | 단일> · 심사 <subagent | in-context>
 ```
 
 Korean, conclusion first, plain headings, no bold runs, no invented names or labels; a number says
-what it counts. Not built → the built files are older. A short remark read one way → say the
-reading and ask. Held is said as held.
+what it counts. Not built → the built files are older. A remark read one way → say the reading, ask.
+Held is said as held.
 
 ## What Claude Does / What You Do
 
@@ -189,8 +190,7 @@ reading and ask. Held is said as held.
 | Runs material, feedback, pattern, rewrite and deck-builder as steps of one loop | Hand over material; answer only what only you know |
 | Proposes the selection table (본문/부록/제외 · 대표) and waits | Approve what goes in and what each item leads with |
 | Snapshots before editing, renumbers in one pass, verifies references | Approve structure changes (page count, blocks, order) |
-| Records your corrections in three places the same turn | Correct facts in your own words |
-| Stops at `check`; builds and renders when told | Say when to build or render |
+| Records corrections in three places the same turn; stops at `check`, builds and renders when told | Correct facts in your own words; say when to build or render |
 
 ## Related Skills
 
