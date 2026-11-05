@@ -49,6 +49,13 @@ function extractServerAndTools(scriptPath) {
     if (m.index >= excludeStart && m.index < excludeEnd) continue;
     toolNames.push(m[1]);
   }
+  // teams/mcp/broker.mjs is a facade: its tool table lives in the sibling broker-tools.mjs.
+  const toolsModule = scriptPath.replace(/\.mjs$/, '-tools.mjs');
+  if (existsSync(toolsModule)) {
+    const toolsSource = readFileSync(toolsModule, 'utf8');
+    const toolsRe = /\bname\s*:\s*['"]([^'"]+)['"]/g;
+    while ((m = toolsRe.exec(toolsSource))) toolNames.push(m[1]);
+  }
   return { serverName, toolNames };
 }
 
@@ -159,7 +166,7 @@ test('MCP tool names are pairwise disjoint across teams / graph / harness', () =
   //
   // teams declares its tools across two files: broker.mjs (team_*, 6 tools) and
   // taskmanager.mjs (tm_*, 9 tools) - one canary from each proves both were read.
-  assert.ok(byPlugin.teams.includes('team_open'), 'expected team_open, from teams/mcp/broker.mjs');
+  assert.ok(byPlugin.teams.includes('team_open'), 'expected team_open, from teams/mcp/broker-tools.mjs');
   assert.ok(byPlugin.teams.includes('tm_open'), 'expected tm_open, from teams/mcp/taskmanager.mjs');
   assert.ok(byPlugin.teams.includes('tm_docs'), 'expected tm_docs, from teams/mcp/taskmanager.mjs (proves the extractor read to the end of that file, not just its first entries)');
   // graph declares all of its tools in the one file, graph/mcp/broker.mjs.
