@@ -163,6 +163,8 @@ toasts).
 
 ### teams plugin bugs
 
+Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 128's leftovers.
+
 125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality**
    - Why: user, 2026-11-04, after the 190/110 captures of card 105: "만약 된다면 view.mjs(web으로 보여주는 것)
      은 퇴역시켜도 될거 같아", "저 *-stats view만 더 퀄리티 높히면 될거 같고". Condition ("만약 된다면"): the
@@ -212,6 +214,11 @@ toasts).
      the last rejection reason and score on STORY rows; a STORY report written by the engine (the pane
      reads it, never composes one); `pane.ts` key tests for every key; demo render of each page at 190 and
      110 approved before the card closes. Not in: split view, retry/cancel keys (the pane stays read-only).
+     Mocks approved again (user, 2026-11-06: "panemock good , 영, 한으로 노출 조정할 수 있으면 좋겠고"):
+     every page's text switches between English and Korean from the pane itself (one key, shown in the
+     footer, kept across reopen in `$.state`; the default stays Claude Code's `language` setting,
+     `teams/hooks/mod.tsx:494`); no string outside the one two-language table; a `pane.ts` test per page
+     renders both languages with no label left in the other one.
    - The command's chat text (user, 2026-11-05, on `/teams-status` printing the whole status block —
      `teams: E-258fa3e5 …`, `RUNNING ▰▰▱▱…`, `▸ Build · …` and every row — into the chat beside the pane):
      "채팅에 … 같이 그리지 마라 mobile이 아니라면". Acceptance: on terminal, desktop and vscode the command
