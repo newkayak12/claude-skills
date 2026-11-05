@@ -36,7 +36,7 @@ equals the previous record's, and `round` is never past `n`. Round numbers run i
    `fail` with the reason when the fix does not fit this round (a step that ran and missed a
    criterion). The verdict values are `pass`, `fail`, `skipped`.
 6. **Record.** One `round` call per round, after the last step (or after the step that ended
-   it), with no `steps` in its input: write `{round, n, feedback, feedback_mode, waiting_user?,
+   it), with no `steps` in its input: write `{round, n, feedback, feedback_mode,
    blocked?}` to `snapshot/rounds/in-N.json` and run `manage.mjs round --input
    snapshot/rounds/in-N.json` (that folder is left out of `changed`). `round` reads the seven
    verdicts `step` recorded and the record says `gate.order: recorded`; steps passed in the input
@@ -91,29 +91,30 @@ unreadable file, a missing renderer or catalog) gives `skipped` with its reason,
   workspace has them). A missing one, or a checker that cannot open the template (0-byte or
   unreadable `template.pptx`), is `skipped` and named in the reason;
 - step 7: `build`/`render` only when the user said so for this loop. Without that word the step is
-  skipped with the reason `not requested`; it is never `waiting_user`. With the word and no
-  renderer, skipped with the reason `no renderer`;
-- any step behind a user-wait point (next section).
+  skipped with the reason `not requested`; it is not a user-wait. With the word and no
+  renderer, skipped with the reason `no renderer`.
 
 ## User-wait points
 
-Steps 2 and 3, and a structure change in step 4, wait for the user in a conversation. When the user
-gave standing answers for the loop ("accept the proposed selection and structure"), the proposal is
-accepted; say so in the step's `reason`. In a headless run with no answer: propose, write nothing that
-needs the answer, record the question as `waiting_user` and end the round. The steps that need the
-answer, and those after them that read its output, are recorded `skipped` with the reason `waiting for
-user`; steps that do not need it (1, 5) still run.
+Steps 2 and 3, and a structure change in step 4, need an answer. It is taken in this order, first
+that can answer:
 
-`waiting_user` ends the round, not the loop. `round` keeps `continue` true after it, and the next
-round carries the question forward in `started_from`, unless no step can proceed: every step skipped,
-or the last round reached, and then `continue` is false and the loop stops.
+1. **The user.** In a conversation, ask and wait in the step. A standing answer the user gave for the
+   loop ("accept the proposed selection and structure") counts as theirs.
+2. **noah.** No user to ask (headless) and noah connected: ask it, and answer from what it returns of
+   the user's stated standards and corrections, quoted in `reason`.
+3. **The proposal.** Neither: take the proposal as it stands, say so in `reason`, and go on.
+
+Record who answered as the step's `answered_by` (`user`, `noah`, `proposal`) with its verdict. A
+user-wait never ends a round or the loop (`round` refuses `waiting_user`); the report lists every
+step answered by `noah` or `proposal`, for the user to confirm or change later.
 
 ## Loop and stop
 
 After each `round` call read its printed `continue`. `continue: true` starts the next round
 (from the gaps and feedback ids just recorded); `continue: false` ends the loop. The `stop_reason`
-values are `n_reached`, `nothing_new`, `waiting_user` and `blocked`, first match wins in that
-precedence: blocked, waiting_user, nothing_new, n_reached. `blocked` (input `blocked`) is for work
+values are `n_reached`, `nothing_new` and `blocked`, first match wins in that
+precedence: blocked, nothing_new, n_reached. `blocked` (input `blocked`) is for work
 that cannot continue at all, with the reason.
 
 `nothing_new` fires when any one of three clauses holds: no gap id absent from the previous round,
@@ -124,7 +125,7 @@ written as the older `[{id,text}]` array), or no file changed since it. Round 1 
 
 One report per loop, in the Output Template's shape, plus per round: its gate (verdict per step,
 gaps), the diff to the previous round (resolved, carried, new), `stop_reason` and `continue`, the
-skipped steps with reasons, the priorities not consumed, the panel mode and the judge mode
+skipped steps with reasons, the steps answered by `noah` or `proposal`, the priorities not consumed, the panel mode and the judge mode
 (`subagent` or `in-context`). The loop's report closes with where it stopped and why.
 
 ## Did it read better

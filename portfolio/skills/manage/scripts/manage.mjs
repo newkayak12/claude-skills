@@ -36,7 +36,8 @@
 //                id every round for the same criterion) }] (exactly seven entries, steps 1-7 once each),
 //                feedback?: [{ id, text }] (the kept findings after settle), feedback_mode: panel | single-context
 //                (required when feedback is non-empty, how `feedback` ran; null or absent otherwise),
-//                waiting_user?: question, blocked?: reason }
+//                blocked?: reason }  (steps[].answered_by?: user | noah | proposal, steps 2-4 only: who settled the
+//                user-wait; `waiting_user` is refused: a user-wait never ends a round)
 //       refused before anything is written: empty criteria or `by`, steps other than 1-7 once each, round > n, an
 //       existing round-N.json (never overwritten), N>1 with no round-(N-1).json, a round-(N-1).json that is not a
 //       record (object with round N-1, integer n, steps array, gate.gaps array of strings, feedback { mode, ids }
@@ -56,13 +57,11 @@
 //                         round N-1 recorded before end manifests existed falls back to mtime),
 //                stop_reason, continue, feedback: { mode: panel | single-context | null, ids: [finding ids in
 //                input order] } (round N-1 written as the legacy [{ id, text }] array is read the same),
-//                waiting_user?, blocked? }
+//                blocked? }
 //       clauses are evaluated only from round 2 on (null in round 1):
 //       no_new_gap = diff.new is empty; no_new_feedback = every feedback id was already in N-1; no_file_changed =
 //       changed is empty. nothing_new fires when ANY ONE of the three holds; the gate records each.
-//       stop_reason, first match wins: blocked > waiting_user > nothing_new > n_reached (round >= n) > null
-//       continue: false for blocked, nothing_new, n_reached; true for null; for waiting_user true, unless every step
-//       was skipped (nothing could proceed) or round >= n (so waiting_user at the last round still ends the loop)
+//       stop_reason, first match wins: blocked > nothing_new > n_reached (round >= n) > null; continue is true only for null
 //       also writes snapshot/rounds/end-N.json ({ path: sha256 } of the workspace as the round left it)
 //       prints { round, rounds: count of round-*.json, stop_reason, continue, gaps }
 //   intake --feedback <file> [--round N]   the findings one portfolio:feedback output gives the round, parsed in node:
@@ -72,14 +71,14 @@
 //       mode: single-context when the Clashes block says 패널 미실행 or is absent, else panel. With --round N also
 //       writes snapshot/rounds/findings-N.json (the `settle --findings` input). Prints { mode, findings, not_consumed, written? }.
 //   step --input -                 records one step entry as it happens into snapshot/rounds/steps-N.json, stamped with
-//       the engine's time: { round, step, criteria, id? } (criteria phase) then { round, step, verdict, by, reason? }
+//       the engine's time: { round, step, criteria, id? } (criteria phase) then { round, step, verdict, by, reason?, answered_by? }
 //       (verdict phase). Refused: a verdict before its criteria or twice, criteria for step s+1 before step s's
 //       verdict, a step out of 1-7 order, a round already recorded. Prints { round, steps, next: { step, needs } | null }.
 //       `round` with no `steps` in its input reads steps-N.json (seven verdicts required) and records gate.order
 //       'recorded' with each step's criteria_at and verdict_at; steps given in the input record gate.order 'caller'.
 //   round --read                   the read form: { rounds, last: { round, stop_reason, continue } | null, items: [one per
 //       round-N.json in round order: { round, n, verdict, gaps, diff, clauses, changed, stop_reason, continue,
-//       feedback, waiting_user?, blocked? }] }, from the files alone; writes nothing
+//       feedback, answered?: { "<step>": answered_by }, waiting_user? (older records), blocked? }] }, from the files alone; writes nothing
 // A page heading is `## N`, `## N.`, `## N)` or `## N쪽`. A `# ` chapter heading bounds a block: pages
 // sort inside their block, and blocks holding pages sort by their first page; other sections stay put.
 import { createHash } from 'node:crypto'
@@ -643,6 +642,13 @@ export function claims(text, items, settledLines = [], sel = null) {
 // ── round: the record is described in the header (`round --input`) ──
 const ROUNDS_DIR = 'snapshot/rounds'
 const VERDICTS = ['pass', 'skipped', 'fail'] // worst last: a step's gate verdict is its worst entry
+// who settled a user-wait point (steps 2, 3, and a structure change in 4): the user, else noah, else the proposal
+const ANSWERERS = ['user', 'noah', 'proposal']
+function checkAnsweredBy(s, where) {
+  if (s.answered_by === undefined) return
+  if (!ANSWERERS.includes(s.answered_by)) throw new Error(`${where}answered_by must be user, noah or proposal`)
+  if (s.step < 2 || s.step > 4) throw new Error(`${where}answered_by is only for the user-wait steps 2-4`)
+}
 const FEEDBACK_MODES = ['panel', 'single-context']
 const isInt = v => Number.isInteger(v) && v >= 1
 const isText = v => typeof v === 'string' && v.trim() !== ''
@@ -659,6 +665,7 @@ function checkRoundInput(input) {
     if (!VERDICTS.includes(s.verdict)) throw new Error(`steps[${i}].verdict must be pass, fail or skipped`)
     if (!isText(s.by)) throw new Error(`steps[${i}].by must be a non-empty string`)
     if (s.reason !== undefined && typeof s.reason !== 'string') throw new Error(`steps[${i}].reason must be a string`)
+    checkAnsweredBy(s, `steps[${i}].`)
     if (s.id !== undefined && (typeof s.id !== 'string' || !/^[^\s/]+$/.test(s.id))) {
       throw new Error(`steps[${i}].id must be a non-empty string without a slash or whitespace (the criterion id)`)
     }
@@ -676,9 +683,10 @@ function checkRoundInput(input) {
   if (feedback.length === 0 && input.feedback_mode != null && !FEEDBACK_MODES.includes(input.feedback_mode)) {
     throw new Error(`feedback_mode must be ${FEEDBACK_MODES.join(' or ')} when given`)
   }
-  for (const k of ['waiting_user', 'blocked']) {
-    if (input[k] !== undefined && input[k] !== null && !isText(input[k])) throw new Error(`${k} must be a non-empty string when given`)
+  if (input.waiting_user !== undefined && input.waiting_user !== null) {
+    throw new Error('waiting_user is not an input: a user-wait is answered by the user, else noah, else the proposal; record who as the step\'s answered_by (rounds.md: User-wait points)')
   }
+  if (input.blocked !== undefined && input.blocked !== null && !isText(input.blocked)) throw new Error('blocked must be a non-empty string when given')
   const seen = input.steps.map(s => s.step).sort((a, b) => a - b)
   if (seen.length !== 7 || seen.some((s, i) => s !== i + 1)) {
     throw new Error(`steps must be exactly seven entries, one for each of steps 1-7 (rounds.md: the seven-step rule); got [${seen.join(', ')}]`)
@@ -807,7 +815,11 @@ export function step(root, input) {
     if (!VERDICTS.includes(input.verdict)) throw new Error('verdict must be pass, fail or skipped')
     if (!isText(input.by)) throw new Error('by must be a non-empty string')
     if (input.reason !== undefined && typeof input.reason !== 'string') throw new Error('reason must be a string')
-    Object.assign(entry, { verdict: input.verdict, by: input.by.trim(), ...(input.reason !== undefined && { reason: input.reason }), verdict_at: at })
+    checkAnsweredBy(input, '')
+    Object.assign(entry, {
+      verdict: input.verdict, by: input.by.trim(), ...(input.reason !== undefined && { reason: input.reason }),
+      ...(input.answered_by !== undefined && { answered_by: input.answered_by }), verdict_at: at,
+    })
   } else {
     const expected = cur ? cur.step + 1 : 1
     if (cur && cur.verdict === undefined) throw new Error(`step ${cur.step} has no verdict yet: the gate comes before step ${input.step}`)
@@ -845,7 +857,7 @@ export function round(root, input, { skip = [] } = {}) {
   const startedFrom = prev ? { gaps: prev.gate.gaps, feedback: prevIds } : { gaps: [], feedback: [] }
   const steps = input.steps.map((s, i) => ({
     step: s.step, ...(s.id !== undefined && { id: s.id }), criteria: s.criteria.trim(), verdict: s.verdict, by: s.by.trim(),
-    ...(s.reason !== undefined && { reason: s.reason }),
+    ...(s.reason !== undefined && { reason: s.reason }), ...(s.answered_by !== undefined && { answered_by: s.answered_by }),
     ...(recorded && { criteria_at: recorded[i].criteria_at, verdict_at: recorded[i].verdict_at }),
   }))
   const gaps = [...new Set(steps.filter(s => s.verdict !== 'pass').map(s => `s${s.step}/${s.id ?? s.criteria.replace(/\s+/g, ' ')}`))]
@@ -872,15 +884,14 @@ export function round(root, input, { skip = [] } = {}) {
   } : null
   const nothingNew = clauses !== null && Object.values(clauses).some(Boolean)
   const last = input.round >= input.n
-  const waiting = isText(input.waiting_user)
   const blocked = isText(input.blocked)
-  const stopReason = blocked ? 'blocked' : waiting ? 'waiting_user' : nothingNew ? 'nothing_new' : last ? 'n_reached' : null
-  const cont = stopReason === null || (stopReason === 'waiting_user' && !last && !steps.every(s => s.verdict === 'skipped'))
+  const stopReason = blocked ? 'blocked' : nothingNew ? 'nothing_new' : last ? 'n_reached' : null
+  const cont = stopReason === null
   const record = {
     round: input.round, n: input.n, started_from: startedFrom, steps,
     gate: { verdict, gaps, diff, clauses, order: recorded ? 'recorded' : 'caller' }, changed, stop_reason: stopReason, continue: cont,
     feedback: { mode: feedback.length > 0 ? input.feedback_mode : null, ids: feedback.map(f => f.id) },
-    ...(waiting && { waiting_user: input.waiting_user }), ...(blocked && { blocked: input.blocked }),
+    ...(blocked && { blocked: input.blocked }),
   }
   mkdirSync(join(root, ROUNDS_DIR), { recursive: true })
   writeFileSync(target, `${JSON.stringify(record, null, 2)}\n`)
@@ -900,6 +911,7 @@ export function readRounds(root) {
   const items = files.map(f => JSON.parse(readFileSync(join(dir, f), 'utf8'))).sort((a, b) => a.round - b.round).map(r => ({
     round: r.round, n: r.n, verdict: r.gate.verdict, gaps: r.gate.gaps, diff: r.gate.diff, clauses: r.gate.clauses,
     changed: r.changed, stop_reason: r.stop_reason, continue: r.continue, feedback: r.feedback,
+    ...(r.steps.some(s => s.answered_by) && { answered: Object.fromEntries(r.steps.filter(s => s.answered_by).map(s => [s.step, s.answered_by])) }),
     ...(r.waiting_user && { waiting_user: r.waiting_user }), ...(r.blocked && { blocked: r.blocked }),
   }))
   const l = items.at(-1)
