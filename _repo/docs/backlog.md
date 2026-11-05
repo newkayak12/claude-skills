@@ -335,6 +335,12 @@ toasts).
      when it asks, instead of every driver carrying everything. Acceptance adds: drivers spawn with
      `--strict-mcp-config` and only the stage's plugin dirs; start context under 20k tokens (measured from
      the init stream); a context request goes through the leader (tm_ask or card 126's bus) and is logged.
+   - Shape (user, same day): "한 세션에 많은걸 주지 말고 차라리 여러 번 세션을 sonnet으로 자주 여는게 나을거
+     같아" — many short Sonnet sessions, one small job each (one node or one subgoal step), instead of one
+     long driver session carrying a whole child run (P3's driver: 144 calls, context grown to 85k).
+     Acceptance adds: a session ends when its node ends and the next node gets a fresh one with only that
+     node's brief; per-session call count and peak context recorded in the ledger; the real L task shows
+     a lower peak context and cost per package than E-258fa3e5.
 
 105. **Repo-wide pane and one viewer: UI look and the loose ends** — code defects in E-03e2e513; cards 105 and 106 shipped 2026-10-30 in
     E-f53a8434 (`236eae3d`; goal gate 92; teams 1658/1660 with 2 skips, plugin test 423/423; real run: two
