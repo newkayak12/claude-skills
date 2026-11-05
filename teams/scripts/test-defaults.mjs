@@ -2,7 +2,7 @@
 process.env.TEAMS_RUNS_DIR ??= 'off';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -56,7 +56,17 @@ const FILES = {
   teamsDocs: join(REPO_ROOT, 'teams/mcp/docs.mjs'),
 };
 
+// graph.mjs is a facade over graph-*.mjs (card 128): createRun and the rest of its text live in
+// the modules, so 'teamsGraph' is the facade plus every graph-*.mjs, read as one text.
 function src(key) {
+  if (key === 'teamsGraph') {
+    const dir = join(REPO_ROOT, 'teams/mcp');
+    return readdirSync(dir)
+      .filter((f) => f === 'graph.mjs' || /^graph-.+\.mjs$/.test(f))
+      .sort()
+      .map((f) => readFileSync(join(dir, f), 'utf8'))
+      .join('\n');
+  }
   return readFileSync(FILES[key], 'utf8');
 }
 
