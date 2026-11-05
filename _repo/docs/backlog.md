@@ -330,7 +330,9 @@ toasts).
 130. **teams spends less per task: model per stage, lean driver sessions, a default budget**
    - Why: E-258fa3e5 (cards 128 + 125 leftovers, opened 2026-11-05 09:25) cost $14.4 over 28 sessions
      before shape started (planning only). Again 2026-11-05: E-066abb46 (size S, Sonnet) spent $48.39 of a
-     $25 budget, `budget_stopped` only after the gate passed (197 min). Cost sources named in the session (2026-11-05), checked where
+     $25 budget, `budget_stopped` only after the gate passed (197 min); `/teams-status` showed the same
+     task at "Cost $21.84 · Budget $21.84 of $25.00" (2026-11-06), so the pane's cost disagrees with the
+     ledger's `spend` (cause unverified). Cost sources named in the session (2026-11-05), checked where
      marked:
      1. Every node is a fresh `claude -p` session that re-reads the rule files and the global CLAUDE.md
         (@MCP.md, ORCHESTRATOR.md, …); planning alone runs investigate, draft, gate and integrate per card
