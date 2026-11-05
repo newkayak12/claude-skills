@@ -212,6 +212,17 @@ toasts).
      the last rejection reason and score on STORY rows; a STORY report written by the engine (the pane
      reads it, never composes one); `pane.ts` key tests for every key; demo render of each page at 190 and
      110 approved before the card closes. Not in: split view, retry/cancel keys (the pane stays read-only).
+   - The command's chat text (user, 2026-11-05, on `/teams-status` printing the whole status block —
+     `teams: E-258fa3e5 …`, `RUNNING ▰▰▱▱…`, `▸ Build · …` and every row — into the chat beside the pane):
+     "채팅에 … 같이 그리지 마라 mobile이 아니라면". Acceptance: on terminal, desktop and vscode the command
+     opens/closes the pane and returns nothing to the chat (at most one line); on mobile it keeps the text;
+     headless `{ text }` unchanged (`mod.md` rule 7); a `claude plugin test` case per surface.
+   - Wrong state in the pane (seen 2026-11-05 10:31, E-258fa3e5): it read `STALLED`, phase `Plan`, `Progress
+     0%` and only QA cards under "Up next" while P1–P3 had been dispatched at 10:10 and their three drivers
+     were writing output; a later open showed `RUNNING`, Build, 17%. Cause unverified (stale read before
+     `/reload-plugins`, or the stall verdict read from the planning cards). Acceptance: the pane's state
+     and phase come from the engine's own status for the task, a test with dispatched packages and an old
+     planning-card mtime shows Build and not STALLED.
 
 126. **teams agents talk over a per-task message bus (topic = the task key), the pane draws it as threads**
    - Why: user, 2026-11-04: "agent 간 대화는? teams 내에서", then "지금은 mod로 가능하지 않나? 가능하더라도
