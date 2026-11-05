@@ -288,6 +288,16 @@ toasts).
      4. Defect fixes conflict: each fix package branched from the same base with no integrate between them;
         D8, D12, D13 and D15 touched the same files and conflicted at merge.
      5. `tm_retry` on a task that ended blocked spawned no daemon; a new Sprint had to be opened.
+        Seen again 2026-11-05 on E-258fa3e5, cause verified: the daemon (pid 21066) exited at
+        `daemon_done` but stayed a zombie (`<defunct>`, STAT Z) because its parent, a long-lived
+        `taskmanager.mjs` MCP server of another session (pid 54355), never reaped it; `driverAlive`
+        (signal 0) counts a zombie as alive, so `serviceDaemon` never respawned it and tm_status
+        reported `daemon alive`. Also seen: `tm_retry({package_id: P4})` twice in a row left two
+        dispatches (P4:4 respawned by the second call, P4:5 new) driving one worktree; and P4:4
+        started on a stale base (P3+P1 only, not P2) though the retry came after the deps changed.
+        6. Two parallel packages edited the same function of a test file (`test-defaults.mjs`, P2 and
+        P3, both after an ask answer allowed the edit) and P4's base merge failed → `dispatch_failed`
+        → `daemon_done`, task blocked for 2 h with nobody told (no push notification, band unchanged).
    - Acceptance: each failure is classified (capacity, permission/environment, below-threshold, merge
      conflict, ended task) and recorded on the node, and each kind has its own path, with a test per path —
      1. a `waiting_capacity` dispatch resumes on its own once the limit's reset time passes (daemon tick),
@@ -297,7 +307,11 @@ toasts).
      3. no package or gate accepts with `match_pct` below `goal_threshold` (a test with 87 vs 90);
      4. fix packages touching the same files run in series or branch from the last accepted fix, and an
         integrate runs between waves; a test with two fixes on one file merges clean;
-     5. `tm_retry` on an ended blocked task starts its daemon and continues from the blocked node;
+     5. `tm_retry` on an ended blocked task starts its daemon and continues from the blocked node; a
+        zombie daemon pid reads as dead (check process state, or reap: spawn the daemon so the
+        server waits on it); a package retry supersedes and kills the previous dispatch's driver,
+        never respawns it, and rebases the worktree on the deps' current heads;
+     6. a blocked task notifies the person (push notification and band) the moment it stops;
      then one real L task where a fix wave and a QA pass complete with no hand merge.
 
 130. **teams spends less per task: model per stage, lean driver sessions, a default budget**
