@@ -430,6 +430,14 @@ function ledgerProject({ nfd = false } = {}) {
   return cwd;
 }
 
+test('ledger lists B- and C-grade files as items too, sorted by name', () => {
+  const cwd = ledgerProject();
+  fs.writeFileSync(path.join(cwd, 'sources', '01_가상검색', 'B1_로그.md'), '# 로그 정리\n');
+  fs.writeFileSync(path.join(cwd, 'sources', '02_가상알림', 'C1_메모.md'), '# 메모\n');
+  const r = run(cwd, ['ledger']);
+  assert.deepEqual(r.json.items.map((i) => i.id), ['01_가상검색/A1', '01_가상검색/A2', '01_가상검색/B1', '02_가상알림/A1', '02_가상알림/C1']);
+});
+
 test('ledger lists every A-file per project folder, NFC ids, title from the first heading', () => {
   const cwd = ledgerProject({ nfd: true });
   const r = run(cwd, ['ledger']);

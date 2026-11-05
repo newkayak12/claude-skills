@@ -119,11 +119,12 @@ function ledgerItems() {
   const ls = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }); } catch { return []; } };
   const out = [];
   for (const p of ls(SRC).filter((e) => e.isDirectory() && /^\d+_/.test(e.name)).sort((x, y) => x.name.localeCompare(y.name))) {
-    for (const f of ls(path.join(SRC, p.name)).filter((e) => e.isFile() && /^A\d+.*\.md$/.test(e.name)).sort((x, y) => x.name.localeCompare(y.name, undefined, { numeric: true }))) {
+    // every grade's file (A1, B2, C3 …), not only A
+    for (const f of ls(path.join(SRC, p.name)).filter((e) => e.isFile() && /^[A-Z]\d+.*\.md$/.test(e.name)).sort((x, y) => x.name.localeCompare(y.name, undefined, { numeric: true }))) {
       const file = `${p.name}/${f.name}`;
       const text = fs.readFileSync(path.join(SRC, file), 'utf8');
       out.push({
-        id: `${p.name.normalize('NFC')}/${f.name.match(/^A\d+/)[0]}`,
+        id: `${p.name.normalize('NFC')}/${f.name.match(/^[A-Z]\d+/)[0]}`,
         file,
         title: (text.match(/^#[ \t]+(.+)$/m) || [, f.name.normalize('NFC').replace(/\.md$/, '')])[1].trim(),
         written: /^- \d{4}-\d{2}-\d{2} .*\(status: written\b/m.test(text),
@@ -310,7 +311,7 @@ const cmd = {
   },
 
   // A workspace that keeps its material as a per-project ledger (`sources/NN_프로젝트/A1….md`) is
-  // read as it is: each A-file is one item, id `NN_프로젝트/A1`.
+  // read as it is: each graded file (A1, B2, C3 …) is one item, id `NN_프로젝트/A1`.
   ledger() {
     return { items: ledgerItems().map(({ id, file, title, written }) => ({ id, file, title, written })) };
   },
