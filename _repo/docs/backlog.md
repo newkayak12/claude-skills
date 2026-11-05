@@ -324,6 +324,17 @@ toasts).
      - node prompts point at file regions (line ranges, symbols) instead of whole large files where the
        stage allows;
      - one real L task's cost compared to E-258fa3e5's per-stage cost, numbers in the report.
+   - Measured 2026-11-05 on E-258fa3e5's P3 driver: a fresh session starts at 54k tokens of context —
+     12 plugins, 93 skills, 124 tools, 12 claude.ai connectors (Notion, Slack, Figma, Datadog, …) and the
+     sec/telemetry plugins — and re-sends it on every API call (144 calls, 54k→85k each, 22M cache-read).
+     `driverArgv` (`teams/mcp/taskmanager.mjs` ~3084) passes `--setting-sources project` but every
+     STAGE_SKILLS plugin dir, no `--strict-mcp-config`, no `--model`. The Sonnet rule existed only for
+     subagents in this repo; E-258fa3e5 was also opened without tm_open's `model`.
+   - Direction (user, same day): "모든 컨텍스트를 주지 않고 필요할 때 Leader가 주면 될거 같은데" — a driver
+     starts lean (its stage's skills only, no connectors) and the TeamLeader hands it a doc, region or rule
+     when it asks, instead of every driver carrying everything. Acceptance adds: drivers spawn with
+     `--strict-mcp-config` and only the stage's plugin dirs; start context under 20k tokens (measured from
+     the init stream); a context request goes through the leader (tm_ask or card 126's bus) and is logged.
 
 105. **Repo-wide pane and one viewer: UI look and the loose ends** — code defects in E-03e2e513; cards 105 and 106 shipped 2026-10-30 in
     E-f53a8434 (`236eae3d`; goal gate 92; teams 1658/1660 with 2 skips, plugin test 423/423; real run: two
