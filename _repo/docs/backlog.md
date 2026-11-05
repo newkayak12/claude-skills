@@ -190,7 +190,7 @@ toasts).
      detached from the starting session; measured 2026-11-04 18:30 on `~/.harness/tasks` (1108 entries):
      no clients 0.07%, one session's 3 s events + status poll ~4% (synthetic root 0.85%). Left: the
      real-root poll under 1% (status recomputes over every entry), a log for the detached server, a
-     relative `HARNESS_TASKS_DIR` resolved in the mod, a default-on loose CPU guard in the suite — in E-258fa3e5.
+     relative `HARNESS_TASKS_DIR` resolved in the mod, a default-on loose CPU guard in the suite — in E-8b2f2880 (E-258fa3e5 cancelled).
    - The viewer link, now and unconditionally (user, 2026-11-04, on a `http://127.0.0.1:7431/E-478d5e95` in a
      reply: "이렇게 내보이는거 굳이 하지말자"): no tm_* reply carries a viewer URL — `view_url` leaves
      tm_open, tm_run and tm_status (`teams/mcp/taskmanager.mjs`), and the skills that tell Claude to show it
@@ -223,6 +223,11 @@ toasts).
      `/reload-plugins`, or the stall verdict read from the planning cards). Acceptance: the pane's state
      and phase come from the engine's own status for the task, a test with dispatched packages and an old
      planning-card mtime shows Build and not STALLED.
+   - Progress that moves (user, 2026-11-05, on `Progress 17%` staying for hours while P1–P3 passed:
+     "왜 아직도 17%?", then "이것도 backlog"): `teams/scripts/lib/view-dashboard.mjs:50` counts only finished
+     stages (1 of 6 = 17%), so Build reads 17% until all eight packages pass. Acceptance: progress counts
+     work inside the running stage (accepted packages / packages for Build, QA cards for QA), shown as
+     stage and package count (`Build 3/8`); a test with 3 of 8 packages accepted reads above 17%.
 
 126. **teams agents talk over a per-task message bus (topic = the task key), the pane draws it as threads**
    - Why: user, 2026-11-04: "agent 간 대화는? teams 내에서", then "지금은 mod로 가능하지 않나? 가능하더라도
@@ -254,7 +259,7 @@ toasts).
      the name's first word, then `⑂`); tests at 190, 110 and a narrow pane on four surfaces; the demo render
      approved by the user (`mod.md` UI rule 0).
 
-128. **teams serves one MCP server, its internals split into modules by concern** — in E-258fa3e5
+128. **teams serves one MCP server, its internals split into modules by concern** — P1–P3 merged `189c74d4` (E-258fa3e5, cancelled after P4 blocked); rest in E-8b2f2880
    - Why: user, 2026-11-04: "teams의 mcp 하나의 서버로 통합 및 노출 내부 mjs 코드 스플릿으로 가독성 및
      유지보수성 증가". Today `teams/.claude-plugin/plugin.json` starts three servers per session —
      `teams-engineering` (`mcp/broker.mjs`, 2,479 lines), `task-manager` (`mcp/taskmanager.mjs`, 9,028 lines,
