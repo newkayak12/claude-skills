@@ -190,7 +190,7 @@ toasts).
      detached from the starting session; measured 2026-11-04 18:30 on `~/.harness/tasks` (1108 entries):
      no clients 0.07%, one session's 3 s events + status poll ~4% (synthetic root 0.85%). Left: the
      real-root poll under 1% (status recomputes over every entry), a log for the detached server, a
-     relative `HARNESS_TASKS_DIR` resolved in the mod, a default-on loose CPU guard in the suite.
+     relative `HARNESS_TASKS_DIR` resolved in the mod, a default-on loose CPU guard in the suite — in E-258fa3e5.
    - The viewer link, now and unconditionally (user, 2026-11-04, on a `http://127.0.0.1:7431/E-478d5e95` in a
      reply: "이렇게 내보이는거 굳이 하지말자"): no tm_* reply carries a viewer URL — `view_url` leaves
      tm_open, tm_run and tm_status (`teams/mcp/taskmanager.mjs`), and the skills that tell Claude to show it
@@ -243,7 +243,7 @@ toasts).
      the name's first word, then `⑂`); tests at 190, 110 and a narrow pane on four surfaces; the demo render
      approved by the user (`mod.md` UI rule 0).
 
-128. **teams serves one MCP server, its internals split into modules by concern**
+128. **teams serves one MCP server, its internals split into modules by concern** — in E-258fa3e5
    - Why: user, 2026-11-04: "teams의 mcp 하나의 서버로 통합 및 노출 내부 mjs 코드 스플릿으로 가독성 및
      유지보수성 증가". Today `teams/.claude-plugin/plugin.json` starts three servers per session —
      `teams-engineering` (`mcp/broker.mjs`, 2,479 lines), `task-manager` (`mcp/taskmanager.mjs`, 9,028 lines,
