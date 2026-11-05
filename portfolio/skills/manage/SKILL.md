@@ -100,8 +100,8 @@ Mechanics: `references/rounds.md`.
    show the user `settled` (finding, line, share). No viewpoint proposes cutting or merging pages
    without a ground, or cites market generalities ("면접 단골 질문"); the first-page summary line
    need not carry a number (measured ones sit in evidence lines, small ones drop).
-   - **Snapshot, then edit.** `snapshot --kind skeleton --level <major|minor|patch> --note "<what>"`
-     before the first edit of a round (major = structure: page count, blocks, order; minor =
+   - **Snapshot, then edit.** `snapshot --kind skeleton --level <major|minor|patch> --note "<what and why>"`
+     (`--by 본인` only when the user decided it) before the first edit of a round (major = structure: page count, blocks, order; minor =
      content; patch = wording). Mark edited cells `[vX]`, unconfirmed wording `[vX 안]`. Lines are
      rewritten with `rewrite` where they need strength.
    - **Decision gate.** Before carrying wording from an older version or backup, check it against
