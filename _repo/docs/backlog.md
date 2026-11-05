@@ -165,7 +165,7 @@ toasts).
 
 Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 128's leftovers.
 
-125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality**
+125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality** — in E-8faf33b9 (L, Sonnet, $80)
    - Why: user, 2026-11-04, after the 190/110 captures of card 105: "만약 된다면 view.mjs(web으로 보여주는 것)
      은 퇴역시켜도 될거 같아", "저 *-stats view만 더 퀄리티 높히면 될거 같고". Condition ("만약 된다면"): the
      pane handles several EPICs at once (`]`/`[` step EPIC, `j`/`k` STORY row, `g` open) — seen live with
