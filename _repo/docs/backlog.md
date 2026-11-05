@@ -19,35 +19,10 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
 
 ### portfolio flow — first (design: `_repo/docs/plans/2026-10-30-portfolio-flow.md`)
 
-123. **portfolio:feedback runs a fixed reviewer panel of subagents, argued out with brainstorming's debate mode and devils-advocate** — in E-478d5e95 (blocked), E-ae7d3226
-    - Why: user, 2026-11-04: "feedback 스킬에서 쓸 여러 subagent를 구성하자 랜덤 구성하지 말고",
-      "거기서 `/think:brainstorming`의 --debate 쓰고 devil's advocate 도 같이 쓰도록하고". Today feedback
-      runs in one context and picks one of the four personas in `feedback/references/personas.md` (step 2,
-      "present the four … and ask, or choose if told 'you decide'"); no subagents, no clash between readers.
-    - Acceptance: the panel is a fixed, named roster written in the skill (each reviewer: persona from
-      `personas.md`, what it reads for, model), the same roster every run, never chosen at random or
-      improvised per run; each reviewer runs as its own subagent on the same document; their findings are
-      argued out through `think:brainstorming`'s debate mode (`think/skills/brainstorming/references/debate.md`:
-      diverge → merge → attack/rebut, max 2 rounds) with `think:devils-advocate` as the attack step's method;
-      the output adds a `[충돌 / Clashes]` block (who disagreed on which finding, whether it survived) and keeps
-      the current Output Template; fewer than 2 subagents alive → the single-context run, said so; one real run
-      on a fictional portfolio shows the roster, the clashes and the merged priorities.
-
-124. **portfolio:manage runs collect → build like the harness: staged, gated, looped n times** — in E-478d5e95 (blocked), E-ae7d3226
-    - Why: user, 2026-11-04: "manage 처리할 때 최초 수집 ~ 빌드까지를 harness 스킬 유사하게 처리할 수 있도록
-      하자", "n회 돌게 해서". Today manage's Process is eight steps the model walks in prose (card 54);
-      nothing sets done-criteria per step, checks them before the next, or repeats the round.
-    - Acceptance: steps 1 (collect) through 7 (build/render) run as one harness-shaped pass — plan the round,
-      set checkable done-criteria per step, do the step, check it with `manage.mjs`/`material` commands where
-      one exists (judge ≠ actor otherwise), gate before the next step, report the round; the pass repeats n
-      times (n given by the user, a default stated in the skill), each round starting from the previous
-      round's gate gaps and feedback findings, and stops early when a round's gate finds nothing new;
-      the round count, each gate's verdict and what changed per round are written under the workspace's
-      `snapshot/` (a record a later session reads); runs headless and without a mod; one real run on a
-      fictional workspace with n = 2 shows two rounds, their gates and the diff between them.
-    - Scope (user, same day): "manage 이후에는 작게 작게 micro로 수정하고 처리할 예정이니까" — the n-round
-      loop is for the first collect → build only; once a deck is built, later changes are micro edits (one
-      item, one page, one fix) that run only the step they touch and its gate, not a full round.
+Cards 123 (feedback panel) and 124 (manage n-round loop) shipped 2026-11-05 by hand on fix/port (manage 93/93;
+real run n=2 on the fixture: two rounds, `gate.order: recorded`, a panel of one sonnet subagent per reviewer
+each round, `nothing_new` at round 2). Left open: D24, whether a round waiting on the user ends the loop (the
+PRD does not say). E-ae7d3226 cleaned.
 
 102. **portfolio checks the deck's claims against the material in an engine, both ways**
     - Why: debate 2026-10-29 (10 personas + noah), verified in code: material marks `근거 없음` /
