@@ -263,6 +263,32 @@ toasts).
      and one real S and one real L task run on the merged server; `ps` shows one teams MCP process per
      session.
 
+129. **teams tells failure kinds apart instead of retrying every failure the same way**
+   - Why: five engine defects seen in the portfolio Sprint E-478d5e95 (cards 123/124, 2026-11-04/05), reported
+     by that session; common cause (its words): "엔진이 모든 실패를 '다시 하면 되는 것'으로만 다룬다". Causes
+     below are as reported, unverified here.
+     1. Usage limit: a driver hit the 5-hour limit, parked on `waiting_capacity`, and never resumed by itself
+        after the limit reset — twice, the second for hours.
+     2. QA can never pass: a QA card's done condition is a subagent writing `report.md`, which Claude Code
+        denies a subagent by default; QA failed three times on that, and the engine retried it as an
+        implementation failure.
+     3. Pass under the bar: goal gate threshold 90, P3 accepted at 87; what it left out surfaced later as 28
+        QA defects.
+     4. Defect fixes conflict: each fix package branched from the same base with no integrate between them;
+        D8, D12, D13 and D15 touched the same files and conflicted at merge.
+     5. `tm_retry` on a task that ended blocked spawned no daemon; a new Sprint had to be opened.
+   - Acceptance: each failure is classified (capacity, permission/environment, below-threshold, merge
+     conflict, ended task) and recorded on the node, and each kind has its own path, with a test per path —
+     1. a `waiting_capacity` dispatch resumes on its own once the limit's reset time passes (daemon tick),
+        no `tm_retry` needed;
+     2. a QA report is written by a path the driver is allowed to write (or by the engine from the QA
+        result), and a denied write is classified as environment, not retried as implement;
+     3. no package or gate accepts with `match_pct` below `goal_threshold` (a test with 87 vs 90);
+     4. fix packages touching the same files run in series or branch from the last accepted fix, and an
+        integrate runs between waves; a test with two fixes on one file merges clean;
+     5. `tm_retry` on an ended blocked task starts its daemon and continues from the blocked node;
+     then one real L task where a fix wave and a QA pass complete with no hand merge.
+
 105. **Repo-wide pane and one viewer: UI look and the loose ends** — code defects in E-03e2e513; cards 105 and 106 shipped 2026-10-30 in
     E-f53a8434 (`236eae3d`; goal gate 92; teams 1658/1660 with 2 skips, plugin test 423/423; real run: two
     scratch tasks, one viewer port, 31 ok)
