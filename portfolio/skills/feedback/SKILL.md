@@ -70,18 +70,20 @@ Then the AI-screener summary — three lines in the screener's voice, only what 
 
 If `sequential-thinking` is available, use it here to map the portfolio's shape before diving into any one project.
 
-**Revision mode** — when a previous version is supplied or the user says 이전 버전 / 고친 버전 / v2 / "compare": follow `references/revision-diff.md`, adding the §C rows (스킬 근거율 · 완전 주장 · 날짜 불일치 · 레벨 갭). The diff replaces the first impression; everything else is scored on the new version and shortened where unchanged. Regressions include claims the rewrite introduced. If `sequential-thinking` is available, carry the tallies with it so every regression traces to a specific tally change.
+**Revision mode** — when a previous version is supplied or the user says 이전 버전 / 고친 버전 / v2 / "compare": follow `references/revision-diff.md`, adding the §C rows (스킬 근거율 · 완전 주장 · 날짜 불일치 · 레벨 갭). The diff replaces the first impression and stays single-context; the same four-reviewer panel (step 2) reviews and debates the new version's findings, and everything else is scored on the new version and shortened where unchanged. Regressions include claims the rewrite introduced. If `sequential-thinking` is available, carry the tallies with it so every regression traces to a specific tally change.
 
-**2. Choose a reviewer persona** — present the four from [`references/personas.md`](references/personas.md) with their one-line questions and ask, or choose if told "you decide." Stay in persona throughout.
+**2. Panel and debate** — steps 0–1 ran once, here: format, tallies, C/A/L IDs. The same four reviewers read the same document on every run, one persona each from [`references/personas.md`](references/personas.md), each as its own subagent. Nobody is chosen at random, improvised, asked for or swapped. Mechanics, attack format, rule S, fallback and the Clashes contract: [`references/panel.md`](references/panel.md). The debate is think:brainstorming's debate mode (`think/skills/brainstorming/references/debate.md`): diverge → merge → attack/rebut, at most 2 rounds, `think:devils-advocate` as the attack method. Claude applies rule S and sets the scores; reviewers do not vote.
 
-| Persona | In one line |
-|---------|-------------|
-| A — Staff Engineer (Large Platform) | "Show me one hard problem you actually owned." |
-| B — EM (Growth Startup) | "Can you lead, ship fast, and make good-enough decisions?" |
-| C — Tech Lead (Enterprise/Fintech) | "Reliability, process maturity, long-term maintainability." |
-| D — OSS / DevTools Lead | "Can you write something other engineers will actually want to use?" |
+| ID | Persona | Reads for | Model |
+|----|---------|-----------|-------|
+| A | Staff Engineer (Large Platform) — "Show me one hard problem you actually owned." | tradeoffs not tech lists, scale, an owned hard problem, "participated in" language | sonnet |
+| B | EM (Growth Startup) — "Can you lead, ship fast, and make good-enough decisions?" | ownership, cross-team effect, leadership, outcomes tied to business metrics | sonnet |
+| C | Tech Lead (Enterprise/Fintech) — "Reliability, process maturity, long-term maintainability." | reliability and incident context, docs, security, consistency over time | sonnet |
+| D | OSS / DevTools Lead — "Can you write something other engineers will actually want to use?" | API and interface thinking, docs, public writing, abstraction | sonnet |
 
-**3. Score, challenge, output** — [`references/scoring-rubric.md`](references/scoring-rubric.md), five dimensions (Technical Depth · System Design · Impact and Results · Leadership/Ownership · Portfolio Narrative), score = highest level *fully* satisfied. Challenge every 7+; apply the 완전 주장 ceiling to Impact once, in its devil's-advocate line. If `think-tool` is available, invoke it before each dimension ("real evidence or pattern-matching?"); if `mcp-reasoner` is available and interpretations still compete, beam search (beamWidth=3) to commit.
+Merge, cut and scoring run on the session model. A persona the user names is a focus: it weights merge order and the priorities' Why, never the roster.
+
+**3. Score, challenge, output** — [`references/scoring-rubric.md`](references/scoring-rubric.md), five dimensions (Technical Depth · System Design · Impact and Results · Leadership/Ownership · Portfolio Narrative), score = highest level *fully* satisfied. After the debate Claude sets one score per dimension by the rubric; reviewer scores and their quoted evidence are inputs. Challenge every 7+; apply the 완전 주장 ceiling to Impact once, in its devil's-advocate line. If `think-tool` is available, invoke it before each dimension ("real evidence or pattern-matching?"); if `mcp-reasoner` is available and interpretations still compete, beam search (beamWidth=3) to commit.
 
 ---
 
@@ -103,11 +105,11 @@ Before/after tally table (`revision-diff.md` + §C rows) · one line on verdict 
 > 근거/Evidence: specific quote or reference
 > _(optional) 🧠 Devil's advocate: objection raised and whether it moved the score — the 완전 주장 ceiling appears here for Impact, nowhere else_
 
-**[핵심 취약점 / Core Vulnerability]** — the one structural flaw the interviewer will remember, citing IDs.
+**[핵심 취약점 / Core Vulnerability]** — the one structural flaw the interviewer will remember, citing IDs. Then `가역성 / Reversibility: reversible | one-way door — why`. Core vulnerability and reversibility appear here and nowhere else.
 
-**[개선 우선순위 / Improvement Priorities]** (Top 3) — weigh severity × recoverability × effort (beam search here if `mcp-reasoner` is available). Each: **무엇을/What** (section or sentence) · **왜/Why** (for this persona) · **어떻게/How** (shape of the fix; missing facts as `[확인 필요: ○○]`).
+**[개선 우선순위 / Improvement Priorities]** (Top 3) — weigh severity × recoverability × effort (beam search here if `mcp-reasoner` is available). Each: **무엇을/What** (section or sentence) · **왜/Why** (for the reviewer who raised it, or the focus persona) · **어떻게/How** (shape of the fix; missing facts as `[확인 필요: ○○]`) · `근거: <appendix ID>` (one surviving finding, e.g. `근거: A1`).
 
-**[예상 인터뷰 질문 / Expected Interview Questions]** (Top 5) — persona-specific; the claim-audit questions (`A1…`) come first.
+**[예상 인터뷰 질문 / Expected Interview Questions]** (Top 5) — each tagged with the reviewer (A–D) who asks it; the claim-audit questions (`A1…`) come first.
 
 **[강점 / Strengths]** — what genuinely impresses, with references.
 
@@ -115,7 +117,9 @@ Before/after tally table (`revision-diff.md` + §C rows) · one line on verdict 
 
 ---
 
-**부록 / Appendix** — evidence, each finding once, with an ID.
+**부록 / Appendix** — evidence, each finding once, with an ID. Every appendix line starts with its ID and a space (`C1 `, `A1 `, `L1 `, `R1 `, `F1 `) — no bullet, no bold before it.
+
+**[충돌 / Clashes]** — the only record of the debate. First a panel line: `패널 / Panel: A Staff · B EM · C Tech Lead · D OSS/DevTools — sonnet, <n> rounds`. Then one line per contested finding: `<finding ID> — <who disagreed> — survived|dropped` (the ID is always `[CALRF]\d+`), where who-disagreed carries each attack's steel-man, type, severity and precedent (`panel.md`). A dropped finding appears here and nowhere else. No contest: `충돌 없음 / no clashes`. Panel not run: `패널 미실행 / panel could not run — single-context review`. Detail: `references/panel.md`.
 
 **[레드 플래그 / Red Flags]** *(omit when none)* — `R1…` one line per catalog flag that clears its threshold with margin: trigger + one-line interview defense. Tally-backed flags cite the tally.
 
@@ -140,7 +144,7 @@ Before/after tally table (`revision-diff.md` + §C rows) · one line on verdict 
 |---|---|
 | Lists and counts every tally before reporting it; states each finding once, in the appendix | Re-count one tally against your document — if it's wrong, say so and the review is redone |
 | Leaves missing facts as `[확인 필요]` instead of writing a plausible one | Fill the blanks — only you know the number |
-| Judges the screen before scoring, in persona throughout | Pick the persona, or say "you decide" |
+| Judges the screen before scoring; runs the fixed A–D panel, applies rule S, sets each score | Name a persona only if one matters most — it orders the fixes, the panel stays the same |
 | Applies provisional thresholds as working numbers and says so | Bring a previous version for revision mode |
 
 ## Related Skills

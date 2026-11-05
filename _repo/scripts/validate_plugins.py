@@ -249,7 +249,7 @@ def check_plugin(plugin_entry):
         # 9. line count — warn if heavy; read content for checks 13-14
         with open(skill_md, encoding="utf-8") as f:
             skill_content = f.read()
-        line_count = skill_content.count("\n") + 1
+        line_count = len(skill_content.splitlines())
         if line_count > 250:
             warn(f"{prefix}/{skill_name}: SKILL.md is {line_count} lines "
                  f"(HEAVY — split background content into references/; "

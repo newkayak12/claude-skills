@@ -19,7 +19,7 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
 
 ### portfolio flow — first (design: `_repo/docs/plans/2026-10-30-portfolio-flow.md`)
 
-123. **portfolio:feedback runs a fixed reviewer panel of subagents, argued out with brainstorming's debate mode and devils-advocate**
+123. **portfolio:feedback runs a fixed reviewer panel of subagents, argued out with brainstorming's debate mode and devils-advocate** — in E-478d5e95 (blocked), E-ae7d3226
     - Why: user, 2026-11-04: "feedback 스킬에서 쓸 여러 subagent를 구성하자 랜덤 구성하지 말고",
       "거기서 `/think:brainstorming`의 --debate 쓰고 devil's advocate 도 같이 쓰도록하고". Today feedback
       runs in one context and picks one of the four personas in `feedback/references/personas.md` (step 2,
@@ -33,7 +33,7 @@ Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is
       the current Output Template; fewer than 2 subagents alive → the single-context run, said so; one real run
       on a fictional portfolio shows the roster, the clashes and the merged priorities.
 
-124. **portfolio:manage runs collect → build like the harness: staged, gated, looped n times**
+124. **portfolio:manage runs collect → build like the harness: staged, gated, looped n times** — in E-478d5e95 (blocked), E-ae7d3226
     - Why: user, 2026-11-04: "manage 처리할 때 최초 수집 ~ 빌드까지를 harness 스킬 유사하게 처리할 수 있도록
       하자", "n회 돌게 해서". Today manage's Process is eight steps the model walks in prose (card 54);
       nothing sets done-criteria per step, checks them before the next, or repeats the round.

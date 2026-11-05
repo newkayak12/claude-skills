@@ -29,10 +29,90 @@
 //       inside the workspace; {kept, settled}: a finding is settled ({finding, line, share}) when it shares
 //       >= 3 word stems with a `## 서술 기준`/`## 구조` line of >= 3 stems and >= half of that line's stems;
 //       `## 정정` lines are never matched; no 확정사실.md → all kept
+//   round --input <file | ->       records one round of the collect → build loop as snapshot/rounds/round-N.json
+//       (the schema's one owner; SKILL.md cites this block). <file> is a path inside the workspace, `-` is stdin.
+//       input  { round: N>=1, n: >=1 (round <= n), steps: [{ step: 1-7, criteria: non-empty, verdict: pass|fail|skipped,
+//                by: actor | judge | command name, reason?, id?: criterion id (no slash, no whitespace; the same
+//                id every round for the same criterion) }] (exactly seven entries, steps 1-7 once each),
+//                feedback?: [{ id, text }] (the kept findings after settle), feedback_mode: panel | single-context
+//                (required when feedback is non-empty, how `feedback` ran; null or absent otherwise),
+//                waiting_user?: question, blocked?: reason }
+//       refused before anything is written: empty criteria or `by`, steps other than 1-7 once each, round > n, an
+//       existing round-N.json (never overwritten), N>1 with no round-(N-1).json, a round-(N-1).json that is not a
+//       record (object with round N-1, integer n, steps array, gate.gaps array of strings, feedback { mode, ids }
+//       or the legacy array of {id}), and an n different from round-(N-1).json's (n is fixed across one loop)
+//       the caller never supplies a derived field; node computes them from round-(N-1).json and the workspace:
+//       record { round, n, started_from: { gaps, feedback }  (round N-1's gate.gaps and feedback ids; empty in
+//                round 1),
+//                steps (as given, criteria trimmed),
+//                gate: { verdict: { "<step>": fail > skipped > pass },
+//                        gaps: ["s<step>/<id>"] (or s<step>/<criteria, whitespace collapsed> when no id) for every
+//                        fail or skipped step, deduplicated; skipped is never pass,
+//                        diff: { resolved: in N-1 not now, carried: in both, new: now only },
+//                        clauses: { no_new_gap, no_new_feedback, no_file_changed } | null },
+//                changed: workspace files (sorted, relative) added, removed or with other bytes (sha256) than in
+//                         snapshot/rounds/end-(N-1).json, the manifest written when round N-1 was recorded; a touch
+//                         is not a change; leaves out snapshot/rounds/ and the --input file; [] in round 1 (a
+//                         round N-1 recorded before end manifests existed falls back to mtime),
+//                stop_reason, continue, feedback: { mode: panel | single-context | null, ids: [finding ids in
+//                input order] } (round N-1 written as the legacy [{ id, text }] array is read the same),
+//                waiting_user?, blocked? }
+//       clauses are evaluated only from round 2 on (null in round 1):
+//       no_new_gap = diff.new is empty; no_new_feedback = every feedback id was already in N-1; no_file_changed =
+//       changed is empty. nothing_new fires when ANY ONE of the three holds; the gate records each.
+//       stop_reason, first match wins: blocked > waiting_user > nothing_new > n_reached (round >= n) > null
+//       continue: false for blocked, nothing_new, n_reached; true for null; for waiting_user true, unless every step
+//       was skipped (nothing could proceed) or round >= n (so waiting_user at the last round still ends the loop)
+//       also writes snapshot/rounds/end-N.json ({ path: sha256 } of the workspace as the round left it)
+//       prints { round, rounds: count of round-*.json, stop_reason, continue, gaps }
+//   intake --feedback <file> [--round N]   the findings one portfolio:feedback output gives the round, parsed in node:
+//       ids from the 개선 우선순위 items' `근거: <ID>` and (panel mode) the Clashes entries marked survived, text from
+//       the appendix line starting with the ID; id is `<ID>#<sha256(text)[0:8]>` (IDs restart every run, the hash
+//       keeps a reworded finding new). A dropped clash is not consumed; a priority citing no ID is in not_consumed.
+//       mode: single-context when the Clashes block says 패널 미실행 or is absent, else panel. With --round N also
+//       writes snapshot/rounds/findings-N.json (the `settle --findings` input). Prints { mode, findings, not_consumed, written? }.
+//   step --input -                 records one step entry as it happens into snapshot/rounds/steps-N.json, stamped with
+//       the engine's time: { round, step, criteria, id? } (criteria phase) then { round, step, verdict, by, reason? }
+//       (verdict phase). Refused: a verdict before its criteria or twice, criteria for step s+1 before step s's
+//       verdict, a step out of 1-7 order, a round already recorded. Prints { round, steps, next: { step, needs } | null }.
+//       `round` with no `steps` in its input reads steps-N.json (seven verdicts required) and records gate.order
+//       'recorded' with each step's criteria_at and verdict_at; steps given in the input record gate.order 'caller'.
+//   round --read                   the read form: { rounds, last: { round, stop_reason, continue } | null, items: [one per
+//       round-N.json in round order: { round, n, verdict, gaps, diff, clauses, changed, stop_reason, continue,
+//       feedback, waiting_user?, blocked? }] }, from the files alone; writes nothing
 // A page heading is `## N`, `## N.`, `## N)` or `## N쪽`. A `# ` chapter heading bounds a block: pages
 // sort inside their block, and blocks holding pages sort by their first page; other sections stay put.
-import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { createHash } from 'node:crypto'
+import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+// Containment on real paths: a symlink inside the workspace that points out is outside. A path that does
+// not exist yet resolves through its nearest existing ancestor; a dangling symlink counts as outside.
+function realPath(p) {
+  const rest = []
+  let cur = resolve(p)
+  for (;;) {
+    try { return join(realpathSync(cur), ...rest.reverse()) } catch {
+      let link = false
+      try { link = lstatSync(cur).isSymbolicLink() } catch { /* not there */ }
+      const up = dirname(cur)
+      if (link || up === cur) return null
+      rest.push(basename(cur))
+      cur = up
+    }
+  }
+}
+function insideRoot(root, p) {
+  const base = realPath(root)
+  const real = realPath(p)
+  if (base === null || real === null) return false
+  const rel = relative(base, real)
+  return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
+}
+function assertInside(root, p) {
+  if (!insideRoot(root, p)) throw new Error(`${relative(root, resolve(p))} must be a path inside the workspace root ${root}`)
+}
 
 const LAYOUT = ['skeleton.md', 'deck.mdx', 'template.pptx', 'deck.catalog.md', 'build', 'snapshot', 'sources', 'docs/확정사실.md',
   'sources/선정.md', 'template/분석.md']
@@ -146,6 +226,7 @@ export function snapshot(root, { kind, level, note, by = '본인', date }) {
   const readme = join(root, 'snapshot', 'README.md')
   if (kind === 'deck') return deckSnapshot(root, { level, note, day, skelS: curS, readme })
   const dir = join(root, 'snapshot', kind, `${kind}-${curS}`)
+  for (const p of [dir, skelPath, readme]) assertInside(root, p)
   if (existsSync(dir)) throw new Error(`${dir} exists: snapshot of ${curS} already taken`)
   mkdirSync(dir, { recursive: true })
   copyFileSync(skelPath, join(dir, 'skeleton.md'))
@@ -173,6 +254,8 @@ function deckSnapshot(root, { level, note, day, skelS, readme }) {
   const newest = vers.sort((x, y) => y[0] - x[0] || y[1] - x[1] || y[2] - x[2])[0]
   const next = `v${(newest ? bump(newest, level) : [1, 0, 0]).join('.')}`
   const dir = join(base, `deck-${next}`)
+  assertInside(root, dir)
+  assertInside(root, readme)
   mkdirSync(dir, { recursive: true })
   copyFileSync(join(root, 'deck.mdx'), join(dir, 'deck.mdx'))
   if (existsSync(join(root, 'assets'))) cpSync(join(root, 'assets'), join(dir, 'assets'), { recursive: true })
@@ -557,10 +640,276 @@ export function claims(text, items, settledLines = [], sel = null) {
   return out
 }
 
+// ── round: the record is described in the header (`round --input`) ──
+const ROUNDS_DIR = 'snapshot/rounds'
+const VERDICTS = ['pass', 'skipped', 'fail'] // worst last: a step's gate verdict is its worst entry
+const FEEDBACK_MODES = ['panel', 'single-context']
+const isInt = v => Number.isInteger(v) && v >= 1
+const isText = v => typeof v === 'string' && v.trim() !== ''
+
+function checkRoundInput(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('round input must be a JSON object')
+  if (!isInt(input.round)) throw new Error('round must be a positive integer')
+  if (!isInt(input.n)) throw new Error('n must be a positive integer')
+  if (!Array.isArray(input.steps)) throw new Error('steps must be an array')
+  input.steps.forEach((s, i) => {
+    if (!s || typeof s !== 'object' || Array.isArray(s)) throw new Error(`steps[${i}] must be an object`)
+    if (!Number.isInteger(s.step) || s.step < 1 || s.step > 7) throw new Error(`steps[${i}].step must be an integer 1-7`)
+    if (!isText(s.criteria)) throw new Error(`steps[${i}].criteria must be a non-empty string`)
+    if (!VERDICTS.includes(s.verdict)) throw new Error(`steps[${i}].verdict must be pass, fail or skipped`)
+    if (!isText(s.by)) throw new Error(`steps[${i}].by must be a non-empty string`)
+    if (s.reason !== undefined && typeof s.reason !== 'string') throw new Error(`steps[${i}].reason must be a string`)
+    if (s.id !== undefined && (typeof s.id !== 'string' || !/^[^\s/]+$/.test(s.id))) {
+      throw new Error(`steps[${i}].id must be a non-empty string without a slash or whitespace (the criterion id)`)
+    }
+  })
+  const feedback = input.feedback ?? []
+  if (!Array.isArray(feedback)) throw new Error('feedback must be an array of {id, text}')
+  feedback.forEach((f, i) => {
+    if (!f || typeof f !== 'object' || Array.isArray(f) || typeof f.id !== 'string' || typeof f.text !== 'string') {
+      throw new Error(`feedback[${i}] must be an object with string id and string text`)
+    }
+  })
+  if (feedback.length > 0 && !FEEDBACK_MODES.includes(input.feedback_mode)) {
+    throw new Error(`feedback_mode must be ${FEEDBACK_MODES.join(' or ')} when feedback is not empty`)
+  }
+  if (feedback.length === 0 && input.feedback_mode != null && !FEEDBACK_MODES.includes(input.feedback_mode)) {
+    throw new Error(`feedback_mode must be ${FEEDBACK_MODES.join(' or ')} when given`)
+  }
+  for (const k of ['waiting_user', 'blocked']) {
+    if (input[k] !== undefined && input[k] !== null && !isText(input[k])) throw new Error(`${k} must be a non-empty string when given`)
+  }
+  const seen = input.steps.map(s => s.step).sort((a, b) => a - b)
+  if (seen.length !== 7 || seen.some((s, i) => s !== i + 1)) {
+    throw new Error(`steps must be exactly seven entries, one for each of steps 1-7 (rounds.md: the seven-step rule); got [${seen.join(', ')}]`)
+  }
+  if (input.round > input.n) throw new Error(`round ${input.round} is past n ${input.n}: a loop has no round beyond n`)
+}
+
+// The predecessor is read as a record, never as "whatever parses": a wrong shape is refused before any .map.
+function readPrevRecord(root, input) {
+  const prevPath = join(root, ROUNDS_DIR, `round-${input.round - 1}.json`)
+  const rel = relative(root, prevPath)
+  if (!existsSync(prevPath)) throw new Error(`round ${input.round} needs ${rel} and it is missing: rounds run in order, never skipping one`)
+  const bad = why => new Error(`previous record malformed: ${rel} ${why}`)
+  let prev
+  try { prev = JSON.parse(readFileSync(prevPath, 'utf8')) } catch (e) { throw bad(`cannot be read as JSON: ${e.message}`) }
+  if (!prev || typeof prev !== 'object' || Array.isArray(prev)) throw bad('must be a JSON object')
+  if (prev.round !== input.round - 1) throw bad(`field round must be ${input.round - 1}`)
+  if (!isInt(prev.n)) throw bad('field n must be a positive integer')
+  if (!Array.isArray(prev.steps)) throw bad('field steps must be an array')
+  if (!prev.gate || typeof prev.gate !== 'object' || Array.isArray(prev.gate)) throw bad('field gate must be an object')
+  if (!Array.isArray(prev.gate.gaps) || prev.gate.gaps.some(g => typeof g !== 'string')) throw bad('field gate.gaps must be an array of strings')
+  // feedback is `{ mode, ids }`, or the legacy `[{ id, text }]` array
+  const legacy = Array.isArray(prev.feedback)
+  const prevIds = legacy ? prev.feedback.map(f => f?.id) : prev.feedback?.ids
+  if (!Array.isArray(prevIds) || prevIds.some(id => typeof id !== 'string')) {
+    throw bad('field feedback must be { mode, ids: [string] } or an array of objects with a string id')
+  }
+  if (prev.n !== input.n) throw new Error(`n ${input.n} differs from n ${prev.n} in ${rel}: n is fixed across the rounds of one loop`)
+  return { prev, prevPath, prevIds }
+}
+
+// sha256 of every file under root (never following a symlink), minus the rounds folder and `skip`.
+function manifest(root, skip) {
+  const out = {}
+  const walk = rel => {
+    for (const e of readdirSync(join(root, rel), { withFileTypes: true })) {
+      const r = rel ? `${rel}/${e.name}` : e.name
+      if (r === ROUNDS_DIR || skip.has(r) || e.isSymbolicLink()) continue
+      if (e.isDirectory()) walk(r)
+      else if (e.isFile()) out[r] = createHash('sha256').update(readFileSync(join(root, r))).digest('hex')
+    }
+  }
+  walk('')
+  return out
+}
+
+// Files added, removed or with other bytes than in `before` (a touch is not a change).
+function changedFrom(before, now, skip) {
+  const paths = new Set([...Object.keys(before), ...Object.keys(now)])
+  return [...paths].filter(p => !skip.has(p) && before[p] !== now[p]).sort()
+}
+
+// Legacy fallback for a round N-1 recorded before end-N manifests: files whose mtime is later than `since`.
+function changedSince(root, since, skip) {
+  const out = []
+  const walk = rel => {
+    for (const e of readdirSync(join(root, rel), { withFileTypes: true })) {
+      const r = rel ? `${rel}/${e.name}` : e.name
+      if (r === ROUNDS_DIR || skip.has(r) || e.isSymbolicLink()) continue
+      if (e.isDirectory()) walk(r)
+      else if (e.isFile() && statSync(join(root, r)).mtimeMs > since) out.push(r)
+    }
+  }
+  walk('')
+  return out.sort()
+}
+
+// The findings one feedback run gives the round (rounds.md § Feedback each round), parsed from its text:
+// ids from the 개선 우선순위 items' `근거: <ID>` and the Clashes entries marked survived, text from the
+// appendix line that starts with the ID. The id carries a hash of that text, so an ID reused with new text
+// (IDs restart every run) is a new finding. A dropped clash and a priority citing no ID are not consumed.
+const FINDING_ID = /[CALRF]\d+/
+export function intake(text) {
+  const lines = text.split('\n')
+  const blockOf = title => {
+    const at = lines.findIndex(l => l.includes(`**[${title}`))
+    if (at < 0) return null
+    const end = lines.findIndex((l, i) => i > at && (/^\*\*\[/.test(l.trim()) || /^\*\*부록/.test(l.trim()) || l.trim() === '---'))
+    return lines.slice(at + 1, end < 0 ? undefined : end).filter(l => l.trim() !== '')
+  }
+  const prio = blockOf('개선 우선순위')
+  if (!prio) throw new Error('no [개선 우선순위 / Improvement Priorities] block: not a portfolio:feedback output')
+  const clashes = blockOf('충돌') ?? []
+  const mode = clashes.some(l => l.includes('패널 미실행')) || clashes.length === 0 ? 'single-context' : 'panel'
+  const appendix = new Map()
+  for (const l of lines) {
+    const m = l.match(new RegExp(`^(${FINDING_ID.source})\\s+(.+)$`))
+    if (m && !m[2].startsWith('—') && !appendix.has(m[1])) appendix.set(m[1], m[2].trim()) // `ID — who — survived` is a clash line
+  }
+  const ids = []
+  const notConsumed = []
+  for (const l of prio) {
+    const m = l.match(new RegExp(`근거:\\s*(${FINDING_ID.source})`))
+    if (m && appendix.has(m[1])) ids.push(m[1])
+    else if (/^\s*\d+[.)]/.test(l)) notConsumed.push(l.trim())
+  }
+  if (mode === 'panel') {
+    for (const l of clashes) {
+      const m = l.match(new RegExp(`^(${FINDING_ID.source})\\s+—.*—\\s*survived\\s*$`))
+      if (m && appendix.has(m[1])) ids.push(m[1])
+    }
+  }
+  const findings = [...new Set(ids)].map(id => {
+    const t = appendix.get(id)
+    return { id: `${id}#${createHash('sha256').update(t).digest('hex').slice(0, 8)}`, text: t }
+  })
+  return { mode, findings, not_consumed: notConsumed }
+}
+
+// One step entry as it happens: criteria first, then its verdict, steps 1-7 in order. The engine stamps
+// each with its own time into snapshot/rounds/steps-N.json, so the order is read from the record.
+export function step(root, input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('step input must be a JSON object')
+  if (!isInt(input.round)) throw new Error('round must be a positive integer')
+  if (!Number.isInteger(input.step) || input.step < 1 || input.step > 7) throw new Error('step must be an integer 1-7')
+  const path = join(root, ROUNDS_DIR, `steps-${input.round}.json`)
+  assertInside(root, path)
+  if (existsSync(join(root, ROUNDS_DIR, `round-${input.round}.json`))) throw new Error(`round ${input.round} is already recorded`)
+  const list = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : []
+  const cur = list.at(-1)
+  const at = new Date().toISOString()
+  if (input.verdict !== undefined) {
+    const entry = list.find(s => s.step === input.step)
+    if (!entry) throw new Error(`step ${input.step} has no criteria yet: criteria come before the verdict`)
+    if (entry.verdict !== undefined) throw new Error(`step ${input.step} already has its verdict`)
+    if (!VERDICTS.includes(input.verdict)) throw new Error('verdict must be pass, fail or skipped')
+    if (!isText(input.by)) throw new Error('by must be a non-empty string')
+    if (input.reason !== undefined && typeof input.reason !== 'string') throw new Error('reason must be a string')
+    Object.assign(entry, { verdict: input.verdict, by: input.by.trim(), ...(input.reason !== undefined && { reason: input.reason }), verdict_at: at })
+  } else {
+    const expected = cur ? cur.step + 1 : 1
+    if (cur && cur.verdict === undefined) throw new Error(`step ${cur.step} has no verdict yet: the gate comes before step ${input.step}`)
+    if (input.step !== expected) throw new Error(`next step is ${expected}: steps run 1-7 in order`)
+    if (!isText(input.criteria)) throw new Error('criteria must be a non-empty string')
+    if (input.id !== undefined && (typeof input.id !== 'string' || !/^[^\s/]+$/.test(input.id))) throw new Error('id must be a non-empty string without a slash or whitespace')
+    list.push({ step: input.step, ...(input.id !== undefined && { id: input.id }), criteria: input.criteria.trim(), criteria_at: at })
+  }
+  mkdirSync(join(root, ROUNDS_DIR), { recursive: true })
+  writeFileSync(path, `${JSON.stringify(list, null, 2)}\n`)
+  const last = list.at(-1)
+  const next = last.verdict === undefined ? { step: last.step, needs: 'verdict' } : last.step < 7 ? { step: last.step + 1, needs: 'criteria' } : null
+  return { round: input.round, steps: list.map(s => ({ step: s.step, verdict: s.verdict ?? null })), next }
+}
+
+export function round(root, input, { skip = [] } = {}) {
+  let recorded = null
+  if (input && typeof input === 'object' && !Array.isArray(input) && input.steps === undefined && isInt(input.round)) {
+    const path = join(root, ROUNDS_DIR, `steps-${input.round}.json`)
+    assertInside(root, path)
+    recorded = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : []
+    if (recorded.length !== 7 || recorded.some(s => s.verdict === undefined)) {
+      throw new Error(`no steps in the input and ${relative(root, path)} does not hold seven verdicts: record each step with \`step\` first`)
+    }
+    input = { ...input, steps: recorded.map(({ criteria_at, verdict_at, ...s }) => s) }
+  }
+  checkRoundInput(input)
+  const roundsDir = join(root, ROUNDS_DIR)
+  assertInside(root, roundsDir)
+  assertInside(root, join(roundsDir, `round-${input.round}.json`))
+  const feedback = input.feedback ?? []
+  const target = join(root, ROUNDS_DIR, `round-${input.round}.json`)
+  if (existsSync(target)) throw new Error(`${relative(root, target)} already exists: rounds never overwrite`)
+  const { prev, prevPath, prevIds } = input.round > 1 ? readPrevRecord(root, input) : {}
+  const startedFrom = prev ? { gaps: prev.gate.gaps, feedback: prevIds } : { gaps: [], feedback: [] }
+  const steps = input.steps.map((s, i) => ({
+    step: s.step, ...(s.id !== undefined && { id: s.id }), criteria: s.criteria.trim(), verdict: s.verdict, by: s.by.trim(),
+    ...(s.reason !== undefined && { reason: s.reason }),
+    ...(recorded && { criteria_at: recorded[i].criteria_at, verdict_at: recorded[i].verdict_at }),
+  }))
+  const gaps = [...new Set(steps.filter(s => s.verdict !== 'pass').map(s => `s${s.step}/${s.id ?? s.criteria.replace(/\s+/g, ' ')}`))]
+  const verdict = {}
+  for (const s of steps) {
+    if (VERDICTS.indexOf(s.verdict) > VERDICTS.indexOf(verdict[s.step] ?? 'pass')) verdict[s.step] = s.verdict
+    verdict[s.step] ??= 'pass'
+  }
+  const diff = {
+    resolved: startedFrom.gaps.filter(g => !gaps.includes(g)),
+    carried: gaps.filter(g => startedFrom.gaps.includes(g)),
+    new: gaps.filter(g => !startedFrom.gaps.includes(g)),
+  }
+  const skipSet = new Set(skip)
+  const now = manifest(root, new Set())
+  const prevManifest = join(root, ROUNDS_DIR, `end-${input.round - 1}.json`)
+  const changed = !prev ? []
+    : existsSync(prevManifest) ? changedFrom(JSON.parse(readFileSync(prevManifest, 'utf8')), now, skipSet)
+    : changedSince(root, statSync(prevPath).mtimeMs, skipSet)
+  const clauses = prev ? {
+    no_new_gap: diff.new.length === 0,
+    no_new_feedback: feedback.every(f => startedFrom.feedback.includes(f.id)),
+    no_file_changed: changed.length === 0,
+  } : null
+  const nothingNew = clauses !== null && Object.values(clauses).some(Boolean)
+  const last = input.round >= input.n
+  const waiting = isText(input.waiting_user)
+  const blocked = isText(input.blocked)
+  const stopReason = blocked ? 'blocked' : waiting ? 'waiting_user' : nothingNew ? 'nothing_new' : last ? 'n_reached' : null
+  const cont = stopReason === null || (stopReason === 'waiting_user' && !last && !steps.every(s => s.verdict === 'skipped'))
+  const record = {
+    round: input.round, n: input.n, started_from: startedFrom, steps,
+    gate: { verdict, gaps, diff, clauses, order: recorded ? 'recorded' : 'caller' }, changed, stop_reason: stopReason, continue: cont,
+    feedback: { mode: feedback.length > 0 ? input.feedback_mode : null, ids: feedback.map(f => f.id) },
+    ...(waiting && { waiting_user: input.waiting_user }), ...(blocked && { blocked: input.blocked }),
+  }
+  mkdirSync(join(root, ROUNDS_DIR), { recursive: true })
+  writeFileSync(target, `${JSON.stringify(record, null, 2)}\n`)
+  // the workspace as this round left it: round N+1's `changed` is measured against it
+  const endPath = join(root, ROUNDS_DIR, `end-${input.round}.json`)
+  assertInside(root, endPath)
+  writeFileSync(endPath, `${JSON.stringify(now)}\n`)
+  const rounds = readdirSync(join(root, ROUNDS_DIR)).filter(f => /^round-\d+\.json$/.test(f)).length
+  return { round: input.round, rounds, stop_reason: stopReason, continue: cont, gaps }
+}
+
+// The read form: every snapshot/rounds/round-N.json in round order, summarised from the files alone.
+export function readRounds(root) {
+  const dir = join(root, ROUNDS_DIR)
+  assertInside(root, dir)
+  const files = existsSync(dir) ? readdirSync(dir).filter(f => /^round-\d+\.json$/.test(f)) : []
+  const items = files.map(f => JSON.parse(readFileSync(join(dir, f), 'utf8'))).sort((a, b) => a.round - b.round).map(r => ({
+    round: r.round, n: r.n, verdict: r.gate.verdict, gaps: r.gate.gaps, diff: r.gate.diff, clauses: r.gate.clauses,
+    changed: r.changed, stop_reason: r.stop_reason, continue: r.continue, feedback: r.feedback,
+    ...(r.waiting_user && { waiting_user: r.waiting_user }), ...(r.blocked && { blocked: r.blocked }),
+  }))
+  const l = items.at(-1)
+  return { rounds: items.length, last: l ? { round: l.round, stop_reason: l.stop_reason, continue: l.continue } : null, items }
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2))
   const cmd = args._[0]
-  const root = process.cwd()
+  const root = realpathSync(process.cwd())
   const file = join(root, args.file || 'skeleton.md')
   let out
   if (cmd === 'layout') {
@@ -593,7 +942,7 @@ function main() {
     if (typeof args.findings !== 'string') throw new Error('--findings <file> is required: a JSON array of {id, text}')
     const path = resolve(root, args.findings)
     const rel = relative(resolve(root), path)
-    if (isAbsolute(args.findings) || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    if (isAbsolute(args.findings) || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel) || !insideRoot(root, path)) {
       throw new Error(`--findings ${args.findings} must be a path inside the workspace root ${root}`)
     }
     let findings
@@ -605,6 +954,47 @@ function main() {
       }
     })
     out = settle(findings, settled(root))
+  } else if (cmd === 'intake') {
+    if (typeof args.feedback !== 'string') throw new Error('--feedback <file> is required: the feedback output this round produced')
+    const path = resolve(root, args.feedback)
+    const rel = relative(resolve(root), path)
+    if (isAbsolute(args.feedback) || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel) || !insideRoot(root, path)) {
+      throw new Error(`--feedback ${args.feedback} must be a path inside the workspace root ${root}`)
+    }
+    out = intake(readFileSync(path, 'utf8'))
+    if (args.round !== undefined) {
+      const n = Number(args.round)
+      if (!isInt(n)) throw new Error('--round must be a positive integer')
+      const target = join(root, ROUNDS_DIR, `findings-${n}.json`)
+      assertInside(root, target)
+      mkdirSync(join(root, ROUNDS_DIR), { recursive: true })
+      writeFileSync(target, `${JSON.stringify(out.findings, null, 2)}\n`)
+      out.written = relative(root, target).split(sep).join('/')
+    }
+  } else if (cmd === 'step') {
+    if (args.input !== '-') throw new Error('--input - is required: one step entry as JSON on stdin')
+    let input
+    try { input = JSON.parse(readFileSync(0, 'utf8')) } catch (e) { throw new Error(`step input cannot be read as JSON: ${e.message}`) }
+    out = step(root, input)
+  } else if (cmd === 'round' && args.read === true) {
+    out = readRounds(root)
+  } else if (cmd === 'round') {
+    if (typeof args.input !== 'string') throw new Error('--input <file | -> is required: the round input JSON (path inside the workspace, or - for stdin)')
+    let text
+    let skip = []
+    if (args.input === '-') text = readFileSync(0, 'utf8')
+    else {
+      const path = resolve(root, args.input)
+      const rel = relative(resolve(root), path)
+      if (isAbsolute(args.input) || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel) || !insideRoot(root, path)) {
+        throw new Error(`--input ${args.input} must be a path inside the workspace root ${root}`)
+      }
+      try { text = readFileSync(path, 'utf8') } catch (e) { throw new Error(`--input ${args.input} cannot be read: ${e.message}`) }
+      skip = [rel.split(sep).join('/')]
+    }
+    let input
+    try { input = JSON.parse(text) } catch (e) { throw new Error(`--input ${args.input} cannot be read as JSON: ${e.message}`) }
+    out = round(root, input, { skip })
   } else if (cmd === 'scaffold') {
     out = scaffold(root)
   } else if (cmd === 'selection') {
@@ -612,11 +1002,14 @@ function main() {
   } else if (cmd === 'keep-render') {
     out = keepRender(root, args.version)
   } else {
-    throw new Error('usage: manage.mjs layout | scaffold | selection | snapshot | renumber | verify | compare | claims | settle --findings <file> | keep-render')
+    throw new Error('usage: manage.mjs layout | scaffold | selection | snapshot | renumber | verify | compare | claims | settle --findings <file> | intake --feedback <file> [--round N] | step --input - | round --input <file | -> | round --read | keep-render')
   }
   process.stdout.write(`${JSON.stringify(out)}\n`)
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+const invokedDirectly = () => {
+  try { return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]) } catch { return false }
+}
+if (invokedDirectly()) {
   try { main() } catch (e) { process.stdout.write(`${JSON.stringify({ error: e.message })}\n`); process.exit(1) }
 }
