@@ -47,7 +47,9 @@ const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const FILES = {
   teamconfig: join(REPO_ROOT, 'teams/mcp/teamconfig.mjs'),
   teamsGraph: join(REPO_ROOT, 'teams/mcp/graph.mjs'),
-  teamsBroker: join(REPO_ROOT, 'teams/mcp/broker.mjs'),
+  // broker.mjs is a facade over broker-*.mjs; the team_open handler lives in broker-tools.mjs and the
+  // run.goal_threshold read-time fallback in broker-normalize.mjs. A guard over several files reads all.
+  teamsBroker: [join(REPO_ROOT, 'teams/mcp/broker-tools.mjs'), join(REPO_ROOT, 'teams/mcp/broker-normalize.mjs')],
   teamsTaskmanager: join(REPO_ROOT, 'teams/mcp/taskmanager.mjs'),
   teamsStagecontract: join(REPO_ROOT, 'teams/mcp/stagecontract.mjs'),
   graphGraph: join(REPO_ROOT, 'graph/mcp/graph.mjs'),
@@ -57,7 +59,7 @@ const FILES = {
 };
 
 function src(key) {
-  return readFileSync(FILES[key], 'utf8');
+  return [].concat(FILES[key]).map((f) => readFileSync(f, 'utf8')).join('\n');
 }
 
 function countSubstr(text, substr) {
