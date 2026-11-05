@@ -29,7 +29,7 @@ that is not a portfolio (`deck-builder`).
 
 Engine, run from the workspace root: `node ${CLAUDE_PLUGIN_ROOT}/skills/manage/scripts/manage.mjs <cmd>`
 (`layout`, `scaffold`, `selection`, `snapshot`, `renumber`, `verify`, `compare`, `claims`, `settle`,
-`round`, `keep-render`; one JSON object each). A real run's mismatch becomes a fixture test first.
+`intake`, `step`, `round`, `keep-render`; one JSON object each). A real run's mismatch becomes a fixture test first.
 
 ## Workspace
 
@@ -56,9 +56,9 @@ block that moves with its pages. History lines (`vX.Y.Z 변경…`, `vX.Y.Z(…`
 
 Nine steps, in order; a round may start again at 2 or 4 (step 8 says where); 9 once the deck is done.
 Steps 1-7 run as one harness-shaped pass, n times (n from the user, default n = 2): plan the round
-→ criteria per step → do → check (a command, else a judge that is not the actor) → gate → `round`
-records it. `feedback` runs each round from the main context; the loop stops at `round`'s `continue:
-false`. A step that could not run is `skipped` with its reason, a gap, never pass; build/render without
+→ criteria per step (`step`) → do → check (a command, else a judge that is not the actor) → gate
+(`step`) → `round`. `feedback` runs every round after step 7 from the main context, `intake` takes its
+findings; the loop stops at `round`'s `continue: false`. A step that could not run is `skipped` with its reason, a gap, never pass; build/render without
 the user's word is skipped `not requested`; a headless user-wait ends the round (`waiting_user`).
 Mechanics: `references/rounds.md`.
 
