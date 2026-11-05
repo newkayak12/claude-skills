@@ -22,6 +22,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WIKI = join(HERE, '..', 'mcp', 'wiki.mjs');
+const SERVER = join(HERE, '..', 'mcp', 'server.mjs');
 const wiki = await import(WIKI);
 const MODE = (await wiki.sqliteSupport()).mode;
 const TMP = mkdtempSync(join(tmpdir(), 'wiki-test-'));
@@ -263,7 +264,7 @@ test('DW8 two processes accepting concurrently leave md and index intact; a shar
 // ---------- DW9 / DW10 ----------
 
 function rpc(root, requests, env = {}) {
-  const r = spawnSync(process.execPath, [WIKI, '--root', root], {
+  const r = spawnSync(process.execPath, [SERVER, '--only', 'wiki', '--root', root], {
     env: { ...BASE_ENV, ...env }, input: requests.map((q) => JSON.stringify(q)).join('\n') + '\n', encoding: 'utf8', timeout: 30000,
   });
   return r.stdout.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
@@ -274,7 +275,7 @@ test('DW9 stdio: initialize + tools/list returns exactly the 9 tools', () => {
     { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
     { jsonrpc: '2.0', id: 2, method: 'tools/list' },
   ]);
-  assert.equal(out[0].result.serverInfo.name, 'teams-wiki');
+  assert.equal(out[0].result.serverInfo.name, 'teams');
   assert.deepEqual(out[1].result.tools.map((t) => t.name).sort(), [
     'wiki_accept', 'wiki_get', 'wiki_list', 'wiki_propose', 'wiki_reject', 'wiki_resume', 'wiki_search', 'wiki_status', 'wiki_write',
   ]);

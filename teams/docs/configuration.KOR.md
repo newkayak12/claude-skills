@@ -9,14 +9,14 @@
 ## 설치
 
 `teams@newkayak12-claude-skills`를 설치하는 것만이 유일하게 선택이 아닌 단계입니다 —
-`teams-engineering`과 `task-manager` MCP 서버를 등록하기 때문입니다. 이후 `tm_*`/`team_*`
+`teams` MCP 서버를 등록하기 때문입니다. 이후 `tm_*`/`team_*`
 도구가 보이지 않으면 Claude Code를 재시작하세요. 마켓플레이스 플러그인 대신 소스
-체크아웃을 쓴다면, 프로젝트 `.mcp.json`에 `mcp/broker.mjs`를 `teams-engineering`으로,
-`mcp/taskmanager.mjs`를 `task-manager`로 등록합니다 — `skills/install/SKILL.md`의 "Install
-modes" 절이 두 항목을 모두 보여줍니다.
+체크아웃을 쓴다면, 프로젝트 `.mcp.json`에 `mcp/server.mjs`를 `teams`로
+등록합니다 — `skills/install/SKILL.md`의 "Install
+modes" 절이 이 항목을 보여줍니다.
 
 그 다음 `teams:install`을 실행하는 것은 선택이며, 태스크를 돌리기 위한 전제조건이 아닙니다 —
-모든 실행 스킬(`orchestrate`/`develop`/`document`/`plan`/`qa`)은 두 MCP 서버만으로 팀을
+모든 실행 스킬(`orchestrate`/`develop`/`document`/`plan`/`qa`)은 `teams` MCP 서버만으로 팀을
 돌리고, `.claude/team.json`이 전혀 없으면 `TEAM_DEFAULTS`(아래)로 대체합니다. 프로젝트가
 플러그인의 내장 기본값 대신 자신만의 기본값, dispatch 게이트, `.claude/conventions/`를
 갖추기로 한 시점에 `teams:install`을 실행하세요 — 무엇이 추가되는지는
@@ -111,7 +111,7 @@ modes" 절이 두 항목을 모두 보여줍니다.
 
 `tm_status`/`tm_board`/`tm_events`는 구동 세션을 위한 기계 형태 JSON을 돌려줍니다 — 사람이
 들여다볼 물건이 아닙니다. `scripts/view.mjs`가 그 별도의 사람용 표면입니다: 의존성 없이
-동작하는, 읽기 전용 CLI로 task-manager 태스크(실행 중이든 끝났든)를 페이지나 텍스트 트리로
+동작하는, 읽기 전용 CLI로 teams 태스크(실행 중이든 끝났든)를 페이지나 텍스트 트리로
 그려줍니다 — 이 도구들이 이미 읽는 것과 같은 `task.json`과 자식 런 파일에서 만들어집니다.
 
 ```

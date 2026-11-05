@@ -55,6 +55,16 @@ function extractServerAndTools(scriptPath) {
     const toolsSource = readFileSync(toolsModule, 'utf8');
     const toolsRe = /\bname\s*:\s*['"]([^'"]+)['"]/g;
     while ((m = toolsRe.exec(toolsSource))) toolNames.push(m[1]);
+    // teams/mcp/server.mjs is the one entry: server-tools.mjs holds no tools itself, it imports
+    // the tables (broker-tools, taskmanager-tools, wiki) - follow its relative imports one hop.
+    for (const spec of importSpecifiers(toolsSource)) {
+      if (!spec.startsWith('.')) continue;
+      const hop = resolve(dirname(toolsModule), spec);
+      if (!existsSync(hop)) continue;
+      const hopRe = /\bname\s*:\s*['"]([^'"]+)['"]/g;
+      const hopSource = readFileSync(hop, 'utf8');
+      while ((m = hopRe.exec(hopSource))) toolNames.push(m[1]);
+    }
   }
   return { serverName, toolNames };
 }
@@ -189,8 +199,7 @@ test('MCP server names are pairwise disjoint across teams / graph / harness', ()
 
   // Same reasoning as the tool-name test above: canaries, not a length or exact-count
   // check, so a legitimate new server doesn't break this, but a degraded regex does.
-  assert.ok(byPlugin.teams.includes('teams-engineering'), 'expected the teams-engineering server, from teams/mcp/broker.mjs');
-  assert.ok(byPlugin.teams.includes('task-manager'), 'expected the task-manager server, from teams/mcp/taskmanager.mjs');
+  assert.ok(byPlugin.teams.includes('teams'), 'expected the teams server, from teams/mcp/server.mjs');
   assert.ok(byPlugin.graph.includes('graph-engineering'), 'expected the graph-engineering server, from graph/mcp/broker.mjs');
 
   // harness has no MCP server today (see the tool-name test above) - [] is correct, not

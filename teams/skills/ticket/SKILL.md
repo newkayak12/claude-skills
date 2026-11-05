@@ -11,7 +11,7 @@ scenarios:
   - "이 스토리 마지막 verdict가 뭐였어"
 compatibility:
   required:
-    - task-manager
+    - teams
 related:
   - board
   - orchestrate

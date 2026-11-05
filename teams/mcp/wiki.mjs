@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// wiki.mjs - teams-wiki: a project wiki that survives the session, as a stdio MCP server.
+// wiki.mjs - the wiki_* tools: a project wiki that survives the session (served by server.mjs).
 //
 // Design: _repo/docs/plans/2026-10-07-teams-wiki-memory.md (1단계). The md files under
 // <root>/.teams_wiki/<space>/<slug>.md are the source of truth - git-tracked, human-editable.
@@ -23,17 +23,14 @@
 // node:sqlite is probed synchronously with process.getBuiltinModule?.() plus an in-memory FTS5 +
 // trigram create; undefined, any throw, or no FTS5 (22.12's SQLite has none) selects scan mode.
 // WIKI_FORCE_SCAN=1 forces scan (tests). Node 18 syntax and APIs only. callToolSync is the core;
-// callTool is its async wrapper. The stdio loop runs only when this file is the entry point.
+// callTool is its async wrapper. A library: served over stdio by server.mjs, it binds no stdin.
 
 import {
   existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { isEntryPoint } from './pluginroots.mjs';
 
-const SERVER = { name: 'teams-wiki', version: '0.1.0' };
-const DEFAULT_PROTOCOL = '2024-11-05';
 const RRF_K = 60;
 const HOLD_MS = Number(process.env.WIKI_TEST_HOLD_MS) || 0; // tests only: widens the INDEX.md read-to-write window
 const NAME = /^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u;
@@ -41,7 +38,6 @@ const NAME = /^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u;
 let root = process.cwd();
 let lockTimeoutMs = Number(process.env.WIKI_LOCK_TIMEOUT_MS) || 10000;
 let db = null;
-let off = false; // CLI entry only: TEAMS_WIKI_OFF=1 hides every tool
 let sqlite; // undefined = not probed yet; then { mode: 'fts5', DatabaseSync } or { mode: 'scan', error? }
 
 export function setRoot(dir) { close(); root = resolve(dir); }
@@ -625,59 +621,3 @@ export function callToolSync(name, args) {
 }
 
 export async function callTool(name, args) { return callToolSync(name, args); }
-
-// ---------- stdio JSON-RPC (pattern of taskmanager.mjs) ----------
-
-async function handle(msg) {
-  const { id, method, params } = msg;
-  const reply = (result) => ({ jsonrpc: '2.0', id, result });
-  switch (method) {
-    case 'initialize':
-      return reply({
-        protocolVersion: params && typeof params.protocolVersion === 'string' ? params.protocolVersion : DEFAULT_PROTOCOL,
-        capabilities: { tools: { listChanged: false } }, serverInfo: SERVER,
-      });
-    case 'ping': return reply({});
-    case 'tools/list': return reply({ tools: off ? [] : TOOLS });
-    case 'tools/call':
-      try {
-        if (off) throw new Error('teams-wiki is off (TEAMS_WIKI_OFF=1)');
-        const out = await callTool(params && params.name, params && params.arguments);
-        return reply({ content: [{ type: 'text', text: JSON.stringify(out, null, 2) }], structuredContent: out, isError: false });
-      } catch (e) {
-        return reply({ content: [{ type: 'text', text: String((e && e.message) || e) }], isError: true });
-      }
-    default:
-      if (typeof id === 'undefined') return null;
-      return { jsonrpc: '2.0', id, error: { code: -32601, message: `method not found: ${method}` } };
-  }
-}
-
-if (isEntryPoint(import.meta.url)) {
-  const i = process.argv.indexOf('--root');
-  if (i >= 0 && process.argv[i + 1]) setRoot(process.argv[i + 1]);
-  if (process.env.TEAMS_WIKI_ROOT) setRoot(process.env.TEAMS_WIKI_ROOT); // non-empty env beats --root
-  off = process.env.TEAMS_WIKI_OFF === '1';
-  let buf = '';
-  let queue = Promise.resolve(); // replies keep request order
-  process.stdin.setEncoding('utf8');
-  process.stdin.on('data', (chunk) => {
-    buf += chunk;
-    let nl;
-    while ((nl = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
-      if (!line) continue;
-      queue = queue.then(async () => {
-        let msg;
-        try { msg = JSON.parse(line); } catch { return; }
-        let out;
-        try { out = await handle(msg); } catch (e) {
-          out = typeof msg.id === 'undefined' ? null : { jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: String((e && e.message) || e) } };
-        }
-        if (out) process.stdout.write(`${JSON.stringify(out)}\n`);
-      });
-    }
-  });
-  process.stdin.on('end', () => { queue.then(() => process.exit(0)); });
-}

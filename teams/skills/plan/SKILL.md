@@ -12,7 +12,7 @@ scenarios:
   - "일반 문서 말고 PRD 흐름으로 고정해서 기획서 써줘"
 compatibility:
   required:
-    - teams-engineering
+    - teams
 related:
   - orchestrate
   - document

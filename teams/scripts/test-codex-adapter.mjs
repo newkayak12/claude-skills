@@ -171,7 +171,7 @@ test('every flag the broker adapter-args block can pass is accepted by both adap
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-const WIKI_SERVER = join(dirname(fileURLToPath(import.meta.url)), '..', 'mcp', 'wiki.mjs');
+const WIKI_SERVER = join(dirname(fileURLToPath(import.meta.url)), '..', 'mcp', 'server.mjs');
 function codexArgv(extra, env, root = 'x') {
   const dir = mkdtempSync(join(tmpdir(), 'codex-wiki-'));
   try {
@@ -190,10 +190,10 @@ test('TEAMS_WIKI_ROOT set: codex exec gets exactly two -c pairs (command, args) 
   const argv = codexArgv([], { TEAMS_WIKI_ROOT: root });
   assert.equal(argv.filter((x) => x === '-c').length, 2);
   const [cmd, args] = cOverrides(argv);
-  assert.equal(cmd.slice(0, cmd.indexOf('=')), 'mcp_servers.teams-wiki.command');
+  assert.equal(cmd.slice(0, cmd.indexOf('=')), 'mcp_servers.teams.command');
   assert.equal(JSON.parse(cmd.slice(cmd.indexOf('=') + 1)), process.execPath);
-  assert.equal(args.slice(0, args.indexOf('=')), 'mcp_servers.teams-wiki.args');
-  assert.deepEqual(JSON.parse(args.slice(args.indexOf('=') + 1)), [WIKI_SERVER, '--root', root]);
+  assert.equal(args.slice(0, args.indexOf('=')), 'mcp_servers.teams.args');
+  assert.deepEqual(JSON.parse(args.slice(args.indexOf('=') + 1)), [WIKI_SERVER, '--only', 'wiki', '--root', root]);
   assert.ok(isAbsolute(WIKI_SERVER));
   assert.equal(argv[argv.length - 1], 'do it', 'the prompt stays last');
 });

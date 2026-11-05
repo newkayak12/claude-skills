@@ -1,6 +1,6 @@
 // Regression suite for teams/scripts/view.mjs - the human-readable status surface for a
-// task-manager task. Builds a real task.json (through the task-manager and broker MCP
-// servers, no vendor CLI needed - the same recipe test-taskmanager.mjs uses) and checks that
+// tm task. Builds a real task.json (through the tm_* and team_* tools of the teams MCP
+// server, no vendor CLI needed - the same recipe test-taskmanager.mjs uses) and checks that
 // collect() derives the right model, that the text renderer names every node, and that the
 // HTTP server actually serves /state.json and an index page.
 //
@@ -21,8 +21,10 @@ import { renderText, renderIndexText, renderTicketsText, renderResourcesText } f
 import { afterTmCall, beforeTmCall, drivePlanning } from './lib/planning-drive.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const TM = join(HERE, '..', 'mcp', 'taskmanager.mjs');
-const BROKER = join(HERE, '..', 'mcp', 'broker.mjs');
+const SERVER = join(HERE, '..', 'mcp', 'server.mjs');
+// Client roles: both spawn the one teams server; the role picks the planning-drive wrapping.
+const TM = 'tm';
+const BROKER = 'broker';
 const VIEW = join(HERE, 'view.mjs');
 const PAGE_HTML = join(HERE, 'lib', 'view-page.html');
 
@@ -74,7 +76,7 @@ function extractPageFns(names) {
 class Client {
   constructor(script, env = {}) {
     this.script = script;
-    this.proc = spawn('node', [script], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, ...env } });
+    this.proc = spawn('node', [SERVER], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, ...env } });
     this.buf = '';
     this.id = 0;
     this.queue = [];
@@ -100,7 +102,7 @@ class Client {
     return this;
   }
   async call(name, args) {
-    // Every task plans now (cards-everywhere C5/C6): a task-manager client drives the planning a
+    // Every task plans now (cards-everywhere C5/C6): a tm client drives the planning a
     // shape submission waits on first - lib/planning-drive.mjs says how, and why.
     if (this.script === TM) args = await beforeTmCall(this, name, args, () => this.planningBroker());
     const out = await this.rawCall(name, args);

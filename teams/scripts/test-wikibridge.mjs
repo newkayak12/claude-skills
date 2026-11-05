@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// test-wikibridge.mjs - teams/mcp/wikibridge.mjs: the task engine's in-process door into teams-wiki.
+// test-wikibridge.mjs - teams/mcp/wikibridge.mjs: the task engine's in-process door into the wiki tools.
 // Design: _repo/docs/plans/2026-10-07-teams-wiki-memory.md (2단계).
 //
 //   node --test teams/scripts/test-wikibridge.mjs

@@ -9,15 +9,14 @@ The full per-key reference for `.claude/team.json`, plus the detailed Sprint, wa
 ## Install
 
 Installing `teams@newkayak12-claude-skills` is the one non-optional step: it registers the
-`teams-engineering` and `task-manager` MCP servers. Reload Claude Code if a `tm_*`/`team_*` tool
+`teams` MCP server. Reload Claude Code if a `tm_*`/`team_*` tool
 is not visible afterward. For a source checkout instead of the marketplace plugin, register
-`mcp/broker.mjs` under the name `teams-engineering` and `mcp/taskmanager.mjs` under
-`task-manager` in the project's `.mcp.json`; `skills/install/SKILL.md`'s "Install modes" section
-shows both entries.
+`mcp/server.mjs` under the name `teams` in the project's `.mcp.json`;
+`skills/install/SKILL.md`'s "Install modes" section shows the entry.
 
 Running `teams:install` after that is optional, not a prerequisite for running a task — every
-run skill (`orchestrate`/`develop`/`document`/`plan`/`qa`) drives a team through the two MCP
-servers alone, falling back to `TEAM_DEFAULTS` (below) with no `.claude/team.json` at all. Run
+run skill (`orchestrate`/`develop`/`document`/`plan`/`qa`) drives a team through the `teams` MCP
+server alone, falling back to `TEAM_DEFAULTS` (below) with no `.claude/team.json` at all. Run
 `teams:install` when the project is ready to commit to its own defaults, a dispatch gate, and
 `.claude/conventions/` instead of the plugin's built-in ones — see
 [`skills/install/SKILL.md`](../skills/install/SKILL.md) for what it adds and
@@ -113,7 +112,7 @@ None of it is new mechanism outside `tm_open` itself; this section is what each 
 
 `tm_status`/`tm_board`/`tm_events` return machine-shaped JSON for a driving session — not
 something a person wants to stare at. `scripts/view.mjs` is the separate human surface: a
-zero-dependency, read-only CLI that renders a task-manager task (running or finished) as a page
+zero-dependency, read-only CLI that renders a teams task (running or finished) as a page
 or a text tree, built from the same `task.json` and child run files these tools already read.
 
 ```

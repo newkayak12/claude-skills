@@ -11,7 +11,7 @@ scenarios:
   - "E-a1b2c3d4/P2/U1 결과 제출하고 검증까지 보여줘"
 compatibility:
   required:
-    - task-manager
+    - teams
 related:
   - inbox
   - take

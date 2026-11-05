@@ -17,7 +17,7 @@ single code change you want to drive in one session.
 | | `graph` | `teams` |
 |---|---|---|
 | Good for | one code request, one run | sized/split requests, documents, PRDs, QA, backlogs |
-| MCP servers | `graph-engineering` (`graph_*`) | `teams-engineering` (`team_*`) + `task-manager` (`tm_*`) + `teams-wiki` (`wiki_*`) |
+| MCP servers | `graph-engineering` (`graph_*`) | `teams` (`team_*` + `tm_*` + `wiki_*`) |
 | Who drives | your session | a background daemon; your session only watches |
 | Run files | `.harness-run/broker/` | `.teams_output/broker/` (runs), `~/.harness/tasks/` (tasks) |
 | Version line | 1.x | 0.x |
@@ -29,7 +29,7 @@ Both can be enabled in the same project: the tool prefixes and run directories a
 ```mermaid
 flowchart TB
   U["You, in a Claude Code session"] --> SK["Entry skill: orchestrate, develop, document, plan, qa, sprint"]
-  SK -->|"tm_open / tm_run"| TM["task-manager MCP server, tm_* tools"]
+  SK -->|"tm_open / tm_run"| TM["teams MCP server, tm_* tools"]
   CLI["scripts/run.mjs, headless"] -->|"same open and wait"| TM
   TM -->|"spawns, detached"| DM["Task daemon"]
   DM <--> TJ[("task.json and ledger in ~/.harness/tasks")]
@@ -37,11 +37,11 @@ flowchart TB
   DM -->|"per package: worktree + driver"| P1
   DM -->|"per package: worktree + driver"| P2
   subgraph P1["Package P1: own worktree and branch"]
-    D1["claude -p driver"] -->|"team_* tools"| B1["teams-engineering broker"]
+    D1["claude -p driver"] -->|"team_* tools"| B1["teams MCP server, team_* tools"]
     B1 --> R1["child graph run"]
   end
   subgraph P2["Package P2: own worktree and branch"]
-    D2["claude -p driver"] -->|"team_* tools"| B2["teams-engineering broker"]
+    D2["claude -p driver"] -->|"team_* tools"| B2["teams MCP server, team_* tools"]
     B2 --> R2["child graph run"]
   end
   P1 -->|"accepted branch"| IT["Integration worktree"]
@@ -49,14 +49,14 @@ flowchart TB
   IT --> RP["Report, retro.json, phase docs"]
 ```
 
-- **task-manager** (`mcp/taskmanager.mjs`) owns a *task*: its node graph, packages, worktrees
+- **The task manager** (`tm_*` tools of the `teams` server) owns a *task*: its node graph, packages, worktrees
   and verdicts. It never does the work itself, and it reads child run files without ever writing
   them.
 - **The daemon** (`mcp/daemon.mjs`) is spawned by `tm_open` and outlives your session. It moves
   the task forward, calls a one-shot `claude -p` judge whenever a step needs judgment, and
   respawns dead or stalled drivers.
 - **A driver** is a headless `claude -p` session that drives one package's child run through the
-  `teams-engineering` broker (`mcp/broker.mjs`, `team_*` tools). The broker is the same engine
+  `teams` server's `team_*` tools (the broker, `mcp/broker.mjs`). The broker is the same engine
   lineage as `graph`.
 - **Integration** merges accepted package branches into a separate integration worktree. teams
   never merges into your own branch; that tree is where the delivered work lives.
@@ -215,7 +215,7 @@ stateDiagram-v2
 
 > **trophy rides along.** From this version, the first interactive session after you install or update this plugin installs [trophy](../trophy/README.md) (achievements) once, in user scope, if you don't have it. Nothing is sent until you say yes; uninstalling trophy is respected (it is never reinstalled). To opt out beforehand: `mkdir -p ~/.claude/plugins/.newkayak12-trophy-ride.done`. Needs `sh` (Windows without one is not covered).
 
-**Install.** Install `teams@newkayak12-claude-skills`; that registers its three MCP servers (reload
+**Install.** Install `teams@newkayak12-claude-skills`; that registers its one `teams` MCP server (reload
 Claude Code if the `tm_*`/`team_*`/`wiki_*` tools do not show). `teams:install` is optional. It pins
 project defaults in `.claude/team.json`, adds a dispatch gate, and adds `.claude/conventions/`
 (optionally filled from a reference project via `develop:like-my-code`). Without it, the built-in
@@ -306,9 +306,9 @@ explanation of every key is in [docs/configuration.md](docs/configuration.md#con
 
 `goal_judges` and `auto_reassign` are call arguments only, not `team.json` keys.
 
-## Wiki memory (teams-wiki)
+## Wiki memory (wiki tools)
 
-`teams-wiki` is a third MCP server in this plugin: the place where subagents (claude and codex node
+The `wiki_*` tools of the `teams` MCP server are the place where subagents (claude and codex node
 workers and drivers) communicate through documents in the main project's `.teams_wiki`, and project memory that
 outlives a session. The server works without the task engine; the engine uses it as described under
 "In the task engine".
@@ -358,7 +358,7 @@ There are 9 tools. Subagents write with `wiki_write`, which needs no approval; `
 project (`task.cwd`), also for workers running in a worktree.
 
 **In the task engine.** The engine does not write the wiki and does not inject it into the task context.
-Claude and codex node workers and drivers get the wiki tools (codex through `-c mcp_servers.teams-wiki`
+Claude and codex node workers and drivers get the wiki tools (through a wiki-only entry of the same server, `server.mjs --only wiki`; codex through `-c mcp_servers.teams`
 overrides): they search it with `wiki_search` / `wiki_get` when they need context, and write with
 `wiki_write` while working, only what is worth remembering later. The judging stages (review, gate, accept,
 critique, test, audit, qa execute) and the manager's judges do not see the wiki, for any vendor. The

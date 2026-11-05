@@ -1,7 +1,7 @@
-// teams/scripts/capture-tools.mjs - records the tools the three teams MCP servers expose today as a
-// golden fixture (fixtures/tools-before.json), so a merged server can be compared against it.
-// Each entry is spawned over stdio on its own (initialize, then tools/list); nothing in teams/mcp
-// is touched. Usage: node teams/scripts/capture-tools.mjs [--out <file>]
+// teams/scripts/capture-tools.mjs - records the tools the teams MCP server (mcp/server.mjs) exposes
+// as a golden-shaped list (fixtures/tools-before.json holds the pre-merge capture, whose entries
+// carry a `server` key this list has not). Spawned over stdio (initialize, then tools/list);
+// nothing in teams/mcp is touched. Usage: node teams/scripts/capture-tools.mjs [--out <file>]
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -73,7 +73,7 @@ function listTools(label, args, env) {
   });
 }
 
-// Returns the normalised, name-sorted entry array for the three servers. Throws on any failure
+// Returns the normalised, name-sorted entry array of the one server. Throws on any failure
 // or when the 6/18/9 split is not met; every tmpdir it made is removed either way.
 export async function captureTools() {
   const dirs = [];
@@ -82,22 +82,14 @@ export async function captureTools() {
     const env = { ...process.env, HARNESS_TASKS_DIR: mk('capture-tasks-'), HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' };
     delete env.TEAMS_WIKI_ROOT;
     delete env.TEAMS_WIKI_OFF;
-    const servers = [
-      ['teams-engineering', [join(MCP, 'broker.mjs')]],
-      ['task-manager', [join(MCP, 'taskmanager.mjs')]],
-      ['teams-wiki', [join(MCP, 'wiki.mjs'), '--root', mk('capture-wiki-')]],
-    ];
     const entries = [];
-    for (const [server, args] of servers) {
-      for (const t of await listTools(server, args, env)) {
-        entries.push(normalize({
-          server,
-          name: t.name,
-          description: t.description,
-          inputSchema: t.inputSchema,
-          outputSchema: t.outputSchema === undefined ? null : t.outputSchema,
-        }));
-      }
+    for (const t of await listTools('teams', [join(MCP, 'server.mjs'), '--root', mk('capture-wiki-')], env)) {
+      entries.push(normalize({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema,
+        outputSchema: t.outputSchema === undefined ? null : t.outputSchema,
+      }));
     }
     entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     const want = Object.entries(EXPECTED_PREFIXES);

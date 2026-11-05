@@ -136,7 +136,7 @@ test('Skill: a node or subagent calling an entry skill is denied; others and mai
 test('Codex MCP entry tools are denied inside a worker and allowed in the main session', () => {
   const dir = project(null);
   try {
-    for (const tool of ['mcp__graph-engineering__graph_open', 'mcp__task-manager__tm_open', 'mcp__task-manager__tm_run']) {
+    for (const tool of ['mcp__graph-engineering__graph_open', 'mcp__teams__tm_open', 'mcp__teams__tm_run']) {
       assert.equal(run(dir, {}, tool, { HARNESS_NODE: '1' }).status, 2, tool);
       assert.equal(run(dir, {}, tool).status, 0, tool);
     }

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// view.mjs - a human-readable window onto a task-manager task (teams/mcp/taskmanager.mjs).
+// view.mjs - a human-readable window onto a teams task (teams/mcp/taskmanager.mjs).
 //
 // The MCP tools (tm_status, tm_board, ...) return machine-shaped JSON for a driving session.
 // This is the separate human surface the repo's convention asks for: point a browser at a

@@ -134,8 +134,8 @@ const spawned = () => ({ drivers: stubFiles('driver').length, daemons: stubFiles
 
 // ---------- the tool list, over the real stdio server ----------
 
-test('the task-manager MCP lists tm_cancel with a required task_id', async () => {
-  const child = spawn(process.execPath, [join(HERE, '..', 'mcp', 'taskmanager.mjs')], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, HARNESS_TEST_NO_DRIVER: '1' } });
+test('the teams MCP lists tm_cancel with a required task_id', async () => {
+  const child = spawn(process.execPath, [join(HERE, '..', 'mcp', 'server.mjs')], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, HARNESS_TEST_NO_DRIVER: '1' } });
   try {
     const reply = await new Promise((resolve, reject) => {
       let buf = '';

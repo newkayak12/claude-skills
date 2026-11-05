@@ -5,7 +5,7 @@ by what the arm left in the tree and what the session cost.
 
 | Arm | What runs | Skill |
 |-----|-----------|-------|
-| `beta` | teams 0.x with the user's words that the work must be split → `size` pinned L: `task-manager` shapes packages, one child graph run per package, integrate | `teams:develop` (code), `teams:orchestrate` with `flow: auto` (docs) |
+| `beta` | teams 0.x with the user's words that the work must be split → `size` pinned L: the task manager shapes packages, one child graph run per package, integrate | `teams:develop` (code), `teams:orchestrate` with `flow: auto` (docs) |
 | `betas` | teams 0.x without those words: `size` measures (S on these fixtures) and delegates to one graph run — the same topology as `stable`, with the `document` kind and `flow` | same |
 | `skills` | `betas`, with `--plugin-dir` for every plugin any `STAGE_SKILLS` (taskmanager.mjs) or `kindSkills` (graph.mjs) entry actually names — `develop`, `think`, `cognition`, `completion`, `write` — plus `agents`, mounted only when the directory exists | same as `betas` |
 | `stable` | graph 1.x: one graph run for the whole request | `graph:orchestrate` |

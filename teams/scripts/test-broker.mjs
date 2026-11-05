@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Regression suite for the teams-engineering MCP server.
+// Regression suite for the team_* tools of the teams MCP server.
 //
 // Every case here is a bug that actually shipped and was caught by running a real
 // graph, not by reading the code. They run against the live MCP surface over stdio
@@ -19,7 +19,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadRun, saveRun, getNode } from '../mcp/graph.mjs';
 
-const BROKER = join(dirname(fileURLToPath(import.meta.url)), '..', 'mcp', 'broker.mjs');
+const BROKER = join(dirname(fileURLToPath(import.meta.url)), '..', 'mcp', 'server.mjs');
 const CODEX_ADAPTER = join(dirname(fileURLToPath(import.meta.url)), '..', 'adapters', 'codex-exec-adapter.mjs');
 const CLAUDE_ADAPTER = join(dirname(fileURLToPath(import.meta.url)), '..', 'adapters', 'claude-exec-adapter.mjs');
 
@@ -135,7 +135,9 @@ test('serves the MCP handshake and the graph tool surface', async () => {
   const c = await new Client().init();
   try {
     const r = await c.send('tools/list', {});
-    const names = r.result.tools.map((t) => t.name).sort();
+    const all = r.result.tools.map((t) => t.name);
+    assert.equal(all.length, 33, 'the one teams server lists every tool');
+    const names = all.filter((n) => n.startsWith('team_')).sort();
     assert.deepEqual(names, [
       'team_next', 'team_open', 'team_retry', 'team_run', 'team_status', 'team_submit',
     ]);
@@ -2491,7 +2493,7 @@ test('the server declares only capabilities it implements', async () => {
     const init = await c.send('initialize', {
       protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' },
     });
-    assert.equal(init.result.serverInfo.name, 'teams-engineering');
+    assert.equal(init.result.serverInfo.name, 'teams');
     assert.equal(init.result.serverInfo.version, '1.0.0');
     const caps = init.result.capabilities;
     assert.ok(caps.tools, 'tools are implemented and must be declared');
@@ -2508,11 +2510,13 @@ test('the server declares only capabilities it implements', async () => {
 test('every tool declares an outputSchema, and a real verdict validates against it', async () => {
   await withRun(async ({ c, cwd, runId }) => {
     const list = await c.send('tools/list', {});
-    for (const t of list.result.tools) {
+    const teamTools = list.result.tools.filter((t) => t.name.startsWith('team_'));
+    assert.equal(teamTools.length, 6, 'the team_ filter must not empty the loop below');
+    for (const t of teamTools) {
       assert.ok(t.outputSchema, `${t.name} returns structuredContent with no declared shape`);
       assert.equal(t.outputSchema.type, 'object');
     }
-    const byName = Object.fromEntries(list.result.tools.map((t) => [t.name, t.outputSchema]));
+    const byName = Object.fromEntries(teamTools.map((t) => [t.name, t.outputSchema]));
 
     // Pin the fields each schema must require as canaries: an emptied or narrowed
     // `required` list in broker.mjs would otherwise turn the loops below into no-ops

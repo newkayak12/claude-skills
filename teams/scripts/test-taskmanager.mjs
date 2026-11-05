@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Regression suite for the task-manager MCP server.
+// Regression suite for the tm_* tools of the teams MCP server.
 //
-// Runs against the live stdio surface, with the teams-engineering broker alongside it
-// as a second process: the manager opens child runs as a library, the broker drives them,
+// Runs against the live stdio surface (server.mjs), with a second server process as the
+// broker role: the manager opens child runs as a library, the broker drives them,
 // and the manager reads them back. No vendor CLI is needed; every node is self-submitted.
 //
 //   node --test teams/scripts/test-taskmanager.mjs
@@ -49,8 +49,10 @@ function inTx(task, helper, ...args) {
 }
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const TM = join(HERE, '..', 'mcp', 'taskmanager.mjs');
-const BROKER = join(HERE, '..', 'mcp', 'broker.mjs');
+const SERVER = join(HERE, '..', 'mcp', 'server.mjs');
+// Client roles: both spawn the one teams server; the role picks the planning-drive wrapping.
+const TM = 'tm';
+const BROKER = 'broker';
 
 class Client {
   // TEAMS_VIEW: '0' by default - every tm_open/tm_run in this suite would otherwise spawn a
@@ -62,7 +64,7 @@ class Client {
   // viewer override this explicitly.
   constructor(script, env = {}) {
     this.script = script;
-    this.proc = spawn('node', [script], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, TEAMS_VIEW: '0', ...env } });
+    this.proc = spawn('node', [script === TM || script === BROKER ? SERVER : script], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, TEAMS_VIEW: '0', ...env } });
     this.buf = '';
     this.id = 0;
     this.queue = [];
@@ -88,7 +90,7 @@ class Client {
     return this;
   }
   async call(name, args) {
-    // Every task plans now (cards-everywhere C5/C6): a task-manager client drives the planning a
+    // Every task plans now (cards-everywhere C5/C6): a tm client drives the planning a
     // shape submission waits on first - lib/planning-drive.mjs says how, and why.
     if (this.script === TM) args = await beforeTmCall(this, name, args, () => this.planningBroker());
     const out = await this.rawCall(name, args);
@@ -285,29 +287,30 @@ test('serves the MCP handshake and the seventeen manager tools', async () => {
   const c = await new Client(TM).init();
   try {
     const r = await c.send('tools/list', {});
-    assert.deepEqual(r.result.tools.map((t) => t.name).sort(), ['tm_ask', 'tm_assign', 'tm_board', 'tm_cancel', 'tm_clean', 'tm_docs', 'tm_events', 'tm_file', 'tm_inbox', 'tm_log', 'tm_next', 'tm_open', 'tm_retry', 'tm_run', 'tm_status', 'tm_submit', 'tm_ticket', 'tm_wait']);
+    const names = r.result.tools.map((t) => t.name);
+    assert.equal(names.length, 33, 'the one teams server lists every tool');
+    assert.deepEqual(names.filter((n) => n.startsWith('tm_')).sort(), ['tm_ask', 'tm_assign', 'tm_board', 'tm_cancel', 'tm_clean', 'tm_docs', 'tm_events', 'tm_file', 'tm_inbox', 'tm_log', 'tm_next', 'tm_open', 'tm_retry', 'tm_run', 'tm_status', 'tm_submit', 'tm_ticket', 'tm_wait']);
   } finally {
     c.close();
   }
 });
 
-// isEntryPoint (pluginroots.mjs) is what taskmanager.mjs's `isMain` and daemon.mjs's
+// isEntryPoint (pluginroots.mjs) is what server.mjs's entry guard and daemon.mjs's
 // RUN_AS_MAIN both compare against - a raw `import.meta.url === process.argv[1]` string
 // comparison (3c5ad0c8) exits silently, having started nothing, the moment either side is
 // reached through a symlink: macOS resolves $TMPDIR's `/var/...` to `/private/var/...` for
 // import.meta.url (the ESM loader realpaths) but leaves argv[1] exactly as typed. A real bench
-// run hit this - "plugin:teams:task-manager: failed (CONNECTION_CLOSED)" while broker.mjs (which
-// carries no such guard) connected fine. Spawns taskmanager.mjs through a symlink standing in
-// for exactly that trap and requires a real reply, not silence.
-test('taskmanager.mjs starts its stdio server even when reached through a symlinked path (the macOS $TMPDIR /var -> /private/var trap)', async () => {
+// run hit this - the plugin's MCP server failed (CONNECTION_CLOSED). Spawns server.mjs through
+// a symlink standing in for exactly that trap and requires a real reply, not silence.
+test('server.mjs starts its stdio server even when reached through a symlinked path (the macOS $TMPDIR /var -> /private/var trap)', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'tm-symlink-'));
   const link = join(dir, 'tm-link.mjs');
   try {
-    symlinkSync(realpathSync(TM), link);
+    symlinkSync(realpathSync(SERVER), link);
     const tm = await new Client(link).init();
     try {
       const r = await tm.send('tools/list', {});
-      assert.ok(r.result && Array.isArray(r.result.tools), `symlinked taskmanager.mjs must answer tools/list, got ${JSON.stringify(r)}`);
+      assert.ok(r.result && Array.isArray(r.result.tools), `symlinked server.mjs must answer tools/list, got ${JSON.stringify(r)}`);
       assert.ok(r.result.tools.some((t) => t.name === 'tm_open'), 'tm_open must be in the symlinked server\'s tool list');
     } finally {
       tm.close();
@@ -1643,7 +1646,7 @@ async function completeDefectChild(g, child, filename) {
 // on the UNCHANGED tree until the subgoal's budget was spent, left gate/reduce unreachable, and
 // the child never reached its own report at all: dispatch:QA:1 folded 'blocked' with gaps:[] and
 // no defects anywhere, accept:QA never ran, and the manager just reopened dispatch:QA:2 over the
-// identical bug. These two tests cover the fix end to end at the task-manager level (the
+// identical bug. These two tests cover the fix end to end at the tm_* level (the
 // broker-level unit coverage is in test-broker.mjs).
 test('a QA execute that runs and finds a real defect completes the child normally, and accept:QA files it as a fix STORY (awake-beta-ref1, §5b)', async () => {
   await withTask(async ({ tm, g, root, task_id }) => {
@@ -1890,7 +1893,7 @@ test('a budget stop that rewires gate:goal past an incomplete QA pass records qa
 // kernel comm=='claude', but on P4's own host the real CLI's kernel comm is a version string -
 // P4 proved it with its own probe, but had no route except to fail an attempt no retry could
 // ever fix (P3's contract, not P4's, was wrong), and the daemon just reopened the identical
-// impossible retry. These tests cover the fix-forward route at the task-manager level, using the
+// impossible retry. These tests cover the fix-forward route at the tm_* level, using the
 // plain P1<-P2 SHAPE fixture (P2 deps: ['P1']) in place of P3/P4.
 test('a downstream package\'s implement reports an upstream_defects outside its own touches[]; the fold carries it through to accept:P2 regardless of the gate\'s own verdict', async () => {
   await withTask(async ({ tm, g, root, task_id }) => {

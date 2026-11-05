@@ -12,7 +12,7 @@ scenarios:
   - "구현 말고 QA 흐름으로 고정해서 테스트 케이스 뽑고 돌려줘"
 compatibility:
   required:
-    - teams-engineering
+    - teams
 related:
   - orchestrate
   - develop

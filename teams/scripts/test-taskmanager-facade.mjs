@@ -66,10 +66,10 @@ test('no taskmanager-*.mjs imports ./taskmanager.mjs', () => {
   }
 });
 
-test('the facade declares no function except emit and handle', () => {
+test('the facade declares no function', () => {
   const text = readFileSync(join(MCP, 'taskmanager.mjs'), 'utf8');
   const names = [...text.matchAll(/^(?:export\s+)?(?:async\s+)?function\*?\s+([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]).sort();
-  assert.deepEqual(names, ['emit', 'handle']);
+  assert.deepEqual(names, []);
 });
 
 test('every teams/mcp/*.mjs is under 1,500 lines', () => {
