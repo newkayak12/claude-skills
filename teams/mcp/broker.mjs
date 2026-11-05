@@ -72,6 +72,7 @@ import {
 import { composePrompt } from './prompts.mjs';
 import { readTeamConfig, resolveTeamOptions } from './teamconfig.mjs';
 import { isEntryPoint } from './pluginroots.mjs';
+import { serve } from './stdio.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER = { name: 'teams-engineering', version: '1.0.0' };
@@ -2323,15 +2324,19 @@ function toolGraphStatus(a) {
 }
 
 // ---------- JSON-RPC / MCP plumbing ----------
+// The loop itself (initialize, tools/list, tools/call, progress, cancellation) is stdio.mjs;
+// this is the broker's tool dispatch, which stdio.mjs calls with a ctx.
 
-async function callTool(name, args, requestId, params) {
+async function callTool(name, args, ctx = {}) {
   const a = args || {};
   if (a.cwd) knownCwds.add(resolve(String(a.cwd)));
   switch (name) {
     case 'team_open': return await toolGraphOpen(a);
     case 'team_next': return await toolGraphNext(a);
     case 'team_run':
-      return await toolGraphRun({ ...a, __onCancel: (cancel) => registerCanceller(requestId, cancel) });
+      // The vendor child is stopped through the `cancel` that runAdapter hands out; a client's
+      // notifications/cancelled reaches it as ctx.registerChild(...).kill().
+      return await toolGraphRun({ ...a, __onCancel: (cancel) => { if (ctx.registerChild) ctx.registerChild({ kill: cancel }); } });
     case 'team_submit': return toolGraphSubmit(a);
     case 'team_retry': return await toolGraphRetry(a);
     case 'team_status': return toolGraphStatus(a);
@@ -2339,102 +2344,7 @@ async function callTool(name, args, requestId, params) {
   }
 }
 
-// One line out per message, never interleaved.
-function emit(obj) {
-  process.stdout.write(JSON.stringify(obj) + '\n');
-}
-
-// MCP cancellation: the client sends notifications/cancelled with the requestId it wants
-// stopped. Nothing could be cancelled while the server ran the vendor synchronously;
-// now the in-flight child can be killed.
-const cancellers = new Map();
-
-function registerCanceller(requestId, cancel) {
-  if (requestId === undefined || requestId === null) return;
-  const list = cancellers.get(requestId) || [];
-  list.push(cancel);
-  cancellers.set(requestId, list);
-}
-
-function cancelRequest(requestId) {
-  const list = cancellers.get(requestId);
-  if (!list) return false;
-  for (const cancel of list) {
-    try { cancel(); } catch { /* the child may already be gone */ }
-  }
-  cancellers.delete(requestId);
-  return true;
-}
-
-// notifications/progress, so a client can show a long node advancing instead of staring
-// at a call that returns nothing for ten minutes.
-function startProgress(token, label) {
-  if (token === undefined || token === null) return () => {};
-  const started = Date.now();
-  let n = 0;
-  const send = () => {
-    emit({
-      jsonrpc: '2.0',
-      method: 'notifications/progress',
-      params: {
-        progressToken: token,
-        progress: ++n,
-        message: `${label} — ${Math.round((Date.now() - started) / 1000)}s`,
-      },
-    });
-  };
-  // Immediately, then on a tick. Waiting for the first interval meant a client saw
-  // nothing at all for the first ten seconds, and nothing ever for a short node.
-  send();
-  const tick = setInterval(send, 10000);
-  tick.unref();
-  return () => clearInterval(tick);
-}
-
-async function handle(msg) {
-  const { id, method, params } = msg;
-  const reply = (result) => ({ jsonrpc: '2.0', id, result });
-  switch (method) {
-    case 'initialize':
-      return reply({
-        protocolVersion: params && typeof params.protocolVersion === 'string' ? params.protocolVersion : DEFAULT_PROTOCOL,
-        // Declare only what is implemented. `logging` was advertised while
-        // notifications/message was never sent, and a client that trusted it got
-        // silence; resources/* would answer -32601 for the same reason.
-        capabilities: { tools: { listChanged: false } },
-        serverInfo: SERVER,
-      });
-    case 'ping':
-      return reply({});
-    case 'notifications/cancelled': {
-      const target = params && params.requestId;
-      cancelRequest(target);
-      return null; // a notification takes no response
-    }
-    case 'tools/list':
-      return reply({ tools: TOOLS });
-    case 'tools/call': {
-      const name = params && params.name;
-      const token = params && params._meta ? params._meta.progressToken : undefined;
-      const stopProgress = startProgress(token, `${name}${params && params.arguments && params.arguments.node_id ? ' ' + params.arguments.node_id : ''}`);
-      try {
-        const out = await callTool(name, params && params.arguments, msg.id, params);
-        stopProgress();
-        return reply({ content: [{ type: 'text', text: JSON.stringify(out, null, 2) }], structuredContent: out, isError: false });
-      } catch (e) {
-        stopProgress();
-        // Tool-level failures are results, not protocol errors - the caller needs the
-        // reason so it can record stage_ok=false and move on.
-        return reply({ content: [{ type: 'text', text: String((e && e.message) || e) }], isError: true });
-      } finally {
-        cancellers.delete(msg.id);
-      }
-    }
-    default:
-      if (typeof id === 'undefined') return null;
-      return { jsonrpc: '2.0', id, error: { code: -32601, message: 'method not found: ' + method } };
-  }
-}
+export { TOOLS as BROKER_TOOLS, callTool as callBrokerTool };
 
 // Only run the stdio server when this file is the process entry point - the same guard
 // taskmanager.mjs (`isMain`) and daemon.mjs (`RUN_AS_MAIN`) already use, from the one module all
@@ -2448,32 +2358,5 @@ async function handle(msg) {
 const isMain = isEntryPoint(import.meta.url);
 
 if (isMain) {
-  let buf = '';
-  process.stdin.setEncoding('utf8');
-  process.stdin.on('data', (chunk) => {
-    buf += chunk;
-    let nl;
-    while ((nl = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
-      if (!line) continue;
-      let msg;
-      try {
-        msg = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      // Dispatch without awaiting: a node run must not stop the server from answering
-      // ping, status, or a cancellation for that very node.
-      Promise.resolve()
-        .then(() => handle(msg))
-        .catch((e) =>
-          typeof msg.id === 'undefined'
-            ? null
-            : { jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: String((e && e.message) || e) } },
-        )
-        .then((out) => { if (out) emit(out); });
-    }
-  });
-  process.stdin.on('end', () => process.exit(0));
+  serve({ serverInfo: SERVER, protocolVersion: DEFAULT_PROTOCOL, tools: TOOLS, call: callTool });
 }
