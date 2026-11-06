@@ -298,6 +298,14 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
    - Why: five engine defects seen in the portfolio Sprint E-478d5e95 (cards 123/124, 2026-11-04/05), reported
      by that session; common cause (its words): "엔진이 모든 실패를 '다시 하면 되는 것'으로만 다룬다". Causes
      below are as reported, unverified here.
+   - Seen 2026-11-06, E-8faf33b9 (card 125, L, $47.29, blocked at 09:23): all five planning cards accepted
+     90–95, then plan-integrate rejected 3 times and the task blocked with "no retry route is left". Round 3
+     was an engine artefact, not a planning gap (verified): `10-prd.md` holds F4 twice (lines 637 and 792)
+     because `cardDocuments` (`teams/mcp/docs.mjs:167`) keeps `prd_paths` entries by their string, and the
+     card listed `10-prd-F4.md` and its absolute path. The judge blamed PLAN-F4 and the integrate budget ran
+     out. The report stage then failed with no reason. Acceptance: `prd_paths` deduped by resolved path,
+     a test with a relative and an absolute path to one file; an engine-made defect in the merged document
+     does not spend the planning card's integrate round; a failed report stage records its reason.
      1. Usage limit: a driver hit the 5-hour limit, parked on `waiting_capacity`, and never resumed by itself
         after the limit reset — twice, the second for hours.
      2. QA can never pass: a QA card's done condition is a subagent writing `report.md`, which Claude Code
