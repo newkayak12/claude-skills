@@ -233,6 +233,27 @@ test('10-prd.md merges every planning card\'s accepted section into one PRD, und
   }
 });
 
+// Card 129: one file listed relative and absolute in prd_paths is one document, not two.
+test('10-prd.md lists a file once when prd_paths holds it relative and absolute', async () => {
+  const { renderPrd, cardDocuments } = await import('../mcp/docs.mjs');
+  const wt = mkdtempSync(join(tmpdir(), 'prd-dup-'));
+  try {
+    writeFileSync(join(wt, '10-prd-F4.md'), '# PRD\n\n## Goal\n\nMARKER-F4-ONCE\n');
+    writeFileSync(join(wt, '10-prd-F5.md'), '# PRD\n\n## Goal\n\nMARKER-F5\n');
+    const task = {
+      run_id: 'bbbbbbbb-1111-2222-3333-555555555555', cwd: '/tmp/x', request: 'dup',
+      planning_pkgs: [{ id: 'PLAN-F4', area: 'F4', area_title: 'dup', title: 'PRD: dup', phase: 'planning' }],
+      nodes: [{ node_id: 'dispatch:PLAN-F4:1', stage: 'dispatch', subgoal_id: 'PLAN-F4', attempt: 1, state: 'done', child: { run_id: 'r1', cwd: wt }, result: { accept: true, user_stories: [{ id: 'F4-US-1', title: 'x' }], prd_paths: ['10-prd-F4.md', join(wt, '10-prd-F4.md'), '10-prd-F5.md'] } }],
+    };
+    assert.equal(cardDocuments(task, task.planning_pkgs[0]).docs.length, 2);
+    const page = renderPrd(task);
+    assert.equal(page.split('MARKER-F4-ONCE').length - 1, 1);
+    assert.equal(page.split('MARKER-F5').length - 1, 1, 'a distinct second file is kept');
+  } finally {
+    rmSync(wt, { recursive: true, force: true });
+  }
+});
+
 // tm_clean removes a planning card's worktree once the task is done; the merged PRD is kept by the
 // snapshot the planning integrate took of every card's section (n.prd.docs), read first.
 test('10-prd.md renders from the planning integrate\'s snapshot when a card\'s worktree is gone', async () => {
@@ -383,4 +404,17 @@ test('Wiki 변경: every report variant lists the pages modified inside [created
     const empty = renderReport(timed({ created_at: END + 100000 }));
     assert.match(empty.slice(empty.indexOf('## Wiki 변경')), /modified while this task ran:\n- \(none\)/);
   } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('report reason: renderBlockedReport shows why a failed report node failed, not "(no reason recorded)"', async () => {
+  const { renderBlockedReport } = await import('../mcp/docs.mjs');
+  const { finish } = await import('../mcp/taskmanager-finish.mjs');
+  process.env.HARNESS_TASKS_DIR = mkdtempSync(join(tmpdir(), 'docs-reason-'));
+  const task = { run_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', cwd: mkdtempSync(join(tmpdir(), 'docs-reason-cwd-')), request: 'r', team: { opts: {} }, nodes: [] };
+  const n = { node_id: 'report', stage: 'report', state: 'running' };
+  task.nodes.push(n);
+  finish(task, n, { stage_ok: false, handoff: 'Result: partial. Planning stopped at plan-integrate:3', evidence: 'The last failure is F4 stories defined twice' });
+  const out = renderBlockedReport(task);
+  assert.ok(!out.includes('(no reason recorded)'));
+  assert.match(out, /report \(failed\): .*F4 stories defined twice/);
 });

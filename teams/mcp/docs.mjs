@@ -164,9 +164,13 @@ export function cardDocuments(task, p) {
     if (snap.length) return { dispatch: d, docs: snap.map((x) => ({ path: x.path, text: x.text })) };
   }
   const docs = [];
+  const seen = new Set();
   for (const rel of d.result.prd_paths || []) {
     if (!/\.md$/i.test(String(rel)) || /-findings\.md$/i.test(String(rel))) continue;
-    try { docs.push({ path: String(rel), text: readFileSync(resolve(d.child.cwd, String(rel)), 'utf8') }); } catch { /* not readable: its stories are listed instead */ }
+    const abs = resolve(d.child.cwd, String(rel));
+    if (seen.has(abs)) continue; // one file listed relative and absolute is one document
+    seen.add(abs);
+    try { docs.push({ path: String(rel), text: readFileSync(abs, 'utf8') }); } catch { /* not readable: its stories are listed instead */ }
   }
   return { dispatch: d, docs };
 }

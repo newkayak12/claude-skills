@@ -6,6 +6,9 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import * as facade from '../mcp/taskmanager.mjs';
 import * as mod from '../mcp/taskmanager-finish.mjs';
 
@@ -32,4 +35,41 @@ test('scopeGaps leaves a result alone unless it is a finished accept node with o
   const result = { stage_ok: true, gaps: ['x'] };
   assert.equal(mod.scopeGaps({}, { stage: 'gate' }, result), result);
   assert.equal(mod.scopeGaps({}, { stage: 'accept' }, result), result);
+});
+
+// A failed report stage returns prose in handoff/evidence and no reason; finish() keeps the words
+// (E-8faf33b9's report node reached the blocked report as "(no reason recorded)").
+function finishNode(stage, result) {
+  // finish() records to the ledger under the tasks root: keep it in scratch, not ~/.harness.
+  process.env.HARNESS_TASKS_DIR = mkdtempSync(join(tmpdir(), 'finish-reason-'));
+  const task = { run_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', cwd: mkdtempSync(join(tmpdir(), 'finish-cwd-')), nodes: [], team: { opts: {} } };
+  const n = { node_id: stage, stage, state: 'running' };
+  task.nodes.push(n);
+  mod.finish(task, n, result);
+  return n;
+}
+
+test('report reason: a failed report with no reason takes it from its evidence', () => {
+  const n = finishNode('report', { stage_ok: false, handoff: 'Result: partial. Planning stopped at plan-integrate:3', evidence: 'F4 stories defined twice' });
+  assert.equal(n.state, 'failed');
+  assert.match(n.result.reason, /F4 stories defined twice/);
+});
+
+test('report reason: long evidence keeps the head of the handoff and the tail of the evidence within about 400 chars', () => {
+  const evidence = `Node results: ${'x'.repeat(900)} The last failure is F4 stories defined twice`;
+  const n = finishNode('report', { stage_ok: false, handoff: `Result: partial. Planning stopped at plan-integrate:3 ${'y'.repeat(900)}`, evidence });
+  assert.ok(n.result.reason.length <= 420, `length ${n.result.reason.length}`);
+  assert.match(n.result.reason, /F4 stories defined twice/);
+  assert.match(n.result.reason, /Planning stopped/);
+});
+
+test('report reason: a report that already has a reason keeps it byte for byte', () => {
+  const n = finishNode('report', { stage_ok: false, reason: 'own  reason ', handoff: 'h', evidence: 'e' });
+  assert.equal(n.result.reason, 'own  reason ');
+});
+
+test('report reason: a failed node of another stage with no reason is unchanged', () => {
+  const n = finishNode('implement', { stage_ok: false, handoff: 'h', evidence: 'e' });
+  assert.equal(n.state, 'failed');
+  assert.equal('reason' in n.result, false);
 });
