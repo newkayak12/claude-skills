@@ -283,6 +283,19 @@ function answerText(payload) {
   return short(JSON.stringify(p));
 }
 
+// The reason for a failed report that named none: stage prefix, head of the handoff, tail of the
+// evidence (about 400 chars). '' when it has a reason, gaps, blocking or problems, or no words.
+function reportReason(r) {
+  const has = (v) => Array.isArray(v) && v.length > 0;
+  if (String(r.reason || '').trim() || has(r.gaps) || has(r.blocking) || has(r.problems)) return '';
+  const flat = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+  const handoff = flat(r.handoff), evidence = flat(r.evidence);
+  const head = handoff.length > 200 ? `${handoff.slice(0, 200)}...` : handoff;
+  const tail = evidence.length > 160 ? `...${evidence.slice(-160)}` : evidence;
+  const words = [head, tail].filter(Boolean).join(' | ');
+  return words ? `report returned stage_ok:false: ${words}` : '';
+}
+
 export function finish(task, n, result) {
   // A node settling is what moves a ticket, and it is the one place both callers pass through -
   // tm_submit and the daemon alike. Hooking the caller instead left the whole surface stale
@@ -343,6 +356,12 @@ export function finish(task, n, result) {
     // ledger, report and triage as "integrate:6: " - the broker's own rule, at manager level.
     const synthesized = reasonFromVerdict(result, f);
     if (synthesized) result = { ...result, reason: synthesized };
+  } else if (n.state === 'failed' && n.stage === 'report') {
+    // A report has no verdict field: it fails with prose in handoff/evidence and no reason, and
+    // every reader of a failed node looks only at reason/gaps/blocking (E-8faf33b9 blocked as
+    // "(no reason recorded)"). Keep its own words: the handoff leads, the evidence ends on the cause.
+    const reason = reportReason(result);
+    if (reason) result = { ...result, reason };
   }
   n.result = result;
   n.finished_at = Date.now();
