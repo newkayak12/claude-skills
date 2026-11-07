@@ -165,7 +165,10 @@ toasts).
 
 Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 128's leftovers.
 
-125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality** — in E-701e2856 (L, Sonnet, $80; E-8faf33b9 blocked on a PRD merge bug, fixed `8d5cb7b0`)
+125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality** — E-8faf33b9 blocked on a PRD merge bug (fixed `8d5cb7b0`); E-701e2856 (2026-11-07, $35.82) planned
+   it again (5 cards 88–94, plan-integrate accepted) and stopped partial at shape:3 (see card 129). Now one
+   size-S task per feature area, in order F1 → F5 → F3 → F4 → F2, each from its section of that PRD (kept
+   at `tmp/card125/F<n>.md` until the card closes).
    - Why: user, 2026-11-04, after the 190/110 captures of card 105: "만약 된다면 view.mjs(web으로 보여주는 것)
      은 퇴역시켜도 될거 같아", "저 *-stats view만 더 퀄리티 높히면 될거 같고". Condition ("만약 된다면"): the
      pane handles several EPICs at once (`]`/`[` step EPIC, `j`/`k` STORY row, `g` open) — seen live with
@@ -306,6 +309,14 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
      out. The report stage then failed with no reason. Acceptance: `prd_paths` deduped by resolved path,
      a test with a relative and an absolute path to one file; an engine-made defect in the merged document
      does not spend the planning card's integrate round; a failed report stage records its reason.
+     Dedupe and report reason shipped `8d5cb7b0` (E-beccd3c6, gate 95).
+   - Seen 2026-11-07, E-701e2856 (card 125 again, $35.82): planning accepted, then shape failed 3 times on
+     its structural check and the task ended partial. The PRD held 25+ stories and 187 ACs, and shape must copy
+     every AC verbatim into a package; each round dropped a different handful (round 1: AC-15, F4-AC-28..31;
+     round 2: F2-AC-27, F3-AC-4/5, AC-7; round 3: five stories unassigned). Some ACs carry no area prefix
+     (`AC-15`, `AC-7`), so the check matched them to the wrong story. Acceptance: shape's repair round is
+     told only the missing ids and keeps the rest of its last shape (no fresh redo); AC ids are area-prefixed
+     at plan-integrate; a test with a 150-AC PRD where round 2 fixes round 1's misses.
      1. Usage limit: a driver hit the 5-hour limit, parked on `waiting_capacity`, and never resumed by itself
         after the limit reset — twice, the second for hours.
      2. QA can never pass: a QA card's done condition is a subagent writing `report.md`, which Claude Code
