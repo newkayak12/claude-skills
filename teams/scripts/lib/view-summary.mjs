@@ -279,6 +279,27 @@ export function metrics(model, { now = Date.now() } = {}) {
   };
 }
 
+// The countable work of the stage that is running, as keys and numbers (the pane maps the words):
+// {key:'sg', k, n, stage_key?} for a size-S fallback run; else {key:'build'|'qa', done, total}.
+// Build counts package cards (the latest attempt decides, as packageModel picked it); QA counts one
+// card per QA-F<n> at its latest round, never defects, audit or integrate rounds. QA wins once every
+// package is accepted. null when nothing is countable.
+// The string-table keys F3 owns (F3-US-9); F4's table registers them in en and ko. The engine names a
+// key and carries numbers; the pane maps the words.
+export const F3_KEYS = ['progBuild', 'progQa', 'progSg', 'sgStagePlan', 'sgStageSetgoal', 'sgStageCritique', 'sgStageImplement', 'sgStageTest', 'sgStageGate', 'sgStageReport', 'estMark', 'afterStop', 'stalledMinutes'];
+const PROGRESS_KEY = { build: 'progBuild', qa: 'progQa', sg: 'progSg' };
+export const progressWordKey = (key) => PROGRESS_KEY[key] || '';
+export const stageWordKey = (stageKey) => (stageKey ? `sgStage${String(stageKey).charAt(0).toUpperCase()}${String(stageKey).slice(1)}` : '');
+
+function progressOf(m, cards) {
+  if (m.harness && m.harness.sg) return { key: 'sg', ...m.harness.sg };
+  const pk = cards.filter((x) => x.kind === 'package');
+  const build = pk.length ? { key: 'build', done: pk.filter((x) => x.state === 'done').length, total: pk.length } : null;
+  const qc = ((m.qa && m.qa.cards) || []).filter((c) => c.rounds && c.rounds.length);
+  const qa = qc.length ? { key: 'qa', done: qc.filter((c) => cardState(c.rounds[c.rounds.length - 1]) === 'done').length, total: qc.length } : null;
+  return qa && (!build || build.done === build.total) ? qa : build || qa;
+}
+
 export function summarize(model, { now = Date.now() } = {}) {
   const m = model;
   const cards = cardsOf(m);
@@ -316,6 +337,7 @@ export function summarize(model, { now = Date.now() } = {}) {
   }
 
   const elapsed = m.elapsed_ms ?? (m.created_at ? now - m.created_at : 0);
+  const progress = progressOf(m, cards);
   return {
     key: (m.ticket && m.ticket.key) || String(m.task_id || ''),
     slug: (m.ticket && m.ticket.slug) || null,
@@ -326,7 +348,12 @@ export function summarize(model, { now = Date.now() } = {}) {
     now: nowStep,
     you: { count: waiting.length, items: waiting, cards: waitingCards(m, cards) },
     stages, work,
-    cost: { usd: (m.cost && m.cost.usd) || 0, turns: (m.cost && m.cost.turns) || 0 },
+    ...(progress ? { progress } : {}),
+    cost: {
+      usd: (m.cost && m.cost.usd) || 0, turns: (m.cost && m.cost.turns) || 0,
+      ...(m.cost && m.cost.estimated ? { estimated: true } : {}),
+      ...(m.cost && m.cost.post_stop_usd != null ? { post_stop_usd: m.cost.post_stop_usd } : {}),
+    },
     log: logOf(m.events, titleOf),
     metrics: metrics(m, { now }),
   };

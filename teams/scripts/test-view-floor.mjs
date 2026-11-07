@@ -174,6 +174,48 @@ test('stalled task', () => {
   } finally { w.cleanup(); }
 });
 
+test('F3-AC-4/5/8: a stalled worker carries integer minutes, a live one has no minutes key, a silent worker beside a live one is stalled', () => {
+  const w = world();
+  try {
+    const s = lTask(w, { id: 'aaaaaaaa-0001', ageMs: 60 * MIN, pkgs: [{ id: 'P1', streamAgeMs: 30 * MIN }] });
+    const live = lTask(w, { id: 'bbbbbbbb-0002', ageMs: 60 * MIN, pkgs: [{ id: 'P1', streamAgeMs: 1000 }] });
+    const mixed = lTask(w, { id: 'cccccccc-0003', ageMs: 60 * MIN, pkgs: [{ id: 'P1', streamAgeMs: 1000 }, { id: 'P2', streamAgeMs: 25 * MIN }] });
+    const sw = entryOf(w, s.id);
+    assert.equal(sw.m.state, 'stalled');
+    assert.equal(sw.floor.workers[0].state, 'stalled');
+    assert.equal(sw.floor.workers[0].minutes, 30, 'whole minutes since the worker\'s own stream');
+    const lw = entryOf(w, live.id).floor.workers;
+    assert.equal(lw[0].state, 'acting');
+    assert.equal('minutes' in lw[0], false, 'a live worker has no minutes key');
+    assert.equal('minutes' in lw.find((x) => x.id === 'judge'), false);
+    const mx = entryOf(w, mixed.id);
+    assert.equal(mx.m.state, 'running', 'one silent worker beside a live one is not a stalled task');
+    const by = Object.fromEntries(mx.floor.workers.map((x) => [x.id, x]));
+    assert.equal(by.P1.state, 'acting');
+    assert.equal(by.P2.state, 'stalled');
+    assert.equal(by.P2.minutes, 25);
+    // the second stall list is not a source: workers[] reads the same without it
+    assert.equal(by.P2.minutes, floorOf(mx.m, { stories: { P2: { silent: true, minutes: 25 } } }, { metrics: { stories: [], drivers: { stalled: [] } } }).workers.find((x) => x.id === 'P2').minutes);
+  } finally { w.cleanup(); }
+});
+
+test('F3-AC-41: floorTasks live flag follows the task\'s own stall_minutes', () => {
+  const w = world();
+  try {
+    const set = (id, agoMs) => {
+      const l = lTask(w, { id, ageMs: 60 * MIN, pkgs: [{ id: 'P1', streamAgeMs: agoMs }] });
+      const p = join(l.dir, 'task.json');
+      write(p, JSON.stringify({ ...JSON.parse(readFileSync(p, 'utf8')), stall_minutes: 20 }));
+    };
+    set('aaaaaaaa-0001', 19 * MIN);
+    set('bbbbbbbb-0002', 21 * MIN);
+    const out = floorTasks({ tasksDir: w.tasks, cwd: w.cwd });
+    const live = Object.fromEntries(out.map((x) => [x.id, x.live]));
+    assert.deepEqual(live, { 'aaaaaaaa-0001': true, 'bbbbbbbb-0002': false });
+    assert.equal(out.find((x) => x.id === 'bbbbbbbb-0002').m.stall.minutes, 21);
+  } finally { w.cleanup(); }
+});
+
 test('live first then stalled, and a stalled task past 24 h is not listed', () => {
   const w = world();
   try {
@@ -459,7 +501,8 @@ test('worker states: you, done, idle, judge acting', () => {
     write(join(l.dir, 'drivers', 'judge_accept_P2_1.stream.jsonl'), asst('judging P2') + '\n', 1000);
     const { m, floor } = entryOf(w, l.id);
     const st = Object.fromEntries(floor.workers.map((x) => [x.id, x.state]));
-    assert.deepEqual(st, { P1: 'you', P2: 'done', P3: 'idle', judge: 'acting' });
+    // F3-AC-5: P3's own stream is silent past the threshold, so it reads stalled beside the live ones
+    assert.deepEqual(st, { P1: 'you', P2: 'done', P3: 'stalled', judge: 'acting' });
     assert.match(floor.workers.find((x) => x.id === 'judge').doing, /judging P2/);
     // the card and its question text
     const you = summarize(m).you;
@@ -535,7 +578,8 @@ test('worker states are a closed set; idle and done workers say nothing', () => 
     const STATES = ['acting', 'you', 'done', 'stalled', 'idle'];
     assert.ok(workers.length >= 5);
     for (const x of workers) assert.ok(STATES.includes(x.state), `${x.id}: ${x.state}`);
-    assert.deepEqual([...new Set(workers.map((x) => x.state))].sort(), ['acting', 'done', 'idle', 'you']);
+    // F3-AC-5: the silent P3 beside live workers reads stalled (the task itself is not stalled)
+    assert.deepEqual([...new Set(workers.map((x) => x.state))].sort(), ['acting', 'done', 'idle', 'stalled', 'you']);
     for (const x of workers.filter((y) => y.state === 'idle' || y.state === 'done')) assert.equal(x.doing, '', x.id);
     const stalled = entryOf(w, lTask(w, { id: 'cccccccc-0003', ageMs: 30 * MIN, pkgs: [{ id: 'P1', streamAgeMs: STALL_MS + 60000 }] }).id).floor.workers;
     for (const x of stalled) assert.ok(STATES.includes(x.state), `${x.id}: ${x.state}`);

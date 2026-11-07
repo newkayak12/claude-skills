@@ -465,6 +465,57 @@ test('createTaskCache: an unchanged task is built in full once; a ledger append 
   assert.deepEqual(cache.stats.byId, { 'E-run00001': 2, 'E-run00002': 2 });
 });
 
+test('F3-AC-33: a driver stream that grows inside the answer window is costed again with no task.json or ledger change', () => {
+  const dir = join(mkdtempSync(join(tmpdir(), 'state-cost-')), 'tasks');
+  mkdirSync(dir, { recursive: true });
+  extraRoots.add(dirname(dir));
+  const log = join(dir, 'E-run00033', 'drivers', 'dispatch_P1_1.stream.jsonl');
+  const result = (usd) => JSON.stringify({ type: 'result', total_cost_usd: usd, num_turns: 1 }) + '\n';
+  stream(log);
+  runningTask(dir, 'E-run00033', { driverPid: process.pid, log });
+  let t = Date.now();
+  const cache = createTaskCache({ refreshMs: 2000, now: () => t });
+  assert.equal(cache.get(dir, 'E-run00033').cost.usd, 0);
+  assert.equal(cache.stats.reads.costs, 1);
+  writeFileSync(log, result(1.5));
+  t += 2000;
+  assert.equal(cache.get(dir, 'E-run00033').cost.usd, 1.5, 'the second answer carries the stream\'s new cost');
+  writeFileSync(log, result(1.5) + result(4.25));
+  t += 2000;
+  assert.equal(cache.get(dir, 'E-run00033').cost.usd, 4.25);
+  assert.equal(cache.stats.collects, 1, 'task.json and ledger.jsonl were never touched');
+  assert.equal(cache.stats.reads.costs, 3);
+});
+
+test('F3-AC-41: the volatile key flips at the task\'s own stall_minutes, with the verdict\'s minutes', async () => {
+  const dir = join(mkdtempSync(join(tmpdir(), 'state-own-limit-')), 'tasks');
+  mkdirSync(dir, { recursive: true });
+  extraRoots.add(dirname(dir));
+  const log = join(dir, 'E-run00041', 'drivers', 'dispatch_P1_1.stream.jsonl');
+  stream(log);
+  runningTask(dir, 'E-run00041', { driverPid: process.pid, log });
+  const tp = join(dir, 'E-run00041', 'task.json');
+  writeFileSync(tp, JSON.stringify({ ...JSON.parse(readFileSync(tp, 'utf8')), stall_minutes: 20, created_at: Date.now() - 60 * 60 * 1000 }));
+  // 19 min silent: past the default 10 minutes, inside the task's own 20; the ledger is old, so the stream is the newest sign of life
+  const at = (Date.now() - 19 * 60 * 1000) / 1000;
+  utimesSync(log, at, at);
+  const old = (Date.now() - 60 * 60 * 1000) / 1000;
+  utimesSync(join(dir, 'E-run00041', 'ledger.jsonl'), old, old);
+  const cache = createTaskCache({ refreshMs: 0 });
+  assert.equal(cache.get(dir, 'E-run00041').state, 'running', '19 min of 20: running');
+  const collects = cache.stats.collects;
+  // the stream crosses 20 min with no file change: only the key moves
+  const edge = (Date.now() - 20 * 60 * 1000 + 1200) / 1000;
+  utimesSync(log, edge, edge);
+  assert.equal(cache.get(dir, 'E-run00041').state, 'running', 'just under 20 min');
+  await sleep(1500);
+  const m = cache.get(dir, 'E-run00041');
+  assert.equal(m.state, 'stalled', 'past 20 min: stalled');
+  assert.equal(m.stall.minutes, 20);
+  assert.equal(m.stall.minutes, collectFromRaw(dir, 'E-run00041', JSON.parse(readFileSync(tp, 'utf8'))).stall.minutes, 'same minutes as a fresh collect');
+  assert.equal(cache.stats.collects, collects, 'no task.json or ledger change: no full collect');
+});
+
 test('createTaskCache: a dead driver pid and a stale stream read stalled with no full collect', async () => {
   const dir = join(mkdtempSync(join(tmpdir(), 'state-clock-')), 'tasks');
   mkdirSync(dir, { recursive: true });

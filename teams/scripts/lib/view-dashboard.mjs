@@ -47,7 +47,11 @@ export function dashboardModel(task, { now = Date.now(), drivers = null } = {}) 
   const stopped = ['cancelled', 'failed', 'blocked'].includes(task.state);
   const stages = (task.stages || []).map((s, i) => ({ n: i + 1, key: s.key, label: STAGE_LABEL[s.key] || s.key, state: stopped && s.state === 'running' ? 'failed' : s.state }));
   const doneStages = stages.filter((s) => s.state === 'done').length;
-  const pct = stages.length ? Math.round((doneStages / stages.length) * 100) : 0;
+  // the running stage counts its accepted share (Build n/m, QA n/m); SG is a label and adds none
+  const p = task.progress;
+  const running = stages.find((s) => s.state === 'running');
+  const fraction = p && running && p.key === running.key && p.total > 0 ? Math.min(1, Math.max(0, p.done / p.total)) : 0;
+  const pct = stages.length ? Math.min(doneStages < stages.length ? 99 : 100, Math.round(((doneStages + fraction) / stages.length) * 100)) : 0;
   const packages = (task.work || []).filter((w) => w.kind === 'package' || w.kind === 'defect').map((w) => ({ title: w.title, state: w.state }));
   const waiting = (task.you && task.you.cards) || [];
   const tiles = [

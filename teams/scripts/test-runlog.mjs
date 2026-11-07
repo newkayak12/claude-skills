@@ -2,7 +2,7 @@
 // lives wherever HARNESS_TASKS_DIR says, not under the project, and TEAMS_RUNS_DIR=off turns it off.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, appendFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { harvestTask } from '../mcp/runlog.mjs';
@@ -129,6 +129,21 @@ test('a budget-stopped task surfaces post_stop_usd: what the in-flight package p
     assert.equal(r.summary.cost_usd, 28.261);
     assert.equal(r.summary.budget.stopped, true);
     assert.equal(r.summary.budget.post_stop_usd, 3.0839, 'cost_usd minus the spend already recorded at budget_stopped');
+  } finally { for (const x of [cwd, tasks, root]) rmSync(x, { recursive: true, force: true }); }
+});
+
+test('post_stop_usd reads the one spend figure: an exact durable 47.2906 (worktrees gone) minus the stop spend', () => {
+  const { cwd, tasks, td } = fixture();
+  const root = mkdtempSync(join(tmpdir(), 'runlog-root-'));
+  try {
+    writeFileSync(join(td, 'drivers', 'S.stream.jsonl'), `${JSON.stringify({ type: 'result', total_cost_usd: 32.7186, num_turns: 4 })}\n`);
+    appendFileSync(join(td, 'ledger.jsonl'), `${JSON.stringify({ ts: Date.now(), event: 'cost_recorded', spend: 47.2906, estimated: false })}\n`);
+    const task = JSON.parse(readFileSync(join(td, 'task.json'), 'utf8'));
+    task.team = { opts: { budget_usd: 25 } };
+    task.budget_stopped = { at: Date.now(), spend: 30, elapsed_minutes: 56, budget_usd: 25, timebox_minutes: null, skipped_packages: [] };
+    writeFileSync(join(td, 'task.json'), JSON.stringify(task));
+    const r = harvestTask({ taskDir: td, cwd, root });
+    assert.equal(r.summary.budget.post_stop_usd, 17.2906);
   } finally { for (const x of [cwd, tasks, root]) rmSync(x, { recursive: true, force: true }); }
 });
 

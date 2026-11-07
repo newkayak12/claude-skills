@@ -21,7 +21,11 @@ export type SummaryTask = {
   you: { count: number; items: string[]; cards?: { key: string; title: string; question: string; who: string; since: number | null }[] }
   stages: { key: string; state: Mark }[]
   work: { title: string; kind: string; id: string | null; state: Mark; filed_by: string | null; reason: string | null }[]
-  cost: { usd: number; turns: number }
+  // the running stage's countable work as keys and numbers, never words; absent when nothing is countable.
+  // sg only on a size-S fallback run with a goal spec; stage_key only while its now.json is fresh
+  progress?: { key: 'build' | 'qa'; done: number; total: number } | { key: 'sg'; k: number; n: number; stage_key?: string }
+  // usd is the one spend figure; estimated only when a running session has no result yet; post_stop_usd only after a budget stop
+  cost: { usd: number; turns: number; estimated?: boolean; post_stop_usd?: number }
   log: { time: string; kind: string; subject: string | null }[]
 }
 
@@ -43,7 +47,9 @@ export type SummaryItem = {
 }
 // icon, word, word_key: node's one state -> mark (view-floor.mjs markOf); word_key is '' for a live Floor worker's word, else the
 // state to localize; it is never '' on a STORY item (a fixed word per row, `doing` stays a field)
-export type SummaryWorker = { id: string; state: WorkState; doing: string; icon: string; word: string; word_key: string }
+export type SummaryWorker = { id: string; state: WorkState; doing: string; icon: string; word: string; word_key: string
+  minutes?: number // only when state is 'stalled': whole minutes silent; absent otherwise
+}
 export type Handoff = { time: string; from: string; what: string; to: string }
 export type SummaryTaskEntry = SummaryTask & {
   task_id: string; created_at: number | null

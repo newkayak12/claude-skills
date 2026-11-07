@@ -150,3 +150,33 @@ test('metrics: absent data prints nothing misleading', () => {
   const none = dashboardText(dashboardModel(task(), { now: 0 }));
   assert.ok(!none.match(/Denials|Budget|attempt/));
 });
+
+// ---------- pct counts the running stage (F3-US-7) ----------
+const stages6 = (done, running = true) => ['plan', 'build', 'integrate', 'qa', 'gate', 'report'].map((key, i) => ({ key, state: i < done ? 'done' : i === done && running ? 'running' : 'pending' }));
+
+test('pct (F3-AC-23): Plan done and 3 of 8 packages accepted = round((1 + 3/8) / 6 x 100) = 23', () => {
+  assert.equal(dashboardModel(task({ stages: stages6(1), progress: { key: 'build', done: 3, total: 8 } })).pct, 23);
+});
+
+test('pct (F3-AC-24): no progress -> fraction 0, today\'s value (the "1 of 3 stages = 33" pin stays above)', () => {
+  assert.equal(dashboardModel(task()).pct, 33);
+  assert.equal(dashboardModel(task({ stages: stages6(1) })).pct, 17);
+});
+
+test('pct (F3-AC-24): fraction clamped to 0..1 and pct below 100 until the last stage is done', () => {
+  assert.equal(dashboardModel(task({ stages: stages6(1), progress: { key: 'build', done: 12, total: 8 } })).pct, 33);
+  assert.equal(dashboardModel(task({ stages: stages6(1), progress: { key: 'build', done: -4, total: 8 } })).pct, 17);
+  assert.equal(dashboardModel(task({ stages: stages6(5), progress: { key: 'report', done: 1, total: 1 } })).pct, 99);
+  assert.equal(dashboardModel(task({ stages: stages6(5), progress: { key: 'report', done: 0, total: 0 } })).pct, 83);
+  assert.equal(dashboardModel(task({ stages: stages6(6, false) })).pct, 100);
+});
+
+test('pct (F3-AC-24): progress of a stage that is not the running one adds nothing', () => {
+  assert.equal(dashboardModel(task({ stages: stages6(1), progress: { key: 'qa', done: 1, total: 2 } })).pct, 17);
+});
+
+test('pct (F3-AC-25): a size-S rail runs the same formula over its own stage count; SG adds no fraction', () => {
+  const rail = [{ key: 'plan', state: 'done' }, { key: 'build', state: 'running' }, { key: 'gate', state: 'pending' }, { key: 'report', state: 'pending' }];
+  assert.equal(dashboardModel(task({ stages: rail, progress: { key: 'sg', k: 2, n: 3, stage_key: 'test' } })).pct, 25);
+  assert.equal(dashboardModel(task({ stages: rail })).pct, 25);
+});

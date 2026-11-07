@@ -7,7 +7,7 @@ import { readLogTail, renderStreamLine } from '../../mcp/tasklog.mjs';
 import { graphRunPath } from '../../mcp/harnessrun.mjs';
 import { epicTicketState } from '../../mcp/tickets.mjs';
 import { findDriverStreams, collectDriverCosts, collectNodeCosts } from '../bench/lib/drivercost.mjs';
-import { collectTask, driverLive } from './view-collect.mjs';
+import { collectTask, driverLive, stallMsOf, minutesSince } from './view-collect.mjs';
 import { summarize, cardsOf, waitingCount } from './view-summary.mjs';
 import { floorOf } from './view-floor.mjs';
 import { repoMatcher } from './view-repo.mjs';
@@ -113,13 +113,18 @@ const runFile = (cwd, runId) => {
 export function floorFacts(m, tasksDir, taskId, { now = Date.now(), raw: given, sig } = {}) {
   const dir = join(tasksDir, taskId);
   const raw = given || readJson(join(dir, 'task.json')) || {};
-  const doing = sig ? (log) => byStat('doing', log, () => doingOf(log)) : doingOf;
+  const limit = stallMsOf(raw);
+  const doing = sig ?(log) => byStat('doing', log, () => doingOf(log)) : doingOf;
   const stories = {};
   const desk = (id, driver, childCwd, childRunId, file) => {
     const log = driver && driver.log;
-    const live = !!driver && driverLive({ ...driver, log }, now);
+    const live = !!driver && driverLive({ ...driver, log }, now, limit);
+    // a worker whose own stream went silent past the threshold: whole minutes since it was last written
+    const at = log ? mtimeOf(log) : null;
+    const silent = !live && at != null && now - at > limit;
     stories[id] = {
       live, doing: live ? doing(log) : '', run_file: file,
+      ...(silent ? { silent: true, minutes: minutesSince(now, at) } : {}),
       ...storyCost(dir, log, childCwd && childRunId ? join(childCwd, '.teams_output', 'broker', String(childRunId)) : null, sig),
     };
   };

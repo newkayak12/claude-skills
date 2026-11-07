@@ -1,0 +1,42 @@
+{
+ "json": {
+  "status": {"asks":{"[]":0},"latest":0,"line":0,"waiting":0},
+  "summary": {"status":{"asks":{"[]":0},"latest":0,"line":0,"waiting":0},"task":{"cost":{"turns":0,"usd":0},"day":0,"done":0,"key":0,"log":{"[]":0},"metrics":{"budget":{"limit_usd":0,"spent_usd":0},"defects":{"dropped":0,"dropped_items":{"[]":0},"filed":0},"denials":0,"drivers":{"cap":0,"live":0,"stalled":{"[]":0}},"max_attempts":0,"out_of_retries":{"[]":0},"scoped_out":{"[]":0},"stages":{"[]":{"cost_usd":0,"retry_cost_usd":0,"stage":0,"wall_ms":0}},"stall_minutes":0,"stories":{"[]":{"attempt":0,"cost_usd":0,"id":0,"judge":0,"key":0,"kind":0,"max_attempts":0,"out_of_retries":0,"retry_cost_usd":0,"scoped_out":{"[]":0},"stages":{"[]":0},"state":0,"title":0,"wall_ms":0}},"threshold":0},"now":{"detail":0,"kind":0,"subject":0},"slug":0,"stages":{"[]":{"key":0,"state":0}},"state":0,"title":0,"total":0,"work":{"[]":{"filed_by":0,"id":0,"kind":0,"reason":0,"state":0,"title":0}},"you":{"cards":{"[]":0},"count":0,"items":{"[]":0}}},"tasks":{"[]":{"age_ms":0,"cost":{"turns":0,"usd":0},"created_at":0,"day":0,"done":0,"handoffs":{"[]":0},"harness":0,"items":{"[]":{"cost_estimated":0,"cost_usd":0,"doing":0,"elapsed_ms":0,"icon":0,"key":0,"last_verdict":0,"live":0,"max":0,"metrics":{"attempt":0,"cost_usd":0,"judge":0,"max_attempts":0,"out_of_retries":0,"retry_cost_usd":0,"wall_ms":0},"owner_key":0,"run_file":0,"state":0,"title":0,"try":0,"word":0,"word_key":0}},"key":0,"live":0,"log":{"[]":0},"metrics":{"budget":{"limit_usd":0,"spent_usd":0},"defects":{"dropped":0,"dropped_items":{"[]":0},"filed":0},"denials":0,"drivers":{"cap":0,"live":0,"stalled":{"[]":0}},"max_attempts":0,"out_of_retries":{"[]":0},"scoped_out":{"[]":0},"stages":{"[]":{"cost_usd":0,"retry_cost_usd":0,"stage":0,"wall_ms":0}},"stall_minutes":0,"stories":{"[]":{"attempt":0,"cost_usd":0,"id":0,"judge":0,"key":0,"kind":0,"max_attempts":0,"out_of_retries":0,"retry_cost_usd":0,"scoped_out":{"[]":0},"stages":{"[]":0},"state":0,"title":0,"wall_ms":0}},"threshold":0},"now":{"detail":0,"kind":0,"subject":0},"slug":0,"stages":{"[]":{"key":0,"state":0}},"state":0,"task_id":0,"title":0,"total":0,"work":{"[]":{"filed_by":0,"id":0,"kind":0,"reason":0,"state":0,"title":0}},"workers":{"[]":{"doing":0,"icon":0,"id":0,"state":0,"word":0,"word_key":0}},"worktree":0,"you":{"cards":{"[]":0},"count":0,"items":{"[]":0}}}}},
+  "decisions": {"card":0,"entries":{"[]":0}},
+  "report": {"failed":0,"needs":{"items":{"[]":0},"more":0},"path":0,"report":0,"retro":0,"task_id":0,"verdict":0},
+  "events": {"kind":0,"text":0,"ts":0},
+  "teams_extra": {"dash":{"alt":0,"model":{"activity":{"[]":0},"at":0,"key":0,"laneBoxes":{"[]":0},"lanes":{"[]":{"cards":{"[]":{"failed":0,"kind":0,"reason":0,"title":0}},"count":0,"key":0,"label":0,"more":0,"short":0}},"now":0,"packages":{"[]":{"state":0,"title":0}},"pct":0,"run":{"budget":{"limit_usd":0,"spent_usd":0},"defects":{"dropped":0,"filed":0},"denials":0,"drivers":{"cap":0,"live":0,"stalled":{"[]":0}},"out_of_retries":{"[]":0},"scoped_out":0},"stages":{"[]":{"key":0,"label":0,"n":0,"state":0}},"state":0,"stories":{"[]":{"attempt":0,"cost_usd":0,"id":0,"judge":0,"max_attempts":0,"out_of_retries":0,"retry_cost_usd":0,"wall_ms":0}},"tiles":{"[]":{"key":0,"label":0,"sub":0,"value":0,"alert":0}},"title":0,"waiting":{"[]":0}},"svg":0},"teams":{"now":{"[]":{"agent":0,"elapsed_ms":0,"key":0,"node":0,"team":0}},"teams":{"[]":{"cards":{"[]":{"id":0,"key":0,"mark":0,"now":{"agent":0,"elapsed_ms":0,"node":0},"state":0,"title":0}},"team":0}}}}
+ },
+ "text": {
+  "board": [
+   "E-E-aaaaaa  build the thing",
+   "STALLED  <BAR> <P>%",
+   "▸ Build · one",
+   "Progress <P>%  ·  Stories 0/1  ·  Cost $<N>  ·  Needs you 0",
+   "✔ Plan → ◉ Build → ○ Integrate → ○ QA → ○ Gate → ○ Report",
+   "In progress 1: one",
+   "Budget $<N> of $<N>  ·  Drivers 0 live",
+   "Denials 0  ·  Defects filed 0 · dropped 0",
+   "P1  ·  attempt 1"
+  ],
+  "text": [
+   "task E-aaaaaaaa1111",
+   "request: build the thing",
+   "state=<S> size=? flow=auto cost=$<N> turns=2 elapsed=<E>",
+   "manager pipeline:",
+   "  [v] size (size)",
+   "  [v] shape (shape)",
+   "  [v] critique (critique)",
+   "  [.] integrate:1 (integrate)",
+   "  [.] report (report)",
+   "packages:",
+   "  P1 - one",
+   "    [>] dispatch:P1:1 (dispatch)",
+   "    [.] accept:P1:1 (accept)",
+   "    child run child-1: NO FILE at <ROOT>/wt",
+   "recent events:",
+   "  <TS> node_start {\"node_id\":\"dispatch:P1:1\"}",
+   "  <TS> budget_stopped {\"spend\":0.4}"
+  ]
+ }
+}

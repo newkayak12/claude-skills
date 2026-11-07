@@ -170,3 +170,116 @@ test('9-day-old task prints stalled', () => {
     assert.equal(JSON.parse(summary.stdout).task.state, 'stalled');
   } finally { f.cleanup(); }
 });
+
+// ---------- F3 (card 125): one verdict, the task's own threshold, minutes ----------
+const MIN = 60 * SEC;
+const patchTask = (f, patch) => {
+  const p = join(f.dir, 'task.json');
+  writeFileSync(p, JSON.stringify({ ...JSON.parse(readFileSync(p, 'utf8')), ...patch }));
+};
+const stream = (f, name, agoMs) => {
+  const p = join(f.dir, 'drivers', name);
+  writeFileSync(p, '{"type":"system"}\n');
+  const t = (Date.now() - agoMs) / 1000;
+  utimesSync(p, t, t);
+  return p;
+};
+
+// P1 is dispatched with no recorded driver; the one recorded driver is a dead planning driver, 2 h silent.
+const planned = (id) => {
+  const f = fixture({ id, driver: false, ledgerAgeMs: 2 * 60 * MIN, createdAgeMs: 2 * 60 * MIN });
+  const log = stream(f, 'plan_1.stream.jsonl', 2 * 60 * MIN);
+  const p = join(f.dir, 'task.json');
+  const body = JSON.parse(readFileSync(p, 'utf8'));
+  body.nodes.find((n) => n.node_id === 'critique').child = { run_id: 'plan-1', cwd: f.cwd, driver: { pid: DEAD_PID, log, restarts: [] } };
+  writeFileSync(p, JSON.stringify(body));
+  return f;
+};
+
+test('F3-AC-1: a fresh stream no recorded driver owns keeps the task running; AC-2 control: all streams old is stalled', () => {
+  const live = planned('E-aaaaaaaa1111');
+  const old = planned('E-bbbbbbbb2222');
+  try {
+    stream(live, 'dispatch_P1_1.stream.jsonl', 1 * SEC);
+    const m = collectTask(live.tasks, live.id);
+    assert.equal(m.state, 'running');
+    assert.equal(m.ticket.state, 'IN_PROGRESS');
+    assert.equal(m.packages[0].ticket_state, 'IN_PROGRESS');
+    assert.deepEqual(m.stall, { stalled: false });
+    stream(old, 'dispatch_P1_1.stream.jsonl', 2 * 60 * MIN);
+    const c = collectTask(old.tasks, old.id);
+    assert.equal(c.state, 'stalled');
+    assert.equal(c.packages[0].ticket_state, 'stalled');
+    assert.equal(c.stall.stalled, true);
+    assert.ok(Number.isInteger(c.stall.minutes) && c.stall.minutes >= 119, `minutes ${c.stall.minutes}`);
+  } finally { live.cleanup(); old.cleanup(); }
+});
+
+test('F3-AC-6: stall_minutes 20 with 15 min silent is not stalled; none with 10:01 is stalled', () => {
+  const a = fixture({ streamAgeMs: 15 * MIN, createdAgeMs: 60 * MIN });
+  const b = fixture({ streamAgeMs: STALL_MS + 1 * SEC, createdAgeMs: 60 * MIN });
+  const c = fixture({ streamAgeMs: 21 * MIN, createdAgeMs: 60 * MIN });
+  try {
+    patchTask(a, { stall_minutes: 20 });
+    patchTask(c, { stall_minutes: 20 });
+    const ma = collectTask(a.tasks, a.id);
+    assert.equal(ma.state, 'running');
+    assert.equal(ma.packages[0].ticket_state, 'IN_PROGRESS');
+    assert.equal(listTasks(a.tasks)[0].state, 'IN_PROGRESS', 'the index path uses the same verdict');
+    assert.equal(collectTask(b.tasks, b.id).state, 'stalled');
+    const mc = collectTask(c.tasks, c.id);
+    assert.equal(mc.state, 'stalled');
+    assert.equal(mc.stall.minutes, 21);
+    const log = join(a.dir, 'drivers', 'P1.stream.jsonl');
+    assert.equal(driverLive({ pid: process.pid, log }, Date.now(), 20 * MIN), true);
+    assert.equal(driverLive({ pid: process.pid, log }), false, 'default threshold is STALL_MS');
+  } finally { a.cleanup(); b.cleanup(); c.cleanup(); }
+});
+
+test('F3-AC-9/11/12: live pid within the threshold is not stalled; every driver dead and no fresh stream is stalled with minutes above 0', () => {
+  const a = fixture({ streamAgeMs: 1 * SEC });
+  const b = fixture({ pid: DEAD_PID, streamAgeMs: 30 * MIN, createdAgeMs: 60 * MIN });
+  const c = fixture({ pid: DEAD_PID, streamAgeMs: 1 * SEC });
+  try {
+    assert.equal(collectTask(a.tasks, a.id).state, 'running');
+    const mb = collectTask(b.tasks, b.id);
+    assert.equal(mb.state, 'stalled');
+    assert.equal(mb.stall.minutes, 30);
+    const mc = collectTask(c.tasks, c.id);
+    assert.equal(mc.state, 'stalled');
+    assert.ok(mc.stall.minutes >= 1, 'a fresh own stream of a dead driver still reads above 0');
+  } finally { a.cleanup(); b.cleanup(); c.cleanup(); }
+});
+
+test('F3-AC-7: the dead-daemon path returns the same { stalled, minutes } shape on the task-level basis', () => {
+  const d = fixture({ driver: false, ledgerAgeMs: 25 * MIN, createdAgeMs: 40 * MIN });
+  try {
+    patchTask(d, { daemon: { pid: DEAD_PID } });
+    stream(d, 'dispatch_P1_1.stream.jsonl', 5 * MIN);
+    const m = collectTask(d.tasks, d.id);
+    assert.equal(m.state, 'stalled');
+    assert.equal(m.stall.stalled, true);
+    assert.equal(m.stall.minutes, 5, 'task-level newest sign of life');
+  } finally { d.cleanup(); }
+});
+
+test('F3-AC-7: the nested stale path returns the same { stalled, minutes } shape on the task-level basis', () => {
+  const d = fixture({ driver: false, ledgerAgeMs: 25 * MIN, createdAgeMs: 40 * MIN });
+  try {
+    stream(d, 'dispatch_P1_1.stream.jsonl', 5 * MIN);
+    const m = collectTask(d.tasks, d.id, { depth: 1 });
+    assert.equal(m.state, 'stale');
+    assert.equal(m.stall.stalled, true);
+    assert.equal(m.stall.minutes, 5, 'task-level newest sign of life');
+  } finally { d.cleanup(); }
+});
+
+test('F3-AC-10: every recorded driver dead and a fresh stream no recorded driver owns is not stalled', () => {
+  const f = planned('E-cccccccc3333');
+  try {
+    stream(f, 'dispatch_P1_1.stream.jsonl', 1 * SEC);
+    const m = collectTask(f.tasks, f.id);
+    assert.equal(m.state, 'running');
+    assert.deepEqual(m.stall, { stalled: false });
+  } finally { f.cleanup(); }
+});

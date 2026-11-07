@@ -69,6 +69,9 @@ const en = {
   runBudget: 'Budget', runBudgetOf: '{spent} of {limit}', runDrivers: 'Drivers', runLive: '{n} live', runLiveCap: '{n}/{cap} live',
   runStalled: 'Stalled', runStalledOne: '{id} {m}m', runDenials: 'Denials', runDefects: 'Defects', runDefectsOf: '{filed} filed · {dropped} dropped',
   runOutOfRetries: 'Out of retries', runScopedOut: 'Scoped out', storyJudge: 'judge {score} vs {threshold}', storyJudgeBare: 'judge {score}', storyGap: 'own gap: {gap}',
+  progBuild: 'Build {done}/{total}', progQa: 'QA {done}/{total}', progSg: 'SG{k} {stage} · {k}/{n}',
+  sgStagePlan: 'Plan', sgStageSetgoal: 'Setgoal', sgStageCritique: 'Critique', sgStageImplement: 'Implement', sgStageTest: 'Test', sgStageGate: 'Gate', sgStageReport: 'Report',
+  estMark: '~', afterStop: 'after stop {usd}', stalledMinutes: '⏸ {n}m',
 }
 
 // one table, two languages; the type keeps the keys identical
@@ -102,6 +105,9 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     runBudget: '예산', runBudgetOf: '{spent} / {limit}', runDrivers: '드라이버', runLive: '{n}개 동작 중', runLiveCap: '{n}/{cap} 동작 중',
     runStalled: '멈춤', runStalledOne: '{id} {m}분', runDenials: '거부', runDefects: '결함', runDefectsOf: '등록 {filed} · 폐기 {dropped}',
     runOutOfRetries: '재시도 소진', runScopedOut: '범위 밖', storyJudge: '판정 {score} / 기준 {threshold}', storyJudgeBare: '판정 {score}', storyGap: '자체 결함: {gap}',
+    progBuild: '개발 {done}/{total}', progQa: 'QA {done}/{total}', progSg: 'SG{k} {stage} · {k}/{n}',
+    sgStagePlan: '계획', sgStageSetgoal: '목표 설정', sgStageCritique: '비평', sgStageImplement: '구현', sgStageTest: '테스트', sgStageGate: '게이트', sgStageReport: '보고',
+    estMark: '~', afterStop: '중단 후 {usd}', stalledMinutes: '⏸ {n}분',
   },
 }
 
