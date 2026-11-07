@@ -526,7 +526,7 @@ export const register: Register = on => {
       await $.ui.close({ id: PANE })
       return { text: STRINGS[await read($, lang)].paneClosed }
     }
-    await $.ui.open(OPEN)
+    const placed = await $.ui.open(OPEN)
     const paneOpened = STRINGS[await read($, lang)].paneOpened
     let run: { exitCode: number; stdout: string } | null = null
     try {
@@ -534,7 +534,13 @@ export const register: Register = on => {
     } catch {
       // a run that cannot start answers with the pane text
     }
-    return { text: statusAnswer(run, paneOpened) }
+    let surfaces: readonly string[] = []
+    try {
+      surfaces = await $.session.surfaces()
+    } catch {
+      // unreadable surfaces keep the board text
+    }
+    return { text: statusAnswer(run, paneOpened, surfaces, placed?.isPlaced === true) }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
