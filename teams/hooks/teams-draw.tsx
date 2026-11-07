@@ -144,8 +144,14 @@ export function workerCells(workers: readonly SummaryWorker[], frameNo: number, 
   }))
 }
 
-// time · who · what · to whom
-export const handoffCells = (feed: readonly Handoff[]): string[][] => feed.slice(0, 5).map(h => [h.time, h.from, h.what, h.to ? `→ ${h.to}` : ''])
+// time · who · what · to whom. `word(key, vars, raw)` draws an engine word by its key (raw when it knows none); a hand-off with
+// no key keeps the engine's text
+export type HandoffWord = (key: string, vars: Record<string, string | number> | undefined, raw: string) => string
+export const handoffCells = (feed: readonly Handoff[], word: HandoffWord = (_key, _vars, raw) => raw): string[][] =>
+  feed.slice(0, 5).map(h => {
+    const to = h.to_key ? word(h.to_key, undefined, h.to) : h.to
+    return [h.time, h.from_key ? word(h.from_key, undefined, h.from) : h.from, h.what_key ? word(h.what_key, h.what_vars, h.what) : h.what, to ? `→ ${to}` : '']
+  })
 
 /* --- the STORY rows --- */
 
@@ -244,9 +250,10 @@ export function tabRowPlan(labels: readonly string[], cost: string, inner: numbe
 const INPUT_CHROME = 10
 
 // The footer on one line: close stays whole; prev/next and the open hint stay when they fit; the key hint takes what is
-// left and ends in … when cut, or is dropped when under 6 columns remain.
-export function footerPlan(parts: { steps: number; open: string; close: string; hint: string }, inner: number): { hint: string } {
-  const fixed = [parts.steps > 0 ? parts.steps + 2 * (parts.steps - 1) : 0, width(parts.open), width(parts.close)].filter(n => n > 0)
+// left and ends in … when cut, or is dropped when under 6 columns remain. The language marker (`l EN`) is reserved first,
+// so it is returned whole whatever the width.
+export function footerPlan(parts: { steps: number; open: string; close: string; hint: string; marker: string }, inner: number): { hint: string; marker: string } {
+  const fixed = [parts.steps > 0 ? parts.steps + 2 * (parts.steps - 1) : 0, width(parts.open), width(parts.close), width(parts.marker)].filter(n => n > 0)
   const room = inner - INPUT_CHROME - fixed.reduce((n, w) => n + w, 0) - 2 * fixed.length
-  return { hint: room >= 6 ? clipText(parts.hint, room) : '' }
+  return { hint: room >= 6 ? clipText(parts.hint, room) : '', marker: parts.marker }
 }

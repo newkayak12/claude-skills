@@ -3,7 +3,7 @@
 //   node --test teams/scripts/test-view-events.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { notableEvents, statusLine, handoffs } from './lib/view-events.mjs';
+import { notableEvents, statusLine, handoffs, ENGINE_WORD_KEYS } from './lib/view-events.mjs';
 
 const L = (o) => JSON.stringify(o);
 const ID = 'E-1a2b3c4d5e6f';
@@ -14,7 +14,7 @@ test('node_finish: only the failed one is notable', () => {
     L({ ts: 11, event: 'node_finish', task_id: ID, node_id: 'n2', state: 'done' }),
   ], 0);
   assert.equal(out.length, 1);
-  assert.deepEqual(out[0], { ts: 10, task_id: ID, kind: 'node_finish', text: 'E-1a2b3c4d n1 failed' });
+  assert.deepEqual(out[0], { ts: 10, task_id: ID, kind: 'node_finish', text: 'E-1a2b3c4d n1 failed', run: 'E-1a2b3c4d' });
 });
 
 test('node_finish: the package and attempt ride along; the attempt shows from the second', () => {
@@ -23,8 +23,8 @@ test('node_finish: the package and attempt ride along; the attempt shows from th
     L({ ts: 11, event: 'node_finish', task_id: ID, node_id: 'gate:P2:1', subgoal_id: 'P2', attempt: 1, state: 'failed' }),
   ], 0);
   assert.deepEqual(out, [
-    { ts: 10, task_id: ID, kind: 'node_finish', text: 'E-1a2b3c4d gate:P1:2 failed (attempt 2)', package: 'P1', attempt: 2 },
-    { ts: 11, task_id: ID, kind: 'node_finish', text: 'E-1a2b3c4d gate:P2:1 failed', package: 'P2', attempt: 1 },
+    { ts: 10, task_id: ID, kind: 'node_finish', text: 'E-1a2b3c4d gate:P1:2 failed (attempt 2)', package: 'P1', attempt: 2, run: 'E-1a2b3c4d' },
+    { ts: 11, task_id: ID, kind: 'node_finish', text: 'E-1a2b3c4d gate:P2:1 failed', package: 'P2', attempt: 1, run: 'E-1a2b3c4d' },
   ]);
 });
 
@@ -84,7 +84,7 @@ test('failed node_finish + daemon_retry_opened: reason from the verdict, retry n
   assert.deepEqual(out, [{
     ts: 12, task_id: ID, kind: 'node_finish', package: 'P1', attempt: 1,
     text: 'E-1a2b3c4d accept:P1:1 failed: gap: no test → retry 2/3', run: 'E-1a2b3c4d', node: 'accept:P1:1',
-    reason: 'gap: no test', next_step: 'retry 2/3', severity: 'info',
+    reason: 'gap: no test', next_step: 'retry 2/3', next_key: 'nextRetry', next_vars: { n: 2, max: 3 }, severity: 'info',
   }]);
 });
 
@@ -157,7 +157,7 @@ test('no next-step event: null and info, emitted once 120 s after its ts, with t
   assert.deepEqual(notableEvents(lines, 0, { now: 1000 + HOLD - 1 }), []);
   assert.deepEqual(notableEvents(lines, 0, { now: 1000 + HOLD }), [{
     ts: 1000 + HOLD, task_id: ID, kind: 'node_finish', text: 'E-1a2b3c4d n1 failed: no reason recorded',
-    run: 'E-1a2b3c4d', node: 'n1', reason: 'no reason recorded', next_step: null, severity: 'info',
+    run: 'E-1a2b3c4d', node: 'n1', reason: 'no reason recorded', reason_key: 'reasonNone', next_step: null, next_key: null, next_vars: null, severity: 'info',
   }]);
 });
 
@@ -221,7 +221,7 @@ test('reason: newlines and whitespace runs collapse to one space; over 120 chars
 
 test('without ctx the old behaviour holds: no fields, no hold', () => {
   const out = notableEvents([F({ ts: 10, node_id: 'n1' })], 0);
-  assert.deepEqual(out, [{ ts: 10, task_id: ID, kind: 'node_finish', text: 'E-1a2b3c4d n1 failed' }]);
+  assert.deepEqual(out, [{ ts: 10, task_id: ID, kind: 'node_finish', text: 'E-1a2b3c4d n1 failed', run: 'E-1a2b3c4d' }]);
 });
 
 test('output is sorted by ts; a released failure lands among the other events by its release ts', () => {
@@ -409,9 +409,9 @@ test('--format events: a failed node_finish carries reason, next_step and severi
 // ---------- eventsOutput stats each ledger first and reads task.json only for the ones that pass ----------
 const ev = (r) => { assert.equal(r.status, 0, r.stderr); return r.stdout; };
 const PINNED = [
-  '{"ts":6,"task_id":"E-aaaaaaaa1111","kind":"daemon_exhausted","text":"E-aaaaaaaa stopped: daemon restarts used up"}',
-  '{"ts":7,"task_id":"E-aaaaaaaa1111","kind":"child_driver_capacity","text":"E-aaaaaaaa paused: provider limit"}',
-  '{"ts":9,"task_id":"E-bbbbbbbb2222","kind":"daemon_exhausted","text":"E-bbbbbbbb stopped: daemon restarts used up"}',
+  '{"ts":6,"task_id":"E-aaaaaaaa1111","kind":"daemon_exhausted","text":"E-aaaaaaaa stopped: daemon restarts used up","run":"E-aaaaaaaa"}',
+  '{"ts":7,"task_id":"E-aaaaaaaa1111","kind":"child_driver_capacity","text":"E-aaaaaaaa paused: provider limit","run":"E-aaaaaaaa"}',
+  '{"ts":9,"task_id":"E-bbbbbbbb2222","kind":"daemon_exhausted","text":"E-bbbbbbbb stopped: daemon restarts used up","run":"E-bbbbbbbb"}',
 ];
 
 test('--format events: the lines for --since 0 are exactly the pinned ones (output of the listTasks-based version)', () => {
@@ -507,9 +507,73 @@ test('hand-offs: a forwarded answer is drawn once - the answered line, not the s
   assert.deepEqual(hand([sub, answered(10, 'person', 'cents')]), [{ from: 'you', what: 'cents', to: 'P3' }]);
 });
 
-test('hand-offs: the waiting_human line is unchanged (literal from the code before part C)', () => {
+test('hand-offs: the waiting_human line keeps its English fields unchanged; the keys ride after them', () => {
   const out = handoffs([L({ ts: 7000, event: 'waiting_human', task_id: ID, node_id: 'ask:P3:1' })]);
-  assert.equal(JSON.stringify(out[0]), JSON.stringify({ time: out[0].time, from: 'P3', what: 'asks you', to: 'you' }));
-  assert.deepEqual(Object.keys(out[0]), ['time', 'from', 'what', 'to']);
-  assert.deepEqual(hand([L({ ts: 7000, event: 'waiting_human', task_id: ID, node_id: 'ask:P3:1' })]), [{ from: 'P3', what: 'asks you', to: 'you' }]);
+  // the English fields keep their order and values; the keys ride after them
+  assert.deepEqual(Object.keys(out[0]), ['time', 'from', 'what', 'what_key', 'what_vars', 'to', 'to_key']);
+  assert.deepEqual([out[0].from, out[0].what, out[0].to], ['P3', 'asks you', 'you']);
+  assert.deepEqual([out[0].what_key, out[0].what_vars, out[0].to_key], ['handAsks', {}, 'partyYou']);
+});
+
+test('F4 keys: each next_step branch yields its key and vars beside the unchanged text; NO_REASON is reasonNone', () => {
+  const one = (next, ctx = {}) => notableEvents([
+    F({ ts: 10, node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', attempt: 1 }),
+    L({ ts: 11, task_id: ID, ...next }),
+  ], 0, ctx).find((e) => e.kind === 'node_finish');
+  const cases = [
+    [{ event: 'auto_reshape', attempt: 3, failed_node: 'accept:P1:1' }, 'retrying as shape:3', 'nextShape', { n: 3 }],
+    [{ event: 'auto_resplit', attempt: 2, failed_node: 'accept:P1:1' }, 'retrying as areas:2', 'nextAreas', { n: 2 }],
+    [{ event: 'daemon_retry_opened', attempt: 2, failed_node: 'accept:P1:1' }, 'retry 2/3', 'nextRetry', { n: 2, max: 3 }],
+    [{ event: 'daemon_retry_settled', failed_node: 'accept:P1:1' }, 'gave up', 'nextGaveUp', {}],
+    [{ event: 'waiting_human', node_id: 'accept:P1:1' }, 'needs you', 'nextNeedsYou', {}],
+  ];
+  for (const [next, text, key, vars] of cases) {
+    const e = one(next, { maxRetries: 2 });
+    assert.equal(e.next_step, text);
+    assert.equal(e.next_key, key);
+    assert.deepEqual(e.next_vars, vars);
+    assert.equal(e.reason_key, 'reasonNone');
+    assert.equal(e.reason, 'no reason recorded');
+  }
+  const none = one({ event: 'node_start' }, { now: 10 + HOLD });
+  assert.deepEqual([none.next_step, none.next_key, none.next_vars], [null, null, null]);
+  const recorded = notableEvents([
+    V({ ts: 9, node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', attempt: 1, verdict: 'reject', reason: 'gap: no test' }),
+    F({ ts: 10, node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', attempt: 1 }),
+  ], 0, { now: 10 + HOLD })[0];
+  assert.equal('reason_key' in recorded, false);
+});
+
+test('F4 keys: waiting_human carries node and run; hand-offs carry what_key/what_vars and partyYou', () => {
+  const [w] = notableEvents([L({ ts: 5, event: 'waiting_human', task_id: ID, node_id: 'n3' })], 0);
+  assert.deepEqual([w.node, w.run], ['n3', 'E-1a2b3c4d']);
+  const h = (e) => handoffs([L({ ts: 5, task_id: ID, ...e })])[0];
+  const v = h({ event: 'verdict', verdict: 'reject', subgoal_id: 'P2' });
+  assert.deepEqual([v.what_key, v.what_vars], ['handVerdict', { v: 'reject' }]);
+  assert.deepEqual([h({ event: 'integrated', merged: 4 }).what_key, h({ event: 'integrated', merged: 4 }).what_vars], ['handIntegrated', { n: 4 }]);
+  const f = h({ event: 'defects_filed', filed: ['D1', 'D2'] });
+  assert.deepEqual([f.what_key, f.what_vars], ['handFiled', { n: 2 }]);
+  const dflt = h({ event: 'tm_submit_human', node_id: 'ask:P2:1' });
+  assert.deepEqual([dflt.what, dflt.what_key, dflt.from_key], ['answered', 'handAnswered', 'partyYou']);
+  const free = h({ event: 'tm_submit_human', node_id: 'ask:P2:1', answer: 'keep it' });
+  assert.equal('what_key' in free, false);
+  assert.equal(free.from_key, 'partyYou');
+  assert.equal('what_key' in h({ event: 'asked', question: 'why?' }), false);
+  assert.equal(h({ event: 'answered', answer: 'x', by: 'person' }).from_key, 'partyYou');
+  assert.equal('from_key' in h({ event: 'answered', answer: 'x', by: 'teamleader' }), false);
+});
+
+test('F4 keys: ENGINE_WORD_KEYS lists every key the module emits', () => {
+  const seen = new Set();
+  const grab = (o) => { for (const k of ['next_key', 'reason_key', 'what_key', 'from_key', 'to_key']) if (o && o[k]) seen.add(o[k]); };
+  for (const e of [
+    { event: 'waiting_human', node_id: 'a' }, { event: 'verdict', verdict: 'x' }, { event: 'integrated' }, { event: 'defects_filed' },
+    { event: 'tm_submit_human' }, { event: 'asked', question: 'q' }, { event: 'answered', answer: 'a' },
+  ]) grab(handoffs([L({ ts: 1, task_id: ID, ...e })])[0]);
+  for (const next of [{ event: 'auto_reshape', attempt: 1 }, { event: 'auto_resplit', attempt: 1 }, { event: 'daemon_retry_opened', attempt: 2 }, { event: 'tm_settle' }, { event: 'waiting_human', node_id: 'n1' }]) {
+    grab(notableEvents([F({ ts: 10, node_id: 'n1' }), L({ ts: 11, task_id: ID, failed_node: 'n1', ...next })], 0, {}).find((e) => e.kind === 'node_finish'));
+  }
+  grab(notableEvents([F({ ts: 10, node_id: 'n1', reason: '' })], 0, {}).find((e) => e.kind === 'node_finish'));
+  for (const k of seen) assert.ok(ENGINE_WORD_KEYS.includes(k), `emitted but not listed: ${k}`);
+  for (const k of ENGINE_WORD_KEYS) assert.ok(seen.has(k), `listed but never emitted: ${k}`);
 });

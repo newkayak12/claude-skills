@@ -8,7 +8,7 @@ import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, utimesSync, rmSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fallbackProgress, collectFromRaw, collectTask } from './lib/view-collect.mjs';
-import { summarize, metrics, storyNow, LANE_KEYS, LANE_LABEL, LANE_LABEL_MAX, LANE_BOX_MAX, laneBox, laneHeaderRoom } from './lib/view-summary.mjs';
+import { SUMMARY_WORD_KEYS, SUBJECT_KEY_OF, SUBJECT_KEYS, NOW_KINDS, summarize, metrics, storyNow, LANE_KEYS, LANE_LABEL, LANE_LABEL_MAX, LANE_BOX_MAX, laneBox, laneHeaderRoom } from './lib/view-summary.mjs';
 import { floorOf } from './lib/view-floor.mjs';
 import { stageOfNode, STAGE_KEYS } from './lib/view-stages.mjs';
 import { dashboardModel } from './lib/view-dashboard.mjs';
@@ -134,6 +134,52 @@ test('log: HH:MM local, newest 20 of 30, no ids', () => {
   clean(m);
 });
 
+test('F4 keys: a failed card with no recorded reason gets reason_key reasonFailed; a recorded one gets none', () => {
+  assert.deepEqual(SUMMARY_WORD_KEYS, ['reasonFailed']);
+  for (const reason of [null, '/Users/x/wt']) {
+    const m = demo();
+    m.packages[2] = card('P2', 'module b', 'failed', { dispatch: ms('dispatch:P2:1', 'failed', { reason }) });
+    const w = summarize(m, { now: NOW }).work.find((x) => x.title === 'module b');
+    assert.deepEqual([w.reason, w.reason_key], ['failed', 'reasonFailed']);
+    clean(m);
+  }
+  const m = demo();
+  m.packages[2] = card('P2', 'module b', 'failed', { dispatch: ms('dispatch:P2:1', 'failed', { reason: 'tests did not pass' }) });
+  const s = summarize(m, { now: NOW });
+  assert.ok(s.work.every((x) => !('reason_key' in x)));
+  clean(m);
+});
+
+// F4 subject words: every English word the engine writes as a subject maps to a STRINGS key, and nothing else is on the list
+test('F4 subjects: each engine-written subject literal has its key, and the list is complete both ways', () => {
+  const src = readFileSync(new URL('./lib/view-summary.mjs', import.meta.url), 'utf8');
+  const stages = /const HUMAN_STAGE = \{([^}]*)\}/.exec(src)[1];
+  const fromStages = [...stages.matchAll(/:\s*'([^']+)'/g)].map((x) => x[1]);
+  // the fallbacks and the integrated event's subject, read from the code that writes them
+  const fallbacks = [...src.matchAll(/\|\| '(a card|the task|a step)'|'(integration)' : subject/g)].map((x) => x[1] || x[2]);
+  const written = new Set([...fromStages, ...fallbacks]);
+  assert.deepEqual([...written].sort(), Object.keys(SUBJECT_KEY_OF).sort());
+  assert.deepEqual(SUBJECT_KEYS, Object.values(SUBJECT_KEY_OF));
+  assert.equal(new Set(SUBJECT_KEYS).size, SUBJECT_KEYS.length);
+  assert.deepEqual(SUBJECT_KEY_OF, { plan: 'subjPlan', build: 'subjBuild', integration: 'subjIntegration', QA: 'subjQa', 'final gate': 'subjFinalGate', report: 'subjReport', 'the task': 'subjTask', 'a card': 'subjCard', 'a step': 'subjStep' });
+});
+
+test('F4 subjects: summarize() writes only subjects on the list (engine words) or a card title', () => {
+  const m = demo();
+  m.manager_stages = [ms('gate:1', 'waiting_human'), ms('report:1', 'waiting_human')];
+  m.harness = { waiting: 1 };
+  m.events = [
+    { ts: NOW, event: 'integrated', node_id: 'integrate:1', state: 'done' },
+    { ts: NOW + 1, event: 'daemon_done', node_id: '', state: 'done' },
+    { ts: NOW + 2, event: 'dispatch', node_id: 'dispatch:P9:1', state: 'running' },
+  ];
+  const s = summarize(m, { now: NOW });
+  const subjects = [...s.log.map((l) => l.subject), ...s.you.items, ...s.you.cards.map((c) => c.title)];
+  for (const x of ['integration', 'the task', 'a card', 'final gate', 'report', 'a step']) assert.ok(subjects.includes(x), x);
+  assert.deepEqual(subjects.filter((x) => !(x in SUBJECT_KEY_OF)), []);
+  clean(m);
+});
+
 test('failed package with null or path-only reason still gets a non-empty reason', () => {
   for (const reason of [null, '/Users/x/wt']) {
     const m = demo();
@@ -165,6 +211,20 @@ test('now: a pending defect is next; a running defect is being fixed', () => {
   const m = demo();
   m.packages[3] = card('D1', 'US-2 -> b.txt was never wired', 'running', { reporter: 'audit', origin: 'planning-audit' });
   assert.equal(summarize(m, { now: NOW }).now.kind, 'fix');
+});
+
+test('NOW_KINDS: every now.kind summarize emits is listed, and the five non-stage kinds are reached', () => {
+  const seen = new Set();
+  const kindOf = (m) => seen.add(summarize(m, { now: NOW }).now.kind);
+  const defect = (state, extra = {}) => card('D1', 'd', state, { reporter: 'audit', origin: 'planning-audit', ...extra });
+  kindOf(demo()); // fixnext
+  const fixing = demo(); fixing.packages[3] = defect('running'); kindOf(fixing);
+  const waiting = demo(); waiting.packages[3] = defect('pending', { child: { nodes: [ms('qa:1', 'waiting_human')] } }); kindOf(waiting);
+  const finished = demo({ state: 'complete' }); finished.manager_stages.forEach((n) => { n.state = 'done'; }); finished.packages[3] = defect('done'); kindOf(finished);
+  kindOf(demo({ state: 'cancelled' })); // idle
+  for (const k of seen) assert.ok(NOW_KINDS.includes(k), `emitted now.kind not in NOW_KINDS: ${k}`);
+  for (const k of ['idle', 'done', 'answer', 'fixnext', 'fix']) assert.ok(seen.has(k), `fixture never reaches ${k}`);
+  for (const k of STAGE_KEYS) assert.ok(NOW_KINDS.includes(k), `stage key missing from NOW_KINDS: ${k}`);
 });
 
 test('work is in run order: plan, build cards, then defects', () => {

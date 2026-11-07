@@ -30,6 +30,8 @@ const report = atom({ plugin: 'teams', key: 'report' } as const, null as { task_
 // replaces it (nor it the tab)
 const cardReport = atom({ plugin: 'teams', key: 'cardReport' } as const, null as { task_id: string; payload: ReportPayload } | null)
 const lang = atom({ plugin: 'teams', key: 'lang' } as const, 'en' as 'en' | 'ko')
+// set once the person pressed `l` or the Button; from then on the session.start setting no longer decides the language
+const langChosen = atom({ plugin: 'teams', key: 'langChosen' } as const, false)
 
 // the end-of-run card per ended task: 'card' while it is shown, 'seen' once its report was opened,
 // 'dismissed' on the person's say-so
@@ -39,6 +41,7 @@ const mark = (m: Ended, id: string, state: Ended[string]): Ended => ({ ...m, [id
 
 const PANE = 'teams-status'
 // opened by the person: it takes the keys, and Escape hands them back by closing it
+// 'Teams' is the product name: on the lang-allow ALLOW list, so it is not a table word
 const OPEN = { id: PANE, title: 'Teams', focus: true, closeOnEscape: true } as const
 
 const en = {
@@ -56,6 +59,8 @@ const en = {
   headLine: '{state} · {done}/{total}', wordIdle: 'idle', wordDone: 'done', wordStalled: 'stalled', wordFailed: 'failed', wordActing: 'working', wordYou: 'needs you', bandDone: '{done}/{total} done',
   stateRunning: 'running', stateStalled: 'stalled', stateComplete: 'finished', stateFailed: 'failed',
   stagePlan: 'Plan', stageBuild: 'Build', stageIntegrate: 'Integrate', stageQa: 'QA', stageGate: 'Final gate', stageReport: 'Report',
+  subjPlan: 'plan', subjBuild: 'build', subjIntegration: 'integration', subjQa: 'QA', subjFinalGate: 'final gate', subjReport: 'report', subjTask: 'the task', subjCard: 'a card', subjStep: 'a step',
+  stageFix: 'fix', stageFixnext: 'fixnext', stageAnswer: 'answer', stageIdle: 'idle', stageDone: 'done',
   nowFix: 'Fixing defect', nowFixnext: 'Waiting to fix defect', nowBuild: 'Building', nowPlan: 'Planning', nowQa: 'QA', nowAnswer: 'Waiting for your answer',
   nowIntegrate: 'Integrating', nowGate: 'Final gate', nowReport: 'Writing the report', nowDone: 'All done', nowIdle: 'Idle',
   logPassed: '{s} passed', logFailed: '{s} failed', logFiled: '{s} filed', logIntegrated: '{s} integrated',
@@ -72,14 +77,30 @@ const en = {
   progBuild: 'Build {done}/{total}', progQa: 'QA {done}/{total}', progSg: 'SG{k} {stage} · {k}/{n}',
   sgStagePlan: 'Plan', sgStageSetgoal: 'Setgoal', sgStageCritique: 'Critique', sgStageImplement: 'Implement', sgStageTest: 'Test', sgStageGate: 'Gate', sgStageReport: 'Report',
   estMark: '~', afterStop: 'after stop {usd}', stalledMinutes: '⏸ {n}m',
+  stageIntegShort: 'Integ', stageReportShort: 'Rep',
+  nextShape: 'retrying as shape:{n}', nextAreas: 'retrying as areas:{n}', nextRetry: 'retry {n}/{max}', nextGaveUp: 'gave up', nextNeedsYou: 'needs you',
+  reasonNone: 'no reason recorded', reasonFailed: 'failed',
+  handAsks: 'asks you', handVerdict: 'verdict {v}', handIntegrated: 'integrated {n}', handFiled: 'filed {n} defect(s)', handAnswered: 'answered', partyYou: 'you',
+  tileProgress: 'Progress', tileStories: 'Stories', tileCost: 'Cost', tileWaiting: 'Needs you', tileDrivers: 'Drivers',
+  tileSubStages: '{done}/{total} stages', tileSubAccepted: 'accepted', tileSubTurns: '{n} turns', tileSubWaiting: 'waiting', tileSubNothing: 'nothing', tileSubLive: 'live',
+  evWaiting: '{run} needs you: {node}', evPaused: '{run} paused: provider limit', evDone: '{run} finished: {state}', evExhausted: '{run} stopped: daemon restarts used up', evFixRounds: '{run} {pkg}: fix rounds used up', evAttempt: '(attempt {n})',
+  doneComplete: 'complete', donePartial: 'partial', doneBlocked: 'blocked',
+  askTo: '⚑ {who} → you', stateBlocked: 'blocked', stateCancelled: 'cancelled',
+  ticketDone: 'done', ticketBlocked: 'blocked', ticketInProgress: 'in progress', ticketReady: 'ready', ticketInReview: 'in review', ticketCancelled: 'cancelled', ticketStalled: 'stalled',
+  ticketBacklog: 'backlog', ticketUnreachable: 'unreachable', ticketWaitingCapacity: 'waiting for capacity', ticketWaitingHuman: 'waiting for you', ticketRejected: 'rejected', ticketSettled: 'settled', ticketUnknown: 'unknown',
+  stateWaitingHuman: 'waiting_human', stateStale: 'stale', stateUnknown: 'unknown', statePartial: 'partial',
+  doneCancelled: 'cancelled', doneRunning: 'running', doneWaitingHuman: 'waiting_human',
+  laneRunning: 'In progress', laneYou: 'Needs you', lanePending: 'Up next', laneDone: 'Done',
+  langMarker: 'l {lang}', langEN: 'EN', langKR: 'KR',
+  footFloor: 'w s move · d ⏎ Phase detail · a back · n next ⚑ · q close', footLog: 'w s scroll · a back · q close',
 }
 
 // one table, two languages; the type keeps the keys identical
 export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
   en,
   ko: {
-    tabDash: '홈', tabFloor: '현장', tabStories: '스토리', tabDecisions: '결정', tabLog: '기록', tabReport: '보고서', close: 'q 닫기',
-    teamPlanning: '기획', teamDevelop: '개발', teamQa: 'QA', teamAudit: '감사', teamEpic: '에픽', nodeWaiting: '답변 대기',
+    tabDash: '홈', tabFloor: '현장', tabStories: 'STORY', tabDecisions: '결정', tabLog: '기록', tabReport: '보고서', close: 'q 닫기',
+    teamPlanning: '기획', teamDevelop: '개발', teamQa: 'QA', teamAudit: '감사', teamEpic: 'EPIC', nodeWaiting: '답변 대기',
     decAll: '전체 카드', decCard: '카드 {c}', decNone: '아직 기록된 결정이 없습니다.',
     kindProposal: '제안', kindRetry: '재시도', kindRejudge: '재판정', kindResplit: '재분할', kindDefect: '결함 등록', kindAnswer: '답변', kindDecision: '결정',
     vAccept: '승인', vSound: '타당', vVerified: '검증됨', vReject: '반려', vJudgeFailed: '판정 실패',
@@ -91,7 +112,9 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     youOthers: '다른 실행에 {n}건 더', costLine: '{usd} · {turns}턴',
     headLine: '{state} · {done}/{total}', wordIdle: '유휴', wordDone: '완료', wordStalled: '멈춤', wordFailed: '실패', wordActing: '작업 중', wordYou: '확인 필요', bandDone: '{done}/{total} 완료',
     stateRunning: '진행 중', stateStalled: '멈춤', stateComplete: '완료', stateFailed: '실패',
-    stagePlan: '계획', stageBuild: '구현', stageIntegrate: '통합', stageQa: 'QA', stageGate: '최종 관문', stageReport: '보고',
+    stagePlan: 'Plan', stageBuild: 'Build', stageIntegrate: 'Integrate', stageQa: 'QA', stageGate: 'Gate', stageReport: 'Report',
+    subjPlan: '계획', subjBuild: '구현', subjIntegration: '통합', subjQa: 'QA', subjFinalGate: '최종 게이트', subjReport: '보고서', subjTask: '작업', subjCard: '카드', subjStep: '단계',
+    stageFix: '결함 수정', stageFixnext: '결함 수정 대기', stageAnswer: '답변 대기', stageIdle: '대기', stageDone: '완료',
     nowFix: '결함 수정 중', nowFixnext: '결함 수정 대기', nowBuild: '구현 중', nowPlan: '계획 중', nowQa: 'QA 중', nowAnswer: '답변 대기 중',
     nowIntegrate: '통합 중', nowGate: '최종 관문', nowReport: '보고서 작성 중', nowDone: '모두 끝남', nowIdle: '대기 중',
     logPassed: '{s} 통과', logFailed: '{s} 실패', logFiled: '{s} 등록', logIntegrated: '{s} 반영',
@@ -101,19 +124,42 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     asksYou: '{who}님이 묻습니다: {q}',
     board: '보드', inboxOne: '질문 {n}건', inboxMany: '질문 {n}건', statusWaiting: '확인 필요: {n}건 대기 - /teams-status 열기',
     pushRejected: '반려', pushNeedsYou: '확인 필요', pushEnded: '실행 종료', nodeFailed: '실패',
-    prev: '◀', next: '▶', keysHint: '[ ] 에픽 · j k 행 · 0-5 탭', openHint: 'g 실행 열기', noStories: '진행 중인 스토리가 없습니다.',
+    prev: '◀', next: '▶', keysHint: '[ ] EPIC · j k 행 · 0-5 탭', openHint: 'g 실행 열기', noStories: '진행 중인 STORY가 없습니다.',
     runBudget: '예산', runBudgetOf: '{spent} / {limit}', runDrivers: '드라이버', runLive: '{n}개 동작 중', runLiveCap: '{n}/{cap} 동작 중',
     runStalled: '멈춤', runStalledOne: '{id} {m}분', runDenials: '거부', runDefects: '결함', runDefectsOf: '등록 {filed} · 폐기 {dropped}',
     runOutOfRetries: '재시도 소진', runScopedOut: '범위 밖', storyJudge: '판정 {score} / 기준 {threshold}', storyJudgeBare: '판정 {score}', storyGap: '자체 결함: {gap}',
-    progBuild: '개발 {done}/{total}', progQa: 'QA {done}/{total}', progSg: 'SG{k} {stage} · {k}/{n}',
+    progBuild: 'Build {done}/{total}', progQa: 'QA {done}/{total}', progSg: 'SG{k} {stage} · {k}/{n}',
     sgStagePlan: '계획', sgStageSetgoal: '목표 설정', sgStageCritique: '비평', sgStageImplement: '구현', sgStageTest: '테스트', sgStageGate: '게이트', sgStageReport: '보고',
     estMark: '~', afterStop: '중단 후 {usd}', stalledMinutes: '⏸ {n}분',
+    stageIntegShort: 'Integ', stageReportShort: 'Rep',
+    nextShape: '형태 {n}(으)로 재시도', nextAreas: '영역 {n}(으)로 재시도', nextRetry: '재시도 {n}/{max}', nextGaveUp: '포기', nextNeedsYou: '확인 필요',
+    reasonNone: '기록된 사유 없음', reasonFailed: '실패',
+    handAsks: '질문', handVerdict: '판정 {v}', handIntegrated: '{n}건 통합', handFiled: '결함 {n}건 등록', handAnswered: '답변함', partyYou: '나',
+    tileProgress: '진행', tileStories: 'STORY', tileCost: '비용', tileWaiting: '확인 필요', tileDrivers: '드라이버',
+    tileSubStages: '{done}/{total} 단계', tileSubAccepted: '승인', tileSubTurns: '{n}턴', tileSubWaiting: '대기', tileSubNothing: '없음', tileSubLive: '동작 중',
+    evWaiting: '{run} 확인 필요: {node}', evPaused: '{run} 일시 중지: 제공자 한도', evDone: '{run} 종료: {state}', evExhausted: '{run} 중단: 데몬 재시작 소진', evFixRounds: '{run} {pkg}: 수정 라운드 소진', evAttempt: '({n}회차)',
+    doneComplete: '완료', donePartial: '일부 완료', doneBlocked: '막힘',
+    askTo: '⚑ {who} → 나', stateBlocked: '막힘', stateCancelled: '취소됨',
+    ticketDone: '완료', ticketBlocked: '막힘', ticketInProgress: '진행 중', ticketReady: '준비됨', ticketInReview: '검토 중', ticketCancelled: '취소됨', ticketStalled: '멈춤',
+    ticketBacklog: '대기열', ticketUnreachable: '도달 불가', ticketWaitingCapacity: '자리 대기', ticketWaitingHuman: '확인 필요', ticketRejected: '반려됨', ticketSettled: '종결', ticketUnknown: '알 수 없음',
+    stateWaitingHuman: '확인 필요', stateStale: '오래됨', stateUnknown: '알 수 없음', statePartial: '일부 완료',
+    doneCancelled: '취소됨', doneRunning: '진행 중', doneWaitingHuman: '확인 필요',
+    laneRunning: '진행 중', laneYou: '확인 필요', lanePending: '대기', laneDone: '완료',
+    langMarker: 'l {lang}', langEN: 'EN', langKR: 'KR',
+    footFloor: 'w s 이동 · d ⏎ Phase 상세 · a 뒤로 · n 다음 ⚑ · q 닫기', footLog: 'w s 스크롤 · a 뒤로 · q 닫기',
   },
 }
 
-// a key the table lacks (a state or kind this mod does not know) formats to ''
-const fmt = (text: string | undefined, vars: Record<string, string | number> = {}) =>
-  (text ?? '').replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ''))
+// a key the table lacks (a state or kind this mod does not know) draws as the key received: fail open, never a throw
+const fmt = (text: string | undefined, vars: Record<string, string | number> = {}, key = '') =>
+  text === undefined ? key : text.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ''))
+
+// one lookup of an engine word by key: the table's words when it holds the key, else `fallback` (the raw value the engine sent)
+const wordOr = (words: Record<string, string>, key: string, fallback: string, vars?: Record<string, string | number>) =>
+  Object.prototype.hasOwnProperty.call(words, key) ? fmt(words[key], vars) : fallback
+
+// `in_progress` -> `InProgress`: an engine state word as the tail of a table key
+const camel = (w: string) => w.toLowerCase().split('_').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('')
 
 const MARK: Record<Mark, string> = { done: '✔', running: '●', pending: '○', failed: '✘' }
 // the stage rail: a dot per stage, a solid rail up to where the run is, dotted after
@@ -147,10 +193,20 @@ async function paneTask($: EngineInterface): Promise<string | undefined> {
   return (await read($, epic)) ?? (await read($, watch)).at(-1) ?? (await read($, status))?.latest ?? undefined
 }
 
+// The English words the engine writes as a subject (view-summary.mjs SUBJECT_KEY_OF; strings.test.ts keeps the two equal): the pane
+// maps one to its key. Any other subject is a card title or text a model or person wrote, drawn as written. The summary's exact shape
+// is pinned by view-once-golden.json, so the engine's words ride as they are and the mod looks them up.
+export const SUBJECT_KEY: Record<string, string> = {
+  plan: 'subjPlan', build: 'subjBuild', integration: 'subjIntegration', QA: 'subjQa', 'final gate': 'subjFinalGate', report: 'subjReport',
+  'the task': 'subjTask', 'a card': 'subjCard', 'a step': 'subjStep',
+}
+export const subjectWord = (wo: (key: string, fallback: string) => string, subject: string | null | undefined): string =>
+  subject != null && Object.prototype.hasOwnProperty.call(SUBJECT_KEY, subject) ? wo(SUBJECT_KEY[subject]!, subject) : (subject ?? '')
+
 // a person's words for the card the task is on now
-function nowSentence(s: (key: keyof typeof en) => string, task: SummaryTask): string {
-  const label = s(`now${cap(task.now.kind)}` as keyof typeof en) || s('nowIdle')
-  return task.now.subject ? `${label}: ${task.now.subject}` : label
+function nowSentence(s: (key: keyof typeof en) => string, wo: (key: string, fallback: string) => string, task: SummaryTask): string {
+  const label = wo(`now${cap(task.now.kind)}`, s('nowIdle'))
+  return task.now.subject ? `${label}: ${subjectWord(wo, task.now.subject)}` : label
 }
 
 // A cache a reload may lose: when the view server was last started (at most once per 30 s)
@@ -257,29 +313,58 @@ const PUSH_KIND: Record<string, keyof typeof en> = {
 }
 
 // A failed node_finish as view.mjs tells it (scripts/lib/view-events.mjs): the node worked out the run,
-// node, reason and next step; the mod only draws them. A line missing any of them is an old-shape line.
-// (A local extension: teams/types is not this change's to edit.)
-type FailedFinish = TeamsEvent & { run?: string; node?: string; reason?: string; next_step?: string | null; severity?: string }
-type Failure = { run: string; node: string; reason: string; next: string | null; severity: 'info' | 'failure' }
+// node, reason and next step (with the keys of the last two); the mod only draws them. A line missing any
+// of run, node, reason is an old-shape line.
+type Failure = { run: string; node: string; reason: string; reasonKey?: string; next: string | null; nextKey?: string; nextVars?: Record<string, string | number>; severity: 'info' | 'failure' }
 
-function failureOf(one: FailedFinish): Failure | null {
+function failureOf(one: TeamsEvent): Failure | null {
   const { run, node, reason, next_step: next, severity } = one
   if (one.kind !== 'node_finish' || typeof run !== 'string' || typeof node !== 'string' || typeof reason !== 'string') return null
   if (severity !== 'info' && severity !== 'failure') return null
   if (next !== undefined && next !== null && typeof next !== 'string') return null
-  return { run, node, reason, next: next ?? null, severity }
+  return {
+    run, node, reason, next: next ?? null, severity,
+    ...(typeof one.reason_key === 'string' ? { reasonKey: one.reason_key } : {}),
+    ...(typeof one.next_key === 'string' ? { nextKey: one.next_key } : {}),
+    ...(typeof one.next_vars === 'object' && one.next_vars !== null ? { nextVars: one.next_vars } : {}),
+  }
 }
 
-// `<node> failed: <reason> → <next step>`, the arrow left out when there is no next step
-const failureWhat = (f: Failure, word: string) => `${f.node} ${word}: ${f.reason}${f.next === null ? '' : ` → ${f.next}`}`
+// `<node> failed: <reason> → <next step>`, the arrow left out when there is no next step. The reason and the next step
+// are drawn by their keys when the engine sent them (a key the table lacks draws as received); free reason text and an
+// old-shape line stay as they came.
+const failureWhat = (f: Failure, words: Record<string, string>) => {
+  const reason = f.reasonKey === undefined ? f.reason : wordOr(words, f.reasonKey, f.reasonKey)
+  const next = f.next === null || f.nextKey === undefined ? f.next : wordOr(words, f.nextKey, f.nextKey, f.nextVars)
+  return `${f.node} ${words.nodeFailed}: ${reason}${next === null ? '' : ` → ${next}`}`
+}
 
 const FAIL_TOAST_MS = 10000
 const PUSH_MAX = 200
 
+// an old-shape line (no next_key) told its next step in this English; only the ⚠ is still read from it
+const LEGACY_NEEDS_YOU = 'needs you'
+
 // info (retry, reshape, nothing yet) is ↻ with the default timeout; a person must act ⚠, gave up ✗, both held longer
-function toastFailure($: EngineInterface, f: Failure, word: string): void {
-  if (f.severity === 'info') $.ui.toast(`↻ ${f.run} ${failureWhat(f, word)}`)
-  else $.ui.toast(`${f.next === 'needs you' ? '⚠' : '✗'} ${f.run} ${failureWhat(f, word)}`, { timeoutMs: FAIL_TOAST_MS })
+function toastFailure($: EngineInterface, f: Failure, words: Record<string, string>): void {
+  if (f.severity === 'info') $.ui.toast(`↻ ${f.run} ${failureWhat(f, words)}`)
+  else {
+    const needsYou = f.nextKey !== undefined ? f.nextKey === 'nextNeedsYou' : f.next === LEGACY_NEEDS_YOU
+    $.ui.toast(`${needsYou ? '⚠' : '✗'} ${f.run} ${failureWhat(f, words)}`, { timeoutMs: FAIL_TOAST_MS })
+  }
+}
+
+// An event's toast and push sentence from its fields: the ev* sentence for kinds that have one. A kind it does not know, or a
+// line missing a field it needs (an old-shape line), is the engine's own text verbatim: fail open.
+function eventSentence(words: Record<string, string>, one: TeamsEvent): string {
+  const run = one.run
+  if (typeof run !== 'string') return one.text
+  if (one.kind === 'waiting_human' && typeof one.node === 'string') return fmt(words.evWaiting, { run, node: one.node })
+  if (one.kind === 'daemon_done' && typeof one.state === 'string') return fmt(words.evDone, { run, state: wordOr(words, `done${camel(one.state)}`, one.state) })
+  if (one.kind === 'child_driver_capacity') return fmt(words.evPaused, { run })
+  if (one.kind === 'daemon_exhausted') return fmt(words.evExhausted, { run })
+  if (one.kind === 'upstream_fix_rounds_exhausted' && typeof one.package === 'string') return fmt(words.evFixRounds, { run, pkg: one.package })
+  return one.text
 }
 
 // One push for an event, `teams <task>: <kind> - <what>`. The event's text already toasts, so a push not
@@ -312,11 +397,12 @@ async function pushEvent($: EngineInterface, one: TeamsEvent, sent: Set<string>)
     const words = STRINGS[await read($, lang)]
     let message: string
     if (failed !== null) {
-      message = `teams ${failed.run}: ${words[kind]} \u2014 ${failureWhat(failed, words.nodeFailed)}`
+      message = `teams ${failed.run}: ${words[kind]} \u2014 ${failureWhat(failed, words)}`
       if (message.length > PUSH_MAX) message = message.slice(0, PUSH_MAX - 1) + '\u2026'
     } else {
-      const m = /^(E-\S+) (.*)$/.exec(one.text)
-      message = `teams ${m?.[1] ?? one.task_id}: ${words[kind]} \u2014 ${m?.[2] ?? one.text}`.slice(0, 200)
+      const sentence = eventSentence(words, one)
+      const m = /^(E-\S+) (.*)$/.exec(sentence)
+      message = `teams ${m?.[1] ?? one.task_id}: ${words[kind]} \u2014 ${m?.[2] ?? sentence}`.slice(0, 200)
     }
     // PushNotification's result: { pushSent?, localSent? }
     await $.tool.call({ tool: 'PushNotification', message, status: 'proactive' } as never)
@@ -330,6 +416,14 @@ const SPIN_MS = 800
 const MARKER_RECHECK_MS = 30000
 const TEAMS_MARKERS = ['.claude/team.json', '.teams_output', '.harness-run']
 const WORK_MAX = 6
+
+// `l` or the footer Button: flip the language, remember the choice, and say the command in it. Nothing else is written.
+async function toggleLang($: EngineInterface): Promise<void> {
+  const to = (await read($, lang)) === 'en' ? 'ko' : 'en'
+  await update($, lang, () => to)
+  await update($, langChosen, () => true)
+  await $.command.register({ name: 'teams-status', description: STRINGS[to].cmdDesc })
+}
 
 export const register: Register = on => {
   let isRunning = false
@@ -414,8 +508,8 @@ export const register: Register = on => {
           if (fresh.length > 0) {
             for (const one of fresh) {
               const failure = failureOf(one)
-              if (failure === null) $.ui.toast(one.text)
-              else toastFailure($, failure, STRINGS[await read($, lang)].nodeFailed)
+              if (failure === null) $.ui.toast(eventSentence(STRINGS[await read($, lang)], one))
+              else toastFailure($, failure, STRINGS[await read($, lang)])
               await pushEvent($, one, pushed)
             }
             // a run that ended after this session began gets a card and one report call
@@ -498,11 +592,15 @@ export const register: Register = on => {
     }
 
     // Claude Code's own language setting, read once per session
-    try {
-      const language = (await $.settings.read()).language
-      await update($, lang, () => (typeof language === 'string' && /^(ko|korean|한국어)/i.test(language) ? 'ko' : 'en'))
-    } catch {
-      // unreadable settings: English
+    // (a language the person chose with `l` is kept: the setting no longer decides)
+    if (!(await read($, langChosen))) {
+      try {
+        const language = (await $.settings.read()).language
+        await update($, lang, () => (typeof language === 'string' && /^(ko|korean|한국어)/i.test(language) ? 'ko' : 'en'))
+      } catch {
+        // unreadable settings: English
+        await update($, lang, () => 'en')
+      }
     }
     await $.command.register({ name: 'teams-status', description: STRINGS[await read($, lang)].cmdDesc })
     // events older than this session's start are not toasted
@@ -554,9 +652,14 @@ export const register: Register = on => {
     const { Box, Button, Input, Markdown, Text } = ui
     const kind = await read($, view)
     const lang$ = await read($, lang)
-    const s = (key: keyof typeof en, vars?: Record<string, string | number>) => fmt(STRINGS[lang$][key], vars)
+    const s = (key: keyof typeof en, vars?: Record<string, string | number>) => fmt(STRINGS[lang$][key], vars, key)
+    // an engine word by its key: the table's word, else the raw value the engine sent (fail open)
+    const wo = (key: string, fallback: string, vars?: Record<string, string | number>) => wordOr(STRINGS[lang$], key, fallback, vars)
+    // the same, for a word whose English is the engine's own and is pinned that way (a lane header that fits its box, an activity
+    // kind, an upper-case ticket state): English keeps it, Korean goes through the key
+    const woKo = (key: string, raw: string, vars?: Record<string, string | number>) => (lang$ === 'en' ? raw : wo(key, raw, vars))
     // node's word_key (idle, done, stalled, failed) names a STRINGS entry; a pure lookup, no decision
-    const fixedWord = (key: string) => s(`word${key.charAt(0).toUpperCase()}${key.slice(1)}` as keyof typeof en)
+    const fixedWord = (key: string) => wo(`word${cap(key)}`, key)
     const id = await paneTask($)
     const listed = await read($, tasks)
     const entry = listed.find(t => t.task_id === id)
@@ -581,6 +684,10 @@ export const register: Register = on => {
     // said once, as the footer's last item
     // (no Button hotkey: the pane's Input holds the focus and takes `q` and `1`-`5` as text, see onKey)
     const close = <Button key="close" role="dismiss" plain dimColor label={s('close')} onPress={() => $.ui.close({ id: PANE })} />
+    // the language marker: `l EN` / `l KR` beside an Input (the key works there), bare `EN` / `KR` on mobile (a Button only)
+    const langWord = s(lang$ === 'en' ? 'langEN' : 'langKR')
+    const marker = carriesInput(e.surface) ? s('langMarker', { lang: langWord }) : langWord
+    const langButton = <Button key="lang" plain dimColor label={marker} onPress={() => toggleLang($)} />
     // plain tabs on one line: the selected one in full strength with a dot, the rest dim; `1`-`5` pick them
     const TABS = ['dash', 'floor', 'stories', 'decisions', 'log', 'report'] as const
     const pickTab = async (one: (typeof TABS)[number]) => {
@@ -604,13 +711,17 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column">
           <Text>{id === undefined ? s('noRun') : s('loading')}</Text>
-          {/* the empty view has no tabs to pick: its Input takes `q` only, so the pane closes on the key as it does elsewhere */}
+          {/* the empty view has no tabs to pick: its Input takes `q` and `l` only, so the pane closes or switches language on the key as it does elsewhere */}
           {id === undefined && carriesInput(e.surface) && (
             <Box height={1} overflow="hidden">
-              <Input key="keys" autoFocus value={buffer} placeholder="" onInput={keep(async text => { if (paneKey(text)?.kind === 'close') await $.ui.close({ id: PANE }) })} onSubmit={async () => {}} />
+              <Input key="keys" autoFocus value={buffer} placeholder="" onInput={keep(async text => {
+                const k = paneKey(text)?.kind
+                if (k === 'close') await $.ui.close({ id: PANE })
+                else if (k === 'lang') await toggleLang($)
+              })} onSubmit={async () => {}} />
             </Box>
           )}
-          {close}
+          <Box columnGap={2}>{close}{langButton}</Box>
         </Box>
       )
     }
@@ -630,7 +741,8 @@ export const register: Register = on => {
 
     // the listed EPICs, one line each, are the title block
     const now = await $.clock.now()
-    const epicWord = (t: SummaryTaskEntry) => (t.state === 'waiting_human' ? s('nodeWaiting') : s(`state${cap(t.state)}` as keyof typeof en) || t.state)
+    // the list's state is a ticket state (BACKLOG, IN_PROGRESS, stalled), a run state (running) or 'unknown'; English draws it as sent
+    const epicWord = (t: SummaryTaskEntry) => (t.state === 'waiting_human' ? s('nodeWaiting') : lang$ === 'en' ? t.state : wo(`ticket${camel(t.state)}`, wo(`state${camel(t.state)}`, t.state)))
     const epicOf = listed.map(t => epicCells(t, epicState(t), t.task_id === id, now, epicWord(t)))
     const epicWidths = columnWidths(epicOf.map(r => r.cells), inner, 2, [3], 4, [6, 5], 12)
     const epicLines: Line[] = epicOf.map(r => rowLine(r.cells, epicWidths, 2, r.tints))
@@ -641,7 +753,7 @@ export const register: Register = on => {
     const pick = Math.min(Math.max(0, await read($, row)), Math.max(0, rows.length - 1))
     const verdictText = (v: string | null) => (v === null ? '' : VERDICT_WORD[v] === undefined ? v : s(VERDICT_WORD[v]!))
     const harnessText = (t: SummaryTaskEntry) => t.harness === null ? ''
-      : `${t.stages.map(g => `${MARK[g.state]}${s(`stage${cap(g.key)}` as keyof typeof en)}`).join(' ')}${t.harness.slug ? ` · ${t.harness.slug}` : ''}${t.harness.moving ? ' ▸' : ''}`
+      : `${t.stages.map(g => `${MARK[g.state]}${wo(`stage${cap(g.key)}`, g.key)}`).join(' ')}${t.harness.slug ? ` · ${t.harness.slug}` : ''}${t.harness.moving ? ' ▸' : ''}`
     const judgeText = (score: number, threshold: number | null) => (threshold === null ? s('storyJudgeBare', { score }) : s('storyJudge', { score, threshold }))
     const storyOf = rows.map(({ entry: t, item }, i) => storyCells(item, verdictText(item.last_verdict), harnessText(t), i === pick, fixedWord, judgeText, gap => s('storyGap', { gap })))
     const storyWidths = columnWidths(storyOf.map(r => r.cells), inner, 2, STORY_SHRINK, 4, [9, 7, 8, 6, 5], 24)
@@ -671,6 +783,7 @@ export const register: Register = on => {
       const key = paneKey(text)
       if (key === null) return
       if (key.kind === 'close') await $.ui.close({ id: PANE })
+      else if (key.kind === 'lang') await toggleLang($)
       else if (key.kind === 'tab') await pickTab(key.tab)
       else if (key.kind === 'step') await cycle(key.by)
       else if (kind !== 'stories') return
@@ -692,7 +805,7 @@ export const register: Register = on => {
       else void $.command.run({ command: slash.command, args: slash.args }).catch(() => {})
     }
     const openHint = kind === 'stories' ? s('openHint') : ''
-    const footerHint = footerPlan({ steps: listed.length > 1 ? 2 : 0, open: openHint, close: s('close'), hint: s('keysHint') }, inner).hint
+    const footerHint = footerPlan({ steps: listed.length > 1 ? 2 : 0, open: openHint, close: s('close'), hint: s('keysHint'), marker }, inner).hint
     const footer = (
       <Box columnGap={2}>
         {listed.length > 1 && <Button key="prev" plain label={s('prev')} onPress={() => cycle(-1)} />}
@@ -700,6 +813,7 @@ export const register: Register = on => {
         {carriesInput(e.surface) && <Box flexShrink={1} height={1} overflow="hidden"><Input key="keys" autoFocus value={buffer} placeholder={footerHint} onInput={keep(onKey)} onSubmit={async (text: string) => { await onSubmit(text); await update($, typed, () => '') }} /></Box>}
         {openHint !== '' && <Text dimColor={!canOpen}>{openHint}</Text>}
         <Box flexShrink={0}>{close}</Box>
+        <Box flexShrink={0}>{langButton}</Box>
       </Box>
     )
     // the Dashboard: node's model (view-dashboard.mjs) for the EPIC the pane shows. An Svg surface draws node's own
@@ -728,24 +842,26 @@ export const register: Register = on => {
       )
     }
 
-    const stateWord = s(`state${cap(task.state)}` as keyof typeof en) || task.state
+    const stateWord = wo(`state${camel(task.state)}`, task.state)
+    // a failed card's reason: the engine's key when it sent one (no reason recorded, failed), else the text a model or person wrote
+    const reasonText = (w: { reason: string | null; reason_key?: string }) => (w.reason_key === undefined ? w.reason : wo(w.reason_key, w.reason_key))
     const card = (c: SummaryTask['work'][number], i: number) => (
       <Box key={`c${i}`} flexDirection="column">
         <Text wrap="truncate-end"><Text color={TINT[c.state]}>{MARK[c.state]}</Text>{` ${c.title}`}</Text>
-        {c.state === 'failed' && c.reason && <Text color="error" wrap="truncate-end">{`  ${c.reason}`}</Text>}
+        {c.state === 'failed' && c.reason && <Text color="error" wrap="truncate-end">{`  ${reasonText(c)}`}</Text>}
       </Box>
     )
 
     // above the tabs only what waits on the person: each waiting card with its question, then the runs besides this one
     const others = (info?.waiting ?? 0) - task.you.count
     const tv = await read($, teams)
-    const teamWord = (t: string) => s(`team${cap(t)}` as keyof typeof en) || t
+    const teamWord = (t: string) => wo(`team${cap(t)}`, t)
     const nodeWord = (n: string) => (n === 'waiting' ? s('nodeWaiting') : n)
     const waitCards = task.you.cards ?? []
     const waitBox = waitCards.length === 0 && others <= 0 ? null : (
       <Box flexDirection="column" marginTop={1}>
         {waitCards.map((c, i) => (
-          <Text key={`w${i}`} color="warning" wrap="truncate-end">{`⚑ ${c.title}${c.question ? ` — ${c.question}` : ''}`}</Text>
+          <Text key={`w${i}`} color="warning" wrap="truncate-end">{`⚑ ${subjectWord(wo, c.title)}${c.question ? ` — ${c.question}` : ''}`}</Text>
         ))}
         {others > 0 && <Text color="warning">{s('youOthers', { n: others })}</Text>}
       </Box>
@@ -760,10 +876,10 @@ export const register: Register = on => {
     const frameNo = await read($, frame)
     const workerOf = workerCells(entry?.workers ?? [], frameNo, fixedWord)
     const workerWidths = columnWidths(workerOf.map(r => r.cells), inner, 2, [3])
-    const handoffOf = handoffCells(entry?.handoffs ?? [])
+    const handoffOf = handoffCells(entry?.handoffs ?? [], (key, vars) => wo(key, key, vars))
     const handoffWidths = columnWidths(handoffOf, inner, 2, [2, 3])
     // asks addressed to this session, from node's status.asks: one warning line each, above the hand-offs
-    const askOf = ((await read($, status))?.asks ?? []).map(a => [`⚑ ${a.who} → you`, a.question])
+    const askOf = ((await read($, status))?.asks ?? []).map(a => [s('askTo', { who: a.who }), a.question])
     const askWidths = columnWidths(askOf, inner, 2, [1])
     const floorLines = (
       <Box flexDirection="column">
@@ -781,7 +897,7 @@ export const register: Register = on => {
           const solid = next !== undefined && next.state !== 'pending'
           return (
             <Box key={g.key}>
-              <Text color={TINT[g.state]} bold={g.state === 'running'}>{`${DOT[g.state]} ${s(`stage${cap(g.key)}` as keyof typeof en)}`}</Text>
+              <Text color={TINT[g.state]} bold={g.state === 'running'}>{`${DOT[g.state]} ${wo(`stage${cap(g.key)}`, g.key)}`}</Text>
               {next !== undefined && <Text color={solid ? 'success' : 'inactive'}>{solid ? ' ━━ ' : ' ┄┄ '}</Text>}
             </Box>
           )
@@ -789,7 +905,10 @@ export const register: Register = on => {
       </Box>
     )
     // the card list heads the Decisions tab, where a picked card's thread is read
-    const reasonOf = (title: string) => task.work.find(w => w.title === title && w.state === 'failed')?.reason ?? null
+    const reasonOf = (title: string) => {
+      const w = task.work.find(x => x.title === title && x.state === 'failed')
+      return w === undefined ? null : reasonText(w)
+    }
     const picker = tv === null ? (
       // before the first teams call: the summary's card list
       <Box flexDirection="column" marginBottom={1}>
@@ -806,7 +925,7 @@ export const register: Register = on => {
               <Box key={`k-${c.id}`} flexDirection="column">
                 {/* one line per card: a narrow pane clips the label instead of wrapping it */}
                 <Box height={1} overflow="hidden"><Button key={`card:${c.id}`} plain dimColor={c.mark === 'done'}
-                  label={`${MARK[c.mark]} ${c.title} · ${c.state ?? ''}${c.now ? ` · ${nodeWord(c.now.node)} ${c.now.agent ?? ''} ${since(c.now.elapsed_ms)}`.trimEnd() : ''}`}
+                  label={`${MARK[c.mark]} ${c.title} · ${c.state === null ? '' : woKo(`ticket${camel(c.state)}`, c.state)}${c.now ? ` · ${nodeWord(c.now.node)} ${c.now.agent ?? ''} ${since(c.now.elapsed_ms)}`.trimEnd() : ''}`}
                   onPress={() => pickCard(c.id)} /></Box>
                 {c.mark === 'failed' && reasonOf(c.title) && <Text color="error" wrap="truncate-end">{`  ${reasonOf(c.title)}`}</Text>}
               </Box>
@@ -824,8 +943,27 @@ export const register: Register = on => {
     } else if (Svg !== undefined) {
       dashBody = <Svg source={dv!.svg} alt={dv!.alt} />
     } else {
+      // every engine word of the model by its key (state*, tile*, stage*, lane*, log*); an unknown key draws the raw value
+      const runState = wo(`state${camel(dm.state)}`, dm.state)
+      const stateText = clipText(runState.toUpperCase(), 12)
+      const tileLabel = (t: (typeof dm.tiles)[number]) => wo(`tile${cap(t.key)}`, t.label).toUpperCase()
+      // the sub-word: the engine's key when it sent one, else the key read from tile.key and the sub text
+      const tileSub = (t: (typeof dm.tiles)[number]) => {
+        if (t.sub_key !== undefined) return wo(t.sub_key, t.sub_key, t.sub_vars)
+        const stages = t.key === 'progress' ? /^(\d+)\/(\d+) stages$/.exec(t.sub) : null
+        if (stages !== null) return wo('tileSubStages', t.sub, { done: stages[1]!, total: stages[2]! })
+        const turns = t.key === 'cost' ? /^(\d+) turns$/.exec(t.sub) : null
+        if (turns !== null) return wo('tileSubTurns', t.sub, { n: turns[1]! })
+        return wo(`tileSub${cap(t.sub)}`, t.sub)
+      }
+      const laneWord = (l: (typeof dm.lanes)[number]) => woKo(`lane${cap(l.key)}`, l.short)
+      const actWord = (a: (typeof dm.activity)[number]) => woKo(`log${cap(a.kind)}`, a.kind, { s: '' }).trim()
+      // the run's now line: the stage word by key, then the subject; the engine's text when the model carries no kind
+      const nowKind = dm.now_key ?? task?.now.kind
+      const nowSubject = subjectWord(wo, dm.now_key !== undefined ? dm.now_subject : task?.now.subject)
+      const nowText = dm.now === '' || nowKind === undefined ? dm.now : [wo(`stage${cap(nowKind)}`, nowKind), nowSubject].filter(Boolean).join(' · ')
       // the state word, a space, the bar, ' 100%': one row at any width
-      const barW = Math.max(4, Math.min(60, inner - clipText(dm.state.toUpperCase(), 12).length - 6))
+      const barW = Math.max(4, Math.min(60, inner - stateText.length - 6))
       const fill = Math.round((barW * dm.pct) / 100)
       const tileW = Math.max(12, Math.floor((inner - (dm.tiles.length - 1)) / dm.tiles.length))
       // lane box width from node (view-summary.mjs laneBoxes): 0 = a pane too narrow for boxes, which lists them one per line
@@ -841,24 +979,24 @@ export const register: Register = on => {
       dashBody = (
         <Box flexDirection="column">
           <Box>
-            <Text color={TINT[(dm.state === 'complete' ? 'done' : dm.state === 'blocked' ? 'failed' : 'running') as Mark]} bold>{`${clipText(dm.state.toUpperCase(), 12)} `}</Text>
+            <Text color={TINT[(dm.state === 'complete' ? 'done' : dm.state === 'blocked' ? 'failed' : 'running') as Mark]} bold>{`${stateText} `}</Text>
             <Text color="claude">{'█'.repeat(fill)}</Text><Text color="inactive">{'░'.repeat(barW - fill)}</Text>
             <Text bold>{` ${dm.pct}%`}</Text>
           </Box>
-          {dm.now !== '' && <Text dimColor wrap="truncate-end">{`▸ ${dm.now}`}</Text>}
+          {dm.now !== '' && <Text dimColor wrap="truncate-end">{`▸ ${nowText}`}</Text>}
           {!tilesFit && (
             <Box marginTop={1} flexDirection="column">
               {dm.tiles.map(t => (
-                <Text key={`tile-${t.key}`} wrap="truncate-end"><Text dimColor>{t.label.toUpperCase().padEnd(10)}</Text><Text bold color={t.alert ? 'warning' : undefined}>{t.value}</Text><Text dimColor>{`  ${t.sub}`}</Text></Text>
+                <Text key={`tile-${t.key}`} wrap="truncate-end"><Text dimColor>{tileLabel(t).padEnd(10)}</Text><Text bold color={t.alert ? 'warning' : undefined}>{t.value}</Text><Text dimColor>{`  ${tileSub(t)}`}</Text></Text>
               ))}
             </Box>
           )}
           {tilesFit && <Box marginTop={1} columnGap={1}>
             {dm.tiles.map(t => (
               <Box key={`tile-${t.key}`} width={tileW} flexDirection="column" borderStyle="round" borderColor={t.alert ? 'warning' : 'inactive'} paddingX={1}>
-                <Text dimColor>{clipText(t.label.toUpperCase(), tileW - 4)}</Text>
+                <Text dimColor>{clipText(tileLabel(t), tileW - 4)}</Text>
                 <Text bold color={t.alert ? 'warning' : undefined}>{clipText(t.value, tileW - 4)}</Text>
-                <Text dimColor>{clipText(t.sub, tileW - 4)}</Text>
+                <Text dimColor>{clipText(tileSub(t), tileW - 4)}</Text>
               </Box>
             ))}
           </Box>}
@@ -866,7 +1004,7 @@ export const register: Register = on => {
           <Box marginTop={1} flexWrap="wrap">
             {dm.stages.map((g, i) => (
               <Box key={`ds-${g.key}`}>
-                <Text color={TINT[g.state]} bold={g.state === 'running'}>{`${STAGE_GLYPH[g.state]} ${g.n} ${g.label}`}</Text>
+                <Text color={TINT[g.state]} bold={g.state === 'running'}>{`${STAGE_GLYPH[g.state]} ${g.n} ${wo(`stage${cap(g.key)}`, g.label)}`}</Text>
                 {i < dm.stages.length - 1 && <Text color={dm.stages[i + 1]!.state === 'pending' ? 'inactive' : 'success'}>{dm.stages[i + 1]!.state === 'pending' ? ' ┄┄ ' : ' ━━ '}</Text>}
               </Box>
             ))}
@@ -877,14 +1015,14 @@ export const register: Register = on => {
           {laneBox === 0 && (
             <Box marginTop={1} flexDirection="column">
               {dm.lanes.map(l => (
-                <Text key={`lane-${l.key}`} wrap="truncate-end"><Text color={LANE_TINT[l.key]}>● </Text><Text bold>{l.short}</Text><Text dimColor>{` ${l.count}  `}</Text>{l.cards.map(c => `${c.failed ? '✘ ' : ''}${c.title}`).join(' · ')}</Text>
+                <Text key={`lane-${l.key}`} wrap="truncate-end"><Text color={LANE_TINT[l.key]}>● </Text><Text bold>{laneWord(l)}</Text><Text dimColor>{` ${l.count}  `}</Text>{l.cards.map(c => `${c.failed ? '✘ ' : ''}${c.title}`).join(' · ')}</Text>
               ))}
             </Box>
           )}
           {laneBox > 0 && <Box marginTop={1} columnGap={1}>
             {dm.lanes.map(l => (
               <Box key={`lane-${l.key}`} width={laneBox} flexDirection="column" borderStyle="round" borderColor="inactive" paddingX={1}>
-                <Text><Text color={LANE_TINT[l.key]}>● </Text><Text bold>{l.short}</Text><Text dimColor>{` ${l.count}`}</Text></Text>
+                <Text><Text color={LANE_TINT[l.key]}>● </Text><Text bold>{laneWord(l)}</Text><Text dimColor>{` ${l.count}`}</Text></Text>
                 {l.cards.map((c, j) => <Text key={`lc-${j}`} color={c.failed ? 'error' : undefined}>{clipText(`${c.failed ? '✘ ' : ''}${c.title}`, laneBox - 4)}</Text>)}
                 {l.more > 0 && <Text dimColor>{`+${l.more}`}</Text>}
               </Box>
@@ -892,7 +1030,7 @@ export const register: Register = on => {
           </Box>}
           <Box marginTop={1} flexDirection="column">
             {dm.activity.map((a, i) => (
-              <Text key={`da-${i}`} wrap="truncate-end"><Text dimColor>{`${a.time}  `}</Text><Text color={ACT_TINT[a.kind] ?? 'inactive'}>{`● ${a.kind.padEnd(10)}`}</Text>{` ${a.subject ?? ''}`}</Text>
+              <Text key={`da-${i}`} wrap="truncate-end"><Text dimColor>{`${a.time}  `}</Text><Text color={ACT_TINT[a.kind] ?? 'inactive'}>{`● ${actWord(a).padEnd(10)}`}</Text>{` ${subjectWord(wo, a.subject)}`}</Text>
             ))}
           </Box>
         </Box>
@@ -914,7 +1052,7 @@ export const register: Register = on => {
       const dp = await read($, decisions)
       const mine = dp !== null && dp.task_id === id && dp.card === pickedId ? dp.payload.entries : null
       const what = (d: Decision) => {
-        const label = d.kind === 'verdict' ? s(VERDICT_WORD[d.verdict ?? ''] ?? 'vReject') : s(`kind${cap(d.kind)}` as keyof typeof en) || d.kind
+        const label = d.kind === 'verdict' ? s(VERDICT_WORD[d.verdict ?? ''] ?? 'vReject') : wo(`kind${cap(d.kind)}`, d.kind)
         const score = d.score !== null && d.score !== undefined ? ` ${d.score}%` : ''
         const why = d.reason ?? d.text ?? d.title ?? ''
         return `${d.time ?? '     '} ${d.actor ?? '—'} · ${label}${score} · ${d.node ?? d.card ?? ''}${why ? ` — ${why}` : ''}`
@@ -948,7 +1086,7 @@ export const register: Register = on => {
         </Box>
       )
     } else if (kind === 'log') {
-      const lines = task.log.map(one => `${one.time} ${s(`log${cap(one.kind)}` as keyof typeof en, { s: one.subject ?? '' }).trim()}`)
+      const lines = task.log.map(one => `${one.time} ${wo(`log${cap(one.kind)}`, `${one.kind} ${one.subject ?? ''}`, { s: subjectWord(wo, one.subject) }).trim()}`)
       body = (
         <Box flexDirection="column">
           {lines.length === 0 ? <Text dimColor>{s('noLog')}</Text> : lines.map((line, i) => <Text key={`l${i}`}>{line}</Text>)}
@@ -989,7 +1127,8 @@ export const register: Register = on => {
     const info = await read($, status)
     const task = await read($, summary)
     const lang$ = await read($, lang)
-    const s = (key: keyof typeof en, vars?: Record<string, string | number>) => fmt(STRINGS[lang$][key], vars)
+    const s = (key: keyof typeof en, vars?: Record<string, string | number>) => fmt(STRINGS[lang$][key], vars, key)
+    const wo = (key: string, fallback: string) => wordOr(STRINGS[lang$], key, fallback)
     const open = () => $.ui.open(OPEN)
 
     // an ended run: one card in place of the running row, until the person opens the report or dismisses it
@@ -1060,7 +1199,7 @@ export const register: Register = on => {
         <Box>
           {flag}
           {asked}
-          <Box flexShrink={1}><Text dimColor wrap="truncate-end">{`teams · ${task.worktree ? `⑂ ${task.worktree} · ` : ''}${task.title} — ${nowSentence(s, task)}`}</Text></Box>
+          <Box flexShrink={1}><Text dimColor wrap="truncate-end">{`teams · ${task.worktree ? `⑂ ${task.worktree} · ` : ''}${task.title} — ${nowSentence(s, wo, task)}`}</Text></Box>
           <Box flexShrink={0} marginLeft={1}>
             <Text color="success">{'━'.repeat(task.total > 0 ? Math.round((10 * task.done) / task.total) : 0)}</Text>
             <Text color="inactive">{'─'.repeat(10 - (task.total > 0 ? Math.round((10 * task.done) / task.total) : 0))}</Text>

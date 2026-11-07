@@ -6,6 +6,9 @@ import { LANE_KEYS, LANE_LABEL, laneBoxes } from './view-summary.mjs';
 
 const STAGE_LABEL = { plan: 'Plan', build: 'Build', integrate: 'Integrate', qa: 'QA', gate: 'Gate', report: 'Report' };
 const LANE_TITLE = { running: 'In progress', you: 'Needs you', pending: 'Up next', done: 'Done' };
+// The tile sub-words a mod keys. Not emitted on the model: the --once golden pins the tiles' shape, so the
+// mod derives the key from tile.key + sub (the Dash goes away in F2).
+export const DASH_WORD_KEYS = ['tileSubStages', 'tileSubAccepted', 'tileSubTurns', 'tileSubWaiting', 'tileSubNothing', 'tileSubLive'];
 const LANE_MAX = 5;
 const ACTIVITY_MAX = 6;
 

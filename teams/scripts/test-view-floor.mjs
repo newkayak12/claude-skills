@@ -372,7 +372,7 @@ test('hand-offs newest 5 recorded only', () => {
   const h = handoffs([...ledger, '{"ts":11000,"event":"verd'], { limit: 5 }); // a torn last line is ignored
   assert.equal(h.length, 5);
   assert.deepEqual(h.map((x) => x.what), ['verdict accept', 'verdict reject', 'asks you', 'keep it', 'filed 1 defect(s)']);
-  assert.deepEqual(Object.keys(h[0]).sort(), ['from', 'time', 'to', 'what']);
+  assert.deepEqual(Object.keys(h[0]).sort(), ['from', 'time', 'to', 'what', 'what_key', 'what_vars']);
   assert.equal(h[0].to, 'P3');
   assert.equal(h[3].from, 'you');
   assert.equal(h[3].to, 'P2');
@@ -626,7 +626,7 @@ test('--once summary: asked and answered lines are hand-offs, newest 5 only, no 
       { from: 'P3', what: 'is amount in cents?', to: 'TeamLeader' },
       { from: 'judge', what: 'verdict reject', to: 'P2' },
     ]);
-    assert.deepEqual(Object.keys(h[0]).sort(), ['from', 'time', 'to', 'what']);
+    assert.deepEqual(Object.keys(h[0]).sort(), ['from', 'from_key', 'time', 'to', 'what']);
   } finally { w.cleanup(); }
 });
 

@@ -1,5 +1,11 @@
 // `state` is the daemon's final state on a daemon_done line (complete, partial, blocked, ...)
-export type TeamsEvent = { ts: number; task_id: string; kind: string; text: string; state?: string; package?: string; attempt?: number }
+// run, node and the *_key / next_vars fields are the engine's words as keys (view-events.mjs): the mod looks the key up in STRINGS and
+// draws the key as received when it is unknown; reason, next_step and severity belong to a failed node_finish (absent on an old-shape line)
+export type TeamsEvent = {
+  ts: number; task_id: string; kind: string; text: string; state?: string; package?: string; attempt?: number
+  run?: string; node?: string; reason?: string; reason_key?: string
+  next_step?: string | null; next_key?: string | null; next_vars?: Record<string, string | number> | null; severity?: string
+}
 
 // `view.mjs --once --format status`: the one-line status of this cwd
 // a question waiting on one interactive session (lib/view-asks.mjs asksFor); `via` is 'send' once the driver's message arrived
@@ -20,7 +26,7 @@ export type SummaryTask = {
   now: { kind: string; subject: string | null; detail: string | null }
   you: { count: number; items: string[]; cards?: { key: string; title: string; question: string; who: string; since: number | null }[] }
   stages: { key: string; state: Mark }[]
-  work: { title: string; kind: string; id: string | null; state: Mark; filed_by: string | null; reason: string | null }[]
+  work: { title: string; kind: string; id: string | null; state: Mark; filed_by: string | null; reason: string | null; reason_key?: string }[]
   // the running stage's countable work as keys and numbers, never words; absent when nothing is countable.
   // sg only on a size-S fallback run with a goal spec; stage_key only while its now.json is fresh
   progress?: { key: 'build' | 'qa'; done: number; total: number } | { key: 'sg'; k: number; n: number; stage_key?: string }
@@ -50,7 +56,11 @@ export type SummaryItem = {
 export type SummaryWorker = { id: string; state: WorkState; doing: string; icon: string; word: string; word_key: string
   minutes?: number // only when state is 'stalled': whole minutes silent; absent otherwise
 }
-export type Handoff = { time: string; from: string; what: string; to: string }
+// what_key/from_key/to_key name a STRINGS entry for the English beside them; what_vars fill its placeholders
+export type Handoff = {
+  time: string; from: string; what: string; to: string
+  what_key?: string; what_vars?: Record<string, string | number>; from_key?: string; to_key?: string
+}
 export type SummaryTaskEntry = SummaryTask & {
   task_id: string; created_at: number | null
   live: boolean; age_ms: number | null // age_ms: stalled tasks only, under 24 h
@@ -76,7 +86,10 @@ export type RunNumbers = {
 export type DashModel = {
   key: string; title: string; state: string; pct: number; now: string
   stages: DashStage[]; packages: { title: string; state: Mark }[]; lanes: DashLane[]
-  tiles: { key: string; label: string; value: string; sub: string; alert?: boolean }[]
+  // sub_key/sub_vars and now_key/now_subject: optional keys for the English beside them; today's node does not emit them
+  // and the mod derives the word from tile.key + sub and from the task's now
+  tiles: { key: string; label: string; value: string; sub: string; alert?: boolean; sub_key?: string; sub_vars?: Record<string, string | number> }[]
+  now_key?: string; now_subject?: string | null
   activity: { time: string; kind: string; subject: string | null }[]
   waiting: { who: string; title: string; question: string }[]
   run?: RunNumbers | null
@@ -139,6 +152,8 @@ declare module 'claude-code' {
       cardReport: { task_id: string; payload: ReportPayload } | null
       ended: Record<string, 'card' | 'seen' | 'dismissed'>
       lang: 'en' | 'ko'
+      // set once the person pressed l or the Button
+      langChosen: boolean
       // the run outcome this mod publishes for trophy: labels only, never an id (same type in graph and harness)
       outcome: { system: 'graph' | 'teams' | 'harness'; outcome: 'pass' | 'reject' | 'fail'; at: number } | null
     }

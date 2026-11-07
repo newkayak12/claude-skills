@@ -4,7 +4,9 @@ import type { On } from 'claude-code'
 
 import { frame, draw, cells } from './demo-frames.ts'
 import { STRINGS } from './mod'
-import { askBandShown, carriesInput, paneKey, paneSlash, statusAnswer } from './pane'
+import { hangulIn, latinOutside } from './lang-allow'
+import { NOW_KINDS } from '../scripts/lib/view-summary.mjs'
+import { askBandShown, carriesInput, PANE_KEYS, paneKey, paneSlash, statusAnswer } from './pane'
 import { clipText, columnWidths, footerPlan, padText, tabRowPlan, width } from './teams-draw'
 
 const SURFACES = ['terminal', 'desktop', 'mobile', 'vscode'] as const
@@ -333,7 +335,32 @@ const fmtOf = (argv: readonly string[]) => argv[argv.indexOf('--format') + 1]
 const stat = (over: Record<string, unknown> = {}) => ({ line: 'teams: E-3a3a3bb5 12/17 ', waiting: 0, latest: '3a3a3bb5-f4b7', ...over })
 
 const LEAKS = ['verdict=', 'match=', '/Users/', '/var/', 'dispatch:', 'gate:goal', 'accept:']
-const EN_UI = ['Now', 'You', 'Stages', 'Work', 'Cost', 'Summary', 'Log', 'needs you', 'question for you', 'questions for you', 'more in other runs', 'running', 'stalled', 'finished']
+// The words a person or the engine wrote (fixture data): shown as written in both languages, so the Korean scan skips them.
+// Longest first: 'module b: tests red' must go before 'module b'.
+const LANG_DATA = [
+  'Build the expense tracker', 'b.txt not wired to the exported path', 'verifier rejected: tests red', 'module b: tests red', 'module c: never dispatched',
+  'D1 b.txt never wired', 'keep the old cache key format?', 'one open question', 'asks a question', 'editing parser.ts', 'editing a.ts', 'reading',
+  'module a', 'module b', 'module c', 'cache layer', 'parser module', 'report writer', 'Receipts upload', 'plan feature 1', 'QA feature 1', 'Planning audit',
+  'All packages shipped.', 'reject: overlap', 'AC 3 missing', 'AC 3 untested', 'reply was not JSON', 'accept:P1:1', 'codex·gpt-5', 'claude·opus', 'claude·sonnet',
+  'task tA', 'small thing', 'rename the config key', 'old import job',
+].sort((a, b) => b.length - a.length)
+// what a person reads of a drawn tree: Text strings, a Button's label, an Input's placeholder, Markdown and Code text; never an Svg's source or alt
+const visible = (tree: unknown): string => {
+  const out: string[] = []
+  const walk = (n: any): void => {
+    if (n === null || n === undefined || n === false) return
+    if (typeof n === 'string' || typeof n === 'number') return void out.push(String(n))
+    if (Array.isArray(n)) return void n.forEach(walk)
+    if (n.type === 'Svg') return
+    if (n.type === 'Button') out.push(String(n.props?.label ?? ''))
+    else if (n.type === 'Input') out.push(String(n.props?.placeholder ?? ''))
+    else if (n.type === 'Markdown' || n.type === 'Code') out.push(String(n.props?.text ?? n.props?.source ?? ''))
+    else if (n.type === 'Link') out.push(String(n.props?.label ?? n.props?.text ?? ''))
+    walk(n.children)
+  }
+  walk(tree)
+  return out.join('\n')
+}
 
 // Engine beneath: a Map-backed $.state, process.run for view.mjs (status and summary answer the same
 // fixture), ui.open and ui.status recorded.
@@ -684,10 +711,15 @@ for (const surface of SURFACES) {
     await seeded($, on, { status: stat({ waiting: 2 }), task: demo({ work: [failedCard] }), teams: TEAMS }, surface, 'korean')
     const ui = await pane($, surface)
     const floor = await shown(ui)
+    const floorSeen = visible(await ui.drawn())
     await ui.press({ key: 'decisions' })
     await ui.redraw()
+    const decisionsSeen = visible(await ui.drawn())
+    const bandSeen = visible(await (await band($, surface)).drawn())
+    // the shared allow-list check: every Latin word outside it and outside the fixture data fails, on all three pages
+    for (const text of [floorSeen, decisionsSeen, bandSeen]) expect(latinOutside(text, [...LANG_DATA, 'engine band'])).toEqual([])
     const texts = [floor, await shown(ui), await shown(await band($, surface))]
-    for (const text of texts) for (const word of [...EN_UI, 'Teams', 'Decisions', 'Develop', 'Audit', '"label":"close"', 'q close']) expect(text).not.toContain(word)
+    for (const text of texts) for (const word of ['Decisions', 'Develop', 'Audit', '"label":"close"', 'q close']) expect(text).not.toContain(word)
     expect(texts[0]).toContain('● 현장')
     expect(texts[1]).toContain('개발')
     expect(texts[0]).toContain('Build the expense tracker')
@@ -729,7 +761,7 @@ test('q closes the pane; /teams-status on an open pane closes it', async ($, on)
   // said once, as the footer's last item; the key hint does not say it again
   expect((await shown(ui)).split('"label":"q close"').length - 1).toBe(1)
   expect((await shown(ui)).replace('"key":"close"', '').split('close').length - 1).toBe(1)
-  expect((await ui.findAll({ type: 'Button' })).at(-1)?.props.key).toBe('close')
+  expect((await ui.findAll({ type: 'Button' })).at(-2)?.props.key).toBe('close') // the language Button follows it (F4)
   for (const lang of ['en', 'ko'] as const) expect(STRINGS[lang].keysHint).not.toMatch(/q close|q 닫기/)
   await ui.press({ key: 'close' })
   expect(closed).toEqual(['teams-status'])
@@ -789,6 +821,224 @@ test('paneKey and paneSlash: q closes, digits pick tabs, a `/` holds the keys, t
   expect(paneSlash(3)).toBeNull()
 })
 
+// ---- F4 lang: `l` and the footer Button switch every surface between English and Korean ----
+// the engine beneath for session.start: the setting is read from `setting()` each time, so a test changes it between starts
+function langStart(on: On, setting: () => unknown, commands: string[] = []) {
+  on('fs.exists', (_$, e) => ({ value: markers.has(e.path) }) as never)
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('session.cwd', () => ({ value: '/proj' }))
+  on('command.register', (_$, e) => {
+    commands.push(`${e.name}: ${(e as { description?: string }).description}`)
+    return { value: { command: e.name } }
+  })
+  on('settings.read', () => ({ value: setting() }) as never)
+}
+// a seeded pane world whose command.register is recorded, so a re-registration is seen
+async function langPane($: Engine, on: On, data: Data, surfaces: readonly Surface[] = ['terminal'], init: Record<string, unknown> = {}) {
+  const clock = mock.clock(on, { now: 1000 })
+  const commands: string[] = []
+  langStart(on, () => ({}), commands)
+  const seen = uiWorld(on, { watch: ['abc'], ...init }, surfaces, data)
+  on('ui.panes', () => ({ value: [{ id: 'teams-status', title: 'Teams', isPlaced: true }] }) as never)
+  on('ui.close', () => ({ value: undefined }))
+  engineBand(on)
+  await start($)
+  await clock.advance(3000)
+  return { seen, commands, tick: () => clock.advance(3000) }
+}
+const typeKey = async (ui: Ui, text: string) => {
+  await ui.input({ key: 'keys', text, kind: 'change' } as never)
+  await ui.redraw()
+}
+
+test('F4 lang: paneKey(l) is the lang key', () => {
+  expect(paneKey('l')).toEqual({ kind: 'lang' })
+  expect(paneKey('][l')).toEqual({ kind: 'lang' })
+})
+
+test('F4 lang: text holding a / and answer mode are no key', () => {
+  expect(paneKey('/teams-status l')).toBeNull()
+  expect(paneKey('l', { answering: true })).toBeNull()
+  expect(paneKey('q', { answering: true })).toBeNull()
+  expect(paneKey('q', { answering: false })).toEqual({ kind: 'close' })
+})
+
+test('F4 lang: PANE_KEYS gives l to lang alone and each char one kind, matching paneKey', () => {
+  expect(PANE_KEYS['l']).toEqual({ kind: 'lang' })
+  expect(Object.entries(PANE_KEYS).filter(([, v]) => v.kind === 'lang').map(([c]) => c)).toEqual(['l'])
+  for (const [c, v] of Object.entries(PANE_KEYS)) {
+    expect([...c]).toHaveLength(1)
+    expect(paneKey(c)).toEqual(v)
+  }
+  expect(Object.keys(PANE_KEYS).sort()).toEqual(['0', '1', '2', '3', '4', '5', '[', ']', 'g', 'j', 'k', 'l', 'q'])
+})
+
+test('F4 lang: typed l on every tab redraws in the other language; view, epic and row stay', async ($, on) => {
+  const { seen } = await langPane($, on, { status: stat(), task: demo(), teams: TEAMS }, ['terminal'], { epic: 'abc', row: 0 })
+  const ui = await pane($, 'terminal')
+  const TABS = ['dash', 'floor', 'stories', 'decisions', 'log', 'report'] as const
+  const word = (lang: 'en' | 'ko', tab: string) => STRINGS[lang][`tab${tab.charAt(0).toUpperCase()}${tab.slice(1)}` as keyof typeof STRINGS.en]
+  for (const tab of TABS) {
+    await ui.press({ key: tab })
+    await ui.redraw()
+    const before = ['view', 'epic', 'row'].map(k => seen.store.get(k))
+    expect(await labels(ui)).toContain('l EN')
+    expect(await labels(ui)).toContain(`● ${word('en', tab)}`)
+    await typeKey(ui, 'l')
+    expect(await labels(ui)).toContain('l KR')
+    expect(await labels(ui)).toContain(`● ${word('ko', tab)}`)
+    expect(['view', 'epic', 'row'].map(k => seen.store.get(k))).toEqual(before)
+    expect(seen.store.get('view')).toBe(tab)
+    expect(seen.store.get('lang')).toBe('ko')
+    await typeKey(ui, 'l') // back to English for the next tab
+    expect(await labels(ui)).toContain('l EN')
+  }
+})
+
+test('F4 lang: the setting ko, korean, 한국어 and KO choose Korean; en, ja, unset and a throw choose English', async ($, on) => {
+  let setting: string | undefined
+  mock.clock(on, { now: 1000 })
+  langStart(on, () => {
+    if (setting === 'throw') throw new Error('settings gone')
+    return setting === undefined ? {} : { language: setting }
+  })
+  const seen = uiWorld(on, {}, ['terminal'], {})
+  for (const [value, want] of [['ko', 'ko'], ['korean', 'ko'], ['한국어', 'ko'], ['KO', 'ko'], ['en', 'en'], ['ja', 'en'], [undefined, 'en'], ['throw', 'en']] as const) {
+    setting = value
+    await start($)
+    expect([value, seen.store.get('lang')]).toEqual([value, want])
+  }
+})
+
+test('F4 lang: the choice survives a pane close and reopen', async ($, on) => {
+  const { seen } = await langPane($, on, { status: stat(), task: demo() })
+  const first = await pane($, 'terminal')
+  await typeKey(first, 'l')
+  expect(await labels(first)).toContain('l KR')
+  await first.unmount()
+  const again = await pane($, 'terminal')
+  expect(await labels(again)).toContain('l KR')
+  expect(seen.store.get('langChosen')).toBe(true)
+})
+
+test('F4 lang: a second session.start with another setting keeps the chosen language', async ($, on) => {
+  let setting: unknown = { language: 'ko' }
+  const clock = mock.clock(on, { now: 1000 })
+  void clock
+  langStart(on, () => setting)
+  const seen = uiWorld(on, {}, ['terminal'], { status: stat(), task: demo() })
+  on('ui.panes', () => ({ value: [] }) as never)
+  await start($)
+  expect(seen.store.get('lang')).toBe('ko')
+  const ui = await pane($, 'terminal')
+  await ui.press({ key: 'lang' }) // ko -> en, chosen
+  expect(seen.store.get('lang')).toBe('en')
+  setting = { language: 'ko' }
+  await start($)
+  expect(seen.store.get('lang')).toBe('en')
+  setting = { language: 'en' }
+  await ui.redraw()
+  await ui.press({ key: 'lang' }) // en -> ko
+  await start($)
+  expect(seen.store.get('lang')).toBe('ko')
+})
+
+test('F4 lang: two surfaces mounted: a toggle on the terminal shows on the mobile redraw', async ($, on) => {
+  await langPane($, on, { status: stat(), task: demo() }, ['terminal', 'mobile'])
+  const term = await pane($, 'terminal')
+  const phone = await pane($, 'mobile')
+  expect(await labels(phone)).toContain('EN')
+  await typeKey(term, 'l')
+  await phone.redraw()
+  expect(await labels(phone)).toContain('KR')
+  expect(await labels(phone)).toContain(`● ${STRINGS.ko.tabFloor}`)
+  expect(await labels(term)).toContain('l KR')
+})
+
+test('F4 lang: the mobile Button KR flips, bare label, no Input', async ($, on) => {
+  const { seen } = await langPane($, on, { status: stat(), task: demo() }, ['mobile'])
+  const ui = await pane($, 'mobile')
+  expect(await ui.find({ key: 'keys' })).toBeUndefined()
+  expect((await ui.find({ key: 'lang' }))?.props).toMatchObject({ plain: true, dimColor: true, label: 'EN' })
+  await ui.press({ key: 'lang' })
+  await ui.redraw()
+  expect((await ui.find({ key: 'lang' }))?.props.label).toBe('KR')
+  expect(seen.store.get('lang')).toBe('ko')
+  await ui.press({ key: 'lang' })
+  await ui.redraw()
+  expect((await ui.find({ key: 'lang' }))?.props.label).toBe('EN')
+  // after close, on every surface, as the last two footer Buttons
+  expect((await ui.findAll({ type: 'Button' })).slice(-2).map(b => b.props.key)).toEqual(['close', 'lang'])
+})
+
+test('F4 lang: the toggle changes lang, langChosen and typed in state and runs no process', async ($, on) => {
+  const { seen } = await langPane($, on, { status: stat(), task: demo() })
+  const ui = await pane($, 'terminal')
+  const before = new Map(seen.store)
+  const calls = seen.argv.length
+  await typeKey(ui, 'l')
+  const changed = [...seen.store.keys()].filter(k => JSON.stringify(seen.store.get(k)) !== JSON.stringify(before.get(k))).sort()
+  expect(changed).toEqual(['lang', 'langChosen', 'typed'])
+  expect(seen.store.get('typed')).toBe('')
+  expect(seen.argv).toHaveLength(calls)
+})
+
+test('F4 lang: the command is registered again with the Korean description', async ($, on) => {
+  const { commands } = await langPane($, on, { status: stat(), task: demo() })
+  expect(commands).toEqual([`teams-status: ${STRINGS.en.cmdDesc}`])
+  await typeKey(await pane($, 'terminal'), 'l')
+  expect(commands).toEqual([`teams-status: ${STRINGS.en.cmdDesc}`, `teams-status: ${STRINGS.ko.cmdDesc}`])
+})
+
+test('F4 lang: after a toggle the status line, the push and both command replies speak the new language', async ($, on) => {
+  // status line and the closing reply (the pane is listed as open)
+  const { seen, tick } = await langPane($, on, { status: stat({ waiting: 2 }), task: demo() })
+  expect(seen.statuses.at(-1)).toBe(STRINGS.en.statusWaiting.replace('{n}', '2'))
+  await typeKey(await pane($, 'terminal'), 'l')
+  await tick()
+  expect(seen.statuses.at(-1)).toBe(STRINGS.ko.statusWaiting.replace('{n}', '2'))
+  const closed = await $.command.run({ command: 'teams-status', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
+  expect(JSON.stringify(closed)).toContain(STRINGS.ko.paneClosed)
+})
+
+test('F4 lang: after a toggle the opened reply speaks the new language', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  langStart(on, () => ({}))
+  uiWorld(on, {}, ['terminal'], { status: stat(), task: demo() })
+  on('ui.panes', () => ({ value: [] }) as never)
+  await start($)
+  const r = (): Promise<unknown> => $.command.run({ command: 'teams-status', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
+  expect(JSON.stringify(await r())).toContain(STRINGS.en.paneOpened)
+  await typeKey(await pane($, 'terminal'), 'l')
+  expect(JSON.stringify(await r())).toContain(STRINGS.ko.paneOpened)
+})
+
+test('F4 lang: after a toggle the push speaks the new language', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { pushes } = pushWorld(on, sentOk, evLines(E1))
+  await start($)
+  await typeKey(await pane($, 'terminal'), 'l') // the empty view's Input takes `l` too
+  await clock.advance(3000)
+  await clock.advance(3000)
+  expect(pushes).toHaveLength(1)
+  // the kind word is the table's; the event's own text after the dash is engine text (U4 keys it)
+  expect(pushes[0].message.startsWith(`teams E-aaaaaaaa: ${STRINGS.ko.pushNeedsYou} —`)).toBe(true)
+})
+
+test('F4 lang: footerPlan returns the marker whole at 42, 110 and 190 columns', () => {
+  for (const [inner, steps, open] of [[42 - 4, 2, 'g open run'], [110 - 4, 2, ''], [190 - 4, 2, 'g open run'], [42 - 4, 0, '']] as const) {
+    for (const marker of ['l EN', 'l KR', 'EN']) {
+      const plan = footerPlan({ steps, open, close: 'q close', hint: '[ ] EPIC · j k row · 0-5 tabs', marker }, inner)
+      expect(plan.marker).toBe(marker)
+      // the marker's room is reserved: hint + Input chrome + prev/next + open + close + marker + a gap after each fit the line
+      const fixed = [steps > 0 ? steps + 2 * (steps - 1) : 0, width(open), 7, width(marker)].filter(n => n > 0)
+      if (plan.hint !== '') expect(width(plan.hint) + 10 + fixed.reduce((n, w) => n + w, 0) + 2 * fixed.length).toBeLessThanOrEqual(inner)
+    }
+  }
+  expect(footerPlan({ steps: 2, open: '', close: 'q close', hint: '[ ] EPIC · j k row · 0-5 tabs', marker: 'l EN' }, 190 - 4).hint).toBe('[ ] EPIC · j k row · 0-5 tabs')
+  expect(footerPlan({ steps: 2, open: '', close: 'q close', hint: '[ ] EPIC · j k row · 0-5 tabs', marker: 'l EN' }, 42 - 4).hint.endsWith('…')).toBe(true)
+})
+
 test('tabRowPlan: the cost text goes first, then the gap, then the longest label is cut with …; footerPlan: close stays whole', () => {
   const tabs = ['● Floor', 'STORYs', 'Decisions', 'Log', 'Report']
   const total = (p: { labels: string[]; gap: number }) => p.labels.reduce((n, l) => n + [...l].length, 0) + p.gap * 4
@@ -801,21 +1051,22 @@ test('tabRowPlan: the cost text goes first, then the gap, then the longest label
   expect(total(tight)).toBeLessThanOrEqual(34)
   expect(tight.labels.some(l => l.endsWith('…'))).toBe(true)
   const hint = '[ ] EPIC · j k row · 0-5 tabs'
-  expect(footerPlan({ steps: 0, open: '', close: 'q close', hint }, 80).hint).toBe(hint)
-  const cut = footerPlan({ steps: 2, open: '', close: 'q close', hint }, 42).hint
+  const marker = 'l EN'
+  expect(footerPlan({ steps: 0, open: '', close: 'q close', hint, marker }, 80).hint).toBe(hint)
+  const cut = footerPlan({ steps: 2, open: '', close: 'q close', hint, marker }, 42).hint
   expect(cut.endsWith('…')).toBe(true)
-  expect([...cut].length + 10 + 4 + 7 + 4).toBeLessThanOrEqual(42) // hint + Input chrome + prev/next + close + two gaps of 2
-  expect(footerPlan({ steps: 2, open: 'g open run', close: 'q close', hint }, 30).hint).toBe('')
+  expect([...cut].length + 10 + 4 + 7 + 4 + 4 + 2).toBeLessThanOrEqual(42) // hint + Input chrome + prev/next + close + marker + three gaps of 2
+  expect(footerPlan({ steps: 2, open: 'g open run', close: 'q close', hint, marker }, 30).hint).toBe('')
 })
 
 test('language korean: stalled pane header and the waiting status line have no English UI word', async ($, on) => {
   const { seen } = await seeded($, on, { status: stat({ waiting: 2 }), task: demo({ state: 'stalled' }) }, 'terminal', '한국어')
   const header = await headerOf(await pane($, 'terminal'))
   expect(header).toContain('멈춤')
-  for (const word of EN_UI) expect(header).not.toContain(word)
+  expect(latinOutside(header, LANG_DATA)).toEqual([])
   const line = seen.statuses[seen.statuses.length - 1] ?? ''
   expect(line).toContain('확인 필요')
-  for (const word of EN_UI) expect(line).not.toContain(word)
+  expect(latinOutside(line, [...LANG_DATA, '/teams-status'])).toEqual([]) // the command name is a literal, not a word
 })
 
 test('status line: waiting 0 clears it', async ($, on) => {
@@ -1668,6 +1919,83 @@ test('failure line, ko: the word failed is Korean in the toast and the push', as
   expect(pushes[0].message).toContain(STRINGS.ko.nodeFailed)
 })
 
+// F4 words: the engine's words arrive as keys; the mod looks them up, and a key it does not know is drawn as received
+const KO_ON = (on: Parameters<typeof pushWorld>[0]) => on('settings.read', () => ({ value: { language: 'korean' } }) as never)
+
+test('F4 words: a Korean nextNeedsYou failure toast reads Korean with ⚠', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  KO_ON(on)
+  const { pushes, seen } = pushWorld(on, sentOk, evLines({ ...NEEDS_YOU, next_key: 'nextNeedsYou', next_vars: {}, reason: 'which db?' }))
+  await start($)
+  await clock.advance(3000)
+  expect(seen.toasts).toEqual([`⚠ E-aaaaaaaa plan:1 ${STRINGS.ko.nodeFailed}: which db? → ${STRINGS.ko.nextNeedsYou}`])
+  expect(pushes[0].message).toContain(STRINGS.ko.nextNeedsYou)
+})
+
+test('F4 words: an event with an unknown kind toasts one.text', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  KO_ON(on)
+  const odd = { ts: 1500, task_id: 'E-aaaaaaaa1', kind: 'something_new', text: 'E-aaaaaaaa did something new', run: 'E-aaaaaaaa', node: 'n1' }
+  const { seen } = pushWorld(on, sentOk, evLines(odd))
+  await start($)
+  await clock.advance(3000)
+  expect(seen.toasts).toEqual([odd.text])
+})
+
+test('F4 words: an unknown next_key draws the key and does not throw', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { seen } = pushWorld(on, sentOk, evLines(FAIL({ severity: 'failure', next_step: 'later', next_key: 'nextFromTheFuture', next_vars: {} })))
+  await start($)
+  await clock.advance(3000)
+  expect(seen.toasts).toEqual(['✗ E-aaaaaaaa critique:2 failed: shape too wide → nextFromTheFuture'])
+})
+
+test('F4 words: waiting_human and daemon_done build their sentence from the fields, in Korean', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  KO_ON(on)
+  const wait = { ts: 1500, task_id: 'E-aaaaaaaa1', kind: 'waiting_human', text: 'E-aaaaaaaa needs you: plan:1', run: 'E-aaaaaaaa', node: 'plan:1' }
+  const fin = { ts: 1600, task_id: 'E-aaaaaaaa1', kind: 'daemon_done', text: 'E-aaaaaaaa finished: complete', run: 'E-aaaaaaaa', state: 'complete' }
+  const { seen } = pushWorld(on, sentOk, evLines(wait, fin))
+  await start($)
+  await clock.advance(3000)
+  expect(seen.toasts).toEqual([
+    STRINGS.ko.evWaiting.replace('{run}', 'E-aaaaaaaa').replace('{node}', 'plan:1'),
+    STRINGS.ko.evDone.replace('{run}', 'E-aaaaaaaa').replace('{state}', STRINGS.ko.doneComplete),
+  ])
+})
+
+for (const [lang, on0] of [['en', false], ['ko', true]] as const) {
+  test(`F4 words: paused, daemon restarts and fix rounds keep their meaning with run on the event (${lang})`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1000 })
+    if (on0) KO_ON(on)
+    const run = 'E-aaaaaaaa'
+    const pause = { ts: 1500, task_id: 'E-aaaaaaaa1', kind: 'child_driver_capacity', text: `${run} paused: provider limit`, run }
+    const dead = { ts: 1600, task_id: 'E-aaaaaaaa1', kind: 'daemon_exhausted', text: `${run} stopped: daemon restarts used up`, run }
+    const fix = { ts: 1700, task_id: 'E-aaaaaaaa1', kind: 'upstream_fix_rounds_exhausted', text: `${run} P1: fix rounds used up`, run, package: 'P1' }
+    const { seen } = pushWorld(on, sentOk, evLines(pause, dead, fix))
+    await start($)
+    await clock.advance(3000)
+    const S = STRINGS[lang]
+    expect(seen.toasts).toEqual(on0
+      ? [S.evPaused.replace('{run}', run), S.evExhausted.replace('{run}', run), S.evFixRounds.replace('{run}', run).replace('{pkg}', 'P1')]
+      : [pause.text, dead.text, fix.text])
+    if (on0) expect(seen.toasts).toEqual([`${run} 일시 중지: 제공자 한도`, `${run} 중단: 데몬 재시작 소진`, `${run} P1: 수정 라운드 소진`])
+  })
+}
+
+test('F4 words: a failure with a reason_key draws the key in the table, an unknown reason_key draws as received', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  KO_ON(on)
+  const { seen } = pushWorld(on, sentOk, evLines(FAIL({ reason: 'no reason recorded', reason_key: 'reasonNone', next_step: null }), FAIL({ ts: 1600, reason: 'x', reason_key: 'reasonFromTheFuture', next_step: null })))
+  await start($)
+  await clock.advance(3000)
+  await clock.advance(3000)
+  expect(seen.toasts).toEqual([
+    `↻ E-aaaaaaaa critique:2 ${STRINGS.ko.nodeFailed}: ${STRINGS.ko.reasonNone}`,
+    `↻ E-aaaaaaaa critique:2 ${STRINGS.ko.nodeFailed}: reasonFromTheFuture`,
+  ])
+})
+
 test('a line with severity but no run, node or reason toasts its text as before, and no tick throws', async ($, on) => {
   const clock = mock.clock(on, { now: 1000 })
   const torn = { ts: 1500, task_id: 'E-aaaaaaaa1', kind: 'node_finish', text: 'E-aaaaaaaa n1 failed', severity: 'failure', next_step: 7, reason: {} }
@@ -2191,7 +2519,7 @@ for (const bodyColumns of [78, 46]) {
         expect(body.filter(l => /Decisions/.test(l))).toHaveLength(1)
         const foot = body[body.length - 1]!
         expect(body.filter(l => l.includes('close'))).toEqual([foot])
-        expect(foot.endsWith('q close')).toBe(true)
+        expect(foot.endsWith('q close  l EN')).toBe(true) // close, then the language marker (F4)
         expect(foot).not.toContain('q: q')
         if (bodyColumns === 46) {
           expect(tabRows[0]).not.toContain('turns') // the cost text gave way
@@ -2899,3 +3227,268 @@ test('view server: with fetch failing the tick falls back to --once and starts t
   expect(seen.argv.filter(a => a.includes('--once')).length > 1).toBe(true)
   expect(seen.argv.filter(isServeStart)).toHaveLength(1)
 })
+
+// ---- F4 page: one test per page, each over the four surfaces, English then Korean (via `l` and via the language setting) ----
+// Fictional data. The words a person or the engine wrote in it (titles, ids, prose, agent names) are named in LANG_DATA / F4_DATA:
+// they stay as written in both languages. Everything else the pane says comes from the table.
+// PLAN and JUDGE are the engine's worker ids; the judge's reason and the report path are written by the run
+const F4_DATA = [...LANG_DATA, 'sound', 'defect D1', '/proj/.teams_output/team/E-abc/80-report.md', '/teams-status', 'PLAN', 'JUDGE'].sort((a, b) => b.length - a.length)
+const F4_TASKS = [
+  epicOf('tA', 'E-3a3a3bb5', [
+    story('E-3a3a3bb5/P1', 'module b', { doing: 'editing a.ts', last_verdict: 'reject', try: 2, max: 3, elapsed_ms: 240000, cost_usd: 0.42, cost_estimated: true, metrics: numbers({ judge: { score: 85, threshold: 90, reason: 'sound', gap: null } }) }),
+    story('E-3a3a3bb5/P2', 'module c', { state: 'idle', elapsed_ms: 3720000, metrics: NEVER }),
+    story('E-3a3a3bb5/P3', 'cache layer', { state: 'you', doing: 'asks a question', elapsed_ms: 600000 }),
+  ], {
+    work: [failedCard, card('module b', 'package', 'done')],
+    workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', 'editing a.ts'), wkd('P2', 'idle'), wkd('P3', 'you', 'asks a question'), wkd('JUDGE', 'stalled')],
+    handoffs: [
+      { time: '10:03', from: 'judge', what: 'verdict reject', what_key: 'handVerdict', what_vars: { v: 'reject' }, to: 'P1' },
+      { time: '10:05', from: 'P3', what: 'asks you', what_key: 'handAsks', what_vars: {}, to: 'you', to_key: 'partyYou' },
+      { time: '10:08', from: 'integrate', what: 'integrated 2', what_key: 'handIntegrated', what_vars: { n: 2 }, to: 'EPIC' },
+    ],
+    you: { count: 1, items: ['one open question'], cards: [{ key: 'E-3a3a3bb5/P3', title: 'cache layer', question: 'keep the old cache key format?' }] },
+  }),
+]
+const F4_FIXTURE: Data = {
+  status: stat({ waiting: 1 }), tasks: F4_TASKS, task: demo({ work: [failedCard, card('module b', 'package', 'done')], now: { kind: 'build', subject: 'module b', detail: '' } }), teams: TEAMS, dash: DASH,
+  decisions: card => (card === 'P1' ? THREAD : { card: null, entries: [] }), reports: { abc: payload(), tA: payload() },
+}
+const F4_PAGES = ['dash', 'floor', 'stories', 'decisions', 'log', 'report', 'band', 'empty', 'mobile'] as const
+type F4Page = (typeof F4_PAGES)[number]
+const F4_SHOTS: { name: string; lines: string[] }[] = []
+const numbersOf = (text: string) => (text.match(/\d+/g) ?? []).sort().join(',')
+
+async function pageWorld($: Engine, on: On, page: F4Page) {
+  const surfaces: readonly Surface[] = page === 'mobile' ? ['mobile'] : SURFACES
+  const empty = page === 'empty'
+  const clock = mock.clock(on, { now: 1000 })
+  const setting = { value: undefined as string | undefined }
+  langStart(on, () => (setting.value === undefined ? {} : { language: setting.value }))
+  const init = empty ? {} : { watch: ['abc'], epic: 'tA', view: F4_PAGES.indexOf(page) < 6 ? page : 'floor' }
+  const seen = uiWorld(on, init, surfaces, empty ? { status: { line: '', waiting: 0 } } : F4_FIXTURE)
+  on('ui.panes', () => ({ value: [{ id: 'teams-status', title: 'Teams', isPlaced: true }] }) as never)
+  on('ui.close', () => ({ value: undefined }))
+  on('ui.render', (_$, e) => (e.component === 'AbovePrompt' ? { type: 'Box', children: [] } : undefined) as never)
+  await start($)
+  if (!empty) await clock.advance(3000)
+  const mounted: { surface: Surface; cols: number; ui: Ui }[] = []
+  const mountAt = async (surface: Surface, cols: number, component: 'Pane' | 'AbovePrompt') => {
+    const props = component === 'Pane' ? { title: 'Teams', isFocused: false, bodyColumns: cols - 4, placement: 'dock' } : { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: cols }
+    const ui = await $.ui.mount({ plugin: 'teams', surface, component, ...(component === 'Pane' ? { requestId: 'teams-status' } : {}), props } as never)
+    if (component === 'Pane' && F4_PAGES.indexOf(page) < 6) {
+      await ui.press({ key: page })
+      await ui.redraw()
+    }
+    mounted.push({ surface, cols, ui })
+    return ui
+  }
+  const redrawAll = async () => { for (const m of mounted) await m.ui.redraw() }
+  return { seen, setting, surfaces, mounted, mountAt, redrawAll, restart: () => start($) }
+}
+const markerOf = (surface: Surface, lang: 'en' | 'ko') => (surface === 'mobile' ? '' : 'l ') + (lang === 'en' ? 'EN' : 'KR')
+
+const f4Page = (page: F4Page) => {
+  return async ($: Engine, on: On) => {
+    const w = await pageWorld($, on, page)
+    const isBand = page === 'band'
+    // the band has no footer: a terminal pane mounted first carries the marker and the key
+    const holder = isBand ? await w.mountAt('terminal', 110, 'Pane') : undefined
+    // every surface at both widths for marker, language and facts; the wrapped-row and cut-glyph check stays on terminal (and mobile) below
+    const shots = w.surfaces.flatMap(s => [190, 110].map(cols => ({ s, cols })))
+    // bands: one per surface and width. Panes: the host allows one Pane per surface, so a pane is mounted afresh at each width
+    const bands = new Map<string, Ui>()
+    if (isBand) for (const { s, cols } of shots) bands.set(`${s}@${cols}`, await w.mountAt(s, cols, 'AbovePrompt'))
+    const subject = async (s: Surface, cols: number) => {
+      if (isBand) return bands.get(`${s}@${cols}`)!
+      const old = w.mounted.findIndex(m => m.surface === s)
+      if (old >= 0) {
+        await w.mounted[old]!.ui.unmount()
+        w.mounted.splice(old, 1)
+      }
+      return w.mountAt(s, cols, 'Pane')
+    }
+    const flip = async () => {
+      const m = w.mounted.find(x => x.surface === 'terminal') ?? w.mounted[0]!
+      if (m.surface === 'mobile') await m.ui.press({ key: 'lang' })
+      else await typeKey(m.ui, 'l')
+      await w.redrawAll()
+    }
+    const check = async (lang: 'en' | 'ko') => {
+      const out = new Map<string, string>()
+      for (const { s, cols } of shots) {
+        const ui = await subject(s, cols)
+        const text = visible(await ui.drawn())
+        out.set(`${s}@${cols}`, text)
+        if (lang === 'en') expect([`${s}@${cols}`, hangulIn(text, F4_DATA)]).toEqual([`${s}@${cols}`, []])
+        else {
+          expect([`${s}@${cols}`, latinOutside(text, F4_DATA)]).toEqual([`${s}@${cols}`, []])
+          expect(hangulIn(text).length > 0).toBe(true)
+        }
+        // the footer marker: on the pane itself; the band has none, its pane holder carries it
+        expect(await labels(holder ?? ui)).toContain(markerOf(holder ? 'terminal' : s, lang))
+        if (s === 'terminal' || page === 'mobile') {
+          const drawn = (await ui.drawn()) as any
+          const l = isBand ? draw(drawn, cols) : frame(drawn, 'Teams', cols)
+          sound(isBand ? l : bodyOf(l), cols + 4)
+          F4_SHOTS.push({ name: `demo-${page}${lang}-${cols}`, lines: l })
+        }
+        if (page === 'mobile') {
+          expect(await labels(ui)).toContain(lang === 'en' ? 'EN' : 'KR')
+          for (const key of ['dash', 'floor', 'stories', 'decisions', 'log', 'report', 'close', 'lang']) expect(await ui.find({ key })).toBeDefined()
+          expect(await ui.find({ key: 'keys' })).toBeUndefined()
+        }
+      }
+      return out
+    }
+    // English: the default with no language setting
+    const en = await check('en')
+    if (page === 'dash') expect(STRINGS.en.progBuild).toBe('Build {done}/{total}') // F3's progress word, English only; the pane draws it once F2's pages do
+    // Korean by `l`
+    await flip()
+    const koByKey = await check('ko')
+    for (const k of en.keys()) expect([k, numbersOf(koByKey.get(k)!)]).toEqual([k, numbersOf(en.get(k)!)])
+    // and back to English by `l`
+    await flip()
+    expect([...(await check('en')).values()]).toEqual([...en.values()])
+    // Korean by the language setting: the choice is released, so session.start applies it
+    w.seen.store.set('langChosen', false)
+    w.setting.value = 'korean'
+    await w.restart()
+    await w.redrawAll()
+    const koBySetting = await check('ko')
+    expect([...koBySetting.values()]).toEqual([...koByKey.values()])
+  }
+}
+test('F4 page: dash', f4Page('dash'))
+test('F4 page: floor', f4Page('floor'))
+test('F4 page: stories', f4Page('stories'))
+test('F4 page: decisions', f4Page('decisions'))
+test('F4 page: log', f4Page('log'))
+test('F4 page: report', f4Page('report'))
+test('F4 page: band', f4Page('band'))
+test('F4 page: empty', f4Page('empty'))
+test('F4 page: mobile', f4Page('mobile'))
+
+// the Dash Now word for every now.kind the engine emits (the page test above pins 'build'): English draws the kind's word, Korean has no Latin outside the allow-list
+for (const kind of NOW_KINDS) {
+  for (const language of [undefined, 'korean']) {
+    test(`F4 dash now: ${kind} ${language ?? 'english'}`, async ($, on) => {
+      const data: Data = { ...F4_FIXTURE, task: demo({ work: [failedCard, card('module b', 'package', 'done')], now: { kind, subject: 'module b', detail: '' } }) }
+      await seeded($, on, data, 'terminal', language, { epic: 'tA', view: 'dash' })
+      const ui = await pane($, 'terminal')
+      await ui.press({ key: 'dash' })
+      await ui.redraw()
+      const text = visible(await ui.drawn())
+      const word = (STRINGS[language === undefined ? 'en' : 'ko'] as Record<string, string>)[`stage${kind[0]!.toUpperCase()}${kind.slice(1)}`]
+      expect([kind, text.includes(`${word} · module b`)]).toEqual([kind, true])
+      if (language === undefined) expect([kind, hangulIn(text, F4_DATA)]).toEqual([kind, []])
+      else expect([kind, latinOutside(text, [...F4_DATA, 'Receipts', 'uplo']), hangulIn(text).length > 0]).toEqual([kind, [], true]) // the lane card title, clipped at this width
+    })
+  }
+}
+
+test('F4 demo renders', () => {
+  // the page tests above collect the renders; each block is split into tmp/card125/F4-renders by graph/scripts/split-demo.mjs
+  const last = new Map(F4_SHOTS.map(s => [s.name, s.lines]))
+  expect(last.size).toBe(36)
+  for (const [name, lines] of last) console.log(`=== ${name} ===\n${lines.join('\n')}\n=== end ===`)
+})
+
+// states the engine emits that the F4 page fixtures do not reach: a STORY in BACKLOG and in WAITING_HUMAN, a task in waiting_human and in stale,
+// drawn on the pages that name them, in English (as the engine sent them, as HEAD drew) and in Korean (no Latin outside the allow-list)
+const STATE_STORIES = {
+  ...TEAMS,
+  teams: [{ team: 'develop', cards: [row('P0', 'module a', 'BACKLOG', 'pending'), row('P1', 'module b', 'WAITING_HUMAN', 'pending'), row('P2', 'module c', 'WAITING_CAPACITY', 'pending')] }],
+}
+const STATE_DATA = [...F4_DATA, 'task tD', 'task tE', 'task tF', 'Receipts', 'uplo']
+const stateTasks = [
+  ...F4_TASKS,
+  epicOf('tD', 'E-d4d4d4d4', [], { live: false, state: 'stale' }),
+  epicOf('tE', 'E-e5e5e5e5', [], { live: false, state: 'unknown' }),
+  epicOf('tF', 'E-f6f6f6f6', [], { live: true, state: 'BACKLOG' }),
+]
+for (const task of ['waiting_human', 'stale']) {
+  for (const view of ['decisions', 'dash'] as const) { // the Report headline's state word (an EPIC the list lacks) is covered by the state family in strings.test.ts
+    for (const language of [undefined, 'korean']) {
+      test(`F4 states: ${task} on ${view} ${language ?? 'english'}`, async ($, on) => {
+        const data: Data = { ...F4_FIXTURE, tasks: stateTasks, teams: STATE_STORIES, dash: { model: { ...DASH.model, state: task } }, task: demo({ state: task, work: [failedCard, card('module b', 'package', 'done')] }) }
+        await seeded($, on, data, 'terminal', language, { epic: 'tA', view })
+        const ui = await pane($, 'terminal')
+        await ui.press({ key: view })
+        await ui.redraw()
+        const text = visible(await ui.drawn())
+        const table = STRINGS[language === undefined ? 'en' : 'ko'] as Record<string, string>
+        const key = task === 'stale' ? 'stateStale' : 'stateWaitingHuman'
+        // English draws the engine's own word: the raw ticket state on Stories, the state on Report and (upper-case) on Dash
+        const words = view === 'decisions'
+          ? language === undefined ? ['BACKLOG', 'WAITING_HUMAN', 'WAITING_CAPACITY'] : [table.ticketBacklog, table.ticketWaitingHuman, table.ticketWaitingCapacity]
+          : [language === undefined ? (view === 'dash' ? clipText(task.toUpperCase(), 12) : task) : view === 'dash' ? clipText(table[key].toUpperCase(), 12) : table[key]]
+        for (const w of words) expect([view, w, text.includes(w)]).toEqual([view, w, true])
+        if (language === undefined) expect([view, hangulIn(text, STATE_DATA)]).toEqual([view, []])
+        else expect([view, latinOutside(text, STATE_DATA), hangulIn(text).length > 0]).toEqual([view, [], true])
+        // the EPIC list rows: stale, unknown and BACKLOG (English as sent, Korean from the table)
+        const listWords = language === undefined ? ['stale', 'unknown', 'BACKLOG'] : [STRINGS.ko.stateStale, STRINGS.ko.ticketUnknown, STRINGS.ko.ticketBacklog]
+        for (const w of listWords) expect([view, w, text.includes(w)]).toEqual([view, w, true])
+      })
+    }
+  }
+}
+
+// AC-23: a toast already shown is not redrawn when the language changes; the next one is in the new language
+test('F4 lang: a toast shown before the toggle stays; the next toast is in the new language', async ($, on) => {
+  const toasts: string[] = []
+  on('ui.toast', (_$, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  const fail = (o: object) => FAIL({ reason: 'gap', next_key: 'nextNeedsYou', next_vars: {}, next_step: 'needs you', severity: 'failure', ...o })
+  const data: Data = { ...F4_FIXTURE, events: [fail({ ts: 1600, node: 'accept:P1:3' })] }
+  const { tick } = await seeded($, on, data, 'terminal', undefined, { epic: 'tA' })
+  const en = `⚠ E-aaaaaaaa accept:P1:3 ${STRINGS.en.nodeFailed}: gap → ${STRINGS.en.nextNeedsYou}`
+  expect(toasts).toEqual([en])
+  const ui = await pane($, 'terminal')
+  await typeKey(ui, 'l')
+  await tick()
+  expect(toasts).toEqual([en])
+  data.events = [...data.events!, fail({ ts: 4500, node: 'plan:1' })]
+  await tick()
+  expect(toasts).toEqual([en, `⚠ E-aaaaaaaa plan:1 ${STRINGS.ko.nodeFailed}: gap → ${STRINGS.ko.nextNeedsYou}`])
+})
+
+// AC-25: the toggle writes lang and langChosen and nothing else in $.state
+test('F4 lang: the toggle touches only lang and langChosen in $.state', async ($, on) => {
+  const { seen } = await seeded($, on, F4_FIXTURE, 'terminal', undefined, { epic: 'tA' })
+  const ui = await pane($, 'terminal')
+  const before = new Map(seen.store)
+  await ui.press({ key: 'lang' })
+  const changed = [...new Set([...before.keys(), ...seen.store.keys()])].filter(k => JSON.stringify(before.get(k)) !== JSON.stringify(seen.store.get(k))).sort()
+  expect(changed).toEqual(['lang', 'langChosen'])
+  expect(seen.store.get('lang')).toBe('ko')
+})
+
+// engine-written subjects (view-summary.mjs SUBJECT_KEY_OF), as summarize() sends them: a Log page and a Dash activity row in each language
+const SUBJECT_LOG = [
+  { time: '10:01', kind: 'passed', subject: 'final gate' }, { time: '10:02', kind: 'integrated', subject: 'integration' },
+  { time: '10:03', kind: 'finished', subject: 'the task' }, { time: '10:04', kind: 'dispatched', subject: 'a card' },
+  { time: '10:05', kind: 'waiting', subject: 'a step' }, { time: '10:06', kind: 'passed', subject: 'module b' },
+]
+for (const language of [undefined, 'korean']) {
+  for (const view of ['log', 'dash'] as const) {
+    test(`F4 subjects: engine words on ${view} ${language ?? 'english'}`, async ($, on) => {
+      const data: Data = { ...F4_FIXTURE, task: demo({ log: SUBJECT_LOG, now: { kind: 'answer', subject: 'final gate', detail: null } }), dash: { model: { ...DASH.model, activity: [...SUBJECT_LOG].reverse() } } }
+      await seeded($, on, data, 'terminal', language, { epic: 'tA', view })
+      const ui = await pane($, 'terminal')
+      await ui.press({ key: view })
+      await ui.redraw()
+      const text = visible(await ui.drawn())
+      const lang = language === undefined ? 'en' : 'ko'
+      for (const x of ['final gate', 'integration', 'the task', 'a card', 'a step']) {
+        const word = STRINGS[lang][`subj${x === 'final gate' ? 'FinalGate' : x === 'integration' ? 'Integration' : x === 'the task' ? 'Task' : x === 'a card' ? 'Card' : 'Step'}` as keyof typeof STRINGS.en]
+        if (view === 'log' || x !== 'a step') expect([view, x, text.includes(word)]).toEqual([view, x, true])
+      }
+      expect(text.includes('module b') || view === 'dash').toBe(true)
+      if (language === undefined) expect([view, text.includes('final gate'), text.includes('a card')]).toEqual([view, true, true])
+      else expect([view, latinOutside(text, [...F4_DATA, 'Receipts', 'uplo'])]).toEqual([view, []])
+    })
+  }
+}

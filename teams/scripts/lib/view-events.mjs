@@ -14,18 +14,18 @@ const cardLabel = (e) => String(e.subgoal_id ?? (e.key ? String(e.key).split('/'
 // recorded hand-off {from, what, to} the teams pane's Floor feed shows (absent = not a hand-off).
 const EVENTS = {
   node_finish: { text: (e, id) => (e.state === 'failed' ? `${id} ${e.node_id} failed${e.attempt > 1 ? ` (attempt ${e.attempt})` : ''}` : null) },
-  waiting_human: { text: (e, id) => `${id} needs you: ${e.node_id}`, hand: (e) => ({ from: cardLabel(e), what: 'asks you', to: 'you' }) },
+  waiting_human: { text: (e, id) => `${id} needs you: ${e.node_id}`, hand: (e) => ({ from: cardLabel(e), what: 'asks you', what_key: 'handAsks', what_vars: {}, to: 'you', to_key: 'partyYou' }) },
   child_driver_capacity: { text: (e, id) => `${id} paused: provider limit` },
   daemon_done: { text: (e, id) => `${id} finished: ${e.state}` },
   daemon_exhausted: { text: (e, id) => `${id} stopped: daemon restarts used up` },
   upstream_fix_rounds_exhausted: { text: (e, id) => `${id} ${e.package_id}: fix rounds used up` },
-  verdict: { hand: (e) => ({ from: e.actor || 'judge', what: `verdict ${e.verdict}`, to: cardLabel(e) }) },
-  integrated: { hand: (e) => ({ from: 'integrate', what: `integrated ${e.merged ?? 0}`, to: 'EPIC' }) },
-  defects_filed: { hand: (e) => ({ from: e.reporter || 'qa', what: `filed ${(e.filed || []).length} defect(s)`, to: (e.filed || []).join(', ') || 'EPIC' }) },
+  verdict: { hand: (e) => ({ from: e.actor || 'judge', what: `verdict ${e.verdict}`, what_key: 'handVerdict', what_vars: { v: e.verdict }, to: cardLabel(e) }) },
+  integrated: { hand: (e) => ({ from: 'integrate', what: `integrated ${e.merged ?? 0}`, what_key: 'handIntegrated', what_vars: { n: e.merged ?? 0 }, to: 'EPIC' }) },
+  defects_filed: { hand: (e) => ({ from: e.reporter || 'qa', what: `filed ${(e.filed || []).length} defect(s)`, what_key: 'handFiled', what_vars: { n: (e.filed || []).length }, to: (e.filed || []).join(', ') || 'EPIC' }) },
   // a forwarded answer carries its ask_id and is drawn once, as `answered`
-  tm_submit_human: { hand: (e) => (e.ask_id ? null : { from: 'you', what: clip(e.answer, 60) || 'answered', to: cardLabel(e) }) },
+  tm_submit_human: { hand: (e) => { if (e.ask_id) return null; const t = clip(e.answer, 60); return { from: 'you', from_key: 'partyYou', what: t || 'answered', ...(t ? {} : { what_key: 'handAnswered', what_vars: {} }), to: cardLabel(e) }; } },
   asked: { hand: (e) => ({ from: cardLabel(e), what: clip(e.question, 60), to: 'TeamLeader' }) },
-  answered: { hand: (e) => ({ from: e.by === 'teamleader' ? 'TeamLeader' : 'you', what: clip(e.answer, 60), to: cardLabel(e) }) },
+  answered: { hand: (e) => { const you = e.by !== 'teamleader'; return { from: you ? 'you' : 'TeamLeader', ...(you ? { from_key: 'partyYou' } : {}), what: clip(e.answer, 60), to: cardLabel(e) }; } },
 };
 
 // Ledger lines as events with a numeric ts; a torn last line is skipped.
@@ -70,17 +70,23 @@ function names(x, n) {
 function nextStep(x, nf, maxRetries) {
   const num = (v) => (typeof v === 'number' && Number.isFinite(v));
   switch (x.event) {
-    case 'auto_reshape': return num(x.attempt) ? `retrying as shape:${x.attempt}` : null;
-    case 'auto_resplit': return num(x.attempt) ? `retrying as areas:${x.attempt}` : null;
+    case 'auto_reshape': return num(x.attempt) ? { text: `retrying as shape:${x.attempt}`, key: 'nextShape', vars: { n: x.attempt } } : null;
+    case 'auto_resplit': return num(x.attempt) ? { text: `retrying as areas:${x.attempt}`, key: 'nextAreas', vars: { n: x.attempt } } : null;
     case 'daemon_retry_opened': {
       const n = num(x.attempt) ? x.attempt : (num(nf.attempt) ? nf.attempt : 1) + 1;
-      return `retry ${n}/${maxRetries + 1}`;
+      return { text: `retry ${n}/${maxRetries + 1}`, key: 'nextRetry', vars: { n, max: maxRetries + 1 } };
     }
-    case 'tm_settle': case 'daemon_retry_settled': return 'gave up';
-    case 'waiting_human': return 'needs you';
+    case 'tm_settle': case 'daemon_retry_settled': return { text: 'gave up', key: 'nextGaveUp', vars: {} };
+    case 'waiting_human': return { text: 'needs you', key: 'nextNeedsYou', vars: {} };
     default: return null;
   }
 }
+
+// Every key this module can hand over beside its English: a mod looks the words up by key.
+export const ENGINE_WORD_KEYS = [
+  'nextShape', 'nextAreas', 'nextRetry', 'nextGaveUp', 'nextNeedsYou', 'reasonNone',
+  'handAsks', 'handVerdict', 'handIntegrated', 'handFiled', 'handAnswered', 'partyYou',
+];
 
 // The failed node_finish at evs[i] as ctx tells it: { ts, reason, next_step, severity }, or null while it is
 // still held. ts is the release time: the next-step event's ts, else the node_finish's ts + HOLD_MS. It is a
@@ -98,9 +104,11 @@ function failure(evs, i, ctx, now) {
     if (v.event === 'verdict' && v.node_id === nf.node_id && (typeof nf.attempt !== 'number' || v.attempt === nf.attempt)) reason = v.reason;
   }
   const recorded = typeof reason === 'string' && reason.trim() ? reason : ctx.reasons?.[nf.node_id];
-  const next_step = next ? nextStep(next, nf, Number.isInteger(ctx.maxRetries) ? ctx.maxRetries : 2) : null;
+  const ns = next ? nextStep(next, nf, Number.isInteger(ctx.maxRetries) ? ctx.maxRetries : 2) : null;
+  const next_step = ns ? ns.text : null;
   const severity = next_step === 'needs you' || next_step === 'gave up' ? 'failure' : 'info';
-  return { ts, reason: typeof recorded === 'string' && recorded.trim() ? oneLine(recorded) : NO_REASON, next_step, severity };
+  const has = typeof recorded === 'string' && recorded.trim();
+  return { ts, reason: has ? oneLine(recorded) : NO_REASON, ...(has ? {} : { reason_key: 'reasonNone' }), next_step, next_key: ns ? ns.key : null, next_vars: ns ? ns.vars : null, severity };
 }
 
 // ctx (optional) switches on the failure story of a failed node_finish: { maxRetries (default 2, graph.mjs),
@@ -125,7 +133,7 @@ export function notableFromEvents(evs, sinceTs, ctx) {
       if (!f) return;
       ts = f.ts;
       // run and node: what the mod names in its toast, so it never parses the text
-      story = { run: id8(e.task_id), node: e.node_id, reason: f.reason, next_step: f.next_step, severity: f.severity };
+      story = { node: e.node_id, reason: f.reason, ...(f.reason_key ? { reason_key: f.reason_key } : {}), next_step: f.next_step, next_key: f.next_key, next_vars: f.next_vars, severity: f.severity };
       text = `${base}: ${f.reason}${f.next_step ? ` → ${f.next_step}` : ''}`;
     }
     if (ts <= sinceTs) return;
@@ -133,7 +141,8 @@ export function notableFromEvents(evs, sinceTs, ctx) {
     const pkg = e.subgoal_id ?? e.package_id;
     // the daemon's final state rides on daemon_done, so a consumer maps a field and never the text
     const state = e.event === 'daemon_done' && typeof e.state === 'string' ? { state: e.state } : {};
-    out.push({ ts, task_id: e.task_id, kind: e.event, text, ...state, ...(pkg != null ? { package: String(pkg) } : {}), ...(typeof e.attempt === 'number' ? { attempt: e.attempt } : {}), ...story });
+    const node = e.event === 'waiting_human' && e.node_id != null ? { node: e.node_id } : {};
+    out.push({ ts, task_id: e.task_id, kind: e.event, text, ...state, ...node, ...(pkg != null ? { package: String(pkg) } : {}), ...(typeof e.attempt === 'number' ? { attempt: e.attempt } : {}), ...(e.task_id != null || e.event === 'node_finish' ? { run: id8(e.task_id) } : {}), ...story });
   });
   return out.sort((a, b) => a.ts - b.ts);
 }

@@ -6,24 +6,25 @@
 export type PaneTabKey = 'dash' | 'floor' | 'stories' | 'decisions' | 'log' | 'report'
 const KEY_TABS: Record<string, PaneTabKey> = { '0': 'dash', '1': 'floor', '2': 'stories', '3': 'decisions', '4': 'log', '5': 'report' }
 
-// `[` / `]` step the EPIC, `j` / `k` the STORY row, `g` opens the row's run, `0`-`5` pick a tab, `q` closes. The pane's
-// Input holds the focus, so these keys reach it as text, never a Button hotkey. Text holding a `/` is a slash command
-// being typed (`/teams-status`): held, no key fires until submit (paneSlash). Any other text, none, or a non-string is no key.
+// `[` / `]` step the EPIC, `j` / `k` the STORY row, `g` opens the row's run, `0`-`5` pick a tab, `l` switches the language,
+// `q` closes. The pane's Input holds the focus, so these keys reach it as text, never a Button hotkey. Text holding a `/`
+// is a slash command being typed (`/teams-status`): held, no key fires until submit (paneSlash). Any other text, none, or a
+// non-string is no key. While the person is answering (opts.answering) letters are text: no key fires, `l` included.
 export type PaneKey =
-  | { kind: 'step'; by: 1 | -1 } | { kind: 'row'; by: 1 | -1 } | { kind: 'open' } | { kind: 'tab'; tab: PaneTabKey } | { kind: 'close' } | null
+  | { kind: 'step'; by: 1 | -1 } | { kind: 'row'; by: 1 | -1 } | { kind: 'open' } | { kind: 'tab'; tab: PaneTabKey } | { kind: 'close' } | { kind: 'lang' } | null
 
-export function paneKey(text: unknown): PaneKey {
+// every key char the pane reads, as one record (a char serves one kind: the collision test walks it)
+export const PANE_KEYS: Record<string, Exclude<PaneKey, null>> = {
+  q: { kind: 'close' }, l: { kind: 'lang' }, g: { kind: 'open' },
+  ']': { kind: 'step', by: 1 }, '[': { kind: 'step', by: -1 }, j: { kind: 'row', by: 1 }, k: { kind: 'row', by: -1 },
+  ...Object.fromEntries(Object.entries(KEY_TABS).map(([c, tab]) => [c, { kind: 'tab', tab } as const])),
+}
+
+export function paneKey(text: unknown, opts?: { answering?: boolean }): PaneKey {
   if (typeof text !== 'string' || text === '' || text.includes('/')) return null
   const k = [...text].pop()!
-  if (k === 'q') return { kind: 'close' }
-  const tab = KEY_TABS[k]
-  if (tab !== undefined) return { kind: 'tab', tab }
-  if (k === ']') return { kind: 'step', by: 1 }
-  if (k === '[') return { kind: 'step', by: -1 }
-  if (k === 'j') return { kind: 'row', by: 1 }
-  if (k === 'k') return { kind: 'row', by: -1 }
-  if (k === 'g') return { kind: 'open' }
-  return null
+  if (opts?.answering === true && /\p{L}/u.test(k)) return null
+  return PANE_KEYS[k] ?? null
 }
 
 // A slash command typed into the pane's Input and submitted. The buffer may start with earlier key presses, so the

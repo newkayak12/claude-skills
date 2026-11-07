@@ -8,6 +8,25 @@ import { hhmm } from './view-events.mjs';
 const DAY_MS = 86400000;
 const HUMAN_STAGE = { plan: 'plan', build: 'build', integrate: 'integration', qa: 'QA', gate: 'final gate', report: 'report' };
 
+// The English words the engine itself writes as a subject (a stage, the whole task, a card or step with no title) and the
+// STRINGS key for each. view-once-golden.json pins the summary's exact shape, so the words ride as they are and the mod maps a
+// subject that equals one of these; any other subject is a card title or other model/person text and is drawn as written.
+export const SUBJECT_KEY_OF = { plan: 'subjPlan', build: 'subjBuild', integration: 'subjIntegration', QA: 'subjQa', 'final gate': 'subjFinalGate', report: 'subjReport', 'the task': 'subjTask', 'a card': 'subjCard', 'a step': 'subjStep' };
+export const SUBJECT_KEYS = Object.values(SUBJECT_KEY_OF);
+
+// Every key this module hands over beside its English (a mod looks the words up by key).
+export const SUMMARY_WORD_KEYS = ['reasonFailed'];
+
+// Every value a collected task's `state` can take (graph-state runState, harness and size-S collect, stall and cancel overrides, the index's 'unknown').
+export const TASK_STATES = ['running', 'stalled', 'stale', 'complete', 'partial', 'blocked', 'cancelled', 'waiting_human', 'unknown'];
+
+// Every state storyTicketState, epicTicketState and taskTicketState (mcp/tickets.mjs) can return; a hooks module cannot import tickets.mjs,
+// so the list lives here and test-state-lists.mjs ties it to those functions' return literals.
+export const TICKET_STATES = ['BACKLOG', 'READY', 'IN_PROGRESS', 'IN_REVIEW', 'DONE', 'BLOCKED', 'CANCELLED', 'UNREACHABLE', 'WAITING_CAPACITY', 'WAITING_HUMAN', 'REJECTED', 'SETTLED'];
+
+// Every now.kind summarize() can emit: the card kinds, idle/done/answer, and the stage keys.
+export const NOW_KINDS = ['idle', 'done', 'answer', 'fixnext', 'fix', 'plan', 'build', 'qa', ...STAGE_KEYS];
+
 // A free-text reason may carry a path or a node id; drop both.
 const scrub = (s) => String(s || '').replace(/\S*\/(?:Users|var|tmp)\/\S*/g, '').replace(/\b[\w-]+:[\w-]+(?::\d+)+/g, '').replace(/\s+/g, ' ').trim();
 
@@ -310,10 +329,12 @@ export function summarize(model, { now = Date.now() } = {}) {
 
   const work = cards.map(({ c, kind, state }) => {
     const failedNode = [c.accept, c.dispatch].find((n) => n && (n.state === 'failed' || n.state === 'blocked'));
+    const recorded = state === 'failed' ? scrub(failedNode && failedNode.reason) : '';
     return {
       title: c.title || '', kind, id: kind === 'defect' ? c.id : null, state,
       filed_by: c.origin ? (c.reporter || c.origin) : null,
-      reason: state === 'failed' ? (scrub(failedNode && failedNode.reason) || 'failed') : null,
+      reason: state === 'failed' ? (recorded || 'failed') : null,
+      ...(state === 'failed' && !recorded ? { reason_key: 'reasonFailed' } : {}),
     };
   });
   const done = work.filter((w) => w.state === 'done').length;

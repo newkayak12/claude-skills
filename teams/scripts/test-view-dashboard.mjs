@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dashboardModel, dashboardSvg, dashboardAlt, dashboardText, lanesOf, fit, storyLine } from './lib/view-dashboard.mjs';
+import { DASH_WORD_KEYS, dashboardModel, dashboardSvg, dashboardAlt, dashboardText, lanesOf, fit, storyLine } from './lib/view-dashboard.mjs';
 
 const task = (over = {}) => ({
   key: 'E-4a1c9e02', title: 'Checkout: refund flow', state: 'running', done: 1, total: 3,
@@ -24,6 +24,20 @@ test('model: percent of done stages, numbered stages, packages only from build c
   assert.deepEqual(m.stages.map((s) => [s.n, s.label, s.state]), [[1, 'Plan', 'done'], [2, 'Build', 'running'], [3, 'Integrate', 'pending']]);
   assert.deepEqual(m.packages.map((p) => p.title), ['Refund API', 'Receipt copy', 'Webhooks']);
   assert.equal(m.now, 'Build · Refund API');
+});
+
+test('F4 keys: DASH_WORD_KEYS names the tile sub-words; the model keeps the golden-pinned shape (no now_key, no sub_key)', () => {
+  assert.deepEqual(DASH_WORD_KEYS, ['tileSubStages', 'tileSubAccepted', 'tileSubTurns', 'tileSubWaiting', 'tileSubNothing', 'tileSubLive']);
+  const m = dashboardModel(task());
+  // every tile sub-word a model can show maps to one listed key (tile.key + sub), and every listed key is used
+  const keyOf = (t) => ({ progress: 'tileSubStages', stories: 'tileSubAccepted', cost: 'tileSubTurns', drivers: 'tileSubLive' }[t.key]
+    || (t.key === 'waiting' ? (t.sub === 'waiting' ? 'tileSubWaiting' : 'tileSubNothing') : null));
+  const used = new Set();
+  for (const mm of [m, dashboardModel(task({ you: { count: 0, cards: [] } }))]) for (const t of mm.tiles) used.add(keyOf(t));
+  used.add(keyOf({ key: 'drivers' }));
+  assert.deepEqual([...used].sort(), [...DASH_WORD_KEYS].sort());
+  assert.ok(m.tiles.every((t) => !('sub_key' in t)));
+  assert.equal('now_key' in m, false);
 });
 
 test('lanes: a waiting card is in Needs you, a failed one stays in progress marked failed', () => {
