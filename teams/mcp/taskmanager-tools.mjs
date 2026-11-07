@@ -27,7 +27,6 @@ const NEXT_SCHEMA = {
       node_id: { type: 'string' }, package_id: { type: 'string' }, cwd: { type: 'string' }, run_id: { type: 'string' },
       branch: { type: 'string' }, child_state: { type: 'string' }, next: { type: 'string' },
     } } },
-    view_url: { type: 'string', description: 'the one browser window for this tasks root (scripts/view.mjs, ensureViewer): open it to watch the run. Absent when TEAMS_VIEW=0 or the viewer could not start - never required, a task opens the same either way.' },
   },
   required: ['task_id', 'state'],
 };
@@ -119,7 +118,7 @@ const TOOLS = [
       },
       required: ['request', 'cwd'],
     },
-    outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, run_id: { type: 'string' }, docs_dir: { type: 'string' }, state: { type: 'string' }, view_url: { type: 'string', description: 'see tm_open({view_url}) - same viewer, same tasks root.' } }, required: ['task_id', 'run_id', 'docs_dir'] },
+    outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, run_id: { type: 'string' }, docs_dir: { type: 'string' }, state: { type: 'string' } }, required: ['task_id', 'run_id', 'docs_dir'] },
   },
   {
     name: 'tm_next',
@@ -335,9 +334,9 @@ function dispatch(name, a, signal) {
   }
 }
 
-// async because dispatch('tm_open'|'tm_run', ...) now returns a promise (openTaskAndMaybePin
-// awaits ensureViewer) - every other tool still resolves synchronously, `await` just passes
-// those straight through.
+// async because dispatch('tm_open'|'tm_run', ...) returns a promise (the open handlers are
+// async) - every other tool still resolves synchronously, `await` just passes those straight
+// through.
 //
 // Exported for teams/scripts/run.mjs (§4-C / §8 step 1 of _repo/docs/plans/
 // 2026-09-21-teams-server-owns-the-loop.md): the headless CLI imports THIS, the exact function

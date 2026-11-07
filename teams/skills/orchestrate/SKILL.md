@@ -78,14 +78,14 @@ tm_open({
   request, cwd, isolated, flow: "auto",
   vendor: "auto", allocation: "balanced",
   host_vendor, host_model, native_models
-})                                               -> task_id, state, docs_dir, view_url
+})                                               -> task_id, state, docs_dir
 ```
 
 That is the whole of your job to start it: size, the feature split and one planning card per
 feature area, the planning integrate, shape, critique, every package's dispatch and fold,
 integrate, one QA card per feature area, the goal gate, the report — or, for a size-S request,
 the development-harness run it hands the request to (claude and codex taking part) — all happen on their own from here. Prefer `tm_run` over `tm_open` when you do not even want the
-`state` field back, only a pointer: same open, same daemon, `{task_id, run_id, docs_dir, view_url}` - open `view_url` in a browser to watch the run.
+`state` field back, only a pointer: same open, same daemon, `{task_id, run_id, docs_dir}`.
 
 After this you watch; you never drive.
 
@@ -178,7 +178,7 @@ Everything past the entry lives in `references/`:
 | the loop itself: dispatch, retries, progress mirror, verdicts, rules | `references/loop.md` |
 | following a task the daemon is driving: worktrees, folds, `tm_retry`, integrate | `tm_status`/`tm_board`/`tm_ticket`/`tm_events` — read-only, safe from any session |
 | a card waiting on a person — pinned work (`assignee: "human"`, `tm_assign`), on an `interactive` run a decision (`ask`) or an accept/reject a `human_gates` stage is waiting on | `inbox`/`take`/`submit` — thin skills over `tm_inbox` (read-only, safe from any session), `tm_assign` (pin/release) and `tm_submit({task_id, key, payload})` (answer one). Both writes touch only the one card named — never a node the daemon or a package driver is itself working — so all three are safe to call alongside a running daemon too. |
-| a live visual of the same task instead of tool replies | `node teams/scripts/view.mjs --task <task_id>` — read-only HTTP page or `--once` text tree |
+| a live look at the same task instead of tool replies | `/teams-status` (with the mod); `node teams/scripts/view.mjs --once --task <task_id>` (Codex, headless, older Claude Code) — read-only text tree |
 | legacy `ordered` mode, per-stage `policy`, `native_models`, provenance | `references/routing.md` |
 | working directory, snapshot identity, briefing scope | `references/handoffs.md` |
 | quota reporting, checkpoints, `reset_capacity` | `references/capacity.md` |

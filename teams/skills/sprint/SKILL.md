@@ -25,7 +25,7 @@ related:
 
 A Sprint is `tm_open` plus four things the task manager already has, run in the order the Scrum
 Guide names them: a bounded backlog (`requests`), a box on cost and time (`budget_usd` /
-`timebox_minutes`), a daily look (`tm_board`/the viewer), a review against what actually shipped
+`timebox_minutes`), a daily look (`tm_board`, `/teams-status`), a review against what actually shipped
 (the report), and a retro that is not thrown away (`retro.json`, read back in by the next
 Sprint's own `tm_open`). This skill is thin on purpose: every one of those five pieces already
 exists as its own tool or field — nothing here is new mechanism, only the order to call it in.
@@ -63,8 +63,9 @@ exists as its own tool or field — nothing here is new mechanism, only the orde
    timebox_minutes, roles) and, once shape has run, `tm_status`'s `shape` block (max_parallel_width,
    fully_serial, bloated) — the same signals `critique` itself judges the shape against. This is
    the sprint's one planning checkpoint; nothing here blocks the daemon, which is already driving.
-3. **Daily → `tm_board`/the viewer.** Call `tm_board({task_id})` for the STORY kanban, or point
-   the human at `node teams/scripts/view.mjs --task <task_id>` for a live view — this skill makes
+3. **Daily → `tm_board`/`/teams-status`.** Call `tm_board({task_id})` for the STORY kanban, or point
+   the human at `/teams-status` (with the mod) or `node teams/scripts/view.mjs --once --task <task_id>`
+   (Codex, headless, older Claude Code) — this skill makes
    no decisions here, it only points at the existing read-only tools (see `board`). If
    `tm_status`'s `budget` field shows `warn: true`, say so plainly (80% spent/elapsed); if
    `over: true`, say what `budget_stopped.skipped_packages` already lists — the daemon has

@@ -5,7 +5,6 @@ import { collectTaskCosts } from './drivercost.mjs';
 import { dirname, join, resolve } from 'node:path';
 import { docPaths, epicBoardRows, epicKey, epicPhase, epicTicketState, initiativeKey, latestBySubgoal, packageFiling, parseTicketKey, planningPkgs, planningStories, qaPkgs, storyBlockedReason, storyKey, storyLinks, storyTaskProgress, storyTicketState, taskKey, ticketSnapshot } from './tickets.mjs';
 import { driverAlive, record, resolveHarnessRun, taskDir, taskPath, tasksRoot } from './taskstate.mjs';
-import { ensureViewer, readViewRecord, viewUrl } from './viewserver.mjs';
 import { graphRunPath } from './harnessrun.mjs';
 import { liveProc, registryProcesses, sameProcess } from './livecap.mjs';
 import { logReply, renderLedgerLine, renderStreamLine } from './tasklog.mjs';
@@ -814,27 +813,21 @@ export function requireRunnable(task, nodeId) {
 }
 
 // Shared by tm_open and tm_run: create the task and, when the caller pinned size, resolve the
-// size node right away exactly like a measured S/L would. Returns {task, delegated, view} -
+// size node right away exactly like a measured S/L would. Returns {task, delegated} -
 // delegated is delegateIfSmall's own return - null since a size-S task plans first (C6): the
-// pin opens its one planning card, and the caller drives the manager graph exactly as for L. view is ensureViewer's {url, port, pid, started} or
-// null - the one call site for the one human window a tasks root gets, made right here because
-// this is the only place tm_open and tm_run's task-creation paths meet; a call added separately
-// in each of them is exactly the split-default shape this file's tests (test-defaults.mjs) exist
-// to catch. Called after record() above, so the task directory already exists on disk. The
-// await is wrapped for the same reason ensureViewer already swallows its own errors: this call
-// must never be able to fail the open, even on a throw ensureViewer did not anticipate.
+// pin opens its one planning card, and the caller drives the manager graph exactly as for L.
+// This is the one place tm_open and tm_run's task-creation paths meet, so a step both need
+// belongs here, not copied into each of them.
 async function openTaskAndMaybePin(a, eventName) {
   const task = createTask(a);
   record(task, { event: eventName, task_id: task.run_id, cwd: task.cwd, flow: task.flow, size_pinned: task.size_pinned, ...(task.size_pin_source ? { size_pin_source: task.size_pin_source } : {}), ...(task.context_from_unresolved ? { context_from_unresolved: task.context_from_unresolved } : {}) });
-  let view = null;
-  try { view = await ensureViewer(tasksRoot(), task.run_id); } catch { view = null; }
-  if (!task.size_pinned) return { task, delegated: null, view };
-  // The pinned size is finished on a fresh read: the await above let the daemon in.
-  const pinned = mutateTask(task.run_id, (fresh) => pinSize(fresh, view));
+  if (!task.size_pinned) return { task, delegated: null };
+  // The pinned size is finished on a fresh read: the daemon may have run since record() above.
+  const pinned = mutateTask(task.run_id, (fresh) => pinSize(fresh));
   return { ...pinned, delegated: withHarnessFields(pinned.delegated, task.run_id) };
 }
 
-function pinSize(task, view) {
+function pinSize(task) {
   const n = task.nodes.find((x) => x.node_id === 'size');
   const out = finish(task, n, {
     stage_ok: true, size: task.size_pinned, size_source: 'pinned', sizing: [],
@@ -846,7 +839,7 @@ function pinSize(task, view) {
     evidence: 'no measurement: pinned by the caller',
   });
   const delegated = delegateIfSmall(task, n, out);
-  return { task, delegated, view };
+  return { task, delegated };
 }
 
 // tm_open: kept for the existing skill path and this whole test suite, byte-for-byte compatible
@@ -857,13 +850,13 @@ function pinSize(task, view) {
 // daemon gets a thin pointer, and the caller reads progress with tm_status/tm_board/tm_wait
 // instead - the daemon and package drivers do the rest.
 async function toolOpen(a) {
-  const { task, delegated, view } = await openTaskAndMaybePin(a, 'tm_open');
+  const { task, delegated } = await openTaskAndMaybePin(a, 'tm_open');
   const shared = sharedSizeSNote(task);
   const notes = [...((task.team && task.team.notes) || []), ...(shared ? [shared] : [])];
-  const viewFields = { ...(view && view.url ? { view_url: view.url } : {}), ...(task.context_from_unresolved ? { context_from_unresolved: task.context_from_unresolved } : {}), ...(task.carryover_candidates ? { carryover_candidates: task.carryover_candidates } : {}), ...(notes.length ? { notes } : {}) };
-  if (delegated) return { ...delegated, docs_dir: docPaths(task).dir, ...viewFields };
-  if (noDaemon()) return { ...toolNext({ task_id: task.run_id }), ...viewFields };
-  return { task_id: task.run_id, state: managerState(task).state, docs_dir: docPaths(task).dir, ...viewFields };
+  const extra = { ...(task.context_from_unresolved ? { context_from_unresolved: task.context_from_unresolved } : {}), ...(task.carryover_candidates ? { carryover_candidates: task.carryover_candidates } : {}), ...(notes.length ? { notes } : {}) };
+  if (delegated) return { ...delegated, docs_dir: docPaths(task).dir, ...extra };
+  if (noDaemon()) return { ...toolNext({ task_id: task.run_id }), ...extra };
+  return { task_id: task.run_id, state: managerState(task).state, docs_dir: docPaths(task).dir, ...extra };
 }
 
 // tm_run: the non-driving entry point §4/§10-1 of the design doc asks for - open, spawn the
@@ -872,17 +865,17 @@ async function toolOpen(a) {
 // to drive a tm_run-created task by hand still can, through tm_next/tm_submit, exactly as it
 // would for a tm_open-created one).
 async function toolRun(a) {
-  const { task, delegated, view } = await openTaskAndMaybePin(a, 'tm_run');
-  const viewFields = { ...(view && view.url ? { view_url: view.url } : {}), ...(task.context_from_unresolved ? { context_from_unresolved: task.context_from_unresolved } : {}), ...(task.carryover_candidates ? { carryover_candidates: task.carryover_candidates } : {}) };
+  const { task, delegated } = await openTaskAndMaybePin(a, 'tm_run');
+  const extra = { ...(task.context_from_unresolved ? { context_from_unresolved: task.context_from_unresolved } : {}), ...(task.carryover_candidates ? { carryover_candidates: task.carryover_candidates } : {}) };
   const shared = sharedSizeSNote(task);
   const notes = [...((task.team && task.team.notes) || []), ...(shared ? [shared] : [])];
-  if (shared) viewFields.notes = notes;
+  if (shared) extra.notes = notes;
   return {
     task_id: task.run_id,
     run_id: task.run_id,
     docs_dir: docPaths(task).dir,
     state: delegated ? delegated.state : managerState(task).state,
-    ...viewFields,
+    ...extra,
   };
 }
 
@@ -1093,11 +1086,6 @@ function toolStatus(a) {
     if (a.node_id) { const n = getNode(task, String(a.node_id)); if (!n) throw new Error(`unknown node ${a.node_id}`); return { task_id: task.run_id, node: n }; }
     return task;
   }
-  // Read the existing record, never spawn one: tm_status is how a caller who joined a running
-  // task after tm_open/tm_run returned finds the same link - it must not have the side effect of
-  // starting a viewer just because someone polled status.
-  const viewRecord = readViewRecord(tasksRoot());
-  const viewFields = viewRecord ? { view_url: viewUrl(viewRecord.port, task.run_id) } : {};
   // The same account view.mjs's header already shows (view-collect.mjs's collectTask, same
   // collectDriverCosts call) - a caller polling tm_status only never had this at all, so a run
   // like awake-beta-ref1's $53.93 / 222 turns sat visible only in the raw driver logs.
@@ -1128,7 +1116,6 @@ function toolStatus(a) {
       ...wikiFields,
       daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon), log: task.daemon.log, stderr: task.daemon.stderr, spawn_count: task.daemon.spawn_count, restarts: task.daemon.restarts || 0, exhausted: !!task.daemon.exhausted, stderr_tail: driverStderrTail(task.daemon) } : null,
       team: task.team || null,
-      ...viewFields,
     };
   }
   if (task.s_run) {
@@ -1155,7 +1142,6 @@ function toolStatus(a) {
       ...wikiFields,
       daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon), log: task.daemon.log, stderr: task.daemon.stderr, spawn_count: task.daemon.spawn_count, restarts: task.daemon.restarts || 0, exhausted: !!task.daemon.exhausted, stderr_tail: driverStderrTail(task.daemon) } : null,
       team: task.team || null,
-      ...viewFields,
     };
   }
   const state = taskState(task);
@@ -1216,7 +1202,6 @@ function toolStatus(a) {
     // Only present when either knob is actually set - a task that never asked for a budget or
     // timebox reads exactly as it did before this existed.
     ...((task.team && task.team.opts && (task.team.opts.budget_usd != null || task.team.opts.timebox_minutes != null)) ? { budget: budgetStatus(task) } : {}),
-    ...viewFields,
   };
 }
 

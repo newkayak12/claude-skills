@@ -76,7 +76,7 @@ own `goal_judges` default of 2 regardless of what a project's `team.json` contai
 ## Sprint: backlog, budget/timebox, retro
 
 The `sprint` skill wraps `tm_open` plus the pieces below into one Scrum-shaped run - `requests`
-for the backlog, `budget_usd`/`timebox_minutes` for the box, the existing `tm_board`/viewer for
+for the backlog, `budget_usd`/`timebox_minutes` for the box, the existing `tm_board` and `/teams-status` for
 the daily look, the report for the review, and `retro.json` plus `context_from` for the retro.
 None of it is new mechanism outside `tm_open` itself; this section is what each piece does.
 
@@ -112,26 +112,17 @@ None of it is new mechanism outside `tm_open` itself; this section is what each 
 
 `tm_status`/`tm_board`/`tm_events` return machine-shaped JSON for a driving session — not
 something a person wants to stare at. `scripts/view.mjs` is the separate human surface: a
-zero-dependency, read-only CLI that renders a teams task (running or finished) as a page
-or a text tree, built from the same `task.json` and child run files these tools already read.
+zero-dependency, read-only CLI that prints a teams task (running or finished) as a text tree,
+built from the same `task.json` and child run files these tools already read. With the mod,
+`/teams-status` shows the same data live; `view.mjs --once` is the way to read it from Codex,
+headless `claude -p` and older Claude Code.
 
 ```
-node teams/scripts/view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--once] [--view pipeline|tickets|resources]
+node teams/scripts/view.mjs --once [--tasks-dir <dir>] [--task <id>] [--view pipeline|tickets|resources]
 ```
 
-With no `--once`, it starts a local HTTP server on `127.0.0.1` and prints the URL (default port
-`7431`; `TEAMS_VIEW_PORT` or `--port` overrides it, and the port is recorded in
-`<tasksRoot>/.view.json`). One teams viewer runs per port: a second tasks root (another worktree
-or repo) registers into the running viewer (`POST /register`) instead of starting another, and
-only a non-teams holder of `7431` moves the viewer to a free port. `/` (and `/state.json` with no
-task) is the index of every registered root's tasks; `/E-<first 8 of its id>` or `/<slug>` opens
-one task, the old `/?task=<id>` link still works, and an unknown key shows the index. The viewer
-stops when no registered root has a live task and no request has come for 30 minutes
-(`TEAMS_VIEW_IDLE_MS`), or when every registered root's tasks dir is gone. `tm_open`/`tm_run` reuse a
-recorded viewer only when its port answers (about 2s of retries), else they
-start a new one and rewrite `.view.json`; `tm_status` only checks the pid. Open it for a
-live page that polls every ~3s, with three views (a tab strip switches between them instantly,
-no extra request — all three read the same poll):
+A run without `--once` prints the usage and exits 1; `--help` prints it and exits 0. It starts
+no server and opens no port. It has three views:
 
 - **pipeline** (default) — the request, size/flow/state, cost and turns so far, the manager
   pipeline (size → shape → critique → one card per dispatched package → integrate → gate:goal →
@@ -150,8 +141,8 @@ no extra request — all three read the same poll):
   upstream fix); `origin` names the STAGE that produced it (`shape`/`repair`/`phase`/`qa`/
   `planning-audit`/`upstream`/`tm_file`), and `link` (upstream fixes only) names what it targets.
   This per-task tickets view itself renders unchanged by initiative grouping - that is an
-  across-tasks concept, shown on the all-EPICs index instead (a per-row `initiative` tag, both in
-  `--once`'s text index and the page's own EPIC cards).
+  across-tasks concept, shown on the all-EPICs index instead (a per-row `initiative` tag in
+  `--once`'s text index).
 - **resources** — the team hierarchy as it is actually resourced right now: TaskLeader (the
   task's daemon — pid, alive/dead, started) → one Team per STORY (worktree, branch, TeamLeader =
   the child run's driver — pid, alive/dead, restarts, cost/turns, any `waiting_capacity`) →
@@ -159,10 +150,10 @@ no extra request — all three read the same poll):
   is), with nested tasks inside a package's worktree appearing as their own sub-tree.
 
 `--tasks-dir` defaults to `tasksRoot()` (`HARNESS_TASKS_DIR`, else `~/.harness/tasks`); with
-`--task` omitted and more than one task on disk, it serves an index instead. `--once` skips the
-server and prints one view as a plain-text tree/board, for a terminal or a CI log — `--view`
-picks which (`pipeline` by default); `tickets`/`resources` fall back to the same task index when
-no single task can be resolved.
+`--task` omitted and more than one task on disk, it prints an index instead. `--once` prints one
+view as a plain-text tree/board, for a terminal or a CI log — `--view` picks which (`pipeline`
+by default); `tickets`/`resources` fall back to the same task index when no single task can be
+resolved.
 
 To follow one ticket from a session instead, `tm_log({key, tail?, since?})` (and the thin
 `teams:log` skill, `/teams:log E-xxxxxxxx/P2`) tails the log that key already points at, as

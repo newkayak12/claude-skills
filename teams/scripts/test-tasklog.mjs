@@ -8,7 +8,6 @@
 //   node --test teams/scripts/test-tasklog.mjs
 
 process.env.TEAMS_RUNS_DIR ??= 'off';
-process.env.TEAMS_VIEW = '0';
 process.env.HARNESS_TEST_NO_DRIVER = '1';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

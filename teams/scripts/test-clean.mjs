@@ -31,7 +31,7 @@ const BROKER = 'broker';
 class Client {
   constructor(script, env = {}) {
     this.script = script;
-    this.proc = spawn('node', [SERVER], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, TEAMS_VIEW: '0', ...env } });
+    this.proc = spawn('node', [SERVER], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, ...env } });
     this.buf = '';
     this.id = 0;
     this.queue = [];

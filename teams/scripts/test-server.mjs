@@ -52,7 +52,7 @@ function repo() {
 }
 
 function baseEnv(extra = {}) {
-  const env = { ...process.env, HARNESS_TASKS_DIR: mk('server-tasks-'), HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' };
+  const env = { ...process.env, HARNESS_TASKS_DIR: mk('server-tasks-'), HARNESS_TEST_NO_DRIVER: '1' };
   delete env.TEAMS_WIKI_ROOT;
   delete env.TEAMS_WIKI_OFF;
   Object.assign(env, extra);
