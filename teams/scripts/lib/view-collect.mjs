@@ -13,7 +13,7 @@ import { loadRunAt, runState } from '../../mcp/graph.mjs';
 import { REASONING_VERDICT } from '../../mcp/verdictfields.mjs';
 import { readPointer, ownsRun, findTaggedRun, harnessVerdict, graphRunPath } from '../../mcp/harnessrun.mjs';
 import { countedDriverRestarts, restartBudget } from '../../mcp/taskstate.mjs';
-import { driverCostOf, collectTaskCosts } from '../bench/lib/drivercost.mjs';
+import { driverCostOf, collectTaskCosts, latestCostEvent, spendFigure, taskFigure } from '../bench/lib/drivercost.mjs';
 import { capOf, liveProcesses } from '../../mcp/livecap.mjs';
 import { statSig } from './view-index.mjs';
 
@@ -396,30 +396,75 @@ function mtimeOf(path) {
   try { return statSync(path).mtimeMs; } catch { return null; }
 }
 
-export function driverLive(driver, now = Date.now()) {
+// The task's own threshold: task.stall_minutes (a positive integer) in ms, else STALL_MS.
+export function stallMsOf(task) {
+  const n = task && task.stall_minutes;
+  return Number.isInteger(n) && n > 0 ? n * 60000 : STALL_MS;
+}
+
+export function driverLive(driver, now = Date.now(), thresholdMs = STALL_MS) {
   if (!driver || !driver.log) return false;
   const m = mtimeOf(driver.log);
-  if (m == null || now - m > STALL_MS) return false;
+  if (m == null || now - m > thresholdMs) return false;
   return driver.pid ? pidAlive(driver.pid) : true;
 }
 
-function taskStalled(tasksDir, taskId, task, now = Date.now()) {
-  const h = task.harness_run;
-  const nodes = Array.isArray(task.nodes) ? task.nodes : [];
-  // A driver parked on a usage limit has exited on purpose; that is waiting, not stalled.
-  if ((h && h.waiting_capacity) || nodes.some((n) => n && n.child && n.child.waiting_capacity)) return false;
-  const drivers = [];
-  if (h && h.driver) drivers.push({ ...h.driver, log: h.driver.log || join(tasksDir, taskId, 'drivers', 'S.stream.jsonl') });
-  if (task.s_run && task.s_run.driver) drivers.push(task.s_run.driver);
-  for (const n of nodes) if (n && n.child && n.child.driver) drivers.push(n.child.driver);
-  if (drivers.length) return !drivers.some((d) => driverLive(d, now));
-  // Nothing ever recorded a driver (driven by hand): the newest sign of life decides.
+// Whole minutes (at least 1) since `at` (ms): a stalled worker or task always reads above 0.
+export const minutesSince = (now, at) => Math.max(1, Math.floor((now - at) / 60000));
+
+// The task-level newest sign of life: created_at, ledger.jsonl, every drivers/*.stream.jsonl and every
+// recorded driver log (ms).
+function lastSignOfLife(tasksDir, taskId, task, drivers = []) {
   const dir = join(tasksDir, taskId);
   const marks = [Number(task.created_at) || 0, mtimeOf(join(dir, 'ledger.jsonl')) || 0];
+  for (const d of drivers) if (d && d.log) marks.push(mtimeOf(d.log) || 0);
   try {
     for (const e of readdirSync(join(dir, 'drivers'))) if (e.endsWith('.stream.jsonl')) marks.push(mtimeOf(join(dir, 'drivers', e)) || 0);
   } catch { /* no drivers dir */ }
-  return now - Math.max(...marks) > STALL_MS;
+  return Math.max(...marks);
+}
+
+function recordedDrivers(tasksDir, taskId, task) {
+  const h = task.harness_run;
+  const drivers = [];
+  if (h && h.driver) drivers.push({ ...h.driver, log: h.driver.log || join(tasksDir, taskId, 'drivers', 'S.stream.jsonl') });
+  if (task.s_run && task.s_run.driver) drivers.push(task.s_run.driver);
+  for (const n of Array.isArray(task.nodes) ? task.nodes : []) if (n && n.child && n.child.driver) drivers.push(n.child.driver);
+  return drivers;
+}
+
+// The one stall verdict { stalled, minutes } (minutes only when stalled, on the task-level newest sign of life).
+// state, ticket_state, workers[] and the state server's cache key all read it with the one threshold (stallMsOf).
+// Stalled when no recorded driver is live and no fresh stream exists that no recorded driver owns (a package
+// driver not yet recorded); with no recorded driver (driven by hand) the newest sign of life decides.
+export function stallVerdict(tasksDir, taskId, task, now = Date.now()) {
+  const limit = stallMsOf(task);
+  const h = task.harness_run;
+  const nodes = Array.isArray(task.nodes) ? task.nodes : [];
+  // A driver parked on a usage limit has exited on purpose; that is waiting, not stalled.
+  if ((h && h.waiting_capacity) || nodes.some((n) => n && n.child && n.child.waiting_capacity)) return { stalled: false };
+  const drivers = recordedDrivers(tasksDir, taskId, task);
+  const last = lastSignOfLife(tasksDir, taskId, task, drivers);
+  let stalled;
+  if (drivers.length) {
+    const owned = new Set(drivers.map((d) => d.log).filter(Boolean));
+    const dir = join(tasksDir, taskId, 'drivers');
+    let freshUnowned = false;
+    try {
+      for (const e of readdirSync(dir)) {
+        if (!e.endsWith('.stream.jsonl') || owned.has(join(dir, e))) continue;
+        if (now - (mtimeOf(join(dir, e)) || 0) <= limit) freshUnowned = true;
+      }
+    } catch { /* no drivers dir */ }
+    stalled = !freshUnowned && !drivers.some((d) => driverLive(d, now, limit));
+  } else {
+    stalled = now - last > limit;
+  }
+  return stalled ? { stalled: true, minutes: minutesSince(now, last) } : { stalled: false };
+}
+
+function taskStalled(tasksDir, taskId, task, now = Date.now()) {
+  return stallVerdict(tasksDir, taskId, task, now).stalled;
 }
 
 // The QA cards and task.audit_pkg (§2/§3 of the QA and planning-audit phase-Teams) are not part of
@@ -568,6 +613,35 @@ function harnessStages(run, loadRun = loadRunAt) {
   return STAGE_KEYS.map((key) => ({ key, state: mergeStates(by[key]) || 'pending' }));
 }
 
+// A fallback run's own position, read-only: n subgoals in 02-goal-spec.json, k the 1-based place of
+// the first one without result.json passed:true (n when all passed), stage_key from now.json only
+// while it is live. The liveness rule is a copy of harness/engine/fallback-check.mjs (liveNow +
+// artifactMs): now.json counts only when it is an object whose `at` parses and is not older than
+// the newest artifact of the run (run dir and subgoals/, now.json excluded). Keys and numbers,
+// never words. null without a goal spec or on any other route.
+const NOW_STAGE_KEYS = ['plan', 'setgoal', 'critique', 'implement', 'test', 'gate', 'report'];
+export function fallbackProgress(run) {
+  if (!run || run.route !== 'fallback') return null;
+  const dir = run.run_dir;
+  const spec = readJsonFile(join(dir, '02-goal-spec.json'));
+  const ids = (Array.isArray(spec && spec.subgoals) ? spec.subgoals : []).map((s) => String(s && s.id));
+  if (!ids.length) return null;
+  const mtimeOf = (path) => { try { return statSync(path).mtimeMs; } catch { return 0; } };
+  const list = (d) => { try { return readdirSync(d); } catch { return []; } };
+  const artifactMs = Math.max(
+    0,
+    ...list(dir).filter((n) => n !== 'now.json' && !n.startsWith('now.json.tmp-')).map((n) => mtimeOf(join(dir, n))),
+    ...list(join(dir, 'subgoals')).map((n) => mtimeOf(join(dir, 'subgoals', n))),
+  );
+  const nowJson = readJsonFile(join(dir, 'now.json'));
+  const at = nowJson && typeof nowJson === 'object' && !Array.isArray(nowJson) ? Date.parse(nowJson.at) : NaN;
+  const live = !Number.isNaN(at) && at >= artifactMs ? nowJson : null;
+  const open = ids.findIndex((id) => { const r = readJsonFile(join(dir, 'subgoals', id, 'result.json')); return !(r && r.passed === true); });
+  const sg = { k: open < 0 ? ids.length : open + 1, n: ids.length };
+  if (live && NOW_STAGE_KEYS.includes(live.stage)) sg.stage_key = live.stage;
+  return sg;
+}
+
 // taskstate.harnessState's judgement, read-only: the run's written report is complete (its goal
 // gate accepted) or partial; else running while the driver lives, is parked on capacity, or its
 // stream is still moving; blocked once it is dead past its restart budget.
@@ -591,6 +665,8 @@ function collectHarness(task, taskId, tasksDir, loadRun = loadRunAt) {
     state, counts,
     harness: {
       slug: run ? (run.route === 'fallback' ? basename(run.run_dir) : run.run_id) : null, moving, driver, stages,
+      // fallback route only: {k, n, stage_key?} from the run dir; null on the graph route or before a goal spec exists
+      sg: fallbackProgress(run),
       // the graph-route run's own file location (run_file in the floor summary); null on the fallback route
       graph: run && run.route === 'graph' ? { run_id: run.run_id, cwd: run.cwd } : null,
       // graph-route nodes parked on a person (the stage bar folds waiting into running)
@@ -635,6 +711,8 @@ function spendRows(driverTotal, task) {
     const own = runStory.get(runId);
     row(own ? own.story : null, own ? own.attempt : 1, stageOfNode(node || '') || 'build', s);
   }
+  // spend a durable event keeps for sessions whose worktrees are gone: one row, so the rows sum to the figure
+  if (driverTotal.durable_gap > 0) row(null, 1, 'other', { cost_usd: driverTotal.durable_gap });
   return rows;
 }
 
@@ -794,7 +872,12 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
 
   const managerStages = task.nodes.filter((n) => !['dispatch', 'accept'].includes(n.stage)).map(nodeSummary);
 
-  const driverTotal = io ? io.costs(join(tasksDir, taskId), task) : collectTaskCosts(join(tasksDir, taskId), task);
+  const ledgerPath = join(tasksDir, taskId, 'ledger.jsonl');
+  const ledger = io ? io.jsonl(ledgerPath) : readJsonl(ledgerPath);
+  // THE spend figure (drivercost.mjs spendFigure): the live total, or the latest exact durable event when larger
+  const live = io ? io.costs(join(tasksDir, taskId), task) : collectTaskCosts(join(tasksDir, taskId), task);
+  const figure = spendFigure(live, latestCostEvent(ledger));
+  const driverTotal = { ...live, cost_usd: figure.spend, estimated: figure.estimated, durable_gap: figure.spend > live.cost_usd ? +(figure.spend - live.cost_usd).toFixed(4) : 0 };
   const daemon = task.daemon ? {
     pid: task.daemon.pid,
     alive: pidAlive(task.daemon.pid),
@@ -826,7 +909,10 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
   // a nested copy can be the kind of frozen worktree artifact this exists to catch.
   const harnessAlive = !!(harness && (harness.moving || (harness.driver && harness.driver.alive)));
   const epicWord = epicTicketState(task);
-  const stalledTask = visiting.depth === 0 && STALLABLE.has(epicWord) && taskStalled(tasksDir, taskId, task);
+  const verdict = visiting.depth === 0 && STALLABLE.has(epicWord) ? stallVerdict(tasksDir, taskId, task) : { stalled: false };
+  const stalledTask = verdict.stalled;
+  // { stalled, minutes? } for every stalled or stale path; minutes on the task-level newest sign of life
+  const stall = { ...verdict };
   if (stalledTask) {
     if (state === 'running') state = 'stalled';
     for (const p of packages) if (STALLABLE.has(p.ticket_state)) p.ticket_state = 'stalled';
@@ -836,7 +922,7 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
       || harnessAlive
       || (sRun && sRun.driver && sRun.driver.alive)
       || [...packages, ...qaRounds, ...auditRounds].some((p) => p.child && p.child.driver && p.child.driver.alive);
-    if (!anyDriverAlive) state = 'stale';
+    if (!anyDriverAlive) { state = 'stale'; stall.stalled = true; stall.minutes = minutesSince(Date.now(), lastSignOfLife(tasksDir, taskId, task, recordedDrivers(tasksDir, taskId, task))); }
   } else if (state === 'running' && daemon && !daemon.alive) {
     // A task that WAS under a daemon, whose daemon is dead and whose drivers are all dead, is not
     // running - nothing is. idol-plan-2's S run read 'running' 86h after daemon_done blocked,
@@ -845,11 +931,9 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     const anyDriverAlive = harnessAlive
       || (sRun && sRun.driver && sRun.driver.alive)
       || [...packages, ...qaRounds, ...auditRounds].some((p) => p.child && p.child.driver && p.child.driver.alive);
-    if (!anyDriverAlive) state = 'stalled';
+    if (!anyDriverAlive) { state = 'stalled'; stall.stalled = true; stall.minutes = minutesSince(Date.now(), lastSignOfLife(tasksDir, taskId, task, recordedDrivers(tasksDir, taskId, task))); }
   }
 
-  const ledgerPath = join(tasksDir, taskId, 'ledger.jsonl');
-  const ledger = io ? io.jsonl(ledgerPath) : readJsonl(ledgerPath);
   const events = ledger.slice(-50);
   const telemetry = telemetryOf({
     task, tasksDir, depth: visiting.depth, ledger, driverTotal, harness, sRun, io,
@@ -881,9 +965,10 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     created_at: task.created_at || null,
     elapsed_ms: elapsedMs(task.created_at),
     state,
+    stall,
     counts,
     daemon,
-    cost: { usd: driverTotal.cost_usd, turns: driverTotal.turns, sessions: driverTotal.sessions, ...(driverTotal.estimated_usd ? { estimated_usd: driverTotal.estimated_usd } : {}) },
+    cost: { usd: driverTotal.cost_usd, turns: driverTotal.turns, sessions: driverTotal.sessions, ...(driverTotal.estimated_usd ? { estimated_usd: driverTotal.estimated_usd } : {}), ...(driverTotal.estimated ? { estimated: true } : {}), ...(task.budget_stopped ? { post_stop_usd: +Math.max(0, driverTotal.cost_usd - (task.budget_stopped.spend || 0)).toFixed(4) } : {}) },
     budget: sprintBox(task, driverTotal.cost_usd),
     package_map: task.shape_diagram && task.shape_diagram.path ? { path: task.shape_diagram.path, source: task.shape_diagram.source } : null,
     manager_stages: managerStages,
@@ -993,7 +1078,7 @@ export function listTasks(tasksDir) {
       phase = epicPhase(task);
       if (!task.s_run) stories = storyProgress(task);
     } catch { /* leave 'unknown' / no progress - a torn task.json should not crash the index */ }
-    const driverTotal = collectTaskCosts(join(tasksDir, id), task);
+    const driverTotal = { cost_usd: taskFigure(join(tasksDir, id), task).spend };
     const row = {
       task_id: id,
       epic_key: key,

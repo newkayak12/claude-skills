@@ -4,7 +4,10 @@
 process.env.TZ = 'UTC';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, utimesSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fallbackProgress, collectFromRaw, collectTask } from './lib/view-collect.mjs';
 import { summarize, metrics, storyNow, LANE_KEYS, LANE_LABEL, LANE_LABEL_MAX, LANE_BOX_MAX, laneBox, laneHeaderRoom } from './lib/view-summary.mjs';
 import { floorOf } from './lib/view-floor.mjs';
 import { stageOfNode, STAGE_KEYS } from './lib/view-stages.mjs';
@@ -493,4 +496,235 @@ test('status words: a working STORY says `working` and one parked on a person sa
   const word = Object.fromEntries(f.items.map((i) => [i.key, [i.word, i.word_key]]));
   assert.deepEqual(word.A, ['working', 'acting']);
   assert.deepEqual(word.B, ['needs you', 'you']);
+});
+
+// ---------- progress: Build n/m, QA n/m, size-S SG (keys and numbers only) ----------
+
+const pkgs = (n, accepted, over = {}) => Array.from({ length: n }, (_, i) => card(`P${i + 1}`, `pkg ${i + 1}`, i < accepted ? 'done' : 'pending', over));
+const qaRound = (id, round, state) => ({ ...card(`${id}:${round}`, id, state), round });
+const progOf = (m) => summarize(m, { now: NOW }).progress;
+
+test('progress build (F3-AC-13): 8 packages, 3 accepted; planning cards and defects are not counted', () => {
+  const m = demo({ audit: null, packages: [card('PLAN', 'Plan', 'done', { phase: 'planning' }), ...pkgs(8, 3), card('D1', 'defect', 'pending', { origin: 'qa', reporter: 'qa' })] });
+  assert.deepEqual(progOf(m), { key: 'build', done: 3, total: 8 });
+});
+
+test('progress build (F3-AC-14): a package attempted twice and accepted on the second counts once, accepted', () => {
+  const p = card('P1', 'pkg 1', 'done', { dispatch: ms('dispatch:P1:2', 'done', { attempt: 2 }), accept: ms('accept:P1:2', 'done', { attempt: 2 }), attempt: 2 });
+  assert.deepEqual(progOf(demo({ audit: null, packages: [p, card('P2', 'pkg 2', 'pending')] })), { key: 'build', done: 1, total: 2 });
+  // through the real package model: attempt 1 failed, attempt 2 accepted -> the latest attempt decides, one card
+  const n = (id, stage, subgoal_id, attempt, state) => ({ id, node_id: id, stage, subgoal_id, attempt, state, deps: [], after: [] });
+  const raw = { task_id: 'E-aaaa1111', state: 'running', request: 'r', created_at: 1, spec: { packages: [{ id: 'P1', title: 'a' }, { id: 'P2', title: 'b' }] }, nodes: [
+    n('dispatch:P1:1', 'dispatch', 'P1', 1, 'failed'), n('accept:P1:1', 'accept', 'P1', 1, 'failed'),
+    n('dispatch:P1:2', 'dispatch', 'P1', 2, 'done'), n('accept:P1:2', 'accept', 'P1', 2, 'done'),
+    n('dispatch:P2:1', 'dispatch', 'P2', 1, 'pending'),
+  ] };
+  const real = collectFromRaw('/nonexistent-tasks-dir', 'E-aaaa1111', raw);
+  assert.ok(!real.error, real.error);
+  assert.deepEqual(progOf(real), { key: 'build', done: 1, total: 2 });
+});
+
+test('progress build (F3-AC-15): no package card -> no progress key at all', () => {
+  const s = summarize(demo({ audit: null, packages: [card('PLAN', 'Plan', 'done', { phase: 'planning' })] }), { now: NOW });
+  assert.equal('progress' in s, false);
+});
+
+test('progress qa (F3-AC-16): the latest round of a card decides; a second round is not a second card', () => {
+  const m = demo({ audit: null, packages: pkgs(2, 2), qa: { id: 'QA-F1, QA-F2', cards: [
+    { id: 'QA-F1', rounds: [qaRound('QA-F1', 1, 'failed'), qaRound('QA-F1', 2, 'done')] },
+    { id: 'QA-F2', rounds: [qaRound('QA-F2', 1, 'running')] },
+  ], rounds: [] } });
+  assert.deepEqual(progOf(m), { key: 'qa', done: 1, total: 2 });
+});
+
+test('progress qa (F3-AC-17): defects, audit rounds and integrate rounds are neither done nor total', () => {
+  const base = { id: 'QA-F1', rounds: [qaRound('QA-F1', 1, 'done')] };
+  const extras = {
+    // a failed and a done defect, two audit rounds (one failed, one pending), and an integrate-style round filed under qa.rounds
+    packages: [...pkgs(1, 1), card('D1', 'defect', 'failed', { origin: 'qa', reporter: 'qa' }), card('D2', 'defect', 'done', { origin: 'qa', reporter: 'qa' })],
+    audit: { id: 'AUDIT', rounds: [qaRound('AUDIT', 1, 'failed'), qaRound('AUDIT', 2, 'pending')] },
+    qa: { id: 'QA-F1', cards: [base], rounds: [...base.rounds, qaRound('integrate', 3, 'pending')] },
+  };
+  const bare = demo({ packages: pkgs(1, 1), audit: null, qa: { id: 'QA-F1', cards: [base], rounds: base.rounds } });
+  assert.deepEqual(progOf(demo(extras)), { key: 'qa', done: 1, total: 1 });
+  assert.deepEqual(progOf(demo(extras)), progOf(bare));
+});
+
+test('progress qa (F3-AC-18): no QA card -> no qa entry (build stays)', () => {
+  assert.deepEqual(progOf(demo({ audit: null, packages: pkgs(2, 1), qa: null })), { key: 'build', done: 1, total: 2 });
+  assert.deepEqual(progOf(demo({ audit: null, packages: pkgs(2, 1), qa: { id: '', cards: [], rounds: [] } })), { key: 'build', done: 1, total: 2 });
+});
+
+// a fallback run dir: spec with n subgoals, optional results, now.json stamped at `at`
+function runDir({ ids = ['U1', 'U2'], passed = [], at = null, specFile = true } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'f3-sg-'));
+  const old = new Date(NOW - 3600e3);
+  const put = (rel, body, when = old) => {
+    const p = join(dir, rel); mkdirSync(join(p, '..'), { recursive: true }); writeFileSync(p, body); utimesSync(p, when, when);
+  };
+  put('manifest.json', '{}');
+  if (specFile) put('02-goal-spec.json', JSON.stringify({ subgoals: ids.map((id) => ({ id })) }));
+  for (const id of ids) put(`subgoals/${id}/result.json`, JSON.stringify({ passed: passed.includes(id) }));
+  if (at !== null) put('now.json', typeof at === 'string' ? at : JSON.stringify({ stage: 'test', at: new Date(at).toISOString() }), new Date(NOW));
+  // a directory's mtime moves with its entries: pin it back so only the files decide the newest artifact
+  utimesSync(join(dir, 'subgoals'), old, old);
+  for (const id of ids) utimesSync(join(dir, 'subgoals', id), old, old);
+  return dir;
+}
+const fb = (dir) => ({ route: 'fallback', run_dir: dir });
+const withRun = (opts, fn) => { const d = runDir(opts); try { return fn(d); } finally { rmSync(d, { recursive: true, force: true }); } };
+const sgModel = (sg) => harnessModel({ plan: 'done' }, { harness: { slug: 'r', moving: false, driver: { alive: true }, sg, stages: STAGE_KEYS.map((key) => ({ key, state: key === 'plan' ? 'done' : 'pending' })) } });
+
+test('progress sg (F3-AC-19): 2 subgoals, none passed, fresh now.json stage test', () => {
+  withRun({ at: NOW }, (d) => {
+    assert.deepEqual(fallbackProgress(fb(d)), { k: 1, n: 2, stage_key: 'test' });
+    assert.deepEqual(progOf(sgModel(fallbackProgress(fb(d)))), { key: 'sg', k: 1, n: 2, stage_key: 'test' });
+  });
+});
+
+test('progress sg (F3-AC-20): first subgoal passed -> k 2; every subgoal passed -> k equals n', () => {
+  withRun({ passed: ['U1'], at: NOW }, (d) => assert.equal(fallbackProgress(fb(d)).k, 2));
+  withRun({ passed: ['U1', 'U2'], at: NOW }, (d) => assert.deepEqual([fallbackProgress(fb(d)).k, fallbackProgress(fb(d)).n], [2, 2]));
+  withRun({ ids: ['A', 'B', 'C'], passed: ['B'], at: NOW }, (d) => assert.equal(fallbackProgress(fb(d)).k, 1));
+});
+
+test('progress sg (F3-AC-21): no 02-goal-spec.json -> no sg progress and no progress key', () => {
+  withRun({ specFile: false, at: NOW }, (d) => {
+    assert.equal(fallbackProgress(fb(d)), null);
+    assert.equal('progress' in summarize(sgModel(fallbackProgress(fb(d))), { now: NOW }), false);
+  });
+});
+
+test('progress sg (F3-AC-22): graph-route, s_run and a missing run give no sg', () => {
+  assert.equal(fallbackProgress({ route: 'graph', run_id: 'x', cwd: '/nope' }), null);
+  assert.equal(fallbackProgress(null), null);
+  // a size-S s_run model (no harness.sg, no package or QA card) carries no progress, nodes or not
+  const sRun = { nodes: [ms('plan:1', 'done'), ms('implement:1', 'running'), ms('gate:1', 'pending')] };
+  assert.equal('progress' in summarize(demo({ audit: null, packages: [], s_run: sRun }), { now: NOW }), false);
+  // the route decides: a complete fallback run dir read as a graph or s_run route gives no sg, as a fallback route it does
+  withRun({ at: NOW }, (d) => {
+    assert.equal(fallbackProgress({ route: 'graph', run_dir: d, run_id: 'x', cwd: '/nope' }), null);
+    assert.equal(fallbackProgress({ route: 's_run', run_dir: d }), null);
+    assert.notEqual(fallbackProgress(fb(d)), null);
+  });
+});
+
+// freshness: the copy of fallback-check.mjs's liveNow/artifactMs rule, one case per clause of its contract comment
+test('now.json freshness (contract: at not older than the newest artifact) - at equal to the newest artifact is live', () => {
+  withRun({ at: NOW - 3600e3 }, (d) => assert.equal(fallbackProgress(fb(d)).stage_key, 'test'));
+});
+test('now.json freshness - at older than the newest artifact is ignored whole: stage_key omitted, k and n stay', () => {
+  withRun({ at: NOW - 7200e3 }, (d) => assert.deepEqual(fallbackProgress(fb(d)), { k: 1, n: 2 }));
+});
+test('now.json freshness - an entry in subgoals/ newer than at counts (the run moved on)', () => {
+  withRun({ at: NOW - 600e3 }, (d) => {
+    const t = new Date(NOW);
+    utimesSync(join(d, 'subgoals', 'U1'), t, t);
+    assert.deepEqual(fallbackProgress(fb(d)), { k: 1, n: 2 });
+  });
+});
+test('now.json freshness - now.json itself and now.json.tmp-* are excluded from the newest artifact', () => {
+  withRun({ at: NOW - 600e3 }, (d) => {
+    const t = new Date(NOW);
+    const tmp = join(d, 'now.json.tmp-1');
+    writeFileSync(tmp, '{}');
+    utimesSync(tmp, t, t);
+    const nowFile = join(d, 'now.json');
+    utimesSync(nowFile, t, t);
+    assert.equal(fallbackProgress(fb(d)).stage_key, 'test');
+  });
+});
+test('now.json freshness - `at` that does not parse, a non-object now.json, or an unknown stage gives no stage_key', () => {
+  withRun({ at: JSON.stringify({ stage: 'test', at: 'garbage' }) }, (d) => assert.deepEqual(fallbackProgress(fb(d)), { k: 1, n: 2 }));
+  withRun({ at: '[1,2]' }, (d) => assert.deepEqual(fallbackProgress(fb(d)), { k: 1, n: 2 }));
+  withRun({ at: 'null' }, (d) => assert.deepEqual(fallbackProgress(fb(d)), { k: 1, n: 2 }));
+  withRun({ at: JSON.stringify({ stage: 'dance', at: new Date(NOW).toISOString() }) }, (d) => assert.deepEqual(fallbackProgress(fb(d)), { k: 1, n: 2 }));
+});
+test('now.json freshness - stage test stays `test` (harness reads it as implement for its own stage; F3 keeps the key)', () => {
+  withRun({ at: NOW }, (d) => assert.equal(fallbackProgress(fb(d)).stage_key, 'test'));
+});
+
+test('progress payload holds keys and numbers only (F3-AC-35)', () => {
+  const p = progOf(sgModel({ k: 2, n: 3, stage_key: 'gate' }));
+  assert.deepEqual(Object.keys(p).sort(), ['k', 'key', 'n', 'stage_key']);
+  assert.ok(Object.values(p).every((v) => typeof v === 'number' || ['sg', 'gate'].includes(v)));
+});
+
+// ---- card 125 F3-US-8: one spend figure, cost.estimated, cost.post_stop_usd (AC-28 to AC-31) ----
+
+const costTree = ({ stream, ledger = [], task = {} }) => {
+  const root = mkdtempSync(join(tmpdir(), 'view-cost-'));
+  const id = 'E-c0570001';
+  const dir = join(root, id);
+  mkdirSync(join(dir, 'drivers'), { recursive: true });
+  if (stream) writeFileSync(join(dir, 'drivers', 'S.stream.jsonl'), stream);
+  writeFileSync(join(dir, 'ledger.jsonl'), ledger.map((e) => JSON.stringify(e) + '\n').join(''));
+  const raw = { run_id: id, kind: 'task', cwd: root, request: 'cost case', created_at: NOW - 60000, nodes: [], ...task };
+  writeFileSync(join(dir, 'task.json'), JSON.stringify(raw));
+  return { root, id, run: () => summarize(collectTask(root, id), { now: NOW }), model: () => collectTask(root, id) };
+};
+const asst = (id, model, out) => JSON.stringify({ type: 'assistant', message: { id, model, usage: { output_tokens: out } } });
+const noResult = [JSON.stringify({ type: 'system', model: 'claude-opus-5-5' }), asst('m1', 'claude-sonnet-5-5', 100000), asst('m2', 'claude-opus-5-5', 100000)].join('\n') + '\n';
+const withResult = (usd) => noResult + JSON.stringify({ type: 'result', total_cost_usd: usd, num_turns: 3, duration_ms: 1 }) + '\n';
+
+test('AC-28: a full stream with a result gives the exact cost.usd and no cost.estimated; a result-less one is estimated', () => {
+  const a = costTree({ stream: withResult(21.8422) });
+  const b = costTree({ stream: noResult });
+  try {
+    const exact = a.run().cost;
+    assert.equal(exact.usd, 21.8422);
+    assert.equal(exact.estimated, undefined);
+    assert.equal('post_stop_usd' in exact, false);
+    const est = b.run().cost;
+    assert.equal(est.estimated, true);
+    assert.ok(est.usd > 0);
+  } finally { for (const t of [a, b]) rmSync(t.root, { recursive: true, force: true }); }
+});
+
+test('AC-29: an exact durable 47.2906 with the worktrees gone beats the live 32.7186; an estimated durable event never raises it', () => {
+  const live = withResult(32.7186);
+  const exact = costTree({ stream: live, ledger: [{ event: 'cost_recorded', spend: 47.2906, estimated: false }] });
+  const est = costTree({ stream: live, ledger: [{ event: 'cost_recorded', spend: 47.2906, estimated: true }] });
+  try {
+    assert.equal(exact.run().cost.usd, 47.2906);
+    assert.equal(est.run().cost.usd, 32.7186);
+  } finally { for (const t of [exact, est]) rmSync(t.root, { recursive: true, force: true }); }
+});
+
+test('AC-30: post_stop_usd is the figure minus budget_stopped.spend, floored at 0, and absent without a budget_stopped', () => {
+  const stopped = costTree({ stream: withResult(28.261), task: { budget_stopped: { at: 1, spend: 25.1771 } } });
+  const over = costTree({ stream: withResult(10), task: { budget_stopped: { at: 1, spend: 25 } } });
+  const none = costTree({ stream: withResult(10) });
+  try {
+    assert.equal(stopped.run().cost.post_stop_usd, 3.0839);
+    assert.equal(over.run().cost.post_stop_usd, 0);
+    assert.equal('post_stop_usd' in none.run().cost, false);
+  } finally { for (const t of [stopped, over, none]) rmSync(t.root, { recursive: true, force: true }); }
+});
+
+test('AC-31: summarize().cost.usd, taskSpend, budgetStatus.spend and the sum of the row costs are one number, in every case', async () => {
+  const { taskSpend, budgetStatus } = await import('../mcp/taskmanager-budget.mjs');
+  const cases = [
+    costTree({ stream: withResult(32.7186) }),
+    costTree({ stream: noResult }),
+    costTree({ stream: withResult(32.7186), ledger: [{ event: 'cost_recorded', spend: 47.2906, estimated: false }] }),
+    costTree({ stream: null, ledger: [{ event: 'cost_recorded', spend: 12.5, estimated: false }] }),
+  ];
+  const was = process.env.HARNESS_TASKS_DIR;
+  try {
+    for (const c of cases) {
+      process.env.HARNESS_TASKS_DIR = c.root;
+      const m = c.model();
+      const task = { run_id: c.id, cwd: c.root, nodes: [], created_at: NOW - 60000, team: { opts: { budget_usd: 1000 } } };
+      const usd = summarize(m, { now: NOW }).cost.usd;
+      const rows = +m.telemetry.spend.reduce((a, r) => a + r.cost_usd, 0).toFixed(4);
+      assert.equal(taskSpend(task), usd, 'taskSpend');
+      assert.equal(budgetStatus(task).spend, usd, 'budgetStatus.spend');
+      assert.equal(rows, usd, 'sum of row costs');
+      assert.equal(m.telemetry.spent_usd, usd, 'telemetry.spent_usd');
+    }
+  } finally {
+    if (was === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = was;
+    for (const c of cases) rmSync(c.root, { recursive: true, force: true });
+  }
 });

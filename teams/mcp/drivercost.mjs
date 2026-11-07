@@ -55,20 +55,29 @@ export function driverKey(root, p) {
 // A session's token use in input-token units (cache write 1.25x, cache read 0.1x, output 5x -
 // the ratios Claude pricing holds across models), summed over its assistant messages, each
 // message counted once at its last usage reading.
-export function usageUnits(streamPath) {
+export function usageUnitsByModel(streamPath) {
+  const out = new Map();
   const txt = read(streamPath);
-  if (!txt) return 0;
+  if (!txt) return out;
   const byMsg = new Map();
+  let sysModel = null;
   for (const line of txt.split('\n')) {
     if (!line.trim()) continue;
     let ev;
     try { ev = JSON.parse(line); } catch { continue; }
-    if (ev.type === 'assistant' && ev.message && ev.message.id && ev.message.usage) byMsg.set(ev.message.id, ev.message.usage);
+    if (ev.type === 'system' && ev.model && !sysModel) sysModel = ev.model;
+    if (ev.type === 'assistant' && ev.message && ev.message.id && ev.message.usage) byMsg.set(ev.message.id, { usage: ev.message.usage, model: ev.message.model || null });
   }
+  for (const { usage: u, model } of byMsg.values()) {
+    const m = model || sysModel || 'unknown';
+    out.set(m, (out.get(m) || 0) + (u.input_tokens || 0) + 1.25 * (u.cache_creation_input_tokens || 0) + 0.1 * (u.cache_read_input_tokens || 0) + 5 * (u.output_tokens || 0));
+  }
+  return out;
+}
+
+export function usageUnits(streamPath) {
   let units = 0;
-  for (const u of byMsg.values()) {
-    units += (u.input_tokens || 0) + 1.25 * (u.cache_creation_input_tokens || 0) + 0.1 * (u.cache_read_input_tokens || 0) + 5 * (u.output_tokens || 0);
-  }
+  for (const v of usageUnitsByModel(streamPath).values()) units += v;
   return units;
 }
 
@@ -76,15 +85,31 @@ export function usageUnits(streamPath) {
 // session is often the only one for 40+ minutes). Measured 2026-09-26: dispatch sessions on
 // claude-opus-5-5 ran 5.2-5.7e-6 per unit across two runs. Keyed by model; any other model has
 // no fallback and stays uncounted until something finishes.
-const FALLBACK_RATES = { 'claude-opus-5-5': 5.5e-6 };
+// Per model, each assistant message priced at its own message.model. Sonnet entry: measured
+// 2026-11-07 from finished single-model sessions under ~/.harness/tasks (result event with
+// total_cost_usd / usageUnits): claude-sonnet-5-5 n=37, median 3.02e-6 (range 2.6e-6..5.8e-6);
+// the same pass over claude-opus-5-5 gave n=58, median 5.73e-6, so the 5.5e-6 entry stays.
+export const FALLBACK_RATES = { 'claude-opus-5-5': 5.5e-6, 'claude-sonnet-5-5': 3.0e-6 };
 
-function streamModel(streamPath) {
-  const txt = read(streamPath);
-  if (!txt) return null;
-  for (const line of txt.split('\n', 50)) {
-    try { const ev = JSON.parse(line); if (ev.type === 'system' && ev.model) return ev.model; } catch { /* keep looking */ }
+// A dated or suffixed id (claude-sonnet-5-5-20261001, claude-opus-5-5[1m]) is priced by its family;
+// an unknown claude model takes the Opus rate; anything else stays uncounted.
+export function fallbackRate(model) {
+  const m = String(model || '').toLowerCase();
+  if (FALLBACK_RATES[model] != null) return FALLBACK_RATES[model];
+  for (const family of ['sonnet', 'opus']) {
+    if (m.includes(family)) return FALLBACK_RATES[`claude-${family}-5-5`];
   }
-  return null;
+  return m.includes('claude') ? FALLBACK_RATES['claude-opus-5-5'] : null;
+}
+
+// Table price of a stream's units, per model; models absent from the table stay uncounted.
+function tablePrice(streamPath) {
+  let usd = 0; let units = 0;
+  for (const [m, u] of usageUnitsByModel(streamPath)) {
+    const r = fallbackRate(m);
+    if (r != null) { usd += u * r; units += u; }
+  }
+  return units > 0 ? usd : null;
 }
 
 const median = (xs) => { const a = [...xs].sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : null; };
@@ -127,12 +152,12 @@ export function collectDriverCosts(root) {
     const key = driverKey(root, p);
     if (byKey.has(key)) continue;
     const calibrated = median(rates.get(streamClass(p)) || []) ?? median(allRates);
-    const rate = calibrated ?? FALLBACK_RATES[streamModel(p)] ?? null;
     const units = usageUnits(p);
-    if (rate == null || !units) continue;
+    const usd = calibrated != null ? units * calibrated : tablePrice(p);
+    if (usd == null || !units) continue;
     byKey.set(key, {
       stream: p.startsWith(root) ? p.slice(root.length + 1) : p,
-      path: p, cost_usd: +(units * rate).toFixed(4), turns: 0, duration_ms: 0, is_error: false, estimated: true,
+      path: p, cost_usd: +usd.toFixed(4), turns: 0, duration_ms: 0, is_error: false, estimated: true,
       ...(calibrated == null ? { uncalibrated: true } : {}),
     });
   }
@@ -215,6 +240,35 @@ export function collectTaskCosts(taskDirPath, task) {
     streams: d.streams,
     node_streams: nodes,
   };
+}
+
+// The latest durable `cost_recorded` event of a ledger (an array of parsed events), or null.
+export function latestCostEvent(events) {
+  let last = null;
+  for (const e of events || []) if (e && e.event === 'cost_recorded' && Number.isFinite(e.spend)) last = e;
+  return last;
+}
+
+// THE spend figure - taskSpend, budgetStatus.spend, the pane and the ledger events all read it.
+// The live total (collectTaskCosts), except when the latest durable event is exact and larger
+// (the sessions it priced are gone with their worktrees): then that event's spend. An
+// estimated durable event never raises it. Pure: `live` is a collectTaskCosts result.
+export function spendFigure(live, durable) {
+  const liveUsd = live.cost_usd;
+  if (durable && !durable.estimated && durable.spend > liveUsd) return { spend: durable.spend, estimated: false, from: 'durable' };
+  return { spend: liveUsd, estimated: !!(live.estimated_sessions > 0), from: 'live' };
+}
+
+// The same, read from a task directory: live costs plus the ledger's latest cost_recorded.
+export function taskFigure(taskDirPath, task) {
+  const live = collectTaskCosts(taskDirPath, task);
+  const txt = read(join(taskDirPath, 'ledger.jsonl')) || '';
+  const events = [];
+  for (const line of txt.split('\n')) {
+    if (!line.includes('cost_recorded')) continue;
+    try { events.push(JSON.parse(line)); } catch { /* skip a torn line */ }
+  }
+  return { ...spendFigure(live, latestCostEvent(events)), live };
 }
 
 // Every <...>/.teams_output/broker/<run_id> directory under a workspace, worktrees included -

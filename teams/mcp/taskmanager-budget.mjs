@@ -1,7 +1,7 @@
 // taskmanager-budget.mjs - budget / timebox and the max_parallel_teams AIMD controller; split out of taskmanager.mjs (card 128 step 1), moved verbatim.
 import { applySuspends, record, taskDir } from './taskstate.mjs';
 import { availableParallelism } from 'node:os';
-import { collectTaskCosts } from './drivercost.mjs';
+import { taskFigure } from './drivercost.mjs';
 import { existsSync, readFileSync } from 'node:fs';
 import { livePlanningPkgs, phaseOfId, planningPkgs } from './tickets.mjs';
 import { node, readyNodes, runState } from './graph.mjs';
@@ -23,7 +23,7 @@ import { shapeAnalysis } from './taskmanager-plan.mjs';
 // driver filename) for a driver stream a worktree checked out a copy of, silently double-
 // counting spend budgetStatus/enforceBudget rely on to stop a run at 100%.
 export function taskSpend(task) {
-  return collectTaskCosts(taskDir(task.run_id), task).cost_usd;
+  return taskFigure(taskDir(task.run_id), task).spend;
 }
 
 export function taskElapsedMinutes(task) {
@@ -41,13 +41,14 @@ export function budgetStatus(task) {
   const opts = (task.team && task.team.opts) || {};
   const budget = Number.isFinite(opts.budget_usd) ? opts.budget_usd : null;
   const timebox = Number.isFinite(opts.timebox_minutes) ? opts.timebox_minutes : null;
-  const spend = (budget != null) ? taskSpend(task) : 0;
   const elapsed = taskElapsedMinutes(task);
   if (budget == null && timebox == null) return { pct: 0, over: false, warn: false, spend: 0, elapsed_minutes: elapsed };
+  const fig = taskFigure(taskDir(task.run_id), task);
+  const spend = fig.spend;
   const frac = (used, limit) => (limit == null ? 0 : (limit > 0 ? used / limit : (used > 0 ? Infinity : 0)));
   const pct = Math.max(frac(spend, budget), frac(elapsed, timebox));
   return {
-    pct, over: pct >= 1, warn: pct >= 0.8, spend, elapsed_minutes: elapsed,
+    pct, over: pct >= 1, warn: pct >= 0.8, spend, estimated: fig.estimated, elapsed_minutes: elapsed,
     ...(budget != null ? { budget_usd: budget } : {}), ...(timebox != null ? { timebox_minutes: timebox } : {}),
   };
 }
@@ -230,7 +231,7 @@ export function enforceBudget(task) {
   let progressed = false;
   if (status.warn && !task.budget_warned) {
     task.budget_warned = true;
-    record(task, { event: 'budget_warning', task_id: task.run_id, pct: Math.round(status.pct * 100), spend: status.spend, elapsed_minutes: Math.round(status.elapsed_minutes) });
+    record(task, { event: 'budget_warning', task_id: task.run_id, pct: Math.round(status.pct * 100), spend: status.spend, ...(status.estimated ? { estimated: true } : {}), elapsed_minutes: Math.round(status.elapsed_minutes) });
     progressed = true;
   }
   if (!status.over) return progressed;
@@ -241,7 +242,7 @@ export function enforceBudget(task) {
       timebox_minutes: status.timebox_minutes == null ? null : status.timebox_minutes,
       skipped_packages: [],
     };
-    record(task, { event: 'budget_stopped', task_id: task.run_id, ...task.budget_stopped });
+    record(task, { event: 'budget_stopped', task_id: task.run_id, ...task.budget_stopped, ...(status.estimated ? { estimated: true } : {}) });
     progressed = true;
   }
   // Stopped before shape ever produced packages (code-sprint-S2, 2026-09-26: the whole $6 went

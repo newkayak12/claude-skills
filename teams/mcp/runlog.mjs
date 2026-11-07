@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSy
 import { join, basename, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { collectTaskCosts } from './drivercost.mjs';
+import { collectTaskCosts, taskFigure } from './drivercost.mjs';
 import { teamsPluginRoot } from './pluginroots.mjs';
 import { reasonFromVerdict } from './graph.mjs';
 
@@ -147,7 +147,8 @@ export function harvestTask({ taskDir, cwd, label, root, scorePrefix } = {}) {
   }
 
   let costs = null;
-  try { costs = taskDir ? collectTaskCosts(taskDir, task) : null; } catch { costs = null; }
+  let figure = null;
+  try { costs = taskDir ? collectTaskCosts(taskDir, task) : null; figure = taskDir ? taskFigure(taskDir, task) : null; } catch { costs = null; }
   const byKind = {};
   for (const s of (costs && costs.streams) || []) {
     // A respawned driver (<name>.restart1) or a re-judge (<name>.r1) is the same kind of spend
@@ -209,7 +210,7 @@ export function harvestTask({ taskDir, cwd, label, root, scorePrefix } = {}) {
     // budget_closed{skipped:["accept:QA:2"]} - fixed by killing exactly that case on sight).
     budget: task && task.team && task.team.opts ? {
       budget_usd: task.team.opts.budget_usd ?? null, timebox_minutes: task.team.opts.timebox_minutes ?? null, stopped: !!task.budget_stopped,
-      ...(task.budget_stopped && costs ? { post_stop_usd: +Math.max(0, (costs.cost_usd || 0) - (task.budget_stopped.spend || 0)).toFixed(4) } : {}),
+      ...(task.budget_stopped && costs ? { post_stop_usd: +Math.max(0, ((figure ? figure.spend : costs.cost_usd) || 0) -(task.budget_stopped.spend || 0)).toFixed(4) } : {}),
     } : null,
     cost_usd: costs ? +(costs.cost_usd || 0).toFixed(4) : null, cost_by_kind: byKind,
     child_runs: childRuns,

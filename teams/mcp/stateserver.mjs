@@ -45,7 +45,7 @@ import { pidAlive } from './proc.mjs';
 import { loadRunAt } from './graph.mjs';
 import { liveProcesses } from './livecap.mjs';
 import { collectTaskCosts } from './drivercost.mjs';
-import { collectFromRaw, captureClock, readJsonl, readJsonRetry, STALL_MS, MOVING_MS } from '../scripts/lib/view-collect.mjs';
+import { collectFromRaw, captureClock, readJsonl, readJsonRetry, stallMsOf, MOVING_MS } from '../scripts/lib/view-collect.mjs';
 import { statSig, statOf, tickMemo, withTickStats } from '../scripts/lib/view-index.mjs';
 import { pruneTails } from '../scripts/lib/view-floor-fs.mjs';
 import { clearGitFacts } from '../scripts/lib/view-repo.mjs';
@@ -112,11 +112,24 @@ const mtimeOfSig = (sig) => { const p = String(sig).split(/[:|]/); return Math.m
 // own files, and, for a task with no recorded driver, its drivers/ streams. One string; a change of it is the
 // only reason to build a task that did not change on disk. Not covered (lag until the next task.json or
 // ledger change): a tagged harness run found by scanning the cwd before one is recorded.
+// The stat signature of every driver stream a task's cost reads: its drivers/ files and each recorded driver log.
+function streamsSig(dir, raw) {
+  const logs = [];
+  const h = raw && raw.harness_run;
+  if (h && h.driver && h.driver.log) logs.push(h.driver.log);
+  if (raw && raw.s_run && raw.s_run.driver && raw.s_run.driver.log) logs.push(raw.s_run.driver.log);
+  for (const n of Array.isArray(raw && raw.nodes) ? raw.nodes : []) if (n && n.child && n.child.driver && n.child.driver.log) logs.push(n.child.driver.log);
+  let names = [];
+  try { names = readdirSync(join(dir, 'drivers')).filter((f) => f.endsWith('.stream.jsonl')).map((f) => join(dir, 'drivers', f)); } catch { /* no drivers dir */ }
+  return [...new Set([...logs, ...names])].sort().map((p) => statSig(p)).join('|');
+}
+
 function volatileKey(tasksDir, id, raw, files, t, listing) {
   const dir = join(tasksDir, id);
+  const limit = stallMsOf(raw); // the task's own threshold, the one the verdict uses
   const side = (path) => {
     const s = statOf(path);
-    return s ? `${s.mtime}:${t - s.mtime > STALL_MS ? 1 : 0}${t - s.mtime <= MOVING_MS ? 1 : 0}` : 'x';
+    return s ? `${s.mtime}:${t - s.mtime > limit ? 1 : 0}${t - s.mtime <= MOVING_MS ? 1 : 0}` : 'x';
   };
   const alive = (pid) => tickMemo(`pid\0${pid}`, () => pidAlive(pid));
   const parts = [];
@@ -127,8 +140,9 @@ function volatileKey(tasksDir, id, raw, files, t, listing) {
   for (const n of Array.isArray(raw.nodes) ? raw.nodes : []) if (n && n.child && n.child.driver) drivers.push(n.child.driver);
   for (const d of drivers) parts.push(`${d.pid}:${alive(d.pid) ? 1 : 0}:${d.log ? side(d.log) : '-'}`);
   if (raw.daemon) parts.push(`daemon ${alive(raw.daemon.pid) ? 1 : 0}`);
-  if (!drivers.length) {
-    parts.push(`ledger ${side(join(dir, 'ledger.jsonl'))}`);
+  if (!drivers.length) parts.push(`ledger ${side(join(dir, 'ledger.jsonl'))}`);
+  {
+    // every drivers/ stream counts: one no recorded driver owns keeps the task running (the verdict's stream scan)
     // the listing of drivers/ is kept while the dir's own mtime stands (a new stream moves it)
     const dsig = statSig(join(dir, 'drivers'));
     if (!listing.names || listing.sig !== dsig) {
@@ -166,7 +180,12 @@ export function createTaskCache({ build = collectFromRaw, now = Date.now, refres
     return {
       loadRun: (p) => kept(p, () => { stats.reads.runs += 1; return loadRunAt(p); }),
       jsonl: (p) => kept(p, () => { stats.reads.ledger += 1; return readJsonl(p); }),
-      costs: (dir, task) => (e.costs ??= (stats.reads.costs += 1, collectTaskCosts(dir, task))),
+      // kept while the driver streams' stat signature stands: a stream that grows (no task.json or ledger change) is read again
+      costs: (dir, task) => {
+        const sig = streamsSig(dir, e.raw);
+        if (e.costs === undefined || e.costsSig !== sig) { stats.reads.costs += 1; e.costs = collectTaskCosts(dir, task); e.costsSig = sig; }
+        return e.costs;
+      },
       live: (root) => (e.live ??= (stats.reads.live += 1, liveProcesses(root).length)),
     };
   }

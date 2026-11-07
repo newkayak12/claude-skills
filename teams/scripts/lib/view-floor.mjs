@@ -59,15 +59,19 @@ export function floorOf(model, facts = {}, { now = Date.now(), metrics: given = 
   const m = model;
   const numbers = new Map(((given || metrics(m, { now })).stories || []).map((s) => [s.id, s]));
   const stalled = m.state === 'stalled' || (m.ticket && m.ticket.state === 'stalled');
+  const taskMinutes = m.stall && m.stall.minutes;
   const epic = (m.ticket && m.ticket.key) || String(m.task_id || '');
   const story = (id) => (facts.stories && facts.stories[id]) || {};
   const verdicts = lastVerdicts(facts.ledger);
   const items = [];
   const workers = [];
   const add = (id, base, f, mark, waiting) => {
-    const state = workState({ mark, waiting, live: !!f.live, stalled });
+    // stalled with the whole task, or on its own: a silent worker beside a live one still reads stalled
+    const state = workState({ mark, waiting, live: !!f.live, stalled: stalled || !!f.silent });
     const doing = state === 'acting' || state === 'you' ? (f.doing || '') : '';
-    workers.push({ id, state, doing, ...markOf(state, doing) });
+    // minutes (integer) only on a stalled worker: its own stream's, else the task-level newest sign of life
+    const minutes = state === 'stalled' ? (Number.isInteger(f.minutes) ? f.minutes : taskMinutes) : null;
+    workers.push({ id, state, doing, ...markOf(state, doing), ...(Number.isInteger(minutes) ? { minutes } : {}) });
     if (mark === 'done' || mark === 'pending') return;
     const itemState = mark === 'failed' && state !== 'you' ? 'failed' : state;
     items.push({

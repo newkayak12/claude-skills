@@ -8,6 +8,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as facade from '../mcp/taskmanager.mjs';
 import * as mod from '../mcp/taskmanager-budget.mjs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { FALLBACK_RATES, fallbackRate, collectTaskCosts, taskFigure, spendFigure, latestCostEvent } from '../mcp/drivercost.mjs';
 
 const OWNED = [
   'taskSpend', 'taskElapsedMinutes', 'budgetStatus', 'closeFailedPlanning', 'enforceBudget',
@@ -31,4 +35,112 @@ test('budgetStatus: neither budget_usd nor timebox_minutes set is unlimited, nev
   assert.equal(s.pct, 0);
   assert.equal(s.over, false);
   assert.equal(s.warn, false);
+});
+
+// ---- card 125 F3-US-8: per-model pricing, one spend figure, durable cost events ----
+
+// A result-less session (the E-066abb46 shape): one Sonnet and one Opus message of equal size.
+const OUT = 100000; // output tokens per message = 5 * OUT input-token units
+const assistant = (id, model) => JSON.stringify({ type: 'assistant', message: { id, model, usage: { output_tokens: OUT } } });
+const resultless = () => [JSON.stringify({ type: 'system', model: 'claude-opus-5-5' }), assistant('m1', 'claude-sonnet-5-5'), assistant('m2', 'claude-opus-5-5')].join('\n') + '\n';
+const opusOnly = 5 * OUT * 2 * FALLBACK_RATES['claude-opus-5-5'];
+const mixed = 5 * OUT * (FALLBACK_RATES['claude-opus-5-5'] + FALLBACK_RATES['claude-sonnet-5-5']);
+
+function withTask(fn, { stream = resultless(), opts = {}, ledger = [] } = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'budget-f3-'));
+  const was = process.env.HARNESS_TASKS_DIR;
+  process.env.HARNESS_TASKS_DIR = root;
+  try {
+    const dir = join(root, 'T1');
+    mkdirSync(join(dir, 'drivers'), { recursive: true });
+    if (stream) writeFileSync(join(dir, 'drivers', 'S.stream.jsonl'), stream);
+    writeFileSync(join(dir, 'ledger.jsonl'), ledger.map((e) => JSON.stringify(e) + '\n').join(''));
+    const task = { run_id: 'T1', cwd: root, nodes: [], created_at: Date.now() - 600000, team: { opts } };
+    return fn({ task, dir });
+  } finally {
+    if (was === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = was;
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+const ledgerOf = (dir) => readFileSync(join(dir, 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+
+test('a result-less Opus+Sonnet stream is priced per message: below the Opus-only price, marked estimated', () => {
+  withTask(({ dir, task }) => {
+    const c = collectTaskCosts(dir, task);
+    assert.equal(c.estimated_sessions, 1);
+    assert.ok(Math.abs(c.cost_usd - mixed) < 1e-3, `${c.cost_usd} vs ${mixed}`);
+    assert.ok(c.cost_usd < opusOnly, `${c.cost_usd} not below ${opusOnly}`);
+  });
+});
+
+test('enforceBudget: budget_warning and budget_stopped carry estimated:true and the status spend', () => {
+  withTask(({ dir, task }) => {
+    const status = mod.budgetStatus(task);
+    assert.equal(status.estimated, true);
+    assert.equal(status.spend, taskFigure(dir, task).spend);
+    mod.enforceBudget(task);
+    const evs = ledgerOf(dir);
+    const w = evs.find((e) => e.event === 'budget_warning');
+    const s = evs.find((e) => e.event === 'budget_stopped');
+    for (const e of [w, s]) { assert.equal(e.estimated, true); assert.equal(e.spend, status.spend); }
+  }, { opts: { budget_usd: 1 } });
+});
+
+test('budgetStatus with only timebox_minutes set returns the real spend', () => {
+  withTask(({ dir, task }) => {
+    const s = mod.budgetStatus(task);
+    assert.ok(s.spend > 0);
+    assert.equal(s.spend, mod.taskSpend(task));
+    assert.equal(s.spend, taskFigure(dir, task).spend);
+  }, { opts: { timebox_minutes: 600 } });
+});
+
+test('a finished session carries no estimated mark on the events', () => {
+  const done = resultless() + JSON.stringify({ type: 'result', total_cost_usd: 2, num_turns: 1, duration_ms: 1 }) + '\n';
+  withTask(({ dir, task }) => {
+    assert.equal(mod.budgetStatus(task).estimated, false);
+    mod.enforceBudget(task);
+    const evs = ledgerOf(dir).filter((x) => x.event === 'budget_stopped' || x.event === 'budget_warning');
+    assert.ok(evs.length >= 1);
+    for (const e of evs) assert.equal('estimated' in e, false);
+  }, { stream: done, opts: { budget_usd: 1 } });
+});
+
+test('spendFigure: an exact larger durable event wins; an estimated one never raises the figure', () => {
+  const live = { cost_usd: 32.7186 };
+  assert.deepEqual(spendFigure(live, { spend: 47.2906, estimated: false }), { spend: 47.2906, estimated: false, from: 'durable' });
+  assert.equal(spendFigure(live, { spend: 47.2906, estimated: true }).spend, 32.7186);
+  assert.equal(spendFigure(live, { spend: 10, estimated: false }).spend, 32.7186);
+  assert.equal(spendFigure({ cost_usd: 5, estimated_sessions: 1 }, null).estimated, true);
+});
+
+test('fallbackRate prices a dated or suffixed model id by its family; an unknown claude model takes the Opus rate', () => {
+  const opus = FALLBACK_RATES['claude-opus-5-5'];
+  const sonnet = FALLBACK_RATES['claude-sonnet-5-5'];
+  assert.equal(fallbackRate('claude-sonnet-5-5'), sonnet);
+  assert.equal(fallbackRate('claude-sonnet-5-5-20261001'), sonnet);
+  assert.equal(fallbackRate('claude-opus-5-5[1m]'), opus);
+  assert.equal(fallbackRate('claude-haiku-5-5'), opus);
+  assert.equal(fallbackRate('gpt-5'), null);
+  assert.equal(fallbackRate(undefined), null);
+  // end to end: a suffixed-id stream is priced like its plain-id twin, not 0
+  const dated = [JSON.stringify({ type: 'system', model: 'claude-opus-5-5' }), assistant('m1', 'claude-sonnet-5-5-20261001'), assistant('m2', 'claude-opus-5-5[1m]')].join('\n') + '\n';
+  withTask(({ dir, task }) => {
+    const c = collectTaskCosts(dir, task);
+    assert.ok(Math.abs(c.cost_usd - mixed) < 1e-3, `${c.cost_usd} vs ${mixed}`);
+  }, { stream: dated });
+});
+
+test('taskFigure / taskSpend / budgetStatus.spend read the latest durable event from the ledger', () => {
+  const ledger = [
+    { event: 'cost_recorded', spend: 99, estimated: true },
+    { event: 'cost_recorded', spend: 47.2906, estimated: false },
+  ];
+  withTask(({ dir, task }) => {
+    assert.equal(latestCostEvent(ledgerOf(dir)).spend, 47.2906);
+    assert.equal(taskFigure(dir, task).spend, 47.2906);
+    assert.equal(mod.taskSpend(task), 47.2906);
+    assert.equal(mod.budgetStatus(task).spend, 47.2906);
+    assert.equal(mod.budgetStatus(task).estimated, false);
+  }, { stream: null, opts: { budget_usd: 100 }, ledger });
 });

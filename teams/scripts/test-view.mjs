@@ -1499,7 +1499,10 @@ test('--once --format summary prints { status, task }: status is --format status
     const out = JSON.parse(r.stdout);
     assert.deepEqual(Object.keys(out).sort(), ['status', 'task', 'tasks']);
     assert.deepEqual(out.status, JSON.parse(run('--format', 'status').stdout));
-    assert.deepEqual(Object.keys(out.task).sort(), ['cost', 'day', 'done', 'key', 'log', 'metrics', 'now', 'slug', 'stages', 'state', 'title', 'total', 'work', 'you']);
+    // `progress` is an optional addition (F3): present only when a stage has countable work
+    const oldKeys = ['cost', 'day', 'done', 'key', 'log', 'metrics', 'now', 'slug', 'stages', 'state', 'title', 'total', 'work', 'you'];
+    assert.deepEqual(Object.keys(out.task).sort(), oldKeys.concat(out.task.progress ? ['progress'] : []).sort());
+    if (out.task.progress) assert.ok(['build', 'qa', 'sg'].includes(out.task.progress.key), 'progress.key is build|qa|sg');
 
     const text = JSON.stringify(out.task);
     for (const tok of ['verdict', 'match_pct', 'dispatch:', 'gate:goal', 'accept:', '/Users/', '/var/', '/tmp/']) {
@@ -1855,5 +1858,22 @@ test('collect(): telemetry carries the last accept score, out-of-retries, spend 
     assert.equal(t.denials.judges, 1);
     const rows = t.spend.map((r) => `${r.story}/${r.attempt}/${r.stage}/${r.cost_usd}`).sort();
     assert.deepEqual(rows, ['P1/1/null/1', 'P1/2/null/0.5', 'P1/2/null/2', 'null/1/plan/0.25']);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('card 125 AC-29: collectTask cost is the exact durable 47.2906 once the worktrees are gone, not the live 32.7186; an estimated durable never raises it', () => {
+  const root = mkdtempSync(join(tmpdir(), 'view-durable-'));
+  try {
+    for (const [id, estimated, want] of [['E-d0000001', false, 47.2906], ['E-d0000002', true, 32.7186]]) {
+      const dir = join(root, id);
+      mkdirSync(join(dir, 'drivers'), { recursive: true });
+      writeFileSync(join(dir, 'drivers', 'S.stream.jsonl'), `${JSON.stringify({ type: 'result', total_cost_usd: 32.7186, num_turns: 4 })}\n`);
+      writeFileSync(join(dir, 'ledger.jsonl'), `${JSON.stringify({ ts: 1, event: 'cost_recorded', spend: 47.2906, estimated })}\n`);
+      writeFileSync(join(dir, 'task.json'), JSON.stringify({ run_id: id, kind: 'task', cwd: root, request: 'gone worktrees', created_at: Date.now(), nodes: [] }));
+      const m = collectTask(root, id);
+      assert.equal(m.cost.usd, want);
+      assert.equal(m.budget, null);
+      assert.equal(listTasks(root).find((r) => r.task_id === id).cost_usd, want, 'the board row reads the same figure');
+    }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
