@@ -337,13 +337,16 @@ const EN_UI = ['Now', 'You', 'Stages', 'Work', 'Cost', 'Summary', 'Log', 'needs 
 
 // Engine beneath: a Map-backed $.state, process.run for view.mjs (status and summary answer the same
 // fixture), ui.open and ui.status recorded.
-type Data = { status?: Record<string, unknown>; tasks?: unknown[]; task?: unknown; teams?: unknown; dash?: unknown; decisions?: (card: string | null) => unknown; reports?: Record<string, unknown>; events?: unknown[]; failReport?: boolean; isUnplaced?: boolean; plain?: Run }
+type Data = { status?: Record<string, unknown>; tasks?: unknown[]; task?: unknown; teams?: unknown; dash?: unknown; decisions?: (card: string | null) => unknown; reports?: Record<string, unknown>; events?: unknown[]; failReport?: boolean; isUnplaced?: boolean; surfacesThrow?: boolean; plain?: Run }
 function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly Surface[] = ['terminal'], data: Data = {}) {
   // the pane opens on the Dashboard; the older tests read the Floor and say so here unless they pick a tab
   const store = new Map<string, unknown>(Object.entries({ view: 'floor', ...init }))
   const seen = { store, argv: [] as (readonly string[])[], opened: [] as string[], openArgs: [] as unknown[], statuses: [] as (string | undefined)[] }
   const status = () => data.status ?? { line: '', waiting: 0 }
-  on('session.surfaces', () => ({ value: surfaces }))
+  on('session.surfaces', () => {
+    if (data.surfacesThrow) throw new Error('surfaces')
+    return { value: surfaces }
+  })
   on('state.get', (_$, e) => ({ value: { value: store.get(e.key), version: 0 } }) as never)
   on('state.set', (_$, e) => {
     store.set(e.key, e.value)
@@ -974,22 +977,96 @@ test('/teams-status: ui.open not placed: answers with the view.mjs text, run wit
   expect(plain.slice(2)).toEqual(['--once', '--format', 'board', '--cwd', '/proj'])
 })
 
-test('/teams-status: a desktop session (pane placed): answers with the view.mjs text', async ($, on) => {
+test('/teams-status: a desktop session (pane placed): answers with one line, no board', async ($, on) => {
   uiWorld(on, {}, ['terminal', 'desktop'], { plain: ok(INDEX) })
   startWorld(on)
   on('ui.panes', () => ({ value: [] }) as never)
   await start($)
-  expect(textOf(await runStatus($))).toBe(INDEX)
+  const text = textOf(await runStatus($))
+  expect(text).toBe('pane opened')
+  expect(text).not.toContain('E-3a3a3bb5')
 })
 
-test('/teams-status: a terminal-only session with the pane placed answers with the view.mjs text', async ($, on) => {
+test('/teams-status: a terminal-only session with the pane placed answers with one line, no board', async ($, on) => {
   const seen = uiWorld(on, {}, ['terminal'], { plain: ok(INDEX) })
+  startWorld(on)
+  on('ui.panes', () => ({ value: [] }) as never)
+  await start($)
+  const text = textOf(await runStatus($))
+  expect(text).toBe('pane opened')
+  expect(text).not.toContain('E-3a3a3bb5')
+  expect(seen.opened).toEqual(['teams-status'])
+})
+
+// the answer by surface: a pane surface gets the one line, mobile the board
+for (const surface of SURFACES) {
+  test(`/teams-status answer on ${surface}`, async ($, on) => {
+    const seen = uiWorld(on, {}, [surface], { plain: ok(INDEX) })
+    startWorld(on)
+    on('ui.panes', () => ({ value: [] }) as never)
+    await start($)
+    expect(textOf(await runStatus($))).toBe(carriesInput(surface) ? 'pane opened' : INDEX)
+    expect(seen.opened).toEqual(['teams-status'])
+  })
+}
+
+test('/teams-status answer headless', async ($, on) => {
+  const seen = uiWorld(on, {}, [], { plain: ok(INDEX) })
   startWorld(on)
   on('ui.panes', () => ({ value: [] }) as never)
   await start($)
   expect(textOf(await runStatus($))).toBe(INDEX)
   expect(seen.opened).toEqual(['teams-status'])
-  expect(seen.argv.filter(a => a.includes('board'))).toHaveLength(1)
+})
+
+for (const [name, surfaces, want] of [
+  ['a pane-surface pair', ['desktop', 'vscode'], 'pane opened'],
+  ['a pane surface beside mobile', ['terminal', 'mobile'], INDEX],
+  ['an unknown surface name', ['watch'], INDEX],
+] as const) {
+  test(`/teams-status answer: ${name}`, async ($, on) => {
+    uiWorld(on, {}, surfaces as never, { plain: ok(INDEX) })
+    startWorld(on)
+    on('ui.panes', () => ({ value: [] }) as never)
+    await start($)
+    expect(textOf(await runStatus($))).toBe(want)
+  })
+}
+
+for (const [why, plain] of [['fails', { exitCode: 1, stdout: INDEX, stderr: 'boom' }], ['prints nothing', ok('  \n')]] as const) {
+  test(`/teams-status answer: on a pane surface a view.mjs that ${why} still answers pane opened`, async ($, on) => {
+    const seen = uiWorld(on, {}, ['terminal'], { plain })
+    startWorld(on)
+    on('ui.panes', () => ({ value: [] }) as never)
+    await start($)
+    expect(textOf(await runStatus($))).toBe('pane opened')
+    expect(seen.opened).toEqual(['teams-status'])
+  })
+}
+
+test('/teams-status answer: surfaces() throwing keeps the board text and the pane open', async ($, on) => {
+  const data: Data = { plain: ok(INDEX) }
+  const seen = uiWorld(on, {}, ['terminal'], data)
+  startWorld(on)
+  on('ui.panes', () => ({ value: [] }) as never)
+  await start($)
+  data.surfacesThrow = true
+  expect(textOf(await runStatus($))).toBe(INDEX)
+  expect(seen.opened).toEqual(['teams-status'])
+})
+
+test('/teams-status answer: the second run on a pane surface closes with one line, no board', async ($, on) => {
+  const closed: string[] = []
+  on('ui.close', (_$, e) => { closed.push(e.id); return { value: undefined } })
+  const seen = uiWorld(on, {}, ['terminal'], { plain: ok(INDEX) })
+  startWorld(on)
+  on('ui.panes', () => ({ value: seen.opened.length > 0 ? [{ id: 'teams-status', title: 'Teams', isPlaced: true }] : [] }) as never)
+  await start($)
+  expect(textOf(await runStatus($))).toBe('pane opened')
+  const text = textOf(await runStatus($))
+  expect(text).toBe('pane closed')
+  expect(text).not.toContain('E-3a3a3bb5')
+  expect(closed).toEqual(['teams-status'])
 })
 
 test('/teams-status: an empty roster answers with the view.mjs text', async ($, on) => {
@@ -1026,10 +1103,24 @@ test('/teams-status: off the terminal, the second run still closes the pane', as
 
 test('pane.ts: carriesInput and the status answer', () => {
   expect(SURFACES.filter(carriesInput)).toEqual(['terminal', 'desktop', 'vscode'])
-  expect(statusAnswer({ exitCode: 0, stdout: 'x\n' }, 'opened')).toBe('x\n')
-  expect(statusAnswer({ exitCode: 2, stdout: 'x' }, 'opened')).toBe('opened')
-  expect(statusAnswer({ exitCode: 0, stdout: ' ' }, 'opened')).toBe('opened')
-  expect(statusAnswer(null, 'opened')).toBe('opened')
+  expect(statusAnswer({ exitCode: 0, stdout: 'x\n' }, 'opened', ['mobile'], true)).toBe('x\n')
+  expect(statusAnswer({ exitCode: 2, stdout: 'x' }, 'opened', ['mobile'], true)).toBe('opened')
+  expect(statusAnswer({ exitCode: 0, stdout: ' ' }, 'opened', ['mobile'], true)).toBe('opened')
+  expect(statusAnswer(null, 'opened', ['mobile'], true)).toBe('opened')
+  const runs = [{ exitCode: 0, stdout: 'x\n' }, { exitCode: 2, stdout: 'x' }, { exitCode: 0, stdout: ' ' }, null]
+  const board = (run: (typeof runs)[number]) => (run !== null && run.exitCode === 0 && run.stdout.trim() !== '' ? run.stdout : 'opened')
+  for (const run of runs) {
+    for (const set of [['terminal'], ['desktop'], ['vscode'], ['terminal', 'desktop'], ['desktop', 'vscode'], ['terminal', 'vscode']]) {
+      expect(statusAnswer(run, 'opened', set, true)).toBe('opened')
+      expect(statusAnswer(run, 'opened', set, false)).toBe(board(run))
+    }
+    for (const set of [['mobile'], ['terminal', 'mobile'], ['watch'], ['terminal', 'watch'], []]) {
+      expect(statusAnswer(run, 'opened', set, true)).toBe(board(run))
+    }
+    for (const bad of [undefined, null, 'terminal', 7]) {
+      expect(statusAnswer(run, 'opened', bad as never, true)).toBe(board(run))
+    }
+  }
 })
 
 // the footer's Input takes the keys; mobile draws none and keeps every Button

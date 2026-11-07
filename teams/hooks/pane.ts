@@ -45,8 +45,17 @@ export function carriesInput(surface: string): boolean {
   return surface === 'terminal' || surface === 'desktop' || surface === 'vscode'
 }
 
-// the text the command answers with: the run's stdout, else `opened` when the run failed or printed nothing
-export function statusAnswer(run: { exitCode: number; stdout: string } | null, opened: string): string {
+// the text the command answers with. Quiet = the pane was seated and every attached surface carries an Input: the one
+// `opened` line, no board. Anything else (a mobile or unknown surface, none attached, an unseated pane, a bad input)
+// keeps the board: the run's stdout, else `opened` when the run failed or printed nothing.
+export function statusAnswer(
+  run: { exitCode: number; stdout: string } | null,
+  opened: string,
+  surfaces: readonly string[] | null | undefined,
+  isPlaced: boolean,
+): string {
+  const quiet = isPlaced === true && Array.isArray(surfaces) && surfaces.length > 0 && surfaces.every(s => typeof s === 'string' && carriesInput(s))
+  if (quiet) return opened
   return run === null || run.exitCode !== 0 || run.stdout.trim() === '' ? opened : run.stdout
 }
 
