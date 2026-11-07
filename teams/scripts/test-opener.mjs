@@ -31,7 +31,7 @@ async function openWith(envOver, sessionFile) {
   const root = mkdtempSync(join(tmpdir(), 'tm-opener-root-'));
   const sessions = mkdtempSync(join(tmpdir(), 'tm-opener-sessions-'));
   if (sessionFile !== undefined) writeFileSync(join(sessions, `${process.pid}.json`), sessionFile);
-  const env = { ...process.env, TEAMS_VIEW: '0', HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_SESSIONS_DIR: sessions };
+  const env = { ...process.env, HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_SESSIONS_DIR: sessions };
   for (const [k, v] of Object.entries(envOver)) { if (v === undefined) delete env[k]; else env[k] = v; }
   const proc = spawn('node', [TM], { stdio: ['pipe', 'pipe', 'inherit'], env });
   let buf = '';

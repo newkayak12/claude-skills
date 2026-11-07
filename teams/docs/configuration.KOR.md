@@ -77,7 +77,7 @@ modes" 절이 이 항목을 보여줍니다.
 
 `sprint` 스킬은 `tm_open`과 아래 조각들을 하나의 스크럼 형태 런으로 묶습니다 — 백로그를 위한
 `requests`, 박스를 위한 `budget_usd`/`timebox_minutes`, 데일리를 위한 기존
-`tm_board`/뷰어, 리뷰를 위한 리포트, 회고를 위한 `retro.json`과 `context_from`. `tm_open`
+`tm_board`와 `/teams-status`, 리뷰를 위한 리포트, 회고를 위한 `retro.json`과 `context_from`. `tm_open`
 자체 밖에 새로운 메커니즘은 없습니다 — 이 절은 각 조각이 무엇을 하는지 설명할 뿐입니다.
 
 - **`requests: [...]`** — `tm_open`은 `request`(문자열 하나) 또는 `requests`(문자열 배열,
@@ -111,26 +111,17 @@ modes" 절이 이 항목을 보여줍니다.
 
 `tm_status`/`tm_board`/`tm_events`는 구동 세션을 위한 기계 형태 JSON을 돌려줍니다 — 사람이
 들여다볼 물건이 아닙니다. `scripts/view.mjs`가 그 별도의 사람용 표면입니다: 의존성 없이
-동작하는, 읽기 전용 CLI로 teams 태스크(실행 중이든 끝났든)를 페이지나 텍스트 트리로
-그려줍니다 — 이 도구들이 이미 읽는 것과 같은 `task.json`과 자식 런 파일에서 만들어집니다.
+동작하는, 읽기 전용 CLI로 teams 태스크(실행 중이든 끝났든)를 텍스트 트리로
+출력합니다 — 이 도구들이 이미 읽는 것과 같은 `task.json`과 자식 런 파일에서 만들어집니다.
+모드가 있으면 `/teams-status`가 같은 데이터를 실시간으로 보여주고, Codex, 헤드리스
+`claude -p`, 이전 Claude Code에서는 `view.mjs --once`로 읽습니다.
 
 ```
-node teams/scripts/view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--once] [--view pipeline|tickets|resources]
+node teams/scripts/view.mjs --once [--tasks-dir <dir>] [--task <id>] [--view pipeline|tickets|resources]
 ```
 
-`--once` 없이 실행하면 `127.0.0.1`에 로컬 HTTP 서버를 띄우고 URL을 출력합니다(기본 포트
-`7431`, `TEAMS_VIEW_PORT`나 `--port`로 바꿀 수 있고, 포트는 `<tasksRoot>/.view.json`에
-기록합니다). 포트마다 teams 뷰어는 하나만 돕니다: 두 번째 태스크 루트(다른 워크트리나
-저장소)는 새로 띄우지 않고 실행 중인 뷰어에 등록(`POST /register`)하며, teams가 아닌 프로그램이
-`7431`을 쥐고 있을 때만 빈 포트로 옮깁니다. `/`(와 태스크 없는 `/state.json`)는 등록된 모든
-루트의 태스크 인덱스이고, `/E-<id 앞 8자>`나 `/<slug>`는 태스크 하나를 엽니다. 예전
-`/?task=<id>` 링크도 그대로 동작하며, 모르는 키는 인덱스를 보여줍니다. 등록된 루트 중
-실행 중인 태스크가 하나도 없고 30분(`TEAMS_VIEW_IDLE_MS`) 동안 요청이 없거나, 등록된 루트의
-태스크 디렉터리가 모두 사라지면 뷰어는 종료합니다. `tm_open`/`tm_run`은
-기록된 뷰어의 포트가 응답할 때(약 2초 재시도)만 재사용하고, 아니면 새로
-띄워 `.view.json`을 다시 씁니다. `tm_status`는 pid만 확인합니다. 열어보면
-~3초마다 폴링하는 실시간 화면을 볼 수 있고, 뷰가 세 개입니다 (탭으로 즉시 전환되며, 추가
-요청 없이 같은 폴링 결과를 그대로 씁니다):
+`--once` 없이 실행하면 사용법을 출력하고 종료 코드 1로 끝나며, `--help`는 사용법을 출력하고
+0으로 끝납니다. 서버도 포트도 열지 않습니다. 뷰가 세 개입니다:
 
 - **pipeline**(기본값) — request, size/flow/state, 지금까지의 비용과 턴 수, 매니저 파이프라인
   (size → shape → critique → 디스패치된 패키지마다 카드 하나 → integrate → gate:goal →
@@ -150,8 +141,8 @@ node teams/scripts/view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--on
   `origin`은 그것을 만들어낸 STAGE(`shape`/`repair`/`phase`/`qa`/`planning-audit`/`upstream`/
   `tm_file`)를, `link`(upstream fix에만)은 그것이 겨냥하는 대상을 가리킵니다. 이 태스크별
   tickets 뷰 자체는 initiative 그룹핑으로 바뀌지 않습니다 — 그것은 태스크를 가로지르는
-  개념이라 전체 EPIC 인덱스 쪽에 표시됩니다(`--once`의 텍스트 인덱스와 페이지 자신의 EPIC
-  카드 모두에 행마다 `initiative` 태그로).
+  개념이라 전체 EPIC 인덱스 쪽에 표시됩니다(`--once`의 텍스트 인덱스에 행마다
+  `initiative` 태그로).
 - **resources** — 지금 실제로 배정된 팀 계층입니다: TaskLeader(그 태스크의 daemon — pid,
   생존 여부, 시작 시각) → STORY마다 Team 하나(워크트리, 브랜치, TeamLeader = 그 자식 런의
   driver — pid, 생존 여부, 재시작 횟수, 비용/턴, `waiting_capacity`가 있으면 그것까지) →
@@ -159,8 +150,8 @@ node teams/scripts/view.mjs [--tasks-dir <dir>] [--task <id>] [--port <n>] [--on
   패키지 워크트리 안에 중첩된 태스크는 자기 자신의 하위 트리로 나타납니다.
 
 `--tasks-dir`은 기본으로 `tasksRoot()`(`HARNESS_TASKS_DIR`, 없으면 `~/.harness/tasks`)를
-쓰고, `--task`를 생략했는데 디스크에 태스크가 여러 개 있으면 인덱스 화면을 대신 보여줍니다.
-`--once`는 서버 없이 뷰 하나를 평문 텍스트 트리/보드로 출력합니다 — 터미널이나 CI 로그용이며,
+쓰고, `--task`를 생략했는데 디스크에 태스크가 여러 개 있으면 인덱스를 대신 출력합니다.
+`--once`는 뷰 하나를 평문 텍스트 트리/보드로 출력합니다 — 터미널이나 CI 로그용이며,
 `--view`로 어느 것을 고를지 정합니다(기본 `pipeline`) — `tickets`/`resources`는 태스크 하나로
 좁혀지지 않으면 같은 태스크 인덱스로 대신합니다.
 

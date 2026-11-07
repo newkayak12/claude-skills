@@ -79,7 +79,7 @@ export async function captureTools() {
   const dirs = [];
   const mk = (prefix) => { const d = mkdtempSync(join(tmpdir(), prefix)); dirs.push(d); return d; };
   try {
-    const env = { ...process.env, HARNESS_TASKS_DIR: mk('capture-tasks-'), HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' };
+    const env = { ...process.env, HARNESS_TASKS_DIR: mk('capture-tasks-'), HARNESS_TEST_NO_DRIVER: '1' };
     delete env.TEAMS_WIKI_ROOT;
     delete env.TEAMS_WIKI_OFF;
     const entries = [];

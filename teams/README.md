@@ -244,7 +244,7 @@ bump for this repository's source).
 | One ticket (`E-xxxxxxxx`, `E-xxxxxxxx/P2`) | `teams:ticket` (`tm_ticket`) |
 | What a ticket is doing right now | `teams:log` (`tm_log`) |
 | What is waiting on you | `teams:inbox`; answer with `teams:submit`; claim a card with `teams:take` |
-| A live page in the browser | `node teams/scripts/view.mjs` (pipeline, tickets and resources views; `--once` prints text) |
+| Status as text, without the pane | `node teams/scripts/view.mjs --once` (pipeline, tickets and resources views; prints a text tree) |
 
 Tickets follow `Initiative (optional) > EPIC > STORY > TASK`: `I-<slug>`, `E-xxxxxxxx` (the
 task), `E-xxxxxxxx/Pn` (a package; also `E-xxxxxxxx/PLAN-F1` for a planning card and

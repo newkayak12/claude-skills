@@ -36,14 +36,14 @@ tm_open({
   request, cwd, isolated, mixed: true, flow: "document",
   vendor: "auto", allocation: "balanced",
   host_vendor, host_model, native_models
-})                                               -> task_id, state, docs_dir, view_url
+})                                               -> task_id, state, docs_dir
 ```
 
 That one call opens the task and spawns the daemon that drives it — size, shape, critique, every
 package's dispatch and fold, integrate, the goal gate, the report, or, for a size-S request, the
 development-harness run it hands the request to — end to end. You never see `size`'s own briefing or submit its payload; the daemon
 judges it itself. Prefer `tm_run` when you do not want even the `state` field back: same open,
-same daemon, `{task_id, run_id, docs_dir, view_url}` - open `view_url` in a browser to watch the run.
+same daemon, `{task_id, run_id, docs_dir}`.
 
 After this you watch; you never drive.
 

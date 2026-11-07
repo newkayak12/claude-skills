@@ -1,8 +1,8 @@
 // Regression suite for teams/scripts/view.mjs - the human-readable status surface for a
 // tm task. Builds a real task.json (through the tm_* and team_* tools of the teams MCP
 // server, no vendor CLI needed - the same recipe test-taskmanager.mjs uses) and checks that
-// collect() derives the right model, that the text renderer names every node, and that the
-// HTTP server actually serves /state.json and an index page.
+// collect() derives the right model, that the text renderer names every node, and that
+// view.mjs --once prints it.
 //
 //   node --test teams/scripts/test-view.mjs
 
@@ -26,50 +26,6 @@ const SERVER = join(HERE, '..', 'mcp', 'server.mjs');
 const TM = 'tm';
 const BROKER = 'broker';
 const VIEW = join(HERE, 'view.mjs');
-const PAGE_HTML = join(HERE, 'lib', 'view-page.html');
-
-// Runs the page's own client-side indexBody(rows, tasksDir) against a real DOM-free stub - the
-// same function view-page.html's tick()/render() call against /state.json's `tasks` array. This
-// is the one way to pin what the browser actually shows for the index without a headless
-// browser: extract the IIFE's body, stub the two globals it touches at load time (`location`,
-// `document`), and call the function it defines by name.
-function renderIndexHtml(rows, tasksDir) {
-  const html = readFileSync(PAGE_HTML, 'utf8');
-  const body = html.match(/\(function \(\) \{([\s\S]*)\}\)\(\);/)[1].replace(/tick\(\);\s*setInterval\(tick, 3000\);/, '');
-  const sandbox = { location: { search: '' }, URLSearchParams, document: { getElementById: () => null } };
-  const fn = new Function('location', 'URLSearchParams', 'document', 'exportsObj', `${body}\nexportsObj.indexBody = indexBody;`);
-  const out = {};
-  fn(sandbox.location, sandbox.URLSearchParams, sandbox.document, out);
-  return out.indexBody(rows, tasksDir);
-}
-
-// Same extraction trick as renderIndexHtml, for pkgCard(p, idx) - the per-package card the HTML
-// page renders on a task's own view. Used to pin that the browser and the CLI/text renderer
-// show the SAME storyLinks() facts (view-render-text.mjs's formatLinksLine renders the identical
-// model field, p.links, for the --once/terminal path).
-function renderPkgCardHtml(p, idx = 0) {
-  const html = readFileSync(PAGE_HTML, 'utf8');
-  const body = html.match(/\(function \(\) \{([\s\S]*)\}\)\(\);/)[1].replace(/tick\(\);\s*setInterval\(tick, 3000\);/, '');
-  const sandbox = { location: { search: '' }, URLSearchParams, document: { getElementById: () => null } };
-  const fn = new Function('location', 'URLSearchParams', 'document', 'exportsObj', `${body}\nexportsObj.pkgCard = pkgCard;`);
-  const out = {};
-  fn(sandbox.location, sandbox.URLSearchParams, sandbox.document, out);
-  return out.pkgCard(p, idx);
-}
-
-// Same extraction trick as renderIndexHtml/renderPkgCardHtml, for the TICKET/RESOURCE view's own
-// client-side renderers - pins that the browser and the CLI/text renderer (view-render-text.mjs)
-// draw the SAME collect() fields into the SAME shape, not two quietly-diverging surfaces.
-function extractPageFns(names) {
-  const html = readFileSync(PAGE_HTML, 'utf8');
-  const body = html.match(/\(function \(\) \{([\s\S]*)\}\)\(\);/)[1].replace(/tick\(\);\s*setInterval\(tick, 3000\);/, '');
-  const sandbox = { location: { search: '' }, URLSearchParams, document: { getElementById: () => null, querySelectorAll: () => [] } };
-  const fn = new Function('location', 'URLSearchParams', 'document', 'exportsObj',
-    `${body}\n${names.map((n) => `exportsObj.${n} = ${n};`).join('\n')}`);
-  const out = {};
-  fn(sandbox.location, sandbox.URLSearchParams, sandbox.document, out);
-  return out;
-}
 
 // ---------- the same fixture recipe test-taskmanager.mjs uses ----------
 
@@ -199,7 +155,7 @@ async function throughCritique(tm, task_id, shape) {
 async function withTask(shape, fn) {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'view-test-root-'));
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' }).init();
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
   const g = await new Client(BROKER).init();
   tm.broker = g;
   try {
@@ -223,7 +179,7 @@ async function withTask(shape, fn) {
 async function withOpenTask(roles, fn) {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'view-test-root-'));
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' }).init();
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
   const g = await new Client(BROKER).init();
   tm.broker = g;
   try {
@@ -324,20 +280,6 @@ function everyNodeId(model, acc = []) {
     }
   }
   return acc;
-}
-
-function waitForListen(proc, timeoutMs = 8000) {
-  return new Promise((resolve, reject) => {
-    let buf = '';
-    const timer = setTimeout(() => reject(new Error(`view.mjs did not print a listen line: ${buf}`)), timeoutMs);
-    proc.stdout.setEncoding('utf8');
-    proc.stdout.on('data', (chunk) => {
-      buf += chunk;
-      const m = buf.match(/listening on (http:\/\/127\.0\.0\.1:\d+)/);
-      if (m) { clearTimeout(timer); resolve(m[1]); }
-    });
-    proc.on('exit', (code) => { clearTimeout(timer); reject(new Error(`view.mjs exited early (${code}): ${buf}`)); });
-  });
 }
 
 // ---------- collect() ----------
@@ -607,12 +549,6 @@ test('collect()/render: a dispatch claimed but not yet applied (running, no chil
     const res = renderResourcesText(model);
     assert.match(res, /Team P1 - module a\n {2}\(opening - child run being created\)/);
     assert.match(res, /Team P2 - module b\n {2}\(not dispatched yet - no worktree\)/);
-
-    const { resourcesBody, pkgCard } = extractPageFns(['resourcesBody', 'pkgCard']);
-    assert.match(resourcesBody(model), /Team P1 – module a<\/div><div class="muted">opening - child run being created<\/div>/);
-    assert.match(resourcesBody(model), /Team P2 – module b<\/div><div class="muted">not dispatched yet<\/div>/);
-    assert.match(pkgCard(p1, 0), /opening - child run being created/);
-    assert.doesNotMatch(pkgCard(p2, 1), /opening/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -676,7 +612,7 @@ test('listTasks() reads the ticket state through a real QA-found-defect round: I
 test('listTasks() before shape: no packages yet reads READY/plan with null story progress, not "0/0"', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'view-test-root-'));
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' }).init();
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
   try {
     const open = await tm.call('tm_open', { brainstorm: false, request: 'task A', cwd, vendor: 'self', roles: { qa: false, audit: false } });
     const row = listTasks(root)[0];
@@ -704,7 +640,7 @@ test('listTasks() before shape: no packages yet reads READY/plan with null story
 test('listTasks() on a legacy size-S task (task.s_run, no task.spec) reads the real state/phase off the child run at every stage - READY/plan through DONE/null (S2 frozen reader)', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'view-test-root-'));
-  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' }).init();
+  const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
   const g = await new Client(BROKER).init();
   try {
     const open = await tm.call('tm_open', { brainstorm: false, request: 'small request', cwd, vendor: 'self', flow: 'develop', size: 'S', roles: { qa: false, audit: false } });
@@ -977,21 +913,14 @@ test('renderText() indents every line of a filed defect\'s multi-line brief (fil
   });
 });
 
-test('/state.json carries model.qa for a task with a QA round (the HTML page and --once read the same collect() output)', async () => {
+test('collectTask() carries model.qa for a task with a QA round (--once reads the same collect() output)', async () => {
   await withOpenTask({ planning: false, qa: true }, async ({ tm, g, root, task_id }) => {
     await driveToQaDefectFound(tm, g, task_id);
 
-    const proc = spawn('node', [VIEW, '--tasks-dir', root, '--task', task_id, '--port', '0'], { stdio: ['ignore', 'pipe', 'pipe'] });
-    try {
-      const base = await waitForListen(proc);
-      const res = await fetch(`${base}/state.json`);
-      const data = await res.json();
-      assert.equal(data.model.qa.rounds.length, 1);
-      assert.equal(data.model.qa.rounds[0].defects_count, 1);
-      assert.equal(data.model.packages.find((p) => p.id === 'D1').reporter, 'qa');
-    } finally {
-      proc.kill();
-    }
+    const model = collectTask(root, task_id);
+    assert.equal(model.qa.rounds.length, 1);
+    assert.equal(model.qa.rounds[0].defects_count, 1);
+    assert.equal(model.packages.find((p) => p.id === 'D1').reporter, 'qa');
   });
 });
 
@@ -1268,81 +1197,6 @@ test('renderResourcesText(): a size-S task renders one Team "S" instead of a pac
   assert.match(text, /\[>\] implement:U1:1 \(implement\)/);
 });
 
-// ---------- both views, through the HTML page's own client-side renderers ----------
-
-test('ticketsBody (HTML): a WAITING_HUMAN card gets a badge, the reason line, and its TASK children as a list - the same facts renderTicketsText prints, as HTML', () => {
-  const { ticketsBody } = extractPageFns(['ticketsBody']);
-  const html = ticketsBody(minimalTicketModel([
-    {
-      id: 'P1', title: 'module a', phase: null, reporter: null, attempt: 2, ticket_key: 'E-aaaaaaaa/P1', ticket_state: 'WAITING_HUMAN', assignee: 'sanghyeon',
-      deps: [], links: { blocked_by: [], blocks: [], implements: ['US-1'], filed_by: null },
-      child: { tasks: [{ id: 'U1', key: 'E-aaaaaaaa/P1/U1', title: 'do it', state: 'WAITING_HUMAN' }] },
-    },
-  ]));
-  assert.match(html, /<span class="badge WAITING_HUMAN">WAITING_HUMAN<\/span>/);
-  assert.match(html, /<div class="reason">waiting on human: sanghyeon<\/div>/);
-  assert.match(html, /<ul class="ticket-tasks"><li><span class="badge WAITING_HUMAN">WAITING_HUMAN<\/span>E-aaaaaaaa\/P1\/U1 – do it<\/li><\/ul>/);
-  assert.match(html, /<h2>WAITING_HUMAN \(1\)<\/h2>/);
-});
-
-test('ticketCard (HTML): a blocked_reason prints its own "blocked: ..." reason line, the same text formatBlockedReason renders for the CLI', () => {
-  const { ticketsBody } = extractPageFns(['ticketsBody']);
-  const html = ticketsBody(minimalTicketModel([
-    {
-      id: 'P2', title: 'b', phase: null, reporter: null, attempt: 1, ticket_key: 'E-aaaaaaaa/P2', ticket_state: 'BACKLOG', assignee: null,
-      deps: ['P1'], links: { blocked_by: [], blocks: [], implements: [], filed_by: null }, child: null,
-      blocked_reason: { reason: 'unmet_deps', node_ids: ['dispatch:P1:1'] },
-    },
-  ]));
-  assert.match(html, /<div class="reason">blocked: unmet deps \(dispatch:P1:1\)<\/div>/);
-});
-
-test('ticketsBody (HTML): flow_metrics renders a stat row (WIP/throughput/mean age/cycle/lead), absent when the model has none', () => {
-  const { ticketsBody } = extractPageFns(['ticketsBody']);
-  const withMetrics = ticketsBody(minimalTicketModel([], {
-    flow_metrics: {
-      wip: 2, throughput: { done: 3, elapsed_ms: 1, per_day: 1.5 },
-      mean_work_item_age_ms: 3600000, cycle_time_ms: { mean: 1800000, by_story: {} }, lead_time_ms: { mean: 7200000, by_story: {} },
-    },
-  }));
-  assert.match(withMetrics, /<div class="label">WIP<\/div><div class="value">2<\/div>/);
-  assert.match(withMetrics, /<div class="label">throughput<\/div><div class="value">1\.50\/day \(3 done\)<\/div>/);
-  assert.match(withMetrics, /<div class="label">mean age<\/div><div class="value">1h0m<\/div>/);
-  assert.match(withMetrics, /<div class="label">cycle time<\/div><div class="value">30m0s<\/div>/);
-  assert.match(withMetrics, /<div class="label">lead time<\/div><div class="value">2h0m<\/div>/);
-
-  const noMetrics = ticketsBody(minimalTicketModel([], { flow_metrics: null }));
-  assert.doesNotMatch(noMetrics, /label">WIP</);
-});
-
-test('resourcesBody (HTML): TaskLeader + Team + worker rows, dot classed by node state', () => {
-  const { resourcesBody } = extractPageFns(['resourcesBody']);
-  const html = resourcesBody(minimalResourceModel({
-    packages: [{
-      id: 'P1', title: 'module a',
-      child: {
-        cwd: '/tmp/w1', branch: 'b1', waiting_capacity: null,
-        driver: { pid: 4242, alive: false, restarts: 2, cost: { cost_usd: 3.5, turns: 12 } },
-        nodes: [{ node_id: 'implement:U1:1', stage: 'implement', state: 'waiting_human', assignee: 'sanghyeon' }],
-        nested: [],
-      },
-    }],
-  }));
-  assert.match(html, /<div class="res-label">TaskLeader<\/div>/);
-  assert.match(html, /<div class="res-label">Team P1 – module a<\/div>/);
-  assert.match(html, /TeamLeader pid=4242 dead restarts=2/);
-  assert.match(html, /<span class="dot waiting_human"><\/span>/);
-  assert.match(html, /human: sanghyeon/);
-});
-
-test('viewTabs (HTML): all three views are offered, "pipeline" marked active with no ?view= in the URL', () => {
-  const { viewTabs } = extractPageFns(['viewTabs']);
-  const html = viewTabs();
-  assert.match(html, /<span class="view-tab active" data-view="pipeline">pipeline<\/span>/);
-  assert.match(html, /<span class="view-tab" data-view="tickets">tickets<\/span>/);
-  assert.match(html, /<span class="view-tab" data-view="resources">resources<\/span>/);
-});
-
 // ---------- --view (the CLI's own selector) ----------
 
 test('--once --view tickets renders the ticket board; --view resources renders the team tree; --view pipeline (or no flag) is unchanged', async () => {
@@ -1371,18 +1225,12 @@ test('--view rejects an unknown value rather than silently falling back', async 
   });
 });
 
-test('/state.json carries model.ticket and packages[].ticket_state - the TICKET/RESOURCE views read the SAME poll the pipeline view already does', async () => {
+test('collectTask() carries model.ticket and packages[].ticket_state - the TICKET/RESOURCE views read the SAME model the pipeline view already does', async () => {
   await withTask(TWO_PKG_SHAPE, async ({ root, task_id }) => {
-    const proc = spawn('node', [VIEW, '--tasks-dir', root, '--task', task_id, '--port', '0'], { stdio: ['ignore', 'pipe', 'pipe'] });
-    try {
-      const base = await waitForListen(proc);
-      const data = await (await fetch(`${base}/state.json`)).json();
-      assert.equal(data.model.ticket.key, `E-${task_id.slice(0, 8)}`);
-      assert.ok(data.model.packages.every((p) => typeof p.ticket_state === 'string'));
-      assert.equal(data.model.daemon, null, 'this fixture was never put under a daemon');
-    } finally {
-      proc.kill();
-    }
+    const model = collectTask(root, task_id);
+    assert.equal(model.ticket.key, `E-${task_id.slice(0, 8)}`);
+    assert.ok(model.packages.every((p) => typeof p.ticket_state === 'string'));
+    assert.equal(model.daemon, null, 'this fixture was never put under a daemon');
   });
 });
 
@@ -1502,131 +1350,6 @@ test('--once with no --task and exactly one task auto-selects it', async () => {
   });
 });
 
-test('the HTTP server serves /state.json for a task and an HTML page at /', async () => {
-  await withTask(TWO_PKG_SHAPE, async ({ root, task_id }) => {
-    const proc = spawn('node', [VIEW, '--tasks-dir', root, '--task', task_id, '--port', '0'], { stdio: ['ignore', 'pipe', 'pipe'] });
-    try {
-      const base = await waitForListen(proc);
-      const stateRes = await fetch(`${base}/state.json`);
-      assert.equal(stateRes.status, 200);
-      assert.match(stateRes.headers.get('content-type') || '', /application\/json/);
-      const data = await stateRes.json();
-      assert.equal(data.mode, 'task');
-      assert.equal(data.model.task_id, task_id);
-      assert.equal(data.model.error, null);
-
-      const pageRes = await fetch(`${base}/`);
-      assert.equal(pageRes.status, 200);
-      assert.match(pageRes.headers.get('content-type') || '', /text\/html/);
-      const html = await pageRes.text();
-      assert.match(html, /<title>/);
-      assert.match(html, /state\.json/);
-      // no external network resources - the deliverable is a self-contained page
-      assert.doesNotMatch(html, /https?:\/\/(?!127\.0\.0\.1)/);
-    } finally {
-      proc.kill();
-    }
-  });
-});
-
-test('/state.json serves an index when several tasks exist and no --task is given', async () => {
-  const cwd1 = repo();
-  const cwd2 = repo();
-  const root = mkdtempSync(join(tmpdir(), 'view-test-root-'));
-  const tm1 = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1', TEAMS_VIEW: '0' }).init();
-  let proc;
-  try {
-    const a = await tm1.call('tm_open', { brainstorm: false, request: 'task A', cwd: cwd1, vendor: 'self', roles: { qa: false, audit: false } });
-    const b = await tm1.call('tm_open', { brainstorm: false, request: 'task B', cwd: cwd2, vendor: 'self', roles: { qa: false, audit: false } });
-    tm1.close();
-
-    proc = spawn('node', [VIEW, '--tasks-dir', root, '--port', '0'], { stdio: ['ignore', 'pipe', 'pipe'] });
-    const base = await waitForListen(proc);
-    const res = await fetch(`${base}/state.json`);
-    const data = await res.json();
-    assert.equal(data.mode, 'index');
-    const ids = data.tasks.map((t) => t.task_id).sort();
-    assert.deepEqual(ids, [a.task_id, b.task_id].sort());
-    // the card model - epic_key/title/state/phase, the same shape listTasks() and
-    // renderIndexText() are pinned against above - travels over the wire unchanged.
-    const rowA = data.tasks.find((t) => t.task_id === a.task_id);
-    assert.deepStrictEqual(
-      { epic_key: rowA.epic_key, title: rowA.title, state: rowA.state, phase: rowA.phase },
-      { epic_key: `E-${a.task_id.slice(0, 8)}`, title: 'task A', state: 'READY', phase: 'plan' },
-    );
-
-    // the index page's per-task link resolves through the same server
-    const linked = await fetch(`${base}/state.json?task=${a.task_id}`);
-    const linkedData = await linked.json();
-    assert.equal(linkedData.mode, 'task');
-    assert.equal(linkedData.model.task_id, a.task_id);
-  } finally {
-    if (proc) proc.kill();
-    rmSync(cwd1, { recursive: true, force: true });
-    rmSync(cwd2, { recursive: true, force: true });
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test('the HTML index page renders one card per EPIC, headlined by epic_key + title (never the raw task_id or the engine run state), each linking to its own /?task=<id>', () => {
-  const rows = [
-    { task_id: 'aaaaaaaa-1111-2222-3333-444444444444', epic_key: 'E-aaaaaaaa', title: 'ship the thing', state: 'IN_PROGRESS', phase: 'impl', size: 'L', created_at: Date.now(), elapsed_ms: 60000, cost_usd: 1.23, stories_done: 1, stories_total: 3, open_defects: 2 },
-    { task_id: 'bbbbbbbb-1111-2222-3333-444444444444', epic_key: 'E-bbbbbbbb', error: 'could not read task.json: missing' },
-  ];
-  const html = renderIndexHtml(rows, '/tmp/x');
-  assert.match(html, /<div class="index-grid">/);
-  // headline is the epic key + title, not the raw task_id
-  assert.match(html, /<span class="key mono">E-aaaaaaaa<\/span>/);
-  assert.match(html, /<div class="title">ship the thing<\/div>/);
-  // the ticket state (with phase), not the engine's run state, drives the badge
-  assert.match(html, /<span class="badge IN_PROGRESS">IN_PROGRESS · impl<\/span>/);
-  // full task_id survives, but only in the card body, never as the href's link text
-  assert.match(html, /<a class="epic-card" href="\/\?task=aaaaaaaa-1111-2222-3333-444444444444">/);
-  assert.match(html, /<div class="id mono">aaaaaaaa-1111-2222-3333-444444444444<\/div>/);
-  assert.doesNotMatch(html, /<span class="key mono">aaaaaaaa-1111-2222-3333-444444444444/);
-  // open defects only surface when there are any
-  assert.match(html, /<span class="defects">open defects: 2<\/span>/);
-  // an unreadable task.json still gets a card and a working link, not a crash
-  assert.match(html, /<a class="epic-card" href="\/\?task=bbbbbbbb-1111-2222-3333-444444444444">/);
-  assert.match(html, /could not read task\.json: missing/);
-});
-
-// The index card intentionally carries NO per-STORY relation detail (blocked by/blocks/
-// implements/filed by) - listTasks()'s row is one EPIC-wide summary (stories done/total, open
-// defect count; see view-collect.mjs's storyProgress), never a per-package breakdown. A STORY's
-// own relations only make sense read against its OWN state, which the index row does not carry
-// at all (epicTicketState is the EPIC's, not any one package's) - showing them here would mean
-// re-deriving per-package facts on a card that has no room to render them meaningfully. They
-// belong on the task view's package cards (pkgCard), where each package already has its own row.
-test('the HTML index card renders no per-STORY link detail (blocked by/blocks/implements/filed by belong on the task view, not the index)', () => {
-  const rows = [
-    { task_id: 'aaaaaaaa-1111-2222-3333-444444444444', epic_key: 'E-aaaaaaaa', title: 'ship the thing', state: 'IN_PROGRESS', phase: 'impl', size: 'L', created_at: Date.now(), elapsed_ms: 60000, cost_usd: 1.23, stories_done: 1, stories_total: 3, open_defects: 2 },
-  ];
-  const html = renderIndexHtml(rows, '/tmp/x');
-  assert.doesNotMatch(html, /blocked by|blocks |implements |filed by/);
-});
-
-// pkgCard (view-page.html) reads the SAME p.links field view-render-text.mjs's formatLinksLine
-// does - pinned here so the browser and the terminal can never quietly disagree about a
-// package's relations.
-test('pkgCard (HTML): no relations -> no extra line; blocked_by/blocks/implements -> one compact line, filed_by left to the existing "[filed by X]" title fragment', () => {
-  const noLinks = renderPkgCardHtml({ id: 'P1', title: 'module a', links: { blocked_by: [], blocks: [], implements: [], filed_by: null } });
-  assert.doesNotMatch(noLinks, /blocked by|blocks |implements /);
-
-  const withLinks = renderPkgCardHtml({
-    id: 'P2', title: 'module b', reporter: 'qa',
-    links: {
-      blocked_by: [{ key: 'E-aaaaaaaa/P1', id: 'P1', state: 'DONE' }],
-      blocks: [{ key: 'E-aaaaaaaa/P3', id: 'P3', state: 'BACKLOG' }],
-      implements: ['US-1'],
-      filed_by: 'qa',
-    },
-  });
-  assert.match(withLinks, /\[filed by qa\]/);
-  assert.match(withLinks, /<div class="muted mono">blocked by P1 \(DONE\) · blocks P3 \(BACKLOG\) · implements US-1<\/div>/);
-  assert.equal((withLinks.match(/filed by/g) || []).length, 1);
-});
-
 test('view.mjs never writes to task.json (read-only)', async () => {
   await withTask(TWO_PKG_SHAPE, async ({ root, task_id }) => {
     const path = join(root, task_id, 'task.json');
@@ -1643,10 +1366,6 @@ test('view.mjs defaults --tasks-dir to tasksRoot() (HARNESS_TASKS_DIR) when omit
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, new RegExp(task_id));
   });
-});
-
-test('lib/view-page.html exists next to view.mjs (the page view.mjs serves is a real file, not a stub)', () => {
-  assert.ok(existsSync(join(HERE, 'lib', 'view-page.html')));
 });
 
 test('collect()/renderText(): a Sprint shows its box (spend vs budget_usd, STOPPED with what was left), and a PLAN team running before shape is listed', () => {

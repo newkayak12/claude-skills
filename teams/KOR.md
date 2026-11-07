@@ -241,7 +241,7 @@ stateDiagram-v2
 | 티켓 하나 (`E-xxxxxxxx`, `E-xxxxxxxx/P2`) | `teams:ticket` (`tm_ticket`) |
 | 티켓이 지금 무엇을 하는지 | `teams:log` (`tm_log`) |
 | 나를 기다리는 것 | `teams:inbox`, 답은 `teams:submit`, 카드 가져오기는 `teams:take` |
-| 브라우저의 실시간 페이지 | `node teams/scripts/view.mjs` (pipeline, tickets, resources 뷰, `--once`는 텍스트 출력) |
+| 패널 없이 텍스트로 보는 상태 | `node teams/scripts/view.mjs --once` (pipeline, tickets, resources 뷰, 텍스트 트리 출력) |
 
 티켓은 `Initiative(선택) > EPIC > STORY > TASK` 구조입니다. `I-<slug>`, `E-xxxxxxxx`(태스크),
 `E-xxxxxxxx/Pn`(패키지. 기획 카드는 `E-xxxxxxxx/PLAN-F1`, QA 카드는 `E-xxxxxxxx/QA-F1`),

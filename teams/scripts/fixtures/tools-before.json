@@ -1595,10 +1595,6 @@
         },
         "task_id": {
           "type": "string"
-        },
-        "view_url": {
-          "description": "the one browser window for this tasks root (scripts/view.mjs, ensureViewer): open it to watch the run. Absent when TEAMS_VIEW=0 or the viewer could not start - never required, a task opens the same either way.",
-          "type": "string"
         }
       },
       "required": [
@@ -1921,10 +1917,6 @@
         },
         "task_id": {
           "type": "string"
-        },
-        "view_url": {
-          "description": "the one browser window for this tasks root (scripts/view.mjs, ensureViewer): open it to watch the run. Absent when TEAMS_VIEW=0 or the viewer could not start - never required, a task opens the same either way.",
-          "type": "string"
         }
       },
       "required": [
@@ -2193,10 +2185,6 @@
           "type": "string"
         },
         "task_id": {
-          "type": "string"
-        },
-        "view_url": {
-          "description": "see tm_open({view_url}) - same viewer, same tasks root.",
           "type": "string"
         }
       },

@@ -20,9 +20,8 @@ import { dashboardModel, dashboardSvg, dashboardAlt, dashboardText } from './vie
 import { asksFor } from './view-asks.mjs';
 import { receivedRows } from './ask-log.mjs';
 
-// --view picks which of the three renderers --once prints for a single task; the HTML page (the
-// non---once path) always ships the full model and lets the browser switch between all three
-// with no extra request - see view-page.html's own view-tabs. Default 'pipeline': the surface
+// --view picks which of the three renderers --once prints for a single task.
+// Default 'pipeline': the surface
 // this file has always shown, unchanged for anyone not passing the flag.
 export const VIEWS = { pipeline: renderText, tickets: renderTicketsText, resources: renderResourcesText };
 

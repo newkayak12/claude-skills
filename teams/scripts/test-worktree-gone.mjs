@@ -13,7 +13,6 @@
 //   node --test teams/scripts/test-worktree-gone.mjs
 
 process.env.TEAMS_RUNS_DIR ??= 'off';
-process.env.TEAMS_VIEW = '0';
 process.env.HARNESS_TEST_NO_DAEMON = '1';
 delete process.env.HARNESS_TEST_NO_DRIVER;
 delete process.env.HARNESS_CHILD_DRIVER;

@@ -5,7 +5,6 @@
 //   node --test teams/scripts/test-taskstate-cleaned.mjs
 
 process.env.TEAMS_RUNS_DIR ??= 'off';
-process.env.TEAMS_VIEW = '0';
 process.env.HARNESS_TEST_NO_DAEMON = '1';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

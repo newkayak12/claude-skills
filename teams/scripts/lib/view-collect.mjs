@@ -1,5 +1,5 @@
 // collect() builds one plain-JSON model of a teams task for a human to look at.
-// Both renderers (the HTML page's /state.json and the --once text tree in view.mjs) draw from
+// Every renderer (the --once text trees in view.mjs and the state server's answers) draws from
 // this single function - it is the only place that reads task.json, a child run file, or a
 // driver stream. Read-only: nothing here ever writes a file.
 //
@@ -907,8 +907,8 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
 // A short, human-quotable headline for a card - there is no title field on a task, only
 // `request` (a free-text sentence or paragraph a person typed). Takes the first sentence/clause
 // (up to the first ./!/?), falls back to the whole string when none of those appear, then
-// truncates. The full `request` is never lost: view.mjs's per-task page (and --task <id>) still
-// show it in full - this is only the index's headline.
+// truncates. The full `request` is never lost: view.mjs's per-task text (--once --task <id>) still
+// shows it in full - this is only the index's headline.
 //
 // A backlog (tm_open requests[], the raw items in task.requests) past one item reads as the backlog
 // cards its items name ("Backlog cards 74, 84"), else as its first item and how many more ("Fix X +2");
@@ -1003,7 +1003,7 @@ export function listTasks(tasksDir) {
       phase,
       // Grouping/display only - a person-set label above the EPIC (teamconfig.mjs's own
       // `initiative` key). null (the default, and every task opened before this existed) means
-      // "not part of any group" - the index and view-page.html render it as a plain tag, never a
+      // "not part of any group" - the index renders it as a plain tag, never a
       // restructured layout, so the byte-for-byte "no initiative anywhere -> unchanged" contract
       // tm_board's own grouping keeps is not something this surface has to re-derive.
       initiative: task.initiative || null,
