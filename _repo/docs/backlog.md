@@ -159,6 +159,29 @@ toasts).
 
 ### Repo and rules
 
+131. **`repo-rules.mjs` runs whatever path it is reached by, so its guards cannot switch off silently**
+   - Why: hook and mod audit, 2026-11-10 (user: "현재 hook, mod로 하는거 기능 점검하고 원하는대로 안되는거 backlog").
+     `node _repo/scripts/test-repo-rules.mjs` on macOS: 188 ok, 75 FAIL, every FAIL a `write:` case. Cause verified:
+     both entry checks (`.claude/hooks/repo-rules.mjs:406`, `:420`) compare `import.meta.url` with
+     `file://${process.argv[1]}`. A copy of the hook run from `/private/tmp/x` denies `sed -i`; the same copy from
+     `/tmp/x` (symlink) or from a path with a space prints nothing and exits 0, so every deny and the prepush hold are
+     off. The test's copies live under `tmpdir()`, a symlink on macOS. This checkout's real path has neither, so the
+     live guard works here; a checkout reached through a symlink or a spaced path has none. Plugin hooks are not
+     affected. `teams/scripts/bench/harvest.mjs:23` has the same check.
+   - Acceptance: the entry check compares real paths, as `session/scripts/reap.mjs:209` does;
+     `node _repo/scripts/test-repo-rules.mjs` has 0 FAIL on macOS; a test runs the hook through a symlink and through a
+     path with a space and gets the deny, and `prepush` refuses in both.
+
+132. **A mod or plugin hook skipped by another plugin's hook is known and its loss is covered**
+   - Why: seen 2026-11-10 in a live session: "session: its classic.SessionStart hook was skipped.
+     "cc-plugin-sec-default" runs first and sent the event on past it", and the same for trophy's `skill.prompt`, after
+     a skill was invoked. The session one is `session/hooks/ensure-trophy.sh`. `trophy/hooks/mod.tsx:440` already
+     expects the `skill.prompt` skip and `:565` covers only a typed skill. What is lost for a skill the model invokes,
+     and for `ensure-trophy.sh`, is unverified.
+   - Acceptance: one live session under that policy states, per skipped hook, what stops working; a model-invoked skill
+     is either recorded by trophy (a `plugin test` case on the path that sees it) or the gap is stated in trophy's
+     README/KOR; `ensure-trophy.sh`'s job has a path that does not depend on the skipped event, or is retired.
+
 ### Subagents and parallel runs — use and clean up (user, 2026-10-17)
 
 ### teams plugin bugs
@@ -326,6 +349,9 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
      at plan-integrate; a test with a 150-AC PRD where round 2 fixes round 1's misses.
      1. Usage limit: a driver hit the 5-hour limit, parked on `waiting_capacity`, and never resumed by itself
         after the limit reset — twice, the second for hours.
+        The opposite seen 2026-11-08/09 on E-b2f3c230 (weekly limit, "resets Nov 10 at 6pm"): the daemon cleared the
+        park and respawned the driver 46 times (`reset_capacity`, about every 33 min at the end) before the reset time,
+        each re-parked within seconds. Acceptance 1 also means no respawn before the stated reset time.
      2. QA can never pass: a QA card's done condition is a subagent writing `report.md`, which Claude Code
         denies a subagent by default; QA failed three times on that, and the engine retried it as an
         implementation failure.
