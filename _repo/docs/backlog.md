@@ -175,7 +175,8 @@ toasts).
 132. **A mod or plugin hook skipped by another plugin's hook is known and its loss is covered**
    - Why: seen 2026-11-10 in a live session: "session: its classic.SessionStart hook was skipped.
      "cc-plugin-sec-default" runs first and sent the event on past it", and the same for trophy's `skill.prompt`, after
-     a skill was invoked. The session one is `session/hooks/ensure-trophy.sh`. `trophy/hooks/mod.tsx:440` already
+     a skill was invoked, and later for trophy's `classic.UserPromptExpansion` (`trophy/hooks/mod.tsx:546`) on a
+     typed `/backlog`. The session one is `session/hooks/ensure-trophy.sh`. `trophy/hooks/mod.tsx:440` already
      expects the `skill.prompt` skip and `:565` covers only a typed skill. What is lost for a skill the model invokes,
      and for `ensure-trophy.sh`, is unverified.
    - Acceptance: one live session under that policy states, per skipped hook, what stops working; a model-invoked skill
@@ -202,7 +203,11 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
    F2 shipped `2169cdab` (E-b2f3c230, gate 93; plugin test 565/565, teams 2220/0/2; $41.88 of $40), F4 gaps
    closed. Left before the card closes: approval of the 32 demo renders in `tmp/card125/renders/` (UI rule 0);
    live look in tmux at 190/110 and in the app; Esc while answering (draft kept?); "→ you" vs "→ me" wording;
-   `answer.mjs --card` on a task with no nodes; README/KOR shots with the batch bump.
+   `answer.mjs --card` on a task with no nodes; README/KOR shots with the batch bump. Also open from the F2
+   report: EPIC report render stays 7 lines (no verdict or result) and FLOOR lacks role counts and
+   "STORY n / subagent n" (the engine does not send them); `test-docs.mjs` asserts only the scoped_out half of
+   "left over"; `foldPackageHistory` takes the latest attempt by array order, not the highest attempt number;
+   the STORY report "tests=pass" verdict line is undrawn.
    - Why: user, 2026-11-04, after the 190/110 captures of card 105: "만약 된다면 view.mjs(web으로 보여주는 것)
      은 퇴역시켜도 될거 같아", "저 *-stats view만 더 퀄리티 높히면 될거 같고". Condition ("만약 된다면"): the
      pane handles several EPICs at once (`]`/`[` step EPIC, `j`/`k` STORY row, `g` open) — seen live with
