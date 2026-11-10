@@ -90,4 +90,5 @@ What changes: <the decision or the fix, or "nothing — both agree on …">
 
 - `agents:use-codex` — the same, from Claude Code to Codex
 - `agents:dispatching-parallel-agents` — several independent jobs at once, inside one model
-- `think:devils-advocate` — an attack on a plan from the same model
+- `think:devils-advocate` — an attack on a plan from the same model; it calls this automatically for a cold objection set
+- `think:brainstorming` — its debate mode uses the other model as a debater, automatically

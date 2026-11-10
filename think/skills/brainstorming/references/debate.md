@@ -29,6 +29,30 @@ reads the log.
 6. **Output.** The normal Output Template plus `[충돌 / Clashes]`: who clashed with whom, on which
    option, and whether the objection survived the cut.
 
+## The other model (automatic, no ask)
+
+When `ask.mjs` and the other CLI are available, one debater is the other model: from Claude Code
+→ `--to codex`, from Codex → `--to claude`. Nobody has to ask; the user sees it in the personas
+list (`+ codex, the opposing side`). It counts as one of the debaters, not a fourth.
+
+**Availability.** Skip it, and say "other model: not used (<reason>)" on the report line, when:
+`SECOND_OPINION_DEPTH` is set (we are already a second opinion) · `ask.mjs` not found · the CLI
+not installed. Find `ask.mjs`: `${CLAUDE_PLUGIN_ROOT}/../agents/scripts/ask.mjs`, else
+`ls ~/.claude/plugins/cache/*/agents/*/scripts/ask.mjs | sort -V | tail -1`. A call that errors or
+times out drops that debater, logs a `fallback` line for it and the debate goes on with the rest.
+Never fails the skill.
+
+**Calls** (read only, `--timeout 300`; codex's sandbox may be down, so the brief carries all the
+material inline or via `--attach a,b`; claude takes `--model sonnet`):
+
+- Round 1 is cold. Brief = the confirmed problem, context, constraints that are facts, "propose
+  1–3 options with their strongest case; no criticism yet". Not our options, not our lean.
+- Merge as usual: its options enter `O1..On`, logged `persona: "codex"` (or `claude`).
+- Rounds 2–3: a new brief with the options so far, its own previous answer, and the rebuttals
+  aimed at it; ask it to attack the options it opposes and defend its own. Now it may see our
+  side: that is the debate. One call per round, same cap (2), same early stop.
+- Its answers are claims. A point that decides a cut is checked against a file or a fact first.
+
 **Fallback.** If a subagent fails or returns nothing and fewer than 2 personas remain, log a
 `fallback` line, tell the user "debate mode stopped — continuing in normal mode", and finish
 3a–3b yourself.

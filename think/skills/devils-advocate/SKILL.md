@@ -61,6 +61,11 @@ proposal, states why it is a problem rather than a possibility, and carries thre
 If `think-tool` or `mcp-reasoner` is available, use it between steps 2 and 3 — second-order
 effects, who gets hurt most, what failed like this before.
 
+When `agents:use-codex` / `use-claude` is installed, also get one cold objection set from the
+other model (codex from Claude Code, claude from Codex) — automatically, brief without our
+assumptions or objections. Merge with ours, mark each objection `claude` / `codex` / both, and
+settle by evidence. Absent or erroring: continue alone and say so. Detail: `references/other-model.md`.
+
 **4. Core vulnerability.** One paragraph: the single deepest flaw — usually a hidden assumption
 from step 2, weaponized. Not the most visible problem; the one the others are symptoms of.
 
@@ -122,4 +127,5 @@ honestly rather than perform them.
 
 - `redefine-problem` — when every objection is surface-level, the problem definition is what's wrong
 - `brainstorming` — when the critique has collapsed the direction and alternatives are needed
+- `agents:use-codex` / `agents:use-claude` — the cold objection set from the other model
 - `cognition:bias-auditor` — when the user's attachment to the position is itself the risk

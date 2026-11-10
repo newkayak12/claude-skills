@@ -87,7 +87,10 @@ teams, or the finalists are not separated by the criteria — and name the cost 
 Otherwise normal mode, unchanged. Flow: show 3 personas (user may swap) → each an independent
 subagent, model named, generating options → merge → devils-advocate attack/rebut, ≤2 rounds →
 cut with kill-criteria. Every utterance is one JSON line in `.claude/brainstorming/<slug>.jsonl`.
-Fewer than 2 agents alive → finish in normal mode and say so. Detail: `references/debate.md`.
+Fewer than 2 agents alive → finish in normal mode and say so. When `agents:use-codex` /
+`use-claude` is installed, one debater is the other model (codex from Claude Code, claude from
+Codex), called automatically, cold in round 1, never failing the debate if absent or erroring.
+Detail and lookup: `references/debate.md`.
 
 **4. Present and get approval.** Size each section to its complexity: a few sentences where it's
 simple, detail where the nuance is. Cover architecture, components, data flow, error handling,
@@ -134,4 +137,5 @@ Write in the user's language.
 - `untangle-thoughts` — too many ideas, need structure and priority
 - `cognition:bias-auditor` — strong pull toward one option
 - `devils-advocate` — stress-test the chosen design before planning
+- `agents:use-codex` / `agents:use-claude` — the other model as a debater in debate mode
 - `write:plans` — the mandatory next step after approval
