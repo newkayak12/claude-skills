@@ -206,6 +206,13 @@ def build(source, out):
     b = re.search(r"(<w:body>)(.*)(</w:body>)", doc, re.S)
     sect = re.search(r"<w:sectPr\b.*?</w:sectPr>\s*$", b.group(2), re.S)
     new = "".join(para(mapping[r], t, *sample.get(mapping[r], (None, None))) for r, t in todo)
+    # the template's photo (an anchored <w:drawing> run) rides along on the first paragraph —
+    # the user's resume carries a photo and the template is the only place its frame lives (user, 2026-11-09)
+    pic = re.search(r"<w:r[ >](?:(?!</w:r>).)*?<w:drawing>.*?</w:drawing>.*?</w:r>", doc, re.S)
+    if pic and new.startswith("<w:p>"):
+        first = re.match(r"<w:p>(<w:pPr>.*?</w:pPr>)?", new, re.S)
+        cut = first.end()
+        new = new[:cut] + pic.group(0) + new[cut:]
     parts["word/document.xml"] = (doc[:b.start(2)] + new + (sect.group(0) if sect else "") + doc[b.end(2):]).encode("utf-8")
     out.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:

@@ -3026,10 +3026,18 @@ def cmd_build(args):
         imgctx["add_rel"] = add_rel
 
         note_text = None
+        # `!drop` removes a shape, which shifts the child indexes every later slot path
+        # relies on. Resolve every drop target first, write the other slots, remove last.
+        drop_els = []
+        for slot_id, kind, value, line in spec.values:
+            if (slot_id in slots and isinstance(value, str) and value.strip() == "!drop"):
+                drop_els.append(resolve_path(spTree, slots[slot_id].path))
         for slot_id, kind, value, line in spec.values:
             where = "line %d" % line
             if slot_id == "notes":
                 note_text = "\n".join(t for _, t in as_items(kind, value))
+                continue
+            if slot_id in slots and isinstance(value, str) and value.strip() == "!drop":
                 continue
             if slot_id not in slots and CLONE_RE.fullmatch(slot_id):
                 _, why = plan_clone(spTree, slots, slot_id, slide_size(pkg))
@@ -3043,6 +3051,11 @@ def cmd_build(args):
                                    ", ".join(slots) or "none"))
                 continue
             apply_value(spTree, slots[slot_id], kind, value, imgctx, problems, where)
+        for el in drop_els:
+            for parent in spTree.iter():
+                if el in list(parent):
+                    parent.remove(el)
+                    break
         # A chart the deck never named still shows the template's sample numbers.
         written = {v[0] for v in spec.values}
         for sid, slot in slots.items():
