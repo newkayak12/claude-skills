@@ -24,6 +24,8 @@
 | 크고 애매한 작업을 프롬프트까지 붙은 subtask로 쪼개기 | `agent-task-decomposer` |
 | 서로 무관한 작업 여러 개를 각 전문가에게 동시에 | `dispatching-parallel-agents` |
 | 계획을 태스크 단위로, 매번 새 서브에이전트 + 리뷰로 실행 | `subagent-driven-development` |
+| Claude Code에서 Codex의 독립된 의견 받기 | `use-codex` |
+| Codex에서 Claude의 독립된 의견 받기 | `use-claude` |
 
 ## 스킬
 
@@ -108,6 +110,23 @@ docs/plans/workspace-invites.md에 계획 있어. 태스크마다 새 서브에�
 단독으로, 그리고 하네스 SetGoal 단계가 subgoal 실행자로 선택할 수 있는 executor로
 (`harness:harness`의 "Optional skill integrations"). 사전 배선은 없습니다 — 하네스는 이것 없이도
 돌고, 이 스킬도 하네스 없이 돕니다.
+
+### `use-codex` · `use-claude`
+
+다른 모델에게 같은 질문을 처음 보는 눈으로 묻습니다. 묻는 쪽은 질문과 재료만 담은 브리프를 씁니다 —
+자기 답은 넣지 않습니다. 넣으면 다른 모델이 그 답에 동의하고 끝나기 때문입니다. `scripts/ask.mjs`가
+`codex exec`이나 `claude -p`를 읽기 전용으로 돌립니다. Codex는 MCP 서버 없이 읽기 전용 샌드박스에서,
+Claude는 Read·Grep·Glob만 가진 채로 돌고, 둘 다 세션을 남기지 않으며, 두 번째 의견이 세 번째를
+부르지 않습니다. 그다음 두 답을 나란히 놓고, 엇갈린 점마다 파일·테스트·명령으로 판정해서 살아남은
+것만 반영합니다.
+
+```
+codex한테도 물어봐줘 — 이 마이그레이션 계획에서 놓친 위험 있는지
+```
+
+Codex 샌드박스가 뜨지 못하는 환경(사용자 네임스페이스가 제한된 bwrap, Ubuntu 기본값)에서는 빈 답을
+그대로 넘기지 않고 그렇다고 알립니다. `--attach <파일>`을 쓰면 파일 내용이 줄 번호와 함께 브리프에
+들어가서 Codex가 도구 없이 답합니다. 테스트: `node --test agents/scripts/test-ask.mjs`.
 
 ## 관련 플러그인
 

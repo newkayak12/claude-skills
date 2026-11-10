@@ -26,6 +26,8 @@ rather than its own summary.
 | Split one big or fuzzy task into agent-ready subtasks with written prompts | `agent-task-decomposer` |
 | Run several unrelated jobs at once, each on a matching specialist | `dispatching-parallel-agents` |
 | Execute a plan task by task, fresh subagent + review each time | `subagent-driven-development` |
+| Get an independent second opinion from Codex, from Claude Code | `use-codex` |
+| Get an independent second opinion from Claude, from Codex | `use-claude` |
 
 ## Skills
 
@@ -115,6 +117,23 @@ dispatch two implementers in parallel, never let a self-review stand in for a re
 as above, and as an executor the harness's SetGoal stage can optionally map onto a subgoal
 (`harness:harness` → "Optional skill integrations"). Nothing is pre-wired — the harness runs
 without it, and it runs without the harness.
+
+### `use-codex` · `use-claude`
+
+A second opinion from the other model, read cold. The asking side writes a brief with the question
+and the material — never its own answer, so the other model cannot just agree with it — and
+`scripts/ask.mjs` runs `codex exec` or `claude -p` read only: Codex in its read-only sandbox with no
+MCP server, Claude with only Read, Grep and Glob. Neither keeps a session, and a second opinion never
+asks for a third. The two answers are then set side by side, each disagreement settled by a file, a
+test or a command, and only what survives is acted on.
+
+```
+codex한테도 물어봐줘 — 이 마이그레이션 계획에서 놓친 위험 있는지
+```
+
+Where Codex's sandbox cannot start (bwrap under restricted user namespaces, Ubuntu's default), the
+script says so instead of passing on an empty answer; `--attach <files>` puts their text, with line
+numbers, into the brief so Codex needs no tool. Tests: `node --test agents/scripts/test-ask.mjs`.
 
 ## Related plugins
 
