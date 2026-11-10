@@ -111,9 +111,12 @@ test('smart-compact keeps its recap too', async ($, on) => {
   const w = world(on, { percent: 90 })
   let done = () => {}
   const compacted = new Promise<void>(r => (done = r))
-  on('session.compact', () => {
+  // smart-compact's /compact comes back as the engine's session.compact; the plugin's hook makes the handoff
+  const rows = [{ role: 'user', text: 'q', toolUses: [] }, { role: 'assistant', text: 'a', toolUses: [] }]
+  on('command.run', { command: 'compact' }, async (_$: any, e: any) => {
+    const r = await $.session.compact({ trigger: 'manual', instructions: e.args, messages: rows } as never)
     done()
-    return { messages: [] }
+    return { value: r } as never
   })
   await $.turn.complete(TURN)
   await compacted

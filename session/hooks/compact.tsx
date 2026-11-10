@@ -1,9 +1,10 @@
 import { atom, update } from 'claude-code'
 import type { On, PluginOptions } from 'claude-code'
 
-import { compactFailed, compactRetry, firstLine, shouldCompactNow } from './compact-logic.ts'
+import { COMPACT_MARK, firstLine, handoffFor, RECAP_HEADER, shouldCompactNow, tailBudget, tailStart } from './compact-logic.ts'
+import type { HandoffFor } from './compact-logic.ts'
 import { appendLog, asLog, fmtLastCheck, fmtLog, fmtStats, LOG_KEY, patchLog } from './compact-log.ts'
-import type { LogEntry, LogStats } from './compact-log.ts'
+import type { LogEntry, LogStats, LogTokens, TokenUse } from './compact-log.ts'
 import { corrections, fmtAgo, isFresh, lessonsKey, makeRecap, mergeLessons, RECAP_PROMPT, recapKey } from './recap.ts'
 import type { Recap } from './recap.ts'
 import { fmtContext, statusLinePercent } from '../scripts/context-logic.mjs'
@@ -11,8 +12,9 @@ import { statusLine } from './status.ts'
 import { BOARD_OPEN } from './board.ts'
 import type { BoardTab } from './board.ts'
 
-// Recap the session at a set context %, then compact with that recap as the summary instructions.
-// The threshold is the userConfig field, so /config shows it; /smart-compact <n> writes the same field.
+// At a set context % (and at the engine's own auto-compact), a handoff made over the rows being compacted and
+// the newest rows verbatim replace the conversation. The threshold is the userConfig field, so /config shows it;
+// /smart-compact <n> writes the same field.
 // Every recap (here or /handoff) is kept per project: the next start shows it, /lessons collects its Corrections.
 export const THRESHOLD_FIELD = 'smart_compact_threshold'
 // the board pane's tab; mod.tsx draws it
@@ -37,8 +39,11 @@ let logChain: Promise<void> = Promise.resolve()
 let logSeq = 0
 const PROC = Date.now().toString(36)
 
-// false from a main-thread tool call until the turn's turn.complete; compact only succeeds once it is true
+// false from a main-thread tool call until the turn's turn.complete; /compact waits until it is true
 let turnEnded = true
+
+// What the session.compact hook made of smart-compact's own /compact; the runner logs it.
+let ownResult: { outcome: string; tokens?: LogTokens } | undefined
 
 const count = (decision: string) => {
   const kind = decision.split(':').slice(0, decision.startsWith('skipped:') ? 2 : 1).join(':')
@@ -80,12 +85,45 @@ const readLog = async ($: any) => {
   }
 }
 
-function logOutcome($: any, id: string, outcome: string) {
-  writeLog($, async list => patchLog(list, id, outcome))
+function logOutcome($: any, id: string, outcome: string, tokens?: LogTokens) {
+  writeLog($, async list => patchLog(list, id, outcome, tokens))
+}
+
+// A model's usage as the log shows it: input counts input + cache_read + cache_creation. A bad field reads as 0.
+type Usage = { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+const tokenUse = (u?: Usage): TokenUse | undefined =>
+  u && typeof u === 'object'
+    ? { input: num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens), output: num(u.output_tokens) }
+    : undefined
+
+// Only the counts that exist; an empty object is no tokens.
+function logTokens(recap?: Usage, done?: { usage?: Usage; tokensBefore?: number; tokensAfter?: number }): LogTokens | undefined {
+  const t: LogTokens = {}
+  const r = tokenUse(recap)
+  if (r) t.recap = r
+  const s = tokenUse(done?.usage)
+  if (s) t.summarizer = s
+  if (typeof done?.tokensBefore === 'number') t.before = done.tokensBefore
+  if (typeof done?.tokensAfter === 'number') t.after = done.tokensAfter
+  return Object.keys(t).length ? t : undefined
+}
+
+// smart-compact's own result goes to its runner; an auto-compact gets a log entry of its own.
+async function settle($: any, kind: HandoffFor, threshold: number, outcome: string, tokens?: LogTokens) {
+  if (kind === 'own') {
+    ownResult = { outcome, tokens }
+    return
+  }
+  let percent: number | null = null
+  try {
+    percent = (await readContext($)).percent ?? null
+  } catch {}
+  logOutcome($, logDecision($, percent, threshold, 'auto-compact', 'pending'), outcome, tokens)
 }
 
 // One fork over the transcript; kept as the project's recap, its Corrections added to the lessons.
-async function recapNow($: any): Promise<{ text: string } | { reason: string }> {
+async function recapNow($: any): Promise<{ text: string; usage?: Usage } | { reason: string }> {
   const r = await $.model.fork({ prompt: RECAP_PROMPT })
   if (!r.isAnswered) return { reason: String(r.reason) }
   try {
@@ -96,7 +134,7 @@ async function recapNow($: any): Promise<{ text: string } | { reason: string }> 
     const fresh = corrections(r.text)
     if (fresh.length > 0) await $.store.set(lessonsKey(root), mergeLessons(kept, fresh))
   } catch {}
-  return { text: r.text }
+  return { text: r.text, usage: r.usage }
 }
 
 async function storedRecap($: any): Promise<Recap | undefined> {
@@ -205,6 +243,28 @@ export const register = (on: On, options: PluginOptions) => {
     return result
   }).catch(($, e, next) => next(e))
 
+  // Auto-compact and smart-compact's own /compact: a handoff made now, over the rows being compacted, then the
+  // handoff and the newest rows verbatim stand in for the summarizer, one model call. It is made here, not before
+  // the compact, so no row arrives between the two. A person's /compact and a subagent's go on to the engine, as
+  // does a handoff that cannot be made; our mark never reaches the summarizer as instructions.
+  on('session.compact', async ($, e, next) => {
+    const kind = handoffFor(e)
+    const rows = e.messages ?? []
+    if (!kind || !rows.length) return next(e)
+    const engine = async (outcome: string) => {
+      const done = await next(kind === 'own' ? { ...e, instructions: undefined } : e)
+      const tokens = done.skip ? undefined : logTokens(undefined, done as { usage?: Usage; tokensBefore?: number; tokensAfter?: number })
+      await settle($, kind, thresholdOf(options), done.skip ? `skip:${done.skip}` : outcome, tokens)
+      return done
+    }
+    const window = (await $.session.usage()).context?.window
+    if (!window) return engine('compacted')
+    const recap = await recapNow($)
+    if ('reason' in recap) return engine(`recap-failed:${recap.reason}`)
+    const tail = rows.slice(tailStart(rows, tailBudget(window, thresholdOf(options))))
+    await settle($, kind, thresholdOf(options), `compacted:recap+${tail.length}`, logTokens(recap.usage))
+    return { messages: [{ role: 'user' as const, text: RECAP_HEADER + recap.text, toolUses: [] }, ...tail] }
+  }).catch(($, e, next) => next(e))
 }
 
 // A module may hook an event once without a matcher, so mod.tsx's tool.call and turn.complete hooks call these.
@@ -229,46 +289,22 @@ export const turnEnd = (e: { agentId?: string }) => {
   if (!e.agentId) turnEnded = true
 }
 
-// Recap, then compact with the recap as the summary; one run at a time, off the hook that started it.
+// /compact with our mark; the session.compact hook above makes the handoff and the compaction. A /compact raised
+// by the engine reaches this module's hooks, where $.session.compact from here would skip them. One run at a
+// time, off the hook that started it.
 function startRecapThenCompact($: any, raw: number | null | undefined, percent: number, threshold: number) {
   isRunning = true
   const id = logDecision($, raw, threshold, 'recapping', 'pending')
   const run = async () => {
-    $.ui.status(`smart-compact: ${percent}% ≥ ${threshold}%, recapping`)
-    const recap = await recapNow($)
-    if ('reason' in recap) {
-      $.ui.toast(`smart-compact: recap failed (${recap.reason}), left to auto-compact`)
-      logOutcome($, id, `recap-failed:${recap.reason}`)
-      return
-    }
-    // the recap is the summary: compact adds only what it lacks, so the two are not carried twice
-    const instructions = `The recap below is the summary; keep it intact. Do not restate what it says, and do not list past user messages or finished work. Add only what its Direction needs and it lacks (exact code, error text):\n\n${recap.text}`
-    // compact rejects while a turn runs: wait for the turn to end, then a bounded number of final tries
-    let lastError: unknown
-    let finalTries = 0
-    for (;;) {
-      // the first try is at once, even mid-turn; after a rejection, wait for the turn end
-      const step = lastError === undefined ? 'try' : compactRetry(turnEnded, finalTries, lastError)
-      if (step === 'fail') {
-        $.ui.toast('smart-compact: could not compact, left to auto-compact')
-        logOutcome($, id, compactFailed(lastError))
-        return
-      }
-      if (step === 'wait') {
-        await $.clock.sleep(500)
-        continue
-      }
-      if (turnEnded) finalTries++
-      try {
-        const done = await $.session.compact({ instructions })
-        $.ui.toast(done.skip ? `smart-compact: skipped (${done.skip})` : 'smart-compact: recapped and compacted')
-        logOutcome($, id, done.skip ? `skip:${done.skip}` : 'compacted')
-        return
-      } catch (err) {
-        lastError = err
-        await $.clock.sleep(500)
-      }
-    }
+    $.ui.status(`smart-compact: ${percent}% ≥ ${threshold}%, handing off`)
+    // no compaction under a running turn: mid-turn, wait for it to end
+    while (!turnEnded) await $.clock.sleep(500)
+    ownResult = undefined
+    await $.command.run({ command: 'compact', args: COMPACT_MARK })
+    // the hook set it during the await; read past the narrowing of the assignment above
+    const r: { outcome: string; tokens?: LogTokens } = (ownResult as typeof ownResult) ?? { outcome: 'compact-not-run' }
+    $.ui.toast(r.outcome.startsWith('compacted:recap') ? 'smart-compact: handed off and compacted' : `smart-compact: ${r.outcome}`)
+    logOutcome($, id, r.outcome, r.tokens)
   }
   void run().catch(err => logOutcome($, id, `error:${firstLine(err)}`)).finally(() => {
     $.ui.status(statusLine({}))

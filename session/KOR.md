@@ -98,17 +98,17 @@ bypass는 네이티브 프롬프트가 없다는 뜻이지 안전망이 없다�
 CLAUDE.md도 자동 메모리도 아닙니다. 메모는 파일이 아니고, 저장소에 쓰이지 않으며, 공유되지 않습니다. 오래 갈 규칙은 `CLAUDE.md`에, 지금 고정해 두고 싶은 것은 메모에 두세요.
 
 ## 스마트 compact
-정한 컨텍스트 %에 닿으면 먼저 다음 단계에 맞춘 세션 recap(목표, 다음 방향, 하던 작업과 파일:줄, 결정, 남은 일, 교정)을 받고, 그 recap을 요약 자체로 넣어 compact합니다. compact는 recap에 없는 것만 덧붙이므로 같은 내용이 두 번 실리지 않고 끝난 작업은 빠집니다.
+정한 컨텍스트 %에 닿으면 smart-compact가 `/compact`를 실행하고 그 compact에 직접 답합니다. compact되는 대화를 놓고 다음 단계에 맞춘 handoff(목표, 다음 방향, 하던 작업과 파일:줄, 결정, 남은 일, 교정)를 쓰고, 새 컨텍스트는 그 handoff 다음에 창의 min(20, 임계치/2)% 안에 드는 가장 최근 원문 턴을 그대로 이은 것입니다. 모델 호출은 한 번이고 엔진 요약기는 돌지 않습니다. 내장 auto-compact도 같은 handoff를 받습니다. 직접 친 `/compact`, 서브에이전트의 compact, handoff를 만들지 못한 compact는 엔진에 맡깁니다.
 
 | 명령 | 하는 일 |
 | --- | --- |
 | `/smart-compact` | 현재 임계치(기본 70%), 마지막 점검, 이 프로세스의 집계 출력 |
 | `/smart-compact <10-95>` | 임계치 설정. `60`, `60%` 둘 다 됩니다 |
-| `/smart-compact log` | 최근 점검 10개를 최신순으로: `23% vs 10% → recapping → compacted` |
+| `/smart-compact log` | 최근 점검 10개를 최신순으로: `23% vs 10% → recapping → compacted:recap+4 · tokens recap 41200 in/900 out` |
 
-같은 값이 `/config`의 **Smart compact threshold (%)** 항목입니다. 메인 루프 턴이 답변으로 끝난 뒤에 돌고, 긴 턴 안에서는 툴 호출 사이에도 사용량을 확인합니다. 턴 도중 compact가 거절되면 턴이 끝날 때까지 기다립니다. 인터랙티브 세션에서만 동작하고 서브에이전트에서는 동작하지 않습니다. recap이 실패하면 아무것도 하지 않고 내장 auto-compact에 맡깁니다. auto-compact 지점보다 낮게 잡으세요. 높으면 auto-compact가 먼저 돕니다. %는 상태줄과 같은 모델 전체 창 기준이라, 1M 창에서 70%는 700k 토큰입니다.
+같은 값이 `/config`의 **Smart compact threshold (%)** 항목입니다. 메인 루프 턴이 답변으로 끝난 뒤에 돌고, 긴 턴 안에서는 툴 호출 사이에도 사용량을 확인합니다. 턴 도중 임계치를 넘으면 턴이 끝날 때 compact합니다. 인터랙티브 세션에서만 동작하고 서브에이전트에서는 동작하지 않습니다. handoff가 실패하면 엔진이 평소처럼 요약합니다. auto-compact 지점보다 낮게 잡으세요. 높으면 auto-compact가 먼저 돕니다. %는 상태줄과 같은 모델 전체 창 기준이라, 1M 창에서 70%는 700k 토큰입니다.
 
-인터랙티브 메인 루프 턴을 점검할 때마다 50개짜리 로그(원래 %, 임계치, 판단, 결과)에 남고, `/smart-compact log`가 보여 줍니다. 서브에이전트와 헤드리스 턴은 프로세스 안에서 집계만 하며, `/smart-compact`가 그 집계와 로그 쓰기 오류를 함께 보여 줍니다.
+인터랙티브 메인 루프 턴을 점검할 때마다 50개짜리 로그(원래 %, 임계치, 판단, 결과)에 남고, `/smart-compact log`가 보여 줍니다. auto-compact도 항목으로 남습니다(`auto-compact`). `compacted:recap+N`은 handoff에 원문 메시지 N개를 이었다는 뜻이고, `compacted`나 `recap-failed:<이유>`는 엔진 요약기가 돌았다는 뜻입니다. `tokens` 뒤에는 handoff의 입력/출력 토큰이, 엔진 경로면 요약기 토큰과 compact 전후 컨텍스트가 찍힙니다. 서브에이전트와 헤드리스 턴은 프로세스 안에서 집계만 하며, `/smart-compact`가 그 집계와 로그 쓰기 오류를 함께 보여 줍니다.
 
 ## Recap, handoff, lessons
 smart-compact나 `/handoff`가 만든 recap은 프로젝트별로 마지막 하나가 보관됩니다. 다른 세션의 recap은 시작할 때 밴드로 한 번만 보여 줍니다. Recap이나 dismiss를 누르면 다시 보여 주지 않고, 세션이 직접 쓴 recap(smart-compact의 recap)으로는 밴드를 띄우지 않습니다.

@@ -171,12 +171,15 @@ for (const surface of SURFACES) {
 
   test(`${surface}: toast, smart-compact`, async ($, on) => {
     guardOn = on
-    const { seen, compacted } = here({ percent: 75 })
+    const { seen } = here({ percent: 75 })
+    // smart-compact's /compact comes back as the engine's session.compact; the plugin's hook makes the handoff
+    const rows = [{ role: 'user', text: 'q', toolUses: [] }, { role: 'assistant', text: 'a', toolUses: [] }]
+    on('command.run', { command: 'compact' }, async (_$: any, e: any) =>
+      ({ value: await $.session.compact({ trigger: 'manual', instructions: e.args, messages: rows } as never) }) as never)
     await start($, surface)
     await $.turn.complete(TURN)
-    await compacted
-    await settle()
-    expect(seen.toasts).toContain('smart-compact: recapped and compacted')
+    for (let i = 0; i < 100 && !seen.toasts.some(t => t.startsWith('smart-compact')); i++) await settle()
+    expect(seen.toasts).toContain('smart-compact: handed off and compacted')
   })
 
   test(`${surface}: toast, cost budget`, { options: { cost_budget_usd: 1 } }, async ($, on) => {

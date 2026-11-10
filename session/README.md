@@ -98,17 +98,17 @@ Two scopes: project (keyed by the repo root) and global. Caps count both togethe
 Not CLAUDE.md, not auto-memory: notes are not files, are never written to your repository, and are not shared. Put lasting rules in `CLAUDE.md`; use a memo for something you want pinned for now.
 
 ## Smart compact
-At a context % you choose, the session is first asked for a recap built around the next steps (goal, direction, what was in progress with its file:line, decisions, open items, corrections), then compacted with that recap as the summary itself: compact adds only what the recap lacks, so nothing is carried twice and finished work drops out.
+At a context % you choose, smart-compact runs `/compact` and answers that compaction itself. It writes a handoff of the conversation being compacted, built around the next steps: goal, direction, what was in progress with its file:line, decisions, open items, corrections. The new context is that handoff followed by the newest raw turns that fit in min(20, threshold/2)% of the window, kept verbatim. That is one model call, and the engine's summarizer does not run. The built-in auto-compact gets the same handoff. Your own `/compact` and a subagent's compaction are left to the engine, and so is a compaction whose handoff cannot be made.
 
 | Command | What it does |
 | --- | --- |
 | `/smart-compact` | print the current threshold (default 70%), the last check, and this process's counts |
 | `/smart-compact <10-95>` | set it; `60` and `60%` both work |
-| `/smart-compact log` | the last 10 checks, newest first: `23% vs 10% → recapping → compacted` |
+| `/smart-compact log` | the last 10 checks, newest first: `23% vs 10% → recapping → compacted:recap+4 · tokens recap 41200 in/900 out` |
 
-The same value is the **Smart compact threshold (%)** row in `/config`. It runs after a main-loop turn that ended with an answer, and usage is also checked between tool calls inside a long turn; if compact is rejected mid-turn, it waits for the turn to end. Interactive sessions only; never for subagents. If the recap fails it does nothing and the built-in auto-compact takes over. Set it below the auto-compact point, or auto-compact fires first: the % is of the model's whole window as the status line shows it, so on a 1M window 70% is 700k tokens.
+The same value is the **Smart compact threshold (%)** row in `/config`. It runs after a main-loop turn that ended with an answer, and usage is also checked between tool calls inside a long turn; crossed mid-turn, it compacts when the turn ends. Interactive sessions only; never for subagents. If the handoff fails, the engine summarizes as usual. Set it below the auto-compact point, or auto-compact fires first: the % is of the model's whole window as the status line shows it, so on a 1M window 70% is 700k tokens.
 
-Each check of an interactive main-loop turn is kept in a 50-entry log (raw %, threshold, decision, outcome) that `/smart-compact log` prints. Subagent and headless turns are only counted in the process, shown on `/smart-compact`, which also shows log write errors.
+Each check of an interactive main-loop turn is kept in a 50-entry log (raw %, threshold, decision, outcome) that `/smart-compact log` prints. An auto-compact gets an entry too (`auto-compact`). `compacted:recap+N` means the handoff plus N raw messages; `compacted` or `recap-failed:<why>` means the engine's summarizer ran. A `tokens` suffix shows the handoff's input/output or, on the engine path, the summarizer's and the context before and after. Subagent and headless turns are only counted in the process, shown on `/smart-compact`, which also shows log write errors.
 
 ## Recap, handoff, lessons
 Every recap (from smart-compact or `/handoff`) is kept for this project, the last one only. A start offers another session's recap in a band once: after Recap or dismiss it is not offered again, and a session never gets a band for the recap it wrote itself (a smart-compact's own recap).
