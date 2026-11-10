@@ -157,6 +157,52 @@ test('a child past its timeout is stopped and reported', async () => {
   assert.ok(!existsSync(mark), 'the child was stopped: it never reached its next command')
 })
 
+test('--act bypasses permissions on both CLIs; without it nothing does', () => {
+  const cx = command('codex', { cwd: '/w', last: '/l', act: true })
+  assert.ok(cx.includes('--dangerously-bypass-approvals-and-sandbox'))
+  assert.ok(!cx.includes('read-only'))
+  assert.equal(cx[cx.indexOf('-c') + 1], 'mcp_servers={}')
+  const cl = command('claude', { cwd: '/w', act: true, model: 'sonnet' })
+  assert.equal(cl[cl.indexOf('--permission-mode') + 1], 'bypassPermissions')
+  assert.ok(!cl.includes('--disallowedTools') && !cl.includes('--tools'), 'every tool is there')
+  assert.ok(cl.includes('--strict-mcp-config') && cl.includes('--no-session-persistence'))
+  for (const to of ['codex', 'claude']) {
+    const ro = command(to, { cwd: '/w', last: '/l' }).join(' ')
+    assert.doesNotMatch(ro, /bypass/, to)
+  }
+  assert.equal(parseArgs(['--act', '--to', 'codex']).act, true)
+})
+
+test('--act reports the files the child changed and whether it committed', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ask-act-'))
+  const git = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir, encoding: 'utf8' })
+  git('init', '-q')
+  writeFileSync(join(dir, 'a.txt'), 'one\n')
+  writeFileSync(join(dir, 'dirty.txt'), 'x\n')
+  git('add', 'a.txt'); git('commit', '-qm', 'init')
+  // dirty.txt was untracked before and is left alone; a.txt is edited; 새.txt is new
+  const bin = fakeBin('claude', `cat > /dev/null\necho two >> a.txt\necho hi > '새.txt'\necho '{"result":"done","is_error":false}'`)
+  let r = await ask({ to: 'claude', promptFile: brief(), cwd: dir, act: true }, env(bin))
+  assert.equal(r.mode, 'act')
+  assert.equal(r.answer, 'done')
+  assert.deepEqual(r.changed.sort(), [' M a.txt', '?? 새.txt'])
+  assert.equal(r.head_moved, false)
+  // a child that commits, then fails, still reports it
+  const bin2 = fakeBin('claude', `cat > /dev/null\ngit -c user.name=t -c user.email=t@t commit -qam x\nexit 2`)
+  r = await ask({ to: 'claude', promptFile: brief(), cwd: dir, act: true }, env(bin2))
+  assert.equal(r.exit, 2)
+  assert.equal(r.head_moved, true)
+  assert.deepEqual(r.changed, [], 'a.txt is committed, so no longer a change')
+  // read mode never looks
+  r = await ask({ to: 'claude', promptFile: brief(), cwd: dir }, env(bin))
+  assert.equal(r.changed, undefined)
+  assert.equal(r.mode, 'read')
+  // outside a git repo the change list is unknown, not empty
+  const plain = mkdtempSync(join(tmpdir(), 'ask-plain-'))
+  r = await ask({ to: 'claude', promptFile: brief(), cwd: plain, act: true }, env(bin))
+  assert.equal(r.changed, null)
+})
+
 test('--dry-run prints the command and runs nothing; args parse', async () => {
   // PATH has no codex: a run that went past the dry-run return would answer "not on PATH"
   const r = await ask({ to: 'codex', promptFile: brief(), dryRun: true, cwd: '/w' }, { ...process.env, PATH: '/nowhere' })

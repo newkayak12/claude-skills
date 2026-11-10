@@ -1,13 +1,17 @@
 #!/usr/bin/env node
-// agents: ask the other CLI for an independent opinion, read only. Used by use-codex and use-claude.
+// agents: hand the other CLI a question (read only) or a task (--act). Used by use-codex and use-claude.
 //
-//   node ask.mjs --to codex|claude --prompt-file <brief.md> [--cwd <dir>] [--model <m>]
+//   node ask.mjs --to codex|claude --prompt-file <brief.md> [--cwd <dir>] [--model <m>] [--act]
 //                [--attach <path,path>] [--timeout <seconds, default 600>] [--dry-run]
 //
-// Prints one JSON line: {to, model, cwd, seconds, exit, answer} or {error}. The child runs read only
-// (codex: --sandbox read-only; claude: Read/Grep/Glob only, everything else denied), keeps no session,
-// and carries SECOND_OPINION_DEPTH so a second opinion never asks for a third (no codex ↔ claude loops).
-// --dry-run prints {to, command, stdin_from} without running anything.
+// Prints one JSON line: {to, mode, model, cwd, seconds, exit, answer} or {error}. By default the child
+// runs read only (codex: --sandbox read-only; claude: Read/Grep/Glob only, everything else denied).
+// --act bypasses permissions instead (codex: --dangerously-bypass-approvals-and-sandbox; claude:
+// --permission-mode bypassPermissions), so the child edits files and runs commands in --cwd; the
+// result then adds `changed` (git status lines that appeared or changed) and `head_moved`.
+// Either way the child keeps no session, loads no MCP server, and carries SECOND_OPINION_DEPTH so it
+// never hands work on to a third (no codex ↔ claude loops).
+// --dry-run prints {to, mode, command, stdin_from} without running anything.
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -25,17 +29,25 @@ export function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--dry-run') out.dryRun = true
+    else if (a === '--act') out.act = true
     else if (a.startsWith('--')) out[a.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = argv[++i]
   }
   return out
 }
 
 // The command line for one call. `last` is where codex writes its final message.
-export function command(to, { cwd, model, last }) {
+export function command(to, { cwd, model, last, act = false }) {
   if (to === 'codex') {
     // no MCP servers: their tools run outside the shell sandbox
-    return ['codex', 'exec', '--sandbox', 'read-only', '--skip-git-repo-check', '--ephemeral',
+    const perm = act ? ['--dangerously-bypass-approvals-and-sandbox'] : ['--sandbox', 'read-only']
+    return ['codex', 'exec', ...perm, '--skip-git-repo-check', '--ephemeral',
       '-c', 'mcp_servers={}', '-C', cwd, '-o', last, ...(model ? ['-m', model] : []), '-']
+  }
+  if (to === 'claude' && act) {
+    // every tool, no prompt; user settings and their hooks (a repo's write rules) stay loaded
+    return ['claude', '-p', '--output-format', 'json', '--no-session-persistence',
+      '--permission-mode', 'bypassPermissions', '--strict-mcp-config',
+      ...(model ? ['--model', model] : [])]
   }
   if (to === 'claude') {
     // dontAsk already denies every tool not allowed; the explicit deny list and no MCP servers say
@@ -63,6 +75,31 @@ function onPath(bin, env) {
   return spawnSync('/bin/sh', ['-c', 'command -v "$1"', '_', bin], { encoding: 'utf8', env }).status === 0
 }
 
+// What the working tree looks like: git status lines and HEAD, or null outside a git repo.
+export function treeState(cwd) {
+  // -z: paths unquoted (Korean names stay readable); a rename's old path follows as its own field
+  const st = spawnSync('git', ['status', '--porcelain=v1', '-z', '-uall'], { cwd, encoding: 'utf8' })
+  if (st.status !== 0) return null
+  const head = spawnSync('git', ['rev-parse', '-q', '--verify', 'HEAD'], { cwd, encoding: 'utf8' }).stdout.trim()
+  const files = {}
+  const fields = st.stdout.split('\0')
+  for (let i = 0; i < fields.length; i++) {
+    const l = fields[i]
+    if (!l) continue
+    if (/^[RC]/.test(l)) i++
+    const h = spawnSync('git', ['hash-object', '--', l.slice(3)], { cwd, encoding: 'utf8' }).stdout.trim()
+    files[l] = h
+  }
+  return { head, files }
+}
+
+// Lines that appeared, or whose file content changed, between two treeStates.
+export function changes(before, after) {
+  if (!before || !after) return { changed: null, head_moved: null }
+  const changed = Object.keys(after.files).filter(l => before.files[l] !== after.files[l])
+  return { changed, head_moved: before.head !== after.head }
+}
+
 // Any value at all means this process is already a second opinion: a number, or anything else.
 export const nested = env => String(env[DEPTH_ENV] ?? '').trim() !== '' && String(env[DEPTH_ENV]).trim() !== '0'
 
@@ -87,13 +124,16 @@ export async function ask(opts, env = process.env) {
   const cwd = resolve(opts.cwd || '.')
   const work = mkdtempSync(join(tmpdir(), 'second-opinion-'))
   const last = join(work, 'last.md')
-  const argv = command(to, { cwd, model: opts.model, last })
-  if (opts.dryRun) { rmSync(work, { recursive: true, force: true }); return { to, command: argv, stdin_from: opts.promptFile } }
+  const act = opts.act === true
+  const mode = act ? 'act' : 'read'
+  const argv = command(to, { cwd, model: opts.model, last, act })
+  if (opts.dryRun) { rmSync(work, { recursive: true, force: true }); return { to, mode, command: argv, stdin_from: opts.promptFile } }
   if (!onPath(argv[0], env)) {
     rmSync(work, { recursive: true, force: true })
     return { error: `${argv[0]} is not on PATH: install it (${to === 'codex' ? 'npm i -g @openai/codex' : 'npm i -g @anthropic-ai/claude-code'}) and sign in once` }
   }
   const timeout = Number(opts.timeout || 600) * 1000
+  const before = act ? treeState(cwd) : null
   const started = Date.now()
   const r = await new Promise(done => {
     // its own process group, so a timeout stops the CLI and everything it started
@@ -117,8 +157,10 @@ export async function ask(opts, env = process.env) {
     child.stdin.end(brief)
   })
   const seconds = Math.round((Date.now() - started) / 100) / 10
+  // in act mode every exit, a failed or timed-out one included, says what the child left behind
+  const touched = act ? changes(before, treeState(cwd)) : {}
   try {
-    if (r.timedOut) return { to, cwd, seconds, error: `no answer within ${timeout / 1000}s` }
+    if (r.timedOut) return { to, mode, cwd, seconds, ...touched, error: `no answer within ${timeout / 1000}s` }
     let answer = ''
     let model = opts.model || null
     if (to === 'codex') answer = existsSync(last) ? readFileSync(last, 'utf8').trim() : r.stdout.trim()
@@ -126,17 +168,17 @@ export async function ask(opts, env = process.env) {
       const c = claudeAnswer(r.stdout)
       answer = c.answer
       model = c.model || model
-      if (c.isError) return { to, cwd, seconds, exit: r.code, error: answer || c.raw || r.stderr.trim().slice(-400) }
+      if (c.isError) return { to, mode, cwd, seconds, exit: r.code, ...touched, error: answer || c.raw || r.stderr.trim().slice(-400) }
     }
     if (r.code !== 0 || !answer) {
-      return { to, cwd, seconds, exit: r.code, error: (r.stderr.trim() || r.stdout.trim()).slice(-400) || 'empty answer' }
+      return { to, mode, cwd, seconds, exit: r.code, ...touched, error: (r.stderr.trim() || r.stdout.trim()).slice(-400) || 'empty answer' }
     }
     // codex exits 0 with a polite "I could not read the files" when its sandbox never started
-    if (to === 'codex' && !attach.length && SANDBOX_DOWN.test(`${answer}\n${r.stderr}`)) {
-      return { to, cwd, seconds, exit: r.code, sandbox_down: true,
+    if (to === 'codex' && !act && !attach.length && SANDBOX_DOWN.test(`${answer}\n${r.stderr}`)) {
+      return { to, mode, cwd, seconds, exit: r.code, sandbox_down: true,
         error: 'codex could not start its sandbox here (bwrap; unprivileged user namespaces are restricted), so it read nothing. Run again with --attach <the files> so it needs no tool.' }
     }
-    return { to, model, cwd, seconds, exit: r.code, attached: attach, answer }
+    return { to, mode, model, cwd, seconds, exit: r.code, attached: attach, ...touched, answer }
   } finally {
     rmSync(work, { recursive: true, force: true })
   }

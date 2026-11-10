@@ -133,7 +133,14 @@ codex한테도 물어봐줘 — 이 마이그레이션 계획에서 놓친 위�
 
 Where Codex's sandbox cannot start (bwrap under restricted user namespaces, Ubuntu's default), the
 script says so instead of passing on an empty answer; `--attach <files>` puts their text, with line
-numbers, into the brief so Codex needs no tool. Tests: `node --test agents/scripts/test-ask.mjs`.
+numbers, into the brief so Codex needs no tool.
+
+From 1.3.0 the other model can also do the work when you ask for it (`codex한테 시켜`): `--act`
+bypasses permissions (Codex `--dangerously-bypass-approvals-and-sandbox`, Claude
+`--permission-mode bypassPermissions`), so it edits and runs commands in `--cwd`. The result lists
+the git status lines it changed and whether HEAD moved, and the asking side reads the diff and reruns
+the check before calling it done. Read only stays the default. Tests:
+`node --test agents/scripts/test-ask.mjs`.
 
 ## Related plugins
 
