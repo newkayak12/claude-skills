@@ -16,8 +16,11 @@ double replace, collision refusal, write only after verify; material items in `s
 untouched chart warnings in check and build (manage 33/33, material 24/24, test_deck 226 ok).
 Card 54's flow shipped 2026-10-30 by hand (see the card); then 104. Portfolio is urgent (user,
 2026-10-30: "portfolio urgent로"): its cards go before every other card, 101 included.
+Portfolio cards are worked in their own session (user, 2026-11-11: "port쪽은 정리해줘 다른 세션에서
+할거고"); a teams session skips that section and starts with teams (same day: "teams부터"), in the
+order under "teams plugin bugs".
 
-### portfolio flow — first (design: `_repo/docs/plans/2026-10-30-portfolio-flow.md`)
+### portfolio flow — own session (design: `_repo/docs/plans/2026-10-30-portfolio-flow.md`)
 
 Cards 123 (feedback panel) and 124 (manage n-round loop) shipped 2026-11-05 by hand on fix/port (manage 93/93;
 real run n=2 on the fixture: two rounds, `gate.order: recorded`, a panel of one sonnet subagent per reviewer
