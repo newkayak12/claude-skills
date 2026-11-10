@@ -350,12 +350,13 @@ def margin_crossers(xml_text, margin=28.0):
 
 DISCLAIMERS = [
     r"AI-generated content may be incorrect\.?",
-    r"AI 생성 콘텐츠는 정확하지 않을 수 있습니다\.?",
-    r"AI에서 생성된 콘텐츠는 부정확할 수 있습니다\.?",
+    # Korean builds word it several ways: AI 생성 / AI가 생성한 / AI에서 생성된 / AI로 생성된 …
+    r"AI\s?(?:가|에서|로|에 의해)?\s?생성(?:한|된|)\s?(?:콘텐츠|내용|컨텐츠)(?:는|은)\s?(?:정확하지 않을|부정확할|틀릴)\s?수\s?있습니다\.?",
 ]
 _DISCLAIMER = re.compile("|".join(DISCLAIMERS), re.I)
 _TOOLS = re.compile(r"\b(Copilot|ChatGPT|GPT-?\d*|OpenAI|Gemini|Claude|Anthropic)\b", re.I)
 _PHRASES = re.compile(r"As an AI\b|AI가 생성|AI로 생성|생성형 ?AI로 (?:작성|생성)|AI로 작성|"
+                      r"(?:ChatGPT|Copilot|Gemini|Claude|GPT-?\d*)\s?(?:로|으로|를 (?:사용|이용|활용)해서?|의 도움으로)\s?(?:작성|생성)|"
                       r"(?:generated|written|created) (?:by|with) (?:an? )?(?:AI|ChatGPT|Copilot|Gemini|Claude)\b", re.I)
 _ALT_TAG = re.compile(r"<(?:\w+:)?(?:cNvPr|docPr)\b[^>]*>")
 _ALT_ATTR = re.compile(r'\b(descr|title)="([^"]*)"')

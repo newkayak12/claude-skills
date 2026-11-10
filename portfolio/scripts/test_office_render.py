@@ -83,6 +83,9 @@ def main():
         f = t / "d.pptx"
         pptx(f, "AI에서 생성된 콘텐츠는 부정확할 수 있습니다. 가상 도표")
         check(o.ai_traces(f)["removed"] == 1 and 'descr="가상 도표"' in read(f, "ppt/slides/slide1.xml"), "the second Korean wording goes")
+        f = t / "d2.pptx"
+        pptx(f, "가상 그림. AI가 생성한 콘텐츠는 부정확할 수 있습니다.")
+        check(o.ai_traces(f)["removed"] == 1 and 'descr="가상 그림."' in read(f, "ppt/slides/slide1.xml"), "another Korean wording (AI가 생성한) goes")
         f = t / "e.docx"
         docx(f, "가상 사진 AI-generated content may be incorrect.")
         r = o.ai_traces(f)
@@ -105,6 +108,12 @@ def main():
         f = t / "i.pptx"
         pptx(f, "가상 로고", visible="As an AI language model, I", app="Microsoft Copilot")
         check(len(o.ai_traces(f)["reported"]) == 2, "pptx: the same two kinds are reported")
+        f = t / "i2.pptx"
+        pptx(f, "가상 로고", visible="이 문서는 ChatGPT로 작성되었습니다")
+        check(len(o.ai_traces(f)["reported"]) == 1, "a tool named as the writer ('ChatGPT로 작성') is reported")
+        f = t / "i3.pptx"
+        pptx(f, "가상 로고", visible="ChatGPT API 연동 상담 봇을 Claude Code로 개발")
+        check(o.ai_traces(f) == {"removed": 0, "reported": []}, "a tool named as project work is not an AI trace")
         f = t / "j.pptx"
         pptx(f, "가상 로고", visible="AI-generated content may be incorrect.")
         r = o.ai_traces(f)
