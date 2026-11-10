@@ -159,7 +159,7 @@ toasts).
 
 ### Repo and rules
 
-131. **`repo-rules.mjs` runs whatever path it is reached by, so its guards cannot switch off silently**
+131. **`repo-rules.mjs` runs whatever path it is reached by, so its guards cannot switch off silently** — in E-f1f5fcf7
    - Why: hook and mod audit, 2026-11-10 (user: "현재 hook, mod로 하는거 기능 점검하고 원하는대로 안되는거 backlog").
      `node _repo/scripts/test-repo-rules.mjs` on macOS: 188 ok, 75 FAIL, every FAIL a `write:` case. Cause verified:
      both entry checks (`.claude/hooks/repo-rules.mjs:406`, `:420`) compare `import.meta.url` with
