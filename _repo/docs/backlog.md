@@ -235,7 +235,7 @@ real deck lone commas 316 → 0, engine version printed).
       resume.md or output a git repository would carry (tested); no real material was ever in the repo
       (history checked: the one tracked `template.pptx` is an empty fixture). Defaults taken: 2 pages,
       Korean only. User, same day: "like-me 쓰고 똑같이" — skeleton, deck.mdx and resume.md lines all go
-      through `write:like-me` (`78da36b3`, SKILL only). Left: the user's own template, two texts they
+      through `write:like-me` (`d1b2cf8f`, SKILL only). Left: the user's own template, two texts they
       wrote alone, and one real run on their workspace; the
       resume-conventions check is the model's (feedback), not an engine check.
 
@@ -312,18 +312,18 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
       outcome carries); identical reason + target rows fold into one with a count and the last date;
       `claude plugin test` with counts; one live look at the tab (mod.md "A UI change is done when").
 
-125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality** — E-8faf33b9 blocked on a PRD merge bug (fixed `8d5cb7b0`); E-701e2856 (2026-11-07, $35.82) planned
+125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality** — E-8faf33b9 blocked on a PRD merge bug (fixed `899dba47`); E-701e2856 (2026-11-07, $35.82) planned
    it again (5 cards 88–94, plan-integrate accepted) and stopped partial at shape:3 (see card 129). Now one
    size-S task per feature area, in order F1 → F5 → F3 → F4 → F2, each from its section of that PRD (kept
-   at `tmp/card125/F<n>.md` until the card closes). F1 shipped `a7c2540c` (E-7b9c49d9, gate 95; teams
+   at `tmp/card125/F<n>.md` until the card closes). F1 shipped `c8328deb` (E-7b9c49d9, gate 95; teams
    2116/2114, 2 skip; plugin test 453/453; Status line kept at `tmp/card125/status-F1.md` for the bump).
-   F5 shipped `715fbead` (E-efbb047d, gate 96; plugin test 465/465, teams 2114/0/2); live look on a pane
+   F5 shipped `69c87a22` (E-efbb047d, gate 96; plugin test 465/465, teams 2114/0/2); live look on a pane
    surface after the bump. F3 shipped (E-dcacc53c, gate 93; teams 2170/2168, 2 skip; plugin test 465/465;
    $35.52 of $30); a real EPIC through Build is still to be watched in the pane. F4 shipped partial
    (E-a6936957, gate 88; teams 2184/2182, 2 skip; plugin test 546/546; $32.47 of $30): the Decisions thread
    draws actor `human` and engine-composed reasons (`size S · develop`, `resplit → areas:N`, `never
    dispatched`) in English; carried into F2, which replaces that page (`tmp/card125/F4-gaps.md`).
-   F2 shipped `2169cdab` (E-b2f3c230, gate 93; plugin test 565/565, teams 2220/0/2; $41.88 of $40), F4 gaps
+   F2 shipped `286bf598` (E-b2f3c230, gate 93; plugin test 565/565, teams 2220/0/2; $41.88 of $40), F4 gaps
    closed. Demo renders approved (user, 2026-11-10: "125 고"). Live look 2026-11-10 in tmux at 190 and 110 on
    E-f1f5fcf7 (size S): open by command and band, w/s/d/a/l, close by Esc, q and the command again all work;
    defects to fix before the card closes:
@@ -363,10 +363,10 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
      and computes a task's state only when that task's files changed (no full re-read per poll); it exits
      when no session is connected; a test with two clients on one socket, and `ps` showing one server
      with two sessions open; idle CPU of the server under 1% with one running task, measured.
-     Shipped `595d5d1b` (E-0ad41780) except the CPU bar on the real root: one server per root, idle-out,
+     Shipped `b6d338ef` (E-0ad41780) except the CPU bar on the real root: one server per root, idle-out,
      detached from the starting session; measured 2026-11-04 18:30 on `~/.harness/tasks` (1108 entries):
      no clients 0.07%, one session's 3 s events + status poll ~4% (synthetic root 0.85%). The rest shipped
-     `67f1e347` (E-066abb46, gate 91): real-root poll 1.55% → 0.38%, server log, relative
+     `bb9b643f` (E-066abb46, gate 91): real-root poll 1.55% → 0.38%, server log, relative
      `HARNESS_TASKS_DIR` in the mod, default-on CPU guard. Socket part done.
    - The viewer link, now and unconditionally (user, 2026-11-04, on a `http://127.0.0.1:7431/E-478d5e95` in a
      reply: "이렇게 내보이는거 굳이 하지말자"): no tm_* reply carries a viewer URL — `view_url` leaves
@@ -443,10 +443,10 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
      the name's first word, then `⑂`); tests at 190, 110 and a narrow pane on four surfaces; the demo render
      approved by the user (`mod.md` UI rule 0).
 
-128. **teams serves one MCP server, its internals split into modules by concern** — shipped on main, unreleased: P1–P3 `189c74d4` (E-258fa3e5), taskmanager facade + 14 modules
-   `24d57811` (E-1140cdb9, gate 95), one server `teams/mcp/server.mjs` `14d94112` (E-d26f7a29, gate 91;
+128. **teams serves one MCP server, its internals split into modules by concern** — shipped on main, unreleased: P1–P3 `f46cfa6d` (E-258fa3e5), taskmanager facade + 14 modules
+   `85175bbc` (E-1140cdb9, gate 95), one server `teams/mcp/server.mjs` `9db4e615` (E-d26f7a29, gate 91;
    suite 2140/2137, plugin test 448/448, real `claude -p --plugin-dir` lists 33 tools from one server).
-   Async abortable `tm_wait` and the stale comments shipped `67f1e347` (E-066abb46).
+   Async abortable `tm_wait` and the stale comments shipped `bb9b643f` (E-066abb46).
    Left: release note on the tool prefix change
    (`mcp__plugin_teams_task-manager__*` → `mcp__plugin_teams_teams__*`, allowlists stop matching); one real
    S and one real L task on the installed merged server after the batch bump; `ps` one teams process.
@@ -481,7 +481,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
      out. The report stage then failed with no reason. Acceptance: `prd_paths` deduped by resolved path,
      a test with a relative and an absolute path to one file; an engine-made defect in the merged document
      does not spend the planning card's integrate round; a failed report stage records its reason.
-     Dedupe and report reason shipped `8d5cb7b0` (E-beccd3c6, gate 95).
+     Dedupe and report reason shipped `899dba47` (E-beccd3c6, gate 95).
    - Seen 2026-11-07, E-701e2856 (card 125 again, $35.82): planning accepted, then shape failed 3 times on
      its structural check and the task ended partial. The PRD held 25+ stories and 187 ACs, and shape must copy
      every AC verbatim into a package; each round dropped a different handful (round 1: AC-15, F4-AC-28..31;
@@ -577,7 +577,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
      a lower peak context and cost per package than E-258fa3e5.
 
 105. **Repo-wide pane and one viewer: UI look and the loose ends** — code defects in E-03e2e513; cards 105 and 106 shipped 2026-10-30 in
-    E-f53a8434 (`236eae3d`; goal gate 92; teams 1658/1660 with 2 skips, plugin test 423/423; real run: two
+    E-f53a8434 (`32db1917`; goal gate 92; teams 1658/1660 with 2 skips, plugin test 423/423; real run: two
     scratch tasks, one viewer port, 31 ok)
     - Why: shipped: `view-repo.mjs` matches tasks by git common dir, the pane row and band mark another
       worktree's task `⑂ <worktree>`; one `view.mjs` serves many task roots (`/` index, `/E-xxxxxxxx`,
@@ -589,7 +589,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
       test skips when 7431 is held; `listenOn` turns a non-EADDRINUSE error into an unhandled rejection;
       stale comment in `view.mjs` ~356; no Host-header check on `/register`; a long title plus `⑂` mark not
       tested for `…`. The run also saw repo-rules refuse `node -e` containing `=>` (unverified false positive).
-    - Code defects fixed 2026-10-31 in E-03e2e513 (`cf509f67`; goal gate 93; teams 1704/1705, 1 skip):
+    - Code defects fixed 2026-10-31 in E-03e2e513 (`e552afcb`; goal gate 93; teams 1704/1705, 1 skip):
       contractions keep their word (`its-broken`), exact slug beats id prefix, join and fallback tested on
       a scratch default port, listen errors exit 1 with one line, stop-rule comment fixed, `⑂` tail cut to
       `…` tested on 4 surfaces.
@@ -597,7 +597,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
       band now list the worktree task (was "no task running"); q, Esc and the command again close it.
       Defect: the `⑂ <worktree>` mark is appended after the title (`teams-draw.tsx:219`, `mod.tsx:962`),
       so it is cut off first and never shows at 190 (row `Backlog card 108 (teams plugin), in…`) or 110.
-    - Fixed 2026-10-31 in E-d19daa16 (`e9b1d5b0`; goal gate 95; plugin test 431/431): the mark is drawn
+    - Fixed 2026-10-31 in E-d19daa16 (`5cf0bbda`; goal gate 95; plugin test 431/431): the mark is drawn
       before the title. Live look (E-7e44f783 running in `../claude-skills-c109`): 190 row
       `E-7e44f783  ⑂ claude-skills-c109 · Backlog card…   running  0/0  34s`, band
       `teams · ⑂ claude-skills-c109 · Backlog card 109 …`; 110 row `⑂ claude-sk…`, band `⑂ claude-skills-c…`.
@@ -619,7 +619,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
    - Why: seen 2026-11-10 while checking card 131: `node --test teams/scripts/bench/test-*.mjs` 78 pass / 2 fail,
      both in `test-drive-gh.mjs` ("a gh-* job that hit a usage limit is resumed by resume.sh in the hashed
      workspace", "resume of a non gh-* workspace works through the same arguments"), each cut at 60 s with exit
-     `null`. The same 2 fail at `b7f5e507`, before card 131's change. The load average was 84 on 8 cores; whether
+     `null`. The same 2 fail at `bc4a8601`, before card 131's change. The load average was 84 on 8 cores; whether
      they pass on an idle machine is unverified.
    - Acceptance: both tests pass on an idle machine, or the hang is found and fixed; `node --test
      teams/scripts/bench/test-*.mjs` 0 fail.
@@ -668,7 +668,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
 
 - `harness` and `graph` plugins are stable: no more changes (user, 2026-11-02: "harness, graph 는
   stable로 더이상 수정 금지"). Card 48 (graph + harness into teams) stops here: Tasks 2–4 (graph
-  critique rounds, goal gate, Codex fallback; E-c5c109e3) and Task 6's first half (eac1f097) shipped,
+  critique rounds, goal gate, Codex fallback; E-c5c109e3) and Task 6's first half (0ae40e03) shipped,
   Tasks 5–9 and the 162-run matrix are not run. teams keeps its own engine copies; the long-term
   direction stays teams (user, 2026-10-17).
 
@@ -682,50 +682,50 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
-| E-f1f5fcf7 | 2026-11-10 | 131 | shipped `2612243d`; size S; goal gate 90; entry checks of `repo-rules.mjs` and bench `harvest.mjs` compare real paths (reap.mjs form); test-repo-rules 188 ok / 75 FAIL → 271 ok / 0 FAIL, 8 new symlink/space entry cases; 0 FAIL needed the test's fixture root resolved to its real path (lead's decision, no person reachable), the write-through-symlink defect it hid is card 134; validate 15/15, check-copies ok, test-harvest 3/3 |
-| E-066abb46 | 2026-11-05 | 125 (socket rest), 128 (tm_wait, comments) | shipped `67f1e347`; size S on Sonnet; goal gate 91; state server skips unchanged tasks (fixture 2.10% → 0.90%, real root 1.55% → 0.38%), server log, mod resolves relative tasks dir, CPU guard default-on passed 3 suites of 2154 (only fail W2 hygiene from a stray `.teams_wiki/`); `tm_wait` awaited + abortable, `team_status`/`wiki_list` answer behind it (red on baseline); plugin test 453/453, view/server tests 386/387 (1 skip); spend $48 of $25 budget (card 130); thin CPU margin, 60 s safety-net rebuild |
-| E-d26f7a29 | 2026-11-05 | 128 step 2 | shipped `14d94112`; one MCP server `teams/mcp/server.mjs`, 33 tools; gate 91 |
-| E-0ad41780 | 2026-11-04 | 125 (socket part) | shipped `595d5d1b`; size S; goal gate 90; `teams/mcp/stateserver.mjs` one socket per tasks root, mod dials it (proto=1, 409 → `--once`), `view.mjs --serve-once-socket` removed, `--once` unchanged (view tests 334/334); s1 and s3 each needed a second attempt (flaky CPU test → opt-in `TEAMS_STATE_PERF=1`; server died with its tmux session → detached, SIGHUP ignored); teams 1827/1829 (2 skip), plugin test 448/448 (re-run by hand); real-root CPU ~4% per polling session, not <1% — left on card 125; critique ended at its 2-round cap with 3 majors open; driver paused 1 h on the 5-hour limit; Codex unreachable |
-| E-6ff25a30 | 2026-11-04 | 121, 112 | shipped `e014fb10`; size S; goal gate 82 fail → one repair (edit-claim overlap only) → 91; `test-taskmanager.mjs` file-level temp tasks root (temp-HOME suite leaves 0 entries; a real-HOME run went 1105 → 1108 with other tasks live, not attributed); `areas-critique` blocks an edit-ownership overlap naming one owner; teams 1813/1814 (1 skip, 0 fail, re-run by hand), plugin test 445/445 (task's count); last critique round's fixes not re-critiqued; Codex unreachable, Claude did all nodes |
+| E-f1f5fcf7 | 2026-11-10 | 131 | shipped `5a9644c8`; size S; goal gate 90; entry checks of `repo-rules.mjs` and bench `harvest.mjs` compare real paths (reap.mjs form); test-repo-rules 188 ok / 75 FAIL → 271 ok / 0 FAIL, 8 new symlink/space entry cases; 0 FAIL needed the test's fixture root resolved to its real path (lead's decision, no person reachable), the write-through-symlink defect it hid is card 134; validate 15/15, check-copies ok, test-harvest 3/3 |
+| E-066abb46 | 2026-11-05 | 125 (socket rest), 128 (tm_wait, comments) | shipped `bb9b643f`; size S on Sonnet; goal gate 91; state server skips unchanged tasks (fixture 2.10% → 0.90%, real root 1.55% → 0.38%), server log, mod resolves relative tasks dir, CPU guard default-on passed 3 suites of 2154 (only fail W2 hygiene from a stray `.teams_wiki/`); `tm_wait` awaited + abortable, `team_status`/`wiki_list` answer behind it (red on baseline); plugin test 453/453, view/server tests 386/387 (1 skip); spend $48 of $25 budget (card 130); thin CPU margin, 60 s safety-net rebuild |
+| E-d26f7a29 | 2026-11-05 | 128 step 2 | shipped `9db4e615`; one MCP server `teams/mcp/server.mjs`, 33 tools; gate 91 |
+| E-0ad41780 | 2026-11-04 | 125 (socket part) | shipped `b6d338ef`; size S; goal gate 90; `teams/mcp/stateserver.mjs` one socket per tasks root, mod dials it (proto=1, 409 → `--once`), `view.mjs --serve-once-socket` removed, `--once` unchanged (view tests 334/334); s1 and s3 each needed a second attempt (flaky CPU test → opt-in `TEAMS_STATE_PERF=1`; server died with its tmux session → detached, SIGHUP ignored); teams 1827/1829 (2 skip), plugin test 448/448 (re-run by hand); real-root CPU ~4% per polling session, not <1% — left on card 125; critique ended at its 2-round cap with 3 majors open; driver paused 1 h on the 5-hour limit; Codex unreachable |
+| E-6ff25a30 | 2026-11-04 | 121, 112 | shipped `ea50578a`; size S; goal gate 82 fail → one repair (edit-claim overlap only) → 91; `test-taskmanager.mjs` file-level temp tasks root (temp-HOME suite leaves 0 entries; a real-HOME run went 1105 → 1108 with other tasks live, not attributed); `areas-critique` blocks an edit-ownership overlap naming one owner; teams 1813/1814 (1 skip, 0 fail, re-run by hand), plugin test 445/445 (task's count); last critique round's fixes not re-critiqued; Codex unreachable, Claude did all nodes |
 | — | 2026-11-04 | 101, 81 closed on evidence | 101: E-bf0527b7 (teams 0.62.7) ran `dispatch:P1:2` and `dispatch:P2:2` together from 05:45 (spawned 1 s apart) and P3:2 with P2:3 from 07:19, no `auto_parallel_decreased`; 81: E-a9953265 (size S, teams 0.63.0) `scope_verdict` `own_record: true`, Codex `apply_patch` limit stays named in teams README/KOR |
-| E-a9953265 | 2026-11-04 | 122 (75 closed without code) | shipped `4761717a`; size S; goal gate 93; test-diagram 118/118 in 34 s (was 148 s on the card, 210–323 s under load); one Chrome shared over CDP only in the suite, the CLI path unchanged |
-| E-bf0527b7 | 2026-11-03 | 113, 49 rest, 94 rest, 84 rest | shipped `45251683..e93a5b31` by hand (cancelled in Build, ~$80): P1 (113) accepted 92 — one viewer per tasks root reused by live pid, finished tasks cached by mtime/size, 5 min idle exit; P2 (49) live forwarded STORY ask in the ledger and the band shot, stalled twice in a tmux wait (taken from attempt 3); P3 (94) 85 at retry 4, its one gap (P1's golden test scrubbed instead of recut) fixed by hand; P4 (84 design doc) never ran. teams 1792/1793 (1 skip), plugin test 445/445; 3 usage-limit parks. E-96699aa4 cancelled in PLAN to pin the viewer design |
-| E-16e58ff6 | 2026-11-03 | 114 | shipped `0cdfee82` by hand (task blocked): P1 accepted; P2 rejected 3× only for touching P1's test-diagram.mjs (pixel window 420x40→420x100); merged tree test-diagram 118/118, check-copies ok, validate 15/15; 2 usage-limit parks; test-diagram 148 s (card 122) |
-| E-c4d76843 | 2026-11-02 | 119 | shipped `cf910d02`; size S; goal gate 94; cache/memo tests 2/2 (falsified), `events` with an old `--since` 2.9 s → 0.18 s byte-identical; repo-rules refuses inline-script repo writes (263 ok); teams 1778/1779 (1 skip); a perl `>>` false positive fixed after the gate; `--cwd` now includes a task whose collect fails but task.json reads (untested) |
+| E-a9953265 | 2026-11-04 | 122 (75 closed without code) | shipped `4e9fbbcc`; size S; goal gate 93; test-diagram 118/118 in 34 s (was 148 s on the card, 210–323 s under load); one Chrome shared over CDP only in the suite, the CLI path unchanged |
+| E-bf0527b7 | 2026-11-03 | 113, 49 rest, 94 rest, 84 rest | shipped `58af948f..e7f52a79` by hand (cancelled in Build, ~$80): P1 (113) accepted 92 — one viewer per tasks root reused by live pid, finished tasks cached by mtime/size, 5 min idle exit; P2 (49) live forwarded STORY ask in the ledger and the band shot, stalled twice in a tmux wait (taken from attempt 3); P3 (94) 85 at retry 4, its one gap (P1's golden test scrubbed instead of recut) fixed by hand; P4 (84 design doc) never ran. teams 1792/1793 (1 skip), plugin test 445/445; 3 usage-limit parks. E-96699aa4 cancelled in PLAN to pin the viewer design |
+| E-16e58ff6 | 2026-11-03 | 114 | shipped `4195a423` by hand (task blocked): P1 accepted; P2 rejected 3× only for touching P1's test-diagram.mjs (pixel window 420x40→420x100); merged tree test-diagram 118/118, check-copies ok, validate 15/15; 2 usage-limit parks; test-diagram 148 s (card 122) |
+| E-c4d76843 | 2026-11-02 | 119 | shipped `fcf2a59f`; size S; goal gate 94; cache/memo tests 2/2 (falsified), `events` with an old `--since` 2.9 s → 0.18 s byte-identical; repo-rules refuses inline-script repo writes (263 ok); teams 1778/1779 (1 skip); a perl `>>` false positive fixed after the gate; `--cwd` now includes a task whose collect fails but task.json reads (untested) |
 | E-3a668d18 | 2026-11-02 | 118 | shipped in teams 0.62.7; size S; goal gate 91; `retryReport` reruns only a failed report (avoid_executors, different_vendor), size-S driver not respawned on an unchanged blocked run (`harness_run_stuck`), tm_retry retries it; red-first tests; teams 1776/1777 (1 skip); no live end-to-end run of a failing report yet |
-| E-db189f56 | 2026-11-02 | 117 | shipped `68eabfac` in teams 0.62.6; size S; goal gate 85 (partial: thin CPU margin, caches untested → card 119); incremental ledger store, per-tick shared bases, `view-once-<version>.sock`; 3 sessions 60 s: 4 s CPU over 62 s (~6.5%, was ~45%), 114 asks, 0 non-200; teams 1767/1768 (1 skip), mod 442/442 |
-| E-1476d4db | 2026-11-02 | 102 (settle) | shipped `608cbe82`; size S; run blocked at its report node (card 118), CLI check run by hand; manage 48/48 |
-| E-bd74d6ca, E-6a0d66eb | 2026-11-02 | 116 | shipped `3bb316f0`, `16fd5a62` in teams 0.62.5; size S; goal gates 88 (partial: `teams` format compared with its render time masked) and 95; one shared server on `~/.harness/view-once.sock`; `events` 2.4 s → 0.17 s (stats ledgers first); live, 3 sessions: one server in 60/60 samples, no `--once` spawns, server ~45% of a core (was ~80% for one session before the events fix); teams 1756/1757 (1 skip), mod 441/441; sharing across sessions left for card 117 |
-| E-0b44dd5c | 2026-11-02 | 115 | shipped `61b4b681` as hotfix teams 0.62.4; size S; goal gate 93; mod tests 439/439, teams 1745/1746 (1 skip); live: plain home folder 0/60 samples with `view.mjs`, this repo 59/60; a stray `/tmp/.teams_output` (2026-09-23) makes every folder under `/tmp` count as teams |
-| E-eb930c1a | 2026-11-01 | 100 (theme) | blocked at integrate (D2/P1 conflict in test-diagram.mjs); merged by hand `38c416b1`, test-diagram 112/112; P2's renders partial (print theme roles by shade only); approval of the theme PNGs left |
-| E-6e771dea | 2026-11-01 | 81 rest | shipped `edfad21d`; size S; goal gate 94; chained own-write test 9/9, limits in README/KOR/CHANGELOG; live `own_record:true` left (needs a session on the bumped teams) |
-| E-7d6199b9 | 2026-11-01 | 107 | shipped `69b2015e`; size S; goal gate 92; bare `tm_retry` resumes an exhausted dead daemon on its run dir; parent-kill survival test; test-taskmanager 373/373, teams 1736/1737 (1 skip); cause of the session-exit kill still unverified |
-| E-e6f71ab7 | 2026-11-01 | 110 | shipped `2e5da3c4`; size S; goal gate 90; gate 29/29 with env cleared and inherited (the 15/6 split was inherited `HARNESS_NODE=1`); real hook run: other session DENY, opener ALLOW; a task with no opener id still unlocks (legacy) |
-| E-51309bd7 | 2026-11-01 | 111 | shipped `c0b3808e`; size S; goal gate 93; shapecheck 22/22, teams 1726/1727 (1 skip) |
+| E-db189f56 | 2026-11-02 | 117 | shipped `ea4445fa` in teams 0.62.6; size S; goal gate 85 (partial: thin CPU margin, caches untested → card 119); incremental ledger store, per-tick shared bases, `view-once-<version>.sock`; 3 sessions 60 s: 4 s CPU over 62 s (~6.5%, was ~45%), 114 asks, 0 non-200; teams 1767/1768 (1 skip), mod 442/442 |
+| E-1476d4db | 2026-11-02 | 102 (settle) | shipped `7270477e`; size S; run blocked at its report node (card 118), CLI check run by hand; manage 48/48 |
+| E-bd74d6ca, E-6a0d66eb | 2026-11-02 | 116 | shipped `86bd2fe8`, `30a8222d` in teams 0.62.5; size S; goal gates 88 (partial: `teams` format compared with its render time masked) and 95; one shared server on `~/.harness/view-once.sock`; `events` 2.4 s → 0.17 s (stats ledgers first); live, 3 sessions: one server in 60/60 samples, no `--once` spawns, server ~45% of a core (was ~80% for one session before the events fix); teams 1756/1757 (1 skip), mod 441/441; sharing across sessions left for card 117 |
+| E-0b44dd5c | 2026-11-02 | 115 | shipped `4fc2480b` as hotfix teams 0.62.4; size S; goal gate 93; mod tests 439/439, teams 1745/1746 (1 skip); live: plain home folder 0/60 samples with `view.mjs`, this repo 59/60; a stray `/tmp/.teams_output` (2026-09-23) makes every folder under `/tmp` count as teams |
+| E-eb930c1a | 2026-11-01 | 100 (theme) | blocked at integrate (D2/P1 conflict in test-diagram.mjs); merged by hand `89e8c161`, test-diagram 112/112; P2's renders partial (print theme roles by shade only); approval of the theme PNGs left |
+| E-6e771dea | 2026-11-01 | 81 rest | shipped `d24fff8d`; size S; goal gate 94; chained own-write test 9/9, limits in README/KOR/CHANGELOG; live `own_record:true` left (needs a session on the bumped teams) |
+| E-7d6199b9 | 2026-11-01 | 107 | shipped `b5fa4852`; size S; goal gate 92; bare `tm_retry` resumes an exhausted dead daemon on its run dir; parent-kill survival test; test-taskmanager 373/373, teams 1736/1737 (1 skip); cause of the session-exit kill still unverified |
+| E-e6f71ab7 | 2026-11-01 | 110 | shipped `2c01a0cb`; size S; goal gate 90; gate 29/29 with env cleared and inherited (the 15/6 split was inherited `HARNESS_NODE=1`); real hook run: other session DENY, opener ALLOW; a task with no opener id still unlocks (legacy) |
+| E-51309bd7 | 2026-11-01 | 111 | shipped `51175e60`; size S; goal gate 93; shapecheck 22/22, teams 1726/1727 (1 skip) |
 | E-15aeadfe | 2026-11-01 | 110, 107, 81 rest | partial, $22.98, planning only: plan-integrate refused F2/F3 both owning the teams docs; PRD reused by the three size-S runs above |
 | E-da411582, E-7626467d, E-b0b206cc | 2026-11-01 | 100, 49 | stopped in planning: 100 on the card-111 AC clash (reopened as E-eb930c1a with unique AC numbering); 49 sized too small, then the AC check again (rerun after the bump) |
 | E-54884e0c | 2026-10-31 | 100, 102 rest, 49 rest | blocked (goal gate 82/90); 100's colour work taken by hand (test-diagram 92/92), 102's `settle` and 49's runbook not taken |
 | E-8c671fd9 | 2026-10-31 | 110, 107, 81 rest | partial: planning only, critique failed shape 3; findings on the cards |
 | E-d50a6887 | 2026-10-31 | 108 | tests only, no version bump: poll non-overlap test (`mod.test.ts`: no second `--once` while the first runs) and a load-independent perf test (`test-view-once-perf.mjs`: second call reads only the open task, 300 ms bar opt-in via `VIEW_ONCE_PERF=1`) |
 | E-2694667a | 2026-10-30 | 108 | partial: teams 0.62.1, `--once` filters before collecting and indexes finished tasks (`.view-index.json`), rebased onto 0.62.0's repo-wide matcher; real status call 7.96 s → 0.40 s; 300 ms fixture test is best-of-10 (single calls flaked 306–399 ms under suite load); poll overlap guard left (108) |
-| E-a7996a31 | 2026-10-30 | 87 rest | shipped `5639b260`; size S; goal gate 91; limit named in the PRD gate prompt (a Jaccard ≥ 0.63 rule passed both tests but missed the one real paraphrase, J=0.38, so declined); teams 1681/1682 |
-| E-233f8dca | 2026-10-30 | 81 rest | shipped `2fc9e26c`; size S; goal gate 90; own-write hook + fallback-route verdict gates; teams 1679/1680, plugin test 411/411 |
-| E-0a2ab67f | 2026-10-31 | 101 first tick | shipped (merge of `1945e0d2`); size S; goal gate 95; test-taskmanager 371/371 in run; real width-2 Sprint left |
-| E-7e44f783 | 2026-10-31 | 109 | shipped `8b001fe1`; size S; goal gate 93 (r1 82); cause verified by test, not ledger (E-ea14c9c4 cleaned): `settleQaRound` deduped by title and repro only; teams 1717/1719 (1 load wall-clock fail, card 108) |
-| E-d19daa16 | 2026-10-31 | 105 ⑂ mark | shipped `e9b1d5b0`; size S; goal gate 95; plugin test 431/431; captures awaiting approval |
-| E-7970d4b5 | 2026-10-31 | 108 | merged `cba67113` locally, then reverted: another session shipped card 108 first as teams 0.62.1 (E-2694667a), kept that one; size S; 32.3 s → 0.38 s, but its wall-clock tests went red under load |
-| E-f53a8434 | 2026-10-30 | 105, 106 | shipped `236eae3d`; size S; goal gate 92; teams 1658/1660, plugin test 423/423; UI look left on card 105 |
-| E-ce2bcff4 | 2026-10-30 | 101 | merged `9d4bd6a2` locally, then reverted `0cb18fbf`: another session shipped card 101 first as teams 0.61.5 (E-ea14c9c4), kept that one; size S, goal gate 92 |
-| E-db7e3226 | 2026-10-30 | 94 defects | shipped `15a95196`; size S (resumed from E-4f12f406); goal gate 91; plugin test 411/411; captures awaiting approval |
-| E-ea14c9c4 | 2026-10-30 | 101 | partial: teams 0.61.5 `e4502d68` taken by hand (P1, D1–D5, D13, P2; teams 1660/1660); integrate:3 blocked on duplicate QA defects (card 109); first tick and a real width-2 run left (101); $61.49 |
-| E-eb3d399f | 2026-10-29 | 100 | partial: P2 + D1 shipped and P1 taken by hand from its worktree (`13b988d5`); P1 'blocked: tool denied' ×3 on the 0.60.1 engine, P3/P4 unreachable; $48.72 |
-| E-124098e5 | 2026-10-15 | 10–13 | shipped `72f0c818`; size S (one harness pass); goal gate 91; $17.74 |
+| E-a7996a31 | 2026-10-30 | 87 rest | shipped `fb090792`; size S; goal gate 91; limit named in the PRD gate prompt (a Jaccard ≥ 0.63 rule passed both tests but missed the one real paraphrase, J=0.38, so declined); teams 1681/1682 |
+| E-233f8dca | 2026-10-30 | 81 rest | shipped `3cc7db00`; size S; goal gate 90; own-write hook + fallback-route verdict gates; teams 1679/1680, plugin test 411/411 |
+| E-0a2ab67f | 2026-10-31 | 101 first tick | shipped (merge of `583c46e3`); size S; goal gate 95; test-taskmanager 371/371 in run; real width-2 Sprint left |
+| E-7e44f783 | 2026-10-31 | 109 | shipped `8aa01310`; size S; goal gate 93 (r1 82); cause verified by test, not ledger (E-ea14c9c4 cleaned): `settleQaRound` deduped by title and repro only; teams 1717/1719 (1 load wall-clock fail, card 108) |
+| E-d19daa16 | 2026-10-31 | 105 ⑂ mark | shipped `5cf0bbda`; size S; goal gate 95; plugin test 431/431; captures awaiting approval |
+| E-7970d4b5 | 2026-10-31 | 108 | merged `a7a64564` locally, then reverted: another session shipped card 108 first as teams 0.62.1 (E-2694667a), kept that one; size S; 32.3 s → 0.38 s, but its wall-clock tests went red under load |
+| E-f53a8434 | 2026-10-30 | 105, 106 | shipped `32db1917`; size S; goal gate 92; teams 1658/1660, plugin test 423/423; UI look left on card 105 |
+| E-ce2bcff4 | 2026-10-30 | 101 | merged `95bfa881` locally, then reverted `fc5c7d95`: another session shipped card 101 first as teams 0.61.5 (E-ea14c9c4), kept that one; size S, goal gate 92 |
+| E-db7e3226 | 2026-10-30 | 94 defects | shipped `d64b8956`; size S (resumed from E-4f12f406); goal gate 91; plugin test 411/411; captures awaiting approval |
+| E-ea14c9c4 | 2026-10-30 | 101 | partial: teams 0.61.5 `f343148d` taken by hand (P1, D1–D5, D13, P2; teams 1660/1660); integrate:3 blocked on duplicate QA defects (card 109); first tick and a real width-2 run left (101); $61.49 |
+| E-eb3d399f | 2026-10-29 | 100 | partial: P2 + D1 shipped and P1 taken by hand from its worktree (`47dcc4d8`); P1 'blocked: tool denied' ×3 on the 0.60.1 engine, P3/P4 unreachable; $48.72 |
+| E-124098e5 | 2026-10-15 | 10–13 | shipped `0b842b46`; size S (one harness pass); goal gate 91; $17.74 |
 | E-c313c8f1 | 2026-10-15 | 2 | shipped (rules say `origin`); size S; $3.89 |
-| E-e9a37754 | 2026-10-16 | 1 | shipped `03c69989`; size S; $6.81 |
-| E-2136f280 | 2026-10-16 | 6 | shipped `d3ddb002`; size S; $5.04 |
+| E-e9a37754 | 2026-10-16 | 1 | shipped `9b45c9d5`; size S; $6.81 |
+| E-2136f280 | 2026-10-16 | 6 | shipped `7a0b0525`; size S; $5.04 |
 | E-e4aa64a3 | 2026-10-16 | 33, 25, 26, 28, 7, 8, 9, 30, 32, 16, 18, 19, 23 | partial (7/8 accepted, nothing merged; card 39); $78.32 |
 | E-59a16f4f | 2026-10-16 | 40 H, 42 G | partial (engine fields only); $27.38 |
-| E-746e822f | 2026-10-17 | merge of the two above | shipped `5692bb74`; size S; $9.65; all suites at or above baseline |
+| E-746e822f | 2026-10-17 | merge of the two above | shipped `e1bb0667`; size S; $9.65; all suites at or above baseline |
 | E-45422629 | 2026-10-17 | 21, 22 | blocked at QA; the two skills taken from its integration tree by the session (196 / 158 lines; QA test/ junk left out); $27.57 |
 | E-4607a6a6 | 2026-10-17 | 39, 45, 44, 40–43 | nothing built: plan-integrate rejected the F5/F6 (graph/teams pane) seam 3 times; $60.57 |
 | E-95de6173 | 2026-10-17 | 39, 45, 44, 40–43 | stopped in plan (machine overload, worktrees deleted); 6/7 PLAN sections kept on `rescue/95de6173-plan-*`; $37 |
@@ -733,38 +733,38 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
 | E-69f230a3 | 2026-10-17 | 24 (knowledge) | stopped at goal gate; integration kept on `rescue/69f230a3-knowledge`; $17 |
 | E-2146f402 | 2026-10-17 | 46 | stopped before build (PLAN only); $11 |
 | E-041cf197 | 2026-10-17 | 50 | stopped in build; PLAN on `rescue/95de6173-plan-F1` (041cf197's PLAN-F1); $10 |
-| E-c2808479 | 2026-10-17 | 14 | shipped `524ecff0`; size S; $6.21 |
-| E-32e8068c | 2026-10-18 | 51 (teams), 45 | shipped by hand `8e3a7550` (P1's gate could not re-run tests: card 39); teams suite 1265, 0 fail; $41 |
+| E-c2808479 | 2026-10-17 | 14 | shipped `ec07498b`; size S; $6.21 |
+| E-32e8068c | 2026-10-18 | 51 (teams), 45 | shipped by hand `10015def` (P1's gate could not re-run tests: card 39); teams suite 1265, 0 fail; $41 |
 | E-6ab58cc6 | 2026-10-18 | 40, 43 | running |
 | E-5ad30c36 → E-f169fb8c | 2026-10-18 → 21 | 54 step 1 | P1+P2 accepted; P3 (real run) failed 3× because the run's evidence was deleted before gates could read it; merged by hand `666b7283`, run by hand; $43.7 |
-| E-c80fa0ea, E-1515b84f, E-0e4ef843 → E-1fdeb52d | 2026-10-25 → 26 | 47 | shipped `f5d6cc63`, `ac84b75b`, `a2fdad3d`; size S ×4 (E-0e4ef843 stopped at implement, finished by E-1fdeb52d); teams 1482/1482; four routing probes match |
-| E-2bb23da3 | 2026-10-25 | 71, 72, 73 | shipped `d0b8f470`; size S; gaps → cards 77, 78 |
-| E-23b35fe3, E-0baf8e75 | 2026-10-26 | 74 (tests) | shipped `55e2dcc3`, `bfe0022c`; size S ×2; part A blocked only on the shared-checkout scope check (card 81) |
-| E-d9a9ede4 | 2026-10-26 | 78, 79, 80 | shipped `dbade549`; size S; repo-rules 80 ok, teams mod 361; q closes the empty pane, seen live |
-| E-53a84277 | 2026-10-26 | 81 (part), 77 | shipped `747e9306`; size S; teams 1492/1492 (5× taskmanager 315/315); flaky test named: judge-stream cleanup `ENOTEMPTY` (cause inferred) |
-| E-82cdb580 | 2026-10-26 | 48 Task 5 | shipped `df102aa5`; size S; AXES.md sha256 9580dbfd…; 27 problems, bench 52/52 |
-| E-d93aa063 | 2026-10-26 | 76 (part) | shipped `ff3d9073`; size S; teams 1513/1513 |
-| E-3f6657e7 | 2026-10-26 | 75 (part) | shipped `6d5809b2`; size S; large-context live check left on card 75 |
-| E-27be4005 | 2026-10-26 | 48 Task 6 (first half) | shipped `eac1f097`; size S; dry run gh-defect-2 ~$0.36 per arm; batch bump `f4d455a1` |
-| E-57170ac9 | 2026-10-27 | 83, 82 (76 closed: shape passed on attempt 2) | P2 shipped `91f32cf4` (bench 80/80); P1 judged accept 3× but settled blocked on a denied extra command (card 85), taken by hand `21a52358` (teams 1530/1530); cancelled at QA-F1's 11 defects |
-| E-7d212456 | 2026-10-27 | 85 | shipped `d8d9eebb`; size L, every stage first try; teams 1541/1541; QA's top-level `test/` scratch left out (card 86) |
-| E-398db286 | 2026-10-27 | 86, 81 | shipped `88cf55ed` by hand (cancelled in Build): P1 (86) accepted on attempt 2; P2 (81, part) judged accept 90 but settled blocked by the installed 0.60.1 engine (card 85 fix not installed yet); teams 1561/1561; ~$19 |
+| E-c80fa0ea, E-1515b84f, E-0e4ef843 → E-1fdeb52d | 2026-10-25 → 26 | 47 | shipped `49d9d3a4`, `2497e9aa`, `dd479d63`; size S ×4 (E-0e4ef843 stopped at implement, finished by E-1fdeb52d); teams 1482/1482; four routing probes match |
+| E-2bb23da3 | 2026-10-25 | 71, 72, 73 | shipped `914225ba`; size S; gaps → cards 77, 78 |
+| E-23b35fe3, E-0baf8e75 | 2026-10-26 | 74 (tests) | shipped `92b464d8`, `6cbfbc5d`; size S ×2; part A blocked only on the shared-checkout scope check (card 81) |
+| E-d9a9ede4 | 2026-10-26 | 78, 79, 80 | shipped `a79c2209`; size S; repo-rules 80 ok, teams mod 361; q closes the empty pane, seen live |
+| E-53a84277 | 2026-10-26 | 81 (part), 77 | shipped `b446157a`; size S; teams 1492/1492 (5× taskmanager 315/315); flaky test named: judge-stream cleanup `ENOTEMPTY` (cause inferred) |
+| E-82cdb580 | 2026-10-26 | 48 Task 5 | shipped `a0fa82be`; size S; AXES.md sha256 9580dbfd…; 27 problems, bench 52/52 |
+| E-d93aa063 | 2026-10-26 | 76 (part) | shipped `f7ce6de4`; size S; teams 1513/1513 |
+| E-3f6657e7 | 2026-10-26 | 75 (part) | shipped `18b0d420`; size S; large-context live check left on card 75 |
+| E-27be4005 | 2026-10-26 | 48 Task 6 (first half) | shipped `0ae40e03`; size S; dry run gh-defect-2 ~$0.36 per arm; batch bump `c2225c52` |
+| E-57170ac9 | 2026-10-27 | 83, 82 (76 closed: shape passed on attempt 2) | P2 shipped `3e84d81a` (bench 80/80); P1 judged accept 3× but settled blocked on a denied extra command (card 85), taken by hand `5c876e67` (teams 1530/1530); cancelled at QA-F1's 11 defects |
+| E-7d212456 | 2026-10-27 | 85 | shipped `2abe90b2`; size L, every stage first try; teams 1541/1541; QA's top-level `test/` scratch left out (card 86) |
+| E-398db286 | 2026-10-27 | 86, 81 | shipped `db529b9e` by hand (cancelled in Build): P1 (86) accepted on attempt 2; P2 (81, part) judged accept 90 but settled blocked by the installed 0.60.1 engine (card 85 fix not installed yet); teams 1561/1561; ~$19 |
 | E-fa84630b | 2026-10-27 | 84 (two defects) | nothing shipped: both PRD cards accepted, critique:3 rejected P1 for carrying the planning card's document criteria the PRD folded into its stories (card 87); $5.97 |
 | E-77926c5f | 2026-10-27 | 87, 89 | nothing shipped: both PRD cards accepted; shape failed 3× (P1 and P3 both touch `teams/mcp/taskmanager.mjs`; one owner per path by design). Cards touching the same engine file go in separate Sprints |
 | E-22c3af14 | 2026-10-27 | 91 | nothing shipped: pinned L, PRD with one story; shape refused 1 package (fits S) and 2 packages (one claims every story) (card 92); reopened unpinned |
-| E-b1aee623 | 2026-10-28 | 91 | shipped `e0032b0f`; size S (unpinned); goal gate 95; accept scores only the package's own acceptance (`scopeGaps`, `out_of_scope[]`); teams 1565/1565; ~$3.5 |
-| E-861e1089 | 2026-10-28 | 87 (part) | shipped `eb3a1c49`; size S; document criteria filtered from the PRD stories by exact text; teams 1567/1567; ~$3 |
-| E-db523454 | 2026-10-28 | 92 | shipped `f5a54fe8`; size S; goal gate 96; "claims every user story" needs 2+ stories; teams 1568/1568; ~$2 |
-| E-8b9c417d | 2026-10-28 | 84 (two defects) | shipped `7e051a4b`; P1 accepted; P2 met its own acceptance but rejected 3× for P3's live look (card 91), taken from its branch; live look done in session; integration branch held QA scratch under `test/` (0.60.1 engine, card 86 fix not installed) — not merged; teams 1570/1570, plugin test 375/375; $27.5 |
-| E-0ad09a55 | 2026-10-28 | 88 (part) | shipped `12668c8f`; size S; goal gate 90; repro gate for QA defects and audit unmet (rerun in the integration tree, a passing one dropped); teams 1577/1577; $3.72 |
-| E-11f56074 | 2026-10-29 | 81 rest, 99 (87 check) | partial, size L, ~$24: both packages' gates "blocked: tool denied" (installed engine lacks e9fc32eb); work taken from the worktrees by hand. 99: hook refuses writes only in this repo's common dir, repo-rules 231/231, live: scratch repo pass, repo deny. 81: engine scope verdict recorded on finish. teams 1633/1633. PRD had no document criteria (87) |
+| E-b1aee623 | 2026-10-28 | 91 | shipped `2e72969f`; size S (unpinned); goal gate 95; accept scores only the package's own acceptance (`scopeGaps`, `out_of_scope[]`); teams 1565/1565; ~$3.5 |
+| E-861e1089 | 2026-10-28 | 87 (part) | shipped `0d0ec3f7`; size S; document criteria filtered from the PRD stories by exact text; teams 1567/1567; ~$3 |
+| E-db523454 | 2026-10-28 | 92 | shipped `4cb97d0d`; size S; goal gate 96; "claims every user story" needs 2+ stories; teams 1568/1568; ~$2 |
+| E-8b9c417d | 2026-10-28 | 84 (two defects) | shipped `1babb2bd`; P1 accepted; P2 met its own acceptance but rejected 3× for P3's live look (card 91), taken from its branch; live look done in session; integration branch held QA scratch under `test/` (0.60.1 engine, card 86 fix not installed) — not merged; teams 1570/1570, plugin test 375/375; $27.5 |
+| E-0ad09a55 | 2026-10-28 | 88 (part) | shipped `84358723`; size S; goal gate 90; repro gate for QA defects and audit unmet (rerun in the integration tree, a passing one dropped); teams 1577/1577; $3.72 |
+| E-11f56074 | 2026-10-29 | 81 rest, 99 (87 check) | partial, size L, ~$24: both packages' gates "blocked: tool denied" (installed engine lacks 8a682c0f); work taken from the worktrees by hand. 99: hook refuses writes only in this repo's common dir, repo-rules 231/231, live: scratch repo pass, repo deny. 81: engine scope verdict recorded on finish. teams 1633/1633. PRD had no document criteria (87) |
 | E-f2173f01 | 2026-10-29 | 94 rest | size S; one status word per STORYs row, title shrinks last (≥24 at 86 cols); live look 84-col pane, shot sent; plugin test 399/399, teams 1631/1631; awaiting the user's approval |
 | E-fa72c6e8 D11 | 2026-10-28 | 97 rest | taken from the cancelled Sprint's D11 branch (`rescue/fa72c6e8-D11`): a command the project's PreToolUse hook refuses (QA probing `rm -f $QAF1_UNSET/…`) is not a needed denial, so it no longer blocks a node; live probe doc `_repo/docs/2026-10-28-hook-deny-permission-denials.md`; teams 1631/1631 |
-| E-75270ef1 | 2026-10-28 | 88 rest, 96 | shipped `fc9ea16c` (committed by the run); audit unmet items need a runnable repro; a dropped defect stays dropped on rescue/retry; task.base_commit at tm_open; size-S prompt names gateintegrity; teams 1626/1626 |
+| E-75270ef1 | 2026-10-28 | 88 rest, 96 | shipped `a05663b2` (committed by the run); audit unmet items need a runnable repro; a dropped defect stays dropped on rescue/retry; task.base_commit at tm_open; size-S prompt names gateintegrity; teams 1626/1626 |
 | E-ca39279f | 2026-10-28 | 97, 98 | size S; one filing holds a defect once (same trimmed title or repro.command); `harnessVerdict` refuses an accept under goal_threshold (the graph's floor-5 band let 85 pass at 90) and the size-S prompt passes the threshold; teams 1618/1618 |
 | E-a0b849a2 | 2026-10-28 | 95 | size S; goal gate 85 (under threshold 90, card 98); a QA/audit-filed package records `base_branch` = the filing pass's integration branch and branches from it; teams 1615/1615 |
 | E-f69222d8 | 2026-10-28 | 90 rest | size S; goal gate 93; `>|`, absolute repo targets from outside, bare `cd`/`cd -`/`pushd`/`popd`/subshell tracking; repo-rules 217/217; live hook run: 4 deny, 2 pass as listed |
-| E-a193d3ec | 2026-10-28 | 94 defects | shipped `bd8e0702`; STORYs reason on its own line, a repackaged story shows its current attempt; teams 1613/1613, plugin test 396/396 |
-| E-692f3092 | 2026-10-28 | 94 | shipped `110de5ff`; teams-status attempts, judge score vs threshold, cost and retry spend, drivers, denials, defects filed/dropped; teams 1610/1610, plugin test 381/381 |
+| E-a193d3ec | 2026-10-28 | 94 defects | shipped `a7ec1188`; STORYs reason on its own line, a repackaged story shows its current attempt; teams 1613/1613, plugin test 396/396 |
+| E-692f3092 | 2026-10-28 | 94 | shipped `a8d0de16`; teams-status attempts, judge score vs threshold, cost and retry spend, drivers, denials, defects filed/dropped; teams 1610/1610, plugin test 381/381 |
 | E-fa72c6e8 | 2026-10-28 | 90 | cancelled by the user in QA round 2, integration-3 taken; `enforcement.md` + repo hook refuses unquoted `rm $VAR` and in-place Bash writes; repo-rules 204/204; rest is card 90, duplicate filing card 97; ~$79 |
-| E-f27382fa | 2026-10-28 | 89 | shipped `cf13b16a`; size S; goal gate 90; `gateintegrity.mjs` + gate:goal section; real run `--baseline HEAD~30` lists card 85's two replaced tests; teams 1591/1591 |
+| E-f27382fa | 2026-10-28 | 89 | shipped `a9212cdb`; size S; goal gate 90; `gateintegrity.mjs` + gate:goal section; real run `--baseline HEAD~30` lists card 85's two replaced tests; teams 1591/1591 |
