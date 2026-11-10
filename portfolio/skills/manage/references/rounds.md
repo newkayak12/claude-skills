@@ -27,7 +27,7 @@ equals the previous record's, and `round` is never past `n`. Round numbers run i
 3. **Do.** The actor (the session) does the step in context, as the Process says.
 4. **Check.** Where a command exists, run it: step 1 `material gaps|foreign`; step 2 `selection`;
    step 3 `claims`, `verify`; step 4 `claims`, `settle`, `renumber`/`verify`, `compare`; step 5
-   `deck-builder catalog`; step 6 `deck-builder check`, `claims --file deck.mdx`; step 7
+   `deck-builder catalog`; step 6 `deck-builder check`, `claims --file portfolio-deck.mdx`; step 7
    `keep-render`. Otherwise (step 1 episode splitting, step 5 style rules, step 7 page reading) a
    judge checks it, and the judge is not the actor.
 5. **Gate.** Record the verdict with `step` (`{"round":N,"step":S,"verdict":…,"by":…,"reason":…}`)
@@ -65,7 +65,7 @@ reasoning, and its verdict is `pass` or `fail` per criterion with the line it re
 `feedback` runs every round, after step 7, from the main context: never inside a subagent or a judge,
 because its three-lens panel needs subagents and a subagent cannot start them (it would fall back to
 one context without saying so). Its target is this round's deck (`build/deck.pdf`) when one exists,
-else this round's `skeleton.md`. A round never skips it and never reuses an output from before the
+else this round's `portfolio-skeleton.md`. A round never skips it and never reuses an output from before the
 loop, from another round or from outside it: a round without its own feedback run is not recorded.
 Save the output as `snapshot/rounds/feedback-N.md` and the next round's step 4 works its findings.
 
@@ -85,9 +85,9 @@ A step that could not run is recorded `skipped` with its reason in `reason`, and
 as a gap. A step is never recorded `pass` without running. An unusable tool (a missing, 0-byte or
 unreadable file, a missing renderer or catalog) gives `skipped` with its reason, never `fail`;
 `fail` is only for a step that ran and missed a criterion. Cases:
-- step 5: `deck.catalog.md` or `template/분석.md` missing, `template.pptx` 0-byte or unreadable,
+- step 5: `deck.catalog.md` or `template/analysis.md` missing, `template.pptx` 0-byte or unreadable,
   or no renderer;
-- step 6: runs when `deck.catalog.md`, `template/분석.md` and `skeleton.md` all exist (the fixture
+- step 6: runs when `deck.catalog.md`, `template/analysis.md` and `portfolio-skeleton.md` all exist (the fixture
   workspace has them). A missing one, or a checker that cannot open the template (0-byte or
   unreadable `template.pptx`), is `skipped` and named in the reason;
 - step 7: `build`/`render` only when the user said so for this loop. Without that word the step is

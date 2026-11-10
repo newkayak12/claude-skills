@@ -70,28 +70,28 @@ test('verify flags order and dangling references', () => {
 
 test('snapshot copies the current skeleton, bumps and logs once', () => {
   const root = mkdtempSync(join(tmpdir(), 'manage-'))
-  writeFileSync(join(root, 'skeleton.md'), SKEL)
+  writeFileSync(join(root, 'portfolio-skeleton.md'), SKEL)
   const r = snapshot(root, { kind: 'skeleton', level: 'minor', note: '검색 블록 두 장 순서 교환', date: '2026-01-02' })
   assert.equal(r.from, 'v4.0.0')
   assert.equal(r.to, 'v4.1.0')
-  assert.equal(readFileSync(join(root, 'snapshot/skeleton/skeleton-v4.0.0/skeleton.md'), 'utf8'), SKEL)
-  const now = readFileSync(join(root, 'skeleton.md'), 'utf8')
+  assert.equal(readFileSync(join(root, 'snapshot/skeleton/skeleton-v4.0.0/portfolio-skeleton.md'), 'utf8'), SKEL)
+  const now = readFileSync(join(root, 'portfolio-skeleton.md'), 'utf8')
   // no --by: the line names no decider (it never claims the user decided)
   assert.match(now, /version: v4\.1\.0\nv4\.1\.0 변경\(2026-01-02\): 검색 블록 두 장 순서 교환\n\n## 1 표지/)
   assert.match(readFileSync(join(root, 'snapshot/README.md'), 'utf8'), /\| v4\.0\.0 \| 2026-01-02 \| 5 \| → v4\.1\.0: 검색 블록/)
   // the next snapshot is of v4.1.0; the same version cannot be taken twice
-  writeFileSync(join(root, 'skeleton.md'), SKEL)
+  writeFileSync(join(root, 'portfolio-skeleton.md'), SKEL)
   assert.throws(() => snapshot(root, { kind: 'skeleton', level: 'patch', note: 'x' }), /already taken/)
 })
 
 test('the first deck snapshot is deck-v1.0.0 and leaves skeleton alone', () => {
   const root = mkdtempSync(join(tmpdir(), 'manage-'))
-  writeFileSync(join(root, 'skeleton.md'), SKEL)
-  writeFileSync(join(root, 'deck.mdx'), '---\noutput: build/deck.pptx\n---\n')
+  writeFileSync(join(root, 'portfolio-skeleton.md'), SKEL)
+  writeFileSync(join(root, 'portfolio-deck.mdx'), '---\noutput: build/deck.pptx\n---\n')
   const r = snapshot(root, { kind: 'deck', level: 'patch', note: 'x' })
   assert.equal(r.to, 'v1.0.0')
-  assert.ok(existsSync(join(root, 'snapshot/deck/deck-v1.0.0/deck.mdx')))
-  assert.equal(readFileSync(join(root, 'skeleton.md'), 'utf8'), SKEL)
+  assert.ok(existsSync(join(root, 'snapshot/deck/deck-v1.0.0/portfolio-deck.mdx')))
+  assert.equal(readFileSync(join(root, 'portfolio-skeleton.md'), 'utf8'), SKEL)
 })
 
 // The shape of a real workspace (fictional content): `## N쪽 ·` headings, a `## 구성` section before
@@ -151,11 +151,11 @@ test('a block swap moves each `#` block with its pages, its title renumbered (re
   assert.deepEqual(verify(r.text).problems, [])
 })
 
-test('layout finds the template where deck.mdx says', () => {
+test('layout finds the template where portfolio-deck.mdx says', () => {
   const root = mkdtempSync(join(tmpdir(), 'manage-'))
   mkdirSync(join(root, 'template'))
   writeFileSync(join(root, 'template/template.pptx'), '')
-  writeFileSync(join(root, 'deck.mdx'), '---\ntemplate: template/template.pptx\noutput: build/deck.pptx\n---\n')
+  writeFileSync(join(root, 'portfolio-deck.mdx'), '---\ntemplate: template/template.pptx\noutput: build/deck.pptx\n---\n')
   const l = layout(root)
   assert.ok(l.present.includes('template/template.pptx'))
   assert.ok(!l.missing.includes('template.pptx'))
@@ -208,11 +208,11 @@ const workspace = () => { const root = mkdtempSync(join(tmpdir(), 'manage-ws-'))
 
 test('real-shape workspace: layout finds every part, verify finds no problem', () => {
   assert.deepEqual(layout(WORKSPACE).missing, [])
-  assert.deepEqual(verify(readFileSync(join(WORKSPACE, 'skeleton.md'), 'utf8')).problems, [])
+  assert.deepEqual(verify(readFileSync(join(WORKSPACE, 'portfolio-skeleton.md'), 'utf8')).problems, [])
 })
 
 test('real-shape workspace: a block swap keeps the appendix table, align table and history right', () => {
-  const r = renumber(readFileSync(join(WORKSPACE, 'skeleton.md'), 'utf8'), parseMap('2:4,3:5,4:2,5:3'))
+  const r = renumber(readFileSync(join(WORKSPACE, 'portfolio-skeleton.md'), 'utf8'), parseMap('2:4,3:5,4:2,5:3'))
   assert.deepEqual(r.warnings, [])
   assert.deepEqual(verify(r.text).problems, [])
   assert.match(r.text, /# 알림 배치 \(2~3쪽\)\n## 2쪽 · `@s4` · 문제\n## 3쪽 · `@s5` · 결과 \[v3\.1\.0 안\]\n2~3쪽 요약은 6쪽 회고로\.\n\n# 검색 개편 \(4~5쪽\)/)
@@ -226,7 +226,7 @@ test('real-shape workspace: snapshot follows its history form and newest-first t
   const root = workspace()
   const r = snapshot(root, { kind: 'skeleton', level: 'patch', note: '부록 제목 정리', date: '2026-01-06' })
   assert.equal(r.to, 'v3.1.1')
-  assert.match(readFileSync(join(root, 'skeleton.md'), 'utf8'), /^version: v3\.1\.1\n> v3\.1\.1\(2026-01-06\): 부록 제목 정리\n> v3\.1\.0/m)
+  assert.match(readFileSync(join(root, 'portfolio-skeleton.md'), 'utf8'), /^version: v3\.1\.1\n> v3\.1\.1\(2026-01-06\): 부록 제목 정리\n> v3\.1\.0/m)
   assert.match(readFileSync(join(root, 'snapshot/README.md'), 'utf8'), /\|---\|---\|---\|---\|\n\| `skeleton-v3\.1\.0` \| 2026-01-06 \| 9 \| → v3\.1\.1: 부록 제목 정리 \|\n\| `skeleton-v3\.0\.0`/)
 })
 
@@ -254,7 +254,7 @@ test('real-shape workspace: a deck snapshot counts deck versions, carries assets
   assert.ok(existsSync(join(root, 'snapshot/deck/deck-v1.1.0/assets/s2.svg')))
   assert.equal(readFileSync(join(root, 'snapshot/deck/deck-v1.1.0/NOTES.md'), 'utf8'), '# deck-v1.1.0\n\n2026-01-07. skeleton v3.1.0 반영. 렌더 지침 적용\n')
   assert.match(readFileSync(join(root, 'snapshot/README.md'), 'utf8'), /\| `deck-v1\.0\.0` \| 2026-01-01 \| 첫 덱 \|\n\| `deck-v1\.1\.0` \| 2026-01-07 \| 렌더 지침 적용 \|\n\n## skeleton/)
-  assert.match(readFileSync(join(root, 'skeleton.md'), 'utf8'), /^version: v3\.1\.0$/m)
+  assert.match(readFileSync(join(root, 'portfolio-skeleton.md'), 'utf8'), /^version: v3\.1\.0$/m)
 })
 
 test('a `·` pair stays ascending after a swap, and a moved heading with `(n/N)` is listed for a hand fix', () => {
@@ -303,13 +303,55 @@ test('scaffold creates the selection table, template analysis and render/feedbac
   const root = mkdtempSync(join(tmpdir(), 'manage-scaffold-'))
   writeFileSync(join(root, 'deck.catalog.md'), '# Catalog\n\n## Voice\n\n- 했다 60%\n\n## Palette\n\n- 10243F\n\n## Type\n\n- 본문 18pt\n\n## @s1 · 표지\n')
   const r = scaffold(root)
-  assert.deepEqual(r.created, ['sources/선정.md', 'template/분석.md', 'snapshot/render', 'feedback'])
-  const analysis = readFileSync(join(root, 'template/분석.md'), 'utf8')
+  assert.deepEqual(r.created, ['CLAUDE.md', 'sources/선정.md', 'template/analysis.md', 'template/next-render.md', 'snapshot/render', 'feedback'])
+  assert.match(readFileSync(join(root, 'CLAUDE.md'), 'utf8'), /manage\.mjs scaffold[\s\S]*portfolio-skeleton\.md[\s\S]*resume-deck\.mdx[\s\S]*template\/next-render\.md/)
+  assert.match(readFileSync(join(root, 'template/next-render.md'), 'utf8'), /\| 쪽 \| 칸 \| 증상 \| 확인 \| 적용 \|/)
+  const analysis = readFileSync(join(root, 'template/analysis.md'), 'utf8')
   assert.match(analysis, /## Palette\n\n- 10243F\n\n## Type\n\n- 본문 18pt\n\n## Voice\n\n- 했다 60%\n\n## 스타일 규칙/)
   assert.ok(!analysis.includes('@s1'))
   writeFileSync(join(root, 'sources/선정.md'), '내 표')
   assert.deepEqual(scaffold(root).created, [])
   assert.equal(readFileSync(join(root, 'sources/선정.md'), 'utf8'), '내 표')
+})
+
+test('files under their old names (NFC or NFD) are read, reported by layout and renamed by scaffold, content kept', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-legacy-'))
+  mkdirSync(join(root, 'template'))
+  writeFileSync(join(root, 'README.md'), '# 작업 안내\n')
+  writeFileSync(join(root, 'skeleton.md'), SKEL)
+  writeFileSync(join(root, 'deck.mdx'), '---\ntemplate: template/t.pptx\n---\n')
+  writeFileSync(join(root, 'template', 't.pptx'), '')
+  writeFileSync(join(root, 'template', '분석.md'.normalize('NFD')), '# 내 분석\n')
+  writeFileSync(join(root, 'template', '다음렌더-지침.md'), '# 내 지침\n')
+  const before = layout(root)
+  assert.deepEqual(before.legacy, [
+    { from: 'skeleton.md', to: 'portfolio-skeleton.md' },
+    { from: 'deck.mdx', to: 'portfolio-deck.mdx' },
+    { from: 'README.md', to: 'CLAUDE.md' },
+    { from: 'template/분석.md', to: 'template/analysis.md' },
+    { from: 'template/다음렌더-지침.md', to: 'template/next-render.md' }])
+  for (const p of ['CLAUDE.md', 'portfolio-skeleton.md', 'portfolio-deck.mdx', 'template/analysis.md', 'template/next-render.md', 'template/t.pptx']) {
+    assert.ok(before.present.includes(p), `${p} present under its old name`)
+  }
+  assert.ok(existsSync(join(root, 'template', '분석.md'.normalize('NFD'))), 'layout touches nothing')
+  // commands read the old name until it is renamed
+  assert.equal(snapshot(root, { kind: 'deck', level: 'patch', note: 'x' }).to, 'v1.0.0')
+  assert.ok(existsSync(join(root, 'snapshot/deck/deck-v1.0.0/deck.mdx')))
+  const r = scaffold(root)
+  assert.equal(r.renamed.length, 5)
+  assert.ok(!r.created.includes('CLAUDE.md'), 'the README became CLAUDE.md; no guide is written over it')
+  assert.ok(!r.created.some(p => p.startsWith('template/')), 'renamed, not created empty')
+  assert.equal(readFileSync(join(root, 'template/analysis.md'), 'utf8'), '# 내 분석\n')
+  assert.equal(readFileSync(join(root, 'template/next-render.md'), 'utf8'), '# 내 지침\n')
+  assert.equal(readFileSync(join(root, 'portfolio-skeleton.md'), 'utf8'), SKEL)
+  assert.equal(readFileSync(join(root, 'CLAUDE.md'), 'utf8'), '# 작업 안내\n')
+  assert.ok(!existsSync(join(root, 'skeleton.md')) && !existsSync(join(root, 'deck.mdx')) && !existsSync(join(root, 'README.md')))
+  assert.deepEqual(readdirSync(join(root, 'template')).sort(), ['analysis.md', 'next-render.md', 't.pptx'])
+  assert.equal(layout(root).legacy, undefined)
+  // both names present: the English one wins and the old one is left for the user to look at
+  writeFileSync(join(root, 'template', '분석.md'), 'old')
+  assert.equal(scaffold(root).renamed, undefined)
+  assert.equal(readFileSync(join(root, 'template/analysis.md'), 'utf8'), '# 내 분석\n')
 })
 
 test('selection reads the table; claims refuses an excluded item and lists only chosen ones the other way', () => {
@@ -333,7 +375,7 @@ test('keep-render copies the previews under the deck version with one review row
   const r = keepRender(root, 'v1.2.0')
   assert.equal(r.kept, 3)
   assert.ok(existsSync(join(root, 'snapshot/render/deck-v1.2.0/pages/p-10.png')))
-  assert.equal(readFileSync(r.review, 'utf8'), '# 렌더 검토 · deck-v1.2.0\n\n| 쪽 | 본 것 | 문제 | 다음렌더-지침 |\n|---|---|---|---|\n| 1 | | | |\n| 2 | | | |\n| 3 | | | |\n')
+  assert.equal(readFileSync(r.review, 'utf8'), '# 렌더 검토 · deck-v1.2.0\n\n| 쪽 | 본 것 | 문제 | next-render |\n|---|---|---|---|\n| 1 | | | |\n| 2 | | | |\n| 3 | | | |\n')
   writeFileSync(r.review, '채운 검토')
   keepRender(root, 'v1.2.0')
   assert.equal(readFileSync(r.review, 'utf8'), '채운 검토')
@@ -803,23 +845,23 @@ test('changed lists files that differ from round N-1, sorted and relative, and l
   assert.deepEqual(round(root, roundIn(2, { n: 9 })).stop_reason, 'nothing_new')
   assert.deepEqual(recOf(root, 2).changed, [])
   writeFileSync(join(root, 'snapshot/rounds/note.json'), '{}')
-  edit(root, 'skeleton.md'); edit(root, 'docs/확정사실.md')
+  edit(root, 'portfolio-skeleton.md'); edit(root, 'docs/확정사실.md')
   mkdirSync(join(root, 'sources/새'), { recursive: true }); writeFileSync(join(root, 'sources/새/a.md'), 'a')
   round(root, roundIn(3, { n: 9 }))
-  assert.deepEqual(recOf(root, 3).changed, ['docs/확정사실.md', 'skeleton.md', 'sources/새/a.md'])
+  assert.deepEqual(recOf(root, 3).changed, ['docs/확정사실.md', 'portfolio-skeleton.md', 'sources/새/a.md'])
   assert.equal(recOf(root, 3).gate.clauses.no_file_changed, false)
 })
 
 test('changed is by content: a touch with the same bytes is not a change, an edit, a new file and a removed file are', () => {
   const root = workspace()
   round(root, roundIn(1, { n: 9 })); afterRound(root, 1)
-  stamp(root, 'skeleton.md', future + 20)
+  stamp(root, 'portfolio-skeleton.md', future + 20)
   round(root, roundIn(2, { n: 9 }))
   assert.deepEqual(recOf(root, 2).changed, [])
   assert.equal(recOf(root, 2).gate.clauses.no_file_changed, true)
-  edit(root, 'skeleton.md'); writeFileSync(join(root, 'sources/new.md'), 'n'); rmSync(join(root, 'docs/확정사실.md'))
+  edit(root, 'portfolio-skeleton.md'); writeFileSync(join(root, 'sources/new.md'), 'n'); rmSync(join(root, 'docs/확정사실.md'))
   round(root, roundIn(3, { n: 9 }))
-  assert.deepEqual(recOf(root, 3).changed, ['docs/확정사실.md', 'skeleton.md', 'sources/new.md'])
+  assert.deepEqual(recOf(root, 3).changed, ['docs/확정사실.md', 'portfolio-skeleton.md', 'sources/new.md'])
 })
 
 test('the --input file itself is not a change', () => {
@@ -838,7 +880,7 @@ test('nothing_new fires when any one clause holds; only all three failing keeps 
   const newFb = [{ id: 'f1', text: 'x' }, { id: 'f2', text: 'y' }]
   const prep = () => { const root = workspace(); round(root, roundIn(1, same)); afterRound(root, 1); return root }
   const run = (input, touch) => {
-    const root = prep(); if (touch) edit(root, 'skeleton.md')
+    const root = prep(); if (touch) edit(root, 'portfolio-skeleton.md')
     const r = round(root, roundIn(2, input))
     return [r.stop_reason, r.continue, recOf(root, 2).gate.clauses]
   }
@@ -863,7 +905,7 @@ test('clauses are not evaluated in round 1: nothing_new never fires there', () =
 test('n_reached at round >= n, null before it', () => {
   const root = workspace()
   assert.deepEqual(round(root, roundIn(1, { n: 2 })), { round: 1, rounds: 1, stop_reason: null, continue: true, gaps: ['s4/기준 4'] })
-  afterRound(root, 1); edit(root, 'skeleton.md')
+  afterRound(root, 1); edit(root, 'portfolio-skeleton.md')
   const r = round(root, roundIn(2, { n: 2, steps: [st(4, 'fail'), st(6, 'fail')], feedback: [{ id: 'f9', text: 'z' }], feedback_mode: 'panel' }))
   assert.deepEqual([r.stop_reason, r.continue], ['n_reached', false])
 })
@@ -913,7 +955,7 @@ test('precedence: blocked > nothing_new > n_reached', () => {
   assert.equal(round(prep(), roundIn(2, same)).stop_reason, 'nothing_new')
   assert.equal(round(prep(), roundIn(2, { ...same, blocked: 'b' })).stop_reason, 'blocked')
   // all three clauses failing (new gap, new feedback id, a changed file) removes nothing_new, so n_reached is what is left
-  const changed = prep(); edit(changed, 'skeleton.md')
+  const changed = prep(); edit(changed, 'portfolio-skeleton.md')
   assert.equal(round(changed, roundIn(2, { ...same, steps: [st(4, 'fail', 'k'), st(5, 'fail', 'z')], feedback: [{ id: 'f9', text: 'z' }], feedback_mode: 'panel' })).stop_reason, 'n_reached')
 })
 
@@ -1016,7 +1058,7 @@ test('n must equal the previous record n, and round may not pass n', () => {
 test('a valid input with a valid predecessor still writes the record and gives the same stop_reason', () => {
   const root = workspace()
   round(root, roundIn(1, { n: 2 }))
-  afterRound(root, 1); edit(root, 'skeleton.md')
+  afterRound(root, 1); edit(root, 'portfolio-skeleton.md')
   const r = round(root, roundIn(2, { n: 2, steps: [st(4, 'fail'), st(6, 'fail')], feedback: [{ id: 'f9', text: 'z' }], feedback_mode: 'panel' }))
   assert.deepEqual([r.stop_reason, r.continue, r.rounds], ['n_reached', false, 2])
   assert.equal(recOf(root, 2).steps.length, 7)

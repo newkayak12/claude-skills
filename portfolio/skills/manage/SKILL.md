@@ -11,7 +11,7 @@ scenarios:
   - "That's wrong, the retry policy was theirs, not mine — record it."
   - "포트폴리오 작업 이어서 하자. 피드백 돌리고 고쳐줘"
   - "검색 블록 두 장 순서 바꾸고 쪽 번호 다 맞춰줘"
-  - "스냅샷 찍고 deck.mdx에 반영해서 check까지만 해줘"
+  - "스냅샷 찍고 portfolio-deck.mdx에 반영해서 check까지만 해줘"
 compatibility:
   required:
     - node 18+ (stdlib only) for scripts/manage.mjs
@@ -34,21 +34,28 @@ Engine, run from the workspace root: `node ${CLAUDE_PLUGIN_ROOT}/skills/manage/s
 ## Workspace
 
 ```
-skeleton.md        the design: every wording change starts here (`version: vX.Y.Z` line at the top)
-deck.mdx           build source carried over from skeleton (output: build/deck.pptx)
-template/         template.pptx (deck.mdx `template:`), NOTES.md (quirks), 분석.md (step 5), 다음렌더-지침.md
-deck.catalog.md    slot ids and character budgets — regenerated only (deck-builder catalog)
-build/             deck.pptx, deck.pdf, pages/ (previews) — regenerated in full by every build
-snapshot/          skeleton-vX.Y.Z/, deck/deck-vX.Y.Z/, scores/, render/deck-vX.Y.Z/ (pages/, 검토.md),
-                   README.md (`## deck` and `## skeleton` tables)
-feedback/          YYYY-MM-DD.md — one `feedback` review per day, ending with its fix table
-sources/           material: material/<id>/ items (`material` skill), or a ledger NN_프로젝트/A1….md read as it is;
-                   선정.md (step 2: 글감 · 쓰임 본문|부록|제외 · 쪽 · 이유 · 대표 — the one place an exclusion lives)
-docs/확정사실.md   settled facts, corrections; `## 서술 기준` and `## 구조` lines no check raises again — read before any work
-_archive/          old plans and deck backups, moved here, never deleted
+CLAUDE.md               the guide every session loads: these names, `scaffold` first (written by scaffold if none)
+portfolio-skeleton.md   the portfolio design: every wording change starts here (`version: vX.Y.Z` at the top)
+portfolio-deck.mdx      its build source (output: build/deck.pptx)
+resume-skeleton.md      the resume design (step 9), facts from portfolio-skeleton; resume-deck.mdx its build source
+template/               template.pptx, resume template (.docx), NOTES.md (quirks), analysis.md (step 5),
+                        next-render.md (step 7: render problems held for the next render)
+deck.catalog.md         slot ids and character budgets — regenerated only (deck-builder catalog)
+build/                  deck.pptx, deck.pdf, resume.docx, resume.pdf, pages/ (previews) — regenerated in full
+snapshot/               skeleton-vX.Y.Z/, deck/deck-vX.Y.Z/, scores/, render/deck-vX.Y.Z/ (pages/, 검토.md),
+                        README.md (`## deck` and `## skeleton` tables)
+feedback/               YYYY-MM-DD.md — one `feedback` review per day, ending with its fix table
+sources/                material: material/<id>/ items (`material` skill), or a ledger NN_프로젝트/A1….md read as it is;
+                        선정.md (step 2: 글감 · 쓰임 본문|부록|제외 · 쪽 · 이유 · 대표 — the one place an exclusion lives)
+docs/확정사실.md        settled facts, corrections; `## 서술 기준` and `## 구조` lines no check raises again — read before any work
+_archive/               old plans and deck backups, moved here, never deleted
 ```
 
-Root holds only skeleton and deck. Tidying moves to `_archive/`; only a proven copy is deleted; a
+These names are the contract: a new file takes its name from this tree. Older names (`skeleton.md`,
+`deck.mdx`, `resume.md`, `README.md`, `template/분석.md`, `template/다음렌더-지침.md`) are still read,
+listed by `layout` as `legacy` and renamed by `scaffold`; then fix references in the workspace's notes.
+
+Root holds only CLAUDE.md and the skeleton and deck pairs. Tidying moves to `_archive/`; only a proven copy is deleted; a
 name clash goes into a subfolder. Page headings: `## N <title>` or `## N쪽 · <title>`, one per page
 (appendix too); references `N쪽`, `N·M쪽`, `N~M쪽` and a `쪽` table column. A `# ` heading bounds a
 block that moves with its pages. History lines (`vX.Y.Z 변경…`, `vX.Y.Z(…`, `>`-quoted) stay as written.
@@ -63,10 +70,10 @@ findings; the loop stops at `round`'s `continue: false`. A step that could not r
 the user's word is skipped `not requested`; a user-wait is answered by the user, else noah, else the proposal (`answered_by`), never a stop.
 Mechanics: `references/rounds.md`.
 
-0. **Open.** `layout`; read `docs/확정사실.md` and the "맞춰야 할 것" table at the end of skeleton.
-   Missing workspace parts are created on request, not silently: `scaffold` makes the flow's new
-   parts (`sources/선정.md`, `template/분석.md`, `snapshot/render/`, `feedback/`) and never
-   overwrites one.
+0. **Open, every session, unasked.** `scaffold` (renames old names, creates only what is missing,
+   never overwrites; its `renamed`/`created` in one report line), then `layout`, `docs/확정사실.md` and
+   the "맞춰야 할 것" table. A stray root file (`*.conflict-*`, a scratch script) is named and moved
+   to `_archive/` once the user agrees.
 1. **Collect.** New material → run `material` from the workspace root (items land in
    `sources/material/`). Evidence order: `sources/` → the user's analysis notes they point to →
    the user. Search before asking; ask only what only the user can answer; everything else stays
@@ -85,53 +92,25 @@ Mechanics: `references/rounds.md`.
    item is marked `material log --id <id> --note "skeleton <N>쪽" --status written --later-step manage`;
    in a ledger workspace (`material ledger` lists items) `material ledger-log --item <NN_프로젝트/A1>`
    with the same flags. The ledger is never moved or rewritten.
-4. **Revise, from several viewpoints.** First `claims`: every page's figures and reason sentences
-   against the items its `글감:` line cites (and `선정.md`: a page citing a `제외` item is `excluded`).
-   Each problem is an edit: `uncited`/`unknown_id` → cite the item; `unsupported`
-   (`근거 없음`) and `not_in_material` → drop the figure or ask the user for its source;
-   `to_confirm` → the user's words or `[확인 필요: …]`. `listed.self_confirmed` (the user's
-   `본인 확인`: real work with no record) stays and is never cut as unsupported; `listed.tone` lines
-   are reworded in the material's words; `unused_results` and `uncited_items` are offered to the
-   user (a real result left out is a gap too), never added silently. Then the viewpoints, in
-   order, each its own numbered edit list with how to fix each: recruiter 6초 and engineer 30초
-   (`feedback`, and `pattern` for how it reads) → interviewer attack (`mock-interview`'s questions
-   on the page claims; a claim the user cannot defend goes to its item's `gaps.md`) → the user's
-   own bar (noah, when connected: their stated standards, quoted). Each viewpoint's findings go to a
-   workspace file as `[{id,text}]`; run `manage.mjs settle --findings <file>`, continue with `kept`,
-   show the user `settled` (finding, line, share). No viewpoint proposes cutting or merging pages
-   without a ground, or cites market generalities ("면접 단골 질문"); the first-page summary line
-   need not carry a number (measured ones sit in evidence lines, small ones drop).
-   - **Snapshot, then edit.** `snapshot --kind skeleton --level <major|minor|patch> --note "<what and why>"`
-     (`--by 본인` only when the user decided it) before the first edit of a round (major = structure: page count, blocks, order; minor =
-     content; patch = wording). Mark edited cells `[vX]`, unconfirmed wording `[vX 안]`. Lines are
-     rewritten with `rewrite` where they need strength.
-   - **Decision gate.** Before carrying wording from an older version or backup, check it against
-     `확정사실.md` (appendix-only, kept-apart blocks) and `선정.md` (`제외`); a hit is not carried. On every
-     structure change re-check block separation (different work never shares a block, title or toc line).
-   - **Structure changes are asked.** Page count, block split, order: propose with the reason,
-     wait for the user. Wording and defaults you may settle — and list them in the report.
-   - **Renumber.** An order change is one `renumber --map "<old>:<new>,…"`: it renumbers headings and
-     references, moves the page sections into the new order and verifies; it writes only when the
-     result verifies, leaves fenced code alone and refuses a target page the map leaves in place
-     (never by hand or in two passes). Report changes, warnings and problems. By hand, and listed
-     in the report: numbers without `쪽` outside a `쪽` column, a block order mark `(n/N)` the
-     warnings name, and everything in deck.mdx (`by_hand`: slide order, `<!-- N. -->` comments, toc
-     page cells). Two pages sharing one description move apart badly: give each page its own first.
-   - **Align table.** Keep the table at the end of skeleton: 번호 · 대상 · 맞출 것 · 상태
-     (`본인 확인 대기` / `deck.mdx 반영 때` / `그림 작업 때` / `캡처 대기`); slots at their budget
-     go in as `check` items.
+4. **Revise, from several viewpoints.** `claims` first (each problem is an edit; `본인 확인` stays),
+   then recruiter/engineer (`feedback`, `pattern`) → interviewer (`mock-interview`) → the user's own
+   bar (noah), each viewpoint's findings through `settle`. `snapshot` before the round's first edit;
+   carried wording passes the decision gate (`확정사실.md`, `선정.md`); structure changes are asked;
+   an order change is one `renumber`; the align table stays at the end of portfolio-skeleton.
+   Rules and the order of each: `references/revise.md`.
 5. **Template.** Once per template (again when it changes): `deck-builder catalog`, then
-   `scaffold` copies its Palette, Type and Voice into `template/분석.md`; add the style rules the
-   pages must keep (spacing, alignment, emphasis — only what the template shows) and the figure
-   colours. A figure drawn with `write:diagram` takes its colours from `## 그림 색`.
-6. **Deck.** Carry skeleton into deck.mdx against `deck.catalog.md` budgets and `template/분석.md`,
-   then `deck-builder` `check` (an untouched chart slot is warned: its numbers are the template's
-   sample) and `claims --file deck.mdx` (each slide cites in its comment: `## @s3 2쪽 · 글감: <id>`). Fine style changes go through the template's run formats, never by hand in the pptx.
+   `scaffold` copies its Palette, Type and Voice into `template/analysis.md`; add the style rules the
+   pages must keep (spacing, alignment, emphasis — only what the template shows), the safe area
+   (the margins nothing crosses) and the figure colours. A figure drawn with `write:diagram` takes
+   its colours from `## 그림 색`.
+6. **Deck.** Carry portfolio-skeleton into portfolio-deck.mdx against `deck.catalog.md` budgets and
+   `template/analysis.md`, then `deck-builder` `check` (an untouched chart slot is warned: its numbers are the template's
+   sample) and `claims --file portfolio-deck.mdx` (each slide cites in its comment: `## @s3 2쪽 · 글감: <id>`). Fine style changes go through the template's run formats, never by hand in the pptx.
    `snapshot --kind deck --level … --note` only when asked (the note names its skeleton).
 7. **Render, review, re-render.** `build` and `render` only when the user says. After a render,
    `keep-render --version <deck version>` keeps the previews under `snapshot/render/deck-vX.Y.Z/`
-   with a `검토.md` row per page (쪽 · 본 것 · 문제 · 다음렌더-지침): look at every page and fill it.
-   A problem seen in a render or in PowerPoint goes into `template/다음렌더-지침.md` (쪽 · 칸 · 증상 ·
+   with a `검토.md` row per page (쪽 · 본 것 · 문제 · next-render): look at every page and fill it.
+   A problem seen in a render or in PowerPoint goes into `template/next-render.md` (쪽 · 칸 · 증상 ·
    확인 · 적용), all applied before the next render; fixed at once only when the user says ("고쳐",
    "맞춰줘"). A frame the deck cannot move is fixed in the template only on the user's word
    (`references/template-edit.md`).
@@ -139,15 +118,18 @@ Mechanics: `references/rounds.md`.
    saved to `feedback/YYYY-MM-DD.md` with its fix table. Each finding goes back to material: a claim
    the deck cannot defend → its item's `gaps.md`; a result the user restores → `result.md` labelled
    `본인 확인`. The next round starts at 2 (selection changed) or 4 (wording).
-9. **Resume.** From the built deck and `선정.md`: `resume.md` (front matter maps name · section ·
-   entry · bullet · body to the user's `template/resume.docx` styles, `resume.py catalog` lists them),
-   every bullet citing `글감:`, then `claims --file resume.md`, `python3 scripts/resume.py build` and,
-   when told, `render` (PDF, pages against `pages:`). Never a built-in look. The user's material —
-   template, deck, resume, PDFs — never goes to git: the engine refuses a workspace git would carry.
+9. **Resume.** `resume-skeleton.md` (the template's section order, facts from portfolio-skeleton
+   only) → `resume-deck.mdx` built straight into the user's template (`resume.py catalog`, roles by
+   `styles:` or `samples:`, photo kept) → `claims --file resume-deck.mdx` → `resume.py build` → `render`
+   when told; over the page budget, propose cuts by `over_lines` and wait: `references/resume.md`.
+   The user's material never goes to git: the engine refuses a workspace git would carry.
 
-Always:
-- **In the user's voice.** Every sentence written into skeleton, deck.mdx or resume.md goes through
-  `write:like-me` the same way, samples being what the user wrote alone in `sources/`; then `claims`.
+Always, portfolio and resume alike (user, 2026-11-10: "safe area가 있는거 시인성, 가독성이 좋은거
+like-me로 ai티를 줄이는거 이건 포폴, 이력서 공통임"):
+- **Safe area, readable.** Nothing crosses the template's margins or touches another box; type and
+  spacing stay the template's, one idea per line, no lone last word. Cut text, never shrink type.
+- **In the user's voice.** Every sentence written into a skeleton or deck source goes through
+  `write:like-me` (samples: what the user wrote alone in `sources/`) to strip machine tells; then `claims`.
 - **Corrections.** When the user corrects a fact, in the same turn: append to the material file
   `## 정정 — 본인 확인 YYYY-MM-DD` with their words verbatim; add one line to `확정사실.md`;
   `noah_collect` the words when noah is connected. The user's word beats the record.

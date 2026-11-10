@@ -1,0 +1,48 @@
+# Resume — step 9 in detail
+
+The resume is the portfolio's second output, built the same way: designed in `resume-skeleton.md`,
+built from `resume-deck.mdx`, straight into the user's own template.
+
+## Design (`resume-skeleton.md`)
+
+- Sections in the order of the user's template (`template/template.docx` or `resume.docx`); projects in
+  the portfolio's order.
+- Facts and sentences come from `portfolio-skeleton.md` only. A fact the portfolio lacks is fixed
+  there first, then carried over.
+- A developer term gets a plain gloss in the same line, as in the portfolio.
+- Page budget (`pages:`) is the user's; what to cut to meet it is the user's decision.
+
+## Build (`resume-deck.mdx` → `build/resume.docx`)
+
+- Never a re-styled copy of the template made by hand, never a post-build script: the engine copies
+  the template's look.
+- `resume.py catalog` lists the template's styles and its `looks` (each distinct size, weight, colour
+  and list once, with its text).
+- Front matter maps each role the resume uses:
+  - `styles:` role → a paragraph style, when the template has real styles;
+  - `samples:` role → the opening text of the template paragraph whose look it takes, when the
+    template tells lines apart by run format only (all `Normal`). Font, size, colour, spacing and list
+    numbering are copied from that paragraph.
+- Markdown shapes give five roles (`#` name, `##` section, `###` entry, `-` bullet, plain body).
+  Any other line names its role: `{contact} …`, `{company} …`, `{meta} 기술: …`.
+- The template's photo (an anchored drawing) is kept on the first paragraph.
+- A role used but mapped nowhere, a style the template lacks, or a sample text no paragraph starts
+  with is refused before anything is written.
+
+## Render and fit
+
+- `render` only when the user says. Past the page budget it warns, and where `pdftotext` exists it
+  reports `over_lines`: the text lines past the last allowed page.
+- Over budget → propose cuts with their line counts (a section, a block to one bullet) and wait.
+  Never shrink type, line spacing or margins below the template's.
+- Look at every page: nothing crosses the safe area, the photo touches no text, no line ends with a
+  lone word. A problem goes into `template/next-render.md` like a deck problem.
+
+## Never
+
+| Mistake | Instead |
+|---|---|
+| Ignoring the template (no photo, other fonts, other section order) | The template's order, look and photo |
+| Adding styles to a copy of the template by hand | `samples:` on the user's own template |
+| Fitting the page by smaller type | Cut text by `over_lines`, with the user |
+| Using an older resume as ground | Build from the current portfolio-skeleton; an older resume is stale |

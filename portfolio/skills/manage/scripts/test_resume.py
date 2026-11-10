@@ -126,6 +126,54 @@ def main():
         rc, e = run(root, "build")
         check(rc != 0 and "template not found" in e["error"], "a missing template is refused, no built-in look")
 
+        print("a Normal-only template, mapped by sample text; resume-deck.mdx is the default source")
+        plain = Path(t) / "plain"
+        (plain / "template").mkdir(parents=True)
+        make_template(plain / "template" / "template.docx")
+        with zipfile.ZipFile(plain / "template" / "template.docx") as z:
+            parts = {n: z.read(n) for n in z.namelist()}
+
+        def run_fmt(text, rpr, extra=""):
+            return ('<w:p><w:pPr><w:spacing w:after="40"/>%s</w:pPr><w:r><w:rPr>%s</w:rPr><w:t>%s</w:t></w:r></w:p>'
+                    % (extra, rpr, text))
+        photo = ('<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">'
+                 '<wp:docPr id="1" name="사진"/></wp:anchor></w:drawing></w:r>')
+        body = ('<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>%s<w:r><w:rPr><w:b/><w:sz w:val="40"/></w:rPr><w:t>홍길동</w:t></w:r></w:p>' % photo
+                + run_fmt("Email: a@b.invalid", '<w:sz w:val="15"/>')
+                + run_fmt("핵심역량", '<w:b/><w:color w:val="1F4E79"/><w:sz w:val="22"/>')
+                + run_fmt("기술: Kotlin", '<w:color w:val="7F7F7F"/><w:sz w:val="16"/>')
+                + run_fmt("샘플 불릿", '<w:sz w:val="18"/>', '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="12"/></w:numPr>')
+                + '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr>')
+        parts["word/document.xml"] = ('<?xml version="1.0" encoding="UTF-8"?><w:document %s><w:body>%s</w:body></w:document>'
+                                      % (W, body)).encode("utf-8")
+        with zipfile.ZipFile(plain / "template" / "template.docx", "w") as z:
+            for n, d in parts.items():
+                z.writestr(n, d)
+        rc, c = run(plain, "catalog", "--template", "template/template.docx")
+        check(rc == 0 and len(c["looks"]) == 5 and {"sample": "핵심역량", "pt": 11.0, "bold": True, "color": "1F4E79", "list": False} in c["looks"],
+              "catalog lists each distinct look once — %s" % c.get("looks"))
+        src = ("---\ntemplate: template/template.docx\npages: 1\nsamples:\n  name: 홍길동\n  contact: Email\n"
+               "  section: 핵심역량\n  meta: 기술\n  bullet: 샘플\n---\n"
+               "# 가상 인물\n{contact} Phone: 010-0000-0000\n## 경력\n{meta} 기술: Spring\n- 한 일\n글감: x\n")
+        (plain / "resume-deck.mdx").write_text(src, encoding="utf-8")
+        (plain / "resume.md").write_text("stale", encoding="utf-8")
+        rc, b = run(plain, "build")
+        check(rc == 0 and b["paragraphs"] == 5, "builds from resume-deck.mdx, not the stale resume.md — %s" % b)
+        with zipfile.ZipFile(plain / "build" / "resume.docx") as z:
+            doc = z.read("word/document.xml").decode("utf-8")
+        check('<w:color w:val="1F4E79"/><w:sz w:val="22"/></w:rPr><w:t xml:space="preserve">경력' in doc, "a section line takes its sample's run format")
+        check('<w:color w:val="7F7F7F"/><w:sz w:val="16"/></w:rPr><w:t xml:space="preserve">기술: Spring' in doc, "{meta} names a role outright")
+        check('<w:numId w:val="12"/>' in doc and '<w:sz w:val="18"/></w:rPr><w:t xml:space="preserve">한 일' in doc,
+              "a bullet keeps the sample's list numbering and size")
+        check(doc.count("<w:drawing>") == 1 and doc.index("<w:drawing>") < doc.index("가상 인물"), "the template's photo is kept, on the first paragraph")
+        check("샘플 불릿" not in doc and "Email: a@b" not in doc, "the template's sample body is gone")
+        (plain / "resume-deck.mdx").write_text(src.replace("  meta: 기술\n", "  meta: 없는문단\n"), encoding="utf-8")
+        rc, e = run(plain, "build")
+        check(rc != 0 and "없는문단" in e["error"], "a sample text no template paragraph starts with is refused")
+        (plain / "resume-deck.mdx").write_text(src.replace("  meta: 기술\n", ""), encoding="utf-8")
+        rc, e = run(plain, "build")
+        check(rc != 0 and "meta" in e["error"], "a role used but mapped nowhere is refused")
+
         print("never to git")
         repo = Path(t) / "repo"
         repo.mkdir()

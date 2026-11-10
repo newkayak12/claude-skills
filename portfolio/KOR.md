@@ -127,14 +127,21 @@ material/
 `deck-builder`를 단계로 알아서 부르므로 따로 부를 필요가 없습니다.
 
 ```
-skeleton.md → deck.mdx → build/        설계도, 빌드 원본, 산출물
-snapshot/  sources/  docs/확정사실.md   버전, 글감, 확정된 사실
+CLAUDE.md                                          세션마다 읽히는 작업 공간 안내
+portfolio-skeleton.md → portfolio-deck.mdx → build/ 설계도, 빌드 원본, 산출물
+resume-skeleton.md    → resume-deck.mdx    → build/ 이력서도 같은 방식
+template/  analysis.md  next-render.md  NOTES.md   템플릿 분석, 다음 렌더 지침, 특이사항
+snapshot/  sources/  docs/확정사실.md               버전, 글감, 확정된 사실
 ```
 
-9단계(2.13.0: manage가 NFD 한글 파일명을 읽고 빠진 확정 결정 절을 알려 줌, feedback이 주장마다
-글감과 대조해 렌즈 세 개로 보고 고칠 문장을 줌, deck-builder가 `deck.mdx`의 도형 위치·글자색·캡션을
-빌드에서 배치하고 쉼표 앞 공백 없이 렌더함): 수집 → 정리(`sources/선정.md`: 본문 / 부록 / 제외, 글감마다 대표) → 초안 → 여러 시점
-퇴고 → 템플릿 분석(`template/분석.md`) → 덱 → 렌더와 검토(미리보기를 덱 버전별로 `snapshot/render/`에
+작업 공간의 모든 세션은 지시가 없어도 `manage.mjs scaffold`로 시작합니다. 옛 이름(`skeleton.md`,
+`deck.mdx`, `resume.md`, `README.md`, `template/분석.md`, `template/다음렌더-지침.md`)을 위 이름으로
+바꾸고, CLAUDE.md를 포함해 없는 것만 만들며, 있는 파일은 덮지 않습니다.
+
+9단계(2.14.0: 위 작업 공간 이름을 `scaffold`가 지킴, 이력서를 사용자 템플릿에 바로 빌드함 — 역할을 템플릿
+문단의 글자로 연결하고 사진을 유지하며 넘친 분량을 줄 수로 알려 줌, 안전 영역·가독성·`write:like-me`를
+포트폴리오와 이력서 공통 규칙으로 둠. 2.13.0: NFD 한글 파일명, feedback 렌즈 셋, deck-builder 빌드 배치): 수집 → 정리(`sources/선정.md`: 본문 / 부록 / 제외, 글감마다 대표) → 초안 → 여러 시점
+퇴고 → 템플릿 분석(`template/analysis.md`) → 덱 → 렌더와 검토(미리보기를 덱 버전별로 `snapshot/render/`에
 보관) → 덱 피드백, 결과는 글감으로 되돌림. 9단계는 같은 확정 주장으로 사용자 본인의 Word 템플릿에
 이력서를 쓰고(`resume.py build`) PDF로 내보냅니다. skeleton·덱·이력서에 쓰는 문장은 모두 `write:like-me`를
 거쳐, 사용자가 직접 쓴 글의 말투로 맞춥니다. 템플릿·덱·이력서·PDF 등 사용자 자료는 git에 올라가지
@@ -143,7 +150,7 @@ snapshot/  sources/  docs/확정사실.md   버전, 글감, 확정된 사실
 - 각 쪽은 글감을 인용합니다(`글감: <id>`). `claims`가 숫자와 이유 문장을 양방향으로 대조합니다 — 근거
   없는 숫자, 글감에 없는 이유, 덱에서 빠진 성과. 기록은 없지만 직접 했다고 확인한 일(`본인 확인`)은
   남기고 지우지 않습니다.
-- 문안은 항상 `skeleton.md`부터 고칩니다. 한 번의 수정을 시작하기 전에 현재 판을 스냅샷으로 뜨고
+- 문안은 항상 `portfolio-skeleton.md`부터 고칩니다. 한 번의 수정을 시작하기 전에 현재 판을 스냅샷으로 뜨고
   버전을 올립니다(major = 구성, minor = 내용, patch = 문구).
 - 구성 변경(장 수, 블록, 순서)은 제안만 하고 확인을 기다립니다.
 - 장 순서를 바꾸면 모든 `N쪽` 참조와 표의 `쪽` 열을 한 번에 바꾸고 다시 검사합니다. 검사를 통과할

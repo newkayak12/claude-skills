@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""portfolio:manage step 9 — resume.md written into the user's own Word template, then PDF.
+"""portfolio:manage step 9 — resume-deck.mdx written into the user's own Word template, then PDF.
+
+The source is resume-deck.mdx (designed in resume-skeleton.md); a workspace older than 2.14 calls
+it resume.md, read when resume-deck.mdx is absent. Its format is the "resume.md" block below.
 
 Stdlib only. Run from the workspace root; every subcommand prints one JSON object.
 
     resume.py catalog [--template template/resume.docx]
         the template's paragraph styles: id, name, how many paragraphs use it, a sample,
         and a suggested role (name | section | entry | bullet | body)
-    resume.py build [--source resume.md] [--out build/resume.docx]
+    resume.py build [--source resume-deck.mdx] [--out build/resume.docx]
         copies the template, drops its sample body, writes each resume.md line with the style
         its front matter maps to that role, copying the template's own paragraph and run format
         for that style (numbering included); `글감:` lines are dropped
@@ -30,7 +33,20 @@ resume.md:
     ## 경력                      -> section
     ### 회사 · 기간 · 역할        -> entry
     - 한 일과 결과 **강조**       -> bullet
+    {meta} 기술: Kotlin, Spring   -> meta (any role, named outright)
     글감: <id>                    -> dropped (cited for `manage claims`)
+
+    A template that tells its lines apart by run format only (every paragraph Normal, as most hand-made
+    resumes) is mapped with `samples:` instead of `styles:` — role: the opening text of the template
+    paragraph whose look it takes (font, size, colour, spacing, list numbering, all copied):
+    samples:
+      name: 홍길동
+      contact: Email
+      section: 핵심역량
+      company: 달빛상점
+      meta: 기술
+    `catalog` lists each distinct look once (`looks`: sample text, pt, bold, colour, list) to pick from.
+    The template's photo (an anchored drawing) is kept on the first paragraph.
 """
 import json
 import re
@@ -99,11 +115,16 @@ def front(text):
 
 
 def lines(body):
-    """(role, text) per resume.md line; `글감:` lines and blanks are not written."""
+    """(role, text) per resume.md line; `글감:` lines and blanks are not written. `{role} text` names
+    any role outright (contact, company, meta …), for lines the five markdown shapes do not tell apart."""
     out = []
     for raw in body.split("\n"):
         s = raw.strip()
         if not s or re.match(r"^(?:[-*]\s*)?글감\s*:", s):
+            continue
+        named = re.match(r"^\{([a-z][a-z0-9_-]*)\}\s*(.*)$", s)
+        if named:
+            out.append((named.group(1), named.group(2).strip()))
             continue
         for prefix, role in (("### ", "entry"), ("## ", "section"), ("# ", "name"), ("- ", "bullet"), ("* ", "bullet")):
             if s.startswith(prefix):
@@ -159,7 +180,42 @@ def catalog(template):
             u["sample"] = text_of(p)[:40]
     rows = [{"id": sid, "name": names.get(sid, sid), **u, "role": suggest(sid, names.get(sid, sid))}
             for sid, u in used.items()]
-    return {"template": str(template), "styles": rows}
+    # a template that tells its lines apart by run format only (every paragraph Normal) is mapped by
+    # `samples:`: each distinct look once, with the text that picks it
+    looks, seen = [], set()
+    for p in PARA.findall(doc):
+        t = text_of(p).strip()
+        if not t:
+            continue
+        rpr = first_rpr(p) or ""
+        size = re.search(r'<w:sz w:val="(\d+)"', rpr)
+        color = re.search(r'<w:color w:val="([0-9A-Fa-f]{6})"', rpr)
+        look = (size.group(1) if size else None, "<w:b/>" in rpr or "<w:b " in rpr, color.group(1) if color else None,
+                bool(re.search(r"<w:numPr>", p)))
+        if look in seen:
+            continue
+        seen.add(look)
+        looks.append({"sample": t[:30], "pt": int(look[0]) / 2 if look[0] else None, "bold": look[1],
+                      "color": look[2], "list": look[3]})
+    return {"template": str(template), "styles": rows, "looks": looks}
+
+
+def first_rpr(p):
+    """The run properties of the paragraph's first run that carries text."""
+    for r in re.findall(r"<w:r[ >].*?</w:r>", p, re.S):
+        if "<w:t" in r:
+            m = re.search(r"<w:rPr>.*?</w:rPr>", r, re.S)
+            return m.group(0) if m else None
+    return None
+
+
+def by_text(doc, prefix):
+    """(pPr, rPr) of the first template paragraph whose text starts with `prefix`, or None."""
+    for p in PARA.findall(doc):
+        if text_of(p).strip().startswith(prefix):
+            ppr = re.search(r"<w:pPr>.*?</w:pPr>", p, re.S)
+            return (ppr.group(0) if ppr else "<w:pPr/>", first_rpr(p))
+    return None
 
 
 def para(style, text, ppr, rpr):
@@ -184,28 +240,38 @@ def build(source, out):
         fail("template not found: %s (the user's own .docx; no built-in look)" % template)
     guard([source, template, out])
     mapping = meta.get("styles") or {}
-    missing = [r for r in ROLES if r not in mapping]
+    by_sample = meta.get("samples") or {}
     with zipfile.ZipFile(template) as zf:
         known = styles(zf)
         doc = zf.read("word/document.xml").decode("utf-8")
         parts = {n: zf.read(n) for n in zf.namelist()}
-    unknown = ["%s: %s" % (r, s) for r, s in mapping.items() if r in ROLES and s not in known]
     todo = lines(body)
     used_roles = {r for r, _ in todo}
-    if [r for r in missing if r in used_roles] or unknown:
-        fail("styles: map every role resume.md uses to a template style — missing %s, unknown %s"
-             % ([r for r in missing if r in used_roles], unknown))
+    missing = sorted(r for r in used_roles if r not in mapping and r not in by_sample)
+    unknown = ["%s: %s" % (r, s) for r, s in mapping.items() if r not in by_sample and s not in known]
+    # samples: a role takes the exact look of a template paragraph picked by its opening text, so a
+    # template whose lines differ by run format only (all Normal) is used as it is, not re-styled by hand
+    from_text = {}
+    for r, prefix in by_sample.items():
+        got = by_text(doc, prefix)
+        if got is None:
+            unknown.append("%s: no template paragraph starts with %r (resume.py catalog lists the looks)" % (r, prefix))
+        else:
+            from_text[r] = got
+    if missing or unknown:
+        fail("map every role the resume uses to a template style (styles:) or sample paragraph (samples:) — "
+             "missing %s, unknown %s" % (missing, unknown))
     # the template's own format per style: first paragraph using it gives pPr and its first run's rPr
     sample = {}
     for p in PARA.findall(doc):
         m = STYLE_OF.search(p)
         if m and m.group(1) not in sample:
             ppr = re.search(r"<w:pPr>.*?</w:pPr>", p, re.S)
-            rpr = re.search(r"<w:rPr>.*?</w:rPr>", p, re.S)
-            sample[m.group(1)] = (ppr.group(0) if ppr else None, rpr.group(0) if rpr else None)
+            sample[m.group(1)] = (ppr.group(0) if ppr else None, first_rpr(p))
     b = re.search(r"(<w:body>)(.*)(</w:body>)", doc, re.S)
     sect = re.search(r"<w:sectPr\b.*?</w:sectPr>\s*$", b.group(2), re.S)
-    new = "".join(para(mapping[r], t, *sample.get(mapping[r], (None, None))) for r, t in todo)
+    new = "".join(para(None, t, *from_text[r]) if r in from_text
+                  else para(mapping[r], t, *sample.get(mapping[r], (None, None))) for r, t in todo)
     # the template's photo (an anchored <w:drawing> run) rides along on the first paragraph —
     # the user's resume carries a photo and the template is the only place its frame lives (user, 2026-11-09)
     pic = re.search(r"<w:r[ >](?:(?!</w:r>).)*?<w:drawing>.*?</w:drawing>.*?</w:r>", doc, re.S)
@@ -238,7 +304,30 @@ def render(docx, pages=None):
     out = {"pdf": str(pdf), "pages": count, "renderer": r.describe()}
     if pages and count > int(pages):
         out["warnings"] = ["%d pages, over the budget of %s" % (count, pages)]
+        over = overflow_lines(pdf, int(pages))
+        if over is not None:
+            # how much to cut, so the cut is sized before anything is shortened (text first, never the type)
+            out["over_lines"] = over
+            out["warnings"].append("%d text lines past page %s: shorten the text by that much, never the type size"
+                                   % (over, pages))
     return out
+
+
+def overflow_lines(pdf, budget):
+    """Non-empty text lines on the pages past the budget (pdftotext), or None when it is not installed."""
+    import subprocess
+    if not shutil.which("pdftotext"):
+        return None
+    r = subprocess.run(["pdftotext", "-f", str(budget + 1), "-layout", str(pdf), "-"], capture_output=True, text=True)
+    if r.returncode != 0:
+        return None
+    return sum(1 for line in r.stdout.split("\n") if line.strip())
+
+
+def default_source():
+    """resume-deck.mdx (the build source beside resume-skeleton.md); resume.md in a workspace older than 2.14."""
+    new = Path("resume-deck.mdx")
+    return new if new.is_file() or not Path("resume.md").is_file() else Path("resume.md")
 
 
 def main(argv):
@@ -249,9 +338,9 @@ def main(argv):
         guard([t])
         return catalog(t)
     if cmd == "build":
-        return build(Path(args.get("source", "resume.md")), Path(args.get("out", "build/resume.docx")))
+        return build(Path(args["source"]) if "source" in args else default_source(), Path(args.get("out", "build/resume.docx")))
     if cmd == "render":
-        src = Path("resume.md")
+        src = Path(args["source"]) if "source" in args else default_source()
         meta = front(src.read_text(encoding="utf-8"))[0] if src.is_file() else {}
         return render(Path(args.get("docx", "build/resume.docx")), meta.get("pages"))
     fail("usage: resume.py catalog | build | render")

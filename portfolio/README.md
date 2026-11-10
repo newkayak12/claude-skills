@@ -134,15 +134,22 @@ is done. You say what you want ("포트폴리오 쓰자", "피드백 돌리고 �
 `deck-builder` as its steps, so you never call them yourself.
 
 ```
-skeleton.md → deck.mdx → build/        design, build source, output
-snapshot/  sources/  docs/확정사실.md   versions, material, settled facts
+CLAUDE.md                                          the workspace guide every session loads
+portfolio-skeleton.md → portfolio-deck.mdx → build/ design, build source, output
+resume-skeleton.md    → resume-deck.mdx    → build/ the resume, the same way
+template/  analysis.md  next-render.md  NOTES.md   template analysis, render fixes held, quirks
+snapshot/  sources/  docs/확정사실.md               versions, material, settled facts
 ```
 
-Nine steps (2.13.0: manage reads NFD Korean file names and names missing settled-decision sections;
-feedback checks each claim against the material through three lenses and gives the line to write;
-deck-builder places shapes, colours and captions from `deck.mdx` and renders without stray spaces
-before commas): collect → select (`sources/선정.md`: 본문 / 부록 / 제외 and what each item
-leads with) → draft → revise from several viewpoints → template analysis (`template/분석.md`) →
+Every session in the workspace starts with `manage.mjs scaffold`, unasked: it renames older names
+(`skeleton.md`, `deck.mdx`, `resume.md`, `README.md`, `template/분석.md`, `template/다음렌더-지침.md`)
+to these, creates only what is missing, CLAUDE.md included, and never overwrites a file.
+
+Nine steps (2.14.0: the workspace names above, kept by `scaffold`; the resume built straight into
+your own template — roles mapped to its paragraphs by their text, photo kept, overflow counted in
+lines; safe area, readability and `write:like-me` as rules for portfolio and resume alike. 2.13.0:
+NFD Korean file names, feedback's three lenses, deck-builder layout in build): collect → select (`sources/선정.md`: 본문 / 부록 / 제외 and what each item
+leads with) → draft → revise from several viewpoints → template analysis (`template/analysis.md`) →
 deck → render and review (previews kept per deck version under `snapshot/render/`) → feedback on
 the deck, back onto the material. Step 9 writes the resume from the same settled claims into your
 own Word template (`resume.py build`, then a PDF). Every line written into the skeleton, deck or
@@ -152,7 +159,7 @@ never goes to git: the engine refuses a workspace a git repository would carry.
 - Every page cites its material (`글감: <id>`); `claims` checks each figure and reason against it
   both ways — a number with no ground, a reason the material never gives, a result left out of
   the deck. Real work you confirm with no record (`본인 확인`) is kept, never cut.
-- Every wording change starts in `skeleton.md`; before the first edit of a round the current
+- Every wording change starts in `portfolio-skeleton.md`; before the first edit of a round the current
   version is snapshotted and the version moves (major = structure, minor = content, patch = wording).
 - Structure changes (page count, blocks, order) are proposed and wait for you.
 - Reordering pages renumbers every `N쪽` reference and `쪽` column in one pass, then verifies them;

@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 // portfolio:manage engine. Run from the workspace root; every subcommand prints one JSON object.
 //   layout                         which workspace paths exist / are missing; touches nothing
+//   layout also lists `legacy` [{from, to}]: template files still under their old Korean names
 //   scaffold                       creates what the eight-step flow needs and the workspace lacks:
-//       sources/선정.md, template/분석.md (catalog's Palette/Type/Voice), snapshot/render/, feedback/
+//       sources/선정.md, template/analysis.md (catalog's Palette/Type/Voice), template/next-render.md,
+//       snapshot/render/, feedback/; first renames template/분석.md → analysis.md and
+//       template/다음렌더-지침.md → next-render.md (NFC or NFD), printed as `renamed`
 //   selection                      sources/선정.md rows (글감 · 쓰임 본문|부록|제외 · 쪽 · 이유 · 대표)
 //   keep-render --version vX.Y.Z   build/pages/*.png → snapshot/render/deck-vX.Y.Z/pages/ + 검토.md
 //   snapshot --kind skeleton|deck --level major|minor|patch --note <text> [--by <who>] [--date YYYY-MM-DD]
@@ -84,7 +87,7 @@
 // A page heading is `## N`, `## N.`, `## N)` or `## N쪽`. A `# ` chapter heading bounds a block: pages
 // sort inside their block, and blocks holding pages sort by their first page; other sections stay put.
 import { createHash } from 'node:crypto'
-import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -127,27 +130,83 @@ export function at(base, ...parts) {
   return join(base, rel.normalize('NFC'))
 }
 
-const LAYOUT = ['skeleton.md', 'deck.mdx', 'template.pptx', 'deck.catalog.md', 'build', 'snapshot', 'sources', 'docs/확정사실.md',
-  'sources/선정.md', 'template/분석.md']
+// Workspace names, prefixed by what they build (portfolio-*, resume-*) and in English for the template
+// folder's working files. A workspace started before 2.14 has the old names: every command reads
+// either, layout reports the old ones as `legacy`, and `scaffold` renames them.
+export const SKELETON = 'portfolio-skeleton.md'      // the design; every wording change starts here
+export const DECK = 'portfolio-deck.mdx'             // build source carried over from the skeleton
+export const ANALYSIS = 'template/analysis.md'       // step 5: Palette, Type, Voice, style rules, figure colours
+export const NEXT_RENDER = 'template/next-render.md' // step 7: render problems held for the next render
+export const RESUME_DECK = 'resume-deck.mdx'        // step 9's build source, designed in resume-skeleton.md
+export const LEGACY_NAMES = { [SKELETON]: 'skeleton.md', [DECK]: 'deck.mdx', [RESUME_DECK]: 'resume.md', 'CLAUDE.md': 'README.md',
+  [ANALYSIS]: 'template/분석.md', [NEXT_RENDER]: 'template/다음렌더-지침.md' }
+function legacyFound(root) {
+  return Object.entries(LEGACY_NAMES).filter(([now, old]) => !existsSync(join(root, now)) && existsSync(at(root, old)))
+}
+// The file under its current name, else under its old one, else the current name (to be created).
+export function wsFile(root, rel) {
+  const now = join(root, rel)
+  if (existsSync(now) || !LEGACY_NAMES[rel]) return now
+  const old = at(root, LEGACY_NAMES[rel])
+  return existsSync(old) ? old : now
+}
+
+const LAYOUT = ['CLAUDE.md', SKELETON, DECK, 'template.pptx', 'deck.catalog.md', 'build', 'snapshot', 'sources', 'docs/확정사실.md',
+  'sources/선정.md', ANALYSIS, NEXT_RENDER]
 
 // The template is where deck.mdx's front matter `template:` says, else the root template.pptx.
 export function layout(root) {
   let template = 'template.pptx'
   try {
-    const m = readFileSync(join(root, 'deck.mdx'), 'utf8').match(/^template:[ \t]*["']?([^"'\n]+?)["']?[ \t]*$/m)
+    const m = readFileSync(wsFile(root, DECK), 'utf8').match(/^template:[ \t]*["']?([^"'\n]+?)["']?[ \t]*$/m)
     if (m) template = m[1]
-  } catch { /* no deck.mdx: it is listed missing */ }
+  } catch { /* no deck source: it is listed missing */ }
   const paths = LAYOUT.map(p => (p === 'template.pptx' ? template : p))
-  const has = p => existsSync(at(root, p))
-  return { present: paths.filter(has), missing: paths.filter(p => !has(p)) }
+  // a file under its old name is present (and listed in `legacy` below)
+  const has = p => existsSync(at(root, p)) || (LEGACY_NAMES[p] !== undefined && existsSync(at(root, LEGACY_NAMES[p])))
+  const out = { present: paths.filter(has), missing: paths.filter(p => !has(p)) }
+  const legacy = legacyFound(root).map(([to, from]) => ({ from, to }))
+  if (legacy.length) out.legacy = legacy   // old names: `scaffold` renames them
+  return out
 }
 
 // The parts of the eight-step flow a workspace may still lack, created empty and never overwritten:
 // step 2's selection table, step 5's template analysis (catalog's Palette, Type and Voice copied in),
 // and the folders steps 7 and 8 keep per deck version.
 const SELECTION_HEAD = '# 선정\n\n| 글감 | 쓰임 | 쪽 | 이유 | 대표 |\n|---|---|---|---|---|\n'
+const NEXT_RENDER_HEAD = ['# next-render', '',
+  '미리보기나 PowerPoint에서 발견한 문제를 모아 두는 곳. 다음 빌드 전에 모두 반영하고, 반영한 줄의 마지막 칸에 반영일과 덱 버전을 쓴다.', '',
+  '| 쪽 | 칸 | 증상 | 확인 | 적용 |', '|---|---|---|---|---|', ''].join('\n')
+// CLAUDE.md, which every Claude Code session opened in the workspace loads: the names and the first
+// command, so a session that was told nothing still keeps the workspace in shape. Written only when
+// the workspace has none (never over the user's own).
+const WORKSPACE_GUIDE = `# 포트폴리오 작업 공간
+
+이 폴더는 portfolio:manage 작업 공간이다. 지시가 없어도 작업을 시작할 때마다 먼저
+\`node <portfolio 플러그인>/skills/manage/scripts/manage.mjs scaffold\`를 돌린다
+(옛 이름을 새 이름으로 바꾸고, 없는 부분만 만들며, 있는 파일은 덮지 않는다).
+그다음 \`docs/확정사실.md\`를 읽는다.
+
+## 이름
+
+| 파일 | 담는 것 |
+|---|---|
+| \`portfolio-skeleton.md\` | 포트폴리오 설계. 문구는 여기서 먼저 고친다 |
+| \`portfolio-deck.mdx\` | 포트폴리오 빌드 원본 (출력 build/deck.pptx) |
+| \`resume-skeleton.md\` | 이력서 설계. 사실은 portfolio-skeleton.md에서 가져온다 |
+| \`resume-deck.mdx\` | 이력서 빌드 원본 (template/resume.docx → build/resume.docx, PDF) |
+| \`template/analysis.md\` | 템플릿 분석: Palette · Type · Voice · 스타일 규칙 · 그림 색 |
+| \`template/next-render.md\` | 렌더에서 본 문제. 다음 렌더 전에 한꺼번에 적용 |
+| \`template/NOTES.md\` | 템플릿 특이사항 |
+| \`docs/확정사실.md\` | 확정된 사실, 정정, 서술 기준 |
+
+새 파일은 이 표의 이름을 따른다. 정리는 \`_archive/\`로 옮기고 지우지 않는다. 루트에는 skeleton과
+deck(portfolio-*, resume-*)과 이 파일만 둔다.
+`
 export function scaffold(root) {
   const created = []
+  // a file under its old Korean name is renamed, never copied: one file, its content untouched
+  const renamed = legacyFound(root).map(([to, from]) => { renameSync(at(root, from), join(root, to)); return { from, to } })
   const make = (rel, body) => {
     const p = at(root, rel)
     if (existsSync(p)) return
@@ -156,18 +215,20 @@ export function scaffold(root) {
     else writeFileSync(p, body)
     created.push(rel)
   }
+  make('CLAUDE.md', WORKSPACE_GUIDE)
   make('sources/선정.md', SELECTION_HEAD)
   let catalog = ''
   try { catalog = readFileSync(join(root, 'deck.catalog.md'), 'utf8') } catch { /* no catalog yet */ }
   const section = name => (catalog.match(new RegExp(`^## ${name}\\b[^\\n]*\\n[\\s\\S]*?(?=^## |(?![\\s\\S]))`, 'm')) || [''])[0].trimEnd()
   const fromCatalog = ['Palette', 'Type', 'Voice'].map(section).filter(Boolean)
-  make('template/분석.md', ['# 템플릿 분석', '',
+  make(ANALYSIS, ['# 템플릿 분석', '',
     ...(fromCatalog.length ? fromCatalog.flatMap(s => [s, '']) : ['(deck-builder catalog를 먼저 돌리면 Palette · Type · Voice가 여기 들어온다)', '']),
     '## 스타일 규칙', '', '- 간격 · 정렬 · 강조 방식 (템플릿에서 본 것만)', '',
     '## 그림 색', '', '- 그림(write:diagram)이 쓰는 색: Palette에서 고른다', ''].join('\n'))
+  make(NEXT_RENDER, NEXT_RENDER_HEAD)
   make('snapshot/render', null)
   make('feedback', null)   // feedback/YYYY-MM-DD.md, one review per day, ending with its fix table
-  return { created }
+  return renamed.length ? { created, renamed } : { created }
 }
 
 // sources/선정.md rows: 글감 · 쓰임 (본문 | 부록 | 제외) · 쪽 · 이유 · 대표.
@@ -183,7 +244,8 @@ export function selection(root) {
 }
 
 // After a render: build/pages/*.png kept under snapshot/render/deck-<v>/pages/ (build/ is regenerated
-// in full), with a 검토.md holding one row per page to fill (쪽 · 본 것 · 문제 · 다음렌더-지침).
+// in full), with a 검토.md holding one row per page to fill (쪽 · 본 것 · 문제 · next-render: what goes
+// into template/next-render.md).
 export function keepRender(root, version) {
   if (!/^v\d+\.\d+\.\d+$/.test(String(version))) throw new Error('--version vX.Y.Z (the deck version rendered) is required')
   const src = join(root, 'build', 'pages')
@@ -195,7 +257,7 @@ export function keepRender(root, version) {
   for (const f of pages) copyFileSync(join(src, f), join(dir, 'pages', f))
   const review = at(dir, '검토.md')
   if (!existsSync(review)) {
-    writeFileSync(review, [`# 렌더 검토 · deck-${version}`, '', '| 쪽 | 본 것 | 문제 | 다음렌더-지침 |', '|---|---|---|---|',
+    writeFileSync(review, [`# 렌더 검토 · deck-${version}`, '', '| 쪽 | 본 것 | 문제 | next-render |', '|---|---|---|---|',
       ...pages.map((_, i) => `| ${i + 1} | | | |`), ''].join('\n'))
   }
   return { kept: pages.length, dir, review }
@@ -228,10 +290,10 @@ export function bump(v, level) {
 export function snapshot(root, { kind, level, note, by, date }) {
   if (kind !== 'skeleton' && kind !== 'deck') throw new Error('kind must be skeleton|deck')
   if (!note) throw new Error('--note is required')
-  const skelPath = join(root, 'skeleton.md')
+  const skelPath = wsFile(root, SKELETON)
   const skel = readFileSync(skelPath, 'utf8')
   const m = skel.match(VERSION)
-  if (!m) throw new Error('skeleton.md has no `version: vX.Y.Z` line')
+  if (!m) throw new Error(`${basename(skelPath)} has no \`version: vX.Y.Z\` line`)
   const cur = [Number(m[1]), Number(m[2]), Number(m[3])]
   const curS = `v${cur.join('.')}`
   const day = date || new Date().toISOString().slice(0, 10)
@@ -241,7 +303,7 @@ export function snapshot(root, { kind, level, note, by, date }) {
   for (const p of [dir, skelPath, readme]) assertInside(root, p)
   if (existsSync(dir)) throw new Error(`${dir} exists: snapshot of ${curS} already taken`)
   mkdirSync(dir, { recursive: true })
-  copyFileSync(skelPath, join(dir, 'skeleton.md'))
+  copyFileSync(skelPath, join(dir, basename(skelPath)))
 
   const next = `v${bump(cur, level).join('.')}`
   // the history line follows the file's own form: quoted `> vX.Y.Z(날짜, 누가): …` when it already uses it
@@ -271,7 +333,8 @@ function deckSnapshot(root, { level, note, day, skelS, readme }) {
   assertInside(root, dir)
   assertInside(root, readme)
   mkdirSync(dir, { recursive: true })
-  copyFileSync(join(root, 'deck.mdx'), join(dir, 'deck.mdx'))
+  const deck = wsFile(root, DECK)
+  copyFileSync(deck, join(dir, basename(deck)))
   if (existsSync(join(root, 'assets'))) cpSync(join(root, 'assets'), join(dir, 'assets'), { recursive: true })
   writeFileSync(join(dir, 'NOTES.md'), `# deck-${next}\n\n${day}. skeleton ${skelS} 반영. ${note}\n`)
   if (existsSync(readme)) writeFileSync(readme, readmeRow(readFileSync(readme, 'utf8'), { cur: next, day, note }, 'deck'))
@@ -966,7 +1029,7 @@ function main() {
   const args = parseArgs(process.argv.slice(2))
   const cmd = args._[0]
   const root = realpathSync(process.cwd())
-  const file = join(root, args.file || 'skeleton.md')
+  const file = args.file ? join(root, args.file) : wsFile(root, SKELETON)
   let out
   if (cmd === 'layout') {
     out = layout(root)
@@ -980,8 +1043,9 @@ function main() {
     if (write) writeFileSync(file, r.text)
     out = { file, changes: r.changes, warnings: r.warnings, written: write, ...v }
     // renumber reads one file; the deck's own page numbers are fixed by hand and said so
-    if (!/deck\.mdx$/.test(file) && existsSync(join(root, 'deck.mdx'))) {
-      out.by_hand = ['deck.mdx: slide order, `<!-- N. … -->` comments and page cells (toc, appendix toc) are not renumbered']
+    const deck = wsFile(root, DECK)
+    if (!/\.mdx$/.test(file) && existsSync(deck)) {
+      out.by_hand = [`${basename(deck)}: slide order, \`<!-- N. … -->\` comments and page cells (toc, appendix toc) are not renumbered`]
     }
   } else if (cmd === 'verify') {
     out = verify(readFileSync(file, 'utf8'))
@@ -992,7 +1056,7 @@ function main() {
     out = compare(load(args.before), load(args.after), both ? load(args['claims-before']) : undefined, both ? load(args['claims-after']) : undefined)
   } else if (cmd === 'claims') {
     const text = readFileSync(file, 'utf8')
-    const pages = /^##\s+@s\d+/m.test(text) ? deckPages(text) : /resume\.md$/.test(file) ? resumePages(text) : text
+    const pages = /^##\s+@s\d+/m.test(text) ? deckPages(text) : /(resume\.md|resume-deck\.mdx)$/.test(file) ? resumePages(text) : text
     out = claims(pages, readMaterial(root), settled(root), selection(root), confirmedFacts(root))
     const note = settledNote(root)
     if (note) out.settled_note = note

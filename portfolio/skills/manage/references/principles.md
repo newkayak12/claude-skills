@@ -56,7 +56,11 @@ appear) live in that workspace's `docs/확정사실.md`, not here.
 | Reusing an older version's figure as is | Check the words inside it against the current text; redraw when they differ |
 | Taking a summary document's count as the fact | Check it against the raw record; held items are not counted |
 | Bold across a whole line or report | Template run formats (`[text]{n}`) in the deck; plain headings in reports |
-| Fixing a render problem on the spot | Note it in `다음렌더-지침.md`; fix at once only what the user said to fix |
+| Fixing a render problem on the spot | Note it in `template/next-render.md`; fix at once only what the user said to fix |
+| Text, caption or photo crossing the safe area or touching another box | Shorten or move the content; the template's margins and gaps hold (portfolio and resume alike) |
+| Fitting a page by shrinking type or line spacing | Cut text by the reported overflow (`over_lines`); type and spacing stay the template's |
+| A resume re-styled by hand (a copied template with styles added, a post-build script) | Map roles to the user's own template with `samples:`; the engine copies the look |
+| A resume that ignores the template (no photo, other fonts, other order) | The template's section order, look and photo; the portfolio's project order |
 | Treating a question as an instruction ("질문! 바꾸란건 아님") | Answer with a judgment; change nothing |
 | Asking what the analysis folder already holds | Search first; ask only what only the user knows |
 
