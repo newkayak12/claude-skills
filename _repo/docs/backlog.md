@@ -24,8 +24,24 @@ real run n=2 on the fixture: two rounds, `gate.order: recorded`, a panel of one 
 each round, `nothing_new` at round 2). Left open: D24, whether a round waiting on the user ends the loop (the
 PRD does not say). E-ae7d3226 cleaned.
 
-Order of the four cards below (user, 2026-11-10: "1. 일단 포폴쪽만 먼저하고 2. resume는 조금 천천히
-3. 각 스킬 점검하고 / feedback은 성능을 향상시키는 방향으로"): 136, 137, 138, then 139.
+Order of the cards below (user, 2026-11-10: "1. 일단 포폴쪽만 먼저하고 2. resume는 조금 천천히
+3. 각 스킬 점검하고 / feedback은 성능을 향상시키는 방향으로"): 140 (a silent engine bug), 136, 137,
+141, 142, 143, 144, then 139. Card 138 (check each portfolio skill) closed 2026-11-10: two read-only
+opus audits of all ten skills against the workspace and its sessions; `check-skeleton.mjs` 0 problems
+for portfolio; every gap went into 136, 137 and 139-144.
+
+140. **manage finds a workspace file whichever Unicode form its Korean name is stored in, and says when it cannot**
+    - Why: verified 2026-11-10 on a real workspace synced from macOS: its Korean file names are
+      decomposed (NFD). `settled`, `settledNote` and `confirmedFacts` (`manage.mjs` ~555-577) open
+      `docs/확정사실.md` in the composed form (NFC) only, so on Linux the file is not found, the catch
+      returns `[]`/`undefined`, and the "no settled section" note never fires: `claims` and `settle`
+      ran with no settled facts and said nothing. Only `layout` (~130) tries both forms; `selection`
+      and `scaffold`'s existence check do not — two runs wrote an NFC `선정.md` beside the NFD one.
+      The real file also uses its own headings, none
+      of which `settled` reads.
+    - Acceptance: one path resolver (NFC, then NFD) used by every workspace read and existence
+      check; a missing or unreadable 확정사실 is reported, never silent; the user's headings are read
+      or `scaffold` adds the two sections; a test with an NFD-named fixture; manage tests with counts.
 
 136. **deck-builder does in build and render what a real workspace patches after every build**
     - Why: review of a real deck workspace, 2026-11-10 (read only). It keeps a 328-line
@@ -48,12 +64,25 @@ Order of the four cards below (user, 2026-11-10: "1. 일단 포폴쪽만 먼저�
       cells the trial did not touch. User, 2026-11-10: "libre도 새로운 환경이면 새로 필요한거 아냐??"
       — so the fix lives in the file copy, never in a LibreOffice profile.
     - Also: the workspace README pins the marketplace path of `deck.py` while the session built
-      with a cached older copy; neither build nor render says which engine ran.
+      with a cached older copy; neither build nor render says which engine ran. SKILL.md (~61) says
+      "finish with `render`", while manage and the user render only when told.
+    - Renderer on a new machine (user, 2026-11-10: "LibreOffice 없이는 동작을 안하지 않냐", "나눔 폰트
+      기본 내장하고 libre는 자동으로 설치하거나 내재화 하거나 렌더러를 우리가 구현하던가", "docker가
+      안갖춰져 있으면 그것도 못하지 않아?"). Today `render` and every SVG picture slot need `soffice` on
+      PATH or `DECK_RENDER_DOCKER`; the Korean image used here (`deck-render-kr`) has no Dockerfile in
+      the repo. Nanum fonts are already bundled (`assets/fonts/`, OFL). Decided direction, not yet
+      approved: no own renderer (a PPTX layout engine is LibreOffice again); `render` finds `soffice`
+      on PATH, else fetches a pinned LibreOffice into the plugin cache once (Linux AppImage; macOS the
+      `.app` copied out of the dmg; checksum-verified; asks once before a ~300 MB download), and uses
+      docker only when `DECK_RENDER_DOCKER` is set. Unverified: an AppImage exists for the pinned
+      version; a dmg-extracted app runs headless past Gatekeeper/quarantine.
     - Acceptance: `deck.mdx` can place and size a slot, recolour a run and mark a superscript;
       captions-into-picture and the panel margin rule are build options; render turns the spacing
       off for every paragraph, table cells included (test: a fixture with a comma after Hangul and a
       table cell renders with no gap, checked from the bbox text); build and render print the
-      engine version and path; `test_deck.py`, `test_render.py` with counts; one real run where the
+      engine version and path; render follows the caller's render policy; on a machine with no
+      LibreOffice and no docker, render fetches the pinned build and renders (one real run on Linux,
+      one on macOS); `test_deck.py`, `test_render.py` with counts; one real run where the
       workspace's `postbuild_layout.py` is no longer needed.
 
 137. **portfolio:feedback finds more and is acted on from the chat alone**
@@ -64,24 +93,103 @@ Order of the four cards below (user, 2026-11-10: "1. 일단 포폴쪽만 먼저�
       restating: plain words for developer-only terms, else a footnote, speaker notes exempt, first
       use per page spelled out ("피처 플래그"), no `(추정)` in body text; diagram colours one family
       with the deck but not monotone, the important part visible.
+    - Levers found by the 2026-11-10 audit (verified against the workspace and its transcript,
+      unless marked), by expected effect:
+      - **No claims-against-material pass.** The formal run found 3 claim and 3 consistency items;
+        asked again ("더 수정할 사항 탐색해보자 점수를 깎는", user 2026-11-09) a second pass found 22, most
+        by setting each page claim against its cited source item. §B (claim-and-consistency.md
+        ~54-89) checks only number/baseline/period/attribution; step 1 (SKILL.md ~58-66) only
+        self-consistency. Add a pass: each outcome or reason sentence judged against its item as
+        possible / weak / unsupported, overclaim vs gap, an ID per unsupported one.
+      - **Caps hide findings:** worst three claims (claim-and-consistency.md ~82, SKILL.md ~64, ~128),
+        five convention items (~41). Keep the caps for the front blocks; list all in the appendix.
+      - **Scores do not move:** five dimensions at 7/6/5/7/7 through rounds 3-10 while the deck changed
+        each round; the rubric has bands but no criteria inside a band. Score inside a band by
+        defect counts.
+      - **Panel skipped without saying so:** 0 Agent calls in the real run, no Clashes line, the file
+        says "리뷰어가 직접 고름" against SKILL.md ~75. What found defects there were lenses with
+        different jobs (6 s/30 s screen, interviewer attack against the material, the user's own bar
+        via noah), as manage step 4 runs them. Replace the four same-job personas with those, and
+        enforce the "panel not run" line.
+      - **"Not in the material" without a search, and stale inputs judged:** the file's own mistake
+        log; user 2026-11-10: "이력서 쪽은 무시 (이력서가 stale)". Step 0 lists each target and
+        cross-reference with version and date and drops one older than the target; every "not in
+        material" cites the empty search.
+      - **Deliberate choices flagged as defects:** the user said two flagged items were deliberate (2026-11-09). With no rationale on record, ask (`[확인 필요: 의도]`) and
+        record the answer as settled.
+      - **No check for what `principles.md` forbids:** the user ranked one such sentence first to fix
+        (2026-11-08); `principles.md` (~36) forbids it but nothing checks it. A red flag
+        ranked above screen cost; `(추정)` in body text checked in the same tone pass.
+      - **Skill-evidence tally ambiguous on a deck:** 6/24, 22/24, 8/24 for one deck, no flag at 33%
+        against the ~60% bar. Say whether tech-table cells count.
+      - **Triggers:** the user never typed a feedback trigger; their words were "점수를 깎는", "더 수정할
+        사항 탐색", "관점별 검토". `write:plans` claims "피드백 써줘", manage "피드백 돌려줘" (collision
+        unverified).
+      - **manage side:** manage saves feedback to `snapshot/feedback/deck-vX.Y.Z.md` (manage SKILL.md
+        ~138) against the user's `feedback/YYYY-MM-DD.md`; its Output Template (~166) is location-first.
     - Acceptance: a measured baseline first — on a fixed fictional deck with planted defects, the
       share of planted defects found and of findings that quote the text and give the replacement;
       the change raises both, stated with numbers; output written to `feedback/YYYY-MM-DD.md` with
       the per-item table by default; the restated rules checked by the panel; manage tests with counts.
 
-138. **Each portfolio skill checked: what it claims against what a real run needed**
-    - Why: user, 2026-11-10: "각 스킬 점검하고", after the workspace review showed work done by hand
-      around deck-builder and resume.
-    - Acceptance: one report row per portfolio skill (trigger, steps, scripts, tests, the gaps a
-      real run hit); `check-skeleton.mjs` output read; every gap found becomes a card or a line on
-      136/137/139.
+141. **manage runs a whole round itself: sync, build, verify, and only structure waits**
+    - Why: 2026-11-10 audit. The run stopped at step 2 and the user said "매니지로 쭉 도는거 아녔음?"
+      (2026-11-05): SKILL.md ~62 says a wait is never a stop, ~75 and ~83 say "propose … and wait".
+      The workspace rebuilt the round by hand in its own tools: skeleton → deck.mdx sync, a check that
+      each skeleton slot's text is in the built pptx, footnote and asset checks; a round there always
+      builds (user, 2026-11-03: "결과물도 검증하고", "더 빌드해보자"). `snapshot/rounds/` exists in none
+      of the three trees, so `step`/`round` were never used. The layout list (~36-47) lacks
+      `README.md` (the user's folder rules: "원리 지침이나 폴더 트리 적혀있던 곳이 어디지? … README.md다",
+      2026-11-10), `style/`, `stable/`, `feedback/`, `decisions/`, `scripts/`; `snapshot --kind`
+      refuses `resume` while `snapshot/resume/` holds 10 versions; a sync-conflict `deck.conflict-*.mdx`
+      in the root is not flagged. Writing rule restated five times (2026-11-07 to 11-10): developer-only
+      words in plain words, else a footnote (the user's words, three times); missing from `principles.md`.
+    - Acceptance: one statement of which gates block (structure only) and which go ahead on the
+      proposal and are reported; engine commands for sync and verify-build; a round's build as the
+      user's standing word; the layout list and `--kind resume`; `layout` warns on stray
+      `deck.*.mdx`; the plain-words rule in principles; manage tests with counts; one real round.
+
+142. **material refreshes the ledger from the user's own notes and shows which pages went stale**
+    - Why: 2026-11-10 audit. Neither material nor manage was loaded as a skill in the session; the
+      one material command run was `ledger`. The user's words were "분석쪽 당겨봐" (2026-11-10) and
+      "obsidian 쪽에 있을텐데?" (2026-11-09); the trigger knows only "글감 모아줘". Ledger files carry
+      hand-written `## 갱신 — 분석 …`, `## 닫음`, `## 보강` sections; `ledger-log` only appends an
+      `## 이력` line (27 of 140 files have one). Five hand-kept per-item status files track each item's
+      reflected / partial / not reflected state and pages; the user asked "오늘 분석 업데이트로 더 정리할건
+      없나?? 스켈레톤, 덱에" and "낡은건 수정".
+    - Acceptance: a refresh trigger and a ledger `update` command appending a dated, cited section;
+      the item → pages table generated from the skeleton's `글감:` lines, with the pages whose item
+      changed state listed (mechanism unverified); material tests with counts; one real run.
+
+143. **pattern scores two versions on fixed keys, scoped for a deck**
+    - Why: 2026-11-10 audit. manage `rounds.md` (~133-135) expects `{item: score}` from pattern; its
+      Output Template has no numbers, so the run invented 1-10 keys after "harness라고 그걸로 채점 안하면
+      대체 뭐하는거야?" (user, 2026-11-03) and had to pin its counting method by hand each round. It
+      also re-decided every round to leave out notes and footnote slots. The workspace's `pattern/`
+      (template composition rules from `deck.py extract`) shares the name.
+    - Acceptance: a two-version mode with a fixed JSON key set and a saved counting basis; notes and
+      footnotes out of scope for skeleton/deck input; the description says it is not about template
+      patterns; one real two-round run.
+
+144. **rewrite and the interview skills match the user's rules and reuse manage's material check**
+    - Why: 2026-11-10 audit. rewrite was never invoked (manage SKILL.md ~105 says lines are rewritten
+      with it); it tags user figures `(본인 추정)` (metric-discovery.md ~57, SKILL.md ~138) against
+      "(추정)은 없어야 함" (user, 2026-11-09), and pitches "stronger / sound more senior" against the
+      user's "과장하면 안돼". fit, interview-plan, mock-interview and job-application-workflow were
+      not used (no JD yet: timing, not a trigger gap). Interview prep happened in feedback's answer
+      table and manage step 4's attack lens; mock-interview builds questions without the material
+      (~27-33). job-application-workflow calls feedback once and never routes a deck to manage.
+      Unverified: five portfolio skills showed no description in a truncated skill listing.
+    - Acceptance: rewrite carries a user figure untagged and is described as fitting a sentence to
+      its evidence; one material-checked, non-interactive question mode in mock-interview that
+      feedback and manage call; the workflow routes a deck to manage; a listing probe for the five.
 
 139. **Resume build lays out what the template means, not only its text (later)**
     - Why: same review. Shipped 2026-11-10: the template photo survives build. Still patched by hand
       after every build (`postbuild_resume.py`, macOS `sips`, so not on Linux): career section on a
       new page, company lines larger, space under description/stack/role lines, photo replaced by
       the deck's. The user also asked for a different section order (2026-11-09). User,
-      2026-11-10: "resume는 조금 천천히" — after 136-138.
+      2026-11-10: "resume는 조금 천천히" — after 136-144.
     - Acceptance: those layout rules expressible in `resume.md` or read from the template;
       `test_resume.py` with counts; one real run with no post-build script.
 
