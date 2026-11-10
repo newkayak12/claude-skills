@@ -21,6 +21,7 @@ Python stdlib only: zipfile, xml.etree, re. No python-pptx, no PyYAML.
 import argparse
 import copy
 import hashlib
+import json
 import os
 import math
 import re
@@ -55,7 +56,122 @@ REL_NOTESMASTER = ("http://schemas.openxmlformats.org/officeDocument/2006/"
 CT_NOTES = "application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"
 CT_NOTESMASTER = ("application/vnd.openxmlformats-officedocument.presentationml."
                   "notesMaster+xml")
-RESERVED_KEYS = ("notes",)
+RESERVED_KEYS = ("notes", "place")
+# `place:` items — `text4: 26.4 270` or `text6: 279.3 156 w=253.9 h=54`, in pt from the
+# slide's top-left: move (and size) a template shape the deck cannot otherwise touch.
+PLACE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*):\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)"
+                      r"((?:\s+[wh]=\d+(?:\.\d+)?)*)\s*$")
+
+
+CAPTION_TEXT_RE = re.compile(r"^\[.*\]$", re.S)
+PAD_EMU = 6 * 12700          # between a picture and its panel, a neighbour or the slide edge
+
+
+def _shape_text(el):
+    return "".join(t.text or "" for t in el.iter(q("a:t"))).strip()
+
+
+def _is_panel(el):
+    geom = el.find(q("p:spPr") + "/" + q("a:prstGeom"))
+    return el.tag == q("p:sp") and geom is not None and geom.get("prst") == "roundRect"
+
+
+def captions_into_pictures(spTree, slide_w, slide_h):
+    """`captions: into-picture` — a `[ … ]` caption above or below a picture is deleted and
+    the picture grows into its room, keeping its aspect, inside its panel, its neighbours and
+    the slide: the diagram carries its own title, so the caption said it twice. Top-level
+    shapes only (a group's children live in the group's own coordinates). -> captions removed."""
+    kids = [c for c in spTree if c.tag in (q("p:sp"), q("p:pic"))]
+    pics = [(c, shape_box(c)) for c in kids if c.tag == q("p:pic") and shape_box(c)]
+    panels = [shape_box(c) for c in kids if _is_panel(c) and shape_box(c)]
+    removed, grown = 0, set()
+    for c in kids:
+        b = shape_box(c) if c.tag == q("p:sp") and not _is_panel(c) else None
+        if not b or not CAPTION_TEXT_RE.match(_shape_text(c)):
+            continue
+        x, y, cx, cy = b
+        near = [(p, pb) for p, pb in pics if pb[0] < x + cx and x < pb[0] + pb[2]]
+        if not near:
+            continue
+        p, (px, py, pw, ph) = min(near, key=lambda e: min(abs(e[1][1] - (y + cy)),
+                                                          abs(y - (e[1][1] + e[1][3]))))
+        spTree.remove(c)
+        removed += 1
+        if id(p) in grown:
+            continue
+        grown.add(id(p))
+        above = y + cy // 2 < py + ph // 2
+        cont = [r for r in panels if r[0] <= px and px + pw <= r[0] + r[2]
+                and r[1] <= min(py, y) and py + ph <= r[1] + r[3]]
+        bottom = min([r[1] + r[3] - PAD_EMU for r in cont] + [slide_h - PAD_EMU])
+        new_h = (py + ph - y) if above else (min(y + cy, bottom) - py)
+        if above:   # growing upward stops halfway into the caption's room, clear of the text above
+            new_h = min(new_h, py + ph - (y + cy // 2))
+        mid = px + pw / 2
+        side = [q_ for o, q_ in pics if o is not p and q_[1] < py + ph and py < q_[1] + q_[3]]
+        left = max([r[0] + PAD_EMU for r in cont] + [PAD_EMU]
+                   + [s[0] + s[2] + PAD_EMU for s in side if s[0] + s[2] / 2 < mid])
+        right = min([r[0] + r[2] - PAD_EMU for r in cont] + [slide_w - PAD_EMU]
+                    + [s[0] - PAD_EMU for s in side if s[0] + s[2] / 2 > mid])
+        scale = min(new_h / ph, 2 * min(mid - left, right - mid) / pw)
+        if scale <= 1.01:
+            continue
+        nw, nh = round(pw * scale), round(ph * scale)
+        set_frame(p, (round(mid - nw / 2), py + ph - nh if above else py), (nw, nh))
+    return removed
+
+
+def pictures_to_panels(spTree, margin_pt):
+    """`panel_margin: 18` — every picture whose centre sits in a rounded panel is fitted, aspect
+    kept, into the panel less the margin on the left, right and bottom and below the panel's own
+    text; centred across, set on the bottom. One rule, so every panel's picture sits alike.
+    -> pictures moved."""
+    m = round(margin_pt * EMU_PER_PT)
+    kids = [c for c in spTree if c.tag in (q("p:sp"), q("p:pic"))]
+    panels = [shape_box(c) for c in kids if _is_panel(c) and shape_box(c)]
+    texts = [shape_box(c) for c in kids if c.tag == q("p:sp") and not _is_panel(c)
+             and shape_box(c) and _shape_text(c)]
+    moved = 0
+    for c in kids:
+        b = shape_box(c) if c.tag == q("p:pic") else None
+        if not b:
+            continue
+        px, py, pw, ph = b
+        cont = [r for r in panels if r[0] <= px + pw / 2 <= r[0] + r[2]
+                and r[1] <= py + ph / 2 <= r[1] + r[3]]
+        if not cont:
+            continue
+        r = min(cont, key=lambda r: r[2] * r[3])
+        left, right, bottom = r[0] + m, r[0] + r[2] - m, r[1] + r[3] - m
+        above = [t[1] + t[3] for t in texts if t[1] + t[3] <= py + ph / 2
+                 and t[0] < px + pw and px < t[0] + t[2] and r[0] <= t[0] + t[2] / 2 <= r[0] + r[2]]
+        top = max([r[1] + m] + [a + PAD_EMU for a in above])
+        bw, bh = right - left, bottom - top
+        if bw <= 0 or bh <= 0:
+            continue
+        scale = min(bw / pw, bh / ph)
+        nw, nh = round(pw * scale), round(ph * scale)
+        set_frame(c, (round(left + (bw - nw) / 2), bottom - nh), (nw, nh))
+        moved += 1
+    return moved
+
+
+def parse_place(kind, value):
+    """[(slot id, x, y, w|None, h|None) in pt], [bad item text]."""
+    good, bad = [], []
+    for _, item in as_items(kind, value):
+        item = item.strip()
+        if not item:
+            continue
+        m = PLACE_RE.match(item)
+        if not m:
+            bad.append(item)
+            continue
+        size = dict(re.findall(r"([wh])=(\d+(?:\.\d+)?)", m.group(4)))
+        good.append((m.group(1), float(m.group(2)), float(m.group(3)),
+                     float(size["w"]) if "w" in size else None,
+                     float(size["h"]) if "h" in size else None))
+    return good, bad
 REL_SLIDE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide"
 REL_NOTES = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide"
 REL_IMAGE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
@@ -951,7 +1067,52 @@ def split_emphasis(text):
 
 
 BR_RE = re.compile(r"<br\s*/?>", re.I)
-SPAN_RE = re.compile(r"(?<!\\)\[(.+?)\]\{(\d+)\}")
+# `[text]{…}`: the paragraph's format n, a colour (`#RRGGBB`, or a theme slot with an optional
+# luminance `bg1 75%`), `sup` / `sub` — any of them, space-separated (`{2 #FFFFFF}`, `{sup}`).
+SPAN_MOD = r"(?:\d{1,3}%|\d+|#[0-9A-Fa-f]{6}|sup|sub|bg[12]|tx[12]|accent[1-6])"
+SPAN_RE = re.compile(r"(?<!\\)\[(.+?)\]\{(%s(?: +%s)*)\}" % (SPAN_MOD, SPAN_MOD))
+SCHEME_RE = re.compile(r"^(?:bg[12]|tx[12]|accent[1-6])$")
+
+
+def span_mods(spec):
+    """`2 bg1 75% sup` -> (2, {"color": ("scheme", "bg1", 75), "baseline": "30000"})."""
+    n, mods = 1, {}
+    for tok in spec.split():
+        if tok.endswith("%"):
+            c = mods.get("color")
+            if c and c[0] == "scheme":
+                mods["color"] = ("scheme", c[1], int(tok[:-1]))
+        elif tok.isdigit():
+            n = int(tok)
+        elif tok.startswith("#"):
+            mods["color"] = ("srgb", tok[1:].upper(), None)
+        elif tok in ("sup", "sub"):
+            mods["baseline"] = "30000" if tok == "sup" else "-25000"
+        elif SCHEME_RE.match(tok):
+            mods["color"] = ("scheme", tok, None)
+    return n, mods
+
+
+def apply_mods(rPr, mods):
+    """Set a run's colour and baseline from span_mods; the rest of its look stays the template's."""
+    if "baseline" in mods:
+        rPr.set("baseline", mods["baseline"])
+    color = mods.get("color")
+    if not color:
+        return
+    for tag in ("a:noFill", "a:solidFill", "a:gradFill", "a:blipFill", "a:pattFill", "a:grpFill"):
+        for old in rPr.findall(q(tag)):
+            rPr.remove(old)
+    fill = ET.Element(q("a:solidFill"))
+    kind, val, lum = color
+    c = ET.SubElement(fill, q("a:srgbClr" if kind == "srgb" else "a:schemeClr"))
+    c.set("val", val)
+    if lum is not None and lum != 100:
+        ET.SubElement(c, q("a:lumMod")).set("val", str(lum * 1000))
+    # solidFill comes before latin/ea/cs and the rest in CT_TextCharacterProperties
+    kids = list(rPr)
+    first = next((i for i, k in enumerate(kids) if k.tag not in (q("a:ln"),)), len(kids))
+    rPr.insert(first, fill)
 
 
 LOOK_ATTRS = ("sz", "b", "i", "u", "strike", "spc", "baseline", "cap", "kern")
@@ -1018,32 +1179,33 @@ def restore(text):
 
 
 def split_spans(text):
-    """[(text, format n) | (None, 'br')] from `[text]{n}` spans and `<br>`; escapes stay
-    protected for split_emphasis and come back through restore()."""
+    """[(text, format n, mods) | (None, 'br', {})] from `[text]{…}` spans and `<br>`; escapes
+    stay protected for split_emphasis and come back through restore()."""
     text = protect(text)
     out = []
     for i, line in enumerate(BR_RE.split(text)):
         if i:
-            out.append((None, "br"))
+            out.append((None, "br", {}))
         pos = 0
         for m in SPAN_RE.finditer(line):
             if m.start() > pos:
-                out.append((line[pos:m.start()], 1))
-            out.append((m.group(1), int(m.group(2))))
+                out.append((line[pos:m.start()], 1, {}))
+            n, mods = span_mods(m.group(2))
+            out.append((m.group(1), n, mods))
             pos = m.end()
         if pos < len(line) or not line:
-            out.append((line[pos:], 1))
+            out.append((line[pos:], 1, {}))
     return out
 
 
 def plain_text(text):
     """What a reader sees of a value: markup removed, `<br>` as a newline."""
-    out = "".join("\n" if t is None else t for t, _ in split_spans(text))
+    out = "".join("\n" if t is None else t for t, _, _ in split_spans(text))
     return restore(EMPHASIS_RE.sub(lambda m: m.group(1) or m.group(2) or m.group(3), out))
 
 
 def max_span_format(text):
-    return max([n for t, n in split_spans(text) if t is not None] or [1])
+    return max([n for t, n, _ in split_spans(text) if t is not None] or [1])
 
 
 def _set_para_text(p, text):
@@ -1068,13 +1230,13 @@ def _set_para_text(p, text):
 
     anchor = p.find(q("a:endParaRPr"))
     pieces = []
-    for span, n in split_spans(text):
+    for span, n, mods in split_spans(text):
         if span is None:
-            pieces.append((None, None, False, False, False))
+            pieces.append((None, None, False, False, False, {}))
             continue
         fmt = formats[n - 1] if 0 < n <= len(formats) else formats[0]
-        pieces += [(fmt,) + e for e in split_emphasis(span) if e[0] or not span]
-    for fmt, chunk, bold, italic, mono in pieces:
+        pieces += [(fmt,) + e + (mods,) for e in split_emphasis(span) if e[0] or not span]
+    for fmt, chunk, bold, italic, mono, mods in pieces:
         if fmt is None:
             br = ET.Element(q("a:br"))
             rp = base.find(q("a:rPr"))
@@ -1094,6 +1256,7 @@ def _set_para_text(p, text):
             rPr.set("b", "1")
         if italic:
             rPr.set("i", "1")
+        apply_mods(rPr, mods)
         if mono:
             for tag in ("a:latin", "a:cs"):
                 for old in rPr.findall(q(tag)):
@@ -2931,6 +3094,19 @@ def _swap_picture(el, raw_value, imgctx, problems, where, slot):
 BUILD_DIR = "build"
 
 
+def engine_label():
+    """`deck.py 2.12.0 (/path/to/deck.py)` — which engine ran, so a build from a stale copy
+    (a plugin cache, a pinned path in a README) shows itself."""
+    here = Path(__file__).resolve()
+    version = "?"
+    try:
+        manifest = here.parents[3] / ".claude-plugin" / "plugin.json"
+        version = json.loads(manifest.read_text(encoding="utf-8")).get("version", "?")
+    except (OSError, ValueError, IndexError):
+        pass
+    return "deck.py %s (%s)" % (version, here)
+
+
 def build_dir(md_path):
     """Where everything the build produces goes. Deleting it loses nothing."""
     return Path(md_path).parent / BUILD_DIR
@@ -2988,12 +3164,24 @@ def cmd_build(args):
 
     imgctx = {"pkg": pkg, "base": md_path.parent.resolve(), "n": 0,
               "by_src": {}, "exts": set(), "add_rel": None,
-              "renderer": Renderer(), "cache": build_dir(md_path) / ".cache",
+              # absolute: docker reads a relative `-v build/.cache:…` as a volume name and refuses
+              "renderer": Renderer(), "cache": (build_dir(md_path) / ".cache").resolve(),
               "rasterized": 0, "cropped": [], "knocked": 0}
     problems = list(errors) + drift
     new_parts = []
     notes_parts = []
     notes_master = None
+    # front matter layout options: `captions: into-picture`, `panel_margin: <pt>`
+    layout_counts = {"captions": 0, "panels": 0, "margin": None}
+    if front.get("panel_margin", "").strip():
+        try:
+            layout_counts["margin"] = float(front["panel_margin"])
+        except ValueError:
+            problems.append("front matter panel_margin %r is not a number of points"
+                            % front["panel_margin"])
+    if front.get("captions", "").strip() not in ("", "into-picture", "keep"):
+        problems.append("front matter captions %r — write `into-picture` or `keep`"
+                        % front["captions"])
 
     for i, spec in enumerate(specs, 1):
         m = re.fullmatch(r"s(\d+)", spec.archetype)
@@ -3028,14 +3216,28 @@ def cmd_build(args):
         note_text = None
         # `!drop` removes a shape, which shifts the child indexes every later slot path
         # relies on. Resolve every drop target first, write the other slots, remove last.
-        drop_els = []
+        drop_els, place_els = [], []
         for slot_id, kind, value, line in spec.values:
             if (slot_id in slots and isinstance(value, str) and value.strip() == "!drop"):
                 drop_els.append(resolve_path(spTree, slots[slot_id].path))
+            if slot_id == "place":
+                good, bad = parse_place(kind, value)
+                for item in bad:
+                    problems.append("line %d: place item %r — write `slot: x y [w=W] [h=H]` "
+                                    "in pt" % (line, item))
+                for sid, x, y, w, h in good:
+                    if sid not in slots:
+                        problems.append("line %d: place names '%s', which '@%s' does not have"
+                                        % (line, sid, spec.archetype))
+                        continue
+                    place_els.append((resolve_path(spTree, slots[sid].path), sid, x, y, w, h,
+                                      line))
         for slot_id, kind, value, line in spec.values:
             where = "line %d" % line
             if slot_id == "notes":
                 note_text = "\n".join(t for _, t in as_items(kind, value))
+                continue
+            if slot_id == "place":
                 continue
             if slot_id in slots and isinstance(value, str) and value.strip() == "!drop":
                 continue
@@ -3051,6 +3253,19 @@ def cmd_build(args):
                                    ", ".join(slots) or "none"))
                 continue
             apply_value(spTree, slots[slot_id], kind, value, imgctx, problems, where)
+        if front.get("captions", "").strip() == "into-picture":
+            sw, sh = slide_size(pkg)
+            layout_counts["captions"] += captions_into_pictures(spTree, sw, sh)
+        if layout_counts["margin"] is not None:
+            layout_counts["panels"] += pictures_to_panels(spTree, layout_counts["margin"])
+        for el, sid, x, y, w, h, line in place_els:
+            ext = extent(el)
+            if ext is None or not set_frame(el, (round(x * EMU_PER_PT), round(y * EMU_PER_PT)),
+                                            (round(w * EMU_PER_PT) if w else ext[0],
+                                             round(h * EMU_PER_PT) if h else ext[1])):
+                problems.append("line %d: place cannot move '%s' — its position is inherited "
+                                "from the layout or it is not a shape with its own frame"
+                                % (line, sid))
         for el in drop_els:
             for parent in spTree.iter():
                 if el in list(parent):
@@ -3098,7 +3313,8 @@ def cmd_build(args):
     pkg.write(out)
 
     fatal = [p for p in problems if "not writable" not in p]
-    print("build -> %s  (%d slides from %s)" % (out, len(new_parts), template.name))
+    print("build -> %s  (%d slides from %s) · %s" % (out, len(new_parts), template.name,
+                                                    engine_label()))
     for p in problems:
         print("  ! %s" % p)
     if notes_parts:
@@ -3114,6 +3330,12 @@ def cmd_build(args):
         print("  %d image(s) embedded%s"
               % (imgctx["n"], ", %d rasterized from SVG" % imgctx["rasterized"]
                  if imgctx["rasterized"] else ""))
+    if layout_counts["captions"]:
+        print("  %d caption(s) removed, their pictures grown into the room"
+              % layout_counts["captions"])
+    if layout_counts["panels"]:
+        print("  %d picture(s) fitted to their panel with a %gpt margin"
+              % (layout_counts["panels"], layout_counts["margin"]))
     return 1 if fatal and args.strict else 0
 
 
@@ -3356,6 +3578,16 @@ def cmd_check(args):
         by_id = {s.id: s for s in slots}
         seen = set()
         for slot_id, kind, value, line in spec.values:
+            if slot_id == "place":
+                good, bad = parse_place(kind, value)
+                for item in bad:
+                    errs.append("line %d: %s place item %r — write `slot: x y [w=W] [h=H]` in pt"
+                                % (line, tag, item))
+                for sid, *_ in good:
+                    if sid not in by_id:
+                        errs.append("line %d: %s place names '%s', which the archetype does "
+                                    "not have" % (line, tag, sid))
+                continue
             if slot_id in RESERVED_KEYS:
                 if not any(n.startswith("ppt/notesMasters/") for n in pkg.parts):
                     warns.append("line %d: %s has notes, and the template carries no notes "
@@ -3557,6 +3789,104 @@ def lo_nowrap_copy(src, dst):
             zout.writestr(n, data)
 
 
+# Run by the renderer's own python (one that imports uno): open the pptx in a private headless
+# soffice, turn ParaIsCharacterDistance off on every paragraph — groups and table cells included —
+# and export the PDF next to it. Prints one `spacing:` line the render reports.
+UNO_CONVERT = r'''
+import os, subprocess, sys, time
+import uno
+from com.sun.star.beans import PropertyValue
+
+
+def pv(n, v):
+    p = PropertyValue()
+    p.Name, p.Value = n, v
+    return p
+
+
+def main(src):
+    pipe = "deckuno%d" % os.getpid()
+    proc = subprocess.Popen(["soffice", "--headless", "--norestore", "--nologo",
+                             "-env:UserInstallation=file:///tmp/loprof-uno",
+                             "--accept=pipe,name=%s;urp;" % pipe],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    local = uno.getComponentContext()
+    resolver = local.ServiceManager.createInstanceWithContext(
+        "com.sun.star.bridge.UnoUrlResolver", local)
+    ctx = None
+    for _ in range(120):
+        try:
+            ctx = resolver.resolve("uno:pipe,name=%s;urp;StarOffice.ComponentContext" % pipe)
+            break
+        except Exception:
+            time.sleep(0.5)
+    if ctx is None:
+        proc.kill()
+        print("spacing: soffice did not answer over uno")
+        return 1
+    desktop = ctx.ServiceManager.createInstanceWithContext("com.sun.star.frame.Desktop", ctx)
+    url = uno.systemPathToFileUrl(os.path.abspath(src))
+    doc = desktop.loadComponentFromURL(url, "_blank", 0, (pv("Hidden", True),))
+    n = {"paragraphs": 0, "cells": 0, "failed": 0}
+
+    def paras(text):
+        try:
+            e = text.createEnumeration()
+        except Exception:
+            return
+        while e.hasMoreElements():
+            p = e.nextElement()
+            try:
+                p.ParaIsCharacterDistance = False
+                n["paragraphs"] += 1
+            except Exception:
+                n["failed"] += 1
+
+    def walk(sh):
+        kind = sh.ShapeType
+        if kind.endswith("GroupShape"):
+            for i in range(sh.Count):
+                walk(sh.getByIndex(i))
+        elif kind.endswith("TableShape"):
+            m = sh.Model
+            for r in range(m.Rows.Count):
+                for c in range(m.Columns.Count):
+                    try:
+                        cur = m.getCellByPosition(c, r).createTextCursor()
+                        cur.gotoStart(False)
+                        cur.gotoEnd(True)
+                        cur.setPropertyValue("ParaIsCharacterDistance", False)
+                        n["cells"] += 1
+                    except Exception:
+                        n["failed"] += 1
+        else:
+            paras(sh)
+
+    pages = doc.DrawPages
+    for i in range(pages.Count):
+        page = pages.getByIndex(i)
+        for j in range(page.Count):
+            walk(page.getByIndex(j))
+    out = os.path.splitext(os.path.abspath(src))[0] + ".pdf"
+    doc.storeToURL(uno.systemPathToFileUrl(out), (pv("FilterName", "impress_pdf_Export"),))
+    doc.close(True)
+    try:
+        desktop.terminate()
+    except Exception:
+        pass
+    try:
+        proc.wait(timeout=30)
+    except Exception:
+        proc.kill()
+    print("spacing: East Asian / Latin spacing off on %d paragraphs and %d table cells%s"
+          % (n["paragraphs"], n["cells"], ", %d could not be set" % n["failed"] if n["failed"] else ""))
+    return 0 if os.path.exists(out) else 1
+
+
+sys.exit(main(sys.argv[1]))
+'''
+
+
 class Renderer:
     """LibreOffice, on PATH or in a container.
 
@@ -3603,13 +3933,30 @@ class Renderer:
         # LibreOffice wraps a wrap="none" body at the box width when it also has spAutoFit;
         # PowerPoint keeps the line and grows the box. Convert a copy without spAutoFit there,
         # so the PDF matches PowerPoint; the pptx itself is left as built.
+        # LibreOffice also puts its own East Asian / Latin spacing into every paragraph
+        # (ParaIsCharacterDistance): the PDF then has a real gap before a comma after Hangul and
+        # between Hangul and Latin or digits, which PowerPoint does not draw. No pptx attribute
+        # turns it off, so the copy is converted through UNO with it off on every paragraph and
+        # table cell. With no python that imports uno, the plain conversion runs and says so.
         src = Path(workdir) / name
         tmp = src.with_name(".lo-" + name)
         lo_nowrap_copy(src, tmp)
-        r = self.sh(workdir, "export HOME=/tmp/lohome; mkdir -p $HOME; "
-                             "soffice --headless -env:UserInstallation=file:///tmp/loprof "
-                             "--convert-to pdf %s 2>&1 | tail -2" % tmp.name)
+        script = Path(workdir) / ".lo-convert.py"
+        script.write_text(UNO_CONVERT, encoding="utf-8")
+        r = self.sh(workdir, "export HOME=/tmp/lohome; mkdir -p $HOME; PY=; "
+                             "for p in python3 /usr/lib/libreoffice/program/python "
+                             "/opt/libreoffice*/program/python "
+                             "/Applications/LibreOffice.app/Contents/Resources/python; do "
+                             "if command -v \"$p\" >/dev/null 2>&1 && \"$p\" -c 'import uno' "
+                             ">/dev/null 2>&1; then PY=$p; break; fi; done; "
+                             "if [ -n \"$PY\" ]; then \"$PY\" %s %s 2>&1 | tail -3; else "
+                             "echo 'spacing: no python with uno, East Asian / Latin spacing "
+                             "left on'; soffice --headless "
+                             "-env:UserInstallation=file:///tmp/loprof "
+                             "--convert-to pdf %s 2>&1 | tail -2; fi"
+                    % (script.name, tmp.name, tmp.name))
         tmp.unlink()
+        script.unlink()
         made = tmp.with_suffix(".pdf")
         if made.is_file():
             os.replace(str(made), str(src.with_suffix(".pdf")))
@@ -3830,6 +4177,9 @@ def cmd_render(args):
     pdf = out.with_suffix(".pdf")
     if not pdf.is_file():
         raise SystemExit("error: the renderer did not produce a PDF\n  %s" % log)
+    for line in log.splitlines():
+        if line.startswith("spacing:"):
+            print("  %s%s" % ("" if " off on " in line else "! ", line))
     print("  pdf -> %s" % pdf)
     pages = r.previews(work, pdf.name)
     if pages:

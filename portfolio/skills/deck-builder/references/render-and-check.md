@@ -88,6 +88,14 @@ box width by LibreOffice. `render` therefore converts a copy without `spAutoFit`
 bodies — the template baseline too — so the PDF keeps the line as PowerPoint does; the built
 pptx is left as built.
 
+LibreOffice also adds its own East Asian / Latin spacing to every paragraph
+(`ParaIsCharacterDistance`): the PDF gets a real gap before a comma after Hangul (`남기고 ,`) and
+between Hangul and Latin or digits (`42 분`) — PowerPoint draws none, and no pptx attribute turns it
+off. `render` therefore converts through UNO with it off on every paragraph, groups and table cells
+included, and prints `spacing: … off on N paragraphs and M table cells`. It needs a python that
+imports `uno` next to the renderer (the docker image has one; on a desktop, LibreOffice's own
+`program/python`); without one it converts as before and prints `! spacing: … left on`.
+
 Renderer is `soffice` on PATH or `DECK_RENDER_DOCKER=<image>`. With neither, `render`
 refuses rather than pretending the layout was checked — say so and fall back to `build`.
 

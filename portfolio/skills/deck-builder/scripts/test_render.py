@@ -322,6 +322,20 @@ def run(work, r):
     hits = deck.collisions(bbox)
     check(not hits, "no text collides or runs off a slide (%s)" % (hits or "clean"))
 
+    # LibreOffice's own East Asian / Latin spacing puts a real gap before a comma after Hangul
+    # ("했고 ,") and between Hangul and digits ("42 분"); render turns it off on every paragraph
+    # and table cell. pdftotext splits a word at such a gap, so a lone "," or a word that is only
+    # a Hangul unit after a number is the gap showing.
+    print("no East Asian / Latin gap in the PDF")
+    check("spacing: East Asian / Latin spacing off on" in out,
+          "the conversion turned the spacing off (%s)"
+          % [l for l in out.splitlines() if l.startswith("spacing:")])
+    words = re.findall(r"<word[^>]*>([^<]*)</word>", bbox)
+    lone = [w for w in words if w in (",", ".", "분", "회", "초")]
+    check(norm("왜했고,무엇이") in norm(pages[0]) and not lone,
+          "no gap before a comma after Hangul or between a number and its unit, table cells "
+          "included (%s)" % (lone[:6] or "clean"))
+
     print("and the audit is not vacuous — a deck that overflows must fail it")
     (work / "stress.mdx").write_text(STRESS, encoding="utf-8")
     check(deck.main(["check", "--deck", str(work / "stress.mdx")]) == 1,

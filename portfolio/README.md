@@ -188,15 +188,20 @@ Tell me which gaps are fatal, and be honest about whether I'd pass screening.
 ### `feedback`
 
 Reads your portfolio as an interviewer who has seen a hundred this week — pattern-matching on
-what's *missing*, not just what's present. A fixed panel of four reviewers (Staff Engineer /
-Startup EM / Enterprise Tech Lead / OSS-DevTools Lead), each its own subagent, reads the same
-document; their findings are debated (diverge, merge, attack and rebut, at most two rounds) and a
-finding survives only if it still points to a quoted line and no attack showed the document
-contradicts it. Name a persona and it becomes the focus that orders the fixes, never who reviews.
-The output adds a Clashes block saying who disagreed on which finding and whether it survived.
-Scores five dimensions, then challenges every score of 7 or above with the objection a skeptical
-interviewer would raise; only scores that survive stay high. Not for rewriting sentences
-(`rewrite`) or JD matching (`fit`).
+what's *missing*, not just what's present. When your material is in reach (`sources/`,
+`docs/확정사실.md`), every outcome, cause, role and reason sentence is set against its record:
+a sentence that says more than happened, or otherwise, is the first thing an interviewer finds.
+A fixed panel of three reviewers with different jobs — a Screener (the 6-second and 30-second
+reads, target only), an Interviewer (every claim against the material) and the Owner's bar (your
+settled rules, a current employer's weaknesses, choices to ask about) — each its own subagent;
+their findings are debated (diverge, merge, attack and rebut, at most two rounds) and a finding
+survives only if it still points to a quoted line and no attack showed the document contradicts
+it. Every finding quotes the current text and gives the replacement, so the review is worked from
+the chat alone; a gap that may be a choice is asked, not flagged. The output adds a Clashes block
+and ends with a fix table (current text · replacement · 바로/확인/준비); in a workspace it is also
+written to `feedback/YYYY-MM-DD.md`. Scores five dimensions — the band by the rubric, the score
+inside it by the findings charged to it, so a fix moves it — then challenges every score of 7 or
+above. Not for rewriting sentences (`rewrite`) or JD matching (`fit`).
 
 ```
 Review my portfolio as a staff engineer at a large platform company.
@@ -206,7 +211,7 @@ Be harsh — I'd rather hear it now than in the interview.
 Five dimensions: Technical Depth · System Design · Impact and Results · Leadership/Ownership ·
 Portfolio Narrative. Score is the highest level *fully* satisfied — partial evidence does not round
 up. Output includes the single core vulnerability, the top five questions the panel will ask,
-and three prioritized fixes. Rubric and persona details: `references/scoring-rubric.md`,
+and three prioritized fixes. Rubric and lens details: `references/scoring-rubric.md`,
 `references/personas.md`.
 
 ```
@@ -408,6 +413,14 @@ More items than the template has rows: `textN_plusK` clones the next sibling sha
 row group, at the template's own interval — only for same-format siblings on one axis with a constant
 gap, and never past the slide edge. Anything irregular is refused with the reason; the template stays
 the design authority.
+
+The layout a deck needs lives in `deck.mdx`, not in a script run after the build: `place:` moves
+and sizes a template shape (in pt; for the gap a `!drop` leaves, or when you ask), `[text]{#FFFFFF}`
+or `{bg1 75%}` recolours a run and `{sup}` raises a footnote mark, and two front-matter options do
+what a real workspace used to patch by hand — `captions: into-picture` deletes a `[ … ]` caption
+and grows its picture into the room, `panel_margin: 18` fits every picture to its rounded panel by
+one rule. `render` turns off LibreOffice's own East Asian / Latin spacing, so the PDF has no gap
+before a comma after Hangul, and build names the engine version and path it ran.
 
 A template paragraph keeps its own mixed formats: `[text]{n}` writes in its format n, `<br>` breaks
 the line, and `deck.py extract` prints the template's own content in this syntax — built unchanged,

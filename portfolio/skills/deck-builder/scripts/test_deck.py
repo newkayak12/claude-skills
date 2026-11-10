@@ -1233,6 +1233,56 @@ def run_styles(tmp):
     check("- `text1` 문단 1: 서식: 1 = 16pt 굵게 · 2 = 10pt" in cat,
           "catalog prints the formats a paragraph offers")
 
+    print("run colour and superscript (card 136)")
+
+    def fills(root):
+        p = list(root.iter(A + "p"))[0]
+        out = []
+        for r in p.findall(A + "r"):
+            rp = r.find(A + "rPr")
+            f = rp.find(A + "solidFill") if rp is not None else None
+            c = list(f)[0] if f is not None else None
+            lum = c.find(A + "lumMod") if c is not None else None
+            out.append((r.find(A + "t").text,
+                        (c.tag.split("}")[1], c.get("val"), lum.get("val") if lum is not None
+                         else None) if c is not None else None,
+                        rp.get("baseline") if rp is not None else None,
+                        rp.get("sz") if rp is not None else None))
+        return out
+
+    chk, out, root = built("text1: [구조를]{#FFFFFF} 풀고 [되돌릴 수 있게]{bg1 75%} 원장[1)]{sup}"
+                           " [작게]{2 accent2}\n")
+    got = fills(root)
+    check(got[0] == ("구조를", ("srgbClr", "FFFFFF", None), None, "1600")
+          and got[2] == ("되돌릴 수 있게", ("schemeClr", "bg1", "75000"), None, "1600")
+          and got[4] == ("1)", None, "30000", "1600")
+          and got[6] == ("작게", ("schemeClr", "accent2", None), None, "1000"),
+          "`{#hex}` / `{bg1 75%%}` recolour a run, `{sup}` raises it, `{2 accent2}` is format 2 "
+          "in accent2: %s" % got)
+    check("서식이 없습니다" not in chk and "line" not in chk.split("error")[-1][:0],
+          "colour and sup spans pass check")
+    check(deck.plain_text("원장[1)]{sup} [흰]{#FFFFFF}") == "원장1) 흰",
+          "a reader sees the span text, not its markup")
+    check(re.search(r"build -> .* · deck\.py \S+ \(.*deck\.py\)", out) is not None,
+          "build names the engine version and path it ran: %s"
+          % next((l for l in out.splitlines() if l.startswith("build ->")), out[-120:]))
+
+    print("place: move and size a template shape (card 136)")
+    _, _, root = built("text1: 옮김\nplace:\n  - text1: 26.4 270 w=253.9\n")
+    sp = next(s for s in root.iter(P + "sp") if s.find(P + "nvSpPr/" + P + "cNvPr").get("name")
+              == "Two")
+    off, ext = sp.find(P + "spPr/" + A + "xfrm/" + A + "off"), sp.find(P + "spPr/" + A + "xfrm/"
+                                                                         + A + "ext")
+    check((off.get("x"), off.get("y"), ext.get("cx"), ext.get("cy"))
+          == (str(round(26.4 * 12700)), str(270 * 12700), str(round(253.9 * 12700)), "1200000"),
+          "`place: text1: x y w=` moves the shape and sets its width, keeping its height: %s"
+          % ((off.get("x"), off.get("y"), ext.get("cx"), ext.get("cy")),))
+    chk, out, _ = built("text1: x\nplace:\n  - text9: 1 2\n  - text1: 왼쪽 위\n")
+    check("place names 'text9'" in chk and "place item 'text1: 왼쪽 위'" in chk
+          and "place names 'text9'" in out,
+          "an unknown slot and a malformed item are check errors, and build says so too")
+    check("notes master" not in chk, "place is not mistaken for notes")
+
 
 def fidelity(tmp):
     """A template's own content, extracted and rebuilt, is the template; and what the
@@ -1574,9 +1624,72 @@ def workdir():
     return Path(tempfile.mkdtemp(prefix="deckbuilder-test-"))
 
 
+def layout_options(tmp):
+    """Card 136: `captions: into-picture` and `panel_margin:` do in build what a real workspace
+    patched after every build."""
+    print("captions into the picture, pictures to their panel")
+    E = 12700
+
+    def sp(name, x, y, cx, cy, text="", panel=False):
+        geom = '<a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom>' if panel else ""
+        body = ('<p:txBody><a:bodyPr/><a:p><a:r><a:rPr lang="ko-KR"/><a:t>%s</a:t></a:r></a:p>'
+                '</p:txBody>' % text) if text else ""
+        return ('<p:sp><p:nvSpPr><p:cNvPr id="9" name="%s"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>'
+                '<p:spPr><a:xfrm><a:off x="%d" y="%d"/><a:ext cx="%d" cy="%d"/></a:xfrm>%s'
+                '</p:spPr>%s</p:sp>' % (name, x * E, y * E, cx * E, cy * E, geom, body))
+
+    def pic(name, x, y, cx, cy):
+        return _pic(name, "rId9", cx * E, cy * E).replace(
+            '<a:off x="0" y="0"/>', '<a:off x="%d" y="%d"/>' % (x * E, y * E))
+
+    def tree(shapes):
+        return ET.fromstring(_slide(shapes)).find(P + "cSld/" + P + "spTree")
+
+    def box(t, name):
+        for el in t:
+            nv = el.find(".//" + P + "cNvPr")
+            if nv is not None and nv.get("name") == name:
+                o, e = el.find(".//" + A + "off"), el.find(".//" + A + "ext")
+                return tuple(round(int(v) / E, 1) for v in (o.get("x"), o.get("y"),
+                                                             e.get("cx"), e.get("cy")))
+        return None
+
+    # a panel 40..440 x 100..400 pt; a 200x100 picture at the top of it, a caption under it
+    t = tree([sp("Panel", 40, 100, 400, 300, panel=True), pic("Pic", 140, 120, 200, 100),
+              sp("Cap", 140, 230, 200, 30, "[ 그림 1 · 구조 ]"), sp("Body", 40, 420, 400, 40, "본문")])
+    n = deck.captions_into_pictures(t, 960 * E, 540 * E)
+    check(n == 1 and box(t, "Cap") is None and box(t, "Body") is not None,
+          "the `[ … ]` caption under the picture is removed, nothing else is")
+    px, py, pw, ph = box(t, "Pic")
+    check(py == 120 and ph == 140 and abs(pw - 280) < 1 and abs(px + pw / 2 - 240) < 1,
+          "the picture grows down into the caption's room, aspect kept, centred: %s"
+          % ((px, py, pw, ph),))
+
+    t = tree([sp("Panel", 40, 100, 400, 300, panel=True), sp("Head", 60, 110, 360, 30, "제목"),
+              pic("Pic", 100, 200, 100, 50), pic("Out", 600, 100, 100, 50)])
+    n = deck.pictures_to_panels(t, 18)
+    px, py, pw, ph = box(t, "Pic")
+    check(n == 1 and box(t, "Out") == (600, 100, 100, 50),
+          "only a picture inside a rounded panel is moved")
+    check(abs(px - 58) < 1 and abs(px + pw - 422) < 1 and abs(py + ph - 382) < 1
+          and py >= 146 and abs(pw / ph - 2) < 0.01,
+          "it fills the panel less 18pt left, right and bottom, under the panel's text, aspect "
+          "kept: %s" % ((px, py, pw, ph),))
+
+    make_png(tmp / "lo.png", 40, 40)
+    make_template(tmp / "lo.pptx", tmp / "lo.png")
+    src = tmp / "lo.mdx"
+    src.write_text("---\ntemplate: lo.pptx\noutput: lo-out.pptx\ncaptions: shrink\n"
+                   "panel_margin: wide\n---\n\n## @s2\ntext1: x\n", encoding="utf-8")
+    out = run_cmd(["build", "--deck", str(src)])
+    check("captions 'shrink'" in out and "panel_margin 'wide'" in out,
+          "an unknown captions value and a non-number margin are named in the build")
+
+
 def main():
     tmp = workdir()
     try:
+        layout_options(tmp)
         run(tmp)
         geometry(tmp)
         sizing(tmp)

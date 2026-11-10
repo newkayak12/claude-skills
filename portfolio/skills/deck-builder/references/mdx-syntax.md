@@ -9,6 +9,8 @@ The deck source. Compiled, not read — the extension is enforced.
 template: template.pptx        # required; no built-in template exists
 template_hash: 5f84440a3521    # from `catalog`; pins the deck to the template's structure
 output: deck.pptx
+captions: into-picture         # optional — see "Layout in the deck" below
+panel_margin: 18               # optional, pt
 ---
 ```
 
@@ -52,6 +54,7 @@ text5: !drop
 | `key: !drop` | delete that shape from the slide |
 | `textN_plusK: value` | clone: the shape (>=3 same-format siblings in one group, constant interval), else the row group holding `textN` (>=2 same-format trailing groups, last observed interval, gaps within 10%), K steps past the last; each cloned row group takes its own `<slot>_plusK` values. Refused with a reason when irregular, differing or off the slide |
 | `notes:` | speaker notes; reserved, works on any archetype |
+| `place:` + `- slot: x y [w=W] [h=H]` | move (and size) a template shape, in pt from the slide's top-left; reserved |
 | slot omitted | keeps the template's own content |
 
 ## Worked example
@@ -92,6 +95,9 @@ key then regular values. `catalog` numbers them per paragraph (`서식: 1 = 16pt
 | Form | Meaning |
 |---|---|
 | `[text]{n}` | write `text` in that paragraph's format n; unmarked text is format 1 |
+| `[text]{#FFFFFF}` · `[text]{bg1 75%}` | recolour the run: a hex colour, or a theme slot (`bg1` `bg2` `tx1` `tx2` `accent1`–`accent6`) with an optional luminance |
+| `[1)]{sup}` · `[2]{sub}` | raise or lower the run (a footnote mark after a word) |
+| `[text]{2 #FFFFFF sup}` | any of the above together, space-separated |
 | `<br>` | line break inside the paragraph (the template's `<a:br/>`) |
 | `\[`, `\]`, `\*`, `` \` `` | the literal character, not markup |
 | `\ ` | a space the parser would trim (a value's leading/trailing spaces); a value ending in `\` ends in a space |
@@ -103,6 +109,29 @@ spacing and cell formats; extra items repeat the level's first paragraph (the la
 
 `deck.py extract --template t.pptx --output deck.mdx` writes the template's own content in
 this syntax; built unchanged, it reproduces every paragraph's runs, breaks and indents.
+
+## Layout in the deck
+
+What a workspace used to patch after every build lives here, so a build is the deck.
+
+```markdown
+## @s3
+text4: !drop
+place:
+  - text5: 26.4 270             # x y, pt from the slide's top-left
+  - text6: 279.3 156 h=54       # and a new height
+  - text22: 156.8 408.8 w=253.9 # or a new width
+```
+
+`place:` moves a shape with its own frame; one whose position comes from the layout is named
+in the build, not moved. It runs after every value and the two options below, so it wins.
+
+| Front matter | What it does |
+|---|---|
+| `captions: into-picture` | a `[ … ]` caption above or below a picture is deleted and the picture grows into its room, aspect kept, inside its rounded panel, its neighbours and the slide — for diagrams that carry their own title |
+| `panel_margin: 18` | every picture whose centre sits in a rounded panel is fitted into the panel less 18pt left, right and bottom, under the panel's own text, centred across and set on the bottom |
+
+Both act on a slide's top-level shapes; a group's children are left as they are.
 
 ## Outline levels
 
