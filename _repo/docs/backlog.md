@@ -284,6 +284,34 @@ toasts).
 
 Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 128's leftovers.
 
+145. **tm_open takes `request` and `requests` together when they say the same thing, so callers stop failing on it**
+    - Why: user, 2026-11-10 (trophy Failures tab screenshot: "이거 backlog에 쌓아주고"). `mcp_error ·
+      tm_open` "tm_open takes request OR requests, not both" recorded 7 times, 2026-10-16 to 10-31.
+      Thrown at `teams/mcp/taskmanager-stages.mjs` ~338 whenever both are non-empty. Which caller
+      sends both is unverified (the Sprint skill documents `requests` at `teams/skills/sprint/SKILL.md`
+      ~42; a session also passing `request` as the Sprint title is the likely shape).
+    - Acceptance: `request` equal to `requests[0]`, or used as a title beside `requests`, is accepted
+      (or the error says which one to drop, with the caller's own values); every skill that calls
+      tm_open shows one form only; a test for both shapes; `node --test teams/scripts/test-*.mjs`
+      with counts.
+
+146. **tm_clean on a running task waits or says how, instead of failing the call**
+    - Why: same screenshot. `mcp_error · tm_clean` "task … is running (daemon alive, pid …) — tm_clean
+      only cleans a task in a terminal state" on 2026-10-21 and 10-26
+      (`teams/mcp/taskmanager-handlers.mjs` ~651). The caller cleaned before the task ended; which
+      skill or session did is unverified.
+    - Acceptance: the skills that reap (orchestrate, sprint, maintaining's "Reap" rule) call
+      tm_wait to a terminal state before tm_clean, or tm_clean takes `wait: true`; the refusal stays
+      for an explicit clean of a live task; a test; teams tests with counts.
+
+147. **trophy's Failures tab says what failed and groups repeats**
+    - Why: same screenshot. `outcome · goal_failed · —` and `outcome · subgoal_failed · —` (2026-11-09)
+      carry no target and no text: `trophy/hooks/failures.ts` ~85-90 maps the harness outcome to a
+      reason only. The same tm_open error fills seven rows one under another.
+    - Acceptance: an outcome row names the task/run and the failed gate or subgoal (what the harness
+      outcome carries); identical reason + target rows fold into one with a count and the last date;
+      `claude plugin test` with counts; one live look at the tab (mod.md "A UI change is done when").
+
 125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality** — E-8faf33b9 blocked on a PRD merge bug (fixed `8d5cb7b0`); E-701e2856 (2026-11-07, $35.82) planned
    it again (5 cards 88–94, plan-integrate accepted) and stopped partial at shape:3 (see card 129). Now one
    size-S task per feature area, in order F1 → F5 → F3 → F4 → F2, each from its section of that PRD (kept
