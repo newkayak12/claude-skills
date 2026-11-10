@@ -201,8 +201,18 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
    draws actor `human` and engine-composed reasons (`size S · develop`, `resplit → areas:N`, `never
    dispatched`) in English; carried into F2, which replaces that page (`tmp/card125/F4-gaps.md`).
    F2 shipped `2169cdab` (E-b2f3c230, gate 93; plugin test 565/565, teams 2220/0/2; $41.88 of $40), F4 gaps
-   closed. Left before the card closes: approval of the 32 demo renders in `tmp/card125/renders/` (UI rule 0);
-   live look in tmux at 190/110 and in the app; Esc while answering (draft kept?); "→ you" vs "→ me" wording;
+   closed. Demo renders approved (user, 2026-11-10: "125 고"). Live look 2026-11-10 in tmux at 190 and 110 on
+   E-f1f5fcf7 (size S): open by command and band, w/s/d/a/l, close by Esc, q and the command again all work;
+   defects to fix before the card closes:
+     1. The footer carries `⏎ submit` on every page, not only in answer mode; it stays English under KR, and at
+        110 the truncation cuts `a back`/`q close` while keeping it.
+     2. FLOOR puts `1 working` on Build while the task is in Plan (`Phase 1/6 Plan`), and Plan's Phase detail
+        reads `Running –` while the size-S driver works.
+     3. Phase detail's breadcrumb loses its tail: the EPIC title takes the line (`… › FLO…`); the title should
+        shorten, not the crumb.
+     4. HOME draws a size-S EPIC twice: the EPIC row and a run row with the same key and title.
+     5. The command closing the pane answers `teams: 창을 열었습니다` / `pane opened` in the chat.
+   Still to do: a look in the Claude app or Desktop; Esc while answering (draft kept?); "→ you" vs "→ me" wording;
    `answer.mjs --card` on a task with no nodes; README/KOR shots with the batch bump. Also open from the F2
    report: EPIC report render stays 7 lines (no verdict or result) and FLOOR lacks role counts and
    "STORY n / subagent n" (the engine does not send them); `test-docs.mjs` asserts only the scoped_out half of
