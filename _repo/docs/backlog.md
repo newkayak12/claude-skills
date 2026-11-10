@@ -199,6 +199,10 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
    (E-a6936957, gate 88; teams 2184/2182, 2 skip; plugin test 546/546; $32.47 of $30): the Decisions thread
    draws actor `human` and engine-composed reasons (`size S · develop`, `resplit → areas:N`, `never
    dispatched`) in English; carried into F2, which replaces that page (`tmp/card125/F4-gaps.md`).
+   F2 shipped `2169cdab` (E-b2f3c230, gate 93; plugin test 565/565, teams 2220/0/2; $41.88 of $40), F4 gaps
+   closed. Left before the card closes: approval of the 32 demo renders in `tmp/card125/renders/` (UI rule 0);
+   live look in tmux at 190/110 and in the app; Esc while answering (draft kept?); "→ you" vs "→ me" wording;
+   `answer.mjs --card` on a task with no nodes; README/KOR shots with the batch bump.
    - Why: user, 2026-11-04, after the 190/110 captures of card 105: "만약 된다면 view.mjs(web으로 보여주는 것)
      은 퇴역시켜도 될거 같아", "저 *-stats view만 더 퀄리티 높히면 될거 같고". Condition ("만약 된다면"): the
      pane handles several EPICs at once (`]`/`[` step EPIC, `j`/`k` STORY row, `g` open) — seen live with
