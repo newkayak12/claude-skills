@@ -160,6 +160,7 @@ headless 실행(`claude -p`)에서는 이 명령들이 텍스트를 출력합니
 한 세션에서 `main`으로의 `git push`가 성공하면(`origin main`, `HEAD:main`, `x:main`, main 브랜치에서의 그냥 push), 같은 저장소에서 최근 30분 안에 움직인 다른 열린 세션마다 `main moved to <sha> … Fetch before editing or bumping versions.` 메시지가 갑니다. 세션당 2분에 한 번까지이고, 이 세션에는 `main moved: told N of M` toast가 뜹니다. headless 실행은 보내지 않습니다.
 
 ## 상태
+- `0.10.0`: smart-compact가 자기 `/compact`를 직접 처리합니다. recap에 최근 턴 원문을 그대로 붙여 모델 호출 한 번으로 끝내고, 엔진 요약기가 다시 돌지 않습니다. auto-compact도 같은 handoff를 받고, `/smart-compact log`에 쓴 토큰 수가 남습니다.
 - `0.9.3`: 모든 패널, 밴드, 토스트가 터미널·데스크톱·모바일·vscode에서 그려집니다. 패널을 그릴 수 없는 곳에서는 `/session`이 글로 답합니다. memo와 hint 토스트는 화면이 있을 때만 뜹니다.
 - `0.9.2`: smart-compact가 토큰 수와 컨텍스트 창 크기로 %를 계산합니다. 상태 줄의 `used_percentage`와 같은 식입니다. `/smart-compact`가 지금 %, 기준, 그 뒤의 토큰 수를 보여 줍니다.
 - `0.9.1`: `/reap-list`가 다른 task 루트에 속한 고아 daemon도 정리하고, 자기를 실행한 세션은 목록에서 숨깁니다.

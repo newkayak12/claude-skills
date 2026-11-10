@@ -131,7 +131,9 @@ skeleton.md → deck.mdx → build/        설계도, 빌드 원본, 산출물
 snapshot/  sources/  docs/확정사실.md   버전, 글감, 확정된 사실
 ```
 
-9단계(2.12.0): 수집 → 정리(`sources/선정.md`: 본문 / 부록 / 제외, 글감마다 대표) → 초안 → 여러 시점
+9단계(2.13.0: manage가 NFD 한글 파일명을 읽고 빠진 확정 결정 절을 알려 줌, feedback이 주장마다
+글감과 대조해 렌즈 세 개로 보고 고칠 문장을 줌, deck-builder가 `deck.mdx`의 도형 위치·글자색·캡션을
+빌드에서 배치하고 쉼표 앞 공백 없이 렌더함): 수집 → 정리(`sources/선정.md`: 본문 / 부록 / 제외, 글감마다 대표) → 초안 → 여러 시점
 퇴고 → 템플릿 분석(`template/분석.md`) → 덱 → 렌더와 검토(미리보기를 덱 버전별로 `snapshot/render/`에
 보관) → 덱 피드백, 결과는 글감으로 되돌림. 9단계는 같은 확정 주장으로 사용자 본인의 Word 템플릿에
 이력서를 쓰고(`resume.py build`) PDF로 내보냅니다. skeleton·덱·이력서에 쓰는 문장은 모두 `write:like-me`를

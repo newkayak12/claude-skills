@@ -138,7 +138,10 @@ skeleton.md → deck.mdx → build/        design, build source, output
 snapshot/  sources/  docs/확정사실.md   versions, material, settled facts
 ```
 
-Nine steps (2.12.0): collect → select (`sources/선정.md`: 본문 / 부록 / 제외 and what each item
+Nine steps (2.13.0: manage reads NFD Korean file names and names missing settled-decision sections;
+feedback checks each claim against the material through three lenses and gives the line to write;
+deck-builder places shapes, colours and captions from `deck.mdx` and renders without stray spaces
+before commas): collect → select (`sources/선정.md`: 본문 / 부록 / 제외 and what each item
 leads with) → draft → revise from several viewpoints → template analysis (`template/분석.md`) →
 deck → render and review (previews kept per deck version under `snapshot/render/`) → feedback on
 the deck, back onto the material. Step 9 writes the resume from the same settled claims into your
