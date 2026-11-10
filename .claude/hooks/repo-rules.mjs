@@ -401,9 +401,11 @@ export function decide(mode, input, env, run = git) {
   return {}
 }
 
+const isEntry = process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
+
 // prepush: run by git's pre-push hook (_repo/hooks/pre-push), so the hold applies to every
 // client, not only Claude Code. Exit 1 refuses the push; read errors fail open.
-if (import.meta.url === `file://${process.argv[1]}` && process.argv[2] === 'prepush') {
+if (isEntry && process.argv[2] === 'prepush') {
   let held = []
   try {
     held = openTasks(git(process.cwd(), ['rev-parse', '--show-toplevel']).trim())
@@ -417,7 +419,7 @@ if (import.meta.url === `file://${process.argv[1]}` && process.argv[2] === 'prep
   process.exit(0)
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isEntry) {
   try {
     let raw = ''
     for await (const c of process.stdin) raw += c

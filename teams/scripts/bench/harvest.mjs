@@ -6,8 +6,9 @@
 //
 //   node harvest.mjs <workspace> [--label L] [--root DIR] [--score-prefix PATH]
 
-import { readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { harvestTask, signature, classify } from '../../mcp/runlog.mjs';
 
 export { signature, classify };
@@ -20,7 +21,7 @@ export function harvest(ws, { label, root, scorePrefix } = {}) {
   return harvestTask({ taskDir: ids[0] ? join(tasksDir, ids[0]) : null, cwd: ws, label, root, scorePrefix: scorePrefix || ws });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const a = process.argv.slice(2);
   const flags = new Set(['--label', '--root', '--score-prefix']);
   const ws = a.find((x, i) => !x.startsWith('--') && !flags.has(a[i - 1]));

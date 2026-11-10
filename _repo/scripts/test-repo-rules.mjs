@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Feeds JSON stdin cases to .claude/hooks/repo-rules.mjs and checks its output.
 import { spawnSync, execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, realpathSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -22,7 +22,7 @@ const gitOut = (cwd, ...a) => execFileSync('git', a, { cwd, encoding: 'utf8', st
 const commonOf = cwd => realpathSync(resolve(cwd, gitOut(cwd, 'rev-parse', '--git-common-dir')))
 
 // a repo with an origin one commit ahead of the clone, to exercise start and commit
-const root = mkdtempSync(join(tmpdir(), 'repo-rules-'))
+const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-rules-')))
 const origin = join(root, 'origin')
 const clone = join(root, 'clone')
 mkdirSync(origin)
@@ -420,7 +420,7 @@ check('write/rm: unbalanced quote -> exit 0', bash("sed -i 's/a/b teams/mcp/x.mj
   check('write: git failing inside the detector -> fail open', Object.keys(d("sed -i 's/a/b/' teams/mcp/x.mjs")).length === 0)
   check('rm: the rm deny needs no git (still denies when git fails)', d('rm -f $S/x').hookSpecificOutput?.permissionDecision === 'deny')
   // commonDir null on one side: real git everywhere except the --git-common-dir lookup of one side
-  const own = dirname(cloneHook)
+  const own = realpathSync(dirname(cloneHook))
   const realGit = (cwd, args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
   const failing = pick => (cwd, args) => {
     if (args.includes('--git-common-dir') && pick(cwd)) throw new Error('common dir lookup failed')
@@ -453,6 +453,42 @@ check('write/rm: unbalanced quote -> exit 0', bash("sed -i 's/a/b teams/mcp/x.mj
   check('write: sed -i in a repo that carries its own hook copy -> deny', writeDenied(bash("sed -i 's/a/b/' notes.txt", scratch)))
   hook = cloneHook
   rmSync(scratch, { recursive: true, force: true })
+}
+
+{
+  const fixtureRoot = join(root, 'entry')
+  mkdirSync(fixtureRoot)
+  const makeRepo = repo => {
+    mkdirSync(repo, { recursive: true })
+    sh(repo, 'init', '-q', '-b', 'main')
+    writeFileSync(join(repo, 'notes.txt'), 'a\n')
+    sh(repo, 'add', 'notes.txt')
+    sh(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'one')
+  }
+  const realFixtureRoot = realpathSync(fixtureRoot)
+  const symlinkRepo = join(fixtureRoot, 'repo')
+  makeRepo(symlinkRepo)
+  const symlinkDir = join(fixtureRoot, 'link')
+  symlinkSync(symlinkRepo, symlinkDir)
+  const spacedRepo = join(realFixtureRoot, 'with space', 'repo')
+  makeRepo(spacedRepo)
+  for (const [kind, repo, reachedRepo] of [
+    ['symlink', symlinkRepo, symlinkDir],
+    ['space', spacedRepo, spacedRepo],
+  ]) {
+    const reachedHook = copyHook(repo).replace(repo, reachedRepo)
+    hook = reachedHook
+    check(`entry path (${kind}): non-canonical fixture`, kind === 'symlink' ? realpathSync(reachedHook) !== reachedHook : reachedHook.includes(' '))
+    check(`entry path (${kind}): sed -i via ${kind} hook path -> deny`, writeDenied(bash("sed -i 's/a/b/' notes.txt", reachedRepo)))
+    const id = `t-131-${kind}`
+    task(id, reachedRepo, ['tm_open'])
+    const held = prepushAt(reachedRepo)
+    check(`entry path (${kind}): prepush via ${kind} hook path, open task -> exit 1 naming the id`, held.status === 1 && held.stderr.includes(id))
+    drop(id)
+    check(`entry path (${kind}): prepush via ${kind} hook path, dropped task -> exit 0`, prepushAt(reachedRepo).status === 0)
+  }
+  hook = cloneHook
+  rmSync(fixtureRoot, { recursive: true, force: true })
 }
 
 check('garbage stdin -> fail open', run('bash', 'not json').code === 0 && Object.keys(run('bash', 'not json').out).length === 0)
