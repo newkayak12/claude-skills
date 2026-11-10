@@ -25,6 +25,19 @@ test('foldPackageHistory folds a package\'s dispatch results into one record per
     nodes: [{ stage: 'dispatch', subgoal_id: 'P1', node_id: 'd1', attempt: 1, result: { changed_files: ['a'], gaps: [], reason: 'ok', accept: true } }],
   };
   assert.deepEqual(mod.foldPackageHistory(task), {
-    P1: { changed_files: ['a'], gaps: [], reason: 'ok', accept: true, attempts: 1 },
+    P1: { changed_files: ['a'], files_changed: ['a'], gaps: [], reason: 'ok', accept: true, attempts: 1 },
   });
+});
+
+test('foldPackageHistory records files_changed from the latest attempt, while changed_files stays the union of every attempt', () => {
+  const task = {
+    spec: { packages: [{ id: 'P1' }] },
+    nodes: [
+      { stage: 'dispatch', subgoal_id: 'P1', node_id: 'd1', attempt: 1, result: { changed_files: ['a', 'old'], accept: false } },
+      { stage: 'dispatch', subgoal_id: 'P1', node_id: 'd2', attempt: 2, result: { changed_files: ['a', 'b', 'a'], accept: true } },
+    ],
+  };
+  const fold = mod.foldPackageHistory(task).P1;
+  assert.deepEqual(fold.files_changed, ['a', 'b']);
+  assert.deepEqual([...fold.changed_files].sort(), ['a', 'b', 'old']);
 });

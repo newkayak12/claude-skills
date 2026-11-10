@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { node } from '../mcp/graph.mjs';
-import { renderAll, writeDocs } from '../mcp/docs.mjs';
+import { renderAll, writeDocs, storyReportSections, buildRetro } from '../mcp/docs.mjs';
 import { docPaths } from '../mcp/tickets.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -131,6 +131,48 @@ test('65-audit.md links the STORY the audit filed in an earlier round, and shows
   assert.match(page, /rounds: 2/);
   assert.match(page, /## Unmet user stories \(latest round\)\n- \(none\)/);
   assert.match(renderAll(task)[docPaths(task).story('D1')], /reporter: audit \(planning-audit\)/);
+});
+
+test('storyReportSections: the mock-06 sections as data, the same in the text; unfinished until accept is done (F2-AC-46)', () => {
+  const task = fixtureTask('/proj');
+  task.goal_threshold = 90;
+  task.max_retries = 2;
+  task.decisions = [{ question: 'keep the legacy route?', chose: 'yes', owner: 'requester', decided_in: 'P1' }, { question: 'other', chose: 'x', decided_in: 'P2' }];
+  task.nodes.find((n) => n.node_id === 'accept:P1:2').result.scoped_out = [{ gap: 'export path', belongs_to: 'P3' }];
+  task.nodes.find((n) => n.node_id === 'integrate:2').result.package_fold = { P1: { files_changed: ['a.txt', 'lib/a.mjs'] } };
+  const rep = storyReportSections(task, 'P1');
+  assert.equal(rep.finished, true);
+  assert.deepEqual(rep.sections.map((s) => s.key), ['result', 'verdict', 'files', 'decisions', 'left', 'seeLog']);
+  const by = Object.fromEntries(rep.sections.map((s) => [s.key, s.lines]));
+  assert.deepEqual(by.verdict, ['score=92', 'threshold=90', 'attempt=2', 'max=3']);
+  assert.deepEqual(by.files, ['a.txt', 'lib/a.mjs']);
+  assert.deepEqual(by.decisions, ['keep the legacy route?: yes']);
+  assert.deepEqual(by.left, ['export path (belongs to P3)']);
+  assert.deepEqual(by.seeLog, ['tm_log E-aaaaaaaa/P1', 'tm_retry E-aaaaaaaa/P1']);
+  const text = renderAll(task)[docPaths(task).story('P1')];
+  assert.match(text, /## Files changed\n- a\.txt\n- lib\/a\.mjs/);
+  assert.match(text, /## Verdict\nscore: 92\/90 · attempt 2\/3/);
+  assert.match(text, /## Left over\n- export path \(belongs to P3\)/);
+  assert.match(text, /## Look again\n- tm_log E-aaaaaaaa\/P1\n- tm_retry E-aaaaaaaa\/P1/);
+
+  task.nodes.find((n) => n.node_id === 'accept:P1:2').state = 'running';
+  assert.equal(storyReportSections(task, 'P1').finished, false);
+});
+
+test('report needs: engine-composed reasons (never dispatched, state: x) carry a key; a judge-written reason stays plain (F4-GAP-1)', () => {
+  const task = fixtureTask('/proj');
+  task.spec.packages.push({ id: 'P9', title: 'never ran', flow: 'develop', deps: [], touches: [] }, { id: 'P8', title: 'odd', flow: 'develop', deps: [], touches: [] }, { id: 'P7', title: 'rejected', flow: 'develop', deps: [], touches: [] });
+  task.nodes.push(
+    { node_id: 'dispatch:P9:1', stage: 'dispatch', subgoal_id: 'P9', attempt: 1, state: 'done', result: {} },
+    { node_id: 'dispatch:P8:1', stage: 'dispatch', subgoal_id: 'P8', attempt: 1, state: 'done', result: {} },
+    { node_id: 'dispatch:P7:1', stage: 'dispatch', subgoal_id: 'P7', attempt: 1, state: 'done', result: {} },
+    { node_id: 'accept:P8:1', stage: 'accept', subgoal_id: 'P8', attempt: 1, state: 'failed', result: {} },
+    { node_id: 'accept:P7:1', stage: 'accept', subgoal_id: 'P7', attempt: 1, state: 'done', result: { accept: false, reason: 'tests red' } },
+  );
+  const un = Object.fromEntries(buildRetro(task).next_backlog.unaccepted_packages.map((p) => [p.id, p]));
+  assert.deepEqual([un.P9.reason, un.P9.reason_key], ['never dispatched', 'reasonNeverDispatched']);
+  assert.deepEqual([un.P8.reason, un.P8.reason_key, un.P8.reason_vars], ['state: failed', 'reasonState', { state: 'failed' }]);
+  assert.deepEqual([un.P7.reason, un.P7.reason_key], ['tests red', undefined]);
 });
 
 test('writeDocs({rebuild:true}) reproduces byte-identical files from engine state alone, with no clock passed - the actual production call shape', () => {

@@ -15,7 +15,7 @@ const row = (cards, { opener = { session_id: 's-1', entrypoint: 'cli' }, live = 
 
 test('addressed: one notice with who, question, since', () => {
   const out = asksFor([row([card('P2', 'Keep the legacy PDF route?', 1000)])], 's-1');
-  assert.deepEqual(out, [{ task_id: 'aaaaaaaa-0001', key: 'E-aaaaaaaa/P2', who: 'P2', question: 'Keep the legacy PDF route?', since: 1000, via: 'poll' }]);
+  assert.deepEqual(out, [{ task_id: 'aaaaaaaa-0001', key: 'E-aaaaaaaa/P2', who: 'P2', question: 'Keep the legacy PDF route?', since: 1000, stage: null, via: 'poll' }]);
 });
 
 test('other session id -> []', () => {
@@ -138,7 +138,7 @@ test('view --session: poll ask, task cwd differs from session cwd', () => {
     task(w, { cwd: '/a' });
     const st = view(w, 'status', '--cwd', '/b', '--session', 's-1');
     assert.equal(st.asks.length, 1);
-    assert.deepEqual({ ...st.asks[0], since: null }, { task_id: 'aaaaaaaa-0001', key: 'E-aaaaaaaa/P2', who: 'P2', question: Q, since: null, via: 'poll' });
+    assert.deepEqual({ ...st.asks[0], since: null }, { task_id: 'aaaaaaaa-0001', key: 'E-aaaaaaaa/P2', who: 'P2', question: Q, since: null, stage: 'ask', via: 'poll' });
     assert.deepEqual(view(w, 'status', '--session', 's-1').asks.map((a) => a.who), ['P2']);
     // scope split: waiting is cwd-scoped (0 for /b), asks is not; the band keys on asks for this case
     assert.equal(st.waiting, 0);

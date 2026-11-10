@@ -13,6 +13,7 @@ export const ALLOW: string[] = [
   'teams', // lower-case product name, as the mocks' header draws it
   'integrate', // lower-case stage id (node and ticket names)
   'qa', // lower-case stage id of the qa flow
+  'size', 'shape', 'areas', // manager node names a Phase's decisions thread draws in its node column
 ]
 
 const onList = (w: string): boolean => ALLOW.includes(w) || /^tm_\w+$/.test(w)

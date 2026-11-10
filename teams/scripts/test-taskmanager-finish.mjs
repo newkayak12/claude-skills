@@ -68,6 +68,20 @@ test('report reason: a report that already has a reason keeps it byte for byte',
   assert.equal(n.result.reason, 'own  reason ');
 });
 
+test('integrate: the persisted result carries files_changed per package at fold time', () => {
+  process.env.HARNESS_TASKS_DIR = mkdtempSync(join(tmpdir(), 'finish-fold-'));
+  const task = {
+    run_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', cwd: mkdtempSync(join(tmpdir(), 'finish-cwd-')), team: { opts: {} },
+    spec: { packages: [{ id: 'P1' }] },
+    nodes: [{ stage: 'dispatch', subgoal_id: 'P1', node_id: 'dispatch:P1:1', attempt: 1, result: { changed_files: ['a.txt', 'b.txt'], accept: true } }],
+  };
+  const n = { node_id: 'integrate:1', stage: 'integrate', state: 'running', deps: [] };
+  task.nodes.push(n);
+  mod.finish(task, n, { stage_ok: true, verified: true, checks: ['build -> ok'], conflicts: [] });
+  assert.equal(n.state, 'done');
+  assert.deepEqual(n.result.package_fold.P1.files_changed, ['a.txt', 'b.txt']);
+});
+
 test('report reason: a failed node of another stage with no reason is unchanged', () => {
   const n = finishNode('implement', { stage_ok: false, handoff: 'h', evidence: 'e' });
   assert.equal(n.state, 'failed');

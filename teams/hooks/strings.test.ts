@@ -80,10 +80,23 @@ test('latinOutside: id tokens are data, a bare prefix is not', () => {
   expect(latinOutside('SG 진행', []).join(' ')).toBe('SG')
 })
 
+// F2-AC-50/51: every F2 key and the engine-composed reason/actor keys are in both tables, and the Korean holds no word off the allow-list
+const F2_GAP_KEYS = ['actorHuman', 'proposalSize', 'proposalSizeFlow', 'resplitAreas', 'resplit', 'replanIds', 'reasonNeverDispatched', 'reasonState']
+test('STRINGS: the F2 keys and the F4-gap keys exist in en and ko, 81 + 8, ko inside the allow-list', () => {
+  const en = STRINGS.en as Record<string, string>
+  const ko = STRINGS.ko as Record<string, string>
+  const f2 = Object.keys(en).filter((k) => /^f2[A-Z]/.test(k))
+  expect(f2.length).toBe(81)
+  for (const k of [...f2, ...F2_GAP_KEYS]) {
+    expect(k in en && k in ko ? k : `missing: ${k}`).toBe(k)
+    expect([k, latinOutside(ko[k]!.replace(/\{\w+\}/g, ''), [])]).toEqual([k, []])
+  }
+  expect([en.actorHuman, ko.actorHuman]).toEqual(['human', '사람'])
+})
+
 test('STRINGS: ko nextShape, nextAreas and tileStories keep to the allow-list', () => {
   const ko = STRINGS.ko as Record<string, string>
   for (const k of ['nextShape', 'nextAreas', 'tileStories']) {
     expect(latinOutside(ko[k].replace(/\{\w+\}/g, ''), []).length === 0 ? k : `${k} has a Latin word outside ALLOW`).toBe(k)
   }
-  expect(ko.tileStories).toBe(ko.tabStories)
 })

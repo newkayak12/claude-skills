@@ -24,7 +24,8 @@ export type SummaryTask = {
   done: number
   total: number
   now: { kind: string; subject: string | null; detail: string | null }
-  you: { count: number; items: string[]; cards?: { key: string; title: string; question: string; who: string; since: number | null }[] }
+  // stage 'ask' marks a card that holds a question for this session (answer mode); any other stage is a card waiting on a person
+  you: { count: number; items: string[]; cards?: { key: string; title: string; question: string; who: string; since: number | null; stage?: string | null }[] }
   stages: { key: string; state: Mark }[]
   work: { title: string; kind: string; id: string | null; state: Mark; filed_by: string | null; reason: string | null; reason_key?: string }[]
   // the running stage's countable work as keys and numbers, never words; absent when nothing is countable.
@@ -33,7 +34,18 @@ export type SummaryTask = {
   // usd is the one spend figure; estimated only when a running session has no result yet; post_stop_usd only after a budget stop
   cost: { usd: number; turns: number; estimated?: boolean; post_stop_usd?: number }
   log: { time: string; kind: string; subject: string | null }[]
+  metrics?: SummaryMetrics
 }
+// the numbers of view-summary.mjs metrics() the pane reads: per STORY progress and agents, the machine-wide drivers (load only when
+// the engine sends it), the spend and wall time per Phase, the STORYs out of retries
+export type SummaryMetrics = {
+  drivers?: { live: number | null; cap: number | null; load?: number | null }
+  stories?: { id: string; progress?: { done: number; total: number } | null; agents?: number | null }[]
+  stages?: { stage: string; cost_usd: number; retry_cost_usd: number; wall_ms: number }[]
+  out_of_retries?: string[]
+}
+// view-floor.mjs phaseCounts: the workers of one Phase by state; decisions only when the engine sends the Phase's count
+export type PhaseCount = { key: string; workers: number; acting: number; you: number; stalled: number; idle: number; done: number; decisions?: number }
 
 // `view.mjs --once --format summary` floor part (teams/scripts/lib/view-floor.mjs): per listed task
 export type WorkState = 'acting' | 'idle' | 'you' | 'done' | 'stalled'
@@ -42,7 +54,8 @@ export type WorkState = 'acting' | 'idle' | 'you' | 'done' | 'stalled'
 export type StoryMetrics = {
   attempt: number | null; max_attempts: number | null
   // gap: the judge's first accept gap when it rejected at or above the threshold, else null
-  judge: { score: number; threshold: number | null; reason: string | null; gap: string | null } | null
+  // verdict (accept|reject|null) and attempt: the attempt the judge scored, older than `attempt` while a retry runs
+  judge: { score: number; threshold: number | null; reason: string | null; gap: string | null; verdict?: string | null; attempt?: number | null } | null
   cost_usd: number | null; retry_cost_usd: number | null; wall_ms: number | null; out_of_retries: boolean | null
 }
 export type SummaryItem = {
@@ -55,24 +68,25 @@ export type SummaryItem = {
 // state to localize; it is never '' on a STORY item (a fixed word per row, `doing` stays a field)
 export type SummaryWorker = { id: string; state: WorkState; doing: string; icon: string; word: string; word_key: string
   minutes?: number // only when state is 'stalled': whole minutes silent; absent otherwise
+  // an acting or waiting worker's node (its stage), role word and ms in it, each only when the engine recorded it
+  node?: string; role?: string; elapsed_ms?: number
 }
 // what_key/from_key/to_key name a STRINGS entry for the English beside them; what_vars fill its placeholders
 export type Handoff = {
   time: string; from: string; what: string; to: string
   what_key?: string; what_vars?: Record<string, string | number>; from_key?: string; to_key?: string
+  // Phase hand-offs only, as recorded: the card, a verdict's score and reason, where the verdict sends the card
+  story?: string; score?: number; reason?: string; to_role?: string
 }
 export type SummaryTaskEntry = SummaryTask & {
   task_id: string; created_at: number | null
   live: boolean; age_ms: number | null // age_ms: stalled tasks only, under 24 h
-  items: SummaryItem[]; workers: SummaryWorker[]; handoffs: Handoff[]
+  items: SummaryItem[]; workers: SummaryWorker[]; handoffs: Handoff[]; phases?: PhaseCount[]
   // an S task's harness run (slug, moved lately); null for a package EPIC
   harness: { slug: string | null; moving: boolean } | null
 }
 // `task` (the running task, or --task) stays as before; `tasks` is live newest-created first, then stalled
 export type SummaryOutput = { status: StatusInfo; tasks: SummaryTaskEntry[]; task: SummaryTask | null }
-
-// the pane's tabs, in key order
-export type PaneView = 'dash' | 'floor' | 'stories' | 'decisions' | 'log' | 'report'
 
 // `view.mjs --once --format teams` dash part (teams/scripts/lib/view-dashboard.mjs): the Dashboard tab
 export type DashStage = { n: number; key: string; label: string; state: Mark }
@@ -117,7 +131,8 @@ export type ReportPayload = {
   task_id: string
   verdict: 'finished' | 'blocked' | 'running'
   failed: number
-  needs: { items: string[]; more: number }
+  // entries: each item with the engine's key beside its text (view-status.mjs needsEntries), same order as items
+  needs: { items: string[]; more: number; entries?: { text: string; name?: string; reason?: string; reason_key?: string; reason_vars?: Record<string, string | number> }[] }
   path: string
   report: { text: string; truncated: boolean; more_lines: number; mtime: number } | null
   retro: object | null
@@ -130,27 +145,36 @@ declare module 'claude-code' {
       watch: string[]
       status: StatusInfo | null
       summary: SummaryTask | null
-      view: PaneView
       // every listed EPIC (live first, then stalled), as the last tick saw them, and the ids of the tick before
       tasks: SummaryTaskEntry[]
       taskIds: string[]
       // the EPIC the pane shows (task_id); null until the first list arrives
       epic: string | null
-      // the STORYs tab: the row `g` opens and `j`/`k` move, an index into every listed task's rows
-      row: number
       // the pane Input's text, as the host holds it; '' after a handled key (a typed `/command` stays until Enter)
       typed: string
       // the Floor spinner frame, advanced every ~800 ms while a worker acts
       frame: number
       teams: TeamsView | null
-      // the Dashboard tab: node's model and the Svg desktop, mobile and vscode draw
+      // the teams call's dash part, stored as the tick receives it (no page draws it now)
       dash: Dash | null
-      // the Decisions tab: fetched for one task, and one card when one was picked
-      decisions: { task_id: string; card: string | null; payload: DecisionsPayload } | null
-      selected: string | null
       report: { task_id: string; payload: ReportPayload } | null
       cardReport: { task_id: string; payload: ReportPayload } | null
       ended: Record<string, 'card' | 'seen' | 'dismissed'>
+      // the page stack (pane.ts Page): which page the pane shows, and the selected row id per level; the answer draft is not kept
+      page: { name: 'HOME' | 'FLOOR' | 'PHASE' | 'STORY' | 'LOG' | 'STORY_REPORT' | 'EPIC_REPORT' | 'ANSWER'; epic: string | null; story: string | null; phase: number | null }
+      pageSel: Record<string, string>
+      // the page ANSWER was opened from, the first line shown per level, and the dim hint after `n` found no flag
+      pageFrom: { name: 'HOME' | 'FLOOR' | 'PHASE' | 'STORY' | 'LOG' | 'STORY_REPORT' | 'EPIC_REPORT' | 'ANSWER'; epic: string | null; story: string | null; phase: number | null } | null
+      pageScroll: Record<string, number>
+      flagHint: boolean
+      // a redraw counter for answer mode; its draft (typed answers, the card's questions, the last refusal) is never kept here
+      answerRev: number
+      // what the open page reads beyond the listing, each keyed to the EPIC (and STORY) it was fetched for
+      decisions: { task_id: string; payload: DecisionsPayload } | null
+      storyData: { task_id: string; story: string; payload: import('../hooks/teams-draw').StoryPayload } | null
+      storyDoc: { task_id: string; story: string; payload: import('../hooks/teams-draw').StoryReport } | null
+      // ended EPICs shown unfolded on HOME, by EPIC id; kept across a closed and reopened pane
+      unfolded: Record<string, boolean>
       lang: 'en' | 'ko'
       // set once the person pressed l or the Button
       langChosen: boolean

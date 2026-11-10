@@ -1504,7 +1504,16 @@ test('--once --format summary prints { status, task }: status is --format status
     assert.deepEqual(Object.keys(out.task).sort(), oldKeys.concat(out.task.progress ? ['progress'] : []).sort());
     if (out.task.progress) assert.ok(['build', 'qa', 'sg'].includes(out.task.progress.key), 'progress.key is build|qa|sg');
 
-    const text = JSON.stringify(out.task);
+    // the field name `verdict` is the F2 judge record's key (metrics judge.verdict); a value leaking would still show
+    const walkVerdicts = (v) => {
+      if (Array.isArray(v)) return v.forEach(walkVerdicts);
+      if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) {
+        if (k === 'verdict') assert.ok(['accept', 'reject', null].includes(x), `verdict value leaks: ${JSON.stringify(x)}`);
+        walkVerdicts(x);
+      }
+    };
+    walkVerdicts(out.task);
+    const text = JSON.stringify(out.task).replace(/"verdict":/g, '"":');
     for (const tok of ['verdict', 'match_pct', 'dispatch:', 'gate:goal', 'accept:', '/Users/', '/var/', '/tmp/']) {
       assert.ok(!text.includes(tok), `task leaks ${tok}`);
     }

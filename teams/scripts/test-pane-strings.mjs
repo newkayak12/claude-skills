@@ -113,6 +113,13 @@ test('pane strings: no user-visible literal outside the table in mod.tsx, teams-
   assert.equal(findings.length, 0, `${findings.length} literal(s) outside the table:\n${findings.join('\n')}`);
 });
 
+// F2-AC-41..43: the stall mark comes from workers[] minutes; the pane reads no mtime and no pid
+test('pane strings: no pane code reads an mtime or a pid', () => {
+  for (const f of FILES) {
+    assert.doesNotMatch(readFileSync(hooks + f, 'utf8'), /statSync|\bmtime\b|process\.kill|\bpid\b|taskStalled|drivers\.stalled/, f);
+  }
+});
+
 // F4-AC-25: the toggle writes lang and langChosen and nothing else: no file write, no process run, no other state write
 test('pane strings: the toggleLang body writes only lang and langChosen', () => {
   const src = readFileSync(hooks + 'mod.tsx', 'utf8');

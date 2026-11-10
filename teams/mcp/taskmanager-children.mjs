@@ -692,8 +692,12 @@ export function foldPackageHistory(task) {
     const acceptEntries = dispatches
       .filter((x) => x.result.accept !== undefined)
       .map((x) => ({ node_id: x.node_id, attempt: x.attempt || 1, value: x.result.accept === true }));
+    // What the STORY changed, as its latest attempt left it (the union above also holds files of
+    // attempts since discarded): the STORY report's "files changed" reads this, not the git tree.
+    const latest = records[records.length - 1].fields.changed_files;
     out[String(pkg.id)] = {
       ...foldRecords(packageReducerKind(pkg), records),
+      files_changed: [...new Set(latest.map(String))],
       accept: acceptEntries.length ? applyMerge('last-by-attempt', acceptEntries) : undefined,
       attempts: records.length,
     };

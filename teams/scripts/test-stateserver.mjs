@@ -126,6 +126,40 @@ test('every format the mod uses answers byte for byte like --once', async () => 
   } finally { await kill(h); }
 });
 
+test('F2-AC-44, 49: story and story-report are served byte for byte like --once, and are not mistaken for another format', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'state-story-'));
+  extraRoots.add(dir);
+  const id = 'E-ssssssss1';
+  const cdir = join(dir, 'wt');
+  write(join(cdir, '.teams_output', 'broker', 'runs', 'c-P1.json'), JSON.stringify({
+    run_id: 'c-P1', flow: 'develop', max_retries: 2, spec: { subgoals: [{ id: 'U1', title: 'unit' }] },
+    nodes: [node('plan', 'plan', 'done'), { ...node('implement:U1:1', 'implement', 'done'), subgoal_id: 'U1' }, { ...node('gate:U1:1', 'gate', 'done'), subgoal_id: 'U1' }],
+  }));
+  write(join(dir, 'tasks', id, 'task.json'), JSON.stringify({
+    run_id: id, kind: 'task', cwd, request: 'r', created_at: T0, spec: { packages: [{ id: 'P1', title: 'story P1', deps: [] }] },
+    nodes: [node('size', 'size', 'done'), { ...node('dispatch:P1:1', 'dispatch', 'done'), subgoal_id: 'P1', child: { run_id: 'c-P1', cwd: cdir } },
+      { ...node('accept:P1:1', 'accept', 'done'), subgoal_id: 'P1', result: { accept: true, match_pct: 90, reason: 'ok' } }],
+  }));
+  write(join(dir, 'tasks', id, 'ledger.jsonl'), jl([{ ts: T0, event: 'child_driver_spawned', node_id: 'dispatch:P1:1' }, { ts: T0 + 1, event: 'verdict', node_id: 'accept:P1:1', subgoal_id: 'P1', verdict: 'accept', score: 90 }]));
+  const tdir = join(dir, 'tasks');
+  const path = sock(tdir);
+  const h = serve(tdir);
+  try {
+    await ready(path);
+    for (const format of ['story', 'story-report']) {
+      const args = ['--format', format, '--task', id, '--story', 'P1'];
+      const r = await get(path, query(args));
+      assert.equal(r.status, 200, format);
+      assert.equal(r.body, once(args, tdir), format);
+      assert.equal(JSON.parse(r.body).story ?? 'P1', 'P1');
+    }
+    // the story argument is part of the answer: another STORY is another answer
+    const other = await get(path, query(['--format', 'story', '--task', id, '--story', 'P9']));
+    assert.equal(JSON.parse(other.body).missing, true);
+    assert.equal(JSON.parse((await get(path, query(['--format', 'story-report', '--task', id, '--story', 'P1']))).body).finished, true);
+  } finally { await kill(h); }
+});
+
 test('the socket is <tasksDir>/.state.sock, with no plugin version in its name', () => {
   assert.equal(statePaths(tasks).sock, join(tasks, '.state.sock'));
   assert.equal(statePaths(tasks).lock, join(tasks, '.state.lock'));

@@ -9,15 +9,17 @@ import { readFileSync, existsSync, openSync, readSync, fstatSync, closeSync } fr
 import { join } from 'node:path';
 import { collectTask, listTasks, readJsonRetry } from './view-collect.mjs';
 import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './view-render-text.mjs';
-import { notableEvents, notableFromEvents, statusLine, HOLD_MS } from './view-events.mjs';
+import { notableEvents, notableFromEvents, statusLine, storyLog, HOLD_MS } from './view-events.mjs';
 import { summarize, waitingCount } from './view-summary.mjs';
-import { floorTasks, floorEntry } from './view-floor-fs.mjs';
+import { floorTasks, floorEntry, floorFacts } from './view-floor-fs.mjs';
 import { repoMatcher } from './view-repo.mjs';
 import { openTasks, statSig, statOf, listDirs } from './view-index.mjs';
 import { reportPayload } from './view-report.mjs';
-import { teamsView, decisionsView } from './view-status.mjs';
+import { teamsView, decisionsView, decisionCounts, needsEntries } from './view-status.mjs';
 import { dashboardModel, dashboardSvg, dashboardAlt, dashboardText } from './view-dashboard.mjs';
 import { asksFor } from './view-asks.mjs';
+import { floorOf } from './view-floor.mjs';
+import { storyPayload, storyReportPayload, participantsOf, storyText, storyReportText } from './view-story.mjs';
 import { receivedRows } from './ask-log.mjs';
 
 // --view picks which of the three renderers --once prints for a single task.
@@ -174,7 +176,7 @@ function summaryParts(tasksDir, cwd, taskId, ctx) {
     const id = taskId || status.latest;
     const hit = id ? listed.find((x) => x.m.task_id === id) : null;
     const m = hit ? hit.m : (id ? collectOf(ctx)(tasksDir, id) : null);
-    const tasks = listed.map((x) => floorEntry(x, tasksDir, { now, ...(ctx && ctx.floorOpts ? ctx.floorOpts(tasksDir, x.id) : {}) }));
+    const tasks = listed.map((x) => withDecisionCounts(floorEntry(x, tasksDir, { now, ...(ctx && ctx.floorOpts ? ctx.floorOpts(tasksDir, x.id) : {}) }), tasksDir, x.id));
     return { status, tasks, task: m && !m.error ? { ...summarize(m), ...marked(hit && hit.worktree) } : null };
   });
 }
@@ -245,6 +247,15 @@ function decisionsOutput(tasksDir, taskId, card) {
   try { raw = taskId ? JSON.parse(readFileSync(join(tasksDir, taskId, 'task.json'), 'utf8')) : null; } catch { raw = null; }
   const ledger = raw ? tailLines(join(tasksDir, taskId, 'ledger.jsonl')).map((l) => { try { return JSON.parse(l); } catch { return null; } }) : [];
   return JSON.stringify(decisionsView(raw, ledger, { card: card || null })) + '\n';
+}
+
+// Each Phase of a floor entry gets `decisions`: its count in the timeline decisionsOutput draws (decisionCounts, the same
+// decisionsView over the same task.json and ledger tail), so FLOOR's number and the Phase detail thread cannot disagree.
+function withDecisionCounts(entry, tasksDir, taskId) {
+  let raw = null;
+  try { raw = JSON.parse(readFileSync(join(tasksDir, taskId, 'task.json'), 'utf8')); } catch { return entry; }
+  const counts = decisionCounts(raw, tailLines(join(tasksDir, taskId, 'ledger.jsonl')));
+  return { ...entry, phases: (entry.phases || []).map((p) => ({ ...p, decisions: (counts.find((c) => c.key === p.key) || { decisions: 0 }).decisions })) };
 }
 
 // What notableEvents reads from task.json: max_retries and each node's result.reason. An unreadable
@@ -383,7 +394,48 @@ function reportOutput(tasksDir, taskId, ctx) {
     try { raw = JSON.parse(readFileSync(join(tasksDir, taskId, 'task.json'), 'utf8')); } catch { raw = null; }
   }
   const verdict = raw ? (m.state === 'complete' ? 'finished' : m.state === 'running' ? 'running' : 'blocked') : undefined;
-  return JSON.stringify(reportPayload(raw || { run_id: taskId || '' }, { verdict })) + '\n';
+  const p = reportPayload(raw || { run_id: taskId || '' }, { verdict });
+  // each needs item with its engine key beside the English text (the pane places it, never rebuilds it); sent only when
+  // some item has a key, so a report with none is byte-for-byte the builder's payload
+  const entries = needsEntries(p.needs.items, p.retro);
+  return JSON.stringify(entries.some((e) => e.reason_key !== undefined) ? { ...p, needs: { ...p.needs, entries } } : p) + '\n';
+}
+
+const readRaw = (tasksDir, taskId) => { try { return JSON.parse(readFileSync(join(tasksDir, taskId, 'task.json'), 'utf8')); } catch { return null; } };
+
+// The STORY payload of --task and --story (lib/view-story.mjs); `--text` prints it as text. A task or STORY
+// that is not there answers `{ task_id, story, missing: true }`.
+function storyOutput(tasksDir, taskId, story, text, ctx) {
+  const id = String(taskId || '');
+  const pkg = String(story || '');
+  const m = id && pkg ? collectOf(ctx)(tasksDir, id) : null;
+  let payload = null;
+  if (m && !m.error) {
+    const now = Date.now();
+    const raw = readRaw(tasksDir, id) || {};
+    const facts = floorFacts(m, tasksDir, id, { now, ...(ctx && ctx.floorOpts ? ctx.floorOpts(tasksDir, id) : {}) });
+    const workers = floorOf(m, facts, { now }).workers.filter((w) => w.id === pkg || w.id === 'judge');
+    const card = (m.packages || []).find((p) => String(p.id) === pkg);
+    const spec = ((raw.spec && raw.spec.packages) || []).find((p) => String(p.id) === pkg);
+    const gaps = {};
+    for (const n of Array.isArray(raw.nodes) ? raw.nodes : []) if (n && /^accept:/.test(String(n.node_id)) && n.result && Array.isArray(n.result.gaps)) gaps[n.node_id] = n.result.gaps.length;
+    const log = storyLog(tailLines(join(tasksDir, id, 'ledger.jsonl')), pkg, {
+      threshold: Number.isFinite(m.telemetry && m.telemetry.goal_threshold) ? m.telemetry.goal_threshold : null,
+      criteria: spec && Array.isArray(spec.acceptance) ? spec.acceptance.length : undefined,
+      subgoals: card && card.child && Array.isArray(card.child.tasks) && card.child.tasks.length ? card.child.tasks.length : undefined,
+      gaps,
+    });
+    const mine = workers.find((w) => w.id === pkg);
+    payload = storyPayload(m, pkg, { workers, log, participants: participantsOf(join(tasksDir, id), pkg, card && card.child && card.child.nodes, { live: !!mine && (mine.state === 'acting' || mine.state === 'you') }) });
+  }
+  if (!payload) payload = { task_id: id, story: pkg, missing: true };
+  return text ? (payload.missing ? 'no such STORY\n' : storyText(payload)) : JSON.stringify(payload) + '\n';
+}
+
+// { finished, text, sections } of one STORY's report (lib/view-story.mjs); `--text` prints the report's own text.
+function storyReportOutput(tasksDir, taskId, story, text) {
+  const payload = storyReportPayload(taskId ? readRaw(tasksDir, String(taskId)) : null, String(story || ''));
+  return text ? storyReportText(payload) : JSON.stringify(payload) + '\n';
 }
 
 // What `--once` prints for these args; the state server answers with the same function.
@@ -396,6 +448,8 @@ export function onceOutput(args, tasksDir, render, shared) {
   if (args.format === 'decisions') return decisionsOutput(tasksDir, args.task, args.card);
   if (args.format === 'report') return reportOutput(tasksDir, args.task, ctx);
   if (args.format === 'events') return eventsOutput(tasksDir, args.cwd, args.since || 0, shared);
+  if (args.format === 'story') return storyOutput(tasksDir, args.task, args.story, args.text, ctx);
+  if (args.format === 'story-report') return storyReportOutput(tasksDir, args.task, args.story, args.text);
   if (args.task) return render(collectTask(tasksDir, args.task));
   const rows = listTasks(tasksDir);
   if (rows.length === 1) return render(collectTask(tasksDir, rows[0].task_id));

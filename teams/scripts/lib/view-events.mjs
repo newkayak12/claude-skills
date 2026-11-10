@@ -1,6 +1,8 @@
 // Pure helpers for the teams-status mod: which ledger lines deserve a toast, and the status line.
 // No fs - view.mjs reads the ledger and hands the lines in.
 
+import { stageOfNode } from './view-stages.mjs';
+
 const id8 = (taskId) => 'E-' + String(taskId ?? '').replace(/^E-/, '').slice(0, 8);
 
 const clip = (s, n) => { const t = String(s ?? '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
@@ -170,6 +172,107 @@ export function lastVerdicts(lines) {
     if (!out[id] || e.ts >= out[id].ts) out[id] = { verdict: e.verdict ?? null, ts: e.ts, attempt: typeof e.attempt === 'number' ? e.attempt : null };
   }
   return out;
+}
+
+// ---------- per-Phase and per-STORY attribution (the teams pane's Phase detail and Log) ----------
+// Phases, in run order. A STORY's own nodes and events (dispatch:Pn:k, accept:Pn:k, its key, its
+// subgoal_id) belong to Build; a manager node follows stageOfNode; a decision follows decided_in's
+// stage, else Plan.
+export const PHASES = ['plan', 'build', 'integrate', 'qa', 'gate', 'report'];
+
+const STORY_NODE = /^(?:dispatch|accept):([^:]+):\d+$/;
+const storyOfEvent = (e, pkgIds) => {
+  const m = String(e.node_id ?? '').match(STORY_NODE);
+  if (m) return m[1];
+  const key = e.key ? String(e.key).split('/')[1] : null;
+  for (const c of [e.subgoal_id, e.package_id, key]) if (c != null && pkgIds.has(String(c))) return String(c);
+  return null;
+};
+
+// The Phase a ledger event belongs to; null when it names no node and no STORY.
+export function phaseOfEvent(e, pkgIds = new Set()) {
+  if (storyOfEvent(e, pkgIds)) return 'build';
+  const stage = e.node_id != null ? stageOfNode(e.node_id) : null;
+  if (stage) return stage;
+  return e.event === 'integrated' ? 'integrate' : null;
+}
+
+// The recorded hand-offs of each Phase, newest first, `limit` per Phase: { plan: [...], build: [...], ... }.
+// Not the EPIC-wide newest five: a Phase's list is its own.
+// A Phase hand-off carries what the Phase page draws beside the shared fields, only as recorded:
+// story (the card the event names), a verdict's score and reason, and where the verdict sends the
+// card (the graph's own flow: an accepted card integrates, a rejected one goes back to its implementer);
+// a question is TeamLeader -> you with the question as `reason`.
+function phaseExtra(e, phase) {
+  const story = phase === 'build' && cardLabel(e) ? { story: cardLabel(e) } : {};
+  if (e.event === 'verdict') {
+    const reason = typeof e.reason === 'string' && e.reason.trim() ? { reason: clip(e.reason, 120) } : {};
+    const flow = e.stage === 'accept' && (e.verdict === 'accept' || e.verdict === 'reject') ? { to_role: e.verdict === 'accept' ? 'integrate' : 'implementer' } : {};
+    return { ...story, ...(Number.isFinite(e.score) ? { score: e.score } : {}), ...reason, ...flow };
+  }
+  if (e.event === 'asked') return { ...story, from: 'TeamLeader', what: '', reason: clip(e.question, 60), to: 'you', to_key: 'partyYou' };
+  return story;
+}
+
+export function phaseHandoffs(lines, { pkgIds = [], limit = 5 } = {}) {
+  const ids = new Set(pkgIds.map(String));
+  const out = Object.fromEntries(PHASES.map((p) => [p, []]));
+  for (const e of parsed(lines)) {
+    const h = EVENTS[e.event]?.hand?.(e);
+    const phase = h ? phaseOfEvent(e, ids) : null;
+    if (phase && out[phase]) out[phase].push({ ts: e.ts, time: hhmm(e.ts), ...h, ...phaseExtra(e, phase) });
+  }
+  for (const p of PHASES) out[p] = out[p].sort((a, b) => b.ts - a.ts).slice(0, limit).map(({ ts, ...h }) => h);
+  return out;
+}
+
+// The Phase a decision (task.decisions entry) belongs to: a STORY id is Build, a node id or a Phase
+// name its own stage, anything else (PLAN, EPIC, task, session, none) is Plan.
+export function phaseOfDecision(d, pkgIds = []) {
+  const at = d && d.decided_in != null ? String(d.decided_in) : '';
+  if (new Set(pkgIds.map(String)).has(at)) return 'build';
+  const stage = stageOfNode(at) || (PHASES.includes(at.toLowerCase()) ? at.toLowerCase() : null);
+  return stage || 'plan';
+}
+
+export function phaseDecisions(decisions, pkgIds = []) {
+  const out = Object.fromEntries(PHASES.map((p) => [p, []]));
+  for (const d of Array.isArray(decisions) ? decisions : []) if (d && d.question) out[phaseOfDecision(d, pkgIds)].push(d);
+  return out;
+}
+
+// The string-table keys a STORY Log row names (F2.log.* in F4's table); numbers ride in `numbers`.
+export const STORY_LOG_KEYS = ['F2.log.criteria', 'F2.log.subgoals', 'F2.log.attemptStart', 'F2.log.attemptCommits', 'F2.log.attemptReject', 'F2.log.approved', 'F2.log.asked'];
+
+const attemptOfNode = (id) => { const n = Number(String(id ?? '').split(':')[2]); return Number.isInteger(n) && n > 0 ? n : null; };
+
+// The Log rows of STORY `pkgId`: ledger events that carry its node ids (dispatch:Pn:k, accept:Pn:k) or its key,
+// as { ts, time, node, state, what_key, numbers, note }. A label is a key plus numbers; the note is data as
+// written (a reason, a question). ctx: { threshold, criteria (n), subgoals (n), gaps: { <accept node id>: n } } - every
+// number the ledger does not carry itself is the caller's, from task.json; absent = the row is not drawn or the
+// number is null. Test and commit counts appear only when the event records them (`commits`).
+export function storyLog(lines, pkgId, ctx = {}) {
+  const id = String(pkgId);
+  const rows = [];
+  const row = (e, state, what_key, numbers, note = null, node = e.node_id ?? null) => rows.push({ ts: e.ts, time: hhmm(e.ts), node, state, what_key, numbers, note });
+  let first = null;
+  for (const e of parsed(lines)) {
+    const mine = storyOfEvent(e, new Set([id])) === id;
+    if (!mine) continue;
+    const n = attemptOfNode(e.node_id) ?? (typeof e.attempt === 'number' ? e.attempt : null);
+    if (first === null) first = e;
+    if (e.event === 'child_driver_spawned' && STORY_NODE.test(String(e.node_id))) row(e, 'running', 'F2.log.attemptStart', { n: n ?? 1 });
+    else if (e.event === 'node_finish' && /^dispatch:/.test(String(e.node_id)) && typeof e.commits === 'number') row(e, e.state === 'failed' ? 'failed' : 'done', 'F2.log.attemptCommits', { n: n ?? 1, c: e.commits });
+    else if (e.event === 'verdict' && /^accept:/.test(String(e.node_id))) {
+      if (e.verdict === 'accept') row(e, 'done', 'F2.log.approved', { gaps: Number.isInteger(ctx.gaps && ctx.gaps[e.node_id]) ? ctx.gaps[e.node_id] : 0 }, e.reason ? clip(e.reason, 120) : null);
+      else if (e.verdict === 'reject') row(e, 'failed', 'F2.log.attemptReject', { n: n ?? 1, score: e.score ?? null, threshold: ctx.threshold ?? null }, e.reason ? clip(e.reason, 120) : null);
+    } else if (e.event === 'asked') row(e, 'waiting', 'F2.log.asked', { question: clip(e.question, 120) });
+  }
+  if (first && Number.isInteger(ctx.criteria)) rows.push({ ts: first.ts, time: hhmm(first.ts), node: null, state: 'done', what_key: 'F2.log.criteria', numbers: { n: ctx.criteria }, note: null });
+  if (first && Number.isInteger(ctx.subgoals)) rows.push({ ts: first.ts, time: hhmm(first.ts), node: null, state: 'done', what_key: 'F2.log.subgoals', numbers: { n: ctx.subgoals }, note: null });
+  // criteria and subgoals first (same ts as the first event), the rest in time order
+  const rank = (r) => (r.what_key === 'F2.log.criteria' ? 0 : r.what_key === 'F2.log.subgoals' ? 1 : 2);
+  return rows.map((r, i) => [r, i]).sort((a, b) => a[0].ts - b[0].ts || rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(([r]) => r);
 }
 
 export function statusLine(rows) {

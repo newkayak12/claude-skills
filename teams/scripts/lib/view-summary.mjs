@@ -1,6 +1,6 @@
 // Pure builder behind `view.mjs --once --format summary` (the teams-status mod's data). Takes the
 // collectTask() model and returns a small plain-JSON object a person can read: what is it doing,
-// who is it waiting on, how much is left. No fs; no node ids, paths or verdict fields leave here.
+// who is it waiting on, how much is left. No fs; no node ids or paths leave here, and the only verdict is judge.verdict (accept|reject|null).
 
 import { STAGE_KEYS, stageOfNode, nodeState, mergeStates } from './view-stages.mjs';
 import { hhmm } from './view-events.mjs';
@@ -147,13 +147,14 @@ function waitingCards(m, cards) {
     if (!nodes.length) continue;
     const question = nodes.flatMap((n) => n.questions || [])[0] || '';
     const key = c.ticket_key || String(c.id);
-    out.push({ key, title: c.title || 'a card', question, who: whoOf(key), since: sinceOf(nodes) });
+    const asking = nodes.find((n) => n.stage === 'ask') || nodes[0];
+    out.push({ key, title: c.title || 'a card', question, who: whoOf(key), since: sinceOf(nodes), stage: asking.stage || null });
   }
   const epic = (m.ticket && m.ticket.key) || '';
   for (const n of [...(m.manager_stages || []), ...((m.s_run && m.s_run.nodes) || [])]) {
-    if (n.state === 'waiting_human') out.push({ key: epic, title: HUMAN_STAGE[stageOfNode(n.node_id)] || 'a step', question: (n.questions || [])[0] || '', who: epic, since: sinceOf([n]) });
+    if (n.state === 'waiting_human') out.push({ key: epic, title: HUMAN_STAGE[stageOfNode(n.node_id)] || 'a step', question: (n.questions || [])[0] || '', who: epic, since: sinceOf([n]), stage: n.stage || null });
   }
-  for (let i = 0; i < ((m.harness && m.harness.waiting) || 0); i += 1) out.push({ key: epic, title: 'a step', question: '', who: epic, since: null });
+  for (let i = 0; i < ((m.harness && m.harness.waiting) || 0); i += 1) out.push({ key: epic, title: 'a step', question: '', who: epic, since: null, stage: null });
   return out;
 }
 
@@ -191,7 +192,8 @@ const MIN_MS = 60000;
 //     budget: {limit_usd, spent_usd} | null,          // null when the task sets no budget
 //     drivers: {live, cap, stalled: [{id, minutes}]}, // live/cap null when unknown; minutes since progress
 //     stories: [{ id, key, title, kind, state, attempt, max_attempts,
-//                 judge: {score, threshold, reason} | null,
+//                 judge: {score, threshold, verdict, attempt, reason, gap} | null,
+//                 progress: {done, total} | null, agents: number | null,   // current attempt's nodes; null = unknown
 //                 cost_usd, retry_cost_usd, wall_ms,
 //                 stages: [{stage, cost_usd, retry_cost_usd, wall_ms}],
 //                 out_of_retries, scoped_out: [{gap, belongs_to}] }],
@@ -226,6 +228,10 @@ export function metrics(model, { now = Date.now() } = {}) {
       byId.set(id, s);
     }
     s.state = state; // the latest round's
+    // the current attempt's child run: its nodes done of all, and the agents working now; null = unknown
+    const cn = c.child && Array.isArray(c.child.nodes) && c.child.nodes.length ? c.child.nodes : null;
+    s.progress = cn ? { done: cn.filter((n) => n.state === 'done').length, total: cn.length } : null;
+    s.agents = cn ? cn.filter((n) => n.state === 'running' || n.judging_since).length : null;
     // attempts begun: a dispatch that never started (pending, or unreachable behind a failed
     // dependency) has not begun its attempt, so a never-run STORY reads 0. A repackage numbers its
     // new dispatch on (:4), so the count starts from the current shape's first dispatch.
@@ -263,7 +269,7 @@ export function metrics(model, { now = Date.now() } = {}) {
     if (j && !stale) {
       const deciding = j.verdict === 'reject' && j.score != null && threshold != null && j.score >= threshold;
       const g = deciding && j.cause != null ? scrub(j.cause) : '';
-      judge = { score: j.score, threshold, reason: reasonLine(j.reason) || null, gap: g || null };
+      judge = { score: j.score, threshold, verdict: j.verdict || null, attempt: j.attempt != null ? j.attempt : null, reason: reasonLine(j.reason) || null, gap: g || null };
     }
     if (maxAttempts != null) s.attempt = Math.min(s.attempt, maxAttempts);
     const { stage, rfa, ...out } = s;

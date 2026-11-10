@@ -2,6 +2,7 @@
 // _repo/docs/plans/2026-10-14-mod-status-panes-design.md). No fs: view.mjs hands in the
 // collectTask() model, the raw task.json and the ledger lines.
 import { cardState } from './view-summary.mjs';
+import { PHASES, phaseOfEvent, phaseOfDecision } from './view-events.mjs';
 
 const agentOf = (n) => (n && n.executor ? (n.model ? `${n.executor}·${n.model}` : n.executor) : null);
 const clip = (s, n = 300) => String(s == null ? '' : s).slice(0, n);
@@ -90,26 +91,36 @@ export function decisionsView(task, ledger, { card = null } = {}) {
   const t = task || {};
   const nodes = new Map((t.nodes || []).map((n) => [n.node_id, n]));
   const pkgs = new Map(((t.spec && t.spec.packages) || []).map((p) => [String(p.id), p]));
+  const pkgIds = [...pkgs.keys()];
   const out = [];
   const lastVerdict = new Map();
   const filedSeen = new Set();
   for (const e of ledger || []) {
     if (!e || typeof e !== 'object') continue;
-    const base = { ts: e.ts || null, time: e.ts ? hhmm(e.ts) : null, card: cardOf(e), node: e.node_id || null };
+    // the Phase is the engine's: a STORY's nodes and cards are build, a manager node its stage, else plan
+    const base = { ts: e.ts || null, time: e.ts ? hhmm(e.ts) : null, card: cardOf(e), node: e.node_id || null, phase: phaseOfEvent(e, new Set(pkgIds)) || (cardOf(e) ? 'build' : 'plan') };
     if (e.event === 'verdict') {
       const v = { ...base, kind: 'verdict', actor: e.actor || null, verdict: e.verdict || null, score: e.score ?? null, reason: e.reason || null };
       lastVerdict.set(e.node_id, v);
       out.push(v);
     } else if (e.event === 'node_finish' && PROPOSALS.has(e.stage) && e.state === 'done') {
       const n = nodes.get(e.node_id);
-      out.push({ ...base, kind: 'proposal', actor: agentOf(n && { executor: n.vendor || n.executor, model: n.model }), text: proposalText(n) });
+      const sized = n && n.result && !Array.isArray(n.result.packages) && !Array.isArray(n.result.areas) && n.result.size;
+      out.push({
+        ...base, kind: 'proposal', actor: agentOf(n && { executor: n.vendor || n.executor, model: n.model }), text: proposalText(n),
+        ...(sized ? { text_key: n.result.flow ? 'proposalSizeFlow' : 'proposalSize', text_vars: { size: n.result.size, ...(n.result.flow ? { flow: n.result.flow } : {}) } } : {}),
+      });
     } else if (e.event === 'daemon_retry_opened' || e.event === 'daemon_retry_settled') {
       out.push({ ...base, kind: 'retry', node: e.failed_node || null, attempt: e.attempt || null, opened: e.event === 'daemon_retry_opened', reason: clip(e.reason) || null });
     } else if (e.event === 'daemon_rejudge') {
       out.push({ ...base, kind: 'rejudge', attempt: e.attempt || null, reason: clip(e.reason) || null });
     } else if (e.event === 'plan_integrate_replan' || e.event === 'plan_integrate_resplit') {
-      const what = e.event === 'plan_integrate_resplit' ? `resplit${e.attempt ? ` → areas:${e.attempt}` : ''}` : `replan ${(e.opened || []).join(', ')}`;
-      out.push({ ...base, kind: 'resplit', reason: clip(what.trim()) });
+      const resplit = e.event === 'plan_integrate_resplit';
+      const what = resplit ? `resplit${e.attempt ? ` → areas:${e.attempt}` : ''}` : `replan ${(e.opened || []).join(', ')}`;
+      // the English stays beside the key: a reader that maps no key still has the words
+      const rk = resplit ? (e.attempt ? { reason_key: 'resplitAreas', reason_vars: { n: e.attempt } } : { reason_key: 'resplit', reason_vars: {} })
+        : { reason_key: 'replanIds', reason_vars: { ids: (e.opened || []).join(', ') } };
+      out.push({ ...base, kind: 'resplit', reason: clip(what.trim()), ...rk });
     } else if (FILED.has(e.event)) {
       // fileDefects' own defects_filed line and its callers' lines name the same ids: one entry each
       for (const id of e.filed || []) {
@@ -119,7 +130,7 @@ export function decisionsView(task, ledger, { card = null } = {}) {
         out.push({ ...base, card: String(id), kind: 'defect', filed_by: (p && p.reporter) || e.reporter || (e.event === 'tm_file' ? 'user' : null), title: clip(p && p.title, 200) || String(id), evidence: evidenceOf(p) || null, from: e.package_id || null });
       }
     } else if (e.event === 'tm_submit_human') {
-      out.push({ ...base, kind: 'answer', actor: 'human', text: clip(e.answer) || null });
+      out.push({ ...base, kind: 'answer', actor: 'human', actor_key: 'actorHuman', text: clip(e.answer) || null });
     }
   }
   // The newest verdict of a node still holds its result: its blocking/problems/gaps join it.
@@ -129,9 +140,31 @@ export function decisionsView(task, ledger, { card = null } = {}) {
   }
   for (const d of t.decisions || []) {
     if (!d || !d.question) continue;
-    out.push({ ts: null, time: null, card: null, node: null, kind: 'decision', actor: d.owner || null, text: clip(`${d.question}: ${d.chose}`), reason: d.because ? clip(d.because) : null, decided_in: d.decided_in || null });
+    out.push({ ts: null, time: null, card: null, node: null, kind: 'decision', actor: d.owner || null, text: clip(`${d.question}: ${d.chose}`), reason: d.because ? clip(d.because) : null, decided_in: d.decided_in || null, phase: phaseOfDecision(d, pkgIds) });
   }
   out.sort((a, b) => (a.ts == null) - (b.ts == null) || (a.ts || 0) - (b.ts || 0));
   const want = card ? String(card).split(':')[0] : null;
   return { card: want, entries: want ? out.filter((x) => x.card === want) : out };
+}
+
+// How many entries of the decisions timeline each Phase holds, [{ key, decisions }] in run order, counted from the
+// same decisionsView the Phase detail thread is drawn from, so the FLOOR count and the thread cannot disagree.
+// `lines` are ledger lines (strings) or parsed events; an unreadable one is skipped.
+export function decisionCounts(task, lines) {
+  const ledger = (lines || []).map((l) => { try { return typeof l === 'string' ? JSON.parse(l) : l; } catch { return null; } });
+  const { entries } = decisionsView(task, ledger);
+  return PHASES.map((key) => ({ key, decisions: entries.filter((x) => x.phase === key).length }));
+}
+
+// The EPIC report's needs with the engine's keys: [{ text, name?, reason?, reason_key?, reason_vars? }], one per `items` entry in
+// order. A retro entry whose reason is the engine's own fallback (docs.mjs: reasonNeverDispatched, reasonState) names
+// its key and numbers beside the English `text`; every other item is data as written.
+export function needsEntries(items, retro) {
+  const nb = (retro && retro.next_backlog) || {};
+  const keyed = new Map();
+  for (const p of Array.isArray(nb.unaccepted_packages) ? nb.unaccepted_packages : []) {
+    const name = p && (p.title || p.id);
+    if (name && p.reason && p.reason_key) keyed.set(`${name}: ${p.reason}`, { name: String(name), reason: String(p.reason), reason_key: p.reason_key, reason_vars: p.reason_vars || {} });
+  }
+  return (items || []).map((text) => ({ text, ...(keyed.get(text) || {}) }));
 }

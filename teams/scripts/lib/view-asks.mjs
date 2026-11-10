@@ -18,7 +18,7 @@ export function asksFor(entries, sessionId, received = []) {
     const cards = summarize(m).you.cards;
     for (const c of cards) {
       const via = received.some((r) => r && r.key === c.key && r.session === sessionId) ? 'send' : 'poll';
-      out.push({ task_id: m.task_id, key: c.key, who: c.who, question: clip(c.question || c.title || ''), since: c.since, via });
+      out.push({ task_id: m.task_id, key: c.key, who: c.who, question: clip(c.question || c.title || ''), since: c.since, stage: c.stage ?? null, via });
     }
   }
   return out.sort((a, b) => (b.since || 0) - (a.since || 0));

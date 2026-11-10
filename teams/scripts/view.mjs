@@ -35,13 +35,15 @@ function parseArgs(argv) {
     else if (arg === '--cwd') a.cwd = argv[++i];
     else if (arg === '--session') a.session = argv[++i];
     else if (arg === '--card') a.card = argv[++i];
+    else if (arg === '--story') a.story = argv[++i];
+    else if (arg === '--text') a.text = true;
     else if (arg === '--help'|| arg === '-h') a.help = true;
   }
   return a;
 }
 
 function usage() {
-  return 'usage: node view.mjs --once [--tasks-dir <dir>] [--task <id>] [--view pipeline|tickets|resources] [--format status|events|summary|teams|board [--since <ts>] [--cwd <dir>] [--session <id>]] [--format report --task <id> [--cwd <dir>]] [--format decisions --task <id> [--card <id>]]\n';
+  return 'usage: node view.mjs --once [--tasks-dir <dir>] [--task <id>] [--view pipeline|tickets|resources] [--format status|events|summary|teams|board [--since <ts>] [--cwd <dir>] [--session <id>]] [--format report --task <id> [--cwd <dir>]] [--format decisions --task <id> [--card <id>]] [--format story|story-report --task <id> --story <Pn> [--text]]\n';
 }
 
 async function main() {

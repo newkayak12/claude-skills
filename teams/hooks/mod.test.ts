@@ -3,11 +3,13 @@ import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { frame, draw, cells } from './demo-frames.ts'
-import { STRINGS } from './mod'
-import { hangulIn, latinOutside } from './lang-allow'
+import { STRINGS, SUBJECT_KEY } from './mod'
+import { ALLOW, hangulIn, latinOutside } from './lang-allow'
+import { STORY_LOG_KEYS } from '../scripts/lib/view-events.mjs'
+import { askBandShown, carriesInput, f2Key, HOME, levelOf, nextFlag, PAGE_KEYS, pageEsc, pageKey, pageStep, paneSlash, reconcileEpic, selectedOf, startNav, statusAnswer } from './pane'
+import type { Page, PageName, PageNav, RowRef, StepCtx } from './pane'
 import { NOW_KINDS } from '../scripts/lib/view-summary.mjs'
-import { askBandShown, carriesInput, PANE_KEYS, paneKey, paneSlash, statusAnswer } from './pane'
-import { clipText, columnWidths, footerPlan, padText, tabRowPlan, width } from './teams-draw'
+import { SPINNER, clipText, columnWidths, footerPlan, handoffCells, padText, plain, rowLine, width, workerCells } from './teams-draw'
 
 const SURFACES = ['terminal', 'desktop', 'mobile', 'vscode'] as const
 type Surface = (typeof SURFACES)[number]
@@ -364,10 +366,9 @@ const visible = (tree: unknown): string => {
 
 // Engine beneath: a Map-backed $.state, process.run for view.mjs (status and summary answer the same
 // fixture), ui.open and ui.status recorded.
-type Data = { status?: Record<string, unknown>; tasks?: unknown[]; task?: unknown; teams?: unknown; dash?: unknown; decisions?: (card: string | null) => unknown; reports?: Record<string, unknown>; events?: unknown[]; failReport?: boolean; isUnplaced?: boolean; surfacesThrow?: boolean; plain?: Run }
+type Data = { status?: Record<string, unknown>; tasks?: unknown[]; task?: unknown; teams?: unknown; dash?: unknown; decisions?: (card: string | null) => unknown; stories?: Record<string, unknown>; storyReports?: Record<string, unknown>; reports?: Record<string, unknown>; events?: unknown[]; failReport?: boolean; isUnplaced?: boolean; surfacesThrow?: boolean; plain?: Run; answer?: (argv: readonly string[]) => Run }
 function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly Surface[] = ['terminal'], data: Data = {}) {
-  // the pane opens on the Dashboard; the older tests read the Floor and say so here unless they pick a tab
-  const store = new Map<string, unknown>(Object.entries({ view: 'floor', ...init }))
+  const store = new Map<string, unknown>(Object.entries(init))
   const seen = { store, argv: [] as (readonly string[])[], opened: [] as string[], openArgs: [] as unknown[], statuses: [] as (string | undefined)[] }
   const status = () => data.status ?? { line: '', waiting: 0 }
   on('session.surfaces', () => {
@@ -381,6 +382,8 @@ function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly 
   })
   on('process.run', (_$, e) => {
     seen.argv.push(e.argv)
+    // the answer CLI (scripts/answer.mjs): the fixture's answer, else a refusal
+    if (String(e.argv[1]).endsWith('/scripts/answer.mjs')) return { value: data.answer?.(e.argv) ?? ok(JSON.stringify({ ok: false, reason: 'no ask card waiting' })) }
     const format = e.argv[e.argv.indexOf('--format') + 1]
     // `view.mjs --once` with no --format: the EPIC index the command answers with off the terminal
     if (!e.argv.includes('--format') || e.argv.includes('board')) return { value: data.plain ?? ok('') }
@@ -393,6 +396,11 @@ function uiWorld(on: On, init: Record<string, unknown> = {}, surfaces: readonly 
     if (format === 'decisions') {
       const card = e.argv.includes('--card') ? e.argv[e.argv.indexOf('--card') + 1]! : null
       return { value: ok(JSON.stringify(data.decisions?.(card) ?? { card, entries: [] })) }
+    }
+    // a STORY's payload and report by its Pn (--story), `{ missing: true }` for one the fixture does not hold
+    if (format === 'story' || format === 'story-report') {
+      const pn = e.argv[e.argv.indexOf('--story') + 1]!
+      return { value: ok(JSON.stringify((format === 'story' ? data.stories : data.storyReports)?.[pn] ?? { story: pn, missing: true })) }
     }
     if (format === 'teams') return { value: ok(JSON.stringify({ status: status(), tasks: data.tasks, task: data.task ?? null, teams: data.teams ?? null, dash: data.dash ?? null })) }
     return { value: ok(format === 'status' ? JSON.stringify(status()) : format === 'summary' ? JSON.stringify({ status: status(), tasks: data.tasks, task: data.task ?? null }) : '') }
@@ -445,18 +453,6 @@ async function seeded($: Engine, on: On, data: Data, surface: (typeof SURFACES)[
 const seededClock = ($: Engine, on: On, data: Data, surface: (typeof SURFACES)[number]) => seeded($, on, data, surface, undefined, { epic: 'tA' })
 
 for (const surface of SURFACES) {
-  test(`${surface}: Summary answers how far / going well, with no internal ids; render runs no process`, async ($, on) => {
-    const { seen } = await seeded($, on, { status: stat(), task: demo() }, surface)
-    const ui = await pane($, surface)
-    const n = seen.argv.length
-    const text = await shown(ui)
-    for (const word of ['4/5', 'running', 'Build the expense tracker']) expect(text).toContain(word)
-    for (const word of ['Now', 'You', 'day ']) expect(text).not.toContain(word)
-    for (const leak of LEAKS) expect(text).not.toContain(leak)
-    await ui.redraw()
-    expect(seen.argv).toHaveLength(n)
-  })
-
   test(`${surface}: session start alone opens no pane`, async ($, on) => {
     const seen = uiWorld(on, {}, [surface])
     startWorld(on)
@@ -467,76 +463,8 @@ for (const surface of SURFACES) {
   test(`${surface}: no Button label in the pane or the band holds a bracket`, async ($, on) => {
     await seeded($, on, { status: stat({ waiting: 1 }), task: demo() }, surface)
     const all = [...(await labels(await pane($, surface))), ...(await labels(await band($, surface)))]
-    expect(all.length >= 5).toBe(true)
+    expect(all.length >= 2).toBe(true)
     expect(all.filter(l => l.includes('[') || l.includes(']'))).toEqual([])
-  })
-
-  test(`${surface}: the title sits on top, then the tabs: plain tabs, the selected one full strength with a dot (1-5 are Input keys, no Button hotkey)`, async ($, on) => {
-    await seeded($, on, { status: stat(), task: demo() }, surface)
-    const ui = await pane($, surface)
-    const tab = async (key: string) => (await ui.find({ key }))?.props
-    expect(await tab('floor')).toMatchObject({ plain: true, dimColor: false, label: '● Floor' })
-    expect(await tab('stories')).toMatchObject({ plain: true, dimColor: true, label: 'STORYs' })
-    expect(await tab('decisions')).toMatchObject({ plain: true, dimColor: true, label: 'Decisions' })
-    expect(await tab('log')).toMatchObject({ label: 'Log' })
-    expect(await tab('report')).toMatchObject({ label: 'Report' })
-    for (const key of ['floor', 'stories', 'decisions', 'log', 'report']) expect((await tab(key))?.hotkey).toBeUndefined()
-    const text = await shown(ui)
-    expect(text.indexOf('Build the expense tracker')).toBeLessThan(text.indexOf('Floor'))
-    await ui.press({ key: 'decisions' })
-    await ui.redraw() // the stubbed $.state does not notify readers
-    expect(await tab('decisions')).toMatchObject({ dimColor: false, label: '● Decisions' })
-    expect(await tab('floor')).toMatchObject({ dimColor: true, label: 'Floor' })
-  })
-
-  // (the per-actor Now lines of `teams.now` left the pane with the Now block: the worker rows and the band say who acts)
-  test(`${surface}: Decisions tab: one block per team, each card with its state and what it does now; the Floor has none`, async ($, on) => {
-    await seeded($, on, { status: stat(), task: demo({ work: [failedCard] }), teams: TEAMS }, surface)
-    const ui = await pane($, surface)
-    expect(await ui.find({ key: 'card:P1' })).toBeUndefined()
-    await ui.press({ key: 'decisions' })
-    await ui.redraw()
-    for (const head of ['Planning', 'Develop', 'QA', 'Audit']) expect(await ui.find({ type: 'Text', text: head })).toBeDefined()
-    expect((await ui.find({ key: 'card:P1' }))?.props.label).toBe('● module b · IN_PROGRESS · implement codex·gpt-5 4m')
-    expect((await ui.find({ key: 'card:P0' }))?.props.label).toBe('✘ module a · BLOCKED')
-    expect(await ui.find({ type: 'Text', text: '  verifier rejected: tests red' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /E-3a3a3bb5\/P1 · implement/ })).toBeUndefined()
-  })
-
-  test(`${surface}: a card pressed opens its own decision thread: earlier and later verdict with actor and reason`, async ($, on) => {
-    const { seen } = await seeded($, on, { status: stat(), task: demo(), teams: TEAMS, decisions: card => (card === 'P1' ? THREAD : { card: null, entries: [] }) }, surface)
-    const ui = await pane($, surface)
-    await ui.press({ key: 'decisions' })
-    await ui.redraw()
-    await ui.press({ key: 'card:P1' })
-    await ui.redraw()
-    const call = seen.argv.filter(a => fmtOf(a) === 'decisions').at(-1)!
-    expect(call.slice(2)).toEqual(['--once', '--format', 'decisions', '--task', 'abc', '--cwd', '/proj', '--card', 'P1'])
-    expect((await ui.find({ key: 'decisions' }))?.props.label).toBe('● Decisions')
-    expect(await ui.find({ type: 'Text', text: 'Card P1' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: '10:00 claude·opus · could not judge · accept:P1:1 — reply was not JSON' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: '10:05 claude·sonnet · rejected 70% · accept:P1:1 — AC 3 missing' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: '      gaps: AC 3 untested' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: '10:06 human · answered · critique — reject: overlap' })).toBeDefined()
-    await ui.press({ key: 'all' })
-    const last = seen.argv.filter(a => fmtOf(a) === 'decisions').at(-1)!
-    expect(last.includes('--card')).toBe(false)
-  })
-
-  test(`${surface}: a failed card shows its reason once; Log tab has time and sentence`, async ($, on) => {
-    await seeded($, on, { status: stat(), task: demo({ work: [failedCard, card('module b', 'package', 'done')] }) }, surface)
-    const ui = await pane($, surface)
-    await ui.press({ key: 'decisions' })
-    await ui.redraw()
-    const work = await shown(ui)
-    expect(work).toContain('module a')
-    expect(work).toContain('module b')
-    expect(work.split('verifier rejected: tests red').length - 1).toBe(1)
-    await ui.press({ key: 'log' })
-    await ui.redraw()
-    const log = await shown(ui)
-    expect(log).toContain('11:02 module b passed')
-    expect(log).toContain('11:40')
   })
 
   test(`${surface}: no watched task and no cwd task draws the no-run text (regression guard)`, async ($, on) => {
@@ -546,18 +474,21 @@ for (const surface of SURFACES) {
     expect(seen.argv).toHaveLength(0)
   })
 
-  test(`${surface}: the no-run view closes on q where an Input is carried; no keys Input on mobile`, async ($, on) => {
+  test(`${surface}: the no-run view closes on q where an Input is carried; the close Button and no keys Input on mobile`, async ($, on) => {
     const closed: string[] = []
     on('ui.close', (_$, e) => { closed.push(e.id); return { value: undefined } })
     uiWorld(on)
     const ui = await pane($, surface)
-    expect((await ui.find({ key: 'close' })) !== undefined).toBe(true)
     if (!carriesInput(surface)) {
       expect(await ui.find({ key: 'keys' })).toBeUndefined()
+      expect((await ui.find({ key: 'close' }))?.props).toMatchObject({ role: 'dismiss', label: 'close' })
+      await ui.press({ key: 'close' })
+      expect(closed).toEqual(['teams-status'])
       return
     }
+    expect(await ui.find({ key: 'close' })).toBeUndefined()
     expect((await ui.find({ key: 'keys' }))?.props.autoFocus).toBe(true)
-    await ui.input({ key: 'keys', text: 'j', kind: 'change' } as never)
+    await ui.input({ key: 'keys', text: 'w', kind: 'change' } as never)
     await ui.redraw()
     expect(closed).toEqual([])
     await ui.input({ key: 'keys', text: 'q', kind: 'change' } as never)
@@ -580,8 +511,8 @@ for (const surface of SURFACES) {
     expect(await typed('/x')).toBe('/x') // text holding `/` is no key: held
     expect(await typed('/xq')).toBe('/xq')
     expect(closed).toEqual([])
-    expect(await typed('j')).toBe('') // a handled key that does nothing here
-    expect(await typed('1')).toBe('')
+    expect(await typed('w')).toBe('') // a handled key that does nothing here
+    expect(await typed('a')).toBe('')
     expect(closed).toEqual([])
     expect(await typed('q')).toBe('')
     expect(closed).toEqual(['teams-status'])
@@ -600,13 +531,14 @@ for (const surface of SURFACES) {
     }
     // a slash command being typed is held: no key fires, the text stays in the Input
     expect(await typed('/teams-status')).toBe('/teams-status')
-    expect(await typed('/xq')).toBe('/xq') // `/x` then q: paneKey is null on a `/`, so q is held
+    expect(await typed('/xq')).toBe('/xq') // `/x` then q: pageKey is null on a `/`, so q is held
     expect(closed).toEqual([])
-    // digits 1, 2, 0 (0 is no tab) then j, k, [, ] and g with no run file: the buffer is cleared every time, whole
-    for (const key of ['1', '2', '0', 'j', 'k', '[', ']', 'g', 'x1']) {
+    // w s d a n l: the buffer is cleared every time, whole (0-5, [ ], j k and g are no key: the text stays)
+    for (const key of ['w', 's', 'd', 'a', 'n', 'l', 'xw']) {
       expect(await typed(key)).toBe('')
       expect(closed).toEqual([])
     }
+    for (const key of ['0', '5', '[', ']', 'j', 'k', 'g']) expect(await typed(key)).toBe(key)
     expect(await typed('/teams-status')).toBe('/teams-status')
     expect(await typed('/teams-status', 'submit')).toBe('')
     expect(closed).toEqual(['teams-status'])
@@ -663,7 +595,6 @@ for (const surface of SURFACES) {
     expect(await ui.find({ key: 'board' })).toBeUndefined()
     await ui.press({ key: 'inbox' })
     expect(seen.opened).toEqual(['teams-status'])
-    expect(await shown(await pane($, surface))).toContain('2 more in other runs')
   })
 
   test(`${surface}: band says one question for you in the singular and the ko label carries the count`, async ($, on) => {
@@ -683,57 +614,6 @@ for (const surface of SURFACES) {
     expect(await ui.find({ key: 'inbox' })).toBeUndefined()
   })
 
-  test(`${surface}: running, stalled and finished tasks read differently on the first screen; a failed card shows its reason`, async ($, on) => {
-    const data: { status: Record<string, unknown>; task: unknown } = { status: stat(), task: demo() }
-    const { tick } = await seeded($, on, data, surface)
-    const ui = await pane($, surface)
-    const headers: string[] = []
-    for (const state of ['running', 'stalled', 'complete']) {
-      data.task = demo({ state })
-      await tick()
-      await ui.redraw()
-      headers.push(await headerOf(ui))
-    }
-    expect(headers[1]).toContain('stalled')
-    expect(headers[1]).not.toContain('running')
-    expect(headers[2]).toContain('finished')
-    expect(headers[2]).not.toContain('running')
-    expect(new Set(headers).size).toBe(3)
-    data.task = demo({ work: [failedCard, card('module b', 'package', 'done')] })
-    await ui.press({ key: 'decisions' })
-    await tick()
-    await ui.redraw()
-    const failed = await shown(ui)
-    for (const word of ['✘', 'module a', 'verifier rejected: tests red']) expect(failed).toContain(word)
-  })
-
-  test(`${surface}: language korean draws no English UI word and the 현장 tab`, async ($, on) => {
-    await seeded($, on, { status: stat({ waiting: 2 }), task: demo({ work: [failedCard] }), teams: TEAMS }, surface, 'korean')
-    const ui = await pane($, surface)
-    const floor = await shown(ui)
-    const floorSeen = visible(await ui.drawn())
-    await ui.press({ key: 'decisions' })
-    await ui.redraw()
-    const decisionsSeen = visible(await ui.drawn())
-    const bandSeen = visible(await (await band($, surface)).drawn())
-    // the shared allow-list check: every Latin word outside it and outside the fixture data fails, on all three pages
-    for (const text of [floorSeen, decisionsSeen, bandSeen]) expect(latinOutside(text, [...LANG_DATA, 'engine band'])).toEqual([])
-    const texts = [floor, await shown(ui), await shown(await band($, surface))]
-    for (const text of texts) for (const word of ['Decisions', 'Develop', 'Audit', '"label":"close"', 'q close']) expect(text).not.toContain(word)
-    expect(texts[0]).toContain('● 현장')
-    expect(texts[1]).toContain('개발')
-    expect(texts[0]).toContain('Build the expense tracker')
-    expect(texts[0]).toContain('q 닫기')
-  })
-}
-
-for (const language of ['English', undefined]) {
-  test(`language ${language ?? 'unset'}: the pane shows Floor`, async ($, on) => {
-    await seeded($, on, { status: stat(), task: demo() }, 'terminal', language)
-    const text = await shown(await pane($, 'terminal'))
-    expect(text).toContain('Floor')
-    expect(text).not.toContain('결정')
-  })
 }
 
 // ---- closing: Escape, q, and the command again ----
@@ -752,26 +632,40 @@ test('the pane opens focused and closes on Escape (from the command and the band
   for (const args of seen.openArgs) expect(args).toMatchObject({ id: 'teams-status', focus: true, closeOnEscape: true })
 })
 
+test('the band [board] opens the pane on HOME, wherever it was left', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  startWorld(on)
+  const seen = uiWorld(on, { watch: ['abc'], page: { name: 'FLOOR', epic: 'tA', story: null, phase: null }, pageFrom: null }, ['terminal'], { status: stat(), task: demo() })
+  on('ui.panes', () => ({ value: [] }) as never)
+  engineBand(on)
+  await start($)
+  await clock.advance(3000)
+  await clock.advance(3000)
+  await (await band($, 'terminal')).press({ key: 'board' })
+  expect(seen.opened).toEqual(['teams-status'])
+  expect(seen.store.get('page')).toEqual({ name: 'HOME', epic: null, story: null, phase: null })
+})
+
 test('q closes the pane; /teams-status on an open pane closes it', async ($, on) => {
   const closed: string[] = []
   on('ui.close', (_$, e) => { closed.push(e.id); return { value: undefined } })
   await seeded($, on, { status: stat(), task: demo() })
   const ui = await pane($, 'terminal')
-  expect((await ui.find({ key: 'close' }))?.props).toMatchObject({ role: 'dismiss', label: 'q close', plain: true, dimColor: true })
-  // said once, as the footer's last item; the key hint does not say it again
-  expect((await shown(ui)).split('"label":"q close"').length - 1).toBe(1)
-  expect((await shown(ui)).replace('"key":"close"', '').split('close').length - 1).toBe(1)
-  expect((await ui.findAll({ type: 'Button' })).at(-2)?.props.key).toBe('close') // the language Button follows it (F4)
-  for (const lang of ['en', 'ko'] as const) expect(STRINGS[lang].keysHint).not.toMatch(/q close|q 닫기/)
-  await ui.press({ key: 'close' })
+  // the Input carries q (its footer says so); the close Button is the mobile one
+  expect(await ui.find({ key: 'close' })).toBeUndefined()
+  expect(String((await ui.find({ key: 'keys' }))?.props.placeholder ?? '')).toContain('w s move')
+  await ui.input({ key: 'keys', text: 'q', kind: 'change' } as never)
   expect(closed).toEqual(['teams-status'])
-  const r = await $.command.run({ command: 'teams-status', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
+  const mobile = await pane($, 'mobile')
+  await mobile.press({ key: 'close' })
   expect(closed).toEqual(['teams-status', 'teams-status'])
+  const r = await $.command.run({ command: 'teams-status', args: '', origin: { kind: 'user' }, presentation: { isFullscreen: false, columns: 80 } } as never)
+  expect(closed).toEqual(['teams-status', 'teams-status', 'teams-status'])
   expect(JSON.stringify(r)).toContain('pane closed')
 })
 
-// the pane's Input is focused on open: q and the digits reach it as text, so they are read there, not as Button hotkeys
-test('with the Input focused: q closes; digits 1-5 pick the tabs; /teams-status submitted closes; /other runs that command', async ($, on) => {
+// the pane's Input is focused on open: q and the letters reach it as text, so they are read there, not as Button hotkeys
+test('with the Input focused: q closes; the old digit keys do nothing; /teams-status submitted closes; /other runs that command', async ($, on) => {
   const closed: string[] = []
   const ran: unknown[] = []
   on('ui.close', (_$, e) => { closed.push(e.id); return { value: undefined } })
@@ -783,10 +677,10 @@ test('with the Input focused: q closes; digits 1-5 pick the tabs; /teams-status 
     await ui.redraw()
   }
   expect((await ui.find({ key: 'keys' }))?.props.autoFocus).toBe(true)
-  // digits: each picks its tab (the selected one carries the dot)
-  for (const [digit, label] of [['2', '● STORYs'], ['3', '● Decisions'], ['4', '● Log'], ['5', '● Report'], ['1', '● Floor']] as const) {
-    await typed(digit)
-    expect(await labels(ui)).toContain(label)
+  // the six tabs are gone: digits, brackets, j k and g reach nothing
+  for (const key of ['0', '1', '2', '3', '4', '5', '[', ']', 'j', 'k', 'g']) {
+    await typed(key)
+    expect(await labels(ui)).toEqual(['l EN'])
   }
   expect(closed).toEqual([])
   // a slash command being typed holds every key: `/teams-status` ends in `s`, `/x q` ends in q
@@ -798,27 +692,243 @@ test('with the Input focused: q closes; digits 1-5 pick the tabs; /teams-status 
   await typed('/help me', 'submit')
   expect(ran).toHaveLength(1)
   expect(ran[0]).toMatchObject({ command: 'help', args: 'me' })
-  await typed('x', 'submit') // not a command: nothing
+  await typed('x', 'submit') // not a command: Enter opens the selected row, and there is none
   expect(closed).toEqual(['teams-status'])
   await typed('q')
   expect(closed).toEqual(['teams-status', 'teams-status'])
 })
 
-test('paneKey and paneSlash: q closes, digits pick tabs, a `/` holds the keys, the command starts at the first `/`', () => {
-  expect(paneKey('q')).toEqual({ kind: 'close' })
-  expect(paneKey('][2')).toEqual({ kind: 'tab', tab: 'stories' })
-  expect(paneKey('5')).toEqual({ kind: 'tab', tab: 'report' })
-  expect(paneKey('6')).toBeNull()
-  expect(paneKey('/teams-status')).toBeNull()
-  expect(paneKey('/help q')).toBeNull()
-  expect(paneKey('')).toBeNull()
-  expect(paneKey(undefined)).toBeNull()
+test('pageKey and paneSlash: q closes, the old tab keys are none, a `/` holds the keys, the command starts at the first `/`', () => {
+  expect(pageKey('q')).toEqual({ kind: 'close' })
+  expect(pageKey('][2')).toBeNull()
+  expect(pageKey('5')).toBeNull()
+  expect(pageKey('/teams-status')).toBeNull()
+  expect(pageKey('/help q')).toBeNull()
+  expect(pageKey('')).toBeNull()
+  expect(pageKey(undefined)).toBeNull()
   expect(paneSlash('/teams-status')).toEqual({ kind: 'close' })
   expect(paneSlash('][2q/teams-status ')).toEqual({ kind: 'close' })
   expect(paneSlash('/help me now')).toEqual({ kind: 'run', command: 'help', args: 'me now' })
   expect(paneSlash('jk')).toBeNull()
   expect(paneSlash('/')).toBeNull()
   expect(paneSlash(3)).toBeNull()
+})
+
+// ---- F2 page stack: pane.ts helpers (F2-AC-7..19) ----
+const nav0 = () => startNav()
+const ctxOf = (o: Partial<StepCtx> = {}): StepCtx => ({ ids: [], row: null, flags: [], maxScroll: 0, ...o })
+const at = (name: PageName, epic: string | null = 'E1', story: string | null = null, phase: number | null = null): Page => ({ name, epic, story, phase })
+const on = (page: Page, o: Partial<PageNav> = {}): PageNav => ({ ...nav0(), page, ...o })
+const ENDED: RowRef = { type: 'epic', epic: 'E2', ended: true, unfolded: false }
+
+test('F2 keys: pageKey maps w s d Enter a n q l, ignores the old keys, holds on `/`, is silent while answering', () => {
+  expect(pageKey('w')).toEqual({ kind: 'move', by: -1 })
+  expect(pageKey('s')).toEqual({ kind: 'move', by: 1 })
+  expect(pageKey('d')).toEqual({ kind: 'open' })
+  expect(pageKey('\r')).toEqual({ kind: 'open' })
+  expect(pageKey('a')).toEqual({ kind: 'back' })
+  expect(pageKey('n')).toEqual({ kind: 'nextFlag' })
+  expect(pageKey('q')).toEqual({ kind: 'close' })
+  expect(pageKey('l')).toEqual({ kind: 'lang' })
+  for (const old of ['0', '1', '5', '[', ']', 'j', 'k', 'g']) expect(pageKey(old)).toBeNull()
+  expect(pageKey('/w')).toBeNull()
+  expect(pageKey(undefined)).toBeNull()
+  expect(pageKey('')).toBeNull()
+  for (const c of ['q', 'w', 'a', 's', 'd', 'n', 'l']) expect(pageKey(c, { answering: true })).toBeNull()
+})
+
+test('F2 keys: each char of PAGE_KEYS serves one kind, and Enter is open', () => {
+  const kinds = Object.entries(PAGE_KEYS).filter(([c]) => c !== '\r' && c !== '\n').map(([, v]) => v.kind)
+  expect(new Set(kinds).size).toBe(kinds.length - 1) // w and s both move
+  expect(PAGE_KEYS['\n']).toEqual({ kind: 'open' })
+})
+
+test('F2 keys: f2Key maps a dotted engine key to the table key and leaves other text alone', () => {
+  expect(f2Key('F2.log.attemptStart')).toBe('f2LogAttemptStart')
+  expect(f2Key('F2.phase.name.qa')).toBe('f2PhaseNameQa')
+  expect(f2Key('nextShape')).toBe('nextShape')
+  for (const k of STORY_LOG_KEYS) expect(f2Key(k) in STRINGS.en ? 1 : `no table key for ${k}`).toBe(1)
+})
+
+test('F2 move: w and s step the selected row and stop at both ends (no wrap)', () => {
+  const ids = ['a', 'b', 'c']
+  let nav = on(HOME, { sel: { [levelOf(HOME)]: 'a' } })
+  nav = pageStep(nav, { kind: 'move', by: 1 }, ctxOf({ ids })).nav
+  expect(nav.sel[levelOf(HOME)]).toBe('b')
+  nav = pageStep(nav, { kind: 'move', by: 1 }, ctxOf({ ids })).nav
+  nav = pageStep(nav, { kind: 'move', by: 1 }, ctxOf({ ids })).nav
+  expect(nav.sel[levelOf(HOME)]).toBe('c')
+  nav = pageStep(nav, { kind: 'move', by: -1 }, ctxOf({ ids })).nav
+  nav = pageStep(nav, { kind: 'move', by: -1 }, ctxOf({ ids })).nav
+  nav = pageStep(nav, { kind: 'move', by: -1 }, ctxOf({ ids })).nav
+  expect(nav.sel[levelOf(HOME)]).toBe('a')
+})
+
+test('F2 move: with nothing selected the first press selects the first row; an empty list selects nothing', () => {
+  expect(pageStep(nav0(), { kind: 'move', by: 1 }, ctxOf({ ids: ['a', 'b'] })).nav.sel[levelOf(HOME)]).toBe('b')
+  expect(pageStep(nav0(), { kind: 'move', by: 1 }, ctxOf()).nav.sel).toEqual({})
+})
+
+test('F2 move: on Log, Report and Phase detail w and s scroll, clamped to 0..maxScroll', () => {
+  for (const name of ['LOG', 'STORY_REPORT', 'EPIC_REPORT', 'PHASE'] as const) {
+    const page = at(name, 'E1', 'P1', 2)
+    let nav = on(page)
+    const level = levelOf(page)
+    nav = pageStep(nav, { kind: 'move', by: -1 }, ctxOf({ maxScroll: 2 })).nav
+    expect(nav.scroll[level] ?? 0).toBe(0)
+    for (let i = 0; i < 5; i += 1) nav = pageStep(nav, { kind: 'move', by: 1 }, ctxOf({ maxScroll: 2 })).nav
+    expect(nav.scroll[level]).toBe(2)
+    nav = pageStep(nav, { kind: 'move', by: -1 }, ctxOf({ maxScroll: 2 })).nav
+    expect(nav.scroll[level]).toBe(1)
+    expect(Object.keys(nav.sel)).toEqual([]) // no row moved
+  }
+})
+
+test('F2 open: HOME rows open FLOOR (EPIC), STORY detail (STORY), answer mode (ask flag), STORY or FLOOR (other flag)', () => {
+  const go = (row: RowRef) => pageStep(nav0(), { kind: 'open' }, ctxOf({ row })).nav
+  expect(go({ type: 'epic', epic: 'E1', ended: false, unfolded: false }).page).toEqual(at('FLOOR'))
+  expect(go({ type: 'epic', epic: 'E2', ended: true, unfolded: true }).page).toEqual(at('FLOOR', 'E2'))
+  expect(go({ type: 'story', epic: 'E1', story: 'P2' }).page).toEqual(at('STORY', 'E1', 'P2'))
+  expect(go({ type: 'flag', epic: 'E1', story: 'P2', ask: true }).page).toEqual(at('ANSWER', 'E1', 'P2'))
+  expect(go({ type: 'flag', epic: 'E1', story: 'P2', ask: false }).page).toEqual(at('STORY', 'E1', 'P2'))
+  expect(go({ type: 'flag', epic: 'E1', story: null, ask: false }).page).toEqual(at('FLOOR'))
+})
+
+test('F2 open: FLOOR opens Phase detail, and Phase 6 opens the EPIC report', () => {
+  const nav = on(at('FLOOR'))
+  expect(pageStep(nav, { kind: 'open' }, ctxOf({ row: { type: 'phase', epic: 'E1', phase: 2 } })).nav.page).toEqual(at('PHASE', 'E1', null, 2))
+  expect(pageStep(nav, { kind: 'open' }, ctxOf({ row: { type: 'phase', epic: 'E1', phase: 6 } })).nav.page).toEqual(at('EPIC_REPORT'))
+})
+
+test('F2 open: on STORY detail the Log, Report and answer rows open their pages, any other row and no row open nothing', () => {
+  const nav = on(at('STORY', 'E1', 'P1'))
+  const row = (r: 'log' | 'report' | 'answer' | 'other'): RowRef => ({ type: 'storyRow', epic: 'E1', story: 'P1', row: r })
+  expect(pageStep(nav, { kind: 'open' }, ctxOf({ row: row('log') })).nav.page).toEqual(at('LOG', 'E1', 'P1'))
+  expect(pageStep(nav, { kind: 'open' }, ctxOf({ row: row('report') })).nav.page).toEqual(at('STORY_REPORT', 'E1', 'P1'))
+  expect(pageStep(nav, { kind: 'open' }, ctxOf({ row: row('answer') })).nav.page).toEqual(at('ANSWER', 'E1', 'P1'))
+  expect(pageStep(nav, { kind: 'open' }, ctxOf({ row: row('other') })).nav).toBe(nav)
+  expect(pageStep(nav, { kind: 'open' }, ctxOf({ row: null })).nav).toBe(nav)
+  const leaf = on(at('LOG', 'E1', 'P1'))
+  expect(pageStep(leaf, { kind: 'open' }, ctxOf({ row: null })).nav).toBe(leaf)
+})
+
+test('F2 open: d on a folded ended EPIC unfolds it, on an unfolded one it opens FLOOR', () => {
+  const nav = pageStep(nav0(), { kind: 'open' }, ctxOf({ row: ENDED })).nav
+  expect(nav.page).toEqual(HOME)
+  expect(nav.unfolded).toEqual({ E2: true })
+  expect(pageStep(nav, { kind: 'open' }, ctxOf({ row: { ...ENDED, unfolded: true } })).nav.page).toEqual(at('FLOOR', 'E2'))
+})
+
+test('F2 back: a goes to the page each level came from (FLOOR, STORY -> HOME; Phase, EPIC report -> FLOOR; Log, Report -> STORY)', () => {
+  const back = (p: Page) => pageStep(on(p), { kind: 'back' }, ctxOf()).nav.page
+  expect(back(at('FLOOR'))).toEqual(HOME)
+  expect(back(at('STORY', 'E1', 'P1'))).toEqual(HOME)
+  expect(back(at('PHASE', 'E1', null, 2))).toEqual(at('FLOOR'))
+  expect(back(at('EPIC_REPORT'))).toEqual(at('FLOOR'))
+  expect(back(at('LOG', 'E1', 'P1'))).toEqual(at('STORY', 'E1', 'P1'))
+  expect(back(at('STORY_REPORT', 'E1', 'P1'))).toEqual(at('STORY', 'E1', 'P1'))
+})
+
+test('F2 back: answer mode returns to the page it was opened from, by a and by Esc, and Esc keeps the pane open', () => {
+  for (const from of [at('STORY', 'E1', 'P1'), HOME]) {
+    const row: RowRef = { type: 'flag', epic: 'E1', story: 'P1', ask: true }
+    const opened = pageStep(on(from), { kind: 'open' }, ctxOf({ row })).nav
+    expect(opened.page.name).toBe('ANSWER')
+    const esc = pageEsc(opened)
+    expect(esc.closed).toBe(false)
+    expect(esc.nav.page).toEqual(from)
+    expect(pageStep(opened, { kind: 'back' }, ctxOf()).nav.page).toEqual(from)
+    expect(pageEsc(esc.nav).closed).toBe(true) // Esc again, on the page itself, closes
+  }
+})
+
+test('F2 back: a on HOME folds an unfolded ended EPIC and is a no-op otherwise (nothing hinted, nothing closed)', () => {
+  const open = on(HOME, { unfolded: { E2: true } })
+  const folded = pageStep(open, { kind: 'back' }, ctxOf({ row: { ...ENDED, unfolded: true } }))
+  expect(folded.nav.unfolded).toEqual({})
+  expect(pageStep(open, { kind: 'back' }, ctxOf({ row: { type: 'story', epic: 'E2', story: 'P1' } })).nav.unfolded).toEqual({})
+  for (const row of [null, { type: 'epic', epic: 'E1', ended: false, unfolded: false } as RowRef, { type: 'flag', epic: 'E1', story: null, ask: false } as RowRef]) {
+    const r = pageStep(open, { kind: 'back' }, ctxOf({ row }))
+    expect([r.nav, r.closed, r.hint]).toEqual([open, false, null])
+  }
+  expect(pageStep(on(HOME), { kind: 'back' }, ctxOf({ row: ENDED })).nav.page).toEqual(HOME)
+})
+
+test('F2 next flag: n visits the flag rows in list order across EPICs, wraps, and lands on HOME with the row selected', () => {
+  const flags = ['flag:E1:P1', 'flag:E2:P3', 'flag:E2:P4']
+  let nav = on(at('PHASE', 'E1', null, 2))
+  const seen: (string | undefined)[] = []
+  for (let i = 0; i < 4; i += 1) {
+    nav = pageStep(nav, { kind: 'nextFlag' }, ctxOf({ flags })).nav
+    expect(nav.page).toEqual(HOME)
+    seen.push(nav.sel[levelOf(HOME)])
+  }
+  expect(seen).toEqual(['flag:E1:P1', 'flag:E2:P3', 'flag:E2:P4', 'flag:E1:P1'])
+  expect(nextFlag(['x'], 'x')).toBe('x') // one flag, already on it: stays
+})
+
+test('F2 next flag: none listed moves nothing and says so', () => {
+  const nav = on(at('FLOOR'))
+  const r = pageStep(nav, { kind: 'nextFlag' }, ctxOf())
+  expect([r.nav, r.hint, r.closed]).toEqual([nav, 'noFlag', false])
+  expect(nextFlag([], null)).toBeNull()
+})
+
+test('F2 close: q closes from every page; l changes nothing the stack holds', () => {
+  for (const name of ['HOME', 'FLOOR', 'PHASE', 'STORY', 'LOG', 'STORY_REPORT', 'EPIC_REPORT'] as const) {
+    expect(pageStep(on(at(name)), { kind: 'close' }, ctxOf()).closed).toBe(true)
+  }
+  const nav = on(at('FLOOR'))
+  expect(pageStep(nav, { kind: 'lang' }, ctxOf())).toEqual({ nav, closed: false, hint: null })
+  expect(pageEsc(on(at('LOG', 'E1', 'P1'))).closed).toBe(true)
+})
+
+test('F2 slash: a `/` in the Input holds every page key until Enter, paneSlash still reads the command', () => {
+  for (const t of ['/d', '/q', 'w/', '/teams-status n']) expect(pageKey(t)).toBeNull()
+  expect(paneSlash('s/teams-status')).toEqual({ kind: 'close' })
+})
+
+test('F2 memory: back to a level shows the row selected when it was left, kept by id not index', () => {
+  let nav = on(HOME)
+  const ids = ['E1', 'E1/P1', 'E1/P2']
+  nav = pageStep(nav, { kind: 'move', by: 1 }, ctxOf({ ids })).nav
+  expect(selectedOf(nav, ids)).toBe('E1/P1')
+  nav = pageStep(nav, { kind: 'open' }, ctxOf({ ids, row: { type: 'story', epic: 'E1', story: 'P1' } })).nav
+  expect(nav.page.name).toBe('STORY')
+  nav = pageStep(nav, { kind: 'back' }, ctxOf()).nav
+  expect(nav.page).toEqual(HOME)
+  // HOME redraws with a row inserted above: the same id, not the same index
+  const next = ['E0', ...ids]
+  expect(selectedOf(nav, next, ids)).toBe('E1/P1')
+  // each level keeps its own: STORY detail's selection is separate from HOME's
+  expect(Object.keys(nav.sel)).toEqual([levelOf(HOME)])
+})
+
+test('F2 memory: a selected row that leaves the list falls to the nearest listed row, never outside it, nothing when empty', () => {
+  const nav = on(HOME, { sel: { [levelOf(HOME)]: 'b' } })
+  expect(selectedOf(nav, ['a', 'c'], ['a', 'b', 'c'])).toBe('c')
+  expect(selectedOf(nav, ['a'], ['a', 'b', 'c'])).toBe('a')
+  expect(selectedOf(nav, ['x', 'y'], ['a', 'b', 'c'])).toBe('x')
+  expect(selectedOf(on(HOME), ['x'])).toBe('x')
+  expect(selectedOf(nav, [], ['a', 'b'])).toBeNull()
+  expect(pageStep(nav, { kind: 'open' }, ctxOf({ ids: [], row: null })).nav).toBe(nav) // empty list: open does nothing
+})
+
+test('F2 memory: an EPIC that leaves the listing sends the pane to HOME with HOME\'s remembered row', () => {
+  const nav = on(at('PHASE', 'E1', null, 3), { sel: { [levelOf(HOME)]: 'E1' }, from: at('FLOOR') })
+  const gone = reconcileEpic(nav, ['E2'])
+  expect(gone.page).toEqual(HOME)
+  expect(gone.sel[levelOf(HOME)]).toBe('E1')
+  expect(reconcileEpic(nav, ['E1', 'E2'])).toBe(nav)
+  const home = on(HOME)
+  expect(reconcileEpic(home, [])).toBe(home)
+})
+
+test('F2 fold: the unfolded set is a plain record by EPIC id, so $.state keeps it across a closed pane', () => {
+  const nav = pageStep(nav0(), { kind: 'open' }, ctxOf({ row: ENDED })).nav
+  const again = startNav(JSON.parse(JSON.stringify(nav.unfolded)))
+  expect(again.unfolded).toEqual({ E2: true })
+  expect(pageStep(again, { kind: 'back' }, ctxOf({ row: { ...ENDED, unfolded: true } })).nav.unfolded).toEqual({})
 })
 
 // ---- F4 lang: `l` and the footer Button switch every surface between English and Korean ----
@@ -851,48 +961,26 @@ const typeKey = async (ui: Ui, text: string) => {
   await ui.redraw()
 }
 
-test('F4 lang: paneKey(l) is the lang key', () => {
-  expect(paneKey('l')).toEqual({ kind: 'lang' })
-  expect(paneKey('][l')).toEqual({ kind: 'lang' })
+test('F4 lang: pageKey(l) is the lang key', () => {
+  expect(pageKey('l')).toEqual({ kind: 'lang' })
+  expect(pageKey('wl')).toEqual({ kind: 'lang' })
 })
 
 test('F4 lang: text holding a / and answer mode are no key', () => {
-  expect(paneKey('/teams-status l')).toBeNull()
-  expect(paneKey('l', { answering: true })).toBeNull()
-  expect(paneKey('q', { answering: true })).toBeNull()
-  expect(paneKey('q', { answering: false })).toEqual({ kind: 'close' })
+  expect(pageKey('/teams-status l')).toBeNull()
+  expect(pageKey('l', { answering: true })).toBeNull()
+  expect(pageKey('q', { answering: true })).toBeNull()
+  expect(pageKey('q', { answering: false })).toEqual({ kind: 'close' })
 })
 
-test('F4 lang: PANE_KEYS gives l to lang alone and each char one kind, matching paneKey', () => {
-  expect(PANE_KEYS['l']).toEqual({ kind: 'lang' })
-  expect(Object.entries(PANE_KEYS).filter(([, v]) => v.kind === 'lang').map(([c]) => c)).toEqual(['l'])
-  for (const [c, v] of Object.entries(PANE_KEYS)) {
+test('F4 lang: PAGE_KEYS gives l to lang alone and each char one kind, matching pageKey', () => {
+  expect(PAGE_KEYS['l']).toEqual({ kind: 'lang' })
+  expect(Object.entries(PAGE_KEYS).filter(([, v]) => v.kind === 'lang').map(([c]) => c)).toEqual(['l'])
+  for (const [c, v] of Object.entries(PAGE_KEYS)) {
     expect([...c]).toHaveLength(1)
-    expect(paneKey(c)).toEqual(v)
+    expect(pageKey(c)).toEqual(v)
   }
-  expect(Object.keys(PANE_KEYS).sort()).toEqual(['0', '1', '2', '3', '4', '5', '[', ']', 'g', 'j', 'k', 'l', 'q'])
-})
-
-test('F4 lang: typed l on every tab redraws in the other language; view, epic and row stay', async ($, on) => {
-  const { seen } = await langPane($, on, { status: stat(), task: demo(), teams: TEAMS }, ['terminal'], { epic: 'abc', row: 0 })
-  const ui = await pane($, 'terminal')
-  const TABS = ['dash', 'floor', 'stories', 'decisions', 'log', 'report'] as const
-  const word = (lang: 'en' | 'ko', tab: string) => STRINGS[lang][`tab${tab.charAt(0).toUpperCase()}${tab.slice(1)}` as keyof typeof STRINGS.en]
-  for (const tab of TABS) {
-    await ui.press({ key: tab })
-    await ui.redraw()
-    const before = ['view', 'epic', 'row'].map(k => seen.store.get(k))
-    expect(await labels(ui)).toContain('l EN')
-    expect(await labels(ui)).toContain(`● ${word('en', tab)}`)
-    await typeKey(ui, 'l')
-    expect(await labels(ui)).toContain('l KR')
-    expect(await labels(ui)).toContain(`● ${word('ko', tab)}`)
-    expect(['view', 'epic', 'row'].map(k => seen.store.get(k))).toEqual(before)
-    expect(seen.store.get('view')).toBe(tab)
-    expect(seen.store.get('lang')).toBe('ko')
-    await typeKey(ui, 'l') // back to English for the next tab
-    expect(await labels(ui)).toContain('l EN')
-  }
+  expect(Object.keys(PAGE_KEYS).sort()).toEqual(['\n', '\r', 'a', 'd', 'l', 'n', 'q', 's', 'w'])
 })
 
 test('F4 lang: the setting ko, korean, 한국어 and KO choose Korean; en, ja, unset and a throw choose English', async ($, on) => {
@@ -951,7 +1039,7 @@ test('F4 lang: two surfaces mounted: a toggle on the terminal shows on the mobil
   await typeKey(term, 'l')
   await phone.redraw()
   expect(await labels(phone)).toContain('KR')
-  expect(await labels(phone)).toContain(`● ${STRINGS.ko.tabFloor}`)
+  expect(await labels(phone)).toContain(STRINGS.ko.f2BtnOpen)
   expect(await labels(term)).toContain('l KR')
 })
 
@@ -1039,31 +1127,18 @@ test('F4 lang: footerPlan returns the marker whole at 42, 110 and 190 columns', 
   expect(footerPlan({ steps: 2, open: '', close: 'q close', hint: '[ ] EPIC · j k row · 0-5 tabs', marker: 'l EN' }, 42 - 4).hint.endsWith('…')).toBe(true)
 })
 
-test('tabRowPlan: the cost text goes first, then the gap, then the longest label is cut with …; footerPlan: close stays whole', () => {
-  const tabs = ['● Floor', 'STORYs', 'Decisions', 'Log', 'Report']
-  const total = (p: { labels: string[]; gap: number }) => p.labels.reduce((n, l) => n + [...l].length, 0) + p.gap * 4
-  const cost = '$1.92 · 14 turns'
-  expect(tabRowPlan(tabs, cost, 80)).toEqual({ labels: tabs, gap: 2, cost })
-  const noCost = tabRowPlan(tabs, cost, 42)
-  expect(noCost).toEqual({ labels: tabs, gap: 2, cost: null })
-  const tight = tabRowPlan(tabs, cost, 34)
-  expect(tight.cost).toBeNull()
-  expect(total(tight)).toBeLessThanOrEqual(34)
-  expect(tight.labels.some(l => l.endsWith('…'))).toBe(true)
-  const hint = '[ ] EPIC · j k row · 0-5 tabs'
+test('footerPlan: the key hint keeps what the marker and close leave, cut with … and dropped under 6 columns', () => {
+  const hint = STRINGS.en.f2FootHome
   const marker = 'l EN'
-  expect(footerPlan({ steps: 0, open: '', close: 'q close', hint, marker }, 80).hint).toBe(hint)
+  expect(footerPlan({ steps: 0, open: '', close: '', hint, marker }, 100).hint).toBe(hint)
   const cut = footerPlan({ steps: 2, open: '', close: 'q close', hint, marker }, 42).hint
   expect(cut.endsWith('…')).toBe(true)
   expect([...cut].length + 10 + 4 + 7 + 4 + 4 + 2).toBeLessThanOrEqual(42) // hint + Input chrome + prev/next + close + marker + three gaps of 2
   expect(footerPlan({ steps: 2, open: 'g open run', close: 'q close', hint, marker }, 30).hint).toBe('')
 })
 
-test('language korean: stalled pane header and the waiting status line have no English UI word', async ($, on) => {
+test('language korean: the waiting status line has no English UI word', async ($, on) => {
   const { seen } = await seeded($, on, { status: stat({ waiting: 2 }), task: demo({ state: 'stalled' }) }, 'terminal', '한국어')
-  const header = await headerOf(await pane($, 'terminal'))
-  expect(header).toContain('멈춤')
-  expect(latinOutside(header, LANG_DATA)).toEqual([])
   const line = seen.statuses[seen.statuses.length - 1] ?? ''
   expect(line).toContain('확인 필요')
   expect(latinOutside(line, [...LANG_DATA, '/teams-status'])).toEqual([]) // the command name is a literal, not a word
@@ -1126,7 +1201,7 @@ test('askBandShown: true only with at least one ask and no card', () => {
 })
 
 // ---- tick cost: events + exactly one data call ----
-async function tickWorld($: Engine, on: On, init: Record<string, unknown>, isOpen: boolean, data: { status?: Record<string, unknown>; task?: unknown } = { status: stat(), task: demo() }) {
+async function tickWorld($: Engine, on: On, init: Record<string, unknown>, isOpen: boolean, data: Data = { status: stat(), task: demo() }) {
   const clock = mock.clock(on, { now: 1000 })
   startWorld(on)
   const seen = uiWorld(on, init, ['terminal'], data)
@@ -1173,14 +1248,6 @@ test('tick: pane open: one --format teams call with --task paneTask; no --view, 
   expect(w.seen.argv.some(a => a.includes('--view'))).toBe(false)
 })
 
-test('tick: Decisions tab open: one more call, --format decisions for the pane task and picked card', async ($, on) => {
-  const w = await tickWorld($, on, { watch: ['abc'], view: 'decisions', selected: 'P1' }, true)
-  await w.tick()
-  expect(w.ticks[0]!.map(formatOf)).toEqual(['teams', 'decisions'])
-  const d = w.ticks[0]![1]!
-  expect([d[d.indexOf('--task') + 1], d[d.indexOf('--card') + 1]]).toEqual(['abc', 'P1'])
-})
-
 test('tick: pane open falls back to status.latest once known', async ($, on) => {
   const w = await tickWorld($, on, {}, true)
   await w.tick()
@@ -1191,11 +1258,11 @@ test('tick: pane open falls back to status.latest once known', async ($, on) => 
 
 test('tick stores the summary the pane then draws without running a process', async ($, on) => {
   // (the pane is drawn from the tick's data; a render adds no process call)
-  const w = await tickWorld($, on, { watch: ['abc'] }, true)
+  const w = await tickWorld($, on, { watch: ['abc'] }, true, { status: stat(), task: demo(), tasks: P_TASKS() })
   await w.tick()
   const n = w.seen.argv.length
   const ui = await pane($, 'terminal')
-  expect(await shown(ui)).toContain('4/5')
+  expect(await shown(ui)).toContain('Cancel payment API')
   await ui.redraw()
   expect(w.seen.argv).toHaveLength(n)
 })
@@ -1382,17 +1449,11 @@ for (const surface of SURFACES) {
     expect((await ui.find({ key: 'keys' })) !== undefined).toBe(surface !== 'mobile')
     expect((await ui.findAll({ type: 'Input' })).length).toBe(surface === 'mobile' ? 0 : 1)
     const keys = (await ui.findAll({ type: 'Button' })).map(b => String(b.props.key))
-    for (const k of ['floor', 'stories', 'decisions', 'log', 'report', 'prev', 'next', 'close']) expect(keys).toContain(k)
+    expect(keys).toEqual(surface === 'mobile' ? ['up', 'down', 'open', 'back', 'flag', 'close', 'lang'] : ['lang'])
   })
 }
 
 // ---- pane fallback: the newest running task of this cwd ----
-test('pane fallback: empty watch shows the cwd task from the status', async ($, on) => {
-  const w = await tickWorld($, on, {}, true)
-  await w.tick()
-  expect(await shown(await pane($, 'terminal'))).toContain('Build the expense tracker')
-})
-
 test('pane fallback: a task id with no summary yet draws Loading (regression guard)', async ($, on) => {
   uiWorld(on, { watch: ['abc'], status: stat() })
   expect(await shown(await pane($, 'terminal'))).toContain('Loading...')
@@ -1413,46 +1474,6 @@ test('band: a 200-char title truncates; progress and the board button are separa
   expect(String(progress!.text)).not.toContain('xxx')
   expect(String(title!.text)).not.toContain('4/5')
   expect(await labels(ui)).toContain('board')
-})
-
-test('pane header (a task the EPIC list lacks): title truncates; "running · done/total" is its own non-truncating node', async ($, on) => {
-  await seeded($, on, { status: stat(), task: demo({ title: LONG }) })
-  const ui = await pane($, 'terminal')
-  const title = await ui.find({ type: 'Text', text: LONG })
-  const head = await ui.find({ type: 'Text', text: 'running · 4/5' })
-  expect(title).toBeDefined()
-  expect(title!.props.wrap).toBe('truncate-end')
-  expect(head).toBeDefined()
-  expect(head!.props.wrap).toBeUndefined()
-})
-
-test('Summary stage rail: a dot per stage, the running one bold, solid rail up to it and dotted after', async ($, on) => {
-  await seeded($, on, { status: stat(), task: demo() })
-  const ui = await pane($, 'terminal')
-  expect(await ui.find({ type: 'Text', text: '● Plan' })).toBeUndefined() // the Floor has no rail
-  await ui.press({ key: 'stories' })
-  await ui.redraw()
-  const text = await shown(ui)
-  expect(await ui.find({ type: 'Text', text: '● Plan' })).toBeDefined()
-  const running = (await ui.findAll({ type: 'Text', text: /^◉ / }))
-  expect(running).toHaveLength(1)
-  expect(running[0]!.props.bold).toBe(true)
-  expect(text).toContain(' ━━ ')
-  expect(text).toContain(' ┄┄ ')
-  expect(text.lastIndexOf(' ━━ ')).toBeLessThan(text.indexOf(' ┄┄ '))
-})
-
-test('Summary Work: one Text per card, capped with "+N more"', async ($, on) => {
-  const many = Array.from({ length: 8 }, (_, i) => card(`card ${i}`, 'package', 'done'))
-  await seeded($, on, { status: stat(), task: demo({ work: many }) })
-  const ui = await pane($, 'terminal')
-  await ui.press({ key: 'decisions' })
-  await ui.redraw()
-  expect(await ui.find({ type: 'Text', text: '✔ card 0' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '✔ card 5' })).toBeDefined()
-  expect(await ui.find({ text: 'card 6' })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: '+2 more' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /card 0.*card 1/ })).toBeUndefined()
 })
 
 // (the Now sentence left the pane; the band says it)
@@ -1510,61 +1531,13 @@ const reportArgv = (seen: { argv: (readonly string[])[] }) => seen.argv.filter(a
 const taskOf = (argv: readonly string[]) => argv[argv.indexOf('--task') + 1]
 
 for (const surface of SURFACES) {
-  test(`${surface}: pressing Report fetches once and draws the report verbatim; a second tick keeps it`, async ($, on) => {
-    const { seen, tick } = await seeded($, on, { status: stat(), task: demo(), reports: { abc: payload() } }, surface)
-    expect(reportArgv(seen)).toHaveLength(0)
-    const ui = await pane($, surface)
-    expect((await ui.find({ key: 'report' }))?.props).toMatchObject({ plain: true, label: 'Report' })
-    await ui.press({ key: 'report' })
-    await ui.redraw()
-    expect(reportArgv(seen)).toHaveLength(1)
-    expect(reportArgv(seen)[0]!.join(' ')).toContain('--format report --task abc')
-    expect((await ui.find({ type: 'Markdown' }))?.props.text).toBe(REPORT_TEXT)
-    await tick()
-    await ui.redraw()
-    expect(reportArgv(seen).length).toBe(2)
-    expect((await ui.find({ type: 'Markdown' }))?.props.text).toBe(REPORT_TEXT)
-  })
-
-  test(`${surface}: with the Report tab closed no report call is made`, async ($, on) => {
+  test(`${surface}: with no EPIC page open no report call is made on a tick`, async ($, on) => {
     const { seen, tick } = await seeded($, on, { status: stat(), task: demo(), reports: { abc: payload() } }, surface)
     await tick()
     await tick()
     expect(reportArgv(seen)).toHaveLength(0)
-  })
-
-  test(`${surface}: report null draws the missing line with the path`, async ($, on) => {
-    await seeded($, on, { status: stat(), task: demo(), reports: { abc: payload({ report: null }) } }, surface)
-    const ui = await pane($, surface)
-    await ui.press({ key: 'report' })
-    await ui.redraw()
-    expect(await shown(ui)).toContain('No report yet: /proj/.teams_output/team/E-abc/80-report.md')
-  })
-
-  test(`${surface}: a >20k report draws the path then the truncated notice before the text`, async ($, on) => {
-    const big = { text: 'line\n'.repeat(3900), truncated: true, more_lines: 1234, mtime: 5 }
-    await seeded($, on, { status: stat(), task: demo(), reports: { abc: payload({ report: big }) } }, surface)
-    const ui = await pane($, surface)
-    await ui.press({ key: 'report' })
-    await ui.redraw()
-    const text = await shown(ui)
-    const path = text.indexOf('80-report.md')
-    const notice = text.indexOf('1234 more lines')
-    const body = text.indexOf('line\\nline')
-    expect(path > 0 && notice > path && body > notice).toBe(true)
-    expect(big.text.length <= 20000).toBe(true)
   })
 }
-
-test('Report tab: Korean tab label and missing line', async ($, on) => {
-  await seeded($, on, { status: stat(), task: demo(), reports: { abc: payload({ report: null }) } }, 'terminal', 'korean')
-  const ui = await pane($, 'terminal')
-  await ui.press({ key: 'report' })
-  await ui.redraw()
-  const text = await shown(ui)
-  expect(text).toContain('보고서')
-  expect(text).toContain('아직 보고서가 없습니다')
-})
 
 // ---- end-of-run card ----
 const END = (task_id: string, ts = 1500) => ({ ts, task_id, kind: 'daemon_done', text: `${task_id} finished: done` })
@@ -1573,9 +1546,9 @@ const BLOCKED = (over: Record<string, unknown> = {}) => T_PAYLOAD({ verdict: 'bl
 const find = async (ui: Ui, key: string) => ui.find({ key })
 
 for (const surface of SURFACES) {
-  test(`${surface}: daemon_done: one report call for T, a card, the toast kept; [report] follows T through the open tab`, async ($, on) => {
+  test(`${surface}: daemon_done: one report call for T, a card, the toast kept; [report] opens FLOOR of T with Phase 6 selected`, async ($, on) => {
     const data = { status: stat(), task: demo(), events: [END('tee')], reports: { abc: payload({ path: '/proj/E-abc/80-report.md', report: { text: 'U report', truncated: false, more_lines: 0, mtime: 1 } }), tee: T_PAYLOAD() } }
-    const { seen, tick } = await seeded($, on, data, surface)
+    const { seen } = await seeded($, on, data, surface)
     expect(reportArgv(seen).map(taskOf)).toEqual(['tee'])
     expect(seen.store.get('cardReport')).toMatchObject({ task_id: 'tee' })
     expect(seen.store.get('ended')).toEqual({ tee: 'card' })
@@ -1586,29 +1559,13 @@ for (const surface of SURFACES) {
     expect(await b.find({ text: 'engine band' })).toBeDefined()
     await b.press({ key: 'report' })
     expect(seen.opened).toEqual(['teams-status'])
-    expect(seen.store.get('view')).toBe('report')
+    expect(seen.store.get('page')).toEqual({ name: 'FLOOR', epic: 'tee', story: null, phase: null })
+    expect(seen.store.get('pageSel')).toEqual({ 'FLOOR:tee::': 'p:6' })
+    expect(seen.store.get('epic')).toBe('tee')
     expect(seen.store.get('watch')).toEqual(['abc', 'tee'])
     expect(seen.store.get('ended')).toEqual({ tee: 'seen' })
     expect(await find(await band($, surface), 'report')).toBeUndefined()
-    await tick()
-    await tick()
-    const argvs = reportArgv(seen)
-    expect(argvs.length).toBe(3)
-    expect(argvs.map(taskOf)).toEqual(['tee', 'tee', 'tee'])
-    const ui = await pane($, surface)
-    const drawn = await shown(ui)
-    expect(drawn).toContain('E-tee/80-report.md')
-    expect((await ui.find({ type: 'Markdown' }))?.props.text).toBe('# T report\n')
-    expect(drawn).not.toContain('U report')
-  })
-
-  test(`${surface}: no card and the pane on U: the Report tab by key fetches U`, async ($, on) => {
-    const { seen } = await seeded($, on, { status: stat(), task: demo(), reports: { abc: payload({ report: null }) } }, surface)
-    const ui = await pane($, surface)
-    await ui.press({ key: 'report' })
-    await ui.redraw()
-    expect(reportArgv(seen).map(taskOf)).toEqual(['abc'])
-    expect(await shown(ui)).toContain('No report yet: /proj/.teams_output/team/E-abc/80-report.md')
+    expect(reportArgv(seen).map(taskOf)).toEqual(['tee'])
   })
 
   test(`${surface}: blocked wording and items; dismiss removes the card with no open`, async ($, on) => {
@@ -1654,15 +1611,6 @@ for (const surface of SURFACES) {
     expect(await find(await band($, surface), 'dismiss')).toBeUndefined()
   })
 
-  test(`${surface}: opening the Report tab on T by key marks the card seen`, async ($, on) => {
-    const { seen } = await seeded($, on, { status: stat(), task: demo(), events: [END('abc')], reports: { abc: T_PAYLOAD({ task_id: 'abc' }) } }, surface)
-    expect(seen.store.get('ended')).toEqual({ abc: 'card' })
-    const ui = await pane($, surface)
-    await ui.press({ key: 'report' })
-    expect(seen.store.get('ended')).toEqual({ abc: 'seen' })
-    expect(await find(await band($, surface), 'dismiss')).toBeUndefined()
-  })
-
   test(`${surface}: language korean draws the card in Korean`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo(), events: [END('tee')], reports: { tee: T_PAYLOAD() } }, surface, 'korean')
     const b = await band($, surface)
@@ -1670,37 +1618,6 @@ for (const surface of SURFACES) {
     for (const word of ['끝남', '실패 2', '+2건 더']) expect(text).toContain(word)
     expect(await labels(b)).toEqual(['보고서', '×'])
     for (const word of ['finished', 'failed', 'more']) expect(text).not.toContain(word)
-  })
-
-  test(`${surface}: a 30k report opened from the card: path, then the truncated notice, then the text`, async ($, on) => {
-    const big = { text: 'line\n'.repeat(3900), truncated: true, more_lines: 900, mtime: 5 }
-    const { seen } = await seeded($, on, { status: stat(), task: demo(), events: [END('tee')], reports: { tee: T_PAYLOAD({ report: big }) } }, surface)
-    await (await band($, surface)).press({ key: 'report' })
-    const ui = await pane($, surface)
-    const kids = (await ui.drawn()) as unknown as { children?: unknown[] }
-    const text = JSON.stringify(kids)
-    const path = text.indexOf('E-tee/80-report.md')
-    const notice = text.indexOf('900 more lines')
-    const body = text.indexOf('line\\nline')
-    expect(path > 0 && notice > path && body > notice).toBe(true)
-    expect(seen.store.get('view')).toBe('report')
-  })
-}
-
-for (const surface of SURFACES) {
-  test(`${surface}: Report tab open on U, T ends: T's card shows and stays; the tab keeps drawing U`, async ($, on) => {
-    const reports = { abc: payload({ report: { text: 'U report', truncated: false, more_lines: 0, mtime: 1 } }), tee: T_PAYLOAD() }
-    const { seen, tick } = await seeded($, on, { status: stat(), task: demo(), events: [END('tee')], reports }, surface, undefined, { view: 'report' })
-    await tick()
-    await tick()
-    const b = await band($, surface)
-    expect(await shown(b)).toContain('finished')
-    expect(await labels(b)).toEqual(['report', '×'])
-    expect(seen.store.get('ended')).toEqual({ tee: 'card' })
-    const ui = await pane($, surface)
-    expect(await shown(ui)).toContain('E-abc/80-report.md')
-    expect((await ui.find({ type: 'Markdown' }))?.props.text).toBe('U report')
-    expect(await shown(ui)).not.toContain('E-tee')
   })
 }
 
@@ -2014,7 +1931,7 @@ const markOf = (state: string, doing: string) => { const m = MARKS[state]!; retu
 const story = (key: string, title: string, over: Record<string, unknown> = {}) => {
   const base = { state: 'acting', doing: '', ...over } as { state: string; doing: string }
   return {
-    key, title, last_verdict: null, cost_usd: null, cost_estimated: false, try: null, max: null,
+    key, title, state: base.state, doing: base.doing, last_verdict: null, cost_usd: null, cost_estimated: false, try: null, max: null,
     live: true, elapsed_ms: null, run_file: null, owner_key: key, ...over, ...markOf(base.state, base.doing),
     // a STORY item's status is one fixed word for every state (view-floor.mjs itemMarkOf); `doing` stays a field
     word_key: base.state, word: base.state === 'acting' ? 'working' : base.state === 'you' ? 'needs you' : base.state,
@@ -2042,176 +1959,6 @@ const wide = ($: Engine, surface: (typeof SURFACES)[number]) =>
   $.ui.mount({ plugin: 'teams', surface, component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: 140, placement: 'dock' } } as never)
 
 for (const surface of SURFACES) {
-  test(`${surface}: story rows aligned`, async ($, on) => {
-    await seeded($, on, { status: stat(), tasks: FULL, task: demo() }, surface, undefined, { epic: 'tA' })
-    const ui = await wide($, surface)
-    await ui.press({ key: 'stories' })
-    await ui.redraw()
-    const rows = await rowTexts(ui)
-    expect(rows).toHaveLength(3)
-    const [a, b, c] = rows as [string, string, string]
-    // every fact on its row, `~` kept, a missing cost blank
-    for (const part of ['module b', 'rejected', '2/3', '4m', '~$0.42']) expect(a).toContain(part)
-    // one status word per row: the verdict wins over what the item is doing
-    expect(a).not.toContain('editing a.ts')
-    expect(b).toContain('idle')
-    expect(b).toContain('1h 2m')
-    expect(b).not.toContain('$')
-    for (const part of ['small thing', 'working', '35s', '$1.50', 'run-7', '▸']) expect(c).toContain(part)
-    expect(c).not.toContain('reading')
-    // the same column starts at the same character on every row
-    expect(a.indexOf('rejected')).toBe(b.indexOf('idle'))
-    expect(a.indexOf('rejected')).toBe(c.indexOf('working'))
-    expect(a.indexOf('4m')).toBe(b.indexOf('1h 2m'))
-    expect(a.indexOf('4m')).toBe(c.indexOf('35s'))
-    // the icon leads each row
-    expect(a).toContain('●')
-    expect(b).toContain('◌')
-  })
-
-  test(`${surface}: story rows end in … when the pane is narrow`, async ($, on) => {
-    await seeded($, on, { status: stat(), tasks: FULL, task: demo() }, surface, undefined, { epic: 'tA' })
-    const ui = await $.ui.mount({ plugin: 'teams', surface, component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: 50, placement: 'dock' } } as never)
-    await ui.press({ key: 'stories' })
-    await ui.redraw()
-    expect((await rowTexts(ui)).some(r => r.includes('…'))).toBe(true)
-  })
-
-  test(`${surface}: the header lists every EPIC, the picked one marked, stalled last and dim with its age`, async ($, on) => {
-    await seeded($, on, { status: stat(), tasks: FULL, task: demo() }, surface, undefined, { epic: 'tA' })
-    const ui = await pane($, surface)
-    const lines = await textsOf(ui, EPIC_LINE)
-    expect(lines).toHaveLength(3)
-    expect(lines[0]).toContain('▸')
-    expect(lines[1]).not.toContain('▸')
-    expect(lines[2]).toContain('2h 0m')
-    expect(lines[2]).toContain('⊘')
-    expect(lines[0]).toContain('E-3a3a3bb5')
-    expect(lines[1]).toContain('E-bbbbbbbb')
-    expect(lines[2]).toContain('E-cccccccc')
-  })
-
-  test(`${surface}: the EPIC row is the title: key, title, state, done/total and age once, no header row, no day, no key in the tab row`, async ($, on) => {
-    await seeded($, on, { status: stat(), tasks: FULL, task: demo() }, surface, undefined, { epic: 'tA' })
-    const ui = await pane($, surface)
-    const picked = (await textsOf(ui, PICKED))[0]!
-    for (const part of ['E-3a3a3bb5', 'task tA', 'running', '4/5', '3s']) expect(picked).toContain(part)
-    const text = await shown(ui)
-    expect(text.match(/E-3a3a3bb5(?!\/)/g)).toHaveLength(1)
-    expect(text).not.toContain('Build the expense tracker')
-    expect(text).not.toMatch(/day \d/)
-    expect(await ui.find({ type: 'Text', text: '$0.00 · 0 turns' })).toBeDefined()
-    // the row has no slug column
-    expect(picked).toMatch(/^▸ +● +E-3a3a3bb5 {2}task tA {2}/)
-  })
-
-  // the slug is not a pane column; the title takes the width and gives way first, at 190 and 110 columns
-  for (const cols of [190, 110]) {
-    test(`${surface}: the EPIC row has no slug and cuts the title first at ${cols}`, async ($, on) => {
-      const long = 'Migrate every legacy report exporter to the new streaming writer and keep each output file identical across all supported locales'
-      const tasks = [
-        epicOf('tA', 'E-3a3a3bb5', [], { title: long, slug: 'report-exporters' }),
-        epicOf('tB', 'E-bbbbbbbb', [], { title: 'short', slug: 'quick-fix' }),
-        epicOf('tC', 'E-cccccccc', [], { title: 'older', slug: null }),
-      ]
-      await seeded($, on, { status: stat(), tasks, task: demo() }, surface, undefined, { epic: 'tA' })
-      const ui = await $.ui.mount({ plugin: 'teams', surface, component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: cols - 4, placement: 'dock' } } as never)
-      const lines = await textsOf(ui, EPIC_LINE)
-      expect(lines).toHaveLength(3)
-      const [a, b, c] = lines as [string, string, string]
-      expect(a).toMatch(/E-3a3a3bb5 {2}Migrate/)
-      for (const l of lines) expect(l).not.toMatch(/report-exporters|quick-fix/)
-      if (cols === 110) {
-        expect(a).toContain('…')
-        expect(a).not.toContain('identical across all supported locales')
-      } else expect(a).toContain('identical across all supported locales')
-      expect(b).toMatch(/E-bbbbbbbb {2}short/)
-      // columns align across rows: every title starts at one offset, rows keep to the pane width
-      expect(new Set([a.indexOf('Migrate'), b.indexOf('short'), c.indexOf('older')]).size).toBe(1)
-      for (const l of lines) expect(cells(l)).toBeLessThanOrEqual(cols - 4)
-    })
-  }
-
-  test(`${surface}: bracket keys clamp at both ends`, async ($, on) => {
-    const { tick } = await seeded($, on, { status: stat(), tasks: FULL, task: demo() }, surface, undefined, { epic: 'tA' })
-    const ui = await pane($, surface)
-    // no Input on mobile: the prev and next Buttons step there
-    const key = async (text: string) => {
-      if (carriesInput(surface)) await ui.input({ key: 'keys', text, kind: 'change' })
-      else await ui.press({ key: text === ']' ? 'next' : 'prev' })
-      await tick()
-      await ui.redraw()
-    }
-    const picked = async () => (await textsOf(ui, PICKED))[0] ?? ''
-    expect(await picked()).toContain('E-3a3a3bb5')
-    await key('[') // first: stays on the first
-    expect(await picked()).toContain('E-3a3a3bb5')
-    await key(']')
-    expect(await picked()).toContain('E-bbbbbbbb')
-    await key(']')
-    expect(await picked()).toContain('E-cccccccc')
-    await key(']') // last: stays on the last
-    expect(await picked()).toContain('E-cccccccc')
-    await key('[')
-    expect(await picked()).toContain('E-bbbbbbbb')
-    // the prev and next Buttons do the same
-    await ui.press({ key: 'next' })
-    await ui.redraw()
-    expect(await picked()).toContain('E-cccccccc')
-    await ui.press({ key: 'prev' })
-    await ui.redraw()
-    expect(await picked()).toContain('E-bbbbbbbb')
-  })
-
-  test(`${surface}: selection falls back to nearest`, async ($, on) => {
-    const data: Data = { status: stat(), tasks: FULL, task: demo() }
-    const { tick } = await seeded($, on, data, surface, undefined, { epic: 'tB' })
-    const ui = await pane($, surface)
-    expect((await textsOf(ui, PICKED))[0]).toContain('E-bbbbbbbb')
-    // the picked task leaves the list: the pane stays open and the selection moves to the nearest listed task
-    data.tasks = [FULL[0]!, FULL[2]!]
-    await tick()
-    await ui.redraw()
-    expect((await textsOf(ui, PICKED))[0]).toContain('E-cccccccc')
-    // the last one leaves too: the nearest left is the first
-    data.tasks = [FULL[0]!]
-    await tick()
-    await ui.redraw()
-    expect((await textsOf(ui, PICKED))[0]).toContain('E-3a3a3bb5')
-  })
-
-  // `g` is an Input key: only on the surfaces that carry an Input
-  if (carriesInput(surface)) test(`${surface}: g opens graph-status with run file`, async ($, on) => {
-    const calls: { command: string; args: string }[] = []
-    on('command.run', (_$, e) => {
-      calls.push({ command: e.command, args: e.args })
-      return { text: '' }
-    })
-    await seeded($, on, { status: stat(), tasks: FULL, task: demo() }, surface, undefined, { epic: 'tA' })
-    const ui = await pane($, surface)
-    await ui.press({ key: 'stories' })
-    await ui.redraw()
-    await ui.input({ key: 'keys', text: 'g', kind: 'change' })
-    expect(calls.map(c => `${c.command} ${c.args}`)).toEqual(['graph-status open /w/runs/p1.json E-3a3a3bb5/P1'])
-  })
-
-  if (carriesInput(surface)) test(`${surface}: g without run file makes no call`, async ($, on) => {
-    const calls: unknown[] = []
-    on('command.run', (_$, e) => {
-      calls.push(e)
-      return { text: '' }
-    })
-    await seeded($, on, { status: stat(), tasks: FULL, task: demo() }, surface, undefined, { epic: 'tA' })
-    const ui = await pane($, surface)
-    await ui.press({ key: 'stories' })
-    await ui.redraw()
-    await ui.input({ key: 'keys', text: 'j', kind: 'change' }) // the second row has no run file
-    await ui.redraw()
-    expect((await ui.find({ type: 'Text', text: 'g open run' }))?.props.dimColor).toBe(true)
-    await ui.input({ key: 'keys', text: 'g', kind: 'change' })
-    expect(calls).toEqual([])
-  })
-
   test(`${surface}: band leads with flag when waiting`, async ($, on) => {
     await seeded($, on, { status: stat({ waiting: 1, latest: null }), task: null }, surface)
     const ui = await band($, surface)
@@ -2224,14 +1971,6 @@ for (const surface of SURFACES) {
     await seeded($, on, { status: stat(), task: demo() }, surface)
     expect(await shown(await band($, surface))).not.toContain('⚑')
   })
-
-  test(`${surface}: waiting card shows question, writes nothing`, async ($, on) => {
-    const { seen } = await seeded($, on, { status: stat({ waiting: 1 }), tasks: FULL, task: demo({ you: { count: 1, items: ['module b'], cards: [{ key: 'E-3a3a3bb5/P1', title: 'module b', question: 'keep the old API?' }] } }) }, surface, undefined, { epic: 'tA' })
-    const ui = await pane($, surface)
-    expect(await ui.find({ type: 'Text', text: /module b — keep the old API\?/ })).toBeDefined()
-    // the mod only reads: no tm_submit, no write, only view.mjs runs
-    expect(seen.argv.every(a => a[1]?.endsWith('/scripts/view.mjs'))).toBe(true)
-  })
 }
 
 // ---- F4: the Floor: worker lines, hand-off feed, the 800 ms clock ----
@@ -2239,79 +1978,17 @@ const wk = (id: string, state: string, doing = '') => ({ id, state, doing, ...ma
 const ho = (time: string, from: string, what: string, to: string) => ({ time, from, what, to })
 const WORKERS = [wk('PLAN', 'done'), wk('P1', 'acting', 'editing a.ts'), wk('P2', 'idle'), wk('P3', 'you', 'asks a question'), wk('JUDGE', 'stalled')]
 const floorOf = (workers: unknown[], handoffs: unknown[] = []) => [epicOf('tA', 'E-3a3a3bb5', [], { workers, handoffs })]
-const WROW = /^[●◌⚑✔⊘]  ?[⠀-⣿]? ?\S/
-const workerTexts = async (ui: Ui) => (await ui.findAll({ type: 'Text' })).map(t => String(t.text)).filter(t => /^[●◌⚑✔⊘] +(?:[⠀-⣿] +)?(?:PLAN|P\d|JUDGE)( |$)/.test(t))
-const feedTexts = async (ui: Ui) => (await ui.findAll({ type: 'Text' })).map(t => String(t.text)).filter(t => /^\d\d:\d\d .*→/.test(t))
 const frameOf = (store: Map<string, unknown>) => Number(store.get('frame') ?? 0)
 
 for (const surface of SURFACES) {
-  test(`${surface}: floor one line per worker`, async ($, on) => {
-    await seeded($, on, { status: stat(), tasks: floorOf(WORKERS), task: demo() }, surface, undefined, { epic: 'tA' })
-    const lines = await workerTexts(await wide($, surface))
-    expect(lines).toHaveLength(5)
-    for (const [i, id] of ['PLAN', 'P1', 'P2', 'P3', 'JUDGE'].entries()) expect(lines[i]).toContain(id)
-    expect(lines[1]).toContain('editing a.ts')
-    // the id starts at the same character on every line
-    expect(new Set(lines.map(l => l.indexOf(/PLAN|P\d|JUDGE/.exec(l)![0]))).size).toBe(1)
-  })
-
-  test(`${surface}: floor idle worker says idle, dim, in the column of the other doing texts; a done one says done`, async ($, on) => {
-    const workers = [wk('PLAN', 'done'), wk('P1', 'acting', 'editing a.ts'), wk('P2', 'idle'), wk('P3', 'you', 'asks a question'), wk('JUDGE', 'idle')]
-    await seeded($, on, { status: stat(), tasks: floorOf(workers), task: demo() }, surface, undefined, { epic: 'tA' })
-    const ui = await wide($, surface)
-    const [plan, p1, p2, p3, judge] = await workerTexts(ui) as [string, string, string, string, string]
-    for (const idle of [p2, judge]) {
-      expect(idle.trimEnd().endsWith('idle')).toBe(true)
-      expect(idle.indexOf('idle')).toBe(p1.indexOf('editing a.ts'))
-      expect(idle.indexOf('idle')).toBe(p3.indexOf('asks a question'))
-    }
-    expect(plan.trimEnd().endsWith('done')).toBe(true)
-    expect((await ui.findAll({ type: 'Text', text: /^idle\s*$/ })).map(t => t.props.dimColor)).toEqual([true, true])
-  })
-
-  test(`${surface}: floor idle word in Korean`, async ($, on) => {
-    await seeded($, on, { status: stat(), tasks: floorOf([wk('P2', 'idle')]), task: demo() }, surface, 'korean', { epic: 'tA' })
-    expect((await workerTexts(await wide($, surface)))[0]!.trimEnd().endsWith('유휴')).toBe(true)
-  })
-
-  test(`${surface}: the Floor holds worker and hand-off rows only; the rail is on STORYs, the cards on Decisions`, async ($, on) => {
-    const you = { count: 1, items: ['module b'], cards: [{ key: 'E-3a3a3bb5/P1', title: 'module b', question: 'keep the old API?' }] }
-    await seeded($, on, { status: stat({ waiting: 1 }), tasks: floorOf(WORKERS, [ho('10:01', 'PLAN', 'the plan', 'P1')]), task: demo({ you }), teams: TEAMS }, surface, undefined, { epic: 'tA' })
-    const ui = await wide($, surface)
-    for (const absent of [/^▶/, /^⚑ You/, /^[●◉] (Plan|Build)/, /━/, /^Planning$/, /^Develop$/]) expect(await ui.find({ type: 'Text', text: absent })).toBeUndefined()
-    expect(await ui.find({ key: 'card:P1' })).toBeUndefined()
-    expect(await workerTexts(ui)).toHaveLength(5)
-    expect(await feedTexts(ui)).toHaveLength(1)
-    await ui.press({ key: 'stories' })
-    await ui.redraw()
-    expect(await ui.find({ type: 'Text', text: '● Plan' })).toBeDefined()
-    await ui.press({ key: 'decisions' })
-    await ui.redraw()
-    expect(await ui.find({ key: 'card:P1' })).toBeDefined()
-  })
-
-  test(`${surface}: floor distinct icon per state`, async ($, on) => {
-    await seeded($, on, { status: stat(), tasks: floorOf(WORKERS), task: demo() }, surface, undefined, { epic: 'tA' })
-    const ui = await wide($, surface)
-    const icons = (await workerTexts(ui)).map(l => l[0])
-    expect(icons).toEqual(['✔', '●', '◌', '⚑', '⊘'])
-    expect(new Set(icons).size).toBe(5)
-    const text = await shown(ui)
-    for (const face of ['😀', '(^', '☺', '^_^', '•_•']) expect(text).not.toContain(face)
-  })
-
-  test(`${surface}: spinner advances only while acting`, async ($, on) => {
+  test(`${surface}: the spinner clock advances only while a worker acts`, async ($, on) => {
     const data = { status: stat(), tasks: floorOf(WORKERS), task: demo() }
     const { seen, clock } = await seededClock($, on, data, surface)
-    const ui = await wide($, surface)
     await clock.advance(800)
     const a = frameOf(seen.store)
     expect(a).toBeGreaterThan(0)
     await clock.advance(800)
     expect(frameOf(seen.store)).toBe(a + 1)
-    await ui.redraw()
-    expect((await workerTexts(ui))[1]).toMatch(/^● +[⠀-⣿] +P1/)
-    expect((await workerTexts(ui))[2]).not.toMatch(/[⠀-⣿]/)
     // nobody acts: the next tick leaves the clock to cancel itself
     data.tasks = floorOf([wk('P1', 'idle'), wk('P2', 'done')])
     await clock.advance(3000)
@@ -2319,24 +1996,6 @@ for (const surface of SURFACES) {
     const b = frameOf(seen.store)
     await clock.advance(5000)
     expect(frameOf(seen.store)).toBe(b)
-  })
-
-  test(`${surface}: hand-off feed at most 5 aligned rows`, async ($, on) => {
-    const feed = [
-      ho('10:01', 'PLAN', 'the plan', 'P1'), ho('10:02', 'P1', 'a diff', 'JUDGE'), ho('10:03', 'JUDGE', 'a verdict', 'P1'),
-      ho('10:04', 'P2', 'tests', 'JUDGE'), ho('10:05', 'PLAN', 'a rewrite', 'P3'), ho('10:06', 'P3', 'an answer', 'PLAN'), ho('10:07', 'P1', 'more', 'JUDGE'),
-    ]
-    await seeded($, on, { status: stat(), tasks: floorOf(WORKERS, feed), task: demo() }, surface, undefined, { epic: 'tA' })
-    const rows = await feedTexts(await wide($, surface))
-    expect(rows).toHaveLength(5)
-    expect(rows[0]).toMatch(/^10:01 +PLAN +the plan +→ P1/)
-    expect(new Set(rows.map(r => r.indexOf('→'))).size).toBe(1)
-    expect(new Set(rows.map(r => r.indexOf(/PLAN|P\d|JUDGE/.exec(r)![0]))).size).toBe(1)
-  })
-
-  test(`${surface}: hand-off feed empty when none recorded`, async ($, on) => {
-    await seeded($, on, { status: stat(), tasks: floorOf(WORKERS), task: demo() }, surface, undefined, { epic: 'tA' })
-    expect(await feedTexts(await wide($, surface))).toEqual([])
   })
 }
 
@@ -2356,183 +2015,8 @@ test('no spinner clock without surface or acting worker: pane open, nobody acts'
   expect(frameOf(seen.store)).toBe(0)
 })
 
-// ---- F4: demo fixtures at 190 and 110 columns (minimal, full, parallel, narrow), fictional data ----
-// Set SHOW to true to make the last test fail with every frame as its message (the runner prints nothing).
-const SHOW = false
 const WIDTHS = [190, 110] as const
-const shownFrames: string[] = []
-const LONGT = 'Migrate every legacy report exporter to the new streaming writer and keep each output file byte for byte identical across all supported locales, then retire the old exporters, their fixtures and every flag that still points at them'
-const LONGD = 'translating the sample strings into twelve languages and re-running the full comparison suite twice, once per engine, before diffing the results line by line'
-const wkd = (id: string, state: string, doing = '') => ({ id, state, doing, ...markOf(state, doing) })
-// what an EPIC's Now line, card list and cost say; each differs from the STORY titles and the You line, and the cost is the STORYs' sum
-const body = (usd: number, turns: number) => ({
-  now: { kind: 'build', subject: 'the parser and the writer', detail: '' },
-  work: [card('parser package', 'package', 'done'), card('writer package', 'package', 'pending')],
-  cost: { usd, turns },
-})
-const DEMO: Record<string, { tasks: unknown[]; you?: unknown }> = {
-  minimal: {
-    tasks: [epicOf('tS', 'E-aaaaaaaa', [story('E-aaaaaaaa', 'rename the config key', { doing: 'editing config.ts', elapsed_ms: 35000, cost_usd: 0.12 })], {
-      ...body(0.12, 3), harness: { slug: 'run-1', moving: true }, stages: [stage('plan', 'done'), stage('build', 'running')], workers: [wkd('PLAN', 'done'), wkd('BUILD', 'acting', 'editing config.ts')],
-    })],
-  },
-  full: {
-    tasks: [
-      epicOf('tA', 'E-3a3a3bb5', [
-        story('E-3a3a3bb5/P1', 'parser module', { doing: 'editing parser.ts', last_verdict: 'reject', try: 2, max: 3, elapsed_ms: 240000, cost_usd: 0.42, cost_estimated: true, run_file: '/w/runs/p1.json' }),
-        story('E-3a3a3bb5/P2', 'report writer', { state: 'idle', elapsed_ms: 3720000, cost_usd: 1.5 }),
-        story('E-3a3a3bb5/P3', 'cache layer', { doing: 'asks a question', state: 'you', elapsed_ms: 600000 }),
-      ], {
-        workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', 'editing parser.ts'), wkd('P2', 'idle'), wkd('P3', 'you', 'asks a question'), wkd('JUDGE', 'idle')],
-        handoffs: [ho('10:01', 'PLAN', 'the plan', 'P1'), ho('10:02', 'P1', 'a diff', 'JUDGE'), ho('10:03', 'JUDGE', 'a verdict', 'P1'), ho('10:04', 'P2', 'test results', 'JUDGE'), ho('10:05', 'P3', 'a question', 'you')],
-        ...body(1.92, 14), slug: 'expense-tracker',
-        you: { count: 1, items: ['one open question'], cards: [{ key: 'E-3a3a3bb5/P3', title: 'cache layer', question: 'keep the old cache key format?' }] },
-      }),
-      epicOf('tC', 'E-cccccccc', [story('E-cccccccc/P1', 'old import job', { state: 'stalled', live: false })], { live: false, age_ms: 7200000, state: 'stalled' }),
-    ],
-  },
-  parallel: {
-    tasks: [
-      epicOf('tA', 'E-3a3a3bb5', [story('E-3a3a3bb5/P1', 'parser module', { doing: 'editing parser.ts', elapsed_ms: 240000, cost_usd: 0.42 })], { ...body(0.42, 6), workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', 'editing parser.ts')] }),
-      epicOf('tB', 'E-bbbbbbbb', [story('E-bbbbbbbb/P1', 'report writer', { doing: 'reading', elapsed_ms: 35000, cost_usd: 1.5 })], { ...body(1.5, 8), workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', 'reading')] }),
-    ],
-  },
-  narrow: {
-    tasks: [epicOf('tN', 'E-dddddddd', [
-      story('E-dddddddd/P1', LONGT, { doing: LONGD, last_verdict: 'reject', try: 2, max: 3, elapsed_ms: 240000, cost_usd: 0.42, cost_estimated: true }),
-      story('E-dddddddd/P2', 'short title', { doing: 'reading', elapsed_ms: 35000, cost_usd: 1.5 }),
-    ], { ...body(1.92, 14), title: LONGT, slug: 'exporter-rewrite', workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', LONGD)], handoffs: [ho('10:01', 'PLAN', LONGD, 'P1')] })],
-  },
-}
-const STOP = new Set(['the', 'and', 'for', 'then', 'with', 'its', 'each', 'one', 'per', 'all', 'any', 'not', 'you'])
 const bodyOf = (lines: string[]) => lines.filter(l => l.startsWith('│')).map(l => l.slice(2, -2).trimEnd())
-
-for (const variant of Object.keys(DEMO)) {
-  for (const cols of WIDTHS) {
-    test(`demo renders at 190 and 110: ${variant} at ${cols}`, async ($, on) => {
-      const d = DEMO[variant]!
-      const first = d.tasks[0] as { task_id: string }
-      await seeded($, on, { status: stat({ waiting: variant === 'full' ? 1 : 0 }), tasks: d.tasks, task: first }, 'terminal', undefined, { epic: first.task_id }, true)
-      const ui = await $.ui.mount({ plugin: 'teams', surface: 'terminal', component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: cols - 4, placement: 'dock' } } as never)
-      const rendered: Record<string, string[]> = {}
-      rendered.floor = frame((await ui.drawn()) as any, 'Teams', cols)
-      await ui.press({ key: 'stories' })
-      await ui.redraw()
-      rendered.stories = frame((await ui.drawn()) as any, 'Teams', cols)
-      const bandUi = await $.ui.mount({ plugin: 'teams', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: cols } } as never)
-      rendered.band = draw((await bandUi.drawn()) as any, cols)
-      for (const [name, lines] of Object.entries(rendered)) {
-        shownFrames.push(`### ${variant} · ${cols} · ${name}`, ...lines)
-        const body = name === 'band' ? lines : bodyOf(lines)
-        expect(body.length).toBeGreaterThan(0)
-        for (const l of lines) {
-          expect(cells(l)).toBeLessThanOrEqual(cols)
-          expect(l).not.toContain('\uFFFD')
-          expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(l)).toBe(false)
-        }
-        // no orphan …: none doubled, none alone in its cell (a line start or after a column gap)
-        for (const l of body) {
-          expect(l).not.toContain('……')
-          expect(/(^|\s\s)…/.test(l)).toBe(false)
-        }
-        if (name === 'band') {
-          for (const l of lines) for (const gone of ['engine band', 'board needs you']) expect(l).not.toContain(gone)
-          continue
-        }
-        // a STORY row's icon and word agree: a still or ended state never carries a working word
-        if (name === 'stories') {
-          const PAIRS6: Record<string, string | null> = { '●': null, '⚑': null, '◌': 'idle', '✔': 'done', '⊘': 'stalled', '✘': 'failed' }
-          const prows = body.filter(l => /^[▸ ] +\S  \S/.test(l) && !/^[▸ ] +\S +E-[0-9a-f]{8} /.test(l))
-          for (const l of prows) {
-            const icon = l.trim().replace(/^▸\s*/, '')[0]!
-            const word = l.trim().replace(/^▸\s*/, '').split(/\s{2,}/)[2]
-            expect(Object.keys(PAIRS6)).toContain(icon)
-            if (PAIRS6[icon] === null) expect(['idle', 'done', 'stalled', 'failed']).not.toContain(word)
-            else expect(word).toBe(PAIRS6[icon])
-            // one status word per row: no second state (whole or cut, e.g. 'fai…') in any other cell
-            const rest = l.trim().replace(/^▸\s*/, '').split(/\s{2,}/).filter((_, i) => i !== 2).join('  ')
-            expect(/\b(rejected|accepted|failed|stalled|idle|done|fai…|sta…)(?=\s|$)/.test(rest)).toBe(false)
-          }
-          if (variant === 'full') for (const i of ['●', '◌', '⚑', '⊘']) expect(prows.map(l => l.trim().replace(/^▸\s*/, '')[0])).toContain(i)
-          if (variant === 'full') expect(body.some(l => /◌.*idle/.test(l)) && body.some(l => /⊘.*stalled/.test(l))).toBe(true)
-        }
-        // `close` is said once, by the footer
-        expect(body.filter(l => l.includes('close'))).toEqual([body[body.length - 1]])
-        // the tab row is one line: all five labels sit on the same line
-        const tabRows = body.filter(l => /Floor/.test(l) && /STORYs/.test(l) && /Decisions/.test(l) && /Log/.test(l) && /Report/.test(l))
-        expect(tabRows).toHaveLength(1)
-        expect(body.filter(l => /Decisions/.test(l))).toHaveLength(1)
-        // columns start at one offset on every row
-        const at = (rows: string[], re: RegExp) => new Set(rows.map(r => (re.exec(r) as RegExpExecArray).index))
-        const wrows = body.filter(l => /^[●◌⚑✔⊘] +(?:[⠀-⣿] +)?(?:PLAN|BUILD|P\d|JUDGE)( |$)/.test(l))
-        if (name === 'floor') expect(at(wrows, /PLAN|BUILD|P\d|JUDGE/).size).toBeLessThanOrEqual(1)
-        const hrows = body.filter(l => /^\d\d:\d\d .*→/.test(l))
-        if (hrows.length > 0) expect(at(hrows, /→/).size).toBe(1)
-        const srows = body.filter(l => /^[▸ ] +[●◌⚑✔✘⊘]  \S/.test(l) && !EPIC_LINE.test(l))
-        if (name === 'stories') {
-          expect(srows.length).toBeGreaterThan(0)
-          if (srows.length > 1) expect(at(srows, /[●◌⚑✔✘⊘]  /).size).toBe(1)
-        }
-      }
-      // the narrow variant has long text: some line ends in …; the others have none that is not asked for
-      if (variant === 'narrow') {
-        expect(bodyOf(rendered.floor!).some(l => l.includes('…'))).toBe(true)
-        expect(bodyOf(rendered.stories!).some(l => l.includes('…'))).toBe(true)
-      }
-      if (variant === 'full') {
-        expect(rendered.band![0]).toContain('⚑')
-        expect(rendered.band![0]).toContain('1 question for you')
-      }
-      // the title block shares no word with the Floor body, and the Floor body is worker and hand-off rows only
-      const fb = bodyOf(rendered.floor!)
-      const tabAt = fb.findIndex(l => /Floor/.test(l) && /STORYs/.test(l) && /Decisions/.test(l) && /Log/.test(l) && /Report/.test(l))
-      const floorBody = fb.slice(tabAt + 1, -1)
-      const wordsOf = (lines: string[]) => new Set(
-        lines.flatMap(l => l.match(/\p{L}[\p{L}\p{N}.\-\/]*/gu) ?? []).map(w => w.toLowerCase().replace(/[.\-\/]+$/, '')).filter(w => w.length >= 3 && !STOP.has(w)),
-      )
-      const header = wordsOf(fb.slice(0, tabAt))
-      expect([...wordsOf(floorBody)].filter(w => header.has(w))).toEqual([])
-      for (const l of floorBody.filter(l => l.trim() !== '')) expect(l).toMatch(/^[●◌⚑✔⊘✘] +(?:[⠀-⣿] +)?\S|^\d\d:\d\d /)
-    })
-  }
-}
-
-// the side pane the host really gives: bodyColumns 78 (190-column terminal) and 46 (110): one tab row with all five
-// names, the footer keeps `close` once, and anything cut ends in …
-for (const bodyColumns of [78, 46]) {
-  for (const variant of ['full', 'narrow']) {
-    test(`side pane at ${bodyColumns} body columns: ${variant}: one tab row with five names, footer closes once, no line wider`, async ($, on) => {
-      const d = DEMO[variant]!
-      const first = d.tasks[0] as { task_id: string }
-      await seeded($, on, { status: stat(), tasks: d.tasks, task: first }, 'terminal', undefined, { epic: first.task_id }, true)
-      const ui = await $.ui.mount({ plugin: 'teams', surface: 'terminal', component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns, placement: 'dock' } } as never)
-      for (const tab of ['floor', 'stories']) {
-        if (tab === 'stories') {
-          await ui.press({ key: 'stories' })
-          await ui.redraw()
-        }
-        const lines = frame((await ui.drawn()) as any, 'Teams', bodyColumns + 4)
-        const body = bodyOf(lines)
-        for (const l of lines) expect(cells(l)).toBeLessThanOrEqual(bodyColumns + 4)
-        const tabRows = body.filter(l => /Floor/.test(l) && /STORYs/.test(l) && /Decisions/.test(l) && /Log/.test(l) && /Report/.test(l))
-        expect(tabRows).toHaveLength(1)
-        expect(body.filter(l => /Decisions/.test(l))).toHaveLength(1)
-        const foot = body[body.length - 1]!
-        expect(body.filter(l => l.includes('close'))).toEqual([foot])
-        expect(foot.endsWith('q close  l EN')).toBe(true) // close, then the language marker (F4)
-        expect(foot).not.toContain('q: q')
-        if (bodyColumns === 46) {
-          expect(tabRows[0]).not.toContain('turns') // the cost text gave way
-          if (variant === 'full' && tab === 'floor') expect(foot).toContain('…') // several EPICs: prev/next take room, the key hint is cut and says so
-        }
-        for (const l of body) {
-          expect(l).not.toContain('……')
-          expect(/(^|\s\s)…/.test(l)).toBe(false)
-        }
-      }
-    })
-  }
-}
 
 // ---- widths by display cells: Korean and English rows in one pane ----
 test('width counts display cells: Hangul 2, ASCII 1, marks and joiners 0', () => {
@@ -2581,76 +2065,6 @@ test('columnWidths: no drop list keeps the old widths; a drop list sheds age fir
   for (const total of [20, 24, 30, 36, 40, 44, 50]) {
     // columns 0 and 1 are one cell by nature; every other column is 0 or at least 2
     for (const w of columnWidths([row], total, 2, [3], 4, [6, 5], 12).slice(2)) expect(w).not.toBe(1)
-  }
-})
-
-// one Korean-title task and one English-title task listed together; pane width 78 and 46 is the frame() cols argument
-// (body = cols - 4, so inner 74 and 42; the pane is given bodyColumns = cols)
-const KO_TITLE = '메모 앱에 태그 검색 추가'
-const EN_TITLE = 'Add CSV export to the reports page'
-for (const cols of [78, 46]) {
-  const bodyColumns = cols
-  test(`mixed Korean and English EPIC rows at pane width ${cols}: same column offsets, no line wider, the title keeps room, no lone …`, async ($, on) => {
-    const tasks = [
-      epicOf('tA', 'E-3a3a3bb5', [], { title: KO_TITLE }),
-      epicOf('tB', 'E-bbbbbbbb', [], { title: EN_TITLE }),
-    ]
-    await seeded($, on, { status: stat(), tasks, task: demo() }, 'terminal', undefined, { epic: 'tA' }, true)
-    const ui = await $.ui.mount({ plugin: 'teams', surface: 'terminal', component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns, placement: 'dock' } } as never)
-    const lines = frame((await ui.drawn()) as any, 'Teams', cols)
-    // (b) no line of the frame is wider than the pane
-    for (const l of lines) expect(cells(l)).toBeLessThanOrEqual(cols)
-    const rows = lines.filter(l => /E-[0-9a-f]{8} /.test(l))
-    expect(rows).toHaveLength(2)
-    const [ko, en] = rows as [string, string]
-    // (a) the state word starts at the same display-cell offset on both rows
-    expect(ko).toContain('running')
-    expect(en).toContain('running')
-    expect(cells(ko.slice(0, ko.indexOf('running')))).toBe(cells(en.slice(0, en.indexOf('running'))))
-    // the title starts at one offset too
-    expect(cells(ko.slice(0, ko.indexOf('메')))).toBe(cells(en.slice(0, en.indexOf('Add'))))
-    // no lone … column on any line
-    for (const l of lines) expect(/\s…(\s|│|$)/.test(l)).toBe(false)
-    if (cols === 46) {
-      // (c) the state word stays; the count and the age are dropped; the title keeps 12 cells before any …
-      for (const r of rows) {
-        expect(r).toContain('running')
-        expect(r).not.toMatch(/\d\/\d/)
-        expect(r).not.toMatch(/\d+[smh]\b/)
-      }
-      for (const [r, first] of [[ko, '메'], [en, 'Add']] as const) {
-        const title = r.slice(r.indexOf(first), r.indexOf('running')).trimEnd()
-        const at = title.indexOf('…')
-        expect(cells(at >= 0 ? title.slice(0, at) : title)).toBeGreaterThanOrEqual(12)
-      }
-    } else {
-      // (d) wide enough: the count and the age are still there
-      for (const r of rows) {
-        expect(r).toMatch(/\d\/\d/)
-        expect(r).toMatch(/\d+[smh]\b/)
-      }
-    }
-  })
-}
-
-test('190 columns: the tab row keeps the cost text, fits the pane and ends in the right border', async ($, on) => {
-  const d = DEMO.full!
-  const first = d.tasks[0] as { task_id: string }
-  await seeded($, on, { status: stat(), tasks: d.tasks, task: first }, 'terminal', undefined, { epic: first.task_id }, true)
-  const ui = await $.ui.mount({ plugin: 'teams', surface: 'terminal', component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: 190, placement: 'dock' } } as never)
-  const lines = frame((await ui.drawn()) as any, 'Teams', 190)
-  const tabRows = lines.filter(l => l.includes('Floor') && /turns/.test(l))
-  expect(tabRows).toHaveLength(1)
-  expect(cells(tabRows[0]!)).toBeLessThanOrEqual(190)
-  expect(tabRows[0]!.endsWith('│')).toBe(true)
-  for (const l of lines) expect(cells(l)).toBeLessThanOrEqual(190)
-})
-
-test('demo frames', () => {
-  // the runner indents an error message, so the frames go to stdout as they are (headings start at column 0), then the test fails
-  if (SHOW) {
-    console.log(`\n${shownFrames.join('\n')}\n`)
-    throw new Error('SHOW is on: frames printed above')
   }
 })
 
@@ -2708,17 +2122,6 @@ for (const surface of SURFACES) {
   test(`${surface}: band ko label exact`, async ($, on) => {
     await seeded($, on, { status: stat({ waiting: 1, asks: [ASK] }), task: demo() }, surface, 'ko')
     expect(await (await band($, surface)).find({ type: 'Text', text: 'P2님이 묻습니다: Keep the legacy PDF route?' })).toBeDefined()
-  })
-
-  test(`${surface}: Floor line for an addressed card, none for an unaddressed waiting card`, async ($, on) => {
-    const you = { count: 2, items: ['a', 'b'], cards: [{ key: ASK.key, title: 'a', question: ASK.question, who: 'P2', since: 1000 }, { key: 'E-aaaaaaaa/P4', title: 'b', question: 'other?', who: 'P4', since: 1000 }] }
-    await seeded($, on, { status: stat({ waiting: 2, asks: [ASK] }), tasks: floorOf(WORKERS), task: demo({ you }), teams: TEAMS }, surface, undefined, { epic: 'tA' })
-    const ui = await wide($, surface)
-    const lines = (await allTexts(ui)).filter(t => t.includes('→ you') && t.includes('Keep'))
-    expect(lines).toHaveLength(1)
-    expect(lines[0]).toMatch(/^⚑ P2 → you {2}Keep the legacy PDF route\?/)
-    expect((await ui.findAll({ type: 'Text', text: /^⚑ P2 → you/ })).some(t => t.props.color === 'warning')).toBe(true)
-    expect((await allTexts(ui)).filter(t => t.includes('P4 → you'))).toEqual([])
   })
 }
 
@@ -2786,91 +2189,12 @@ test('receiver: a teams ask is consumed and the data refreshed once; other text 
   expect(dataCalls()).toBe(n + 1)
 })
 
-// the Home tab draws node's dashboard: node's SVG where the surface has Svg, the same model in Ink on the terminal
-const DASH = {
-  model: {
-    key: 'E-3a3a3bb5', title: 'Build the expense tracker', state: 'running', pct: 33, now: 'Build · Receipts upload',
-    stages: [{ n: 1, key: 'plan', label: 'Plan', state: 'done' }, { n: 2, key: 'build', label: 'Build', state: 'running' }, { n: 3, key: 'integrate', label: 'Integrate', state: 'pending' }],
-    packages: [{ title: 'Receipts upload', state: 'running' }],
-    lanes: [{ key: 'running', label: 'In progress', short: 'Active', count: 1, cards: [{ title: 'Receipts upload', kind: 'package', failed: false, reason: null }], more: 0 }],
-    // node's laneBoxes() (view-summary.mjs): the lane width per pane width, 0 where the boxes do not fit
-    laneBoxes: Array.from({ length: 241 }, (_, i) => (i >= 72 ? Math.max(14, Math.floor((i - 3) / 4)) : 0)),
-    tiles: [{ key: 'progress', label: 'Progress', value: '33%', sub: '1/3 stages' }, { key: 'cost', label: 'Cost', value: '$1.20', sub: '30 turns' }],
-    activity: [{ time: '10:02', kind: 'dispatched', subject: 'Receipts upload' }],
-    waiting: [], at: 0,
-  },
-  svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>',
-  alt: 'E-3a3a3bb5 Build the expense tracker: running, 33%',
-}
-for (const surface of SURFACES) {
-  test(`${surface}: Home draws ${surface === 'terminal' ? 'the Ink dashboard, no Svg' : "node's Svg"}`, async ($, on) => {
-    await seeded($, on, { status: stat(), task: demo(), dash: DASH }, surface, undefined, { view: 'dash' })
-    const ui = await pane($, surface)
-    const svg = await ui.find({ type: 'Svg' })
-    if (surface === 'terminal') {
-      expect(svg).toBeUndefined()
-      const text = await shown(ui)
-      const rows = frame((await ui.drawn()) as any, 'Teams', 84)
-      for (const l of rows) expect(cells(l)).toBeLessThanOrEqual(84)
-      for (const word of ['33%', '2 Build', 'PROGRESS', 'Receipts upload', 'Active', 'dispatched']) expect(text).toContain(word)
-    } else {
-      expect(svg?.props.source).toBe(DASH.svg)
-      expect(svg?.props.alt).toBe(DASH.alt)
-    }
-  })
-}
-// card 94 rest: the lane headers node returns (view-summary.mjs LANE_LABEL) are drawn whole in a box at 190, 110 and 78 columns
-for (const cols of [190, 110, 78]) {
-  test(`terminal: Home lane headers read whole at ${cols} columns, none cut by …`, async ($, on) => {
-    const lane = (key: string, label: string) => ({ key, label: `${label} long`, short: label, count: 12, cards: [{ title: `${label} card`, kind: 'package', failed: false, reason: null }], more: 0 })
-    const lanes = [lane('running', 'Active'), lane('you', 'On you'), lane('pending', 'Next'), lane('done', 'Done')]
-    await seeded($, on, { status: stat(), task: demo(), dash: { ...DASH, model: { ...DASH.model, lanes } } }, 'terminal', undefined, { view: 'dash' })
-    const ui = await $.ui.mount({ plugin: 'teams', surface: 'terminal', component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: cols, placement: 'dock' } } as never)
-    const text = await shown(ui)
-    for (const l of lanes) {
-      expect(text).toContain(l.short)
-      expect(text).not.toContain(`${l.short}…`)
-      expect(text).not.toContain(l.label)
-    }
-    expect(text).not.toMatch(/Activ…|On yo…|Nex…|Don…/)
-  })
-}
-
-test('the pane opens on Home; 0 picks it, 1 the Floor', async () => {
-  expect(paneKey('0')).toEqual({ kind: 'tab', tab: 'dash' })
-  expect(paneKey('1')).toEqual({ kind: 'tab', tab: 'floor' })
-})
-
-// ---- U3: the run's numbers on Home and the STORYs tab, at 190 and 110 columns (fictional data) ----
+// ---- F2 pages: fixtures (the REASON and the sound() check serve the page tests below) ----
 const REASON = 'All code and test acceptance for the parser is met and verified by the final run of the whole suite across every supported locale'
-const numbers = (over: Record<string, unknown> = {}) => ({
-  attempt: 3, max_attempts: 3, judge: { score: 85, threshold: 90, reason: REASON }, cost_usd: 1.27, retry_cost_usd: 2.35, wall_ms: 1521000, out_of_retries: true, ...over,
-})
-const NEVER = numbers({ attempt: 0, judge: null, cost_usd: 0, retry_cost_usd: 0, wall_ms: 0 })
-const RUN = {
-  budget: { limit_usd: 5, spent_usd: 3.62 }, drivers: { live: 2, cap: 4, stalled: [{ id: 'P2', minutes: 25 }] },
-  denials: 1, out_of_retries: ['P2', 'P3'], defects: { filed: 2, dropped: 1 }, scoped_out: 1,
-}
-const NUMBERED = [
-  epicOf('tA', 'E-3a3a3bb5', [
-    story('E-3a3a3bb5/P2', 'report writer', { state: 'failed', last_verdict: 'reject', metrics: numbers() }),
-    story('E-3a3a3bb5/P3', 'cache layer', { state: 'idle', metrics: NEVER }),
-    story('E-3a3a3bb5/P4', 'parser module', { doing: 'editing parser.ts', metrics: numbers({ attempt: 1, judge: { score: 94, threshold: 90, reason: 'sound' }, retry_cost_usd: 0, cost_usd: 0.42, wall_ms: 240000, out_of_retries: false }) }),
-  ]),
-]
-const longRun = { ...RUN, out_of_retries: Array.from({ length: 60 }, (_, i) => `QA-F${i}`) }
-const inPane = async ($: Engine, cols: number, tab?: string) => {
-  const ui = await $.ui.mount({ plugin: 'teams', surface: 'terminal', component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: cols - 4, placement: 'dock' } } as never)
-  if (tab !== undefined) {
-    await ui.press({ key: tab })
-    await ui.redraw()
-  }
-  return bodyOf(frame((await ui.drawn()) as any, 'Teams', cols))
-}
 // no line wider than the pane, no cut glyph, no `…` alone in a cell or doubled, nothing undefined
 const sound = (lines: string[], cols: number) => {
   for (const l of lines) {
-    expect(cells(l)).toBeLessThanOrEqual(cols - 4)
+    expect(width(l)).toBeLessThanOrEqual(cols - 4)
     expect(l).not.toContain('�')
     expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(l)).toBe(false)
     expect(l).not.toContain('……')
@@ -2879,177 +2203,10 @@ const sound = (lines: string[], cols: number) => {
   }
 }
 
-for (const cols of WIDTHS) {
-  test(`Home shows the run's numbers at ${cols} columns`, async ($, on) => {
-    await seeded($, on, { status: stat(), tasks: NUMBERED, task: demo(), dash: { ...DASH, model: { ...DASH.model, run: RUN } } }, 'terminal', undefined, { epic: 'tA', view: 'dash' }, true)
-    const lines = await inPane($, cols)
-    sound(lines, cols)
-    const text = lines.join('\n')
-    for (const part of ['Budget', '$3.62 of $5.00', '2/4 live', 'Stalled', 'P2 25m', 'Denials', 'Defects', '2 filed · 1 dropped', 'Out of retries', 'P2, P3', 'Scoped out']) expect(text).toContain(part)
-    // label · value, one per line: the values start at one column (the longest label is 14 wide, then a 2-cell gap)
-    const rows = lines.filter(l => /^(Budget|Drivers|Stalled|Denials|Defects|Out of retries|Scoped out) /.test(l))
-    expect(rows).toHaveLength(7)
-    for (const l of rows) {
-      expect(l.slice(14, 16)).toBe('  ')
-      expect(l[16]).not.toBe(' ')
-    }
-  })
-  test(`Home cuts a long list with … at ${cols} columns`, async ($, on) => {
-    await seeded($, on, { status: stat(), tasks: NUMBERED, task: demo(), dash: { ...DASH, model: { ...DASH.model, run: longRun } } }, 'terminal', undefined, { epic: 'tA', view: 'dash' }, true)
-    const lines = await inPane($, cols)
-    sound(lines, cols)
-    const cut = lines.find(l => l.startsWith('Out of retries'))!
-    expect(cut.endsWith('…')).toBe(true)
-  })
-  test(`STORYs shows attempt, judge, cost with retry, wall, one line each at ${cols} columns`, async ($, on) => {
-    await seeded($, on, { status: stat(), tasks: NUMBERED, task: demo() }, 'terminal', undefined, { epic: 'tA' }, true)
-    const lines = await inPane($, cols, 'stories')
-    sound(lines, cols)
-    const rows = lines.filter(l => /^[▸ ] +[●◌⚑✔✘⊘]  \S/.test(l) && !EPIC_LINE.test(l))
-    expect(rows).toHaveLength(3)
-    const [p2, p3, p4] = rows as [string, string, string]
-    for (const part of ['report writer', '3/3', 'judge 85 vs 90', '$1.27', '+$2.35', '25m']) expect(p2).toContain(part)
-    // the reason is the line under its row, not on it
-    expect(p2).not.toContain('All code')
-    expect(lines[lines.indexOf(p2) + 1]).toContain('All code')
-    expect(p3).toContain('0/3')
-    expect(p3).not.toContain('judge')
-    for (const part of ['1/3', 'judge 94 vs 90', '$0.42', '4m']) expect(p4).toContain(part)
-    expect(p4).not.toContain('+$')
-    // the long reason is cut with …, never run on
-    if (cols === 110) expect(lines[lines.indexOf(p2) + 1]!.trimEnd().endsWith('…')).toBe(true)
-    // icons first: ✘ for the failed STORY, columns at one offset on every row
-    expect(p2.replace(/^▸ */, '').trimStart()[0]).toBe('✘')
-    const judgeAt = rows.map(l => l.indexOf('judge')).filter(i => i >= 0)
-    expect(new Set(judgeAt).size).toBe(1)
-  })
-}
-
-// ---- U2: a STORY is two lines — the numbers, then the reason or the judge's gap — at 86, 110 and 190 columns ----
-const TWO = [
-  epicOf('tA', 'E-3a3a3bb5', [
-    story('E-3a3a3bb5/P2', 'report writer with a deliberately long title', { state: 'failed', last_verdict: 'reject', metrics: numbers({ judge: { score: 85, threshold: 90, reason: REASON, gap: null } }) }),
-    story('E-3a3a3bb5/P3', 'cache layer', { doing: 'editing cache.ts', metrics: numbers({ attempt: 1, judge: { score: 93, threshold: 90, reason: 'sound', gap: 'the retry path has no test' }, retry_cost_usd: 0, out_of_retries: false }) }),
-    story('E-3a3a3bb5/P4', 'parser', { state: 'idle', metrics: NEVER }),
-  ]),
-]
-for (const cols of [86, 110, 190]) {
-  test(`STORY rows are two lines with the title cut only at its end at ${cols} columns`, async ($, on) => {
-    await seeded($, on, { status: stat(), tasks: TWO, task: demo() }, 'terminal', undefined, { epic: 'tA' }, true)
-    const lines = await inPane($, cols, 'stories')
-    sound(lines, cols)
-    for (const l of lines) expect(l).not.toContain('->')
-    const at = (re: RegExp) => lines.findIndex(l => re.test(l) && !EPIC_LINE.test(l))
-    const p2 = at(/^[▸ ] +✘  report/)
-    const p3 = at(/^[▸ ] +●  cache/)
-    expect(p2).toBeGreaterThanOrEqual(0)
-    expect(p3).toBeGreaterThan(p2)
-    // the title: whole while room is free (never a stub), else a long prefix and a single … at its end
-    const title = lines[p2]!.replace(/^[▸ ] +✘  /, '').split(/ {2,}/)[0]!
-    expect(title.startsWith('report writer')).toBe(true)
-    expect(title.indexOf('…') === -1 || title.indexOf('…') === title.length - 1).toBe(true)
-    if (cols >= 190) expect(title).toBe('report writer with a deliberately long title')
-    // line 2: the reason on its own line, indented under the title, clipped with … only at its end
-    const note = lines[p2 + 1]!
-    expect(note.startsWith('    ')).toBe(true)
-    expect(note.trim().startsWith('All code and test acceptance')).toBe(true)
-    expect(lines[p2]).not.toContain('All code')
-    if (cols < 190) expect(note.trimEnd().endsWith('…')).toBe(true)
-    // the judge's gap replaces the reason
-    expect(lines[p3 + 1]!.trim().startsWith('own gap: the retry path has no test')).toBe(true)
-    expect(lines.join('\n')).not.toContain('sound')
-  })
-  test(`STORY rows keep a long title and show one status word at ${cols} columns`, async ($, on) => {
-    const T40 = 'importer for the quarterly ledger export' // 40 characters
-    expect(T40).toHaveLength(40)
-    const tasks = [epicOf('tA', 'E-3a3a3bb5', [
-      story('E-3a3a3bb5/P2', T40, { state: 'failed', last_verdict: 'reject', metrics: numbers() }),
-      story('E-3a3a3bb5/P3', 'cache layer', { state: 'done', last_verdict: 'accept', metrics: numbers({ attempt: 1, judge: { score: 94, threshold: 90, reason: 'sound' }, retry_cost_usd: 0, out_of_retries: false }) }),
-      story('E-3a3a3bb5/P4', 'parser', { state: 'idle', metrics: NEVER }),
-    ])]
-    await seeded($, on, { status: stat(), tasks, task: demo() }, 'terminal', undefined, { epic: 'tA' }, true)
-    const lines = await inPane($, cols, 'stories')
-    sound(lines, cols)
-    const rows = lines.filter(l => /^[▸ ] +[●◌⚑✔✘⊘]  \S/.test(l) && !EPIC_LINE.test(l))
-    expect(rows).toHaveLength(3)
-    // title: whole at 190; at least 30 characters before … at 110, 24 at 86 (rows at 86 may drop retry or wall; the title is kept)
-    const title = rows[0]!.replace(/^[▸ ] +✘  /, '').split(/ {2,}/)[0]!
-    const visible = title.replace(/…$/, '')
-    expect(T40.startsWith(visible)).toBe(true)
-    if (cols >= 190) expect(title).toBe(T40)
-    if (cols === 110) expect(visible.length).toBeGreaterThanOrEqual(30)
-    if (cols === 86) expect(visible.length).toBeGreaterThanOrEqual(24)
-    // exactly one status word per row, and no cut second state beside it
-    const STATE = /\b(rejected|accepted|failed|stalled|idle|done|reject|accept|fai|sta|rej|acc)(…)?(?=\s|$)/g
-    const words = rows.map(l => l.replace(/^[▸ ] +[●◌⚑✔✘⊘]  /, '').split(/ {2,}/).slice(1).join('  ').match(STATE) ?? [])
-    expect(words[0]).toEqual(['rejected'])
-    expect(words[1]).toEqual(['accepted'])
-    expect(words[2]).toEqual(['idle'])
-  })
-  for (const surface of SURFACES) {
-    test(`${surface}: two-line STORY rows mount at ${cols} columns`, async ($, on) => {
-      await seeded($, on, { status: stat(), tasks: TWO, task: demo() }, surface, undefined, { epic: 'tA', view: 'stories' }, true)
-      const ui = await $.ui.mount({ plugin: 'teams', surface, component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: cols - 4, placement: 'dock' } } as never)
-      const text = (await ui.findAll({ type: 'Text' })).map(t => String(t.text)).join('\n')
-      expect(text).toContain('report writer')
-      expect(text).not.toContain('->')
-    })
-  }
-}
-
-// ---- card94: one fixed status word per STORY row, no '->', the title and the reason get the room ----
-// the widths the host gives: pane frame 86 = bodyColumns 82, and the side pane of a 190- and a 110-column screen = 78 and 46
-const T40 = 'Retry queue drains stale jobs on restart' // 40 characters
-const R120 = 'The tenant cap is skipped when two workers claim one job at the same moment, so a burst of claims can exceed the limit.'
-const DOING = '-> Bash node --test teams/scripts/test-view-summary.mjs teams/scripts/test-view-floor.mjs teams/scripts/test-view.mjs'
-const CARD94 = [
-  epicOf('tA', 'E-3a3a3bb5', [
-    story('E-3a3a3bb5/P2', T40, { doing: DOING, metrics: numbers({ attempt: 2, judge: null, retry_cost_usd: 0, out_of_retries: false }) }),
-    story('E-3a3a3bb5/P3', 'Billing export batches by tenant', { state: 'failed', last_verdict: 'reject', metrics: numbers({ attempt: 1, judge: { score: 70, threshold: 90, reason: R120, gap: null }, retry_cost_usd: 0, out_of_retries: false }) }),
-    story('E-3a3a3bb5/P4', 'Webhook signer rotates keys nightly', { state: 'failed', last_verdict: 'reject', metrics: numbers({ attempt: 1, judge: { score: 93, threshold: 90, reason: 'sound', gap: R120 }, retry_cost_usd: 0, out_of_retries: false }) }),
-  ]),
-]
-for (const surface of SURFACES) {
-  for (const bodyColumns of [82, 78, 46]) {
-    test(`card94 ${surface} at ${bodyColumns} body columns: STORY rows have one status word, no '->', the title and the reason keep their room`, async ($, on) => {
-      await seeded($, on, { status: stat(), tasks: CARD94, task: demo() }, surface, undefined, { epic: 'tA', view: 'stories' }, true)
-      const ui = await $.ui.mount({ plugin: 'teams', surface, component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns, placement: 'dock' } } as never)
-      const all = (await ui.findAll({ type: 'Text' })).map(t => String(t.text))
-      if (surface === 'terminal') sound(bodyOf(frame((await ui.drawn()) as any, 'Teams', bodyColumns + 4)), bodyColumns + 4)
-      for (const l of all) {
-        expect(l).not.toContain('->')
-        expect(cells(l)).toBeLessThanOrEqual(bodyColumns - 4)
-      }
-      const rows = all.filter(l => /^[▸ ] +[●◌⚑✔✘⊘]  \S/.test(l) && !EPIC_LINE.test(l))
-      expect(rows).toHaveLength(3)
-      const parts = rows.map(l => l.replace(/^[▸ ] +[●◌⚑✔✘⊘]  /, '').split(/ {2,}/))
-      // the title shows its first words
-      const title = parts[0]![0]!.replace(/…$/, '')
-      expect(T40.startsWith(title)).toBe(true)
-      expect(cells(title)).toBeGreaterThanOrEqual(bodyColumns === 46 ? 16 : 24)
-      expect(title).toContain(bodyColumns === 46 ? 'Retry queue' : 'Retry queue drains')
-      // one fixed word per row: the acting row says working, the rejected rows rejected, nothing else beside it
-      expect(parts[0]![1]).toBe('working')
-      expect(parts[1]![1]).toBe('rejected')
-      expect(parts[2]![1]).toBe('rejected')
-      // the 120-char reason (the gap of the 93 vs 90 row) is the line under its row: >= 40 cells, ends in …
-      const notes = [/^\s+The tenant cap/, /^\s+own gap: The tenant cap/].map(re => all.find(l => re.test(l))!)
-      for (const note of notes) {
-        expect(note).toBeDefined()
-        expect(cells(note.trim())).toBeGreaterThanOrEqual(40)
-        expect(note.trimEnd().endsWith('…')).toBe(true)
-      }
-      const note1 = notes[0]!
-      if (bodyColumns === 46) expect(note1.startsWith('  ') && !note1.startsWith('   ')).toBe(true)
-      else expect(rows[2]).toContain('judge 93 vs 90')
-    })
-  }
-}
-
 // ---- card 105: a task in a linked worktree of this repo is marked ⑂ <worktree>; the mod only renders the field ----
 const WT = [epicOf('tW', 'E-wwwwwwww', [], { title: 'in a worktree', worktree: 'wt' }), epicOf('tM', 'E-mmmmmmmm', [], { title: 'own checkout', worktree: null })]
 for (const surface of SURFACES) {
-  test(`${surface}: pane EPIC row shows ⑂ wt for a worktree task, none for null`, async ($, on) => {
+  test(`${surface}: HOME EPIC row shows ⑂ wt for a worktree task, none for null`, async ($, on) => {
     await seeded($, on, { status: stat(), tasks: WT, task: WT[0] }, surface, undefined, { watch: [] })
     const ui = await wide($, surface)
     const text = await shown(ui)
@@ -3073,26 +2230,6 @@ for (const surface of SURFACES) {
     const b = await shown(await band($, surface))
     expect(b).not.toContain('⑂')
     expect(b).toMatch(/teams · .+ — \S/)
-  })
-  // the title cell (⑂ worktree · title) is cut from its end at 110 columns: the title tail goes, the ⑂ mark stays, the row keeps its cells
-  test(`${surface}: a long title with a worktree is cut to … at 110 columns, the ⑂ mark stays`, async ($, on) => {
-    const long = 'Migrate every legacy report exporter to the new streaming writer and keep each output file identical across all supported locales'
-    const tasks = [
-      epicOf('tW', 'E-aaaaaaaa', [], { title: long, worktree: 'feature-worktree' }),
-      epicOf('tS', 'E-bbbbbbbb', [], { title: 'short', worktree: null }),
-    ]
-    await seeded($, on, { status: stat(), tasks, task: tasks[0] }, surface, undefined, { epic: 'tW' })
-    const ui = await $.ui.mount({ plugin: 'teams', surface, component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: 106, placement: 'dock' } } as never)
-    const lines = await textsOf(ui, EPIC_LINE)
-    expect(lines).toHaveLength(2)
-    const [w, s] = lines as [string, string]
-    expect(w).toContain('…')
-    expect(w).toContain('⑂ feature-worktree · Migrate')
-    expect(w).not.toContain('all supported locales')
-    expect(w).toMatch(/\d+\/\d+/)
-    expect(s).toMatch(/\d+\/\d+/)
-    expect(w.indexOf('⑂')).toBe(s.indexOf('short'))
-    for (const l of lines) expect(cells(l)).toBeLessThanOrEqual(106)
   })
 }
 
@@ -3228,209 +2365,1079 @@ test('view server: with fetch failing the tick falls back to --once and starts t
   expect(seen.argv.filter(isServeStart)).toHaveLength(1)
 })
 
-// ---- F4 page: one test per page, each over the four surfaces, English then Korean (via `l` and via the language setting) ----
-// Fictional data. The words a person or the engine wrote in it (titles, ids, prose, agent names) are named in LANG_DATA / F4_DATA:
-// they stay as written in both languages. Everything else the pane says comes from the table.
-// PLAN and JUDGE are the engine's worker ids; the judge's reason and the report path are written by the run
-const F4_DATA = [...LANG_DATA, 'sound', 'defect D1', '/proj/.teams_output/team/E-abc/80-report.md', '/teams-status', 'PLAN', 'JUDGE'].sort((a, b) => b.length - a.length)
-const F4_TASKS = [
-  epicOf('tA', 'E-3a3a3bb5', [
-    story('E-3a3a3bb5/P1', 'module b', { doing: 'editing a.ts', last_verdict: 'reject', try: 2, max: 3, elapsed_ms: 240000, cost_usd: 0.42, cost_estimated: true, metrics: numbers({ judge: { score: 85, threshold: 90, reason: 'sound', gap: null } }) }),
-    story('E-3a3a3bb5/P2', 'module c', { state: 'idle', elapsed_ms: 3720000, metrics: NEVER }),
-    story('E-3a3a3bb5/P3', 'cache layer', { state: 'you', doing: 'asks a question', elapsed_ms: 600000 }),
-  ], {
-    work: [failedCard, card('module b', 'package', 'done')],
-    workers: [wkd('PLAN', 'done'), wkd('P1', 'acting', 'editing a.ts'), wkd('P2', 'idle'), wkd('P3', 'you', 'asks a question'), wkd('JUDGE', 'stalled')],
-    handoffs: [
-      { time: '10:03', from: 'judge', what: 'verdict reject', what_key: 'handVerdict', what_vars: { v: 'reject' }, to: 'P1' },
-      { time: '10:05', from: 'P3', what: 'asks you', what_key: 'handAsks', what_vars: {}, to: 'you', to_key: 'partyYou' },
-      { time: '10:08', from: 'integrate', what: 'integrated 2', what_key: 'handIntegrated', what_vars: { n: 2 }, to: 'EPIC' },
-    ],
-    you: { count: 1, items: ['one open question'], cards: [{ key: 'E-3a3a3bb5/P3', title: 'cache layer', question: 'keep the old cache key format?' }] },
-  }),
+// ---- F2 pages: HOME and FLOOR on the keys w s d a n q, English then Korean, on every surface (fictional data) ----
+// The words a person or the engine wrote in the data (titles, ids, prose) stay as written in both languages: F4_DATA names them.
+// Everything else a page says comes from the table.
+const judgeOf = (verdict: string, score: number, attempt: number, reason: string | null = null) => ({ score, threshold: 80, reason, gap: null, verdict, attempt })
+const numsOf = (attempt: number, judge: unknown) => ({ attempt, max_attempts: 3, judge, cost_usd: 0.4, retry_cost_usd: 0, wall_ms: 0, out_of_retries: false })
+const NOW0 = 4000 // the mock clock after one tick
+const ago = (min: number) => NOW0 - min * 60000
+const P_STAGES = [stage('plan', 'done'), stage('build', 'running'), stage('integrate', 'pending'), stage('qa', 'pending'), stage('gate', 'pending'), stage('report', 'pending')]
+const NO_PHASE = { workers: 0, acting: 0, you: 0, stalled: 0, idle: 0, done: 0 }
+const P_PHASES = [
+  { key: 'plan', ...NO_PHASE, workers: 3, done: 3, decisions: 3 }, { key: 'build', ...NO_PHASE, workers: 4, acting: 2, you: 1, stalled: 1, decisions: 1 },
+  { key: 'integrate', ...NO_PHASE }, { key: 'qa', ...NO_PHASE }, { key: 'gate', ...NO_PHASE }, { key: 'report', ...NO_PHASE },
 ]
-const F4_FIXTURE: Data = {
-  status: stat({ waiting: 1 }), tasks: F4_TASKS, task: demo({ work: [failedCard, card('module b', 'package', 'done')], now: { kind: 'build', subject: 'module b', detail: '' } }), teams: TEAMS, dash: DASH,
-  decisions: card => (card === 'P1' ? THREAD : { card: null, entries: [] }), reports: { abc: payload(), tA: payload() },
+const P_METRICS = {
+  drivers: { live: 5, cap: 8, load: 3.1 }, out_of_retries: [] as string[],
+  stories: [
+    { id: 'S1', progress: { done: 6, total: 6 }, agents: null }, { id: 'S2', progress: { done: 3, total: 6 }, agents: 3 },
+    { id: 'S3', progress: { done: 2, total: 6 }, agents: 2 }, { id: 'S4', progress: null, agents: null },
+  ],
+  stages: [{ stage: 'plan', cost_usd: 0.4, retry_cost_usd: 0, wall_ms: 300000 }, { stage: 'build', cost_usd: 1.81, retry_cost_usd: 0.26, wall_ms: 840000 }],
 }
-const F4_PAGES = ['dash', 'floor', 'stories', 'decisions', 'log', 'report', 'band', 'empty', 'mobile'] as const
-type F4Page = (typeof F4_PAGES)[number]
-const F4_SHOTS: { name: string; lines: string[] }[] = []
-const numbersOf = (text: string) => (text.match(/\d+/g) ?? []).sort().join(',')
+const P_ASK = { key: 'E-3f9a2c11/S2', title: 'refund idempotency key', question: 'How many retries on refund failure?', who: 'S2', since: ago(9), stage: 'ask' }
+const P_STORIES = () => [
+  story('S1', 'cancel reason enum', { state: 'done', last_verdict: 'accept', try: 1, max: 3, elapsed_ms: 240000, metrics: numsOf(1, judgeOf('accept', 91, 1)) }),
+  story('S2', 'refund idempotency key', { state: 'you', try: 2, max: 3, elapsed_ms: 660000, metrics: numsOf(2, judgeOf('reject', 61, 1, REASON)) }),
+  story('S3', 'PG cancel webhook', { doing: 'testing', try: 1, max: 3, elapsed_ms: 360000 }),
+  story('S4', 'cancel webhook receipt', { state: 'idle', elapsed_ms: null }),
+]
+const P_TASKS = (over: Record<string, unknown> = {}) => [
+  epicOf('tA', 'E-3f9a2c11', P_STORIES(), {
+    title: 'Cancel payment API', done: 1, total: 4, created_at: ago(22), cost: { usd: 2.47, turns: 40 }, stages: P_STAGES, phases: P_PHASES, metrics: P_METRICS,
+    progress: { key: 'build', done: 3, total: 6 },
+    you: { count: 1, items: ['refund idempotency key'], cards: [P_ASK] },
+    workers: [{ ...wk('S3', 'stalled'), minutes: 23, phase: 'build' }, { ...wk('S1', 'done'), phase: 'build' }, { ...wk('S2', 'acting', 'editing parser.ts'), phase: 'build', node: 'implement', role: 'implementer', elapsed_ms: 660000 }, { ...wk('PLAN', 'done'), phase: 'plan' }],
+    phase_handoffs: {
+      build: [
+        { time: '14:03', from: 'judge', what: 'verdict reject', what_key: 'handVerdict', what_vars: { v: 'reject' }, to: 'S2', story: 'S2', score: 61, reason: 'AC 3 missing', to_role: 'implementer' },
+        { time: '13:58', from: 'S1', what: 'integrated 1', what_key: 'handIntegrated', what_vars: { n: 1 }, to: 'judge' },
+        { time: '13:52', from: 'TeamLeader', what: '', to: 'you', to_key: 'partyYou', story: 'S2', reason: 'How many retries on refund failure?' },
+        { time: '13:40', from: 'judge', what: 'verdict accept', what_key: 'handVerdict', what_vars: { v: 'accept' }, to: 'S1', story: 'S1', score: 91, to_role: 'integrate' },
+      ],
+    },
+    ...over,
+  }),
+  epicOf('tB', 'E-71c2a0f4', [], { title: 'Alert batch retry policy', done: 0, total: 0, created_at: ago(9), cost: { usd: 0.31, turns: 5 }, stages: [stage('plan', 'running'), ...P_STAGES.slice(1).map(g => stage(g.key, 'pending'))] }),
+  epicOf('tC', 'E-91c0b3d7', [], { title: 'Log cleanup cron', state: 'complete', live: false, age_ms: 7200000, done: 5, total: 5, cost: { usd: 3.34, turns: 80 } }),
+]
+const P_DATA = [
+  ...LANG_DATA, 'Cancel payment API', 'cancel reason enum', 'refund idempotency key', 'PG cancel webhook', 'cancel webhook receipt', 'Alert batch retry policy', 'Log cleanup cron',
+  'How many retries on refund failure?', 'S1', 'S2', 'S3', 'S4', 'E-3f9a2c11', 'E-71c2a0f4', 'E-91c0b3d7', REASON,
+  // the Phase, STORY, Log, Report and thread fixtures below: words a person, a model or the engine's flow name wrote
+  'duplicate request double refund test missing', 'POST cancel endpoint adds the reason enum', 'cancel_reason.py', 'cancel_api.py', 'enum or free text: enum',
+  'multi-language reason text (belongs to S4)', 'AC 3 missing', 'develop', 'refund ledger', 'audit trail', 'a note a person wrote',
+].sort((a, b) => b.length - a.length)
+const F4_DATA = P_DATA
+// a title or reason cut to the column ends in … : its kept head is still the data's own text
+const F4_CUTS = [...new Set([...F4_DATA, '"How many retries on refund failure?"'].flatMap(d => Array.from({ length: Math.max(1, d.length - 3) }, (_, i) => d.slice(0, i + 4))))].sort((a, b) => b.length - a.length)
+const P_FIXTURE = (over: Partial<Data> = {}): Data => ({ status: stat({ waiting: 1 }), tasks: P_TASKS(), task: demo(), ...over })
+const F4_FIXTURE: Data = P_FIXTURE()
+const HOME_PAGE = { name: 'HOME', epic: null, story: null, phase: null }
+const FLOOR_PAGE = { name: 'FLOOR', epic: 'tA', story: null, phase: null }
+const atCols = (ui$: Engine, surface: Surface, cols: number) =>
+  ui$.ui.mount({ plugin: 'teams', surface, component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: cols - 4, placement: 'dock' } } as never)
+const linesAt = async (ui: Ui, cols: number) => bodyOf(frame((await ui.drawn()) as any, 'Teams', cols))
+const homeLines = async ($: Engine, on: On, cols: number, data: Data = P_FIXTURE(), surface: Surface = 'terminal', language?: string, init: Record<string, unknown> = {}) => {
+  await seeded($, on, data, surface, language, { epic: 'tA', ...init }, true)
+  const ui = await atCols($, surface, cols)
+  return { ui, lines: await linesAt(ui, cols) }
+}
+const pressKey = async (ui: Ui, text: string) => {
+  await ui.input({ key: 'keys', text, kind: 'change' } as never)
+  await ui.redraw()
+}
 
-async function pageWorld($: Engine, on: On, page: F4Page) {
-  const surfaces: readonly Surface[] = page === 'mobile' ? ['mobile'] : SURFACES
-  const empty = page === 'empty'
-  const clock = mock.clock(on, { now: 1000 })
-  const setting = { value: undefined as string | undefined }
-  langStart(on, () => (setting.value === undefined ? {} : { language: setting.value }))
-  const init = empty ? {} : { watch: ['abc'], epic: 'tA', view: F4_PAGES.indexOf(page) < 6 ? page : 'floor' }
-  const seen = uiWorld(on, init, surfaces, empty ? { status: { line: '', waiting: 0 } } : F4_FIXTURE)
-  on('ui.panes', () => ({ value: [{ id: 'teams-status', title: 'Teams', isPlaced: true }] }) as never)
-  on('ui.close', () => ({ value: undefined }))
-  on('ui.render', (_$, e) => (e.component === 'AbovePrompt' ? { type: 'Box', children: [] } : undefined) as never)
-  await start($)
-  if (!empty) await clock.advance(3000)
-  const mounted: { surface: Surface; cols: number; ui: Ui }[] = []
-  const mountAt = async (surface: Surface, cols: number, component: 'Pane' | 'AbovePrompt') => {
-    const props = component === 'Pane' ? { title: 'Teams', isFocused: false, bodyColumns: cols - 4, placement: 'dock' } : { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: cols }
-    const ui = await $.ui.mount({ plugin: 'teams', surface, component, ...(component === 'Pane' ? { requestId: 'teams-status' } : {}), props } as never)
-    if (component === 'Pane' && F4_PAGES.indexOf(page) < 6) {
-      await ui.press({ key: page })
-      await ui.redraw()
-    }
-    mounted.push({ surface, cols, ui })
-    return ui
+test('HOME at 190: header, flag section, EPIC rows with the Phase rail, STORY rows with score, reason, bar and agents', async ($, on) => {
+  const { lines } = await homeLines($, on, 190)
+  sound(lines, 190)
+  const text = lines.join('\n')
+  // header: EPIC count, machine-wide drivers and load on the left, total spend and elapsed on the right
+  expect(lines[0]).toMatch(/^teams {2}EPIC 3 · drivers 5\/8 · load 3\.1\/8 \(machine-wide\) +\$6\.12 · 22m$/)
+  // the flag section: an ask, and a driver F3 says is stopped; each row ends in the key that jumps to the next one
+  expect(text).toContain('⚑ Waiting for you 2')
+  const ask = lines.find(l => l.includes('"How many retries on refund failure?"'))!
+  expect(ask).toMatch(/⚑ +Cancel payment API › S2 +"How many retries on refund failure\?" +9m waiting +n$/)
+  const stalled = lines.find(l => l.includes('no output for 23m (driver stopped?)'))!
+  expect(stalled).toMatch(/⏸ +Cancel payment API › S3 +no output for 23m \(driver stopped\?\) +n$/)
+  // the running EPIC rows are open with their STORY rows; the rail keeps Integ and Rep
+  const epic = lines.find(l => l.includes('E-3f9a2c11  '))!
+  for (const part of ['▾', 'Cancel payment API', '✔Plan', '●Build', '○Integ', '○QA', '○Gate', '○Rep', 'Build 3/6', 'STORY 1/4', '22m', '$2.47']) expect(epic).toContain(part)
+  expect(text).toContain('E-71c2a0f4')
+  expect(text).toContain('○Rep')
+  const s1 = lines.find(l => /✔ +S1 /.test(l))!
+  for (const part of ['cancel reason enum', 'accepted', 'try 1/3', '██████', '91/80', '4m']) expect(s1).toContain(part)
+  const s2 = lines.find(l => /⚑ +S2 /.test(l))!
+  for (const part of ['refund idempotency key', 'try 2/3', 'last 61/80', 'All code and test acceptance', '3 ag', '11m']) expect(s2).toContain(part)
+  expect(s2).not.toContain('rejected') // the old verdict is not this row's status: the attempt is a retry
+  const s3 = lines.find(l => /⏸ +S3 /.test(l))!
+  expect(s3).toContain('⏸ 23m')
+  expect(s3).toContain('2 ag')
+  const s4 = lines.find(l => /◌ +S4 /.test(l))!
+  expect(s4).toContain('idle')
+  expect(s4).not.toMatch(/ag|█/)
+  // the ended EPIC is one folded row below the running ones
+  const ended = lines.find(l => l.includes('E-91c0b3d7'))!
+  for (const part of ['▸', 'Log cleanup cron', 'ended 2h 0m ago · STORY 5/5', '$3.34']) expect(ended).toContain(part)
+  expect(lines.indexOf(ended)).toBeGreaterThan(lines.indexOf(s4))
+  // F4's marker closes the footer; the page's key line is the Input's hint
+  expect(lines.at(-1)).toMatch(/l EN$/)
+  expect(lines.at(-1)).toContain('w s move · d ⏎ open')
+})
+
+test('HOME places F3 values only when present: Build n/m, estimated mark, spend after a stop; and ⏸ only with minutes', async ($, on) => {
+  const without = P_TASKS({ progress: undefined, cost: { usd: 2.47, turns: 40 }, workers: [{ ...wk('S3', 'stalled') }, wk('S1', 'done')], you: { count: 0, items: [], cards: [] } })
+  const a = await homeLines($, on, 190, P_FIXTURE({ tasks: without }))
+  const textA = a.lines.join('\n')
+  expect(textA).not.toMatch(/Build \d|QA \d|SG\d|~\$|after stop|⏸|no output/)
+  expect(textA).not.toContain('⚑ Waiting for you')
+  expect(textA).toContain('$2.47')
+})
+
+test('HOME with F3 values: estimated cost mark, spend after a stop, QA n/m and SGk stage', async ($, on) => {
+  const tasks = P_TASKS({ cost: { usd: 2.47, turns: 40, estimated: true, post_stop_usd: 0.12 }, progress: { key: 'sg', k: 2, n: 5, stage_key: 'implement' } })
+  const data = P_FIXTURE({ tasks })
+  const { tick } = await seeded($, on, data, 'terminal', undefined, { epic: 'tA' })
+  const ui = await atCols($, 'terminal', 190)
+  const epic = (await linesAt(ui, 190)).find(l => l.includes('E-3f9a2c11  '))!
+  expect(epic).toContain('SG2 Implement · 2/5')
+  expect(epic).toContain('~$2.47 after stop $0.12')
+  data.tasks = P_TASKS({ progress: { key: 'qa', done: 1, total: 4 } })
+  await tick()
+  await ui.redraw()
+  expect((await linesAt(ui, 190)).join('\n')).toContain('QA 1/4')
+})
+
+test('HOME STORY rows drop the mini bar, then the agents, then the reason as the pane narrows; the title shrinks first and nothing is wider than the pane', async ($, on) => {
+  const long = 'Retry queue drains stale jobs on restart and keeps every claim idempotent across both regions'
+  const tasks = P_TASKS()
+  ;(tasks[0] as { items: { title: string }[] }).items[1]!.title = long
+  await seeded($, on, P_FIXTURE({ tasks }), 'terminal', undefined, { epic: 'tA' }, true)
+  const kept: Record<number, [boolean, boolean, boolean]> = {}
+  for (const cols of [190, 150, 130, 110, 100, 95, 90, 85, 82, 70, 60, 50]) {
+    const ui = await atCols($, 'terminal', cols)
+    const lines = await linesAt(ui, cols)
+    sound(lines, cols)
+    const s2 = lines.find(l => /⚑ +S2 /.test(l))!
+    expect(s2).toContain('last 61/80') // the score stays whenever the reason goes
+    expect(s2).toContain(cols >= 82 ? 'Retry queue' : 'Ret') // the title keeps room until only the status and the score are left, then ends in …
+    kept[cols] = [s2.includes('█') || s2.includes('░'), / 3 ag/.test(s2), s2.includes('All code')]
+    // a column that is still drawn means every column dropped after it is drawn too: bar goes first, then agents, then reason
+    const [bar, ag, reason] = kept[cols]!
+    expect([cols, !bar || ag]).toEqual([cols, true])
+    expect([cols, !ag || reason]).toEqual([cols, true])
+    await ui.unmount()
   }
-  const redrawAll = async () => { for (const m of mounted) await m.ui.redraw() }
-  return { seen, setting, surfaces, mounted, mountAt, redrawAll, restart: () => start($) }
-}
-const markerOf = (surface: Surface, lang: 'en' | 'ko') => (surface === 'mobile' ? '' : 'l ') + (lang === 'en' ? 'EN' : 'KR')
+  expect(kept[190]).toEqual([true, true, true])
+  expect(kept[50]).toEqual([false, false, false])
+})
 
-const f4Page = (page: F4Page) => {
-  return async ($: Engine, on: On) => {
-    const w = await pageWorld($, on, page)
-    const isBand = page === 'band'
-    // the band has no footer: a terminal pane mounted first carries the marker and the key
-    const holder = isBand ? await w.mountAt('terminal', 110, 'Pane') : undefined
-    // every surface at both widths for marker, language and facts; the wrapped-row and cut-glyph check stays on terminal (and mobile) below
-    const shots = w.surfaces.flatMap(s => [190, 110].map(cols => ({ s, cols })))
-    // bands: one per surface and width. Panes: the host allows one Pane per surface, so a pane is mounted afresh at each width
-    const bands = new Map<string, Ui>()
-    if (isBand) for (const { s, cols } of shots) bands.set(`${s}@${cols}`, await w.mountAt(s, cols, 'AbovePrompt'))
-    const subject = async (s: Surface, cols: number) => {
-      if (isBand) return bands.get(`${s}@${cols}`)!
-      const old = w.mounted.findIndex(m => m.surface === s)
-      if (old >= 0) {
-        await w.mounted[old]!.ui.unmount()
-        w.mounted.splice(old, 1)
-      }
-      return w.mountAt(s, cols, 'Pane')
-    }
-    const flip = async () => {
-      const m = w.mounted.find(x => x.surface === 'terminal') ?? w.mounted[0]!
-      if (m.surface === 'mobile') await m.ui.press({ key: 'lang' })
-      else await typeKey(m.ui, 'l')
-      await w.redrawAll()
-    }
-    const check = async (lang: 'en' | 'ko') => {
-      const out = new Map<string, string>()
-      for (const { s, cols } of shots) {
-        const ui = await subject(s, cols)
+test('HOME at 110: the drivers part of the header goes first', async ($, on) => {
+  const { lines } = await homeLines($, on, 70)
+  expect(lines[0]).toMatch(/^teams {2}EPIC 3 +\$6\.12 · 22m$/)
+  expect(lines[0]).not.toContain('drivers')
+})
+
+test('HOME ended EPIC: d unfolds, a folds, the fold state is kept per EPIC in $.state across a closed pane', async ($, on) => {
+  const tasks = P_TASKS()
+  ;(tasks[2] as { items: unknown[] }).items = [story('S9', 'wrap up the cron', { state: 'done', last_verdict: 'accept', metrics: numsOf(1, judgeOf('accept', 90, 1)) })]
+  const { seen } = await seeded($, on, P_FIXTURE({ tasks }), 'terminal', undefined, { epic: 'tA', pageSel: { 'HOME:::': 'e:tC' } })
+  const ui = await atCols($, 'terminal', 190)
+  expect((await linesAt(ui, 190)).join('\n')).not.toContain('wrap up the cron')
+  expect(String((await ui.find({ key: 'keys' }))?.props.placeholder)).toContain('d unfold')
+  await pressKey(ui, 'd')
+  expect(seen.store.get('unfolded')).toEqual({ tC: true })
+  expect((await linesAt(ui, 190)).join('\n')).toContain('wrap up the cron')
+  expect(String((await ui.find({ key: 'keys' }))?.props.placeholder)).toContain('a fold')
+  await ui.unmount()
+  const again = await atCols($, 'terminal', 190)
+  expect((await linesAt(again, 190)).join('\n')).toContain('wrap up the cron') // still unfolded after a reopen
+  await pressKey(again, 'a')
+  expect(seen.store.get('unfolded')).toEqual({})
+  expect((await linesAt(again, 190)).join('\n')).not.toContain('wrap up the cron')
+  // a on a running EPIC row or with nothing unfolded: nothing happens
+  await pressKey(again, 'a')
+  expect(seen.store.get('page') ?? HOME_PAGE).toEqual(HOME_PAGE) // never written: HOME is the default
+})
+
+test('keys from HOME: d opens FLOOR, s and d reach Phase detail, Phase 6 opens the EPIC report, a goes back keeping each level\'s row', async ($, on) => {
+  const { seen } = await seeded($, on, P_FIXTURE(), 'terminal', undefined, { epic: 'tA', pageSel: { 'HOME:::': 'e:tA' } })
+  const ui = await atCols($, 'terminal', 190)
+  await pressKey(ui, 'd') // the EPIC row
+  expect(seen.store.get('page')).toEqual(FLOOR_PAGE)
+  expect(await linesAt(ui, 190)).toEqual(expect.arrayContaining([expect.stringContaining('Cancel payment API › FLOOR')]))
+  await pressKey(ui, 's')
+  await pressKey(ui, 'd')
+  expect(seen.store.get('page')).toEqual({ name: 'PHASE', epic: 'tA', story: null, phase: 2 })
+  expect((await linesAt(ui, 190))[0]).toContain('Cancel payment API › FLOOR › 2 Build')
+  await pressKey(ui, 'a')
+  expect(seen.store.get('page')).toEqual(FLOOR_PAGE)
+  expect((await linesAt(ui, 190)).find(l => l.includes('2 Build'))).toMatch(/▸/) // row 2 is still the selected one
+  for (const k of ['s', 's', 's', 's']) await pressKey(ui, k)
+  await pressKey(ui, 's') // the last row: no wrap
+  expect((await linesAt(ui, 190)).find(l => l.includes('6 Report'))).toMatch(/▸/)
+  await pressKey(ui, 'd')
+  expect(seen.store.get('page')).toEqual({ name: 'EPIC_REPORT', epic: 'tA', story: null, phase: null })
+  expect((await linesAt(ui, 190))[0]).toContain('Cancel payment API › FLOOR › 6 Report')
+  await pressKey(ui, 'a')
+  await pressKey(ui, 'a')
+  expect(seen.store.get('page')).toEqual(HOME_PAGE)
+  expect((await linesAt(ui, 190)).find(l => l.includes('E-3f9a2c11  '))).toMatch(/▸/)
+})
+
+test('keys: a STORY row opens STORY detail and a returns; d with no row opens nothing; w stops at the first row', async ($, on) => {
+  const { seen } = await seeded($, on, P_FIXTURE(), 'terminal', undefined, { epic: 'tA', pageSel: { 'HOME:::': 's:tA:S3' } })
+  const ui = await atCols($, 'terminal', 190)
+  await pressKey(ui, 'd')
+  expect(seen.store.get('page')).toEqual({ name: 'STORY', epic: 'tA', story: 'S3', phase: null })
+  expect((await linesAt(ui, 190))[0]).toContain('Cancel payment API › S3 PG cancel webhook')
+  await pressKey(ui, 'a')
+  expect(seen.store.get('page')).toEqual(HOME_PAGE)
+  for (let i = 0; i < 12; i++) await pressKey(ui, 'w')
+  expect((await linesAt(ui, 190)).find(l => /▸/.test(l))).toContain('⚑')
+})
+
+test('keys: n jumps to the next flag from any page and wraps', async ($, on) => {
+  const { seen } = await seeded($, on, P_FIXTURE(), 'terminal', undefined, { epic: 'tA', page: FLOOR_PAGE })
+  const ui = await atCols($, 'terminal', 190)
+  await pressKey(ui, 'n')
+  expect(seen.store.get('page')).toEqual(HOME_PAGE)
+  expect(seen.store.get('pageSel')).toMatchObject({ 'HOME:::': 'f:tA:ask:E-3f9a2c11/S2' })
+  await pressKey(ui, 'n')
+  expect(seen.store.get('pageSel')).toMatchObject({ 'HOME:::': 'f:tA:stall:S3' })
+  await pressKey(ui, 'n')
+  expect(seen.store.get('pageSel')).toMatchObject({ 'HOME:::': 'f:tA:ask:E-3f9a2c11/S2' })
+})
+
+test('keys: n with no flag listed says so and moves nothing; the next key clears the hint', async ($, on) => {
+  const data = P_FIXTURE({ tasks: P_TASKS({ workers: [], you: { count: 0, items: [], cards: [] } }) })
+  const none = await seeded($, on, data, 'terminal', undefined, { epic: 'tA' })
+  const two = await atCols($, 'terminal', 190)
+  await pressKey(two, 'n')
+  expect(none.seen.store.get('flagHint')).toBe(true)
+  expect(await shown(two)).toContain(STRINGS.en.f2HintNoFlag)
+  expect(none.seen.store.get('page') ?? HOME_PAGE).toEqual(HOME_PAGE)
+  await pressKey(two, 'w')
+  expect(none.seen.store.get('flagHint')).toBe(false)
+})
+
+test('Enter on an ask flag opens answer mode, Enter on another flag opens its STORY; q closes; old keys do nothing', async ($, on) => {
+  const closed: string[] = []
+  on('ui.close', (_$, e) => { closed.push(e.id); return { value: undefined } })
+  const { seen } = await seeded($, on, P_FIXTURE(), 'terminal', undefined, { epic: 'tA', pageSel: { 'HOME:::': 'f:tA:ask:E-3f9a2c11/S2' } })
+  const ui = await atCols($, 'terminal', 190)
+  await ui.input({ key: 'keys', text: '', kind: 'submit' } as never)
+  expect(seen.store.get('page')).toEqual({ name: 'ANSWER', epic: 'tA', story: 'S2', phase: null })
+  expect(seen.store.get('pageFrom')).toEqual(HOME_PAGE)
+  // `a` is text while answering: an empty Enter cancels and goes back to the page ANSWER was opened from
+  await ui.redraw()
+  await ui.input({ key: 'answer', text: '', kind: 'submit' } as never)
+  expect(seen.store.get('page')).toEqual(HOME_PAGE)
+  await ui.redraw()
+  await pressKey(ui, 'n')
+  await ui.input({ key: 'keys', text: '', kind: 'submit' } as never)
+  expect(seen.store.get('page')).toEqual({ name: 'STORY', epic: 'tA', story: 'S3', phase: null })
+  for (const k of ['0', '1', '5', '[', ']', 'j', 'k', 'g']) await pressKey(ui, k)
+  expect(seen.store.get('page')).toEqual({ name: 'STORY', epic: 'tA', story: 'S3', phase: null })
+  await pressKey(ui, 'q')
+  expect(closed).toEqual(['teams-status'])
+})
+
+test('a page of an EPIC that left the listing returns to HOME with HOME\'s remembered row, on the next tick and on a redraw', async ($, on) => {
+  const data = P_FIXTURE()
+  const { seen, tick } = await seeded($, on, data, 'terminal', undefined, { epic: 'tA', page: FLOOR_PAGE, pageSel: { 'HOME:::': 'e:tB' } })
+  const ui = await atCols($, 'terminal', 190)
+  expect((await linesAt(ui, 190))[0]).toContain('FLOOR')
+  data.tasks = P_TASKS().slice(1)
+  await tick()
+  await ui.redraw()
+  expect((await linesAt(ui, 190))[0]).toMatch(/^teams/)
+  expect(seen.store.get('page')).toEqual(HOME_PAGE)
+  expect((await linesAt(ui, 190)).find(l => /▸/.test(l))).toContain('E-71c2a0f4')
+})
+
+test('the selected row that leaves the list falls to the nearest listed row, and nothing is selected on an empty list', async ($, on) => {
+  const data = P_FIXTURE()
+  const { seen, tick } = await seeded($, on, data, 'terminal', undefined, { epic: 'tA', pageSel: { 'HOME:::': 's:tA:S4' } })
+  const ui = await atCols($, 'terminal', 190)
+  expect((await linesAt(ui, 190)).find(l => /▸/.test(l))).toContain('S4')
+  data.tasks = P_TASKS({ items: P_STORIES().slice(0, 3) })
+  await tick()
+  await ui.redraw()
+  // S4 sat last in its EPIC: its neighbours are S3 above and the next EPIC below, and the tie goes to the row below (fallbackSelection)
+  expect((await linesAt(ui, 190)).find(l => /▸/.test(l))).toContain('E-71c2a0f4')
+  expect(seen.store.get('pageSel')).toMatchObject({ 'HOME:::': 'e:tB' })
+})
+
+test('FLOOR: six Phase rows with mark, number, name, elapsed, cost, who works, decisions, flag and stall counts; header on the right; Phase 6 hint', async ($, on) => {
+  const { lines } = await homeLines($, on, 190, P_FIXTURE(), 'terminal', undefined, { page: FLOOR_PAGE })
+  sound(lines, 190)
+  expect(lines[0]).toMatch(/^Cancel payment API › FLOOR +Phase 2\/6 Build · 22m · \$2\.47$/)
+  const rows = lines.filter(l => /^[▸ ] ?[✔●○✘]  ?\d /.test(l.replace(/^ +/, '')) || /[✔●○] +\d (Plan|Build|Integrate|QA|Gate|Report)/.test(l))
+  expect(rows).toHaveLength(6)
+  const [plan, build, integrate, , , report] = rows as [string, string, string, string, string, string]
+  for (const part of ['✔', '1 Plan', '5m', '$0.40', 'decisions 3']) expect(plan).toContain(part)
+  for (const part of ['●', '2 Build', '14m', '$2.07', '2 working', 'decisions 1', '⚑ 1', '⏸ 1']) expect(build).toContain(part)
+  expect(integrate).toMatch(/○ +3 Integrate +–/)
+  expect(report).toContain('6 Report')
+  expect(report).toContain('EPIC report opens here')
+  expect(lines.at(-1)).toContain('w s move · d ⏎ Phase detail')
+})
+
+test('FLOOR draws no count or cost the engine did not send', async ($, on) => {
+  const { lines } = await homeLines($, on, 190, P_FIXTURE({ tasks: P_TASKS({ phases: undefined, metrics: { drivers: { live: 1, cap: 2 } } }) }), 'terminal', undefined, { page: FLOOR_PAGE })
+  const text = lines.join('\n')
+  expect(text).not.toMatch(/decisions|working|⚑ \d|⏸ \d|\$0\.|\$1\./)
+})
+
+for (const lang of [undefined, 'korean'] as const) {
+  for (const page of [HOME_PAGE, FLOOR_PAGE]) {
+    for (const cols of [190, 110]) {
+      test(`${page.name} in ${lang ?? 'English'} at ${cols} columns: only table words, nothing wider than the pane, no cut glyph`, async ($, on) => {
+        const { lines, ui } = await homeLines($, on, cols, P_FIXTURE(), 'terminal', lang, { page })
+        sound(lines, cols)
         const text = visible(await ui.drawn())
-        out.set(`${s}@${cols}`, text)
-        if (lang === 'en') expect([`${s}@${cols}`, hangulIn(text, F4_DATA)]).toEqual([`${s}@${cols}`, []])
+        if (lang === undefined) expect(hangulIn(text, F4_DATA)).toEqual([])
         else {
-          expect([`${s}@${cols}`, latinOutside(text, F4_DATA)]).toEqual([`${s}@${cols}`, []])
-          expect(hangulIn(text).length > 0).toBe(true)
+          expect(latinOutside(text, F4_CUTS)).toEqual([])
+          expect(hangulIn(text, F4_DATA).length > 0).toBe(true)
         }
-        // the footer marker: on the pane itself; the band has none, its pane holder carries it
-        expect(await labels(holder ?? ui)).toContain(markerOf(holder ? 'terminal' : s, lang))
-        if (s === 'terminal' || page === 'mobile') {
-          const drawn = (await ui.drawn()) as any
-          const l = isBand ? draw(drawn, cols) : frame(drawn, 'Teams', cols)
-          sound(isBand ? l : bodyOf(l), cols + 4)
-          F4_SHOTS.push({ name: `demo-${page}${lang}-${cols}`, lines: l })
-        }
-        if (page === 'mobile') {
-          expect(await labels(ui)).toContain(lang === 'en' ? 'EN' : 'KR')
-          for (const key of ['dash', 'floor', 'stories', 'decisions', 'log', 'report', 'close', 'lang']) expect(await ui.find({ key })).toBeDefined()
-          expect(await ui.find({ key: 'keys' })).toBeUndefined()
-        }
-      }
-      return out
+        F2_SHOTS.push({ name: `demo-${page.name.toLowerCase()}${lang === undefined ? 'en' : 'ko'}-${cols}`, lines })
+      })
     }
-    // English: the default with no language setting
-    const en = await check('en')
-    if (page === 'dash') expect(STRINGS.en.progBuild).toBe('Build {done}/{total}') // F3's progress word, English only; the pane draws it once F2's pages do
-    // Korean by `l`
-    await flip()
-    const koByKey = await check('ko')
-    for (const k of en.keys()) expect([k, numbersOf(koByKey.get(k)!)]).toEqual([k, numbersOf(en.get(k)!)])
-    // and back to English by `l`
-    await flip()
-    expect([...(await check('en')).values()]).toEqual([...en.values()])
-    // Korean by the language setting: the choice is released, so session.start applies it
-    w.seen.store.set('langChosen', false)
-    w.setting.value = 'korean'
-    await w.restart()
-    await w.redrawAll()
-    const koBySetting = await check('ko')
-    expect([...koBySetting.values()]).toEqual([...koByKey.values()])
   }
 }
-test('F4 page: dash', f4Page('dash'))
-test('F4 page: floor', f4Page('floor'))
-test('F4 page: stories', f4Page('stories'))
-test('F4 page: decisions', f4Page('decisions'))
-test('F4 page: log', f4Page('log'))
-test('F4 page: report', f4Page('report'))
-test('F4 page: band', f4Page('band'))
-test('F4 page: empty', f4Page('empty'))
-test('F4 page: mobile', f4Page('mobile'))
+const F2_SHOTS: { name: string; lines: string[] }[] = []
 
-// the Dash Now word for every now.kind the engine emits (the page test above pins 'build'): English draws the kind's word, Korean has no Latin outside the allow-list
-for (const kind of NOW_KINDS) {
-  for (const language of [undefined, 'korean']) {
-    test(`F4 dash now: ${kind} ${language ?? 'english'}`, async ($, on) => {
-      const data: Data = { ...F4_FIXTURE, task: demo({ work: [failedCard, card('module b', 'package', 'done')], now: { kind, subject: 'module b', detail: '' } }) }
-      await seeded($, on, data, 'terminal', language, { epic: 'tA', view: 'dash' })
-      const ui = await pane($, 'terminal')
-      await ui.press({ key: 'dash' })
-      await ui.redraw()
+// ---- HOME's EPIC rows on every surface (restored from the tab-era pane tests, re-expressed on homeRows) ----
+// one running EPIC, one waiting on a person, one whose driver F3 reports stopped (workers[] stalled with minutes, no heartbeat), one ended
+const H_LONG = 'Migrate every legacy report exporter to the new streaming writer and keep each output identical'
+const H_TASKS = (over: Record<string, unknown> = {}) => [
+  epicOf('tA', 'E-aaaaaaaa', [story('S1', 'parse the header', { state: 'idle' })], { title: 'Alpha parser', slug: 'alpha-slug', done: 1, total: 3, ...over }),
+  epicOf('tB', 'E-bbbbbbbb', [], { title: 'Beta exporter', slug: 'beta-slug', state: 'waiting_human', done: 2, total: 3 }),
+  epicOf('tC', 'E-cccccccc', [], { title: 'Gamma sync', slug: null, live: false, age_ms: 7200000, workers: [{ ...wk('S9', 'stalled'), minutes: 23 }], done: 0, total: 2 }),
+  epicOf('tD', 'E-dddddddd', [], { title: 'Delta cleanup', slug: 'delta-slug', state: 'complete', live: false, age_ms: 3600000, done: 2, total: 2 }),
+]
+// the EPIC row of a title: it carries the open or fold glyph and is neither a flag row (›, ⚑ section) nor a STORY row
+const epicLine = (lines: string[], title: string) => lines.find(l => l.includes(title) && /[▾▸]/.test(l.replace(/^▸/, ' ')) && !l.includes('›'))
+const compactOf = (surface: Surface) => surface === 'mobile'
+
+for (const surface of SURFACES) {
+  test(`${surface}: HOME lists every EPIC, the picked one marked, the stalled one last of the running and dim with its age`, async ($, on) => {
+    const { ui, lines } = await homeLines($, on, 190, P_FIXTURE({ tasks: H_TASKS() }), surface, undefined, { pageSel: { 'HOME:::': 'e:tB' } })
+    sound(lines, 190)
+    const titles = ['Alpha parser', 'Beta exporter', 'Gamma sync', 'Delta cleanup']
+    const rows = titles.map(t => epicLine(lines, t))
+    expect(rows.every(r => r !== undefined)).toBe(true)
+    // order: running, waiting, stalled, then the ended one folded below them
+    const at = rows.map(r => lines.indexOf(r!))
+    expect([...at].sort((a, b) => a - b)).toEqual(at)
+    // the picked row carries ▸ at the line start; no other row does
+    expect(lines.filter(l => l.startsWith('▸')).map(l => l.includes('Beta exporter'))).toEqual([true])
+    // the stalled row: its age, the ⏸ icon in the inactive colour, the age dim
+    expect(rows[2]).toContain('2h 0m')
+    expect(rows[2]).toContain('⏸')
+    expect((await ui.findAll({ type: 'Text', text: /^⏸\s*$/ })).map(t => t.props.color)).toContain('inactive')
+    expect((await ui.findAll({ type: 'Text', text: /^2h 0m\s*$/ })).map(t => t.props.dimColor)).toEqual([true])
+    if (!compactOf(surface)) for (const [i, key] of ['E-aaaaaaaa', 'E-bbbbbbbb', 'E-cccccccc', 'E-dddddddd'].entries()) expect(rows[i]).toContain(key)
+  })
+
+  test(`${surface}: running, stalled, waiting and finished EPICs read differently on HOME; a failed STORY shows its reason once`, async ($, on) => {
+    const failed = story('S5', 'verify the receipt', { state: 'failed', metrics: numsOf(3, judgeOf('reject', 40, 3, 'verifier rejected: tests red')) })
+    const tasks = H_TASKS({ items: [story('S1', 'parse the header', { state: 'idle' }), story('S2', 'write the rows', { doing: 'editing a.ts' }), failed] })
+    const { lines } = await homeLines($, on, 190, P_FIXTURE({ tasks }), surface)
+    sound(lines, 190)
+    const iconOf = (title: string) => /[●⏸✔⚑◌✘]/.exec(epicLine(lines, title)!)![0]
+    const epicIcons = ['Alpha parser', 'Beta exporter', 'Gamma sync', 'Delta cleanup'].map(iconOf)
+    expect(epicIcons).toEqual(['●', '⚑', '⏸', '✔'])
+    expect(new Set(epicIcons).size).toBe(4)
+    const storyIcons = ['parse the header', 'write the rows', 'verify the receipt'].map(t => /[●⏸✔⚑◌✘]/.exec(lines.find(l => l.includes(t))!)![0])
+    expect(storyIcons).toEqual(['◌', '●', '✘'])
+    const text = lines.join('\n')
+    expect(text.split('verifier rejected: tests red')).toHaveLength(2) // the reason, once
+    expect(lines.find(l => l.includes('verify the receipt'))).toContain('verifier rejected: tests red')
+  })
+
+  // the slug is not a HOME column; the title takes the width and gives way first, at 190 and 110 columns
+  for (const cols of [190, 110]) {
+    test(`${surface}: the EPIC row has no slug and cuts the title first at ${cols}`, async ($, on) => {
+      const tasks = H_TASKS({ title: H_LONG, slug: 'report-exporters' })
+      const { ui, lines } = await homeLines($, on, cols, P_FIXTURE({ tasks }), surface)
+      sound(lines, cols)
+      const rows = ['Migrate', 'Beta exporter', 'Gamma sync', 'Delta cleanup'].map(t => epicLine(lines, t)!)
+      for (const l of lines) expect(l).not.toMatch(/report-exporters|alpha-slug|beta-slug|delta-slug/)
+      const [a, b, c] = rows as [string, string, string, string]
+      if (cols === 110) {
+        expect(a).toContain('…')
+        expect(a).not.toContain('keep each output identical')
+      } else {
+        expect(a).toContain('keep each output identical')
+        expect(a).not.toContain('…')
+      }
+      // columns align across the running rows: every title starts at one offset
+      expect(new Set([width(a.slice(0, a.indexOf('Migrate'))), width(b.slice(0, b.indexOf('Beta'))), width(c.slice(0, c.indexOf('Gamma')))]).size).toBe(1)
+      // the title gives way first: everything after it (rail or phase word, STORY count, age, cost) keeps the width it has at 190
+      await ui.unmount()
+      const full = epicLine(await linesAt(await atCols($, surface, 190), 190), 'Migrate')!
+      const tail = (l: string) => l.slice(l.search(/✔Plan|\bBuild\b/)).trimEnd()
+      expect(tail(a)).toBe(tail(full))
+      if (!compactOf(surface)) for (const part of ['E-aaaaaaaa', '✔Plan', '●QA', 'STORY 1/3', '3s']) expect(a).toContain(part)
+    })
+  }
+
+  // the title cell (⑂ worktree · title) is cut from its end at 110 columns: the title tail goes, the ⑂ mark and the worktree stay, the row keeps its cells
+  test(`${surface}: a long title with a worktree is cut to … at 110 columns, the ⑂ mark stays`, async ($, on) => {
+    const tasks = [
+      epicOf('tW', 'E-aaaaaaaa', [], { title: H_LONG, worktree: 'feature-worktree', done: 1, total: 3 }),
+      epicOf('tS', 'E-bbbbbbbb', [], { title: 'short', worktree: null, done: 2, total: 3 }),
+    ]
+    const { lines } = await homeLines($, on, 110, P_FIXTURE({ tasks }), surface)
+    sound(lines, 110)
+    const w = epicLine(lines, '⑂')!
+    const s = epicLine(lines, 'short')!
+    expect(w).toContain('⑂ feature-worktree · Migrate')
+    expect(w).toContain('…')
+    expect(w).not.toContain('keep each output identical')
+    expect(w.indexOf('…')).toBeGreaterThan(w.indexOf('feature-worktree')) // the cut is in the title, after the mark and the worktree name
+    if (!compactOf(surface)) {
+      expect(w).toContain('STORY 1/3')
+      expect(s).toContain('STORY 2/3')
+    }
+    expect(width(w.slice(0, w.indexOf('⑂')))).toBe(width(s.slice(0, s.indexOf('short'))))
+    expect(s).not.toContain('⑂')
+  })
+}
+
+// mixed Korean and English titles: one Korean-title EPIC and one English-title EPIC listed together at pane width 78 and 46
+const KO_TITLE = '메모 앱에 태그 검색 추가'
+const EN_TITLE = 'Add CSV export to the reports page'
+for (const cols of [78, 46]) {
+  test(`HOME: mixed Korean and English EPIC rows at pane width ${cols}: same column offsets, no line wider, the title keeps room, no lone …`, async ($, on) => {
+    const tasks = [epicOf('tA', 'E-3a3a3bb5', [], { title: KO_TITLE, done: 1, total: 3 }), epicOf('tB', 'E-bbbbbbbb', [], { title: EN_TITLE, done: 2, total: 3 })]
+    const { lines } = await homeLines($, on, cols, P_FIXTURE({ tasks: tasks, status: stat() }), 'terminal', undefined, {}) // header, no flags
+    for (const l of lines) expect(width(l)).toBeLessThanOrEqual(cols - 4)
+    const ko = epicLine(lines, '메')!
+    const en = epicLine(lines, 'Add')!
+    expect([ko, en].every(r => r !== undefined)).toBe(true)
+    // the title starts at one display-cell offset, and so does the Phase rail or whatever column follows it
+    expect(width(ko.slice(0, ko.indexOf('메')))).toBe(width(en.slice(0, en.indexOf('Add'))))
+    const next = (r: string) => r.search(/●Build|✔Plan|\d+[smh]\b/)
+    expect(width(ko.slice(0, next(ko)))).toBe(width(en.slice(0, next(en))))
+    for (const l of lines) expect(/\s…(\s|$)/.test(l)).toBe(false)
+    // the title keeps 12 cells before any …
+    for (const [r, first] of [[ko, '메'], [en, 'Add']] as const) {
+      const from = r.slice(r.indexOf(first))
+      const end = from.search(/ {2}(?:●|✔|○|\d)/)
+      const title = (end >= 0 ? from.slice(0, end) : from).trimEnd()
+      const cut = title.indexOf('…')
+      expect(width(cut >= 0 ? title.slice(0, cut) : title)).toBeGreaterThanOrEqual(12)
+    }
+  })
+}
+
+test('the Korean HOME flags, folded row and header use the Korean table', async ($, on) => {
+  const { lines } = await homeLines($, on, 190, P_FIXTURE(), 'terminal', 'korean')
+  const text = lines.join('\n')
+  for (const part of ['나를 기다림 2', '9m 대기', '응답 없음 23m (드라이버 멈춤?)', '끝남 2h 0m 전 · STORY 5/5', 'drivers 5/8 · load 3.1/8 (머신 전체)', '직전 61/80', '⏸ 23분']) expect(text).toContain(part)
+  expect(lines.at(-1)).toContain('w s 이동')
+  expect(lines.at(-1)).toMatch(/l KR$/)
+})
+
+// ---- F2 pages: Phase detail (with the decisions thread), STORY detail, Log, STORY Report and the EPIC report ----
+const FLOW = ['plan', 'setgoal', 'critique', 'implement', 'test', 'gate']
+const dn = (state: string, extra: Record<string, unknown> = {}) => ({ state, ...extra })
+const S2_PAYLOAD = {
+  task_id: 'tA', story: 'S2', key: 'E-3f9a2c11/S2', title: 'refund idempotency key', state: 'running', attempt: 2,
+  flow: [dn('done'), dn('done'), dn('done'), dn('running'), dn('pending'), dn('pending')].map((f, i) => ({ key: FLOW[i], ...f })),
+  progress: { try_done: 4, try_total: 6, total_done: 10, total_all: 18 },
+  grid: {
+    stages: FLOW,
+    attempts: [
+      { attempt: 1, cells: { plan: dn('done'), setgoal: dn('done'), critique: dn('done'), implement: dn('done'), test: dn('done'), gate: dn('failed', { score: 61, threshold: 80, reason: 'duplicate request double refund test missing' }) } },
+      { attempt: 2, cells: { plan: dn('done'), setgoal: dn('done'), critique: dn('done'), implement: dn('running'), test: null, gate: null } },
+    ],
+  },
+  participants: { source: 'stream', total: [{ kind: 'implementer', model: 'sonnet', n: 1 }, { kind: 'critic', model: 'opus', n: 1 }], live: [{ kind: 'implementer', model: 'sonnet', n: 1 }] },
+  workers: [wk('S2', 'acting', 'editing parser.ts'), wk('judge', 'idle')],
+  log: [
+    { ts: ago(40), time: '13:37', node: 'plan', state: 'done', what_key: 'F2.log.subgoals', numbers: { n: 2 }, note: null },
+    { ts: ago(39), time: '13:40', node: 'setgoal', state: 'done', what_key: 'F2.log.criteria', numbers: { n: 5 }, note: null },
+    { ts: ago(30), time: '13:51', node: 'implement', state: 'done', what_key: 'F2.log.attemptCommits', numbers: { n: 1, c: 3 }, note: null },
+    { ts: ago(20), time: '14:03', node: 'gate', state: 'failed', what_key: 'F2.log.attemptReject', numbers: { n: 1, score: 61, threshold: 80 }, note: 'duplicate request double refund test missing' },
+    { ts: ago(10), time: '14:05', node: 'ask', state: 'waiting', what_key: 'F2.log.asked', numbers: { question: 'How many retries on refund failure?' }, note: null },
+    { ts: ago(0.2), time: '14:12', node: 'implement', state: 'running', what_key: 'F2.log.attemptStart', numbers: { n: 2 }, note: null },
+  ],
+}
+const S1_REPORT = {
+  task_id: 'tA', story: 'S1', finished: true, text: '# S1\n', verdict: { score: 91, threshold: 80, attempt: 1, max: 3, tests: 'pass' },
+  sections: [
+    { key: 'result', lines: ['POST cancel endpoint adds the reason enum'] },
+    { key: 'verdict', lines: ['score=91', 'threshold=80', 'attempt=1', 'max=3', 'tests=pass'] },
+    { key: 'files', lines: ['cancel_reason.py', 'cancel_api.py'] },
+    { key: 'decisions', lines: ['enum or free text: enum'] },
+    { key: 'left', lines: ['multi-language reason text (belongs to S4)'] },
+    { key: 'seeLog', lines: ['tm_log E-3f9a2c11/S1', 'tm_retry E-3f9a2c11/S1'] },
+  ],
+}
+const S2_REPORT = { task_id: 'tA', story: 'S2', finished: false, text: '', sections: [{ key: 'seeLog', lines: ['tm_log E-3f9a2c11/S2', 'tm_retry E-3f9a2c11/S2'] }] }
+// the Plan thread: a proposal, a judge's verdict, a person's answer and a re-split, with the engine's key beside each English word
+const dec = (over: Record<string, unknown>) => ({ ts: 1, time: '10:00', card: null, node: null, kind: 'decision', phase: 'plan', ...over })
+const PLAN_THREAD = {
+  card: null,
+  entries: [
+    dec({ time: '09:58', node: 'size', kind: 'proposal', actor: 'claude·opus', text: 'size S · develop', text_key: 'proposalSizeFlow', text_vars: { size: 'S', flow: 'develop' } }),
+    dec({ time: '10:05', node: 'critique', kind: 'verdict', actor: 'claude·sonnet', verdict: 'reject', score: 70, reason: 'AC 3 missing', gaps: ['AC 3 untested'] }),
+    dec({ time: '10:06', node: 'critique', kind: 'answer', actor: 'human', actor_key: 'actorHuman', text: 'reject: overlap' }),
+    dec({ time: '10:09', kind: 'resplit', reason: 'resplit → areas:3', reason_key: 'resplitAreas', reason_vars: { n: 3 } }),
+    dec({ time: '10:11', kind: 'resplit', reason: 'replan S2, S3', reason_key: 'replanIds', reason_vars: { ids: 'S2, S3' } }),
+    dec({ time: '10:14', card: 'S2', node: 'accept:S2:1', phase: 'build', kind: 'verdict', actor: 'claude·sonnet', verdict: 'reject', score: 61, reason: 'AC 3 missing' }),
+  ],
+}
+const PAGES_FIXTURE = (over: Partial<Data> = {}): Data => P_FIXTURE({
+  stories: { S2: S2_PAYLOAD }, storyReports: { S1: S1_REPORT, S2: S2_REPORT }, decisions: () => PLAN_THREAD, ...over,
+})
+const PHASE_BUILD = { name: 'PHASE', epic: 'tA', story: null, phase: 2 }
+const PHASE_PLAN = { name: 'PHASE', epic: 'tA', story: null, phase: 1 }
+const STORY_S2 = { name: 'STORY', epic: 'tA', story: 'S2', phase: null }
+const LOG_S2 = { name: 'LOG', epic: 'tA', story: 'S2', phase: null }
+const REPORT_S1 = { name: 'STORY_REPORT', epic: 'tA', story: 'S1', phase: null }
+const REPORT_S2 = { name: 'STORY_REPORT', epic: 'tA', story: 'S2', phase: null }
+const NEEDS_PAYLOAD = payload({
+  task_id: 'tA', verdict: 'blocked', failed: 1, needs: {
+    items: ['refund ledger: never dispatched', 'audit trail: state: pending', 'a note a person wrote'], more: 0,
+    entries: [
+      { text: 'refund ledger: never dispatched', name: 'refund ledger', reason: 'never dispatched', reason_key: 'reasonNeverDispatched', reason_vars: {} },
+      { text: 'audit trail: state: pending', name: 'audit trail', reason: 'state: pending', reason_key: 'reasonState', reason_vars: { state: 'pending' } },
+      { text: 'a note a person wrote' },
+    ],
+  },
+  path: '/proj/.teams_output/team/E-tA/80-report.md', report: { text: REPORT_TEXT, truncated: false, more_lines: 0, mtime: 7 },
+  retro: { next_backlog: { unaccepted_packages: [
+    { id: 'P1', title: 'refund ledger', reason: 'never dispatched', reason_key: 'reasonNeverDispatched', reason_vars: {} },
+    { id: 'P2', title: 'audit trail', reason: 'state: pending', reason_key: 'reasonState', reason_vars: { state: 'pending' } },
+  ] } },
+})
+const EPIC_REPORT = { name: 'EPIC_REPORT', epic: 'tA', story: null, phase: null }
+const REPORT_FIXTURE = (): Data => PAGES_FIXTURE({ reports: { tA: NEEDS_PAYLOAD } })
+const at$ = (lines: string[], part: string) => lines.findIndex(l => l.includes(part))
+
+test('PHASE: Running, Handed over and Decisions in that order; the workers, the hand-offs and the thread of this Phase only', async ($, on) => {
+  const { lines } = await homeLines($, on, 190, PAGES_FIXTURE({ decisions: () => ({ card: null, entries: [...PLAN_THREAD.entries] }) }), 'terminal', undefined, { page: PHASE_BUILD })
+  sound(lines, 190)
+  const [running, handed, decisions] = [at$(lines, 'Running'), at$(lines, 'Handed over'), at$(lines, 'Decisions (this Phase)')]
+  expect(running > 0 && handed > running && decisions > handed).toBe(true)
+  expect(lines[0]).toMatch(/^Cancel payment API › FLOOR › 2 Build +14m · \$2\.07$/)
+  const mine = lines.slice(running + 1, handed).join('\n')
+  expect(mine).toMatch(/⏸ +S3 +⏸ 23m/)
+  // STORY · node · role · what · elapsed, all from the engine's worker
+  expect(mine).toMatch(/● +\S+ +S2 +implement +implementer +editing parser\.ts +11m/)
+  expect(mine).not.toMatch(/S1|PLAN/) // a finished worker, and one of another Phase
+  const feed = lines.slice(handed + 1, decisions)
+  // time · STORY · who · what, score, reason · where it goes
+  expect(feed[0]).toMatch(/14:03 +S2 +judge +reject 61 "AC 3 missing" +→ implementer/)
+  expect(feed[1]).toMatch(/13:58 +S1 +integrated 1 +→ judge/)
+  expect(feed[2]).toMatch(/13:52 +S2 +TeamLeader +"How many retries on refund failure\?" +→ you/)
+  expect(feed[3]).toMatch(/13:40 +S1 +judge +accept 91 +→ integrate/)
+  // only the Build thread: the STORY's own verdict; the Plan entries are not here
+  const thread = lines.slice(decisions + 1).join('\n')
+  expect(thread).toContain('accept:S2:1')
+  expect(thread).not.toMatch(/proposed|answered|re-split/)
+  expect(lines.at(-1)).toContain('w s scroll')
+  expect(lines.some(l => /Decisions$/.test(l.trim()) && !l.includes('(this Phase)'))).toBe(false) // Decisions is a section, not a page
+})
+
+test('PHASE: ⏸ with minutes only from the engine; a stalled worker without them draws no ⏸; the Phase count and spend only when sent', async ($, on) => {
+  // the engine counts a stalled worker only with its minutes, so a worker without them is no ⏸ in the Phase count either
+  const bare = P_TASKS({ workers: [{ ...wk('S3', 'stalled'), phase: 'build' }, { ...wk('S2', 'acting', 'editing parser.ts'), phase: 'build' }], phases: P_PHASES.map(p => ({ ...p, stalled: 0 })), metrics: { drivers: { live: 1, cap: 2 } } })
+  const { lines } = await homeLines($, on, 190, PAGES_FIXTURE({ tasks: bare }), 'terminal', undefined, { page: PHASE_BUILD })
+  const text = lines.join('\n')
+  expect(text).not.toContain('⏸')
+  expect(text).toContain('S3')
+  expect(lines[0]).toMatch(/^Cancel payment API › FLOOR › 2 Build *$/)
+})
+
+test('PHASE: the engine tags each decision with its Phase; a task.decisions entry (no node, phase qa) is on the QA page and not on Plan', async ($, on) => {
+  const qa = dec({ time: null, kind: 'decision', actor: 'claude·opus', text: 'coverage floor: 80', phase: 'qa' })
+  const fixture = () => PAGES_FIXTURE({ decisions: () => ({ card: null, entries: [...PLAN_THREAD.entries, qa] }) })
+  const onQa = await homeLines($, on, 190, fixture(), 'terminal', undefined, { page: { name: 'PHASE', epic: 'tA', story: null, phase: 4 } })
+  expect(onQa.lines.slice(at$(onQa.lines, 'Decisions (this Phase)') + 1).join('\n')).toContain('coverage floor: 80')
+  expect(onQa.lines.join('\n')).not.toContain('accept:S2:1') // a Build entry stays off the QA page
+})
+
+test('PHASE: a task.decisions entry tagged qa is not on the Plan page', async ($, on) => {
+  const qa = dec({ time: null, kind: 'decision', actor: 'claude·opus', text: 'coverage floor: 80', phase: 'qa' })
+  const onPlan = await homeLines($, on, 190, PAGES_FIXTURE({ decisions: () => ({ card: null, entries: [...PLAN_THREAD.entries, qa] }) }), 'terminal', undefined, { page: PHASE_PLAN })
+  expect(onPlan.lines.join('\n')).not.toContain('coverage floor: 80')
+  expect(onPlan.lines.join('\n')).toContain('size S · develop')
+})
+
+test('PHASE: the Phase\'s own counts (working, needs you, stalled, decisions) are drawn from phases[] when present', async ($, on) => {
+  const withCounts = await homeLines($, on, 190, PAGES_FIXTURE(), 'terminal', undefined, { page: PHASE_BUILD })
+  expect(withCounts.lines[2]).toMatch(/^ +2 working · ⚑ 1 · ⏸ 1 · decisions 1$/)
+})
+
+test('PHASE: with no phases[] from the engine no count is drawn for the Phase', async ($, on) => {
+  const bare = await homeLines($, on, 190, PAGES_FIXTURE({ tasks: P_TASKS({ phases: undefined }) }), 'terminal', undefined, { page: PHASE_BUILD })
+  expect(bare.lines.join('\n')).not.toMatch(/decisions \d|working · /)
+  expect(bare.lines[2]).toContain('Running')
+})
+
+test('PHASE: the thread is drawn through keys; w and s scroll it, stopping at both ends', async ($, on) => {
+  const many = { card: null, entries: Array.from({ length: 24 }, (_, i) => dec({ time: `10:${String(i).padStart(2, '0')}`, card: 'S2', node: 'accept:S2:1', phase: 'build', kind: 'verdict', actor: 'claude·sonnet', verdict: 'reject', score: 50 + i, reason: 'AC 3 missing' })) }
+  const { seen } = await seeded($, on, PAGES_FIXTURE({ decisions: () => many }), 'terminal', undefined, { epic: 'tA', page: PHASE_BUILD }, true)
+  const ui = await atCols($, 'terminal', 190)
+  const first = await linesAt(ui, 190)
+  expect(first.join('\n')).toContain('▼ ')
+  expect(first.join('\n')).not.toContain('▲ ')
+  await pressKey(ui, 's')
+  expect(seen.store.get('pageScroll')).toEqual({ 'PHASE:tA::2': 1 })
+  expect((await linesAt(ui, 190)).join('\n')).toContain('▲ 1')
+  for (let i = 0; i < 60; i++) await pressKey(ui, 's')
+  const end = await linesAt(ui, 190)
+  expect(end.join('\n')).not.toContain('▼ ')
+  expect(end.join('\n')).toContain('10:23')
+  const stop = (seen.store.get('pageScroll') as Record<string, number>)['PHASE:tA::2']!
+  await pressKey(ui, 's')
+  expect((seen.store.get('pageScroll') as Record<string, number>)['PHASE:tA::2']).toBe(stop)
+  for (let i = 0; i < 80; i++) await pressKey(ui, 'w')
+  expect((seen.store.get('pageScroll') as Record<string, number>)['PHASE:tA::2']).toBe(0)
+})
+
+test('STORY: FLOW, progress, participants, the attempt grid with the rejected judge and its reason, the ask, the Log and Report rows', async ($, on) => {
+  const { lines } = await homeLines($, on, 190, PAGES_FIXTURE(), 'terminal', undefined, { page: STORY_S2 })
+  sound(lines, 190)
+  expect(lines[0]).toMatch(/^Cancel payment API › S2 refund idempotency key +implement · try 2\/3 · \$0\.40 · 11m$/)
+  const text = lines.join('\n')
+  expect(lines.find(l => l.startsWith('FLOW'))).toMatch(/^FLOW +✔plan ━ ✔setgoal ━ ✔critique ━ ●implement ┄ ○test ┄ ○gate$/)
+  expect(text).toMatch(/Progress +████████░░░░ +this try 4\/6 nodes · total 10\/18 \(based on 2 tries\)/)
+  expect(text).toMatch(/Participants +subagent: 2 total · 1 live/)
+  expect(text).toContain('implementer ×1 sonnet  critic ×1 opus')
+  const grid = lines.filter(l => /^\d\/3 /.test(l.trim()))
+  expect(grid).toHaveLength(2)
+  expect(grid[0]).toMatch(/1\/3 +✔ +✔ +✔ +✔ +✔ +✘ 61\/80 +"duplicate request double refund test missing"/)
+  expect(grid[1]).toMatch(/2\/3 +✔ +✔ +✔ +●/)
+  expect(lines.some(l => l.trim() === 'Now')).toBe(true)
+  expect(lines.find(l => /^● +\S+ +S2 /.test(l.trim()))).toContain('editing parser.ts')
+  expect(lines.find(l => l.includes('⚑ S2 → you'))).toMatch(/▸ +⚑ S2 → you +"How many retries on refund failure\?" +9m waiting +⏎ answer/)
+  expect(text).toMatch(/Log 6 · last 12s ago/)
+  expect(text).toContain('Report: appears after the gate passes')
+  expect(lines.at(-1)).toContain('w s move · d ⏎ open')
+})
+
+test('STORY: d on the Log row opens Log, d on the Report row opens the STORY Report, a returns to the row; Enter on the ask opens answer mode', async ($, on) => {
+  const { seen } = await seeded($, on, PAGES_FIXTURE(), 'terminal', undefined, { epic: 'tA', page: STORY_S2 }, true)
+  const ui = await atCols($, 'terminal', 190)
+  expect((await linesAt(ui, 190)).find(l => l.includes('⚑ S2 → you'))).toContain('▸') // the ask leads and is selected first
+  await pressKey(ui, 's')
+  await pressKey(ui, 'd')
+  expect(seen.store.get('page')).toEqual(LOG_S2)
+  expect((await linesAt(ui, 190))[0]).toContain('Cancel payment API › S2 refund idempotency key › Log')
+  await pressKey(ui, 'a')
+  expect(seen.store.get('page')).toEqual(STORY_S2)
+  expect((await linesAt(ui, 190)).find(l => l.includes('Log 6'))).toContain('▸')
+  await pressKey(ui, 's')
+  await pressKey(ui, 'd')
+  expect(seen.store.get('page')).toEqual(REPORT_S2)
+  await pressKey(ui, 'a')
+  await pressKey(ui, 'w')
+  await pressKey(ui, 'w')
+  await pressKey(ui, 'd')
+  expect(seen.store.get('page')).toEqual({ name: 'ANSWER', epic: 'tA', story: 'S2', phase: null })
+})
+
+test('LOG: time · node · what · note, newest first, the entry count in the header, no f filter, w and s scroll', async ($, on) => {
+  const { lines } = await homeLines($, on, 190, PAGES_FIXTURE(), 'terminal', undefined, { page: LOG_S2 })
+  sound(lines, 190)
+  expect(lines[0]).toMatch(/^Cancel payment API › S2 refund idempotency key › Log +6 entries$/)
+  const rows = lines.filter(l => /^\d\d:\d\d /.test(l))
+  expect(rows).toHaveLength(6)
+  expect(rows[0]).toMatch(/^14:12 +● implement +attempt 2 started *$/)
+  expect(rows[1]).toMatch(/^14:05 +⚑ ask +TeamLeader → me "How many retries on refund failure\?" *$/)
+  expect(rows[2]).toMatch(/^14:03 +✘ gate +attempt 1 reject 61\/80 +"duplicate request double refund test missing"$/)
+  expect(rows[3]).toMatch(/^13:51 +✔ implement +attempt 1 commits 3 *$/)
+  expect(rows[5]).toMatch(/^13:37 +✔ plan +2 subgoals *$/)
+  expect(new Set(rows.map(r => r.indexOf(/implement|ask|gate|plan|setgoal/.exec(r)![0]))).size).toBe(1) // one node column
+  expect(lines.join('\n')).not.toMatch(/ f |filter|failures/i)
+  expect(lines.at(-1)).toContain('w s scroll · a back')
+})
+
+test('STORY Report before the gate reads "Not available yet" and draws no section', async ($, on) => {
+  const before = await homeLines($, on, 190, PAGES_FIXTURE(), 'terminal', undefined, { page: REPORT_S2 })
+  expect(before.lines.join('\n')).toContain('Not available yet: appears after the gate passes')
+  expect(before.lines.join('\n')).not.toMatch(/Result|Judge|tm_retry/)
+})
+
+test('STORY Report: sections from the keys, ending in tm_log and tm_retry as text, no retry or cancel Button', async ($, on) => {
+  const { lines, ui } = await homeLines($, on, 190, PAGES_FIXTURE(), 'terminal', undefined, { page: REPORT_S1 })
+  sound(lines, 190)
+  expect(lines[0]).toMatch(/^Cancel payment API › S1 cancel reason enum › Report +accepted 91\/80 · 4m$/)
+  const rows = lines.filter(l => /^(Result|Judge|Files changed|Decisions|Left over|Look again) /.test(l))
+  expect(rows).toHaveLength(6)
+  expect(rows[0]).toMatch(/^Result +POST cancel endpoint adds the reason enum$/)
+  expect(rows[1]).toMatch(/^Judge +judge 91 \/ threshold 80 · attempt 1\/3$/)
+  expect(rows[2]).toMatch(/^Files changed +cancel_reason\.py · cancel_api\.py$/)
+  expect(rows[5]).toMatch(/^Look again +tm_log E-3f9a2c11\/S1 · tm_retry E-3f9a2c11\/S1$/)
+  expect((await labels(ui)).filter(l => /retry|cancel/i.test(l))).toEqual([])
+  expect(lines.at(-1)).toContain('w s scroll · a back')
+})
+
+test('EPIC report: FLOOR Phase 6 opens it; it draws the report, the path and the needs; a returns to FLOOR; no placeholder is left', async ($, on) => {
+  const { seen } = await seeded($, on, REPORT_FIXTURE(), 'terminal', undefined, { epic: 'tA', page: FLOOR_PAGE, pageSel: { 'FLOOR:tA::': 'p:6' } }, true)
+  const ui = await atCols($, 'terminal', 190)
+  await pressKey(ui, 'd')
+  expect(seen.store.get('page')).toEqual(EPIC_REPORT)
+  const text = visible(await ui.drawn())
+  expect(text).toContain('/proj/.teams_output/team/E-tA/80-report.md')
+  expect(text).toContain('All packages shipped.')
+  expect(text).toContain('⚑ refund ledger: never dispatched')
+  expect(text).toContain('⚑ audit trail: state: pending')
+  expect(text).toContain('⚑ a note a person wrote')
+  expect(text).not.toContain('Loading')
+  expect((await linesAt(ui, 190))[0]).toContain('Cancel payment API › FLOOR › 6 Report')
+  await pressKey(ui, 'a')
+  expect(seen.store.get('page')).toEqual(FLOOR_PAGE)
+})
+
+// F4_CUTS without the heads that are also the start of an allow-listed word (`accept` cut out of `accepted` leaves `ed`)
+const PAGE_CUTS = F4_CUTS.filter(c => !ALLOW.some(w => w.length > c.length && w.startsWith(c)))
+const PAGE_DATA = [NEEDS_PAYLOAD.path, ...PAGE_CUTS]
+const PAGE_CASES = [
+  ['phase', PHASE_BUILD], ['phase', PHASE_PLAN], ['story', STORY_S2], ['log', LOG_S2], ['storyreport', REPORT_S1],
+] as const
+for (const lang of [undefined, 'korean'] as const) {
+  for (const [tag, page] of PAGE_CASES) {
+    for (const cols of [190, 110]) {
+      test(`${page.name}${page.phase === 1 ? ' (Plan)' : ''} in ${lang ?? 'English'} at ${cols} columns: only table words, nothing wider than the pane, no cut glyph`, async ($, on) => {
+        const { lines, ui } = await homeLines($, on, cols, PAGES_FIXTURE(), 'terminal', lang, { page })
+        sound(lines, cols)
+        const text = visible(await ui.drawn())
+        if (lang === undefined) expect(hangulIn(text, F4_DATA)).toEqual([])
+        else {
+          expect(latinOutside(text, PAGE_DATA)).toEqual([])
+          expect(hangulIn(text, F4_DATA).length > 0).toBe(true)
+        }
+        if (page.phase !== 1) F2_SHOTS.push({ name: `demo-${tag}${lang === undefined ? 'en' : 'ko'}-${cols}`, lines })
+      })
+    }
+  }
+  for (const cols of [190, 110]) {
+    test(`EPIC report in ${lang ?? 'English'} at ${cols} columns: the needs drawn through their keys, only table words, nothing wider than the pane`, async ($, on) => {
+      const { lines, ui } = await homeLines($, on, cols, REPORT_FIXTURE(), 'terminal', lang, { page: EPIC_REPORT })
+      sound(lines, cols)
       const text = visible(await ui.drawn())
-      const word = (STRINGS[language === undefined ? 'en' : 'ko'] as Record<string, string>)[`stage${kind[0]!.toUpperCase()}${kind.slice(1)}`]
-      expect([kind, text.includes(`${word} · module b`)]).toEqual([kind, true])
-      if (language === undefined) expect([kind, hangulIn(text, F4_DATA)]).toEqual([kind, []])
-      else expect([kind, latinOutside(text, [...F4_DATA, 'Receipts', 'uplo']), hangulIn(text).length > 0]).toEqual([kind, [], true]) // the lane card title, clipped at this width
+      if (lang === undefined) expect(hangulIn(text, F4_DATA)).toEqual([])
+      else {
+        expect(latinOutside(text, PAGE_DATA)).toEqual([])
+        expect(text).toContain('⚑ refund ledger: 시작된 적 없음')
+        expect(text).toContain('⚑ audit trail: 상태: 대기')
+        expect(text).not.toMatch(/never dispatched|state: /)
+      }
+      F2_SHOTS.push({ name: `demo-epicreport${lang === undefined ? 'en' : 'ko'}-${cols}`, lines })
     })
   }
 }
 
-test('F4 demo renders', () => {
-  // the page tests above collect the renders; each block is split into tmp/card125/F4-renders by graph/scripts/split-demo.mjs
-  const last = new Map(F4_SHOTS.map(s => [s.name, s.lines]))
-  expect(last.size).toBe(36)
-  for (const [name, lines] of last) console.log(`=== ${name} ===\n${lines.join('\n')}\n=== end ===`)
+// F4 gap 1-3: the decisions thread, now in Phase detail, draws the person as a key and the engine's own reasons through keys; the
+// Korean render of a thread with a proposal, a verdict, an answer and both kinds of re-split holds nothing outside the allow-list
+test('PHASE thread in Korean: verdict, answer (actor human), proposal "size S · develop", resplit and replan, nothing outside the allow-list', async ($, on) => {
+  const { lines, ui } = await homeLines($, on, 190, PAGES_FIXTURE(), 'terminal', 'korean', { page: PHASE_PLAN })
+  sound(lines, 190)
+  const text = visible(await ui.drawn())
+  const thread = lines.slice(at$(lines, '결정 (이 Phase)') + 1, -1) // up to the footer line
+  expect(thread).toHaveLength(6) // five entries and the verdict's one gap line; the STORY's own verdict belongs to Build
+  expect(thread[0]).toMatch(/09:58 +claude·opus +제안 +size +규모 S · develop$/)
+  expect(thread[1]).toMatch(/10:05 +claude·sonnet +반려 70% +critique +AC 3 missing$/)
+  expect(thread[2]).toContain('누락: AC 3 untested')
+  expect(thread[3]).toMatch(/10:06 +사람 +답변 +critique +reject: overlap$/)
+  expect(thread[4]).toMatch(/10:09 +— +재분할 +재분할 → 영역:3$/)
+  expect(thread[5]).toMatch(/10:11 +— +재분할 +재계획 S2, S3$/)
+  expect(text).not.toMatch(/\bhuman\b|\bsize S\b|resplit|replan|re-split/)
+  expect(latinOutside(text, PAGE_DATA)).toEqual([])
 })
 
-// states the engine emits that the F4 page fixtures do not reach: a STORY in BACKLOG and in WAITING_HUMAN, a task in waiting_human and in stale,
-// drawn on the pages that name them, in English (as the engine sent them, as HEAD drew) and in Korean (no Latin outside the allow-list)
-const STATE_STORIES = {
-  ...TEAMS,
-  teams: [{ team: 'develop', cards: [row('P0', 'module a', 'BACKLOG', 'pending'), row('P1', 'module b', 'WAITING_HUMAN', 'pending'), row('P2', 'module c', 'WAITING_CAPACITY', 'pending')] }],
+test('PHASE thread in English keeps the engine words: the person as human, size S · develop, resplit, replan', async ($, on) => {
+  const { lines } = await homeLines($, on, 190, PAGES_FIXTURE(), 'terminal', undefined, { page: PHASE_PLAN })
+  const text = lines.join('\n')
+  for (const part of ['human', 'size S · develop', 'resplit → areas:3', 'replan S2, S3']) expect(text).toContain(part)
+})
+
+for (const surface of SURFACES) {
+  for (const page of [HOME_PAGE, FLOOR_PAGE, { name: 'PHASE', epic: 'tA', story: null, phase: 2 }, { name: 'STORY', epic: 'tA', story: 'S3', phase: null }, { name: 'LOG', epic: 'tA', story: 'S3', phase: null },
+    { name: 'STORY_REPORT', epic: 'tA', story: 'S3', phase: null }, { name: 'EPIC_REPORT', epic: 'tA', story: null, phase: null }]) {
+    test(`${surface}: ${page.name} mounts with Box, Text and Button only (Input behind the surface check), a breadcrumb or header on line 1`, async ($, on) => {
+      await seeded($, on, P_FIXTURE(), surface, undefined, { epic: 'tA', page })
+      const ui = await pane($, surface)
+      const tree = JSON.stringify(await ui.drawn())
+      for (const bad of ['"type":"Select"', '"type":"Client"', '"type":"Svg"', '"type":"Raster"', '"type":"Image"']) expect(tree).not.toContain(bad)
+      expect((await ui.findAll({ type: 'Input' })).length).toBe(carriesInput(surface) ? 1 : 0)
+      const text = visible(await ui.drawn())
+      expect(text).toContain(page.name === 'HOME' ? 'teams' : 'Cancel payment API')
+      // F4's language Button stays on every page
+      expect(await labels(ui)).toContain(carriesInput(surface) ? 'l EN' : 'EN')
+      // the footer: the F2 line on an Input surface, the six actions as Buttons on mobile
+      if (carriesInput(surface)) expect(String((await ui.find({ key: 'keys' }))?.props.placeholder)).toMatch(/^w s /)
+      else expect((await labels(ui)).filter(l => l !== 'EN')).toEqual([STRINGS.en.f2BtnUp, STRINGS.en.f2BtnDown, STRINGS.en.f2BtnOpen, STRINGS.en.f2BtnBack, STRINGS.en.f2BtnFlag, STRINGS.en.f2BtnClose])
+    })
+  }
 }
-const STATE_DATA = [...F4_DATA, 'task tD', 'task tE', 'task tF', 'Receipts', 'uplo']
-const stateTasks = [
-  ...F4_TASKS,
-  epicOf('tD', 'E-d4d4d4d4', [], { live: false, state: 'stale' }),
-  epicOf('tE', 'E-e5e5e5e5', [], { live: false, state: 'unknown' }),
-  epicOf('tF', 'E-f6f6f6f6', [], { live: true, state: 'BACKLOG' }),
-]
-for (const task of ['waiting_human', 'stale']) {
-  for (const view of ['decisions', 'dash'] as const) { // the Report headline's state word (an EPIC the list lacks) is covered by the state family in strings.test.ts
-    for (const language of [undefined, 'korean']) {
-      test(`F4 states: ${task} on ${view} ${language ?? 'english'}`, async ($, on) => {
-        const data: Data = { ...F4_FIXTURE, tasks: stateTasks, teams: STATE_STORIES, dash: { model: { ...DASH.model, state: task } }, task: demo({ state: task, work: [failedCard, card('module b', 'package', 'done')] }) }
-        await seeded($, on, data, 'terminal', language, { epic: 'tA', view })
-        const ui = await pane($, 'terminal')
-        await ui.press({ key: view })
-        await ui.redraw()
-        const text = visible(await ui.drawn())
-        const table = STRINGS[language === undefined ? 'en' : 'ko'] as Record<string, string>
-        const key = task === 'stale' ? 'stateStale' : 'stateWaitingHuman'
-        // English draws the engine's own word: the raw ticket state on Stories, the state on Report and (upper-case) on Dash
-        const words = view === 'decisions'
-          ? language === undefined ? ['BACKLOG', 'WAITING_HUMAN', 'WAITING_CAPACITY'] : [table.ticketBacklog, table.ticketWaitingHuman, table.ticketWaitingCapacity]
-          : [language === undefined ? (view === 'dash' ? clipText(task.toUpperCase(), 12) : task) : view === 'dash' ? clipText(table[key].toUpperCase(), 12) : table[key]]
-        for (const w of words) expect([view, w, text.includes(w)]).toEqual([view, w, true])
-        if (language === undefined) expect([view, hangulIn(text, STATE_DATA)]).toEqual([view, []])
-        else expect([view, latinOutside(text, STATE_DATA), hangulIn(text).length > 0]).toEqual([view, [], true])
-        // the EPIC list rows: stale, unknown and BACKLOG (English as sent, Korean from the table)
-        const listWords = language === undefined ? ['stale', 'unknown', 'BACKLOG'] : [STRINGS.ko.stateStale, STRINGS.ko.ticketUnknown, STRINGS.ko.ticketBacklog]
-        for (const w of listWords) expect([view, w, text.includes(w)]).toEqual([view, w, true])
-      })
+
+test('mobile: the Buttons act on the selected row, no Input is mounted, HOME is spend and elapsed only, ⚑ with none draws the hint', async ($, on) => {
+  const closed: string[] = []
+  on('ui.close', (_$, e) => { closed.push(e.id); return { value: undefined } })
+  const { seen } = await seeded($, on, P_FIXTURE(), 'mobile', undefined, { epic: 'tA', pageSel: { 'HOME:::': 'e:tA' } })
+  const ui = await pane($, 'mobile')
+  const text = visible(await ui.drawn())
+  expect(text).toContain('$6.12 · 22m')
+  expect(text).not.toContain('drivers')
+  expect(text.replace(/\n/g, '')).toMatch(/⚑ 2 +Cancel payment API › S2/) // the section is one row of segments, each its own Text
+  expect(text).not.toMatch(/○Integ|█| ag\b/) // no Phase rail, no mini bar, no agents on mobile
+  expect(await ui.find({ key: 'keys' })).toBeUndefined()
+  await ui.press({ key: 'down' })
+  await ui.redraw()
+  expect(seen.store.get('pageSel')).toMatchObject({ 'HOME:::': 's:tA:S1' })
+  await ui.press({ key: 'up' })
+  await ui.redraw() // the harness redraws on request: a Button acts on the row of the last draw
+  await ui.press({ key: 'open' }) // the EPIC row
+  expect(seen.store.get('page')).toEqual(FLOOR_PAGE)
+  await ui.redraw()
+  await ui.press({ key: 'back' })
+  expect(seen.store.get('page') ?? HOME_PAGE).toEqual(HOME_PAGE)
+  await ui.redraw()
+  await ui.press({ key: 'flag' })
+  expect(seen.store.get('pageSel')).toMatchObject({ 'HOME:::': 'f:tA:ask:E-3f9a2c11/S2' })
+  await ui.press({ key: 'close' })
+  expect(closed).toEqual(['teams-status'])
+})
+
+test('mobile: ⚑ with no flag acts as n with none', async ($, on) => {
+  const { seen } = await seeded($, on, P_FIXTURE({ tasks: P_TASKS({ workers: [], you: { count: 0, items: [], cards: [] } }) }), 'mobile', undefined, { epic: 'tA' })
+  const ui = await pane($, 'mobile')
+  await ui.press({ key: 'flag' })
+  await ui.redraw()
+  expect(seen.store.get('flagHint')).toBe(true)
+  expect(visible(await ui.drawn())).toContain(STRINGS.en.f2HintNoFlag)
+})
+
+// ---- answer mode (F2-AC-25, 27..30, 32; 12, 13; 31, 33) ----
+const ANSWER_PAGE = { name: 'ANSWER', epic: 'tA', story: 'S2', phase: null }
+const ASK_QUESTION = 'How many retries on refund failure?'
+const ASK_KEY = 'E-3f9a2c11/S2:ask1'
+const askCardOf = (questions: { question: string; options: string[] }[]) =>
+  ({ key: ASK_KEY, node_id: 'ask:S2', title: 'refund idempotency key', story_key: 'E-3f9a2c11/S2', ask_id: 'a1', since: ago(9), questions })
+const FREE = [{ question: ASK_QUESTION, options: [] as string[] }]
+// the answer CLI as the fixture: `--card` lists the ask, `--answer` records its argv and answers with `reply`
+function answerData(questions = FREE, reply: (decisions: { question: string; chose: string }[]) => Run | object = () => ({ ok: true, key: ASK_KEY, node_id: 'ask:S2', state: 'done' })) {
+  const sent: { key: string; task: string; decisions: { question: string; chose: string }[] }[] = []
+  const data = PAGES_FIXTURE({
+    answer: argv => {
+      if (argv.includes('--card')) return ok(JSON.stringify({ ok: true, task_id: 'tA', cards: [askCardOf(questions)] }))
+      const decisions = JSON.parse(argv[argv.indexOf('--decisions') + 1]!)
+      sent.push({ key: argv[argv.indexOf('--key') + 1]!, task: argv[argv.indexOf('--task') + 1]!, decisions })
+      const r = reply(decisions)
+      return 'exitCode' in r ? (r as Run) : ok(JSON.stringify(r))
+    },
+  })
+  return { data, sent }
+}
+const answerSeed = async ($: Engine, on: On, data: Data, surface: Surface = 'terminal', language?: string) => {
+  const toasts: string[] = []
+  on('ui.toast', (_$, e) => { toasts.push(e.text); return { value: undefined } })
+  const world = await seeded($, on, data, surface, language, { epic: 'tA', page: ANSWER_PAGE, pageFrom: HOME_PAGE }, true)
+  return { ...world, toasts, ui: await atCols($, surface, 190) }
+}
+const typeAnswer = async (ui: Ui, text: string, kind: 'change' | 'submit' = 'submit') => {
+  await ui.input({ key: 'answer', text, kind } as never)
+  await ui.redraw()
+}
+
+test('ANSWER: breadcrumb, how long it waits, who asks, the question, a context line, the prompt and the answer-mode footer; one Input', async ($, on) => {
+  const { ui } = await answerSeed($, on, answerData().data)
+  const lines = await linesAt(ui, 190)
+  sound(lines, 190)
+  expect(lines[0]).toMatch(/^Cancel payment API › S2 refund idempotency key › Answer the question +⚑ 9m waiting$/)
+  expect(lines.find(l => l.startsWith('S2 → you'))).toBeDefined()
+  expect(lines).toContain(`"${ASK_QUESTION}"`)
+  expect(lines.find(l => l.startsWith('Context'))).toMatch(/^Context +refund idempotency key$/)
+  expect(lines.find(l => l.startsWith('Answer ›'))).toBeDefined()
+  expect(lines.at(-1)).toMatch(/^Input mode: letters go in as typed · ⏎ send · empty ⏎ cancel +l EN$/)
+  expect((await ui.findAll({ type: 'Input' })).map(i => i.props.autoFocus === true)).toEqual([true])
+  expect(await ui.find({ key: 'keys' })).toBeUndefined()
+})
+
+test('ANSWER: a long question wraps inside the pane at 110 columns', async ($, on) => {
+  const long = 'Should the refund retry use the same idempotency key as the first attempt, or a fresh one per attempt, and how long should it keep retrying before it files a defect?'
+  const data = answerData([{ question: long, options: [] }]).data
+  await seeded($, on, data, 'terminal', undefined, { epic: 'tA', page: ANSWER_PAGE, pageFrom: HOME_PAGE }, true)
+  const ui = await atCols($, 'terminal', 110)
+  const lines = await linesAt(ui, 110)
+  sound(lines, 110)
+  expect(lines.join(' ').replace(/\s+/g, ' ')).toContain(long)
+})
+
+test('ANSWER: Enter sends the typed text once through answer.mjs under the plugin root, shows the toast, returns to the page it was opened from', async ($, on) => {
+  const { data, sent } = answerData()
+  const { seen, ui, toasts } = await answerSeed($, on, data)
+  const calls = seen.argv.filter(a => String(a[1]).endsWith('/scripts/answer.mjs'))
+  expect(calls).toHaveLength(1) // the card lookup, once for the page
+  expect(calls[0]).toEqual(['node', expect.stringMatching(/\/scripts\/answer\.mjs$/), '--card', '--task', 'tA', '--story', 'S2'])
+  await typeAnswer(ui, '  3 retries, then a manual queue ')
+  expect(sent).toEqual([{ key: ASK_KEY, task: 'tA', decisions: [{ question: ASK_QUESTION, chose: '3 retries, then a manual queue' }] }])
+  expect(toasts).toContain(STRINGS.en.f2AnswerAccepted)
+  expect(seen.store.get('page')).toEqual(HOME_PAGE)
+  expect(seen.store.get('typed')).toBe('')
+  // the pane was opened without closeOnEscape while answering and with it again after
+  const flags = seen.openArgs.map(a => (a as { closeOnEscape?: boolean }).closeOnEscape === true)
+  expect(flags.slice(-2)).toEqual([false, true])
+})
+
+test('ANSWER: a refusal shows the engine reason and keeps the page and the typed text; the next Enter can still send', async ($, on) => {
+  let refuse = true
+  const { data, sent } = answerData(FREE, () => (refuse ? { ok: false, reason: 'decisions: chose must not be empty' } : { ok: true, key: ASK_KEY }))
+  const { seen, ui, toasts } = await answerSeed($, on, data)
+  await typeAnswer(ui, 'later')
+  expect(seen.store.get('page')).toEqual(ANSWER_PAGE)
+  expect(seen.store.get('typed')).toBe('later')
+  expect((await linesAt(ui, 190)).find(l => l.startsWith('Not accepted'))).toBe('Not accepted: decisions: chose must not be empty')
+  expect(toasts).toEqual([])
+  refuse = false
+  await typeAnswer(ui, 'later')
+  expect(sent).toHaveLength(2)
+  expect(seen.store.get('page')).toEqual(HOME_PAGE)
+})
+
+for (const [why, run] of [['exits non-zero', { exitCode: 1, stdout: '', stderr: 'node: cannot find answer.mjs' }], ['prints no JSON', ok('')]] as [string, Run][]) {
+  test(`ANSWER: an answer tool that ${why} shows the failure line, keeps the draft, and the pane stays usable`, async ($, on) => {
+    let broken = true
+    const { data, sent } = answerData(FREE, () => (broken ? run : { ok: true, key: ASK_KEY }))
+    const { seen, ui } = await answerSeed($, on, data)
+    await typeAnswer(ui, 'three')
+    const line = (await linesAt(ui, 190)).find(l => l.startsWith('Could not run the answer tool'))
+    expect(line).toBeDefined()
+    expect(seen.store.get('page')).toEqual(ANSWER_PAGE)
+    expect(seen.store.get('typed')).toBe('three')
+    await typeAnswer(ui, 'q', 'change') // still typing, still no key
+    expect(seen.store.get('page')).toEqual(ANSWER_PAGE)
+    broken = false
+    await typeAnswer(ui, 'three')
+    expect(sent).toHaveLength(2)
+    expect(seen.store.get('page')).toEqual(HOME_PAGE)
+  })
+}
+
+test('ANSWER: a card lookup that fails shows the failure line; empty Enter still leaves', async ($, on) => {
+  const { data } = answerData()
+  data.answer = () => ({ exitCode: 1, stdout: '', stderr: 'no tool' })
+  const { seen, ui } = await answerSeed($, on, data)
+  expect((await linesAt(ui, 190)).find(l => l.startsWith('Could not run the answer tool'))).toBe('Could not run the answer tool: no tool')
+  await typeAnswer(ui, 'x') // nothing to send to: nothing happens
+  expect(seen.store.get('page')).toEqual(ANSWER_PAGE)
+  await typeAnswer(ui, '')
+  expect(seen.store.get('page')).toEqual(HOME_PAGE)
+})
+
+test('ANSWER: several questions are asked one at a time and sent once after the last, one decisions entry each', async ($, on) => {
+  const qs = [{ question: 'How many retries?', options: [] }, { question: 'Which queue?', options: [] }, { question: 'Page the owner?', options: [] }]
+  const { data, sent } = answerData(qs)
+  const { seen, ui } = await answerSeed($, on, data)
+  expect(seen.store.get('page')).toEqual(ANSWER_PAGE)
+  expect(visible(await ui.drawn())).toContain('"How many retries?"')
+  expect(visible(await ui.drawn())).toContain('1/3')
+  await typeAnswer(ui, '3')
+  expect(sent).toEqual([])
+  expect(visible(await ui.drawn())).toContain('"Which queue?"')
+  expect(visible(await ui.drawn())).toContain('2/3')
+  expect(seen.store.get('typed')).toBe('')
+  await typeAnswer(ui, 'manual')
+  expect(sent).toEqual([])
+  await typeAnswer(ui, 'no')
+  expect(sent).toEqual([{ key: ASK_KEY, task: 'tA', decisions: [{ question: 'How many retries?', chose: '3' }, { question: 'Which queue?', chose: 'manual' }, { question: 'Page the owner?', chose: 'no' }] }])
+  expect(seen.store.get('page')).toEqual(HOME_PAGE)
+})
+
+test('ANSWER: q w a s d n l are text, the language key is inert, `/` holds, and the language Button still works', async ($, on) => {
+  const closed: string[] = []
+  on('ui.close', (_$, e) => { closed.push(e.id); return { value: undefined } })
+  const { seen, ui } = await answerSeed($, on, answerData().data)
+  for (const text of ['q', 'w', 'a', 's', 'd', 'n', 'l', 'qwasdnl', '/teams-status']) {
+    await typeAnswer(ui, text, 'change')
+    expect(seen.store.get('page')).toEqual(ANSWER_PAGE)
+    expect(seen.store.get('typed')).toBe(text)
+  }
+  expect(seen.store.get('lang') ?? 'en').toBe('en')
+  expect(seen.store.get('pageSel') ?? {}).toEqual({})
+  expect(closed).toEqual([])
+  await ui.press({ key: 'lang' })
+  expect(seen.store.get('lang')).toBe('ko')
+})
+
+test('ANSWER: empty or blank Enter cancels the draft and returns; the pane stays open and closeOnEscape is back', async ($, on) => {
+  const closed: string[] = []
+  on('ui.close', (_$, e) => { closed.push(e.id); return { value: undefined } })
+  const { seen, ui } = await answerSeed($, on, answerData().data)
+  await typeAnswer(ui, '   ')
+  expect(seen.store.get('page')).toEqual(HOME_PAGE)
+  expect(closed).toEqual([])
+  expect((seen.openArgs.at(-1) as { closeOnEscape?: boolean }).closeOnEscape).toBe(true)
+  expect(visible(await ui.drawn())).not.toContain('Input mode')
+})
+
+test('ANSWER: a pane that the host closed on ANSWER opens again on the page it came from, the draft lost, closeOnEscape back', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  startWorld(on)
+  const seen = uiWorld(on, { watch: ['abc'], epic: 'tA', page: ANSWER_PAGE, pageFrom: HOME_PAGE }, ['terminal'], answerData().data)
+  on('ui.panes', () => ({ value: [] }) as never)
+  await start($)
+  expect(seen.store.get('page')).toEqual(ANSWER_PAGE) // no pane is open: ui.panes() holds none
+  await $.command.run({ command: 'teams-status' } as never)
+  expect(seen.store.get('page')).toEqual(HOME_PAGE)
+  expect((seen.openArgs.at(-1) as { closeOnEscape?: boolean }).closeOnEscape).toBe(true)
+})
+
+for (const surface of SURFACES) {
+  test(`${surface}: ANSWER mounts with Box, Text and Button only (Input behind the surface check); no Select, Client, Svg, Raster or Image`, async ($, on) => {
+    const { ui } = await answerSeed($, on, answerData().data, surface)
+    const tree = JSON.stringify(await ui.drawn())
+    for (const bad of ['"type":"Select"', '"type":"Client"', '"type":"Svg"', '"type":"Raster"', '"type":"Image"']) expect(tree).not.toContain(bad)
+    expect((await ui.findAll({ type: 'Input' })).length).toBe(carriesInput(surface) ? 1 : 0)
+    const text = visible(await ui.drawn())
+    expect(text).toContain('Cancel payment API')
+    expect(text).toContain(ASK_QUESTION)
+    expect(await labels(ui)).toContain(carriesInput(surface) ? 'l EN' : 'EN')
+    if (!carriesInput(surface)) {
+      expect((await labels(ui)).filter(l => l !== 'EN')).toEqual([STRINGS.en.f2BtnUp, STRINGS.en.f2BtnDown, STRINGS.en.f2BtnOpen, STRINGS.en.f2BtnBack, STRINGS.en.f2BtnFlag, STRINGS.en.f2BtnClose])
+      expect(text).toContain(STRINGS.en.f2AnswerDesktopOnly)
     }
+  })
+}
+
+test('mobile ANSWER: an ask with options shows one Button per option and a tap submits it through answer.mjs; no Input', async ($, on) => {
+  const opts = ['2 retries', '3 retries', '5 retries']
+  const { data, sent } = answerData([{ question: ASK_QUESTION, options: opts }])
+  const { seen, ui } = await answerSeed($, on, data, 'mobile')
+  expect(await ui.find({ key: 'answer' })).toBeUndefined()
+  expect(await labels(ui)).toEqual([...opts, STRINGS.en.f2BtnUp, STRINGS.en.f2BtnDown, STRINGS.en.f2BtnOpen, STRINGS.en.f2BtnBack, STRINGS.en.f2BtnFlag, STRINGS.en.f2BtnClose, 'EN'])
+  expect(visible(await ui.drawn())).not.toContain(STRINGS.en.f2AnswerDesktopOnly)
+  await ui.press({ key: 'o1' })
+  expect(sent).toEqual([{ key: ASK_KEY, task: 'tA', decisions: [{ question: ASK_QUESTION, chose: '3 retries' }] }])
+  expect(seen.store.get('page')).toEqual(HOME_PAGE)
+})
+
+test('mobile ANSWER: the back Button returns to the page it was opened from and drops the draft', async ($, on) => {
+  const { seen, ui } = await answerSeed($, on, answerData().data, 'mobile')
+  await ui.press({ key: 'back' })
+  expect(seen.store.get('page')).toEqual(HOME_PAGE)
+  expect((seen.openArgs.at(-1) as { closeOnEscape?: boolean }).closeOnEscape).toBe(true)
+})
+
+for (const cols of [190, 110]) {
+  for (const language of [undefined, 'korean'] as const) {
+    test(`ANSWER in ${language ?? 'English'} at ${cols} columns: only table words, nothing wider than the pane`, async ($, on) => {
+      await seeded($, on, answerData([{ question: ASK_QUESTION, options: [] }]).data, 'terminal', language, { epic: 'tA', page: ANSWER_PAGE, pageFrom: HOME_PAGE }, true)
+      const ui = await atCols($, 'terminal', cols)
+      const lines = await linesAt(ui, cols)
+      sound(lines, cols)
+      const text = visible(await ui.drawn())
+      if (language === undefined) expect(hangulIn(text, F4_DATA)).toEqual([])
+      else {
+        expect(latinOutside(text, PAGE_DATA)).toEqual([])
+        expect(text).toContain(STRINGS.ko.f2AnswerTitle)
+        expect(text).toContain(STRINGS.ko.f2AnswerContext)
+        expect(lines.at(-1)).toContain(STRINGS.ko.f2FootAnswer.slice(0, 12))
+        expect(lines.at(-1)).toMatch(/l KR$/)
+      }
+      F2_SHOTS.push({ name: `demo-answer${language === undefined ? 'en' : 'ko'}-${cols}`, lines })
+    })
   }
 }
 
@@ -3466,29 +3473,263 @@ test('F4 lang: the toggle touches only lang and langChosen in $.state', async ($
   expect(seen.store.get('lang')).toBe('ko')
 })
 
-// engine-written subjects (view-summary.mjs SUBJECT_KEY_OF), as summarize() sends them: a Log page and a Dash activity row in each language
-const SUBJECT_LOG = [
-  { time: '10:01', kind: 'passed', subject: 'final gate' }, { time: '10:02', kind: 'integrated', subject: 'integration' },
-  { time: '10:03', kind: 'finished', subject: 'the task' }, { time: '10:04', kind: 'dispatched', subject: 'a card' },
-  { time: '10:05', kind: 'waiting', subject: 'a step' }, { time: '10:06', kind: 'passed', subject: 'module b' },
-]
-for (const language of [undefined, 'korean']) {
-  for (const view of ['log', 'dash'] as const) {
-    test(`F4 subjects: engine words on ${view} ${language ?? 'english'}`, async ($, on) => {
-      const data: Data = { ...F4_FIXTURE, task: demo({ log: SUBJECT_LOG, now: { kind: 'answer', subject: 'final gate', detail: null } }), dash: { model: { ...DASH.model, activity: [...SUBJECT_LOG].reverse() } } }
-      await seeded($, on, data, 'terminal', language, { epic: 'tA', view })
-      const ui = await pane($, 'terminal')
-      await ui.press({ key: view })
-      await ui.redraw()
-      const text = visible(await ui.drawn())
-      const lang = language === undefined ? 'en' : 'ko'
-      for (const x of ['final gate', 'integration', 'the task', 'a card', 'a step']) {
-        const word = STRINGS[lang][`subj${x === 'final gate' ? 'FinalGate' : x === 'integration' ? 'Integration' : x === 'the task' ? 'Task' : x === 'a card' ? 'Card' : 'Step'}` as keyof typeof STRINGS.en]
-        if (view === 'log' || x !== 'a step') expect([view, x, text.includes(word)]).toEqual([view, x, true])
-      }
-      expect(text.includes('module b') || view === 'dash').toBe(true)
-      if (language === undefined) expect([view, text.includes('final gate'), text.includes('a card')]).toEqual([view, true, true])
-      else expect([view, latinOutside(text, [...F4_DATA, 'Receipts', 'uplo'])]).toEqual([view, []])
+// ---- the band sentence and the language frames (restored from F4 dash now / page band / page empty) ----
+// the band says what the task is on now, for every now.kind the engine emits: English draws the kind's word, Korean has no Latin outside the data
+for (const kind of NOW_KINDS) {
+  for (const language of [undefined, 'korean']) {
+    test(`F4 band now: ${kind} ${language ?? 'english'}`, async ($, on) => {
+      await seeded($, on, { status: stat(), task: demo({ now: { kind, subject: 'module b', detail: '' } }) }, 'terminal', language)
+      const text = visible(await (await band($, 'terminal')).drawn())
+      const word = (STRINGS[language === undefined ? 'en' : 'ko'] as Record<string, string>)[`now${kind[0]!.toUpperCase()}${kind.slice(1)}`]
+      expect([kind, word !== undefined, text.includes(`${word}: module b`)]).toEqual([kind, true, true])
+      if (language === undefined) expect([kind, hangulIn(text, LANG_DATA)]).toEqual([kind, []])
+      else expect([kind, latinOutside(text, [...LANG_DATA, 'engine band']), hangulIn(text, LANG_DATA).length > 0]).toEqual([kind, [], true])
     })
   }
 }
+
+// the band in English and Korean (by `l` on the pane, and by the setting), on every surface at 190 and 110, no stray language
+for (const surface of SURFACES) {
+  test(`F4 band: ${surface} in English, Korean by l and Korean by the setting, at 190 and 110 columns`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1000 })
+    let setting: Record<string, unknown> = {}
+    langStart(on, () => setting)
+    uiWorld(on, { watch: ['abc'], epic: 'tA' }, [surface], F4_FIXTURE)
+    on('ui.panes', () => ({ value: [{ id: 'teams-status', title: 'Teams', isPlaced: true }] }) as never)
+    on('ui.close', () => ({ value: undefined }))
+    engineBand(on)
+    await start($)
+    await clock.advance(3000)
+    const holder = await pane($, surface)
+    const bandAt = (cols: number) => $.ui.mount({ plugin: 'teams', surface, component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: cols } } as never)
+    const read = async (lang: 'en' | 'ko') => {
+      const out: Record<number, string> = {}
+      for (const cols of [190, 110]) {
+        const ui = await bandAt(cols)
+        const drawn = (await ui.drawn()) as never
+        const text = visible(drawn)
+        out[cols] = text
+        if (lang === 'en') expect([cols, hangulIn(text, F4_DATA)]).toEqual([cols, []])
+        else {
+          expect([cols, latinOutside(text, [...F4_DATA, 'engine band'])]).toEqual([cols, []])
+          expect(hangulIn(text, F4_DATA).length > 0).toBe(true)
+        }
+        // one question waits (F4_FIXTURE): the inbox Button takes the board Button's place, in the language drawn
+        expect(await labels(ui)).toContain((lang === 'en' ? STRINGS.en.inboxOne : STRINGS.ko.inboxOne).replace('{n}', '1'))
+        sound(draw(drawn, cols), cols + 4)
+        await ui.unmount()
+      }
+      expect(await labels(holder)).toContain(carriesInput(surface) ? (lang === 'en' ? 'l EN' : 'l KR') : lang === 'en' ? 'EN' : 'KR')
+      return out
+    }
+    const en = await read('en')
+    if (carriesInput(surface)) await typeKey(holder, 'l')
+    else await holder.press({ key: 'lang' })
+    await holder.redraw()
+    const ko = await read('ko')
+    const nums = (t: string) => (t.match(/\d+/g) ?? []).sort().join(',')
+    for (const cols of [190, 110]) expect([cols, nums(ko[cols]!)]).toEqual([cols, nums(en[cols]!)])
+  })
+}
+
+// the no-run pane, English and Korean, on every surface: only the table's words, the language marker, the close key
+for (const surface of SURFACES) {
+  for (const language of [undefined, 'korean']) {
+    test(`F4 empty: ${surface} no-run pane in ${language ?? 'English'} has no stray language`, async ($, on) => {
+      langStart(on, () => (language === undefined ? {} : { language }))
+      uiWorld(on, {}, [surface], { status: { line: '', waiting: 0 } })
+      on('ui.panes', () => ({ value: [{ id: 'teams-status', title: 'Teams', isPlaced: true }] }) as never)
+      on('ui.close', () => ({ value: undefined }))
+      engineBand(on)
+      await start($)
+      const ui = await pane($, surface)
+      const text = visible(await ui.drawn())
+      expect(text).toContain(language === undefined ? STRINGS.en.noRun : STRINGS.ko.noRun)
+      if (language === undefined) expect(hangulIn(text)).toEqual([])
+      else {
+        expect(latinOutside(text)).toEqual([])
+        expect(hangulIn(text).length > 0).toBe(true)
+      }
+      expect(await labels(ui)).toContain(carriesInput(surface) ? (language === undefined ? 'l EN' : 'l KR') : language === undefined ? 'EN' : 'KR')
+      if (!carriesInput(surface)) expect((await ui.find({ key: 'close' }))?.props).toMatchObject({ role: 'dismiss' })
+    })
+  }
+}
+
+// ---- workerCells and handoffCells: the helpers the PHASE page draws (s5); their cases from the tab-era Floor tests ----
+const rowsOf = (rows: readonly { cells: string[]; tints: unknown[] }[], gap = 2) => {
+  const widths = columnWidths(rows.map(r => r.cells), 200, gap, [], 4)
+  return rows.map(r => plain(rowLine(r.cells, widths, gap, r.tints as never)))
+}
+const WCELLS = [wk('PLAN', 'done'), wk('P1', 'acting', 'editing a.ts'), wk('P2', 'idle'), wk('P3', 'you', 'asks a question'), wk('JUDGE', 'stalled')] as never
+const wordOf = (key: string) => (STRINGS.en as Record<string, string>)[`word${key[0]!.toUpperCase()}${key.slice(1)}`] ?? key
+
+test('workerCells: one line per worker, the id starting at one offset', () => {
+  const cells = workerCells(WCELLS, 0, wordOf)
+  expect(cells).toHaveLength(5)
+  const lines = rowsOf(cells)
+  for (const [i, id] of ['PLAN', 'P1', 'P2', 'P3', 'JUDGE'].entries()) expect(lines[i]).toContain(id)
+  expect(lines[1]).toContain('editing a.ts')
+  expect(new Set(lines.map(l => l.indexOf(/PLAN|P\d|JUDGE/.exec(l)![0]))).size).toBe(1)
+})
+
+test('workerCells: a distinct icon per state, no faces', () => {
+  const cells = workerCells(WCELLS, 0, wordOf)
+  const icons = cells.map(c => c.cells[0])
+  expect(icons).toEqual(['✔', '●', '◌', '⚑', '⏸'])
+  expect(new Set(icons).size).toBe(5)
+  expect(JSON.stringify(cells)).not.toMatch(/😀|\(\^|☺|\^_\^|•_•/)
+})
+
+test('workerCells: an idle worker says idle, dim, in the column of the other doing texts; a done one says done', () => {
+  const workers = [wk('PLAN', 'done'), wk('P1', 'acting', 'editing a.ts'), wk('P2', 'idle'), wk('P3', 'you', 'asks a question'), wk('JUDGE', 'idle')] as never
+  const cells = workerCells(workers, 0, wordOf)
+  const [plan, p1, p2, p3, judge] = rowsOf(cells) as [string, string, string, string, string]
+  for (const idle of [p2, judge]) {
+    expect(idle.trimEnd().endsWith('idle')).toBe(true)
+    expect(idle.indexOf('idle')).toBe(p1.indexOf('editing a.ts'))
+    expect(idle.indexOf('idle')).toBe(p3.indexOf('asks a question'))
+  }
+  expect(plan.trimEnd().endsWith('done')).toBe(true)
+  for (const i of [2, 4]) expect(cells[i]!.tints[3]).toBe('dim')
+})
+
+test('workerCells: the idle word in Korean; the spinner only on an acting worker', () => {
+  const ko = (key: string) => (STRINGS.ko as Record<string, string>)[`word${key[0]!.toUpperCase()}${key.slice(1)}`] ?? key
+  expect(rowsOf(workerCells([wk('P2', 'idle')] as never, 0, ko))[0]!.trimEnd().endsWith('유휴')).toBe(true)
+  const cells = workerCells(WCELLS, 3, wordOf)
+  expect(cells.map(c => c.cells[1] !== '')).toEqual([false, true, false, false, false])
+  expect(cells[1]!.cells[1]).toBe(SPINNER[3])
+})
+
+const HAND = [
+  { time: '10:01', from: 'PLAN', what: 'the plan', to: 'P1' }, { time: '10:02', from: 'P1', what: 'a diff', to: 'JUDGE' }, { time: '10:03', from: 'JUDGE', what: 'a verdict', to: 'P1' },
+  { time: '10:04', from: 'P2', what: 'tests', to: 'JUDGE' }, { time: '10:05', from: 'PLAN', what: 'a rewrite', to: 'P3' }, { time: '10:06', from: 'P3', what: 'an answer', to: 'PLAN' },
+  { time: '10:07', from: 'P1', what: 'more', to: 'JUDGE' },
+] as never
+
+test('handoffCells: at most 5 aligned rows', () => {
+  const rows = handoffCells(HAND)
+  expect(rows).toHaveLength(5)
+  const widths = columnWidths(rows, 200, 2, [], 4)
+  const lines = rows.map(r => plain(rowLine(r, widths, 2)))
+  expect(lines[0]).toMatch(/^10:01 +PLAN +the plan +→ P1/)
+  expect(new Set(lines.map(r => r.indexOf('→'))).size).toBe(1)
+  expect(new Set(lines.map(r => r.indexOf(/PLAN|P\d|JUDGE/.exec(r)![0]))).size).toBe(1)
+})
+
+test('handoffCells: empty when none recorded; an engine word comes by its key, the raw text when it has none', () => {
+  expect(handoffCells([])).toEqual([])
+  const keyed = [{ time: '10:03', from: 'judge', what: 'verdict reject', what_key: 'handVerdict', what_vars: { v: 'reject' }, to: 'P1' }] as never
+  expect(handoffCells(keyed)[0]).toEqual(['10:03', 'judge', 'verdict reject', '→ P1'])
+  expect(handoffCells(keyed, (key, vars) => `${key}:${JSON.stringify(vars)}`)[0]![2]).toBe('handVerdict:{"v":"reject"}')
+})
+
+// ---- EPIC report states (restored from the Report tab tests of 65d4eaa8, now on the EPIC_REPORT page) ----
+const REPORT_PATH = NEEDS_PAYLOAD.path
+const reportOf = (over: Record<string, unknown>) => payload({ task_id: 'tA', path: REPORT_PATH, ...over })
+const BIG = { text: 'line\n'.repeat(3900), truncated: true, more_lines: 1234, mtime: 5 }
+for (const surface of SURFACES) {
+  for (const language of [undefined, 'korean'] as const) {
+    const ko = language === 'korean'
+    test(`EPIC report ${surface} in ${ko ? 'Korean' : 'English'}: report null draws the missing line with the path`, async ($, on) => {
+      await seeded($, on, PAGES_FIXTURE({ reports: { tA: reportOf({ report: null }) } }), surface, language, { epic: 'tA', page: EPIC_REPORT }, true)
+      const text = visible(await (await atCols($, surface, 190)).drawn())
+      expect(text).toContain(`${ko ? '아직 보고서가 없습니다' : 'No report yet'}: ${REPORT_PATH}`)
+      if (ko) expect(text).not.toContain('No report yet')
+    })
+
+    test(`EPIC report ${surface} in ${ko ? 'Korean' : 'English'}: a report over 20k draws the path, then the truncated notice, then the text`, async ($, on) => {
+      await seeded($, on, PAGES_FIXTURE({ reports: { tA: reportOf({ report: BIG }) } }), surface, language, { epic: 'tA', page: EPIC_REPORT }, true)
+      const text = await shown(await atCols($, surface, 190))
+      const path = text.indexOf('80-report.md')
+      const notice = text.indexOf(ko ? '파일에 1234줄 더 있습니다' : 'Shortened: 1234 more lines in the file.')
+      const body = text.indexOf('line\\nline')
+      expect(path > 0 && notice > path && body > notice).toBe(true)
+      if (ko) expect(text).not.toContain('Shortened')
+    })
+  }
+
+  test(`EPIC report ${surface}: page open on U, T ends: T's card shows and stays; the page keeps drawing U`, async ($, on) => {
+    const reports = { tA: reportOf({ report: { text: 'U report', truncated: false, more_lines: 0, mtime: 1 } }), tee: T_PAYLOAD() }
+    const { seen, tick } = await seeded($, on, PAGES_FIXTURE({ events: [END('tee')], reports }), surface, undefined, { epic: 'tA', page: EPIC_REPORT })
+    await tick()
+    await tick()
+    const b = await band($, surface)
+    expect(await shown(b)).toContain('finished')
+    expect(await labels(b)).toEqual(['report', '×'])
+    expect(seen.store.get('ended')).toEqual({ tee: 'card' })
+    const ui = await atCols($, surface, 190)
+    expect(await shown(ui)).toContain('E-tA/80-report.md')
+    expect((await ui.find({ type: 'Markdown' }))?.props.text).toBe('U report')
+    expect(await shown(ui)).not.toContain('E-tee')
+  })
+}
+
+// ---- F4 page language invariants (restored from the f4Page loop): every page on every surface ----
+const LANG_PAGES = [HOME_PAGE, FLOOR_PAGE, PHASE_BUILD, STORY_S2, LOG_S2, { name: 'STORY_REPORT', epic: 'tA', story: 'S1', phase: null }, EPIC_REPORT] as const
+const digitsOf = (text: string) => (text.match(/\d+/g) ?? []).sort().join(',')
+for (const surface of SURFACES) {
+  for (const page of LANG_PAGES) {
+    test(`${page.name} on ${surface}: l goes Korean and back to the first English render; Korean by l equals Korean by the setting; same numbers; only table words`, async ($, on) => {
+      const clock = mock.clock(on, { now: 1000 })
+      const setting = { value: undefined as string | undefined }
+      langStart(on, () => (setting.value === undefined ? {} : { language: setting.value }))
+      const seen = uiWorld(on, { watch: ['abc'], epic: 'tA', page }, [surface], REPORT_FIXTURE())
+      on('ui.panes', () => ({ value: [{ id: 'teams-status', title: 'Teams', isPlaced: true }] }) as never)
+      on('ui.close', () => ({ value: undefined }))
+      on('ui.render', (_$, e) => (e.component === 'AbovePrompt' ? { type: 'Box', children: [] } : undefined) as never)
+      await start($)
+      await clock.advance(3000)
+      const ui = await atCols($, surface, 190)
+      const read = async () => ({ text: visible(await ui.drawn()), buttons: await labels(ui) })
+      const flip = async () => {
+        if (carriesInput(surface)) await pressKey(ui, 'l')
+        else {
+          await ui.press({ key: 'lang' })
+          await ui.redraw()
+        }
+      }
+      const en = await read()
+      expect(hangulIn(en.text, F4_DATA)).toEqual([])
+      await flip()
+      const koByKey = await read()
+      expect(latinOutside(koByKey.text, PAGE_DATA)).toEqual([])
+      expect(hangulIn(koByKey.text, F4_DATA).length > 0).toBe(true)
+      expect(latinOutside(koByKey.buttons.join(' '), PAGE_DATA)).toEqual([])
+      if (!carriesInput(surface)) expect(hangulIn(koByKey.buttons.join(' ')).length > 0).toBe(true) // the mobile Buttons are Korean too
+      expect(digitsOf(koByKey.text)).toBe(digitsOf(en.text))
+      await flip()
+      expect((await read()).text).toBe(en.text) // back to English by l: the first render exactly
+      await flip()
+      seen.store.set('langChosen', false)
+      setting.value = 'korean'
+      await start($)
+      await ui.redraw()
+      expect((await read()).text).toBe(koByKey.text) // Korean by the setting equals Korean by l
+    })
+  }
+}
+
+// ---- the band's engine subject words (restored from F4 subjects): drawn through the table, never as the engine's English in Korean ----
+for (const [subject, key] of Object.entries(SUBJECT_KEY)) {
+  for (const language of [undefined, 'korean'] as const) {
+    test(`F4 subjects: the band draws the engine subject "${subject}" ${language ?? 'in English'}${language === undefined ? '' : ' by subjectWord'}`, async ($, on) => {
+      await seeded($, on, { status: stat(), task: demo({ now: { kind: 'answer', subject, detail: '' } }) }, 'terminal', language)
+      const text = visible(await (await band($, 'terminal')).drawn())
+      const t = STRINGS[language === undefined ? 'en' : 'ko'] as Record<string, string>
+      expect(text).toContain(`${t.nowAnswer}: ${t[key]}`)
+      if (language === 'korean') {
+        if (t[key] !== subject) expect(text).not.toContain(subject)
+        expect(latinOutside(text, [...LANG_DATA, 'engine band'])).toEqual([])
+      }
+    })
+  }
+}
+
+test('F2 demo renders', () => {
+  // the page tests above collect the renders; each block is split into tmp/card125/renders by graph/scripts/split-demo.mjs
+  const last = new Map(F2_SHOTS.map(s => [s.name, s.lines]))
+  expect(last.size).toBe(32)
+  for (const [name, lines] of last) console.log(`=== ${name} ===\n${lines.join('\n')}\n=== end ===`)
+})

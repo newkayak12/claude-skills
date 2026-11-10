@@ -3,7 +3,7 @@
 //   node --test teams/scripts/test-view-events.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { notableEvents, statusLine, handoffs, ENGINE_WORD_KEYS } from './lib/view-events.mjs';
+import { notableEvents, statusLine, handoffs, ENGINE_WORD_KEYS, PHASES, phaseOfEvent, phaseOfDecision, phaseDecisions, storyLog, STORY_LOG_KEYS } from './lib/view-events.mjs';
 
 const L = (o) => JSON.stringify(o);
 const ID = 'E-1a2b3c4d5e6f';
@@ -576,4 +576,62 @@ test('F4 keys: ENGINE_WORD_KEYS lists every key the module emits', () => {
   grab(notableEvents([F({ ts: 10, node_id: 'n1', reason: '' })], 0, {}).find((e) => e.kind === 'node_finish'));
   for (const k of seen) assert.ok(ENGINE_WORD_KEYS.includes(k), `emitted but not listed: ${k}`);
   for (const k of ENGINE_WORD_KEYS) assert.ok(seen.has(k), `listed but never emitted: ${k}`);
+});
+
+// ---------- F2: attribution per Phase and the STORY Log (card 125 F2, F2-AC-45, 48) ----------
+
+test('F2-AC-48: phaseOfEvent - STORY nodes and keys are Build, manager nodes follow stageOfNode, a bare event names none', () => {
+  const ids = new Set(['P1']);
+  assert.equal(phaseOfEvent({ node_id: 'dispatch:P1:2' }, ids), 'build');
+  assert.equal(phaseOfEvent({ node_id: 'accept:P1:1' }, ids), 'build');
+  assert.equal(phaseOfEvent({ key: 'E-x/P1' }, ids), 'build');
+  assert.equal(phaseOfEvent({ subgoal_id: 'P1' }, ids), 'build');
+  assert.equal(phaseOfEvent({ node_id: 'critique' }, ids), 'plan');
+  assert.equal(phaseOfEvent({ node_id: 'integrate:1' }, ids), 'integrate');
+  assert.equal(phaseOfEvent({ node_id: 'integrate:2' }, ids), 'qa');
+  assert.equal(phaseOfEvent({ node_id: 'gate:goal:1' }, ids), 'gate');
+  assert.equal(phaseOfEvent({ node_id: 'report' }, ids), 'report');
+  assert.equal(phaseOfEvent({ event: 'integrated' }, ids), 'integrate');
+  assert.equal(phaseOfEvent({ event: 'asked' }, ids), null);
+});
+
+test('F2-AC-48: decisions follow decided_in\'s stage, else Plan', () => {
+  const d = (decided_in) => ({ question: 'q', chose: 'c', decided_in });
+  assert.equal(phaseOfDecision(d('P2'), ['P1', 'P2']), 'build');
+  assert.equal(phaseOfDecision(d('critique'), ['P1']), 'plan');
+  assert.equal(phaseOfDecision(d('gate:goal:1'), ['P1']), 'gate');
+  assert.equal(phaseOfDecision(d('qa'), ['P1']), 'qa');
+  for (const at of ['PLAN', 'EPIC', 'task', 'session', 'brainstorm', undefined, null]) assert.equal(phaseOfDecision(d(at), ['P1']), 'plan', String(at));
+  const out = phaseDecisions([d('P1'), d('PLAN'), { chose: 'no question' }, null], ['P1']);
+  assert.deepEqual([out.build.length, out.plan.length], [1, 1]);
+  assert.deepEqual(Object.keys(out), PHASES);
+});
+
+test('F2-AC-45: storyLog rows are { time, node, state, what_key, numbers, note } for this STORY only; keys are F2.log.*', () => {
+  const T = Date.UTC(2026, 0, 1, 9, 0, 0);
+  const lines = [
+    L({ ts: T, event: 'child_driver_spawned', task_id: ID, node_id: 'dispatch:P1:1' }),
+    L({ ts: T + 1000, event: 'verdict', task_id: ID, node_id: 'accept:P1:1', subgoal_id: 'P1', attempt: 1, verdict: 'reject', score: 61, reason: 'footer not cleared' }),
+    L({ ts: T + 2000, event: 'child_driver_spawned', task_id: ID, node_id: 'dispatch:P1:2' }),
+    L({ ts: T + 2500, event: 'node_finish', task_id: ID, node_id: 'dispatch:P1:2', state: 'done', commits: 3 }),
+    L({ ts: T + 3000, event: 'asked', task_id: ID, key: 'E-1a2b3c4d/P1', node_id: 'dispatch:P1:2', question: 'cents or dollars?' }),
+    L({ ts: T + 4000, event: 'verdict', task_id: ID, node_id: 'accept:P1:2', subgoal_id: 'P1', attempt: 2, verdict: 'accept', score: 91 }),
+    L({ ts: T + 5000, event: 'child_driver_spawned', task_id: ID, node_id: 'dispatch:P2:1' }),
+    L({ ts: T + 6000, event: 'node_finish', task_id: ID, node_id: 'size', state: 'done' }),
+  ];
+  const rows = storyLog(lines, 'P1', { threshold: 80, criteria: 4, subgoals: 3, gaps: { 'accept:P1:2': 2 } });
+  assert.deepEqual(rows.map((r) => r.what_key), ['F2.log.criteria', 'F2.log.subgoals', 'F2.log.attemptStart', 'F2.log.attemptReject', 'F2.log.attemptStart', 'F2.log.attemptCommits', 'F2.log.asked', 'F2.log.approved']);
+  assert.deepEqual(rows.map((r) => Object.keys(r).sort().join()), rows.map(() => 'node,note,numbers,state,time,ts,what_key'));
+  assert.deepEqual(rows[3].numbers, { n: 1, score: 61, threshold: 80 });
+  assert.equal(rows[3].note, 'footer not cleared');
+  assert.equal(rows[3].state, 'failed');
+  assert.deepEqual(rows[5].numbers, { n: 2, c: 3 });
+  assert.deepEqual(rows[6].numbers, { question: 'cents or dollars?' });
+  assert.deepEqual(rows[7].numbers, { gaps: 2 });
+  assert.equal(rows[7].state, 'done');
+  assert.ok(STORY_LOG_KEYS.includes('F2.log.approved') && rows.every((r) => STORY_LOG_KEYS.includes(r.what_key)));
+  // no commit count unless the event records one; no row for another STORY or a manager node
+  assert.equal(storyLog(lines.filter((l) => !/commits/.test(l)), 'P1').some((r) => r.what_key === 'F2.log.attemptCommits'), false);
+  assert.equal(storyLog(lines, 'P2').length, 1);
+  assert.deepEqual(storyLog([], 'P1'), []);
 });

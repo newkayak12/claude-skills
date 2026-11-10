@@ -508,7 +508,7 @@ test('worker states: you, done, idle, judge acting', () => {
     const you = summarize(m).you;
     assert.equal(you.count, 1);
     assert.deepEqual(you.items, ['story P1']); // items stay plain titles (back-compat)
-    assert.deepEqual(you.cards, [{ key: 'E-aaaaaaaa/P1', title: 'story P1', question: 'Keep the legacy PDF route?', who: 'P1', since: null }]);
+    assert.deepEqual(you.cards, [{ key: 'E-aaaaaaaa/P1', title: 'story P1', question: 'Keep the legacy PDF route?', who: 'P1', since: null, stage: 'ask' }]);
   } finally { w.cleanup(); }
 });
 
@@ -741,7 +741,7 @@ test('a STORY item carries its numbers as metrics; the existing try, max and cos
   const f = floorOf(m, { stories: { P2: { cost_usd: 3.75 } } });
   const by = Object.fromEntries(f.items.map((i) => [i.key, i]));
   assert.deepEqual(by.P2.metrics, {
-    attempt: 3, max_attempts: 3, judge: { score: 85, threshold: 90, reason: 'the footer is not cleared', gap: null },
+    attempt: 3, max_attempts: 3, judge: { score: 85, threshold: 90, verdict: null, attempt: 3, reason: 'the footer is not cleared', gap: null },
     cost_usd: 1.25, retry_cost_usd: 2.5, wall_ms: 180000, out_of_retries: true,
   });
   assert.equal(by.P2.cost_usd, 3.75, 'the desk cost the item already had is unchanged');
@@ -766,4 +766,86 @@ test('--once summary: items carry metrics read from the ledger (accept judge, ne
     assert.equal(p1.metrics.out_of_retries, false);
     assert.equal(p1.metrics.retry_cost_usd, 0);
   } finally { w.cleanup(); }
+});
+
+// ---------- F2: per-Phase counts and hand-offs (card 125 F2, F2-AC-41/42/45/48) ----------
+
+test('F2-AC-48: workers carry their Phase; phases count only workers[] and a stalled one needs its integer minutes', () => {
+  const m = { task_id: 't', state: 'running', ticket: { key: 'E-t' },
+    packages: [
+      { id: 'P1', title: 'a', phase: 'planning', dispatch: { state: 'running', started_at: 1 }, child: { max_retries: 2 } },
+      { id: 'P2', title: 'b', dispatch: { state: 'running', started_at: 1 }, child: { max_retries: 2 } },
+      { id: 'P3', title: 'c', dispatch: { state: 'running', started_at: 1 }, child: { max_retries: 2 } },
+      { id: 'P4', title: 'd', dispatch: { state: 'running', started_at: 1 }, child: { max_retries: 2 } },
+    ] };
+  const f = floorOf(m, { stories: { P1: { live: true, doing: 'x' }, P2: { live: true, doing: 'y' }, P3: { silent: true, minutes: 23 }, P4: { silent: true } }, judge: { live: true, doing: 'j' } }, { now: 0 });
+  assert.deepEqual(f.workers.map((w) => [w.id, w.phase]), [['PLAN', 'plan'], ['P2', 'build'], ['P3', 'build'], ['P4', 'build'], ['judge', 'gate']]);
+  const by = Object.fromEntries(f.phases.map((p) => [p.key, p]));
+  assert.deepEqual(f.phases.map((p) => p.key), ['plan', 'build', 'integrate', 'qa', 'gate', 'report']);
+  assert.deepEqual([by.plan.acting, by.build.acting, by.build.stalled, by.gate.acting], [1, 1, 1, 1]);
+  assert.equal(by.build.workers, 3);
+  // a stalled worker without minutes is not counted as stalled (no rule of this file's own)
+  assert.equal(f.workers.find((w) => w.id === 'P4').minutes, undefined);
+});
+
+test('F2-AC-48: hand-offs are per Phase, each with its own newest five; a STORY event is Build, a manager node its stage', () => {
+  const L = (o) => JSON.stringify({ task_id: 'E-t', ...o });
+  const ledger = [
+    L({ ts: 1000, event: 'verdict', node_id: 'accept:P1:1', subgoal_id: 'P1', verdict: 'reject' }),
+    L({ ts: 2000, event: 'waiting_human', node_id: 'ask:P1:1', key: 'E-t/P1' }),
+    L({ ts: 3000, event: 'verdict', node_id: 'critique', verdict: 'sound' }),
+    L({ ts: 4000, event: 'integrated', merged: 2 }),
+    ...[0, 1, 2, 3, 4, 5, 6].map((i) => L({ ts: 5000 + i, event: 'verdict', node_id: 'accept:P1:2', subgoal_id: 'P1', verdict: 'accept' })),
+  ];
+  const f = floorOf({ task_id: 't', state: 'running', ticket: { key: 'E-t' }, packages: [{ id: 'P1', title: 'a', dispatch: { state: 'running', started_at: 1 }, child: { max_retries: 2 } }] }, { ledger }, { now: 0 });
+  assert.equal(f.phase_handoffs.build.length, 5, 'Build keeps its own newest five');
+  assert.equal(f.phase_handoffs.plan.length, 1);
+  assert.equal(f.phase_handoffs.plan[0].what, 'verdict sound');
+  assert.equal(f.phase_handoffs.integrate.length, 1);
+  assert.deepEqual(f.phase_handoffs.qa, []);
+  assert.equal(f.handoffs.length, 5, 'the EPIC-wide list is unchanged');
+});
+
+test('F2-AC-2: an acting worker carries node, role and elapsed_ms from its running node; a waiting one is the TeamLeader\'s; absent where unrecorded', () => {
+  const model = (child) => ({ task_id: 't', state: 'running', ticket: { key: 'E-t' }, packages: [
+    { id: 'P1', title: 'a', dispatch: { state: 'running', started_at: 1000, stage: 'dispatch' }, child },
+    { id: 'P2', title: 'b', dispatch: { state: 'running', started_at: 1000, stage: 'dispatch' }, child: { max_retries: 2 } },
+    { id: 'P3', title: 'c', dispatch: { state: 'running', started_at: 1000, stage: 'dispatch' }, child: { max_retries: 2, nodes: [{ node_id: 'ask:P3:1', stage: 'ask', state: 'waiting_human', waiting_since: 31000 }] } },
+  ] });
+  const facts = { stories: { P1: { live: true }, P2: { live: true }, P3: { live: true } } };
+  const running = { max_retries: 2, nodes: [{ node_id: 'implement:U1:1', stage: 'implement', state: 'running', started_at: 1000 }] };
+  const f = floorOf(model(running), facts, { now: 61000 });
+  const by = Object.fromEntries(f.workers.map((x) => [x.id, x]));
+  assert.deepEqual([by.P1.node, by.P1.role, by.P1.elapsed_ms], ['implement', 'implementer', 60000]);
+  // a claimed dispatch with no inner node yet: nothing recorded, nothing sent
+  assert.deepEqual(['node', 'role', 'elapsed_ms'].map((k) => k in by.P2), [false, false, false]);
+  assert.deepEqual([by.P3.node, by.P3.role, by.P3.elapsed_ms], ['ask', 'TeamLeader', 30000]);
+  // a stalled worker keeps only its minutes
+  const stalled = floorOf({ ...model(running), state: 'stalled', stall: { minutes: 23 } }, { stories: {} }, { now: 61000 });
+  assert.deepEqual(['node', 'role', 'elapsed_ms'].map((k) => k in stalled.workers[0]), [false, false, false]);
+});
+
+test('F2-AC-2: Phase hand-offs carry story, a verdict\'s score, reason and next role, and a question is TeamLeader to you; the EPIC-wide list keeps its fields', () => {
+  const L = (o) => JSON.stringify({ task_id: 'E-t', ...o });
+  const ledger = [
+    L({ ts: 1000, event: 'verdict', node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', verdict: 'accept', score: 91, reason: null }),
+    L({ ts: 2000, event: 'verdict', node_id: 'accept:P2:1', stage: 'accept', subgoal_id: 'P2', verdict: 'reject', score: 61, reason: 'AC 3 missing' }),
+    L({ ts: 3000, event: 'asked', key: 'E-t/P2', question: 'How many retries?' }),
+    L({ ts: 4000, event: 'verdict', node_id: 'critique', verdict: 'sound' }),
+    L({ ts: 5000, event: 'integrated', merged: 2 }),
+  ];
+  const f = floorOf({ task_id: 't', state: 'running', ticket: { key: 'E-t' }, packages: [{ id: 'P1', title: 'a', dispatch: { state: 'running', started_at: 1 }, child: { max_retries: 2 } }, { id: 'P2', title: 'b', dispatch: { state: 'running', started_at: 1 }, child: { max_retries: 2 } }] }, { ledger }, { now: 0 });
+  const b = f.phase_handoffs.build;
+  assert.deepEqual(b.map((h) => h.story), ['P2', 'P2', 'P1']);
+  assert.deepEqual([b[2].score, b[2].to_role, 'reason' in b[2]], [91, 'integrate', false]);
+  assert.deepEqual([b[1].score, b[1].reason, b[1].to_role], [61, 'AC 3 missing', 'implementer']);
+  assert.deepEqual([b[0].from, b[0].what, b[0].reason, b[0].to, b[0].to_key], ['TeamLeader', '', 'How many retries?', 'you', 'partyYou']);
+  // a manager verdict and an integration record no story and no flow
+  assert.deepEqual([f.phase_handoffs.plan[0].story, f.phase_handoffs.plan[0].to_role, f.phase_handoffs.integrate[0].story], [undefined, undefined, undefined]);
+  assert.deepEqual(Object.keys(f.handoffs.find((h) => h.what === 'verdict reject')).sort(), ['from', 'time', 'to', 'what', 'what_key', 'what_vars']);
+});
+
+test('floor source: no use of metrics.drivers.stalled or taskStalled', () => {
+  const src = readFileSync(join(dirname(VIEW), 'lib', 'view-floor.mjs'), 'utf8');
+  assert.ok(!/metrics\.drivers\.stalled|taskStalled/.test(src));
 });

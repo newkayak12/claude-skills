@@ -10,7 +10,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { teamsView, decisionsView } from './lib/view-status.mjs';
+import { teamsView, decisionsView, decisionCounts, needsEntries } from './lib/view-status.mjs';
+
+const PHASE_NAMES = ['plan', 'build', 'integrate', 'qa', 'gate', 'report'];
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const NOW = 1_000_000;
@@ -93,12 +95,54 @@ test('decisions: a re-judged node keeps its earlier and later verdict, each with
 test('decisions: proposal, retry, defect with evidence, answer, resplit, decisions[] in time order; unknown events dropped', () => {
   const { entries } = decisionsView(TASK, LEDGER);
   assert.deepEqual(entries.map((e) => e.kind), ['proposal', 'verdict', 'rejudge', 'verdict', 'verdict', 'retry', 'defect', 'answer', 'resplit', 'decision']);
-  assert.deepEqual(entries[0], { ts: 1, time: '00:00', card: null, node: 'shape', kind: 'proposal', actor: 'claude·opus', text: 'P1 module a; P2 module b' });
+  assert.deepEqual(entries[0], { ts: 1, time: '00:00', card: null, node: 'shape', kind: 'proposal', actor: 'claude·opus', text: 'P1 module a; P2 module b', phase: 'plan' });
   const d = entries.find((e) => e.kind === 'defect');
   assert.deepEqual([d.card, d.title, d.filed_by, d.evidence], ['D1', 'b.txt not wired', 'qa', 'node b.mjs prints undefined']);
   assert.equal(entries.filter((e) => e.kind === 'defect').length, 1, 'defects_filed and the caller line name D1 once');
-  assert.deepEqual(entries.find((e) => e.kind === 'answer'), { ts: 8, time: '00:00', card: 'TASK', node: 'critique', kind: 'answer', actor: 'human', text: 'reject: overlap' });
-  assert.deepEqual(entries.at(-1), { ts: null, time: null, card: null, node: null, kind: 'decision', actor: 'requester', text: 'storage?: files', reason: 'no db here', decided_in: 'EPIC' });
+  assert.deepEqual(entries.find((e) => e.kind === 'answer'), { ts: 8, time: '00:00', card: 'TASK', node: 'critique', kind: 'answer', actor: 'human', actor_key: 'actorHuman', text: 'reject: overlap', phase: 'plan' });
+  assert.deepEqual(entries.at(-1), { ts: null, time: null, card: null, node: null, kind: 'decision', actor: 'requester', text: 'storage?: files', reason: 'no db here', decided_in: 'EPIC', phase: 'plan' });
+});
+
+test('F2-AC-48: every entry carries its Phase from the engine: STORY nodes and cards are build, a manager node its stage, a task.decisions entry follows decided_in', () => {
+  const { entries } = decisionsView(TASK, LEDGER);
+  const phaseOf = (pred) => entries.find(pred).phase;
+  assert.equal(phaseOf((e) => e.kind === 'proposal'), 'plan');
+  assert.equal(phaseOf((e) => e.node === 'accept:P1:1'), 'build');
+  assert.equal(phaseOf((e) => e.kind === 'retry'), 'build', 'a card event with no node is build');
+  assert.equal(phaseOf((e) => e.kind === 'verdict' && e.node === 'integrate:1'), 'integrate');
+  assert.ok(entries.every((e) => PHASE_NAMES.includes(e.phase)));
+  const decided = (decided_in) => decisionsView({ ...TASK, decisions: [{ question: 'q', chose: 'c', decided_in }] }, []).entries[0].phase;
+  assert.equal(decided('P1'), 'build', 'a STORY id');
+  assert.equal(decided('qa'), 'qa', 'a Phase name');
+  assert.equal(decided('integrate:1'), 'integrate', 'a node id');
+  assert.equal(decided('EPIC'), 'plan');
+  assert.equal(decided(undefined), 'plan');
+});
+
+test('F2-AC-48: the count of each Phase is taken from the same entries, so FLOOR and the Phase thread agree', () => {
+  const task = { ...TASK, decisions: [...TASK.decisions, { question: 'q', chose: 'c', decided_in: 'P1' }, { question: 'r', chose: 'c', decided_in: 'qa' }] };
+  const counts = decisionCounts(task, LEDGER.map((l) => JSON.stringify(l)));
+  const { entries } = decisionsView(task, LEDGER);
+  assert.deepEqual(counts.map((c) => c.key), PHASE_NAMES);
+  for (const c of counts) assert.equal(c.decisions, entries.filter((e) => e.phase === c.key).length, c.key);
+  assert.equal(counts.reduce((n, c) => n + c.decisions, 0), entries.length);
+  assert.equal(counts.find((c) => c.key === 'qa').decisions, 1);
+  assert.ok(counts.find((c) => c.key === 'build').decisions >= 3);
+});
+
+test('needsEntries: a retro reason the engine wrote carries its key, name and reason beside the text; other items are text only', () => {
+  const retro = { next_backlog: { unaccepted_packages: [
+    { id: 'P1', title: 'ledger', reason: 'never dispatched', reason_key: 'reasonNeverDispatched', reason_vars: {} },
+    { id: 'P2', title: 'audit', reason: 'state: pending', reason_key: 'reasonState', reason_vars: { state: 'pending' } },
+    { id: 'P3', title: 'plain', reason: 'tests red' },
+  ] } };
+  const items = ['ledger: never dispatched', 'audit: state: pending', 'plain: tests red', 'a note'];
+  assert.deepEqual(needsEntries(items, retro), [
+    { text: items[0], name: 'ledger', reason: 'never dispatched', reason_key: 'reasonNeverDispatched', reason_vars: {} },
+    { text: items[1], name: 'audit', reason: 'state: pending', reason_key: 'reasonState', reason_vars: { state: 'pending' } },
+    { text: items[2] }, { text: items[3] },
+  ]);
+  assert.deepEqual(needsEntries(items, null).map((e) => e.text), items);
 });
 
 test('decisions: --card narrows to one card (a QA round suffix ignored); nothing for an empty task', () => {
@@ -170,4 +214,27 @@ test('status: a harness_run task is listed as running and its done/total counts 
   } finally {
     rmSync(f.root, { recursive: true, force: true });
   }
+});
+
+test('decisions: engine-composed words carry a key and numbers beside the English (F4-GAP-1 engine side)', () => {
+  const task = {
+    nodes: [
+      { node_id: 'size', stage: 'size', state: 'done', vendor: 'claude', model: 'opus', result: { size: 'S', flow: 'develop' } },
+      { node_id: 'areas', stage: 'areas', state: 'done', vendor: 'claude', model: 'opus', result: { areas: [{ id: 'F1', title: 'module a' }] } },
+    ],
+  };
+  const ledger = [
+    { ts: 1, event: 'node_finish', node_id: 'size', stage: 'size', state: 'done' },
+    { ts: 2, event: 'node_finish', node_id: 'areas', stage: 'areas', state: 'done' },
+    { ts: 3, event: 'plan_integrate_resplit', node_id: 'plan-integrate:1', attempt: 2 },
+    { ts: 4, event: 'plan_integrate_replan', node_id: 'plan-integrate:1', opened: ['P1', 'P2'] },
+    { ts: 5, event: 'tm_submit_human', node_id: 'critique', answer: 'ok' },
+  ];
+  const [size, areas, resplit, replan, answer] = decisionsView(task, ledger).entries;
+  assert.deepEqual([size.text, size.text_key, size.text_vars], ['size S · develop', 'proposalSizeFlow', { size: 'S', flow: 'develop' }]);
+  assert.equal(areas.text, 'module a');
+  assert.equal(areas.text_key, undefined, 'a model-written area title stays data');
+  assert.deepEqual([resplit.reason, resplit.reason_key, resplit.reason_vars], ['resplit → areas:2', 'resplitAreas', { n: 2 }]);
+  assert.deepEqual([replan.reason, replan.reason_key, replan.reason_vars], ['replan P1, P2', 'replanIds', { ids: 'P1, P2' }]);
+  assert.deepEqual([answer.actor, answer.actor_key], ['human', 'actorHuman']);
 });

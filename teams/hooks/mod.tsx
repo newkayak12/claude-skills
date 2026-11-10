@@ -1,25 +1,33 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Dash, Decision, DecisionsPayload, Mark, PaneView, ReportPayload, StatusInfo, SummaryItem, SummaryTask, SummaryTaskEntry, TeamsEvent, TeamsView } from '../types'
-import { askBandShown, carriesInput, fallbackSelection, paneKey, paneSlash, statusAnswer, stepClamp, storyRows } from './pane'
-import { STORY_SHRINK, clipText, columnWidths, epicCells, epicState, handoffCells, renderLines, rowLine, runCells, since, storyCells, tabRowPlan, footerPlan, workerCells } from './teams-draw'
-import type { Line } from './teams-draw'
+import type { Dash, DecisionsPayload, ReportPayload, StatusInfo, SummaryTask, SummaryTaskEntry, TeamsEvent, TeamsView } from '../types'
+import { HOME, askBandShown, carriesInput, fallbackSelection, levelOf, pageEsc, pageKey, pageStep, paneSlash, reconcileEpic, selectedOf, statusAnswer } from './pane'
+import type { Page, PageKey, PageNav, RowRef, StepCtx, StepResult } from './pane'
+import { HOME_PLANS, PAGE_ROWS, PHASE_KEYS, clipText, costText, epicElapsed, floorRows, footerPlan, homeHeader, homeRows, isEnded, logLines, needsOf, pageLines, phaseLines, renderLines, rowIdsOf, since, storyGrid, storyLabel, storyNow, storyReportLines, storyRows, storyTop, width, windowOf } from './teams-draw'
+import type { DecisionX, Line, PageOpts, PageRow, PhaseEntry, StoryPayload, StoryReport } from './teams-draw'
 
 const cursor = atom({ plugin: 'teams', key: 'cursor' } as const, 0)
 const status = atom({ plugin: 'teams', key: 'status' } as const, null as StatusInfo | null)
 const summary = atom({ plugin: 'teams', key: 'summary' } as const, null as SummaryTask | null)
 const teams = atom({ plugin: 'teams', key: 'teams' } as const, null as TeamsView | null)
 const dash = atom({ plugin: 'teams', key: 'dash' } as const, null as Dash | null)
-const decisions = atom({ plugin: 'teams', key: 'decisions' } as const, null as { task_id: string; card: string | null; payload: DecisionsPayload } | null)
-const selected = atom({ plugin: 'teams', key: 'selected' } as const, null as string | null)
 const watch = atom({ plugin: 'teams', key: 'watch' } as const, [] as string[])
-const view = atom({ plugin: 'teams', key: 'view' } as const, 'dash' as PaneView)
-// every listed EPIC (live first, then stalled), the ids of the tick before, the one the pane shows, and the STORY row `g` opens
+// every listed EPIC (live first, then stalled), the ids of the tick before, and the one the data call is for
 const tasks = atom({ plugin: 'teams', key: 'tasks' } as const, [] as SummaryTaskEntry[])
 const taskIds = atom({ plugin: 'teams', key: 'taskIds' } as const, [] as string[])
 const epic = atom({ plugin: 'teams', key: 'epic' } as const, null as string | null)
-const row = atom({ plugin: 'teams', key: 'row' } as const, 0)
+// the page stack (pane.ts PageNav): the page, the page ANSWER came from, the row id and scroll offset per level, the ended EPICs
+// shown open. The pane's page decides the EPIC the data call is for.
+const page = atom({ plugin: 'teams', key: 'page' } as const, HOME as Page)
+const pageFrom = atom({ plugin: 'teams', key: 'pageFrom' } as const, null as Page | null)
+const pageSel = atom({ plugin: 'teams', key: 'pageSel' } as const, {} as Record<string, string>)
+const pageScroll = atom({ plugin: 'teams', key: 'pageScroll' } as const, {} as Record<string, number>)
+const unfolded = atom({ plugin: 'teams', key: 'unfolded' } as const, {} as Record<string, boolean>)
+// `n` found no flag: a dim line says so until the next key
+const flagHint = atom({ plugin: 'teams', key: 'flagHint' } as const, false)
+// a counter only: answer mode's draft lives in a module variable, and a change to it bumps this so the pane redraws
+const answerRev = atom({ plugin: 'teams', key: 'answerRev' } as const, 0)
 // the pane Input's text: drawn as its value, so a handled key can draw '' and the host drops what was typed
 const typed = atom({ plugin: 'teams', key: 'typed' } as const, '')
 // the spinner frame beside an acting worker; moved by the 800 ms clock only while a worker acts
@@ -29,6 +37,11 @@ const report = atom({ plugin: 'teams', key: 'report' } as const, null as { task_
 // the report behind the end-of-run card: its own atom, so an open Report tab on another task never
 // replaces it (nor it the tab)
 const cardReport = atom({ plugin: 'teams', key: 'cardReport' } as const, null as { task_id: string; payload: ReportPayload } | null)
+// what the open page reads beyond the listing, each keyed to the EPIC (and STORY) it was fetched for so a page never draws another's:
+// a Phase page's decisions thread, a STORY's payload (STORY and Log pages), a STORY's report
+const decisions = atom({ plugin: 'teams', key: 'decisions' } as const, null as { task_id: string; payload: DecisionsPayload } | null)
+const storyData = atom({ plugin: 'teams', key: 'storyData' } as const, null as { task_id: string; story: string; payload: StoryPayload } | null)
+const storyDoc = atom({ plugin: 'teams', key: 'storyDoc' } as const, null as { task_id: string; story: string; payload: StoryReport } | null)
 const lang = atom({ plugin: 'teams', key: 'lang' } as const, 'en' as 'en' | 'ko')
 // set once the person pressed `l` or the Button; from then on the session.start setting no longer decides the language
 const langChosen = atom({ plugin: 'teams', key: 'langChosen' } as const, false)
@@ -43,9 +56,10 @@ const PANE = 'teams-status'
 // opened by the person: it takes the keys, and Escape hands them back by closing it
 // 'Teams' is the product name: on the lang-allow ALLOW list, so it is not a table word
 const OPEN = { id: PANE, title: 'Teams', focus: true, closeOnEscape: true } as const
+// while answering Esc is the person's, not the host's close (F2-AC-12)
+const OPEN_ANSWER = { id: PANE, title: 'Teams', focus: true } as const
 
 const en = {
-  tabDash: 'Home', tabFloor: 'Floor', tabStories: 'STORYs', tabDecisions: 'Decisions', tabLog: 'Log', tabReport: 'Report', close: 'q close',
   teamPlanning: 'Planning', teamDevelop: 'Develop', teamQa: 'QA', teamAudit: 'Audit', teamEpic: 'EPIC', nodeWaiting: 'waiting for you',
   decAll: 'all cards', decCard: 'Card {c}', decNone: 'No decisions recorded yet.',
   kindProposal: 'proposed', kindRetry: 'retry', kindRejudge: 're-judge', kindResplit: 're-split', kindDefect: 'defect filed', kindAnswer: 'answered', kindDecision: 'decided',
@@ -70,7 +84,7 @@ const en = {
   asksYou: '{who} asks you: {q}',
   board: 'board', inboxOne: '{n} question for you', inboxMany: '{n} questions for you', statusWaiting: 'needs you: {n} waiting - open /teams-status',
   pushRejected: 'rejected', pushNeedsYou: 'needs you', pushEnded: 'run ended', nodeFailed: 'failed',
-  prev: '◀', next: '▶', keysHint: '[ ] EPIC · j k row · 0-5 tabs', openHint: 'g open run', noStories: 'No STORY at work.',
+  noStories: 'No STORY at work.',
   runBudget: 'Budget', runBudgetOf: '{spent} of {limit}', runDrivers: 'Drivers', runLive: '{n} live', runLiveCap: '{n}/{cap} live',
   runStalled: 'Stalled', runStalledOne: '{id} {m}m', runDenials: 'Denials', runDefects: 'Defects', runDefectsOf: '{filed} filed · {dropped} dropped',
   runOutOfRetries: 'Out of retries', runScopedOut: 'Scoped out', storyJudge: 'judge {score} vs {threshold}', storyJudgeBare: 'judge {score}', storyGap: 'own gap: {gap}',
@@ -88,18 +102,47 @@ const en = {
   askTo: '⚑ {who} → you', stateBlocked: 'blocked', stateCancelled: 'cancelled',
   ticketDone: 'done', ticketBlocked: 'blocked', ticketInProgress: 'in progress', ticketReady: 'ready', ticketInReview: 'in review', ticketCancelled: 'cancelled', ticketStalled: 'stalled',
   ticketBacklog: 'backlog', ticketUnreachable: 'unreachable', ticketWaitingCapacity: 'waiting for capacity', ticketWaitingHuman: 'waiting for you', ticketRejected: 'rejected', ticketSettled: 'settled', ticketUnknown: 'unknown',
-  stateWaitingHuman: 'waiting_human', stateStale: 'stale', stateUnknown: 'unknown', statePartial: 'partial',
+  stateWaitingHuman: 'waiting_human', stateStale: 'stale', stateUnknown: 'unknown', statePartial: 'partial', statePending: 'pending',
   doneCancelled: 'cancelled', doneRunning: 'running', doneWaitingHuman: 'waiting_human',
   laneRunning: 'In progress', laneYou: 'Needs you', lanePending: 'Up next', laneDone: 'Done',
   langMarker: 'l {lang}', langEN: 'EN', langKR: 'KR',
-  footFloor: 'w s move · d ⏎ Phase detail · a back · n next ⚑ · q close', footLog: 'w s scroll · a back · q close',
+  // F2 page-stack words. Key = the spec's dotted name with the dots dropped and each part capitalised, after `f2`
+  // (F2.page.floor -> f2PageFloor; pane.ts f2Key does it for a key the engine sends, e.g. F2.log.*). Families: page, phase.name, rail,
+  // crumb, hint, home, fold, row, phase, story, log, report, answer, btn, flag, foot, floor.
+  f2PageFloor: 'FLOOR', f2PageLog: 'Log', f2PageReport: 'Report',
+  f2PhaseNamePlan: 'Plan', f2PhaseNameBuild: 'Build', f2PhaseNameIntegrate: 'Integrate', f2PhaseNameQa: 'QA', f2PhaseNameGate: 'Gate', f2PhaseNameReport: 'Report',
+  f2RailIntegrate: 'Integ', f2RailReport: 'Rep', f2CrumbStory: 'STORY {id}', f2HintNoFlag: 'No ⚑ waiting',
+  f2HomeDrivers: 'drivers {n}/{max} · load {l}/{max} (machine-wide)',
+  f2FoldEnded: 'ended {ago} ago · STORY {done}/{total}', f2FoldHasReport: 'report ready', f2FoldUnfold: 'd unfold', f2FoldRefold: 'a fold',
+  f2RowRejected: 'last {score}/{threshold} · {reason}', f2RowRetrying: 'try {n}/{max}', f2RowStalledMinutes: '⏸ {m}m', f2RowAgents: '{n} ag',
+  f2PhaseRunning: 'Running', f2PhaseHandoffs: 'Handed over', f2PhaseDecisions: 'Decisions (this Phase)', f2PhaseAccept: 'accept {score}', f2PhaseReject: 'reject {score}',
+  f2StoryFlow: 'FLOW', f2StoryProgress: 'Progress', f2StoryParticipants: 'Participants', f2StoryGrid: 'Attempts', f2StoryNow: 'Now',
+  f2StoryTryLine: 'this try {n}/{m} nodes · total {t}/{u} (based on {k} tries)', f2StoryAgents: 'subagent: {total} total · {live} live',
+  f2StoryLogRow: 'Log {n} · last {ago} ago', f2StoryReportRow: 'Report: appears after the gate passes', f2StoryAnswerRow: '⏎ answer',
+  f2LogCount: '{n} entries', f2LogAttemptStart: 'attempt {n} started', f2LogAttemptCommits: 'attempt {n} commits {c}',
+  f2LogAttemptReject: 'attempt {n} reject {score}/{threshold}', f2LogApproved: 'approved ({gaps} gaps)', f2LogCriteria: '{n} acceptance criteria',
+  f2LogSubgoals: '{n} subgoals', f2LogAsked: 'TeamLeader → me "{question}"',
+  f2ReportNotAvailable: 'Not available yet: appears after the gate passes', f2ReportSeeLog: 'Look again', f2ReportAccepted: 'accepted {score}/{threshold} · {t}',
+  f2ReportVerdictLine: 'judge {score} / threshold {threshold} · attempt {n}/{max}', f2ReportTestsPassed: '{n} tests passed',
+  f2ReportResult: 'Result', f2ReportVerdict: 'Judge', f2ReportFiles: 'Files changed', f2ReportDecisions: 'Decisions', f2ReportLeft: 'Left over',
+  f2AnswerTitle: 'Answer the question', f2AnswerPrompt: 'Answer', f2AnswerContext: 'Context', f2AnswerSend: '⏎ send', f2AnswerCancel: 'empty ⏎ cancel',
+  f2AnswerDesktopOnly: 'answer on a desktop', f2AnswerAccepted: 'Answer sent', f2AnswerRefused: 'Not accepted: {reason}', f2AnswerFailed: 'Could not run the answer tool: {reason}',
+  f2BtnUp: '▲', f2BtnDown: '▼', f2BtnOpen: 'open', f2BtnBack: 'back', f2BtnFlag: '⚑', f2BtnClose: 'close',
+  f2FlagTitle: 'Waiting for you {n}', f2FlagAge: '{m} waiting', f2FlagDriverSilent: 'no output for {m} (driver stopped?)',
+  f2FootHome: 'w s move · d ⏎ open (EPIC → Floor · STORY → detail) · n next ⚑ · q close', f2FootFloor: 'w s move · d ⏎ Phase detail · a back · n next ⚑ · q close',
+  f2FootStory: 'w s move · d ⏎ open · a back · n next ⚑ · q close', f2FootScroll: 'w s scroll · a back · n next ⚑ · q close',
+  f2FootAnswer: 'Input mode: letters go in as typed · ⏎ send · empty ⏎ cancel',
+  f2FloorPhaseOf: 'Phase {n}/6', f2FloorDecisionsN: 'decisions {n}', f2FloorReportHint: 'EPIC report opens here',
+  // keys the engine sends beside its English (view-status decisions, docs.mjs unaccepted_packages); the English stays beside each
+  actorHuman: 'human', proposalSize: 'size {size}', proposalSizeFlow: 'size {size} · {flow}',
+  resplitAreas: 'resplit → areas:{n}', resplit: 'resplit', replanIds: 'replan {ids}',
+  reasonNeverDispatched: 'never dispatched', reasonState: 'state: {state}',
 }
 
 // one table, two languages; the type keeps the keys identical
 export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
   en,
   ko: {
-    tabDash: '홈', tabFloor: '현장', tabStories: 'STORY', tabDecisions: '결정', tabLog: '기록', tabReport: '보고서', close: 'q 닫기',
     teamPlanning: '기획', teamDevelop: '개발', teamQa: 'QA', teamAudit: '감사', teamEpic: 'EPIC', nodeWaiting: '답변 대기',
     decAll: '전체 카드', decCard: '카드 {c}', decNone: '아직 기록된 결정이 없습니다.',
     kindProposal: '제안', kindRetry: '재시도', kindRejudge: '재판정', kindResplit: '재분할', kindDefect: '결함 등록', kindAnswer: '답변', kindDecision: '결정',
@@ -124,7 +167,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     asksYou: '{who}님이 묻습니다: {q}',
     board: '보드', inboxOne: '질문 {n}건', inboxMany: '질문 {n}건', statusWaiting: '확인 필요: {n}건 대기 - /teams-status 열기',
     pushRejected: '반려', pushNeedsYou: '확인 필요', pushEnded: '실행 종료', nodeFailed: '실패',
-    prev: '◀', next: '▶', keysHint: '[ ] EPIC · j k 행 · 0-5 탭', openHint: 'g 실행 열기', noStories: '진행 중인 STORY가 없습니다.',
+    noStories: '진행 중인 STORY가 없습니다.',
     runBudget: '예산', runBudgetOf: '{spent} / {limit}', runDrivers: '드라이버', runLive: '{n}개 동작 중', runLiveCap: '{n}/{cap} 동작 중',
     runStalled: '멈춤', runStalledOne: '{id} {m}분', runDenials: '거부', runDefects: '결함', runDefectsOf: '등록 {filed} · 폐기 {dropped}',
     runOutOfRetries: '재시도 소진', runScopedOut: '범위 밖', storyJudge: '판정 {score} / 기준 {threshold}', storyJudgeBare: '판정 {score}', storyGap: '자체 결함: {gap}',
@@ -142,11 +185,37 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     askTo: '⚑ {who} → 나', stateBlocked: '막힘', stateCancelled: '취소됨',
     ticketDone: '완료', ticketBlocked: '막힘', ticketInProgress: '진행 중', ticketReady: '준비됨', ticketInReview: '검토 중', ticketCancelled: '취소됨', ticketStalled: '멈춤',
     ticketBacklog: '대기열', ticketUnreachable: '도달 불가', ticketWaitingCapacity: '자리 대기', ticketWaitingHuman: '확인 필요', ticketRejected: '반려됨', ticketSettled: '종결', ticketUnknown: '알 수 없음',
-    stateWaitingHuman: '확인 필요', stateStale: '오래됨', stateUnknown: '알 수 없음', statePartial: '일부 완료',
+    stateWaitingHuman: '확인 필요', stateStale: '오래됨', stateUnknown: '알 수 없음', statePartial: '일부 완료', statePending: '대기',
     doneCancelled: '취소됨', doneRunning: '진행 중', doneWaitingHuman: '확인 필요',
     laneRunning: '진행 중', laneYou: '확인 필요', lanePending: '대기', laneDone: '완료',
     langMarker: 'l {lang}', langEN: 'EN', langKR: 'KR',
-    footFloor: 'w s 이동 · d ⏎ Phase 상세 · a 뒤로 · n 다음 ⚑ · q 닫기', footLog: 'w s 스크롤 · a 뒤로 · q 닫기',
+    f2PageFloor: 'FLOOR', f2PageLog: 'Log', f2PageReport: 'Report',
+    f2PhaseNamePlan: 'Plan', f2PhaseNameBuild: 'Build', f2PhaseNameIntegrate: 'Integrate', f2PhaseNameQa: 'QA', f2PhaseNameGate: 'Gate', f2PhaseNameReport: 'Report',
+    f2RailIntegrate: 'Integ', f2RailReport: 'Rep', f2CrumbStory: 'STORY {id}', f2HintNoFlag: '대기 중인 ⚑ 없음',
+    f2HomeDrivers: 'drivers {n}/{max} · load {l}/{max} (머신 전체)',
+    f2FoldEnded: '끝남 {ago} 전 · STORY {done}/{total}', f2FoldHasReport: '보고서 있음', f2FoldUnfold: 'd 펼치기', f2FoldRefold: 'a 접기',
+    f2RowRejected: '직전 {score}/{threshold} · {reason}', f2RowRetrying: 'try {n}/{max}', f2RowStalledMinutes: '⏸ {m}분', f2RowAgents: '{n} ag',
+    f2PhaseRunning: '돌고 있음', f2PhaseHandoffs: '넘겨준 일', f2PhaseDecisions: '결정 (이 Phase)', f2PhaseAccept: 'accept {score}', f2PhaseReject: 'reject {score}',
+    f2StoryFlow: 'FLOW', f2StoryProgress: '진행', f2StoryParticipants: '참가', f2StoryGrid: '시도', f2StoryNow: '지금',
+    f2StoryTryLine: '이번 시도 {n}/{m} 노드 · 전체 {t}/{u} (시도 {k}회 기준)', f2StoryAgents: 'subagent 누적 {total} · 지금 {live}',
+    f2StoryLogRow: 'Log {n}건 · 마지막 {ago} 전', f2StoryReportRow: 'Report: gate 통과 후 생김', f2StoryAnswerRow: '⏎ 답하기',
+    f2LogCount: '{n}건', f2LogAttemptStart: '시도 {n} 시작', f2LogAttemptCommits: '시도 {n} 커밋 {c}건',
+    f2LogAttemptReject: '시도 {n} reject {score}/{threshold}', f2LogApproved: '승인 (지적 {gaps})', f2LogCriteria: '완료 기준 {n}개',
+    f2LogSubgoals: '하위 목표 {n}개', f2LogAsked: 'TeamLeader → 나 "{question}"',
+    f2ReportNotAvailable: '아직 없음: gate 통과 후 생김', f2ReportSeeLog: '다시 보기', f2ReportAccepted: 'accepted {score}/{threshold} · {t}',
+    f2ReportVerdictLine: 'judge {score} / 기준 {threshold} · 시도 {n}/{max}', f2ReportTestsPassed: '테스트 {n} 통과',
+    f2ReportResult: '결과', f2ReportVerdict: '판정', f2ReportFiles: '바뀐 파일', f2ReportDecisions: '결정', f2ReportLeft: '남은 일',
+    f2AnswerTitle: '질문에 답하기', f2AnswerPrompt: '답', f2AnswerContext: '맥락', f2AnswerSend: '⏎ 보내기', f2AnswerCancel: '빈 ⏎ 취소',
+    f2AnswerDesktopOnly: '데스크톱에서 답해 주세요', f2AnswerAccepted: '답을 보냈습니다', f2AnswerRefused: '받지 못했습니다: {reason}', f2AnswerFailed: '답변 도구를 실행하지 못했습니다: {reason}',
+    f2BtnUp: '▲', f2BtnDown: '▼', f2BtnOpen: '열기', f2BtnBack: '뒤로', f2BtnFlag: '⚑', f2BtnClose: '닫기',
+    f2FlagTitle: '나를 기다림 {n}', f2FlagAge: '{m} 대기', f2FlagDriverSilent: '응답 없음 {m} (드라이버 멈춤?)',
+    f2FootHome: 'w s 이동 · d ⏎ 열기 (EPIC → FLOOR · STORY → 상세) · n 다음 ⚑ · q 닫기', f2FootFloor: 'w s 이동 · d ⏎ Phase 상세 · a 뒤로 · n 다음 ⚑ · q 닫기',
+    f2FootStory: 'w s 이동 · d ⏎ 열기 · a 뒤로 · n 다음 ⚑ · q 닫기', f2FootScroll: 'w s 스크롤 · a 뒤로 · n 다음 ⚑ · q 닫기',
+    f2FootAnswer: '입력 모드: 글자가 그대로 들어감 · ⏎ 보내기 · 빈 ⏎ 취소',
+    f2FloorPhaseOf: 'Phase {n}/6', f2FloorDecisionsN: '결정 {n}', f2FloorReportHint: 'EPIC 보고서는 여기서 열림',
+    actorHuman: '사람', proposalSize: '규모 {size}', proposalSizeFlow: '규모 {size} · {flow}',
+    resplitAreas: '재분할 → 영역:{n}', resplit: '재분할', replanIds: '재계획 {ids}',
+    reasonNeverDispatched: '시작된 적 없음', reasonState: '상태: {state}',
   },
 }
 
@@ -161,10 +230,6 @@ const wordOr = (words: Record<string, string>, key: string, fallback: string, va
 // `in_progress` -> `InProgress`: an engine state word as the tail of a table key
 const camel = (w: string) => w.toLowerCase().split('_').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('')
 
-const MARK: Record<Mark, string> = { done: '✔', running: '●', pending: '○', failed: '✘' }
-// the stage rail: a dot per stage, a solid rail up to where the run is, dotted after
-const DOT: Record<Mark, string> = { done: '●', running: '◉', pending: '○', failed: '✘' }
-const TINT: Record<Mark, string> = { done: 'success', running: 'claude', pending: 'inactive', failed: 'error' }
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 const VERDICT_WORD: Record<string, keyof typeof en> = { accept: 'vAccept', sound: 'vSound', verified: 'vVerified', reject: 'vReject', judge_failed: 'vJudgeFailed' }
@@ -188,9 +253,91 @@ function taskIdOf(r: { result?: unknown; text?: unknown }): string | undefined {
   }
 }
 
-// the pane's task: the picked EPIC, else the last watched one, else this cwd's newest running one (from the tick's status)
+// the pane's task: the EPIC of the open page, else the picked one, else the last watched one, else this cwd's newest running one (from the tick's status)
 async function paneTask($: EngineInterface): Promise<string | undefined> {
-  return (await read($, epic)) ?? (await read($, watch)).at(-1) ?? (await read($, status))?.latest ?? undefined
+  return (await read($, page)).epic ?? (await read($, epic)) ?? (await read($, watch)).at(-1) ?? (await read($, status))?.latest ?? undefined
+}
+
+// the page stack as one value, and back: only what changed is written
+async function readNav($: EngineInterface): Promise<PageNav> {
+  return { page: await read($, page), from: await read($, pageFrom), sel: await read($, pageSel), scroll: await read($, pageScroll), unfolded: await read($, unfolded) }
+}
+async function writeNav($: EngineInterface, nav: PageNav): Promise<void> {
+  const cur = await readNav($)
+  if (JSON.stringify(nav.page) !== JSON.stringify(cur.page)) await update($, page, () => nav.page)
+  if (JSON.stringify(nav.from) !== JSON.stringify(cur.from)) await update($, pageFrom, () => nav.from)
+  if (JSON.stringify(nav.sel) !== JSON.stringify(cur.sel)) await update($, pageSel, () => nav.sel)
+  if (JSON.stringify(nav.scroll) !== JSON.stringify(cur.scroll)) await update($, pageScroll, () => nav.scroll)
+  if (JSON.stringify(nav.unfolded) !== JSON.stringify(cur.unfolded)) await update($, unfolded, () => nav.unfolded)
+}
+// the rows each level listed at the last tick: the nearest-row fallback when the selected row leaves (a cache a reload may lose)
+const levelIds = new Map<string, string[]>()
+
+// ---- answer mode ----
+// The draft of one ask card (the answers typed so far, the question the person is on, the last refusal) is a cache a reload may
+// lose: it is never written to $.state, and it is dropped when the pane leaves ANSWER. `answerRev` only tells the pane to redraw.
+type AskCard = { key: string; node_id: string; title: string; story_key: string | null; ask_id: string | null; since: number | null; questions: { question: string; options: string[] }[] }
+type Draft = { task: string; story: string; cards: AskCard[]; loadError: string | null; qi: number; chosen: { question: string; chose: string }[]; status: { kind: 'refused' | 'failed'; reason: string } | null; busy: boolean }
+let draft: Draft | null = null
+// whether the pane was last opened without closeOnEscape (while answering)
+let answering = false
+const redraw = (a: EngineInterface) => update(a, answerRev, n => n + 1)
+
+// One run of the answer CLI under $.plugin.root; its one JSON line on stdout. A run that fails or prints no JSON throws.
+async function answerCli($: EngineInterface, args: string[]): Promise<Record<string, unknown>> {
+  const r = await $.process.run(['node', `${$.plugin.root}/scripts/answer.mjs`, ...args])
+  if (r.exitCode !== 0) throw new Error(r.stderr.trim() || `exit ${r.exitCode}`)
+  return JSON.parse(r.stdout.trim().split('\n').pop() ?? '') as Record<string, unknown>
+}
+const failText = (e: unknown) => String((e as { message?: unknown } | null)?.message ?? e)
+
+// The ask card behind the ANSWER page, asked of the engine once per page (not per tick): its own key and questions with their options.
+async function loadAnswer($: EngineInterface, task: string, story: string): Promise<void> {
+  if (draft !== null && draft.task === task && draft.story === story) return
+  const d: Draft = { task, story, cards: [], loadError: null, qi: 0, chosen: [], status: null, busy: false }
+  draft = d
+  try {
+    const o = await answerCli($, ['--card', '--task', task, '--story', story])
+    if (o.ok === true && Array.isArray(o.cards)) d.cards = o.cards as AskCard[]
+    else d.loadError = String(o.reason ?? '')
+  } catch (e) {
+    d.loadError = failText(e)
+  }
+  await redraw($)
+}
+
+const openArgs = () => (answering ? OPEN_ANSWER : OPEN)
+// Answering opens the pane again without closeOnEscape (each open sets it anew); leaving puts it back. A host that refuses the
+// re-open leaves the pane as it was: fail open.
+async function setAnswering($: EngineInterface, on: boolean): Promise<void> {
+  if (on === answering) return
+  answering = on
+  try {
+    if ((await $.ui.panes()).some(p => p.id === PANE)) await $.ui.open(openArgs())
+  } catch {
+    // the pane keeps its last flags
+  }
+}
+// The pane's page decides whether a draft lives: leaving ANSWER drops it and the typed text.
+async function settleAnswer($: EngineInterface, pg: Page): Promise<void> {
+  if (pg.name === 'ANSWER') return setAnswering($, true)
+  if (draft !== null) {
+    draft = null
+    await update($, typed, () => '')
+    await redraw($)
+  }
+  await setAnswering($, false)
+}
+// Esc, or the person's close while answering: the draft is cancelled and the pane returns to the page ANSWER was opened from
+async function leaveAnswer($: EngineInterface): Promise<void> {
+  const r = pageEsc(await readNav($))
+  await writeNav($, r.nav)
+  await settleAnswer($, r.nav.page)
+}
+// A pane opened again after it closed on ANSWER (the host's Esc, the Close Button) starts on the page ANSWER came from, draft lost
+async function openPane($: EngineInterface) {
+  if (!(await $.ui.panes()).some(p => p.id === PANE) && (await read($, page)).name === 'ANSWER') await leaveAnswer($)
+  return $.ui.open(openArgs())
 }
 
 // The English words the engine writes as a subject (view-summary.mjs SUBJECT_KEY_OF; strings.test.ts keeps the two equal): the pane
@@ -289,15 +436,36 @@ async function fetchReport($: EngineInterface, taskId: string, forCard = false):
   }
 }
 
-// One decisions call for a task (and the picked card); a failed call keeps what was stored.
-async function fetchDecisions($: EngineInterface, taskId: string): Promise<void> {
+// The data of the page the pane is on, fetched for its EPIC: a Phase page's decisions, a STORY's payload (STORY and Log), a STORY's
+// report, an EPIC's report. A failed call or unreadable output leaves what was stored.
+async function fetchPage($: EngineInterface, pg: Page): Promise<void> {
   try {
-    const cwd = await $.session.cwd()
-    const card = await read($, selected)
-    const r = await viewOnce($, ['--format', 'decisions', '--task', taskId, '--cwd', cwd, ...(card === null ? [] : ['--card', card])])
-    if (r.exitCode !== 0) return
-    const payload = JSON.parse(r.stdout.trim().split('\n').pop() ?? '') as DecisionsPayload
-    await update($, decisions, () => ({ task_id: taskId, card, payload }))
+    await settleAnswer($, pg)
+  } catch {
+    // answer mode keeps its last state
+  }
+  if (pg.epic === null) return
+  const task = pg.epic
+  const last = async (args: string[]) => {
+    const r = await viewOnce($, [...args, '--task', task, '--cwd', await $.session.cwd()])
+    return r.exitCode !== 0 ? null : JSON.parse(r.stdout.trim().split('\n').pop() ?? '')
+  }
+  try {
+    const story = pg.story === null ? '' : storyLabel(pg.story)
+    if (pg.name === 'PHASE') {
+      const payload = await last(['--format', 'decisions']) as DecisionsPayload | null
+      if (payload !== null) await update($, decisions, () => ({ task_id: task, payload }))
+    } else if (pg.name === 'STORY' || pg.name === 'LOG') {
+      const payload = await last(['--format', 'story', '--story', story]) as StoryPayload | null
+      if (payload !== null) await update($, storyData, () => ({ task_id: task, story, payload }))
+    } else if (pg.name === 'STORY_REPORT') {
+      const payload = await last(['--format', 'story-report', '--story', story]) as StoryReport | null
+      if (payload !== null) await update($, storyDoc, () => ({ task_id: task, story, payload }))
+    } else if (pg.name === 'EPIC_REPORT') {
+      await fetchReport($, task)
+    } else if (pg.name === 'ANSWER') {
+      await loadAnswer($, task, story)
+    }
   } catch {
     // a failed call keeps the last payload
   }
@@ -415,7 +583,6 @@ const TICK_MS = 3000
 const SPIN_MS = 800
 const MARKER_RECHECK_MS = 30000
 const TEAMS_MARKERS = ['.claude/team.json', '.teams_output', '.harness-run']
-const WORK_MAX = 6
 
 // `l` or the footer Button: flip the language, remember the choice, and say the command in it. Nothing else is written.
 async function toggleLang($: EngineInterface): Promise<void> {
@@ -433,6 +600,8 @@ export const register: Register = on => {
 
   on('session.start', async ($, e, next) => {
     if ((await $.session.surfaces()).length === 0) return next(e)
+    draft = null
+    answering = false
 
     // the spinner clock runs only while the pane is open and a worker of the shown EPIC acts
     let spinner: { cancel: () => void } | null = null
@@ -491,7 +660,6 @@ export const register: Register = on => {
         const cwd = await $.session.cwd()
         const since = await read($, cursor)
 
-        const fetched = new Set<string>()
         const cardFetched = new Set<string>()
         const ev = await viewOnce($, ['--format', 'events', '--since', String(since), '--cwd', cwd])
         if (ev.exitCode === 0) {
@@ -557,6 +725,14 @@ export const register: Register = on => {
               if (chosen !== null && chosen !== current) await update($, epic, () => chosen)
               await update($, taskIds, () => ids)
             }
+            // a page of an EPIC that left the listing goes back to HOME, so no stale page stays drawn
+            // and a selected row that left its page's list falls to the nearest listed row, kept here (a draw writes no state)
+            const nav = reconcileEpic(await readNav($), ids)
+            const rowIds = rowIdsOf(nav.page, list, nav.unfolded)
+            const level = levelOf(nav.page)
+            const kept = selectedOf(nav, rowIds, levelIds.get(level) ?? rowIds)
+            levelIds.set(level, rowIds)
+            await writeNav($, kept === null || kept === nav.sel[level] ? nav : { ...nav, sel: { ...nav.sel, [level]: kept } })
           }
           // pinned only while a person must act (the engine draws it as a warning); the ask band already says so
           // Known limits: (1) the poll cannot see e.props.hasSurvey, so while a survey hides the band the status
@@ -568,15 +744,7 @@ export const register: Register = on => {
           const cardShown = cardId !== undefined && held?.task_id === cardId && held.payload.verdict !== 'running'
           $.ui.status(info.waiting > 0 && !askBandShown(info.asks, cardShown) ? fmt(STRINGS[await read($, lang)].statusWaiting, { n: info.waiting }) : undefined)
         }
-        // the Decisions tab refetches only while it is open, for the pane's task and picked card
-        if (id !== undefined && (await read($, view)) === 'decisions') await fetchDecisions($, id)
-        // the Report tab refetches only while it is open, for the pane's task
-        const isTab = id !== undefined && (await read($, view)) === 'report'
-        if (isTab && (await read($, ended))[id] === 'card') await update($, ended, m => mark(m, id, 'seen'))
-        if (isTab && !fetched.has(id)) {
-          fetched.add(id)
-          await fetchReport($, id)
-        }
+        if (isOpen) await fetchPage($, await read($, page))
         // a card waits for its report (none yet, or another task's in the atom)
         const waiting = cardTask(await read($, ended))
         if (waiting !== undefined && !cardFetched.has(waiting)) {
@@ -617,7 +785,7 @@ export const register: Register = on => {
     const r = await next(e)
     try {
       $.ui.log(`teams: ${e.surface} attached (${e.clientId})`, { to: 'debug' })
-      if ((await $.ui.panes()).some(p => p.id === PANE)) await $.ui.open(OPEN)
+      if ((await $.ui.panes()).some(p => p.id === PANE)) await $.ui.open(openArgs())
     } catch {
       // a pane that cannot be offered leaves the session as it was
     }
@@ -630,7 +798,7 @@ export const register: Register = on => {
       await $.ui.close({ id: PANE })
       return { text: STRINGS[await read($, lang)].paneClosed }
     }
-    const placed = await $.ui.open(OPEN)
+    const placed = await openPane($)
     const paneOpened = STRINGS[await read($, lang)].paneOpened
     let run: { exitCode: number; stdout: string } | null = null
     try {
@@ -647,33 +815,36 @@ export const register: Register = on => {
     return { text: statusAnswer(run, paneOpened, surfaces, placed?.isPlaced === true) }
   })
 
+  // The person's close (Esc, the close mark) while answering cancels the draft and the pane stays; the next one closes it. Another
+  // origin (this plugin's own close, an unload) passes. Whether the host sends Esc here or hands it back to the prompt once
+  // closeOnEscape is dropped is unchecked without a live session.
+  on('ui.close', { id: PANE }, async ($, e, next) => {
+    if (e.origin.kind !== 'person' || (await read($, page)).name !== 'ANSWER') return next(e)
+    await leaveAnswer($)
+    return { value: undefined } as never
+  }).catch(($, e, next) => next(e))
+
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const ui = $.ui.resolve(e)
     const { Box, Button, Input, Markdown, Text } = ui
-    const kind = await read($, view)
     const lang$ = await read($, lang)
     const s = (key: keyof typeof en, vars?: Record<string, string | number>) => fmt(STRINGS[lang$][key], vars, key)
     // an engine word by its key: the table's word, else the raw value the engine sent (fail open)
     const wo = (key: string, fallback: string, vars?: Record<string, string | number>) => wordOr(STRINGS[lang$], key, fallback, vars)
-    // the same, for a word whose English is the engine's own and is pinned that way (a lane header that fits its box, an activity
-    // kind, an upper-case ticket state): English keeps it, Korean goes through the key
-    const woKo = (key: string, raw: string, vars?: Record<string, string | number>) => (lang$ === 'en' ? raw : wo(key, raw, vars))
     // node's word_key (idle, done, stalled, failed) names a STRINGS entry; a pure lookup, no decision
     const fixedWord = (key: string) => wo(`word${cap(key)}`, key)
+    const say = (key: string, vars?: Record<string, string | number>) => s(key as keyof typeof en, vars)
     const id = await paneTask($)
     const listed = await read($, tasks)
-    const entry = listed.find(t => t.task_id === id)
-    // the summary is drawn only for the EPIC the pane shows; right after a switch it is the last one's until the next tick
-    const held = await read($, summary)
-    const task = held !== null && entry !== undefined && held.key !== entry.key ? null : held
-    const info = await read($, status)
     const inner = Math.max(20, (e.props.bodyColumns ?? 80) - 4)
+    const compact = !carriesInput(e.surface)
     // the Input draws what it holds: every edit is stored, and a handled key stores '' so the host drops the whole
     // buffer (text holding a `/` is no key: it stays until Enter). The store is a state update, so the pane redraws.
     const buffer = await read($, typed)
+    await read($, answerRev) // answer mode's draft is a module variable: this read is what redraws the pane when it changes
     const keep = (handle: (text: string) => Promise<void>) => async (text: string) => {
       await update($, typed, () => text)
-      if (paneKey(text) === null) return
+      if (pageKey(text, { answering: (await read($, page)).name === 'ANSWER' }) === null) return
       try {
         await handle(text)
       } finally {
@@ -681,455 +852,309 @@ export const register: Register = on => {
       }
     }
 
-    // said once, as the footer's last item
-    // (no Button hotkey: the pane's Input holds the focus and takes `q` and `1`-`5` as text, see onKey)
-    const close = <Button key="close" role="dismiss" plain dimColor label={s('close')} onPress={() => $.ui.close({ id: PANE })} />
     // the language marker: `l EN` / `l KR` beside an Input (the key works there), bare `EN` / `KR` on mobile (a Button only)
     const langWord = s(lang$ === 'en' ? 'langEN' : 'langKR')
     const marker = carriesInput(e.surface) ? s('langMarker', { lang: langWord }) : langWord
     const langButton = <Button key="lang" plain dimColor label={marker} onPress={() => toggleLang($)} />
-    // plain tabs on one line: the selected one in full strength with a dot, the rest dim; `1`-`5` pick them
-    const TABS = ['dash', 'floor', 'stories', 'decisions', 'log', 'report'] as const
-    const pickTab = async (one: (typeof TABS)[number]) => {
-      await update($, view, () => one)
-      if (one === 'report' && id !== undefined) {
-        await update($, ended, m => (m[id] === 'card' ? mark(m, id, 'seen') : m))
-        await fetchReport($, id)
-      }
-      if (one === 'decisions' && id !== undefined) await fetchDecisions($, id)
-    }
-    const costText = task === null ? '' : s('costLine', { usd: `$${task.cost.usd.toFixed(2)}`, turns: task.cost.turns })
-    const tabPlan = tabRowPlan(TABS.map(one => `${kind === one ? '● ' : ''}${s(`tab${cap(one)}` as keyof typeof en)}`), costText, inner)
-    const tabs = (
-      <Box columnGap={tabPlan.gap}>
-        {TABS.map((one, i) => (
-          <Box key={`tab-${one}`} flexShrink={0}><Button key={one} plain dimColor={kind !== one} label={tabPlan.labels[i]!} onPress={() => pickTab(one)} /></Box>
-        ))}
-      </Box>
-    )
-    if (id === undefined || (task === null && entry === undefined && kind !== 'report' && kind !== 'stories')) {
-      return (
-        <Box flexDirection="column">
-          <Text>{id === undefined ? s('noRun') : s('loading')}</Text>
-          {/* the empty view has no tabs to pick: its Input takes `q` and `l` only, so the pane closes or switches language on the key as it does elsewhere */}
-          {id === undefined && carriesInput(e.surface) && (
-            <Box height={1} overflow="hidden">
-              <Input key="keys" autoFocus value={buffer} placeholder="" onInput={keep(async text => {
-                const k = paneKey(text)?.kind
-                if (k === 'close') await $.ui.close({ id: PANE })
-                else if (k === 'lang') await toggleLang($)
-              })} onSubmit={async () => {}} />
-            </Box>
-          )}
-          <Box columnGap={2}>{close}{langButton}</Box>
-        </Box>
-      )
-    }
-    // the task's report, drawn only when it was fetched for the pane's task: its path first, then
-    // (when capped) the truncated notice, then the text
-    const rp = await read($, report)
-    const mine = rp !== null && rp.task_id === id ? rp.payload : null
-    const reportBody = mine === null ? <Text dimColor>{s('loading')}</Text>
-      : mine.report === null ? <Text>{s('reportMissing', { path: mine.path })}</Text>
-      : (
-        <Box flexDirection="column">
-          <Text>{mine.path}</Text>
-          {mine.report.truncated && <Text color="warning">{s('reportTruncated', { n: mine.report.more_lines })}</Text>}
-          <Markdown text={mine.report.text} />
-        </Box>
-      )
 
-    // the listed EPICs, one line each, are the title block
-    const now = await $.clock.now()
-    // the list's state is a ticket state (BACKLOG, IN_PROGRESS, stalled), a run state (running) or 'unknown'; English draws it as sent
-    const epicWord = (t: SummaryTaskEntry) => (t.state === 'waiting_human' ? s('nodeWaiting') : lang$ === 'en' ? t.state : wo(`ticket${camel(t.state)}`, wo(`state${camel(t.state)}`, t.state)))
-    const epicOf = listed.map(t => epicCells(t, epicState(t), t.task_id === id, now, epicWord(t)))
-    const epicWidths = columnWidths(epicOf.map(r => r.cells), inner, 2, [3], 4, [6, 5], 12)
-    const epicLines: Line[] = epicOf.map(r => rowLine(r.cells, epicWidths, 2, r.tints))
-    const epics = epicLines.length === 0 ? null : renderLines(ui, epicLines, 'e')
-
-    // the STORYs tab: every listed task's STORYs at work, columns at the same offset on every row
-    const rows = storyRows(listed)
-    const pick = Math.min(Math.max(0, await read($, row)), Math.max(0, rows.length - 1))
+    // The page stack. An EPIC that left the listing sends the pane to HOME; the selected row is kept per level by its id and
+    // falls to the nearest listed row when it leaves; what a row opens comes from pane.ts.
+    // (a host with no clock still draws: the wall clock stands in)
+    const now = await $.clock.now().catch(() => Date.now())
+    const stored = reconcileEpic(await readNav($), listed.map(t => t.task_id))
+    const pg = stored.page
+    const entry = pg.epic === null ? undefined : listed.find(t => t.task_id === pg.epic)
+    const cardHeld = await read($, cardReport)
     const verdictText = (v: string | null) => (v === null ? '' : VERDICT_WORD[v] === undefined ? v : s(VERDICT_WORD[v]!))
-    const harnessText = (t: SummaryTaskEntry) => t.harness === null ? ''
-      : `${t.stages.map(g => `${MARK[g.state]}${wo(`stage${cap(g.key)}`, g.key)}`).join(' ')}${t.harness.slug ? ` · ${t.harness.slug}` : ''}${t.harness.moving ? ' ▸' : ''}`
-    const judgeText = (score: number, threshold: number | null) => (threshold === null ? s('storyJudgeBare', { score }) : s('storyJudge', { score, threshold }))
-    const storyOf = rows.map(({ entry: t, item }, i) => storyCells(item, verdictText(item.last_verdict), harnessText(t), i === pick, fixedWord, judgeText, gap => s('storyGap', { gap })))
-    const storyWidths = columnWidths(storyOf.map(r => r.cells), inner, 2, STORY_SHRINK, 4, [9, 7, 8, 6, 5], 24)
-    // line 2 sits under the title: the marker and icon columns and their gaps, then the note up to the pane's edge;
-    // in a narrow pane (inner < 60) it is indented 2 cells instead, so the reason keeps the room
-    const noteAt = inner < 60 ? 2 : storyWidths.slice(0, 2).reduce((n, w) => n + (w > 0 ? w + 2 : 0), 0)
-    const storyLines: Line[] = storyOf.flatMap(r => [
-      rowLine(r.cells, storyWidths, 2, r.tints),
-      ...(r.note === '' ? [] : [[{ t: ' '.repeat(noteAt) }, { t: clipText(r.note, Math.max(4, inner - noteAt)), dim: true }] as Line]),
-    ])
-    const storiesBody = rows.length === 0 ? <Text dimColor>{s('noStories')}</Text>
-      : renderLines(ui, storyLines, 's')
-
-    // `[` `]` step the EPIC and stop at the ends; `j` `k` move the STORY row; `g` opens its run. The Input takes the
-    // keys (a Button hotkey is one digit or lowercase letter), prev / next are Buttons for the pointer
-    const cycle = async (by: 1 | -1) => {
-      const ids = listed.map(t => t.task_id)
-      if (ids.length === 0) return
-      const to = ids[stepClamp(Math.max(0, ids.indexOf(id)), by, ids.length)]!
-      if (to === id) return
-      await update($, epic, () => to)
-      await update($, row, () => 0)
-    }
-    const target = kind === 'stories' ? rows[pick]?.item : undefined
-    const canOpen = target?.run_file != null
-    const onKey = async (text: string) => {
-      const key = paneKey(text)
-      if (key === null) return
-      if (key.kind === 'close') await $.ui.close({ id: PANE })
-      else if (key.kind === 'lang') await toggleLang($)
-      else if (key.kind === 'tab') await pickTab(key.tab)
-      else if (key.kind === 'step') await cycle(key.by)
-      else if (kind !== 'stories') return
-      else if (key.kind === 'row') await update($, row, () => stepClamp(pick, key.by, rows.length))
-      else if (target !== undefined && target.run_file != null) {
-        try {
-          await $.command.run({ command: 'graph-status', args: `open ${target.run_file} ${target.owner_key}` })
-        } catch {
-          // a hand-off that is not there leaves the pane as it was
-        }
+    const home = homeRows(listed, { now, compact, unfolded: stored.unfolded, say, fixed: fixedWord, verdict: verdictText, reportReady: tid => cardHeld?.task_id === tid && cardHeld.payload.report !== null })
+    // what the page reads beyond the listing, only when it was fetched for this EPIC (and STORY)
+    const storyId = pg.story === null ? null : storyLabel(pg.story)
+    const sdHeld = await read($, storyData)
+    const sd = sdHeld !== null && sdHeld.task_id === pg.epic && sdHeld.story === storyId && sdHeld.payload.missing !== true ? sdHeld.payload : null
+    const docHeld = await read($, storyDoc)
+    const doc = docHeld !== null && docHeld.task_id === pg.epic && docHeld.story === storyId && docHeld.payload.missing !== true ? docHeld.payload : null
+    const decHeld = await read($, decisions)
+    const thread = decHeld !== null && decHeld.task_id === pg.epic ? (decHeld.payload.entries as DecisionX[]) : null
+    const opts: PageOpts = { say, wo, fixed: fixedWord, verdictOf: v => s(VERDICT_WORD[v ?? ''] ?? 'vReject'), frame: await read($, frame), now }
+    const phaseKey = PHASE_KEYS[Math.min(5, Math.max(0, (pg.phase ?? 1) - 1))]!
+    const rows: PageRow[] = pg.name === 'HOME' ? [...home.flags, ...home.body] : pg.name === 'FLOOR' && entry !== undefined ? floorRows(entry, say)
+      : pg.name === 'STORY' && entry !== undefined && storyId !== null ? storyRows(entry, storyId, sd, doc, opts) : []
+    const rowIds = rows.map(r => r.id)
+    const level = levelOf(pg)
+    const sel = selectedOf(stored, rowIds, levelIds.get(level) ?? rowIds)
+    const nav: PageNav = sel === null ? stored : { ...stored, sel: { ...stored.sel, [level]: sel } }
+    const selRow = rows.find(r => r.id === sel)
+    const ref: RowRef | null = selRow?.ref ?? null
+    // the text pages: Phase detail, Log and the STORY Report are lines windowed by the scroll offset of their level
+    const docLines: Line[] | null = entry === undefined ? null
+      : pg.name === 'PHASE' ? phaseLines(entry as PhaseEntry, phaseKey, thread, opts, inner)
+        : pg.name === 'LOG' ? logLines(sd, opts, inner)
+          : pg.name === 'STORY_REPORT' ? storyReportLines(doc, say, inner) : null
+    const windowed = docLines === null ? null : windowOf(docLines, stored.scroll[level] ?? 0, PAGE_ROWS)
+    const ctx: StepCtx = { ids: rowIds, row: ref, flags: home.flags.map(f => f.id), maxScroll: windowed?.max ?? 0 }
+    const hinted = await read($, flagHint)
+    // one key or Button press: the page stack moves, the EPIC the data call is for follows the page
+    const act = async (key: Exclude<PageKey, null>): Promise<void> => {
+      if (hinted) await update($, flagHint, () => false)
+      if (key.kind === 'lang') return toggleLang($)
+      const r: StepResult = pageStep(nav, key, ctx)
+      if (r.closed) {
+        await $.ui.close({ id: PANE })
+        return
       }
+      await writeNav($, r.nav)
+      const to = r.nav.page.epic
+      if (to !== null && to !== (await read($, epic))) await update($, epic, () => to)
+      if (JSON.stringify(r.nav.page) !== JSON.stringify(nav.page)) await fetchPage($, r.nav.page)
+      if (r.hint === 'noFlag') await update($, flagHint, () => true)
     }
-    // the same Input takes a typed `/command`, held until Enter (paneKey fires no key on text holding `/`): `/teams-status`
-    // closes the pane, `/name args` runs that command. Not awaited: awaited inside onSubmit the host cuts the hook at its budget.
+    const onKey = async (text: string) => {
+      const key = pageKey(text)
+      if (key !== null) await act(key)
+    }
+    // the same Input takes a typed `/command`, held until Enter (pageKey fires no key on text holding `/`): `/teams-status`
+    // closes the pane, `/name args` runs that command; Enter on any other text opens the selected row. Not awaited: awaited
+    // inside onSubmit the host cuts the hook at its budget.
     const onSubmit = async (text: string) => {
       const slash = paneSlash(text)
-      if (slash === null) return
-      if (slash.kind === 'close') await $.ui.close({ id: PANE })
+      if (slash === null) await act({ kind: 'open' })
+      else if (slash.kind === 'close') await $.ui.close({ id: PANE })
       else void $.command.run({ command: slash.command, args: slash.args }).catch(() => {})
+      await update($, typed, () => '')
     }
-    const openHint = kind === 'stories' ? s('openHint') : ''
-    const footerHint = footerPlan({ steps: listed.length > 1 ? 2 : 0, open: openHint, close: s('close'), hint: s('keysHint'), marker }, inner).hint
-    const footer = (
+    // Answer mode: one question at a time, the engine takes the whole card once after the last, one decisions[] entry per question.
+    // Empty Enter cancels. Refused or a failed run keeps the draft (and the text) and says why; accepted returns to the page ANSWER
+    // came from, and the data is read again so the ⚑ clears.
+    const submitAnswer = async (text: string): Promise<void> => {
+      const d = draft
+      if (d === null || d.busy) return
+      const chose = text.trim()
+      if (chose === '') return leaveAnswer($)
+      const card = d.cards[0]
+      const q = card?.questions[d.qi]
+      if (card === undefined || q === undefined) return
+      const decisions = [...d.chosen, { question: q.question, chose }]
+      if (d.qi + 1 < card.questions.length) {
+        d.chosen = decisions
+        d.qi += 1
+        d.status = null
+        await update($, typed, () => '')
+        return redraw($)
+      }
+      d.busy = true
+      let sent = false
+      try {
+        const o = await answerCli($, ['--answer', '--task', d.task, '--key', card.key, '--decisions', JSON.stringify(decisions)])
+        if (o.ok === true) sent = true
+        else d.status = { kind: 'refused', reason: String(o.reason ?? '') }
+      } catch (e) {
+        d.status = { kind: 'failed', reason: failText(e) }
+      }
+      d.busy = false
+      if (sent) {
+        try {
+          $.ui.toast(s('f2AnswerAccepted'))
+          await leaveAnswer($)
+          if (refresh !== null) await refresh()
+        } catch {
+          // the answer is in; a toast or a refresh that fails changes nothing
+        }
+        return
+      }
+      await update($, typed, () => chose)
+      await redraw($)
+    }
+
+    // line 1: the breadcrumb from HOME (page names and Phase names by key), the Phase header of FLOOR on its right
+    const phaseLabel = (n: number) => `${n} ${say(`f2PhaseName${cap(PHASE_KEYS[n - 1]!)}`)}`
+    const item = entry?.items.find(i => i.key === pg.story)
+    const storyName = pg.story === null ? '' : `${storyLabel(pg.story)}${item === undefined ? '' : ` ${item.title}`}`
+    const epicName = entry?.title ?? ''
+    const crumbs = pg.name === 'FLOOR' ? [epicName, s('f2PageFloor')]
+      : pg.name === 'PHASE' ? [epicName, s('f2PageFloor'), phaseLabel(pg.phase ?? 1)]
+      : pg.name === 'EPIC_REPORT' ? [epicName, s('f2PageFloor'), phaseLabel(6)]
+      : pg.name === 'STORY' ? [epicName, storyName]
+      : pg.name === 'LOG' ? [epicName, storyName, s('f2PageLog')]
+      : pg.name === 'STORY_REPORT' ? [epicName, storyName, s('f2PageReport')]
+      : [epicName, storyName, s('f2AnswerTitle')]
+    const phaseAt = entry === undefined ? 0 : Math.max(0, entry.stages.some(g => g.state === 'running') ? entry.stages.findIndex(g => g.state === 'running') : entry.stages.filter(g => g.state === 'done').length - 1)
+    // the right of line 1: FLOOR's Phase header; a Phase's own time and spend; a STORY's node, try, spend and time; the Log's count;
+    // the Report's verdict. Each is the engine's number placed, blank when it sent none.
+    const ledger = entry?.metrics?.stages?.find(x => x.stage === phaseKey)
+    const ledgerUsd = ledger === undefined ? 0 : ledger.cost_usd + ledger.retry_cost_usd
+    const storyMs = item?.metrics != null && (item.metrics.wall_ms ?? 0) > 0 ? item.metrics.wall_ms : item?.elapsed_ms ?? null
+    const verdictOf = doc?.verdict
+    // the ask the ANSWER page is about: who asks, the summary's question and age
+    const askCard = entry?.you.cards?.find(c => c.stage === 'ask' && storyId !== null && storyLabel(c.key) === storyId)
+    const floorRight = entry === undefined ? ''
+      : pg.name === 'FLOOR'
+        ? [`${s('f2FloorPhaseOf', { n: phaseAt + 1 })} ${say(`f2PhaseName${cap(PHASE_KEYS[Math.min(phaseAt, 5)]!)}`)}`, since(epicElapsed(entry, now)), entry.cost.usd > 0 ? costText(entry.cost.usd, entry.cost.estimated === true) : ''].filter(Boolean).join(' · ')
+        : pg.name === 'PHASE' ? [ledger !== undefined && ledger.wall_ms > 0 ? since(ledger.wall_ms) : '', ledgerUsd > 0 ? costText(ledgerUsd, false) : ''].filter(Boolean).join(' · ')
+          : pg.name === 'STORY' && item !== undefined
+            ? [sd?.flow.find(f => f.state === 'running')?.key ?? '', item.try === null ? '' : s('f2RowRetrying', { n: item.try, max: item.max ?? '-' }), costText(item.cost_usd ?? item.metrics?.cost_usd ?? null, item.cost_estimated), since(storyMs)].filter(Boolean).join(' · ')
+            : pg.name === 'LOG' ? (sd === null ? '' : s('f2LogCount', { n: sd.log.length }))
+              : pg.name === 'STORY_REPORT' && doc?.finished === true && verdictOf?.score != null && item?.last_verdict !== 'reject'
+                ? s('f2ReportAccepted', { score: verdictOf.score, threshold: verdictOf.threshold ?? '', t: since(storyMs) })
+                : pg.name === 'ANSWER' && askCard?.since != null ? `⚑ ${s('f2FlagAge', { m: since(Math.max(0, now - askCard.since)) })}` : ''
+    const crumbRoom = inner - (floorRight === '' ? 0 : width(floorRight) + 2)
+    const crumbFull = crumbs.join(' › ')
+    const crumbEl = width(crumbFull) > crumbRoom ? <Text bold wrap="truncate-end">{clipText(crumbFull, crumbRoom)}</Text> : (
+      <Text wrap="truncate-end"><Text dimColor>{`${crumbs.slice(0, -1).join(' › ')} › `}</Text><Text bold>{crumbs[crumbs.length - 1]}</Text></Text>
+    )
+    const rule = (k: string) => renderLines(ui, [[{ t: '─'.repeat(inner), dim: true }]], k)
+
+    let body
+    if (pg.name === 'HOME') {
+      const lines = pageLines(rows, sel, inner, HOME_PLANS)
+      const nFlag = home.flags.length
+      const hd = homeHeader(listed, now, say)
+      const room = inner - width('teams') - width(hd.right) - 4
+      const left = compact ? '' : width([hd.epics, hd.drivers].filter(Boolean).join(' · ')) <= room ? [hd.epics, hd.drivers].filter(Boolean).join(' · ') : hd.epics
+      const flagPicked = sel !== null && home.flags.some(f => f.id === sel)
+      body = listed.length === 0 ? <Text>{id === undefined ? s('noRun') : s('loading')}</Text> : (
+        <Box flexDirection="column">
+          <Box>
+            <Box flexShrink={0}><Text bold>teams</Text></Box>
+            <Box flexShrink={1} marginLeft={2}><Text dimColor wrap="truncate-end">{left}</Text></Box>
+            <Box flexGrow={1} flexShrink={0} justifyContent="flex-end" marginLeft={2}><Text>{hd.right}</Text></Box>
+          </Box>
+          {rule('r1')}
+          {nFlag > 0 && (
+            <Box flexDirection="column">
+              {compact
+                ? renderLines(ui, [[{ t: flagPicked ? '▸ ' : '  ', tint: 'claude' }, ...home.flagLine]], 'g')
+                : <Box flexDirection="column"><Text color="warning" bold>{`⚑ ${s('f2FlagTitle', { n: nFlag })}`}</Text>{renderLines(ui, lines.slice(0, nFlag), 'f')}</Box>}
+              {rule('r2')}
+            </Box>
+          )}
+          {renderLines(ui, lines.slice(nFlag), 'e')}
+        </Box>
+      )
+    } else {
+      let page$
+      if (entry === undefined) page$ = <Text dimColor>{s('loading')}</Text>
+      else if (pg.name === 'FLOOR') page$ = renderLines(ui, pageLines(rows, sel, inner, HOME_PLANS), 'p')
+      else if (windowed !== null) {
+        // Log waits for its payload; Phase detail and the Report draw their sections (a dim – where nothing is recorded)
+        page$ = pg.name === 'LOG' && sd === null ? <Text dimColor>{s('loading')}</Text> : renderLines(ui, windowed.lines, 't')
+      } else if (pg.name === 'STORY') {
+        const top = storyTop(sd, say)
+        const grid = storyGrid(sd, item?.max ?? null, say, inner)
+        const working = storyNow(sd, opts, inner)
+        page$ = (
+          <Box flexDirection="column">
+            {sd === null ? <Text dimColor>{s('loading')}</Text> : renderLines(ui, top, 'a')}
+            {grid.length > 0 && <Box flexDirection="column">{rule('r2')}{renderLines(ui, grid, 'b')}</Box>}
+            {working.length > 0 && <Box flexDirection="column">{rule('r3')}{renderLines(ui, working, 'c')}</Box>}
+            {rule('r4')}
+            {renderLines(ui, pageLines(rows, sel, inner, HOME_PLANS), 'd')}
+          </Box>
+        )
+      } else if (pg.name === 'EPIC_REPORT') {
+        const held = (await read($, report))?.task_id === pg.epic ? await read($, report) : cardHeld?.task_id === pg.epic ? cardHeld : null
+        const p = held?.payload ?? null
+        const needs = p === null ? [] : needsOf(p.needs, wo)
+        page$ = p === null ? <Text dimColor>{s('loading')}</Text> : p.report === null ? <Text>{s('reportMissing', { path: p.path })}</Text> : (
+          <Box flexDirection="column">
+            <Text>{p.path}</Text>
+            {needs.map((n, i) => <Text key={`n${i}`} color="warning" wrap="truncate-end">{`⚑ ${n}`}</Text>)}
+            {p.report.truncated && <Text color="warning">{s('reportTruncated', { n: p.report.more_lines })}</Text>}
+            <Markdown text={p.report.text} />
+          </Box>
+        )
+      } else if (pg.name === 'ANSWER') {
+        // who asks, the question, a context line, then the prompt: an Input on a surface that carries one, else the card's options as
+        // Buttons (a free-text ask has no input on mobile)
+        const d = draft !== null && draft.task === pg.epic && draft.story === storyId ? draft : null
+        const qs = d?.cards[0]?.questions ?? []
+        const q = qs[d?.qi ?? 0]
+        const question = q?.question ?? askCard?.question ?? ''
+        const options = q?.options ?? []
+        const failed = d?.loadError != null ? s('f2AnswerFailed', { reason: d.loadError }) : d?.status == null ? '' : s(d.status.kind === 'refused' ? 'f2AnswerRefused' : 'f2AnswerFailed', { reason: d.status.reason })
+        page$ = (
+          <Box flexDirection="column">
+            <Text>{`${askCard?.who ?? ''} → ${s('partyYou')}${qs.length > 1 ? ` ${(d?.qi ?? 0) + 1}/${qs.length}` : ''}`}</Text>
+            <Text bold>{question === '' ? askCard?.title ?? '' : `"${question}"`}</Text>
+            <Text dimColor wrap="truncate-end">{`${s('f2AnswerContext')}  ${askCard?.title ?? d?.cards[0]?.title ?? ''}`}</Text>
+            {rule('r2')}
+            {compact
+              ? options.length > 0
+                ? <Box flexDirection="column">{options.map((o, i) => <Button key={`o${i}`} plain label={o} onPress={() => submitAnswer(o)} />)}</Box>
+                : <Text dimColor>{s('f2AnswerDesktopOnly')}</Text>
+              : (
+                <Box>
+                  <Box flexShrink={0}><Text color="claude">{`${s('f2AnswerPrompt')} ›`}</Text></Box>
+                  <Box flexShrink={1} marginLeft={1} height={1} overflow="hidden"><Input key="answer" autoFocus value={buffer} onInput={keep(onKey)} onSubmit={submitAnswer} /></Box>
+                </Box>
+              )}
+            {failed !== '' && <Text color="error">{failed}</Text>}
+            {rule('r3')}
+          </Box>
+        )
+      } else page$ = <Text dimColor>{s('loading')}</Text>
+      body = (
+        <Box flexDirection="column">
+          <Box>
+            <Box flexShrink={1}>{crumbEl}</Box>
+            {floorRight !== '' && <Box flexShrink={0} marginLeft={2}><Text>{floorRight}</Text></Box>}
+          </Box>
+          {rule('r1')}
+          {page$}
+        </Box>
+      )
+    }
+
+    // The footer: the page's key line in the Input's placeholder (with the unfold or fold hint of the selected EPIC row), then
+    // `l EN`; on mobile no Input, the same actions as Buttons that act on the selected row, then `EN`.
+    const selEpic = ref !== null && (ref.type === 'epic' || ref.type === 'story') ? listed.find(t => t.task_id === ref.epic) : undefined
+    const foldHint = pg.name !== 'HOME' || selEpic === undefined || !isEnded(selEpic) ? ''
+      : nav.unfolded[selEpic.task_id] === true ? s('f2FoldRefold') : ref?.type === 'epic' ? s('f2FoldUnfold') : ''
+    const foot = pg.name === 'HOME' ? 'f2FootHome' : pg.name === 'FLOOR' ? 'f2FootFloor' : pg.name === 'STORY' ? 'f2FootStory' : pg.name === 'ANSWER' ? 'f2FootAnswer' : 'f2FootScroll'
+    const footText = [s(foot), foldHint].filter(Boolean).join(' · ')
+    const footHint = footerPlan({ steps: 0, open: '', close: '', hint: footText, marker }, inner).hint
+    const footer = compact ? (
+      <Box columnGap={2} flexWrap="wrap">
+        <Button key="up" plain label={s('f2BtnUp')} onPress={() => act({ kind: 'move', by: -1 })} />
+        <Button key="down" plain label={s('f2BtnDown')} onPress={() => act({ kind: 'move', by: 1 })} />
+        <Button key="open" plain label={s('f2BtnOpen')} onPress={() => act({ kind: 'open' })} />
+        <Button key="back" plain label={s('f2BtnBack')} onPress={() => act({ kind: 'back' })} />
+        <Button key="flag" plain label={s('f2BtnFlag')} onPress={() => act({ kind: 'nextFlag' })} />
+        <Button key="close" role="dismiss" plain label={s('f2BtnClose')} onPress={() => $.ui.close({ id: PANE })} />
+        {langButton}
+      </Box>
+    ) : pg.name === 'ANSWER' ? (
       <Box columnGap={2}>
-        {listed.length > 1 && <Button key="prev" plain label={s('prev')} onPress={() => cycle(-1)} />}
-        {listed.length > 1 && <Button key="next" plain label={s('next')} onPress={() => cycle(1)} />}
-        {carriesInput(e.surface) && <Box flexShrink={1} height={1} overflow="hidden"><Input key="keys" autoFocus value={buffer} placeholder={footerHint} onInput={keep(onKey)} onSubmit={async (text: string) => { await onSubmit(text); await update($, typed, () => '') }} /></Box>}
-        {openHint !== '' && <Text dimColor={!canOpen}>{openHint}</Text>}
-        <Box flexShrink={0}>{close}</Box>
+        <Box flexShrink={1}><Text dimColor wrap="truncate-end">{footHint}</Text></Box>
+        <Box flexShrink={0}>{langButton}</Box>
+      </Box>
+    ) : (
+      <Box columnGap={2}>
+        <Box flexShrink={1} height={1} overflow="hidden"><Input key="keys" autoFocus value={buffer} placeholder={footHint} onInput={keep(onKey)} onSubmit={onSubmit} /></Box>
         <Box flexShrink={0}>{langButton}</Box>
       </Box>
     )
-    // the Dashboard: node's model (view-dashboard.mjs) for the EPIC the pane shows. An Svg surface draws node's own
-    // SVG; the terminal draws the same model in Ink — header, tiles, numbered pipeline with Build's packages, lanes, activity
-    const dv = await read($, dash)
-    const dm = dv !== null && dv.model.key === (task?.key ?? entry?.key) ? dv.model : null
-    // Svg is every surface's but the terminal's (mod.md rule 8: behind an e.surface check)
-    const Svg = e.surface === 'terminal' ? undefined : (ui as { Svg?: any }).Svg
-    if (task === null && kind === 'dash' && dm !== null) {
-      return (
-        <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
-          <Box marginY={1}>{tabs}</Box>
-          {drawDash()}
-          {footer}
-        </Box>
-      )
-    }
-    if (task === null) {
-      return (
-        <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
-          <Box marginY={1}>{tabs}</Box>
-          {epics}
-          {kind === 'stories' ? storiesBody : kind === 'report' ? reportBody : <Text>{s('loading')}</Text>}
-          {footer}
-        </Box>
-      )
-    }
-
-    const stateWord = wo(`state${camel(task.state)}`, task.state)
-    // a failed card's reason: the engine's key when it sent one (no reason recorded, failed), else the text a model or person wrote
-    const reasonText = (w: { reason: string | null; reason_key?: string }) => (w.reason_key === undefined ? w.reason : wo(w.reason_key, w.reason_key))
-    const card = (c: SummaryTask['work'][number], i: number) => (
-      <Box key={`c${i}`} flexDirection="column">
-        <Text wrap="truncate-end"><Text color={TINT[c.state]}>{MARK[c.state]}</Text>{` ${c.title}`}</Text>
-        {c.state === 'failed' && c.reason && <Text color="error" wrap="truncate-end">{`  ${reasonText(c)}`}</Text>}
-      </Box>
-    )
-
-    // above the tabs only what waits on the person: each waiting card with its question, then the runs besides this one
-    const others = (info?.waiting ?? 0) - task.you.count
-    const tv = await read($, teams)
-    const teamWord = (t: string) => wo(`team${cap(t)}`, t)
-    const nodeWord = (n: string) => (n === 'waiting' ? s('nodeWaiting') : n)
-    const waitCards = task.you.cards ?? []
-    const waitBox = waitCards.length === 0 && others <= 0 ? null : (
-      <Box flexDirection="column" marginTop={1}>
-        {waitCards.map((c, i) => (
-          <Text key={`w${i}`} color="warning" wrap="truncate-end">{`⚑ ${subjectWord(wo, c.title)}${c.question ? ` — ${c.question}` : ''}`}</Text>
-        ))}
-        {others > 0 && <Text color="warning">{s('youOthers', { n: others })}</Text>}
-      </Box>
-    )
-    const pickCard = async (cardId: string) => {
-      await update($, selected, () => cardId)
-      await update($, view, () => 'decisions')
-      await fetchDecisions($, id)
-    }
-
-    // the Floor: one line per worker of the shown EPIC, then the newest hand-offs; columns at one offset per block
-    const frameNo = await read($, frame)
-    const workerOf = workerCells(entry?.workers ?? [], frameNo, fixedWord)
-    const workerWidths = columnWidths(workerOf.map(r => r.cells), inner, 2, [3])
-    const handoffOf = handoffCells(entry?.handoffs ?? [], (key, vars) => wo(key, key, vars))
-    const handoffWidths = columnWidths(handoffOf, inner, 2, [2, 3])
-    // asks addressed to this session, from node's status.asks: one warning line each, above the hand-offs
-    const askOf = ((await read($, status))?.asks ?? []).map(a => [s('askTo', { who: a.who }), a.question])
-    const askWidths = columnWidths(askOf, inner, 2, [1])
-    const floorLines = (
-      <Box flexDirection="column">
-        {askOf.length > 0 && <Box marginBottom={1}>{renderLines(ui, askOf.map(r => rowLine(r, askWidths, 2, ['warning'])), 'a')}</Box>}
-        {renderLines(ui, workerOf.map(r => rowLine(r.cells, workerWidths, 2, r.tints)), 'w')}
-        {handoffOf.length > 0 && <Box marginTop={1}>{renderLines(ui, handoffOf.map(r => rowLine(r, handoffWidths, 2, ['dim'])), 'h')}</Box>}
-      </Box>
-    )
-
-    // the stage rail heads the STORYs tab
-    const rail = (
-      <Box flexWrap="wrap" marginBottom={1}>
-        {task.stages.map((g, i) => {
-          const next = task.stages[i + 1]
-          const solid = next !== undefined && next.state !== 'pending'
-          return (
-            <Box key={g.key}>
-              <Text color={TINT[g.state]} bold={g.state === 'running'}>{`${DOT[g.state]} ${wo(`stage${cap(g.key)}`, g.key)}`}</Text>
-              {next !== undefined && <Text color={solid ? 'success' : 'inactive'}>{solid ? ' ━━ ' : ' ┄┄ '}</Text>}
-            </Box>
-          )
-        })}
-      </Box>
-    )
-    // the card list heads the Decisions tab, where a picked card's thread is read
-    const reasonOf = (title: string) => {
-      const w = task.work.find(x => x.title === title && x.state === 'failed')
-      return w === undefined ? null : reasonText(w)
-    }
-    const picker = tv === null ? (
-      // before the first teams call: the summary's card list
-      <Box flexDirection="column" marginBottom={1}>
-        {task.work.slice(0, WORK_MAX).map(card)}
-        {task.work.length > WORK_MAX && <Text dimColor>{`  ${s('workMore', { n: task.work.length - WORK_MAX })}`}</Text>}
-      </Box>
-    ) : (
-      // one block per team; each card a button (↑↓ moves, Enter opens its decision thread)
-      <Box flexDirection="column" marginBottom={1}>
-        {tv.teams.map(t => (
-          <Box key={`t-${t.team}`} flexDirection="column">
-            <Text bold>{teamWord(t.team)}</Text>
-            {t.cards.map(c => (
-              <Box key={`k-${c.id}`} flexDirection="column">
-                {/* one line per card: a narrow pane clips the label instead of wrapping it */}
-                <Box height={1} overflow="hidden"><Button key={`card:${c.id}`} plain dimColor={c.mark === 'done'}
-                  label={`${MARK[c.mark]} ${c.title} · ${c.state === null ? '' : woKo(`ticket${camel(c.state)}`, c.state)}${c.now ? ` · ${nodeWord(c.now.node)} ${c.now.agent ?? ''} ${since(c.now.elapsed_ms)}`.trimEnd() : ''}`}
-                  onPress={() => pickCard(c.id)} /></Box>
-                {c.mark === 'failed' && reasonOf(c.title) && <Text color="error" wrap="truncate-end">{`  ${reasonOf(c.title)}`}</Text>}
-              </Box>
-            ))}
-          </Box>
-        ))}
-      </Box>
-    )
-
-    // hoisted: the task-less view above draws it too
-    function drawDash() {
-    let dashBody
-    if (dm === null) {
-      dashBody = <Text dimColor>{s('loading')}</Text>
-    } else if (Svg !== undefined) {
-      dashBody = <Svg source={dv!.svg} alt={dv!.alt} />
-    } else {
-      // every engine word of the model by its key (state*, tile*, stage*, lane*, log*); an unknown key draws the raw value
-      const runState = wo(`state${camel(dm.state)}`, dm.state)
-      const stateText = clipText(runState.toUpperCase(), 12)
-      const tileLabel = (t: (typeof dm.tiles)[number]) => wo(`tile${cap(t.key)}`, t.label).toUpperCase()
-      // the sub-word: the engine's key when it sent one, else the key read from tile.key and the sub text
-      const tileSub = (t: (typeof dm.tiles)[number]) => {
-        if (t.sub_key !== undefined) return wo(t.sub_key, t.sub_key, t.sub_vars)
-        const stages = t.key === 'progress' ? /^(\d+)\/(\d+) stages$/.exec(t.sub) : null
-        if (stages !== null) return wo('tileSubStages', t.sub, { done: stages[1]!, total: stages[2]! })
-        const turns = t.key === 'cost' ? /^(\d+) turns$/.exec(t.sub) : null
-        if (turns !== null) return wo('tileSubTurns', t.sub, { n: turns[1]! })
-        return wo(`tileSub${cap(t.sub)}`, t.sub)
-      }
-      const laneWord = (l: (typeof dm.lanes)[number]) => woKo(`lane${cap(l.key)}`, l.short)
-      const actWord = (a: (typeof dm.activity)[number]) => woKo(`log${cap(a.kind)}`, a.kind, { s: '' }).trim()
-      // the run's now line: the stage word by key, then the subject; the engine's text when the model carries no kind
-      const nowKind = dm.now_key ?? task?.now.kind
-      const nowSubject = subjectWord(wo, dm.now_key !== undefined ? dm.now_subject : task?.now.subject)
-      const nowText = dm.now === '' || nowKind === undefined ? dm.now : [wo(`stage${cap(nowKind)}`, nowKind), nowSubject].filter(Boolean).join(' · ')
-      // the state word, a space, the bar, ' 100%': one row at any width
-      const barW = Math.max(4, Math.min(60, inner - stateText.length - 6))
-      const fill = Math.round((barW * dm.pct) / 100)
-      const tileW = Math.max(12, Math.floor((inner - (dm.tiles.length - 1)) / dm.tiles.length))
-      // lane box width from node (view-summary.mjs laneBoxes): 0 = a pane too narrow for boxes, which lists them one per line
-      const laneBox: number = dm.laneBoxes[Math.min(inner, dm.laneBoxes.length - 1)]
-      // boxes only where each keeps a readable width; a narrow pane lists them one per line
-      const tilesFit = inner >= dm.tiles.length * 15
-      const LANE_TINT: Record<string, string> = { running: 'claude', you: 'warning', pending: 'inactive', done: 'success' }
-      const ACT_TINT: Record<string, string> = { failed: 'error', passed: 'success', finished: 'success', integrated: 'success', waiting: 'warning' }
-      const STAGE_GLYPH: Record<Mark, string> = { done: '✔', running: '◉', pending: '○', failed: '✘' }
-      // the run's numbers, label · value on one line each, columns at one offset
-      const runOf = dm.run ? runCells(dm.run, (key, vars) => s(key as keyof typeof en, vars)) : []
-      const runWidths = columnWidths(runOf.map(r => r.cells), inner, 2, [1])
-      dashBody = (
-        <Box flexDirection="column">
-          <Box>
-            <Text color={TINT[(dm.state === 'complete' ? 'done' : dm.state === 'blocked' ? 'failed' : 'running') as Mark]} bold>{`${stateText} `}</Text>
-            <Text color="claude">{'█'.repeat(fill)}</Text><Text color="inactive">{'░'.repeat(barW - fill)}</Text>
-            <Text bold>{` ${dm.pct}%`}</Text>
-          </Box>
-          {dm.now !== '' && <Text dimColor wrap="truncate-end">{`▸ ${nowText}`}</Text>}
-          {!tilesFit && (
-            <Box marginTop={1} flexDirection="column">
-              {dm.tiles.map(t => (
-                <Text key={`tile-${t.key}`} wrap="truncate-end"><Text dimColor>{tileLabel(t).padEnd(10)}</Text><Text bold color={t.alert ? 'warning' : undefined}>{t.value}</Text><Text dimColor>{`  ${tileSub(t)}`}</Text></Text>
-              ))}
-            </Box>
-          )}
-          {tilesFit && <Box marginTop={1} columnGap={1}>
-            {dm.tiles.map(t => (
-              <Box key={`tile-${t.key}`} width={tileW} flexDirection="column" borderStyle="round" borderColor={t.alert ? 'warning' : 'inactive'} paddingX={1}>
-                <Text dimColor>{clipText(tileLabel(t), tileW - 4)}</Text>
-                <Text bold color={t.alert ? 'warning' : undefined}>{clipText(t.value, tileW - 4)}</Text>
-                <Text dimColor>{clipText(tileSub(t), tileW - 4)}</Text>
-              </Box>
-            ))}
-          </Box>}
-          {runOf.length > 0 && <Box marginTop={1}>{renderLines(ui, runOf.map(r => rowLine(r.cells, runWidths, 2, r.tints)), 'r')}</Box>}
-          <Box marginTop={1} flexWrap="wrap">
-            {dm.stages.map((g, i) => (
-              <Box key={`ds-${g.key}`}>
-                <Text color={TINT[g.state]} bold={g.state === 'running'}>{`${STAGE_GLYPH[g.state]} ${g.n} ${wo(`stage${cap(g.key)}`, g.label)}`}</Text>
-                {i < dm.stages.length - 1 && <Text color={dm.stages[i + 1]!.state === 'pending' ? 'inactive' : 'success'}>{dm.stages[i + 1]!.state === 'pending' ? ' ┄┄ ' : ' ━━ '}</Text>}
-              </Box>
-            ))}
-          </Box>
-          {dm.packages.slice(0, 6).map((p, i, all) => (
-            <Text key={`dp-${i}`} wrap="truncate-end"><Text color="inactive">{i === all.length - 1 ? '  └─ ' : '  ├─ '}</Text><Text color={TINT[p.state]}>{`${MARK[p.state]} `}</Text>{clipText(p.title, inner - 8)}</Text>
-          ))}
-          {laneBox === 0 && (
-            <Box marginTop={1} flexDirection="column">
-              {dm.lanes.map(l => (
-                <Text key={`lane-${l.key}`} wrap="truncate-end"><Text color={LANE_TINT[l.key]}>● </Text><Text bold>{laneWord(l)}</Text><Text dimColor>{` ${l.count}  `}</Text>{l.cards.map(c => `${c.failed ? '✘ ' : ''}${c.title}`).join(' · ')}</Text>
-              ))}
-            </Box>
-          )}
-          {laneBox > 0 && <Box marginTop={1} columnGap={1}>
-            {dm.lanes.map(l => (
-              <Box key={`lane-${l.key}`} width={laneBox} flexDirection="column" borderStyle="round" borderColor="inactive" paddingX={1}>
-                <Text><Text color={LANE_TINT[l.key]}>● </Text><Text bold>{laneWord(l)}</Text><Text dimColor>{` ${l.count}`}</Text></Text>
-                {l.cards.map((c, j) => <Text key={`lc-${j}`} color={c.failed ? 'error' : undefined}>{clipText(`${c.failed ? '✘ ' : ''}${c.title}`, laneBox - 4)}</Text>)}
-                {l.more > 0 && <Text dimColor>{`+${l.more}`}</Text>}
-              </Box>
-            ))}
-          </Box>}
-          <Box marginTop={1} flexDirection="column">
-            {dm.activity.map((a, i) => (
-              <Text key={`da-${i}`} wrap="truncate-end"><Text dimColor>{`${a.time}  `}</Text><Text color={ACT_TINT[a.kind] ?? 'inactive'}>{`● ${actWord(a).padEnd(10)}`}</Text>{` ${subjectWord(wo, a.subject)}`}</Text>
-            ))}
-          </Box>
-        </Box>
-      )
-    }
-    return dashBody
-    }
-    const dashBody = drawDash()
-
-    let body
-    if (kind === 'dash') {
-      body = dashBody
-    } else if (kind === 'floor') {
-      body = floorLines
-    } else if (kind === 'stories') {
-      body = <Box flexDirection="column">{rail}{storiesBody}</Box>
-    } else if (kind === 'decisions') {
-      const pickedId = await read($, selected)
-      const dp = await read($, decisions)
-      const mine = dp !== null && dp.task_id === id && dp.card === pickedId ? dp.payload.entries : null
-      const what = (d: Decision) => {
-        const label = d.kind === 'verdict' ? s(VERDICT_WORD[d.verdict ?? ''] ?? 'vReject') : wo(`kind${cap(d.kind)}`, d.kind)
-        const score = d.score !== null && d.score !== undefined ? ` ${d.score}%` : ''
-        const why = d.reason ?? d.text ?? d.title ?? ''
-        return `${d.time ?? '     '} ${d.actor ?? '—'} · ${label}${score} · ${d.node ?? d.card ?? ''}${why ? ` — ${why}` : ''}`
-      }
-      const subs = (d: Decision) => [
-        ...(d.blocking ?? []).map(x => `${s('lineBlocking')}: ${x}`),
-        ...(d.problems ?? []).map(x => `${s('lineProblems')}: ${x}`),
-        ...(d.gaps ?? []).map(x => `${s('lineGaps')}: ${x}`),
-        ...(d.evidence ? [`${s('lineEvidence')}: ${d.evidence}`] : []),
-      ]
-      body = (
-        <Box flexDirection="column">
-          {picker}
-          {pickedId !== null && (
-            <Box columnGap={2}>
-              <Text bold>{s('decCard', { c: pickedId })}</Text>
-              <Button key="all" plain label={s('decAll')} onPress={async () => {
-                await update($, selected, () => null)
-                await fetchDecisions($, id)
-              }} />
-            </Box>
-          )}
-          {mine === null ? <Text dimColor>{s('loading')}</Text>
-            : mine.length === 0 ? <Text dimColor>{s('decNone')}</Text>
-            : mine.map((d, i) => (
-              <Box key={`d${i}`} flexDirection="column">
-                <Text color={d.verdict === 'reject' || d.kind === 'defect' ? 'error' : d.kind === 'answer' || d.kind === 'decision' ? 'warning' : undefined} wrap="truncate-end">{what(d)}</Text>
-                {subs(d).map((line, j) => <Text key={`d${i}-${j}`} dimColor wrap="truncate-end">{`      ${line}`}</Text>)}
-              </Box>
-            ))}
-        </Box>
-      )
-    } else if (kind === 'log') {
-      const lines = task.log.map(one => `${one.time} ${wo(`log${cap(one.kind)}`, `${one.kind} ${one.subject ?? ''}`, { s: subjectWord(wo, one.subject) }).trim()}`)
-      body = (
-        <Box flexDirection="column">
-          {lines.length === 0 ? <Text dimColor>{s('noLog')}</Text> : lines.map((line, i) => <Text key={`l${i}`}>{line}</Text>)}
-        </Box>
-      )
-    } else {
-      body = reportBody
-    }
     return (
       <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
-        {/* the EPIC rows are the title; a task that is not listed gets one row of its own */}
-        {entry === undefined && (
-          <Box>
-            <Box flexShrink={1}><Text bold wrap="truncate-end">{task.title}</Text></Box>
-            <Box flexShrink={0} marginLeft={2}>
-              <Text color="claude">{s('headLine', { state: stateWord, done: task.done, total: task.total })}</Text>
-            </Box>
-          </Box>
-        )}
-        {epics !== null && <Box marginTop={entry === undefined ? 1 : 0}>{epics}</Box>}
-        {waitBox}
-        {/* the tab row never wraps: tabRowPlan drops the cost text first, then shortens the labels */}
-        <Box marginY={1}>
-          <Box flexShrink={0}>{tabs}</Box>
-          {tabPlan.cost !== null && (
-            <Box flexGrow={1} flexShrink={1} justifyContent="flex-end" marginLeft={2}>
-              <Text dimColor wrap="truncate-end">{tabPlan.cost}</Text>
-            </Box>
-          )}
-        </Box>
         {body}
+        {hinted && <Text dimColor>{s('f2HintNoFlag')}</Text>}
         {footer}
       </Box>
     )
-  })
+  }).catch(($, e, next) => next(e))
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const info = await read($, status)
     const task = await read($, summary)
     const lang$ = await read($, lang)
     const s = (key: keyof typeof en, vars?: Record<string, string | number>) => fmt(STRINGS[lang$][key], vars, key)
-    const wo = (key: string, fallback: string) => wordOr(STRINGS[lang$], key, fallback)
-    const open = () => $.ui.open(OPEN)
+    const wo = (key: string, fallback: string, vars?: Record<string, string | number>) => wordOr(STRINGS[lang$], key, fallback, vars)
+    const open = () => openPane($)
+    // the band's [board] opens HOME, wherever the pane was left
+    const openHome = async () => {
+      await update($, page, () => HOME)
+      await update($, pageFrom, () => null)
+      await open()
+    }
 
     // an ended run: one card in place of the running row, until the person opens the report or dismisses it
     const cardId = cardTask(await read($, ended))
@@ -1143,15 +1168,19 @@ export const register: Register = on => {
           <Box>
             <Box flexShrink={0}><Text bold color={p.verdict === 'finished' ? 'success' : 'warning'}>{`teams · ${s(p.verdict === 'finished' ? 'cardFinished' : 'cardBlocked')}`}</Text></Box>
             {p.failed > 0 && <Box flexShrink={0} marginLeft={1}><Text color="error">{s('cardFailed', { n: p.failed })}</Text></Box>}
-            {p.needs.items.length > 0 && <Box flexShrink={1} marginLeft={1}><Text dimColor wrap="truncate-end">{`— ${p.needs.items.join('; ')}`}</Text></Box>}
+            {p.needs.items.length > 0 && <Box flexShrink={1} marginLeft={1}><Text dimColor wrap="truncate-end">{`— ${needsOf(p.needs, wo).join('; ')}`}</Text></Box>}
             {p.needs.more > 0 && <Box flexShrink={0} marginLeft={1}><Text dimColor>{s('cardMore', { n: p.needs.more })}</Text></Box>}
             {p.report !== null && (
               <Box flexShrink={0} marginLeft={1}>
                 <Button key="report" label={s('reportButton')} onPress={async () => {
                   await update($, watch, l => [...l.filter(x => x !== cardId), cardId])
                   await update($, summary, () => null)
-                  await update($, report, () => held)
-                  await update($, view, () => 'report')
+                  // the Report button opens FLOOR with Phase 6 selected, for that EPIC
+                  const to: Page = { name: 'FLOOR', epic: cardId, story: null, phase: null }
+                  await update($, epic, () => cardId)
+                  await update($, page, () => to)
+                  await update($, pageFrom, () => null)
+                  await update($, pageSel, m => ({ ...m, [levelOf(to)]: `p:${PHASE_KEYS.length}` }))
                   await set('seen')
                   await open()
                 }} />
@@ -1207,7 +1236,7 @@ export const register: Register = on => {
           </Box>
           {Math.max(info?.waiting ?? 0, asks.length) > 0
             ? <Box flexShrink={0} marginLeft={1}><Button key="inbox" label={inboxLabel(Math.max(info?.waiting ?? 0, asks.length))} onPress={open} /></Box>
-            : <Box flexShrink={0} marginLeft={1}><Button key="board" label={s('board')} onPress={open} /></Box>}
+            : <Box flexShrink={0} marginLeft={1}><Button key="board" label={s('board')} onPress={openHome} /></Box>}
         </Box>
         {await next(e)}
       </Box>

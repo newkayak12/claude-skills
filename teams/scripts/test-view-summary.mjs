@@ -46,7 +46,17 @@ function demo(over = {}) {
 
 const FORBIDDEN = ['verdict', 'match_pct', 'dispatch:', 'accept:', 'gate:goal', 'integrate:', '/Users/', '/var/', '/tmp/'];
 const clean = (m) => {
-  const s = JSON.stringify(summarize(m, { now: NOW }));
+  // judge.verdict is a field name now (F2-AC-35); the word still must not leak into a value
+  const out = summarize(m, { now: NOW });
+  const walk = (v) => {
+    if (Array.isArray(v)) return v.forEach(walk);
+    if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) {
+      if (k === 'verdict') assert.ok(['accept', 'reject', null].includes(x), `verdict value leaks: ${JSON.stringify(x)}`);
+      walk(x);
+    }
+  };
+  walk(out);
+  const s = JSON.stringify(out).replaceAll('"verdict":', '"":');
   for (const t of FORBIDDEN) assert.ok(!s.includes(t), `leaked ${t}: ${s}`);
 };
 
@@ -341,7 +351,7 @@ test('metrics: attempt n of max, capped at max_retries + 1; a never-run STORY is
 
 test('metrics: the last judge score against the threshold, and its reason without node ids or paths', () => {
   const x = metrics(withTelemetry({ judge: { P2: { score: 85, reason: 'accept:P2:3 failed in /tmp/x/y: the footer is not cleared', attempt: 3 } } }), { now: NOW });
-  assert.deepEqual(story(x, 'P2').judge, { score: 85, threshold: 90, reason: 'failed in the footer is not cleared', gap: null });
+  assert.deepEqual(story(x, 'P2').judge, { score: 85, threshold: 90, verdict: null, attempt: 3, reason: 'failed in the footer is not cleared', gap: null });
   assert.equal(x.threshold, 90);
 });
 
@@ -388,7 +398,7 @@ test('card94 own cause: 93 vs 90 reject whose current accept node is a pending r
   const m = withTelemetry({ judge: { P2: { score: 93, reason: 'close but not enough', attempt: 2, verdict: 'reject', cause: 'accept:P2:2 tenant cap at /tmp/x/y is skipped' } } });
   m.packages[1] = retry;
   const j = story(metrics(m, { now: NOW }), 'P2').judge;
-  assert.deepEqual(j, { score: 93, threshold: 90, reason: 'close but not enough', gap: 'tenant cap at is skipped' });
+  assert.deepEqual(j, { score: 93, threshold: 90, verdict: 'reject', attempt: 2, reason: 'close but not enough', gap: 'tenant cap at is skipped' });
   m.telemetry.judge.P2.score = 85;
   assert.equal(story(metrics(m, { now: NOW }), 'P2').judge.gap, null);
   m.telemetry.judge.P2.score = 93;
@@ -411,7 +421,7 @@ test('card94 storyNow: in-round retry running, repackage third attempt, settled,
   assert.equal(r.home.state, 'running');
   let now = storyNow(r.m, r.m.packages[1], { attempt: 2, verdict: 'reject' });
   assert.deepEqual(now, { state: 'running', attempt: 3, verdict: null });
-  assert.deepEqual(story(metrics(r.m, { now: NOW }), 'P2').judge, { score: 93, threshold: 90, reason: 'close but not enough', gap: null }, 'the round-level score stays visible');
+  assert.deepEqual(story(metrics(r.m, { now: NOW }), 'P2').judge, { score: 93, threshold: 90, verdict: 'reject', attempt: 2, reason: 'close but not enough', gap: null }, 'the round-level score stays visible');
   // repackage third attempt: :6 running, round_first_attempt 4, reject of attempt 5
   r = run(p2('dispatch:P2:6', 'running', 'accept:P2:6', 'pending', { attempt: 6, round_first_attempt: 4 }), { attempt: 5, verdict: 'reject' });
   assert.equal(r.home.state, 'running');
@@ -787,4 +797,27 @@ test('AC-31: summarize().cost.usd, taskSpend, budgetStatus.spend and the sum of 
     if (was === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = was;
     for (const c of cases) rmSync(c.root, { recursive: true, force: true });
   }
+});
+
+test('F2 records: judge verdict and attempt (rejected and accepted), item progress/agents, card stage', () => {
+  const rej = story(metrics(withTelemetry({ judge: { P2: { score: 61, reason: 'no test', attempt: 1, verdict: 'reject' } } }), { now: NOW }), 'P2').judge;
+  assert.deepEqual([rej.verdict, rej.attempt, rej.score], ['reject', 1, 61]);
+  const acc = story(metrics(withTelemetry({ judge: { P2: { score: 91, attempt: 2, verdict: 'accept' } } }), { now: NOW }), 'P2').judge;
+  assert.deepEqual([acc.verdict, acc.attempt, acc.score], ['accept', 2, 91]);
+
+  const m = withTelemetry({});
+  m.packages[0] = card('P1', 'module a', 'running', {
+    child: { nodes: [ms('plan:1', 'done'), ms('setgoal:1', 'done'), ms('implement:1', 'running'), ms('test:1', 'pending')] },
+  });
+  const x = metrics(m, { now: NOW });
+  assert.deepEqual(story(x, 'P1').progress, { done: 2, total: 4 });
+  assert.equal(story(x, 'P1').agents, 1);
+  assert.equal(story(x, 'P2').progress, null, 'no child run: unknown, blank');
+  assert.equal(story(x, 'P2').agents, null);
+
+  const w = demo();
+  w.packages[2] = card('P2', 'module b', 'pending', { child: { nodes: [ms('ask:1', 'waiting_human', { questions: ['which db?'] })] } });
+  w.packages[3] = card('D1', 'defect D1', 'pending', { child: { nodes: [ms('qa:1', 'waiting_human')] } });
+  const cards = summarize(w, { now: NOW }).you.cards;
+  assert.deepEqual(cards.map((c) => c.stage), ['ask', 'qa']);
 });

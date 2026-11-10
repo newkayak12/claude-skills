@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // stateserver.mjs - the engine's state socket: ONE per tasks root, answering what the teams mod asks
-// (`view.mjs --once --format status|events|summary|teams|board|report|decisions`) over HTTP on a Unix
+// (`view.mjs --once --format status|events|summary|teams|board|report|decisions|story|story-report`) over HTTP on a Unix
 // socket. The answers come from the same function as the CLI (scripts/lib/view-once.mjs), so a served
 // answer equals `--once` for the same root and cwd.
 //
@@ -340,11 +340,11 @@ export async function startStateServer({ tasksDir, idleMs = idleDefault(), exit 
         return;
       }
       const args = { view: q.get('view') || 'pipeline' };
-      for (const k of ['format', 'cwd', 'task', 'session', 'card']) if (q.has(k)) args[k] = q.get(k);
+      for (const k of ['format', 'cwd', 'task', 'session', 'card', 'story']) if (q.has(k)) args[k] = q.get(k);
       if (q.has('since')) args.since = Number(q.get('since')) || 0;
       const render = VIEWS[args.view];
       if (!render) throw new Error('unknown view');
-      const key = JSON.stringify([tasksDir, args.view, args.format, args.cwd, args.task, args.session, args.since, args.card]);
+      const key = JSON.stringify([tasksDir, args.view, args.format, args.cwd, args.task, args.session, args.since, args.card, args.story]);
       let hit = answers.get(key);
       if (!hit || Date.now() - hit.at >= ANSWER_MS) {
         if (Date.now() - tick.at >= ANSWER_MS) {

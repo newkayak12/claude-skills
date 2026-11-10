@@ -255,6 +255,41 @@ export function renderCritique(task) {
   return L.join('\n') + '\n';
 }
 
+// The STORY report's sections as data, the one source of both renderStory's text and the pane's
+// payload (view --format story-report): [{key, lines}] with key result, verdict, files, decisions,
+// left, seeLog. Model-written sentences stay as written; the verdict is numbers (key=value lines),
+// so a reader draws the labels in its own language. finished is false until the accept node is done.
+export function storyReportSections(task, pkgId) {
+  const id = String(pkgId);
+  const dispatch = latestBySubgoal(task, id, 'dispatch');
+  const accept = latestBySubgoal(task, id, 'accept');
+  const r = (accept && accept.result) || null;
+  const finished = !!(accept && accept.state === 'done' && r);
+  const opts = (task.team && task.team.opts) || {};
+  const threshold = Number.isFinite(task.goal_threshold) ? task.goal_threshold : (Number.isFinite(opts.goal_threshold) ? opts.goal_threshold : null);
+  const retries = Number.isInteger(task.max_retries) ? task.max_retries : (Number.isInteger(opts.max_retries) ? opts.max_retries : null);
+  const folds = task.nodes.filter((n) => n.stage === 'integrate' && n.state === 'done' && n.result && n.result.package_fold);
+  const fold = folds.length ? folds[folds.length - 1].result.package_fold[id] : null;
+  const testRuns = task.nodes.flatMap((n) => (n.stage === 'integrate' && n.integration && n.integration.package_tests) || []).filter((t) => String(t.package) === id);
+  const lastTest = testRuns[testRuns.length - 1];
+  const num = (v) => (v == null ? '' : String(v));
+  const sections = [
+    { key: 'result', lines: finished ? [String((dispatch && dispatch.result && (dispatch.result.handoff || dispatch.result.reason)) || r.reason || '')].filter(Boolean) : [] },
+    {
+      key: 'verdict',
+      lines: !r ? [] : [`score=${num(r.match_pct)}`, `threshold=${num(threshold)}`, `attempt=${num(accept.attempt || 1)}`, `max=${num(retries == null ? null : retries + 1)}`, ...(lastTest ? [`tests=${lastTest.exit === 0 ? 'pass' : 'fail'}`] : [])],
+    },
+    { key: 'files', lines: (fold && fold.files_changed) || [] },
+    { key: 'decisions', lines: (task.decisions || []).filter((d) => d && d.question && String(d.decided_in) === id).map((d) => `${d.question}: ${d.chose}`) },
+    {
+      key: 'left',
+      lines: !r ? [] : [...(Array.isArray(r.scoped_out) ? r.scoped_out : []).map((e) => `${e.gap} (belongs to ${e.belongs_to})`), ...(Array.isArray(r.gaps) ? r.gaps : []).map(String)],
+    },
+    { key: 'seeLog', lines: [`tm_log ${storyKey(task.run_id, id)}`, `tm_retry ${storyKey(task.run_id, id)}`] },
+  ];
+  return { finished, sections };
+}
+
 export function renderStory(task, pkgId) {
   const pkg = (task.spec.packages || []).find((p) => String(p.id) === String(pkgId));
   const key = storyKey(task.run_id, pkgId);
@@ -303,6 +338,13 @@ export function renderStory(task, pkgId) {
   } else {
     L.push('(not judged yet)');
   }
+  // The mock-06 sections, from the same data the pane's story-report payload carries.
+  const rep = storyReportSections(task, pkgId);
+  const sec = (k) => rep.sections.find((s) => s.key === k).lines;
+  const vd = Object.fromEntries(sec('verdict').map((l) => l.split('=')).map(([k, v]) => [k, v]));
+  L.push('', '## Result', rep.finished ? bullets(sec('result')) : '(not finished yet)');
+  if (sec('verdict').length) L.push('', '## Verdict', `score: ${vd.score || '—'}/${vd.threshold || '—'} · attempt ${vd.attempt}/${vd.max || '—'}${vd.tests ? ` · tests: ${vd.tests}` : ''}`);
+  L.push('', '## Files changed', bullets(sec('files')), '', '## Decisions', bullets(sec('decisions')), '', '## Left over', bullets(sec('left')), '', '## Look again', bullets(sec('seeLog')));
   if (dispatch && dispatch.child && dispatch.child.driver) L.push('', '## Driver', `log: ${dispatch.child.driver.log}`);
   return L.join('\n') + '\n';
 }
@@ -451,9 +493,13 @@ export function buildRetro(task) {
     const latest = accepts[accepts.length - 1];
     const ok = !!(latest && latest.state === 'done' && latest.result && latest.result.accept === true);
     if (!ok) {
+      // An engine-composed fallback reason carries a key (and its number/word) beside the English, as
+      // reasonFailed does; a reason the judge wrote stays as written, with no key.
+      const written = latest && latest.result && latest.result.reason;
       unaccepted.push({
         id, title: packageTitle(task, id),
-        reason: latest ? String((latest.result && latest.result.reason) || `state: ${latest.state}`) : 'never dispatched',
+        reason: latest ? String(written || `state: ${latest.state}`) : 'never dispatched',
+        ...(written ? {} : latest ? { reason_key: 'reasonState', reason_vars: { state: latest.state } } : { reason_key: 'reasonNeverDispatched', reason_vars: {} }),
       });
     }
   }
