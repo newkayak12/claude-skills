@@ -216,6 +216,14 @@ export function scaffold(root) {
     created.push(rel)
   }
   make('CLAUDE.md', WORKSPACE_GUIDE)
+  // a CLAUDE.md the user already had (or the README renamed into it) keeps every line; the guide is
+  // appended below it once, so the next session still reads the names and the scaffold rule
+  const appended = []
+  const guide = join(root, 'CLAUDE.md')
+  if (!created.includes('CLAUDE.md') && !readFileSync(guide, 'utf8').includes('manage.mjs scaffold')) {
+    writeFileSync(guide, readFileSync(guide, 'utf8').trimEnd() + '\n\n' + WORKSPACE_GUIDE)
+    appended.push('CLAUDE.md')
+  }
   make('sources/선정.md', SELECTION_HEAD)
   let catalog = ''
   try { catalog = readFileSync(join(root, 'deck.catalog.md'), 'utf8') } catch { /* no catalog yet */ }
@@ -228,7 +236,7 @@ export function scaffold(root) {
   make(NEXT_RENDER, NEXT_RENDER_HEAD)
   make('snapshot/render', null)
   make('feedback', null)   // feedback/YYYY-MM-DD.md, one review per day, ending with its fix table
-  return renamed.length ? { created, renamed } : { created }
+  return { created, ...(renamed.length && { renamed }), ...(appended.length && { appended }) }
 }
 
 // sources/선정.md rows: 글감 · 쓰임 (본문 | 부록 | 제외) · 쪽 · 이유 · 대표.

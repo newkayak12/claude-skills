@@ -132,7 +132,8 @@ Codex 샌드박스가 뜨지 못하는 환경(사용자 네임스페이스가 �
 (Codex `--dangerously-bypass-approvals-and-sandbox`, Claude `--permission-mode bypassPermissions`)
 `--cwd`에서 파일을 고치고 명령을 실행합니다. 결과에는 바뀐 git status 줄과 HEAD가 움직였는지가
 나오고, 묻는 쪽이 diff를 읽고 검사를 다시 돌린 뒤에야 끝났다고 합니다. 기본값은 여전히 읽기 전용입니다.
-테스트: `node --test agents/scripts/test-ask.mjs`.
+테스트: `node --test agents/scripts/test-ask.mjs`. 1.3.1: `think:brainstorming --debate`와
+`think:devils-advocate`가 `ask.mjs`를 알아서 부르고, 두 스킬이 이를 호출자로 적습니다.
 
 ## 관련 플러그인
 

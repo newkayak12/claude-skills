@@ -138,10 +138,13 @@ snapshot/  sources/  docs/확정사실.md               버전, 글감, 확정�
 
 작업 공간의 모든 세션은 지시가 없어도 `manage.mjs scaffold`로 시작합니다. 옛 이름(`skeleton.md`,
 `deck.mdx`, `resume.md`, `README.md`, `template/분석.md`, `template/다음렌더-지침.md`)을 위 이름으로
-바꾸고, CLAUDE.md를 포함해 없는 것만 만들며, 있는 파일은 덮지 않습니다.
+바꾸고, CLAUDE.md를 포함해 없는 것만 만들며, 있는 파일은 덮지 않습니다. 이미 있는 CLAUDE.md(이름을 바꾼
+README 포함)는 내용을 그대로 두고 안내문을 한 번만 뒤에 덧붙입니다.
 
 9단계(2.14.0: 위 작업 공간 이름을 `scaffold`가 지킴, 이력서를 사용자 템플릿에 바로 빌드함 — 역할을 템플릿
-문단의 글자로 연결하고 사진을 유지하며 넘친 분량을 줄 수로 알려 줌, 안전 영역·가독성·`write:like-me`를
+문단의 글자로 연결하고 사진을 유지하며 넘친 분량을 줄 수로 알려 줌(새 `resume-builder`), 7단계는 새
+`render-review`, 두 빌더 마지막에 AI 흔적 검사 — 대체 텍스트의 "AI-generated content may be incorrect"는
+지우고 그 밖의 흔적은 알려 줌, 안전 영역·가독성·`write:like-me`를
 포트폴리오와 이력서 공통 규칙으로 둠. 2.13.0: NFD 한글 파일명, feedback 렌즈 셋, deck-builder 빌드 배치): 수집 → 정리(`sources/선정.md`: 본문 / 부록 / 제외, 글감마다 대표) → 초안 → 여러 시점
 퇴고 → 템플릿 분석(`template/analysis.md`) → 덱 → 렌더와 검토(미리보기를 덱 버전별로 `snapshot/render/`에
 보관) → 덱 피드백, 결과는 글감으로 되돌림. 9단계는 같은 확정 주장으로 사용자 본인의 Word 템플릿에

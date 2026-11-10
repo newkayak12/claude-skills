@@ -71,7 +71,7 @@ the user's word is skipped `not requested`; a user-wait is answered by the user,
 Mechanics: `references/rounds.md`.
 
 0. **Open, every session, unasked.** `scaffold` (renames old names, creates only what is missing,
-   never overwrites; its `renamed`/`created` in one report line), then `layout`, `docs/확정사실.md` and
+   never overwrites, appends the guide once to a CLAUDE.md that lacks it; its `renamed`/`created`/`appended` in one report line), then `layout`, `docs/확정사실.md` and
    the "맞춰야 할 것" table. A stray root file (`*.conflict-*`, a scratch script) is named and moved
    to `_archive/` once the user agrees.
 1. **Collect.** New material → run `material` from the workspace root (items land in

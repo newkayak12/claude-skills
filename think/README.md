@@ -117,7 +117,7 @@ criteria don't separate, Claude offers it in one line; or ask for it ("토론으
 shows three personas (swap any), each runs as its own subagent to propose options, then they attack
 and rebut each other for up to two rounds; Claude still cuts with the kill-criteria and adds
 `[충돌]` — who clashed where. Every utterance is logged to `.claude/brainstorming/<slug>.jsonl`. With
-fewer than two agents left it finishes in normal mode and says so. When the `agents` plugin
+fewer than two agents left it finishes in normal mode and says so. From 1.7.0, when the `agents` plugin
 (`use-codex` / `use-claude`) and the other CLI are present, one debater is the other model (codex
 from Claude Code, claude from Codex), called automatically and cold in round 1; if it is missing
 or errors, the debate goes on without it and says so.
@@ -205,7 +205,7 @@ severity, and a real precedent — or an honest "no clear precedent — speculat
 a fabricated one. It hunts unstated assumptions first, since the sharpest objection usually targets
 one of them, and always closes with one core vulnerability and a reversibility call — that line is
 what tells you whether the objections must be resolved before starting or can be learned after.
-When the `agents` plugin and the other CLI are present, it also gets one cold objection set from the
+From 1.7.0, when the `agents` plugin and the other CLI are present, it also gets one cold objection set from the
 other model (codex from Claude Code, claude from Codex), merges it with its own and marks which
 model raised each; if that is missing or errors, it continues alone and says so.
 

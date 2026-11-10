@@ -140,7 +140,8 @@ bypasses permissions (Codex `--dangerously-bypass-approvals-and-sandbox`, Claude
 `--permission-mode bypassPermissions`), so it edits and runs commands in `--cwd`. The result lists
 the git status lines it changed and whether HEAD moved, and the asking side reads the diff and reruns
 the check before calling it done. Read only stays the default. Tests:
-`node --test agents/scripts/test-ask.mjs`.
+`node --test agents/scripts/test-ask.mjs`. 1.3.1: `think:brainstorming --debate` and
+`think:devils-advocate` call `ask.mjs` on their own; both skills name them as callers.
 
 ## Related plugins
 

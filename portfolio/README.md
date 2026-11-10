@@ -145,11 +145,14 @@ snapshot/  sources/  docs/확정사실.md               versions, material, sett
 
 Every session in the workspace starts with `manage.mjs scaffold`, unasked: it renames older names
 (`skeleton.md`, `deck.mdx`, `resume.md`, `README.md`, `template/분석.md`, `template/다음렌더-지침.md`)
-to these, creates only what is missing, CLAUDE.md included, and never overwrites a file.
+to these, creates only what is missing, CLAUDE.md included, and never overwrites a file. A CLAUDE.md
+that is already there (a renamed README too) keeps its text and gets the guide appended once.
 
 Nine steps (2.14.0: the workspace names above, kept by `scaffold`; the resume built straight into
 your own template — roles mapped to its paragraphs by their text, photo kept, overflow counted in
-lines; safe area, readability and `write:like-me` as rules for portfolio and resume alike. 2.13.0:
+lines, by the new `resume-builder`; step 7 as the new `render-review`; a final AI-trace check in both
+builders that strips "AI-generated content may be incorrect" from alt text and reports any other AI
+trace; safe area, readability and `write:like-me` as rules for portfolio and resume alike. 2.13.0:
 NFD Korean file names, feedback's three lenses, deck-builder layout in build): collect → select (`sources/선정.md`: 본문 / 부록 / 제외 and what each item
 leads with) → draft → revise from several viewpoints → template analysis (`template/analysis.md`) →
 deck → render and review (previews kept per deck version under `snapshot/render/`) → feedback on
