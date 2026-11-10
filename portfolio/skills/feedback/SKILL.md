@@ -2,10 +2,9 @@
 name: feedback
 effort: high
 description: >-
-  Use when someone shares a developer portfolio and wants interviewer-grade feedback: screen
-  verdict, whether numbers and skills hold up against their material, whether it reads at the
-  claimed level. Triggers: "포트폴리오 피드백 해줘", "서류 통과할까", "숫자 근거 있어?", "시니어로 읽혀?",
-  "고친 버전 비교", "점수 깎는 거 찾아줘", "더 고칠 거 찾아줘", "관점별 검토".
+  Use when a developer portfolio needs interviewer-grade review against its material. Triggers:
+  "포트폴리오 피드백 해줘", "점수 깎는 거 찾아줘", "더 고칠 거 찾아줘", "관점별 검토", "서류 통과할까",
+  "숫자 근거 있어?", "시니어로 읽혀?", "고친 버전 비교".
 scenarios:
   - "Review my backend developer portfolio and give me honest feedback"
   - "Audit my portfolio — do the numbers hold up and does the skills list match the projects?"
