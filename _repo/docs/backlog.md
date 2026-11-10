@@ -159,18 +159,16 @@ toasts).
 
 ### Repo and rules
 
-131. **`repo-rules.mjs` runs whatever path it is reached by, so its guards cannot switch off silently** — in E-f1f5fcf7
-   - Why: hook and mod audit, 2026-11-10 (user: "현재 hook, mod로 하는거 기능 점검하고 원하는대로 안되는거 backlog").
-     `node _repo/scripts/test-repo-rules.mjs` on macOS: 188 ok, 75 FAIL, every FAIL a `write:` case. Cause verified:
-     both entry checks (`.claude/hooks/repo-rules.mjs:406`, `:420`) compare `import.meta.url` with
-     `file://${process.argv[1]}`. A copy of the hook run from `/private/tmp/x` denies `sed -i`; the same copy from
-     `/tmp/x` (symlink) or from a path with a space prints nothing and exits 0, so every deny and the prepush hold are
-     off. The test's copies live under `tmpdir()`, a symlink on macOS. This checkout's real path has neither, so the
-     live guard works here; a checkout reached through a symlink or a spaced path has none. Plugin hooks are not
-     affected. `teams/scripts/bench/harvest.mjs:23` has the same check.
-   - Acceptance: the entry check compares real paths, as `session/scripts/reap.mjs:209` does;
-     `node _repo/scripts/test-repo-rules.mjs` has 0 FAIL on macOS; a test runs the hook through a symlink and through a
-     path with a space and gets the deny, and `prepush` refuses in both.
+134. **`repo-rules.mjs` denies a repo write reached through a symlinked path, even when its parent directory is new**
+   - Why: carryover of card 131 (E-f1f5fcf7, 2026-11-10, report §5). With the entry checks fixed, `echo x >
+     <symlinked-prefix>/teams/a.md` and `cd <symlinked clone> && sed -i ... teams/mcp/x.mjs` pass under `tmpdir()`
+     and are denied under `realpath(tmpdir())`. Cause named by the report, unverified here: the `samePath` fallback
+     to `resolve()` at `.claude/hooks/repo-rules.mjs:304` when the parent does not exist, and `cd` targets are not
+     canonicalized. The test now resolves its fixture root (`root = realpathSync(mkdtempSync(...))`), so no test pins
+     this; with the old root line the test gives 269 ok / 2 FAIL (`write: absolute repo path`, `write: cd into the
+     repo from outside it`).
+   - Acceptance: a test with a symlinked, non-canonical root denies both writes; `node
+     _repo/scripts/test-repo-rules.mjs` 0 FAIL.
 
 132. **A mod or plugin hook skipped by another plugin's hook is known and its loss is covered**
    - Why: seen 2026-11-10 in a live session: "session: its classic.SessionStart hook was skipped.
@@ -492,6 +490,15 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
      the report lands in `_repo/docs/plans/` dated, and what teams should take
      is listed at its end for the user to choose (no cards filed without that choice).
 
+135. **The two resume tests in `teams/scripts/bench/test-drive-gh.mjs` finish under their 60 s limit**
+   - Why: seen 2026-11-10 while checking card 131: `node --test teams/scripts/bench/test-*.mjs` 78 pass / 2 fail,
+     both in `test-drive-gh.mjs` ("a gh-* job that hit a usage limit is resumed by resume.sh in the hashed
+     workspace", "resume of a non gh-* workspace works through the same arguments"), each cut at 60 s with exit
+     `null`. The same 2 fail at `b7f5e507`, before card 131's change. The load average was 84 on 8 cores; whether
+     they pass on an idle machine is unverified.
+   - Acceptance: both tests pass on an idle machine, or the hang is found and fixed; `node --test
+     teams/scripts/bench/test-*.mjs` 0 fail.
+
 ### write plugin
 
 ### knowledge plugin
@@ -550,6 +557,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-f1f5fcf7 | 2026-11-10 | 131 | shipped `2612243d`; size S; goal gate 90; entry checks of `repo-rules.mjs` and bench `harvest.mjs` compare real paths (reap.mjs form); test-repo-rules 188 ok / 75 FAIL → 271 ok / 0 FAIL, 8 new symlink/space entry cases; 0 FAIL needed the test's fixture root resolved to its real path (lead's decision, no person reachable), the write-through-symlink defect it hid is card 134; validate 15/15, check-copies ok, test-harvest 3/3 |
 | E-066abb46 | 2026-11-05 | 125 (socket rest), 128 (tm_wait, comments) | shipped `67f1e347`; size S on Sonnet; goal gate 91; state server skips unchanged tasks (fixture 2.10% → 0.90%, real root 1.55% → 0.38%), server log, mod resolves relative tasks dir, CPU guard default-on passed 3 suites of 2154 (only fail W2 hygiene from a stray `.teams_wiki/`); `tm_wait` awaited + abortable, `team_status`/`wiki_list` answer behind it (red on baseline); plugin test 453/453, view/server tests 386/387 (1 skip); spend $48 of $25 budget (card 130); thin CPU margin, 60 s safety-net rebuild |
 | E-d26f7a29 | 2026-11-05 | 128 step 2 | shipped `14d94112`; one MCP server `teams/mcp/server.mjs`, 33 tools; gate 91 |
 | E-0ad41780 | 2026-11-04 | 125 (socket part) | shipped `595d5d1b`; size S; goal gate 90; `teams/mcp/stateserver.mjs` one socket per tasks root, mod dials it (proto=1, 409 → `--once`), `view.mjs --serve-once-socket` removed, `--once` unchanged (view tests 334/334); s1 and s3 each needed a second attempt (flaky CPU test → opt-in `TEAMS_STATE_PERF=1`; server died with its tmux session → detached, SIGHUP ignored); teams 1827/1829 (2 skip), plugin test 448/448 (re-run by hand); real-root CPU ~4% per polling session, not <1% — left on card 125; critique ended at its 2-round cap with 3 majors open; driver paused 1 h on the 5-hour limit; Codex unreachable |
