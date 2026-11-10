@@ -115,6 +115,18 @@ function assertInside(root, p) {
   if (!insideRoot(root, p)) throw new Error(`${relative(root, resolve(p))} must be a path inside the workspace root ${root}`)
 }
 
+// A Korean name synced or copied from macOS (iCloud, zip, rsync) is stored decomposed (NFD) and Linux
+// matches names byte for byte: every workspace path is looked up in both forms, NFC first. The NFC
+// path is returned when neither exists, so a new file is written composed.
+export function at(base, ...parts) {
+  const rel = join(...parts)
+  for (const form of ['NFC', 'NFD']) {
+    const p = join(base, rel.normalize(form))
+    if (existsSync(p)) return p
+  }
+  return join(base, rel.normalize('NFC'))
+}
+
 const LAYOUT = ['skeleton.md', 'deck.mdx', 'template.pptx', 'deck.catalog.md', 'build', 'snapshot', 'sources', 'docs/확정사실.md',
   'sources/선정.md', 'template/분석.md']
 
@@ -126,8 +138,7 @@ export function layout(root) {
     if (m) template = m[1]
   } catch { /* no deck.mdx: it is listed missing */ }
   const paths = LAYOUT.map(p => (p === 'template.pptx' ? template : p))
-  // a Korean name copied from macOS (zip, rsync) is stored decomposed (NFD); look for both forms
-  const has = p => existsSync(join(root, p.normalize('NFC'))) || existsSync(join(root, p.normalize('NFD')))
+  const has = p => existsSync(at(root, p))
   return { present: paths.filter(has), missing: paths.filter(p => !has(p)) }
 }
 
@@ -138,7 +149,7 @@ const SELECTION_HEAD = '# 선정\n\n| 글감 | 쓰임 | 쪽 | 이유 | 대표 |\
 export function scaffold(root) {
   const created = []
   const make = (rel, body) => {
-    const p = join(root, rel)
+    const p = at(root, rel)
     if (existsSync(p)) return
     mkdirSync(join(p, '..'), { recursive: true })
     if (body === null) mkdirSync(p, { recursive: true })
@@ -162,7 +173,7 @@ export function scaffold(root) {
 // sources/선정.md rows: 글감 · 쓰임 (본문 | 부록 | 제외) · 쪽 · 이유 · 대표.
 export function selection(root) {
   let text = ''
-  try { text = readFileSync(join(root, 'sources', '선정.md'), 'utf8') } catch { return null }
+  try { text = readFileSync(at(root, 'sources', '선정.md'), 'utf8') } catch { return null }
   const rows = text.split('\n').filter(l => /^\s*\|/.test(l) && !/^\s*\|[\s:|-]+\|\s*$/.test(l))
     .map(l => l.split('|').slice(1, -1).map(c => c.trim()))
     .filter(c => c[0] && c[0] !== '글감')
@@ -182,7 +193,7 @@ export function keepRender(root, version) {
   const dir = join(root, 'snapshot', 'render', `deck-${version}`)
   mkdirSync(join(dir, 'pages'), { recursive: true })
   for (const f of pages) copyFileSync(join(src, f), join(dir, 'pages', f))
-  const review = join(dir, '검토.md')
+  const review = at(dir, '검토.md')
   if (!existsSync(review)) {
     writeFileSync(review, [`# 렌더 검토 · deck-${version}`, '', '| 쪽 | 본 것 | 문제 | 다음렌더-지침 |', '|---|---|---|---|',
       ...pages.map((_, i) => `| ${i + 1} | | | |`), ''].join('\n'))
@@ -552,7 +563,7 @@ export function resumePages(text) {
 // `## 서술 기준` and `## 구조` in docs/확정사실.md, handed to feedback and drift checks as they are.
 export function settled(root) {
   let text = ''
-  try { text = readFileSync(join(root, 'docs', '확정사실.md'), 'utf8') } catch { return [] }
+  try { text = readFileSync(at(root, 'docs', '확정사실.md'), 'utf8') } catch { return [] }
   const out = []
   let on = false
   for (const l of text.split('\n')) {
@@ -562,10 +573,14 @@ export function settled(root) {
   return out
 }
 
-// A 확정사실.md that has neither section leaves every settled decision unread: said, never silent.
+// A 확정사실.md that is missing, unreadable or has neither section leaves every settled decision
+// unread: said, never silent.
 export function settledNote(root) {
   let text
-  try { text = readFileSync(join(root, 'docs', '확정사실.md'), 'utf8') } catch { return undefined }
+  try { text = readFileSync(at(root, 'docs', '확정사실.md'), 'utf8') } catch (e) {
+    return e.code === 'ENOENT' ? 'docs/확정사실.md not found: no settled decision or confirmed fact is read'
+      : `docs/확정사실.md cannot be read (${e.code || e.message}): no settled decision or confirmed fact is read`
+  }
   return /^##\s+(서술 기준|구조)/m.test(text) ? undefined
     : 'docs/확정사실.md has no `## 서술 기준` or `## 구조` section: no settled decision is read; write them there'
 }
@@ -574,7 +589,7 @@ export function settledNote(root) {
 // its cited items do not carry (listed as confirmed, never not_in_material).
 export function confirmedFacts(root) {
   let text = ''
-  try { text = readFileSync(join(root, 'docs', '확정사실.md'), 'utf8') } catch { return [] }
+  try { text = readFileSync(at(root, 'docs', '확정사실.md'), 'utf8') } catch { return [] }
   return text.split('\n').filter(l => figs(l).length).map(l => ({ figs: figs(l), text: l.trim() }))
 }
 

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
-import { bump, claims, compare, confirmedFacts, deckPages, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, readRounds, renumber, round, scaffold, selection, settle, settled, snapshot, step, verify } from './manage.mjs'
+import { bump, claims, compare, confirmedFacts, deckPages, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, readRounds, renumber, round, scaffold, selection, settle, settled, settledNote, snapshot, step, verify } from './manage.mjs'
 
 const SKEL = `# 가상 포트폴리오
 version: v4.0.0
@@ -565,12 +565,35 @@ test('settle CLI: one JSON line {kept, settled}', () => {
   assert.deepEqual(Object.keys(out.settled[0]).sort(), ['finding', 'line', 'share'])
 })
 
-test('settle CLI: no docs/확정사실.md keeps every finding; an empty file array gives empty lists', () => {
+test('settle CLI: no docs/확정사실.md keeps every finding and says the file is missing; an empty file array gives empty lists', () => {
   const root = settleRoot()
   writeFileSync(join(root, 'findings.json'), JSON.stringify([F_BASIS, F_OTHER]))
-  assert.deepEqual(JSON.parse(settleCli(root, '--findings', 'findings.json').stdout), { kept: [F_BASIS, F_OTHER], settled: [] })
+  const missing = 'docs/확정사실.md not found: no settled decision or confirmed fact is read'
+  assert.deepEqual(JSON.parse(settleCli(root, '--findings', 'findings.json').stdout), { kept: [F_BASIS, F_OTHER], settled: [], settled_note: missing })
   writeFileSync(join(root, 'none.json'), '[]')
-  assert.deepEqual(JSON.parse(settleCli(root, '--findings', 'none.json').stdout), { kept: [], settled: [] })
+  assert.deepEqual(JSON.parse(settleCli(root, '--findings', 'none.json').stdout), { kept: [], settled: [], settled_note: missing })
+})
+
+// A workspace synced from macOS keeps Korean names decomposed (NFD); Linux matches bytes (card 140).
+test('NFD names: 확정사실 and 선정 are read, layout lists them present, scaffold does not write an NFC twin', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-nfd-'))
+  mkdirSync(join(root, 'docs')); mkdirSync(join(root, 'sources'))
+  writeFileSync(join(root, 'docs', '확정사실.md'.normalize('NFD')), SETTLE_DOC + '\n- 응답 시간 2.7초\n')
+  writeFileSync(join(root, 'sources', '선정.md'.normalize('NFD')), '# 선정\n\n| 글감 | 쓰임 | 쪽 | 이유 | 대표 |\n|---|---|---|---|---|\n| 01_가상/A1 | 본문 | 3 | 핵심 | 예 |\n')
+  assert.ok(!existsSync(join(root, 'docs', '확정사실.md'.normalize('NFC'))), 'the fixture holds only the NFD name')
+  assert.deepEqual(settled(root), ['진행 중인 장은 완료했을 때 기준으로 쓴다', '서로 다른 일은 한 블록에 섞지 않는다'])
+  assert.equal(confirmedFacts(root).length, 1)
+  assert.equal(selection(root).rows.length, 1)
+  const l = layout(root)
+  assert.ok(l.present.includes('docs/확정사실.md') && l.present.includes('sources/선정.md'))
+  assert.ok(!scaffold(root).created.includes('sources/선정.md'))
+  assert.deepEqual(readdirSync(join(root, 'sources')), ['선정.md'.normalize('NFD')])
+  assert.equal(settledNote(root), undefined)
+})
+
+test('settledNote: a file with neither section is named; so is a missing one', () => {
+  assert.match(settledNote(settleRoot('# 확정사실\n\n## 쓰지 않는 것\n- 직함\n')), /no `## 서술 기준` or `## 구조` section/)
+  assert.match(settledNote(settleRoot()), /not found/)
 })
 
 test('settle CLI: a missing flag, a missing file and a non-array file are errors naming --findings', () => {
