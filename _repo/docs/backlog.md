@@ -24,6 +24,67 @@ real run n=2 on the fixture: two rounds, `gate.order: recorded`, a panel of one 
 each round, `nothing_new` at round 2). Left open: D24, whether a round waiting on the user ends the loop (the
 PRD does not say). E-ae7d3226 cleaned.
 
+Order of the four cards below (user, 2026-11-10: "1. 일단 포폴쪽만 먼저하고 2. resume는 조금 천천히
+3. 각 스킬 점검하고 / feedback은 성능을 향상시키는 방향으로"): 136, 137, 138, then 139.
+
+136. **deck-builder does in build and render what a real workspace patches after every build**
+    - Why: review of a real deck workspace, 2026-11-10 (read only). It keeps a 328-line
+      `postbuild_layout.py` run after every build; one session skipped it once and a page shipped
+      misplaced. What the script does, each a deck-builder gap:
+      - moves and resizes template shapes per page (x, y, h, w in pt), since `deck.mdx` cannot;
+        this is also how the gap a `!drop` leaves gets closed;
+      - deletes `[ … ]` captions and grows the picture into their room, bounded by its panel,
+        neighbours and the page edge (user, 2026-11-03: "도식화에 제목 넣으니까 [] 로 감싼거 굳이 넣지
+        말자 이미지를 더 잘보이게 하고");
+      - sets every picture inside a rounded panel to one margin rule (user, 2026-11-09: "이미지 바깥
+        여백 좀 맞추자 일관적으로, 최소 좌우하는 일정해야지");
+      - recolours text runs (an ending page matched to the cover, emphasis runs forced white);
+      - superscripts footnote marks `1)` after a word (user, 2026-11-03: "윗첨자로 안쓰냐");
+      - re-implements render (wrap="none" copy, docker convert, pdftoppm) to redo the PDF.
+    - Render bug, cause verified 2026-11-10 in that workspace: LibreOffice adds its automatic
+      East Asian / Latin spacing, so the PDF has a real gap before commas and between Hangul and
+      Latin or digits (`남기고 ,` 3.4 pt; 245 lines over 31 pages; the pptx text has none). Turning
+      the spacing off per paragraph in the copy handed to LibreOffice left 2 lines, both in table
+      cells the trial did not touch. User, 2026-11-10: "libre도 새로운 환경이면 새로 필요한거 아냐??"
+      — so the fix lives in the file copy, never in a LibreOffice profile.
+    - Also: the workspace README pins the marketplace path of `deck.py` while the session built
+      with a cached older copy; neither build nor render says which engine ran.
+    - Acceptance: `deck.mdx` can place and size a slot, recolour a run and mark a superscript;
+      captions-into-picture and the panel margin rule are build options; render turns the spacing
+      off for every paragraph, table cells included (test: a fixture with a comma after Hangul and a
+      table cell renders with no gap, checked from the bbox text); build and render print the
+      engine version and path; `test_deck.py`, `test_render.py` with counts; one real run where the
+      workspace's `postbuild_layout.py` is no longer needed.
+
+137. **portfolio:feedback finds more and is acted on from the chat alone**
+    - Why: user, 2026-11-10: "feedback은 성능을 향상시키는 방향으로". Seen in the same workspace
+      review: "어디라고 하지 말고 내용을 줘 그래야 이 채팅창만 보고 고치지" (user, 2026-11-09); the user
+      had to ask for the result as `feedback/YYYY-MM-DD.md` with a per-item table at the end (what to
+      change, its shape, its state) and wrote that into the workspace README; rules the user kept
+      restating: plain words for developer-only terms, else a footnote, speaker notes exempt, first
+      use per page spelled out ("피처 플래그"), no `(추정)` in body text; diagram colours one family
+      with the deck but not monotone, the important part visible.
+    - Acceptance: a measured baseline first — on a fixed fictional deck with planted defects, the
+      share of planted defects found and of findings that quote the text and give the replacement;
+      the change raises both, stated with numbers; output written to `feedback/YYYY-MM-DD.md` with
+      the per-item table by default; the restated rules checked by the panel; manage tests with counts.
+
+138. **Each portfolio skill checked: what it claims against what a real run needed**
+    - Why: user, 2026-11-10: "각 스킬 점검하고", after the workspace review showed work done by hand
+      around deck-builder and resume.
+    - Acceptance: one report row per portfolio skill (trigger, steps, scripts, tests, the gaps a
+      real run hit); `check-skeleton.mjs` output read; every gap found becomes a card or a line on
+      136/137/139.
+
+139. **Resume build lays out what the template means, not only its text (later)**
+    - Why: same review. Shipped 2026-11-10: the template photo survives build. Still patched by hand
+      after every build (`postbuild_resume.py`, macOS `sips`, so not on Linux): career section on a
+      new page, company lines larger, space under description/stack/role lines, photo replaced by
+      the deck's. The user also asked for a different section order (2026-11-09). User,
+      2026-11-10: "resume는 조금 천천히" — after 136-138.
+    - Acceptance: those layout rules expressible in `resume.md` or read from the template;
+      `test_resume.py` with counts; one real run with no post-build script.
+
 102. **portfolio checks the deck's claims against the material in an engine, both ways**
     - Why: debate 2026-10-29 (10 personas + noah), verified in code: material marks `근거 없음` /
       `user-stated` (material/SKILL.md:49, parts.md:31-32) but manage's skeleton step only says "each
