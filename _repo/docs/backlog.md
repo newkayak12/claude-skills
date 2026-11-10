@@ -25,47 +25,20 @@ each round, `nothing_new` at round 2). Left open: D24, whether a round waiting o
 PRD does not say). E-ae7d3226 cleaned.
 
 Order of the cards below (user, 2026-11-10: "1. 일단 포폴쪽만 먼저하고 2. resume는 조금 천천히
-3. 각 스킬 점검하고 / feedback은 성능을 향상시키는 방향으로"): 140 (a silent engine bug), 136, 137,
-141, 142, 143, 144, then 139. Card 138 (check each portfolio skill) closed 2026-11-10: two read-only
+3. 각 스킬 점검하고 / feedback은 성능을 향상시키는 방향으로"): 141, 142, 143, 144, 136 (renderer, later:
+"렌더러 종속성은 나중에"), then 139. Card 138 (check each portfolio skill) closed 2026-11-10: two read-only
 opus audits of all ten skills against the workspace and its sessions; `check-skeleton.mjs` 0 problems
-for portfolio; every gap went into 136, 137 and 139-144.
+for portfolio; every gap went into 136, 137 and 139-144. Shipped by hand 2026-11-10 (user: "teams 없이
+직접"), on main unreleased: 140 `cbe5fef4` (manage reads NFD-named files; real workspace confirmed facts
+0 → 35), 137 `a603630b` `6ed273f6` (feedback: claims vs material, S·I·O lenses, fix table; blind bench
+actionable 16% → 93%, planted defects 10/11 → 11/11), 136 minus the renderer `63a459ce` (`place:`, run
+colour and `sup`, `captions:`/`panel_margin:`, UNO render with the East Asian / Latin spacing off —
+real deck lone commas 316 → 0, engine version printed).
 
-140. **manage finds a workspace file whichever Unicode form its Korean name is stored in, and says when it cannot**
-    - Why: verified 2026-11-10 on a real workspace synced from macOS: its Korean file names are
-      decomposed (NFD). `settled`, `settledNote` and `confirmedFacts` (`manage.mjs` ~555-577) open
-      `docs/확정사실.md` in the composed form (NFC) only, so on Linux the file is not found, the catch
-      returns `[]`/`undefined`, and the "no settled section" note never fires: `claims` and `settle`
-      ran with no settled facts and said nothing. Only `layout` (~130) tries both forms; `selection`
-      and `scaffold`'s existence check do not — two runs wrote an NFC `선정.md` beside the NFD one.
-      The real file also uses its own headings, none
-      of which `settled` reads.
-    - Acceptance: one path resolver (NFC, then NFD) used by every workspace read and existence
-      check; a missing or unreadable 확정사실 is reported, never silent; the user's headings are read
-      or `scaffold` adds the two sections; a test with an NFD-named fixture; manage tests with counts.
-
-136. **deck-builder does in build and render what a real workspace patches after every build**
-    - Why: review of a real deck workspace, 2026-11-10 (read only). It keeps a 328-line
-      `postbuild_layout.py` run after every build; one session skipped it once and a page shipped
-      misplaced. What the script does, each a deck-builder gap:
-      - moves and resizes template shapes per page (x, y, h, w in pt), since `deck.mdx` cannot;
-        this is also how the gap a `!drop` leaves gets closed;
-      - deletes `[ … ]` captions and grows the picture into their room, bounded by its panel,
-        neighbours and the page edge (user, 2026-11-03: "도식화에 제목 넣으니까 [] 로 감싼거 굳이 넣지
-        말자 이미지를 더 잘보이게 하고");
-      - sets every picture inside a rounded panel to one margin rule (user, 2026-11-09: "이미지 바깥
-        여백 좀 맞추자 일관적으로, 최소 좌우하는 일정해야지");
-      - recolours text runs (an ending page matched to the cover, emphasis runs forced white);
-      - superscripts footnote marks `1)` after a word (user, 2026-11-03: "윗첨자로 안쓰냐");
-      - re-implements render (wrap="none" copy, docker convert, pdftoppm) to redo the PDF.
-    - Render bug, cause verified 2026-11-10 in that workspace: LibreOffice adds its automatic
-      East Asian / Latin spacing, so the PDF has a real gap before commas and between Hangul and
-      Latin or digits (`남기고 ,` 3.4 pt; 245 lines over 31 pages; the pptx text has none). Turning
-      the spacing off per paragraph in the copy handed to LibreOffice left 2 lines, both in table
-      cells the trial did not touch. User, 2026-11-10: "libre도 새로운 환경이면 새로 필요한거 아냐??"
-      — so the fix lives in the file copy, never in a LibreOffice profile.
-    - Also: the workspace README pins the marketplace path of `deck.py` while the session built
-      with a cached older copy; neither build nor render says which engine ran. SKILL.md (~61) says
-      "finish with `render`", while manage and the user render only when told.
+136. **deck-builder's render brings its own renderer to a machine with none (later)**
+    - Why: the rest of the card shipped 2026-11-10 (`63a459ce`). Left: the renderer itself.
+      Render's spacing fix needs a python that imports `uno` beside the renderer; without one it
+      converts as before and says so.
     - Renderer on a new machine (user, 2026-11-10: "LibreOffice 없이는 동작을 안하지 않냐", "나눔 폰트
       기본 내장하고 libre는 자동으로 설치하거나 내재화 하거나 렌더러를 우리가 구현하던가", "docker가
       안갖춰져 있으면 그것도 못하지 않아?"). Today `render` and every SVG picture slot need `soffice` on
@@ -76,61 +49,11 @@ for portfolio; every gap went into 136, 137 and 139-144.
       `.app` copied out of the dmg; checksum-verified; asks once before a ~300 MB download), and uses
       docker only when `DECK_RENDER_DOCKER` is set. Unverified: an AppImage exists for the pinned
       version; a dmg-extracted app runs headless past Gatekeeper/quarantine.
-    - Acceptance: `deck.mdx` can place and size a slot, recolour a run and mark a superscript;
-      captions-into-picture and the panel margin rule are build options; render turns the spacing
-      off for every paragraph, table cells included (test: a fixture with a comma after Hangul and a
-      table cell renders with no gap, checked from the bbox text); build and render print the
-      engine version and path; render follows the caller's render policy; on a machine with no
-      LibreOffice and no docker, render fetches the pinned build and renders (one real run on Linux,
-      one on macOS); `test_deck.py`, `test_render.py` with counts; one real run where the
-      workspace's `postbuild_layout.py` is no longer needed.
-
-137. **portfolio:feedback finds more and is acted on from the chat alone**
-    - Why: user, 2026-11-10: "feedback은 성능을 향상시키는 방향으로". Seen in the same workspace
-      review: "어디라고 하지 말고 내용을 줘 그래야 이 채팅창만 보고 고치지" (user, 2026-11-09); the user
-      had to ask for the result as `feedback/YYYY-MM-DD.md` with a per-item table at the end (what to
-      change, its shape, its state) and wrote that into the workspace README; rules the user kept
-      restating: plain words for developer-only terms, else a footnote, speaker notes exempt, first
-      use per page spelled out ("피처 플래그"), no `(추정)` in body text; diagram colours one family
-      with the deck but not monotone, the important part visible.
-    - Levers found by the 2026-11-10 audit (verified against the workspace and its transcript,
-      unless marked), by expected effect:
-      - **No claims-against-material pass.** The formal run found 3 claim and 3 consistency items;
-        asked again ("더 수정할 사항 탐색해보자 점수를 깎는", user 2026-11-09) a second pass found 22, most
-        by setting each page claim against its cited source item. §B (claim-and-consistency.md
-        ~54-89) checks only number/baseline/period/attribution; step 1 (SKILL.md ~58-66) only
-        self-consistency. Add a pass: each outcome or reason sentence judged against its item as
-        possible / weak / unsupported, overclaim vs gap, an ID per unsupported one.
-      - **Caps hide findings:** worst three claims (claim-and-consistency.md ~82, SKILL.md ~64, ~128),
-        five convention items (~41). Keep the caps for the front blocks; list all in the appendix.
-      - **Scores do not move:** five dimensions at 7/6/5/7/7 through rounds 3-10 while the deck changed
-        each round; the rubric has bands but no criteria inside a band. Score inside a band by
-        defect counts.
-      - **Panel skipped without saying so:** 0 Agent calls in the real run, no Clashes line, the file
-        says "리뷰어가 직접 고름" against SKILL.md ~75. What found defects there were lenses with
-        different jobs (6 s/30 s screen, interviewer attack against the material, the user's own bar
-        via noah), as manage step 4 runs them. Replace the four same-job personas with those, and
-        enforce the "panel not run" line.
-      - **"Not in the material" without a search, and stale inputs judged:** the file's own mistake
-        log; user 2026-11-10: "이력서 쪽은 무시 (이력서가 stale)". Step 0 lists each target and
-        cross-reference with version and date and drops one older than the target; every "not in
-        material" cites the empty search.
-      - **Deliberate choices flagged as defects:** the user said two flagged items were deliberate (2026-11-09). With no rationale on record, ask (`[확인 필요: 의도]`) and
-        record the answer as settled.
-      - **No check for what `principles.md` forbids:** the user ranked one such sentence first to fix
-        (2026-11-08); `principles.md` (~36) forbids it but nothing checks it. A red flag
-        ranked above screen cost; `(추정)` in body text checked in the same tone pass.
-      - **Skill-evidence tally ambiguous on a deck:** 6/24, 22/24, 8/24 for one deck, no flag at 33%
-        against the ~60% bar. Say whether tech-table cells count.
-      - **Triggers:** the user never typed a feedback trigger; their words were "점수를 깎는", "더 수정할
-        사항 탐색", "관점별 검토". `write:plans` claims "피드백 써줘", manage "피드백 돌려줘" (collision
-        unverified).
-      - **manage side:** manage saves feedback to `snapshot/feedback/deck-vX.Y.Z.md` (manage SKILL.md
-        ~138) against the user's `feedback/YYYY-MM-DD.md`; its Output Template (~166) is location-first.
-    - Acceptance: a measured baseline first — on a fixed fictional deck with planted defects, the
-      share of planted defects found and of findings that quote the text and give the replacement;
-      the change raises both, stated with numbers; output written to `feedback/YYYY-MM-DD.md` with
-      the per-item table by default; the restated rules checked by the panel; manage tests with counts.
+    - Acceptance: on a machine with no LibreOffice and no docker, render fetches the pinned build
+      and renders, the spacing off (one real run on Linux, one on macOS); `test_render.py` with
+      counts. Also carried from the shipped part: the real workspace drops its
+      `postbuild_layout.py` once its deck.mdx moves to `place:`, `{sup}` and the two options (the
+      user's call; build alone placed 42 captions and 20 panel pictures there, 2026-11-10).
 
 141. **manage runs a whole round itself: sync, build, verify, and only structure waits**
     - Why: 2026-11-10 audit. The run stopped at step 2 and the user said "매니지로 쭉 도는거 아녔음?"
@@ -144,6 +67,11 @@ for portfolio; every gap went into 136, 137 and 139-144.
       refuses `resume` while `snapshot/resume/` holds 10 versions; a sync-conflict `deck.conflict-*.mdx`
       in the root is not flagged. Writing rule restated five times (2026-11-07 to 11-10): developer-only
       words in plain words, else a footnote (the user's words, three times); missing from `principles.md`.
+    - Carried from 137 (shipped): manage's Output Template (~166) still reports by place ("N쪽 칸:
+      무엇을 어떻게"), not current text → replacement; the user's diagram rule (one colour family with
+      the deck, not monotone, the important part visible — 2026-11-09) is in no skill
+      (`template/분석.md`'s 그림 색 or `write:diagram`); the trigger collision with `write:plans`
+      ("피드백 써줘") is unprobed.
     - Acceptance: one statement of which gates block (structure only) and which go ahead on the
       proposal and are reported; engine commands for sync and verify-build; a round's build as the
       user's standing word; the layout list and `--kind resume`; `layout` warns on stray
