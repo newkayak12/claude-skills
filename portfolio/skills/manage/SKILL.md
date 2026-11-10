@@ -107,21 +107,19 @@ Mechanics: `references/rounds.md`.
    `template/analysis.md`, then `deck-builder` `check` (an untouched chart slot is warned: its numbers are the template's
    sample) and `claims --file portfolio-deck.mdx` (each slide cites in its comment: `## @s3 2쪽 · 글감: <id>`). Fine style changes go through the template's run formats, never by hand in the pptx.
    `snapshot --kind deck --level … --note` only when asked (the note names its skeleton).
-7. **Render, review, re-render.** `build` and `render` only when the user says. After a render,
-   `keep-render --version <deck version>` keeps the previews under `snapshot/render/deck-vX.Y.Z/`
-   with a `검토.md` row per page (쪽 · 본 것 · 문제 · next-render): look at every page and fill it.
-   A problem seen in a render or in PowerPoint goes into `template/next-render.md` (쪽 · 칸 · 증상 ·
-   확인 · 적용), all applied before the next render; fixed at once only when the user says ("고쳐",
-   "맞춰줘"). A frame the deck cannot move is fixed in the template only on the user's word
-   (`references/template-edit.md`).
+7. **Render, review, re-render.** `build` and `render` only when the user says. After a render run
+   `render-review` (deck and resume alike): `keep-render`, then every page against safe area,
+   readability, AI traces and the skeleton, one `검토.md` row per page. A problem seen there or in
+   PowerPoint goes into `template/next-render.md` (쪽 · 칸 · 증상 · 확인 · 적용), all applied before
+   the next render; fixed at once only when the user says ("고쳐", "맞춰줘"). A frame the deck cannot
+   move is fixed in the template only on the user's word (`references/template-edit.md`).
 8. **Feedback on the deck.** `feedback` on the rendered PDF with the material and 확정사실 in reach,
    saved to `feedback/YYYY-MM-DD.md` with its fix table. Each finding goes back to material: a claim
    the deck cannot defend → its item's `gaps.md`; a result the user restores → `result.md` labelled
    `본인 확인`. The next round starts at 2 (selection changed) or 4 (wording).
 9. **Resume.** `resume-skeleton.md` (the template's section order, facts from portfolio-skeleton
-   only) → `resume-deck.mdx` built straight into the user's template (`resume.py catalog`, roles by
-   `styles:` or `samples:`, photo kept) → `claims --file resume-deck.mdx` → `resume.py build` → `render`
-   when told; over the page budget, propose cuts by `over_lines` and wait: `references/resume.md`.
+   only) → `resume-deck.mdx` → `claims --file resume-deck.mdx` → `resume-builder` (catalog, build into
+   the user's template, final checks, render when told, fit by `over_lines`) → `render-review` (step 7).
    The user's material never goes to git: the engine refuses a workspace git would carry.
 
 Always, portfolio and resume alike (user, 2026-11-10: "safe area가 있는거 시인성, 가독성이 좋은거
@@ -178,5 +176,6 @@ Held is said as held.
 
 - `material` — step 1, collects material into `sources/material/`; its status follows steps 2-3
 - `feedback`, `pattern`, `rewrite`, `mock-interview` — steps 4 and 8; `write:like-me` — the voice
-- `deck-builder` — steps 5-7 (and its renderer for step 9's PDF); `write:diagram` — figures
+- `deck-builder` — steps 5-7; `resume-builder` — step 9 (docx build, PDF, fit); `render-review` — step 7
+  and the resume's render; `write:diagram` — figures
 - `job-application-workflow` — the whole application; its deck step is this workflow

@@ -116,6 +116,7 @@ def main():
         check(doc.rstrip().endswith('</w:sectPr></w:body></w:document>'), "page setup (sectPr) is kept last")
         check(set(names) >= {"word/styles.xml", "[Content_Types].xml"}, "the rest of the package is copied")
         check(len(b["warnings"]) == 1 and "확인 필요" in b["warnings"][0], "an unconfirmed line is warned")
+        check(b["ai_traces"] == {"removed": 0, "reported": []}, "build reports ai_traces, clean here — %s" % b["ai_traces"])
 
         print("refusals")
         bad = RESUME.replace("bullet: ListBullet", "bullet: NoSuchStyle")
@@ -137,7 +138,7 @@ def main():
             return ('<w:p><w:pPr><w:spacing w:after="40"/>%s</w:pPr><w:r><w:rPr>%s</w:rPr><w:t>%s</w:t></w:r></w:p>'
                     % (extra, rpr, text))
         photo = ('<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">'
-                 '<wp:docPr id="1" name="사진"/></wp:anchor></w:drawing></w:r>')
+                 '<wp:docPr id="1" name="사진" descr="가상 인물 사진. AI-generated content may be incorrect."/></wp:anchor></w:drawing></w:r>')
         body = ('<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>%s<w:r><w:rPr><w:b/><w:sz w:val="40"/></w:rPr><w:t>홍길동</w:t></w:r></w:p>' % photo
                 + run_fmt("Email: a@b.invalid", '<w:sz w:val="15"/>')
                 + run_fmt("핵심역량", '<w:b/><w:color w:val="1F4E79"/><w:sz w:val="22"/>')
@@ -165,6 +166,8 @@ def main():
         check('<w:color w:val="7F7F7F"/><w:sz w:val="16"/></w:rPr><w:t xml:space="preserve">기술: Spring' in doc, "{meta} names a role outright")
         check('<w:numId w:val="12"/>' in doc and '<w:sz w:val="18"/></w:rPr><w:t xml:space="preserve">한 일' in doc,
               "a bullet keeps the sample's list numbering and size")
+        check("AI-generated" not in doc and 'descr="가상 인물 사진."' in doc and b["ai_traces"]["removed"] == 1,
+              "the photo's AI disclaimer is removed from its alt text, the rest kept — %s" % b["ai_traces"])
         check(doc.count("<w:drawing>") == 1 and doc.index("<w:drawing>") < doc.index("가상 인물"), "the template's photo is kept, on the first paragraph")
         check("샘플 불릿" not in doc and "Email: a@b" not in doc, "the template's sample body is gone")
         (plain / "resume-deck.mdx").write_text(src.replace("  meta: 기술\n", "  meta: 없는문단\n"), encoding="utf-8")
@@ -188,9 +191,9 @@ def main():
         check(rc == 0, "the same workspace, ignored, builds")
 
         print("render")
-        sys.path.insert(0, str(HERE.parents[1] / "deck-builder" / "scripts"))
-        import deck
-        if deck.Renderer().available:
+        sys.path.insert(0, str(HERE.parents[2] / "scripts"))
+        import office_render
+        if office_render.Renderer().available:
             (root / "resume.md").write_text(RESUME, encoding="utf-8")
             run(root, "build")
             rc, r = run(root, "render")

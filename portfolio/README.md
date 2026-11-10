@@ -43,6 +43,8 @@ classification). Connect them under Claude settings → MCP Servers as remote SS
 | Practice defending my work in a mock interview | `mock-interview` |
 | Swap the key colors in a PPTX across every slide | `deck-builder` (recolor) |
 | Build a PPTX from a template plus content, as a repeatable build | `deck-builder` |
+| Write my resume into my own Word template (.docx), render the PDF, fit the page budget | `resume-builder` |
+| Review a rendered deck or resume page by page: safe area, readability, AI traces, skeleton match | `render-review` |
 
 ## Skills
 
@@ -152,7 +154,7 @@ NFD Korean file names, feedback's three lenses, deck-builder layout in build): c
 leads with) → draft → revise from several viewpoints → template analysis (`template/analysis.md`) →
 deck → render and review (previews kept per deck version under `snapshot/render/`) → feedback on
 the deck, back onto the material. Step 9 writes the resume from the same settled claims into your
-own Word template (`resume.py build`, then a PDF). Every line written into the skeleton, deck or
+own Word template (`resume-builder`, then a PDF). Every line written into the skeleton, deck or
 resume goes through `write:like-me`, in your voice from texts you wrote yourself. Your material — templates, decks, resumes, PDFs —
 never goes to git: the engine refuses a workspace a git repository would carry.
 
@@ -167,6 +169,24 @@ never goes to git: the engine refuses a workspace a git repository would carry.
 - A correction you give is kept in your words in the material file, in `docs/확정사실.md`, and in
   noah when connected — so the next session does not repeat the mistake.
 - It stops at deck-builder `check`; build and render happen when you say.
+
+### `resume-builder`
+
+Writes `resume-deck.mdx` into your own Word template: `catalog` lists the template's styles and looks,
+the front matter maps each role (`styles:` or `samples:`), `build` copies the template's look and keeps
+its photo, `render` makes the PDF and counts pages against your budget, `over_lines` says how many text
+lines run past it so the cut is sized in text, never type. The build ends with a final AI-trace check
+(shared with `deck-builder`): a leftover "AI-generated content may be incorrect" in alt text is removed;
+an AI tool named in the file properties or an AI phrase in the visible text is reported, never deleted.
+`scripts/office_render.py` (in the plugin's `scripts/`) holds the renderer both builders use; with
+`DECK_RENDER_DOCKER` and a work dir outside `$HOME` (a snap Docker cannot mount it) it stages the files
+under `~/.cache/portfolio-render/`, renders, copies back and deletes the stage.
+
+### `render-review`
+
+`manage` step 7 as its own skill, for deck and resume alike: keep the previews, then every page against
+four checks — safe area (a helper lists text lines crossing a margin), readability, AI traces, match to
+the skeleton — write one row per page in `검토.md` and the problems into `template/next-render.md`.
 
 ### `fit`
 

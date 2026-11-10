@@ -37,6 +37,10 @@ import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+# the renderer is shared with resume-builder: portfolio/scripts/office_render.py
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from office_render import Renderer, bbox_pages, ai_traces  # noqa: E402
+
 # ── Namespaces ───────────────────────────────────────────────────────────────
 
 NS = {
@@ -3312,11 +3316,17 @@ def cmd_build(args):
     out.parent.mkdir(parents=True, exist_ok=True)
     pkg.write(out)
 
+    # the last check: an AI disclaimer left in alt text is removed, other traces are warned
+    traces = ai_traces(out)
+    problems += ["ai trace: " + t for t in traces["reported"]]
+
     fatal = [p for p in problems if "not writable" not in p]
     print("build -> %s  (%d slides from %s) · %s" % (out, len(new_parts), template.name,
                                                     engine_label()))
     for p in problems:
         print("  ! %s" % p)
+    if traces["removed"]:
+        print("  ai traces: %d AI disclaimer(s) removed from alt text" % traces["removed"])
     if notes_parts:
         print("  %d slide(s) carry speaker notes" % len(notes_parts))
     for where, slot_id, name, lost, anchor in imgctx["cropped"]:
@@ -3773,244 +3783,7 @@ def cmd_check(args):
 
 # ── Rendering and the geometric audit ────────────────────────────────────────
 
-XH = "{http://www.w3.org/1999/xhtml}"
-_NOWRAP_BODY = re.compile(r'(<a:bodyPr\b[^>]*\bwrap="none"[^>]*(?<!/)>)(.*?)(</a:bodyPr>)', re.S)
-
-
-def lo_nowrap_copy(src, dst):
-    """Copy a pptx, dropping spAutoFit from every wrap="none" body (LibreOffice input only)."""
-    with zipfile.ZipFile(str(src)) as zin, zipfile.ZipFile(str(dst), "w", zipfile.ZIP_DEFLATED) as zout:
-        for n in zin.namelist():
-            data = zin.read(n)
-            if n.endswith(".xml") and n.startswith("ppt/") and b'wrap="none"' in data:
-                text = _NOWRAP_BODY.sub(lambda m: m.group(1) + re.sub(
-                    r"<a:spAutoFit\s*/>", "", m.group(2)) + m.group(3), data.decode("utf-8"))
-                data = text.encode("utf-8")
-            zout.writestr(n, data)
-
-
-# Run by the renderer's own python (one that imports uno): open the pptx in a private headless
-# soffice, turn ParaIsCharacterDistance off on every paragraph — groups and table cells included —
-# and export the PDF next to it. Prints one `spacing:` line the render reports.
-UNO_CONVERT = r'''
-import os, subprocess, sys, time
-import uno
-from com.sun.star.beans import PropertyValue
-
-
-def pv(n, v):
-    p = PropertyValue()
-    p.Name, p.Value = n, v
-    return p
-
-
-def main(src):
-    pipe = "deckuno%d" % os.getpid()
-    proc = subprocess.Popen(["soffice", "--headless", "--norestore", "--nologo",
-                             "-env:UserInstallation=file:///tmp/loprof-uno",
-                             "--accept=pipe,name=%s;urp;" % pipe],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    local = uno.getComponentContext()
-    resolver = local.ServiceManager.createInstanceWithContext(
-        "com.sun.star.bridge.UnoUrlResolver", local)
-    ctx = None
-    for _ in range(120):
-        try:
-            ctx = resolver.resolve("uno:pipe,name=%s;urp;StarOffice.ComponentContext" % pipe)
-            break
-        except Exception:
-            time.sleep(0.5)
-    if ctx is None:
-        proc.kill()
-        print("spacing: soffice did not answer over uno")
-        return 1
-    desktop = ctx.ServiceManager.createInstanceWithContext("com.sun.star.frame.Desktop", ctx)
-    url = uno.systemPathToFileUrl(os.path.abspath(src))
-    doc = desktop.loadComponentFromURL(url, "_blank", 0, (pv("Hidden", True),))
-    n = {"paragraphs": 0, "cells": 0, "failed": 0}
-
-    def paras(text):
-        try:
-            e = text.createEnumeration()
-        except Exception:
-            return
-        while e.hasMoreElements():
-            p = e.nextElement()
-            try:
-                p.ParaIsCharacterDistance = False
-                n["paragraphs"] += 1
-            except Exception:
-                n["failed"] += 1
-
-    def walk(sh):
-        kind = sh.ShapeType
-        if kind.endswith("GroupShape"):
-            for i in range(sh.Count):
-                walk(sh.getByIndex(i))
-        elif kind.endswith("TableShape"):
-            m = sh.Model
-            for r in range(m.Rows.Count):
-                for c in range(m.Columns.Count):
-                    try:
-                        cur = m.getCellByPosition(c, r).createTextCursor()
-                        cur.gotoStart(False)
-                        cur.gotoEnd(True)
-                        cur.setPropertyValue("ParaIsCharacterDistance", False)
-                        n["cells"] += 1
-                    except Exception:
-                        n["failed"] += 1
-        else:
-            paras(sh)
-
-    pages = doc.DrawPages
-    for i in range(pages.Count):
-        page = pages.getByIndex(i)
-        for j in range(page.Count):
-            walk(page.getByIndex(j))
-    out = os.path.splitext(os.path.abspath(src))[0] + ".pdf"
-    doc.storeToURL(uno.systemPathToFileUrl(out), (pv("FilterName", "impress_pdf_Export"),))
-    doc.close(True)
-    try:
-        desktop.terminate()
-    except Exception:
-        pass
-    try:
-        proc.wait(timeout=30)
-    except Exception:
-        proc.kill()
-    print("spacing: East Asian / Latin spacing off on %d paragraphs and %d table cells%s"
-          % (n["paragraphs"], n["cells"], ", %d could not be set" % n["failed"] if n["failed"] else ""))
-    return 0 if os.path.exists(out) else 1
-
-
-sys.exit(main(sys.argv[1]))
-'''
-
-
-class Renderer:
-    """LibreOffice, on PATH or in a container.
-
-    DECK_RENDER_DOCKER=<image> uses that image instead. A container's daemon may not
-    see /tmp, so in docker mode the deck has to live somewhere it can bind-mount —
-    the deck's own directory, which is where the user put it.
-    """
-
-    def __init__(self):
-        self.image = os.environ.get("DECK_RENDER_DOCKER")
-        self.local = shutil.which("soffice") or shutil.which("libreoffice")
-        self.available = bool(self.local or (self.image and shutil.which("docker")))
-
-    def describe(self):
-        return self.local if self.local else "docker %s" % self.image
-
-    def sh(self, workdir, script):
-        # The bundled fonts join what fontconfig already sees, so soffice wraps on them.
-        if self.local:
-            return subprocess.run(["bash", "-c", script], cwd=str(workdir), env=self._fc_env(),
-                                  capture_output=True, text=True, timeout=900)
-        return subprocess.run(
-            ["docker", "run", "--rm", "--entrypoint", "bash", "-u", "0",
-             "-v", "%s:/work" % workdir,
-             "-v", "%s:/usr/share/fonts/deck-builder:ro" % BUNDLED_FONT_DIR,
-             "-w", "/work", self.image, "-c", script],
-            capture_output=True, text=True, timeout=1800)
-
-    def _fc_env(self):
-        env = dict(os.environ)
-        if BUNDLED_FONT_DIR.is_dir():
-            if not getattr(self, "_fc_conf", None):
-                fd, self._fc_conf = tempfile.mkstemp(suffix=".conf", prefix="deck-fonts-")
-                with os.fdopen(fd, "w") as f:
-                    f.write('<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n'
-                            '<fontconfig><include ignore_missing="yes">%s</include>'
-                            '<dir>%s</dir></fontconfig>\n'
-                            % (env.get("FONTCONFIG_FILE", "/etc/fonts/fonts.conf"),
-                               BUNDLED_FONT_DIR))
-            env["FONTCONFIG_FILE"] = self._fc_conf
-        return env
-
-    def to_pdf(self, workdir, name):
-        # LibreOffice wraps a wrap="none" body at the box width when it also has spAutoFit;
-        # PowerPoint keeps the line and grows the box. Convert a copy without spAutoFit there,
-        # so the PDF matches PowerPoint; the pptx itself is left as built.
-        # LibreOffice also puts its own East Asian / Latin spacing into every paragraph
-        # (ParaIsCharacterDistance): the PDF then has a real gap before a comma after Hangul and
-        # between Hangul and Latin or digits, which PowerPoint does not draw. No pptx attribute
-        # turns it off, so the copy is converted through UNO with it off on every paragraph and
-        # table cell. With no python that imports uno, the plain conversion runs and says so.
-        src = Path(workdir) / name
-        tmp = src.with_name(".lo-" + name)
-        lo_nowrap_copy(src, tmp)
-        script = Path(workdir) / ".lo-convert.py"
-        script.write_text(UNO_CONVERT, encoding="utf-8")
-        r = self.sh(workdir, "export HOME=/tmp/lohome; mkdir -p $HOME; PY=; "
-                             "for p in python3 /usr/lib/libreoffice/program/python "
-                             "/opt/libreoffice*/program/python "
-                             "/Applications/LibreOffice.app/Contents/Resources/python; do "
-                             "if command -v \"$p\" >/dev/null 2>&1 && \"$p\" -c 'import uno' "
-                             ">/dev/null 2>&1; then PY=$p; break; fi; done; "
-                             "if [ -n \"$PY\" ]; then \"$PY\" %s %s 2>&1 | tail -3; else "
-                             "echo 'spacing: no python with uno, East Asian / Latin spacing "
-                             "left on'; soffice --headless "
-                             "-env:UserInstallation=file:///tmp/loprof "
-                             "--convert-to pdf %s 2>&1 | tail -2; fi"
-                    % (script.name, tmp.name, tmp.name))
-        tmp.unlink()
-        script.unlink()
-        made = tmp.with_suffix(".pdf")
-        if made.is_file():
-            os.replace(str(made), str(src.with_suffix(".pdf")))
-        return (r.stdout + r.stderr).strip()
-
-    def bbox(self, workdir, pdf):
-        out = Path(pdf).with_suffix(".bbox.html").name
-        self.sh(workdir, "command -v pdftotext >/dev/null || exit 0; "
-                         "pdftotext -bbox-layout %s %s && chmod a+rw %s" % (pdf, out, out))
-        f = workdir / out
-        return f.read_text(encoding="utf-8") if f.is_file() else None
-
-    def fonts(self, workdir):
-        """Font families the renderer can actually see, lowercased. None if unknown."""
-        r = self.sh(workdir, "command -v fc-list >/dev/null || exit 9; fc-list --format "
-                             "'%{family}\\n'")
-        if r.returncode == 9 or not r.stdout.strip():
-            return None
-        out = set()
-        for line in r.stdout.splitlines():
-            for alias in line.split(","):
-                if alias.strip():
-                    out.add(alias.strip().lower())
-        return out
-
-    def previews(self, workdir, pdf, dpi=72):
-        self.sh(workdir, "command -v pdftoppm >/dev/null || exit 0; mkdir -p pages && "
-                         "pdftoppm -r %d -png %s pages/p && chmod -R a+rwX pages"
-                % (dpi, pdf))
-        d = workdir / "pages"
-        return sorted(d.glob("p*.png")) if d.is_dir() else []
-
-
-def _bbox_pages(xml_text):
-    root = ET.fromstring(xml_text)
-    out = []
-    for page in root.iter(XH + "page"):
-        pw, ph = float(page.get("width")), float(page.get("height"))
-        blocks = []
-        for block in page.iter(XH + "block"):
-            lines = []
-            for line in block.iter(XH + "line"):
-                ws = [w for w in line.iter(XH + "word") if (w.text or "").strip()]
-                if not ws:
-                    continue
-                lines.append(((min(float(w.get("xMin")) for w in ws),
-                               min(float(w.get("yMin")) for w in ws),
-                               max(float(w.get("xMax")) for w in ws),
-                               max(float(w.get("yMax")) for w in ws)),
-                              " ".join(w.text for w in ws)))
-            if lines:
-                blocks.append(lines)
-        out.append((pw, ph, blocks))
-    return out
+_bbox_pages = bbox_pages   # the renderer and its geometry live in portfolio/scripts/office_render.py
 
 
 def collisions(xml_text, cross_tol=0.05, bunch_tol=0.70):

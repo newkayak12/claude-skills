@@ -136,7 +136,10 @@ How much slack `check` allows, and when to trust `추정`: `references/render-an
 python3 /abs/path/scripts/deck.py build --deck deck.mdx [--output out.pptx] [--strict]
 ```
 
-The same `deck.mdx` always produces a byte-identical pptx.
+The same `deck.mdx` always produces a byte-identical pptx. The build ends with a final AI-trace check
+(`portfolio/scripts/office_render.py`, shared with `resume-builder`): an "AI-generated content may be
+incorrect" left in alt text is removed; an AI tool in the properties or an AI phrase in visible text is
+a `! ai trace` warning, never deleted — tell the user each one.
 
 ### Step 6 · Render and look
 

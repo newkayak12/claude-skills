@@ -42,6 +42,8 @@ remote SSE 엔드포인트로 추가하세요.
 | 모의 면접으로 내 작업 방어 연습 | `mock-interview` |
 | PPTX 전체 슬라이드 키컬러 일괄 교체 | `deck-builder` (recolor) |
 | 템플릿 + 내용으로 PPTX를 반복 가능한 빌드로 생성 | `deck-builder` |
+| 내 Word 템플릿(.docx)에 이력서를 쓰고 PDF로 뽑아 쪽 수에 맞추기 | `resume-builder` |
+| 렌더한 덱·이력서를 쪽마다 검토: 안전 영역, 가독성, AI 흔적, skeleton 일치 | `render-review` |
 
 ## 스킬
 
@@ -143,7 +145,7 @@ snapshot/  sources/  docs/확정사실.md               버전, 글감, 확정�
 포트폴리오와 이력서 공통 규칙으로 둠. 2.13.0: NFD 한글 파일명, feedback 렌즈 셋, deck-builder 빌드 배치): 수집 → 정리(`sources/선정.md`: 본문 / 부록 / 제외, 글감마다 대표) → 초안 → 여러 시점
 퇴고 → 템플릿 분석(`template/analysis.md`) → 덱 → 렌더와 검토(미리보기를 덱 버전별로 `snapshot/render/`에
 보관) → 덱 피드백, 결과는 글감으로 되돌림. 9단계는 같은 확정 주장으로 사용자 본인의 Word 템플릿에
-이력서를 쓰고(`resume.py build`) PDF로 내보냅니다. skeleton·덱·이력서에 쓰는 문장은 모두 `write:like-me`를
+이력서를 쓰고(`resume-builder`) PDF로 내보냅니다. skeleton·덱·이력서에 쓰는 문장은 모두 `write:like-me`를
 거쳐, 사용자가 직접 쓴 글의 말투로 맞춥니다. 템플릿·덱·이력서·PDF 등 사용자 자료는 git에 올라가지
 않습니다: git 저장소가 추적하는 위치의 작업 폴더면 엔진이 실행을 거부합니다.
 
@@ -158,6 +160,23 @@ snapshot/  sources/  docs/확정사실.md               버전, 글감, 확정�
 - 정정해 주신 내용은 원문 그대로 글감 파일, `docs/확정사실.md`, (연결돼 있으면) noah에 남겨서
   다음 세션이 같은 실수를 하지 않게 합니다.
 - deck-builder `check`까지만 하고, 빌드와 렌더는 말씀하실 때 합니다.
+
+### `resume-builder`
+
+`resume-deck.mdx`를 사용자 본인의 Word 템플릿에 씁니다. `catalog`가 템플릿의 스타일과 모양을 나열하고,
+front matter가 역할을 연결하며(`styles:` 또는 `samples:`), `build`가 템플릿의 모양을 그대로 복사하고
+사진을 유지합니다. `render`는 PDF를 만들어 쪽 수를 예산과 비교하고, `over_lines`가 넘친 텍스트 줄 수를
+알려 주므로 글자 크기가 아니라 문장을 줄입니다. 빌드는 마지막에 AI 흔적 검사를 합니다(`deck-builder`와
+공용): 대체 텍스트에 남은 "AI-generated content may be incorrect"는 지우고, 파일 속성에 AI 도구 이름이나
+보이는 글에 AI 문구가 있으면 알리기만 하고 지우지 않습니다. 두 빌더가 쓰는 렌더러는 플러그인의
+`scripts/office_render.py`에 있습니다. `DECK_RENDER_DOCKER`를 쓰는데 작업 폴더가 `$HOME` 밖이면(snap
+Docker는 마운트하지 못함) `~/.cache/portfolio-render/`에 옮겨 렌더하고, 결과를 되가져온 뒤 그 폴더를 지웁니다.
+
+### `render-review`
+
+`manage` 7단계를 따로 떼어 낸 스킬로, 덱과 이력서에 똑같이 씁니다. 미리보기를 보관한 뒤 모든 쪽을 네 가지
+검사로 봅니다 — 안전 영역(여백을 넘은 텍스트 줄을 나열하는 도우미가 있음), 가독성, AI 흔적, skeleton 일치.
+쪽마다 `검토.md`에 한 줄을 쓰고 문제는 `template/next-render.md`에 넣습니다.
 
 ### `fit`
 

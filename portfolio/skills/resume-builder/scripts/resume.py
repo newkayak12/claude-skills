@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""portfolio:manage step 9 — resume-deck.mdx written into the user's own Word template, then PDF.
+"""portfolio:resume-builder — resume-deck.mdx written into the user's own Word template, then PDF.
 
 The source is resume-deck.mdx (designed in resume-skeleton.md); a workspace older than 2.14 calls
 it resume.md, read when resume-deck.mdx is absent. Its format is the "resume.md" block below.
@@ -14,7 +14,7 @@ Stdlib only. Run from the workspace root; every subcommand prints one JSON objec
         its front matter maps to that role, copying the template's own paragraph and run format
         for that style (numbering included); `글감:` lines are dropped
     resume.py render [--docx build/resume.docx]
-        LibreOffice (deck-builder's renderer: soffice on PATH or DECK_RENDER_DOCKER) to PDF;
+        LibreOffice (portfolio/scripts/office_render.py: soffice on PATH or DECK_RENDER_DOCKER) to PDF;
         reports the page count against the front matter's `pages:`
 
 resume.md:
@@ -55,6 +55,9 @@ import sys
 import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+import office_render  # noqa: E402  the renderer and the AI-trace check, shared with deck-builder
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 ROLES = ("name", "section", "entry", "bullet", "body")
@@ -285,15 +288,16 @@ def build(source, out):
         for n, data in parts.items():
             z.writestr(n, data)
     held = [t for _, t in todo if "[확인 필요" in t]
+    traces = office_render.ai_traces(out)   # the last check: AI disclaimers in alt text go, the rest is reported
     return {"docx": str(out), "paragraphs": len(todo), "template": str(template),
-            "warnings": ["unconfirmed line kept: %s" % t[:60] for t in held]}
+            "ai_traces": traces,
+            "warnings": ["unconfirmed line kept: %s" % t[:60] for t in held]
+            + ["ai trace: %s" % t for t in traces["reported"]]}
 
 
 def render(docx, pages=None):
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "deck-builder" / "scripts"))
-    import deck  # deck-builder's renderer: soffice on PATH or DECK_RENDER_DOCKER
     guard([docx, docx.with_suffix(".pdf")])
-    r = deck.Renderer()
+    r = office_render.Renderer()
     if not r.available:
         fail("no renderer: install LibreOffice (soffice) or set DECK_RENDER_DOCKER=<image>")
     log = r.to_pdf(docx.parent.resolve(), docx.name)

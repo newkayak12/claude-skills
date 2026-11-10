@@ -1,7 +1,7 @@
-# Resume — step 9 in detail
+# Resume — the detail behind resume-builder
 
-The resume is the portfolio's second output, built the same way: designed in `resume-skeleton.md`,
-built from `resume-deck.mdx`, straight into the user's own template.
+The resume is the portfolio's second output, built the same way: designed in `resume-skeleton.md`
+(`manage` step 9), built from `resume-deck.mdx` by this skill, straight into the user's own template.
 
 ## Design (`resume-skeleton.md`)
 
@@ -28,6 +28,14 @@ built from `resume-deck.mdx`, straight into the user's own template.
 - The template's photo (an anchored drawing) is kept on the first paragraph.
 - A role used but mapped nowhere, a style the template lacks, or a sample text no paragraph starts
   with is refused before anything is written.
+
+## Final AI-trace check (every build)
+
+`build` ends with `office_render.ai_traces` over every XML part of the .docx: an AI disclaimer in a
+picture's alt text (`descr`/`title` on `docPr`) is removed, the rest of the alt text kept; an AI tool
+named in `docProps` and an AI phrase in the visible text ("As an AI", "AI가 생성", "생성형 AI로 작성")
+are listed in `ai_traces.reported` and in `warnings`, never deleted. The same function runs in
+`deck-builder build`; `python3 portfolio/scripts/office_render.py ai-traces <file> [--report-only]` runs it alone.
 
 ## Render and fit
 
