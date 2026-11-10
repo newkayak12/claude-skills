@@ -40,7 +40,8 @@ template/         template.pptx (deck.mdx `template:`), NOTES.md (quirks), 분�
 deck.catalog.md    slot ids and character budgets — regenerated only (deck-builder catalog)
 build/             deck.pptx, deck.pdf, pages/ (previews) — regenerated in full by every build
 snapshot/          skeleton-vX.Y.Z/, deck/deck-vX.Y.Z/, scores/, render/deck-vX.Y.Z/ (pages/, 검토.md),
-                   feedback/deck-vX.Y.Z.md, README.md (`## deck` and `## skeleton` tables)
+                   README.md (`## deck` and `## skeleton` tables)
+feedback/          YYYY-MM-DD.md — one `feedback` review per day, ending with its fix table
 sources/           material: material/<id>/ items (`material` skill), or a ledger NN_프로젝트/A1….md read as it is;
                    선정.md (step 2: 글감 · 쓰임 본문|부록|제외 · 쪽 · 이유 · 대표 — the one place an exclusion lives)
 docs/확정사실.md   settled facts, corrections; `## 서술 기준` and `## 구조` lines no check raises again — read before any work
@@ -64,7 +65,7 @@ Mechanics: `references/rounds.md`.
 
 0. **Open.** `layout`; read `docs/확정사실.md` and the "맞춰야 할 것" table at the end of skeleton.
    Missing workspace parts are created on request, not silently: `scaffold` makes the flow's new
-   parts (`sources/선정.md`, `template/분석.md`, `snapshot/render/`, `snapshot/feedback/`) and never
+   parts (`sources/선정.md`, `template/분석.md`, `snapshot/render/`, `feedback/`) and never
    overwrites one.
 1. **Collect.** New material → run `material` from the workspace root (items land in
    `sources/material/`). Evidence order: `sources/` → the user's analysis notes they point to →
@@ -134,11 +135,10 @@ Mechanics: `references/rounds.md`.
    확인 · 적용), all applied before the next render; fixed at once only when the user says ("고쳐",
    "맞춰줘"). A frame the deck cannot move is fixed in the template only on the user's word
    (`references/template-edit.md`).
-8. **Feedback on the deck.** `feedback` on the rendered PDF (first three pages, what each figure
-   means, page flow), saved to `snapshot/feedback/deck-vX.Y.Z.md`. Each finding goes back to
-   material: a claim the deck cannot defend → its item's `gaps.md`; a real result the user restores
-   → the item's `result.md` labelled `본인 확인`. The next round starts at 2 (selection changed) or 4
-   (wording); no follow-up question trees.
+8. **Feedback on the deck.** `feedback` on the rendered PDF with the material and 확정사실 in reach,
+   saved to `feedback/YYYY-MM-DD.md` with its fix table. Each finding goes back to material: a claim
+   the deck cannot defend → its item's `gaps.md`; a result the user restores → `result.md` labelled
+   `본인 확인`. The next round starts at 2 (selection changed) or 4 (wording).
 9. **Resume.** From the built deck and `선정.md`: `resume.md` (front matter maps name · section ·
    entry · bullet · body to the user's `template/resume.docx` styles, `resume.py catalog` lists them),
    every bullet citing `글감:`, then `claims --file resume.md`, `python3 scripts/resume.py build` and,

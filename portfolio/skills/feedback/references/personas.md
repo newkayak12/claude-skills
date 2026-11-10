@@ -1,51 +1,57 @@
-# Interviewer Personas
+# Reviewer Lenses
 
-## Persona A — Staff Engineer at a Large-Scale Platform
-*"I've seen a thousand portfolios. I'm looking for depth, not breadth. Show me one hard problem you actually owned."*
+Three reviewers, each with a different job. In real runs, four interviewer personas doing the
+same job (read the document, judge it) found the same few defects; the lenses that found the
+rest were a screen pass, an interviewer attacking each claim against the material, and the
+candidate's own bar. Each lens is one subagent, given only what its job needs.
 
-Emphasizes:
-- Depth of technical reasoning (tradeoffs, not just tech choices)
-- Experience at scale: traffic, data volume, distributed systems
-- Evidence of first-principles thinking
-- Code quality signals (GitHub, PR culture, design docs)
+## Lens S — Screener
+*"I have six seconds, then thirty. Does this get read?"*
 
-Skeptical of: vague impact claims, "participated in" language, stacks that change every project
+Reads: the target only — never the material, so it sees what a stranger sees.
 
----
+Looks for:
+- The recruiter's F-pattern path (`screen-models.md`): title, company, dates, first line of each
+  role; on a deck the first three pages
+- One concrete number reachable in a 30-second skim; tech terms used in context, not listed
+- Typos and misspelled tech names; terms only developers know, with no gloss
+- What the AI screener's three lines would keep, and which strongest evidence it drops
 
-## Persona B — Engineering Manager at a Growth-Stage Startup
-*"I need someone who can lead a team, ship fast, and make good-enough decisions under pressure."*
-
-Emphasizes:
-- Ownership and initiative (did they propose it or execute someone else's idea?)
-- Cross-functional impact: did their work unblock others or change how the team operates?
-- Leadership signals: mentoring, tech decisions, incident response
-- Concrete outcomes tied to business metrics
-
-Skeptical of: deep specialization with no evidence of breadth, no mention of teammates or collaboration
+Skeptical of: a first page that needs the third to make sense, walls of text, a stack list with
+no page that uses it
 
 ---
 
-## Persona C — Tech Lead at a Traditional Enterprise / Fintech
-*"Reliability, process maturity, and long-term maintainability are what matter here."*
+## Lens I — Interviewer
+*"Walk me through that. What did *you* do, and how do you know it worked?"*
 
-Emphasizes:
-- System reliability: SLAs, error handling, observability, runbooks
-- Documentation discipline and communication quality
-- Security and compliance awareness
-- Consistency over time (not just one flashy project)
+Reads: the target and the material (`claim-and-consistency.md` §G).
 
-Skeptical of: hype-driven stacks with no rationale, missing operational context, no mention of failure or incident handling
+Looks for:
+- Every outcome, cause, role and reason sentence against its record: overclaim, contradiction,
+  gap — quoting the record and its file
+- Numbers without a baseline, period or attribution (§B), and the question each invites
+- Role words the record does not carry ("주도", "설계", "규명") and verbs that hide a shared decision
+- Dates and figures that differ between pages, or between a page and its record
+
+Skeptical of: a cause stated as found when the record says estimated, a whole reported as a part,
+any figure the record does not hold
 
 ---
 
-## Persona D — Open Source / Developer Tools Team Lead
-*"Can you write something other engineers will actually want to use and maintain?"*
+## Lens O — Owner's bar
+*"Is this the document the candidate decided to write?"*
 
-Emphasizes:
-- API design intuition and ergonomics
-- Documentation quality and developer experience thinking
-- Community contribution or public technical writing
-- Abstraction and interface design over implementation details
+Reads: the target, `docs/확정사실.md`, the workspace's own rules (README, style notes), the
+`[확정]` list; `noah` when connected, for the candidate's standards in their own words.
 
-Skeptical of: closed-source-only work, no external technical communication, overly internal focus
+Looks for:
+- Breaks of the settled lines: plain words for developer-only terms or a footnote, no `(추정)` in
+  body text, one kind of work per page — whatever the record settles
+- A current employer's weakness, internal setup or confidential detail (`screen-models.md`
+  red flag) — ranked above every screen cost
+- Gaps that may be choices: absences the record explains, or does not — asked as
+  `[확인 필요: 의도]`, never flagged
+- Settled items being reopened, and stale inputs judged as if current
+
+Skeptical of: a finding that contradicts a correction the candidate already made

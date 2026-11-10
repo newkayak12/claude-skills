@@ -1,6 +1,14 @@
 # Scoring Rubric
 
-A score is the **highest level the portfolio fully satisfies** — partial evidence does not round up.
+The band is the **highest level the portfolio fully satisfies** — partial evidence does not round up.
+
+**Inside the band.** Start at the band's top and take one point off for each surviving finding
+charged to the dimension, down to the band's floor; a `critical` or two `high` findings on one
+dimension take it to the floor. Charge each finding to one dimension: material 불가 on outcomes →
+Impact, on cause or design → Technical Depth or System Design, on role → Leadership/Ownership;
+breaks of the owner's rules and screen findings → Portfolio Narrative. Write the charge next to
+the score (`7 / 10 — 9 − 2: A1 A3`), so a fixed finding visibly moves it. Scores that do not move
+between rounds while the document changes mean findings are not being charged.
 
 ## Technical Depth
 

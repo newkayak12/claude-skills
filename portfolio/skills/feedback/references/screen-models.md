@@ -37,6 +37,7 @@ flags in their own block, each with a one-line interview defense the candidate c
 
 | Flag | What triggers it | Defense line shape |
 |------|------------------|--------------------|
+| 재직 회사 약점 노출 | A current or recent employer's live weakness, internal setup or confidential detail ("DB에 외부 직접 접근 경로가 열려 있다") — ranked above every other flag | None — remove it; describe your change, not the hole that remains |
 | 경력 갭 | Unexplained gap ≥ 6 months | Name it + what you did in it (one clause) |
 | 잦은 이직 | 2+ roles under ~18 months, no context | The reason that repeats is the story — state the arc |
 | 직함 인플레이션 | Title outpaces evidence (Lead with no leading shown) | Scope in numbers: team size, what you owned |

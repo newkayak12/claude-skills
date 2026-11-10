@@ -1,6 +1,6 @@
 # Reviewer panel — detail
 
-Step 2 of `SKILL.md`. The roster (A–D) is in the SKILL.md table and never changes. The debate
+Step 2 of `SKILL.md`. The roster (S · I · O) is in the SKILL.md table and never changes. The debate
 follows think:brainstorming's debate mode (`think/skills/brainstorming/references/debate.md`),
 adapted from design options to review findings. The Clashes block is the only record: no debate
 log file is written.
@@ -14,19 +14,20 @@ session model for merge, cut (rule S), scoring and the final blocks.
 
 1. **Ledger first.** Steps 0–1 of `SKILL.md` run once in the main context: format, tallies,
    the numbered C/A/L/R/F lists. That ledger is what reviewers cite.
-2. **Diverge (round 1).** Start four subagents in one message, one per roster row, each with its
-   own persona text from `personas.md`. Each gets the document and the ledger, never another
-   reviewer's output, and returns, in its persona's voice:
-   - up to 5 findings: the ledger ID it supports (or `new:<C|A|L|R|F>`, naming the block it belongs to), a quoted document line, what that
-     line shows or fails to show, no criticism of other reviewers;
+2. **Diverge (round 1).** Start three subagents in one message, one per roster row, each with its
+   own lens text from `personas.md` and only the inputs its row reads (S never gets the
+   material). Each gets the ledger, never another reviewer's output, and returns, in its lens's
+   voice:
+   - every finding it can quote, worst first: the ledger ID it supports (or `new:<C|A|L|R|F>`, naming the block it belongs to), a quoted document line, what that
+     line shows or fails to show, the record it breaks when there is one, the replacement text, no criticism of other reviewers;
    - a score per rubric dimension with the quoted evidence for it.
 3. **Merge.** Claude dedupes the findings across reviewers. Claude gives every `new:<X>` finding
    the next free ID in block X (`C` / `A` / `L` / `R` / `F`) here, before the attack rounds; the ID
    stays through attack, cut and the Clashes block. A finding no reviewer can tie
    to a quoted line is cut here. Order: severity, then the focus persona's findings first when
    the user named one.
-4. **Attack / rebut (rounds 2–3, at most 2).** Start four subagents in one message again, one per
-   reviewer, each its own `sonnet` Agent call with its own persona text, reading the merged list
+4. **Attack / rebut (rounds 2–3, at most 2).** Start three subagents in one message again, one per
+   reviewer, each its own `sonnet` Agent call with its own lens text, reading the merged list
    with the other reviewers' findings, using `think:devils-advocate` as the attack method. One
    subagent playing several reviewers is not the panel: a reviewer whose own call does not return
    is missing for that round, named in the Clashes block. Per finding it opposes it writes one
@@ -61,9 +62,9 @@ Format, one literal line per contested finding, three fields separated by ` — 
 
 `<finding ID>` always matches `^[CALRF]\d+$`; `new`, `신규` labels and `N<n>` are never written.
 `<who disagreed>` names reviewer letters and the move, and each attack keeps its parts:
-`B attacked (execution, high; steel-man: <one line>; precedent: speculative), A rebutted`.
+`O attacked (execution, high; steel-man: <one line>; precedent: speculative), I rebutted`.
 It carries no ` — `. A finding no attack touched has no entry. Above the entries one panel line:
-`패널 / Panel: A Staff · B EM · C Tech Lead · D OSS/DevTools — sonnet, <n> rounds`; it is not an entry. `survived` and `dropped` are the
+`패널 / Panel: S Screener · I Interviewer · O Owner's bar — sonnet, <n> rounds`; it is not an entry. `survived` and `dropped` are the
 only closing words, lower case.
 
 Entry rules, panel run and revision mode alike:
@@ -75,15 +76,15 @@ Entry rules, panel run and revision mode alike:
   and the closing word. A 판정 sentence is not an entry.
 
 ```
-wrong: C1 — B attacked, A rebutted — survived (reason text)
-wrong: C1 (note) — B attacked — 인용문이 근거를 뒷받침하지 않음 — survived
-right: C1 — B attacked (execution, high; steel-man: <one line>; precedent: speculative), A rebutted; the quoted line still carries it — survived
+wrong: C1 — O attacked, I rebutted — survived (reason text)
+wrong: C1 (note) — O attacked — 인용문이 근거를 뒷받침하지 않음 — survived
+right: C1 — O attacked (execution, high; steel-man: <one line>; precedent: speculative), I rebutted; the quoted line still carries it — survived
 ```
 
 Before Write, check and fix:
 
 - every entry line against `^[A-Z]+[0-9]+ — [^—]+ — (survived|dropped)$`;
-- no entry names one letter as both attacker and rebutter (`B attacked …, B rebutted` is wrong);
+- no entry names one letter as both attacker and rebutter (`O attacked …, O rebutted` is wrong);
 - every appendix line against `^[CALRF][0-9]+ ` — no `- `, `* `, number or bold before the ID;
 - every block heading written exactly as in the Output Template, both halves
   (`**[충돌 / Clashes]**`, never `[충돌]` or `[Clashes]`).
@@ -96,12 +97,14 @@ Before Write, check and fix:
 ## Fallback
 
 Fewer than 2 subagents alive — no Agent tool, the calls fail, or fewer than 2 reviewers return —
-means no panel. Run the single-context review as one interviewer reading for all four rows'
-concerns (steps 1 and 3 of `SKILL.md`), and write the Clashes block as
-`패널 미실행 / panel could not run — single-context review` plus the reason. With 2 or 3 reviewers
-back, continue and add a line naming the missing reviewer to the Clashes block.
+means no panel. Run the single-context review as the three lenses in turn, each its own pass
+with its own inputs (S on the target alone first, then I with the material, then O with the
+rules) — steps 1 and 3 of `SKILL.md` — and write the Clashes block as
+`패널 미실행 / panel could not run — single-context review` plus the reason. A run that skips the
+panel without that line is a defect of the review, not a shorter review. With 2 reviewers back,
+continue and add a line naming the missing reviewer to the Clashes block.
 
 ## Revision mode
 
-The v1/v2 diff stays single-context (step 1). The same four reviewers get the new version only;
+The v1/v2 diff stays single-context (step 1). The same three reviewers get the new version only;
 their findings are debated as above and the diff rows are not argued.

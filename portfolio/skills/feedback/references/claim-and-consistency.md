@@ -36,8 +36,9 @@ contradiction needs no domain knowledge to spot. Check four things; report only 
    a bullet names it, or names something that only exists inside it (`Spring Batch` evidences
    `Spring Boot`/`Spring` and the JVM language the summary states; `N+1 제거·인덱스 추가` with one
    database in the list evidences that database). A list of two databases with an anonymous
-   index bullet evidences neither. Tally: `스킬 근거율 n/m` (entries with evidence / entries
-   listed). Under ~60% is skill inflation and goes in the
+   index bullet evidences neither. On a deck, a tech-stack table or a stack cell on a project
+   page is an index too — evidence is a body line that uses the skill. Tally: `스킬 근거율 n/m`
+   (entries with evidence / entries listed). Under ~60% is skill inflation and goes in the
    red-flag block (provisional threshold — set from fixture reviews, not research; see §F); name the unevidenced entries so the candidate can either add the bullet
    or delete the entry.
 3. **Role claim vs. bullet language.** A summary or title that says 리드 / owned / 설계 while
@@ -79,10 +80,11 @@ same bullets, so apply one rule to avoid double-penalising or contradicting: `�
 off and the rubric decides alone. State the ceiling once, in the Impact dimension's
 devil's-advocate line, and do not mention the audit again in the score block.
 
-Name the **worst three** incomplete claims — the ones with the highest visibility (summary,
-first bullet of the most recent role) — and for each write the exact interview question it
-invites. Those questions feed the expected-questions block directly: an incomplete claim
-is not a *possible* question, it is a certain one.
+List **every** incomplete claim, the worst first — highest visibility (summary, first bullet
+of the most recent role) leads — and for each write the exact interview question it invites.
+The worst three feed the expected-questions block directly: an incomplete claim is not a
+*possible* question, it is a certain one. The rest stay in the appendix; a cap would hide the
+defects the candidate asked to find.
 
 Do not double-count with XYZ+S. A bullet can be XYZ+S-complete and claim-incomplete
 (`배포 30분 → 4분` has X, Y, Z, S but no period and no attribution). Report both tallies;
@@ -150,6 +152,33 @@ direction decides what it means:
 Korean market note: 연차 ↔ level is loose (5년 is *expected* to read 시니어, not guaranteed to),
 so 연차 alone never sets the claimed rung — it sets the reader's expectation, and a gap against
 that expectation is what the engineer 30-second pass actually reacts to.
+
+## G. Claims against the material — does each sentence say what the record says?
+
+§A and §B ask whether the document agrees with itself. An interviewer who has read the
+candidate's own write-up, or who asks one follow-up, finds a different defect first: the
+sentence says more than happened. Run this pass whenever there is material — `sources/`
+items, `docs/확정사실.md`, a folder the user names. In the one real run that had material, a
+review without it found 6 items; the same deck read against the material gave 22.
+
+1. **Find the record.** For each outcome, cause, role and reason sentence, find its item: the
+   `글감:` line a skeleton page cites, else a search of the material for the sentence's own
+   nouns. Write down the file and the words searched; "재료에 없음" without both is not
+   reported, because a review that says the record is silent when it is not loses the reader.
+2. **Judge it.** `근거 있음` (the record says it), `약함` (the record says less: a range for a
+   number, "추정" for a cause, a part for the whole) or `불가`. A 불가 is one of:
+   - **overclaim** — more than the record: "규명" where the record says 추정, "주도" where the
+     record splits the decision, "3건 배포" presented as all where the record says 4 planned;
+   - **contradiction** — otherwise than the record: another number, another reason;
+   - **gap** — the record is silent on a fact the sentence needs: the replacement carries
+     `[확인 필요: ○○]`.
+3. **Choices are asked, not flagged.** When the record says something was left out on purpose,
+   or gives no reason either way for an absence, the finding is a question
+   (`[확인 필요: 의도]`), never a defect.
+4. **Report.** Each 불가 is an `A` finding: the quoted sentence, the kind, the record quoted
+   with its file (`[재료 01/A1: "…"]`), the question it invites, the replacement text. 약함 is
+   listed when the sentence is on the first three pages or carries a number. Tally:
+   `재료 대조 불가 n/m` over the sentences judged.
 
 ## F. Provisional thresholds
 

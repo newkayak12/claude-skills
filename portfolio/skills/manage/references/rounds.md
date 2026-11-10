@@ -63,7 +63,7 @@ reasoning, and its verdict is `pass` or `fail` per criterion with the line it re
 ## Feedback each round
 
 `feedback` runs every round, after step 7, from the main context: never inside a subagent or a judge,
-because its four-reviewer panel needs subagents and a subagent cannot start them (it would fall back to
+because its three-lens panel needs subagents and a subagent cannot start them (it would fall back to
 one context without saying so). Its target is this round's deck (`build/deck.pdf`) when one exists,
 else this round's `skeleton.md`. A round never skips it and never reuses an output from before the
 loop, from another round or from outside it: a round without its own feedback run is not recorded.

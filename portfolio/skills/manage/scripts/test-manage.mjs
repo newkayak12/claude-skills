@@ -303,7 +303,7 @@ test('scaffold creates the selection table, template analysis and render/feedbac
   const root = mkdtempSync(join(tmpdir(), 'manage-scaffold-'))
   writeFileSync(join(root, 'deck.catalog.md'), '# Catalog\n\n## Voice\n\n- 했다 60%\n\n## Palette\n\n- 10243F\n\n## Type\n\n- 본문 18pt\n\n## @s1 · 표지\n')
   const r = scaffold(root)
-  assert.deepEqual(r.created, ['sources/선정.md', 'template/분석.md', 'snapshot/render', 'snapshot/feedback'])
+  assert.deepEqual(r.created, ['sources/선정.md', 'template/분석.md', 'snapshot/render', 'feedback'])
   const analysis = readFileSync(join(root, 'template/분석.md'), 'utf8')
   assert.match(analysis, /## Palette\n\n- 10243F\n\n## Type\n\n- 본문 18pt\n\n## Voice\n\n- 했다 60%\n\n## 스타일 규칙/)
   assert.ok(!analysis.includes('@s1'))

@@ -2,7 +2,7 @@
 // portfolio:manage engine. Run from the workspace root; every subcommand prints one JSON object.
 //   layout                         which workspace paths exist / are missing; touches nothing
 //   scaffold                       creates what the eight-step flow needs and the workspace lacks:
-//       sources/선정.md, template/분석.md (catalog's Palette/Type/Voice), snapshot/render/, snapshot/feedback/
+//       sources/선정.md, template/분석.md (catalog's Palette/Type/Voice), snapshot/render/, feedback/
 //   selection                      sources/선정.md rows (글감 · 쓰임 본문|부록|제외 · 쪽 · 이유 · 대표)
 //   keep-render --version vX.Y.Z   build/pages/*.png → snapshot/render/deck-vX.Y.Z/pages/ + 검토.md
 //   snapshot --kind skeleton|deck --level major|minor|patch --note <text> [--by <who>] [--date YYYY-MM-DD]
@@ -166,7 +166,7 @@ export function scaffold(root) {
     '## 스타일 규칙', '', '- 간격 · 정렬 · 강조 방식 (템플릿에서 본 것만)', '',
     '## 그림 색', '', '- 그림(write:diagram)이 쓰는 색: Palette에서 고른다', ''].join('\n'))
   make('snapshot/render', null)
-  make('snapshot/feedback', null)
+  make('feedback', null)   // feedback/YYYY-MM-DD.md, one review per day, ending with its fix table
   return { created }
 }
 
