@@ -90,9 +90,10 @@ unreadable file, a missing renderer or catalog) gives `skipped` with its reason,
 - step 6: runs when `deck.catalog.md`, `template/analysis.md` and `portfolio-skeleton.md` all exist (the fixture
   workspace has them). A missing one, or a checker that cannot open the template (0-byte or
   unreadable `template.pptx`), is `skipped` and named in the reason;
-- step 7: `build`/`render` only when the user said so for this loop. Without that word the step is
-  skipped with the reason `not requested`; it is not a user-wait. With the word and no
-  renderer, skipped with the reason `no renderer`.
+- step 7: a round always builds (`deck-builder build`, then `verify-build`; the user's standing word,
+  2026-11-03). `render` only when the user said so for this loop; without that word the render part is
+  noted `not requested`, not a user-wait. Build impossible (no template, no builder) or no renderer
+  when told: skipped with that reason.
 
 ## User-wait points
 

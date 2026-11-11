@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
-import { bump, claims, compare, confirmedFacts, deckPages, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, readRounds, renumber, round, scaffold, selection, settle, settled, settledNote, snapshot, step, verify } from './manage.mjs'
+import { bump, claims, compare, confirmedFacts, deckPages, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, readRounds, renumber, round, scaffold, selection, settle, settled, settledNote, snapshot, step, sync, verify, verifyBuild } from './manage.mjs'
+import { deflateRawSync } from 'node:zlib'
 
 const SKEL = `# 가상 포트폴리오
 version: v4.0.0
@@ -1237,4 +1238,95 @@ test('symlink: run through a link to the script from a cwd reached by a link, it
   writeFileSync(join(root, 'in2.json'), JSON.stringify(roundIn(2)))
   symlinkSync(join(root, 'in2.json'), join(root, 'in-link.json'))
   assert.equal(manageCli(MANAGE, wsLink, 'round', '--input', 'in-link.json').status, 0)
+})
+
+// card 141: sync, verify-build, layout's optional folders and conflict copies, snapshot --kind resume
+const SLOT_SKEL = '# 가상\nversion: v1.0.0\n\n## 2쪽 · `@s2` · 문제\ntitle: 검색이 느렸다\ntext1:\n  - 응답 2.1초\n  - 원인은 인덱스 [1]{sup}\nnotes: 말할 것\npic1: assets/s2.svg\n\n## 3쪽 · `@s3` · 결과\ntitle: 응답 340ms\n\n## 4쪽 · `@s4` · 알림\ntitle: 알림 배치\n'
+const SLOT_DECK = '---\ntemplate: template.pptx\n---\n\n## @s2 2쪽\ntitle: 검색이 느렸다\ntext1:\n  - 응답 2.1초\n  - 원인은 [옛 문구]{sup}\npic1: assets/s2.svg\n\n## @s3 3쪽\ntitle: 응답 **340ms**\n'
+
+function zipOf(entries) {
+  const parts = []; const central = []; let off = 0
+  for (const [name, data] of Object.entries(entries)) {
+    const raw = deflateRawSync(Buffer.from(data)); const nm = Buffer.from(name)
+    const lh = Buffer.alloc(30); lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(8, 8); lh.writeUInt32LE(raw.length, 18); lh.writeUInt16LE(nm.length, 26)
+    const ch = Buffer.alloc(46); ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(8, 10); ch.writeUInt32LE(raw.length, 20); ch.writeUInt16LE(nm.length, 28); ch.writeUInt32LE(off, 42)
+    parts.push(lh, nm, raw); central.push(ch, nm); off += 30 + nm.length + raw.length
+  }
+  const cd = Buffer.concat(central); const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(central.length / 2, 10); end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(off, 16)
+  return Buffer.concat([...parts, cd, end])
+}
+const slideXml = (...t) => `<p:sld>${t.map(x => `<a:t>${x}</a:t>`).join('')}</p:sld>`
+
+function slotWs() {
+  const root = mkdtempSync(join(tmpdir(), 'manage-slot-')); copies.push(root)
+  writeFileSync(join(root, 'portfolio-skeleton.md'), SLOT_SKEL)
+  writeFileSync(join(root, 'portfolio-deck.mdx'), SLOT_DECK)
+  return root
+}
+
+test('sync reports each skeleton slot missing or different, ignoring markup, and writes only with the flag', () => {
+  const root = slotWs()
+  const r = sync(root)
+  assert.deepEqual(r.different.map(d => `${d.slide}.${d.key}`), ['s2.text1'])
+  assert.deepEqual(r.missing, [])
+  assert.deepEqual(r.slide_missing, ['s4'])
+  assert.equal(r.written, false)
+  assert.equal(readFileSync(join(root, 'portfolio-deck.mdx'), 'utf8'), SLOT_DECK, 'a report writes nothing')
+  writeFileSync(join(root, 'portfolio-skeleton.md'), SLOT_SKEL.replace('title: 응답 340ms', 'title: 응답 340ms\nsubtitle: 한 줄'))
+  const w = sync(root, { write: true })
+  assert.deepEqual(w.missing.map(m => m.key), ['subtitle'])
+  assert.equal(w.written, true)
+  const deck = readFileSync(join(root, 'portfolio-deck.mdx'), 'utf8')
+  assert.match(deck, /text1:\n  - 응답 2\.1초\n  - 원인은 인덱스 \[1\]\{sup\}\npic1: assets\/s2\.svg/)
+  assert.match(deck, /title: 응답 \*\*340ms\*\*\nsubtitle: 한 줄/)
+  assert.ok(!deck.includes('@s4'), 'a missing slide is never created')
+  assert.deepEqual([sync(root).missing, sync(root).different], [[], []])
+})
+
+test('verify-build: skeleton slot text, footnote marks and picture files against the built pptx', () => {
+  const root = slotWs()
+  assert.throws(() => verifyBuild(root), /build first/)
+  mkdirSync(join(root, 'build'))
+  writeFileSync(join(root, 'build', 'deck.pptx'), zipOf({
+    'ppt/slides/slide1.xml': slideXml('검색이', ' 느렸다', '응답 2.1초', '원인은 인덱스 [1]'),
+    'ppt/slides/slide2.xml': slideXml('응답 340ms', '알림 배치'), 'ppt/presentation.xml': '<x/>' }))
+  const r = verifyBuild(root)
+  assert.equal(r.checked, 5)
+  assert.deepEqual(r.absent, [])
+  assert.deepEqual(r.footnotes_absent, ['옛 문구'])
+  assert.deepEqual(r.assets_absent, ['assets/s2.svg'])
+  assert.equal(r.ok, false)
+  mkdirSync(join(root, 'assets')); writeFileSync(join(root, 'assets', 's2.svg'), '<svg/>')
+  writeFileSync(join(root, 'portfolio-deck.mdx'), SLOT_DECK.replace('[옛 문구]{sup}', '[1]{sup}'))
+  assert.equal(verifyBuild(root).ok, true)
+  writeFileSync(join(root, 'build', 'deck.pptx'), zipOf({ 'ppt/slides/slide1.xml': slideXml('검색이 느렸다') }))
+  const bad = verifyBuild(root)
+  assert.deepEqual(bad.absent.map(a => `${a.slide}.${a.key}`), ['s2.text1', 's2.text1', 's3.title', 's4.title'])
+  assert.equal(bad.ok, false)
+})
+
+test('layout: optional folders are present or absent, a stray deck conflict copy warns', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-opt-')); copies.push(root)
+  mkdirSync(join(root, 'style')); mkdirSync(join(root, 'decisions'))
+  let l = layout(root)
+  assert.deepEqual(l.optional, { present: ['decisions', 'style'], absent: ['feedback', 'stable', 'scripts'] })
+  assert.ok(!l.missing.includes('style') && l.warnings === undefined)
+  writeFileSync(join(root, 'portfolio-deck.conflict-2026.mdx'), '')
+  writeFileSync(join(root, 'deck.conflict-x.mdx'), '')
+  writeFileSync(join(root, 'portfolio-deck.mdx'), '')
+  l = layout(root)
+  assert.equal(l.warnings.length, 2)
+  assert.match(l.warnings[0], /^deck\.conflict-x\.mdx: /)
+})
+
+test('snapshot --kind resume counts its own versions, apart from deck', () => {
+  const root = workspace()
+  writeFileSync(join(root, 'resume-skeleton.md'), '# 이력서\n')
+  writeFileSync(join(root, 'resume-deck.mdx'), '---\n---\n')
+  const a = snapshot(root, { kind: 'resume', level: 'patch', note: '첫 판', date: '2026-01-08' })
+  assert.equal(a.to, 'v1.0.0')
+  assert.deepEqual(readdirSync(join(root, 'snapshot/resume/resume-v1.0.0')).sort(), ['NOTES.md', 'assets', 'resume-deck.mdx', 'resume-skeleton.md'])
+  assert.equal(snapshot(root, { kind: 'resume', level: 'minor', note: '둘째', date: '2026-01-09' }).to, 'v1.1.0')
+  assert.equal(snapshot(root, { kind: 'deck', level: 'patch', note: 'x' }).to, 'v1.0.1', 'deck keeps its own count (fixture holds deck-v1.0.0)')
 })

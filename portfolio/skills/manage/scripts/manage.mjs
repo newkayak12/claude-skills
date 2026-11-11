@@ -6,6 +6,11 @@
 //       sources/선정.md, template/analysis.md (catalog's Palette/Type/Voice), template/next-render.md,
 //       snapshot/render/, feedback/; first renames template/분석.md → analysis.md and
 //       template/다음렌더-지침.md → next-render.md (NFC or NFD), printed as `renamed`
+//   sync [--write]                 portfolio-skeleton.md slots (`key: value` under a `## … @sN` heading) against
+//       portfolio-deck.mdx: { missing, different, slide_missing }; written only with --write (a slide is never created)
+//   verify-build                   each skeleton slot's text is in build/deck.pptx; `[x]{sup}` marks and picture files exist
+//   layout also lists `optional` (feedback, decisions, style, stable, scripts: present | absent) and `warnings`
+//       for a stray deck.*.mdx in the root; snapshot --kind resume keeps snapshot/resume/resume-vX.Y.Z
 //   selection                      sources/선정.md rows (글감 · 쓰임 본문|부록|제외 · 쪽 · 이유 · 대표)
 //   keep-render --version vX.Y.Z   build/pages/*.png → snapshot/render/deck-vX.Y.Z/pages/ + 검토.md
 //   snapshot --kind skeleton|deck --level major|minor|patch --note <text> [--by <who>] [--date YYYY-MM-DD]
@@ -90,6 +95,7 @@ import { createHash } from 'node:crypto'
 import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { inflateRawSync } from 'node:zlib'
 
 // Containment on real paths: a symlink inside the workspace that points out is outside. A path that does
 // not exist yet resolves through its nearest existing ancestor; a dangling symlink counts as outside.
@@ -154,6 +160,8 @@ export function wsFile(root, rel) {
 const LAYOUT = ['CLAUDE.md', SKELETON, DECK, 'template.pptx', 'deck.catalog.md', 'build', 'snapshot', 'sources', 'docs/확정사실.md',
   'sources/선정.md', ANALYSIS, NEXT_RENDER]
 
+const OPTIONAL = ['feedback', 'decisions', 'style', 'stable', 'scripts']
+
 // The template is where deck.mdx's front matter `template:` says, else the root template.pptx.
 export function layout(root) {
   let template = 'template.pptx'
@@ -167,6 +175,12 @@ export function layout(root) {
   const out = { present: paths.filter(has), missing: paths.filter(p => !has(p)) }
   const legacy = legacyFound(root).map(([to, from]) => ({ from, to }))
   if (legacy.length) out.legacy = legacy   // old names: `scaffold` renames them
+  // known folders a workspace may or may not keep: present or absent, never missing
+  out.optional = { present: OPTIONAL.filter(has), absent: OPTIONAL.filter(p => !has(p)) }
+  // a sync-conflict copy of a deck source in the root (`deck.conflict-….mdx`): named, left for the user
+  let stray = []
+  try { stray = readdirSync(root).filter(f => /^(portfolio-|resume-)?deck\..+\.mdx$/.test(f.normalize('NFC'))).sort() } catch { /* unreadable root */ }
+  if (stray.length) out.warnings = stray.map(f => `${f}: a conflict copy of a deck source in the root; compare it with the real one, then move it to _archive/`)
   return out
 }
 
@@ -232,7 +246,9 @@ export function scaffold(root) {
   make(ANALYSIS, ['# 템플릿 분석', '',
     ...(fromCatalog.length ? fromCatalog.flatMap(s => [s, '']) : ['(deck-builder catalog를 먼저 돌리면 Palette · Type · Voice가 여기 들어온다)', '']),
     '## 스타일 규칙', '', '- 간격 · 정렬 · 강조 방식 (템플릿에서 본 것만)', '',
-    '## 그림 색', '', '- 그림(write:diagram)이 쓰는 색: Palette에서 고른다', ''].join('\n'))
+    '## 그림 색', '', '- 그림(write:diagram)이 쓰는 색: Palette에서 고른다',
+    '- 덱과 같은 색 계열 하나로 그린다. 한 가지 색(단색)으로만 칠하지 않는다.',
+    '- 가장 중요한 부분이 한눈에 보이게 한다 (강조색은 그 부분에만).', ''].join('\n'))
   make(NEXT_RENDER, NEXT_RENDER_HEAD)
   make('snapshot/render', null)
   make('feedback', null)   // feedback/YYYY-MM-DD.md, one review per day, ending with its fix table
@@ -296,7 +312,7 @@ export function bump(v, level) {
 }
 
 export function snapshot(root, { kind, level, note, by, date }) {
-  if (kind !== 'skeleton' && kind !== 'deck') throw new Error('kind must be skeleton|deck')
+  if (!['skeleton', 'deck', 'resume'].includes(kind)) throw new Error('kind must be skeleton|deck|resume')
   if (!note) throw new Error('--note is required')
   const skelPath = wsFile(root, SKELETON)
   const skel = readFileSync(skelPath, 'utf8')
@@ -306,7 +322,7 @@ export function snapshot(root, { kind, level, note, by, date }) {
   const curS = `v${cur.join('.')}`
   const day = date || new Date().toISOString().slice(0, 10)
   const readme = join(root, 'snapshot', 'README.md')
-  if (kind === 'deck') return deckSnapshot(root, { level, note, day, skelS: curS, readme })
+  if (kind === 'deck' || kind === 'resume') return deckSnapshot(root, { kind, level, note, day, skelS: curS, readme })
   const dir = join(root, 'snapshot', kind, `${kind}-${curS}`)
   for (const p of [dir, skelPath, readme]) assertInside(root, p)
   if (existsSync(dir)) throw new Error(`${dir} exists: snapshot of ${curS} already taken`)
@@ -330,23 +346,25 @@ export function snapshot(root, { kind, level, note, by, date }) {
 // The deck counts its own versions, apart from skeleton: the next one after the newest
 // snapshot/deck/deck-vX.Y.Z (v1.0.0 when there is none). The folder holds that version: deck.mdx,
 // assets/ when there is one, and a NOTES.md with the note; the row goes into README's `## deck` table.
-function deckSnapshot(root, { level, note, day, skelS, readme }) {
-  const base = join(root, 'snapshot', 'deck')
+// kind `resume` is the same with its own count under snapshot/resume/, copying resume-skeleton.md and
+// resume-deck.mdx (whichever exist).
+function deckSnapshot(root, { kind = 'deck', level, note, day, skelS, readme }) {
+  const base = join(root, 'snapshot', kind)
   let names = []
   try { names = readdirSync(base) } catch { /* first deck snapshot */ }
-  const vers = names.map(n => n.match(/^deck-v(\d+)\.(\d+)\.(\d+)$/)).filter(Boolean).map(m => m.slice(1).map(Number))
+  const vers = names.map(n => n.match(new RegExp(`^${kind}-v(\\d+)\\.(\\d+)\\.(\\d+)$`))).filter(Boolean).map(m => m.slice(1).map(Number))
   const newest = vers.sort((x, y) => y[0] - x[0] || y[1] - x[1] || y[2] - x[2])[0]
   const next = `v${(newest ? bump(newest, level) : [1, 0, 0]).join('.')}`
-  const dir = join(base, `deck-${next}`)
+  const dir = join(base, `${kind}-${next}`)
   assertInside(root, dir)
   assertInside(root, readme)
   mkdirSync(dir, { recursive: true })
-  const deck = wsFile(root, DECK)
-  copyFileSync(deck, join(dir, basename(deck)))
+  const sources = kind === 'deck' ? [wsFile(root, DECK)] : ['resume-skeleton.md', RESUME_DECK].map(p => wsFile(root, p)).filter(existsSync)
+  for (const f of sources) copyFileSync(f, join(dir, basename(f)))
   if (existsSync(join(root, 'assets'))) cpSync(join(root, 'assets'), join(dir, 'assets'), { recursive: true })
-  writeFileSync(join(dir, 'NOTES.md'), `# deck-${next}\n\n${day}. skeleton ${skelS} 반영. ${note}\n`)
-  if (existsSync(readme)) writeFileSync(readme, readmeRow(readFileSync(readme, 'utf8'), { cur: next, day, note }, 'deck'))
-  return { kind: 'deck', snapshot: dir, from: newest ? `v${newest.join('.')}` : null, to: next, skeleton: skelS, readme }
+  writeFileSync(join(dir, 'NOTES.md'), `# ${kind}-${next}\n\n${day}. skeleton ${skelS} 반영. ${note}\n`)
+  if (existsSync(readme)) writeFileSync(readme, readmeRow(readFileSync(readme, 'utf8'), { cur: next, day, note }, kind))
+  return { kind, snapshot: dir, from: newest ? `v${newest.join('.')}` : null, to: next, skeleton: skelS, readme }
 }
 
 // The page count the skeleton states in its head (`28장`), else the number of page headings.
@@ -1033,6 +1051,139 @@ export function readRounds(root) {
   return { rounds: items.length, last: l ? { round: l.round, stop_reason: l.stop_reason, continue: l.continue } : null, items }
 }
 
+// Slot text, in the skeleton and in the deck source alike: under a `## … @sN …` heading, a line
+// `key: value` (key lowercase ASCII) plus the indented lines after it. Not slots: `notes`, `place`, a
+// picture path, `!drop`. Returns Map(slide id -> { order: [key], slots: Map(key -> value lines) }).
+const SKIP_KEYS = new Set(['notes', 'place'])
+export function slotsOf(text) {
+  const out = new Map()
+  let cur = null
+  let key = null
+  for (const l of text.replace(/^---\n[\s\S]*?\n---\n/, '').split('\n')) {
+    const h = l.match(/^##\s.*@(s\d+)\b/)
+    if (h) { cur = { order: [], slots: new Map() }; out.set(h[1], cur); key = null; continue }
+    if (/^#{1,2}\s/.test(l)) { cur = null; key = null; continue }
+    if (!cur) continue
+    const kv = l.match(/^([a-z][a-z0-9_]*):[ \t]*(.*)$/)
+    if (kv) {
+      key = SKIP_KEYS.has(kv[1]) || kv[2] === '!drop' || /\.(png|jpe?g|svg|gif)(\s*\|.*)?$/i.test(kv[2]) ? null : kv[1]
+      if (key) { cur.order.push(key); cur.slots.set(key, kv[2] ? [kv[2].trim()] : []) }
+    } else if (key && /^[ \t]+\S/.test(l)) cur.slots.get(key).push(l.trim())
+    else key = null
+  }
+  return out
+}
+// the words a slot says, without the deck's markup: `**`, `[text]{fmt}`, `<br>`, list dashes, spacing
+const plain = s => s.replace(/\[([^\]]*)\]\{[^}]*\}/g, '$1').replace(/\*\*/g, '').replace(/<br\s*\/?>/g, ' ').replace(/^[-|]\s*/, '').replace(/\s+/g, ' ').trim()
+
+// skeleton -> deck source: each skeleton slot absent from, or different in, the deck's same slide.
+// Writes only with `write`: a different slot is replaced, an absent one appended to its slide; a slide
+// the deck lacks is reported and never created (structure is the user's).
+export function sync(root, { write = false } = {}) {
+  const skelPath = wsFile(root, SKELETON)
+  const deckPath = wsFile(root, DECK)
+  const skel = slotsOf(readFileSync(skelPath, 'utf8'))
+  const deckText = readFileSync(deckPath, 'utf8')
+  const deck = slotsOf(deckText)
+  const missing = []; const different = []; const noSlide = []
+  for (const [sid, s] of skel) {
+    const d = deck.get(sid)
+    if (!d) { if (s.slots.size) noSlide.push(sid); continue }
+    for (const key of s.order) {
+      const want = s.slots.get(key)
+      if (!d.slots.has(key)) missing.push({ slide: sid, key, skeleton: want.join(' / ') })
+      else if (d.slots.get(key).map(plain).join(' ') !== want.map(plain).join(' ')) {
+        different.push({ slide: sid, key, skeleton: want.join(' / '), deck: d.slots.get(key).join(' / ') })
+      }
+    }
+  }
+  const out = { skeleton: basename(skelPath), deck: basename(deckPath), missing, different, slide_missing: noSlide, written: false }
+  if (write && (missing.length || different.length)) {
+    assertInside(root, deckPath)
+    const lines = deckText.split('\n')
+    // walk the deck once, slide by slide; an edit rewrites a slot's lines or appends before the next heading
+    const res = []
+    let sid = null; let skip = false
+    const flush = () => {
+      const add = missing.filter(m => m.slide === sid)
+      const tail = []
+      while (add.length && res.length && res.at(-1).trim() === '') tail.push(res.pop())
+      for (const m of add) res.push(...slotLines(m.key, skel.get(sid).slots.get(m.key)))
+      res.push(...tail)
+    }
+    for (const l of lines) {
+      const h = l.match(/^##\s.*@(s\d+)\b/)
+      if (h || /^#{1,2}\s/.test(l)) { if (sid) flush(); sid = h ? h[1] : null; skip = false; res.push(l); continue }
+      const kv = sid && l.match(/^([a-z][a-z0-9_]*):/)
+      if (kv) {
+        skip = false
+        const diff = different.find(x => x.slide === sid && x.key === kv[1])
+        if (diff) { res.push(...slotLines(kv[1], skel.get(sid).slots.get(kv[1]))); skip = true; continue }
+      } else if (skip && /^[ \t]+\S/.test(l)) continue
+      else skip = false
+      res.push(l)
+    }
+    if (sid) flush()
+    writeFileSync(deckPath, res.join('\n'))
+    out.written = true
+  }
+  return out
+}
+const slotLines = (key, vals) => (vals.length === 1 ? [`${key}: ${vals[0]}`] : [`${key}:`, ...vals.map(v => `  ${v}`)])
+
+// Read a pptx (zip) with the standard library: the text of every slide, `<a:t>` runs joined.
+export function pptxText(path) {
+  const buf = readFileSync(path)
+  const end = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]))
+  if (end < 0) throw new Error(`${path} is not a zip file`)
+  const count = buf.readUInt16LE(end + 10)
+  let p = buf.readUInt32LE(end + 16)
+  let text = ''
+  for (let i = 0; i < count; i++) {
+    const method = buf.readUInt16LE(p + 10); const csize = buf.readUInt32LE(p + 20)
+    const nlen = buf.readUInt16LE(p + 28); const elen = buf.readUInt16LE(p + 30); const clen = buf.readUInt16LE(p + 32)
+    const lh = buf.readUInt32LE(p + 42)
+    const name = buf.toString('utf8', p + 46, p + 46 + nlen)
+    p += 46 + nlen + elen + clen
+    if (!/^ppt\/slides\/slide\d+\.xml$/.test(name)) continue
+    const start = lh + 30 + buf.readUInt16LE(lh + 26) + buf.readUInt16LE(lh + 28)
+    const raw = buf.subarray(start, start + csize)
+    const xml = (method === 8 ? inflateRawSync(raw) : raw).toString('utf8')
+    for (const t of xml.matchAll(/<a:t>([^<]*)<\/a:t>/g)) text += `${t[1]} `
+    text += '\n'
+  }
+  return text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&')
+}
+
+// build/deck.pptx against the sources: every skeleton slot's text is in the pptx, every footnote mark
+// (`[x]{sup}`) of the deck source is, and every picture the deck source names exists.
+export function verifyBuild(root) {
+  const deckPath = wsFile(root, DECK)
+  const deckText = readFileSync(deckPath, 'utf8')
+  const pptx = join(root, 'build', 'deck.pptx')
+  if (!existsSync(pptx)) throw new Error('build/deck.pptx does not exist: build first')
+  const flat = s => s.replace(/\s+/g, '')
+  const built = flat(pptxText(pptx))
+  const absent = []
+  let checked = 0
+  for (const [sid, s] of slotsOf(readFileSync(wsFile(root, SKELETON), 'utf8'))) {
+    for (const key of s.order) {
+      for (const v of s.slots.get(key)) {
+        const want = flat(plain(v.replace(/\[[^\]]*\]\{[^}]*\bsup\b[^}]*\}/g, '')))   // a footnote mark is checked on its own
+        if (!want) continue
+        checked++
+        if (!built.includes(want)) absent.push({ slide: sid, key, text: v })
+      }
+    }
+  }
+  const footnotes = [...deckText.matchAll(/\[([^\]]+)\]\{[^}]*\bsup\b[^}]*\}/g)].map(m => m[1])
+  const footnotes_absent = footnotes.filter(f => !built.includes(flat(f)))
+  const assets_absent = [...deckText.matchAll(/^\s*[a-z][a-z0-9_]*:[ \t]*(\S+\.(?:png|jpe?g|svg|gif))(?:\s*\|.*)?$/gim)]
+    .map(m => m[1]).filter(f => !existsSync(join(dirname(deckPath), f)))
+  return { checked, absent, footnotes: footnotes.length, footnotes_absent, assets_absent,
+    ok: !absent.length && !footnotes_absent.length && !assets_absent.length }
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2))
   const cmd = args._[0]
@@ -1041,6 +1192,10 @@ function main() {
   let out
   if (cmd === 'layout') {
     out = layout(root)
+  } else if (cmd === 'sync') {
+    out = sync(root, { write: args.write === true })
+  } else if (cmd === 'verify-build') {
+    out = verifyBuild(root)
   } else if (cmd === 'snapshot') {
     out = snapshot(root, { kind: args.kind, level: args.level, note: args.note, by: args.by, date: args.date })
   } else if (cmd === 'renumber') {
@@ -1134,7 +1289,7 @@ function main() {
   } else if (cmd === 'keep-render') {
     out = keepRender(root, args.version)
   } else {
-    throw new Error('usage: manage.mjs layout | scaffold | selection | snapshot | renumber | verify | compare | claims | settle --findings <file> | intake --feedback <file> [--round N] | step --input - | round --input <file | -> | round --read | keep-render')
+    throw new Error('usage: manage.mjs layout | scaffold | selection | sync [--write] | verify-build | snapshot | renumber | verify | compare | claims | settle --findings <file> | intake --feedback <file> [--round N] | step --input - | round --input <file | -> | round --read | keep-render')
   }
   process.stdout.write(`${JSON.stringify(out)}\n`)
 }

@@ -18,6 +18,8 @@ appear) live in that workspace's `docs/확정사실.md`, not here.
 
 ## Writing
 
+- **Plain words.** A word only a developer knows is said in plain words; if it must stay, a footnote
+  explains it. Spell a term out at its first use on each page. Speaker notes are exempt.
 - **Write the role.** No label like "공동 대응" — incidents are always handled by several people.
   Others' actions: no subject, order and reason. The candidate's: by role (wrote the report as
   owner, led the review, shipped the recurrence fix).

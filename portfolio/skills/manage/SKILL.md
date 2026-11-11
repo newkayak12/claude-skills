@@ -28,8 +28,8 @@ skills as its steps. **Not for** a one-off review of someone else's document (`f
 that is not a portfolio (`deck-builder`).
 
 Engine, run from the workspace root: `node ${CLAUDE_PLUGIN_ROOT}/skills/manage/scripts/manage.mjs <cmd>`
-(`layout`, `scaffold`, `selection`, `snapshot`, `renumber`, `verify`, `compare`, `claims`, `settle`,
-`intake`, `step`, `round`, `keep-render`; one JSON object each). A real run's mismatch becomes a fixture test first.
+(`layout`, `scaffold`, `selection`, `snapshot`, `renumber`, `verify`, `sync`, `verify-build`, `compare`,
+`claims`, `settle`, `intake`, `step`, `round`, `keep-render`; one JSON object each). A real run's mismatch becomes a fixture test first.
 
 ## Workspace
 
@@ -49,13 +49,14 @@ sources/                material: material/<id>/ items (`material` skill), or a 
                         선정.md (step 2: 글감 · 쓰임 본문|부록|제외 · 쪽 · 이유 · 대표 — the one place an exclusion lives)
 docs/확정사실.md        settled facts, corrections; `## 서술 기준` and `## 구조` lines no check raises again — read before any work
 _archive/               old plans and deck backups, moved here, never deleted
+decisions/ style/ stable/ scripts/   the user's own folders, optional: `layout` says present or absent, never missing
 ```
 
 These names are the contract: a new file takes its name from this tree. Older names (`skeleton.md`,
 `deck.mdx`, `resume.md`, `README.md`, `template/분석.md`, `template/다음렌더-지침.md`) are still read,
 listed by `layout` as `legacy` and renamed by `scaffold`; then fix references in the workspace's notes.
 
-Root holds only CLAUDE.md and the skeleton and deck pairs. Tidying moves to `_archive/`; only a proven copy is deleted; a
+Root holds only CLAUDE.md and the skeleton and deck pairs (`layout` warns on a `deck.*.mdx` conflict copy). Tidying moves to `_archive/`; only a proven copy is deleted; a
 name clash goes into a subfolder. Page headings: `## N <title>` or `## N쪽 · <title>`, one per page
 (appendix too); references `N쪽`, `N·M쪽`, `N~M쪽` and a `쪽` table column. A `# ` heading bounds a
 block that moves with its pages. History lines (`vX.Y.Z 변경…`, `vX.Y.Z(…`, `>`-quoted) stay as written.
@@ -66,9 +67,15 @@ Nine steps, in order; a round may start again at 2 or 4 (step 8 says where); 9 o
 Steps 1-7 run as one harness-shaped pass, n times (n from the user, default n = 2): plan the round
 → criteria per step (`step`) → do → check (a command, else a judge that is not the actor) → gate
 (`step`) → `round`. `feedback` runs every round after step 7 from the main context, `intake` takes its
-findings; the loop stops at `round`'s `continue: false`. A step that could not run is `skipped` with its reason, a gap, never pass; build/render without
-the user's word is skipped `not requested`; a user-wait is answered by the user, else noah, else the proposal (`answered_by`), never a stop.
+findings; the loop stops at `round`'s `continue: false`. A step that could not run is `skipped` with its reason, a gap, never pass.
 Mechanics: `references/rounds.md`.
+
+**Which gates block.** Structure only: the order of pages and what goes in or out (step 2's table, step 3's
+blocks, a step 4 order or page-count change). It is asked, answered by the user, else noah, else the
+proposal (`answered_by`), and is the only wait; the round never stops on it. Everything else goes ahead on
+the proposal and is reported under "기본값으로 정한 것": wording, fixes from feedback, the deck source,
+the snapshot. A round always builds (the user's standing word: "결과물도 검증하고, 더 빌드해보자"):
+`sync`, `deck-builder build`, `verify-build`; render only when the user says.
 
 0. **Open, every session, unasked.** `scaffold` (renames old names, creates only what is missing,
    never overwrites, appends the guide once to a CLAUDE.md that lacks it; its `renamed`/`created`/`appended` in one report line), then `layout`, `docs/확정사실.md` and
@@ -81,21 +88,21 @@ Mechanics: `references/rounds.md`.
 2. **Select.** Before any page is written, one row per item in `sources/선정.md`: 글감 · 쓰임
    (`본문` | `부록` | `제외`) · 쪽 · 이유 · 대표 (the one problem, decision or result the item leads
    with, in the material's words). Picked by signal (`references/principles.md` § Composition);
-   propose the table and wait for the user. Mark each item `material log --id <id> --note
+   propose the table (structure: asked). Mark each item `material log --id <id> --note
    "선정: <쓰임>" --status selected|excluded --later-step manage`. An exclusion lives only here, not
    in `확정사실.md`. `selection` reads the table back; a 쓰임 outside the three is a problem.
 3. **Draft.** No skeleton yet, or a new project → write it from the `본문`/`부록` items only: one
    project as why → the user's role and decision → result; strengths chosen from the evidence.
    Each page that carries a figure or a reason cites its items on one line under its heading, `글감: <id>, <id>` (a ledger item is
    `NN_프로젝트/A1`); a reason the item does not give is written `[확인 필요: …]`, never filled in.
-   Propose the structure (blocks, order, body vs appendix) and wait before filling pages. A written
+   The structure (blocks, order, body vs appendix) is asked; wording is not. A written
    item is marked `material log --id <id> --note "skeleton <N>쪽" --status written --later-step manage`;
    in a ledger workspace (`material ledger` lists items) `material ledger-log --item <NN_프로젝트/A1>`
    with the same flags. The ledger is never moved or rewritten.
 4. **Revise, from several viewpoints.** `claims` first (each problem is an edit; `본인 확인` stays),
    then recruiter/engineer (`feedback`, `pattern`) → interviewer (`mock-interview`) → the user's own
-   bar (noah), each viewpoint's findings through `settle`. `snapshot` before the round's first edit;
-   carried wording passes the decision gate (`확정사실.md`, `선정.md`); structure changes are asked;
+   bar (noah), each viewpoint's findings through `settle`. `snapshot` before the round's first edit
+   (`--kind skeleton|deck|resume`); carried wording passes the decision gate (`확정사실.md`, `선정.md`);
    an order change is one `renumber`; the align table stays at the end of portfolio-skeleton.
    Rules and the order of each: `references/revise.md`.
 5. **Template.** Once per template (again when it changes): `deck-builder catalog`, then
@@ -103,11 +110,13 @@ Mechanics: `references/rounds.md`.
    pages must keep (spacing, alignment, emphasis — only what the template shows), the safe area
    (the margins nothing crosses) and the figure colours. A figure drawn with `write:diagram` takes
    its colours from `## 그림 색`.
-6. **Deck.** Carry portfolio-skeleton into portfolio-deck.mdx against `deck.catalog.md` budgets and
+6. **Deck.** Carry portfolio-skeleton into portfolio-deck.mdx: `sync` lists each skeleton slot missing or
+   different in the deck source, `sync --write` carries them (never a slide); against `deck.catalog.md` budgets and
    `template/analysis.md`, then `deck-builder` `check` (an untouched chart slot is warned: its numbers are the template's
    sample) and `claims --file portfolio-deck.mdx` (each slide cites in its comment: `## @s3 2쪽 · 글감: <id>`). Fine style changes go through the template's run formats, never by hand in the pptx.
    `snapshot --kind deck --level … --note` only when asked (the note names its skeleton).
-7. **Render, review, re-render.** `build` and `render` only when the user says. After a render run
+7. **Build, render, review.** Every round builds, then `verify-build` (each skeleton slot's text is in
+   build/deck.pptx, footnote marks and picture files exist). `render` only when the user says. After a render run
    `render-review` (deck and resume alike): `keep-render`, then every page against safe area,
    readability, AI traces and the skeleton, one `검토.md` row per page. A problem seen there or in
    PowerPoint goes into `template/next-render.md` (쪽 · 칸 · 증상 · 확인 · 적용), all applied before
@@ -143,7 +152,7 @@ Principles for any candidate, and the mistakes this flow stops: `references/prin
 [결론 한 줄 — 무엇을 바꿨고 무엇이 남았나] (단계 N · skeleton vA → vB)
 
 바꾼 것
-- N쪽 칸: 무엇을 어떻게 (한 줄씩)
+- N쪽 칸: "현재 문구" → "바뀐 문구" (한 줄씩, 자리만 적지 않는다)
 
 기본값으로 정한 것 (다르면 말씀해 주세요)
 - …
@@ -155,7 +164,7 @@ Principles for any candidate, and the mistakes this flow stops: `references/prin
 확인한 것 (템플릿이나 원재료를 고쳤을 때: 백업 위치, check 결과)
 
 claims: 문제 <n> (근거 없음 n · 글감에 없음 n · 확인 필요 n · 인용 없음 n) · 본인 확인 <n> · 덱에 없는 성과 <n>
-renumber/verify: <changes, warnings, problems | 안 함> · deck check: <warnings | 안 함> · build/render: <함 | 안 함>
+renumber/verify: <changes, warnings, problems | 안 함> · sync: <빠진 n · 다른 n> · deck check: <warnings | 안 함> · build: <함> · verify-build: <빠진 문구 n · 각주 n · 그림 파일 n> · render: <함 | 안 함>
 라운드: <n>회 중 <k>회 · 종료 <stop_reason> · 게이트 gap <n> (건너뛴 단계: 이유) · 패널 <4인 | 단일> · 심사 <subagent | in-context>
 ```
 
@@ -168,9 +177,9 @@ Held is said as held.
 | Claude | You |
 |---|---|
 | Runs material, feedback, pattern, rewrite and deck-builder as steps of one loop | Hand over material; answer only what only you know |
-| Proposes the selection table (본문/부록/제외 · 대표) and waits | Approve what goes in and what each item leads with |
+| Proposes the selection table (본문/부록/제외 · 대표); structure is the only wait | Approve what goes in and what each item leads with |
 | Snapshots before editing, renumbers in one pass, verifies references | Approve structure changes (page count, blocks, order) |
-| Records corrections in three places the same turn; stops at `check`, builds and renders when told | Correct facts in your own words; say when to build or render |
+| Runs a whole round: sync, build, verify-build; wording goes ahead and is reported | Correct facts in your own words; say when to render |
 
 ## Related Skills
 
