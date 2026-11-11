@@ -38,6 +38,12 @@ Engine, run from the workspace root: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/resum
    `styles:` role → paragraph style when the template has real styles; `samples:` role → the opening
    text of the template paragraph whose look it takes when every line is `Normal`.
    Roles: `#` name, `##` section, `###` entry, `-` bullet, plain body; any other `{role} text`.
+   Finish from the front matter, never a post-build script: `title:`, `author:`, `photo_alt:`, `keep:`
+   (roles held with the next line) and `spacing:` (pt) where the template reads too tight; a
+   `라벨: 값` line takes a two-format sample's label and value; links are made by the build.
+   Every entry of one kind has the same lines (each project its 설명·기술·역할, each company its
+   bullets); one with less is filled from the skeleton or asked, never left uneven. Each entry keeps
+   its `글감: <id>` line (dropped by the build) so `manage claims --file resume-deck.mdx` can check it.
 3. **Build.** `build` copies the template, drops its sample body, writes each line in its role's look
    (numbering included), keeps the photo on the first paragraph. A role mapped nowhere, a style the
    template lacks, or a sample text no paragraph starts with is refused before anything is written.

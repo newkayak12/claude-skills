@@ -15,6 +15,9 @@ appear) live in that workspace's `docs/확정사실.md`, not here.
 | Strengths | Cover, profile and core-strength page carry the same sentences in the same order. Cover: sentence + one evidence phrase; core page: sentence + two evidence bullets with page numbers |
 | Strength evidence | Pick the evidence first, then fit the sentence. A sentence true of one case only is too narrow; a strength backed only by a side project is weak |
 | Archetypes | Use each template archetype for its own purpose; another use needs a written reason and is reverted when the reason goes |
+| Block ends with a result | Every body project block closes on its result-and-lessons page (or a result archetype), so the reader never leaves a project without its outcome. A block without one carries a written reason, and the reason is asked |
+| One picture, one-picture page | A page with one picture uses an archetype built for one, or the picture fills its panel (`panel_margin:`); never a two-picture archetype with half the page empty. Pictures on one page share one text size: draw them at the same scale |
+| Figure text | Text inside a figure reads at 8pt or more where it is placed; `check` warns below that. Enlarge the picture, cut the figure's words, or redraw it — a figure nobody can read is decoration |
 
 ## Writing
 
