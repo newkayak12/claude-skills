@@ -265,7 +265,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
       outcome carries); identical reason + target rows fold into one with a count and the last date;
       `claude plugin test` with counts; one live look at the tab (mod.md "A UI change is done when").
 
-125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality** — live-look defects 1-5 and F2 leftovers in E-bcc5a0fe (2026-11-11, size S, $40); E-8faf33b9 blocked on a PRD merge bug (fixed `899dba47`); E-701e2856 (2026-11-07, $35.82) planned
+125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality** — E-8faf33b9 blocked on a PRD merge bug (fixed `899dba47`); E-701e2856 (2026-11-07, $35.82) planned
    it again (5 cards 88–94, plan-integrate accepted) and stopped partial at shape:3 (see card 129). Now one
    size-S task per feature area, in order F1 → F5 → F3 → F4 → F2, each from its section of that PRD (kept
    at `tmp/card125/F<n>.md` until the card closes). F1 shipped `c8328deb` (E-7b9c49d9, gate 95; teams
@@ -279,21 +279,20 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
    F2 shipped `286bf598` (E-b2f3c230, gate 93; plugin test 565/565, teams 2220/0/2; $41.88 of $40), F4 gaps
    closed. Demo renders approved (user, 2026-11-10: "125 고"). Live look 2026-11-10 in tmux at 190 and 110 on
    E-f1f5fcf7 (size S): open by command and band, w/s/d/a/l, close by Esc, q and the command again all work;
-   defects to fix before the card closes:
-     1. The footer carries `⏎ submit` on every page, not only in answer mode; it stays English under KR, and at
-        110 the truncation cuts `a back`/`q close` while keeping it.
-     2. FLOOR puts `1 working` on Build while the task is in Plan (`Phase 1/6 Plan`), and Plan's Phase detail
-        reads `Running –` while the size-S driver works.
-     3. Phase detail's breadcrumb loses its tail: the EPIC title takes the line (`… › FLO…`); the title should
-        shorten, not the crumb.
-     4. HOME draws a size-S EPIC twice: the EPIC row and a run row with the same key and title.
-     5. The command closing the pane answers `teams: 창을 열었습니다` / `pane opened` in the chat.
-   Still to do: a look in the Claude app or Desktop; Esc while answering (draft kept?); "→ you" vs "→ me" wording;
-   `answer.mjs --card` on a task with no nodes; README/KOR shots with the batch bump. Also open from the F2
-   report: EPIC report render stays 7 lines (no verdict or result) and FLOOR lacks role counts and
-   "STORY n / subagent n" (the engine does not send them); `test-docs.mjs` asserts only the scoped_out half of
-   "left over"; `foldPackageHistory` takes the latest attempt by array order, not the highest attempt number;
-   the STORY report "tests=pass" verdict line is undrawn.
+   five defects found. E-bcc5a0fe (2026-11-11, size S, gate 90, $37 of $40) shipped `71f04900`, unbumped:
+   `⏎ submit` gone from the keys footer and truncation keeps `a back`/`q close`; FLOOR and Phase detail follow
+   the running stage (size-S Plan: 1 working on Plan, driver listed); the crumb keeps its tail and the EPIC
+   title shortens; HOME draws a size-S EPIC once; Esc while answering drops the draft and says so;
+   `answer.mjs` on a task with no nodes says so; `foldPackageHistory` takes the highest attempt;
+   `test-docs.mjs` asserts both halves of "left over"; STORY report Judge row draws `tests pass`. Checked by
+   hand: plugin test 626/626, teams 2224/0/2 of 2226, validate 15/15, check-copies ok. Renders of every page
+   at 190/110 en/ko in `tmp/card125/renders-fix/` (52) wait for the user's approval.
+   Still to do: approve those renders; the close command answering `pane opened` (did not reproduce live in
+   E-bcc5a0fe, two-copies cause ruled out under `--plugin-dir`; cause unknown, watch for it on the installed
+   build); the host still draws a bare ⏎ after the keys Input outside answer mode (host behaviour, room kept
+   for it); a look in the Claude app or Desktop; "→ you" vs "→ me" wording; README/KOR shots with the batch
+   bump. Also open from the F2 report: EPIC report render stays 7 lines (no verdict or result) and FLOOR lacks
+   role counts and "STORY n / subagent n" (the engine does not send them).
    - Why: user, 2026-11-04, after the 190/110 captures of card 105: "만약 된다면 view.mjs(web으로 보여주는 것)
      은 퇴역시켜도 될거 같아", "저 *-stats view만 더 퀄리티 높히면 될거 같고". Condition ("만약 된다면"): the
      pane handles several EPICs at once (`]`/`[` step EPIC, `j`/`k` STORY row, `g` open) — seen live with
