@@ -265,6 +265,18 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
       outcome carries); identical reason + target rows fold into one with a count and the last date;
       `claude plugin test` with counts; one live look at the tab (mod.md "A UI change is done when").
 
+150. **trophy's Achievements pane reads at a glance in a narrow column, and opens only when asked**
+    - Why: user, 2026-11-11 (screenshot of the pane in a ~30-column side column: "이거좀 닫아줘 뭐야").
+      It was up right after `/trophy:list` printed its table. Titles are cut to "Hello, …", "You Have …",
+      the tab row is cut at "[ Tri", and 80 rows one per line need scrolling to see anything. What
+      opened it is unverified: in `trophy/hooks/mod.tsx` only `/achievements` (~591) and the
+      Failures buttons (~625, ~766, `showFailures`) call `$.ui.open`; `trophy:list` itself opens nothing.
+    - Acceptance: the cause of the open found; `/trophy:list` and any other unasked path leave the pane
+      closed; at narrow width the pane shows unlocked ones and nearest-to-unlock first with titles
+      readable (no cut mid-word without `…`), locked ones folded into a count, tabs that fit; mod.md
+      "A UI change is done when" (190 and 110 columns plus the narrow column seen here, every surface);
+      `claude plugin test` with counts.
+
 125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality** — E-8faf33b9 blocked on a PRD merge bug (fixed `899dba47`); E-701e2856 (2026-11-07, $35.82) planned
    it again (5 cards 88–94, plan-integrate accepted) and stopped partial at shape:3 (see card 129). Now one
    size-S task per feature area, in order F1 → F5 → F3 → F4 → F2, each from its section of that PRD (kept
