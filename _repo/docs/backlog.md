@@ -286,8 +286,8 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
    `answer.mjs` on a task with no nodes says so; `foldPackageHistory` takes the highest attempt;
    `test-docs.mjs` asserts both halves of "left over"; STORY report Judge row draws `tests pass`. Checked by
    hand: plugin test 626/626, teams 2224/0/2 of 2226, validate 15/15, check-copies ok. Renders of every page
-   at 190/110 en/ko in `tmp/card125/renders-fix/` (52) wait for the user's approval.
-   Still to do: approve those renders; the close command answering `pane opened` (did not reproduce live in
+   at 190/110 en/ko in `tmp/card125/renders-fix/` (52) approved (user, 2026-11-11: "고").
+   Still to do: the STORY report header's `accepted 91/80` stays English under KR; the close command answering `pane opened` (did not reproduce live in
    E-bcc5a0fe, two-copies cause ruled out under `--plugin-dir`; cause unknown, watch for it on the installed
    build); the host still draws a bare ⏎ after the keys Input outside answer mode (host behaviour, room kept
    for it); a look in the Claude app or Desktop; "→ you" vs "→ me" wording; README/KOR shots with the batch
