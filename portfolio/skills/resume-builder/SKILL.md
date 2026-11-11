@@ -45,10 +45,21 @@ Engine, run from the workspace root: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/resum
    and named) and `ai_traces: {removed, reported}`: an AI disclaimer left in alt text ("AI-generated
    content may be incorrect") is removed; an AI tool named in the document properties or an AI phrase
    in the visible text is reported and never deleted. Say each `reported` item to the user.
-5. **Render.** Only when the user says: `render` writes `build/resume.pdf`, counts pages against `pages:`.
-6. **Fit.** Over budget: `over_lines` is the number of text lines past the last allowed page. Propose
+   Nothing is called submittable before `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/office_render.py final-check
+   [--dir build] [--allow "Claude Code,Codex"] [--author NAME]` has run over `resume.docx` and `resume.pdf`:
+   one verdict per file (`깨끗함` or the list), exit non-zero on any finding. It checks alt-text
+   disclaimers (removed), document properties naming an AI tool or a library (`--author` rewrites
+   creator and last editor in the docx), and text, notes and PDF metadata for AI phrases and work
+   annotations (`[확인 필요`, `TODO`, `FIXME`, `(본인 확인`, `Generated with`, `Co-Authored-By`, a model as
+   writer). Findings are reported, never deleted. `--allow` lists the tools the person really lists as
+   their own skills. Say every finding; the person decides.
+5. **Render.** Only when the user says: `render` writes `build/resume.pdf`, counts pages against `pages:`,
+   rewrites the page previews `build/pages/resume-p-N.png` (stale ones deleted) and prints the
+   `final_check` verdicts.
+6. **Review.** After every render, not only when over budget, run `render-review` on the PDF and its fresh previews.
+7. **Fit.** Over budget: `over_lines` is the number of text lines past the last allowed page. Propose
    cuts with their line counts (a section, a block to one bullet) and wait. Cut text, never type size,
-   line spacing or margins. Then run `render-review` on the PDF.
+   line spacing or margins. Then render and review again.
 
 The user's material never goes to git: the engine refuses a template, source or output a git repository
 would carry (`.gitignore` it or work outside it).
@@ -58,7 +69,7 @@ would carry (`.gitignore` it or work outside it).
 ```
 이력서 <빌드함 | 안 함> — <paragraphs>줄, 템플릿 <file>
 매핑: <styles | samples>로 <roles>
-최종 검사: AI 흔적 <removed>건 제거 · 보고 <n>건 (<항목>) · [확인 필요] <n>건
+최종 검사: final-check <파일별 깨끗함 | n건 (<항목>)> · AI 흔적 <removed>건 제거 · [확인 필요] <n>건
 렌더: <pages>쪽 / 예산 <pages>쪽 · 넘친 줄 <over_lines | 없음 | 렌더 안 함>
 정하실 것: <잘라낼 후보와 줄 수 | 없음>
 ```

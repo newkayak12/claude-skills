@@ -6,6 +6,7 @@ ever kept in the repo (the user's real material never goes to git).
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -118,6 +119,20 @@ def main():
         check(len(b["warnings"]) == 1 and "확인 필요" in b["warnings"][0], "an unconfirmed line is warned")
         check(b["ai_traces"] == {"removed": 0, "reported": []}, "build reports ai_traces, clean here — %s" % b["ai_traces"])
 
+        check(b["final_check"][0] == "resume.docx: 1건" and "[확인 필요" in b["final_check"][1],
+              "build prints the final-check verdict: the kept [확인 필요 line is a finding — %s" % b["final_check"])
+
+        print("the old engine path (manage/scripts/resume.py) is a shim")
+        shim = HERE.parents[1] / "manage" / "scripts" / "resume.py"
+        shim_out = Path(t) / "shim-out.docx"
+        r = subprocess.run([sys.executable, str(shim), "build", "--out", str(shim_out)], cwd=root,
+                           capture_output=True, text=True)
+        check(r.returncode == 0 and json.loads(r.stdout)["paragraphs"] == 6 and shim_out.is_file(),
+              "build through the shim gives the same result — %s" % (r.stdout or r.stderr)[:120])
+        check("moved" in r.stderr and r.stderr.strip().count("\n") == 0, "one stderr line says the engine moved — %r" % r.stderr)
+        r = subprocess.run([sys.executable, str(shim), "nothing"], cwd=root, capture_output=True, text=True)
+        check(r.returncode != 0 and "usage" in r.stderr, "the shim passes the engine's refusal and exit code through")
+
         print("refusals")
         bad = RESUME.replace("bullet: ListBullet", "bullet: NoSuchStyle")
         (root / "resume.md").write_text(bad, encoding="utf-8")
@@ -196,8 +211,18 @@ def main():
         if office_render.Renderer().available:
             (root / "resume.md").write_text(RESUME, encoding="utf-8")
             run(root, "build")
+            pages = root / "build" / "pages"
+            pages.mkdir(parents=True, exist_ok=True)
+            (pages / "resume-p-9.png").write_bytes(b"stale")
+            (pages / "p-1.png").write_bytes(b"deck")
             rc, r = run(root, "render")
             check(rc == 0 and r["pages"] >= 1 and (root / r["pdf"]).is_file(), "render writes a PDF and counts its pages — %s" % r)
+            shots = sorted(x.name for x in pages.glob("resume-p*.png"))
+            if shutil.which("pdftoppm") or os.environ.get("DECK_RENDER_DOCKER"):
+                check(len(shots) == r["pages"] and "resume-p-9.png" not in shots and (pages / "resume-p-1.png").stat().st_size > 5,
+                      "render regenerates the page previews and deletes the stale ones — %s" % shots)
+                check((pages / "p-1.png").read_bytes() == b"deck", "another document's previews are left alone")
+            check(any(x.startswith("resume.pdf:") for x in r["final_check"]), "render prints the final-check verdict for the PDF — %s" % r["final_check"])
         else:
             print("  skip render: no soffice and no DECK_RENDER_DOCKER")
 

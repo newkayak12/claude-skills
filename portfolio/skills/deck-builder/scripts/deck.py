@@ -39,7 +39,7 @@ from pathlib import Path
 
 # the renderer is shared with resume-builder: portfolio/scripts/office_render.py
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
-from office_render import Renderer, bbox_pages, ai_traces  # noqa: E402
+from office_render import Renderer, bbox_pages, ai_traces, final_check, final_lines  # noqa: E402
 
 # ── Namespaces ───────────────────────────────────────────────────────────────
 
@@ -228,7 +228,8 @@ def require_template(path):
 
 def require_deck(path):
     """Deck sources are .mdx: a source file, not a document someone reads as markdown."""
-    path = Path(path)
+    # the real absolute path: docker bind-mounts need one, so the caller never has to write `$(pwd -P)/…`
+    path = Path(os.path.realpath(str(path)))
     if path.suffix.lower() != DECK_EXT:
         raise SystemExit(
             "error: deck source must be a %s file, got %s\n"
@@ -3319,6 +3320,10 @@ def cmd_build(args):
     # the last check: an AI disclaimer left in alt text is removed, other traces are warned
     traces = ai_traces(out)
     problems += ["ai trace: " + t for t in traces["reported"]]
+    # then the rest of the final check: properties naming a tool or library, work annotations left in
+    # the slides and notes (office_render.py final-check; reported, never deleted)
+    extra = [f for f in final_check([out])[str(out)]["findings"] if f not in traces["reported"]]
+    problems += ["final-check: " + f for f in extra]
 
     fatal = [p for p in problems if "not writable" not in p]
     print("build -> %s  (%d slides from %s) · %s" % (out, len(new_parts), template.name,
@@ -3327,6 +3332,8 @@ def cmd_build(args):
         print("  ! %s" % p)
     if traces["removed"]:
         print("  ai traces: %d AI disclaimer(s) removed from alt text" % traces["removed"])
+    if not traces["reported"] and not extra:
+        print("  final-check: %s: 깨끗함" % out.name)
     if notes_parts:
         print("  %d slide(s) carry speaker notes" % len(notes_parts))
     for where, slot_id, name, lost, anchor in imgctx["cropped"]:
@@ -3933,7 +3940,7 @@ def cmd_render(args):
             "  a deck is read by people, so this step looks at the page rather than the file.\n"
             "  install LibreOffice (soffice on PATH), or set DECK_RENDER_DOCKER=<image>.")
     rc = cmd_build(args)
-    md_path = Path(args.deck)
+    md_path = require_deck(args.deck)   # the real absolute path, as cmd_build resolved it
     front, _, _ = parse_deck(md_path.read_text(encoding="utf-8"))
     out = resolve_output(front, args, md_path)
     work = out.parent.resolve()   # docker reads a relative `-v build:/work` as a named volume
@@ -3954,9 +3961,12 @@ def cmd_render(args):
         if line.startswith("spacing:"):
             print("  %s%s" % ("" if " off on " in line else "! ", line))
     print("  pdf -> %s" % pdf)
-    pages = r.previews(work, pdf.name)
+    pages = r.previews(work, pdf.name)   # the old previews are deleted first
     if pages:
         print("  %d page preview(s) -> %s/" % (len(pages), pages[0].parent))
+    # the PDF carries the same final check as the pptx
+    for line in final_lines(final_check([pdf])):
+        print("  final-check: %s" % line if not line.startswith("  ") else "  " + line)
 
     box = r.bbox(work, pdf.name)
     if box is None:

@@ -299,12 +299,27 @@ class Renderer:
                     out.add(alias.strip().lower())
         return out
 
-    def previews(self, workdir, pdf, dpi=72):
+    def previews(self, workdir, pdf, dpi=72, prefix="p"):
+        """Page PNGs in <workdir>/pages/<prefix>-N.png; the old ones with that prefix go first, so a
+        shorter document never keeps the previews of a longer one."""
         self.sh(workdir, "command -v pdftoppm >/dev/null || exit 0; mkdir -p pages && "
-                         "pdftoppm -r %d -png %s pages/p && chmod -R a+rwX pages"
-                % (dpi, pdf))
+                         "rm -f pages/%s*.png && "
+                         "pdftoppm -r %d -png %s pages/%s && chmod -R a+rwX pages"
+                % (prefix, dpi, pdf, prefix))
         d = Path(workdir) / "pages"
-        return sorted(d.glob("p*.png")) if d.is_dir() else []
+        return sorted(d.glob(prefix + "*.png")) if d.is_dir() else []
+
+    def text(self, workdir, pdf):
+        """The PDF's text (pdftotext), or None when pdftotext is not there."""
+        out = Path(pdf).with_suffix(".final.txt").name
+        self.sh(workdir, "command -v pdftotext >/dev/null || exit 0; "
+                         "pdftotext %s %s && chmod a+rw %s" % (pdf, out, out))
+        f = Path(workdir) / out
+        try:
+            return f.read_text(encoding="utf-8") if f.is_file() else None
+        finally:
+            if f.is_file():
+                f.unlink()
 
 
 # ── Geometry from pdftotext -bbox-layout ─────────────────────────────────────
@@ -365,10 +380,18 @@ _PARA = re.compile(r"<(a|w):p[ >/].*?</\1:p>", re.S)
 _RUN_TEXT = re.compile(r"<(?:a|w):t\b[^>]*>([^<]*)</(?:a|w):t>")
 
 
-def ai_traces(path, fix=True):
+def _strip(s, allow):
+    """`s` without the names the user listed as their own skills (--allow "Claude Code,Codex")."""
+    for a in allow:
+        s = re.sub(re.escape(a), " ", s, flags=re.I)
+    return s
+
+
+def ai_traces(path, fix=True, allow=()):
     """Scan every XML part of a pptx/docx. Alt text carrying an AI disclaimer is cleaned (the rest of
     the alt text stays) when `fix`; a tool named in the document properties and an AI phrase in visible
-    text are only reported, never deleted. Returns {"removed": n, "reported": [str]}."""
+    text are only reported, never deleted. Names in `allow` are not counted as a tool or a writer.
+    Returns {"removed": n, "reported": [str]}."""
     path = Path(path)
     removed, reported, changed = 0, [], {}
     with zipfile.ZipFile(str(path)) as z:
@@ -403,13 +426,13 @@ def ai_traces(path, fix=True):
         # (b) properties
         if name in ("docProps/app.xml", "docProps/core.xml"):
             for tag, val in _PROP_ELEM.findall(text):
-                if _TOOLS.search(val):
+                if _TOOLS.search(_strip(val, allow)):
                     reported.append("%s: <%s> names an AI tool: %s" % (name, tag, html.unescape(val)[:60]))
         # (c) visible text, per paragraph so a phrase split over runs is still seen
         if name.startswith(("ppt/slides/", "ppt/notesSlides/", "word/")) and "<" in new:
             for p in _PARA.finditer(new):
                 joined = html.unescape("".join(_RUN_TEXT.findall(p.group(0))))
-                m = _DISCLAIMER.search(joined) or _PHRASES.search(joined)
+                m = _DISCLAIMER.search(joined) or _PHRASES.search(_strip(joined, allow))
                 if m:
                     reported.append("%s: visible text has an AI phrase: %r" % (name, joined[:60]))
     if fix and changed:
@@ -420,6 +443,168 @@ def ai_traces(path, fix=True):
                 zout.writestr(i, changed.get(i.filename, data[i.filename]))
         os.replace(tmp, str(path))
     return {"removed": removed, "reported": reported}
+
+
+# ── One check before anything is called submittable ──────────────────────────
+
+FINAL_FILES = ("deck.pptx", "deck.pdf", "resume.docx", "resume.pdf")
+_LIBS = re.compile(r"python-?docx|python-?pptx|Steve Canny|reportlab|\bfpdf2?\b|pypdf2?\b|weasyprint|"
+                   r"docx2pdf", re.I)
+_PDF_TOOLS = re.compile(r"\b(Copilot|ChatGPT|GPT-?\d*|OpenAI|Gemini|Claude|Anthropic|Codex)\b", re.I)
+_NOTES = re.compile(
+    r"\[확인 필요|\bTODO\b|\bFIXME\b|\(본인 확인|본인 확인 \d{4}-\d{2}-\d{2}|Generated with|Co-Authored-By|"
+    r"(?:작성자|저자|글쓴이|author|writer|written by|created by)\s*[:：]?\s*"
+    r"(?:Claude|Opus|Sonnet|Haiku|ChatGPT|GPT-?\d*|Gemini|Copilot)\b", re.I)
+_TEXT_PARTS = ("ppt/slides/", "ppt/notesSlides/", "word/")
+_PDF_INFO = re.compile(rb"/(Author|Creator|Title|Producer|Subject|Keywords)\s*(\((?:\\.|[^\\)])*\)|<[0-9A-Fa-f\s]*>)")
+_CORE_WHO = (("dc", "creator"), ("cp", "lastModifiedBy"))
+
+
+def _pdf_string(raw):
+    if raw.startswith(b"<"):
+        b = bytes.fromhex(re.sub(rb"\s", b"", raw[1:-1]).decode("ascii") or "")
+    else:
+        body = raw[1:-1]
+        b = re.sub(rb"\\(?:([0-7]{1,3})|(.))",
+                   lambda m: bytes([int(m.group(1), 8) & 255]) if m.group(1)
+                   else {b"n": b"\n", b"r": b"\r", b"t": b"\t"}.get(m.group(2), m.group(2)), body, flags=re.S)
+    if b.startswith(b"\xfe\xff"):
+        return b[2:].decode("utf-16-be", "replace")
+    try:
+        return b.decode("utf-8")
+    except UnicodeDecodeError:
+        return b.decode("latin-1")
+
+
+def _set_author(path, author):
+    """dc:creator and cp:lastModifiedBy of a docx/pptx set to `author`. True when the file changed."""
+    path = Path(path)
+    with zipfile.ZipFile(str(path)) as z:
+        infos = z.infolist()
+        data = {i.filename: z.read(i.filename) for i in infos}
+    core = data.get("docProps/core.xml")
+    if core is None:
+        return False
+    text = core.decode("utf-8")
+    new = text
+    for pre, tag in _CORE_WHO:
+        val = html.escape(author, quote=False)
+        pat = re.compile(r"(<%s:%s\b[^>]*>)[^<]*(</%s:%s>)" % (pre, tag, pre, tag))
+        if pat.search(new):
+            new = pat.sub(lambda m: m.group(1) + val + m.group(2), new)
+        elif "xmlns:%s=" % pre in new:
+            new = re.sub(r"</(\w+:)?coreProperties>\s*$",
+                         lambda m: "<%s:%s>%s</%s:%s></%s>" % (pre, tag, val, pre, tag,
+                                                               (m.group(1) or "") + "coreProperties"), new)
+    if new == text:
+        return False
+    data["docProps/core.xml"] = new.encode("utf-8")
+    fd, tmp = tempfile.mkstemp(suffix=path.suffix, dir=str(path.parent))
+    os.close(fd)
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+        for i in infos:
+            zout.writestr(i, data[i.filename])
+    os.replace(tmp, str(path))
+    return True
+
+
+def _note_hits(joined):
+    return [m.group(0) for m in _NOTES.finditer(joined)]
+
+
+def _office_findings(path, allow, author):
+    fixed = []
+    if author and _set_author(path, author):
+        fixed.append("작성자·마지막 수정자를 %s로 바꿈" % author)
+    tr = ai_traces(path, fix=True, allow=allow)
+    findings = list(tr["reported"])
+    if tr["removed"]:
+        fixed.append("대체 텍스트의 AI 문구 %d건 제거" % tr["removed"])
+    with zipfile.ZipFile(str(path)) as z:
+        for name in z.namelist():
+            raw = z.read(name)
+            if name in ("docProps/app.xml", "docProps/core.xml"):
+                for tag, val in _PROP_ELEM.findall(raw.decode("utf-8", "replace")):
+                    v = html.unescape(val)
+                    if _LIBS.search(v):
+                        findings.append("%s: <%s> names a library: %s" % (name, tag, v[:60]))
+            elif name.startswith(_TEXT_PARTS) and name.endswith(".xml"):
+                for p in _PARA.finditer(raw.decode("utf-8", "replace")):
+                    joined = html.unescape("".join(_RUN_TEXT.findall(p.group(0))))
+                    for hit in _note_hits(_strip(joined, allow)):
+                        findings.append("%s: work annotation left in the text: %r in %r" % (name, hit, joined[:60]))
+    return findings, fixed
+
+
+def _pdf_findings(path, allow):
+    path = Path(path)
+    findings = []
+    for key, raw in _PDF_INFO.findall(path.read_bytes()):
+        val = _pdf_string(raw)
+        k = key.decode()
+        if _PDF_TOOLS.search(_strip(val, allow)) or _LIBS.search(val):
+            findings.append("PDF %s names a tool or library: %s" % (k, val[:60]))
+    text = None
+    if shutil.which("pdftotext"):
+        r = subprocess.run(["pdftotext", str(path), "-"], capture_output=True, text=True)
+        text = r.stdout if r.returncode == 0 else None
+    else:
+        rd = Renderer()
+        if rd.available:
+            text = rd.text(path.parent.resolve(), path.name)
+    if text is None:
+        findings.append("PDF text not checked: no pdftotext (install poppler or set DECK_RENDER_DOCKER)")
+    else:
+        flat = re.sub(r"\s+", " ", text)
+        s = _strip(flat, allow)
+        for m in list(_DISCLAIMER.finditer(flat)) + list(_PHRASES.finditer(s)) + list(_NOTES.finditer(s)):
+            findings.append("PDF text: %r" % m.group(0)[:60])
+    return findings
+
+
+def final_check(paths, allow=(), author=None):
+    """The check before anything is called submittable. {path: {"findings": [str], "fixed": [str]}} for
+    each existing file: alt-text disclaimers are removed, `author` (when given) is written into a
+    docx/pptx; every other finding is only reported, never deleted."""
+    out = {}
+    for p in map(Path, paths):
+        if not p.is_file():
+            continue
+        try:
+            if p.suffix.lower() == ".pdf":
+                findings, fixed = _pdf_findings(p, allow), []
+            else:
+                findings, fixed = _office_findings(p, allow, author)
+        except (zipfile.BadZipFile, OSError) as e:
+            findings, fixed = ["cannot be read: %s" % e], []
+        out[str(p)] = {"findings": findings, "fixed": fixed}
+    return out
+
+
+def final_lines(result):
+    """One verdict line per file, then its findings."""
+    lines = []
+    for p, r in result.items():
+        note = " (%s)" % "; ".join(r["fixed"]) if r["fixed"] else ""
+        lines.append("%s: %s%s" % (Path(p).name, "깨끗함" if not r["findings"] else "%d건" % len(r["findings"]), note))
+        lines += ["  - " + f for f in r["findings"]]
+    return lines
+
+
+def cmd_final_check(argv):
+    import argparse
+    ap = argparse.ArgumentParser(prog="office_render.py final-check")
+    ap.add_argument("--dir", default="build")
+    ap.add_argument("--allow", default="", help='names that are your own skills, e.g. "Claude Code,Codex"')
+    ap.add_argument("--author")
+    a = ap.parse_args(argv)
+    allow = [x.strip() for x in a.allow.split(",") if x.strip()]
+    res = final_check([Path(a.dir) / n for n in FINAL_FILES], allow, a.author)
+    if not res:
+        print("검사할 파일 없음: %s 에 %s 가 없습니다" % (a.dir, ", ".join(FINAL_FILES)))
+        return 1
+    print("\n".join(final_lines(res)))
+    return 1 if any(r["findings"] for r in res.values()) else 0
 
 
 def main(argv):
@@ -437,8 +622,10 @@ def main(argv):
         hits = margin_crossers(box, margin)
         return {"margin_pt": margin, "pages": sorted({h[0] for h in hits}),
                 "hits": [{"page": p, "side": s, "text": t} for p, s, t in hits]}
-    return {"error": "usage: office_render.py ai-traces <file> [--report-only] | margins <pdf> [--margin pt]"}
+    return {"error": "usage: office_render.py ai-traces <file> [--report-only] | margins <pdf> [--margin pt] | final-check [--dir build] [--allow names] [--author NAME]"}
 
 
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["final-check"]:
+        sys.exit(cmd_final_check(sys.argv[2:]))
     print(json.dumps(main(sys.argv[1:]), ensure_ascii=False))

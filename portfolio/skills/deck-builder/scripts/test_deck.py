@@ -783,6 +783,19 @@ def untouched_charts(tmp):
     out = run_cmd(["build", "--deck", str(d / "deck.mdx")])
     check("chart 'chart1' keeps the template's sample numbers" in out,
           "build warns on an untouched chart — got: %s" % out[-200:])
+    check("final-check: out.pptx: 깨끗함" in out, "build ends with the final-check verdict — got: %s" % out[-120:])
+    (d / "deck.mdx").write_text(
+        "---\ntemplate: template.pptx\noutput: out.pptx\n---\n\n"
+        "## @s2\ntitle: 결과\ntext1:\n  - TODO 수치 확인\n", encoding="utf-8")
+    here = os.getcwd()
+    try:
+        os.chdir(str(d))
+        # a relative --deck: the engine makes the path absolute itself (a docker mount needs one)
+        out = run_cmd(["build", "--deck", "deck.mdx"])
+    finally:
+        os.chdir(here)
+    check("build -> %s" % (d.resolve() / "out.pptx") in out and "final-check: " in out and "TODO" in out,
+          "a relative --deck builds to an absolute path and the final check reports a TODO left in a slide — got: %s" % out[:300])
 
 
 def make_split_png(path, w, h, left=(20, 20, 20), right=(240, 240, 240)):

@@ -136,10 +136,11 @@ How much slack `check` allows, and when to trust `추정`: `references/render-an
 python3 /abs/path/scripts/deck.py build --deck deck.mdx [--output out.pptx] [--strict]
 ```
 
-The same `deck.mdx` always produces a byte-identical pptx. The build ends with a final AI-trace check
-(`portfolio/scripts/office_render.py`, shared with `resume-builder`): an "AI-generated content may be
-incorrect" left in alt text is removed; an AI tool in the properties or an AI phrase in visible text is
-a `! ai trace` warning, never deleted — tell the user each one.
+The same `deck.mdx` always produces a byte-identical pptx. The build ends with the shared final check
+(`office_render.py`): an "AI-generated content may be incorrect" in alt text is removed; an AI tool in the
+properties, an AI phrase or a `TODO` / `[확인 필요` in the text is a warning, never deleted — tell the user
+each one. Before calling a deck submittable run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/office_render.py
+final-check [--dir build] [--allow "Claude Code,Codex"] [--author NAME]`: a verdict per file, non-zero on a finding.
 
 ### Step 6 · Render and look
 
@@ -147,8 +148,8 @@ a `! ai trace` warning, never deleted — tell the user each one.
 python3 /abs/path/scripts/deck.py render --deck deck.mdx
 ```
 
-What `render` does (PNG previews, geometry audit, missing-font notice, renderer choice and
-the `build` fallback): `references/render-and-check.md` — read before running it.
+What `render` does: `references/render-and-check.md` — read before running it. `--deck` may be
+relative. After every render, not only on a warning, run `render-review` on the PDF and previews.
 
 ## Output Template
 

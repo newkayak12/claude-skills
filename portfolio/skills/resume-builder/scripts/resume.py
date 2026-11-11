@@ -15,7 +15,10 @@ Stdlib only. Run from the workspace root; every subcommand prints one JSON objec
         for that style (numbering included); `글감:` lines are dropped
     resume.py render [--docx build/resume.docx]
         LibreOffice (portfolio/scripts/office_render.py: soffice on PATH or DECK_RENDER_DOCKER) to PDF;
-        reports the page count against the front matter's `pages:`
+        reports the page count against the front matter's `pages:`; rewrites the page previews
+        build/pages/resume-p-N.png (the old ones deleted first) and prints the final-check verdicts.
+        Before calling anything submittable: `office_render.py final-check [--dir build]
+        [--allow "Claude Code,Codex"] [--author NAME]`
 
 resume.md:
     ---
@@ -289,8 +292,10 @@ def build(source, out):
             z.writestr(n, data)
     held = [t for _, t in todo if "[확인 필요" in t]
     traces = office_render.ai_traces(out)   # the last check: AI disclaimers in alt text go, the rest is reported
+    final = office_render.final_check([out])
     return {"docx": str(out), "paragraphs": len(todo), "template": str(template),
             "ai_traces": traces,
+            "final_check": office_render.final_lines(final),
             "warnings": ["unconfirmed line kept: %s" % t[:60] for t in held]
             + ["ai trace: %s" % t for t in traces["reported"]]}
 
@@ -306,6 +311,12 @@ def render(docx, pages=None):
         fail("the renderer did not produce a PDF: %s" % log)
     count = len(re.findall(rb"/Type\s*/Page\b", pdf.read_bytes()))
     out = {"pdf": str(pdf), "pages": count, "renderer": r.describe()}
+    # previews are always regenerated, so a page PNG never outlives the PDF it came from
+    shots = r.previews(docx.parent.resolve(), pdf.name, dpi=80, prefix="resume-p")
+    out["previews"] = [str(s) for s in shots]
+    if not shots:
+        out["previews_note"] = "no page previews: pdftoppm is not available"
+    out["final_check"] = office_render.final_lines(office_render.final_check([docx, pdf]))
     if pages and count > int(pages):
         out["warnings"] = ["%d pages, over the budget of %s" % (count, pages)]
         over = overflow_lines(pdf, int(pages))
