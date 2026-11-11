@@ -244,6 +244,14 @@ def main():
         f = t / "d2.pptx"
         pptx(f, "가상 그림. AI가 생성한 콘텐츠는 부정확할 수 있습니다.")
         check(o.ai_traces(f)["removed"] == 1 and 'descr="가상 그림."' in read(f, "ppt/slides/slide1.xml"), "another Korean wording (AI가 생성한) goes")
+        f = t / "d3.pptx"
+        pptx(f, "가상 그림. AI가 작성한 내용이므로 오류가 있을 수 있습니다.")
+        check(o.ai_traces(f)["removed"] == 1 and 'descr="가상 그림."' in read(f, "ppt/slides/slide1.xml"), "작성한 … 오류가 있을 수 있습니다 goes too")
+        for s in ("이 문서는 AI의 도움을 받아 작성했습니다", "본 내용은 인공지능이 작성하였습니다", "AI를 활용해 작성",
+                  "AI로 작성해서 틀릴 수 있습니다", "ChatGPT로 작성되었습니다"):
+            check(o._PHRASES.search(s) or o._DISCLAIMER.search(s), "an AI phrase is caught: %s" % s)
+        for s in ("AI 추천 시스템을 설계했다", "인공지능 팀과 협업해 API를 작성했다", "LLM 기반 요약 기능을 만들었다"):
+            check(not (o._PHRASES.search(s) or o._DISCLAIMER.search(s)), "work about AI is not a trace: %s" % s)
         f = t / "e.docx"
         docx(f, "가상 사진 AI-generated content may be incorrect.")
         r = o.ai_traces(f)
