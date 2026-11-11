@@ -425,6 +425,10 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
    - Why: five engine defects seen in the portfolio Sprint E-478d5e95 (cards 123/124, 2026-11-04/05), reported
      by that session; common cause (its words): "엔진이 모든 실패를 '다시 하면 되는 것'으로만 다룬다". Causes
      below are as reported, unverified here.
+   - Seen again 2026-11-11, E-89982ed5 (card 130, L, $15.74, partial in planning): plan-integrate rejected 3 times
+     for the same two PLAN-F2 gaps (broker spawn sites out of F2's Scope; `tasklog.mjs` named as the ledger
+     writer), each round saying only F2 must change; F2's attempts 2-3 did not close them, and the partial reason
+     names `dispatch:PLAN-F2:2` "no retry left" although attempt 3 was accepted 92%.
    - Seen 2026-11-06, E-8faf33b9 (card 125, L, $47.29, blocked at 09:23): all five planning cards accepted
      90–95, then plan-integrate rejected 3 times and the task blocked with "no retry route is left". Round 3
      was an engine artefact, not a planning gap (verified): `10-prd.md` holds F4 twice (lines 637 and 792)
@@ -480,7 +484,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
      6. a blocked task notifies the person (push notification and band) the moment it stops;
      then one real L task where a fix wave and a QA pass complete with no hand merge.
 
-130. **teams spends less per task: model per stage, lean driver sessions, a default budget** — in E-89982ed5 (2026-11-11, size L, $80; real-L cost comparison left to the card 129 Sprint)
+130. **teams spends less per task: model per stage, lean driver sessions, a default budget** — E-89982ed5 (2026-11-11, L, $15.74) stopped partial in planning, no code: PRDs F1 (model per stage), F2 (lean sessions), F3 (budget) accepted and pinned on `rescue/card130-prd-f{1,2,3}`; plan-integrate failed 3× on F2 (see card 129). Light PLAN chain confirmed (A4.3). Next run starts from those PRDs with F2's two gaps decided; real-L cost comparison left to the card 129 Sprint
    - Why: E-258fa3e5 (cards 128 + 125 leftovers, opened 2026-11-05 09:25) cost $14.4 over 28 sessions
      before shape started (planning only). Again 2026-11-05: E-066abb46 (size S, Sonnet) spent $48.39 of a
      $25 budget, `budget_stopped` only after the gate passed (197 min); `/teams-status` showed the same
