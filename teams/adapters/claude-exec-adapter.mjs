@@ -10,12 +10,13 @@ import { randomUUID, createHash } from 'node:crypto';
 import { DISALLOWED_BASH, neededDenials } from '../mcp/denials.mjs';
 
 const args = process.argv.slice(2);
-const opts = { sandbox: 'workspace-write', addDirs: [] };
+const opts = { sandbox: 'workspace-write', addDirs: [], pluginDirs: [] };
 for (let i = 0; i < args.length; i++) {
   const key = args[i];
   if (key === '--detect' || key === '--isolated' || key === '--verify' || key === '--no-wiki') opts[key.slice(2)] = true;
   else if (key === '--add-dir') opts.addDirs.push(args[++i]);
-  else if (['--cwd', '--output', '--prompt-file', '--events-output', '--stage', '--sandbox', '--model'].includes(key)) opts[key.slice(2)] = args[++i];
+  else if (key === '--plugin-dir') opts.pluginDirs.push(args[++i]);
+  else if (['--cwd', '--output', '--prompt-file', '--events-output', '--stage', '--sandbox', '--model', '--setting-sources', '--mcp-config'].includes(key)) opts[key.slice(2)] = args[++i];
   else throw new Error(`unknown argument ${key}`);
 }
 if (!opts.cwd || !opts.output || (!opts.detect && !opts['prompt-file'])) throw new Error('cwd, output and prompt-file (unless detect) are required');
@@ -46,9 +47,15 @@ function unexplainedRefusal(result) {
 const WIKI_TOOLS = ['wiki_search', 'wiki_get', 'wiki_resume', 'wiki_list', 'wiki_status', 'wiki_write'].map(t => `mcp__teams__${t}`);
 const wikiRoot = process.env.TEAMS_WIKI_ROOT;
 const withWiki = Boolean(wikiRoot) && !opts['no-wiki'] && !opts.detect;
-const mcpConfig = withWiki
-  ? JSON.stringify({ mcpServers: { teams: { command: process.execPath, args: [fileURLToPath(new URL('../mcp/server.mjs', import.meta.url)), '--only', 'wiki', '--root', wikiRoot] } } })
-  : '{"mcpServers":{}}';
+// A lean launch (card 130) passes its own --mcp-config: the one teams server, which serves tm_ask
+// and team_* next to wiki_*. It replaces the wiki-only config below; the node's wiki access is
+// still decided by withWiki (TEAMS_WIKI_OFF hides wiki_* from that server), and tm_ask is allowed.
+const leanMcp = !opts.detect && Boolean(opts['mcp-config']);
+const mcpConfig = leanMcp
+  ? opts['mcp-config']
+  : withWiki
+    ? JSON.stringify({ mcpServers: { teams: { command: process.execPath, args: [fileURLToPath(new URL('../mcp/server.mjs', import.meta.url)), '--only', 'wiki', '--root', wikiRoot] } } })
+    : '{"mcpServers":{}}';
 
 async function invoke(prompt) {
   const readOnly = opts.sandbox === 'read-only';
@@ -79,11 +86,15 @@ async function invoke(prompt) {
   // every --verify gate read 'tool denied' (E-64cda2b0, E-910c1de2). Allowing Bash here is
   // safe because --disallowedTools wins over an allow rule (live probe 2026-10-21: `node --test`
   // ran, `rm` stayed denied).
-  const allowed = [...(verifyTools ? ['Bash'] : []), ...(withWiki ? WIKI_TOOLS : [])];
+  const allowed = [...(verifyTools ? ['Bash'] : []), ...(withWiki ? WIKI_TOOLS : []), ...(leanMcp ? ['mcp__teams__tm_ask'] : [])];
   if (allowed.length) cli.push('--allowedTools', allowed.join(','));
+  if (opts['setting-sources']) cli.push('--setting-sources', opts['setting-sources']);
+  for (const dir of opts.pluginDirs) cli.push('--plugin-dir', dir);
   for (const dir of opts.addDirs) cli.push('--add-dir', dir);
+  // Without a wiki the lean teams server must not offer wiki_* either (a judge never sees it).
+  const env = leanMcp && !withWiki ? { ...process.env, TEAMS_WIKI_OFF: '1' } : process.env;
   return await new Promise(resolveResult => {
-    const child = spawn('claude', cli, { cwd: opts.cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn('claude', cli, { cwd: opts.cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '', stderr = '', stopped = false;
     const stop = () => {
       stopped = true;

@@ -34,7 +34,7 @@ function capHandoff(text) {
 // generation's `isDegenerateSpec` corrective re-author carried; `validateSpec` catches the
 // same emptiness cases (and more) but only lists them - it never explained why they recur.
 export const DEGENERATE_SPEC_DIAGNOSIS = `Diagnosis: the previous spec was rejected by structured-output validation, not by a human judgment call. The usual cause is a single missing or empty top-level field - most often "acceptance" at the goal level, or a subgoal with no "acceptance", no "title", or a title/goal so short it reads as a placeholder rather than real content. The failure mode to avoid: shrinking the whole spec to isolate which field is wrong. Do not throw away subgoals, decomposition, or detail that was not named below. Fix exactly the field(s) named as the problem and return the rest of the spec unchanged.`;
-import { mountBlock, SKILL_INVOKE_LINE, SKILL_METHOD_DISCLAIMER, SKILLS_USED_FIELD } from './mounts.mjs';
+import { graphStageSkills, mountBlock, SKILL_INVOKE_LINE, SKILL_METHOD_DISCLAIMER, SKILLS_USED_FIELD } from './mounts.mjs';
 export { SKILL_INVOKE_LINE, SKILL_METHOD_DISCLAIMER, SKILLS_USED_FIELD };
 
 
@@ -297,7 +297,23 @@ function wikiBlock(run, n) {
   return ex === 'claude' || ex === 'codex' ? WIKI_PARAGRAPH.map((l) => l.replace('%NODE%', n.node_id)) : null;
 }
 
+// Method comes from the kind, by stage. A spec that named its own replaces the family for the hand
+// that writes; a judge keeps the family's, because a judge's method is not the author's to choose.
+function subgoalMethodOf(n, sg) {
+  const authoring = !REASONING_STAGES.has(n.stage) && !VERDICT_FIELD[n.stage];
+  return authoring && sg.skills?.length ? sg.skills : kindSkills(kindOf(sg), n.stage);
+}
+
+// Every skill the prompt of node `n` names under Method (the subgoal's own, then the stage mount),
+// so a lean launch mounts exactly the plugins this node's prompt sends it to.
+export function nodeSkills(run, n, briefing) {
+  const own = briefing && briefing.subgoal ? subgoalMethodOf(n, briefing.subgoal) : [];
+  return [...new Set([...own, ...graphStageSkills(run, n)])];
+}
+
 // opts.regionPointer: nodelaunch.mjs's regionPointer; the adapter prompt of broker-tools passes it.
+// opts.ask: {task_id, key} of the STORY this node works for, when the engine knows it; the node is
+// then told the exact tm_ask call.
 export function composePrompt(run, n, briefing, opts = {}) {
   const scopedExecution = run.allocation === 'balanced' && ['implement', 'test', 'draft'].includes(n.stage) && briefing.subgoal;
   const lines = [];
@@ -323,7 +339,10 @@ export function composePrompt(run, n, briefing, opts = {}) {
   lines.push(`no codex-runner.mjs, no nested \`codex exec\`, no harness pipeline or broker call.`);
   lines.push(`Routing, verification, and the graph are already handled around you.`);
   // A lean session starts with this node's brief and nothing else (card 130).
-  lines.push(`If you need a document, a region of a file or a rule you were not given, ask the leader with tm_ask (the ask is logged) instead of reading whole large files; a session with no tm_ask tool says so in its handoff.`);
+  const ask = opts.ask && opts.ask.task_id && opts.ask.key ? opts.ask : null;
+  lines.push(ask
+    ? `If you need a document, a region of a file or a rule you were not given, ask the leader instead of reading whole large files: call tm_ask({task_id: "${ask.task_id}", key: "${ask.key}", question}) once with the whole question (the ask is logged), then end your turn at once with {"stage_ok": false, "reason": "parked on tm_ask"}: the story is parked and resumed with the answer. Do not guess and do not poll.`
+    : `If you need a document, a region of a file or a rule you were not given, ask the leader with tm_ask (the ask is logged) instead of reading whole large files; a session with no tm_ask tool says so in its handoff.`);
   lines.push('');
 
   if (REASONING_STAGES.has(n.stage)) {
@@ -401,10 +420,7 @@ export function composePrompt(run, n, briefing, opts = {}) {
     // judge and not the actor - the exact identity the gate exists to not have.
     const authoring = !REASONING_STAGES.has(n.stage) && !VERDICT_FIELD[n.stage];
     if (sg.persona && authoring) lines.push(`Act as: ${sg.persona}`);
-    // Method comes from the kind, by stage. A spec that named its own replaces the family
-    // for the hand that writes; a judge keeps the family's, because a judge's method is not
-    // the author's to choose.
-    const method = authoring && sg.skills?.length ? sg.skills : kindSkills(kindOf(sg), n.stage);
+    const method = subgoalMethodOf(n, sg);
     // A persona says who is working; skills say how. setgoal names them per subgoal because
     // it is the stage that knows what the work is - a migration wants different method than
     // a reference document. Same precedence as everywhere else: the node contract wins, a

@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { capacityFailure, capacityNotice } from './routing.mjs';
-import { resolveStageModel } from './nodelaunch.mjs';
+import { leanLaunchArgs, resolveStageModel } from './nodelaunch.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -18,6 +18,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 //   <cmd> [args] --detect  --cwd DIR --sandbox MODE --output FILE
 //   <cmd> [args] --stage S --cwd DIR --prompt-file F --events-output F --output F
 //                --sandbox MODE [--isolated] [--add-dir DIR] [--model M]
+//                [--setting-sources S] [--plugin-dir DIR]... [--mcp-config JSON]   (claude adapter only)
 // exit 0 AND report.stage_ok === true is the only success.
 //
 // `self` is the orchestrator: no adapter, it does the work and submits the result for
@@ -71,6 +72,8 @@ export function loadVendors(cwd) {
   }
   return vendors;
 }
+
+const isClaudeAdapter = (v) => Boolean(v && Array.isArray(v.args) && v.args[0] === BUILTIN_VENDORS.claude.args[0]);
 
 function adapterExists(v) {
   if (!v || !Array.isArray(v.args) || !v.args.length) return !!(v && v.command);
@@ -147,10 +150,17 @@ const MAX_OUTPUT = 64 * 1024 * 1024;
 // one already in extraArgs, else the stage's resolved model; opts.models is the merged `models`
 // option). The detect probe passes no stage and runs with its args untouched. opts.spawn is a
 // test seam for node:child_process spawn.
+// opts.lean (the task argument of nodelaunch.mjs leanLaunchArgs: stage_skills, plugin_dirs, root)
+// makes the launch lean too: --strict-mcp-config with the teams server only, project settings, the
+// stage's plugin dirs. Only the builtin claude adapter takes those flags, so any other vendor gets
+// the model alone; args already carrying --mcp-config are left as given.
 export function runAdapter(vendor, extraArgs, cwd, opts = {}) {
-  const args = opts.stage && !extraArgs.includes('--model')
-    ? [...extraArgs, '--model', resolveStageModel(opts.stage, { models: opts.models })]
-    : extraArgs;
+  let args = extraArgs;
+  if (opts.stage) {
+    if (!args.includes('--model')) args = [...args, '--model', resolveStageModel(opts.stage, { models: opts.models })];
+    // The adapter is strict by itself, so --strict-mcp-config is not passed to it: its own claude argv carries it.
+    if (opts.lean && isClaudeAdapter(vendor) && !args.includes('--mcp-config')) args = [...args, ...leanLaunchArgs(opts.stage, opts.lean).filter((a) => a !== '--strict-mcp-config')];
+  }
   return new Promise((resolve) => {
     let child;
     try {

@@ -32,7 +32,8 @@ import {
   promoteHumanGates,
   autoPassHumanGateResult,
 } from './graph.mjs';
-import { composePrompt } from './prompts.mjs';
+import { composePrompt, nodeSkills } from './prompts.mjs';
+import { storyKey } from './tickets.mjs';
 import { nodeEndEntry, nodeStartEntry, regionPointer, resolveStageModel, usageFromStream } from './nodelaunch.mjs';
 import { readTeamConfig, resolveTeamOptions } from './teamconfig.mjs';
 import { brokerDir, loadVendors, probeCache, readJson, record, runAdapter, syncOpenNodes } from './broker-vendors.mjs';
@@ -453,6 +454,13 @@ function nodeUsage(eventsPath, stdout) {
   return u;
 }
 
+// {task_id, key} a node passes to tm_ask when this run is a package (STORY) child of a task: the
+// task manager's driver env names the task (TEAMS_ASK_TASK_ID), the run names its package.
+function askTarget(run) {
+  const task_id = process.env.TEAMS_ASK_TASK_ID;
+  return task_id && run.package && run.package.id ? { task_id, key: storyKey(task_id, run.package.id) } : null;
+}
+
 async function toolGraphRun(a) {
   const run = mustFindRun(a);
   let n = requireRunnable(run, String(a.node_id));
@@ -506,7 +514,8 @@ async function toolGraphRun(a) {
   const promptPath = join(dir, 'prompt.md');
   const outPath = join(dir, 'result.json');
   const eventsPath = join(dir, 'events.jsonl');
-  writeFileSync(promptPath, composePrompt(run, n, nodeBriefing(run, n), { regionPointer }));
+  const briefing = nodeBriefing(run, n);
+  writeFileSync(promptPath, composePrompt(run, n, briefing, { regionPointer, ask: askTarget(run) }));
   n.detail_path = outPath;
   saveRun(run);
 
@@ -558,6 +567,9 @@ async function toolGraphRun(a) {
       timeoutMs: a.timeout_ms,
       stage: r.vendor === 'claude' ? launchStage : undefined,
       models: stageModels,
+      // Lean: the plugins this node's own prompt sends it to (its subgoal's method and the stage
+      // mount) next to teams; the teams MCP server stays, so tm_ask and team_* work.
+      lean: { stage_skills: { [launchStage]: nodeSkills(run, n, briefing) } },
     });
   } finally {
     activeNodes.delete(activeKey);

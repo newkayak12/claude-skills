@@ -156,6 +156,10 @@ function spawnChildDriver(task, nodeIdLabel, child, opts = {}) {
     // The project wiki lives in the main project, never in a worktree a child may run in.
     env.TEAMS_WIKI_ROOT = task.cwd;
     Object.assign(env, openerEnv(task));
+    // The adapter sessions of a package's run may tm_ask its TeamLeader: they name this task
+    // (broker-tools askTarget); a size-S run has no STORY to ask for and inherits nothing.
+    delete env.TEAMS_ASK_TASK_ID;
+    if (task.nodes.some((x) => x.stage === 'dispatch' && x.child && x.child.run_id === child.run_id)) env.TEAMS_ASK_TASK_ID = task.run_id;
     // `claude -p` otherwise caps how long it waits on its own background agents at the end of a
     // turn; 0 makes the driver wait for them without a ceiling. An explicit opts.env may override.
     env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS = '0';

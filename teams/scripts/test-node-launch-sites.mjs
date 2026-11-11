@@ -8,16 +8,24 @@
 // adapter argv of broker-tools.mjs and runAdapter (broker-vendors.mjs). The detect probe in
 // broker-vendors.mjs probe() is not a node launch and stays as it was.
 //
-// PARTIAL (named, not faked): teams/adapters/claude-exec-adapter.mjs builds the claude argv of a
-// broker-adapter node and is outside this package. It accepts no lean flags, so for the adapter
-// paths only an explicit --model and the flags the adapter accepts are asserted, plus what the
-// adapter itself already passes (--strict-mcp-config with an empty or wiki-only MCP config). The
-// teams-MCP-with-tm_ask config, the stage's plugin dirs and the CLAUDE.md exclusion for those
-// nodes are not met, and the last test of this file pins that fact so the gap stays visible.
-// A graph node behind the adapter therefore cannot reach tm_ask; the STORY-level parking path
-// (taskmanager-asks.mjs, taskmanager-children.mjs:211, daemon.mjs:681) is unchanged.
-// A child driver is still one claude process for a whole run (a team_next loop), so "one process
-// per node" is proved on the adapter path; the driver-loop form is a partial of F2-US-2.
+// The adapter paths (broker-tools adapter argv, runAdapter) reach claude through
+// teams/adapters/claude-exec-adapter.mjs, which takes the lean flags additively (--setting-sources,
+// repeatable --plugin-dir, --mcp-config). Their final `claude` argv is captured here by a stub
+// claude binary behind the real adapter.
+//
+// What is proved and what is not (named, not faked):
+//   - tm_ask is reachable from an adapter node: the lean --mcp-config declares the teams server,
+//     which lists tm_ask, and the adapter allows mcp__teams__tm_ask. The prompt carries the exact
+//     task_id and key. A tm_ask with them is logged and parks the STORY, and an answer unparks it
+//     (taskmanager-asks.mjs under test). NOT proved: a live model calling tm_ask from inside an
+//     adapter node, or the answer reaching that node's next session (the driver's resume prompt
+//     carries it; the node is re-run by the driver loop). PARTIAL.
+//   - PARTIAL (A2.2): a child driver is still one claude process for a whole run (a team_next
+//     loop, taskmanager-drivers.mjs spawnChildDriver). "One process per node" is proved at the
+//     adapter spawn (each node's own `claude` process), the decided session boundary; the
+//     driver-loop form is not met.
+//   - NOT met anywhere: the user's global CLAUDE.md. `--setting-sources project` leaves it in the
+//     start context and no flag drops it alone (nodelaunch.mjs header), so no test claims it.
 
 process.env.TEAMS_RUNS_DIR ??= 'off';
 import { test } from 'node:test';
@@ -26,18 +34,19 @@ import { EventEmitter } from 'node:events';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { driverArgv } from '../mcp/taskmanager-drivers.mjs';
 import { answerArgv, judgeArgv } from '../mcp/daemon.mjs';
-import { runAdapter } from '../mcp/broker-vendors.mjs';
+import { loadVendors, probeCache, runAdapter } from '../mcp/broker-vendors.mjs';
+import { loadRun, saveRun } from '../mcp/graph.mjs';
 import { BROKER_TOOLS, callBrokerTool } from '../mcp/broker-tools.mjs';
 import { composePrompt } from '../mcp/prompts.mjs';
 import { REGION_THRESHOLD_LINES, regionPointer } from '../mcp/nodelaunch.mjs';
 import { referencedPlugins } from '../mcp/pluginroots.mjs';
 
 const ADAPTER = fileURLToPath(new URL('../adapters/claude-exec-adapter.mjs', import.meta.url));
-const ADAPTER_FLAGS = new Set(['--detect', '--isolated', '--verify', '--no-wiki', '--add-dir', '--cwd', '--output', '--prompt-file', '--events-output', '--stage', '--sandbox', '--model']);
+const ADAPTER_FLAGS = new Set(['--detect', '--isolated', '--verify', '--no-wiki', '--add-dir', '--cwd', '--output', '--prompt-file', '--events-output', '--stage', '--sandbox', '--model', '--setting-sources', '--plugin-dir', '--mcp-config']);
 
 // ---------- helpers ----------
 
@@ -356,27 +365,262 @@ test('tm_ask is reachable from a lean driver and judge: the one teams server (tm
   }
 }));
 
-test('PARTIAL: the claude adapter (outside this package) keeps its own strict, wiki-only MCP config - no tm_ask, no plugin dirs, no setting-sources for an adapter node', () => {
+// ---------- the claude adapter takes the lean flags additively ----------
+
+// Runs the real adapter with a stub `claude` first on PATH; returns the argv and env the stub saw.
+function adapterThroughStub(adapterArgs, env = {}) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'node-launch-adapter-')));
   try {
     const bin = join(dir, 'claude');
     writeFileSync(bin, `#!/usr/bin/env node
 const fs = require('node:fs');
 let p = ''; process.stdin.on('data', (c) => { p += c; });
-process.stdin.on('end', () => { fs.writeFileSync('observed.json', JSON.stringify({ args: process.argv.slice(2) })); console.log(JSON.stringify({ result: '{"stage_ok":true}' })); });
+process.stdin.on('end', () => { fs.writeFileSync(${JSON.stringify(join(dir, 'observed.json'))}, JSON.stringify({ args: process.argv.slice(2), wikiOff: process.env.TEAMS_WIKI_OFF || null })); console.log(JSON.stringify({ result: '{"stage_ok":true}' })); });
 `);
     chmodSync(bin, 0o755);
     writeFileSync(join(dir, 'prompt.md'), 'x');
-    const env = { ...process.env, PATH: `${dir}:${process.env.PATH}` };
-    delete env.TEAMS_WIKI_ROOT;
-    const r = spawnSync(process.execPath, [ADAPTER, '--cwd', dir, '--output', join(dir, 'out.json'), '--prompt-file', join(dir, 'prompt.md'), '--sandbox', 'read-only', '--model', 'opus'], { encoding: 'utf8', env });
+    const full = { ...process.env, PATH: `${dir}:${process.env.PATH}`, ...env };
+    if (!('TEAMS_WIKI_ROOT' in env)) delete full.TEAMS_WIKI_ROOT;
+    const r = spawnSync(process.execPath, [ADAPTER, '--cwd', dir, '--output', join(dir, 'out.json'), '--prompt-file', join(dir, 'prompt.md'), ...adapterArgs], { encoding: 'utf8', env: full });
     assert.equal(r.status, 0, r.stderr);
-    const { args } = JSON.parse(readFileSync(join(dir, 'observed.json'), 'utf8'));
-    assert.ok(args.includes('--strict-mcp-config'), 'the adapter already runs strict');
-    assert.deepEqual(modelsOf(args), ['opus'], 'the explicit model reaches the adapter\'s own claude argv');
-    assert.deepEqual(JSON.parse(valuesOf(args, '--mcp-config')[0]), { mcpServers: {} }, 'unmet: no teams server, so no tm_ask');
-    assert.ok(!args.includes('--plugin-dir') && !args.includes('--setting-sources'), 'unmet: no stage plugin dirs or settings limit');
+    return JSON.parse(readFileSync(join(dir, 'observed.json'), 'utf8'));
   } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+
+test('claude adapter: with none of the lean flags its claude argv is what it always was (strict, an empty MCP config, no plugin dirs)', () => {
+  const { args, wikiOff } = adapterThroughStub(['--sandbox', 'read-only', '--model', 'opus']);
+  assert.ok(args.includes('--strict-mcp-config'));
+  assert.deepEqual(modelsOf(args), ['opus']);
+  assert.deepEqual(JSON.parse(valuesOf(args, '--mcp-config')[0]), { mcpServers: {} });
+  assert.ok(!args.includes('--plugin-dir') && !args.includes('--setting-sources') && !args.includes('--allowedTools'));
+  assert.equal(wikiOff, null);
+});
+
+test('claude adapter: --mcp-config replaces the MCP config once (still strict), --setting-sources and each --plugin-dir are passed on, tm_ask is allowed', () => {
+  const cfg = JSON.stringify({ mcpServers: { teams: { command: 'node', args: ['/teams/mcp/server.mjs'] } } });
+  const { args, wikiOff } = adapterThroughStub(['--sandbox', 'read-only', '--no-wiki', '--model', 'opus', '--setting-sources', 'project', '--plugin-dir', '/p/teams', '--plugin-dir', '/p/develop', '--mcp-config', cfg]);
+  assert.ok(args.includes('--strict-mcp-config'));
+  assert.deepEqual(valuesOf(args, '--mcp-config'), [cfg]);
+  assert.deepEqual(valuesOf(args, '--setting-sources'), ['project']);
+  assert.deepEqual(valuesOf(args, '--plugin-dir'), ['/p/teams', '/p/develop']);
+  assert.deepEqual(valuesOf(args, '--allowedTools'), ['mcp__teams__tm_ask']);
+  assert.equal(wikiOff, '1', 'a judging stage (--no-wiki) never sees wiki_* on the lean teams server');
+});
+
+test('claude adapter: a worker with a wiki root gets the wiki tools beside tm_ask, and the wiki stays on', () => {
+  const cfg = JSON.stringify({ mcpServers: { teams: { command: 'node', args: ['/teams/mcp/server.mjs'] } } });
+  const { args, wikiOff } = adapterThroughStub(['--sandbox', 'workspace-write', '--mcp-config', cfg], { TEAMS_WIKI_ROOT: '/proj' });
+  const allowed = valuesOf(args, '--allowedTools')[0].split(',');
+  assert.ok(allowed.includes('mcp__teams__tm_ask') && allowed.includes('mcp__teams__wiki_search'));
+  assert.equal(wikiOff, null);
+});
+
+// ---------- AC-X1 .. AC-X3: the final claude argv of a graph node, behind the real adapter ----------
+
+// The builtin claude vendor (the real adapter) with a stub `claude` first on PATH. The stub logs its
+// pid, argv and env per call to invocations.jsonl and answers each stage with a valid result.
+async function withStubClaude(fn, { env = {} } = {}) {
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'node-launch-real-')));
+  // CLAUDE_PLUGIN_ROOT is off so the plugin root is this checkout's teams/ (see withoutOverrides).
+  const saved = Object.fromEntries(['PATH', 'BROKER_VENDORS', 'TEAMS_WIKI_ROOT', 'TEAMS_ASK_TASK_ID', 'CLAUDE_PLUGIN_ROOT'].map((k) => [k, process.env[k]]));
+  try {
+    mkdirSync(join(cwd, 'bin'));
+    writeFileSync(join(cwd, 'bin', 'claude'), `#!/usr/bin/env node
+const fs = require('node:fs');
+let prompt = ''; process.stdin.on('data', (c) => { prompt += c; });
+process.stdin.on('end', () => {
+  const stage = (prompt.match(/^# (\\w+) node/) || [])[1];
+  fs.appendFileSync(${JSON.stringify(join(cwd, 'invocations.jsonl'))}, JSON.stringify({ stage, pid: process.pid, args: process.argv.slice(2), wikiOff: process.env.TEAMS_WIKI_OFF || null, prompt }) + '\\n');
+  const result = { stage_ok: true, handoff: 'h', evidence: 'e', changed_files: [], checks: ['c -> pass'], verified: true, sound: true, accept: true, match_pct: 100, gaps: [] };
+  if (stage === 'setgoal') result.spec = ${JSON.stringify(SPEC)};
+  console.log(JSON.stringify({ type: 'result', result: JSON.stringify(result), num_turns: 1, usage: { input_tokens: 10, cache_read_input_tokens: 90, cache_creation_input_tokens: 0 } }));
+});
+`);
+    chmodSync(join(cwd, 'bin', 'claude'), 0o755);
+    process.env.PATH = `${join(cwd, 'bin')}:${process.env.PATH}`;
+    delete process.env.BROKER_VENDORS;
+    delete process.env.TEAMS_WIKI_ROOT;
+    delete process.env.TEAMS_ASK_TASK_ID;
+    delete process.env.CLAUDE_PLUGIN_ROOT;
+    Object.assign(process.env, env);
+    // Readiness is answered from the cache, so no probe (a paid claude call) runs: the key holds
+    // the vendor, the cwd, the sandbox and the model routing picks ('sonnet' balanced, else none).
+    for (const sandbox of ['read-only', 'workspace-write', 'danger-full-access']) {
+      for (const model of ['default', 'sonnet']) probeCache.set(['claude', cwd, sandbox, model].join(' '), Promise.resolve({ ready: true, reachable: true, reason: '', quota: false }));
+    }
+    return await fn(cwd);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    for (const k of Object.keys(env)) { if (!(k in saved)) delete process.env[k]; }
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+test('AC-X1: a graph node\'s final claude argv is lean - strict MCP, the teams server alone, project settings, the teams root plus that stage\'s plugin dirs', () => withStubClaude(async (cwd) => {
+  const { invocations } = await runNodes(cwd);
+  assert.deepEqual(invocations.map((i) => i.stage), ['plan', 'setgoal', 'critique', 'implement']);
+  for (const { stage, args } of invocations) {
+    assertLean(args, `node ${stage}`);
+    for (const f of args.filter((a) => a.startsWith('--'))) assert.ok(ADAPTER_FLAGS.has(f) || ['-p', '--output-format', '--no-session-persistence', '--strict-mcp-config', '--tools', '--permission-mode', '--allowedTools'].includes(f), `${stage}: unexpected claude flag ${f}`);
+    assert.deepEqual(valuesOf(args, '--allowedTools').join(',').split(',').filter((t) => t === 'mcp__teams__tm_ask'), ['mcp__teams__tm_ask'], `${stage}: tm_ask is allowed`);
+  }
+  // the plugin dirs follow each node's own Method, never every installed plugin
+  const dirs = Object.fromEntries(invocations.map((i) => [i.stage, dirsOf(i.args).sort()]));
+  assert.deepEqual(dirs.plan, ['agents', 'teams'], 'plan: agents:agent-task-decomposer');
+  assert.deepEqual(dirs.setgoal, ['teams'], 'setgoal mounts no skill');
+  assert.deepEqual(dirs.critique, ['teams', 'think'], 'critique: think:devils-advocate');
+  assert.deepEqual(dirs.implement, ['develop', 'teams'], 'implement: develop:clean-code');
+  assert.deepEqual(invocations.map((i) => modelsOf(i.args)), [['opus'], ['opus'], ['opus'], ['sonnet']], 'the explicit model still rides next to the lean flags');
+}));
+
+test('AC-X1: --setting-sources project is the only settings source, so the user scope is not read', () => withStubClaude(async (cwd) => {
+  const { invocations } = await runNodes(cwd, {}, ['plan']);
+  assert.deepEqual(valuesOf(invocations[0].args, '--setting-sources'), ['project']);
+}));
+
+test('a node behind a judging stage gets no wiki on the lean teams server; its tm_ask stays allowed', () => withStubClaude(async (cwd) => {
+  const { invocations } = await runNodes(cwd, {}, ['plan', 'setgoal', 'critique']);
+  assert.equal(invocations[2].stage, 'critique');
+  assert.equal(invocations[2].wikiOff, '1');
+}));
+
+test('A2.2 at the session boundary: two consecutive nodes of one run are two claude processes (distinct pids, one spawn each)', () => withStubClaude(async (cwd) => {
+  const { invocations } = await runNodes(cwd, {}, ['plan', 'setgoal']);
+  assert.equal(invocations.length, 2);
+  assert.notEqual(invocations[0].pid, invocations[1].pid);
+}));
+
+test('runAdapter forwards the lean flags next to the model for the builtin claude adapter only; a vendor already carrying --mcp-config, another adapter, and the detect path are left as they are', () => withoutOverrides(async () => {
+  const claude = loadVendors('/w').claude;
+  const s = stubSpawn();
+  await runAdapter(claude, ['--cwd', '/w'], '/w', { stage: 'implement', lean: { stage_skills: { implement: ['develop:clean-code'] } }, spawn: s.spawn });
+  const args = s.calls[0].args;
+  assert.deepEqual(modelsOf(args), ['sonnet']);
+  assert.ok(!args.includes('--strict-mcp-config'), 'the adapter takes no such flag: it is strict by itself (AC-X1 reads the claude argv behind it)');
+  assert.deepEqual(valuesOf(args, '--setting-sources'), ['project']);
+  assert.deepEqual(dirsOf(args).sort(), ['develop', 'teams']);
+  assert.deepEqual(Object.keys(JSON.parse(valuesOf(args, '--mcp-config')[0]).mcpServers), ['teams']);
+
+  await runAdapter(claude, ['--cwd', '/w', '--mcp-config', '{}'], '/w', { stage: 'implement', lean: {}, spawn: s.spawn });
+  assert.deepEqual(valuesOf(s.calls[1].args, '--mcp-config'), ['{}'], 'already carried: not added twice');
+  await runAdapter(VENDOR, ['--cwd', '/w'], '/w', { stage: 'implement', lean: {}, spawn: s.spawn });
+  assert.ok(!s.calls[2].args.includes('--strict-mcp-config') && !s.calls[2].args.includes('--plugin-dir'), 'another adapter gets the model only');
+  assert.deepEqual(modelsOf(s.calls[2].args), ['sonnet']);
+  const detect = ['--detect', '--cwd', '/w', '--sandbox', 'read-only', '--output', '/w/p.json'];
+  await runAdapter(claude, detect, '/w', { timeoutMs: 1000, spawn: s.spawn });
+  assert.deepEqual(s.calls[3].args, [...claude.args, ...detect], 'the probe path stays byte-identical');
+}));
+
+// ---------- tm_ask from an adapter node ----------
+
+test('tm_ask is reachable from an adapter node: the lean --mcp-config declares the teams server, and that server lists tm_ask and team_*', () => withStubClaude(async (cwd) => {
+  const { invocations } = await runNodes(cwd, {}, ['plan']);
+  const server = JSON.parse(valuesOf(invocations[0].args, '--mcp-config')[0]).mcpServers.teams;
+  const r = spawnSync(server.command, server.args, {
+    input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) + '\n', encoding: 'utf8', env: { ...process.env },
+  });
+  const names = JSON.parse(r.stdout.trim().split('\n')[0]).result.tools.map((t) => t.name);
+  assert.ok(names.includes('tm_ask') && names.includes('team_next') && names.includes('team_run'), 'the one teams server serves both');
+}));
+
+test('a package child\'s prompt carries the exact tm_ask call (task_id and key); with no task known it states the generic rule', () => withStubClaude(async (cwd) => {
+  const task_id = '1a2b0001-1111-2222-3333-444444444444';
+  process.env.TEAMS_ASK_TASK_ID = task_id;
+  const { run_id } = await call('team_open', { request: 'r', cwd, vendor: 'claude', allocation: 'balanced', host_vendor: 'codex', flow: 'develop', goal_judges: 1 });
+  const run = loadRun(cwd, run_id);
+  run.package = { id: 'P1', origin: 'shape' };
+  saveRun(run);
+  await call('team_next', { run_id, cwd });
+  await call('team_run', { run_id, cwd, node_id: 'plan' });
+  const prompt = readFileSync(join(cwd, 'invocations.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))[0].prompt;
+  assert.ok(prompt.includes(`tm_ask({task_id: "${task_id}", key: "E-1a2b0001/P1", question})`), 'the node is told the call it makes');
+  assert.match(prompt, /logged/);
+}).then(() => withStubClaude(async (cwd) => {
+  const { invocations } = await runNodes(cwd, {}, ['plan']);
+  assert.doesNotMatch(invocations[0].prompt, /tm_ask\(\{task_id/);
+  assert.match(invocations[0].prompt, /ask the leader with tm_ask/);
+})));
+
+test('a tm_ask with the prompt\'s task_id and key is logged and parks the STORY; the answer unparks it and resumes the driver with it (taskmanager-asks.mjs, under test)', async () => {
+  const keys = ['HARNESS_TASKS_DIR', 'HARNESS_TEST_NO_DAEMON', 'HARNESS_TEST_NO_DRIVER', 'HARNESS_CHILD_DRIVER', 'STUB_LOG'];
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'node-launch-ask-')));
+  try {
+    process.env.HARNESS_TASKS_DIR = root;
+    process.env.HARNESS_TEST_NO_DAEMON = '1';
+    delete process.env.HARNESS_TEST_NO_DRIVER;
+    process.env.STUB_LOG = join(root, 'driver-calls.jsonl');
+    writeFileSync(join(root, 'driver.mjs'), "import { appendFileSync } from 'node:fs';\nappendFileSync(process.env.STUB_LOG, JSON.stringify({ argv: process.argv.slice(2) }) + '\\n');\nsetTimeout(() => {}, 1500);\n");
+    process.env.HARNESS_CHILD_DRIVER = `node ${join(root, 'driver.mjs')}`;
+    const tm = await import('../mcp/taskmanager.mjs');
+    const graph = await import('../mcp/graph.mjs');
+    const daemon = await import('../mcp/daemon.mjs');
+    const { storyKey } = await import('../mcp/tickets.mjs');
+
+    const task_id = '1a2b0002-1111-2222-3333-444444444444';
+    const childCwd = mkdtempSync(join(root, 'wt-'));
+    mkdirSync(join(childCwd, '.teams_output', 'broker', 'runs'), { recursive: true });
+    writeFileSync(join(childCwd, '.teams_output', 'broker', 'runs', 'c1.json'), JSON.stringify({ run_id: 'c1', flow: 'develop', max_retries: 2, cwd: childCwd, spec: { subgoals: [{ id: 'U1', title: 'unit' }] }, nodes: [graph.node('implement:U1:1', 'implement', [], { state: 'pending', subgoal_id: 'U1' })] }));
+    const path = tm.taskPath(task_id);
+    mkdirSync(dirname(path), { recursive: true });
+    const done = (id, stage, deps) => graph.node(id, stage, deps, { state: 'done', result: { stage_ok: true } });
+    writeFileSync(path, JSON.stringify({
+      run_id: task_id, kind: 'task', store_path: path, cwd: root, request: 'r', created_at: Date.now(), flow: 'develop', flow_chosen: 'develop', size: 'L', max_retries: 2, driver_restarts: 2,
+      spec: { acceptance: ['a'], packages: [{ id: 'P1', title: 'module a', flow: 'develop', brief: 'b', acceptance: ['a'], touches: ['a.txt'], deps: [] }] },
+      nodes: [done('size', 'size', []), done('shape', 'shape', ['size']), done('critique', 'critique', ['shape']),
+        graph.node('dispatch:P1:1', 'dispatch', ['critique'], { subgoal_id: 'P1', state: 'running', child: { run_id: 'c1', cwd: childCwd, driver: { pid: 2 ** 22 + 777, restarts: [], started_at: Date.now() - 1000 } } }),
+        graph.node('accept:P1:1', 'accept', ['dispatch:P1:1'], { subgoal_id: 'P1' })],
+    }, null, 2));
+
+    // the key a node is handed is the one broker-tools derives from the package id and the task id
+    const key = storyKey(task_id, 'P1');
+    const out = await tm.callTool('tm_ask', { task_id, key, question: 'cents or dollars?' });
+    assert.equal(out.state, 'parked');
+    const load = () => JSON.parse(readFileSync(path, 'utf8'));
+    const ledger = () => readFileSync(join(tm.taskDir(task_id), 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    const asked = ledger().filter((e) => e.event === 'asked');
+    assert.deepEqual(asked.map((e) => [e.key, e.question, e.ask_id]), [[key, 'cents or dollars?', out.ask_id]], 'the ask is logged');
+    const parked = load();
+    const n = parked.nodes.find((x) => x.node_id === 'dispatch:P1:1');
+    assert.equal(tm.serviceDeadDriver(parked, n.child, n.node_id), false, 'parked: the dead driver is not restarted');
+    assert.equal(tm.dispatchSettled(parked, n), false, 'parked: the STORY is not folded');
+
+    const callsFile = process.env.STUB_LOG;
+    const calls = () => (existsSync(callsFile) ? readFileSync(callsFile, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+    assert.equal(calls().length, 0, 'nothing resumed while parked');
+    await daemon.stepOnce(task_id, { judge: async () => { throw new Error('no judge expected'); }, answer: async () => JSON.stringify({ verdict: 'answer', answer: 'cents' }) });
+    assert.equal(ledger().filter((e) => e.event === 'answered').length, 1, 'the answer is logged');
+    const end = Date.now() + 6000;
+    while (!calls().length && Date.now() < end) await new Promise((r) => setTimeout(r, 50));
+    assert.equal(calls().length, 1, 'unparked: the driver is resumed once');
+    assert.match(calls()[0].argv.at(-1), /cents/, 'with the answer in its prompt');
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('spawnChildDriver names the task to the adapter sessions of a package run (TEAMS_ASK_TASK_ID) and to nobody else', async () => {
+  const { spawnChildDriver } = await import('../mcp/taskmanager-drivers.mjs');
+  const saved = Object.fromEntries(['HARNESS_CHILD_DRIVER', 'HARNESS_TASKS_DIR', 'TEAMS_ASK_TASK_ID'].map((k) => [k, process.env[k]]));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'node-launch-env-')));
+  try {
+    process.env.HARNESS_TASKS_DIR = root;
+    process.env.TEAMS_ASK_TASK_ID = 'inherited-from-elsewhere';
+    const out = join(root, 'env.jsonl');
+    writeFileSync(join(root, 'driver.mjs'), `import { appendFileSync } from 'node:fs';\nappendFileSync(${JSON.stringify(out)}, JSON.stringify({ id: process.env.TEAMS_ASK_TASK_ID || null }) + '\\n');\n`);
+    process.env.HARNESS_CHILD_DRIVER = `node ${join(root, 'driver.mjs')}`;
+    const task = { run_id: '1a2b0003-1111-2222-3333-444444444444', cwd: root, nodes: [{ node_id: 'dispatch:P1:1', stage: 'dispatch', subgoal_id: 'P1', child: { run_id: 'c1', cwd: root } }] };
+    spawnChildDriver(task, 'dispatch:P1:1', task.nodes[0].child);
+    spawnChildDriver(task, 'S', { run_id: 'size-s-run', cwd: root });
+    const end = Date.now() + 6000;
+    while ((!existsSync(out) || readFileSync(out, 'utf8').trim().split('\n').length < 2) && Date.now() < end) await new Promise((r) => setTimeout(r, 50));
+    const ids = readFileSync(out, 'utf8').trim().split('\n').map((l) => JSON.parse(l).id).sort();
+    assert.deepEqual(ids, [null, task.run_id].sort(), 'the package run is told; a size-S run inherits nothing');
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('the broker tool table is unchanged: no tool schema moved with this wiring', () => {
