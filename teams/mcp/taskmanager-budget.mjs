@@ -225,6 +225,27 @@ function settleRunningDispatchesAtStop(task, status) {
   return changed;
 }
 
+function settleHarnessDriverAtStop(task, status) {
+  const h = task.harness_run;
+  if (!h || task.budget_stopped.harness_killed) return false;
+  const opts = (task.team && task.team.opts) || {};
+  const graceMinutes = Number.isFinite(opts.budget_grace_minutes) ? opts.budget_grace_minutes : 5;
+  const graceUsd = Number.isFinite(opts.budget_grace_usd) ? opts.budget_grace_usd
+    : (Number.isFinite(status.budget_usd) ? status.budget_usd * 0.10 : null);
+  const elapsedMinutes = (Date.now() - task.budget_stopped.at) / 60000;
+  const spendSinceStop = Math.max(0, (status.spend || 0) - (task.budget_stopped.spend || 0));
+  if (elapsedMinutes < graceMinutes && (graceUsd == null || spendSinceStop < graceUsd)) return false;
+  if (!h.driver || !h.driver.pid || !killDriver(h.driver)) return false;
+  task.budget_stopped.harness_killed = true;
+  h.exhausted = true;
+  h.stuck = { node: 'harness_run', reason: 'budget grace exhausted', at: Date.now() };
+  record(task, {
+    event: 'budget_killed', task_id: task.run_id, node_id: 'S', reason: `skipped: budget grace exhausted (${Math.round(elapsedMinutes)}m / ${graceMinutes}m, $${spendSinceStop.toFixed(2)}${graceUsd != null ? ` / $${graceUsd.toFixed(2)}` : ''} since budget_stopped)`,
+    spend_at_kill: status.spend, killed_driver: true, pid: h.driver.pid,
+  });
+  return true;
+}
+
 export function enforceBudget(task) {
   applySuspends(task);
   const status = budgetStatus(task);
@@ -253,7 +274,11 @@ export function enforceBudget(task) {
   // report opens on its own, which writes the retro with the whole backlog carried forward.
   // A size-S task's QA cards (m4) are phase passes: the stop settles them (no grace) and the S
   // report closes on what the run delivered - there is no manager report node to open.
-  if (task.s_run || task.harness_run) return settleRunningDispatchesAtStop(task, status) || progressed;
+  if (task.s_run || task.harness_run) {
+    progressed = settleRunningDispatchesAtStop(task, status) || progressed;
+    if (task.harness_run) progressed = settleHarnessDriverAtStop(task, status) || progressed;
+    return progressed;
+  }
   if (!task.spec || !Array.isArray(task.spec.packages)) {
     // A planning card still running when the box trips is let finish within the same grace a
     // package gets, then settled - not waited on forever (m2).

@@ -8,9 +8,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as facade from '../mcp/taskmanager.mjs';
 import * as mod from '../mcp/taskmanager-budget.mjs';
+import { renderHarnessReport } from '../mcp/docs.mjs';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawn } from 'node:child_process';
 import { FALLBACK_RATES, fallbackRate, collectTaskCosts, taskFigure, spendFigure, latestCostEvent } from '../mcp/drivercost.mjs';
 
 const OWNED = [
@@ -63,6 +65,90 @@ function withTask(fn, { stream = resultless(), opts = {}, ledger = [] } = {}) {
   }
 }
 const ledgerOf = (dir) => readFileSync(join(dir, 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+
+function liveDriver() {
+  const child = spawn('sleep', ['60'], { detached: true, stdio: 'ignore' });
+  child.unref();
+  return { pid: child.pid };
+}
+
+test('enforceBudget kills a past-grace harness driver and leaves a report renderable', () => {
+  withTask(({ dir, task }) => {
+    const driver = liveDriver();
+    const reportPath = join(dir, 'harness-report.md');
+    writeFileSync(reportPath, '# harness report\n');
+    task.harness_run = {
+      driver, report_path: reportPath, cwd: dir,
+      opened_at: Date.now() - 600000,
+      run: null,
+    };
+    task.budget_stopped = { at: Date.now() - 600000, spend: 0 };
+    try {
+      mod.enforceBudget(task);
+      const killed = ledgerOf(dir).find((e) => e.event === 'budget_killed' && e.node_id === 'S');
+      assert.equal(killed.pid, driver.pid);
+      assert.equal(killed.killed_driver, true);
+      assert.ok(renderHarnessReport(task));
+      mod.enforceBudget(task);
+      assert.equal(ledgerOf(dir).filter((e) => e.event === 'budget_killed' && e.node_id === 'S').length, 1);
+    } finally {
+      try { process.kill(-driver.pid, 'SIGTERM'); } catch {}
+    }
+  }, { stream: resultless(), opts: { budget_usd: 1 } });
+});
+
+test('enforceBudget leaves a harness driver alive within both grace windows', () => {
+  withTask(({ dir, task }) => {
+    const driver = liveDriver();
+    task.harness_run = { driver, cwd: dir, opened_at: Date.now(), run: null };
+    task.budget_stopped = { at: Date.now(), spend: 0 };
+    try {
+      mod.enforceBudget(task);
+      assert.doesNotThrow(() => process.kill(driver.pid, 0));
+      assert.equal(ledgerOf(dir).some((e) => e.event === 'budget_killed'), false);
+    } finally {
+      try { process.kill(-driver.pid, 'SIGTERM'); } catch {}
+    }
+  }, { stream: resultless(), opts: { budget_usd: 1, budget_grace_usd: 100, budget_grace_minutes: 5 } });
+});
+
+// One enforceBudget call on a size-S task whose budget_stopped was set `agoMin` minutes ago with
+// `stoppedSpend` already spent; reports whether the driver died and how many budget_killed it logged.
+function harnessStopCase({ agoMin, stoppedSpend, opts }) {
+  let out;
+  withTask(({ dir, task }) => {
+    const driver = liveDriver();
+    task.harness_run = { driver, cwd: dir, opened_at: Date.now() - 3600000, run: null };
+    task.budget_stopped = { at: Date.now() - agoMin * 60000, spend: stoppedSpend };
+    try {
+      mod.enforceBudget(task);
+      let alive = true;
+      try { process.kill(driver.pid, 0); } catch { alive = false; }
+      out = { alive, kills: ledgerOf(dir).filter((e) => e.event === 'budget_killed' && e.pid === driver.pid).length };
+    } finally {
+      try { process.kill(-driver.pid, 'SIGTERM'); } catch {}
+    }
+  }, { stream: resultless(), opts: { budget_usd: 1, ...opts } });
+  return out;
+}
+
+test('harness driver kill: dollar grace alone triggers (time grace not spent)', () => {
+  const r = harnessStopCase({ agoMin: 0, stoppedSpend: 0, opts: { budget_grace_minutes: 5000 } });
+  assert.equal(r.kills, 1);
+});
+
+test('harness driver kill: time grace alone triggers (no spend since the stop)', () => {
+  const r = harnessStopCase({ agoMin: 10, stoppedSpend: 1e9, opts: { budget_grace_usd: 1e9 } });
+  assert.equal(r.kills, 1);
+});
+
+test('harness driver kill: budget_grace_usd overrides the 10% default', () => {
+  const dflt = harnessStopCase({ agoMin: 0, stoppedSpend: 0, opts: { budget_grace_minutes: 5000 } });
+  const wide = harnessStopCase({ agoMin: 0, stoppedSpend: 0, opts: { budget_grace_minutes: 5000, budget_grace_usd: 1e9 } });
+  assert.equal(dflt.kills, 1);
+  assert.equal(wide.kills, 0);
+  assert.equal(wide.alive, true);
+});
 
 test('a result-less Opus+Sonnet stream is priced per message: below the Opus-only price, marked estimated', () => {
   withTask(({ dir, task }) => {

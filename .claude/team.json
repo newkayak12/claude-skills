@@ -22,7 +22,7 @@
   "docs_dir": ".teams_output/team",
   "plugin_dirs": [],
   "retry_policy": "continue",
-  "budget_usd": null,
+  "budget_usd": 40,
   "timebox_minutes": null,
   "budget_grace_usd": null,
   "budget_grace_minutes": 5,
