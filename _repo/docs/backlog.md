@@ -588,30 +588,6 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
 
 (cards 102, 103 and 54 moved to the top, 2026-10-30)
 
-148. **portfolio normalization leftovers — what 2.16.0 left out**
-    - Why: 2026-11-11, a real workspace's hand-built rules were moved into the skills as 2.16.0
-      (`final-check`, round record folders, `snapshot --stable`, `style/`, `questions`, ledger grades,
-      debate saved to `consensus/`). These were left:
-      1. `think/skills/brainstorming/references/debate.md` has no "portfolio workspace: transcript and
-         open questions" section; the rule is one line in SKILL.md (the dispatch gate denied the
-         reference edit without a task).
-      2. `material update` takes ledger files only, not `material/<id>/` folder items.
-      3. `material ledger-scaffold` appends project rows below a free-text `sources/README.md`
-         instead of into a table.
-      4. `final-check` does not read XMP metadata or compressed PDF Info dicts; the same phrase can
-         be reported twice (resume build `warnings` and `final_check`).
-      5. `deck-builder` and `rewrite` do not read `style/레이아웃.md` `safe_area` or the style files;
-         manage only exposes `safe_area` and states the rule. `consensus/` and `decisions/` have no
-         write command besides think's debate.
-    - Acceptance: each item fixed with a test, or closed with its reason; manage 114, material 31,
-      office_render, resume, deck tests green.
-
-149. **deck-builder test fails with a renderer present: the rasterized SVG is not cached**
-    - Why: 2026-11-11, `DECK_RENDER_DOCKER=deck-render python3 test_deck.py` → 1 FAILED "the
-      rasterized PNG is cached by content, got []" (`test_deck.py:674`); same on `ea742505`, so it
-      predates 2.16.0. Without docker the branch is skipped (240 ok). Cause unverified.
-    - Acceptance: `test_deck.py` all passed with and without `DECK_RENDER_DOCKER`.
-
 ### Skeleton and length (one card per skill, next edit)
 
 120. **Every skill optimized: length, trigger accuracy, script speed, code quality — one plugin per Sprint**

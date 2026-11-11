@@ -141,7 +141,9 @@ snapshot/  sources/  docs/확정사실.md               버전, 글감, 확정�
 바꾸고, CLAUDE.md를 포함해 없는 것만 만들며, 있는 파일은 덮지 않습니다. 이미 있는 CLAUDE.md(이름을 바꾼
 README 포함)는 내용을 그대로 두고 안내문을 한 번만 뒤에 덧붙입니다.
 
-9단계(2.16.0: workspace 표준 — 라운드마다 `snapshot/rounds/round-NN/`에 기록을 남기고, `report.md`에
+9단계(2.17.0: `office_render.py margins`가 `style/레이아웃.md`의 네 변 여백을 따로 읽음; `final-check`가
+압축된 PDF Info와 XMP를 읽고 같은 지적은 한 번만 냄; `rewrite`가 `style/` 파일을 따름; `material update --part`로
+폴더 형식 글감을 갱신함; `ledger-scaffold`가 프로젝트 표 안에 행을 넣음. 2.16.0: workspace 표준 — 라운드마다 `snapshot/rounds/round-NN/`에 기록을 남기고, `report.md`에
 수정마다 이유와 사용자가 정할 구조를 적으며 `round-check`가 빈 칸을 찾음; `snapshot --stable`이 기준본을 고정함;
 `scaffold`가 `style/` 템플릿 4개와 `docs/확인할-것.md`를 만듦(`questions --add/--read`); `layout`이 깨진
 `analysis/` 링크와 버전이 박혔거나 없는 엔진 경로를 경고함(옛 `manage/scripts/resume.py`는 넘겨서 계속 돎);

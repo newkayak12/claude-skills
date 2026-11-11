@@ -78,3 +78,8 @@ Claude appends the subagents' lines as they return.
 
 `attack` counts against an option; `rebut` and `support` count for it. `result` or `fallback`
 ends the debate.
+
+## Portfolio workspace
+
+Besides the log: the transcript, each line as spoken, to `consensus/<date>-<HHMM>-<topic>-<N>인<R>라운드.md`
+(never overwritten); open questions appended to `docs/확인할-것.md`. Rule: SKILL.md.

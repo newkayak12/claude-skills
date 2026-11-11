@@ -296,8 +296,8 @@ def build(source, out):
     return {"docx": str(out), "paragraphs": len(todo), "template": str(template),
             "ai_traces": traces,
             "final_check": office_render.final_lines(final),
-            "warnings": ["unconfirmed line kept: %s" % t[:60] for t in held]
-            + ["ai trace: %s" % t for t in traces["reported"]]}
+            # AI traces are in ai_traces.reported and final_check already; warnings holds the rest
+            "warnings": ["unconfirmed line kept: %s" % t[:60] for t in held]}
 
 
 def render(docx, pages=None):

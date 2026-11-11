@@ -181,6 +181,22 @@ def final_check_tests(t):
     else:
         check(any("not checked" in x for x in got), "with no pdftotext the PDF text is said to be unchecked — %s" % got)
 
+    print("  pdf: compressed Info and XMP")
+    import zlib
+    pdf(f["resume.pdf"], producer="LibreOffice 7.6", creator="Writer")
+    raw = f["resume.pdf"].read_bytes()
+    info = zlib.compress(b"7 0 << /Producer (python-docx 1.1) >>")
+    xmp = zlib.compress(b'<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF><rdf:Description>'
+                        b'<xmp:CreatorTool>ChatGPT</xmp:CreatorTool></rdf:Description></rdf:RDF></x:xmpmeta>')
+    extra = (b"8 0 obj\n<< /Type /ObjStm /Filter /FlateDecode /Length %d >>\nstream\n" % len(info) + info
+             + b"\nendstream\nendobj\n9 0 obj\n<< /Type /Metadata /Subtype /XML /Filter /FlateDecode /Length %d >>\nstream\n"
+             % len(xmp) + xmp + b"\nendstream\nendobj\n")
+    f["resume.pdf"].write_bytes(raw.replace(b"trailer\n", extra + b"trailer\n"))
+    got = [x for x in of(run(), "resume.pdf") if "names a tool or library" in x]
+    check(any("Producer" in x and "python-docx" in x for x in got), "an Info dict inside a compressed object stream is read — %s" % got)
+    check(any("XMP xmp:CreatorTool" in x and "ChatGPT" in x for x in got), "a compressed XMP packet is read — %s" % got)
+    check(len(got) == len(set(got)), "no finding is reported twice — %s" % got)
+
     print("  cli")
     import subprocess
     cli = [sys.executable, str(Path(o.__file__)), "final-check", "--dir", str(d)]
@@ -274,6 +290,14 @@ def main():
                '</block></flow></page></doc></body></html>')
         hits = o.margin_crossers(box, 28)
         check([(h[0], h[1]) for h in hits] == [(1, "left"), (2, "right"), (2, "bottom")], "lines past a margin are listed by page and side — %s" % hits)
+        ws = t / "ws"
+        (ws / "style").mkdir(parents=True)
+        check(o.safe_area(ws) is None, "no style/레이아웃.md, no safe area")
+        (ws / "style" / "레이아웃.md").write_text("# 레이아웃\n- top: 60\n- bottom: 4\n- left: 5\n- right: 15\n", encoding="utf-8")
+        area = o.safe_area(ws)
+        check(area == {"top": 60.0, "bottom": 4.0, "left": 5.0, "right": 15.0},"the four sides are read from style/레이아웃.md — %s" % area)
+        hits = o.margin_crossers(box, area)
+        check([(h[0], h[1]) for h in hits] == [(1, "top"), (2, "right")], "each side uses its own margin — %s" % hits)
 
         print("render")
         r = o.Renderer()

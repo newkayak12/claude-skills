@@ -35,6 +35,7 @@ compatibility:
 - Rewrite by purpose — vocabulary, emphasis, order, shape. The two rules above are the only bound; the writing-mode guard of `feedback` is not imported (default - revisit).
 - Rewrite first, then ask: questions follow the rewrite, never replace it.
 - Keep the `[확정]` ledger; nothing on it is re-proposed or reopened.
+- In a portfolio workspace, read `style/문체.md` and `style/표기규칙.md` (resume lines: also `style/이력서-서식.md`) before the first rewrite; their rules beat this skill's defaults, and a line that breaks one is not offered.
 - JD mode: ALWAYS run the JD analysis and the gap analysis before rewriting any section, and ALWAYS lead with the `JD 적합도 판정` line; every later block cites it rather than restating it.
 
 ## Mode

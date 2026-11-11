@@ -21,9 +21,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import unicodedata
 import uuid
 import xml.etree.ElementTree as ET
 import zipfile
+import zlib
 from pathlib import Path
 
 XH = "{http://www.w3.org/1999/xhtml}"
@@ -348,14 +350,32 @@ def bbox_pages(xml_text):
     return out
 
 
+def safe_area(workspace):
+    """{top, bottom, left, right} pt from the workspace's style/레이아웃.md (`- top: 36` lines, the same
+    form manage's `layout` reads), only when all four are numbers; else None."""
+    for form in ("NFC", "NFD"):
+        p = Path(workspace) / unicodedata.normalize(form, "style/레이아웃.md")
+        if p.is_file():
+            text = p.read_text(encoding="utf-8")
+            v = {}
+            for k in ("top", "bottom", "left", "right"):
+                m = re.search(r"^\s*-\s*%s\s*:\s*(\d+(?:\.\d+)?)\s*(?:pt)?\s*$" % k, text, re.M)
+                if m:
+                    v[k] = float(m.group(1))
+            return v if len(v) == 4 else None
+    return None
+
+
 def margin_crossers(xml_text, margin=28.0):
-    """[(page, side, text)] for every text line whose box leaves the page inset by `margin` pt."""
+    """[(page, side, text)] for every text line whose box leaves the page inset by `margin` pt
+    (one number, or {top, bottom, left, right})."""
+    m = margin if isinstance(margin, dict) else dict.fromkeys(("top", "bottom", "left", "right"), margin)
     hits = []
     for n, (pw, ph, blocks) in enumerate(bbox_pages(xml_text), 1):
         for lines in blocks:
             for (x0, y0, x1, y1), text in lines:
-                for side, bad in (("left", x0 < margin), ("right", x1 > pw - margin),
-                                  ("top", y0 < margin), ("bottom", y1 > ph - margin)):
+                for side, bad in (("left", x0 < m["left"]), ("right", x1 > pw - m["right"]),
+                                  ("top", y0 < m["top"]), ("bottom", y1 > ph - m["bottom"])):
                     if bad:
                         hits.append((n, side, text[:60]))
     return hits
@@ -536,14 +556,37 @@ def _office_findings(path, allow, author):
     return findings, fixed
 
 
+_PDF_STREAM = re.compile(rb"/FlateDecode.{0,200}?stream\r?\n(.*?)endstream", re.S)
+_XMP_FIELD = re.compile(r"<(dc:creator|dc:title|xmp:CreatorTool|pdf:Producer|pdf:Keywords)\b[^>]*>(.*?)</\1>", re.S)
+
+
+def _pdf_bodies(data):
+    """The file's bytes, then every Flate stream inflated: an Info dict inside a compressed object
+    stream, and a compressed XMP packet, are only readable there."""
+    out = [data]
+    for m in _PDF_STREAM.finditer(data):
+        try:
+            out.append(zlib.decompressobj().decompress(m.group(1)))
+        except zlib.error:
+            pass
+    return out
+
+
 def _pdf_findings(path, allow):
     path = Path(path)
     findings = []
-    for key, raw in _PDF_INFO.findall(path.read_bytes()):
-        val = _pdf_string(raw)
-        k = key.decode()
-        if _PDF_TOOLS.search(_strip(val, allow)) or _LIBS.search(val):
-            findings.append("PDF %s names a tool or library: %s" % (k, val[:60]))
+    bodies = _pdf_bodies(path.read_bytes())
+    for body in bodies:
+        for key, raw in _PDF_INFO.findall(body):
+            val = _pdf_string(raw)
+            k = key.decode()
+            if _PDF_TOOLS.search(_strip(val, allow)) or _LIBS.search(val):
+                findings.append("PDF %s names a tool or library: %s" % (k, val[:60]))
+        if b"<x:xmpmeta" in body or b"<rdf:RDF" in body:
+            for tag, val in _XMP_FIELD.findall(body.decode("utf-8", "replace")):
+                v = html.unescape(re.sub(r"<[^>]+>", " ", val)).strip()
+                if _PDF_TOOLS.search(_strip(v, allow)) or _LIBS.search(v):
+                    findings.append("PDF XMP %s names a tool or library: %s" % (tag, re.sub(r"\s+", " ", v)[:60]))
     text = None
     if shutil.which("pdftotext"):
         r = subprocess.run(["pdftotext", str(path), "-"], capture_output=True, text=True)
@@ -559,7 +602,7 @@ def _pdf_findings(path, allow):
         s = _strip(flat, allow)
         for m in list(_DISCLAIMER.finditer(flat)) + list(_PHRASES.finditer(s)) + list(_NOTES.finditer(s)):
             findings.append("PDF text: %r" % m.group(0)[:60])
-    return findings
+    return list(dict.fromkeys(findings))   # the same Info value in two revisions, one phrase two patterns
 
 
 def final_check(paths, allow=(), author=None):
@@ -611,8 +654,10 @@ def main(argv):
     if len(argv) >= 2 and argv[0] == "ai-traces":
         return ai_traces(argv[1], fix="--report-only" not in argv)
     if len(argv) >= 2 and argv[0] == "margins":
-        margin = float(argv[argv.index("--margin") + 1]) if "--margin" in argv else 28.0
         pdf = Path(argv[1]).resolve()
+        # --margin wins; else the workspace's style/레이아웃.md (the pdf sits in <workspace>/build/); else 28
+        area = None if "--margin" in argv else (safe_area(pdf.parent.parent) or safe_area(pdf.parent))
+        margin = float(argv[argv.index("--margin") + 1]) if "--margin" in argv else (area or 28.0)
         r = Renderer()
         if not r.available:
             return {"error": "no renderer (pdftotext runs through it): install LibreOffice or set DECK_RENDER_DOCKER"}

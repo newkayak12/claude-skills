@@ -16,7 +16,7 @@
 //   node material.mjs ledger
 //   node material.mjs ledger-scaffold [--project NN_이름 --period P]
 //   node material.mjs ledger-log--item NN_프로젝트/A1 --note N [--status S --later-step X]
-//   node material.mjs update  --item NN_프로젝트/A1 --note N --source PATH [--line N|N-M]
+//   node material.mjs update  --item NN_프로젝트/A1|<id> --note N --source PATH [--line N|N-M] [--part P]
 //   node material.mjs item-pages
 //
 // Step 1 (collection) creates status "raw" and never changes it. A status other than raw
@@ -36,7 +36,7 @@ import path from 'node:path';
 const PARTS = ['meta.md', 'problem.md', 'decision.md', 'result.md', 'learned.md', 'gaps.md', 'history.md'];
 // selected / excluded: manage's step 2 (sources/선정.md); written: its draft step
 const STATUSES = ['raw', 'shaped', 'selected', 'excluded', 'written', 'rendered', 'reviewed'];
-const FLAGS = new Set(['id', 'source', 'title', 'period', 'role', 'tags', 'note', 'status', 'later-step', 'question', 'citation', 'add-source', 'item', 'line', 'project']);
+const FLAGS = new Set(['id', 'source', 'title', 'period', 'role', 'tags', 'note', 'status', 'later-step', 'question', 'citation', 'add-source', 'item', 'line', 'project', 'part']);
 const ANSWERED = '[답변됨]';
 const ID_RE = /^[\p{L}\p{N}][\p{L}\p{N}-]*$/u;
 const SRC = path.resolve(process.cwd(), 'sources');
@@ -397,8 +397,18 @@ const cmd = {
     if (!fs.existsSync(tableFile)) {
       make('README.md', ['# 프로젝트', '', '| 폴더 | 프로젝트 | 기간 |', '|---|---|---|', ...missing.map(row), ''].join('\n'));
     } else if (missing.length) {
-      const text = fs.readFileSync(tableFile, 'utf8');
-      fs.appendFileSync(tableFile, `${text.endsWith('\n') ? '' : '\n'}${missing.map(row).join('\n')}\n`);
+      // rows go right after the last line of the first pipe table; a README with no table gets one
+      const lines = fs.readFileSync(tableFile, 'utf8').split('\n');
+      const start = lines.findIndex((l, i) => /^\s*\|/.test(l) && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1] ?? ''));
+      if (start < 0) {
+        const text = lines.join('\n');
+        fs.writeFileSync(tableFile, `${text}${text.endsWith('\n') ? '' : '\n'}\n| 폴더 | 프로젝트 | 기간 |\n|---|---|---|\n${missing.map(row).join('\n')}\n`);
+      } else {
+        let end = start + 1;
+        while (end + 1 < lines.length && /^\s*\|/.test(lines[end + 1])) end++;
+        lines.splice(end + 1, 0, ...missing.map(row));
+        fs.writeFileSync(tableFile, lines.join('\n'));
+      }
       made.push('README.md (rows added)');
     }
     return { created: made };
@@ -422,18 +432,27 @@ const cmd = {
 
   // Appends a dated, cited `## 갱신 — YYYY-MM-DD` section at the end of a ledger file, from the
   // user's own notes; nothing above it is touched. The same note and source again is `unchanged`.
+  // A folder item (material/<id>/) takes the section in one of its parts: --part, default result.
   update(a) {
     need(a, 'item', 'note', 'source');
-    const it = ledgerItems().find((x) => x.id === one(a.item).normalize('NFC'));
-    if (!it) fail(`no ledger item ${a.item}`);
     if (a.line !== undefined && !/^\d+(-\d+)?$/.test(one(a.line))) fail('--line must be N or N-M');
     const cite = `${one(a.source)}${a.line !== undefined ? `:${one(a.line)}` : ''}`;
     const body = `- ${one(a.note)}\n- 출처: ${cite}\n`;
-    const full = path.join(SRC, it.file);
-    const text = fs.readFileSync(full, 'utf8');
-    if (text.includes(body)) return { result: 'unchanged', id: it.id };
-    fs.appendFileSync(full, `${text.endsWith('\n') ? '' : '\n'}\n## 갱신 — ${today()}\n${body}`);
-    return { result: 'updated', id: it.id, file: it.file, source: cite };
+    const id = one(a.item).normalize('NFC');
+    const it = ledgerItems().find((x) => x.id === id);
+    let full, file;
+    if (it) {
+      full = path.join(SRC, it.file); file = it.file;
+    } else if (ID_RE.test(id) && readMeta(path.join(MAT, id))) {
+      const part = one(a.part || 'result');
+      if (!['problem', 'decision', 'result', 'learned'].includes(part)) fail('--part must be problem|decision|result|learned');
+      file = `${id}/${part}.md`; full = path.join(MAT, file);
+    } else fail(`no ledger or folder item ${a.item}`);
+    const text = fs.existsSync(full) ? fs.readFileSync(full, 'utf8') : '';
+    if (text.includes(body)) return { result: 'unchanged', id };
+    const add = `${text && !text.endsWith('\n') ? '\n' : ''}${text ? '\n' : ''}## 갱신 — ${today()}\n${body}`;
+    if (it) fs.appendFileSync(full, add); else safeWrite(file, add, 'a');
+    return { result: 'updated', id, file, source: cite };
   },
 
   // The item -> pages table, from the workspace skeleton's `글감: <id>, …` lines (a page is the

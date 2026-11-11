@@ -32,8 +32,9 @@ for the next render. Portfolio deck and resume alike. **Not for** content judgem
    (previews from `build/pages/` to `snapshot/render/deck-vX.Y.Z/`, `검토.md` with a row per page).
    Resume: `pdftoppm -r 80 -png build/resume.pdf snapshot/render/resume-<YYYY-MM-DD>/pages/p`, then
    the same `검토.md` table (`| 쪽 | 본 것 | 문제 | next-render |`) beside it.
-2. **List what a tool can.** `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/office_render.py margins build/<file>.pdf --margin <pt>`
-   (the margin from `template/analysis.md`'s safe area; 28 when it names none) lists each text line whose
+2. **List what a tool can.** `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/office_render.py margins build/<file>.pdf`
+   (each side from `style/레이아웃.md`'s `- top/bottom/left/right: <pt>`; else `--margin <pt>` from
+   `template/analysis.md`'s safe area; 28 when neither names one) lists each text line whose
    box leaves the margin, by page and side. `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/office_render.py ai-traces build/<file>.<pptx|docx> --report-only` lists AI traces.
 3. **Look at each page** (the preview image, then the page text) against the checks below. One row
    per page in `검토.md`: 본 것 (what is on it, one line), 문제 (check · where · symptom), next-render.

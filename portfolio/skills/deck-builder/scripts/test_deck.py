@@ -670,7 +670,7 @@ def svg_assets(tmp):
     if deck.Renderer().available:
         check(rc == 0, "an SVG asset checks clean when a renderer is present")
         deck.main(["build", "--deck", str(tmp / "svg.mdx")])
-        cached = list((tmp / ".deckcache").glob("*.png"))
+        cached = list((deck.build_dir(tmp / "svg.mdx") / ".cache").glob("*.png"))
         check(len(cached) == 1, "the rasterized PNG is cached by content, got %s" % cached)
         with zipfile.ZipFile(tmp / "svg.pptx") as z:
             names = z.namelist()

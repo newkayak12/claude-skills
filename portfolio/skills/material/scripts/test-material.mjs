@@ -480,7 +480,23 @@ test('update appends a dated, cited ## 갱신 section; nothing above it changes;
   assert.equal(run(cwd, args).json.result, 'unchanged');
   assert.equal(fs.readFileSync(file, 'utf8'), after);
   assert.equal(run(cwd, ['update', '--item', '01_가상검색/A1', '--note', 'x', '--source', 's', '--line', 'abc']).code, 1);
-  assert.match(run(cwd, ['update', '--item', '09_없음/A1', '--note', 'x', '--source', 's']).json.error, /no ledger item/);
+  assert.match(run(cwd, ['update', '--item', '09_없음/A1', '--note', 'x', '--source', 's']).json.error, /no ledger or folder item/);
+});
+
+test('update on a folder item appends the section to its part (default result), only under material/', () => {
+  const { cwd } = project();
+  assert.equal(init(cwd, 'search-revamp').code, 0);
+  const res = path.join(cwd, 'material', 'search-revamp', 'result.md');
+  const before = fs.existsSync(res) ? fs.readFileSync(res, 'utf8') : '';
+  const r = run(cwd, ['update', '--item', 'search-revamp', '--note', '응답 40% 단축', '--source', 'notes/메모.md']);
+  assert.equal(r.json.result, 'updated');
+  assert.equal(r.json.file, 'search-revamp/result.md');
+  assert.ok(fs.readFileSync(res, 'utf8').startsWith(before));
+  assert.match(fs.readFileSync(res, 'utf8'), new RegExp(`## 갱신 — ${DATE}\\n- 응답 40% 단축\\n- 출처: notes/메모\\.md\\n$`));
+  const d = run(cwd, ['update', '--item', 'search-revamp', '--part', 'decision', '--note', '캐시 먼저', '--source', 's']);
+  assert.equal(d.json.file, 'search-revamp/decision.md');
+  assert.equal(run(cwd, ['update', '--item', 'search-revamp', '--part', 'meta', '--note', 'x', '--source', 's']).code, 1);
+  assert.equal(run(cwd, ['update', '--item', '../escape', '--note', 'x', '--source', 's']).code, 1);
 });
 
 test('item-pages: table from 글감: lines, baseline first, then only the pages of a changed item are stale', () => {
@@ -564,6 +580,19 @@ test('ledger-scaffold creates project READMEs with the grade list, X_ file and p
   const p = run(cwd, ['ledger']).json.problems;
   assert.deepEqual([p.noExcluded, p.noReadme, p.notInTable, p.notInReadme], [[], [], [], ['02_가상알림/A1_알림.md']]);
   assert.match(run(cwd, ['ledger-scaffold', '--project', '09_없음']).json.error, /no ledger project/);
+});
+
+test('ledger-scaffold puts rows inside the table, and gives a README without one a table', () => {
+  const cwd = ledgerProject();
+  const f = path.join(cwd, 'sources', 'README.md');
+  fs.writeFileSync(f, '# 원장\n\n| 폴더 | 프로젝트 | 기간 |\n|---|---|---|\n| 01_가상검색 | 가상검색 | 2024 |\n\n아래는 메모.\n');
+  run(cwd, ['ledger-scaffold']);
+  assert.equal(fs.readFileSync(f, 'utf8'), '# 원장\n\n| 폴더 | 프로젝트 | 기간 |\n|---|---|---|\n| 01_가상검색 | 가상검색 | 2024 |\n| 02_가상알림 | 가상알림 |  |\n\n아래는 메모.\n');
+  const cwd2 = ledgerProject();
+  const g = path.join(cwd2, 'sources', 'README.md');
+  fs.writeFileSync(g, '자유 형식 설명\n');
+  run(cwd2, ['ledger-scaffold']);
+  assert.match(fs.readFileSync(g, 'utf8'), /^자유 형식 설명\n\n\| 폴더 \| 프로젝트 \| 기간 \|\n\|---\|---\|---\|\n\| 01_가상검색 /);
 });
 
 test('ledger-scaffold makes sources/README.md when absent', () => {
