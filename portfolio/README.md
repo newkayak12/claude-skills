@@ -148,7 +148,14 @@ Every session in the workspace starts with `manage.mjs scaffold`, unasked: it re
 to these, creates only what is missing, CLAUDE.md included, and never overwrites a file. A CLAUDE.md
 that is already there (a renamed README too) keeps its text and gets the guide appended once.
 
-Nine steps (2.15.0: a round runs through by itself — `sync` and `verify-build`, only structure waits;
+Nine steps (2.16.0: the workspace standard — each round keeps `snapshot/rounds/round-NN/` with a
+`report.md` giving every edit its reason and the structure left to you, checked by `round-check`;
+`snapshot --stable` freezes a baseline; `scaffold` adds four `style/` templates and
+`docs/확인할-것.md` (`questions --add/--read`); `layout` warns on a broken `analysis/` link and an
+engine path that is pinned or gone (an old `manage/scripts/resume.py` still runs, forwarded);
+`office_render.py final-check` checks the four deliverables before you send them; every resume render
+rewrites its previews and goes through `render-review`; `material` ledgers take A/B/C grades and an
+`X_` file of topics not to use (`ledger-scaffold`). 2.15.0: a round runs through by itself — `sync` and `verify-build`, only structure waits;
 `material update`/`item-pages` refresh items from your notes and list the pages that went stale;
 `pattern` scores two versions on fixed keys `compare` reads; `rewrite` keeps your figures untagged
 and never inflates; `mock-interview` builds a question list checked against the material.

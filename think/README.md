@@ -120,7 +120,9 @@ and rebut each other for up to two rounds; Claude still cuts with the kill-crite
 fewer than two agents left it finishes in normal mode and says so. From 1.7.0, when the `agents` plugin
 (`use-codex` / `use-claude`) and the other CLI are present, one debater is the other model (codex
 from Claude Code, claude from Codex), called automatically and cold in round 1; if it is missing
-or errors, the debate goes on without it and says so.
+or errors, the debate goes on without it and says so. From 1.8.0, run inside a portfolio workspace, the
+debate is also saved verbatim to `consensus/<date>-<HHMM>-<topic>-<N>인<R>라운드.md` and its open
+questions are appended to `docs/확인할-것.md`.
 
 **`/brainstorming-status` pane** (Claude Code, interactive sessions only; never required). Reads the
 newest debate log: tabs Timeline (↑↓ scroll, Tab onto a persona to filter, who is speaking now),

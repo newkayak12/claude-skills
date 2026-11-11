@@ -141,7 +141,13 @@ snapshot/  sources/  docs/확정사실.md               버전, 글감, 확정�
 바꾸고, CLAUDE.md를 포함해 없는 것만 만들며, 있는 파일은 덮지 않습니다. 이미 있는 CLAUDE.md(이름을 바꾼
 README 포함)는 내용을 그대로 두고 안내문을 한 번만 뒤에 덧붙입니다.
 
-9단계(2.15.0: 한 라운드를 스스로 끝까지 돎 — `sync`와 `verify-build`, 구조만 기다림;
+9단계(2.16.0: workspace 표준 — 라운드마다 `snapshot/rounds/round-NN/`에 기록을 남기고, `report.md`에
+수정마다 이유와 사용자가 정할 구조를 적으며 `round-check`가 빈 칸을 찾음; `snapshot --stable`이 기준본을 고정함;
+`scaffold`가 `style/` 템플릿 4개와 `docs/확인할-것.md`를 만듦(`questions --add/--read`); `layout`이 깨진
+`analysis/` 링크와 버전이 박혔거나 없는 엔진 경로를 경고함(옛 `manage/scripts/resume.py`는 넘겨서 계속 돎);
+`office_render.py final-check`가 보내기 전 산출물 4개를 검사함; 이력서를 렌더할 때마다 미리보기를 새로 만들고
+`render-review`를 거침; `material` 원장이 A/B/C 등급과 쓰지 않을 주제를 모은 `X_` 파일을 받음(`ledger-scaffold`).
+2.15.0: 한 라운드를 스스로 끝까지 돎 — `sync`와 `verify-build`, 구조만 기다림;
 `material update`/`item-pages`가 노트로 글감을 갱신하고 낡은 쪽을 알려 줌; `pattern`이 두 버전을 `compare`가 읽는
 고정 키로 채점함; `rewrite`는 사용자 숫자에 표시를 붙이지 않고 부풀리지 않음; `mock-interview`가 글감과 대조한
 질문 목록을 만듦. 2.14.0: 위 작업 공간 이름을 `scaffold`가 지킴, 이력서를 사용자 템플릿에 바로 빌드함 — 역할을 템플릿

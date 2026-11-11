@@ -116,7 +116,8 @@
 남으면 일반 모드로 마무리하고 그렇다고 알립니다. 1.7.0부터 `agents` 플러그인(`use-codex` / `use-claude`)과 상대
 CLI가 있으면 토론자 한 명이 상대 모델(Claude Code에선 codex, Codex에선 claude)이며, 묻지 않아도
 자동으로 부르고 1라운드는 아무것도 보여주지 않은 채 시작합니다. 없거나 오류가 나면 그 없이 토론을 이어가고
-그렇다고 알립니다.
+그렇다고 알립니다. 1.8.0부터 portfolio workspace 안에서 돌리면 토론 원문을
+`consensus/<date>-<HHMM>-<topic>-<N>인<R>라운드.md`에 그대로 저장하고, 미결 질문을 `docs/확인할-것.md`에 덧붙입니다.
 
 **`/brainstorming-status` 창** (Claude Code 대화형 세션에서만, 없어도 스킬은 그대로 동작). 가장
 최근 토론 로그를 읽습니다. 탭: 타임라인(↑↓ 스크롤, Tab으로 페르소나 골라 필터, 지금 발언 중),
