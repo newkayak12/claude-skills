@@ -45,6 +45,16 @@ actionable 16% → 93%, planted defects 10/11 → 11/11), 136 minus the renderer
 colour and `sup`, `captions:`/`panel_margin:`, UNO render with the East Asian / Latin spacing off —
 real deck lone commas 316 → 0, engine version printed).
 
+151. **portfolio 3.0.0: the skill alone builds a deck and resume as good as the hand-finished workspace's**
+    - Why: user, 2026-11-11, after a fresh skeleton from their workspace left 6 claims problems: "6건의
+      문제도 계속 줄일 수 있게 하자 이 스킬을 강화하자 3.0.0까지해서 깔끔하게, 원본 workspace build
+      결과물 급을 목표로". The hand-finished build still leans on workspace scripts (layout, resume
+      formatting, alt text, AI-trace check) the plugin does not replace (cards 136, 139).
+    - Acceptance: on a copy of the workspace with its scripts removed, the skill alone runs skeleton →
+      revise → deck → render → resume → final-check; a blind judge (different tier) compares its
+      build pages with the hand-finished build page by page and finds no gap the plugin could close;
+      claims leaves only `[확인 필요]` lines; tests with counts; no workspace content in the repo.
+
 136. **deck-builder's render brings its own renderer to a machine with none (later)**
     - Why: the rest of the card shipped 2026-11-10 (`63a459ce`). Left: the renderer itself.
       Render's spacing fix needs a python that imports `uno` beside the renderer; without one it

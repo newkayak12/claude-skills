@@ -530,6 +530,13 @@ test('claims: a page citing nothing passes a line whose figures 확정사실.md 
   assert.deepEqual(r.listed.confirmed.map(x => x.text.split(' ')[0]), ['2개월', '3개월'])
 })
 
+test('claims: a contents or strengths line repeating figures a citing page grounds is listed summary, not uncited', () => {
+  const root = claimsWorkspace()
+  const r = claims('## 1 목차\n03. 검색 지연 — 820ms → 210ms\n04. 다른 것 — 12배 개선\n05. 근거 없는 것 — 40% 단축\n## 2 검색\n글감: retro--검색-지연\n응답을 820ms에서 210ms로, 처리를 40% 줄였다.\n', readMaterial(root))
+  assert.deepEqual(r.listed.summary.map(s => s.page), [1])
+  assert.deepEqual(r.problems.map(p => [p.page, p.kind]), [[2, 'unsupported'], [1, 'uncited'], [1, 'uncited']])
+})
+
 test('claims: digits glued to a name (HS256, S3, ES512) are not figures', () => {
   assert.deepEqual(figs('HS256 대칭키, S3 2개, ES512 1회'), ['2개', '1회'])
   assert.deepEqual(figs('응답 1,200건, 3.5배'), ['1200건', '3.5배'])

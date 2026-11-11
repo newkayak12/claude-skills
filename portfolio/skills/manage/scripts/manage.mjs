@@ -827,8 +827,10 @@ export function settle(findings, lines) {
 // lists cover only 본문/부록 items, and items the table does not name are listed `unselected`.
 export function claims(text, items, settledLines = [], sel = null, confirmed = []) {
   const use = new Map((sel?.rows || []).map(r => [r.id, r.use]))
-  const problems = [], listed = { self_confirmed: [], user_stated: [], tone: [], confirmed: [] }
+  const problems = [], listed = { self_confirmed: [], user_stated: [], tone: [], confirmed: [], summary: [] }
   const carried = new Map()   // item id → figures some page carries
+  const summary = []          // uncited lines with figures, kept for the summary check below
+  const grounded = new Set()  // figures a citing page carries with ground (not `근거 없음`)
   const lines = text.split('\n')
   const pages = []
   let cur = null
@@ -856,6 +858,7 @@ export function claims(text, items, settledLines = [], sel = null, confirmed = [
         // a page that needs no item (a profile): a line whose every figure 확정사실.md states passes
         const facts = fs.map(f => confirmed.find(c => c.figs.includes(f)))
         if (!reason && facts.every(Boolean)) fs.forEach((f, i) => listed.confirmed.push({ page: p.page, text: `${f} — ${line}`, fact: facts[i].text }))
+        else if (!reason) summary.push({ page: p.page, fs, line })
         else problems.push({ page: p.page, kind: 'uncited', text: line })
         continue
       }
@@ -870,8 +873,9 @@ export function claims(text, items, settledLines = [], sel = null, confirmed = [
         if (!carried.has(hit.it.id)) carried.set(hit.it.id, new Set())
         carried.get(hit.it.id).add(f)
         const { evidence, label } = hit.row
-        if (/근거 없음/.test(evidence)) problems.push({ page: p.page, kind: 'unsupported', text: `${f} — ${line}` })
-        else if (/본인 확인/.test(label)) listed.self_confirmed.push({ page: p.page, id: hit.it.id, text: `${f} — ${line}` })
+        if (/근거 없음/.test(evidence)) { problems.push({ page: p.page, kind: 'unsupported', text: `${f} — ${line}` }); continue }
+        grounded.add(f)
+        if (/본인 확인/.test(label)) listed.self_confirmed.push({ page: p.page, id: hit.it.id, text: `${f} — ${line}` })
         else if (/user-stated/.test(label)) listed.user_stated.push({ page: p.page, id: hit.it.id, text: `${f} — ${line}` })
       }
       if (reason) {
@@ -882,6 +886,11 @@ export function claims(text, items, settledLines = [], sel = null, confirmed = [
         if (share < 0.5) problems.push({ page: p.page, kind: 'to_confirm', text: line })
       }
     }
+  }
+  // a summary page (cover, contents, strengths) repeats figures a citing page grounds: listed `summary`
+  for (const s of summary) {
+    if (s.fs.every(f => grounded.has(f) || confirmed.some(c => c.figs.includes(f)))) listed.summary.push({ page: s.page, text: s.line })
+    else problems.push({ page: s.page, kind: 'uncited', text: s.line })
   }
   // the other way: figures in cited items no page carries, and items no page cites
   const unused = []
