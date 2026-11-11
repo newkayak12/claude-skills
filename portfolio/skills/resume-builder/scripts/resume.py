@@ -50,6 +50,9 @@ resume.md:
       meta: 기술
     `catalog` lists each distinct look once (`looks`: sample text, pt, bold, colour, list) to pick from.
     The template's photo (an anchored drawing) is kept on the first paragraph.
+    Finish keys (no post-build script): `keep: section, entry` (roles kept with the next line),
+    `spacing:` role: <before> <after> in pt, `title:`, `author:`, `photo_alt:`. A `라벨: 값` line takes a
+    two-format sample's label and value runs; URLs and mail addresses become links.
 """
 import json
 import re
@@ -215,28 +218,91 @@ def first_rpr(p):
     return None
 
 
-def by_text(doc, prefix):
-    """(pPr, rPr) of the first template paragraph whose text starts with `prefix`, or None."""
-    for p in PARA.findall(doc):
-        if text_of(p).strip().startswith(prefix):
-            ppr = re.search(r"<w:pPr>.*?</w:pPr>", p, re.S)
-            return (ppr.group(0) if ppr else "<w:pPr/>", first_rpr(p))
+def label_rpr(p):
+    """A template line `라벨: 값` whose label and value are two run formats: (label rPr, value rPr), else None."""
+    runs = [(("".join(re.findall(r"<w:t[^>]*>([^<]*)</w:t>", r))), re.search(r"<w:rPr>.*?</w:rPr>", r, re.S))
+            for r in re.findall(r"<w:r[ >].*?</w:r>", p, re.S) if "<w:t" in r]
+    runs = [(t, m.group(0) if m else "") for t, m in runs if t]
+    if len(runs) < 2:
+        return None
+    text = ""
+    for i, (t, rpr) in enumerate(runs):
+        text += t
+        if re.search(r"[:：]\s*$", text) and i + 1 < len(runs) and runs[i + 1][1] != runs[0][1]:
+            return runs[0][1], runs[i + 1][1]
     return None
 
 
-def para(style, text, ppr, rpr):
-    """One paragraph in `style`, its pPr and rPr taken from the template's own sample when it has one."""
-    if ppr is None:
-        ppr = '<w:pPr><w:pStyle w:val="%s"/></w:pPr>' % style
-    runs = []
+def by_text(doc, prefix):
+    """(pPr, rPr, label) of the first template paragraph whose text starts with `prefix`, or None."""
+    for p in PARA.findall(doc):
+        if text_of(p).strip().startswith(prefix):
+            ppr = re.search(r"<w:pPr>.*?</w:pPr>", p, re.S)
+            return (ppr.group(0) if ppr else "<w:pPr/>", first_rpr(p), label_rpr(p))
+    return None
+
+
+LINK = re.compile(r"(https?://[^\s·,]+|[\w.+-]+@[\w-]+(?:\.[\w-]+)+)")
+
+
+def text_runs(text, rpr, links):
+    """Runs for `text` in `rpr`: **bold** parts bold; a URL or mail address a hyperlink (its target
+    appended to `links` as (rId, url), written to the package rels by build)."""
+    out = []
     for k, part in enumerate(re.split(r"\*\*(.+?)\*\*", text)):
         if not part:
             continue
         r = rpr or ""
         if k % 2:
             r = (r[:-len("</w:rPr>")] + "<w:b/></w:rPr>") if r else "<w:rPr><w:b/></w:rPr>"
-        runs.append('<w:r>%s<w:t xml:space="preserve">%s</w:t></w:r>' % (r, escape(part)))
-    return "<w:p>%s%s</w:p>" % (ppr, "".join(runs))
+        for j, bit in enumerate(LINK.split(part)):
+            if not bit:
+                continue
+            run = '<w:r>%s<w:t xml:space="preserve">%s</w:t></w:r>'
+            if j % 2 and links is not None:
+                rid = "rIdResumeLink%d" % (len(links) + 1)
+                links.append((rid, bit if bit.startswith("http") else "mailto:" + bit))
+                lr = (r[:-len("</w:rPr>")] if r else "<w:rPr>") + '<w:u w:val="single"/></w:rPr>'
+                out.append('<w:hyperlink r:id="%s">%s</w:hyperlink>' % (rid, run % (lr, escape(bit))))
+            else:
+                out.append(run % (r, escape(bit)))
+    return "".join(out)
+
+
+def para(style, text, ppr, rpr, label=None, links=None):
+    """One paragraph in `style`, its pPr and rPr taken from the template's own sample when it has one;
+    a `라벨: 값` line takes the sample's two formats when its sample has them."""
+    if ppr is None:
+        ppr = '<w:pPr><w:pStyle w:val="%s"/></w:pPr>' % style
+    m = re.match(r"^([^:：]{1,12}[:：])(.*)$", text, re.S) if label else None
+    if m:
+        return "<w:p>%s%s%s</w:p>" % (ppr, text_runs(m.group(1), label[0], links), text_runs(m.group(2), label[1], links))
+    return "<w:p>%s%s</w:p>" % (ppr, text_runs(text, rpr, links))
+
+
+def tune(ppr, keep=False, before=None, after=None):
+    """pPr with keepNext (a heading never ends a page) and spacing before/after (twips) set."""
+    ppr = ppr if ppr and ppr != "<w:pPr/>" else "<w:pPr></w:pPr>"
+    if keep and "<w:keepNext/>" not in ppr:
+        st = re.search(r"<w:pStyle [^>]*/>", ppr)
+        at = st.end() if st else len("<w:pPr>")
+        ppr = ppr[:at] + "<w:keepNext/>" + ppr[at:]
+    if before is None and after is None:
+        return ppr
+    sp = re.search(r"<w:spacing\b[^>]*/>", ppr)
+    tag = sp.group(0) if sp else "<w:spacing/>"
+    for k, v in (("before", before), ("after", after)):
+        if v is None:
+            continue
+        tag = re.sub(r'\sw:%s="\d+"' % k, "", tag)
+        tag = tag.replace("<w:spacing", '<w:spacing w:%s="%d"' % (k, v), 1)
+    if sp:
+        return ppr.replace(sp.group(0), tag, 1)
+    # spacing sits after numPr/pBdr and before ind/jc in the schema order
+    nxt = re.search(r"<w:(ind|contextualSpacing|mirrorIndents|suppressOverlap|jc|textDirection|textAlignment|"
+                    r"textboxTightWrap|outlineLvl|divId|cnfStyle|rPr|sectPr|pPrChange)\b", ppr)
+    at = nxt.start() if nxt else len(ppr) - len("</w:pPr>")
+    return ppr[:at] + tag + ppr[at:]
 
 
 def build(source, out):
@@ -276,8 +342,26 @@ def build(source, out):
             sample[m.group(1)] = (ppr.group(0) if ppr else None, first_rpr(p))
     b = re.search(r"(<w:body>)(.*)(</w:body>)", doc, re.S)
     sect = re.search(r"<w:sectPr\b.*?</w:sectPr>\s*$", b.group(2), re.S)
-    new = "".join(para(None, t, *from_text[r]) if r in from_text
-                  else para(mapping[r], t, *sample.get(mapping[r], (None, None))) for r, t in todo)
+    # spacing: `role: <before> <after>` in pt overrides the template's; a heading (section, entry) is
+    # kept with the line after it; the first line under a section starts with no space of its own
+    spacing = {}
+    for r, v in (meta.get("spacing") or {}).items():
+        nums = re.findall(r"\d+(?:\.\d+)?", v)
+        if len(nums) != 2:
+            fail("spacing: %s: give two numbers in pt, before and after — got %r" % (r, v))
+        spacing[r] = [round(float(n) * 20) for n in nums]
+    keep = {k.strip() for k in meta.get("keep", "section, entry").split(",") if k.strip()}
+    links, out_paras = [], []
+    for i, (r, t) in enumerate(todo):
+        ppr, rpr, label = from_text[r] if r in from_text else (*sample.get(mapping[r], (None, None)), None)
+        if ppr is None:
+            ppr = '<w:pPr><w:pStyle w:val="%s"/></w:pPr>' % mapping[r]
+        before, after = spacing.get(r, (None, None))
+        if i and todo[i - 1][0] == "section":
+            before = 0
+        ppr = tune(ppr, keep=r in keep, before=before, after=after)
+        out_paras.append(para(None, t, ppr, rpr, label, links))
+    new = "".join(out_paras)
     # the template's photo (an anchored <w:drawing> run) rides along on the first paragraph —
     # the user's resume carries a photo and the template is the only place its frame lives (user, 2026-11-09)
     pic = re.search(r"<w:r[ >](?:(?!</w:r>).)*?<w:drawing>.*?</w:drawing>.*?</w:r>", doc, re.S)
@@ -285,7 +369,33 @@ def build(source, out):
         first = re.match(r"<w:p>(<w:pPr>.*?</w:pPr>)?", new, re.S)
         cut = first.end()
         new = new[:cut] + pic.group(0) + new[cut:]
-    parts["word/document.xml"] = (doc[:b.start(2)] + new + (sect.group(0) if sect else "") + doc[b.end(2):]).encode("utf-8")
+    head = doc[:b.start(2)]
+    if links and "xmlns:r=" not in head:
+        head = head.replace("<w:document ", '<w:document xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ', 1)
+    if meta.get("photo_alt"):
+        new = re.sub(r'(<wp:docPr\b[^>]*?)\sdescr="[^"]*"', r"\1", new)
+        new = re.sub(r"(<wp:docPr\b)", r'\1 descr="%s"' % escape(meta["photo_alt"], {'"': "&quot;"}), new)
+    parts["word/document.xml"] = (head + new + (sect.group(0) if sect else "") + doc[b.end(2):]).encode("utf-8")
+    rels_name = "word/_rels/document.xml.rels"
+    if links:
+        rels = parts.get(rels_name, b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                         b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>').decode("utf-8")
+        rels = re.sub(r'<Relationship Id="rIdResumeLink\d+"[^>]*/>', "", rels)
+        add = "".join('<Relationship Id="%s" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" '
+                      'Target="%s" TargetMode="External"/>' % (rid, escape(u, {'"': "&quot;"})) for rid, u in links)
+        parts[rels_name] = rels.replace("</Relationships>", add + "</Relationships>").encode("utf-8")
+    # document properties: the title and author the front matter names (never a tool's name)
+    if "docProps/core.xml" in parts and (meta.get("title") or meta.get("author")):
+        core = parts["docProps/core.xml"].decode("utf-8")
+        for tag, val in (("dc:title", meta.get("title")), ("dc:creator", meta.get("author")), ("cp:lastModifiedBy", meta.get("author"))):
+            if not val:
+                continue
+            el = "<%s>%s</%s>" % (tag, escape(val), tag)
+            if re.search(r"<%s\b" % tag, core):
+                core = re.sub(r"<%s\b[^>]*/>|<%s\b[^>]*>.*?</%s>" % (tag, tag, tag), el, core, count=1, flags=re.S)
+            else:
+                core = core.replace("</cp:coreProperties>", el + "</cp:coreProperties>")
+        parts["docProps/core.xml"] = core.encode("utf-8")
     out.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for n, data in parts.items():

@@ -6,6 +6,7 @@ ever kept in the repo (the user's real material never goes to git).
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -185,6 +186,45 @@ def main():
               "the photo's AI disclaimer is removed from its alt text, the rest kept — %s" % b["ai_traces"])
         check(doc.count("<w:drawing>") == 1 and doc.index("<w:drawing>") < doc.index("가상 인물"), "the template's photo is kept, on the first paragraph")
         check("샘플 불릿" not in doc and "Email: a@b" not in doc, "the template's sample body is gone")
+        print("the template's finish without a post-build script (card 139)")
+        lab = ('<w:p><w:pPr><w:spacing w:after="40"/></w:pPr><w:r><w:rPr><w:color w:val="000000"/><w:sz w:val="16"/></w:rPr>'
+               '<w:t xml:space="preserve">역할: </w:t></w:r><w:r><w:rPr><w:color w:val="595959"/><w:sz w:val="16"/></w:rPr>'
+               '<w:t>설계</w:t></w:r></w:p>')
+        with zipfile.ZipFile(plain / "template" / "template.docx") as z:
+            parts2 = {n: z.read(n) for n in z.namelist()}
+        parts2["word/document.xml"] = parts2["word/document.xml"].replace("<w:sectPr>".encode(), (lab + "<w:sectPr>").encode(), 1)
+        parts2["docProps/core.xml"] = (b'<?xml version="1.0" encoding="UTF-8"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/'
+                                       b'package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/">'
+                                       b'<dc:creator>python-docx</dc:creator></cp:coreProperties>')
+        with zipfile.ZipFile(plain / "template" / "template.docx", "w") as z:
+            for n, d in parts2.items():
+                z.writestr(n, d)
+        fin = ("---\ntemplate: template/template.docx\npages: 1\ntitle: 가상 인물 이력서\nauthor: 가상 인물\n"
+               "photo_alt: 가상 인물 프로필 사진\nkeep: section, company\nsamples:\n  name: 홍길동\n  contact: Email\n"
+               "  section: 핵심역량\n  company: 핵심역량\n  role: 역할\n  bullet: 샘플\nspacing:\n  company: 12 3\n---\n"
+               "# 가상 인물\n{contact} 메일: a@b.invalid · https://example.invalid/me\n## 경력\n{company} 가상상점\n"
+               "{role} 역할: 검색 개편\n- 한 일\n")
+        (plain / "resume-deck.mdx").write_text(fin, encoding="utf-8")
+        rc, b = run(plain, "build")
+        with zipfile.ZipFile(plain / "build" / "resume.docx") as z:
+            doc = z.read("word/document.xml").decode("utf-8")
+            rels = z.read("word/_rels/document.xml.rels").decode("utf-8") if "word/_rels/document.xml.rels" in z.namelist() else ""
+            core = z.read("docProps/core.xml").decode("utf-8")
+        check(rc == 0 and '<w:color w:val="000000"/><w:sz w:val="16"/></w:rPr><w:t xml:space="preserve">역할:</w:t>' in doc
+              and '<w:color w:val="595959"/><w:sz w:val="16"/></w:rPr><w:t xml:space="preserve"> 검색 개편</w:t>' in doc,
+              "a `라벨: 값` line takes the sample's label and value formats — %s" % b)
+        check(doc.count("<w:hyperlink ") == 2 and 'Target="mailto:a@b.invalid"' in rels and 'Target="https://example.invalid/me"' in rels
+              and "xmlns:r=" in doc, "a mail address and a URL become links, their targets in the rels")
+        company = re.search(r"<w:p><w:pPr>((?:(?!</w:pPr>).)*)</w:pPr><w:r><w:rPr>(?:(?!</w:r>).)*가상상점", doc, re.S)
+        check(company and "<w:keepNext/>" in company.group(1) and 'w:before="0"' in company.group(1) and 'w:after="60"' in company.group(1),
+              "a kept role holds with the next line; the first line under a section starts at 0; spacing: sets after (pt) — %s"
+              % (company.group(1) if company else None))
+        check("<dc:title>가상 인물 이력서</dc:title>" in core and "<dc:creator>가상 인물</dc:creator>" in core and "python-docx" not in core,
+              "title and author come from the front matter — %s" % core)
+        check('descr="가상 인물 프로필 사진"' in doc, "photo_alt sets the photo's alt text")
+        (plain / "resume-deck.mdx").write_text(fin.replace("  company: 12 3", "  company: 12"), encoding="utf-8")
+        rc, e = run(plain, "build")
+        check(rc != 0 and "spacing" in e["error"], "a spacing line without two numbers is refused")
         (plain / "resume-deck.mdx").write_text(src.replace("  meta: 기술\n", "  meta: 없는문단\n"), encoding="utf-8")
         rc, e = run(plain, "build")
         check(rc != 0 and "없는문단" in e["error"], "a sample text no template paragraph starts with is refused")

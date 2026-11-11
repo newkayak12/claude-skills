@@ -26,6 +26,13 @@ The resume is the portfolio's second output, built the same way: designed in `re
 - Markdown shapes give five roles (`#` name, `##` section, `###` entry, `-` bullet, plain body).
   Any other line names its role: `{contact} …`, `{company} …`, `{meta} 기술: …`.
 - The template's photo (an anchored drawing) is kept on the first paragraph.
+- The finish a post-build script used to add, from the front matter and the template alone:
+  - a `라벨: 값` line whose sample paragraph has a label run and a value run in two formats takes both;
+  - a URL or mail address is a link (ATS and readers click it);
+  - `keep: section, entry, company` — those roles stay on the page of the line after them
+    (default `section, entry`); the first line under a section has no space before it;
+  - `spacing:` role → `<before> <after>` in pt, when the template's own spacing reads too tight;
+  - `title:`, `author:` → the document properties; `photo_alt:` → the photo's alt text.
 - A role used but mapped nowhere, a style the template lacks, or a sample text no paragraph starts
   with is refused before anything is written.
 
