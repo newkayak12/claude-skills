@@ -1,9 +1,10 @@
 ---
 name: material
 description: >-
-  Use when someone hands over career material (retrospectives, resumes, notes,
-  chat dumps) to collect as portfolio items before writing. Triggers on:
-  "글감 모아줘", "회고로 포트폴리오 재료", "collect my material".
+  Use when career material (retrospectives, notes, chat dumps) is handed over
+  to collect as portfolio items, or the ledger must refresh from notes.
+  Triggers: "글감 모아줘", "분석 당겨와", "노트에서 갱신", "글감 업데이트",
+  "refresh my material from notes".
 scenarios:
   - "Here is my retrospective. Collect the episodes as portfolio material."
   - "I added one detail to the payment-migration story and answered your question — update it."
@@ -11,6 +12,8 @@ scenarios:
   - "이 회고록에서 글감 모아줘"
   - "내가 준 자료로 에피소드별 글감 폴더 만들어줘"
   - "지난번 질문에 답했어, 글감 업데이트해줘"
+  - "노트에서 분석 당겨와서 글감 갱신해줘"
+  - "Refresh my material from these notes and tell me which pages went stale."
 compatibility:
   optional:
     - think-tool
@@ -36,6 +39,8 @@ Script, run from the project root: `node ${CLAUDE_PLUGIN_ROOT}/skills/material/s
 | `foreign` | none | Lists files in `material/` the flow did not write |
 | `ledger` | none | A workspace that keeps material as `sources/NN_프로젝트/A1….md`: lists each graded file (A1, B2, C3 …) as item `NN_프로젝트/A1`, its title and whether it is `written` |
 | `ledger-log` | `--item --note` (opt. `--status --later-step`) | Appends one line under `## 이력` at the end of that ledger file, nothing above it touched; a note already there is `unchanged` |
+| `update` | `--item --note --source` (opt. `--line N` or `N-M`) | Ledger file: appends `## 갱신 — <date>` with the note and `출처: <source>:<line>` at the end, nothing above it touched; the same note and source again is `unchanged` |
+| `item-pages` | none | Reads `portfolio-skeleton.md` (old `skeleton.md` too): item → pages from the `글감:` lines; `stale` = pages whose item text changed since the table kept in `sources/item-pages.json` (first run: baseline, none stale); `missing` = cited ids with no item |
 
 `--status` (on `log` and `init`) is reserved for later steps: the script refuses it without `--later-step <name>`. Step 1 never passes either flag.
 
@@ -63,6 +68,15 @@ Per-part procedures: `references/parts.md`. Citation, evidence and matching: `re
 5. **Record**: `log` one note per item created or changed (source, what changed); skip it for an item that did not change (rule i). Never pass `--status`.
 6. **Index and scan**: run `index`, then `foreign`.
 7. **Summarize** per the template.
+
+### Refresh from notes (ledger workspace)
+
+Trigger: the user asks to pull analysis or notes into the ledger. Not a collection run.
+
+1. Read only the note files the user points to, in full. Ask for the path if none is given; never search the disk for notes.
+2. `ledger`, then match each note statement to an item. A statement fitting no item or several: ask, do not guess. A figure with no unit evidence stays as the user's note says it, with its source.
+3. `update --item --note --source [--line]` once per statement (short paraphrase, rule a). Then `ledger-log` one line per item changed.
+4. `item-pages`, and print `stale` as `<item> → <pages>` for `portfolio:manage` to revisit; `missing` ids and a baseline run are said as such.
 
 ## Output Template
 

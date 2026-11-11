@@ -15,6 +15,8 @@
 //   node material.mjs foreign
 //   node material.mjs ledger
 //   node material.mjs ledger-log --item NN_프로젝트/A1 --note N [--status S --later-step X]
+//   node material.mjs update  --item NN_프로젝트/A1 --note N --source PATH [--line N|N-M]
+//   node material.mjs item-pages
 //
 // Step 1 (collection) creates status "raw" and never changes it. A status other than raw
 // (init --status, log --status) is reserved for later steps and refused unless the caller
@@ -26,13 +28,14 @@
 // whitespace-collapsed). It is NOT semantic: a renamed episode is only seen as "same source,
 // different title", and the same episode under two sources as "same title, different source".
 // Both are reported "ambiguous" and never resolved here; the caller asks the user.
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const PARTS = ['meta.md', 'problem.md', 'decision.md', 'result.md', 'learned.md', 'gaps.md', 'history.md'];
 // selected / excluded: manage's step 2 (sources/선정.md); written: its draft step
 const STATUSES = ['raw', 'shaped', 'selected', 'excluded', 'written', 'rendered', 'reviewed'];
-const FLAGS = new Set(['id', 'source', 'title', 'period', 'role', 'tags', 'note', 'status', 'later-step', 'question', 'citation', 'add-source', 'item']);
+const FLAGS = new Set(['id', 'source', 'title', 'period', 'role', 'tags', 'note', 'status', 'later-step', 'question', 'citation', 'add-source', 'item', 'line']);
 const ANSWERED = '[답변됨]';
 const ID_RE = /^[\p{L}\p{N}][\p{L}\p{N}-]*$/u;
 const SRC = path.resolve(process.cwd(), 'sources');
@@ -332,6 +335,69 @@ const cmd = {
     return { result: 'logged', id: it.id, file: it.file };
   },
 
+  // Appends a dated, cited `## 갱신 — YYYY-MM-DD` section at the end of a ledger file, from the
+  // user's own notes; nothing above it is touched. The same note and source again is `unchanged`.
+  update(a) {
+    need(a, 'item', 'note', 'source');
+    const it = ledgerItems().find((x) => x.id === one(a.item).normalize('NFC'));
+    if (!it) fail(`no ledger item ${a.item}`);
+    if (a.line !== undefined && !/^\d+(-\d+)?$/.test(one(a.line))) fail('--line must be N or N-M');
+    const cite = `${one(a.source)}${a.line !== undefined ? `:${one(a.line)}` : ''}`;
+    const body = `- ${one(a.note)}\n- 출처: ${cite}\n`;
+    const full = path.join(SRC, it.file);
+    const text = fs.readFileSync(full, 'utf8');
+    if (text.includes(body)) return { result: 'unchanged', id: it.id };
+    fs.appendFileSync(full, `${text.endsWith('\n') ? '' : '\n'}\n## 갱신 — ${today()}\n${body}`);
+    return { result: 'updated', id: it.id, file: it.file, source: cite };
+  },
+
+  // The item -> pages table, from the workspace skeleton's `글감: <id>, …` lines (a page is the
+  // `##` heading above the line). Each cited item's state is a hash of its text (a ledger file
+  // without its `## 이력` log, or a material folder's parts without history.md). The previous table
+  // is kept in sources/item-pages.json; the pages whose item's hash differs from it are `stale`.
+  // The first run has nothing to compare: it records the baseline and lists none.
+  'item-pages'() {
+    const root = process.cwd();
+    const skelFile = ['portfolio-skeleton.md', 'skeleton.md'].map((n) => path.join(root, n)).find((p) => fs.existsSync(p));
+    if (!skelFile) fail('no portfolio-skeleton.md (or skeleton.md) in the project root');
+    const pages = new Map();
+    let page = null;
+    for (const l of fs.readFileSync(skelFile, 'utf8').split(/\r?\n/)) {
+      const h = /^##\s+(.+?)\s*$/.exec(l);
+      if (h) { const n = /^(\d+)/.exec(h[1]); page = n ? `${n[1]}쪽` : h[1].split(/\s+[·—-]\s+/)[0].trim(); continue; }
+      const c = /^\s*(?:[-*]\s*)?글감\s*:\s*(.+)$/.exec(l);
+      if (!c || !page) continue;
+      for (const id of c[1].split(/[,，]/).map((s) => s.trim().normalize('NFC')).filter(Boolean)) {
+        if (!pages.has(id)) pages.set(id, []);
+        if (!pages.get(id).includes(page)) pages.get(id).push(page);
+      }
+    }
+    const ledger = new Map(ledgerItems().map((x) => [x.id, x.file]));
+    const hash = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);
+    const read = (p) => { try { return fs.readFileSync(p, 'utf8'); } catch { return null; } };
+    const stateOf = (id) => {
+      if (ledger.has(id)) return hash(read(path.join(SRC, ledger.get(id))).replace(/^## 이력[ \t]*\n(?:(?!## )[^\n]*(?:\n|$))*/m, '').replace(/\s+/g, ' ').trim());
+      const dir = path.join(MAT, id);
+      if (!fs.existsSync(dir)) return null;
+      return hash(PARTS.filter((p) => p !== 'history.md').map((p) => read(path.join(dir, p)) ?? '').join('\n'));
+    };
+    const store = path.join(SRC, 'item-pages.json');
+    let prev = null;
+    try { prev = JSON.parse(fs.readFileSync(store, 'utf8')).items ?? null; } catch { /* none yet */ }
+    const items = {}, rows = [], stale = [], missing = [];
+    for (const [id, ps] of pages) {
+      const state = stateOf(id);
+      if (state === null) { missing.push(id); continue; }
+      items[id] = { state, pages: ps };
+      const changed = prev !== null && (!prev[id] || prev[id].state !== state);
+      if (changed) stale.push({ item: id, pages: ps });
+      rows.push({ item: id, pages: ps, stale: changed });
+    }
+    fs.mkdirSync(SRC, { recursive: true });
+    fs.writeFileSync(store, JSON.stringify({ date: today(), items }, null, 2) + '\n');
+    return { baseline: prev === null, table: rows, stale, missing };
+  },
+
   foreign() {
     const found = [];
     const walk = (dir, rel) => {
@@ -362,7 +428,7 @@ function parse(argv) {
 
 try {
   const [sub, ...rest] = process.argv.slice(2);
-  if (!Object.hasOwn(cmd, sub ?? '')) fail(`unknown subcommand: ${sub ?? ''} (id|match|init|index|log|answer|gaps|foreign|ledger|ledger-log)`);
+  if (!Object.hasOwn(cmd, sub ?? '')) fail(`unknown subcommand: ${sub ?? ''} (id|match|init|index|log|answer|gaps|foreign|ledger|ledger-log|update|item-pages)`);
   process.stdout.write(JSON.stringify(cmd[sub](parse(rest))) + '\n');
 } catch (e) {
   process.stdout.write(JSON.stringify({ error: e.message }) + '\n');

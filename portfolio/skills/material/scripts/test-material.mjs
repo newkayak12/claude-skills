@@ -467,6 +467,49 @@ test('ledger-log refuses a status without its later step, and an unknown item', 
   assert.match(run(cwd, ['ledger-log', '--item', '09_없음/A1', '--note', 'x']).json.error, /no ledger item/);
 });
 
+test('update appends a dated, cited ## 갱신 section; nothing above it changes; the same note is unchanged', () => {
+  const cwd = ledgerProject();
+  const file = path.join(cwd, 'sources', '01_가상검색', 'A1_검색개편.md');
+  const before = fs.readFileSync(file, 'utf8');
+  const args = ['update', '--item', '01_가상검색/A1', '--note', '캐시 적중률 확인', '--source', 'notes/홍길동-메모.md', '--line', '12-14'];
+  const r = run(cwd, args);
+  assert.equal(r.json.result, 'updated');
+  const after = fs.readFileSync(file, 'utf8');
+  assert.ok(after.startsWith(before));
+  assert.equal(after.slice(before.length), `\n## 갱신 — ${DATE}\n- 캐시 적중률 확인\n- 출처: notes/홍길동-메모.md:12-14\n`);
+  assert.equal(run(cwd, args).json.result, 'unchanged');
+  assert.equal(fs.readFileSync(file, 'utf8'), after);
+  assert.equal(run(cwd, ['update', '--item', '01_가상검색/A1', '--note', 'x', '--source', 's', '--line', 'abc']).code, 1);
+  assert.match(run(cwd, ['update', '--item', '09_없음/A1', '--note', 'x', '--source', 's']).json.error, /no ledger item/);
+});
+
+test('item-pages: table from 글감: lines, baseline first, then only the pages of a changed item are stale', () => {
+  const cwd = ledgerProject();
+  fs.writeFileSync(path.join(cwd, 'portfolio-skeleton.md'),
+    '# 가상 회사 홍길동\n\n## 2쪽 · 검색 개편\n글감: 01_가상검색/A1\n\n## 3쪽 · 알림\n글감: 02_가상알림/A1, 01_가상검색/A1, 07_없음/A1\n');
+  const first = run(cwd, ['item-pages']).json;
+  assert.equal(first.baseline, true);
+  assert.deepEqual(first.stale, []);
+  assert.deepEqual(first.table.find((r) => r.item === '01_가상검색/A1').pages, ['2쪽', '3쪽']);
+  assert.deepEqual(first.missing, ['07_없음/A1']);
+  assert.ok(fs.existsSync(path.join(cwd, 'sources', 'item-pages.json')));
+  assert.deepEqual(run(cwd, ['item-pages']).json.stale, []);
+  // a log line under ## 이력 is not a change of state; a 갱신 section is
+  run(cwd, ['ledger-log', '--item', '02_가상알림/A1', '--note', 'x']);
+  assert.deepEqual(run(cwd, ['item-pages']).json.stale, []);
+  run(cwd, ['update', '--item', '02_가상알림/A1', '--note', '배치 간격 변경', '--source', 'n.md']);
+  const r = run(cwd, ['item-pages']).json;
+  assert.deepEqual(r.stale, [{ item: '02_가상알림/A1', pages: ['3쪽'] }]);
+  assert.deepEqual(run(cwd, ['item-pages']).json.stale, []);
+});
+
+test('item-pages reads the old skeleton.md name and fails without a skeleton', () => {
+  const cwd = ledgerProject();
+  assert.match(run(cwd, ['item-pages']).json.error, /no portfolio-skeleton/);
+  fs.writeFileSync(path.join(cwd, 'skeleton.md'), '## 1 표지\n글감: 01_가상검색/A1\n');
+  assert.deepEqual(run(cwd, ['item-pages']).json.table[0].pages, ['1쪽']);
+});
+
 test('a manage workspace (sources/ at the root) keeps items in sources/material/, run from the root (card 103)', () => {
   const { cwd } = project();
   fs.mkdirSync(path.join(cwd, 'sources'));
