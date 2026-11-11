@@ -279,7 +279,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
    F2 shipped `286bf598` (E-b2f3c230, gate 93; plugin test 565/565, teams 2220/0/2; $41.88 of $40), F4 gaps
    closed. Demo renders approved (user, 2026-11-10: "125 고"). Live look 2026-11-10 in tmux at 190 and 110 on
    E-f1f5fcf7 (size S): open by command and band, w/s/d/a/l, close by Esc, q and the command again all work;
-   five defects found. E-bcc5a0fe (2026-11-11, size S, gate 90, $37 of $40) shipped `71f04900`, unbumped:
+   five defects found. E-bcc5a0fe (2026-11-11, size S, gate 90, $37 of $40) shipped `4aab562f`, unbumped:
    `⏎ submit` gone from the keys footer and truncation keeps `a back`/`q close`; FLOOR and Phase detail follow
    the running stage (size-S Plan: 1 working on Plan, driver listed); the crumb keeps its tail and the EPIC
    title shortens; HOME draws a size-S EPIC once; Esc while answering drops the draft and says so;
