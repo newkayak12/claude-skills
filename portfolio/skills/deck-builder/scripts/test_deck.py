@@ -1627,6 +1627,113 @@ def row_groups(tmp):
           "only the trailing same-format rows set the interval: %s" % group_ys(pptx))
 
 
+def placing(tmp):
+    """`check` measures a placed frame, `distribute:` re-spaces rows, a small figure is warned."""
+    print("check honours place, distribute, figure text size")
+    E = deck.EMU_PER_PT
+    make_png(tmp / "pl.png", 40, 40)
+    make_template(tmp / "pl.pptx", tmp / "pl.png")
+    pkg = deck.Package(tmp / "pl.pptx")
+    gap = 20 * E
+    column = _slide([
+        _sp("Title 1", "title", [(0, "제목")], cx=3000000, cy=600000, x=0, y=0),
+        _sp("Body 2", "body", [(0, "가나다")], cx=3000000, cy=600000, x=0, y=600000 + gap),
+        _sp("Body 3", "body", [(0, "아래")], cx=3000000, cy=400000, x=0, y=1200000 + 2 * gap),
+    ]).encode("utf-8")
+    for part in deck.slide_order(pkg):   # the gap recurs on both slides, so it is the zone
+        pkg.parts[part] = column
+    pkg.write(tmp / "pl.pptx")
+    head = "---\ntemplate: pl.pptx\noutput: pl-out.pptx\n---\n\n## @s1\n"
+    src = tmp / "pl.mdx"
+
+    def chk(body):
+        src.write_text(head + body, encoding="utf-8")
+        return run_cmd(["check", "--deck", str(src)])
+    long_text = "text1: %s\n" % ("가" * 30)
+    check("임계 침범" in chk(long_text), "unplaced: the neighbour's zone is crossed")
+    out = chk(long_text + "place:\n  - text2: 0 235\n")
+    check("임계 침범" not in out and "straight into" not in out,
+          "text2 placed far below: no collision at the placed position: %s" % out[-300:])
+    out = chk(long_text + "place:\n  - text2: 0 145 w=250 h=40\n")
+    check("임계 침범" in out, "text2 placed but still too close (position and size): still reported")
+
+    print("distribute: re-space the slide's row groups")
+
+    def row(i, y):
+        body = _sp("Head %d" % i, None, [(0, "h%d" % i)], cx=3000000, cy=400000, x=1000000, y=y)
+        return ('<p:grpSp><p:nvGrpSpPr><p:cNvPr id="%d" name="Row %d"/><p:cNvGrpSpPr/><p:nvPr/>'
+                '</p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="1000000" y="%d"/>'
+                '<a:ext cx="3400000" cy="750000"/><a:chOff x="1000000" y="%d"/>'
+                '<a:chExt cx="3400000" cy="750000"/></a:xfrm></p:grpSpPr>%s</p:grpSp>'
+                % (700 + i, i, y, y, body))
+    pkg = deck.Package(tmp / "pl.pptx")
+    pkg.parts[deck.slide_order(pkg)[1]] = _slide(
+        [row(i, 1000000 + i * 1200000) for i in range(3)]).encode("utf-8")
+    pkg.write(tmp / "pl.pptx")
+
+    def build(body, name="pld"):
+        s = tmp / (name + ".mdx")
+        s.write_text("---\ntemplate: pl.pptx\noutput: %s-out.pptx\n---\n\n## @s2\n%s" % (name, body),
+                     encoding="utf-8")
+        o = run_cmd(["build", "--deck", str(s)])
+        r = ET.fromstring(deck.Package(tmp / (name + "-out.pptx")).parts["ppt/slides/slide1.xml"])
+        gs = [g.find(deck.q("p:grpSpPr") + "/" + deck.q("a:xfrm")) for g in
+              r.find(deck.q("p:cSld") + "/" + deck.q("p:spTree")).findall(deck.q("p:grpSp"))]
+        return o, sorted((int(x.find(deck.q("a:off")).get("y")), int(x.find(deck.q("a:ext")).get("cy")))
+                         for x in gs)
+    clones = "text3_plus1: x\n"
+    out, rows = build("text1: a\n" + clones)
+    check([y for y, _ in rows] == [1000000 + i * 1200000 for i in range(4)],
+          "no distribute: rows stay where cloning put them: %s" % rows)
+    out, rows = build("text1: a\n" + clones + "distribute: 70\n")
+    ys = [y for y, _ in rows]
+    gaps = [ys[i + 1] - (ys[i] + rows[i][1]) for i in range(3)]
+    check(len(rows) == 4 and ys[0] == 70 * E and max(gaps) - min(gaps) <= 1
+          and ys[-1] + rows[-1][1] <= (540 - 28) * E + 1 and all(h == 750000 for _, h in rows),
+          "distribute: 70 — even gaps, first at 70pt, last inside the 28pt default safe area, "
+          "sizes kept: %s" % rows)
+    (tmp / "style").mkdir(exist_ok=True)
+    (tmp / "style" / "레이아웃.md").write_text(
+        "## 안전 영역 (pt)\n- top: 30\n- bottom: 60\n- left: 30\n- right: 30\n", encoding="utf-8")
+    out, rows = build("text1: a\n" + clones + "distribute: 70\n")
+    check(abs(rows[-1][0] + rows[-1][1] - (540 - 60) * E) <= 1,
+          "the safe area's bottom margin from style/레이아웃.md ends the last row: %s" % rows)
+    out, rows = build("text1: a\n" + clones + "distribute: 400\n")
+    check("none were moved" in out and [y for y, _ in rows] == [1000000 + i * 1200000 for i in range(4)],
+          "rows that cannot fit are reported and left alone")
+    out, _ = build("text1: a\ndistribute: soon\n")
+    check("distribute 'soon' is not a number" in out and "distribute 'soon' is not a number"
+          in run_cmd(["check", "--deck", str(tmp / "pld.mdx")]),
+          "a non-number is named by build and check")
+
+    print("figure text under 8pt")
+    (tmp / "style" / "레이아웃.md").unlink()
+
+    def svg(name, size):
+        (tmp / name).write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500">'
+            '<g style="font-size:%s"><text x="10" y="40">label</text></g></svg>' % size,
+            encoding="utf-8")
+
+    def fig(size, mode="fit"):
+        svg("fig.svg", size)
+        s = tmp / "fig.mdx"
+        s.write_text("---\ntemplate: pl.pptx\noutput: fig-out.pptx\n---\n\n## @s2\n"
+                     "pic1: fig.svg | %s\nplace:\n  - pic1: 0 0 w=300 h=150\n" % mode, encoding="utf-8")
+        return run_cmd(["check", "--deck", str(s)])
+    pkg = deck.Package(tmp / "pl.pptx")
+    pkg.parts[deck.slide_order(pkg)[1]] = _slide([_pic("Picture 4", "rId9", 3000000, 2000000)]).encode("utf-8")
+    pkg.write(tmp / "pl.pptx")
+    out = fig("20px")
+    check("figure text ~6.0pt at this size (under 8pt)" in out, "20px in a 300pt-wide frame: ~6pt, warned: %s"
+          % [l for l in out.splitlines() if "figure" in l])
+    check("figure text" not in fig("40"), "font-size 40 (unitless) -> 12pt: no warning")
+    svg("fig.svg", "20")
+    check(abs(deck.svg_min_text_pt(tmp / "fig.svg", 300, 300, "fit") - 6.0) < 1e-6
+          and abs(deck.svg_min_text_pt(tmp / "fig.svg", 300, 300, "fill") - 12.0) < 1e-6,
+          "`fit` scales by min(frame/viewBox), `fill` by max")
+
+
 def workdir():
     """A container renderer's daemon may not see /tmp, so mirror test_render.py there."""
     if os.environ.get("DECK_RENDER_DOCKER") and not shutil.which("soffice"):
@@ -1717,6 +1824,7 @@ def main():
         fonts(tmp)
         bundled_fonts(tmp)
         zones(tmp)
+        placing(tmp)
         run_styles(tmp)
         fidelity(tmp)
         metrics(tmp)

@@ -39,7 +39,7 @@ from pathlib import Path
 
 # the renderer is shared with resume-builder: portfolio/scripts/office_render.py
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
-from office_render import Renderer, bbox_pages, ai_traces, final_check, final_lines  # noqa: E402
+from office_render import Renderer, bbox_pages, ai_traces, final_check, final_lines, safe_area  # noqa: E402
 
 # ── Namespaces ───────────────────────────────────────────────────────────────
 
@@ -176,7 +176,102 @@ def parse_place(kind, value):
                      float(size["w"]) if "w" in size else None,
                      float(size["h"]) if "h" in size else None))
     return good, bad
-REL_SLIDE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide"
+
+
+def place_frame(el, x, y, w, h):
+    """Move (and size) one shape to x y pt, w/h pt or its own size. False when it has no own frame."""
+    ext = extent(el)
+    return ext is not None and set_frame(
+        el, (round(x * EMU_PER_PT), round(y * EMU_PER_PT)),
+        (round(w * EMU_PER_PT) if w else ext[0], round(h * EMU_PER_PT) if h else ext[1]))
+
+
+def parse_distribute(value):
+    """`distribute: 70` -> 70.0 pt, or None when it is not a number of points."""
+    try:
+        return float(str(value).strip())
+    except ValueError:
+        return None
+
+
+def distribute_rows(spTree, top_pt, bottom_pt):
+    """`distribute: <top>` — the slide's top-level row groups keep their order and size and are
+    re-spaced evenly from top_pt to bottom_pt (first row's top, last row's bottom).
+    -> rows moved; None when the rows are taller than the room (nothing moved)."""
+    rows = []
+    for g in spTree.findall(q("p:grpSp")):
+        xf = g.find(q("p:grpSpPr") + "/" + q("a:xfrm"))
+        o, e = (xf.find(q("a:off")), xf.find(q("a:ext"))) if xf is not None else (None, None)
+        if o is not None and e is not None:
+            rows.append((int(o.get("y")), int(e.get("cy")), o))
+    rows.sort(key=lambda r: r[0])
+    if len(rows) < 2:
+        return 0
+    top, bottom = round(top_pt * EMU_PER_PT), round(bottom_pt * EMU_PER_PT)
+    gap = (bottom - top - sum(r[1] for r in rows)) / (len(rows) - 1)
+    if gap < 0:
+        return None
+    y = float(top)
+    for _, cy, o in rows:
+        o.set("y", str(round(y)))
+        y += cy + gap
+    return len(rows)
+
+
+def safe_bottom_pt(md_path, slide_h_emu):
+    """Bottom of the safe area in pt: the workspace's style/레이아웃.md bottom margin (the deck's
+    folder or its parent), else office_render's default 28pt."""
+    area = safe_area(Path(md_path).resolve().parent) or safe_area(Path(md_path).resolve().parent.parent)
+    return slide_h_emu / EMU_PER_PT - (area["bottom"] if area else 28.0)
+
+
+SVG_MIN_PT = 8.0
+
+
+def svg_min_text_pt(path, frame_w_pt, frame_h_pt, mode="fill"):
+    """Smallest rendered text size (pt) of an SVG placed in the frame, or None when it has no
+    text or no usable viewBox. font-size comes from the attribute, `style=`, or a parent <g>/<svg>
+    (px, unitless, pt, em, %); text with none is the SVG default 16. Scale as the engine places it:
+    `fit` = min(fw/vw, fh/vh), `fill` = max, `stretch` = min."""
+    try:
+        root = ET.fromstring(Path(path).read_bytes())
+    except (ET.ParseError, OSError):
+        return None
+    vb = re.split(r"[,\s]+", (root.get("viewBox") or "").strip())
+    try:
+        vw, vh = float(vb[2]), float(vb[3])
+    except (IndexError, ValueError):
+        try:
+            vw, vh = (float(re.match(r"[\d.]+", root.get(k) or "x").group()) for k in ("width", "height"))
+        except (AttributeError, ValueError):
+            return None
+    if vw <= 0 or vh <= 0:
+        return None
+    rx, ry = frame_w_pt / vw, frame_h_pt / vh
+    scale = max(rx, ry) if mode == "fill" else min(rx, ry)
+    sizes = []
+
+    def size_of(el, inherited):
+        raw = el.get("font-size") or next(iter(re.findall(r"font-size\s*:\s*([^;]+)", el.get("style") or "")), None)
+        m = re.fullmatch(r"\s*(-?[\d.]+)\s*(px|pt|em|%)?\s*", raw or "")
+        if not m:
+            return inherited
+        v, unit = float(m.group(1)), m.group(2)
+        return v * {"pt": 4 / 3, "em": inherited, "%": inherited / 100}.get(unit, 1)
+
+    def walk(el, inherited):
+        size = size_of(el, inherited)
+        name = el.tag.rsplit("}", 1)[-1]
+        if name in ("text", "tspan") and ((el.text or "").strip()
+                                          or any((c.tail or "").strip() for c in el)):
+            sizes.append(size)
+        for c in el:
+            walk(c, size)
+
+    walk(root, 16.0)
+    sizes = [s for s in sizes if s > 0]
+    return min(sizes) * scale if sizes else None
+REL_SLIDE ="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide"
 REL_NOTES = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide"
 REL_IMAGE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
 CT_SLIDE = "application/vnd.openxmlformats-officedocument.presentationml.slide+xml"
@@ -1901,23 +1996,27 @@ def neighbour_gaps(units):
     return out
 
 
+def slide_pairs(slots):
+    """[pair] of one slide's neighbouring units, zone not yet set (see template_zones)."""
+    units = zone_units(slots)
+    recs = []
+    for i, j, axis, gap in neighbour_gaps(units):
+        (ab, am), (bb, bm) = units[i], units[j]
+        recs.append({"a": [m.id for m in am], "b": [m.id for m in bm],
+                     "a_box": ab, "b_box": bb, "axis": axis, "gap": gap,
+                     "label": "%s %s %s" % (unit_label(am), axis, unit_label(bm)),
+                     "key": (unit_role(am), unit_role(bm), axis),
+                     "count": 1, "zone": None, "borrowed": False, "spread": 0.0})
+    return recs
+
+
 def template_zones(pkg, parts, slide_cy):
     """{archetype: [pair]} — every neighbouring pair on every slide, with the zone the
     template's own recurring gaps give it. A pair is a dict: a, b (member slot ids),
     a_box, b_box (pt), label, axis, gap, count, zone (None = 기준 없음), borrowed, spread."""
     pairs = {}
     for idx, part in enumerate(parts, 1):
-        slots = analyze_slide(ET.fromstring(pkg.parts[part]), slide_cy)
-        units = zone_units(slots)
-        recs = []
-        for i, j, axis, gap in neighbour_gaps(units):
-            (ab, am), (bb, bm) = units[i], units[j]
-            recs.append({"a": [m.id for m in am], "b": [m.id for m in bm],
-                         "a_box": ab, "b_box": bb, "axis": axis, "gap": gap,
-                         "label": "%s %s %s" % (unit_label(am), axis, unit_label(bm)),
-                         "key": (unit_role(am), unit_role(bm), axis),
-                         "count": 1, "zone": None, "borrowed": False, "spread": 0.0})
-        pairs["s%d" % idx] = recs
+        pairs["s%d" % idx] = slide_pairs(analyze_slide(ET.fromstring(pkg.parts[part]), slide_cy))
     by_key = {}
     for recs in pairs.values():
         for r in recs:
@@ -3221,8 +3320,13 @@ def cmd_build(args):
         note_text = None
         # `!drop` removes a shape, which shifts the child indexes every later slot path
         # relies on. Resolve every drop target first, write the other slots, remove last.
-        drop_els, place_els = [], []
+        drop_els, place_els, distribute_top = [], [], None
         for slot_id, kind, value, line in spec.values:
+            if slot_id == "distribute":
+                distribute_top = parse_distribute(value)
+                if distribute_top is None:
+                    problems.append("line %d: distribute %r is not a number of points"
+                                    % (line, value))
             if (slot_id in slots and isinstance(value, str) and value.strip() == "!drop"):
                 drop_els.append(resolve_path(spTree, slots[slot_id].path))
             if slot_id == "place":
@@ -3242,7 +3346,7 @@ def cmd_build(args):
             if slot_id == "notes":
                 note_text = "\n".join(t for _, t in as_items(kind, value))
                 continue
-            if slot_id == "place":
+            if slot_id in ("place", "distribute"):
                 continue
             if slot_id in slots and isinstance(value, str) and value.strip() == "!drop":
                 continue
@@ -3264,10 +3368,7 @@ def cmd_build(args):
         if layout_counts["margin"] is not None:
             layout_counts["panels"] += pictures_to_panels(spTree, layout_counts["margin"])
         for el, sid, x, y, w, h, line in place_els:
-            ext = extent(el)
-            if ext is None or not set_frame(el, (round(x * EMU_PER_PT), round(y * EMU_PER_PT)),
-                                            (round(w * EMU_PER_PT) if w else ext[0],
-                                             round(h * EMU_PER_PT) if h else ext[1])):
+            if not place_frame(el, x, y, w, h):
                 problems.append("line %d: place cannot move '%s' — its position is inherited "
                                 "from the layout or it is not a shape with its own frame"
                                 % (line, sid))
@@ -3276,6 +3377,12 @@ def cmd_build(args):
                 if el in list(parent):
                     parent.remove(el)
                     break
+        if distribute_top is not None:
+            bottom = safe_bottom_pt(md_path, slide_size(pkg)[1])
+            if distribute_rows(spTree, distribute_top, bottom) is None:
+                problems.append("@%s: distribute %g — the rows are taller than the room down to "
+                                "the safe area (%gpt), so none were moved"
+                                % (spec.archetype, distribute_top, bottom))
         # A chart the deck never named still shows the template's sample numbers.
         written = {v[0] for v in spec.values}
         for sid, slot in slots.items():
@@ -3473,6 +3580,17 @@ def _check_picture_color(path, tag, slot_id, line, warns, palette, background,
                      "match it." % (line, tag, slot_id, path.name, border, background))
 
 
+def _check_figure_text(path, slot, tag, slot_id, line, warns, mode="fill"):
+    """An SVG's smallest text, at the size the frame shows it, under SVG_MIN_PT is a warning."""
+    if path.suffix.lower() != ".svg" or not slot.frame_pt:
+        return
+    small = svg_min_text_pt(path, slot.frame_pt[0], slot.frame_pt[1], mode)
+    if small is not None and small < SVG_MIN_PT:
+        warns.append("line %d: %s.%s — figure text ~%.1fpt at this size (under %gpt) — enlarge "
+                     "the picture, cut the figure's text, or redraw it larger"
+                     % (line, tag, slot_id, small, SVG_MIN_PT))
+
+
 def _check_picture_size(path, slot, tag, slot_id, line, warns, mode="fill"):
     """Two ways a picture disappoints: it loses content, or it looks soft."""
     size = image_size(path) if path.suffix.lower() in IMAGE_CT else None
@@ -3595,8 +3713,31 @@ def cmd_check(args):
             errs.append("%s: unknown archetype — template has s1..s%d" % (tag, len(protos)))
             continue
         by_id = {s.id: s for s in slots}
+        pairs = zones.get(spec.archetype, [])
+        # `place:` moves a slot's frame: measure the placed frame, not the template's
+        placed = [it for sid, kind, value, _ in spec.values if sid == "place"
+                  for it in parse_place(kind, value)[0] if it[0] in by_id]
+        if placed:
+            probe = ET.fromstring(pkg.parts[protos[int(spec.archetype[1:]) - 1]])
+            tree = probe.find(q("p:cSld") + "/" + q("p:spTree"))
+            for sid, x, y, w, h in placed:
+                place_frame(resolve_path(tree, by_id[sid].path), x, y, w, h)
+            slots = analyze_slide(probe, slide_cy)
+            by_id = {s.id: s for s in slots}
+            base = {r["label"]: r for r in pairs}
+            pairs = slide_pairs(slots)
+            for r in pairs:
+                t = base.get(r["label"])
+                if t:
+                    r.update(count=t["count"], zone=t["zone"], borrowed=t["borrowed"],
+                             spread=t["spread"])
         seen = set()
         for slot_id, kind, value, line in spec.values:
+            if slot_id == "distribute":
+                if parse_distribute(value) is None:
+                    errs.append("line %d: %s distribute %r is not a number of points"
+                                % (line, tag, value))
+                continue
             if slot_id == "place":
                 good, bad = parse_place(kind, value)
                 for item in bad:
@@ -3652,6 +3793,7 @@ def cmd_check(args):
                                      "nothing for it. PNG or JPEG is the safe choice."
                                      % (line, tag, slot_id, ext))
                     _check_picture_size(p, slot, tag, slot_id, line, warns, mode)
+                    _check_figure_text(p, slot, tag, slot_id, line, warns, mode)
                     _check_picture_color(p, tag, slot_id, line, warns, palette,
                                          backgrounds.get(spec.archetype), flags,
                                          full_bleed=covers_slide(slot, slide_size(pkg)))
@@ -3737,7 +3879,7 @@ def cmd_check(args):
                                "runs %.0fpt lower than the design puts it%s. Cut it to %d "
                                "lines, or use an archetype with room."
                                % (line, tag, slot_id, lines, was, pt(over), where, was))
-                    for r in zones.get(spec.archetype, []):
+                    for r in pairs:
                         if r["axis"] != "↓" or slot_id not in r["a"] or r["zone"] is None:
                             continue
                         left = r["gap"] - pt(over)

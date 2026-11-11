@@ -55,6 +55,7 @@ text5: !drop
 | `textN_plusK: value` | clone: the shape (>=3 same-format siblings in one group, constant interval), else the row group holding `textN` (>=2 same-format trailing groups, last observed interval, gaps within 10%), K steps past the last; each cloned row group takes its own `<slot>_plusK` values. Refused with a reason when irregular, differing or off the slide |
 | `notes:` | speaker notes; reserved, works on any archetype |
 | `place:` + `- slot: x y [w=W] [h=H]` | move (and size) a template shape, in pt from the slide's top-left; reserved |
+| `distribute: 70` | re-space the slide's top-level row groups evenly from y=70pt to the safe area's bottom; reserved |
 | slot omitted | keeps the template's own content |
 
 ## Worked example
@@ -125,6 +126,19 @@ place:
 
 `place:` moves a shape with its own frame; one whose position comes from the layout is named
 in the build, not moved. It runs after every value and the two options below, so it wins.
+`check` measures a placed slot at its placed frame (position and size), not the template's.
+
+`distribute: 70` (a slide line beside `place:`) re-spaces the slide's top-level row groups
+(`p:grpSp`) evenly: order and size kept, only y changes, the first row's top at 70pt and the
+last row's bottom at the safe area's bottom, the gaps equal. For a contents slide whose cloned
+last row (`text7_plus1`) fell below the safe area. The bottom is the slide height less the
+bottom margin of `style/레이아웃.md` (in the deck's folder or its parent), else less 28pt. Rows
+taller than that room are reported and none are moved. It runs after `place:` and `!drop`.
+
+A picture slot holding an SVG is warned in `check` when its smallest text, at the size the
+frame shows it, is under 8pt (`figure text ~5.4pt at this size`): enlarge the picture, cut the
+figure's text, or redraw it larger. Sizes come from `font-size` (attribute, `style=`, or a parent
+`<g>`); scale is the frame over the viewBox (`fit`: the smaller ratio). Warning only.
 
 | Front matter | What it does |
 |---|---|
