@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { capacityFailure, capacityNotice } from './routing.mjs';
+import { resolveStageModel } from './nodelaunch.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -142,11 +143,18 @@ const NODE_TIMEOUT_MS = Number(process.env.BROKER_NODE_TIMEOUT_MS) > 0
   : 45 * 60 * 1000;
 const MAX_OUTPUT = 64 * 1024 * 1024;
 
+// opts.stage marks a node launch: the spawned args then carry exactly one explicit --model (the
+// one already in extraArgs, else the stage's resolved model; opts.models is the merged `models`
+// option). The detect probe passes no stage and runs with its args untouched. opts.spawn is a
+// test seam for node:child_process spawn.
 export function runAdapter(vendor, extraArgs, cwd, opts = {}) {
+  const args = opts.stage && !extraArgs.includes('--model')
+    ? [...extraArgs, '--model', resolveStageModel(opts.stage, { models: opts.models })]
+    : extraArgs;
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(vendor.command, [...(vendor.args || []), ...extraArgs], {
+      child = (opts.spawn || spawn)(vendor.command, [...(vendor.args || []), ...args], {
         cwd,
         // a node does a stage's work; it must not open a run (the gates read HARNESS_NODE)
         env: { ...process.env, HARNESS_NODE: '1' },

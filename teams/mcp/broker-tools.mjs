@@ -13,6 +13,7 @@ import {
   saveRun,
   listRuns,
   getNode,
+  stagePolicy,
   openRepair,
   retrySubgoal,
   retryReport,
@@ -32,6 +33,7 @@ import {
   autoPassHumanGateResult,
 } from './graph.mjs';
 import { composePrompt } from './prompts.mjs';
+import { nodeEndEntry, nodeStartEntry, regionPointer, resolveStageModel, usageFromStream } from './nodelaunch.mjs';
 import { readTeamConfig, resolveTeamOptions } from './teamconfig.mjs';
 import { brokerDir, loadVendors, probeCache, readJson, record, runAdapter, syncOpenNodes } from './broker-vendors.mjs';
 import { applyRollback, attributionBase, crossCheck, isWikiClaim, recordCheckpoint, verifyRestore, verifySnapshot } from './broker-checkpoint.mjs';
@@ -442,6 +444,15 @@ async function toolGraphNext(a) {
   return response;
 }
 
+// {api_calls, peak_context_tokens} of one node's session: its adapter events file, else the
+// adapter's stdout. Nulls when neither holds usage; never throws.
+function nodeUsage(eventsPath, stdout) {
+  let u = { api_calls: null, peak_context_tokens: null };
+  try { u = usageFromStream(readFileSync(eventsPath, 'utf8')); } catch { /* no events file */ }
+  if (u.api_calls == null && u.peak_context_tokens == null) u = usageFromStream(stdout);
+  return u;
+}
+
 async function toolGraphRun(a) {
   const run = mustFindRun(a);
   let n = requireRunnable(run, String(a.node_id));
@@ -465,8 +476,16 @@ async function toolGraphRun(a) {
     return verdict(run, n);
   }
 
-  // Policy is the default; an explicit team_run({model}) still wins for one call.
-  const chosenModel = a.model || r.model;
+  // Policy is the default; an explicit team_run({model}) still wins for one call. The claude
+  // adapter always gets an explicit model by stage (card 130: implement/test sonnet; plan,
+  // critique, review, gate, report opus; team.json `models` overrides) unless one is pinned at
+  // tm_open / team_run. Any other vendor keeps the model routing chose: a stage alias means
+  // nothing to it.
+  const launchStage = n.node_id.startsWith('gate:goal') ? 'gate:goal' : n.stage;
+  const stageModels = resolveTeamOptions({}, readTeamConfig(run.cwd).config).opts.models;
+  const chosenModel = a.model || (r.vendor === 'claude'
+    ? stagePolicy(run, n).model || resolveStageModel(launchStage, { models: stageModels })
+    : r.model);
   const independence = reviewIndependence(run, n, r.executor || r.vendor, chosenModel);
 
   const vendor = loadVendors(run.cwd)[r.vendor];
@@ -487,7 +506,7 @@ async function toolGraphRun(a) {
   const promptPath = join(dir, 'prompt.md');
   const outPath = join(dir, 'result.json');
   const eventsPath = join(dir, 'events.jsonl');
-  writeFileSync(promptPath, composePrompt(run, n, nodeBriefing(run, n)));
+  writeFileSync(promptPath, composePrompt(run, n, nodeBriefing(run, n), { regionPointer }));
   n.detail_path = outPath;
   saveRun(run);
 
@@ -530,15 +549,20 @@ async function toolGraphRun(a) {
   // verifyRestore in broker-checkpoint.mjs).
   const verifySnap = verifies ? verifySnapshot(run, n) : null;
 
+  // One adapter process is this node's whole session; the ledger brackets it.
+  record(run.cwd, nodeStartEntry({ run_id: run.run_id, node_id: n.node_id, stage: n.stage, model: chosenModel ? String(chosenModel) : null }));
   let proc;
   try {
     proc = await runAdapter(vendor, args, run.cwd, {
       register: (cancel) => { if (a.__onCancel) a.__onCancel(cancel); },
       timeoutMs: a.timeout_ms,
+      stage: r.vendor === 'claude' ? launchStage : undefined,
+      models: stageModels,
     });
   } finally {
     activeNodes.delete(activeKey);
   }
+  record(run.cwd, nodeEndEntry({ run_id: run.run_id, node_id: n.node_id, stage: n.stage, model: chosenModel ? String(chosenModel) : null, ...nodeUsage(eventsPath, proc.stdout) }));
   const report = readJson(outPath) || {};
   const payload = parseVendorResult(report) || {};
 

@@ -45,7 +45,9 @@ import { answerPrompt, parseVerdict } from './storyask.mjs';
 import { ALL_TOOLS } from './server-tools.mjs';
 import { harvestTask } from './runlog.mjs';
 import { taskFigure } from './drivercost.mjs';
-import { pluginDirArgs, isEntryPoint, teamsPluginRoot } from './pluginroots.mjs';
+import { isEntryPoint, teamsPluginRoot } from './pluginroots.mjs';
+import { resolveStageModel } from './nodelaunch.mjs';
+import { launchArgs } from './taskmanager-drivers.mjs';
 import { reserveSlot, noteWaiting, clearWaiting } from './livecap.mjs';
 import { neededDenials } from './denials.mjs';
 
@@ -94,17 +96,25 @@ const JUDGE_TIMEOUT_MS = Number(process.env.HARNESS_JUDGE_TIMEOUT_MS) > 0
   ? Number(process.env.HARNESS_JUDGE_TIMEOUT_MS)
   : 45 * 60 * 1000;
 
-export function judgeArgv(task = null) {
+// A stub command is replaced whole, but tm_open's model is still handed to it as before.
+const overrideArgv = (override, task) => [...override.split(/\s+/), ...(task && task.child_opts && task.child_opts.model ? ['--model', task.child_opts.model] : [])];
+
+// One explicit --model (card 130: a judge and the goal gate on opus unless models / tm_open say
+// otherwise) and lean launch args. With a node, only the plugins of that node's stage; without
+// one, the judge stage: every manager stage's plugins, as before.
+export function judgeArgv(task = null, node = null) {
   const override = String(process.env.HARNESS_JUDGE_DRIVER || '').trim();
-  if (override) return override.split(/\s+/);
+  if (override) return overrideArgv(override, task);
   const argv = ['claude', '-p', '--output-format', 'stream-json', '--verbose',
     '--dangerously-skip-permissions', '--setting-sources', 'project'];
-  argv.push('--plugin-dir', teamsPluginRoot());
   // The manager's own stage skills (shape/critique/accept/integrate/gate:goal) live in other
   // plugins; without their directories the judge is told to load skills it cannot see.
-  argv.push(...pluginDirArgs({
-    skills: [Object.values(STAGE_SKILLS), task && task.stage_skills].filter(Boolean),
-    extraDirs: (task && task.team && task.team.opts && task.team.opts.plugin_dirs) || [],
+  const stage = node ? (String(node.node_id).startsWith('gate:goal') ? 'gate:goal' : node.stage) : 'judge';
+  const named = task && task.stage_skills && typeof task.stage_skills === 'object' ? Object.values(task.stage_skills) : [];
+  argv.push(...launchArgs(stage, task, {
+    scope: 'manager',
+    root: task && task.cwd,
+    ...(node ? {} : { skills: { judge: [...Object.values(STAGE_SKILLS), ...named].flat() } }),
   }));
   return argv;
 }
@@ -228,16 +238,14 @@ async function judge(task, n, { slot = null } = {}) {
     mkdirSync(dirname(p), { recursive: true });
     writeFileSync(p, prompt);
   } catch { /* tm_status full is the fallback view */ }
-  const argv = judgeArgv(task);
+  const argv = judgeArgv(task, n);
   // Judges never see the project wiki: TEAMS_WIKI_OFF=1 hides wiki_* from the judge's teams server.
-  const extra = [];
-  if (task.child_opts && task.child_opts.model) extra.push('--model', task.child_opts.model);
   return new Promise((resolve) => {
     let out = '';
     let err = '';
     let proc;
     try {
-      proc = spawn(argv[0], [...argv.slice(1), ...extra, prompt], { cwd: task.cwd, env: { ...process.env, TEAMS_WIKI_OFF: '1', HARNESS_NODE: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
+      proc = spawn(argv[0], [...argv.slice(1), prompt], { cwd: task.cwd, env: { ...process.env, TEAMS_WIKI_OFF: '1', HARNESS_NODE: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (e) {
       resolve({ stage_ok: false, judge_failed: true, reason: `judge process for ${n.node_id} could not start: ${String((e && e.message) || e)}` });
       return;
@@ -283,11 +291,11 @@ async function judge(task, n, { slot = null } = {}) {
       // blocked, not a reject, and not judge_failed (autoRejudge would ask again and be denied again).
       const denied = judgeDenials(out, task.cwd);
       const text = lastResultText(out);
-      const blocked = () => settle({ stage_ok: false, blocked: 'tool denied', reason: 'blocked: tool denied', denied, judged_by: judgedBy(out, extra) });
+      const blocked = () => settle({ stage_ok: false, blocked: 'tool denied', reason: 'blocked: tool denied', denied, judged_by: judgedBy(out, argv) });
       try {
         const parsed = extractJson(text);
         if (denied.length && unexplainedRefusal(parsed)) { blocked(); return; }
-        settle({ ...(unexplainedRefusal(parsed) || parsed), judged_by: judgedBy(out, extra), ...(denied.length ? { denied } : {}) });
+        settle({ ...(unexplainedRefusal(parsed) || parsed), judged_by: judgedBy(out, argv), ...(denied.length ? { denied } : {}) });
       } catch (e) {
         if (denied.length) { blocked(); return; }
         settle({
@@ -319,11 +327,16 @@ const answerDenied = () => ALL_TOOLS.map((t) => t.name).filter((n) => !ANSWER_AL
 
 export function answerArgv(task = null) {
   const override = String(process.env.HARNESS_ANSWER_DRIVER || '').trim();
-  if (override) return override.split(/\s+/);
+  if (override) return overrideArgv(override, task);
+  // An explicit model like every other node (a STORY answer is a judgment: the judge stage). The
+  // lean MCP config is not added: this node denies the teams tools by their plugin-namespaced
+  // names (answerDenied), and an inline --mcp-config would register them under another name.
+  const model = (task && task.child_opts && task.child_opts.model)
+    || resolveStageModel('judge', { models: task && task.team && task.team.opts && task.team.opts.models });
   // `=` form: both flags are variadic and would otherwise swallow the prompt that follows.
   return ['claude', '-p', '--output-format', 'stream-json', '--verbose',
     '--dangerously-skip-permissions', '--setting-sources', 'project',
-    '--plugin-dir', teamsPluginRoot(),
+    '--plugin-dir', teamsPluginRoot(), '--model', model,
     '--tools=Read,Grep,Glob', `--disallowedTools=${answerDenied().join(',')}`];
 }
 
@@ -335,7 +348,6 @@ export function answerNode(task, ask, { slot = null } = {}) {
     wikiHint: `the project wiki of ${task.cwd}: wiki_search by the words of the question, then wiki_get the page`,
   });
   const argv = answerArgv(task);
-  const extra = task.child_opts && task.child_opts.model ? ['--model', task.child_opts.model] : [];
   const env = { ...process.env, TEAMS_WIKI_ROOT: task.cwd, HARNESS_NODE: '1' };
   delete env.TEAMS_WIKI_OFF;
   return new Promise((resolve) => {
@@ -343,7 +355,7 @@ export function answerNode(task, ask, { slot = null } = {}) {
     let err = '';
     let proc;
     try {
-      proc = spawn(argv[0], [...argv.slice(1), ...extra, prompt], { cwd: task.cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+      proc = spawn(argv[0], [...argv.slice(1), prompt], { cwd: task.cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (e) {
       resolve({ crashed: true, error: String((e && e.message) || e) });
       return;

@@ -6,6 +6,8 @@
 // long loop impossible. The graph already holds all of it, so the broker writes the
 // prompt and the orchestrator never sees the payload.
 
+import { readFileSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { REASONING_STAGES, FLOWS, VERDICT_FIELD, kindSkills, kindOf } from './graph.mjs';
 import { conventionsBlock } from './conventions.mjs';
 import { JUDGING_STAGES } from './routing.mjs';
@@ -226,6 +228,24 @@ function bullets(list) {
   return (list || []).map((x) => `- ${x}`).join('\n') || '- (none)';
 }
 
+// bullets() for a list of paths: one over REGION_THRESHOLD_LINES lines is given as a region
+// pointer with its size, so a node opens the part it needs instead of the whole file.
+// regionPointer is nodelaunch.mjs's and is handed in, not imported: nodelaunch -> stagecontract
+// -> prompts is a cycle, and a prompts.mjs that imports nodelaunch fails to load. Without it
+// every path is listed as given. A path that is not a readable file in cwd yet (a file the node
+// will create) is listed as given too.
+function pathBullets(cwd, paths, regionPointer) {
+  return bullets((paths || []).map((p) => {
+    let text = '';
+    try {
+      const file = resolve(cwd, String(p));
+      if (regionPointer && statSync(file).isFile() && statSync(file).size < 8 * 1024 * 1024) text = readFileSync(file, 'utf8');
+    } catch { /* not there (yet), or not a file */ }
+    const pointer = regionPointer ? regionPointer(String(p), text) : null;
+    return pointer ? `${pointer} (${text.replace(/\r?\n$/, '').split(/\r?\n/).length} lines - open the range you need, not the whole file)` : p;
+  }));
+}
+
 // A package's own child run (run.package, set by the task manager's openChild) runs the full
 // harness, but its plan is not a second decomposition of the EPIC: the manager's shape already
 // split the EPIC into packages and its critique already passed that split. What is left to plan
@@ -277,7 +297,8 @@ function wikiBlock(run, n) {
   return ex === 'claude' || ex === 'codex' ? WIKI_PARAGRAPH.map((l) => l.replace('%NODE%', n.node_id)) : null;
 }
 
-export function composePrompt(run, n, briefing) {
+// opts.regionPointer: nodelaunch.mjs's regionPointer; the adapter prompt of broker-tools passes it.
+export function composePrompt(run, n, briefing, opts = {}) {
   const scopedExecution = run.allocation === 'balanced' && ['implement', 'test', 'draft'].includes(n.stage) && briefing.subgoal;
   const lines = [];
   lines.push(`# ${n.stage} node ${n.node_id}`);
@@ -301,6 +322,8 @@ export function composePrompt(run, n, briefing) {
   lines.push(`own tools. Do not re-enter the harness from inside it: no codex-exec-adapter.mjs,`);
   lines.push(`no codex-runner.mjs, no nested \`codex exec\`, no harness pipeline or broker call.`);
   lines.push(`Routing, verification, and the graph are already handled around you.`);
+  // A lean session starts with this node's brief and nothing else (card 130).
+  lines.push(`If you need a document, a region of a file or a rule you were not given, ask the leader with tm_ask (the ask is logged) instead of reading whole large files; a session with no tm_ask tool says so in its handoff.`);
   lines.push('');
 
   if (REASONING_STAGES.has(n.stage)) {
@@ -388,12 +411,12 @@ export function composePrompt(run, n, briefing) {
     // missing skill is skipped in silence, and nobody is there to answer a question.
     // Rendered once, merged with the stage mount, by mountBlock below (develop-renewal-teams R1b).
     subgoalMethod = method;
-    if (sg.files?.length) lines.push(`Required paths:\n${bullets(sg.files)}`);
+    if (sg.files?.length) lines.push(`Required paths:\n${pathBullets(run.cwd, sg.files, opts.regionPointer)}`);
     // setgoal names what a planning document's investigator should open in sources[], apart from
     // files[], which is what the subgoal writes. The two shared one field until idol-pm-3
     // (2026-09-23): setgoal put .claude/team.json in files[] as a source to read, and the
     // document-path rule rejected the spec for it.
-    if (sg.sources?.length && (n.stage === 'investigate' || n.stage === 'audit')) lines.push(`Sources to open first:\n${bullets(sg.sources)}`);
+    if (sg.sources?.length && (n.stage === 'investigate' || n.stage === 'audit')) lines.push(`Sources to open first:\n${pathBullets(run.cwd, sg.sources, opts.regionPointer)}`);
     if (['implement', 'investigate', 'draft', 'revise', 'template-fill'].includes(n.stage)) {
       // A planning subgoal writes the PRD, which governs the whole tree - its conventions are
       // not selected by the paths it touches.

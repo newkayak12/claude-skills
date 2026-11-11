@@ -2,8 +2,8 @@
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync } from 'node:fs';
-import { pluginDirArgs, teamsPluginRoot } from './pluginroots.mjs';
-import { STAGE_SKILLS } from './stagecontract.mjs';
+import { skillPluginDirs } from './pluginroots.mjs';
+import { leanLaunchArgs, resolveStageModel, stageSkillList } from './nodelaunch.mjs';
 import { storyKey } from './tickets.mjs';
 import { __clock, countedDriverRestarts, driverAlive, harnessState, record, restartBudget, stampAfterWake, taskDir, tasksRoot, unfinishedWork } from './taskstate.mjs';
 import { spawn } from 'node:child_process';
@@ -42,6 +42,28 @@ export function openerEnv(task) {
   return id ? { TEAMS_OPENER_SESSION_ID: id, TEAMS_TASK_ID: task.run_id } : {};
 }
 
+// The model and lean part of a `claude -p` launch (card 130), shared by every spawn site whose
+// argv is ours: one explicit --model, then nodelaunch.mjs's lean args. tm_open's model
+// (child_opts.model) still wins over the stage's resolved model. The caller's base argv already
+// carries `--setting-sources project`, so the lean args' copy is dropped rather than repeated.
+// opts: { scope, skills (stage_skills override), plugin_dirs, root }.
+export function launchArgs(stage, task, opts = {}) {
+  const t = task || {};
+  const model = (t.child_opts && t.child_opts.model)
+    || resolveStageModel(stage, { models: t.team && t.team.opts && t.team.opts.models });
+  const lean = leanLaunchArgs(stage, {
+    scope: opts.scope,
+    stage_skills: opts.skills === undefined ? t.stage_skills : opts.skills,
+    plugin_dirs: opts.plugin_dirs || (t.team && t.team.opts && t.team.opts.plugin_dirs) || [],
+    root: opts.root,
+  });
+  const i = lean.indexOf('--setting-sources');
+  if (i >= 0) lean.splice(i, 2);
+  return ['--model', model, ...lean];
+}
+
+const skillsIn = (x) => (Array.isArray(x) ? x : x && typeof x === 'object' ? Object.values(x).flat() : []);
+
 export function driverArgv(task = null, o = {}) {
   // Tests (and anyone with a different CLI) replace the whole command line here; the prompt is
   // always appended as the last argument.
@@ -50,14 +72,18 @@ export function driverArgv(task = null, o = {}) {
   const argv = ['claude', '-p', '--output-format', 'stream-json', '--verbose',
     '--dangerously-skip-permissions', '--setting-sources', 'project'];
   // This server is launched with CLAUDE_PLUGIN_ROOT when it runs from a --plugin-dir; the child
-  // needs the same directory to see the same plugin. Without it the plugin is installed.
-  argv.push('--plugin-dir', teamsPluginRoot());
-  // And every plugin the method tables name (pluginroots.mjs): --setting-sources project hides
-  // the user's installed plugins, so without these the child's nodes never see a single skill
-  // they are told to load - which is how every bench run before 0.18.0 ran (skills_used none).
-  argv.push(...pluginDirArgs({
-    skills: [task && task.child_opts && task.child_opts.skills, task && task.stage_skills, Object.values(STAGE_SKILLS), o.harness ? HARNESS_SKILLS : null].filter(Boolean),
-    extraDirs: (task && task.team && task.team.opts && task.team.opts.plugin_dirs) || [],
+  // needs the same directory to see the same plugin. Without it the plugin is installed. And
+  // every plugin the graph's method tables name (pluginroots.mjs): --setting-sources project
+  // hides the user's installed plugins, so without these the child's nodes never see a single
+  // skill they are told to load - which is how every bench run before 0.18.0 ran (skills_used
+  // none). A driver runs graph nodes, never a manager judge, so STAGE_SKILLS' plugins stay out.
+  const team = (task && task.team && task.team.opts) || {};
+  argv.push(...launchArgs('driver', task, {
+    skills: { driver: [...stageSkillList('driver', {}), ...skillsIn(task && task.child_opts && task.child_opts.skills), ...skillsIn(task && task.stage_skills), ...(o.harness ? HARNESS_SKILLS : [])] },
+    plugin_dirs: skillPluginDirs({
+      skills: [task && task.child_opts && task.child_opts.skills, task && task.stage_skills, o.harness ? HARNESS_SKILLS : null].filter(Boolean),
+      extraDirs: team.plugin_dirs || [],
+    }),
   }));
   return argv;
 }
