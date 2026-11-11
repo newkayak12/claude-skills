@@ -100,9 +100,9 @@ the snapshot. A round always builds (the user's standing word: "결과물도 검
    in a ledger workspace (`material ledger` lists items) `material ledger-log --item <NN_프로젝트/A1>`
    with the same flags. The ledger is never moved or rewritten.
 4. **Revise, from several viewpoints.** `claims` first (each problem is an edit; `본인 확인` stays),
-   then recruiter/engineer (`feedback`, `pattern`) → interviewer (`mock-interview`) → the user's own
-   bar (noah), each viewpoint's findings through `settle`. `snapshot` before the round's first edit
-   (`--kind skeleton|deck|resume`); carried wording passes the decision gate (`확정사실.md`, `선정.md`);
+   then recruiter/engineer (`feedback`, `pattern`) → interviewer (`mock-interview` question-list
+   mode) → the user's own bar (noah), each viewpoint's findings through `settle`. `snapshot` before
+   the round's first edit (`--kind skeleton|deck|resume`); carried wording passes the decision gate (`확정사실.md`, `선정.md`);
    an order change is one `renumber`; the align table stays at the end of portfolio-skeleton.
    Rules and the order of each: `references/revise.md`.
 5. **Template.** Once per template (again when it changes): `deck-builder catalog`, then

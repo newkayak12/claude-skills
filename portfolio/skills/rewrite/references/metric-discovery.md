@@ -54,4 +54,4 @@ Dashboards (Grafana, Datadog), tickets and sprint reports, PR and commit counts,
 - No number without a baseline — `feedback` counts it as incomplete.
 - At most 2–3 numbers per bullet; pick the ones an interviewer would probe.
 - Confidential figures only as the user's own range or %, never an invented absolute.
-- No estimation technique of any kind. A figure the user states themselves is carried as written, tagged `(본인 추정)`.
+- No estimation technique of any kind. A figure the user states themselves is carried as written, untagged: no `(추정)`, no `(본인 추정)`.

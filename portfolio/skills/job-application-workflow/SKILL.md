@@ -38,6 +38,7 @@ With a JD: 서류 통과 가능성, gaps by severity, positioning, apply or not.
 
 **Step 2 — Review** · `feedback`
 Interviewer-grade verdict on the materials: screen verdict, whether numbers and skills hold up, level read.
+A portfolio deck goes to `portfolio:manage` (material check, review, versions) instead of one `feedback` call; `feedback` stays for a single resume or a one-off document.
 **Skip if:** the materials were reviewed since their last change.
 > "Step 2 시작" / "포트폴리오 피드백 해줘"
 
@@ -104,7 +105,7 @@ One per line — what the next step cannot proceed without.
 
 ## Related Skills
 
-- Steps: `fit`, `feedback`, `rewrite`, `write:writer-verification`, `interview-plan`, `mock-interview`
+- Steps: `fit`, `feedback` (a deck: `manage`), `rewrite`, `write:writer-verification`, `interview-plan`, `mock-interview`
 - Adjacent: `pattern` (how the writing reads), `deck-builder` (portfolio deck as pptx)
 - Deck: `portfolio:manage` (the portfolio deck as one workflow: material → skeleton → feedback → deck, with versions and corrections)
 - After: `think:negotiate` (offer negotiation)

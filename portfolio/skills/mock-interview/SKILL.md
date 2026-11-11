@@ -3,13 +3,14 @@ name: mock-interview
 description: >-
   Use when someone wants a realistic mock interview grounded in their own
   portfolio, with per-answer coaching. Triggers on: "모의 면접 해줘",
-  "인터뷰 연습", "mock interview", "grill me on my portfolio".
+  "인터뷰 연습", "예상 질문 목록", "mock interview", "grill me on my portfolio".
 scenarios:
   - "Run a mock interview with me based on my portfolio — use a staff engineer persona"
   - "Ask me tough questions about my system design experience from my portfolio"
   - "I want to practice answering interview questions about my work"
   - "포트폴리오 기반으로 모의 면접 해줘"
   - "내 포트폴리오 보고 어려운 질문 던져줘"
+  - "이 덱 줄마다 면접관이 물을 질문 목록만 뽑아줘 (글감 근거 확인)"
 compatibility:
   recommended: []
   optional:
@@ -86,6 +87,23 @@ A stronger shape is structure only; a missing number/outcome is [확인 필요: 
 Be honest: name a vague answer, an answer that talked around the question, or one that was genuinely impressive. Use `think` when an answer is hard to evaluate — is it actually good or just confidently delivered? Record non-obvious evaluation judgments as an interviewer note. Once a story is judged or a number challenged, add it to `[확정]` and do not probe it again.
 
 **5. Close** with the Output Template.
+
+## Question-list mode (material-checked, non-interactive)
+
+Used when a caller (`manage` step 4, `feedback`) or the user asks for the attack questions, not a live session. No persona dialogue, no coaching, no `[확정]` round; one pass, one list.
+
+Input: the deck or skeleton file, and its cited material — `manage.mjs claims` output (`글감: <id>` per page) or the `material/` items by id. A page with no `글감:` line gets one question asking for its source.
+
+For each figure, reason sentence or role claim on a page, ask what an interviewer would ask, built only from that line and its cited item. Every question names both:
+
+```
+Q1 | 줄: <page · the line, quoted> | 글감: <id> | 질문: <the question> | 공격: <what the item does not give: 기준값 · 본인 기여 · 선택 이유 · 측정 방법 · 근거 없음>
+```
+
+- A question never contains a fact the line and item do not hold; what the item lacks is the question, not an answer.
+- A line the item fully supports gets no question, or a depth drill at most. A claim with no item behind it is a `근거 없음` question, tagged with its line.
+- Order by what a reader would stress first; one list, no preview of answers.
+- Output is the list and one count line (`질문 <n> · 근거 없음 <n> · 줄 <n>`). Each row is one finding `{id: "Q1", text: <the row>}` for `manage.mjs settle --findings`.
 
 ## Rules
 

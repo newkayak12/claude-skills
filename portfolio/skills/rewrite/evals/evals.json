@@ -70,7 +70,7 @@
     {
       "id": 2,
       "prompt": "이 경력기술서 문장들 더 임팩트 있게 고쳐줘.\n\n[Resume file: resume-backend-kr.md]\n(no job posting, no company named)",
-      "expected_output": "Passage mode (no JD). Per passage: 진단 → Before → After → 왜 더 강해졌는가 → Rewriter note → [확인 필요 질문] → [확정]. For 'API 응답속도 개선' the diagnosis names Y (the metric) as missing, with Z and S also absent; the After keeps the number as `[확인 필요: … 수치]`. No `JD 적합도 판정` line, no gap table, no number/cause/scope absent from the fixture; '820ms → 310ms' and '4시간 → 40분' identical Before and After. Baseline for parity: `git show cbdfcd6:portfolio/skills/portfolio-rewrite/SKILL.md` on the same input must name the same missing element.",
+      "expected_output": "Passage mode (no JD). Per passage: 진단 → Before → After → 무엇을 바꿨는가 → Rewriter note → [확인 필요 질문] → [확정]. For 'API 응답속도 개선' the diagnosis names Y (the metric) as missing, with Z and S also absent; the After keeps the number as `[확인 필요: … 수치]`. No `JD 적합도 판정` line, no gap table, no number/cause/scope absent from the fixture; '820ms → 310ms' and '4시간 → 40분' identical Before and After. Baseline for parity: `git show cbdfcd6:portfolio/skills/portfolio-rewrite/SKILL.md` on the same input must name the same missing element.",
       "files": [
         "evals/files/resume-backend-kr.md"
       ],
@@ -95,7 +95,7 @@
             "진단",
             "Before",
             "After",
-            "왜 더 강해졌는가",
+            "무엇을 바꿨는가",
             "[확인 필요 질문]"
           ]
         },
@@ -170,18 +170,23 @@
     {
       "id": 4,
       "prompt": "이 불릿 고쳐줘.\n\n- 배포 자동화 스크립트 작성\n\n[확인 필요: 대상 서비스 수]에 대해 물었더니 내가 답했어: \"대략 40개 정도 되는 것 같아요.\" 이걸 반영해서 다시 써줘.\n(no job posting, no company named)",
-      "expected_output": "The user's own approximation is carried as written, tagged (본인 추정), and logged in [확정]; Claude adds no other number. Notes that without a baseline feedback still treats it as incomplete.",
+      "expected_output": "The user's own approximation is carried as written with no (추정) or (본인 추정) tag, and logged in [확정]; Claude adds no other number. Notes that without a baseline feedback still treats it as incomplete.",
       "files": [],
       "assertions": [
         {
           "name": "tagged",
-          "description": "본인 추정 태그와 확정 기록",
+          "description": "추정 태그 없이 확정 기록",
           "type": "contains_all",
           "values": [
             "40",
-            "(본인 추정)",
             "[확정]"
           ]
+        },
+        {
+          "name": "no-estimate-tag",
+          "description": "(추정) 태그 없음",
+          "type": "regex",
+          "pattern": "^(?![\\s\\S]*추정\\))[\\s\\S]*$"
         },
         {
           "name": "baseline-note",

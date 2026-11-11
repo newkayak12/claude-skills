@@ -2,14 +2,14 @@
 name: rewrite
 effort: high
 description: >-
-  Use when resume or portfolio lines need a stronger rewrite, optionally tailored to a JD. Triggers on: "이력서 문장
+  Use when resume or portfolio lines need rewriting so each sentence fits its evidence, optionally tailored to a JD. Triggers on: "이력서 문장
   고쳐줘", "포트폴리오 임팩트 있게 바꿔줘", "공고에 맞게 이력서 최적화", "rewrite my resume bullet", "tailor resume to JD".
 scenarios:
-  - "Rewrite this portfolio bullet point to sound more senior"
-  - "I have vague impact claims — help me rewrite them with stronger language"
+  - "Rewrite this portfolio bullet so it says exactly what my evidence supports"
+  - "I have vague impact claims — help me rewrite them to match what I can show"
   - "Tailor my resume to this job description — keyword alignment, achievement reframing and skills reordering"
   - "이 문장 더 임팩트 있게 고쳐줘"
-  - "이 포트폴리오 섹션 시니어 수준으로 리라이팅 해줘"
+  - "이 포트폴리오 섹션 근거에 맞게 리라이팅 해줘"
   - "이 공고에 맞게 이력서 최적화해줘"
   - "Add metrics to my resume bullets — I'm not sure what numbers I even have"
   - "수치 넣고 싶은데 데이터가 없어"
@@ -39,7 +39,7 @@ compatibility:
 
 ## Mode
 
-**A target JD is optional. Its presence switches the rewrite into JD-tailoring mode**, which performs keyword alignment, achievement reframing (XYZ/STAR, passive 참여/기여 reframed) and skills reordering against that posting. Without a JD, the skill runs passage mode: each pasted passage is strengthened on its own, exactly as below. Both modes cover 이력서 and 포트폴리오 sections.
+**A target JD is optional. Its presence switches the rewrite into JD-tailoring mode**, which performs keyword alignment, achievement reframing (XYZ/STAR, passive 참여/기여 reframed) and skills reordering against that posting. Without a JD, the skill runs passage mode: each pasted passage is fitted to its evidence on its own, exactly as below. A rewrite never raises a claim past what the user's material shows (과장 금지). Both modes cover 이력서 and 포트폴리오 sections.
 
 - JD supplied → JD mode, even if the user only says "고쳐줘".
 - User asks to tailor ("공고에 맞게", "tailor to this JD") but gives no JD → ask for the full JD text; do not guess the posting. A company name alone is not a JD.
@@ -130,12 +130,12 @@ No `JD 적합도 판정` line and no gap table. For each passage, in this order:
 **After:**
 > [rewritten version, missing facts as `[확인 필요: ○○]`]
 
-**왜 더 강해졌는가:**
-2–4 sentences: what changed and why it matters to an interviewer, naming the technique (changed subject from "we" to "I", surfaced the decision, reshaped to XYZ+S, added failure-and-recovery arc).
+**무엇을 바꿨는가:**
+2–4 sentences: what changed, how the sentence now fits its evidence and why an interviewer can check it, naming the technique (changed subject from "we" to "I", surfaced the decision, reshaped to XYZ+S, added failure-and-recovery arc).
 
 > 🧠 **Rewriter note**: [only if the diagnosis or rewrite needed a real judgment call]
 
-**[확인 필요 질문]** *(omit when none)* — one question per marker, in the order they appear. For a missing number, ask the metric type and where the data might live (`references/metric-discovery.md`), never a value. A figure the user gives themselves is carried as written, tagged `(본인 추정)`, logged in `[확정]`; without a baseline `feedback` still counts it incomplete. "모르겠어요" or no data: the marker stays, or suggest dropping or merging the line.
+**[확인 필요 질문]** *(omit when none)* — one question per marker, in the order they appear. For a missing number, ask the metric type and where the data might live (`references/metric-discovery.md`), never a value. A figure the user gives themselves is carried as written, untagged (no `(추정)`, no `(본인 추정)`), logged in `[확정]`; without a baseline `feedback` still counts it incomplete. "모르겠어요" or no data: the marker stays, or suggest dropping or merging the line.
 
 **[확정]** *(continuing session)* — the restated list plus anything settled this turn, including a pattern call-out already made.
 

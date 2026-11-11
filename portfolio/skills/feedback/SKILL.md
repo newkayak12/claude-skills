@@ -157,5 +157,5 @@ Before/after tally table (`revision-diff.md` + §C rows) · one line on verdict 
 
 - `rewrite` — act on the improvement priorities
 - `pattern` — writing patterns behind the ownership read
-- `mock-interview` — rehearse the expected questions
+- `mock-interview` — rehearse the expected questions; its question-list mode gives them per line and cited item
 - `fit` — match against a specific posting
