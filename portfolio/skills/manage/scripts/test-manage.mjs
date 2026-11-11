@@ -1292,9 +1292,9 @@ function slotWs() {
 test('sync reports each skeleton slot missing or different, ignoring markup, and writes only with the flag', () => {
   const root = slotWs()
   const r = sync(root)
-  assert.deepEqual(r.different.map(d => `${d.slide}.${d.key}`), ['s2.text1'])
+  assert.deepEqual(r.different.map(d => `${d.slide}.${d.key}`), ['s2 2쪽.text1'])
   assert.deepEqual(r.missing, [])
-  assert.deepEqual(r.slide_missing, ['s4'])
+  assert.deepEqual(r.slide_missing, ['s4 4쪽'])
   assert.equal(r.written, false)
   assert.equal(readFileSync(join(root, 'portfolio-deck.mdx'), 'utf8'), SLOT_DECK, 'a report writes nothing')
   writeFileSync(join(root, 'portfolio-skeleton.md'), SLOT_SKEL.replace('title: 응답 340ms', 'title: 응답 340ms\nsubtitle: 한 줄'))
@@ -1306,6 +1306,27 @@ test('sync reports each skeleton slot missing or different, ignoring markup, and
   assert.match(deck, /title: 응답 \*\*340ms\*\*\nsubtitle: 한 줄/)
   assert.ok(!deck.includes('@s4'), 'a missing slide is never created')
   assert.deepEqual([sync(root).missing, sync(root).different], [[], []])
+})
+
+test('sync reads a table skeleton: slots named in backticks, several slots per row, pages sharing an archetype', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-table-'))
+  const skel = ['# 가상 skeleton', '', '## 6쪽 · `@s12` · 문제와 해결(1/2)', '', '| 슬롯 | 내용 |', '|---|---|',
+    '| 제목 `text4` | 문제와 해결(1/2) 느린 검색 |', '| 문제 `text9` | · 응답이 느렸다.<br>· 원인은 인덱스였다. |',
+    '| 캡션 `text11`·`text12` | <!-- [ 전 ] --> · [ 후 ] |', '| 그림 `pic1` | `assets/a.svg` |', '| 노트 | 쓰지 않는다 |', '',
+    '## 7쪽 · `@s12` · 문제와 해결(2/2)', '', '| `text4` | 문제와 해결(2/2) 캐시 |', '',
+    '## 2쪽 · `@s2` · 목차', '', '| 칸 | 번호 | 쪽 |', '|---|---|---|', '| `text3`·`text2` | 01. 검색 | 3 |', ''].join('\n')
+  const deck = ['---', 'template: t.pptx', '---', '## @s12 6쪽', 'text4: 문제와 해결(1/2) 느린 검색', 'text9:', '  - 응답이 느렸다.',
+    '  - 원인은 인덱스였다.', 'text12: \\[ 후 \\]', '', '## @s12 7쪽', 'text4: 옛 제목', '', '## @s2 2쪽', 'text3: 01. 검색', 'text2: 3', ''].join('\n')
+  writeFileSync(join(root, 'portfolio-skeleton.md'), skel)
+  writeFileSync(join(root, 'portfolio-deck.mdx'), deck)
+  const r = sync(root)
+  assert.deepEqual(r.missing, [])
+  assert.deepEqual(r.different.map(d => `${d.slide}.${d.key}`), ['s12 7쪽.text4'])
+  assert.deepEqual(r.slide_missing, [])
+})
+
+test('claims: a range carries its unit to both numbers (30 → 50초, 4~6개)', () => {
+  assert.deepEqual(figs('30 → 50초, 4~6개, 1.8초 → 0.4초'), ['30초', '50초', '4개', '6개', '1.8초', '0.4초'])
 })
 
 test('verify-build: skeleton slot text, footnote marks and picture files against the built pptx', () => {
@@ -1326,7 +1347,7 @@ test('verify-build: skeleton slot text, footnote marks and picture files against
   assert.equal(verifyBuild(root).ok, true)
   writeFileSync(join(root, 'build', 'deck.pptx'), zipOf({ 'ppt/slides/slide1.xml': slideXml('검색이 느렸다') }))
   const bad = verifyBuild(root)
-  assert.deepEqual(bad.absent.map(a => `${a.slide}.${a.key}`), ['s2.text1', 's2.text1', 's3.title', 's4.title'])
+  assert.deepEqual(bad.absent.map(a => `${a.slide}.${a.key}`), ['s2 2쪽.text1', 's2 2쪽.text1', 's3 3쪽.title', 's4 4쪽.title'])
   assert.equal(bad.ok, false)
 })
 

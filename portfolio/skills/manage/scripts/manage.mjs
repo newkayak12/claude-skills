@@ -687,7 +687,9 @@ const REASON = /때문|위해|위한|그래서|따라서|덕분|인해|원인|�
 const LABEL = /^\s*[^\s:：]{1,6}\s*[:：]\s*/
 // phrases the user rejected as machine-written; listed, not failed
 const TONE = ['효율적으로', '획기적', '극대화', '성공적으로', '원활한', '원활하게', '시너지', '견고한', '혁신적', '함으로써', '다양한 ', '핵심적인', '도모']
-export const figs = s => [...String(s).matchAll(FIG)].map(m => `${m[1].replace(/,/g, '')}${m[2].replace(/\s+/g, '')}`)
+// `30 → 50초`, `4~6개`: the unit after the second number belongs to the first as well
+const RANGE = /(?<![A-Za-z\d.])(\d[\d,]*(?:\.\d+)?)(\s*(?:→|->|~|～|–)\s*\d[\d,]*(?:\.\d+)?\s*)((?:[만억천]\s*)?(?:%|ms|초|분|시간|개월|일|주|배|건|명|회|개|대|원|GB|MB|KB|TB|TPS|QPS|RPS|x))(?![A-Za-z])/gu
+export const figs = s => [...String(s).replace(RANGE, '$1$3$2$3').matchAll(FIG)].map(m => `${m[1].replace(/,/g, '')}${m[2].replace(/\s+/g, '')}`)
 const stems = s => (String(s).match(/[\p{L}\p{N}]+/gu) || [])
   .filter(w => w.length >= 2 && !REASON.test(w))
   .map(w => (/^[\p{Script=Hangul}]/u.test(w) ? w.slice(0, 2) : w.toLowerCase()))
@@ -1189,15 +1191,42 @@ export function readRounds(root) {
 // `key: value` (key lowercase ASCII) plus the indented lines after it. Not slots: `notes`, `place`, a
 // picture path, `!drop`. Returns Map(slide id -> { order: [key], slots: Map(key -> value lines) }).
 const SKIP_KEYS = new Set(['notes', 'place'])
+// a slide's key: its archetype id, with its page when the heading names one (`@s12 6쪽`), since one
+// archetype serves several pages
+const slideKey = l => {
+  const h = l.match(/^##\s.*@(s\d+)\b/)
+  if (!h) return null
+  const p = l.match(/(\d+)\s*쪽/)
+  return p ? `${h[1]} ${p[1]}쪽` : h[1]
+}
 export function slotsOf(text) {
   const out = new Map()
   let cur = null
   let key = null
   for (const l of text.replace(/^---\n[\s\S]*?\n---\n/, '').split('\n')) {
-    const h = l.match(/^##\s.*@(s\d+)\b/)
-    if (h) { cur = { order: [], slots: new Map() }; out.set(h[1], cur); key = null; continue }
+    const h = slideKey(l)
+    if (h) { cur = { order: [], slots: new Map() }; out.set(h, cur); key = null; continue }
     if (/^#{1,2}\s/.test(l)) { cur = null; key = null; continue }
     if (!cur) continue
+    // a table row naming its slots in backticks: `| 제목 \`text4\` | value |`, or several slots matched
+    // to as many cells (`| \`text11\`·\`text10\` | a | b |`) or to one cell split at ` · `
+    const row = l.match(/^\s*\|(.*)\|\s*$/)
+    if (row) {
+      key = null
+      const cells = row[1].split('|').map(c => c.trim())
+      const ids = [...(cells[0] || '').matchAll(/`([a-z][a-z0-9_]*)`/g)].map(m => m[1]).filter(k => !SKIP_KEYS.has(k))
+      if (!ids.length) continue
+      let vals = cells.slice(1)
+      if (ids.length > 1 && vals.length === 1) vals = vals[0].split(/\s+·\s+/)
+      if (vals.length !== ids.length) continue
+      ids.forEach((k, i) => {
+        const v = vals[i].replace(/<!--[\s\S]*?-->/g, '').trim()
+        // not slot text: a drop, a picture path, an empty-slot note (`없음 …`)
+        if (!v || /^`?!drop/.test(v) || /^`?[^\s`]+\.(png|jpe?g|svg|gif)\b/i.test(v) || /^없음(\s|\.|$)/.test(v)) return
+        cur.order.push(k); cur.slots.set(k, v.split(/<br\s*\/?>/).map(s => s.trim()).filter(Boolean))
+      })
+      continue
+    }
     const kv = l.match(/^([a-z][a-z0-9_]*):[ \t]*(.*)$/)
     if (kv) {
       key = SKIP_KEYS.has(kv[1]) || kv[2] === '!drop' || /\.(png|jpe?g|svg|gif)(\s*\|.*)?$/i.test(kv[2]) ? null : kv[1]
@@ -1208,7 +1237,9 @@ export function slotsOf(text) {
   return out
 }
 // the words a slot says, without the deck's markup: `**`, `[text]{fmt}`, `<br>`, list dashes, spacing
-const plain = s => s.replace(/\[([^\]]*)\]\{[^}]*\}/g, '$1').replace(/\*\*/g, '').replace(/<br\s*\/?>/g, ' ').replace(/^[-|]\s*/, '').replace(/\s+/g, ' ').trim()
+// (a skeleton writes a line break as ` / ` and numbers a footnote `1) `; the deck splits lines and
+// numbers footnotes itself; a deck line may end in `\`)
+const plain = s => s.replace(/\s*\[확인 필요[^\]]*\]/g, '').replace(/\\$/, '').replace(/\s+\/\s+/g, ' ').replace(/^\d+\)\s+/, '').replace(/\\(.)/g, '$1').replace(/\[([^\]]*)\]\{[^}]*\}/g, '$1').replace(/\*\*/g, '').replace(/<br\s*\/?>/g, ' ').replace(/^[-|·•]\s*/, '').replace(/\s+/g, ' ').trim()
 
 // skeleton -> deck source: each skeleton slot absent from, or different in, the deck's same slide.
 // Writes only with `write`: a different slot is replaced, an absent one appended to its slide; a slide
@@ -1246,8 +1277,8 @@ export function sync(root, { write = false } = {}) {
       res.push(...tail)
     }
     for (const l of lines) {
-      const h = l.match(/^##\s.*@(s\d+)\b/)
-      if (h || /^#{1,2}\s/.test(l)) { if (sid) flush(); sid = h ? h[1] : null; skip = false; res.push(l); continue }
+      const h = slideKey(l)
+      if (h || /^#{1,2}\s/.test(l)) { if (sid) flush(); sid = h; skip = false; res.push(l); continue }
       const kv = sid && l.match(/^([a-z][a-z0-9_]*):/)
       if (kv) {
         skip = false
@@ -1263,7 +1294,7 @@ export function sync(root, { write = false } = {}) {
   }
   return out
 }
-const slotLines = (key, vals) => (vals.length === 1 ? [`${key}: ${vals[0]}`] : [`${key}:`, ...vals.map(v => `  ${v}`)])
+const slotLines = (key, vals) => (vals.length === 1 ? [`${key}: ${vals[0]}`] : [`${key}:`, ...vals.map(v => `  ${v.replace(/^[·•]\s*/, '- ')}`)])
 
 // Read a pptx (zip) with the standard library: the text of every slide, `<a:t>` runs joined.
 export function pptxText(path) {
