@@ -109,19 +109,35 @@ function driverPrompt(task, child, opts = {}) {
     `run_id ${child.run_id} at cwd ${child.cwd}. Do not call team_open or tm_open.`,
     answers.length
       ? `A previous driver for this exact run parked on a question and is replaced by you; call team_status({run_id, cwd}) first, then continue from there - do not redo a node that is already done.\n${answers.join('\n')}`
-      : opts.resume
-        ? `A previous driver for this exact run died before it finished; call team_status({run_id, cwd}) first to see what it already completed, and resume from there - do not redo a node that is already done.`
-        : '',
+      : opts.nextNode
+        ? `The previous driver for this exact run finished its node and ended its turn; call team_status({run_id, cwd}) first, then drive the next ready node - do not redo a node that is already done.`
+        : opts.resume
+          ? `A previous driver for this exact run died before it finished; call team_status({run_id, cwd}) first to see what it already completed, and resume from there - do not redo a node that is already done.`
+          : '',
     story && story.subgoal_id
       ? `If a question blocks you that neither your briefing nor the plan settles, call tm_ask({task_id: "${task.run_id}", key: "${storyKey(task.run_id, story.subgoal_id)}", question}) once with the whole question, then end your turn at once: you are parked at no cost and resumed with the answer. Do not guess and do not poll.`
       : '',
-    `Read references/loop.md, then drive team_next/team_run/team_submit exactly as it says until the run is`,
-    `complete or blocked - a fresh agent for every ready node, its JSON relayed verbatim to team_submit,`,
-    `team_retry as the loop says.`,
+    // One driver process per node (card 130: a session ends when its node ends). The manager
+    // starts the next driver when this one exits with the run moved on (serviceDeadDriver).
+    `Read references/loop.md, then drive team_next/team_run/team_submit exactly as it says for ONE node only: call team_next once, take the first ready node,`,
+    `run it (team_run, or a fresh agent for a native one), relay its JSON verbatim to team_submit, apply team_retry`,
+    `as the loop says if that node failed, then end your turn at once - a fresh driver takes the next node, so do not loop.`,
+    `If team_run returns parked: true the node asked its leader (tm_ask) and waits for the answer: end your turn at once.`,
+    `If team_next says the run is complete or blocked there is no node to drive: end with the run's state.`,
     routing.length ? `Pass ${routing.join(', ')}.` : '',
     `Never end a turn while your own background agent or test run is still running; wait for it to finish first.`,
     `End with the skill's output template.`,
   ].filter(Boolean).join(' ');
+}
+
+// How many nodes of the child's run have settled; a driver records it at spawn so the manager can
+// tell a driver that finished its node (the run moved on) from one that died with nothing done.
+const SETTLED = new Set(['done', 'failed', 'skipped', 'unreachable']);
+function settledNodes(child) {
+  try {
+    const run = loadRun(child.cwd, child.run_id);
+    return run ? run.nodes.filter((x) => SETTLED.has(x.state)).length : null;
+  } catch { return null; }
 }
 
 // nodeIdLabel names the log files under <taskDir>/drivers/ (a package's node_id, or "S" for a
@@ -181,7 +197,7 @@ function spawnChildDriver(task, nodeIdLabel, child, opts = {}) {
       });
     } catch { /* best-effort */ }
     proc.unref();
-    return { pid: proc.pid || null, started_at: Date.now(), log, stderr, exit: exitFile, command };
+    return { pid: proc.pid || null, started_at: Date.now(), log, stderr, exit: exitFile, command, settled: settledNodes(child) };
   } catch (e) {
     return { pid: null, started_at: Date.now(), log, stderr, exit: exitFile, command, error: String((e && e.message) || e) };
   } finally {
@@ -304,6 +320,17 @@ export function serviceDeadDriver(task, child, nodeId) {
   }
   const budget = restartBudget(task);
   const priorRestarts = driver.restarts || [];
+  // A driver drives one node and ends its turn: it exited cleanly with the run moved on since it
+  // started. The next node gets a fresh driver; that is the plan, not a death, so no restart is spent.
+  const exit = entry.exit;
+  if (Number.isInteger(driver.settled) && settledNodes(child) > driver.settled && (!exit || (exit.code === 0 && !exit.signal))) {
+    const attempt = nextSpawnAttempt(child);
+    return respawnDriver(task, nodeId, child, {
+      attempt, reason: 'next_node', restarts: priorRestarts,
+      spawn: (t, c) => spawnChildDriver(t, nodeId, c, { resume: true, nextNode: true, attempt }),
+      event: (t, fresh) => ({ event: 'child_driver_next_node', task_id: t.run_id, node_id: nodeId, pid: fresh.pid, previous_pid: driver.pid }),
+    });
+  }
   const countedRestarts = countedDriverRestarts(task, driver);
   if (countedRestarts.length >= budget) return false; // budget spent (within the window, if any): fold it, do not respawn again
   const restarts = [...priorRestarts, stampAfterWake(task, priorRestarts, entry)];

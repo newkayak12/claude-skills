@@ -14,16 +14,17 @@
 // claude binary behind the real adapter.
 //
 // What is proved and what is not (named, not faked):
-//   - tm_ask is reachable from an adapter node: the lean --mcp-config declares the teams server,
-//     which lists tm_ask, and the adapter allows mcp__teams__tm_ask. The prompt carries the exact
-//     task_id and key. A tm_ask with them is logged and parks the STORY, and an answer unparks it
-//     (taskmanager-asks.mjs under test). NOT proved: a live model calling tm_ask from inside an
-//     adapter node, or the answer reaching that node's next session (the driver's resume prompt
-//     carries it; the node is re-run by the driver loop). PARTIAL.
-//   - PARTIAL (A2.2): a child driver is still one claude process for a whole run (a team_next
-//     loop, taskmanager-drivers.mjs spawnChildDriver). "One process per node" is proved at the
-//     adapter spawn (each node's own `claude` process), the decided session boundary; the
-//     driver-loop form is not met.
+//   - tm_ask from an adapter node: the lean --mcp-config declares the teams server, which lists
+//     tm_ask, and the adapter allows mcp__teams__tm_ask. The prompt carries the exact task_id and
+//     key. A stand-in model calls the real tm_ask from inside team_run's adapter session: the ask is
+//     logged, team_run parks the node (pending, not failed, node_parked in the ledger), the daemon's
+//     answer unparks it, and the node's next session carries the answer in its prompt. NOT proved:
+//     a real claude deciding to call tm_ask (the stand-in plays the model); PARTIAL.
+//   - A2.2: a child driver drives ONE node and ends its turn (driverPrompt); the manager starts a
+//     fresh driver process for the next node when the run moved on (serviceDeadDriver, no restart
+//     spent). Proved with a stand-in driver: two consecutive nodes, two driver processes, distinct
+//     pids. NOT proved: a real claude driver obeying the one-node instruction; PARTIAL. Ready nodes
+//     of one run are now taken one driver at a time, so parallel nodes no longer overlap.
 //   - NOT met anywhere: the user's global CLAUDE.md. `--setting-sources project` leaves it in the
 //     start context and no flag drops it alone (nodelaunch.mjs header), so no test claims it.
 
@@ -617,6 +618,186 @@ test('spawnChildDriver names the task to the adapter sessions of a package run (
     while ((!existsSync(out) || readFileSync(out, 'utf8').trim().split('\n').length < 2) && Date.now() < end) await new Promise((r) => setTimeout(r, 50));
     const ids = readFileSync(out, 'utf8').trim().split('\n').map((l) => JSON.parse(l).id).sort();
     assert.deepEqual(ids, [null, task.run_id].sort(), 'the package run is told; a size-S run inherits nothing');
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// ---------- one driver process per node (A2.2, the child driver loop) ----------
+
+// A stand-in driver: reads the run it is told to continue, settles ONE pending node (unless
+// STUB_NOOP), logs its pid and prompt, and exits 0 - what a driver that ends its turn after its node does.
+const NODE_DRIVER = `import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const prompt = process.argv.at(-1);
+const m = prompt.match(/run_id (\\S+) at cwd (\\S+)\\. Do not/);
+appendFileSync(process.env.STUB_LOG, JSON.stringify({ pid: process.pid, prompt }) + '\\n');
+if (m && !process.env.STUB_NOOP) {
+  const file = join(m[2], '.teams_output', 'broker', 'runs', m[1] + '.json');
+  const run = JSON.parse(readFileSync(file, 'utf8'));
+  const n = run.nodes.find((x) => x.state === 'pending');
+  if (n) { n.state = 'done'; n.result = { stage_ok: true }; }
+  writeFileSync(file, JSON.stringify(run));
+}
+`;
+
+async function withNodeDrivers(fn) {
+  const keys = ['HARNESS_TASKS_DIR', 'HARNESS_TEST_NO_DAEMON', 'HARNESS_TEST_NO_DRIVER', 'HARNESS_CHILD_DRIVER', 'STUB_LOG', 'STUB_NOOP', 'TEAMS_ASK_TASK_ID'];
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'node-launch-drv-')));
+  try {
+    process.env.HARNESS_TASKS_DIR = root;
+    process.env.HARNESS_TEST_NO_DAEMON = '1';
+    delete process.env.HARNESS_TEST_NO_DRIVER;
+    delete process.env.STUB_NOOP;
+    process.env.STUB_LOG = join(root, 'drivers.jsonl');
+    writeFileSync(join(root, 'driver.mjs'), NODE_DRIVER);
+    process.env.HARNESS_CHILD_DRIVER = `node ${join(root, 'driver.mjs')}`;
+    const graph = await import('../mcp/graph.mjs');
+    const childCwd = mkdtempSync(join(root, 'wt-'));
+    mkdirSync(join(childCwd, '.teams_output', 'broker', 'runs'), { recursive: true });
+    writeFileSync(join(childCwd, '.teams_output', 'broker', 'runs', 'c1.json'), JSON.stringify({
+      run_id: 'c1', flow: 'develop', max_retries: 2, cwd: childCwd, spec: { subgoals: [{ id: 'U1', title: 'unit' }] },
+      nodes: [graph.node('implement:U1:1', 'implement', [], { state: 'pending', subgoal_id: 'U1' }), graph.node('test:U1:1', 'test', ['implement:U1:1'], { state: 'pending', subgoal_id: 'U1' })],
+    }));
+    const child = { run_id: 'c1', cwd: childCwd };
+    const node = { node_id: 'dispatch:P1:1', stage: 'dispatch', subgoal_id: 'P1', state: 'running', child };
+    const task = { run_id: '1a2b0004-1111-2222-3333-444444444444', kind: 'task', cwd: root, driver_restarts: 2, nodes: [node] };
+    const calls = () => (existsSync(process.env.STUB_LOG) ? readFileSync(process.env.STUB_LOG, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+    const exited = async (driver) => {
+      const end = Date.now() + 8000;
+      while (!existsSync(driver.exit) && Date.now() < end) await new Promise((r) => setTimeout(r, 25));
+      assert.ok(existsSync(driver.exit), 'the driver process exited');
+    };
+    const settled = () => loadRun(childCwd, 'c1').nodes.filter((x) => x.state === 'done').map((x) => x.node_id);
+    return await fn({ task, node, child, calls, exited, settled });
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test('A2.2: a driver drives one node and ends its turn; the manager starts a fresh driver process for the next node, spending no restart', () => withNodeDrivers(async ({ task, node, child, calls, exited, settled }) => {
+  const { spawnChildDriver, serviceDeadDriver } = await import('../mcp/taskmanager-drivers.mjs');
+  child.driver = spawnChildDriver(task, node.node_id, child);
+  const first = child.driver;
+  await exited(first);
+  assert.deepEqual(settled(), ['implement:U1:1'], 'driver 1 settled its one node');
+  assert.equal(serviceDeadDriver(task, child, node.node_id), true, 'the run moved on: a driver for the next node is started');
+  const second = child.driver;
+  assert.notEqual(second.pid, first.pid, 'a separate process');
+  assert.deepEqual(second.restarts, [], 'no restart spent: finishing a node is not a death');
+  await exited(second);
+  assert.deepEqual(settled(), ['implement:U1:1', 'test:U1:1'], 'driver 2 settled the next node');
+  const seen = calls();
+  assert.equal(seen.length, 2, 'two nodes, two driver spawns');
+  assert.notEqual(seen[0].pid, seen[1].pid, 'two consecutive nodes: two driver processes (distinct pids)');
+  assert.match(seen[0].prompt, /for ONE node only/, 'the driver is told to take one node and end its turn');
+  assert.match(seen[1].prompt, /finished its node and ended its turn/);
+  const ledger = readFileSync(join(process.env.HARNESS_TASKS_DIR, task.run_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(ledger.filter((e) => e.event === 'child_driver_next_node').length, 1);
+  assert.equal(ledger.filter((e) => e.event === 'child_driver_restarted').length, 0);
+}));
+
+test('A2.2: a driver that exits with its run unmoved is still a death - the restart is counted', () => withNodeDrivers(async ({ task, node, child, calls, exited, settled }) => {
+  const { spawnChildDriver, serviceDeadDriver } = await import('../mcp/taskmanager-drivers.mjs');
+  process.env.STUB_NOOP = '1';
+  child.driver = spawnChildDriver(task, node.node_id, child);
+  await exited(child.driver);
+  assert.deepEqual(settled(), []);
+  assert.equal(serviceDeadDriver(task, child, node.node_id), true);
+  assert.equal(child.driver.restarts.length, 1, 'no node finished, so this is a restart and spends the budget');
+  await exited(child.driver);
+  assert.equal(calls().length, 2);
+}));
+
+// ---------- a node that asks its leader parks, and runs again with the answer ----------
+
+test('tm_ask from an adapter node: the ask is logged, the node parks (not failed), and the answer unparks it - the node reruns with the answer in its prompt', async () => {
+  const keys = ['HARNESS_TASKS_DIR', 'HARNESS_TEST_NO_DAEMON', 'HARNESS_TEST_NO_DRIVER', 'HARNESS_CHILD_DRIVER', 'STUB_LOG'];
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'node-launch-park-')));
+  const task_id = '1a2b0005-1111-2222-3333-444444444444';
+  try {
+    process.env.HARNESS_TASKS_DIR = root;
+    process.env.HARNESS_TEST_NO_DAEMON = '1';
+    delete process.env.HARNESS_TEST_NO_DRIVER;
+    process.env.STUB_LOG = join(root, 'driver-calls.jsonl');
+    writeFileSync(join(root, 'driver.mjs'), "import { appendFileSync } from 'node:fs';\nappendFileSync(process.env.STUB_LOG, JSON.stringify({ argv: process.argv.slice(2) }) + '\\n');\nsetTimeout(() => {}, 1000);\n");
+    process.env.HARNESS_CHILD_DRIVER = `node ${join(root, 'driver.mjs')}`;
+    const tm = await import('../mcp/taskmanager.mjs');
+    const graph = await import('../mcp/graph.mjs');
+    const daemon = await import('../mcp/daemon.mjs');
+    const { storyKey } = await import('../mcp/tickets.mjs');
+    const tmUrl = new URL('../mcp/taskmanager.mjs', import.meta.url).href;
+
+    await withStubClaude(async (cwd) => {
+      const { run_id } = await call('team_open', { request: 'r', cwd, vendor: 'claude', allocation: 'balanced', host_vendor: 'codex', flow: 'develop', goal_judges: 1 });
+      const run = loadRun(cwd, run_id);
+      run.package = { id: 'P1', origin: 'shape' };
+      saveRun(run);
+      const path = tm.taskPath(task_id);
+      mkdirSync(dirname(path), { recursive: true });
+      const done = (id, stage, deps) => graph.node(id, stage, deps, { state: 'done', result: { stage_ok: true } });
+      writeFileSync(path, JSON.stringify({
+        run_id: task_id, kind: 'task', store_path: path, cwd: root, request: 'r', created_at: Date.now(), flow: 'develop', flow_chosen: 'develop', size: 'L', max_retries: 2, driver_restarts: 2,
+        spec: { acceptance: ['a'], packages: [{ id: 'P1', title: 'module a', flow: 'develop', brief: 'b', acceptance: ['a'], touches: ['a.txt'], deps: [] }] },
+        nodes: [done('size', 'size', []), done('shape', 'shape', ['size']), done('critique', 'critique', ['shape']),
+          graph.node('dispatch:P1:1', 'dispatch', ['critique'], { subgoal_id: 'P1', state: 'running', child: { run_id, cwd, driver: { pid: 2 ** 22 + 778, restarts: [], started_at: Date.now() - 1000 } } }),
+          graph.node('accept:P1:1', 'accept', ['dispatch:P1:1'], { subgoal_id: 'P1' })],
+      }, null, 2));
+      const key = storyKey(task_id, 'P1');
+
+      // The stand-in model: the first run of `plan` calls the real tm_ask (a separate process,
+      // like the teams MCP server a claude session talks to) and ends its turn parked; the run
+      // that carries the answer delivers.
+      writeFileSync(join(cwd, 'bin', 'claude'), `#!/usr/bin/env node
+const fs = require('node:fs');
+const { spawnSync } = require('node:child_process');
+let prompt = ''; process.stdin.on('data', (c) => { prompt += c; });
+process.stdin.on('end', () => {
+  fs.appendFileSync(${JSON.stringify(join(cwd, 'invocations.jsonl'))}, JSON.stringify({ pid: process.pid, prompt }) + '\\n');
+  let result = { stage_ok: true, handoff: 'planned with the answer', evidence: 'e' };
+  if (!prompt.includes('## Answers to your tm_ask')) {
+    const code = 'import(' + JSON.stringify(${JSON.stringify(tmUrl)}) + ').then(async (m) => { const r = await m.callTool("tm_ask", { task_id: ' + JSON.stringify(${JSON.stringify(task_id)}) + ', key: ' + JSON.stringify(${JSON.stringify(key)}) + ', question: "cents or dollars?" }); process.stdout.write(JSON.stringify(r)); })';
+    const r = spawnSync(process.execPath, ['-e', code], { encoding: 'utf8', env: process.env });
+    fs.appendFileSync(${JSON.stringify(join(cwd, 'asked.jsonl'))}, (r.stdout || r.stderr) + '\\n');
+    result = { stage_ok: false, reason: 'parked on tm_ask' };
+  }
+  console.log(JSON.stringify({ type: 'result', result: JSON.stringify(result), num_turns: 1, usage: { input_tokens: 10, cache_read_input_tokens: 90, cache_creation_input_tokens: 0 } }));
+});
+`);
+      const invocations = () => readFileSync(join(cwd, 'invocations.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+      const taskLedger = () => readFileSync(join(tm.taskDir(task_id), 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+
+      await call('team_next', { run_id, cwd });
+      const parked = await call('team_run', { run_id, cwd, node_id: 'plan' });
+      assert.equal(parked.parked, true, JSON.stringify(parked));
+      assert.equal(parked.state, 'pending', 'parked, not failed: the node is run again, no retry spent');
+      assert.match(invocations()[0].prompt, new RegExp(`tm_ask\\(\\{task_id: "${task_id}", key: "${key}"`), 'the node was told its exact call');
+      const asked = taskLedger().filter((e) => e.event === 'asked');
+      assert.deepEqual(asked.map((e) => [e.key, e.question]), [[key, 'cents or dollars?']], 'the ask is logged');
+      assert.deepEqual(parked.ask_ids, [asked[0].ask_id]);
+      const planNode = loadRun(cwd, run_id).nodes.find((x) => x.node_id === 'plan');
+      assert.equal(planNode.state, 'pending');
+      assert.deepEqual(planNode.parked_asks, [asked[0].ask_id]);
+      const events = readFileSync(join(cwd, '.teams_output', 'broker', 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+      assert.equal(events.filter((e) => e.event === 'node_parked' && e.node_id === 'plan').length, 1);
+      const disk = JSON.parse(readFileSync(path, 'utf8'));
+      const n = disk.nodes.find((x) => x.node_id === 'dispatch:P1:1');
+      assert.equal(tm.serviceDeadDriver(disk, n.child, n.node_id), false, 'parked: the STORY is not restarted or folded');
+
+      // answering unparks it
+      await daemon.stepOnce(task_id, { judge: async () => { throw new Error('no judge expected'); }, answer: async () => JSON.stringify({ verdict: 'answer', answer: 'cents' }) });
+      assert.equal(taskLedger().filter((e) => e.event === 'answered').length, 1, 'the answer is logged');
+      await call('team_next', { run_id, cwd });
+      const again = await call('team_run', { run_id, cwd, node_id: 'plan' });
+      assert.equal(again.state, 'done', JSON.stringify(again));
+      assert.equal(invocations().length, 2, 'a second session for the same node');
+      assert.notEqual(invocations()[0].pid, invocations()[1].pid);
+      assert.match(invocations()[1].prompt, /## Answers to your tm_ask\nQuestion: cents or dollars\?\nAnswer: cents/, 'the answer is in the node\'s own prompt');
+    }, { env: { TEAMS_ASK_TASK_ID: task_id } });
   } finally {
     for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
     rmSync(root, { recursive: true, force: true });

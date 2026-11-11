@@ -312,8 +312,8 @@ export function nodeSkills(run, n, briefing) {
 }
 
 // opts.regionPointer: nodelaunch.mjs's regionPointer; the adapter prompt of broker-tools passes it.
-// opts.ask: {task_id, key} of the STORY this node works for, when the engine knows it; the node is
-// then told the exact tm_ask call.
+// opts.ask: {task_id, key, answers?} of the STORY this node works for, when the engine knows it; the
+// node is then told the exact tm_ask call, and the answers a parked earlier run of it was given.
 export function composePrompt(run, n, briefing, opts = {}) {
   const scopedExecution = run.allocation === 'balanced' && ['implement', 'test', 'draft'].includes(n.stage) && briefing.subgoal;
   const lines = [];
@@ -341,8 +341,14 @@ export function composePrompt(run, n, briefing, opts = {}) {
   // A lean session starts with this node's brief and nothing else (card 130).
   const ask = opts.ask && opts.ask.task_id && opts.ask.key ? opts.ask : null;
   lines.push(ask
-    ? `If you need a document, a region of a file or a rule you were not given, ask the leader instead of reading whole large files: call tm_ask({task_id: "${ask.task_id}", key: "${ask.key}", question}) once with the whole question (the ask is logged), then end your turn at once with {"stage_ok": false, "reason": "parked on tm_ask"}: the story is parked and resumed with the answer. Do not guess and do not poll.`
+    ? `If you need a document, a region of a file or a rule you were not given, ask the leader instead of reading whole large files: call tm_ask({task_id: "${ask.task_id}", key: "${ask.key}", question}) once with the whole question (the ask is logged), then end your turn at once with {"stage_ok": false, "reason": "parked on tm_ask"}: the engine parks this node and runs it again with the answer in its prompt. Do not guess and do not poll.`
     : `If you need a document, a region of a file or a rule you were not given, ask the leader with tm_ask (the ask is logged) instead of reading whole large files; a session with no tm_ask tool says so in its handoff.`);
+  // The run again of a node that parked: its leader's answers, verbatim.
+  const answers = ask && Array.isArray(ask.answers) ? ask.answers : [];
+  if (answers.length) {
+    lines.push('', '## Answers to your tm_ask');
+    for (const a of answers) lines.push(`Question: ${a.question}`, `Answer: ${a.answer}`);
+  }
   lines.push('');
 
   if (REASONING_STAGES.has(n.stage)) {

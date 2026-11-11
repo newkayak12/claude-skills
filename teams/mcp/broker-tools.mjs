@@ -34,6 +34,7 @@ import {
 } from './graph.mjs';
 import { composePrompt, nodeSkills } from './prompts.mjs';
 import { storyKey } from './tickets.mjs';
+import { taskPath } from './taskstate.mjs';
 import { nodeEndEntry, nodeStartEntry, regionPointer, resolveStageModel, usageFromStream } from './nodelaunch.mjs';
 import { readTeamConfig, resolveTeamOptions } from './teamconfig.mjs';
 import { brokerDir, loadVendors, probeCache, readJson, record, runAdapter, syncOpenNodes } from './broker-vendors.mjs';
@@ -461,6 +462,34 @@ function askTarget(run) {
   return task_id && run.package && run.package.id ? { task_id, key: storyKey(task_id, run.package.id) } : null;
 }
 
+// The asks (tm_ask) of this run's STORY, from the manager's task file - read only, the manager
+// owns it. [] when the run has no leader or the file is unreadable.
+function storyAsks(target) {
+  if (!target) return [];
+  try {
+    const task = JSON.parse(readFileSync(taskPath(target.task_id), 'utf8'));
+    return (task.story_asks || []).filter((a) => a.key === target.key);
+  } catch { return []; }
+}
+
+// A node that asked its leader and ended its turn is parked, not failed: it goes back to pending
+// with the ask ids on it, the manager answers the STORY's ask, and the node runs again with the
+// answers in its prompt (askTarget's `answers`). The driver is told to end its turn.
+function parkNode(run, n, asks) {
+  const ask_ids = asks.map((a) => a.ask_id);
+  n.parked_asks = [...new Set([...(n.parked_asks || []), ...ask_ids])];
+  n.result = { stage_ok: false, reason: `parked on tm_ask: ${ask_ids.join(', ')}` };
+  n.state = 'pending';
+  n.ticket = null;
+  // running -> pending is a deliberate reopen: saveRun's merge keeps the disk copy's running
+  // state unless `reopened` outruns it (graph-retry.mjs does the same).
+  n.reopened = (n.reopened || 0) + 1;
+  saveRun(run);
+  syncOpenNodes(run);
+  record(run.cwd, { event: 'node_parked', run_id: run.run_id, node_id: n.node_id, stage: n.stage, ask_ids });
+  return { ...verdict(run, n), parked: true, ask_ids, next: 'End your turn now: this node asked its leader and waits for the answer. A fresh driver runs it again with the answer.' };
+}
+
 async function toolGraphRun(a) {
   const run = mustFindRun(a);
   let n = requireRunnable(run, String(a.node_id));
@@ -515,7 +544,9 @@ async function toolGraphRun(a) {
   const outPath = join(dir, 'result.json');
   const eventsPath = join(dir, 'events.jsonl');
   const briefing = nodeBriefing(run, n);
-  writeFileSync(promptPath, composePrompt(run, n, briefing, { regionPointer, ask: askTarget(run) }));
+  const target = askTarget(run);
+  const answers = target ? storyAsks(target).filter((a) => (n.parked_asks || []).includes(a.ask_id) && (a.state === 'answered' || a.state === 'delivered')).map((a) => ({ question: a.question, answer: a.answer })) : [];
+  writeFileSync(promptPath, composePrompt(run, n, briefing, { regionPointer, ask: target && { ...target, answers } }));
   n.detail_path = outPath;
   saveRun(run);
 
@@ -607,6 +638,13 @@ async function toolGraphRun(a) {
   n = getNode(run, n.node_id) || n;
 
   const transportOk = proc.status === 0;
+  // The node asked its leader during this session and did not deliver a passing result: parked.
+  if (transportOk) {
+    const asked = storyAsks(target).filter((a) => a.at >= n.started_at);
+    const usable = payload && payload._unparsed !== true && Object.keys(payload).length > 0;
+    const delivered = reasoning ? usable && payload.stage_ok !== false : report.stage_ok === true;
+    if (asked.length && !delivered) return parkNode(run, n, asked);
+  }
   // A provider's usage limit is never a verdict on the work, under either allocation: code-sprint-S2's
   // second PLAN run (allocation ordered) had every codex node exit 1 on "You've hit your usage
   // limit", each counted as a failed attempt, until the package's retries were spent. The
