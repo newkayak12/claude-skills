@@ -1,14 +1,16 @@
 ---
 name: pattern
 description: >-
-  Use when someone wants to understand the writing patterns in their portfolio —
-  not what it says but how it reads: passive voice ratio, subject audit, number
-  density, and decision visibility. Triggers on: "패턴 분석해줘", "오너십이 잘 드러나나", "피동형
-  많이 썼나".
+  Use when someone wants to see how a portfolio reads — passive voice, subject
+  audit, number density, decision visibility — or to score two versions on the
+  same keys. Not template composition patterns (deck-builder extract). Triggers:
+  "패턴 분석해줘", "오너십이 잘 드러나나", "두 버전 패턴 점수 비교해줘".
 scenarios:
   - "Analyze the writing patterns in my portfolio — do I show ownership clearly?"
   - "How much passive voice am I using and how does it affect my portfolio?"
   - "Do my impact claims have numbers or are they all vague?"
+  - "Score v1 and v2 of my skeleton on the same pattern keys"
+  - "두 버전 패턴 점수 비교해줘: v1.md v2.md"
   - "내 포트폴리오 주어 비율 분석해줘"
   - "오너십이 잘 드러나는지 패턴 분석 해줘"
 compatibility:
@@ -36,6 +38,16 @@ compatibility:
 **Not for** rewriting weak sections (`rewrite`), overall quality scoring (`feedback`), or JD keyword matching (`fit`).
 
 Input: the portfolio text (paste or upload); Korean fully supported.
+
+## Two-version mode
+
+Given two versions (skeleton or deck.mdx), do not re-decide the keys or the counting: run
+`node ${CLAUDE_PLUGIN_ROOT}/skills/pattern/scripts/pattern-score.mjs <a> <b> --out <dir>` and report its
+JSON as it is. The fixed keys and how each is counted are in `references/counting-basis.md`; `--out`
+writes `pattern-a.json`/`pattern-b.json` (flat `{ "<key>": <score> }`, what manage's `compare` reads)
+and `pattern-basis.json`. Notes and footnote slots are out of scope for skeleton and deck input and
+the script excludes them; do not count them by hand either. Add a judgment (Top 3, fixes) only after
+the numbers, and apply the boundary rule to them; a changed `basis_version` means the two rounds are not comparable.
 
 ## Process
 
@@ -116,6 +128,14 @@ One line: what this writing pattern tells an interviewer before they read the co
 
 Insert `🧠 Pattern note` where a finding required non-obvious judgment.
 
+**[두 버전 점수]** (two-version mode; the script's numbers, same keys every round)
+
+| key | A | B | 변화 |
+|---|---|---|---|
+| decision_verb_pct · active_pct · own_subject_pct · specific_pct · number_density_pct · failure_pct · decision_marks_pct | n | n | ±n |
+
+Each key is a 0-100 share, higher reads better. Under it: `basis_version`, the `counts` behind the shares, and the `--out` files.
+
 ---
 
 **[가장 자주 나타나는 패턴 Top 3]**
@@ -130,7 +150,7 @@ For each flagged pattern: one concrete fix that changes shape, never adds a fact
 
 | Claude | You |
 |--------|-----|
-| Audits 6 dimensions: subject audit, agency language, number density, failure narrative, decision visibility, verb energy | Provides the portfolio text |
+| Audits 6 dimensions: subject audit, agency language, number density, failure narrative, decision visibility, verb energy | Two versions: runs `pattern-score.mjs`, reports its keys, counts and basis unchanged | Provides the portfolio text, or both versions' paths |
 | Calculates ratios and marks boundary values `경계` instead of flagging | Validates findings against your actual intent |
 | Identifies top 3 patterns with quotes and one fix each, missing facts as `[확인 필요]` | Fills the `[확인 필요]` facts and decides what to rewrite (or uses rewrite) |
 

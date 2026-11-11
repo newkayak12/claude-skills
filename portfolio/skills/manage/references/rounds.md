@@ -132,7 +132,9 @@ skipped steps with reasons, the steps answered by `noah` or `proposal`, the prio
 ## Did it read better
 
 After a round's edits, score the round's snapshot and the new skeleton with the same rubric in the
-same turn: `feedback`'s five dimension scores and `pattern`'s items, each run as
+same turn: `feedback`'s five dimension scores and `pattern`'s fixed keys (two-version mode: `pattern-score.mjs
+<before> <after> --out <dir>`, its `pattern-a.json`/`pattern-b.json` and `pattern-basis.json`, basis in
+`pattern/references/counting-basis.md`, never re-decided per round), each run as
 `{ "<item>": <score> }` into `snapshot/scores/skeleton-vX.Y.Z.json`, then
 `compare --before <snapshot's> --after <new>`, with both rounds' `claims` saved beside them
 (`skeleton-vX.Y.Z.claims.json`) as `--claims-before`/`--claims-after`: a claim that lost its ground
