@@ -14,7 +14,8 @@
 //   node material.mjs gaps
 //   node material.mjs foreign
 //   node material.mjs ledger
-//   node material.mjs ledger-log --item NN_프로젝트/A1 --note N [--status S --later-step X]
+//   node material.mjs ledger-scaffold [--project NN_이름 --period P]
+//   node material.mjs ledger-log--item NN_프로젝트/A1 --note N [--status S --later-step X]
 //   node material.mjs update  --item NN_프로젝트/A1 --note N --source PATH [--line N|N-M]
 //   node material.mjs item-pages
 //
@@ -35,7 +36,7 @@ import path from 'node:path';
 const PARTS = ['meta.md', 'problem.md', 'decision.md', 'result.md', 'learned.md', 'gaps.md', 'history.md'];
 // selected / excluded: manage's step 2 (sources/선정.md); written: its draft step
 const STATUSES = ['raw', 'shaped', 'selected', 'excluded', 'written', 'rendered', 'reviewed'];
-const FLAGS = new Set(['id', 'source', 'title', 'period', 'role', 'tags', 'note', 'status', 'later-step', 'question', 'citation', 'add-source', 'item', 'line']);
+const FLAGS = new Set(['id', 'source', 'title', 'period', 'role', 'tags', 'note', 'status', 'later-step', 'question', 'citation', 'add-source', 'item', 'line', 'project']);
 const ANSWERED = '[답변됨]';
 const ID_RE = /^[\p{L}\p{N}][\p{L}\p{N}-]*$/u;
 const SRC = path.resolve(process.cwd(), 'sources');
@@ -122,12 +123,15 @@ function ledgerItems() {
   const ls = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }); } catch { return []; } };
   const out = [];
   for (const p of ls(SRC).filter((e) => e.isDirectory() && /^\d+_/.test(e.name)).sort((x, y) => x.name.localeCompare(y.name))) {
-    // every grade's file (A1, B2, C3 …), not only A
-    for (const f of ls(path.join(SRC, p.name)).filter((e) => e.isFile() && /^[A-Z]\d+.*\.md$/.test(e.name)).sort((x, y) => x.name.localeCompare(y.name, undefined, { numeric: true }))) {
+    // every grade's file (A1, B2, C3 …); X_ files (topics not to use) and other letters are not items
+    for (const f of ls(path.join(SRC, p.name)).filter((e) => e.isFile() && /^[ABC]\d+.*\.md$/.test(e.name)).sort((x, y) => x.name.localeCompare(y.name, undefined, { numeric: true }))) {
       const file = `${p.name}/${f.name}`;
       const text = fs.readFileSync(path.join(SRC, file), 'utf8');
       out.push({
-        id: `${p.name.normalize('NFC')}/${f.name.match(/^[A-Z]\d+/)[0]}`,
+        id: `${p.name.normalize('NFC')}/${f.name.match(/^[ABC]\d+/)[0]}`,
+        grade: f.name[0],
+        // the file opens with `> 등급 · 프로젝트 · 원자료: <path>`
+        header: /^>[^\n]*·[^\n]*·\s*원자료:\s*\S/.test(text.replace(/^\s+/, '')),
         file,
         title: (text.match(/^#[ \t]+(.+)$/m) || [, f.name.normalize('NFC').replace(/\.md$/, '')])[1].trim(),
         written: /^- \d{4}-\d{2}-\d{2} .*\(status: written\b/m.test(text),
@@ -135,6 +139,25 @@ function ledgerItems() {
     }
   }
   return out;
+}
+// The ledger's folders: per project its README text, X_ files, graded file names and files with
+// another grade letter; `table` = the projects named in sources/README.md.
+function ledgerTree() {
+  const ls = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }); } catch { return []; } };
+  const projects = ls(SRC).filter((e) => e.isDirectory() && /^\d+_/.test(e.name)).sort((x, y) => x.name.localeCompare(y.name)).map((p) => {
+    const files = ls(path.join(SRC, p.name)).filter((e) => e.isFile()).map((e) => e.name.normalize('NFC'));
+    const rd = ls(path.join(SRC, p.name)).find((e) => e.isFile() && e.name === 'README.md');
+    return {
+      dir: p.name, name: p.name.normalize('NFC'),
+      readme: rd ? fs.readFileSync(path.join(SRC, p.name, rd.name), 'utf8').normalize('NFC') : null,
+      x: files.filter((f) => /^X_.*\.md$/.test(f)),
+      files: files.filter((f) => /^[ABC]\d+.*\.md$/.test(f)),
+      invalid: files.filter((f) => /^[D-WYZ]\d+.*\.md$/.test(f)).map((f) => `${p.name.normalize('NFC')}/${f}`),
+    };
+  });
+  let top = '';
+  try { top = fs.readFileSync(path.join(SRC, 'README.md'), 'utf8').normalize('NFC'); } catch { /* none */ }
+  return { projects, table: projects.filter((p) => top.includes(p.name)).map((p) => p.name) };
 }
 const cell = (s) => String(s).replace(/\|/g, '\\|');
 function indexItems() {
@@ -315,8 +338,70 @@ const cmd = {
 
   // A workspace that keeps its material as a per-project ledger (`sources/NN_프로젝트/A1….md`) is
   // read as it is: each graded file (A1, B2, C3 …) is one item, id `NN_프로젝트/A1`.
+  // Also reports what the ledger shape lacks (`problems`), writing nothing: files with a grade
+  // letter other than A/B/C, items without the `> 등급 · 프로젝트 · 원자료:` first line, items a
+  // project README does not list, projects without an X_ file or a README or a row in
+  // sources/README.md. `excluded` lists the X_ files: topics not to use, never cited.
   ledger() {
-    return { items: ledgerItems().map(({ id, file, title, written }) => ({ id, file, title, written })) };
+    const items = ledgerItems();
+    const t = ledgerTree();
+    const problems = {
+      invalidGrade: t.projects.flatMap((p) => p.invalid),
+      noHeader: items.filter((i) => !i.header).map((i) => i.id),
+      notInReadme: [],
+      noExcluded: t.projects.filter((p) => !p.x.length).map((p) => p.name),
+      noReadme: t.projects.filter((p) => !p.readme).map((p) => p.name),
+      notInTable: t.projects.filter((p) => !t.table.includes(p.name)).map((p) => p.name),
+    };
+    for (const p of t.projects.filter((q) => q.readme)) {
+      for (const f of p.files) if (!p.readme.includes(f)) problems.notInReadme.push(`${p.name}/${f}`);
+    }
+    return {
+      items: items.map(({ id, grade, header, file, title, written }) => ({ id, grade, header, file, title, written })),
+      excluded: t.projects.flatMap((p) => p.x.map((f) => `${p.name}/${f}`)),
+      analysis: fs.existsSync(path.resolve(process.cwd(), 'analysis')),
+      problems,
+    };
+  },
+
+  // Creates what the ledger shape lacks and never overwrites: a project README listing its items
+  // and grades, `X_쓰지않을것.md` where the project has no X_ file, the project table
+  // sources/README.md (or a missing row appended). --project NN_이름 limits it to one; --period
+  // fills that project's table cell.
+  'ledger-scaffold'(a) {
+    const t = ledgerTree();
+    const want = a.project === undefined ? null : one(a.project).normalize('NFC');
+    const projects = t.projects.filter((p) => !want || p.name === want);
+    if (want && !projects.length) fail(`no ledger project ${a.project}`);
+    const made = [];
+    const make = (rel, text) => {
+      const full = path.join(SRC, rel);
+      try { fs.writeFileSync(full, text, { flag: 'wx' }); made.push(rel.normalize('NFC')); } catch (e) { if (e.code !== 'EEXIST') throw e; }
+    };
+    const items = ledgerItems();
+    for (const p of projects) {
+      if (!p.readme) {
+        const rows = items.filter((i) => i.file.startsWith(`${p.dir}/`));
+        const lines = [`# ${p.name.replace(/^\d+_/, '')}`, '', '| 파일 | 등급 | 제목 |', '|---|---|---|'];
+        for (const r of rows) lines.push(`| ${[`[${path.basename(r.file)}](${encodeURI(path.basename(r.file))})`, r.grade, r.title].map(cell).join(' | ')} |`);
+        lines.push('', '등급: A 독립 쪽 · B 다른 글감의 불릿/근거 · C 각주만. 쓰지 않을 것: `X_` 파일.', '');
+        make(`${p.dir}/README.md`, lines.join('\n'));
+      }
+      if (!p.x.length) {
+        make(`${p.dir}/X_쓰지않을것.md`, '# 쓰지 않을 것\n\n> 면접에서 공격받을 위험이 있어 쓰지 않는 주제와 이유. 어떤 쪽에도 인용하지 않는다.\n\n| 주제 | 이유 |\n|---|---|\n');
+      }
+    }
+    const row = (p) => `| ${p.name} | ${p.name.replace(/^\d+_/, '')} | ${want === p.name ? one(a.period) : ''} |`;
+    const tableFile = path.join(SRC, 'README.md');
+    const missing = projects.filter((p) => !t.table.includes(p.name));
+    if (!fs.existsSync(tableFile)) {
+      make('README.md', ['# 프로젝트', '', '| 폴더 | 프로젝트 | 기간 |', '|---|---|---|', ...missing.map(row), ''].join('\n'));
+    } else if (missing.length) {
+      const text = fs.readFileSync(tableFile, 'utf8');
+      fs.appendFileSync(tableFile, `${text.endsWith('\n') ? '' : '\n'}${missing.map(row).join('\n')}\n`);
+      made.push('README.md (rows added)');
+    }
+    return { created: made };
   },
 
   'ledger-log'(a) {
@@ -428,7 +513,7 @@ function parse(argv) {
 
 try {
   const [sub, ...rest] = process.argv.slice(2);
-  if (!Object.hasOwn(cmd, sub ?? '')) fail(`unknown subcommand: ${sub ?? ''} (id|match|init|index|log|answer|gaps|foreign|ledger|ledger-log|update|item-pages)`);
+  if (!Object.hasOwn(cmd, sub ?? '')) fail(`unknown subcommand: ${sub ?? ''} (id|match|init|index|log|answer|gaps|foreign|ledger|ledger-scaffold|ledger-log|update|item-pages)`);
   process.stdout.write(JSON.stringify(cmd[sub](parse(rest))) + '\n');
 } catch (e) {
   process.stdout.write(JSON.stringify({ error: e.message }) + '\n');

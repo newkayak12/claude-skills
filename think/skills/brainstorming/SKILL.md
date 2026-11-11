@@ -90,6 +90,7 @@ cut with kill-criteria. Every utterance is one JSON line in `.claude/brainstormi
 Fewer than 2 agents alive → finish in normal mode and say so. When `agents:use-codex` /
 `use-claude` is installed, one debater is the other model (codex from Claude Code, claude from
 Codex), called automatically, cold in round 1, never failing the debate if absent or erroring.
+Inside a portfolio workspace (`portfolio-skeleton.md` or a `CLAUDE.md` naming `portfolio:manage`), the whole debate is saved unedited (every line as spoken, no summary) to `consensus/<YYYY-MM-DD>-<HHMM>-<topic>-<N>인<R>라운드.md` (N debaters, R rounds; never overwrite), and each question it left to the user is appended to `docs/확인할-것.md` as `- [ ] <date> <question> (from consensus/<file>)`, existing lines untouched; both paths go in the Output. Elsewhere unchanged.
 Detail and lookup: `references/debate.md`.
 
 **4. Present and get approval.** Size each section to its complexity: a few sentences where it's

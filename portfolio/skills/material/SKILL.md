@@ -3,7 +3,7 @@ name: material
 description: >-
   Use when career material (retrospectives, notes, chat dumps) is handed over
   to collect as portfolio items, or the ledger must refresh from notes.
-  Triggers: "글감 모아줘", "분석 당겨와", "노트에서 갱신", "글감 업데이트",
+  Triggers: "글감 모아줘", "글감 원장 정리해줘", "분석 당겨와", "노트에서 갱신", "글감 업데이트",
   "refresh my material from notes".
 scenarios:
   - "Here is my retrospective. Collect the episodes as portfolio material."
@@ -37,7 +37,8 @@ Script, run from the project root: `node ${CLAUDE_PLUGIN_ROOT}/skills/material/s
 | `gaps` | none | Open and answered question counts per item, from `gaps.md` |
 | `answer` | `--id --question --citation` | Marks the open gaps.md question `[답변됨]` with the citation of the answering material; the line stays |
 | `foreign` | none | Lists files in `material/` the flow did not write |
-| `ledger` | none | A workspace that keeps material as `sources/NN_프로젝트/A1….md`: lists each graded file (A1, B2, C3 …) as item `NN_프로젝트/A1`, its title and whether it is `written` |
+| `ledger` | none | A workspace that keeps material as `sources/NN_프로젝트/A1….md`: lists each graded file (A, B, C + n) as item `NN_프로젝트/A1` with grade, title, `header` (first line `> 등급 · 프로젝트 · 원자료: <path>`) and whether it is `written`; `excluded` = the `X_` files; `analysis` = whether the `analysis/` link exists; `problems` = other grade letters, no header, not in the project README, no `X_` file, no README, not in the project table. Writes nothing |
+| `ledger-scaffold` | opt. `--project NN_이름 --period P` | Creates what `problems` lists as missing, never overwriting: the project `README.md` (items and grades), `X_쓰지않을것.md`, the `sources/README.md` project table (folder, project, period; a missing row is appended) |
 | `ledger-log` | `--item --note` (opt. `--status --later-step`) | Appends one line under `## 이력` at the end of that ledger file, nothing above it touched; a note already there is `unchanged` |
 | `update` | `--item --note --source` (opt. `--line N` or `N-M`) | Ledger file: appends `## 갱신 — <date>` with the note and `출처: <source>:<line>` at the end, nothing above it touched; the same note and source again is `unchanged` |
 | `item-pages` | none | Reads `portfolio-skeleton.md` (old `skeleton.md` too): item → pages from the `글감:` lines; `stale` = pages whose item text changed since the table kept in `sources/item-pages.json` (first run: baseline, none stale); `missing` = cited ids with no item |
@@ -68,6 +69,15 @@ Per-part procedures: `references/parts.md`. Citation, evidence and matching: `re
 5. **Record**: `log` one note per item created or changed (source, what changed); skip it for an item that did not change (rule i). Never pass `--status`.
 6. **Index and scan**: run `index`, then `foreign`.
 7. **Summarize** per the template.
+
+### Ledger shape (ledger workspace)
+
+Trigger: "글감 원장 정리해줘". One item = one file `<grade><n>_<title>.md` in `sources/<NN>_<project>/`. A stands as its own page, B is a bullet or evidence for another item, C is a footnote only. Each file opens with `> 등급 · 프로젝트 · 원자료: <path>`.
+
+1. `ledger`; say each `problems` entry. Wrong grade letters and missing headers are the user's to fix (ask which grade); do not rename or rewrite their files.
+2. `ledger-scaffold` for missing READMEs, `X_쓰지않을것.md` and project rows; ask the period for a new project.
+3. Raw material is read from the `analysis/` link (a read-only archive): read it, never write there; cite it as the `원자료:` path.
+4. `X_` files list topics not to use and why (interview attack risk): never made into items, never cited by `portfolio:manage` `claims`; a new such topic is appended to the project's `X_` file with its reason, from the user's words.
 
 ### Refresh from notes (ledger workspace)
 

@@ -524,3 +524,53 @@ test('a manage workspace (sources/ at the root) keeps items in sources/material/
   init(other, 'b');
   assert.ok(fs.existsSync(path.join(other, 'material/b/meta.md')));
 });
+
+// Ledger shape: grades A/B/C, `> 등급 · 프로젝트 · 원자료:` first line, per-project README, X_ file, project table.
+test('ledger reports grade letters other than A/B/C, a missing header, X_ files and what the shape lacks; writes nothing', () => {
+  const cwd = ledgerProject();
+  const d = path.join(cwd, 'sources', '01_가상검색');
+  fs.writeFileSync(path.join(d, 'A1_검색개편.md'), '> A · 가상검색 · 원자료: analysis/01/retro.md\n\n# 검색 개편\n');
+  fs.writeFileSync(path.join(d, 'D1_잘못.md'), '# 잘못된 등급\n');
+  fs.writeFileSync(path.join(d, 'X_쓰지않을것.md'), '# 쓰지 않을 것\n');
+  fs.mkdirSync(path.join(cwd, 'analysis'));
+  const before = snap(path.join(cwd, 'sources'));
+  const r = run(cwd, ['ledger']).json;
+  assert.deepEqual(snap(path.join(cwd, 'sources')), before);
+  assert.deepEqual(r.items.map((i) => i.id), ['01_가상검색/A1', '01_가상검색/A2', '02_가상알림/A1']);
+  assert.deepEqual(r.items.map((i) => [i.grade, i.header]), [['A', true], ['A', false], ['A', false]]);
+  assert.deepEqual(r.excluded, ['01_가상검색/X_쓰지않을것.md']);
+  assert.equal(r.analysis, true);
+  assert.deepEqual(r.problems.invalidGrade, ['01_가상검색/D1_잘못.md']);
+  assert.deepEqual(r.problems.noHeader, ['01_가상검색/A2', '02_가상알림/A1']);
+  assert.deepEqual(r.problems.noExcluded, ['02_가상알림']);
+  assert.deepEqual(r.problems.noReadme, ['01_가상검색', '02_가상알림']);
+  assert.deepEqual(r.problems.notInTable, ['01_가상검색', '02_가상알림']);
+});
+
+test('ledger-scaffold creates project READMEs with the grade list, X_ file and project table; never overwrites', () => {
+  const cwd = ledgerProject();
+  fs.writeFileSync(path.join(cwd, 'sources', 'README.md'), '# 프로젝트\n\n| 폴더 | 프로젝트 | 기간 |\n|---|---|---|\n| 01_가상검색 | 가상검색 | 2024 |\n');
+  fs.writeFileSync(path.join(cwd, 'sources', '02_가상알림', 'README.md'), '# mine\n');
+  const r = run(cwd, ['ledger-scaffold', '--project', '02_가상알림', '--period', '2025.01-06']).json;
+  assert.deepEqual(r.created, ['02_가상알림/X_쓰지않을것.md', 'README.md (rows added)']);
+  assert.equal(fs.readFileSync(path.join(cwd, 'sources', '02_가상알림', 'README.md'), 'utf8'), '# mine\n');
+  assert.match(fs.readFileSync(path.join(cwd, 'sources', 'README.md'), 'utf8'), /\| 02_가상알림 \| 가상알림 \| 2025\.01-06 \|/);
+  const all = run(cwd, ['ledger-scaffold']).json;
+  assert.deepEqual(all.created, ['01_가상검색/README.md', '01_가상검색/X_쓰지않을것.md']);
+  const readme = fs.readFileSync(path.join(cwd, 'sources', '01_가상검색', 'README.md'), 'utf8');
+  assert.match(readme, /A1_검색개편\.md.*\| A \| 검색 개편/);
+  assert.match(readme, /A2_캐시\.md/);
+  assert.deepEqual(run(cwd, ['ledger-scaffold']).json.created, []);
+  const p = run(cwd, ['ledger']).json.problems;
+  assert.deepEqual([p.noExcluded, p.noReadme, p.notInTable, p.notInReadme], [[], [], [], ['02_가상알림/A1_알림.md']]);
+  assert.match(run(cwd, ['ledger-scaffold', '--project', '09_없음']).json.error, /no ledger project/);
+});
+
+test('ledger-scaffold makes sources/README.md when absent', () => {
+  const cwd = ledgerProject();
+  fs.rmSync(path.join(cwd, 'sources', 'README.md'));
+  run(cwd, ['ledger-scaffold']);
+  const t = fs.readFileSync(path.join(cwd, 'sources', 'README.md'), 'utf8');
+  assert.match(t, /\| 01_가상검색 \| 가상검색 \|/);
+  assert.match(t, /\| 02_가상알림 \| 가상알림 \|/);
+});
