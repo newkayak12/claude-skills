@@ -25,6 +25,7 @@ const MIN = 60 * 1000;
 const asst = (text, id = 'm1') => JSON.stringify({ type: 'assistant', message: { id, content: [{ type: 'text', text }], usage: { input_tokens: 1000, output_tokens: 100 } } });
 const result = (usd) => JSON.stringify({ type: 'result', subtype: 'success', total_cost_usd: usd, num_turns: 3 });
 const touch = (p, agoMs) => { const t = (Date.now() - agoMs) / 1000; utimesSync(p, t, t); };
+const refresh = (p) => { const t = (Date.now() + 10000) / 1000; utimesSync(p, t, t); };
 const write = (p, s, agoMs = 0) => { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, s); if (agoMs) touch(p, agoMs); };
 
 // A temp world: <root>/tasks (the tasks dir), <root>/proj (the cwd), <root>/wt-<id> child worktrees.
@@ -135,6 +136,40 @@ test('L EPIC with three packages', () => {
     assert.deepEqual(t.workers.map((x) => x.id), ['P1', 'P2', 'P3', 'judge']);
     assert.deepEqual(t.workers.slice(0, 3).map((x) => x.state), ['acting', 'acting', 'acting']);
     assert.equal(t.workers[3].state, 'idle');
+  } finally { w.cleanup(); }
+});
+
+test('size S floor driver follows the requested stage, defaulting to build', () => {
+  const w = world();
+  try {
+    const s = sTask(w, { graphFile: true });
+    const m = collectTask(w.tasks, s.id);
+    const facts = floorFacts(m, w.tasks, s.id);
+    const plan = floorOf(m, facts, { stage: 'plan' });
+    assert.equal(plan.workers.find((x) => x.id === 'S').phase, 'plan');
+    assert.equal(plan.phases.find((x) => x.key === 'plan').acting, 1);
+    assert.equal(plan.phases.find((x) => x.key === 'build').acting, 0);
+    assert.equal(floorOf(m, facts).workers.find((x) => x.id === 'S').phase, 'build');
+    write(s.graphPath, JSON.stringify({ run_id: s.runId, nodes: [node('plan', 'plan', [], { state: 'done' }), node('implement:U1:1', 'implement', ['plan'], { state: 'running' })] }));
+    refresh(s.graphPath); refresh(join(s.dir, 'task.json'));
+    const entry = summary(w).tasks[0];
+    write(s.graphPath, JSON.stringify({ run_id: s.runId, nodes: [node('plan', 'plan', [], { state: 'running' }), node('implement:U1:1', 'implement', ['plan'], { state: 'pending' })] }));
+    refresh(s.graphPath); refresh(join(s.dir, 'task.json'));
+    const running = summary(w).tasks[0];
+    assert.equal(running.workers.find((x) => x.id === 'S').phase, 'plan');
+    assert.equal(running.phases.find((x) => x.key === 'plan').acting, 1);
+    assert.equal(running.phases.find((x) => x.key === 'build').acting, 0);
+    const fw = world();
+    const fs = sTask(fw, { id: 'bbbbbbbb-0002', graphFile: true });
+    // the run file keeps its request tag and created_at, or the run is not this task's and its stages read pending
+    write(fs.graphPath, JSON.stringify({ run_id: fs.runId, request: `do it [teams-task ${fs.id}]`, created_at: Date.now(), nodes: [node('plan', 'plan', [], { state: 'failed' }), node('implement:U1:1', 'implement', ['plan'], { state: 'pending' })] }));
+    refresh(fs.graphPath); refresh(join(fs.dir, 'task.json'));
+    const failed = summary(fw).tasks[0];
+    assert.deepEqual(failed.stages.filter((x) => x.state !== 'pending'), [{ key: 'plan', state: 'failed' }]);
+    assert.equal(failed.workers.find((x) => x.id === 'S').phase, 'plan');
+    assert.equal(failed.phases.find((x) => x.key === 'plan').acting, 1);
+    assert.equal(failed.phases.find((x) => x.key === 'build').acting, 0);
+    fw.cleanup();
   } finally { w.cleanup(); }
 });
 

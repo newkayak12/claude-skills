@@ -190,6 +190,17 @@ test('F2-AC-46: a finished STORY: text is the doc file as written, sections carr
   } finally { f.cleanup(); }
 });
 
+test('story-report verdict.tests is pass or fail from the last package test run, absent with none', () => {
+  for (const exit of [0, 1]) {
+    const f = fixture({ nodes: CHILD, accept: { result: { accept: true, match_pct: 91 } } });
+    f.task.nodes.push(node('integrate:1', 'integrate', [], { state: 'done', integration: { package_tests: [{ package: 'P1', exit }] } }));
+    write(join(f.dir, 'task.json'), JSON.stringify(f.task));
+    try { assert.equal(json(f, 'story-report').verdict.tests, exit === 0 ? 'pass' : 'fail'); } finally { f.cleanup(); }
+  }
+  const f = fixture({ nodes: CHILD, accept: { result: { accept: true, match_pct: 91 } } });
+  try { assert.equal('tests' in json(f, 'story-report').verdict, false); } finally { f.cleanup(); }
+});
+
 test('F2-AC-46: a finished STORY whose doc file is gone is rendered from the same data', () => {
   const f = fixture({ nodes: CHILD, accept: { result: { accept: true, match_pct: 91, reason: 'done' } } });
   try {

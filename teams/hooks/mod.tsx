@@ -4,7 +4,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Dash, DecisionsPayload, ReportPayload, StatusInfo, SummaryTask, SummaryTaskEntry, TeamsEvent, TeamsView } from '../types'
 import { HOME, askBandShown, carriesInput, fallbackSelection, levelOf, pageEsc, pageKey, pageStep, paneSlash, reconcileEpic, selectedOf, statusAnswer } from './pane'
 import type { Page, PageKey, PageNav, RowRef, StepCtx, StepResult } from './pane'
-import { HOME_PLANS, PAGE_ROWS, PHASE_KEYS, clipText, costText, epicElapsed, floorRows, footerPlan, homeHeader, homeRows, isEnded, logLines, needsOf, pageLines, phaseLines, renderLines, rowIdsOf, since, storyGrid, storyLabel, storyNow, storyReportLines, storyRows, storyTop, width, windowOf } from './teams-draw'
+import { HOME_PLANS, PAGE_ROWS, PHASE_KEYS, clipText, crumbFit, costText, epicElapsed, floorRows, footerPlan, KEYS_CHROME, homeHeader, homeRows, isEnded, logLines, needsOf, pageLines, phaseLines, renderLines, rowIdsOf, since, storyGrid, storyLabel, storyNow, storyReportLines, storyRows, storyTop, width, windowOf } from './teams-draw'
 import type { DecisionX, Line, PageOpts, PageRow, PhaseEntry, StoryPayload, StoryReport } from './teams-draw'
 
 const cursor = atom({ plugin: 'teams', key: 'cursor' } as const, 0)
@@ -26,6 +26,7 @@ const pageScroll = atom({ plugin: 'teams', key: 'pageScroll' } as const, {} as R
 const unfolded = atom({ plugin: 'teams', key: 'unfolded' } as const, {} as Record<string, boolean>)
 // `n` found no flag: a dim line says so until the next key
 const flagHint = atom({ plugin: 'teams', key: 'flagHint' } as const, false)
+const draftHint = atom({ plugin: 'teams', key: 'draftHint' } as const, false)
 // a counter only: answer mode's draft lives in a module variable, and a change to it bumps this so the pane redraws
 const answerRev = atom({ plugin: 'teams', key: 'answerRev' } as const, 0)
 // the pane Input's text: drawn as its value, so a handled key can draw '' and the host drops what was typed
@@ -123,7 +124,7 @@ const en = {
   f2LogAttemptReject: 'attempt {n} reject {score}/{threshold}', f2LogApproved: 'approved ({gaps} gaps)', f2LogCriteria: '{n} acceptance criteria',
   f2LogSubgoals: '{n} subgoals', f2LogAsked: 'TeamLeader → me "{question}"',
   f2ReportNotAvailable: 'Not available yet: appears after the gate passes', f2ReportSeeLog: 'Look again', f2ReportAccepted: 'accepted {score}/{threshold} · {t}',
-  f2ReportVerdictLine: 'judge {score} / threshold {threshold} · attempt {n}/{max}', f2ReportTestsPassed: '{n} tests passed',
+  f2ReportVerdictLine: 'judge {score} / threshold {threshold} · attempt {n}/{max}', f2AnswerSubmit: 'send', f2HintDraftDropped: 'Draft dropped', f2ReportTestsPass: 'tests pass', f2ReportTestsFail: 'tests fail',
   f2ReportResult: 'Result', f2ReportVerdict: 'Judge', f2ReportFiles: 'Files changed', f2ReportDecisions: 'Decisions', f2ReportLeft: 'Left over',
   f2AnswerTitle: 'Answer the question', f2AnswerPrompt: 'Answer', f2AnswerContext: 'Context', f2AnswerSend: '⏎ send', f2AnswerCancel: 'empty ⏎ cancel',
   f2AnswerDesktopOnly: 'answer on a desktop', f2AnswerAccepted: 'Answer sent', f2AnswerRefused: 'Not accepted: {reason}', f2AnswerFailed: 'Could not run the answer tool: {reason}',
@@ -131,7 +132,7 @@ const en = {
   f2FlagTitle: 'Waiting for you {n}', f2FlagAge: '{m} waiting', f2FlagDriverSilent: 'no output for {m} (driver stopped?)',
   f2FootHome: 'w s move · d ⏎ open (EPIC → Floor · STORY → detail) · n next ⚑ · q close', f2FootFloor: 'w s move · d ⏎ Phase detail · a back · n next ⚑ · q close',
   f2FootStory: 'w s move · d ⏎ open · a back · n next ⚑ · q close', f2FootScroll: 'w s scroll · a back · n next ⚑ · q close',
-  f2FootAnswer: 'Input mode: letters go in as typed · ⏎ send · empty ⏎ cancel',
+  f2FootAnswer: 'Input mode: letters go in as typed · empty ⏎ cancel',
   f2FloorPhaseOf: 'Phase {n}/6', f2FloorDecisionsN: 'decisions {n}', f2FloorReportHint: 'EPIC report opens here',
   // keys the engine sends beside its English (view-status decisions, docs.mjs unaccepted_packages); the English stays beside each
   actorHuman: 'human', proposalSize: 'size {size}', proposalSizeFlow: 'size {size} · {flow}',
@@ -203,7 +204,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     f2LogAttemptReject: '시도 {n} reject {score}/{threshold}', f2LogApproved: '승인 (지적 {gaps})', f2LogCriteria: '완료 기준 {n}개',
     f2LogSubgoals: '하위 목표 {n}개', f2LogAsked: 'TeamLeader → 나 "{question}"',
     f2ReportNotAvailable: '아직 없음: gate 통과 후 생김', f2ReportSeeLog: '다시 보기', f2ReportAccepted: 'accepted {score}/{threshold} · {t}',
-    f2ReportVerdictLine: 'judge {score} / 기준 {threshold} · 시도 {n}/{max}', f2ReportTestsPassed: '테스트 {n} 통과',
+    f2ReportVerdictLine: 'judge {score} / 기준 {threshold} · 시도 {n}/{max}', f2AnswerSubmit: '보내기', f2HintDraftDropped: '초안을 버렸습니다', f2ReportTestsPass: '테스트 통과', f2ReportTestsFail: '테스트 실패',
     f2ReportResult: '결과', f2ReportVerdict: '판정', f2ReportFiles: '바뀐 파일', f2ReportDecisions: '결정', f2ReportLeft: '남은 일',
     f2AnswerTitle: '질문에 답하기', f2AnswerPrompt: '답', f2AnswerContext: '맥락', f2AnswerSend: '⏎ 보내기', f2AnswerCancel: '빈 ⏎ 취소',
     f2AnswerDesktopOnly: '데스크톱에서 답해 주세요', f2AnswerAccepted: '답을 보냈습니다', f2AnswerRefused: '받지 못했습니다: {reason}', f2AnswerFailed: '답변 도구를 실행하지 못했습니다: {reason}',
@@ -211,7 +212,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     f2FlagTitle: '나를 기다림 {n}', f2FlagAge: '{m} 대기', f2FlagDriverSilent: '응답 없음 {m} (드라이버 멈춤?)',
     f2FootHome: 'w s 이동 · d ⏎ 열기 (EPIC → FLOOR · STORY → 상세) · n 다음 ⚑ · q 닫기', f2FootFloor: 'w s 이동 · d ⏎ Phase 상세 · a 뒤로 · n 다음 ⚑ · q 닫기',
     f2FootStory: 'w s 이동 · d ⏎ 열기 · a 뒤로 · n 다음 ⚑ · q 닫기', f2FootScroll: 'w s 스크롤 · a 뒤로 · n 다음 ⚑ · q 닫기',
-    f2FootAnswer: '입력 모드: 글자가 그대로 들어감 · ⏎ 보내기 · 빈 ⏎ 취소',
+    f2FootAnswer: '입력 모드: 글자가 그대로 들어감 · 빈 ⏎ 취소',
     f2FloorPhaseOf: 'Phase {n}/6', f2FloorDecisionsN: '결정 {n}', f2FloorReportHint: 'EPIC 보고서는 여기서 열림',
     actorHuman: '사람', proposalSize: '규모 {size}', proposalSizeFlow: '규모 {size} · {flow}',
     resplitAreas: '재분할 → 영역:{n}', resplit: '재분할', replanIds: '재계획 {ids}',
@@ -329,10 +330,11 @@ async function settleAnswer($: EngineInterface, pg: Page): Promise<void> {
   await setAnswering($, false)
 }
 // Esc, or the person's close while answering: the draft is cancelled and the pane returns to the page ANSWER was opened from
-async function leaveAnswer($: EngineInterface): Promise<void> {
-  const r = pageEsc(await readNav($))
+async function leaveAnswer($: EngineInterface, { dropped = true }: { dropped?: boolean } = {}): Promise<void> {
+  const r = pageEsc(await readNav($), dropped && ((await read($, typed)) !== '' || (draft?.chosen.length ?? 0) > 0))
   await writeNav($, r.nav)
   await settleAnswer($, r.nav.page)
+  if (r.hint === 'draftDropped') await update($, draftHint, () => true)
 }
 // A pane opened again after it closed on ANSWER (the host's Esc, the Close Button) starts on the page ANSWER came from, draft lost
 async function openPane($: EngineInterface) {
@@ -896,6 +898,7 @@ export const register: Register = on => {
     // one key or Button press: the page stack moves, the EPIC the data call is for follows the page
     const act = async (key: Exclude<PageKey, null>): Promise<void> => {
       if (hinted) await update($, flagHint, () => false)
+      if (await read($, draftHint)) await update($, draftHint, () => false)
       if (key.kind === 'lang') return toggleLang($)
       const r: StepResult = pageStep(nav, key, ctx)
       if (r.closed) {
@@ -929,7 +932,7 @@ export const register: Register = on => {
       const d = draft
       if (d === null || d.busy) return
       const chose = text.trim()
-      if (chose === '') return leaveAnswer($)
+      if (chose === '') return leaveAnswer($, { dropped: true })
       const card = d.cards[0]
       const q = card?.questions[d.qi]
       if (card === undefined || q === undefined) return
@@ -954,7 +957,7 @@ export const register: Register = on => {
       if (sent) {
         try {
           $.ui.toast(s('f2AnswerAccepted'))
-          await leaveAnswer($)
+          await leaveAnswer($, { dropped: false })
           if (refresh !== null) await refresh()
         } catch {
           // the answer is in; a toast or a refresh that fails changes nothing
@@ -997,10 +1000,8 @@ export const register: Register = on => {
                 ? s('f2ReportAccepted', { score: verdictOf.score, threshold: verdictOf.threshold ?? '', t: since(storyMs) })
                 : pg.name === 'ANSWER' && askCard?.since != null ? `⚑ ${s('f2FlagAge', { m: since(Math.max(0, now - askCard.since)) })}` : ''
     const crumbRoom = inner - (floorRight === '' ? 0 : width(floorRight) + 2)
-    const crumbFull = crumbs.join(' › ')
-    const crumbEl = width(crumbFull) > crumbRoom ? <Text bold wrap="truncate-end">{clipText(crumbFull, crumbRoom)}</Text> : (
-      <Text wrap="truncate-end"><Text dimColor>{`${crumbs.slice(0, -1).join(' › ')} › `}</Text><Text bold>{crumbs[crumbs.length - 1]}</Text></Text>
-    )
+    const fittedCrumbs = crumbFit(crumbs, crumbRoom)
+    const crumbEl = <Text wrap="truncate-end"><Text dimColor>{`${fittedCrumbs.slice(0, -1).join(' › ')} › `}</Text><Text bold>{fittedCrumbs[fittedCrumbs.length - 1]}</Text></Text>
     const rule = (k: string) => renderLines(ui, [[{ t: '─'.repeat(inner), dim: true }]], k)
 
     let body
@@ -1084,7 +1085,7 @@ export const register: Register = on => {
               : (
                 <Box>
                   <Box flexShrink={0}><Text color="claude">{`${s('f2AnswerPrompt')} ›`}</Text></Box>
-                  <Box flexShrink={1} marginLeft={1} height={1} overflow="hidden"><Input key="answer" autoFocus value={buffer} onInput={keep(onKey)} onSubmit={submitAnswer} /></Box>
+                  <Box flexShrink={1} marginLeft={1} height={1} overflow="hidden"><Input key="answer" autoFocus value={buffer} submitLabel={s('f2AnswerSubmit')} onInput={keep(onKey)} onSubmit={submitAnswer} /></Box>
                 </Box>
               )}
             {failed !== '' && <Text color="error">{failed}</Text>}
@@ -1111,7 +1112,7 @@ export const register: Register = on => {
       : nav.unfolded[selEpic.task_id] === true ? s('f2FoldRefold') : ref?.type === 'epic' ? s('f2FoldUnfold') : ''
     const foot = pg.name === 'HOME' ? 'f2FootHome' : pg.name === 'FLOOR' ? 'f2FootFloor' : pg.name === 'STORY' ? 'f2FootStory' : pg.name === 'ANSWER' ? 'f2FootAnswer' : 'f2FootScroll'
     const footText = [s(foot), foldHint].filter(Boolean).join(' · ')
-    const footHint = footerPlan({ steps: 0, open: '', close: '', hint: footText, marker }, inner).hint
+    const footHint = footerPlan({ steps: 0, open: '', close: '', hint: footText, marker }, inner, pg.name === 'ANSWER' ? 0 : KEYS_CHROME).hint
     const footer = compact ? (
       <Box columnGap={2} flexWrap="wrap">
         <Button key="up" plain label={s('f2BtnUp')} onPress={() => act({ kind: 'move', by: -1 })} />
@@ -1129,14 +1130,14 @@ export const register: Register = on => {
       </Box>
     ) : (
       <Box columnGap={2}>
-        <Box flexShrink={1} height={1} overflow="hidden"><Input key="keys" autoFocus value={buffer} placeholder={footHint} onInput={keep(onKey)} onSubmit={onSubmit} /></Box>
+        <Box flexShrink={1} height={1} overflow="hidden"><Input key="keys" autoFocus value={buffer} placeholder={footHint} submitLabel="" onInput={keep(onKey)} onSubmit={onSubmit} /></Box>
         <Box flexShrink={0}>{langButton}</Box>
       </Box>
     )
     return (
       <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
         {body}
-        {hinted && <Text dimColor>{s('f2HintNoFlag')}</Text>}
+        {(hinted || await read($, draftHint)) && <Text dimColor>{hinted ? s('f2HintNoFlag') : s('f2HintDraftDropped')}</Text>}
         {footer}
       </Box>
     )

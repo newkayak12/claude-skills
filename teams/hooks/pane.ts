@@ -158,7 +158,7 @@ export type StepCtx = {
   maxScroll: number // last first-line of a scrolled page
   prev?: readonly string[] // the rows of the previous draw, for fallbackSelection
 }
-export type StepResult = { nav: PageNav; closed: boolean; hint: 'noFlag' | null }
+export type StepResult = { nav: PageNav; closed: boolean; hint: 'noFlag' | 'draftDropped' | null }
 
 // The selected row id of the current level after a new list: kept, else the nearest listed, else none
 export function selectedOf(nav: PageNav, ids: readonly string[], prev: readonly string[] = ids): string | null {
@@ -179,9 +179,9 @@ export function reconcileEpic(nav: PageNav, listed: readonly string[]): PageNav 
 }
 
 // Esc: in answer mode it cancels the draft and the pane stays; anywhere else the host closes the pane
-export function pageEsc(nav: PageNav): StepResult {
+export function pageEsc(nav: PageNav, dropped = false): StepResult {
   if (nav.page.name !== 'ANSWER') return { nav, closed: true, hint: null }
-  return { nav: { ...nav, page: backOf(nav.page, nav.from)!, from: null }, closed: false, hint: null }
+  return { nav: { ...nav, page: backOf(nav.page, nav.from)!, from: null }, closed: false, hint: dropped ? 'draftDropped' : null }
 }
 
 // One key on the current page. `l` is the language (the caller toggles it) and `q` closes; the rest move, open, go back or jump.

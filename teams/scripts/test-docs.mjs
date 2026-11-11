@@ -139,15 +139,17 @@ test('storyReportSections: the mock-06 sections as data, the same in the text; u
   task.max_retries = 2;
   task.decisions = [{ question: 'keep the legacy route?', chose: 'yes', owner: 'requester', decided_in: 'P1' }, { question: 'other', chose: 'x', decided_in: 'P2' }];
   task.nodes.find((n) => n.node_id === 'accept:P1:2').result.scoped_out = [{ gap: 'export path', belongs_to: 'P3' }];
+  task.nodes.find((n) => n.node_id === 'accept:P1:2').result.gaps = ['no retry test'];
   task.nodes.find((n) => n.node_id === 'integrate:2').result.package_fold = { P1: { files_changed: ['a.txt', 'lib/a.mjs'] } };
   const rep = storyReportSections(task, 'P1');
   assert.equal(rep.finished, true);
   assert.deepEqual(rep.sections.map((s) => s.key), ['result', 'verdict', 'files', 'decisions', 'left', 'seeLog']);
   const by = Object.fromEntries(rep.sections.map((s) => [s.key, s.lines]));
   assert.deepEqual(by.verdict, ['score=92', 'threshold=90', 'attempt=2', 'max=3']);
+  assert.deepEqual(by.left, ['export path (belongs to P3)', 'no retry test']);
+  assert.match(renderAll(task)[docPaths(task).story('P1')], /## Left over\n- export path \(belongs to P3\)\n- no retry test/);
   assert.deepEqual(by.files, ['a.txt', 'lib/a.mjs']);
   assert.deepEqual(by.decisions, ['keep the legacy route?: yes']);
-  assert.deepEqual(by.left, ['export path (belongs to P3)']);
   assert.deepEqual(by.seeLog, ['tm_log E-aaaaaaaa/P1', 'tm_retry E-aaaaaaaa/P1']);
   const text = renderAll(task)[docPaths(task).story('P1')];
   assert.match(text, /## Files changed\n- a\.txt\n- lib\/a\.mjs/);

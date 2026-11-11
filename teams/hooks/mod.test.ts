@@ -9,7 +9,7 @@ import { STORY_LOG_KEYS } from '../scripts/lib/view-events.mjs'
 import { askBandShown, carriesInput, f2Key, HOME, levelOf, nextFlag, PAGE_KEYS, pageEsc, pageKey, pageStep, paneSlash, reconcileEpic, selectedOf, startNav, statusAnswer } from './pane'
 import type { Page, PageName, PageNav, RowRef, StepCtx } from './pane'
 import { NOW_KINDS } from '../scripts/lib/view-summary.mjs'
-import { SPINNER, clipText, columnWidths, footerPlan, handoffCells, padText, plain, rowLine, width, workerCells } from './teams-draw'
+import { KEYS_CHROME, SPINNER, clipText, columnWidths, crumbFit, footerPlan, handoffCells, homeRows, padText, plain, rowLine, storyReportLines, width, workerCells } from './teams-draw'
 
 const SURFACES = ['terminal', 'desktop', 'mobile', 'vscode'] as const
 type Surface = (typeof SURFACES)[number]
@@ -1124,7 +1124,7 @@ test('F4 lang: footerPlan returns the marker whole at 42, 110 and 190 columns', 
     }
   }
   expect(footerPlan({ steps: 2, open: '', close: 'q close', hint: '[ ] EPIC · j k row · 0-5 tabs', marker: 'l EN' }, 190 - 4).hint).toBe('[ ] EPIC · j k row · 0-5 tabs')
-  expect(footerPlan({ steps: 2, open: '', close: 'q close', hint: '[ ] EPIC · j k row · 0-5 tabs', marker: 'l EN' }, 42 - 4).hint.endsWith('…')).toBe(true)
+  expect(footerPlan({ steps: 2, open: '', close: 'q close', hint: '[ ] EPIC · j k row · 0-5 tabs', marker: 'l EN' }, 42 - 4).hint).toBe('[ ] EP…')
 })
 
 test('footerPlan: the key hint keeps what the marker and close leave, cut with … and dropped under 6 columns', () => {
@@ -1132,9 +1132,95 @@ test('footerPlan: the key hint keeps what the marker and close leave, cut with �
   const marker = 'l EN'
   expect(footerPlan({ steps: 0, open: '', close: '', hint, marker }, 100).hint).toBe(hint)
   const cut = footerPlan({ steps: 2, open: '', close: 'q close', hint, marker }, 42).hint
-  expect(cut.endsWith('…')).toBe(true)
-  expect([...cut].length + 10 + 4 + 7 + 4 + 4 + 2).toBeLessThanOrEqual(42) // hint + Input chrome + prev/next + close + marker + three gaps of 2
+  expect(cut).toBe('q close')
+  expect(width(cut) + 10 + 4 + 7 + 4 + 4 + 2).toBeLessThanOrEqual(42) // hint + Input chrome + prev/next + close + marker + gaps
   expect(footerPlan({ steps: 2, open: 'g open run', close: 'q close', hint, marker }, 30).hint).toBe('')
+})
+
+test('pane helpers: real page footers drop detail first and keep a/q segments whole', () => {
+  for (const lang of ['en', 'ko'] as const) for (const inner of [46, 60, 106]) {
+    for (const hint of [STRINGS[lang].f2FootHome, STRINGS[lang].f2FootFloor, STRINGS[lang].f2FootStory, STRINGS[lang].f2FootScroll]) {
+      const result = footerPlan({ steps: 0, open: '', close: '', hint, marker: 'l EN' }, inner, 0) // the call the pane makes
+      expect(width(result.hint)).toBeLessThanOrEqual(inner)
+      if (inner <= 60) expect(result.hint).not.toMatch(/EPIC → Floor · STORY → detail|에픽 → FLOOR · STORY → 상세/)
+      if (hint.includes('d ⏎ open')) expect(result.hint).toContain('d ⏎ open')
+      if (hint.includes('d ⏎ 열기')) expect(result.hint).toContain('d ⏎ 열기')
+      for (const segment of hint.split(' · ').filter(s => /(^|\s)[aq](?:\s|$)/.test(s))) expect(result.hint).toContain(segment)
+    }
+  }
+})
+
+test('pane helpers: detail is stripped before any whole segment is dropped (inner 60)', () => {
+  const plan = (hint: string) => footerPlan({ steps: 0, open: '', close: '', hint, marker: 'l EN' }, 60, 0).hint
+  expect(plan(STRINGS.en.f2FootHome)).toBe('w s move · d ⏎ open · n next ⚑ · q close')
+  expect(plan(STRINGS.ko.f2FootHome)).toBe('w s 이동 · d ⏎ 열기 · n 다음 ⚑ · q 닫기')
+})
+
+test('pane helpers: non-answer footer fits beside the Input bare ⏎ (chrome 2) with a back / q close whole', () => {
+  const lang = { en: ['a back', 'q close'], ko: ['a 뒤로', 'q 닫기'] } as const
+  for (const l of ['en', 'ko'] as const) for (const inner of [106, 60, 46]) {
+    for (const hint of [STRINGS[l].f2FootHome, STRINGS[l].f2FootFloor, STRINGS[l].f2FootStory, STRINGS[l].f2FootScroll]) {
+      const result = footerPlan({ steps: 0, open: '', close: '', hint, marker: 'l EN' }, inner, KEYS_CHROME)
+      expect(width(result.hint) + 2 + 2 + width('l EN')).toBeLessThanOrEqual(inner)
+      for (const key of lang[l]) if (hint.includes(key)) expect(result.hint).toContain(key)
+    }
+  }
+})
+
+test('pane helpers: ANSWER footer with zero chrome keeps its first segment', () => {
+  for (const lang of ['en', 'ko'] as const) {
+    const hint = STRINGS[lang].f2FootAnswer
+    const result = footerPlan({ steps: 0, open: '', close: '', hint, marker: 'l EN' }, 46, 0)
+    expect(result.hint.startsWith(hint.split(' · ')[0]!)).toBe(true)
+    expect(width(result.hint)).toBeLessThanOrEqual(46)
+  }
+})
+
+test('pane helpers: crumbFit shortens EPIC, keeps the last crumb, and floors tiny room at one glyph plus ellipsis', () => {
+  expect(crumbFit(['A very long EPIC', '1 Plan'], 46)).toEqual(['A very long EPIC', '1 Plan'])
+  expect(crumbFit(['A very long EPIC title', '1 Plan'], 12)).toEqual(['A…', '1 Plan'])
+  expect(crumbFit(['큰 에픽 제목', 'STORY', '1 계획'], 20).at(-1)).toBe('1 계획')
+  expect(crumbFit(['ABCDEFG'], 3).at(0)).toMatch(/^..…$/)
+  expect(width(crumbFit(['Epic', '1 Plan'], 8)[0])).toBeGreaterThanOrEqual(2)
+  expect(crumbFit(['Epicccc', 'STORY', '1 Plan'], 16).at(-1)).toBe('1 Plan')
+  expect(crumbFit(['Epicccc', '1 Plan'], 9)).toEqual(['E…', '1 P…'])
+})
+
+test('pane helpers: crumbFit floor is one whole glyph plus ellipsis by width (Hangul 2 cols)', () => {
+  const korean = crumbFit(['큰 에픽 제목', 'STORY', '1 계획'], 10)
+  expect(korean[0]).toBe('큰…')
+  expect(crumbFit(['큰 에픽 제목', '1 계획'], 6)[0]).toBe('큰…')
+  expect(crumbFit(['큰 에픽 제목', '중간 제목 길게', '1 계획'], 12)[1]).toMatch(/^중…/)
+})
+
+test('pane helpers: crumbFit below the room its floors need keeps the floors and may exceed room', () => {
+  const tiny = crumbFit(['Epicccc', 'STORY', '1 Plan'], 9)
+  expect(tiny.slice(0, 2)).toEqual(['E…', 'S…'])
+  expect(width(tiny.join(' › '))).toBeGreaterThan(9)
+})
+
+test('pane helpers: homeRows removes only the size-S EPIC item and keeps L STORY rows', () => {
+  const base = { task_id: 'E1', key: 'E1', title: 'Epic', state: 'acting', items: [{ key: 'E1', title: 'Epic' }, { key: 'P1', title: 'Story' }], stages: [], progress: { done: 0, total: 1 }, done: 0, total: 1, cost: { usd: 0 }, elapsed_ms: 0, you: { cards: [] }, workers: [], metrics: {} }
+  const opts = { now: 0, compact: false, unfolded: {}, say: ((k: string) => k) as never, fixed: (() => '') as never, verdict: (() => '') as never, reportReady: () => false } as never
+  expect(homeRows([base as never], opts).body.filter(r => r.ref.type === 'story')).toHaveLength(1)
+  const large = { ...base, items: [{ key: 'P1', title: 'Story' }, { key: 'P2', title: 'Story 2' }] }
+  expect(homeRows([large as never], opts).body.filter(r => r.ref.type === 'story')).toHaveLength(2)
+})
+
+test('pane helpers: pageEsc reports dropped drafts only in ANSWER', () => {
+  const answer = on(at('ANSWER', 'E1', 'P1'))
+  expect(pageEsc(answer, true).hint).toBe('draftDropped')
+  expect(pageEsc(answer, false).hint).toBeNull()
+  expect(pageEsc(on(at('STORY', 'E1', 'P1')), true)).toEqual({ nav: on(at('STORY', 'E1', 'P1')), closed: true, hint: null })
+})
+
+test('pane helpers: storyReportLines includes test verdict pass/fail and omits absent', () => {
+  const say = ((key: string) => key) as never
+  const report = { finished: true, verdict: { score: 1, threshold: 1, attempt: 1, max: 1, tests: 'fail' }, sections: [{ key: 'verdict', lines: ['x'] }] }
+  expect(JSON.stringify(storyReportLines(report as never, say, 106))).toContain('f2ReportTestsFail')
+  expect(JSON.stringify(storyReportLines({ ...report, verdict: { ...report.verdict, tests: undefined } } as never, say, 106))).not.toContain('f2ReportTests')
+  const koSay = ((key: string) => key === 'f2ReportTestsPass' ? '테스트 통과' : key) as never
+  expect(JSON.stringify(storyReportLines({ ...report, verdict: { ...report.verdict, tests: 'pass' } } as never, koSay, 106))).toContain('테스트 통과')
 })
 
 test('language korean: the waiting status line has no English UI word', async ($, on) => {
@@ -3065,7 +3151,7 @@ test('STORY Report: sections from the keys, ending in tm_log and tm_retry as tex
   const rows = lines.filter(l => /^(Result|Judge|Files changed|Decisions|Left over|Look again) /.test(l))
   expect(rows).toHaveLength(6)
   expect(rows[0]).toMatch(/^Result +POST cancel endpoint adds the reason enum$/)
-  expect(rows[1]).toMatch(/^Judge +judge 91 \/ threshold 80 · attempt 1\/3$/)
+  expect(rows[1]).toMatch(/^Judge +judge 91 \/ threshold 80 · attempt 1\/3 · tests pass$/)
   expect(rows[2]).toMatch(/^Files changed +cancel_reason\.py · cancel_api\.py$/)
   expect(rows[5]).toMatch(/^Look again +tm_log E-3f9a2c11\/S1 · tm_retry E-3f9a2c11\/S1$/)
   expect((await labels(ui)).filter(l => /retry|cancel/i.test(l))).toEqual([])
@@ -3250,7 +3336,7 @@ test('ANSWER: breadcrumb, how long it waits, who asks, the question, a context l
   expect(lines).toContain(`"${ASK_QUESTION}"`)
   expect(lines.find(l => l.startsWith('Context'))).toMatch(/^Context +refund idempotency key$/)
   expect(lines.find(l => l.startsWith('Answer ›'))).toBeDefined()
-  expect(lines.at(-1)).toMatch(/^Input mode: letters go in as typed · ⏎ send · empty ⏎ cancel +l EN$/)
+  expect(lines.at(-1)).toMatch(/^Input mode: letters go in as typed · empty ⏎ cancel  l EN$/)
   expect((await ui.findAll({ type: 'Input' })).map(i => i.props.autoFocus === true)).toEqual([true])
   expect(await ui.find({ key: 'keys' })).toBeUndefined()
 })
@@ -3711,6 +3797,188 @@ for (const surface of SURFACES) {
   }
 }
 
+// ---- card 125 page wiring: footer submit label, size-S pages, breadcrumb tail, closing reply, draft dropped, report verdict ----
+const SIZE_S_ID = 'E-5e5e5e5e'
+const sizeS = (stageKey: 'plan' | 'build') => epicOf('tS', SIZE_S_ID, [story(SIZE_S_ID, 'small thing', { owner_key: SIZE_S_ID, doing: 'planning' })], {
+  title: 'Quick fix', size: 'S', harness: { slug: 'run-7', moving: true },
+  stages: [stage('plan', stageKey === 'plan' ? 'running' : 'done'), stage('build', stageKey === 'build' ? 'running' : 'pending'), ...P_STAGES.slice(2).map(g => stage(g.key, 'pending'))],
+  phases: [{ key: 'plan', ...NO_PHASE, workers: 1, acting: stageKey === 'plan' ? 1 : 0 }, { key: 'build', ...NO_PHASE, workers: stageKey === 'build' ? 1 : 0, acting: stageKey === 'build' ? 1 : 0 }, ...P_PHASES.slice(2)],
+  workers: [{ ...wk('S', 'acting', 'planning'), phase: stageKey }],
+})
+const sizeSData = (stageKey: 'plan' | 'build' = 'plan') => PAGES_FIXTURE({ tasks: [sizeS(stageKey)] })
+const SIZE_S_FLOOR = { name: 'FLOOR', epic: 'tS', story: null, phase: null }
+const SIZE_S_PLAN = { name: 'PHASE', epic: 'tS', story: null, phase: 1 }
+
+for (const [lang, t] of [[undefined, STRINGS.en], ['korean', STRINGS.ko]] as const) {
+  for (const page of [HOME_PAGE, FLOOR_PAGE, STORY_S2, PHASE_BUILD, LOG_S2, REPORT_S1]) {
+    test(`footer: the keys Input draws no submit label on ${page.name}${lang === undefined ? '' : ' (Korean)'}`, async ($, on) => {
+      const { ui } = await homeLines($, on, 190, PAGES_FIXTURE(), 'terminal', lang, { page })
+      expect((await ui.find({ key: 'keys' }))?.props.submitLabel).toBe('')
+    })
+  }
+
+  test(`footer: the answer Input's submit label is the table word${lang === undefined ? '' : ' (Korean)'}`, async ($, on) => {
+    const { ui } = await answerSeed($, on, answerData().data, 'terminal', lang)
+    expect((await ui.find({ key: 'answer' }))?.props.submitLabel).toBe(t.f2AnswerSubmit)
+    expect(t.f2AnswerSubmit).toBe(lang === undefined ? 'send' : '보내기')
+  })
+
+  test(`STORY report: the Judge row ends with the tests verdict${lang === undefined ? '' : ' (Korean)'}`, async ($, on) => {
+    const { lines } = await homeLines($, on, 190, PAGES_FIXTURE(), 'terminal', lang, { page: REPORT_S1 })
+    const judge = lines.find(l => l.includes('judge 91'))
+    expect(judge).toBeDefined()
+    expect(judge!.endsWith(lang === undefined ? 'tests pass' : '테스트 통과')).toBe(true)
+  })
+
+  test(`/teams-status on an open pane answers closed and never opened; on a closed pane it answers opened${lang === undefined ? '' : ' (Korean)'}`, async ($, on) => {
+    mock.clock(on, { now: 1000 })
+    langStart(on, () => (lang === undefined ? {} : { language: lang }))
+    uiWorld(on, {}, ['terminal'], { status: stat(), task: demo() })
+    let panes = [{ id: 'teams-status', title: 'Teams', isPlaced: true }]
+    on('ui.panes', () => ({ value: panes }) as never)
+    on('ui.close', () => { panes = []; return { value: undefined } })
+    await start($)
+    const closing = JSON.stringify(await runStatus($))
+    expect(closing).toContain(t.paneClosed)
+    expect(closing).not.toContain(STRINGS.en.paneOpened)
+    expect(closing).not.toContain(STRINGS.ko.paneOpened)
+    const opening = JSON.stringify(await runStatus($))
+    expect(opening).toContain(t.paneOpened)
+  })
+}
+
+test('size S in Plan: FLOOR counts 1 working on Plan and none on Build', async ($, on) => {
+  const { lines } = await homeLines($, on, 190, sizeSData('plan'), 'terminal', undefined, { epic: 'tS', page: SIZE_S_FLOOR })
+  const plan = lines.find(l => /1 Plan/.test(l))!
+  const build = lines.find(l => /2 Build/.test(l))!
+  expect(plan).toContain('1 working')
+  expect(build).not.toContain('working')
+})
+
+test('size S in Plan: Phase 1 Running lists the S driver, not a dash', async ($, on) => {
+  const { lines } = await homeLines($, on, 190, sizeSData('plan'), 'terminal', undefined, { epic: 'tS', page: SIZE_S_PLAN })
+  const running = at$(lines, 'Running')
+  const handed = at$(lines, 'Handed over')
+  const mine = lines.slice(running + 1, handed).join('\n')
+  expect(mine).toMatch(/● +\S* *S\b/)
+  expect(mine.trim()).not.toBe('–')
+})
+
+test('HOME names a size-S EPIC key once', async ($, on) => {
+  const { lines } = await homeLines($, on, 190, sizeSData('plan'), 'terminal', undefined, { epic: 'tS', page: HOME_PAGE })
+  expect(lines.filter(l => l.includes(SIZE_S_ID))).toHaveLength(1)
+})
+
+for (const lang of [undefined, 'korean'] as const) {
+  test(`Phase detail at 110 columns with a long EPIC title keeps its tail and shortens the head${lang === undefined ? '' : ' (Korean)'}`, async ($, on) => {
+    const long = 'Cancel payment API with a very long title that cannot fit the line beside the crumbs of this page at all'
+    const { lines } = await homeLines($, on, 110, PAGES_FIXTURE({ tasks: P_TASKS({ title: long }) }), 'terminal', lang, { page: PHASE_PLAN })
+    expect(lines[0]).toMatch(/^Cancel payment API.*… › FLOOR › 1 Plan( {2}.*)?$/)
+  })
+}
+
+for (const lang of [undefined, 'korean'] as const) {
+  for (const cols of [190, 110]) {
+    const tag = lang === undefined ? 'en' : 'ko'
+    const shots: [string, Data, Record<string, unknown>][] = [
+      ['homesizes', sizeSData('plan'), { epic: 'tS', page: HOME_PAGE }],
+      ['floorsizes', sizeSData('plan'), { epic: 'tS', page: SIZE_S_FLOOR }],
+      ['phasesizes', sizeSData('plan'), { epic: 'tS', page: SIZE_S_PLAN }],
+      ['phaselong', PAGES_FIXTURE({ tasks: P_TASKS({ title: 'Cancel payment API with a very long title that cannot fit the line beside the crumbs of this page at all' }) }), { page: PHASE_PLAN }],
+      ['draftdropped', PAGES_FIXTURE(), { page: HOME_PAGE, draftHint: true }],
+    ]
+    for (const [name, data, init] of shots) {
+      test(`demo shot ${name} in ${lang ?? 'English'} at ${cols} columns`, async ($, on) => {
+        const { lines } = await homeLines($, on, cols, data, 'terminal', lang, init)
+        sound(lines, cols)
+        F2_SHOTS.push({ name: `demo-${name}${tag}-${cols}`, lines })
+      })
+    }
+  }
+}
+
+// The testing engine cannot raise a person's `ui.close`, so the drops are reached through the other two paths into leaveAnswer: an empty
+// Enter after answered questions, and the pane opened again after the host closed it on ANSWER with text still typed.
+async function hostClosedAnswer($: Engine, on: On, language?: string) {
+  const clock = mock.clock(on, { now: 1000 })
+  startWorld(on, language)
+  const seen = uiWorld(on, { watch: ['abc'], epic: 'tA', page: ANSWER_PAGE, pageFrom: HOME_PAGE }, ['terminal'], answerData().data)
+  let panes = [{ id: 'teams-status', title: 'Teams', isPlaced: true }]
+  on('ui.panes', () => ({ value: panes }) as never)
+  on('ui.render', (_$, e) => (e.component === 'AbovePrompt' ? { type: 'Box', children: [] } : undefined) as never)
+  await start($)
+  await clock.advance(3000)
+  const ui = await atCols($, 'terminal', 190)
+  return { seen, ui, hostClose: () => { panes = [] }, reopen: () => $.command.run({ command: 'teams-status' } as never) }
+}
+for (const [lang, t] of [[undefined, STRINGS.en], ['korean', STRINGS.ko]] as const) {
+  test(`ANSWER closed by the host with text typed: reopening says the draft was dropped and shows an empty field${lang === undefined ? '' : ' (Korean)'}`, async ($, on) => {
+    const { seen, ui, hostClose, reopen } = await hostClosedAnswer($, on, lang)
+    await typeAnswer(ui, 'half an answer', 'change')
+    expect(seen.store.get('typed')).toBe('half an answer')
+    hostClose()
+    await reopen()
+    expect(seen.store.get('page')).toEqual(HOME_PAGE)
+    expect(seen.store.get('typed')).toBe('')
+    expect(seen.store.get('draftHint')).toBe(true)
+    await ui.redraw()
+    expect(visible(await ui.drawn())).toContain(t.f2HintDraftDropped)
+    // the same ⚑ opens answer mode again: nothing of the draft is left
+    seen.store.set('page', ANSWER_PAGE)
+    seen.store.set('pageFrom', HOME_PAGE)
+    await ui.redraw()
+    expect((await ui.find({ key: 'answer' }))?.props.value).toBe('')
+  })
+
+  test(`ANSWER empty Enter after an answered question says the draft was dropped${lang === undefined ? '' : ' (Korean)'}`, async ($, on) => {
+    const qs = [{ question: 'How many retries?', options: [] }, { question: 'Which queue?', options: [] }]
+    const { seen, ui } = await answerSeed($, on, answerData(qs).data, 'terminal', lang)
+    await typeAnswer(ui, '3')
+    await typeAnswer(ui, '   ')
+    expect(seen.store.get('page')).toEqual(HOME_PAGE)
+    expect(seen.store.get('draftHint')).toBe(true)
+    expect(visible(await ui.drawn())).toContain(t.f2HintDraftDropped)
+  })
+}
+
+test('ANSWER empty Enter with nothing typed and nothing answered says nothing about a draft', async ($, on) => {
+  const { seen, ui } = await answerSeed($, on, answerData().data)
+  await typeAnswer(ui, '   ')
+  expect(seen.store.get('page')).toEqual(HOME_PAGE)
+  expect(visible(await ui.drawn())).not.toContain(STRINGS.en.f2HintDraftDropped)
+  expect(seen.store.get('draftHint') ?? false).toBe(false)
+})
+
+test('ANSWER accepted submit leaves no draft-dropped hint', async ($, on) => {
+  const { seen, ui } = await answerSeed($, on, answerData().data)
+  await typeAnswer(ui, '3 retries')
+  expect(seen.store.get('page')).toEqual(HOME_PAGE)
+  expect(seen.store.get('draftHint') ?? false).toBe(false)
+  expect(visible(await ui.drawn())).not.toContain(STRINGS.en.f2HintDraftDropped)
+})
+
+test('ANSWER: the pane reopened after a host close with no draft and nothing typed shows no draft-dropped hint', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  startWorld(on)
+  const seen = uiWorld(on, { watch: ['abc'], epic: 'tA', page: ANSWER_PAGE, pageFrom: HOME_PAGE }, ['terminal'], answerData().data)
+  on('ui.panes', () => ({ value: [] }) as never)
+  await start($) // no draft exists: it is null while the page is still ANSWER
+  await $.command.run({ command: 'teams-status' } as never)
+  expect(seen.store.get('page')).toEqual(HOME_PAGE)
+  expect(seen.store.get('draftHint') ?? false).toBe(false)
+})
+
+test('ANSWER: the draft-dropped hint clears on the next key', async ($, on) => {
+  const { seen, ui, hostClose, reopen } = await hostClosedAnswer($, on)
+  await typeAnswer(ui, 'half', 'change')
+  hostClose()
+  await reopen()
+  expect(seen.store.get('draftHint')).toBe(true)
+  await ui.redraw()
+  await typeKey(ui, 'w')
+  expect(seen.store.get('draftHint')).toBe(false)
+})
+
 // ---- the band's engine subject words (restored from F4 subjects): drawn through the table, never as the engine's English in Korean ----
 for (const [subject, key] of Object.entries(SUBJECT_KEY)) {
   for (const language of [undefined, 'korean'] as const) {
@@ -3730,6 +3998,6 @@ for (const [subject, key] of Object.entries(SUBJECT_KEY)) {
 test('F2 demo renders', () => {
   // the page tests above collect the renders; each block is split into tmp/card125/renders by graph/scripts/split-demo.mjs
   const last = new Map(F2_SHOTS.map(s => [s.name, s.lines]))
-  expect(last.size).toBe(32)
+  expect(last.size).toBe(52)
   for (const [name, lines] of last) console.log(`=== ${name} ===\n${lines.join('\n')}\n=== end ===`)
 })

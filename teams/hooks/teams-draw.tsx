@@ -323,12 +323,12 @@ export function homeRows(listed: readonly SummaryTaskEntry[], o: HomeOpts): Home
   }
   for (const t of listed) {
     if (isEnded(t)) continue
-    body.push(epicRow(t, true), ...t.items.map(item => storyRow(t, item, o)))
+    body.push(epicRow(t, true), ...t.items.filter(item => item.key !== t.key).map(item => storyRow(t, item, o)))
   }
   for (const t of listed) {
     if (!isEnded(t)) continue
     const open = o.unfolded[t.task_id] === true
-    body.push(epicRow(t, open), ...(open ? t.items.map(item => storyRow(t, item, o)) : []))
+    body.push(epicRow(t, open), ...(open ? t.items.filter(item => item.key !== t.key).map(item => storyRow(t, item, o)) : []))
   }
   // mobile: the whole section on one line, `⚑ 2` and where each waits
   const flagLine: Line = [
@@ -640,7 +640,9 @@ export function storyReportLines(p: StoryReport | null, say: Say, inner: number)
   if (p === null || !p.finished) return [[{ t: say('f2ReportNotAvailable'), dim: true }]]
   const rows = p.sections.filter(s => s.lines.length > 0 && SECTION_LABEL[s.key] !== undefined).map((s): { cells: string[]; tints: Dim[] } => {
     const v = p.verdict
-    const text = s.key === 'verdict' ? say('f2ReportVerdictLine', { score: v?.score ?? '', threshold: v?.threshold ?? '', n: v?.attempt ?? '', max: v?.max ?? '' }) : s.lines.map(oneLine).join(' · ')
+    const text = s.key === 'verdict'
+      ? say('f2ReportVerdictLine', { score: v?.score ?? '', threshold: v?.threshold ?? '', n: v?.attempt ?? '', max: v?.max ?? '' }) + (v?.tests === undefined ? '' : ` · ${say(v.tests === 'pass' ? 'f2ReportTestsPass' : 'f2ReportTestsFail')}`)
+      : s.lines.map(oneLine).join(' · ')
     return { cells: [say(SECTION_LABEL[s.key]!), text], tints: [undefined, s.key === 'seeLog' ? 'claude' : undefined] }
   })
   const widths = columnWidths(rows.map(r => r.cells), inner, 2, [1], 4)
@@ -682,9 +684,50 @@ export function rowIdsOf(page: Page, listed: readonly SummaryTaskEntry[], unfold
 // so it is returned whole whatever the width.
 // The Input draws its own `⏎ submit` (9 columns and a gap) beside the hint while focused.
 const INPUT_CHROME = 10
+// The keys Input with submitLabel "" still draws a bare `⏎` (2 columns with its gap) after the hint.
+export const KEYS_CHROME = 2
 
-export function footerPlan(parts: { steps: number; open: string; close: string; hint: string; marker: string }, inner: number): { hint: string; marker: string } {
+export function footerPlan(parts: { steps: number; open: string; close: string; hint: string; marker: string }, inner: number, chrome = INPUT_CHROME): { hint: string; marker: string } {
   const fixed = [parts.steps > 0 ? parts.steps + 2 * (parts.steps - 1) : 0, width(parts.open), width(parts.close), width(parts.marker)].filter(n => n > 0)
-  const room = inner - INPUT_CHROME - fixed.reduce((n, w) => n + w, 0) - 2 * fixed.length
-  return { hint: room >= 6 ? clipText(parts.hint, room) : '', marker: parts.marker }
+  const room = inner - chrome - fixed.reduce((n, w) => n + w, 0) - 2 * fixed.length
+  if (room < 6) return { hint: '', marker: parts.marker }
+  const segments: string[] = []
+  let start = 0; let depth = 0
+  for (let i = 0; i < parts.hint.length; i += 1) {
+    if (parts.hint[i] === '(') depth += 1
+    else if (parts.hint[i] === ')') depth -= 1
+    else if (depth === 0 && parts.hint.startsWith(' · ', i)) { segments.push(parts.hint.slice(start, i)); start = i + 3; i += 2 }
+  }
+  segments.push(parts.hint.slice(start))
+  if (width(segments.join(' · ')) <= room) return { hint: parts.hint, marker: parts.marker }
+  const keyed = segments.some(s => /(^|\s)[aq](?:\s|$)/.test(s))
+  const kept = [...segments]
+  const detail = kept.findIndex(s => / \([^()]*\)$/.test(s))
+  if (detail >= 0 && width(kept.join(' · ')) > room) kept[detail] = kept[detail]!.replace(/ \([^()]*\)$/, '')
+  for (let i = kept.length - 1; i >= 0 && width(kept.join(' · ')) > room; i -= 1) {
+    if (/((^|\s)[aq](?:\s|$))/.test(kept[i]!)) continue
+    if (!keyed && i === 0) continue
+    kept.splice(i, 1)
+  }
+  const hint = width(kept.join(' · ')) > room ? clipText(kept.join(' · '), room) : kept.join(' · ')
+  return { hint, marker: parts.marker }
+}
+
+export function crumbFit(crumbs: readonly string[], room: number): string[] {
+  const out = [...crumbs]
+  if (out.length === 0 || room <= 0) return []
+  // Floors: one whole first glyph plus '…' (width(), so Hangul needs 3). Below the room the floors need
+  // (e.g. three crumbs under 12 cols) the result may exceed room; the Text's end-truncation clips it.
+  const floor = (s: string) => width([...s][0] ?? '') + 1
+  const first = () => clipText(out[0]!, Math.max(floor(out[0]!), room - (out.length > 1 ? width(` › ${out.slice(1).join(' › ')}`) : 0)))
+  if (width(out.join(' › ')) > room) out[0] = first()
+  if (width(out.join(' › ')) > room && out.length > 2) {
+    const tail = out.slice(2).join(' › ')
+    out[1] = clipText(out[1]!, Math.max(floor(out[1]!), room - width(`${out[0]} › ${tail ? `${out[1]} › ${tail}` : out[1]}`)))
+  }
+  if (width(out.join(' › ')) > room) {
+    const prefix = out.slice(0, -1).join(' › ')
+    out[out.length - 1] = clipText(out[out.length - 1]!, Math.max(2, room - width(prefix ? `${prefix} › ` : '')))
+  }
+  return out
 }

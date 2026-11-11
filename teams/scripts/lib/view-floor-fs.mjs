@@ -220,6 +220,7 @@ export function floorTasks({ tasksDir, cwd, opener, now = Date.now(), collect = 
 // One listed task as the summary prints it: summarize()'s fields plus identity, liveness, age and the floor.
 export function floorEntry({ m, id, live, age_ms, waiting, worktree = null }, tasksDir, { now = Date.now(), ...reuse } = {}) {
   const summary = summarize(m, { now });
+  const stage = (summary.stages.find((s) => s.state === 'running') || summary.stages.find((s) => s.state === 'failed'))?.key;
   return {
     ...summary,
     worktree,
@@ -228,6 +229,6 @@ export function floorEntry({ m, id, live, age_ms, waiting, worktree = null }, ta
     // an S task's harness run: the slug it is known by and whether it moved lately (the row's liveness is item.live)
     harness: m.harness ? { slug: m.harness.slug || null, moving: !!m.harness.moving } : null,
     // each STORY's numbers (attempt, judge, cost, wall, out of retries) ride on its item as `metrics`
-    ...floorOf(m, floorFacts(m, tasksDir, id, { now, ...reuse }), { now, metrics: summary.metrics }),
+    ...floorOf(m, floorFacts(m, tasksDir, id, { now, ...reuse }), { now, metrics: summary.metrics, stage }),
   };
 }

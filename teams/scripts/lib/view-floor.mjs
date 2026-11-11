@@ -72,7 +72,7 @@ const NUMBERS = ['attempt', 'max_attempts', 'judge', 'cost_usd', 'retry_cost_usd
 const numbersOf = (s) => (s ? Object.fromEntries(NUMBERS.map((k) => [k, s[k] ?? null])) : null);
 
 // `metrics` (summarize(model).metrics) is passed by a caller that already has it; else it is computed here.
-export function floorOf(model, facts = {}, { now = Date.now(), metrics: given = null } = {}) {
+export function floorOf(model, facts = {}, { now = Date.now(), metrics: given = null, stage = null } = {}) {
   const m = model;
   const numbers = new Map(((given || metrics(m, { now })).stories || []).map((s) => [s.id, s]));
   const stalled = m.state === 'stalled' || (m.ticket && m.ticket.state === 'stalled');
@@ -108,7 +108,7 @@ export function floorOf(model, facts = {}, { now = Date.now(), metrics: given = 
     add(id, {
       key: epic, title: (m.ticket && m.ticket.title) || '', last_verdict: null, try: null, max: null,
       elapsed_ms: m.elapsed_ms ?? null, owner_key: epic,
-    }, f, mark, waiting);
+    }, f, mark, waiting, stage ?? 'build');
   } else {
     let plans = 0;
     for (const { c, state: mark, stage } of cardsOf(m)) {

@@ -168,3 +168,18 @@ test('an unknown card, an unknown task and a missing flag are refused or reporte
   assert.equal(cli('--task', t.id).status, 2);
   assert.equal(cli('--answer', '--task', t.id).status, 2);
 });
+
+test('a task with no nodes: --card and --answer report a clear reason', () => {
+  const id = `no-nodes-${++seq}`;
+  const path = tm.taskPath(id);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify({ run_id: id, kind: 'task' }));
+  for (const args of [['--card'], ['--answer', '--key', 'anything']]) {
+    const r = cli(...args, '--task', id);
+    assert.equal(r.status, 0);
+    assert.equal(r.stderr, '');
+    assert.equal(r.out.ok, false);
+    assert.match(r.out.reason, /no nodes yet/);
+    assert.doesNotMatch(r.out.reason, /is not iterable|Cannot read/);
+  }
+});

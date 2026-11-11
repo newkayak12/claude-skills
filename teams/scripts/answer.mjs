@@ -19,6 +19,12 @@ function arg(argv, name) { const i = argv.indexOf(name); return i < 0 ? undefine
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\n');
 const storyOfKey = (k) => (k ? String(k).split('/')[1] : undefined);
 
+async function hasNodes(taskId) {
+  const { taskPath } = await import('../mcp/taskstate.mjs');
+  const { readFile } = await import('node:fs/promises');
+  try { return JSON.parse(await readFile(taskPath(taskId), 'utf8')); } catch { return null; }
+}
+
 // One waiting ask card as the pane draws it: its own key, the questions with their options.
 function cardView(c) {
   return {
@@ -39,6 +45,8 @@ async function main(argv) {
   }
 
   if (argv.includes('--card')) {
+    const raw = await hasNodes(task);
+    if (raw && !Array.isArray(raw.nodes)) return out({ ok: false, reason: `${task} has no nodes yet: nothing to answer` });
     const { toolInbox } = await import('../mcp/taskmanager-handlers.mjs');
     const story = arg(argv, '--story');
     let cards = [];
@@ -49,6 +57,8 @@ async function main(argv) {
   }
 
   if (!key) { process.stderr.write('usage: --answer needs --key <ask card key>\n'); process.exitCode = 2; return; }
+  const rawTask = await hasNodes(task);
+  if (rawTask && !Array.isArray(rawTask.nodes)) return out({ ok: false, reason: `${task} has no nodes yet: nothing to answer` });
   let decisions;
   const raw = arg(argv, '--decisions');
   if (raw !== undefined) {

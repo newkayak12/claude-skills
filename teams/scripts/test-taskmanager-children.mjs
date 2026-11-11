@@ -41,3 +41,11 @@ test('foldPackageHistory records files_changed from the latest attempt, while ch
   assert.deepEqual(fold.files_changed, ['a', 'b']);
   assert.deepEqual([...fold.changed_files].sort(), ['a', 'b', 'old']);
 });
+
+test('foldPackageHistory files_changed comes from the highest attempt even when dispatch nodes are out of order', () => {
+  const task = { spec: { packages: [{ id: 'P1' }] }, nodes: [
+    { stage: 'dispatch', subgoal_id: 'P1', node_id: 'd2', attempt: 2, result: { changed_files: ['new'] } },
+    { stage: 'dispatch', subgoal_id: 'P1', node_id: 'd1', attempt: 1, result: { changed_files: ['old'] } },
+  ] };
+  assert.deepEqual(mod.foldPackageHistory(task).P1.files_changed, ['new']);
+});

@@ -167,6 +167,7 @@ declare module 'claude-code' {
       pageFrom: { name: 'HOME' | 'FLOOR' | 'PHASE' | 'STORY' | 'LOG' | 'STORY_REPORT' | 'EPIC_REPORT' | 'ANSWER'; epic: string | null; story: string | null; phase: number | null } | null
       pageScroll: Record<string, number>
       flagHint: boolean
+      draftHint: boolean
       // a redraw counter for answer mode; its draft (typed answers, the card's questions, the last refusal) is never kept here
       answerRev: number
       // what the open page reads beyond the listing, each keyed to the EPIC (and STORY) it was fetched for
