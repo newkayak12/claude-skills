@@ -191,11 +191,14 @@ export function enginePathWarnings(root) {
   for (const rel of files) {
     let text = ''
     try { text = readFileSync(at(root, rel), 'utf8') } catch { continue }
-    for (const m of text.matchAll(/([^\s`'"()<>|,]*)(skills\/([\w-]+)\/scripts\/[\w.-]+)/g)) {
+    // `=` ends the prefix too: `R=~/.claude/…/resume.py` names the path after the assignment
+    for (const m of text.matchAll(/([^\s`'"()<>|,=]*)(skills\/([\w-]+)\/scripts\/[\w.-]+)/g)) {
       const tail = m[2].replace(/\.+$/, '')
       const prefix = m[1]
       const named = `${prefix}${tail}`
-      if (/^[/~]/.test(prefix)) {
+      if (/\/plugins\/cache\/[^/]+\/[^/]+\/\d+\.\d+\.\d+\//.test(prefix)) {
+        out.push(`${rel}: names ${named}, a version-pinned plugin cache path that goes stale on update; write the command without an install path`)
+      } else if (/^[/~]/.test(prefix)) {
         if (!existsSync(prefix.startsWith('~') ? join(homedir(), named.slice(1)) : named)) out.push(`${rel}: names ${named}, which does not exist on disk; write the command without an install path`)
       } else if (existsSync(join(PLUGIN_ROOT, 'skills', m[3])) && !existsSync(join(PLUGIN_ROOT, tail))) {
         out.push(`${rel}: names ${named}, but the ${m[3]} skill has no ${tail.split('/').slice(2).join('/')}`)
@@ -709,8 +712,9 @@ export function readMaterial(root) {
     }
   }
   for (const p of ls(join(root, 'sources')).filter(e => e.isDirectory() && /^\d+_/.test(e.name))) {
-    // every grade's file (A1, B2, C3 …), not only A: a page may cite any of them
-    for (const f of ls(join(root, 'sources', p.name)).filter(e => e.isFile() && /^[A-Z]\d+.*\.md$/.test(e.name))) {
+    // every grade's file (A1, B2, C3 …), not only A: a page may cite any of them. Grades are A, B, C
+    // as material's ledger reads them; X_ files (topics not to use) are never items
+    for (const f of ls(join(root, 'sources', p.name)).filter(e => e.isFile() && /^[ABC]\d+.*\.md$/.test(e.name))) {
       const text = read(join(root, 'sources', p.name, f.name))
       // a ledger has no result table: each line holding a figure is its row, `근거 없음` on that line marks it
       const rows = text.split('\n').filter(l => figs(l).length)
