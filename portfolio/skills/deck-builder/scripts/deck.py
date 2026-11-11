@@ -3317,11 +3317,13 @@ def cmd_build(args):
     out.parent.mkdir(parents=True, exist_ok=True)
     pkg.write(out)
 
-    # the last check: an AI disclaimer left in alt text is removed, other traces are warned
+    # the last check: every AI trace is taken out (alt text, properties, sentences in slides and notes)
     traces = ai_traces(out)
     problems += ["ai trace: " + t for t in traces["reported"]]
-    # then the rest of the final check: properties naming a tool or library, work annotations left in
-    # the slides and notes (office_render.py final-check; reported, never deleted)
+    for t in traces["removed_text"]:
+        print("  ai trace removed (fix the source too): %s" % t)
+    # then the rest of the final check: work annotations left in the slides and notes
+    # (office_render.py final-check; questions for the user, reported, never deleted)
     extra = [f for f in final_check([out])[str(out)]["findings"] if f not in traces["reported"]]
     problems += ["final-check: " + f for f in extra]
 

@@ -48,7 +48,7 @@ for the next render. Portfolio deck and resume alike. **Not for** content judgem
 |---|---|
 | Safe area | a line or box crosses the template's margins, touches another box, or the photo touches text |
 | Readability | type below the template's body size; a lone last word on a line; text on a fill with contrast under 4.5:1; more than one idea per line |
-| AI traces | `ai-traces` reports anything: a disclaimer in alt text, an AI tool in the properties, an AI phrase in visible text. Visible text is the user's to change, never silently deleted |
+| AI traces | none may reach a submitted file: `final-check` takes out a disclaimer in alt text, an AI tool or library in the properties and each visible sentence that says AI wrote it, and lists what it took out word for word — tell the user, so the source (`deck.mdx`, `resume-deck.mdx`) is fixed too. `ai-traces --report-only` only lists |
 | Skeleton match | a page's headline, figures or order differ from `portfolio-skeleton.md` / `resume-skeleton.md`; a `[확인 필요]` line reached the page |
 
 A check that could not run (no poppler, no renderer) is written in `검토.md` as skipped with its

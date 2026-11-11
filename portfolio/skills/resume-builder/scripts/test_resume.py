@@ -117,7 +117,7 @@ def main():
         check(doc.rstrip().endswith('</w:sectPr></w:body></w:document>'), "page setup (sectPr) is kept last")
         check(set(names) >= {"word/styles.xml", "[Content_Types].xml"}, "the rest of the package is copied")
         check(len(b["warnings"]) == 1 and "확인 필요" in b["warnings"][0], "an unconfirmed line is warned")
-        check(b["ai_traces"] == {"removed": 0, "reported": []}, "build reports ai_traces, clean here — %s" % b["ai_traces"])
+        check(b["ai_traces"] == {"removed": 0, "removed_text": [], "reported": []},"build reports ai_traces, clean here — %s" % b["ai_traces"])
 
         check(b["final_check"][0] == "resume.docx: 1건" and "[확인 필요" in b["final_check"][1],
               "build prints the final-check verdict: the kept [확인 필요 line is a finding — %s" % b["final_check"])

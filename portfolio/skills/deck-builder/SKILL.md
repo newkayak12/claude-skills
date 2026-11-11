@@ -137,9 +137,9 @@ python3 /abs/path/scripts/deck.py build --deck deck.mdx [--output out.pptx] [--s
 ```
 
 The same `deck.mdx` always produces a byte-identical pptx. The build ends with the shared final check
-(`office_render.py`): an "AI-generated content may be incorrect" in alt text is removed; an AI tool in the
-properties, an AI phrase or a `TODO` / `[확인 필요` in the text is a warning, never deleted — tell the user
-each one. Before calling a deck submittable run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/office_render.py
+(`office_render.py`): every AI trace is taken out — an alt-text disclaimer, an AI tool or library in the
+properties, each slide or notes sentence saying AI wrote it — and printed (`ai trace removed`): fix those words
+in `deck.mdx` too. A `TODO` / `[확인 필요` stays, as a warning. Before calling a deck submittable run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/office_render.py
 final-check [--dir build] [--allow "Claude Code,Codex"] [--author NAME]`: a verdict per file, non-zero on a finding.
 
 ### Step 6 · Render and look

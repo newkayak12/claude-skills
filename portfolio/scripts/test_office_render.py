@@ -124,25 +124,27 @@ def final_check_tests(t):
     pptx(f["deck.pptx"], "가상 로고", app="python-pptx")
     add_core(f["deck.pptx"], creator="Steve Canny")
     res = run()
-    got = of(res, "resume.docx")
-    check(len(got) == 3 and any("AI tool" in x and "ChatGPT" in x for x in got) and sum("library" in x for x in got) == 2,
-          "docx: an AI tool in the title and a library as creator and last editor are reported — %s" % got)
-    check(len(of(res, "deck.pptx")) == 2, "pptx: python-pptx as Application and the library author are reported — %s" % of(res, "deck.pptx"))
+    core = read(f["resume.docx"], "docProps/core.xml")
+    check(of(res, "resume.docx") == [] and "<dc:title>이력서</dc:title>" in core and "python-docx" not in core,
+          "docx: the AI tool leaves the title and the library leaves creator and last editor — %s" % core)
+    check(of(res, "deck.pptx") == [] and "python-pptx" not in read(f["deck.pptx"], "docProps/app.xml")
+          and "Steve Canny" not in read(f["deck.pptx"], "docProps/core.xml"), "pptx: python-pptx as Application and the library author go")
+    check(any("python-docx" in x for x in res[str(f["resume.docx"])]["fixed"]), "the verdict lists what was taken out")
+    add_core(f["resume.docx"], title="이력서", creator="python-docx", last="python-docx")
     res = run(author="홍길동")
     check("<dc:creator>홍길동</dc:creator>" in read(f["resume.docx"], "docProps/core.xml")
           and "<cp:lastModifiedBy>홍길동</cp:lastModifiedBy>" in read(f["resume.docx"], "docProps/core.xml"),
           "--author sets dc:creator and lastModifiedBy")
-    check(not [x for x in of(res, "resume.docx") if "creator" in x or "lastModifiedBy" in x], "after --author the library names are gone")
-    check(any("python-pptx" in x for x in of(res, "deck.pptx")), "--author does not hide the library named in app.xml")
 
     print("  work annotations")
     docx(f["resume.docx"], "가상 사진",
          visible="원인은 [확인 필요: 측정 기준] / TODO 수치 / (본인 확인 2026-11-01) / Generated with X")
     add_core(f["resume.docx"])
-    before = read(f["resume.docx"], "word/document.xml")
     got = of(run(), "resume.docx")
-    check(len(got) == 4, "[확인 필요, TODO, (본인 확인, Generated with are each reported — %s" % got)
-    check(read(f["resume.docx"], "word/document.xml") == before, "annotations are reported, never deleted")
+    doc = read(f["resume.docx"], "word/document.xml")
+    check(len(got) == 3, "[확인 필요, TODO, (본인 확인 are each reported — %s" % got)
+    check("[확인 필요: 측정 기준]" in doc and "TODO 수치" in doc and "Generated with" not in doc,
+          "annotations stay for the user; the 'Generated with' line goes — %s" % doc[-140:])
     pptx(f["deck.pptx"], "가상 로고", visible="Co-Authored-By: someone", app="Microsoft Office PowerPoint")
     add_core(f["deck.pptx"])
     with zipfile.ZipFile(f["deck.pptx"]) as z:
@@ -153,20 +155,23 @@ def final_check_tests(t):
         z.writestr("ppt/notesSlides/notesSlide1.xml",
                    '<p:notes %s><a:p><a:r><a:t>FIXME 가상 노트</a:t></a:r></a:p></p:notes>' % A)
     got = of(run(), "deck.pptx")
-    check(len(got) == 2 and any("notesSlide" in x for x in got), "speaker notes and slide text are both scanned — %s" % got)
+    check(len(got) == 1 and "notesSlide" in got[0] and "Co-Authored-By" not in read(f["deck.pptx"], "ppt/slides/slide1.xml"),
+          "speaker notes are scanned (FIXME kept, reported); the Co-Authored-By line on the slide goes — %s" % got)
     docx(f["resume.docx"], "가상 사진", visible="작성자: Claude Opus")
     add_core(f["resume.docx"])
-    check(len(of(run(), "resume.docx")) == 1, "a model name used as the writer is reported")
+    check(of(run(), "resume.docx") == [] and "Claude" not in read(f["resume.docx"], "word/document.xml"), "a model named as the writer goes")
 
     print("  --allow")
     docx(f["resume.docx"], "가상 사진", visible="Claude Code로 작성 · Codex를 사용해 작성")
     add_core(f["resume.docx"], title="Claude Code 활용기")
-    plain = of(run(), "resume.docx")
-    allowed = of(run(allow=["Claude Code", "Codex"]), "resume.docx")
-    check(len(plain) >= 1 and allowed == [], "names the user lists as their own skills are skipped — %s -> %s" % (plain, allowed))
-    docx(f["resume.docx"], "가상 사진", visible="이 문서는 ChatGPT로 작성되었습니다")
+    run(allow=["Claude Code", "Codex"])
+    check("Claude Code로 작성" in read(f["resume.docx"], "word/document.xml") and "Claude Code 활용기" in read(f["resume.docx"], "docProps/core.xml"),
+          "names the user lists as their own skills are left in place")
+    docx(f["resume.docx"], "가상 사진", visible="Claude Code 플러그인을 만들었다. 이 문서는 ChatGPT로 작성되었습니다.")
     add_core(f["resume.docx"])
-    check(len(of(run(allow=["Claude Code", "Codex"]), "resume.docx")) == 1, "--allow does not hide another tool as the writer")
+    run(allow=["Claude Code", "Codex"])
+    doc = read(f["resume.docx"], "word/document.xml")
+    check("ChatGPT" not in doc and "Claude Code 플러그인을 만들었다." in doc, "--allow does not keep another tool as the writer")
 
     print("  pdf")
     pdf(f["resume.pdf"], producer="python-docx 1.1", creator="Claude Code", title="가상")
@@ -180,6 +185,19 @@ def final_check_tests(t):
         check(any("TODO" in x for x in got) and any("Generated with" in x for x in got), "PDF text is scanned for annotations — %s" % got)
     else:
         check(any("not checked" in x for x in got), "with no pdftotext the PDF text is said to be unchecked — %s" % got)
+
+    print("  pdf: rendered again from the cleaned docx")
+    docx(f["resume.docx"], "가상 사진", visible="이 문서는 ChatGPT로 작성되었습니다")
+    add_core(f["resume.docx"])
+    pdf(f["resume.pdf"], text="old render")
+    stale = f["resume.pdf"].read_bytes()
+    res = run()
+    if r.available:
+        check(f["resume.pdf"].read_bytes() != stale and any("다시 렌더" in x for x in res[str(f["resume.pdf"])]["fixed"]),
+              "the PDF is rendered again from the docx that was cleaned — %s" % res[str(f["resume.pdf"])])
+    else:
+        check(any("no renderer" in x for x in of(res, "resume.pdf")), "with no renderer the stale PDF is a finding — %s" % of(res, "resume.pdf"))
+    check(not [x for x in res if x.endswith(".docx") and of(res, "resume.docx")], "the docx itself is clean after the check")
 
     print("  pdf: compressed Info and XMP")
     import zlib
@@ -228,7 +246,7 @@ def main():
         pptx(f, "가상 로고. AI-generated content may be incorrect.")
         r = o.ai_traces(f)
         s = read(f, "ppt/slides/slide1.xml")
-        check(r == {"removed": 1, "reported": []} and 'descr="가상 로고."' in s and "AI-generated" not in s,
+        check(r["removed"] == 1 and not r["reported"] and 'descr="가상 로고."' in s and "AI-generated" not in s,
               "pptx: the disclaimer sentence goes, the rest of the alt text stays — %s" % r)
         check(zipfile.ZipFile(f).read("ppt/media/image1.png").startswith(b"\x89PNG"), "binary parts are copied untouched")
         f = t / "b.pptx"
@@ -255,35 +273,59 @@ def main():
         f = t / "e.docx"
         docx(f, "가상 사진 AI-generated content may be incorrect.")
         r = o.ai_traces(f)
-        check(r == {"removed": 1, "reported": []} and 'title="가상 사진"' in read(f, "word/document.xml"),
+        check(r["removed"] == 1 and not r["reported"] and 'title="가상 사진"' in read(f, "word/document.xml"),
               "docx: a title attribute on docPr is cleaned too — %s" % r)
-        check(o.ai_traces(f) == {"removed": 0, "reported": []}, "a clean file stays clean, nothing reported")
+        check(o.ai_traces(f) == {"removed": 0, "removed_text": [], "reported": []}, "a clean file stays clean, nothing reported")
         f = t / "g.pptx"
         pptx(f, "AI-generated content may be incorrect.")
         before = f.read_bytes()
         r = o.ai_traces(f, fix=False)
         check(f.read_bytes() == before and r["removed"] == 0 and len(r["reported"]) == 1, "fix=False reports and leaves the file as it is")
 
-        print("reported, never deleted")
+        print("visible text and properties: every trace goes")
         f = t / "h.docx"
         docx(f, "가상 사진", visible="이 문서는 생성형 AI로 작성했습니다", app="ChatGPT")
-        before = read(f, "word/document.xml")
         r = o.ai_traces(f)
-        check(r["removed"] == 0 and len(r["reported"]) == 2, "an AI tool in app.xml and an AI phrase in the text are reported — %s" % r["reported"])
-        check(read(f, "word/document.xml") == before, "visible text is never deleted")
+        doc = read(f, "word/document.xml")
+        check(r["removed"] == 2 and not r["reported"], "an AI tool in app.xml and an AI sentence in the text are removed — %s" % r)
+        check("생성형 AI" not in doc and doc.count("<w:p>") == 1, "a Word paragraph that was only the trace goes; the photo paragraph stays")
+        check("<Application></Application>" in read(f, "docProps/app.xml"), "the AI tool in app.xml is emptied")
+        check(any("생성형 AI로 작성했습니다" in x for x in r["removed_text"]), "what was removed is listed word for word — %s" % r["removed_text"])
+        f = t / "h2.docx"
+        docx(f, "가상 사진", visible="검색 응답을 820ms에서 310ms로 줄였다. 이 문서는 ChatGPT로 작성되었습니다. 캐시를 먼저 넣었다.")
+        o.ai_traces(f)
+        doc = read(f, "word/document.xml")
+        check("<w:t>검색 응답을 820ms에서 310ms로 줄였다. 캐시를 먼저 넣었다.</w:t>" in doc,
+              "only the trace sentence goes; the sentences around it stay — %s" % doc[-160:])
+        f = t / "h3.docx"
+        docx(f, "가상 사진", visible="AI로 작성해서 틀릴 수 있습니다 / [확인 필요: 기간]")
+        o.ai_traces(f)
+        check("<w:t>[확인 필요: 기간]</w:t>" in read(f, "word/document.xml"), "a ` / ` separates claims: the work annotation next to a trace stays")
         f = t / "i.pptx"
         pptx(f, "가상 로고", visible="As an AI language model, I", app="Microsoft Copilot")
-        check(len(o.ai_traces(f)["reported"]) == 2, "pptx: the same two kinds are reported")
+        r = o.ai_traces(f)
+        s = read(f, "ppt/slides/slide1.xml")
+        check(r["removed"] == 2 and "As an AI" not in s and "<a:p><a:r><a:t></a:t></a:r></a:p>" in s,
+              "pptx: both go; the slide paragraph stays, blank (a text box needs one) — %s" % r)
         f = t / "i2.pptx"
         pptx(f, "가상 로고", visible="이 문서는 ChatGPT로 작성되었습니다")
-        check(len(o.ai_traces(f)["reported"]) == 1, "a tool named as the writer ('ChatGPT로 작성') is reported")
+        check(o.ai_traces(f)["removed"] == 1 and "ChatGPT" not in read(f, "ppt/slides/slide1.xml"), "a tool named as the writer ('ChatGPT로 작성') goes")
         f = t / "i3.pptx"
         pptx(f, "가상 로고", visible="ChatGPT API 연동 상담 봇을 Claude Code로 개발")
-        check(o.ai_traces(f) == {"removed": 0, "reported": []}, "a tool named as project work is not an AI trace")
+        check(o.ai_traces(f) == {"removed": 0, "removed_text": [], "reported": []}, "a tool named as project work is not an AI trace")
         f = t / "j.pptx"
         pptx(f, "가상 로고", visible="AI-generated content may be incorrect.")
-        r = o.ai_traces(f)
-        check(len(r["reported"]) == 1 and "AI-generated" in read(f, "ppt/slides/slide1.xml"), "a disclaimer typed into visible text is reported, kept")
+        check(o.ai_traces(f)["removed"] == 1 and "AI-generated" not in read(f, "ppt/slides/slide1.xml"), "a disclaimer typed into visible text goes")
+        f = t / "k.pptx"
+        pptx(f, "가상 로고", visible="이 문서는 ChatGPT로 작성되었습니다", app="python-pptx")
+        add_core(f, title="발표 (Gemini)", creator="python-pptx")
+        before = f.read_bytes()
+        r = o.ai_traces(f, fix=False)
+        check(f.read_bytes() == before and r["removed"] == 0 and len(r["reported"]) == 4, "fix=False reports all and changes nothing — %s" % r["reported"])
+        o.ai_traces(f)
+        core = read(f, "docProps/core.xml")
+        check("<dc:title>발표</dc:title>" in core and "<dc:creator></dc:creator>" in core and "<Application></Application>" in read(f, "docProps/app.xml"),
+              "properties: the tool goes from the title, a library author and Application are emptied — %s" % core)
 
         final_check_tests(t)
 

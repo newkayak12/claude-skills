@@ -397,7 +397,10 @@ _PHRASES = re.compile(r"As an AI\b|AI가 생성|AI로 생성|생성형 ?AI로 (?
                       r"AI의 도움을 받아\s?(?:작성|생성)|(?:AI|인공지능)를? (?:사용|이용|활용)해서? (?:작성|생성)|"
                       r"인공지능(?:이|으로)\s?(?:작성|생성)|"
                       r"(?:ChatGPT|Copilot|Gemini|Claude|GPT-?\d*)\s?(?:로|으로|를 (?:사용|이용|활용)해서?|의 도움으로)\s?(?:작성|생성)|"
-                      r"(?:generated|written|created) (?:by|with) (?:an? )?(?:AI|ChatGPT|Copilot|Gemini|Claude)\b", re.I)
+                      r"(?:generated|written|created) (?:by|with) (?:an? )?(?:AI|ChatGPT|Copilot|Gemini|Claude)\b|"
+                      r"Generated with\b|Co-Authored-By\b|"
+                      r"(?:작성자|저자|글쓴이|author|writer|written by|created by)\s*[:：]?\s*"
+                      r"(?:Claude|Opus|Sonnet|Haiku|ChatGPT|GPT-?\d*|Gemini|Copilot)\b", re.I)
 _ALT_TAG = re.compile(r"<(?:\w+:)?(?:cNvPr|docPr)\b[^>]*>")
 _ALT_ATTR = re.compile(r'\b(descr|title)="([^"]*)"')
 _PROP_ELEM = re.compile(r"<([\w:]+)[^>]*>([^<]+)</\1>")
@@ -412,13 +415,68 @@ def _strip(s, allow):
     return s
 
 
+_SENTENCE = re.compile(r".*?(?:[.!?。](?=\s|$)|\s[/|]\s|$)\s*", re.S)
+
+
+def _sentences(s):
+    """[(start, end)] of the sentences of `s`, each with the space after it: ends at . ! ? 。 before a
+    space or the end, or at a ` / ` or ` | ` separator (one line holding several claims)."""
+    out, i = [], 0
+    while i < len(s):
+        m = _SENTENCE.match(s, i)
+        end = m.end() if m and m.end() > i else len(s)
+        out.append((i, end))
+        i = end
+    return out
+
+
+def _trace_spans(joined, allow):
+    """[(start, end)] of every sentence of `joined` carrying an AI disclaimer or an AI-writing phrase,
+    with the space after it (or the space and separator before it, for the last one)."""
+    spans = []
+    for a, b in _sentences(joined):
+        sent = joined[a:b]
+        if _DISCLAIMER.search(sent) or _PHRASES.search(_strip(sent, allow)):
+            if b >= len(joined):   # the last sentence: take the separator before it instead
+                while a > 0 and (joined[a - 1].isspace() or joined[a - 1] in "/|"):
+                    a -= 1
+            spans.append((a, b))
+    return spans
+
+
+def _cut_runs(para, spans):
+    """`para` (one <a:p>/<w:p>) with the characters in `spans` (indices into its joined run text)
+    taken out of the runs that hold them; markup and the other text untouched."""
+    drop = set()
+    for a, b in spans:
+        drop.update(range(a, b))
+    pos = 0
+
+    def cut(m):
+        nonlocal pos
+        val = html.unescape(m.group(2))
+        keep = "".join(c for k, c in enumerate(val, pos) if k not in drop)
+        pos += len(val)
+        return m.group(1) + html.escape(keep, quote=False) + m.group(3)
+    return re.sub(r"(<(?:a|w):t\b[^>]*>)([^<]*)(</(?:a|w):t>)", cut, para)
+
+
+def _scrub_prop(val):
+    """A property value without AI tool or library names (and the brackets around them)."""
+    for pat in (_TOOLS, _LIBS):
+        val = re.sub(r"[\s(\[]*(?:%s)(?:[\s\d.]*)[)\]]*" % pat.pattern, " ", val, flags=re.I)
+    return re.sub(r"\s{2,}", " ", val).strip(" -·,;:")
+
+
 def ai_traces(path, fix=True, allow=()):
-    """Scan every XML part of a pptx/docx. Alt text carrying an AI disclaimer is cleaned (the rest of
-    the alt text stays) when `fix`; a tool named in the document properties and an AI phrase in visible
-    text are only reported, never deleted. Names in `allow` are not counted as a tool or a writer.
-    Returns {"removed": n, "reported": [str]}."""
+    """Scan every XML part of a pptx/docx and, when `fix`, take every AI trace out: an AI disclaimer in
+    alt text (the rest of the alt text stays), an AI tool or library named in the document properties,
+    and each sentence of visible text (slides, notes, body, headers) that says AI wrote it or may be
+    wrong — a paragraph left empty goes with it. Names in `allow` are not counted as a tool or a writer.
+    Returns {"removed": n, "removed_text": [str], "reported": [str]}; with fix=False nothing changes
+    and everything found is in `reported`."""
     path = Path(path)
-    removed, reported, changed = 0, [], {}
+    removed, reported, changed, removed_text = 0, [], {}, []
     with zipfile.ZipFile(str(path)) as z:
         infos = z.infolist()
         data = {i.filename: z.read(i.filename) for i in infos}
@@ -446,20 +504,47 @@ def ai_traces(path, fix=True, allow=()):
                 return '%s="%s"' % (a.group(1), html.escape(left, quote=True))
             return _ALT_ATTR.sub(clean_attr, m.group(0))
         new = _ALT_TAG.sub(clean_tag, text)
-        if new != text:
-            changed[name] = new.encode("utf-8")
-        # (b) properties
+        # (b) properties: an AI tool or a library named in a value
         if name in ("docProps/app.xml", "docProps/core.xml"):
-            for tag, val in _PROP_ELEM.findall(text):
-                if _TOOLS.search(_strip(val, allow)):
-                    reported.append("%s: <%s> names an AI tool: %s" % (name, tag, html.unescape(val)[:60]))
+            def clean_prop(m):
+                nonlocal removed
+                val = html.unescape(m.group(2))
+                if not (_TOOLS.search(_strip(val, allow)) or _LIBS.search(val)):
+                    return m.group(0)
+                if not fix:
+                    reported.append("%s: <%s> names an AI tool or library: %s" % (name, m.group(1), val[:60]))
+                    return m.group(0)
+                removed += 1
+                left = _scrub_prop(val)
+                removed_text.append("%s <%s>: %s → %s" % (name, m.group(1), val[:60], left or "(빈 값)"))
+                return m.group(0).replace(">%s<" % m.group(2), ">%s<" % html.escape(left, quote=False), 1)
+            new = _PROP_ELEM.sub(clean_prop, new)
         # (c) visible text, per paragraph so a phrase split over runs is still seen
         if name.startswith(("ppt/slides/", "ppt/notesSlides/", "word/")) and "<" in new:
-            for p in _PARA.finditer(new):
-                joined = html.unescape("".join(_RUN_TEXT.findall(p.group(0))))
-                m = _DISCLAIMER.search(joined) or _PHRASES.search(_strip(joined, allow))
-                if m:
-                    reported.append("%s: visible text has an AI phrase: %r" % (name, joined[:60]))
+            def clean_para(p):
+                nonlocal removed
+                para = p.group(0)
+                joined = html.unescape("".join(_RUN_TEXT.findall(para)))
+                spans = _trace_spans(joined, allow)
+                if not spans:
+                    return para
+                cut = "".join(joined[a:b] for a, b in spans).strip()
+                if not fix:
+                    reported.append("%s: visible text has an AI phrase: %r" % (name, cut[:60]))
+                    return para
+                removed += len(spans)
+                removed_text.append("%s: %s" % (name, cut))
+                para = _cut_runs(para, spans)
+                rest = html.unescape("".join(_RUN_TEXT.findall(para))).strip()
+                # an empty Word paragraph goes, unless it is a table cell's last one or holds a picture
+                # or the section; an empty slide paragraph stays (a text box needs one) but is blank
+                if not rest and para.startswith("<w:p") and not re.search(r"<w:sectPr|<w:drawing|<w:pict", para) \
+                        and not new[p.end():p.end() + 7].startswith("</w:tc>"):
+                    return ""
+                return para
+            new = _PARA.sub(clean_para, new)
+        if new != text:
+            changed[name] = new.encode("utf-8")
     if fix and changed:
         fd, tmp = tempfile.mkstemp(suffix=path.suffix, dir=str(path.parent))
         os.close(fd)
@@ -467,7 +552,7 @@ def ai_traces(path, fix=True, allow=()):
             for i in infos:
                 zout.writestr(i, changed.get(i.filename, data[i.filename]))
         os.replace(tmp, str(path))
-    return {"removed": removed, "reported": reported}
+    return {"removed": removed, "removed_text": removed_text, "reported": reported}
 
 
 # ── One check before anything is called submittable ──────────────────────────
@@ -476,10 +561,8 @@ FINAL_FILES = ("deck.pptx", "deck.pdf", "resume.docx", "resume.pdf")
 _LIBS = re.compile(r"python-?docx|python-?pptx|Steve Canny|reportlab|\bfpdf2?\b|pypdf2?\b|weasyprint|"
                    r"docx2pdf", re.I)
 _PDF_TOOLS = re.compile(r"\b(Copilot|ChatGPT|GPT-?\d*|OpenAI|Gemini|Claude|Anthropic|Codex)\b", re.I)
-_NOTES = re.compile(
-    r"\[확인 필요|\bTODO\b|\bFIXME\b|\(본인 확인|본인 확인 \d{4}-\d{2}-\d{2}|Generated with|Co-Authored-By|"
-    r"(?:작성자|저자|글쓴이|author|writer|written by|created by)\s*[:：]?\s*"
-    r"(?:Claude|Opus|Sonnet|Haiku|ChatGPT|GPT-?\d*|Gemini|Copilot)\b", re.I)
+# work annotations: questions for the user, reported and kept (the AI-writer lines are in _PHRASES)
+_NOTES = re.compile(r"\[확인 필요|\bTODO\b|\bFIXME\b|\(본인 확인|본인 확인 \d{4}-\d{2}-\d{2}", re.I)
 _TEXT_PARTS = ("ppt/slides/", "ppt/notesSlides/", "word/")
 _PDF_INFO = re.compile(rb"/(Author|Creator|Title|Producer|Subject|Keywords)\s*(\((?:\\.|[^\\)])*\)|<[0-9A-Fa-f\s]*>)")
 _CORE_WHO = (("dc", "creator"), ("cp", "lastModifiedBy"))
@@ -544,7 +627,8 @@ def _office_findings(path, allow, author):
     tr = ai_traces(path, fix=True, allow=allow)
     findings = list(tr["reported"])
     if tr["removed"]:
-        fixed.append("대체 텍스트의 AI 문구 %d건 제거" % tr["removed"])
+        fixed.append("AI 흔적 %d건 제거" % tr["removed"])
+        fixed += ["  지움: %s" % t for t in tr["removed_text"]]
     with zipfile.ZipFile(str(path)) as z:
         for name in z.namelist():
             raw = z.read(name)
@@ -612,17 +696,31 @@ def _pdf_findings(path, allow):
 
 def final_check(paths, allow=(), author=None):
     """The check before anything is called submittable. {path: {"findings": [str], "fixed": [str]}} for
-    each existing file: alt-text disclaimers are removed, `author` (when given) is written into a
-    docx/pptx; every other finding is only reported, never deleted."""
-    out = {}
-    for p in map(Path, paths):
+    each existing file. Every AI trace is taken out of a docx/pptx (alt text, properties, visible
+    sentences) and `author` (when given) is written into it; a PDF whose docx/pptx of the same name
+    changed is rendered again from it, so its text and metadata are clean too. Work annotations
+    ([확인 필요, TODO …) are questions for the user: reported, never deleted."""
+    out, cleaned = {}, set()
+    paths = sorted(map(Path, paths), key=lambda p: p.suffix.lower() == ".pdf")   # office files first
+    for p in paths:
         if not p.is_file():
             continue
         try:
             if p.suffix.lower() == ".pdf":
-                findings, fixed = _pdf_findings(p, allow), []
+                fixed = []
+                src = next((s for s in cleaned if s.stem == p.stem and s.parent == p.parent), None)
+                if src is not None:
+                    rd = Renderer()
+                    if rd.available:
+                        rd.to_pdf(src.parent.resolve(), src.name)
+                        fixed.append("%s에서 다시 렌더함" % src.name)
+                findings = _pdf_findings(p, allow)
+                if src is not None and not fixed:
+                    findings.append("%s changed but no renderer: render %s again from it" % (src.name, p.name))
             else:
                 findings, fixed = _office_findings(p, allow, author)
+                if fixed:
+                    cleaned.add(p)
         except (zipfile.BadZipFile, OSError) as e:
             findings, fixed = ["cannot be read: %s" % e], []
         out[str(p)] = {"findings": findings, "fixed": fixed}

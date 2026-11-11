@@ -42,17 +42,19 @@ Engine, run from the workspace root: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/resum
    (numbering included), keeps the photo on the first paragraph. A role mapped nowhere, a style the
    template lacks, or a sample text no paragraph starts with is refused before anything is written.
 4. **Final checks.** The build output carries `warnings` (an unconfirmed `[확인 필요: …]` line is kept
-   and named) and `ai_traces: {removed, reported}`: an AI disclaimer left in alt text ("AI-generated
-   content may be incorrect") is removed; an AI tool named in the document properties or an AI phrase
-   in the visible text is reported and never deleted. Say each `reported` item to the user.
+   and named) and `ai_traces: {removed, removed_text, reported}`. A submitted document carries no AI
+   trace (user, 2026-11-11: "흔적을 다 지워야죠 공식적으로 제출하는 문서인데"): an AI disclaimer in alt
+   text, an AI tool or library in the document properties, and every visible sentence that says AI
+   wrote it or may be wrong ("ChatGPT로 작성", "AI로 작성해서 틀릴 수 있습니다", `Generated with`,
+   `Co-Authored-By`, a model as writer) are taken out; the rest of the paragraph stays. Say each
+   `removed_text` line to the user and fix the same words in `resume-deck.mdx`, or the next build brings them back.
    Nothing is called submittable before `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/office_render.py final-check
    [--dir build] [--allow "Claude Code,Codex"] [--author NAME]` has run over `resume.docx` and `resume.pdf`:
-   one verdict per file (`깨끗함` or the list), exit non-zero on any finding. It checks alt-text
-   disclaimers (removed), document properties naming an AI tool or a library (`--author` rewrites
-   creator and last editor in the docx), and text, notes and PDF metadata for AI phrases and work
-   annotations (`[확인 필요`, `TODO`, `FIXME`, `(본인 확인`, `Generated with`, `Co-Authored-By`, a model as
-   writer). Findings are reported, never deleted. `--allow` lists the tools the person really lists as
-   their own skills. Say every finding; the person decides.
+   one verdict per file (`깨끗함` or the list), exit non-zero on any finding. It takes the same traces
+   out of the docx (`--author` writes creator and last editor), renders the PDF again from a docx it
+   changed, and checks PDF metadata and text. Work annotations (`[확인 필요`, `TODO`, `FIXME`,
+   `(본인 확인`) are questions, reported and kept until the person answers. `--allow` lists the tools
+   the person really lists as their own skills ("Claude Code로 개발" stays).
 5. **Render.** Only when the user says: `render` writes `build/resume.pdf`, counts pages against `pages:`,
    rewrites the page previews `build/pages/resume-p-N.png` (stale ones deleted) and prints the
    `final_check` verdicts.
@@ -80,7 +82,7 @@ would carry (`.gitignore` it or work outside it).
 |---|---|
 | Lists the template's styles and looks, proposes the role mapping | Confirm the mapping; say which lines are which when the template does not |
 | Builds into your template, keeps the photo, runs the final AI-trace check | Provide the template and `resume-deck.mdx`; keep both out of git |
-| Reports every unconfirmed line and every reported AI trace | Answer `[확인 필요]` lines; decide what to do with a reported phrase |
+| Takes every AI trace out and lists what it took; reports every unconfirmed line | Answer `[확인 필요]` lines; fix removed lines in your source |
 | Renders when told, sizes the cut by `over_lines`, waits | Say when to render; choose what to cut |
 
 ## Related Skills

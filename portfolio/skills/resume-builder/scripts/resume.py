@@ -291,7 +291,7 @@ def build(source, out):
         for n, data in parts.items():
             z.writestr(n, data)
     held = [t for _, t in todo if "[확인 필요" in t]
-    traces = office_render.ai_traces(out)   # the last check: AI disclaimers in alt text go, the rest is reported
+    traces = office_render.ai_traces(out)   # the last check: every AI trace goes (alt text, properties, sentences)
     final = office_render.final_check([out])
     return {"docx": str(out), "paragraphs": len(todo), "template": str(template),
             "ai_traces": traces,

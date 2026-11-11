@@ -148,7 +148,10 @@ Every session in the workspace starts with `manage.mjs scaffold`, unasked: it re
 to these, creates only what is missing, CLAUDE.md included, and never overwrites a file. A CLAUDE.md
 that is already there (a renamed README too) keeps its text and gets the guide appended once.
 
-Nine steps (2.17.0: `office_render.py margins` takes each side from `style/레이아웃.md`;
+Nine steps (2.18.0: no AI trace reaches a submitted file — the final check takes out alt-text
+disclaimers, AI tools and libraries in the properties, and every visible sentence saying AI wrote it
+(`Generated with`, `Co-Authored-By` included), lists each removal word for word and renders the PDF
+again from a file it changed; work annotations stay as questions. 2.17.0: `office_render.py margins` takes each side from `style/레이아웃.md`;
 `final-check` reads compressed PDF Info and XMP and reports each finding once; `rewrite` follows the
 `style/` files; `material update --part` refreshes a folder item; `ledger-scaffold` adds rows inside
 the project table. 2.16.0: the workspace standard — each round keeps `snapshot/rounds/round-NN/` with a
@@ -193,8 +196,8 @@ Writes `resume-deck.mdx` into your own Word template: `catalog` lists the templa
 the front matter maps each role (`styles:` or `samples:`), `build` copies the template's look and keeps
 its photo, `render` makes the PDF and counts pages against your budget, `over_lines` says how many text
 lines run past it so the cut is sized in text, never type. The build ends with a final AI-trace check
-(shared with `deck-builder`): a leftover "AI-generated content may be incorrect" in alt text is removed;
-an AI tool named in the file properties or an AI phrase in the visible text is reported, never deleted.
+(shared with `deck-builder`) that takes every AI trace out — an alt-text disclaimer, an AI tool or library
+in the file properties, each visible sentence saying AI wrote it — and lists what it took out word for word.
 `scripts/office_render.py` (in the plugin's `scripts/`) holds the renderer both builders use; with
 `DECK_RENDER_DOCKER` and a work dir outside `$HOME` (a snap Docker cannot mount it) it stages the files
 under `~/.cache/portfolio-render/`, renders, copies back and deletes the stage.

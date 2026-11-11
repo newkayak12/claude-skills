@@ -141,7 +141,9 @@ snapshot/  sources/  docs/확정사실.md               버전, 글감, 확정�
 바꾸고, CLAUDE.md를 포함해 없는 것만 만들며, 있는 파일은 덮지 않습니다. 이미 있는 CLAUDE.md(이름을 바꾼
 README 포함)는 내용을 그대로 두고 안내문을 한 번만 뒤에 덧붙입니다.
 
-9단계(2.17.0: `office_render.py margins`가 `style/레이아웃.md`의 네 변 여백을 따로 읽음; `final-check`가
+9단계(2.18.0: 제출 파일에 AI 흔적이 남지 않음 — 최종 검사가 대체 텍스트의 면책 문구, 속성의 AI 도구·라이브러리
+이름, AI가 썼다고 말하는 보이는 문장(`Generated with`, `Co-Authored-By` 포함)을 모두 지우고, 지운 것을 원문
+그대로 알리며, 고친 파일에서 PDF를 다시 렌더함; 작업용 표시는 질문으로 남김. 2.17.0: `office_render.py margins`가 `style/레이아웃.md`의 네 변 여백을 따로 읽음; `final-check`가
 압축된 PDF Info와 XMP를 읽고 같은 지적은 한 번만 냄; `rewrite`가 `style/` 파일을 따름; `material update --part`로
 폴더 형식 글감을 갱신함; `ledger-scaffold`가 프로젝트 표 안에 행을 넣음. 2.16.0: workspace 표준 — 라운드마다 `snapshot/rounds/round-NN/`에 기록을 남기고, `report.md`에
 수정마다 이유와 사용자가 정할 구조를 적으며 `round-check`가 빈 칸을 찾음; `snapshot --stable`이 기준본을 고정함;
@@ -181,8 +183,8 @@ README 포함)는 내용을 그대로 두고 안내문을 한 번만 뒤에 덧�
 front matter가 역할을 연결하며(`styles:` 또는 `samples:`), `build`가 템플릿의 모양을 그대로 복사하고
 사진을 유지합니다. `render`는 PDF를 만들어 쪽 수를 예산과 비교하고, `over_lines`가 넘친 텍스트 줄 수를
 알려 주므로 글자 크기가 아니라 문장을 줄입니다. 빌드는 마지막에 AI 흔적 검사를 합니다(`deck-builder`와
-공용): 대체 텍스트에 남은 "AI-generated content may be incorrect"는 지우고, 파일 속성에 AI 도구 이름이나
-보이는 글에 AI 문구가 있으면 알리기만 하고 지우지 않습니다. 두 빌더가 쓰는 렌더러는 플러그인의
+공용): 대체 텍스트의 면책 문구, 파일 속성의 AI 도구·라이브러리 이름, AI가 썼다고 말하는 보이는 문장을 모두
+지우고, 지운 것을 원문 그대로 알려 줍니다. 두 빌더가 쓰는 렌더러는 플러그인의
 `scripts/office_render.py`에 있습니다. `DECK_RENDER_DOCKER`를 쓰는데 작업 폴더가 `$HOME` 밖이면(snap
 Docker는 마운트하지 못함) `~/.cache/portfolio-render/`에 옮겨 렌더하고, 결과를 되가져온 뒤 그 폴더를 지웁니다.
 

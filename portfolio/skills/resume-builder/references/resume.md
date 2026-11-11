@@ -31,10 +31,13 @@ The resume is the portfolio's second output, built the same way: designed in `re
 
 ## Final AI-trace check (every build)
 
-`build` ends with `office_render.ai_traces` over every XML part of the .docx: an AI disclaimer in a
-picture's alt text (`descr`/`title` on `docPr`) is removed, the rest of the alt text kept; an AI tool
-named in `docProps` and an AI phrase in the visible text ("As an AI", "AI가 생성", "생성형 AI로 작성")
-are listed in `ai_traces.reported` and in `warnings`, never deleted. The same function runs in
+`build` ends with `office_render.ai_traces` over every XML part of the .docx and takes every AI trace
+out: an AI disclaimer in a picture's alt text (`descr`/`title` on `docPr`; the rest of the alt text
+kept), an AI tool or library named in `docProps` (the tool cut from a title, a library author
+emptied), and each visible sentence that says AI wrote it or may be wrong ("As an AI", "AI가 생성",
+"ChatGPT로 작성", `Generated with`, `Co-Authored-By`) — the sentence only, a ` / ` counts as a sentence
+end; a Word paragraph left empty goes, a slide paragraph stays blank. `ai_traces.removed_text` lists
+each removal word for word. Work annotations are never removed. The same function runs in
 `deck-builder build`; `python3 portfolio/scripts/office_render.py ai-traces <file> [--report-only]` runs it alone.
 
 ## Render and fit
