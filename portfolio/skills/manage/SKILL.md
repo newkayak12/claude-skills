@@ -105,8 +105,8 @@ the snapshot. A round always builds (the user's standing word: "결과물도 검
 3. **Draft.** No skeleton yet, or a new project → write it from the `본문`/`부록` items only: one
    project as why → the user's role and decision → result; strengths chosen from the evidence.
    Each page that carries a figure or a reason cites its items on one line under its heading, `글감: <id>, <id>` (a ledger item is
-   `NN_프로젝트/A1`); a reason the item does not give is written `[확인 필요: …]`, never filled in.
-   The structure (blocks, order, body vs appendix) is asked; wording is not. A written
+   `NN_프로젝트/A1`, never a README or index; a fact only `확정사실.md` holds needs no cite); a reason the item does not give is written `[확인 필요: …]`, never filled in.
+   The draft ends with `claims`: each problem fixed (a `제외` item's lines go) or left `[확인 필요]`. Structure (blocks, order, body vs appendix) is asked; wording is not. A written
    item is marked `material log --id <id> --note "skeleton <N>쪽" --status written --later-step manage`;
    in a ledger workspace (`material ledger` lists items) `material ledger-log --item <NN_프로젝트/A1>`
    with the same flags. The ledger is never moved or rewritten.

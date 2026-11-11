@@ -678,15 +678,16 @@ export function compare(before, after, claimsBefore, claimsAfter) {
 // ── claims: the skeleton's claims checked against the material, both ways ──
 // A page cites its material with one line `글감: <id>, <id>` (an item folder under sources/material/
 // or material/, or a ledger item `NN_프로젝트/A1`). A figure is a number with a unit or a percentage.
-// (a Korean particle may follow the unit: `3배가`; `12만 건` is one figure)
-const FIG = /(\d[\d,]*(?:\.\d+)?)\s*((?:[만억천]\s*)?(?:%|ms|초|분|시간|개월|일|주|배|건|명|회|개|대|원|GB|MB|KB|TB|TPS|QPS|RPS|x)|[만억천])(?![A-Za-z])/gu
+// (a Korean particle may follow the unit: `3배가`; `12만 건` is one figure; digits glued to a name,
+// `HS256`, `S3`, are not a figure)
+const FIG = /(?<![A-Za-z\d.])(\d[\d,]*(?:\.\d+)?)\s*((?:[만억천]\s*)?(?:%|ms|초|분|시간|개월|일|주|배|건|명|회|개|대|원|GB|MB|KB|TB|TPS|QPS|RPS|x)|[만억천])(?![A-Za-z])/gu
 const CITE = /^\s*(?:[-*]\s*)?글감\s*:\s*(.+)$/
 // a sentence that gives a reason, cause or solution; grounded only when the cited items say it
 const REASON = /때문|위해|위한|그래서|따라서|덕분|인해|원인|해결|선택했|결정했|판단했/
 const LABEL = /^\s*[^\s:：]{1,6}\s*[:：]\s*/
 // phrases the user rejected as machine-written; listed, not failed
 const TONE = ['효율적으로', '획기적', '극대화', '성공적으로', '원활한', '원활하게', '시너지', '견고한', '혁신적', '함으로써', '다양한 ', '핵심적인', '도모']
-const figs = s => [...String(s).matchAll(FIG)].map(m => `${m[1].replace(/,/g, '')}${m[2].replace(/\s+/g, '')}`)
+export const figs = s => [...String(s).matchAll(FIG)].map(m => `${m[1].replace(/,/g, '')}${m[2].replace(/\s+/g, '')}`)
 const stems = s => (String(s).match(/[\p{L}\p{N}]+/gu) || [])
   .filter(w => w.length >= 2 && !REASON.test(w))
   .map(w => (/^[\p{Script=Hangul}]/u.test(w) ? w.slice(0, 2) : w.toLowerCase()))
@@ -851,7 +852,13 @@ export function claims(text, items, settledLines = [], sel = null, confirmed = [
       const fs = figs(line)
       // a template label (`해결:`, `문제:`) is a slot name, not a reason: read what follows it
       const reason = REASON.test(line.replace(LABEL, '')) && !/\[확인 필요/.test(line)
-      if ((fs.length || reason) && !known.length) { problems.push({ page: p.page, kind: 'uncited', text: line }); continue }
+      if ((fs.length || reason) && !known.length) {
+        // a page that needs no item (a profile): a line whose every figure 확정사실.md states passes
+        const facts = fs.map(f => confirmed.find(c => c.figs.includes(f)))
+        if (!reason && facts.every(Boolean)) fs.forEach((f, i) => listed.confirmed.push({ page: p.page, text: `${f} — ${line}`, fact: facts[i].text }))
+        else problems.push({ page: p.page, kind: 'uncited', text: line })
+        continue
+      }
       for (const f of fs) {
         const hit = ground.map(it => ({ it, row: it.rows.find(r => r.figs.includes(f)) })).find(x => x.row)
         if (!hit) {

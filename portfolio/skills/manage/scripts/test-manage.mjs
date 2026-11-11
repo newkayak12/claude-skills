@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
-import { addQuestion, readQuestions, roundCheck, freezeStable, enginePathWarnings, safeArea, bump, claims, compare, confirmedFacts, deckPages, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, readRounds, renumber, round, scaffold, selection, settle, settled, settledNote, snapshot, step, sync, verify, verifyBuild } from './manage.mjs'
+import { addQuestion, readQuestions, roundCheck, freezeStable, enginePathWarnings, safeArea, bump, claims, compare, confirmedFacts, deckPages, figs, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, readRounds, renumber, round, scaffold, selection, settle, settled, settledNote, snapshot, step, sync, verify, verifyBuild } from './manage.mjs'
 import { deflateRawSync } from 'node:zlib'
 
 const SKEL = `# 가상 포트폴리오
@@ -517,6 +517,22 @@ test('claims: a figure only docs/확정사실.md states is listed as confirmed, 
   const r = claims('## 1 검색\n글감: 01_가상검색/A1\n9개월 동안 배포를 47초로 줄였다.\n응답이 80% 줄었다.\n', readMaterial(root), [], null, confirmedFacts(root))
   assert.deepEqual(r.problems.map(p => p.text.split(' ')[0]), ['80%'])
   assert.deepEqual(r.listed.confirmed.map(x => x.text.split(' ')[0]), ['9개월', '47초'])
+})
+
+test('claims: a page citing nothing passes a line whose figures 확정사실.md all states (a profile page)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-ledger-'))
+  mkdirSync(join(root, 'sources/01_가상검색'), { recursive: true })
+  writeFileSync(join(root, 'sources/01_가상검색/A1_검색.md'), '# A1 검색\n\n- 결과: 응답 50% 단축\n')
+  mkdirSync(join(root, 'docs'))
+  writeFileSync(join(root, 'docs/확정사실.md'), '# 확정사실\n\n## 사실\n- 프로필: 총 경력 4년 2개월, 가상회사 1년 3개월\n')
+  const r = claims('## 1 프로필\n경력 (총 경력 4년 2개월)\n가상회사 (1년 3개월)\n팀 8명을 이끌었다.\n', readMaterial(root), [], null, confirmedFacts(root))
+  assert.deepEqual(r.problems.map(p => [p.kind, p.text]), [['uncited', '팀 8명을 이끌었다.']])
+  assert.deepEqual(r.listed.confirmed.map(x => x.text.split(' ')[0]), ['2개월', '3개월'])
+})
+
+test('claims: digits glued to a name (HS256, S3, ES512) are not figures', () => {
+  assert.deepEqual(figs('HS256 대칭키, S3 2개, ES512 1회'), ['2개', '1회'])
+  assert.deepEqual(figs('응답 1,200건, 3.5배'), ['1200건', '3.5배'])
 })
 
 test('claims: a template label (`해결:`) is not read as a reason sentence', () => {
