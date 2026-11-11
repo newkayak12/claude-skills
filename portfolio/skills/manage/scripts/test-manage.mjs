@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
-import { bump, claims, compare, confirmedFacts, deckPages, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, readRounds, renumber, round, scaffold, selection, settle, settled, settledNote, snapshot, step, sync, verify, verifyBuild } from './manage.mjs'
+import { addQuestion, readQuestions, roundCheck, freezeStable, enginePathWarnings, safeArea, bump, claims, compare, confirmedFacts, deckPages, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, readRounds, renumber, round, scaffold, selection, settle, settled, settledNote, snapshot, step, sync, verify, verifyBuild } from './manage.mjs'
 import { deflateRawSync } from 'node:zlib'
 
 const SKEL = `# 가상 포트폴리오
@@ -304,7 +304,8 @@ test('scaffold creates the selection table, template analysis and render/feedbac
   const root = mkdtempSync(join(tmpdir(), 'manage-scaffold-'))
   writeFileSync(join(root, 'deck.catalog.md'), '# Catalog\n\n## Voice\n\n- 했다 60%\n\n## Palette\n\n- 10243F\n\n## Type\n\n- 본문 18pt\n\n## @s1 · 표지\n')
   const r = scaffold(root)
-  assert.deepEqual(r.created, ['CLAUDE.md', 'sources/선정.md', 'template/analysis.md', 'template/next-render.md', 'snapshot/render', 'feedback'])
+  assert.deepEqual(r.created, ['CLAUDE.md', 'sources/선정.md', 'template/analysis.md', 'template/next-render.md', 'snapshot/render', 'feedback',
+    'style/문체.md', 'style/표기규칙.md', 'style/레이아웃.md', 'style/이력서-서식.md', 'docs/확인할-것.md'])
   assert.match(readFileSync(join(root, 'CLAUDE.md'), 'utf8'), /manage\.mjs scaffold[\s\S]*portfolio-skeleton\.md[\s\S]*resume-deck\.mdx[\s\S]*template\/next-render\.md/)
   assert.match(readFileSync(join(root, 'template/next-render.md'), 'utf8'), /\| 쪽 \| 칸 \| 증상 \| 확인 \| 적용 \|/)
   const analysis = readFileSync(join(root, 'template/analysis.md'), 'utf8')
@@ -694,7 +695,7 @@ const edit = (root, rel) => writeFileSync(join(root, rel), `${readFileSync(join(
 test('round 1, no previous file: empty started_from, no clauses, diff.new is every gap, record and summary written', () => {
   const root = workspace()
   const r = round(root, roundIn(1, { steps: [st(1, 'pass'), st(4, 'fail', '표 정렬'), st(7, 'skipped', '쪽 읽기')], feedback: [{ id: 'f1', text: 'x' }], feedback_mode: 'panel' }))
-  assert.deepEqual(r, { round: 1, rounds: 1, stop_reason: null, continue: true, gaps: ['s4/표 정렬', 's7/쪽 읽기'] })
+  assert.deepEqual(r, { round: 1, rounds: 1, stop_reason: null, continue: true, gaps: ['s4/표 정렬', 's7/쪽 읽기'], record_dir: 'snapshot/rounds/round-01' })
   const rec = recOf(root, 1)
   assert.deepEqual(rec.started_from, { gaps: [], feedback: [] })
   assert.deepEqual(rec.changed, [])
@@ -909,7 +910,7 @@ test('clauses are not evaluated in round 1: nothing_new never fires there', () =
 
 test('n_reached at round >= n, null before it', () => {
   const root = workspace()
-  assert.deepEqual(round(root, roundIn(1, { n: 2 })), { round: 1, rounds: 1, stop_reason: null, continue: true, gaps: ['s4/기준 4'] })
+  assert.deepEqual(round(root, roundIn(1, { n: 2 })), { round: 1, rounds: 1, stop_reason: null, continue: true, gaps: ['s4/기준 4'], record_dir: 'snapshot/rounds/round-01' })
   afterRound(root, 1); edit(root, 'portfolio-skeleton.md')
   const r = round(root, roundIn(2, { n: 2, steps: [st(4, 'fail'), st(6, 'fail')], feedback: [{ id: 'f9', text: 'z' }], feedback_mode: 'panel' }))
   assert.deepEqual([r.stop_reason, r.continue], ['n_reached', false])
@@ -1114,7 +1115,7 @@ test('round CLI: stdin and a file inside the workspace both work; an outside pat
   const root = workspace()
   const r = roundCli(root, roundIn(1))
   assert.equal(r.status, 0)
-  assert.deepEqual(JSON.parse(r.stdout), { round: 1, rounds: 1, stop_reason: null, continue: true, gaps: ['s4/기준 4'] })
+  assert.deepEqual(JSON.parse(r.stdout), { round: 1, rounds: 1, stop_reason: null, continue: true, gaps: ['s4/기준 4'], record_dir: 'snapshot/rounds/round-01' })
   assert.ok(existsSync(join(root, 'snapshot/rounds/round-1.json')))
   writeFileSync(join(root, 'in.json'), JSON.stringify(roundIn(2)))
   const f = roundCli(root, null, '--input', 'in.json')
@@ -1149,7 +1150,7 @@ test('rounds counts the round-*.json files and the shared fixture is left alone'
   const root = workspace()
   round(root, roundIn(1)); round(root, roundIn(2))
   assert.equal(round(root, roundIn(3)).rounds, 3)
-  assert.deepEqual(readdirSync(join(root, 'snapshot/rounds')).sort(), ['end-1.json', 'end-2.json', 'end-3.json', 'round-1.json', 'round-2.json', 'round-3.json'])
+  assert.deepEqual(readdirSync(join(root, 'snapshot/rounds')).sort(), ['end-1.json', 'end-2.json', 'end-3.json', 'round-01', 'round-02', 'round-03', 'round-1.json', 'round-2.json', 'round-3.json'])
   assert.ok(!existsSync(join(WORKSPACE, 'snapshot/rounds')))
 })
 
@@ -1310,7 +1311,7 @@ test('layout: optional folders are present or absent, a stray deck conflict copy
   const root = mkdtempSync(join(tmpdir(), 'manage-opt-')); copies.push(root)
   mkdirSync(join(root, 'style')); mkdirSync(join(root, 'decisions'))
   let l = layout(root)
-  assert.deepEqual(l.optional, { present: ['decisions', 'style'], absent: ['feedback', 'stable', 'scripts'] })
+  assert.deepEqual(l.optional, { present: ['decisions', 'style'], absent: ['feedback', 'consensus', 'stable', 'scripts', 'docs/확인할-것.md'] })
   assert.ok(!l.missing.includes('style') && l.warnings === undefined)
   writeFileSync(join(root, 'portfolio-deck.conflict-2026.mdx'), '')
   writeFileSync(join(root, 'deck.conflict-x.mdx'), '')
@@ -1329,4 +1330,131 @@ test('snapshot --kind resume counts its own versions, apart from deck', () => {
   assert.deepEqual(readdirSync(join(root, 'snapshot/resume/resume-v1.0.0')).sort(), ['NOTES.md', 'assets', 'resume-deck.mdx', 'resume-skeleton.md'])
   assert.equal(snapshot(root, { kind: 'resume', level: 'minor', note: '둘째', date: '2026-01-09' }).to, 'v1.1.0')
   assert.equal(snapshot(root, { kind: 'deck', level: 'patch', note: 'x' }).to, 'v1.0.1', 'deck keeps its own count (fixture holds deck-v1.0.0)')
+})
+
+// ── the standard workspace: round record folder, stable baseline, style, questions (all names invented) ──
+test('round writes snapshot/rounds/round-NN/ with every record file, copies what exists, never overwrites', () => {
+  const root = workspace()
+  mkdirSync(join(root, 'snapshot/rounds'), { recursive: true })
+  writeFileSync(join(root, 'snapshot/rounds/feedback-1.md'), '# 피드백 원문\n')
+  const r = round(root, roundIn(1))
+  assert.equal(r.record_dir, 'snapshot/rounds/round-01')
+  const dir = join(root, r.record_dir)
+  assert.deepEqual(readdirSync(dir).sort(), ['compare.json', 'feedback-after.json', 'feedback-before.json', 'feedback.md', 'noah.md', 'overrides.md',
+    'pattern-a.json', 'pattern-b.json', 'portfolio-skeleton.md', 'report.md'])
+  assert.equal(readFileSync(join(dir, 'portfolio-skeleton.md'), 'utf8'), readFileSync(join(root, 'portfolio-skeleton.md'), 'utf8'))
+  assert.equal(readFileSync(join(dir, 'feedback.md'), 'utf8'), '# 피드백 원문\n')
+  assert.match(readFileSync(join(dir, 'report.md'), 'utf8'), /\| 쪽 \| 칸 \| 이전 → 이후 \| 출처 \| 근거 파일 \| 이유 \|/)
+  // a record file the person filled is not replaced when the folder is written again
+  writeFileSync(join(dir, 'noah.md'), '판정: 통과\n')
+  assert.throws(() => round(root, roundIn(1)), /already exists/)
+  assert.equal(readFileSync(join(dir, 'noah.md'), 'utf8'), '판정: 통과\n')
+  assert.deepEqual(readRounds(root).items.map(i => i.round), [1], 'the folder is not a round record')
+})
+
+test('round-check: a template report has open verification lines; an edit with no reason, a rejected finding with none and no noah verdict are problems', () => {
+  const root = workspace()
+  round(root, roundIn(1))
+  let c = roundCheck(root, 1)
+  assert.equal(c.ok, false)
+  assert.ok(c.problems.includes('noah.md has no 판정'))
+  assert.ok(c.problems.some(p => /검증: "pptx 문구/.test(p)))
+  assert.ok(c.problems.some(p => /기본값으로 정한 것: empty/.test(p)))
+  assert.ok(c.unfilled.includes('compare.json') && c.unfilled.includes('feedback.md'))
+  const dir = join(root, 'snapshot/rounds/round-01')
+  writeFileSync(join(dir, 'noah.md'), '판정: 보완\n근거: 인용\n')
+  const rep = readFileSync(join(dir, 'report.md'), 'utf8')
+  const filled = rep
+    .replace('|---|---|---|---|---|---|\n', '|---|---|---|---|---|---|\n| 3 | 제목 | A → B | panel | feedback-1.md C2 | |\n')
+    .replace('| 쓰지 않은 이유 |\n|---|---|---|\n', '| 쓰지 않은 이유 |\n|---|---|---|\n| C5 이름 바꾸자 | noah | |\n')
+  writeFileSync(join(dir, 'report.md'), filled)
+  c = roundCheck(root, 1)
+  assert.ok(c.problems.includes('report.md 고친 것 row 1 (3): "이유" is empty'))
+  assert.ok(c.problems.includes('report.md 쓰지 않은 지적 row 1 (C5 이름 바꾸자): "쓰지 않은 이유" is empty'))
+  // every part answered: ok
+  writeFileSync(join(dir, 'report.md'), filled
+    .replace('| panel | feedback-1.md C2 | |', '| panel | feedback-1.md C2 | 숫자 근거가 글감에 있다 |').replace('| C5 이름 바꾸자 | noah | |', '| C5 이름 바꾸자 | noah | 확정사실에 있다 |')
+    .replace(/\(작성\)[^\n]*/g, '없음').replace(/(- [^:\n]+:)\n/g, '$1 통과\n').replace(/(- [^:\n]+:)$/g, '$1 통과'))
+  c = roundCheck(root, 1)
+  assert.deepEqual(c.problems, [])
+  assert.throws(() => roundCheck(root, 9), /does not exist/)
+})
+
+test('snapshot --stable freezes skeleton, deck, resume sources and style read-only, one README row, never overwritten', () => {
+  const root = workspace()
+  writeFileSync(join(root, 'resume-skeleton.md'), '# 이력서\n')
+  scaffold(root)
+  const r = freezeStable(root, { note: '첫 기준본', date: '2026-02-01' })
+  assert.equal(r.stable, 'stable/2026-02-01-skeleton-v3.1.0')
+  const dir = join(root, r.stable)
+  assert.deepEqual(readdirSync(dir).sort(), ['portfolio-deck.mdx', 'portfolio-skeleton.md', 'resume-skeleton.md', 'style'])
+  assert.deepEqual(readdirSync(join(dir, 'style')).length, 4)
+  assert.throws(() => writeFileSync(join(dir, 'portfolio-skeleton.md'), 'x'), /EACCES|EPERM/)
+  const readme = readFileSync(join(root, 'stable/README.md'), 'utf8')
+  assert.match(readme, /\| 2026-02-01 \| skeleton v3\.1\.0 · deck v1\.0\.0 · resume - \| 첫 기준본 \|/)
+  assert.throws(() => freezeStable(root, { date: '2026-02-01' }), /never overwritten/)
+  freezeStable(root, { note: '둘째', date: '2026-02-02' })
+  assert.equal(readFileSync(join(root, 'stable/README.md'), 'utf8').trim().split('\n').length, readme.trim().split('\n').length + 1)
+  assert.deepEqual(layout(root).known.stable, ['2026-02-01-skeleton-v3.1.0', '2026-02-02-skeleton-v3.1.0'])
+})
+
+test('scaffold writes the style templates and the questions file once, the guide has the base principles and no pinned path', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-style-')); copies.push(root)
+  scaffold(root)
+  assert.match(readFileSync(join(root, 'style/문체.md'), 'utf8'), /## 규칙[\s\S]*## 내 문단/)
+  assert.match(readFileSync(join(root, 'style/표기규칙.md'), 'utf8'), /## 각주[\s\S]*## 캡션/)
+  assert.match(readFileSync(join(root, 'style/이력서-서식.md'), 'utf8'), /## ATS·파서 규칙/)
+  writeFileSync(join(root, 'style/문체.md'), '내 규칙')
+  assert.deepEqual(scaffold(root).created, [])
+  assert.equal(readFileSync(join(root, 'style/문체.md'), 'utf8'), '내 규칙')
+  const guide = readFileSync(join(root, 'CLAUDE.md'), 'utf8')
+  for (const w of ['## 기본 원칙', '안전 영역', '줄여 맞추지 않는다', 'AI나 도구의 흔적', 'docs/확인할-것.md', 'stable/<날짜>', 'consensus/', 'decisions/', 'analysis/']) assert.ok(guide.includes(w), w)
+  assert.deepEqual(enginePathWarnings(root), [], 'the guide itself pins nothing')
+  assert.equal(safeArea(root), null, 'an empty template gives no safe area')
+  writeFileSync(join(root, 'style/레이아웃.md'), '# 레이아웃\n- top: 36\n- bottom: 30pt\n- left: 40\n- right: 40\n')
+  assert.deepEqual(layout(root).safe_area, { top: 36, bottom: 30, left: 40, right: 40 })
+})
+
+test('layout lists the known folders, reports a broken analysis link and an engine path that is not on disk', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-known-')); copies.push(root)
+  scaffold(root)
+  mkdirSync(join(root, 'consensus')); writeFileSync(join(root, 'consensus/2026-02-01-순서.md'), '원문')
+  mkdirSync(join(root, 'decisions')); writeFileSync(join(root, 'decisions/01-블록.md'), '정함')
+  symlinkSync(join(root, 'no-such-archive'), join(root, 'analysis'))
+  writeFileSync(join(root, 'style/표기규칙.md'), '# 표기\n실행: node ~/.claude/plugins/cache/x/portfolio/9.9.9/skills/manage/scripts/resume.py build\n')
+  writeFileSync(join(root, 'CLAUDE.md'), `${readFileSync(join(root, 'CLAUDE.md'), 'utf8')}\n\`node \${CLAUDE_PLUGIN_ROOT}/skills/manage/scripts/gone.mjs\` 그리고 \${CLAUDE_PLUGIN_ROOT}/skills/manage/scripts/manage.mjs\n`)
+  const l = layout(root)
+  assert.deepEqual(l.known.consensus, ['2026-02-01-순서.md'])
+  assert.deepEqual(l.known.decisions, ['01-블록.md'])
+  assert.equal(l.known.style.length, 4)
+  assert.deepEqual(l.analysis, { link: join(root, 'no-such-archive'), ok: false })
+  assert.ok(l.warnings.some(w => /^analysis\/: a broken link/.test(w)))
+  assert.ok(l.warnings.some(w => /^style\/표기규칙\.md: names .*resume\.py, which does not exist/.test(w)))
+  assert.ok(l.warnings.some(w => /^CLAUDE\.md: .*gone\.mjs/.test(w)))
+  assert.equal(l.warnings.filter(w => /manage\.mjs/.test(w)).length, 0, 'an engine file that exists is not warned')
+  assert.ok(l.optional.present.includes('consensus') && l.optional.present.includes('docs/확인할-것.md'))
+})
+
+test('questions: add appends a dated line with its page, a duplicate is not added twice, read returns open and answered', () => {
+  const root = workspace()
+  assert.deepEqual(readQuestions(root).open, [])
+  assert.deepEqual(addQuestion(root, { text: '이 수치는 본인 확인인가', page: 3, date: '2026-03-01' }), { added: true, date: '2026-03-01', page: '3쪽', text: '이 수치는 본인 확인인가' })
+  assert.equal(addQuestion(root, { text: '이 수치는 본인 확인인가', page: '3쪽', date: '2026-03-02' }).duplicate, true)
+  addQuestion(root, { text: '부록으로 옮길까', date: '2026-03-01' })
+  const p = join(root, 'docs/확인할-것.md')
+  assert.match(readFileSync(p, 'utf8'), /# 확인할 것[\s\S]*- \[ \] 2026-03-01 · 3쪽 · 이 수치는 본인 확인인가\n- \[ \] 2026-03-01 · - · 부록으로 옮길까\n$/)
+  writeFileSync(p, readFileSync(p, 'utf8').replace('- [ ] 2026-03-01 · 3쪽 · 이 수치는 본인 확인인가', '- [x] 2026-03-01 · 3쪽 · 이 수치는 본인 확인인가 → 답: 맞다, 직접 했다'))
+  const q = readQuestions(root)
+  assert.deepEqual(q.answered, [{ date: '2026-03-01', page: '3쪽', text: '이 수치는 본인 확인인가', answer: '맞다, 직접 했다' }])
+  assert.deepEqual(q.open.map(o => o.text), ['부록으로 옮길까'])
+  assert.throws(() => addQuestion(root, { text: '' }), /--text/)
+})
+
+test('CLI: snapshot --stable, round-check and questions print one JSON object', () => {
+  const root = workspace()
+  const run = (...a) => JSON.parse(spawnSync(process.execPath, [MANAGE, ...a], { cwd: root, encoding: 'utf8' }).stdout)
+  assert.match(run('snapshot', '--stable', '--note', '기준', '--date', '2026-04-01').stable, /^stable\/2026-04-01-skeleton-v3\.1\.0$/)
+  assert.equal(run('questions', '--add', '--text', '묻는다', '--page', '2').added, true)
+  assert.equal(run('questions', '--read').open.length, 1)
+  assert.match(run('round-check', '--round', '1').error, /does not exist/)
 })

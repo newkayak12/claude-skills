@@ -28,8 +28,8 @@ skills as its steps. **Not for** a one-off review of someone else's document (`f
 that is not a portfolio (`deck-builder`).
 
 Engine, run from the workspace root: `node ${CLAUDE_PLUGIN_ROOT}/skills/manage/scripts/manage.mjs <cmd>`
-(`layout`, `scaffold`, `selection`, `snapshot`, `renumber`, `verify`, `sync`, `verify-build`, `compare`,
-`claims`, `settle`, `intake`, `step`, `round`, `keep-render`; one JSON object each). A real run's mismatch becomes a fixture test first.
+(`layout`, `scaffold`, `selection`, `snapshot` (`--stable`), `renumber`, `verify`, `sync`, `verify-build`, `compare`,
+`claims`, `settle`, `intake`, `step`, `round`, `round-check`, `questions`, `keep-render`; one JSON object each). A real run's mismatch becomes a fixture test first.
 
 ## Workspace
 
@@ -43,21 +43,22 @@ template/               template.pptx, resume template (.docx), NOTES.md (quirks
 deck.catalog.md         slot ids and character budgets — regenerated only (deck-builder catalog)
 build/                  deck.pptx, deck.pdf, resume.docx, resume.pdf, pages/ (previews) — regenerated in full
 snapshot/               skeleton-vX.Y.Z/, deck/deck-vX.Y.Z/, scores/, render/deck-vX.Y.Z/ (pages/, 검토.md),
-                        README.md (`## deck` and `## skeleton` tables)
+                        README.md (`## deck` and `## skeleton` tables); rounds/round-NN/ = one round's record
+stable/                 YYYY-MM-DD-skeleton-vX.Y.Z/ frozen baseline (skeleton, deck + resume source, style), README.md row; never edited
+style/                  문체.md 표기규칙.md 레이아웃.md 이력서-서식.md — the user's fixed rules (`scaffold` templates)
+consensus/ decisions/   debate transcripts kept unedited (`<date>-<topic>.md`); decisions `NN-<topic>.md`
+analysis/               link to the user's raw archive outside the workspace: read-only
 feedback/               YYYY-MM-DD.md — one `feedback` review per day, ending with its fix table
 sources/                material: material/<id>/ items (`material` skill), or a ledger NN_프로젝트/A1….md read as it is;
                         선정.md (step 2: 글감 · 쓰임 본문|부록|제외 · 쪽 · 이유 · 대표 — the one place an exclusion lives)
 docs/확정사실.md        settled facts, corrections; `## 서술 기준` and `## 구조` lines no check raises again — read before any work
+docs/확인할-것.md       questions a round could not settle: `questions --add` each round, answered ones read back (`--read`)
 _archive/               old plans and deck backups, moved here, never deleted
-decisions/ style/ stable/ scripts/   the user's own folders, optional: `layout` says present or absent, never missing
 ```
 
-These names are the contract: a new file takes its name from this tree. Older names (`skeleton.md`,
-`deck.mdx`, `resume.md`, `README.md`, `template/분석.md`, `template/다음렌더-지침.md`) are still read,
-listed by `layout` as `legacy` and renamed by `scaffold`; then fix references in the workspace's notes.
-
-Root holds only CLAUDE.md and the skeleton and deck pairs (`layout` warns on a `deck.*.mdx` conflict copy). Tidying moves to `_archive/`; only a proven copy is deleted; a
-name clash goes into a subfolder. Page headings: `## N <title>` or `## N쪽 · <title>`, one per page
+These names are the contract: a new file takes its name from this tree; older names are `legacy` (`layout`),
+renamed by `scaffold`. Root holds only CLAUDE.md and the skeleton and deck pairs; tidying moves to `_archive/`
+(`references/workspace.md`). Page headings: `## N <title>` or `## N쪽 · <title>`, one per page
 (appendix too); references `N쪽`, `N·M쪽`, `N~M쪽` and a `쪽` table column. A `# ` heading bounds a
 block that moves with its pages. History lines (`vX.Y.Z 변경…`, `vX.Y.Z(…`, `>`-quoted) stay as written.
 
@@ -66,9 +67,18 @@ block that moves with its pages. History lines (`vX.Y.Z 변경…`, `vX.Y.Z(…`
 Nine steps, in order; a round may start again at 2 or 4 (step 8 says where); 9 once the deck is done.
 Steps 1-7 run as one harness-shaped pass, n times (n from the user, default n = 2): plan the round
 → criteria per step (`step`) → do → check (a command, else a judge that is not the actor) → gate
-(`step`) → `round`. `feedback` runs every round after step 7 from the main context, `intake` takes its
-findings; the loop stops at `round`'s `continue: false`. A step that could not run is `skipped` with its reason, a gap, never pass.
-Mechanics: `references/rounds.md`.
+(`step`) → `round`. A round is the full flow once over the whole deck, not a part of it. `feedback` runs every
+round after step 7 from the main context, `intake` takes its findings; the loop stops at `round`'s `continue: false`.
+A step that could not run is `skipped` with its reason, a gap, never pass. Mechanics: `references/rounds.md`.
+
+**The round's record** (`round` writes `snapshot/rounds/round-NN/`; detail `references/workspace.md`): that round's
+skeleton, feedback (revision mode: previous vs this version) and scores, pattern two-version scores, `compare`,
+`noah.md`, `overrides.md`, `report.md`. noah (the user's proxy) gives its verdict every round, written apart from the panel.
+Every edit in `report.md` carries its source (feedback priority | panel | noah), the evidence file and the reason; a
+finding not used says why; "사용자가 정할 구조" lists what only the user decides. Run `round-check --round N` before
+reporting: an edit without a reason is a problem. Each question the round could not settle goes to
+`questions --add --text … --page N`; at the start `questions --read` returns the answered ones: use them, do not ask again.
+A baseline is frozen with `snapshot --stable --note …` (rounds compare against it, it is never edited).
 
 **Which gates block.** Structure only: the order of pages and what goes in or out (step 2's table, step 3's
 blocks, a step 4 order or page-count change). It is asked, answered by the user, else noah, else the
@@ -78,8 +88,9 @@ the snapshot. A round always builds (the user's standing word: "결과물도 검
 `sync`, `deck-builder build`, `verify-build`; render only when the user says.
 
 0. **Open, every session, unasked.** `scaffold` (renames old names, creates only what is missing,
-   never overwrites, appends the guide once to a CLAUDE.md that lacks it; its `renamed`/`created`/`appended` in one report line), then `layout`, `docs/확정사실.md` and
-   the "맞춰야 할 것" table. A stray root file (`*.conflict-*`, a scratch script) is named and moved
+   never overwrites, appends the guide once to a CLAUDE.md that lacks it, creates `style/` templates and `docs/확인할-것.md`;
+   its `renamed`/`created`/`appended` in one report line), then `layout` (its warnings: a broken `analysis/` link, an
+   engine path in CLAUDE.md or `style/` that is not on disk), `docs/확정사실.md`, `questions --read` and the "맞춰야 할 것" table. A stray root file (`*.conflict-*`, a scratch script) is named and moved
    to `_archive/` once the user agrees.
 1. **Collect.** New material → run `material` from the workspace root (items land in
    `sources/material/`). Evidence order: `sources/` → the user's analysis notes they point to →
@@ -133,18 +144,17 @@ the snapshot. A round always builds (the user's standing word: "결과물도 검
 
 Always, portfolio and resume alike (user, 2026-11-10: "safe area가 있는거 시인성, 가독성이 좋은거
 like-me로 ai티를 줄이는거 이건 포폴, 이력서 공통임"):
-- **Safe area, readable.** Nothing crosses the template's margins or touches another box; type and
-  spacing stay the template's, one idea per line, no lone last word. Cut text, never shrink type.
-- **In the user's voice.** Every sentence written into a skeleton or deck source goes through
-  `write:like-me` (samples: what the user wrote alone in `sources/`) to strip machine tells; then `claims`.
+- **Safe area, readable.** Nothing crosses the margins (`layout`'s `safe_area`, from `style/레이아웃.md`, is what
+  `deck-builder` uses) or touches another box; type and spacing stay the template's, one idea per line, no lone last word. Cut text, never shrink type.
+- **In the user's voice.** Read `style/문체.md` and `style/표기규칙.md` before any rewrite; every sentence written into a
+  skeleton or deck source goes through `write:like-me` (samples: `style/문체.md`'s own paragraphs and what the user wrote
+  alone in `sources/`, never AI-edited text) to strip machine tells; then `claims`. A resume follows `style/이력서-서식.md`.
+- **No traces.** Deliverables carry no AI or tool trace; the builders' final check catches it.
 - **Corrections.** When the user corrects a fact, in the same turn: append to the material file
   `## 정정 — 본인 확인 YYYY-MM-DD` with their words verbatim; add one line to `확정사실.md`;
   `noah_collect` the words when noah is connected. The user's word beats the record.
-- **Did it read better.** After a round's edits, score the snapshot and the new skeleton with the
-  same rubric, then `compare` (`lost_ground` = worse): `references/rounds.md` § Did it read better.
-- **A vague answer** ("바꾸고"): do the part every reading shares, hold the rest and say so.
-
-Principles for any candidate, and the mistakes this flow stops: `references/principles.md`.
+- **Did it read better.** After a round's edits, score the snapshot and the new skeleton with the same rubric, then
+  `compare` (`lost_ground` = worse): `references/rounds.md`. **A vague answer** ("바꾸고"): do the shared part, hold the rest, say so.
 
 ## Output Template
 
@@ -166,11 +176,11 @@ Principles for any candidate, and the mistakes this flow stops: `references/prin
 claims: 문제 <n> (근거 없음 n · 글감에 없음 n · 확인 필요 n · 인용 없음 n) · 본인 확인 <n> · 덱에 없는 성과 <n>
 renumber/verify: <changes, warnings, problems | 안 함> · sync: <빠진 n · 다른 n> · deck check: <warnings | 안 함> · build: <함> · verify-build: <빠진 문구 n · 각주 n · 그림 파일 n> · render: <함 | 안 함>
 라운드: <n>회 중 <k>회 · 종료 <stop_reason> · 게이트 gap <n> (건너뛴 단계: 이유) · 패널 <4인 | 단일> · 심사 <subagent | in-context>
+기록: round-NN/ · round-check 문제 <n> · noah 판정 <값> · 열린 질문 <n> · 기준본 <stable 폴더 | 없음>
 ```
 
-Korean, conclusion first, plain headings, no bold runs, no invented names or labels; a number says
-what it counts. Not built → the built files are older. A remark read one way → say the reading, ask.
-Held is said as held.
+Korean, conclusion first, plain headings, no bold runs, no invented names or labels; a number says what it counts.
+Not built → the built files are older. A remark read one way → say the reading, ask. Held is said as held.
 
 ## What Claude Does / What You Do
 
@@ -186,5 +196,5 @@ Held is said as held.
 - `material` — step 1, collects material into `sources/material/`; its status follows steps 2-3
 - `feedback`, `pattern`, `rewrite`, `mock-interview` — steps 4 and 8; `write:like-me` — the voice
 - `deck-builder` — steps 5-7; `resume-builder` — step 9 (docx build, PDF, fit); `render-review` — step 7
-  and the resume's render; `write:diagram` — figures
-- `job-application-workflow` — the whole application; its deck step is this workflow
+  and the resume's render; `write:diagram` — figures; `job-application-workflow` — the whole application
+- `references/principles.md` — principles for any candidate and the mistakes this flow stops

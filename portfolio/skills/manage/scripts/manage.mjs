@@ -89,10 +89,27 @@
 //   round --read                   the read form: { rounds, last: { round, stop_reason, continue } | null, items: [one per
 //       round-N.json in round order: { round, n, verdict, gaps, diff, clauses, changed, stop_reason, continue,
 //       feedback, answered?: { "<step>": answered_by }, waiting_user? (older records), blocked? }] }, from the files alone; writes nothing
+//   round also writes the round's record folder snapshot/rounds/round-NN/ (never overwriting a file): the
+//       skeleton of that round, feedback.md (previous vs this version), feedback-before/after.json,
+//       pattern-a/b.json, compare.json, noah.md (the user-proxy verdict, written apart every round),
+//       overrides.md and report.md (every edit carries source, evidence file and reason). Files that
+//       already exist beside the record (rounds/feedback-N.md) are copied in; the rest are templates.
+//   round-check --round N          the record folder read back: `unfilled` files still templates, and `problems`:
+//       a report edit row with no source/evidence/reason, a rejected finding with no reason, an empty
+//       section or verification line, noah.md with no 판정
+//   snapshot --stable [--note <text>] [--date YYYY-MM-DD]
+//       freezes skeleton + deck source + resume sources + style/ into stable/<date>-skeleton-v<ver>/ (files
+//       read-only, never overwritten) and appends a row (date, versions, note) to stable/README.md
+//   questions --add --text <q> [--page N] [--date D]   appends `- [ ] D · N쪽 · q` to docs/확인할-것.md
+//   questions --read               { open, answered }: answered ones are lines `- [x] … → 답: …`
+//   layout also lists `known` (style files, consensus, decisions, stable, docs/확인할-것.md), `safe_area` from
+//       style/레이아웃.md, and warns on a broken analysis/ link and on CLAUDE.md/style/*.md naming an engine
+//       path (`…/skills/<skill>/scripts/<file>`) that does not exist
 // A page heading is `## N`, `## N.`, `## N)` or `## N쪽`. A `# ` chapter heading bounds a block: pages
 // sort inside their block, and blocks holding pages sort by their first page; other sections stay put.
 import { createHash } from 'node:crypto'
-import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { inflateRawSync } from 'node:zlib'
@@ -160,7 +177,48 @@ export function wsFile(root, rel) {
 const LAYOUT = ['CLAUDE.md', SKELETON, DECK, 'template.pptx', 'deck.catalog.md', 'build', 'snapshot', 'sources', 'docs/확정사실.md',
   'sources/선정.md', ANALYSIS, NEXT_RENDER]
 
-const OPTIONAL = ['feedback', 'decisions', 'style', 'stable', 'scripts']
+const OPTIONAL = ['feedback', 'decisions', 'style', 'consensus', 'stable', 'scripts', 'docs/확인할-것.md']
+const STYLE_FILES = ['문체.md', '표기규칙.md', '레이아웃.md', '이력서-서식.md']
+const QUESTIONS = 'docs/확인할-것.md'
+const PLUGIN_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+
+// `…/skills/<skill>/scripts/<file>` named in the workspace guide or a style file. A literal path (/…, ~/…)
+// must exist; a variable or placeholder prefix (`${CLAUDE_PLUGIN_ROOT}/`, `<portfolio 플러그인>/`) is read
+// against this plugin, when the skill is one of its own.
+export function enginePathWarnings(root) {
+  const files = ['CLAUDE.md', ...STYLE_FILES.map(f => `style/${f}`)]
+  const out = []
+  for (const rel of files) {
+    let text = ''
+    try { text = readFileSync(at(root, rel), 'utf8') } catch { continue }
+    for (const m of text.matchAll(/([^\s`'"()<>|,]*)(skills\/([\w-]+)\/scripts\/[\w.-]+)/g)) {
+      const tail = m[2].replace(/\.+$/, '')
+      const prefix = m[1]
+      const named = `${prefix}${tail}`
+      if (/^[/~]/.test(prefix)) {
+        if (!existsSync(prefix.startsWith('~') ? join(homedir(), named.slice(1)) : named)) out.push(`${rel}: names ${named}, which does not exist on disk; write the command without an install path`)
+      } else if (existsSync(join(PLUGIN_ROOT, 'skills', m[3])) && !existsSync(join(PLUGIN_ROOT, tail))) {
+        out.push(`${rel}: names ${named}, but the ${m[3]} skill has no ${tail.split('/').slice(2).join('/')}`)
+      }
+    }
+  }
+  return out
+}
+
+// style/레이아웃.md `- top: 36` lines (pt) → { top, bottom, left, right }, only when all four are numbers.
+export function safeArea(root) {
+  let text = ''
+  try { text = readFileSync(at(root, 'style', '레이아웃.md'), 'utf8') } catch { return null }
+  const v = {}
+  for (const k of ['top', 'bottom', 'left', 'right']) {
+    const m = text.match(new RegExp(`^\\s*-\\s*${k}\\s*:\\s*(\\d+(?:\\.\\d+)?)\\s*(?:pt)?\\s*$`, 'm'))
+    if (m) v[k] = Number(m[1])
+  }
+  return Object.keys(v).length === 4 ? v : null
+}
+
+const listMd = d => { try { return readdirSync(d).filter(f => /\.md$/.test(f)).map(f => f.normalize('NFC')).sort() } catch { return [] } }
+const listDirs = d => { try { return readdirSync(d, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name).sort() } catch { return [] } }
 
 // The template is where deck.mdx's front matter `template:` says, else the root template.pptx.
 export function layout(root) {
@@ -180,7 +238,26 @@ export function layout(root) {
   // a sync-conflict copy of a deck source in the root (`deck.conflict-….mdx`): named, left for the user
   let stray = []
   try { stray = readdirSync(root).filter(f => /^(portfolio-|resume-)?deck\..+\.mdx$/.test(f.normalize('NFC'))).sort() } catch { /* unreadable root */ }
-  if (stray.length) out.warnings = stray.map(f => `${f}: a conflict copy of a deck source in the root; compare it with the real one, then move it to _archive/`)
+  const warnings = stray.map(f => `${f}: a conflict copy of a deck source in the root; compare it with the real one, then move it to _archive/`)
+  // analysis/ is the link to the user's raw archive outside the workspace: read-only, and a broken link is said
+  try {
+    if (lstatSync(join(root, 'analysis')).isSymbolicLink()) {
+      const target = readlinkSync(join(root, 'analysis'))
+      const ok = existsSync(join(root, 'analysis'))
+      out.analysis = { link: target, ok }
+      if (!ok) warnings.push(`analysis/: a broken link to ${target}; the archive is not reachable, re-link it (read-only, never copy it into the workspace)`)
+    }
+  } catch { /* no analysis/ */ }
+  warnings.push(...enginePathWarnings(root))
+  if (warnings.length) out.warnings = warnings
+  const styleDir = at(root, 'style')
+  out.known = {
+    style: STYLE_FILES.filter(f => existsSync(join(styleDir, f.normalize('NFC'))) || existsSync(join(styleDir, f.normalize('NFD')))),
+    consensus: listMd(at(root, 'consensus')), decisions: listMd(at(root, 'decisions')),
+    stable: listDirs(at(root, 'stable')),
+  }
+  const sa = safeArea(root)
+  if (sa) out.safe_area = sa
   return out
 }
 
@@ -191,15 +268,39 @@ const SELECTION_HEAD = '# 선정\n\n| 글감 | 쓰임 | 쪽 | 이유 | 대표 |\
 const NEXT_RENDER_HEAD = ['# next-render', '',
   '미리보기나 PowerPoint에서 발견한 문제를 모아 두는 곳. 다음 빌드 전에 모두 반영하고, 반영한 줄의 마지막 칸에 반영일과 덱 버전을 쓴다.', '',
   '| 쪽 | 칸 | 증상 | 확인 | 적용 |', '|---|---|---|---|---|', ''].join('\n')
+// style/: the user's fixed rules, empty templates with their headings. Read before any sentence is written
+// (voice, notation), by deck-builder (layout) and by resume-builder (resume format).
+const STYLE_TEMPLATES = {
+  '문체.md': ['# 문체', '', '## 규칙', '', '- ', '', '## 내 문단', '',
+    '내가 직접 쓴 글만 붙인다. AI가 고치거나 쓴 글은 넣지 않는다. 문단마다 어디서 가져왔는지 한 줄.', '', '- ', ''].join('\n'),
+  '표기규칙.md': ['# 표기규칙', '', '## 띄어쓰기와 문장부호', '', '- ', '', '## 각주', '',
+    '- 각주는 번호 표시로 쓴다: 본문 `[1]{sup}`, 같은 쪽 아래에 같은 번호의 풀이. 번호는 쪽마다 1부터.', '', '## 캡션', '', '- ', ''].join('\n'),
+  '레이아웃.md': ['# 레이아웃', '', '## 안전 영역 (pt)', '',
+    '덱의 어떤 글, 그림, 사진도 이 여백을 넘지 않는다. 숫자만 쓴다 (deck-builder가 읽는다).', '',
+    '- top: ', '- bottom: ', '- left: ', '- right: ', ''].join('\n'),
+  '이력서-서식.md': ['# 이력서 서식', '', '## 글자와 간격', '', '| 요소 | 글자 크기 | 줄 간격 | 비고 |', '|---|---|---|---|', '',
+    '## 머리글과 사진', '', '- ', '', '## ATS·파서 규칙', '', '- 파서가 먼저 읽는다: 표 안 표, 텍스트 상자, 머리글 바닥글 속 본문을 쓰지 않는다.', '- ', ''].join('\n'),
+}
+const QUESTIONS_HEAD = ['# 확인할 것', '',
+  '한 라운드가 정하지 못한 질문. 한 줄에 하나: `- [ ] 날짜 · N쪽 · 질문`. 답은 같은 줄 끝에 ` → 답: …`을 붙이고 `[x]`로 바꾼다.', '', ''].join('\n')
+
 // CLAUDE.md, which every Claude Code session opened in the workspace loads: the names and the first
 // command, so a session that was told nothing still keeps the workspace in shape. Written only when
 // the workspace has none (never over the user's own).
 const WORKSPACE_GUIDE = `# 포트폴리오 작업 공간
 
 이 폴더는 portfolio:manage 작업 공간이다. 지시가 없어도 작업을 시작할 때마다 먼저
-\`node <portfolio 플러그인>/skills/manage/scripts/manage.mjs scaffold\`를 돌린다
-(옛 이름을 새 이름으로 바꾸고, 없는 부분만 만들며, 있는 파일은 덮지 않는다).
-그다음 \`docs/확정사실.md\`를 읽는다.
+\`manage.mjs scaffold\`를 돌린다 (옛 이름을 새 이름으로 바꾸고, 없는 부분만 만들며, 있는 파일은 덮지 않는다).
+엔진 경로는 portfolio:manage 스킬이 알려 준다. 플러그인 설치 경로(버전 폴더)는 이 파일과 style/에 적지 않는다.
+그다음 \`docs/확정사실.md\`와 \`docs/확인할-것.md\`(답이 달린 것)를 읽는다.
+
+## 기본 원칙
+
+- 안전 영역: 글, 캡션, 사진은 style/레이아웃.md의 여백을 넘지 않고 다른 상자에 닿지 않는다.
+- 시인성이 먼저다: 글자 크기와 줄 간격을 줄여 맞추지 않는다. 글을 줄인다.
+- 내 말투: 문장은 style/문체.md와 내가 직접 쓴 글(sources/)을 따른다. AI가 고친 글을 표본으로 쓰지 않는다.
+- 이력서는 파서가 먼저 읽는다: style/이력서-서식.md의 ATS 규칙이 모양보다 앞선다.
+- 산출물(덱, 이력서)에 AI나 도구의 흔적을 남기지 않는다. 빌더(deck-builder, resume-builder)의 마지막 확인으로 잡는다.
 
 ## 이름
 
@@ -213,6 +314,16 @@ const WORKSPACE_GUIDE = `# 포트폴리오 작업 공간
 | \`template/next-render.md\` | 렌더에서 본 문제. 다음 렌더 전에 한꺼번에 적용 |
 | \`template/NOTES.md\` | 템플릿 특이사항 |
 | \`docs/확정사실.md\` | 확정된 사실, 정정, 서술 기준 |
+| \`docs/확인할-것.md\` | 한 라운드가 정하지 못한 질문 (날짜, 쪽). 답이 달리면 \`[x]\`로 읽는다 |
+| \`style/문체.md\` | 문체 규칙과 내가 직접 쓴 문단 (AI가 고친 글은 넣지 않는다) |
+| \`style/표기규칙.md\` | 띄어쓰기, 각주(번호 표시), 캡션 |
+| \`style/레이아웃.md\` | 덱의 안전 영역 여백(pt). deck-builder가 읽는다 |
+| \`style/이력서-서식.md\` | 글자·간격 표, 머리글과 사진, ATS·파서 규칙 |
+| \`snapshot/rounds/round-NN/\` | 라운드 기록: 그 판의 skeleton, 피드백과 점수, noah 판정, override, report.md(고친 곳마다 이유) |
+| \`stable/<날짜>-skeleton-v<버전>/\` | 고정한 기준본(skeleton, 덱·이력서 원본, style). README 표에 한 줄. 고치지 않는다 |
+| \`consensus/<날짜>-<주제>.md\` | 토론 기록 원문. 고치지 않는다 |
+| \`decisions/NN-<주제>.md\` | 정한 것과 이유 |
+| \`analysis/\` | 바깥 원본 보관소로 가는 링크. 읽기만 하고 작업 공간에 복사하지 않는다 |
 
 새 파일은 이 표의 이름을 따른다. 정리는 \`_archive/\`로 옮기고 지우지 않는다. 루트에는 skeleton과
 deck(portfolio-*, resume-*)과 이 파일만 둔다.
@@ -252,6 +363,8 @@ export function scaffold(root) {
   make(NEXT_RENDER, NEXT_RENDER_HEAD)
   make('snapshot/render', null)
   make('feedback', null)   // feedback/YYYY-MM-DD.md, one review per day, ending with its fix table
+  for (const [name, body] of Object.entries(STYLE_TEMPLATES)) make(`style/${name}`, body)
+  make(QUESTIONS, QUESTIONS_HEAD)
   return { created, ...(renamed.length && { renamed }), ...(appended.length && { appended }) }
 }
 
@@ -1033,7 +1146,8 @@ export function round(root, input, { skip = [] } = {}) {
   assertInside(root, endPath)
   writeFileSync(endPath, `${JSON.stringify(now)}\n`)
   const rounds = readdirSync(join(root, ROUNDS_DIR)).filter(f => /^round-\d+\.json$/.test(f)).length
-  return { round: input.round, rounds, stop_reason: stopReason, continue: cont, gaps }
+  const { dir: record_dir } = writeRoundDir(root, input.round)
+  return { round: input.round, rounds, stop_reason: stopReason, continue: cont, gaps, record_dir }
 }
 
 // The read form: every snapshot/rounds/round-N.json in round order, summarised from the files alone.
@@ -1184,6 +1298,179 @@ export function verifyBuild(root) {
     ok: !absent.length && !footnotes_absent.length && !assets_absent.length }
 }
 
+// ── the round's record folder: snapshot/rounds/round-NN/ ──
+// What a person reads to see what a round did and why: the skeleton of that round, the feedback and its
+// scores (revision mode: previous vs this version), pattern two-version scores, `compare`, the user-proxy
+// (noah) verdict written apart, the user's overrides, and report.md where every edit carries its reason.
+const PH = '(작성)'
+const REPORT_HEAD = n => ['# round ' + n + ' report', '',
+  '고친 곳마다 출처(feedback 우선순위 | panel | noah), 근거 파일, 이유를 쓴다. 비어 있으면 round-check가 문제로 센다.', '',
+  '## 고친 것', '', '| 쪽 | 칸 | 이전 → 이후 | 출처 | 근거 파일 | 이유 |', '|---|---|---|---|---|---|', '',
+  '## 쓰지 않은 지적', '', '| 지적 | 출처 | 쓰지 않은 이유 |', '|---|---|---|', '',
+  '## 기본값으로 정한 것', '', `${PH} 없으면 "없음"`, '',
+  '## 사용자가 정할 구조', '', `${PH} 쪽 수, 블록, 순서, 본문/부록. 없으면 "없음"`, '',
+  '## 검증', '',
+  '- 렌더 후 바뀐 쪽 화면 확인:', '- pptx 문구 = skeleton (verify-build):', '- 자산 파일:', '- 각주 쌍:', '- 문장 일치 (claims):', '',
+  '## 열린 질문', '', `${PH} docs/확인할-것.md에 날짜와 쪽을 붙여 적은 것. 없으면 "없음"`, ''].join('\n')
+const NOAH_HEAD = n => ['# noah 판정 · round ' + n, '',
+  '사용자 대리 판정. 패널과 따로, 매 라운드 쓴다. noah가 없으면 이유를 적는다.', '',
+  '판정: ', '근거 (noah가 말한 기준, 인용): ', '다음 라운드에 넘길 것: ', ''].join('\n')
+const OVERRIDES_HEAD = ['# override', '', '사용자가 지적이나 기본값을 뒤집은 것.', '', '| 지적 또는 기본값 | 사용자 결정 | 날짜 |', '|---|---|---|', ''].join('\n')
+const roundDirOf = (root, n) => join(root, ROUNDS_DIR, `round-${String(n).padStart(2, '0')}`)
+
+function writeRoundDir(root, n) {
+  const dir = roundDirOf(root, n)
+  assertInside(root, dir)
+  mkdirSync(dir, { recursive: true })
+  const made = []
+  const make = (name, body, from) => {
+    const p = join(dir, name)
+    if (existsSync(p)) return
+    if (from && existsSync(from)) copyFileSync(from, p)
+    else writeFileSync(p, body)
+    made.push(name)
+  }
+  const skel = wsFile(root, SKELETON)
+  if (existsSync(skel)) make(basename(skel), '', skel)
+  const fb = join(root, ROUNDS_DIR, `feedback-${n}.md`)
+  make('feedback.md', ['# feedback · round ' + n, '', `이전 판과 이번 판을 견준다 (revision 모드). ${PH}`, ''].join('\n'), fb)
+  for (const f of ['feedback-before.json', 'feedback-after.json', 'pattern-a.json', 'pattern-b.json', 'compare.json']) make(f, '{}\n')
+  make('noah.md', NOAH_HEAD(n))
+  make('overrides.md', OVERRIDES_HEAD)
+  make('report.md', REPORT_HEAD(n))
+  return { dir: relative(root, dir).split(sep).join('/'), made }
+}
+
+// The round folder read back: files still templates, and the report's edits without a reason.
+export function roundCheck(root, n) {
+  if (!isInt(n)) throw new Error('--round N must be a positive integer')
+  const dir = roundDirOf(root, n)
+  assertInside(root, dir)
+  if (!existsSync(dir)) throw new Error(`${relative(root, dir)} does not exist: \`round\` writes it`)
+  const read = f => { try { return readFileSync(join(dir, f), 'utf8') } catch { return null } }
+  const unfilled = []
+  const problems = []
+  for (const f of ['feedback-before.json', 'feedback-after.json', 'pattern-a.json', 'pattern-b.json', 'compare.json']) {
+    try { if (!Object.keys(JSON.parse(read(f) ?? '{}')).length) unfilled.push(f) } catch { problems.push(`${f}: not JSON`) }
+  }
+  if ((read('feedback.md') ?? '').includes(PH)) unfilled.push('feedback.md')
+  const noah = read('noah.md')
+  if (noah === null) problems.push('noah.md is missing: the user-proxy verdict is written every round')
+  else if (!/^판정:[ \t]*\S/m.test(noah)) problems.push('noah.md has no 판정')
+  const report = read('report.md')
+  if (report === null) problems.push('report.md is missing')
+  else {
+    const sections = new Map()
+    let cur = null
+    for (const l of report.split('\n')) {
+      const h = l.match(/^##\s+(.+?)\s*$/)
+      if (h) { cur = h[1]; sections.set(cur, []) } else if (cur) sections.get(cur).push(l)
+    }
+    const rows = lines => {
+      const t = lines.filter(l => /^\s*\|/.test(l) && !/^\s*\|[\s:|-]+\|\s*$/.test(l)).map(l => l.split('|').slice(1, -1).map(c => c.trim()))
+      return { head: t[0] ?? [], body: t.slice(1) }
+    }
+    const need = (title, cols) => {
+      const sec = sections.get(title)
+      if (!sec) { problems.push(`report.md has no \`## ${title}\` section`); return }
+      const { head, body } = rows(sec)
+      body.forEach((r, i) => {
+        for (const c of cols) {
+          const k = head.findIndex(h => h.includes(c))
+          if (k < 0) problems.push(`report.md ${title}: no "${c}" column`)
+          else if (!r[k] || r[k].includes(PH)) problems.push(`report.md ${title} row ${i + 1} (${r[0] || '?'}): "${c}" is empty`)
+        }
+      })
+    }
+    need('고친 것', ['출처', '근거', '이유'])
+    need('쓰지 않은 지적', ['출처', '쓰지 않은 이유'])
+    for (const t of ['기본값으로 정한 것', '사용자가 정할 구조', '열린 질문']) {
+      const sec = sections.get(t)
+      if (!sec) problems.push(`report.md has no \`## ${t}\` section`)
+      else if (!sec.some(l => l.trim() && !l.includes(PH))) problems.push(`report.md ${t}: empty (write 없음 when there is nothing)`)
+    }
+    for (const l of sections.get('검증') ?? []) {
+      const m = l.match(/^-\s+(.+?):\s*(.*)$/)
+      if (m && !m[2].trim()) problems.push(`report.md 검증: "${m[1]}" has no result`)
+    }
+    if (!sections.has('검증')) problems.push('report.md has no `## 검증` section')
+  }
+  return { round: n, dir: relative(root, dir).split(sep).join('/'), unfilled, problems, ok: problems.length === 0 }
+}
+
+// ── stable: the frozen baseline ──
+// skeleton + deck source + resume sources + style/ frozen together under stable/<date>-skeleton-v<ver>/,
+// read-only, one row in stable/README.md. Rounds compare against it; it is never edited.
+export function freezeStable(root, { note = '', date } = {}) {
+  const skelPath = wsFile(root, SKELETON)
+  const skel = readFileSync(skelPath, 'utf8')
+  const m = skel.match(VERSION)
+  if (!m) throw new Error(`${basename(skelPath)} has no \`version: vX.Y.Z\` line`)
+  const ver = `v${m[1]}.${m[2]}.${m[3]}`
+  const day = date || new Date().toISOString().slice(0, 10)
+  const base = join(root, 'stable')
+  const dir = join(base, `${day}-skeleton-${ver}`)
+  assertInside(root, dir)
+  if (existsSync(dir)) throw new Error(`${relative(root, dir)} exists: a stable baseline is never overwritten`)
+  mkdirSync(dir, { recursive: true })
+  const kept = []
+  for (const f of [skelPath, wsFile(root, DECK), wsFile(root, 'resume-skeleton.md'), wsFile(root, RESUME_DECK)]) {
+    if (!existsSync(f)) continue
+    copyFileSync(f, join(dir, basename(f)))
+    kept.push(basename(f))
+  }
+  const styleDir = at(root, 'style')
+  if (existsSync(styleDir)) { cpSync(styleDir, join(dir, 'style'), { recursive: true }); kept.push('style/') }
+  const newest = k => {
+    try {
+      const v = readdirSync(join(root, 'snapshot', k)).map(n => n.match(/-(v\d+\.\d+\.\d+)$/)?.[1]).filter(Boolean)
+        .sort((a, b) => { const x = a.slice(1).split('.').map(Number); const y = b.slice(1).split('.').map(Number); return y[0] - x[0] || y[1] - x[1] || y[2] - x[2] })
+      return v[0] ?? '-'
+    } catch { return '-' }
+  }
+  const row = `| ${day} | skeleton ${ver} · deck ${newest('deck')} · resume ${newest('resume')} | ${note.replace(/\|/g, '/') || '-'} |`
+  const readme = join(base, 'README.md')
+  assertInside(root, readme)
+  const body = existsSync(readme) ? readFileSync(readme, 'utf8')
+    : '# 기준본 (stable)\n\n고정한 판. 고치지 않는다. 라운드는 이 판과 견준다.\n\n| 날짜 | 버전 | 메모 |\n|---|---|---|\n'
+  writeFileSync(readme, `${body.replace(/\n*$/, '\n')}${row}\n`)
+  // frozen: files read-only (a later write fails instead of editing a baseline)
+  const lock = p => { for (const e of readdirSync(p, { withFileTypes: true })) { const q = join(p, e.name); if (e.isDirectory()) lock(q); else chmodSync(q, 0o444) } }
+  lock(dir)
+  return { stable: relative(root, dir).split(sep).join('/'), skeleton: ver, kept, readme: relative(root, readme).split(sep).join('/') }
+}
+
+// ── questions: docs/확인할-것.md ──
+// One line per question: `- [ ] 날짜 · N쪽 · 질문`; answered: `- [x] … · 질문 → 답: …` (the user writes the answer).
+const Q_LINE = /^- \[( |x|X)\] (\d{4}-\d{2}-\d{2}) · ([^·]+?) · (.+?)(?: → 답: (.+))?\s*$/
+export function readQuestions(root) {
+  let text = ''
+  try { text = readFileSync(at(root, 'docs', '확인할-것.md'), 'utf8') } catch { return { open: [], answered: [], error: 'no docs/확인할-것.md: run scaffold' } }
+  const open = []; const answered = []
+  for (const l of text.split('\n')) {
+    const m = l.match(Q_LINE)
+    if (!m) continue
+    const q = { date: m[2], page: m[3].trim(), text: m[4].trim() }
+    if (m[1] !== ' ' && m[5]) answered.push({ ...q, answer: m[5].trim() })
+    else open.push(q)
+  }
+  return { open, answered }
+}
+export function addQuestion(root, { text, page, date }) {
+  if (typeof text !== 'string' || !text.trim() || text.includes('\n')) throw new Error('--text <question> is required (one line)')
+  const day = date || new Date().toISOString().slice(0, 10)
+  const where = page === undefined || page === true ? '-' : /쪽$/.test(String(page)) ? String(page) : `${page}쪽`
+  const p = at(root, 'docs', '확인할-것.md')
+  assertInside(root, p)
+  mkdirSync(dirname(p), { recursive: true })
+  const body = existsSync(p) ? readFileSync(p, 'utf8') : QUESTIONS_HEAD
+  const q = text.trim().replace(/ · /g, ' / ')
+  const dup = readQuestions(root).open.some(o => o.page === where && o.text === q)
+  if (dup) return { added: false, duplicate: true, page: where, text: q }
+  writeFileSync(p, `${body.replace(/\n*$/, '\n')}- [ ] ${day} · ${where} · ${q}\n`)
+  return { added: true, date: day, page: where, text: q }
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2))
   const cmd = args._[0]
@@ -1196,6 +1483,14 @@ function main() {
     out = sync(root, { write: args.write === true })
   } else if (cmd === 'verify-build') {
     out = verifyBuild(root)
+  } else if (cmd === 'snapshot' && args.stable === true) {
+    out = freezeStable(root, { note: typeof args.note === 'string' ? args.note : '', date: args.date })
+  } else if (cmd === 'round-check') {
+    out = roundCheck(root, Number(args.round))
+  } else if (cmd === 'questions') {
+    if (args.add) out = addQuestion(root, { text: args.text, page: args.page, date: args.date })
+    else if (args.read) out = readQuestions(root)
+    else throw new Error('usage: questions --add --text <question> [--page N] [--date D] | questions --read')
   } else if (cmd === 'snapshot') {
     out = snapshot(root, { kind: args.kind, level: args.level, note: args.note, by: args.by, date: args.date })
   } else if (cmd === 'renumber') {
@@ -1289,7 +1584,7 @@ function main() {
   } else if (cmd === 'keep-render') {
     out = keepRender(root, args.version)
   } else {
-    throw new Error('usage: manage.mjs layout | scaffold | selection | sync [--write] | verify-build | snapshot | renumber | verify | compare | claims | settle --findings <file> | intake --feedback <file> [--round N] | step --input - | round --input <file | -> | round --read | keep-render')
+    throw new Error('usage: manage.mjs layout | scaffold | selection | sync [--write] | verify-build | snapshot [--stable] | renumber | verify | compare | round-check --round N | questions --add|--read | claims | settle --findings <file> | intake --feedback <file> [--round N] | step --input - | round --input <file | -> | round --read | keep-render')
   }
   process.stdout.write(`${JSON.stringify(out)}\n`)
 }
