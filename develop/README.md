@@ -7,7 +7,7 @@ in the wrong place, a test that passes for the wrong reason, a pool sized by gue
 nobody wrote until the pager went off. Each skill takes one of those and gives it a process:
 diagnose before changing, name the trade-off, verify with evidence rather than assertion.
 
-Five of the 35 skills are **workflow entry points** — they don't do the work themselves, they drive
+Five of the 36 skills are **workflow entry points** — they don't do the work themselves, they drive
 the specialist skills in a fixed order and let you join mid-process.
 
 ## Install & Uninstall
@@ -50,6 +50,7 @@ the specialist skills in a fixed order and let you join mid-process.
 | Fix DB slowness caused by server config, VACUUM, locks, or partitioning | `database-optimizer` |
 | Stop "connection pool exhausted" errors and size the pool properly | `connection-pool-tuner` |
 | Fix data that goes inconsistent after a partial failure | `transaction-boundary-reviewer` |
+| Look at data read-only through local/dev/stage/prod profiles | `database-readonly` |
 
 **Architecture & domain**
 
@@ -347,6 +348,16 @@ and InnoDB REPEATABLE READ go beyond the SQL standard (no phantoms for snapshot 
 ```
 After a timeout last night, orders were created but payments weren't. Review our
 @Transactional boundaries and tell me whether this needs Outbox or a Saga.
+```
+
+### `database-readonly`
+
+Runs read-only queries through the bundled MySQL MCP server, with local/dev/stage/prod profile switching. Production
+queries require confirmation; login happens only through the CLI, and passwords never belong in chat. Not for writing
+SQL (use `sql-pro`) or diagnosing slowness (use `database-optimizer`).
+
+```
+Show me the last 10 orders from the dev database, read-only.
 ```
 
 ### Architecture & domain
@@ -711,6 +722,11 @@ Doc types it distinguishes, each with its own audience and update trigger:
 | Onboarding Guide | New team members | Quarterly + workflow changes |
 
 ## MCP
+
+`develop` ships `mcp/database-readonly/`, a read-only MySQL MCP server. It is not auto-registered (there is no
+`.mcp.json`); set it up with `cd <plugin dir>/mcp/database-readonly && npm install`, then `claude mcp add -s user
+database-readonly -- node <plugin dir>/mcp/database-readonly/server.mjs`. See
+`mcp/database-readonly/README.md` for details.
 
 Most skills declare `compatibility` in their frontmatter. `think-tool` is recommended wherever a
 trade-off has to be weighed explicitly — architecture patterns, SLO targets, isolation levels,

@@ -1,0 +1,5 @@
+node_modules/
+# env files hold 1Password references (op://...) or real values — never commit
+.env
+.env.*
+*.env
