@@ -145,6 +145,9 @@ export const TEAM_DEFAULTS = Object.freeze({
   // Extra plugin directories every child driver and judge session is given with --plugin-dir,
   // on top of the ones pluginroots.mjs finds for the skills the method tables name.
   plugin_dirs: [],
+  // Model per stage, {stage: model}, merged key by key like roles (tm_open over team.json over
+  // this empty default). The stage keys and the built-in per-stage defaults live in nodelaunch.mjs.
+  models: {},
   // What a retry (a subgoal's implement/draft re-attempt after its own gate rejects it, or a
   // package's dispatch re-attempt after retryPackage) does with the worktree the failed attempt
   // left behind. `continue` (default) builds the next attempt on top of it, exactly as every
@@ -220,6 +223,8 @@ const CHECK = {
   budget_grace_usd: (v) => v === null || (typeof v === 'number' && Number.isFinite(v) && v >= 0),
   budget_grace_minutes: (v) => Number.isInteger(v) && v >= 0,
   plugin_dirs: (v) => Array.isArray(v) && v.every((d) => typeof d === 'string' && d.length > 0),
+  models: (v) => v && typeof v === 'object' && !Array.isArray(v)
+    && Object.entries(v).every(([stage, model]) => typeof stage === 'string' && typeof model === 'string' && model.length > 0),
   retry_policy: (v) => v === 'continue' || v === 'rollback',
   initiative: (v) => v === null || (typeof v === 'string' && v.trim().length > 0),
 };
@@ -271,7 +276,7 @@ function applyLayer(opts, sources, notes, layer, name) {
     }
     if (!(k in CHECK)) { notes.push(`${name}: unknown key "${k}" ignored`); continue; }
     if (!CHECK[k](v)) { notes.push(`${name}: "${k}" has the wrong type or range, ignored`); continue; }
-    opts[k] = k === 'roles' ? { ...opts.roles, ...v } : (Array.isArray(v) ? v.slice() : v);
+    opts[k] = (k === 'roles' || k === 'models') ? { ...opts[k], ...v } : (Array.isArray(v) ? v.slice() : v);
     sources[k] = name;
   }
 }
@@ -279,7 +284,7 @@ function applyLayer(opts, sources, notes, layer, name) {
 // `args` is the raw tm_open argument object; only keys named in TEAM_DEFAULTS are considered,
 // so tm_open's other arguments (request, cwd, size, ...) pass through untouched.
 export function resolveTeamOptions(args, fileConfig) {
-  const opts = { ...TEAM_DEFAULTS, roles: { ...TEAM_DEFAULTS.roles } };
+  const opts = { ...TEAM_DEFAULTS, roles: { ...TEAM_DEFAULTS.roles }, models: { ...TEAM_DEFAULTS.models } };
   const sources = Object.fromEntries(Object.keys(TEAM_DEFAULTS).map((k) => [k, 'default']));
   const notes = [];
   applyLayer(opts, sources, notes, fileConfig, 'team.json');

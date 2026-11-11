@@ -1736,6 +1736,13 @@
         "model": {
           "type": "string"
         },
+        "models": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Per-stage model overrides.",
+          "type": "object"
+        },
         "native_models": {
           "items": {
             "type": "string"
@@ -2088,6 +2095,13 @@
         },
         "model": {
           "type": "string"
+        },
+        "models": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Per-stage model overrides.",
+          "type": "object"
         },
         "native_models": {
           "items": {
