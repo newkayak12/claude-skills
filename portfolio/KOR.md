@@ -141,7 +141,10 @@ snapshot/  sources/  docs/확정사실.md               버전, 글감, 확정�
 바꾸고, CLAUDE.md를 포함해 없는 것만 만들며, 있는 파일은 덮지 않습니다. 이미 있는 CLAUDE.md(이름을 바꾼
 README 포함)는 내용을 그대로 두고 안내문을 한 번만 뒤에 덧붙입니다.
 
-9단계(2.14.0: 위 작업 공간 이름을 `scaffold`가 지킴, 이력서를 사용자 템플릿에 바로 빌드함 — 역할을 템플릿
+9단계(2.15.0: 한 라운드를 스스로 끝까지 돎 — `sync`와 `verify-build`, 구조만 기다림;
+`material update`/`item-pages`가 노트로 글감을 갱신하고 낡은 쪽을 알려 줌; `pattern`이 두 버전을 `compare`가 읽는
+고정 키로 채점함; `rewrite`는 사용자 숫자에 표시를 붙이지 않고 부풀리지 않음; `mock-interview`가 글감과 대조한
+질문 목록을 만듦. 2.14.0: 위 작업 공간 이름을 `scaffold`가 지킴, 이력서를 사용자 템플릿에 바로 빌드함 — 역할을 템플릿
 문단의 글자로 연결하고 사진을 유지하며 넘친 분량을 줄 수로 알려 줌(새 `resume-builder`), 7단계는 새
 `render-review`, 두 빌더 마지막에 AI 흔적 검사 — 대체 텍스트의 "AI-generated content may be incorrect"는
 지우고 그 밖의 흔적은 알려 줌, 안전 영역·가독성·`write:like-me`를

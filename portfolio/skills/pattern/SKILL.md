@@ -1,10 +1,9 @@
 ---
 name: pattern
 description: >-
-  Use when someone wants to see how a portfolio reads — passive voice, subject
-  audit, number density, decision visibility — or to score two versions on the
-  same keys. Not template composition patterns (deck-builder extract). Triggers:
-  "패턴 분석해줘", "오너십이 잘 드러나나", "두 버전 패턴 점수 비교해줘".
+  Use when checking how a portfolio reads (passive voice, ownership, numbers, decisions) or
+  scoring two versions on fixed keys. Not template patterns. Triggers: "패턴 분석해줘",
+  "오너십이 잘 드러나나", "두 버전 패턴 점수 비교해줘".
 scenarios:
   - "Analyze the writing patterns in my portfolio — do I show ownership clearly?"
   - "How much passive voice am I using and how does it affect my portfolio?"

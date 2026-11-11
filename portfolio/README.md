@@ -148,7 +148,11 @@ Every session in the workspace starts with `manage.mjs scaffold`, unasked: it re
 to these, creates only what is missing, CLAUDE.md included, and never overwrites a file. A CLAUDE.md
 that is already there (a renamed README too) keeps its text and gets the guide appended once.
 
-Nine steps (2.14.0: the workspace names above, kept by `scaffold`; the resume built straight into
+Nine steps (2.15.0: a round runs through by itself — `sync` and `verify-build`, only structure waits;
+`material update`/`item-pages` refresh items from your notes and list the pages that went stale;
+`pattern` scores two versions on fixed keys `compare` reads; `rewrite` keeps your figures untagged
+and never inflates; `mock-interview` builds a question list checked against the material.
+2.14.0: the workspace names above, kept by `scaffold`; the resume built straight into
 your own template — roles mapped to its paragraphs by their text, photo kept, overflow counted in
 lines, by the new `resume-builder`; step 7 as the new `render-review`; a final AI-trace check in both
 builders that strips "AI-generated content may be incorrect" from alt text and reports any other AI

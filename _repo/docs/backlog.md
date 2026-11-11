@@ -28,8 +28,15 @@ each round, `nothing_new` at round 2). Left open: D24, whether a round waiting o
 PRD does not say). E-ae7d3226 cleaned.
 
 Order of the cards below (user, 2026-11-10: "1. 일단 포폴쪽만 먼저하고 2. resume는 조금 천천히
-3. 각 스킬 점검하고 / feedback은 성능을 향상시키는 방향으로"): 141, 142, 143, 144, 136 (renderer, later:
-"렌더러 종속성은 나중에"), then 139. Card 138 (check each portfolio skill) closed 2026-11-10: two read-only
+3. 각 스킬 점검하고 / feedback은 성능을 향상시키는 방향으로"): 136 (renderer, later:
+"렌더러 종속성은 나중에"), then 139. Cards 141-144 shipped 2026-11-11 in portfolio 2.15.0 (manage
+`sync`/`verify-build`, only structure waits, manage 106/106; material `update`/`item-pages`, 28/28;
+pattern two-version fixed keys read by `compare`, 6/6; rewrite untagged figures, mock-interview
+question-list mode, workflow routes a deck to manage; one real `claude -p` run each, fictional
+workspaces). Left from them: the "피드백 써줘" collision with `write:plans` is unprobed; `material
+update` takes ledger items only, not `material/<id>/` folders; a skeleton slot is assumed to be a
+`key: value` line under a `## … @sN` heading (confirm on the real workspace); the "five skills with no
+description" listing symptom is unexplained (all 12 have one, 175-249 chars). Card 138 (check each portfolio skill) closed 2026-11-10: two read-only
 opus audits of all ten skills against the workspace and its sessions; `check-skeleton.mjs` 0 problems
 for portfolio; every gap went into 136, 137 and 139-144. Shipped by hand 2026-11-10 (user: "teams 없이
 직접"), on main unreleased: 140 `cbe5fef4` (manage reads NFD-named files; real workspace confirmed facts
@@ -57,63 +64,6 @@ real deck lone commas 316 → 0, engine version printed).
       counts. Also carried from the shipped part: the real workspace drops its
       `postbuild_layout.py` once its deck.mdx moves to `place:`, `{sup}` and the two options (the
       user's call; build alone placed 42 captions and 20 panel pictures there, 2026-11-10).
-
-141. **manage runs a whole round itself: sync, build, verify, and only structure waits**
-    - Why: 2026-11-10 audit. The run stopped at step 2 and the user said "매니지로 쭉 도는거 아녔음?"
-      (2026-11-05): SKILL.md ~62 says a wait is never a stop, ~75 and ~83 say "propose … and wait".
-      The workspace rebuilt the round by hand in its own tools: skeleton → deck.mdx sync, a check that
-      each skeleton slot's text is in the built pptx, footnote and asset checks; a round there always
-      builds (user, 2026-11-03: "결과물도 검증하고", "더 빌드해보자"). `snapshot/rounds/` exists in none
-      of the three trees, so `step`/`round` were never used. The layout list (~36-47) lacks
-      `README.md` (the user's folder rules: "원리 지침이나 폴더 트리 적혀있던 곳이 어디지? … README.md다",
-      2026-11-10), `style/`, `stable/`, `feedback/`, `decisions/`, `scripts/`; `snapshot --kind`
-      refuses `resume` while `snapshot/resume/` holds 10 versions; a sync-conflict `deck.conflict-*.mdx`
-      in the root is not flagged. Writing rule restated five times (2026-11-07 to 11-10): developer-only
-      words in plain words, else a footnote (the user's words, three times); missing from `principles.md`.
-    - Carried from 137 (shipped): manage's Output Template (~166) still reports by place ("N쪽 칸:
-      무엇을 어떻게"), not current text → replacement; the user's diagram rule (one colour family with
-      the deck, not monotone, the important part visible — 2026-11-09) is in no skill
-      (`template/분석.md`'s 그림 색 or `write:diagram`); the trigger collision with `write:plans`
-      ("피드백 써줘") is unprobed.
-    - Acceptance: one statement of which gates block (structure only) and which go ahead on the
-      proposal and are reported; engine commands for sync and verify-build; a round's build as the
-      user's standing word; the layout list and `--kind resume`; `layout` warns on stray
-      `deck.*.mdx`; the plain-words rule in principles; manage tests with counts; one real round.
-
-142. **material refreshes the ledger from the user's own notes and shows which pages went stale**
-    - Why: 2026-11-10 audit. Neither material nor manage was loaded as a skill in the session; the
-      one material command run was `ledger`. The user's words were "분석쪽 당겨봐" (2026-11-10) and
-      "obsidian 쪽에 있을텐데?" (2026-11-09); the trigger knows only "글감 모아줘". Ledger files carry
-      hand-written `## 갱신 — 분석 …`, `## 닫음`, `## 보강` sections; `ledger-log` only appends an
-      `## 이력` line (27 of 140 files have one). Five hand-kept per-item status files track each item's
-      reflected / partial / not reflected state and pages; the user asked "오늘 분석 업데이트로 더 정리할건
-      없나?? 스켈레톤, 덱에" and "낡은건 수정".
-    - Acceptance: a refresh trigger and a ledger `update` command appending a dated, cited section;
-      the item → pages table generated from the skeleton's `글감:` lines, with the pages whose item
-      changed state listed (mechanism unverified); material tests with counts; one real run.
-
-143. **pattern scores two versions on fixed keys, scoped for a deck**
-    - Why: 2026-11-10 audit. manage `rounds.md` (~133-135) expects `{item: score}` from pattern; its
-      Output Template has no numbers, so the run invented 1-10 keys after "harness라고 그걸로 채점 안하면
-      대체 뭐하는거야?" (user, 2026-11-03) and had to pin its counting method by hand each round. It
-      also re-decided every round to leave out notes and footnote slots. The workspace's `pattern/`
-      (template composition rules from `deck.py extract`) shares the name.
-    - Acceptance: a two-version mode with a fixed JSON key set and a saved counting basis; notes and
-      footnotes out of scope for skeleton/deck input; the description says it is not about template
-      patterns; one real two-round run.
-
-144. **rewrite and the interview skills match the user's rules and reuse manage's material check**
-    - Why: 2026-11-10 audit. rewrite was never invoked (manage SKILL.md ~105 says lines are rewritten
-      with it); it tags user figures `(본인 추정)` (metric-discovery.md ~57, SKILL.md ~138) against
-      "(추정)은 없어야 함" (user, 2026-11-09), and pitches "stronger / sound more senior" against the
-      user's "과장하면 안돼". fit, interview-plan, mock-interview and job-application-workflow were
-      not used (no JD yet: timing, not a trigger gap). Interview prep happened in feedback's answer
-      table and manage step 4's attack lens; mock-interview builds questions without the material
-      (~27-33). job-application-workflow calls feedback once and never routes a deck to manage.
-      Unverified: five portfolio skills showed no description in a truncated skill listing.
-    - Acceptance: rewrite carries a user figure untagged and is described as fitting a sentence to
-      its evidence; one material-checked, non-interactive question mode in mock-interview that
-      feedback and manage call; the workflow routes a deck to manage; a listing probe for the five.
 
 139. **Resume build lays out what the template means, not only its text (later)**
     - Why: same review. Shipped 2026-11-10: the template photo survives build. Still patched by hand
