@@ -224,7 +224,7 @@ toasts).
    - Why: seen 2026-11-10 in a live session: "session: its classic.SessionStart hook was skipped.
      "cc-plugin-sec-default" runs first and sent the event on past it", and the same for trophy's `skill.prompt`, after
      a skill was invoked, and later for trophy's `classic.UserPromptExpansion` (`trophy/hooks/mod.tsx:546`) on a
-     typed `/backlog`. The session one is `session/hooks/ensure-trophy.sh`. `trophy/hooks/mod.tsx:440` already
+     typed `/backlog`, and 2026-11-11 for trophy's `classic.PostToolUseFailure` after a refused tm_open. The session one is `session/hooks/ensure-trophy.sh`. `trophy/hooks/mod.tsx:440` already
      expects the `skill.prompt` skip and `:565` covers only a typed skill. What is lost for a skill the model invokes,
      and for `ensure-trophy.sh`, is unverified.
    - Acceptance: one live session under that policy states, per skipped hook, what stops working; a model-invoked skill
@@ -480,7 +480,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
      6. a blocked task notifies the person (push notification and band) the moment it stops;
      then one real L task where a fix wave and a QA pass complete with no hand merge.
 
-130. **teams spends less per task: model per stage, lean driver sessions, a default budget**
+130. **teams spends less per task: model per stage, lean driver sessions, a default budget** — in E-89982ed5 (2026-11-11, size L, $80; real-L cost comparison left to the card 129 Sprint)
    - Why: E-258fa3e5 (cards 128 + 125 leftovers, opened 2026-11-05 09:25) cost $14.4 over 28 sessions
      before shape started (planning only). Again 2026-11-05: E-066abb46 (size S, Sonnet) spent $48.39 of a
      $25 budget, `budget_stopped` only after the gate passed (197 min); `/teams-status` showed the same
