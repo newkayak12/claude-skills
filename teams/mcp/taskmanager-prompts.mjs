@@ -8,7 +8,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { exclusionLine, resolveBase } from './basefail.mjs';
 import { formatList, gateIntegrity } from './gateintegrity.mjs';
-import { collectTaskCosts } from './drivercost.mjs';
+import { taskFigure } from './drivercost.mjs';
 import { ACCEPT_EXTRA, CONTRACT, MANAGER_CONVENTION_STAGES, stageSkills } from './stagecontract.mjs';
 import { conventionsBlock } from './conventions.mjs';
 import { BRAINSTORM_LIGHT, MUTATING, bullets, shapeDiagramLines } from './taskmanager-stages.mjs';
@@ -576,10 +576,11 @@ export function composeTaskPrompt(task, n) {
     // drivercost.mjs) - stated here explicitly so 80-report.md (docs.mjs's renderReport, which
     // relays this node's own `report` string verbatim) actually says what the task cost instead
     // of that number sitting only in the raw drivers/*.stream.jsonl logs.
-    const reportCost = collectTaskCosts(taskDir(task.run_id), task);
+    const reportCost = taskFigure(taskDir(task.run_id), task);
+    const liveCost = reportCost.live;
     L.push('');
     L.push(`## Cost and turns`);
-    L.push(`Total across every session this task spawned: $${reportCost.cost_usd.toFixed(2)} ($${reportCost.drivers_usd.toFixed(2)} driver and manager sessions + $${reportCost.nodes_usd.toFixed(2)} node sessions), ${reportCost.turns} turns, ${reportCost.sessions} sessions.`);
+    L.push(`Total across every session this task spawned: $${reportCost.spend.toFixed(2)} ($${liveCost.drivers_usd.toFixed(2)} driver and manager sessions + $${liveCost.nodes_usd.toFixed(2)} node sessions), ${liveCost.turns} turns, ${liveCost.sessions} sessions.`);
     L.push(`State this in the report - it is the one place a person reads it without opening a raw driver log.`);
   }
   if (['gate', 'report'].includes(n.stage)) {

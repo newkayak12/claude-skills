@@ -44,7 +44,7 @@ import { tasksRoot } from './taskstate.mjs';
 import { pidAlive } from './proc.mjs';
 import { loadRunAt } from './graph.mjs';
 import { liveProcesses } from './livecap.mjs';
-import { collectTaskCosts } from './drivercost.mjs';
+import { taskFigure } from './drivercost.mjs';
 import { collectFromRaw, captureClock, readJsonl, readJsonRetry, stallMsOf, MOVING_MS } from '../scripts/lib/view-collect.mjs';
 import { statSig, statOf, tickMemo, withTickStats } from '../scripts/lib/view-index.mjs';
 import { pruneTails } from '../scripts/lib/view-floor-fs.mjs';
@@ -181,9 +181,10 @@ export function createTaskCache({ build = collectFromRaw, now = Date.now, refres
       loadRun: (p) => kept(p, () => { stats.reads.runs += 1; return loadRunAt(p); }),
       jsonl: (p) => kept(p, () => { stats.reads.ledger += 1; return readJsonl(p); }),
       // kept while the driver streams' stat signature stands: a stream that grows (no task.json or ledger change) is read again
+      // taskFigure's .live is the per-driver breakdown; view-collect puts the spend figure (spendFigure) over it from the same ledger
       costs: (dir, task) => {
         const sig = streamsSig(dir, e.raw);
-        if (e.costs === undefined || e.costsSig !== sig) { stats.reads.costs += 1; e.costs = collectTaskCosts(dir, task); e.costsSig = sig; }
+        if (e.costs === undefined || e.costsSig !== sig) { stats.reads.costs += 1; e.costs = taskFigure(dir, task).live; e.costsSig = sig; }
         return e.costs;
       },
       live: (root) => (e.live ??= (stats.reads.live += 1, liveProcesses(root).length)),

@@ -1,7 +1,7 @@
 // taskmanager-handlers.mjs - the tool handlers: events, wait, board, open, run, retry, file, status; split out of taskmanager.mjs (card 128 step 1), moved verbatim.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { applyPinAction, authorStage, currentAttempt, getNode, kindOf, loadRun, loadRunAt, peekHumanActions, queueHumanAction, retryReport, runState, saveRun, unmetDeps } from './graph.mjs';
-import { collectTaskCosts } from './drivercost.mjs';
+import { taskFigure } from './drivercost.mjs';
 import { dirname, join, resolve } from 'node:path';
 import { docPaths, epicBoardRows, epicKey, epicPhase, epicTicketState, initiativeKey, latestBySubgoal, packageFiling, parseTicketKey, planningPkgs, planningStories, qaPkgs, storyBlockedReason, storyKey, storyLinks, storyTaskProgress, storyTicketState, taskKey, ticketSnapshot } from './tickets.mjs';
 import { driverAlive, record, resolveHarnessRun, taskDir, taskPath, tasksRoot } from './taskstate.mjs';
@@ -251,7 +251,8 @@ function toolBoard(a) {
   const task = mustFindTask(a);
   // One collectDriverCosts call per task_id lookup - cheap (drivers/ is a handful of files even
   // on a large task), the same reason tm_status now pays it too.
-  const driverTotal = collectTaskCosts(taskDir(task.run_id), task);
+  const figure = taskFigure(taskDir(task.run_id), task);
+  const driverTotal = figure.live;
   return {
     key: epicKey(task.run_id),
     slug: task.slug || null,
@@ -260,7 +261,7 @@ function toolBoard(a) {
     state: epicTicketState(task),
     phase: epicPhase(task),
     daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon) } : null,
-    cost: { usd: driverTotal.cost_usd, turns: driverTotal.turns, sessions: driverTotal.sessions },
+    cost: { usd: figure.spend, turns: driverTotal.turns, sessions: driverTotal.sessions },
     stories: epicBoardRows(task),
     doc_path: docPaths(task).index,
   };
@@ -311,8 +312,8 @@ function ticketForInitiative(slug) {
     .filter((t) => t.initiative === slug)
     .sort((x, y) => (y.created_at || 0) - (x.created_at || 0))
     .map((t) => {
-      const driverTotal = collectTaskCosts(taskDir(t.run_id), t);
-      return { ...epicRow(t), cost: { usd: driverTotal.cost_usd, turns: driverTotal.turns, sessions: driverTotal.sessions } };
+      const figure = taskFigure(taskDir(t.run_id), t);
+      return { ...epicRow(t), cost: { usd: figure.spend, turns: figure.live.turns, sessions: figure.live.sessions } };
     });
   if (!epics.length) throw new Error(`no EPIC found under initiative "${slug}"`);
   return { key: initiativeKey(slug), kind: 'INITIATIVE', initiative: slug, epics };
@@ -1089,9 +1090,10 @@ function toolStatus(a) {
   // The same account view.mjs's header already shows (view-collect.mjs's collectTask, same
   // collectDriverCosts call) - a caller polling tm_status only never had this at all, so a run
   // like awake-beta-ref1's $53.93 / 222 turns sat visible only in the raw driver logs.
-  const driverTotal = collectTaskCosts(taskDir(task.run_id), task);
+  const figure = taskFigure(taskDir(task.run_id), task);
+  const driverTotal = figure.live;
   const wikiFields = { wiki: { mode: wikiMode() } };
-  const costFields = { cost: { usd: driverTotal.cost_usd, turns: driverTotal.turns, sessions: driverTotal.sessions, drivers_usd: driverTotal.drivers_usd, nodes_usd: driverTotal.nodes_usd, ...(driverTotal.estimated_usd ? { estimated_usd: driverTotal.estimated_usd } : {}) } };
+  const costFields = { cost: { usd: figure.spend, turns: driverTotal.turns, sessions: driverTotal.sessions, drivers_usd: driverTotal.drivers_usd, nodes_usd: driverTotal.nodes_usd, ...(driverTotal.estimated_usd ? { estimated_usd: driverTotal.estimated_usd } : {}) } };
   if (task.harness_run) {
     // tm_status is not a board tool: a verdict first read here renders its report and retro here.
     const before = ticketSnapshot(task);
