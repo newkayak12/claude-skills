@@ -265,7 +265,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
       outcome carries); identical reason + target rows fold into one with a count and the last date;
       `claude plugin test` with counts; one live look at the tab (mod.md "A UI change is done when").
 
-125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality** — E-8faf33b9 blocked on a PRD merge bug (fixed `899dba47`); E-701e2856 (2026-11-07, $35.82) planned
+125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality** — live-look defects 1-5 and F2 leftovers in E-bcc5a0fe (2026-11-11, size S, $40); E-8faf33b9 blocked on a PRD merge bug (fixed `899dba47`); E-701e2856 (2026-11-07, $35.82) planned
    it again (5 cards 88–94, plan-integrate accepted) and stopped partial at shape:3 (see card 129). Now one
    size-S task per feature area, in order F1 → F5 → F3 → F4 → F2, each from its section of that PRD (kept
    at `tmp/card125/F<n>.md` until the card closes). F1 shipped `c8328deb` (E-7b9c49d9, gate 95; teams
