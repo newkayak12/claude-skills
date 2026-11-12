@@ -1791,10 +1791,20 @@ def layout_options(tmp):
     px, py, pw, ph = box(t, "Pic")
     check(n == 1 and box(t, "Out") == (600, 100, 100, 50),
           "only a picture inside a rounded panel is moved")
-    check(abs(px - 58) < 1 and abs(px + pw - 422) < 1 and abs(py + ph - 382) < 1
-          and py >= 146 and abs(pw / ph - 2) < 0.01,
+    check(abs(px - 58) < 1 and abs(px + pw - 422) < 1 and py + ph <= 382 + 1
+          and py >= 146 and abs(pw / ph - 2) < 0.01 and abs((py - 146) - (382 - py - ph)) < 1,
           "it fills the panel less 18pt left, right and bottom, under the panel's text, aspect "
-          "kept: %s" % ((px, py, pw, ph),))
+          "kept, centred in that room: %s" % ((px, py, pw, ph),))
+
+    # a tall text frame holding one short line: the picture starts under the text, not the frame
+    t = tree([sp("Panel", 40, 100, 400, 300, panel=True), sp("Bul", 60, 110, 360, 200, "짧은 한 줄"),
+              pic("Pic", 100, 330, 100, 50)])
+    bul = [el for el in t if el.find(".//" + P + "cNvPr") is not None
+           and el.find(".//" + P + "cNvPr").get("name") == "Bul"][0]
+    framed = deck.pictures_to_panels(t, 18, {id(bul): (110 + 20) * E})
+    px, py, pw, ph = box(t, "Pic")
+    check(framed == 1 and py < 200 and pw > 300 and py >= 136,
+          "with the text measured, the picture rises under the text and grows: %s" % ((px, py, pw, ph),))
 
     make_png(tmp / "lo.png", 40, 40)
     make_template(tmp / "lo.pptx", tmp / "lo.png")

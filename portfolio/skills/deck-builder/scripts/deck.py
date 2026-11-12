@@ -125,16 +125,57 @@ def captions_into_pictures(spTree, slide_w, slide_h):
     return removed
 
 
-def pictures_to_panels(spTree, margin_pt):
+def text_ends(spTree, slots):
+    """{id(shape element): EMU where its text ends} for top-anchored text slots, measured from the
+    lines the text wraps to (not the frame, which a short text leaves mostly empty)."""
+    out = {}
+    for s in slots.values():
+        if not s.box or not s.line_h or not s.max_em or s.wrap == "none":
+            continue
+        el = resolve_path(spTree, s.path)
+        if el is None or el.tag != q("p:sp"):
+            continue
+        body = el.find(q("p:txBody") + "/" + q("a:bodyPr"))
+        if body is not None and body.get("anchor") not in (None, "t"):
+            continue
+        ps = [p for p in el.iter(q("a:p")) if "".join(t.text or "" for t in p.iter(q("a:t"))).strip()]
+        if not ps:
+            continue
+        paras = ["".join(t.text or "" for t in p.iter(q("a:t"))) for p in ps]
+        # space between paragraphs (spcBef / spcAft in points), the list style's when a paragraph has none
+        lst = el.find(q("p:txBody") + "/" + q("a:lstStyle"))
+        def gap(p):
+            total = 0
+            for tag in ("a:spcBef", "a:spcAft"):
+                pts = p.find(q("a:pPr") + "/" + q(tag) + "/" + q("a:spcPts"))
+                if pts is None and lst is not None:
+                    pts = lst.find(".//" + q(tag) + "/" + q("a:spcPts"))
+                total += int(pts.get("val", 0)) * EMU_PER_PT // 100 if pts is not None else 0
+            return total
+        inset = int(body.get("tIns", 45720)) if body is not None else 45720
+        # half a line of slack: the measure is an estimate, and a picture must never cover text
+        out[id(el)] = (s.box[1] + inset + wrapped_lines(s, paras) * s.line_h + sum(gap(p) for p in ps)
+                       + s.line_h // 2)
+    return out
+
+
+def pictures_to_panels(spTree, margin_pt, ends=None, skip=()):
     """`panel_margin: 18` — every picture whose centre sits in a rounded panel is fitted, aspect
     kept, into the panel less the margin on the left, right and bottom and below the panel's own
-    text; centred across, set on the bottom. One rule, so every panel's picture sits alike.
-    -> pictures moved."""
+    text (where that text ends when `ends` measures it, else its frame); centred in that room.
+    One rule, so every panel's picture sits alike. -> pictures moved."""
     m = round(margin_pt * EMU_PER_PT)
+    ends = ends or {}
     kids = [c for c in spTree if c.tag in (q("p:sp"), q("p:pic"))]
     panels = [shape_box(c) for c in kids if _is_panel(c) and shape_box(c)]
-    texts = [shape_box(c) for c in kids if c.tag == q("p:sp") and not _is_panel(c)
-             and shape_box(c) and _shape_text(c)]
+    texts = []
+    for c in kids:
+        # a shape the deck drops (`!drop`) leaves after this, so it holds no room
+        b = (shape_box(c) if c.tag == q("p:sp") and not _is_panel(c) and _shape_text(c)
+             and id(c) not in skip else None)
+        if b:
+            end = min(ends.get(id(c), b[1] + b[3]), b[1] + b[3])
+            texts.append((b[0], b[1], b[2], end - b[1]))
     moved = 0
     for c in kids:
         b = shape_box(c) if c.tag == q("p:pic") else None
@@ -155,7 +196,8 @@ def pictures_to_panels(spTree, margin_pt):
             continue
         scale = min(bw / pw, bh / ph)
         nw, nh = round(pw * scale), round(ph * scale)
-        set_frame(c, (round(left + (bw - nw) / 2), bottom - nh), (nw, nh))
+        # centred in the room under the text: no band left between the text and a short picture
+        set_frame(c, (round(left + (bw - nw) / 2), round(top + (bh - nh) / 2)), (nw, nh))
         moved += 1
     return moved
 
@@ -3366,7 +3408,8 @@ def cmd_build(args):
             sw, sh = slide_size(pkg)
             layout_counts["captions"] += captions_into_pictures(spTree, sw, sh)
         if layout_counts["margin"] is not None:
-            layout_counts["panels"] += pictures_to_panels(spTree, layout_counts["margin"])
+            layout_counts["panels"] += pictures_to_panels(spTree, layout_counts["margin"], text_ends(spTree, slots),
+                                                          skip={id(el) for el in drop_els if el is not None})
         for el, sid, x, y, w, h, line in place_els:
             if not place_frame(el, x, y, w, h):
                 problems.append("line %d: place cannot move '%s' — its position is inherited "
