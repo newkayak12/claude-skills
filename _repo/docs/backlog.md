@@ -54,6 +54,13 @@ real deck lone commas 316 → 0, engine version printed).
       revise → deck → render → resume → final-check; a blind judge (different tier) compares its
       build pages with the hand-finished build page by page and finds no gap the plugin could close;
       claims leaves only `[확인 필요]` lines; tests with counts; no workspace content in the repo.
+    - Shipped 2026-11-12 in portfolio 3.0.0 (by hand, user: "고고"): three blind opus judgments of the
+      page images (kept local, never in the repo), the last 35 (skill alone) to 29 (hand-finished); claims 10 → 0,
+      sync 0 → 261 slots read, verify-build absent 70 → 0. Left, all [tool] from the last judgment:
+      figure text 5–6pt on body pages (check warns; the figures are the workspace's own), a figure
+      table header wider than its cell, contents rows not `distribute:`d by the skill, a smaller run in
+      the cover's "(N개월)" next to its date, resume meta lines with no label contrast unless the
+      workspace sets `look:` (shipped after that run).
 
 136. **deck-builder's render brings its own renderer to a machine with none (later)**
     - Why: the rest of the card shipped 2026-11-10 (`63a459ce`). Left: the renderer itself.
@@ -83,6 +90,9 @@ real deck lone commas 316 → 0, engine version printed).
       2026-11-10: "resume는 조금 천천히" — after 136-144.
     - Acceptance: those layout rules expressible in `resume.md` or read from the template;
       `test_resume.py` with counts; one real run with no post-build script.
+    - 3.0.0 (2026-11-12) shipped the finish keys (`look:`, `spacing:`, `keep:`, label/value runs,
+      links, title/author/photo_alt); a real run built a 2-page resume with no post-build script.
+      Left: a section that starts a new page, and the photo replaced by the deck's.
 
 102. **portfolio checks the deck's claims against the material in an engine, both ways**
     - Why: debate 2026-10-29 (10 personas + noah), verified in code: material marks `근거 없음` /

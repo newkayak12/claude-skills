@@ -148,7 +148,17 @@ Every session in the workspace starts with `manage.mjs scaffold`, unasked: it re
 to these, creates only what is missing, CLAUDE.md included, and never overwrites a file. A CLAUDE.md
 that is already there (a renamed README too) keeps its text and gets the guide appended once.
 
-Nine steps (2.18.0: no AI trace reaches a submitted file — the final check takes out alt-text
+Nine steps (3.0.0: the skill alone finishes a build a hand-finished workspace needed scripts for —
+`resume-deck.mdx` front matter finishes the template's look (`keep:`, `spacing:`, `look:`, `title:`,
+`author:`, `photo_alt:`; a `라벨: 값` line takes a label and a value format; links are made), deck
+`distribute:` spreads row groups to the safe area, `panel_margin:` sets a picture right under where
+its panel's text ends (measured, not the frame), `check` measures a `place:`d slot where it is placed
+and warns on figure text under 8pt; `sync` and `verify-build` read a table skeleton (slots in
+backticks, pages sharing an archetype — slide keys are now `s12 6쪽`, the breaking change) and pptx
+runs with `xml:space`; `claims` passes profile facts `확정사실.md` states, summary pages that repeat a
+grounded figure, digits glued to a name (`HS256`) and ranges (`30 → 50초`); the draft ends with
+`claims` fixed; composition keeps a result page per block, one-picture pages and same-shaped resume
+entries. 2.18.0: no AI trace reaches a submitted file — the final check takes out alt-text
 disclaimers, AI tools and libraries in the properties, and every visible sentence saying AI wrote it
 (`Generated with`, `Co-Authored-By` included), lists each removal word for word and renders the PDF
 again from a file it changed; work annotations stay as questions. 2.17.0: `office_render.py margins` takes each side from `style/레이아웃.md`;
