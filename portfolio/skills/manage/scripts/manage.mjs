@@ -1314,7 +1314,7 @@ export function pptxText(path) {
     const start = lh + 30 + buf.readUInt16LE(lh + 26) + buf.readUInt16LE(lh + 28)
     const raw = buf.subarray(start, start + csize)
     const xml = (method === 8 ? inflateRawSync(raw) : raw).toString('utf8')
-    for (const t of xml.matchAll(/<a:t>([^<]*)<\/a:t>/g)) text += `${t[1]} `
+    for (const t of xml.matchAll(/<a:t(?:\s[^>]*)?>([^<]*)<\/a:t>/g)) text += `${t[1]} `
     text += '\n'
   }
   return text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&')
@@ -1334,10 +1334,12 @@ export function verifyBuild(root) {
   for (const [sid, s] of slotsOf(readFileSync(wsFile(root, SKELETON), 'utf8'))) {
     for (const key of s.order) {
       for (const v of s.slots.get(key)) {
-        const want = flat(plain(v.replace(/\[[^\]]*\]\{[^}]*\bsup\b[^}]*\}/g, '')))   // a footnote mark is checked on its own
+        // a footnote mark is checked on its own: the text matches with the mark or without it
+        const want = flat(plain(v.replace(/\[[^\]]*\]\{[^}]*\bsup\b[^}]*\}/g, '')))
+        const marked = flat(plain(v))
         if (!want) continue
         checked++
-        if (!built.includes(want)) absent.push({ slide: sid, key, text: v })
+        if (!built.includes(want) && !built.includes(marked)) absent.push({ slide: sid, key, text: v })
       }
     }
   }

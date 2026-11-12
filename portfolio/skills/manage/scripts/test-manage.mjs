@@ -1280,7 +1280,8 @@ function zipOf(entries) {
   end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(central.length / 2, 10); end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(off, 16)
   return Buffer.concat([...parts, cd, end])
 }
-const slideXml = (...t) => `<p:sld>${t.map(x => `<a:t>${x}</a:t>`).join('')}</p:sld>`
+// a run with spaces is written `<a:t xml:space="preserve">`, read like any other
+const slideXml = (...t) => `<p:sld>${t.map((x, i) => (i % 2 ? `<a:t xml:space="preserve">${x}</a:t>` : `<a:t>${x}</a:t>`)).join('')}</p:sld>`
 
 function slotWs() {
   const root = mkdtempSync(join(tmpdir(), 'manage-slot-')); copies.push(root)
