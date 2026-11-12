@@ -212,7 +212,7 @@ export function harvestTask({ taskDir, cwd, label, root, scorePrefix } = {}) {
       budget_usd: task.team.opts.budget_usd ?? null, timebox_minutes: task.team.opts.timebox_minutes ?? null, stopped: !!task.budget_stopped,
       ...(task.budget_stopped && costs ? { post_stop_usd: +Math.max(0, ((figure ? figure.spend : costs.cost_usd) || 0) -(task.budget_stopped.spend || 0)).toFixed(4) } : {}),
     } : null,
-    cost_usd: costs ? +(costs.cost_usd || 0).toFixed(4) : null, cost_by_kind: byKind,
+    cost_usd: costs ? +(((figure ? figure.spend : costs.cost_usd) || 0)).toFixed(4) : null, cost_by_kind: byKind,
     child_runs: childRuns,
     ...(opening.length ? { opening } : {}),
     retries: events.filter((e) => e.event === 'daemon_retry_opened').length,
