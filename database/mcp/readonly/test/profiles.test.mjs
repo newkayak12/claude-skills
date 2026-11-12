@@ -65,15 +65,22 @@ test('login stores settings in profiles.json and the password only in the secret
   assert.equal(p.list().find((r) => r.profile === 'prod').loggedIn, false);
 });
 
-test('1Password is optional per profile: op:// reference stored, read at resolve', async () => {
+test('1Password is asked once: fields saved plain at login, password ref read once per process', async () => {
   const dir = tmp();
   const reads = [];
   const p = createProfiles({ dir, secrets: fileStore(dir), read: async (r) => (reads.push(r), 'from-op') });
   await p.login('stage', { ...fields, host: 'op://V/i/hostname' }, { op: 'op://V/i/password' });
+  assert.equal(p.get('stage').host, 'from-op');
   const cfg = await p.resolve('stage');
+  await p.resolve('stage');
+  await p.resolve('stage');
   assert.equal(cfg.password, 'from-op');
   assert.equal(cfg.host, 'from-op');
   assert.deepEqual(reads.sort(), ['op://V/i/hostname', 'op://V/i/password']);
+  let fails = 0;
+  const q = createProfiles({ dir, secrets: fileStore(dir), read: async () => (fails++ ? 'ok' : Promise.reject(new Error('op locked'))) });
+  await assert.rejects(q.resolve('stage'), /op locked/);
+  assert.equal((await q.resolve('stage')).password, 'ok');
   await assert.rejects(p.login('stage', fields, { op: 'nope' }), /must start with op:\/\//);
 });
 

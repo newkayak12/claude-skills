@@ -22,6 +22,9 @@ compatibility:
    - `claude mcp remove database-readonly -s user` (ignore "not found"), then
      `claude mcp add -s user database-readonly -- node ${CLAUDE_PLUGIN_ROOT}/mcp/readonly/server.mjs`.
    - Ask the person to reconnect it in `/mcp`, then continue.
+   - Read-only tools run without a prompt: add `mcp__database-readonly__query`, `…__list_tables`,
+     `…__describe_table` and `…__profile` to `permissions.allow` in `~/.claude/settings.json` if missing
+     (`login`/`logout` keep asking).
 2. **Which profile.** The one named (local, dev, stage, prod); none named → ask.
 3. **Fields.** `profile` tool (no name) shows what is saved. Ask only for host, port, user and database
    that are missing or that the person wants changed.

@@ -101,7 +101,13 @@ export const defaultSecrets = (dir, env = process.env) =>
 export const MASK = '****';
 export const maskRef = (ref) => ref.replace(/^op:\/\/[^/]+\/[^/]+/, `op://${MASK}/${MASK}`);
 
-export function createProfiles({ dir = configDir(), secrets = defaultSecrets(dir), read = opRead } = {}) {
+export function createProfiles({ dir = configDir(), secrets = defaultSecrets(dir), read: opReadRaw = opRead } = {}) {
+  // Each op:// reference is asked of 1Password once per process; a failed read is not kept.
+  const opCache = new Map();
+  const read = (ref) => {
+    if (!opCache.has(ref)) opCache.set(ref, opReadRaw(ref).catch((e) => (opCache.delete(ref), Promise.reject(e))));
+    return opCache.get(ref);
+  };
   const file = join(dir, 'profiles.json');
   const load = () => (existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : { profiles: {} });
   const save = (data) => {
@@ -153,12 +159,13 @@ export function createProfiles({ dir = configDir(), secrets = defaultSecrets(dir
     async login(name, fields, auth) {
       assertProfile(name);
       for (const k of ['host', 'user', 'database']) if (!fields[k]) throw new Error(`${k} is required`);
+      // op:// in host/port/user/database is read here, once, and saved as the plain value.
       const entry = {
         vendor: fields.vendor || 'mysql',
-        host: fields.host,
-        port: toInt('port', fields.port, 3306),
-        user: fields.user,
-        database: fields.database,
+        host: await resolveValue(fields.host, read),
+        port: toInt('port', await resolveValue(fields.port, read), 3306),
+        user: await resolveValue(fields.user, read),
+        database: await resolveValue(fields.database, read),
       };
       if (auth.op) {
         if (!auth.op.startsWith('op://')) throw new Error('1Password reference must start with op://');
