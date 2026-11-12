@@ -77,6 +77,44 @@ test('1Password is optional per profile: op:// reference stored, read at resolve
   await assert.rejects(p.login('stage', fields, { op: 'nope' }), /must start with op:\/\//);
 });
 
+const fakeKeychain = () => {
+  const m = new Map();
+  return { kind: 'keychain', m, get: async (a) => m.get(a) ?? null, set: async (a, p) => void m.set(a, p), del: async (a) => void m.delete(a) };
+};
+
+test('with Keychain, an op:// login is read once into Keychain; the file keeps only a masked ref', async () => {
+  const dir = tmp();
+  const reads = [];
+  const kc = fakeKeychain();
+  const p = createProfiles({ dir, secrets: kc, read: async (r) => (reads.push(r), 'from-op') });
+  const entry = await p.login('prod', fields, { op: 'op://Employee/item123/password' });
+  assert.equal(entry.auth, 'keychain');
+  assert.equal(kc.m.get('prod'), 'from-op');
+  const json = readFileSync(join(dir, 'profiles.json'), 'utf8');
+  assert.doesNotMatch(json, /Employee|item123|from-op/);
+  assert.equal(p.get('prod').password_from, 'op://****/****/password');
+  assert.equal((await p.resolve('prod')).password, 'from-op');
+  await p.resolve('prod');
+  assert.deepEqual(reads, ['op://Employee/item123/password']);
+});
+
+test('with Keychain, an existing op or secrets.json login moves on first use; secrets.json is masked', async () => {
+  const dir = tmp();
+  const old = createProfiles({ dir, secrets: fileStore(dir), read: async () => 'from-op' });
+  await old.login('stage', fields, { op: 'op://V/i/password' });
+  await old.login('dev', fields, { store: 'file-pw' });
+  const kc = fakeKeychain();
+  const p = createProfiles({ dir, secrets: kc, read: async () => 'from-op' });
+  assert.equal((await p.resolve('stage')).password, 'from-op');
+  assert.equal((await p.resolve('dev')).password, 'file-pw');
+  assert.deepEqual([kc.m.get('stage'), kc.m.get('dev')], ['from-op', 'file-pw']);
+  assert.equal(JSON.parse(readFileSync(join(dir, 'secrets.json'), 'utf8')).dev, '****');
+  assert.doesNotMatch(readFileSync(join(dir, 'profiles.json'), 'utf8'), /op:\/\/V\/i/);
+  assert.deepEqual([p.get('stage').auth, p.get('dev').auth], ['keychain', 'keychain']);
+  await p.logout('dev');
+  assert.equal(p.get('dev').password_from, undefined);
+});
+
 test('logout removes the password, keeps host/user/database; resolve then fails', async () => {
   const dir = tmp();
   const secrets = fileStore(dir);

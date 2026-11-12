@@ -27,7 +27,9 @@ compatibility:
    that are missing or that the person wants changed.
 4. **Log in.** Call the `login` tool with `name` and the fields.
    - Default: the server opens a macOS password dialog; the person types the password there; it goes to Keychain.
-   - Option: the person gives a 1Password reference → pass `op_ref` (no dialog).
+   - Option: the person gives a 1Password reference → pass `op_ref` (no dialog). On macOS the server
+     reads it once into Keychain and keeps only a masked ref (`op://****/****/password`), so later
+     connections do not ask 1Password again. An older op or secrets.json login moves the same way on first use.
    - Never ask for, accept, or pass a password in chat or in a tool argument. A pasted password is not
      repeated; call `login` without it so the dialog asks.
 5. **Report** the result: saved, where the password lives, and `connection` (`ok` or the failure).

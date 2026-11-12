@@ -27,7 +27,9 @@ claude mcp add -s user database-readonly -- node /path/server.mjs
 
 Settings: `~/.config/database-readonly-mcp/profiles.json` (0600, no passwords). Passwords: macOS
 Keychain (service `database-readonly-mcp`, account = profile); elsewhere or with `DBRO_SECRETS=file`,
-`secrets.json` (0600) in the same folder.
+`secrets.json` (0600) in the same folder. With Keychain, an op:// password is read once into Keychain
+and profiles.json keeps only `password_from: op://****/****/<field>`; a profile still on `op` or on
+`secrets.json` moves on its next use, and its `secrets.json` value becomes `****`.
 
 ## Direct mode settings
 

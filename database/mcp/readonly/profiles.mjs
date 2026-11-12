@@ -97,6 +97,10 @@ export function fileStore(dir) {
 export const defaultSecrets = (dir, env = process.env) =>
   process.platform === 'darwin' && env.DBRO_SECRETS !== 'file' ? keychainStore() : fileStore(dir);
 
+// What a file keeps once the secret moved to Keychain: where it came from, item and vault hidden.
+export const MASK = '****';
+export const maskRef = (ref) => ref.replace(/^op:\/\/[^/]+\/[^/]+/, `op://${MASK}/${MASK}`);
+
 export function createProfiles({ dir = configDir(), secrets = defaultSecrets(dir), read = opRead } = {}) {
   const file = join(dir, 'profiles.json');
   const load = () => (existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : { profiles: {} });
@@ -104,6 +108,29 @@ export function createProfiles({ dir = configDir(), secrets = defaultSecrets(dir
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     writeJson0600(file, data);
   };
+  // With Keychain, a password from 1Password or from secrets.json is copied in once; the file keeps
+  // only a masked trace (op ref with vault/item hidden, or MASK in secrets.json).
+  const toKeychain = secrets.kind === 'keychain';
+  const legacy = fileStore(dir);
+  async function moveToKeychain(name) {
+    const data = load();
+    const e = data.profiles[name];
+    if (!toKeychain || !e) return e;
+    if (e.auth === 'op') {
+      await secrets.set(name, await read(e.password_ref));
+      e.password_from = maskRef(e.password_ref);
+      delete e.password_ref;
+    } else if (e.auth === 'file') {
+      const pw = await legacy.get(name);
+      if (pw === null || pw === MASK) return e;
+      await secrets.set(name, pw);
+      await legacy.set(name, MASK);
+      e.password_from = 'file';
+    } else return e;
+    e.auth = secrets.kind;
+    save(data);
+    return e;
+  }
 
   return {
     file,
@@ -149,7 +176,7 @@ export function createProfiles({ dir = configDir(), secrets = defaultSecrets(dir
       const data = load();
       data.profiles[name] = entry;
       save(data);
-      return entry;
+      return (await moveToKeychain(name)) ?? entry;
     },
     // Forget the password source; host/user/database stay for the next login.
     async logout(name) {
@@ -160,6 +187,7 @@ export function createProfiles({ dir = configDir(), secrets = defaultSecrets(dir
       if (e) {
         delete e.auth;
         delete e.password_ref;
+        delete e.password_from;
         save(data);
       }
       return !!e;
@@ -167,7 +195,7 @@ export function createProfiles({ dir = configDir(), secrets = defaultSecrets(dir
     // Full connection config for a profile (password resolved). Throws if not logged in.
     async resolve(name, extra = {}) {
       assertProfile(name);
-      const e = load().profiles[name];
+      const e = await moveToKeychain(name);
       if (!e || !e.auth) throw new Error(`profile "${name}" is not logged in; log in with the login tool (database:login ${name})`);
       let password = '';
       if (e.auth === 'op') password = await read(e.password_ref);
