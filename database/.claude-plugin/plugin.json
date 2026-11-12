@@ -1,0 +1,11 @@
+{
+  "name": "database",
+  "description": "Database tools: readonly (a read-only MySQL MCP server with local/dev/stage/prod profiles — session READ ONLY on every connection, statement whitelist, row cap; login through the skill with a macOS password dialog into Keychain, 1Password op:// optional; prod switch confirmed by the person).",
+  "version": "0.1.0",
+  "author": {
+    "name": "newkayak12"
+  },
+  "category": "engineering",
+  "repository": "https://github.com/newkayak12/claude-skills",
+  "license": "MIT"
+}

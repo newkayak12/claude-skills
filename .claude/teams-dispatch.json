@@ -8,5 +8,5 @@
     "_repo/scripts/**"
   ],
   "min_chars": 400,
-  "allow": ["portfolio/**"]
+  "allow": ["portfolio/**", "database/**"]
 }

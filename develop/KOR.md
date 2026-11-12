@@ -7,7 +7,7 @@
 아는 런북 같은 것들이죠. 각 스킬은 그중 하나를 맡아 프로세스를 부여합니다 — 바꾸기 전에 진단하고,
 트레이드오프를 명시하고, 주장 대신 증거로 검증합니다.
 
-36개 중 5개는 **워크플로 진입점**입니다. 직접 일하지 않고 전문 스킬들을 정해진 순서로 구동하며,
+35개 중 5개는 **워크플로 진입점**입니다. 직접 일하지 않고 전문 스킬들을 정해진 순서로 구동하며,
 중간 단계부터 합류할 수 있습니다.
 
 ## Install & Uninstall
@@ -50,7 +50,6 @@
 | 서버 설정·VACUUM·락·파티셔닝이 원인인 DB 느림 | `database-optimizer` |
 | "connection pool exhausted" 제거와 풀 사이징 | `connection-pool-tuner` |
 | 부분 실패 후 데이터 정합성이 깨지는 문제 | `transaction-boundary-reviewer` |
-| local/dev/stage/prod 프로필로 DB 데이터를 읽기 전용 조회 | `database-readonly` |
 
 **아키텍처 · 도메인**
 
@@ -338,16 +337,6 @@ RDS Postgres가 매일 오후만 되면 느려지는데 쿼리 하나씩 보면 
 ```
 어젯밤 타임아웃 이후 주문은 생성됐는데 결제가 안 됐습니다. @Transactional 경계를
 검토하고 Outbox가 필요한지 Saga가 필요한지 판단해주세요.
-```
-
-### `database-readonly`
-
-번들된 MySQL MCP 서버로 읽기 전용 쿼리를 실행하고 local/dev/stage/prod 프로필을 전환합니다. 프로덕션 조회는
-확인이 필요하며, 로그인은 CLI로만 하고 비밀번호를 채팅에 쓰지 않습니다. SQL 작성은 `sql-pro`, 느림 진단은
-`database-optimizer`를 사용하세요.
-
-```
-dev 데이터베이스에서 최근 주문 10건을 읽기 전용으로 조회해줘.
 ```
 
 ### 아키텍처 · 도메인
@@ -695,11 +684,6 @@ REST API, SRE 파이프라인 연동만 필요한 경우(`sre-engineer`)는 제�
 | Onboarding Guide | 신규 팀원 | 분기 검토 + 워크플로 변경 시 |
 
 ## MCP
-
-`develop`에는 읽기 전용 MySQL MCP 서버인 `mcp/database-readonly/`가 포함되어 있습니다. 자동 등록하지 않으며
-`.mcp.json`도 만들지 않습니다. `cd <plugin dir>/mcp/database-readonly && npm install` 후 `claude mcp add -s user
-database-readonly -- node <plugin dir>/mcp/database-readonly/server.mjs`로 설정하세요. 자세한 내용은
-`mcp/database-readonly/README.md`를 참고하세요.
 
 대부분의 스킬은 frontmatter에 `compatibility`를 선언합니다. `think-tool`은 트레이드오프를
 명시적으로 저울질해야 하는 곳 — 아키텍처 패턴, SLO 목표, 격리 수준, 서킷 브레이커 임계값, 카오스

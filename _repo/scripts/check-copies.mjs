@@ -5,14 +5,15 @@
 //    harness/hooks/goal-gate.mjs vs graph/hooks/vendor/goal-gate.mjs,
 //    teams/mcp/diagram.mjs vs write/skills/diagram/scripts/diagram.mjs.
 // 2. Plan-prompt plugin list: the "(plugins: …)" list in harness/engine/pipeline.js must equal the
-//    marketplace plugins that ship at least one skills/**/SKILL.md, minus harness, graph, teams, trophy.
+//    marketplace plugins that ship at least one skills/**/SKILL.md, minus harness, graph, teams, trophy,
+//    database (an operational query skill, not a planning method; harness is frozen).
 // Exit 1 on any drift, naming each drifted group.
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
-const EXCLUDE = new Set(['harness', 'graph', 'teams', 'trophy'])
+const EXCLUDE = new Set(['harness', 'graph', 'teams', 'trophy', 'database'])
 
 const plugins = readdirSync(root).filter(
   (n) => !n.startsWith('.') && n !== '_repo' && n !== 'node_modules' && statSync(join(root, n)).isDirectory(),

@@ -18,6 +18,7 @@ Switching to `prod` asks the person to confirm (MCP elicitation); a client that 
 ```sh
 node cli.mjs login dev      # prompts host/port/user/database + hidden password -> Keychain
                             # type an op:// reference at the password prompt to use 1Password instead
+                            # without a terminal (run by Claude) on macOS: a hidden password dialog opens
 node cli.mjs login stage --host db.stage --user reader --database app --op op://Vault/item/password
 node cli.mjs logout dev     # removes the password, keeps host/user/database
 node cli.mjs list

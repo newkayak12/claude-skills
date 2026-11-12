@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-// dbro: manage database-readonly-mcp profiles from a terminal (the password never goes through the model).
+// dbro: manage database-readonly-mcp profiles (the password never goes through the model).
+// Without a terminal (run by Claude), login asks the password in a macOS hidden dialog.
 //   dbro login <profile> [--host H] [--port P] [--user U] [--database D] [--vendor mysql] [--op op://...] [--no-password]
 //   dbro logout <profile>
 //   dbro list
 import { parseArgs } from 'node:util';
 import { createInterface } from 'node:readline';
-import { createProfiles, PROFILES, assertProfile } from './profiles.mjs';
+import { createProfiles, PROFILES, assertProfile, passwordDialog } from './profiles.mjs';
 import { redactor } from './config.mjs';
 
 const out = (s) => process.stdout.write(s + '\n');
@@ -95,10 +96,13 @@ async function main() {
   let auth;
   if (values.op) auth = { op: values.op };
   else if (values['no-password']) auth = { none: true };
-  else {
-    if (!interactive) throw new Error('password needs a terminal (or use --op op://... / --no-password)');
+  else if (interactive) {
     const pw = await ask('password (hidden; or an op:// reference to read it from 1Password)', { hidden: true });
     auth = pw.startsWith('op://') ? { op: pw } : pw === '' ? { none: true } : { store: pw };
+  } else if (process.platform === 'darwin') {
+    auth = { store: await passwordDialog(name) };
+  } else {
+    throw new Error(`password needs a terminal: ! node ${process.argv[1]} login ${name} (or use --op op://... / --no-password)`);
   }
   const entry = await profiles.login(name, fields, auth);
   out(`${name}: saved (password: ${entry.auth})`);

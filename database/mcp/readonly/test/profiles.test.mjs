@@ -7,7 +7,44 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { createProfiles, fileStore, keychainStore } from '../profiles.mjs';
+import { createProfiles, fileStore, keychainStore, passwordDialog } from '../profiles.mjs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { writeFileSync, chmodSync, existsSync } from 'node:fs';
+
+test('passwordDialog: answer returned, cancel rejected', async () => {
+  const ok = (cmd, args, cb) => (assert.equal(cmd, 'osascript'), assert.match(args[1], /with hidden answer/), cb(null, 's3cret\n'));
+  assert.equal(await passwordDialog('dev', ok), 's3cret');
+  const cancel = (_c, _a, cb) => cb(Object.assign(new Error('User canceled. (-128)'), { code: 1 }));
+  await assert.rejects(passwordDialog('dev', cancel), /login cancelled/);
+});
+
+// CLI without a terminal (as Claude runs it): a fake osascript on PATH stands in for the dialog.
+function runCli(dir, answer, args) {
+  const bin = mkdtempSync(join(tmpdir(), 'dbro-bin-'));
+  writeFileSync(join(bin, 'osascript'), answer === null ? '#!/bin/sh\necho "User canceled. (-128)" >&2\nexit 1\n' : `#!/bin/sh\nprintf '%s\\n' '${answer}'\n`);
+  chmodSync(join(bin, 'osascript'), 0o755);
+  return spawnSync(process.execPath, [fileURLToPath(new URL('../cli.mjs', import.meta.url)), ...args], {
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, DBRO_CONFIG_DIR: dir, DBRO_SECRETS: 'file' },
+    input: '',
+    encoding: 'utf8',
+  });
+}
+
+test('cli login without a terminal asks the macOS dialog; password saved, never printed', { skip: process.platform !== 'darwin' && 'not macOS' }, () => {
+  const dir = tmp();
+  const args = ['login', 'dev', '--host', 'h', '--user', 'u', '--database', 'd', '--no-verify'];
+  const r = runCli(dir, 'dlg-pw-123', args);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /dev: saved \(password: file\)/);
+  assert.doesNotMatch(r.stdout + r.stderr, /dlg-pw-123/);
+  assert.equal(JSON.parse(readFileSync(join(dir, 'secrets.json'), 'utf8')).dev, 'dlg-pw-123');
+
+  const dir2 = tmp();
+  const c = runCli(dir2, null, args);
+  assert.equal(c.status, 1);
+  assert.match(c.stderr, /login cancelled/);
+  assert.equal(existsSync(join(dir2, 'profiles.json')), false);
+});
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'dbro-test-'));
 const fields = { host: 'h.example', port: '3307', user: 'reader', database: 'app' };

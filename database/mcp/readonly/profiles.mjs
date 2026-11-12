@@ -61,6 +61,17 @@ export function keychainStore(service = SERVICE) {
   };
 }
 
+// macOS hidden-answer dialog. The password comes back on osascript's stdout and is never printed.
+// Cancel makes osascript exit non-zero (-128): nothing is returned.
+export function passwordDialog(profile, run = execFile) {
+  const script = `display dialog "${profile} password" default answer "" with hidden answer with title "database-readonly"`;
+  return new Promise((res, rej) =>
+    run('osascript', ['-e', script, '-e', 'text returned of result'], (err, stdout) =>
+      err ? rej(new Error('login cancelled')) : res(String(stdout).replace(/\n$/, '')),
+    ),
+  );
+}
+
 // Fallback outside macOS: secrets.json with mode 0600 next to profiles.json.
 export function fileStore(dir) {
   const file = join(dir, 'secrets.json');

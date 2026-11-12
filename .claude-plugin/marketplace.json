@@ -11,8 +11,8 @@
   "plugins": [
     {
       "name": "develop",
-      "description": "Engineering skills: SQL, clean architecture, clean code, DDD, database optimization, chaos engineering, Spring Boot, Kotlin, TDD, testing, bug diagnosis, security audit, architecture review, deprecation & migration, SRE, performance profiling & optimization, incident response, documentation strategy, like-my-code (a repo's style as harness conventions, each rule with evidence and a cited source), database-readonly (read-only MySQL MCP server with local/dev/stage/prod profiles). ADR drafting moved to write:plans (ADR format); diagram moved to write:diagram.",
-      "version": "2.1.0",
+      "description": "Engineering skills: SQL, clean architecture, clean code, DDD, database optimization, chaos engineering, Spring Boot, Kotlin, TDD, testing, bug diagnosis, security audit, architecture review, deprecation & migration, SRE, performance profiling & optimization, incident response, documentation strategy, like-my-code (a repo's style as harness conventions, each rule with evidence and a cited source). ADR drafting moved to write:plans (ADR format); diagram moved to write:diagram.",
+      "version": "2.2.0",
       "author": {
         "name": "newkayak12"
       },
@@ -21,6 +21,16 @@
       "dependencies": [
         "trophy"
       ]
+    },
+    {
+      "name": "database",
+      "description": "Database tools: readonly (a read-only MySQL MCP server with local/dev/stage/prod profiles — session READ ONLY on every connection, statement whitelist, row cap; login through the skill with a macOS password dialog into Keychain, 1Password op:// optional; prod switch confirmed by the person).",
+      "version": "0.1.0",
+      "author": {
+        "name": "newkayak12"
+      },
+      "source": "./database",
+      "category": "engineering"
     },
     {
       "name": "think",
