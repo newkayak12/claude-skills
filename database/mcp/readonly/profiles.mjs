@@ -168,7 +168,7 @@ export function createProfiles({ dir = configDir(), secrets = defaultSecrets(dir
     async resolve(name, extra = {}) {
       assertProfile(name);
       const e = load().profiles[name];
-      if (!e || !e.auth) throw new Error(`profile "${name}" is not logged in; run in a terminal: node cli.mjs login ${name}`);
+      if (!e || !e.auth) throw new Error(`profile "${name}" is not logged in; log in with the login tool (database:login ${name})`);
       let password = '';
       if (e.auth === 'op') password = await read(e.password_ref);
       else if (e.auth !== 'none') {

@@ -41,7 +41,7 @@ Opt out beforehand: `mkdir -p ~/.claude/plugins/.newkayak12-trophy-ride.done`.
 | [agents](./agents/README.md) · [한국어](./agents/KOR.md) | Agent orchestration: parallel agents, subagent-driven development |
 | [cognition](./cognition/README.md) · [한국어](./cognition/KOR.md) | Thinking quality: assumptions, biases, fallacies, mental models, trade-offs |
 | [completion](./completion/README.md) · [한국어](./completion/KOR.md) | Verification before completion |
-| [database](./database/README.md) · [한국어](./database/KOR.md) | Read-only MySQL MCP with local/dev/stage/prod profiles and a login/query skill |
+| [database](./database/README.md) · [한국어](./database/KOR.md) | Read-only MySQL MCP with login, logout, profile and query skills |
 | [develop](./develop/README.md) · [한국어](./develop/KOR.md) | Engineering: CLI, SQL, architecture, Spring Boot, Kotlin, TDD, and more |
 | [graph](./graph/README.md) | Graph-owned harness orchestration, MCP installation, routing, and adjudication |
 | [harness](./harness/README.md) · [한국어](./harness/KOR.md) | Six-stage planning, implementation, verification, quality gate, and reporting |

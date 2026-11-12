@@ -5,7 +5,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { readSettings, isDirect, limits, resolveConfig, redactor, USAGE } from './config.mjs';
-import { createProfiles, PROFILES } from './profiles.mjs';
+import { createProfiles, PROFILES, passwordDialog } from './profiles.mjs';
 
 const VENDORS = {
   mysql: () => import('./vendors/mysql.mjs'),
@@ -40,9 +40,29 @@ const PROFILE_TOOLS = [
     name: 'profile',
     description:
       'Without name: list profiles (local, dev, stage, prod), which are logged in, and the active one. ' +
-      'With name: switch the active connection to that profile. Switching to prod asks the person to confirm. ' +
-      'Logging in is done by the person in a terminal (node cli.mjs login <profile>), never through this tool.',
+      'With name: switch the active connection to that profile. Switching to prod asks the person to confirm.',
     inputSchema: { type: 'object', properties: { name: { type: 'string', enum: PROFILES } } },
+  },
+  {
+    name: 'login',
+    description:
+      'Save a profile login and test it. host/port/user/database come from the arguments (omitted ones keep the saved ' +
+      'values). The password is never an argument: on macOS the server opens a hidden password dialog for the person ' +
+      'and stores the answer in Keychain. Optional: op_ref (a 1Password op:// reference) instead of the dialog, or ' +
+      'no_password for an account without one. Does not switch the active profile.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', enum: PROFILES },
+        host: { type: 'string' },
+        port: { type: 'integer' },
+        user: { type: 'string' },
+        database: { type: 'string' },
+        op_ref: { type: 'string', description: 'op://vault/item/field — read from 1Password instead of the dialog' },
+        no_password: { type: 'boolean' },
+      },
+      required: ['name'],
+    },
   },
   {
     name: 'logout',
@@ -65,7 +85,7 @@ async function openVendor(cfg) {
 }
 
 // state: { profile: name|null, db, redact }. profiles: null in direct mode.
-export function createServer({ state, profiles, lim }) {
+export function createServer({ state, profiles, lim, dialog = passwordDialog }) {
   const server = new Server({ name: 'database-readonly-mcp', version: '0.2.0' }, { capabilities: { tools: {} } });
   const tools = profiles ? [...PROFILE_TOOLS, ...DB_TOOLS] : DB_TOOLS;
   const tag = (v) => (state.profile ? { profile: state.profile, ...v } : v);
@@ -116,13 +136,48 @@ export function createServer({ state, profiles, lim }) {
         await switchTo(args.name);
         return ok({ active: state.profile, changed: true });
       }
+      if (profiles && name === 'login') {
+        if (!PROFILES.includes(args.name)) return fail(`unknown profile "${args.name}"`);
+        const prev = profiles.get(args.name) ?? {};
+        const fields = {
+          vendor: prev.vendor ?? 'mysql',
+          host: args.host ?? prev.host,
+          port: args.port ?? prev.port,
+          user: args.user ?? prev.user,
+          database: args.database ?? prev.database,
+        };
+        const missing = ['host', 'user', 'database'].filter((k) => !fields[k]);
+        if (missing.length) return fail(`login ${args.name}: missing ${missing.join(', ')} (no saved value)`);
+        let auth;
+        if (args.op_ref) auth = { op: args.op_ref };
+        else if (args.no_password) auth = { none: true };
+        else if (process.platform === 'darwin') auth = { store: await dialog(args.name) };
+        else return fail(`no password dialog on this OS; the person runs in a terminal: node ${process.argv[1].replace(/server\.mjs$/, 'cli.mjs')} login ${args.name}`);
+        const entry = await profiles.login(args.name, fields, auth);
+        let connection = 'ok';
+        let cfg;
+        try {
+          cfg = await profiles.resolve(args.name, { maxRows: 1, maxExecutionMs: 10000 });
+          const db = await openVendor(cfg);
+          try {
+            await db.execute('SELECT 1');
+          } finally {
+            await db.close();
+          }
+        } catch (e) {
+          const msg = e.code ? `${e.code}: ${e.message}` : e.message;
+          connection = `failed: ${cfg ? redactor(cfg)(msg) : msg}`;
+        }
+        if (connection === 'ok' && args.name === state.profile) await switchTo(args.name);
+        return ok({ profile: args.name, saved: true, password: entry.auth, connection, active: state.profile });
+      }
       if (profiles && name === 'logout') {
         if (!PROFILES.includes(args.name)) return fail(`unknown profile "${args.name}"`);
         const existed = await profiles.logout(args.name);
         if (args.name === state.profile && state.db) {
           await state.db.close().catch(() => {});
           state.db = null;
-          state.error = `profile "${args.name}" was logged out; log in again in a terminal: node cli.mjs login ${args.name}`;
+          state.error = `profile "${args.name}" was logged out; log in again with the login tool`;
         }
         return ok({ profile: args.name, loggedOut: existed });
       }

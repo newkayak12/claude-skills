@@ -100,10 +100,10 @@ test('macOS keychain round trip (password via stdin)', { skip: process.platform 
   assert.equal(await k.get('t1'), null);
 });
 
-async function connect(dir, { elicit } = {}) {
+async function connect(dir, { elicit, path } = {}) {
   const client = new Client({ name: 't', version: '0' }, { capabilities: elicit ? { elicitation: {} } : {} });
   if (elicit) client.setRequestHandler(ElicitRequestSchema, elicit);
-  const env = { ...process.env, DBRO_CONFIG_DIR: dir, DBRO_SECRETS: 'file' };
+  const env = { ...process.env, DBRO_CONFIG_DIR: dir, DBRO_SECRETS: 'file', ...(path ? { PATH: path } : {}) };
   for (const k of ['MYSQL_HOST', 'MYSQL_USER', 'MYSQL_DB', 'MYSQL_PASS', 'MYSQL_PORT', 'DBRO_PROFILE']) delete env[k];
   await client.connect(new StdioClientTransport({
     command: process.execPath,
@@ -122,15 +122,51 @@ test('server profile mode: starts on local, lists profiles, reports not logged i
   const { client, call } = await connect(tmp());
   try {
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
-    assert.deepEqual(names, ['describe_table', 'list_tables', 'logout', 'profile', 'query']);
+    assert.deepEqual(names, ['describe_table', 'list_tables', 'login', 'logout', 'profile', 'query']);
     const list = JSON.parse((await call('profile')).text);
     assert.equal(list.active, 'local');
     assert.equal(list.connected, false);
     const q = await call('query', { sql: 'SELECT 1' });
     assert.equal(q.isError, true);
-    assert.match(q.text, /not logged in; run in a terminal: node cli\.mjs login local/);
+    assert.match(q.text, /not logged in; log in with the login tool \(database:login local\)/);
   } finally {
     await client.close();
+  }
+});
+
+// login tool: the server opens the password dialog itself (a fake osascript on PATH here).
+test('login tool: dialog password saved to the store, never in the tool result; cancel saves nothing', { skip: process.platform !== 'darwin' && 'not macOS' }, async () => {
+  const fake = (answer) => {
+    const bin = mkdtempSync(join(tmpdir(), 'dbro-bin-'));
+    writeFileSync(join(bin, 'osascript'), answer === null ? '#!/bin/sh\nexit 1\n' : `#!/bin/sh\nprintf '%s\\n' '${answer}'\n`);
+    chmodSync(join(bin, 'osascript'), 0o755);
+    return `${bin}:${process.env.PATH}`;
+  };
+  const dir = tmp();
+  let a = await connect(dir, { path: fake('tool-pw-9') });
+  try {
+    const r = await a.call('login', { name: 'dev', host: '127.0.0.1', port: 1, user: 'u', database: 'd' });
+    assert.equal(r.isError, false, r.text);
+    const body = JSON.parse(r.text);
+    assert.equal(body.saved, true);
+    assert.equal(body.password, 'file');
+    assert.match(body.connection, /^failed: ECONNREFUSED/); // nothing listens on port 1
+    assert.doesNotMatch(r.text, /tool-pw-9/);
+    assert.equal(JSON.parse(readFileSync(join(dir, 'secrets.json'), 'utf8')).dev, 'tool-pw-9');
+    const again = await a.call('login', { name: 'stage' });
+    assert.match(again.text, /missing host, user, database/);
+  } finally {
+    await a.client.close();
+  }
+  const dir2 = tmp();
+  a = await connect(dir2, { path: fake(null) });
+  try {
+    const r = await a.call('login', { name: 'dev', host: 'h', user: 'u', database: 'd' });
+    assert.equal(r.isError, true);
+    assert.match(r.text, /login cancelled/);
+    assert.equal(existsSync(join(dir2, 'profiles.json')), false);
+  } finally {
+    await a.client.close();
   }
 });
 
