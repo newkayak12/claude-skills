@@ -51,7 +51,8 @@ resume.md:
     `catalog` lists each distinct look once (`looks`: sample text, pt, bold, colour, list) to pick from.
     The template's photo (an anchored drawing) is kept on the first paragraph.
     Finish keys (no post-build script): `keep: section, entry` (roles kept with the next line),
-    `spacing:` role: <before> <after> in pt, `title:`, `author:`, `photo_alt:`. A `라벨: 값` line takes a
+    `spacing:` role: <before> <after> in pt, `look:` role: size <pt> color <RRGGBB> label <RRGGBB>,
+    `title:`, `author:`, `photo_alt:`. A `라벨: 값` line takes a
     two-format sample's label and value runs; URLs and mail addresses become links.
 """
 import json
@@ -280,6 +281,26 @@ def para(style, text, ppr, rpr, label=None, links=None):
     return "<w:p>%s%s</w:p>" % (ppr, text_runs(text, rpr, links))
 
 
+def restyle_rpr(rpr, size=None, color=None):
+    """rPr with its size (pt) and colour replaced, each only when given."""
+    r = rpr or "<w:rPr></w:rPr>"
+
+    def put(r, tag, after_re):
+        # schema order: the new element goes before the first element that must follow it
+        m = re.search(after_re, r)
+        at = m.start() if m else len(r) - len("</w:rPr>")
+        return r[:at] + tag + r[at:]
+    tail = r"<w:(highlight|u|effect|bdr|shd|fitText|vertAlign|rtl|cs|em|lang|eastAsianLayout|specVanish|oMath)\b"
+    if color:
+        r = re.sub(r"<w:color\b[^>]*/>", "", r)
+        r = put(r, '<w:color w:val="%s"/>' % color.upper(), r"<w:(spacing|w|kern|position|sz|szCs)\b|" + tail)
+    if size:
+        half = round(float(size) * 2)
+        r = re.sub(r"<w:sz(?:Cs)?\b[^>]*/>", "", r)
+        r = put(r, '<w:sz w:val="%d"/><w:szCs w:val="%d"/>' % (half, half), tail)
+    return r
+
+
 def tune(ppr, keep=False, before=None, after=None):
     """pPr with keepNext (a heading never ends a page) and spacing before/after (twips) set."""
     ppr = ppr if ppr and ppr != "<w:pPr/>" else "<w:pPr></w:pPr>"
@@ -351,9 +372,25 @@ def build(source, out):
             fail("spacing: %s: give two numbers in pt, before and after — got %r" % (r, v))
         spacing[r] = [round(float(n) * 20) for n in nums]
     keep = {k.strip() for k in meta.get("keep", "section, entry").split(",") if k.strip()}
+    # look: `role: size 8 color 595959 label 000000` — the run size (pt) and colour a role takes over
+    # its sample's, and a label colour for its `라벨: 값` lines (the value keeps `color`)
+    looks = {}
+    for r, v in (meta.get("look") or {}).items():
+        words = v.split()
+        kv = dict(zip(words[::2], words[1::2]))
+        if (not kv or len(words) % 2 or set(kv) - {"size", "color", "label"}
+                or any(not re.fullmatch(r"\d+(\.\d+)?" if k == "size" else r"[0-9A-Fa-f]{6}", x) for k, x in kv.items())):
+            fail("look: %s: give size <pt>, color <RRGGBB>, label <RRGGBB> — got %r" % (r, v))
+        looks[r] = kv
     links, out_paras = [], []
     for i, (r, t) in enumerate(todo):
         ppr, rpr, label = from_text[r] if r in from_text else (*sample.get(mapping[r], (None, None)), None)
+        if r in looks:
+            rpr = restyle_rpr(rpr, looks[r].get("size"), looks[r].get("color"))
+            if label or "label" in looks[r]:
+                base = label or (rpr, rpr)
+                label = (restyle_rpr(base[0], looks[r].get("size"), looks[r].get("label") or looks[r].get("color")),
+                         restyle_rpr(base[1], looks[r].get("size"), looks[r].get("color")))
         if ppr is None:
             ppr = '<w:pPr><w:pStyle w:val="%s"/></w:pPr>' % mapping[r]
         before, after = spacing.get(r, (None, None))

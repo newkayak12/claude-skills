@@ -39,7 +39,8 @@ Engine, run from the workspace root: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/resum
    text of the template paragraph whose look it takes when every line is `Normal`.
    Roles: `#` name, `##` section, `###` entry, `-` bullet, plain body; any other `{role} text`.
    Finish from the front matter, never a post-build script: `title:`, `author:`, `photo_alt:`, `keep:`
-   (roles held with the next line) and `spacing:` (pt) where the template reads too tight; a
+   (roles held with the next line), `spacing:` (pt) where the template reads too tight, `look:` (size,
+   colour, label colour) where a sample is too small or faint; a
    `라벨: 값` line takes a two-format sample's label and value; links are made by the build.
    Every entry of one kind has the same lines (each project its 설명·기술·역할, each company its
    bullets); one with less is filled from the skeleton or asked, never left uneven. Each entry keeps

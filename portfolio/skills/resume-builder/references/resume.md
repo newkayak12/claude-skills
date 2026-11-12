@@ -32,6 +32,8 @@ The resume is the portfolio's second output, built the same way: designed in `re
   - `keep: section, entry, company` — those roles stay on the page of the line after them
     (default `section, entry`); the first line under a section has no space before it;
   - `spacing:` role → `<before> <after>` in pt, when the template's own spacing reads too tight;
+  - `look:` role → `size <pt> color <RRGGBB> label <RRGGBB>` (any of them), when the sample's run
+    reads too small or too faint (contrast), or its `라벨: 값` line needs a label colour of its own;
   - `title:`, `author:` → the document properties; `photo_alt:` → the photo's alt text.
 - A role used but mapped nowhere, a style the template lacks, or a sample text no paragraph starts
   with is refused before anything is written.

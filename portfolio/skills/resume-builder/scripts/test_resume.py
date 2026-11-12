@@ -222,6 +222,20 @@ def main():
         check("<dc:title>가상 인물 이력서</dc:title>" in core and "<dc:creator>가상 인물</dc:creator>" in core and "python-docx" not in core,
               "title and author come from the front matter — %s" % core)
         check('descr="가상 인물 프로필 사진"' in doc, "photo_alt sets the photo's alt text")
+        looked = fin.replace("spacing:\n", "look:\n  contact: size 8 color 333333\n  meta: label 000000 color 595959\nspacing:\n") \
+                    .replace("  role: 역할\n", "  role: 역할\n  meta: 기술\n") + "{meta} 기술: Kotlin\n"
+        (plain / "resume-deck.mdx").write_text(looked, encoding="utf-8")
+        rc, b = run(plain, "build")
+        with zipfile.ZipFile(plain / "build" / "resume.docx") as z:
+            doc = z.read("word/document.xml").decode("utf-8")
+        check(rc == 0 and '<w:color w:val="333333"/><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr><w:t xml:space="preserve">메일: ' in doc,
+              "look: sets a role's size and colour — %s" % doc[max(0, doc.find("메일") - 160):doc.find("메일") + 10])
+        check('<w:color w:val="000000"/><w:sz w:val="16"/></w:rPr><w:t xml:space="preserve">기술:</w:t>' in doc
+              and '<w:color w:val="595959"/><w:sz w:val="16"/></w:rPr><w:t xml:space="preserve"> Kotlin</w:t>' in doc,
+              "look: label gives a one-format sample's `라벨: 값` line a label colour")
+        (plain / "resume-deck.mdx").write_text(looked.replace("color 333333", "color red"), encoding="utf-8")
+        rc, e = run(plain, "build")
+        check(rc != 0 and "look" in e["error"], "a look line that is not size/colour is refused")
         (plain / "resume-deck.mdx").write_text(fin.replace("  company: 12 3", "  company: 12"), encoding="utf-8")
         rc, e = run(plain, "build")
         check(rc != 0 and "spacing" in e["error"], "a spacing line without two numbers is refused")
