@@ -660,6 +660,7 @@ function toolNext(a) {
     }
     if (task.harness_run) {
       touchMarker(task.harness_run.cwd, task.run_id);
+      enforceBudget(task);
       return { out: toolNextHarness(task) };
     }
     if (task.s_run) return { out: toolNextSRun(task) };

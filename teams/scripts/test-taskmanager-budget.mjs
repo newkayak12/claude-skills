@@ -230,3 +230,54 @@ test('taskFigure / taskSpend / budgetStatus.spend read the latest durable event 
     assert.equal(mod.budgetStatus(task).estimated, false);
   }, { stream: null, opts: { budget_usd: 100 }, ledger });
 });
+
+// F3-US-1 wiring: the daemon tick must reach enforceBudget for a size-S task, or the grace kill
+// above never fires on a live run (QA-F3 repair: stepOnceInner returned before it).
+async function daemonTickCase({ agoMin, graceUsd }) {
+  const root = mkdtempSync(join(tmpdir(), 'budget-f3-tick-'));
+  const was = process.env.HARNESS_TASKS_DIR;
+  process.env.HARNESS_TASKS_DIR = root;
+  process.env.TEAMS_RUNS_DIR ??= 'off';
+  process.env.HARNESS_TEST_NO_DAEMON = '1';
+  const driver = liveDriver();
+  try {
+    const daemon = await import('../mcp/daemon.mjs');
+    const store = await import('../mcp/taskstate.mjs');
+    const id = '0000aaaa-eeee-ffff-0000-222222222222';
+    const dir = store.taskDir(id);
+    mkdirSync(join(dir, 'drivers'), { recursive: true });
+    const reportPath = join(dir, 'harness-report.md');
+    writeFileSync(reportPath, '# harness report\n');
+    writeFileSync(join(dir, 'drivers', 'S.stream.jsonl'), JSON.stringify({ type: 'result', total_cost_usd: 50, num_turns: 1, duration_ms: 1 }) + '\n');
+    writeFileSync(store.taskPath(id), JSON.stringify({
+      run_id: id, kind: 'task', store_path: store.taskPath(id), cwd: root, request: 'r', created_at: Date.now() - 3600000,
+      flow: 'develop', size: 'S', max_retries: 2, driver_restarts: 2, base_ref: null, nodes: [],
+      team: { opts: { budget_usd: 40, budget_grace_minutes: 5, budget_grace_usd: graceUsd } },
+      harness_run: { cwd: root, opened_at: Date.now() - 3600000, report_path: reportPath, driver, run: null },
+      budget_stopped: { at: Date.now() - agoMin * 60000, spend: 41, budget_usd: 40, skipped_packages: [] },
+    }));
+    for (let i = 0; i < 3; i++) await daemon.stepOnce(id);
+    await new Promise((r) => setTimeout(r, 300));
+    let alive = true;
+    try { process.kill(driver.pid, 0); } catch { alive = false; }
+    const killed = ledgerOf(dir).filter((e) => e.event === 'budget_killed' && e.pid === driver.pid).length;
+    return { alive, killed, report: readFileSync(reportPath, 'utf8') };
+  } finally {
+    try { process.kill(-driver.pid, 'SIGKILL'); } catch {}
+    if (was === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = was;
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test('daemon tick: a size-S run past budget plus time grace has its driver killed and the report stays', async () => {
+  const r = await daemonTickCase({ agoMin: 10, graceUsd: 1e9 });
+  assert.equal(r.alive, false);
+  assert.equal(r.killed, 1);
+  assert.ok(r.report.length > 0);
+});
+
+test('daemon tick: a size-S run inside grace is not killed', async () => {
+  const r = await daemonTickCase({ agoMin: 0, graceUsd: 1e9 });
+  assert.equal(r.alive, true);
+  assert.equal(r.killed, 0);
+});

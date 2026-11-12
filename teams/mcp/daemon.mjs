@@ -629,7 +629,10 @@ async function stepOnceInner(taskId, judgeFn, answerFn) {
   // A legacy task.s_run (S2) is read, never driven: nothing to do here.
   const mode = tx((t) => {
     if (t.harness_run) {
-      let changed = serviceSRun(t);
+      // Budget first: a stop that trips this tick (budget_stopped, then the grace kill of the
+      // driver) must land before serviceSRun could respawn a driver the stop is about to kill.
+      let changed = enforceBudget(t);
+      if (serviceSRun(t)) changed = true;
       if (autoResumeCapacity(t)) changed = true;
       return { harness: true, changed };
     }
