@@ -148,7 +148,12 @@ Every session in the workspace starts with `manage.mjs scaffold`, unasked: it re
 to these, creates only what is missing, CLAUDE.md included, and never overwrites a file. A CLAUDE.md
 that is already there (a renamed README too) keeps its text and gets the guide appended once.
 
-Nine steps (3.1.0: a machine with no LibreOffice and no docker renders — `office_render.py
+Nine steps (3.2.0: resume `render` sets the template's page breaks against the ones Word saved
+(`word_check`) and warns when the renderer breaks elsewhere — the pinned LibreOffice matched Word
+where the docker 25.8 image ran a page short; `over_lines` works with PyMuPDF; render reports
+`orphan` (a word alone on a line), `split` (a number torn from its unit), `marks` (`*` and `∗` mixed)
+for deck and resume, and `uneven` (blocks the template spaces alike rendered unevenly apart); PyMuPDF
+no longer joins two frames into one block, which gave impossible zone findings; 3.1.0: a machine with no LibreOffice and no docker renders — `office_render.py
 install-renderer --yes` (asked once) unpacks a pinned, SHA-256-checked LibreOffice 26.8.3 under
 `~/.cache/claude-portfolio/` without root, and PyMuPDF stands in for poppler (previews, PDF text,
 line boxes; Linux x86_64, macOS not yet); the renderer is `soffice` on PATH, then `DECK_RENDER_DOCKER`,

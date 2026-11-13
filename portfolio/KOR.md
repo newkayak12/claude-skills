@@ -141,7 +141,11 @@ snapshot/  sources/  docs/확정사실.md               버전, 글감, 확정�
 바꾸고, CLAUDE.md를 포함해 없는 것만 만들며, 있는 파일은 덮지 않습니다. 이미 있는 CLAUDE.md(이름을 바꾼
 README 포함)는 내용을 그대로 두고 안내문을 한 번만 뒤에 덧붙입니다.
 
-9단계(3.1.0: LibreOffice도 docker도 없는 컴퓨터에서 렌더 — `office_render.py install-renderer --yes`(한 번
+9단계(3.2.0: 이력서 `render`가 Word가 저장해 둔 템플릿의 쪽 나눔과 렌더 결과를 비교하고(`word_check`) 다르면
+경고 — 고정한 LibreOffice는 Word와 맞았고 docker 25.8 이미지는 한 쪽을 적게 나눔; `over_lines`가 PyMuPDF로도
+동작; 덱과 이력서 렌더가 `orphan`(한 단어만 다음 줄로 넘어감), `split`(숫자와 단위가 줄에서 갈림), `marks`(`*`와
+`∗` 섞임)를, 덱 렌더가 `uneven`(템플릿이 같은 간격으로 둔 블록이 렌더에서 고르지 않음)을 알림; PyMuPDF가 두 글
+상자를 한 블록으로 묶어 생기던 비정상 임계 침범 오탐을 없앰; 3.1.0: LibreOffice도 docker도 없는 컴퓨터에서 렌더 — `office_render.py install-renderer --yes`(한 번
 묻고)가 버전을 고정하고 SHA-256으로 확인한 LibreOffice 26.8.3을 root 없이 `~/.cache/claude-portfolio/`에 풀고,
 poppler가 없으면 PyMuPDF가 미리보기·PDF 글자·줄 위치를 맡음(Linux x86_64, macOS는 아직). 렌더러는 PATH의
 `soffice`, 다음 `DECK_RENDER_DOCKER`, 다음 그 캐시. 이력서 `break:`는 섹션을 새 쪽에서 시작하고 `photo:`는 덱

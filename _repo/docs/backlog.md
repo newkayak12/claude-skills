@@ -79,10 +79,11 @@ real deck lone commas 316 → 0, engine version printed).
     - Seen 2026-11-13 on a local copy of a real workspace: the same resume.docx (NanumSquare in both
       PDFs) renders 3 pages on the cached LibreOffice 26.8.3 and 2 on the docker image (25.8.7); a
       7.5pt line's pitch is 13.5pt against 10.5pt, so the page budget depends on the renderer. The
-      deck audit gave 15 problems / 25 template-own on the cache against 14 / 6 on docker, some with
-      impossible values ("688pt 거슬러", unverified: PyMuPDF line merging). Cause unverified; which one
-      matches Word is unknown. Acceptance adds: one docx whose Word page count is known renders the
-      same count on the pinned build (or the pin moves), and the audit counts agree within one.
+      deck audit gave 15 problems / 25 template-own on the cache against 14 / 6 on docker. Settled the
+      same day: the Word template's saved page marks (`w:lastRenderedPageBreak`) match the cached 26.8.3
+      on 3 of 3 pages and docker's 25.8 on 2 of 3, so the pinned build is the Word-like one; resume
+      `render` now checks this on every run (`word_check`). The impossible deck values ("688pt 거슬러")
+      were PyMuPDF blocks spanning two frames, now split: 13 / 9 on the cache against 14 / 6.
     - Acceptance: on a Mac with no LibreOffice and no docker, `install-renderer --yes` then render
       works with the spacing off; `test_render.py` and `test_office_render.py` with counts there.
       Carried: the real workspace drops its `postbuild_layout.py` once its deck.mdx moves to
