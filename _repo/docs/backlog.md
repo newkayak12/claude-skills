@@ -61,38 +61,25 @@ real deck lone commas 316 → 0, engine version printed).
       table header wider than its cell, contents rows not `distribute:`d by the skill, a smaller run in
       the cover's "(N개월)" next to its date, resume meta lines with no label contrast unless the
       workspace sets `look:` (shipped after that run).
+    - 3.1.0 (2026-11-13): contents rows past the safe area are now spread by themselves; two full
+      `claude -p --model opus` runs on a fictional person and template (no docker, the cached
+      renderer) left no engine workaround but one: `compare` against claims saved before the
+      material ledger changed reports a lost ground (worked around by re-running claims on the old
+      skeleton; unverified cause: the saved claims carry the old ledger's ids). Still left: the three
+      figure/cover items above (the workspace's own figures and template).
 
-136. **deck-builder's render brings its own renderer to a machine with none (later)**
-    - Why: the rest of the card shipped 2026-11-10 (`63a459ce`). Left: the renderer itself.
-      Render's spacing fix needs a python that imports `uno` beside the renderer; without one it
-      converts as before and says so.
-    - Renderer on a new machine (user, 2026-11-10: "LibreOffice 없이는 동작을 안하지 않냐", "나눔 폰트
-      기본 내장하고 libre는 자동으로 설치하거나 내재화 하거나 렌더러를 우리가 구현하던가", "docker가
-      안갖춰져 있으면 그것도 못하지 않아?"). Today `render` and every SVG picture slot need `soffice` on
-      PATH or `DECK_RENDER_DOCKER`; the Korean image used here (`deck-render-kr`) has no Dockerfile in
-      the repo. Nanum fonts are already bundled (`assets/fonts/`, OFL). Decided direction, not yet
-      approved: no own renderer (a PPTX layout engine is LibreOffice again); `render` finds `soffice`
-      on PATH, else fetches a pinned LibreOffice into the plugin cache once (Linux AppImage; macOS the
-      `.app` copied out of the dmg; checksum-verified; asks once before a ~300 MB download), and uses
-      docker only when `DECK_RENDER_DOCKER` is set. Unverified: an AppImage exists for the pinned
-      version; a dmg-extracted app runs headless past Gatekeeper/quarantine.
-    - Acceptance: on a machine with no LibreOffice and no docker, render fetches the pinned build
-      and renders, the spacing off (one real run on Linux, one on macOS); `test_render.py` with
-      counts. Also carried from the shipped part: the real workspace drops its
-      `postbuild_layout.py` once its deck.mdx moves to `place:`, `{sup}` and the two options (the
-      user's call; build alone placed 42 captions and 20 panel pictures there, 2026-11-10).
-
-139. **Resume build lays out what the template means, not only its text (later)**
-    - Why: same review. Shipped 2026-11-10: the template photo survives build. Still patched by hand
-      after every build (`postbuild_resume.py`, macOS `sips`, so not on Linux): career section on a
-      new page, company lines larger, space under description/stack/role lines, photo replaced by
-      the deck's. The user also asked for a different section order (2026-11-09). User,
-      2026-11-10: "resume는 조금 천천히" — after 136-144.
-    - Acceptance: those layout rules expressible in `resume.md` or read from the template;
-      `test_resume.py` with counts; one real run with no post-build script.
-    - 3.0.0 (2026-11-12) shipped the finish keys (`look:`, `spacing:`, `keep:`, label/value runs,
-      links, title/author/photo_alt); a real run built a 2-page resume with no post-build script.
-      Left: a section that starts a new page, and the photo replaced by the deck's.
+136. **The bundled renderer on macOS and arm64**
+    - Why: Linux x86_64 shipped in 3.1.0 (2026-11-13): `install-renderer --yes` unpacks a pinned,
+      SHA-256-checked LibreOffice 26.8.3 deb set under `~/.cache/claude-portfolio/` without root, and
+      PyMuPDF (cp311-abi3 manylinux x86_64 wheel) stands in for poppler; a full fictional run rendered
+      with no docker. Left: macOS (the dmg path prints a hint only; unverified that a dmg-extracted
+      `.app` runs headless past Gatekeeper/quarantine), arm64 and Python < 3.11 for PyMuPDF, and the
+      pinned URL lives under `stable/`, which moves when a new stable ships (no fallback URL).
+      PyMuPDF can merge side-by-side table cells on one baseline into one line.
+    - Acceptance: on a Mac with no LibreOffice and no docker, `install-renderer --yes` then render
+      works with the spacing off; `test_render.py` and `test_office_render.py` with counts there.
+      Carried: the real workspace drops its `postbuild_layout.py` once its deck.mdx moves to
+      `place:`, `{sup}` and the two options (the user's call).
 
 102. **portfolio checks the deck's claims against the material in an engine, both ways**
     - Why: debate 2026-10-29 (10 personas + noah), verified in code: material marks `근거 없음` /

@@ -148,7 +148,18 @@ Every session in the workspace starts with `manage.mjs scaffold`, unasked: it re
 to these, creates only what is missing, CLAUDE.md included, and never overwrites a file. A CLAUDE.md
 that is already there (a renamed README too) keeps its text and gets the guide appended once.
 
-Nine steps (3.0.0: the skill alone finishes a build a hand-finished workspace needed scripts for —
+Nine steps (3.1.0: a machine with no LibreOffice and no docker renders — `office_render.py
+install-renderer --yes` (asked once) unpacks a pinned, SHA-256-checked LibreOffice 26.8.3 under
+`~/.cache/claude-portfolio/` without root, and PyMuPDF stands in for poppler (previews, PDF text,
+line boxes; Linux x86_64, macOS not yet); the renderer is `soffice` on PATH, then `DECK_RENDER_DOCKER`,
+then that cache. Resume `break:` starts a section on a new page and `photo:` puts the deck's photo in
+the template's frame; repeated contents rows that pass the safe area are spread by themselves; `check`
+skips a `!drop` slot; from runs on a fictional person and template: claims takes dates and unit-like
+words as no number and accepts a number the material's own text holds, compare matches a problem by
+kind and number, `sync` carries tables and nested lists inside a slot, compares line by line and names
+a deck slot the skeleton dropped (`deck_only`), `verify-build` reads table rows, `layout` takes the one
+pptx under `template/` before the deck source exists, `final-check --author` adds document properties
+to a file saved without them; 3.0.0: the skill alone finishes a build a hand-finished workspace needed scripts for —
 `resume-deck.mdx` front matter finishes the template's look (`keep:`, `spacing:`, `look:`, `title:`,
 `author:`, `photo_alt:`; a `라벨: 값` line takes a label and a value format; links are made), deck
 `distribute:` spreads row groups to the safe area, `panel_margin:` sets a picture right under where

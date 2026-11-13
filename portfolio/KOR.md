@@ -141,7 +141,16 @@ snapshot/  sources/  docs/확정사실.md               버전, 글감, 확정�
 바꾸고, CLAUDE.md를 포함해 없는 것만 만들며, 있는 파일은 덮지 않습니다. 이미 있는 CLAUDE.md(이름을 바꾼
 README 포함)는 내용을 그대로 두고 안내문을 한 번만 뒤에 덧붙입니다.
 
-9단계(3.0.0: 손으로 마무리하던 workspace가 스크립트로 하던 일을 스킬만으로 함 — `resume-deck.mdx` 머리말이
+9단계(3.1.0: LibreOffice도 docker도 없는 컴퓨터에서 렌더 — `office_render.py install-renderer --yes`(한 번
+묻고)가 버전을 고정하고 SHA-256으로 확인한 LibreOffice 26.8.3을 root 없이 `~/.cache/claude-portfolio/`에 풀고,
+poppler가 없으면 PyMuPDF가 미리보기·PDF 글자·줄 위치를 맡음(Linux x86_64, macOS는 아직). 렌더러는 PATH의
+`soffice`, 다음 `DECK_RENDER_DOCKER`, 다음 그 캐시. 이력서 `break:`는 섹션을 새 쪽에서 시작하고 `photo:`는 덱
+사진을 템플릿 사진 틀에 넣음. 안전 영역을 넘는 목차 반복 줄은 저절로 고르게 배치. `check`는 `!drop` 칸을 재지
+않음. 가상 인물과 가상 템플릿으로 돌려 본 결과: claims는 날짜와 단위 같은 낱말을 숫자로 보지 않고 글감 본문에 있는
+숫자를 근거로 인정, compare는 같은 문제를 종류와 숫자로 판단, `sync`는 칸 안의 표와 중첩 목록을 옮기고 줄 단위로
+비교하며 skeleton에서 지운 칸을 알려 줌(`deck_only`), `verify-build`는 표 행을 읽음, `layout`은 덱 원본이 생기기
+전에 `template/` 아래 pptx 하나를 템플릿으로 봄, `final-check --author`는 문서 속성이 없는 파일에 속성을 만들어
+넣음; 3.0.0: 손으로 마무리하던 workspace가 스크립트로 하던 일을 스킬만으로 함 — `resume-deck.mdx` 머리말이
 템플릿 모양을 마무리(`keep:`, `spacing:`, `look:`, `title:`, `author:`, `photo_alt:`; `라벨: 값` 줄은 라벨과 값
 서식을 따로; 링크 생성), 덱 `distribute:`가 줄 묶음을 안전 영역 안에 고르게 배치, `check`가 `place:`로 옮긴 칸을
 옮긴 자리에서 재고 8pt 미만 그림 글자를 경고, `panel_margin:`이 그림을 판 안의 글이 실제로 끝나는 곳(틀이 아니라 잰 높이) 바로
