@@ -122,7 +122,7 @@ the snapshot. A round always builds (the user's standing word: "결과물도 검
    (the margins nothing crosses) and the figure colours. A figure drawn with `write:diagram` takes
    its colours from `## 그림 색`.
 6. **Deck.** Carry portfolio-skeleton into portfolio-deck.mdx: `sync` lists each skeleton slot missing or
-   different in the deck source, `sync --write` carries them (never a slide); against `deck.catalog.md` budgets and
+   different in the deck source and each slot it dropped (`deck_only`: `!drop` or delete it), `sync --write` carries them (never a slide); against `deck.catalog.md` budgets and
    `template/analysis.md`, then `deck-builder` `check` (an untouched chart slot is warned: its numbers are the template's
    sample) and `claims --file portfolio-deck.mdx` (each slide cites in its comment: `## @s3 2쪽 · 글감: <id>`). Fine style changes go through the template's run formats, never by hand in the pptx.
    `snapshot --kind deck --level … --note` only when asked (the note names its skeleton).

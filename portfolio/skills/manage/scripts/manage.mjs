@@ -7,7 +7,7 @@
 //       snapshot/render/, feedback/; first renames template/분석.md → analysis.md and
 //       template/다음렌더-지침.md → next-render.md (NFC or NFD), printed as `renamed`
 //   sync [--write]                 portfolio-skeleton.md slots (`key: value` under a `## … @sN` heading) against
-//       portfolio-deck.mdx: { missing, different, slide_missing }; written only with --write (a slide is never created)
+//       portfolio-deck.mdx: { missing, different, slide_missing, deck_only }; written only with --write (a slide is never created, a deck_only slot never removed)
 //   verify-build                   each skeleton slot's text is in build/deck.pptx; `[x]{sup}` marks and picture files exist
 //   layout also lists `optional` (feedback, decisions, style, stable, scripts: present | absent) and `warnings`
 //       for a stray deck.*.mdx in the root; snapshot --kind resume keeps snapshot/resume/resume-vX.Y.Z
@@ -229,7 +229,12 @@ export function layout(root) {
   try {
     const m = readFileSync(wsFile(root, DECK), 'utf8').match(/^template:[ \t]*["']?([^"'\n]+?)["']?[ \t]*$/m)
     if (m) template = m[1]
-  } catch { /* no deck source: it is listed missing */ }
+  } catch {
+    // no deck source yet (it is listed missing): the one pptx under template/ stands for the template
+    let under = []
+    try { under = readdirSync(join(root, 'template')).filter(f => /\.pptx$/i.test(f)) } catch { /* no template/ */ }
+    if (!existsSync(at(root, template)) && under.length === 1) template = `template/${under[0]}`
+  }
   const paths = LAYOUT.map(p => (p === 'template.pptx' ? template : p))
   // a file under its old name is present (and listed in `legacy` below)
   const has = p => existsSync(at(root, p)) || (LEGACY_NAMES[p] !== undefined && existsSync(at(root, LEGACY_NAMES[p])))
@@ -1281,10 +1286,12 @@ export function sync(root, { write = false } = {}) {
   const skel = slotsOf(readFileSync(skelPath, 'utf8'))
   const deckText = readFileSync(deckPath, 'utf8')
   const deck = slotsOf(deckText)
-  const missing = []; const different = []; const noSlide = []
+  const missing = []; const different = []; const noSlide = []; const deckOnly = []
   for (const [sid, s] of skel) {
     const d = deck.get(sid)
     if (!d) { if (s.slots.size) noSlide.push(sid); continue }
+    // a slot the skeleton no longer has: reported, never removed (`!drop` or delete is a choice)
+    for (const key of d.order) if (!s.slots.has(key)) deckOnly.push({ slide: sid, key, deck: d.slots.get(key).join(' / ') })
     for (const key of s.order) {
       const want = s.slots.get(key)
       if (!d.slots.has(key)) missing.push({ slide: sid, key, skeleton: want.join(' / ') })
@@ -1294,7 +1301,7 @@ export function sync(root, { write = false } = {}) {
       }
     }
   }
-  const out = { skeleton: basename(skelPath), deck: basename(deckPath), missing, different, slide_missing: noSlide, written: false }
+  const out = { skeleton: basename(skelPath), deck: basename(deckPath), missing, different, slide_missing: noSlide, deck_only: deckOnly, written: false }
   if (write && (missing.length || different.length)) {
     assertInside(root, deckPath)
     const lines = deckText.split('\n')

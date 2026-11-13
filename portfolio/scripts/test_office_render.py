@@ -136,6 +136,13 @@ def final_check_tests(t):
     check("<dc:creator>홍길동</dc:creator>" in read(f["resume.docx"], "docProps/core.xml")
           and "<cp:lastModifiedBy>홍길동</cp:lastModifiedBy>" in read(f["resume.docx"], "docProps/core.xml"),
           "--author sets dc:creator and lastModifiedBy")
+    docx(f["resume.docx"], "가상 사진")   # saved without document properties
+    run(author="홍길동")
+    with zipfile.ZipFile(str(f["resume.docx"])) as z:
+        names, rels, types = z.namelist(), z.read("_rels/.rels").decode(), z.read("[Content_Types].xml").decode()
+    check("docProps/core.xml" in names and "<dc:creator>홍길동</dc:creator>" in read(f["resume.docx"], "docProps/core.xml")
+          and "core-properties" in rels and "/docProps/core.xml" in types,
+          "--author adds document properties to a file saved without them")
 
     print("  work annotations")
     docx(f["resume.docx"], "가상 사진",

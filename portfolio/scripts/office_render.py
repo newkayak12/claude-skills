@@ -896,6 +896,9 @@ _NOTES = re.compile(r"\[확인 필요|\bTODO\b|\bFIXME\b|\(본인 확인|본인 
 _TEXT_PARTS = ("ppt/slides/", "ppt/notesSlides/", "word/")
 _PDF_INFO = re.compile(rb"/(Author|Creator|Title|Producer|Subject|Keywords)\s*(\((?:\\.|[^\\)])*\)|<[0-9A-Fa-f\s]*>)")
 _CORE_WHO = (("dc", "creator"), ("cp", "lastModifiedBy"))
+_CORE_NEW = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.'
+             'openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/">'
+             '<dc:creator></dc:creator><cp:lastModifiedBy></cp:lastModifiedBy></cp:coreProperties>')
 
 
 def _pdf_string(raw):
@@ -922,7 +925,20 @@ def _set_author(path, author):
         data = {i.filename: z.read(i.filename) for i in infos}
     core = data.get("docProps/core.xml")
     if core is None:
-        return False
+        # a file saved without document properties gets them, so the author is written all the same
+        core = _CORE_NEW.encode("utf-8")
+        rels = data.get("_rels/.rels", b"").decode("utf-8")
+        types = data.get("[Content_Types].xml", b"").decode("utf-8")
+        if "</Relationships>" not in rels or "</Types>" not in types:
+            return False
+        data["_rels/.rels"] = rels.replace("</Relationships>", '<Relationship Id="rIdCoreProps" Type="http://schemas.'
+                                           'openxmlformats.org/package/2006/relationships/metadata/core-properties" '
+                                           'Target="docProps/core.xml"/></Relationships>').encode("utf-8")
+        data["[Content_Types].xml"] = types.replace("</Types>", '<Override PartName="/docProps/core.xml" ContentType='
+                                                    '"application/vnd.openxmlformats-package.core-properties+xml"/>'
+                                                    '</Types>').encode("utf-8")
+        infos = infos + [zipfile.ZipInfo("docProps/core.xml", date_time=infos[0].date_time)]
+        infos[-1].compress_type = zipfile.ZIP_DEFLATED
     text = core.decode("utf-8")
     new = text
     for pre, tag in _CORE_WHO:

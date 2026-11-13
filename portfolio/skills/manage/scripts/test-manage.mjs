@@ -162,6 +162,16 @@ test('layout finds the template where portfolio-deck.mdx says', () => {
   assert.ok(!l.missing.includes('template.pptx'))
 })
 
+test('layout, before the deck source exists, takes the one pptx under template/', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-'))
+  mkdirSync(join(root, 'template'))
+  writeFileSync(join(root, 'template/회사.pptx'), '')
+  const l = layout(root)
+  assert.ok(l.present.includes('template/회사.pptx'))
+  assert.ok(!l.missing.includes('template.pptx'))
+  rmSync(root, { recursive: true, force: true })
+})
+
 test('layout finds a Korean file name stored decomposed (NFD, as macOS zips write it)', () => {
   const root = mkdtempSync(join(tmpdir(), 'manage-'))
   mkdirSync(join(root, 'docs'))
@@ -1320,6 +1330,14 @@ test('sync reports each skeleton slot missing or different, ignoring markup, and
   assert.match(deck, /title: 응답 \*\*340ms\*\*\nsubtitle: 한 줄/)
   assert.ok(!deck.includes('@s4'), 'a missing slide is never created')
   assert.deepEqual([sync(root).missing, sync(root).different], [[], []])
+})
+
+test('sync names a deck slot the skeleton dropped and leaves it in place', () => {
+  const root = slotWs()
+  writeFileSync(join(root, 'portfolio-deck.mdx'), SLOT_DECK.replace('title: 응답 **340ms**', 'title: 응답 **340ms**\ntext2: 지운 줄'))
+  const r = sync(root, { write: true })
+  assert.deepEqual(r.deck_only, [{ slide: 's3 3쪽', key: 'text2', deck: '지운 줄' }])
+  assert.match(readFileSync(join(root, 'portfolio-deck.mdx'), 'utf8'), /text2: 지운 줄/, 'never removed')
 })
 
 test('sync reads a table skeleton: slots named in backticks, several slots per row, pages sharing an archetype', () => {
