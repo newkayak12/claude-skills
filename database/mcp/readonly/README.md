@@ -13,7 +13,8 @@ Read-only database MCP server (stdio). Vendor: `mysql` (more later under `vendor
 
 Without `--host/--user/--database`, the server runs on profiles `local`, `dev`, `stage`, `prod` and
 starts on `local` (or `--profile X`). Extra tools: `profile(name?)` lists or switches, `logout(name)`.
-Switching to `prod` asks the person to confirm (MCP elicitation); a client that cannot ask is refused.
+Switching profiles asks nothing (every connection is read-only). `query`, `list_tables`,
+`describe_table` and `profile` carry `readOnlyHint: true`; `login` and `logout` do not.
 
 ```sh
 node cli.mjs login dev      # prompts host/port/user/database + hidden password -> Keychain

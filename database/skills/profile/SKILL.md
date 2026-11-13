@@ -19,8 +19,7 @@ compatibility:
 1. **No name** → `profile` tool with no name: active profile, connected or not, and each profile's
    login state. Show it as a table.
 2. **A name** → `profile` tool with `name`.
-   - `prod` only when the person asked for prod in this conversation. The server asks the person to
-     confirm; a decline is final — never retry around it.
+   - `prod` only when the person asked for prod in this conversation (no dialog: every connection is read-only).
    - Not logged in → say so and offer `database:login <profile>`.
 3. **Report** the active profile after the call. Tools missing → set up with `database:login`.
 
@@ -35,7 +34,7 @@ active: dev (connected)
 
 | Claude | You |
 |---|---|
-| Shows profiles, switches to the one you named | Confirm a switch to prod |
+| Shows profiles, switches to the one you named | Name the environment (prod only when you say so) |
 
 ## Related Skills
 

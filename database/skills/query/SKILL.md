@@ -17,7 +17,7 @@ compatibility:
 ## Process
 
 1. **Profile.** An environment named ("dev에서", "on stage") and not active → `database:profile` first
-   (prod only when asked; the server confirms). Not logged in → offer `database:login`.
+   (prod only when asked). Not logged in → offer `database:login`.
 2. **Schema.** Unknown tables or columns → `list_tables`, then `describe_table`.
 3. **Query.** One statement per `query` (SELECT, SHOW, DESCRIBE, DESC, EXPLAIN, WITH), with `LIMIT`.
    `truncated: true` means the row cap cut the result — say so.

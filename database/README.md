@@ -9,7 +9,7 @@ under `mcp/readonly/vendors/`) and four skills that drive it.
 |---|---|
 | `database:login` | Sets up the server on first use, asks host/port/user/database, then the server opens a macOS password dialog; the password goes to Keychain (1Password `op://` optional). Tests the connection. |
 | `database:logout` | Forgets a profile's saved password; host/user/database stay. |
-| `database:profile` | Shows profiles (local, dev, stage, prod) or switches the connection; prod asks you to confirm. |
+| `database:profile` | Shows profiles (local, dev, stage, prod) or switches the connection; prod only when you name it, no dialog. |
 | `database:query` | Reads the schema and runs read-only queries; every answer names its profile. |
 
 ```

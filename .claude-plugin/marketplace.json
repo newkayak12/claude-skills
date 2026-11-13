@@ -24,8 +24,8 @@
     },
     {
       "name": "database",
-      "description": "Read-only database access: the database-readonly MCP server (MySQL; session READ ONLY on every connection, statement whitelist, row cap) and skills login (macOS password dialog into Keychain, 1Password op:// optional), logout, profile (local/dev/stage/prod; prod confirmed by the person) and query.",
-      "version": "0.5.0",
+      "description": "Read-only database access: the database-readonly MCP server (MySQL; session READ ONLY on every connection, statement whitelist, row cap) and skills login (macOS password dialog into Keychain, 1Password op:// optional), logout, profile (local/dev/stage/prod; no confirmation, read-only) and query (personal-data columns hidden).",
+      "version": "0.6.0",
       "author": {
         "name": "newkayak12"
       },

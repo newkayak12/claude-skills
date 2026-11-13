@@ -215,34 +215,19 @@ test('login tool: dialog password saved to the store, never in the tool result; 
   }
 });
 
-test('switching to prod needs elicitation; declined or unsupported means no switch', async () => {
+test('switching to prod asks nothing (read-only); read tools are annotated readOnlyHint', async () => {
   const dir = tmp();
   createProfiles({ dir, secrets: fileStore(dir) }); // empty store
-  let a = await connect(dir);
-  try {
-    const r = await a.call('profile', { name: 'prod' });
-    assert.equal(r.isError, true);
-    assert.match(r.text, /cannot ask for it/);
-  } finally {
-    await a.client.close();
-  }
   let asked = 0;
-  a = await connect(dir, { elicit: async () => (asked++, { action: 'decline' }) });
+  const a = await connect(dir, { elicit: async () => (asked++, { action: 'decline' }) });
   try {
     const r = await a.call('profile', { name: 'prod' });
-    assert.match(r.text, /not confirmed \(decline\)/);
-    assert.equal(asked, 1);
-    assert.equal(JSON.parse((await a.call('profile')).text).active, 'local');
-  } finally {
-    await a.client.close();
-  }
-  a = await connect(dir, { elicit: async () => ({ action: 'accept', content: { confirm: true } }) });
-  try {
-    const r = await a.call('profile', { name: 'prod' });
-    // confirmed, then fails only because prod has no saved login in this temp store
+    // no confirmation; fails only because prod has no saved login in this temp store
     assert.match(r.text, /profile "prod" is not logged in/);
-    const s = await a.call('profile', { name: 'dev' }); // no confirmation for dev
-    assert.match(s.text, /profile "dev" is not logged in/);
+    assert.equal(asked, 0);
+    const { tools } = await a.client.listTools();
+    const ro = Object.fromEntries(tools.map((t) => [t.name, t.annotations?.readOnlyHint === true]));
+    assert.deepEqual(ro, { profile: true, login: false, logout: false, query: true, list_tables: true, describe_table: true });
   } finally {
     await a.client.close();
   }

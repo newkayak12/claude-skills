@@ -9,7 +9,7 @@ MCP 서버 하나(`database-readonly`, 지금은 MySQL; 다른 DB는 `mcp/readon
 |---|---|
 | `database:login` | 처음 쓸 때 서버를 설치·등록하고, host/port/user/database를 물은 뒤 서버가 macOS 비밀번호 창을 띄웁니다. 비밀번호는 Keychain에 저장(1Password `op://`는 옵션). 접속을 시험합니다. |
 | `database:logout` | 프로필에 저장된 비밀번호를 지웁니다. host/user/database는 남깁니다. |
-| `database:profile` | 프로필(local, dev, stage, prod)을 보여주거나 커넥션을 바꿉니다. prod는 확인을 받습니다. |
+| `database:profile` | 프로필(local, dev, stage, prod)을 보여주거나 커넥션을 바꿉니다. prod는 이름을 말할 때만 바꾸며 확인 창은 없습니다. |
 | `database:query` | 스키마를 보고 읽기 전용 쿼리를 실행합니다. 답마다 프로필을 밝힙니다. |
 
 ```
