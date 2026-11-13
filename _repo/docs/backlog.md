@@ -76,6 +76,13 @@ real deck lone commas 316 → 0, engine version printed).
       `.app` runs headless past Gatekeeper/quarantine), arm64 and Python < 3.11 for PyMuPDF, and the
       pinned URL lives under `stable/`, which moves when a new stable ships (no fallback URL).
       PyMuPDF can merge side-by-side table cells on one baseline into one line.
+    - Seen 2026-11-13 on a local copy of a real workspace: the same resume.docx (NanumSquare in both
+      PDFs) renders 3 pages on the cached LibreOffice 26.8.3 and 2 on the docker image (25.8.7); a
+      7.5pt line's pitch is 13.5pt against 10.5pt, so the page budget depends on the renderer. The
+      deck audit gave 15 problems / 25 template-own on the cache against 14 / 6 on docker, some with
+      impossible values ("688pt 거슬러", unverified: PyMuPDF line merging). Cause unverified; which one
+      matches Word is unknown. Acceptance adds: one docx whose Word page count is known renders the
+      same count on the pinned build (or the pin moves), and the audit counts agree within one.
     - Acceptance: on a Mac with no LibreOffice and no docker, `install-renderer --yes` then render
       works with the spacing off; `test_render.py` and `test_office_render.py` with counts there.
       Carried: the real workspace drops its `postbuild_layout.py` once its deck.mdx moves to
