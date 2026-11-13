@@ -495,6 +495,17 @@ def mupdf_tests(t):
                   "the adapter maps the dict to bbox_pages' shape (spaces collapsed, same-baseline pieces joined, blank lines and images dropped) — %s" % (pages[0],))
             box = r.bbox(work, "d.pdf")
             check(o.bbox_pages(box) == pages, "bbox() is XML that bbox_pages reads back to exactly that")
+
+            class _P:   # one PyMuPDF block holding a header left and right, two stacked lines, a far line
+                def get_text(self, kind):
+                    ln = lambda x0, y0, x1, t: {"bbox": (x0, y0, x1, y0 + 14), "spans": [{"text": t}]}
+                    return {"width": 960.0, "height": 540.0, "blocks": [{"type": 0, "lines": [
+                        ln(30, 24, 300, "머리 왼쪽"), ln(860, 24, 930, "머리 오른쪽"),
+                        ln(60, 130, 400, "본문 하나"), ln(60, 146, 380, "본문 둘"), ln(60, 300, 380, "멀리")]}]}
+            split = [[t for _, t in b] for b in o.mupdf_pages([_P()])[0][2]]
+            check(split == [["머리 왼쪽"], ["머리 오른쪽"], ["본문 하나", "본문 둘"], ["멀리"]],
+                  "a PyMuPDF block is split where a line shares no width with the one above or sits a line's height below, "
+                  "as pdftotext keeps one frame's lines apart — %s" % split)
             hits = o.margin_crossers(box, 30)
             check(len(hits) == 20 and hits[0] == (1, "left", "안녕 세상 AB") and hits[1][1] == "top", "margin_crossers reads it — %d hits" % len(hits))
             check(r.text(work, "d.pdf") == "\f".join(["page text"] * 10), "text() joins the pages with form feeds, as pdftotext does")

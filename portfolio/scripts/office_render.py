@@ -397,8 +397,20 @@ def mupdf_pages(doc):
                                      prev + " " + text)
                         continue
                 lines.append((box, text))
-            if lines:
-                blocks.append(lines)
+            # PyMuPDF puts lines of two frames in one block (a header left and right, a footnote and
+            # the page number); pdftotext keeps a block to one column of stacked lines. Split where a
+            # line shares no width with the line above or sits more than a line's height below it.
+            cur = []
+            for box, text in lines:
+                if cur:
+                    (a0, _, a1, b1), _t = cur[-1]
+                    h = min(b1 - cur[-1][0][1], box[3] - box[1])
+                    if min(a1, box[2]) <= max(a0, box[0]) or box[1] - b1 > h:
+                        blocks.append(cur)
+                        cur = []
+                cur.append((box, text))
+            if cur:
+                blocks.append(cur)
         out.append((float(d["width"]), float(d["height"]), blocks))
     return out
 
