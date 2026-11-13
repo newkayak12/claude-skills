@@ -407,6 +407,25 @@ def emphasis(tmp):
     check(len(sizes) <= 1, "emphasis did not change the size the template set: %s" % sizes)
 
 
+def uneven():
+    """Three blocks the template spaces alike: one runs short, the gaps after it do not match."""
+    print("uneven gaps on one page")
+    from office_render import pages_to_xml
+    unit = lambda y: (50.0, y, 300.0, 40.0)
+    pair = lambda a, b, name: {"a_box": unit(a), "b_box": unit(b), "axis": "↓", "key": ("본문", "본문", "↓"),
+                               "gap": 10.0, "zone": 10.0, "spread": 0.0, "borrowed": False, "label": name}
+    zones = {"s1": [pair(100, 150, "A ↓ B"), pair(150, 200, "B ↓ C")]}
+
+    def page(a_end, b_end):
+        line = lambda y0, y1: ((50.0, y0, 340.0, y1), "본문 한 줄")
+        return [(960.0, 540.0, [[line(100, a_end)], [line(150, b_end)], [line(200, 214)]])]
+    hits = deck.zone_audit(pages_to_xml(page(114, 188)), ["s1"], zones, 960.0)
+    check([k for _, k, _ in hits] == ["uneven"] and "36/12" in hits[0][2] and "distribute:" in hits[0][2],
+          "blocks the template spaces alike, rendered 36pt and 12pt apart, are `uneven` — %s" % hits)
+    hits = deck.zone_audit(pages_to_xml(page(114, 164)), ["s1"], zones, 960.0)
+    check(hits == [], "the same blocks, evenly apart, are not — %s" % hits)
+
+
 def drift(tmp):
     """`@sN` must not silently point somewhere else after the template moves."""
     print("template drift")
@@ -1851,6 +1870,7 @@ def main():
         legibility(tmp)
         emphasis(tmp)
         drift(tmp)
+        uneven()
         notes(tmp)
         svg_assets(tmp)
         guards(tmp)

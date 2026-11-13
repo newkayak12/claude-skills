@@ -39,7 +39,7 @@ from pathlib import Path
 
 # the renderer is shared with resume-builder: portfolio/scripts/office_render.py
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
-from office_render import Renderer, NO_RENDERER, bbox_pages, ai_traces, final_check, final_lines, safe_area  # noqa: E402
+from office_render import Renderer, NO_RENDERER, bbox_pages, ai_traces, final_check, final_lines, safe_area, wraps  # noqa: E402
 
 # ── Namespaces ───────────────────────────────────────────────────────────────
 
@@ -1964,6 +1964,7 @@ def shapes_below(slot, slots, over_emu):
 # are one unit — the outermost outline around them — since their own gaps say nothing.
 
 ZONE_TOL_PT = 1.0
+UNEVEN_PT = 6.0            # gaps the template spaces alike may differ this much on a page before `uneven`
 ZONE_MIN_REPEAT = 2
 ZONE_BAND = 0.5          # neighbours share at least this much of the smaller cross extent
 
@@ -4048,7 +4049,7 @@ def zone_audit(xml_text, archetypes, zones, slide_w_pt):
     neighbour. `drift`: pages on one archetype whose rendered gap for one pair (content
     to content, frame where a unit has no text) spreads wider than the template's own
     cluster does (at least ZONE_TOL_PT) — the same layout no longer looks the same."""
-    found, seen = [], {}
+    found, seen, page_gaps = [], {}, {}
     for pi, (pw, ph, blocks) in enumerate(_bbox_pages(xml_text), 1):
         if pi > len(archetypes):
             break
@@ -4099,6 +4100,17 @@ def zone_audit(xml_text, archetypes, zones, slide_w_pt):
                               "안으로 %.1fpt 들어감" % (r["label"], start - back, zone_cell(r),
                                                        r["zone"] - (back - frame_end))))
             seen.setdefault((arch, r["label"]), []).append((pi, seen_gap, r["spread"]))
+            if content.get(a) and content.get(b):
+                page_gaps.setdefault((r["key"], round(r["gap"] / (2 * ZONE_TOL_PT))), []).append((r["label"], seen_gap))
+        # `uneven`: pairs the template spaces alike (one role pair, one gap) whose text, as rendered, sits
+        # unevenly apart on this page: the blocks hold different amounts and the frames do not move
+        for obs in page_gaps.values():
+            gaps = [g for _, g in obs]
+            if len(obs) >= 2 and max(gaps) - min(gaps) > max(UNEVEN_PT, 0.25 * statistics.median(gaps)):
+                found.append((pi, "uneven", "%s — the template spaces these alike; rendered %s pt apart. "
+                              "`distribute:` the slide, or even out the text" % (
+                                  obs[0][0], "/".join("%.0f" % g for g in gaps))))
+        page_gaps = {}
     for (arch, label), obs in sorted(seen.items(), key=lambda kv: kv[1][0][0]):
         if len(obs) < 2:
             continue
@@ -4175,7 +4187,7 @@ def cmd_render(args):
     if box is None:
         print("  ! no pdftotext in the renderer — skipping the collision audit")
         return rc
-    hits = collisions(box)
+    hits = collisions(box) + wraps(box)
     _, specs, _ = parse_deck(md_path.read_text(encoding="utf-8"))
     tpl = Package(resolve_template(front, args, md_path))
     tparts = slide_order(tpl)
@@ -4191,7 +4203,7 @@ def cmd_render(args):
     rbox = r.bbox(work, ref.with_suffix(".pdf").name) if ref.with_suffix(".pdf").is_file() else None
     seen = set()
     if rbox:
-        own = collisions(rbox) + zone_audit(rbox, ["s%d" % i for i in range(1, len(tparts) + 1)],
+        own = collisions(rbox) + wraps(rbox) + zone_audit(rbox, ["s%d" % i for i in range(1, len(tparts) + 1)],
                                             zones, pt(slide_size(tpl)[0]))
         seen = {(p, k, d) for p, k, d in own}
     inherited = [h for h in hits if h[0] <= len(archs)

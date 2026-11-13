@@ -692,6 +692,43 @@ def bbox_pages(xml_text):
     return out
 
 
+UNIT_START = re.compile(r"^(건|명|초|분|개|회|배|일|시간|ms|%|원|만|억|천)")
+
+
+def wraps(xml_text, orphan_ratio=0.3, full_ratio=0.8):
+    """How the renderer broke lines, where it reads badly (deck and resume alike).
+
+    `orphan`: one word alone on a line after a full one (a paragraph's last word wrapped down, a
+    table cell's last item on its own). `split`: a number at a line's end and its unit opening the
+    next. `marks`: footnote marks typed two ways (`*` and `∗`) across the document."""
+    found, marks = [], {}
+    for pi, (pw, ph, blocks) in enumerate(bbox_pages(xml_text), 1):
+        for lines in blocks:
+            for box, text in lines:
+                m = re.match(r"^\s*([*∗])", text)
+                if m:
+                    marks.setdefault(m.group(1), []).append(pi)
+            if len(lines) < 2:
+                continue
+            widest = max(b[2] - b[0] for b, _ in lines)
+            for k in range(1, len(lines)):
+                (pb, prev), (b, t) = lines[k - 1], lines[k]
+                t = t.strip()
+                full = pb[2] - pb[0] >= full_ratio * widest
+                if full and " " not in t and len(t) <= 12 and not t.isdigit() \
+                        and b[2] - b[0] < orphan_ratio * (pb[2] - pb[0]):
+                    found.append((pi, "orphan", "%r alone on the line after %r — rewrap or cut a word"
+                                  % (t, prev[-20:])))
+                if full and re.search(r"\d$", prev.strip()) and UNIT_START.match(t):
+                    found.append((pi, "split", "the number %r ends a line and its unit %r opens the next"
+                                  % (prev.strip()[-8:], t[:4])))
+    if len(marks) > 1:
+        found.append((min(p for ps in marks.values() for p in ps), "marks", "footnote marks typed two ways: %s"
+                      % ", ".join("%r on page %s" % (k, "·".join(str(p) for p in sorted(set(v))))
+                                  for k, v in sorted(marks.items()))))
+    return found
+
+
 def safe_area(workspace):
     """{top, bottom, left, right} pt from the workspace's style/레이아웃.md (`- top: 36` lines, the same
     form manage's `layout` reads), only when all four are numbers; else None."""

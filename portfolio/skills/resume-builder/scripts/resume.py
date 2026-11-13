@@ -591,6 +591,10 @@ def render(docx, pages=None, template=None):
         out["previews_note"] = "no page previews: pdftoppm is not available"
     out["final_check"] = office_render.final_lines(office_render.final_check([docx, pdf]))
     out["warnings"] = []
+    box = r.bbox(docx.parent.resolve(), pdf.name)
+    if box:
+        # a word alone on a line, a number torn from its unit, footnote marks typed two ways
+        out["wraps"] = ["page %d %s: %s" % h for h in office_render.wraps(box)]
     if template and Path(template).is_file():
         # the template was laid out by Word: where this renderer breaks its pages elsewhere, its page
         # count is not Word's either

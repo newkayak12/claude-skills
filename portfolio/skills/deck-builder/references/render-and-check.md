@@ -70,7 +70,12 @@ source.
 Builds, converts through LibreOffice, writes PNG previews of every page, and audits the
 rendered geometry — `overlap` (two text frames clash), `bunched` (lines inside one frame
 sit closer than that frame's own norm, so text has outgrown its box), `off-slide` (the
-renderer cut it). Clean means clean: the audit compares across frames and measures pitch
+renderer cut it), `orphan` (one word alone on the line after a full one, a table cell's last item
+on its own), `split` (a number ends a line and its unit opens the next), `marks` (footnote marks
+typed two ways, `*` and `∗`). The last three are fixed in the words, never the frame. `uneven`:
+on one page, pairs the template spaces alike (same role pair, same gap) whose text renders unevenly
+apart, because the blocks hold different amounts in fixed frames — `distribute:` the slide or even out
+the text. Clean means clean: the audit compares across frames and measures pitch
 against each frame's median, so CJK fonts whose em box exceeds a 100% line do not trip it.
 
 `render` first says which of the template's typefaces the renderer does not have. A

@@ -506,6 +506,16 @@ def mupdf_tests(t):
             check(split == [["머리 왼쪽"], ["머리 오른쪽"], ["본문 하나", "본문 둘"], ["멀리"]],
                   "a PyMuPDF block is split where a line shares no width with the one above or sits a line's height below, "
                   "as pdftotext keeps one frame's lines apart — %s" % split)
+            page = lambda *bl: (960.0, 540.0, [list(b) for b in bl])
+            w = o.wraps(o.pages_to_xml([
+                page([((60, 100, 400, 114), "가상 도구: 도구A, 도구B, 도구C, 도구D,"), ((60, 116, 110, 130), "도구E")],
+                     [((60, 200, 400, 214), "평균 응답이 줄었고 실패한 요청은 하루 12"), ((60, 216, 300, 230), "건으로 줄었습니다")],
+                     [((60, 300, 400, 314), "짧은 줄이 이어지는 목록의 첫째 항목입니다 길게"), ((60, 316, 300, 330), "둘째 항목도 이만큼 깁니다")],
+                     [((40, 400, 300, 414), "* 측정 기준은 부록")]),
+                page([((40, 400, 300, 414), "∗ 다른 기호의 각주")])]))
+            kinds = [(p, k) for p, k, _ in w]
+            check(kinds == [(1, "orphan"), (1, "split"), (1, "marks")] and "'도구E'" in w[0][2] and "'∗' on page 2" in w[2][2],
+                  "wraps: a lone last word, a number torn from its unit and footnote marks typed two ways; a long next line is not an orphan — %s" % w)
             hits = o.margin_crossers(box, 30)
             check(len(hits) == 20 and hits[0] == (1, "left", "안녕 세상 AB") and hits[1][1] == "top", "margin_crossers reads it — %d hits" % len(hits))
             check(r.text(work, "d.pdf") == "\f".join(["page text"] * 10), "text() joins the pages with form feeds, as pdftotext does")
