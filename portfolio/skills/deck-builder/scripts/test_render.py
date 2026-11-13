@@ -71,10 +71,15 @@ class Renderer(deck.Renderer):
         return d
 
     def has_poppler(self, workdir):
-        return self.sh(workdir, "command -v pdftotext >/dev/null && echo yes"
-                       ).stdout.strip() == "yes"
+        # poppler, or the PyMuPDF that install-renderer unpacked (the engine's fallback)
+        return bool(self._mupdf("pdftotext")) or self.sh(
+            workdir, "command -v pdftotext >/dev/null && echo yes").stdout.strip() == "yes"
 
     def page_texts(self, workdir, pdf, pages):
+        m = self._mupdf("pdftotext")
+        if m:
+            with m.open(str(Path(workdir) / pdf)) as doc:
+                return [p.get_text() for p in doc][:pages]
         return [self.sh(workdir, "pdftotext -f %d -l %d -layout %s -" % (i, i, pdf)).stdout
                 for i in range(1, pages + 1)]
 

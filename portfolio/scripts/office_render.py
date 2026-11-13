@@ -300,6 +300,130 @@ def install_renderer(yes=False, url=None, sha256=None, version=None, size=None, 
     return 0, "installed: %s" % got
 
 
+# PyMuPDF: page previews, PDF text and line boxes on a machine with no poppler. One abi3 wheel
+# (CPython 3.11+, manylinux_2_28 x86_64) unpacked with zipfile — nothing goes into site-packages.
+MUPDF_VERSION = "2.1"
+MUPDF_URL = ("https://files.pythonhosted.org/packages/f4/dc/e244c162ab621a45bfe36e33fe432264ef7e40592f739474864df66a2dd8/"
+             "pymupdf-2.1-cp311-abi3-manylinux_2_28_x86_64.whl")
+MUPDF_SHA256 = "a9efa2e9e5f469d3b5749199329739cfef1ff1d1846538ced4885c544eecbcd9"
+MUPDF_SIZE = 68983787
+
+
+def pylib_dir():
+    return cache_dir() / "pylib"
+
+
+def install_pymupdf(yes=False, url=None, sha256=None, size=None, version=None, log=print):
+    """Download the pinned PyMuPDF wheel into <cache>/wheels, check its SHA-256, unpack it into
+    <cache>/pylib. Returns (exit code, message)."""
+    url, sha256 = url or MUPDF_URL, sha256 or MUPDF_SHA256
+    size = MUPDF_SIZE if size is None else size
+    version = version or MUPDF_VERSION
+    lib = pylib_dir()
+    if (lib / ".installed").is_file():
+        return 0, "PyMuPDF already installed: %s" % lib
+    if sys.version_info < (3, 11):
+        return 1, ("PyMuPDF: the pinned wheel is for Python 3.11+, this is %d.%d — "
+                   "install poppler (pdftotext, pdftoppm) instead" % sys.version_info[:2])
+    if not (sys.platform.startswith("linux") and os.uname().machine in ("x86_64", "amd64")):
+        return 1, "PyMuPDF: the pinned wheel is Linux x86_64 only — install poppler instead"
+    if not yes:
+        return 1, ("install-renderer will also download PyMuPDF %s (%d MB) from\n  %s\n"
+                   "check its SHA-256 and unpack it into\n  %s\n(page previews, PDF text and line boxes "
+                   "where poppler is missing). Nothing was downloaded; run with --yes." % (version, size >> 20, url, lib))
+    wheels = cache_dir() / "wheels"
+    wheels.mkdir(parents=True, exist_ok=True)
+    whl = wheels / Path(url).name
+    log("downloading %s" % url)
+    try:
+        _download(url, whl, sha256, log)
+        shutil.rmtree(str(lib), ignore_errors=True)
+        lib.mkdir(parents=True)
+        with zipfile.ZipFile(str(whl)) as z:
+            for n in z.namelist():
+                if n.startswith("/") or ".." in Path(n).parts:
+                    raise ValueError("unsafe path in the wheel: %s" % n)
+            z.extractall(str(lib))
+    except (ValueError, OSError, zipfile.BadZipFile) as e:
+        whl.unlink(missing_ok=True)
+        return 1, "PyMuPDF install failed: %s" % e
+    whl.unlink(missing_ok=True)
+    (lib / ".installed").write_text(sha256 + "\n")
+    return 0, "installed PyMuPDF: %s" % lib
+
+
+def mupdf_module():
+    """The `pymupdf` module from <cache>/pylib, or None. The directory is on sys.path only while
+    it is imported."""
+    lib = pylib_dir()
+    if not (lib / ".installed").is_file():
+        return None
+    m = sys.modules.get("pymupdf")
+    if m is None or not str(getattr(m, "__file__", "") or "").startswith(str(lib)):
+        sys.modules.pop("pymupdf", None)
+        sys.path.insert(0, str(lib))
+        try:
+            import pymupdf as m
+        except ImportError:
+            return None
+        finally:
+            sys.path.remove(str(lib))
+    return m
+
+
+def mupdf_pages(doc):
+    """[(page_w, page_h, blocks)] — what bbox_pages returns — from an open PyMuPDF document:
+    each text line of page.get_text("dict") is ((x0, y0, x1, y1), text), spaces collapsed."""
+    out = []
+    for page in doc:
+        d = page.get_text("dict")
+        blocks = []
+        for b in d.get("blocks", []):
+            if b.get("type", 0) != 0:
+                continue
+            lines = []
+            for ln in b.get("lines", []):
+                text = " ".join("".join(s.get("text", "") for s in ln.get("spans", [])).split())
+                if not text:
+                    continue
+                box = tuple(float(v) for v in ln["bbox"])
+                if lines:   # PyMuPDF cuts a visual line at each gap; pdftotext keeps it whole
+                    (a0, b0, a1, b1), prev = lines[-1]
+                    h1, h2 = b1 - b0, box[3] - box[1]
+                    # one baseline, a word-gap apart, about the same size (a big figure beside body text is its own line)
+                    if (min(b1, box[3]) - max(b0, box[1]) >= 0.5 * min(h1, h2) and min(h1, h2) >= 0.6 * max(h1, h2)
+                            and box[0] - a1 <= min(h1, h2) and box[0] >= a0):
+                        lines[-1] = ((min(a0, box[0]), min(b0, box[1]), max(a1, box[2]), max(b1, box[3])),
+                                     prev + " " + text)
+                        continue
+                lines.append((box, text))
+            if lines:
+                blocks.append(lines)
+        out.append((float(d["width"]), float(d["height"]), blocks))
+    return out
+
+
+def pages_to_xml(pages):
+    """A pdftotext -bbox-layout document for `pages`, so every reader of bbox_pages works unchanged
+    (a line's words all carry the line's box; readers take the line's min/max)."""
+    from xml.sax.saxutils import escape
+    parts = ['<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><body><doc>']
+    for pw, ph, blocks in pages:
+        parts.append('<page width="%r" height="%r"><flow>' % (pw, ph))
+        for lines in blocks:
+            parts.append("<block>")
+            for (x0, y0, x1, y1), text in lines:
+                parts.append('<line>')
+                for w in text.split():
+                    parts.append('<word xMin="%r" yMin="%r" xMax="%r" yMax="%r">%s</word>'
+                                 % (x0, y0, x1, y1, escape(w)))
+                parts.append("</line>")
+            parts.append("</block>")
+        parts.append("</flow></page>")
+    parts.append("</doc></body></html>")
+    return "".join(parts)
+
+
 def cmd_install_renderer(argv):
     import argparse
     ap = argparse.ArgumentParser(prog="office_render.py install-renderer")
@@ -307,7 +431,9 @@ def cmd_install_renderer(argv):
     a = ap.parse_args(argv)
     rc, msg = install_renderer(yes=a.yes)
     print(msg, file=sys.stderr if rc else sys.stdout)
-    return rc
+    rc2, msg2 = install_pymupdf(yes=a.yes)
+    print(msg2, file=sys.stderr if rc2 else sys.stdout)
+    return rc or rc2
 
 
 def _under_home(p):
@@ -457,7 +583,18 @@ class Renderer:
             os.replace(str(made), str(src.with_suffix(".pdf")))
         return (r.stdout + r.stderr).strip()
 
+    def _mupdf(self, tool):
+        """PyMuPDF (from install-renderer's pylib) when this renderer runs on the host and poppler's
+        `tool` is not on its PATH; else None. A container keeps its own poppler."""
+        if not self.local or shutil.which(tool, path=self._fc_env().get("PATH")):
+            return None
+        return mupdf_module()
+
     def bbox(self, workdir, pdf):
+        m = self._mupdf("pdftotext")
+        if m:
+            with m.open(str(Path(workdir) / pdf)) as doc:
+                return pages_to_xml(mupdf_pages(doc))
         out = Path(pdf).with_suffix(".bbox.html").name
         self.sh(workdir, "command -v pdftotext >/dev/null || exit 0; "
                          "pdftotext -bbox-layout %s %s && chmod a+rw %s" % (pdf, out, out))
@@ -480,6 +617,17 @@ class Renderer:
     def previews(self, workdir, pdf, dpi=72, prefix="p"):
         """Page PNGs in <workdir>/pages/<prefix>-N.png; the old ones with that prefix go first, so a
         shorter document never keeps the previews of a longer one."""
+        m = self._mupdf("pdftoppm")
+        if m:
+            d = Path(workdir) / "pages"
+            d.mkdir(exist_ok=True)
+            for old in d.glob(prefix + "*.png"):
+                old.unlink()
+            with m.open(str(Path(workdir) / pdf)) as doc:
+                width = len(str(doc.page_count))   # pdftoppm pads the page number to the page count
+                for i, page in enumerate(doc, 1):
+                    page.get_pixmap(dpi=dpi).save(str(d / ("%s-%0*d.png" % (prefix, width, i))))
+            return sorted(d.glob(prefix + "*.png"))
         self.sh(workdir, "command -v pdftoppm >/dev/null || exit 0; mkdir -p pages && "
                          "rm -f pages/%s*.png && "
                          "pdftoppm -r %d -png %s pages/%s && chmod -R a+rwX pages"
@@ -488,7 +636,11 @@ class Renderer:
         return sorted(d.glob(prefix + "*.png")) if d.is_dir() else []
 
     def text(self, workdir, pdf):
-        """The PDF's text (pdftotext), or None when pdftotext is not there."""
+        """The PDF's text (pdftotext, else PyMuPDF), or None when neither is there."""
+        m = self._mupdf("pdftotext")
+        if m:
+            with m.open(str(Path(workdir) / pdf)) as doc:
+                return "\f".join(p.get_text() for p in doc)
         out = Path(pdf).with_suffix(".final.txt").name
         self.sh(workdir, "command -v pdftotext >/dev/null || exit 0; "
                          "pdftotext %s %s && chmod a+rw %s" % (pdf, out, out))
@@ -860,6 +1012,9 @@ def _pdf_findings(path, allow):
         rd = Renderer()
         if rd.available:
             text = rd.text(path.parent.resolve(), path.name)
+        elif mupdf_module():   # no renderer here, but the PDF can still be read
+            with mupdf_module().open(str(path)) as doc:
+                text = "\f".join(p.get_text() for p in doc)
     if text is None:
         findings.append("PDF text not checked: no pdftotext (install poppler, or %s)" % NO_RENDERER)
     else:
@@ -942,7 +1097,7 @@ def main(argv):
             return {"error": "no renderer (pdftotext runs through it): " + NO_RENDERER}
         box = r.bbox(pdf.parent, pdf.name)
         if box is None:
-            return {"error": "no pdftotext"}
+            return {"error": "no pdftotext and no PyMuPDF: install poppler or run install-renderer --yes"}
         hits = margin_crossers(box, margin)
         return {"margin_pt": margin, "pages": sorted({h[0] for h in hits}),
                 "hits": [{"page": p, "side": s, "text": t} for p, s, t in hits]}

@@ -182,8 +182,8 @@ def final_check_tests(t):
     pdf(f["resume.pdf"], text="TODO fix this. Generated with Claude")
     r = o.Renderer()
     got = of(run(), "resume.pdf")
-    # pdftotext is the host's (poppler) or the container image's; a cached LibreOffice brings none
-    if (r.available and not r.local) or shutil.which("pdftotext"):
+    # pdftotext is the host's (poppler) or the container image's; else the cached PyMuPDF reads it
+    if (r.available and not r.local) or shutil.which("pdftotext") or o.mupdf_module():
         check(any("TODO" in x for x in got) and any("Generated with" in x for x in got), "PDF text is scanned for annotations — %s" % got)
     else:
         check(any("not checked" in x for x in got), "with no pdftotext the PDF text is said to be unchecked — %s" % got)
@@ -393,6 +393,124 @@ def install_tests(t):
             shutil.rmtree(str(d), ignore_errors=True)
 
 
+FAKE_MUPDF = '''
+from pathlib import Path
+PAGES = [{"width": 595.0, "height": 842.0, "blocks": [
+    {"type": 0, "lines": [{"bbox": (10.5, 20.0, 100.0, 34.0), "spans": [{"text": "안녕 "}]},
+                          {"bbox": (110.0, 21.0, 200.25, 34.0), "spans": [{"text": "세상  AB"}]},
+                          {"bbox": (10.5, 40.0, 90.0, 54.0), "spans": [{"text": "  "}]}]},
+    {"type": 1, "bbox": (0, 0, 1, 1)},
+    {"type": 0, "lines": [{"bbox": (300.0, 700.0, 400.0, 720.0), "spans": [{"text": "foot"}]}]}]}] * 10
+
+
+class _Pix:
+    def __init__(self, dpi):
+        self.dpi = dpi
+
+    def save(self, p):
+        Path(p).write_bytes(b"png dpi=%d" % self.dpi)
+
+
+class _Page:
+    def __init__(self, d):
+        self.d = d
+
+    def get_text(self, kind="text"):
+        return self.d if kind == "dict" else "page text"
+
+    def get_pixmap(self, dpi=72):
+        return _Pix(dpi)
+
+
+class _Doc:
+    page_count = len(PAGES)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def __iter__(self):
+        return iter(_Page(d) for d in PAGES)
+
+
+def open(path):
+    return _Doc()
+'''
+
+
+def mupdf_tests(t):
+    print("PyMuPDF fallback")
+    t = t / "mu"
+    t.mkdir()
+    tgz = t / "fake.tar.gz"
+    fake_tarball(tgz)
+    whl = t / "fake-1-py3-none-any.whl"
+    with zipfile.ZipFile(whl, "w") as z:
+        z.writestr("pymupdf.py", FAKE_MUPDF)
+    cache = t / "cache"
+    bins = t / "bin"
+    bins.mkdir()
+    (bins / "bash").symlink_to(shutil.which("bash"))
+    msgs = []
+    with env(XDG_CACHE_HOME=str(cache), PATH=str(bins), DECK_RENDER_DOCKER=None):
+        lib = o.pylib_dir()
+        check(lib == o.cache_dir() / "pylib" and len(o.MUPDF_SHA256) == 64 and o.MUPDF_URL.startswith("https://"), "the PyMuPDF wheel is pinned, unpacked into <cache>/pylib")
+        rc, msg = o.install_pymupdf(url=whl.as_uri(), sha256=sha(whl), size=3 << 20, log=msgs.append)
+        check(rc == 1 and "--yes" in msg and "3 MB" in msg and not msgs, "PyMuPDF: without --yes it says what it would do and downloads nothing")
+        rc, msg = o.install_pymupdf(yes=True, url=whl.as_uri(), sha256="0" * 64, log=msgs.append)
+        check(rc == 1 and "sha256 mismatch" in msg and not (lib / ".installed").exists() and not lib.exists(),
+              "PyMuPDF: a wrong SHA-256 is refused and nothing is unpacked — %s" % msg[:50])
+        check(not list((o.cache_dir() / "wheels").glob("*.whl")), "the refused wheel is not kept")
+        check(o.mupdf_module() is None, "without pylib there is no fallback")
+
+        o.install_renderer(yes=True, url=tgz.as_uri(), sha256=sha(tgz), log=msgs.append)
+        r = o.Renderer()
+        check(r.available and r.local and r._mupdf("pdftoppm") is None, "no pylib: no fallback, previews and bbox give nothing")
+        work = t / "work"
+        work.mkdir()
+        (work / "d.pdf").write_bytes(b"%PDF")
+        check(r.previews(work, "d.pdf") == [] and r.bbox(work, "d.pdf") is None and r.text(work, "d.pdf") is None, "…and say so (empty, None, None)")
+
+        rc, msg = o.install_pymupdf(yes=True, url=whl.as_uri(), sha256=sha(whl), log=msgs.append)
+        check(rc == 0 and (lib / ".installed").is_file() and (lib / "pymupdf.py").is_file(), "PyMuPDF: a matching SHA-256 unpacks the wheel — %s" % msg[-40:])
+        check(not list((o.cache_dir() / "wheels").glob("*.whl")) and str(lib) not in sys.path, "the wheel is deleted and pylib is not left on sys.path")
+        rc, msg = o.install_pymupdf(url=whl.as_uri(), sha256="0" * 64)
+        check(rc == 0 and "already" in msg, "a second run finds it installed")
+
+        try:
+            check(r._mupdf("pdftoppm") is not None, "no poppler on PATH and pylib there: the fallback is chosen")
+            pages = o.mupdf_pages(r._mupdf("pdftotext").open("x"))
+            line = ((10.5, 20.0, 200.25, 34.0), "안녕 세상 AB")
+            check(len(pages) == 10 and pages[0] == (595.0, 842.0, [[line], [((300.0, 700.0, 400.0, 720.0), "foot")]]),
+                  "the adapter maps the dict to bbox_pages' shape (spaces collapsed, same-baseline pieces joined, blank lines and images dropped) — %s" % (pages[0],))
+            box = r.bbox(work, "d.pdf")
+            check(o.bbox_pages(box) == pages, "bbox() is XML that bbox_pages reads back to exactly that")
+            hits = o.margin_crossers(box, 30)
+            check(len(hits) == 20 and hits[0] == (1, "left", "안녕 세상 AB") and hits[1][1] == "top", "margin_crossers reads it — %d hits" % len(hits))
+            check(r.text(work, "d.pdf") == "\f".join(["page text"] * 10), "text() joins the pages with form feeds, as pdftotext does")
+            (work / "pages").mkdir()
+            (work / "pages" / "p-1.png").write_bytes(b"stale")
+            (work / "pages" / "keep-1.png").write_bytes(b"other prefix")
+            shots = r.previews(work, "d.pdf", dpi=50)
+            names = [p.name for p in shots]
+            check(names == ["p-%02d.png" % i for i in range(1, 11)], "previews are pages/p-NN.png, numbers padded as pdftoppm pads them — %s" % names[:3])
+            check((work / "pages" / "p-01.png").read_bytes() == b"png dpi=50" and not (work / "pages" / "p-1.png").exists()
+                  and (work / "pages" / "keep-1.png").exists(), "at the asked dpi; the old previews of that prefix go, other prefixes stay")
+
+            stub(bins / "pdftotext", '#!/bin/sh\nfor a; do last=$a; done; echo POPPLER > "$last"\n')
+            check(r._mupdf("pdftotext") is None and r.text(work, "d.pdf") == "POPPLER\n", "with poppler on PATH it is used first, PyMuPDF is not")
+            (bins / "pdftotext").unlink()
+            with env(DECK_RENDER_DOCKER="img"):
+                (cache / "claude-portfolio" / "libreoffice" / o.LO_VERSION / ".installed").unlink()
+                stub(bins / "docker")
+                rd = o.Renderer()
+                check(rd.local is None and rd._mupdf("pdftotext") is None, "the docker path never takes the fallback")
+        finally:
+            sys.modules.pop("pymupdf", None)
+
+
 def main():
     with tempfile.TemporaryDirectory() as t:
         t = Path(t)
@@ -505,6 +623,7 @@ def main():
         check([(h[0], h[1]) for h in hits] == [(1, "top"), (2, "right")], "each side uses its own margin — %s" % hits)
 
         install_tests(t)
+        mupdf_tests(t)
 
         print("render")
         r = o.Renderer()
