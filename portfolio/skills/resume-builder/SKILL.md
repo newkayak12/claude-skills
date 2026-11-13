@@ -16,7 +16,7 @@ compatibility:
     - python 3.9+ (stdlib only)
   recommended:
     - LibreOffice (soffice on PATH), or DECK_RENDER_DOCKER=<image> — `render` needs it; catalog and build do not. With neither, ask the person once, then run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/office_render.py install-renderer --yes`
-    - pdftotext (poppler) — `over_lines` needs it
+    - pdftotext (poppler), or the PyMuPDF that install-renderer brings — `over_lines` needs one
   remote_mcp_note: >-
     LibreOffice가 없으면 `build`까지는 동작하고 `render`만 멈춥니다. 페이지 수와 넘친 줄 수는 렌더한
     PDF에서만 알 수 있으니 가능하면 설치하세요.
@@ -65,7 +65,8 @@ Engine, run from the workspace root: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/resum
    the person really lists as their own skills ("Claude Code로 개발" stays).
 5. **Render.** Only when the user says: `render` writes `build/resume.pdf`, counts pages against `pages:`,
    rewrites the page previews `build/pages/resume-p-N.png` (stale ones deleted) and prints the
-   `final_check` verdicts.
+   `final_check` verdicts. It also renders the template and sets its page breaks against the ones Word saved
+   (`word_check`); a mismatch warns that this renderer's page count is not Word's: say so, never trust its count.
 6. **Review.** After every render, not only when over budget, run `render-review` on the PDF and its fresh previews.
 7. **Fit.** Over budget: `over_lines` is the number of text lines past the last allowed page. Propose
    cuts with their line counts (a section, a block to one bullet) and wait. Cut text, never type size,

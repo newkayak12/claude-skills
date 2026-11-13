@@ -56,7 +56,9 @@ resume.md:
     template photo's frame (cropped to fill). A `라벨: 값` line takes a
     two-format sample's label and value runs; URLs and mail addresses become links.
 """
+import html
 import json
+import os
 import re
 import shutil
 import sys
@@ -526,7 +528,52 @@ def build(source, out):
             "warnings": ["unconfirmed line kept: %s" % t[:60] for t in held]}
 
 
-def render(docx, pages=None):
+def word_breaks(path):
+    """Where Word last broke the pages of `path`: the text that opens each page after the first, from the
+    `w:lastRenderedPageBreak` marks Word saves (whitespace dropped). [] when Word left none."""
+    try:
+        with zipfile.ZipFile(str(path)) as z:
+            xml = z.read("word/document.xml").decode("utf-8")
+    except (OSError, KeyError, zipfile.BadZipFile):
+        return []
+    out = []
+    for m in re.finditer(r"<w:lastRenderedPageBreak/>", xml):
+        t = "".join(re.findall(r"<w:t(?:\s[^>]*)?>([^<]*)</w:t>", xml[m.end():m.end() + 4000]))
+        t = re.sub(r"\s+", "", html.unescape(t))[:10]
+        if t:
+            out.append(t)
+    return out
+
+
+def word_check(r, template, workdir):
+    """The template converted with this renderer, its page breaks set against Word's. None when the template
+    carries no Word page marks; else {word_breaks, matched, mismatch: [page, word, here]}."""
+    want = word_breaks(template)
+    if not want:
+        return None
+    d = Path(workdir) / ".word-check"
+    d.mkdir(exist_ok=True)
+    try:
+        shutil.copyfile(str(template), str(d / "t.docx"))
+        r.to_pdf(d.resolve(), "t.docx")
+        text = r.text(d.resolve(), "t.pdf") if (d / "t.pdf").is_file() else None
+    finally:
+        shutil.rmtree(str(d), ignore_errors=True)
+    if text is None:
+        return None
+    starts = [re.sub(r"\s+", "", p) for p in text.split("\f")[1:] if p.strip()]
+    # a header repeats at the top of every page: the text all pages open with is not the page's own
+    head = os.path.commonprefix(starts) if len(starts) > 1 else ""
+    starts = [s[len(head):] for s in starts]
+    mismatch = []
+    for i, w in enumerate(want):
+        here = starts[i] if i < len(starts) else ""
+        if not here.startswith(w):
+            mismatch.append({"page": i + 2, "word": w, "here": here[:10]})
+    return {"word_breaks": len(want), "matched": len(want) - len(mismatch), "mismatch": mismatch}
+
+
+def render(docx, pages=None, template=None):
     guard([docx, docx.with_suffix(".pdf")])
     r = office_render.Renderer()
     if not r.available:
@@ -543,26 +590,37 @@ def render(docx, pages=None):
     if not shots:
         out["previews_note"] = "no page previews: pdftoppm is not available"
     out["final_check"] = office_render.final_lines(office_render.final_check([docx, pdf]))
+    out["warnings"] = []
+    if template and Path(template).is_file():
+        # the template was laid out by Word: where this renderer breaks its pages elsewhere, its page
+        # count is not Word's either
+        wc = word_check(r, Path(template), docx.parent.resolve())
+        if wc is not None:
+            out["word_check"] = wc
+            for m in wc["mismatch"]:
+                out["warnings"].append("this renderer breaks the template's page %d where Word does not (Word opens "
+                                       "it with '%s', here '%s'): page counts here may differ from Word's"
+                                       % (m["page"], m["word"], m["here"]))
     if pages and count > int(pages):
-        out["warnings"] = ["%d pages, over the budget of %s" % (count, pages)]
-        over = overflow_lines(pdf, int(pages))
+        out["warnings"].append("%d pages, over the budget of %s" % (count, pages))
+        over = overflow_lines(r, pdf, int(pages))
         if over is not None:
             # how much to cut, so the cut is sized before anything is shortened (text first, never the type)
             out["over_lines"] = over
             out["warnings"].append("%d text lines past page %s: shorten the text by that much, never the type size"
                                    % (over, pages))
+    if not out["warnings"]:
+        del out["warnings"]
     return out
 
 
-def overflow_lines(pdf, budget):
-    """Non-empty text lines on the pages past the budget (pdftotext), or None when it is not installed."""
-    import subprocess
-    if not shutil.which("pdftotext"):
+def overflow_lines(r, pdf, budget):
+    """Non-empty text lines on the pages past the budget (the renderer's pdftotext, else PyMuPDF), or None
+    when neither is there."""
+    text = r.text(pdf.parent.resolve(), pdf.name)
+    if text is None:
         return None
-    r = subprocess.run(["pdftotext", "-f", str(budget + 1), "-layout", str(pdf), "-"], capture_output=True, text=True)
-    if r.returncode != 0:
-        return None
-    return sum(1 for line in r.stdout.split("\n") if line.strip())
+    return sum(1 for page in text.split("\f")[budget:] for line in page.split("\n") if line.strip())
 
 
 def default_source():
@@ -583,7 +641,7 @@ def main(argv):
     if cmd == "render":
         src = Path(args["source"]) if "source" in args else default_source()
         meta = front(src.read_text(encoding="utf-8"))[0] if src.is_file() else {}
-        return render(Path(args.get("docx", "build/resume.docx")), meta.get("pages"))
+        return render(Path(args.get("docx", "build/resume.docx")), meta.get("pages"), meta.get("template"))
     fail("usage: resume.py catalog | build | render")
 
 

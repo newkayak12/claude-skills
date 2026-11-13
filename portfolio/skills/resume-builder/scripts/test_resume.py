@@ -59,6 +59,20 @@ def make_template(path):
         z.writestr("word/styles.xml", styles)
 
 
+def marked(path, mark_at):
+    """The template with a forced page break before 경력 and Word's last page mark before `mark_at`."""
+    with zipfile.ZipFile(path) as z:
+        parts = {n: z.read(n) for n in z.namelist()}
+    doc = parts["word/document.xml"].decode("utf-8")
+    doc = re.sub(r"<w:br w:type=\"page\"/>|<w:lastRenderedPageBreak/>", "", doc)
+    doc = doc.replace("<w:t>경력", '<w:br w:type="page"/><w:t>경력', 1)
+    doc = doc.replace("<w:t>" + mark_at, "<w:lastRenderedPageBreak/><w:t>" + mark_at, 1)
+    parts["word/document.xml"] = doc.encode("utf-8")
+    with zipfile.ZipFile(path, "w") as z:
+        for n, d in parts.items():
+            z.writestr(n, d)
+
+
 RESUME = """---
 template: template/resume.docx
 pages: 2
@@ -322,6 +336,25 @@ def main():
                       "render regenerates the page previews and deletes the stale ones — %s" % shots)
                 check((pages / "p-1.png").read_bytes() == b"deck", "another document's previews are left alone")
             check(any(x.startswith("resume.pdf:") for x in r["final_check"]), "render prints the final-check verdict for the PDF — %s" % r["final_check"])
+            # Word's page marks in the template: the renderer's breaks are set against them
+            t = root / "template" / "resume.docx"
+            plain = t.read_bytes()
+            marked(t, mark_at="경력")       # Word opened page 2 at the forced break: this renderer agrees
+            rc, r = run(root, "render")
+            check(rc == 0 and r.get("word_check") == {"word_breaks": 1, "matched": 1, "mismatch": []}
+                  and not any("Word" in w for w in r.get("warnings", [])),
+                  "a renderer that breaks the template where Word did is not warned — %s" % r.get("word_check"))
+            marked(t, mark_at="샘플")       # Word (as saved) opened page 2 elsewhere
+            rc, r = run(root, "render")
+            check(rc == 0 and r["word_check"]["mismatch"] and any("where Word does not" in w for w in r["warnings"]),
+                  "a renderer that breaks the template's page elsewhere than Word is warned — %s" % r.get("warnings"))
+            t.write_bytes(plain)
+            (root / "resume.md").write_text(RESUME.replace("pages: 2", "pages: 1").replace(
+                "## 경력", "## 경력\n" + "\n".join("- 가상 줄 %d" % i for i in range(70))), encoding="utf-8")
+            run(root, "build")
+            rc, r = run(root, "render")
+            check(rc == 0 and r["pages"] > 1 and r.get("over_lines", 0) > 0,
+                  "over budget, the lines past the last page are counted (poppler or PyMuPDF) — %s" % r.get("over_lines"))
         else:
             print("  skip render: no soffice and no DECK_RENDER_DOCKER")
 

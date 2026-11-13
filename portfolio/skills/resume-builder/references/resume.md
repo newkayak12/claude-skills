@@ -54,8 +54,13 @@ each removal word for word. Work annotations are never removed. The same functio
 
 ## Render and fit
 
-- `render` only when the user says. Past the page budget it warns, and where `pdftotext` exists it
-  reports `over_lines`: the text lines past the last allowed page.
+- `render` only when the user says. Past the page budget it warns, and where `pdftotext` or PyMuPDF
+  exists it reports `over_lines`: the text lines past the last allowed page.
+- `word_check`: a template saved by Word carries `w:lastRenderedPageBreak` marks where Word last broke
+  its pages. `render` converts the template with the same renderer and checks that each of those pages
+  opens with the same text (a header repeated on every page is skipped). A mismatch is a warning: two
+  LibreOffice builds have laid out one docx a page apart (2026-11-13: 25.8 broke a Word template's page 3
+  early, 26.8.3 matched Word on all three), so that renderer's page count is not Word's.
 - Over budget → propose cuts with their line counts (a section, a block to one bullet) and wait.
   Never shrink type, line spacing or margins below the template's.
 - Look at every page: nothing crosses the safe area, the photo touches no text, no line ends with a
