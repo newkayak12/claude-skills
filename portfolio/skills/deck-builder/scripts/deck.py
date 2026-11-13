@@ -3828,6 +3828,8 @@ def cmd_check(args):
                 errs.append("line %d: %s has no slot '%s' — available: %s"
                             % (line, tag, slot_id, ", ".join(by_id)))
                 continue
+            if kind == "scalar" and isinstance(value, str) and value.strip() == "!drop":
+                continue   # the shape leaves the slide: nothing to measure
             if slot.type == "picture" and kind == "scalar" and value.strip() != "!drop":
                 path, mode, anchor, flags = parse_picture_value(value)
                 if mode is None:

@@ -1686,6 +1686,10 @@ def placing(tmp):
     out, rows = build("text1: a\n" + clones)
     check([y for y, _ in rows] == [1000000 + i * 1200000 for i in range(4)],
           "no distribute: rows stay where cloning put them: %s" % rows)
+    s = tmp / "pldrop.mdx"
+    s.write_text("---\ntemplate: pl.pptx\noutput: pldrop-out.pptx\n---\n\n## @s2\ntext1: !drop\n", encoding="utf-8")
+    chk = run_cmd(["check", "--deck", str(s)])
+    check("'!drop'" not in chk, "check measures nothing for a `!drop` slot: %s" % chk[-200:])
     out2, rows2 = build("text1: a\ntext3_plus1: x\ntext3_plus2: y\n", name="pla")
     gaps2 = [rows2[i + 1][0] - rows2[i][0] - rows2[i][1] for i in range(len(rows2) - 1)]
     check(len(rows2) == 5 and rows2[0][0] == 1000000 and rows2[-1][0] + rows2[-1][1] <= 512 * 12700 + 1
