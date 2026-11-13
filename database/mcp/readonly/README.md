@@ -31,6 +31,15 @@ Keychain (service `database-readonly-mcp`, account = profile); elsewhere or with
 and profiles.json keeps only `password_from: op://****/****/<field>`; a profile still on `op` or on
 `secrets.json` moves on its next use, and its `secrets.json` value becomes `****`.
 
+## Personal data
+
+Every result drops personal-data columns and lists them under `hidden`. A column is matched by its
+source name (`recv_nm AS who` is still hidden); a computed column is hidden when the statement names
+one (`CONCAT(recv_nm, '') AS x`). Default patterns (`PII_DEFAULT` in `config.mjs`): phone/tel/hp/fax,
+email, addr/address, post/zip codes, resident numbers, birth, passport, and person names such as
+`order_nm`, `recv_nm`, `sender_name`. `--pii off` (`DBRO_PII=off`) disables it; `--pii 'regex,regex'`
+replaces the list.
+
 ## Direct mode settings
 
 | Option | Env | Default |

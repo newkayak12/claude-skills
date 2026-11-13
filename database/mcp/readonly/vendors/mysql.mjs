@@ -2,6 +2,7 @@
 // No explicit transactions anywhere: statements run under autocommit, and the session's default
 // access mode (SET SESSION TRANSACTION READ ONLY) makes each implicit transaction read-only.
 import mysql from 'mysql2';
+import { piiMatcher } from '../config.mjs';
 
 const ALLOWED_FIRST = new Set(['SELECT', 'SHOW', 'DESCRIBE', 'DESC', 'EXPLAIN', 'WITH']);
 
@@ -116,7 +117,20 @@ function reject(rule, message) {
   return { ok: false, rule, message };
 }
 
+// Result columns that carry personal data: a table column whose source name matches, or a computed
+// column (no source name) whose own name, or the statement, mentions one — so neither an alias nor
+// CONCAT(recv_nm) AS x gets one out.
+export function piiColumns(fields, sql, isPii = piiMatcher()) {
+  if (!isPii) return [];
+  const words = (s) => String(s).split(/[^A-Za-z0-9_$]+/).filter(Boolean);
+  const sqlHasPii = words(sql).some(isPii);
+  return fields
+    .filter((f) => (f.orgName ? isPii(f.orgName) : sqlHasPii || words(f.name).some(isPii)))
+    .map((f) => f.name);
+}
+
 export function createMysql(cfg) {
+  const isPii = piiMatcher(cfg.pii);
   const pool = mysql.createPool({
     host: cfg.host,
     port: cfg.port,
@@ -172,8 +186,11 @@ export function createMysql(cfg) {
         }
         if (truncated) conn.destroy();
         else conn.release();
+        const hidden = fields ? piiColumns(fields, sql, isPii) : [];
+        for (const r of rows) for (const c of hidden) delete r[c];
         resolve({
-          columns: fields ? fields.map((f) => f.name) : [],
+          columns: fields ? fields.map((f) => f.name).filter((c) => !hidden.includes(c)) : [],
+          ...(hidden.length ? { hidden } : {}),
           rows: header && !fields ? [] : rows,
           rowCount: rows.length,
           truncated,

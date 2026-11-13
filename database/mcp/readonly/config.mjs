@@ -17,11 +17,29 @@ const OPTIONS = {
   'max-rows': 'MAX_ROWS',
   'max-execution-ms': 'MAX_EXECUTION_MS',
   profile: 'DBRO_PROFILE',
+  pii: 'DBRO_PII',
 };
+
+// Personal-data columns dropped from every result (matched on the source column name, so an alias
+// does not bring one back). --pii: "off", or comma-separated regexes that replace the default.
+export const PII_DEFAULT = [
+  '(^|_)(tel|phone|hp|mobile|cell_?no|fax)(_?\\d+|_?no)?$',
+  '(^|_)e_?mail(_?addr)?$',
+  '(^|_)(addr|address)(_?\\d+|_?dtl|_?detail)?$',
+  '(^|_)(post|zip)(_?(no|cd|code))?$',
+  '(^|_)(jumin|rrn|ssn|resident_?no|birth\\w*|passport\\w*)$',
+  '(^|_)(order|orderer|ord|recv|receiver|recipient|sender|send|buyer|member|cust|customer|user|consignee)_?(nm|name)$',
+];
+export function piiMatcher(spec) {
+  if (spec === 'off') return null;
+  const list = spec ? spec.split(',').map((s) => s.trim()).filter(Boolean) : PII_DEFAULT;
+  const res = list.map((s) => new RegExp(s, 'i'));
+  return (col) => res.some((r) => r.test(col));
+}
 
 export const USAGE = `database-readonly-mcp [--profile local|dev|stage|prod]            (profile mode, default local)
 database-readonly-mcp --host H [--port 3306] --user U [--password P] --database D   (direct mode)
-  common: [--vendor mysql] [--max-rows 1000] [--max-execution-ms 30000]
+  common: [--vendor mysql] [--max-rows 1000] [--max-execution-ms 30000] [--pii off|regex,regex]
 Each option falls back to its env var: ${Object.entries(OPTIONS).map(([k, v]) => `--${k}=${v}`).join(', ')}.
 A value starting with op:// is resolved with \`op read\` (1Password CLI, optional).
 Profiles are saved with: node cli.mjs login <profile>`;
@@ -61,13 +79,14 @@ export const isDirect = (raw) => !!(raw.host || raw.user || raw.database);
 export const limits = (raw) => ({
   maxRows: toInt('max-rows', raw['max-rows'], 1000),
   maxExecutionMs: toInt('max-execution-ms', raw['max-execution-ms'], 30000),
+  ...(raw.pii ? { pii: raw.pii } : {}),
 });
 
 // Direct mode config.
 export async function resolveConfig(argv = process.argv.slice(2), env = process.env, read = opRead) {
   const raw = readSettings(argv, env);
   const out = {};
-  for (const k of ['vendor', 'host', 'port', 'user', 'password', 'database', 'max-rows', 'max-execution-ms']) {
+  for (const k of ['vendor', 'host', 'port', 'user', 'password', 'database', 'max-rows', 'max-execution-ms', 'pii']) {
     try {
       out[k] = await resolveValue(raw[k], read);
     } catch (e) {

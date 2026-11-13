@@ -22,6 +22,9 @@ Log in to dev, then show me the last 10 orders.
   INTO, SLEEP/BENCHMARK/GET_LOCK/LOAD_FILE, `/*! */` and DML hidden in WITH or EXPLAIN.
 - **The password never goes through the chat**: no tool takes it as an argument.
 - **Rows** stream and stop at 1000 (`truncated: true`).
+- **Personal data stays out**: columns such as names, phones, addresses, post codes and email are
+  dropped from every result by their source column, so an alias does not bring one back; the result
+  lists them under `hidden`. `--pii off` (`DBRO_PII`) turns it off; `--pii regex,regex` replaces the list.
 
 Setup (`database:login` does it): `npm ci` in `mcp/readonly/` and
 `claude mcp add -s user database-readonly -- node <plugin dir>/mcp/readonly/server.mjs`, redone when an

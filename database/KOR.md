@@ -22,6 +22,9 @@ dev로 로그인하고 최근 주문 10건 보여줘.
   `/*! */`, WITH·EXPLAIN 안의 DML을 거부합니다.
 - **비밀번호는 대화를 거치지 않습니다**: 비밀번호를 인자로 받는 도구가 없습니다.
 - **행**은 스트리밍으로 읽다가 1000행에서 끊습니다(`truncated: true`).
+- **개인정보는 결과에서 빠집니다**: 이름, 전화번호, 주소, 우편번호, 이메일 같은 컬럼을 원본 컬럼명
+  기준으로 모든 결과에서 빼므로 별칭으로도 꺼낼 수 없습니다. 뺀 컬럼은 `hidden`에 나옵니다.
+  `--pii off`(`DBRO_PII`)로 끄고, `--pii regex,regex`로 목록을 바꿉니다.
 
 설치(`database:login`이 합니다): `mcp/readonly/`에서 `npm ci`, 그리고
 `claude mcp add -s user database-readonly -- node <plugin dir>/mcp/readonly/server.mjs`. 업데이트로

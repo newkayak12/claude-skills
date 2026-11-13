@@ -23,6 +23,9 @@ compatibility:
    `truncated: true` means the row cap cut the result — say so.
 4. **Rejected.** `rejected [rule]` is the read-only guard; do not rephrase around it. Writes are not
    possible through this server.
+5. **Personal data.** Leave name, phone, address, post code and email columns out of the SELECT list.
+   The server drops them anyway and lists them under `hidden` — say which were hidden; do not try to
+   get them back through an expression or alias.
 
 ## Output Template
 
