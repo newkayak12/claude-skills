@@ -3420,6 +3420,19 @@ def cmd_build(args):
                 if el in list(parent):
                     parent.remove(el)
                     break
+        if distribute_top is None and any(_is_clone(g) for g in spTree.findall(q("p:grpSp"))):
+            # a cloned row pushed past the safe area: spread the rows from where the first one
+            # starts, as `distribute:` would, so a contents slide with one more row still fits
+            rows = []
+            for g in spTree.findall(q("p:grpSp")):
+                xf = _group_xfrm(g)
+                o, e = (xf.find(q("a:off")), xf.find(q("a:ext"))) if xf is not None else (None, None)
+                if o is not None and e is not None:
+                    rows.append((int(o.get("y")), int(e.get("cy"))))
+            bottom = safe_bottom_pt(md_path, slide_size(pkg)[1])
+            if rows and max(y + cy for y, cy in rows) > bottom * EMU_PER_PT:
+                distribute_top = min(y for y, _ in rows) / EMU_PER_PT
+                layout_counts["distributed"] = layout_counts.get("distributed", 0) + 1
         if distribute_top is not None:
             bottom = safe_bottom_pt(md_path, slide_size(pkg)[1])
             if distribute_rows(spTree, distribute_top, bottom) is None:
@@ -3502,6 +3515,9 @@ def cmd_build(args):
     if layout_counts["captions"]:
         print("  %d caption(s) removed, their pictures grown into the room"
               % layout_counts["captions"])
+    if layout_counts.get("distributed"):
+        print("  %d slide(s) with a cloned row past the safe area: rows spread to fit"
+              % layout_counts["distributed"])
     if layout_counts["panels"]:
         print("  %d picture(s) fitted to their panel with a %gpt margin"
               % (layout_counts["panels"], layout_counts["margin"]))

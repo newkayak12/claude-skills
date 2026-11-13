@@ -1596,10 +1596,11 @@ def row_groups(tmp):
                                  + deck.q("a:off")).get("y"))
                       for g in root_of(pptx).findall(deck.q("p:grpSp")))
 
-    template("g1.pptx", [row(i, 1000000 + i * 1200000) for i in range(3)])
+    # rows 1,000,000 EMU apart so five still end inside the safe area (no automatic spreading)
+    template("g1.pptx", [row(i, 1000000 + i * 1000000) for i in range(3)])
     out, pptx = build("g1", "text5: H3\ntext6: D3\ntext5_plus1: H4\ntext6_plus1: D4\n"
                             "text5_plus2: H5\ntext6_plus2: D5\n")
-    check(group_ys(pptx) == [1000000 + i * 1200000 for i in range(5)],
+    check(group_ys(pptx) == [1000000 + i * 1000000 for i in range(5)],
           "3 row groups + 2 clones sit at the last interval: %s" % group_ys(pptx))
     texts = set(slide_texts(pptx, "ppt/slides/slide1.xml"))
     check({"H4", "D4", "H5", "D5"} <= texts, "each cloned group takes the next item's texts")
@@ -1685,6 +1686,11 @@ def placing(tmp):
     out, rows = build("text1: a\n" + clones)
     check([y for y, _ in rows] == [1000000 + i * 1200000 for i in range(4)],
           "no distribute: rows stay where cloning put them: %s" % rows)
+    out2, rows2 = build("text1: a\ntext3_plus1: x\ntext3_plus2: y\n", name="pla")
+    gaps2 = [rows2[i + 1][0] - rows2[i][0] - rows2[i][1] for i in range(len(rows2) - 1)]
+    check(len(rows2) == 5 and rows2[0][0] == 1000000 and rows2[-1][0] + rows2[-1][1] <= 512 * 12700 + 1
+          and max(gaps2) - min(gaps2) <= 2 and "rows spread to fit" in out2,
+          "a cloned row past the safe area spreads the rows on its own, from the first row's top: %s" % rows2)
     out, rows = build("text1: a\n" + clones + "distribute: 70\n")
     ys = [y for y, _ in rows]
     gaps = [ys[i + 1] - (ys[i] + rows[i][1]) for i in range(3)]

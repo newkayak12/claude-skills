@@ -134,6 +134,8 @@ last row's bottom at the safe area's bottom, the gaps equal. For a contents slid
 last row (`text7_plus1`) fell below the safe area. The bottom is the slide height less the
 bottom margin of `style/레이아웃.md` (in the deck's folder or its parent), else less 28pt. Rows
 taller than that room are reported and none are moved. It runs after `place:` and `!drop`.
+Without the line, build does the same on its own when a cloned row ends past the safe area,
+from the first row's top (the build says so); `distribute:` is for another top.
 
 A picture slot holding an SVG is warned in `check` when its smallest text, at the size the
 frame shows it, is under 8pt (`figure text ~5.4pt at this size`): enlarge the picture, cut the
