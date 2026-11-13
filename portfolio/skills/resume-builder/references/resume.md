@@ -34,7 +34,10 @@ The resume is the portfolio's second output, built the same way: designed in `re
   - `spacing:` role → `<before> <after>` in pt, when the template's own spacing reads too tight;
   - `look:` role → `size <pt> color <RRGGBB> label <RRGGBB>` (any of them), when the sample's run
     reads too small or too faint (contrast), or its `라벨: 값` line needs a label colour of its own;
-  - `title:`, `author:` → the document properties; `photo_alt:` → the photo's alt text.
+  - `title:`, `author:` → the document properties; `photo_alt:` → the photo's alt text;
+  - `break: 경력, 사이드 프로젝트` — those `##` sections start a new page;
+  - `photo: assets/profile.jpg` — the template photo's picture replaced (PNG or JPEG), its frame
+    kept, cropped from the centre to the frame's shape, never stretched.
 - A role used but mapped nowhere, a style the template lacks, or a sample text no paragraph starts
   with is refused before anything is written.
 

@@ -236,6 +236,51 @@ def main():
         (plain / "resume-deck.mdx").write_text(looked.replace("color 333333", "color red"), encoding="utf-8")
         rc, e = run(plain, "build")
         check(rc != 0 and "look" in e["error"], "a look line that is not size/colour is refused")
+        print("break: and photo:")
+        import struct, zlib
+        def png(w, h):
+            raw = b"".join(b"\x00" + b"\x80\x80\x80" * w for _ in range(h))
+            chunk = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+            return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+                    + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+        with zipfile.ZipFile(plain / "template" / "template.docx") as z:
+            parts3 = {n: z.read(n) for n in z.namelist()}
+        real_photo = ('<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">'
+                      '<wp:extent cx="900000" cy="900000"/><wp:docPr id="1" name="사진" descr="x"/><a:graphic xmlns:a="http://schemas.'
+                      'openxmlformats.org/drawingml/2006/main"><a:graphicData><pic:pic xmlns:pic="http://schemas.openxmlformats.org/'
+                      'drawingml/2006/picture"><pic:blipFill><a:blip r:embed="rIdPhoto"/><a:stretch><a:fillRect/></a:stretch>'
+                      '</pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>')
+        d3 = parts3["word/document.xml"].decode("utf-8")
+        d3 = re.sub(r"<w:r><w:drawing>.*?</w:drawing></w:r>", real_photo, d3, count=1, flags=re.S)
+        if "xmlns:r=" not in d3:
+            d3 = d3.replace("<w:document ", '<w:document xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ', 1)
+        parts3["word/document.xml"] = d3.encode("utf-8")
+        parts3["word/_rels/document.xml.rels"] = (b'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/'
+                                                  b'package/2006/relationships"><Relationship Id="rIdPhoto" Type="http://schemas.openxmlformats.org/'
+                                                  b'officeDocument/2006/relationships/image" Target="media/image1.jpeg"/></Relationships>')
+        parts3["word/media/image1.jpeg"] = b"\xff\xd8old"
+        with zipfile.ZipFile(plain / "template" / "template.docx", "w") as z:
+            for n, d in parts3.items():
+                z.writestr(n, d)
+        (plain / "me.png").write_bytes(png(200, 100))
+        brk = fin.replace("keep: section, company\n", "keep: section, company\nbreak: 경력\nphoto: me.png\n")
+        (plain / "resume-deck.mdx").write_text(brk, encoding="utf-8")
+        rc, b = run(plain, "build")
+        with zipfile.ZipFile(plain / "build" / "resume.docx") as z:
+            names3 = z.namelist()
+            doc = z.read("word/document.xml").decode("utf-8")
+            rels = z.read("word/_rels/document.xml.rels").decode("utf-8")
+            ct = z.read("[Content_Types].xml").decode("utf-8")
+            img = z.read("word/media/image1.png") if "word/media/image1.png" in names3 else b""
+        sec = re.search(r"<w:p><w:pPr>((?:(?!</w:pPr>).)*)</w:pPr><w:r><w:rPr>(?:(?!</w:r>).)*경력", doc, re.S)
+        check(rc == 0 and sec and "<w:pageBreakBefore/>" in sec.group(1), "break: starts the named section on a new page — %s" % b)
+        check(img[:4] == b"\x89PNG" and "word/media/image1.jpeg" not in names3 and 'Target="media/image1.png"' in rels
+              and 'Extension="png"' in ct, "photo: replaces the template photo's picture, its type registered")
+        check('<a:srcRect l="25000" r="25000"/>' in doc and 'cx="900000"' in doc,
+              "photo: a wider picture is cropped from the centre to the template frame, the frame kept")
+        (plain / "resume-deck.mdx").write_text(brk.replace("break: 경력", "break: 없는절"), encoding="utf-8")
+        rc, e = run(plain, "build")
+        check(rc != 0 and "없는절" in e["error"], "a break naming no section is refused")
         (plain / "resume-deck.mdx").write_text(fin.replace("  company: 12 3", "  company: 12"), encoding="utf-8")
         rc, e = run(plain, "build")
         check(rc != 0 and "spacing" in e["error"], "a spacing line without two numbers is refused")

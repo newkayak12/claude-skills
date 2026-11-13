@@ -52,7 +52,8 @@ resume.md:
     The template's photo (an anchored drawing) is kept on the first paragraph.
     Finish keys (no post-build script): `keep: section, entry` (roles kept with the next line),
     `spacing:` role: <before> <after> in pt, `look:` role: size <pt> color <RRGGBB> label <RRGGBB>,
-    `title:`, `author:`, `photo_alt:`. A `라벨: 값` line takes a
+    `title:`, `author:`, `photo_alt:`, `break:` sections on a new page, `photo:` a picture into the
+    template photo's frame (cropped to fill). A `라벨: 값` line takes a
     two-format sample's label and value runs; URLs and mail addresses become links.
 """
 import json
@@ -281,6 +282,72 @@ def para(style, text, ppr, rpr, label=None, links=None):
     return "<w:p>%s%s</w:p>" % (ppr, text_runs(text, rpr, links))
 
 
+def page_break_before(ppr):
+    """pPr that starts its paragraph on a new page (pageBreakBefore after pStyle/keepNext/keepLines)."""
+    if "<w:pageBreakBefore/>" in ppr:
+        return ppr
+    m = list(re.finditer(r"<w:(pStyle [^>]*/|keepNext/|keepLines/)>", ppr))
+    at = m[-1].end() if m else len("<w:pPr>")
+    return ppr[:at] + "<w:pageBreakBefore/>" + ppr[at:]
+
+
+def image_size(data):
+    """(width, height) of PNG or JPEG bytes, else None."""
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+    if data[:2] == b"\xff\xd8":
+        i = 2
+        while i + 9 < len(data):
+            if data[i] != 0xFF:
+                i += 1
+                continue
+            mark, size = data[i + 1], int.from_bytes(data[i + 2:i + 4], "big")
+            if 0xC0 <= mark <= 0xCF and mark not in (0xC4, 0xC8, 0xCC):
+                return int.from_bytes(data[i + 7:i + 9], "big"), int.from_bytes(data[i + 5:i + 7], "big")
+            i += 2 + size
+    return None
+
+
+def swap_photo(parts, rels_name, run, path):
+    """The template photo's picture replaced by `path` (PNG or JPEG) in the same frame, cropped to
+    fill it from the centre, never stretched. Returns the photo run to use in its place."""
+    if not path.is_file():
+        fail("photo: %s not found" % path)
+    data = path.read_bytes()
+    size = image_size(data)
+    if not size:
+        fail("photo: %s is not a PNG or JPEG" % path)
+    rid = re.search(r'<a:blip\b[^>]*r:embed="([^"]+)"', run)
+    ext = re.search(r'<wp:extent cx="(\d+)" cy="(\d+)"', run)
+    if not rid or not ext:
+        fail("photo: the template photo has no embedded picture or frame size")
+    rels = parts[rels_name].decode("utf-8")
+    rel = re.search(r'<Relationship\b[^>]*Id="%s"[^>]*/>' % re.escape(rid.group(1)), rels)
+    target = re.search(r'Target="([^"]+)"', rel.group(0)).group(1)
+    kind = "png" if data[:4] == b"\x89PNG" else "jpeg"
+    new_target = re.sub(r"\.[A-Za-z]+$", ".png" if kind == "png" else ".jpeg", target)
+    part = lambda t: t.lstrip("/") if t.startswith("/") else "word/" + t   # a rels target -> its part name
+    parts.pop(part(target), None)
+    parts[part(new_target)] = data
+    parts[rels_name] = rels.replace(rel.group(0), rel.group(0).replace(target, new_target)).encode("utf-8")
+    ct = parts["[Content_Types].xml"].decode("utf-8")
+    if 'Extension="%s"' % new_target.rsplit(".", 1)[1] not in ct:
+        ct = ct.replace("</Types>", '<Default Extension="%s" ContentType="image/%s"/></Types>' % (new_target.rsplit(".", 1)[1], kind))
+        parts["[Content_Types].xml"] = ct.encode("utf-8")
+    # crop to the frame's shape from the centre (srcRect in 1/1000 of a percent)
+    fw, fh = int(ext.group(1)), int(ext.group(2))
+    iw, ih = size
+    crop = ""
+    if iw * fh > ih * fw:      # wider than the frame: trim the sides
+        cut = round((1 - (ih * fw) / (iw * fh)) / 2 * 100000)
+        crop = '<a:srcRect l="%d" r="%d"/>' % (cut, cut)
+    elif iw * fh < ih * fw:    # taller: trim top and bottom
+        cut = round((1 - (iw * fh) / (ih * fw)) / 2 * 100000)
+        crop = '<a:srcRect t="%d" b="%d"/>' % (cut, cut)
+    new_run = re.sub(r"<a:srcRect\b[^>]*/>", "", run)
+    return re.sub(r"(<a:blip\b[^>]*?(?:/>|>.*?</a:blip>))", lambda m: m.group(1) + crop, new_run, count=1, flags=re.S)
+
+
 def restyle_rpr(rpr, size=None, color=None):
     """rPr with its size (pt) and colour replaced, each only when given."""
     r = rpr or "<w:rPr></w:rPr>"
@@ -382,6 +449,9 @@ def build(source, out):
                 or any(not re.fullmatch(r"\d+(\.\d+)?" if k == "size" else r"[0-9A-Fa-f]{6}", x) for k, x in kv.items())):
             fail("look: %s: give size <pt>, color <RRGGBB>, label <RRGGBB> — got %r" % (r, v))
         looks[r] = kv
+    # break: `경력, 사이드 프로젝트` — those sections start a new page
+    breaks = {s.strip() for s in meta.get("break", "").split(",") if s.strip()}
+    unused_breaks = set(breaks)
     links, out_paras = [], []
     for i, (r, t) in enumerate(todo):
         ppr, rpr, label = from_text[r] if r in from_text else (*sample.get(mapping[r], (None, None)), None)
@@ -397,7 +467,12 @@ def build(source, out):
         if i and todo[i - 1][0] == "section":
             before = 0
         ppr = tune(ppr, keep=r in keep, before=before, after=after)
+        if r == "section" and t.strip() in breaks:
+            ppr = page_break_before(ppr)
+            unused_breaks.discard(t.strip())
         out_paras.append(para(None, t, ppr, rpr, label, links))
+    if unused_breaks:
+        fail("break: no section line reads %s (the `##` lines of the resume)" % sorted(unused_breaks))
     new = "".join(out_paras)
     # the template's photo (an anchored <w:drawing> run) rides along on the first paragraph —
     # the user's resume carries a photo and the template is the only place its frame lives (user, 2026-11-09)
@@ -406,6 +481,10 @@ def build(source, out):
         first = re.match(r"<w:p>(<w:pPr>.*?</w:pPr>)?", new, re.S)
         cut = first.end()
         new = new[:cut] + pic.group(0) + new[cut:]
+    if meta.get("photo"):
+        if not pic:
+            fail("photo: the template has no photo (an anchored picture) to put %s into" % meta["photo"])
+        new = new.replace(pic.group(0), swap_photo(parts, "word/_rels/document.xml.rels", pic.group(0), Path(meta["photo"])), 1)
     head = doc[:b.start(2)]
     if links and "xmlns:r=" not in head:
         head = head.replace("<w:document ", '<w:document xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ', 1)
