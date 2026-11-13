@@ -529,7 +529,14 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
         and its findings are written to the node, not only to the ask;
      then one real L task where a fix wave and a QA pass complete with no hand merge.
 
-130. **teams spends less per task: model per stage, lean driver sessions, a default budget** — E-89982ed5 (2026-11-11, L, $15.74) stopped partial in planning, no code: PRDs F1 (model per stage), F2 (lean sessions), F3 (budget) accepted and pinned on `rescue/card130-prd-f{1,2,3}`; plan-integrate failed 3× on F2 (see card 129). Light PLAN chain confirmed (A4.3). Next run starts from those PRDs with F2's two gaps decided; real-L cost comparison left to the card 129 Sprint
+130. **teams spends less per task: model per stage, lean driver sessions, a default budget** — shipped `05f80b2c` by E-e9e7a45b (2026-11-13, L, $56.07 of $80; see Sprints). Left:
+   - QA-F1 (model per stage) never finished: the disk filled, its run file was lost (card 129 item 7).
+     Its findings, from the ask text only: D1 high, a tm_open `models` override is dropped on the broker
+     adapter path; D2, D3 medium and D4-D6 low, details lost with the run file. Acceptance: a test that a
+     tm_open per-stage model reaches the broker-tools and runAdapter argv; QA-F1 rerun on main.
+   - The start context of a fresh driver, before and after, measured on one real headless run (target
+     under 20k tokens); and the real-L cost compared to E-258fa3e5 (with the card 129 Sprint).
+   - The original card follows for reference.
    - Why: E-258fa3e5 (cards 128 + 125 leftovers, opened 2026-11-05 09:25) cost $14.4 over 28 sessions
      before shape started (planning only). Again 2026-11-05: E-066abb46 (size S, Sonnet) spent $48.39 of a
      $25 budget, `budget_stopped` only after the gate passed (197 min); `/teams-status` showed the same
@@ -683,6 +690,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-e9e7a45b | 2026-11-13 | 130 | shipped `05f80b2c` (hand-merged from integration head `fa8ac240`, daemon did not resume, card 129 item 7); size L, $56.07; P1-P4 accepted (90/85/87/92), QA-F2 80, QA-F3 88, QA-F1 not finished (disk full); model per stage, lean argv on all five spawn paths, one driver per node, node_start/node_end via record(), region prompts, size-S budget kill, pane spend from taskFigure, `budget_usd` 40; on the merged tree teams test-*.mjs 2292 tests / 2290 pass / 0 fail, plugin test 626/626, card 130 tests 59/59, validate 16/16, check-copies ok |
 | E-f1f5fcf7 | 2026-11-10 | 131 | shipped `5a9644c8`; size S; goal gate 90; entry checks of `repo-rules.mjs` and bench `harvest.mjs` compare real paths (reap.mjs form); test-repo-rules 188 ok / 75 FAIL → 271 ok / 0 FAIL, 8 new symlink/space entry cases; 0 FAIL needed the test's fixture root resolved to its real path (lead's decision, no person reachable), the write-through-symlink defect it hid is card 134; validate 15/15, check-copies ok, test-harvest 3/3 |
 | E-066abb46 | 2026-11-05 | 125 (socket rest), 128 (tm_wait, comments) | shipped `bb9b643f`; size S on Sonnet; goal gate 91; state server skips unchanged tasks (fixture 2.10% → 0.90%, real root 1.55% → 0.38%), server log, mod resolves relative tasks dir, CPU guard default-on passed 3 suites of 2154 (only fail W2 hygiene from a stray `.teams_wiki/`); `tm_wait` awaited + abortable, `team_status`/`wiki_list` answer behind it (red on baseline); plugin test 453/453, view/server tests 386/387 (1 skip); spend $48 of $25 budget (card 130); thin CPU margin, 60 s safety-net rebuild |
 | E-d26f7a29 | 2026-11-05 | 128 step 2 | shipped `9db4e615`; one MCP server `teams/mcp/server.mjs`, 33 tools; gate 91 |
