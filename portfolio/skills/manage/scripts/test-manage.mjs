@@ -300,6 +300,19 @@ test('renumber writes the file only when the result verifies (--force writes any
 })
 
 // card 54: the eight-step flow's new parts
+test('scaffold run before the catalog fills the analysis placeholder once the catalog exists, the rest kept', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-scaf-'))
+  scaffold(root)
+  const p = join(root, 'template', 'analysis.md')
+  writeFileSync(p, readFileSync(p, 'utf8') + '\n- 내가 쓴 규칙\n')
+  writeFileSync(join(root, 'deck.catalog.md'), '# c\n\n## Palette\n\n- 남색 10243F\n\n## Type\n\n- Verdana 18pt\n\n## Slides\n')
+  const r = scaffold(root)
+  const text = readFileSync(p, 'utf8')
+  assert.deepEqual(r.filled, ['template/analysis.md'])
+  assert.ok(text.includes('남색 10243F') && text.includes('Verdana 18pt') && text.includes('내가 쓴 규칙') && !text.includes('먼저 돌리면'))
+  assert.equal(scaffold(root).filled, undefined, 'filled once')
+})
+
 test('scaffold creates the selection table, template analysis and render/feedback folders, never overwriting', () => {
   const root = mkdtempSync(join(tmpdir(), 'manage-scaffold-'))
   writeFileSync(join(root, 'deck.catalog.md'), '# Catalog\n\n## Voice\n\n- 했다 60%\n\n## Palette\n\n- 10243F\n\n## Type\n\n- 본문 18pt\n\n## @s1 · 표지\n')
@@ -1324,6 +1337,46 @@ test('sync reads a table skeleton: slots named in backticks, several slots per r
   assert.deepEqual(r.missing, [])
   assert.deepEqual(r.different.map(d => `${d.slide}.${d.key}`), ['s12 7쪽.text4'])
   assert.deepEqual(r.slide_missing, [])
+})
+
+test('claims: dates and a unit-like first syllable are not figures; a unit followed by a particle is', () => {
+  assert.deepEqual(figs('2024-02, 배치가 돌았다. 09:30 기준. 3 대응팀'), [])
+  assert.deepEqual(figs('응답이 3배가 됐다, 37건 → 1건, 2 건이 남았다'), ['3배', '37건', '1건', '2건'])
+})
+
+test('claims: a number the cited item states outside its results (a team size) is listed in_text, not a problem', () => {
+  const root = claimsWorkspace()
+  const items = readMaterial(root)
+  const id = [...items.keys()][0]
+  items.get(id).text += '\n- 백엔드 3명 중 1명으로 참여했다.\n'
+  const r = claims(`## 1 검색\n글감: ${id}\n백엔드 3명 중 1명으로 820ms를 210ms로 줄였다.\n`, items)
+  assert.deepEqual(r.problems, [])
+  assert.deepEqual(r.listed.in_text.map(x => x.text.split(' ')[0]), ['3명', '1명'])
+})
+
+test('compare: a figure that had no ground before is not lost ground when only its sentence changes', () => {
+  const before = { problems: [{ page: 3, kind: 'unsupported', text: '40% — 처리를 40% 줄였다.' }] }
+  const after = { problems: [{ page: 4, kind: 'unsupported', text: '40% — 처리 시간을 40% 줄였습니다.' },
+    { page: 5, kind: 'unsupported', text: '40% — 다시 40%' }] }
+  const r = compare({ a: 5 }, { a: 5 }, before, after)
+  assert.equal(r.lost_ground.length, 1, 'the same figure failing in one more place is new')
+  assert.equal(compare({ a: 5 }, { a: 5 }, before, { problems: [after.problems[0]] }).verdict, 'same')
+})
+
+test('sync: a table and a nested list inside a slot are carried whole; a line split in two is different', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-nest-'))
+  const skel = ['# s', '', '## 2쪽 · `@s2` · 결과', 'table1:', '  | 지표 | 이전 | 이후 |', '  | p95 | 2.4초 | 0.6초 |',
+    'text1:', '  - 강점', '    - 근거 한 줄', 'text2: 한 줄 / 두 줄', ''].join('\n')
+  writeFileSync(join(root, 'portfolio-skeleton.md'), skel)
+  writeFileSync(join(root, 'portfolio-deck.mdx'), '---\ntemplate: t.pptx\n---\n## @s2 2쪽\ntext2: 한 줄 두 줄\n')
+  const r = sync(root, { write: true })
+  assert.deepEqual(r.missing.map(m => m.key), ['table1', 'text1'])
+  assert.deepEqual(r.different.map(d => d.key), ['text2'])
+  const deck = readFileSync(join(root, 'portfolio-deck.mdx'), 'utf8')
+  assert.match(deck, /table1:\n {2}\| 지표 \| 이전 \| 이후 \|\n {2}\| p95 \| 2\.4초 \| 0\.6초 \|/)
+  assert.match(deck, /text1:\n {2}- 강점\n {4}- 근거 한 줄/)
+  assert.match(deck, /text2:\n {2}한 줄\n {2}두 줄/)
+  assert.deepEqual([sync(root).missing, sync(root).different.map(d => d.key)], [[], []])
 })
 
 test('claims: a range carries its unit to both numbers (30 → 50초, 4~6개)', () => {

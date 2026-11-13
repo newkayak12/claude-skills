@@ -363,12 +363,21 @@ export function scaffold(root) {
     '## 그림 색', '', '- 그림(write:diagram)이 쓰는 색: Palette에서 고른다',
     '- 덱과 같은 색 계열 하나로 그린다. 한 가지 색(단색)으로만 칠하지 않는다.',
     '- 가장 중요한 부분이 한눈에 보이게 한다 (강조색은 그 부분에만).', ''].join('\n'))
+  // an analysis written before the catalog existed still holds the placeholder line: fill it in place,
+  // the rest of the file (style rules the user wrote) untouched
+  const filled = []
+  const ap = at(root, ANALYSIS)
+  if (!created.includes(ANALYSIS) && fromCatalog.length && existsSync(ap)) {
+    const text = readFileSync(ap, 'utf8')
+    const ph = '(deck-builder catalog를 먼저 돌리면 Palette · Type · Voice가 여기 들어온다)'
+    if (text.includes(ph)) { writeFileSync(ap, text.replace(ph, fromCatalog.join('\n\n'))); filled.push(ANALYSIS) }
+  }
   make(NEXT_RENDER, NEXT_RENDER_HEAD)
   make('snapshot/render', null)
   make('feedback', null)   // feedback/YYYY-MM-DD.md, one review per day, ending with its fix table
   for (const [name, body] of Object.entries(STYLE_TEMPLATES)) make(`style/${name}`, body)
   make(QUESTIONS, QUESTIONS_HEAD)
-  return { created, ...(renamed.length && { renamed }), ...(appended.length && { appended }) }
+  return { created, ...(renamed.length && { renamed }), ...(appended.length && { appended }), ...(filled.length && { filled }) }
 }
 
 // sources/선정.md rows: 글감 · 쓰임 (본문 | 부록 | 제외) · 쪽 · 이유 · 대표.
@@ -668,9 +677,16 @@ export function compare(before, after, claimsBefore, claimsAfter) {
   const rose = items.filter(i => i.delta > 0).map(i => i.item)
   let verdict = dropped.length && rose.length ? 'mixed' : dropped.length ? 'worse' : rose.length ? 'better' : 'same'
   if (!claimsBefore || !claimsAfter) return { verdict, items, dropped, unmatched }
-  const key = p => `${p.kind}|${p.text}`
-  const had = new Set(claimsBefore.problems.map(key))
-  const lostGround = claimsAfter.problems.filter(p => !had.has(key(p)))
+  // a figure problem is the same problem when its kind and figure are, whatever the sentence around it
+  // became; counted, so a figure that now fails in one more place is still new
+  const key = p => { const f = String(p.text).match(/^(\S+) — /); return `${p.kind}|${f ? f[1] : p.text}` }
+  const had = new Map()
+  for (const p of claimsBefore.problems) had.set(key(p), (had.get(key(p)) || 0) + 1)
+  const lostGround = claimsAfter.problems.filter(p => {
+    const n = had.get(key(p)) || 0
+    if (n) { had.set(key(p), n - 1); return false }
+    return true
+  })
   if (lostGround.length) verdict = 'worse'
   return { verdict, items, dropped, unmatched, lost_ground: lostGround }
 }
@@ -689,7 +705,18 @@ const LABEL = /^\s*[^\s:：]{1,6}\s*[:：]\s*/
 const TONE = ['효율적으로', '획기적', '극대화', '성공적으로', '원활한', '원활하게', '시너지', '견고한', '혁신적', '함으로써', '다양한 ', '핵심적인', '도모']
 // `30 → 50초`, `4~6개`: the unit after the second number belongs to the first as well
 const RANGE = /(?<![A-Za-z\d.])(\d[\d,]*(?:\.\d+)?)(\s*(?:→|->|~|～|–)\s*\d[\d,]*(?:\.\d+)?\s*)((?:[만억천]\s*)?(?:%|ms|초|분|시간|개월|일|주|배|건|명|회|개|대|원|GB|MB|KB|TB|TPS|QPS|RPS|x))(?![A-Za-z])/gu
-export const figs = s => [...String(s).replace(RANGE, '$1$3$2$3').matchAll(FIG)].map(m => `${m[1].replace(/,/g, '')}${m[2].replace(/\s+/g, '')}`)
+// Not a figure: a number inside a date or time (`2024-02`, `09:30`, `3/4`), and a number set apart from
+// a Korean unit that is only the first syllable of the next word (`2024-02, 배치`, `3 대응`).
+const PARTICLE = /^(은|는|이|가|을|를|의|에|로|도|만|와|과|씩|째|당|간|까지|부터|보다|처럼|으로)/
+export const figs = s => [...String(s).replace(RANGE, '$1$3$2$3').matchAll(FIG)].filter(m => {
+  const str = m.input, at = m.index
+  if (at > 0 && /[-/:]/.test(str[at - 1]) && /\d/.test(str[at - 2] || '')) return false
+  const after = str.slice(at + m[0].length)
+  if (/[-/:]\d/.test(after.slice(0, 2)) && !/[가-힣%]/.test(m[2])) return false
+  const spaced = /\s/.test(m[0].slice(m[1].length, m[0].length - m[2].length))
+  if (spaced && /^[가-힣]$/.test(m[2]) && /^[가-힣]/.test(after) && !PARTICLE.test(after)) return false
+  return true
+}).map(m => `${m[1].replace(/,/g, '')}${m[2].replace(/\s+/g, '')}`)
 const stems = s => (String(s).match(/[\p{L}\p{N}]+/gu) || [])
   .filter(w => w.length >= 2 && !REASON.test(w))
   .map(w => (/^[\p{Script=Hangul}]/u.test(w) ? w.slice(0, 2) : w.toLowerCase()))
@@ -829,7 +856,7 @@ export function settle(findings, lines) {
 // lists cover only 본문/부록 items, and items the table does not name are listed `unselected`.
 export function claims(text, items, settledLines = [], sel = null, confirmed = []) {
   const use = new Map((sel?.rows || []).map(r => [r.id, r.use]))
-  const problems = [], listed = { self_confirmed: [], user_stated: [], tone: [], confirmed: [], summary: [] }
+  const problems = [], listed = { self_confirmed: [], user_stated: [], tone: [], confirmed: [], summary: [], in_text: [] }
   const carried = new Map()   // item id → figures some page carries
   const summary = []          // uncited lines with figures, kept for the summary check below
   const grounded = new Set()  // figures a citing page carries with ground (not `근거 없음`)
@@ -868,7 +895,10 @@ export function claims(text, items, settledLines = [], sel = null, confirmed = [
         const hit = ground.map(it => ({ it, row: it.rows.find(r => r.figs.includes(f)) })).find(x => x.row)
         if (!hit) {
           const fact = confirmed.find(c => c.figs.includes(f))
-          if (fact) listed.confirmed.push({ page: p.page, text: `${f} — ${line}`, fact: fact.text })
+          // a number the cited item states outside its results (a team of 3, one server): context, listed
+          const said = ground.find(it => figs(it.text).includes(f))
+          if (said) { grounded.add(f); listed.in_text.push({ page: p.page, id: said.id, text: `${f} — ${line}` }) }
+          else if (fact) listed.confirmed.push({ page: p.page, text: `${f} — ${line}`, fact: fact.text })
           else problems.push({ page: p.page, kind: 'not_in_material', text: `${f} — ${line}` })
           continue
         }
@@ -1210,7 +1240,8 @@ export function slotsOf(text) {
     if (!cur) continue
     // a table row naming its slots in backticks: `| 제목 \`text4\` | value |`, or several slots matched
     // to as many cells (`| \`text11\`·\`text10\` | a | b |`) or to one cell split at ` · `
-    const row = l.match(/^\s*\|(.*)\|\s*$/)
+    // (an indented `| a | b |` line is a table inside a slot value, read below as its continuation)
+    const row = l.match(/^\|(.*)\|\s*$/)
     if (row) {
       key = null
       const cells = row[1].split('|').map(c => c.trim())
@@ -1223,7 +1254,7 @@ export function slotsOf(text) {
         const v = vals[i].replace(/<!--[\s\S]*?-->/g, '').trim()
         // not slot text: a drop, a picture path, an empty-slot note (`없음 …`)
         if (!v || /^`?!drop/.test(v) || /^`?[^\s`]+\.(png|jpe?g|svg|gif)\b/i.test(v) || /^없음(\s|\.|$)/.test(v)) return
-        cur.order.push(k); cur.slots.set(k, v.split(/<br\s*\/?>/).map(s => s.trim()).filter(Boolean))
+        cur.order.push(k); cur.slots.set(k, v.split(/<br\s*\/?>|\s+\/\s+/).map(s => s.trim()).filter(Boolean))
       })
       continue
     }
@@ -1231,7 +1262,7 @@ export function slotsOf(text) {
     if (kv) {
       key = SKIP_KEYS.has(kv[1]) || kv[2] === '!drop' || /\.(png|jpe?g|svg|gif)(\s*\|.*)?$/i.test(kv[2]) ? null : kv[1]
       if (key) { cur.order.push(key); cur.slots.set(key, kv[2] ? [kv[2].trim()] : []) }
-    } else if (key && /^[ \t]+\S/.test(l)) cur.slots.get(key).push(l.trim())
+    } else if (key && /^[ \t]+\S/.test(l)) cur.slots.get(key).push(l.replace(/^( {2}|\t)/, '').trimEnd())   // nesting kept
     else key = null
   }
   return out
@@ -1239,7 +1270,7 @@ export function slotsOf(text) {
 // the words a slot says, without the deck's markup: `**`, `[text]{fmt}`, `<br>`, list dashes, spacing
 // (a skeleton writes a line break as ` / ` and numbers a footnote `1) `; the deck splits lines and
 // numbers footnotes itself; a deck line may end in `\`)
-const plain = s => s.replace(/\s*\[확인 필요[^\]]*\]/g, '').replace(/\\$/, '').replace(/\s+\/\s+/g, ' ').replace(/^\d+\)\s+/, '').replace(/\\(.)/g, '$1').replace(/\[([^\]]*)\]\{[^}]*\}/g, '$1').replace(/\*\*/g, '').replace(/<br\s*\/?>/g, ' ').replace(/^[-|·•]\s*/, '').replace(/\s+/g, ' ').trim()
+const plain = s => s.trim().replace(/\s*\[확인 필요[^\]]*\]/g, '').replace(/\\$/, '').replace(/\s+\/\s+/g, ' ').replace(/^\d+\)\s+/, '').replace(/\\(.)/g, '$1').replace(/\[([^\]]*)\]\{[^}]*\}/g, '$1').replace(/\*\*/g, '').replace(/<br\s*\/?>/g, ' ').replace(/^[-|·•]\s*/, '').replace(/\s+/g, ' ').trim()
 
 // skeleton -> deck source: each skeleton slot absent from, or different in, the deck's same slide.
 // Writes only with `write`: a different slot is replaced, an absent one appended to its slide; a slide
@@ -1257,7 +1288,8 @@ export function sync(root, { write = false } = {}) {
     for (const key of s.order) {
       const want = s.slots.get(key)
       if (!d.slots.has(key)) missing.push({ slide: sid, key, skeleton: want.join(' / ') })
-      else if (d.slots.get(key).map(plain).join(' ') !== want.map(plain).join(' ')) {
+      // line by line: a line split in two, or two joined, is a different slot (it lays out differently)
+      else if (JSON.stringify(slotLinesOf(d.slots.get(key))) !== JSON.stringify(slotLinesOf(want))) {
         different.push({ slide: sid, key, skeleton: want.join(' / '), deck: d.slots.get(key).join(' / ') })
       }
     }
@@ -1294,7 +1326,12 @@ export function sync(root, { write = false } = {}) {
   }
   return out
 }
-const slotLines = (key, vals) => (vals.length === 1 ? [`${key}: ${vals[0]}`] : [`${key}:`, ...vals.map(v => `  ${v.replace(/^[·•]\s*/, '- ')}`)])
+const slotLinesOf = vals => vals.flatMap(v => v.split(/\s+\/\s+/)).map(plain).filter(Boolean)
+// written to the deck: the skeleton's ` / ` line breaks become lines, `·` bullets become `- `
+const slotLines = (key, raw) => {
+  const vals = raw.flatMap(v => v.split(/\s+\/\s+/))
+  return vals.length === 1 ? [`${key}: ${vals[0]}`] : [`${key}:`, ...vals.map(v => `  ${v.replace(/^(\s*)[·•]\s*/, '$1- ')}`)]
+}
 
 // Read a pptx (zip) with the standard library: the text of every slide, `<a:t>` runs joined.
 export function pptxText(path) {
@@ -1335,8 +1372,9 @@ export function verifyBuild(root) {
     for (const key of s.order) {
       for (const v of s.slots.get(key)) {
         // a footnote mark is checked on its own: the text matches with the mark or without it
-        const want = flat(plain(v.replace(/\[[^\]]*\]\{[^}]*\bsup\b[^}]*\}/g, '')))
-        const marked = flat(plain(v))
+        // (a table row's cell bars are not text: `| a | b |` is checked as `ab`)
+        const want = flat(plain(v.replace(/\[[^\]]*\]\{[^}]*\bsup\b[^}]*\}/g, '')).replace(/\|/g, ''))
+        const marked = flat(plain(v).replace(/\|/g, ''))
         if (!want) continue
         checked++
         if (!built.includes(want) && !built.includes(marked)) absent.push({ slide: sid, key, text: v })
