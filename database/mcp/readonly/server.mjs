@@ -180,7 +180,7 @@ export function createServer({ state, profiles, lim, dialog = passwordDialog }) 
   return server;
 }
 
-async function main() {
+export async function main() {
   if (process.argv.includes('--help')) {
     process.stderr.write(USAGE + '\n');
     return;

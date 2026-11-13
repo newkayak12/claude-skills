@@ -7,7 +7,7 @@ MCP 서버 하나(`database-readonly`, 지금은 MySQL; 다른 DB는 `mcp/readon
 
 | 스킬 | 하는 일 |
 |---|---|
-| `database:login` | 처음 쓸 때 서버를 설치·등록하고, host/port/user/database를 물은 뒤 서버가 macOS 비밀번호 창을 띄웁니다. 비밀번호는 Keychain에 저장(1Password `op://`는 옵션). 접속을 시험합니다. |
+| `database:login` | host/port/user/database를 물은 뒤 서버가 macOS 비밀번호 창을 띄웁니다. 비밀번호는 Keychain에 저장(1Password `op://`는 옵션). 접속을 시험합니다. |
 | `database:logout` | 프로필에 저장된 비밀번호를 지웁니다. host/user/database는 남깁니다. |
 | `database:profile` | 프로필(local, dev, stage, prod)을 보여주거나 커넥션을 바꿉니다. prod는 이름을 말할 때만 바꾸며 확인 창은 없습니다. |
 | `database:query` | 스키마를 보고 읽기 전용 쿼리를 실행합니다. 답마다 프로필을 밝힙니다. |
@@ -26,6 +26,6 @@ dev로 로그인하고 최근 주문 10건 보여줘.
   기준으로 모든 결과에서 빼므로 별칭으로도 꺼낼 수 없습니다. 뺀 컬럼은 `hidden`에 나옵니다.
   `--pii off`(`DBRO_PII`)로 끄고, `--pii regex,regex`로 목록을 바꿉니다.
 
-설치(`database:login`이 합니다): `mcp/readonly/`에서 `npm ci`, 그리고
-`claude mcp add -s user database-readonly -- node <plugin dir>/mcp/readonly/server.mjs`. 업데이트로
-플러그인 경로가 바뀌면 다시 합니다. 자세한 내용: [`mcp/readonly/README.md`](mcp/readonly/README.md).
+설치: 필요 없습니다. 플러그인이 서버(`plugin:database:database-readonly`)를 띄우고, 버전마다 처음 뜰 때
+의존성을 설치하므로 업데이트를 그대로 따라갑니다. 0.6.0 이하에서 남은 사용자 범위 `database-readonly`는
+지웁니다(`claude mcp remove database-readonly -s user`). 자세한 내용: [`mcp/readonly/README.md`](mcp/readonly/README.md).

@@ -16,13 +16,12 @@ compatibility:
 
 ## Process
 
-1. **Server ready.** If the `database-readonly` tools are not available, or `claude mcp get database-readonly`
-   shows a command path other than `${CLAUDE_PLUGIN_ROOT}/mcp/readonly/server.mjs`:
-   - `${CLAUDE_PLUGIN_ROOT}/mcp/readonly/node_modules` missing → `cd ${CLAUDE_PLUGIN_ROOT}/mcp/readonly && npm ci`.
-   - `claude mcp remove database-readonly -s user` (ignore "not found"), then
-     `claude mcp add -s user database-readonly -- node ${CLAUDE_PLUGIN_ROOT}/mcp/readonly/server.mjs`.
-   - Ask the person to reconnect it in `/mcp`, then continue.
-   - Read-only tools run without a prompt: add `mcp__database-readonly__query`, `…__list_tables`,
+1. **Server ready.** The plugin starts the server itself (`mcp__plugin_database_database-readonly__*`;
+   it installs its dependencies on first start of a version), so an update needs no setup.
+   - A leftover user-scope registration from 0.6.0 or older: `claude mcp get database-readonly` finds
+     one → `claude mcp remove database-readonly -s user`.
+   - Tools missing → ask the person to run `/reload-plugins` or reconnect `plugin:database:database-readonly` in `/mcp`.
+   - Read-only tools run without a prompt: add `mcp__plugin_database_database-readonly__query`, `…__list_tables`,
      `…__describe_table` and `…__profile` to `permissions.allow` in `~/.claude/settings.json` if missing
      (`login`/`logout` keep asking).
 2. **Which profile.** The one named (local, dev, stage, prod); none named → ask.

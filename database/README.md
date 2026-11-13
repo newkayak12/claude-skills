@@ -7,7 +7,7 @@ under `mcp/readonly/vendors/`) and four skills that drive it.
 
 | Skill | Does |
 |---|---|
-| `database:login` | Sets up the server on first use, asks host/port/user/database, then the server opens a macOS password dialog; the password goes to Keychain (1Password `op://` optional). Tests the connection. |
+| `database:login` | Asks host/port/user/database, then the server opens a macOS password dialog; the password goes to Keychain (1Password `op://` optional). Tests the connection. |
 | `database:logout` | Forgets a profile's saved password; host/user/database stay. |
 | `database:profile` | Shows profiles (local, dev, stage, prod) or switches the connection; prod only when you name it, no dialog. |
 | `database:query` | Reads the schema and runs read-only queries; every answer names its profile. |
@@ -26,6 +26,6 @@ Log in to dev, then show me the last 10 orders.
   dropped from every result by their source column, so an alias does not bring one back; the result
   lists them under `hidden`. `--pii off` (`DBRO_PII`) turns it off; `--pii regex,regex` replaces the list.
 
-Setup (`database:login` does it): `npm ci` in `mcp/readonly/` and
-`claude mcp add -s user database-readonly -- node <plugin dir>/mcp/readonly/server.mjs`, redone when an
-update moves the plugin path. Details: [`mcp/readonly/README.md`](mcp/readonly/README.md).
+Setup: none. The plugin starts the server (`plugin:database:database-readonly`) and installs its
+dependencies on the first start of each version, so an update follows by itself. A user-scope
+`database-readonly` left from 0.6.0 or older should be removed (`claude mcp remove database-readonly -s user`). Details: [`mcp/readonly/README.md`](mcp/readonly/README.md).
