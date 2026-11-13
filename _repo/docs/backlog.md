@@ -500,6 +500,15 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
         6. Two parallel packages edited the same function of a test file (`test-defaults.mjs`, P2 and
         P3, both after an ask answer allowed the edit) and P4's base merge failed → `dispatch_failed`
         → `daemon_done`, task blocked for 2 h with nobody told (no push notification, band unchanged).
+     7. Seen 2026-11-13 on E-e9e7a45b (card 130 run 2): the disk filled (135 MiB free), QA-F1's
+        cases node hit ENOSPC and parked a waiting_human ask; the daemon then ended (`daemon_done`,
+        state blocked) with `daemon.restarts` 2 of 2 but `exhausted: false`. Answering the ask
+        (`tm_submit` key) resumed nothing; the QA-F1 child run file was gone (`child_state: missing`),
+        so the dispatch folded failed. `tm_retry({package_id: QA-F1})` opened `dispatch:QA-F1:2` but
+        no daemon or driver started (`serviceDaemon` returns early on a blocked task), and a bare
+        `tm_retry` would fall through to reshape because `exhausted` is false. Its QA findings
+        (D1 high: a tm_open `models` override is dropped on the broker adapter path; D2-D3 medium,
+        D4-D6 low) live only in the ask text. Cause of the vanished run file unverified.
    - Acceptance: each failure is classified (capacity, permission/environment, below-threshold, merge
      conflict, ended task) and recorded on the node, and each kind has its own path, with a test per path —
      1. a `waiting_capacity` dispatch resumes on its own once the limit's reset time passes (daemon tick),
@@ -514,6 +523,10 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
         server waits on it); a package retry supersedes and kills the previous dispatch's driver,
         never respawns it, and rebases the worktree on the deps' current heads;
      6. a blocked task notifies the person (push notification and band) the moment it stops;
+     7. answering an ask on a task whose daemon ended restarts the daemon and continues from that node;
+        a package retry on an ended task starts a daemon whatever `exhausted` says; a bare `tm_retry`
+        never reshapes a task whose graph still has pending nodes; an ENOSPC is classified environment
+        and its findings are written to the node, not only to the ask;
      then one real L task where a fix wave and a QA pass complete with no hand merge.
 
 130. **teams spends less per task: model per stage, lean driver sessions, a default budget** — E-89982ed5 (2026-11-11, L, $15.74) stopped partial in planning, no code: PRDs F1 (model per stage), F2 (lean sessions), F3 (budget) accepted and pinned on `rescue/card130-prd-f{1,2,3}`; plan-integrate failed 3× on F2 (see card 129). Light PLAN chain confirmed (A4.3). Next run starts from those PRDs with F2's two gaps decided; real-L cost comparison left to the card 129 Sprint
