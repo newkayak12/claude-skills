@@ -560,9 +560,9 @@ def main():
     r = Renderer()
     if not r.available:
         print("SKIPPED — no renderer.")
-        print("  install LibreOffice (soffice on PATH), or set DECK_RENDER_DOCKER=<image>")
+        print("  " + deck.NO_RENDERER)
         return 0
-    print("renderer: %s" % ("soffice on PATH" if r.local else "docker " + r.image))
+    print("renderer: %s" % r.describe())
     work = r.workdir()
     try:
         run(work, r)

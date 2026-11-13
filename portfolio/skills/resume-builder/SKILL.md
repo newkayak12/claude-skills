@@ -15,7 +15,7 @@ compatibility:
   required:
     - python 3.9+ (stdlib only)
   recommended:
-    - LibreOffice (soffice on PATH) or DECK_RENDER_DOCKER=<image> — `render` needs it; catalog and build do not
+    - LibreOffice (soffice on PATH), or DECK_RENDER_DOCKER=<image> — `render` needs it; catalog and build do not. With neither, ask the person once, then run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/office_render.py install-renderer --yes`
     - pdftotext (poppler) — `over_lines` needs it
   remote_mcp_note: >-
     LibreOffice가 없으면 `build`까지는 동작하고 `render`만 멈춥니다. 페이지 수와 넘친 줄 수는 렌더한

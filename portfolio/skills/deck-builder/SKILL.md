@@ -149,7 +149,7 @@ python3 /abs/path/scripts/deck.py render --deck deck.mdx
 ```
 
 What `render` does: `references/render-and-check.md` — read before running it. `--deck` may be
-relative. After every render, not only on a warning, run `render-review` on the PDF and previews.
+relative. After every render, not only on a warning, run `render-review` on the PDF and previews. With no renderer, ask the person once, then run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/office_render.py install-renderer --yes` (a pinned LibreOffice into `~/.cache`, no root).
 
 ## Output Template
 

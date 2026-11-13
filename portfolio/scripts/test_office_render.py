@@ -5,6 +5,7 @@
                                          DECK_RENDER_DOCKER=<image> also proves the staging from /tmp)
 """
 import os
+import shutil
 import sys
 import tempfile
 import zipfile
@@ -181,7 +182,8 @@ def final_check_tests(t):
     pdf(f["resume.pdf"], text="TODO fix this. Generated with Claude")
     r = o.Renderer()
     got = of(run(), "resume.pdf")
-    if r.available or __import__("shutil").which("pdftotext"):
+    # pdftotext is the host's (poppler) or the container image's; a cached LibreOffice brings none
+    if (r.available and not r.local) or shutil.which("pdftotext"):
         check(any("TODO" in x for x in got) and any("Generated with" in x for x in got), "PDF text is scanned for annotations — %s" % got)
     else:
         check(any("not checked" in x for x in got), "with no pdftotext the PDF text is said to be unchecked — %s" % got)
@@ -236,6 +238,159 @@ def final_check_tests(t):
     empty.mkdir()
     p = subprocess.run([sys.executable, str(Path(o.__file__)), "final-check", "--dir", str(empty)], capture_output=True, text=True)
     check(p.returncode == 1, "no deliverable in the dir is not a pass")
+
+
+class env:
+    """Set (or, with None, remove) environment variables for a block."""
+
+    def __init__(self, **kv):
+        self.kv, self.old = kv, {}
+
+    def __enter__(self):
+        for k, v in self.kv.items():
+            self.old[k] = os.environ.get(k)
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def __exit__(self, *a):
+        for k, v in self.old.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def stub(path, body="#!/bin/sh\necho stub\n"):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body)
+    path.chmod(0o755)
+
+
+def fake_tarball(path):
+    """A LibreOffice_x.tar.gz holding one deb whose data.tar.xz has opt/libreoffice9/program/soffice."""
+    import io
+    import lzma
+    import tarfile
+    data = io.BytesIO()
+    with tarfile.open(fileobj=data, mode="w") as tf:
+        body = b"#!/bin/sh\necho fake soffice\n"
+        for name in ("./opt/", "./opt/libreoffice9/", "./opt/libreoffice9/program/"):
+            ti = tarfile.TarInfo(name)
+            ti.type = tarfile.DIRTYPE
+            ti.mode = 0o755
+            tf.addfile(ti)
+        ti = tarfile.TarInfo("./opt/libreoffice9/program/soffice")
+        ti.size, ti.mode = len(body), 0o755
+        tf.addfile(ti, io.BytesIO(body))
+        ti = tarfile.TarInfo("./usr/share/skipped.txt")
+        ti.size = 1
+        tf.addfile(ti, io.BytesIO(b"x"))
+    members = [("debian-binary", b"2.0\n"), ("control.tar.gz", b"\x1f\x8b"), ("data.tar.xz", lzma.compress(data.getvalue()))]
+    ar = b"!<arch>\n"
+    for n, b in members:
+        ar += ("%-16s%-12d%-6d%-6d%-8s%-10d`\n" % (n + "/", 0, 0, 0, "100644", len(b))).encode() + b + (b"\n" if len(b) % 2 else b"")
+    deb = Path(str(path) + ".deb")
+    deb.write_bytes(ar)
+    with tarfile.open(str(path), "w:gz") as tf:
+        tf.add(str(deb), arcname="LibreOffice_9/DEBS/libreoffice9_9.0_amd64.deb")
+    deb.unlink()
+
+
+def sha(path):
+    import hashlib
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def install_tests(t):
+    print("install-renderer and the renderer's resolution order")
+    t = t / "inst"
+    t.mkdir()
+    tgz = t / "fake.tar.gz"
+    fake_tarball(tgz)
+    url = tgz.as_uri()
+    cache = t / "cache"
+    msgs = []
+    with env(XDG_CACHE_HOME=str(cache)):
+        d = o.cache_dir()
+        check(d == cache / "claude-portfolio" / "libreoffice" / o.LO_VERSION, "the cache is under XDG_CACHE_HOME — %s" % d)
+        check(len(o.LO_SHA256) == 64 and o.LO_URL.startswith("https://") and o.LO_VERSION in o.LO_URL, "the pinned URL, version and SHA-256 are set")
+
+        rc, msg = o.install_renderer(url=url, sha256=sha(tgz), size=5 << 20, log=msgs.append)
+        check(rc == 1 and "--yes" in msg and "5 MB" in msg and url in msg and str(d) in msg, "without --yes it says size, source and target, and exits 1")
+        check(not d.exists(), "without --yes nothing is created")
+        check(not msgs, "without --yes nothing is downloaded")
+
+        rc, msg = o.install_renderer(yes=True, url=url, sha256="0" * 64, log=msgs.append)
+        check(rc == 1 and "sha256 mismatch" in msg and "nothing was installed" in msg, "a wrong SHA-256 is refused — %s" % msg[:50])
+        check(not (d / ".installed").exists() and not (d / "download.tar.gz").exists() and not (d / "root").exists(),
+              "a refused download leaves no marker, no file, no unpack")
+        check(o.cached_soffice() is None, "so there is no cached renderer")
+
+        import contextlib
+        import io
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf), contextlib.redirect_stdout(buf):
+            rc_cli = o.cmd_install_renderer([])
+        check(rc_cli == 1 and "--yes" in buf.getvalue(), "the command line refuses without --yes too")
+
+        saved = sys.platform
+        try:
+            sys.platform = "darwin"
+            rc, msg = o.install_renderer(yes=True, url=url, sha256=sha(tgz))
+        finally:
+            sys.platform = saved
+        check(rc == 1 and "macOS" in msg and "libreoffice.org" in msg and "DECK_RENDER_DOCKER" in msg and not (d / "download.tar.gz").exists(),
+              "macOS: a message pointing at libreoffice.org, nothing downloaded")
+
+        bins = t / "bin"
+        bins.mkdir()
+        (bins / "bash").symlink_to(shutil.which("bash"))   # the only thing on the stubbed PATH
+        with env(PATH=str(bins), DECK_RENDER_DOCKER=None):
+            r = o.Renderer()
+            check(not r.available and r.local is None, "no soffice, no cache, no docker: no renderer")
+            check("install-renderer" in o.NO_RENDERER and "DECK_RENDER_DOCKER" in o.NO_RENDERER,
+                  "the no-renderer hint names install-renderer and DECK_RENDER_DOCKER")
+            pdf = t / "x.pdf"
+            pdf.write_bytes(b"%PDF-1.4\n")
+            res = o.main(["margins", str(pdf)])
+            check("install-renderer" in res.get("error", ""), "margins without a renderer names install-renderer — %s" % res.get("error", "")[:60])
+
+        with env(PATH=str(bins), DECK_RENDER_DOCKER=None):
+            rc, msg = o.install_renderer(yes=True, url=url, sha256=sha(tgz), log=msgs.append)
+            check(rc == 0 and "installed" in msg, "a matching SHA-256 installs (fake deb, unpacked without root) — %s" % msg[-50:])
+            so = o.cached_soffice()
+            check(so is not None and so.name == "soffice" and so.parent.name == "program" and os.access(so, os.X_OK), "the cached soffice is found and executable")
+            check(not (d / "root" / "usr").exists() and not (d / "download.tar.gz").exists() and not (d / "debs").exists(),
+                  "only /opt is unpacked and the download and debs are removed")
+            rc, msg = o.install_renderer(url=url, sha256="0" * 64)
+            check(rc == 0 and "already installed" in msg, "a second run (even without --yes) finds it installed")
+
+            r = o.Renderer()
+            check(r.available and r.local == str(so) and r.cached == so, "no soffice on PATH: the cached install is used")
+            check("install-renderer" in r.describe() and str(so) in r.describe(), "describe says it is the cached install — %s" % r.describe()[-45:])
+            e = r._fc_env()
+            check(e["PATH"].split(os.pathsep)[0] == str(so.parent) and e["LO_PROGRAM"] == str(so.parent), "the cached program dir is first on PATH for the render script")
+            check("deck-fonts-" in e["FONTCONFIG_FILE"] and str(o.BUNDLED_FONT_DIR) in Path(e["FONTCONFIG_FILE"]).read_text(),
+                  "the bundled Nanum fonts reach the cached soffice through a fontconfig file")
+            out = r.sh(t, "soffice").stdout.strip()
+            check(out == "fake soffice", "a script run by the renderer finds `soffice` on that PATH — %r" % out)
+
+            stub(bins / "soffice")
+            stub(bins / "docker")
+            with env(DECK_RENDER_DOCKER="some-image"):
+                r = o.Renderer()
+                check(r.local == str(bins / "soffice") and r.cached is None and r.describe() == str(bins / "soffice"),
+                      "soffice on PATH wins over the cache and over docker")
+            (bins / "soffice").unlink()
+            with env(DECK_RENDER_DOCKER="some-image"):
+                r = o.Renderer()
+                check(r.cached == so, "the cache wins over docker")
+                shutil.rmtree(str(d))
+                r = o.Renderer()
+                check(r.local is None and r.available and r.describe() == "docker some-image", "with neither, DECK_RENDER_DOCKER is used")
+            shutil.rmtree(str(d), ignore_errors=True)
 
 
 def main():
@@ -348,6 +503,8 @@ def main():
         check(area == {"top": 60.0, "bottom": 4.0, "left": 5.0, "right": 15.0},"the four sides are read from style/레이아웃.md — %s" % area)
         hits = o.margin_crossers(box, area)
         check([(h[0], h[1]) for h in hits] == [(1, "top"), (2, "right")], "each side uses its own margin — %s" % hits)
+
+        install_tests(t)
 
         print("render")
         r = o.Renderer()

@@ -530,7 +530,7 @@ def render(docx, pages=None):
     guard([docx, docx.with_suffix(".pdf")])
     r = office_render.Renderer()
     if not r.available:
-        fail("no renderer: install LibreOffice (soffice) or set DECK_RENDER_DOCKER=<image>")
+        fail("no renderer: " + office_render.NO_RENDERER)
     log = r.to_pdf(docx.parent.resolve(), docx.name)
     pdf = docx.with_suffix(".pdf")
     if not pdf.is_file():

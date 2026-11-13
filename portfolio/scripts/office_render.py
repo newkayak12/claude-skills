@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Shared by deck-builder (pptx) and resume-builder (docx): the renderer and the final checks.
 
-  Renderer      LibreOffice on PATH, or in a container (DECK_RENDER_DOCKER=<image>)
+  Renderer      LibreOffice on PATH, else the copy install-renderer cached, else a container
+                (DECK_RENDER_DOCKER=<image>)
   bbox_pages    pdftotext -bbox-layout output -> pages of text lines with their boxes
   margin_crossers   lines whose box leaves a page margin (the safe area)
   ai_traces     the last check of a built pptx/docx: AI disclaimers left in alt text, AI tools named
                 in the document properties, AI phrases in the visible text
 
 Command line (one JSON object each):
+  office_render.py install-renderer [--yes]   unpack a pinned LibreOffice into ~/.cache, no root
+                                              (without --yes: says what it would do, exits 1)
   office_render.py ai-traces <file.pptx|file.docx> [--report-only]
   office_render.py margins <file.pdf> [--margin 28]
 
@@ -145,6 +148,168 @@ sys.exit(main(sys.argv[1]))
 '''
 
 
+# ── A renderer for a machine with none: LibreOffice's own debs, unpacked without root ────────
+
+LO_VERSION = "26.8.3"
+LO_URL = ("https://download.documentfoundation.org/libreoffice/stable/%s/deb/x86_64/"
+          "LibreOffice_%s_Linux_x86-64_deb.tar.gz" % (LO_VERSION, LO_VERSION))
+LO_SHA256 = "e7cd3538e85818ff9dd9bb65386769fde927011242aace5a144989f4000dcabf"
+LO_SIZE = 221377373
+SELF = Path(__file__).resolve()
+NO_RENDERER = ("install LibreOffice (soffice on PATH), run `python3 %s install-renderer` "
+               "(the person is asked first), or set DECK_RENDER_DOCKER=<image>" % SELF)
+_SKIP_DEBS = ("desktop-integration", "-menus", "debian-menus")
+
+
+def cache_dir(version=None):
+    base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    return Path(base) / "claude-portfolio" / "libreoffice" / (version or LO_VERSION)
+
+
+def cached_soffice(version=None):
+    """The soffice of a finished install-renderer, or None (a half-done unpack has no marker)."""
+    d = cache_dir(version)
+    if not (d / ".installed").is_file():
+        return None
+    hits = sorted((d / "root" / "opt").glob("libreoffice*/program/soffice"))
+    return hits[0] if hits and os.access(hits[0], os.X_OK) else None
+
+
+class _Slice:
+    """Read-only window on an open file: one ar member, handed to tarfile as a stream."""
+
+    def __init__(self, f, size):
+        self.f, self.left = f, size
+
+    def read(self, n=-1):
+        n = self.left if n is None or n < 0 else min(n, self.left)
+        b = self.f.read(n)
+        self.left -= len(b)
+        return b
+
+
+def _unpack_deb(deb, root):
+    """Extract the /opt files of a .deb (ar of control.tar + data.tar.xz|gz) under `root`."""
+    import tarfile
+    with open(str(deb), "rb") as f:
+        if f.read(8) != b"!<arch>\n":
+            raise ValueError("%s is not a deb" % Path(deb).name)
+        while True:
+            h = f.read(60)
+            if len(h) < 60:
+                raise ValueError("%s has no data.tar" % Path(deb).name)
+            name, size = h[:16].decode().strip().rstrip("/"), int(h[48:58])
+            if not name.startswith("data.tar"):
+                f.seek(size + size % 2, 1)
+                continue
+            if name.endswith(".zst"):
+                raise ValueError("%s: zstd debs need dpkg-deb" % Path(deb).name)
+            with tarfile.open(fileobj=_Slice(f, size), mode="r|" + ("xz" if name.endswith(".xz") else "gz")) as t:
+                for m in t:
+                    parts = Path(m.name).parts
+                    if parts and parts[0] == ".":
+                        parts = parts[1:]
+                    if not parts or parts[0] != "opt" or ".." in parts:
+                        continue
+                    m.name = "/".join(parts)
+                    m.mode |= 0o200
+                    try:
+                        t.extract(m, str(root), filter="fully_trusted")
+                    except TypeError:
+                        t.extract(m, str(root))
+            return
+
+
+def _download(url, dest, sha256, log):
+    import hashlib
+    import urllib.request
+    h, got = hashlib.sha256(), 0
+    last = 0
+    with urllib.request.urlopen(url, timeout=60) as r, open(str(dest), "wb") as out:
+        while True:
+            b = r.read(1 << 20)
+            if not b:
+                break
+            out.write(b)
+            h.update(b)
+            got += len(b)
+            if got - last >= 20 << 20:
+                last = got
+                log("  %d MB" % (got >> 20))
+    if h.hexdigest() != sha256:
+        Path(dest).unlink()
+        raise ValueError("sha256 mismatch: got %s, expected %s — nothing was installed" % (h.hexdigest(), sha256))
+
+
+def install_renderer(yes=False, url=None, sha256=None, version=None, size=None, log=print):
+    """Download the pinned LibreOffice debs into the per-user cache, check the SHA-256, unpack them
+    without root. Returns (exit code, message). Without `yes` nothing is downloaded."""
+    url, sha256, version = url or LO_URL, sha256 or LO_SHA256, version or LO_VERSION
+    size = LO_SIZE if size is None else size
+    if sys.platform == "darwin":
+        return 1, ("macOS: install LibreOffice from libreoffice.org (the dmg), or set "
+                   "DECK_RENDER_DOCKER=<image>; install-renderer unpacks Linux x86_64 builds only")
+    if not (sys.platform.startswith("linux") and os.uname().machine in ("x86_64", "amd64")):
+        return 1, "install-renderer supports Linux x86_64 only: install LibreOffice or set DECK_RENDER_DOCKER=<image>"
+    dest = cache_dir(version)
+    have = cached_soffice(version)
+    if have:
+        return 0, "already installed: %s" % have
+    if not yes:
+        return 1, ("install-renderer will download LibreOffice %s (%d MB) from\n  %s\n"
+                   "check its SHA-256 and unpack it, no root needed, into\n  %s (about 1 GB on disk).\n"
+                   "Nothing was downloaded. Run again with --yes to do it."
+                   % (version, size >> 20, url, dest))
+    dest.mkdir(parents=True, exist_ok=True)
+    tgz = dest / "download.tar.gz"
+    log("downloading %s" % url)
+    try:
+        _download(url, tgz, sha256, log)
+    except (ValueError, OSError) as e:
+        tgz.unlink(missing_ok=True)
+        return 1, "download failed: %s" % e
+    import tarfile
+    work = dest / "debs"
+    root = dest / "root"
+    shutil.rmtree(str(work), ignore_errors=True)
+    shutil.rmtree(str(root), ignore_errors=True)
+    root.mkdir()
+    try:
+        with tarfile.open(str(tgz)) as t:
+            members = [m for m in t.getmembers() if m.isfile() and m.name.endswith(".deb")
+                       and not any(s in m.name for s in _SKIP_DEBS)]
+            for m in members:
+                m.name = Path(m.name).name
+                try:
+                    t.extract(m, str(work), filter="data")
+                except TypeError:
+                    t.extract(m, str(work))
+        debs = sorted(work.glob("*.deb"))
+        for i, d in enumerate(debs, 1):
+            log("unpacking %d/%d %s" % (i, len(debs), d.name))
+            _unpack_deb(d, root)
+    except (ValueError, OSError, tarfile.TarError) as e:
+        return 1, "unpack failed: %s" % e
+    finally:
+        shutil.rmtree(str(work), ignore_errors=True)
+        tgz.unlink(missing_ok=True)
+    (dest / ".installed").write_text(sha256 + "\n")
+    got = cached_soffice(version)
+    if not got:
+        return 1, "unpacked, but no executable soffice under %s" % (root / "opt")
+    return 0, "installed: %s" % got
+
+
+def cmd_install_renderer(argv):
+    import argparse
+    ap = argparse.ArgumentParser(prog="office_render.py install-renderer")
+    ap.add_argument("--yes", action="store_true", help="the person agreed: download and unpack")
+    a = ap.parse_args(argv)
+    rc, msg = install_renderer(yes=a.yes)
+    print(msg, file=sys.stderr if rc else sys.stdout)
+    return rc
+
+
 def _under_home(p):
     try:
         Path(p).resolve().relative_to(Path.home().resolve())
@@ -159,9 +324,9 @@ def _snapshot(root):
 
 
 class Renderer:
-    """LibreOffice, on PATH or in a container.
+    """LibreOffice: on PATH, else the copy `install-renderer` unpacked, else in a container.
 
-    DECK_RENDER_DOCKER=<image> uses that image instead. A container's daemon (a snap one, for
+    DECK_RENDER_DOCKER=<image> is the last resort. A container's daemon (a snap one, for
     instance) may bind-mount only paths under $HOME, so a work dir elsewhere is staged into a
     fresh dir under ~/.cache/portfolio-render/, rendered there, the changed files copied back and
     the stage deleted. Files the container writes end up owned by the host user.
@@ -169,10 +334,17 @@ class Renderer:
 
     def __init__(self):
         self.image = os.environ.get("DECK_RENDER_DOCKER")
+        # soffice on PATH, then the install-renderer cache, then the container
+        self.cached = None
         self.local = shutil.which("soffice") or shutil.which("libreoffice")
+        if not self.local:
+            self.cached = cached_soffice()
+            self.local = str(self.cached) if self.cached else None
         self.available = bool(self.local or (self.image and shutil.which("docker")))
 
     def describe(self):
+        if self.cached:
+            return "%s (LibreOffice %s from install-renderer)" % (self.local, LO_VERSION)
         return self.local if self.local else "docker %s" % self.image
 
     def sh(self, workdir, script):
@@ -226,6 +398,10 @@ class Renderer:
 
     def _fc_env(self):
         env = dict(os.environ)
+        if self.cached:   # the cached soffice is not on PATH; its own python is told where it is
+            prog = str(self.cached.parent)
+            env["PATH"] = prog + os.pathsep + env.get("PATH", "")
+            env["LO_PROGRAM"] = prog
         if BUNDLED_FONT_DIR.is_dir():
             if not getattr(self, "_fc_conf", None):
                 fd, self._fc_conf = tempfile.mkstemp(suffix=".conf", prefix="deck-fonts-")
@@ -260,7 +436,7 @@ class Renderer:
         plain = ("soffice --headless -env:UserInstallation=file:///tmp/loprof "
                  "--convert-to pdf %s 2>&1 | tail -2" % tmp.name)
         if is_pptx:
-            body = ("PY=; for p in python3 /usr/lib/libreoffice/program/python "
+            body = ("PY=; for p in ${LO_PROGRAM:+$LO_PROGRAM/python} python3 /usr/lib/libreoffice/program/python "
                     "/opt/libreoffice*/program/python "
                     "/Applications/LibreOffice.app/Contents/Resources/python; do "
                     "if command -v \"$p\" >/dev/null 2>&1 && \"$p\" -c 'import uno' "
@@ -685,7 +861,7 @@ def _pdf_findings(path, allow):
         if rd.available:
             text = rd.text(path.parent.resolve(), path.name)
     if text is None:
-        findings.append("PDF text not checked: no pdftotext (install poppler or set DECK_RENDER_DOCKER)")
+        findings.append("PDF text not checked: no pdftotext (install poppler, or %s)" % NO_RENDERER)
     else:
         flat = re.sub(r"\s+", " ", text)
         s = _strip(flat, allow)
@@ -763,7 +939,7 @@ def main(argv):
         margin = float(argv[argv.index("--margin") + 1]) if "--margin" in argv else (area or 28.0)
         r = Renderer()
         if not r.available:
-            return {"error": "no renderer (pdftotext runs through it): install LibreOffice or set DECK_RENDER_DOCKER"}
+            return {"error": "no renderer (pdftotext runs through it): " + NO_RENDERER}
         box = r.bbox(pdf.parent, pdf.name)
         if box is None:
             return {"error": "no pdftotext"}
@@ -776,4 +952,6 @@ def main(argv):
 if __name__ == "__main__":
     if sys.argv[1:2] == ["final-check"]:
         sys.exit(cmd_final_check(sys.argv[2:]))
+    if sys.argv[1:2] == ["install-renderer"]:
+        sys.exit(cmd_install_renderer(sys.argv[2:]))
     print(json.dumps(main(sys.argv[1:]), ensure_ascii=False))

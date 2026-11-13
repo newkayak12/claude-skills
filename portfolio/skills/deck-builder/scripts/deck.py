@@ -39,7 +39,7 @@ from pathlib import Path
 
 # the renderer is shared with resume-builder: portfolio/scripts/office_render.py
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
-from office_render import Renderer, bbox_pages, ai_traces, final_check, final_lines, safe_area  # noqa: E402
+from office_render import Renderer, NO_RENDERER, bbox_pages, ai_traces, final_check, final_lines, safe_area  # noqa: E402
 
 # ── Namespaces ───────────────────────────────────────────────────────────────
 
@@ -3158,8 +3158,7 @@ def _swap_picture(el, raw_value, imgctx, problems, where, slot):
         r = imgctx["renderer"]
         if not r.available:
             problems.append("%s: slot '%s' points at an SVG (%s) but there is no renderer to "
-                            "turn it into a picture — install LibreOffice (soffice on PATH) "
-                            "or set DECK_RENDER_DOCKER=<image>" % (where, slot.id, src.name))
+                            "turn it into a picture — %s" % (where, slot.id, src.name, NO_RENDERER))
             return
         src, fresh = rasterize_svg(src, slot_frame_cx(el), imgctx["cache"], r)
         if fresh:
@@ -3847,8 +3846,7 @@ def cmd_check(args):
                 else:
                     if ext == ".svg" and not Renderer().available:
                         errs.append("line %d: %s.%s — %s is an SVG and needs a renderer to "
-                                    "become a picture; install LibreOffice or set "
-                                    "DECK_RENDER_DOCKER" % (line, tag, slot_id, p.name))
+                                    "become a picture; %s" % (line, tag, slot_id, p.name, NO_RENDERER))
                     elif ext not in UNIVERSAL_EXT and ext != ".svg":
                         warns.append("line %d: %s.%s — %s embeds, but older PowerPoint shows "
                                      "nothing for it. PNG or JPEG is the safe choice."
@@ -4143,7 +4141,7 @@ def cmd_render(args):
         raise SystemExit(
             "error: no renderer.\n"
             "  a deck is read by people, so this step looks at the page rather than the file.\n"
-            "  install LibreOffice (soffice on PATH), or set DECK_RENDER_DOCKER=<image>.")
+            "  %s." % NO_RENDERER)
     rc = cmd_build(args)
     md_path = require_deck(args.deck)   # the real absolute path, as cmd_build resolved it
     front, _, _ = parse_deck(md_path.read_text(encoding="utf-8"))
