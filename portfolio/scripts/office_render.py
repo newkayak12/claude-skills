@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Shared by deck-builder (pptx) and resume-builder (docx): the renderer and the final checks.
 
-  Renderer      LibreOffice on PATH, else the copy install-renderer cached, else a container
-                (DECK_RENDER_DOCKER=<image>)
+  Renderer      LibreOffice on PATH, else a container (DECK_RENDER_DOCKER=<image>), else the copy
+                install-renderer cached
   bbox_pages    pdftotext -bbox-layout output -> pages of text lines with their boxes
   margin_crossers   lines whose box leaves a page margin (the safe area)
   ai_traces     the last check of a built pptx/docx: AI disclaimers left in alt text, AI tools named
@@ -450,9 +450,10 @@ def _snapshot(root):
 
 
 class Renderer:
-    """LibreOffice: on PATH, else the copy `install-renderer` unpacked, else in a container.
+    """LibreOffice: on PATH, else in the container DECK_RENDER_DOCKER=<image> names, else the copy
+    `install-renderer` unpacked.
 
-    DECK_RENDER_DOCKER=<image> is the last resort. A container's daemon (a snap one, for
+    A container's daemon (a snap one, for
     instance) may bind-mount only paths under $HOME, so a work dir elsewhere is staged into a
     fresh dir under ~/.cache/portfolio-render/, rendered there, the changed files copied back and
     the stage deleted. Files the container writes end up owned by the host user.
@@ -460,10 +461,11 @@ class Renderer:
 
     def __init__(self):
         self.image = os.environ.get("DECK_RENDER_DOCKER")
-        # soffice on PATH, then the install-renderer cache, then the container
+        # soffice on PATH, then a container the person named (DECK_RENDER_DOCKER is a choice, so it
+        # wins over the cache), then the install-renderer cache
         self.cached = None
         self.local = shutil.which("soffice") or shutil.which("libreoffice")
-        if not self.local:
+        if not self.local and not (self.image and shutil.which("docker")):
             self.cached = cached_soffice()
             self.local = str(self.cached) if self.cached else None
         self.available = bool(self.local or (self.image and shutil.which("docker")))

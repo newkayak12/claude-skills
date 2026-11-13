@@ -386,7 +386,8 @@ def install_tests(t):
             (bins / "soffice").unlink()
             with env(DECK_RENDER_DOCKER="some-image"):
                 r = o.Renderer()
-                check(r.cached == so, "the cache wins over docker")
+                check(r.cached is None and r.local is None and r.image == "some-image" and r.describe() == "docker some-image",
+                      "a container the person named (DECK_RENDER_DOCKER) wins over the cache")
                 shutil.rmtree(str(d))
                 r = o.Renderer()
                 check(r.local is None and r.available and r.describe() == "docker some-image", "with neither, DECK_RENDER_DOCKER is used")

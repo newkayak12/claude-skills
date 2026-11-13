@@ -96,7 +96,8 @@ included, and prints `spacing: … off on N paragraphs and M table cells`. It ne
 imports `uno` next to the renderer (the docker image has one; on a desktop, LibreOffice's own
 `program/python`); without one it converts as before and prints `! spacing: … left on`.
 
-Renderer is `soffice` on PATH, else the LibreOffice `office_render.py install-renderer --yes` unpacked
-under `~/.cache/claude-portfolio/libreoffice/`, else `DECK_RENDER_DOCKER=<image>`. With none, `render`
+Renderer is `soffice` on PATH, else `DECK_RENDER_DOCKER=<image>` when the person set it, else the
+LibreOffice `office_render.py install-renderer --yes` unpacked under `~/.cache/claude-portfolio/libreoffice/`
+(with PyMuPDF for previews, PDF text and line boxes when poppler is missing). With none, `render`
 refuses rather than pretending the layout was checked — say so and fall back to `build`.
 
