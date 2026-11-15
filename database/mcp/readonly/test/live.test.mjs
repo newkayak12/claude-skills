@@ -9,6 +9,8 @@ import { resolveConfig, redactor } from '../config.mjs';
 import createMysql from '../vendors/mysql.mjs';
 
 const live = !!process.env.MYSQL_HOST;
+// The MCP server under test: the sources, or the shipped bundle with DBRO_SERVER=dist/database-readonly.mjs.
+const SERVER = fileURLToPath(new URL(`../${process.env.DBRO_SERVER || 'server.mjs'}`, import.meta.url));
 const opts = { skip: !live && 'MYSQL_HOST not set' };
 let cfg, redact, db, client, table, column;
 
@@ -21,7 +23,7 @@ before(async () => {
   await client.connect(
     new StdioClientTransport({
       command: process.execPath,
-      args: [fileURLToPath(new URL('../server.mjs', import.meta.url))],
+      args: [SERVER],
       env: { ...process.env },
       stderr: 'ignore',
     }),
@@ -157,7 +159,7 @@ test('profile mode: saved dev login, switch local -> dev, query tagged with prof
   for (const k of ['MYSQL_HOST', 'MYSQL_USER', 'MYSQL_DB', 'MYSQL_PASS', 'MYSQL_PORT']) delete env[k];
   const pc = new Client({ name: 'live-profile', version: '0' });
   await pc.connect(new StdioClientTransport({
-    command: process.execPath, args: [fileURLToPath(new URL('../server.mjs', import.meta.url))], env, stderr: 'ignore',
+    command: process.execPath, args: [SERVER], env, stderr: 'ignore',
   }));
   try {
     const sw = await pc.callTool({ name: 'profile', arguments: { name: 'dev' } });
@@ -174,6 +176,17 @@ test('profile mode: saved dev login, switch local -> dev, query tagged with prof
   } finally {
     await pc.close();
   }
+});
+
+test('personal data hidden by source column on a real result (seeded orders table)', { skip: (!live || !process.env.DBRO_SEEDED) && 'needs the seeded docker DB (npm run test:docker)' }, async (t) => {
+  const r = await call('query', { sql: 'SELECT id, order_nm AS who, recv_hp, shop_cd, COUNT(*) OVER () AS n FROM orders ORDER BY id' });
+  assert.equal(r.isError, false, r.text);
+  assert.deepEqual(r.data.columns, ['id', 'shop_cd', 'n']);
+  assert.deepEqual(r.data.hidden, ['who', 'recv_hp']);
+  assert.deepEqual(r.data.rows, [{ id: 1, shop_cd: 'A', n: 2 }, { id: 2, shop_cd: 'B', n: 2 }]);
+  const all = await call('query', { sql: 'SELECT * FROM orders' });
+  assert.deepEqual(all.data.hidden, ['order_nm', 'recv_hp']);
+  t.diagnostic(`alias + window: columns=${r.data.columns} hidden=${r.data.hidden}; SELECT * hidden=${all.data.hidden}`);
 });
 
 test('SHOW GRANTS summary (privileges only, no user/host)', opts, async (t) => {

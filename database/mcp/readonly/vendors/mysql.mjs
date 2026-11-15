@@ -117,15 +117,52 @@ function reject(rule, message) {
   return { ok: false, rule, message };
 }
 
+// The select-list expressions of a statement with exactly one SELECT, no `*` and no @variables, or
+// null. Only then does a computed column's own expression tell everything it reads: a subquery, CTE
+// or derived table could hand a personal column over under a harmless alias.
+export function selectList(sql) {
+  // '…' and "…" contents blanked (length kept) so their commas and parentheses do not count.
+  const s = String(sql).replace(/'(?:[^'\\]|\\.|'')*'|"(?:[^"\\]|\\.|"")*"/g, (m) => `'${' '.repeat(m.length - 2)}'`);
+  const upper = s.toUpperCase();
+  if ((upper.match(/\bSELECT\b/g) || []).length !== 1 || s.includes('@')) return null;
+  const start = upper.match(/^\s*SELECT\b/);
+  if (!start) return null;
+  const exprs = [];
+  let depth = 0;
+  let from = start[0].length;
+  let i = from;
+  const END = /^(FROM|WHERE|GROUP|HAVING|ORDER|LIMIT|UNION|WINDOW|INTO|FOR|LOCK)\b/;
+  for (; i < s.length; i++) {
+    const c = s[i];
+    if (c === '(') depth++;
+    else if (c === ')') depth--;
+    else if (depth === 0 && c === ',') {
+      exprs.push(s.slice(from, i));
+      from = i + 1;
+    } else if (depth === 0 && !/[\w$`]/.test(s[i - 1]) && END.test(upper.slice(i))) break;
+  }
+  exprs.push(s.slice(from, i));
+  // `*` or t.* expands to columns the list does not name.
+  if (exprs.some((e) => /(^|\.)\*$/.test(e.replace(/\s+/g, '')))) return null;
+  return exprs.map((e) => e.trim());
+}
+
 // Result columns that carry personal data: a table column whose source name matches, or a computed
-// column (no source name) whose own name, or the statement, mentions one — so neither an alias nor
-// CONCAT(recv_nm) AS x gets one out.
+// column (no source name) whose expression or own name mentions one — so neither an alias nor
+// CONCAT(recv_nm) AS x gets one out. When the expressions cannot be told apart (subquery, CTE, `*`,
+// @variables), any personal column named in the statement hides every computed column.
 export function piiColumns(fields, sql, isPii = piiMatcher()) {
   if (!isPii) return [];
   const words = (s) => String(s).split(/[^A-Za-z0-9_$]+/).filter(Boolean);
+  const list = selectList(sql);
+  const exprs = list && list.length === fields.length ? list : null;
   const sqlHasPii = words(sql).some(isPii);
   return fields
-    .filter((f) => (f.orgName ? isPii(f.orgName) : sqlHasPii || words(f.name).some(isPii)))
+    .filter((f, i) => {
+      if (f.orgName) return isPii(f.orgName);
+      if (words(f.name).some(isPii)) return true;
+      return exprs ? words(exprs[i]).some(isPii) : sqlHasPii;
+    })
     .map((f) => f.name);
 }
 

@@ -19,7 +19,8 @@ compatibility:
 1. **No name** → `profile` tool with no name: active profile, connected or not, and each profile's
    login state. Show it as a table.
 2. **A name** → `profile` tool with `name`.
-   - `prod` only when the person asked for prod in this conversation (no dialog: every connection is read-only).
+   - `prod` only when the person asked for prod in this conversation (no dialog: every connection is
+     read-only). The switch reports `limits`: prod caps at 200 rows and 10 s.
    - Not logged in → say so and offer `database:login <profile>`.
 3. **Report** the active profile after the call. Tools missing → set up with `database:login`.
 

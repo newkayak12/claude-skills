@@ -21,11 +21,14 @@ Log in to dev, then show me the last 10 orders.
   one statement starting with SELECT, SHOW, DESCRIBE, DESC, EXPLAIN or WITH, and rejects locking reads,
   INTO, SLEEP/BENCHMARK/GET_LOCK/LOAD_FILE, `/*! */` and DML hidden in WITH or EXPLAIN.
 - **The password never goes through the chat**: no tool takes it as an argument.
-- **Rows** stream and stop at 1000 (`truncated: true`).
+- **Rows** stream and stop at 1000 (`truncated: true`); on prod at 200, with a 10 s statement limit.
 - **Personal data stays out**: columns such as names, phones, addresses, post codes and email are
   dropped from every result by their source column, so an alias does not bring one back; the result
-  lists them under `hidden`. `--pii off` (`DBRO_PII`) turns it off; `--pii regex,regex` replaces the list.
+  lists them under `hidden`. A computed column is hidden only when its own expression reads one.
+  `--pii off` (`DBRO_PII`) turns it off; `--pii regex,regex` replaces the list.
+- **Query log**: every read goes to `~/.config/database-readonly-mcp/query.log` with string values
+  as `'?'` and no result values.
 
-Setup: none. The plugin starts the server (`plugin:database:database-readonly`) and installs its
-dependencies on the first start of each version, so an update follows by itself. A user-scope
+Setup: none. The plugin starts the server (`plugin:database:database-readonly`) from one bundled
+file with its dependencies inside, so an install or update needs no npm and no network. A user-scope
 `database-readonly` left from 0.6.0 or older should be removed (`claude mcp remove database-readonly -s user`). Details: [`mcp/readonly/README.md`](mcp/readonly/README.md).

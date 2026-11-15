@@ -21,11 +21,13 @@ dev로 로그인하고 최근 주문 10건 보여줘.
   EXPLAIN, WITH로 시작하는 문장 하나만 받고, 잠금 읽기, INTO, SLEEP/BENCHMARK/GET_LOCK/LOAD_FILE,
   `/*! */`, WITH·EXPLAIN 안의 DML을 거부합니다.
 - **비밀번호는 대화를 거치지 않습니다**: 비밀번호를 인자로 받는 도구가 없습니다.
-- **행**은 스트리밍으로 읽다가 1000행에서 끊습니다(`truncated: true`).
+- **행**은 스트리밍으로 읽다가 1000행에서 끊습니다(`truncated: true`). prod에서는 200행, 문장당 10초입니다.
 - **개인정보는 결과에서 빠집니다**: 이름, 전화번호, 주소, 우편번호, 이메일 같은 컬럼을 원본 컬럼명
-  기준으로 모든 결과에서 빼므로 별칭으로도 꺼낼 수 없습니다. 뺀 컬럼은 `hidden`에 나옵니다.
-  `--pii off`(`DBRO_PII`)로 끄고, `--pii regex,regex`로 목록을 바꿉니다.
+  기준으로 모든 결과에서 빼므로 별칭으로도 꺼낼 수 없습니다. 뺀 컬럼은 `hidden`에 나옵니다. 계산
+  컬럼은 그 식이 개인정보 컬럼을 읽을 때만 뺍니다. `--pii off`(`DBRO_PII`)로 끄고, `--pii regex,regex`로 목록을 바꿉니다.
+- **조회 기록**: 모든 조회가 `~/.config/database-readonly-mcp/query.log`에 남습니다. 문자열 값은 `'?'`로
+  바뀌고 결과 값은 적지 않습니다.
 
-설치: 필요 없습니다. 플러그인이 서버(`plugin:database:database-readonly`)를 띄우고, 버전마다 처음 뜰 때
-의존성을 설치하므로 업데이트를 그대로 따라갑니다. 0.6.0 이하에서 남은 사용자 범위 `database-readonly`는
+설치: 필요 없습니다. 플러그인이 의존성까지 묶은 파일 하나로 서버(`plugin:database:database-readonly`)를
+띄우므로 설치나 업데이트에 npm도 네트워크도 필요 없습니다. 0.6.0 이하에서 남은 사용자 범위 `database-readonly`는
 지웁니다(`claude mcp remove database-readonly -s user`). 자세한 내용: [`mcp/readonly/README.md`](mcp/readonly/README.md).

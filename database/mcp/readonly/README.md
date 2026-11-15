@@ -8,6 +8,18 @@ Read-only database MCP server (stdio). Vendor: `mysql` (more later under `vendor
   INTO, FOR UPDATE/SHARE, LOCK IN SHARE MODE, GET_LOCK, SLEEP, BENCHMARK, LOAD_FILE, `/*! */`, `/*+ */`,
   and DML inside WITH/EXPLAIN. Rows stream and stop at `--max-rows` with `truncated: true`.
 - Tools: `query(sql)`, `list_tables()`, `describe_table(table)`.
+- The plugin runs `dist/database-readonly.mjs`: the server and its dependencies bundled by
+  `npm run build` (esbuild), so an installed copy needs no `npm install`. Run the build after any
+  change to the sources or `package-lock.json`; `test/bundle.test.mjs` fails on a stale bundle.
+- On `prod` the row cap is at most 200 and the statement timeout at most 10 s (`PROD_LIMITS` in
+  `server.mjs`); a switch reports the limits in force.
+
+## Query log
+
+Every read (`query`, `list_tables`, `describe_table`), rejected and failed ones included, adds one
+JSON line to `~/.config/database-readonly-mcp/query.log` (0600; rolled to `query.log.1` past 5 MB):
+time, profile, tool, the SQL with every string literal as `'?'`, row count, `truncated`, the number of
+hidden columns, elapsed ms, or the rejection rule / error code. No result value is written.
 
 ## Profiles (default mode)
 
@@ -35,8 +47,10 @@ and profiles.json keeps only `password_from: op://****/****/<field>`; a profile 
 ## Personal data
 
 Every result drops personal-data columns and lists them under `hidden`. A column is matched by its
-source name (`recv_nm AS who` is still hidden); a computed column is hidden when the statement names
-one (`CONCAT(recv_nm, '') AS x`). Default patterns (`PII_DEFAULT` in `config.mjs`): phone/tel/hp/fax,
+source name (`recv_nm AS who` is still hidden); a computed column is hidden when its own expression
+names one (`CONCAT(recv_nm, '') AS x`), so `COUNT(*)` next to a personal column in WHERE stays. When
+the expressions cannot be told apart (a subquery, CTE or derived table, `*`, `@variables`), any
+personal column named in the statement hides every computed column. Default patterns (`PII_DEFAULT` in `config.mjs`): phone/tel/hp/fax,
 email, addr/address, post/zip codes, resident numbers, birth, passport, and person names such as
 `order_nm`, `recv_nm`, `sender_name`. `--pii off` (`DBRO_PII=off`) disables it; `--pii 'regex,regex'`
 replaces the list.
@@ -71,6 +85,8 @@ claude mcp add -s user mydb -e MYSQL_PASS=... -- node /path/server.mjs --host 12
 
 ```sh
 npm test                                   # unit tests; live tests skip without MYSQL_HOST
+npm run test:docker                        # live tests on a throwaway seeded MySQL in docker, against
+                                           # server.mjs and the bundle (no host port; removed after)
 op run --env-file .env.dev -- npm test     # + live tests against a DEV database (.env.dev is gitignored)
 ```
 

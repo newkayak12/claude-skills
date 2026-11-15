@@ -16,8 +16,8 @@ compatibility:
 
 ## Process
 
-1. **Server ready.** The plugin starts the server itself (`mcp__plugin_database_database-readonly__*`;
-   it installs its dependencies on first start of a version), so an update needs no setup.
+1. **Server ready.** The plugin starts the server itself (`mcp__plugin_database_database-readonly__*`,
+   a bundled file with its dependencies inside), so an install or update needs no setup.
    - A leftover user-scope registration from 0.6.0 or older: `claude mcp get database-readonly` finds
      one → `claude mcp remove database-readonly -s user`.
    - Tools missing → ask the person to run `/reload-plugins` or reconnect `plugin:database:database-readonly` in `/mcp`.

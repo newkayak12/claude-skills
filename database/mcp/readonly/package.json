@@ -4,13 +4,23 @@
   "private": true,
   "description": "Read-only database MCP server (stdio). Vendors: mysql.",
   "type": "module",
-  "engines": { "node": ">=20" },
-  "bin": { "database-readonly-mcp": "server.mjs", "dbro": "cli.mjs" },
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "database-readonly-mcp": "server.mjs",
+    "dbro": "cli.mjs"
+  },
   "scripts": {
-    "test": "node --test"
+    "build": "node build.mjs",
+    "test": "node --test",
+    "test:docker": "node live-docker.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
     "mysql2": "3.24.6"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
   }
 }

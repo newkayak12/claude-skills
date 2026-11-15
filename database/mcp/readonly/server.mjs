@@ -6,12 +6,27 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { readSettings, isDirect, limits, resolveConfig, redactor, USAGE } from './config.mjs';
 import { createProfiles, PROFILES, passwordDialog } from './profiles.mjs';
+import { createAudit } from './audit.mjs';
+import { basename, dirname, join } from 'node:path';
 
 const VENDORS = {
   mysql: () => import('./vendors/mysql.mjs'),
 };
 // Tools that only read: clients may run them without asking.
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+
+// prod reads less per call: the row cap and statement timeout never exceed these there.
+export const PROD_LIMITS = { maxRows: 200, maxExecutionMs: 10000 };
+export const limitsFor = (name, lim) =>
+  name === 'prod'
+    ? { ...lim, maxRows: Math.min(lim.maxRows, PROD_LIMITS.maxRows), maxExecutionMs: Math.min(lim.maxExecutionMs, PROD_LIMITS.maxExecutionMs) }
+    : lim;
+
+// cli.mjs sits beside server.mjs, and one level above the bundle in dist/.
+const cliPath = () => {
+  const d = dirname(process.argv[1]);
+  return join(basename(d) === 'dist' ? dirname(d) : d, 'cli.mjs');
+};
 
 const log = (...a) => process.stderr.write(`[database-readonly-mcp] ${a.join(' ')}\n`);
 
@@ -89,7 +104,7 @@ async function openVendor(cfg) {
 }
 
 // state: { profile: name|null, db, redact }. profiles: null in direct mode.
-export function createServer({ state, profiles, lim, dialog = passwordDialog }) {
+export function createServer({ state, profiles, lim, dialog = passwordDialog, audit = () => {} }) {
   const server = new Server({ name: 'database-readonly-mcp', version: '0.2.0' }, { capabilities: { tools: {} } });
   const tools = profiles ? [...PROFILE_TOOLS, ...DB_TOOLS] : DB_TOOLS;
   const tag = (v) => (state.profile ? { profile: state.profile, ...v } : v);
@@ -101,7 +116,7 @@ export function createServer({ state, profiles, lim, dialog = passwordDialog }) 
   };
 
   async function switchTo(name) {
-    const cfg = await profiles.resolve(name, lim);
+    const cfg = await profiles.resolve(name, limitsFor(name, lim));
     const db = await openVendor(cfg);
     const old = state.db;
     Object.assign(state, { profile: name, db, redact: redactor(cfg), error: null });
@@ -117,7 +132,8 @@ export function createServer({ state, profiles, lim, dialog = passwordDialog }) 
         if (!PROFILES.includes(args.name)) return fail(`unknown profile "${args.name}"`);
         if (args.name === state.profile && state.db) return ok({ active: state.profile, changed: false });
         await switchTo(args.name);
-        return ok({ active: state.profile, changed: true });
+        const { maxRows, maxExecutionMs } = limitsFor(args.name, lim);
+        return ok({ active: state.profile, changed: true, limits: { maxRows, maxExecutionMs } });
       }
       if (profiles && name === 'login') {
         if (!PROFILES.includes(args.name)) return fail(`unknown profile "${args.name}"`);
@@ -135,7 +151,7 @@ export function createServer({ state, profiles, lim, dialog = passwordDialog }) 
         if (args.op_ref) auth = { op: args.op_ref };
         else if (args.no_password) auth = { none: true };
         else if (process.platform === 'darwin') auth = { store: await dialog(args.name) };
-        else return fail(`no password dialog on this OS; the person runs in a terminal: node ${process.argv[1].replace(/server\.mjs$/, 'cli.mjs')} login ${args.name}`);
+        else return fail(`no password dialog on this OS; the person runs in a terminal: node ${cliPath()} login ${args.name}`);
         const entry = await profiles.login(args.name, fields, auth);
         let connection = 'ok';
         let cfg;
@@ -164,14 +180,34 @@ export function createServer({ state, profiles, lim, dialog = passwordDialog }) 
         }
         return ok({ profile: args.name, loggedOut: existed });
       }
-      if (name === 'query') {
-        const db = activeDb();
-        const c = db.check(args.sql);
-        if (!c.ok) return fail(`rejected [${c.rule}]: ${c.message}`);
-        return ok(tag(await db.execute(c.sql)));
+      if (name === 'query' || name === 'list_tables' || name === 'describe_table') {
+        const entry = { profile: state.profile ?? 'direct', tool: name };
+        if (name === 'query') entry.sql = args.sql;
+        if (name === 'describe_table') entry.table = args.table;
+        try {
+          const db = activeDb();
+          let r;
+          if (name === 'query') {
+            const c = db.check(args.sql);
+            if (!c.ok) {
+              audit({ ...entry, rejected: c.rule });
+              return fail(`rejected [${c.rule}]: ${c.message}`);
+            }
+            r = await db.execute(c.sql);
+          } else r = name === 'list_tables' ? await db.listTables() : await db.describeTable(args.table);
+          audit({
+            ...entry,
+            rows: r.rowCount ?? r.columns.length,
+            ...(r.truncated ? { truncated: true } : {}),
+            ...(r.hidden ? { hidden: r.hidden.length } : {}),
+            ...(r.elapsedMs !== undefined ? { elapsedMs: r.elapsedMs } : {}),
+          });
+          return ok(tag(r));
+        } catch (e) {
+          audit({ ...entry, error: e.code ?? 'error' });
+          throw e;
+        }
       }
-      if (name === 'list_tables') return ok(tag(await activeDb().listTables()));
-      if (name === 'describe_table') return ok(tag(await activeDb().describeTable(args.table)));
       return fail(`unknown tool: ${name}`);
     } catch (e) {
       return fail(`error: ${state.redact(e.code ? `${e.code}: ${e.message}` : e.message)}`);
@@ -214,14 +250,15 @@ export async function main() {
     }
     state.profile = start;
     try {
-      const cfg = await profiles.resolve(start, lim);
+      const cfg = await profiles.resolve(start, limitsFor(start, lim));
       state.db = await openVendor(cfg);
       state.redact = redactor(cfg);
     } catch (e) {
       state.error = e.message; // server still starts; tools report it
     }
   }
-  const server = createServer({ state, profiles, lim });
+  const audit = createAudit({ onError: (e) => log(`query log: ${e.message}`) });
+  const server = createServer({ state, profiles, lim, audit });
   await server.connect(new StdioServerTransport());
   log(`ready (${profiles ? `profile=${state.profile}${state.db ? '' : ' (not connected)'}` : 'direct'}, maxRows=${lim.maxRows}, maxExecutionMs=${lim.maxExecutionMs})`);
   const shutdown = () => (state.db ? state.db.close() : Promise.resolve()).finally(() => process.exit(0));

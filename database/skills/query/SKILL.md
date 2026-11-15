@@ -20,12 +20,16 @@ compatibility:
    (prod only when asked). Not logged in → offer `database:login`.
 2. **Schema.** Unknown tables or columns → `list_tables`, then `describe_table`.
 3. **Query.** One statement per `query` (SELECT, SHOW, DESCRIBE, DESC, EXPLAIN, WITH), with `LIMIT`.
-   `truncated: true` means the row cap cut the result — say so.
+   `truncated: true` means the row cap cut the result — say so. On prod the cap is 200 rows and 10 s:
+   aggregate there instead of paging through rows.
 4. **Rejected.** `rejected [rule]` is the read-only guard; do not rephrase around it. Writes are not
    possible through this server.
 5. **Personal data.** Leave name, phone, address, post code and email columns out of the SELECT list.
    The server drops them anyway and lists them under `hidden` — say which were hidden; do not try to
-   get them back through an expression or alias.
+   get them back through an expression or alias. A count hidden too (a subquery or CTE beside a
+   personal column) → rewrite it as one plain SELECT.
+6. **Log.** Every read is logged locally without values (`~/.config/database-readonly-mcp/query.log`);
+   "what did we run on prod" → read that file.
 
 ## Output Template
 
