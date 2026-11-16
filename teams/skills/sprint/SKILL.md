@@ -40,8 +40,8 @@ exists as its own tool or field — nothing here is new mechanism, only the orde
    reads them as rules. If the user skips it, the engine brainstorms from the backlog itself (a
    `brainstorm` node after size) and the report leads with what it decided on its own.
 1. **Sprint Planning → `tm_open`.** Collect the Sprint's backlog as `requests: [...]` (priority =
-   array order, item 0 highest — a single-item Sprint still works, but then `request` alone is
-   simpler and unchanged). Set `budget_usd` and/or `timebox_minutes` to the Sprint's own box —
+   array order, item 0 highest; a single-item Sprint is `requests: ["..."]`; `request` is not sent
+   beside it, bar an optional one-line Sprint title). Set `budget_usd` and/or `timebox_minutes` to the Sprint's own box —
    neither is required, but a Sprint with no box is not really timeboxed. A backlog of two or
    more items with a box is pinned size L without measuring: the box stops by leaving the
    lowest-priority packages undispatched, and a one-run (S) task has no packages to leave. Set `interactive: true`
@@ -73,7 +73,7 @@ exists as its own tool or field — nothing here is new mechanism, only the orde
    report it.
 4. **Review → the report.** Once `tm_status` reads `complete` (or `blocked` with nothing left to
    drive), read the report doc (`tm_docs({task_id})` → `80-report.md`) — the human-facing account
-   of what shipped, worth reading over what the daemon merely logged.
+   of what shipped, worth reading over what the daemon merely logged. Clean up (`tm_clean`) only once the task is terminal, or call `tm_clean({task_id, wait: true})`; never on a running task.
 5. **Retro → `retro.json` → the next Sprint's context.** The same report stage already wrote
    `retro.json` beside `80-report.md` (docs.mjs's `renderRetro`): what failed and why, retries,
    defects left (`retrospective`), and backlog items not shipped / user stories not shipped

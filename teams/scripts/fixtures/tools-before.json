@@ -1053,15 +1053,23 @@
     "server": "task-manager"
   },
   {
-    "description": "EPIC teardown (§14 C-11): removes the git worktrees and local branches a task's packages created, once the task is done. With task_id: refused (throws) while the task is still running - a live daemon or dispatch means there is nothing settled yet to clean, check tm_status/tm_wait first. dry_run defaults false here - naming one task is already the decision to act. Without task_id: sweeps every task under the tasks root, silently skipping any still running rather than refusing the whole call; dry_run defaults true (list what each terminal task would lose, change nothing) since no single task was chosen. Never touches the integration worktree/branch - teams never merges it into the project's own branch, so it is the only place a task's accepted work survives once package branches are gone; a repair/qa/audit package's \"worktree\" already IS that tree and is filtered out the same way. A package branch is deleted only once every commit on it is reachable from an integration branch or the project's own HEAD (git merge-base --is-ancestor, actually checked, never assumed) - one that is not is reported under kept_branches with why, and only its worktree directory is removed (the branch ref alone still holds every commit). task.json, docs and driver logs are left alone; a `clean` event is appended to the task's own ledger. Idempotent: a worktree or branch already gone from an earlier call reads as already_clean.",
+    "description": "EPIC teardown (§14 C-11): removes the git worktrees and local branches a task's packages created, once the task is done. With task_id: refused (throws) while the task is still running - a live daemon or dispatch means there is nothing settled yet to clean, call tm_wait first, or pass wait: true to wait (up to max_ms, default 60000, cap 300000; abortable) for a terminal state and then clean - a task still running when the wait ends is refused with how long was waited. wait is ignored without task_id. dry_run defaults false here - naming one task is already the decision to act. Without task_id: sweeps every task under the tasks root, silently skipping any still running rather than refusing the whole call; dry_run defaults true (list what each terminal task would lose, change nothing) since no single task was chosen. Never touches the integration worktree/branch - teams never merges it into the project's own branch, so it is the only place a task's accepted work survives once package branches are gone; a repair/qa/audit package's \"worktree\" already IS that tree and is filtered out the same way. A package branch is deleted only once every commit on it is reachable from an integration branch or the project's own HEAD (git merge-base --is-ancestor, actually checked, never assumed) - one that is not is reported under kept_branches with why, and only its worktree directory is removed (the branch ref alone still holds every commit). task.json, docs and driver logs are left alone; a `clean` event is appended to the task's own ledger. Idempotent: a worktree or branch already gone from an earlier call reads as already_clean.",
     "inputSchema": {
       "properties": {
         "dry_run": {
           "description": "default false with task_id (an explicit target), true without one (a sweep lists candidates by default). true reports removed_worktrees/removed_branches as a plan and touches no git state.",
           "type": "boolean"
         },
+        "max_ms": {
+          "description": "wait budget in ms, default 60000, capped at 300000. Only read with wait: true.",
+          "type": "number"
+        },
         "task_id": {
           "type": "string"
+        },
+        "wait": {
+          "description": "default false. true with task_id waits (bounded by max_ms, abortable, like tm_wait) for a terminal state, then cleans; ignored by a sweep.",
+          "type": "boolean"
         }
       },
       "type": "object"
@@ -1753,10 +1761,11 @@
           "type": "object"
         },
         "request": {
+          "description": "One request. Beside `requests`, leave it out, or send requests[0] itself or a one-line title (at most 120 chars, kept as the task's title); anything else is refused.",
           "type": "string"
         },
         "requests": {
-          "description": "A backlog instead of one request: several EPIC-level items, priority = array order (first is highest). An item may be {request, acceptance: [\"...\"]} to declare that item's own acceptance criteria - when every item declares them (or shared_acceptance is given), roles.planning \"auto\" runs the light PLAN chain (investigate -> template-fill -> gate) instead of the full one. shape treats each as its own story set; with budget_usd/timebox_minutes in play, the lowest-priority items still unshaped or undispatched when the stop trips are exactly what the report names \"Next backlog\". Mutually exclusive with `request` - send one or the other, never both.",
+          "description": "A backlog instead of one request: several EPIC-level items, priority = array order (first is highest). An item may be {request, acceptance: [\"...\"]} to declare that item's own acceptance criteria - when every item declares them (or shared_acceptance is given), roles.planning \"auto\" runs the light PLAN chain (investigate -> template-fill -> gate) instead of the full one. shape treats each as its own story set; with budget_usd/timebox_minutes in play, the lowest-priority items still unshaped or undispatched when the stop trips are exactly what the report names \"Next backlog\". `request` may stay beside it only as requests[0] itself or a one-line title of at most 120 chars; anything else is refused.",
           "items": {
             "anyOf": [
               {
@@ -1832,7 +1841,6 @@
         }
       },
       "required": [
-        "request",
         "cwd"
       ],
       "type": "object"
@@ -2113,10 +2121,11 @@
           "type": "object"
         },
         "request": {
+          "description": "Same meaning as tm_open({request}).",
           "type": "string"
         },
         "requests": {
-          "description": "Same meaning as tm_open({requests}) - mutually exclusive with `request`.",
+          "description": "Same meaning as tm_open({requests}).",
           "items": {
             "anyOf": [
               {
@@ -2181,7 +2190,6 @@
         }
       },
       "required": [
-        "request",
         "cwd"
       ],
       "type": "object"

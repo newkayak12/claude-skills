@@ -142,8 +142,9 @@ async function throughCritique(tm, task_id, shape = SHAPE) {
 // Drives the two-package SHAPE all the way to a completed EPIC: both packages dispatched,
 // accepted, integrated, goal-gated and reported. Returns the task.json snapshot so a test can
 // read each package's own worktree/branch off it.
-async function runFullEpic(tm, g, root, task_id) {
+async function runFullEpic(tm, g, root, task_id, whileRunning) {
   await throughCritique(tm, task_id);
+  if (whileRunning) await whileRunning(); // the task reads `running` here
   let nx = await tm.call('tm_next', { task_id });
   await completeChild(g, nx.children[0]);
   await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
@@ -284,6 +285,79 @@ test('tm_clean refuses a task that is still running', async () => {
     const r = await tm.call('tm_clean', { task_id });
     assert.match(r.error, /running/);
     assert.match(r.error, /terminal state/);
+    assert.match(r.error, /tm_wait/);
+    assert.match(r.error, /wait: true/);
+  });
+});
+
+// A second client (own server process, same tasks root) carries the pending wait: the test
+// Client matches replies FIFO, so the first client stays free to drive the task.
+const second = (root) => new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
+
+test('tm_clean wait: true on a running task cleans it once the task ends', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    const tm2 = await second(root);
+    try {
+      let pending;
+      const task = await runFullEpic(tm, g, root, task_id, () => {
+        pending = tm2.rawCall('tm_clean', { task_id, wait: true, max_ms: 120000 });
+      });
+      const p1 = dispatchChild(task, 'P1');
+      const r = await pending;
+      assert.equal(r.error, undefined, JSON.stringify(r));
+      assert.deepEqual(r.removed_worktrees.map((x) => x.package_id).sort(), ['P1', 'P2', 'PLAN-F1']);
+      assert.ok(!existsSync(join(p1.cwd, '.git')), 'P1 worktree gone');
+      const ledger = readFileSync(join(root, task_id, 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+      assert.ok(ledger.some((e) => e.event === 'clean'), 'a clean event is recorded');
+    } finally {
+      tm2.close();
+    }
+  });
+});
+
+test('tm_clean wait: true gives up at max_ms on a task that stays running, and cleans nothing', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children[0];
+    const tm2 = await second(root);
+    try {
+      const t0 = Date.now();
+      const r = await tm2.rawCall('tm_clean', { task_id, wait: true, max_ms: 1500 });
+      const took = Date.now() - t0;
+      assert.match(r.error, /running/);
+      assert.match(r.error, /waited/);
+      assert.ok(took < 1500 + 2500, `bounded by max_ms, took ${took} ms`);
+      assert.ok(existsSync(join(child.cwd, '.git')), 'the package worktree is still in place');
+    } finally {
+      tm2.close();
+    }
+  });
+});
+
+test('tm_clean wait: true stops on the client cancelling the request, and cleans nothing', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    const child = nx.children[0];
+    const tm2 = await second(root);
+    try {
+      const t0 = Date.now();
+      const pending = tm2.rawCall('tm_clean', { task_id, wait: true, max_ms: 120000 });
+      const requestId = tm2.id;
+      await new Promise((r) => setTimeout(r, 1500));
+      // A notification has no id and gets no reply: write it past send() so it is not queued.
+      tm2.proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId } }) + '\n');
+      const r = await pending;
+      const took = Date.now() - t0;
+      assert.ok(r.error, 'an error reply');
+      assert.ok(took < 10000, `returned long before max_ms, took ${took} ms`);
+      assert.ok(existsSync(join(child.cwd, '.git')), 'the package worktree is still in place');
+      const ledger = readFileSync(join(root, task_id, 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+      assert.ok(!ledger.some((e) => e.event === 'clean'), 'no clean event');
+    } finally {
+      tm2.close();
+    }
   });
 });
 
@@ -348,6 +422,9 @@ test('tm_clean({}) without task_id sweeps every task under the tasks root, defau
       const done = JSON.parse(readFileSync(join(root, doneId, 'task.json'), 'utf8'));
       const p1 = dispatchChild(done, 'P1');
       assert.ok(existsSync(join(p1.cwd, '.git')), 'dry_run by default - nothing removed yet');
+
+      const waitSweep = await tmA.call('tm_clean', { wait: true, max_ms: 1500 });
+      assert.equal(waitSweep.tasks.find((t) => t.task_id === runningId).skipped, true, 'a sweep never waits on a running task');
 
       const swept = await tmA.call('tm_clean', { dry_run: false });
       const doneRow2 = swept.tasks.find((t) => t.task_id === doneId);

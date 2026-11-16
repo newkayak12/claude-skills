@@ -80,8 +80,10 @@ modes" 절이 이 항목을 보여줍니다.
 `tm_board`와 `/teams-status`, 리뷰를 위한 리포트, 회고를 위한 `retro.json`과 `context_from`. `tm_open`
 자체 밖에 새로운 메커니즘은 없습니다 — 이 절은 각 조각이 무엇을 하는지 설명할 뿐입니다.
 
-- **`requests: [...]`** — `tm_open`은 `request`(문자열 하나) 또는 `requests`(문자열 배열,
-  우선순위 = 배열 순서, 0번이 최우선) 중 하나만 받습니다 — 둘 다 주거나 둘 다 안 주면 거부됩니다.
+- **`requests: [...]`** — `tm_open`은 `requests`(문자열 배열, 우선순위 = 배열 순서, 0번이
+  최우선) 또는 요청 하나일 때 `request`를 받으며, 둘 다 안 주면 거부됩니다. 둘을 함께 주면
+  `request`가 `requests[0]`과 같거나 120자 이하의 한 줄 제목일 때만 받아들이고(태스크 제목으로
+  보관), 그 밖의 조합은 무엇을 빼야 하는지 알려 주며 거부됩니다.
   `requests`는 size/shape/PLAN이 이미 읽는 태스크의 단일 합성 `request` 텍스트("[backlog
   priority N] ...")가 되고, 원본 배열은 shape의 브리핑과 회고를 위해 `task.requests`에 그대로
   남습니다. `shape`는 각 패키지의 기존 `priority` 필드를 백로그 순서에 맞춰 설정하라는 지시를

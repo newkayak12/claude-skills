@@ -634,22 +634,40 @@ function toolDocs(a) {
   return { task_id: task.run_id, rebuild: a.rebuild === true, written };
 }
 
-// tm_clean({task_id?, dry_run?}) — §14 C-11: "EPIC DONE 시 tm_clean({task_id}) 하나만 추가."
-// With task_id: refuses (throws) a task that is not yet in a terminal state - complete or
-// blocked, the same distinction serviceDaemon already reads off taskState/managerState. dry_run
+// tm_clean({task_id?, dry_run?, wait?, max_ms?}) — §14 C-11: "EPIC DONE 시 tm_clean({task_id}) 하나만 추가."
+// With task_id: refuses (throws) a task that is not yet in a terminal state - complete, partial,
+// blocked or cancelled, the same distinction serviceDaemon already reads off taskState/managerState.
+// wait:true turns that refusal into a bounded wait: toolWait is looped (cursor carried) until the
+// task is terminal, max_ms is spent (default 60000, capped at WAIT_MS_MAX) or the caller cancels
+// (signal); a task still running after that is refused as above, plus how long was waited. dry_run
 // defaults false there (an explicit target means the caller already decided). Without task_id:
 // every task under tasksRoot() is swept, a running one is skipped rather than refusing the whole
-// call, and dry_run defaults true (list candidates, change nothing) since nobody named one task
-// to act on. Idempotent either way: a worktree or branch already gone from a prior call reads as
-// already_clean, not an error.
-function toolClean(a) {
+// call (wait is ignored), and dry_run defaults true (list candidates, change nothing) since nobody
+// named one task to act on. Idempotent either way: a worktree or branch already gone from a prior
+// call reads as already_clean, not an error.
+async function toolClean(a, signal) {
   if (a.task_id) {
-    const task = mustFindTask(a);
+    let task = mustFindTask(a);
     const dryRun = a.dry_run === undefined ? false : !!a.dry_run;
+    let waited = null;
+    if (a.wait === true && taskState(task).state === 'running') {
+      const budget = Math.min(Math.max(Number(a.max_ms) || 60000, 0), WAIT_MS_MAX);
+      const start = Date.now();
+      let cursor = 0;
+      let remaining = budget;
+      // toolWait reads max_ms 0 as its 60000 default, so it is only called while time remains.
+      while (remaining > 0 && !signal?.aborted && taskState(task).state === 'running') {
+        const r = await toolWait({ task_id: a.task_id, cursor, max_ms: remaining }, signal);
+        cursor = r.cursor;
+        task = mustFindTask(a);
+        remaining = budget - (Date.now() - start);
+      }
+      waited = Date.now() - start;
+    }
     const st = taskState(task).state;
     if (st === 'running') {
       const alive = task.daemon && driverAlive(task.daemon);
-      throw new Error(`task ${task.run_id} is running (daemon ${alive ? `alive, pid ${task.daemon.pid}` : 'not tracked as alive'}) - tm_clean only cleans a task in a terminal state (complete or blocked); check tm_status/tm_wait first`);
+      throw new Error(`task ${task.run_id} is running (daemon ${alive ? `alive, pid ${task.daemon.pid}` : 'not tracked as alive'}) - tm_clean only cleans a task in a terminal state (complete, partial, blocked or cancelled); call tm_wait({task_id}) until it is terminal, or tm_clean({task_id, wait: true})${waited === null ? '' : `; waited ${waited} ms`}`);
     }
     return cleanTask(task, dryRun);
   }

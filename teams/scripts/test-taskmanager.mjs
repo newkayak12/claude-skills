@@ -3417,8 +3417,62 @@ test('tm_open requires request XOR requests, and requests: [...] becomes the bac
   await withTask(async ({ tm, cwd }) => {
     const neither = await tm.call('tm_open', { cwd, vendor: 'self' });
     assert.match(neither.error, /request.*requests|requests.*request/i);
-    const both = await tm.call('tm_open', { cwd, vendor: 'self', request: 'a', requests: ['b', 'c'] });
-    assert.match(both.error, /request OR requests/);
+  });
+});
+
+const CARD145 = { cwd: undefined, vendor: 'self', roles: { qa: false }, brainstorm: false };
+const BACKLOG145 = ['build the API', 'write the docs'];
+
+test('card 145: request equal to requests[0] (string and object item) is accepted, no title', async () => {
+  await withTask(async ({ tm, cwd, root }) => {
+    const base = { ...CARD145, cwd };
+    const s = await tm.call('tm_open', { ...base, request: ' build  the API ', requests: BACKLOG145 });
+    assert.equal(s.error, undefined, JSON.stringify(s));
+    const t = JSON.parse(readFileSync(join(root, s.task_id, 'task.json'), 'utf8'));
+    assert.deepEqual(t.requests, BACKLOG145);
+    assert.match(t.request, /\[backlog priority 0\] build the API/);
+    assert.equal(t.title, null);
+    const o = await tm.call('tm_open', { ...base, request: 'build the API', requests: [{ request: 'build the API', acceptance: ['x'] }, 'write the docs'] });
+    assert.equal(o.error, undefined, JSON.stringify(o));
+    const t2 = JSON.parse(readFileSync(join(root, o.task_id, 'task.json'), 'utf8'));
+    assert.equal(t2.title, null);
+  });
+});
+
+test('card 145: a one-line request beside requests is kept as the task title', async () => {
+  await withTask(async ({ tm, cwd, root }) => {
+    const open = await tm.call('tm_open', { ...CARD145, cwd, request: 'Sprint 12', requests: BACKLOG145 });
+    assert.equal(open.error, undefined, JSON.stringify(open));
+    const t = JSON.parse(readFileSync(join(root, open.task_id, 'task.json'), 'utf8'));
+    assert.equal(t.title, 'Sprint 12');
+    assert.match(t.context, /^Title: Sprint 12/);
+    assert.doesNotMatch(t.request, /Sprint 12/);
+    assert.match(t.slug, /^build-api/);
+  });
+});
+
+test('card 145: request repeating a later item is refused, naming requests[1]', async () => {
+  await withTask(async ({ tm, cwd }) => {
+    const r = await tm.call('tm_open', { ...CARD145, cwd, request: 'write the docs', requests: BACKLOG145 });
+    assert.match(r.error, /requests\[1\]/);
+    assert.match(r.error, /drop request/i);
+  });
+});
+
+test('card 145: a real mismatch (multi-line, over 120 chars) is refused with both values quoted', async () => {
+  await withTask(async ({ tm, cwd }) => {
+    const r = await tm.call('tm_open', { ...CARD145, cwd, request: `rewrite the billing module\nmove invoices to the new store\n${'x'.repeat(130)}`, requests: BACKLOG145 });
+    assert.match(r.error, /drop request/i);
+    assert.match(r.error, /drop requests/i);
+    assert.match(r.error, /rewrite the billing/);
+    assert.match(r.error, /build the API/);
+  });
+});
+
+test('card 145: tm_run takes the title shape through the same path', async () => {
+  await withTask(async ({ tm, cwd }) => {
+    const r = await tm.call('tm_run', { ...CARD145, cwd, request: 'Sprint 12', requests: BACKLOG145 });
+    assert.equal(r.error, undefined, JSON.stringify(r));
   });
 });
 

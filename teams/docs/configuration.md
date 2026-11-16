@@ -80,8 +80,10 @@ for the backlog, `budget_usd`/`timebox_minutes` for the box, the existing `tm_bo
 the daily look, the report for the review, and `retro.json` plus `context_from` for the retro.
 None of it is new mechanism outside `tm_open` itself; this section is what each piece does.
 
-- **`requests: [...]`** — `tm_open` takes `request` (one string) XOR `requests` (an array of
-  strings, priority = array order, item 0 highest); passing both, or neither, is refused.
+- **`requests: [...]`** — `tm_open` takes `requests` (an array of strings, priority = array
+  order, item 0 highest) or, for one request, `request`; neither is refused. Both together are
+  accepted when `request` equals `requests[0]` or is a one-line title of at most 120 chars (kept as
+  the task's title); any other pair is refused with a message naming what to drop.
   `requests` becomes the task's single composed `request` text (`"[backlog priority N] ..."` per
   item) that size/shape/PLAN already read, plus the raw array on `task.requests` for shape's own
   briefing and the retro. `shape` is told to set each package's existing `priority` field

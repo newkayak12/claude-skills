@@ -55,7 +55,7 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        request: { type: 'string' }, cwd: { type: 'string', description: 'the project root: child worktrees branch from its HEAD, and a size-S run under s_driver "process" opens directly here' },
+        request: { type: 'string', description: 'One request. Beside `requests`, leave it out, or send requests[0] itself or a one-line title (at most 120 chars, kept as the task\'s title); anything else is refused.' }, cwd: { type: 'string', description: 'the project root: child worktrees branch from its HEAD, and a size-S run under s_driver "process" opens directly here' },
         context: { type: 'string' },
         flow: { type: 'string', enum: ['auto', 'develop', 'document'] },
         vendor: { type: 'string' }, allocation: { type: 'string', enum: ['ordered', 'balanced'] },
@@ -80,14 +80,14 @@ const TOOLS = [
         timebox_minutes: { type: ['number', 'null'], description: 'default null (unlimited), also settable in .claude/team.json. Minutes since tm_open, the same stop condition budget_usd is, on the same clock - see its own description for exactly what 80% and 100% do.' },
         budget_grace_usd: { type: ['number', 'null'], description: 'default null (10% of budget_usd when budget_usd is set, else no dollar grace), also settable in .claude/team.json. At 100% a dispatch already running whose accept the closing path still needs (a package, PLAN, or a size-S run) is let finish, but not forever: past this much MORE spend since the stop (or budget_grace_minutes, whichever first) it is killed too (killDriver, the same stop retryPackage/serviceStalledDriver already use) and its accept is skipped like a package that never ran. A phase-Team pass (QA, AUDIT) gets none of this grace - it is killed the moment the box trips, since the goal-gate rewire already never reads its accept once stopped.' },
         budget_grace_minutes: { type: 'integer', description: 'default 5, also settable in .claude/team.json. See budget_grace_usd - whichever of the two limits a still-running, still-needed dispatch reaches first stops it.' },
-        requests: { type: 'array', items: { anyOf: [{ type: 'string' }, { type: 'object', properties: { request: { type: 'string' }, acceptance: { type: 'array', items: { type: 'string' } } }, required: ['request'] }] }, description: 'A backlog instead of one request: several EPIC-level items, priority = array order (first is highest). An item may be {request, acceptance: ["..."]} to declare that item\'s own acceptance criteria - when every item declares them (or shared_acceptance is given), roles.planning "auto" runs the light PLAN chain (investigate -> template-fill -> gate) instead of the full one. shape treats each as its own story set; with budget_usd/timebox_minutes in play, the lowest-priority items still unshaped or undispatched when the stop trips are exactly what the report names "Next backlog". Mutually exclusive with `request` - send one or the other, never both.' },
+        requests: { type: 'array', items: { anyOf: [{ type: 'string' }, { type: 'object', properties: { request: { type: 'string' }, acceptance: { type: 'array', items: { type: 'string' } } }, required: ['request'] }] }, description: 'A backlog instead of one request: several EPIC-level items, priority = array order (first is highest). An item may be {request, acceptance: ["..."]} to declare that item\'s own acceptance criteria - when every item declares them (or shared_acceptance is given), roles.planning "auto" runs the light PLAN chain (investigate -> template-fill -> gate) instead of the full one. shape treats each as its own story set; with budget_usd/timebox_minutes in play, the lowest-priority items still unshaped or undispatched when the stop trips are exactly what the report names "Next backlog". `request` may stay beside it only as requests[0] itself or a one-line title of at most 120 chars; anything else is refused.' },
         shared_acceptance: { type: 'array', items: { type: 'string' }, description: 'Acceptance criteria that apply to EVERY backlog item (or to the single request) - the structured form of an "Acceptance for every item:" block. Written into the request text and, when non-empty, makes roles.planning "auto" pick the light PLAN chain (_repo/docs/plans/2026-09-28-teams-light-plan.md). roles.planning itself (team.json or a roles argument) takes true (full chain), "light" (force light) or "auto" (default: light when acceptance is declared - structured fields, or a numbered backlog with an "Acceptance:" heading and bullets - else full). false is refused with a note: planning always runs, one card per feature area, and every task gets a PRD and user stories.' },
         context_from: { type: 'string', description: 'A prior task_id (or its ticket key). Its retro.json - the Retrospective and Next backlog a finished task\'s report stage writes - is read and folded into this task\'s own context: what failed and why, retries, defects left, and any unaccepted packages or unresolved questions the prior task ran out of budget/timebox to reach. The prior task\'s own Next backlog is NOT auto-added to `requests` - naming it here is a decision this task\'s own request should still make in its own words. tm_open returns carryover_candidates (backlog items and user stories the prior Sprint did not ship) for the person to choose from.' },
         initiative: { type: 'string', description: 'default null, also settable in .claude/team.json. An optional label ABOVE this EPIC - several EPICs toward one outcome (a slug-normalized "I-<slug>" key: lowercased, non-alphanumeric runs collapsed to one "-"). Display/grouping only: tm_board groups every EPIC by it once any task has one, and tm_ticket("I-<slug>") lists that group\'s EPICs with state and cost. Never read by scheduling or execution, and never nests a task inside another - EPICs under the same initiative are still independent tasks.' },
         decisions: { type: 'array', items: { type: 'object', properties: { question: { type: 'string' }, chose: { type: 'string' }, because: { type: 'string' } }, required: ['question', 'chose'] }, description: 'What the entry skill settled with the user in its brainstorm before calling tm_open: [{question, chose, because?}]. Written as the first entries of task.decisions (source "brainstorm", decided_in "session"); PLAN and every package read them as settled rules, and an ask about the same question is never opened again. Passing it (even []) skips the engine\'s own brainstorm node.' },
         brainstorm: { type: 'boolean', description: 'default true, also settable in .claude/team.json. With no decisions[], the engine holds the brainstorm itself: a `brainstorm` node after size, ahead of PLAN/shape, restates intent/scope/approach/assumptions from the request and asks the requester one card of questions when interactive (defaults otherwise). Its result becomes task.decisions (source "self-brainstorm", or "ask" where a person chose) and the report leads with what the engine decided on its own. false skips the node.' },
       },
-      required: ['request', 'cwd'],
+      required: ['cwd'],
     },
     outputSchema: NEXT_SCHEMA,
   },
@@ -97,7 +97,7 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        request: { type: 'string' }, cwd: { type: 'string' }, context: { type: 'string' },
+        request: { type: 'string', description: 'Same meaning as tm_open({request}).' }, cwd: { type: 'string' }, context: { type: 'string' },
         flow: { type: 'string', enum: ['auto', 'develop', 'document'] },
         vendor: { type: 'string' }, allocation: { type: 'string', enum: ['ordered', 'balanced'] },
         host_vendor: { type: 'string' }, host_model: { type: 'string' }, native_models: { type: 'array', items: { type: 'string' } },
@@ -111,14 +111,14 @@ const TOOLS = [
         stall_minutes: { type: 'integer' }, restart_period_minutes: { type: 'integer' },
         budget_usd: { type: ['number', 'null'], description: 'Same meaning as tm_open({budget_usd}).' },
         timebox_minutes: { type: ['number', 'null'], description: 'Same meaning as tm_open({timebox_minutes}).' },
-        requests: { type: 'array', items: { anyOf: [{ type: 'string' }, { type: 'object', properties: { request: { type: 'string' }, acceptance: { type: 'array', items: { type: 'string' } } }, required: ['request'] }] }, description: 'Same meaning as tm_open({requests}) - mutually exclusive with `request`.' },
+        requests: { type: 'array', items: { anyOf: [{ type: 'string' }, { type: 'object', properties: { request: { type: 'string' }, acceptance: { type: 'array', items: { type: 'string' } } }, required: ['request'] }] }, description: 'Same meaning as tm_open({requests}).' },
         shared_acceptance: { type: 'array', items: { type: 'string' }, description: 'Same meaning as tm_open({shared_acceptance}).' },
         context_from: { type: 'string', description: 'Same meaning as tm_open({context_from}).' },
         initiative: { type: 'string', description: 'Same meaning as tm_open({initiative}).' },
         decisions: { type: 'array', items: { type: 'object' }, description: 'Same meaning as tm_open({decisions}).' },
         brainstorm: { type: 'boolean', description: 'Same meaning as tm_open({brainstorm}).' },
       },
-      required: ['request', 'cwd'],
+      required: ['cwd'],
     },
     outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, run_id: { type: 'string' }, docs_dir: { type: 'string' }, state: { type: 'string' } }, required: ['task_id', 'run_id', 'docs_dir'] },
   },
@@ -261,9 +261,11 @@ const TOOLS = [
   },
   {
     name: 'tm_clean',
-    description: 'EPIC teardown (§14 C-11): removes the git worktrees and local branches a task\'s packages created, once the task is done. With task_id: refused (throws) while the task is still running - a live daemon or dispatch means there is nothing settled yet to clean, check tm_status/tm_wait first. dry_run defaults false here - naming one task is already the decision to act. Without task_id: sweeps every task under the tasks root, silently skipping any still running rather than refusing the whole call; dry_run defaults true (list what each terminal task would lose, change nothing) since no single task was chosen. Never touches the integration worktree/branch - teams never merges it into the project\'s own branch, so it is the only place a task\'s accepted work survives once package branches are gone; a repair/qa/audit package\'s "worktree" already IS that tree and is filtered out the same way. A package branch is deleted only once every commit on it is reachable from an integration branch or the project\'s own HEAD (git merge-base --is-ancestor, actually checked, never assumed) - one that is not is reported under kept_branches with why, and only its worktree directory is removed (the branch ref alone still holds every commit). task.json, docs and driver logs are left alone; a `clean` event is appended to the task\'s own ledger. Idempotent: a worktree or branch already gone from an earlier call reads as already_clean.',
+    description: 'EPIC teardown (§14 C-11): removes the git worktrees and local branches a task\'s packages created, once the task is done. With task_id: refused (throws) while the task is still running - a live daemon or dispatch means there is nothing settled yet to clean, call tm_wait first, or pass wait: true to wait (up to max_ms, default 60000, cap 300000; abortable) for a terminal state and then clean - a task still running when the wait ends is refused with how long was waited. wait is ignored without task_id. dry_run defaults false here - naming one task is already the decision to act. Without task_id: sweeps every task under the tasks root, silently skipping any still running rather than refusing the whole call; dry_run defaults true (list what each terminal task would lose, change nothing) since no single task was chosen. Never touches the integration worktree/branch - teams never merges it into the project\'s own branch, so it is the only place a task\'s accepted work survives once package branches are gone; a repair/qa/audit package\'s "worktree" already IS that tree and is filtered out the same way. A package branch is deleted only once every commit on it is reachable from an integration branch or the project\'s own HEAD (git merge-base --is-ancestor, actually checked, never assumed) - one that is not is reported under kept_branches with why, and only its worktree directory is removed (the branch ref alone still holds every commit). task.json, docs and driver logs are left alone; a `clean` event is appended to the task\'s own ledger. Idempotent: a worktree or branch already gone from an earlier call reads as already_clean.',
     inputSchema: { type: 'object', properties: {
       task_id: { type: 'string' },
+      wait: { type: 'boolean', description: 'default false. true with task_id waits (bounded by max_ms, abortable, like tm_wait) for a terminal state, then cleans; ignored by a sweep.' },
+      max_ms: { type: 'number', description: 'wait budget in ms, default 60000, capped at 300000. Only read with wait: true.' },
       dry_run: { type: 'boolean', description: 'default false with task_id (an explicit target), true without one (a sweep lists candidates by default). true reports removed_worktrees/removed_branches as a plan and touches no git state.' },
     } },
     outputSchema: { type: 'object', properties: {
@@ -329,7 +331,7 @@ function dispatch(name, a, signal) {
     case 'tm_assign': return toolAssign(a);
     case 'tm_inbox': return toolInbox(a);
     case 'tm_docs': return toolDocs(a);
-    case 'tm_clean': return toolClean(a);
+    case 'tm_clean': return toolClean(a, signal);
     case 'tm_cancel': return toolCancel(a);
     case 'tm_ask': return toolAsk(a);
     default: throw new Error('unknown tool: ' + name);

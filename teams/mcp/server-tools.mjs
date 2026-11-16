@@ -32,7 +32,9 @@ export function makeCall({ wikiOff = false } = {}) {
   return (name, args, ctx) => {
     if (typeof name === 'string') {
       if (name.startsWith('team_')) return callBrokerTool(name, args, ctx);
-      if (name === 'tm_wait') return callTmTool(name, args, ctx);
+      // tm_wait and a waiting tm_clean must not sit in the serial queue (they would hold every other
+      // tm_* call for their whole wait) and need ctx.signal to stop on a cancel.
+      if (name === 'tm_wait' || (name === 'tm_clean' && args && args.wait === true)) return callTmTool(name, args, ctx);
       if (name.startsWith('tm_')) return serial(() => callTmTool(name, args));
       if (name.startsWith('wiki_')) {
         if (wikiOff) return Promise.reject(new Error(WIKI_OFF_MESSAGE));

@@ -212,6 +212,25 @@ function requestText(r) {
   }
   return String(r);
 }
+// request beside requests: requests drives the backlog, so request is only ever redundant
+// (requests[0] itself) or a one-line title; a later item or a multi-line / long text is a
+// different task the caller would silently lose, so it is refused. Items are compared by their own
+// text, never the acceptance block requestText appends.
+const TITLE_MAX = 120;
+function itemText(r) {
+  if (r && typeof r === 'object') return String(r.request != null ? r.request : (r.text != null ? r.text : (r.title != null ? r.title : '')));
+  return String(r);
+}
+function requestBesideRequests(request, rawRequests) {
+  const norm = (s) => String(s).trim().replace(/\s+/g, ' ');
+  const cut = (s) => { const t = norm(s); return t.length > 80 ? `${t.slice(0, 80)}…` : t; };
+  const want = norm(request);
+  if (want === norm(itemText(rawRequests[0]))) return { title: null };
+  const later = rawRequests.findIndex((r, i) => i >= 1 && norm(itemText(r)) === want);
+  const trimmed = String(request).trim();
+  if (later < 0 && !trimmed.includes('\n') && trimmed.length <= TITLE_MAX) return { title: trimmed };
+  throw new Error(`tm_open got request and requests that differ: request "${cut(request)}" vs requests[0] "${cut(itemText(rawRequests[0]))}"${later >= 0 ? `, and request repeats requests[${later}] "${cut(itemText(rawRequests[later]))}"` : ''}. Drop request (requests: [...] is the backlog; a one-line title of at most ${TITLE_MAX} chars may stay in request), or drop requests to open the one request.`);
+}
 function withSharedAcceptance(request, shared) {
   const list = Array.isArray(shared) ? shared.map((s) => String(s).trim()).filter(Boolean) : [];
   return list.length ? `${request}\n\nAcceptance for every item:\n${list.map((s) => `- ${s}`).join('\n')}` : request;
@@ -335,9 +354,9 @@ function createTask(a) {
   if (!requests && (a.request == null || String(a.request).trim() === '')) {
     throw new Error('tm_open needs either request (a string) or requests (a non-empty array of strings), not neither');
   }
-  if (requests && a.request != null && String(a.request).trim() !== '') {
-    throw new Error('tm_open takes request OR requests, not both - requests: [...] IS the several-item form of request');
-  }
+  const title = requests && a.request != null && String(a.request).trim() !== ''
+    ? requestBesideRequests(a.request, a.requests).title
+    : null;
   const cwd = resolve(String(a.cwd));
   const teamFile = readTeamConfig(cwd);
   const team = resolveTeamOptions(a, teamFile.config);
@@ -372,7 +391,8 @@ function createTask(a) {
     opener: { session_id: currentSessionId(), entrypoint: process.env.CLAUDE_CODE_ENTRYPOINT || null },
     request: withSharedAcceptance(requests ? composeBacklogRequest(requests) : String(a.request), a.shared_acceptance),
     requests, // null for the ordinary single-request task - the byte-for-byte compat case.
-    context: [priorRetro.text, a.context || ''].filter(Boolean).join('\n\n'),
+    title, // null unless a one-line title came beside requests.
+    context: [title ? `Title: ${title}` : '', priorRetro.text, a.context || ''].filter(Boolean).join('\n\n'),
     ...(priorRetro.unresolved ? { context_from_unresolved: priorRetro.unresolved } : {}),
     ...(priorRetro.carryover && priorRetro.carryover.length ? { carryover_candidates: priorRetro.carryover } : {}),
     // Where package and integration worktrees branch from (see priorRetroContext). null = HEAD.

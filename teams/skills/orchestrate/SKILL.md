@@ -102,6 +102,7 @@ are a headless session: it ends the moment you stop calling tools, and the daemo
 go on building into a workspace nobody is waiting for. The blocking `tm_wait` call is the only
 thing holding you open — a real run died at one minute saying "I'll check again in about four
 minutes", and everything it was waiting for finished long after it was gone.
+If you clean up (`tm_clean`), do it only after `tm_wait` reads a terminal state (complete, partial, blocked, cancelled), or call `tm_clean({task_id, wait: true})`; never on a running task.
 
 `isolated` is true only when you created or were handed a private worktree holding this run
 alone; it travels straight into each package's own dispatch under an L task. A size-S task goes to
