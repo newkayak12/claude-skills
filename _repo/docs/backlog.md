@@ -224,17 +224,6 @@ toasts).
 
 ### Repo and rules
 
-134. **`repo-rules.mjs` denies a repo write reached through a symlinked path, even when its parent directory is new**
-   - Why: carryover of card 131 (E-f1f5fcf7, 2026-11-10, report §5). With the entry checks fixed, `echo x >
-     <symlinked-prefix>/teams/a.md` and `cd <symlinked clone> && sed -i ... teams/mcp/x.mjs` pass under `tmpdir()`
-     and are denied under `realpath(tmpdir())`. Cause named by the report, unverified here: the `samePath` fallback
-     to `resolve()` at `.claude/hooks/repo-rules.mjs:304` when the parent does not exist, and `cd` targets are not
-     canonicalized. The test now resolves its fixture root (`root = realpathSync(mkdtempSync(...))`), so no test pins
-     this; with the old root line the test gives 269 ok / 2 FAIL (`write: absolute repo path`, `write: cd into the
-     repo from outside it`).
-   - Acceptance: a test with a symlinked, non-canonical root denies both writes; `node
-     _repo/scripts/test-repo-rules.mjs` 0 FAIL.
-
 132. **A mod or plugin hook skipped by another plugin's hook is known and its loss is covered**
    - Why: seen 2026-11-10 in a live session: "session: its classic.SessionStart hook was skipped.
      "cc-plugin-sec-default" runs first and sent the event on past it", and the same for trophy's `skill.prompt`, after
@@ -252,25 +241,15 @@ toasts).
 
 Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 128's leftovers.
 
-145. **tm_open takes `request` and `requests` together when they say the same thing, so callers stop failing on it**
-    - Why: user, 2026-11-10 (trophy Failures tab screenshot: "이거 backlog에 쌓아주고"). `mcp_error ·
-      tm_open` "tm_open takes request OR requests, not both" recorded 7 times, 2026-10-16 to 10-31.
-      Thrown at `teams/mcp/taskmanager-stages.mjs` ~338 whenever both are non-empty. Which caller
-      sends both is unverified (the Sprint skill documents `requests` at `teams/skills/sprint/SKILL.md`
-      ~42; a session also passing `request` as the Sprint title is the likely shape).
-    - Acceptance: `request` equal to `requests[0]`, or used as a title beside `requests`, is accepted
-      (or the error says which one to drop, with the caller's own values); every skill that calls
-      tm_open shows one form only; a test for both shapes; `node --test teams/scripts/test-*.mjs`
-      with counts.
-
-146. **tm_clean on a running task waits or says how, instead of failing the call**
-    - Why: same screenshot. `mcp_error · tm_clean` "task … is running (daemon alive, pid …) — tm_clean
-      only cleans a task in a terminal state" on 2026-10-21 and 10-26
-      (`teams/mcp/taskmanager-handlers.mjs` ~651). The caller cleaned before the task ended; which
-      skill or session did is unverified.
-    - Acceptance: the skills that reap (orchestrate, sprint, maintaining's "Reap" rule) call
-      tm_wait to a terminal state before tm_clean, or tm_clean takes `wait: true`; the refusal stays
-      for an explicit clean of a live task; a test; teams tests with counts.
+152. **The W2 hygiene test does not fail on a `.teams_wiki` a real teams run left in the repo root**
+    - Why: seen 2026-11-16 checking cards 145/146: `node --test teams/scripts/test-*.mjs` 2300 / 2297 pass / 1 fail,
+      "W2 hygiene: nothing in this suite wrote a .teams_wiki into the repo or the process cwd"
+      (`teams/scripts/test-taskmanager.mjs`). The repo root holds an untracked `.teams_wiki/` dated 2026-11-11
+      (pages `teams/…` written by E-e9e7a45b's report), not by the suite. Whether a real run should write its
+      wiki there is unverified.
+    - Acceptance: the test tells a suite-written `.teams_wiki` from one present before the suite started (snapshot
+      at start), or real runs write the wiki outside the repo / it is gitignored and the test reads that; teams
+      suite 0 fail with the directory present.
 
 147. **trophy's Failures tab says what failed and groups repeats**
     - Why: same screenshot. `outcome · goal_failed · —` and `outcome · subgoal_failed · —` (2026-11-09)
@@ -685,6 +664,8 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-71b43a9a, E-1ece45cc | 2026-11-16 | 145, 146 | shipped `7d31c3c7`; two size-S runs in parallel on the main checkout, one commit; goal gates 92, 93; tm_open takes request beside requests (equal or one-line title), real mismatch refused naming what to drop; tm_clean `wait: true`, refusal says how; orchestrate/sprint wait before cleaning; teams 2300 / 2297 pass / 1 fail (W2 hygiene, card 152), plugin test 626/626, validate 16/16, check-copies ok; small gaps: stale test name, "tm_open got" from tm_run, branch survival not asserted on cancel |
+| E-c22f9c92 | 2026-11-16 | 134 | shipped `1b351f52`; size S, parallel with 145/146; goal gate 84 → 95 after repair (cd stays logical, canonicalized at comparison); test-repo-rules 275 ok / 0 FAIL, red on base 2 FAIL; validate 16/16, check-copies ok |
 | E-e9e7a45b | 2026-11-13 | 130 | shipped `a37c7f33` (integration head `fa8ac240` hand-merged, then rebased onto origin as 12 commits; daemon did not resume, card 129 item 7); size L, $56.07; P1-P4 accepted (90/85/87/92), QA-F2 80, QA-F3 88, QA-F1 not finished (disk full); model per stage, lean argv on all five spawn paths, one driver per node, node_start/node_end via record(), region prompts, size-S budget kill, pane spend from taskFigure, `budget_usd` 40; on the merged tree teams test-*.mjs 2292 tests / 2290 pass / 0 fail, plugin test 626/626, card 130 tests 59/59, validate 16/16, check-copies ok |
 | E-f1f5fcf7 | 2026-11-10 | 131 | shipped `5a9644c8`; size S; goal gate 90; entry checks of `repo-rules.mjs` and bench `harvest.mjs` compare real paths (reap.mjs form); test-repo-rules 188 ok / 75 FAIL → 271 ok / 0 FAIL, 8 new symlink/space entry cases; 0 FAIL needed the test's fixture root resolved to its real path (lead's decision, no person reachable), the write-through-symlink defect it hid is card 134; validate 15/15, check-copies ok, test-harvest 3/3 |
 | E-066abb46 | 2026-11-05 | 125 (socket rest), 128 (tm_wait, comments) | shipped `bb9b643f`; size S on Sonnet; goal gate 91; state server skips unchanged tasks (fixture 2.10% → 0.90%, real root 1.55% → 0.38%), server log, mod resolves relative tasks dir, CPU guard default-on passed 3 suites of 2154 (only fail W2 hygiene from a stray `.teams_wiki/`); `tm_wait` awaited + abortable, `team_status`/`wiki_list` answer behind it (red on baseline); plugin test 453/453, view/server tests 386/387 (1 skip); spend $48 of $25 budget (card 130); thin CPU margin, 60 s safety-net rebuild |
