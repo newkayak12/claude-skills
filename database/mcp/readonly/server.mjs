@@ -11,7 +11,11 @@ import { basename, dirname, join } from 'node:path';
 
 const VENDORS = {
   mysql: () => import('./vendors/mysql.mjs'),
+  mariadb: () => import('./vendors/mariadb.mjs'),
+  postgres: () => import('./vendors/postgres.mjs'),
+  oracle: () => import('./vendors/oracle.mjs'),
 };
+const LABEL = { mysql: 'MySQL', mariadb: 'MariaDB', postgres: 'PostgreSQL', oracle: 'Oracle' };
 // Tools that only read: clients may run them without asking.
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
@@ -34,7 +38,8 @@ const DB_TOOLS = [
   {
     name: 'query',
     description:
-      'Run one read-only SQL statement (SELECT, SHOW, DESCRIBE, DESC, EXPLAIN, WITH) on the active profile. ' +
+      'Run one read-only SQL statement (SELECT or WITH; also SHOW/DESCRIBE/EXPLAIN on MySQL and MariaDB, ' +
+      'SHOW/EXPLAIN/TABLE/VALUES on PostgreSQL) on the active profile. ' +
       'Returns rows as JSON, elapsedMs, truncated (true when the row cap cut the result) and profile.',
     annotations: READ_ONLY,
     inputSchema: { type: 'object', properties: { sql: { type: 'string', description: 'a single SQL statement' } }, required: ['sql'] },
@@ -104,9 +109,11 @@ async function openVendor(cfg) {
 }
 
 // state: { profile: name|null, db, redact }. profiles: null in direct mode.
-export function createServer({ state, profiles, lim, dialog = passwordDialog, audit = () => {} }) {
-  const server = new Server({ name: 'database-readonly-mcp', version: '0.2.0' }, { capabilities: { tools: {} } });
-  const tools = profiles ? [...PROFILE_TOOLS, ...DB_TOOLS] : DB_TOOLS;
+// vendor: this server's database kind; every tool description starts with it so a client running one
+// server per vendor can tell them apart.
+export function createServer({ state, profiles, lim, vendor = 'mysql', dialog = passwordDialog, audit = () => {} }) {
+  const server = new Server({ name: `database-readonly-${vendor}`, version: '0.3.0' }, { capabilities: { tools: {} } });
+  const tools = (profiles ? [...PROFILE_TOOLS, ...DB_TOOLS] : DB_TOOLS).map((t) => ({ ...t, description: `${LABEL[vendor]}: ${t.description}` }));
   const tag = (v) => (state.profile ? { profile: state.profile, ...v } : v);
 
   const activeDb = () => {
@@ -139,7 +146,6 @@ export function createServer({ state, profiles, lim, dialog = passwordDialog, au
         if (!PROFILES.includes(args.name)) return fail(`unknown profile "${args.name}"`);
         const prev = profiles.get(args.name) ?? {};
         const fields = {
-          vendor: prev.vendor ?? 'mysql',
           host: args.host ?? prev.host,
           port: args.port ?? prev.port,
           user: args.user ?? prev.user,
@@ -151,7 +157,7 @@ export function createServer({ state, profiles, lim, dialog = passwordDialog, au
         if (args.op_ref) auth = { op: args.op_ref };
         else if (args.no_password) auth = { none: true };
         else if (process.platform === 'darwin') auth = { store: await dialog(args.name) };
-        else return fail(`no password dialog on this OS; the person runs in a terminal: node ${cliPath()} login ${args.name}`);
+        else return fail(`no password dialog on this OS; the person runs in a terminal: node ${cliPath()} login ${args.name} --vendor ${vendor}`);
         const entry = await profiles.login(args.name, fields, auth);
         let connection = 'ok';
         let cfg;
@@ -159,7 +165,7 @@ export function createServer({ state, profiles, lim, dialog = passwordDialog, au
           cfg = await profiles.resolve(args.name, { maxRows: 1, maxExecutionMs: 10000 });
           const db = await openVendor(cfg);
           try {
-            await db.execute('SELECT 1');
+            await db.ping();
           } finally {
             await db.close();
           }
@@ -230,6 +236,7 @@ export async function main() {
     process.stderr.write(USAGE + '\n');
     process.exit(2);
   }
+  const vendor = raw.vendor || 'mysql';
   const state = { profile: null, db: null, redact: (m) => m, error: null };
   let profiles = null;
   if (isDirect(raw)) {
@@ -242,7 +249,7 @@ export async function main() {
       process.exit(2);
     }
   } else {
-    profiles = createProfiles();
+    profiles = createProfiles({ vendor });
     const start = raw.profile || 'local';
     if (!PROFILES.includes(start)) {
       log(`unknown profile "${start}"; profiles: ${PROFILES.join(', ')}`);
@@ -258,9 +265,9 @@ export async function main() {
     }
   }
   const audit = createAudit({ onError: (e) => log(`query log: ${e.message}`) });
-  const server = createServer({ state, profiles, lim, audit });
+  const server = createServer({ state, profiles, lim, vendor, audit: (e) => audit({ vendor, ...e }) });
   await server.connect(new StdioServerTransport());
-  log(`ready (${profiles ? `profile=${state.profile}${state.db ? '' : ' (not connected)'}` : 'direct'}, maxRows=${lim.maxRows}, maxExecutionMs=${lim.maxExecutionMs})`);
+  log(`ready (${vendor}, ${profiles ? `profile=${state.profile}${state.db ? '' : ' (not connected)'}` : 'direct'}, maxRows=${lim.maxRows}, maxExecutionMs=${lim.maxExecutionMs})`);
   const shutdown = () => (state.db ? state.db.close() : Promise.resolve()).finally(() => process.exit(0));
   process.stdin.on('close', shutdown);
   process.on('SIGTERM', shutdown);

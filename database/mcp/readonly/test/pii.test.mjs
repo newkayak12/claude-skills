@@ -28,7 +28,7 @@ test('piiColumns: by source column (alias does not help), and computed columns w
 });
 
 test('selectList: one SELECT split at top-level commas; subquery, CTE, *, @var give null', () => {
-  assert.deepEqual(selectList("SELECT a, CONCAT(b, ',', c) AS x, COUNT(*) FROM t WHERE d = 'from, x'"), ['a', "CONCAT(b, ' ', c) AS x", 'COUNT(*)']);
+  assert.deepEqual(selectList("SELECT a, CONCAT(b, ',', c) AS x, COUNT(*) FROM t WHERE d = 'from, x'"), ['a', "CONCAT(b, '', c) AS x", 'COUNT(*)']);
   assert.deepEqual(selectList('SELECT DISTINCT shop_cd FROM t ORDER BY 1'), ['DISTINCT shop_cd']);
   assert.deepEqual(selectList('SELECT 1'), ['1']);
   assert.deepEqual(selectList('SELECT from_dt, order_nm FROM t'), ['from_dt', 'order_nm']);

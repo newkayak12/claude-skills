@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 // dbro: manage database-readonly-mcp profiles (the password never goes through the model).
 // Without a terminal (run by Claude), login asks the password in a macOS hidden dialog.
-//   dbro login <profile> [--host H] [--port P] [--user U] [--database D] [--vendor mysql] [--op op://...] [--no-password]
-//   dbro logout <profile>
-//   dbro list
+//   dbro login <profile> [--vendor mysql|mariadb|postgres|oracle] [--host H] [--port P] [--user U] [--database D] [--op op://...] [--no-password]
+//   dbro logout <profile> [--vendor V]
+//   dbro list [--vendor V]
+// Each vendor keeps its own profiles (default mysql).
 import { parseArgs } from 'node:util';
 import { createInterface } from 'node:readline';
 import { createProfiles, PROFILES, assertProfile, passwordDialog } from './profiles.mjs';
-import { redactor } from './config.mjs';
+import { redactor, VENDORS, DEFAULT_PORT } from './config.mjs';
 
 const out = (s) => process.stdout.write(s + '\n');
 
@@ -35,7 +36,7 @@ async function verify(profiles, name) {
     const { default: create } = await import(`./vendors/${cfg.vendor}.mjs`);
     const db = create({ ...cfg, maxRows: 1, maxExecutionMs: 10000 });
     try {
-      const r = await db.execute('SELECT 1 AS ok');
+      const r = await db.ping();
       out(`connection ok (read-only session, ${r.elapsedMs} ms)`);
     } finally {
       await db.close();
@@ -62,7 +63,9 @@ async function main() {
     },
   });
   const [cmd, name] = positionals;
-  const profiles = createProfiles();
+  const vendor = values.vendor ?? 'mysql';
+  if (!VENDORS.includes(vendor)) throw new Error(`--vendor must be one of ${VENDORS.join(', ')}`);
+  const profiles = createProfiles({ vendor });
 
   if (cmd === 'list' || !cmd) {
     for (const p of profiles.list()) {
@@ -87,9 +90,8 @@ async function main() {
   const interactive = process.stdin.isTTY;
   const field = async (k, label, def) => values[k] ?? (interactive ? await ask(label, { def: prev[k] ?? def }) : prev[k] ?? def);
   const fields = {
-    vendor: values.vendor ?? prev.vendor ?? 'mysql',
     host: await field('host', 'host', name === 'local' ? '127.0.0.1' : undefined),
-    port: await field('port', 'port', 3306),
+    port: await field('port', 'port', DEFAULT_PORT[vendor]),
     user: await field('user', 'user'),
     database: await field('database', 'database'),
   };
@@ -102,7 +104,7 @@ async function main() {
   } else if (process.platform === 'darwin') {
     auth = { store: await passwordDialog(name) };
   } else {
-    throw new Error(`password needs a terminal: ! node ${process.argv[1]} login ${name} (or use --op op://... / --no-password)`);
+    throw new Error(`password needs a terminal: ! node ${process.argv[1]} login ${name} --vendor ${vendor} (or use --op op://... / --no-password)`);
   }
   const entry = await profiles.login(name, fields, auth);
   out(`${name}: saved (password: ${entry.auth})`);

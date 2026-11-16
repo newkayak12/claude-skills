@@ -2,8 +2,9 @@
 
 **English** · [한국어](KOR.md)
 
-Read-only database access through one MCP server (`database-readonly`, MySQL today; other vendors go
-under `mcp/readonly/vendors/`) and four skills that drive it.
+Read-only database access for MySQL, MariaDB, PostgreSQL and Oracle: one MCP server per vendor
+(`readonly-mysql`, `readonly-mariadb`, `readonly-postgres`, `readonly-oracle`, each with its own
+profiles) and four skills that pick the right one.
 
 | Skill | Does |
 |---|---|
@@ -16,19 +17,23 @@ under `mcp/readonly/vendors/`) and four skills that drive it.
 Log in to dev, then show me the last 10 orders.
 ```
 
-- **Read-only, twice.** Every pooled connection runs `SET SESSION TRANSACTION READ ONLY` and
-  `max_execution_time` before its first statement (no BEGIN; autocommit). `query` also accepts only
-  one statement starting with SELECT, SHOW, DESCRIBE, DESC, EXPLAIN or WITH, and rejects locking reads,
-  INTO, SLEEP/BENCHMARK/GET_LOCK/LOAD_FILE, `/*! */` and DML hidden in WITH or EXPLAIN.
+- **Read-only, twice.** The database refuses writes: MySQL/MariaDB sessions run `SET SESSION
+  TRANSACTION READ ONLY`, PostgreSQL connections start with `default_transaction_read_only=on`, and
+  every Oracle call runs inside `SET TRANSACTION READ ONLY` and rolls back; each with a statement
+  timeout. `query` also accepts only one read statement and rejects locking reads, INTO, sleeps,
+  file and network access, functions that run SQL text (`query_to_xml`, `DBMS_XMLGEN`), executable
+  comments and DML hidden in WITH or EXPLAIN.
 - **The password never goes through the chat**: no tool takes it as an argument.
 - **Rows** stream and stop at 1000 (`truncated: true`); on prod at 200, with a 10 s statement limit.
 - **Personal data stays out**: columns such as names, phones, addresses, post codes and email are
   dropped from every result by their source column, so an alias does not bring one back; the result
   lists them under `hidden`. A computed column is hidden only when its own expression reads one.
+  Oracle reports no source column, so there a column is matched by its name and its select-list expression.
   `--pii off` (`DBRO_PII`) turns it off; `--pii regex,regex` replaces the list.
 - **Query log**: every read goes to `~/.config/database-readonly-mcp/query.log` with string values
   as `'?'` and no result values.
 
-Setup: none. The plugin starts the server (`plugin:database:database-readonly`) from one bundled
-file with its dependencies inside, so an install or update needs no npm and no network. A user-scope
+Setup: none. The plugin starts the four servers (`plugin:database:readonly-<vendor>`) from one bundled
+file with the drivers inside (Oracle in Thin mode: no Instant Client), so an install or update needs
+no npm and no network. MySQL logins saved before 0.9.0 stay with `readonly-mysql`. A user-scope
 `database-readonly` left from 0.6.0 or older should be removed (`claude mcp remove database-readonly -s user`). Details: [`mcp/readonly/README.md`](mcp/readonly/README.md).

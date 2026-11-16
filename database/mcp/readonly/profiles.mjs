@@ -5,13 +5,18 @@ import { execFile, spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync, existsSync, renameSync, chmodSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { resolveValue, toInt, opRead } from './config.mjs';
+import { resolveValue, toInt, opRead, DEFAULT_PORT } from './config.mjs';
 
 export const PROFILES = ['local', 'dev', 'stage', 'prod'];
 export const SERVICE = 'database-readonly-mcp';
 
-export const configDir = (env = process.env) =>
-  env.DBRO_CONFIG_DIR || join(env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'database-readonly-mcp');
+// One server per vendor, each with its own profiles and Keychain service. MySQL keeps the original
+// folder and service, so logins saved before vendors were split stay where they are.
+export const configDir = (env = process.env, vendor = 'mysql') => {
+  const base = env.DBRO_CONFIG_DIR || join(env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'database-readonly-mcp');
+  return vendor === 'mysql' ? base : join(base, vendor);
+};
+export const serviceFor = (vendor = 'mysql') => (vendor === 'mysql' ? SERVICE : `${SERVICE}-${vendor}`);
 
 export function assertProfile(name) {
   if (!PROFILES.includes(name)) throw new Error(`unknown profile "${name}"; profiles: ${PROFILES.join(', ')}`);
@@ -94,14 +99,20 @@ export function fileStore(dir) {
 }
 
 // DBRO_SECRETS=file forces the file store (tests, or a Mac without a usable login keychain).
-export const defaultSecrets = (dir, env = process.env) =>
-  process.platform === 'darwin' && env.DBRO_SECRETS !== 'file' ? keychainStore() : fileStore(dir);
+export const defaultSecrets = (dir, env = process.env, service = SERVICE) =>
+  process.platform === 'darwin' && env.DBRO_SECRETS !== 'file' ? keychainStore(service) : fileStore(dir);
 
 // What a file keeps once the secret moved to Keychain: where it came from, item and vault hidden.
 export const MASK = '****';
 export const maskRef = (ref) => ref.replace(/^op:\/\/[^/]+\/[^/]+/, `op://${MASK}/${MASK}`);
 
-export function createProfiles({ dir = configDir(), secrets = defaultSecrets(dir), read: opReadRaw = opRead } = {}) {
+export function createProfiles({
+  vendor = 'mysql',
+  dir = configDir(process.env, vendor),
+  secrets = defaultSecrets(dir, process.env, serviceFor(vendor)),
+  read: opReadRaw = opRead,
+} = {}) {
+  const defaultPort = DEFAULT_PORT[vendor] ?? 3306;
   // Each op:// reference is asked of 1Password once per process; a failed read is not kept.
   const opCache = new Map();
   const read = (ref) => {
@@ -161,9 +172,9 @@ export function createProfiles({ dir = configDir(), secrets = defaultSecrets(dir
       for (const k of ['host', 'user', 'database']) if (!fields[k]) throw new Error(`${k} is required`);
       // op:// in host/port/user/database is read here, once, and saved as the plain value.
       const entry = {
-        vendor: fields.vendor || 'mysql',
+        vendor,
         host: await resolveValue(fields.host, read),
-        port: toInt('port', await resolveValue(fields.port, read), 3306),
+        port: toInt('port', await resolveValue(fields.port, read), defaultPort),
         user: await resolveValue(fields.user, read),
         database: await resolveValue(fields.database, read),
       };
@@ -211,9 +222,9 @@ export function createProfiles({ dir = configDir(), secrets = defaultSecrets(dir
         if (password === null) throw new Error(`profile "${name}": password missing from ${secrets.kind}; log in again`);
       }
       return {
-        vendor: e.vendor || 'mysql',
+        vendor,
         host: await resolveValue(e.host, read),
-        port: toInt('port', await resolveValue(e.port, read), 3306),
+        port: toInt('port', await resolveValue(e.port, read), defaultPort),
         user: await resolveValue(e.user, read),
         password,
         database: await resolveValue(e.database, read),

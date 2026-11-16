@@ -14,11 +14,14 @@
   "scripts": {
     "build": "node build.mjs",
     "test": "node --test",
-    "test:docker": "node live-docker.mjs"
+    "test:docker": "node live/docker.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
-    "mysql2": "3.24.6"
+    "mysql2": "3.24.6",
+    "oracledb": "26.0.0",
+    "pg": "8.23.1",
+    "pg-cursor": "2.22.1"
   },
   "devDependencies": {
     "esbuild": "0.28.2"

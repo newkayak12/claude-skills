@@ -156,7 +156,7 @@ test('profile mode: saved dev login, switch local -> dev, query tagged with prof
     'dev', { host: cfg.host, port: cfg.port, user: cfg.user, database: cfg.database }, { store: cfg.password },
   );
   const env = { ...process.env, DBRO_CONFIG_DIR: dir, DBRO_SECRETS: 'file' };
-  for (const k of ['MYSQL_HOST', 'MYSQL_USER', 'MYSQL_DB', 'MYSQL_PASS', 'MYSQL_PORT']) delete env[k];
+  for (const k of ['MYSQL_HOST', 'MYSQL_USER', 'MYSQL_DB', 'MYSQL_PASS', 'MYSQL_PORT', 'DB_HOST', 'DB_USER', 'DB_NAME', 'DB_PASS', 'DB_PORT']) delete env[k];
   const pc = new Client({ name: 'live-profile', version: '0' });
   await pc.connect(new StdioClientTransport({
     command: process.execPath, args: [SERVER], env, stderr: 'ignore',

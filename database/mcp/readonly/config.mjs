@@ -20,6 +20,12 @@ const OPTIONS = {
   pii: 'DBRO_PII',
 };
 
+// Vendor-neutral env names, read when the MYSQL_* one is not set.
+const GENERIC_ENV = { host: 'DB_HOST', port: 'DB_PORT', user: 'DB_USER', password: 'DB_PASS', database: 'DB_NAME' };
+
+export const VENDORS = ['mysql', 'mariadb', 'postgres', 'oracle'];
+export const DEFAULT_PORT = { mysql: 3306, mariadb: 3306, postgres: 5432, oracle: 1521 };
+
 // Personal-data columns dropped from every result (matched on the source column name, so an alias
 // does not bring one back). --pii: "off", or comma-separated regexes that replace the default.
 export const PII_DEFAULT = [
@@ -37,12 +43,14 @@ export function piiMatcher(spec) {
   return (col) => res.some((r) => r.test(col));
 }
 
-export const USAGE = `database-readonly-mcp [--profile local|dev|stage|prod]            (profile mode, default local)
-database-readonly-mcp --host H [--port 3306] --user U [--password P] --database D   (direct mode)
-  common: [--vendor mysql] [--max-rows 1000] [--max-execution-ms 30000] [--pii off|regex,regex]
-Each option falls back to its env var: ${Object.entries(OPTIONS).map(([k, v]) => `--${k}=${v}`).join(', ')}.
+export const USAGE = `database-readonly-mcp [--vendor V] [--profile local|dev|stage|prod]   (profile mode, default local)
+database-readonly-mcp [--vendor V] --host H [--port P] --user U [--password P] --database D   (direct mode)
+  vendors: ${VENDORS.join(', ')} (default mysql); each vendor has its own profiles
+  common: [--max-rows 1000] [--max-execution-ms 30000] [--pii off|regex,regex]
+Each option falls back to its env var: ${Object.entries(OPTIONS).map(([k, v]) => `--${k}=${v}`).join(', ')}
+(and DB_HOST, DB_PORT, DB_USER, DB_PASS, DB_NAME). Oracle: --database is the service name.
 A value starting with op:// is resolved with \`op read\` (1Password CLI, optional).
-Profiles are saved with: node cli.mjs login <profile>`;
+Profiles are saved with: node cli.mjs login <profile> [--vendor V]`;
 
 export function opRead(ref) {
   return new Promise((resolve, reject) => {
@@ -70,7 +78,8 @@ export function readSettings(argv = process.argv.slice(2), env = process.env) {
     strict: true,
   });
   const raw = {};
-  for (const [opt, envName] of Object.entries(OPTIONS)) raw[opt] = values[opt] ?? env[envName];
+  for (const [opt, envName] of Object.entries(OPTIONS)) raw[opt] = values[opt] ?? env[envName] ?? env[GENERIC_ENV[opt]];
+  if (raw.vendor && !VENDORS.includes(raw.vendor)) throw new Error(`--vendor must be one of ${VENDORS.join(', ')}`);
   return raw;
 }
 
@@ -95,10 +104,11 @@ export async function resolveConfig(argv = process.argv.slice(2), env = process.
   }
   const missing = ['host', 'user', 'database'].filter((k) => !out[k]);
   if (missing.length) throw new Error(`missing: ${missing.map((k) => `--${k} (${OPTIONS[k]})`).join(', ')}`);
+  const vendor = out.vendor || 'mysql';
   return {
-    vendor: out.vendor || 'mysql',
+    vendor,
     host: out.host,
-    port: toInt('port', out.port, 3306),
+    port: toInt('port', out.port, DEFAULT_PORT[vendor]),
     user: out.user,
     password: out.password ?? '',
     database: out.database,

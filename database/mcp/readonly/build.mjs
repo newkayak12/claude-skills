@@ -22,13 +22,24 @@ export const bundleHash = () => readFileSync(OUT, 'utf8').match(/^\/\/ sources: 
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { build } = await import('esbuild');
+  const { rmSync, writeFileSync, mkdirSync } = await import('node:fs');
+  const dist = join(here, 'dist');
+  rmSync(dist, { recursive: true, force: true });
+  // Each vendor's driver lands in its own chunk, loaded only by the server run with that --vendor.
+  mkdirSync(dist, { recursive: true });
+  const entry = join(dist, '.entry.mjs');
+  writeFileSync(entry, "import { main } from '../server.mjs';\nawait main();\n");
   await build({
-    stdin: { contents: "import { main } from './server.mjs';\nawait main();\n", resolveDir: here, sourcefile: 'entry.mjs', loader: 'js' },
+    entryPoints: { 'database-readonly': entry },
     bundle: true,
+    splitting: true,
+    chunkNames: 'chunks/[name]-[hash]',
     platform: 'node',
     target: 'node20',
     format: 'esm',
-    outfile: OUT,
+    outdir: dist,
+    outExtension: { '.js': '.mjs' },
+    external: ['pg-native'], // pg's optional native binding, never used
     legalComments: 'none',
     banner: {
       js: [
@@ -40,5 +51,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     },
     logLevel: 'warning',
   });
+  rmSync(entry);
   process.stderr.write(`built ${OUT}\n`);
 }

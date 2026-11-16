@@ -1,172 +1,44 @@
-// MySQL vendor: statement check, pool with a per-connection read-only session, streaming row cap.
+// MySQL and MariaDB: statement check, pool with a per-connection read-only session, streaming row cap.
 // No explicit transactions anywhere: statements run under autocommit, and the session's default
 // access mode (SET SESSION TRANSACTION READ ONLY) makes each implicit transaction read-only.
 import mysql from 'mysql2';
 import { piiMatcher } from '../config.mjs';
+import { DIALECTS, checkStatement, piiColumns as piiColumnsFor, selectList as selectListFor, shape, TABLE_NAME } from './sql.mjs';
 
-const ALLOWED_FIRST = new Set(['SELECT', 'SHOW', 'DESCRIBE', 'DESC', 'EXPLAIN', 'WITH']);
+const dialect = DIALECTS.mysql;
 
-const FORBIDDEN = [
-  [/\bINTO\s+OUTFILE\b/, 'INTO OUTFILE'],
-  [/\bINTO\s+DUMPFILE\b/, 'INTO DUMPFILE'],
-  [/\bINTO\b/, 'INTO (SELECT ... INTO variables)'],
-  [/\bFOR\s+UPDATE\b/, 'FOR UPDATE'],
-  [/\bFOR\s+SHARE\b/, 'FOR SHARE'],
-  [/\bLOCK\s+IN\s+SHARE\s+MODE\b/, 'LOCK IN SHARE MODE'],
-  [/\bGET_LOCK\b/, 'GET_LOCK'],
-  [/\bSLEEP\b/, 'SLEEP'],
-  [/\bBENCHMARK\b/, 'BENCHMARK'],
-  [/\bLOAD_FILE\b/, 'LOAD_FILE'],
-];
-
-// Data-changing statement keywords. INSERT(...) and REPLACE(...) are also string functions, so the
-// function-call form is allowed. Checked for statements that can wrap DML: WITH ... DELETE (MySQL 8),
-// EXPLAIN ANALYZE UPDATE/DELETE (executes the statement).
-const DML = [
-  [/\bINSERT\b(?!\s*\()/, 'INSERT'],
-  [/\bUPDATE\b/, 'UPDATE'],
-  [/\bDELETE\b/, 'DELETE'],
-  [/\bREPLACE\b(?!\s*\()/, 'REPLACE'],
-];
-const DML_CHECKED = new Set(['WITH', 'EXPLAIN', 'DESCRIBE', 'DESC']);
-
-// One pass over the text. Returns
-//   clean:  comments replaced by a space, string literals intact (this is what gets executed)
-//   masked: same, with string/identifier literal contents blanked (this is what gets inspected)
-// or { error }.
-export function scan(sql) {
-  let clean = '';
-  let masked = '';
-  let i = 0;
-  const n = sql.length;
-  while (i < n) {
-    const c = sql[i];
-    const next = sql[i + 1];
-    if (c === '/' && next === '*') {
-      const third = sql[i + 2];
-      if (third === '!') return { error: 'executable comment /*! ... */ is not allowed (MySQL runs its content)' };
-      if (third === '+') return { error: 'optimizer hint /*+ ... */ is not allowed (can change session settings)' };
-      const end = sql.indexOf('*/', i + 2);
-      if (end < 0) return { error: 'unterminated /* comment' };
-      clean += ' ';
-      masked += ' ';
-      i = end + 2;
-    } else if (c === '#' || (c === '-' && next === '-' && (i + 2 >= n || /[\s]/.test(sql[i + 2])))) {
-      const end = sql.indexOf('\n', i);
-      clean += ' ';
-      masked += ' ';
-      i = end < 0 ? n : end + 1;
-    } else if (c === "'" || c === '"' || c === '`') {
-      let j = i + 1;
-      for (;;) {
-        if (j >= n) return { error: `unterminated ${c} literal` };
-        if (sql[j] === '\\' && c !== '`') {
-          j += 2;
-          continue;
-        }
-        if (sql[j] === c) {
-          if (sql[j + 1] === c) {
-            j += 2;
-            continue;
-          }
-          break;
-        }
-        j++;
-      }
-      clean += sql.slice(i, j + 1);
-      masked += c + c;
-      i = j + 1;
-    } else {
-      clean += c;
-      masked += c;
-      i++;
-    }
-  }
-  return { clean: clean.trim(), masked: masked.trim() };
-}
+const RULES = {
+  first: new Set(['SELECT', 'SHOW', 'DESCRIBE', 'DESC', 'EXPLAIN', 'WITH']),
+  // Statements that can wrap DML: WITH ... DELETE (MySQL 8), EXPLAIN ANALYZE UPDATE/DELETE (executes it).
+  dmlChecked: new Set(['WITH', 'EXPLAIN', 'DESCRIBE', 'DESC']),
+  // INSERT(...) and REPLACE(...) are also string functions, so the function-call form is allowed.
+  dml: [
+    [/\bINSERT\b(?!\s*\()/, 'INSERT'],
+    [/\bUPDATE\b/, 'UPDATE'],
+    [/\bDELETE\b/, 'DELETE'],
+    [/\bREPLACE\b(?!\s*\()/, 'REPLACE'],
+  ],
+  forbidden: [
+    [/\bINTO\s+OUTFILE\b/, 'INTO OUTFILE'],
+    [/\bINTO\s+DUMPFILE\b/, 'INTO DUMPFILE'],
+    [/\bINTO\b/, 'INTO (SELECT ... INTO variables)'],
+    [/\bFOR\s+UPDATE\b/, 'FOR UPDATE'],
+    [/\bFOR\s+SHARE\b/, 'FOR SHARE'],
+    [/\bLOCK\s+IN\s+SHARE\s+MODE\b/, 'LOCK IN SHARE MODE'],
+    [/\bGET_LOCK\b/, 'GET_LOCK'],
+    [/\bSLEEP\b/, 'SLEEP'],
+    [/\bBENCHMARK\b/, 'BENCHMARK'],
+    [/\bLOAD_FILE\b/, 'LOAD_FILE'],
+  ],
+};
 
 // Returns { ok: true, sql } with the statement to execute, or { ok: false, rule, message }.
-export function checkQuery(sql) {
-  if (typeof sql !== 'string') return reject('input', 'sql must be a string');
-  const s = scan(sql);
-  if (s.error) return reject('comment/literal', s.error);
-  let { clean, masked } = s;
-  if (masked.endsWith(';')) {
-    masked = masked.slice(0, -1).trim();
-    clean = clean.replace(/;\s*$/, '').trim();
-  }
-  if (!masked) return reject('empty', 'empty statement');
-  if (masked.includes(';')) return reject('single-statement', 'only one statement is allowed (found ; inside)');
-  const upper = masked.toUpperCase();
-  const first = (upper.match(/^[A-Z]+/) || [''])[0];
-  if (!ALLOWED_FIRST.has(first)) {
-    return reject('whitelist', `first keyword "${first || masked.slice(0, 10)}" is not allowed; allowed: ${[...ALLOWED_FIRST].join(', ')}`);
-  }
-  if (DML_CHECKED.has(first)) {
-    for (const [re, name] of DML) {
-      if (re.test(upper)) return reject('dml', `${name} inside ${first} is not allowed`);
-    }
-  }
-  for (const [re, name] of FORBIDDEN) {
-    if (re.test(upper)) return reject('forbidden', `${name} is not allowed`);
-  }
-  return { ok: true, sql: clean };
-}
+export const checkQuery = (sql) => checkStatement(sql, dialect, RULES);
+export const selectList = (sql) => selectListFor(sql, dialect);
+export const piiColumns = (fields, sql, isPii = piiMatcher()) => piiColumnsFor(fields, sql, isPii, dialect);
 
-function reject(rule, message) {
-  return { ok: false, rule, message };
-}
-
-// The select-list expressions of a statement with exactly one SELECT, no `*` and no @variables, or
-// null. Only then does a computed column's own expression tell everything it reads: a subquery, CTE
-// or derived table could hand a personal column over under a harmless alias.
-export function selectList(sql) {
-  // '…' and "…" contents blanked (length kept) so their commas and parentheses do not count.
-  const s = String(sql).replace(/'(?:[^'\\]|\\.|'')*'|"(?:[^"\\]|\\.|"")*"/g, (m) => `'${' '.repeat(m.length - 2)}'`);
-  const upper = s.toUpperCase();
-  if ((upper.match(/\bSELECT\b/g) || []).length !== 1 || s.includes('@')) return null;
-  const start = upper.match(/^\s*SELECT\b/);
-  if (!start) return null;
-  const exprs = [];
-  let depth = 0;
-  let from = start[0].length;
-  let i = from;
-  const END = /^(FROM|WHERE|GROUP|HAVING|ORDER|LIMIT|UNION|WINDOW|INTO|FOR|LOCK)\b/;
-  for (; i < s.length; i++) {
-    const c = s[i];
-    if (c === '(') depth++;
-    else if (c === ')') depth--;
-    else if (depth === 0 && c === ',') {
-      exprs.push(s.slice(from, i));
-      from = i + 1;
-    } else if (depth === 0 && !/[\w$`]/.test(s[i - 1]) && END.test(upper.slice(i))) break;
-  }
-  exprs.push(s.slice(from, i));
-  // `*` or t.* expands to columns the list does not name.
-  if (exprs.some((e) => /(^|\.)\*$/.test(e.replace(/\s+/g, '')))) return null;
-  return exprs.map((e) => e.trim());
-}
-
-// Result columns that carry personal data: a table column whose source name matches, or a computed
-// column (no source name) whose expression or own name mentions one — so neither an alias nor
-// CONCAT(recv_nm) AS x gets one out. When the expressions cannot be told apart (subquery, CTE, `*`,
-// @variables), any personal column named in the statement hides every computed column.
-export function piiColumns(fields, sql, isPii = piiMatcher()) {
-  if (!isPii) return [];
-  const words = (s) => String(s).split(/[^A-Za-z0-9_$]+/).filter(Boolean);
-  const list = selectList(sql);
-  const exprs = list && list.length === fields.length ? list : null;
-  const sqlHasPii = words(sql).some(isPii);
-  return fields
-    .filter((f, i) => {
-      if (f.orgName) return isPii(f.orgName);
-      if (words(f.name).some(isPii)) return true;
-      return exprs ? words(exprs[i]).some(isPii) : sqlHasPii;
-    })
-    .map((f) => f.name);
-}
-
-export function createMysql(cfg) {
+// flavor 'mariadb': the timeout variable is max_statement_time (seconds) instead of max_execution_time (ms).
+export function createMysql(cfg, flavor = 'mysql') {
   const isPii = piiMatcher(cfg.pii);
   const pool = mysql.createPool({
     host: cfg.host,
@@ -186,15 +58,21 @@ export function createMysql(cfg) {
   const q = (conn, sql, values) =>
     new Promise((res, rej) => conn.query(sql, values, (err, rows) => (err ? rej(err) : res(rows))));
 
+  const timeout =
+    flavor === 'mariadb'
+      ? `SET SESSION max_statement_time = ${Number(cfg.maxExecutionMs) / 1000}`
+      : `SET SESSION max_execution_time = ${Number(cfg.maxExecutionMs)}`;
+
   // Every connection gets the read-only session before its first user statement, and we verify it.
   async function getConn() {
     const conn = await new Promise((res, rej) => pool.getConnection((err, c) => (err ? rej(err) : res(c))));
     if (ready.has(conn)) return conn;
     try {
       await q(conn, 'SET SESSION TRANSACTION READ ONLY');
-      await q(conn, `SET SESSION max_execution_time = ${Number(cfg.maxExecutionMs)}`);
-      const [row] = await q(conn, 'SELECT @@session.transaction_read_only AS ro');
-      if (Number(row.ro) !== 1) throw new Error('session read-only mode did not take effect');
+      await q(conn, timeout);
+      // MySQL and MariaDB 11.1+ name it transaction_read_only, older MariaDB tx_read_only.
+      const vars = await q(conn, "SHOW SESSION VARIABLES WHERE Variable_name IN ('transaction_read_only', 'tx_read_only')");
+      if (!vars.length || !vars.every((v) => v.Value === 'ON')) throw new Error('session read-only mode did not take effect');
       ready.add(conn);
       return conn;
     } catch (e) {
@@ -216,24 +94,14 @@ export function createMysql(cfg) {
       const finish = (err) => {
         if (done) return;
         done = true;
-        const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
         if (err) {
           conn.release();
           return reject(err);
         }
         if (truncated) conn.destroy();
         else conn.release();
-        const hidden = fields ? piiColumns(fields, sql, isPii) : [];
-        for (const r of rows) for (const c of hidden) delete r[c];
-        resolve({
-          columns: fields ? fields.map((f) => f.name).filter((c) => !hidden.includes(c)) : [],
-          ...(hidden.length ? { hidden } : {}),
-          rows: header && !fields ? [] : rows,
-          rowCount: rows.length,
-          truncated,
-          elapsedMs: Math.round(elapsedMs * 10) / 10,
-          ...(header && !fields ? { result: header } : {}),
-        });
+        const out = shape({ fields, rows: header && !fields ? [] : rows, truncated, started, sql, isPii, dialect });
+        resolve(header && !fields ? { ...out, result: header } : out);
       };
       const query = conn.query(sql);
       query.on('fields', (f) => (fields = f));
@@ -264,7 +132,7 @@ export function createMysql(cfg) {
   }
 
   async function describeTable(table) {
-    if (typeof table !== 'string' || !/^[A-Za-z0-9_$]{1,64}$/.test(table)) {
+    if (typeof table !== 'string' || !TABLE_NAME.test(table) || table.includes('.')) {
       throw new Error('invalid table name (allowed: letters, digits, _ and $, up to 64 chars)');
     }
     const conn = await getConn();
@@ -285,7 +153,9 @@ export function createMysql(cfg) {
 
   const close = () => new Promise((res) => pool.end(() => res()));
 
-  return { check: checkQuery, execute, listTables, describeTable, close, _getConn: getConn };
+  const ping = () => execute('SELECT 1 AS ok');
+
+  return { check: checkQuery, execute, ping, listTables, describeTable, close, _getConn: getConn };
 }
 
 export default createMysql;

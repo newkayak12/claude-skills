@@ -1,12 +1,25 @@
 # database-readonly-mcp
 
-Read-only database MCP server (stdio). Vendor: `mysql` (more later under `vendors/`).
+Read-only database MCP server (stdio). `--vendor mysql|mariadb|postgres|oracle` (default mysql); the
+plugin runs one server per vendor. Shared statement handling is in `vendors/sql.mjs`, one module per vendor.
 
-- Every pooled connection runs `SET SESSION TRANSACTION READ ONLY` and `SET SESSION max_execution_time`
-  before its first statement (verified with `@@transaction_read_only`). No BEGIN/COMMIT/ROLLBACK: autocommit.
-- `query` accepts one statement starting with SELECT, SHOW, DESCRIBE, DESC, EXPLAIN or WITH; rejects
-  INTO, FOR UPDATE/SHARE, LOCK IN SHARE MODE, GET_LOCK, SLEEP, BENCHMARK, LOAD_FILE, `/*! */`, `/*+ */`,
-  and DML inside WITH/EXPLAIN. Rows stream and stop at `--max-rows` with `truncated: true`.
+| Vendor | Read-only by | Timeout | Accepted first keyword | Personal data matched by |
+|---|---|---|---|---|
+| mysql | `SET SESSION TRANSACTION READ ONLY`, checked | `max_execution_time` | SELECT, WITH, SHOW, DESCRIBE, DESC, EXPLAIN | source column (`orgName`) |
+| mariadb | same, checked (`tx_read_only` on older versions) | `max_statement_time` | same as mysql | source column |
+| postgres | startup `default_transaction_read_only=on`, checked | `statement_timeout` | SELECT, WITH, EXPLAIN, SHOW, TABLE, VALUES | source column (`pg_attribute`) |
+| oracle | `SET TRANSACTION READ ONLY` per call, then rollback | `callTimeout` | SELECT, WITH | column name and select-list expression |
+
+- No BEGIN/COMMIT: MySQL, MariaDB and PostgreSQL run autocommit statements in read-only transactions.
+- Rejected on every vendor: more than one statement, locking reads, INTO, DML inside WITH/EXPLAIN,
+  `/*+ */` hints. mysql/mariadb: `/*! */`, `/*M! */`, GET_LOCK, SLEEP, BENCHMARK, LOAD_FILE. postgres:
+  pg_sleep, server file and large-object functions, dblink, advisory locks, set_config, nextval/setval,
+  backend signals and admin functions, `*_to_xml` (they run SQL text; checked with string contents
+  included). oracle: inline `WITH FUNCTION`, `seq.NEXTVAL`, DBMS_* (but DBMS_LOB, DBMS_RANDOM), UTL_*
+  (but UTL_RAW), HTTPURITYPE.
+- A function that writes through its own (autonomous) transaction is not stopped by a read-only
+  transaction: give the account read-only privileges too.
+- Rows stream (mysql) or are fetched through a cursor/result set, and stop at `--max-rows` with `truncated: true`.
 - Tools: `query(sql)`, `list_tables()`, `describe_table(table)`.
 - The plugin runs `dist/database-readonly.mjs`: the server and its dependencies bundled by
   `npm run build` (esbuild), so an installed copy needs no `npm install`. Run the build after any
@@ -38,8 +51,10 @@ node cli.mjs list
 claude mcp add -s user database-readonly -- node /path/server.mjs
 ```
 
-Settings: `~/.config/database-readonly-mcp/profiles.json` (0600, no passwords). Passwords: macOS
-Keychain (service `database-readonly-mcp`, account = profile); elsewhere or with `DBRO_SECRETS=file`,
+Each vendor keeps its own profiles: mysql in `~/.config/database-readonly-mcp/`, the others in
+`~/.config/database-readonly-mcp/<vendor>/`; `cli.mjs` takes `--vendor` the same way.
+Settings: `profiles.json` there (0600, no passwords). Passwords: macOS Keychain (service
+`database-readonly-mcp`, `database-readonly-mcp-<vendor>` for the others; account = profile); elsewhere or with `DBRO_SECRETS=file`,
 `secrets.json` (0600) in the same folder. With Keychain, an op:// password is read once into Keychain
 and profiles.json keeps only `password_from: op://****/****/<field>`; a profile still on `op` or on
 `secrets.json` moves on its next use, and its `secrets.json` value becomes `****`.
@@ -60,15 +75,15 @@ replaces the list.
 | Option | Env | Default |
 |---|---|---|
 | `--vendor` | `DB_VENDOR` | `mysql` |
-| `--host` | `MYSQL_HOST` | required |
-| `--port` | `MYSQL_PORT` | 3306 |
-| `--user` | `MYSQL_USER` | required |
-| `--password` | `MYSQL_PASS` | empty |
-| `--database` | `MYSQL_DB` | required |
+| `--host` | `MYSQL_HOST` or `DB_HOST` | required |
+| `--port` | `MYSQL_PORT` or `DB_PORT` | 3306, postgres 5432, oracle 1521 |
+| `--user` | `MYSQL_USER` or `DB_USER` | required |
+| `--password` | `MYSQL_PASS` or `DB_PASS` | empty |
+| `--database` | `MYSQL_DB` or `DB_NAME` | required (oracle: service name) |
 | `--max-rows` | `MAX_ROWS` | 1000 |
 | `--max-execution-ms` | `MAX_EXECUTION_MS` | 30000 |
 
-Args win over env. Any value starting with `op://` is read with `op read` (1Password CLI), so
+Args win over env; a `MYSQL_*` variable wins over its `DB_*` one. Any value starting with `op://` is read with `op read` (1Password CLI), so
 `op run` is optional. Prefer env or `op://` for the password: a plain `--password` shows in `ps`.
 
 ```sh
@@ -85,8 +100,9 @@ claude mcp add -s user mydb -e MYSQL_PASS=... -- node /path/server.mjs --host 12
 
 ```sh
 npm test                                   # unit tests; live tests skip without MYSQL_HOST
-npm run test:docker                        # live tests on a throwaway seeded MySQL in docker, against
-                                           # server.mjs and the bundle (no host port; removed after)
+npm run test:docker [-- postgres oracle]   # live tests per vendor (default all four) on a throwaway
+                                           # seeded database in docker, against server.mjs and the
+                                           # bundle (no host port; removed after)
 op run --env-file .env.dev -- npm test     # + live tests against a DEV database (.env.dev is gitignored)
 ```
 
