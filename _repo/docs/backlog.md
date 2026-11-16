@@ -638,17 +638,6 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
       `node -e '[1,2].map(x => x*2)'` runs, not refused (the earlier refusal not reproduced).
     - Acceptance (left): the user approves the 190/110 captures.
 
-133. **teams is measured against gstack and cursor/plugins in one written report**
-   - Why: user, 2026-11-10: "https://github.com/garrytan/gstack, https://github.com/cursor/plugins 분석 Fable5.2로
-     + teams와 대조(Fable5.2) 및 리포트 작성(Opus 5.5)".
-   - Acceptance: analysis of each repo and the contrast with teams run as subagents on Fable (the user named Fable
-     5.2), the report written on Opus 5.5; each repo is read at a pinned commit and every claim about it cites a
-     file there; the contrast covers what teams does (stages and gates, task/EPIC/STORY model, drivers and
-     parallel runs, human asks, the pane and band, cost and budget, install and config) and says per row which
-     side does it, how, and whether teams should take it; borrowed ideas are named as ideas, no code copied;
-     the report lands in `_repo/docs/plans/` dated, and what teams should take
-     is listed at its end for the user to choose (no cards filed without that choice).
-
 135. **The two resume tests in `teams/scripts/bench/test-drive-gh.mjs` finish under their 60 s limit**
    - Why: seen 2026-11-10 while checking card 131: `node --test teams/scripts/bench/test-*.mjs` 78 pass / 2 fail,
      both in `test-drive-gh.mjs` ("a gh-* job that hit a usage limit is resumed by resume.sh in the hashed
