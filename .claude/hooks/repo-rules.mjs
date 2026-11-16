@@ -31,7 +31,19 @@ const COMMIT = /\bgit\s+commit\b/
 //   is daemon_done AND <task.cwd>/<docs_dir>/E-<run_id[0:8]>/80-report.md exists, whatever the
 //   outcome; or (b) that last event is clean (tm_clean). A report without daemon_done stays held
 //   (a crashed daemon), and so does a failed task without its report. No ledger = just opened = held.
-const samePath = p => { try { return realpathSync(p) } catch { return resolve(p) } }
+// A path that does not exist yet is canonicalized through its nearest existing ancestor.
+const samePath = p => {
+  let d = resolve(p)
+  const rest = []
+  for (;;) {
+    try { return join(realpathSync(d), ...rest) } catch {
+      const up = dirname(d)
+      if (up === d) return resolve(p)
+      rest.unshift(basename(d))
+      d = up
+    }
+  }
+}
 const DOCS_DIR = '.teams_output/team' // TEAM_DEFAULTS.docs_dir; task.team.opts.docs_dir overrides (teams/mcp/tickets.mjs docPaths)
 
 function holdsPush(task, id, dir) {
@@ -338,7 +350,7 @@ function bashDeny(cmd, cwd, env, run) {
             if (to) {
               if (name === 'pushd') st.stack.push(st.dir)
               st.prev = st.dir
-              st.dir = resolve(st.dir, to)
+              st.dir = resolve(st.dir, to) // logical, as bash's cd; targets are canonicalized at comparison via samePath
             }
           }
         }

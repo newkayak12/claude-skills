@@ -491,6 +491,29 @@ check('write/rm: unbalanced quote -> exit 0', bash("sed -i 's/a/b teams/mcp/x.mj
   rmSync(fixtureRoot, { recursive: true, force: true })
 }
 
+// a symlinked, non-canonical root whose target parent dir (teams/) does not exist: the write must still deny
+{
+  const realDir = realpathSync(mkdtempSync(join(tmpdir(), 'repo-rules-link-')))
+  const linkDir = join(tmpdir(), `repo-rules-linkto-${process.pid}`)
+  symlinkSync(realDir, linkDir)
+  const realRepo = join(realDir, 'repo')
+  mkdirSync(join(realDir, 'outside'))
+  mkdirSync(realRepo)
+  sh(realRepo, 'init', '-q', '-b', 'main')
+  copyHook(realRepo)
+  const linkRepo = join(linkDir, 'repo')
+  const outside = join(linkDir, 'outside')
+  hook = join(realRepo, '.claude/hooks/repo-rules.mjs')
+  check('write: symlinked root is non-canonical', realpathSync(linkRepo) !== linkRepo)
+  check('write: absolute path via a symlinked root, new parent dir -> deny', writeDenied(bash(`echo x > ${linkRepo}/teams/a.md`, outside)))
+  check('write: cd into the repo via a symlinked root, then sed -i on a new dir -> deny', writeDenied(bash(`cd ${linkRepo} && sed -i 's/a/b/' teams/mcp/x.mjs`, outside)))
+  symlinkSync(join(realDir, 'outside'), join(realRepo, 'r'))
+  check('write: cd into an in-repo symlink to outside, cd .. (logical), then sed -i -> deny', writeDenied(bash("cd r && cd .. && sed -i 's/a/b/' teams/mcp/x.mjs", realRepo)))
+  hook = cloneHook
+  rmSync(linkDir, { force: true })
+  rmSync(realDir, { recursive: true, force: true })
+}
+
 check('garbage stdin -> fail open', run('bash', 'not json').code === 0 && Object.keys(run('bash', 'not json').out).length === 0)
 check('bad cwd -> fail open', run('bash', { tool_name: 'Bash', tool_input: { command: 'git commit' }, cwd: '/nonexistent' }).code === 0)
 
