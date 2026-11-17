@@ -81,6 +81,10 @@ real deck lone commas 316 → 0, engine version printed).
       the `font-size` that reaches 8pt; `scaffold` returns the workspace files that still reference an
       old name (report only, user files untouched); tests with counts (`test_resume.py`, `test_deck.py`,
       `test-manage.mjs`).
+    - Scope (user, 2026-11-17: "워크스페이스 빌드 내가 마지막으로 픽한거니까"): the workspace's last
+      build (deck 31 pages, resume 3 pages, 2026-11-13) is the user's pick and the target; (1) and (2)
+      do not move the skill toward it and wait; (3) is a bug either way. What the skill still lacks is
+      measured against that build (skill alone vs the pick, blind), and those gaps come first.
 
 153. **The deck render is checked against PowerPoint, and the 3.2.0 audits catch what they missed**
     - Why: after portfolio 3.2.0 (2026-11-14) the deck renderer is checked only against Word's saved
