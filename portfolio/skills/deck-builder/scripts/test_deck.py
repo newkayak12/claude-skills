@@ -426,6 +426,38 @@ def uneven():
     hits = deck.zone_audit(pages_to_xml(page(114, 164)), ["s1"], zones, 960.0)
     check(hits == [], "the same blocks, evenly apart, are not — %s" % hits)
 
+    print("zone audit: level lines, sideways drift, measured frames")
+    line = lambda x0, y0, x1, y1: ((x0, y0, x1, y1), "글")
+    # a header unit: a short label at 70–80pt and a long lead at 100–112pt; a right label at 70–80pt
+    side = {"a": ["text4", "text13"], "b": ["text3"], "a_box": (20.0, 70.0, 500.0, 42.0),
+            "b_box": (600.0, 70.0, 300.0, 10.0), "axis": "→", "key": ("h", "r", "→"), "gap": 80.0,
+            "zone": 63.0, "spread": 0.0, "borrowed": False, "label": "head → right"}
+    lead = lambda x1: [(960.0, 540.0, [[line(20, 70, 200, 80)], [line(20, 100, x1, 112)],
+                                       [line(700, 70, 900, 80)]])]
+    hits = deck.zone_audit(pages_to_xml(lead(560)), ["s1"], {"s1": [side]}, 960.0)
+    check(not [h for h in hits if h[1] == "zone"],
+          "a line below the right label's height does not cross into its zone sideways — %s" % hits)
+    hits = deck.zone_audit(pages_to_xml([(960.0, 540.0, [[line(20, 70, 580, 80)], [line(700, 70, 900, 80)]])]),
+                           ["s1"], {"s1": [side]}, 960.0)
+    check([h for h in hits if h[1] == "zone"], "a line level with it still does — %s" % hits)
+    hits = deck.zone_audit(pages_to_xml(lead(300) + lead(480)), ["s1", "s1"], {"s1": [side]}, 960.0)
+    check(not [h for h in hits if h[1] == "drift"],
+          "two pages whose left text differs in length are not a sideways drift — %s" % hits)
+    # a panel holding a picture above a footnote: the panel's frame ends it, not its text
+    panel = {"a": ["text2", "pic1"], "b": ["text14"], "a_box": (20.0, 100.0, 400.0, 290.0),
+             "b_box": (20.0, 410.0, 400.0, 30.0), "axis": "↓", "key": ("p", "f", "↓"), "gap": 20.0,
+             "zone": 20.0, "spread": 0.0, "borrowed": False, "label": "panel ↓ foot"}
+    pg = lambda end: [(960.0, 540.0, [[line(30, 110, 400, end)], [line(20, 412, 300, 424)]])]
+    hits = deck.zone_audit(pages_to_xml(pg(130) + pg(220)), ["s1", "s1"], {"s1": [panel]}, 960.0)
+    check(not [h for h in hits if h[1] == "drift"],
+          "a panel with a picture ends at its frame: more text above the picture is no drift — %s" % hits)
+    # a page's own pairs (from its built slide) replace the archetype's
+    moved = dict(side, b_box=(600.0, 200.0, 300.0, 10.0))
+    hits = deck.zone_audit(pages_to_xml([(960.0, 540.0, [[line(20, 70, 580, 80)], [line(700, 200, 900, 210)]])]),
+                           ["s1"], {"s1": [side]}, 960.0, page_zones={1: [moved]})
+    check(not [h for h in hits if h[1] == "zone"],
+          "page_zones: a page measured on its placed frames, not the template's — %s" % hits)
+
 
 def drift(tmp):
     """`@sN` must not silently point somewhere else after the template moves."""
@@ -1699,6 +1731,23 @@ def placing(tmp):
           "a spill from an `h=` frame is measured on that frame's height, a part line counted: %s"
           % out[-300:])
 
+    print("render audits a moved page on its built frames")
+    src.write_text(head + "text1: 짧음\nplace:\n  - text2: 0 300\n\n## @s1\ntext1: 짧음\ntext3: !drop\n",
+                   encoding="utf-8")
+    run_cmd(["build", "--deck", str(src)])
+    tpl = deck.Package(tmp / "pl.pptx")
+    tparts = deck.slide_order(tpl)
+    zones = deck.template_zones(tpl, tparts, deck.slide_size(tpl)[1])
+    _, specs, _ = deck.parse_deck(src.read_text(encoding="utf-8"))
+    pz = deck.built_page_zones(tpl, tparts, deck.Package(tmp / "pl-out.pptx"), specs, zones,
+                               deck.slide_size(tpl)[1])
+    moved = [r for r in pz.get(1, []) if r["b"] == ["text2"] or r["a"] == ["text2"]]
+    check(moved and any(abs(r["b_box"][1] - 300) < 1 or abs(r["a_box"][1] - 300) < 1 for r in moved),
+          "page 1: text2's pair is measured where `place:` put it (300pt): %s"
+          % [(r["label"], r["a_box"], r["b_box"]) for r in pz.get(1, [])])
+    check(2 in pz and not [r for r in pz[2] if "text3" in r["a"] + r["b"]],
+          "page 2: a pair with a wholly `!drop`ped unit is not audited: %s" % pz.get(2))
+
     print("distribute: re-space the slide's row groups")
 
     def row(i, y):
@@ -1743,6 +1792,15 @@ def placing(tmp):
           and ys[-1] + rows[-1][1] <= (540 - 28) * E + 1 and all(h == 750000 for _, h in rows),
           "distribute: 70 — even gaps, first at 70pt, last inside the 28pt default safe area, "
           "sizes kept: %s" % rows)
+    tpl = deck.Package(tmp / "pl.pptx")
+    tparts = deck.slide_order(tpl)
+    zs = deck.template_zones(tpl, tparts, deck.slide_size(tpl)[1])
+    _, specs, _ = deck.parse_deck((tmp / "pld.mdx").read_text(encoding="utf-8"))
+    pz = deck.built_page_zones(tpl, tparts, deck.Package(tmp / "pld-out.pptx"), specs, zs,
+                               deck.slide_size(tpl)[1])
+    tops = sorted(round(r[s + "_box"][1]) for r in pz.get(1, []) for s in ("a", "b"))
+    check(tops and tops[0] == 70,
+          "a `distribute:`d page is audited with each row where it moved (first row at 70pt): %s" % tops)
     (tmp / "style").mkdir(exist_ok=True)
     (tmp / "style" / "레이아웃.md").write_text(
         "## 안전 영역 (pt)\n- top: 30\n- bottom: 60\n- left: 30\n- right: 30\n", encoding="utf-8")

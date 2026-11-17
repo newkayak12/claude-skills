@@ -4076,21 +4076,28 @@ def collisions(xml_text, cross_tol=0.05, bunch_tol=0.70):
     return found
 
 
-def zone_audit(xml_text, archetypes, zones, slide_w_pt):
+def zone_audit(xml_text, archetypes, zones, slide_w_pt, page_zones=None):
     """Rendered text against the template's critical zones.
 
     `zone`: a unit's rendered lines run past its frame and into the zone before its
     neighbour. `drift`: pages on one archetype whose rendered gap for one pair (content
     to content, frame where a unit has no text) spreads wider than the template's own
-    cluster does (at least ZONE_TOL_PT) — the same layout no longer looks the same."""
+    cluster does (at least ZONE_TOL_PT) — the same layout no longer looks the same.
+
+    `page_zones` {page: [pair]} replaces a page's archetype pairs with ones measured on its built
+    frames (`place:`, `distribute:`, `!drop`). Sideways, only lines level with the neighbour count;
+    drift is read down the page only (a left-aligned line's length is content, not layout), and a
+    unit holding a picture ends at its frame (the picture, not its text, is what sits there)."""
     found, seen, page_gaps = [], {}, {}
+    page_zones = page_zones or {}
     for pi, (pw, ph, blocks) in enumerate(_bbox_pages(xml_text), 1):
         if pi > len(archetypes):
             break
         arch = archetypes[pi - 1]
         k = pw / slide_w_pt if slide_w_pt else 1.0
-        content = {}
-        boxes = {r[s + "_box"] for r in zones.get(arch, []) for s in ("a", "b")}
+        content, owned = {}, {}
+        rows = page_zones.get(pi, zones.get(arch, []))
+        boxes = {r[s + "_box"] for r in rows for s in ("a", "b")}
         for lines in blocks:
             # A block belongs to the frame holding its first line (text overruns downward),
             # else its last line (overruns upward), else the frame it overlaps most.
@@ -4106,21 +4113,30 @@ def zone_audit(xml_text, archetypes, zones, slide_w_pt):
             if own is None or not box_intersection(bx, own):
                 continue
             got = content.setdefault(own, [1e9, 1e9, -1e9, -1e9])
+            owned.setdefault(own, []).extend(tuple(v / k for v in box) for box, _ in lines)
             for box, _ in lines:
                 got[0], got[1] = min(got[0], box[0] / k), min(got[1], box[1] / k)
                 got[2], got[3] = max(got[2], box[2] / k), max(got[3], box[3] / k)
-        for r in zones.get(arch, []):
+        def level(unit, other):
+            """[x0, y0, x1, y1] of the unit's lines that share rows with the other frame, or None."""
+            ls = [l for l in owned.get(unit, []) if l[1] < other[1] + other[3] and other[1] < l[3]]
+            return [min(l[0] for l in ls), min(l[1] for l in ls), max(l[2] for l in ls),
+                    max(l[3] for l in ls)] if ls else None
+        for r in rows:
             a, b = r["a_box"], r["b_box"]
-            ca = content.get(a)
-            cb = content.get(b, [b[0], b[1], b[0] + b[2], b[1] + b[3]])
+            pictured = any(m.startswith("pic") for m in r.get("a", []))
             if r["axis"] == "↓":
+                ca, has_b = content.get(a), content.get(b)
+                cb = has_b or [b[0], b[1], b[0] + b[2], b[1] + b[3]]
                 frame_end, end = a[1] + a[3], (ca[3] if ca else None)
                 start = b[1]
-                seen_gap = cb[1] - (ca[3] if ca else a[1] + a[3])
+                seen_gap = cb[1] - (a[1] + a[3] if pictured or not ca else ca[3])
             else:
+                ca, has_b = level(a, b), level(b, a)
+                cb = has_b or [b[0], b[1], b[0] + b[2], b[1] + b[3]]
                 frame_end, end = a[0] + a[2], (ca[2] if ca else None)
                 start = b[0]
-                seen_gap = cb[0] - (ca[2] if ca else a[0] + a[2])
+                seen_gap = None
             if end is not None and r["zone"] is not None and end > frame_end + ZONE_TOL_PT \
                     and start - end < r["zone"] - ZONE_TOL_PT:
                 found.append((pi, "zone", "%s — 글이 프레임을 %.1fpt 넘어 임계 %s 안으로 "
@@ -4128,11 +4144,13 @@ def zone_audit(xml_text, archetypes, zones, slide_w_pt):
                                                 r["zone"] - (start - end))))
             # The later shape's text can overrun backwards too (bottom- or centre-anchored).
             back = cb[1] if r["axis"] == "↓" else cb[0]
-            if content.get(b) and r["zone"] is not None and back < start - ZONE_TOL_PT \
+            if has_b and r["zone"] is not None and back < start - ZONE_TOL_PT \
                     and back - frame_end < r["zone"] - ZONE_TOL_PT:
                 found.append((pi, "zone", "%s — 뒤 도형의 글이 프레임을 %.1fpt 거슬러 임계 %s "
                               "안으로 %.1fpt 들어감" % (r["label"], start - back, zone_cell(r),
                                                        r["zone"] - (back - frame_end))))
+            if seen_gap is None:
+                continue
             seen.setdefault((arch, r["label"]), []).append((pi, seen_gap, r["spread"]))
             if content.get(a) and content.get(b):
                 page_gaps.setdefault((r["key"], round(r["gap"] / (2 * ZONE_TOL_PT))), []).append((r["label"], seen_gap))
@@ -4244,7 +4262,9 @@ def cmd_render(args):
     tparts = slide_order(tpl)
     zones = template_zones(tpl, tparts, slide_size(tpl)[1])
     archs = [s.archetype for s in specs]
-    hits += zone_audit(box, archs, zones, pt(slide_size(tpl)[0]))
+    hits += zone_audit(box, archs, zones, pt(slide_size(tpl)[0]),
+                       page_zones=built_page_zones(tpl, tparts, Package(out), specs, zones,
+                                                   slide_size(tpl)[1]))
 
     # The template rendered the same way is the baseline: what its own page of that
     # archetype already shows is the template's, not something this deck did.
@@ -4275,6 +4295,68 @@ def cmd_render(args):
     if rbox is None:
         print("  ! 템플릿 원본을 렌더하지 못해 템플릿 자체 문제와 구분하지 못했습니다")
     return 1 if (hits and args.strict) else rc
+
+
+def built_page_zones(tpl, tparts, built, specs, zones, slide_cy):
+    """{page: [pair]} for pages whose shapes the deck moved or dropped, so the audit reads the
+    frames the reader sees. A moved page (`place:`, `distribute:`) is the template slide with each
+    named shape's frame taken from the built slide, its pairs re-measured and given the template
+    pair's zone by label; a pair one of whose units was wholly `!drop`ped is left out on every page
+    (the shapes are gone, their frame is not a neighbour). Measured 2026-11-17: on a deck moved off its post-build
+    scripts, 7 of 17 render findings were frames measured where the template had them."""
+    out, bparts = {}, slide_order(built)
+
+    def name_of(el):   # shape_name, and a group's own name
+        nv = el.find(q("p:nvGrpSpPr") + "/" + q("p:cNvPr"))
+        return nv.get("name") or "" if nv is not None else shape_name(el)
+    for page, spec in enumerate(specs, 1):
+        arch = spec.archetype
+        n = int(arch[1:]) if re.fullmatch(r"s\d+", arch) else 0
+        if not 1 <= n <= len(tparts) or page > len(bparts):
+            continue
+        keys = {sid for sid, *_ in spec.values}
+        dropped = {sid for sid, kind, value, _ in spec.values
+                   if kind == "scalar" and isinstance(value, str) and value.strip() == "!drop"}
+        rows = zones.get(arch, [])
+        if keys & {"place", "distribute"}:
+            probe = ET.fromstring(tpl.parts[tparts[n - 1]])
+            tree = probe.find(q("p:cSld") + "/" + q("p:spTree"))
+            got = ET.fromstring(built.parts[bparts[page - 1]]).find(q("p:cSld") + "/" + q("p:spTree"))
+            by_name = {}
+            for c in got:
+                by_name.setdefault(name_of(c), c)
+            for c in tree:
+                twin = by_name.get(name_of(c)) if name_of(c) else None
+                holder = "p:grpSpPr" if c.tag == q("p:grpSp") else "p:spPr"
+                mine = c.find(q(holder) + "/" + q("a:xfrm"))
+                theirs = twin.find(q(holder) + "/" + q("a:xfrm")) if twin is not None else None
+                if mine is None or theirs is None:
+                    continue
+                if c.tag == q("p:grpSp"):
+                    # the analysis reads a group's children in their own coordinates: a group
+                    # `distribute:` moved carries its children by the same offset
+                    o0, o1 = mine.find(q("a:off")), theirs.find(q("a:off"))
+                    dx = int(o1.get("x", 0)) - int(o0.get("x", 0))
+                    dy = int(o1.get("y", 0)) - int(o0.get("y", 0))
+                    for kid in c.iter():
+                        off = kid.find(q("p:spPr") + "/" + q("a:xfrm") + "/" + q("a:off"))
+                        if kid is not c and off is not None:
+                            off.set("x", str(int(off.get("x", 0)) + dx))
+                            off.set("y", str(int(off.get("y", 0)) + dy))
+                parent = c.find(q(holder))
+                parent.insert(list(parent).index(mine), copy.deepcopy(theirs))
+                parent.remove(mine)
+            base = {r["label"]: r for r in rows}
+            rows = slide_pairs(analyze_slide(probe, slide_cy))
+            for r in rows:
+                t = base.get(r["label"])
+                if t:
+                    r.update(count=t["count"], zone=t["zone"], borrowed=t["borrowed"], spread=t["spread"])
+        elif not dropped:
+            continue
+        # a unit is gone only when every shape in it is: a panel whose caption was dropped still stands
+        out[page] = [r for r in rows if not set(r["a"]) <= dropped and not set(r["b"]) <= dropped]
+    return out
 
 
 def panel_floors(xml_text, pptx, gap_pt=TEXT_GAP_PT):
