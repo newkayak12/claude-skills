@@ -293,15 +293,6 @@ toasts).
 
 Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 128's leftovers.
 
-152. **The W2 hygiene test does not fail on a `.teams_wiki` a real teams run left in the repo root**
-    - Why: seen 2026-11-16 checking cards 145/146: `node --test teams/scripts/test-*.mjs` 2300 / 2297 pass / 1 fail,
-      "W2 hygiene: nothing in this suite wrote a .teams_wiki into the repo or the process cwd"
-      (`teams/scripts/test-taskmanager.mjs`). The repo root holds an untracked `.teams_wiki/` dated 2026-11-11
-      (pages `teams/…` written by E-e9e7a45b's report), not by the suite. Whether a real run should write its
-      wiki there is unverified.
-    - Acceptance: the test tells a suite-written `.teams_wiki` from one present before the suite started (snapshot
-      at start), or real runs write the wiki outside the repo / it is gitignored and the test reads that; teams
-      suite 0 fail with the directory present.
 
 147. **trophy's Failures tab says what failed and groups repeats**
     - Why: same screenshot. `outcome · goal_failed · —` and `outcome · subgoal_failed · —` (2026-11-09)
@@ -479,7 +470,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
      and one real S and one real L task run on the merged server; `ps` shows one teams MCP process per
      session.
 
-129. **teams tells failure kinds apart instead of retrying every failure the same way**
+129. **teams tells failure kinds apart instead of retrying every failure the same way** — P1 (failure-kind contract: `recordFailureKind`, `failure_classified` ledger event) shipped `76c8b671` by E-bf0570ac (2026-11-17, L, partial: $83.82 of $80 spent in planning, P2-P9 never dispatched). Left: acceptance items 1-7 below on top of P1; the next run plans less (size per part, or pinned packages) so the budget reaches develop.
    - Why: five engine defects seen in the portfolio Sprint E-478d5e95 (cards 123/124, 2026-11-04/05), reported
      by that session; common cause (its words): "엔진이 모든 실패를 '다시 하면 되는 것'으로만 다룬다". Causes
      below are as reported, unverified here.
@@ -557,9 +548,8 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
 
 130. **teams spends less per task: model per stage, lean driver sessions, a default budget** — shipped `a37c7f33` by E-e9e7a45b (2026-11-13, L, $56.07 of $80; see Sprints). Left:
    - QA-F1 (model per stage) never finished: the disk filled, its run file was lost (card 129 item 7).
-     Its findings, from the ask text only: D1 high, a tm_open `models` override is dropped on the broker
-     adapter path; D2, D3 medium and D4-D6 low, details lost with the run file. Acceptance: a test that a
-     tm_open per-stage model reaches the broker-tools and runAdapter argv; QA-F1 rerun on main.
+     D1 (tm_open `models` override dropped on the broker adapter path) shipped `0160b5bf` by E-fadb773c
+     (2026-11-17). D2, D3 medium and D4-D6 low were lost with the run file. Acceptance: QA-F1 rerun on main.
    - The start context of a fresh driver, before and after, measured on one real headless run (target
      under 20k tokens); and the real-L cost compared to E-258fa3e5 (with the card 129 Sprint).
    - The original card follows for reference.
@@ -638,15 +628,6 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
       `node -e '[1,2].map(x => x*2)'` runs, not refused (the earlier refusal not reproduced).
     - Acceptance (left): the user approves the 190/110 captures.
 
-135. **The two resume tests in `teams/scripts/bench/test-drive-gh.mjs` finish under their 60 s limit**
-   - Why: seen 2026-11-10 while checking card 131: `node --test teams/scripts/bench/test-*.mjs` 78 pass / 2 fail,
-     both in `test-drive-gh.mjs` ("a gh-* job that hit a usage limit is resumed by resume.sh in the hashed
-     workspace", "resume of a non gh-* workspace works through the same arguments"), each cut at 60 s with exit
-     `null`. The same 2 fail at `bc4a8601`, before card 131's change. The load average was 84 on 8 cores; whether
-     they pass on an idle machine is unverified.
-   - Acceptance: both tests pass on an idle machine, or the hang is found and fixed; `node --test
-     teams/scripts/bench/test-*.mjs` 0 fail.
-
 ### write plugin
 
 ### knowledge plugin
@@ -705,6 +686,8 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-bf0570ac | 2026-11-17 | 129 | partial: P1 `76c8b671` taken from integration-2; budget $83.82 of $80 spent in planning (PLAN-F2 ×3, second round per PLAN card, two plan-integrates, two shapes), P2-P9 never dispatched; per-stage cost vs E-258fa3e5 not produced; teams 2346 / 2344 pass / 0 fail |
+| E-3b9b2694, E-4b431dba, E-fadb773c | 2026-11-17 | 135, 152, 130 D1 | shipped `e05315ff`, `bd10f855`, `0160b5bf`; size S in parallel on main; 135: GNU-only `touch -d` hung the stub on macOS; gates 95, 93; teams 2304 / 2302 / 0 fail, bench 80/80 |
 | E-71b43a9a, E-1ece45cc | 2026-11-16 | 145, 146 | shipped `7d31c3c7`; two size-S runs in parallel on the main checkout, one commit; goal gates 92, 93; tm_open takes request beside requests (equal or one-line title), real mismatch refused naming what to drop; tm_clean `wait: true`, refusal says how; orchestrate/sprint wait before cleaning; teams 2300 / 2297 pass / 1 fail (W2 hygiene, card 152), plugin test 626/626, validate 16/16, check-copies ok; small gaps: stale test name, "tm_open got" from tm_run, branch survival not asserted on cancel |
 | E-c22f9c92 | 2026-11-16 | 134 | shipped `1b351f52`; size S, parallel with 145/146; goal gate 84 → 95 after repair (cd stays logical, canonicalized at comparison); test-repo-rules 275 ok / 0 FAIL, red on base 2 FAIL; validate 16/16, check-copies ok |
 | E-e9e7a45b | 2026-11-13 | 130 | shipped `a37c7f33` (integration head `fa8ac240` hand-merged, then rebased onto origin as 12 commits; daemon did not resume, card 129 item 7); size L, $56.07; P1-P4 accepted (90/85/87/92), QA-F2 80, QA-F3 88, QA-F1 not finished (disk full); model per stage, lean argv on all five spawn paths, one driver per node, node_start/node_end via record(), region prompts, size-S budget kill, pane spend from taskFigure, `budget_usd` 40; on the merged tree teams test-*.mjs 2292 tests / 2290 pass / 0 fail, plugin test 626/626, card 130 tests 59/59, validate 16/16, check-copies ok |
