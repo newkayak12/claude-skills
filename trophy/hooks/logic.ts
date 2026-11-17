@@ -172,6 +172,39 @@ export function achievementRow(a: Achievement, uses: readonly Use[], unlockedOn:
   return `🔒 ${a.title}  ${bar(have, need)} ${have}/${need}`
 }
 
+// The narrow pane's list: unlocked (newest first), the `nearest` locked ones closest to unlocking, and how many are folded.
+export function paneList(
+  catalog: readonly Achievement[],
+  uses: readonly Use[],
+  unlocked: Readonly<Record<string, string>>,
+  nearest = 5,
+) {
+  const done = catalog
+    .map((a, i) => ({ a, i }))
+    .filter(({ a }) => unlocked[a.id] !== undefined)
+    .sort((x, y) => (unlocked[y.a.id]! < unlocked[x.a.id]! ? -1 : unlocked[y.a.id]! > unlocked[x.a.id]! ? 1 : x.i - y.i))
+    .map(({ a }) => a)
+  const locked = catalog
+    .map((a, i) => ({ a, i, ratio: ratioOf(uses, a) }))
+    .filter(({ a }) => unlocked[a.id] === undefined)
+  const near = locked
+    .filter(({ a }) => !a.hidden)
+    .sort((x, y) => y.ratio - x.ratio || x.i - y.i)
+    .slice(0, nearest)
+    .map(({ a }) => a)
+  return {
+    unlocked: done,
+    near,
+    folded: locked.length - near.length,
+    hidden: locked.filter(({ a }) => a.hidden).length,
+  }
+}
+
+const ratioOf = (uses: readonly Use[], a: Achievement) => {
+  const [have, need] = progress(uses, a)
+  return have / need
+}
+
 // Counts of the last `days` days up to and including `today`, summed per skill.
 export function sumDays(counts: DayCounts, today: string, days: number): Record<string, Counts> {
   const from = Date.parse(today) - (days - 1) * 86_400_000
@@ -337,6 +370,13 @@ export function addOutcome(outcomes: Outcomes, day: string, system: System, outc
 }
 
 // Required and optional property keys of every event; buildBatch builds each from these names only.
+// A command the person did not ask for: a notification, a schedule, a peer session, a relay or a monitor typed it.
+const UNASKED_ORIGINS = new Set([
+  'task-notification', 'scheduled-trigger', 'peer', 'peer-send-message', 'projects-relay', 'channel',
+  'coordinator', 'observer', 'observer-activity', 'auto-continuation', 'slack-ping',
+])
+export const askedOrigin = (origin: { kind: string } | undefined): boolean => !UNASKED_ORIGINS.has(origin?.kind ?? '')
+
 export const EVENT_KEYS: Record<string, { required: string[]; optional: string[] }> = {
   skill_used: { required: ['skill', 'plugin', 'day', 'count'], optional: ['plugin_version'] },
   trigger_result: { required: ['skill', 'day', 'hit', 'miss', 'unmatched'], optional: ['plugin_version'] },

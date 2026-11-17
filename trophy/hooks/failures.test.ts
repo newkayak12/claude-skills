@@ -1,6 +1,8 @@
 import { test, expect } from 'claude-code/testing'
 
-import { appendEntry, failureEvents, outcomeFailure, ownedMcpTool, ownedSkill } from './failures.ts'
+import {
+  appendEntry, copyBody, failureEvents, foldRows, outcomeFailure, ownedMcpTool, ownedSkill, rowDetail, rowMeta, rowTitle, targetOf,
+} from './failures.ts'
 import type { Entry } from './failures.ts'
 
 const entry = (o: Partial<Entry>): Entry => ({
@@ -114,4 +116,112 @@ test('failureEvents carries the plugin and Claude Code versions, and splits coun
     ['1.10.3', '2.1.293', 2],
     ['1.10.4', '2.1.293', 1],
   ])
+})
+
+test('147a: a goal_failed outcome row names the harness goal gate and the project folder', () => {
+  const e = entry({ kind: 'outcome', reason: 'goal_failed', plugin: undefined, skill: undefined, local: { path: '/work/demo-app' } })
+  expect(targetOf(e)).toBe('harness goal gate · demo-app')
+  expect(rowTitle(e)).toBe('2026-10-01 · outcome · goal_failed · harness goal gate · demo-app')
+})
+
+test('147a: a subgoal_failed outcome row names the harness subgoal and the project folder', () => {
+  const e = entry({ kind: 'outcome', reason: 'subgoal_failed', plugin: undefined, skill: undefined, local: { path: '/work/demo-app/' } })
+  expect(targetOf(e)).toBe('harness subgoal · demo-app')
+  expect(targetOf({ ...e, local: {} })).toBe('harness subgoal')
+})
+
+test('147a: an outcome stored before the change names its slug and subgoal', () => {
+  const e = entry({ kind: 'outcome', reason: 'subgoal_failed', plugin: undefined, skill: undefined, local: { slug: 'demo-run', subgoal: 's1' } })
+  expect(targetOf(e)).toBe('demo-run · s1')
+  expect(targetOf({ ...e, local: { slug: 'demo-run' } })).toBe('demo-run')
+})
+
+test('147a: an outcome detail names the folder, the UTC time and .harness-run/', () => {
+  const e = entry({ ts: Date.parse('2026-10-01T09:05:00Z'), kind: 'outcome', reason: 'goal_failed', local: { path: '/work/demo-app' } })
+  expect(rowDetail(e)).toEqual(['09:05 UTC · .harness-run/ in /work'])
+  expect(rowDetail({ ...e, local: {} })).toEqual(['09:05 UTC · .harness-run/'])
+})
+
+test('147a: the project folder appears once across the title, the meta line and the detail', () => {
+  const e = entry({ ts: Date.parse('2026-10-01T09:05:00Z'), kind: 'outcome', reason: 'goal_failed', local: { path: '/work/demo-app/' } })
+  for (const narrow of [false, true]) {
+    const lines = [targetOf(e, !narrow), rowMeta(e, narrow), ...rowDetail(e)]
+    expect(lines.join('\n').split('demo-app').length - 1).toBe(1)
+  }
+  expect(copyBody(e)).toContain('demo-app')
+})
+
+test('147a: a row with no detail has no detail line, and a slug already in the title is not repeated', () => {
+  expect(rowDetail(entry({ local: {} }))).toEqual([])
+  expect(rowDetail(entry({ local: { text: 'boom\nline2' } }))).toEqual(['boom', 'line2'])
+  const old = entry({ ts: Date.parse('2026-10-01T09:05:00Z'), kind: 'outcome', reason: 'goal_failed', local: { slug: 'demo-run' } })
+  expect(targetOf(old)).toBe('demo-run')
+  expect(rowDetail(old)).toEqual(['09:05 UTC · .harness-run/'])
+})
+
+test('147a: rowMeta: an outcome drops the reason its title says and, narrow, carries the folder', () => {
+  const e = entry({ kind: 'outcome', reason: 'goal_failed', day: '2026-11-11', local: { path: '/work/demo-app' } })
+  expect(rowMeta(e)).toBe('2026-11-11')
+  expect(rowMeta(e, true)).toBe('2026-11-11 · demo-app')
+  expect(targetOf(e, false)).toBe('harness goal gate')
+  expect(rowMeta({ ...e, local: { slug: 'demo-run' } })).toBe('goal_failed · 2026-11-11')
+  expect(rowMeta(entry({ reason: 'is_error', day: '2026-11-10' }), true)).toBe('is_error · 2026-11-10')
+})
+
+test('147a: an mcp_error and a skill is_error name their target, never - or a dash', () => {
+  const mcp = entry({ reason: 'mcp_error', plugin: 'teams', skill: undefined, tool: 'tm_open' })
+  expect(targetOf(mcp)).toBe('teams · tm_open')
+  expect(targetOf(entry({}))).toBe('develop:clean-code')
+  for (const t of [targetOf(mcp), targetOf(entry({})), targetOf(entry({ kind: 'outcome', reason: 'goal_failed', local: {} }))]) {
+    expect(t === '-' || t === '—').toBe(false)
+  }
+})
+
+test('147a: failureEvents emits nothing for an outcome and never its local.path', () => {
+  const log = [entry({ kind: 'outcome', reason: 'goal_failed', local: { path: '/work/demo-app' } })]
+  expect(failureEvents(log, undefined, '2026-10-05')).toEqual([])
+  expect(JSON.stringify(failureEvents([...log, entry({})], undefined, '2026-10-05'))).not.toContain('/work/demo-app')
+})
+
+const tmOpen = (n: number) => entry({
+  ts: n * 1000, day: `2026-11-${String(n).padStart(2, '0')}`, reason: 'mcp_error', plugin: 'teams', skill: undefined, tool: 'tm_open',
+})
+
+test('147b: seven tm_open errors plus a goal_failed and an is_error fold into 3 rows, newest first', () => {
+  const log = [
+    entry({ ts: 100, day: '2026-11-01' }),
+    ...[9, 9, 9, 10, 10, 11, 11].map(tmOpen),
+    entry({ ts: 20000, day: '2026-11-12', kind: 'outcome', reason: 'goal_failed', local: { path: '/w/demo-app' } }),
+  ]
+  const rows = foldRows(log)
+  expect(rows.length).toBe(3)
+  expect(rows.map(r => r.entry.reason)).toEqual(['goal_failed', 'mcp_error', 'is_error'])
+  expect(rows[1]).toMatchObject({ count: 7 })
+  expect(rows[1]?.entry.day).toBe('2026-11-11')
+  expect(rows[0]?.count).toBe(1)
+})
+
+test('147b: the same reason with a different target stays two rows', () => {
+  expect(foldRows([entry({}), entry({ skill: 'sql-pro' })]).length).toBe(2)
+})
+
+test('147b: the same target with a different reason stays two rows', () => {
+  expect(foldRows([entry({}), entry({ reason: 'unsuccessful' })]).length).toBe(2)
+})
+
+test('147b: the same tool name under two plugins stays two rows', () => {
+  const a = entry({ reason: 'mcp_error', plugin: 'teams', skill: undefined, tool: 'tm_open' })
+  expect(foldRows([a, { ...a, plugin: 'graph' }]).length).toBe(2)
+})
+
+test('147b: one group with different text and session shows the newest entry and a count', () => {
+  const old = entry({ ts: 1000, day: '2026-10-01', session: 'a', local: { text: 'old' } })
+  const latest = entry({ ts: 9000, day: '2026-10-09', session: 'b', local: { text: 'new' } })
+  expect(foldRows([latest, old])).toEqual([{ entry: latest, count: 2 }])
+  expect(foldRows([entry({ ts: 1 }), entry({ ts: 2, skill: 'x' }), entry({ ts: 3, skill: 'y' })], 2).length).toBe(2)
+})
+
+test('147b: copyBody adds count only above 1', () => {
+  expect(copyBody(entry({}))).not.toContain('count:')
+  expect(copyBody(entry({}), 7)).toContain('count: 7')
 })

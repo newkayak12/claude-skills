@@ -21,8 +21,8 @@ export type Entry = {
   version?: string
   cc?: string
   session: string
-  // Raw text stays on this machine: never read by buildBatch. slug/subgoal/path are kept only because stored
-  // pre-change outcome entries still carry them; new outcome entries have an empty local.
+  // Raw text stays on this machine: never read by buildBatch. slug/subgoal are kept only because stored
+  // pre-change outcome entries still carry them; new outcome entries keep path (the session's cwd).
   local: { text?: string; note?: string; slug?: string; subgoal?: string; path?: string }
 }
 
@@ -137,24 +137,68 @@ export function failureEvents(log: readonly Entry[], sentThrough: string | undef
 
 export const PANE_ROWS = 30
 
-// Newest first, at most 30.
-export const newest = (log: readonly Entry[]): Entry[] => log.slice(-PANE_ROWS).reverse()
+const outcomeFolder = (e: Entry): string | undefined => e.local.path?.replace(/\/+$/, '').split('/').pop() || undefined
 
-export const rowTitle = (e: Entry): string =>
-  [e.day, e.kind, e.reason, e.plugin && e.skill ? `${e.plugin}:${e.skill}` : (e.tool ?? e.plugin ?? '-')].join(' · ')
+// What failed, in one line. An outcome names the harness gate or subgoal and the project folder it ran in
+// (the harness publishes only the label, so a new entry has no slug); stored pre-change entries name their slug.
+export function targetOf(e: Entry, withFolder = true): string {
+  if (e.kind === 'outcome') {
+    const what = e.local.slug
+      ? [e.local.slug, e.local.subgoal].filter(Boolean).join(' · ')
+      : e.reason === 'goal_failed' ? 'harness goal gate' : 'harness subgoal'
+    const folder = outcomeFolder(e)
+    return folder && withFolder ? `${what} · ${folder}` : what
+  }
+  if (e.plugin && e.skill) return `${e.plugin}:${e.skill}`
+  if (e.plugin && e.tool) return `${e.plugin} · ${e.tool}`
+  return e.tool ?? e.plugin ?? '-'
+}
 
-// First five lines of the local raw text, note or slug.
+export const rowTitle = (e: Entry): string => [e.day, e.kind, e.reason, targetOf(e)].join(' · ')
+
+// One row per reason + target (kind follows from reason, plugin is inside targetOf). The newest entry
+// stands for its group, so its day is the last date; groups newest first, at most `max`.
+export function foldRows(log: readonly Entry[], max = PANE_ROWS): { entry: Entry; count: number }[] {
+  const groups = new Map<string, { entry: Entry; count: number }>()
+  for (const e of log) {
+    const key = `${e.reason}|${targetOf(e)}`
+    const hit = groups.get(key)
+    if (!hit) groups.set(key, { entry: e, count: 1 })
+    else {
+      hit.count += 1
+      if (e.ts >= hit.entry.ts) hit.entry = e
+    }
+  }
+  return Array.from(groups.values()).sort((a, b) => b.entry.ts - a.entry.ts).slice(0, max)
+}
+
+// The second line of a row. An outcome's title already says the gate (and, when `narrow`, drops the folder to here);
+// a stored outcome with a slug keeps its reason, since the slug does not say which gate failed.
+export function rowMeta(e: Entry, narrow = false): string {
+  if (e.kind !== 'outcome') return `${e.reason} · ${e.day}`
+  const folder = narrow ? outcomeFolder(e) : undefined
+  return [e.local.slug ? e.reason : undefined, e.day, folder].filter(Boolean).join(' · ')
+}
+
+// First five lines of the local raw text or note; an outcome with none says where it ran and when. The slug and
+// subgoal are in the title, so they are not repeated; no detail is no line.
 export function rowDetail(e: Entry): string[] {
-  const raw = e.local.text ?? e.local.note ?? [e.local.slug, e.local.subgoal].filter(Boolean).join(' ')
-  return (raw ?? '').split('\n').slice(0, 5)
+  const raw = e.local.text ?? e.local.note
+  if (!raw && e.kind === 'outcome') {
+    const at = new Date(e.ts).toISOString().slice(11, 16) + ' UTC'
+    // The folder's own name is in the title or line 2; the detail says only where it sits (its parent).
+    const parent = e.local.path?.replace(/\/+$/, '').split('/').slice(0, -1).join('/') || undefined
+    return [[at, parent ? `.harness-run/ in ${parent}` : '.harness-run/'].join(' · ')]
+  }
+  return raw ? raw.split('\n').slice(0, 5) : []
 }
 
 // A ready-to-file bug body; raw text stays on this machine unless the person pastes it.
-export function copyBody(e: Entry): string {
-  const target = e.plugin && e.skill ? `${e.plugin}:${e.skill}` : (e.tool ?? e.plugin ?? '-')
+export function copyBody(e: Entry, count = 1): string {
   return [
-    `skill: ${target}`,
+    `skill: ${targetOf(e)}`,
     `reason: ${e.reason}`,
+    ...(count > 1 ? [`count: ${count}`] : []),
     `day: ${e.day}`,
     `version: ${e.version ?? '-'} · Claude Code ${e.cc ?? '-'}`,
     `text:`,

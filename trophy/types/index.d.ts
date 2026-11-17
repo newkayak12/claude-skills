@@ -20,6 +20,8 @@ declare module 'claude-code' {
       lang: 'en' | 'ko'
       // last UTC day this session was counted active ('' before the first start)
       lastActiveDay: string
+      // ids of the trophy panes this session opened (the command or a Button); a pane listed whose id is absent was not asked for
+      paneAsked: string[]
     }
     // Run outcomes the graph, teams and harness mods publish. trophy reads them through `state.set` hooks;
     // each declaration repeats the producer's own type and must stay identical to it.

@@ -24,7 +24,7 @@ The UI is in English by default and switches to Korean when Claude Code's `langu
 
 | I want to… | Do |
 |---|---|
-| See my achievements and progress | `/achievements` (a pane: **Achievements**, **Triggers** and **Failures** tabs) |
+| See my achievements and progress | `/achievements` (a pane: **Achievements**, **Triggers** and **Failures** tabs; closes on Esc, q or `/achievements` again) |
 | See what failed | the **Failures** tab, or **View** on the `✘ N trophy <last failure>` row above the prompt |
 | Report a problem with the last skill | `/trophy-bug <note>` (the note stays local; only the code `user_report` can be sent) |
 | See them in the conversation | the `trophy:list` skill (reads `~/.claude/trophy/profile.json`) |

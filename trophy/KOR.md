@@ -24,7 +24,7 @@ UI는 기본적으로 영어이고, Claude Code의 `language` 설정이 한국�
 
 | 하고 싶은 일 | 방법 |
 |---|---|
-| 업적과 진행도 보기 | `/achievements` (**업적**, **트리거**, **실패** 탭이 있는 패널) |
+| 업적과 진행도 보기 | `/achievements` (**업적**, **트리거**, **실패** 탭이 있는 패널; Esc, q, `/achievements` 다시 입력으로 닫힘) |
 | 실패한 것 보기 | **실패** 탭, 또는 프롬프트 위 `✘ N trophy <마지막 실패>` 줄의 **보기** |
 | 마지막 스킬의 문제 신고 | `/trophy-bug <메모>` (메모는 로컬에만 남고, 고정 코드 `user_report`만 전송될 수 있음) |
 | 대화창에서 보기 | `trophy:list` 스킬 (`~/.claude/trophy/profile.json`을 읽음) |

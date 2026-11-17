@@ -2,7 +2,7 @@ import { test, expect } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { achievements } from '../data/achievements.ts'
-import { evaluate } from './logic.ts'
+import { evaluate, paneList } from './logic.ts'
 import type { Use } from './logic.ts'
 import { language, memoryStore, sessionAt } from './testkit.ts'
 
@@ -123,4 +123,32 @@ test('by default the celebration card is in English', async ($, on) => {
   expect(await ui.find({ text: /Achievement unlocked/ })).toBeDefined()
   expect(await ui.find({ text: /Thinking Cap On/ })).toBeDefined()
   expect(await ui.find({ text: /업적 해금/ })).toBeUndefined()
+})
+
+// ---- 150b: the narrow pane's list ------------------------------------------------------------------------
+const fake = (id: string, count: number, hidden?: true) =>
+  ({ id, title: id, description: id, ko: { title: id, description: id }, ...(hidden ? { hidden } : {}), rule: { kind: 'repeat', skill: 'a:b', count } }) as (typeof achievements)[number]
+
+test('150b: paneList orders near by have/need then catalog order, and cuts to the nearest five', () => {
+  const catalog = [fake('far', 10), fake('tie1', 4), fake('close', 2), fake('tie2', 4), fake('x1', 9), fake('x2', 9), fake('x3', 9), fake('x4', 9)]
+  const list = paneList(catalog, [use('a:b'), use('a:b')], {})
+  expect(list.near.map(a => a.id)).toEqual(['close', 'tie1', 'tie2', 'x1', 'x2'])
+  expect(list.folded).toBe(3)
+})
+
+test('150b: paneList counts hidden locked ones, never lists them, and orders unlocked newest first', () => {
+  const catalog = [fake('a', 1), fake('b', 1), fake('c', 1), fake('h', 1, true), fake('d', 5)]
+  const list = paneList(catalog, [], { a: '2026-10-01', b: '2026-10-03', c: '2026-10-03' })
+  expect(list.unlocked.map(a => a.id)).toEqual(['b', 'c', 'a'])
+  expect(list.near.map(a => a.id)).toEqual(['d'])
+  expect(list.hidden).toBe(1)
+  expect(list.folded).toBe(1)
+})
+
+test('150b: paneList on the real catalog with an empty profile folds 75 and counts 5 hidden', () => {
+  const list = paneList(achievements, [], {})
+  expect(list.unlocked).toEqual([])
+  expect(list.near.length).toBe(5)
+  expect(list.folded).toBe(75)
+  expect(list.hidden).toBe(5)
 })

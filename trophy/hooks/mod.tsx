@@ -5,6 +5,7 @@ import { achievements } from '../data/achievements.ts'
 import { triggers } from '../data/triggers.ts'
 import {
   achievementRow,
+  askedOrigin,
   cells,
   addActivity,
   addMcp,
@@ -22,6 +23,7 @@ import {
   osOf,
   outcomeOf,
   ownedMcpByName,
+  paneList,
   POSTHOG_URL,
   recordUse,
   resolveSkill,
@@ -32,8 +34,8 @@ import {
 } from './logic.ts'
 import type { Achievement, Activity, BatchStore, DayCounts, McpCalls, Os, Outcomes, System, Use, Versions } from './logic.ts'
 import {
-  appendEntry, copyBody, marketplaceCandidates, newest, outcomeFailure, ownedMcpTool, ownedSkill,
-  rowDetail, rowTitle,
+  appendEntry, copyBody, foldRows, marketplaceCandidates, outcomeFailure, ownedMcpTool, ownedSkill,
+  rowDetail, rowMeta, rowTitle, targetOf,
 } from './failures.ts'
 import type { Entry } from './failures.ts'
 
@@ -54,9 +56,17 @@ const lastTitle = atom({ plugin: 'trophy', key: 'lastTitle' } as const, '')
 const lang = atom({ plugin: 'trophy', key: 'lang' } as const, 'en' as 'en' | 'ko')
 // The last UTC day this session was counted active; a session left open past midnight marks the new day on its next prompt.
 const lastActiveDay = atom({ plugin: 'trophy', key: 'lastActiveDay' } as const, '')
+// ids of the trophy panes this session opened; never reset (a reload fires session.start again), undefined reads as none
+const paneAsked = atom({ plugin: 'trophy', key: 'paneAsked' } as const, [] as string[])
+const asked = async ($: EngineInterface, id: string) => {
+  const ids = await read($, paneAsked)
+  if (!ids.includes(id)) await update($, paneAsked, () => [...(ids ?? []), id])
+}
 
 const CARD_MS = 8000
 const BAR = 10
+// A column narrower than this (the 30-column dock gives 26) lists unlocked and nearest-to-unlock achievements only.
+const NARROW = 50
 const PANE = 'trophy'
 const BATCH_PANE = 'trophy-batch'
 type Consent = 'unasked' | 'yes' | 'no'
@@ -79,7 +89,7 @@ const en = {
   cmdTelemetry: 'Anonymous usage counts: on, off or status',
   cmdBug: "Report a problem with this marketplace's last skill; the note stays local",
   bugUsage: 'usage: /trophy-bug <note>', bugRecorded: 'Recorded.', bugFailed: 'Could not record the report.',
-  paneOpened: 'Achievements pane opened.', unlockedCount: '{done} / {n} unlocked',
+  paneOpened: 'Achievements pane opened.', paneNotOpened: 'Achievements pane not opened: the command did not come from a person.', paneClosed: 'Achievements pane closed.', closeBtn: 'Close [q]', unlockedCount: '{done} / {n} unlocked', foldedLocked: '🔒 +{n} locked ({hidden} hidden)', foldedLockedAll: '🔒 +{n} locked',
   tabTrophies: 'Achievements', tabTriggers: 'Triggers', tabFailures: 'Failures',
   copy: 'Copy', noFailures: 'No failures recorded.',
   headHit: 'Most-hit skills (7 days)', headMiss: 'Most-missed skills (had a trigger phrase, not used)',
@@ -107,7 +117,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     cmdTelemetry: '익명 사용 통계: on, off, status',
     cmdBug: '이 마켓플레이스의 마지막 스킬 문제 신고 (메모는 로컬에만 저장)',
     bugUsage: '사용법: /trophy-bug <메모>', bugRecorded: '기록했습니다.', bugFailed: '신고를 기록하지 못했습니다.',
-    paneOpened: '업적 창을 열었습니다.', unlockedCount: '{done} / {n} 해금',
+    paneOpened: '업적 창을 열었습니다.', paneNotOpened: '업적 창을 열지 않았습니다: 사람이 입력한 명령이 아닙니다.', paneClosed: '업적 창을 닫았습니다.', closeBtn: '닫기 [q]', unlockedCount: '{done} / {n} 해금', foldedLocked: '🔒 +{n} 잠김 (숨김 {hidden})', foldedLockedAll: '🔒 +{n} 잠김',
     tabTrophies: '업적', tabTriggers: '트리거', tabFailures: '실패',
     copy: '복사', noFailures: '기록된 실패가 없습니다.',
     headHit: '가장 많이 맞은 스킬 (7일)', headMiss: '가장 많이 놓친 스킬 (트리거 문구는 있었는데 안 쓴)',
@@ -201,10 +211,27 @@ const safe = async (work: () => Promise<unknown>) => {
 
 const cut = (v: unknown) => String(v ?? '').slice(0, TEXT_MAX)
 
+// The one place the Achievements pane opens: it records that this session asked for it.
+const openPane = async ($: EngineInterface) => {
+  await asked($, PANE)
+  await $.ui.open({ id: PANE, title: await str($, 'paneTitle'), focus: true, closeOnEscape: true })
+}
+
 const showFailures = async ($: EngineInterface) => {
   await update($, unseen, () => 0)
   await update($, tab, () => 'failures')
-  await $.ui.open({ id: PANE, title: await str($, 'paneTitle') })
+  await openPane($)
+}
+
+// A trophy pane this session never asked for (left up by a resume or a reload of another process) is closed;
+// a pane the person opened is never touched. Fails open: a failed lookup closes nothing.
+const closeUnasked = async ($: EngineInterface) => {
+  try {
+    const ids = (await read($, paneAsked)) ?? []
+    for (const p of await $.ui.panes()) {
+      if ((p.id === PANE || p.id === BATCH_PANE) && !ids.includes(p.id)) await $.ui.close({ id: p.id })
+    }
+  } catch {}
 }
 
 // Every hook fails open: the event goes on, and the failure is kept (scrubbed) for the next send.
@@ -331,6 +358,14 @@ export async function countOutcome($: EngineInterface, system: System, value: un
   await $.store.set('trophy.outcomes', addOutcome(outcomes, dayOf(await $.clock.now()), hit.system, hit.outcome))
 }
 
+// A failed harness outcome becomes a local Failures entry carrying the session's folder; pass and graph record nothing.
+export async function recordOutcome($: EngineInterface, value: unknown) {
+  const reason = outcomeFailure(value)
+  if (!reason) return
+  const path = await $.session.cwd().catch(() => '')
+  await record($, { kind: 'outcome', reason, local: path ? { path } : {} })
+}
+
 // The file trophy:list reads. Written after every store change; a failed write never blocks the prompt.
 async function mirror($: EngineInterface) {
   try {
@@ -384,6 +419,8 @@ async function note($: EngineInterface, name: string): Promise<boolean> {
 export const register: Register = on => {
   // Non-interactive sessions (every `claude -p`, so every teams/graph adapter) stay idle.
   on('session.start', async ($, e, next) => {
+    // a pane left up from before this session (paneAsked is never reset here: a reload fires session.start again)
+    await closeUnasked($)
     if ((await $.session.surfaces()).length === 0) return next(e)
 
     // The stored answer first: until then the band stays hidden, so a yes never flashes the question.
@@ -503,8 +540,7 @@ export const register: Register = on => {
     await safe(async () => {
       if (!(await read($, active))) return
       await countOutcome($, 'harness', e.value)
-      const reason = outcomeFailure(e.value)
-      if (reason) await record($, { kind: 'outcome', reason, local: {} })
+      await recordOutcome($, e.value)
     })
     return result
   }).catch(failOpen)
@@ -585,10 +621,29 @@ export const register: Register = on => {
     return next(e)
   }).catch(failOpen)
 
-  // The pane opens only from its command.
-  on('command.run', { command: 'achievements' }, async $ => {
+  // A surface joining re-seats a pane the engine kept; one this session never asked for goes.
+  on('session.attach', async ($, e, next) => {
+    await closeUnasked($)
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  // Not a widen signal (the engine seats a waiting pane itself, no hook fires): a safety sweep after a turn.
+  on('session.measure', async ($, e, next) => {
+    await closeUnasked($)
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  // The pane opens only from its command (a person's, not a notification's or a schedule's) and from the Failures
+  // Buttons (the band's View, the tab); /achievements again, Esc and the header's q close it.
+  on('command.run', { command: 'achievements' }, async ($, e) => {
+    if (!askedOrigin(e.origin)) return { text: await str($, 'paneNotOpened') }
+    const up = await $.ui.panes().catch(() => [])
+    if (up.some(p => p.id === PANE && p.isShown)) {
+      await $.ui.close({ id: PANE })
+      return { text: await str($, 'paneClosed') }
+    }
     if ((await read($, tab)) === 'failures') await update($, unseen, () => 0)
-    await $.ui.open({ id: PANE, title: await str($, 'paneTitle') })
+    await openPane($)
     return { text: await str($, 'paneOpened') }
   }).catch(failOpen)
 
@@ -600,57 +655,70 @@ export const register: Register = on => {
     const unlocked = ((await $.store.get('trophy.unlocked')) ?? {}) as Record<string, string>
     const done = Object.keys(unlocked).length
     const filled = achievements.length === 0 ? 0 : Math.round((done / achievements.length) * BAR)
+    const narrow = e.props.bodyColumns < NARROW
+    // Row 1: the count (only on the trophies tab; narrow, short as 3/80 with no bar) and Close. Row 2: the tabs, which
+    // wrap as whole Buttons with a gap, so a label never splits or touches the next.
     const header = (
-      <Box borderStyle="round" borderColor="claude">
-        <Text key="count" bold>
-          {'▰'.repeat(filled)}
-          {'▱'.repeat(BAR - filled)} {t('unlockedCount', { done, n: achievements.length })}{' '}
-        </Text>
-        <Button
-          key="tab-trophies"
-          label={t('tabTrophies')}
-          variant={current === 'trophies' ? 'primary' : undefined}
-          onPress={() => update($, tab, () => 'trophies')}
-        />
-        <Button
-          key="tab-triggers"
-          label={t('tabTriggers')}
-          variant={current === 'triggers' ? 'primary' : undefined}
-          onPress={() => update($, tab, () => 'triggers')}
-        />
-        <Button
-          key="tab-failures"
-          label={t('tabFailures')}
-          variant={current === 'failures' ? 'primary' : undefined}
-          onPress={() => showFailures($)}
-        />
+      <Box borderStyle="round" borderColor="claude" flexDirection="column">
+        <Box key="top" columnGap={1}>
+          {current === 'trophies' ? (
+            <Text key="count" bold wrap="truncate-end">
+              {narrow
+                ? `${done}/${achievements.length}`
+                : `${'▰'.repeat(filled)}${'▱'.repeat(BAR - filled)} ${t('unlockedCount', { done, n: achievements.length })}`}
+            </Text>
+          ) : null}
+          <Button key="close" role="dismiss" hotkey="q" label={t('closeBtn')} onPress={() => $.ui.close({ id: PANE })} />
+        </Box>
+        <Box key="tabs" columnGap={1} flexWrap="wrap">
+          <Button
+            key="tab-trophies"
+            label={t('tabTrophies')}
+            variant={current === 'trophies' ? 'primary' : undefined}
+            onPress={() => update($, tab, () => 'trophies')}
+          />
+          <Button
+            key="tab-triggers"
+            label={t('tabTriggers')}
+            variant={current === 'triggers' ? 'primary' : undefined}
+            onPress={() => update($, tab, () => 'triggers')}
+          />
+          <Button
+            key="tab-failures"
+            label={t('tabFailures')}
+            variant={current === 'failures' ? 'primary' : undefined}
+            onPress={() => showFailures($)}
+          />
+        </Box>
       </Box>
     )
 
     if (current === 'failures') {
-      const rows = newest(((await $.store.get('trophy.failures')) ?? []) as Entry[])
+      const rows = foldRows(((await $.store.get('trophy.failures')) ?? []) as Entry[])
       return (
         <Box flexDirection="column">
           {header}
           {rows.length === 0 && <Text dimColor>{t('noFailures')}</Text>}
-          {rows.map((r, i) => (
+          {rows.map(({ entry: r, count }, i) => (
             <Box key={`fail-${i}`} flexDirection="column" borderStyle="round" borderColor="error" borderDimColor paddingX={1}>
               <Box justifyContent="space-between" gap={1}>
                 <Box flexShrink={1}>
                   <Text color="error">✘ </Text>
-                  <Text wrap="truncate-end">{rowTitle(r)}</Text>
+                  <Text wrap="truncate-end">{targetOf(r, !narrow)}</Text>
                 </Box>
-                <Box flexShrink={0}>
+                <Box flexShrink={0} gap={1}>
+                  {count > 1 && <Text>{`×${count}`}</Text>}
                   <Button
                     key={`copy-${i}`}
                     label={t('copy')}
                     onPress={press => {
-                      void $.ui.copy({ text: copyBody(r), surface: press.surface }).catch(() => {})
+                      void $.ui.copy({ text: copyBody(r, count), surface: press.surface }).catch(() => {})
                     }}
                   />
                 </Box>
               </Box>
-              {rowDetail(r).map((line, j) => <Text key={`d-${i}-${j}`} dimColor>{line}</Text>)}
+              <Text dimColor wrap="truncate-end">{rowMeta(r, narrow)}</Text>
+              {rowDetail(r).map((line, j) => <Text key={`d-${i}-${j}`} dimColor wrap="truncate-end">{line}</Text>)}
             </Box>
           ))}
         </Box>
@@ -679,6 +747,31 @@ export const register: Register = on => {
     }
 
     const uses = ((await $.store.get('trophy.uses')) ?? []) as Use[]
+    if (narrow) {
+      const list = paneList(achievements, uses, unlocked)
+      return (
+        <Box flexDirection="column">
+          {header}
+          {list.unlocked.map(a => (
+            <Box key={`done-${a.id}`} gap={1}>
+              <Box flexShrink={1}>
+                <Text wrap="truncate-end">{`🏆 ${localize(a, lang$).title}`}</Text>
+              </Box>
+              <Box flexShrink={0}>
+                <Text dimColor>{unlocked[a.id]}</Text>
+              </Box>
+            </Box>
+          ))}
+          {list.near.map(a => (
+            <Box key={`near-${a.id}`} flexDirection="column">
+              <Text wrap="truncate-end">{`🔒 ${localize(a, lang$).title}`}</Text>
+              <Text color="claude" wrap="truncate-end">{cells(a, uses)}</Text>
+            </Box>
+          ))}
+          {list.folded > 0 && <Text dimColor wrap="truncate-end">{t(list.hidden > 0 ? 'foldedLocked' : 'foldedLockedAll', { n: list.folded, hidden: list.hidden })}</Text>}
+        </Box>
+      )
+    }
     return (
       <Box flexDirection="column">
         {header}
@@ -744,7 +837,10 @@ export const register: Register = on => {
                 $.ui.toast(await sendLine($))
               }} />
               <Button key="decline" hotkey="n" plain label={t('decline')} onPress={() => setConsent($, 'no')} />
-              <Button key="show" hotkey="p" plain label={t('show')} onPress={() => $.ui.open({ id: BATCH_PANE, title: t('previewTitle') })} />
+              <Button key="show" hotkey="p" plain label={t('show')} onPress={async () => {
+                await asked($, BATCH_PANE)
+                await $.ui.open({ id: BATCH_PANE, title: t('previewTitle') })
+              }} />
             </Box>
           </Box>
         ) : null}
