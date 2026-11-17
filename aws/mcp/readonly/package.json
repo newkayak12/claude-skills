@@ -1,0 +1,18 @@
+{
+  "name": "aws-readonly-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Read-only AWS MCP server (stdio), shipped as one bundle in dist/.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "esbuild": "0.28.2"
+  }
+}
