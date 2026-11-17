@@ -10419,10 +10419,39 @@ test('unfinishedWork names each planning and QA card that has no verdict, by car
 });
 
 // ---------- W2: the wiki bridge in the engine (_repo/docs/plans/2026-10-07-teams-wiki-memory.md, 2단계) ----------
-// Every flow here runs in a tmp repo(); the last W2 test fails the suite if a .teams_wiki ever
-// shows up in this repo or the process cwd.
+// Every flow here runs in a tmp repo(); the last W2 test fails the suite if a .teams_wiki is new or
+// changed in this repo or the process cwd compared with what was there when the suite started.
 
 const wikiDir = (cwd) => join(cwd, '.teams_wiki');
+// null when absent, else rel path -> mtimeMs. Skips the wiki's own derived files (.index.sqlite*, .lock*),
+// which a live wiki server rewrites on its own.
+function wikiSnapshot(dir) {
+  const root = wikiDir(dir);
+  if (!existsSync(root)) return null;
+  const snap = new Map();
+  const walk = (d, rel) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      if (e.name.startsWith('.index.sqlite') || e.name.startsWith('.lock')) continue;
+      const p = join(d, e.name), r = rel ? join(rel, e.name) : e.name;
+      if (e.isDirectory()) walk(p, r); else snap.set(r, statSync(p).mtimeMs);
+    }
+  };
+  walk(root, '');
+  return snap;
+}
+function wikiChanges(before, after) {
+  if (after === null) return [];
+  if (before === null) return ['new .teams_wiki'];
+  const out = [];
+  for (const [rel, m] of after) {
+    if (!before.has(rel)) out.push(`new ${rel}`);
+    else if (before.get(rel) !== m) out.push(`changed ${rel}`);
+  }
+  return out;
+}
+// Must stay at module scope (no top-level await above it): the snapshot is taken before any test body runs.
+const WIKI_HYGIENE_DIRS = [...new Set([process.cwd(), join(HERE, '..', '..'), join(HERE, '..')])];
+const WIKI_AT_START = new Map(WIKI_HYGIENE_DIRS.map((d) => [d, wikiSnapshot(d)]));
 const fullTask = (tm, task_id) => tm.call('tm_status', { task_id, full: true });
 
 test('W2 context: an existing .teams_wiki (even with a log page) adds nothing to task.context and sets no task.wiki', async () => {
@@ -10504,9 +10533,38 @@ test('W2 status: the size-S harness_run task shape reports the wiki mode too', a
   } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
 });
 
-test('W2 hygiene: nothing in this suite wrote a .teams_wiki into the repo or the process cwd', () => {
-  for (const dir of [process.cwd(), join(HERE, '..', '..'), join(HERE, '..')]) {
-    assert.equal(existsSync(join(dir, '.teams_wiki')), false, `${dir} has a .teams_wiki`);
+test('W2 hygiene helper: a pre-existing .teams_wiki passes; a new dir, a new page or a changed page fails; the index files are ignored', () => {
+  const root = mkdtempSync(join(tmpdir(), 'w2-hyg-'));
+  try {
+    // absent -> created
+    assert.equal(wikiSnapshot(root), null);
+    mkdirSync(wikiDir(root));
+    writeFileSync(join(wikiDir(root), 'x.md'), 'x');
+    assert.ok(wikiChanges(null, wikiSnapshot(root)).includes('new .teams_wiki'));
+    rmSync(wikiDir(root), { recursive: true, force: true });
+    // pre-existing, untouched
+    mkdirSync(wikiDir(root));
+    writeFileSync(join(wikiDir(root), 'a.md'), 'a');
+    writeFileSync(join(wikiDir(root), '.index.sqlite-shm'), 's');
+    const before = wikiSnapshot(root);
+    assert.deepEqual(wikiChanges(before, wikiSnapshot(root)), []);
+    // a touched index file is ignored
+    const later = new Date(Date.now() + 10000);
+    utimesSync(join(wikiDir(root), '.index.sqlite-shm'), later, later);
+    assert.deepEqual(wikiChanges(before, wikiSnapshot(root)), []);
+    // a new page in a new subdirectory
+    mkdirSync(join(wikiDir(root), 'sub'));
+    writeFileSync(join(wikiDir(root), 'sub', 'b.md'), 'b');
+    assert.deepEqual(wikiChanges(before, wikiSnapshot(root)), ['new ' + join('sub', 'b.md')]);
+    // a changed page
+    utimesSync(join(wikiDir(root), 'a.md'), later, later);
+    assert.ok(wikiChanges(before, wikiSnapshot(root)).includes('changed a.md'));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('W2 hygiene: nothing in this suite wrote to a .teams_wiki in the repo or the process cwd (compared with when the suite started)', () => {
+  for (const dir of WIKI_HYGIENE_DIRS) {
+    assert.deepEqual(wikiChanges(WIKI_AT_START.get(dir), wikiSnapshot(dir)), [], `${dir}: suite wrote to .teams_wiki`);
   }
 });
 
