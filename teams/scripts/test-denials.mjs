@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { neededDenials } from '../mcp/denials.mjs';
+import { neededDenials, writeDenials } from '../mcp/denials.mjs';
 
 // Probed live (claude 2.1.312, 2026-10-28): a PreToolUse hook deny of `sed -i` and a dontAsk denial
 // of `touch` both land in permission_denials as {tool_name, tool_use_id, tool_input:{command,...}}.
@@ -73,6 +73,30 @@ test('a command only a plugin hooks.json hook refuses is kept (documented limit:
     writeFileSync(join(dir, 'plugin', 'hooks', 'hooks.json'), JSON.stringify(plugin));
     assert.deepEqual(neededDenials(LIVE_ENVELOPE, dir), ['perl -i -pe s/a/b/ _repo/docs/probe-nonexistent.txt', 'touch tmp/probe-made.txt']);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+const fileEntry = (tool_name, file_path) => ({ tool_name, tool_use_id: 't', tool_input: { file_path } });
+
+test('writeDenials returns Write, Edit, MultiEdit and NotebookEdit denials with their file_path', () => {
+  const denials = [
+    fileEntry('Write', '/w/a.md'), fileEntry('Edit', '/w/b.mjs'),
+    fileEntry('MultiEdit', '/w/c.mjs'), fileEntry('NotebookEdit', '/w/d.ipynb'),
+  ];
+  const got = writeDenials({ permission_denials: denials });
+  assert.deepEqual(got, denials);
+  assert.deepEqual(got.map(d => d.tool_input.file_path), ['/w/a.md', '/w/b.mjs', '/w/c.mjs', '/w/d.ipynb']);
+});
+
+test('writeDenials ignores Bash and other tools, and neededDenials is unchanged next to it', () => {
+  const envelope = { permission_denials: [entry('touch made.txt'), fileEntry('Read', '/w/r.md'), fileEntry('Write', '/w/a.md')] };
+  assert.deepEqual(writeDenials(envelope), [fileEntry('Write', '/w/a.md')]);
+  assert.deepEqual(neededDenials(envelope), ['touch made.txt']);
+});
+
+test('writeDenials returns [] for a missing, empty or non-object envelope and never throws', () => {
+  for (const bad of [undefined, null, 'x', 7, [], {}, { permission_denials: null }, { permission_denials: 'x' }, { permission_denials: [null, 3, {}, { tool_name: 'Write' }] }]) {
+    assert.deepEqual(writeDenials(bad), []);
+  }
 });
 
 test('a hook that exits 2 refuses; a hook that crashes or a project without settings does not', () => {

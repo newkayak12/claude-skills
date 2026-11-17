@@ -51,3 +51,12 @@ export function neededDenials(envelope, cwd) {
     .filter(cmd => !DISALLOWED_PREFIXES.some(p => cmd.trim() === p || cmd.trim().startsWith(`${p} `)))
     .filter(cmd => !(cwd && hookRefuses(cmd, cwd)));
 }
+
+const WRITE_TOOLS = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'];
+
+// File-write denials of the same envelope: the entries themselves, each with tool_input.file_path.
+// Read by the failure classifier (an environment failure), never throws.
+export function writeDenials(envelope) {
+  const denials = Array.isArray(envelope?.permission_denials) ? envelope.permission_denials : [];
+  return denials.filter(d => WRITE_TOOLS.includes(d?.tool_name) && typeof d.tool_input?.file_path === 'string');
+}
