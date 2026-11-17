@@ -49,7 +49,8 @@ before(() => {
     'echo "$@" >> "$STUB_LOG/bench.args"',
     'mkdir -p "$STUB_WS"',
     'printf \'{"type":"result","result":"%s"}\\n\' "$STUB_RESULT" > "$STUB_WS.stream.jsonl"',
-    '[ -z "${STUB_AGE:-}" ] || touch -d "$STUB_AGE days ago" "$STUB_WS.stream.jsonl"',
+    // BSD touch (macOS) has no "N days ago" date form, so backdate through node.
+    '[ -z "${STUB_AGE:-}" ] || node -e \'const t = Date.now() / 1000 - process.argv[2] * 86400; require("fs").utimesSync(process.argv[1], t, t)\' "$STUB_WS.stream.jsonl" "$STUB_AGE"',
     '',
   ].join('\n'));
   // Stub score.mjs: records the workspace drive.sh / resume.sh scored.
