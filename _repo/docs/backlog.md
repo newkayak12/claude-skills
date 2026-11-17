@@ -68,6 +68,20 @@ real deck lone commas 316 → 0, engine version printed).
       skeleton; unverified cause: the saved claims carry the old ledger's ids). Still left: the three
       figure/cover items above (the workspace's own figures and template).
 
+153. **The deck render is checked against PowerPoint, and the 3.2.0 audits catch what they missed**
+    - Why: after portfolio 3.2.0 (2026-11-14) the deck renderer is checked only against Word's saved
+      page breaks for the resume (`word_check`); nothing says the cached LibreOffice lays a pptx out
+      as PowerPoint does. On a real 31-page deck the new audits found the blind judge's lone words and
+      mixed footnote marks with no false hit, but missed: blocks unevenly spaced on one body page and
+      the gap before a closing "lessons" block (`uneven` groups only pairs the template spaces alike);
+      template slot text under ~9pt (KPI cards) passes check; `orphan` flags a single word but not a
+      2–3 word tail after a full line.
+    - Acceptance: one deck exported to PDF by PowerPoint is compared page by page with the cached
+      renderer's PDF (line breaks and block positions), the differences written down, and the audits
+      tuned to it; `uneven` reports the two missed gaps on a fixture shaped like that page; check
+      warns on slot text under a stated size; `orphan` covers a 2–3 word tail without a false hit on
+      the real deck; `test_deck.py`, `test_render.py`, `test_office_render.py` with counts.
+
 136. **The bundled renderer on macOS and arm64**
     - Why: Linux x86_64 shipped in 3.1.0 (2026-11-13): `install-renderer --yes` unpacks a pinned,
       SHA-256-checked LibreOffice 26.8.3 deb set under `~/.cache/claude-portfolio/` without root, and
