@@ -243,11 +243,11 @@ test('aws CLI missing: error says so, the just-written keys are deleted', async 
   const s = setup();
   s.answers.push(FAKE.key, FAKE.secret);
   s.ctx.exec = async () => {
-    throw Object.assign(new Error('aws CLI not found'), { code: 'ENOENT' });
+    throw Object.assign(new Error('aws CLI not installed → aws:login installs it'), { code: 'ENOENT' });
   };
   const r = await s.run();
   assert.equal(r.isError, true);
-  assert.match(text(r), /aws CLI not found/);
+  assert.ok(text(r).includes('aws CLI not installed → aws:login installs it'));
   assert.deepEqual(s.deletes(), ['dev']);
   assert.equal(s.store.size, 0);
 });

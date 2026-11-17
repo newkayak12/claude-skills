@@ -303,8 +303,7 @@ test('a missing aws CLI is returned naming the aws CLI', async () => {
   const s = setup({ behavior: () => ({ error: Object.assign(new Error('spawn aws ENOENT'), { code: 'ENOENT' }) }) });
   const r = await run(s, 'ec2', 'describe-instances');
   assert.equal(r.isError, true);
-  assert.match(text(r), /aws CLI/);
-  assert.match(text(r), /not found|not installed/);
+  assert.equal(text(r).split('\n')[1], 'aws CLI not installed → aws:login installs it');
   assert.equal(text(r).split('\n')[0], HEADER);
   assert.deepEqual(s.log().map((l) => l.outcome), ['cli-missing']);
 });

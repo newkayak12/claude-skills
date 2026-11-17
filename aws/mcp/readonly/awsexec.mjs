@@ -35,7 +35,7 @@ export function childEnv(creds, region, baseEnv = process.env) {
 }
 
 // Runs `aws <argv>` with no shell. Resolves { stdout, stderr, code, truncated, timedOut }; rejects only
-// when the CLI cannot be started ('aws CLI not found' for ENOENT).
+// when the CLI cannot be started ('aws CLI not installed → aws:login installs it' for ENOENT).
 export function execAws(argv, env, { timeoutMs = 60_000, capBytes = 1_048_576, execFile = nodeExecFile } = {}) {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -56,7 +56,7 @@ export function execAws(argv, env, { timeoutMs = 60_000, capBytes = 1_048_576, e
       let code = 0;
       let truncated = false;
       if (e) {
-        if (e.code === 'ENOENT') return finish(reject, Object.assign(new Error('aws CLI not found'), { code: 'ENOENT' }));
+        if (e.code === 'ENOENT') return finish(reject, Object.assign(new Error('aws CLI not installed → aws:login installs it'), { code: 'ENOENT' }));
         if (e.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
           truncated = true;
           code = null;

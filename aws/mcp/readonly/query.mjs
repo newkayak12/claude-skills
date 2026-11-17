@@ -98,7 +98,7 @@ export const queryTool = defineTool({
       } catch (e) {
         if (e?.code === 'ENOENT') {
           log('cli-missing');
-          return err(`${hd}\naws CLI not found: install the AWS CLI v2 and put aws on PATH (macOS: brew install awscli)`);
+          return err(`${hd}\naws CLI not installed → aws:login installs it`);
         }
         log('error');
         return err(`${hd}\n${scrub(e?.message ?? 'aws could not run')}`);

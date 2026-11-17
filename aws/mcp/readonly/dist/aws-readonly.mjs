@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // readonly-aws MCP server, bundled by build.mjs — do not edit; edit the sources and run npm run build.
-// sources: c0e8300574ec8503
+// sources: e83e2bad9b437202
 import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -17302,7 +17302,7 @@ function execAws(argv, env, { timeoutMs = 6e4, capBytes = 1048576, execFile: exe
       let code = 0;
       let truncated = false;
       if (e) {
-        if (e.code === "ENOENT") return finish(reject2, Object.assign(new Error("aws CLI not found"), { code: "ENOENT" }));
+        if (e.code === "ENOENT") return finish(reject2, Object.assign(new Error("aws CLI not installed \u2192 aws:login installs it"), { code: "ENOENT" }));
         if (e.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
           truncated = true;
           code = null;
@@ -17443,7 +17443,7 @@ async function aws(d, argv, creds, region) {
   try {
     return await d.runAws(argv, env);
   } catch (e) {
-    throw new Fail(e?.message === "aws CLI not found" ? "aws CLI not found: install the AWS CLI v2" : "aws CLI could not run");
+    throw new Fail(e?.code === "ENOENT" ? "aws CLI not installed \u2192 aws:login installs it" : "aws CLI could not run");
   }
 }
 async function whoami(d, creds, region) {
@@ -18003,7 +18003,7 @@ ${scrub2(`could not prepare the aws environment: ${e?.message ?? "unknown error"
         if (e?.code === "ENOENT") {
           log2("cli-missing");
           return err(`${hd}
-aws CLI not found: install the AWS CLI v2 and put aws on PATH (macOS: brew install awscli)`);
+aws CLI not installed \u2192 aws:login installs it`);
         }
         log2("error");
         return err(`${hd}

@@ -67,7 +67,7 @@ async function aws(d, argv, creds, region) {
   try {
     return await d.runAws(argv, env);
   } catch (e) {
-    throw new Fail(e?.message === 'aws CLI not found' ? 'aws CLI not found: install the AWS CLI v2' : 'aws CLI could not run');
+    throw new Fail(e?.code === 'ENOENT' ? 'aws CLI not installed → aws:login installs it' : 'aws CLI could not run');
   }
 }
 

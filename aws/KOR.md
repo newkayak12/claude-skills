@@ -70,6 +70,6 @@ dev(ap-northeast-2)로 로그인하고 EC2 인스턴스 목록 보여줘.
   - `--query`, `--max-items`, `--page-size`, `--no-paginate`를 뺀 모든 전역 플래그
   - `file://`, `fileb://`, `http://`, `https://`로 시작하는 인자 값
 
-설치: `aws` CLI가 PATH에 있어야 하며(없으면 서버가 이름을 대고 알려줌), `op`는 1Password 로그인에만
+설치: `aws` CLI가 PATH에 있어야 하며, 없으면 서버가 'aws CLI not installed → aws:login installs it'라고 답하고 `aws:login`이 AWS CLI v2를 설치합니다(brew, 없으면 공식 pkg; 비밀번호를 물을 수 있음). `op`는 1Password 로그인에만
 필요합니다. 플러그인이 묶인 파일 하나로 `plugin:aws:readonly-aws`를 띄우므로 설치에 npm도 네트워크도
 필요 없습니다.

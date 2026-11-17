@@ -71,5 +71,5 @@ The server refuses, not the prompt. A refused call returns `rejected [rule]: ...
   - every global flag except `--query`, `--max-items`, `--page-size`, `--no-paginate`
   - argument values starting `file://`, `fileb://`, `http://`, `https://`
 
-Setup: needs the `aws` CLI on the PATH (the server names it if missing); `op` only for 1Password logins.
+Setup: needs the `aws` CLI on the PATH; if it is missing the server answers 'aws CLI not installed → aws:login installs it', and `aws:login` installs AWS CLI v2 (brew, else the official pkg; may ask for the password); `op` only for 1Password logins.
 The plugin starts `plugin:aws:readonly-aws` from one bundled file; no npm and no network on install.

@@ -89,9 +89,9 @@ test('execAws keeps the partial stdout when execFile reports maxBuffer', async (
   assert.equal(r.truncated, true);
 });
 
-test('execAws maps ENOENT to "aws CLI not found"', async () => {
+test('execAws maps ENOENT to "aws CLI not installed → aws:login installs it"', async () => {
   const execFile = (_c, _a, _o, cb) => (cb(Object.assign(new Error('spawn aws ENOENT'), { code: 'ENOENT' })), { kill() {} });
-  await assert.rejects(execAws([], {}, { execFile }), (e) => e.message === 'aws CLI not found');
+  await assert.rejects(execAws([], {}, { execFile }), (e) => e.message === 'aws CLI not installed → aws:login installs it' && e.code === 'ENOENT');
 });
 
 test('execAws returns the exit code and stderr of a failed run', async () => {
