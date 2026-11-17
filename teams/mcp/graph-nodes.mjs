@@ -94,6 +94,9 @@ export function createRun(opts) {
     // Read by retrySubgoal below to decide whether a rejected attempt's worktree edits stay (as
     // every retry has always left them) or are reset to the attempt's own pre-checkpoint first.
     retry_policy: opts.retry_policy === 'rollback' ? 'rollback' : 'continue',
+    // Per-stage model overrides from tm_open, read by the broker's team_run over team.json's map.
+    // Absent (not {}) when none, so a run opened by anyone else is byte-for-byte what it was.
+    ...(opts.models && typeof opts.models === 'object' && !Array.isArray(opts.models) && Object.keys(opts.models).length ? { models: { ...opts.models } } : {}),
     // `auto` lets plan pick the flow; an entry skill pins it. `mixed` false turns the pin
     // into a rule every subgoal must follow.
     flow: FLOWS[opts.flow] ? opts.flow : 'auto',

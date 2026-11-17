@@ -494,6 +494,9 @@ function createTask(a) {
       // task's own retryPackage (which reads task.team.opts.retry_policy directly - see
       // retryPackage). graph.mjs's createRun turns this into run.retry_policy.
       retry_policy: T.retry_policy === 'rollback' ? 'rollback' : 'continue',
+      // The broker launches a package's nodes and reads only the child run, so tm_open's `models`
+      // (already layered over team.json in T) has to ride on it.
+      models: T.models,
     },
     created_at: Date.now(),
     spec: null,

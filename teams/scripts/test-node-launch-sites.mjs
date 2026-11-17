@@ -804,6 +804,68 @@ process.stdin.on('end', () => {
   }
 });
 
+// ---------- D1: tm_open `models` reaches the broker adapter paths ----------
+
+const withRunModels = (cwd, run_id, models) => {
+  const run = loadRun(cwd, run_id);
+  run.models = models;
+  saveRun(run);
+};
+
+test('D1 models override: T1 run.models overlays team.json key by key on the adapter argv (invocations.jsonl) and node_start', () => withClaudeVendor(async (cwd) => {
+  const { run_id } = await call('team_open', { request: 'r', cwd, vendor: 'claude', allocation: 'balanced', host_vendor: 'codex', flow: 'develop', goal_judges: 1 });
+  withRunModels(cwd, run_id, { plan: 'haiku', implement: 'haiku' });
+  for (const node_id of ['plan', 'setgoal', 'critique', 'implement:U1:1']) {
+    await call('team_next', { run_id, cwd });
+    const v = await call('team_run', { run_id, cwd, node_id });
+    assert.equal(v.state, 'done', `${node_id}: ${JSON.stringify(v)}`);
+  }
+  const lines = (file) => readFileSync(file, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(lines(join(cwd, 'invocations.jsonl')).map((i) => [i.stage, modelsOf(i.args)]), [
+    ['plan', ['haiku']], ['setgoal', ['sonnet']], ['critique', ['opus']], ['implement', ['haiku']],
+  ]);
+  const starts = lines(join(cwd, '.teams_output', 'broker', 'ledger.jsonl')).filter((e) => e.event === 'node_start');
+  assert.equal(starts.find((e) => e.node_id === 'plan').model, 'haiku');
+}, { teamJson: { models: { setgoal: 'sonnet', plan: 'opus', implement: 'opus' } } }));
+
+test('D1 models override: T2 (regression guard) a run-level model still wins over run.models', () => withClaudeVendor(async (cwd) => {
+  const { run_id } = await call('team_open', { request: 'r', cwd, vendor: 'claude', allocation: 'balanced', host_vendor: 'codex', flow: 'develop', goal_judges: 1, model: 'pinned-model' });
+  withRunModels(cwd, run_id, { plan: 'haiku' });
+  await call('team_next', { run_id, cwd });
+  const v = await call('team_run', { run_id, cwd, node_id: 'plan' });
+  assert.equal(v.state, 'done', JSON.stringify(v));
+  const inv = readFileSync(join(cwd, 'invocations.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(modelsOf(inv[0].args), ['pinned-model']);
+}));
+
+test('D1 models override: T4 child_opts carries tm_open models and createRun keeps them only when non-empty', async () => {
+  const keys = ['HARNESS_TASKS_DIR', 'HARNESS_TEST_NO_DAEMON', 'HARNESS_TEST_NO_DRIVER'];
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'node-launch-d1-')));
+  try {
+    process.env.HARNESS_TASKS_DIR = root;
+    process.env.HARNESS_TEST_NO_DAEMON = '1';
+    process.env.HARNESS_TEST_NO_DRIVER = '1';
+    const cwd = join(root, 'proj');
+    mkdirSync(cwd);
+    const git = (...a) => spawnSync('git', a, { cwd, encoding: 'utf8' });
+    git('init', '-q'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't');
+    writeFileSync(join(cwd, 'a.txt'), 'x\n');
+    git('add', '.'); git('commit', '-q', '-m', 'init');
+    const tm = await import('../mcp/taskmanager.mjs');
+    const { createRun } = await import('../mcp/graph.mjs');
+    const open = await tm.callTool('tm_open', { request: 'r', cwd, vendor: 'self', brainstorm: false, models: { plan: 'haiku' } });
+    const task = JSON.parse(readFileSync(tm.taskPath(open.task_id), 'utf8'));
+    assert.equal(task.child_opts.models.plan, 'haiku', 'tm_open models reach child_opts');
+    assert.equal(createRun({ ...task.child_opts, cwd, request: 'r' }).models.plan, 'haiku');
+    assert.ok(!('models' in createRun({ cwd, request: 'r', models: {} })), 'empty: no key');
+    assert.ok(!('models' in createRun({ cwd, request: 'r' })), 'absent: no key');
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('the broker tool table is unchanged: no tool schema moved with this wiring', () => {
   assert.deepEqual(BROKER_TOOLS.map((t) => t.name), ['team_open', 'team_next', 'team_run', 'team_submit', 'team_retry', 'team_status']);
 });

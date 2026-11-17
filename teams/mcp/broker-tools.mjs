@@ -515,11 +515,11 @@ async function toolGraphRun(a) {
 
   // Policy is the default; an explicit team_run({model}) still wins for one call. The claude
   // adapter always gets an explicit model by stage (card 130: implement/test sonnet; plan,
-  // critique, review, gate, report opus; team.json `models` overrides) unless one is pinned at
-  // tm_open / team_run. Any other vendor keeps the model routing chose: a stage alias means
+  // critique, review, gate, report opus; team.json `models` overrides, tm_open's `models` on
+  // run.models overlays those key by key) unless one is pinned at tm_open / team_run. Any other vendor keeps the model routing chose: a stage alias means
   // nothing to it.
   const launchStage = n.node_id.startsWith('gate:goal') ? 'gate:goal' : n.stage;
-  const stageModels = resolveTeamOptions({}, readTeamConfig(run.cwd).config).opts.models;
+  const stageModels = { ...resolveTeamOptions({}, readTeamConfig(run.cwd).config).opts.models, ...(run.models || {}) };
   const chosenModel = a.model || (r.vendor === 'claude'
     ? stagePolicy(run, n).model || resolveStageModel(launchStage, { models: stageModels })
     : r.model);
