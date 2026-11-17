@@ -233,6 +233,10 @@ def main():
         check(company and "<w:keepNext/>" in company.group(1) and 'w:before="0"' in company.group(1) and 'w:after="60"' in company.group(1),
               "a kept role holds with the next line; the first line under a section starts at 0; spacing: sets after (pt) — %s"
               % (company.group(1) if company else None))
+        role_p = re.search(r"<w:p><w:pPr>((?:(?!</w:pPr>).)*)</w:pPr>(?:(?!</w:p>).)*검색 개편", doc, re.S)
+        check(role_p and "<w:keepNext/>" in role_p.group(1),
+              "a line between a kept heading and its first bullet holds with the next line, so the head never ends a page — %s"
+              % (role_p.group(1) if role_p else None))
         check("<dc:title>가상 인물 이력서</dc:title>" in core and "<dc:creator>가상 인물</dc:creator>" in core and "python-docx" not in core,
               "title and author come from the front matter — %s" % core)
         check('descr="가상 인물 프로필 사진"' in doc, "photo_alt sets the photo's alt text")
@@ -247,6 +251,9 @@ def main():
         check('<w:color w:val="000000"/><w:sz w:val="16"/></w:rPr><w:t xml:space="preserve">기술:</w:t>' in doc
               and '<w:color w:val="595959"/><w:sz w:val="16"/></w:rPr><w:t xml:space="preserve"> Kotlin</w:t>' in doc,
               "look: label gives a one-format sample's `라벨: 값` line a label colour")
+        tail_p = re.search(r"<w:p><w:pPr>((?:(?!</w:pPr>).)*)</w:pPr>(?:(?!</w:p>).)*Kotlin", doc, re.S)
+        check(tail_p and "<w:keepNext/>" not in tail_p.group(1),
+              "a line with no bullet after it is not held to the next line — %s" % (tail_p.group(1) if tail_p else None))
         (plain / "resume-deck.mdx").write_text(looked.replace("color 333333", "color red"), encoding="utf-8")
         rc, e = run(plain, "build")
         check(rc != 0 and "look" in e["error"], "a look line that is not size/colour is refused")

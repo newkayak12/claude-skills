@@ -85,6 +85,22 @@ real deck lone commas 316 → 0, engine version printed).
       build (deck 31 pages, resume 3 pages, 2026-11-13) is the user's pick and the target; (1) and (2)
       do not move the skill toward it and wait; (3) is a bug either way. What the skill still lacks is
       measured against that build (skill alone vs the pick, blind), and those gaps come first.
+    - Measured 2026-11-17 (two blind opus judges per round, page pairs shuffled, keys kept apart):
+      the same deck source built by the skill alone lost 15 of 31 pages to the pick (figures small
+      under a gap, footnote marks inline, three pages of shape positions) — all of it done by the
+      workspace's own scripts. With that layout written into the copy's `deck.mdx` in skill terms
+      (`captions: into-picture`, `panel_margin: 10`, `place:` from the scripts' table, `[1)]{sup}`)
+      the skill was better on 11 pages and worse on 3 (one a slot mapping error of the migration, one
+      the closing slide's colours the scripts set, one a picture `place:` pushed past the slide). Shipped
+      in 3.2.1: a resume head (설명·기술·역할) holds with its first bullet; `check` ignores `!drop`ped
+      shapes as neighbours and gives a `place:` `h=` its extra lines; build names a frame placed past
+      the slide. Resume: the skill's output read better to the judges than the pick's grey label lines;
+      the pick's look is reachable with `look:` (the user's choice).
+    - Left: (3) above. And manage does not steer a workspace off its post-build scripts: `layout` could
+      name each script the skill replaces and the `deck.mdx` line that does its job (the migration
+      above was done by hand from `postbuild_layout.py`'s table, shape names matched to slots by text).
+      `check` still reports @s3 text19 running into a `place:`d text8 whose new position clears it in
+      the render (its spill is measured against the template's line count, not the placed frame).
 
 153. **The deck render is checked against PowerPoint, and the 3.2.0 audits catch what they missed**
     - Why: after portfolio 3.2.0 (2026-11-14) the deck renderer is checked only against Word's saved

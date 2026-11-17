@@ -454,6 +454,22 @@ def build(source, out):
     # break: `경력, 사이드 프로젝트` — those sections start a new page
     breaks = {s.strip() for s in meta.get("break", "").split(",") if s.strip()}
     unused_breaks = set(breaks)
+    # a kept heading holds the lines under it (설명·기술·역할) down to its first bullet, so a page
+    # never ends between a project's head and its first bullet (seen 2026-11-17: a heading and its
+    # 기술 line closed page 2 and the bullets went to page 3); a run that meets no bullet is left alone
+    held = [r in keep for r, _ in todo]
+    i = 0
+    while i < len(todo):
+        if not held[i]:
+            i += 1
+            continue
+        j = i + 1
+        while j < len(todo) and not held[j] and todo[j][0] != "bullet":
+            j += 1
+        if j < len(todo) and todo[j][0] == "bullet":
+            for k in range(i + 1, j):
+                held[k] = True
+        i = max(j, i + 1)
     links, out_paras = [], []
     for i, (r, t) in enumerate(todo):
         ppr, rpr, label = from_text[r] if r in from_text else (*sample.get(mapping[r], (None, None)), None)
@@ -468,7 +484,7 @@ def build(source, out):
         before, after = spacing.get(r, (None, None))
         if i and todo[i - 1][0] == "section":
             before = 0
-        ppr = tune(ppr, keep=r in keep, before=before, after=after)
+        ppr = tune(ppr, keep=held[i], before=before, after=after)
         if r == "section" and t.strip() in breaks:
             ppr = page_break_before(ppr)
             unused_breaks.discard(t.strip())

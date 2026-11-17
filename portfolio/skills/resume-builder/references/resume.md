@@ -30,7 +30,9 @@ The resume is the portfolio's second output, built the same way: designed in `re
   - a `라벨: 값` line whose sample paragraph has a label run and a value run in two formats takes both;
   - a URL or mail address is a link (ATS and readers click it);
   - `keep: section, entry, company` — those roles stay on the page of the line after them
-    (default `section, entry`); the first line under a section has no space before it;
+    (default `section, entry`), and so do the lines under a kept heading down to its first bullet
+    (설명·기술·역할), so a page never ends between a project's head and its first bullet; the first
+    line under a section has no space before it;
   - `spacing:` role → `<before> <after>` in pt, when the template's own spacing reads too tight;
   - `look:` role → `size <pt> color <RRGGBB> label <RRGGBB>` (any of them), when the sample's run
     reads too small or too faint (contrast), or its `라벨: 값` line needs a label colour of its own;

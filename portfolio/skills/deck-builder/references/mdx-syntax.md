@@ -125,7 +125,9 @@ place:
 ```
 
 `place:` moves a shape with its own frame; one whose position comes from the layout is named
-in the build, not moved. It runs after every value and the two options below, so it wins.
+in the build, not moved. It runs after every value and the two options below, so it wins — and
+keeps the size they gave: a picture grown where it stood can end past the slide once moved, and
+the build names any placed frame that ends more than 2pt past the slide's edge (`place puts …`).
 `check` measures a placed slot at its placed frame (position and size), not the template's.
 
 `distribute: 70` (a slide line beside `place:`) re-spaces the slide's top-level row groups

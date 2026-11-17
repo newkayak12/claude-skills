@@ -3415,6 +3415,17 @@ def cmd_build(args):
                 problems.append("line %d: place cannot move '%s' — its position is inherited "
                                 "from the layout or it is not a shape with its own frame"
                                 % (line, sid))
+                continue
+            # place keeps a frame's size, and `captions:`/`panel_margin:` may have grown it
+            # where it stood: moved, it can end past the slide (seen 2026-11-17, 984.9 of 960pt)
+            box, (sw, sh) = shape_box(el), slide_size(pkg)
+            tol = 2 * EMU_PER_PT     # a frame's edge a point past the slide shows nothing
+            if box and (box[0] < -tol or box[1] < -tol or box[0] + box[2] > sw + tol
+                        or box[1] + box[3] > sh + tol):
+                problems.append("line %d: place puts '%s' past the slide — its frame ends at "
+                                "%.1f × %.1fpt on a %.1f × %.1fpt slide; give it w=/h= or move it"
+                                % (line, sid, (box[0] + box[2]) / EMU_PER_PT,
+                                   (box[1] + box[3]) / EMU_PER_PT, sw / EMU_PER_PT, sh / EMU_PER_PT))
         for el in drop_els:
             for parent in spTree.iter():
                 if el in list(parent):
@@ -3777,12 +3788,18 @@ def cmd_check(args):
         placed = [it for sid, kind, value, _ in spec.values if sid == "place"
                   for it in parse_place(kind, value)[0] if it[0] in by_id]
         if placed:
+            was_h = {s.id: s.box[3] for s in slots if s.box}
             probe = ET.fromstring(pkg.parts[protos[int(spec.archetype[1:]) - 1]])
             tree = probe.find(q("p:cSld") + "/" + q("p:spTree"))
             for sid, x, y, w, h in placed:
                 place_frame(resolve_path(tree, by_id[sid].path), x, y, w, h)
             slots = analyze_slide(probe, slide_cy)
             by_id = {s.id: s for s in slots}
+            # a frame given a taller `h=` holds that many more of the template's lines
+            for sid, _x, _y, _w, h in placed:
+                s = by_id.get(sid)
+                if h and s and s.box and s.line_h and s.proto_lines is not None and sid in was_h:
+                    s.proto_lines += max(0, int((s.box[3] - was_h[sid]) / s.line_h))
             base = {r["label"]: r for r in pairs}
             pairs = slide_pairs(slots)
             for r in pairs:
@@ -3790,6 +3807,10 @@ def cmd_check(args):
                 if t:
                     r.update(count=t["count"], zone=t["zone"], borrowed=t["borrowed"],
                              spread=t["spread"])
+        # a `!drop`ped shape leaves the slide: nothing runs into it or lies under a picture
+        dropped = {sid for sid, kind, value, _ in spec.values
+                   if kind == "scalar" and isinstance(value, str) and value.strip() == "!drop"}
+        live = [s for s in slots if s.id not in dropped]
         seen = set()
         for slot_id, kind, value, line in spec.values:
             if slot_id == "distribute":
@@ -3859,7 +3880,7 @@ def cmd_check(args):
                                          full_bleed=covers_slide(slot, slide_size(pkg)))
                     if slot.box:
                         _check_picture_legibility(
-                            p, slot, slots, tag, slot_id, line, warns, errs, mode, anchor,
+                            p, slot, live, tag, slot_id, line, warns, errs, mode, anchor,
                             flags, backgrounds.get(spec.archetype), theme)
             if slot.type == "table" and kind != "table":
                 errs.append("line %d: %s.%s is a table — use `| a | b |` rows"
@@ -3931,7 +3952,7 @@ def cmd_check(args):
                 got = spill(slot, [t for _, t in seen_items(kind, value)])
                 if got and got[0] > 0:
                     over, lines, was = got
-                    into = shapes_below(slot, slots, over)
+                    into = shapes_below(slot, live, over)
                     where = (" straight into %s" % ", ".join(o.id for o in into[:2])
                              if into else " into the space below it")
                     say = errs if into else warns

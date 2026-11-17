@@ -148,7 +148,12 @@ Every session in the workspace starts with `manage.mjs scaffold`, unasked: it re
 to these, creates only what is missing, CLAUDE.md included, and never overwrites a file. A CLAUDE.md
 that is already there (a renamed README too) keeps its text and gets the guide appended once.
 
-Nine steps (3.2.0: resume `render` sets the template's page breaks against the ones Word saved
+Nine steps (3.2.1: a resume page no longer ends between a project's head lines and its first
+bullet; `check` stops reporting collisions with `!drop`ped shapes and gives a frame `place:` made
+taller its extra lines; build names a placed frame that ends past the slide. Measured blind against
+a user's hand-finished 31-page deck: with its layout written in `deck.mdx` (`place:`, `{sup}`,
+`captions:`, `panel_margin:`) the skill alone was better on 11 pages and worse on 3, against
+worse on 15 when the same source leaned on workspace scripts; 3.2.0: resume `render` sets the template's page breaks against the ones Word saved
 (`word_check`) and warns when the renderer breaks elsewhere — the pinned LibreOffice matched Word
 where the docker 25.8 image ran a page short; `over_lines` works with PyMuPDF; render reports
 `orphan` (a word alone on a line), `split` (a number torn from its unit), `marks` (`*` and `∗` mixed)

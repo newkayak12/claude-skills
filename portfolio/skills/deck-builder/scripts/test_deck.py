@@ -1314,6 +1314,11 @@ def run_styles(tmp):
           and "place names 'text9'" in out,
           "an unknown slot and a malformed item are check errors, and build says so too")
     check("notes master" not in chk, "place is not mistaken for notes")
+    _, out, _ = built("text1: 옮김\nplace:\n  - text1: 26.4 270 w=253.9\n")
+    check("past the slide" not in out, "a placed frame inside the slide is not reported: %s" % out[-200:])
+    _, out, _ = built("text1: 옮김\nplace:\n  - text1: 900 270 w=253.9\n")
+    check("place puts 'text1' past the slide" in out,
+          "a placed frame that ends past the slide's edge is named in the build: %s" % out[-300:])
 
 
 def fidelity(tmp):
@@ -1676,6 +1681,14 @@ def placing(tmp):
           "text2 placed far below: no collision at the placed position: %s" % out[-300:])
     out = chk(long_text + "place:\n  - text2: 0 145 w=250 h=40\n")
     check("임계 침범" in out, "text2 placed but still too close (position and size): still reported")
+    out = chk(long_text)
+    check("straight into text2" in out, "unplaced, undropped: the spill names the shape below: %s" % out[-300:])
+    out = chk(long_text + "text2: !drop\n")
+    check("straight into text2" not in out,
+          "a `!drop`ped shape is not a neighbour the text runs into: %s" % out[-300:])
+    out = chk("text1: %s\nplace:\n  - text1: 0 0 h=200\n  - text2: 0 300\n  - text3: 0 360\n" % ("가" * 30))
+    check("lines where the template has" not in out,
+          "a frame given a taller `h=` holds that many more lines before it spills: %s" % out[-300:])
 
     print("distribute: re-space the slide's row groups")
 
