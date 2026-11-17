@@ -166,6 +166,35 @@ export const LEGACY_NAMES = { [SKELETON]: 'skeleton.md', [DECK]: 'deck.mdx', [RE
 function legacyFound(root) {
   return Object.entries(LEGACY_NAMES).filter(([now, old]) => !existsSync(join(root, now)) && existsSync(at(root, old)))
 }
+// Workspace files that still name a file by its old name after it was renamed: reported, never edited
+// (the user's notes). Root, template/, style/, docs/ and scripts/ only — sources/, analysis/, snapshot/,
+// _archive/ and build/ are records. README.md is too common a name to search for. A name inside a longer
+// one (`portfolio-deck.mdx` holds `deck.mdx`) is not a hit. (2026-11-17: template/NOTES.md still sent
+// readers to 다음렌더-지침.md after scaffold renamed it.)
+export function staleRefs(root) {
+  const olds = Object.entries(LEGACY_NAMES)
+    .filter(([now, old]) => old !== 'README.md' && existsSync(join(root, now)) && !existsSync(at(root, old)))
+  if (!olds.length) return []
+  const files = []
+  for (const dir of ['', 'template', 'style', 'docs', 'scripts']) {
+    let names = []
+    try { names = readdirSync(join(root, dir)) } catch { continue }
+    for (const n of names) if (/\.(md|mdx|py|mjs|js|txt)$/.test(n)) files.push(dir ? `${dir}/${n.normalize('NFC')}` : n.normalize('NFC'))
+  }
+  const out = []
+  for (const rel of files) {
+    let text
+    try { text = readFileSync(at(root, rel), 'utf8').normalize('NFC') } catch { continue }
+    for (const [now, old] of olds) {
+      const base = old.split('/').pop().normalize('NFC')
+      const re = new RegExp(`(^|[^\\w.-])${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'm')
+      const lines = text.split('\n').map((l, i) => re.test(l) ? i + 1 : 0).filter(Boolean)
+      if (lines.length) out.push({ file: rel, old, now, lines })
+    }
+  }
+  return out
+}
+
 // The file under its current name, else under its old one, else the current name (to be created).
 export function wsFile(root, rel) {
   const now = join(root, rel)
@@ -266,6 +295,42 @@ export function layout(root) {
   }
   const sa = safeArea(root)
   if (sa) out.safe_area = sa
+  const replaced = scriptReplacements(root)
+  if (replaced.length) out.scripts = replaced
+  return out
+}
+
+// What a workspace script run after the build did, and the line that does it inside the build.
+// Measured 2026-11-17: the same deck source lost 15 of 31 pages to the user's hand-finished build
+// while it leaned on such scripts, and won 11 / lost 3 once their work was written in deck.mdx.
+const SCRIPT_JOBS = [
+  { job: 'moves shapes by their names', test: /\bLAYOUT\s*=\s*\{|"(TextBox|Picture|Rectangle) \d+"/,
+    instead: '`place:` on that slide, slot ids from `deck.py shapes --deck <deck> --pages N` (shape name → slot)' },
+  { job: 'deletes `[ … ]` captions and grows the picture', test: /drop_captions|'\[ …? ?\]'|캡션을 지우/,
+    instead: '`captions: into-picture` in the front matter' },
+  { job: 'sets a picture under the text above it', test: /fit_pictures|GAP\s*=|그림을 그 아래/,
+    instead: '`panel_margin: <pt>` in the front matter; render measures the text and keeps each picture 10pt under it' },
+  { job: 'raises footnote numbers', test: /superscript|윗첨자|baseline="30000"/,
+    instead: '`[1)]{sup}` right after the word' },
+  { job: 'recolours runs', test: /WHITEN|GREY\d*|lumMod|schemeClr/,
+    instead: '`[글]{#RRGGBB}` on the run' },
+  { job: 'turns off the Hangul–Latin autospace in the PDF', test: /ParaIsCharacterDistance/,
+    instead: 'nothing: deck-builder render already does it' },
+  { job: 'strips alt text / checks AI traces', test: /AI-generated|strip_alt|check_ai_traces|흔적/,
+    instead: 'nothing: build and render run the final AI-trace check' },
+  { job: 'formats the resume after its build', test: /\.docx[\s\S]*<?w:(sz|spacing|ind)\b|<?w:(sz|spacing|ind)\b[\s\S]*\.docx/,
+    instead: 'resume front matter `look:`, `spacing:`, `keep:` (resume-builder)' },
+]
+export function scriptReplacements(root) {
+  let names = []
+  try { names = readdirSync(join(root, 'scripts')).filter(f => /\.(py|mjs|js|sh)$/.test(f)).sort() } catch { return [] }
+  const out = []
+  for (const f of names) {
+    let text = ''
+    try { text = readFileSync(join(root, 'scripts', f), 'utf8') } catch { continue }
+    const jobs = SCRIPT_JOBS.filter(j => j.test.test(text)).map(({ job, instead }) => ({ job, instead }))
+    if (jobs.length) out.push({ script: `scripts/${f}`, jobs })
+  }
   return out
 }
 
@@ -382,7 +447,9 @@ export function scaffold(root) {
   make('feedback', null)   // feedback/YYYY-MM-DD.md, one review per day, ending with its fix table
   for (const [name, body] of Object.entries(STYLE_TEMPLATES)) make(`style/${name}`, body)
   make(QUESTIONS, QUESTIONS_HEAD)
-  return { created, ...(renamed.length && { renamed }), ...(appended.length && { appended }), ...(filled.length && { filled }) }
+  const stale = staleRefs(root)
+  return { created, ...(renamed.length && { renamed }), ...(appended.length && { appended }), ...(filled.length && { filled }),
+    ...(stale.length && { stale_refs: stale }) }
 }
 
 // sources/선정.md rows: 글감 · 쓰임 (본문 | 부록 | 제외) · 쪽 · 이유 · 대표.

@@ -96,11 +96,15 @@ real deck lone commas 316 → 0, engine version printed).
       shapes as neighbours and gives a `place:` `h=` its extra lines; build names a frame placed past
       the slide. Resume: the skill's output read better to the judges than the pick's grey label lines;
       the pick's look is reachable with `look:` (the user's choice).
-    - Left: (3) above. And manage does not steer a workspace off its post-build scripts: `layout` could
-      name each script the skill replaces and the `deck.mdx` line that does its job (the migration
-      above was done by hand from `postbuild_layout.py`'s table, shape names matched to slots by text).
-      `check` still reports @s3 text19 running into a `place:`d text8 whose new position clears it in
-      the render (its spill is measured against the template's line count, not the placed frame).
+    - Shipped in 3.2.2: (3) (`scaffold` `stale_refs`), `layout` `scripts` (each post-build script and
+      the line that does its job), `deck.py shapes`, a `place:` `h=` frame measured on its height, and
+      `render` setting `panel_margin:` pictures 10pt under the text it measured. A fresh sonnet agent given
+      only the skill moved a copy of the workspace off its scripts; blind against the pick: better 9,
+      worse 1 (17: a 12.7pt gap where the pick left 23.5), same 21.
+    - Left: (1) and (2) wait (scope above). The bench agent had to size a `place:`d picture by hand
+      when `captions: into-picture` had grown it (build names it, nothing sizes it), and found no
+      slot-level colour (31: every run wrapped) and no doc for `{bg1 75%}` = lumMod. 17 render layout
+      lines on the migrated copy are not yet triaged.
 
 153. **The deck render is checked against PowerPoint, and the 3.2.0 audits catch what they missed**
     - Why: after portfolio 3.2.0 (2026-11-14) the deck renderer is checked only against Word's saved

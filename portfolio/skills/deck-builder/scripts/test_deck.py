@@ -5,6 +5,7 @@
 
 import contextlib
 import io
+import json
 import os
 import re
 import shutil
@@ -1319,6 +1320,10 @@ def run_styles(tmp):
     _, out, _ = built("text1: 옮김\nplace:\n  - text1: 900 270 w=253.9\n")
     check("place puts 'text1' past the slide" in out,
           "a placed frame that ends past the slide's edge is named in the build: %s" % out[-300:])
+    got = json.loads(run_cmd(["shapes", "--deck", str(tmp / "rs.mdx")]))
+    check(got["pages"] and got["pages"][0]["archetype"] == "@s2"
+          and got["pages"][0]["shapes"].get("Two") == "text1",
+          "shapes maps a page's template shape names to slot ids, for writing `place:`: %s" % got)
 
 
 def fidelity(tmp):
@@ -1689,6 +1694,10 @@ def placing(tmp):
     out = chk("text1: %s\nplace:\n  - text1: 0 0 h=200\n  - text2: 0 300\n  - text3: 0 360\n" % ("가" * 30))
     check("lines where the template has" not in out,
           "a frame given a taller `h=` holds that many more lines before it spills: %s" % out[-300:])
+    out = chk("text1: %s\nplace:\n  - text1: 0 0 h=50\n  - text2: 0 300\n  - text3: 0 360\n" % ("가" * 60))
+    check("placed frame holds" in out and "lines where the template has" not in out,
+          "a spill from an `h=` frame is measured on that frame's height, a part line counted: %s"
+          % out[-300:])
 
     print("distribute: re-space the slide's row groups")
 
@@ -1847,6 +1856,28 @@ def layout_options(tmp):
     px, py, pw, ph = box(t, "Pic")
     check(framed == 1 and py < 200 and pw > 300 and py >= 136,
           "with the text measured, the picture rises under the text and grows: %s" % ((px, py, pw, ph),))
+    t = tree([sp("Panel", 40, 100, 400, 300, panel=True), sp("Bul", 60, 110, 360, 200, "짧은 한 줄"),
+              pic("Pic", 100, 330, 100, 50)])
+    bul = [el for el in t if el.find(".//" + P + "cNvPr") is not None
+           and el.find(".//" + P + "cNvPr").get("name") == "Bul"][0]
+    deck.pictures_to_panels(t, 18, {id(bul): (110 + 20) * E}, floors={"Pic": 175 * E})
+    check(box(t, "Pic")[1] >= 175,
+          "a floor the render measured keeps the picture below the real last line: %s" % (box(t, "Pic"),))
+
+    # the render's own lines: a line ending at 172pt above a picture whose top is 174pt
+    xml = ('<html xmlns="http://www.w3.org/1999/xhtml"><body><doc><page width="960" height="540"><flow>'
+           '<block><line><word xMin="70" yMin="160" xMax="300" yMax="172">끝</word></line></block>'
+           '</flow></page></doc></body></html>')
+    pp = tmp / "pf.pptx"
+    make_png(tmp / "pf.png", 40, 40)
+    make_template(pp, tmp / "pf.png")
+    pkg = deck.Package(pp)
+    first = deck.slide_order(pkg)[0]
+    pkg.parts[first] = _slide([pic("Pic", 60, 174, 200, 100), pic("Far", 600, 400, 50, 50)]).encode("utf-8")
+    pkg.write(pp)
+    got = deck.panel_floors(xml, pp)
+    check(got == {1: {"Pic": round(182 * E)}},
+          "panel_floors: a picture 2pt under a rendered line gets a floor 10pt under it, a clear one none: %s" % got)
 
     make_png(tmp / "lo.png", 40, 40)
     make_template(tmp / "lo.pptx", tmp / "lo.png")

@@ -148,7 +148,14 @@ Every session in the workspace starts with `manage.mjs scaffold`, unasked: it re
 to these, creates only what is missing, CLAUDE.md included, and never overwrites a file. A CLAUDE.md
 that is already there (a renamed README too) keeps its text and gets the guide appended once.
 
-Nine steps (3.2.1: a resume page no longer ends between a project's head lines and its first
+Nine steps (3.2.2: deck `render` measures where each panel's text really ends and keeps every
+`panel_margin:` picture 10pt under it, rebuilding once (an estimate had left three 1.4–3.3pt
+under the text); `manage layout` lists each post-build script a workspace runs and the `deck.mdx`
+line that does its job, `scaffold` reports files still naming a renamed file, `deck.py shapes`
+maps shape names to slot ids for `place:`, and a `place:` `h=` frame is measured on its own
+height. A fresh agent following only these, on a copy of a real workspace with its scripts
+removed, built a deck that blind judges rated better on 9 pages, worse on 1 and the same on 21
+against the user's hand-finished one; 3.2.1: a resume page no longer ends between a project's head lines and its first
 bullet; `check` stops reporting collisions with `!drop`ped shapes and gives a frame `place:` made
 taller its extra lines; build names a placed frame that ends past the slide. Measured blind against
 a user's hand-finished 31-page deck: with its layout written in `deck.mdx` (`place:`, `{sup}`,

@@ -87,11 +87,11 @@ the proposal and is reported under "기본값으로 정한 것": wording, fixes 
 the snapshot. A round always builds (the user's standing word: "결과물도 검증하고, 더 빌드해보자"):
 `sync`, `deck-builder build`, `verify-build`; render only when the user says.
 
-0. **Open, every session, unasked.** `scaffold` (renames old names, creates only what is missing,
-   never overwrites, appends the guide once to a CLAUDE.md that lacks it, creates `style/` templates and `docs/확인할-것.md`;
-   its `renamed`/`created`/`appended` in one report line), then `layout` (its warnings: a broken `analysis/` link, an
-   engine path in CLAUDE.md or `style/` that is not on disk), `docs/확정사실.md`, `questions --read` and the "맞춰야 할 것" table. A stray root file (`*.conflict-*`, a scratch script) is named and moved
-   to `_archive/` once the user agrees.
+0. **Open, every session, unasked.** `scaffold` (renames old names, creates only what is missing, never overwrites, appends
+   the guide once to a CLAUDE.md that lacks it, creates `style/` templates and `docs/확인할-것.md`; `renamed`/`created`/`appended`/
+   `stale_refs` (files naming an old name) in one line), then `layout` (warnings: a broken `analysis/` link, an engine path not on
+   disk; `scripts`: each post-build script and the `deck.mdx`/resume line doing its job — propose it; `deck.py shapes` maps shape
+   names to slots for `place:`), `docs/확정사실.md`, `questions --read`, the "맞춰야 할 것" table. A stray root file is moved to `_archive/` once the user agrees.
 1. **Collect.** New material → run `material` from the workspace root (items land in
    `sources/material/`). Evidence order: `sources/` → the user's analysis notes they point to →
    the user. Search before asking; ask only what only the user can answer; everything else stays

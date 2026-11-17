@@ -19,8 +19,10 @@ Python stdlib only: zipfile, xml.etree, re. No python-pptx, no PyYAML.
 """
 
 import argparse
+import contextlib
 import copy
 import hashlib
+import io
 import json
 import os
 import math
@@ -69,6 +71,7 @@ PLACE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*):\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(
 
 CAPTION_TEXT_RE = re.compile(r"^\[.*\]$", re.S)
 PAD_EMU = 6 * 12700          # between a picture and its panel, a neighbour or the slide edge
+TEXT_GAP_PT = 10.0           # a panel picture under rendered text: at least this far below its last line
 
 
 def _shape_text(el):
@@ -159,13 +162,15 @@ def text_ends(spTree, slots):
     return out
 
 
-def pictures_to_panels(spTree, margin_pt, ends=None, skip=()):
+def pictures_to_panels(spTree, margin_pt, ends=None, skip=(), floors=None):
     """`panel_margin: 18` — every picture whose centre sits in a rounded panel is fitted, aspect
     kept, into the panel less the margin on the left, right and bottom and below the panel's own
     text (where that text ends when `ends` measures it, else its frame); centred in that room.
-    One rule, so every panel's picture sits alike. -> pictures moved."""
+    `floors` {picture name: EMU} is where the render measured the text above it really ends
+    plus the gap, and the picture's room never starts above it. -> pictures moved."""
     m = round(margin_pt * EMU_PER_PT)
     ends = ends or {}
+    floors = floors or {}
     kids = [c for c in spTree if c.tag in (q("p:sp"), q("p:pic"))]
     panels = [shape_box(c) for c in kids if _is_panel(c) and shape_box(c)]
     texts = []
@@ -190,7 +195,7 @@ def pictures_to_panels(spTree, margin_pt, ends=None, skip=()):
         left, right, bottom = r[0] + m, r[0] + r[2] - m, r[1] + r[3] - m
         above = [t[1] + t[3] for t in texts if t[1] + t[3] <= py + ph / 2
                  and t[0] < px + pw and px < t[0] + t[2] and r[0] <= t[0] + t[2] / 2 <= r[0] + r[2]]
-        top = max([r[1] + m] + [a + PAD_EMU for a in above])
+        top = max([r[1] + m] + [a + PAD_EMU for a in above] + [floors.get(shape_name(c), 0)])
         bw, bh = right - left, bottom - top
         if bw <= 0 or bh <= 0:
             continue
@@ -3409,7 +3414,8 @@ def cmd_build(args):
             layout_counts["captions"] += captions_into_pictures(spTree, sw, sh)
         if layout_counts["margin"] is not None:
             layout_counts["panels"] += pictures_to_panels(spTree, layout_counts["margin"], text_ends(spTree, slots),
-                                                          skip={id(el) for el in drop_els if el is not None})
+                                                          skip={id(el) for el in drop_els if el is not None},
+                                                          floors=getattr(args, "panel_floors", {}).get(i))
         for el, sid, x, y, w, h, line in place_els:
             if not place_frame(el, x, y, w, h):
                 problems.append("line %d: place cannot move '%s' — its position is inherited "
@@ -3795,11 +3801,13 @@ def cmd_check(args):
                 place_frame(resolve_path(tree, by_id[sid].path), x, y, w, h)
             slots = analyze_slide(probe, slide_cy)
             by_id = {s.id: s for s in slots}
-            # a frame given a taller `h=` holds that many more of the template's lines
+            # a frame given `h=` is measured against its own height, not the template's lines:
+            # it holds h / line height lines (a fraction kept — floored, a 54pt frame for 15.5pt
+            # lines gained nothing over the template's 39pt and a fitting list read as a spill)
             for sid, _x, _y, _w, h in placed:
                 s = by_id.get(sid)
                 if h and s and s.box and s.line_h and s.proto_lines is not None and sid in was_h:
-                    s.proto_lines += max(0, int((s.box[3] - was_h[sid]) / s.line_h))
+                    s.proto_lines = max(s.proto_lines, s.box[3] / s.line_h)
             base = {r["label"]: r for r in pairs}
             pairs = slide_pairs(slots)
             for r in pairs:
@@ -3956,10 +3964,15 @@ def cmd_check(args):
                     where = (" straight into %s" % ", ".join(o.id for o in into[:2])
                              if into else " into the space below it")
                     say = errs if into else warns
-                    say.append("line %d: %s.%s — %d lines where the template has %d, so it "
-                               "runs %.0fpt lower than the design puts it%s. Cut it to %d "
-                               "lines, or use an archetype with room."
-                               % (line, tag, slot_id, lines, was, pt(over), where, was))
+                    if isinstance(was, float):   # a `place:` h= frame, measured on its own height
+                        say.append("line %d: %s.%s — %d lines where the placed frame holds %.1f, "
+                                   "so it runs %.0fpt past the frame%s. Cut a line, or give `place:` "
+                                   "a taller h=." % (line, tag, slot_id, lines, was, pt(over), where))
+                    else:
+                        say.append("line %d: %s.%s — %d lines where the template has %d, so it "
+                                   "runs %.0fpt lower than the design puts it%s. Cut it to %d "
+                                   "lines, or use an archetype with room."
+                                   % (line, tag, slot_id, lines, was, pt(over), where, was))
                     for r in pairs:
                         if r["axis"] != "↓" or slot_id not in r["a"] or r["zone"] is None:
                             continue
@@ -4208,6 +4221,23 @@ def cmd_render(args):
     if box is None:
         print("  ! no pdftotext in the renderer — skipping the collision audit")
         return rc
+    # `panel_margin:` placed its pictures under an estimate of where the text ends; the render
+    # measures it. A picture closer than TEXT_GAP_PT to the line above is set below it, once.
+    if front.get("panel_margin", "").strip() and not getattr(args, "panel_floors", None):
+        floors = panel_floors(box, out)
+        if floors:
+            args.panel_floors = floors
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = cmd_build(args)
+            r.to_pdf(work, out.name)
+            r.previews(work, pdf.name)
+            box = r.bbox(work, pdf.name)
+            n = sum(len(v) for v in floors.values())
+            print("  %d panel picture(s) sat under %gpt below the text the render measured "
+                  "(pages %s): set %gpt below it, rebuilt and rendered again"
+                  % (n, TEXT_GAP_PT, ", ".join(str(p) for p in sorted(floors)), TEXT_GAP_PT))
+            if box is None:
+                return rc
     hits = collisions(box) + wraps(box)
     _, specs, _ = parse_deck(md_path.read_text(encoding="utf-8"))
     tpl = Package(resolve_template(front, args, md_path))
@@ -4247,6 +4277,65 @@ def cmd_render(args):
     return 1 if (hits and args.strict) else rc
 
 
+def panel_floors(xml_text, pptx, gap_pt=TEXT_GAP_PT):
+    """{slide no: {picture name: EMU}} for each picture the render shows closer than gap_pt under
+    the text above it: the floor is that text's measured last line plus gap_pt.
+
+    `panel_margin:` places a picture under its panel's text from an estimate of where the text
+    ends; on a real deck that estimate fell 5pt short and three pictures sat 1.4–3.3pt under
+    the last line (2026-11-17). The render knows where the line really is."""
+    pkg = Package(pptx)
+    sw = pt(slide_size(pkg)[0])
+    out = {}
+    for no, (part, (pw, ph, blocks)) in enumerate(zip(slide_order(pkg), bbox_pages(xml_text)), 1):
+        k = pw / sw if sw else 1.0
+        tree = ET.fromstring(pkg.parts[part]).find(q("p:cSld") + "/" + q("p:spTree"))
+        lines = [b for blk in blocks for b, _ in blk]
+        for c in tree:
+            if c.tag != q("p:pic"):
+                continue
+            box = shape_box(c)
+            if not box:
+                continue
+            x0, top, x1 = pt(box[0]) * k, pt(box[1]) * k, pt(box[0] + box[2]) * k
+            above = [y1 for (lx0, y0, lx1, y1) in lines
+                     if lx0 < x1 and x0 < lx1 and y0 < top and y1 > top - 150 * k]
+            if above and max(above) + gap_pt * k > top + 0.5 * k:
+                floor = (max(above) / k + gap_pt) * EMU_PER_PT
+                out.setdefault(no, {})[shape_name(c)] = round(floor)
+    return out
+
+
+def cmd_shapes(args):
+    """deck.mdx -> JSON: each page's template shape names and the slot each one is.
+
+    A workspace that moved shapes after the build by their PowerPoint names (`TextBox 15`)
+    writes the same moves as `place:` lines, which take slot ids (`text7`): this is the table
+    between the two. Pages are deck pages, so a page's names are its archetype's."""
+    md_path = require_deck(args.deck)
+    front, specs, errors = parse_deck(md_path.read_text(encoding="utf-8"))
+    pkg = Package(resolve_template(front, args, md_path))
+    protos, slide_cy = slide_order(pkg), slide_size(pkg)[1]
+    want = {int(p) for p in args.pages.split(",")} if args.pages else None
+    out = []
+    for page, spec in enumerate(specs, 1):
+        if want and page not in want:
+            continue
+        n = int(spec.archetype[1:])
+        if not 1 <= n <= len(protos):
+            continue
+        tree = ET.fromstring(pkg.parts[protos[n - 1]])
+        sp = tree.find(q("p:cSld") + "/" + q("p:spTree"))
+        names = {}
+        for s in analyze_slide(tree, slide_cy):
+            name = shape_name(resolve_path(sp, s.path))
+            if name:
+                names[name] = s.id
+        out.append({"page": page, "archetype": "@" + spec.archetype, "shapes": names})
+    print(json.dumps({"pages": out}, ensure_ascii=False, indent=1))
+    return 0
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 def main(argv=None):
@@ -4282,6 +4371,12 @@ def main(argv=None):
     d.add_argument("--output")
     d.add_argument("--strict", action="store_true", help="exit nonzero on any problem")
     d.set_defaults(func=cmd_render)
+
+    s = sub.add_parser("shapes", help="each page's template shape names and their slot ids (JSON)")
+    s.add_argument("--deck", required=True, metavar="deck" + DECK_EXT)
+    s.add_argument("--template", help="overrides the front matter; one is always required")
+    s.add_argument("--pages", help="comma-separated deck pages, default all")
+    s.set_defaults(func=cmd_shapes)
 
     args = ap.parse_args(argv)
     return args.func(args)

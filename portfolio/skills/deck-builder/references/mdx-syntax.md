@@ -124,6 +124,9 @@ place:
   - text22: 156.8 408.8 w=253.9 # or a new width
 ```
 
+A move written for PowerPoint shape names (`TextBox 15`) takes slot ids here: `deck.py shapes
+--deck deck.mdx --pages 3` prints each page's shape names and the slot each one is.
+
 `place:` moves a shape with its own frame; one whose position comes from the layout is named
 in the build, not moved. It runs after every value and the two options below, so it wins — and
 keeps the size they gave: a picture grown where it stood can end past the slide once moved, and
@@ -147,7 +150,7 @@ figure's text, or redraw it larger. Sizes come from `font-size` (attribute, `sty
 | Front matter | What it does |
 |---|---|
 | `captions: into-picture` | a `[ … ]` caption above or below a picture is deleted and the picture grows into its room, aspect kept, inside its rounded panel, its neighbours and the slide — for diagrams that carry their own title |
-| `panel_margin: 18` | every picture whose centre sits in a rounded panel is fitted into the panel less 18pt left, right and bottom, under the panel's own text, centred across and set on the bottom |
+| `panel_margin: 18` | every picture whose centre sits in a rounded panel is fitted into the panel less 18pt left, right and bottom, under the panel's own text, centred across and set on the bottom. Where the text ends is estimated at build; `render` measures it, and a picture closer than 10pt to the line above is set 10pt under it, rebuilt and rendered once more (the render says which pages) |
 
 Both act on a slide's top-level shapes; a group's children are left as they are.
 

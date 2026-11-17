@@ -348,6 +348,7 @@ test('files under their old names (NFC or NFD) are read, reported by layout and 
   writeFileSync(join(root, 'template', 't.pptx'), '')
   writeFileSync(join(root, 'template', '분석.md'.normalize('NFD')), '# 내 분석\n')
   writeFileSync(join(root, 'template', '다음렌더-지침.md'), '# 내 지침\n')
+  writeFileSync(join(root, 'template', 'NOTES.md'), '# 메모\n수정 목록은 `다음렌더-지침.md`에 둔다.\nportfolio-deck.mdx를 고친다.\n')
   const before = layout(root)
   assert.deepEqual(before.legacy, [
     { from: 'skeleton.md', to: 'portfolio-skeleton.md' },
@@ -364,6 +365,9 @@ test('files under their old names (NFC or NFD) are read, reported by layout and 
   assert.ok(existsSync(join(root, 'snapshot/deck/deck-v1.0.0/deck.mdx')))
   const r = scaffold(root)
   assert.equal(r.renamed.length, 5)
+  assert.deepEqual(r.stale_refs, [{ file: 'template/NOTES.md', old: 'template/다음렌더-지침.md', now: 'template/next-render.md', lines: [2] }],
+    'a file still naming a renamed file is reported (not the longer name portfolio-deck.mdx)')
+  assert.match(readFileSync(join(root, 'template/NOTES.md'), 'utf8'), /다음렌더-지침\.md/, 'reported, never edited')
   assert.ok(!r.created.includes('CLAUDE.md'), 'the README became CLAUDE.md; no guide is written over it')
   assert.ok(!r.created.some(p => p.startsWith('template/')), 'renamed, not created empty')
   assert.equal(readFileSync(join(root, 'template/analysis.md'), 'utf8'), '# 내 분석\n')
@@ -375,7 +379,7 @@ test('files under their old names (NFC or NFD) are read, reported by layout and 
   assert.equal(scaffold(root).appended, undefined, 'appended once')
   assert.equal(readFileSync(join(root, 'CLAUDE.md'), 'utf8'), guide)
   assert.ok(!existsSync(join(root, 'skeleton.md')) && !existsSync(join(root, 'deck.mdx')) && !existsSync(join(root, 'README.md')))
-  assert.deepEqual(readdirSync(join(root, 'template')).sort(), ['analysis.md', 'next-render.md', 't.pptx'])
+  assert.deepEqual(readdirSync(join(root, 'template')).sort(), ['NOTES.md', 'analysis.md', 'next-render.md', 't.pptx'])
   assert.equal(layout(root).legacy, undefined)
   // both names present: the English one wins and the old one is left for the user to look at
   writeFileSync(join(root, 'template', '분석.md'), 'old')
@@ -1584,5 +1588,21 @@ test('readMaterial: ledger grades are A, B, C; X_ and other letters are never it
   for (const f of ['A1_정산.md', 'B2_재시도.md', 'C3_각주.md', 'D1_기타.md', 'X_쓰지않을것.md']) writeFileSync(join(p, f), '처리 30% 단축\n')
   const ids = [...readMaterial(root).keys()].sort()
   assert.deepEqual(ids, ['01_가상결제/A1', '01_가상결제/B2', '01_가상결제/C3'])
+  rmSync(root, { recursive: true, force: true })
+})
+
+test('layout names each post-build script and the deck or resume line that does its job inside the build', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-scripts-'))
+  mkdirSync(join(root, 'scripts'))
+  writeFileSync(join(root, 'scripts', 'move.py'), 'LAYOUT = {\n  3: {"TextBox 5": (26.4, 270)},\n}\n')
+  writeFileSync(join(root, 'scripts', 'fmt.py'), 'SRC = "template/t.docx"\nppr = "<w:spacing w:after=\\"40\\"/>"\n')
+  writeFileSync(join(root, 'scripts', 'pdf.py'), 'p.ParaIsCharacterDistance = False\n')
+  writeFileSync(join(root, 'scripts', 'note.py'), 'print("nothing here")\n')
+  const s = layout(root).scripts
+  const jobs = Object.fromEntries(s.map(x => [x.script, x.jobs.map(j => j.instead)]))
+  assert.deepEqual(Object.keys(jobs), ['scripts/fmt.py', 'scripts/move.py', 'scripts/pdf.py'], 'a script with no known job is not listed')
+  assert.match(jobs['scripts/move.py'][0], /place:.*deck\.py shapes/)
+  assert.match(jobs['scripts/fmt.py'][0], /look:.*spacing:.*keep:/)
+  assert.match(jobs['scripts/pdf.py'][0], /already/)
   rmSync(root, { recursive: true, force: true })
 })
