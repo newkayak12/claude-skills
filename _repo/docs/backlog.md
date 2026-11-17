@@ -68,6 +68,20 @@ real deck lone commas 316 → 0, engine version printed).
       skeleton; unverified cause: the saved claims carry the old ledger's ids). Still left: the three
       figure/cover items above (the workspace's own figures and template).
 
+154. **portfolio says where to cut and why a figure is small, and scaffold reports what its renames left dangling**
+    - Why: 2026-11-17, portfolio 3.2.0 run on a local copy of a real workspace (user: "스킬을 고치는건데").
+      (1) resume `render` gives only `over_lines` (36); the 8 lines cut by hand were all paragraphs whose
+      last line held a few characters, found by eye. (2) deck `check` warns "figure text ~4.5pt … enlarge
+      the picture, cut text" 40 times, but the cause is the SVG's own `font-size` (5.6) and the page has
+      no room to enlarge. (3) `scaffold` renamed `template/다음렌더-지침.md` → `next-render.md` on open
+      and `template/NOTES.md` still names the old file.
+    - Acceptance: `render` (resume, and the deck's text frames where it applies) lists short-tail
+      paragraphs ranked by characters to cut for one line saved, and on the real copy names the bullets
+      cut by hand; the figure warning for an SVG states its smallest `font-size`, the placement scale and
+      the `font-size` that reaches 8pt; `scaffold` returns the workspace files that still reference an
+      old name (report only, user files untouched); tests with counts (`test_resume.py`, `test_deck.py`,
+      `test-manage.mjs`).
+
 153. **The deck render is checked against PowerPoint, and the 3.2.0 audits catch what they missed**
     - Why: after portfolio 3.2.0 (2026-11-14) the deck renderer is checked only against Word's saved
       page breaks for the resume (`word_check`); nothing says the cached LibreOffice lays a pptx out
