@@ -148,7 +148,10 @@ Every session in the workspace starts with `manage.mjs scaffold`, unasked: it re
 to these, creates only what is missing, CLAUDE.md included, and never overwrites a file. A CLAUDE.md
 that is already there (a renamed README too) keeps its text and gets the guide appended once.
 
-Nine steps (3.2.4: a panel shortened to keep a footnote's zone no longer shrinks the pictures
+Nine steps (3.2.5: deck `render` holds together the lines it saw break badly — a number split
+from its unit, a last word alone — on its one rebuild, words and size untouched; blind against a
+user's hand-finished 31-page deck the skill alone is now better on 11 pages, worse on none;
+3.2.4: a panel shortened to keep a footnote's zone no longer shrinks the pictures
 still inside it — 3.2.3 refit them and cost a page 3% of each picture; 3.2.3: deck `render` keeps each shape's critical zone — the gaps the template repeats
 between neighbours: text running down past its frame moves the shapes below it down, text growing
 up (a 2–3 line footnote) shortens the panel row above it, a crossing the template's own page shows
