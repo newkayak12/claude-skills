@@ -458,6 +458,21 @@ def uneven():
     check(not [h for h in hits if h[1] == "zone"],
           "page_zones: a page measured on its placed frames, not the template's — %s" % hits)
 
+    print("zone audit: each crossing says what would keep the zone")
+    down = {"a": ["text1"], "b": ["text2"], "a_box": (50.0, 100.0, 300.0, 40.0),
+            "b_box": (50.0, 150.0, 300.0, 40.0), "axis": "↓", "key": ("x", "y", "↓"), "gap": 10.0,
+            "zone": 10.0, "spread": 0.0, "borrowed": False, "label": "A ↓ B"}
+    fixes = {}
+    deck.zone_audit(pages_to_xml([(960.0, 540.0, [[line(50, 100, 340, 146)], [line(50, 150, 340, 160)]])]),
+                    ["s1"], {"s1": [down]}, 960.0, fixes=fixes)
+    check(fixes.get(1) and fixes[1][0][:2] == ("down", ["text2"]) and abs(fixes[1][0][2] - 6.0) < 0.1,
+          "text running 6pt past its frame into a 10pt zone: move B down 6pt — %s" % fixes)
+    fixes = {}
+    deck.zone_audit(pages_to_xml([(960.0, 540.0, [[line(50, 100, 340, 120)], [line(50, 144, 340, 190)]])]),
+                    ["s1"], {"s1": [down]}, 960.0, fixes=fixes)
+    check(fixes.get(1) and fixes[1][0][:2] == ("up", ["text1"]) and abs(fixes[1][0][2] - 6.0) < 0.1,
+          "text growing 6pt up into the zone above: give back 6pt from A's bottom — %s" % fixes)
+
 
 def drift(tmp):
     """`@sN` must not silently point somewhere else after the template moves."""
@@ -1933,6 +1948,44 @@ def layout_options(tmp):
     first = deck.slide_order(pkg)[0]
     pkg.parts[first] = _slide([pic("Pic", 60, 174, 200, 100), pic("Far", 600, 400, 50, 50)]).encode("utf-8")
     pkg.write(pp)
+    print("fit_zones: overflow moves the shapes below or shortens the panel row above")
+
+    def slots_of(shapes):
+        root = ET.fromstring(_slide(shapes))
+        sp_tree = root.find(P + "cSld/" + P + "spTree")
+        ss = deck.analyze_slide(root, 540 * E)
+        named = {deck.shape_name(deck.resolve_path(sp_tree, s.path)): s.id for s in ss}
+        return sp_tree, {s.id: s for s in ss}, named
+    row = [sp("PanL", 40, 100, 400, 300, "문제", panel=True), sp("PanR", 500, 100, 400, 300, "해결", panel=True),
+           pic("PicL", 140, 300, 200, 95), sp("Foot", 40, 410, 300, 20, "각주")]
+    t, ss, named = slots_of(row)
+    notes, probs = deck.fit_zones(t, ss, [("up", [named["PanL"]], 6.0, (40.0, 100.0, 400.0, 300.0))], 512.0)
+    check(box(t, "PanL")[3] == 294 and box(t, "PanR")[3] == 294 and not probs,
+          "a footnote 6pt into the zone shortens both panels sharing that bottom by 6pt: %s %s"
+          % ((box(t, "PanL"), box(t, "PanR")), probs))
+    px, py, pw, ph = box(t, "PicL")
+    check(py + ph <= 394 - 6 + 0.5 and abs(pw / ph - 200 / 95) < 0.02 and notes,
+          "a picture in a shortened panel is scaled to stay inside it, aspect kept: %s" % (box(t, "PicL"),))
+    col = [sp("Lead", 40, 100, 400, 40, "글"), sp("Next", 40, 150, 400, 40, "아래"),
+           pic("Under", 40, 200, 200, 100), sp("Side", 600, 150, 300, 40, "옆"), sp("Band", 40, 515, 300, 15, "쪽")]
+    t, ss, named = slots_of(col)
+    notes, probs = deck.fit_zones(t, ss, [("down", [named["Next"]], 25.5, (40.0, 150.0, 400.0, 40.0))], 512.0)
+    check(box(t, "Next")[1] == 175.5 and box(t, "Under")[1] == 225.5 and box(t, "Side")[1] == 150
+          and box(t, "Band")[1] == 515 and box(t, "Lead")[1] == 100 and not probs,
+          "text 25.5pt into the zone below moves that shape and the ones under it, not its side "
+          "neighbour or the bottom band: %s" % [(n, box(t, n)) for n in ("Next", "Under", "Side", "Band")])
+    t, ss, named = slots_of(col)
+    notes, probs = deck.fit_zones(t, ss, [("down", [named["Next"]], 250.0, (40.0, 150.0, 400.0, 40.0))], 512.0)
+    check(box(t, "Next")[1] == 150 and probs and "250" in probs[0],
+          "no room above the safe area's bottom: nothing moves, the deficit is reported: %s" % probs)
+    t, ss, named = slots_of(col)
+    nxt = [el for el in t if el.find(".//" + P + "cNvPr") is not None
+           and el.find(".//" + P + "cNvPr").get("name") == "Next"][0]
+    notes, probs = deck.fit_zones(t, ss, [("down", [named["Next"]], 10.0, (40.0, 150.0, 400.0, 40.0))], 512.0,
+                                  placed={id(nxt)})
+    check(box(t, "Next")[1] == 150 and probs and "place:" in probs[0],
+          "a shape the user `place:`d is not moved; it is reported: %s" % probs)
+
     got = deck.panel_floors(xml, pp)
     check(got == {1: {"Pic": round(182 * E)}},
           "panel_floors: a picture 2pt under a rendered line gets a floor 10pt under it, a clear one none: %s" % got)

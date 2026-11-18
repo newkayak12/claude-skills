@@ -407,8 +407,19 @@ def zones(work, r):
     print("    " + "\n    ".join(l for l in out.splitlines() if "page" in l or "!" in l))
     check("NanumSquare" not in "".join(l for l in out.splitlines() if "renderer has no" in l),
           "the renderer sees the bundled NanumSquare — nothing substituted")
-    check(re.search(r"page 3\s+zone\s+`text1` ↓ `text2` — 글이 프레임을", out) is not None,
-          "the overrunning body is a zone finding on page 3")
+    check("zone kept — page 3: text2 moved" in out
+          and re.search(r"page 3\s+zone\s+`text1` ↓ `text2`", out) is None,
+          "the overrunning body moves the box below it down: the zone is kept, no finding left on page 3")
+    (work / "zdeck.mdx").write_text(
+        "---\ntemplate: ztpl.pptx\noutput: zdeck.pptx\n---\n\n"
+        "## @s1\ntitle: 짧은 제목\ntext1: %s\n" % ("넘치는 본문입니다 " * 150), encoding="utf-8")
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        deck.main(["render", "--deck", str(work / "zdeck.mdx")])
+    full = buf.getvalue()
+    check("no room above the safe area" in full,
+          "a body too long for any move: nothing moved, the render says to cut it — %s"
+          % [l for l in full.splitlines() if "zone" in l or "!" in l][:4])
     check(re.search(r"drift\s+@s1 슬라이드 1·2·3: `title` ↓ `text1`", out) is not None,
           "the wrapped title moves the title↔body gap: one drift finding naming the slides")
 

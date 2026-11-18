@@ -207,6 +207,76 @@ def pictures_to_panels(spTree, margin_pt, ends=None, skip=(), floors=None):
     return moved
 
 
+def fit_zones(spTree, slots, fixes, safe_bottom, placed=()):
+    """Keep the template's critical zones where the render measured text crossing one (user,
+    2026-11-18: "글 넘침 조정해야지"). fixes: [(kind, member slot ids, pt, unit box in pt)].
+
+    "up" — text below grew up into the zone (a centre- or bottom-anchored footnote): every panel
+    whose bottom is the unit's bottom gives back pt, so a row of panels stays level; a picture in
+    one is scaled to stay inside it. "down" — text ran down into the zone: the unit and every shape
+    under it across its width move down pt, as long as they stay above the safe area's bottom
+    (pt); a shape already past it is the bottom band's and stays. A `place:`d shape (placed: ids
+    of elements) is never moved. Type is never shrunk. -> (notes, problems)."""
+    E = EMU_PER_PT
+    tops = [c for c in spTree if c.tag in (q("p:sp"), q("p:pic"), q("p:grpSp"), q("p:graphicFrame"),
+                                           q("p:cxnSp")) and shape_box(c)]
+    ids = lambda members: ", ".join(members)
+    notes, problems, done = [], [], set()
+
+    def move(el, dy):
+        holder = el.find(q("p:grpSpPr") if el.tag == q("p:grpSp") else q("p:spPr"))
+        off = holder.find(q("a:xfrm") + "/" + q("a:off")) if holder is not None else None
+        if off is None:
+            off = el.find(q("p:xfrm") + "/" + q("a:off"))
+        off.set("y", str(int(off.get("y")) + round(dy * E)))
+    for kind, members, d, box in sorted(fixes, key=lambda f: -f[2]):
+        key = (kind, tuple(members))
+        if key in done or d <= 0:
+            continue
+        done.add(key)
+        if kind == "up":
+            bottom = box[1] + box[3]
+            row = [c for c in tops if _is_panel(c) and abs(pt(sum(shape_box(c)[1::2])) - bottom) <= 2]
+            if not row:
+                problems.append("%s: text below runs %.1fpt into its zone and no panel shares its bottom "
+                                "to give way — cut the text below" % (ids(members), d))
+                continue
+            for p in row:
+                x, y, w, h = shape_box(p)
+                set_frame(p, (x, y), (w, h - round(d * E)))
+                new_bottom = y + h - round(d * E)
+                for c in tops:
+                    b = shape_box(c)
+                    if c.tag != q("p:pic") or not (x <= b[0] + b[2] / 2 <= x + w and y <= b[1] + b[3] / 2 <= y + h):
+                        continue
+                    room = new_bottom - PAD_EMU - b[1]
+                    if b[1] + b[3] > new_bottom - PAD_EMU and room > 0:
+                        nw = round(b[2] * room / b[3])
+                        set_frame(c, (b[0] + (b[2] - nw) // 2, b[1]), (nw, room))
+            notes.append("%d panel(s) %.1fpt shorter so the text under %s keeps its zone"
+                         % (len(row), d, ids(members)))
+        else:
+            x0, x1, top = box[0], box[0] + box[2], box[1]
+            moving = [c for c in tops if pt(shape_box(c)[1]) >= top - ZONE_TOL_PT
+                      and pt(shape_box(c)[0]) < x1 and x0 < pt(shape_box(c)[0] + shape_box(c)[2])
+                      and pt(shape_box(c)[1] + shape_box(c)[3]) <= safe_bottom]
+            if any(id(c) in placed for c in moving):
+                problems.append("%s: text above runs %.1fpt into its zone; a `place:`d shape is under it, "
+                                "so nothing moved — cut the text or place it lower" % (ids(members), d))
+                continue
+            low = max(pt(shape_box(c)[1] + shape_box(c)[3]) for c in moving) if moving else 0
+            if not moving or low + d > safe_bottom + 0.01:
+                problems.append("%s: text above runs %.1fpt into its zone and there is no room above the "
+                                "safe area (%gpt) to move it — cut the text above" % (ids(members), d, safe_bottom))
+                continue
+            for c in moving:
+                move(c, d)
+            under = len(moving) - 1
+            notes.append("%s%s moved %.1fpt down to keep its zone"
+                         % (ids(members), " and %d shape(s) under it" % under if under > 0 else "", d))
+    return notes, problems
+
+
 def parse_place(kind, value):
     """[(slot id, x, y, w|None, h|None) in pt], [bad item text]."""
     good, bad = [], []
@@ -3412,10 +3482,26 @@ def cmd_build(args):
         if front.get("captions", "").strip() == "into-picture":
             sw, sh = slide_size(pkg)
             layout_counts["captions"] += captions_into_pictures(spTree, sw, sh)
+        # render measured text crossing a critical zone: keep it (fit_zones), panels first, so
+        # `panel_margin:` refits their pictures, moves after, so a moved unit carries its picture
+        zfix = getattr(args, "zone_fixes", {}).get(i, [])
+        placed_ids = {id(el) for el, *_ in place_els if el is not None}
+        sb = safe_bottom_pt(md_path, slide_size(pkg)[1])
+        zlog = getattr(args, "zone_notes", None)
+        ups = [f for f in zfix if f[0] == "up"]
+        if ups:
+            n_, p_ = fit_zones(spTree, slots, ups, sb, placed_ids)
+            if zlog is not None:
+                zlog += ["page %d: %s" % (i, x) for x in n_] + ["! page %d: %s" % (i, x) for x in p_]
         if layout_counts["margin"] is not None:
             layout_counts["panels"] += pictures_to_panels(spTree, layout_counts["margin"], text_ends(spTree, slots),
                                                           skip={id(el) for el in drop_els if el is not None},
                                                           floors=getattr(args, "panel_floors", {}).get(i))
+        downs = [f for f in zfix if f[0] == "down"]
+        if downs:
+            n_, p_ = fit_zones(spTree, slots, downs, sb, placed_ids)
+            if zlog is not None:
+                zlog += ["page %d: %s" % (i, x) for x in n_] + ["! page %d: %s" % (i, x) for x in p_]
         for el, sid, x, y, w, h, line in place_els:
             if not place_frame(el, x, y, w, h):
                 problems.append("line %d: place cannot move '%s' — its position is inherited "
@@ -3979,8 +4065,9 @@ def cmd_check(args):
                         left = r["gap"] - pt(over)
                         if left < r["zone"] - ZONE_TOL_PT:
                             warns.append("line %d: %s.%s — 임계 침범: %s 사이 간격이 %.1fpt로 "
-                                         "줄어 템플릿 임계 %s보다 %.1fpt 들어갑니다. 줄이거나 "
-                                         "여유 있는 아키타입으로 바꾸세요 (도형은 옮기지 않음)."
+                                         "줄어 템플릿 임계 %s보다 %.1fpt 들어갑니다. render가 렌더에서 "
+                                         "재어 아래 도형을 내리거나 패널을 줄여 임계를 지키고, 자리가 "
+                                         "없으면 알립니다(예상치)."
                                          % (line, tag, slot_id, r["label"], max(left, 0.0),
                                             zone_cell(r), r["zone"] - left))
             if slot.type == "list" and slot.max_items and kind == "list" \
@@ -4076,7 +4163,7 @@ def collisions(xml_text, cross_tol=0.05, bunch_tol=0.70):
     return found
 
 
-def zone_audit(xml_text, archetypes, zones, slide_w_pt, page_zones=None):
+def zone_audit(xml_text, archetypes, zones, slide_w_pt, page_zones=None, fixes=None):
     """Rendered text against the template's critical zones.
 
     `zone`: a unit's rendered lines run past its frame and into the zone before its
@@ -4087,7 +4174,11 @@ def zone_audit(xml_text, archetypes, zones, slide_w_pt, page_zones=None):
     `page_zones` {page: [pair]} replaces a page's archetype pairs with ones measured on its built
     frames (`place:`, `distribute:`, `!drop`). Sideways, only lines level with the neighbour count;
     drift is read down the page only (a left-aligned line's length is content, not layout), and a
-    unit holding a picture ends at its frame (the picture, not its text, is what sits there)."""
+    unit holding a picture ends at its frame (the picture, not its text, is what sits there).
+
+    `fixes` {page: [(kind, members, pt, box)]}, when given, gets what keeps each vertical crossing's
+    zone: "down" — move the later unit (and what is under it) down by pt; "up" — the earlier unit
+    gives back pt at its bottom (its panel row shortens). `fit_zones` applies them at build."""
     found, seen, page_gaps = [], {}, {}
     page_zones = page_zones or {}
     for pi, (pw, ph, blocks) in enumerate(_bbox_pages(xml_text), 1):
@@ -4142,6 +4233,8 @@ def zone_audit(xml_text, archetypes, zones, slide_w_pt, page_zones=None):
                 found.append((pi, "zone", "%s — 글이 프레임을 %.1fpt 넘어 임계 %s 안으로 "
                               "%.1fpt 들어감" % (r["label"], end - frame_end, zone_cell(r),
                                                 r["zone"] - (start - end))))
+                if fixes is not None and r["axis"] == "↓":
+                    fixes.setdefault(pi, []).append(("down", list(r["b"]), r["zone"] - (start - end), b))
             # The later shape's text can overrun backwards too (bottom- or centre-anchored).
             back = cb[1] if r["axis"] == "↓" else cb[0]
             if has_b and r["zone"] is not None and back < start - ZONE_TOL_PT \
@@ -4149,6 +4242,8 @@ def zone_audit(xml_text, archetypes, zones, slide_w_pt, page_zones=None):
                 found.append((pi, "zone", "%s — 뒤 도형의 글이 프레임을 %.1fpt 거슬러 임계 %s "
                               "안으로 %.1fpt 들어감" % (r["label"], start - back, zone_cell(r),
                                                        r["zone"] - (back - frame_end))))
+                if fixes is not None and r["axis"] == "↓":
+                    fixes.setdefault(pi, []).append(("up", list(r["a"]), r["zone"] - (back - frame_end), a))
             if seen_gap is None:
                 continue
             seen.setdefault((arch, r["label"]), []).append((pi, seen_gap, r["spread"]))
@@ -4239,32 +4334,12 @@ def cmd_render(args):
     if box is None:
         print("  ! no pdftotext in the renderer — skipping the collision audit")
         return rc
-    # `panel_margin:` placed its pictures under an estimate of where the text ends; the render
-    # measures it. A picture closer than TEXT_GAP_PT to the line above is set below it, once.
-    if front.get("panel_margin", "").strip() and not getattr(args, "panel_floors", None):
-        floors = panel_floors(box, out)
-        if floors:
-            args.panel_floors = floors
-            with contextlib.redirect_stdout(io.StringIO()):
-                rc = cmd_build(args)
-            r.to_pdf(work, out.name)
-            r.previews(work, pdf.name)
-            box = r.bbox(work, pdf.name)
-            n = sum(len(v) for v in floors.values())
-            print("  %d panel picture(s) sat under %gpt below the text the render measured "
-                  "(pages %s): set %gpt below it, rebuilt and rendered again"
-                  % (n, TEXT_GAP_PT, ", ".join(str(p) for p in sorted(floors)), TEXT_GAP_PT))
-            if box is None:
-                return rc
-    hits = collisions(box) + wraps(box)
     _, specs, _ = parse_deck(md_path.read_text(encoding="utf-8"))
     tpl = Package(resolve_template(front, args, md_path))
     tparts = slide_order(tpl)
     zones = template_zones(tpl, tparts, slide_size(tpl)[1])
     archs = [s.archetype for s in specs]
-    hits += zone_audit(box, archs, zones, pt(slide_size(tpl)[0]),
-                       page_zones=built_page_zones(tpl, tparts, Package(out), specs, zones,
-                                                   slide_size(tpl)[1]))
+    W = pt(slide_size(tpl)[0])
 
     # The template rendered the same way is the baseline: what its own page of that
     # archetype already shows is the template's, not something this deck did.
@@ -4272,11 +4347,45 @@ def cmd_render(args):
     shutil.copyfile(str(resolve_template(front, args, md_path)), str(ref))
     r.to_pdf(work, ref.name)
     rbox = r.bbox(work, ref.with_suffix(".pdf").name) if ref.with_suffix(".pdf").is_file() else None
-    seen = set()
+    seen, tfix = set(), {}
     if rbox:
         own = collisions(rbox) + wraps(rbox) + zone_audit(rbox, ["s%d" % i for i in range(1, len(tparts) + 1)],
-                                            zones, pt(slide_size(tpl)[0]))
+                                            zones, W, fixes=tfix)
         seen = {(p, k, d) for p, k, d in own}
+    # a crossing the template's own page shows is its design, not overflow: left as it is
+    designed = {(n, f[0], tuple(f[1])) for n, fs in tfix.items() for f in fs}
+
+    # The build placed by estimates; the render measures. Once: a `panel_margin:` picture closer
+    # than TEXT_GAP_PT to the line above is set below it, and text crossing a critical zone gets
+    # its neighbours moved or its panel row shortened (fit_zones) — rebuilt and rendered again.
+    if not getattr(args, "zone_notes", None) and not getattr(args, "panel_floors", None):
+        floors = panel_floors(box, out) if front.get("panel_margin", "").strip() else {}
+        fixes = {}
+        zone_audit(box, archs, zones, W, fixes=fixes,
+                   page_zones=built_page_zones(tpl, tparts, Package(out), specs, zones, slide_size(tpl)[1]))
+        fixes = {p: kept for p, fs in fixes.items()
+                 if (kept := [f for f in fs if (int(archs[p - 1][1:]), f[0], tuple(f[1])) not in designed])}
+        if floors or fixes:
+            args.panel_floors, args.zone_fixes, args.zone_notes = floors, fixes, []
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = cmd_build(args)
+            r.to_pdf(work, out.name)
+            r.previews(work, pdf.name)
+            box = r.bbox(work, pdf.name)
+            if floors:
+                print("  %d panel picture(s) sat under %gpt below the text the render measured "
+                      "(pages %s): set %gpt below it"
+                      % (sum(len(v) for v in floors.values()), TEXT_GAP_PT,
+                         ", ".join(str(p) for p in sorted(floors)), TEXT_GAP_PT))
+            for line in args.zone_notes:
+                print("  %s" % line if line.startswith("!") else "  zone kept — %s" % line)
+            print("  rebuilt and rendered again with these")
+            if box is None:
+                return rc
+    hits = collisions(box) + wraps(box)
+    hits += zone_audit(box, archs, zones, W,
+                       page_zones=built_page_zones(tpl, tparts, Package(out), specs, zones,
+                                                   slide_size(tpl)[1]))
     inherited = [h for h in hits if h[0] <= len(archs)
                  and (int(archs[h[0] - 1][1:]), h[1], h[2]) in seen]
     hits = [h for h in hits if h not in inherited]
@@ -4298,8 +4407,9 @@ def cmd_render(args):
 
 
 def built_page_zones(tpl, tparts, built, specs, zones, slide_cy):
-    """{page: [pair]} for pages whose shapes the deck moved or dropped, so the audit reads the
-    frames the reader sees. A moved page (`place:`, `distribute:`) is the template slide with each
+    """{page: [pair]} for pages whose shapes the build moved or dropped, so the audit reads the
+    frames the reader sees. A page whose built frames differ from the template's (`place:`,
+    `distribute:`, caption and panel fits, `fit_zones`) is the template slide with each
     named shape's frame taken from the built slide, its pairs re-measured and given the template
     pair's zone by label; a pair one of whose units was wholly `!drop`ped is left out on every page
     (the shapes are gone, their frame is not a neighbour). Measured 2026-11-17: on a deck moved off its post-build
@@ -4314,46 +4424,46 @@ def built_page_zones(tpl, tparts, built, specs, zones, slide_cy):
         n = int(arch[1:]) if re.fullmatch(r"s\d+", arch) else 0
         if not 1 <= n <= len(tparts) or page > len(bparts):
             continue
-        keys = {sid for sid, *_ in spec.values}
         dropped = {sid for sid, kind, value, _ in spec.values
                    if kind == "scalar" and isinstance(value, str) and value.strip() == "!drop"}
+        probe = ET.fromstring(tpl.parts[tparts[n - 1]])
+        tree = probe.find(q("p:cSld") + "/" + q("p:spTree"))
+        got = ET.fromstring(built.parts[bparts[page - 1]]).find(q("p:cSld") + "/" + q("p:spTree"))
+        by_name, moved = {}, False
+        for c in got:
+            by_name.setdefault(name_of(c), c)
+        for c in tree:
+            twin = by_name.get(name_of(c)) if name_of(c) else None
+            holder = "p:grpSpPr" if c.tag == q("p:grpSp") else "p:spPr"
+            mine = c.find(q(holder) + "/" + q("a:xfrm"))
+            theirs = twin.find(q(holder) + "/" + q("a:xfrm")) if twin is not None else None
+            if mine is None or theirs is None or ET.tostring(mine) == ET.tostring(theirs):
+                continue
+            moved = True
+            if c.tag == q("p:grpSp"):
+                # the analysis reads a group's children in their own coordinates: a group
+                # `distribute:` moved carries its children by the same offset
+                o0, o1 = mine.find(q("a:off")), theirs.find(q("a:off"))
+                dx = int(o1.get("x", 0)) - int(o0.get("x", 0))
+                dy = int(o1.get("y", 0)) - int(o0.get("y", 0))
+                for kid in c.iter():
+                    off = kid.find(q("p:spPr") + "/" + q("a:xfrm") + "/" + q("a:off"))
+                    if kid is not c and off is not None:
+                        off.set("x", str(int(off.get("x", 0)) + dx))
+                        off.set("y", str(int(off.get("y", 0)) + dy))
+            parent = c.find(q(holder))
+            parent.insert(list(parent).index(mine), copy.deepcopy(theirs))
+            parent.remove(mine)
+        if not moved and not dropped:
+            continue
         rows = zones.get(arch, [])
-        if keys & {"place", "distribute"}:
-            probe = ET.fromstring(tpl.parts[tparts[n - 1]])
-            tree = probe.find(q("p:cSld") + "/" + q("p:spTree"))
-            got = ET.fromstring(built.parts[bparts[page - 1]]).find(q("p:cSld") + "/" + q("p:spTree"))
-            by_name = {}
-            for c in got:
-                by_name.setdefault(name_of(c), c)
-            for c in tree:
-                twin = by_name.get(name_of(c)) if name_of(c) else None
-                holder = "p:grpSpPr" if c.tag == q("p:grpSp") else "p:spPr"
-                mine = c.find(q(holder) + "/" + q("a:xfrm"))
-                theirs = twin.find(q(holder) + "/" + q("a:xfrm")) if twin is not None else None
-                if mine is None or theirs is None:
-                    continue
-                if c.tag == q("p:grpSp"):
-                    # the analysis reads a group's children in their own coordinates: a group
-                    # `distribute:` moved carries its children by the same offset
-                    o0, o1 = mine.find(q("a:off")), theirs.find(q("a:off"))
-                    dx = int(o1.get("x", 0)) - int(o0.get("x", 0))
-                    dy = int(o1.get("y", 0)) - int(o0.get("y", 0))
-                    for kid in c.iter():
-                        off = kid.find(q("p:spPr") + "/" + q("a:xfrm") + "/" + q("a:off"))
-                        if kid is not c and off is not None:
-                            off.set("x", str(int(off.get("x", 0)) + dx))
-                            off.set("y", str(int(off.get("y", 0)) + dy))
-                parent = c.find(q(holder))
-                parent.insert(list(parent).index(mine), copy.deepcopy(theirs))
-                parent.remove(mine)
+        if moved:
             base = {r["label"]: r for r in rows}
             rows = slide_pairs(analyze_slide(probe, slide_cy))
             for r in rows:
                 t = base.get(r["label"])
                 if t:
                     r.update(count=t["count"], zone=t["zone"], borrowed=t["borrowed"], spread=t["spread"])
-        elif not dropped:
-            continue
         # a unit is gone only when every shape in it is: a panel whose caption was dropped still stands
         out[page] = [r for r in rows if not set(r["a"]) <= dropped and not set(r["b"]) <= dropped]
     return out

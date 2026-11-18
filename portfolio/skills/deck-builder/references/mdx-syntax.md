@@ -154,6 +154,14 @@ figure's text, or redraw it larger. Sizes come from `font-size` (attribute, `sty
 
 Both act on a slide's top-level shapes; a group's children are left as they are.
 
+**Critical zones at render.** A gap the template repeats between two neighbouring shapes is their
+zone (`catalog` lists it). `render` measures each page and, where text crosses a zone, rebuilds
+once: text running down past its frame moves the shape below and everything under it across its
+width down by the deficit (inside the safe area); text growing up (a centre- or bottom-anchored
+footnote) shortens every panel sharing the bottom above it by the deficit, and a picture in one
+shrinks to stay inside. A crossing the template's own page shows is left as designed; a `place:`d
+shape is never moved; what could not be kept is printed with `!`. Type is never shrunk.
+
 ## Outline levels
 
 Indenting a list item two extra spaces writes it at outline level 1. It only *looks*
