@@ -1,6 +1,6 @@
 // taskmanager-plan.mjs - planning cards, shape validation and expansion; split out of taskmanager.mjs (card 128 step 1), moved verbatim.
 import { docPaths, latestBySubgoal, livePlanningPkgs, planningPkgs, planningStories, qaPkgs, storyId, storyLabel } from './tickets.mjs';
-import { FLOWS, nextIndex, node, pushChain, saveRun, settleFailure } from './graph.mjs';
+import { FLOWS, nextIndex, node, openAsk, pushChain, saveRun, settleFailure } from './graph.mjs';
 import { cardDocuments, renderPrd } from './docs.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -8,6 +8,8 @@ import { record } from './taskstate.mjs';
 import { areaClaims, areaOwnershipOverlaps, formatShapeFeedback, pathOverlapProblems, scopesOverlap, shapePrecheck, touchScope } from './shapecheck.mjs';
 import { PACKAGE_CHAIN, bullets } from './taskmanager-stages.mjs';
 import { killDriver } from './taskmanager-drivers.mjs';
+import { writeManagerBriefing } from './taskmanager-prompts.mjs';
+import { escalationAsk, recordFailureKind, repeatedGaps } from './failure-kind.mjs';
 
 // ---------- planning cards (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C2-C4, C6) ----------
 //
@@ -143,8 +145,69 @@ export function preparePlanIntegration(task, n) {
 // the gaps as feedback (the same budget a rejected accept spends), a feature no card owns opens a
 // new card, and a fresh plan-integrate waits on the cards' newest accepts - shape moves behind it.
 // Bounded like a reshape: max_retries + 1 planning integrates, then the failure settles.
+// Two refusals that name nothing new are not retried a third time (card 129): interactive, a person
+// is asked (stop, or retry once more with their answer as feedback); otherwise the stage stops
+// naming the gaps. The ask is answered through n.escalation, read back here and in autoRetryPackages.
+export function escalateRepeated(task, n, { target, stage, gaps, roundLeft, stop }) {
+  recordFailureKind(task, n, 'repeated-identical-rejection', { via: 'repeat-check', findings: gaps });
+  let asked = false;
+  if (task.interactive === true && roundLeft) {
+    asked = true;
+    const ids = openAsk(task, n, [escalationAsk({ target, stage, gaps })], { blocking: true, consumers: false });
+    if (ids.length) {
+      writeManagerBriefing(task, task.nodes.find((x) => x.node_id === ids[0]));
+      n.escalation = { ask: ids[0], gaps };
+      record(task, { event: 'repeated_rejection_asked', task_id: task.run_id, node_id: n.node_id, ask: ids[0], gaps });
+      return { attempt: null, asked: ids[0] };
+    }
+  }
+  n.result.reason = repeatedReason(gaps);
+  const out = stop();
+  record(task, { event: 'repeated_rejection_stopped', task_id: task.run_id, node_id: n.node_id, gaps, ...(asked ? { ask: 'not-opened' } : {}) });
+  return out;
+}
+
+const repeatedReason = (gaps) => `rejected twice for the same gaps: ${gaps.join('; ')}`;
+
+// What the person answered on n's escalation card: null when n has none, {waiting} while the card
+// is open, {retry, answer} for a "retry ..." answer (once: the node is marked resolved), else {stop,
+// reason} - any other answer, a timeout's default included, or a card that is gone.
+export function escalationOutcome(task, n) {
+  const esc = n && n.escalation;
+  if (!esc) return null;
+  const ask = task.nodes.find((x) => x.node_id === esc.ask);
+  if (ask && ask.state === 'waiting_human') return { waiting: true };
+  const chose = ask && ask.state === 'done' ? ((ask.result && ask.result.decisions) || []).map((d) => String((d && d.chose) ?? '')).filter(Boolean).join('; ') : '';
+  if (/^retry/i.test(chose)) {
+    esc.resolved = 'retry';
+    return { retry: true, answer: chose };
+  }
+  return { stop: true, reason: repeatedReason(esc.gaps || []) };
+}
+
 function replanPlanning(task, n) {
+  const outcome = escalationOutcome(task, n);
+  if (outcome && outcome.waiting) return null;
+  const settleRepeated = () => {
+    const unreachable = settleFailure(task, n);
+    record(task, { event: 'plan_integrate_settled', task_id: task.run_id, node_id: n.node_id, reason: 'repeated identical rejection', unreachable });
+    return { task, attempt: null, reason: 'repeated identical rejection', unreachable };
+  };
+  if (outcome && outcome.stop) {
+    n.result.reason = outcome.reason;
+    settleRepeated();
+    return null;
+  }
   const rounds = task.nodes.filter((x) => x.stage === 'plan-integrate').length;
+  if (!outcome) {
+    const prev = task.nodes.find((x) => x.node_id === n.supersedes);
+    const gaps = prev && prev.result ? repeatedGaps(n.result, prev.result, { planIntegrate: true }) : null;
+    if (gaps) {
+      escalateRepeated(task, n, { target: 'the planning cards', stage: 'integrate', gaps, roundLeft: rounds <= task.max_retries, stop: settleRepeated });
+      return null;
+    }
+  }
+  const answerLine = outcome && outcome.retry ? `the person's answer: ${outcome.answer}` : '';
   if (rounds > task.max_retries) {
     const unreachable = settleFailure(task, n);
     record(task, { event: 'plan_integrate_settled', task_id: task.run_id, node_id: n.node_id, reason: 'planning integrate budget exhausted', unreachable });
@@ -175,7 +238,7 @@ function replanPlanning(task, n) {
   const context = [r.reason, ...(r.contradictions || []).map((c) => `contradiction: ${c}`), ...uncovered.map((u) => `uncovered: ${u}`)].filter(Boolean);
   const retried = [];
   for (const [card, gaps] of gapsByCard) {
-    const out = retryPackage(task, card, [`The planning integrate (${n.node_id}) sent this card back:`, ...gaps, ...context].join('\n- '));
+    const out = retryPackage(task, card, [`The planning integrate (${n.node_id}) sent this card back:`, ...gaps, ...context, ...(answerLine ? [answerLine] : [])].join('\n- '));
     if (out.attempt) retried.push(card);
   }
   // A new card waits on what the first cards waited on: the plan stage's split (or size, for a
@@ -190,7 +253,7 @@ function replanPlanning(task, n) {
   const fresh = `plan-integrate:${nextIndex(task, 'plan-integrate')}`;
   task.nodes.push(node(fresh, 'plan-integrate', accepts, {
     subgoal_id: null, supersedes: n.node_id,
-    feedback: [r.reason || '', ...[...gapsByCard].map(([c, g]) => `${c}: ${g.join('; ')}`), ...context.slice(1)].filter(Boolean).join('\n- '),
+    feedback: [r.reason || '', ...[...gapsByCard].map(([c, g]) => `${c}: ${g.join('; ')}`), ...context.slice(1), answerLine].filter(Boolean).join('\n- '),
   }));
   for (const x of task.nodes) {
     if (x.node_id === fresh) continue;
@@ -566,37 +629,48 @@ function roundDispatch(task, pkgId) {
   return (critique && mine.find((x) => x.deps.includes(critique.node_id))) || mine[0] || null;
 }
 
-function retryPackage(task, pkgId, feedback) {
+// The next attempt of a package and what this shape round has spent on it. The budget is per shape
+// round. idol-pm-4 (2026-09-23) reshaped twice, and counting every accept node ever pushed spent a
+// retry of each package on rounds it never ran in.
+export function nextPackageAttempt(task, pkgId) {
   const prior = task.nodes.filter((n) => n.subgoal_id === pkgId && n.stage === 'accept');
   const attempt = Math.max(0, ...prior.map((n) => n.attempt || 1)) + 1;
-  // The budget is per shape round. idol-pm-4 (2026-09-23) reshaped twice, and counting every
-  // accept node ever pushed spent a retry of each package on rounds it never ran in.
   const first = roundDispatch(task, pkgId);
-  const spent = attempt - ((first && first.attempt) || 1);
-  if (spent > task.max_retries) {
-    // Recorded before settleFailure writes the integrate off: reintegrateExhausted needs to know
-    // which packages are not done once the rest has finished.
-    if (((task.spec && task.spec.packages) || []).some((p) => !p.repair && String(p.id) === String(pkgId))) {
-      const ex = task.exhausted || (task.exhausted = { packages: [] });
-      if (!ex.packages.includes(String(pkgId))) ex.packages.push(String(pkgId));
-    }
-    const dead = task.nodes.filter((n) => n.subgoal_id === pkgId && n.state === 'failed' && !n.final);
-    // Settle first, save second: an object literal evaluates left to right, and a save that
-    // runs before the settling writes the unsettled graph.
-    const unreachable = dead.flatMap((n) => settleFailure(task, n));
-    return { task: saveRun(task), attempt: null, reason: 'retry budget exhausted', unreachable };
+  return { attempt, first, spent: attempt - ((first && first.attempt) || 1) };
+}
+
+// A package that gets no further attempt: its failed nodes settle and its dependents with them.
+// reason is why - the retry budget, or a repeated rejection (card 129).
+export function stopPackage(task, pkgId, reason) {
+  // Recorded before settleFailure writes the integrate off: reintegrateExhausted needs to know
+  // which packages are not done once the rest has finished.
+  if (((task.spec && task.spec.packages) || []).some((p) => !p.repair && String(p.id) === String(pkgId))) {
+    const ex = task.exhausted || (task.exhausted = { packages: [] });
+    if (!ex.packages.includes(String(pkgId))) ex.packages.push(String(pkgId));
   }
+  const dead = task.nodes.filter((n) => n.subgoal_id === pkgId && n.state === 'failed' && !n.final);
+  // Settle first, save second: an object literal evaluates left to right, and a save that
+  // runs before the settling writes the unsettled graph.
+  const unreachable = dead.flatMap((n) => settleFailure(task, n));
+  return { task: saveRun(task), attempt: null, reason, unreachable };
+}
+
+function retryPackage(task, pkgId, feedback) {
+  const { attempt, first, spent } = nextPackageAttempt(task, pkgId);
+  if (spent > task.max_retries) return stopPackage(task, pkgId, 'retry budget exhausted');
   const prevAccept = `accept:${pkgId}:${attempt - 1}`;
   for (const n of task.nodes) {
-    if (n.subgoal_id !== pkgId || (n.attempt || 1) !== attempt - 1) continue;
-    // Nothing downstream will ever read what this attempt's driver is still doing, and it holds
-    // the worktree the next attempt continues in. Stop it before the fresh dispatch opens.
+    if (n.subgoal_id !== pkgId || (n.attempt || 1) >= attempt) continue;
+    // Nothing downstream will ever read what an earlier attempt's driver is still doing (any
+    // earlier one, not only the last), and it holds the worktree the next attempt continues in.
+    // Stop it before the fresh dispatch opens.
     if (n.stage === 'dispatch' && n.child && killDriver(n.child.driver)) {
       record(task, { event: 'child_driver_killed', task_id: task.run_id, node_id: n.node_id, pid: n.child.driver.pid, reason: `superseded by attempt ${attempt}` });
     }
-    if (n.state === 'pending') {
+    const live = n.state === 'pending' || (n.stage === 'dispatch' && n.state === 'running');
+    if (live) {
       n.state = 'skipped';
-      n.result = { stage_ok: false, reason: `superseded by attempt ${attempt}` };
+      n.result = { stage_ok: false, reason: `superseded by attempt ${attempt}`, superseded_by: `dispatch:${pkgId}:${attempt}` };
     }
   }
   // Deps come from this round's dispatch. Copying the package's first-ever dispatch wired

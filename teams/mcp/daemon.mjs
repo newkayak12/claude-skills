@@ -48,6 +48,7 @@ import { taskFigure } from './drivercost.mjs';
 import { isEntryPoint, teamsPluginRoot } from './pluginroots.mjs';
 import { resolveStageModel } from './nodelaunch.mjs';
 import { launchArgs } from './taskmanager-drivers.mjs';
+import { stopNotice } from './resume.mjs';
 import { reserveSlot, noteWaiting, clearWaiting } from './livecap.mjs';
 import { neededDenials } from './denials.mjs';
 
@@ -843,6 +844,8 @@ async function main() {
       const doneState = taskState(fresh);
       record(fresh, { event: 'daemon_done', task_id: TASK_ID, state: doneState.state,
         ...(doneState.partial ? { partial: true, partial_reasons: doneState.partial_reasons } : {}) });
+      const notice = stopNotice(fresh, doneState.state, doneState.reason);
+      if (notice) record(fresh, notice);
       // The durable spend: node-adapter sessions vanish with their worktrees at tm_clean.
       try {
         const fig = taskFigure(taskDir(TASK_ID), fresh);

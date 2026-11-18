@@ -30,30 +30,23 @@ export function succeeded(task, n, result) {
   // ("fan-club"/"팬클럽"/"presale" zero times) - the number was recorded and nothing acted on it.
   // A rejection here is not the end of the package: it buys the retry max_retries already
   // budgets, with the gaps that cost it the points carried into the next attempt.
-  // An accept below the floor fails only when the judge named something missing. The gate
-  // contract tells a judge that a run which met its bar with known weaknesses is not a 100, and
-  // observations never block - so an accept:true with gaps[] empty lands at 87-88 by design, and
-  // the floor was turning those points into a rejection the judge never made. idol-pm-4
-  // (2026-09-23): P2 and P5 accepted at 88 with no gaps, both failed, both rebuilt from scratch.
-  // idol-pm-1's PRD, the case the floor exists for, named its gap - it still fails.
+  // Below the floor fails whether or not the judge named a gap, a base-failing gap or a sibling's
+  // gap: no package or gate is accepted under goal_threshold. Two exemptions stay, neither an
+  // accepted package: accept:QA filing defects, and gate:goal after a sweep (the task is partial).
   if ((n.stage === 'gate' || n.stage === 'accept') && Number.isFinite(result.match_pct)) {
     const floor = Number.isInteger(task.goal_threshold) ? task.goal_threshold : 90;
-    // A gap that names a failure also failing on the base (excludeBaseFailures) does not count.
-    const excluded = Array.isArray(result.base_excluded) ? result.base_excluded : [];
-    const named = Array.isArray(result.gaps) && result.gaps.some((g) => !excluded.some((e) => String(g).includes(e.test)));
-    // accept:QA is the exception: its points are docked for the defects it files, and filing them
-    // is what fixes them. Failing it on the floor dropped the defects (the file hook runs only on
-    // 'done') and reran the whole QA on the same tree (awake-beta-ref1: accept:QA:2 accepted at
-    // 72 with a real defect filed, failed on the floor, dispatch:QA:3 reopened over the same bug).
+    // accept:QA's points are docked for the defects it files, and filing them is what fixes them.
+    // Failing it on the floor dropped the defects (the file hook runs only on 'done') and reran
+    // the whole QA on the same tree. Its accept means "cases ran, defects filed", not delivered
+    // work, and unfinishedWork lists the filed defects.
     const filesDefects = n.stage === 'accept' && phaseOfId(task, n.subgoal_id) === 'qa'
       && Array.isArray(result.defects) && result.defects.length > 0;
     // A goal gate after a budget/timebox sweep judges a Sprint that deliberately left packages
-    // undone: its match against the WHOLE goal sits below the floor by construction (code-sprint-S6:
-    // accept:true at 72 with three of four backlog items shipped, failed on the floor, no report).
-    // The judge's own accept stands; the shortfall is what the retro's Next backlog carries.
+    // undone: its match against the WHOLE goal sits below the floor by construction. The judge's
+    // own accept stands, the task stays partial, and the shortfall is what the retro carries.
     const boxedGoal = n.stage === 'gate' && String(n.node_id).startsWith('gate:goal')
       && ((task.budget_stopped && (task.budget_stopped.skipped_packages || []).length > 0) || notDoneIds(task).length > 0);
-    if (result.match_pct < floor && (n.stage === 'gate' || named) && !filesDefects && !boxedGoal) return false;
+    if (result.match_pct < floor && !filesDefects && !boxedGoal) return false;
   }
   // A rejection needs no evidence of its own. A positive verdict does: dispatch's accept
   // is computed by the manager itself from the folded child and is exempt, but gate,
@@ -325,7 +318,7 @@ export function finish(task, n, result) {
   if (reviewerIndependence) result = { ...result, reviewer_independence: reviewerIndependence };
   const f = VERDICT[n.stage];
   const floor = Number.isInteger(task.goal_threshold) ? task.goal_threshold : 90;
-  const belowFloor = n.stage === 'gate' && f && result[f] === true
+  const belowFloor = (n.stage === 'gate' || n.stage === 'accept') && f && result[f] === true
     && Number.isFinite(result.match_pct) && result.match_pct < floor;
   if (belowFloor && task.budget_stopped && (task.budget_stopped.skipped_packages || []).length && String(n.node_id).startsWith('gate:goal')) {
     result = { ...result, goal_floor_waived: `budget/timebox stopped the Sprint with ${task.budget_stopped.skipped_packages.join(', ')} undone; match_pct ${result.match_pct} is judged against the whole goal` };
@@ -345,7 +338,8 @@ export function finish(task, n, result) {
   if (n.state === 'failed' && belowFloor) {
     // The judging itself worked - it is the number that overrules the word, exactly as
     // the graph engine's own goal gate is held to its floor.
-    result = { ...result, reason: `match_pct ${result.match_pct} below the goal threshold ${floor}` };
+    const judgeReason = typeof result.reason === 'string' && result.reason ? result.reason : undefined;
+    result = { ...result, reason: `match_pct ${result.match_pct} below the goal threshold ${floor}`, ...(judgeReason ? { judge_reason: judgeReason } : {}) };
   } else if (n.state === 'failed' && noEvidence) {
     // A rejection needs no evidence of its own; a positive verdict does. This is the
     // manager's own judging failing to do its job, not a verdict on the work it judged.

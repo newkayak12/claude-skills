@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { KINDS, classifyFailure, gapSignature, recordFailureKind, environmentEvidence, escalationAsk } from '../mcp/failure-kind.mjs';
+import { KINDS, classifyFailure, gapSignature, recordFailureKind, environmentEvidence, escalationAsk, rejectionKeys, repeatedGaps } from '../mcp/failure-kind.mjs';
 
 const task = { run_id: 'T-fk', goal_threshold: 90 };
 const node = { node_id: 'gate:U1:1', stage: 'gate', subgoal_id: 'U1', state: 'done', attempt: 2, result: { stage_ok: false } };
@@ -218,4 +218,82 @@ test('escalationAsk is a stop-by-default ask card carrying its marker', () => {
   assert.match(ask.question, /P2/);
   assert.match(ask.question, /accept/);
   assert.match(ask.question, /no retry test/);
+});
+
+// card 129 U2: the repeat comparator. Fixture = E-89982ed5's plan-integrate rounds 1 and 2: the same
+// card, the same contradiction pair, the same story ids in reworded prose with different line refs.
+const PI_ROUND_1 = {
+  accept: false,
+  retry: [{ card: 'PLAN-F2', gaps: [
+    "Scope: list every spawn site F1 names (taskmanager-drivers.mjs driverArgv and :460, daemon.mjs :102/:240). F2-US-1's test must check --strict-mcp-config.",
+    "Out of scope: permit the files F2-US-3, F2-US-4 and F2-US-6 need, at broker-vendors.mjs:88-104.",
+    'F2-US-4: say the telemetry fields do not replace the model field.',
+  ] }],
+  contradictions: [
+    'PLAN-F2 vs PLAN-F1: F1 makes broker-tools.mjs:526 a spawn boundary; F2-US-1 requires the lean flags.',
+    'PLAN-F2 vs itself: its Out of scope forbids what F2-US-3 needs.',
+  ],
+};
+const PI_ROUND_2 = {
+  accept: false,
+  retry: [{ card: 'PLAN-F2', gaps: [
+    'Scope: list every driver and judge spawn site F1 names: taskmanager-drivers.mjs driverArgv (:45/:54) and :113/:460. F2-US-1 A2.1 must check the flags.',
+    'F2-US-1 A2.3: state where the per-session API call count is written, at broker-vendors.mjs:88-104.',
+  ] }],
+  contradictions: [
+    'PLAN-F2 vs PLAN-F1: the adapter path F1 covers would start without the lean flags.',
+    'PLAN-F2 vs PLAN-F1 (ledger): F1 writes the model through broker-vendors.mjs:88-104, F2 names tasklog.mjs.',
+  ],
+};
+const PI = { planIntegrate: true };
+
+test('rejectionKeys: reworded plan-integrate prose with the same card, pair and story ids is a repeat', () => {
+  assert.deepEqual([...rejectionKeys(PI_ROUND_2, PI)].sort(), ['card:PLAN-F2', 'id:PLAN-F2:F2-US-1', 'pair:PLAN-F1|PLAN-F2']);
+  const named = repeatedGaps(PI_ROUND_2, PI_ROUND_1, PI);
+  assert.ok(named, 'round 2 names nothing round 1 did not');
+  assert.match(named[0], /^PLAN-F2: Scope: list every driver/);
+  assert.ok(named.some((x) => x.startsWith('PLAN-F2 vs PLAN-F1')), 'the contradictions are named too');
+  assert.deepEqual([...rejectionKeys({ accept: true }, PI)], [], 'an accept holds no key');
+  assert.ok(rejectionKeys({ accept: false, contradictions: ['PLAN-F2 vs itself: x'] }, PI).has('pair:PLAN-F2|PLAN-F2'), "'itself' is the card itself");
+  assert.ok(rejectionKeys({ accept: false, contradictions: ['PLAN-F1 vs PLAN-F2 (ledger): x'] }, PI).has('pair:PLAN-F1|PLAN-F2'), 'the pair is sorted, a trailing note ignored');
+});
+
+test('rejectionKeys: same card with a new story id is not a repeat', () => {
+  const worse = { ...PI_ROUND_2, retry: [{ card: 'PLAN-F2', gaps: [...PI_ROUND_2.retry[0].gaps, 'F2-US-5 has no acceptance'] }] };
+  assert.equal(repeatedGaps(worse, PI_ROUND_1, PI), null);
+  const otherCard = { ...PI_ROUND_2, retry: [...PI_ROUND_2.retry, { card: 'PLAN-F3', gaps: ['x'] }] };
+  assert.equal(repeatedGaps(otherCard, PI_ROUND_1, PI), null, 'a new card is new');
+  const otherPair = { ...PI_ROUND_2, contradictions: ['PLAN-F2 vs PLAN-F3: y'] };
+  assert.equal(repeatedGaps(otherPair, PI_ROUND_1, PI), null, 'a new pair is new');
+});
+
+test('rejectionKeys: package gaps reworded with the same AC ids are a repeat, a new AC id is not', () => {
+  const a1 = { accept: false, gaps: ['AC-3 not covered by any test (a.mjs:10)', 'F1-AC-2: the error path is missing'] };
+  const a2 = { accept: false, gaps: ['no test for AC-3 at b.mjs:99-101', 'the error path of F1-AC-2 is still absent'] };
+  assert.deepEqual([...rejectionKeys(a1)].sort(), ['id:AC-3', 'id:F1-AC-2']);
+  assert.deepEqual(repeatedGaps(a2, a1), a2.gaps);
+  assert.deepEqual(repeatedGaps({ accept: false, gaps: [a2.gaps[0]] }, a1), [a2.gaps[0]], 'the same gaps with one fixed is a repeat');
+  assert.equal(repeatedGaps({ accept: false, gaps: [...a2.gaps, 'AC-4 missing'] }, a1), null);
+  // id-less prose compares by its normalised text: line refs and trailing punctuation do not count.
+  const p1 = { accept: false, gaps: ['The retry loop never backs off (x.mjs:12).'] };
+  assert.ok(repeatedGaps({ accept: false, gaps: ['the retry loop never backs off (x.mjs:99)'] }, p1));
+  assert.equal(repeatedGaps({ accept: false, gaps: ['the retry loop is unbounded'] }, p1), null, 'a reworded id-less gap is a new key');
+});
+
+test('rejectionKeys: floor-only refusals compare by the judge reason', () => {
+  const f = { floor: 90 };
+  const low = (judge_reason, match_pct = 87) => ({ accept: true, match_pct, gaps: [], judge_reason, reason: `match_pct ${match_pct} below the goal threshold 90` });
+  assert.deepEqual([...rejectionKeys(low('Tests cover only half of the cases.'), f)], ['reason:tests cover only half of the cases']);
+  assert.deepEqual(repeatedGaps(low('tests cover only half of the cases'), low('Tests cover only half of the cases.', 85), f), ['tests cover only half of the cases']);
+  assert.equal(repeatedGaps(low('docs are missing'), low('tests cover only half of the cases'), f), null);
+  assert.deepEqual([...rejectionKeys({ accept: true, match_pct: 95, gaps: [] }, f)], [], 'an accept at or over the floor holds no key');
+  assert.deepEqual([...rejectionKeys({ accept: false, gaps: [] }, f)], [], 'a refusal with no words compares to nothing');
+});
+
+test('repeatedGaps: null on an empty set or a new key, the named gaps on a subset', () => {
+  assert.equal(repeatedGaps({ accept: false, gaps: [] }, { accept: false, gaps: ['AC-1 x'] }), null, 'empty current');
+  assert.equal(repeatedGaps({ accept: false, gaps: ['AC-1 x'] }, { accept: false, gaps: [] }), null, 'empty previous');
+  assert.equal(repeatedGaps({ accept: false, gaps: ['AC-1 x', 'AC-2 y'] }, { accept: false, gaps: ['AC-1 x'] }), null, 'a new key');
+  assert.equal(repeatedGaps(undefined, undefined), null);
+  assert.deepEqual(repeatedGaps({ accept: false, gaps: ['AC-1 again'] }, { accept: false, gaps: ['AC-1 x', 'AC-2 y'] }), ['AC-1 again']);
 });

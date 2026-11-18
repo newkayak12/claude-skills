@@ -1715,6 +1715,8 @@ test('an accept:QA below the floor that files a defect still finishes done and f
     assert.equal(accepted.state, 'done', JSON.stringify(accepted));
 
     const task2 = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const { unfinishedWork } = await import('../mcp/taskmanager.mjs');
+    assert.match(unfinishedWork(task2).partial_reasons.join('\n'), /D1/, 'the filed defect is listed as unfinished work');
     assert.deepEqual(task2.spec.packages.map((p) => p.id), ['P1', 'P2', 'D1'], 'the defect is filed as a fix STORY');
     const d1 = task2.spec.packages.find((p) => p.id === 'D1');
     assert.equal(d1.reporter, 'qa');
@@ -7165,16 +7167,32 @@ test('an accept under goal_threshold is a rejection, and the phase-Team package 
 
 // idol-pm-4 (2026-09-23): P2 and P5 accepted at 88 with gaps[] empty and failed on the number
 // alone - the judge had found nothing blocking, and each package was rebuilt from scratch. The
-// floor now needs a named gap on accept. The manager's own goal gate keeps the plain floor.
-test('an accept under the floor fails only when the judge named a gap', async () => {
+// floor then needed a named gap on accept; now no accept or gate passes under goal_threshold.
+test('an accept under the floor fails, named gap or not', async () => {
   const { succeeded } = await import('../mcp/taskmanager.mjs');
   const task = { goal_threshold: 90 };
   const accept = { stage: 'accept', node_id: 'accept:P2:2' };
   const r = (extra) => ({ stage_ok: true, accept: true, checks: ['npm test -> 79/79'], ...extra });
-  assert.equal(succeeded(task, accept, r({ match_pct: 88, gaps: [], observations: ['a small scope overlap'] })), true, 'weaknesses that do not block are not a rejection');
-  assert.equal(succeeded(task, accept, r({ match_pct: 87, gaps: ['the export path is not exercised end to end'] })), false, 'a named gap under the floor still is');
+  assert.equal(succeeded(task, accept, r({ match_pct: 87, gaps: [] })), false, 'no gap named, still under the floor');
+  assert.equal(succeeded(task, accept, r({ match_pct: 88, gaps: [], observations: ['a small scope overlap'] })), false, 'observations do not lift the floor');
+  assert.equal(succeeded(task, accept, r({ match_pct: 87, gaps: ['the export path is not exercised end to end'] })), false, 'a named gap under the floor fails');
+  assert.equal(succeeded(task, accept, r({ match_pct: 87, gaps: ['test x fails'], base_excluded: [{ test: 'test x' }] })), false, 'a base-excluded gap does not lift the floor');
   assert.equal(succeeded(task, accept, r({ match_pct: 95, gaps: ['minor'] })), true, 'at the floor a gap is carried, not refused');
   assert.equal(succeeded(task, { stage: 'gate', node_id: 'gate:goal:1' }, r({ match_pct: 88, gaps: [] })), false, 'the goal gate keeps the plain floor');
+});
+
+test('an accept:P1 at 87 under goal_threshold 90 settles failed and its reason names both numbers', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    const nx = await tm.call('tm_next', { task_id });
+    await completeChild(g, nx.children[0]);
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' })).state, 'done');
+    const v = await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 87, gaps: [], reason: 'weaknesses disclosed' }) });
+    assert.equal(v.state, 'failed');
+    const n = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8')).nodes.find((x) => x.node_id === 'accept:P1:1');
+    assert.equal(n.result.reason, 'match_pct 87 below the goal threshold 90');
+    assert.equal(n.result.judge_reason, 'weaknesses disclosed');
+  });
 });
 
 // A gap that belongs to another package is not this package's shortfall: scopeGaps moves it to
@@ -7194,7 +7212,8 @@ test('scopeGaps: a gap that belongs to a sibling or to none moves to observation
 
   const sibling = r({ gaps: ['the export path is not exercised end to end'], out_of_scope: [{ gap: 'the export path is not exercised', belongs_to: 'P3' }] });
   const moved = scopeGaps(task, n, sibling);
-  assert.equal(settle(sibling), true, 'a sibling-owned gap alone no longer blocks an 88');
+  assert.equal(settle({ ...sibling, match_pct: 90 }), true, 'a sibling-owned gap alone no longer blocks a 90');
+  assert.equal(settle(sibling), false, 'an 88 is under the floor whoever owns the gap');
   assert.deepEqual(moved.gaps, []);
   assert.deepEqual(moved.observations, ['out of scope (belongs to P3): the export path is not exercised end to end']);
   assert.deepEqual(moved.scoped_out, [{ gap: 'the export path is not exercised', belongs_to: 'P3' }]);
@@ -7203,7 +7222,7 @@ test('scopeGaps: a gap that belongs to a sibling or to none moves to observation
   assert.deepEqual(sibling.gaps, ['the export path is not exercised end to end'], 'the input is not mutated');
   assert.equal(sibling.observations, undefined);
 
-  assert.equal(settle(r({ gaps: ['nobody owns the legacy importer'], out_of_scope: [{ gap: 'nobody owns the legacy importer', belongs_to: 'none' }] })), true, "belongs_to 'none' settles too");
+  assert.equal(settle(r({ match_pct: 90, gaps: ['nobody owns the legacy importer'], out_of_scope: [{ gap: 'nobody owns the legacy importer', belongs_to: 'none' }] })), true, "belongs_to 'none' settles too");
   assert.equal(settle(r({ gaps: ['own unmet criterion: no retry on 5xx'] })), false, 'an own gap with no out_of_scope rejects');
   assert.equal(settle(r({ gaps: ['own unmet criterion: no retry on 5xx'], out_of_scope: [] })), false, 'an empty out_of_scope changes nothing');
 
@@ -7253,7 +7272,10 @@ test('an accept whose only gap belongs to a sibling settles accepted; an own gap
     const retry = read().nodes.find((n) => n.node_id === 'dispatch:P2:2');
     assert.ok(retry, 'a second attempt opens');
     assert.match(String(retry.feedback || ''), /b\.txt has no error path/, 'the own gap travels into the retry');
-    assert.doesNotMatch(String(retry.feedback || ''), /never read back by the loader/, 'the sibling gap does not');
+    // card 129 U2: the retry feedback also carries every observation, so the sibling's gap is
+    // there - as an observation (out of scope), never as a gap of this package.
+    assert.doesNotMatch(String(retry.feedback || ''), /^- a\.txt is never read back by the loader/m, 'the sibling gap does not travel as a gap');
+    assert.match(String(retry.feedback || ''), /observation: out of scope \(belongs to P1\): a\.txt is never read back/);
   });
 
   await withTask(async ({ tm, g, root, task_id }) => {
@@ -7268,12 +7290,12 @@ test('an accept whose only gap belongs to a sibling settles accepted; an own gap
 
     const sibling = 'a.txt is never read back by the loader';
     const v = await tm.call('tm_submit', { task_id, node_id: 'accept:P2:1', payload: ok({
-      accept: true, match_pct: 88, gaps: [sibling], out_of_scope: [{ gap: sibling, belongs_to: 'P1' }],
+      accept: true, match_pct: 90, gaps: [sibling], out_of_scope: [{ gap: sibling, belongs_to: 'P1' }],
     }) });
     assert.equal(v.state, 'done', JSON.stringify(v));
     const node = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8')).nodes.find((n) => n.node_id === 'accept:P2:1');
     assert.equal(node.state, 'done');
-    assert.equal(node.result.match_pct, 88);
+    assert.equal(node.result.match_pct, 90);
     assert.deepEqual(node.result.gaps, []);
     assert.deepEqual(node.result.observations, [`out of scope (belongs to P1): ${sibling}`]);
   });
@@ -8549,6 +8571,389 @@ test('code-beta-X3: a child blocked at probe on spent credit parks until the res
   });
 });
 
+// card 129 U1 (E-b2f3c230): a re-park used to restart the wait. The park now carries first_since and
+// parks, and the daemon tick resolves a stated reset against the FIRST park.
+const CARD129_R = "You've hit your weekly limit · resets Nov 10 at 6pm (UTC)";
+const CARD129_S0 = Date.parse('2026-11-09T12:00:00Z');
+const CARD129_RESET = Date.parse('2026-11-10T18:00:00Z');
+const CARD129_MIN = 60 * 1000;
+
+// Parks P1's dispatch on `wc`, then runs autoResumeCapacity at each `at`; returns [{at, resumed, parked}].
+// Run under the test seam (no driver): a resume clears the park and records daemon_capacity_resumed;
+// the respawn itself is the driver tests below (U1.4-U1.6, and the reset_capacity tests above).
+async function card129Ticks(wc, ticks) {
+  const { autoResumeCapacity } = await import('../mcp/taskmanager.mjs');
+  const out = [];
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    await tm.call('tm_next', { task_id });
+    const file = join(root, task_id, 'task.json');
+    const load = () => JSON.parse(readFileSync(file, 'utf8'));
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    const task0 = load();
+    task0.nodes.find((x) => x.node_id === 'dispatch:P1:1').child.waiting_capacity = wc;
+    writeFileSync(file, JSON.stringify(task0, null, 2));
+    process.env.HARNESS_TASKS_DIR = root;
+    try {
+      for (const at of ticks) {
+        const resumed = inTx(load(), autoResumeCapacity, at);
+        const parked = !!load().nodes.find((x) => x.node_id === 'dispatch:P1:1').child.waiting_capacity;
+        const ev = (await tm.call('tm_events', { task_id })).events.filter((e) => e.event === 'daemon_capacity_resumed');
+        out.push({ at, resumed, parked, resumedEvents: ev.length });
+      }
+    } finally { if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; }
+  });
+  return out;
+}
+
+test('card129 U1.1 a dated reset is honoured: not due before reset + grace, due after it', async () => {
+  const r = await card129Ticks({ reason: CARD129_R, since: CARD129_S0, first_since: CARD129_S0, parks: 1 },
+    [CARD129_RESET - 60 * CARD129_MIN, CARD129_RESET + 1 * CARD129_MIN, CARD129_RESET + 4 * CARD129_MIN]);
+  assert.deepEqual(r.map((x) => x.resumed), [false, false, true]);
+  assert.deepEqual(r.map((x) => x.parked), [true, true, false], 'the park is cleared only at reset + 4 min');
+  assert.deepEqual(r.map((x) => x.resumedEvents), [0, 0, 1], 'daemon_capacity_resumed recorded once, at the resume');
+});
+
+test('card129 U1.2 E-b2f3c230: a re-park with a fresh since still waits for the stated reset', async () => {
+  const since = CARD129_S0 + 33 * CARD129_MIN;
+  const r = await card129Ticks({ reason: CARD129_R, since, first_since: CARD129_S0, parks: 2 },
+    [CARD129_S0 + 66 * CARD129_MIN, CARD129_S0 + 6 * 60 * CARD129_MIN]);
+  assert.deepEqual(r.map((x) => x.resumed), [false, false], 'no resume 33 min and 6 h after the first park');
+  assert.deepEqual(r.map((x) => x.parked), [true, true]);
+  assert.deepEqual(r.map((x) => x.resumedEvents), [0, 0]);
+});
+
+test('card129 U1.3 an unstated park on its third park waits 120 minutes, not 30', async () => {
+  const since = CARD129_S0;
+  const r = await card129Ticks({ reason: "You've hit your usage limit", since, first_since: since - 90 * CARD129_MIN, parks: 3 },
+    [since + 119 * CARD129_MIN, since + 123 * CARD129_MIN]);
+  assert.deepEqual(r.map((x) => x.resumed), [false, true]);
+  assert.deepEqual(r.map((x) => x.parked), [true, false]);
+});
+
+test('card129 U1.3b a dated park re-parked after its reset (fresh first_since) backs off, never waits a year', async () => {
+  const since = CARD129_RESET + 5 * CARD129_MIN; // re-park 5 min after the stated reset: restart, first_since = now
+  const r = await card129Ticks({ reason: CARD129_R, since, first_since: since, parks: 1 },
+    [since + 29 * CARD129_MIN, since + 33 * CARD129_MIN]);
+  assert.deepEqual(r.map((x) => x.resumed), [false, true], 'resumes about 30 min + grace later, not on 2027-11-10');
+  assert.deepEqual(r.map((x) => x.parked), [true, false]);
+});
+
+test('card129 U1.3c a late first park of a dated reason already past backs off, never waits a year', async () => {
+  const since = CARD129_RESET + 1 * CARD129_MIN;
+  const r = await card129Ticks({ reason: CARD129_R, since, first_since: since, parks: 1 },
+    [since + 33 * CARD129_MIN]);
+  assert.deepEqual(r.map((x) => x.resumed), [true]);
+  assert.deepEqual(r.map((x) => x.parked), [false]);
+});
+
+test('card129 U1.3d a zone-less time reads in the host zone on the resume path', async () => {
+  const hadTZ = Object.prototype.hasOwnProperty.call(process.env, 'TZ');
+  const prevTZ = process.env.TZ;
+  process.env.TZ = 'Asia/Seoul'; // UTC+9 all year: 5:40pm Seoul is 08:40Z
+  try {
+    const since = Date.parse('2026-11-09T00:00:00Z');
+    const wc = { reason: "You've hit your session limit · resets 5:40pm", since, first_since: since, parks: 1 };
+    const r = await card129Ticks(wc, [Date.parse('2026-11-09T08:36:00Z'), Date.parse('2026-11-09T08:44:00Z')]);
+    assert.deepEqual(r.map((x) => x.resumed), [false, true]);
+  } finally { if (hadTZ) process.env.TZ = prevTZ; else delete process.env.TZ; }
+});
+
+test('card129 U1.4 code-beta-X3: a re-park after a resume keeps first_since and counts up, and records the kind', async () => {
+  const { serviceDeadDriver, clearCapacity } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    await tm.call('tm_next', { task_id });
+    const load = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const ledger = () => readFileSync(join(root, task_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    const prevRoot = process.env.HARNESS_TASKS_DIR;
+    // The clock is pinned (2026-12-30T12:00Z + 1 min per call) so the park never depends on the real date.
+    const realNow = Date.now;
+    let clock = Date.parse('2026-12-30T12:00:00Z');
+    const withRoot = (fn) => { process.env.HARNESS_TASKS_DIR = root; Date.now = () => (clock += 60 * 1000); try { return fn(); } finally { Date.now = realNow; if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot; } };
+    const task = load();
+    const n = task.nodes.find((x) => x.node_id === 'dispatch:P1:1');
+    const runFile = join(n.child.cwd, '.teams_output', 'broker', 'runs', `${n.child.run_id}.json`);
+    const reason = 'usage capacity exhausted at probe: You\'ve hit your usage limit · resets Dec 31 at 11pm (UTC)';
+    const block = () => {
+      const child = JSON.parse(readFileSync(runFile, 'utf8'));
+      Object.assign(child, { routing_blocked: true, routing_blocked_capacity: reason, unavailable_vendors: { codex: reason } });
+      writeFileSync(runFile, JSON.stringify(child, null, 2));
+      n.child.driver = { pid: 2 ** 22 + 4323, started_at: Date.now() }; // exited after reporting blocked
+    };
+    block();
+    assert.equal(withRoot(() => serviceDeadDriver(task, n.child, n.node_id)), true, 'parked');
+    const first = n.child.waiting_capacity;
+    assert.equal(first.parks, 1);
+    assert.equal(first.first_since, first.since);
+    assert.ok(ledger().some((e) => e.event === 'failure_classified' && e.node_id === 'dispatch:P1:1' && e.failure_kind === 'capacity' && e.via === 'park'));
+
+    withRoot(() => clearCapacity(task, 'P1'));
+    assert.equal(n.child.waiting_capacity, undefined);
+    assert.equal(n.child.last_capacity.first_since, first.first_since);
+    assert.equal(n.child.last_capacity.parks, 1);
+    assert.equal(n.child.last_capacity.reason, first.reason);
+    assert.ok(Number.isFinite(n.child.last_capacity.cleared_at), 'the cleared park is kept with its cleared_at');
+
+    block(); // the resumed driver hit the same wall and exited again
+    assert.equal(withRoot(() => serviceDeadDriver(task, n.child, n.node_id)), true, 're-parked');
+    assert.equal(n.child.waiting_capacity.first_since, first.first_since, 'the wait still counts from the first park');
+    assert.equal(n.child.waiting_capacity.parks, 2);
+    assert.ok(n.child.waiting_capacity.since >= first.since);
+  });
+});
+
+test('card129 U1.5 a usage-limit death parks with first_since and parks 1 and records the kind', async () => {
+  const f = driverFixture({}, FAKE_DRIVER_LIMIT);
+  const tm = await f.client.init();
+  try {
+    const { task_id } = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'big request', cwd: f.cwd, vendor: 'self' });
+    await throughCritique(tm, task_id);
+    await tm.call('tm_next', { task_id });
+    await waitFor(async () => {
+      const nx = await tm.call('tm_next', { task_id });
+      return nx.children[0].waiting_capacity ? nx.children[0] : null;
+    }, 'the driver to park on capacity');
+    const w = readTask(f.root, task_id).nodes.find((n) => n.node_id === 'dispatch:P1:1').child.waiting_capacity;
+    assert.equal(w.parks, 1);
+    assert.equal(w.first_since, w.since);
+    const ledger = readFileSync(join(f.root, task_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.ok(ledger.some((e) => e.event === 'failure_classified' && e.failure_kind === 'capacity' && e.via === 'park'));
+  } finally {
+    tm.close();
+    rmSync(f.cwd, { recursive: true, force: true });
+    rmSync(f.root, { recursive: true, force: true });
+    rmSync(f.drv, { recursive: true, force: true });
+  }
+});
+
+test('card129 U1.6 S1a: a size-S harness park carries first_since and parks 1 and records the kind on node S', async () => {
+  const f = driverFixture({}, FAKE_DRIVER_LIMIT);
+  const tm = await f.client.init();
+  try {
+    const { task_id } = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small request', cwd: f.cwd, vendor: 'self', size: 'S', driver_restarts: 0 });
+    await waitFor(async () => { const t = readTask(f.root, task_id); return !driverAliveLocal(t.harness_run.driver.pid); }, 'the driver to hit its limit');
+    await tm.call('tm_next', { task_id });
+    const w = readTask(f.root, task_id).harness_run.waiting_capacity;
+    assert.equal(w.parks, 1);
+    assert.equal(w.first_since, w.since);
+    const ledger = readFileSync(join(f.root, task_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.ok(ledger.some((e) => e.event === 'failure_classified' && e.node_id === 'S' && e.failure_kind === 'capacity' && e.via === 'park'));
+  } finally {
+    tm.close();
+    rmSync(f.cwd, { recursive: true, force: true });
+    rmSync(f.root, { recursive: true, force: true });
+    rmSync(f.drv, { recursive: true, force: true });
+  }
+});
+
+// card 129 U2: an environment failure (ENOSPC, a denied write, a tool denial) of a dispatch is not
+// retried as implement; its findings go on the failed node. Only `environment` changes the route.
+const C129_WRITE = (file_path) => ({ tool_name: 'Write', tool_use_id: 'w1', tool_input: { file_path } });
+const c129Ledger = (root, id) => readFileSync(join(root, id, 'ledger.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+const c129WithRoot = (root, fn) => {
+  const prev = process.env.HARNESS_TASKS_DIR;
+  process.env.HARNESS_TASKS_DIR = root;
+  try { return fn(); } finally { if (prev === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prev; }
+};
+const c129Edit = (file, fn) => { const t = JSON.parse(readFileSync(file, 'utf8')); fn(t, (id) => t.nodes.find((x) => x.node_id === id)); writeFileSync(file, JSON.stringify(t, null, 2)); };
+const c129RunFile = (c) => join(c.cwd, '.teams_output', 'broker', 'runs', `${c.run_id}.json`);
+
+// Opens P1's dispatch, lets `setup` hand-write the failure, runs autoRetryPackages once and hands
+// {changed, task, ledger} to `check`.
+async function card129Retry({ setup, check, shape, qa = false }) {
+  const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    const file = join(root, task_id, 'task.json');
+    const load = () => JSON.parse(readFileSync(file, 'utf8'));
+    if (qa) await toIntegrate(tm, g, task_id);
+    else await throughCritique(tm, task_id, shape);
+    if (qa) await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const nx = await tm.call('tm_next', { task_id });
+    await setup({ tm, g, root, task_id, file, nx });
+    const changed = c129WithRoot(root, () => inTx(load(), autoRetryPackages));
+    await check({ changed, task: load(), ledger: c129Ledger(root, task_id) });
+  }, qa ? { roles: { qa: true } } : undefined);
+}
+const c129FailDispatch = (file, result, id = 'dispatch:P1:1') => c129Edit(file, (t, n) => { n(id).state = 'failed'; n(id).result = { stage_ok: false, ...result }; });
+const c129Withheld = ({ changed, task, ledger }, finding) => {
+  assert.equal(changed, true);
+  assert.ok(!task.nodes.some((n) => n.node_id === 'dispatch:P1:2'), 'no dispatch:P1:2');
+  const failed = task.nodes.find((n) => n.node_id === 'dispatch:P1:1');
+  assert.equal(failed.result.failure_kind, 'environment');
+  assert.ok(failed.result.findings.some((f) => finding.test(f)), JSON.stringify(failed.result.findings));
+  assert.equal(failed.final, true);
+  assert.ok(ledger.some((e) => e.event === 'failure_classified' && e.failure_kind === 'environment' && e.via === 'autoRetryPackages'));
+  assert.ok(ledger.some((e) => e.event === 'daemon_retry_withheld' && e.package_id === 'P1' && e.failure_kind === 'environment'));
+  assert.ok(!ledger.some((e) => e.event === 'daemon_retry_opened'));
+};
+
+test('card129 U2.1 a dispatch that failed on ENOSPC is not retried: environment kind, the ENOSPC line on the node', async () => {
+  await card129Retry({
+    setup: ({ file }) => c129FailDispatch(file, { reason: 'child stopped: ENOSPC: no space left on device, write /w/.git/index' }),
+    check: (r) => c129Withheld(r, /ENOSPC/),
+  });
+});
+
+test('card129 U2.2 a dispatch carrying environment_findings is not retried; the finding is on the node', async () => {
+  await card129Retry({
+    setup: ({ file }) => c129FailDispatch(file, { reason: 'child blocked', environment_findings: ['write denied: /w/src/a.mjs'] }),
+    check: (r) => c129Withheld(r, /write denied: \/w\/src\/a\.mjs/),
+  });
+});
+
+test('card129 U2.3 end to end: a child implement node that ended blocked "tool denied" folds into environment_findings and is not retried', async () => {
+  await card129Retry({
+    setup: async ({ tm, g, task_id, nx }) => {
+      const child = nx.children.find((c) => c.node_id === 'dispatch:P1:1');
+      await blockChild(g, child);
+      const f = c129RunFile(child);
+      const run = JSON.parse(readFileSync(f, 'utf8'));
+      const impl = run.nodes.filter((x) => x.stage === 'implement').sort((a, b) => (a.attempt || 1) - (b.attempt || 1)).at(-1);
+      impl.state = 'failed';
+      impl.result = { stage_ok: false, blocked: 'tool denied', reason: 'blocked: tool denied' };
+      writeFileSync(f, JSON.stringify(run, null, 2));
+      assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' })).state, 'failed');
+    },
+    check: (r) => {
+      const dispatch = r.task.nodes.find((n) => n.node_id === 'dispatch:P1:1');
+      assert.ok(dispatch.result.environment_findings.includes('tool denied'), JSON.stringify(dispatch.result.environment_findings));
+      c129Withheld(r, /tool denied/);
+    },
+  });
+});
+
+test('card129 U2.4 control: a plain gate rejection still opens dispatch:P1:2', async () => {
+  await card129Retry({
+    setup: async ({ tm, g, task_id, nx }) => {
+      await blockChild(g, nx.children.find((c) => c.node_id === 'dispatch:P1:1'));
+      assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' })).state, 'failed');
+    },
+    check: ({ changed, task, ledger }) => {
+      assert.equal(changed, true);
+      assert.equal(task.nodes.find((n) => n.node_id === 'dispatch:P1:1').result.environment_findings, undefined);
+      assert.ok(task.nodes.some((n) => n.node_id === 'dispatch:P1:2'));
+      assert.ok(ledger.some((e) => e.event === 'daemon_retry_opened' && e.package_id === 'P1' && e.attempt === 2));
+      assert.ok(!ledger.some((e) => e.event === 'daemon_retry_withheld'));
+    },
+  });
+});
+
+test('card129 U2.5 a QA child: a denial of its own report path is not environment, a denial of another path is', async () => {
+  const { foldChild } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await toIntegrate(tm, g, task_id);
+    await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+    const qa1 = (await tm.call('tm_next', { task_id })).children[0];
+    await completeQaChild(g, qa1, { accept: true, match_pct: 95 });
+    const f = c129RunFile(qa1);
+    const report = join(qa1.cwd, 'test/qa/report.md');
+    const fold = (denied) => {
+      const run = JSON.parse(readFileSync(f, 'utf8'));
+      const sg = run.spec.subgoals.find((s) => s.id === 'Q1');
+      sg.kind = 'qa';
+      sg.files = ['test/qa/report.md'];
+      const ex = run.nodes.find((x) => x.node_id === 'execute:Q1:1');
+      ex.state = 'failed';
+      ex.result = { stage_ok: false, reason: 'could not write', permission_denials: [C129_WRITE(denied)] };
+      writeFileSync(f, JSON.stringify(run, null, 2));
+      const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+      return foldChild(task, task.nodes.find((n) => n.node_id === 'dispatch:QA-F1:1'));
+    };
+    assert.equal(fold(report).environment_findings, undefined, 'the engine-written report path is exempt');
+    const other = join(qa1.cwd, 'src/other.mjs');
+    assert.deepEqual(fold(other).environment_findings, [`write denied: ${other}`]);
+  }, { roles: { qa: true } });
+});
+
+test('card129 U2.6 only the latest attempt counts: an ENOSPC attempt that a later one recovered is not environment', async () => {
+  await card129Retry({
+    setup: async ({ tm, g, task_id, nx }) => {
+      const child = nx.children.find((c) => c.node_id === 'dispatch:P1:1');
+      await blockChild(g, child);
+      const f = c129RunFile(child);
+      const run = JSON.parse(readFileSync(f, 'utf8'));
+      const first = run.nodes.find((x) => x.node_id === 'implement:U1:1');
+      assert.ok(run.nodes.some((x) => x.stage === 'implement' && x.subgoal_id === 'U1' && (x.attempt || 1) > 1 && x.state === 'done'), JSON.stringify(run.nodes.map((x) => [x.node_id, x.state])));
+      first.state = 'failed';
+      first.result = { stage_ok: false, reason: 'ENOSPC: no space left on device' };
+      writeFileSync(f, JSON.stringify(run, null, 2));
+      assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' })).state, 'failed');
+    },
+    check: ({ task, ledger }) => {
+      assert.equal(task.nodes.find((n) => n.node_id === 'dispatch:P1:1').result.environment_findings, undefined);
+      assert.ok(task.nodes.some((n) => n.node_id === 'dispatch:P1:2'));
+      assert.ok(ledger.some((e) => e.event === 'daemon_retry_opened'));
+    },
+  });
+});
+
+test('card129 U2.7 a failed dispatch:QA with defects AND environment_findings still files its defects; the node also gets the kind', async () => {
+  await card129Retry({
+    qa: true,
+    setup: ({ file }) => c129FailDispatch(file, { reason: 'execute found a defect', defects: ['POST /reset starts the real app'], environment_findings: ['write denied: /w/src/a.mjs'] }, 'dispatch:QA-F1:1'),
+    check: ({ task, ledger }) => {
+      assert.ok(ledger.some((e) => e.event === 'daemon_defects_filed' || e.event === 'daemon_defects_held'), JSON.stringify(ledger.map((e) => e.event)));
+      const accept = task.nodes.find((n) => n.node_id === 'accept:QA-F1:1');
+      assert.equal(accept.state, 'skipped');
+      assert.equal(accept.result.qa_direct, true);
+      const failed = task.nodes.find((n) => n.node_id === 'dispatch:QA-F1:1');
+      assert.equal(failed.result.failure_kind, 'environment');
+      assert.ok(failed.result.findings.includes('write denied: /w/src/a.mjs'));
+      assert.ok(ledger.some((e) => e.event === 'failure_classified' && e.failure_kind === 'environment' && e.via === 'autoRetryPackages'));
+      assert.ok(!ledger.some((e) => e.event === 'daemon_retry_withheld'));
+      assert.ok(!task.nodes.some((n) => n.node_id === 'dispatch:QA-F1:2'));
+    },
+  });
+});
+
+test('card129 U2.8 a failed accept node with a Write denial is not withheld as environment', async () => {
+  await card129Retry({
+    setup: ({ file }) => c129Edit(file, (t, n) => {
+      n('dispatch:P1:1').state = 'done';
+      n('dispatch:P1:1').result = { stage_ok: true };
+      n('accept:P1:1').state = 'failed';
+      n('accept:P1:1').result = { stage_ok: false, accept: false, reason: 'rejected: a.txt is wrong', gaps: ['a.txt'], permission_denials: [C129_WRITE('/w/a.txt')] };
+    }),
+    check: ({ changed, task, ledger }) => {
+      assert.equal(changed, true);
+      assert.ok(task.nodes.some((n) => n.node_id === 'dispatch:P1:2'));
+      assert.ok(ledger.some((e) => e.event === 'daemon_retry_opened' && e.package_id === 'P1'));
+      assert.ok(!ledger.some((e) => e.event === 'daemon_retry_withheld'));
+    },
+  });
+});
+
+test('card129 U2.9 a withheld environment package is settled: its accept is not left pending and the package is on task.exhausted', async () => {
+  await card129Retry({
+    shape: { ...SHAPE, packages: SHAPE.packages.map((p) => ({ ...p, deps: [] })) },
+    setup: async ({ tm, g, task_id, file, nx }) => {
+      const p2 = nx.children.find((c) => c.package_id === 'P2');
+      await completeChild(g, p2);
+      assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P2:1' })).state, 'done');
+      assert.equal((await tm.call('tm_submit', { task_id, node_id: 'accept:P2:1', payload: ok({ accept: true, match_pct: 90 }) })).state, 'done');
+      c129FailDispatch(file, { reason: 'child stopped: ENOSPC: no space left on device' });
+    },
+    check: (r) => {
+      c129Withheld(r, /ENOSPC/);
+      assert.equal(r.task.nodes.find((n) => n.node_id === 'accept:P1:1').state, 'unreachable');
+      assert.ok(r.task.exhausted.packages.includes('P1'), JSON.stringify(r.task.exhausted));
+      assert.ok(r.ledger.some((e) => e.event === 'daemon_retry_withheld' && /^environment: /.test(e.reason)));
+    },
+  });
+});
+
+test('card129 U2.10 a child whose run file is gone keeps today\'s retry (item 7, cause unverified)', async () => {
+  await card129Retry({
+    setup: ({ file }) => c129FailDispatch(file, { reason: 'child run r1 has no file under /w/child' }),
+    check: ({ task, ledger }) => {
+      assert.ok(task.nodes.some((n) => n.node_id === 'dispatch:P1:2'));
+      assert.ok(ledger.some((e) => e.event === 'daemon_retry_opened' && e.package_id === 'P1'));
+      assert.ok(!ledger.some((e) => e.event === 'daemon_retry_withheld'));
+    },
+  });
+});
+
 test('code-sprint-P3: a package that failed as the box ran out is left out of the reintegration, and the accepted one is still merged', async () => {
   await withTask(async ({ tm, g, root, task_id }) => {
     await throughCritique(tm, task_id); // P1, P2 (deps: [P1])
@@ -8651,6 +9056,35 @@ test('Card 39: a gate:goal behind a subset integrate that lands below the floor 
     inTx(task, finish, goal, { stage_ok: true, accept: true, match_pct: 72, gaps: ['P1 never shipped'], checks: ['git log -> P2 merged'], evidence: 'e' });
     assert.equal(goal.state, 'done', JSON.stringify(goal.result));
     assert.match(goal.result.goal_floor_waived, /P1/);
+  });
+});
+
+test('a floor-exempt goal gate after a budget sweep is not an accept: the task stays partial', async () => {
+  const { autoRetryPackages, finish, unfinishedWork, succeeded } = await import('../mcp/taskmanager.mjs');
+  await withBoxRoot(async (root) => {
+    const task = exhaustedTask(root, 'x5');
+    task.budget_stopped = { skipped_packages: ['P1'] };
+    const goal = nodeOf(task, 'gate:goal:1');
+    inTx(task, finish, goal, { stage_ok: true, accept: true, match_pct: 72, gaps: [], checks: ['git log -> P2 merged'], evidence: 'e' });
+    assert.equal(goal.state, 'done', JSON.stringify(goal.result));
+    assert.ok(goal.result.goal_floor_waived);
+    assert.match(unfinishedWork(task).partial_reasons.join('\n'), /P1/, 'the reason names the skipped package');
+  });
+});
+
+test('packages left not done after retries ran out do not lift the floor for an accepted package', async () => {
+  const { autoRetryPackages, finish, unfinishedWork, succeeded } = await import('../mcp/taskmanager.mjs');
+  await withBoxRoot(async (root) => {
+    const task = exhaustedTask(root, 'x6');
+    inTx(task, autoRetryPackages);
+    const goal = nodeOf(task, 'gate:goal:1');
+    nodeOf(task, 'integrate:2').state = 'done';
+    inTx(task, finish, goal, { stage_ok: true, accept: true, match_pct: 72, gaps: [], checks: ['git log -> P2 merged'], evidence: 'e' });
+    assert.equal(goal.state, 'done');
+    assert.ok(goal.result.goal_floor_waived);
+    assert.match(unfinishedWork(task).partial_reasons.join('\n'), /P2|P1/, 'the not-done package is named');
+    const accept = { stage: 'accept', node_id: 'accept:P1:1', subgoal_id: 'P1' };
+    assert.equal(succeeded(task, accept, { stage_ok: true, accept: true, match_pct: 87, gaps: [], checks: ['c'] }), false, 'a not-done sibling does not lift an accept floor');
   });
 });
 
@@ -8781,14 +9215,14 @@ test('Card 39: an accept below the floor whose only gap fails on the base commit
       ],
     };
   };
-  const verdict = (command) => ({ stage_ok: true, accept: true, match_pct: 72, gaps: ['test foo fails'], checks: ['ok -> looked fine', `${command} -> not ok 1 - foo\n# fail 1`], evidence: 'e' });
+  const verdict = (command, match_pct = 72) => ({ stage_ok: true, accept: true, match_pct, gaps: ['test foo fails'], checks: ['ok -> looked fine', `${command} -> not ok 1 - foo\n# fail 1`], evidence: 'e' });
   const prior = __baseFail.run;
   try {
     await withBoxRoot(async (root) => {
       const calls = [];
       __baseFail.run = (command) => { calls.push(command); return { status: 1, stdout: 'not ok 1 - foo\n# fail 1\n', stderr: '' }; };
       const onBase = fixture(root, 'b1');
-      inTx(onBase, finish, nodeOf(onBase, 'accept:P1:1'), verdict('node --test also-fails-on-base.mjs'));
+      inTx(onBase, finish, nodeOf(onBase, 'accept:P1:1'), verdict('node --test also-fails-on-base.mjs', 90));
       const a = nodeOf(onBase, 'accept:P1:1');
       assert.equal(a.state, 'done', JSON.stringify(a.result));
       assert.deepEqual(a.result.exclusions, [`excluded (also fails on base ${sha.slice(0, 7)}): foo`]);
@@ -8798,7 +9232,7 @@ test('Card 39: an accept below the floor whose only gap fails on the base commit
       const onPackage = fixture(root, 'b2');
       inTx(onPackage, finish, nodeOf(onPackage, 'accept:P1:1'), verdict('node --test fails-on-package-only.mjs'));
       const b = nodeOf(onPackage, 'accept:P1:1');
-      assert.equal(b.state, 'failed', 'a failure the base does not have still fails on the floor');
+      assert.equal(b.state, 'failed', 'under the floor fails, base-excluded or not');
       assert.deepEqual(b.result.exclusions || [], []);
     });
   } finally {
@@ -10107,6 +10541,265 @@ test('M3: a QA card spent past its retries does not take the round down - its si
     assert.deepEqual(t.qa_not_run.map((q) => q.pass), ['QA-F2']);
     assert.ok(!t.nodes.some((n) => n.state === 'unreachable' && n.subgoal_id !== 'QA-F2'), 'nothing outside the dead card stays written off');
   }, { roles: { qa: true }, max_retries: 0 });
+});
+
+// ---------- card 129 U2: two rejections naming nothing new escalate instead of a third retry ----------
+//
+// Headless the stage stops naming the gaps; interactive a person is asked (stop, or retry once more
+// with their answer). The comparator is failure-kind.mjs's repeatedGaps: same ids / card / pair = same.
+
+const REFUND_1 = { reason: 'F2 contradicts F1', retry: [{ card: 'PLAN-F2', gaps: ['F2-US-1 must state the refund rule F1 relies on (f2.md:10)'] }], contradictions: ['PLAN-F2 vs PLAN-F1: F1 refunds within 7 days, F2 never refunds'] };
+const REFUND_2 = { reason: 'still contradicts', retry: [{ card: 'PLAN-F2', gaps: ['state the refund rule in F2-US-1, see f2.md:44'] }], contradictions: ['PLAN-F2 vs PLAN-F1: the two still disagree on refunds'] };
+const REFUND_NEW = { reason: 'still contradicts', retry: [{ card: 'PLAN-F2', gaps: ['F2-US-2 has no acceptance a tester can run'] }], contradictions: ['PLAN-F2 vs PLAN-F1: the two still disagree on refunds'] };
+const planStoriesOf = (id) => [`${id.replace('PLAN-', '')}-US-1`];
+
+// Round 1 refuses the accepted cards; round n > 1 first redoes PLAN-F2 (the retried card), then refuses.
+async function refusePlanIntegrate(tm, g, task_id, round, payload) {
+  if (round === 1) await tm.call('tm_next', { task_id });
+  else {
+    const c = (await tm.call('tm_next', { task_id })).children.find((x) => x.node_id === `dispatch:PLAN-F2:${round}`);
+    assert.ok(c, `dispatch:PLAN-F2:${round} is open`);
+    await completePlanningChild(g, c, ['F2-US-1']);
+    await tm.call('tm_submit', { task_id, node_id: c.node_id });
+    await tm.call('tm_submit', { task_id, node_id: `accept:PLAN-F2:${round}`, payload: ok({ accept: true, match_pct: 95 }) });
+    await tm.call('tm_next', { task_id });
+  }
+  return tm.call('tm_submit', { task_id, node_id: `plan-integrate:${round}`, payload: ok({ accept: false, ...payload }) });
+}
+
+// The person's answer on a manager ask card, through tm_inbox's key like a real one.
+async function answerAsk(tm, root, task_id, askId, chose) {
+  const card = (await tm.rawCall('tm_inbox', { task_id })).cards.find((c) => c.node_id === askId);
+  assert.ok(card, `${askId} is in the inbox`);
+  const ask = readTask(root, task_id).nodes.find((n) => n.node_id === askId);
+  return tm.rawCall('tm_submit', { task_id, key: card.key, payload: { decisions: ask.questions.map((q) => ({ question: q.question, chose })) } });
+}
+
+const RETRY_ANSWER = 'retry once more with my answer as feedback: refunds are 7 days everywhere';
+
+test('repeated rejection headless: plan-integrate rejected twice for the same gaps stops the stage, no third round', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await twoCardsAccepted(tm, g, task_id, planStoriesOf);
+    assert.equal((await refusePlanIntegrate(tm, g, task_id, 1, REFUND_1)).state, 'failed');
+    assert.ok(readTask(root, task_id).nodes.some((n) => n.node_id === 'plan-integrate:2'), 'round 1 is retried');
+    assert.equal((await refusePlanIntegrate(tm, g, task_id, 2, REFUND_2)).state, 'failed');
+    const task = readTask(root, task_id);
+    assert.ok(!task.nodes.some((n) => n.node_id === 'plan-integrate:3'), 'no third round');
+    assert.ok(!task.nodes.some((n) => n.node_id === 'dispatch:PLAN-F2:3'), 'no third dispatch of the card');
+    const pi = task.nodes.find((n) => n.node_id === 'plan-integrate:2');
+    assert.equal(pi.final, true);
+    assert.equal(pi.result.failure_kind, 'repeated-identical-rejection');
+    assert.match(pi.result.reason, /^rejected twice for the same gaps: /);
+    assert.match(pi.result.reason, /PLAN-F2/);
+    const events = readLedger(root, task_id);
+    assert.ok(events.some((e) => e.event === 'failure_classified' && e.node_id === 'plan-integrate:2' && e.failure_kind === 'repeated-identical-rejection'));
+    assert.ok(events.some((e) => e.event === 'repeated_rejection_stopped' && e.node_id === 'plan-integrate:2'));
+    assert.ok(!events.some((e) => e.event === 'repeated_rejection_asked'));
+    await planningClosesToReport(tm, root, task_id, { node: 'plan-integrate:2', prd: true, stories: ['F1-US-1', 'F2-US-1'] });
+  });
+});
+
+test('repeated rejection control: plan-integrate same card with a new gap opens a third round', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await twoCardsAccepted(tm, g, task_id, planStoriesOf);
+    await refusePlanIntegrate(tm, g, task_id, 1, REFUND_1);
+    await refusePlanIntegrate(tm, g, task_id, 2, REFUND_NEW);
+    const task = readTask(root, task_id);
+    assert.ok(task.nodes.some((n) => n.node_id === 'plan-integrate:3'), 'a gap naming a story id round 1 did not name is new information');
+    assert.ok(task.nodes.some((n) => n.node_id === 'dispatch:PLAN-F2:3'));
+    assert.ok(!task.nodes.find((n) => n.node_id === 'plan-integrate:2').final);
+    assert.ok(!readLedger(root, task_id).some((e) => e.event === 'repeated_rejection_stopped'));
+  });
+});
+
+test('repeated rejection interactive: plan-integrate asks, and a retry answer opens exactly one more round', async () => {
+  const { autoReshape } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await twoCardsAccepted(tm, g, task_id, planStoriesOf);
+    await refusePlanIntegrate(tm, g, task_id, 1, REFUND_1);
+    await refusePlanIntegrate(tm, g, task_id, 2, REFUND_2);
+    let task = readTask(root, task_id);
+    const ask = task.nodes.find((n) => n.node_id === 'ask:plan-integrate:2:1');
+    assert.ok(ask, 'a card asks the person');
+    assert.equal(ask.state, 'waiting_human');
+    assert.match(ask.questions[0].question, /rejected twice for the same gaps/);
+    assert.match(ask.questions[0].question, /PLAN-F2: state the refund rule in F2-US-1/);
+    assert.deepEqual(task.nodes.find((n) => n.node_id === 'shape').deps, ['plan-integrate:2'], 'shape is not rewired onto the ask');
+    assert.ok(!task.nodes.some((n) => (n.deps || []).concat(n.after || []).includes(ask.node_id)), 'nothing waits on the ask');
+    assert.ok(!task.nodes.some((n) => n.node_id === 'plan-integrate:3'), 'no third round while it waits');
+    assert.equal(withTasksRoot(root, () => inTx(task, autoReshape)), false, 'the daemon tick settles nothing while the card is open');
+    assert.ok(!readTask(root, task_id).nodes.find((n) => n.node_id === 'plan-integrate:2').final);
+    assert.ok(readLedger(root, task_id).some((e) => e.event === 'repeated_rejection_asked' && e.ask === ask.node_id));
+
+    assert.equal((await answerAsk(tm, root, task_id, ask.node_id, RETRY_ANSWER)).state, 'done');
+    assert.equal(withTasksRoot(root, () => inTx(readTask(root, task_id), autoReshape)), true);
+    task = readTask(root, task_id);
+    const pi3 = task.nodes.find((n) => n.node_id === 'plan-integrate:3');
+    assert.ok(pi3, 'exactly one more round');
+    assert.equal(pi3.supersedes, 'plan-integrate:2');
+    assert.match(pi3.feedback, /refunds are 7 days everywhere/);
+    assert.match(task.nodes.find((n) => n.node_id === 'dispatch:PLAN-F2:3').feedback, /refunds are 7 days everywhere/);
+    assert.ok(!task.nodes.some((n) => n.node_id === 'plan-integrate:4'));
+    assert.equal(task.nodes.find((n) => n.node_id === 'plan-integrate:2').escalation.resolved, 'retry');
+  }, { interactive: true });
+});
+
+test('repeated rejection interactive: a stop answer settles the plan-integrate and closes to report', async () => {
+  const { autoReshape } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await twoCardsAccepted(tm, g, task_id, planStoriesOf);
+    await refusePlanIntegrate(tm, g, task_id, 1, REFUND_1);
+    await refusePlanIntegrate(tm, g, task_id, 2, REFUND_2);
+    assert.equal((await answerAsk(tm, root, task_id, 'ask:plan-integrate:2:1', 'stop the stage')).state, 'done');
+    withTasksRoot(root, () => inTx(readTask(root, task_id), autoReshape));
+    const task = readTask(root, task_id);
+    const pi = task.nodes.find((n) => n.node_id === 'plan-integrate:2');
+    assert.equal(pi.final, true);
+    assert.match(pi.result.reason, /^rejected twice for the same gaps: /);
+    assert.ok(!task.nodes.some((n) => n.node_id === 'plan-integrate:3'));
+    assert.ok(readLedger(root, task_id).some((e) => e.event === 'plan_integrate_settled' && e.reason === 'repeated identical rejection'));
+    await planningClosesToReport(tm, root, task_id, { node: 'plan-integrate:2', prd: true, stories: ['F1-US-1', 'F2-US-1'] });
+  }, { interactive: true });
+});
+
+test('repeated rejection interactive: a third identical rejection after a retry answer stops instead of asking again', async () => {
+  const { autoReshape } = await import('../mcp/taskmanager.mjs');
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await twoCardsAccepted(tm, g, task_id, planStoriesOf);
+    await refusePlanIntegrate(tm, g, task_id, 1, REFUND_1);
+    await refusePlanIntegrate(tm, g, task_id, 2, REFUND_2);
+    await answerAsk(tm, root, task_id, 'ask:plan-integrate:2:1', RETRY_ANSWER);
+    assert.equal(withTasksRoot(root, () => inTx(readTask(root, task_id), autoReshape)), true);
+    await refusePlanIntegrate(tm, g, task_id, 3, REFUND_2);
+    const task = readTask(root, task_id);
+    assert.ok(!task.nodes.some((n) => n.node_id === 'ask:plan-integrate:3:1'), 'the identical question is settled: no second card');
+    assert.ok(!task.nodes.some((n) => n.node_id === 'plan-integrate:4'));
+    const pi = task.nodes.find((n) => n.node_id === 'plan-integrate:3');
+    assert.equal(pi.final, true);
+    assert.match(pi.result.reason, /^rejected twice for the same gaps: /);
+    const stopped = readLedger(root, task_id).filter((e) => e.event === 'repeated_rejection_stopped');
+    assert.deepEqual(stopped.map((e) => [e.node_id, e.ask]), [['plan-integrate:3', 'not-opened']]);
+  }, { interactive: true, max_retries: 3 });
+});
+
+test('repeated rejection interactive: with no round left the repeat stops without asking', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await twoCardsAccepted(tm, g, task_id, planStoriesOf);
+    await refusePlanIntegrate(tm, g, task_id, 1, REFUND_1);
+    await refusePlanIntegrate(tm, g, task_id, 2, REFUND_2);
+    const task = readTask(root, task_id);
+    assert.ok(!task.nodes.some((n) => n.stage === 'ask'), 'a "retry once more" the budget would refuse is never offered');
+    assert.equal(task.nodes.find((n) => n.node_id === 'plan-integrate:2').final, true);
+    assert.match(task.nodes.find((n) => n.node_id === 'plan-integrate:2').result.reason, /^rejected twice for the same gaps: /);
+    const stopped = readLedger(root, task_id).filter((e) => e.event === 'repeated_rejection_stopped');
+    assert.equal(stopped.length, 1);
+    assert.equal(stopped[0].ask, undefined, 'no ask was attempted');
+  }, { interactive: true, max_retries: 1 });
+});
+
+// A package's rejected attempt written by hand: its dispatch done, its accept failed with `result`.
+function rejectAcceptByHand(root, task_id, pid, attempt, result) {
+  const file = join(root, task_id, 'task.json');
+  const raw = JSON.parse(readFileSync(file, 'utf8'));
+  const d = raw.nodes.find((n) => n.node_id === `dispatch:${pid}:${attempt}`);
+  const a = raw.nodes.find((n) => n.node_id === `accept:${pid}:${attempt}`);
+  d.state = 'done'; d.result = { stage_ok: true, accept: true };
+  a.state = 'failed'; a.result = { stage_ok: true, accept: false, match_pct: 60, ...result };
+  writeFileSync(file, JSON.stringify(raw));
+}
+
+async function retryTick(root, task_id) {
+  const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
+  return withTasksRoot(root, () => inTx(readTask(root, task_id), autoRetryPackages));
+}
+
+test('repeated rejection headless: a package accept rejected twice for the same AC ids opens no third dispatch', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    rejectAcceptByHand(root, task_id, 'P1', 1, { reason: 'ACs unmet', gaps: ['AC-1 is not covered by any test (a.txt:3)', 'AC-2 has no error path'] });
+    assert.equal(await retryTick(root, task_id), true);
+    assert.ok(readTask(root, task_id).nodes.some((n) => n.node_id === 'dispatch:P1:2'), 'the first rejection retries');
+    rejectAcceptByHand(root, task_id, 'P1', 2, { reason: 'ACs still unmet', gaps: ['no test exists for AC-1, see a.txt:99'] });
+    await retryTick(root, task_id);
+    const task = readTask(root, task_id);
+    assert.ok(!task.nodes.some((n) => n.node_id === 'dispatch:P1:3'), 'no third dispatch');
+    assert.ok(task.exhausted.packages.includes('P1'));
+    const acc = task.nodes.find((n) => n.node_id === 'accept:P1:2');
+    assert.equal(acc.result.failure_kind, 'repeated-identical-rejection');
+    assert.match(acc.result.reason, /^rejected twice for the same gaps: no test exists for AC-1/);
+    assert.ok(readLedger(root, task_id).some((e) => e.event === 'repeated_rejection_stopped' && e.node_id === 'accept:P1:2'));
+  });
+});
+
+test('repeated rejection control: a package gap naming a new AC id still retries', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    rejectAcceptByHand(root, task_id, 'P1', 1, { gaps: ['AC-1 is not covered by any test'] });
+    await retryTick(root, task_id);
+    rejectAcceptByHand(root, task_id, 'P1', 2, { gaps: ['AC-1 is still not covered', 'AC-4 is now missing too'] });
+    await retryTick(root, task_id);
+    const task = readTask(root, task_id);
+    assert.ok(task.nodes.some((n) => n.node_id === 'dispatch:P1:3'), 'a new AC id is new information');
+    assert.ok(!(task.exhausted && task.exhausted.packages.includes('P1')));
+  });
+});
+
+test('floor-only refusal: the retry feedback carries the judge reason and observations', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await throughCritique(tm, task_id);
+    await completeChild(g, (await tm.call('tm_next', { task_id })).children[0]);
+    assert.equal((await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' })).state, 'done');
+    const v = await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 87, gaps: [], reason: 'the error path is only half tested', observations: ['logging is noisy'] }) });
+    assert.equal(v.state, 'failed');
+    assert.equal(await retryTick(root, task_id), true);
+    const fb = readTask(root, task_id).nodes.find((n) => n.node_id === 'dispatch:P1:2').feedback;
+    assert.match(fb, /match_pct 87 below the goal threshold 90/);
+    assert.match(fb, /the error path is only half tested/);
+    assert.match(fb, /observation: logging is noisy/);
+  });
+});
+
+test('floor-only refusal: two with the same judge reason stop, a different reason retries', async () => {
+  for (const [second, opensThird] of [['The error path is only half tested.', false], ['the docs are missing', true]]) {
+    await withTask(async ({ tm, g, root, task_id }) => {
+      await throughCritique(tm, task_id);
+      await completeChild(g, (await tm.call('tm_next', { task_id })).children[0]);
+      await tm.call('tm_submit', { task_id, node_id: 'dispatch:P1:1' });
+      await tm.call('tm_submit', { task_id, node_id: 'accept:P1:1', payload: ok({ accept: true, match_pct: 87, gaps: [], reason: 'the error path is only half tested' }) });
+      await retryTick(root, task_id);
+      const file = join(root, task_id, 'task.json');
+      const raw = JSON.parse(readFileSync(file, 'utf8'));
+      raw.nodes.find((n) => n.node_id === 'dispatch:P1:2').state = 'done';
+      raw.nodes.find((n) => n.node_id === 'dispatch:P1:2').result = { stage_ok: true, accept: true };
+      writeFileSync(file, JSON.stringify(raw));
+      const v = await tm.call('tm_submit', { task_id, node_id: 'accept:P1:2', payload: ok({ accept: true, match_pct: 85, gaps: [], reason: second }) });
+      assert.equal(v.state, 'failed', second);
+      await retryTick(root, task_id);
+      const task = readTask(root, task_id);
+      assert.equal(task.nodes.some((n) => n.node_id === 'dispatch:P1:3'), opensThird, second);
+      if (!opensThird) assert.match(task.nodes.find((n) => n.node_id === 'accept:P1:2').result.reason, /^rejected twice for the same gaps: the error path is only half tested/i);
+    });
+  }
+});
+
+test('repeated rejection on a QA card takes the same rescue path as budget exhaustion', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await twoAreasIntegrated(tm, g, task_id);
+    await tm.call('tm_next', { task_id });
+    rejectAcceptByHand(root, task_id, 'QA-F2', 1, { reason: 'the QA report does not show the cases ran', gaps: ['AC-1 was never exercised'] });
+    await retryTick(root, task_id);
+    assert.ok(readTask(root, task_id).nodes.some((n) => n.node_id === 'dispatch:QA-F2:2'), 'the first rejection retries the card');
+    rejectAcceptByHand(root, task_id, 'QA-F2', 2, { reason: 'the QA report still does not show the cases ran', gaps: ['AC-1 still was not exercised, see report.md:4'] });
+    await retryTick(root, task_id);
+    const t = readTask(root, task_id);
+    assert.ok(!t.nodes.some((n) => n.node_id === 'dispatch:QA-F2:3'), 'no third QA dispatch');
+    assert.deepEqual(t.qa_not_run.map((q) => q.pass), ['QA-F2']);
+    assert.ok(readLedger(root, task_id).some((e) => e.event === 'qa_card_dropped' && e.package_id === 'QA-F2'));
+    const goal = t.nodes.find((n) => n.node_id === 'gate:goal:1');
+    assert.notEqual(goal.state, 'unreachable', 'the goal gate is still reachable');
+    assert.ok(!goal.deps.some((d) => d.startsWith('accept:QA-F2')), 'the dead card is dropped from the goal gate');
+    assert.equal(t.nodes.find((n) => n.node_id === 'accept:QA-F2:2').result.failure_kind, 'repeated-identical-rejection');
+  }, { roles: { qa: true } });
 });
 
 test('C7: QA runs one card per feature area in parallel, each a full-harness run over the integrated tree; a round\'s defects are filed together once every card has settled, and the next round reopens every card', async () => {

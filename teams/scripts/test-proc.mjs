@@ -4,7 +4,7 @@
 process.env.TEAMS_RUNS_DIR ??= 'off';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { pidAlive, isZombie } from '../mcp/proc.mjs';
 
@@ -14,11 +14,31 @@ test('pidAlive: this process is alive, a missing pid is not', () => {
   assert.equal(pidAlive(2 ** 22 + 12345), false);
 });
 
-test('pidAlive: a zombie (exited, never reaped) reads dead', { skip: !existsSync('/proc/self/stat') && 'no /proc' }, async () => {
-  // The background child exits only once its parent has exec'd into `sleep 5`, which never waits
+test('isZombie: injected reader (ps fallback when /proc is absent)', () => {
+  const enoent = () => { throw Object.assign(new Error('no /proc'), { code: 'ENOENT' }); };
+  const ps = (out) => ({ procStat: enoent, psStat: () => out });
+  assert.equal(isZombie(1, ps('Z+\n')), true);
+  assert.equal(isZombie(1, ps('S\n')), false);
+  assert.equal(isZombie(1, ps('')), false);
+  assert.equal(isZombie(1, { procStat: enoent, psStat: () => { throw new Error('ps failed'); } }), false);
+  // /proc present: it answers, ps is not consulted
+  assert.equal(isZombie(1, { procStat: () => '1 (x) Z 0', psStat: () => { throw new Error('unused'); } }), true);
+  assert.equal(isZombie(1, { procStat: () => '1 (x) S 0', psStat: () => 'Z' }), false);
+  // pidAlive: kill(0) succeeds, reader says Z -> dead; says S -> alive
+  assert.equal(pidAlive(process.pid, ps('Z')), false);
+  assert.equal(pidAlive(process.pid, ps('S')), true);
+});
+
+const hasPs = spawnSync('ps', ['-o', 'stat=', '-p', String(process.pid)]).status === 0;
+test('pidAlive: a zombie (exited, never reaped) reads dead', { skip: !existsSync('/proc/self/stat') && !hasPs && 'no /proc and no ps' }, async () => {
+  // The background child exits only once its parent has exec'd into `sleep`, which never waits
   // on it. A bare `sleep 0 &` could finish before the exec, and dash reaps a finished background
   // child after a builtin - under load /proc/<pid> was gone, not <defunct>, and the test flaked.
-  const sh = spawn('sh', ['-c', 'sh -c \'until [ ! -e /proc/$PPID ] || { read c </proc/$PPID/comm && [ "$c" = sleep ]; }; do :; done\' & echo $!; exec sleep 5'], { stdio: ['ignore', 'pipe', 'ignore'] });
+  // Without /proc (macOS) a short `(sleep 1) &` outlives the exec and is then orphaned-unreaped.
+  const script = existsSync('/proc/self/stat')
+    ? 'sh -c \'until [ ! -e /proc/$PPID ] || { read c </proc/$PPID/comm && [ "$c" = sleep ]; }; do :; done\' & echo $!; exec sleep 5'
+    : '(sleep 1) & echo $!; exec sleep 8';
+  const sh = spawn('sh', ['-c', script], { stdio: ['ignore', 'pipe', 'ignore'] });
   try {
     const pid = Number(await new Promise((res) => sh.stdout.once('data', (d) => res(String(d).trim()))));
     let zombie = false;

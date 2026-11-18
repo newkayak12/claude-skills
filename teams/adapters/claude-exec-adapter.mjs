@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'nod
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
-import { DISALLOWED_BASH, neededDenials } from '../mcp/denials.mjs';
+import { DISALLOWED_BASH, neededDenials, writeDenials } from '../mcp/denials.mjs';
 
 const args = process.argv.slice(2);
 const opts = { sandbox: 'workspace-write', addDirs: [], pluginDirs: [] };
@@ -173,6 +173,11 @@ try {
         process.exitCode = 0;
       }
     }
+    // card 129: the envelope's file-write denials ride on the result, so the engine's failure
+    // classifier (an environment failure, not a defect of the work) sees them. stage_ok and the
+    // exit code are what they were.
+    const writes = writeDenials(envelope);
+    if (writes.length && report.result && typeof report.result === 'object') report.result = { ...report.result, permission_denials: writes };
   }
   writeFileSync(opts.output, JSON.stringify(report, null, 2) + '\n');
 } catch (error) {

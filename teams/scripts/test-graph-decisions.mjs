@@ -102,6 +102,14 @@ test('openAsk: only decidable questions make a card; the consumer is rewired to 
   assert.deepEqual(openAsk(run, inv, [{ question: 'q2', default: 'd' }]), [], 'one card per owner and attempt');
 });
 
+test('openAsk with consumers false leaves the asking node consumers unwired to the ask', () => {
+  const { run, inv } = askRun();
+  const ids = openAsk(run, inv, [{ question: 'q', default: 'd' }], { consumers: false });
+  assert.deepEqual(ids, ['ask:U1:1']);
+  assert.deepEqual(getNode(run, 'ask:U1:1').deps, ['investigate:U1:1'], 'the card still asks about the node');
+  assert.deepEqual(getNode(run, 'draft:U1:1').deps, ['investigate:U1:1'], 'the consumer does not wait on it');
+});
+
 test('openAsk: one card per answering owner, suffixed b, c; an already-settled question is not asked again', () => {
   const { run, inv } = askRun();
   run.task_decisions = [{ question: 'settled', chose: 'x' }];

@@ -5,6 +5,7 @@
 const MIN = 60 * 1000;
 const FIRST_WAIT_MIN = 30;
 const MAX_WAIT_MIN = 240;
+const MAX_STATED_DAYS = 31;
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
 // The wall clock of epoch `ms` in `tz` (a zone name, or null for the host's local zone); null when
@@ -85,8 +86,28 @@ export function resetInstant(reason, since) {
 // 30 minutes from `since` on the first park, doubled per identical re-park, capped at 240.
 export function capacityWait({ reason, since, firstSince, parks } = {}) {
   const now = Number(since) || Date.now();
-  const stated = resetInstant(reason, Number(firstSince) || now);
-  if (stated !== null && stated > now) return stated;
+  const first = Number(firstSince) || now;
+  // A stated instant more than MAX_STATED_DAYS past the first park is a year roll of a date
+  // already gone (a re-park after the reset, or a late first park): back off instead.
+  const stated = resetInstant(reason, first);
+  if (stated !== null && stated > now && stated - first <= MAX_STATED_DAYS * 24 * 60 * MIN) return stated;
   const n = Math.max(1, Math.floor(Number(parks) || 1));
   return now + Math.min(FIRST_WAIT_MIN * 2 ** (n - 1), MAX_WAIT_MIN) * MIN;
+}
+
+// The park record for a (re-)park at `now`. `prev` is the holder's last park ({reason, first_since,
+// parks, cleared_at?}) or null. The same stated instant still ahead, or two unstated reasons, is
+// the same wait: first_since is kept and parks counts up. Anything else restarts at 1: no prior
+// park, one cleared more than 4 hours ago, a stated instant already passed, or a different one.
+// Pure: the caller passes `now`.
+export function parkCapacity(prev, reason, now) {
+  const fresh = { reason, since: now, first_since: now, parks: 1 };
+  if (!prev) return fresh;
+  if (prev.cleared_at && now - prev.cleared_at > MAX_WAIT_MIN * MIN) return fresh;
+  const first = Number(prev.first_since) || Number(prev.since) || now;
+  const was = resetInstant(prev.reason, first);
+  const next = resetInstant(reason, first);
+  if (was !== null && was <= now) return fresh;
+  if (was !== next) return fresh;
+  return { reason, since: now, first_since: first, parks: (Number(prev.parks) || 1) + 1 };
 }

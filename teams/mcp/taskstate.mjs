@@ -198,7 +198,8 @@ export function unfinishedWork(task) {
   const last = (pred) => task.nodes.filter(pred).pop();
   if (task.planning_failed) {
     const f = task.planning_failed;
-    reasons.push(`planning stopped at ${f.node_id} with no retry left: ${String(f.reason || '').slice(0, 300)}${f.prd ? '' : ' - no planning card was accepted, so there is no PRD'}`);
+    const why = f.failure_kind === 'repeated-identical-rejection' ? ': rejected twice for the same gaps' : ' with no retry left';
+    reasons.push(`planning stopped at ${f.node_id}${why}: ${String(f.reason || '').slice(0, 300)}${f.prd ? '' : ' - no planning card was accepted, so there is no PRD'}`);
   }
   const skippedPkgs = (task.budget_stopped && task.budget_stopped.skipped_packages) || [];
   for (const p of ((task.spec && task.spec.packages) || [])) {

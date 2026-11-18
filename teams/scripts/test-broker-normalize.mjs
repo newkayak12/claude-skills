@@ -112,8 +112,18 @@ test('nodeSucceeded: the goal gate also needs attacks[] and a match_pct at the r
   assert.equal(gate({ ...ok, attacks: [] }), false, 'never invoked from outside the tree');
   assert.equal(gate({ ...ok, match_pct: 95 }), true);
   assert.equal(gate({ ...ok, match_pct: 80, gaps: ['named'] }), false, 'below the floor with a named gap fails');
-  assert.equal(gate({ ...ok, match_pct: 86 }), true, 'within 5 of the floor, accepted, no named gap: a band, not a waiver');
+  assert.equal(gate({ ...ok, match_pct: 86 }), false, 'under the floor, no named gap: no band');
   assert.equal(gate({ ...ok, match_pct: 70 }), false, 'an accept at 70 with no gaps contradicts itself');
+});
+
+test('nodeSucceeded: a goal gate at 87 under goal_threshold 90 is refused with or without gaps', () => {
+  const ok = { stage_ok: true, accept: true, checks: ['c'], attacks: ['a'] };
+  const goal = { stage: 'gate', subgoal_id: null };
+  const run = { goal_threshold: 90 };
+  assert.equal(nodeSucceeded(run, goal, { ...ok, match_pct: 87, gaps: [] }), false);
+  assert.equal(nodeSucceeded(run, goal, { ...ok, match_pct: 87, gaps: ['g'] }), false);
+  assert.equal(nodeSucceeded(run, goal, { ...ok, match_pct: 90 }), true);
+  assert.equal(nodeSucceeded({ goal_threshold: 0 }, goal, { ...ok, match_pct: 87, gaps: [] }), true, 'threshold 0 goes by verdict');
 });
 
 test('nodeSucceeded: run.goal_threshold moves the floor, and 0 goes by verdict alone', () => {

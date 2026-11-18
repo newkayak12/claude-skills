@@ -150,23 +150,37 @@ export function closeFailedPlanning(task) {
   if (readyNodes(task).length || pendingRejudgeAt(task) !== null) return false;
   // A planning integrate that asked for a re-split is final by design (resplitPlanning), and a
   // retired card's nodes are history - neither is planning that failed.
-  const dead = task.nodes.find((n) => n.state === 'failed' && n.final && !n.resplit
+  // The node that decided is the LAST dead one not superseded by a later attempt: a card whose
+  // attempt 3 was accepted is not what stopped planning, the plan-integrate after it is.
+  const dead = task.nodes.filter((n) => n.state === 'failed' && n.final && !n.resplit && !supersededAttempt(task, n)
     && (PRE_SHAPE_STAGES.has(n.stage) || (phaseOfId(task, n.subgoal_id) === 'planning'
-      && livePlanningPkgs(task).some((p) => String(p.id) === String(n.subgoal_id)))));
+      && livePlanningPkgs(task).some((p) => String(p.id) === String(n.subgoal_id))))).pop();
   if (!dead) return false;
+  const failureKind = dead.result && dead.result.failure_kind;
+  const repeated = failureKind === 'repeated-identical-rejection';
+  const skipReason = `skipped: planning stopped at ${dead.node_id}${repeated ? ': rejected twice for the same gaps' : ' with no retry left'}`;
   const skipped = [];
   for (const n of task.nodes) {
     if (n.state !== 'pending' && n.state !== 'unreachable') continue;
     n.state = 'skipped';
     n.final = true;
-    n.result = { stage_ok: false, reason: `skipped: planning stopped at ${dead.node_id} with no retry left` };
+    n.result = { stage_ok: false, reason: skipReason };
     skipped.push(n.node_id);
   }
   const accepted = planningPkgs(task).some((p) => task.nodes.some((x) => x.stage === 'accept' && x.subgoal_id === String(p.id) && x.state === 'done'));
-  task.planning_failed = { node_id: dead.node_id, stage: dead.stage, reason: whyFailed(dead), prd: accepted };
+  task.planning_failed = { node_id: dead.node_id, stage: dead.stage, reason: whyFailed(dead), prd: accepted, ...(failureKind ? { failure_kind: failureKind } : {}) };
   task.nodes.push(node('report', 'report', [], { subgoal_id: null }));
   record(task, { event: 'planning_closed', task_id: task.run_id, node_id: dead.node_id, skipped, prd: accepted });
   return true;
+}
+
+// A later attempt of the same subgoal (same stage with a higher attempt, or a done accept of it)
+// replaces a failed node: its failure is history, not the decision.
+function supersededAttempt(task, n) {
+  const sub = n.subgoal_id ?? null;
+  const at = n.attempt || 1;
+  return task.nodes.some((m) => m !== n && (m.subgoal_id ?? null) === sub && (m.attempt || 1) > at
+    && (m.stage === n.stage || (m.stage === 'accept' && m.state === 'done')));
 }
 
 function whyFailed(n) {

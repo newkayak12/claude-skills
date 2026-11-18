@@ -5,7 +5,8 @@
 // handlers, because finishNode needs it and the tools module imports this one, never the reverse.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
+import { recordCasesBaseline, writeQaReport } from './qa-report.mjs';
 import { randomUUID } from 'node:crypto';
 import {
   REASONING_STAGES,
@@ -411,6 +412,16 @@ export function finishNode(run, n, result, vendorName) {
   n.result = result;
   n.vendor = vendorName;
   n.finished_at = Date.now();
+  // card 129: the QA report is the engine's to write when the driver did not (see qa-report.mjs).
+  // changed_files stays worktree-relative like every other entry; engine_written keeps the absolute path.
+  if (n.stage === 'cases') recordCasesBaseline(run, n);
+  if (n.stage === 'execute') {
+    const p = writeQaReport(run, n, n.result);
+    if (p) {
+      const rel = relative(run.cwd, p);
+      n.result = { ...n.result, engine_written: [p], changed_files: [...new Set([...(n.result.changed_files || []), rel])] };
+    }
+  }
 
   // setgoal is the only node that changes the shape of the graph. Expanding here keeps
   // the spec out of the orchestrator entirely - but only for a spec that can actually

@@ -15,6 +15,8 @@ import { driverRestartsSpent, driverStderrTail, serviceDeadDriver, spawnChildDri
 import { missingPrdSections, prdStories, stripDocumentAcceptance } from './taskmanager-handlers.mjs';
 import { serviceHarnessRun } from './taskmanager-harness.mjs';
 import { storyAsksOf } from './taskmanager-asks.mjs';
+import { classifyFailure, environmentEvidence } from './failure-kind.mjs';
+import { qaReportPaths } from './qa-report.mjs';
 
 // Executed by the server the moment the node is ready. The model never opens a run.
 // The slot under max_live_drivers is taken first, before a worktree or a run file exists: a node
@@ -346,6 +348,22 @@ export function foldChild(task, n) {
     }
     return [...seen.values()];
   })();
+  // card 129 U2: what an environment failure (ENOSPC, a denied write, a tool denial) of the child's
+  // LATEST attempts left behind. A failed node counts only when no node of the same subgoal and
+  // stage has a higher attempt - an attempt that recovered is not the cause of this failure. A
+  // denied write to the engine-written QA report is not one (classifyFailure's engineWrittenPath).
+  const environmentFindings = (() => {
+    const out = [];
+    for (const x of child.nodes) {
+      if (x.state !== 'failed' || !x.result || typeof x.result !== 'object') continue;
+      if (child.nodes.some((y) => y.subgoal_id === x.subgoal_id && y.stage === x.stage && (y.attempt || 1) > (x.attempt || 1))) continue;
+      const stderr = x.result.stderr;
+      const kind = classifyFailure(child, x, x.result, { stderr, engineWrittenPath: qaReportPaths(child, x.subgoal_id)[0] });
+      if (kind !== 'environment') continue;
+      for (const f of environmentEvidence({ result: x.result, stderr })) if (!out.includes(f)) out.push(f);
+    }
+    return out;
+  })();
   const base = {
     child_run_id: child.run_id,
     child_cwd: n.child.cwd,
@@ -356,6 +374,7 @@ export function foldChild(task, n) {
     ...(defectsFound.length ? { defects: defectsFound } : {}),
     ...(Object.keys(defectRepros).length ? { defect_repros: defectRepros } : {}),
     ...(upstreamDefectsFound.length ? { upstream_defects: upstreamDefectsFound } : {}),
+    ...(environmentFindings.length ? { environment_findings: environmentFindings } : {}),
     ...(setFindings ? { set_findings: setFindings } : {}),
     // §6.2-3/4: what an execution-phase package could not decide by default - finish() parks it
     // once at EPIC level (escalateBlocking).

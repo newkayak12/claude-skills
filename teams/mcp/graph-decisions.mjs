@@ -178,6 +178,8 @@ export function routeExecutionQuestions(run, n, questions) {
 // the card (ask_id, story_key), is never filtered as already settled (a question is never dropped),
 // and leaves `n`'s consumers alone - the STORY's dispatch node is still what they wait on, the card
 // only holds its parked driver.
+// `consumers: false` leaves `n`'s consumers alone too: the card only holds a question about a
+// node that is itself still to be retried or settled (card 129's repeated-rejection ask).
 export function openAsk(run, n, questions, opts = {}) {
   if (!n) return [];
   let qs = (questions || []).filter((q) => q && (q.question || q.unknown)
@@ -258,7 +260,7 @@ export function openAsk(run, n, questions, opts = {}) {
   // carry that decision as an open question and the answer would arrive too late to be a rule.
   // Rewired into whichever list originally named the node - a data (`deps`) consumer stays a
   // data consumer, an order-only (`after`) one stays order-only.
-  for (const c of story ? [] : consumers) {
+  for (const c of story || opts.consumers === false ? [] : consumers) {
     if (c.deps.includes(n.node_id)) c.deps = [...c.deps.filter((d) => d !== n.node_id), ...ids];
     if ((c.after || []).includes(n.node_id)) c.after = [...c.after.filter((d) => d !== n.node_id), ...ids];
   }

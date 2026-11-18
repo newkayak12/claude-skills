@@ -15,6 +15,9 @@ import { deliverStoryAnswers, storyAsksOf } from './taskmanager-asks.mjs';
 import { reserveSpawn, respawnDriver, spawning } from './taskmanager-claims.mjs';
 import { noDriver } from './taskmanager-worktree.mjs';
 import { pendingRejudgeAt } from './taskmanager-repair.mjs';
+import { parkCapacity } from './capacity-reset.mjs';
+import { recordFailureKind } from './failure-kind.mjs';
+import { stopNotice } from './resume.mjs';
 
 // ---------- child driver processes ----------
 
@@ -303,7 +306,8 @@ export function serviceDeadDriver(task, child, nodeId) {
   } else if (cs.state === 'blocked' && run.routing_blocked_capacity && !child.waiting_capacity) {
     // Blocked only on spent vendor credit (the broker's routing_blocked_capacity): the same
     // park a usage-limit death gets, not a fold - a retry would probe the same empty account.
-    child.waiting_capacity = { reason: String(run.routing_blocked_capacity).slice(0, 500), since: Date.now() };
+    child.waiting_capacity = parkCapacity(child.last_capacity || null, String(run.routing_blocked_capacity).slice(0, 500), Date.now());
+    recordFailureKind(task, task.nodes.find((x) => x.node_id === nodeId) || { node_id: nodeId }, 'capacity', { via: 'park' });
     record(task, { event: 'child_driver_capacity', task_id: task.run_id, node_id: nodeId, pid: driver.pid, reason: child.waiting_capacity.reason.slice(0, 300), at_probe: true });
     return true;
   } else if (cs.state !== 'running') {
@@ -314,7 +318,8 @@ export function serviceDeadDriver(task, child, nodeId) {
   const usage = driverUsageLimitText(driver);
   const entry = { pid: driver.pid, exit: driverExitInfo(driver), at: Date.now(), stderr_tail: (usage || tail).slice(-300) };
   if (usage) {
-    child.waiting_capacity = { reason: usage.slice(0, 500), since: Date.now() };
+    child.waiting_capacity = parkCapacity(child.last_capacity || null, usage.slice(0, 500), Date.now());
+    recordFailureKind(task, task.nodes.find((x) => x.node_id === nodeId) || { node_id: nodeId }, 'capacity', { via: 'park' });
     record(task, { event: 'child_driver_capacity', task_id: task.run_id, node_id: nodeId, pid: driver.pid, reason: usage.slice(0, 300) });
     return true;
   }
@@ -488,6 +493,19 @@ function spawnDaemon(task, { reset = false } = {}) {
   });
 }
 
+// A person's action on an ended task (tm_retry, an ask answer): clear exhausted and, when the
+// manager graph reads running and no daemon is alive or spawning, give it a fresh daemon with a
+// fresh budget. Runs inside the caller's transaction (spawnDaemon spawns after the commit).
+function resumeDaemon(task, { reason, node_id } = {}) {
+  if (task.daemon) task.daemon.exhausted = false;
+  if (noDaemon()) return { spawned: false };
+  if (managerState(task).state !== 'running') return { spawned: false };
+  if (task.daemon && (driverAlive(task.daemon) || spawning(task.daemon))) return { spawned: false };
+  const spawned = !!spawnDaemon(task, { reset: true });
+  if (spawned) record(task, { event: 'daemon_resumed', task_id: task.run_id, reason, node_id: node_id || null });
+  return { spawned };
+}
+
 // The size-L state a dead daemon past its restart budget leaves: nothing respawns it, so the
 // caller is told the way out (tm_retry's bare route, retryTask). Null while the daemon is fine.
 function daemonExhaustedNext(task) {
@@ -625,6 +643,10 @@ export function serviceDaemon(task) {
   if (task.daemon && (task.daemon.restarts || 0) >= budget) {
     task.daemon.exhausted = true;
     record(task, { event: 'daemon_exhausted', task_id: task.run_id, restarts: task.daemon.restarts, stderr: driverStderrTail(task.daemon) });
+    // Built from the state after exhausted is set: taskState reads blocked now, `st` read running.
+    const now = taskState(task);
+    const notice = stopNotice(task, now.state, now.reason);
+    if (notice) record(task, notice);
     saveRun(task);
     return true;
   }
@@ -633,4 +655,4 @@ export function serviceDaemon(task) {
   return true;
 }
 
-export { currentSessionId, daemonExhaustedNext, driverExitInfo, driverUsageLimitText, killDriver, nextSpawnAttempt, spawnChildDriver, spawnDaemon };
+export { currentSessionId, daemonExhaustedNext, driverExitInfo, driverUsageLimitText, killDriver, nextSpawnAttempt, resumeDaemon, spawnChildDriver, spawnDaemon };

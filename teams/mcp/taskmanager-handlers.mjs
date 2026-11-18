@@ -16,7 +16,8 @@ import { budgetStatus, ensureAutoParallel } from './taskmanager-budget.mjs';
 import { cleanTask, noDriver, packageOf } from './taskmanager-worktree.mjs';
 import { clearCapacity, fileDefects, integrateToRepair, openRepair } from './taskmanager-repair.mjs';
 import { createTask, mustFindTask, sharedSizeSNote, withTask } from './taskmanager-stages.mjs';
-import { daemonExhaustedNext, driverStderrTail, managerState, nextSpawnAttempt, noDaemon, serviceDaemon, spawnDaemon, taskState } from './taskmanager-drivers.mjs';
+import { daemonExhaustedNext, driverStderrTail, managerState, nextSpawnAttempt, noDaemon, resumeDaemon, serviceDaemon, taskState } from './taskmanager-drivers.mjs';
+import { blockedNode } from './resume.mjs';
 import { finish, verdict } from './taskmanager-finish.mjs';
 import { harnessInfo, openHarnessRun, serviceHarnessRun, spawnHarnessDriver, toolNextHarness } from './taskmanager-harness.mjs';
 import { knownIds, retryAreas, retryPackage, retryShape, shapeAnalysis, shapeFeedback } from './taskmanager-plan.mjs';
@@ -984,17 +985,25 @@ function retryTask(task, a) {
   }
   // A size-L task whose daemon died past driver_restarts with its manager graph still running:
   // nothing is wrong with the shape, so a bare tm_retry gives the daemon a fresh budget on the
-  // same run instead of re-planning. A graph that is itself blocked falls through to retryShape.
+  // same run instead of re-planning. A graph that is itself blocked continues from the node that
+  // stopped it (blockedNode), below.
   const noSelector = a.package_id == null && a.repair !== true && !(Array.isArray(a.repackage) && a.repackage.length);
-  if (noSelector && !task.s_run && !task.harness_run && task.daemon && task.daemon.exhausted === true
-    && !driverAlive(task.daemon) && managerState(task).state === 'running') {
-    task.daemon.exhausted = false;
-    task.daemon.restarts = 0;
-    const spawned = noDaemon() ? false : spawnDaemon(task, { reset: true });
+  const at = blockedNode(task);
+  // Every retried route ends here: the person acted, so the daemon runs again (a settled graph
+  // starts none). node_id is the node the retry continued from.
+  const withDaemon = (reply) => {
+    const node_id = at ? at.node.node_id : undefined;
+    const daemon = resumeDaemon(task, { reason: 'tm_retry', node_id });
     saveRun(task);
-    if (!spawned && !noDaemon()) return { task_id: task.run_id, target: 'daemon', retried: false, reason: 'the daemon could not be started (task directory gone or a spawn already under way)' };
+    return { ...reply, ...(node_id ? { node_id } : {}), daemon };
+  };
+  if (noSelector && !task.s_run && !task.harness_run && task.daemon
+    && !driverAlive(task.daemon) && managerState(task).state === 'running') {
+    const daemon = resumeDaemon(task, { reason: 'tm_retry', node_id: undefined });
+    saveRun(task);
+    if (!daemon.spawned && !noDaemon()) return { task_id: task.run_id, target: 'daemon', retried: false, reason: 'the daemon could not be started (task directory gone or a spawn already under way)' };
     record(task, { event: 'tm_retry', task_id: task.run_id, target: 'daemon' });
-    return { task_id: task.run_id, target: 'daemon', retried: true };
+    return { task_id: task.run_id, target: 'daemon', retried: true, daemon };
   }
   // Two children pass and the merge fails: that is nobody's failure but the shape's. The
   // packages that collided go back to shape as one instruction - make them one package, or
@@ -1014,7 +1023,8 @@ function retryTask(task, a) {
     ].filter(Boolean).join('\n- ');
     const out = retryShape(task, fb);
     record(task, { event: out.attempt ? 'tm_repackage' : 'tm_settle', task_id: task.run_id, packages: ids, attempt: out.attempt });
-    return { task_id: task.run_id, target: 'shape', repackage: ids, retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable };
+    const reply = { task_id: task.run_id, target: 'shape', repackage: ids, retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable };
+    return out.attempt ? withDaemon(reply) : reply;
   }
   // An integrate that refused over a seam has no package to blame: reopening one puts the child
   // back in its own worktree, where the offending claim is still true and the defect is not
@@ -1025,25 +1035,40 @@ function retryTask(task, a) {
     if (target.error) throw new Error(target.error);
     const out = openRepair(task, target.node);
     record(task, { event: out.package_id ? 'tm_repair' : 'tm_settle', task_id: task.run_id, package_id: out.package_id, integrate: target.node.node_id });
-    return { task_id: task.run_id, target: out.package_id || target.node.node_id, package_id: out.package_id || undefined, repair: true,
+    const reply = { task_id: task.run_id, target: out.package_id || target.node.node_id, package_id: out.package_id || undefined, repair: true,
       repairs: target.node.node_id, retried: !!out.package_id, attempt: out.package_id ? 1 : undefined,
       reason: out.reason, unreachable: out.unreachable };
+    return out.package_id ? withDaemon(reply) : reply;
   }
-  if (!a.package_id) {
-    // Before shape exists, "retry the plan" means the plan stage's feature split (C2).
-    const split = task.nodes.filter((n) => (n.stage === 'areas' || n.stage === 'areas-critique') && n.state === 'failed' && n.result && !n.final).pop();
-    if (split && !task.nodes.some((n) => n.stage === 'shape')) {
+  // A bare call continues from the node that stopped the graph, whatever kind it is; it reshapes
+  // only when that node is itself a shape/critique.
+  if (!a.package_id && !(at && at.route === 'package')) {
+    const route = at ? at.route : null;
+    if (route === 'areas') {
+      const split = at.node;
       const out = retryAreas(task, [split.result.reason || '', ...(split.result.area_problems || []), ...(split.result.blocking || [])].filter(Boolean).join('\n- '));
       saveRun(task);
       record(task, { event: out.attempt ? 'tm_retry' : 'tm_settle', task_id: task.run_id, target: 'areas', attempt: out.attempt });
-      return { task_id: task.run_id, target: 'areas', retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable };
+      const reply = { task_id: task.run_id, target: 'areas', retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable };
+      return out.attempt ? withDaemon(reply) : reply;
     }
-    const source = task.nodes.filter((n) => (n.stage === 'critique' || n.stage === 'shape') && n.state === 'failed' && n.result).pop();
-    const out = retryShape(task, source && source.result ? shapeFeedback(source) : '');
-    record(task, { event: out.attempt ? 'tm_retry' : 'tm_settle', task_id: task.run_id, target: 'shape', attempt: out.attempt });
-    return { task_id: task.run_id, target: 'shape', retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable };
+    if (route === 'shape') {
+      const source = at.node;
+      const out = retryShape(task, source.result ? shapeFeedback(source) : '');
+      record(task, { event: out.attempt ? 'tm_retry' : 'tm_settle', task_id: task.run_id, target: 'shape', attempt: out.attempt });
+      const reply = { task_id: task.run_id, target: 'shape', retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable };
+      return out.attempt ? withDaemon(reply) : reply;
+    }
+    if (route === 'repair') {
+      const out = openRepair(task, at.node);
+      record(task, { event: out.package_id ? 'tm_repair' : 'tm_settle', task_id: task.run_id, package_id: out.package_id, integrate: at.node.node_id });
+      const reply = { task_id: task.run_id, target: out.package_id || at.node.node_id, package_id: out.package_id || undefined, repair: true,
+        repairs: at.node.node_id, retried: !!out.package_id, attempt: out.package_id ? 1 : undefined, reason: out.reason, unreachable: out.unreachable };
+      return out.package_id ? withDaemon(reply) : reply;
+    }
+    return { task_id: task.run_id, retried: false, reason: 'nothing to continue: the task has no failed node to retry (tm_next says what it waits on)' };
   }
-  const pid = String(a.package_id);
+  const pid = a.package_id != null ? String(a.package_id) : String(at.node.subgoal_id);
   // A package id the shape never named would open a phantom package with a dispatch that can
   // only fail. The first task to reach a failed integrate probed `package_id: "integrate"`.
   // Planning and QA cards are packages too (C2/C7): tm_retry({package_id: "PLAN-F2"}) reopens one.
@@ -1054,7 +1079,8 @@ function retryTask(task, a) {
   const fb = last && last.result ? [last.result.reason || '', ...(last.result.gaps || [])].filter(Boolean).join('\n- ') : '';
   const out = retryPackage(task, pid, fb);
   record(task, { event: out.attempt ? 'tm_retry' : 'tm_settle', task_id: task.run_id, package_id: pid, attempt: out.attempt });
-  return { task_id: task.run_id, target: pid, package_id: pid, retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable };
+  // A spent budget settles the graph: resumeDaemon starts a daemon only if it still reads running.
+  return withDaemon({ task_id: task.run_id, target: pid, package_id: pid, retried: !!out.attempt, attempt: out.attempt || undefined, reason: out.reason, unreachable: out.unreachable });
 }
 
 function toolFile(a) {

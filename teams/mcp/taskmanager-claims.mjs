@@ -16,11 +16,12 @@ import { touchMarker } from './engage.mjs';
 import { AIMD_START, closeFailedPlanning, enforceBudget, ensureAutoParallel, recordAutoParallelTick, updateAutoParallel } from './taskmanager-budget.mjs';
 import { answerText, finish, verdict } from './taskmanager-finish.mjs';
 import { briefingPath, composeTaskPrompt, writeManagerBriefing } from './taskmanager-prompts.mjs';
-import { daemonExhaustedNext, killDriver, serviceDeadDriver, serviceStalledDriver } from './taskmanager-drivers.mjs';
+import { daemonExhaustedNext, killDriver, managerState, resumeDaemon, serviceDeadDriver, serviceStalledDriver } from './taskmanager-drivers.mjs';
+import { blockedNode } from './resume.mjs';
 import { delegateIfSmall, requireRunnable, withHarnessFields } from './taskmanager-handlers.mjs';
 import { foldChild, openChild, prepareIntegration } from './taskmanager-children.mjs';
 import { noDriver, packageOf, worktreeGoneStop } from './taskmanager-worktree.mjs';
-import { preparePlanIntegration } from './taskmanager-plan.mjs';
+import { preparePlanIntegration, retryPackage } from './taskmanager-plan.mjs';
 import { resumeParkedDriver, storyAnswerText, storyAskAnswered } from './taskmanager-asks.mjs';
 import { toolNextHarness, toolNextSRun } from './taskmanager-harness.mjs';
 import { withTask } from './taskmanager-stages.mjs';
@@ -828,7 +829,27 @@ function toolSubmitHumanManager(task, key, nodeId, rawPayload) {
   const verdictOut = finish(task, n, payload);
   record(task, { event: 'tm_submit_human', task_id: task.run_id, key, node_id: nodeId, ...(n.ask_id ? { ask_id: n.ask_id } : {}), stage_ok: verdictOut.stage_ok === true, answer: answerText(rawPayload) });
   if (story && story.state === 'forwarded') storyAskAnswered(task, story, { answer: storyAnswer, by: 'person', route: 'forward' });
-  return { task_id: task.run_id, key, node_id: nodeId, state: n.state, result: n.result };
+  const retry = continueBlockedAfterAnswer(task, nodeId, answerText(rawPayload));
+  return { task_id: task.run_id, key, node_id: nodeId, state: n.state, result: n.result, ...(retry ? { retry } : {}) };
+}
+
+// An answer on an ended task: a running graph gets a fresh daemon (resumeDaemon, spawned after
+// commit). A graph that reads blocked continues from the blocked package the way a bare tm_retry
+// does (retryPackage), the answer riding in as the new attempt's feedback. Returns the retry
+// outcome when the blocked route was taken, else null.
+function continueBlockedAfterAnswer(task, nodeId, answer) {
+  const at = managerState(task).state === 'blocked' ? blockedNode(task) : null;
+  if (!at || at.route !== 'package') {
+    resumeDaemon(task, { reason: 'ask_answered', node_id: nodeId });
+    return null;
+  }
+  const pid = String(at.node.subgoal_id);
+  const r = at.node.result || {};
+  const fb = [r.reason || '', ...(r.gaps || []), `Answer to your question: ${answer}`].filter(Boolean).join('\n- ');
+  const out = retryPackage(task, pid, fb);
+  record(task, { event: out.attempt ? 'tm_retry' : 'tm_settle', task_id: task.run_id, package_id: pid, attempt: out.attempt, reason: 'ask_answered' });
+  resumeDaemon(task, { reason: 'ask_answered', node_id: at.node.node_id }); // spawns only if the graph still reads running
+  return { retried: !!out.attempt, package_id: pid, node_id: at.node.node_id, ...(out.attempt ? { attempt: out.attempt } : { reason: out.reason, unreachable: out.unreachable }) };
 }
 
 function toolSubmitHuman(task, a) {
@@ -907,6 +928,7 @@ function toolSubmitHuman(task, a) {
   // alive, and that driver picks the answered node up on its next team_next. A second driver on
   // the same run would dispatch the same ready nodes twice.
   resumeParkedDriver(task, dispatch.node_id, dispatch.child, 'human_submitted'); // inside toolSubmit's transaction
+  resumeDaemon(task, { reason: 'ask_answered', node_id: nodeId });
   return { task_id: task.run_id, key, node_id: nodeId, state: done ? 'done' : 'failed', result };
 }
 

@@ -1,6 +1,6 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { resetInstant, capacityWait } from '../mcp/capacity-reset.mjs';
+import { resetInstant, capacityWait, parkCapacity } from '../mcp/capacity-reset.mjs';
 
 // The host zone is pinned in-process: Asia/Seoul is UTC+9 all year, so every expectation below is
 // written as an explicit UTC instant, independent of the code under test.
@@ -103,4 +103,61 @@ test('a stated instant already past on a re-park takes the doubling fallback', (
   const since = utc(2026, 10, 11);
   assert.equal(capacityWait({ reason: 'resets Nov 10 at 6pm', since, firstSince, parks: 2 }), since + 60 * MIN);
   assert.equal(capacityWait({ reason: 'resets Nov 10 at 6pm', since, firstSince, parks: 3 }), since + 120 * MIN);
+});
+
+const R6 = "You've hit your weekly limit · resets Nov 10 at 6pm (UTC)";
+const S0 = Date.parse('2026-11-09T12:00:00Z');
+
+test('card129 U1.P1 a first park starts the wait', () => {
+  assert.deepEqual(parkCapacity(null, R6, S0), { reason: R6, since: S0, first_since: S0, parks: 1 });
+});
+
+test('card129 U1.P2 a re-park of the same stated time keeps first_since and counts up', () => {
+  const prev = { reason: R6, since: S0, first_since: S0, parks: 1, cleared_at: S0 + 5 * MIN };
+  const now = S0 + 33 * MIN;
+  assert.deepEqual(parkCapacity(prev, R6, now), { reason: R6, since: now, first_since: S0, parks: 2 });
+});
+
+test('card129 U1.P3 a different stated time restarts', () => {
+  const prev = { reason: R6, since: S0, first_since: S0, parks: 1 };
+  const now = S0 + 33 * MIN;
+  const other = "You've hit your weekly limit · resets Nov 11 at 6pm (UTC)";
+  assert.deepEqual(parkCapacity(prev, other, now), { reason: other, since: now, first_since: now, parks: 1 });
+});
+
+test('card129 U1.P4 a stated instant already passed restarts', () => {
+  const prev = { reason: R6, since: S0, first_since: S0, parks: 2 };
+  const now = Date.parse('2026-11-10T18:05:00Z');
+  assert.deepEqual(parkCapacity(prev, R6, now), { reason: R6, since: now, first_since: now, parks: 1 });
+});
+
+test('card129 U1.P5 two unstated parks, cleared 10 minutes before, carry', () => {
+  const prev = { reason: 'usage limit reached', since: S0, first_since: S0, parks: 1, cleared_at: S0 + 30 * MIN };
+  const now = S0 + 40 * MIN;
+  assert.deepEqual(parkCapacity(prev, 'usage limit reached', now), { reason: 'usage limit reached', since: now, first_since: S0, parks: 2 });
+});
+
+test('card129 U1.P4b a restart after the stated instant waits the 30-minute backoff, not a year', () => {
+  const now = Date.parse('2026-11-10T18:05:00Z');
+  const prev = { reason: R6, since: S0, first_since: S0, parks: 2 };
+  const p = parkCapacity(prev, R6, now);
+  assert.equal(capacityWait({ ...p, firstSince: p.first_since }), now + 30 * MIN);
+  const late = parkCapacity(null, R6, now); // a late first park
+  assert.equal(capacityWait({ ...late, firstSince: late.first_since }), now + 30 * MIN);
+});
+
+test('card129 U1.P4c a zone-less time reads in the host zone in capacityWait (Asia/Seoul pinned above)', () => {
+  const since = Date.parse('2026-11-09T00:00:00Z'); // 09:00 Seoul
+  assert.equal(capacityWait({ reason: 'resets 5:40pm', since, firstSince: since, parks: 1 }), Date.parse('2026-11-09T08:40:00Z'));
+});
+
+test('card129 U1.P4d a dated reset nine days out is still honoured; only a year roll backs off', () => {
+  const first = Date.parse('2026-11-01T00:00:00Z');
+  assert.equal(capacityWait({ reason: R6, since: first, firstSince: first, parks: 1 }), Date.parse('2026-11-10T18:00:00Z'));
+});
+
+test('card129 U1.P6 an unstated re-park cleared 5 hours before restarts', () => {
+  const prev = { reason: 'usage limit reached', since: S0, first_since: S0, parks: 3, cleared_at: S0 + 30 * MIN };
+  const now = S0 + 30 * MIN + 5 * 60 * MIN;
+  assert.deepEqual(parkCapacity(prev, 'usage limit reached', now), { reason: 'usage limit reached', since: now, first_since: now, parks: 1 });
 });

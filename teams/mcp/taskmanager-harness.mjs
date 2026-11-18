@@ -12,6 +12,8 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { touchMarker } from './engage.mjs';
 import { driverExitInfo, driverStderrTail, driverUsageLimitText, nextSpawnAttempt, spawnChildDriver, taskState } from './taskmanager-drivers.mjs';
 import { excludeMarkers, git, noDriver } from './taskmanager-worktree.mjs';
+import { parkCapacity } from './capacity-reset.mjs';
+import { recordFailureKind } from './failure-kind.mjs';
 import { reserveSpawn, respawnDriver, spawning } from './taskmanager-claims.mjs';
 
 // ---------- size S on the development harness (S1/S1a) ----------
@@ -253,7 +255,8 @@ export function serviceHarnessRun(task) {
   if ((v && v.finished) || !d || driverAlive(d) || h.waiting_capacity || task.budget_stopped || spawning(h)) return changed();
   const usage = driverUsageLimitText(d);
   if (usage) {
-    h.waiting_capacity = { reason: usage.slice(0, 500), since: Date.now() };
+    h.waiting_capacity = parkCapacity(h.last_capacity || null, usage.slice(0, 500), Date.now());
+    recordFailureKind(task, { node_id: 'S' }, 'capacity', { via: 'park' });
     record(task, { event: 'child_driver_capacity', task_id: task.run_id, node_id: 'S', pid: d.pid, reason: usage.slice(0, 300) });
     return true;
   }

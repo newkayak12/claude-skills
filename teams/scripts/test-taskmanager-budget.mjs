@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import * as facade from '../mcp/taskmanager.mjs';
 import * as mod from '../mcp/taskmanager-budget.mjs';
 import { renderHarnessReport } from '../mcp/docs.mjs';
+import { unfinishedWork } from '../mcp/taskstate.mjs';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -280,4 +281,70 @@ test('daemon tick: a size-S run inside grace is not killed', async () => {
   const r = await daemonTickCase({ agoMin: 0, graceUsd: 1e9 });
   assert.equal(r.alive, true);
   assert.equal(r.killed, 0);
+});
+
+// ---------- closeFailedPlanning: the deciding attempt (card 129, E-89982ed5) ----------
+const pNode = (node_id, stage, subgoal_id, attempt, state, extra = {}) => ({
+  node_id, stage, subgoal_id, attempt, deps: [], after: [], state, final: state === 'failed' || state === 'done', result: null, ...extra,
+});
+function closePlanning(task) {
+  const root = mkdtempSync(join(tmpdir(), 'cfp-'));
+  const was = process.env.HARNESS_TASKS_DIR;
+  process.env.HARNESS_TASKS_DIR = root;
+  try {
+    const closed = mod.closeFailedPlanning(task);
+    return { closed, skipped: task.nodes.filter((n) => n.state === 'skipped') };
+  } finally {
+    if (was === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = was;
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+const planTask = (nodes) => ({ run_id: 'cfp-test', nodes, planning_pkgs: [{ id: 'PLAN-F2' }] });
+
+test('closeFailedPlanning names the deciding attempt: E-89982ed5 replay picks plan-integrate:3, not dispatch:PLAN-F2:2', () => {
+  const task = planTask([
+    pNode('dispatch:PLAN-F2:1', 'dispatch', 'PLAN-F2', 1, 'done'),
+    pNode('accept:PLAN-F2:1', 'accept', 'PLAN-F2', 1, 'failed', { result: { reason: 'gaps' } }),
+    pNode('dispatch:PLAN-F2:2', 'dispatch', 'PLAN-F2', 2, 'failed', { result: { reason: 'no retry left' } }),
+    pNode('dispatch:PLAN-F2:3', 'dispatch', 'PLAN-F2', 3, 'done'),
+    pNode('accept:PLAN-F2:3', 'accept', 'PLAN-F2', 3, 'done', { result: { match_pct: 92 } }),
+    pNode('plan-integrate:3', 'plan-integrate', null, 3, 'failed', { result: { reason: 'integrate refused' } }),
+    pNode('shape', 'shape', null, 1, 'unreachable', { final: false }),
+  ]);
+  const { closed, skipped } = closePlanning(task);
+  assert.equal(closed, true);
+  assert.equal(task.planning_failed.node_id, 'plan-integrate:3');
+  assert.deepEqual(skipped.map((n) => n.node_id), ['shape']);
+  assert.match(skipped[0].result.reason, /planning stopped at plan-integrate:3 with no retry left/);
+  const w = unfinishedWork(task);
+  assert.equal(w.partial, true);
+  assert.ok(w.partial_reasons[0].startsWith('planning stopped at plan-integrate:3'));
+  assert.ok(!w.partial_reasons.join('\n').includes('PLAN-F2:2'));
+});
+
+test('closeFailedPlanning control: a planning card whose last attempt failed final is still chosen', () => {
+  const task = planTask([
+    pNode('dispatch:PLAN-F2:1', 'dispatch', 'PLAN-F2', 1, 'failed', { result: { reason: 'first' } }),
+    pNode('dispatch:PLAN-F2:2', 'dispatch', 'PLAN-F2', 2, 'failed', { result: { reason: 'second' } }),
+    pNode('shape', 'shape', null, 1, 'unreachable', { final: false }),
+  ]);
+  assert.equal(closePlanning(task).closed, true);
+  assert.equal(task.planning_failed.node_id, 'dispatch:PLAN-F2:2');
+  assert.equal(task.planning_failed.reason, 'second');
+});
+
+test('closeFailedPlanning and unfinishedWork say rejected twice for the same gaps when the deciding node failed on a repeat', () => {
+  const task = planTask([
+    pNode('plan-integrate:1', 'plan-integrate', null, 1, 'failed', { result: { reason: 'r1' } }),
+    pNode('plan-integrate:2', 'plan-integrate', null, 2, 'failed', {
+      result: { reason: 'rejected twice for the same gaps: PLAN-F2: F2-US-1', failure_kind: 'repeated-identical-rejection' },
+    }),
+    pNode('shape', 'shape', null, 1, 'unreachable', { final: false }),
+  ]);
+  const { skipped } = closePlanning(task);
+  assert.equal(task.planning_failed.node_id, 'plan-integrate:2');
+  assert.equal(task.planning_failed.failure_kind, 'repeated-identical-rejection');
+  assert.equal(skipped[0].result.reason, 'skipped: planning stopped at plan-integrate:2: rejected twice for the same gaps');
+  assert.ok(unfinishedWork(task).partial_reasons[0].startsWith('planning stopped at plan-integrate:2: rejected twice for the same gaps: '));
+  assert.ok(!skipped[0].result.reason.includes('no retry left'));
 });

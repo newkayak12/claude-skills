@@ -91,6 +91,89 @@ export function gapSignature(result, floor) {
   return [...set].sort().join('|');
 }
 
+// ---------- the repeat comparator (card 129 U2) ----------
+//
+// Two rejections are "the same" when the second names nothing the first did not. Gaps are judge
+// prose and get reworded every round, so the comparison is on what they POINT at: a story / AC /
+// declared id when the gap names one, else the gap's own text with line refs and punctuation gone.
+// gapSignature above stays the exact-text signature classifyFailure uses.
+
+const ID_RE = /\b(?:[A-Z][A-Z0-9]*-)?(?:US|AC)-\d+\b|\bA-\d+\b/g;
+const PAIR_RE = /^\s*(\S+)\s+vs\s+(\S+)/i;
+
+function norm(s) {
+  return String(s ?? '').toLowerCase()
+    .replace(/:\d+(?:[-/:]\d+)*/g, '').replace(/\bl\.\s*\d+/g, '').replace(/\blines?\s+\d+(?:-\d+)?/g, '')
+    .replace(/\s+/g, ' ').trim().replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, '');
+}
+
+function gapKeys(gap, prefix) {
+  const t = entryText(gap);
+  const ids = t.match(ID_RE);
+  if (ids) return ids.map((id) => `id:${prefix}${id}`);
+  const n = norm(t);
+  return n ? [`gap:${prefix}${n}`] : [];
+}
+
+const contradictionKey = (c) => {
+  const t = entryText(c);
+  const m = PAIR_RE.exec(t);
+  if (!m) return `contra:${norm(t)}`;
+  const x = m[1].replace(/[:;,.)]+$/, '');
+  const y = m[2].replace(/[:;,.)]+$/, '');
+  return `pair:${[x, /^itself$/i.test(y) ? x : y].sort().join('|')}`;
+};
+
+const retryEntries = (result) => flat(result?.retry).filter((x) => x && typeof x === 'object').map((x) => ({ card: x.card != null ? String(x.card) : '', gaps: flat(x.gaps).map(entryText).filter(Boolean) }));
+
+// The set of things a rejection objected to. Empty for an accept, and for a refusal that said
+// nothing comparable: an empty set never matches.
+export function rejectionKeys(result, { floor, planIntegrate } = {}) {
+  const keys = new Set();
+  if (!result || typeof result !== 'object') return keys;
+  if (planIntegrate) {
+    if (result.accept === true) return keys;
+    for (const { card, gaps } of retryEntries(result)) {
+      keys.add(`card:${card}`);
+      for (const g of gaps) gapKeys(g, `${card}:`).forEach((k) => keys.add(k));
+    }
+    flat(result.contradictions).forEach((c) => keys.add(contradictionKey(c)));
+    flat(result.duplicate_ids).forEach((d) => d && d.id != null && keys.add(`dup:${d.id}`));
+    flat(result.placeholder_acceptance).forEach((p) => p && keys.add(`placeholder:${p.card}:${p.story}`));
+    flat(result.uncovered).forEach((u) => norm(entryText(u)) && keys.add(`uncovered:${norm(entryText(u))}`));
+    return keys;
+  }
+  for (const g of [...flat(result.gaps), ...flat(result.spec_drift)]) gapKeys(g, '').forEach((k) => keys.add(k));
+  const refused = result.accept !== true || (Number.isFinite(floor) && Number.isFinite(result.match_pct) && result.match_pct < floor);
+  if (!keys.size && refused) {
+    const why = norm(text(result.judge_reason) || text(result.reason));
+    if (why) keys.add(`reason:${why}`);
+  }
+  return keys;
+}
+
+// What a repeat names, or null when the retry is still new information. A repeat is a rejection
+// whose every key the previous one already had; one new key (a story id, a card, a pair, an
+// id-less gap) buys the retry.
+export function repeatedGaps(cur, prev, opts = {}) {
+  const now = rejectionKeys(cur, opts);
+  const before = rejectionKeys(prev, opts);
+  if (!now.size || !before.size || [...now].some((k) => !before.has(k))) return null;
+  const named = [];
+  if (opts.planIntegrate) {
+    for (const { card, gaps } of retryEntries(cur)) gaps.forEach((g) => named.push(`${card}: ${g}`));
+    flat(cur.contradictions).map(entryText).filter(Boolean).forEach((c) => named.push(c));
+    flat(cur.duplicate_ids).forEach((d) => d && d.id != null && named.push(`story id ${d.id} is defined by several cards`));
+    flat(cur.placeholder_acceptance).forEach((p) => p && named.push(`${p.card}: story ${p.story} has placeholder acceptance`));
+    flat(cur.uncovered).map(entryText).filter(Boolean).forEach((u) => named.push(`uncovered: ${u}`));
+    if (!named.length) retryEntries(cur).forEach((x) => named.push(x.card));
+  } else {
+    [...flat(cur.gaps), ...flat(cur.spec_drift)].map(entryText).filter(Boolean).forEach((g) => named.push(g));
+    if (!named.length) named.push(text(cur.judge_reason) || text(cur.reason));
+  }
+  return named;
+}
+
 export function classifyFailure(task, node, result, opts = {}) {
   if (capacityHit(result, opts)) return 'capacity';
   if (environmentHit(result, opts)) return 'environment';

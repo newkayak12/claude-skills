@@ -7,10 +7,15 @@ import { TEAM_DEFAULTS } from './teamconfig.mjs';
 import { existsSync } from 'node:fs';
 import { PACKAGE_CHAIN, bullets } from './taskmanager-stages.mjs';
 import { integrationTrees, noDriver, packageOf } from './taskmanager-worktree.mjs';
-import { replanPlanning, retryAreas, retryPackage, retryShape, shapeFeedback, touchesOverlap } from './taskmanager-plan.mjs';
+import { escalateRepeated, escalationOutcome, nextPackageAttempt, replanPlanning, retryAreas, retryPackage, retryShape, shapeFeedback, stopPackage, touchesOverlap } from './taskmanager-plan.mjs';
 import { nextSpawnAttempt, spawnChildDriver } from './taskmanager-drivers.mjs';
 import { respawnDriver } from './taskmanager-claims.mjs';
+import { capacityWait } from './capacity-reset.mjs';
 import { spawnHarnessDriver } from './taskmanager-harness.mjs';
+import { classifyFailure, environmentEvidence, recordFailureKind, repeatedGaps } from './failure-kind.mjs';
+
+// foldChild's own "the child's run file is gone" reason is item 7 (cause unverified): it keeps the retry.
+const NO_RUN_FILE_RE = /has no file under/i;
 
 // ---------- repair: the package whose worktree is the integration tree ----------
 
@@ -264,6 +269,17 @@ export function autoReshape(task) {
   return !!out.attempt;
 }
 
+// The gaps a failed accept repeats from this package's failed accept one attempt earlier, or null.
+// Only an accept is a rejection: a dispatch that failed (a child that blocked, a driver that died)
+// carries the same words attempt after attempt without a judge having refused anything.
+function repeatedRejection(task, pid, failed) {
+  if (failed.stage !== 'accept') return null;
+  const attempt = failed.attempt || 1;
+  const prev = task.nodes.find((n) => n.subgoal_id === pid && n.stage === 'accept' && (n.attempt || 1) === attempt - 1 && n.state === 'failed' && n.result);
+  if (!prev) return null;
+  return repeatedGaps(failed.result, prev.result, { floor: task.goal_threshold });
+}
+
 export function autoRetryPackages(task) {
   // A stopped box dispatches nothing new (advanceDispatches), so a retry opened now could never
   // run - code-sprint-S2 opened PLAN attempt 3 after budget_stopped, and it sat pending. The
@@ -317,6 +333,8 @@ export function autoRetryPackages(task) {
         }
       }
       failed.final = true;
+      const envFound = failed.result.environment_findings;
+      if (Array.isArray(envFound) && envFound.length) recordFailureKind(task, failed, 'environment', { via: 'autoRetryPackages', findings: envFound });
       const out = settleQaRound(task);
       record(task, { event: out && out.filed ? 'daemon_defects_filed' : out && out.unresolved ? 'daemon_retry_settled' : 'daemon_defects_held', task_id: task.run_id, package_id: pid,
         ...(out && out.filed ? { filed: out.filed } : {}), ...(out && out.unresolved ? { reason: 'qa_rounds exhausted with unresolved defects' } : {}), failed_node: failed.node_id });
@@ -345,8 +363,57 @@ export function autoRetryPackages(task) {
       // package id at all - nothing left to file or wire. Fall through to the ordinary retry
       // below, same as before this existed.
     }
-    const fb = [failed.result.reason || '', ...(failed.result.gaps || [])].filter(Boolean).join('\n- ');
-    const out = retryPackage(task, pid, fb);
+    // card 129 U2: an environment failure (ENOSPC, a denied write, a tool denial) is not a defect of
+    // the work, so a blind retry as implement meets the same wall. Withhold it: the kind and the
+    // findings go on the node, and the package is settled like retryPackage's exhausted path so its
+    // pending accept and dependents do not wedge the task. tm_retry({package_id}) still reopens it.
+    if (failed.stage === 'dispatch') {
+      const envFound = Array.isArray(failed.result.environment_findings) ? failed.result.environment_findings : [];
+      const stderr = failed.result.driver_stderr;
+      const ownEnv = !NO_RUN_FILE_RE.test(String(failed.result.reason || '')) && classifyFailure(task, failed, failed.result, { stderr }) === 'environment';
+      if (envFound.length || ownEnv) {
+        const findings = envFound.length ? envFound : environmentEvidence({ result: failed.result, stderr });
+        recordFailureKind(task, failed, 'environment', { via: 'autoRetryPackages', findings });
+        if (((task.spec && task.spec.packages) || []).some((p) => !p.repair && String(p.id) === pid)) {
+          const ex = task.exhausted || (task.exhausted = { packages: [] });
+          if (!ex.packages.includes(pid)) ex.packages.push(pid);
+        }
+        const dead = task.nodes.filter((n) => n.subgoal_id === pid && n.state === 'failed' && !n.final);
+        dead.forEach((n) => settleFailure(task, n));
+        failed.final = true;
+        record(task, { event: 'daemon_retry_withheld', task_id: task.run_id, package_id: pid, failure_kind: 'environment', failed_node: failed.node_id, reason: `environment: ${findings[0]}`.slice(0, 400) });
+        saveRun(task);
+        changed = true;
+        continue;
+      }
+    }
+    // card 129: a repeated rejection (two in a row naming nothing new) escalates instead of retrying
+    // a third time. A card waiting on the person's answer is left alone; an answered one retries once
+    // more with the answer, or stops.
+    const outcome = escalationOutcome(task, failed);
+    if (outcome && outcome.waiting) continue;
+    const r = failed.result;
+    let fb = [r.reason || '', r.judge_reason || '', ...(r.gaps || []), ...(r.observations || []).map((o) => `observation: ${o}`)].filter(Boolean).join('\n- ');
+    let out;
+    if (outcome && outcome.stop) {
+      failed.result.reason = outcome.reason;
+      out = stopPackage(task, pid, outcome.reason);
+    } else {
+      if (outcome && outcome.retry) fb = [fb, `the person's answer: ${outcome.answer}`].join('\n- ');
+      const gaps = outcome ? null : repeatedRejection(task, pid, failed);
+      out = gaps
+        ? escalateRepeated(task, failed, {
+          target: pid, stage: failed.stage, gaps,
+          roundLeft: nextPackageAttempt(task, pid).spent <= task.max_retries,
+          stop: () => stopPackage(task, pid, failed.result.reason),
+        })
+        : retryPackage(task, pid, fb);
+    }
+    if (out.asked) {
+      saveRun(task);
+      changed = true;
+      continue;
+    }
     if (!out.attempt && pkg.phase === 'qa') rescueQaRound(task, pkg, out.unreachable || [], failed);
     record(task, {
       event: out.attempt ? 'daemon_retry_opened' : 'daemon_retry_settled', task_id: task.run_id,
@@ -377,6 +444,9 @@ function reopenCapacity(child) {
   saveRun(run);
 }
 
+// What a cleared park leaves behind, so the next park of the same wait carries first_since and parks.
+const lastPark = (w) => ({ reason: w.reason, first_since: w.first_since ?? w.since, parks: w.parks ?? 1, cleared_at: Date.now() });
+
 // Clears a parked-on-capacity driver (every waiting child, or one package's, or the s_run)
 // and respawns it on the same run_id - none of it counts against driver_restarts. Shared by
 // tm_retry({reset_capacity:true}) and the daemon's own autoResumeCapacity.
@@ -386,6 +456,7 @@ export function clearCapacity(task, packageId) {
     const h = task.harness_run;
     if (h && h.waiting_capacity && (!a.package_id || String(a.package_id) === 'S')) {
       record(task, { event: 'child_driver_capacity_cleared', task_id: task.run_id, node_id: 'S', was: h.waiting_capacity });
+      h.last_capacity = lastPark(h.waiting_capacity);
       delete h.waiting_capacity;
       if (!noDriver()) {
         const restarts = (h.driver && h.driver.restarts) || [];
@@ -403,6 +474,7 @@ export function clearCapacity(task, packageId) {
       if (n.stage !== 'dispatch' || n.state !== 'running' || !n.child || !n.child.waiting_capacity) continue;
       if (a.package_id && n.subgoal_id !== String(a.package_id)) continue;
       record(task, { event: 'child_driver_capacity_cleared', task_id: task.run_id, node_id: n.node_id, was: n.child.waiting_capacity });
+      n.child.last_capacity = lastPark(n.child.waiting_capacity);
       delete n.child.waiting_capacity;
       reopenCapacity(n.child);
       if (!noDriver()) {
@@ -468,7 +540,7 @@ export function autoResumeCapacity(task, now = Date.now()) {
   // warning line: a park the daemon never resumes would also never settle (nothing spends, so
   // the box never trips), and portfolio-consolidate's P1 delivered accepted work after its resume.
   if (task.budget_stopped) return false;
-  const due = (w) => w && now >= capacityResetAt(w.reason, w.since) + CAPACITY_GRACE_MS;
+  const due = (w) => w && now >= capacityWait({ reason: w.reason, since: w.since, firstSince: w.first_since ?? w.since, parks: w.parks ?? 1 }) + CAPACITY_GRACE_MS;
   let resumed = [];
   if (task.harness_run && due(task.harness_run.waiting_capacity)) resumed = resumed.concat(clearCapacity(task, 'S'));
   for (const n of task.nodes) {

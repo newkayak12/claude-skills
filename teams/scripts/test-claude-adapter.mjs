@@ -392,3 +392,22 @@ test('a detect run, or a failed adapter exit, never reads permission_denials', (
     assert.equal(quota.report.result, undefined);
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
+
+// card 129 U2.A: a denied Write/Edit is an environment failure the classifier can only see if the
+// result carries it. Bash denials keep riding as result.denied; stage_ok and the exit code do not move.
+test('card129 U2.A the envelope\'s file-write denials ride on the result as permission_denials', () => {
+  const f = fixture();
+  try {
+    const write = { tool_name: 'Write', tool_use_id: 'w1', tool_input: { file_path: '/w/src/a.mjs' } };
+    const r = gateRun(f, [write, denial('rm -rf x')]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.report.stage_ok, true);
+    assert.deepEqual(r.report.result.permission_denials, [write]);
+    assert.equal('denied' in r.report.result, false, 'a Bash denial the guard blocks on purpose is not a need');
+    const blocked = gateRun(f, [write, denial('node --test x.mjs')], { MOCK_PROSE: '1' });
+    assert.equal(blocked.report.result.blocked, 'tool denied');
+    assert.deepEqual(blocked.report.result.permission_denials, [write]);
+    const plain = gateRun(f, [denial('rm -rf x')]);
+    assert.equal('permission_denials' in plain.report.result, false);
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});

@@ -2415,11 +2415,11 @@ test('a goal gate accepting at 70 fails: most of the goal is not the goal', asyn
   }, { isolated: true });
 });
 
-test('a goal gate accepting just under the floor with no gaps named passes; naming a gap there fails (awake-beta-ref2)', async () => {
+test('a goal gate accepting under the floor fails with or without a named gap', async () => {
   await withRun(async ({ c, cwd, runId }) => {
     const gate = await toGoalGate(c, cwd, runId);
     const v = await c.call('team_submit', { run_id: runId, cwd, node_id: gate, payload: ok({ accept: true, match_pct: 88, gaps: [] }) });
-    assert.equal(v.state, 'done', 'disclosed weaknesses that do not block are not a rejection the judge never made');
+    assert.equal(v.state, 'failed', 'the number overrules the word, gaps or not');
   }, { isolated: true });
   await withRun(async ({ c, cwd, runId }) => {
     const gate = await toGoalGate(c, cwd, runId);
