@@ -1966,6 +1966,10 @@ def layout_options(tmp):
     px, py, pw, ph = box(t, "PicL")
     check(py + ph <= 394 - 6 + 0.5 and abs(pw / ph - 200 / 95) < 0.02 and notes,
           "a picture in a shortened panel is scaled to stay inside it, aspect kept: %s" % (box(t, "PicL"),))
+    t, ss, named = slots_of([sp("PanL", 40, 100, 400, 300, "문제", panel=True), pic("PicL", 140, 280, 200, 95)])
+    deck.fit_zones(t, ss, [("up", [named["PanL"]], 6.0, (40.0, 100.0, 400.0, 300.0))], 512.0)
+    check(box(t, "PanL")[3] == 294 and box(t, "PicL") == (140, 280, 200, 95),
+          "a picture still inside the shortened panel keeps its frame: %s" % (box(t, "PicL"),))
     col = [sp("Lead", 40, 100, 400, 40, "글"), sp("Next", 40, 150, 400, 40, "아래"),
            pic("Under", 40, 200, 200, 100), sp("Side", 600, 150, 300, 40, "옆"), sp("Band", 40, 515, 300, 15, "쪽")]
     t, ss, named = slots_of(col)

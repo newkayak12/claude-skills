@@ -3482,24 +3482,19 @@ def cmd_build(args):
         if front.get("captions", "").strip() == "into-picture":
             sw, sh = slide_size(pkg)
             layout_counts["captions"] += captions_into_pictures(spTree, sw, sh)
-        # render measured text crossing a critical zone: keep it (fit_zones), panels first, so
-        # `panel_margin:` refits their pictures, moves after, so a moved unit carries its picture
-        zfix = getattr(args, "zone_fixes", {}).get(i, [])
-        placed_ids = {id(el) for el, *_ in place_els if el is not None}
-        sb = safe_bottom_pt(md_path, slide_size(pkg)[1])
-        zlog = getattr(args, "zone_notes", None)
-        ups = [f for f in zfix if f[0] == "up"]
-        if ups:
-            n_, p_ = fit_zones(spTree, slots, ups, sb, placed_ids)
-            if zlog is not None:
-                zlog += ["page %d: %s" % (i, x) for x in n_] + ["! page %d: %s" % (i, x) for x in p_]
         if layout_counts["margin"] is not None:
             layout_counts["panels"] += pictures_to_panels(spTree, layout_counts["margin"], text_ends(spTree, slots),
                                                           skip={id(el) for el in drop_els if el is not None},
                                                           floors=getattr(args, "panel_floors", {}).get(i))
-        downs = [f for f in zfix if f[0] == "down"]
-        if downs:
-            n_, p_ = fit_zones(spTree, slots, downs, sb, placed_ids)
+        # render measured text crossing a critical zone: keep it (fit_zones) after the pictures are
+        # placed, so a shortened panel shrinks only a picture it no longer holds (refitting them all
+        # into the shorter panel cost page 8 3% of each picture's size, 2026-11-18), and a moved
+        # unit carries its picture
+        zfix = getattr(args, "zone_fixes", {}).get(i, [])
+        placed_ids = {id(el) for el, *_ in place_els if el is not None}
+        zlog = getattr(args, "zone_notes", None)
+        if zfix:
+            n_, p_ = fit_zones(spTree, slots, zfix, safe_bottom_pt(md_path, slide_size(pkg)[1]), placed_ids)
             if zlog is not None:
                 zlog += ["page %d: %s" % (i, x) for x in n_] + ["! page %d: %s" % (i, x) for x in p_]
         for el, sid, x, y, w, h, line in place_els:
