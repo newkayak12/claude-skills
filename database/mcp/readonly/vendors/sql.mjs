@@ -160,16 +160,19 @@ export function selectList(sql, d = DIALECTS.mysql) {
 // when the driver reports one ('' for a computed column, and for every column on Oracle). A source
 // column is matched by its name, so an alias does not help; a computed column is hidden when its own
 // expression or its name mentions one. When the expressions cannot be told apart (subquery, CTE, `*`,
-// @variables), any personal column named in the statement hides every computed column.
+// @variables), any personal column named in the statement hides every computed column — except in
+// SHOW and DESCRIBE, whose result is metadata (SHOW CREATE TABLE address names a table, not a column).
+// A source name is split into words too: a view column can be named get_decrypt(a.ord_tel).
+const METADATA = /^\s*(SHOW|DESCRIBE|DESC)\b/i;
 export function piiColumns(fields, sql, isPii = piiMatcher(), d = DIALECTS.mysql) {
   if (!isPii) return [];
   const words = (s) => String(s).split(/[^A-Za-z0-9_$]+/).filter(Boolean);
   const list = selectList(sql, d);
   const exprs = list && list.length === fields.length ? list : null;
-  const sqlHasPii = words(sql).some(isPii);
+  const sqlHasPii = !METADATA.test(sql) && words(sql).some(isPii);
   return fields
     .filter((f, i) => {
-      if (f.orgName) return isPii(f.orgName);
+      if (f.orgName) return words(f.orgName).some(isPii);
       if (words(f.name).some(isPii)) return true;
       return exprs ? words(exprs[i]).some(isPii) : sqlHasPii;
     })

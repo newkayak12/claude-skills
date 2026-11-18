@@ -28,6 +28,8 @@ Log in to dev, then show me the last 10 orders.
 - **Personal data stays out**: columns such as names, phones, addresses, post codes and email are
   dropped from every result by their source column, so an alias does not bring one back; the result
   lists them under `hidden`. A computed column is hidden only when its own expression reads one.
+  A view column named by its expression (`get_decrypt(a.ord_tel)`) is matched word by word, and any
+  `decrypt` column is hidden. SHOW and DESCRIBE are metadata: a table named `address` is shown.
   Oracle reports no source column, so there a column is matched by its name and its select-list expression.
   `--pii off` (`DBRO_PII`) turns it off; `--pii regex,regex` replaces the list.
 - **Query log**: every read goes to `~/.config/database-readonly-mcp/query.log` with string values

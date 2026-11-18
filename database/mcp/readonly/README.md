@@ -65,9 +65,11 @@ Every result drops personal-data columns and lists them under `hidden`. A column
 source name (`recv_nm AS who` is still hidden); a computed column is hidden when its own expression
 names one (`CONCAT(recv_nm, '') AS x`), so `COUNT(*)` next to a personal column in WHERE stays. When
 the expressions cannot be told apart (a subquery, CTE or derived table, `*`, `@variables`), any
-personal column named in the statement hides every computed column. Default patterns (`PII_DEFAULT` in `config.mjs`): phone/tel/hp/fax,
+personal column named in the statement hides every computed column — except SHOW and DESCRIBE, whose
+result is metadata (`SHOW CREATE TABLE address` is shown). A source name is matched word by word, so a
+view column named `get_decrypt(a.ord_tel)` is hidden. Default patterns (`PII_DEFAULT` in `config.mjs`): phone/tel/hp/fax,
 email, addr/address, post/zip codes, resident numbers, birth, passport, and person names such as
-`order_nm`, `recv_nm`, `sender_name`. `--pii off` (`DBRO_PII=off`) disables it; `--pii 'regex,regex'`
+`order_nm`, `recv_nm`, `sender_name`, and decrypt (`get_decrypt`). `--pii off` (`DBRO_PII=off`) disables it; `--pii 'regex,regex'`
 replaces the list.
 
 ## Direct mode settings

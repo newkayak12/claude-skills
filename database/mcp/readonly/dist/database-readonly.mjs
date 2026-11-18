@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // database-readonly MCP server, bundled by build.mjs — do not edit; edit the sources and run npm run build.
-// sources: 379690eca612ddd0
+// sources: 0f598961112e8f4a
 import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);
 import {
   DEFAULT_PORT,
@@ -16,7 +16,7 @@ import {
   resolveConfig,
   resolveValue,
   toInt
-} from "./chunks/chunk-M46VLRPB.mjs";
+} from "./chunks/chunk-HUUJICVI.mjs";
 
 // node_modules/ajv/dist/compile/codegen/code.js
 var require_code = __commonJS({
@@ -17260,10 +17260,10 @@ function createAudit({ dir = configDir(), max = 5 * 1024 * 1024, onError = () =>
 // server.mjs
 import { basename, dirname, join as join3 } from "node:path";
 var VENDORS = {
-  mysql: () => import("./chunks/mysql-NRYBCV76.mjs"),
-  mariadb: () => import("./chunks/mariadb-66T5DBEZ.mjs"),
-  postgres: () => import("./chunks/postgres-ZKA4TF4W.mjs"),
-  oracle: () => import("./chunks/oracle-FLQHB5C6.mjs")
+  mysql: () => import("./chunks/mysql-L57GI2N6.mjs"),
+  mariadb: () => import("./chunks/mariadb-VA5IA3N6.mjs"),
+  postgres: () => import("./chunks/postgres-CX2COL6Z.mjs"),
+  oracle: () => import("./chunks/oracle-7UY4GWZK.mjs")
 };
 var LABEL = { mysql: "MySQL", mariadb: "MariaDB", postgres: "PostgreSQL", oracle: "Oracle" };
 var READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };

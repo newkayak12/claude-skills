@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // database-readonly MCP server, bundled by build.mjs — do not edit; edit the sources and run npm run build.
-// sources: 379690eca612ddd0
+// sources: 0f598961112e8f4a
 import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -66,7 +66,8 @@ var PII_DEFAULT = [
   "(^|_)(addr|address)(_?\\d+|_?dtl|_?detail)?$",
   "(^|_)(post|zip)(_?(no|cd|code))?$",
   "(^|_)(jumin|rrn|ssn|resident_?no|birth\\w*|passport\\w*)$",
-  "(^|_)(order|orderer|ord|recv|receiver|recipient|sender|send|buyer|member|cust|customer|user|consignee)_?(nm|name)$"
+  "(^|_)(order|orderer|ord|recv|receiver|recipient|sender|send|buyer|member|cust|customer|user|consignee)_?(nm|name)$",
+  "(^|_)decrypt(ed)?(_|$)"
 ];
 function piiMatcher(spec) {
   if (spec === "off") return null;

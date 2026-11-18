@@ -1,7 +1,7 @@
 {
   "name": "database",
   "description": "Read-only database access for MySQL, MariaDB, PostgreSQL and Oracle: one MCP server per vendor (readonly-mysql/-mariadb/-postgres/-oracle, own profiles; read-only transactions the database enforces, statement whitelist, row cap, timeout) and skills login (macOS password dialog into Keychain, 1Password op:// optional), logout, profile (local/dev/stage/prod; no confirmation, read-only) and query (personal-data columns hidden, prod capped at 200 rows / 10 s, local query log without values). Bundled: no npm install.",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "mcpServers": {
     "readonly-mysql": {
       "type": "stdio",

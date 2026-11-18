@@ -5,9 +5,9 @@ import { piiColumns, selectList } from '../vendors/mysql.mjs';
 
 test('default PII columns: names, phones, addresses, post codes, email, ids', () => {
   const isPii = piiMatcher();
-  for (const c of ['order_nm', 'recv_nm', 'ORDER_TEL', 'recv_hp', 'recv_tel', 'recv_post', 'recv_addr_1', 'recv_addr_2', 'email', 'user_email', 'zip_code', 'birth_dt', 'jumin', 'sender_name', 'phone'])
+  for (const c of ['order_nm', 'recv_nm', 'ORDER_TEL', 'recv_hp', 'recv_tel', 'recv_post', 'recv_addr_1', 'recv_addr_2', 'email', 'user_email', 'zip_code', 'birth_dt', 'jumin', 'sender_name', 'phone', 'get_decrypt', 'decrypted_val'])
     assert.equal(isPii(c), true, c);
-  for (const c of ['id', 'product_nm', 'option_nm', 'shop_cd', 'order_num', 'post_id', 'brand_name', 'name', 'reg_date', 'delivery_msg', 'hpa'])
+  for (const c of ['id', 'product_nm', 'option_nm', 'shop_cd', 'order_num', 'post_id', 'brand_name', 'name', 'reg_date', 'delivery_msg', 'hpa', 'decryption_key_id'])
     assert.equal(isPii(c), false, c);
 });
 
@@ -51,4 +51,19 @@ test('piiColumns: a computed column is hidden only by its own expression when th
   // a derived table hides every computed column again
   const derived = 'SELECT COUNT(*) AS n, x FROM (SELECT recv_nm AS x FROM t) d GROUP BY x';
   assert.deepEqual(piiColumns([f('n'), f('x')], derived), ['n', 'x']);
+});
+
+test('piiColumns: SHOW and DESCRIBE are metadata, a personal word in the table name hides nothing', () => {
+  const f = (name, orgName = '') => ({ name, orgName });
+  for (const sql of ['SHOW CREATE TABLE address', 'show create table tms_address', 'DESCRIBE address', 'DESC tms_address', 'SHOW COLUMNS FROM address'])
+    assert.deepEqual(piiColumns([f('Table'), f('Create Table')], sql), [], sql);
+  // a SELECT naming the same table still hides its computed columns when the list cannot be split
+  assert.deepEqual(piiColumns([f('n')], 'SELECT n FROM (SELECT COUNT(*) AS n FROM address) d'), ['n']);
+});
+
+test('piiColumns: a view column named after a decrypt call over a personal column is hidden', () => {
+  const f = (name, orgName = '') => ({ name, orgName });
+  assert.deepEqual(piiColumns([f('id', 'id'), f('get_decrypt(a.ord_tel)', 'get_decrypt(a.ord_tel)')], 'SELECT * FROM v_order'), ['get_decrypt(a.ord_tel)']);
+  assert.deepEqual(piiColumns([f('x', 'get_decrypt(a.memo)')], 'SELECT x FROM v_order'), ['x']);
+  assert.deepEqual(piiColumns([f('x')], 'SELECT get_decrypt(memo) AS x FROM t'), ['x']);
 });

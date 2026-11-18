@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Seeds the throwaway database live/docker.mjs started: waits until it accepts connections, then
-// creates orders (with personal-data columns) and two rows. Writes, so it uses the drivers directly,
+// creates orders (with personal-data columns) and two rows; on mysql/mariadb also a table named address
+// and a view whose column is named by its expression (UPPER(recv_hp)), as a decrypting view is. Writes, so it uses the drivers directly,
 // never the read-only server. Env: DBRO_LIVE_VENDOR, DB_HOST, DB_PORT, DB_USER, DB_PASS, DB_NAME.
 const { DBRO_LIVE_VENDOR: vendor, DB_HOST: host, DB_PORT: port, DB_USER: user, DB_PASS: password, DB_NAME: database } = process.env;
 
@@ -22,6 +23,7 @@ async function connect() {
       run: (sql, v) => c.query(sql, v),
       table: TABLE.mysql,
       insert: 'INSERT INTO orders VALUES (?, ?, ?, ?, ?)',
+      extra: ['CREATE TABLE address (id INT PRIMARY KEY, shop_cd VARCHAR(10))', 'CREATE VIEW v_orders AS SELECT id, UPPER(recv_hp) FROM orders'],
       end: () => c.end(),
     };
   }
@@ -57,5 +59,6 @@ for (;;) {
 }
 await db.run(db.table);
 for (const r of ROWS) await db.run(db.insert, r);
+for (const s of db.extra ?? []) await db.run(s);
 await db.end();
 process.stderr.write(`seeded ${vendor}: orders (2 rows)\n`);

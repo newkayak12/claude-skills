@@ -189,6 +189,22 @@ test('personal data hidden by source column on a real result (seeded orders tabl
   t.diagnostic(`alias + window: columns=${r.data.columns} hidden=${r.data.hidden}; SELECT * hidden=${all.data.hidden}`);
 });
 
+test('SHOW CREATE TABLE / DESCRIBE on a table named address are shown; a view column named UPPER(recv_hp) is hidden', { skip: (!live || !process.env.DBRO_SEEDED) && 'needs the seeded docker DB (npm run test:docker)' }, async (t) => {
+  const show = await call('query', { sql: 'SHOW CREATE TABLE address' });
+  assert.equal(show.isError, false, show.text);
+  assert.equal(show.data.hidden, undefined, JSON.stringify(show.data.hidden));
+  assert.match(Object.values(show.data.rows[0]).join(' '), /CREATE TABLE `address`/);
+  const desc = await call('query', { sql: 'DESCRIBE address' });
+  assert.equal(desc.data.hidden, undefined, JSON.stringify(desc.data.hidden));
+  assert.equal(desc.data.rowCount, 2);
+  const view = await call('query', { sql: 'SELECT * FROM v_orders ORDER BY id' });
+  assert.equal(view.isError, false, view.text);
+  assert.deepEqual(view.data.columns, ['id']);
+  assert.equal(view.data.hidden.length, 1);
+  assert.ok(view.data.rows.every((r) => Object.keys(r).join() === 'id'));
+  t.diagnostic(`SHOW CREATE columns=${show.data.columns}; DESCRIBE rows=${desc.data.rowCount}; view hidden=${view.data.hidden}`);
+});
+
 test('SHOW GRANTS summary (privileges only, no user/host)', opts, async (t) => {
   const r = await db.execute('SHOW GRANTS');
   const WRITE = /\b(ALL PRIVILEGES|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|INDEX|REFERENCES|TRIGGER|EVENT|CREATE ROUTINE|ALTER ROUTINE|EXECUTE|FILE|SUPER|LOCK TABLES|CREATE TEMPORARY TABLES)\b/;

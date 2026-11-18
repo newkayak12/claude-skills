@@ -35,6 +35,7 @@ export const PII_DEFAULT = [
   '(^|_)(post|zip)(_?(no|cd|code))?$',
   '(^|_)(jumin|rrn|ssn|resident_?no|birth\\w*|passport\\w*)$',
   '(^|_)(order|orderer|ord|recv|receiver|recipient|sender|send|buyer|member|cust|customer|user|consignee)_?(nm|name)$',
+  '(^|_)decrypt(ed)?(_|$)',
 ];
 export function piiMatcher(spec) {
   if (spec === 'off') return null;

@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // database-readonly MCP server, bundled by build.mjs — do not edit; edit the sources and run npm run build.
-// sources: 379690eca612ddd0
+// sources: 0f598961112e8f4a
 import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);
 import {
   piiMatcher
-} from "./chunk-M46VLRPB.mjs";
+} from "./chunk-HUUJICVI.mjs";
 
 // vendors/sql.mjs
 var DIALECTS = {
@@ -138,14 +138,15 @@ function selectList(sql, d = DIALECTS.mysql) {
   if (exprs.some((e) => /(^|\.)\*$/.test(e.replace(/\s+/g, "")))) return null;
   return exprs.map((e) => e.trim());
 }
+var METADATA = /^\s*(SHOW|DESCRIBE|DESC)\b/i;
 function piiColumns(fields, sql, isPii = piiMatcher(), d = DIALECTS.mysql) {
   if (!isPii) return [];
   const words = (s) => String(s).split(/[^A-Za-z0-9_$]+/).filter(Boolean);
   const list = selectList(sql, d);
   const exprs = list && list.length === fields.length ? list : null;
-  const sqlHasPii = words(sql).some(isPii);
+  const sqlHasPii = !METADATA.test(sql) && words(sql).some(isPii);
   return fields.filter((f, i) => {
-    if (f.orgName) return isPii(f.orgName);
+    if (f.orgName) return words(f.orgName).some(isPii);
     if (words(f.name).some(isPii)) return true;
     return exprs ? words(exprs[i]).some(isPii) : sqlHasPii;
   }).map((f) => f.name);
