@@ -336,12 +336,12 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
    `test-docs.mjs` asserts both halves of "left over"; STORY report Judge row draws `tests pass`. Checked by
    hand: plugin test 626/626, teams 2224/0/2 of 2226, validate 15/15, check-copies ok. Renders of every page
    at 190/110 en/ko in `tmp/card125/renders-fix/` (52) approved (user, 2026-11-11: "고").
-   Still to do: the STORY report header's `accepted 91/80` stays English under KR; the close command answering `pane opened` (did not reproduce live in
+   KR header, one waiting-on-you wording, EPIC report result/gate and FLOOR counts shipped `ea091543`
+   (E-ef381b6b, gate 91; renders in `tmp/card125/renders-leftovers/` pending approval).
+   Still to do: the close command answering `pane opened` (did not reproduce live in
    E-bcc5a0fe, two-copies cause ruled out under `--plugin-dir`; cause unknown, watch for it on the installed
    build); the host still draws a bare ⏎ after the keys Input outside answer mode (host behaviour, room kept
-   for it); a look in the Claude app or Desktop; "→ you" vs "→ me" wording; README/KOR shots with the batch
-   bump. Also open from the F2 report: EPIC report render stays 7 lines (no verdict or result) and FLOOR lacks
-   role counts and "STORY n / subagent n" (the engine does not send them).
+   for it); a look in the Claude app or Desktop; README/KOR shots with the batch bump.
    - Why: user, 2026-11-04, after the 190/110 captures of card 105: "만약 된다면 view.mjs(web으로 보여주는 것)
      은 퇴역시켜도 될거 같아", "저 *-stats view만 더 퀄리티 높히면 될거 같고". Condition ("만약 된다면"): the
      pane handles several EPICs at once (`]`/`[` step EPIC, `j`/`k` STORY row, `g` open) — seen live with
@@ -432,17 +432,6 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
      for publish/read/cursor/wake, and one real L task where two packages exchange a message that changes
      what one of them builds.
 
-127. **Every EPIC row reads as its key plus a short natural-language name, never the key alone**
-   - Why: user, 2026-11-04, on a pane screenshot with rows `● E-0ad41780 ⑂ c…` and `● E-6ff25a30 ⑂ c…`:
-     "EPIC 이름 이렇게 못알아보게 하지 말고 EPIC + 자연어 설명으로". The row's title is the request's first
-     words ("Backlog card 125, the state-socket part only…"), and at a narrow pane the key and the `⑂`
-     worktree mark take the width, so the name is cut to nothing.
-   - Acceptance: the engine writes one short name per EPIC (a few words in the request's language, e.g.
-     `mod 상태 소켓 하나로`, `테스트 fixture 격리 · 영역 겹침 차단`) at open, kept in task.json and returned by
-     tm_board/tm_status; every surface (pane row, band, board, `view.mjs --once`) shows `E-xxxxxxxx · <name>`;
-     when width runs out the name keeps priority over the worktree mark and state columns (key, then at least
-     the name's first word, then `⑂`); tests at 190, 110 and a narrow pane on four surfaces; the demo render
-     approved by the user (`mod.md` UI rule 0).
 
 128. **teams serves one MCP server, its internals split into modules by concern** — shipped on main, unreleased: P1–P3 `f46cfa6d` (E-258fa3e5), taskmanager facade + 14 modules
    `85175bbc` (E-1140cdb9, gate 95), one server `teams/mcp/server.mjs` `9db4e615` (E-d26f7a29, gate 91;
@@ -470,7 +459,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
      and one real S and one real L task run on the merged server; `ps` shows one teams MCP process per
      session.
 
-129. **teams tells failure kinds apart instead of retrying every failure the same way** — P1 (failure-kind contract: `recordFailureKind`, `failure_classified` ledger event) shipped `76c8b671` by E-bf0570ac (2026-11-17, L, partial: $83.82 of $80 spent in planning, P2-P9 never dispatched). Left: acceptance items 1-7 below on top of P1; the next run plans less (size per part, or pinned packages) so the budget reaches develop.
+129. **teams tells failure kinds apart instead of retrying every failure the same way** — P1 (failure-kind contract: `recordFailureKind`, `failure_classified` ledger event) shipped `76c8b671` by E-bf0570ac (2026-11-17, L, partial: $83.82 of $80 spent in planning, P2-P9 never dispatched). Items 1-3 and 5-7 (engine side) shipped `6938ea15` by three size-S runs (E-25fcd1cc, E-5962bcf9, E-8924b6d7, 2026-11-18, gates 90-91). Left: item 4 (fix packages on the same files in series, integrate between waves); the mod turning the notify event into a push and band line; one real L task where a fix wave and a QA pass complete with no hand merge (after the batch bump).
    - Why: five engine defects seen in the portfolio Sprint E-478d5e95 (cards 123/124, 2026-11-04/05), reported
      by that session; common cause (its words): "엔진이 모든 실패를 '다시 하면 되는 것'으로만 다룬다". Causes
      below are as reported, unverified here.
@@ -686,6 +675,8 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-0596d1ed, E-f7d8137e, E-63616592 | 2026-11-18 | 127 | shipped `7d6b8bea`; first run gate 87 (Korean particle stripping garbled names), repair with whole-token removals gate 92, merge with 125 leftovers gate 90; teams 2479 / 2478 / 0 fail / 1 skip, plugin test 944/944; demo approval waived by the user (2026-11-16) |
+| E-25fcd1cc, E-5962bcf9, E-8924b6d7, E-ef381b6b | 2026-11-18 | 129 items 1-3 5-7, 125 leftovers | shipped `6938ea15`, `ea091543`; size S on main; E-5962bcf9 sat 14 h in waiting_cap after the reset (0.63.0 has no auto-resume; fixed in `6938ea15`), resumed by hand |
 | E-bf0570ac | 2026-11-17 | 129 | partial: P1 `76c8b671` taken from integration-2; budget $83.82 of $80 spent in planning (PLAN-F2 ×3, second round per PLAN card, two plan-integrates, two shapes), P2-P9 never dispatched; per-stage cost vs E-258fa3e5 not produced; teams 2346 / 2344 pass / 0 fail |
 | E-3b9b2694, E-4b431dba, E-fadb773c | 2026-11-17 | 135, 152, 130 D1 | shipped `e05315ff`, `bd10f855`, `0160b5bf`; size S in parallel on main; 135: GNU-only `touch -d` hung the stub on macOS; gates 95, 93; teams 2304 / 2302 / 0 fail, bench 80/80 |
 | E-71b43a9a, E-1ece45cc | 2026-11-16 | 145, 146 | shipped `7d31c3c7`; two size-S runs in parallel on the main checkout, one commit; goal gates 92, 93; tm_open takes request beside requests (equal or one-line title), real mismatch refused naming what to drop; tm_clean `wait: true`, refusal says how; orchestrate/sprint wait before cleaning; teams 2300 / 2297 pass / 1 fail (W2 hygiene, card 152), plugin test 626/626, validate 16/16, check-copies ok; small gaps: stale test name, "tm_open got" from tm_run, branch survival not asserted on cancel |
