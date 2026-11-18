@@ -437,9 +437,11 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
    `85175bbc` (E-1140cdb9, gate 95), one server `teams/mcp/server.mjs` `9db4e615` (E-d26f7a29, gate 91;
    suite 2140/2137, plugin test 448/448, real `claude -p --plugin-dir` lists 33 tools from one server).
    Async abortable `tm_wait` and the stale comments shipped `bb9b643f` (E-066abb46).
-   Left: release note on the tool prefix change
-   (`mcp__plugin_teams_task-manager__*` → `mcp__plugin_teams_teams__*`, allowlists stop matching); one real
-   S and one real L task on the installed merged server after the batch bump; `ps` one teams process.
+   Released in teams 0.64.0 (`b63a24af`, 2026-11-18) with the tool prefix change in the CHANGELOG. Real S
+   task on the installed 0.64.0 (headless `claude -p`, scratch repo, E-c2327cbb): called as
+   `mcp__plugin_teams_teams__tm_open`, driver on `teams/0.64.0`, goal gate 100, no 0.64.0 server left after
+   the session exited (the 19 × 3 0.63.0 servers in `ps` belong to sessions started before the bump).
+   Left: one real L task on 0.64.0 (shared with card 129's last item).
    - Why: user, 2026-11-04: "teams의 mcp 하나의 서버로 통합 및 노출 내부 mjs 코드 스플릿으로 가독성 및
      유지보수성 증가". Today `teams/.claude-plugin/plugin.json` starts three servers per session —
      `teams-engineering` (`mcp/broker.mjs`, 2,479 lines), `task-manager` (`mcp/taskmanager.mjs`, 9,028 lines,
