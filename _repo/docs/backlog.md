@@ -296,26 +296,6 @@ toasts).
 Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 128's leftovers.
 
 
-147. **trophy's Failures tab says what failed and groups repeats**
-    - Why: same screenshot. `outcome · goal_failed · —` and `outcome · subgoal_failed · —` (2026-11-09)
-      carry no target and no text: `trophy/hooks/failures.ts` ~85-90 maps the harness outcome to a
-      reason only. The same tm_open error fills seven rows one under another.
-    - Acceptance: an outcome row names the task/run and the failed gate or subgoal (what the harness
-      outcome carries); identical reason + target rows fold into one with a count and the last date;
-      `claude plugin test` with counts; one live look at the tab (mod.md "A UI change is done when").
-
-150. **trophy's Achievements pane reads at a glance in a narrow column, and opens only when asked**
-    - Why: user, 2026-11-11 (screenshot of the pane in a ~30-column side column: "이거좀 닫아줘 뭐야").
-      It was up right after `/trophy:list` printed its table. Titles are cut to "Hello, …", "You Have …",
-      the tab row is cut at "[ Tri", and 80 rows one per line need scrolling to see anything. What
-      opened it is unverified: in `trophy/hooks/mod.tsx` only `/achievements` (~591) and the
-      Failures buttons (~625, ~766, `showFailures`) call `$.ui.open`; `trophy:list` itself opens nothing.
-    - Acceptance: the cause of the open found; `/trophy:list` and any other unasked path leave the pane
-      closed; at narrow width the pane shows unlocked ones and nearest-to-unlock first with titles
-      readable (no cut mid-word without `…`), locked ones folded into a count, tabs that fit; mod.md
-      "A UI change is done when" (190 and 110 columns plus the narrow column seen here, every surface);
-      `claude plugin test` with counts.
-
 125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality** — E-8faf33b9 blocked on a PRD merge bug (fixed `899dba47`); E-701e2856 (2026-11-07, $35.82) planned
    it again (5 cards 88–94, plan-integrate accepted) and stopped partial at shape:3 (see card 129). Now one
    size-S task per feature area, in order F1 → F5 → F3 → F4 → F2, each from its section of that PRD (kept
@@ -339,7 +319,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
    hand: plugin test 626/626, teams 2224/0/2 of 2226, validate 15/15, check-copies ok. Renders of every page
    at 190/110 en/ko in `tmp/card125/renders-fix/` (52) approved (user, 2026-11-11: "고").
    KR header, one waiting-on-you wording, EPIC report result/gate and FLOOR counts shipped `ea091543`
-   (E-ef381b6b, gate 91; renders in `tmp/card125/renders-leftovers/` pending approval).
+   (E-ef381b6b, gate 91; renders in `tmp/card125/renders-leftovers/` approved, user 2026-11-18: "3다 완료").
    Still to do: the close command answering `pane opened` (did not reproduce live in
    E-bcc5a0fe, two-copies cause ruled out under `--plugin-dir`; cause unknown, watch for it on the installed
    build); the host still draws a bare ⏎ after the keys Input outside answer mode (host behaviour, room kept
@@ -679,6 +659,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-e4d3b316 | 2026-11-18 | 147, 150 | shipped `d24576d0` in trophy 0.10.0; Failures rows name the run and failed gate and fold repeats; Achievements pane opens only when asked and fits a narrow column; renders in `tmp/card147-150/` approved (user, 2026-11-18: "3다 완료") |
 | E-0596d1ed, E-f7d8137e, E-63616592 | 2026-11-18 | 127 | shipped `7d6b8bea`; first run gate 87 (Korean particle stripping garbled names), repair with whole-token removals gate 92, merge with 125 leftovers gate 90; teams 2479 / 2478 / 0 fail / 1 skip, plugin test 944/944; demo approval waived by the user (2026-11-16) |
 | E-25fcd1cc, E-5962bcf9, E-8924b6d7, E-ef381b6b | 2026-11-18 | 129 items 1-3 5-7, 125 leftovers | shipped `6938ea15`, `ea091543`; size S on main; E-5962bcf9 sat 14 h in waiting_cap after the reset (0.63.0 has no auto-resume; fixed in `6938ea15`), resumed by hand |
 | E-bf0570ac | 2026-11-17 | 129 | partial: P1 `76c8b671` taken from integration-2; budget $83.82 of $80 spent in planning (PLAN-F2 ×3, second round per PLAN card, two plan-integrates, two shapes), P2-P9 never dispatched; per-stage cost vs E-258fa3e5 not produced; teams 2346 / 2344 pass / 0 fail |
