@@ -44,7 +44,8 @@ import { ticketSnapshot, docPaths } from './tickets.mjs';
 import { answerPrompt, parseVerdict } from './storyask.mjs';
 import { ALL_TOOLS } from './server-tools.mjs';
 import { harvestTask } from './runlog.mjs';
-import { taskFigure } from './drivercost.mjs';
+import { taskFigure, costByStage } from './drivercost.mjs';
+import { writeDocs } from './docs.mjs';
 import { isEntryPoint, teamsPluginRoot } from './pluginroots.mjs';
 import { resolveStageModel } from './nodelaunch.mjs';
 import { launchArgs } from './taskmanager-drivers.mjs';
@@ -849,7 +850,10 @@ async function main() {
       // The durable spend: node-adapter sessions vanish with their worktrees at tm_clean.
       try {
         const fig = taskFigure(taskDir(TASK_ID), fresh);
-        record(fresh, { event: 'cost_recorded', task_id: TASK_ID, spend: fig.spend, estimated: fig.estimated });
+        record(fresh, { event: 'cost_recorded', task_id: TASK_ID, spend: fig.spend, estimated: fig.estimated, by_stage: costByStage(fig.live) });
+        // The report was first rendered when its node finished, before this event existed: re-render
+        // so the first 80-report.md already carries the Cost section's figures.
+        try { writeDocs(fresh); } catch { /* a document is evidence, not a dependency */ }
       } catch { /* the ledger is evidence, not a dependency */ }
       // Every task leaves a record past its project's .teams_output and /tmp (mcp/runlog.mjs,
       // read across runs by scripts/bench/triage.mjs). A failure to keep it never fails the task.

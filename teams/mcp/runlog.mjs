@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSy
 import { join, basename, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { collectTaskCosts, taskFigure } from './drivercost.mjs';
+import { collectTaskCosts, taskFigure, costByStage } from './drivercost.mjs';
 import { teamsPluginRoot } from './pluginroots.mjs';
 import { reasonFromVerdict } from './graph.mjs';
 
@@ -149,30 +149,7 @@ export function harvestTask({ taskDir, cwd, label, root, scorePrefix } = {}) {
   let costs = null;
   let figure = null;
   try { costs = taskDir ? collectTaskCosts(taskDir, task) : null; figure = taskDir ? taskFigure(taskDir, task) : null; } catch { costs = null; }
-  const byKind = {};
-  for (const s of (costs && costs.streams) || []) {
-    // A respawned driver (<name>.restart1) or a re-judge (<name>.r1) is the same kind of spend
-    // as its first session - portfolio-consolidate-8518d5dd bucketed them apart, one per run name.
-    // Cards carry their area (dispatch_PLAN-F2, judge_accept_QA-F1, judge_plan-integrate): one
-    // bucket per phase and per judging stage, not one per card (m6).
-    const k = basename(String(s.stream || s.path || '')).replace(/\.stream\.jsonl$/, '').replace(/\.(restart|r)\d+$/, '').replace(/_\d+$/, '').replace(/^judge_(\w+?)(_P\w+|\.r\d+)?$/, 'judge_$1').replace(/^judge_([a-z][a-z-]*)_[A-Z][\w-]*$/, 'judge_$1').replace(/^dispatch_(PLAN|AUDIT|QA)(-F\d+)?$/, 'dispatch_$1').replace(/^dispatch_P\d+\w*$/, 'dispatch_package');
-    byKind[k] = +((byKind[k] || 0) + (s.cost_usd || 0)).toFixed(4);
-  }
-  // collectTaskCosts splits its total into driver streams (above, the manager's own
-  // dispatch_/judge_ sessions) and node_streams (each child graph run's own draft/review/gate/
-  // plan/setgoal/critique adapter session, broker/<run_id>/<node>/<attempt>/events.jsonl). Both
-  // halves feed cost_usd (drivers_usd + nodes_usd), so leaving node_streams out here means
-  // byKind silently undercounts cost_usd by exactly nodes_usd - the archive summary then reads
-  // as if a run cost far less than task.budget_stopped/enforceBudget (which reads cost_usd
-  // in full via taskSpend) ever saw. Bucketed by stage (attempt/subgoal suffix stripped) and
-  // prefixed node_ so a node session's cost is never mistaken for its manager-level counterpart
-  // (e.g. node_review vs a package's own dispatch_package).
-  for (const s of (costs && costs.node_streams) || []) {
-    const nodeDir = String(s.stream || s.path || '').split(/[\\/]/)[1] || '';
-    const stage = nodeDir.replace(/_U\d+(_\d+)?$/, '').replace(/_\d+$/, '') || 'node';
-    const k = `node_${stage}`;
-    byKind[k] = +((byKind[k] || 0) + (s.cost_usd || 0)).toFixed(4);
-  }
+  const byKind = costByStage(costs);
   // Same predicate as tickets.mjs's board `opening`: a dispatch running with no child run yet.
   const opening = ((task && task.nodes) || []).filter((n) => n.stage === 'dispatch' && n.state === 'running' && !n.child).map((n) => n.node_id);
   const score = readText(join(out, 'bench.score.txt')).split('\n').find((l) => / \| \d+\/\d+ \| /.test(l)) || null;

@@ -3,7 +3,8 @@ import { spawnSync } from 'node:child_process';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { record, taskDir, tasksRoot } from './taskstate.mjs';
-import { taskFigure } from './drivercost.mjs';
+import { taskFigure, costByStage } from './drivercost.mjs';
+import { writeDocs } from './docs.mjs';
 import { packageName } from './names.mjs';
 import { touchMarker } from './engage.mjs';
 import { manifestPathOf, newTopLevelDirs } from './layout-guard.mjs';
@@ -301,8 +302,10 @@ function cleanTask(task, dryRun) {
   if (!dryRun) {
     try {
       const fig = taskFigure(taskDir(task.run_id), task);
-      record(task, { event: 'cost_recorded', task_id: task.run_id, spend: fig.spend, estimated: fig.estimated });
+      record(task, { event: 'cost_recorded', task_id: task.run_id, spend: fig.spend, estimated: fig.estimated, by_stage: costByStage(fig.live) });
     } catch { /* the ledger is evidence, not a dependency */ }
+    // The report reads by_stage from that event: render it now, before tm_docs is asked for.
+    try { writeDocs(task); } catch { /* a document is evidence, not a dependency */ }
   }
   for (const c of candidates) {
     const branchRef = `refs/heads/${c.branch}`;

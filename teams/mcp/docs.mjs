@@ -15,9 +15,10 @@
 import { mkdirSync, writeFileSync, rmSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { mode as wikiMode } from './wikibridge.mjs';
-import { unfinishedWork } from './taskstate.mjs';
+import { unfinishedWork, taskDir } from './taskstate.mjs';
 import { loadRun, runState } from './graph.mjs';
 import { harnessVerdict } from './harnessrun.mjs';
+import { collectTaskCosts, costByStage, spendFigure } from './drivercost.mjs';
 import {
   epicKey, storyKey, docPaths, latestBySubgoal, epicTicketState, epicPhase,
   storyTicketState, storyTaskProgress, epicBoardRows, packageFiling,
@@ -625,6 +626,46 @@ function wikiSection(task) {
 
 const defectLine = (d) => (d.repro_unverified ? `${d.title} (repro_unverified)` : d.title);
 
+// The cost of each stage of the run, read from the ledger's latest cost_recorded by_stage. When
+// that event has no by_stage (a 0.64-shape ledger, or none at all) the amounts come from the
+// driver streams still on disk (costByStage over collectTaskCosts); with the streams gone too the
+// stage reads 'no cost recorded'. Never throws: no ledger, no streams, no cost.
+function costSection(task) {
+  let ev = null;
+  try {
+    const txt = readFileSync(join(taskDir(task.run_id), 'ledger.jsonl'), 'utf8');
+    for (const line of txt.split('\n')) {
+      if (!line.includes('cost_recorded')) continue;
+      try { const e = JSON.parse(line); if (e && e.event === 'cost_recorded') ev = e; } catch { /* torn line */ }
+    }
+  } catch { ev = null; }
+  let byStage = (ev && ev.by_stage && typeof ev.by_stage === 'object') ? ev.by_stage : null;
+  let spend = ev && Number.isFinite(ev.spend) ? ev.spend : null;
+  if (!byStage) {
+    byStage = {};
+    try {
+      const live = collectTaskCosts(taskDir(task.run_id), task);
+      byStage = costByStage(live);
+      if (spend === null) { const s = spendFigure(live, ev).spend; if (s > 0) spend = s; }
+    } catch { /* streams gone or unreadable: no cost recorded */ }
+  }
+  const usd = (v) => (Number.isFinite(v) && v > 0 ? `$${v.toFixed(2)}` : null);
+  const keys = Object.keys(byStage);
+  const rows = keys.map((k) => `${k}: ${usd(byStage[k]) || 'no cost recorded'}`);
+  const stages = [...new Set((task.nodes || []).map((n) => n.stage).filter(Boolean))];
+  for (const s of stages) {
+    // A key that maps to the stage covers it even at $0: its own line already says so.
+    const hit = keys.some((k) => k === s || k.startsWith(`${s}_`) || k === `judge_${s}` || k === `node_${s}`);
+    if (!hit) rows.push(`${s}: no cost recorded`);
+  }
+  const budget = task.team && task.team.opts && task.team.opts.budget_usd;
+  let total = 'no cost recorded';
+  if (spend !== null) {
+    total = `$${spend.toFixed(2)} ${Number.isFinite(budget) && budget > 0 ? `of $${budget} budget` : '(no budget set)'}`;
+  }
+  return ['', '## Cost', '', bullets(rows), '', `Total: ${total}`];
+}
+
 export function renderReport(task) {
   const n = task.nodes.find((x) => x.stage === 'report' && x.state === 'done');
   const key = epicKey(task.run_id);
@@ -637,6 +678,7 @@ export function renderReport(task) {
   L.push('', 'Defects left:', bullets(retro.retrospective.defects_left.map(defectLine)));
   if (retro.retrospective.dropped_defects) L.push('', 'Dropped defects:', bullets(retro.retrospective.dropped_defects.map((d) => `${d.id ? `${d.id} ` : ''}${d.title}: ${d.reason}`.trim())));
   if (retro.integration_branch) L.push('', `The accepted work is on branch \`${retro.integration_branch}\`. Nothing has merged it into the project's own branch - merge it to keep it; a follow-up Sprint opened with context_from builds on it either way.`);
+  L.push(...costSection(task));
   L.push('', '## Next backlog', '');
   if (retro.next_backlog.unshipped_requests) L.push('Backlog items not shipped:', bullets(retro.next_backlog.unshipped_requests.map((r) => `[${r.priority}] ${r.request}`)), '');
   L.push('User stories not shipped (carry into the next Sprint):', bullets(retro.next_backlog.unfinished_stories.map((u) => `${u.id}${u.title ? ` ${u.title}` : ''}`)), '');

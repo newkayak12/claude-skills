@@ -24,6 +24,21 @@ Defects left:
 
 The accepted work is on branch `harness/aaaaaaaa/integration-2`. Nothing has merged it into the project's own branch - merge it to keep it; a follow-up Sprint opened with context_from builds on it either way.
 
+## Cost
+
+- size: no cost recorded
+- areas: no cost recorded
+- dispatch: no cost recorded
+- accept: no cost recorded
+- plan-integrate: no cost recorded
+- shape: no cost recorded
+- critique: no cost recorded
+- integrate: no cost recorded
+- gate: no cost recorded
+- report: no cost recorded
+
+Total: no cost recorded
+
 ## Next backlog
 
 User stories not shipped (carry into the next Sprint):

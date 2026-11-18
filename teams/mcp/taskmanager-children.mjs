@@ -111,8 +111,11 @@ function openChildOnSlot(task, n, progress, reservation) {
   }
   const based_on = [];
   if (wt.created) {
-    if (depBranches[0]) based_on.push(depBranches[0]);
-    for (const b of depBranches.slice(1)) {
+    // A package with a base_branch (one QA or the audit filed) is based on that branch, which the
+    // line-72 choice puts ahead of depBranches[0]: the first dep is not in its tree, so it is merged
+    // like the rest. Otherwise the first dep IS the base and only the others are merged.
+    if (depBranches[0] && !pkg.base_branch) based_on.push(depBranches[0]);
+    for (const b of pkg.base_branch ? depBranches : depBranches.slice(1)) {
       const m = mergeInto(wt.path, b, `harness: base ${pkg.id} on ${b}`);
       if (!m.ok) {
         const merged = (pkg.deps || []).filter((d) => based_on.includes(deliveredBranch(task, d)));
@@ -121,7 +124,7 @@ function openChildOnSlot(task, n, progress, reservation) {
         n.result = {
           stage_ok: false, accept: false, conflicts: m.conflicts,
           conflicting_packages: [String(culprit), ...merged.map(String)],
-          reason: `dependencies of ${pkg.id} conflict with each other on ${m.conflicts.join(', ')} (${culprit} against ${merged.join(', ')}); repackage them`,
+          reason: `dependencies of ${pkg.id} conflict with each other on ${m.conflicts.join(', ')} (${culprit} against ${merged.length ? merged.join(', ') : pkg.base_branch}); repackage them`,
         };
         record(task, { event: 'dispatch_failed', task_id: task.run_id, node_id: n.node_id, reason: n.result.reason });
         return;

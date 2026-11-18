@@ -7,7 +7,7 @@
 // `num_turns`, `duration_ms`) - everything before it is a partial view. Reading any other event
 // for cost undercounts.
 import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 
 const read = (p) => { try { return readFileSync(p, 'utf8'); } catch { return null; } };
 const ls = (p) => { try { return readdirSync(p, { withFileTypes: true }); } catch { return []; } };
@@ -240,6 +240,36 @@ export function collectTaskCosts(taskDirPath, task) {
     streams: d.streams,
     node_streams: nodes,
   };
+}
+
+// Spend per kind of session from a collectTaskCosts result (runlog's summary.cost_by_kind, the
+// ledger's cost_recorded.by_stage).
+export function costByStage(costs) {
+  const byKind = {};
+  for (const s of (costs && costs.streams) || []) {
+    // A respawned driver (<name>.restart1) or a re-judge (<name>.r1) is the same kind of spend
+    // as its first session - portfolio-consolidate-8518d5dd bucketed them apart, one per run name.
+    // Cards carry their area (dispatch_PLAN-F2, judge_accept_QA-F1, judge_plan-integrate): one
+    // bucket per phase and per judging stage, not one per card (m6).
+    const k = basename(String(s.stream || s.path || '')).replace(/\.stream\.jsonl$/, '').replace(/\.(restart|r)\d+$/, '').replace(/_\d+$/, '').replace(/^judge_(\w+?)(_P\w+|\.r\d+)?$/, 'judge_$1').replace(/^judge_([a-z][a-z-]*)_[A-Z][\w-]*$/, 'judge_$1').replace(/^dispatch_(PLAN|AUDIT|QA)(-F\d+)?$/, 'dispatch_$1').replace(/^dispatch_P\d+\w*$/, 'dispatch_package');
+    byKind[k] = +((byKind[k] || 0) + (s.cost_usd || 0)).toFixed(4);
+  }
+  // collectTaskCosts splits its total into driver streams (above, the manager's own
+  // dispatch_/judge_ sessions) and node_streams (each child graph run's own draft/review/gate/
+  // plan/setgoal/critique adapter session, broker/<run_id>/<node>/<attempt>/events.jsonl). Both
+  // halves feed cost_usd (drivers_usd + nodes_usd), so leaving node_streams out here means
+  // byKind silently undercounts cost_usd by exactly nodes_usd - the archive summary then reads
+  // as if a run cost far less than task.budget_stopped/enforceBudget (which reads cost_usd
+  // in full via taskSpend) ever saw. Bucketed by stage (attempt/subgoal suffix stripped) and
+  // prefixed node_ so a node session's cost is never mistaken for its manager-level counterpart
+  // (e.g. node_review vs a package's own dispatch_package).
+  for (const s of (costs && costs.node_streams) || []) {
+    const nodeDir = String(s.stream || s.path || '').split(/[\\/]/)[1] || '';
+    const stage = nodeDir.replace(/_U\d+(_\d+)?$/, '').replace(/_\d+$/, '') || 'node';
+    const k = `node_${stage}`;
+    byKind[k] = +((byKind[k] || 0) + (s.cost_usd || 0)).toFixed(4);
+  }
+  return byKind;
 }
 
 // The latest durable `cost_recorded` event of a ledger (an array of parsed events), or null.

@@ -8,7 +8,7 @@
 process.env.TEAMS_RUNS_DIR ??= 'off';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, readFileSync, mkdtempSync, rmSync, readdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, mkdtempSync, mkdirSync, rmSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -461,4 +461,89 @@ test('report reason: renderBlockedReport shows why a failed report node failed, 
   const out = renderBlockedReport(task);
   assert.ok(!out.includes('(no reason recorded)'));
   assert.match(out, /report \(failed\): .*F4 stories defined twice/);
+});
+
+// F1-US-5: the Sprint report's cost section reads the ledger's latest cost_recorded.
+async function costReport(events, opts = {}) {
+  const { renderReport } = await import('../mcp/docs.mjs');
+  const root = mkdtempSync(join(tmpdir(), 'docs-cost-'));
+  const prev = process.env.HARNESS_TASKS_DIR;
+  process.env.HARNESS_TASKS_DIR = root;
+  try {
+    const task = fixtureTask(root);
+    if (opts.noBudget) delete task.team.opts.budget_usd; else task.team.opts.budget_usd = 60;
+    if (events) {
+      mkdirSync(join(root, task.run_id), { recursive: true });
+      writeFileSync(join(root, task.run_id, 'ledger.jsonl'), events.map((e) => JSON.stringify(e)).join('\n') + '\n');
+    }
+    if (opts.streams) {
+      mkdirSync(join(root, task.run_id, 'drivers'), { recursive: true });
+      for (const [name, usd] of Object.entries(opts.streams)) writeFileSync(join(root, task.run_id, 'drivers', `${name}.stream.jsonl`), JSON.stringify({ type: 'result', total_cost_usd: usd, num_turns: 1, duration_ms: 1 }) + '\n');
+    }
+    return renderReport(task);
+  } finally {
+    if (prev === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prev;
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+const costEv = (spend, by_stage) => ({ event: 'cost_recorded', spend, estimated: false, by_stage });
+
+test('Cost: each by_stage key with its amount, total names the spend and the $60 box', async () => {
+  const out = await costReport([costEv(1.75, { dispatch_package: 1.5, judge_shape: 0.25 })]);
+  assert.match(out, /## Cost/);
+  assert.match(out, /- dispatch_package: \$1\.50/);
+  assert.match(out, /- judge_shape: \$0\.25/);
+  assert.match(out, /Total: \$1\.75 of \$60 budget/);
+});
+
+test('Cost: a stage with no by_stage entry, or a 0 one, reads no cost recorded', async () => {
+  const out = await costReport([costEv(1.75, { dispatch_package: 1.5, judge_shape: 0.25, report: 0 })]);
+  assert.match(out, /- report: no cost recorded/);
+  assert.match(out, /- areas: no cost recorded/);
+  assert.ok(!/- dispatch: no cost recorded/.test(out), 'dispatch is covered by dispatch_package');
+});
+
+test('Cost: no cost_recorded event (or no ledger) -> every line and the total read no cost recorded, no throw', async () => {
+  for (const events of [[{ event: 'tm_open' }], null]) {
+    const out = await costReport(events);
+    const sec = out.split('## Cost')[1].split('## Next backlog')[0];
+    assert.match(sec, /Total: no cost recorded/);
+    for (const l of sec.split('\n').filter((x) => x.startsWith('- '))) assert.match(l, /no cost recorded$/);
+  }
+});
+
+test('Cost: two cost_recorded events -> the later one only', async () => {
+  const out = await costReport([costEv(9, { judge_old: 9 }), costEv(1.75, { dispatch_package: 1.5, judge_shape: 0.25 })]);
+  assert.ok(!out.includes('judge_old'));
+  assert.match(out, /Total: \$1\.75/);
+});
+
+test('Cost: 0.64-shape ledger (spend, no by_stage) + streams on disk -> per-stage amounts from the streams, total against $60', async () => {
+  const out = await costReport([{ event: 'cost_recorded', spend: 2, estimated: false }], { streams: { dispatch_P1: 1.5, judge_shape: 0.5 } });
+  assert.match(out, /- dispatch_package: \$1\.50/);
+  assert.match(out, /- judge_shape: \$0\.50/);
+  assert.match(out, /Total: \$2\.00 of \$60 budget/);
+  const none = await costReport(null, { streams: { dispatch_P1: 1.5 } });
+  assert.match(none, /- dispatch_package: \$1\.50/);
+  assert.match(none, /Total: \$1\.50 of \$60 budget/);
+});
+
+test('Cost: 0.64-shape ledger and no streams -> no cost recorded lines, total from the event, no throw', async () => {
+  const out = await costReport([{ event: 'cost_recorded', spend: 2, estimated: false }]);
+  const sec = out.split('## Cost')[1].split('## Next backlog')[0];
+  assert.match(sec, /Total: \$2\.00 of \$60 budget/);
+  for (const l of sec.split('\n').filter((x) => x.startsWith('- '))) assert.match(l, /no cost recorded$/);
+});
+
+test('Cost: a $0 mapped key (dispatch_package) and its stage give one no cost recorded line', async () => {
+  const out = await costReport([costEv(1, { dispatch_package: 0, judge_shape: 1 })]);
+  const sec = out.split('## Cost')[1].split('## Next backlog')[0];
+  assert.match(sec, /- dispatch_package: no cost recorded/);
+  assert.ok(!/- dispatch: no cost recorded/.test(sec), 'no second line for the stage dispatch');
+});
+
+test('Cost: no budget_usd -> total says no budget set, no $60, no NaN', async () => {
+  const out = await costReport([costEv(1.75, { dispatch_package: 1.75 })], { noBudget: true });
+  assert.match(out, /Total: \$1\.75 \(no budget set\)/);
+  assert.ok(!out.includes('$60') && !out.includes('NaN'));
 });

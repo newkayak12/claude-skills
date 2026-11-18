@@ -2253,6 +2253,94 @@ test('tm_file after integrate:1: a filed STORY depends on every earlier package 
   }, { max_parallel_teams: 3 }); // pinned: this test is about the overlap edges, not the auto start width (1 here, from the serial P1->P2 shape)
 });
 
+// card 129 part 3 (E-ea14c9c4 / E-478d5e95, D8/D12/D13/D15): a QA- or audit-filed fix has base_branch
+// (the filing integrate's branch), which used to win over its first dep in the dispatch base, so the
+// series edge overlapDeps adds ordered the fixes but the later one still branched without the earlier.
+// Reaches the QA filing the way the test at "a QA-filed defect package records the integration branch" does.
+const QA_FILE_OPTS = { roles: { qa: true }, max_parallel_teams: 3 }; // pinned: this test is about the dispatch base, not the auto start width
+async function qaFileDefects(tm, g, task_id, defects) {
+  await toIntegrate(tm, g, task_id);
+  await tm.call('tm_submit', { task_id, node_id: 'integrate:1', payload: ok({ verified: true, checks: ['build -> ok'] }) });
+  const nx = await tm.call('tm_next', { task_id });
+  await completeQaChild(g, nx.children[0], { accept: true, match_pct: 95 });
+  await tm.call('tm_submit', { task_id, node_id: 'dispatch:QA-F1:1' });
+  const accepted = await tm.call('tm_submit', { task_id, node_id: 'accept:QA-F1:1', payload: ok({
+    accept: true, match_pct: 95,
+    // A distinct repro command per defect: the QA join folds two defects sharing one into the first.
+    defects: defects.map((d, i) => ({ title: d.title, touches: d.touches, deps: [], evidence: 'e', repro: { ...REPRO, command: `exit ${i + 1}` }, severity: 'high' })),
+  }) });
+  assert.equal(accepted.state, 'done', JSON.stringify(accepted));
+}
+
+test('card 129 part 3: QA-filed fixes on one file run in series and the second fix tree holds the first (base_branch keeps deps)', async () => {
+  await withTask(async ({ tm, g, cwd, root, task_id }) => {
+    const load = () => JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    // The file is one no shape package owns (P1 has a.txt, P2 b.txt): the fixes' deps are then only
+    // each other, so the earlier fix is the LATER one's first dep - the one a base_branch used to drop.
+    // (On b.txt, P2 would come first and the later fix merged D1 as its second dep, hiding the bypass.)
+    // Eight lines, so an insert at the top and an append at the bottom are not adjacent hunks.
+    writeFileSync(join(cwd, 'c.txt'), Array.from({ length: 8 }, (_, i) => `line ${i + 1}\n`).join(''));
+    execFileSync('git', ['add', 'c.txt'], { cwd });
+    execFileSync('git', ['commit', '-qm', 'add c.txt'], { cwd });
+    await qaFileDefects(tm, g, task_id, [
+      { title: 'fix one on c', touches: ['c.txt'] },
+      { title: 'fix two on c', touches: ['c.txt'] },
+    ]);
+    const filed = load();
+    const pkg = (id) => filed.spec.packages.find((p) => p.id === id);
+    assert.ok(pkg('D1').base_branch && pkg('D2').base_branch, 'QA filing records base_branch on both fixes');
+    assert.equal(pkg('D2').deps[0], 'D1', `D2 shares c.txt with D1 and waits for it, as its first dep: ${JSON.stringify(pkg('D2').deps)}`);
+    assert.ok(load().nodes.find((n) => n.node_id === 'dispatch:D2:1').deps.includes('accept:D1:1'));
+
+    // D1 inserts a line at the top of c.txt, D2 appends one at the bottom: no textual conflict, so a
+    // conflict at the reintegrate could only come from a tree that lacks the other fix's commit.
+    const top = (cwd2) => { writeFileSync(join(cwd2, 'c.txt'), `top line\n${readFileSync(join(cwd2, 'c.txt'), 'utf8')}`); return ['c.txt']; };
+    const bottom = (cwd2) => { appendFileSync(join(cwd2, 'c.txt'), 'bottom line\n'); return ['c.txt']; };
+
+    let nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.children.map((c) => c.package_id), ['D1'], 'D2 is not dispatched while D1 is not accepted');
+    assert.equal(load().nodes.find((n) => n.node_id === 'dispatch:D2:1').state, 'pending');
+    await acceptChildPackage(tm, g, task_id, nx.children[0], top);
+
+    nx = await tm.call('tm_next', { task_id });
+    const d2 = nx.children.find((c) => c.package_id === 'D2');
+    assert.ok(d2, 'D2 dispatches once D1 is accepted');
+    const d1Branch = load().nodes.find((n) => n.node_id === 'dispatch:D1:1').child.branch;
+    const d1Tip = gitOut(cwd, 'rev-parse', d1Branch);
+    assert.equal(spawnSync('git', ['merge-base', '--is-ancestor', d1Tip, 'HEAD'], { cwd: d2.cwd }).status, 0, "D2's tree holds D1's commit");
+    assert.match(readFileSync(join(d2.cwd, 'c.txt'), 'utf8'), /^top line\n/, "D2's c.txt starts from D1's edit");
+    await acceptChildPackage(tm, g, task_id, d2, bottom);
+
+    // The reintegrate really merges both branches (HARNESS_TEST_NO_DRIVER: nothing else runs it).
+    nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.ready.map((n) => n.node_id), ['integrate:2']);
+    const after = load();
+    const integ = after.nodes.find((n) => n.node_id === 'integrate:2');
+    assert.equal(integ.state, 'pending', 'the reintegrate is ready, not failed');
+    assert.deepEqual(integ.integration.merged.map((m) => m.package), ['P1', 'P2', 'D1', 'D2'], 'both fixes merged by git');
+    assert.ok(!(integ.result && integ.result.deferred_conflicts && integ.result.deferred_conflicts.length), 'no deferred conflicts');
+    assert.ok(!after.spec.packages.some((p) => p.repair), 'no conflict repair package is filed');
+    assert.match(readFileSync(join(integ.integration.cwd, 'c.txt'), 'utf8'), /^top line\n[\s\S]*bottom line\n$/, 'the integrated c.txt holds both edits');
+  }, QA_FILE_OPTS);
+});
+
+test('card 129 part 3: QA-filed fixes on disjoint files dispatch together with base_branch', async () => {
+  await withTask(async ({ tm, g, root, task_id }) => {
+    await qaFileDefects(tm, g, task_id, [
+      { title: 'fix on b', touches: ['b.txt'] },
+      { title: 'fix on c', touches: ['c.txt'] },
+    ]);
+    const task = JSON.parse(readFileSync(join(root, task_id, 'task.json'), 'utf8'));
+    const pkg = (id) => task.spec.packages.find((p) => p.id === id);
+    assert.ok(pkg('D1').base_branch && pkg('D2').base_branch, 'QA filing records base_branch on both fixes');
+    assert.deepEqual(pkg('D1').deps, ['P2'], 'D1 orders behind P2, which owns b.txt, and nothing else');
+    assert.deepEqual(pkg('D2').deps, [], 'D2 touches c.txt, which no package owns: no ordering');
+    assertAcyclic(task);
+    const nx = await tm.call('tm_next', { task_id });
+    assert.deepEqual(nx.children.map((c) => c.package_id).sort(), ['D1', 'D2'], 'both fixes dispatch in one call');
+  }, QA_FILE_OPTS);
+});
+
 test('an earlier filed defect whose accept ends final-failed settles the later overlapping defect unreachable, not pending (N5)', async () => {
   const { autoRetryPackages } = await import('../mcp/taskmanager.mjs');
   await withTask(async ({ tm, g, root, task_id }) => {

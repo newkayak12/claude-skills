@@ -256,3 +256,22 @@ test('no opening dispatch -> summary carries no opening key', () => {
     assert.equal('opening' in r.summary, false);
   } finally { for (const d of [cwd, tasks, root]) rmSync(d, { recursive: true, force: true }); }
 });
+
+test('costByStage buckets restart/r1/_N suffixes, cards and node_streams like the former inline byKind', async () => {
+  const { costByStage } = await import('../mcp/drivercost.mjs');
+  const costs = {
+    streams: [
+      { stream: 'dispatch_P1.stream.jsonl', cost_usd: 1 },
+      { stream: 'dispatch_P2.restart1.stream.jsonl', cost_usd: 0.5 },
+      { stream: 'dispatch_PLAN-F2_3.stream.jsonl', cost_usd: 2 },
+      { stream: 'judge_accept_P1.r1.stream.jsonl', cost_usd: 0.25 },
+      { stream: 'judge_plan-integrate_PLAN-F1.stream.jsonl', cost_usd: 0.75 },
+    ],
+    node_streams: [
+      { stream: 'run1/review_U1_2/a/events.jsonl', cost_usd: 1.2 },
+      { stream: 'x/gate_3/a/events.jsonl', cost_usd: 0.3 },
+    ],
+  };
+  assert.deepEqual(costByStage(costs), { dispatch_package: 1.5, dispatch_PLAN: 2, judge_accept: 0.25, 'judge_plan-integrate': 0.75, node_review: 1.2, node_gate: 0.3 });
+  assert.deepEqual(costByStage(null), {});
+});
