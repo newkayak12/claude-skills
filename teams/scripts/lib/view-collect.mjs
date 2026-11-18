@@ -7,6 +7,7 @@
 // broker). A parse failure is tolerated, not fatal: it is reported on the model as
 // `error` / a node's own `read_error`, never thrown past collect().
 import { pidAlive } from '../../mcp/proc.mjs';
+import { taskName } from '../../mcp/names.mjs';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { loadRunAt, runState } from '../../mcp/graph.mjs';
@@ -956,7 +957,7 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     // plan/setgoal/impl/qualitygate), never `state`/`flow` below (the engine's own run-state
     // words) - the two are deliberately different vocabularies for different audiences (see
     // tickets.mjs's header comment), and this surface shows both rather than picking one.
-    ticket: { key: epicKey(task.run_id || taskId), slug: task.slug || null, title: deriveTitle(task.request, task.requests), state: stalledTask ? 'stalled' : epicWord, phase: epicPhase(task) },
+    ticket: { key: epicKey(task.run_id || taskId), slug: task.slug || null, title: taskName(task), state: stalledTask ? 'stalled' : epicWord, phase: epicPhase(task) },
     size: task.size || null,
     flow: task.flow && task.flow !== 'auto' ? task.flow : (task.flow_chosen || 'auto'),
     kind: task.kind || 'task',
@@ -987,32 +988,6 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
   if (task.created_at) onClock((now) => { model.elapsed_ms = now - task.created_at; });
   onClock((now) => { model.flow_metrics = flowMetrics(task, boardEntries, { now }); });
   return model;
-}
-
-// A short, human-quotable headline for a card - there is no title field on a task, only
-// `request` (a free-text sentence or paragraph a person typed). Takes the first sentence/clause
-// (up to the first ./!/?), falls back to the whole string when none of those appear, then
-// truncates. The full `request` is never lost: view.mjs's per-task text (--once --task <id>) still
-// shows it in full - this is only the index's headline.
-//
-// A backlog (tm_open requests[], the raw items in task.requests) past one item reads as the backlog
-// cards its items name ("Backlog cards 74, 84"), else as its first item and how many more ("Fix X +2");
-// one item reads as itself, not as the composed "[backlog priority 0] ..." request string.
-const TITLE_MAX = 72;
-const itemText = (r) => (r && typeof r === 'object' ? (r.request ?? r.text ?? r.title ?? '') : r);
-export function deriveTitle(request, requests) {
-  let text = request;
-  if (Array.isArray(requests) && requests.length > 1) {
-    const cards = [...new Set(requests.map((r) => (/\bcard (\d+)/i.exec(String(itemText(r) || '')) || [])[1]).filter(Boolean))];
-    if (cards.length) return `Backlog card${cards.length > 1 ? 's' : ''} ${cards.join(', ')}`;
-    return `${deriveTitle(itemText(requests[0]))} +${requests.length - 1}`;
-  }
-  if (Array.isArray(requests) && requests.length === 1) text = itemText(requests[0]);
-  const s = String(text || '').trim();
-  if (!s) return '(no request)';
-  const clause = (s.match(/^[\s\S]*?[.!?](?=\s|$)/) || [s])[0].replace(/[.!?]+$/, '').trim();
-  if (clause.length <= TITLE_MAX) return clause;
-  return `${clause.slice(0, TITLE_MAX - 1).trimEnd()}…`;
 }
 
 // epicBoardRows' own `origin` field (tickets.mjs) is not itself "was this filed as a defect" -
@@ -1083,7 +1058,7 @@ export function listTasks(tasksDir) {
       task_id: id,
       epic_key: key,
       slug: task.slug || null,
-      title: deriveTitle(task.request, task.requests),
+      title: taskName(task),
       state,
       phase,
       // Grouping/display only - a person-set label above the EPIC (teamconfig.mjs's own

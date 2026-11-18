@@ -151,6 +151,6 @@ export function serve({ serverInfo, protocolVersion, tools, call }) {
     }
   });
   input.on('end', () => {
-    Promise.allSettled([...pending]).then(() => process.exit(0));
+    Promise.allSettled([...pending]).then(() => process.stdout.write('', () => process.exit(0)));
   });
 }

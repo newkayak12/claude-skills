@@ -243,7 +243,8 @@ test('view-once-golden.json differs from the base commit only by additions or by
       if (!c) { bad.push(`removed: ${group}.${fmt}`); continue; }
       if (b.lines) {
         const have = new Set(c.lines || []);
-        for (const l of b.lines) if (!have.has(l)) bad.push(`line dropped in ${group}.${fmt}: ${l}`);
+        // card 127: the header `E-key  title` became `E-key · title`; that rewording is the only one allowed
+        for (const l of b.lines) if (!have.has(l) && !(have.has(l.replace(/^(E-\S+)  /, '$1 · ')))) bad.push(`line dropped in ${group}.${fmt}: ${l}`);
       } else bad.push(...additionsViolations(b, c).map((v) => `${group}.${fmt} ${v}`));
     }
   }

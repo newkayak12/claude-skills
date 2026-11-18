@@ -9,6 +9,7 @@ import { graphRunPath } from './harnessrun.mjs';
 import { liveProc, registryProcesses, sameProcess } from './livecap.mjs';
 import { logReply, renderLedgerLine, renderStreamLine } from './tasklog.mjs';
 import { mutateRun, mutateTask } from './store.mjs';
+import { taskName } from './names.mjs';
 import { mode as wikiMode } from './wikibridge.mjs';
 import { writeDocs } from './docs.mjs';
 import { askTimeoutMs } from './taskmanager-asks.mjs';
@@ -223,7 +224,7 @@ export function appendBoardTransitions(task, before, by) {
 // A no-task_id tm_board row, shared by the flat listing and every initiative group below it -
 // one function so the two can never disagree about what an epic row looks like.
 function epicRow(t) {
-  return { key: epicKey(t.run_id), slug: t.slug || null, task_id: t.run_id, title: String(t.request).slice(0, 60), state: epicTicketState(t), phase: epicPhase(t) };
+  return { key: epicKey(t.run_id), name: taskName(t), slug: t.slug || null, task_id: t.run_id, title: String(t.request).slice(0, 60), state: epicTicketState(t), phase: epicPhase(t) };
 }
 
 function toolBoard(a) {
@@ -256,6 +257,7 @@ function toolBoard(a) {
   const driverTotal = figure.live;
   return {
     key: epicKey(task.run_id),
+    name: taskName(task),
     slug: task.slug || null,
     task_id: task.run_id,
     title: String(task.request).slice(0, 80),
@@ -327,7 +329,7 @@ function toolTicket(a) {
   const { task, pkgId, subgoalId } = resolveTicketRef(key);
   if (!pkgId) {
     return {
-      key: epicKey(task.run_id), task_id: task.run_id, kind: 'EPIC',
+      key: epicKey(task.run_id), name: taskName(task), task_id: task.run_id, kind: 'EPIC',
       title: String(task.request).slice(0, 160),
       state: epicTicketState(task), phase: epicPhase(task),
       daemon: task.daemon ? { pid: task.daemon.pid, alive: driverAlive(task.daemon) } : null,
@@ -1123,7 +1125,7 @@ function toolStatus(a) {
     try { ids = readdirSync(tasksRoot()); } catch { ids = []; }
     const tasks = ids.map((id) => loadRunAt(taskPath(id))).filter(Boolean)
       .sort((x, y) => (y.created_at || 0) - (x.created_at || 0))
-      .map((t) => { const s = t.cancelled || t.worktree_gone ? taskState(t) : runState(t); return { task_id: t.run_id, cwd: t.cwd, state: s.state, counts: s.counts, size: t.size, request: String(t.request).slice(0, 160), created_at: new Date(t.created_at).toISOString() }; });
+      .map((t) => { const s = t.cancelled || t.worktree_gone ? taskState(t) : runState(t); return { task_id: t.run_id, name: taskName(t), cwd: t.cwd, state: s.state, counts: s.counts, size: t.size, request: String(t.request).slice(0, 160), created_at: new Date(t.created_at).toISOString() }; });
     return { root: tasksRoot(), tasks };
   }
   let task = mustFindTask(a);
@@ -1147,6 +1149,7 @@ function toolStatus(a) {
     const ts = taskState(task);
     return {
       task_id: task.run_id,
+      name: taskName(task),
       slug: task.slug || null,
       cwd: task.cwd,
       state: ts.state,
@@ -1171,6 +1174,7 @@ function toolStatus(a) {
     const ts = taskState(task);
     return {
       task_id: task.run_id,
+      name: taskName(task),
       slug: task.slug || null,
       cwd: task.cwd,
       state: ts.state,
@@ -1193,6 +1197,7 @@ function toolStatus(a) {
   const state = taskState(task);
   return {
     task_id: task.run_id,
+    name: taskName(task),
     slug: task.slug || null,
     cwd: task.cwd,
     state: state.state,

@@ -83,7 +83,7 @@ test('fit: cuts with an ellipsis, wide glyphs count wider', () => {
 test('text: key and title first, bar and percent, stages in order, waiting and lanes, nothing for no task', () => {
   const t = dashboardText(dashboardModel(task(), { now: 0 }));
   const lines = t.trimEnd().split('\n');
-  assert.equal(lines[0], 'E-4a1c9e02  Checkout: refund flow');
+  assert.equal(lines[0], 'E-4a1c9e02 · Checkout: refund flow');
   assert.match(lines[1], /^RUNNING  ▰{3}▱{7} 33%$/);
   assert.ok(t.includes('✔ Plan → ◉ Build → ○ Integrate'));
   assert.ok(t.includes('⚑ Receipt copy — Brand or plain?'));

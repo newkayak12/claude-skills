@@ -41,16 +41,16 @@ of truth. This skill calls it and prints the Output Template below; it makes no 
 Epic list (no EPIC named):
 
 ```
-| key        | title              | state       | phase |
-|------------|--------------------|-------------|-------|
-| E-a1b2c3d4 | 결제 취소 기능       | IN_PROGRESS | impl  |
-| E-b2c3d4e5 | 알림 배치 정리       | DONE        | report|
+| EPIC                         | state       | phase |
+|------------------------------|-------------|-------|
+| E-a1b2c3d4 · 결제 취소 기능    | IN_PROGRESS | impl  |
+| E-b2c3d4e5 · 알림 배치 정리    | DONE        | report|
 ```
 
 One EPIC (named):
 
 ```
-## E-a1b2c3d4  결제 취소 기능              state: IN_PROGRESS   phase: impl   daemon: pid 4121 alive
+## E-a1b2c3d4 · 결제 취소 기능              state: IN_PROGRESS   phase: impl   daemon: pid 4121 alive
 
 | key  | role     | state        | tasks | last verdict |
 |------|----------|--------------|-------|--------------|

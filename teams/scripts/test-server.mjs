@@ -153,7 +153,24 @@ test('full mode lists the 33 tools of the golden fixture, same names, descriptio
     const listed = (await c.tools()).map((t) => normalize({
       name: t.name, description: t.description, inputSchema: t.inputSchema, outputSchema: t.outputSchema === undefined ? null : t.outputSchema,
     })).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-    const golden = FIXTURE.map(({ server, ...rest }) => rest).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    // Same three exact swaps as test-taskmanager-tools.mjs: the fixture is pre-merge, card 127 added the EPIC `name`.
+    const NAME_FRAGMENT = {
+      tm_status: ['Compact task state: ', 'Compact task state: the EPIC `name` (a short natural-language name), '],
+      tm_board: ['(key, state, phase)', '(key, name - a short natural-language name, state, phase)'],
+      tm_ticket: ['for the EPIC, E-xxxxxxxx/Pn', 'for the EPIC (with its short natural-language `name`), E-xxxxxxxx/Pn'],
+    };
+    // tm_open and tm_run gained the optional `name` argument (the model-written EPIC name), pinned as its exact schema.
+    const NAME_PROP = {
+      tm_open: { type: 'string', description: 'Optional short name for this EPIC, a few words in the request\'s language. Pass it only when the request\'s first clause does not read as a title (a chat sentence, not a card title). Stored once in task.json and shown beside the key; derived from the request when omitted.' },
+      tm_run: { type: 'string', description: 'Same meaning as tm_open({name}): a few words in the request\'s language, passed only when the request\'s first clause does not read as a title. Stored once in task.json and shown beside the key; derived from the request when omitted.' },
+    };
+    const golden = FIXTURE.map(({ server, ...rest0 }) => {
+      const rest = NAME_PROP[rest0.name] ? { ...rest0, inputSchema: { ...rest0.inputSchema, properties: { ...rest0.inputSchema.properties, name: NAME_PROP[rest0.name] } } } : rest0;
+      const frag = NAME_FRAGMENT[rest.name];
+      if (!frag) return rest;
+      assert.equal(rest.description.split(frag[0]).length, 2, `${rest.name}: the fixture holds the anchor once`);
+      return { ...rest, description: rest.description.replace(frag[0], () => frag[1]) };
+    }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     assert.equal(golden.length, 33);
     assert.equal(listed.length, 33);
     assert.deepEqual(listed, golden);

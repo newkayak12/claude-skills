@@ -20,6 +20,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { docPaths } from '../mcp/tickets.mjs';
+import { epicName, givenName, taskName } from '../mcp/names.mjs';
 import { shippedPackages } from '../mcp/docs.mjs';
 import { collectDriverCosts } from './bench/lib/drivercost.mjs';
 import { hasDeclaredAcceptance, detectDeclaredAcceptance, resolvePlanningMode, renderAcceptanceTemplate } from '../mcp/acceptance.mjs';
@@ -11988,4 +11989,174 @@ test('card 109: a repair that ignores a settled package does not drop it', async
     assert.ok(!(i3.integration.already_applied || []).some((m) => m.package === 'D2'), 'D2 is not listed as applied');
     assert.ok(!('conflicts' in i3.result));
   }, { max_parallel_teams: 3 });
+});
+
+const CARD127_REQ = 'Backlog card 127: every EPIC row reads as its key plus a short natural-language name, never the key alone. User, 2026-11-04, on a pane with rows `● E-0ad41780 ⑂ c…`: "EPIC 이름 이렇게 못알아보게 하지 말고".\nAcceptance:\n- a test';
+const CARD127_KO = 'Backlog card 125: mod 상태를 소켓 하나로 합친다. 뷰어는 그대로 둔다.';
+const CARD127_R130 = [
+  'Card 130 part 1, model per stage (PRD F1): team.json / tm_open take a model per stage\nAcceptance:\n- a test',
+  'Card 130 parts 2 and 4, lean short sessions (PRD F2): every driver, judge and broker adapter node spawn uses --strict-mcp-config',
+  'Card 130 part 3, budget holds for every size (PRD F3): budget_usd stops a size-S driver',
+];
+const card127Stored = (root, id) => JSON.parse(readFileSync(join(root, id, 'task.json'), 'utf8'));
+
+test('card 127: tm_open and tm_run store the EPIC name in task.json (English card request, Korean request)', async () => {
+  await withTask(async ({ tm, cwd, root }) => {
+    const base = { ...CARD145, cwd };
+    const a = await tm.call('tm_open', { ...base, request: CARD127_REQ });
+    assert.equal(a.error, undefined, JSON.stringify(a));
+    assert.deepStrictEqual(card127Stored(root, a.task_id).name, 'every EPIC row reads as its key plus a short…');
+    const d = await tm.call('tm_run', { ...base, request: CARD127_KO });
+    assert.equal(d.error, undefined, JSON.stringify(d));
+    assert.deepStrictEqual(card127Stored(root, d.task_id).name, 'mod 상태를 소켓 하나로 합친다');
+  });
+});
+
+const CARD127_USER_SENTENCE = 'backlog harness의 티캣,을 4522629같은거 말고 자연어로 정하면 더 좋을 것 같음 사람이 알 수 있게';
+
+test('card 127: tm_open({request: chat sentence, name}) stores the model-written name once, and tm_board and tm_status return it beside the key (golden (h))', async () => {
+  await withTask(async ({ tm, cwd, root }) => {
+    const o = await tm.call('tm_open', { ...CARD145, cwd, request: CARD127_USER_SENTENCE, name: '티켓 이름을 자연어로' });
+    assert.equal(o.error, undefined, JSON.stringify(o));
+    assert.deepStrictEqual(card127Stored(root, o.task_id).name, '티켓 이름을 자연어로');
+    const key = `E-${o.task_id.slice(0, 8)}`;
+    assert.deepStrictEqual((await tm.call('tm_board', { task_id: key })).name, '티켓 이름을 자연어로');
+    assert.deepStrictEqual((await tm.call('tm_board', {})).epics.find((r) => r.task_id === o.task_id).name, '티켓 이름을 자연어로');
+    assert.deepStrictEqual((await tm.call('tm_status', { task_id: o.task_id })).name, '티켓 이름을 자연어로');
+    assert.deepStrictEqual((await tm.call('tm_status', {})).tasks.find((r) => r.task_id === o.task_id).name, '티켓 이름을 자연어로');
+    const task = card127Stored(root, o.task_id);
+    assert.deepStrictEqual(taskName(task), '티켓 이름을 자연어로');
+    // Without a name the same sentence is named by its whole-token derivation, not by the model.
+    const p = await tm.call('tm_open', { ...CARD145, cwd, request: CARD127_USER_SENTENCE });
+    assert.deepStrictEqual(card127Stored(root, p.task_id).name, epicName(CARD127_USER_SENTENCE));
+  });
+});
+
+test('card 127: tm_run stores a given name too', async () => {
+  await withTask(async ({ tm, cwd, root }) => {
+    const r = await tm.call('tm_run', { ...CARD145, cwd, request: CARD127_USER_SENTENCE, name: 'EPIC 이름 자연어' });
+    assert.equal(r.error, undefined, JSON.stringify(r));
+    assert.deepStrictEqual(card127Stored(root, r.task_id).name, 'EPIC 이름 자연어');
+  });
+});
+
+test('card 127: a blank name falls back to the name derived from the request; an 80-char name is stored cut to <= 60 chars ending in …', async () => {
+  await withTask(async ({ tm, cwd, root }) => {
+    const b = await tm.call('tm_open', { ...CARD145, cwd, request: CARD127_KO, name: '   ' });
+    assert.equal(b.error, undefined, JSON.stringify(b));
+    assert.deepStrictEqual(card127Stored(root, b.task_id).name, epicName(CARD127_KO));
+    const long = 'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi';
+    assert.ok(long.length >= 80, `${long.length}`);
+    const l = await tm.call('tm_open', { ...CARD145, cwd, request: CARD127_KO, name: long });
+    assert.equal(l.error, undefined, JSON.stringify(l));
+    const stored = card127Stored(root, l.task_id).name;
+    assert.ok(stored.length <= 60 && stored.endsWith('…'), stored);
+    const tokens = long.split(' ');
+    const head = stored.slice(0, -1).split(' ');
+    assert.deepStrictEqual(head, tokens.slice(0, head.length), 'a whole-token head of the given name');
+    assert.deepStrictEqual(stored, givenName(long));
+  });
+});
+
+test('card 127: tm_open stores the backlog name, and the one-line title wins beside requests', async () => {
+  await withTask(async ({ tm, cwd, root }) => {
+    const base = { ...CARD145, cwd };
+    const c =await tm.call('tm_open', { ...base, requests: CARD127_R130 });
+    assert.equal(c.error, undefined, JSON.stringify(c));
+    assert.deepStrictEqual(card127Stored(root, c.task_id).name, 'model per stage · lean short sessions +1');
+    const g = await tm.call('tm_open', { ...base, request: 'Cards 145 and 146: tm_open and tm_clean stop failing', requests: ['Card 145: a', 'Card 146: b'] });
+    assert.equal(g.error, undefined, JSON.stringify(g));
+    const gt = card127Stored(root, g.task_id);
+    assert.deepStrictEqual(gt.name, 'tm_open and tm_clean stop failing');
+    assert.deepStrictEqual(gt.name, epicName(gt.request, { requests: gt.requests, title: gt.title }));
+  });
+});
+
+test('card 127: tm_board (list, initiative group, one EPIC) returns the stored name beside the key', async () => {
+  await withTask(async ({ tm, cwd, root }) => {
+    const o = await tm.call('tm_open', { ...CARD145, cwd, request: CARD127_REQ, initiative: 'names' });
+    assert.equal(o.error, undefined, JSON.stringify(o));
+    const stored = card127Stored(root, o.task_id).name;
+    const key = `E-${o.task_id.slice(0, 8)}`;
+    const rowOf = (rows) => rows.find((r) => r.task_id === o.task_id);
+    const board = await tm.call('tm_board', {});
+    const row = rowOf(board.epics);
+    assert.match(row.key, /^E-[0-9a-f]{8}$/);
+    assert.deepStrictEqual(row.name, stored);
+    assert.deepStrictEqual(rowOf(board.groups.find((x) => x.initiative === 'names').epics).name, stored, 'the initiative group row too');
+    assert.deepStrictEqual((await tm.call('tm_board', { task_id: key })).name, stored);
+  });
+});
+
+test('card 127: tm_status and tm_ticket return the stored name beside the key', async () => {
+  await withTask(async ({ tm, cwd, root }) => {
+    const o = await tm.call('tm_open', { ...CARD145, cwd, request: CARD127_REQ, initiative: 'names' });
+    assert.equal(o.error, undefined, JSON.stringify(o));
+    const stored = card127Stored(root, o.task_id).name;
+    const key = `E-${o.task_id.slice(0, 8)}`;
+    const rowOf = (rows) => rows.find((r) => r.task_id === o.task_id);
+    assert.deepStrictEqual((await tm.call('tm_status', { task_id: o.task_id })).name, stored);
+    assert.deepStrictEqual(rowOf((await tm.call('tm_status', {})).tasks).name, stored);
+    const ticket = await tm.call('tm_ticket', { key });
+    assert.equal(ticket.key, key);
+    assert.deepStrictEqual(ticket.name, stored);
+    const init = await tm.call('tm_ticket', { key: 'I-names' });
+    assert.deepStrictEqual(init.epics.find((e) => e.task_id === o.task_id).name, stored);
+  });
+});
+
+test('card 127: a task.json written without a name is answered with taskName(task) and is not rewritten by the reads', async () => {
+  await withTask(async ({ tm, cwd, root }) => {
+    const o = await tm.call('tm_open', { ...CARD145, cwd, request: CARD127_KO });
+    const path = join(root, o.task_id, 'task.json');
+    const raw = JSON.parse(readFileSync(path, 'utf8'));
+    delete raw.name;
+    writeFileSync(path, JSON.stringify(raw));
+    const before = readFileSync(path);
+    const want = taskName(raw);
+    assert.deepStrictEqual(want, 'mod 상태를 소켓 하나로 합친다');
+    const key = `E-${o.task_id.slice(0, 8)}`;
+    assert.deepStrictEqual((await tm.call('tm_board', { task_id: key })).name, want);
+    assert.deepStrictEqual((await tm.call('tm_board', {})).epics.find((r) => r.task_id === o.task_id).name, want);
+    assert.deepStrictEqual((await tm.call('tm_status', { task_id: o.task_id })).name, want);
+    assert.deepStrictEqual((await tm.call('tm_status', {})).tasks.find((r) => r.task_id === o.task_id).name, want);
+    assert.deepStrictEqual((await tm.call('tm_ticket', { key })).name, want);
+    assert.ok(readFileSync(path).equals(before), 'task.json bytes are identical after the reads');
+  });
+});
+
+test('card 127: tm_open with article-only requests stores "untitled work" instead of throwing', async () => {
+  await withTask(async ({ tm, cwd, root }) => {
+    const base = { ...CARD145, cwd };
+    const r = await tm.call('tm_open', { ...base, requests: ['a', 'b'] });
+    assert.equal(r.error, undefined, JSON.stringify(r));
+    assert.deepStrictEqual(card127Stored(root, r.task_id).name, 'untitled work');
+    const s = await tm.call('tm_open', { ...base, request: 'the' });
+    assert.equal(s.error, undefined, JSON.stringify(s));
+    assert.deepStrictEqual(card127Stored(root, s.task_id).name, 'untitled work');
+  });
+});
+
+test('card 127: tm_board and tm_status still list every EPIC when one task.json has no name and an article-only request', async () => {
+  await withTask(async ({ tm, cwd, root }) => {
+    const base = { ...CARD145, cwd };
+    const ok = await tm.call('tm_open', { ...base, request: CARD127_KO });
+    const odd = await tm.call('tm_open', { ...base, request: 'a keeper of the legacy list' });
+    const path = join(root, odd.task_id, 'task.json');
+    const raw = JSON.parse(readFileSync(path, 'utf8'));
+    delete raw.name;
+    delete raw.requests;
+    delete raw.title;
+    raw.request = 'a';
+    writeFileSync(path, JSON.stringify(raw));
+    const rowOf = (rows, id) => rows.find((r) => r.task_id === id);
+    const board = await tm.call('tm_board', {});
+    assert.equal(board.error, undefined, JSON.stringify(board));
+    assert.deepStrictEqual(rowOf(board.epics, ok.task_id).name, 'mod 상태를 소켓 하나로 합친다');
+    assert.deepStrictEqual(rowOf(board.epics, odd.task_id).name, 'untitled work');
+    const status = await tm.call('tm_status', {});
+    assert.equal(status.error, undefined, JSON.stringify(status));
+    assert.deepStrictEqual(rowOf(status.tasks, ok.task_id).name, 'mod 상태를 소켓 하나로 합친다');
+    assert.deepStrictEqual(rowOf(status.tasks, odd.task_id).name, 'untitled work');
+  });
 });

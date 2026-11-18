@@ -4,7 +4,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Dash, DecisionsPayload, ReportPayload, StatusInfo, SummaryTask, SummaryTaskEntry, TeamsEvent, TeamsView } from '../types'
 import { HOME, askBandShown, carriesInput, fallbackSelection, levelOf, pageEsc, pageKey, pageStep, paneSlash, reconcileEpic, selectedOf, statusAnswer } from './pane'
 import type { Page, PageKey, PageNav, RowRef, StepCtx, StepResult } from './pane'
-import { HOME_PLANS, PAGE_ROWS, PHASE_KEYS, clipText, crumbFit, costText, epicElapsed, floorRows, footerPlan, KEYS_CHROME, homeHeader, homeRows, isEnded, logLines, needsOf, pageLines, phaseLines, renderLines, rowIdsOf, since, storyGrid, storyLabel, storyNow, storyReportLines, storyRows, storyTop, width, windowOf } from './teams-draw'
+import { HOME_PLANS, PAGE_ROWS, PHASE_KEYS, clipText, clipWords, crumbFit, costText, epicElapsed, floorRows, footerPlan, KEYS_CHROME, homeHeader, homeRows, isEnded, logLines, needsOf, pageLines, phaseLines, renderLines, rowIdsOf, since, storyGrid, storyLabel, storyNow, storyReportLines, storyRows, storyTop, width, windowOf } from './teams-draw'
 import type { DecisionX, Line, PageOpts, PageRow, PhaseEntry, StoryPayload, StoryReport } from './teams-draw'
 
 const cursor = atom({ plugin: 'teams', key: 'cursor' } as const, 0)
@@ -83,7 +83,7 @@ const en = {
   noRun: 'No teams run in this session.', loading: 'Loading...', noLog: 'Nothing logged yet.',
   workMore: '+{n} more', cmdDesc: 'Open or close the teams status pane', paneOpened: 'pane opened',
   asksYou: '{who} asks you: {q}',
-  board: 'board', inboxOne: 'needs you: {n} ask', inboxMany: 'needs you: {n} asks', statusWaiting: 'needs you: {n} waiting - open /teams-status',
+  board: 'board', inboxOne: 'needs you: {n} ask', inboxMany: 'needs you: {n} asks', inboxShort: 'needs you', statusWaiting: 'needs you: {n} waiting - open /teams-status',
   pushRejected: 'rejected', pushNeedsYou: 'needs you', pushEnded: 'run ended', nodeFailed: 'failed',
   noStories: 'No STORY at work.',
   runBudget: 'Budget', runBudgetOf: '{spent} of {limit}', runDrivers: 'Drivers', runLive: '{n} live', runLiveCap: '{n}/{cap} live',
@@ -167,7 +167,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     noRun: '이 세션에 팀 실행이 없습니다.', loading: '불러오는 중...', noLog: '아직 기록이 없습니다.',
     workMore: '+{n}건 더', cmdDesc: '팀 현황 창 열기/닫기', paneOpened: '창을 열었습니다',
     asksYou: '{who}님이 묻습니다: {q}',
-    board: '보드', inboxOne: '내 차례: 질문 {n}건', inboxMany: '내 차례: 질문 {n}건', statusWaiting: '내 차례: {n}건 - /teams-status 열기',
+    board: '보드', inboxOne: '내 차례: 질문 {n}건', inboxMany: '내 차례: 질문 {n}건', inboxShort: '내 차례', statusWaiting: '내 차례: {n}건 - /teams-status 열기',
     pushRejected: '반려', pushNeedsYou: '내 차례', pushEnded: '실행 종료', nodeFailed: '실패',
     noStories: '진행 중인 STORY가 없습니다.',
     runBudget: '예산', runBudgetOf: '{spent} / {limit}', runDrivers: '드라이버', runLive: '{n}개 동작 중', runLiveCap: '{n}/{cap} 동작 중',
@@ -974,7 +974,7 @@ export const register: Register = on => {
     const phaseLabel = (n: number) => `${n} ${say(`f2PhaseName${cap(PHASE_KEYS[n - 1]!)}`)}`
     const item = entry?.items.find(i => i.key === pg.story)
     const storyName = pg.story === null ? '' : `${storyLabel(pg.story)}${item === undefined ? '' : ` ${item.title}`}`
-    const epicName = entry?.title ?? ''
+    const epicName = entry ? `${entry.key} · ${entry.title}` : ''
     const crumbs = pg.name === 'FLOOR' ? [epicName, s('f2PageFloor')]
       : pg.name === 'PHASE' ? [epicName, s('f2PageFloor'), phaseLabel(pg.phase ?? 1)]
       : pg.name === 'EPIC_REPORT' ? [epicName, s('f2PageFloor'), phaseLabel(6)]
@@ -1246,21 +1246,74 @@ export const register: Register = on => {
         </Box>
       )
     }
-    // under 50 columns the title and the bar go: flag, done count and the button are what fit on the one row
-    const narrowBand = (e.props.bodyColumns ?? 80) < 50
+    // card 127 AC-7: key > first word > ⑂ <wt> > rest of the name. The name is the part that shrinks, cut with …, never below
+    // its first word; ` · ⑂ <wt>` stays whole while that floor holds. The now sentence follows and is cut by the Text's end-truncation.
+    const bandHead = `teams · ${task.key} · `
+    const bandWtFull = task.worktree ? ` · ⑂ ${task.worktree}` : ''
+    const bandFirst = /^\s*(\S*)/.exec(task.title)?.[1] ?? ''
+    const bandCols = e.props.bodyColumns ?? 80
+    const bandFlagW = flagged ? 2 : 0
+    const bandWait = Math.max(info?.waiting ?? 0, asks.length)
+    const bandDoneText = s('bandDone', { done: task.done, total: task.total })
+    // state columns drop in this order as the row narrows: bar, then the done count, then the question button shortens; the button stays
+    type BandTier = { bar: boolean; done: boolean; short: boolean }
+    const bandTiers: BandTier[] = [{ bar: true, done: true, short: false }, { bar: false, done: true, short: false }, { bar: false, done: false, short: false }, { bar: false, done: false, short: true }]
+    const bandLabel = (t: BandTier) => (bandWait === 0 ? s('board') : t.short ? s('inboxShort', { n: bandWait }) : inboxLabel(bandWait))
+    const bandRightW = (t: BandTier) =>
+      (t.bar || t.done ? 1 + (t.bar ? 10 : 0) + (t.done ? (t.bar ? 1 : 0) + width(bandDoneText) : 0) : 0) + 1 + width(bandLabel(t)) + 2
+    const bandMore = task.title.trim().length > bandFirst.length
+    // the floor counts at most 16 columns of the first word, so one huge word does not strip the state columns
+    const bandFloorOf = (wt: string) => width(bandHead) + Math.min(width(bandFirst), 16) + (bandMore ? 1 : 0) + width(wt)
+    // the ⑂ <wt> goes whole or not at all: when even the narrowest tier cannot hold key · first word… · ⑂ <wt> (2 spare columns), it is omitted
+    const bandWt = bandWtFull !== '' && bandFlagW + bandRightW(bandTiers[3]!) + bandFloorOf(bandWtFull) + 2 <= bandCols ? bandWtFull : ''
+    const bandFloor = bandFloorOf(bandWt)
+    // the wished floor: the first two words of the name, so a question box does not leave only the first word
+    const bandWords2 = /^\s*(\S+\s+\S+)/.exec(task.title)?.[1] ?? bandFirst
+    const bandFloor2 = bandFloor + Math.max(0, Math.min(width(bandWords2), 24) - Math.min(width(bandFirst), 16))
+    const bandAskFull = first === undefined ? '' : s('asksYou', { who: first.who, q: first.question })
+    const bandMoreAsks = asks.length > 1 ? 1 + width(`+${asks.length - 1}`) : 0
+    // the question box is asked for 18 columns before a state column is dropped; the name floor is never given up for it
+    const bandAskNeed = bandAskFull === '' ? 0 : Math.min(width(bandAskFull), 18) + bandMoreAsks + 1
+    const fitTier = (t: BandTier, need: number, floor = bandFloor) => bandFlagW + bandRightW(t) + floor + need <= bandCols
+    const bandTier = bandTiers.find(t => fitTier(t, bandAskNeed, bandFloor2)) ?? bandTiers.find(t => fitTier(t, bandAskNeed)) ?? bandTiers.find(t => fitTier(t, 0)) ?? bandTiers[3]!
+    // the box is capped at a quarter of the row and gets what the key, two words and ⑂ leave (else what the first word leaves);
+    // cut with …, dropped under 10 columns
+    const bandAskCap = Math.floor(bandCols / 4) - bandMoreAsks
+    const bandAskRoomOf = (floor: number) => Math.min(bandCols - bandFlagW - bandRightW(bandTier) - floor - 1 - bandMoreAsks, bandAskCap)
+    const bandAskRoom = bandAskRoomOf(bandFloor2) >= 10 ? bandAskRoomOf(bandFloor2) : bandAskRoomOf(bandFloor)
+    const bandAskText = bandAskRoom >= 10 ? clipText(bandAskFull, bandAskRoom) : ''
+    const bandAsked = bandAskText === '' ? null : (
+      <Box flexDirection="row" flexShrink={0} marginRight={1}>
+        <Box flexShrink={1}><Text color="warning" wrap="truncate-end">{bandAskText}</Text></Box>
+        {asks.length > 1 && <Box flexShrink={0} marginLeft={1}><Text dimColor>{`+${asks.length - 1}`}</Text></Box>}
+      </Box>
+    )
+    const bandAskUsed = bandAskText === '' ? 0 : width(bandAskText) + bandMoreAsks + 1
+    const bandRoom = bandCols - bandFlagW - bandRightW(bandTier) - bandAskUsed - width(bandHead) - width(bandWt)
+    // when key · first word (+ …) does not fit even the narrowest tier, the key stands alone: no ' · ', no cut word, no ⑂
+    const bandKeyOnly = width(bandFirst) + (bandMore ? 1 : 0) > bandRoom
+    const bandHeadShown = bandKeyOnly ? bandHead.replace(/ · $/, '') : bandHead
+    const bandNameShown = bandKeyOnly ? '' : clipWords(task.title.trim(), Math.max(width(bandFirst) + (bandMore ? 1 : 0), bandRoom))
+    // the now sentence follows only when it has room for itself; otherwise nothing follows the ⑂ or the name, so no glyph is cut
+    const bandNowRoom = bandRoom - width(bandNameShown) - (bandNameShown === task.title.trim() ? 0 : 99)
+    const bandTail = bandNowRoom >= 6 ? ` — ${nowSentence(s, wo, task)}` : ''
+    const bandFilled = task.total > 0 ? Math.round((10 * task.done) / task.total) : 0
     return (
       <Box flexDirection="column">
         <Box>
           {flag}
-          {asked}
-          {!narrowBand && <Box flexShrink={1}><Text dimColor wrap="truncate-end">{`teams · ${task.worktree ? `⑂ ${task.worktree} · ` : ''}${task.title} — ${nowSentence(s, wo, task)}`}</Text></Box>}
-          <Box flexShrink={0} marginLeft={narrowBand ? 0 : 1}>
-            {!narrowBand && <Text color="success">{'━'.repeat(task.total > 0 ? Math.round((10 * task.done) / task.total) : 0)}</Text>}
-            {!narrowBand && <Text color="inactive">{'─'.repeat(10 - (task.total > 0 ? Math.round((10 * task.done) / task.total) : 0))}</Text>}
-            <Text dimColor>{`${narrowBand ? '' : ' '}${s('bandDone', { done: task.done, total: task.total })}`}</Text>
-          </Box>
-          {Math.max(info?.waiting ?? 0, asks.length) > 0
-            ? <Box flexShrink={0} marginLeft={1}><Button key="inbox" label={inboxLabel(Math.max(info?.waiting ?? 0, asks.length))} onPress={open} /></Box>
+          {bandAsked}
+          {/* card 127 AC-7: key > first word of the name > ⑂ worktree > rest of the name; only the name tail shrinks, cut with … */}
+          <Box flexShrink={1}><Text dimColor wrap="truncate-end">{`${bandHeadShown}${bandNameShown}${bandKeyOnly ? '' : bandWt}${bandTail}`}</Text></Box>
+          {(bandTier.bar || bandTier.done) && (
+            <Box flexShrink={0} marginLeft={1}>
+              {bandTier.bar && <Text color="success">{'━'.repeat(bandFilled)}</Text>}
+              {bandTier.bar && <Text color="inactive">{'─'.repeat(10 - bandFilled)}</Text>}
+              {bandTier.done && <Text dimColor>{`${bandTier.bar ? ' ' : ''}${bandDoneText}`}</Text>}
+            </Box>
+          )}
+          {bandWait > 0
+            ? <Box flexShrink={0} marginLeft={1}><Button key="inbox" label={bandLabel(bandTier)} onPress={open} /></Box>
             : <Box flexShrink={0} marginLeft={1}><Button key="board" label={s('board')} onPress={openHome} /></Box>}
         </Box>
         {await next(e)}

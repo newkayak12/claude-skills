@@ -27,7 +27,26 @@ test('TOOLS deep-equals the golden fixture\'s tm_* entries', () => {
   assert.ok(fixture.every((t) => t.server === 'task-manager'));
   // capture-tools.mjs tags each entry with the server it came from; tools/list does not carry that.
   const listed = fixture.map(({ server, ...tool }) => tool);
-  assert.deepEqual(JSON.parse(JSON.stringify(mod.TOOLS)).sort(byName), listed.sort(byName));
+  // The fixture is the pre-merge capture; three descriptions have since gained the EPIC `name` (card 127).
+  // Each is pinned exactly: the fixture's old text with only this one fragment swapped in.
+  const NAME_FRAGMENT = {
+    tm_status: ['Compact task state: ', 'Compact task state: the EPIC `name` (a short natural-language name), '],
+    tm_board: ['(key, state, phase)', '(key, name - a short natural-language name, state, phase)'],
+    tm_ticket: ['for the EPIC, E-xxxxxxxx/Pn', 'for the EPIC (with its short natural-language `name`), E-xxxxxxxx/Pn'],
+  };
+  // tm_open and tm_run gained the optional `name` argument (the model-written EPIC name), pinned as its exact schema.
+  const NAME_PROP = {
+    tm_open: { type: 'string', description: 'Optional short name for this EPIC, a few words in the request\'s language. Pass it only when the request\'s first clause does not read as a title (a chat sentence, not a card title). Stored once in task.json and shown beside the key; derived from the request when omitted.' },
+    tm_run: { type: 'string', description: 'Same meaning as tm_open({name}): a few words in the request\'s language, passed only when the request\'s first clause does not read as a title. Stored once in task.json and shown beside the key; derived from the request when omitted.' },
+  };
+  const expected = listed.map((t0) => {
+    const t = NAME_PROP[t0.name] ? { ...t0, inputSchema: { ...t0.inputSchema, properties: { ...t0.inputSchema.properties, name: NAME_PROP[t0.name] } } } : t0;
+    const frag = NAME_FRAGMENT[t.name];
+    if (!frag) return t;
+    assert.equal(t.description.split(frag[0]).length, 2, `${t.name}: the fixture holds the anchor once`);
+    return { ...t, description: t.description.replace(frag[0], () => frag[1]) };
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(mod.TOOLS)).sort(byName), expected.sort(byName));
 });
 
 test('every TOOLS name has a dispatch case and every dispatch case has a TOOLS entry (18 tm_*)', () => {

@@ -16,6 +16,25 @@
 // words verbatim and nothing else; otherwise the words above minus instruction fillers (read, fully,
 // no version bump...). The prefix card-N, cards-a-b (3+ consecutive) or cards-a-b-c leads when a plan
 // topic was found or fewer than 2 words remain. Cap 32: prefix whole, words while they fit.
+//
+// Name (epicName, givenName, taskName): the readable title of an EPIC, in the request's own language,
+// at most 60 chars per item. A name is made only of whole tokens of its source, never edited inside a
+// word: no particle, ending or article is stripped, no stem is cut. Source: the title, else each
+// requests item, else the request; first line only. Backlog/card/카드 N(번)/part prefixes,
+// parentheses, E- keys and backticks go; a path-only token (a '/' and only path characters, or a
+// leading / ./ ~, a trailing / or a file at the end) is removed whole, never shortened. The first
+// clause with words (up to : ; . ? ! or a dash; a one-word label yields to a later clause of 2+) is
+// the name when it fits. Too long: the part before its first ', ' (comma and a space; 티캣,을 is one
+// token) when it has 3+ words, else the head before the first subordinate word (that, so, when,
+// because, which, if, after, instead...), else the longest head that fits; each ends in '…' after
+// trailing function words (a, the, of, to, in, by, and, with...) are backed off whole. Only a first
+// token longer than 59 chars is cut inside itself, and the '…' marks it. Several items are joined by
+// ' · ' while they fit, with ' +K' for the rest. Nothing readable: 'untitled work'. A name the caller
+// wrote (givenName) is its first line cut the same way; taskName prefers a stored one.
+// Lines are tried in order until one names; after a card prefix, scaffolding (items 5-7, leftover,
+// carryover D1, on top of P1, package labels, a leading in/of/and) goes like the card number, and a
+// line left with under 3 words yields to a later one. An E-key takes the function word before it.
+// A label clause ("...것:") yields to the clause after it.
 import { createHash } from 'node:crypto';
 
 const SLUG_MAX = 32;
@@ -154,4 +173,211 @@ export function uniqueSlug(base, taken) {
     const cand = base.slice(0, SLUG_MAX - suffix.length).replace(/-+$/, '') + suffix;
     if (!used.has(cand)) return cand;
   }
+}
+
+const NAME_MAX = 60;
+const ARTICLES = new Set('a an the its their'.split(' '));
+const BOUNDARY = new Set(
+  'plus to for by from so when because that which instead never while after before if and or but in on at of via until unless'.split(' '));
+const FUNCTION_WORDS = new Set([...BOUNDARY, ...ARTICLES,
+  ...'as is be with into onto inside under out over about through across within between than below above against per how why what who where whose whatever'.split(' ')]);
+// A cut ends before the first of these (a subordinate clause), never inside it; a cut never ends on a TRAIL word.
+const SUBORDINATE = new Set('that so when whatever because while which if after before until unless instead'.split(' '));
+const TRAIL = new Set('a an the of to in on at by for with and or from as is are its their'.split(' '));
+const FIT = NAME_MAX - 1; // room for the …
+const NUM_LIST = String.raw`#?\d+[a-z]?\b(?:\s*(?:,|and|&)\s*#?\d+[a-z]?\b)*`;
+const KO_NUM_LIST = String.raw`#?\d+(?:\s?번)?(?:\s*(?:,|과|와|및|and|&)\s*#?\d+(?:\s?번)?)*`;
+const JOINERS = /^(?:[\s:,;—–]|-+(?=\s))+/; // a hyphen joins only when a space follows: --once keeps its dashes
+const PREFIXES = [
+  /^\[backlog priority \d+\]/i,
+  new RegExp(String.raw`^(?:backlog\s+)?cards?\s+${NUM_LIST}`, 'i'),
+  new RegExp(String.raw`^(?:백로그\s*)?카드\s*${KO_NUM_LIST}`),
+  new RegExp(String.raw`^parts?\s+${NUM_LIST}`, 'i'),
+  /^\([^)]*\)/,
+  /^#?\d+[:)]\s+/, // a card label on its own line ("147: ...")
+  JOINERS,
+];
+const CLAUSE_END = /:(?=\s|$)|\s[—–]\s|;|\.(?=\s|$)|[?!](?=\s|$)/;
+const hasLetter = (t) => /\p{L}/u.test(t);
+
+// Scaffolding after a card prefix, stripped like the card number: `items 5-7`, `leftover`, `carryover`,
+// `follow-up` (the last three only before a punctuation, a package label or the end), `on top of P1`,
+// the package labels that follow (QA-F1, D1) and the joining word left in front. Case-sensitive on purpose:
+// a label is capitals plus digits.
+const LABEL = String.raw`[A-Z]{1,3}-?[A-Z]?\d+\b`;
+const ITEMS = new RegExp(String.raw`^[Ii]tems?\s+\d+(?:[-–]\d+)?(?:\s*(?:,|and|&)\s*\d+(?:[-–]\d+)?)*\b`);
+const LEFTOVER = new RegExp(String.raw`^(?:[Ll]eftovers?|[Cc]arry-?overs?|[Ff]ollow-?ups?)(?=\s*(?:[,:;.]|$)|\s+${LABEL})`);
+const LEAD_LABEL = new RegExp(String.raw`^${LABEL}`);
+const LEAD_JOIN = /^(?:(?:[\s.,:;—–]|-+(?=\s))+|(?:and|or|in|on|of|to|for|from|at)\b\s*)/i;
+// A label clause ("사용자가 요청한 것:", "the following:") says nothing; the clause after it does.
+const LABEL_CLAUSE = /^[^:]*(?:것|내용|사항|다음|following|below)\s*:\s+/;
+
+const CUT_PATH = ''; // a path-only token was removed here
+const CUT_ELL = ''; // a token holding … was removed here
+const MARKS = [CUT_PATH, CUT_ELL];
+function cleanText(line) {
+  let t = line.replace(/[]/g, '').trim();
+  let lead = false;
+  for (let again = true; again;) {
+    again = false;
+    for (const re of PREFIXES) {
+      const next = t.replace(re, '');
+      if (next !== t) { t = next; again = true; if (PREFIXES.indexOf(re) < 4) lead = true; }
+    }
+  }
+  while (/\([^()]*\)/.test(t)) t = t.replace(/\([^()]*\)/g, ' ');
+  const toks = [];
+  for (const tok of t.split(/\s+/)) {
+    const b = baseName(tok);
+    // an E-key removed after a function word takes that word with it ("of E-1a2b3c4d")
+    if (!b && /^E-[0-9a-f]{8}$/.test(tok.replace(WRAP_L, '').replace(WRAP_R, ''))
+      && toks.length && FUNCTION_WORDS.has(toks.at(-1).toLowerCase())) toks.pop();
+    if (b) toks.push(b);
+    else if (tok.trim() && toks.length && !MARKS.includes(toks.at(-1)) && !/^E-[0-9a-f]{8}$/.test(tok.replace(WRAP_L, '').replace(WRAP_R, ''))) {
+      toks.push(tok.includes('…') ? CUT_ELL : CUT_PATH); // where a token was removed whole: lineName cuts there when the rest would strand
+    }
+  }
+  t = toks.join(' ').replace(/`/g, '').replace(/\s+/g, ' ').replace(/\s+([,.;:!?])(?=\s|$)/g, '$1')
+    .replace(/\s*,?\s*\bon top of \S+/gi, ' ').replace(JOINERS, '').trim();
+  let scaffold = false;
+  for (let again = true; again;) {
+    again = false;
+    for (const re of [ITEMS, LEFTOVER]) {
+      const next = t.replace(re, '');
+      if (next !== t) { t = next; again = scaffold = lead = true; }
+    }
+    if (lead) {
+      for (const re of scaffold ? [LEAD_LABEL, LEAD_JOIN] : [LEAD_JOIN]) {
+        const next = t.replace(re, '');
+        if (next !== t) { t = next; again = true; }
+      }
+    }
+  }
+  const rest = t.replace(LABEL_CLAUSE, '');
+  if (hasLetter(rest)) t = rest;
+  return { text: t.trim(), scaffold };
+}
+
+// A path-only token (a '/' and nothing but path characters, or a leading / ./ ~, a trailing / or a
+// file at the end) is removed whole, never shortened; so is an E-xxxxxxxx key. Any other token stays.
+const WRAP_L = /^[“‘"'(<[*`]+/;
+const WRAP_R = /[)>\]*"'”’`,;:!?.…—]+$/;
+function baseName(tok) {
+  if (tok.includes('…')) return ''; // a source '…' is never kept or turned into a space: its token goes whole
+  const core = tok.replace(WRAP_L, '').replace(WRAP_R, '');
+  if (/^E-[0-9a-f]{8}$/.test(core)) return '';
+  if (core.includes('/')) {
+    const segs = core.split('/');
+    const last = segs.filter(Boolean).at(-1) ?? '';
+    if (/^[\w.~@/-]+$/.test(core) || segs.length > 2 || !segs[0] || core.endsWith('/') || /^[.~]/.test(core) || isPathLike(last)) return '';
+  }
+  return isPathLike(core) ? core + tok.slice(tok.replace(WRAP_R, '').length) : tok;
+}
+
+const bare = (w) => w.toLowerCase().replace(/^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu, '');
+const wordsIn = (t) => t.split(/\s+/).filter(Boolean);
+
+// The first `words` as one whole-token head, trailing function words and a trailing , ; : backed off.
+function headOf(words) {
+  const kept = [...words];
+  while (kept.length >= 2 && TRAIL.has(bare(kept.at(-1)))) kept.pop();
+  return kept.join(' ').replace(/[,;:]+$/, '');
+}
+
+// `words` whole when they fit NAME_MAX; else the first of: the part before the first ', ' (3+ words),
+// the head before the first SUBORDINATE word (index 3+), the longest head that fits (the only step
+// with `longestOnly`); each ends in '…'. Only a first token longer than FIT is cut inside itself, at FIT, and marked by the '…'.
+function cutName(words, longestOnly = false) {
+  const whole = words.join(' ');
+  if (whole.length <= NAME_MAX) return whole;
+  const mark = (head) => (head.length <= FIT ? `${head}…` : '');
+  const comma = wordsIn(whole.split(/,\s/)[0]);
+  if (!longestOnly && comma.length >= 3 && comma.length < words.length) {
+    const named = mark(headOf(comma));
+    if (named) return named;
+  }
+  for (let k = 3; !longestOnly && k < words.length; k++) {
+    if (!SUBORDINATE.has(bare(words[k]))) continue;
+    const named = mark(headOf(words.slice(0, k)));
+    if (named) return named;
+  }
+  for (let k = words.length - 1; k >= 1; k--) {
+    const named = mark(headOf(words.slice(0, k)));
+    if (named) return named;
+  }
+  return `${words[0].slice(0, FIT)}…`;
+}
+
+// One clause's name. A removed token (see cleanText) that is followed by the clause end or a function
+// word (a path), or that held a '…', cuts the clause there: the head before it, trailing function words
+// backed off whole, + '…'. A head of under 2 content words is `thin`. Any other removal leaves the words as they were.
+function clauseName(clause) {
+  const words = wordsIn(clause);
+  while (MARKS.includes(words[0])) words.shift();
+  const isCut = (i) => MARKS.includes(words[i]) && (words[i] === CUT_ELL || i === words.length - 1
+    || MARKS.includes(words[i + 1]) || FUNCTION_WORDS.has(bare(words[i + 1])));
+  const at = words.findIndex((_, i) => isCut(i));
+  const plain = words.filter((w) => !MARKS.includes(w));
+  if (at < 0) return { name: cutName(plain), count: plain.length, thin: false };
+  const head = words.slice(0, at).filter((w) => !MARKS.includes(w));
+  // a head of function words only has nothing to qualify: it drops like a removal first in the clause
+  if (!head.some((w) => hasLetter(w) && !FUNCTION_WORDS.has(bare(w)))) return clauseName(words.slice(at + 1).join(' '));
+  while (head.length > 1 && FUNCTION_WORDS.has(bare(head.at(-1)))) head.pop();
+  const text = head.join(' ').replace(/[,;:]+$/, '');
+  const content = head.filter((w) => hasLetter(w) && !FUNCTION_WORDS.has(bare(w))).length;
+  return { name: text.length <= FIT ? `${text}…` : cutName(head), count: head.length, thin: content < 2 };
+}
+
+// The name of one line: its first clause with words; a one-word label ("PRD:", "Fix:") yields to a
+// later clause of 2+, and so does a clause cut thin by a removal.
+function lineName(text) {
+  const clauses = text.split(CLAUSE_END).map((c) => c.trim())
+    .filter((c) => hasLetter(c) && wordsIn(c).some((w) => hasLetter(w) && !TRAIL.has(bare(w))))
+    .map(clauseName);
+  const clause = clauses.find((c) => c.count >= 2 && !c.thin) ?? clauses.find((c) => c.count >= 2) ?? clauses[0];
+  return clause ? clause.name : '';
+}
+
+// A name the caller wrote: its first non-blank line, cut only to the longest whole-token head.
+export function givenName(text) {
+  const line = String(text ?? '').split('\n').find((l) => l.trim()) ?? '';
+  return hasLetter(line) ? cutName(wordsIn(line), true) : '';
+}
+
+// Lines in order until one gives a name; a line that is scaffolding plus under 3 words ("items 3 and
+// repeated rejections") gives way to a later line of 3+ and stays the fallback.
+function itemName(source) {
+  let thin = '';
+  for (const line of String(source ?? '').split('\n')) {
+    if (!line.trim()) continue;
+    const { text, scaffold } = cleanText(line);
+    const name = /^\S+:$/.test(text) ? '' : lineName(text); // "Acceptance:" names nothing
+    if (!name) continue;
+    if (scaffold && name.split(/\s+/).length < 3) { thin ||= name; continue; }
+    return name;
+  }
+  return thin;
+}
+
+export function epicName(request, { requests, title } = {}) {
+  const items = Array.isArray(requests)
+    ? requests.map((r) => (typeof r === 'string' ? r : r?.request ?? r?.text ?? r?.title ?? '')) : [];
+  const sources = typeof title === 'string' && title.trim() ? [title] : items.length ? items : [request];
+  const names = sources.map(itemName).filter((n) => hasLetter(n) && !/^[a-z]$/i.test(n)); // a lone letter says nothing
+  if (!names.length) return 'untitled work';
+  let out = names[0];
+  let used = 1;
+  for (; used < names.length; used++) {
+    const left = names.length - used - 1;
+    const next = `${out} · ${names[used]}`;
+    if ((next + (left ? ` +${left}` : '')).length > NAME_MAX) break;
+    out = next;
+  }
+  const more = used < names.length ? ` +${names.length - used}` : '';
+  return (out + more).length <= NAME_MAX ? out + more : out; // a full-width first name leaves no room for +K
+}
+
+export function taskName(task) {
+  if (typeof task?.name === 'string' && task.name.trim()) return task.name;
+  return epicName(task?.request ?? '', { requests: task?.requests, title: task?.title });
 }

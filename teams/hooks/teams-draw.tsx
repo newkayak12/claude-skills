@@ -50,6 +50,26 @@ export function clipText(s: string, w: number): string {
   return `${out.trimEnd()}…`
 }
 
+// cut to w display cells at a word boundary: whole words, then … (never inside a word). `key · name` keeps the key and the
+// first word of the name, + … in a cell of its own. When even `key · first word…` does not fit, the key stands alone, no
+// trailing ' · '. A lone · before the … is backed off. Only the first word of a plain title stays when nothing more fits;
+// a first token wider than w is cut by clipText.
+export function clipWords(s: string, w: number): string {
+  if (width(s) <= w) return s
+  const ends = Array.from(s.matchAll(/\S+/g), m => ({ word: m[0], end: m.index! + m[0].length }))
+  const named = ends[1]?.word === '·' && ends.length > 2
+  const keep = named ? 3 : 1
+  let n = 0
+  while (n < ends.length && width(s.slice(0, ends[n]!.end)) + 1 <= w) n++
+  while (n > 0 && ends[n - 1]!.word === '·') n--
+  if (n < keep) {
+    const first = ends[0]!.word
+    return width(first) <= w ? first : clipText(s, w)
+  }
+  const head = s.slice(0, ends[n - 1]!.end)
+  return head.endsWith('…') ? head : `${head}…`
+}
+
 /* --- icons and tints: one glyph and one colour per state, no faces --- */
 
 export const ICON: Record<WorkState | 'failed', string> = { acting: '●', idle: '◌', you: '⚑', done: '✔', stalled: '⏸', failed: '✘' }
@@ -123,7 +143,7 @@ export function rowLine(cells: readonly Cell[], widths: readonly number[], gap: 
       return
     }
     const tint = tints[c]
-    out.push({ t: padText(clipText(cell, w), w), tint: tint === 'dim' ? undefined : tint, dim: tint === 'dim' })
+    out.push({ t: padText(cell.includes(' · ') ? clipWords(cell, w) : clipText(cell, w), w), tint: tint === 'dim' ? undefined : tint, dim: tint === 'dim' })
   })
   return out
 }
@@ -176,7 +196,9 @@ export type Say = (key: string, vars?: Record<string, string | number>) => strin
 type Dim = Tint | 'dim' | undefined
 // one selectable row: its id (kept per level), what it opens (RowRef), the column group it aligns with, its cells
 export type PageRow = { id: string; block: string; ref: RowRef; cells: Cell[]; tints: Dim[] }
-export type BlockPlan = { shrink: number[]; drop?: number[]; titleMin?: number }
+// `named`: the shrink column holds `key · name`; its floor is `key · first word` + 1, computed from the rows, and below
+// every drop it floors at the key + 1 (key whole)
+export type BlockPlan = { shrink: number[]; drop?: number[]; titleMin?: number; named?: boolean }
 
 const POINTER = '▸'
 const MARK_ICON: Record<Mark, string> = { done: '✔', running: '●', pending: '○', failed: '✘' }
@@ -305,23 +327,24 @@ export function homeRows(listed: readonly SummaryTaskEntry[], o: HomeOpts): Home
     const stage = t.stages.find(g => g.state === 'running')
     const cost = t.cost.usd > 0 || t.cost.estimated ? costText(t.cost.usd, t.cost.estimated === true) : ''
     const after = t.cost.post_stop_usd == null ? '' : say('afterStop', { usd: costText(t.cost.post_stop_usd, false) })
-    const title = t.worktree ? `⑂ ${t.worktree} · ${t.title}` : t.title
+    const keyName = `${t.key} · ${t.title}`
+    const wt = t.worktree ? `⑂ ${t.worktree}` : ''
     const ref: RowRef = { type: 'epic', epic: t.task_id, ended, unfolded: o.unfolded[t.task_id] === true }
     if (ended) {
       const ago = say('f2FoldEnded', { ago: since(epicElapsed(t, now)), done: t.done, total: t.total })
       return {
         id: `e:${t.task_id}`, block: 'ended', ref,
-        cells: [' ', open ? '▾' : '▸', ICON.done, t.key, title, o.reportReady(t.task_id) ? `${ago} · ${say('f2FoldHasReport')}` : ago, [cost, after].filter(Boolean).join(' ')],
-        tints: [undefined, 'claude', 'success', 'dim', undefined, 'dim', 'dim'],
+        cells: [' ', open ? '▾' : '▸', ICON.done, keyName, wt, o.reportReady(t.task_id) ? `${ago} · ${say('f2FoldHasReport')}` : ago, [cost, after].filter(Boolean).join(' ')],
+        tints: [undefined, 'claude', 'success', undefined, 'dim', 'dim', 'dim'],
       }
     }
     return {
       id: `e:${t.task_id}`, block: 'epic', ref,
       cells: [
-        ' ', '▾', ICON[state], compact ? '' : t.key, title, compact ? (stage === undefined ? '' : phaseName(say, stage.key)) : railSegs(t.stages, say),
+        ' ', '▾', ICON[state], keyName, wt, compact ? (stage === undefined ? '' : phaseName(say, stage.key)) : railSegs(t.stages, say),
         compact ? '' : [state === 'you' ? say('wordYou') : '', progressText(t.progress, say)].filter(Boolean).join(' · '), compact ? '' : `STORY ${t.done}/${t.total}`, since(epicElapsed(t, now)), [cost, after].filter(Boolean).join(' '),
       ],
-      tints: [undefined, 'claude', TINT[state], 'dim', undefined, compact ? 'claude' : undefined, 'dim', 'dim', 'dim', 'dim'],
+      tints: [undefined, 'claude', TINT[state], undefined, 'dim', compact ? 'claude' : undefined, 'dim', 'dim', 'dim', 'dim'],
     }
   }
   for (const t of listed) {
@@ -342,11 +365,12 @@ export function homeRows(listed: readonly SummaryTaskEntry[], o: HomeOpts): Home
 }
 
 // the shrink and drop order of each column group: the title (cell 4) shrinks last; the STORY row sheds mini bar, then agents,
-// then the reason, then `try n/max` (so the score is never cut); the EPIC row sheds the rail, then F3's progress, then the STORY count
+// then the reason, then `try n/max` (so the score is never cut); the EPIC row (cell 3 = `key · name`, 4 = `⑂ wt`) sheds the
+// rail, F3's progress, the STORY count, cost, since, then ⑂; the key·name cell never goes below `key · first word` before that
 export const HOME_PLANS: Record<string, BlockPlan> = {
   flag: { shrink: [3, 2], drop: [5, 4], titleMin: 12 },
-  epic: { shrink: [4], drop: [5, 6, 7, 9, 8], titleMin: 12 },
-  ended: { shrink: [4], drop: [5, 6], titleMin: 12 },
+  epic: { shrink: [3], drop: [5, 6, 7, 9, 8, 4], named: true },
+  ended: { shrink: [3], drop: [6, 5, 4, 2], named: true },
   story: { shrink: [4], drop: [7, 10, 9, 6, 11], titleMin: 12 },
   phase: { shrink: [2], drop: [9, 10, 6], titleMin: 10 },
 }
@@ -357,9 +381,23 @@ export function pageLines(rows: readonly PageRow[], selected: string | null, inn
   const widthsOf = new Map<string, number[]>()
   for (const block of new Set(rows.map(r => r.block))) {
     const plan = plans[block] ?? { shrink: [2] }
-    widthsOf.set(block, columnWidths(rows.filter(r => r.block === block).map(r => withPointer(r).map(cellText)), inner, 2, plan.shrink, 4, plan.drop, plan.titleMin))
+    const texts = rows.filter(r => r.block === block).map(r => withPointer(r).map(cellText))
+    // a `named` block: floor of the key·name cell per block from its rows — `key · first word` + 1 for the …, and the key + 1 last
+    const at = plan.shrink[0] ?? 0
+    const sep = (s: string) => s.indexOf(' · ')
+    const first = (s: string) => width(s.slice(0, sep(s) + 3) + (s.slice(sep(s) + 3).split(/\s/)[0] ?? ''))
+    const named = plan.named === true
+    const titleMin = named ? texts.reduce((n, r) => Math.max(n, sep(r[at] ?? '') < 0 ? 0 : first(r[at]!) + 1), 0) : plan.titleMin
+    const min = named ? texts.reduce((n, r) => Math.max(n, sep(r[at] ?? '') < 0 ? 0 : sep(r[at]!) + 1), 4) : 4
+    widthsOf.set(block, columnWidths(texts, inner, 2, plan.shrink, min, plan.drop, titleMin))
   }
   return rows.map(r => rowLine(withPointer(r), widthsOf.get(r.block)!, 2, r.id === selected ? r.tints.map((x, c) => (c === 0 ? 'claude' : x)) : r.tints))
+}
+
+// The plain text of HOME's EPIC rows (running, then ended) laid out at `inner` cells by the path the pane draws
+export function epicLines(listed: readonly SummaryTaskEntry[], inner: number, o: HomeOpts): string[] {
+  const body = homeRows(listed, o).body.filter(r => r.block === 'epic' || r.block === 'ended')
+  return pageLines(body, null, inner).map(l => plain(l).trimEnd())
 }
 
 // HOME's header: how many EPICs, the machine-wide drivers (and load when the engine sends it), spend and elapsed of the listed EPICs

@@ -9,7 +9,7 @@
  },
  "text": {
   "board": [
-   "E-E-aaaaaa  build the thing",
+   "E-E-aaaaaa · build the thing",
    "STALLED  <BAR> <P>%",
    "▸ Build · one",
    "Progress <P>%  ·  Stories 0/1  ·  Cost $<N>  ·  Needs you 0",
@@ -20,7 +20,7 @@
    "P1  ·  attempt 1"
   ],
   "text": [
-   "task E-aaaaaaaa1111",
+   "E-E-aaaaaa · build the thing",
    "request: build the thing",
    "state=<S> size=? flow=auto cost=$<N> turns=2 elapsed=<E>",
    "manager pipeline:",

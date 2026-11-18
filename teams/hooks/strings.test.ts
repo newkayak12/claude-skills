@@ -95,7 +95,7 @@ test('STRINGS: the F2 keys and the F4-gap keys exist in en and ko, 89 + 8, ko in
 })
 
 // card 125 leftovers: one wording for an item waiting on the person (EN "needs you", KO "내 차례"), no arrow form, no old words
-const WAITING_KEYS = ['wordYou', 'nodeWaiting', 'ticketWaitingHuman', 'logWaiting', 'nowAnswer', 'f2FlagTitle', 'statusWaiting', 'pushNeedsYou', 'nextNeedsYou', 'evWaiting', 'tileWaiting', 'laneYou', 'askTo', 'f2LogAsked', 'inboxOne', 'inboxMany', 'stageAnswer', 'stateWaitingHuman', 'doneWaitingHuman']
+const WAITING_KEYS = ['wordYou', 'nodeWaiting', 'ticketWaitingHuman', 'logWaiting', 'nowAnswer', 'f2FlagTitle', 'statusWaiting', 'pushNeedsYou', 'nextNeedsYou', 'evWaiting', 'tileWaiting', 'laneYou', 'askTo', 'f2LogAsked', 'inboxOne', 'inboxMany', 'inboxShort', 'stageAnswer', 'stateWaitingHuman', 'doneWaitingHuman']
 test('STRINGS: every waiting-on-the-person key says "needs you" in en and "내 차례" in ko, with no arrow form or old word', () => {
   const en = STRINGS.en as Record<string, string>
   const ko = STRINGS.ko as Record<string, string>

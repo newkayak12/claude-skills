@@ -161,7 +161,7 @@ test('9-day-old task prints stalled', () => {
       writeFileSync(join(f.tasks, g.id, 'task.json'), readFileSync(join(g.tasks, g.id, 'task.json')));
       const cli = spawnSync(process.execPath, [VIEW, '--once', '--tasks-dir', f.tasks], { encoding: 'utf8' });
       assert.equal(cli.status, 0, cli.stderr);
-      assert.match(cli.stdout, /E-aaaaaa\s+stalled/);
+      assert.match(cli.stdout, /E-aaaaaa\S* · .+\s+stalled/);
     } finally { g.cleanup(); }
 
     const summary = once(f, '--format', 'summary', '--task', f.id);

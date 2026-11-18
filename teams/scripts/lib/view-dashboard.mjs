@@ -336,7 +336,7 @@ export function dashboardText(model) {
   const lane = (k) => model.lanes.find((l) => l.key === k);
   const titles = (l) => l.cards.map((c) => `${c.failed ? '✘ ' : ''}${c.title}`).join(' · ') + (l.more ? ` · +${l.more}` : '');
   const out = [
-    `${model.key}  ${model.title}`,
+    `${model.key} · ${model.title}`,
     `${String(model.state).replace('_', ' ').toUpperCase()}  ${bar(model.pct)} ${model.pct}%`,
   ];
   if (model.now) out.push(`▸ ${model.now}`);

@@ -57,6 +57,7 @@ const TOOLS = [
       properties: {
         request: { type: 'string', description: 'One request. Beside `requests`, leave it out, or send requests[0] itself or a one-line title (at most 120 chars, kept as the task\'s title); anything else is refused.' }, cwd: { type: 'string', description: 'the project root: child worktrees branch from its HEAD, and a size-S run under s_driver "process" opens directly here' },
         context: { type: 'string' },
+        name: { type: 'string', description: 'Optional short name for this EPIC, a few words in the request\'s language. Pass it only when the request\'s first clause does not read as a title (a chat sentence, not a card title). Stored once in task.json and shown beside the key; derived from the request when omitted.' },
         flow: { type: 'string', enum: ['auto', 'develop', 'document'] },
         vendor: { type: 'string' }, allocation: { type: 'string', enum: ['ordered', 'balanced'] },
         host_vendor: { type: 'string' }, host_model: { type: 'string' }, native_models: { type: 'array', items: { type: 'string' } },
@@ -98,6 +99,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         request: { type: 'string', description: 'Same meaning as tm_open({request}).' }, cwd: { type: 'string' }, context: { type: 'string' },
+        name: { type: 'string', description: 'Same meaning as tm_open({name}): a few words in the request\'s language, passed only when the request\'s first clause does not read as a title. Stored once in task.json and shown beside the key; derived from the request when omitted.' },
         flow: { type: 'string', enum: ['auto', 'develop', 'document'] },
         vendor: { type: 'string' }, allocation: { type: 'string', enum: ['ordered', 'balanced'] },
         host_vendor: { type: 'string' }, host_model: { type: 'string' }, native_models: { type: 'array', items: { type: 'string' } },
@@ -182,7 +184,7 @@ const TOOLS = [
   },
   {
     name: 'tm_status',
-    description: 'Compact task state: counts, per-node state and verdict, child pointers. Omit task_id to list every task the manager knows. full:true returns the whole task file - large by design.',
+    description: 'Compact task state: the EPIC `name` (a short natural-language name), counts, per-node state and verdict, child pointers. Omit task_id to list every task the manager knows. full:true returns the whole task file - large by design.',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, node_id: { type: 'string' }, full: { type: 'boolean' } } },
     outputSchema: { type: 'object' },
   },
@@ -194,13 +196,13 @@ const TOOLS = [
   },
   {
     name: 'tm_board',
-    description: 'Ticket-shaped board (§4/§8 of the design doc). Omit task_id for every EPIC this manager knows (key, state, phase) - grouped by `initiative` (a `groups: [{initiative, key: "I-<slug>", epics}]` array, an initiative-less `null` group included) whenever at least one task has one set; with none set anywhere, exactly the flat `{epics}` list this always returned. With task_id: the EPIC header plus its STORY kanban - one row per package, its state derived from task.json the same way tm_status is, never a second source of truth - and a doc_path to the human-readable INDEX.md (which may not exist on disk yet; see tm_docs). task_id accepts a full run id or the ticket key E-xxxxxxxx (the same 8-hex-prefix resolution tm_ticket uses). Read-only.',
+    description: 'Ticket-shaped board (§4/§8 of the design doc). Omit task_id for every EPIC this manager knows (key, name - a short natural-language name, state, phase) - grouped by `initiative` (a `groups: [{initiative, key: "I-<slug>", epics}]` array, an initiative-less `null` group included) whenever at least one task has one set; with none set anywhere, exactly the flat `{epics}` list this always returned. With task_id: the EPIC header plus its STORY kanban - one row per package, its state derived from task.json the same way tm_status is, never a second source of truth - and a doc_path to the human-readable INDEX.md (which may not exist on disk yet; see tm_docs). task_id accepts a full run id or the ticket key E-xxxxxxxx (the same 8-hex-prefix resolution tm_ticket uses). Read-only.',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' } } },
     outputSchema: { type: 'object' },
   },
   {
     name: 'tm_ticket',
-    description: 'One ticket by key: I-<slug> for an initiative (every EPIC under it, with state and cost - see tm_open({initiative})), E-xxxxxxxx for the EPIC, E-xxxxxxxx/Pn for a STORY. State, worktree/branch, task progress (x/y) and the last accept verdict, plus a doc_path (EPIC/STORY only) and reporter/origin/link (STORY only - reporter is the issuing team, origin the stage that filed it, link only set for an upstream fix). Read-only; a doc_path is always returned for an EPIC/STORY, even before tm_docs has written anything there.',
+    description: 'One ticket by key: I-<slug> for an initiative (every EPIC under it, with state and cost - see tm_open({initiative})), E-xxxxxxxx for the EPIC (with its short natural-language `name`), E-xxxxxxxx/Pn for a STORY. State, worktree/branch, task progress (x/y) and the last accept verdict, plus a doc_path (EPIC/STORY only) and reporter/origin/link (STORY only - reporter is the issuing team, origin the stage that filed it, link only set for an upstream fix). Read-only; a doc_path is always returned for an EPIC/STORY, even before tm_docs has written anything there.',
     inputSchema: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] },
     outputSchema: { type: 'object' },
   },

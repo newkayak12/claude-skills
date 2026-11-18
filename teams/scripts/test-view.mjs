@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { node, saveRun } from '../mcp/graph.mjs';
-import { collectTask, listTasks, deriveTitle } from './lib/view-collect.mjs';
+import { collectTask, listTasks } from './lib/view-collect.mjs';
 import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './lib/view-render-text.mjs';
 import { afterTmCall, beforeTmCall, drivePlanning } from './lib/planning-drive.mjs';
 
@@ -1297,38 +1297,72 @@ test('renderIndexText() renders one card per row, in tickets.mjs vocabulary (epi
   const text = renderIndexText(rows, '/tmp/somewhere');
   assert.equal(text, [
     'tasks under /tmp/somewhere:',
-    '  E-t1  IN_PROGRESS · impl  ship the thing',
+    '  E-t1 · ship the thing  IN_PROGRESS · impl',
     '    task=t1  size=L  stories 1/2 done  cost=$1.50  elapsed=1m5s',
-    '  E-t2  DONE  done deal',
+    '  E-t2 · done deal  DONE',
     '    task=t2  size=S  open defects=2  cost=$0.00  elapsed=5s',
     '  E-t3  ERROR: could not read task.json: missing  (task t3)',
     '',
   ].join('\n'));
 });
 
-test('renderIndexText() puts the slug after the key for a slugged row, and leaves an unslugged row as before', () => {
+test('renderIndexText() puts the slug at the end of a slugged row, and leaves an unslugged row without one', () => {
   const rows = [
     { task_id: 't1', epic_key: 'E-t1', slug: 'ship-thing', title: 'ship the thing', state: 'IN_PROGRESS', phase: 'impl', size: 'L', cost_usd: 0, elapsed_ms: 5000 },
     { task_id: 't2', epic_key: 'E-t2', slug: null, title: 'done deal', state: 'DONE', phase: null, size: 'S', cost_usd: 0, elapsed_ms: 5000 },
   ];
   const lines = renderIndexText(rows, '/tmp/x').split('\n');
-  assert.equal(lines[1], '  E-t1  ship-thing  IN_PROGRESS · impl  ship the thing');
-  assert.equal(lines[3], '  E-t2  DONE  done deal');
+  assert.equal(lines[1], '  E-t1 · ship the thing  IN_PROGRESS · impl  ship-thing');
+  assert.equal(lines[3], '  E-t2 · done deal  DONE');
 });
 
 test('renderIndexText() on an empty tasks dir', () => {
   assert.equal(renderIndexText([], '/tmp/nowhere'), 'tasks under /tmp/nowhere:\n  (none)\n');
 });
 
-test('deriveTitle() takes the first sentence/clause of the request as the card headline, truncating deliberately rather than showing a raw task_id', () => {
-  assert.equal(deriveTitle('Demo: build the expense tracker across two modules, then QA the integrated tree.'),
-    'Demo: build the expense tracker across two modules, then QA the integra…');
-  assert.equal(deriveTitle('Fix the login bug. Also update the docs.'), 'Fix the login bug');
-  assert.equal(deriveTitle('no terminal punctuation at all here'), 'no terminal punctuation at all here');
-  assert.equal(deriveTitle('Backlog card 46 (_repo/docs/backlog.md) x. Next'), 'Backlog card 46 (_repo/docs/backlog.md) x');
-  assert.equal(deriveTitle(''), '(no request)');
-  assert.equal(deriveTitle(undefined), '(no request)');
-  assert.equal(deriveTitle('   '), '(no request)');
+test('card 127 listTasks(): the row title is the short natural-language name, never the cut-off request or a card number', () => {
+  const titleOf = (task) => { const f = harnessTask({ task }); try { return listTasks(f.root)[0].title; } finally { f.cleanup(); } };
+  assert.equal(titleOf({ request: 'Fix the login bug. Also update the docs.' }), 'Fix the login bug');
+  assert.equal(titleOf({ request: 'Backlog card 46 (_repo/docs/backlog.md) tidy docs. Next' }), 'tidy docs');
+  assert.equal(titleOf({ request: '   ' }), 'untitled work');
+  const long = titleOf({ request: 'Demo: build the expense tracker across two modules, then QA the integrated tree.' });
+  assert.equal(long, 'build the expense tracker across two modules…');
+  assert.ok(long.length <= 60, long);
+});
+
+test('card 127 --once: the index row reads `E-xxxxxxxx · <name>` and the EPIC header starts with the same', () => {
+  const f = harnessTask({ task: { request: 'Backlog card 127: every EPIC row reads as its key plus a short natural-language name, never the key alone. User, 2026-11-04, on a pane.' } });
+  try {
+    // one task auto-selects (no index), so a second task dir makes --once print the index
+    const other = join(f.root, 'bbbbbbbb-1111-4222-8333-444444444444');
+    mkdirSync(other, { recursive: true });
+    writeFileSync(join(other, 'task.json'), readFileSync(join(f.dir, 'task.json'), 'utf8').replaceAll(HID, 'bbbbbbbb-1111-4222-8333-444444444444'));
+    const idx = spawnSync('node', [VIEW, '--once', '--tasks-dir', f.root], { encoding: 'utf8' });
+    assert.equal(idx.status, 0, idx.stderr);
+    assert.match(idx.stdout, /^  E-aaaaaaaa · every EPIC row reads as its key plus a short…/m);
+    const head = spawnSync('node', [VIEW, '--once', '--tasks-dir', f.root, '--task', HID, '--view', 'tickets'], { encoding: 'utf8' });
+    assert.equal(head.status, 0, head.stderr);
+    assert.match(head.stdout.split('\n')[0], /^E-aaaaaaaa · every EPIC row reads as its key plus a short…/);
+  } finally { f.cleanup(); }
+});
+
+test('card 127 --once --task <id> (default pipeline view): the first line is `E-xxxxxxxx · <name>`', () => {
+  const f = harnessTask({ task: { request: 'Backlog card 127: every EPIC row reads as its key plus a short natural-language name, never the key alone. User, 2026-11-04, on a pane.' } });
+  try {
+    const r = spawnSync('node', [VIEW, '--once', '--tasks-dir', f.root, '--task', HID], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout.split('\n')[0], /^E-aaaaaaaa · every EPIC row reads as its key plus a short…/);
+  } finally { f.cleanup(); }
+});
+
+test('card 127 collect(): a stored name wins over the request, and a task.json without `name` shows the derived name', () => {
+  const stored = harnessTask({ task: { request: 'Backlog card 125: mod 상태를 소켓 하나로 합친다. 뷰어는 그대로 둔다.', name: 'mod 상태 소켓 하나로' } });
+  const bare = harnessTask({ task: { request: 'Backlog card 125: mod 상태를 소켓 하나로 합친다. 뷰어는 그대로 둔다.' } });
+  try {
+    assert.equal(stored.collect().ticket.title, 'mod 상태 소켓 하나로');
+    assert.equal(bare.collect().ticket.title, 'mod 상태를 소켓 하나로 합친다', 'backfilled at read time');
+    assert.equal(readFileSync(join(bare.dir, 'task.json'), 'utf8').includes('"name"'), false, 'the read does not write it back');
+  } finally { stored.cleanup(); bare.cleanup(); }
 });
 
 // ---------- the view.mjs CLI itself ----------
@@ -1747,24 +1781,23 @@ test('collect(): a harness_run task with no ledger file gets none created by loo
   } finally { f.cleanup(); }
 });
 
-test('deriveTitle(): requests[] with N>1 reads as its backlog cards, else its first item +N; a single request reads as its item; no requests[] is unchanged', () => {
-  const backlog = ['[backlog priority 0] one', '[backlog priority 1] two', '[backlog priority 2] three'];
-  assert.equal(deriveTitle('[backlog priority 0] one\n\n[backlog priority 1] two', ['one', 'two', 'three']), 'one +2');
-  assert.equal(deriveTitle(backlog.join('\n\n'), ['one', 'two']), 'one +1');
-  assert.equal(deriveTitle('x', ['Backlog card 74 remainder: reach a remote surface. See card 83.', { request: 'Backlog card 84: a real dashboard.' }]), 'Backlog cards 74, 84', 'the first card each item names');
-  assert.equal(deriveTitle('[backlog priority 0] Fix the login bug. Then more.', ['Fix the login bug. Then more.']), 'Fix the login bug');
-  assert.equal(deriveTitle('x', [{ request: 'Fix the login bug', acceptance: ['a'] }]), 'Fix the login bug', 'an {request, acceptance} item reads as its request');
-  assert.equal(deriveTitle('Fix the login bug. Also docs.', []), 'Fix the login bug');
-  assert.equal(deriveTitle('Fix the login bug. Also docs.', undefined), 'Fix the login bug');
-  assert.equal(deriveTitle('Fix the login bug. Also docs.'), 'Fix the login bug');
+test('card 127 collect(): requests[] with N>1 reads as its item names joined by · (never card numbers); a single request reads as its item; no requests[] is the request\'s name', () => {
+  const titleOf = (task) => { const f = harnessTask({ task }); try { return f.collect().ticket.title; } finally { f.cleanup(); } };
+  const two = ['Backlog card 74 tidy docs. See card 83.', { request: 'Backlog card 84: a real dashboard.' }];
+  assert.equal(titleOf({ request: 'x', requests: two }), 'tidy docs · a real dashboard', 'item names, no card numbers');
+  assert.equal(titleOf({ request: '[backlog priority 0] Fix the login bug. Then more.', requests: ['Fix the login bug. Then more.'] }), 'Fix the login bug');
+  assert.equal(titleOf({ request: 'x', requests: [{ request: 'Fix the login bug', acceptance: ['a'] }] }), 'Fix the login bug', 'an {request, acceptance} item reads as its request');
+  assert.equal(titleOf({ request: 'Fix the login bug. Also docs.', requests: [] }), 'Fix the login bug');
+  assert.equal(titleOf({ request: 'Fix the login bug. Also docs.' }), 'Fix the login bug');
 });
 
-test('collect()/listTasks(): a three-item backlog task is titled by its first item +2 in the EPIC header and in the index', () => {
-  const f = harnessTask({ task: { request: '[backlog priority 0] a\n\n[backlog priority 1] b\n\n[backlog priority 2] c', requests: ['a', 'b', 'c'] } });
+test('card 127 collect()/listTasks(): a three-item backlog task is named by its item names, folding to its first name +2 when they are long, in the EPIC header and in the index', () => {
+  const items = ['[backlog priority 0] Card 1 build the expense tracker module', '[backlog priority 1] Card 2 write the integration test suite', '[backlog priority 2] Card 3 publish the release notes page'];
+  const f = harnessTask({ task: { request: items.join('\n\n'), requests: items } });
   try {
-    assert.equal(f.collect().ticket.title, 'a +2');
-    assert.equal(listTasks(f.root)[0].title, 'a +2');
-    assert.match(renderTicketsText(f.collect()), /a \+2/);
+    assert.equal(f.collect().ticket.title, 'build the expense tracker module +2');
+    assert.equal(listTasks(f.root)[0].title, 'build the expense tracker module +2');
+    assert.match(renderTicketsText(f.collect()), /^E-aaaaaaaa · build the expense tracker module \+2/);
   } finally { f.cleanup(); }
 });
 
@@ -1783,7 +1816,7 @@ test('renderText()/renderResourcesText(): a harness_run task draws its stages fr
   } finally { f.cleanup(); }
 });
 
-test('view.mjs --once on a harness_run task fixture prints state running, the plan stage filled and the title "a +2"', () => {
+test('view.mjs --once on a harness_run task fixture of article-only items prints state running, the plan stage filled and the title "untitled work"', () => {
   const f = harnessTask({ live: true, task: { request: '[backlog priority 0] a\n\n[backlog priority 1] b\n\n[backlog priority 2] c', requests: ['a', 'b', 'c'] } });
   try {
     harnessFallbackRun(f, { '01-plan.md': '# plan' });
@@ -1793,7 +1826,7 @@ test('view.mjs --once on a harness_run task fixture prints state running, the pl
     assert.match(pipeline.stdout, /state=running/);
     assert.match(pipeline.stdout, /\[v\] plan/);
     const tickets = run('--view', 'tickets');
-    assert.match(tickets.stdout, /a \+2/);
+    assert.match(tickets.stdout, /^E-aaaaaaaa · untitled work/);
   } finally { f.cleanup(); }
 });
 

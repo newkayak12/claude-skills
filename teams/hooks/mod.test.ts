@@ -9,7 +9,7 @@ import { STORY_LOG_KEYS } from '../scripts/lib/view-events.mjs'
 import { askBandShown, carriesInput, f2Key, HOME, levelOf, nextFlag, PAGE_KEYS, pageEsc, pageKey, pageStep, paneSlash, reconcileEpic, selectedOf, startNav, statusAnswer } from './pane'
 import type { Page, PageName, PageNav, RowRef, StepCtx } from './pane'
 import { NOW_KINDS } from '../scripts/lib/view-summary.mjs'
-import { KEYS_CHROME, SPINNER, clipText, columnWidths, crumbFit, footerPlan, handoffCells, homeRows, padText, plain, rowLine, storyReportLines, width, workerCells } from './teams-draw'
+import { KEYS_CHROME, SPINNER, clipText, clipWords, columnWidths, crumbFit, epicLines, footerPlan, handoffCells, homeRows, padText, plain, rowLine, storyReportLines, width, workerCells } from './teams-draw'
 
 const SURFACES = ['terminal', 'desktop', 'mobile', 'vscode'] as const
 type Surface = (typeof SURFACES)[number]
@@ -426,8 +426,8 @@ function startWorld(on: On, language?: string) {
 }
 const pane = ($: Engine, surface: (typeof SURFACES)[number]) =>
   $.ui.mount({ plugin: 'teams', surface, component: 'Pane', requestId: 'teams-status', props: { title: 'Teams', isFocused: false, bodyColumns: 80, placement: 'dock' } } as never)
-const band = ($: Engine, surface: (typeof SURFACES)[number], hasSurvey = false) =>
-  $.ui.mount({ plugin: 'teams', surface, component: 'AbovePrompt', props: { hasSurvey, isWorking: false, maxRows: 5, bodyColumns: 80 } } as never)
+const band = ($: Engine, surface: (typeof SURFACES)[number], hasSurvey = false, cols = 80) =>
+  $.ui.mount({ plugin: 'teams', surface, component: 'AbovePrompt', props: { hasSurvey, isWorking: false, maxRows: 5, bodyColumns: cols } } as never)
 type Ui = Awaited<ReturnType<typeof pane>>
 const shown = async (ui: Ui) => JSON.stringify(await ui.drawn())
 const labels = async (ui: Ui) => (await ui.findAll({ type: 'Button' })).map(b => String(b.props.label))
@@ -1559,9 +1559,11 @@ const LONG = 'x'.repeat(200)
 test('band: a 200-char title truncates; progress and the board button are separate, non-truncating nodes', async ($, on) => {
   await seeded($, on, { status: stat(), task: demo({ title: LONG }) })
   const ui = await band($, 'terminal')
-  const title = await ui.find({ type: 'Text', text: LONG })
+  // card 127 repair: one 200-column word can never fit, so the key stands alone (never a part of the word)
+  const title = await ui.find({ type: 'Text', text: 'teams · E-' })
   const progress = await ui.find({ type: 'Text', text: '4/5' })
   expect(title).toBeDefined()
+  expect(String(title!.text)).not.toContain('xxx')
   expect(progress).toBeDefined()
   expect(title!.props.wrap).toBe('truncate-end')
   expect(progress!.props.wrap).toBeUndefined()
@@ -2171,7 +2173,7 @@ const allTexts = async (ui: Ui) => (await ui.findAll({ type: 'Text' })).map(t =>
 for (const surface of SURFACES) {
   test(`${surface}: band one ask shows who and question, then the inbox Button`, async ($, on) => {
     await seeded($, on, { status: stat({ waiting: 1, asks: [ASK] }), task: demo() }, surface)
-    const ui = await band($, surface)
+    const ui = await band($, surface, false, 200) // the box is capped at a quarter of the row; the whole question needs 200 (card 127)
     const q = await ui.find({ type: 'Text', text: 'P2 asks you: Keep the legacy PDF route?' })
     expect(q?.props.color).toBe('warning')
     expect(q?.props.wrap).toBe('truncate-end')
@@ -2181,7 +2183,7 @@ for (const surface of SURFACES) {
 
   test(`${surface}: band two asks shows +1`, async ($, on) => {
     await seeded($, on, { status: stat({ waiting: 2, asks: [ASK, ASK2] }), task: demo() }, surface)
-    const ui = await band($, surface)
+    const ui = await band($, surface, false, 200)
     expect(await ui.find({ type: 'Text', text: 'P2 asks you: Keep the legacy PDF route?' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '+1' })).toBeDefined()
     expect(await labels(ui)).toContain('needs you: 2 asks')
@@ -2215,7 +2217,7 @@ for (const surface of SURFACES) {
 
   test(`${surface}: band ko label exact`, async ($, on) => {
     await seeded($, on, { status: stat({ waiting: 1, asks: [ASK] }), task: demo() }, surface, 'ko')
-    expect(await (await band($, surface)).find({ type: 'Text', text: 'P2님이 묻습니다: Keep the legacy PDF route?' })).toBeDefined()
+    expect(await (await band($, surface, false, 200)).find({ type: 'Text', text: 'P2님이 묻습니다: Keep the legacy PDF route?' })).toBeDefined()
   })
 }
 
@@ -2300,31 +2302,96 @@ const sound = (lines: string[], cols: number) => {
 // ---- card 105: a task in a linked worktree of this repo is marked ⑂ <worktree>; the mod only renders the field ----
 const WT = [epicOf('tW', 'E-wwwwwwww', [], { title: 'in a worktree', worktree: 'wt' }), epicOf('tM', 'E-mmmmmmmm', [], { title: 'own checkout', worktree: null })]
 for (const surface of SURFACES) {
-  test(`${surface}: HOME EPIC row shows ⑂ wt for a worktree task, none for null`, async ($, on) => {
+  test(`${surface}: card 127 HOME EPIC row shows key · name then ⑂ wt for a worktree task, none for null`, async ($, on) => {
     await seeded($, on, { status: stat(), tasks: WT, task: WT[0] }, surface, undefined, { watch: [] })
     const ui = await wide($, surface)
     const text = await shown(ui)
-    expect(text).toContain('⑂ wt · in a worktree')
-    expect(text).toContain('own checkout')
+    expect(text).toContain('E-wwwwwwww · in a worktree')
+    expect(text).toContain('E-mmmmmmmm · own checkout')
     expect(text.split('⑂').length).toBe(2)
+    expect(text.indexOf('in a worktree')).toBeLessThan(text.indexOf('⑂ wt'))
   })
-  test(`${surface}: band shows ⑂ wt for a worktree task; null shows no ⑂`, async ($, on) => {
+  test(`${surface}: card 127 band reads key · name · ⑂ wt — now; null shows no ⑂`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo({ worktree: 'wt' }) }, surface)
-    const b = await shown(await band($, surface))
-    expect(b).toContain('teams · ⑂ wt · ')
-    expect(b).toMatch(/teams · ⑂ wt · .+ — \S/)
+    const b = await shown(await band($, surface, false, 140))
+    expect(b).toMatch(/teams · E-3a3a3bb5 · .+ · ⑂ wt — \S/)
   })
-  test(`${surface}: band with a long title keeps ⑂ <worktree> before the title`, async ($, on) => {
-    const long = 'Migrate every legacy report exporter to the new streaming writer and keep each output file identical across all supported locales'
-    await seeded($, on, { status: stat(), task: demo({ worktree: 'feature-worktree', title: long }) }, surface)
-    expect(await shown(await band($, surface))).toContain('teams · ⑂ feature-worktree · Migrate')
-  })
-  test(`${surface}: band with worktree null shows no ⑂`, async ($, on) => {
+  test(`${surface}: card 127 band without a worktree reads key · name — now, no ⑂`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo({ worktree: null }) }, surface)
-    const b = await shown(await band($, surface))
-    expect(b).not.toContain('⑂')
-    expect(b).toMatch(/teams · .+ — \S/)
+    const n = await shown(await band($, surface))
+    expect(n).not.toContain('⑂')
+    expect(n).toMatch(/teams · E-3a3a3bb5 · .+ — \S/)
   })
+  test(`${surface}: card 127 band with a long title at a narrow width keeps the key and the first word`, async ($, on) => {
+    const long = 'Migrate every legacy report exporter to the new streaming writer and keep each output file identical across all supported locales'
+    await seeded($, on, { status: stat(), task: demo({ worktree: 'wt-a', title: long }) }, surface)
+    const full = await shown(await band($, surface))
+    expect(full).toContain('teams · E-3a3a3bb5 · Migrate')
+    // narrow (AC-7): the name tail is cut with …; the key, the first word and ⑂ <worktree> stay whole
+    for (const cols of [90, 72]) {
+      const ui = await $.ui.mount({ plugin: 'teams', surface, component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: cols } } as never)
+      const lines = draw((await ui.drawn()) as never, cols) as string[]
+      const row = lines.find(l => l.includes('teams · E-3a3a3bb5'))!
+      expect(row, `band at ${cols}`).toBeDefined()
+      expect(row).toContain('teams · E-3a3a3bb5 · Migrate')
+      expect(row).toContain('…')
+      // AC-7: ⑂ <worktree> stays whole; the name tail is what is cut
+      expect(row, `⑂ at ${cols}`).toContain('… · ⑂ wt-a')
+      expect(row).not.toContain('streaming writer')
+      for (const l of lines) expect(width(l)).toBeLessThanOrEqual(cols)
+      await ui.unmount()
+    }
+  })
+  test(`${surface}: card 127 band with a question box keeps the key and ⑂ and the first word; the box is capped`, async ($, on) => {
+    const long = 'Migrate every legacy report exporter to the new streaming writer and keep each output file identical across all supported locales'
+    await seeded($, on, { status: stat({ waiting: 1, asks: [ASK] }), task: demo({ worktree: 'wt-a', title: long }) }, surface)
+    for (const cols of [190, 120, 72]) {
+      const ui = await $.ui.mount({ plugin: 'teams', surface, component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: cols } } as never)
+      const lines = draw((await ui.drawn()) as never, cols) as string[]
+      const row = lines.find(l => l.includes('teams · E-3a3a3bb5'))!
+      expect(row, `band at ${cols}`).toBeDefined()
+      expect(row).toContain('teams · E-3a3a3bb5 · Migrate')
+      expect(row, `⑂ at ${cols}`).toMatch(/⑂ wt-a/)
+      if (cols <= 72) expect(row).not.toContain('streaming writer')
+      if (cols >= 120) expect(row, `ask at ${cols}`).toContain('asks you')
+      if (cols === 120) {
+        // the box is capped at about a quarter of the row; the name keeps more than its first word
+        const name = /teams · E-3a3a3bb5 · (.*?)(?: · ⑂|$)/.exec(row)![1]!.replace(/…$/, '').trim()
+        expect(name.split(/\s+/).length, `name at 120: ${row}`).toBeGreaterThanOrEqual(2)
+        expect(width(/^(.*?)teams · /.exec(row)![1]!), `ask box at 120: ${row}`).toBeLessThanOrEqual(Math.ceil(cols / 4) + 2)
+      }
+      for (const l of lines) expect(width(l)).toBeLessThanOrEqual(cols)
+      await ui.unmount()
+    }
+  })
+  for (const asks of [[], [ASK]]) {
+  test(`${surface}: card 127 band below the ⑂ width drops the bar, then the done count, the button last (${asks.length} asks)`, async ($, on) => {
+    const long = 'Migrate every legacy report exporter to the new streaming writer and keep each output file identical across all supported locales'
+    {
+      await seeded($, on, { status: stat({ waiting: asks.length, asks }), task: demo({ worktree: 'wt-a', title: long }) }, surface)
+      for (const cols of [56, 48, 40]) {
+        const ui = await $.ui.mount({ plugin: 'teams', surface, component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: cols } } as never)
+        const lines = draw((await ui.drawn()) as never, cols) as string[]
+        const row = lines.find(l => l.includes('teams · E-'))!
+        const tag = `band at ${cols}, ${asks.length} asks`
+        expect(row, tag).toContain('teams · E-3a3a3bb5')
+        if (cols >= 48) expect(row, tag).toContain('teams · E-3a3a3bb5 · Migrate')
+        const firstCut = !row.includes('Migrate')
+        if (firstCut) expect(row, tag).not.toMatch(/[━─]/)
+        if (cols <= 56) expect(row, tag).not.toMatch(/[━─]/)
+        if (cols <= 48) expect(row, tag).not.toContain('4/5')
+        expect(row, tag).toMatch(asks.length ? /needs you/ : /board/)
+        // card 127 AC-7: no cut ⑂, no lone …, no ⑂ at 40; a shown ⑂ is followed by the whole worktree name
+        expect(row, tag).not.toMatch(/·…/)
+        expect(row, tag).not.toMatch(/⑂…/)
+        if (cols <= 40) expect(row, tag).not.toContain('⑂')
+        if (row.includes('⑂')) expect(row, tag).toMatch(/⑂ wt-a(?![\w-])/)
+        for (const l of lines) expect(width(l), tag).toBeLessThanOrEqual(cols)
+        await ui.unmount()
+      }
+    }
+  })
+  }
 }
 
 // ---- the view server: data calls go to its Unix socket first, `--once` is the fallback ----
@@ -2546,7 +2613,7 @@ test('HOME at 190: header, flag section, EPIC rows with the Phase rail, STORY ro
   const stalled = lines.find(l => l.includes('no output for 23m (driver stopped?)'))!
   expect(stalled).toMatch(/⏸ +Cancel payment API › S3 +no output for 23m \(driver stopped\?\) +n$/)
   // the running EPIC rows are open with their STORY rows; the rail keeps Integ and Rep
-  const epic = lines.find(l => l.includes('E-3f9a2c11  '))!
+  const epic = lines.find(l => l.includes('E-3f9a2c11 · Cancel'))!
   for (const part of ['▾', 'Cancel payment API', '✔Plan', '●Build', '○Integ', '○QA', '○Gate', '○Rep', 'Build 3/6', 'STORY 1/4', '22m', '$2.47']) expect(epic).toContain(part)
   expect(text).toContain('E-71c2a0f4')
   expect(text).toContain('○Rep')
@@ -2584,7 +2651,7 @@ test('HOME with F3 values: estimated cost mark, spend after a stop, QA n/m and S
   const data = P_FIXTURE({ tasks })
   const { tick } = await seeded($, on, data, 'terminal', undefined, { epic: 'tA' })
   const ui = await atCols($, 'terminal', 190)
-  const epic = (await linesAt(ui, 190)).find(l => l.includes('E-3f9a2c11  '))!
+  const epic = (await linesAt(ui, 190)).find(l => l.includes('E-3f9a2c11 · Cancel'))!
   expect(epic).toContain('SG2 Implement · 2/5')
   expect(epic).toContain('~$2.47 after stop $0.12')
   data.tasks = P_TASKS({ progress: { key: 'qa', done: 1, total: 4 } })
@@ -2667,7 +2734,7 @@ test('keys from HOME: d opens FLOOR, s and d reach Phase detail, Phase 6 opens t
   await pressKey(ui, 'a')
   await pressKey(ui, 'a')
   expect(seen.store.get('page')).toEqual(HOME_PAGE)
-  expect((await linesAt(ui, 190)).find(l => l.includes('E-3f9a2c11  '))).toMatch(/▸/)
+  expect((await linesAt(ui, 190)).find(l => l.includes('E-3f9a2c11 · Cancel'))).toMatch(/▸/)
 })
 
 test('keys: a STORY row opens STORY detail and a returns; d with no row opens nothing; w stops at the first row', async ($, on) => {
@@ -2757,7 +2824,7 @@ test('the selected row that leaves the list falls to the nearest listed row, and
 test('FLOOR: six Phase rows with mark, number, name, elapsed, cost, who works, decisions, flag and stall counts; header on the right; Phase 6 hint', async ($, on) => {
   const { lines } = await homeLines($, on, 190, P_FIXTURE(), 'terminal', undefined, { page: FLOOR_PAGE })
   sound(lines, 190)
-  expect(lines[0]).toMatch(/^Cancel payment API › FLOOR +Phase 2\/6 Build · 22m · \$2\.47$/)
+  expect(lines[0]).toMatch(/^E-3f9a2c11 · Cancel payment API › FLOOR +Phase 2\/6 Build · 22m · \$2\.47$/)
   const rows = lines.filter(l => /^[▸ ] ?[✔●○✘]  ?\d /.test(l.replace(/^ +/, '')) || /[✔●○] +\d (Plan|Build|Integrate|QA|Gate|Report)/.test(l))
   expect(rows).toHaveLength(6)
   const [plan, build, integrate, , , report] = rows as [string, string, string, string, string, string]
@@ -2824,7 +2891,8 @@ for (const surface of SURFACES) {
     expect(rows[2]).toContain('⏸')
     expect((await ui.findAll({ type: 'Text', text: /^⏸\s*$/ })).map(t => t.props.color)).toContain('inactive')
     expect((await ui.findAll({ type: 'Text', text: /^2h 0m\s*$/ })).map(t => t.props.dimColor)).toEqual([true])
-    if (!compactOf(surface)) for (const [i, key] of ['E-aaaaaaaa', 'E-bbbbbbbb', 'E-cccccccc', 'E-dddddddd'].entries()) expect(rows[i]).toContain(key)
+    // card 127: the key stands before the name on every surface, mobile included
+    for (const [i, key] of ['E-aaaaaaaa', 'E-bbbbbbbb', 'E-cccccccc', 'E-dddddddd'].entries()) expect(rows[i]).toContain(`${key} · ${titles[i]}`)
   })
 
   test(`${surface}: running, stalled, waiting and finished EPICs read differently on HOME; a failed STORY shows its reason once`, async ($, on) => {
@@ -2845,7 +2913,7 @@ for (const surface of SURFACES) {
 
   // the slug is not a HOME column; the title takes the width and gives way first, at 190 and 110 columns
   for (const cols of [190, 110]) {
-    test(`${surface}: the EPIC row has no slug and cuts the title first at ${cols}`, async ($, on) => {
+    test(`${surface}: card 127 the EPIC row has no slug and cuts the name first at ${cols}, key and first word whole`, async ($, on) => {
       const tasks = H_TASKS({ title: H_LONG, slug: 'report-exporters' })
       const { ui, lines } = await homeLines($, on, cols, P_FIXTURE({ tasks }), surface)
       sound(lines, cols)
@@ -2866,12 +2934,13 @@ for (const surface of SURFACES) {
       const full = epicLine(await linesAt(await atCols($, surface, 190), 190), 'Migrate')!
       const tail = (l: string) => l.slice(l.search(/✔Plan|\bBuild\b/)).trimEnd()
       expect(tail(a)).toBe(tail(full))
-      if (!compactOf(surface)) for (const part of ['E-aaaaaaaa', '✔Plan', '●QA', 'STORY 1/3', '3s']) expect(a).toContain(part)
+      expect(a).toContain('E-aaaaaaaa · Migrate')
+      if (!compactOf(surface)) for (const part of ['✔Plan', '●QA', 'STORY 1/3', '3s']) expect(a).toContain(part)
     })
   }
 
-  // the title cell (⑂ worktree · title) is cut from its end at 110 columns: the title tail goes, the ⑂ mark and the worktree stay, the row keeps its cells
-  test(`${surface}: a long title with a worktree is cut to … at 110 columns, the ⑂ mark stays`, async ($, on) => {
+  // card 127: the key·name cell is cut from its end at 110 columns: the name tail goes, the key and the first word stay, the ⑂ cell follows it
+  test(`${surface}: card 127 a long name with a worktree is cut to … at 110 columns, the key and first word stay`, async ($, on) => {
     const tasks = [
       epicOf('tW', 'E-aaaaaaaa', [], { title: H_LONG, worktree: 'feature-worktree', done: 1, total: 3 }),
       epicOf('tS', 'E-bbbbbbbb', [], { title: 'short', worktree: null, done: 2, total: 3 }),
@@ -2880,43 +2949,267 @@ for (const surface of SURFACES) {
     sound(lines, 110)
     const w = epicLine(lines, '⑂')!
     const s = epicLine(lines, 'short')!
-    expect(w).toContain('⑂ feature-worktree · Migrate')
+    expect(w).toContain('E-aaaaaaaa · Migrate')
     expect(w).toContain('…')
     expect(w).not.toContain('keep each output identical')
-    expect(w.indexOf('…')).toBeGreaterThan(w.indexOf('feature-worktree')) // the cut is in the title, after the mark and the worktree name
+    expect(w).toContain('⑂ feature-worktree')
+    expect(w.indexOf('…')).toBeGreaterThan(w.indexOf('Migrate')) // the cut is in the name, after the first word
+    expect(w.indexOf('⑂')).toBeGreaterThan(w.indexOf('…')) // the worktree is its own cell, after the name
+    expect(s).toContain('E-bbbbbbbb · short')
+    expect(s).not.toContain('⑂')
+    // card 127: the state columns stay while the name shrinks first, and the name cell starts and ends at one offset in both rows
     if (!compactOf(surface)) {
       expect(w).toContain('STORY 1/3')
       expect(s).toContain('STORY 2/3')
     }
-    expect(width(w.slice(0, w.indexOf('⑂')))).toBe(width(s.slice(0, s.indexOf('short'))))
-    expect(s).not.toContain('⑂')
+    expect(width(w.slice(0, w.indexOf('Migrate')))).toBe(width(s.slice(0, s.indexOf('short'))))
+    const after = (r: string) => r.search(/STORY|\d+[smh]\b/)
+    expect(width(w.slice(0, after(w)))).toBe(width(s.slice(0, after(s))))
   })
 }
+
+// card 127: the EPIC rows of three running EPICs on every surface at 190, 110, 40 columns, and epicLines at inner 20 (24 columns)
+const C127 = [
+  epicOf('tA', 'E-aaaaaaaa', [], { title: 'every EPIC row reads as key plus short natural-language name', worktree: 'feature-worktree', done: 1, total: 3 }),
+  epicOf('tB', 'E-bbbbbbbb', [], { title: '테스트 fixture 격리 · 영역 겹침 차단', worktree: null, done: 2, total: 3 }),
+  epicOf('tC', 'E-cccccccc', [], { title: 'model per stage · lean short sessions +1', worktree: 'wt-130', done: 0, total: 2 }),
+]
+const C127_FIRST: Record<string, string> = { 'E-aaaaaaaa': 'every', 'E-bbbbbbbb': '테스트', 'E-cccccccc': 'model' }
+const c127Rows = (lines: string[]) => Object.keys(C127_FIRST).map(k => ({ k, l: lines.find(x => x.includes(k) && /[▾▸]/.test(x.replace(/^▸/, ' ')))! }))
+for (const surface of SURFACES) {
+  for (const cols of [190, 110, 40]) {
+    test(`${surface}: card 127 EPIC rows at ${cols} columns keep key · first word, drop columns before it and ⑂ last (AC-7)`, async ($, on) => {
+      const { lines } = await homeLines($, on, cols, P_FIXTURE({ tasks: C127, status: stat() }), surface, undefined, {})
+      sound(lines, cols)
+      for (const { k, l } of c127Rows(lines)) {
+        expect(l, `${k} row`).toBeDefined()
+        expect(l).toContain(`${k} · ${C127_FIRST[k]}`)
+        if (l.includes('⑂') || l.includes('STORY ')) expect(l).toContain(`${k} · ${C127_FIRST[k]}`)
+      }
+      const [a, b] = c127Rows(lines)
+      if (cols === 190) {
+        expect(a!.l).toContain('E-aaaaaaaa · every EPIC row')
+        expect(a!.l).toContain('⑂ feature-worktree')
+        expect(b!.l).toContain('E-bbbbbbbb · 테스트 fixture 격리 · 영역 겹침 차단')
+      }
+      if (cols === 110) expect(a!.l).toContain('⑂ feature-worktree')
+      if (cols === 40) for (const l of lines) expect(l.includes('⑂') || l.includes('STORY ')).toBe(false)
+    })
+  }
+}
+test('card 127 epicLines at inner 20 (24 columns) keeps every key whole, no ⑂ or STORY cell, no lone …', async ($, on) => {
+  const o = { now: 0, compact: false, unfolded: {}, say: (k: string) => k, fixed: (k: string) => k, verdict: () => '', reportReady: () => false } as never
+  const lines = epicLines(C127 as never, 20, o)
+  expect(lines).toHaveLength(3)
+  sound(lines, 24)
+  for (const [i, k] of Object.keys(C127_FIRST).entries()) expect(lines[i]).toContain(k)
+  for (const l of lines) expect(l.includes('⑂') || l.includes('STORY ')).toBe(false)
+})
+test('card 127 a Korean first word is kept whole at 40 columns', async ($, on) => {
+  const { lines } = await homeLines($, on, 40, P_FIXTURE({ tasks: C127, status: stat() }), 'terminal', undefined, {})
+  expect(c127Rows(lines)[1]!.l).toContain('E-bbbbbbbb · 테스트')
+})
+
+// card 127 AC-3 (i): at ~50 columns the band drops the bar before the name's first word; names end in … or keep a Korean verb
+const BAND_NAMES: Array<[string, string, string]> = [
+  ['en', 'Migrate every legacy report exporter to the new streaming writer and keep every output…', 'Migrate'],
+  ['ko', '세션 메모 창에서 긴 메모가 잘려서 끝까지 읽을 수 없다', '세션'],
+]
+for (const surface of SURFACES) {
+  for (const [lang, title, first] of BAND_NAMES) {
+    for (const worktree of ['wt-a', null]) {
+      for (const asks of [[], [ASK]]) {
+        test(`${surface}: card 127 band at ~50 columns keeps the first word over the bar (${lang}, ${worktree ?? 'no worktree'}, ${asks.length} asks)`, async ($, on) => {
+          await seeded($, on, { status: stat({ waiting: asks.length, asks }), task: demo({ worktree, title }) }, surface)
+          for (const cols of [50, 52, 54, 56, 58]) {
+            const ui = await $.ui.mount({ plugin: 'teams', surface, component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: cols } } as never)
+            const lines = draw((await ui.drawn()) as never, cols) as string[]
+            const row = lines.find(l => l.includes('teams · E-'))!
+            const tag = `${lang} band at ${cols}, ${worktree}, ${asks.length} asks: ${row}`
+            expect(row, tag).toContain(`teams · E-3a3a3bb5 · ${first}`)
+            if (cols <= 50) expect(row, tag).not.toMatch(/[━─]/)
+            expect(row, tag).not.toMatch(/·…/)
+            expect(row, tag).not.toMatch(/⑂…/)
+            expect(/\s…(\s|$)/.test(row), tag).toBe(false)
+            // the name is cut at a word boundary: what stands before a closing … is a whole run of words of the title
+            const shown = /E-3a3a3bb5 · ([^…]*…)/.exec(row)![1]!
+            const stem = shown.endsWith('…') && shown !== title ? shown.slice(0, -1) : shown
+            expect(title.startsWith(stem) && (stem === title || title[stem.length] === ' '), tag).toBe(true)
+            for (const l of lines) expect(width(l), tag).toBeLessThanOrEqual(cols)
+            await ui.unmount()
+          }
+        })
+      }
+    }
+  }
+}
+
+// card 127 AC-3 (ii): an ended EPIC (state complete, live false) is drawn as a row of its own: key · name, ⑂ worktree, no cut word
+const C127_ENDED = [
+  epicOf('tE', 'E-eeeeeeee', [], { title: '세션 메모 창에서 긴 메모가 잘려서 끝까지 읽을 수 없다', worktree: 'wt-e', state: 'complete', live: false, age_ms: 7200000, done: 3, total: 3 }),
+  epicOf('tF', 'E-ffffffff', [], { title: 'Migrate every legacy report exporter to the new streaming writer and keep every output…', worktree: null, state: 'complete', live: false, age_ms: 3600000, done: 2, total: 2 }),
+]
+const ENDED_FIRST: Record<string, string> = { 'E-eeeeeeee': '세션', 'E-ffffffff': 'Migrate' }
+const endedRow = (lines: string[], k: string) => lines.find(l => l.includes(k))!
+for (const surface of SURFACES) {
+  for (const cols of [190, 110, 50]) test(`${surface}: card 127 ended EPIC rows are drawn with key · name whole at ${cols} columns`, async ($, on) => {
+    {
+      const { lines } = await homeLines($, on, cols, P_FIXTURE({ tasks: C127_ENDED, status: stat() }), surface, undefined, {})
+      sound(lines, cols)
+      for (const [k, first] of Object.entries(ENDED_FIRST)) {
+        const l = endedRow(lines, k)
+        expect(l, `${k} at ${cols}`).toBeDefined()
+        expect(l, `${k} at ${cols}`).toContain(`${k} · ${first}`)
+        expect(l).not.toMatch(/·…/)
+        expect(l).not.toMatch(/⑂…/)
+        expect(l.trimStart().startsWith('▸'), `${k} at ${cols} starts with ▸`).toBe(true)
+        expect(/(^|\s)…(\s|$)/.test(l), `${k} at ${cols} lone …`).toBe(false)
+      }
+      if (cols === 190) {
+        expect(endedRow(lines, 'E-eeeeeeee')).toContain('E-eeeeeeee · 세션 메모 창에서 긴 메모가 잘려서 끝까지 읽을 수 없다')
+        expect(endedRow(lines, 'E-eeeeeeee')).toContain('⑂ wt-e')
+        expect(endedRow(lines, 'E-ffffffff')).toContain('keep every output…')
+        expect(endedRow(lines, 'E-ffffffff')).not.toContain('⑂')
+      }
+    }
+  })
+}
+test('card 127 epicLines draws an ended EPIC last-row-safe at inner 186, 106, 46, 26: key · first word whole, ⑂ dropped first', async ($, on) => {
+  const o = { now: 0, compact: false, unfolded: {}, say: (k: string) => k, fixed: (k: string) => k, verdict: () => '', reportReady: () => false } as never
+  for (const inner of [186, 106, 46, 26]) {
+    const lines = epicLines(C127_ENDED as never, inner, o)
+    expect(lines, `inner ${inner}`).toHaveLength(2)
+    sound(lines, inner + 4)
+    const mixed = epicLines([epicOf('tR', 'E-rrrrrrrr', [], { title: 'Run now' }), ...C127_ENDED] as never, inner, o)
+    expect(mixed.slice(-2).map(l => l.includes('E-eeeeeeee') || l.includes('E-ffffffff')), `ended rows are the last rows at ${inner}`).toEqual([true, true])
+    for (const [i, [k, first]] of Object.entries(ENDED_FIRST).entries()) {
+      // key · first word whole, or (when even `key · first word…` does not fit) the key alone
+      if (inner > 26) expect(lines[i], `${k} at ${inner}`).toContain(`${k} · ${first}`)
+      else expect(lines[i], `${k} at ${inner}`).toMatch(new RegExp(`${k} · ${first}|${k}(?! ·)`))
+      expect(lines[i]).not.toMatch(/·…/)
+      expect(lines[i]!.trimStart().startsWith('▸'), `${k} at ${inner} starts with ▸`).toBe(true)
+      expect(/(^|\s)…(\s|$)/.test(lines[i]!), `${k} at ${inner} lone …`).toBe(false)
+      expect(width(lines[i]!), `${k} at ${inner} width`).toBeLessThanOrEqual(inner)
+    }
+    if (inner === 186) expect(lines[0]).toContain('⑂ wt-e')
+    if (inner <= 26) expect(lines.some(l => l.includes('⑂'))).toBe(false)
+    for (const l of lines) if (l.includes('⑂')) expect(l).toMatch(/⑂ wt-e(?![\w-])/)
+  }
+})
+// card 127 repair: clipWords never cuts inside a word; key alone (no trailing ' · ') when key · first word… does not fit
+test('card 127 clipWords: a one-word name that does not fit gives the key alone, never a cut word', () => {
+  const s = 'E-11111111 · Internationalization'
+  expect(clipWords(s, 40)).toBe(s)
+  for (const w of [32, 26, 16, 12, 10]) expect(clipWords(s, w), `w ${w}`).toBe('E-11111111')
+  for (let w = 10; w <= 40; w++) {
+    const r = clipWords('E-aaaaaaaa · When is it done', w)
+    expect(width(r), `w ${w}`).toBeLessThanOrEqual(w)
+    expect(r, `w ${w}`).not.toMatch(/ ·…?$/)
+    expect(r === 'E-aaaaaaaa' || r.endsWith('…') || r === 'E-aaaaaaaa · When is it done', `w ${w}: ${r}`).toBe(true)
+  }
+})
+test('card 127 clipWords: a non-name cell with a wide first token stays within the width; no lone · before …', () => {
+  const r = clipWords('teams/scripts/lib/view-floor-fs.mjs: fixed · tests 4/4', 20)
+  expect(width(r)).toBeLessThanOrEqual(20)
+  expect(r.endsWith('…')).toBe(true)
+  expect(clipWords('tests pass · more stuff here', 14)).not.toMatch(/·…/)
+  expect(clipWords('tests pass · more stuff here', 14)).toBe('tests pass…')
+})
+const ONE_WORD = epicOf('tO', 'E-11111111', [], { title: 'Internationalization', worktree: null })
+for (const surface of SURFACES) {
+  for (const cols of [190, 110, 50, 30]) test(`${surface}: card 127 a one-word name is whole or the key alone in running and ended rows at ${cols}`, async ($, on) => {
+    const ended = { ...ONE_WORD, task_id: 'tOE', key: 'E-22222222', state: 'complete', live: false, age_ms: 3600000, done: 1, total: 1 }
+    const { lines } = await homeLines($, on, cols, P_FIXTURE({ tasks: [ONE_WORD, ended], status: stat() }), surface, undefined, {})
+    for (const k of ['E-11111111', 'E-22222222']) {
+      const l = lines.find(x => x.includes(k))!
+      expect(l, `${k} at ${cols}`).toBeDefined()
+      expect(l, `${k} at ${cols}`).not.toMatch(/Internationa(?!lization)/)
+      expect(l, `${k} at ${cols}`).not.toMatch(/·…/)
+      expect(l, `${k} at ${cols}`).not.toMatch(new RegExp(`${k} ·\\s*$`))
+    }
+  })
+  test(`${surface}: card 127 HOME rows at 30 columns: a name is whole, ends in …, or the key stands alone`, async ($, on) => {
+    const titles: Record<string, string> = { 'E-aaaaaaaa': 'When a task resumes the board stays empty', 'E-dddddddd': 'Make the session memo readable', 'E-bbbbbbbb': '세션 메모 창에서 긴 메모가 잘린다' }
+    const tasks = Object.entries(titles).map(([k, title], i) => epicOf(`t${i}`, k, [], { title, done: 1, total: 3 }))
+    const { lines } = await homeLines($, on, 30, P_FIXTURE({ tasks, status: stat() }), surface, undefined, {})
+    for (const [k, title] of Object.entries(titles)) {
+      const l = lines.find(x => x.includes(k))!
+      expect(l, k).toBeDefined()
+      expect(l, k).not.toMatch(/·…/)
+      const word = l.split(`${k} · `)[1]?.trim().split(/\s+/)[0]
+      if (word === undefined) continue
+      const first = title.split(' ')[0]!
+      expect(word === first || word === `${first}…`, `${k}: ${l}`).toBe(true)
+    }
+  })
+  for (const [lang, title] of BAND_NAMES) for (const asks of [[], [ASK]]) {
+    test(`${surface}: card 127 band at 30 columns shows the key alone, never a cut first word or ·… (${lang}, ${asks.length} asks)`, async ($, on) => {
+      await seeded($, on, { status: stat({ waiting: asks.length, asks }), task: demo({ worktree: null, title }) }, surface)
+      const ui = await $.ui.mount({ plugin: 'teams', surface, component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: 30 } } as never)
+      const lines = draw((await ui.drawn()) as never, 30) as string[]
+      const row = lines.find(l => l.includes('teams · E-'))!
+      const tag = `${title} ${asks.length} asks: ${row}`
+      expect(row, tag).toBeDefined()
+      expect(row, tag).not.toMatch(/·…|· \S+…|E-3a3a3bb5 ·/)
+      for (const l of lines) expect(width(l), tag).toBeLessThanOrEqual(30)
+      await ui.unmount()
+    })
+  }
+}
+test('card 127 homeLines at 110 columns: ended EPIC rows are the last EPIC rows', async ($, on) => {
+  const { lines } = await homeLines($, on, 110, P_FIXTURE({ tasks: [epicOf('tR', 'E-rrrrrrrr', [], { title: 'Run now' }), ...C127_ENDED], status: stat() }), 'terminal', undefined, {})
+  const at = (k: string) => lines.findIndex(l => l.includes(k))
+  expect(at('E-rrrrrrrr')).toBeGreaterThanOrEqual(0)
+  expect(at('E-rrrrrrrr')).toBeLessThan(at('E-eeeeeeee'))
+  expect(at('E-eeeeeeee')).toBeLessThan(at('E-ffffffff'))
+  const keyed = lines.map((l, i) => (/E-[0-9a-f]{8} · /.test(l) ? i : -1)).filter(i => i >= 0)
+  expect(keyed.at(-1)).toBe(at('E-ffffffff'))
+})
+// card 127: a name is cut at a word boundary with …, never inside a word, later words included
+test('card 127 epicLines cuts an ended EPIC name at a word boundary, never inside a word (inner 186 to 26)', async ($, on) => {
+  const o = { now: 0, compact: false, unfolded: {}, say: (k: string) => k, fixed: (k: string) => k, verdict: () => '', reportReady: () => false } as never
+  for (const inner of [186, 106, 76, 46, 36, 26]) {
+    const lines = epicLines(C127_ENDED as never, inner, o)
+    for (const [i, t] of C127_ENDED.entries()) {
+      const { key, title } = t as unknown as { key: string; title: string }
+      const found = new RegExp(`${key} · (.*?)(?: {2}|$)`).exec(lines[i]!)
+      if (found === null) { expect(lines[i], `inner ${inner}: key alone`).toContain(key); continue }
+      const name = found[1]!.trimEnd()
+      const stem = name.endsWith('…') && name !== title ? name.slice(0, -1) : name
+      expect(title.startsWith(stem) && (stem === title || title[stem.length] === ' '), `inner ${inner}: ${lines[i]}`).toBe(true)
+    }
+  }
+  expect(epicLines(C127_ENDED as never, 46, o)[0]).toContain('E-eeeeeeee · 세션 메모…')
+})
 
 // mixed Korean and English titles: one Korean-title EPIC and one English-title EPIC listed together at pane width 78 and 46
 const KO_TITLE = '메모 앱에 태그 검색 추가'
 const EN_TITLE = 'Add CSV export to the reports page'
 for (const cols of [78, 46]) {
-  test(`HOME: mixed Korean and English EPIC rows at pane width ${cols}: same column offsets, no line wider, the title keeps room, no lone …`, async ($, on) => {
+  test(`HOME: card 127 mixed Korean and English EPIC rows at pane width ${cols}: same name offset, no line wider, key and first word whole, no lone …`, async ($, on) => {
     const tasks = [epicOf('tA', 'E-3a3a3bb5', [], { title: KO_TITLE, done: 1, total: 3 }), epicOf('tB', 'E-bbbbbbbb', [], { title: EN_TITLE, done: 2, total: 3 })]
     const { lines } = await homeLines($, on, cols, P_FIXTURE({ tasks: tasks, status: stat() }), 'terminal', undefined, {}) // header, no flags
     for (const l of lines) expect(width(l)).toBeLessThanOrEqual(cols - 4)
     const ko = epicLine(lines, '메')!
     const en = epicLine(lines, 'Add')!
     expect([ko, en].every(r => r !== undefined)).toBe(true)
-    // the title starts at one display-cell offset, and so does the Phase rail or whatever column follows it
+    // card 127: the name starts at one display-cell offset (after the key), and the Korean first word stays whole
     expect(width(ko.slice(0, ko.indexOf('메')))).toBe(width(en.slice(0, en.indexOf('Add'))))
+    // the first column after the name cell is shown at both widths and starts at one offset in both rows
     const next = (r: string) => r.search(/●Build|✔Plan|\d+[smh]\b/)
+    expect(next(ko)).toBeGreaterThanOrEqual(0)
+    expect(next(en)).toBeGreaterThanOrEqual(0)
     expect(width(ko.slice(0, next(ko)))).toBe(width(en.slice(0, next(en))))
+    expect(ko).toContain('E-3a3a3bb5 · 메모')
+    expect(en).toContain('E-bbbbbbbb · Add')
     for (const l of lines) expect(/\s…(\s|$)/.test(l)).toBe(false)
-    // the title keeps 12 cells before any …
-    for (const [r, first] of [[ko, '메'], [en, 'Add']] as const) {
-      const from = r.slice(r.indexOf(first))
-      const end = from.search(/ {2}(?:●|✔|○|\d)/)
-      const title = (end >= 0 ? from.slice(0, end) : from).trimEnd()
-      const cut = title.indexOf('…')
-      expect(width(cut >= 0 ? title.slice(0, cut) : title)).toBeGreaterThanOrEqual(12)
-    }
+  })
+}
+
+for (const surface of SURFACES) {
+  test(`${surface}: card 127 the first crumb reads E-xxxxxxxx · <name>`, async ($, on) => {
+    const { lines } = await homeLines($, on, 190, P_FIXTURE(), surface, undefined, { page: FLOOR_PAGE })
+    expect(lines[0]).toContain('E-3f9a2c11 · Cancel payment API')
   })
 }
 
@@ -3011,7 +3304,7 @@ test('PHASE: Running, Handed over and Decisions in that order; the workers, the 
   sound(lines, 190)
   const [running, handed, decisions] = [at$(lines, 'Running'), at$(lines, 'Handed over'), at$(lines, 'Decisions (this Phase)')]
   expect(running > 0 && handed > running && decisions > handed).toBe(true)
-  expect(lines[0]).toMatch(/^Cancel payment API › FLOOR › 2 Build +14m · \$2\.07$/)
+  expect(lines[0]).toMatch(/^E-3f9a2c11 · Cancel payment API › FLOOR › 2 Build +14m · \$2\.07$/)
   const mine = lines.slice(running + 1, handed).join('\n')
   expect(mine).toMatch(/⏸ +S3 +⏸ 23m/)
   // STORY · node · role · what · elapsed, all from the engine's worker
@@ -3039,7 +3332,7 @@ test('PHASE: ⏸ with minutes only from the engine; a stalled worker without the
   const text = lines.join('\n')
   expect(text).not.toContain('⏸')
   expect(text).toContain('S3')
-  expect(lines[0]).toMatch(/^Cancel payment API › FLOOR › 2 Build *$/)
+  expect(lines[0]).toMatch(/^E-3f9a2c11 · Cancel payment API › FLOOR › 2 Build *$/)
 })
 
 test('PHASE: the engine tags each decision with its Phase; a task.decisions entry (no node, phase qa) is on the QA page and not on Plan', async ($, on) => {
@@ -3092,7 +3385,7 @@ test('PHASE: the thread is drawn through keys; w and s scroll it, stopping at bo
 test('STORY: FLOW, progress, participants, the attempt grid with the rejected judge and its reason, the ask, the Log and Report rows', async ($, on) => {
   const { lines } = await homeLines($, on, 190, PAGES_FIXTURE(), 'terminal', undefined, { page: STORY_S2 })
   sound(lines, 190)
-  expect(lines[0]).toMatch(/^Cancel payment API › S2 refund idempotency key +implement · try 2\/3 · \$0\.40 · 11m$/)
+  expect(lines[0]).toMatch(/^E-3f9a2c11 · Cancel payment API › S2 refund idempotency key +implement · try 2\/3 · \$0\.40 · 11m$/)
   const text = lines.join('\n')
   expect(lines.find(l => l.startsWith('FLOW'))).toMatch(/^FLOW +✔plan ━ ✔setgoal ━ ✔critique ━ ●implement ┄ ○test ┄ ○gate$/)
   expect(text).toMatch(/Progress +████████░░░░ +this try 4\/6 nodes · total 10\/18 \(based on 2 tries\)/)
@@ -3134,7 +3427,7 @@ test('STORY: d on the Log row opens Log, d on the Report row opens the STORY Rep
 test('LOG: time · node · what · note, newest first, the entry count in the header, no f filter, w and s scroll', async ($, on) => {
   const { lines } = await homeLines($, on, 190, PAGES_FIXTURE(), 'terminal', undefined, { page: LOG_S2 })
   sound(lines, 190)
-  expect(lines[0]).toMatch(/^Cancel payment API › S2 refund idempotency key › Log +6 entries$/)
+  expect(lines[0]).toMatch(/^E-3f9a2c11 · Cancel payment API › S2 refund idempotency key › Log +6 entries$/)
   const rows = lines.filter(l => /^\d\d:\d\d /.test(l))
   expect(rows).toHaveLength(6)
   expect(rows[0]).toMatch(/^14:12 +● implement +attempt 2 started *$/)
@@ -3157,7 +3450,7 @@ test('STORY Report before the gate reads "Not available yet" and draws no sectio
 test('STORY Report: sections from the keys, ending in tm_log and tm_retry as text, no retry or cancel Button', async ($, on) => {
   const { lines, ui } = await homeLines($, on, 190, PAGES_FIXTURE(), 'terminal', undefined, { page: REPORT_S1 })
   sound(lines, 190)
-  expect(lines[0]).toMatch(/^Cancel payment API › S1 cancel reason enum › Report +accepted 91\/80 · 4m$/)
+  expect(lines[0]).toMatch(/^E-3f9a2c11 · Cancel payment API › S1 cancel reason enum › Report +accepted 91\/80 · 4m$/)
   const rows = lines.filter(l => /^(Result|Judge|Files changed|Decisions|Left over|Look again) /.test(l))
   expect(rows).toHaveLength(6)
   expect(rows[0]).toMatch(/^Result +POST cancel endpoint adds the reason enum$/)
@@ -3341,7 +3634,7 @@ test('ANSWER: breadcrumb, how long it waits, who asks, the question, a context l
   const { ui } = await answerSeed($, on, answerData().data)
   const lines = await linesAt(ui, 190)
   sound(lines, 190)
-  expect(lines[0]).toMatch(/^Cancel payment API › S2 refund idempotency key › Answer the question +⚑ 9m waiting$/)
+  expect(lines[0]).toMatch(/^E-3f9a2c11 · Cancel payment API › S2 refund idempotency key › Answer the question +⚑ 9m waiting$/)
   expect(lines.find(l => l.startsWith('S2 needs you'))).toBeDefined()
   expect(lines.some(l => l.includes('→'))).toBe(false)
   expect(lines).toContain(`"${ASK_QUESTION}"`)
@@ -3884,7 +4177,7 @@ for (const lang of [undefined, 'korean'] as const) {
   test(`Phase detail at 110 columns with a long EPIC title keeps its tail and shortens the head${lang === undefined ? '' : ' (Korean)'}`, async ($, on) => {
     const long = 'Cancel payment API with a very long title that cannot fit the line beside the crumbs of this page at all'
     const { lines } = await homeLines($, on, 110, PAGES_FIXTURE({ tasks: P_TASKS({ title: long }) }), 'terminal', lang, { page: PHASE_PLAN })
-    expect(lines[0]).toMatch(/^Cancel payment API.*… › FLOOR › 1 Plan( {2}.*)?$/)
+    expect(lines[0]).toMatch(/^E-3f9a2c11 · Cancel payment API.*… › FLOOR › 1 Plan( {2}.*)?$/)
   })
 }
 

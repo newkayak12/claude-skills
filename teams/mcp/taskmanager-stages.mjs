@@ -9,7 +9,7 @@ import { questionLine } from './docs.mjs';
 import { readTeamConfig, resolveTeamOptions } from './teamconfig.mjs';
 import { randomUUID } from 'node:crypto';
 import { hasDeclaredAcceptance, resolvePlanningMode } from './acceptance.mjs';
-import { epicSlug, uniqueSlug } from './names.mjs';
+import { epicName, epicSlug, givenName, uniqueSlug } from './names.mjs';
 import { mutateTask } from './store.mjs';
 import { lastRelevantEvent, resolveTaskRef } from './taskmanager-handlers.mjs';
 import { git } from './taskmanager-worktree.mjs';
@@ -387,6 +387,8 @@ function createTask(a) {
     // The readable label of this EPIC (names.mjs), set once from the first request and used in its
     // branch and worktree names. A task without one (opened before it existed) keeps harness/<id8>/*.
     slug: uniqueSlug(epicSlug(requests ? requests[0] : String(a.request)), takenSlugs(cwd)),
+    // The short natural-language name every surface shows beside the key (names.mjs epicName); readers backfill it with taskName.
+    name: givenName(a.name ?? '') || epicName(String(a.request ?? ''), { requests: a.requests, title }),
     // Who opened the task: the person's session id, which drivers and the band need (§7 of _repo/docs/plans/mod/2026-10-17-subagent-communication.md); the MCP env is the only source.
     opener: { session_id: currentSessionId(), entrypoint: process.env.CLAUDE_CODE_ENTRYPOINT || null },
     request: withSharedAcceptance(requests ? composeBacklogRequest(requests) : String(a.request), a.shared_acceptance),
