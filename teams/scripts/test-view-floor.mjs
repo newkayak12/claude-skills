@@ -880,6 +880,31 @@ test('F2-AC-2: Phase hand-offs carry story, a verdict\'s score, reason and next 
   assert.deepEqual(Object.keys(f.handoffs.find((h) => h.what === 'verdict reject')).sort(), ['from', 'time', 'to', 'what', 'what_key', 'what_vars']);
 });
 
+test('F2: a Phase counts its STORYs, their roles and open subagents; the judge acting is a gate role; a size-S floor has no subagents', () => {
+  const w = world();
+  try {
+    const call = (id) => JSON.stringify({ type: 'assistant', message: { id: `m-${id}`, content: [{ type: 'tool_use', id, name: 'Agent', input: { subagent_type: 'general-purpose' } }] } });
+    const t = lTask(w, { pkgs: [
+      { id: 'P1', streamAgeMs: 1000, lines: [asst('working'), call('a1'), call('a2')] },
+      { id: 'P2', done: true },
+    ] });
+    write(join(t.dir, 'drivers', 'judge_gate_1.stream.jsonl'), asst('judging') + '\n', 1000);
+    const { floor } = entryOf(w, t.id);
+    const build = floor.phases.find((x) => x.key === 'build');
+    assert.equal(build.stories, 2);
+    assert.deepEqual(build.roles, { implementer: 1 });
+    assert.equal(build.subagents, 2);
+    const gate = floor.phases.find((x) => x.key === 'gate');
+    assert.equal(gate.roles.judge, 1);
+    assert.equal(gate.stories, 0);
+    assert.equal(floor.phases.find((x) => x.key === 'qa').subagents, undefined);
+    const s = sTask(w);
+    const sf = entryOf(w, s.id).floor;
+    assert.ok(sf.phases.every((p) => !('subagents' in p)));
+    assert.equal(sf.phases.find((p) => p.key === 'build').stories, 0);
+  } finally { w.cleanup(); }
+});
+
 test('floor source: no use of metrics.drivers.stalled or taskStalled', () => {
   const src = readFileSync(join(dirname(VIEW), 'lib', 'view-floor.mjs'), 'utf8');
   assert.ok(!/metrics\.drivers\.stalled|taskStalled/.test(src));

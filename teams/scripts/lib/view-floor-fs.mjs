@@ -10,6 +10,7 @@ import { findDriverStreams, collectDriverCosts, collectNodeCosts } from '../benc
 import { collectTask, driverLive, stallMsOf, minutesSince } from './view-collect.mjs';
 import { summarize, cardsOf, waitingCount } from './view-summary.mjs';
 import { floorOf } from './view-floor.mjs';
+import { participantsOf } from './view-story.mjs';
 import { repoMatcher } from './view-repo.mjs';
 import { openTasks, statSig } from './view-index.mjs';
 
@@ -116,7 +117,7 @@ export function floorFacts(m, tasksDir, taskId, { now = Date.now(), raw: given, 
   const limit = stallMsOf(raw);
   const doing = sig ?(log) => byStat('doing', log, () => doingOf(log)) : doingOf;
   const stories = {};
-  const desk = (id, driver, childCwd, childRunId, file) => {
+  const desk = (id, driver, childCwd, childRunId, file, childNodes) => {
     const log = driver && driver.log;
     const live = !!driver && driverLive({ ...driver, log }, now, limit);
     // a worker whose own stream went silent past the threshold: whole minutes since it was last written
@@ -125,6 +126,8 @@ export function floorFacts(m, tasksDir, taskId, { now = Date.now(), raw: given, 
     stories[id] = {
       live, doing: live ? doing(log) : '', run_file: file,
       ...(silent ? { silent: true, minutes: minutesSince(now, at) } : {}),
+      // a package desk's open Agent calls while its driver works (the size-S desk has no dispatch stream)
+      ...(childNodes ? { subagents: live ? participantsOf(dir, id, childNodes, { live }).live.reduce((s, a) => s + a.n, 0) : 0 } : {}),
       ...storyCost(dir, log, childCwd && childRunId ? join(childCwd, '.teams_output', 'broker', String(childRunId)) : null, sig),
     };
   };
@@ -140,7 +143,7 @@ export function floorFacts(m, tasksDir, taskId, { now = Date.now(), raw: given, 
   } else {
     for (const { c } of cardsOf(m)) {
       const ch = c.child;
-      desk(String(c.id), ch && ch.driver, ch && ch.cwd, ch && ch.run_id, ch ? runFile(ch.cwd, ch.run_id) : null);
+      desk(String(c.id), ch && ch.driver, ch && ch.cwd, ch && ch.run_id, ch ? runFile(ch.cwd, ch.run_id) : null, (ch && ch.nodes) || []);
     }
   }
   let judge = { live: false, doing: '' };

@@ -45,7 +45,7 @@ export type SummaryMetrics = {
   out_of_retries?: string[]
 }
 // view-floor.mjs phaseCounts: the workers of one Phase by state; decisions only when the engine sends the Phase's count
-export type PhaseCount = { key: string; workers: number; acting: number; you: number; stalled: number; idle: number; done: number; decisions?: number }
+export type PhaseCount = { key: string; workers: number; acting: number; you: number; stalled: number; idle: number; done: number; decisions?: number; stories?: number; subagents?: number; roles?: Record<string, number> }
 
 // `view.mjs --once --format summary` floor part (teams/scripts/lib/view-floor.mjs): per listed task
 export type WorkState = 'acting' | 'idle' | 'you' | 'done' | 'stalled'
@@ -136,6 +136,8 @@ export type ReportPayload = {
   path: string
   report: { text: string; truncated: boolean; more_lines: number; mtime: number } | null
   retro: object | null
+  // STORY packages accepted of all, and the last goal gate (accept, score = match_pct); null for a task not there
+  result?: { stories: { accepted: number; total: number }; gate: { accept: boolean; score: number | null; threshold: number | null } | null } | null
 }
 
 declare module 'claude-code' {

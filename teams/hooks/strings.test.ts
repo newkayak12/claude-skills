@@ -82,16 +82,34 @@ test('latinOutside: id tokens are data, a bare prefix is not', () => {
 
 // F2-AC-50/51: every F2 key and the engine-composed reason/actor keys are in both tables, and the Korean holds no word off the allow-list
 const F2_GAP_KEYS = ['actorHuman', 'proposalSize', 'proposalSizeFlow', 'resplitAreas', 'resplit', 'replanIds', 'reasonNeverDispatched', 'reasonState']
-test('STRINGS: the F2 keys and the F4-gap keys exist in en and ko, 84 + 8, ko inside the allow-list', () => {
+test('STRINGS: the F2 keys and the F4-gap keys exist in en and ko, 89 + 8, ko inside the allow-list', () => {
   const en = STRINGS.en as Record<string, string>
   const ko = STRINGS.ko as Record<string, string>
   const f2 = Object.keys(en).filter((k) => /^f2[A-Z]/.test(k))
-  expect(f2.length).toBe(84)
+  expect(f2.length).toBe(89) // 84 + f2FloorStoriesAgents, f2EpicVerdict, f2EpicRunning, f2EpicStories, f2EpicGate
   for (const k of [...f2, ...F2_GAP_KEYS]) {
     expect(k in en && k in ko ? k : `missing: ${k}`).toBe(k)
     expect([k, latinOutside(ko[k]!.replace(/\{\w+\}/g, ''), [])]).toEqual([k, []])
   }
   expect([en.actorHuman, ko.actorHuman]).toEqual(['human', '사람'])
+})
+
+// card 125 leftovers: one wording for an item waiting on the person (EN "needs you", KO "내 차례"), no arrow form, no old words
+const WAITING_KEYS = ['wordYou', 'nodeWaiting', 'ticketWaitingHuman', 'logWaiting', 'nowAnswer', 'f2FlagTitle', 'statusWaiting', 'pushNeedsYou', 'nextNeedsYou', 'evWaiting', 'tileWaiting', 'laneYou', 'askTo', 'f2LogAsked', 'inboxOne', 'inboxMany', 'stageAnswer', 'stateWaitingHuman', 'doneWaitingHuman']
+test('STRINGS: every waiting-on-the-person key says "needs you" in en and "내 차례" in ko, with no arrow form or old word', () => {
+  const en = STRINGS.en as Record<string, string>
+  const ko = STRINGS.ko as Record<string, string>
+  for (const k of WAITING_KEYS) {
+    expect([k, en[k]!.toLowerCase().includes('needs you')]).toEqual([k, true])
+    expect([k, ko[k]!.includes('내 차례')]).toEqual([k, true])
+  }
+  for (const [lang, table] of [['en', en], ['ko', ko]] as const) {
+    for (const [k, v] of Object.entries(table)) {
+      expect([lang, k, /→ (you|나|me)/.test(v)]).toEqual([lang, k, false])
+      expect([lang, k, /확인 필요|답변 대기|나를 기다림|waiting for you|waiting_human/i.test(v)]).toEqual([lang, k, false])
+    }
+  }
+  for (const k of ['askTo', 'f2LogAsked']) expect([en[k]!.includes('→'), ko[k]!.includes('→')]).toEqual([false, false])
 })
 
 test('STRINGS: ko nextShape, nextAreas and tileStories keep to the allow-list', () => {

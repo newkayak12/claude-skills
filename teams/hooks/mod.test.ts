@@ -591,7 +591,7 @@ for (const surface of SURFACES) {
   test(`${surface}: needs-you count comes from status.waiting: band Button and the pane's other-runs line`, async ($, on) => {
     const { seen } = await seeded($, on, { status: stat({ waiting: 2 }), task: demo() }, surface)
     const ui = await band($, surface)
-    expect((await ui.find({ key: 'inbox' }))?.props.label).toBe('2 questions for you')
+    expect((await ui.find({ key: 'inbox' }))?.props.label).toBe('needs you: 2 asks')
     expect(await ui.find({ key: 'board' })).toBeUndefined()
     await ui.press({ key: 'inbox' })
     expect(seen.opened).toEqual(['teams-status'])
@@ -599,13 +599,21 @@ for (const surface of SURFACES) {
 
   test(`${surface}: band says one question for you in the singular and the ko label carries the count`, async ($, on) => {
     await seeded($, on, { status: stat({ waiting: 1 }), task: demo() }, surface)
-    expect((await (await band($, surface)).find({ key: 'inbox' }))?.props.label).toBe('1 question for you')
+    expect((await (await band($, surface)).find({ key: 'inbox' }))?.props.label).toBe('needs you: 1 ask')
   })
 
   test(`${surface}: korean band label counts the questions`, async ($, on) => {
     await seeded($, on, { status: stat({ waiting: 3 }), task: demo() }, surface, 'korean')
-    expect((await (await band($, surface)).find({ key: 'inbox' }))?.props.label).toBe('질문 3건')
+    expect((await (await band($, surface)).find({ key: 'inbox' }))?.props.label).toBe('내 차례: 질문 3건')
   })
+
+  for (const [lang, word] of [[undefined, 'needs you'], ['ko', '내 차례']] as const) for (const n of [1, 2]) {
+    test(`${surface}: band label carries ${word} with ${n} open question(s), no arrow`, async ($, on) => {
+      await seeded($, on, { status: stat({ waiting: n }), task: demo() }, surface, lang)
+      const label = String((await (await band($, surface)).find({ key: 'inbox' }))?.props.label)
+      expect([n, label.includes(word), label.includes('→'), label.includes(String(n))]).toEqual([n, true, false, true])
+    })
+  }
 
   test(`${surface}: band shows no inbox Button when nothing waits (regression guard)`, async ($, on) => {
     await seeded($, on, { status: stat(), task: demo() }, surface)
@@ -1226,7 +1234,7 @@ test('pane helpers: storyReportLines includes test verdict pass/fail and omits a
 test('language korean: the waiting status line has no English UI word', async ($, on) => {
   const { seen } = await seeded($, on, { status: stat({ waiting: 2 }), task: demo({ state: 'stalled' }) }, 'terminal', '한국어')
   const line = seen.statuses[seen.statuses.length - 1] ?? ''
-  expect(line).toContain('확인 필요')
+  expect(line).toContain('내 차례')
   expect(latinOutside(line, [...LANG_DATA, '/teams-status'])).toEqual([]) // the command name is a literal, not a word
 })
 
@@ -2167,7 +2175,7 @@ for (const surface of SURFACES) {
     const q = await ui.find({ type: 'Text', text: 'P2 asks you: Keep the legacy PDF route?' })
     expect(q?.props.color).toBe('warning')
     expect(q?.props.wrap).toBe('truncate-end')
-    expect(await labels(ui)).toContain('1 question for you')
+    expect(await labels(ui)).toContain('needs you: 1 ask')
     expect((await allTexts(ui)).some(t => /^\+\d/.test(t))).toBe(false)
   })
 
@@ -2176,7 +2184,7 @@ for (const surface of SURFACES) {
     const ui = await band($, surface)
     expect(await ui.find({ type: 'Text', text: 'P2 asks you: Keep the legacy PDF route?' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '+1' })).toBeDefined()
-    expect(await labels(ui)).toContain('2 questions for you')
+    expect(await labels(ui)).toContain('needs you: 2 asks')
     // +1 sits in the same row Box as the question (a fragment lets the host break the line)
     type N = { type?: string; props?: Record<string, unknown>; children?: unknown }
     const kids = (n: N): N[] => (Array.isArray(n.children) ? (n.children as N[]) : n.children ? [n.children as N] : []).filter(c => typeof c === 'object' && c !== null)
@@ -2194,7 +2202,7 @@ for (const surface of SURFACES) {
     const ui = await band($, surface)
     expect((await allTexts(ui))[0]).toBe('⚑')
     expect((await shown(ui))).not.toContain('asks you')
-    expect(await labels(ui)).toContain('1 question for you')
+    expect(await labels(ui)).toContain('needs you: 1 ask')
   })
 
   test(`${surface}: band ask from another repo (waiting 0, no task) still shows the ask row`, async ($, on) => {
@@ -2202,7 +2210,7 @@ for (const surface of SURFACES) {
     const ui = await band($, surface)
     expect(await ui.find({ type: 'Text', text: 'P2 asks you: Keep the legacy PDF route?' })).toBeDefined()
     expect((await allTexts(ui))[0]).toBe('⚑')
-    expect(await labels(ui)).toContain('1 question for you')
+    expect(await labels(ui)).toContain('needs you: 1 ask')
   })
 
   test(`${surface}: band ko label exact`, async ($, on) => {
@@ -2532,7 +2540,7 @@ test('HOME at 190: header, flag section, EPIC rows with the Phase rail, STORY ro
   // header: EPIC count, machine-wide drivers and load on the left, total spend and elapsed on the right
   expect(lines[0]).toMatch(/^teams {2}EPIC 3 · drivers 5\/8 · load 3\.1\/8 \(machine-wide\) +\$6\.12 · 22m$/)
   // the flag section: an ask, and a driver F3 says is stopped; each row ends in the key that jumps to the next one
-  expect(text).toContain('⚑ Waiting for you 2')
+  expect(text).toContain('⚑ Needs you 2')
   const ask = lines.find(l => l.includes('"How many retries on refund failure?"'))!
   expect(ask).toMatch(/⚑ +Cancel payment API › S2 +"How many retries on refund failure\?" +9m waiting +n$/)
   const stalled = lines.find(l => l.includes('no output for 23m (driver stopped?)'))!
@@ -2567,7 +2575,7 @@ test('HOME places F3 values only when present: Build n/m, estimated mark, spend 
   const a = await homeLines($, on, 190, P_FIXTURE({ tasks: without }))
   const textA = a.lines.join('\n')
   expect(textA).not.toMatch(/Build \d|QA \d|SG\d|~\$|after stop|⏸|no output/)
-  expect(textA).not.toContain('⚑ Waiting for you')
+  expect(textA).not.toContain('⚑ Needs you')
   expect(textA).toContain('$2.47')
 })
 
@@ -2915,7 +2923,7 @@ for (const cols of [78, 46]) {
 test('the Korean HOME flags, folded row and header use the Korean table', async ($, on) => {
   const { lines } = await homeLines($, on, 190, P_FIXTURE(), 'terminal', 'korean')
   const text = lines.join('\n')
-  for (const part of ['나를 기다림 2', '9m 대기', '응답 없음 23m (드라이버 멈춤?)', '끝남 2h 0m 전 · STORY 5/5', 'drivers 5/8 · load 3.1/8 (머신 전체)', '직전 61/80', '⏸ 23분']) expect(text).toContain(part)
+  for (const part of ['내 차례 2','9m 대기', '응답 없음 23m (드라이버 멈춤?)', '끝남 2h 0m 전 · STORY 5/5', 'drivers 5/8 · load 3.1/8 (머신 전체)', '직전 61/80', '⏸ 23분']) expect(text).toContain(part)
   expect(lines.at(-1)).toContain('w s 이동')
   expect(lines.at(-1)).toMatch(/l KR$/)
 })
@@ -3013,7 +3021,8 @@ test('PHASE: Running, Handed over and Decisions in that order; the workers, the 
   // time · STORY · who · what, score, reason · where it goes
   expect(feed[0]).toMatch(/14:03 +S2 +judge +reject 61 "AC 3 missing" +→ implementer/)
   expect(feed[1]).toMatch(/13:58 +S1 +integrated 1 +→ judge/)
-  expect(feed[2]).toMatch(/13:52 +S2 +TeamLeader +"How many retries on refund failure\?" +→ you/)
+  expect(feed[2]).toMatch(/13:52 +S2 +TeamLeader +needs you +"How many retries on refund failure\?" *$/)
+  expect(feed[2]).not.toMatch(/→|asks you/) // the person is named once, by the state word
   expect(feed[3]).toMatch(/13:40 +S1 +judge +accept 91 +→ integrate/)
   // only the Build thread: the STORY's own verdict; the Plan entries are not here
   const thread = lines.slice(decisions + 1).join('\n')
@@ -3095,7 +3104,7 @@ test('STORY: FLOW, progress, participants, the attempt grid with the rejected ju
   expect(grid[1]).toMatch(/2\/3 +✔ +✔ +✔ +●/)
   expect(lines.some(l => l.trim() === 'Now')).toBe(true)
   expect(lines.find(l => /^● +\S+ +S2 /.test(l.trim()))).toContain('editing parser.ts')
-  expect(lines.find(l => l.includes('⚑ S2 → you'))).toMatch(/▸ +⚑ S2 → you +"How many retries on refund failure\?" +9m waiting +⏎ answer/)
+  expect(lines.find(l => l.includes('⚑ S2 needs you'))).toMatch(/▸ +⚑ S2 needs you +"How many retries on refund failure\?" +9m waiting +⏎ answer/)
   expect(text).toMatch(/Log 6 · last 12s ago/)
   expect(text).toContain('Report: appears after the gate passes')
   expect(lines.at(-1)).toContain('w s move · d ⏎ open')
@@ -3104,7 +3113,7 @@ test('STORY: FLOW, progress, participants, the attempt grid with the rejected ju
 test('STORY: d on the Log row opens Log, d on the Report row opens the STORY Report, a returns to the row; Enter on the ask opens answer mode', async ($, on) => {
   const { seen } = await seeded($, on, PAGES_FIXTURE(), 'terminal', undefined, { epic: 'tA', page: STORY_S2 }, true)
   const ui = await atCols($, 'terminal', 190)
-  expect((await linesAt(ui, 190)).find(l => l.includes('⚑ S2 → you'))).toContain('▸') // the ask leads and is selected first
+  expect((await linesAt(ui, 190)).find(l => l.includes('⚑ S2 needs you'))).toContain('▸') // the ask leads and is selected first
   await pressKey(ui, 's')
   await pressKey(ui, 'd')
   expect(seen.store.get('page')).toEqual(LOG_S2)
@@ -3129,7 +3138,8 @@ test('LOG: time · node · what · note, newest first, the entry count in the he
   const rows = lines.filter(l => /^\d\d:\d\d /.test(l))
   expect(rows).toHaveLength(6)
   expect(rows[0]).toMatch(/^14:12 +● implement +attempt 2 started *$/)
-  expect(rows[1]).toMatch(/^14:05 +⚑ ask +TeamLeader → me "How many retries on refund failure\?" *$/)
+  expect(rows[1]).toMatch(/^14:05 +⚑ ask +TeamLeader · needs you "How many retries on refund failure\?" *$/)
+  expect(rows[1]).not.toContain('→')
   expect(rows[2]).toMatch(/^14:03 +✘ gate +attempt 1 reject 61\/80 +"duplicate request double refund test missing"$/)
   expect(rows[3]).toMatch(/^13:51 +✔ implement +attempt 1 commits 3 *$/)
   expect(rows[5]).toMatch(/^13:37 +✔ plan +2 subgoals *$/)
@@ -3332,7 +3342,8 @@ test('ANSWER: breadcrumb, how long it waits, who asks, the question, a context l
   const lines = await linesAt(ui, 190)
   sound(lines, 190)
   expect(lines[0]).toMatch(/^Cancel payment API › S2 refund idempotency key › Answer the question +⚑ 9m waiting$/)
-  expect(lines.find(l => l.startsWith('S2 → you'))).toBeDefined()
+  expect(lines.find(l => l.startsWith('S2 needs you'))).toBeDefined()
+  expect(lines.some(l => l.includes('→'))).toBe(false)
   expect(lines).toContain(`"${ASK_QUESTION}"`)
   expect(lines.find(l => l.startsWith('Context'))).toMatch(/^Context +refund idempotency key$/)
   expect(lines.find(l => l.startsWith('Answer ›'))).toBeDefined()
@@ -3999,5 +4010,184 @@ test('F2 demo renders', () => {
   // the page tests above collect the renders; each block is split into tmp/card125/renders by graph/scripts/split-demo.mjs
   const last = new Map(F2_SHOTS.map(s => [s.name, s.lines]))
   expect(last.size).toBe(52)
+  for (const [name, lines] of last) console.log(`=== ${name} ===\n${lines.join('\n')}\n=== end ===`)
+})
+
+// ---- card 125 leftovers: KO report header, one waiting wording, EPIC report verdict and result, FLOOR roles and STORY / subagent ----
+const WAIT_WORD = { en: STRINGS.en.wordYou, ko: STRINGS.ko.wordYou } as const
+const LEFT_PHASES = P_PHASES.map(p => p.key === 'build' ? { ...p, stories: 2, subagents: 2, roles: { implementer: 1 } } : p)
+const LEFT_RESULT = { stories: { accepted: 2, total: 3 }, gate: { accept: true, score: 88, threshold: 80 } }
+const LEFT_FLOOR = (): Data => PAGES_FIXTURE({ tasks: P_TASKS({ phases: LEFT_PHASES }) })
+const LEFT_REPORT = (over: Record<string, unknown> = {}): Data => PAGES_FIXTURE({ tasks: P_TASKS({ phases: LEFT_PHASES }), reports: { tA: { ...NEEDS_PAYLOAD, result: LEFT_RESULT, ...over } } })
+
+test('wording: the words are one pair, EN needs you and KO 내 차례', () => {
+  expect(WAIT_WORD).toEqual({ en: 'needs you', ko: '내 차례' })
+})
+
+for (const [lang, w] of [[undefined, WAIT_WORD.en], ['korean', WAIT_WORD.ko]] as const) {
+  // the footer line is key help (`EPIC → Floor`), not a state; the arrow checks cover the rows above it
+  test(`wording ${lang ?? 'English'}: the HOME flag block says "${w}" with no arrow`, async ($, on) => {
+    const home = await homeLines($, on, 190, P_FIXTURE(), 'terminal', lang)
+    expect(home.lines.join('\n')).toContain(`⚑ ${lang === undefined ? 'Needs you' : w} 2`)
+    expect(home.lines.slice(0, -1).some(l => l.includes('→'))).toBe(false)
+  })
+
+  test(`wording ${lang ?? 'English'}: the Log ask row says "${w}" with no arrow`, async ($, on) => {
+    const log = await homeLines($, on, 190, PAGES_FIXTURE(), 'terminal', lang, { page: LOG_S2 })
+    const ask = log.lines.find(l => /^14:05 /.test(l))!
+    expect(ask).toContain(`TeamLeader · ${w} "How many retries on refund failure?"`)
+    expect(log.lines.slice(0, -1).some(l => /→|asks you/.test(l))).toBe(false)
+  })
+
+  test(`wording ${lang ?? 'English'}: the answer-mode header says "${w}" with no arrow`, async ($, on) => {
+    const { ui } = await answerSeed($, on, answerData().data, 'terminal', lang)
+    const answer = await linesAt(ui, 190)
+    expect(answer.find(l => l.startsWith(`S2 ${w}`))).toBeDefined()
+    expect(answer.slice(0, -1).some(l => l.includes('→'))).toBe(false)
+  })
+
+  test(`wording ${lang ?? 'English'}: the hand-off to the person names them once, by "${w}", with no arrow and no asks you`, async ($, on) => {
+    const { lines } = await homeLines($, on, 190, PAGES_FIXTURE(), 'terminal', lang, { page: PHASE_BUILD })
+    const row = lines.find(l => l.includes('13:52'))!
+    expect(row.split(w)).toHaveLength(2)
+    expect(row).not.toMatch(/→|asks you|질문/)
+    expect(row).toMatch(new RegExp(`13:52 +S2 +TeamLeader +${w} +"How many retries on refund failure\\?"`))
+  })
+
+  test(`wording ${lang ?? 'English'}: the band line says "${w}"`, async ($, on) => {
+    const { seen } = await seeded($, on, { status: stat({ waiting: 2 }), task: demo({ state: 'stalled' }) }, 'terminal', lang)
+    expect(seen.statuses[seen.statuses.length - 1] ?? '').toContain(lang === undefined ? 'needs you: 2 waiting' : '내 차례: 2건')
+  })
+
+  test(`wording ${lang ?? 'English'}: an EPIC row waiting on the person says "${w}", not the raw state`, async ($, on) => {
+    const epics = await homeLines($, on, 190, P_FIXTURE({ tasks: H_TASKS() }), 'terminal', lang, { page: HOME_PAGE })
+    const beta = epics.lines.find(l => l.includes('Beta exporter') && !l.includes('›'))!
+    expect(beta).toContain(w)
+    expect(epics.lines.join('\n')).not.toContain('waiting_human')
+  })
+
+  test(`wording ${lang ?? 'English'}: a run that ends waiting on the person toasts "${w}"`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1000 })
+    if (lang !== undefined) KO_ON(on)
+    const fin = { ts: 1600, task_id: 'E-aaaaaaaa1', kind: 'daemon_done', text: 'E-aaaaaaaa finished: waiting_human', run: 'E-aaaaaaaa', state: 'waiting_human' }
+    const { seen } = pushWorld(on, sentOk, evLines(fin))
+    await start($)
+    await clock.advance(3000)
+    expect(seen.toasts.some(t => t.includes(w) && !t.includes('waiting_human'))).toBe(true)
+  })
+
+  test(`STORY report ${lang ?? 'English'}: the header right is ${lang === undefined ? 'accepted' : '승인'} 91/80 · 4m`, async ($, on) => {
+    const { lines, ui } = await homeLines($, on, 190, PAGES_FIXTURE(), 'terminal', lang, { page: REPORT_S1 })
+    sound(lines, 190)
+    const text = visible(await ui.drawn())
+    if (lang === undefined) expect(lines[0]).toMatch(/Report +accepted 91\/80 · 4m$/)
+    else {
+      expect(lines[0]).toMatch(/Report +승인 91\/80 · 4m$/)
+      expect(text).not.toContain('accepted')
+      expect(latinOutside(text, PAGE_DATA)).toEqual([])
+    }
+  })
+
+  for (const cols of [190, 110]) {
+    test(`EPIC report ${lang ?? 'English'} at ${cols}: header verdict, Verdict and Result rows above the path; no Result row without result`, async ($, on) => {
+      const ko = lang !== undefined
+      const { lines, ui } = await homeLines($, on, cols, LEFT_REPORT(), 'terminal', lang, { page: EPIC_REPORT })
+      sound(lines, cols)
+      expect(lines[0]).toMatch(ko ? /막힘 · 실패 1$/ : /blocked · failed 1$/)
+      const verdict = lines.findIndex(l => (ko ? /^판정 +막힘 · 실패 1$/ : /^Verdict +blocked · failed 1$/).test(l))
+      const result = lines.findIndex(l => (ko ? /^결과 +STORY 2\/3 · gate 88\/80 승인$/ : /^Result +STORY 2\/3 · gate 88\/80 accepted$/).test(l))
+      const path = lines.findIndex(l => l.includes('/proj/.teams_output/team/E-tA/80-report.md'))
+      expect([verdict >= 0, result > verdict, path > result]).toEqual([true, true, true])
+      if (ko) expect(latinOutside(visible(await ui.drawn()), PAGE_DATA)).toEqual([])
+    })
+
+    test(`EPIC report ${lang ?? 'English'} at ${cols}: a rejected gate says so; a payload without result draws no Result row`, async ($, on) => {
+      const ko = lang !== undefined
+      const rejected = await homeLines($, on, cols, LEFT_REPORT({ result: { stories: { accepted: 1, total: 4 }, gate: { accept: false, score: 61, threshold: 80 } } }), 'terminal', lang, { page: EPIC_REPORT })
+      sound(rejected.lines, cols)
+      expect(rejected.lines.some(l => l.includes('gate 61/80') && l.includes(ko ? '반려' : 'rejected'))).toBe(true)
+    })
+
+    test(`EPIC report ${lang ?? 'English'} at ${cols}: no result, no Result row`, async ($, on) => {
+      const bare = await homeLines($, on, cols, LEFT_REPORT({ result: undefined }), 'terminal', lang, { page: EPIC_REPORT })
+      sound(bare.lines, cols)
+      expect(bare.lines.some(l => /^(Result|결과) /.test(l))).toBe(false)
+      expect(bare.lines.some(l => /^(Verdict|판정) /.test(l))).toBe(true)
+    })
+  }
+
+  test(`EPIC report ${lang ?? 'English'}: a finished run says finished and no failed count`, async ($, on) => {
+    const { lines } = await homeLines($, on, 190, LEFT_REPORT({ verdict: 'finished', failed: 0 }), 'terminal', lang, { page: EPIC_REPORT })
+    expect(lines[0]).toMatch(lang === undefined ? /finished$/ : /끝남$/)
+    expect(lines[0]).not.toMatch(/failed|실패/)
+  })
+
+  test(`FLOOR ${lang ?? 'English'} at 190: role counts and STORY n / subagent n on the Phase with package desks, nothing on a Phase without`, async ($, on) => {
+    const ko = lang !== undefined
+    const { lines, ui } = await homeLines($, on, 190, LEFT_FLOOR(), 'terminal', lang, { page: FLOOR_PAGE })
+    sound(lines, 190)
+    const build = lines.find(l => l.includes('2 Build'))!
+    expect(build).toContain('implementer 1')
+    expect(build).toContain(ko ? 'STORY 2 / 서브에이전트 2' : 'STORY 2 / subagent 2')
+    for (const key of ['1 Plan', '3 Integrate', '6 Report']) expect(lines.find(l => l.includes(key))!).not.toMatch(/STORY \d|implementer/)
+    if (ko) expect(latinOutside(visible(await ui.drawn()), F4_CUTS)).toEqual([])
+  })
+
+  test(`FLOOR ${lang ?? 'English'}: a Phase without the fields draws neither cell`, async ($, on) => {
+    const bare = await homeLines($, on, 190, PAGES_FIXTURE(), 'terminal', lang, { page: FLOOR_PAGE })
+    expect(bare.lines.join('\n')).not.toMatch(/STORY \d+ \/|implementer \d/)
+  })
+
+  test(`FLOOR ${lang ?? 'English'} at 110: the STORY / subagent cell stays, the roles cell drops first`, async ($, on) => {
+    const { lines } = await homeLines($, on, 110, LEFT_FLOOR(), 'terminal', lang, { page: FLOOR_PAGE })
+    const build = lines.find(l => l.includes('2 Build'))!
+    expect(build).toContain(lang === undefined ? 'STORY 2 / subagent 2' : 'STORY 2 / 서브에이전트 2')
+    expect(build).not.toContain('implementer')
+  })
+
+  for (const cols of [110, 30]) {
+    test(`FLOOR ${lang ?? 'English'} at ${cols}: every line stays within the pane`, async ($, on) => {
+      const { lines } = await homeLines($, on, cols, LEFT_FLOOR(), 'terminal', lang, { page: FLOOR_PAGE })
+      sound(lines, cols)
+    })
+  }
+}
+
+const LEFTOVER_SHOTS: { name: string; lines: string[] }[] = []
+for (const lang of [undefined, 'korean'] as const) {
+  for (const surface of SURFACES) {
+    for (const cols of [190, 110, 30]) {
+      const tag = `${lang === undefined ? 'en' : 'ko'}${surface}`
+      const pages: [string, Data, Record<string, unknown>][] = [
+        ['storyreport', PAGES_FIXTURE(), { page: REPORT_S1 }],
+        ['epicreport', LEFT_REPORT(), { page: EPIC_REPORT }],
+        ['floor', LEFT_FLOOR(), { page: FLOOR_PAGE }],
+        ['home', P_FIXTURE(), { page: HOME_PAGE }],
+        ['log', PAGES_FIXTURE(), { page: LOG_S2 }],
+      ]
+      for (const [name, data, init] of pages) {
+        test(`leftover shot ${name} in ${lang ?? 'English'} on ${surface} at ${cols} columns`, async ($, on) => {
+          const { lines } = await homeLines($, on, cols, data, surface, lang, init)
+          sound(lines, cols)
+          expect(lines.some(l => /→ (you|me|나)/.test(l))).toBe(false)
+          LEFTOVER_SHOTS.push({ name: `demo-${name}${tag}-${cols}`, lines })
+        })
+      }
+      test(`leftover shot band in ${lang ?? 'English'} on ${surface} at ${cols} columns`, async ($, on) => {
+        await seeded($, on, P_FIXTURE(), surface, lang, { epic: 'tA' }, true)
+        const ui = await $.ui.mount({ plugin: 'teams', surface, component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: cols } } as never)
+        const lines = draw((await ui.drawn()) as never, cols)
+        sound(lines, cols + 4)
+        expect(lines.some(l => /→ (you|me|나)/.test(l))).toBe(false)
+        LEFTOVER_SHOTS.push({ name: `demo-band${tag}-${cols}`, lines })
+      })
+    }
+  }
+}
+
+test('card 125 leftovers demo renders', () => {
+  const last = new Map(LEFTOVER_SHOTS.map(s => [s.name, s.lines]))
+  expect(last.size).toBe(144)
+  for (const name of last.keys()) expect(name).toMatch(/^demo-[a-z]+-\d+$/)
   for (const [name, lines] of last) console.log(`=== ${name} ===\n${lines.join('\n')}\n=== end ===`)
 })

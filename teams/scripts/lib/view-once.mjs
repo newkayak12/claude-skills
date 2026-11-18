@@ -9,8 +9,8 @@ import { readFileSync, existsSync, openSync, readSync, fstatSync, closeSync } fr
 import { join } from 'node:path';
 import { collectTask, listTasks, readJsonRetry } from './view-collect.mjs';
 import { renderText, renderIndexText, renderTicketsText, renderResourcesText } from './view-render-text.mjs';
-import { notableEvents, notableFromEvents, statusLine, storyLog, HOLD_MS } from './view-events.mjs';
-import { summarize, waitingCount } from './view-summary.mjs';
+import { notableEvents, notableFromEvents, statusLine, storyLog, lastVerdicts, HOLD_MS } from './view-events.mjs';
+import { summarize, waitingCount, cardsOf, storyNow } from './view-summary.mjs';
 import { floorTasks, floorEntry, floorFacts } from './view-floor-fs.mjs';
 import { repoMatcher } from './view-repo.mjs';
 import { openTasks, statSig, statOf, listDirs } from './view-index.mjs';
@@ -387,6 +387,19 @@ function eventsOutput(tasksDir, cwd, since, shared) {
 
 // One ReportPayload line for --task (the teams-status Report tab and end-of-run card). A task that is
 // unknown or unreadable still gets a payload, with report and retro null.
+// What the run came to: STORY packages accepted of all, and the last goal gate's verdict. null for a task not there.
+function resultOf(m, tasksDir, taskId) {
+  const verdicts = lastVerdicts(tailLines(join(tasksDir, taskId, 'ledger.jsonl')));
+  const packages = cardsOf(m).filter((x) => x.kind === 'package');
+  const accepted = packages.filter((x) => storyNow(m, x.c, verdicts[String(x.c.id).split(':')[0]]).verdict === 'accept').length;
+  const gates = [...(m.manager_stages || []), ...((m.s_run && m.s_run.nodes) || [])]
+    .filter((n) => String(n.node_id).startsWith('gate:goal') && (n.verdict !== undefined || n.match_pct !== undefined));
+  const g = gates[gates.length - 1];
+  const num = (v) => (Number.isFinite(v) ? v : null);
+  const gate = g ? { accept: g.verdict === true, score: num(g.match_pct), threshold: num(m.telemetry && m.telemetry.goal_threshold) } : null;
+  return { stories: { accepted, total: packages.length }, gate };
+}
+
 function reportOutput(tasksDir, taskId, ctx) {
   const m = taskId ? collectOf(ctx)(tasksDir, taskId) : null;
   let raw = null;
@@ -398,7 +411,8 @@ function reportOutput(tasksDir, taskId, ctx) {
   // each needs item with its engine key beside the English text (the pane places it, never rebuilds it); sent only when
   // some item has a key, so a report with none is byte-for-byte the builder's payload
   const entries = needsEntries(p.needs.items, p.retro);
-  return JSON.stringify(entries.some((e) => e.reason_key !== undefined) ? { ...p, needs: { ...p.needs, entries } } : p) + '\n';
+  const out = { ...p, result: raw ? resultOf(m, tasksDir, taskId) : null };
+  return JSON.stringify(entries.some((e) => e.reason_key !== undefined) ? { ...out, needs: { ...p.needs, entries } } : out) + '\n';
 }
 
 const readRaw = (tasksDir, taskId) => { try { return JSON.parse(readFileSync(join(tasksDir, taskId, 'task.json'), 'utf8')); } catch { return null; } };

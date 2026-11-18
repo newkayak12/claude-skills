@@ -163,8 +163,11 @@ export function workerCells(workers: readonly SummaryWorker[], frameNo: number, 
 export type HandoffWord = (key: string, vars: Record<string, string | number> | undefined, raw: string) => string
 export const handoffCells = (feed: readonly Handoff[], word: HandoffWord = (_key, _vars, raw) => raw): string[][] =>
   feed.slice(0, 5).map(h => {
+    const from = h.from_key ? word(h.from_key, undefined, h.from) : h.from
+    // a hand-off to the person: the state word says it, the target cell stays empty, so the person is named once
+    if (h.to_key === 'partyYou') return [h.time, from, word('wordYou', undefined, 'needs you'), '']
     const to = h.to_key ? word(h.to_key, undefined, h.to) : h.to
-    return [h.time, h.from_key ? word(h.from_key, undefined, h.from) : h.from, h.what_key ? word(h.what_key, h.what_vars, h.what) : h.what, to ? `→ ${to}` : '']
+    return [h.time, from, h.what_key ? word(h.what_key, h.what_vars, h.what) : h.what, to ? `→ ${to}` : '']
   })
 
 /* --- HOME and FLOOR: rows as cells, the pane draws them --- */
@@ -316,7 +319,7 @@ export function homeRows(listed: readonly SummaryTaskEntry[], o: HomeOpts): Home
       id: `e:${t.task_id}`, block: 'epic', ref,
       cells: [
         ' ', '▾', ICON[state], compact ? '' : t.key, title, compact ? (stage === undefined ? '' : phaseName(say, stage.key)) : railSegs(t.stages, say),
-        compact ? '' : progressText(t.progress, say), compact ? '' : `STORY ${t.done}/${t.total}`, since(epicElapsed(t, now)), [cost, after].filter(Boolean).join(' '),
+        compact ? '' : [state === 'you' ? say('wordYou') : '', progressText(t.progress, say)].filter(Boolean).join(' · '), compact ? '' : `STORY ${t.done}/${t.total}`, since(epicElapsed(t, now)), [cost, after].filter(Boolean).join(' '),
       ],
       tints: [undefined, 'claude', TINT[state], 'dim', undefined, compact ? 'claude' : undefined, 'dim', 'dim', 'dim', 'dim'],
     }
@@ -341,11 +344,11 @@ export function homeRows(listed: readonly SummaryTaskEntry[], o: HomeOpts): Home
 // the shrink and drop order of each column group: the title (cell 4) shrinks last; the STORY row sheds mini bar, then agents,
 // then the reason, then `try n/max` (so the score is never cut); the EPIC row sheds the rail, then F3's progress, then the STORY count
 export const HOME_PLANS: Record<string, BlockPlan> = {
-  flag: { shrink: [3, 2], titleMin: 12 },
-  epic: { shrink: [4], drop: [5, 6, 7], titleMin: 12 },
-  ended: { shrink: [4], drop: [5], titleMin: 12 },
-  story: { shrink: [4], drop: [7, 10, 9, 6], titleMin: 12 },
-  phase: { shrink: [2], drop: [6], titleMin: 10 },
+  flag: { shrink: [3, 2], drop: [5, 4], titleMin: 12 },
+  epic: { shrink: [4], drop: [5, 6, 7, 9, 8], titleMin: 12 },
+  ended: { shrink: [4], drop: [5, 6], titleMin: 12 },
+  story: { shrink: [4], drop: [7, 10, 9, 6, 11], titleMin: 12 },
+  phase: { shrink: [2], drop: [9, 10, 6], titleMin: 10 },
 }
 
 // The lines of `rows`, one per row in order; each column group is aligned on its own widths, the selected row carries ▸
@@ -374,6 +377,8 @@ export function homeHeader(listed: readonly SummaryTaskEntry[], now: number, say
 // FLOOR: the six Phases of one EPIC, one row each: mark · number and name · elapsed · cost · who works · decisions · ⚑ and ⏸ counts.
 // Elapsed and cost are the ledger's per-Phase numbers (metrics.stages), counts come from the engine's phases[]; absent, blank.
 export function floorRows(t: SummaryTaskEntry, say: Say): PageRow[] {
+  // role counts and `STORY n / subagent n` only where a Phase has package desks (stories > 0); the two cells exist on every row or none
+  const desks = (t.phases ?? []).some(p => (p.stories ?? 0) > 0)
   return PHASE_KEYS.map((key, i): PageRow => {
     const state: Mark = t.stages.find(g => g.key === key)?.state ?? 'pending'
     const pc = t.phases?.find(p => p.key === key)
@@ -388,8 +393,12 @@ export function floorRows(t: SummaryTaskEntry, say: Say): PageRow[] {
         key === 'report' ? say('f2FloorReportHint') : pc !== undefined && pc.acting > 0 ? `${pc.acting} ${say('wordActing')}` : '',
         pc !== undefined && typeof pc.decisions === 'number' ? say('f2FloorDecisionsN', { n: pc.decisions }) : '',
         pc !== undefined && pc.you > 0 ? `⚑ ${pc.you}` : '', pc !== undefined && pc.stalled > 0 ? `${ICON.stalled} ${pc.stalled}` : '',
+        ...(!desks ? [] : [
+          pc !== undefined && (pc.stories ?? 0) > 0 ? Object.entries(pc.roles ?? {}).map(([role, n]) => `${role} ${n}`).join(', ') : '',
+          pc !== undefined && (pc.stories ?? 0) > 0 ? say('f2FloorStoriesAgents', { s: pc.stories!, a: pc.subagents ?? 0 }) : '',
+        ]),
       ],
-      tints: [undefined, MARK_TINT[state], undefined, 'dim', 'dim', 'dim', undefined, 'warning', 'error'],
+      tints: [undefined, MARK_TINT[state], undefined, 'dim', 'dim', 'dim', undefined, 'warning', 'error', ...(desks ? ['dim' as const, 'dim' as const] : [])],
     }
   })
 }

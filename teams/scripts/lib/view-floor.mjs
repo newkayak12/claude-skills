@@ -89,7 +89,7 @@ export function floorOf(model, facts = {}, { now = Date.now(), metrics: given = 
     const doing = state === 'acting' || state === 'you' ? (f.doing || '') : '';
     // minutes (integer) only on a stalled worker: its own stream's, else the task-level newest sign of life
     const minutes = state === 'stalled' ? (Number.isInteger(f.minutes) ? f.minutes : taskMinutes) : null;
-    workers.push({ id, phase, state, doing, ...markOf(state, doing), ...(Number.isInteger(minutes) ? { minutes } : {}), ...(state === 'acting' || state === 'you' ? at : {}) });
+    workers.push({ id, phase, state, doing, ...markOf(state, doing), ...(Number.isInteger(minutes) ? { minutes } : {}), ...(Number.isInteger(f.subagents) ? { subagents: f.subagents } : {}), ...(state === 'acting' || state === 'you' ? at : {}) });
     if (mark === 'done' || mark === 'pending') return;
     const itemState = mark === 'failed' && state !== 'you' ? 'failed' : state;
     items.push({
@@ -141,6 +141,14 @@ export function phaseCounts(list) {
   return PHASES.map((key) => {
     const w = (list || []).filter((x) => x.phase === key);
     const n = (state) => w.filter((x) => x.state === state && (state !== 'stalled' || Number.isInteger(x.minutes))).length;
-    return { key, workers: w.length, acting: n('acting'), you: n('you'), stalled: n('stalled'), idle: n('idle'), done: n('done') };
+    const desks = w.filter((x) => x.id !== 'judge' && x.id !== 'S');
+    const roles = {};
+    for (const x of w) if (x.role && /^[a-z]+$/.test(x.role)) roles[x.role] = (roles[x.role] || 0) + 1;
+    if (w.some((x) => x.id === 'judge' && x.state === 'acting')) roles.judge = (roles.judge || 0) + 1;
+    const subs = w.filter((x) => Number.isInteger(x.subagents));
+    return {
+      key, workers: w.length, acting: n('acting'), you: n('you'), stalled: n('stalled'), idle: n('idle'), done: n('done'),
+      stories: desks.length, roles, ...(subs.length ? { subagents: subs.reduce((s, x) => s + x.subagents, 0) } : {}),
+    };
   });
 }

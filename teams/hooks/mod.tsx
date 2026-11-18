@@ -61,7 +61,7 @@ const OPEN = { id: PANE, title: 'Teams', focus: true, closeOnEscape: true } as c
 const OPEN_ANSWER = { id: PANE, title: 'Teams', focus: true } as const
 
 const en = {
-  teamPlanning: 'Planning', teamDevelop: 'Develop', teamQa: 'QA', teamAudit: 'Audit', teamEpic: 'EPIC', nodeWaiting: 'waiting for you',
+  teamPlanning: 'Planning', teamDevelop: 'Develop', teamQa: 'QA', teamAudit: 'Audit', teamEpic: 'EPIC', nodeWaiting: 'needs you',
   decAll: 'all cards', decCard: 'Card {c}', decNone: 'No decisions recorded yet.',
   kindProposal: 'proposed', kindRetry: 'retry', kindRejudge: 're-judge', kindResplit: 're-split', kindDefect: 'defect filed', kindAnswer: 'answered', kindDecision: 'decided',
   vAccept: 'accepted', vSound: 'sound', vVerified: 'verified', vReject: 'rejected', vJudgeFailed: 'could not judge',
@@ -75,15 +75,15 @@ const en = {
   stateRunning: 'running', stateStalled: 'stalled', stateComplete: 'finished', stateFailed: 'failed',
   stagePlan: 'Plan', stageBuild: 'Build', stageIntegrate: 'Integrate', stageQa: 'QA', stageGate: 'Final gate', stageReport: 'Report',
   subjPlan: 'plan', subjBuild: 'build', subjIntegration: 'integration', subjQa: 'QA', subjFinalGate: 'final gate', subjReport: 'report', subjTask: 'the task', subjCard: 'a card', subjStep: 'a step',
-  stageFix: 'fix', stageFixnext: 'fixnext', stageAnswer: 'answer', stageIdle: 'idle', stageDone: 'done',
-  nowFix: 'Fixing defect', nowFixnext: 'Waiting to fix defect', nowBuild: 'Building', nowPlan: 'Planning', nowQa: 'QA', nowAnswer: 'Waiting for your answer',
+  stageFix: 'fix', stageFixnext: 'fixnext', stageAnswer: 'needs you', stageIdle: 'idle', stageDone: 'done',
+  nowFix: 'Fixing defect', nowFixnext: 'Waiting to fix defect', nowBuild: 'Building', nowPlan: 'Planning', nowQa: 'QA', nowAnswer: 'Needs you',
   nowIntegrate: 'Integrating', nowGate: 'Final gate', nowReport: 'Writing the report', nowDone: 'All done', nowIdle: 'Idle',
   logPassed: '{s} passed', logFailed: '{s} failed', logFiled: '{s} filed', logIntegrated: '{s} integrated',
-  logDispatched: '{s} started', logWaiting: '{s} waiting for you', logFinished: '{s} finished',
+  logDispatched: '{s} started', logWaiting: '{s} needs you', logFinished: '{s} finished',
   noRun: 'No teams run in this session.', loading: 'Loading...', noLog: 'Nothing logged yet.',
   workMore: '+{n} more', cmdDesc: 'Open or close the teams status pane', paneOpened: 'pane opened',
   asksYou: '{who} asks you: {q}',
-  board: 'board', inboxOne: '{n} question for you', inboxMany: '{n} questions for you', statusWaiting: 'needs you: {n} waiting - open /teams-status',
+  board: 'board', inboxOne: 'needs you: {n} ask', inboxMany: 'needs you: {n} asks', statusWaiting: 'needs you: {n} waiting - open /teams-status',
   pushRejected: 'rejected', pushNeedsYou: 'needs you', pushEnded: 'run ended', nodeFailed: 'failed',
   noStories: 'No STORY at work.',
   runBudget: 'Budget', runBudgetOf: '{spent} of {limit}', runDrivers: 'Drivers', runLive: '{n} live', runLiveCap: '{n}/{cap} live',
@@ -100,11 +100,11 @@ const en = {
   tileSubStages: '{done}/{total} stages', tileSubAccepted: 'accepted', tileSubTurns: '{n} turns', tileSubWaiting: 'waiting', tileSubNothing: 'nothing', tileSubLive: 'live',
   evWaiting: '{run} needs you: {node}', evPaused: '{run} paused: provider limit', evDone: '{run} finished: {state}', evExhausted: '{run} stopped: daemon restarts used up', evFixRounds: '{run} {pkg}: fix rounds used up', evAttempt: '(attempt {n})',
   doneComplete: 'complete', donePartial: 'partial', doneBlocked: 'blocked',
-  askTo: '⚑ {who} → you', stateBlocked: 'blocked', stateCancelled: 'cancelled',
+  askTo: '⚑ {who} needs you', stateBlocked: 'blocked', stateCancelled: 'cancelled',
   ticketDone: 'done', ticketBlocked: 'blocked', ticketInProgress: 'in progress', ticketReady: 'ready', ticketInReview: 'in review', ticketCancelled: 'cancelled', ticketStalled: 'stalled',
-  ticketBacklog: 'backlog', ticketUnreachable: 'unreachable', ticketWaitingCapacity: 'waiting for capacity', ticketWaitingHuman: 'waiting for you', ticketRejected: 'rejected', ticketSettled: 'settled', ticketUnknown: 'unknown',
-  stateWaitingHuman: 'waiting_human', stateStale: 'stale', stateUnknown: 'unknown', statePartial: 'partial', statePending: 'pending',
-  doneCancelled: 'cancelled', doneRunning: 'running', doneWaitingHuman: 'waiting_human',
+  ticketBacklog: 'backlog', ticketUnreachable: 'unreachable', ticketWaitingCapacity: 'waiting for capacity', ticketWaitingHuman: 'needs you', ticketRejected: 'rejected', ticketSettled: 'settled', ticketUnknown: 'unknown',
+  stateWaitingHuman: 'needs you', stateStale: 'stale', stateUnknown: 'unknown', statePartial: 'partial', statePending: 'pending',
+  doneCancelled: 'cancelled', doneRunning: 'running', doneWaitingHuman: 'needs you',
   laneRunning: 'In progress', laneYou: 'Needs you', lanePending: 'Up next', laneDone: 'Done',
   langMarker: 'l {lang}', langEN: 'EN', langKR: 'KR',
   // F2 page-stack words. Key = the spec's dotted name with the dots dropped and each part capitalised, after `f2`
@@ -122,18 +122,19 @@ const en = {
   f2StoryLogRow: 'Log {n} · last {ago} ago', f2StoryReportRow: 'Report: appears after the gate passes', f2StoryAnswerRow: '⏎ answer',
   f2LogCount: '{n} entries', f2LogAttemptStart: 'attempt {n} started', f2LogAttemptCommits: 'attempt {n} commits {c}',
   f2LogAttemptReject: 'attempt {n} reject {score}/{threshold}', f2LogApproved: 'approved ({gaps} gaps)', f2LogCriteria: '{n} acceptance criteria',
-  f2LogSubgoals: '{n} subgoals', f2LogAsked: 'TeamLeader → me "{question}"',
+  f2LogSubgoals: '{n} subgoals', f2LogAsked: 'TeamLeader · needs you "{question}"',
   f2ReportNotAvailable: 'Not available yet: appears after the gate passes', f2ReportSeeLog: 'Look again', f2ReportAccepted: 'accepted {score}/{threshold} · {t}',
   f2ReportVerdictLine: 'judge {score} / threshold {threshold} · attempt {n}/{max}', f2AnswerSubmit: 'send', f2HintDraftDropped: 'Draft dropped', f2ReportTestsPass: 'tests pass', f2ReportTestsFail: 'tests fail',
   f2ReportResult: 'Result', f2ReportVerdict: 'Judge', f2ReportFiles: 'Files changed', f2ReportDecisions: 'Decisions', f2ReportLeft: 'Left over',
   f2AnswerTitle: 'Answer the question', f2AnswerPrompt: 'Answer', f2AnswerContext: 'Context', f2AnswerSend: '⏎ send', f2AnswerCancel: 'empty ⏎ cancel',
   f2AnswerDesktopOnly: 'answer on a desktop', f2AnswerAccepted: 'Answer sent', f2AnswerRefused: 'Not accepted: {reason}', f2AnswerFailed: 'Could not run the answer tool: {reason}',
   f2BtnUp: '▲', f2BtnDown: '▼', f2BtnOpen: 'open', f2BtnBack: 'back', f2BtnFlag: '⚑', f2BtnClose: 'close',
-  f2FlagTitle: 'Waiting for you {n}', f2FlagAge: '{m} waiting', f2FlagDriverSilent: 'no output for {m} (driver stopped?)',
+  f2FlagTitle: 'Needs you {n}', f2FlagAge: '{m} waiting', f2FlagDriverSilent: 'no output for {m} (driver stopped?)',
   f2FootHome: 'w s move · d ⏎ open (EPIC → Floor · STORY → detail) · n next ⚑ · q close', f2FootFloor: 'w s move · d ⏎ Phase detail · a back · n next ⚑ · q close',
   f2FootStory: 'w s move · d ⏎ open · a back · n next ⚑ · q close', f2FootScroll: 'w s scroll · a back · n next ⚑ · q close',
   f2FootAnswer: 'Input mode: letters go in as typed · empty ⏎ cancel',
   f2FloorPhaseOf: 'Phase {n}/6', f2FloorDecisionsN: 'decisions {n}', f2FloorReportHint: 'EPIC report opens here',
+  f2FloorStoriesAgents: 'STORY {s} / subagent {a}', f2EpicVerdict: 'Verdict', f2EpicRunning: 'running', f2EpicStories: 'STORY {accepted}/{total}', f2EpicGate: 'gate {score}/{threshold}',
   // keys the engine sends beside its English (view-status decisions, docs.mjs unaccepted_packages); the English stays beside each
   actorHuman: 'human', proposalSize: 'size {size}', proposalSizeFlow: 'size {size} · {flow}',
   resplitAreas: 'resplit → areas:{n}', resplit: 'resplit', replanIds: 'replan {ids}',
@@ -144,7 +145,7 @@ const en = {
 export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
   en,
   ko: {
-    teamPlanning: '기획', teamDevelop: '개발', teamQa: 'QA', teamAudit: '감사', teamEpic: 'EPIC', nodeWaiting: '답변 대기',
+    teamPlanning: '기획', teamDevelop: '개발', teamQa: 'QA', teamAudit: '감사', teamEpic: 'EPIC', nodeWaiting: '내 차례',
     decAll: '전체 카드', decCard: '카드 {c}', decNone: '아직 기록된 결정이 없습니다.',
     kindProposal: '제안', kindRetry: '재시도', kindRejudge: '재판정', kindResplit: '재분할', kindDefect: '결함 등록', kindAnswer: '답변', kindDecision: '결정',
     vAccept: '승인', vSound: '타당', vVerified: '검증됨', vReject: '반려', vJudgeFailed: '판정 실패',
@@ -154,20 +155,20 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     reportMissing: '아직 보고서가 없습니다: {path}', reportTruncated: '일부만 표시: 파일에 {n}줄 더 있습니다.',
     stages: '단계', work: '작업', cost: '비용',
     youOthers: '다른 실행에 {n}건 더', costLine: '{usd} · {turns}턴',
-    headLine: '{state} · {done}/{total}', wordIdle: '유휴', wordDone: '완료', wordStalled: '멈춤', wordFailed: '실패', wordActing: '작업 중', wordYou: '확인 필요', bandDone: '{done}/{total} 완료',
+    headLine: '{state} · {done}/{total}', wordIdle: '유휴', wordDone: '완료', wordStalled: '멈춤', wordFailed: '실패', wordActing: '작업 중', wordYou: '내 차례', bandDone: '{done}/{total} 완료',
     stateRunning: '진행 중', stateStalled: '멈춤', stateComplete: '완료', stateFailed: '실패',
     stagePlan: 'Plan', stageBuild: 'Build', stageIntegrate: 'Integrate', stageQa: 'QA', stageGate: 'Gate', stageReport: 'Report',
     subjPlan: '계획', subjBuild: '구현', subjIntegration: '통합', subjQa: 'QA', subjFinalGate: '최종 게이트', subjReport: '보고서', subjTask: '작업', subjCard: '카드', subjStep: '단계',
-    stageFix: '결함 수정', stageFixnext: '결함 수정 대기', stageAnswer: '답변 대기', stageIdle: '대기', stageDone: '완료',
-    nowFix: '결함 수정 중', nowFixnext: '결함 수정 대기', nowBuild: '구현 중', nowPlan: '계획 중', nowQa: 'QA 중', nowAnswer: '답변 대기 중',
+    stageFix: '결함 수정', stageFixnext: '결함 수정 대기', stageAnswer: '내 차례', stageIdle: '대기', stageDone: '완료',
+    nowFix: '결함 수정 중', nowFixnext: '결함 수정 대기', nowBuild: '구현 중', nowPlan: '계획 중', nowQa: 'QA 중', nowAnswer: '내 차례',
     nowIntegrate: '통합 중', nowGate: '최종 관문', nowReport: '보고서 작성 중', nowDone: '모두 끝남', nowIdle: '대기 중',
     logPassed: '{s} 통과', logFailed: '{s} 실패', logFiled: '{s} 등록', logIntegrated: '{s} 반영',
-    logDispatched: '{s} 시작', logWaiting: '{s} 답변 대기', logFinished: '{s} 끝남',
+    logDispatched: '{s} 시작', logWaiting: '{s} 내 차례', logFinished: '{s} 끝남',
     noRun: '이 세션에 팀 실행이 없습니다.', loading: '불러오는 중...', noLog: '아직 기록이 없습니다.',
     workMore: '+{n}건 더', cmdDesc: '팀 현황 창 열기/닫기', paneOpened: '창을 열었습니다',
     asksYou: '{who}님이 묻습니다: {q}',
-    board: '보드', inboxOne: '질문 {n}건', inboxMany: '질문 {n}건', statusWaiting: '확인 필요: {n}건 대기 - /teams-status 열기',
-    pushRejected: '반려', pushNeedsYou: '확인 필요', pushEnded: '실행 종료', nodeFailed: '실패',
+    board: '보드', inboxOne: '내 차례: 질문 {n}건', inboxMany: '내 차례: 질문 {n}건', statusWaiting: '내 차례: {n}건 - /teams-status 열기',
+    pushRejected: '반려', pushNeedsYou: '내 차례', pushEnded: '실행 종료', nodeFailed: '실패',
     noStories: '진행 중인 STORY가 없습니다.',
     runBudget: '예산', runBudgetOf: '{spent} / {limit}', runDrivers: '드라이버', runLive: '{n}개 동작 중', runLiveCap: '{n}/{cap} 동작 중',
     runStalled: '멈춤', runStalledOne: '{id} {m}분', runDenials: '거부', runDefects: '결함', runDefectsOf: '등록 {filed} · 폐기 {dropped}',
@@ -176,19 +177,19 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     sgStagePlan: '계획', sgStageSetgoal: '목표 설정', sgStageCritique: '비평', sgStageImplement: '구현', sgStageTest: '테스트', sgStageGate: '게이트', sgStageReport: '보고',
     estMark: '~', afterStop: '중단 후 {usd}', stalledMinutes: '⏸ {n}분',
     stageIntegShort: 'Integ', stageReportShort: 'Rep',
-    nextShape: '형태 {n}(으)로 재시도', nextAreas: '영역 {n}(으)로 재시도', nextRetry: '재시도 {n}/{max}', nextGaveUp: '포기', nextNeedsYou: '확인 필요',
+    nextShape: '형태 {n}(으)로 재시도', nextAreas: '영역 {n}(으)로 재시도', nextRetry: '재시도 {n}/{max}', nextGaveUp: '포기', nextNeedsYou: '내 차례',
     reasonNone: '기록된 사유 없음', reasonFailed: '실패',
     handAsks: '질문', handVerdict: '판정 {v}', handIntegrated: '{n}건 통합', handFiled: '결함 {n}건 등록', handAnswered: '답변함', partyYou: '나',
-    tileProgress: '진행', tileStories: 'STORY', tileCost: '비용', tileWaiting: '확인 필요', tileDrivers: '드라이버',
+    tileProgress: '진행', tileStories: 'STORY', tileCost: '비용', tileWaiting: '내 차례', tileDrivers: '드라이버',
     tileSubStages: '{done}/{total} 단계', tileSubAccepted: '승인', tileSubTurns: '{n}턴', tileSubWaiting: '대기', tileSubNothing: '없음', tileSubLive: '동작 중',
-    evWaiting: '{run} 확인 필요: {node}', evPaused: '{run} 일시 중지: 제공자 한도', evDone: '{run} 종료: {state}', evExhausted: '{run} 중단: 데몬 재시작 소진', evFixRounds: '{run} {pkg}: 수정 라운드 소진', evAttempt: '({n}회차)',
+    evWaiting: '{run} 내 차례: {node}', evPaused: '{run} 일시 중지: 제공자 한도', evDone: '{run} 종료: {state}', evExhausted: '{run} 중단: 데몬 재시작 소진', evFixRounds: '{run} {pkg}: 수정 라운드 소진', evAttempt: '({n}회차)',
     doneComplete: '완료', donePartial: '일부 완료', doneBlocked: '막힘',
-    askTo: '⚑ {who} → 나', stateBlocked: '막힘', stateCancelled: '취소됨',
+    askTo: '⚑ {who} 내 차례', stateBlocked: '막힘', stateCancelled: '취소됨',
     ticketDone: '완료', ticketBlocked: '막힘', ticketInProgress: '진행 중', ticketReady: '준비됨', ticketInReview: '검토 중', ticketCancelled: '취소됨', ticketStalled: '멈춤',
-    ticketBacklog: '대기열', ticketUnreachable: '도달 불가', ticketWaitingCapacity: '자리 대기', ticketWaitingHuman: '확인 필요', ticketRejected: '반려됨', ticketSettled: '종결', ticketUnknown: '알 수 없음',
-    stateWaitingHuman: '확인 필요', stateStale: '오래됨', stateUnknown: '알 수 없음', statePartial: '일부 완료', statePending: '대기',
-    doneCancelled: '취소됨', doneRunning: '진행 중', doneWaitingHuman: '확인 필요',
-    laneRunning: '진행 중', laneYou: '확인 필요', lanePending: '대기', laneDone: '완료',
+    ticketBacklog: '대기열', ticketUnreachable: '도달 불가', ticketWaitingCapacity: '자리 대기', ticketWaitingHuman: '내 차례', ticketRejected: '반려됨', ticketSettled: '종결', ticketUnknown: '알 수 없음',
+    stateWaitingHuman: '내 차례', stateStale: '오래됨', stateUnknown: '알 수 없음', statePartial: '일부 완료', statePending: '대기',
+    doneCancelled: '취소됨', doneRunning: '진행 중', doneWaitingHuman: '내 차례',
+    laneRunning: '진행 중', laneYou: '내 차례', lanePending: '대기', laneDone: '완료',
     langMarker: 'l {lang}', langEN: 'EN', langKR: 'KR',
     f2PageFloor: 'FLOOR', f2PageLog: 'Log', f2PageReport: 'Report',
     f2PhaseNamePlan: 'Plan', f2PhaseNameBuild: 'Build', f2PhaseNameIntegrate: 'Integrate', f2PhaseNameQa: 'QA', f2PhaseNameGate: 'Gate', f2PhaseNameReport: 'Report',
@@ -202,18 +203,19 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     f2StoryLogRow: 'Log {n}건 · 마지막 {ago} 전', f2StoryReportRow: 'Report: gate 통과 후 생김', f2StoryAnswerRow: '⏎ 답하기',
     f2LogCount: '{n}건', f2LogAttemptStart: '시도 {n} 시작', f2LogAttemptCommits: '시도 {n} 커밋 {c}건',
     f2LogAttemptReject: '시도 {n} reject {score}/{threshold}', f2LogApproved: '승인 (지적 {gaps})', f2LogCriteria: '완료 기준 {n}개',
-    f2LogSubgoals: '하위 목표 {n}개', f2LogAsked: 'TeamLeader → 나 "{question}"',
-    f2ReportNotAvailable: '아직 없음: gate 통과 후 생김', f2ReportSeeLog: '다시 보기', f2ReportAccepted: 'accepted {score}/{threshold} · {t}',
+    f2LogSubgoals: '하위 목표 {n}개', f2LogAsked: 'TeamLeader · 내 차례 "{question}"',
+    f2ReportNotAvailable: '아직 없음: gate 통과 후 생김', f2ReportSeeLog: '다시 보기', f2ReportAccepted: '승인 {score}/{threshold} · {t}',
     f2ReportVerdictLine: 'judge {score} / 기준 {threshold} · 시도 {n}/{max}', f2AnswerSubmit: '보내기', f2HintDraftDropped: '초안을 버렸습니다', f2ReportTestsPass: '테스트 통과', f2ReportTestsFail: '테스트 실패',
     f2ReportResult: '결과', f2ReportVerdict: '판정', f2ReportFiles: '바뀐 파일', f2ReportDecisions: '결정', f2ReportLeft: '남은 일',
     f2AnswerTitle: '질문에 답하기', f2AnswerPrompt: '답', f2AnswerContext: '맥락', f2AnswerSend: '⏎ 보내기', f2AnswerCancel: '빈 ⏎ 취소',
     f2AnswerDesktopOnly: '데스크톱에서 답해 주세요', f2AnswerAccepted: '답을 보냈습니다', f2AnswerRefused: '받지 못했습니다: {reason}', f2AnswerFailed: '답변 도구를 실행하지 못했습니다: {reason}',
     f2BtnUp: '▲', f2BtnDown: '▼', f2BtnOpen: '열기', f2BtnBack: '뒤로', f2BtnFlag: '⚑', f2BtnClose: '닫기',
-    f2FlagTitle: '나를 기다림 {n}', f2FlagAge: '{m} 대기', f2FlagDriverSilent: '응답 없음 {m} (드라이버 멈춤?)',
+    f2FlagTitle: '내 차례 {n}', f2FlagAge: '{m} 대기', f2FlagDriverSilent: '응답 없음 {m} (드라이버 멈춤?)',
     f2FootHome: 'w s 이동 · d ⏎ 열기 (EPIC → FLOOR · STORY → 상세) · n 다음 ⚑ · q 닫기', f2FootFloor: 'w s 이동 · d ⏎ Phase 상세 · a 뒤로 · n 다음 ⚑ · q 닫기',
     f2FootStory: 'w s 이동 · d ⏎ 열기 · a 뒤로 · n 다음 ⚑ · q 닫기', f2FootScroll: 'w s 스크롤 · a 뒤로 · n 다음 ⚑ · q 닫기',
     f2FootAnswer: '입력 모드: 글자가 그대로 들어감 · 빈 ⏎ 취소',
     f2FloorPhaseOf: 'Phase {n}/6', f2FloorDecisionsN: '결정 {n}', f2FloorReportHint: 'EPIC 보고서는 여기서 열림',
+    f2FloorStoriesAgents: 'STORY {s} / 서브에이전트 {a}', f2EpicVerdict: '판정', f2EpicRunning: '진행 중', f2EpicStories: 'STORY {accepted}/{total}', f2EpicGate: 'gate {score}/{threshold}',
     actorHuman: '사람', proposalSize: '규모 {size}', proposalSizeFlow: '규모 {size} · {flow}',
     resplitAreas: '재분할 → 영역:{n}', resplit: '재분할', replanIds: '재계획 {ids}',
     reasonNeverDispatched: '시작된 적 없음', reasonState: '상태: {state}',
@@ -989,7 +991,11 @@ export const register: Register = on => {
     const verdictOf = doc?.verdict
     // the ask the ANSWER page is about: who asks, the summary's question and age
     const askCard = entry?.you.cards?.find(c => c.stage === 'ask' && storyId !== null && storyLabel(c.key) === storyId)
-    const floorRight = entry === undefined ? ''
+    // the EPIC report's payload: the last fetch, else the card's; its verdict word heads the page
+    const heldReport = pg.name === 'EPIC_REPORT' ? await read($, report) : null
+    const epicP = (heldReport?.task_id === pg.epic ? heldReport : cardHeld?.task_id === pg.epic ? cardHeld : null)?.payload ?? null
+    const epicVerdictWord = epicP === null ? '' : s(epicP.verdict === 'finished' ? 'cardFinished' : epicP.verdict === 'blocked' ? 'cardBlocked' : 'f2EpicRunning')
+    const rightWide = entry === undefined ? ''
       : pg.name === 'FLOOR'
         ? [`${s('f2FloorPhaseOf', { n: phaseAt + 1 })} ${say(`f2PhaseName${cap(PHASE_KEYS[Math.min(phaseAt, 5)]!)}`)}`, since(epicElapsed(entry, now)), entry.cost.usd > 0 ? costText(entry.cost.usd, entry.cost.estimated === true) : ''].filter(Boolean).join(' · ')
         : pg.name === 'PHASE' ? [ledger !== undefined && ledger.wall_ms > 0 ? since(ledger.wall_ms) : '', ledgerUsd > 0 ? costText(ledgerUsd, false) : ''].filter(Boolean).join(' · ')
@@ -998,7 +1004,12 @@ export const register: Register = on => {
             : pg.name === 'LOG' ? (sd === null ? '' : s('f2LogCount', { n: sd.log.length }))
               : pg.name === 'STORY_REPORT' && doc?.finished === true && verdictOf?.score != null && item?.last_verdict !== 'reject'
                 ? s('f2ReportAccepted', { score: verdictOf.score, threshold: verdictOf.threshold ?? '', t: since(storyMs) })
-                : pg.name === 'ANSWER' && askCard?.since != null ? `⚑ ${s('f2FlagAge', { m: since(Math.max(0, now - askCard.since)) })}` : ''
+                : pg.name === 'EPIC_REPORT' && epicP !== null
+                  ? [epicVerdictWord, epicP.failed > 0 ? s('cardFailed', { n: epicP.failed }) : ''].filter(Boolean).join(' · ')
+                  : pg.name === 'ANSWER' && askCard?.since != null ? `⚑ ${s('f2FlagAge', { m: since(Math.max(0, now - askCard.since)) })}` : ''
+    // narrow pane: the right sheds its last ` · ` part until the breadcrumb has 12 cells (or only one part is left), so it never wraps
+    let floorRight = rightWide
+    while (floorRight.includes(' · ') && inner - width(floorRight) - 2 < 12) floorRight = floorRight.slice(0, floorRight.lastIndexOf(' · '))
     const crumbRoom = inner - (floorRight === '' ? 0 : width(floorRight) + 2)
     const fittedCrumbs = crumbFit(crumbs, crumbRoom)
     const crumbEl = <Text wrap="truncate-end"><Text dimColor>{`${fittedCrumbs.slice(0, -1).join(' › ')} › `}</Text><Text bold>{fittedCrumbs[fittedCrumbs.length - 1]}</Text></Text>
@@ -1052,11 +1063,22 @@ export const register: Register = on => {
           </Box>
         )
       } else if (pg.name === 'EPIC_REPORT') {
-        const held = (await read($, report))?.task_id === pg.epic ? await read($, report) : cardHeld?.task_id === pg.epic ? cardHeld : null
-        const p = held?.payload ?? null
+        const p = epicP
         const needs = p === null ? [] : needsOf(p.needs, wo)
+        // Verdict and Result rows above the path; the Result row only when the engine sent `result`
+        const res = p?.result ?? null
+        const gate = res?.gate ?? null
+        const facts: [string, string][] = p === null ? [] : [
+          [s('f2EpicVerdict'), [epicVerdictWord, p.failed > 0 ? s('cardFailed', { n: p.failed }) : ''].filter(Boolean).join(' · ')],
+          ...(res === null ? [] : [[s('f2ReportResult'), [
+            s('f2EpicStories', { accepted: res.stories.accepted, total: res.stories.total }),
+            gate === null ? '' : `${s('f2EpicGate', { score: gate.score ?? '-', threshold: gate.threshold ?? '-' })} ${s(gate.accept ? 'vAccept' : 'vReject')}`,
+          ].filter(Boolean).join(' · ')] as [string, string]]),
+        ]
+        const labelW = Math.max(0, ...facts.map(([k]) => width(k))) + 2
         page$ = p === null ? <Text dimColor>{s('loading')}</Text> : p.report === null ? <Text>{s('reportMissing', { path: p.path })}</Text> : (
           <Box flexDirection="column">
+            {facts.map(([k, v], i) => <Text key={`f${i}`} wrap="truncate-end"><Text bold>{k + ' '.repeat(labelW - width(k))}</Text>{v}</Text>)}
             <Text>{p.path}</Text>
             {needs.map((n, i) => <Text key={`n${i}`} color="warning" wrap="truncate-end">{`⚑ ${n}`}</Text>)}
             {p.report.truncated && <Text color="warning">{s('reportTruncated', { n: p.report.more_lines })}</Text>}
@@ -1074,7 +1096,7 @@ export const register: Register = on => {
         const failed = d?.loadError != null ? s('f2AnswerFailed', { reason: d.loadError }) : d?.status == null ? '' : s(d.status.kind === 'refused' ? 'f2AnswerRefused' : 'f2AnswerFailed', { reason: d.status.reason })
         page$ = (
           <Box flexDirection="column">
-            <Text>{`${askCard?.who ?? ''} → ${s('partyYou')}${qs.length > 1 ? ` ${(d?.qi ?? 0) + 1}/${qs.length}` : ''}`}</Text>
+            <Text>{`${askCard?.who ?? ''} ${s('wordYou')}${qs.length > 1 ? ` ${(d?.qi ?? 0) + 1}/${qs.length}` : ''}`}</Text>
             <Text bold>{question === '' ? askCard?.title ?? '' : `"${question}"`}</Text>
             <Text dimColor wrap="truncate-end">{`${s('f2AnswerContext')}  ${askCard?.title ?? d?.cards[0]?.title ?? ''}`}</Text>
             {rule('r2')}
@@ -1224,16 +1246,18 @@ export const register: Register = on => {
         </Box>
       )
     }
+    // under 50 columns the title and the bar go: flag, done count and the button are what fit on the one row
+    const narrowBand = (e.props.bodyColumns ?? 80) < 50
     return (
       <Box flexDirection="column">
         <Box>
           {flag}
           {asked}
-          <Box flexShrink={1}><Text dimColor wrap="truncate-end">{`teams · ${task.worktree ? `⑂ ${task.worktree} · ` : ''}${task.title} — ${nowSentence(s, wo, task)}`}</Text></Box>
-          <Box flexShrink={0} marginLeft={1}>
-            <Text color="success">{'━'.repeat(task.total > 0 ? Math.round((10 * task.done) / task.total) : 0)}</Text>
-            <Text color="inactive">{'─'.repeat(10 - (task.total > 0 ? Math.round((10 * task.done) / task.total) : 0))}</Text>
-            <Text dimColor>{` ${s('bandDone', { done: task.done, total: task.total })}`}</Text>
+          {!narrowBand && <Box flexShrink={1}><Text dimColor wrap="truncate-end">{`teams · ${task.worktree ? `⑂ ${task.worktree} · ` : ''}${task.title} — ${nowSentence(s, wo, task)}`}</Text></Box>}
+          <Box flexShrink={0} marginLeft={narrowBand ? 0 : 1}>
+            {!narrowBand && <Text color="success">{'━'.repeat(task.total > 0 ? Math.round((10 * task.done) / task.total) : 0)}</Text>}
+            {!narrowBand && <Text color="inactive">{'─'.repeat(10 - (task.total > 0 ? Math.round((10 * task.done) / task.total) : 0))}</Text>}
+            <Text dimColor>{`${narrowBand ? '' : ' '}${s('bandDone', { done: task.done, total: task.total })}`}</Text>
           </Box>
           {Math.max(info?.waiting ?? 0, asks.length) > 0
             ? <Box flexShrink={0} marginLeft={1}><Button key="inbox" label={inboxLabel(Math.max(info?.waiting ?? 0, asks.length))} onPress={open} /></Box>
