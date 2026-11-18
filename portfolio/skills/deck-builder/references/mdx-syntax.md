@@ -162,6 +162,13 @@ footnote) shortens every panel sharing the bottom above it by the deficit, and a
 shrinks to stay inside. A crossing the template's own page shows is left as designed; a `place:`d
 shape is never moved; what could not be kept is printed with `!`. Type is never shrunk.
 
+**Line breaks at render.** In the same rebuild, a paragraph the render broke badly is held
+together where it broke, words and size untouched: a number split from its unit (`5` / `분`) gets
+a word joiner (U+2060) before each unit in that paragraph, and a last word alone on its line is
+joined to the word before it (a no-break space, and word joiners between the two words' Hangul
+syllables, which the renderer otherwise splits) so both move down together. A break the
+template's own page shows is left; the render prints `held …` for each paragraph it glued.
+
 ## Outline levels
 
 Indenting a list item two extra spaces writes it at outline level 1. It only *looks*

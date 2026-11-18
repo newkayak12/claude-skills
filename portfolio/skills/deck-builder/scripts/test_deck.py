@@ -1298,6 +1298,23 @@ def run_styles(tmp):
     pprs = [p.find(A + "pPr").get("marL") for p in root.iter(A + "p")]
     check(pprs == ["0", "457200"],
           "each paragraph keeps its own template paragraph's indent: %s" % pprs)
+    _, _, root = built("text1:\n  - 토큰은 발행 시각 기준 5분까지만 허용하고 30초 지나면 거절합니다\n"
+                       "  - 레거시 영향 범위 안에서 적용할 수 있는 것부터 [진행했습니다.]{2}\n"
+                       "  - 짧은 두 줄\n")
+    texts = lambda: ["".join(t.text or "" for t in p.iter(A + "t")) for p in root.iter(A + "p")]
+    before = texts()
+    check(not any("⁠" in s or " " in s for s in before),
+          "build alone writes the text as given (no glue until a render saw a bad break): %r" % before)
+    n = deck.glue_spots(root, [("split", "토큰은 발행 시각 기준 5", "분까지만 허용하고"),
+                               ("orphan", "범위 안에서 적용할 수 있는 것부터", "진행했습니다.")])
+    got = texts()
+    check(n == 2 and "5⁠분" in got[0] and "30⁠초" in got[0] and " " not in got[0],
+          "a split number: its paragraph's numbers are held to their units, nothing else: %r" % got[0])
+    check(got[1].replace("⁠", "").endswith("것부터 진행했습니다.")
+          and got[1].endswith("것⁠부⁠터 진⁠행⁠했⁠습⁠니⁠다.")
+          and "⁠" not in got[1].split("것")[0],
+          "a lone last word is held to the word before it, across runs, both words whole: %r" % got[1])
+    check(got[2] == "짧은 두 줄", "a paragraph the render did not name is left as written: %r" % got[2])
     _, _, root = built("text1: 경력 [**굵게만**]{2} [보통]{2}\n")
     got = runs(root)
     check(got[1:] == [("굵게만", "1000", "1"), (" ", "1600", "1"), ("보통", "1000", None)],

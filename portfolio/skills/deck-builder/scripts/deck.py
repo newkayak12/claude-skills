@@ -1425,6 +1425,82 @@ def max_span_format(text):
     return max([n for t, n, _ in split_spans(text) if t is not None] or [1])
 
 
+UNIT_AFTER_NUMBER = re.compile(r"(\d)(?=(건|명|초|분|개|회|배|일|시간|ms|%|원|만|억|천|년|월|주))")
+GLUE_MIN_CHARS = 20   # a line shorter than this does not wrap in any frame the templates use
+
+
+def glue_breaks(p, units=True, last=True):
+    """Keep a paragraph from breaking where it reads badly, without touching its words or size.
+
+    units: a number and the unit after it (`5분`) get a word joiner (U+2060) between them — the
+    renderer may break between a digit and Hangul, and did (`시각 기준 5` / `분까지만`). last: the
+    last space of a line long enough to wrap becomes a no-break space, so its last word never
+    stands alone on the next line (`진행했습니다.`). Render applies it only to the paragraphs it saw
+    break so (`glue_spots`); both were in a real deck's render and the user's own build (2026-11-19)."""
+    lines, cur = [], []
+    for child in p:
+        if child.tag == q("a:br"):
+            lines.append(cur)
+            cur = []
+        elif child.tag == q("a:r"):
+            t = child.find(q("a:t"))
+            if t is not None and t.text:
+                if units:
+                    t.text = UNIT_AFTER_NUMBER.sub("\\1\u2060", t.text)
+                cur.append(t)
+    lines.append(cur)
+    for ts in lines:
+        if not last or len("".join(t.text for t in ts).strip()) < GLUE_MIN_CHARS:
+            continue
+        # the last space with a word after it, in this run or a later one of the same line
+        after, done = False, False
+        for t in reversed(ts):
+            s = t.text
+            for i in range(len(s) - 1, -1, -1):
+                if s[i] == " " and (after or s[i + 1:].strip()):
+                    t.text = s[:i] + "\u00a0" + s[i + 1:]
+                    done = True
+                    break
+            if done:
+                break
+            after = after or bool(s.strip())
+        # the renderer breaks between Hangul syllables when a held pair must wrap (`\uac83\ubd80` / `\ud130
+        # \uc9c4\ud589\ud588\uc2b5\ub2c8\ub2e4.`, 2026-11-19): the two words' syllables are joined too, so they move whole
+        if done:
+            full = "".join(t.text for t in ts)
+            k = full.rfind("\u00a0")
+            start = full.rfind(" ", 0, k) + 1
+            span = range(start, len(full.rstrip()))
+            pos = 0
+            for t in ts:
+                s, out = t.text, []
+                for j, ch in enumerate(s):
+                    out.append(ch)
+                    g = pos + j
+                    if g + 1 in span and g in span and "\uac00" <= ch <= "\ud7a3" \
+                            and g + 1 < len(full) and "\uac00" <= full[g + 1] <= "\ud7a3":
+                        out.append("\u2060")
+                pos += len(s)
+                t.text = "".join(out)
+
+
+def glue_spots(spTree, spots):
+    """Glue the paragraphs render saw break badly on this slide. spots: [(kind, before, line)]
+    from office_render.wraps — `split`: the line ending in a number and the line opening with its
+    unit; `orphan`: the line before and the lone word. -> paragraphs glued."""
+    def norm(s):
+        return re.sub(r"\s+", "", s.replace("⁠", ""))
+    n = 0
+    for p in spTree.iter(q("a:p")):
+        text = norm(para_text(p))
+        units = any(k == "split" and norm(b)[-6:] + norm(t)[:2] in text for k, b, t in spots)
+        last = any(k == "orphan" and norm(b)[-6:] + norm(t) in text for k, b, t in spots)
+        if units or last:
+            glue_breaks(p, units=units, last=last)
+            n += 1
+    return n
+
+
 def _set_para_text(p, text):
     """Replace a paragraph's runs with runs carrying `text`, honouring inline emphasis,
     `[text]{n}` (the paragraph's own run format n) and `<br>`."""
@@ -3493,6 +3569,12 @@ def cmd_build(args):
         zfix = getattr(args, "zone_fixes", {}).get(i, [])
         placed_ids = {id(el) for el, *_ in place_els if el is not None}
         zlog = getattr(args, "zone_notes", None)
+        spots = getattr(args, "glue_spots", {}).get(i)
+        if spots and zlog is not None:
+            if glue_spots(spTree, spots):
+                zlog.append("page %d: held %s on one line" % (i, ", ".join(
+                    "%r+%r" % (b.strip()[-4:], t[:4]) if k == "split" else "%r to the word before" % t
+                    for k, b, t in spots)))
         if zfix:
             n_, p_ = fit_zones(spTree, slots, zfix, safe_bottom_pt(md_path, slide_size(pkg)[1]), placed_ids)
             if zlog is not None:
@@ -4360,8 +4442,16 @@ def cmd_render(args):
                    page_zones=built_page_zones(tpl, tparts, Package(out), specs, zones, slide_size(tpl)[1]))
         fixes = {p: kept for p, fs in fixes.items()
                  if (kept := [f for f in fs if (int(archs[p - 1][1:]), f[0], tuple(f[1])) not in designed])}
-        if floors or fixes:
+        # a number split from its unit, a last word alone: glued where the render saw it, not
+        # where the template's own page shows the same break
+        found, glue = [], {}
+        wraps(box, spots=found)
+        for p, k, before, line, detail in found:
+            if p <= len(archs) and (int(archs[p - 1][1:]), k, detail) not in seen:
+                glue.setdefault(p, []).append((k, before, line))
+        if floors or fixes or glue:
             args.panel_floors, args.zone_fixes, args.zone_notes = floors, fixes, []
+            args.glue_spots = glue
             with contextlib.redirect_stdout(io.StringIO()):
                 rc = cmd_build(args)
             r.to_pdf(work, out.name)
@@ -4373,7 +4463,7 @@ def cmd_render(args):
                       % (sum(len(v) for v in floors.values()), TEXT_GAP_PT,
                          ", ".join(str(p) for p in sorted(floors)), TEXT_GAP_PT))
             for line in args.zone_notes:
-                print("  %s" % line if line.startswith("!") else "  zone kept — %s" % line)
+                print("  %s" % line if line.startswith("!") or " held " in line else "  zone kept — %s" % line)
             print("  rebuilt and rendered again with these")
             if box is None:
                 return rc
