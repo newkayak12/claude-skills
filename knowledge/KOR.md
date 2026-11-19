@@ -522,6 +522,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" migrate --root . --wor
   --psql "docker exec -i <pg-container> psql -U postgres"   # 또는 PG* 환경변수와 psql; 스크립트만 쓰려면 --sql-out file.sql
 ```
 
+- v1.23.1 — 훅 명령이 플러그인 경로를 따옴표로 감쌉니다. 경로에 공백이 있어도(Orca의 `~/Library/Application Support/...`) `Cannot find module`로 실패해 게이트가 꺼지는 일이 없습니다.
 - v1.23.0 — LLM 그래프 빌드가 증분으로 돕니다(업데이트 큐에 든 노트만 모델에 보내고, 전부는 `--full`). OpenAI 호환 엔드포인트(TEI, vLLM, OpenAI)로 임베딩할 수 있고 E5 프롬프트와 창 크기를 맞춥니다. 검색어를 임베딩할 수 없으면 어휘 검색으로 답하고 그 사실을 알립니다. capture의 한국어 조사는 명시 목록 하나로 정해 `결제 승인서`가 더는 `결제 승인`에 링크되지 않습니다. compose의 index는 `KNOWLEDGE_LLM_URL` 없이 돌고, 바인드 마운트 uid 규칙과 Codex에서 `knowledge_capture`를 승인하는 법을 적었습니다.
 - v1.21.4 — 각 스킬에 Process와 Output Template 절이 생겼습니다(동작 변화 없음). write:plans가 나뉜 뒤로 참조는 write:prd / write:adr을 가리킵니다.
 - v1.21.3 — Codex: MCP 서버가 Codex에서도 등록됩니다(`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`). Claude는 plugin.json에서 읽습니다.

@@ -52,6 +52,7 @@ Zero runtime dependencies, Node 18+.
 Optional: `graph:install` can run `develop:like-my-code` to write `.claude/conventions/`; the broker then tells every plan, setgoal, implement, and test node, on any vendor, to read and follow the relevant files.
 
 ## Status
+- v1.17.2 — hook commands quote the plugin root, so a path with a space (Orca: `~/Library/Application Support/...`) no longer fails with `Cannot find module` and leaves the gate off.
 - v1.17.1 — `/graph-status` draws on terminal, desktop, mobile and vscode; the key input shows only where the surface carries one (mobile keeps the buttons).
 - v1.17.0 — the harness work moved into graph (card 48): the broker runs critique rounds, each run keeps its own now-record, and `node-gate.mjs` denies a write to a gated path (`.claude/harness-gate.json`) outside a run. The gate helpers ship as a vendored copy (`hooks/vendor/goal-gate.mjs`), so an installed graph no longer reaches into the harness plugin's folder.
 - v1.16.0 — a failure toast says why the node failed and what happens next (`retry n/m`, `retrying as setgoal:N`, `gave up`); a self-correcting retry is info, not a failure. The reason and next step come from `scripts/failure-events.mjs`; the mod only draws them.

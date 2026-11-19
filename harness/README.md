@@ -307,6 +307,7 @@ The gate hook denying an Edit to a gated path before the harness is engaged.
 The mod also publishes each fallback run's outcome (`pass` on a report with no failure, `reject` on a failed goal gate after the report, `fail` on a failed subgoal; no ids) as the state value `harness.outcome`, for the `trophy` plugin's opt-in counts.
 
 ## Status
+- v1.38.3 — hook commands quote the plugin root, so a path with a space (Orca: `~/Library/Application Support/...`) no longer fails with `Cannot find module` and leaves the gate off.
 - v1.38.2 — `/harness-status` draws on terminal, desktop, mobile and vscode; the key input shows only where the surface carries one (mobile keeps the buttons).
 - v1.38.1 — the `harness` skill page gains an Output Template and a Related Skills section; no engine change.
 - v1.38.0 — `/harness-status` says what the run is doing now, what it did last and whether it waits on you; the stage rail shows the critique loop with "round n of max", findings are listed by severity across rounds, and `[` `]` switch runs and stop at the ends. A run whose critique cap ran out no longer reads "critique" after it moved on. The band shows harness runs only and says the elapsed time once; the status line counts from the run's own stages. A failure toast says why and what happens next (`retry n/m`, `needs you`, `gave up`).
