@@ -68,22 +68,6 @@ real deck lone commas 316 → 0, engine version printed).
       skeleton; unverified cause: the saved claims carry the old ledger's ids). Still left: the three
       figure/cover items above (the workspace's own figures and template).
 
-163. **portfolio measures readability and adjusts it, and reviews the text through several lenses**
-    - Why: user, 2026-11-19: "글자 크기 키우는걸 정해달라고 하는게 아니라 가독성을 측정하고 조절해야 하는거
-      아님?? 가독성, 문체, 단어 선정, AI티, 글 흐름을 다각도로 검사해야지 (스킬로 만들어서 subagent로
-      참여시켜도 좋고)". Measured on the bench copy (`figure_text_sizes`, shipped): 39 of 40 SVG
-      figures show text under 7.5pt at their built size (median 5.5pt, min 4.2pt); the user's pick
-      is the same. render-review's readability check is by eye only; text lenses live in separate
-      skills (`write:writer-verification` AI tells and flow, `pattern` agency, `feedback` content).
-    - Acceptance: (1) render reports each figure's rendered text pt and, below 7.5pt, the build
-      raises that SVG's text in its own raster copy (source untouched) as far as each label still
-      fits its box and clears its neighbours, then re-measures; what cannot reach 7.5pt is
-      reported with the size reached. (2) render-review gains a lens step: the page text and the
-      measures go to one subagent per lens (가독성 · 문체 · 단어 선정 · AI티 · 글 흐름, opus),
-      each finding quoting the text and giving the replacement; merged into 검토.md and
-      next-render.md; words change only on the user's "고쳐". (3) Blind on the bench copy: no page
-      worse than 3.2.5. Tests with counts (`test_deck.py`, `test_render.py`).
-
 154. **portfolio says where to cut and why a figure is small, and scaffold reports what its renames left dangling**
     - Why: 2026-11-17, portfolio 3.2.0 run on a local copy of a real workspace (user: "스킬을 고치는건데").
       (1) resume `render` gives only `over_lines` (36); the 8 lines cut by hand were all paragraphs whose

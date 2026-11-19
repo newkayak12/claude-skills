@@ -20,7 +20,7 @@ compatibility:
     poppler가 없으면 안전 영역 목록은 건너뛰고, 미리보기 이미지를 눈으로 보고 검토합니다. 건너뛴 검사는 검토.md에 적습니다.
 ---
 
-# Render Review — every page, the same four checks
+# Render Review — every page, the same checks and five lenses
 
 `manage` step 7 after a render: look at every page against fixed checks, write what is wrong, hold it
 for the next render. Portfolio deck and resume alike. **Not for** content judgement (`feedback`) or fixing
@@ -38,6 +38,9 @@ for the next render. Portfolio deck and resume alike. **Not for** content judgem
    box leaves the margin, by page and side. `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/office_render.py ai-traces build/<file>.<pptx|docx> --report-only` lists AI traces.
 3. **Look at each page** (the preview image, then the page text) against the checks below. One row
    per page in `검토.md`: 본 것 (what is on it, one line), 문제 (check · where · symptom), next-render.
+   **Then read it through five lenses at once** — 가독성 · 문체 · 단어 선정 · AI티 · 글 흐름: one opus
+   subagent per lens, all five in one message, each given the page text and the render's measures
+   and returning 쪽 · 원문 · 문제 · 바꿀 문장 rows (`references/lenses.md`). Merge them into `검토.md`.
 4. **Write the problems** into `template/next-render.md` (쪽 · 칸 · 증상 · 확인 · 적용), one row each,
    all applied before the next render. A frame the deck cannot move is a template edit, only on the
    user's word (`manage` `references/template-edit.md`).
@@ -47,7 +50,8 @@ for the next render. Portfolio deck and resume alike. **Not for** content judgem
 | Check | Fails when |
 |---|---|
 | Safe area | a line or box crosses the template's margins, touches another box, or the photo touches text |
-| Readability | type below the template's body size; a lone last word on a line; text on a fill with contrast under 4.5:1; more than one idea per line |
+| Readability | type below the template's body size; figure text the render measured under 7.5pt (`figure text:` lines); a lone last word on a line; text on a fill with contrast under 4.5:1; more than one idea per line |
+| Lenses | a 가독성, 문체, 단어 선정, AI티 or 글 흐름 finding with its quote and replacement (`references/lenses.md`); the user's sentences change only on "고쳐" |
 | AI traces | none may reach a submitted file: `final-check` takes out a disclaimer in alt text, an AI tool or library in the properties and each visible sentence that says AI wrote it, and lists what it took out word for word — tell the user, so the source (`deck.mdx`, `resume-deck.mdx`) is fixed too. `ai-traces --report-only` only lists |
 | Skeleton match | a page's headline, figures or order differ from `portfolio-skeleton.md` / `resume-skeleton.md`; a `[확인 필요]` line reached the page |
 
@@ -61,6 +65,7 @@ reason, never as passed.
 안전 영역: <쪽 N 오른쪽 "…" | 없음 | 건너뜀: 이유>
 가독성: <쪽 N 글자 크기·외톨이 단어·대비 | 없음>
 AI 흔적: <보고 n건 (항목) | 없음>
+관점: 가독성 n · 문체 n · 단어 n · AI티 n · 흐름 n (원문 → 바꿀 문장은 검토.md)
 skeleton 일치: <쪽 N 어긋남 | 없음>
 next-render에 적은 것: <n>건 · 정하실 것: <없음 | …>
 ```
