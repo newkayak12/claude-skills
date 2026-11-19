@@ -140,28 +140,24 @@ node --no-warnings knowledge/scripts/sqlite-knowledge.mjs index \
 
 ## Docker
 
-From this repository, build or refresh the dependency-free index with:
+`KNOWLEDGE_ROOT` is required (compose refuses to start without it; a relative default would mount
+the plugin cache). Build or refresh the dependency-free index of the current project with:
 
 ```bash
-docker compose -f knowledge/compose.yaml run --rm knowledge-index
-```
-
-For a vault elsewhere, pass its absolute path:
-
-```bash
-KNOWLEDGE_ROOT=/absolute/path/to/vault \
-  docker compose -f knowledge/compose.yaml run --rm knowledge-index
+KNOWLEDGE_ROOT=$PWD docker compose -f "${CLAUDE_PLUGIN_ROOT}/compose.yaml" run --rm knowledge-index
 ```
 
 For semantic embeddings, start Ollama, pull the configured model once, and run the semantic profile:
 
 ```bash
-docker compose -f knowledge/compose.yaml --profile semantic up -d ollama
-docker compose -f knowledge/compose.yaml exec ollama ollama pull embeddinggemma
-docker compose -f knowledge/compose.yaml --profile semantic run --rm knowledge-index-ollama
+export KNOWLEDGE_ROOT=$PWD
+docker compose -f "${CLAUDE_PLUGIN_ROOT}/compose.yaml" --profile semantic up -d ollama
+docker compose -f "${CLAUDE_PLUGIN_ROOT}/compose.yaml" exec ollama ollama pull embeddinggemma
+docker compose -f "${CLAUDE_PLUGIN_ROOT}/compose.yaml" --profile semantic run --rm knowledge-index-ollama
 ```
 
-The bind-mounted vault receives `.knowledge/knowledge.sqlite`. The named `ollama-models` volume keeps model data outside Git. Claude Code normally uses the plugin's host-side stdio MCP server; Docker is an optional reproducible indexing/runtime path.
+The store under the mounted project receives `.knowledge/knowledge.sqlite` (by default
+`knowledge-system/.knowledge/knowledge.sqlite`). The named `ollama-models` volume keeps model data outside Git. Claude Code normally uses the plugin's host-side stdio MCP server; Docker is an optional reproducible indexing/runtime path.
 
 ## Runtime Requirements
 

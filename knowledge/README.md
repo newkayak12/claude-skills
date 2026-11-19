@@ -24,6 +24,27 @@ Installing registers the `knowledge-local` MCP server against the current projec
 makes the hook available. Nothing runs until a skill is invoked or a Markdown file inside a
 knowledge workspace is edited.
 
+### Where files land
+
+One resolver (`scripts/knowledge-paths.mjs`) serves the indexer, the MCP server and the hook, so
+all three find the same store. The store is the project root when it holds an artifact
+(`_knowledge/catalog.jsonl`, `_rag/`, `_graph/`), else `knowledge-system/` (or `knowledge-base/`,
+`knowledge-artifacts/`) under it. A project with no store gets `knowledge-system/` on its first write.
+`root` in `_knowledge/config.json` moves a store elsewhere (read once, never chained).
+
+| Path | Created by | When | Purpose |
+|---|---|---|---|
+| `~/.claude/plugins/cache/<market>/knowledge/<ver>/` | `/plugin install` | install | the plugin itself: skills, scripts, hook, Dockerfile, compose |
+| `<project>/` | nothing | install | installing writes nothing into the project |
+| `<project>/knowledge-system/` (`notes/`, `mocs/`, `_knowledge/`, `_ontology/`, `_graph/`, `_rag/`) | the skills, `knowledge_capture` | a build, or the first capture | the store: Markdown and JSONL, kept in Git |
+| `<project>/knowledge-system/.knowledge/knowledge.sqlite` (+ `-wal`, `-shm`) | `index` / `knowledge_index` | each index | disposable search index |
+| `<project>/knowledge-system/_knowledge/{checks,reports,jobs}/` | the delta hook, `knowledge_capture` | after a `.md` edit in the store, or a capture | `checks/latest.json`, `reports/delta-checks.jsonl`, `jobs/*-queue.jsonl` |
+| `knowledge-system/notes/<id>.md`, `_knowledge/catalog.jsonl` row, `mocs/captures.md` | `knowledge_capture` | each capture | the captured note, its catalog row, the list of captures that link to nothing |
+| `knowledge-system/_knowledge/config.json` | you | optional | per-store settings: `root`, `notes_dir`, `link`, `graph`, `llm`, `storage` |
+| `knowledge-system/_graph/{nodes,edges,rejected-edges,question-reachability}.jsonl` | `knowledge-graph.mjs build` | each LLM graph build | graph, refused edges with reasons, competency-question reachability |
+| `knowledge-system/.knowledge/hardware-probe.json`, `.knowledge/graph-previous/` | `knowledge-graph.mjs` | each graph build | the model tier picked and why; the graph the last build replaced |
+| `knowledge-system/.knowledge/postgres.json` | you | optional | `workspace_id`, `schema` for `migrate` and `postgres-sync` |
+
 ## Core concepts
 
 Nine ideas carry the whole plugin. Each borrows from an established theory and bends it where
@@ -195,6 +216,29 @@ with graph_check and prove each one is reachable within two hops.
 Relationship-heavy competency questions get a `_graph/question-reachability.jsonl` record: an
 unreachable question is a graph defect, ranked with orphans.
 
+**LLM build in Docker (optional).** With any OpenAI-compatible chat endpoint, one command reads
+every catalog note, keeps only edges that pass the rules above (evidence found word for word in the
+cited note, a specific `UPPER_SNAKE` type, known endpoints, no reversed duplicate unless the ontology
+says symmetric), writes refused edges to `_graph/rejected-edges.jsonl` with reasons, computes
+reachability, and rebuilds the index. A hardware probe picks the model size: CPU-only under 16 GB is
+`small`, 16 GB RAM or 8 GB VRAM `medium`, 16 GB VRAM `large` (`KNOWLEDGE_LLM_TIER` or
+`KNOWLEDGE_LLM_MODEL` override it). With no endpoint it changes nothing and exits 2; the skill path
+above is unchanged.
+
+```bash
+# bundled ollama, pulls the model the probe picked
+KNOWLEDGE_ROOT=$PWD KNOWLEDGE_LLM_URL=http://ollama:11434 KNOWLEDGE_LLM_PULL=1 \
+  docker compose -f "${CLAUDE_PLUGIN_ROOT}/compose.yaml" --profile llm up -d --wait ollama
+KNOWLEDGE_ROOT=$PWD KNOWLEDGE_LLM_URL=http://ollama:11434 KNOWLEDGE_LLM_PULL=1 \
+  docker compose -f "${CLAUDE_PLUGIN_ROOT}/compose.yaml" --profile graph --profile llm run --rm knowledge-graph
+# or without Docker, against any endpoint
+KNOWLEDGE_LLM_URL=http://127.0.0.1:11434 node "${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-graph.mjs" build --root .
+```
+
+Node types, allowed relation types and symmetric types come from `graph` in
+`_knowledge/config.json` (`relation_types`, `symmetric`, `weak_types`, `max_hops`), so one engine
+serves stores with different ontologies.
+
 ### `render-graph-view`
 
 Renders `_graph/nodes.jsonl` + `edges.jsonl` into a single self-contained HTML file — canvas,
@@ -222,8 +266,9 @@ Prepare _rag/ from the vault for pgvector. Keep note ids stable so citations sur
 
 ### `sqlite-index-builder`
 
-Builds `.knowledge/knowledge.sqlite` from the catalog-backed Markdown, RAG chunks, and graph
-JSONL. The database is disposable local state — Markdown and JSONL stay in Git.
+Builds `<store>/.knowledge/knowledge.sqlite` (by default `<project>/knowledge-system/.knowledge/knowledge.sqlite`)
+from the catalog-backed Markdown, RAG chunks, and graph JSONL. The database is disposable local
+state — Markdown and JSONL stay in Git.
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" index --root knowledge-system
@@ -307,6 +352,20 @@ The `knowledge-local` MCP server exposes:
 | `knowledge_search` | Hybrid retrieval with source references and diagnostics |
 | `knowledge_get` | Full record by stable id |
 | `knowledge_neighbors` | Direct graph relationships of a node |
+| `knowledge_capture` | Save content as a linked Markdown note in the store |
+
+### Capture
+
+`knowledge_capture` turns what arrives over MCP into a note the vault can answer from. The engine
+links, not the caller: a note is linked only when its title or an alias appears in the text (a
+Korean term through its particle, `결제 승인을`; never inside code or an existing link), and the
+linked note gets a backlink in its `## Related`. Index hits the text does not name come back in
+`skipped_candidates` with the reason, never as links. A title or alias the catalog already has
+creates nothing and returns `merged_into`. A capture that names no note is listed in
+`mocs/captures.md`, so no capture is an orphan. The reply names `linked_to`, `backlinked_from`,
+`merged_into` and `skipped_candidates`; catalog, graph and embed jobs are queued, and the next
+`knowledge_index` makes it searchable. `link` in `_knowledge/config.json` sets `min_term_length`,
+`max_links`, `moc` and `fallback_moc`.
 
 ### How ranking works
 
@@ -407,7 +466,36 @@ Node 24+ (unflagged `node:sqlite` with FTS5). Node 22.5–23 needs `--experiment
 some 22.x builds lack FTS5. The bundled Docker image is a known-good path:
 
 ```bash
-docker compose -f knowledge/compose.yaml run --rm knowledge-index
+KNOWLEDGE_ROOT=$PWD docker compose -f "${CLAUDE_PLUGIN_ROOT}/compose.yaml" run --rm knowledge-index
+```
+
+`KNOWLEDGE_ROOT` is required: compose refuses to start without it, because a relative default
+would resolve against the compose file and mount the plugin cache instead of your project.
+
+### Backends and pgvector
+
+`index`, `search`, `get`, `neighbors` and `status` go through the backend a store names
+(`storage.backend` in `_knowledge/config.json`, or `KNOWLEDGE_BACKEND`); sqlite is the only one
+wired in this version. Search is a full scan, so its time grows with the store. `status` reports
+`size` — documents, bytes including the WAL, the threshold, and `pgvector_advised`:
+
+| Documents | 1k | 5k | 10k | 20k | 50k |
+|---|---|---|---|---|---|
+| search p95 | 25 ms | 97 ms | 187 ms | 384 ms | 1108 ms |
+| database | 6 MB | 31 MB | 64 MB | 126 MB | 310 MB |
+
+Measured 2026-11-19 on synthetic notes, hash provider (384 dimensions), 12-core CPU, 13 GB RAM, 30
+queries per size. The budget is p95 under 400 ms, so pgvector is advised from **20,000 documents** or
+**256 MB** (the byte limit catches larger embeddings); `storage.pgvector_threshold` changes either.
+
+`migrate` copies a built sqlite store into PostgreSQL + pgvector, embeddings included, into tables
+that mirror sqlite's (`kn_documents`, `kn_document_relations`, `kn_graph_nodes`, `kn_graph_edges`,
+`kn_metadata`), replacing the workspace's rows in one transaction, and fails unless the row counts on
+both sides match. Over 2000 dimensions the rows are copied but get no HNSW index.
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" migrate --root . --workspace my-store \
+  --psql "docker exec -i <pg-container> psql -U postgres"   # or PG* env and plain psql; --sql-out file.sql to only write the script
 ```
 
 - v1.21.4 — skills gain their Process and Output Template sections (no behaviour change); references point at write:prd / write:adr after the write:plans split.

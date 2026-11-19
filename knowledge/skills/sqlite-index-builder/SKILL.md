@@ -92,8 +92,9 @@ After indexing:
 2. Require the database to exist and report `stale: false`.
 3. Compare the returned note, chunk, node, and edge counts with the discovered inputs. Explain legitimately absent artifact types instead of treating every zero as success.
 4. When notes exist, run one bounded search smoke test using a term that appears verbatim in a known note title or alias, and confirm that note is returned with `lexical_match: true`. A smoke test whose results are all `lexical_match: false` indicates a ranking or tokenization problem, not a passing build. When graph nodes and edges exist, run one neighbor lookup for a known node.
-5. When `_knowledge/questions.jsonl` exists, run `eval --root /path/to/vault --k 10` and report `mrr`, `recall_at_k`, and `mean_distinct_notes`. A `mean_distinct_notes` well below k means chunks of one note are crowding the top slots; results are grouped per note by default, so this should only happen with `--group none`. Any competency question whose required notes are missing from the top k is a retrieval defect: name the question rather than reporting the build as clean, and follow the retrieval repair loop below instead of accepting the score.
-6. Report as in Output Template below.
+5. Report `size` from status: documents, bytes, and `pgvector_advised` with its reason. When it is true, say so and offer `migrate` (README, "Backends and pgvector"); do not switch `storage.backend` — only sqlite is wired.
+6. When `_knowledge/questions.jsonl` exists, run `eval --root /path/to/vault --k 10` and report `mrr`, `recall_at_k`, and `mean_distinct_notes`. A `mean_distinct_notes` well below k means chunks of one note are crowding the top slots; results are grouped per note by default, so this should only happen with `--group none`. Any competency question whose required notes are missing from the top k is a retrieval defect: name the question rather than reporting the build as clean, and follow the retrieval repair loop below instead of accepting the score.
+7. Report as in Output Template below.
 
 ### Retrieval Repair Loop
 

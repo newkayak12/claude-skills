@@ -34,6 +34,10 @@ Before extracting graph records, ask a lightweight "what is this?" intake when t
 
 If the user answers roughly, proceed with a small provisional schema and mark uncertain classes or edges in `extraction-report.md`. Use `knowledge:ontology-builder` first only when class/relation semantics will materially affect correctness.
 
+## LLM Build Option
+
+When the person has an OpenAI-compatible chat endpoint (ollama, llama.cpp, vLLM) or asks for the Docker build, steps 4-8 run as one command instead of by hand: `KNOWLEDGE_LLM_URL=<url> node "${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-graph.mjs" build --root <project>` (or the compose `graph` profile, README). It enforces the Evidence Rules below in code and writes `_graph/rejected-edges.jsonl` with reasons. Read that file and `_graph/question-reachability.jsonl` before reporting: a reason that dominates (`evidence-not-in-source`, `vague-type`) is a prompt or ontology problem, and an unreachable question is still a graph defect. Allowed relation types go in `graph.relation_types` of `_knowledge/config.json`. No endpoint (exit 2): extract by hand as below.
+
 ## Process
 
 1. **Define graph purpose and competency paths.** Identify the expected questions the graph should answer: impact analysis, onboarding, comparison, compliance traceability, research synthesis, product taxonomy, code architecture, or support knowledge. Reuse `_knowledge/questions.jsonl` when present; mark relationship-heavy questions with `graph_check: true` and their required graph node IDs.

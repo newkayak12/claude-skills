@@ -24,6 +24,27 @@
 활성화됩니다. 스킬을 부르거나 지식 워크스페이스 안의 Markdown을 고치기 전까진 아무것도
 실행되지 않습니다.
 
+### 파일이 생기는 곳
+
+인덱서, MCP 서버, 훅이 resolver 하나(`scripts/knowledge-paths.mjs`)를 같이 써서 셋 다 같은
+저장소를 찾습니다. 프로젝트 루트에 산출물(`_knowledge/catalog.jsonl`, `_rag/`, `_graph/`)이 있으면
+루트가 저장소이고, 없으면 그 아래 `knowledge-system/`(또는 `knowledge-base/`,
+`knowledge-artifacts/`)입니다. 저장소가 없는 프로젝트는 첫 쓰기 때 `knowledge-system/`이 생깁니다.
+`_knowledge/config.json`의 `root`로 저장소를 옮길 수 있습니다(한 번만 따라가고 이어서 따라가지 않음).
+
+| 경로 | 만드는 것 | 언제 | 용도 |
+|---|---|---|---|
+| `~/.claude/plugins/cache/<market>/knowledge/<ver>/` | `/plugin install` | 설치 | 플러그인 자체: 스킬, 스크립트, 훅, Dockerfile, compose |
+| `<project>/` | 없음 | 설치 | 설치는 프로젝트에 아무것도 쓰지 않음 |
+| `<project>/knowledge-system/` (`notes/`, `mocs/`, `_knowledge/`, `_ontology/`, `_graph/`, `_rag/`) | 스킬, `knowledge_capture` | 빌드 또는 첫 capture | 저장소: Markdown과 JSONL, Git에 둠 |
+| `<project>/knowledge-system/.knowledge/knowledge.sqlite` (+ `-wal`, `-shm`) | `index` / `knowledge_index` | 인덱싱할 때마다 | 버려도 되는 검색 인덱스 |
+| `<project>/knowledge-system/_knowledge/{checks,reports,jobs}/` | delta 훅, `knowledge_capture` | 저장소 안 `.md` 수정 후, 또는 capture | `checks/latest.json`, `reports/delta-checks.jsonl`, `jobs/*-queue.jsonl` |
+| `knowledge-system/notes/<id>.md`, `_knowledge/catalog.jsonl` 행, `mocs/captures.md` | `knowledge_capture` | capture마다 | 저장된 노트, 그 카탈로그 행, 아무것도 링크하지 않은 capture 목록 |
+| `knowledge-system/_knowledge/config.json` | 사용자 | 선택 | 저장소별 설정: `root`, `notes_dir`, `link`, `graph`, `llm`, `storage` |
+| `knowledge-system/_graph/{nodes,edges,rejected-edges,question-reachability}.jsonl` | `knowledge-graph.mjs build` | LLM 그래프 빌드마다 | 그래프, 사유가 붙은 거부 엣지, 컴피턴시 질문 도달성 |
+| `knowledge-system/.knowledge/hardware-probe.json`, `.knowledge/graph-previous/` | `knowledge-graph.mjs` | 그래프 빌드마다 | 고른 모델 등급과 근거, 직전 빌드가 대체한 그래프 |
+| `knowledge-system/.knowledge/postgres.json` | 사용자 | 선택 | `migrate`와 `postgres-sync`용 `workspace_id`, `schema` |
+
 ## 핵심 개념
 
 플러그인 전체는 아홉 가지 생각 위에 서 있습니다. 각각 검증된 이론에서 빌려 왔고, 측정 결과가
@@ -190,6 +211,27 @@ Citations: recall 3/3; precision 3/4; off-key 1; full 1/1
 관계 중심 컴피턴시 질문은 `_graph/question-reachability.jsonl` 레코드를 받습니다. 도달
 불가 질문은 고아 노드와 같은 등급의 그래프 결함입니다.
 
+**Docker에서 LLM으로 빌드(선택).** OpenAI 호환 chat 엔드포인트가 있으면 명령 하나로 카탈로그
+노트를 전부 읽고, 위 규칙을 통과한 엣지만 남깁니다(인용한 노트에 근거 문장이 글자 그대로 있음,
+구체적인 `UPPER_SNAKE` 타입, 알려진 양 끝 노드, 온톨로지가 대칭이라 하지 않는 한 역방향 중복 없음).
+거부한 엣지는 사유와 함께 `_graph/rejected-edges.jsonl`에 쓰고, 도달성을 계산하고, 인덱스를 다시
+만듭니다. 모델 크기는 하드웨어 판별이 고릅니다: GPU 없이 16 GB 미만이면 `small`, RAM 16 GB 또는
+VRAM 8 GB면 `medium`, VRAM 16 GB면 `large`(`KNOWLEDGE_LLM_TIER`나 `KNOWLEDGE_LLM_MODEL`로 덮어씀).
+엔드포인트가 없으면 아무것도 바꾸지 않고 exit 2로 끝나며, 위의 스킬 경로는 그대로입니다.
+
+```bash
+# 동봉 ollama: 판별이 고른 모델을 받아옴
+KNOWLEDGE_ROOT=$PWD KNOWLEDGE_LLM_URL=http://ollama:11434 KNOWLEDGE_LLM_PULL=1 \
+  docker compose -f "${CLAUDE_PLUGIN_ROOT}/compose.yaml" --profile llm up -d --wait ollama
+KNOWLEDGE_ROOT=$PWD KNOWLEDGE_LLM_URL=http://ollama:11434 KNOWLEDGE_LLM_PULL=1 \
+  docker compose -f "${CLAUDE_PLUGIN_ROOT}/compose.yaml" --profile graph --profile llm run --rm knowledge-graph
+# 또는 Docker 없이, 아무 엔드포인트로
+KNOWLEDGE_LLM_URL=http://127.0.0.1:11434 node "${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-graph.mjs" build --root .
+```
+
+노드 타입, 허용 관계 타입, 대칭 타입은 `_knowledge/config.json`의 `graph`(`relation_types`,
+`symmetric`, `weak_types`, `max_hops`)에서 오므로, 엔진 하나가 온톨로지가 다른 저장소들을 섬깁니다.
+
 ### `render-graph-view`
 
 `_graph/nodes.jsonl` + `edges.jsonl`을 자체 완결 HTML 한 파일로 렌더링합니다 — 캔버스,
@@ -217,7 +259,8 @@ pgvector용으로 볼트에서 _rag/ 준비해줘. 재색인해도 인용이 살
 
 ### `sqlite-index-builder`
 
-카탈로그 기반 Markdown, RAG 청크, 그래프 JSONL로 `.knowledge/knowledge.sqlite`를 만듭니다.
+카탈로그 기반 Markdown, RAG 청크, 그래프 JSONL로 `<store>/.knowledge/knowledge.sqlite`(기본은
+`<project>/knowledge-system/.knowledge/knowledge.sqlite`)를 만듭니다.
 DB는 일회용 로컬 상태 — Git에는 Markdown과 JSONL만 둡니다.
 
 ```bash
@@ -300,6 +343,19 @@ Missing knowledge:
 | `knowledge_search` | 소스 참조·진단 필드가 붙은 하이브리드 검색 |
 | `knowledge_get` | 안정 id로 전체 레코드 조회 |
 | `knowledge_neighbors` | 노드의 직접 관계 조회 |
+| `knowledge_capture` | 받은 내용을 링크된 Markdown 노트로 저장소에 저장 |
+
+### Capture
+
+`knowledge_capture`는 MCP로 들어온 내용을 볼트가 답할 수 있는 노트로 만듭니다. 링크는 호출자가
+아니라 엔진이 겁니다. 노트의 제목이나 별칭이 본문에 나올 때만 링크하고(한국어는 조사를 붙인
+`결제 승인을`도 인정, 코드나 기존 링크 안은 제외), 링크된 노트의 `## Related`에 역링크를 답니다.
+본문이 이름을 대지 않은 인덱스 검색 결과는 링크가 아니라 사유와 함께 `skipped_candidates`로
+돌아옵니다. 카탈로그에 이미 있는 제목이나 별칭이면 아무것도 만들지 않고 `merged_into`를
+돌려줍니다. 아무 노트도 언급하지 않은 capture는 `mocs/captures.md`에 올려서 고아가 생기지 않게
+합니다. 응답에는 `linked_to`, `backlinked_from`, `merged_into`, `skipped_candidates`가 담기고,
+카탈로그·그래프·임베딩 작업이 큐에 들어가며, 다음 `knowledge_index`부터 검색됩니다.
+`_knowledge/config.json`의 `link`로 `min_term_length`, `max_links`, `moc`, `fallback_moc`를 정합니다.
 
 ### 랭킹 방식
 
@@ -390,7 +446,36 @@ Node 24+(플래그 없는 `node:sqlite` + FTS5). Node 22.5–23은 `--experiment
 필요하고 일부 22.x 빌드엔 FTS5가 없습니다. 동봉된 Docker 이미지가 확실한 경로입니다:
 
 ```bash
-docker compose -f knowledge/compose.yaml run --rm knowledge-index
+KNOWLEDGE_ROOT=$PWD docker compose -f "${CLAUDE_PLUGIN_ROOT}/compose.yaml" run --rm knowledge-index
+```
+
+`KNOWLEDGE_ROOT`는 필수입니다. 없으면 compose가 시작을 거부합니다. 상대 경로 기본값은 compose
+파일 기준으로 풀려서, 프로젝트 대신 플러그인 캐시를 마운트하기 때문입니다.
+
+### 백엔드와 pgvector
+
+`index`, `search`, `get`, `neighbors`, `status`는 저장소가 지정한 백엔드(`_knowledge/config.json`의
+`storage.backend` 또는 `KNOWLEDGE_BACKEND`)를 거칩니다. 이번 버전에서 연결된 것은 sqlite뿐입니다.
+검색은 전체 스캔이라 저장소가 클수록 느려집니다. `status`는 `size`에 문서 수, WAL을 포함한 바이트,
+임계값, `pgvector_advised`를 보고합니다:
+
+| 문서 수 | 1k | 5k | 10k | 20k | 50k |
+|---|---|---|---|---|---|
+| 검색 p95 | 25 ms | 97 ms | 187 ms | 384 ms | 1108 ms |
+| DB 크기 | 6 MB | 31 MB | 64 MB | 126 MB | 310 MB |
+
+2026-11-19 측정: 합성 노트, hash provider(384차원), 12코어 CPU, RAM 13 GB, 크기별 질의 30개.
+예산은 p95 400 ms 미만이라 **문서 20,000개** 또는 **256 MB**부터 pgvector를 권합니다(바이트 기준은
+더 큰 임베딩을 잡기 위함). `storage.pgvector_threshold`로 둘 다 바꿀 수 있습니다.
+
+`migrate`는 빌드된 sqlite 저장소를 임베딩까지 PostgreSQL + pgvector로 복사합니다. 대상 테이블은
+sqlite와 같은 모양(`kn_documents`, `kn_document_relations`, `kn_graph_nodes`, `kn_graph_edges`,
+`kn_metadata`)이고, 해당 workspace의 행을 트랜잭션 하나로 교체하며, 양쪽 행 수가 같지 않으면
+실패합니다. 2000차원을 넘으면 행은 복사하되 HNSW 인덱스는 만들지 않습니다.
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" migrate --root . --workspace my-store \
+  --psql "docker exec -i <pg-container> psql -U postgres"   # 또는 PG* 환경변수와 psql; 스크립트만 쓰려면 --sql-out file.sql
 ```
 
 - v1.21.4 — 각 스킬에 Process와 Output Template 절이 생겼습니다(동작 변화 없음). write:plans가 나뉜 뒤로 참조는 write:prd / write:adr을 가리킵니다.
