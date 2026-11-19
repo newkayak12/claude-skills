@@ -321,6 +321,13 @@ for (const [name, c] of [
   ['perl -e two-argument open with > to a literal', `perl -e 'open(H, ">teams/x.txt"); print H 1'`],
   ['perl -e open with > to $f bound to a repo path', `perl -e 'my $f = "teams/x.txt"; open(my $h, ">", $f); print $h 1'`],
   ['perl -e open with >> to $f bound to a repo path', `perl -e 'my $f = "teams/x.txt"; open(my $h, ">>", $f); print $h 1'`],
+  // a backslash outside quotes escapes the next char (card 156): `'\\''` is a literal apostrophe, not a quote flip
+  ["card 156: git commit -m with an odd '\\'' count, then a redirect", `git commit -m 'dep'\\''s'; echo y > teams/a.md`],
+  ["card 156: git commit -m with '\\'' and a newline in the message, then a redirect", `git commit -m 'dep'\\''s\nfix'; echo y > teams/a.md`],
+  ['card 156: escaped apostrophe outside quotes does not hide a redirect', `echo it\\'s ; echo x > teams/a.md`],
+  ['card 156: escaped newline joins the segment, redirect still seen', 'echo a \\\n> teams/a.md'],
+  // `\\"` inside double quotes still closes the quote in split() and words() (known gap, pinned as it is today)
+  ['card 156: \\" inside double quotes, pinned as today (denied)', 'echo "a \\" > teams/a.md b"'],
 ]) {
   check(`write: ${name} -> deny, reason names Read/Edit/Write`, writeDenied(bash(c, clone)))
 }
@@ -388,6 +395,12 @@ for (const [name, c] of [
   ['perl -pe without -i on a repo file', "perl -pe 's/a/b/' teams/mcp/x.mjs"],
   ['node -e writeFileSync to an unbound identifier', `node -e "require('fs').writeFileSync(f,'x')"`],
   ['python3 -c open(p, w) on an unbound identifier', `python3 -c "open(p,'w').write('x')"`],
+  // card 156: a single-quoted -m message with `'\\''`, a newline and a `<...>` trailer is one argument, not a redirect
+  ["card 156 (proof): git commit -m with one '\\'', trailer <..>, then && git log", `git commit -q -m 'dep'\\''s fix\n\nCo-Authored-By: Claude <noreply@anthropic.com>' && git log --oneline -1`],
+  ["card 156 (proof): the same message, then ; echo ok", `git commit -q -m 'dep'\\''s fix\n\nCo-Authored-By: Claude <noreply@anthropic.com>'; echo ok`],
+  ["card 156: git commit -m with two '\\'' (even count)", `git commit -q -m 'a'\\''b'\\''c fix\n\nCo-Authored-By: Claude <noreply@anthropic.com>' && git log --oneline -1`],
+  ["card 156 (not the proof, nothing after the closing quote): one-line message with '\\'' and <..>", `git commit -q -m 'dep'\\''s fix\n\nCo-Authored-By: Claude <noreply@anthropic.com>'`],
+  ['card 156: a lone trailing backslash does not throw', 'echo hi \\'],
 ]) {
   check(`write: ${name} -> no deny`, free(bash(c, clone)))
 }

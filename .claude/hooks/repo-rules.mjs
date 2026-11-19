@@ -104,6 +104,7 @@ function split(cmd) {
   for (let i = 0; i < cmd.length; i++) {
     const c = cmd[i]
     if (q) { if (c === q) q = ''; cur += c; continue }
+    if (c === '\\' && i + 1 < cmd.length) { cur += c + cmd[++i]; continue }
     if (c === '"' || c === "'") { q = c; cur += c; continue }
     if (c === '|' && cur.endsWith('>')) { cur += c; continue }
     if (c === ';' || c === '&' || c === '|') {
