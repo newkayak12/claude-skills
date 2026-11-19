@@ -129,9 +129,15 @@ A move written for PowerPoint shape names (`TextBox 15`) takes slot ids here: `d
 
 `place:` moves a shape with its own frame; one whose position comes from the layout is named
 in the build, not moved. It runs after every value and the two options below, so it wins — and
-keeps the size they gave: a picture grown where it stood can end past the slide once moved, and
-the build names any placed frame that ends more than 2pt past the slide's edge (`place puts …`).
+keeps the size they gave. A picture given no `w=`/`h=` that would end past the slide once moved
+is shrunk at its new spot to end inside the safe area, aspect kept (`placed picture fitted into
+the safe area — …`); any other placed frame that ends more than 2pt past the slide's edge, or a
+picture whose size you wrote, is named in the build (`place puts …`).
 `check` measures a placed slot at its placed frame (position and size), not the template's.
+
+`color:` (a slide line beside `place:`) sets the text colour of whole shapes, written as in a
+span: `- text3: bg1 85%`, `- text1: #FFFFFF`. Every run of the shape takes it; a span with its
+own colour (`[구조를]{2 #FFFFFF}`) still wins, so one word can stand out without wrapping the rest.
 
 `distribute: 70` (a slide line beside `place:`) re-spaces the slide's top-level row groups
 (`p:grpSp`) evenly: order and size kept, only y changes, the first row's top at 70pt and the

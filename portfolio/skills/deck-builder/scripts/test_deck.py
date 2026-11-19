@@ -1315,6 +1315,24 @@ def run_styles(tmp):
           and "⁠" not in got[1].split("것")[0],
           "a lone last word is held to the word before it, across runs, both words whole: %r" % got[1])
     check(got[2] == "짧은 두 줄", "a paragraph the render did not name is left as written: %r" % got[2])
+    def fills(root):
+        out = []
+        for r in root.iter(A + "r"):
+            c = r.find(A + "rPr/" + A + "solidFill")
+            k = c[0] if c is not None else None
+            lum = k.find(A + "lumMod") if k is not None else None
+            out.append((r.find(A + "t").text, k.get("val") if k is not None else None,
+                        lum.get("val") if lum is not None else None))
+        return out
+    chk, _, root = built("text1: 회색 글 [흰 글]{#FFFFFF} 끝\ncolor:\n  - text1: bg1 75%\n")
+    got = fills(root)
+    check(got == [("회색 글 ", "bg1", "75000"), ("흰 글", "FFFFFF", None), (" 끝", "bg1", "75000")],
+          "`color:` colours every run of the shape; a span's own colour wins: %s" % got)
+    check("'color'" not in chk and "color item" not in chk and "color names" not in chk,
+          "check accepts `color:` as a page key, not a slot: %s" % chk[-300:])
+    chk, _, _ = built("text1: 글\ncolor:\n  - text9: bg1\n  - text1: 아무색\n")
+    check("color names 'text9'" in chk and "color item 'text1: 아무색'" in chk,
+          "an unknown slot and a colour it cannot read are check errors: %s" % chk[-300:])
     _, _, root = built("text1: 경력 [**굵게만**]{2} [보통]{2}\n")
     got = runs(root)
     check(got[1:] == [("굵게만", "1000", "1"), (" ", "1600", "1"), ("보통", "1000", None)],
@@ -1987,6 +2005,36 @@ def layout_options(tmp):
     want = 4 * min(w / 100, hpt / 50)
     check(len(got) == 1 and got[0][:2] == (1, pic_slot.id) and abs(got[0][2] - want) < 0.2,
           "an SVG's smallest text × the frame it was built into: %s (want %.1fpt)" % (got, want))
+
+    print("a picture place: puts past the slide is fitted into the safe area")
+    sw, sh = deck.slide_size(tpkg)
+    tw, th = pic_slot.box[2], pic_slot.box[3]
+    x0, y0 = round(sw / 12700) - round(tw / 12700 / 2), 20          # half of it past the right edge
+
+    def placed(line):
+        (ft / "pl.mdx").write_text("---\ntemplate: ft.pptx\noutput: pl-out.pptx\n---\n\n## @s2\n"
+                                   "%s: ft.png\nplace:\n  - %s\n" % (pic_slot.id, line), encoding="utf-8")
+        out = run_cmd(["build", "--deck", str(ft / "pl.mdx")])
+        root = ET.fromstring(deck.Package(ft / "pl-out.pptx").parts["ppt/slides/slide1.xml"])
+        pic = next(e for e in root.iter(P + "pic"))
+        o = pic.find(P + "spPr/" + A + "xfrm/" + A + "off")
+        e = pic.find(P + "spPr/" + A + "xfrm/" + A + "ext")
+        return out, int(o.get("x")), int(o.get("y")), int(e.get("cx")), int(e.get("cy"))
+    out, x, y, cx, cy = placed("%s: %d %d" % (pic_slot.id, x0, y0))
+    check("past the slide" not in out and (x, y) == (x0 * 12700, y0 * 12700)
+          and x + cx <= sw - 28 * 12700 + 12700 and abs(cx / cy - tw / th) < 0.01,
+          "it shrinks at its new spot to end inside the safe area, aspect kept: %s / %s"
+          % ((x, y, cx, cy, sw), out[-200:]))
+    check("fitted into the safe area" in out, "the build says it fitted it: %s" % out[-300:])
+    E = 12700
+    k = deck.place_fit_scale((37.4 * E, 128 * E, 947 * E, 154 * E), 960 * E, 512 * E, 28 * E)
+    check(abs(37.4 + 947 * k - (960 - 37.4)) < 0.1,
+          "a picture starting 37.4pt in ends 37.4pt from the right, not at the 28pt line: %.1f"
+          % (37.4 + 947 * k))
+    k = deck.place_fit_scale((600 * E, 128 * E, 400 * E, 100 * E), 960 * E, 512 * E, 28 * E)
+    check(abs(600 + 400 * k - 932) < 0.1, "one on the right half ends at the safe line: %.1f" % (600 + 400 * k))
+    out, *_ = placed("%s: %d %d w=%d" % (pic_slot.id, x0, y0, round(tw / 12700)))
+    check("past the slide" in out, "a size written with w= is kept and reported: %s" % out[-300:])
 
     print("figure text raised in the raster copy, as far as each label fits")
     svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">'

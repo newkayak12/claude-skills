@@ -101,9 +101,9 @@ real deck lone commas 316 → 0, engine version printed).
       `render` setting `panel_margin:` pictures 10pt under the text it measured. A fresh sonnet agent given
       only the skill moved a copy of the workspace off its scripts; blind against the pick: better 9,
       worse 1 (17: a 12.7pt gap where the pick left 23.5), same 21.
-    - Left: (1) and (2) wait (scope above). The bench agent had to size a `place:`d picture by hand
-      when `captions: into-picture` had grown it (build names it, nothing sizes it), and found no
-      slot-level colour (31: every run wrapped) and no doc for `{bg1 75%}` = lumMod. Render findings
+    - Left: (1) and (2) wait (scope above); (2)'s figure text is now raised by render (3.2.6). The
+      placed-picture size and slot-level colour shipped in 3.2.7 (`place:` fits a grown picture into
+      the safe area; `color:` per shape). Render findings
       on the migrated copy, triaged in 3.2.3 (zones kept by render, user 2026-11-18 "글 넘침 조정해야지"):
       3 left, all real — a number split from its unit (12), a lone word (17), and footnote-to-panel
       gaps 21 vs 27pt across 7·8·11·16·17 by footnote line count (drift; nothing crosses).

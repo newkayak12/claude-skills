@@ -295,6 +295,37 @@ def parse_place(kind, value):
     return good, bad
 
 
+def place_fit_scale(box, slide_w, safe_bottom, right_margin):
+    """Scale (≤1) that makes a placed picture's frame (x, y, w, h EMU) end inside the safe area.
+    A picture on the left half ends no closer to the right edge than it stands from the left
+    (page 29, 2026-11-19: ending at the 28pt default line beside a 37.4pt left margin read as
+    cramped next to the hand-sized build)."""
+    right = max(right_margin, box[0] if box[0] < slide_w / 2 else 0)
+    return min(1.0, (slide_w - right - box[0]) / box[2], (safe_bottom - box[1]) / box[3])
+
+
+def parse_color(kind, value):
+    """`color:` items `slot: <colour>` -> [(slot id, span mods)], [bad item text]. The colour is
+    written as in a span (`bg1 75%`, `#FFFFFF`, `tx1`); every run of the shape takes it unless
+    a span gives its own (page 31, 2026-11-19: three colours meant wrapping each run, `\\ `
+    escapes included)."""
+    good, bad = [], []
+    for _, item in as_items(kind, value):
+        item = item.strip()
+        if not item:
+            continue
+        sid, _, spec = item.partition(":")
+        n, mods = span_mods(spec.strip())
+        if not sid.strip() or "color" not in mods or n != 1:
+            bad.append(item)
+            continue
+        good.append((sid.strip(), {"color": mods["color"]}))
+    return good, bad
+
+
+SLOT_MODS = {}   # the `color:` mods of the slot being written; _set_para_text reads them
+
+
 def place_frame(el, x, y, w, h):
     """Move (and size) one shape to x y pt, w/h pt or its own size. False when it has no own frame."""
     ext = extent(el)
@@ -1549,7 +1580,7 @@ def _set_para_text(p, text):
             rPr.set("b", "1")
         if italic:
             rPr.set("i", "1")
-        apply_mods(rPr, mods)
+        apply_mods(rPr, {**SLOT_MODS, **mods})
         if mono:
             for tag in ("a:latin", "a:cs"):
                 for old in rPr.findall(q(tag)):
@@ -3683,7 +3714,7 @@ def cmd_build(args):
         note_text = None
         # `!drop` removes a shape, which shifts the child indexes every later slot path
         # relies on. Resolve every drop target first, write the other slots, remove last.
-        drop_els, place_els, distribute_top = [], [], None
+        drop_els, place_els, distribute_top, slot_colors = [], [], None, {}
         for slot_id, kind, value, line in spec.values:
             if slot_id == "distribute":
                 distribute_top = parse_distribute(value)
@@ -3704,12 +3735,22 @@ def cmd_build(args):
                         continue
                     place_els.append((resolve_path(spTree, slots[sid].path), sid, x, y, w, h,
                                       line))
+            if slot_id == "color":
+                good, bad = parse_color(kind, value)
+                for item in bad:
+                    problems.append("line %d: color item %r — write `slot: <colour>` as in a span"
+                                    % (line, item))
+                for sid, mods in good:
+                    if sid not in slots:
+                        problems.append("line %d: color names '%s', which '@%s' does not have"
+                                        % (line, sid, spec.archetype))
+                    slot_colors[sid] = mods
         for slot_id, kind, value, line in spec.values:
             where = "line %d" % line
             if slot_id == "notes":
                 note_text = "\n".join(t for _, t in as_items(kind, value))
                 continue
-            if slot_id in ("place", "distribute"):
+            if slot_id in ("place", "distribute", "color"):
                 continue
             if slot_id in slots and isinstance(value, str) and value.strip() == "!drop":
                 continue
@@ -3724,7 +3765,12 @@ def cmd_build(args):
                                 % (where, spec.archetype, slot_id,
                                    ", ".join(slots) or "none"))
                 continue
-            apply_value(spTree, slots[slot_id], kind, value, imgctx, problems, where)
+            SLOT_MODS.clear()
+            SLOT_MODS.update(slot_colors.get(slot_id, {}))
+            try:
+                apply_value(spTree, slots[slot_id], kind, value, imgctx, problems, where)
+            finally:
+                SLOT_MODS.clear()
         if front.get("captions", "").strip() == "into-picture":
             sw, sh = slide_size(pkg)
             layout_counts["captions"] += captions_into_pictures(spTree, sw, sh)
@@ -3759,6 +3805,20 @@ def cmd_build(args):
             # where it stood: moved, it can end past the slide (seen 2026-11-17, 984.9 of 960pt)
             box, (sw, sh) = shape_box(el), slide_size(pkg)
             tol = 2 * EMU_PER_PT     # a frame's edge a point past the slide shows nothing
+            # a picture given no size of its own is shrunk at its new spot to end inside the safe
+            # area, aspect kept (page 29, 2026-11-19: a caption-grown picture moved by `place:`
+            # needed a hand-written w=880 h=143)
+            if box and el.tag == q("p:pic") and not w and not h and (
+                    box[0] + box[2] > sw + tol or box[1] + box[3] > sh + tol):
+                area = safe_area(Path(md_path).resolve().parent) or \
+                    safe_area(Path(md_path).resolve().parent.parent) or {"right": 28.0, "bottom": 28.0}
+                k = place_fit_scale(box, sw, safe_bottom_pt(md_path, sh) * EMU_PER_PT,
+                                    area["right"] * EMU_PER_PT)
+                if k > 0.2:
+                    set_frame(el, (box[0], box[1]), (round(box[2] * k), round(box[3] * k)))
+                    layout_counts.setdefault("place_fit", []).append(
+                        "page %d %s: %.0f%% of its size" % (i, sid, k * 100))
+                    box = shape_box(el)
             if box and (box[0] < -tol or box[1] < -tol or box[0] + box[2] > sw + tol
                         or box[1] + box[3] > sh + tol):
                 problems.append("line %d: place puts '%s' past the slide — its frame ends at "
@@ -3865,6 +3925,8 @@ def cmd_build(args):
     if layout_counts["captions"]:
         print("  %d caption(s) removed, their pictures grown into the room"
               % layout_counts["captions"])
+    for line in layout_counts.get("place_fit", []):
+        print("  placed picture fitted into the safe area — %s" % line)
     if layout_counts.get("distributed"):
         print("  %d slide(s) with a cloned row past the safe area: rows spread to fit"
               % layout_counts["distributed"])
@@ -4167,6 +4229,16 @@ def cmd_check(args):
                 for sid, *_ in good:
                     if sid not in by_id:
                         errs.append("line %d: %s place names '%s', which the archetype does "
+                                    "not have" % (line, tag, sid))
+                continue
+            if slot_id == "color":
+                good, bad = parse_color(kind, value)
+                for item in bad:
+                    errs.append("line %d: %s color item %r — write `slot: <colour>` as in a span "
+                                "(`bg1 75%%`, `#FFFFFF`)" % (line, tag, item))
+                for sid, _ in good:
+                    if sid not in by_id:
+                        errs.append("line %d: %s color names '%s', which the archetype does "
                                     "not have" % (line, tag, sid))
                 continue
             if slot_id in RESERVED_KEYS:
