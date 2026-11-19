@@ -498,6 +498,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" migrate --root . --wor
   --psql "docker exec -i <pg-container> psql -U postgres"   # or PG* env and plain psql; --sql-out file.sql to only write the script
 ```
 
+- v1.22.0 — `knowledge_capture` saves MCP content as a linked note (engine links, backlinks, `merged_into`); optional LLM graph build in Docker with a hardware-picked model and an edge validator; storage backend seam, `migrate` to pgvector and size advice in `status`; compose requires `KNOWLEDGE_ROOT`; one store resolver for hook, indexer and MCP.
 - v1.21.4 — skills gain their Process and Output Template sections (no behaviour change); references point at write:prd / write:adr after the write:plans split.
 - v1.21.3 — Codex: MCP servers register under Codex (`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`); Claude reads them from plugin.json.
 

@@ -478,6 +478,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" migrate --root . --wor
   --psql "docker exec -i <pg-container> psql -U postgres"   # 또는 PG* 환경변수와 psql; 스크립트만 쓰려면 --sql-out file.sql
 ```
 
+- v1.22.0 — `knowledge_capture`가 MCP로 받은 내용을 링크된 노트로 저장합니다(엔진이 링크와 역링크를 걸고, 이미 있는 개념이면 `merged_into`). Docker에서 하드웨어에 맞는 모델로 LLM 그래프 빌드(선택)와 엣지 검증기, 저장소 백엔드 경계, pgvector로 `migrate`, `status`의 크기 안내가 생겼습니다. compose는 `KNOWLEDGE_ROOT`가 필수이고, 훅·인덱서·MCP가 저장소 위치를 같은 규칙으로 찾습니다.
 - v1.21.4 — 각 스킬에 Process와 Output Template 절이 생겼습니다(동작 변화 없음). write:plans가 나뉜 뒤로 참조는 write:prd / write:adr을 가리킵니다.
 - v1.21.3 — Codex: MCP 서버가 Codex에서도 등록됩니다(`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`). Claude는 plugin.json에서 읽습니다.
 
