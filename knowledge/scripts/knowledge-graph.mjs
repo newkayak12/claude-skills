@@ -8,10 +8,11 @@
 // nothing; the graph-builder skill path is the same as before.
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizeTerm, slugify } from './knowledge-capture.mjs';
 import { loadStoreConfig } from './knowledge-config.mjs';
+import { consumeQueue, readQueue } from './knowledge-jobs.mjs';
 import { findKnowledgeRoot, inside } from './knowledge-paths.mjs';
 import { PROBE_FILE, chooseModel, probeHardware, writeProbe } from './knowledge-probe.mjs';
 
@@ -225,21 +226,31 @@ function cleanLabel(value) {
  * chat(messages) -> reply text. Notes are read once; replies that are not JSON
  * are counted as failed notes, never guessed at.
  */
-export async function extractGraph(root, { chat, config, log = () => {}, limit = Infinity }) {
+export async function extractGraph(root, { chat, config, log = () => {}, limit = Infinity, only = null, deleted = new Set(), base = null }) {
   const catalog = readJsonl(join(root, '_knowledge', 'catalog.jsonl')).filter((entry) => entry.id && entry.path);
   const nameToId = new Map();
   const nodes = new Map();
   for (const entry of catalog) {
     for (const term of [entry.id, entry.title, ...(entry.aliases || [])]) if (term) nameToId.set(normalizeTerm(term), entry.id);
+    if (deleted.has(entry.path)) continue;
     nodes.set(entry.id, { id: entry.id, canonical_name: entry.title || entry.id, label: cleanLabel(entry.type || 'Note'), aliases: entry.aliases || [], note_path: entry.path });
+  }
+  // Incremental: the entity nodes of the existing graph stay resolvable by name.
+  for (const node of base?.nodes || []) {
+    if (nodes.has(node.id) || node.note_path) continue;
+    nodes.set(node.id, node);
+    for (const term of [node.canonical_name, ...(node.aliases || [])]) if (term && !nameToId.has(normalizeTerm(term))) nameToId.set(normalizeTerm(term), node.id);
   }
   const knownNames = catalog.map((entry) => entry.title).filter(Boolean);
   const texts = new Map();
   const candidates = [];
   const failed = [];
+  const done = new Set();
+  const touched = new Map();
   let processed = 0;
   for (const entry of catalog) {
     if (processed >= limit) break;
+    if (only && !only.has(entry.path)) continue;
     const abs = join(root, entry.path);
     if (!inside(root, abs) || !existsSync(abs)) {
       failed.push({ path: entry.path, reason: 'missing-file' });
@@ -259,6 +270,11 @@ export async function extractGraph(root, { chat, config, log = () => {}, limit =
       failed.push({ path: entry.path, reason: error.name === 'AbortError' ? 'timeout' : error.message.slice(0, 200) });
       continue;
     }
+    done.add(entry.path);
+    const touch = (id) => {
+      if (!touched.has(id)) touched.set(id, new Set());
+      touched.get(id).add(entry.path);
+    };
     const localIds = new Map();
     for (const entity of Array.isArray(reply.entities) ? reply.entities : []) {
       const name = String(entity?.name || '').trim();
@@ -273,6 +289,7 @@ export async function extractGraph(root, { chat, config, log = () => {}, limit =
         if (typeof alias === 'string' && alias.trim() && !nameToId.has(normalizeTerm(alias))) nameToId.set(normalizeTerm(alias), id);
       }
       localIds.set(key, id);
+      touch(id);
       if (!nodes.has(id)) {
         nodes.set(id, { id, canonical_name: name, label: cleanLabel(entity.type), aliases: (entity.aliases || []).filter((a) => typeof a === 'string'), source_refs: [entry.path] });
       }
@@ -283,10 +300,12 @@ export async function extractGraph(root, { chat, config, log = () => {}, limit =
       const resolveName = (name) => {
         const key = normalizeTerm(name);
         const known = localIds.get(key) || nameToId.get(key);
+        if (known) touch(known);
         if (known || !key || !normalizeTerm(text).includes(key)) return known || null;
         const id = `n-${slugify(String(name).trim())}`;
         nameToId.set(key, id);
         localIds.set(key, id);
+        touch(id);
         if (!nodes.has(id)) nodes.set(id, { id, canonical_name: String(name).trim(), label: 'Entity', aliases: [], source_refs: [entry.path] });
         return id;
       };
@@ -306,7 +325,41 @@ export async function extractGraph(root, { chat, config, log = () => {}, limit =
     return inside(root, abs) && existsSync(abs) ? readFileSync(abs, 'utf8') : null;
   };
   const { accepted, rejected } = validateEdges(candidates, { nodeIds: new Set(nodes.keys()), sourceText, config });
-  return { nodes: [...nodes.values()], edges: accepted, rejected, failed, processed };
+  if (!base) return { nodes: [...nodes.values()], edges: accepted, rejected, failed, processed, done: [...done] };
+  return { ...mergeIncremental({ base, nodes, accepted, rejected, touched, replaced: new Set([...done, ...deleted]) }), failed, processed, done: [...done] };
+}
+
+// Replace what the re-extracted (and deleted) notes contributed: their edges,
+// their claim on entity nodes, their rejected edges. Everything else is kept as
+// it was; an entity node a kept edge still uses is never dropped.
+function mergeIncremental({ base, nodes, accepted, rejected, touched, replaced }) {
+  const edges = new Map();
+  for (const edge of base.edges) {
+    const refs = (edge.source_refs || []).filter((ref) => !replaced.has(ref));
+    if (!refs.length) continue;
+    // An edge kept from another note still loses an endpoint whose note was deleted.
+    if (!nodes.has(edge.source) || !nodes.has(edge.target)) continue;
+    edges.set(`${edge.source}\u0000${edge.type}\u0000${edge.target}`, refs.length === (edge.source_refs || []).length ? edge : { ...edge, source_refs: refs });
+  }
+  for (const edge of accepted) {
+    const key = `${edge.source}\u0000${edge.type}\u0000${edge.target}`;
+    const kept = edges.get(key);
+    if (kept) edges.set(key, { ...kept, source_refs: [...new Set([...kept.source_refs, ...edge.source_refs])] });
+    else edges.set(key, edge);
+  }
+  const used = new Set([...edges.values()].flatMap((edge) => [edge.source, edge.target]));
+  const merged = [];
+  for (const node of nodes.values()) {
+    if (node.note_path) {
+      merged.push(node);
+      continue;
+    }
+    const refs = [...new Set([...(node.source_refs || []).filter((ref) => !replaced.has(ref)), ...(touched.get(node.id) || [])])];
+    if (!refs.length && !used.has(node.id)) continue;
+    merged.push(refs.length ? { ...node, source_refs: refs } : node);
+  }
+  const keptRejected = (base.rejected || []).filter((item) => !(item.edge?.source_refs || []).some((ref) => replaced.has(ref)));
+  return { nodes: merged, edges: [...edges.values()], rejected: [...keptRejected, ...rejected] };
 }
 
 // Write every _graph file into a temp dir, then rename into place, so a run
@@ -382,6 +435,39 @@ export async function buildGraph(inputRoot, options = {}) {
       message: 'No LLM endpoint configured (KNOWLEDGE_LLM_URL or llm.url in _knowledge/config.json); _graph was not changed. Without one, build the graph with the graph-builder skill.',
     };
   }
+  const nodesPath = join(root, '_graph', 'nodes.jsonl');
+  const edgesPath = join(root, '_graph', 'edges.jsonl');
+  const incremental = options.full !== true && existsSync(nodesPath) && existsSync(edgesPath);
+  const queueLines = readQueue(root, 'graph');
+  const queued = new Map();
+  for (const line of queueLines) {
+    let file = null;
+    try {
+      file = JSON.parse(line)?.file;
+    } catch {
+      // an unreadable line names no note; it is consumed with the rest
+    }
+    if (typeof file !== 'string' || !file) continue;
+    queued.set(line, isAbsolute(file) ? relative(root, file) : file.replace(/^\.\//, ''));
+  }
+  const queuedFiles = new Set(queued.values());
+  if (incremental && !queuedFiles.size) {
+    consumeQueue(root, 'graph', queueLines);
+    return {
+      root,
+      status: 'up-to-date',
+      mode: 'incremental',
+      notes_queued: 0,
+      notes_deleted: 0,
+      queue_remaining: readQueue(root, 'graph').length,
+      nodes: readJsonl(nodesPath).length,
+      edges: readJsonl(edgesPath).length,
+      message: 'The graph update queue is empty; _graph was not changed.',
+    };
+  }
+  const deleted = new Set(incremental ? [...queuedFiles].filter((file) => !existsSync(join(root, file))) : []);
+  const only = incremental ? new Set([...queuedFiles].filter((file) => !deleted.has(file))) : null;
+  const base = incremental ? { nodes: readJsonl(nodesPath), edges: readJsonl(edgesPath), rejected: readJsonl(join(root, '_graph', 'rejected-edges.jsonl')) } : null;
   const probe = readProbe(root);
   const facts = probe ? { gpu: probe.gpu, ram_mb: probe.ram_mb, ram_available_mb: probe.ram_available_mb, cores: probe.cores } : probeHardware(options.probeSources);
   const choice = chooseModel(facts, endpoint.llm, options.env || process.env);
@@ -392,13 +478,19 @@ export async function buildGraph(inputRoot, options = {}) {
   const chat = options.chat || openAiCompatibleChat({ url: endpoint.url, model: choice.model, apiKey: endpoint.apiKey, timeoutMs: endpoint.timeoutMs });
   const config = graphConfig(storeConfig);
   const started = Date.now();
-  const extracted = await extractGraph(root, { chat, config, log: options.log, limit: options.limit ?? Infinity });
-  if (extracted.processed && extracted.failed.length === extracted.processed) {
+  const extracted = await extractGraph(root, { chat, config, log: options.log, limit: options.limit ?? Infinity, only, deleted, base });
+  if (extracted.processed && extracted.failed.length === extracted.processed && !deleted.size) {
     throw new Error(`every note failed extraction (${extracted.failed[0]?.reason}); _graph was not changed`);
   }
   const questions = readJsonl(join(root, '_knowledge', 'questions.jsonl'));
   const reachability = questionReachability(questions, extracted.nodes, extracted.edges, config.max_hops);
   const written = writeGraph(root, { ...extracted, reachability });
+  // Only now, with _graph on disk, do queue entries go. A note that failed stays
+  // queued for the next run; so does anything a --limit run never reached.
+  const failedPaths = new Set(extracted.failed.map((item) => item.path));
+  if (incremental || options.limit === undefined) {
+    consumeQueue(root, 'graph', queueLines.filter((line) => !failedPaths.has(queued.get(line))));
+  }
   const rejectedByReason = {};
   for (const item of extracted.rejected) for (const reason of item.reasons) rejectedByReason[reason] = (rejectedByReason[reason] || 0) + 1;
   let index = null;
@@ -409,6 +501,10 @@ export async function buildGraph(inputRoot, options = {}) {
   return {
     root,
     status: 'built',
+    mode: incremental ? 'incremental' : 'full',
+    notes_queued: queuedFiles.size,
+    notes_deleted: deleted.size,
+    queue_remaining: readQueue(root, 'graph').length,
     model: choice,
     notes_processed: extracted.processed,
     notes_failed: extracted.failed,
@@ -430,6 +526,7 @@ function parseArgs(argv) {
     const arg = rest.shift();
     if (arg === '--root') options.root = rest.shift();
     else if (arg === '--no-index') options.index = false;
+    else if (arg === '--full') options.full = true;
     else if (arg === '--limit') options.limit = Number(rest.shift());
     else throw new Error(`Unknown argument: ${arg}`);
   }
@@ -450,6 +547,7 @@ async function main() {
   const result = await buildGraph(resolve(args.root), {
     index: args.index,
     limit: args.limit,
+    full: args.full,
     log: (line) => process.stderr.write(`${line}\n`),
   });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

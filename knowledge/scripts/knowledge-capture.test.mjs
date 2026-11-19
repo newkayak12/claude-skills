@@ -96,6 +96,14 @@ test('a Korean alias links through a particle; code spans and words containing i
   assert.equal(findTerm('see [[x|Payment Authorization]]', 'Payment Authorization'), -1);
 });
 
+test('a Hangul match extends only across a listed particle', () => {
+  assert.equal(findTerm('결제 승인서 검토', '결제 승인'), -1);
+  assert.equal(findTerm('결제 승인서', '결제 승인'), -1);
+  assert.equal(findTerm('결제 승인 검토', '결제 승인'), 0);
+  assert.equal(findTerm('결제 승인은 끝났다', '결제 승인'), 0);
+  assert.equal(findTerm('결제 승인.', '결제 승인'), 0);
+});
+
 test('the linked note gets one backlink and the new note is never an orphan', async (t) => {
   const { project, root } = store(t);
   const result = await captureNote(project, { title: 'Decline', content: '결제 승인을 실패하면 보류한다.' });

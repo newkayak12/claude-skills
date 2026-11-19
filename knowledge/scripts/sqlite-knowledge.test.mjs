@@ -1291,3 +1291,139 @@ test('filters search and list by domain, doc_type, section, and path prefix', as
   const status = indexStatus(root);
   assert.ok(status.filters.metadata_keys_seen.includes('doc_type'));
 }));
+
+// A stand-in for an OpenAI-compatible `/v1/embeddings`: records each request and
+// answers with a fixed 4-d vector per input, listed in reverse `index` order.
+function embeddingsStub(status = 200) {
+  const requests = [];
+  const server = createServer((request, response) => {
+    let body = '';
+    request.on('data', (chunk) => { body += chunk; });
+    request.on('end', () => {
+      requests.push({ url: request.url, auth: request.headers.authorization, body: JSON.parse(body) });
+      response.writeHead(status, { 'content-type': 'application/json' });
+      if (status !== 200) return response.end('{"error":"nope"}');
+      const data = JSON.parse(body).input.map((_, index) => ({ index, embedding: [1, index, 0, 0] })).reverse();
+      return response.end(JSON.stringify({ data }));
+    });
+  });
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => resolve({
+      url: `http://127.0.0.1:${server.address().port}`,
+      requests,
+      close: () => new Promise((done) => server.close(done)),
+    }));
+  });
+}
+
+function oneNoteVault(root) {
+  write(join(root, 'notes', 'pay.md'), '# 결제 승인\n\n결제 승인 재시도 정책.\n');
+  write(join(root, '_knowledge', 'catalog.jsonl'), jsonl([{ id: 'pay', path: 'notes/pay.md', title: '결제 승인' }]));
+}
+
+function readMeta(root) {
+  const db = new DatabaseSync(join(root, '.knowledge', 'knowledge.sqlite'), { readOnly: true });
+  const metadata = Object.fromEntries(db.prepare('SELECT key, value FROM metadata').all().map((row) => [row.key, row.value]));
+  db.close();
+  return metadata;
+}
+
+test('openai provider posts to /v1/embeddings with e5 prompts and records the prompt id only', async () => fixture(async (root) => {
+  const stub = await embeddingsStub();
+  try {
+    oneNoteVault(root);
+    const built = await buildIndex(root, {
+      provider: 'openai', model: 'intfloat/multilingual-e5-base', embedUrl: `${stub.url}/v1/`, embedApiKey: 'secret-key',
+    });
+    assert.equal(built.embedding_provider, 'openai');
+    const [request] = stub.requests;
+    assert.equal(request.url, '/v1/embeddings');
+    assert.equal(request.auth, 'Bearer secret-key');
+    assert.equal(request.body.model, 'intfloat/multilingual-e5-base');
+    for (const input of request.body.input) assert.ok(input.startsWith('passage: '), input);
+
+    const metadata = readMeta(root);
+    assert.equal(metadata.embedding_prompt, 'e5-v1');
+    assert.equal(metadata.embedding_provider, 'openai');
+    assert.ok(!JSON.stringify(metadata).includes('secret-key'));
+    assert.ok(!JSON.stringify(metadata).includes(stub.url));
+
+    stub.requests.length = 0;
+    await searchIndex(root, '결제 승인', { embedUrl: stub.url, embedApiKey: 'secret-key' });
+    assert.equal(stub.requests[0].body.input[0], 'query: 결제 승인');
+  } finally {
+    await stub.close();
+  }
+}));
+
+test('openai provider parses data[].embedding in index order and errors on non-2xx', async () => {
+  const stub = await embeddingsStub();
+  try {
+    await fixture(async (root) => {
+      oneNoteVault(root);
+      // No key: no Authorization header; a model without e5 gets no prefix.
+      await buildIndex(root, { provider: 'openai', model: 'plain-model', embedUrl: stub.url });
+      assert.equal(stub.requests[0].auth, undefined);
+      assert.ok(!stub.requests[0].body.input[0].startsWith('passage: '));
+      const db = new DatabaseSync(join(root, '.knowledge', 'knowledge.sqlite'), { readOnly: true });
+      const row = db.prepare('SELECT embedding FROM documents WHERE embedding IS NOT NULL ORDER BY rowid LIMIT 1').get();
+      db.close();
+      const bytes = Buffer.from(row.embedding);
+      const vector = new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+      // input 0 was answered [1,0,0,0] though the stub listed it last; the vector is unit-length.
+      assert.equal(vector.length, 4);
+      assert.ok(Math.abs(vector[0] - 1) < 1e-6 && vector[1] === 0);
+    });
+  } finally {
+    await stub.close();
+  }
+  const failing = await embeddingsStub(503);
+  try {
+    await fixture(async (root) => {
+      oneNoteVault(root);
+      await assert.rejects(buildIndex(root, { provider: 'openai', model: 'm', embedUrl: failing.url }), /503/);
+    });
+  } finally {
+    await failing.close();
+  }
+});
+
+test('embed.* in _knowledge/config.json drives the openai provider with no env', async () => fixture(async (root) => {
+  const stub = await embeddingsStub();
+  const saved = ['KNOWLEDGE_EMBED_PROVIDER', 'KNOWLEDGE_EMBED_URL', 'KNOWLEDGE_EMBED_API_KEY', 'KNOWLEDGE_EMBED_MODEL']
+    .map((key) => [key, process.env[key]]);
+  for (const [key] of saved) delete process.env[key];
+  try {
+    oneNoteVault(root);
+    write(join(root, '_knowledge', 'config.json'), JSON.stringify({
+      embed: { provider: 'openai', url: stub.url, api_key: 'file-key', model: 'intfloat/multilingual-e5-base' },
+    }));
+    // parseArgs leaves provider unset so the file can supply it.
+    assert.equal(parseArgs(['index']).provider, null);
+    const built = await buildIndex(root, parseArgs(['index']));
+    assert.equal(built.embedding_provider, 'openai');
+    assert.equal(stub.requests[0].url, '/v1/embeddings');
+    assert.equal(stub.requests[0].auth, 'Bearer file-key');
+
+    // Env outranks the file.
+    process.env.KNOWLEDGE_EMBED_API_KEY = 'env-key';
+    stub.requests.length = 0;
+    await buildIndex(root, { reuseEmbeddings: false });
+    assert.equal(stub.requests[0].auth, 'Bearer env-key');
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    await stub.close();
+  }
+}));
+
+test('e5 prompt family is selected for openai e5 models only', () => {
+  const prompt = embeddingPrompt('openai', 'intfloat/multilingual-e5-base');
+  assert.equal(prompt.id, 'e5-v1');
+  assert.equal(prompt.query('환불'), 'query: 환불');
+  assert.equal(prompt.document('결제', '재시도'), 'passage: 결제\n재시도');
+  assert.equal(promptById('e5-v1').id, 'e5-v1');
+  assert.equal(embeddingPrompt('openai', 'text-embedding-3-small'), null);
+  assert.equal(embeddingPrompt('hash', 'intfloat/multilingual-e5-base'), null);
+});

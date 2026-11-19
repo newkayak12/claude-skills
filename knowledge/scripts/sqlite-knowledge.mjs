@@ -14,7 +14,8 @@ import {
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { backendFor, registerBackend, sizeAdvice } from './knowledge-backend.mjs';
-import { CAPTURE_TOOL, captureNote } from './knowledge-capture.mjs';
+import { CAPTURE_TOOL, KOREAN_PARTICLES, captureNote } from './knowledge-capture.mjs';
+import { loadEmbedConfig } from './knowledge-config.mjs';
 import { countSql, countsOf, migrateSql, migrateTarget, readSqliteStore, runPsql } from './knowledge-migrate.mjs';
 import {
   ARTIFACT_PATHS,
@@ -47,6 +48,7 @@ const DEFAULT_DB = '.knowledge/knowledge.sqlite';
 const DEFAULT_DIMENSIONS = 384;
 const DEFAULT_OLLAMA_URL = 'http://127.0.0.1:11434';
 const DEFAULT_OLLAMA_MODEL = 'embeddinggemma';
+const EMBED_PROVIDERS = ['hash', 'ollama', 'openai'];
 const SCHEMA_VERSION = '5';
 const RRF_K = 60;
 // A relation note is about two or more other notes. One matched participant is
@@ -61,8 +63,10 @@ function parseArgs(argv) {
   const options = {
     root: process.cwd(),
     db: null,
-    provider: process.env.KNOWLEDGE_EMBED_PROVIDER || 'hash',
-    model: process.env.KNOWLEDGE_EMBED_MODEL || DEFAULT_OLLAMA_MODEL,
+    // Left unset here: env and _knowledge/config.json `embed.*` are resolved
+    // against the store root by loadEmbedConfig when the index is built.
+    provider: null,
+    model: null,
     ollamaUrl: process.env.OLLAMA_HOST || DEFAULT_OLLAMA_URL,
     dimensions: DEFAULT_DIMENSIONS,
     limit: 8,
@@ -132,7 +136,7 @@ function parseArgs(argv) {
   if (!['note', 'none'].includes(options.group)) {
     throw new Error('--group must be note or none');
   }
-  if (!['hash', 'ollama'].includes(options.provider)) {
+  if (options.provider !== null && !EMBED_PROVIDERS.includes(options.provider)) {
     throw new Error(`Unsupported embedding provider: ${options.provider}`);
   }
   if (!Number.isInteger(options.dimensions) || options.dimensions < 32 || options.dimensions > 4096) {
@@ -484,9 +488,20 @@ const EMBEDDING_PROMPTS = {
     document: (title, text) => `title: ${String(title || '').trim() || 'none'} | text: ${text}`,
     query: (text) => `task: search result | query: ${text}`,
   },
+  // The E5 family is trained with `query: ` and `passage: ` glued to the text.
+  e5: {
+    id: 'e5-v1',
+    document: (title, text) => `passage: ${[String(title || '').trim(), text].filter(Boolean).join('\n')}`,
+    query: (text) => `query: ${text}`,
+  },
 };
 
 function embeddingPrompt(provider, model) {
+  if (provider === 'openai') {
+    // The model is named by the endpoint (e.g. intfloat/multilingual-e5-base).
+    const base = String(model || '').split('/').pop();
+    return /e5/i.test(base) ? EMBEDDING_PROMPTS.e5 : null;
+  }
   if (provider !== 'ollama') return null;
   const family = String(model || '').split(':')[0].trim().toLowerCase();
   return EMBEDDING_PROMPTS[family] ?? null;
@@ -516,13 +531,40 @@ async function ollamaEmbeddings(texts, options) {
   return payload.embeddings.map(normalizeVector);
 }
 
+// OpenAI-compatible `POST <url>/v1/embeddings` (OpenAI, TEI, vLLM, …). A url that
+// already ends in `/v1` is accepted; the key is sent only when one is set.
+async function openaiEmbeddings(texts, options) {
+  if (!options.embedUrl) throw new Error('openai embedding provider needs KNOWLEDGE_EMBED_URL or embed.url');
+  const base = String(options.embedUrl).replace(/\/+$/, '').replace(/\/v1$/, '');
+  const headers = { 'content-type': 'application/json' };
+  if (options.embedApiKey) headers.authorization = `Bearer ${options.embedApiKey}`;
+  const response = await fetch(`${base}/v1/embeddings`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ model: options.model, input: texts }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 500);
+    throw new Error(`OpenAI-compatible embedding failed (${response.status}): ${detail}`);
+  }
+  const payload = await response.json();
+  const data = Array.isArray(payload.data) ? [...payload.data] : [];
+  if (data.length !== texts.length || data.some((item) => !Array.isArray(item?.embedding))) {
+    throw new Error('OpenAI-compatible endpoint returned an invalid embeddings response');
+  }
+  data.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+  return data.map((item) => normalizeVector(item.embedding));
+}
+
 async function embedTexts(texts, options) {
   if (options.provider === 'hash') {
     return texts.map((text) => hashEmbedding(text, options.dimensions));
   }
+  const embed = options.provider === 'openai' ? openaiEmbeddings : ollamaEmbeddings;
   const embeddings = [];
   for (let index = 0; index < texts.length; index += 32) {
-    embeddings.push(...await ollamaEmbeddings(texts.slice(index, index + 32), options));
+    embeddings.push(...await embed(texts.slice(index, index + 32), options));
   }
   return embeddings;
 }
@@ -690,14 +732,22 @@ function loadEmbeddingCache(dbPath, config, promptId) {
 async function sqliteBuildIndex(inputRoot, options = {}) {
   const root = findKnowledgeRoot(inputRoot);
   const dbPath = resolveDbPath(root, options.db);
-  const provider = options.provider || 'hash';
+  const embed = loadEmbedConfig(root, options);
+  const provider = embed.provider;
+  if (!EMBED_PROVIDERS.includes(provider)) throw new Error(`Unsupported embedding provider: ${provider}`);
   const dimensions = options.dimensions || DEFAULT_DIMENSIONS;
-  const model = provider === 'hash' ? `local-hash-v1:${dimensions}` : (options.model || DEFAULT_OLLAMA_MODEL);
+  if (provider === 'openai' && !embed.model) {
+    throw new Error('openai embedding provider needs a model (KNOWLEDGE_EMBED_MODEL or embed.model)');
+  }
+  const model = provider === 'hash' ? `local-hash-v1:${dimensions}` : (embed.model || DEFAULT_OLLAMA_MODEL);
   const config = {
     provider,
     dimensions,
     model,
     ollamaUrl: options.ollamaUrl || DEFAULT_OLLAMA_URL,
+    // Used to call the endpoint only; never recorded in the index metadata.
+    embedUrl: embed.url,
+    embedApiKey: embed.apiKey,
   };
   const data = collectKnowledge(root);
   if (!data.documents.length && !data.edges.length) {
@@ -893,14 +943,14 @@ function openIndex(inputRoot, dbPath = null) {
 // second prefix ("재고를" reaches "재고"). Particles are ambiguous — 재시도 ends
 // in 도 — so the stem is added beside the word, never instead of it: an
 // over-strip widens recall, and the unstripped word still ranks the true match.
-const KOREAN_PARTICLES = ['에서는', '에서', '으로', '에게', '까지', '부터', '와', '과', '을', '를', '이', '가', '은', '는', '의', '에', '로', '도', '만']
+const PARTICLES_LONGEST_FIRST = [...KOREAN_PARTICLES]
   .sort((left, right) => right.length - left.length);
 const HANGUL_WORD = /^\p{Script=Hangul}+$/u;
 const MAX_QUERY_TOKENS = 24;
 
 function koreanForms(token) {
   if (!HANGUL_WORD.test(token)) return [token];
-  const particle = KOREAN_PARTICLES.find((item) => token.endsWith(item) && [...token].length - [...item].length >= 2);
+  const particle = PARTICLES_LONGEST_FIRST.find((item) => token.endsWith(item) && [...token].length - [...item].length >= 2);
   return particle ? [token, token.slice(0, -particle.length)] : [token];
 }
 
@@ -952,6 +1002,14 @@ async function queryEmbedding(text, metadata, options = {}) {
     return (await ollamaEmbeddings([prompt ? prompt.query(text) : text], {
       model: metadata.embedding_model,
       ollamaUrl: options.ollamaUrl || process.env.OLLAMA_HOST || DEFAULT_OLLAMA_URL,
+    }))[0];
+  }
+  if (provider === 'openai') {
+    const prompt = promptById(metadata.embedding_prompt);
+    return (await openaiEmbeddings([prompt ? prompt.query(text) : text], {
+      model: metadata.embedding_model,
+      embedUrl: options.embedUrl,
+      embedApiKey: options.embedApiKey,
     }))[0];
   }
   throw new Error(`Unsupported index embedding provider: ${provider}`);
@@ -1264,7 +1322,10 @@ async function sqliteSearch(inputRoot, query, options = {}) {
     const cacheKey = `${metadata.embedding_model}\u0000${query}`;
     let queryVector = cache?.get(cacheKey);
     if (!queryVector) {
-      queryVector = await queryEmbedding(query, metadata, options);
+      const embed = metadata.embedding_provider === 'openai' ? loadEmbedConfig(root, options) : null;
+      queryVector = await queryEmbedding(query, metadata, embed
+        ? { ...options, embedUrl: embed.url, embedApiKey: embed.apiKey }
+        : options);
       cache?.set(cacheKey, queryVector);
     }
     const filter = documentFilter(options);
@@ -1997,8 +2058,8 @@ const MCP_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        provider: { type: 'string', enum: ['hash', 'ollama'], description: 'hash is dependency-free; ollama provides semantic embeddings.' },
-        model: { type: 'string', description: 'Ollama embedding model when provider is ollama.' },
+        provider: { type: 'string', enum: ['hash', 'ollama', 'openai'], description: 'hash is dependency-free; ollama and openai (an OpenAI-compatible endpoint set by KNOWLEDGE_EMBED_URL) provide semantic embeddings. Unset: env, then _knowledge/config.json embed.provider, then hash.' },
+        model: { type: 'string', description: 'Embedding model when provider is ollama or openai.' },
       },
       additionalProperties: false,
     },
@@ -2062,8 +2123,8 @@ async function callMcpTool(root, dbPath, name, args = {}) {
   if (name === 'knowledge_index') {
     return buildIndex(root, {
       db: dbPath,
-      provider: args.provider || process.env.KNOWLEDGE_EMBED_PROVIDER || 'hash',
-      model: args.model || process.env.KNOWLEDGE_EMBED_MODEL || DEFAULT_OLLAMA_MODEL,
+      provider: args.provider,
+      model: args.model,
       ollamaUrl: process.env.OLLAMA_HOST || DEFAULT_OLLAMA_URL,
       dimensions: DEFAULT_DIMENSIONS,
     });

@@ -49,8 +49,15 @@ function overlaps(ranges, start, end) {
   return ranges.some(([a, b]) => start < b && end > a);
 }
 
+// The one Korean particle list: capture links across it, the index tokenizer strips it.
+export const KOREAN_PARTICLES = ['에서는', '에서', '으로', '에게', '까지', '부터', '와', '과', '을', '를', '이', '가', '은', '는', '의', '에', '로', '도', '만'];
+
+function followedByParticle(rest) {
+  return KOREAN_PARTICLES.some((item) => rest.startsWith(item) && !WORD.test(rest[item.length] || ' '));
+}
+
 // First place `term` appears in `text` as a whole word, outside code and links.
-// A Hangul term may be followed by more Hangul (a particle: 결제 승인을, 결제 승인은).
+// A Hangul term may be followed by a listed particle (결제 승인을, 결제 승인은), not by other Hangul (결제 승인서).
 export function findTerm(text, term, ranges = protectedRanges(text)) {
   const needle = term.normalize('NFC').toLowerCase();
   const hay = text.toLowerCase();
@@ -63,7 +70,7 @@ export function findTerm(text, term, ranges = protectedRanges(text)) {
     const before = hay[at - 1];
     const after = hay[at + needle.length];
     const okBefore = !before || !WORD.test(before);
-    const okAfter = !after || !WORD.test(after) || (hangulEnd && HANGUL.test(after));
+    const okAfter = !after || !WORD.test(after) || (hangulEnd && HANGUL.test(after) && followedByParticle(hay.slice(at + needle.length)));
     if (okBefore && okAfter && !overlaps(ranges, at, at + needle.length)) return at;
     from = at + 1;
   }

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
@@ -12,6 +12,7 @@ import {
   questionReachability,
   validateEdges,
 } from './knowledge-graph.mjs';
+import { appendJsonl, consumeQueue, readQueue } from './knowledge-jobs.mjs';
 import { chooseModel, pickTier, probeHardware } from './knowledge-probe.mjs';
 import { validateKnowledge } from './validate-knowledge.mjs';
 
@@ -247,12 +248,130 @@ test('no endpoint: says so and leaves _graph byte for byte', async (t) => {
   assert.equal(treeHash(root), before);
 });
 
+const probeSources = { nvidiaSmi: () => null, totalMem: GB, freeMem: GB, cores: 1 };
+
+function countingChat(inner = fakeChat) {
+  const titles = [];
+  const chat = async (messages) => {
+    titles.push(/Note "([^"]+)"/.exec(messages[1].content)[1]);
+    return inner(messages);
+  };
+  return { chat, titles };
+}
+
+const queueFile = (root) => join(root, '_knowledge', 'jobs', 'graph-update-queue.jsonl');
+const queue = (root, ...files) => {
+  for (const file of files) appendJsonl(queueFile(root), { file, reason: 'edited', queued_at: '2026-11-19T00:00:00.000Z' });
+};
+const lines = (path) => readFileSync(path, 'utf8').split('\n').filter(Boolean);
+
+test('incremental: a queued note is re-extracted alone, an unqueued note is not re-sent to the model', async (t) => {
+  const { project, root } = vault(t);
+  const counter = countingChat();
+  const run = (extra = {}) => buildGraph(project, { chat: counter.chat, env: {}, index: false, probeSources, ...extra });
+  const full = await run();
+  assert.equal(full.mode, 'full');
+  assert.deepEqual(counter.titles, ['Order Service', 'Payments DB']);
+  const edgesBefore = lines(join(root, '_graph', 'edges.jsonl'));
+  const nodesBefore = lines(join(root, '_graph', 'nodes.jsonl'));
+  counter.titles.length = 0;
+  queue(root, 'notes/payments-db.md');
+  const result = await run();
+  assert.deepEqual(counter.titles, ['Payments DB']);
+  assert.equal(result.mode, 'incremental');
+  assert.deepEqual([result.notes_queued, result.notes_deleted, result.queue_remaining], [1, 0, 0]);
+  assert.deepEqual([result.nodes, result.edges], [3, 2]);
+  // Lines of the note that was not queued are byte-equal.
+  const edgesAfter = lines(join(root, '_graph', 'edges.jsonl'));
+  const orderEdge = edgesBefore.find((l) => l.includes('"order-service"'));
+  assert.ok(edgesAfter.includes(orderEdge));
+  assert.ok(nodesBefore.filter((l) => l.includes('Order Service')).every((l) => lines(join(root, '_graph', 'nodes.jsonl')).includes(l)));
+  assert.equal(lines(queueFile(root)).length, 0);
+});
+
+test('incremental: a rerun with --full re-extracts every note and ignores the existing graph', async (t) => {
+  const { project, root } = vault(t);
+  const counter = countingChat();
+  await buildGraph(project, { chat: counter.chat, env: {}, index: false, probeSources });
+  counter.titles.length = 0;
+  const result = await buildGraph(project, { chat: counter.chat, env: {}, index: false, probeSources, full: true });
+  assert.equal(result.mode, 'full');
+  assert.equal(counter.titles.length, 2);
+});
+
+test('queue (a): entries leave the queue only after _graph is written', { skip: process.getuid?.() === 0 }, async (t) => {
+  const { project, root } = vault(t);
+  await buildGraph(project, { chat: fakeChat, env: {}, index: false, probeSources });
+  queue(root, 'notes/payments-db.md');
+  chmodSync(join(root, '_graph'), 0o500);
+  // The temp dir's own cleanup may run first; restore only what is still there.
+  t.after(() => existsSync(join(root, '_graph')) && chmodSync(join(root, '_graph'), 0o700));
+  await assert.rejects(buildGraph(project, { chat: fakeChat, env: {}, index: false, probeSources }));
+  assert.equal(lines(queueFile(root)).length, 1);
+  chmodSync(join(root, '_graph'), 0o700);
+  const result = await buildGraph(project, { chat: fakeChat, env: {}, index: false, probeSources });
+  assert.equal(result.queue_remaining, 0);
+  assert.equal(lines(queueFile(root)).length, 0);
+});
+
+test('queue (b): a note whose extraction failed stays queued and keeps its earlier nodes and edges', async (t) => {
+  const { project, root } = vault(t);
+  await buildGraph(project, { chat: fakeChat, env: {}, index: false, probeSources });
+  queue(root, 'notes/order-service.md', 'notes/payments-db.md');
+  const chat = async (messages) => (/Note "Payments DB"/.test(messages[1].content) ? 'not json' : fakeChat(messages));
+  const result = await buildGraph(project, { chat, env: {}, index: false, probeSources });
+  assert.equal(result.notes_failed.length, 1);
+  assert.equal(result.queue_remaining, 1);
+  assert.match(lines(queueFile(root))[0], /payments-db\.md/);
+  const edges = lines(join(root, '_graph', 'edges.jsonl')).map((l) => JSON.parse(l));
+  assert.ok(edges.some((e) => e.type === 'OWNS' && e.source === 'n-billing-team'));
+});
+
+test('queue (c): a queued note that no longer exists loses its nodes and edges with no model call', async (t) => {
+  const { project, root } = vault(t);
+  await buildGraph(project, { chat: fakeChat, env: {}, index: false, probeSources });
+  rmSync(join(root, 'notes', 'payments-db.md'));
+  queue(root, 'notes/payments-db.md');
+  const counter = countingChat();
+  const result = await buildGraph(project, { chat: counter.chat, env: {}, index: false, probeSources });
+  assert.equal(counter.titles.length, 0);
+  assert.deepEqual([result.mode, result.notes_deleted, result.queue_remaining], ['incremental', 1, 0]);
+  const nodes = lines(join(root, '_graph', 'nodes.jsonl')).map((l) => JSON.parse(l).id);
+  assert.deepEqual(nodes, ['order-service']);
+  assert.equal(lines(join(root, '_graph', 'edges.jsonl')).length, 0);
+});
+
+test('queue (d): an empty queue with an existing _graph makes no model call and leaves _graph untouched', async (t) => {
+  const { project, root } = vault(t);
+  await buildGraph(project, { chat: fakeChat, env: {}, index: false, probeSources });
+  const mtimes = () => ['nodes.jsonl', 'edges.jsonl'].map((n) => statSync(join(root, '_graph', n)).mtimeMs);
+  const before = mtimes();
+  const counter = countingChat();
+  const result = await buildGraph(project, { chat: counter.chat, env: {}, index: false, probeSources });
+  assert.equal(counter.titles.length, 0);
+  assert.deepEqual([result.status, result.mode, result.notes_queued], ['up-to-date', 'incremental', 0]);
+  assert.deepEqual(mtimes(), before);
+});
+
+test('queue: consumeQueue removes only the given entries and keeps one appended after the read', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'knowledge-queue-'));
+  try {
+    queue(dir, 'a.md', 'b.md');
+    const read = readQueue(dir, 'graph');
+    queue(dir, 'c.md');
+    consumeQueue(dir, 'graph', read.slice(0, 1));
+    assert.deepEqual(lines(queueFile(dir)).map((l) => JSON.parse(l).file), ['b.md', 'c.md']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('every note failing (timeout, bad JSON) leaves _graph as it was; a rebuild keeps the previous graph', async (t) => {
   const { project, root } = vault(t);
   put(join(root, '_graph', 'nodes.jsonl'), '{"id":"hand-made"}\n');
   const before = treeHash(join(root, '_graph'));
-  await assert.rejects(buildGraph(project, { chat: async () => 'not json', env: {}, index: false, probeSources: { nvidiaSmi: () => null, totalMem: GB, freeMem: GB, cores: 1 } }), /_graph was not changed/);
+  await assert.rejects(buildGraph(project, { chat: async () => 'not json', env: {}, index: false, full: true, probeSources: { nvidiaSmi: () => null, totalMem: GB, freeMem: GB, cores: 1 } }), /_graph was not changed/);
   assert.equal(treeHash(join(root, '_graph')), before);
-  await buildGraph(project, { chat: fakeChat, env: {}, index: false, probeSources: { nvidiaSmi: () => null, totalMem: GB, freeMem: GB, cores: 1 } });
+  await buildGraph(project, { chat: fakeChat, env: {}, index: false, full: true, probeSources: { nvidiaSmi: () => null, totalMem: GB, freeMem: GB, cores: 1 } });
   assert.equal(readFileSync(join(root, '.knowledge', 'graph-previous', 'nodes.jsonl'), 'utf8'), '{"id":"hand-made"}\n');
 });
