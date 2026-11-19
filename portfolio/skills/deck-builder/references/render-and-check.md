@@ -58,11 +58,15 @@ below. A `| fit` picture shrinks inside its frame and so never enters a zone.
 `render` reads the rendered lines: `zone` when a frame's text runs past it (either way — a
 bottom-anchored body overruns upward) into the zone, `drift` when slides of one archetype show
 the same pair's gap spreading wider than the template's own cluster (at least 1pt), listing the
-slides and gaps. Frames never move; the fix is shorter content or another archetype.
+slides and gaps. Where a drift comes from where the lower shape's text sits inside its own frame
+(a centre-anchored footnote of one line sits half a line lower than one of two), the rebuild lifts
+that frame by the difference, never past the closest gap the other pages keep; a `place:`d shape
+is not lifted. Any other drift is reported; the fix is shorter content or another archetype.
 
-Known limit: pdftotext can merge lines of two side-by-side frames into one block; the
-finding then lands on the right page and victim, but may name the neighbouring outline as the
-source.
+pdftotext can merge two frames 2pt apart into one block; a line goes to the other frame when
+that frame holds its width and middle and starts at another indent (an overrun line starts at its
+own frame's left edge, so it stays). Known limit: lines of two side-by-side frames merged at one
+indent may still name the neighbouring outline as the source.
 
 
 ## `render`

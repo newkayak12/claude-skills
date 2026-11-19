@@ -148,7 +148,10 @@ Every session in the workspace starts with `manage.mjs scaffold`, unasked: it re
 to these, creates only what is missing, CLAUDE.md included, and never overwrites a file. A CLAUDE.md
 that is already there (a renamed README too) keeps its text and gets the guide appended once.
 
-Nine steps (3.2.7: a picture `place:` would push past the slide is fitted into the safe area at
+Nine steps (3.2.8: deck `render` evens a footnote-to-panel gap that drifts only because a
+centre-anchored footnote of one line sits lower than one of two (the frame is lifted by the
+difference), and no longer reads two frames 2pt apart, merged into one rendered block, as an
+overrun; 3.2.7: a picture `place:` would push past the slide is fitted into the safe area at
 its new spot, aspect kept; `color:` sets a whole shape's text colour, a span's own colour still
 wins — the two things a hand-finished deck's migration still needed by hand; 3.2.6: deck `render` measures figure text at its built size and raises what shows
 under 7.5pt in the SVG's raster copy, each label only as far as it fits its box (median 5.5 →

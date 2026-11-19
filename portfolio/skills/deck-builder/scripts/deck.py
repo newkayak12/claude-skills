@@ -234,7 +234,17 @@ def fit_zones(spTree, slots, fixes, safe_bottom, placed=()):
         if key in done or d <= 0:
             continue
         done.add(key)
-        if kind == "up":
+        if kind == "lift":
+            # drift: the unit's text starts lower in its frame than on the archetype's other pages
+            # (a centre-anchored footnote of fewer lines) — the frame rises by the difference
+            own = [c for c in tops if all(abs(pt(v) - w) <= 2 for v, w in zip(shape_box(c), box))]
+            if not own or any(id(c) in placed for c in own):
+                continue
+            for c in own:
+                move(c, -d)
+            notes.append("%s lifted %.1fpt so its text starts as far under the shape above as on "
+                         "the layout's other pages" % (ids(members), d))
+        elif kind == "up":
             bottom = box[1] + box[3]
             row = [c for c in tops if _is_panel(c) and abs(pt(sum(shape_box(c)[1::2])) - bottom) <= 2]
             if not row:
@@ -4522,9 +4532,19 @@ def zone_audit(xml_text, archetypes, zones, slide_w_pt, page_zones=None, fixes=N
                 * (box_intersection(bx, u) or (0, 0, 0, 0))[3], default=None)
             if own is None or not box_intersection(bx, own):
                 continue
-            got = content.setdefault(own, [1e9, 1e9, -1e9, -1e9])
-            owned.setdefault(own, []).extend(tuple(v / k for v in box) for box, _ in lines)
+
+            def whole(box):
+                """Another frame holding the line (its width whole, its middle), set at another indent: the renderer merged
+                two frames 2pt apart into one block (page 3, 2026-11-19). An overrun line starts at
+                its own frame's left edge, so it stays."""
+                x0, y0, x1, y1 = (v / k for v in box)
+                return next((u for u in boxes if u is not own and abs(u[0] - own[0]) > ZONE_TOL_PT
+                             and u[0] - ZONE_TOL_PT <= x0 and x1 <= u[0] + u[2] + ZONE_TOL_PT
+                             and u[1] <= (y0 + y1) / 2 <= u[1] + u[3]), None)
             for box, _ in lines:
+                unit = whole(box) or own
+                got = content.setdefault(unit, [1e9, 1e9, -1e9, -1e9])
+                owned.setdefault(unit, []).append(tuple(v / k for v in box))
                 got[0], got[1] = min(got[0], box[0] / k), min(got[1], box[1] / k)
                 got[2], got[3] = max(got[2], box[2] / k), max(got[3], box[3] / k)
         def level(unit, other):
@@ -4565,7 +4585,10 @@ def zone_audit(xml_text, archetypes, zones, slide_w_pt, page_zones=None, fixes=N
                     fixes.setdefault(pi, []).append(("up", list(r["a"]), r["zone"] - (back - frame_end), a))
             if seen_gap is None:
                 continue
-            seen.setdefault((arch, r["label"]), []).append((pi, seen_gap, r["spread"]))
+            # where the later unit's text starts inside its own frame (a centre-anchored line sits
+            # lower than two): the part of a drift no content above explains
+            inner = cb[1] - b[1] if has_b and (pictured or not ca) else None
+            seen.setdefault((arch, r["label"]), []).append((pi, seen_gap, r["spread"], inner, r))
             if content.get(a) and content.get(b):
                 page_gaps.setdefault((r["key"], round(r["gap"] / (2 * ZONE_TOL_PT))), []).append((r["label"], seen_gap))
         # `uneven`: pairs the template spaces alike (one role pair, one gap) whose text, as rendered, sits
@@ -4580,11 +4603,22 @@ def zone_audit(xml_text, archetypes, zones, slide_w_pt, page_zones=None, fixes=N
     for (arch, label), obs in sorted(seen.items(), key=lambda kv: kv[1][0][0]):
         if len(obs) < 2:
             continue
-        gaps = [g for _, g, _ in obs]
+        gaps = [o[1] for o in obs]
         if max(gaps) - min(gaps) > max(obs[0][2], ZONE_TOL_PT):
             found.append((obs[0][0], "drift", "@%s 슬라이드 %s: %s %s pt"
-                          % (arch, "·".join(str(p) for p, _, _ in obs), label,
+                          % (arch, "·".join(str(o[0]) for o in obs), label,
                              "/".join("%.0f" % g for g in gaps))))
+            inners = [o[3] for o in obs]
+            if fixes is not None and None not in inners:
+                # never past the closest gap seen; a page under its zone gets an "up" fix that
+                # brings it to the zone, so it counts at the zone and not as the target
+                zone = lambda o: o[1] if o[4]["zone"] is None else max(o[1], o[4]["zone"])
+                clear = [o for o in obs if zone(o) == o[1]] or obs
+                base, near = min(o[3] for o in clear), min(zone(o) for o in obs)
+                for pi, gap, _, inner, r in obs:
+                    lift = min(inner - base, gap - near)
+                    if lift > ZONE_TOL_PT:
+                        fixes.setdefault(pi, []).append(("lift", list(r["b"]), lift, r["b_box"]))
     return found
 
 

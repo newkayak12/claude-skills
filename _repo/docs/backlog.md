@@ -104,9 +104,9 @@ real deck lone commas 316 → 0, engine version printed).
     - Left: (1) and (2) wait (scope above); (2)'s figure text is now raised by render (3.2.6). The
       placed-picture size and slot-level colour shipped in 3.2.7 (`place:` fits a grown picture into
       the safe area; `color:` per shape). Render findings
-      on the migrated copy, triaged in 3.2.3 (zones kept by render, user 2026-11-18 "글 넘침 조정해야지"):
-      3 left, all real — a number split from its unit (12), a lone word (17), and footnote-to-panel
-      gaps 21 vs 27pt across 7·8·11·16·17 by footnote line count (drift; nothing crosses).
+      on the migrated copy: all closed — the split number and lone word glued (3.2.5), the
+      footnote-gap drift evened by lifting the centre-anchored footnote and page 3's false zone hit
+      (two frames merged in one rendered block) gone (3.2.8; layout clean; blind 11·17 4/4 better).
 
 153. **The deck render is checked against PowerPoint, and the 3.2.0 audits catch what they missed**
     - Why: after portfolio 3.2.0 (2026-11-14) the deck renderer is checked only against Word's saved

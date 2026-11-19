@@ -472,6 +472,32 @@ def uneven():
                     ["s1"], {"s1": [down]}, 960.0, fixes=fixes)
     check(fixes.get(1) and fixes[1][0][:2] == ("up", ["text1"]) and abs(fixes[1][0][2] - 6.0) < 0.1,
           "text growing 6pt up into the zone above: give back 6pt from A's bottom — %s" % fixes)
+    # a centre-anchored footnote: one line sits 6pt lower in its frame than two lines do
+    fixes = {}
+    hits = deck.zone_audit(pages_to_xml(pg(130)[:1] + [(960.0, 540.0, [[line(30, 110, 400, 130)],
+                                                                         [line(20, 418, 300, 430)]])]),
+                           ["s1", "s1"], {"s1": [panel]}, 960.0, fixes=fixes)
+    check([h for h in hits if h[1] == "drift"] and list(fixes) == [2] and fixes[2][0][:2] == ("lift", ["text14"])
+          and abs(fixes[2][0][2] - 6.0) < 0.1,
+          "a footnote starting 6pt lower in its frame on one page: lift it 6pt there — %s" % fixes)
+    # one page whose footnote runs up under its zone is brought to the zone by "up", not the target
+    fixes = {}
+    deck.zone_audit(pages_to_xml([(960.0, 540.0, [[line(30, 110, 400, 130)], [line(20, 405, 300, 430)]])]
+                                 + pg(130) + [(960.0, 540.0, [[line(30, 110, 400, 130)], [line(20, 418, 300, 430)]])]),
+                    ["s1"] * 3, {"s1": [panel]}, 960.0, fixes=fixes)
+    check([f[0] for f in fixes.get(1, [])] == ["up"] and fixes.get(3) and abs(fixes[3][0][2] - 6.0) < 0.1
+          and not fixes.get(2), "a page under its zone counts at the zone: the others lift only to it — %s" % fixes)
+    # two frames 2pt apart that the renderer merged into one block: each line goes to its frame
+    head = {"a": ["text7"], "b": ["text19"], "a_box": (265.0, 131.0, 230.0, 23.0),
+            "b_box": (279.0, 156.0, 205.0, 54.0), "axis": "↓", "key": ("h", "l", "↓"), "gap": 2.0,
+            "zone": 0.6, "spread": 0.0, "borrowed": False, "label": "head ↓ list"}
+    hits = deck.zone_audit(pages_to_xml([(960.0, 540.0, [[line(272, 140, 487, 152), line(286, 154.5, 355, 167),
+                                                          line(286, 204, 384, 216)]])]),
+                           ["s1"], {"s1": [head]}, 960.0)
+    check(not hits, "one rendered block over two frames at different indents is not an overrun — %s" % hits)
+    hits = deck.zone_audit(pages_to_xml([(960.0, 540.0, [[line(265, 140, 487, 152), line(265, 160, 480, 172)]])]),
+                           ["s1"], {"s1": [head]}, 960.0)
+    check([h for h in hits if h[1] == "zone"], "a line at the upper frame's own indent still overruns — %s" % hits)
 
 
 def drift(tmp):
@@ -2108,6 +2134,13 @@ def layout_options(tmp):
     deck.fit_zones(t, ss, [("up", [named["PanL"]], 6.0, (40.0, 100.0, 400.0, 300.0))], 512.0)
     check(box(t, "PanL")[3] == 294 and box(t, "PicL") == (140, 280, 200, 95),
           "a picture still inside the shortened panel keeps its frame: %s" % (box(t, "PicL"),))
+    t, ss, named = slots_of([sp("Foot", 40, 410, 300, 20, "각주")])
+    notes, _ = deck.fit_zones(t, ss, [("lift", [named["Foot"]], 6.0, (40.0, 410.0, 300.0, 20.0))], 512.0)
+    check(box(t, "Foot")[1] == 404 and notes, "lift 6pt: the footnote frame starts 6pt higher: %s" % (box(t, "Foot"),))
+    t, ss, named = slots_of([sp("Foot", 40, 410, 300, 20, "각주")])
+    deck.fit_zones(t, ss, [("lift", [named["Foot"]], 6.0, (40.0, 410.0, 300.0, 20.0))], 512.0,
+                   placed={id(c) for c in t})
+    check(box(t, "Foot")[1] == 410, "a placed footnote is not lifted: %s" % (box(t, "Foot"),))
     col = [sp("Lead", 40, 100, 400, 40, "글"), sp("Next", 40, 150, 400, 40, "아래"),
            pic("Under", 40, 200, 200, 100), sp("Side", 600, 150, 300, 40, "옆"), sp("Band", 40, 515, 300, 15, "쪽")]
     t, ss, named = slots_of(col)
