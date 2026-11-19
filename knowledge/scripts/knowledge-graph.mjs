@@ -230,7 +230,7 @@ export async function extractGraph(root, { chat, config, log = () => {}, limit =
   const nameToId = new Map();
   const nodes = new Map();
   for (const entry of catalog) {
-    for (const term of [entry.title, ...(entry.aliases || [])]) if (term) nameToId.set(normalizeTerm(term), entry.id);
+    for (const term of [entry.id, entry.title, ...(entry.aliases || [])]) if (term) nameToId.set(normalizeTerm(term), entry.id);
     nodes.set(entry.id, { id: entry.id, canonical_name: entry.title || entry.id, label: cleanLabel(entry.type || 'Note'), aliases: entry.aliases || [], note_path: entry.path });
   }
   const knownNames = catalog.map((entry) => entry.title).filter(Boolean);
@@ -278,7 +278,18 @@ export async function extractGraph(root, { chat, config, log = () => {}, limit =
       }
     }
     for (const relation of Array.isArray(reply.relations) ? reply.relations : []) {
-      const resolveName = (name) => localIds.get(normalizeTerm(name)) || nameToId.get(normalizeTerm(name)) || null;
+      // An endpoint the model did not list as an entity still becomes a node
+      // when the note itself names it; anything else stays unknown and is refused.
+      const resolveName = (name) => {
+        const key = normalizeTerm(name);
+        const known = localIds.get(key) || nameToId.get(key);
+        if (known || !key || !normalizeTerm(text).includes(key)) return known || null;
+        const id = `n-${slugify(String(name).trim())}`;
+        nameToId.set(key, id);
+        localIds.set(key, id);
+        if (!nodes.has(id)) nodes.set(id, { id, canonical_name: String(name).trim(), label: 'Entity', aliases: [], source_refs: [entry.path] });
+        return id;
+      };
       candidates.push({
         source: resolveName(relation?.source),
         target: resolveName(relation?.target),

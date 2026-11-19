@@ -224,6 +224,19 @@ test('build output passes validate-knowledge when the question is reachable', as
   assert.deepEqual(graphErrors, []);
 });
 
+test('endpoints: a note id resolves; a name the note states becomes a node; an invented name stays unknown', async (t) => {
+  const { project } = vault(t);
+  const chat = async (messages) => (/Note "Order Service"/.test(messages[1].content)
+    ? JSON.stringify({ entities: [], relations: [
+      { source: 'order-service', target: 'Payments DB', type: 'DEPENDS_ON', evidence: 'The Order Service depends on the Payments DB.' },
+      { source: 'Order Service', target: 'Ghost Queue', type: 'CALLS', evidence: 'The Order Service depends on the Payments DB.' },
+    ] })
+    : JSON.stringify({ entities: [], relations: [] }));
+  const result = await buildGraph(project, { chat, env: {}, index: false, probeSources: { nvidiaSmi: () => null, totalMem: GB, freeMem: GB, cores: 1 } });
+  assert.equal(result.edges, 1);
+  assert.deepEqual(result.rejected_by_reason, { 'unknown-target-node': 1 });
+});
+
 test('no endpoint: says so and leaves _graph byte for byte', async (t) => {
   const { project, root } = vault(t);
   put(join(root, '_graph', 'nodes.jsonl'), '{"id":"hand-made"}\n');
