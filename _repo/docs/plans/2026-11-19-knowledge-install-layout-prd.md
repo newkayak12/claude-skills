@@ -25,7 +25,10 @@ Decisions taken as rules:
 - **Published for F3's profile to reuse**: the root variable is `KNOWLEDGE_ROOT`; the mount line is `${KNOWLEDGE_ROOT:?KNOWLEDGE_ROOT must be the project to index}:/workspace`. Every service that mounts a project uses exactly this line; `ollama` mounts only its named volume. `build.context: .` stays (the Dockerfile COPYs from the plugin; finding 3).
 - **Resolver: one shared module** `knowledge/scripts/knowledge-paths.mjs`, imported by the hook and the script (default - revisit with implementation lead). The hook walks up from the edited file to the first dir where the script's rule finds artifacts, keeping the cwd bound and the `knowledge-system` name fallback (default - revisit with implementation lead).
 - `findKnowledgeRoot(inputRoot)` keeps its signature and its export (callers `:703`, `:887`, `:1606`, `:1889`).
-- The config `root` key's file, name and precedence are defined by F2; F1's resolver reads it from there.
+- **Config file (settled, task decision):** `<knowledge root>/_knowledge/config.json`; env vars override its values. F2 defines the schema and the `root` key's place in it; F1's resolver reads that key.
+- **Config `root` is a redirect (default - revisit with F2 PLAN and the F1 build package):** the file lives inside the root it would name, so the resolver reads `root` once, from the first resolved root's `_knowledge/config.json`, and never chains.
+- **WAL files (default - revisit with the F1 build package):** `index` sets `PRAGMA journal_mode = WAL` (`sqlite-knowledge.mjs:580`), so `knowledge.sqlite-wal` and `-shm` may remain. The scratch run checks for them; if they remain they are listed in table row 4.
+- **No `KNOWLEDGE_ROOT` reader exists in node code today** (grep: 0 matches in `knowledge/scripts`, `knowledge/hooks`); the variable lives in compose and docs only (findings, repair note attempt 3).
 
 ## User stories
 
@@ -60,7 +63,7 @@ As an instance owner, the delta hook and `sqlite-knowledge.mjs` find the same kn
 - Resolution rule (the card's own criteria, F1-AC-2):
   - `knowledge/scripts/knowledge-paths.mjs` holds the logic; the hook imports it; the script keeps `findKnowledgeRoot(inputRoot)` with an unchanged signature and export (`sqlite-knowledge.mjs:2130`) so `buildIndex`, `openIndex`, `evalQuestions` and `indexStatus` need no edit.
   - The hook walks up from the edited file to the first dir where the script's rule finds artifacts, bounded by cwd, with the `knowledge-system` name fallback.
-  - The config `root` key is read by this resolver from the place F2 defines; F1 does not define its file, name or precedence.
+  - The config `root` key is read by this resolver from `<knowledge root>/_knowledge/config.json` (settled; env overrides the file) as a one-step redirect from the first resolved root, no chaining (default - revisit with F2 PLAN); F2 defines the key's schema.
   - Node tests run both entry points on the same fixtures: root with artifacts, nested `knowledge-system/`, `knowledge-base/`, `knowledge-artifacts/`, a root with none, and a configured `root` (the last once F2 lands). Both give the same dir. The existing suites stay green: `node --test knowledge/scripts/*.test.mjs knowledge/hooks/*.test.mjs`, counts reported.
 - R1: Shared engine: noah, genna personal graphs and general projects all use it — per-instance root, ontology and link policy are config; no instance name in engine code (user: "우리 지식 저장소를 upgrade 할거고 이걸 noah, genna에서 개인화 그래프 용도로도 사용할거야 범용도 있고")
   - applied: the root comes from `--root`, `KNOWLEDGE_ROOT` or config; `grep -ni 'noah\|genna' knowledge/scripts knowledge/hooks` finds nothing in the resolver.
@@ -101,9 +104,9 @@ As a tester, I check that what is on disk is what the table names, from a copy p
 
 **Acceptance**
 - A1.3: a scratch project in tmp/ indexed with scripts/sqlite-knowledge.mjs produces exactly the files the table names
-  - Copy the plugin to `tmp/<run>/plugins/cache/<market>/knowledge/<ver>/`; build `tmp/<run>/project/` with a `knowledge-system/` tree holding artifacts.
-  - Run `node <copy>/scripts/sqlite-knowledge.mjs index --root tmp/<run>/project` and one hook invocation on an edited `.md`.
-  - `find tmp/<run>/project` lists F1's rows only: `knowledge-system/.knowledge/knowledge.sqlite` and `_knowledge/{checks,reports,jobs}/...`; `find` on the cache copy shows nothing new.
+  - Copy the plugin to `tmp/<run>/plugins/cache/<market>/knowledge/<ver>/`; build `tmp/<run>/project/` with a `knowledge-system/` tree that seeds `knowledge-system/_knowledge/catalog.jsonl` (input, an F2-block row). Without an artifact the script does not nest and writes `<project>/.knowledge/` instead (`sqlite-knowledge.mjs:171-183`).
+  - Diff the tree before and after each step. Step 1: `node <copy>/scripts/sqlite-knowledge.mjs index --root tmp/<run>/project` adds only `knowledge-system/.knowledge/knowledge.sqlite`, plus `-wal`/`-shm` if they remain (listed in row 4 if so). Step 2: one hook invocation on an edited `.md` adds `_knowledge/{checks,reports,jobs}/...`.
+  - `find tmp/<run>/project` lists F1's rows only; `find` on the cache copy shows nothing new.
   - Only F1's own rows are checked here. The check that the full table (F2, F3, F4 rows included) matches the disk belongs to integrate.
   - Run the compose rule checks of F1-US-1 from the same copy; record whether `.knowledge/` is writable under `USER node` for a bind mount of another uid (default - revisit with implementation lead: record the result if the run passes and document the uid requirement).
   - tmp/ is removed after the result is recorded.
@@ -130,10 +133,8 @@ As a tester, I check that what is on disk is what the table names, from a copy p
 
 ## Open questions
 
-- Is a shared `knowledge/scripts/knowledge-paths.mjs` better than the same logic in both files? — owner: implementation lead (F1 package). Written above as the rule (default - revisit).
-- What does 'agree' mean for the hook's walk-up? — owner: implementation lead. Written above as the rule (default - revisit).
-- What is the config root key's file, name, and precedence against --root and KNOWLEDGE_ROOT? — owner: F2 PLAN (dependency). F1's resolver reads it; its fixture waits for F2.
-- Does F1 also update skills/query/references/local-sqlite.md:140-164, which documents compose without KNOWLEDGE_ROOT? — owner: PO. Written above as yes (default - revisit).
-- Can USER node (uid 1000) in the image write .knowledge/ into a bind-mounted project owned by another uid? — owner: implementation lead. Recorded by the scratch run.
-- Which files do F3's profile and hardware probe, and F4's migrate/status, write on disk? — owners: F3 PLAN and F4 PLAN (dependency); integrate checks the full table.
+Decided by default and written above as rules, not open: shared `knowledge-paths.mjs` imported by both files (F1 build package); the config `root` redirect without chaining (F2 PLAN with the F1 build package); WAL/-shm checked in the scratch run (F1 build package); `local-sqlite.md:140-164` follows the new rule in F1 (PO).
+
+- Is a project bind-mount owned by another uid writable for USER node? — owner: F1 build package (recorded by the scratch run; document the uid requirement if it fails).
+- Which files F3's profile and probe and F4's migrate and status write (their table rows)? — owners: F3 PLAN, F4 PLAN (dependency); integrate checks the full table.
 - Does `docker compose config` on this machine confirm that `..` resolves to the compose file's parent and that `:?` fails naming the variable? — owner: tester (F1 package scratch run).
