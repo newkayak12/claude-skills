@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${PLUGIN_ROOT}/hooks/node-gate.mjs"
+            "command": "node \"${PLUGIN_ROOT}/hooks/node-gate.mjs\""
           }
         ]
       },
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${PLUGIN_ROOT}/hooks/node-gate.mjs"
+            "command": "node \"${PLUGIN_ROOT}/hooks/node-gate.mjs\""
           }
         ]
       }

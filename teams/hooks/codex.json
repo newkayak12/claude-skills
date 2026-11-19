@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${PLUGIN_ROOT}/hooks/dispatch-gate.mjs"
+            "command": "node \"${PLUGIN_ROOT}/hooks/dispatch-gate.mjs\""
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${PLUGIN_ROOT}/hooks/own-writes.mjs",
+            "command": "node \"${PLUGIN_ROOT}/hooks/own-writes.mjs\"",
             "timeout": 5
           }
         ]
