@@ -462,7 +462,7 @@ test('AC-X1: a graph node\'s final claude argv is lean - strict MCP, the teams s
   assert.deepEqual(invocations.map((i) => i.stage), ['plan', 'setgoal', 'critique', 'implement']);
   for (const { stage, args } of invocations) {
     assertLean(args, `node ${stage}`);
-    for (const f of args.filter((a) => a.startsWith('--'))) assert.ok(ADAPTER_FLAGS.has(f) || ['-p', '--output-format', '--no-session-persistence', '--strict-mcp-config', '--tools', '--permission-mode', '--allowedTools'].includes(f), `${stage}: unexpected claude flag ${f}`);
+    for (const f of args.filter((a) => a.startsWith('--'))) assert.ok(ADAPTER_FLAGS.has(f) || ['-p', '--output-format', '--verbose', '--no-session-persistence', '--strict-mcp-config', '--tools', '--permission-mode', '--allowedTools'].includes(f), `${stage}: unexpected claude flag ${f}`);
     assert.deepEqual(valuesOf(args, '--allowedTools').join(',').split(',').filter((t) => t === 'mcp__teams__tm_ask'), ['mcp__teams__tm_ask'], `${stage}: tm_ask is allowed`);
   }
   // the plugin dirs follow each node's own Method, never every installed plugin

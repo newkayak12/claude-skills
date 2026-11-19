@@ -3,7 +3,7 @@
 // project's permission settings; danger-full-access is an explicit per-run opt-in that
 // bypasses the prompt. A sandbox name here is a tool profile, not an OS sandbox claim.
 import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync, createWriteStream } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
@@ -27,6 +27,17 @@ mkdirSync(dirname(opts.output), { recursive: true });
 
 function parse(text) {
   try { return JSON.parse(text); } catch { return null; }
+}
+
+// stream-json prints one event per line; the envelope is the last type:'result' event. With no
+// such line (a stub that prints one bare envelope) the whole stdout is parsed as before.
+function envelopeOf(stdout) {
+  const lines = stdout.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const event = lines[i].trim() ? parse(lines[i]) : null;
+    if (event && typeof event === 'object' && event.type === 'result') return event;
+  }
+  return parse(stdout);
 }
 
 // Verbatim copy of unexplainedRefusal in mcp/daemon.mjs (about lines 189-201): importing the daemon
@@ -74,7 +85,7 @@ async function invoke(prompt) {
   // file (`echo x > path`) is not expressible as a command-prefix pattern and is not blocked
   // by it - the review/gate prompt's own instruction not to write is the other half of this.
   const verifyTools = readOnly && opts.verify;
-  const cli = ['-p', '--output-format', 'json', '--no-session-persistence',
+  const cli = ['-p', '--output-format', 'stream-json', '--verbose', '--no-session-persistence',
     '--strict-mcp-config', '--mcp-config', mcpConfig,
     '--model', opts.model || 'sonnet',
     '--tools', readOnly ? (verifyTools ? 'Read,Glob,Grep,Bash' : 'Read,Glob,Grep') : 'Read,Glob,Grep,Edit,Write,Bash',
@@ -93,6 +104,14 @@ async function invoke(prompt) {
   for (const dir of opts.addDirs) cli.push('--add-dir', dir);
   // Without a wiki the lean teams server must not offer wiki_* either (a judge never sees it).
   const env = leanMcp && !withWiki ? { ...process.env, TEAMS_WIKI_OFF: '1' } : process.env;
+  // Each stdout chunk reaches events.jsonl as it arrives: the running node's live signal for the
+  // stall check (card 129), where a post-exit write left a long claude node silent.
+  let events = null;
+  if (opts['events-output']) {
+    mkdirSync(dirname(resolve(opts['events-output'])), { recursive: true });
+    events = createWriteStream(opts['events-output'], { flags: 'w' });
+    events.on('error', () => {});
+  }
   return await new Promise(resolveResult => {
     const child = spawn('claude', cli, { cwd: opts.cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '', stderr = '', stopped = false;
@@ -103,14 +122,15 @@ async function invoke(prompt) {
     };
     process.on('SIGTERM', stop);
     process.on('SIGINT', stop);
-    child.stdout.on('data', c => { stdout += c; });
+    child.stdout.on('data', c => { stdout += c; if (events) events.write(c); });
     child.stderr.on('data', c => { stderr += c; });
     child.stdin.on('error', () => {});
     child.stdin.end(prompt);
     const finish = status => {
       process.removeListener('SIGTERM', stop);
       process.removeListener('SIGINT', stop);
-      resolveResult({ status, stdout, stderr, stopped });
+      if (events) events.end(() => resolveResult({ status, stdout, stderr, stopped }));
+      else resolveResult({ status, stdout, stderr, stopped });
     };
     child.on('error', error => { stderr = error.message; });
     child.on('close', finish);
@@ -133,11 +153,7 @@ try {
       : `Use Bash to run exactly this command, then return ${marker}: node -e "require('fs').writeFileSync(process.argv[1], require('crypto').createHash('sha256').update(process.argv[2]).digest('hex'))" ${JSON.stringify(probeFile)} ${marker}`
     : readFileSync(opts['prompt-file'], 'utf8');
   const proc = await invoke(prompt);
-  if (opts['events-output']) {
-    mkdirSync(dirname(resolve(opts['events-output'])), { recursive: true });
-    writeFileSync(opts['events-output'], proc.stdout);
-  }
-  const envelope = parse(proc.stdout);
+  const envelope = envelopeOf(proc.stdout);
   const ok = proc.status === 0 && !proc.stopped && envelope && !envelope.is_error;
   const message = String(envelope?.result || '');
   let report;

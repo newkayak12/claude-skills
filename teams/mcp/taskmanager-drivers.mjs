@@ -1,7 +1,7 @@
 // taskmanager-drivers.mjs - child driver and daemon processes; split out of taskmanager.mjs (card 128 step 1), moved verbatim.
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync } from 'node:fs';
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { skillPluginDirs } from './pluginroots.mjs';
 import { leanLaunchArgs, resolveStageModel, stageSkillList } from './nodelaunch.mjs';
 import { storyKey } from './tickets.mjs';
@@ -354,12 +354,25 @@ export function serviceDeadDriver(task, child, nodeId) {
 // (queueHumanAction and a few other paths append to the ledger without touching the run's own
 // mtime). board.jsonl is TASK-level, not per-child (taskmanager.mjs's own board.jsonl, not a
 // broker concept), so it is not read here. null when nothing has been written yet.
-function childProgressMtime(child) {
+// Also read, because a node can work for longer than 3x stall_minutes without finishing (and so
+// without moving either broker file above): the driver's own stream log (driver.log), and the files
+// in the attempt dir (dirname(detail_path): events.jsonl, prompt.md, result.json) of every node of
+// the child's run that is 'running'. Worktree files are not read - a node running tests writes
+// none there, and a git status or tree walk per poll is not cheap.
+function childProgressMtime(child, driver, run) {
   if (!child || !child.cwd || !child.run_id) return null;
   const candidates = [
     join(child.cwd, '.teams_output', 'broker', 'runs', `${child.run_id}.json`),
     join(child.cwd, '.teams_output', 'broker', 'ledger.jsonl'),
   ];
+  if (driver && typeof driver.log === 'string') candidates.push(driver.log);
+  for (const n of (run && Array.isArray(run.nodes)) ? run.nodes : []) {
+    if (!n || n.state !== 'running' || typeof n.detail_path !== 'string') continue;
+    const dir = dirname(n.detail_path);
+    try {
+      for (const f of readdirSync(dir)) candidates.push(join(dir, f));
+    } catch { /* no attempt dir yet - fine */ }
+  }
   let latest = null;
   for (const p of candidates) {
     try {
@@ -385,6 +398,10 @@ function childProgressMtime(child) {
 // respawn: the very next poll finds driverAlive() false and serviceDeadDriver's own path takes
 // over, exactly as it would for a crash, spending a restart the same way.
 //
+// Accepted trade-off: any write to the files childProgressMtime reads counts as progress, so a
+// node that keeps emitting (a tool-error loop, say) is not killed by this check; a node that
+// emits nothing is.
+//
 // Returns true when it changed anything (so the caller knows to persist the task), same
 // contract as serviceDeadDriver.
 export function serviceStalledDriver(task, child, nodeId) {
@@ -400,7 +417,7 @@ export function serviceStalledDriver(task, child, nodeId) {
   // alone it read 79 minutes idle the moment it came up - idol-beta-ask1's P6 had eight fresh
   // drivers killed as "stalled" within 68 ms and its whole restart budget spent.
   // And the wake from a suspend (task.resumed_at): a sleeping laptop is not a stalled driver.
-  const progressAt = Math.max(childProgressMtime(child) ?? 0, driver.started_at ?? 0, task.resumed_at ?? 0) || Date.now();
+  const progressAt = Math.max(childProgressMtime(child, driver, run) ?? 0, driver.started_at ?? 0, task.resumed_at ?? 0) || Date.now();
   const idleMs = Date.now() - progressAt;
   const stallMs = stallMinutes * 60000;
   if (idleMs < stallMs) {

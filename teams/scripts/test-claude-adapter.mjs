@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, chmodSync, realpathSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -410,4 +410,52 @@ test('card129 U2.A the envelope\'s file-write denials ride on the result as perm
     const plain = gateRun(f, [denial('rm -rf x')]);
     assert.equal('permission_denials' in plain.report.result, false);
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('events.jsonl is written while claude runs', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'claude-adapter-stream-'));
+  const sentinel = join(dir, 'go');
+  const events = join(dir, 'events.jsonl');
+  const binary = join(dir, 'claude');
+  // The fake prints an assistant line, waits for the sentinel (self-exit after 15 s), then prints a result line.
+  writeFileSync(binary, `#!/usr/bin/env node
+const fs = require('node:fs');
+process.stdin.resume();
+process.stdin.on('end', () => {
+  console.log(JSON.stringify({type:'assistant', message:'working'}));
+  const started = Date.now();
+  const timer = setInterval(() => {
+    if (fs.existsSync(${JSON.stringify(sentinel)}) || Date.now() - started > 15000) {
+      clearInterval(timer);
+      console.log(JSON.stringify({type:'result', result: JSON.stringify({stage_ok:true}), usage:{input_tokens:7,output_tokens:1}, modelUsage:{sonnet:{}}}));
+      process.exit(0);
+    }
+  }, 50);
+});
+`);
+  chmodSync(binary, 0o755);
+  writeFileSync(join(dir, 'prompt.md'), 'Execute this isolated stage.');
+  const child = spawn('node', [adapter, '--cwd', dir, '--output', join(dir, 'result.json'), '--prompt-file', join(dir, 'prompt.md'), '--stage', 'test', '--events-output', events],
+    { env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, TEAMS_WIKI_ROOT: '' }, stdio: 'ignore' });
+  let closed = false;
+  const exited = new Promise(res => child.on('close', code => { closed = true; res(code); }));
+  try {
+    const deadline = Date.now() + 5000;
+    let seen = false;
+    while (Date.now() < deadline && !seen) {
+      try { seen = readFileSync(events, 'utf8').includes('"type":"assistant"'); } catch { /* not yet */ }
+      if (!seen) await new Promise(r => setTimeout(r, 50));
+    }
+    assert.ok(seen, 'the assistant line reached events.jsonl');
+    assert.equal(closed, false, 'and the adapter is still running');
+  } finally {
+    writeFileSync(sentinel, '');
+  }
+  assert.equal(await exited, 0);
+  const report = JSON.parse(readFileSync(join(dir, 'result.json'), 'utf8'));
+  assert.equal(report.stage_ok, true);
+  assert.equal(report.usage.input_tokens, 7);
+  assert.deepEqual(Object.keys(report.model_usage), ['sonnet']);
+  assert.equal(readFileSync(events, 'utf8').trim().split('\n').length, 2);
+  rmSync(dir, { recursive: true, force: true });
 });

@@ -105,7 +105,8 @@ export const TEAM_DEFAULTS = Object.freeze({
   // A driver can answer process.kill(pid,0) and still be doing nothing - a wedged model, a
   // provider hang with no error, a tool call that never returns. stall_minutes is the "no
   // progress" signal for that: the mtime of the files daemon.mjs's own waitForProgress already
-  // watches for this child (its broker run file, plus its ledger) idle this long marks the
+  // watches for this child (its broker run file, plus its ledger, the driver stream log driver.log,
+  // and events.jsonl and the other attempt-dir files of a running node) idle this long marks the
   // dispatch stalled (once, recorded, taskmanager.mjs's serviceStalledDriver); idle 3x this long
   // kills the driver and lets the ordinary dead-driver path (serviceDeadDriver) respawn it,
   // spending a restart like any other death. 0 disables the whole check - a project whose own
