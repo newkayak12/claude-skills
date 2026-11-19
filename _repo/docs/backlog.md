@@ -319,6 +319,15 @@ toasts).
 
 Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 128's leftovers.
 
+165. **PLAN dispatch judge reads the PRD file, not only the result fields, before calling a section missing**
+   - Why: E-f9145f5b (2026-11-19), PLAN-F1 rejected twice ("the PRD is missing required sections: Goal,
+     User stories, Out of scope") while those headings were in the committed PRD; attempt 3 passed at 93%
+     with the same sections. Two retries spent budget the Sprint then lacked for plan-integrate and build
+     (it closed at $44.94 of $40, PLAN only). Cause unverified: likely the check reads the submitted payload
+     fields rather than the file.
+   - Acceptance: a test where a PRD file holds all required headings and the payload omits one does not
+     reject for a missing section; a file actually missing one still rejects, red before the fix.
+
 155. **teams MCP: find and fix the comma error the user saw**
     - Why: user, 2026-11-18, while E-f20f1c65 ran: "mcp 쉼표로 잡혀서 오류나는거 같던데 teams", "이건 긴급임".
       Not reproduced: that day every session's `mcp-logs-plugin-teams-teams` log shows the server connected,
@@ -639,52 +648,47 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
 
 ### knowledge plugin
 
-Principle for 158–162 (user, 2026-11-19): "우리 지식 저장소를 upgrade 할거고 이걸 noah, genna에서
+Principle (user, 2026-11-19): "우리 지식 저장소를 upgrade 할거고 이걸 noah, genna에서
 개인화 그래프 용도로도 사용할거야 범용도 있고" — knowledge is the shared engine: per-instance root,
 ontology and link policy are config, nothing in the engine names one instance. Ollama stays optional
 (lesson les-knowledge-no-external-runtime-deps); a real run uses a copy in `tmp/`, never a live vault.
+Design: `_repo/docs/plans/2026-11-19-knowledge-*` (PRDs F1–F4, shipped in knowledge 1.22.0).
 
-158. **knowledge install layout — compose mounts the project, README shows where files land** — in E-f9145f5b
-   - Why: 2026-11-19 check. `compose.yaml` `${KNOWLEDGE_ROOT:-..}` resolves against the compose file,
-     so an installed copy (`~/.claude/plugins/cache/<market>/knowledge/<ver>/`) mounts the plugin cache,
-     not the project. README says `.knowledge/knowledge.sqlite` without its base; a scratch index put it
-     at `<project>/knowledge-system/.knowledge/knowledge.sqlite`. User: "knowledge 스킬 설치하면 폴더링
-     어떻게 되는지도 확인 필요".
-   - Acceptance: compose refuses to start without a project root (or defaults to the caller's cwd), never
-     the plugin dir; README/KOR carry one table: plugin cache, project (nothing on install),
-     `knowledge-system/` tree, `.knowledge/` DB, `_knowledge/{checks,reports,jobs}`; a scratch install +
-     index matches the table.
+164. **noah and genna run on the knowledge engine instead of their own servers**
+   - Why: user, 2026-11-19: "noah, genna '/home/newkayak12' 보면 있을 텐데 이쪽 교체를 해야할거야".
+     Each has its own `server/{noah,genna}-mcp.mjs` (keyword + vector RRF), vectors in
+     `_knowledge/vectors.{json,f32}` from TEI `intfloat/multilingual-e5-base` on a 04:00 timer, and `tools/`
+     (ingest, fold, nightly, rebuild, mocs); hosting in `~/docker/mcps/` (`noah-server`, `genna-server`,
+     `*-embed`, nginx). The noah vault (300 catalog notes, `.knowledge/knowledge.sqlite`) is live on the
+     home server and gitignored; genna starts empty. `noah-server` is in use: plan first, no cut-over
+     without the user.
+   - Acceptance: a plan in `_repo/docs/plans/` maps every `noah_*`/`genna_*` tool to a knowledge tool or a
+     per-store config/persona layer that stays in the instance repo; the engine names neither instance;
+     a copy of the noah vault in `tmp/` answers its competency questions through the knowledge MCP at or
+     above today's recall; the embedding endpoint (TEI) attaches as an OpenAI-compatible provider; the
+     cut-over order (genna first, it is empty) is approved before any container changes.
 
-159. **knowledge_capture — MCP write tool that saves what arrives as a linked md note** — in E-f9145f5b
-   - Why: 2026-11-19, the MCP is read-only (search/get/neighbors/index/status/root). User: "mcp로 받은
-     정도를 md로 저장", "새로운 글 오면 linked 처리 잘해야하고".
-   - Acceptance: `knowledge_capture` writes `notes/<id>.md` (frontmatter + source) and its catalog row;
-     same concept (title, alias, near-duplicate) → returns `merged_into` instead of a new note; links are
-     computed by the engine from search/neighbors and kept only when the concept appears in the text
-     (no co-occurrence-only link); linked notes get the backlink (Related or MOC); response lists
-     `linked_to`, `backlinked_from`, `merged_into`, `skipped_candidates` with reasons; tests: the new note
-     has 0 dead links, is not an orphan, no duplicate id/title; delta queues (catalog, graph, embed) get
-     the job; Codex manifest registers the same tool.
+166. **knowledge leftovers from 1.22.0**
+   - Why: E-f9145f5b worktree run, 2026-11-19.
+     - Graph build re-extracts every note each run; `_knowledge/jobs/graph-update-queue.jsonl` is never
+       consumed (34 notes took 508 s on CPU).
+     - Real run with qwen2.5:3b (the CPU-only `small` pick): 44 nodes, 2 edges, 16 refused (self-loop 8,
+       vague-type 4, missing/foreign evidence 6, unknown node 2), both test questions unreachable. The
+       validator held; the small tier is too weak to build a useful graph. Untested on `medium`.
+     - Capture matches a Hangul term followed by more Hangul as a particle, so `결제 승인서` links to
+       `결제 승인` (false positive).
+     - Bind-mount write under `USER node` only checked with the same uid.
+     - Codex: a non-interactive `codex exec` refuses `knowledge_capture` under approval policy `never`;
+       the real call passed only with approvals bypassed.
+   - Acceptance: graph build reads the queue and re-extracts only changed notes (test + one timed rerun);
+     one `medium`-tier run reports edges and reachability against the `small` run; a particle list (or
+     dictionary) replaces the any-Hangul rule, with `결제 승인서` red before; README states the uid rule
+     after a different-uid check; README/KOR say how a Codex session approves the write tool.
 
-160. **Docker graph build — LLM extraction from md to `_graph/` and sqlite, model picked for the machine** — in E-f9145f5b
-   - Why: 2026-11-19, user: "docker(ollama -> 환경에 맞는) graph-builder로 빌드해서 sqlite로 내리는 방향".
-     graph-builder is prose only today; compose has ollama for embeddings only.
-   - Acceptance: a compose profile runs extraction → `_graph/nodes.jsonl`, `edges.jsonl` → sqlite index;
-     endpoint is OpenAI-compatible URL + model (ollama is one); hardware probe (GPU/VRAM, RAM) picks the
-     model size, recorded in `.knowledge/`, overridden by env; without an endpoint the graph-builder skill
-     path is unchanged; extracted edges pass the graph-builder rules (evidence required, no `RELATED_TO`);
-     one real run on a copy in `tmp/` with node/edge counts and reachability reported.
-
-161. **Storage backend seam — sqlite behind an interface, migrate to pgvector, size advisory** — in E-f9145f5b
-   - Why: 2026-11-19, user: "이후 pgvector로 넘어갈 수 있게", "이후 sqlite를 대체하는 방향으로 사이즈가
-     크다면". `postgres-sync.mjs` upserts chunks.jsonl to pgvector but cannot carry sqlite's embeddings.
-   - Acceptance: search/index call a backend interface (sqlite the only one wired); `migrate` moves
-     documents, embeddings and graph from sqlite to pgvector (row counts equal, docker postgres in a
-     bench, unique name, no host port); `status` reports size against a measured threshold and says
-     when pgvector is advised; existing test suites stay green with counts.
-
-162. **pgvector backend replaces sqlite when the store is large** (after 161; next Sprint)
-   - Why: same words as 161.
+162. **pgvector backend replaces sqlite when the store is large** — deferred (user, 2026-11-19: "pgvector는 일단 딜레이")
+   - Why: user, 2026-11-19: "이후 pgvector로 넘어갈 수 있게", "이후 sqlite를 대체하는 방향으로 사이즈가
+     크다면". 1.22.0 has the seam (`storage.backend`), `migrate` into `kn_*` mirror tables (counts checked
+     live) and the advisory (20000 documents / 256 MB, from a p95 400 ms budget the user has not confirmed).
    - Acceptance: MCP search/get/neighbors run on pgvector with the same results shape; eval on one
      instance scores within the sqlite run's recall@10/MRR; the threshold from 161 picks the backend.
 
@@ -866,4 +870,5 @@ ontology and link policy are config, nothing in the engine names one instance. O
 | E-a193d3ec | 2026-10-28 | 94 defects | shipped `a7ec1188`; STORYs reason on its own line, a repackaged story shows its current attempt; teams 1613/1613, plugin test 396/396 |
 | E-692f3092 | 2026-10-28 | 94 | shipped `a8d0de16`; teams-status attempts, judge score vs threshold, cost and retry spend, drivers, denials, defects filed/dropped; teams 1610/1610, plugin test 381/381 |
 | E-fa72c6e8 | 2026-10-28 | 90 | cancelled by the user in QA round 2, integration-3 taken; `enforcement.md` + repo hook refuses unquoted `rm $VAR` and in-place Bash writes; repo-rules 204/204; rest is card 90, duplicate filing card 97; ~$79 |
+| E-f9145f5b | 2026-11-19 | 158-161 (knowledge) | PLAN only, partial on budget ($44.94 of $40; plan-integrate rejected, PLAN-F1 twice on card 165's bug); PRDs kept, then built by hand in a worktree (user: "이거 wt 따서 해줘"), merged `74144298`; knowledge tests 72 → 111; real runs: compose refusal from a cache-shaped copy, capture over stdio and Codex, Docker graph on a 34-note copy with qwen2.5:3b (44 nodes, 2 edges, 16 refused; card 166), migrate to live pgvector 78/44/2 rows matched, search p95 25-1108 ms at 1k-50k |
 | E-f27382fa | 2026-10-28 | 89 | shipped `a9212cdb`; size S; goal gate 90; `gateintegrity.mjs` + gate:goal section; real run `--baseline HEAD~30` lists card 85's two replaced tests; teams 1591/1591 |
