@@ -636,7 +636,7 @@ ontology and link policy are config, nothing in the engine names one instance. O
 (lesson les-knowledge-no-external-runtime-deps); a real run uses a copy in `tmp/`, never a live vault.
 Design: `_repo/docs/plans/2026-11-19-knowledge-*` (PRDs F1–F4, shipped in knowledge 1.22.0).
 
-164. **noah and genna run on the knowledge engine instead of their own servers**
+164. **noah and genna run on the knowledge engine instead of their own servers** — in E-df46dbb4 (plan + tmp-copy proof only)
    - Why: user, 2026-11-19: "noah, genna '/home/newkayak12' 보면 있을 텐데 이쪽 교체를 해야할거야".
      Each has its own `server/{noah,genna}-mcp.mjs` (keyword + vector RRF), vectors in
      `_knowledge/vectors.{json,f32}` from TEI `intfloat/multilingual-e5-base` on a 04:00 timer, and `tools/`
@@ -650,7 +650,7 @@ Design: `_repo/docs/plans/2026-11-19-knowledge-*` (PRDs F1–F4, shipped in know
      above today's recall; the embedding endpoint (TEI) attaches as an OpenAI-compatible provider; the
      cut-over order (genna first, it is empty) is approved before any container changes.
 
-166. **knowledge leftovers from 1.22.0**
+166. **knowledge leftovers from 1.22.0** — in E-df46dbb4
    - Why: E-f9145f5b worktree run, 2026-11-19.
      - Graph build re-extracts every note each run; `_knowledge/jobs/graph-update-queue.jsonl` is never
        consumed (34 notes took 508 s on CPU).
