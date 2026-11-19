@@ -130,3 +130,10 @@ U-1 … U-6 below.
 - **U-6, F3/F4 rows** (owners: F3 PLAN, F4 PLAN). Which files F3's profile and probe write, and what F4's migrate/status leave on disk. F1 reserves the blocks only, and integrate checks the full table.
 - **U-7, compose `config` on this machine** (owner: tester). The compose resolution rule is cited from Docker's behaviour and the backlog's 2026-11-19 observation. This stage did not execute compose.
   - investigate:U1:2 re-read `compose.yaml:1-41`, `sqlite-knowledge.mjs:170-188`, `knowledge-delta-check.mjs:69-71` and `README.md:225`/`KOR.md:220`. Every citation above still matches. `docker` is installed (`/snap/bin/docker`). A `docker compose config` run from a cache-shaped tmp/ copy was refused approval in this stage, so U-7 stays open for the F1 package's scratch run (F1-US-4).
+
+## Repair note (PLAN-F1 attempt 2, investigate:U1:1)
+
+- Attempt 1 was rejected as "missing Goal, User stories, Out of scope". The PRD file already has every required heading: `## Goal` L5, `## Scope` L18, `## User stories` L30, `### F1-US-1..4` L32/L53/L76/L98, `## Out of scope` L121, `## Open questions` L131. The critique also found this. The gap was the template-fill payload, so template-fill must return `goal`, `scope`, `out_of_scope`, `user_stories[]` (F1-US-1..4, each with acceptance) and `open_questions` as named fields.
+- Citations re-checked in attempt 2 with grep: `DEFAULT_DB` `:34`, `findKnowledgeRoot` `:175`, its callers `:704/:888/:1607/:1890`, the export `:2130`, README `:225/:410`, KOR `:220/:393`. Note that the PRD's caller lines `:703/:887/:1606/:1889` are the functions' opening lines, one line above each call. Both readings are valid.
+- `docker compose config` from a cache-shaped tmp copy was refused approval again in this stage, so U-7 stays with the F1 package's scratch run.
+- The compose rule stays **refuse** (`${KNOWLEDGE_ROOT:?...}`), stated as a rule, not as an open question.
