@@ -623,6 +623,55 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
 
 ### knowledge plugin
 
+Principle for 158–162 (user, 2026-11-19): "우리 지식 저장소를 upgrade 할거고 이걸 noah, genna에서
+개인화 그래프 용도로도 사용할거야 범용도 있고" — knowledge is the shared engine: per-instance root,
+ontology and link policy are config, nothing in the engine names one instance. Ollama stays optional
+(lesson les-knowledge-no-external-runtime-deps); a real run uses a copy in `tmp/`, never a live vault.
+
+158. **knowledge install layout — compose mounts the project, README shows where files land**
+   - Why: 2026-11-19 check. `compose.yaml` `${KNOWLEDGE_ROOT:-..}` resolves against the compose file,
+     so an installed copy (`~/.claude/plugins/cache/<market>/knowledge/<ver>/`) mounts the plugin cache,
+     not the project. README says `.knowledge/knowledge.sqlite` without its base; a scratch index put it
+     at `<project>/knowledge-system/.knowledge/knowledge.sqlite`. User: "knowledge 스킬 설치하면 폴더링
+     어떻게 되는지도 확인 필요".
+   - Acceptance: compose refuses to start without a project root (or defaults to the caller's cwd), never
+     the plugin dir; README/KOR carry one table: plugin cache, project (nothing on install),
+     `knowledge-system/` tree, `.knowledge/` DB, `_knowledge/{checks,reports,jobs}`; a scratch install +
+     index matches the table.
+
+159. **knowledge_capture — MCP write tool that saves what arrives as a linked md note**
+   - Why: 2026-11-19, the MCP is read-only (search/get/neighbors/index/status/root). User: "mcp로 받은
+     정도를 md로 저장", "새로운 글 오면 linked 처리 잘해야하고".
+   - Acceptance: `knowledge_capture` writes `notes/<id>.md` (frontmatter + source) and its catalog row;
+     same concept (title, alias, near-duplicate) → returns `merged_into` instead of a new note; links are
+     computed by the engine from search/neighbors and kept only when the concept appears in the text
+     (no co-occurrence-only link); linked notes get the backlink (Related or MOC); response lists
+     `linked_to`, `backlinked_from`, `merged_into`, `skipped_candidates` with reasons; tests: the new note
+     has 0 dead links, is not an orphan, no duplicate id/title; delta queues (catalog, graph, embed) get
+     the job; Codex manifest registers the same tool.
+
+160. **Docker graph build — LLM extraction from md to `_graph/` and sqlite, model picked for the machine**
+   - Why: 2026-11-19, user: "docker(ollama -> 환경에 맞는) graph-builder로 빌드해서 sqlite로 내리는 방향".
+     graph-builder is prose only today; compose has ollama for embeddings only.
+   - Acceptance: a compose profile runs extraction → `_graph/nodes.jsonl`, `edges.jsonl` → sqlite index;
+     endpoint is OpenAI-compatible URL + model (ollama is one); hardware probe (GPU/VRAM, RAM) picks the
+     model size, recorded in `.knowledge/`, overridden by env; without an endpoint the graph-builder skill
+     path is unchanged; extracted edges pass the graph-builder rules (evidence required, no `RELATED_TO`);
+     one real run on a copy in `tmp/` with node/edge counts and reachability reported.
+
+161. **Storage backend seam — sqlite behind an interface, migrate to pgvector, size advisory**
+   - Why: 2026-11-19, user: "이후 pgvector로 넘어갈 수 있게", "이후 sqlite를 대체하는 방향으로 사이즈가
+     크다면". `postgres-sync.mjs` upserts chunks.jsonl to pgvector but cannot carry sqlite's embeddings.
+   - Acceptance: search/index call a backend interface (sqlite the only one wired); `migrate` moves
+     documents, embeddings and graph from sqlite to pgvector (row counts equal, docker postgres in a
+     bench, unique name, no host port); `status` reports size against a measured threshold and says
+     when pgvector is advised; existing test suites stay green with counts.
+
+162. **pgvector backend replaces sqlite when the store is large** (after 161; next Sprint)
+   - Why: same words as 161.
+   - Acceptance: MCP search/get/neighbors run on pgvector with the same results shape; eval on one
+     instance scores within the sqlite run's recall@10/MRR; the threshold from 161 picks the backend.
+
 ### portfolio plugin
 
 (cards 102, 103 and 54 moved to the top, 2026-10-30)
