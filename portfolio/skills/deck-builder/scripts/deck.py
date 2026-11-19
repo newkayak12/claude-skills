@@ -4749,7 +4749,7 @@ def cmd_render(args):
                       "(sources untouched), %d reach it" % (len(reached), FIGURE_MIN_PT, len(reached) - len(short)))
                 for page, sid, got, name in short:
                     print("  ! page %d %s (%s): its labels fit their boxes only up to %.1fpt — "
-                          "enlarge the picture or redraw the figure with fewer words"
+                          "redraw it (Step 3b: fewer words, wider boxes, or split) until check passes"
                           % (page, sid, name, got))
             print("  rebuilt and rendered again with these")
             if box is None:

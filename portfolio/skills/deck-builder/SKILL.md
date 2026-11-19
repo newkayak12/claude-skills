@@ -113,6 +113,17 @@ Write a picture slot's art as an `.svg`, in the template's colors and at the fra
 pt size — both printed by `catalog`. It becomes source like the rest of the deck and is
 rasterized to PNG at build time.
 
+Then run `check` and read every `figure text ~Npt` warning: generated art is this skill's own
+output, so that warning is not a judgment call. Redraw the figure until `check` shows it no more
+— fewer words per label, wider boxes, or the figure split in two (user, 2026-11-19:
+"스킬을 갈고 닦는 건데"). Shorten words, never facts: before redrawing, list what the figure says —
+each step, number, name, lane, column, warning and its marks (①②③) — and after, tick each one off
+in the new figure; a fact with no room moves into the slide's text or `notes:`, it is not dropped.
+Then look at the rendered page: no label may touch or cross its box's edge (blind bench 2026-11-19:
+the first redraw read better on 32 of 36 judgments but every loss was a dropped step, lane or
+warning, and one label clipped). `render` raising text in the raster copy only saves what was missed; its `!`
+lines (`labels fit their boxes only up to`) send the figure back here.
+
 Rules, rationale and a worked example: `references/generated-art.md`.
 
 ### Step 4 · Check

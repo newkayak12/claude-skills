@@ -107,6 +107,12 @@ real deck lone commas 316 → 0, engine version printed).
       on the migrated copy: all closed — the split number and lone word glued (3.2.5), the
       footnote-gap drift evened by lifting the centre-anchored footnote and page 3's false zone hit
       (two frames merged in one rendered block) gone (3.2.8; layout clean; blind 11·17 4/4 better).
+      Figure text: Step 3b redraws until check passes, facts kept (3.2.9; a skill-only sonnet run took
+      40 warnings to 0; blind 18 pages vs the pick: round 1 (words cut, facts dropped) 32/3/1, round 2
+      (facts listed and kept) 34 better, 0 worse, 2 same).
+    - Left: the redraw took template hexes at full strength (#FF0000, bright yellow fills); judges
+      called them a little harsh on 11·21·30 (low). Acceptance: generated-art guidance or check steers
+      large fills to the template's tints, and a blind re-run shows no colour finding.
 
 153. **The deck render is checked against PowerPoint, and the 3.2.0 audits catch what they missed**
     - Why: after portfolio 3.2.0 (2026-11-14) the deck renderer is checked only against Word's saved

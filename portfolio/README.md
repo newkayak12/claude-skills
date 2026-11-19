@@ -148,7 +148,10 @@ Every session in the workspace starts with `manage.mjs scaffold`, unasked: it re
 to these, creates only what is missing, CLAUDE.md included, and never overwrites a file. A CLAUDE.md
 that is already there (a renamed README too) keeps its text and gets the guide appended once.
 
-Nine steps (3.2.8: deck `render` evens a footnote-to-panel gap that drifts only because a
+Nine steps (3.2.9: deck-builder Step 3b redraws generated art until `check` shows no figure-text
+warning, shortening words but never facts (each listed before and ticked off after; a fact with no
+room moves to the slide text or `notes:`), and render's figure warning sends the figure back there;
+3.2.8: deck `render` evens a footnote-to-panel gap that drifts only because a
 centre-anchored footnote of one line sits lower than one of two (the frame is lifted by the
 difference), and no longer reads two frames 2pt apart, merged into one rendered block, as an
 overrun; 3.2.7: a picture `place:` would push past the slide is fitted into the safe area at
