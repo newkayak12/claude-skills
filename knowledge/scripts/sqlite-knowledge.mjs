@@ -12,6 +12,14 @@ import {
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CAPTURE_TOOL, captureNote } from './knowledge-capture.mjs';
+import {
+  ARTIFACT_PATHS,
+  INDEXED_ARTIFACT_KINDS,
+  findKnowledgeRoot,
+  hasArtifacts,
+  inside,
+} from './knowledge-paths.mjs';
 
 let DatabaseSync = null;
 let sqliteLoadError = null;
@@ -42,16 +50,6 @@ const RRF_K = 60;
 // second one before it counts as a signal at all.
 const RELATION_PARTICIPANT_FLOOR = 2;
 const DEFAULT_HOLDOUT_RATIO = 0.35;
-const ARTIFACT_PATHS = {
-  catalog: ['_knowledge/catalog.jsonl'],
-  chunks: ['_rag/chunks.jsonl', 'rag/chunks.jsonl'],
-  nodes: ['_graph/nodes.jsonl', 'graph/nodes.jsonl'],
-  edges: ['_graph/edges.jsonl', 'graph/edges.jsonl'],
-  questions: ['_knowledge/questions.jsonl'],
-};
-// Questions are an evaluation set, not indexed content: they must not decide
-// where the knowledge root is, nor make a built index look stale when edited.
-const INDEXED_ARTIFACT_KINDS = ['catalog', 'chunks', 'nodes', 'edges'];
 
 function parseArgs(argv) {
   const args = [...argv];
@@ -161,25 +159,6 @@ function parseArgs(argv) {
     throw new Error('--sweep must be 1 to 8 comma-separated ratios from 0 to 1');
   }
   return { command, ...options };
-}
-
-function inside(parent, child) {
-  const rel = relative(parent, child);
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
-}
-
-function hasArtifacts(root) {
-  return INDEXED_ARTIFACT_KINDS.flatMap((kind) => ARTIFACT_PATHS[kind]).some((path) => existsSync(join(root, path)));
-}
-
-function findKnowledgeRoot(inputRoot) {
-  const root = resolve(inputRoot);
-  if (hasArtifacts(root)) return root;
-  for (const candidate of ['knowledge-system', 'knowledge-base', 'knowledge-artifacts']) {
-    const nested = join(root, candidate);
-    if (hasArtifacts(nested)) return nested;
-  }
-  return root;
 }
 
 function resolveDbPath(root, dbPath = null) {
@@ -1993,6 +1972,7 @@ const MCP_TOOLS = [
     description: 'Report index location, source freshness, counts, and embedding configuration.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
+  CAPTURE_TOOL,
 ];
 
 async function callMcpTool(root, dbPath, name, args = {}) {
@@ -2009,6 +1989,11 @@ async function callMcpTool(root, dbPath, name, args = {}) {
   if (name === 'knowledge_get') return getDocument(root, args.id, { ...args, db: dbPath });
   if (name === 'knowledge_neighbors') return graphNeighbors(root, args.query, { ...args, db: dbPath });
   if (name === 'knowledge_status') return indexStatus(root, { db: dbPath });
+  if (name === 'knowledge_capture') {
+    return captureNote(root, args, {
+      search: (storeRoot, query, options) => searchIndex(storeRoot, query, { ...options, db: dbPath }),
+    });
+  }
   throw new Error(`Unknown tool: ${name}`);
 }
 

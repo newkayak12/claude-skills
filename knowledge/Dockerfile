@@ -1,7 +1,7 @@
 FROM node:24-bookworm-slim
 
 WORKDIR /opt/knowledge
-COPY scripts/sqlite-knowledge.mjs ./scripts/sqlite-knowledge.mjs
+COPY scripts/ ./scripts/
 COPY servers/knowledge-mcp.mjs ./servers/knowledge-mcp.mjs
 
 USER node

@@ -3,7 +3,7 @@ services:
     build:
       context: .
     volumes:
-      - ${KNOWLEDGE_ROOT:-..}:/workspace
+      - ${KNOWLEDGE_ROOT:?KNOWLEDGE_ROOT must be the project to index}:/workspace
     command: ["index", "--root", "/workspace", "--provider", "hash"]
 
   knowledge-index-ollama:
@@ -11,7 +11,7 @@ services:
     build:
       context: .
     volumes:
-      - ${KNOWLEDGE_ROOT:-..}:/workspace
+      - ${KNOWLEDGE_ROOT:?KNOWLEDGE_ROOT must be the project to index}:/workspace
     environment:
       OLLAMA_HOST: http://ollama:11434
     command:

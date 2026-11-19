@@ -5,7 +5,6 @@
 // existing knowledge workspace, and records check results plus reindex queues.
 // It never blocks a tool call and exits quietly outside knowledge workspaces.
 import {
-  appendFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -13,19 +12,10 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-
-const KNOWLEDGE_MARKERS = [
-  'knowledge-system-plan.md',
-  'vault-plan.md',
-  'index.md',
-  '_rag',
-  '_graph',
-  '_ontology',
-  '_knowledge',
-  '.knowledge',
-];
+import { appendJsonl, writeDeltaJobs } from '../scripts/knowledge-jobs.mjs';
+import { findRootForFile } from '../scripts/knowledge-paths.mjs';
 
 const LINK_SCAN_SKIP_DIRS = new Set(['_rag', '_graph', '_ontology', '_knowledge', '.git']);
 
@@ -52,45 +42,7 @@ function candidateFiles(input) {
   return [...new Set(raw.filter(Boolean).map(String))];
 }
 
-function inside(parent, child) {
-  const rel = relative(parent, child);
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
-}
-
-function markerScore(dir) {
-  let score = 0;
-  for (const marker of KNOWLEDGE_MARKERS) {
-    if (existsSync(join(dir, marker))) score += 1;
-  }
-  if (basename(dir) === 'knowledge-system') score += 2;
-  return score;
-}
-
-function findKnowledgeRoot(cwd, filePath) {
-  const abs = isAbsolute(filePath) ? resolve(filePath) : resolve(cwd, filePath);
-  if (!inside(cwd, abs)) return null;
-
-  let dir = dirname(abs);
-  let best = null;
-  while (inside(cwd, dir)) {
-    if (markerScore(dir) >= 2 || existsSync(join(dir, '_rag')) || existsSync(join(dir, '_graph'))) {
-      best = dir;
-      break;
-    }
-    const next = dirname(dir);
-    if (next === dir) break;
-    dir = next;
-  }
-
-  if (best) return { root: best, file: abs };
-
-  const parts = relative(cwd, abs).split(/[\\/]/);
-  const idx = parts.indexOf('knowledge-system');
-  if (idx >= 0) {
-    return { root: resolve(cwd, ...parts.slice(0, idx + 1)), file: abs };
-  }
-  return null;
-}
+const findKnowledgeRoot = findRootForFile;
 
 function hasFrontmatter(text) {
   if (!text.startsWith('---\n')) return false;
@@ -180,11 +132,6 @@ function staleByMtime(sourceFile, artifactFile) {
   }
 }
 
-function appendJsonl(path, record) {
-  mkdirSync(dirname(path), { recursive: true });
-  appendFileSync(path, `${JSON.stringify(record)}\n`);
-}
-
 function analyze(root, file) {
   const rel = relative(root, file).replace(/\\/g, '/');
   const text = readFileSync(file, 'utf8');
@@ -260,38 +207,24 @@ function main(input = readInput()) {
 
     const checksDir = join(root, '_knowledge', 'checks');
     const reportsDir = join(root, '_knowledge', 'reports');
-    const jobsDir = join(root, '_knowledge', 'jobs');
     mkdirSync(checksDir, { recursive: true });
     mkdirSync(reportsDir, { recursive: true });
 
     writeFileSync(join(checksDir, 'latest.json'), `${JSON.stringify(report, null, 2)}\n`);
     appendJsonl(join(reportsDir, 'delta-checks.jsonl'), report);
 
-    const jobBase = {
+    writeDeltaJobs(root, {
       file: report.file,
+      note_id: report.note_id,
       reason: 'post-tool knowledge delta',
       queued_at: report.checked_at,
-    };
-    if (report.catalog_delta_needed) {
-      appendJsonl(join(jobsDir, 'catalog-delta-queue.jsonl'), {
-        ...jobBase,
-        note_id: report.note_id,
-        operation: 'upsert-note',
-        scope: 'single-note',
-        beta: true,
-      });
-    }
-    if (report.answerability_delta_needed) {
-      appendJsonl(join(jobsDir, 'answerability-check-queue.jsonl'), {
-        ...jobBase,
-        note_id: report.note_id,
-        operation: 'recheck-affected-questions',
-        scope: 'note-dependents',
-      });
-    }
-    if (report.rag_delta_needed) appendJsonl(join(jobsDir, 'embed-queue.jsonl'), jobBase);
-    if (report.graph_delta_needed) appendJsonl(join(jobsDir, 'graph-update-queue.jsonl'), jobBase);
-    if (report.ontology_review_suggested) appendJsonl(join(jobsDir, 'ontology-review-queue.jsonl'), jobBase);
+    }, {
+      catalog: report.catalog_delta_needed,
+      answerability: report.answerability_delta_needed,
+      embed: report.rag_delta_needed,
+      graph: report.graph_delta_needed,
+      ontology: report.ontology_review_suggested,
+    });
   }
 }
 

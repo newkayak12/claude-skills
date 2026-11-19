@@ -4,3 +4,4 @@
 **/*.sqlite
 **/*.sqlite-shm
 **/*.sqlite-wal
+**/*.test.mjs
