@@ -1,18 +1,18 @@
-// logout: forget the cached STS session of a profile; with forget:true also the stored keys or the
-// 1Password reference. The profile entry (region, label, mfa_serial) always stays. Not read-only.
+// logout: forget the cached STS session of a profile; with forget:true also the stored keys. A 1Password
+// reference lives in the profile entry and stays. The profile entry always stays. Not read-only.
 import { ok, err, header, defineTool } from './contract.mjs';
-import { sessionAccount, keyAccount, opAccount } from './keychain.mjs';
+import { sessionAccount, keyAccount } from './keychain.mjs';
 import { assertName, unknownProfile } from './profiles.mjs';
 
 export const logoutTool = defineTool({
   name: 'logout',
   description:
-    'Delete the cached session of a profile (default: the active one) and report its expiry. STS tokens cannot be revoked and stay valid until then. forget:true also deletes the stored keys or 1Password reference; the profile entry stays.',
+    'Delete the cached session of a profile (default: the active one) and report its expiry. STS tokens cannot be revoked and stay valid until then. forget:true also deletes the stored keys; a 1Password reference stays in the profile entry, as does the entry.',
   inputSchema: {
     type: 'object',
     properties: {
       profile: { type: 'string', description: 'Profile name; default is the active profile.' },
-      forget: { type: 'boolean', description: 'Also delete the stored access keys or the 1Password reference.' },
+      forget: { type: 'boolean', description: 'Also delete the stored access keys (a 1Password reference stays in the profile entry).' },
     },
     additionalProperties: false,
   },
@@ -35,10 +35,15 @@ export const logoutTool = defineTool({
         lines.push(`no session cached; nothing deleted${e.mfa_serial ? '' : ' (a profile without an MFA serial never has one)'}.`);
       }
 
+      const ref = await profiles.opRef(name);
       if (args?.forget) {
-        await keychain.del(e.op ? opAccount(name) : keyAccount(name));
-        lines.push(e.op ? '1Password reference deleted; the profile entry stays.' : 'stored keys deleted; the profile entry stays.');
-      } else if (e.op) {
+        if (ref) {
+          lines.push('1Password reference stays in the profile entry (profile_save with vault and item null removes it); nothing else to delete.');
+        } else {
+          await keychain.del(keyAccount(name));
+          lines.push('stored keys deleted; the profile entry stays.');
+        }
+      } else if (ref) {
         lines.push('the next query will log in again silently.');
       }
       return ok(lines.join('\n'));

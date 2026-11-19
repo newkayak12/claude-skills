@@ -22,6 +22,65 @@ test('describe-, list-, get-, lookup- and search- operations pass', () => {
 
 test('sts get-caller-identity passes', () => passes('sts', 'get-caller-identity'));
 
+test('logs filter-log-events passes as one named operation; no other filter-* does', () => {
+  passes('logs', 'filter-log-events', ['--log-group-name', '/aws/lambda/foo', '--filter-pattern', 'ERROR', '--start-time', '1700000000000']);
+  for (const [s, o] of [['logs', 'filter-something'], ['logs', 'filter-log-event'], ['logs', 'filter-log-events-x'], ['ec2', 'filter-x'], ['ec2', 'filter-log-events']]) {
+    assert.equal(rule(s, o), 'not-allowed', `${s} ${o}`);
+  }
+  assert.match(check({ service: 'ec2', operation: 'run-instances' }).message, /logs filter-log-events/);
+});
+
+test('--output passes only as exact lowercase json, text or table, as two tokens or --output=<v>', () => {
+  for (const v of ['json', 'text', 'table']) {
+    passes('ec2', 'describe-instances', ['--output', v]);
+    passes('ec2', 'describe-instances', [`--output=${v}`]);
+    passes('ec2', 'describe-instances', ['--max-items', '5', '--output', v, '--query', 'Reservations[]']);
+    passes('logs', 'filter-log-events', ['--log-group-name', 'g', '--output', v]);
+  }
+  passes('s3', 'ls', ['--output', 'text', 's3://b']);
+  passes('s3', 'ls', ['s3://b', '--output=table']);
+  passes('sts', 'get-caller-identity', ['--output', 'text']);
+});
+
+test('--output with any other value, no value, an empty value or a repeat is global-flag', () => {
+  const bad = [
+    ['--output', 'yaml'], ['--output', 'yaml-stream'], ['--output', 'JSON'], ['--output', 'Text'], ['--output', ' json'], ['--output', 'json '], ['--output', ''],
+    ['--output=yaml'], ['--output=yaml-stream'], ['--output=JSON'], ['--output='], ['--output', '--query'], ['--output', 'jsonx'],
+    ['--output'], ['--max-items', '5', '--output'],
+    ['--output', 'json', '--output', 'json'], ['--output=json', '--output=text'], ['--output', 'json', '--output=json'], ['--output', 'json', '--output'],
+    ['--OUTPUT', 'json'], ['--Output=json'],
+  ];
+  for (const a of bad) assert.equal(rule('ec2', 'describe-instances', a), 'global-flag', JSON.stringify(a));
+  assert.equal(rule('s3', 'ls', ['--output', 'yaml', 's3://b']), 'global-flag');
+  assert.equal(rule('s3', 'ls', ['--output', 'json', '--output', 'json', 's3://b']), 'global-flag');
+  assert.match(check({ service: 'ec2', operation: 'describe-instances', args: ['--output', 'yaml'] }).message, /--output json\|text\|table/);
+});
+
+test('--output abbreviations stay global-flag; --output-file forms and --outfile stay output-file', () => {
+  for (const a of [['--out', 'json'], ['--outp', 'json'], ['--outpu', 'text'], ['--out=json'], ['--outp=table']]) {
+    assert.equal(rule('ec2', 'describe-instances', a), 'global-flag', JSON.stringify(a));
+  }
+  for (const a of [['--output-file', 'x'], ['--output-file=x'], ['--output-f', 'x'], ['--outfile', 'x'], ['--output', 'json', '--output-file', 'x']]) {
+    assert.equal(rule('ec2', 'describe-instances', a), 'output-file', JSON.stringify(a));
+  }
+});
+
+test('a rejected --output never puts its value in the message', () => {
+  const secret = 'DISTINCTIVESECRET987';
+  for (const a of [['--output', secret], [`--output=${secret}`], ['--output', 'json', '--output', secret], [`--output-file=${secret}`], ['--outp', secret]]) {
+    const r = check({ service: 'ec2', operation: 'describe-instances', args: a });
+    assert.ok(r.rule, JSON.stringify(a));
+    assert.equal(r.message.includes(secret), false, JSON.stringify(a));
+  }
+});
+
+test('--output does not weaken a named deny or the file/url rules', () => {
+  assert.equal(rule('secretsmanager', 'get-secret-value', ['--output', 'text']), 'secret-value');
+  assert.equal(rule('ec2', 'run-instances', ['--output', 'text']), 'not-allowed');
+  assert.equal(rule('ec2', 'describe-instances', ['--output', 'text', '--filters', 'file://x']), 'url-or-file-value');
+  assert.equal(rule('s3', 'ls', ['--output', 'text', '/etc']), 'not-allowed');
+});
+
 test('s3 ls passes with no argument or with s3:// URIs only', () => {
   passes('s3', 'ls');
   passes('s3', 'ls', ['s3://my-bucket']);
@@ -208,7 +267,7 @@ test('only --query, --max-items, --page-size and --no-paginate pass of the globa
   passes('ec2', 'describe-instances', ['--query=Reservations[]', '--max-items=5', '--page-size=2', '--no-paginate']);
   passes('ec2', 'describe-instances', ['--max', '5', '--page', '2', '--no-pag']);
   passes('ec2', 'describe-instances', ['--filters', 'Name=instance-state-name,Values=running', '--instance-ids', 'i-1', 'i-2']);
-  for (const f of ['--region', '--output', '--debug', '--no-sign-request', '--ca-bundle', '--no-verify-ssl', '--color', '--version', '--cli-read-timeout', '--cli-connect-timeout', '--cli-binary-format', '--no-cli-pager', '--cli-auto-prompt', '--no-cli-auto-prompt', '--generate-cli-skeleton', '--starting-token', '--cli-error-format']) {
+  for (const f of ['--region', '--debug', '--no-sign-request', '--ca-bundle', '--no-verify-ssl', '--color', '--version', '--cli-read-timeout', '--cli-connect-timeout', '--cli-binary-format', '--no-cli-pager', '--cli-auto-prompt', '--no-cli-auto-prompt', '--generate-cli-skeleton', '--starting-token', '--cli-error-format']) {
     assert.equal(rule('ec2', 'describe-instances', [f]), 'global-flag', f);
     assert.equal(rule('ec2', 'describe-instances', [`${f}=x`]), 'global-flag', `${f}=x`);
   }

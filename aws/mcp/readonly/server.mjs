@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// readonly-aws: read-only AWS MCP server over stdio. Four tools: profile, login, logout, query.
+// readonly-aws: read-only AWS MCP server over stdio. Five tools: profile, profile_save, login, logout, query.
 // stdout carries the MCP protocol only; every log line goes to stderr.
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { err } from './contract.mjs';
 import { createKeychain } from './keychain.mjs';
-import { createProfiles, configDir, profileTool } from './profiles.mjs';
+import { createProfiles, configDir, profileTool, profileSaveTool } from './profiles.mjs';
 import { execAws } from './awsexec.mjs';
 import { login } from './login.mjs';
 import { logoutTool } from './logout.mjs';
@@ -14,7 +14,7 @@ import { queryTool } from './query.mjs';
 
 const log = (...a) => process.stderr.write(`[readonly-aws] ${a.join(' ')}\n`);
 
-export const TOOLS = [profileTool, login, logoutTool, queryTool];
+export const TOOLS = [profileTool, profileSaveTool, login, logoutTool, queryTool];
 
 // ctx is the one object every tool handler gets (see contract.mjs).
 export function createServer(ctx, tools = TOOLS) {

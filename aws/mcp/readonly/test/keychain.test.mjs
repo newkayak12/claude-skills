@@ -99,3 +99,16 @@ test('macOS keychain round trip with the real security binary', { skip: process.
   }
   assert.equal(await kc.get('t1'), null);
 });
+
+test('has runs find-generic-password with no -w and answers by exit code', async () => {
+  const s = stub((args) => (args.includes('present') ? { code: 0, stdout: 'keychain: ...\n', stderr: '' } : { code: 44, stdout: '', stderr: 'not found' }));
+  const kc = createKeychain({ run: s.run });
+  assert.equal(await kc.has('present'), true);
+  assert.equal(await kc.has('absent'), false);
+  assert.deepEqual(s.calls[0].args, ['find-generic-password', '-s', 'readonly-aws', '-a', 'present']);
+  for (const c of s.calls) assert.equal(c.args.includes('-w') || c.args.includes('-g'), false);
+});
+
+test('has rejects off macOS like the other calls', async () => {
+  await assert.rejects(createKeychain({ run: stub().run, platform: 'linux' }).has('dev'), /macOS is required/);
+});

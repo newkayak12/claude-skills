@@ -94,6 +94,67 @@ test('an allowed call runs execFile aws [service, operation, ...args, --output, 
   assert.deepEqual(s.log().map((l) => l.outcome), ['ok']);
 });
 
+test("the person's --output is passed through: argv holds exactly one --output, with their value", async () => {
+  const forms = [
+    [['--output', 'text'], ['ec2', 'describe-instances', '--output', 'text']],
+    [['--output=table'], ['ec2', 'describe-instances', '--output=table']],
+    [['--max-items', '5', '--output', 'json'], ['ec2', 'describe-instances', '--max-items', '5', '--output', 'json']],
+  ];
+  for (const [args, expected] of forms) {
+    const s = setup();
+    const r = await run(s, 'ec2', 'describe-instances', args);
+    assert.equal(r.isError, undefined, args.join(' '));
+    const { argv } = s.spy.calls[0];
+    assert.deepEqual(argv, expected);
+    assert.equal(argv.filter((t) => t === '--output' || t.startsWith('--output=')).length, 1, args.join(' '));
+  }
+});
+
+test('logs filter-log-events runs; with no --output the argv ends --output json', async () => {
+  const s = setup();
+  const args = ['--log-group-name', '/aws/lambda/foo', '--filter-pattern', 'ERROR'];
+  const r = await run(s, 'logs', 'filter-log-events', args);
+  assert.equal(r.isError, undefined);
+  assert.deepEqual(s.spy.calls[0].argv, ['logs', 'filter-log-events', ...args, '--output', 'json']);
+});
+
+test('text and table output are scrubbed of the session secrets like json', async () => {
+  const fixtures = {
+    text: `EVENTS\t${FAKE.secret}\t1700000000000\nSEARCHEDLOGSTREAMS\tstream\tcreds ${FAKE.key} ${FAKE.token}\n`,
+    table: `-------------------------\n|  FilterLogEvents       |\n+--------+---------------+\n|  ${FAKE.key}  |  ${FAKE.secret}  |\n|  token | ${FAKE.token} |\n+--------+---------------+\n`,
+  };
+  for (const [fmt, stdout] of Object.entries(fixtures)) {
+    const s = setup({ behavior: () => ({ stdout }) });
+    const r = await run(s, 'logs', 'filter-log-events', ['--log-group-name', 'g', '--output', fmt]);
+    assert.equal(r.isError, undefined, fmt);
+    for (const v of [FAKE.key, FAKE.secret, FAKE.token]) assert.equal(text(r).includes(v), false, `${fmt} ${v}`);
+    assert.match(text(r), /\*\*\*/, fmt);
+    assert.equal(s.spy.calls[0].argv.at(-1), fmt);
+  }
+});
+
+test('text and table output over 1 MiB are cut, whether or not the child hit its own cap', async () => {
+  for (const fmt of ['text', 'table']) {
+    const big = (fmt === 'table' ? '|  row  |\n' : 'row\tx\n').repeat(Math.ceil((2 * 1024 * 1024) / 10));
+    const s = setup({ behavior: () => ({ stdout: big }) });
+    const r = await run(s, 'ec2', 'describe-instances', ['--output', fmt]);
+    assert.equal(r.isError, undefined, fmt);
+    assert.ok(Buffer.byteLength(text(r)) <= 1024 * 1024 + 512, `${fmt} cut`);
+    assert.ok(Buffer.byteLength(text(r)) > 1024 * 1024 - 512, `${fmt} not over-cut`);
+    const t = setup({ behavior: () => ({ error: Object.assign(new Error('maxBuffer'), { code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }), stdout: big }) });
+    const rt = await run(t, 'ec2', 'describe-instances', ['--output', fmt]);
+    assert.equal(rt._meta?.truncated, true, fmt);
+    assert.ok(Buffer.byteLength(text(rt)) <= 1024 * 1024 + 1024, `${fmt} truncated cut`);
+  }
+});
+
+test('the query tool text says --output json|text|table may be given and json is the default', () => {
+  assert.match(queryTool.description, /--output json\|text\|table/);
+  assert.match(queryTool.description, /filter-log-events/);
+  assert.match(queryTool.inputSchema.properties.args.description, /--output json\|text\|table/);
+  assert.match(queryTool.inputSchema.properties.args.description, /default/i);
+});
+
 test('the shell is never involved: a hostile arg stays one argv element', async () => {
   const s = setup();
   await run(s, 'ec2', 'describe-instances', ['--query', 'a; touch /tmp/pwned && $(id) `id`']);
@@ -208,7 +269,8 @@ const REJECTS = [
   ['A6.4 s3api get-object-torrent', 's3api', 'get-object-torrent', ['--bucket', 'b', '--key', 'k', 'out'], 's3api-get-object'],
   ['A6.4 other outfile operation (glacier get-job-output)', 'glacier', 'get-job-output', ['--account-id', '-', 'out'], 'outfile-positional'],
   ['A6.5 --region', 'ec2', 'describe-instances', ['--region', 'us-west-2'], 'global-flag'],
-  ['A6.5 --output', 'ec2', 'describe-instances', ['--output', 'text'], 'global-flag'],
+  ['A6.5 --output yaml', 'ec2', 'describe-instances', ['--output', 'yaml'], 'global-flag'],
+  ['A6.5 repeated --output', 'ec2', 'describe-instances', ['--output', 'text', '--output', 'table'], 'global-flag'],
   ['A6.5 --debug', 'ec2', 'describe-instances', ['--debug'], 'global-flag'],
   ['A6.5 --no-sign-request', 'ec2', 'describe-instances', ['--no-sign-request'], 'global-flag'],
   ['A6.5 --ca-bundle', 'ec2', 'describe-instances', ['--ca-bundle', '/tmp/ca'], 'global-flag'],

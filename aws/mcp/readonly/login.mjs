@@ -8,14 +8,13 @@
 // ctx may carry dialog(prompt), op {readItem, otp}, sleep(ms) and an exec override (argv, env).
 import { ok, err, header, defineTool } from './contract.mjs';
 import { execAws, childEnv } from './awsexec.mjs';
-import { keyAccount, opAccount } from './keychain.mjs';
-import { assertName, maskRef } from './profiles.mjs';
+import { keyAccount } from './keychain.mjs';
+import { assertName, assertRegion, assertAccount, assertOpRef, maskRef } from './profiles.mjs';
 import { hiddenDialog } from './dialog.mjs';
 import * as realOp from './op.mjs';
 
 const DURATIONS = [129600, 43200, 3600]; // seconds: IAM-user maximum, then the fallbacks
 const WINDOW_MS = 30_000; // one TOTP window
-const REGION_RE = /^[a-z]{2}(-[a-z0-9]+)+$/;
 const SERIAL_RE = /^arn:aws[a-z-]*:iam::\d{12}:(mfa|sms-mfa)\/\S+$/;
 const MFA_REJECTED = /MultiFactorAuthentication failed|invalid MFA one time pass code/i;
 
@@ -41,10 +40,6 @@ const isStr = (v) => typeof v === 'string' && v.length > 0;
 const parseKeys = (raw) => {
   const o = raw === null ? null : unb64(raw);
   return isStr(o?.AccessKeyId) && isStr(o?.SecretAccessKey) ? { AccessKeyId: o.AccessKeyId, SecretAccessKey: o.SecretAccessKey } : null;
-};
-const parseRef = (raw) => {
-  const o = raw === null ? null : unb64(raw);
-  return isStr(o?.vault) && isStr(o?.item) ? { vault: o.vault, item: o.item } : null;
 };
 
 const awsCode = (stderr) => String(stderr ?? '').match(/An error occurred \(([A-Za-z]+)\)/)?.[1];
@@ -153,18 +148,20 @@ const sessionCreds = (session) => ({ AccessKeyId: session.AccessKeyId, SecretAcc
 export const login = defineTool({
   name: 'login',
   description:
-    'Log in a named AWS profile with an IAM user access key pair, kept in macOS Keychain (typed once into a hidden dialog) or read from a 1Password item (vault + item). Verifies the keys with sts get-caller-identity. With mfa_serial it asks for the MFA code and caches a session token (up to 36 h); without, the keys are used directly. No key or code is ever a tool argument.',
+    'Log in a named AWS profile with an IAM user access key pair, kept in macOS Keychain (typed once into a hidden dialog) or read from a 1Password item (vault + item). Fields the profile already holds (region, account, MFA serial, 1Password reference) are reused; an argument wins and is saved. Verifies the keys with sts get-caller-identity and refuses when the saved account is another one. With mfa_serial it asks for the MFA code and caches a session token (up to 36 h); without, the keys are used directly. No key or code is ever a tool argument.',
   inputSchema: {
     type: 'object',
     properties: {
       profile: { type: 'string', description: 'Profile name, [a-z0-9_-]{1,32}.' },
-      region: { type: 'string', description: 'AWS region the profile queries, for example us-east-1.' },
+      region: { type: 'string', description: 'AWS region the profile queries, for example us-east-1. Optional when the profile has one saved.' },
+      account: { type: 'string', description: 'Optional 12-digit AWS account id; the keys must belong to it. Saved with the profile.' },
       label: { type: 'string', description: 'Optional display label; defaults to the account id.' },
       mfa_serial: { type: 'string', description: 'Optional MFA device ARN; saved with the profile.' },
       vault: { type: 'string', description: 'Optional 1Password vault holding the key item (with item).' },
-      item: { type: 'string', description: 'Optional 1Password item with fields "access key id" and "secret access key" (and a one-time password).' },
+      item: { type: 'string', description: 'Optional 1Password item with the key pair: fields "access key id" and "secret access key", else "username" and "password".' },
+      otp_item: { type: 'string', description: 'Optional 1Password item (same vault) holding the one-time password, when it is not in the key item. Used only with an MFA serial.' },
     },
-    required: ['profile', 'region'],
+    required: ['profile'],
     additionalProperties: false,
   },
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -172,11 +169,15 @@ export const login = defineTool({
     const d = deps(ctx);
     const { profiles, keychain } = ctx;
     let account;
-    const head = () => header({ profile: args?.profile, account, region: args?.region });
+    let region = args?.region;
+    const head = () => header({ profile: args?.profile, account, region });
     try {
       const profile = assertName(args?.profile);
-      const region = args?.region;
-      if (typeof region !== 'string' || !REGION_RE.test(region)) throw new Fail('region must look like us-east-1');
+      const old = profiles.get(profile);
+      region = region ?? old?.region;
+      if (region === undefined) throw new Fail(`region is required: profile ${profile} has none saved`);
+      assertRegion(region);
+      if (args?.account !== undefined) assertAccount(args.account);
       const label = args?.label === undefined ? undefined : String(args.label).trim();
       if (label !== undefined && (!label || label.length > 64 || /[\x00-\x1f]/.test(label))) throw new Fail('label must be 1-64 printable characters');
       if (args?.mfa_serial !== undefined && !SERIAL_RE.test(String(args.mfa_serial))) throw new Fail('mfa_serial must be an MFA device ARN (arn:aws:iam::<account>:mfa/<name>)');
@@ -184,12 +185,16 @@ export const login = defineTool({
       const hasItem = args?.item !== undefined;
       if (hasVault !== hasItem) throw new Fail('vault and item go together');
 
-      const old = profiles.get(profile);
       const serial = args?.mfa_serial ?? old?.mfa_serial;
 
-      // Where the keys come from: an explicit 1Password reference, the stored one of an op-backed
-      // profile, the stored keys, else two hidden dialogs.
-      const ref = hasVault ? { vault: args.vault, item: args.item } : old?.op ? parseRef(await keychain.get(opAccount(profile))) : null;
+      // Where the keys come from: an explicit 1Password reference, the saved one, the stored keys, else
+      // two hidden dialogs. otp_item (same vault) is kept unless a new one is given or the vault changed.
+      const saved = await profiles.opRef(profile);
+      const base = hasVault ? { vault: args.vault, item: args.item } : saved;
+      if (args?.otp_item !== undefined && !base) throw new Fail('otp_item needs vault and item: pass them with it');
+      const otpItem = args?.otp_item ?? (saved?.vault === base?.vault ? saved?.otp_item : undefined);
+      if (typeof otpItem === 'string' && otpItem.startsWith('-')) throw new Fail('1Password otp_item name is not valid');
+      const ref = base ? assertOpRef({ ...base, ...(otpItem !== undefined ? { otp_item: otpItem } : {}) }) : null;
       let keys;
       let written = false;
       if (ref) {
@@ -217,9 +222,16 @@ export const login = defineTool({
         if (written) await keychain.del(keyAccount(profile)).catch(() => {});
         throw e;
       }
+      // The account the person named (or the profile holds) must be the keys' account, checked before
+      // anything is saved or minted. recordLogin refuses the same mismatch only as a backstop.
+      const expected = args?.account ?? old?.account;
+      if (expected && expected !== identity.Account) {
+        if (written) await keychain.del(keyAccount(profile)).catch(() => {});
+        throw new Fail(`account mismatch: profile ${profile} is for account ${expected}, these keys belong to account ${identity.Account}; nothing saved`);
+      }
       account = identity.Account;
-      if (ref) await keychain.set(opAccount(profile), b64(ref));
-      const entry = profiles.recordLogin(profile, { identity, label, region, mfa_serial: args?.mfa_serial, op: Boolean(ref) });
+      if (args?.account !== undefined && args.account !== old?.account) profiles.upsert(profile, { account: args.account, region });
+      const entry = profiles.recordLogin(profile, { identity, label, region, mfa_serial: args?.mfa_serial, op: ref ?? undefined });
 
       let expiry = 'none';
       if (serial) {
@@ -227,7 +239,7 @@ export const login = defineTool({
           creds: keys,
           region,
           serial,
-          getCode: ref ? () => d.op.otp(ref.vault, ref.item) : dialogCode(d, profile),
+          getCode: ref ? () => d.op.otp(ref.vault, ref.item, { otp_item: ref.otp_item }) : dialogCode(d, profile),
           retryOnReject: Boolean(ref),
         });
         await profiles.setSession(profile, session);
@@ -266,7 +278,7 @@ async function ensure(profile, ctx) {
       const s = await profiles.getSession(profile);
       if ([s?.AccessKeyId, s?.SecretAccessKey, s?.SessionToken].every(isStr)) return { creds: sessionCreds(s), region: e.region };
     }
-    const ref = e.op ? parseRef(await keychain.get(opAccount(profile))) : null;
+    const ref = await profiles.opRef(profile);
     if (ref) {
       const keys = await d.op.readItem(ref.vault, ref.item);
       d.secrets.push(keys.AccessKeyId, keys.SecretAccessKey);
@@ -275,7 +287,7 @@ async function ensure(profile, ctx) {
         creds: keys,
         region: e.region,
         serial: e.mfa_serial,
-        getCode: () => d.op.otp(ref.vault, ref.item),
+        getCode: () => d.op.otp(ref.vault, ref.item, { otp_item: ref.otp_item }),
         retryOnReject: true,
       });
       await profiles.setSession(profile, session);

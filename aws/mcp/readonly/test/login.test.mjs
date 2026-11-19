@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createProfiles } from '../profiles.mjs';
@@ -80,13 +80,15 @@ function setup() {
       return s.awsHandler(argv, env);
     },
     dialog: (prompt) => hiddenDialog(prompt, { run: osaRun }),
-    op: { readItem: (v, i) => readItem(v, i, { run: opRun }), otp: (v, i) => otp(v, i, { run: opRun }) },
+    op: { readItem: (v, i) => readItem(v, i, { run: opRun }), otp: (v, i, o) => otp(v, i, { ...o, run: opRun }) },
     sleep: async (ms) => void calls.sleep.push(ms),
   };
   s.mint = () => calls.aws.filter((c) => c.argv[1] === 'get-session-token');
   s.writes = () => calls.security.filter((c) => c.args[0] === '-i').map((c) => ({ stdin: c.stdin, account: /-a "([^"]*)"/.exec(c.stdin)[1], value: /-w "(.*)"\n$/.exec(c.stdin)[1] }));
   s.deletes = () => calls.security.filter((c) => c.args[0] === 'delete-generic-password').map((c) => c.args[c.args.indexOf('-a') + 1]);
   s.run = (args) => login.handler({ profile: 'dev', region: 'us-east-1', ...args }, s.ctx);
+  s.call = (args) => login.handler(args, s.ctx); // exactly these arguments, no defaults
+  s.profilesJson = () => (existsSync(join(dir, 'profiles.json')) ? readFileSync(join(dir, 'profiles.json'), 'utf8') : null);
   return s;
 }
 const text = (r) => r.content[0].text;
@@ -122,10 +124,10 @@ function sweep(s, results, { code } = {}) {
   }
 }
 
-test('A3.2: schema takes profile, region, label?, mfa_serial?, vault?, item? and no key, secret or code field', () => {
+test('A3.2: schema requires only profile; region, account, otp_item and the rest are optional, and no key, secret or code field', () => {
   assert.equal(login.name, 'login');
-  assert.deepEqual(Object.keys(login.inputSchema.properties).sort(), ['item', 'label', 'mfa_serial', 'profile', 'region', 'vault']);
-  assert.deepEqual([...login.inputSchema.required].sort(), ['profile', 'region']);
+  assert.deepEqual(Object.keys(login.inputSchema.properties).sort(), ['account', 'item', 'label', 'mfa_serial', 'otp_item', 'profile', 'region', 'vault']);
+  assert.deepEqual(login.inputSchema.required, ['profile']);
   assert.equal(login.inputSchema.additionalProperties, false);
   for (const k of Object.keys(login.inputSchema.properties)) assert.doesNotMatch(k, /key|secret|code|token|password/i);
   assert.equal(login.annotations.readOnlyHint, false);
@@ -254,7 +256,7 @@ test('aws CLI missing: error says so, the just-written keys are deleted', async 
 
 test('bad arguments are refused before any child runs', async () => {
   const s = setup();
-  for (const bad of [{ region: 'mars' }, { profile: 'Bad Name' }, { mfa_serial: 'not-an-arn' }, { vault: 'Private' }, { item: 'AWS' }, { label: '' }]) {
+  for (const bad of [{ region: 'mars' }, { profile: 'Bad Name' }, { mfa_serial: 'not-an-arn' }, { vault: 'Private' }, { item: 'AWS' }, { label: '' }, { account: '12345' }, { account: 123456789012 }, { otp_item: 'AWS otp' }, { vault: 'Private', item: 'AWS', otp_item: '-x' }]) {
     const r = await s.run(bad);
     assert.equal(r.isError, true, JSON.stringify(bad));
   }
@@ -359,7 +361,7 @@ test('A4: a malformed code answer is refused before any get-session-token call; 
   }
 });
 
-test('A5.1/A5.2: vault+item -> no key dialog, op argv exact, only the reference stored (masked in the answer), keys never in Keychain', async () => {
+test('A5.1/A5.2: vault+item -> no key dialog, op argv exact, the reference lives in the entry (masked in the answer), nothing in Keychain', async () => {
   const s = setup();
   const r = await s.run({ vault: 'Private', item: 'AWS prod' });
   assert.equal(r.isError, undefined);
@@ -367,11 +369,10 @@ test('A5.1/A5.2: vault+item -> no key dialog, op argv exact, only the reference 
   assert.deepEqual(s.calls.op, [['item', 'get', 'AWS prod', '--vault', 'Private', '--format', 'json']]);
   assert.equal(s.calls.aws[0].env.AWS_ACCESS_KEY_ID, FAKE.key);
   assert.equal(s.calls.aws[0].env.AWS_SECRET_ACCESS_KEY, FAKE.secret);
-  const w = s.writes();
-  assert.deepEqual(w.map((x) => x.account), ['dev:op']);
-  assert.deepEqual(unb64(w[0].value), { vault: 'Private', item: 'AWS prod' });
+  assert.deepEqual(s.writes(), [], 'no Keychain write at all: no <profile>:op item, no keys');
   assert.equal(s.store.has('dev'), false);
-  assert.equal(s.profiles.get('dev').op, true);
+  assert.equal(s.store.has('dev:op'), false);
+  assert.deepEqual(s.profiles.get('dev').op, { vault: 'Private', item: 'AWS prod' });
   assert.match(text(r), /op:\/\/\*\*\*\*\/\*\*\*\*/);
   assert.ok(!text(r).includes('Private') && !text(r).includes('AWS prod'));
   assert.match(text(r), /session expiry: none/);
@@ -407,7 +408,7 @@ test('A5.4: op fails (signed out, item missing, field missing) -> error without 
   const cases = [
     [() => ({ error: Object.assign(new Error('x'), { code: 1 }), stderr: `[ERROR] You are not currently signed in. ${SENTINEL} ${FAKE.secret}` }), /signed out/],
     [() => ({ error: Object.assign(new Error('x'), { code: 1 }), stderr: `"AWS prod" isn't an item ${SENTINEL} ${FAKE.secret}` }), /not found/],
-    [() => ({ stdout: JSON.stringify({ fields: [{ label: 'Access Key ID', value: FAKE.key }] }) }), /no 'secret access key' field/],
+    [() => ({ stdout: JSON.stringify({ fields: [{ label: 'Access Key ID', value: FAKE.key }] }) }), /needs 'access key id' \+ 'secret access key', or 'username' \+ 'password'/],
   ];
   for (const [handler, re] of cases) {
     const s = setup();
@@ -473,12 +474,242 @@ test('op-backed profile logged in again without vault/item reuses the stored ref
   assert.equal(s.calls.osascript.length, 0);
 });
 
+// --- saved fields, account check, otp_item (card 157 item 2) ------------------------------------
+
+const REF = { vault: 'Private', item: 'AWS prod' };
+const OTP_REF = { ...REF, otp_item: 'AWS otp' };
+// The reference names (vault, item, otp item) never reach an answer; only the mask does.
+function sweepRef(results) {
+  for (const r of results) {
+    for (const v of ['Private', 'AWS prod', 'AWS otp']) assert.ok(!text(r).includes(v), `answer leaks reference name ${v}`);
+  }
+}
+const mintArgv = (code, serial = MFA) => ['sts', 'get-session-token', '--serial-number', serial, '--token-code', code, '--duration-seconds', '129600', '--output', 'json'];
+
+test('A3.2: login {profile} with the saved region and Keychain keys asks nothing: no dialog, no MFA', async () => {
+  const s = setup();
+  s.profiles.upsert('dev', { region: 'ap-northeast-2', account: '123456789012' });
+  await storeKeys(s);
+  const r = await s.call({ profile: 'dev' });
+  assert.equal(r.isError, undefined);
+  assert.equal(first(r), 'profile dev · account 123456789012 · region ap-northeast-2');
+  assert.equal(s.calls.osascript.length, 0);
+  assert.equal(s.calls.aws[0].env.AWS_REGION, 'ap-northeast-2');
+  assert.equal(s.mint().length, 0);
+  assert.equal(s.profiles.get('dev').region, 'ap-northeast-2');
+  sweep(s, [r]);
+});
+
+test('A3.2: login {profile} with the saved region and keys missing asks the two key dialogs; a saved MFA serial adds one for the code', async () => {
+  const s = setup();
+  s.profiles.upsert('dev', { region: 'ap-northeast-2' });
+  s.answers.push(FAKE.key, FAKE.secret);
+  const r = await s.call({ profile: 'dev' });
+  assert.equal(r.isError, undefined);
+  assert.equal(s.calls.osascript.length, 2);
+  assert.equal(s.mint().length, 0);
+
+  const m = setup();
+  m.profiles.upsert('dev', { region: 'ap-northeast-2', mfa_serial: MFA });
+  m.answers.push(FAKE.key, FAKE.secret, CODE);
+  const r2 = await m.call({ profile: 'dev' });
+  assert.equal(r2.isError, undefined);
+  assert.equal(m.calls.osascript.length, 3);
+  assert.match(m.calls.osascript[2].args[1], /MFA code/);
+  assert.deepEqual(m.mint()[0].argv, mintArgv(CODE));
+  assert.equal(m.mint()[0].env.AWS_REGION, 'ap-northeast-2');
+  sweep(m, [r2], { code: CODE });
+});
+
+test('A3.2: an unknown profile with no region fails on region before any child runs', async () => {
+  const s = setup();
+  const r = await s.call({ profile: 'dev' });
+  assert.equal(r.isError, true);
+  assert.match(text(r), /region/);
+  assert.equal(s.calls.osascript.length + s.calls.aws.length + s.calls.security.length + s.calls.op.length, 0);
+  assert.equal(s.profilesJson(), null);
+  const t = setup();
+  const r2 = await t.call({ profile: 'dev', vault: 'Private', item: 'AWS prod' });
+  assert.equal(r2.isError, true);
+  assert.match(text(r2), /region/);
+  assert.equal(t.calls.op.length + t.calls.aws.length, 0);
+});
+
+test('an explicit region wins over the saved one and is saved', async () => {
+  const s = setup();
+  s.profiles.upsert('dev', { region: 'eu-west-1' });
+  await storeKeys(s);
+  const r = await s.call({ profile: 'dev', region: 'us-east-1' });
+  assert.equal(r.isError, undefined);
+  assert.equal(s.calls.aws[0].env.AWS_REGION, 'us-east-1');
+  assert.equal(s.profiles.get('dev').region, 'us-east-1');
+});
+
+test('A3.3: a saved account that is not the identity account is refused with both ids; nothing is minted, saved or kept', async () => {
+  const s = setup();
+  s.profiles.upsert('dev', { region: 'us-east-1', account: '999999999999', mfa_serial: MFA });
+  const before = s.profilesJson();
+  s.answers.push(FAKE.key, FAKE.secret);
+  const r = await s.call({ profile: 'dev' });
+  assert.equal(r.isError, true);
+  assert.ok(text(r).includes('999999999999') && text(r).includes('123456789012'), 'names both ids');
+  assert.equal(s.mint().length, 0, 'no get-session-token call');
+  assert.equal(s.calls.osascript.length, 2, 'no MFA code was asked');
+  assert.equal(s.profilesJson(), before, 'profiles.json byte-identical');
+  assert.equal(s.store.has('dev:session'), false);
+  assert.equal(s.store.has('dev'), false, 'the keys this call wrote are deleted');
+  assert.deepEqual(s.deletes(), ['dev']);
+  sweep(s, [r]);
+});
+
+test('A3.3: an account mismatch keeps keys that were already stored', async () => {
+  const s = setup();
+  s.profiles.upsert('dev', { region: 'us-east-1', account: '999999999999' });
+  await storeKeys(s);
+  const r = await s.call({ profile: 'dev' });
+  assert.equal(r.isError, true);
+  assert.deepEqual(s.deletes(), []);
+  assert.ok(s.store.has('dev'));
+  assert.equal(s.mint().length, 0);
+});
+
+test('A3.3: an explicit account that is not the identity account is refused for a new profile too', async () => {
+  const s = setup();
+  s.answers.push(FAKE.key, FAKE.secret);
+  const r = await s.run({ account: '999999999999', mfa_serial: MFA });
+  assert.equal(r.isError, true);
+  assert.ok(text(r).includes('999999999999') && text(r).includes('123456789012'));
+  assert.equal(s.mint().length, 0);
+  assert.equal(s.profilesJson(), null);
+  assert.equal(s.profiles.get('dev'), null);
+  assert.deepEqual(s.deletes(), ['dev']);
+});
+
+test('A3.3: an account mismatch on the 1Password path writes nothing to Keychain or the profile file', async () => {
+  const s = setup();
+  s.profiles.upsert('dev', { region: 'us-east-1', account: '999999999999', vault: 'Private', item: 'AWS prod', otp_item: 'AWS otp', mfa_serial: MFA });
+  const before = s.profilesJson();
+  const r = await s.call({ profile: 'dev' });
+  assert.equal(r.isError, true);
+  assert.ok(text(r).includes('999999999999') && text(r).includes('123456789012'));
+  assert.equal(s.mint().length, 0);
+  assert.equal(s.calls.op.filter((a) => a.includes('--otp')).length, 0, 'no code was read');
+  assert.deepEqual(s.writes(), []);
+  assert.equal(s.profilesJson(), before);
+  sweep(s, [r]);
+  sweepRef([r]);
+});
+
+test('AC-1: a verified explicit account replaces a stale saved one and is saved; a matching saved account passes', async () => {
+  const s = setup();
+  s.profiles.upsert('dev', { region: 'us-east-1', account: '999999999999' });
+  await storeKeys(s);
+  const r = await s.call({ profile: 'dev', account: '123456789012' });
+  assert.equal(r.isError, undefined);
+  assert.equal(s.profiles.get('dev').account, '123456789012');
+
+  const n = setup();
+  n.answers.push(FAKE.key, FAKE.secret);
+  const r2 = await n.run({ account: '123456789012' });
+  assert.equal(r2.isError, undefined);
+  assert.equal(n.profiles.get('dev').account, '123456789012');
+  assert.equal(n.profiles.active(), 'dev');
+});
+
+test('AC-1: login {profile} reuses the saved reference, otp_item and MFA serial: op reads key item and otp item, session minted', async () => {
+  const s = setup();
+  s.profiles.upsert('dev', { region: 'ap-northeast-2', account: '123456789012', mfa_serial: MFA, ...OTP_REF });
+  s.otps.push(CODE);
+  const r = await s.call({ profile: 'dev' });
+  assert.equal(r.isError, undefined);
+  assert.equal(s.calls.osascript.length, 0);
+  assert.deepEqual(s.calls.op, [
+    ['item', 'get', 'AWS prod', '--vault', 'Private', '--format', 'json'],
+    ['item', 'get', 'AWS otp', '--vault', 'Private', '--otp'],
+  ]);
+  assert.deepEqual(s.mint()[0].argv, mintArgv(CODE));
+  assert.deepEqual(s.profiles.get('dev').op, OTP_REF, 'otp_item kept in the entry');
+  assert.deepEqual(s.writes().map((w) => w.account), ['dev:session']);
+  assert.match(text(r), /op:\/\/\*\*\*\*\/\*\*\*\*/);
+  sweep(s, [r], { code: CODE });
+  sweepRef([r]);
+});
+
+test('AC-1: an explicit otp_item is used and saved with the reference', async () => {
+  const s = setup();
+  s.otps.push(CODE);
+  const r = await s.run({ ...REF, otp_item: 'AWS otp', mfa_serial: MFA });
+  assert.equal(r.isError, undefined);
+  assert.deepEqual(s.calls.op[1], ['item', 'get', 'AWS otp', '--vault', 'Private', '--otp']);
+  assert.deepEqual(s.profiles.get('dev').op, OTP_REF);
+  assert.deepEqual(s.writes().map((w) => w.account), ['dev:session']);
+
+  // on a saved profile, otp_item alone replaces the saved one
+  s.otps.push(CODE2);
+  s.calls.op.length = 0;
+  const r2 = await s.call({ profile: 'dev', otp_item: 'other otp' });
+  assert.equal(r2.isError, undefined);
+  assert.deepEqual(s.calls.op[1], ['item', 'get', 'other otp', '--vault', 'Private', '--otp']);
+  assert.deepEqual(s.profiles.get('dev').op, { ...REF, otp_item: 'other otp' });
+  sweepRef([r, r2]);
+});
+
+test('AC-2: otp_item without an mfa_serial asks for no code, raises no error and stays in the entry', async () => {
+  const s = setup();
+  const r = await s.run({ ...REF, otp_item: 'AWS otp' });
+  assert.equal(r.isError, undefined);
+  assert.equal(s.calls.op.filter((a) => a.includes('--otp')).length, 0);
+  assert.equal(s.mint().length, 0);
+  assert.deepEqual(s.profiles.get('dev').op, OTP_REF);
+  assert.match(text(r), /session expiry: none/);
+  sweepRef([r]);
+});
+
+test('a legacy op:true entry with its Keychain pointer is read through opRef, migrated into the entry, and the pointer is deleted', async () => {
+  const s = setup();
+  s.profiles.recordLogin('dev', { identity, region: 'us-east-1', op: true });
+  await s.keychain.set('dev:op', Buffer.from(JSON.stringify(REF)).toString('base64'));
+  s.calls.security.length = 0;
+  const r = await s.call({ profile: 'dev' });
+  assert.equal(r.isError, undefined);
+  assert.deepEqual(s.calls.op, [['item', 'get', 'AWS prod', '--vault', 'Private', '--format', 'json']]);
+  assert.deepEqual(s.profiles.get('dev').op, REF);
+  assert.equal(s.store.has('dev:op'), false);
+  assert.deepEqual(s.writes(), [], 'login never writes <profile>:op');
+  assert.equal(s.calls.osascript.length, 0);
+});
+
+test('login reads the reference through profiles.opRef, once', async () => {
+  const s = setup();
+  s.profiles.upsert('dev', { region: 'us-east-1', ...REF });
+  let n = 0;
+  const real = s.profiles.opRef;
+  s.profiles.opRef = async (name) => (n++, real(name));
+  const r = await s.call({ profile: 'dev' });
+  assert.equal(r.isError, undefined);
+  assert.equal(n, 1);
+  assert.equal(s.calls.op.length, 1);
+});
+
+test('R3: the new fields (account, otp_item, reference) never show a name or a value in any answer, success or error', async () => {
+  const s = setup();
+  s.otps.push(CODE);
+  const ok1 = await s.run({ ...REF, otp_item: 'AWS otp', mfa_serial: MFA, account: '123456789012' });
+  const bad = await s.run({ ...REF, otp_item: 'AWS otp', account: '999999999999' });
+  s.opHandler = () => ({ error: Object.assign(new Error('x'), { code: 1 }), stderr: `"AWS otp" isn't an item in "Private" ${SENTINEL} ${FAKE.secret}` });
+  const gone = await s.run({ ...REF, otp_item: 'AWS otp' });
+  assert.equal(ok1.isError, undefined);
+  assert.equal(bad.isError, true);
+  assert.equal(gone.isError, true);
+  sweepRef([ok1, bad, gone]);
+  sweep(s, [ok1, bad, gone], { code: CODE });
+});
+
 // --- ensureSession -------------------------------------------------------------------------------
 
-const seed = async (s, { op = false, mfa = true, session = EXP[129600], keys = !op } = {}) => {
-  s.profiles.recordLogin('dev', { identity, label: 'Acme', region: 'eu-west-1', mfa_serial: mfa ? MFA : undefined, op });
+const seed =async (s, { op = false, mfa = true, session = EXP[129600], keys = !op } = {}) => {
+  s.profiles.recordLogin('dev', { identity, label: 'Acme', region: 'eu-west-1', mfa_serial: mfa ? MFA : undefined, op: op ? { ...REF, ...(typeof op === 'object' ? op : {}) } : false });
   if (keys) await storeKeys(s);
-  if (op) await s.keychain.set('dev:op', Buffer.from(JSON.stringify({ vault: 'Private', item: 'AWS prod' })).toString('base64'));
   if (session) await s.profiles.setSession('dev', { AccessKeyId: FAKE.sessKey, SecretAccessKey: FAKE.sessSecret, SessionToken: FAKE.token, Expiration: session });
 };
 const quiet = (s) => assert.equal(s.calls.osascript.length + s.calls.op.length + s.calls.aws.length, 0);
@@ -553,6 +784,41 @@ test('ensureSession 3: op failures become a not-logged-in error naming aws:login
   assert.match(r.error, /aws:login/);
   assert.match(r.error, /signed out/);
   assert.ok(!r.error.includes(SENTINEL));
+});
+
+test('ensureSession 3: reads the reference through profiles.opRef and passes otp_item to op.otp; no account check (no get-caller-identity)', async () => {
+  const s = setup();
+  await seed(s, { op: { otp_item: 'AWS otp' }, session: null });
+  let n = 0;
+  const real = s.profiles.opRef;
+  s.profiles.opRef = async (name) => (n++, real(name));
+  s.otps.push(CODE);
+  // the keys now belong to another account than the saved one: ensure does not look
+  s.awsHandler = (argv) => (argv[1] === 'get-caller-identity' ? done({ ...identity, Account: '999999999999' }) : minted(129600));
+  const r = await ensureSession('dev', s.ctx);
+  assert.equal(r.creds.SessionToken, FAKE.token);
+  assert.equal(n, 1);
+  assert.deepEqual(s.calls.op, [
+    ['item', 'get', 'AWS prod', '--vault', 'Private', '--format', 'json'],
+    ['item', 'get', 'AWS otp', '--vault', 'Private', '--otp'],
+  ]);
+  assert.deepEqual(s.calls.aws.map((c) => c.argv[1]), ['get-session-token']);
+  assert.equal(s.profiles.get('dev').account, '123456789012');
+  assert.equal(s.writes().filter((w) => w.account === 'dev:op').length, 0);
+});
+
+test('ensureSession 3: a legacy op:true entry is read through opRef and migrated; no <profile>:op write', async () => {
+  const s = setup();
+  s.profiles.recordLogin('dev', { identity, label: 'Acme', region: 'eu-west-1', mfa_serial: MFA, op: true });
+  await s.keychain.set('dev:op', Buffer.from(JSON.stringify(REF)).toString('base64'));
+  s.calls.security.length = 0;
+  s.otps.push(CODE);
+  const r = await ensureSession('dev', s.ctx);
+  assert.equal(r.creds.SessionToken, FAKE.token);
+  assert.deepEqual(s.calls.op[1], ['item', 'get', 'AWS prod', '--vault', 'Private', '--otp']);
+  assert.deepEqual(s.profiles.get('dev').op, REF);
+  assert.equal(s.store.has('dev:op'), false);
+  assert.equal(s.writes().filter((w) => w.account === 'dev:op').length, 0);
 });
 
 test('ensureSession 4: not logged in -> an error naming aws:login (unknown profile, no keys, no session, expired session)', async () => {

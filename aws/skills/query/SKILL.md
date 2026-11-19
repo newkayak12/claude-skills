@@ -30,8 +30,8 @@ compatibility:
    logged in or session `expired` → offer `aws:login`. Read the active profile line (profile · account · region).
 2. **Call.** `query` with `{service, operation, args[]}`: service and operation as in the CLI
    (`ec2` + `describe-instances`), one call each, args as separate strings.
-   - Allowed: `describe-*`, `list-*`, `get-*`, `lookup-*`, `search-*`; `sts get-caller-identity`; `s3 ls` with an `s3://` URI only.
-   - Global flags: only `--query`, `--max-items`, `--page-size`, `--no-paginate`. Narrow big answers with `--query` and `--max-items`.
+   - Allowed: `describe-*`, `list-*`, `get-*`, `lookup-*`, `search-*`; `logs filter-log-events` (keyword/time search across a log group's streams); `sts get-caller-identity`; `s3 ls` with an `s3://` URI only.
+   - Global flags: only `--query`, `--max-items`, `--page-size`, `--no-paginate`, and `--output json|text|table` (once, lowercase; json when omitted, so pass `--output table` for a table). Narrow big answers with `--query` and `--max-items`.
    - `aws CLI not installed → aws:login installs it` → hand off to `aws:login` (its step 1 installs the CLI); run no
      `aws`, `brew` or installer from Bash. The same answer after the install → ask the person to run
      `/reload-plugins` or restart Claude Code, then stop; no retry loop.

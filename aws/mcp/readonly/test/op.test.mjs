@@ -112,3 +112,79 @@ test('a vault or item starting with a dash is refused before op runs', async () 
   await assert.rejects(otp('v', '-x', { run }), /item name/);
   assert.equal(calls.length, 0);
 });
+
+// --- username/password layout and otp_item (card 157 item 2) ------------------------------------
+
+test('readItem reads username/password when the named pair is absent, labels trimmed and case-insensitive', async () => {
+  const { run } = stub({ stdout: itemJson([
+    { label: ' Username ', value: KEY },
+    { label: 'PASSWORD', value: SECRET },
+    { label: 'one-time password', value: 'otpauth://totp/x?secret=ZZZ' },
+  ]) });
+  assert.deepEqual(await readItem('v', 'i', { run }), { AccessKeyId: KEY, SecretAccessKey: SECRET });
+});
+
+test('readItem: the named pair wins when the item holds both layouts', async () => {
+  const { run } = stub({ stdout: itemJson([
+    { label: 'username', value: 'console-user' },
+    { label: 'password', value: 'console-pass' },
+    { label: 'access key id', value: KEY },
+    { label: 'secret access key', value: SECRET },
+  ]) });
+  assert.deepEqual(await readItem('v', 'i', { run }), { AccessKeyId: KEY, SecretAccessKey: SECRET });
+});
+
+test('readItem never mixes halves of the two layouts', async () => {
+  // a named half plus a complete username/password pair: the whole pair is used, not key id + password
+  const whole = stub({ stdout: itemJson([
+    { label: 'access key id', value: 'AKIAHALFHALFHALF0000' },
+    { label: 'username', value: KEY },
+    { label: 'password', value: SECRET },
+  ]) }).run;
+  assert.deepEqual(await readItem('v', 'i', { run: whole }), { AccessKeyId: KEY, SecretAccessKey: SECRET });
+  // one half of each layout: no pair at all
+  const halves = stub({ stdout: itemJson([
+    { label: 'access key id', value: KEY },
+    { label: 'password', value: SECRET },
+  ]) }).run;
+  await assert.rejects(readItem('v', 'i', { run: halves }));
+});
+
+test('a partial layout errors naming both layouts and no value', async () => {
+  const { run } = stub({ stdout: itemJson([
+    { label: 'username', value: KEY },
+    { label: 'access key id', value: SECRET },
+  ]) });
+  await assert.rejects(readItem('v', 'i', { run }), (e) => {
+    for (const label of ['access key id', 'secret access key', 'username', 'password']) assert.ok(e.message.includes(label), `message names ${label}`);
+    assert.equal(e.message.includes(KEY), false);
+    assert.equal(e.message.includes(SECRET), false);
+    return true;
+  });
+});
+
+test('otp with an otp_item runs item get <otp_item> --vault <vault> --otp and never names the key item', async () => {
+  const { run, calls } = stub({ stdout: '654321\n' });
+  assert.equal(await otp('My Vault', 'key item', { otp_item: 'console login', run }), '654321');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].file, 'op');
+  assert.deepEqual(calls[0].args, ['item', 'get', 'console login', '--vault', 'My Vault', '--otp']);
+  assert.equal(calls[0].opts.shell, undefined);
+});
+
+test('otp with no otp_item reads the key item as before', async () => {
+  const { run, calls } = stub({ stdout: '123456\n' });
+  assert.equal(await otp('My Vault', 'key item', { run }), '123456');
+  assert.deepEqual(calls[0].args, ['item', 'get', 'key item', '--vault', 'My Vault', '--otp']);
+  const none = stub({ stdout: '123456\n' });
+  await otp('My Vault', 'key item', { otp_item: undefined, run: none.run });
+  assert.deepEqual(none.calls[0].args, ['item', 'get', 'key item', '--vault', 'My Vault', '--otp']);
+});
+
+test('assertRef refuses a bad otp_item before op runs', async () => {
+  const { run, calls } = stub({ stdout: '123456' });
+  for (const bad of ['-x', '', 'a\nb', 'a\0b', 7]) {
+    await assert.rejects(otp('v', 'i', { otp_item: bad, run }), /otp_item name/, JSON.stringify(bad));
+  }
+  assert.equal(calls.length, 0);
+});

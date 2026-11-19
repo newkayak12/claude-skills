@@ -4,13 +4,19 @@
 // stdout or stderr, so no value or item content can leak through a message.
 import { execFile } from 'node:child_process';
 
-const LABELS = { AccessKeyId: 'access key id', SecretAccessKey: 'secret access key' };
+// Two key layouts, never mixed half and half: the named pair, else a login item's username/password.
+const LAYOUTS = [
+  { AccessKeyId: 'access key id', SecretAccessKey: 'secret access key' },
+  { AccessKeyId: 'username', SecretAccessKey: 'password' },
+];
 const TIMEOUT_MS = 60000;
 const NOT_INSTALLED = '1Password CLI (op) is not installed';
 
 // Argv positions come from the caller; a leading dash would be read by op as an option.
-function assertRef(vault, item) {
-  for (const [k, v] of [['vault', vault], ['item', item]]) {
+function assertRef(vault, item, otpItem) {
+  const names = [['vault', vault], ['item', item]];
+  if (otpItem !== undefined) names.push(['otp_item', otpItem]);
+  for (const [k, v] of names) {
     if (typeof v !== 'string' || !v || v.startsWith('-') || /[\r\n\0]/.test(v)) throw new Error(`1Password ${k} name is not valid`);
   }
 }
@@ -30,7 +36,8 @@ function runOp(args, run) {
   });
 }
 
-// Resolves {AccessKeyId, SecretAccessKey}; fields are matched by label, case-insensitively.
+// Resolves {AccessKeyId, SecretAccessKey}; fields are matched by label (trimmed, case-insensitive). The
+// first layout whose two fields both hold a value is used; otherwise the error names both layouts.
 export async function readItem(vault, item, { run = execFile } = {}) {
   assertRef(vault, item);
   const out = await runOp(['item', 'get', item, '--vault', vault, '--format', 'json'], run);
@@ -41,19 +48,24 @@ export async function readItem(vault, item, { run = execFile } = {}) {
     throw new Error('1Password item could not be read: op did not return JSON');
   }
   if (!Array.isArray(fields)) throw new Error('1Password item has no fields');
-  const creds = {};
-  for (const [key, label] of Object.entries(LABELS)) {
+  const valueOf = (label) => {
     const f = fields.find((x) => typeof x?.label === 'string' && x.label.trim().toLowerCase() === label);
-    if (!f || typeof f.value !== 'string' || !f.value) throw new Error(`1Password item has no '${label}' field`);
-    creds[key] = f.value;
+    return typeof f?.value === 'string' && f.value ? f.value : null;
+  };
+  for (const layout of LAYOUTS) {
+    const id = valueOf(layout.AccessKeyId);
+    const secret = valueOf(layout.SecretAccessKey);
+    if (id && secret) return { AccessKeyId: id, SecretAccessKey: secret };
   }
-  return creds;
+  const [named, login] = LAYOUTS.map((l) => `'${l.AccessKeyId}' + '${l.SecretAccessKey}'`);
+  throw new Error(`1Password item has no key pair: it needs ${named}, or ${login}`);
 }
 
-// Resolves the first 6-digit token on op's stdout.
-export async function otp(vault, item, { run = execFile } = {}) {
-  assertRef(vault, item);
-  const out = await runOp(['item', 'get', item, '--vault', vault, '--otp'], run);
+// Resolves the first 6-digit token on op's stdout, read from otp_item (same vault) when given, else
+// from the key item.
+export async function otp(vault, item, { otp_item, run = execFile } = {}) {
+  assertRef(vault, item, otp_item);
+  const out = await runOp(['item', 'get', otp_item ?? item, '--vault', vault, '--otp'], run);
   const m = out.match(/(?<!\d)\d{6}(?!\d)/);
   if (!m) throw new Error('1Password did not return a 6-digit one-time code');
   return m[0];

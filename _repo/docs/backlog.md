@@ -696,36 +696,6 @@ Design: `_repo/docs/plans/2026-11-19-knowledge-*` (PRDs F1–F4, shipped in know
 
 (cards 102, 103 and 54 moved to the top, 2026-10-30)
 
-### aws plugin
-
-157. **aws: the person creates named profiles (account info, region) first; login fills one; `profile` lists and switches them** — in E-59613d5d
-   - Why: user, 2026-11-18, first real `aws:login`: "profile을 사용자가 생성하고 계정정보, 리전을
-     기록), profile은 여러개 만들 수 있고 list로 조회해서 바꿀 수 있음". Today a profile exists only
-     as a side effect of `login` (name + region as login arguments); there is no step that creates
-     one with its account info before any key is involved.
-   - Also seen the same day: a 1Password layout with the keys in `username`/`password` of one item
-     and the TOTP in another item (`one-time password` on a console-login item) is not readable by
-     `login`, which wants `access key id` / `secret access key` and the OTP in the same item. Worked
-     around by copying fields with `op item edit` (piped JSON; an OTP field keeps its type only with
-     an id starting `TOTP_`, otherwise op stores it CONCEALED).
-   - Acceptance: a `profile` create/update (name, account label/id, region, optional MFA serial,
-     optional 1Password vault/item/otp item) writes the profile without keys; several profiles
-     coexist; `profile` with no name lists every one (name, account, region, key source, session
-     expiry, active marker) and `profile <name>` switches; `login <name>` uses the saved fields and asks
-     only for what is missing; `login` reads `username`/`password` when the named key fields are absent
-     and takes an `otp_item`; tests in `aws/mcp/readonly` for each, counts reported; one real login
-     with a 1Password-backed profile.
-   - Also (user, same day): "이거 1password 안쓰면 다 천천히 받도록하고" — without 1Password, login
-     collects everything one step at a time (profile name → account → region → MFA serial → keys in the
-     hidden dialog → MFA code), one ask per step, never a bundled form. Acceptance: the login SKILL.md
-     Process asks each missing field alone and in that order; one real dialog-path login.
-   - Also seen the same day reading a service's CloudWatch logs through `query`: `logs
-     filter-log-events` (read-only keyword/time search across streams) is rejected because the allow-list
-     knows only describe/list/get/lookup/search verbs, so a search goes stream by stream with
-     `get-log-events`; and `--output text` is rejected `[global-flag]`. Acceptance: `logs
-     filter-log-events` allowed (named, not a `filter-*` wildcard); `--output json|text|table` allowed,
-     other values rejected; policy tests for both, counts reported.
-
 ### Skeleton and length (one card per skill, next edit)
 
 120. **Every skill optimized: length, trigger accuracy, script speed, code quality — one plugin per Sprint**

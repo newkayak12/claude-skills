@@ -99,30 +99,61 @@ test('forget:true with no session still deletes the keys', async () => {
   assert.deepEqual(s.deletes(), ['dev']);
 });
 
+const REF = { vault: 'Employee', item: 'AWS prod', otp_item: 'AWS otp' };
+const STAYS = '1Password reference stays in the profile entry (profile_save with vault and item null removes it); nothing else to delete.';
+function opProfile(s, name = 'prod') {
+  s.profiles.recordLogin(name, { identity: { Account: '999999999999' }, region: 'eu-west-1', mfa_serial: MFA, op: REF });
+}
+
 test('1Password-backed profile without forget: next query logs in again silently', async () => {
   const s = setup();
-  s.profiles.recordLogin('prod', { identity: { Account: '999999999999' }, region: 'eu-west-1', mfa_serial: MFA, op: true });
-  await s.keychain.set('prod:op', FAKE.op);
+  opProfile(s);
   await s.profiles.setSession('prod', session);
   const r = await logoutTool.handler({ profile: 'prod' }, s.ctx);
   assert.match(text(r), /next query will log in again silently/);
   assert.deepEqual(s.deletes(), ['prod:session']);
-  assert.equal(await s.keychain.get('prod:op'), FAKE.op);
+  assert.deepEqual(s.profiles.get('prod').op, REF);
   // the same line when there was no session to delete
   const again = await logoutTool.handler({ profile: 'prod' }, s.ctx);
   assert.match(text(again), /no session/);
   assert.match(text(again), /next query will log in again silently/);
 });
 
-test('1Password-backed profile with forget deletes the op reference and does not promise a silent login', async () => {
+test('1Password-backed profile with forget leaves the entry reference, says so in the fixed message, and promises no silent login', async () => {
   const s = setup();
-  s.profiles.recordLogin('prod', { identity: { Account: '999999999999' }, region: 'eu-west-1', mfa_serial: MFA, op: true });
-  await s.keychain.set('prod:op', FAKE.op);
+  opProfile(s);
+  const before = readFileSync(join(s.dir, 'profiles.json'), 'utf8');
   const r = await logoutTool.handler({ profile: 'prod', forget: true }, s.ctx);
-  assert.deepEqual(s.deletes(), ['prod:op']);
-  assert.match(text(r), /1Password reference deleted/);
-  assert.doesNotMatch(text(r), /silently/);
-  assert.equal(s.profiles.get('prod').op, true);
+  assert.deepEqual(s.deletes(), [], 'no <profile>:op, no key item deleted');
+  assert.ok(text(r).split('\n').includes(STAYS), text(r));
+  assert.doesNotMatch(text(r), /silently|reference deleted|keys? deleted/);
+  assert.equal(readFileSync(join(s.dir, 'profiles.json'), 'utf8'), before);
+  assert.deepEqual(s.profiles.get('prod').op, REF);
+  assert.equal(first(r), 'profile prod · account 999999999999 · region eu-west-1');
+});
+
+test('forget on a 1Password profile still deletes its cached session', async () => {
+  const s = setup();
+  opProfile(s);
+  await s.profiles.setSession('prod', session);
+  const r = await logoutTool.handler({ profile: 'prod', forget: true }, s.ctx);
+  assert.deepEqual(s.deletes(), ['prod:session']);
+  assert.match(text(r), /session deleted/);
+  assert.ok(text(r).includes(STAYS));
+});
+
+test('logout reads the reference through profiles.opRef; a legacy op:true entry is migrated by it and its reference stays', async () => {
+  const s = setup();
+  s.profiles.recordLogin('prod', { identity: { Account: '999999999999' }, region: 'eu-west-1', op: true });
+  await s.keychain.set('prod:op', Buffer.from(JSON.stringify({ vault: 'Employee', item: 'AWS prod' })).toString('base64'));
+  let asked = [];
+  const real = s.profiles.opRef;
+  s.profiles.opRef = async (name) => (asked.push(name), real(name));
+  const r = await logoutTool.handler({ profile: 'prod', forget: true }, s.ctx);
+  assert.deepEqual(asked, ['prod']);
+  assert.ok(text(r).includes(STAYS));
+  assert.deepEqual(s.profiles.get('prod').op, { vault: 'Employee', item: 'AWS prod' });
+  assert.deepEqual(s.deletes(), ['prod:op'], 'only the migrated pointer, deleted by opRef; no key item');
 });
 
 test('without a profile argument logout acts on the active profile', async () => {
@@ -161,8 +192,7 @@ test('a Keychain failure is returned as an error naming Keychain', async () => {
 test('R3: no key, secret, token or op reference in any logout result or any security argv', async () => {
   const s = setup();
   await mfaProfile(s);
-  s.profiles.recordLogin('prod', { identity: { Account: '999999999999' }, region: 'eu-west-1', mfa_serial: MFA, op: true });
-  await s.keychain.set('prod:op', FAKE.op);
+  opProfile(s);
   await s.profiles.setSession('prod', session);
   const out = [];
   out.push(text(await logoutTool.handler({ profile: 'dev' }, s.ctx)));
@@ -175,5 +205,5 @@ test('R3: no key, secret, token or op reference in any logout result or any secu
     assert.equal(out.join('\n').includes(v), false, `result has ${v}`);
     assert.equal(argv.includes(v), false, `argv has ${v}`);
   }
-  assert.equal(out.join('\n').includes('Employee'), false);
+  for (const name of ['Employee', 'AWS prod', 'AWS otp']) assert.equal(out.join('\n').includes(name), false, `result has ${name}`);
 });

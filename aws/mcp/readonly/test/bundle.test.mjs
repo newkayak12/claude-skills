@@ -11,7 +11,7 @@ test('dist bundle is built from the current sources (else: npm run build)', () =
   assert.equal(bundleHash(), sourceHash(), 'dist/aws-readonly.mjs is stale: run npm run build');
 });
 
-test('the bundle alone (no node_modules beside it) lists exactly profile, login, logout, query', async () => {
+test('the bundle alone (no node_modules beside it) lists exactly profile, profile_save, login, logout, query', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'awsro-bundle-'));
   copyFileSync(OUT, join(dir, 'aws-readonly.mjs'));
   assert.deepEqual(readdirSync(dir), ['aws-readonly.mjs']);
@@ -28,7 +28,7 @@ test('the bundle alone (no node_modules beside it) lists exactly profile, login,
   );
   try {
     const { tools } = await client.listTools();
-    assert.deepEqual(tools.map((t) => t.name).sort(), ['login', 'logout', 'profile', 'query']);
+    assert.deepEqual(tools.map((t) => t.name).sort(), ['login', 'logout', 'profile', 'profile_save', 'query']);
     const by = Object.fromEntries(tools.map((t) => [t.name, t]));
     assert.equal(by.profile.annotations.readOnlyHint, true);
     assert.equal(by.query.annotations.readOnlyHint, true);

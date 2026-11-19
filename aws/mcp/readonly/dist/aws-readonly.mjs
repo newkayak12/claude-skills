@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // readonly-aws MCP server, bundled by build.mjs — do not edit; edit the sources and run npm run build.
-// sources: e83e2bad9b437202
+// sources: 52b07732e1df1b50
 import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -9682,14 +9682,14 @@ var $ZodObject = /* @__PURE__ */ $constructor("$ZodObject", (inst, def) => {
     const shape = zod.def.shape;
     const propValues = {};
     for (const key in shape) {
-      const field = shape[key]._zod;
-      if (field.values) {
+      const field2 = shape[key]._zod;
+      if (field2.values) {
         if (!Object.prototype.hasOwnProperty.call(propValues, key)) {
           assignProp(propValues, key, /* @__PURE__ */ new Set());
         }
-        for (const v of field.values)
+        for (const v of field2.values)
           propValues[key].add(v);
-        if (field.optin !== void 0)
+        if (field2.optin !== void 0)
           propValues[key].add(void 0);
       }
     }
@@ -12388,8 +12388,8 @@ var objectProcessor = (schema, ctx, _json, params) => {
   }
   const requiredKeys = [];
   for (const key of Object.keys(shape)) {
-    const field = def.shape[key];
-    if (ctx.io === "input" ? inputOptin(field) === void 0 : field._zod.optout === void 0) {
+    const field2 = def.shape[key];
+    if (ctx.io === "input" ? inputOptin(field2) === void 0 : field2._zod.optout === void 0) {
       requiredKeys.push(key);
     }
   }
@@ -17098,6 +17098,11 @@ function createKeychain({ run, platform, service = SERVICE } = {}) {
       const r = await call(["find-generic-password", "-s", service, "-a", account, "-w"]);
       return r.code === 0 ? String(r.stdout).replace(/\n$/, "") : null;
     },
+    // Existence only: without -w the secret is never printed, and the output is dropped.
+    async has(account) {
+      const r = await call(["find-generic-password", "-s", service, "-a", account]);
+      return r.code === 0;
+    },
     async set(account, value) {
       value = String(value);
       if (/[\r\n]/.test(value)) throw new Error("Keychain value must not contain a newline");
@@ -17118,10 +17123,36 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync, renameSync, chmodSy
 import { homedir } from "node:os";
 import { join } from "node:path";
 var NAME_RE = /^[a-z0-9_-]{1,32}$/;
+var REGION_RE = /^[a-z]{2}(-[a-z0-9]+)+$/;
+var SERIAL_RE = /^arn:aws[a-z-]*:iam::\d{12}:(mfa|sms-mfa)\/\S+$/;
+var ACCOUNT_RE = /^\d{12}$/;
 var configDir = (env = process.env) => env.AWSRO_CONFIG_DIR || join(homedir(), ".config", "aws-readonly-mcp");
 function assertName(name) {
   if (typeof name !== "string" || !NAME_RE.test(name)) throw new Error("profile name must match [a-z0-9_-]{1,32}");
   return name;
+}
+function assertRegion(region) {
+  if (typeof region !== "string" || !REGION_RE.test(region)) throw new Error("region must look like us-east-1");
+  return region;
+}
+function assertSerial(serial) {
+  if (typeof serial !== "string" || !SERIAL_RE.test(serial)) throw new Error("mfa_serial must be an MFA device ARN (arn:aws:iam::<account>:mfa/<name>)");
+  return serial;
+}
+function assertAccount(account) {
+  if (typeof account !== "string" || !ACCOUNT_RE.test(account)) throw new Error("account must be 12 digits");
+  return account;
+}
+function assertLabel(label) {
+  const l = typeof label === "string" ? label.trim() : "";
+  if (!l || l.length > 64 || /[\x00-\x1f\x7f]/.test(l)) throw new Error("label must be 1-64 printable characters");
+  return l;
+}
+var printable = (s) => typeof s === "string" && s.trim() !== "" && s.length <= 128 && !/[\x00-\x1f\x7f]/.test(s);
+var isOpRef = (o) => Boolean(o) && typeof o === "object" && !Array.isArray(o) && printable(o.vault) && printable(o.item) && (o.otp_item === void 0 || printable(o.otp_item));
+function assertOpRef(o) {
+  if (!isOpRef(o)) throw new Error("1Password reference needs vault and item together (printable, up to 128 characters); otp_item only with item");
+  return { vault: o.vault, item: o.item, ...o.otp_item !== void 0 ? { otp_item: o.otp_item } : {} };
 }
 var maskRef = () => "op://****/****";
 function writeJson0600(file, data) {
@@ -17129,6 +17160,16 @@ function writeJson0600(file, data) {
   writeFileSync(tmp, JSON.stringify(data, null, 2) + "\n", { mode: 384 });
   renameSync(tmp, file);
   chmodSync(file, 384);
+}
+async function legacyRef(keychain, name) {
+  try {
+    const raw = await keychain.get(opAccount(name));
+    if (raw === null) return null;
+    const o = JSON.parse(Buffer.from(raw, "base64").toString("utf8"));
+    return isOpRef(o) ? assertOpRef(o) : null;
+  } catch {
+    return null;
+  }
 }
 function createProfiles({ dir = configDir(), keychain, now = () => Date.now() } = {}) {
   const profilesFile = join(dir, "profiles.json");
@@ -17162,21 +17203,89 @@ function createProfiles({ dir = configDir(), keychain, now = () => Date.now() } 
       need(name);
       write(stateFile, { active: name });
     },
+    // Create or update a profile by hand, no keys, no AWS call. A field left undefined keeps its saved
+    // value, null removes it. Every value is checked before anything is written. region is required on
+    // create (and cannot be removed); vault and item come together, otp_item (same vault) only with item.
+    upsert(name, { label, account, region, mfa_serial, vault, item, otp_item } = {}) {
+      assertName(name);
+      const old = all()[name];
+      const keep = (v, saved, check2) => v === void 0 ? saved : v === null ? void 0 : check2(v);
+      const reg = region === void 0 ? old?.region : assertRegion(region);
+      if (reg === void 0) throw new Error("region must look like us-east-1 (a region is required for a new profile)");
+      const entry = { name, region: reg };
+      const lab = keep(label, old?.label, assertLabel);
+      const acct = keep(account, old?.account, assertAccount);
+      const serial = keep(mfa_serial, old?.mfa_serial, assertSerial);
+      const oldRef = isOpRef(old?.op) ? old.op : null;
+      let op;
+      if (vault === null || item === null) {
+        if (typeof vault === "string" || typeof item === "string") throw new Error("vault and item come together: pass both, or null to remove the reference");
+      } else if (vault !== void 0 || item !== void 0) {
+        const v = vault ?? oldRef?.vault;
+        const i = item ?? oldRef?.item;
+        if (v === void 0 || i === void 0) throw new Error("vault and item come together: pass both");
+        op = { vault: v, item: i, ...oldRef?.otp_item !== void 0 ? { otp_item: oldRef.otp_item } : {} };
+      } else {
+        op = oldRef ?? (old?.op === true ? true : void 0);
+      }
+      if (otp_item !== void 0 && otp_item !== null) {
+        if (!op || op === true) throw new Error("otp_item needs vault and item: pass them with it");
+        op = { ...op, otp_item };
+      } else if (otp_item === null && op && op !== true) {
+        op = { vault: op.vault, item: op.item };
+      }
+      if (op && op !== true) op = assertOpRef(op);
+      if (lab !== void 0) entry.label = lab;
+      if (acct !== void 0) entry.account = acct;
+      if (serial !== void 0) entry.mfa_serial = serial;
+      if (op !== void 0) entry.op = op;
+      write(profilesFile, { profiles: { ...all(), [name]: entry } });
+      if (!self.active()) self.setActive(name);
+      return entry;
+    },
+    // The saved 1Password reference { vault, item, otp_item? } or null. A legacy entry (op: true, the
+    // reference in Keychain `<name>:op`) is migrated once: the entry is written first, then the Keychain
+    // item deleted. A missing or unreadable reference gives null and the entry stays as it was.
+    async opRef(name) {
+      const e = self.get(name);
+      if (isOpRef(e?.op)) return assertOpRef(e.op);
+      if (e?.op !== true) return null;
+      const ref = await legacyRef(keychain, name);
+      if (!ref) return null;
+      const cur = all()[name];
+      if (cur?.op === true) write(profilesFile, { profiles: { ...all(), [name]: { ...cur, op: ref } } });
+      await keychain.del(opAccount(name)).catch(() => {
+      });
+      return ref;
+    },
+    // Where the keys live: 1password, keychain or none. An existence check only; no secret is read,
+    // nothing is migrated or deleted.
+    async keySource(name) {
+      const e = need(name);
+      if (isOpRef(e.op)) return "1password";
+      if (e.op === true) return await legacyRef(keychain, name) ? "1password" : "none";
+      return await keychain.has(keyAccount(name)) ? "keychain" : "none";
+    },
     // Saved after a successful get-caller-identity. Settings not passed stay as they were; the label
-    // defaults to the account id (a label kept from an earlier login of the same account stays).
+    // defaults to the account id. Saved label, account, mfa_serial and op object are never erased: a
+    // boolean op never replaces an object, and a saved account that is not the identity's is refused.
     recordLogin(name, { identity, label, region, mfa_serial, op } = {}) {
       assertName(name);
       if (!identity?.Account) throw new Error("login needs the identity from sts get-caller-identity");
       const old = all()[name];
+      if (old?.account && old.account !== identity.Account) {
+        throw new Error(`account mismatch: profile "${name}" is saved for account ${old.account}, the login is account ${identity.Account}`);
+      }
       const reg = region ?? old?.region;
       if (!reg) throw new Error("a region is required for a new profile");
+      const saved = isOpRef(old?.op) ? old.op : null;
       const entry = {
         name,
         region: reg,
-        label: label ?? (old && old.account === identity.Account ? old.label : identity.Account),
+        label: label ?? old?.label ?? identity.Account,
         account: identity.Account,
         ...mfa_serial ?? old?.mfa_serial ? { mfa_serial: mfa_serial ?? old.mfa_serial } : {},
-        op: op ?? old?.op ?? false
+        op: op && typeof op === "object" ? assertOpRef(op) : saved ?? op ?? old?.op ?? false
       };
       write(profilesFile, { profiles: { ...all(), [name]: entry } });
       if (!self.active()) self.setActive(name);
@@ -17212,14 +17321,14 @@ function createProfiles({ dir = configDir(), keychain, now = () => Date.now() } 
 }
 var unknownProfile = (profiles, name) => `unknown profile "${name}"; known: ${profiles.names().join(", ") || "(none)"}`;
 var rowOf = async (profiles, p, active) => {
-  const parts = [p.name, p.label, p.region, `expiry ${await profiles.sessionStatus(p.name)}`];
-  if (p.op) parts.push(maskRef());
+  const src = await profiles.keySource(p.name);
+  const parts = [p.name, p.label ?? "-", p.account ?? "-", p.region, `keys ${src}${src === "1password" ? ` ${maskRef()}` : ""}`, `expiry ${await profiles.sessionStatus(p.name)}`];
   if (p.name === active) parts.push("active");
   return `${p.name === active ? "*" : " "} ${parts.join(" \xB7 ")}`;
 };
 var profileTool = defineTool({
   name: "profile",
-  description: "List the saved AWS profiles (name, account label, region, session expiry, active marker), or switch the active profile by name. Never calls AWS.",
+  description: "List the saved AWS profiles (name, label, account, region, key source, session expiry, active marker), or switch the active profile by name. Never calls AWS.",
   inputSchema: {
     type: "object",
     properties: { name: { type: "string", description: "Profile to make active; omit to list." } },
@@ -17246,6 +17355,46 @@ no profiles saved; log in first`);
       const rows = [];
       for (const p of list) rows.push(await rowOf(profiles, p, active));
       return ok([head, ...rows].join("\n"));
+    } catch (e) {
+      return err(e.message);
+    }
+  }
+});
+var SAVE_FIELDS = ["label", "account", "region", "mfa_serial", "vault", "item", "otp_item"];
+var field = (description) => ({ type: ["string", "null"], description });
+var profileSaveTool = defineTool({
+  name: "profile_save",
+  description: "Create or update a saved AWS profile (name, label, 12-digit account, region, MFA serial, 1Password vault/item/otp_item). Writes the local profile file only; never stores keys and never calls AWS. A field left out stays as saved, null removes it. region is required for a new profile. The first saved profile becomes active.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      name: { type: "string", description: "Profile name, [a-z0-9_-]{1,32}." },
+      label: field("Display label, 1-64 printable characters."),
+      account: field("12-digit AWS account id."),
+      region: { type: "string", description: "Region such as ap-northeast-2; required for a new profile." },
+      mfa_serial: field("MFA device ARN (arn:aws:iam::<account>:mfa/<name>)."),
+      vault: field("1Password vault name; with item."),
+      item: field("1Password item holding the AWS access key; with vault."),
+      otp_item: field("1Password item (same vault) holding the one-time password; needs item.")
+    },
+    required: ["name"],
+    additionalProperties: false
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  async handler(args, ctx) {
+    const { profiles } = ctx;
+    try {
+      const extra = Object.keys(args ?? {}).filter((k) => k !== "name" && !SAVE_FIELDS.includes(k));
+      if (extra.length) return err(`profile_save takes name, ${SAVE_FIELDS.join(", ")} only; refused: ${extra.join(", ")}. Keys are never saved here.`);
+      for (const k of SAVE_FIELDS) {
+        const v = args?.[k];
+        if (v !== void 0 && v !== null && typeof v !== "string") return err(`${k} must be a string or null`);
+      }
+      const name = assertName(args?.name);
+      const existed = Boolean(profiles.get(name));
+      const e = profiles.upsert(name, Object.fromEntries(SAVE_FIELDS.filter((k) => args[k] !== void 0).map((k) => [k, args[k]])));
+      const src = await profiles.keySource(name);
+      return ok([header({ profile: name, account: e.account, region: e.region }), `${existed ? "updated" : "created"} profile ${name}`, `keys ${src}${src === "1password" ? ` ${maskRef()}` : ""}`, `active profile: ${profiles.active() ?? "-"}`].join("\n"));
     } catch (e) {
       return err(e.message);
     }
@@ -17345,11 +17494,16 @@ __export(op_exports, {
   readItem: () => readItem
 });
 import { execFile as execFile2 } from "node:child_process";
-var LABELS = { AccessKeyId: "access key id", SecretAccessKey: "secret access key" };
+var LAYOUTS = [
+  { AccessKeyId: "access key id", SecretAccessKey: "secret access key" },
+  { AccessKeyId: "username", SecretAccessKey: "password" }
+];
 var TIMEOUT_MS = 6e4;
 var NOT_INSTALLED = "1Password CLI (op) is not installed";
-function assertRef(vault, item) {
-  for (const [k, v] of [["vault", vault], ["item", item]]) {
+function assertRef(vault, item, otpItem) {
+  const names = [["vault", vault], ["item", item]];
+  if (otpItem !== void 0) names.push(["otp_item", otpItem]);
+  for (const [k, v] of names) {
     if (typeof v !== "string" || !v || v.startsWith("-") || /[\r\n\0]/.test(v)) throw new Error(`1Password ${k} name is not valid`);
   }
 }
@@ -17376,17 +17530,21 @@ async function readItem(vault, item, { run = execFile2 } = {}) {
     throw new Error("1Password item could not be read: op did not return JSON");
   }
   if (!Array.isArray(fields)) throw new Error("1Password item has no fields");
-  const creds = {};
-  for (const [key, label] of Object.entries(LABELS)) {
+  const valueOf = (label) => {
     const f = fields.find((x) => typeof x?.label === "string" && x.label.trim().toLowerCase() === label);
-    if (!f || typeof f.value !== "string" || !f.value) throw new Error(`1Password item has no '${label}' field`);
-    creds[key] = f.value;
+    return typeof f?.value === "string" && f.value ? f.value : null;
+  };
+  for (const layout of LAYOUTS) {
+    const id = valueOf(layout.AccessKeyId);
+    const secret = valueOf(layout.SecretAccessKey);
+    if (id && secret) return { AccessKeyId: id, SecretAccessKey: secret };
   }
-  return creds;
+  const [named, login2] = LAYOUTS.map((l) => `'${l.AccessKeyId}' + '${l.SecretAccessKey}'`);
+  throw new Error(`1Password item has no key pair: it needs ${named}, or ${login2}`);
 }
-async function otp(vault, item, { run = execFile2 } = {}) {
-  assertRef(vault, item);
-  const out = await runOp(["item", "get", item, "--vault", vault, "--otp"], run);
+async function otp(vault, item, { otp_item, run = execFile2 } = {}) {
+  assertRef(vault, item, otp_item);
+  const out = await runOp(["item", "get", otp_item ?? item, "--vault", vault, "--otp"], run);
   const m = out.match(/(?<!\d)\d{6}(?!\d)/);
   if (!m) throw new Error("1Password did not return a 6-digit one-time code");
   return m[0];
@@ -17395,8 +17553,7 @@ async function otp(vault, item, { run = execFile2 } = {}) {
 // login.mjs
 var DURATIONS = [129600, 43200, 3600];
 var WINDOW_MS = 3e4;
-var REGION_RE = /^[a-z]{2}(-[a-z0-9]+)+$/;
-var SERIAL_RE = /^arn:aws[a-z-]*:iam::\d{12}:(mfa|sms-mfa)\/\S+$/;
+var SERIAL_RE2 = /^arn:aws[a-z-]*:iam::\d{12}:(mfa|sms-mfa)\/\S+$/;
 var MFA_REJECTED = /MultiFactorAuthentication failed|invalid MFA one time pass code/i;
 var Fail = class extends Error {
 };
@@ -17420,10 +17577,6 @@ var isStr = (v) => typeof v === "string" && v.length > 0;
 var parseKeys = (raw) => {
   const o = raw === null ? null : unb64(raw);
   return isStr(o?.AccessKeyId) && isStr(o?.SecretAccessKey) ? { AccessKeyId: o.AccessKeyId, SecretAccessKey: o.SecretAccessKey } : null;
-};
-var parseRef = (raw) => {
-  const o = raw === null ? null : unb64(raw);
-  return isStr(o?.vault) && isStr(o?.item) ? { vault: o.vault, item: o.item } : null;
 };
 var awsCode = (stderr) => String(stderr ?? "").match(/An error occurred \(([A-Za-z]+)\)/)?.[1];
 function deps(ctx) {
@@ -17517,18 +17670,20 @@ var dialogCode = (d, profile) => async () => {
 var sessionCreds = (session) => ({ AccessKeyId: session.AccessKeyId, SecretAccessKey: session.SecretAccessKey, SessionToken: session.SessionToken });
 var login = defineTool({
   name: "login",
-  description: "Log in a named AWS profile with an IAM user access key pair, kept in macOS Keychain (typed once into a hidden dialog) or read from a 1Password item (vault + item). Verifies the keys with sts get-caller-identity. With mfa_serial it asks for the MFA code and caches a session token (up to 36 h); without, the keys are used directly. No key or code is ever a tool argument.",
+  description: "Log in a named AWS profile with an IAM user access key pair, kept in macOS Keychain (typed once into a hidden dialog) or read from a 1Password item (vault + item). Fields the profile already holds (region, account, MFA serial, 1Password reference) are reused; an argument wins and is saved. Verifies the keys with sts get-caller-identity and refuses when the saved account is another one. With mfa_serial it asks for the MFA code and caches a session token (up to 36 h); without, the keys are used directly. No key or code is ever a tool argument.",
   inputSchema: {
     type: "object",
     properties: {
       profile: { type: "string", description: "Profile name, [a-z0-9_-]{1,32}." },
-      region: { type: "string", description: "AWS region the profile queries, for example us-east-1." },
+      region: { type: "string", description: "AWS region the profile queries, for example us-east-1. Optional when the profile has one saved." },
+      account: { type: "string", description: "Optional 12-digit AWS account id; the keys must belong to it. Saved with the profile." },
       label: { type: "string", description: "Optional display label; defaults to the account id." },
       mfa_serial: { type: "string", description: "Optional MFA device ARN; saved with the profile." },
       vault: { type: "string", description: "Optional 1Password vault holding the key item (with item)." },
-      item: { type: "string", description: 'Optional 1Password item with fields "access key id" and "secret access key" (and a one-time password).' }
+      item: { type: "string", description: 'Optional 1Password item with the key pair: fields "access key id" and "secret access key", else "username" and "password".' },
+      otp_item: { type: "string", description: "Optional 1Password item (same vault) holding the one-time password, when it is not in the key item. Used only with an MFA serial." }
     },
-    required: ["profile", "region"],
+    required: ["profile"],
     additionalProperties: false
   },
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -17536,20 +17691,28 @@ var login = defineTool({
     const d = deps(ctx);
     const { profiles, keychain } = ctx;
     let account;
-    const head = () => header({ profile: args?.profile, account, region: args?.region });
+    let region = args?.region;
+    const head = () => header({ profile: args?.profile, account, region });
     try {
       const profile = assertName(args?.profile);
-      const region = args?.region;
-      if (typeof region !== "string" || !REGION_RE.test(region)) throw new Fail("region must look like us-east-1");
+      const old = profiles.get(profile);
+      region = region ?? old?.region;
+      if (region === void 0) throw new Fail(`region is required: profile ${profile} has none saved`);
+      assertRegion(region);
+      if (args?.account !== void 0) assertAccount(args.account);
       const label = args?.label === void 0 ? void 0 : String(args.label).trim();
       if (label !== void 0 && (!label || label.length > 64 || /[\x00-\x1f]/.test(label))) throw new Fail("label must be 1-64 printable characters");
-      if (args?.mfa_serial !== void 0 && !SERIAL_RE.test(String(args.mfa_serial))) throw new Fail("mfa_serial must be an MFA device ARN (arn:aws:iam::<account>:mfa/<name>)");
+      if (args?.mfa_serial !== void 0 && !SERIAL_RE2.test(String(args.mfa_serial))) throw new Fail("mfa_serial must be an MFA device ARN (arn:aws:iam::<account>:mfa/<name>)");
       const hasVault = args?.vault !== void 0;
       const hasItem = args?.item !== void 0;
       if (hasVault !== hasItem) throw new Fail("vault and item go together");
-      const old = profiles.get(profile);
       const serial = args?.mfa_serial ?? old?.mfa_serial;
-      const ref = hasVault ? { vault: args.vault, item: args.item } : old?.op ? parseRef(await keychain.get(opAccount(profile))) : null;
+      const saved = await profiles.opRef(profile);
+      const base = hasVault ? { vault: args.vault, item: args.item } : saved;
+      if (args?.otp_item !== void 0 && !base) throw new Fail("otp_item needs vault and item: pass them with it");
+      const otpItem = args?.otp_item ?? (saved?.vault === base?.vault ? saved?.otp_item : void 0);
+      if (typeof otpItem === "string" && otpItem.startsWith("-")) throw new Fail("1Password otp_item name is not valid");
+      const ref = base ? assertOpRef({ ...base, ...otpItem !== void 0 ? { otp_item: otpItem } : {} }) : null;
       let keys;
       let written = false;
       if (ref) {
@@ -17577,16 +17740,22 @@ var login = defineTool({
         });
         throw e;
       }
+      const expected = args?.account ?? old?.account;
+      if (expected && expected !== identity.Account) {
+        if (written) await keychain.del(keyAccount(profile)).catch(() => {
+        });
+        throw new Fail(`account mismatch: profile ${profile} is for account ${expected}, these keys belong to account ${identity.Account}; nothing saved`);
+      }
       account = identity.Account;
-      if (ref) await keychain.set(opAccount(profile), b64(ref));
-      const entry = profiles.recordLogin(profile, { identity, label, region, mfa_serial: args?.mfa_serial, op: Boolean(ref) });
+      if (args?.account !== void 0 && args.account !== old?.account) profiles.upsert(profile, { account: args.account, region });
+      const entry = profiles.recordLogin(profile, { identity, label, region, mfa_serial: args?.mfa_serial, op: ref ?? void 0 });
       let expiry = "none";
       if (serial) {
         const session = await mintSession(d, {
           creds: keys,
           region,
           serial,
-          getCode: ref ? () => d.op.otp(ref.vault, ref.item) : dialogCode(d, profile),
+          getCode: ref ? () => d.op.otp(ref.vault, ref.item, { otp_item: ref.otp_item }) : dialogCode(d, profile),
           retryOnReject: Boolean(ref)
         });
         await profiles.setSession(profile, session);
@@ -17620,7 +17789,7 @@ async function ensure(profile, ctx) {
       const s = await profiles.getSession(profile);
       if ([s?.AccessKeyId, s?.SecretAccessKey, s?.SessionToken].every(isStr)) return { creds: sessionCreds(s), region: e.region };
     }
-    const ref = e.op ? parseRef(await keychain.get(opAccount(profile))) : null;
+    const ref = await profiles.opRef(profile);
     if (ref) {
       const keys = await d.op.readItem(ref.vault, ref.item);
       d.secrets.push(keys.AccessKeyId, keys.SecretAccessKey);
@@ -17629,7 +17798,7 @@ async function ensure(profile, ctx) {
         creds: keys,
         region: e.region,
         serial: e.mfa_serial,
-        getCode: () => d.op.otp(ref.vault, ref.item),
+        getCode: () => d.op.otp(ref.vault, ref.item, { otp_item: ref.otp_item }),
         retryOnReject: true
       });
       await profiles.setSession(profile, session);
@@ -17648,12 +17817,12 @@ async function ensure(profile, ctx) {
 // logout.mjs
 var logoutTool = defineTool({
   name: "logout",
-  description: "Delete the cached session of a profile (default: the active one) and report its expiry. STS tokens cannot be revoked and stay valid until then. forget:true also deletes the stored keys or 1Password reference; the profile entry stays.",
+  description: "Delete the cached session of a profile (default: the active one) and report its expiry. STS tokens cannot be revoked and stay valid until then. forget:true also deletes the stored keys; a 1Password reference stays in the profile entry, as does the entry.",
   inputSchema: {
     type: "object",
     properties: {
       profile: { type: "string", description: "Profile name; default is the active profile." },
-      forget: { type: "boolean", description: "Also delete the stored access keys or the 1Password reference." }
+      forget: { type: "boolean", description: "Also delete the stored access keys (a 1Password reference stays in the profile entry)." }
     },
     additionalProperties: false
   },
@@ -17674,10 +17843,15 @@ var logoutTool = defineTool({
       } else {
         lines.push(`no session cached; nothing deleted${e.mfa_serial ? "" : " (a profile without an MFA serial never has one)"}.`);
       }
+      const ref = await profiles.opRef(name);
       if (args?.forget) {
-        await keychain.del(e.op ? opAccount(name) : keyAccount(name));
-        lines.push(e.op ? "1Password reference deleted; the profile entry stays." : "stored keys deleted; the profile entry stays.");
-      } else if (e.op) {
+        if (ref) {
+          lines.push("1Password reference stays in the profile entry (profile_save with vault and item null removes it); nothing else to delete.");
+        } else {
+          await keychain.del(keyAccount(name));
+          lines.push("stored keys deleted; the profile entry stays.");
+        }
+      } else if (ref) {
         lines.push("the next query will log in again silently.");
       }
       return ok(lines.join("\n"));
@@ -17752,13 +17926,13 @@ var OUTFILE_OPERATIONS = Object.freeze([
 ]);
 var OUTFILE = new Set(OUTFILE_OPERATIONS);
 var MESSAGES = {
-  "not-allowed": "only describe-*, list-*, get-*, lookup-*, search-*, sts get-caller-identity and s3 ls with an s3:// URI are allowed",
+  "not-allowed": "only describe-*, list-*, get-*, lookup-*, search-*, logs filter-log-events, sts get-caller-identity and s3 ls with an s3:// URI are allowed",
   "invalid-token": "service and operation must be lowercase CLI names (letters, digits, dashes)",
   "invalid-args": "args must be an array of strings",
   "endpoint-override": "--endpoint-url is not accepted; calls go to the AWS endpoints only",
   "profile-override": "--profile is not accepted; the active profile is used",
   "cli-input": "--cli-input-* is not accepted; pass arguments one by one",
-  "global-flag": "only the global flags --query, --max-items, --page-size and --no-paginate are accepted",
+  "global-flag": "only the global flags --query, --max-items, --page-size, --no-paginate and --output json|text|table (once) are accepted",
   "output-file": "writing a response to a local file (--output-file, --*outfile) is not accepted",
   "url-or-file-value": "argument values starting file://, fileb://, http:// or https:// are not accepted",
   "secret-value": "secretsmanager get-secret-value reads a secret and is denied",
@@ -17843,8 +18017,25 @@ var S3_LS_FLAGS = /* @__PURE__ */ new Map([
   ["--bucket-name-prefix", true],
   ["--bucket-region", true]
 ]);
-function s3LsArgs(args) {
+var OUTPUT_VALUES = /* @__PURE__ */ new Set(["json", "text", "table"]);
+function outputFlags(args) {
+  const skip = /* @__PURE__ */ new Set();
   for (let i = 0; i < args.length; i++) {
+    const t = args[i];
+    if (t === "--output") {
+      if (skip.size || !OUTPUT_VALUES.has(args[i + 1])) return { reject: true };
+      skip.add(i).add(i + 1);
+      i++;
+    } else if (t.startsWith("--output=")) {
+      if (skip.size || !OUTPUT_VALUES.has(t.slice("--output=".length))) return { reject: true };
+      skip.add(i);
+    }
+  }
+  return { reject: false, skip };
+}
+function s3LsArgs(args, skip) {
+  for (let i = 0; i < args.length; i++) {
+    if (skip.has(i)) continue;
     const t = args[i];
     if (t.startsWith("--")) {
       const takesValue = S3_LS_FLAGS.get(flagName(t));
@@ -17867,7 +18058,11 @@ function check(input) {
   if (service === "s3" && operation !== "ls") return reject("s3-high-level");
   if (service === "ssm" && SSM_READS.has(operation) && withDecryption(args)) return reject("ssm-decryption");
   if (OUTFILE.has(key)) return reject("outfile-positional");
-  for (const t of args) {
+  const output = outputFlags(args);
+  if (output.reject) return reject("global-flag");
+  for (let i = 0; i < args.length; i++) {
+    const t = args[i];
+    if (output.skip.has(i)) continue;
     if (t.startsWith("--")) {
       const rule = flagRule(t);
       if (rule) return reject(rule);
@@ -17875,8 +18070,8 @@ function check(input) {
     const eq = t.startsWith("--") ? t.indexOf("=") : -1;
     if (VALUE_PREFIX_RE.test(t) || eq >= 0 && VALUE_PREFIX_RE.test(t.slice(eq + 1))) return reject("url-or-file-value");
   }
-  if (service === "s3") return s3LsArgs(args);
-  if (key === "sts get-caller-identity") return { ok: true };
+  if (service === "s3") return s3LsArgs(args, output.skip);
+  if (key === "sts get-caller-identity" || key === "logs filter-log-events") return { ok: true };
   if (/^(describe|list|get|lookup|search)-/.test(operation)) return { ok: true };
   return reject("not-allowed");
 }
@@ -17935,13 +18130,13 @@ var scrubber = (creds = {}) => {
 };
 var queryTool = defineTool({
   name: "query",
-  description: 'Run one read-only AWS CLI call as the active profile: service and operation as in the CLI (ec2 + describe-instances) and args as separate strings. Allowed: describe-*, list-*, get-*, lookup-*, search-*, sts get-caller-identity, s3 ls with an s3:// URI. Anything else, and any override flag, comes back as "rejected [rule]". Output is cut at 1 MiB and a call stops at 60 s. The first line of every answer names profile, account and region.',
+  description: 'Run one read-only AWS CLI call as the active profile: service and operation as in the CLI (ec2 + describe-instances) and args as separate strings. Allowed: describe-*, list-*, get-*, lookup-*, search-*, logs filter-log-events, sts get-caller-identity, s3 ls with an s3:// URI. Anything else, and any override flag, comes back as "rejected [rule]". Output is json unless the args carry --output json|text|table (once). Output is cut at 1 MiB and a call stops at 60 s. The first line of every answer names profile, account and region.',
   inputSchema: {
     type: "object",
     properties: {
       service: { type: "string", description: "AWS CLI service, e.g. ec2, s3api, iam." },
       operation: { type: "string", description: "AWS CLI operation, e.g. describe-instances." },
-      args: { type: "array", items: { type: "string" }, description: "Remaining arguments, one string each. Global flags: only --query, --max-items, --page-size, --no-paginate." }
+      args: { type: "array", items: { type: "string" }, description: "Remaining arguments, one string each. Global flags: only --query, --max-items, --page-size, --no-paginate and --output json|text|table (once; the default is json)." }
     },
     required: ["service", "operation"],
     additionalProperties: false
@@ -17998,7 +18193,8 @@ ${scrub2(`could not prepare the aws environment: ${e?.message ?? "unknown error"
       }
       let res;
       try {
-        res = await (ctx.exec ?? execAws)([service, operation, ...args, "--output", "json"], env);
+        const hasOutput = args.some((t) => t === "--output" || t.startsWith("--output="));
+        res = await (ctx.exec ?? execAws)([service, operation, ...args, ...hasOutput ? [] : ["--output", "json"]], env);
       } catch (e) {
         if (e?.code === "ENOENT") {
           log2("cli-missing");
@@ -18039,7 +18235,7 @@ ${cut(scrub2(res.stdout ?? "")) || "(no output)"}`);
 // server.mjs
 var log = (...a) => process.stderr.write(`[readonly-aws] ${a.join(" ")}
 `);
-var TOOLS = [profileTool, login, logoutTool, queryTool];
+var TOOLS = [profileTool, profileSaveTool, login, logoutTool, queryTool];
 function createServer(ctx, tools = TOOLS) {
   const server = new Server({ name: "readonly-aws", version: "0.1.0" }, { capabilities: { tools: {} } });
   const byName = new Map(tools.map((t) => [t.name, t]));

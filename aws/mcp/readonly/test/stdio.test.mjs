@@ -54,7 +54,7 @@ test('bundle over stdio: tools/list, not-logged-in query, rejected query; aws ne
     send({ jsonrpc: '2.0', method: 'notifications/initialized' });
 
     const list = await call(2, 'tools/list', {});
-    assert.deepEqual(list.result.tools.map((t) => t.name).sort(), ['login', 'logout', 'profile', 'query']);
+    assert.deepEqual(list.result.tools.map((t) => t.name).sort(), ['login', 'logout', 'profile', 'profile_save', 'query']);
 
     const noSession = await call(3, 'tools/call', { name: 'query', arguments: { service: 'sts', operation: 'get-caller-identity' } });
     assert.equal(noSession.result.isError, true);

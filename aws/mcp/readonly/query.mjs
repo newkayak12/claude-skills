@@ -30,14 +30,15 @@ export const queryTool = defineTool({
   name: 'query',
   description:
     'Run one read-only AWS CLI call as the active profile: service and operation as in the CLI (ec2 + describe-instances) and args as separate strings. ' +
-    'Allowed: describe-*, list-*, get-*, lookup-*, search-*, sts get-caller-identity, s3 ls with an s3:// URI. Anything else, and any override flag, comes back as "rejected [rule]". ' +
+    'Allowed: describe-*, list-*, get-*, lookup-*, search-*, logs filter-log-events, sts get-caller-identity, s3 ls with an s3:// URI. Anything else, and any override flag, comes back as "rejected [rule]". ' +
+    'Output is json unless the args carry --output json|text|table (once). ' +
     'Output is cut at 1 MiB and a call stops at 60 s. The first line of every answer names profile, account and region.',
   inputSchema: {
     type: 'object',
     properties: {
       service: { type: 'string', description: 'AWS CLI service, e.g. ec2, s3api, iam.' },
       operation: { type: 'string', description: 'AWS CLI operation, e.g. describe-instances.' },
-      args: { type: 'array', items: { type: 'string' }, description: 'Remaining arguments, one string each. Global flags: only --query, --max-items, --page-size, --no-paginate.' },
+      args: { type: 'array', items: { type: 'string' }, description: 'Remaining arguments, one string each. Global flags: only --query, --max-items, --page-size, --no-paginate and --output json|text|table (once; the default is json).' },
     },
     required: ['service', 'operation'],
     additionalProperties: false,
@@ -94,7 +95,9 @@ export const queryTool = defineTool({
 
       let res;
       try {
-        res = await (ctx.exec ?? execAws)([service, operation, ...args, '--output', 'json'], env);
+        // policy accepted at most one --output; json is added only when the person gave none
+        const hasOutput = args.some((t) => t === '--output' || t.startsWith('--output='));
+        res = await (ctx.exec ?? execAws)([service, operation, ...args, ...(hasOutput ? [] : ['--output', 'json'])], env);
       } catch (e) {
         if (e?.code === 'ENOENT') {
           log('cli-missing');

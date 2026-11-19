@@ -79,13 +79,13 @@ export const OUTFILE_OPERATIONS = Object.freeze([
 const OUTFILE = new Set(OUTFILE_OPERATIONS);
 
 const MESSAGES = {
-  'not-allowed': 'only describe-*, list-*, get-*, lookup-*, search-*, sts get-caller-identity and s3 ls with an s3:// URI are allowed',
+  'not-allowed': 'only describe-*, list-*, get-*, lookup-*, search-*, logs filter-log-events, sts get-caller-identity and s3 ls with an s3:// URI are allowed',
   'invalid-token': 'service and operation must be lowercase CLI names (letters, digits, dashes)',
   'invalid-args': 'args must be an array of strings',
   'endpoint-override': '--endpoint-url is not accepted; calls go to the AWS endpoints only',
   'profile-override': '--profile is not accepted; the active profile is used',
   'cli-input': '--cli-input-* is not accepted; pass arguments one by one',
-  'global-flag': 'only the global flags --query, --max-items, --page-size and --no-paginate are accepted',
+  'global-flag': 'only the global flags --query, --max-items, --page-size, --no-paginate and --output json|text|table (once) are accepted',
   'output-file': 'writing a response to a local file (--output-file, --*outfile) is not accepted',
   'url-or-file-value': 'argument values starting file://, fileb://, http:// or https:// are not accepted',
   'secret-value': 'secretsmanager get-secret-value reads a secret and is denied',
@@ -162,8 +162,30 @@ const S3_LS_FLAGS = new Map([
   ['--request-payer', true], ['--bucket-name-prefix', true], ['--bucket-region', true],
 ]);
 
-function s3LsArgs(args) {
+// The one global flag a caller may set: exactly `--output <v>` or `--output=<v>`, v lowercase json, text or table.
+// Any other --output (other value, no value, a repeat) is rejected; abbreviations and --output-file* are
+// not matched here and fall to flagRule. `skip` holds the indices of the accepted tokens.
+const OUTPUT_VALUES = new Set(['json', 'text', 'table']);
+
+function outputFlags(args) {
+  const skip = new Set();
   for (let i = 0; i < args.length; i++) {
+    const t = args[i];
+    if (t === '--output') {
+      if (skip.size || !OUTPUT_VALUES.has(args[i + 1])) return { reject: true };
+      skip.add(i).add(i + 1);
+      i++;
+    } else if (t.startsWith('--output=')) {
+      if (skip.size || !OUTPUT_VALUES.has(t.slice('--output='.length))) return { reject: true };
+      skip.add(i);
+    }
+  }
+  return { reject: false, skip };
+}
+
+function s3LsArgs(args, skip) {
+  for (let i = 0; i < args.length; i++) {
+    if (skip.has(i)) continue;
     const t = args[i];
     if (t.startsWith('--')) {
       const takesValue = S3_LS_FLAGS.get(flagName(t));
@@ -189,7 +211,12 @@ export function check(input) {
   if (service === 'ssm' && SSM_READS.has(operation) && withDecryption(args)) return reject('ssm-decryption');
   if (OUTFILE.has(key)) return reject('outfile-positional');
 
-  for (const t of args) {
+  const output = outputFlags(args);
+  if (output.reject) return reject('global-flag');
+
+  for (let i = 0; i < args.length; i++) {
+    const t = args[i];
+    if (output.skip.has(i)) continue;
     if (t.startsWith('--')) {
       const rule = flagRule(t);
       if (rule) return reject(rule);
@@ -198,8 +225,8 @@ export function check(input) {
     if (VALUE_PREFIX_RE.test(t) || (eq >= 0 && VALUE_PREFIX_RE.test(t.slice(eq + 1)))) return reject('url-or-file-value');
   }
 
-  if (service === 's3') return s3LsArgs(args);
-  if (key === 'sts get-caller-identity') return { ok: true };
+  if (service === 's3') return s3LsArgs(args, output.skip);
+  if (key === 'sts get-caller-identity' || key === 'logs filter-log-events') return { ok: true };
   if (/^(describe|list|get|lookup|search)-/.test(operation)) return { ok: true };
   return reject('not-allowed');
 }

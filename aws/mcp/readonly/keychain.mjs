@@ -44,6 +44,11 @@ export function createKeychain({ run, platform, service = SERVICE } = {}) {
       const r = await call(['find-generic-password', '-s', service, '-a', account, '-w']);
       return r.code === 0 ? String(r.stdout).replace(/\n$/, '') : null;
     },
+    // Existence only: without -w the secret is never printed, and the output is dropped.
+    async has(account) {
+      const r = await call(['find-generic-password', '-s', service, '-a', account]);
+      return r.code === 0;
+    },
     async set(account, value) {
       value = String(value);
       if (/[\r\n]/.test(value)) throw new Error('Keychain value must not contain a newline');

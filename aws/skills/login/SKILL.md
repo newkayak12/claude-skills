@@ -38,17 +38,28 @@ IAM user keys only, no roles. macOS only. Read-only: the server refuses writes, 
 2. **Server ready.** The plugin starts `readonly-aws` (tools `mcp__plugin_aws_readonly-aws__*`) from a
    bundled file. Tools missing → ask the person to run `/reload-plugins` or reconnect
    `plugin:aws:readonly-aws` in `/mcp`. Keychain missing → quote the error that names it.
-3. **Fields.** `profile` (no name) shows what is saved. Ask only for what is missing:
-   - `profile` — name matching `[a-z0-9_-]{1,32}`.
-   - `region` — e.g. `ap-northeast-2`.
-   - `label?` — defaults to the account id from `sts get-caller-identity`.
-   - `mfa_serial?` — the MFA device ARN; saved in the profile file. None → no MFA session.
-   - `vault?` and `item?` — only for keys held in 1Password.
-4. **Log in.** Call `login` with those fields. Keys come from exactly two places:
+3. **Fields.** Call `profile` (no name) first: its row for the profile shows the saved account (`-` = none),
+   region and key source (`keys none`, `keys keychain`, `keys 1password`). Ask for what is missing,
+   **one field per message**, in this order, and skip any field the row already holds:
+   1. `profile` — name matching `[a-z0-9_-]{1,32}`.
+   2. `account` — 12 digits; `login` refuses keys of another account. `none` skips the check.
+      For `none` (here and for the MFA serial) leave the argument out; never pass the word `none` to `login`.
+   3. `region` — e.g. `ap-northeast-2`.
+   4. `mfa_serial` — the MFA device ARN, saved in the profile file. Ask only on a first login (`keys none`);
+      accept `none` for no MFA session. Later logins reuse what is saved; an absent serial means no MFA.
+   5. Keys — never asked in chat: the hidden dialog opens in step 4 (or 1Password, below).
+   6. MFA code — never asked in chat: the hidden dialog opens in step 4 (or `op --otp`).
+   - `label?` — defaults to the account id from `sts get-caller-identity`; ask only if the person offers one.
+   - `vault?`, `item?`, `otp_item?` — only for keys held in 1Password; take them when the person names them.
+     The profile saves them; `login dev` alone reuses them.
+4. **Log in.** Call `login` with the fields given (`profile` alone when everything is saved). Keys come from
+   exactly two places:
    - Default: the server opens a macOS hidden dialog for Access Key ID and Secret Access Key; they go to
      Keychain (service `readonly-aws`, account `<profile>`).
-   - 1Password: `vault` and `item` given → the server reads fields `access key id` and `secret access key`
-     (case-insensitive) with `op`; with `mfa_serial` it also reads the code via `op item get --otp`.
+   - 1Password: `vault` and `item` → the server reads `access key id` + `secret access key` of that item
+     (case-insensitive), else `username` + `password` (an item holding both uses the first pair; halves are
+     never mixed). With `mfa_serial` the one-time code comes from `op item get --otp` on `otp_item` (same
+     vault) when given, else on `item`. `otp_item` without `mfa_serial` is saved and ignored.
    - The person offers keys in chat → decline in one line, name the dialog and 1Password, call `login` without them.
 5. **MFA session.** With `mfa_serial`, the server calls `sts get-session-token` for 129600 s (36 h),
    falling back to 43200 then 3600 if refused, and stores the session in Keychain (account
@@ -70,7 +81,7 @@ Without MFA: `session none (long-term keys)`.
 
 | Claude | You |
 |---|---|
-| Asks profile, region and optional MFA serial or vault/item, calls `login`, shows account, region and Expiration, declines keys in chat | Type the keys in the macOS dialog, or name the 1Password vault and item; give the MFA serial |
+| Reads the `profile` row, asks each missing field alone (profile → account → region → MFA serial), calls `login`, shows account, region and Expiration, declines keys and codes in chat | Answer one field per message; type the keys and the MFA code in the macOS dialog, or name the 1Password vault, item and otp item |
 
 ## Related Skills
 
