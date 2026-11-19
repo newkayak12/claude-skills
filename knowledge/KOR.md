@@ -229,6 +229,13 @@ KNOWLEDGE_ROOT=$PWD KNOWLEDGE_LLM_URL=http://ollama:11434 KNOWLEDGE_LLM_PULL=1 \
 KNOWLEDGE_LLM_URL=http://127.0.0.1:11434 node "${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-graph.mjs" build --root .
 ```
 
+`_graph/`가 있으면 다시 돌릴 때는 증분입니다. `_knowledge/jobs/graph-update-queue.jsonl`(훅과
+`knowledge_capture`가 쌓음)을 읽어 큐에 든 노트만 모델에 보냅니다. 그 노트가 만든 예전 엣지와
+엔티티 주장은 새로 바뀌고, 큐에 들었는데 지워진 노트는 모델 호출 없이 노드와 엣지를 잃으며,
+나머지는 바이트 그대로 남습니다. 큐 항목은 `_graph/`를 쓴 뒤에야 빠지고, 추출에 실패한 노트는
+큐에 남습니다. 큐가 비어 있으면 아무것도 바꾸지 않습니다(`status: up-to-date`). `--full`은 모든
+노트를 다시 추출합니다.
+
 노드 타입, 허용 관계 타입, 대칭 타입은 `_knowledge/config.json`의 `graph`(`relation_types`,
 `symmetric`, `weak_types`, `max_hops`)에서 오므로, 엔진 하나가 온톨로지가 다른 저장소들을 섬깁니다.
 
@@ -348,14 +355,40 @@ Missing knowledge:
 ### Capture
 
 `knowledge_capture`는 MCP로 들어온 내용을 볼트가 답할 수 있는 노트로 만듭니다. 링크는 호출자가
-아니라 엔진이 겁니다. 노트의 제목이나 별칭이 본문에 나올 때만 링크하고(한국어는 조사를 붙인
-`결제 승인을`도 인정, 코드나 기존 링크 안은 제외), 링크된 노트의 `## Related`에 역링크를 답니다.
+아니라 엔진이 겁니다. 노트의 제목이나 별칭이 본문에 나올 때만 링크하고(한국어는 목록에 있는
+조사를 붙인 `결제 승인을`은 인정하지만 `결제 승인서`는 아님, 코드나 기존 링크 안은 제외, 같은 조사
+목록으로 인덱스가 검색어의 조사를 뗌), 링크된 노트의 `## Related`에 역링크를 답니다.
 본문이 이름을 대지 않은 인덱스 검색 결과는 링크가 아니라 사유와 함께 `skipped_candidates`로
 돌아옵니다. 카탈로그에 이미 있는 제목이나 별칭이면 아무것도 만들지 않고 `merged_into`를
 돌려줍니다. 아무 노트도 언급하지 않은 capture는 `mocs/captures.md`에 올려서 고아가 생기지 않게
 합니다. 응답에는 `linked_to`, `backlinked_from`, `merged_into`, `skipped_candidates`가 담기고,
 카탈로그·그래프·임베딩 작업이 큐에 들어가며, 다음 `knowledge_index`부터 검색됩니다.
 `_knowledge/config.json`의 `link`로 `min_term_length`, `max_links`, `moc`, `fallback_moc`를 정합니다.
+
+**Codex.** `knowledge_capture`는 파일을 쓰므로 Codex가 실행 전에 승인을 묻습니다. 비대화형
+`codex exec`(승인 정책 `never`)는 `MCP tool call requires approval, but approval policy is never`로
+거부합니다. 승인 전체를 건너뛰지 말고 이 도구 하나만 승인하세요:
+
+```toml
+# ~/.codex/config.toml — 서버 이름은 Codex가 보여주는 이름
+[mcp_servers.knowledge-local.tools.knowledge_capture]
+approval_mode = "approve"
+```
+
+실행 한 번에만: `codex exec -c 'mcp_servers.knowledge-local.tools.knowledge_capture.approval_mode="approve"' …`.
+codex-cli 0.170.0에서 서버를 직접 등록해(`-c mcp_servers.<name>.…`) 확인했습니다. 설정이 없으면
+거부되고, 있으면 노트가 써집니다. 읽기 도구는 승인이 필요 없습니다.
+
+### OpenAI 호환 엔드포인트로 임베딩
+
+`--provider openai`(또는 `KNOWLEDGE_EMBED_PROVIDER=openai`, `_knowledge/config.json`의
+`embed.provider`)는 `POST <url>/v1/embeddings`로 임베딩합니다. OpenAI, text-embeddings-inference,
+vLLM이 해당합니다. `KNOWLEDGE_EMBED_URL` / `embed.url`, `KNOWLEDGE_EMBED_MODEL` / `embed.model`,
+`KNOWLEDGE_EMBED_API_KEY` / `embed.api_key`로 정하고, 환경변수가 파일보다 우선하며, url과 키는
+인덱스에 기록되지 않습니다. E5 모델(`intfloat/multilingual-e5-base`)은 `query: ` / `passage: `
+프롬프트와 460자 창을 받습니다. 이런 서버에서는 512토큰이 넘는 입력을 아예 거부하기 때문입니다.
+검색어도 같은 엔드포인트로 임베딩하며, 엔드포인트가 꺼져 있으면 어휘 검색만으로 답하고
+`query_embedding: {applied: false, error}`와 `fusion_weights` `0 / 1`로 그 사실을 알립니다.
 
 ### 랭킹 방식
 
@@ -452,6 +485,17 @@ KNOWLEDGE_ROOT=$PWD docker compose -f "${CLAUDE_PLUGIN_ROOT}/compose.yaml" run -
 `KNOWLEDGE_ROOT`는 필수입니다. 없으면 compose가 시작을 거부합니다. 상대 경로 기본값은 compose
 파일 기준으로 풀려서, 프로젝트 대신 플러그인 캐시를 마운트하기 때문입니다.
 
+이미지는 `node`(uid 1000)로 실행되고 마운트한 프로젝트에 `.knowledge/`와 `_graph/`를 씁니다.
+그래서 Linux에서는 프로젝트가 uid 1000으로 쓰기 가능해야 합니다. 다른 uid 소유면 쓰기가 실패하니
+(`EACCES … mkdir '/workspace/.knowledge'` 또는 `attempt to write a readonly database`) 소유자로
+실행하세요:
+
+```bash
+KNOWLEDGE_ROOT=$PWD docker compose -f "${CLAUDE_PLUGIN_ROOT}/compose.yaml" run --rm --user "$(id -u):$(id -g)" knowledge-index
+```
+
+uid 1001 소유 프로젝트로 확인했습니다. `node`로는 거부되고 `--user 1001:1001`로는 색인됩니다.
+
 ### 백엔드와 pgvector
 
 `index`, `search`, `get`, `neighbors`, `status`는 저장소가 지정한 백엔드(`_knowledge/config.json`의
@@ -478,7 +522,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" migrate --root . --wor
   --psql "docker exec -i <pg-container> psql -U postgres"   # 또는 PG* 환경변수와 psql; 스크립트만 쓰려면 --sql-out file.sql
 ```
 
-- v1.22.0 — `knowledge_capture`가 MCP로 받은 내용을 링크된 노트로 저장합니다(엔진이 링크와 역링크를 걸고, 이미 있는 개념이면 `merged_into`). Docker에서 하드웨어에 맞는 모델로 LLM 그래프 빌드(선택)와 엣지 검증기, 저장소 백엔드 경계, pgvector로 `migrate`, `status`의 크기 안내가 생겼습니다. compose는 `KNOWLEDGE_ROOT`가 필수이고, 훅·인덱서·MCP가 저장소 위치를 같은 규칙으로 찾습니다.
+- v1.23.0 — LLM 그래프 빌드가 증분으로 돕니다(업데이트 큐에 든 노트만 모델에 보내고, 전부는 `--full`). OpenAI 호환 엔드포인트(TEI, vLLM, OpenAI)로 임베딩할 수 있고 E5 프롬프트와 창 크기를 맞춥니다. 검색어를 임베딩할 수 없으면 어휘 검색으로 답하고 그 사실을 알립니다. capture의 한국어 조사는 명시 목록 하나로 정해 `결제 승인서`가 더는 `결제 승인`에 링크되지 않습니다. compose의 index는 `KNOWLEDGE_LLM_URL` 없이 돌고, 바인드 마운트 uid 규칙과 Codex에서 `knowledge_capture`를 승인하는 법을 적었습니다.
 - v1.21.4 — 각 스킬에 Process와 Output Template 절이 생겼습니다(동작 변화 없음). write:plans가 나뉜 뒤로 참조는 write:prd / write:adr을 가리킵니다.
 - v1.21.3 — Codex: MCP 서버가 Codex에서도 등록됩니다(`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`). Claude는 plugin.json에서 읽습니다.
 

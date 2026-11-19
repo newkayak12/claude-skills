@@ -235,6 +235,13 @@ KNOWLEDGE_ROOT=$PWD KNOWLEDGE_LLM_URL=http://ollama:11434 KNOWLEDGE_LLM_PULL=1 \
 KNOWLEDGE_LLM_URL=http://127.0.0.1:11434 node "${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-graph.mjs" build --root .
 ```
 
+A rerun is incremental once `_graph/` exists: it reads `_knowledge/jobs/graph-update-queue.jsonl`
+(the hook and `knowledge_capture` append to it) and sends only the queued notes to the model. Their
+old edges and entity claims are replaced, a queued note that no longer exists loses its nodes and
+edges with no model call, and everything else stays byte for byte. Queue entries leave only after
+`_graph/` is written; a note whose extraction failed stays queued. An empty queue changes nothing
+(`status: up-to-date`). `--full` re-extracts every note.
+
 Node types, allowed relation types and symmetric types come from `graph` in
 `_knowledge/config.json` (`relation_types`, `symmetric`, `weak_types`, `max_hops`), so one engine
 serves stores with different ontologies.
@@ -358,7 +365,8 @@ The `knowledge-local` MCP server exposes:
 
 `knowledge_capture` turns what arrives over MCP into a note the vault can answer from. The engine
 links, not the caller: a note is linked only when its title or an alias appears in the text (a
-Korean term through its particle, `결제 승인을`; never inside code or an existing link), and the
+Korean term through a listed particle, `결제 승인을`, but not `결제 승인서`; never inside code or an
+existing link; the same particle list strips query words in the index), and the
 linked note gets a backlink in its `## Related`. Index hits the text does not name come back in
 `skipped_candidates` with the reason, never as links. A title or alias the catalog already has
 creates nothing and returns `merged_into`. A capture that names no note is listed in
@@ -366,6 +374,31 @@ creates nothing and returns `merged_into`. A capture that names no note is liste
 `merged_into` and `skipped_candidates`; catalog, graph and embed jobs are queued, and the next
 `knowledge_index` makes it searchable. `link` in `_knowledge/config.json` sets `min_term_length`,
 `max_links`, `moc` and `fallback_moc`.
+
+**Codex.** `knowledge_capture` writes, so Codex asks before it runs. A non-interactive
+`codex exec` (approval policy `never`) refuses it with `MCP tool call requires approval, but
+approval policy is never`. Approve that one tool instead of bypassing approvals:
+
+```toml
+# ~/.codex/config.toml — the server name as Codex lists it
+[mcp_servers.knowledge-local.tools.knowledge_capture]
+approval_mode = "approve"
+```
+
+or per run: `codex exec -c 'mcp_servers.knowledge-local.tools.knowledge_capture.approval_mode="approve"' …`.
+Checked on codex-cli 0.170.0 with the server registered by hand (`-c mcp_servers.<name>.…`): refused
+without the setting, the note written with it. The read tools need no approval.
+
+### Embeddings from an OpenAI-compatible endpoint
+
+`--provider openai` (or `KNOWLEDGE_EMBED_PROVIDER=openai`, or `embed.provider` in
+`_knowledge/config.json`) embeds through `POST <url>/v1/embeddings` — OpenAI, text-embeddings-inference,
+vLLM. `KNOWLEDGE_EMBED_URL` / `embed.url`, `KNOWLEDGE_EMBED_MODEL` / `embed.model` and
+`KNOWLEDGE_EMBED_API_KEY` / `embed.api_key` set it; env outranks the file, and neither the url nor the
+key is written to the index. An E5 model (`intfloat/multilingual-e5-base`) gets its `query: ` /
+`passage: ` prompts and 460-character windows, since its 512 tokens are a hard limit on such servers.
+Queries are embedded through the same endpoint; when it is down, search answers lexical-only and says
+so in `query_embedding: {applied: false, error}` with `fusion_weights` `0 / 1`.
 
 ### How ranking works
 
@@ -472,6 +505,17 @@ KNOWLEDGE_ROOT=$PWD docker compose -f "${CLAUDE_PLUGIN_ROOT}/compose.yaml" run -
 `KNOWLEDGE_ROOT` is required: compose refuses to start without it, because a relative default
 would resolve against the compose file and mount the plugin cache instead of your project.
 
+The image runs as `node` (uid 1000) and writes `.knowledge/` and `_graph/` into the mounted project,
+so on Linux the project must be writable by uid 1000. Owned by another uid, the write fails
+(`EACCES … mkdir '/workspace/.knowledge'`, or `attempt to write a readonly database`); run as the
+owner instead:
+
+```bash
+KNOWLEDGE_ROOT=$PWD docker compose -f "${CLAUDE_PLUGIN_ROOT}/compose.yaml" run --rm --user "$(id -u):$(id -g)" knowledge-index
+```
+
+Checked with a project owned by uid 1001: refused as `node`, indexed with `--user 1001:1001`.
+
 ### Backends and pgvector
 
 `index`, `search`, `get`, `neighbors` and `status` go through the backend a store names
@@ -498,7 +542,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" migrate --root . --wor
   --psql "docker exec -i <pg-container> psql -U postgres"   # or PG* env and plain psql; --sql-out file.sql to only write the script
 ```
 
-- v1.22.0 — `knowledge_capture` saves MCP content as a linked note (engine links, backlinks, `merged_into`); optional LLM graph build in Docker with a hardware-picked model and an edge validator; storage backend seam, `migrate` to pgvector and size advice in `status`; compose requires `KNOWLEDGE_ROOT`; one store resolver for hook, indexer and MCP.
+- v1.23.0 — the LLM graph build is incremental (only notes in the update queue go back to the model; `--full` for all); embeddings from any OpenAI-compatible endpoint (TEI, vLLM, OpenAI) with E5 prompts and windows; search stays lexical and says so when the query cannot be embedded; capture's Korean particles are one explicit list (`결제 승인서` no longer links to `결제 승인`); compose's index runs without `KNOWLEDGE_LLM_URL`; the uid rule for bind mounts and Codex approval of `knowledge_capture` are documented.
 - v1.21.4 — skills gain their Process and Output Template sections (no behaviour change); references point at write:prd / write:adr after the write:plans split.
 - v1.21.3 — Codex: MCP servers register under Codex (`.codex-plugin/plugin.json`, `${PLUGIN_ROOT}`); Claude reads them from plugin.json.
 

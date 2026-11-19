@@ -636,36 +636,32 @@ ontology and link policy are config, nothing in the engine names one instance. O
 (lesson les-knowledge-no-external-runtime-deps); a real run uses a copy in `tmp/`, never a live vault.
 Design: `_repo/docs/plans/2026-11-19-knowledge-*` (PRDs F1–F4, shipped in knowledge 1.22.0).
 
-164. **noah and genna run on the knowledge engine instead of their own servers** — in E-df46dbb4 (plan + tmp-copy proof only)
+164. **noah and genna run on the knowledge engine instead of their own servers: the cut-over and the engine gaps it needs**
    - Why: user, 2026-11-19: "noah, genna '/home/newkayak12' 보면 있을 텐데 이쪽 교체를 해야할거야".
-     Each has its own `server/{noah,genna}-mcp.mjs` (keyword + vector RRF), vectors in
-     `_knowledge/vectors.{json,f32}` from TEI `intfloat/multilingual-e5-base` on a 04:00 timer, and `tools/`
-     (ingest, fold, nightly, rebuild, mocs); hosting in `~/docker/mcps/` (`noah-server`, `genna-server`,
-     `*-embed`, nginx). The noah vault (300 catalog notes, `.knowledge/knowledge.sqlite`) is live on the
-     home server and gitignored; genna starts empty. `noah-server` is in use: plan first, no cut-over
-     without the user.
-   - Acceptance: a plan in `_repo/docs/plans/` maps every `noah_*`/`genna_*` tool to a knowledge tool or a
-     per-store config/persona layer that stays in the instance repo; the engine names neither instance;
-     a copy of the noah vault in `tmp/` answers its competency questions through the knowledge MCP at or
-     above today's recall; the embedding endpoint (TEI) attaches as an OpenAI-compatible provider; the
-     cut-over order (genna first, it is empty) is approved before any container changes.
+     Plan, tool map and tmp-copy proof shipped (E-df46dbb4, `_repo/docs/plans/2026-11-19-knowledge-noah-genna-on-engine.md`):
+     on a noah copy knowledge scored recall@10 0.792 through TEI vs noah-server 0.762 (query embedded) /
+     0.683 (daytime, embed server down); lexical fallback 0.644. Decided (user, 2026-11-19): one resident
+     embedding sidecar shared by genna and noah ("임베딩 사이드카는 하나만 띄워서 써야겠는걸? genna,
+     noah를 쓸거면?"); measured 2.3 GiB resident, ~1.2 % idle CPU, query p50 23 ms / p95 27 ms.
+     Left: engine gaps the tool map names — `knowledge_get` paging and the store's `index`/`rules`
+     files, read access to `sources/` (`*_source`, `*_source_list`), replacing an existing note
+     (`*_note_write`); then the cut-over.
+   - Acceptance: the three gaps close with node tests and stay instance-free (the no-instance-name test
+     green); the user approves the cut-over (genna first, it is empty, then noah) before any container
+     under `~/docker/mcps` changes; after each move a fresh copy re-measures recall@10 at or above the
+     plan's table; one shared TEI with its 3 GB limit and the two nightly re-index jobs staggered.
 
-166. **knowledge leftovers from 1.22.0** — in E-df46dbb4
-   - Why: E-f9145f5b worktree run, 2026-11-19.
-     - Graph build re-extracts every note each run; `_knowledge/jobs/graph-update-queue.jsonl` is never
-       consumed (34 notes took 508 s on CPU).
-     - Real run with qwen2.5:3b (the CPU-only `small` pick): 44 nodes, 2 edges, 16 refused (self-loop 8,
-       vague-type 4, missing/foreign evidence 6, unknown node 2), both test questions unreachable. The
-       validator held; the small tier is too weak to build a useful graph. Untested on `medium`.
-     - Capture matches a Hangul term followed by more Hangul as a particle, so `결제 승인서` links to
-       `결제 승인` (false positive).
-     - Bind-mount write under `USER node` only checked with the same uid.
-     - Codex: a non-interactive `codex exec` refuses `knowledge_capture` under approval policy `never`;
-       the real call passed only with approvals bypassed.
-   - Acceptance: graph build reads the queue and re-extracts only changed notes (test + one timed rerun);
-     one `medium`-tier run reports edges and reachability against the `small` run; a particle list (or
-     dictionary) replaces the any-Hangul rule, with `결제 승인서` red before; README states the uid rule
-     after a different-uid check; README/KOR say how a Codex session approves the write tool.
+167. **LLM graph build: refuse the wrong edges a 7b model gets past the validator**
+   - Why: E-df46dbb4 real run, 2026-11-19, 34-note noah copy, CPU only. `small` (qwen2.5:3b, 1939 s):
+     83 nodes, 2 edges, 43 refused (vague-type 31, missing evidence 25, self-loop 10), 4 notes failed.
+     `medium` (qwen2.5:7b, 5170 s): 127 nodes, 56 edges, 38 refused (evidence not in source 35), none
+     failed; g1/g2 unreachable on both. Many accepted medium edges are wrong: reversed (`intellij OWNS
+     jetbrains`), invented types with no ontology (`PREFERS_FORMAL_LANGUAGE`), whole sentences as nodes
+     (`n-비관락-잡고-했고-외부-요청-없고-…`). Incremental rerun of one note: 232 s; empty queue: 0 s.
+   - Acceptance: with no ontology a default relation-type list applies (an unknown type refused with
+     its reason); a node name past a length or clause limit is refused; a node test per rule, red first;
+     one medium rerun on a copy reports accepted edges before and after and how many of a hand-checked
+     sample are right.
 
 162. **pgvector backend replaces sqlite when the store is large** — deferred (user, 2026-11-19: "pgvector는 일단 딜레이")
    - Why: user, 2026-11-19: "이후 pgvector로 넘어갈 수 있게", "이후 sqlite를 대체하는 방향으로 사이즈가
@@ -729,6 +725,7 @@ Design: `_repo/docs/plans/2026-11-19-knowledge-*` (PRDs F1–F4, shipped in know
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
 | E-131cef79 | 2026-11-19 | 156, 129 D2 | cancelled; 156 shipped `25abee20` (P1 accepted 93; repo-rules split() reads a backslash outside quotes as an escape; test-repo-rules 285 ok / 0 FAIL, red 281 / 4 before); D2 not done: P2 killed twice by the stall check while running the suite, $32; validate 17/17, check-copies ok |
+| E-df46dbb4 | 2026-11-19 | 166, 164 (plan + proof) | cancelled after PLAN + 4 failed/stuck packages on budget ($41.15 of $40; P1-P3 `reduce unreachable`/adapter exit, P4 asked for host files its sandbox could not read); uncommitted P1/P2/P4 work pinned to `rescue/df46dbb4-*`, finished by hand in a worktree: incremental graph build, one Korean particle list (`결제 승인서` red first), OpenAI-compatible embeddings with e5 prompts and 460-char windows, lexical fallback when the query cannot be embedded, compose index no longer needs `KNOWLEDGE_LLM_URL` (1.22.0 regression); knowledge tests 111 → 125; real runs: noah copy recall@10 0.792 via TEI vs noah-server 0.762/0.683, medium vs small graph (card 167), incremental rerun 232 s vs 5170 s, uid 1001 refused / `--user` indexed, Codex refused / `approval_mode="approve"` wrote; card 166 closed, 164 left with gaps + cut-over |
 | E-f20f1c65 | 2026-11-18 | 129 item 4 | shipped `6d2bd41e`; size L on installed 0.64.0; gate 90; partial: D2 (suite hermeticity) skipped on budget grace, $63.58 of $60; P1 attempt 1 blocked (adapter exit 1), auto-resume after the usage limit worked; teams 2499 / 2498 / 0 fail / 1 skip in a clean env, validate 17/17, check-copies ok |
 | E-e4d3b316 | 2026-11-18 | 147, 150 | shipped `d24576d0` in trophy 0.10.0; Failures rows name the run and failed gate and fold repeats; Achievements pane opens only when asked and fits a narrow column; renders in `tmp/card147-150/` approved (user, 2026-11-18: "3다 완료") |
 | E-0596d1ed, E-f7d8137e, E-63616592 | 2026-11-18 | 127 | shipped `7d6b8bea`; first run gate 87 (Korean particle stripping garbled names), repair with whole-token removals gate 92, merge with 125 leftovers gate 90; teams 2479 / 2478 / 0 fail / 1 skip, plugin test 944/944; demo approval waived by the user (2026-11-16) |
