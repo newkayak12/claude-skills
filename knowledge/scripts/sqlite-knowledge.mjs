@@ -9,16 +9,20 @@ import {
   mkdirSync,
   readFileSync,
   statSync,
+  writeFileSync,
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { backendFor, registerBackend, sizeAdvice } from './knowledge-backend.mjs';
 import { CAPTURE_TOOL, captureNote } from './knowledge-capture.mjs';
+import { countSql, countsOf, migrateSql, migrateTarget, readSqliteStore, runPsql } from './knowledge-migrate.mjs';
 import {
   ARTIFACT_PATHS,
   INDEXED_ARTIFACT_KINDS,
   findKnowledgeRoot,
   hasArtifacts,
   inside,
+  readStoreConfig,
 } from './knowledge-paths.mjs';
 
 let DatabaseSync = null;
@@ -114,11 +118,15 @@ function parseArgs(argv) {
     else if (arg === '--sweep') {
       options.sweep = value().split(',').map((part) => Number(part.trim()));
     }
+    else if (arg === '--workspace') options.workspace = value();
+    else if (arg === '--schema') options.schema = value();
+    else if (arg === '--sql-out') options.sqlOut = value();
+    else if (arg === '--psql') options.psql = value().split(' ').filter(Boolean);
     else if (!options.query && ['search', 'neighbors', 'get'].includes(command)) options.query = arg;
     else throw new Error(`Unknown argument: ${arg}`);
   }
 
-  if (!['index', 'search', 'neighbors', 'get', 'status', 'serve', 'eval', 'list'].includes(command)) {
+  if (!['index', 'search', 'neighbors', 'get', 'status', 'serve', 'eval', 'list', 'migrate'].includes(command)) {
     throw new Error(`Unknown command: ${command}`);
   }
   if (!['note', 'none'].includes(options.group)) {
@@ -679,7 +687,7 @@ function loadEmbeddingCache(dbPath, config, promptId) {
   }
 }
 
-async function buildIndex(inputRoot, options = {}) {
+async function sqliteBuildIndex(inputRoot, options = {}) {
   const root = findKnowledgeRoot(inputRoot);
   const dbPath = resolveDbPath(root, options.db);
   const provider = options.provider || 'hash';
@@ -1241,7 +1249,7 @@ function retrievalMode(lexicalReturned, total) {
   return lexicalReturned === total ? 'fts' : 'hybrid-fts-vector';
 }
 
-async function searchIndex(inputRoot, query, options = {}) {
+async function sqliteSearch(inputRoot, query, options = {}) {
   if (!String(query || '').trim()) throw new Error('query is required');
   const limit = Math.min(50, Math.max(1, Number(options.limit) || 8));
   const { root, database, db } = openIndex(inputRoot, options.db);
@@ -1747,7 +1755,7 @@ function signTestPValue(wins, losses) {
   return Math.min(1, Number((2 * probability).toFixed(6)));
 }
 
-function getDocument(inputRoot, id, options = {}) {
+function sqliteGet(inputRoot, id, options = {}) {
   if (!String(id || '').trim()) throw new Error('id is required');
   const { root, database, db } = openIndex(inputRoot, options.db);
   try {
@@ -1768,7 +1776,7 @@ function getDocument(inputRoot, id, options = {}) {
   }
 }
 
-function graphNeighbors(inputRoot, query, options = {}) {
+function sqliteNeighbors(inputRoot, query, options = {}) {
   if (!String(query || '').trim()) throw new Error('node query is required');
   const limit = Math.min(100, Math.max(1, Number(options.limit) || 25));
   const direction = options.direction || 'both';
@@ -1865,11 +1873,11 @@ function listDocuments(inputRoot, options = {}) {
   }
 }
 
-function indexStatus(inputRoot, options = {}) {
+function sqliteStatus(inputRoot, options = {}) {
   const root = findKnowledgeRoot(inputRoot);
   const database = resolveDbPath(root, options.db);
   if (!existsSync(database)) {
-    return { root, database, exists: false, stale: hasArtifacts(root) };
+    return { root, database, exists: false, stale: hasArtifacts(root), backend: 'sqlite' };
   }
   const db = openSqlite(database, { readOnly: true });
   try {
@@ -1901,10 +1909,85 @@ function indexStatus(inputRoot, options = {}) {
         `).all().map((row) => row.key),
       },
       bytes: statSync(database).size,
+      backend: 'sqlite',
+      size: sizeAdvice(
+        Object.values(counts).reduce((sum, count) => sum + count, 0),
+        [database, `${database}-wal`].filter(existsSync).reduce((sum, path) => sum + statSync(path).size, 0),
+        readStoreConfigSafe(root),
+      ),
     };
   } finally {
     db.close();
   }
+}
+
+// Copy the sqlite store into pgvector tables. --sql-out writes the script
+// instead of running it; --psql "docker exec -i NAME psql -U postgres" runs it
+// where no port is published. Either way the source counts are returned, and a
+// run compares them with the counts PostgreSQL reports afterwards.
+function migrateToPgvector(inputRoot, options = {}) {
+  const root = findKnowledgeRoot(inputRoot);
+  const database = resolveDbPath(root, options.db);
+  if (!existsSync(database)) throw new Error(`SQLite knowledge index not found: ${database}. Run index first.`);
+  const target = migrateTarget(root, options);
+  const db = openSqlite(database, { readOnly: true });
+  let store;
+  try {
+    store = readSqliteStore(db);
+  } finally {
+    db.close();
+  }
+  const source = countsOf(store);
+  const { sql, vectorIndex } = migrateSql(store, target);
+  const result = { root, database, workspace_id: target.workspaceId, schema: target.schema, source, vector_index: vectorIndex, sql_bytes: Buffer.byteLength(sql) };
+  if (options.sqlOut) {
+    writeFileSync(resolve(options.sqlOut), sql);
+    return { ...result, sql_out: resolve(options.sqlOut), target: null, matches: null };
+  }
+  runPsql(sql, { psql: options.psql || ['psql'] });
+  const reported = Object.fromEntries(runPsql(countSql(target), { psql: options.psql || ['psql'] })
+    .trim().split('\n').filter(Boolean).map((line) => {
+      const [name, count] = line.split('|');
+      return [name, Number(count)];
+    }));
+  const matches = Object.keys(source).every((key) => source[key] === reported[key]);
+  if (!matches) throw new Error(`migrate counts differ: sqlite ${JSON.stringify(source)} vs pgvector ${JSON.stringify(reported)}`);
+  return { ...result, target: reported, matches };
+}
+
+function readStoreConfigSafe(root) {
+  try {
+    return readStoreConfig(root);
+  } catch {
+    return {};
+  }
+}
+
+registerBackend('sqlite', {
+  index: sqliteBuildIndex,
+  search: sqliteSearch,
+  get: sqliteGet,
+  neighbors: sqliteNeighbors,
+  status: sqliteStatus,
+});
+
+// The public entry points keep their names and return shapes; each asks the
+// store which backend it uses.
+const backendOf = (inputRoot, options) => backendFor(findKnowledgeRoot(inputRoot), options);
+function buildIndex(inputRoot, options = {}) {
+  return backendOf(inputRoot, options).index(inputRoot, options);
+}
+function searchIndex(inputRoot, query, options = {}) {
+  return backendOf(inputRoot, options).search(inputRoot, query, options);
+}
+function getDocument(inputRoot, id, options = {}) {
+  return backendOf(inputRoot, options).get(inputRoot, id, options);
+}
+function graphNeighbors(inputRoot, query, options = {}) {
+  return backendOf(inputRoot, options).neighbors(inputRoot, query, options);
+}
+function indexStatus(inputRoot, options = {}) {
+  return backendOf(inputRoot, options).status(inputRoot, options);
 }
 
 const MCP_TOOLS = [
@@ -2090,6 +2173,7 @@ async function main(argv = process.argv.slice(2)) {
     result = options.sweep ? await sweepFusionWeights(root, options) : await evalQuestions(root, options);
   }
   else if (options.command === 'list') result = listDocuments(root, options);
+  else if (options.command === 'migrate') result = migrateToPgvector(root, options);
   else if (options.command === 'serve') {
     await serveMcp({ root, db: options.db });
     return;
@@ -2108,6 +2192,7 @@ if (isEntrypoint) {
 export {
   MCP_TOOLS,
   buildIndex,
+  migrateToPgvector,
   callMcpTool,
   collectKnowledge,
   embeddingPrompt,

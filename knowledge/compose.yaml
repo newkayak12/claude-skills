@@ -26,8 +26,30 @@ services:
       ollama:
         condition: service_healthy
 
+  # LLM graph build: KNOWLEDGE_LLM_URL is any OpenAI-compatible endpoint. With
+  # `--profile llm` it can be the bundled ollama (http://ollama:11434), which
+  # pulls the model the hardware probe picked; a host server is reachable as
+  # http://host.docker.internal:<port>.
+  knowledge-graph:
+    profiles: ["graph"]
+    build:
+      context: .
+    volumes:
+      - ${KNOWLEDGE_ROOT:?KNOWLEDGE_ROOT must be the project to index}:/workspace
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      KNOWLEDGE_LLM_URL: ${KNOWLEDGE_LLM_URL:?KNOWLEDGE_LLM_URL must name an OpenAI-compatible endpoint}
+      KNOWLEDGE_LLM_MODEL: ${KNOWLEDGE_LLM_MODEL:-}
+      KNOWLEDGE_LLM_TIER: ${KNOWLEDGE_LLM_TIER:-}
+      KNOWLEDGE_LLM_API_KEY: ${KNOWLEDGE_LLM_API_KEY:-}
+      KNOWLEDGE_LLM_TIMEOUT_MS: ${KNOWLEDGE_LLM_TIMEOUT_MS:-300000}
+      KNOWLEDGE_LLM_PULL: ${KNOWLEDGE_LLM_PULL:-}
+    entrypoint: ["node", "--no-warnings", "/opt/knowledge/scripts/knowledge-graph.mjs"]
+    command: ["build", "--root", "/workspace"]
+
   ollama:
-    profiles: ["semantic"]
+    profiles: ["semantic", "llm"]
     image: ollama/ollama:latest
     volumes:
       - ollama-models:/root/.ollama
