@@ -328,16 +328,6 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
    - Acceptance: a test where a PRD file holds all required headings and the payload omits one does not
      reject for a missing section; a file actually missing one still rejects, red before the fix.
 
-155. **teams MCP: find and fix the comma error the user saw**
-    - Why: user, 2026-11-18, while E-f20f1c65 ran: "mcp 쉼표로 잡혀서 오류나는거 같던데 teams", "이건 긴급임".
-      Not reproduced: that day every session's `mcp-logs-plugin-teams-teams` log shows the server connected,
-      and every E-f20f1c65 driver's init event reads `teams` `connected`. The only errors in the logs are from
-      2026-11-10 (cwd ENOENT in a deleted worktree). Suspected, unverified: teams joins tool lists with commas
-      (`teams/adapters/claude-exec-adapter.mjs:83` `--disallowedTools`, `:90` `--allowedTools`,
-      `teams/mcp/daemon.mjs:341`). User, 2026-11-19: "hook에 걸려 문제가 생기던데 모르곘네", so it was a hook refusal. A scan of 2026-11-17/18 transcripts outside this repo found no hook refusal that names teams or a comma split. The closest was the harness gate listing three gated files joined by ", " in one message (colo-backend fix-multi, a harness gate refusal, not teams). A comma-joined `--allowedTools` with two `mcp__teams__wiki_*` names was probed on 2.1.327 and passed (no denials). Which session and action hit it, and the exact message, are still to be had from the user.
-    - Acceptance: the error reproduced from the user's message or session (cause tagged verified); a fix with a
-      test that fails before it; the reproducing call succeeds once on the installed build.
-
 
 125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality** — E-8faf33b9 blocked on a PRD merge bug (fixed `899dba47`); E-701e2856 (2026-11-07, $35.82) planned
    it again (5 cards 88–94, plan-integrate accepted) and stopped partial at shape:3 (see card 129). Now one
