@@ -294,14 +294,6 @@ toasts).
 
 ### Repo and rules
 
-156. **repo-rules does not read a commit message as a file write**
-    - Why: seen 2026-11-18. `git commit -q -m ${msg}` was refused with "Bash Co-Authored-By: writes  && git log
-      --oneline -1, a repo file, in place". The message held `dep's` and `<noreply@anthropic.com>`. The same trailer
-      in a message with no apostrophe passed minutes earlier. Worked around with `git commit -F tmp/…`. Cause
-      unverified: the hook's quote parsing probably loses track at the `'` and reads the `>` as a redirect.
-    - Acceptance: a `node _repo/scripts/test-repo-rules.mjs` case where a single-quoted `-m` message holding
-      `'\''` and `<…>` passes, red before the fix. The existing redirect refusals stay green, with counts.
-
 132. **A mod or plugin hook skipped by another plugin's hook is known and its loss is covered**
    - Why: seen 2026-11-10 in a live session: "session: its classic.SessionStart hook was skipped.
      "cc-plugin-sec-default" runs first and sent the event on past it", and the same for trophy's `skill.prompt`, after
@@ -476,7 +468,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
      and one real S and one real L task run on the merged server; `ps` shows one teams MCP process per
      session.
 
-129. **teams tells failure kinds apart instead of retrying every failure the same way** — P1 (failure-kind contract: `recordFailureKind`, `failure_classified` ledger event) shipped `76c8b671` by E-bf0570ac (2026-11-17, L, partial: $83.82 of $80 spent in planning, P2-P9 never dispatched). Items 1-3 and 5-7 (engine side) shipped `6938ea15` by three size-S runs (E-25fcd1cc, E-5962bcf9, E-8924b6d7, 2026-11-18, gates 90-91). Item 4 shipped `6d2bd41e` by E-f20f1c65 (2026-11-18, L on installed 0.64.0, gate 90, partial: D2 skipped on budget, $63.58 of $60): a filed fix with base_branch merges every dep's branch; QA passed and fix D1 integrated with no hand merge; the Sprint report has a per-stage Cost section (`render-docs.mjs`). Left: the mod turning the notify event into a push and band line; D2, the teams suite is not hermetic (with a leaked `TEAMS_WIKI_OFF=1` and `HARNESS_NODE=1` four tests fail: two MCP tool-count tests, 24 vs 33, and two claude-adapter wiki argv tests; 2499/2498/0/1 in a clean env); `child_driver_stalled` fires on a driver waiting in a nested `team_run` that sends only heartbeats (seen 2026-11-18 on `dispatch:P1:2`, node was running tests, unverified as the cause); multi-dep merge order and the base_branch conflict path have no test; a retried filed fix does not pick up a dep accepted later.
+129. **teams tells failure kinds apart instead of retrying every failure the same way** — P1 (failure-kind contract: `recordFailureKind`, `failure_classified` ledger event) shipped `76c8b671` by E-bf0570ac (2026-11-17, L, partial: $83.82 of $80 spent in planning, P2-P9 never dispatched). Items 1-3 and 5-7 (engine side) shipped `6938ea15` by three size-S runs (E-25fcd1cc, E-5962bcf9, E-8924b6d7, 2026-11-18, gates 90-91). Item 4 shipped `6d2bd41e` by E-f20f1c65 (2026-11-18, L on installed 0.64.0, gate 90, partial: D2 skipped on budget, $63.58 of $60): a filed fix with base_branch merges every dep's branch; QA passed and fix D1 integrated with no hand merge; the Sprint report has a per-stage Cost section (`render-docs.mjs`). Left: the mod turning the notify event into a push and band line; D2, the teams suite is not hermetic (with a leaked `TEAMS_WIKI_OFF=1` and `HARNESS_NODE=1` four tests fail: two MCP tool-count tests, 24 vs 33, and two claude-adapter wiki argv tests; 2499/2498/0/1 in a clean env); `child_driver_stalled` fires on a driver waiting in a nested `team_run` that sends only heartbeats (seen 2026-11-18 on `dispatch:P1:2`, node was running tests). On 2026-11-19 it killed a working driver: E-131cef79 `dispatch:P2:1` was running the full suite twice per check, was killed at 60 idle minutes twice, and failed after 2 restarts. The task was cancelled with D2 undone ($32); multi-dep merge order and the base_branch conflict path have no test; a retried filed fix does not pick up a dep accepted later.
    - Why: five engine defects seen in the portfolio Sprint E-478d5e95 (cards 123/124, 2026-11-04/05), reported
      by that session; common cause (its words): "엔진이 모든 실패를 '다시 하면 되는 것'으로만 다룬다". Causes
      below are as reported, unverified here.
@@ -736,6 +728,7 @@ Design: `_repo/docs/plans/2026-11-19-knowledge-*` (PRDs F1–F4, shipped in know
 
 | EPIC | Date | Cards | Result |
 |---|---|---|---|
+| E-131cef79 | 2026-11-19 | 156, 129 D2 | cancelled; 156 shipped `25abee20` (P1 accepted 93; repo-rules split() reads a backslash outside quotes as an escape; test-repo-rules 285 ok / 0 FAIL, red 281 / 4 before); D2 not done: P2 killed twice by the stall check while running the suite, $32; validate 17/17, check-copies ok |
 | E-f20f1c65 | 2026-11-18 | 129 item 4 | shipped `6d2bd41e`; size L on installed 0.64.0; gate 90; partial: D2 (suite hermeticity) skipped on budget grace, $63.58 of $60; P1 attempt 1 blocked (adapter exit 1), auto-resume after the usage limit worked; teams 2499 / 2498 / 0 fail / 1 skip in a clean env, validate 17/17, check-copies ok |
 | E-e4d3b316 | 2026-11-18 | 147, 150 | shipped `d24576d0` in trophy 0.10.0; Failures rows name the run and failed gate and fold repeats; Achievements pane opens only when asked and fits a narrow column; renders in `tmp/card147-150/` approved (user, 2026-11-18: "3다 완료") |
 | E-0596d1ed, E-f7d8137e, E-63616592 | 2026-11-18 | 127 | shipped `7d6b8bea`; first run gate 87 (Korean particle stripping garbled names), repair with whole-token removals gate 92, merge with 125 leftovers gate 90; teams 2479 / 2478 / 0 fail / 1 skip, plugin test 944/944; demo approval waived by the user (2026-11-16) |
