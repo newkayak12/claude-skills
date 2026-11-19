@@ -551,6 +551,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" migrate --root . --wor
 [ROADMAP.md](ROADMAP.md) — what is measured, what is queued, and what is deliberately not being
 done, ordered by measured lever size rather than by what is easiest to edit.
 
+[docs/basics.md](docs/basics.md) — search basics with worked numbers, in Korean: inverted index, BM25
+(IDF, saturation, length), Korean tokenizing, embeddings and cosine, E5 prompts, RRF, rerankers,
+recall@k and MRR — each tied to what this engine does.
+
 [docs/theory.md](docs/theory.md) — the papers and principles behind the rules (RRF, BM25, competency
 questions, reusable holdout, leakage, cross-encoder reranking), and where this plugin departs from them.
 Its §9 compares the engine against [Hindsight](https://github.com/vectorize-io/hindsight): the retrieval
