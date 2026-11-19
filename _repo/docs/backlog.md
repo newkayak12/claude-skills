@@ -278,6 +278,14 @@ toasts).
 
 ### Repo and rules
 
+156. **repo-rules does not read a commit message as a file write**
+    - Why: seen 2026-11-18. `git commit -q -m ${msg}` was refused with "Bash Co-Authored-By: writes  && git log
+      --oneline -1, a repo file, in place". The message held `dep's` and `<noreply@anthropic.com>`. The same trailer
+      in a message with no apostrophe passed minutes earlier. Worked around with `git commit -F tmp/…`. Cause
+      unverified: the hook's quote parsing probably loses track at the `'` and reads the `>` as a redirect.
+    - Acceptance: a `node _repo/scripts/test-repo-rules.mjs` case where a single-quoted `-m` message holding
+      `'\''` and `<…>` passes, red before the fix. The existing redirect refusals stay green, with counts.
+
 132. **A mod or plugin hook skipped by another plugin's hook is known and its loss is covered**
    - Why: seen 2026-11-10 in a live session: "session: its classic.SessionStart hook was skipped.
      "cc-plugin-sec-default" runs first and sent the event on past it", and the same for trophy's `skill.prompt`, after
@@ -294,6 +302,16 @@ toasts).
 ### teams plugin bugs
 
 Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 128's leftovers.
+
+155. **teams MCP: find and fix the comma error the user saw**
+    - Why: user, 2026-11-18, while E-f20f1c65 ran: "mcp 쉼표로 잡혀서 오류나는거 같던데 teams", "이건 긴급임".
+      Not reproduced: that day every session's `mcp-logs-plugin-teams-teams` log shows the server connected,
+      and every E-f20f1c65 driver's init event reads `teams` `connected`. The only errors in the logs are from
+      2026-11-10 (cwd ENOENT in a deleted worktree). Suspected, unverified: teams joins tool lists with commas
+      (`teams/adapters/claude-exec-adapter.mjs:83` `--disallowedTools`, `:90` `--allowedTools`,
+      `teams/mcp/daemon.mjs:341`). Which session and action hit it, and the exact message, are still to be had from the user.
+    - Acceptance: the error reproduced from the user's message or session (cause tagged verified); a fix with a
+      test that fails before it; the reproducing call succeeds once on the installed build.
 
 
 125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality** — E-8faf33b9 blocked on a PRD merge bug (fixed `899dba47`); E-701e2856 (2026-11-07, $35.82) planned
