@@ -2369,7 +2369,173 @@ def svg_aspect(path):
     return None
 
 
-def rasterize_svg(src, frame_cx, cache_dir, renderer, dpi=200):
+HANGUL_EM = 0.92          # NanumSquare's Hangul advance, em; Latin is narrower
+FIGURE_MIN_PT = 7.5       # the size figure text is raised to at render (write:diagram's floor)
+
+
+def _text_em(s):
+    """Estimated advance of a string in em (NanumSquare)."""
+    w = 0.0
+    for ch in s:
+        o = ord(ch)
+        if 0xAC00 <= o <= 0xD7A3 or 0x3000 <= o <= 0x9FFF or 0x1100 <= o <= 0x11FF or 0xFF00 <= o <= 0xFFEF:
+            w += HANGUL_EM
+        elif ch == " ":
+            w += 0.3
+        elif ch.isupper():
+            w += 0.65
+        elif ch.isalnum():
+            w += 0.55
+        else:
+            w += 0.45
+    return w
+
+
+def enlarge_svg_text(data, target):
+    """(svg bytes, smallest text size after): every <text> under `target` (SVG units) raised
+    toward it, each only as far as it still fits its box and touches no other text.
+
+    A label's box is the smallest <rect> holding its centre (a rect covering most of the figure
+    is the background, not a box); it keeps the label's centre, so a label grows about its middle.
+    Text with no box stays inside the figure. Only the font-size and y attributes of the <text>
+    tags change, edited in place, so a figure needing nothing comes back byte for byte. The
+    source file is never written: build rasterizes the returned copy (card 163, 2026-11-19 —
+    39 of 40 figures on a real deck showed text under 7.5pt)."""
+    ns = "{http://www.w3.org/2000/svg}"
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError:
+        return data, None
+    vb = re.split(r"[,\s]+", (root.get("viewBox") or "").strip())
+    try:
+        vx, vy, vw, vh = (float(v) for v in vb[:4])
+    except ValueError:
+        return data, None
+
+    def num(el, k):
+        try:
+            return float(el.get(k))
+        except (TypeError, ValueError):
+            return None
+    rects = []
+    for r in root.iter(ns + "rect"):
+        x, y, w, h = (num(r, k) for k in ("x", "y", "width", "height"))
+        x, y = x or 0.0, y or 0.0
+        if w and h and w * h < 0.8 * vw * vh:
+            rects.append((x, y, w, h))
+    # lines and arrows a label must not run into: straight strokes and small arrowheads
+    strokes = []
+    for el in root.iter():
+        name = el.tag.rsplit("}", 1)[-1]
+        if name == "line":
+            x1, y1, x2, y2 = (num(el, k) or 0.0 for k in ("x1", "y1", "x2", "y2"))
+            pts = [(x1, y1), (x2, y2)]
+        elif name in ("path", "polyline", "polygon"):
+            vals = [float(v) for v in re.findall(r"-?\d+(?:\.\d+)?", el.get("d") or el.get("points") or "")]
+            if (el.get("d") or "") and re.search(r"[a-zA-Z]", re.sub(r"[MLHVZmlhvz]", "", el.get("d"))):
+                continue        # curves: their numbers are not a bounding box
+            pts = list(zip(vals[0::2], vals[1::2]))
+        else:
+            continue
+        if pts:
+            xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+            if min(max(xs) - min(xs), max(ys) - min(ys)) <= 6:   # a stroke or an arrowhead
+                strokes.append((min(xs) - 0.3, min(ys) - 0.3, max(xs) + 0.3, max(ys) + 0.3))
+    texts = []
+    for t in root.iter(ns + "text"):
+        s, x, y = num(t, "font-size"), num(t, "x"), num(t, "y")
+        body = "".join(t.itertext()).strip()
+        ok = s is not None and x is not None and y is not None and body and not t.get("transform") \
+            and not any(c.get("font-size") or "font-size" in (c.get("style") or "") for c in t)
+        texts.append({"ok": ok, "s": s, "x": x, "y": y, "em": _text_em(body) if body else 0,
+                      "anchor": t.get("text-anchor") or "start", "y0": y, "s0": s})
+
+    def box(t, s, y):
+        w = t["em"] * s * 1.1      # the estimate runs short on bold and Latin runs: room to spare
+        x0 = {"middle": t["x"] - w / 2, "end": t["x"] - w}.get(t["anchor"], t["x"])
+        return (x0, y - 0.8 * s, x0 + w, y + 0.2 * s)
+
+    def touches(a, b, gap=0.3):
+        return a[0] < b[2] + gap and b[0] < a[2] + gap and a[1] < b[3] + gap and b[1] < a[3] + gap
+
+    def overlap(a, b, gap=0.3):
+        w = min(a[2], b[2]) + gap - max(a[0], b[0])
+        h = min(a[3], b[3]) + gap - max(a[1], b[1])
+        return w * h if w > 0 and h > 0 else 0.0
+    for t in texts:
+        if not t["ok"] or t["s"] >= target:
+            continue
+        b0 = box(t, t["s"], t["y"])
+        cx, cy = (b0[0] + b0[2]) / 2, (b0[1] + b0[3]) / 2
+        holder = min((r for r in rects if r[0] <= cx <= r[0] + r[2] and r[1] <= cy <= r[1] + r[3]),
+                     key=lambda r: r[2] * r[3], default=None)
+        cap = target
+        if holder and t["em"]:
+            cap = min(cap, (holder[2] - 3.0) / (t["em"] * 1.1))
+        # a box about one line tall is the label's own: it grows about its middle; in a larger
+        # frame the text keeps its baseline (an arrow label sits on its line)
+        own = holder is not None and holder[3] <= 3 * t["s"]
+        if own:
+            cap = min(cap, holder[3] * 0.75)
+        frame = (holder[0] + 1.5, holder[1] + 0.5, holder[0] + holder[2] - 1.5, holder[1] + holder[3] - 0.5) \
+            if holder else (vx, vy, vx + vw, vy + vh)
+        t["own"] = own
+        others = [box(o, o["s"], o["y"]) for o in texts if o is not t and o["ok"]] + strokes
+        # a neighbour it already touches (lines of one label, a label on its arrow) may stay
+        # touched, never more; any other it must not reach
+        was = [overlap(b0, o) for o in others]
+        s = max(t["s"], cap)
+        while s > t["s"]:
+            y = t["y"] + 0.3 * (s - t["s"]) if own else t["y"]
+            b = box(t, s, y)
+            inside = b[0] >= frame[0] and b[2] <= frame[2] and b[1] >= frame[1] and b[3] <= frame[3]
+            if inside and all(overlap(b, o) <= w0 + 1e-6 for o, w0 in zip(others, was)):
+                t["s"], t["y"] = math.floor(s * 100) / 100, y   # the size as written
+                break
+            s = round(s - 0.05, 4)
+    # one size per set: the lines of one label (same x and anchor, a line apart) and a row of
+    # labels (same baseline) that started at one size keep one size, the smallest any reached
+    ok = [t for t in texts if t["ok"]]
+    group = {id(t): id(t) for t in ok}
+
+    def find(k):
+        while group[k] != k:
+            k = group[k]
+        return k
+    for a in ok:
+        for b in ok:
+            if a is not b and a["s0"] == b["s0"] and (
+                    abs(a["y0"] - b["y0"]) < 0.01
+                    or (a["x"] == b["x"] and a["anchor"] == b["anchor"] and abs(a["y0"] - b["y0"]) <= 1.6 * a["s0"])):
+                group[find(id(a))] = find(id(b))
+    low = {}
+    for t in ok:
+        k = find(id(t))
+        low[k] = min(low.get(k, t["s"]), t["s"])
+    for t in ok:
+        s = low[find(id(t))]
+        if t["s"] > s:
+            t["s"] = s
+            t["y"] = t["y0"] + 0.3 * (s - t["s0"]) if t.get("own") else t["y0"]
+    if all(t["s"] == t["s0"] for t in texts):
+        return data, min((t["s"] for t in texts if t["ok"]), default=None)
+    text = data.decode("utf-8")
+    tags = list(re.finditer(r"<text\b[^>]*>", text))
+    if len(tags) != len(texts):
+        return data, None
+    out, last = [], 0
+    for m, t in zip(tags, texts):
+        tag = m.group(0)
+        if t["s"] != t["s0"]:
+            tag = re.sub(r'font-size="[^"]*"', 'font-size="%s"' % ("%.2f" % t["s"]).rstrip("0").rstrip("."), tag)
+            tag = re.sub(r'\by="[^"]*"', 'y="%s"' % ("%.2f" % t["y"]).rstrip("0").rstrip("."), tag)
+        out += [text[last:m.start()], tag]
+        last = m.end()
+    out.append(text[last:])
+    return "".join(out).encode("utf-8"), min(t["s"] for t in texts if t["ok"])
+
+
+def rasterize_svg(src, frame_cx, cache_dir, renderer, dpi=200, min_text=None):
     """SVG source -> PNG, sized for the frame it goes into and cached by content.
 
     Generated art is source too, so the same .svg must always produce the same bytes:
@@ -2377,6 +2543,8 @@ def rasterize_svg(src, frame_cx, cache_dir, renderer, dpi=200):
     export is itself byte-stable, so a cold cache reproduces a warm one.
     """
     data = Path(src).read_bytes()
+    if min_text:     # render measured the figure's text small: raise it in this copy only
+        data, _ = enlarge_svg_text(data, min_text)
     width = int(min(4000, max(400, (frame_cx or 5000000) / 914400 * dpi)))
     aspect = svg_aspect(src) or 16 / 9
     height = max(1, int(round(width / aspect)))
@@ -3312,7 +3480,8 @@ def _swap_picture(el, raw_value, imgctx, problems, where, slot):
             problems.append("%s: slot '%s' points at an SVG (%s) but there is no renderer to "
                             "turn it into a picture — %s" % (where, slot.id, src.name, NO_RENDERER))
             return
-        src, fresh = rasterize_svg(src, slot_frame_cx(el), imgctx["cache"], r)
+        src, fresh = rasterize_svg(src, slot_frame_cx(el), imgctx["cache"], r,
+                                   min_text=imgctx.get("fig_targets", {}).get(slot.id))
         if fresh:
             imgctx["rasterized"] += 1
         if src.read_bytes()[:8] != PNG_MAGIC:
@@ -3481,6 +3650,7 @@ def cmd_build(args):
                         % front["captions"])
 
     for i, spec in enumerate(specs, 1):
+        imgctx["fig_targets"] = getattr(args, "figure_targets", {}).get(i, {})
         m = re.fullmatch(r"s(\d+)", spec.archetype)
         if not m or not (1 <= int(m.group(1)) <= len(protos)):
             problems.append("line %d: unknown archetype '@%s' (template has s1..s%d)"
@@ -4449,9 +4619,11 @@ def cmd_render(args):
         for p, k, before, line, detail in found:
             if p <= len(archs) and (int(archs[p - 1][1:]), k, detail) not in seen:
                 glue.setdefault(p, []).append((k, before, line))
-        if floors or fixes or glue:
+        # figure text the reader sees under FIGURE_MIN_PT: raised in the raster copy (card 163)
+        figs = figure_targets(figure_text_sizes(tpl, tparts, Package(out), specs, md_path))
+        if floors or fixes or glue or figs:
             args.panel_floors, args.zone_fixes, args.zone_notes = floors, fixes, []
-            args.glue_spots = glue
+            args.glue_spots, args.figure_targets = glue, figs
             with contextlib.redirect_stdout(io.StringIO()):
                 rc = cmd_build(args)
             r.to_pdf(work, out.name)
@@ -4464,6 +4636,15 @@ def cmd_render(args):
                          ", ".join(str(p) for p in sorted(floors)), TEXT_GAP_PT))
             for line in args.zone_notes:
                 print("  %s" % line if line.startswith("!") or " held " in line else "  zone kept — %s" % line)
+            if figs:
+                reached = figure_reached(figure_text_sizes(tpl, tparts, Package(out), specs, md_path), figs)
+                short = [g for g in reached if g[2] < FIGURE_MIN_PT - 0.05]
+                print("  figure text: %d figure(s) showed text under %gpt; raised in the raster copy "
+                      "(sources untouched), %d reach it" % (len(reached), FIGURE_MIN_PT, len(reached) - len(short)))
+                for page, sid, got, name in short:
+                    print("  ! page %d %s (%s): its labels fit their boxes only up to %.1fpt — "
+                          "enlarge the picture or redraw the figure with fewer words"
+                          % (page, sid, name, got))
             print("  rebuilt and rendered again with these")
             if box is None:
                 return rc
@@ -4584,6 +4765,42 @@ def figure_text_sizes(tpl, tparts, built, specs, md_path):
             if size is not None:
                 out.append((page, sid, size, p, (pt(box[2]), pt(box[3]))))
     return out
+
+
+def _svg_units(path):
+    """An SVG's smallest text in its own units (scale 1), or None."""
+    try:
+        root = ET.fromstring(Path(path).read_bytes())
+        vw, vh = (float(v) for v in re.split(r"[,\s]+", (root.get("viewBox") or "").strip())[2:4])
+    except (ET.ParseError, OSError, ValueError):
+        return None
+    return svg_min_text_pt(path, vw, vh, "fit")
+
+
+def figure_targets(sizes, floor=FIGURE_MIN_PT):
+    """{page: {slot id: SVG units}} — for each figure whose text shows under `floor` pt, the size its
+    smallest text must have in the SVG's own units to show at `floor`."""
+    out = {}
+    for page, sid, size, path, _ in sizes:
+        units = _svg_units(path)
+        if size < floor - 0.01 and units:
+            out.setdefault(page, {})[sid] = units * floor / size
+    return out
+
+
+def figure_reached(sizes, targets):
+    """[(page, slot id, pt reached, svg name)] for the raised figures, measured on the copy the build
+    rasterized: its smallest text after `enlarge_svg_text`, at the built frame."""
+    got = []
+    for page, sid, size, path, _ in sizes:
+        t = targets.get(page, {}).get(sid)
+        units = _svg_units(path)
+        if not t or not units:
+            continue
+        _, low = enlarge_svg_text(Path(path).read_bytes(), t)
+        if low:
+            got.append((page, sid, size * low / units, path.name))
+    return got
 
 
 def panel_floors(xml_text, pptx, gap_pt=TEXT_GAP_PT):

@@ -169,6 +169,13 @@ joined to the word before it (a no-break space, and word joiners between the two
 syllables, which the renderer otherwise splits) so both move down together. A break the
 template's own page shows is left; the render prints `held …` for each paragraph it glued.
 
+**Figure text at render.** render measures each SVG figure's smallest text at the size the built
+slide shows it (`figure text: …`). Under 7.5pt, the same rebuild rasterizes a copy of the SVG
+whose labels are raised toward 7.5pt — each only as far as it fits its box, stays off lines,
+arrows and other text, and keeps one size with the other lines of its label and the labels on
+its row. The source SVG is never written. A figure that cannot reach 7.5pt is printed with `!`
+and the size it reached: enlarge the picture, or redraw it with fewer words.
+
 ## Outline levels
 
 Indenting a list item two extra spaces writes it at outline level 1. It only *looks*

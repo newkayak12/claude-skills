@@ -1988,6 +1988,56 @@ def layout_options(tmp):
     check(len(got) == 1 and got[0][:2] == (1, pic_slot.id) and abs(got[0][2] - want) < 0.2,
           "an SVG's smallest text × the frame it was built into: %s (want %.1fpt)" % (got, want))
 
+    print("figure text raised in the raster copy, as far as each label fits")
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">'
+           '<text x="4" y="10" font-size="7" font-weight="bold">제목</text>'
+           '<rect x="10" y="20" width="60" height="14"/>'
+           '<text x="40" y="29" font-size="4" text-anchor="middle">넓은 상자</text>'
+           '<rect x="100" y="75" width="30" height="14"/>'
+           '<text x="115" y="84" font-size="4" text-anchor="middle">좁은상자라벨</text>'
+           '<text x="10" y="60" font-size="4">자유 글</text>'
+           '<text x="10" y="66" font-size="4">바로 아래</text></svg>')
+    out, low = deck.enlarge_svg_text(svg.encode(), 6.0)
+    root = ET.fromstring(out)
+    sz = {t.text: float(t.get("font-size")) for t in root.iter("{http://www.w3.org/2000/svg}text")}
+    check(sz["넓은 상자"] == 6.0 and sz["제목"] == 7.0,
+          "a label with room in its box reaches the target; a larger title keeps its size: %s" % sz)
+    check(4.0 < sz["좁은상자라벨"] < 6.0 and sz["좁은상자라벨"] * 6 * deck.HANGUL_EM <= 30 - 1.9,
+          "a label in a narrow box grows only as far as it fits the box: %s" % sz["좁은상자라벨"])
+    check(sz["자유 글"] > 4.0 and min(sz["자유 글"], sz["바로 아래"]) < 6.0,
+          "two free lines 6 units apart grow, but not both to 6 — they would touch: %s"
+          % ((sz["자유 글"], sz["바로 아래"]),))
+    check(abs(low - min(sz.values())) < 1e-6, "it returns the smallest size reached: %s" % low)
+    lined = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">'
+             '<rect x="5" y="5" width="190" height="90" fill="none"/>'
+             '<text x="20" y="40" font-size="4">화살표 위 라벨</text>'
+             '<line x1="10" y1="42" x2="150" y2="42" stroke-width="0.6"/>'
+             '<text x="190" y="12" font-size="4" text-anchor="end">구간 이름</text></svg>')
+    out3, _ = deck.enlarge_svg_text(lined.encode(), 6.0)
+    r3 = ET.fromstring(out3)
+    t3 = {t.text: (float(t.get("font-size")), float(t.get("y"))) for t in r3.iter("{http://www.w3.org/2000/svg}text")}
+    check(t3["화살표 위 라벨"][1] == 40 and t3["화살표 위 라벨"][0] * 0.2 + 40 < 42 - 0.3 + 1e-9,
+          "a label over an arrow keeps its baseline and stops before the line: %s" % (t3["화살표 위 라벨"],))
+    check(12 - 0.8 * t3["구간 이름"][0] >= 5 + 0.5 - 1e-9,
+          "text in a large frame stays inside it, top edge included: %s" % (t3["구간 이름"],))
+    tight = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 100">'
+             '<text x="148" y="46" font-size="5.5" text-anchor="middle">배포/활성</text>'
+             '<text x="148" y="53" font-size="5.5" text-anchor="middle">분리</text>'
+             '<text x="176" y="46" font-size="5.5" text-anchor="middle">DualWrite</text>'
+             '<text x="176" y="53" font-size="5.5" text-anchor="middle">+ Flag</text></svg>')
+    out4, _ = deck.enlarge_svg_text(tight.encode(), 8.0)
+    t4 = {t.text: float(t.get("font-size")) for t in ET.fromstring(out4).iter("{http://www.w3.org/2000/svg}text")}
+    check(t4["배포/활성"] == 5.5 and t4["DualWrite"] == 5.5,
+          "labels already side by side at their edges do not grow into each other: %s" % t4)
+    check(t4["배포/활성"] == t4["분리"] and t4["DualWrite"] == t4["+ Flag"],
+          "the lines of one label keep one size: %s" % t4)
+    row = tight.replace("</svg>", '<text x="205" y="46" font-size="5.5" text-anchor="middle">규칙</text></svg>')
+    out5, _ = deck.enlarge_svg_text(row.encode(), 8.0)
+    t5 = {t.text: float(t.get("font-size")) for t in ET.fromstring(out5).iter("{http://www.w3.org/2000/svg}text")}
+    check(t5["규칙"] == t5["배포/활성"], "a row of labels on one baseline keeps one size: %s" % t5)
+    out2, _ = deck.enlarge_svg_text(svg.encode(), 3.0)
+    check(out2 == svg.encode(), "nothing under the target: the SVG is returned byte for byte")
+
     print("fit_zones: overflow moves the shapes below or shortens the panel row above")
 
     def slots_of(shapes):
