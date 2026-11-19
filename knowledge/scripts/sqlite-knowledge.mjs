@@ -441,10 +441,15 @@ function normalizeVector(values) {
 // direction to be wrong in. Only models with a known window get one.
 const EMBEDDING_CONTEXT_CHARS = {
   embeddinggemma: 1800,
+  // E5 takes 512 tokens and a server such as TEI refuses longer input outright.
+  e5: 460,
 };
 
 function embeddingContextChars(provider, model, override = null) {
   if (override !== null && Number.isFinite(override)) return override > 0 ? override : null;
+  if (provider === 'openai') {
+    return /e5/i.test(String(model || '').split('/').pop()) ? EMBEDDING_CONTEXT_CHARS.e5 : null;
+  }
   if (provider !== 'ollama') return null;
   const family = String(model || '').split(':')[0].trim().toLowerCase();
   return EMBEDDING_CONTEXT_CHARS[family] ?? null;
@@ -763,7 +768,9 @@ async function sqliteBuildIndex(inputRoot, options = {}) {
       return textWindows([document.title, document.section, document.text].filter(Boolean).join('\n'), contextChars);
     }
     const body = [document.section, document.text].filter(Boolean).join('\n');
-    const wrapperChars = prompt.document(document.title, '').length;
+    // Measured around a one-character body: a wrapper may add a separator only
+    // when there is text to separate (e5 joins title and window with a newline).
+    const wrapperChars = prompt.document(document.title, 'x').length - 1;
     const budget = contextChars ? Math.max(1, contextChars - wrapperChars) : contextChars;
     return textWindows(body, budget).map((window) => prompt.document(document.title, window));
   });
@@ -1313,7 +1320,7 @@ async function sqliteSearch(inputRoot, query, options = {}) {
   const { root, database, db } = openIndex(inputRoot, options.db);
   try {
     const metadata = readMetadata(db);
-    const weights = fusionWeights(metadata.embedding_provider, options.lexicalWeight ?? null);
+    let weights = fusionWeights(metadata.embedding_provider, options.lexicalWeight ?? null);
     // A weight sweep re-scores the same questions several times over. The query
     // vector does not depend on the fusion weights, and with a real provider it
     // is the one part of a search that costs an HTTP round trip, so the caller
@@ -1321,12 +1328,21 @@ async function sqliteSearch(inputRoot, query, options = {}) {
     const cache = options.embeddingCache instanceof Map ? options.embeddingCache : null;
     const cacheKey = `${metadata.embedding_model}\u0000${query}`;
     let queryVector = cache?.get(cacheKey);
+    let embeddingError = null;
     if (!queryVector) {
       const embed = metadata.embedding_provider === 'openai' ? loadEmbedConfig(root, options) : null;
-      queryVector = await queryEmbedding(query, metadata, embed
-        ? { ...options, embedUrl: embed.url, embedApiKey: embed.apiKey }
-        : options);
-      cache?.set(cacheKey, queryVector);
+      try {
+        queryVector = await queryEmbedding(query, metadata, embed
+          ? { ...options, embedUrl: embed.url, embedApiKey: embed.apiKey }
+          : options);
+        cache?.set(cacheKey, queryVector);
+      } catch (error) {
+        // An embedding server that is down (a nightly-only TEI, a stopped
+        // ollama) leaves search lexical, not broken; the reply says so.
+        embeddingError = error.message;
+        queryVector = null;
+        weights = { semantic: 0, lexical: 1 };
+      }
     }
     const filter = documentFilter(options);
     const allRows = db.prepare(`SELECT * FROM documents d WHERE 1 = 1${filter.sql}`).all(...filter.params);
@@ -1336,7 +1352,7 @@ async function sqliteSearch(inputRoot, query, options = {}) {
     // semantically lets short metadata-only records crowd out real notes.
     const semanticRanks = new Map();
     allRows
-      .filter((row) => String(row.text || '').trim())
+      .filter((row) => queryVector && String(row.text || '').trim())
       .map((row) => ({ row, score: cosine(queryVector, bufferVector(row.embedding)) }))
       .filter((item) => item.score !== null)
       .sort((left, right) => right.score - left.score)
@@ -1459,6 +1475,7 @@ async function sqliteSearch(inputRoot, query, options = {}) {
         .map((rowid) => rowsById.get(rowid).document_id),
       relation_participant_evicted_ids: evicted.map((item) => item.row.document_id),
       fusion_weights: weights,
+      query_embedding: embeddingError ? { applied: false, error: embeddingError } : { applied: true, error: null },
       embedding_quality: embeddingQuality(metadata.embedding_provider),
       embedding_provider: metadata.embedding_provider,
       embedding_model: metadata.embedding_model,

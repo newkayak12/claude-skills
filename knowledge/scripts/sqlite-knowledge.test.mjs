@@ -1418,6 +1418,34 @@ test('embed.* in _knowledge/config.json drives the openai provider with no env',
   }
 }));
 
+test('an e5 model behind an openai endpoint gets windows that fit its 512 tokens', async () => fixture(async (root) => {
+  const stub = await embeddingsStub();
+  try {
+    write(join(root, 'notes', 'long.md'), `# 긴 노트\n\n${'결제 승인 재시도 정책을 설명한다. '.repeat(120)}\n`);
+    write(join(root, '_knowledge', 'catalog.jsonl'), jsonl([{ id: 'long', path: 'notes/long.md', title: '긴 노트' }]));
+    const built = await buildIndex(root, { provider: 'openai', model: 'intfloat/multilingual-e5-base', embedUrl: stub.url });
+    assert.equal(built.embedding_context_chars, 460);
+    assert.equal(built.documents_windowed, 1);
+    const inputs = stub.requests.flatMap((request) => request.body.input);
+    assert.ok(inputs.length > 1);
+    for (const input of inputs) assert.ok(input.length <= 460, `${input.length} chars`);
+  } finally {
+    await stub.close();
+  }
+}));
+
+test('search stays lexical, and says so, when the query embedding server is down', async () => fixture(async (root) => {
+  const stub = await embeddingsStub();
+  oneNoteVault(root);
+  await buildIndex(root, { provider: 'openai', model: 'intfloat/multilingual-e5-base', embedUrl: stub.url });
+  await stub.close();
+  const result = await searchIndex(root, '결제 승인', { embedUrl: stub.url });
+  assert.equal(result.query_embedding.applied, false);
+  assert.ok(result.query_embedding.error);
+  assert.deepEqual(result.fusion_weights, { semantic: 0, lexical: 1 });
+  assert.equal(result.results[0].id, 'pay');
+}));
+
 test('e5 prompt family is selected for openai e5 models only', () => {
   const prompt = embeddingPrompt('openai', 'intfloat/multilingual-e5-base');
   assert.equal(prompt.id, 'e5-v1');

@@ -39,7 +39,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      KNOWLEDGE_LLM_URL: ${KNOWLEDGE_LLM_URL:?KNOWLEDGE_LLM_URL must name an OpenAI-compatible endpoint}
+      # Not `:?`: compose interpolates every service, so a required value here
+      # would stop `knowledge-index` too. Unset, the build says so and exits.
+      KNOWLEDGE_LLM_URL: ${KNOWLEDGE_LLM_URL:-}
       KNOWLEDGE_LLM_MODEL: ${KNOWLEDGE_LLM_MODEL:-}
       KNOWLEDGE_LLM_TIER: ${KNOWLEDGE_LLM_TIER:-}
       KNOWLEDGE_LLM_API_KEY: ${KNOWLEDGE_LLM_API_KEY:-}
