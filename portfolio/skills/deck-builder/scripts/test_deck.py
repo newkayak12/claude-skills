@@ -1965,6 +1965,29 @@ def layout_options(tmp):
     first = deck.slide_order(pkg)[0]
     pkg.parts[first] = _slide([pic("Pic", 60, 174, 200, 100), pic("Far", 600, 400, 50, 50)]).encode("utf-8")
     pkg.write(pp)
+    print("figure text measured at the size the built slide shows it")
+    ft = tmp / "ft"            # its own folder: the build's raster cache is counted elsewhere
+    ft.mkdir(exist_ok=True)
+    (ft / "fig.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50">'
+                                '<text x="2" y="10" font-size="4">작은 라벨</text>'
+                                '<text x="2" y="30" font-size="8">제목</text></svg>', encoding="utf-8")
+    make_png(ft / "ft.png", 40, 40)
+    make_template(ft / "ft.pptx", ft / "ft.png")
+    tpkg = deck.Package(ft / "ft.pptx")
+    pic_slot = next(s for s in deck.analyze_slide(ET.fromstring(tpkg.parts[deck.slide_order(tpkg)[1]]))
+                    if s.type == "picture")
+    (ft / "ft.mdx").write_text("---\ntemplate: ft.pptx\noutput: ft-out.pptx\n---\n\n## @s2\n%s: fig.svg | fit\n"
+                               % pic_slot.id, encoding="utf-8")
+    run_cmd(["build", "--deck", str(ft / "ft.mdx")])
+    _, specs, _ = deck.parse_deck((ft / "ft.mdx").read_text(encoding="utf-8"))
+    got = deck.figure_text_sizes(tpkg, deck.slide_order(tpkg), deck.Package(ft / "ft-out.pptx"), specs,
+                                 ft / "ft.mdx")
+    w = deck.pt(pic_slot.box[2])
+    hpt = deck.pt(pic_slot.box[3])
+    want = 4 * min(w / 100, hpt / 50)
+    check(len(got) == 1 and got[0][:2] == (1, pic_slot.id) and abs(got[0][2] - want) < 0.2,
+          "an SVG's smallest text × the frame it was built into: %s (want %.1fpt)" % (got, want))
+
     print("fit_zones: overflow moves the shapes below or shortens the panel row above")
 
     def slots_of(shapes):

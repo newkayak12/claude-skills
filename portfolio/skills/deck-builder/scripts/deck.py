@@ -4554,6 +4554,38 @@ def built_page_zones(tpl, tparts, built, specs, zones, slide_cy):
     return out
 
 
+def figure_text_sizes(tpl, tparts, built, specs, md_path):
+    """[(page, slot id, pt, svg path, frame pt (w, h))]: each SVG picture's smallest text at the frame
+    the built slide shows it in. check estimates it from the template's frame; the build then
+    grows or shrinks pictures (`captions:`, `panel_margin:`, zones), and an SVG becomes a PNG in
+    the pptx, so the PDF has no text to measure — the source SVG × the built frame is the size."""
+    out, bparts = [], slide_order(built)
+    for page, spec in enumerate(specs, 1):
+        n = int(spec.archetype[1:]) if re.fullmatch(r"s\d+", spec.archetype) else 0
+        if not 1 <= n <= len(tparts) or page > len(bparts):
+            continue
+        tslide = ET.fromstring(tpl.parts[tparts[n - 1]])
+        ttree = tslide.find(q("p:cSld") + "/" + q("p:spTree"))
+        names = {s.id: shape_name(resolve_path(ttree, s.path)) for s in analyze_slide(tslide)
+                 if s.type == "picture"}
+        btree = ET.fromstring(built.parts[bparts[page - 1]]).find(q("p:cSld") + "/" + q("p:spTree"))
+        boxes = {shape_name(c): shape_box(c) for c in btree.iter() if c.tag == q("p:pic")}
+        for sid, kind, value, _ in spec.values:
+            if sid not in names or kind != "scalar" or not isinstance(value, str) or value.strip() == "!drop":
+                continue
+            path, mode, _, _ = parse_picture_value(value)
+            p = Path(path)
+            p = p if p.is_absolute() else Path(md_path).parent / p
+            box = boxes.get(names[sid])
+            if p.suffix.lower() != ".svg" or not box or mode is None:
+                continue
+            # the frame is the picture's own after build: `fit` already sized it to the image
+            size = svg_min_text_pt(p, pt(box[2]), pt(box[3]), "fit" if mode == "fit" else mode)
+            if size is not None:
+                out.append((page, sid, size, p, (pt(box[2]), pt(box[3]))))
+    return out
+
+
 def panel_floors(xml_text, pptx, gap_pt=TEXT_GAP_PT):
     """{slide no: {picture name: EMU}} for each picture the render shows closer than gap_pt under
     the text above it: the floor is that text's measured last line plus gap_pt.
