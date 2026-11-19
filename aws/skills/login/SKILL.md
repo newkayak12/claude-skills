@@ -56,9 +56,8 @@ IAM user keys only, no roles. macOS only. Read-only: the server refuses writes, 
    exactly two places:
    - Default: the server opens a macOS hidden dialog for Access Key ID and Secret Access Key; they go to
      Keychain (service `readonly-aws`, account `<profile>`).
-   - 1Password: `vault` and `item` → the server reads `access key id` + `secret access key` of that item
-     (case-insensitive), else `username` + `password` (an item holding both uses the first pair; halves are
-     never mixed). With `mfa_serial` the one-time code comes from `op item get --otp` on `otp_item` (same
+   - 1Password: `vault` and `item` → the server reads only `username` (access key id) + `password` (secret
+     access key) of that item (case-insensitive). With `mfa_serial` the one-time code comes from `op item get --otp` on `otp_item` (same
      vault) when given, else on `item`. `otp_item` without `mfa_serial` is saved and ignored.
    - The person offers keys in chat → decline in one line, name the dialog and 1Password, call `login` without them.
 5. **MFA session.** With `mfa_serial`, the server calls `sts get-session-token` for 129600 s (36 h),

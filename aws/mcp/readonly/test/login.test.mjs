@@ -51,7 +51,7 @@ function setup() {
     if (a === undefined) return cb(Object.assign(new Error('no answer queued'), { code: 1 }), '', '');
     cb(null, `${a}\n`, '');
   };
-  s.opItem = { fields: [{ label: 'Access Key ID', value: FAKE.key }, { label: 'SECRET ACCESS KEY', value: FAKE.secret }, { label: 'one-time password', value: 'otpauth://totp/x?secret=ZZZ' }] };
+  s.opItem = { fields: [{ label: 'username', value: FAKE.key }, { label: 'PASSWORD', value: FAKE.secret }, { label: 'one-time password', value: 'otpauth://totp/x?secret=ZZZ' }] };
   s.opHandler = (args) => {
     if (args.includes('--otp')) {
       const c = s.otps.shift();
@@ -408,7 +408,7 @@ test('A5.4: op fails (signed out, item missing, field missing) -> error without 
   const cases = [
     [() => ({ error: Object.assign(new Error('x'), { code: 1 }), stderr: `[ERROR] You are not currently signed in. ${SENTINEL} ${FAKE.secret}` }), /signed out/],
     [() => ({ error: Object.assign(new Error('x'), { code: 1 }), stderr: `"AWS prod" isn't an item ${SENTINEL} ${FAKE.secret}` }), /not found/],
-    [() => ({ stdout: JSON.stringify({ fields: [{ label: 'Access Key ID', value: FAKE.key }] }) }), /needs 'access key id' \+ 'secret access key', or 'username' \+ 'password'/],
+    [() => ({ stdout: JSON.stringify({ fields: [{ label: 'Access Key ID', value: FAKE.key }] }) }), /needs 'username' \+ 'password'/],
   ];
   for (const [handler, re] of cases) {
     const s = setup();

@@ -20,15 +20,15 @@ const itemJson = (fields) => JSON.stringify({ id: 'x', fields });
 
 test('readItem matches labels case-insensitively and returns the pair', async () => {
   const { run } = stub({ stdout: itemJson([
-    { label: 'username', value: 'someone' },
-    { label: 'Access Key ID', value: KEY },
-    { label: ' SECRET ACCESS KEY ', value: SECRET },
+    { label: 'Access Key ID', value: 'ignored' },
+    { label: 'UserName', value: KEY },
+    { label: ' PASSWORD ', value: SECRET },
   ]) });
   assert.deepEqual(await readItem('Dev', 'aws-root', { run }), { AccessKeyId: KEY, SecretAccessKey: SECRET });
 });
 
 test('readItem argv is exact and goes through execFile with no shell', async () => {
-  const { run, calls } = stub({ stdout: itemJson([{ label: 'access key id', value: KEY }, { label: 'secret access key', value: SECRET }]) });
+  const { run, calls } = stub({ stdout: itemJson([{ label: 'username', value: KEY }, { label: 'password', value: SECRET }]) });
   await readItem('My Vault', 'my item', { run });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].file, 'op');
@@ -64,15 +64,15 @@ test('ENOENT gives the not-installed message for both calls', async () => {
 });
 
 test('a missing field names the label, not a value', async () => {
-  const { run } = stub({ stdout: itemJson([{ label: 'access key id', value: KEY }, { label: 'notes', value: SECRET }]) });
+  const { run } = stub({ stdout: itemJson([{ label: 'username', value: KEY }, { label: 'notes', value: SECRET }]) });
   await assert.rejects(readItem('v', 'i', { run }), (e) => {
-    assert.match(e.message, /secret access key/);
+    assert.match(e.message, /password/);
     assert.equal(e.message.includes(KEY), false);
     assert.equal(e.message.includes(SECRET), false);
     return true;
   });
-  const empty = stub({ stdout: itemJson([{ label: 'access key id', value: '' }, { label: 'secret access key', value: SECRET }]) }).run;
-  await assert.rejects(readItem('v', 'i', { run: empty }), /access key id/);
+  const empty = stub({ stdout: itemJson([{ label: 'username', value: '' }, { label: 'password', value: SECRET }]) }).run;
+  await assert.rejects(readItem('v', 'i', { run: empty }), /username/);
 });
 
 test('a failed exit names the failure without stderr content', async () => {
@@ -124,39 +124,21 @@ test('readItem reads username/password when the named pair is absent, labels tri
   assert.deepEqual(await readItem('v', 'i', { run }), { AccessKeyId: KEY, SecretAccessKey: SECRET });
 });
 
-test('readItem: the named pair wins when the item holds both layouts', async () => {
-  const { run } = stub({ stdout: itemJson([
-    { label: 'username', value: 'console-user' },
-    { label: 'password', value: 'console-pass' },
+test('readItem reads only username and password: the access key fields are never used', async () => {
+  const both = stub({ stdout: itemJson([
+    { label: 'access key id', value: 'AKIAOTHEROTHEROTHER0' },
+    { label: 'secret access key', value: 'other-secret' },
+    { label: 'username', value: KEY },
+    { label: 'password', value: SECRET },
+  ]) }).run;
+  assert.deepEqual(await readItem('v', 'i', { run: both }), { AccessKeyId: KEY, SecretAccessKey: SECRET });
+  const keysOnly = stub({ stdout: itemJson([
     { label: 'access key id', value: KEY },
     { label: 'secret access key', value: SECRET },
-  ]) });
-  assert.deepEqual(await readItem('v', 'i', { run }), { AccessKeyId: KEY, SecretAccessKey: SECRET });
-});
-
-test('readItem never mixes halves of the two layouts', async () => {
-  // a named half plus a complete username/password pair: the whole pair is used, not key id + password
-  const whole = stub({ stdout: itemJson([
-    { label: 'access key id', value: 'AKIAHALFHALFHALF0000' },
-    { label: 'username', value: KEY },
-    { label: 'password', value: SECRET },
   ]) }).run;
-  assert.deepEqual(await readItem('v', 'i', { run: whole }), { AccessKeyId: KEY, SecretAccessKey: SECRET });
-  // one half of each layout: no pair at all
-  const halves = stub({ stdout: itemJson([
-    { label: 'access key id', value: KEY },
-    { label: 'password', value: SECRET },
-  ]) }).run;
-  await assert.rejects(readItem('v', 'i', { run: halves }));
-});
-
-test('a partial layout errors naming both layouts and no value', async () => {
-  const { run } = stub({ stdout: itemJson([
-    { label: 'username', value: KEY },
-    { label: 'access key id', value: SECRET },
-  ]) });
-  await assert.rejects(readItem('v', 'i', { run }), (e) => {
-    for (const label of ['access key id', 'secret access key', 'username', 'password']) assert.ok(e.message.includes(label), `message names ${label}`);
+  await assert.rejects(readItem('v', 'i', { run: keysOnly }), (e) => {
+    assert.match(e.message, /'username' \+ 'password'/);
+    assert.equal(e.message.includes('access key id'), false);
     assert.equal(e.message.includes(KEY), false);
     assert.equal(e.message.includes(SECRET), false);
     return true;

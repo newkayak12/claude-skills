@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // readonly-aws MCP server, bundled by build.mjs — do not edit; edit the sources and run npm run build.
-// sources: 52b07732e1df1b50
+// sources: 5eb9141807dacf1f
 import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -17494,10 +17494,7 @@ __export(op_exports, {
   readItem: () => readItem
 });
 import { execFile as execFile2 } from "node:child_process";
-var LAYOUTS = [
-  { AccessKeyId: "access key id", SecretAccessKey: "secret access key" },
-  { AccessKeyId: "username", SecretAccessKey: "password" }
-];
+var LAYOUT = { AccessKeyId: "username", SecretAccessKey: "password" };
 var TIMEOUT_MS = 6e4;
 var NOT_INSTALLED = "1Password CLI (op) is not installed";
 function assertRef(vault, item, otpItem) {
@@ -17534,13 +17531,10 @@ async function readItem(vault, item, { run = execFile2 } = {}) {
     const f = fields.find((x) => typeof x?.label === "string" && x.label.trim().toLowerCase() === label);
     return typeof f?.value === "string" && f.value ? f.value : null;
   };
-  for (const layout of LAYOUTS) {
-    const id = valueOf(layout.AccessKeyId);
-    const secret = valueOf(layout.SecretAccessKey);
-    if (id && secret) return { AccessKeyId: id, SecretAccessKey: secret };
-  }
-  const [named, login2] = LAYOUTS.map((l) => `'${l.AccessKeyId}' + '${l.SecretAccessKey}'`);
-  throw new Error(`1Password item has no key pair: it needs ${named}, or ${login2}`);
+  const id = valueOf(LAYOUT.AccessKeyId);
+  const secret = valueOf(LAYOUT.SecretAccessKey);
+  if (id && secret) return { AccessKeyId: id, SecretAccessKey: secret };
+  throw new Error(`1Password item has no key pair: it needs '${LAYOUT.AccessKeyId}' + '${LAYOUT.SecretAccessKey}'`);
 }
 async function otp(vault, item, { otp_item, run = execFile2 } = {}) {
   assertRef(vault, item, otp_item);
@@ -17680,7 +17674,7 @@ var login = defineTool({
       label: { type: "string", description: "Optional display label; defaults to the account id." },
       mfa_serial: { type: "string", description: "Optional MFA device ARN; saved with the profile." },
       vault: { type: "string", description: "Optional 1Password vault holding the key item (with item)." },
-      item: { type: "string", description: 'Optional 1Password item with the key pair: fields "access key id" and "secret access key", else "username" and "password".' },
+      item: { type: "string", description: 'Optional 1Password item with the key pair: fields "username" and "password" (and its one-time code).' },
       otp_item: { type: "string", description: "Optional 1Password item (same vault) holding the one-time password, when it is not in the key item. Used only with an MFA serial." }
     },
     required: ["profile"],

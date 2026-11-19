@@ -1,14 +1,11 @@
-// 1Password CLI reads for a 1Password-backed profile: the key pair of an item and its one-time code.
+// 1Password CLI reads for a 1Password-backed profile: an item's username/password (the key pair) and its one-time code.
 // op prints the secret on its own stdout by design; it is parsed here and returned to the caller, never
 // logged. Every error is built from fixed text plus the exit code or the field label, never from op's
 // stdout or stderr, so no value or item content can leak through a message.
 import { execFile } from 'node:child_process';
 
-// Two key layouts, never mixed half and half: the named pair, else a login item's username/password.
-const LAYOUTS = [
-  { AccessKeyId: 'access key id', SecretAccessKey: 'secret access key' },
-  { AccessKeyId: 'username', SecretAccessKey: 'password' },
-];
+// One key layout: a login item's username (access key id) and password (secret access key). No other field is read.
+const LAYOUT = { AccessKeyId: 'username', SecretAccessKey: 'password' };
 const TIMEOUT_MS = 60000;
 const NOT_INSTALLED = '1Password CLI (op) is not installed';
 
@@ -36,8 +33,8 @@ function runOp(args, run) {
   });
 }
 
-// Resolves {AccessKeyId, SecretAccessKey}; fields are matched by label (trimmed, case-insensitive). The
-// first layout whose two fields both hold a value is used; otherwise the error names both layouts.
+// Resolves {AccessKeyId, SecretAccessKey} from the username and password fields, matched by label
+// (trimmed, case-insensitive); otherwise the error names the two labels.
 export async function readItem(vault, item, { run = execFile } = {}) {
   assertRef(vault, item);
   const out = await runOp(['item', 'get', item, '--vault', vault, '--format', 'json'], run);
@@ -52,13 +49,10 @@ export async function readItem(vault, item, { run = execFile } = {}) {
     const f = fields.find((x) => typeof x?.label === 'string' && x.label.trim().toLowerCase() === label);
     return typeof f?.value === 'string' && f.value ? f.value : null;
   };
-  for (const layout of LAYOUTS) {
-    const id = valueOf(layout.AccessKeyId);
-    const secret = valueOf(layout.SecretAccessKey);
-    if (id && secret) return { AccessKeyId: id, SecretAccessKey: secret };
-  }
-  const [named, login] = LAYOUTS.map((l) => `'${l.AccessKeyId}' + '${l.SecretAccessKey}'`);
-  throw new Error(`1Password item has no key pair: it needs ${named}, or ${login}`);
+  const id = valueOf(LAYOUT.AccessKeyId);
+  const secret = valueOf(LAYOUT.SecretAccessKey);
+  if (id && secret) return { AccessKeyId: id, SecretAccessKey: secret };
+  throw new Error(`1Password item has no key pair: it needs '${LAYOUT.AccessKeyId}' + '${LAYOUT.SecretAccessKey}'`);
 }
 
 // Resolves the first 6-digit token on op's stdout, read from otp_item (same vault) when given, else

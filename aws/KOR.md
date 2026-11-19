@@ -31,8 +31,8 @@ MFA 일련번호, 1Password `vault`/`item`/`otp_item`을 넘깁니다. 프로필
   `label` 기본값은 계정 ID입니다.
 - **숨김 입력 창**(기본): 키를 macOS 숨김 입력 창에 입력하면 Keychain 서비스 `readonly-aws`, 계정
   `<profile>`에 저장됩니다. 키를 인자로 받는 도구가 없어 키는 대화를 거치지 않습니다.
-- **1Password**: `vault`와 `item`을 넘기면 서버가 `access key id`, `secret access key` 필드(대소문자
-  무시)를 `op item get`으로 읽고, 없으면 `username`, `password`를 읽습니다. MFA 일련번호가 있으면 일회용
+- **1Password**: `vault`와 `item`을 넘기면 서버가 `username`(access key id), `password`(secret access
+  key) 필드만(대소문자 무시) `op item get`으로 읽습니다. MFA 일련번호가 있으면 일회용
   코드를 `otp_item`(같은 vault의 다른 항목)이 있으면 거기서, 없으면 `item`에서 `op item get --otp`로
   읽습니다. 참조만 저장합니다.
 - **MFA(선택)**: `mfa_serial`을 넘기면(프로필 파일에 저장) 로그인이 `sts get-session-token`을

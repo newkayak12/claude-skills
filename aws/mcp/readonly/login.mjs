@@ -158,7 +158,7 @@ export const login = defineTool({
       label: { type: 'string', description: 'Optional display label; defaults to the account id.' },
       mfa_serial: { type: 'string', description: 'Optional MFA device ARN; saved with the profile.' },
       vault: { type: 'string', description: 'Optional 1Password vault holding the key item (with item).' },
-      item: { type: 'string', description: 'Optional 1Password item with the key pair: fields "access key id" and "secret access key", else "username" and "password".' },
+      item: { type: 'string', description: 'Optional 1Password item with the key pair: fields "username" and "password" (and its one-time code).' },
       otp_item: { type: 'string', description: 'Optional 1Password item (same vault) holding the one-time password, when it is not in the key item. Used only with an MFA serial.' },
     },
     required: ['profile'],
