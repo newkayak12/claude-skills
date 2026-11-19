@@ -23,7 +23,7 @@ import { writeDenials } from './denials.mjs';
 
 export const KINDS = ['capacity', 'environment', 'repeated-identical-rejection', 'below-threshold', 'merge-conflict', 'ended-task', 'unclassified'];
 
-const CAPACITY_RE = /hit your [a-z0-9-]+ limit/i;
+export const CAPACITY_RE = /hit your [a-z0-9-]+ limit/i;
 const ENOSPC_RE = /ENOSPC|no space left on device/i;
 const MISSING_FILE_RE = /has no file under/i;
 const DEFAULT_FLOOR = 90;

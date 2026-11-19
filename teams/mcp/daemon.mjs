@@ -52,6 +52,8 @@ import { launchArgs } from './taskmanager-drivers.mjs';
 import { stopNotice } from './resume.mjs';
 import { reserveSlot, noteWaiting, clearWaiting } from './livecap.mjs';
 import { neededDenials } from './denials.mjs';
+import { parkCapacity } from './capacity-reset.mjs';
+import { CAPACITY_RE, recordFailureKind } from './failure-kind.mjs';
 
 function parseArgs(argv) {
   const out = {};
@@ -299,6 +301,19 @@ async function judge(task, n, { slot = null } = {}) {
         if (denied.length && unexplainedRefusal(parsed)) { blocked(); return; }
         settle({ ...(unexplainedRefusal(parsed) || parsed), judged_by: judgedBy(out, argv), ...(denied.length ? { denied } : {}) });
       } catch (e) {
+        // A reply that is the usage-limit text is a capacity park, not a malformed verdict: autoRejudge
+        // resumes it after the stated reset without spending a rejudge attempt.
+        const limit = [text, err].find((s) => CAPACITY_RE.test(String(s || '')));
+        if (limit) {
+          settle({
+            stage_ok: false,
+            judge_failed: true,
+            waiting_capacity: parkCapacity(n.last_capacity || null, String(limit).trim().slice(0, 500), Date.now()),
+            reason: `judge for ${n.node_id} hit a usage limit: ${String(limit).trim().slice(0, 300)}`,
+            judged_by: judgedBy(out, argv),
+          });
+          return;
+        }
         if (denied.length) { blocked(); return; }
         settle({
           stage_ok: false,
@@ -591,6 +606,10 @@ function applyJudged(taskId, nodeId, stamp, result) {
       delete f.vendor; delete f.model;
       if (by && by.vendor) { f.vendor = by.vendor; if (by.model) f.model = by.model; }
       const out = finish(t, f, verdict);
+      if (verdict.waiting_capacity) {
+        recordFailureKind(t, f, 'capacity', { via: 'park' });
+        record(t, { event: 'judge_capacity', task_id: t.run_id, node_id: nodeId, reason: String(verdict.waiting_capacity.reason).slice(0, 200) });
+      }
       // finish() alone does not delegate a size-S task to its own run - toolSubmit calls
       // delegateIfSmall right after finish() for the size node, and the daemon makes the same
       // call here, on the fresh node, only for a verdict that was applied.

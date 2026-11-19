@@ -235,7 +235,7 @@ export function autoReshape(task) {
   // (2026-09-22) hit the 45m judge timeout twice in 247 minutes; under this code that is two of
   // the three shaping attempts gone to a timeout string. Once the rejudge budget IS spent there
   // is no verdict coming, and reshaping is the only move left - so reshape then.
-  const judgeStuck = (n) => Boolean(n.result.blocked) || (n.result.judge_failed === true && (n.judge_attempts || 0) < JUDGE_ATTEMPTS_MAX);
+  const judgeStuck = (n) => Boolean(n.result.blocked) || (n.result.judge_failed === true && (judgeParked(n) || (n.judge_attempts || 0) < JUDGE_ATTEMPTS_MAX));
   // The plan stage's split and the planning integrate are the shaping pair's planning twins
   // (_repo/docs/plans/2026-09-28-teams-cards-everywhere.md C2/C4), recovered the same way: a failed
   // split is split again with its problems as feedback; a planning integrate whose judge never
@@ -489,6 +489,12 @@ export function clearCapacity(task, packageId) {
       }
       resumed.push(n.node_id);
     }
+    for (const n of task.nodes) {
+      if (!judgeParked(n) || String(a.package_id) === 'S') continue;
+      if (a.package_id && n.subgoal_id !== String(a.package_id)) continue;
+      reopenParkedJudge(task, n);
+      resumed.push(n.node_id);
+    }
   return resumed;
 }
 
@@ -530,6 +536,21 @@ export function capacityResetAt(reason, since) {
 
 const CAPACITY_GRACE_MS = 3 * 60 * 1000;
 
+// When a park may resume: its stated reset (or back-off) plus the grace.
+const parkDueAt = (w) => capacityWait({ reason: w.reason, since: w.since, firstSince: w.first_since ?? w.since, parks: w.parks ?? 1 }) + CAPACITY_GRACE_MS;
+
+// A judge that replied with the usage-limit text: failed + judge_failed, parked on result.waiting_capacity.
+const judgeParked = (n) => Boolean(n.state === 'failed' && n.result && n.result.judge_failed === true && n.result.waiting_capacity);
+
+// Reopens a parked judge node for another single-shot judge; judge_attempts is not touched.
+function reopenParkedJudge(task, n) {
+  n.last_capacity = lastPark(n.result.waiting_capacity);
+  n.state = 'pending';
+  n.reopened = (n.reopened || 0) + 1;
+  delete n.result; delete n.finished_at; delete n.started_at;
+  record(task, { event: 'judge_capacity_cleared', task_id: task.run_id, node_id: n.node_id });
+}
+
 // The daemon's own tm_retry({reset_capacity:true}): once the reset time a provider named has
 // passed (plus a few minutes' grace), clear the park and respawn - the caller no longer has to
 // notice. trap-beta-T2 (2026-09-21) sat 1h51m on "resets 5:40pm (UTC)" after the reset because
@@ -540,7 +561,7 @@ export function autoResumeCapacity(task, now = Date.now()) {
   // warning line: a park the daemon never resumes would also never settle (nothing spends, so
   // the box never trips), and portfolio-consolidate's P1 delivered accepted work after its resume.
   if (task.budget_stopped) return false;
-  const due = (w) => w && now >= capacityWait({ reason: w.reason, since: w.since, firstSince: w.first_since ?? w.since, parks: w.parks ?? 1 }) + CAPACITY_GRACE_MS;
+  const due = (w) => w && now >= parkDueAt(w);
   let resumed = [];
   if (task.harness_run && due(task.harness_run.waiting_capacity)) resumed = resumed.concat(clearCapacity(task, 'S'));
   for (const n of task.nodes) {
@@ -569,6 +590,11 @@ export function pendingRejudgeAt(task) {
   let at = null;
   for (const n of task.nodes) {
     if (n.state !== 'failed' || !n.result || n.result.judge_failed !== true) continue;
+    if (judgeParked(n)) {
+      const t = parkDueAt(n.result.waiting_capacity);
+      if (at === null || t < at) at = t;
+      continue;
+    }
     if ((n.judge_attempts || 0) >= JUDGE_ATTEMPTS_MAX) continue;
     const reason = String(n.result.reason || '');
     const t = /session limit|usage limit|resets\s+\d/i.test(reason)
@@ -583,6 +609,13 @@ export function autoRejudge(task, now = Date.now()) {
   let changed = false;
   for (const n of task.nodes) {
     if (n.state !== 'failed' || !n.result || n.result.judge_failed !== true) continue;
+    if (judgeParked(n)) {
+      // A capacity park is not a failed judge: no attempt is spent and the cap does not apply.
+      if (now < parkDueAt(n.result.waiting_capacity)) continue;
+      reopenParkedJudge(task, n);
+      changed = true;
+      continue;
+    }
     if ((n.judge_attempts || 0) >= JUDGE_ATTEMPTS_MAX) continue;
     const reason = String(n.result.reason || '');
     const at = /session limit|usage limit|resets\s+\d/i.test(reason)
