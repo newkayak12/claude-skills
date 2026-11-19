@@ -698,7 +698,7 @@ Design: `_repo/docs/plans/2026-11-19-knowledge-*` (PRDs F1–F4, shipped in know
 
 ### aws plugin
 
-157. **aws: the person creates named profiles (account info, region) first; login fills one; `profile` lists and switches them**
+157. **aws: the person creates named profiles (account info, region) first; login fills one; `profile` lists and switches them** — in E-59613d5d
    - Why: user, 2026-11-18, first real `aws:login`: "profile을 사용자가 생성하고 계정정보, 리전을
      기록), profile은 여러개 만들 수 있고 list로 조회해서 바꿀 수 있음". Today a profile exists only
      as a side effect of `login` (name + region as login arguments); there is no step that creates
