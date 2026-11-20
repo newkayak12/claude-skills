@@ -532,9 +532,6 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" migrate --root . --wor
 [ROADMAP.md](ROADMAP.md) — 무엇을 측정 중이고, 무엇이 대기 중이며, 무엇을 의도적으로
 하지 않는지. 고치기 쉬운 순서가 아니라 측정된 레버 크기 순입니다.
 
-[docs/basics.md](docs/basics.md) — 검색 기초를 숫자 예시로: 역색인, BM25(IDF·포화·길이 보정), 한국어 토큰화,
-임베딩과 코사인 유사도, E5 접두어, RRF, 리랭커, recall@k와 MRR — 각각 이 엔진이 실제로 하는 일과 함께.
-
 [docs/theory.md](docs/theory.md) — 규칙 뒤에 있는 논문과 원리(RRF, BM25, 컴피턴시 질문,
 재사용 holdout, 누수, 크로스인코더 리랭킹)와, 이 플러그인이 그것과 다르게 간 지점.
 그 문서 §9는 엔진을 [Hindsight](https://github.com/vectorize-io/hindsight)와 대조합니다 —
