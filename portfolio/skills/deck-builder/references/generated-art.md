@@ -29,6 +29,11 @@ template uses, and warns when the art's aspect would make the build crop it.
 **Write it in the template's colors.** `catalog` prints a Palette section — the theme
 slots and the colors the slides actually use. Use those hexes, not ones that merely look
 close. The reference supplies the design; the generated source supplies only the content.
+A filled box — panel, bar, tag, table cell — takes one of the tints the Palette lists (lighter
+60% or 80%). Emphasis — a risk, a failure, a key number — takes the slides' own most-used accent or
+bold, never a loud colour the slides use once or not at all: a template that uses `#FF0000` once
+does not want red bars or red labels (blind bench 2026-11-19: red and yellow fills read harsh;
+user 2026-11-20: "도식내 빨간글자 존나 조화롭지 못하네"). `check` warns on loud text, lines or boxes.
 
 **Author it at the frame's exact pt size.** `catalog` gives it per picture slot
 (`author at 441×248 pt`). Use those numbers as the SVG's `width`, `height` and `viewBox`,

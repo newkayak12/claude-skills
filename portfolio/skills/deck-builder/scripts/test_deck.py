@@ -639,6 +639,29 @@ def color(tmp):
     check(cols == ["10243F", "FF00AA", "AABBCC"],
           "every hex is found and shorthand expanded, got %s" % cols)
 
+    check(deck.tint("FF0000", 0.8) == "FFCCCC" and deck.tint("4472C4", 0.6) == "B4C7E7",
+          "a tint is the colour moved toward white as PowerPoint's theme grid does")
+    tints = deck.palette_tints([("dk1", "000000"), ("accent4", "FFC000")], [("435EA0", 199), ("F9F9F9", 27)])
+    check([t[1] for t in tints] == ["FFC000", "435EA0"] and len(tints[0][2]) == 3,
+          "tints for accents and the slides' own colours, none for black or near-white: %s" % tints)
+    (tmp / "loud.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200">'
+        '<rect x="0" y="0" width="40" height="20" fill="#FFC000"/>'       # a tag, 1% of the figure
+        '<rect x="0" y="40" width="3" height="3" fill="#FF0000"/>'        # a dot
+        '<rect x="0" y="60" width="200" height="40" fill="#435EA0"/>'     # the slides' own fill
+        '<rect x="0" y="120" width="200" height="40" fill="#FFF2CC"/>'    # a tint
+        '<text fill="#FF0000">위험</text></svg>', encoding="utf-8")
+    check(deck.svg_loud_fills(tmp / "loud.svg", {"435EA0"}) == ["FF0000", "FFC000"],
+          "red text and a box filled at full strength are loud; a dot, a tint and the slides' own fill "
+          "are not: %s" % deck.svg_loud_fills(tmp / "loud.svg", {"435EA0"}))
+    check(deck.svg_loud_fills(tmp / "loud.svg", {"435EA0", "FF0000", "FFC000"}) == [],
+          "a colour the slides fill with themselves is never loud")
+    warns = []
+    deck._check_picture_color(tmp / "loud.svg", "@s1", "pic1", 3, warns,
+                              ["FFC000", "FF0000", "435EA0", "FFF2CC"], None, own_fills={"435EA0"})
+    check(len(warns) == 1 and "#FFC000" in warns[0] and "#FF0000" in warns[0] and "tint" in warns[0],
+          "check names the loud fill and the tint to use: %s" % warns)
+
     check(deck.color_distance("FFFFFF", "10243F") > 60, "white and navy are far apart")
     check(deck.color_distance("10243F", "11253F") < 5, "near-identical navies are close")
 

@@ -1826,6 +1826,51 @@ def svg_colors(path):
     return seen
 
 
+LOUD_SATURATION = 0.75     # #FF0000, #FFC000 and the like; the template's mid blues sit near 0.6
+LOUD_AREA = 0.002          # of the figure: a tag, a bar, a panel — not a dot. The judged harsh
+                           # fills (2026-11-19) were 0.46%, 0.96% and 4.76% of their figures
+
+
+def svg_loud_fills(path, own=frozenset()):
+    """Hexes a <rect> fills over LOUD_AREA of the figure at saturation over LOUD_SATURATION, the
+    slides' own fills (`own`) aside. Paths and circles are left out: their area is not read."""
+    try:
+        root = ET.fromstring(Path(path).read_bytes())
+        vw, vh = (float(v) for v in re.split(r"[,\s]+", (root.get("viewBox") or "").strip())[2:4])
+    except (ET.ParseError, OSError, ValueError):
+        return []
+    out = []
+    # text and lines too (user, 2026-11-20: "도식내 빨간글자 존나 조화롭지 못하네"): emphasis in a
+    # figure takes the slides' own accent, not a colour the template uses once
+    for el in root.iter():
+        name = el.tag.rsplit("}", 1)[-1]
+        if name not in ("text", "tspan", "line", "path", "polyline"):
+            continue
+        style = dict(kv.split(":", 1) for kv in (el.get("style") or "").replace(" ", "").split(";") if ":" in kv)
+        keys = ("fill",) if name in ("text", "tspan") else ("stroke",)
+        for k in keys:
+            m = re.fullmatch(r"#([0-9A-Fa-f]{6})", (el.get(k) or style.get(k) or "").strip())
+            if m and saturation(m.group(1).upper()) > LOUD_SATURATION and m.group(1).upper() not in own \
+                    and m.group(1).upper() not in out:
+                out.append(m.group(1).upper())
+    for r in root.iter("{http://www.w3.org/2000/svg}rect"):
+        style = dict(kv.split(":", 1) for kv in (r.get("style") or "").replace(" ", "").split(";") if ":" in kv)
+        fill = (r.get("fill") or style.get("fill") or "").strip()
+        m = re.fullmatch(r"#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})", fill)
+        try:
+            w, h = float(r.get("width") or 0), float(r.get("height") or 0)
+            op = float(r.get("fill-opacity") or style.get("fill-opacity") or r.get("opacity") or 1)
+        except ValueError:
+            continue
+        if not m or op < 0.5 or w * h < LOUD_AREA * vw * vh:
+            continue
+        hexv = m.group(1).upper()
+        hexv = "".join(c * 2 for c in hexv) if len(hexv) == 3 else hexv
+        if saturation(hexv) > LOUD_SATURATION and hexv not in own and hexv not in out:
+            out.append(hexv)
+    return out
+
+
 def rgb(hexv):
     h = hexv.lstrip("#")
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
@@ -1839,6 +1884,34 @@ def color_distance(a, b):
     d = ((2 + rm / 256) * (ra - rb) ** 2 + 4 * (ga - gb) ** 2
          + (2 + (255 - rm) / 256) * (ba - bb) ** 2) ** 0.5
     return min(100.0, d / 765 * 100)
+
+
+TINTS = (0.8, 0.6, 0.4)    # PowerPoint's "lighter 80/60/40%" rows of the theme colour grid
+
+
+def tint(hexv, share):
+    """`hexv` moved `share` of the way to white, as PowerPoint's theme grid does."""
+    return "%02X%02X%02X" % tuple(round(c + (255 - c) * share) for c in rgb(hexv))
+
+
+def palette_tints(theme, used):
+    """[(name, base hex, [tint hexes])] for the accents and the slides' own colours: what a wide
+    fill is painted with (2026-11-19 blind bench: full-strength #FF0000 and #FFC000 fills read
+    harsh beside the template's pale panels)."""
+    out, seen = [], set()
+    bases = [(k, v) for k, v in theme if k.startswith("accent")] + [("used", c) for c, _ in used]
+    for name, base in bases:
+        if base in seen or saturation(base) < 0.25:
+            continue
+        seen.add(base)
+        out.append((name, base, [tint(base, s) for s in TINTS]))
+    return out
+
+
+def saturation(hexv):
+    r, g, b = (c / 255 for c in rgb(hexv))
+    hi, lo = max(r, g, b), min(r, g, b)
+    return 0.0 if hi == 0 else (hi - lo) / hi
 
 
 def nearest(hexv, palette):
@@ -3051,6 +3124,15 @@ def cmd_catalog(args):
             lines.append("Most used in the slides themselves: "
                          + ", ".join("`#%s` (%d)" % (k, n) for k, n in used))
             lines.append("")
+        tints = palette_tints(theme, used)
+        if tints:
+            lines += ["Filled boxes (panels, bars, tags, table cells) take a tint. Emphasis (a risk, a "
+                      "number, a warning) takes the slides' most-used accent or bold, not a loud colour "
+                      "the slides use once or never. `check` warns on loud text, lines or boxes.", "",
+                      "| colour | full | lighter 40% | lighter 60% | lighter 80% |", "|---|---|---|---|---|"]
+            lines += ["| `%s` | `#%s` | `#%s` | `#%s` | `#%s` |" % (n, b, t[2], t[1], t[0])
+                      for n, b, t in tints]
+            lines.append("")
 
     theme_fonts, sizes, faces = template_typography(pkg, parts)
     if theme_fonts or sizes or faces:
@@ -4016,7 +4098,7 @@ def _rewrite_content_types(pkg, new_parts, exts, notes_parts=(), notes_master=No
 # ── Check ────────────────────────────────────────────────────────────────────
 
 def _check_picture_color(path, tag, slot_id, line, warns, palette, background,
-                         flags=frozenset(), full_bleed=False):
+                         flags=frozenset(), full_bleed=False, own_fills=frozenset()):
     """Two ways a picture clashes: off the template's palette, or a box on the slide."""
     if path.suffix.lower() == ".svg":
         strays = []
@@ -4028,6 +4110,13 @@ def _check_picture_color(path, tag, slot_id, line, warns, palette, background,
             warns.append("line %d: %s.%s — %s paints with colors the template does not "
                          "use: %s. Generated art carries content; the reference carries "
                          "the design." % (line, tag, slot_id, path.name, "; ".join(strays[:4])))
+        loud = svg_loud_fills(path, own_fills)
+        if loud:
+            warns.append("line %d: %s.%s — %s paints text, lines or a box in full-strength %s, a "
+                         "colour the slides themselves barely use; mark emphasis with the slides' own "
+                         "accent (the catalog's most-used colours) or bold, and fill boxes with a "
+                         "lighter 60%% or 80%% tint" % (line, tag, slot_id, path.name,
+                                                              ", ".join("#" + c for c in loud[:3])))
         return
     if path.suffix.lower() != ".png" or not background or full_bleed:
         return                              # full bleed: there is no slide left to sit on
@@ -4181,7 +4270,10 @@ def cmd_check(args):
 
     theme_colors, used_colors = template_palette(pkg, protos)
     theme = dict(theme_colors)
-    palette = [v for _, v in theme_colors] + [c for c, _ in used_colors]
+    palette = [v for _, v in theme_colors] + [c for c, _ in used_colors] \
+        + [t for _, _, ts in palette_tints(theme_colors, used_colors) for t in ts]
+    # the slides' own fills (used three times or more) are the template's design at any size
+    own_fills = {c for c, n in used_colors if n >= 3}
     backgrounds = {"s%d" % i: slide_background(pkg, n) for i, n in enumerate(protos, 1)}
 
     errs, warns = list(errors), []
@@ -4300,7 +4392,8 @@ def cmd_check(args):
                     _check_figure_text(p, slot, tag, slot_id, line, warns, mode)
                     _check_picture_color(p, tag, slot_id, line, warns, palette,
                                          backgrounds.get(spec.archetype), flags,
-                                         full_bleed=covers_slide(slot, slide_size(pkg)))
+                                         full_bleed=covers_slide(slot, slide_size(pkg)),
+                                         own_fills=own_fills)
                     if slot.box:
                         _check_picture_legibility(
                             p, slot, live, tag, slot_id, line, warns, errs, mode, anchor,

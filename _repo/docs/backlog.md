@@ -110,9 +110,9 @@ real deck lone commas 316 → 0, engine version printed).
       Figure text: Step 3b redraws until check passes, facts kept (3.2.9; a skill-only sonnet run took
       40 warnings to 0; blind 18 pages vs the pick: round 1 (words cut, facts dropped) 32/3/1, round 2
       (facts listed and kept) 34 better, 0 worse, 2 same).
-    - Left: the redraw took template hexes at full strength (#FF0000, bright yellow fills); judges
-      called them a little harsh on 11·21·30 (low). Acceptance: generated-art guidance or check steers
-      large fills to the template's tints, and a blind re-run shows no colour finding.
+      Colour (3.2.10, user 2026-11-20 "도식내 빨간글자 존나 조화롭지 못하네"): catalog tints, check warns
+      on loud text/lines/boxes; a skill-only run took 27 colour warnings to 0; blind 16 pages vs the
+      pick 32 better, 0 worse (colour notes all low, P judged harsher).
 
 153. **The deck render is checked against PowerPoint, and the 3.2.0 audits catch what they missed**
     - Why: after portfolio 3.2.0 (2026-11-14) the deck renderer is checked only against Word's saved
