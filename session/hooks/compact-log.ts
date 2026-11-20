@@ -153,7 +153,7 @@ export const fmtArmTotals = (t: ArmTotals): string =>
     return `${arm}: ${a.compactions} ${a.compactions === 1 ? 'compaction' : 'compactions'} · context ${ctx} · model tokens/compaction ${model} · discarded precomputes ${a.discardedPrecomputes}`
   }).join('\n')
 
-export const fmtStats =(s: LogStats): string => {
+export const fmtStats = (s: LogStats): string => {
   const counts = Object.entries(s.byDecision).map(([d, n]) => `${d} ${n}`)
   const errors = `log write errors ${s.logWriteErrors}${s.lastLogError ? `: ${s.lastLogError}` : ''}`
   return `this process: ${s.evaluated} turns checked${counts.length ? ` (${counts.join(', ')})` : ''}; ${errors}`
