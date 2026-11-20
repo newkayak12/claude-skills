@@ -17,7 +17,9 @@
 //
 // --once's text tree comes from ONE collect() function (teams/scripts/lib/view-collect.mjs) - this
 // file only parses flags. The --once answers themselves live in lib/view-once.mjs, which the
-// engine's state server (mcp/stateserver.mjs) also serves.
+// engine's state server (mcp/stateserver.mjs) also serves. A task's bus messages (bus.jsonl) come out as
+// `threads` (and the person's derived `unread`) in the JSON answers and as lines under the text tree
+// (lib/view-bus.mjs); view.mjs reads them and never writes.
 // tasksRoot is taskmanager.mjs's own re-export of this one; taskmanager.mjs pulls in the whole task layer, ~50 ms to load on every call.
 import { tasksRoot } from '../mcp/taskstate.mjs';
 import { VIEWS, onceOutput } from './lib/view-once.mjs';

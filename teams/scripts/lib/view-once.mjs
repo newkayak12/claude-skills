@@ -21,6 +21,8 @@ import { asksFor } from './view-asks.mjs';
 import { floorOf } from './view-floor.mjs';
 import { storyPayload, storyReportPayload, participantsOf, storyText, storyReportText } from './view-story.mjs';
 import { receivedRows } from './ask-log.mjs';
+import { busView, busFields, threadsLines } from './view-bus.mjs';
+import { BUS_FILE } from '../../mcp/bus.mjs';
 
 // --view picks which of the three renderers --once prints for a single task.
 // Default 'pipeline': the surface
@@ -134,18 +136,37 @@ function statusBase(tasksDir, cwd, ctx) {
 function statusOutput(tasksDir, cwd, session, ctx) {
   const status = { ...statusBase(tasksDir, cwd, ctx) };
   status.asks = asksOf(tasksDir, session, ctx);
+  Object.assign(status, noticeKey(tasksDir, session, ctx));
   return JSON.stringify(status) + '\n';
 }
 
-// The questions waiting on one session, over every open task whatever its cwd (floorTasks filters on the
-// raw task.json opener before collecting); [] without a session. `via` is 'send' once a received row exists.
+// The open tasks of one session, over every task whatever its cwd (floorTasks filters on the raw task.json
+// opener before collecting).
+const sessionEntries = (tasksDir, session, ctx) => memo(ctx, ['session', tasksDir, session], () => floorTasks({ tasksDir, opener: session, now: Date.now(), collect: collectOf(ctx), open: openOf(ctx) }));
+
+// The questions waiting on one session, over every open task whatever its cwd; [] without a session.
+// `via` is 'send' once a received row exists.
 function asksOf(tasksDir, session, ctx) {
   if (!session) return [];
   return memo(ctx, ['asks', tasksDir, session], () => {
-    const entries = floorTasks({ tasksDir, opener: session, now: Date.now(), collect: collectOf(ctx), open: openOf(ctx) });
+    const entries = sessionEntries(tasksDir, session, ctx);
     return asksFor(entries, session, receivedRows(tasksDir, entries.map((x) => x.id)));
   });
 }
+
+// The band rows `✉ P2 -> you: ...` (lib/view-bus.mjs): per live task of the session with an unread
+// person-addressed message, its newest; newest first. [] without a session.
+function noticesOf(tasksDir, session, ctx) {
+  if (!session) return [];
+  return memo(ctx, ['notices', tasksDir, session], () => sessionEntries(tasksDir, session, ctx)
+    .filter((x) => x.live && existsSync(join(tasksDir, x.id, BUS_FILE)))
+    .map((x) => busView(tasksDir, x.id).unread.notice)
+    .filter(Boolean)
+    .sort((a, b) => b.ts - a.ts));
+}
+
+// `{ notices }` when there is a row, else nothing: the key is omitted so a status with no message is unchanged.
+const noticeKey = (tasksDir, session, ctx) => { const notices = noticesOf(tasksDir, session, ctx); return notices.length ? { notices } : {}; };
 
 function statusFrom(entries) {
   const models = entries.map((x) => x.m);
@@ -177,14 +198,14 @@ function summaryParts(tasksDir, cwd, taskId, ctx) {
     const hit = id ? listed.find((x) => x.m.task_id === id) : null;
     const m = hit ? hit.m : (id ? collectOf(ctx)(tasksDir, id) : null);
     const tasks = listed.map((x) => withDecisionCounts(floorEntry(x, tasksDir, { now, ...(ctx && ctx.floorOpts ? ctx.floorOpts(tasksDir, x.id) : {}) }), tasksDir, x.id));
-    return { status, tasks, task: m && !m.error ? { ...summarize(m), ...marked(hit && hit.worktree) } : null };
+    return { status, tasks, task: m && !m.error ? { ...summarize(m), ...marked(hit && hit.worktree), ...busFields(tasksDir, m.task_id) } : null };
   });
 }
 
 // summaryParts with the session's asks applied last, as the parsed object --format summary prints.
 function summaryBase(tasksDir, cwd, taskId, session, ctx) {
   const p = summaryParts(tasksDir, cwd, taskId, ctx);
-  return { status: { ...p.status, asks: asksOf(tasksDir, session, ctx) }, tasks: p.tasks, task: p.task };
+  return { status: { ...p.status, asks: asksOf(tasksDir, session, ctx), ...noticeKey(tasksDir, session, ctx) }, tasks: p.tasks, task: p.task };
 }
 
 function summaryOutput(tasksDir, cwd, taskId, session, ctx) {
@@ -199,7 +220,7 @@ function teamsParts(tasksDir, cwd, taskId, ctx) {
     const m = id ? collectOf(ctx)(tasksDir, id) : null;
     const ok = m && !m.error;
     const listedTask = base.tasks.find((t) => t.task_id === id);
-    const task = ok ? { ...summarize(m), ...marked(listedTask && listedTask.worktree) } : null;
+    const task = ok ? { ...summarize(m), ...marked(listedTask && listedTask.worktree), ...busFields(tasksDir, m.task_id) } : null;
     const model = dashboardModel(task);
     const dash = model ? { model, svg: dashboardSvg(model), alt: dashboardAlt(model) } : null;
     return { task, teams: ok ? teamsView(m) : null, dash };
@@ -440,7 +461,8 @@ function storyOutput(tasksDir, taskId, story, text, ctx) {
       gaps,
     });
     const mine = workers.find((w) => w.id === pkg);
-    payload = storyPayload(m, pkg, { workers, log, participants: participantsOf(join(tasksDir, id), pkg, card && card.child && card.child.nodes, { live: !!mine && (mine.state === 'acting' || mine.state === 'you') }) });
+    const bus = busView(tasksDir, id, { story: pkg });
+    payload = storyPayload(m, pkg, { workers, log, threads: bus.threads, unread: bus.unread, participants: participantsOf(join(tasksDir, id), pkg, card && card.child && card.child.nodes, { live: !!mine && (mine.state === 'acting' || mine.state === 'you') }) });
   }
   if (!payload) payload = { task_id: id, story: pkg, missing: true };
   return text ? (payload.missing ? 'no such STORY\n' : storyText(payload)) : JSON.stringify(payload) + '\n';
@@ -450,6 +472,12 @@ function storyOutput(tasksDir, taskId, story, text, ctx) {
 function storyReportOutput(tasksDir, taskId, story, text) {
   const payload = storyReportPayload(taskId ? readRaw(tasksDir, String(taskId)) : null, String(story || ''));
   return text ? storyReportText(payload) : JSON.stringify(payload) + '\n';
+}
+
+// A single task's text tree with its bus threads below it (nothing added for a task with no message).
+function withThreads(out, tasksDir, taskId) {
+  const lines = threadsLines(busView(tasksDir, taskId).threads);
+  return lines.length ? `${out}${out.endsWith('\n') ? '' : '\n'}${lines.join('\n')}\n` : out;
 }
 
 // What `--once` prints for these args; the state server answers with the same function.
@@ -464,9 +492,9 @@ export function onceOutput(args, tasksDir, render, shared) {
   if (args.format === 'events') return eventsOutput(tasksDir, args.cwd, args.since || 0, shared);
   if (args.format === 'story') return storyOutput(tasksDir, args.task, args.story, args.text, ctx);
   if (args.format === 'story-report') return storyReportOutput(tasksDir, args.task, args.story, args.text);
-  if (args.task) return render(collectTask(tasksDir, args.task));
+  if (args.task) return withThreads(render(collectTask(tasksDir, args.task)), tasksDir, args.task);
   const rows = listTasks(tasksDir);
-  if (rows.length === 1) return render(collectTask(tasksDir, rows[0].task_id));
+  if (rows.length === 1) return withThreads(render(collectTask(tasksDir, rows[0].task_id)), tasksDir, rows[0].task_id);
   // tickets/resources need one specific task to draw a board/tree for - an index of several
   // tasks falls back to the same plain task list every --view does, rather than a board with
   // nothing on it.

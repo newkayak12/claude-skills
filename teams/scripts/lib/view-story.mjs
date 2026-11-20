@@ -13,6 +13,7 @@ import { docPaths } from '../../mcp/tickets.mjs';
 import { cardsOf } from './view-summary.mjs';
 import { nodeState, mergeStates } from './view-stages.mjs';
 import { statSig } from './view-index.mjs';
+import { threadsLines } from './view-bus.mjs';
 
 // The FLOW of a STORY's child run, in order. A document run's draft and review sit where implement and test do.
 export const FLOW = ['plan', 'setgoal', 'critique', 'implement', 'test', 'gate'];
@@ -139,6 +140,8 @@ export function storyPayload(m, pkgId, facts = {}) {
     participants: facts.participants || { source: 'none', total: [], live: [] },
     workers: facts.workers || [],
     log: facts.log || [],
+    threads: facts.threads || [],
+    unread: facts.unread || { count: 0, notice: null },
   };
 }
 
@@ -181,6 +184,7 @@ export function storyText(p) {
     L.push(`attempt ${a.attempt}: ${FLOW.map((k) => { const c = a.cells[k]; return c ? `${k}:${c.state}${c.score != null ? ` ${c.score}/${c.threshold ?? '?'}` : ''}${c.reason ? ` "${c.reason}"` : ''}` : `${k}:-`; }).join(' ')}`);
   }
   for (const w of p.workers) L.push(`worker ${w.id}: ${w.state}${Number.isInteger(w.minutes) ? ` ${w.minutes}m` : ''}`);
+  L.push(...threadsLines(p.threads));
   return L.join('\n') + '\n';
 }
 
