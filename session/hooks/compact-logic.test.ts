@@ -1,6 +1,19 @@
 import { test, expect } from 'claude-code/testing'
 
-import { COMPACT_MARK, firstLine, handoffFor, shouldCompactNow, tailBudget, tailStart, type TailRow } from './compact-logic.ts'
+import {
+  COMPACT_MARK,
+  compactOutcome,
+  firstLine,
+  handoffFor,
+  parseSmartCompactArgs,
+  precomputeKey,
+  reusablePrecompute,
+  shouldCompactNow,
+  tailBudget,
+  tailStart,
+  type KeyRow,
+  type TailRow,
+} from './compact-logic.ts'
 
 const idle = { isRunning: false, surfaces: 1 }
 
@@ -27,9 +40,78 @@ test('handoffFor: auto-compact and our own /compact get a handoff; a person’s 
   expect(handoffFor({ trigger: 'manual', instructions: ` ${COMPACT_MARK}\n` })).toBe('own')
   expect(handoffFor({ trigger: 'manual', instructions: 'keep the code' })).toBe(null)
   expect(handoffFor({ trigger: 'manual' })).toBe(null)
-  expect(handoffFor({ trigger: 'plugin', instructions: COMPACT_MARK })).toBe(null)
-  expect(handoffFor({ trigger: 'precompute' })).toBe(null)
   expect(handoffFor({ trigger: 'auto', agentId: 'a1' })).toBe(null)
+})
+
+test('handoffFor: a plugin-raised compaction is ours, with the mark or none; another plugin’s instructions are not', () => {
+  expect(handoffFor({ trigger: 'plugin', instructions: COMPACT_MARK })).toBe('own')
+  expect(handoffFor({ trigger: 'plugin', instructions: ` ${COMPACT_MARK}\n` })).toBe('own')
+  expect(handoffFor({ trigger: 'plugin' })).toBe('own')
+  expect(handoffFor({ trigger: 'plugin', instructions: '  ' })).toBe('own')
+  expect(handoffFor({ trigger: 'plugin', instructions: 'keep the code' })).toBe(null)
+  expect(handoffFor({ trigger: 'plugin', instructions: COMPACT_MARK, agentId: 'a1' })).toBe(null)
+})
+
+test('handoffFor: a precompute trigger is marked so the caller makes the recap ahead; a subagent’s is not', () => {
+  expect(handoffFor({ trigger: 'precompute' })).toBe('precompute')
+  expect(handoffFor({ trigger: 'precompute', instructions: COMPACT_MARK })).toBe('precompute')
+  expect(handoffFor({ trigger: 'precompute', agentId: 'a1' })).toBe(null)
+  expect(handoffFor({ trigger: 'manual', instructions: COMPACT_MARK, agentId: 'a1' })).toBe(null)
+  expect(handoffFor({})).toBe(null)
+  expect(handoffFor({ trigger: 'other' })).toBe(null)
+})
+
+test('compactOutcome: what the hook saw is the outcome; nothing seen is unobserved, never compact-not-run', () => {
+  expect(compactOutcome(undefined)).toBe('unobserved')
+  expect(compactOutcome(null)).toBe('unobserved')
+  expect(compactOutcome({ kind: 'handoff', tail: 4 })).toBe('compacted:recap+4')
+  expect(compactOutcome({ kind: 'fallback', reason: 'busy' })).toBe('recap-failed:busy')
+  expect(compactOutcome({ kind: 'engine' })).toBe('compacted:engine')
+  const seen = [undefined, { kind: 'handoff' as const, tail: 0 }, { kind: 'fallback' as const, reason: '' }, { kind: 'engine' as const }]
+  for (const s of seen) expect(compactOutcome(s)).not.toBe('compact-not-run')
+  expect(new Set(seen.map(compactOutcome)).size).toBe(seen.length)
+})
+
+const row = (handle?: string, uuid?: string): KeyRow => ({ handle, uuid })
+
+test('precomputeKey: row count and the last row’s handle, else its uuid, else nothing', () => {
+  expect(precomputeKey([row('h1'), row('h2')])).toBe('2:h2')
+  expect(precomputeKey([row(undefined, 'u1')])).toBe('1:u1')
+  expect(precomputeKey([row('h1', 'u1')])).toBe('1:h1')
+  expect(precomputeKey([row()])).toBe('1:')
+  expect(precomputeKey([])).toBe('0:')
+})
+
+test('reusablePrecompute: the stored handoff while the key matches; stale after a new row or a changed last handle', () => {
+  const rows = [row('h1'), row('h2')]
+  const stored = { key: precomputeKey(rows), handoff: 'recap text' }
+  expect(reusablePrecompute(stored, rows)).toBe('recap text')
+  expect(reusablePrecompute(stored, [...rows, row('h3')])).toBe(null)
+  expect(reusablePrecompute(stored, [row('h1'), row('h9')])).toBe(null)
+  expect(reusablePrecompute(stored, rows.slice(0, 1))).toBe(null)
+  expect(reusablePrecompute(undefined, rows)).toBe(null)
+  expect(reusablePrecompute(null, rows)).toBe(null)
+})
+
+test('parseSmartCompactArgs: a bare command is status, never set', () => {
+  for (const bare of ['', '  ', ' \n\t', undefined]) expect(parseSmartCompactArgs(bare)).toEqual({ kind: 'status' })
+})
+
+test('parseSmartCompactArgs: words and a whole number from 10 to 95, with an optional %', () => {
+  expect(parseSmartCompactArgs('log')).toEqual({ kind: 'log' })
+  expect(parseSmartCompactArgs('off')).toEqual({ kind: 'off' })
+  expect(parseSmartCompactArgs('on')).toEqual({ kind: 'on' })
+  expect(parseSmartCompactArgs(' on ')).toEqual({ kind: 'on' })
+  expect(parseSmartCompactArgs('60')).toEqual({ kind: 'set', value: 60 })
+  expect(parseSmartCompactArgs('60%')).toEqual({ kind: 'set', value: 60 })
+  expect(parseSmartCompactArgs(' 30 ')).toEqual({ kind: 'set', value: 30 })
+  expect(parseSmartCompactArgs('10')).toEqual({ kind: 'set', value: 10 })
+  expect(parseSmartCompactArgs('95%')).toEqual({ kind: 'set', value: 95 })
+})
+
+test('parseSmartCompactArgs: out of range, fractions and anything else are invalid', () => {
+  for (const bad of ['5', '9', '96', '0', '-30', '60.5', '0x20', '6e1', '%', '60%%', 'abc', 'off now', 'ON', '1 0'])
+    expect(parseSmartCompactArgs(bad)).toEqual({ kind: 'invalid' })
 })
 
 const say = (role: 'user' | 'assistant', chars: number): TailRow => ({ role, text: 'x'.repeat(chars), toolUses: [] })

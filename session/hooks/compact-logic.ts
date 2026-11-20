@@ -18,13 +18,72 @@ export const firstLine = (err: unknown): string =>
 // session.compact hook, where a $.session.compact call from the plugin would skip it.
 export const COMPACT_MARK = 'smart-compact handoff'
 
-// Which compactions get a handoff: the engine's auto-compact and smart-compact's own /compact.
-// A person's /compact and a subagent's compaction stay the engine's.
-export type HandoffFor = 'auto' | 'own' | null
+// Which compactions get a handoff: the engine's auto-compact, smart-compact's own /compact (the engine sends it
+// as trigger 'plugin', or as 'manual' carrying the mark) and a precompute, which the caller answers by making
+// the recap ahead. A person's /compact and a subagent's compaction stay the engine's.
+// A 'plugin' compaction with instructions other than the mark was raised by another plugin.
+export type HandoffFor = 'auto' | 'own' | 'precompute' | null
 export const handoffFor = (e: { trigger?: string; instructions?: string; agentId?: string }): HandoffFor => {
   if (e.agentId) return null
   if (e.trigger === 'auto') return 'auto'
-  return e.trigger === 'manual' && e.instructions?.trim() === COMPACT_MARK ? 'own' : null
+  if (e.trigger === 'precompute') return 'precompute'
+  const instructions = e.instructions?.trim()
+  if (e.trigger === 'plugin') return !instructions || instructions === COMPACT_MARK ? 'own' : null
+  return e.trigger === 'manual' && instructions === COMPACT_MARK ? 'own' : null
+}
+
+// What the session.compact hook saw of one compaction; nothing is a hook that never ran.
+export type Observed =
+  | { kind: 'handoff'; tail: number }
+  | { kind: 'fallback'; reason: string }
+  | { kind: 'engine' }
+  | undefined
+  | null
+
+// The log outcome comes only from what the hook saw, so a compaction that ran is never logged as not run.
+export const compactOutcome = (observed: Observed): string => {
+  switch (observed?.kind) {
+    case 'handoff':
+      return `compacted:recap+${observed.tail}`
+    case 'fallback':
+      return `recap-failed:${observed.reason}`
+    case 'engine':
+      return 'compacted:engine'
+    default:
+      return 'unobserved'
+  }
+}
+
+// A precompute is the handoff made ahead plus the conversation it covered: row count and last row.
+export type KeyRow = { handle?: string; uuid?: string }
+export const precomputeKey = (rows: readonly KeyRow[]): string => {
+  const last = rows[rows.length - 1]
+  return `${rows.length}:${last?.handle ?? last?.uuid ?? ''}`
+}
+
+// The stored handoff while the conversation is the one it covered; null once a row was added or changed.
+export const reusablePrecompute = <T>(stored: { key: string; handoff: T } | null | undefined, rows: readonly KeyRow[]): T | null =>
+  stored && stored.key === precomputeKey(rows) ? stored.handoff : null
+
+export type SmartCompactArgs =
+  | { kind: 'status' }
+  | { kind: 'log' }
+  | { kind: 'off' }
+  | { kind: 'on' }
+  | { kind: 'set'; value: number }
+  | { kind: 'invalid' }
+
+const THRESHOLD_MIN = 10
+const THRESHOLD_MAX = 95
+
+// /smart-compact's argument. Only a whole number from 10 to 95 (a trailing % allowed) sets; a bare command is status.
+export const parseSmartCompactArgs = (args?: string): SmartCompactArgs => {
+  const arg = (args ?? '').trim()
+  if (!arg) return { kind: 'status' }
+  if (arg === 'log' || arg === 'off' || arg === 'on') return { kind: arg }
+  const m = /^(\d+)%?$/.exec(arg)
+  const value = m ? Number(m[1]) : NaN
+  return value >= THRESHOLD_MIN && value <= THRESHOLD_MAX ? { kind: 'set', value } : { kind: 'invalid' }
 }
 
 export const RECAP_HEADER =
