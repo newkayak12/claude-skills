@@ -747,8 +747,33 @@ def safe_area(workspace):
                 m = re.search(r"^\s*-\s*%s\s*:\s*(\d+(?:\.\d+)?)\s*(?:pt)?\s*$" % k, text, re.M)
                 if m:
                     v[k] = float(m.group(1))
-            return v if len(v) == 4 else None
+            return v if len(v) == 4 else safe_area_table(text)
     return None
+
+
+SIDE_NAMES = {"top": "top", "위": "top", "bottom": "bottom", "아래": "bottom",
+              "left": "left", "왼쪽": "left", "right": "right", "오른쪽": "right"}
+
+
+def safe_area_table(text):
+    """The same four margins from a table whose header names a 여백 (margin) column, one row per
+    side (2026-11-20: a workspace wrote its safe area as | 변 | 좌표 | 여백 | 근거 |, the line form
+    found nothing and every check fell back to 28pt — 117 false margin hits)."""
+    col, v = None, {}
+    for line in text.splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")] if line.strip().startswith("|") else None
+        if not cells:
+            col = None
+            continue
+        if col is None:
+            col = next((i for i, c in enumerate(cells) if c.lower() in ("여백", "margin")), None)
+            continue
+        side = SIDE_NAMES.get(cells[0].lower())
+        if side and col < len(cells):
+            m = re.match(r"(\d+(?:\.\d+)?)", cells[col])
+            if m:
+                v[side] = float(m.group(1))
+    return v if len(v) == 4 else None
 
 
 def margin_crossers(xml_text, margin=28.0):
@@ -759,6 +784,11 @@ def margin_crossers(xml_text, margin=28.0):
     for n, (pw, ph, blocks) in enumerate(bbox_pages(xml_text), 1):
         for lines in blocks:
             for (x0, y0, x1, y1), text in lines:
+                # the bottom band below the safe area holds page numbers and footnotes by design: a
+                # line wholly inside it that is one of those is where it belongs (2026-11-20: 80 of
+                # 84 hits on a 31-page deck were page numbers and footnote lines)
+                if y0 >= ph - m["bottom"] and re.match(r"\s*(\d+\s*$|\d+\)|\*|※)", text):
+                    continue
                 for side, bad in (("left", x0 < m["left"]), ("right", x1 > pw - m["right"]),
                                   ("top", y0 < m["top"]), ("bottom", y1 > ph - m["bottom"])):
                     if bad:
@@ -1174,7 +1204,26 @@ def main(argv):
         hits = margin_crossers(box, margin)
         return {"margin_pt": margin, "pages": sorted({h[0] for h in hits}),
                 "hits": [{"page": p, "side": s, "text": t} for p, s, t in hits]}
-    return {"error": "usage: office_render.py ai-traces <file> [--report-only] | margins <pdf> [--margin pt] | final-check [--dir build] [--allow names] [--author NAME]"}
+    if len(argv) >= 2 and argv[0] == "text":
+        # each page's lines in reading order, written beside the previews as pages/p-NN.txt — what
+        # render-review's lenses read; pdftotext or PyMuPDF through the same renderer, docker included
+        # (2026-11-20: a reviewer had to run pdftotext inside the image by hand)
+        pdf = Path(argv[1]).resolve()
+        r = Renderer()
+        if not r.available:
+            return {"error": "no renderer (pdftotext runs through it): " + NO_RENDERER}
+        box = r.bbox(pdf.parent, pdf.name)
+        if box is None:
+            return {"error": "no pdftotext and no PyMuPDF: install poppler or run install-renderer --yes"}
+        out = pdf.parent / "pages"
+        out.mkdir(exist_ok=True)
+        written = []
+        for n, (_, _, blocks) in enumerate(bbox_pages(box), 1):
+            p = out / ("p-%02d.txt" % n)
+            p.write_text("\n".join(t for lines in blocks for _, t in lines) + "\n", encoding="utf-8")
+            written.append(str(p))
+        return {"pages": len(written), "dir": str(out)}
+    return {"error": "usage: office_render.py ai-traces <file> [--report-only] | margins <pdf> [--margin pt] | text <pdf> | final-check [--dir build] [--allow names] [--author NAME]"}
 
 
 if __name__ == "__main__":

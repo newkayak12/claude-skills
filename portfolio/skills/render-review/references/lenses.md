@@ -5,10 +5,11 @@ together. Each gets the same input and only its own lens; none edits a file.
 
 ## Input every lens gets
 
-- The page text, per page: `pdftotext -layout build/<file>.pdf -` split on form feeds (or the
-  `office_render.py` bbox text when pdftotext is missing), with the page number.
+- The page text, per page: `build/pages/p-NN.txt`, written by `office_render.py text build/<file>.pdf`
+  (pdftotext or PyMuPDF through the same renderer, `DECK_RENDER_DOCKER` included), with the page number.
 - The render's own measures for that page: the `layout:` lines, `held …` lines and `figure text:`
-  lines `deck.py render` printed (figure text pt reached, lone words, split numbers, zones).
+  lines in `build/render.txt`, which `deck.py render` writes beside the PDF (figure text pt reached,
+  lone words, split numbers, zones). A resume has no such file; say so in the prompt.
 - `portfolio-skeleton.md` / `resume-skeleton.md` headlines, so a lens knows what each page claims.
 - The `[확정]` list from `manage` (settled wording): a settled sentence is not a finding.
 

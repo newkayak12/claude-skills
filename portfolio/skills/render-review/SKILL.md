@@ -33,15 +33,24 @@ for the next render. Portfolio deck and resume alike. **Not for** content judgem
    Resume: `pdftoppm -r 80 -png build/resume.pdf snapshot/render/resume-<YYYY-MM-DD>/pages/p`, then
    the same `검토.md` table (`| 쪽 | 본 것 | 문제 | next-render |`) beside it.
 2. **List what a tool can.** `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/office_render.py margins build/<file>.pdf`
-   (each side from `style/레이아웃.md`'s `- top/bottom/left/right: <pt>`; else `--margin <pt>` from
-   `template/analysis.md`'s safe area; 28 when neither names one) lists each text line whose
-   box leaves the margin, by page and side. `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/office_render.py ai-traces build/<file>.<pptx|docx> --report-only` lists AI traces.
-3. **Look at each page** (the preview image, then the page text) against the checks below. One row
-   per page in `검토.md`: 본 것 (what is on it, one line), 문제 (check · where · symptom), next-render.
+   (each side from `style/레이아웃.md`: `- top/bottom/left/right: <pt>` lines or a table with a
+   여백 column, one row per 위·아래·왼쪽·오른쪽; else `--margin <pt>` from `template/analysis.md`'s safe
+   area; 28 when neither names one) lists each text line whose box leaves the margin, by page and
+   side; page numbers and footnote lines wholly in the bottom band are left out. `office_render.py
+   ai-traces build/<file>.<pptx|docx> --report-only` lists AI traces. `office_render.py text
+   build/<file>.pdf` writes each page's text to `build/pages/p-NN.txt`. All three run through
+   `DECK_RENDER_DOCKER` when poppler is missing; if `CLAUDE_PLUGIN_ROOT` is unset, set it to the
+   portfolio plugin's folder first.
+3. **Look at each page** — every preview image, not a sample — then its text, against the checks
+   below. One row per page in `검토.md`: 본 것 (what is on it, one line), 문제 (check · where · symptom), next-render.
    **Then read it through five lenses at once** — 가독성 · 문체 · 단어 선정 · AI티 · 글 흐름: one opus
-   subagent per lens, all five in one message, each given the page text and the render's measures
-   and returning 쪽 · 원문 · 문제 · 바꿀 문장 rows (`references/lenses.md`). Merge them into `검토.md`.
-4. **Write the problems** into `template/next-render.md` (쪽 · 칸 · 증상 · 확인 · 적용), one row each,
+   subagent per lens, all five in one message, each given `build/pages/p-NN.txt`, `build/render.txt`
+   (the render's measures, deck only) and `docs/확정사실.md` when it exists, and returning
+   쪽 · 원문 · 문제 · 바꿀 문장 rows (`references/lenses.md`). Merge them into `검토.md`, checking
+   every 바꿀 문장 against its page text.
+4. **Write the problems** into `template/next-render.md` (created with that table header if it does
+   not exist; an older workspace may still have `다음렌더-지침.md`, renamed by `manage scaffold`)
+   (쪽 · 칸 · 증상 · 확인 · 적용), one row each,
    all applied before the next render. A frame the deck cannot move is a template edit, only on the
    user's word (`manage` `references/template-edit.md`).
 

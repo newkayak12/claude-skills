@@ -4880,7 +4880,39 @@ def missing_fonts(pkg, slide_parts, available):
     return missing
 
 
+class _Tee(io.TextIOBase):
+    """stdout to the terminal and into a buffer at once."""
+    def __init__(self, a, b):
+        self.a, self.b = a, b
+
+    def write(self, s):
+        self.a.write(s)
+        self.b.write(s)
+        return len(s)
+
+    def flush(self):
+        self.a.flush()
+
+
 def cmd_render(args):
+    """render, with everything it prints kept as build/render.txt — the `layout:`, `held`, `zone`
+    and `figure text:` lines render-review's lenses read (2026-11-20: they were printed and gone)."""
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(_Tee(sys.stdout, buf)):
+            return _cmd_render(args)
+    finally:
+        try:
+            md_path = require_deck(args.deck)
+            front, _, _ = parse_deck(md_path.read_text(encoding="utf-8"))
+            out = resolve_output(front, args, md_path)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            (out.parent / "render.txt").write_text(buf.getvalue(), encoding="utf-8")
+        except (SystemExit, OSError):
+            pass
+
+
+def _cmd_render(args):
     r = Renderer()
     if not r.available:
         raise SystemExit(

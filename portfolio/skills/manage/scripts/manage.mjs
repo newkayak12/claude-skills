@@ -246,6 +246,28 @@ export function safeArea(root) {
     const m = text.match(new RegExp(`^\\s*-\\s*${k}\\s*:\\s*(\\d+(?:\\.\\d+)?)\\s*(?:pt)?\\s*$`, 'm'))
     if (m) v[k] = Number(m[1])
   }
+  return Object.keys(v).length === 4 ? v : safeAreaTable(text)
+}
+
+// The same margins from a table whose header names a 여백 (margin) column, one row per side — the
+// form a workspace wrote (2026-11-20); office_render.safe_area_table reads it the same way.
+const SIDES = { top: 'top', 위: 'top', bottom: 'bottom', 아래: 'bottom', left: 'left', 왼쪽: 'left', right: 'right', 오른쪽: 'right' }
+export function safeAreaTable(text) {
+  let col = null
+  const v = {}
+  for (const line of text.split('\n')) {
+    const t = line.trim()
+    if (!t.startsWith('|')) { col = null; continue }
+    const cells = t.replace(/^\||\|$/g, '').split('|').map(c => c.trim())
+    if (col === null) {
+      const i = cells.findIndex(c => ['여백', 'margin'].includes(c.toLowerCase()))
+      col = i < 0 ? null : i
+      continue
+    }
+    const side = SIDES[cells[0].toLowerCase()]
+    const m = side && col < cells.length && cells[col].match(/^(\d+(?:\.\d+)?)/)
+    if (m) v[side] = Number(m[1])
+  }
   return Object.keys(v).length === 4 ? v : null
 }
 

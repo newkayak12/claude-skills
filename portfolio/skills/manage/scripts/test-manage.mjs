@@ -1533,6 +1533,9 @@ test('scaffold writes the style templates and the questions file once, the guide
   assert.equal(safeArea(root), null, 'an empty template gives no safe area')
   writeFileSync(join(root, 'style/레이아웃.md'), '# 레이아웃\n- top: 36\n- bottom: 30pt\n- left: 40\n- right: 40\n')
   assert.deepEqual(layout(root).safe_area, { top: 36, bottom: 30, left: 40, right: 40 })
+  writeFileSync(join(root, 'style/레이아웃.md'), '# 레이아웃\n\n| 변 | 좌표(pt) | 여백 | 근거 |\n|---|---|---|---|\n'
+    + '| 왼쪽 | x ≥ 23.4 | 23.4 | a |\n| 오른쪽 | x ≤ 936.6 | 23.4 | b |\n| 위 | y ≥ 13.5 | 13.5 | c |\n| 아래 | y ≤ 510 | 30 | d |\n')
+  assert.deepEqual(safeArea(root), { left: 23.4, right: 23.4, top: 13.5, bottom: 30 }, 'a table with a 여백 column reads the same')
 })
 
 test('layout lists the known folders, reports a broken analysis link and an engine path that is not on disk', () => {

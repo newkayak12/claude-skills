@@ -650,6 +650,22 @@ def main():
         check(area == {"top": 60.0, "bottom": 4.0, "left": 5.0, "right": 15.0},"the four sides are read from style/레이아웃.md — %s" % area)
         hits = o.margin_crossers(box, area)
         check([(h[0], h[1]) for h in hits] == [(1, "top"), (2, "right")], "each side uses its own margin — %s" % hits)
+        (ws / "style" / "레이아웃.md").write_text(
+            "# 레이아웃\n\n| 변 | 좌표(pt) | 여백 | 근거 |\n|---|---|---|---|\n| 왼쪽 | x ≥ 23.4 | 23.4 | a |\n"
+            "| 오른쪽 | x ≤ 936.6 | 23.4 | b |\n| 위 | y ≥ 13.5 | 13.5 | c |\n| 아래 | y ≤ 510 | 30 | d |\n",
+            encoding="utf-8")
+        area = o.safe_area(ws)
+        check(area == {"left": 23.4, "right": 23.4, "top": 13.5, "bottom": 30.0},
+              "a table with a 여백 column gives the same four sides — %s" % area)
+        band = ('<html xmlns="http://www.w3.org/1999/xhtml"><body><doc><page width="600" height="800"><flow><block>'
+                '<line xMin="560" yMin="780" xMax="580" yMax="792"><word xMin="560" yMin="780" xMax="580" yMax="792">7</word></line>'
+                '<line xMin="40" yMin="776" xMax="300" yMax="788"><word xMin="40" yMin="776" xMax="300" yMax="788">1) 각주</word></line>'
+                '</block><block>'
+                '<line xMin="40" yMin="760" xMax="300" yMax="790"><word xMin="40" yMin="760" xMax="300" yMax="790">본문</word></line>'
+                '</block></flow></page></doc></body></html>')
+        hits = o.margin_crossers(band, area)
+        check([h[2] for h in hits] == ["본문"],
+              "a page number and a footnote wholly in the bottom band are where they belong; other text is not — %s" % hits)
 
         install_tests(t)
         mupdf_tests(t)
