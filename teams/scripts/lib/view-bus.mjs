@@ -5,9 +5,10 @@
 // `unread`; --format story carries both too, its threads limited to the STORY).
 // A task with no message has no bus.jsonl content to show: its summary/teams task and the status
 // `notices` then OMIT the keys (the byte-for-byte goldens of test-view-once-perf.mjs, which this package
-// may not regenerate, have none), so a reader treats absent as `threads: []`, `unread: { count: 0,
-// notice: null }` and `notices: []`. The --format story payload always carries both keys. (default - revisit:
-// always emit the keys once those goldens are regenerated)
+// may not regenerate, have none). THE RULE: absent threads = [], absent unread = {count:0, notice:null}
+// (absent notices = []); story format always carries both. A reader treats absent as empty. This is the
+// resolution chosen against AC-9 (owned paths) over AC-6 (keys always present). (default - revisit with the
+// EPIC manager: always emit the keys once those goldens are regenerated)
 //
 //   threads: [{ topic, story, messages: [{ from, to, body, ts, time }] }]
 //     One entry per sub-topic that holds a message: `E-xxxxxxxx/Pn` (a STORY's thread) and
@@ -16,10 +17,11 @@
 //     (newest thread last). `from` and `to` are the bus keys as stored ('teamleader', 'person', 'all' or
 //     `E-xxxxxxxx/Pn`); `body` is kept whole; `ts` is the bus message id (ms); `time` is that ts in the
 //     process's local time as `YYYY-MM-DD HH:MM` (the tests run with TZ=UTC).
-//     In --format story a STORY's threads are the messages bus.mjs lets that STORY read: to === the STORY,
-//     from === the STORY, or to === 'all', grouped by their topic. So a message the STORY sent to a sibling
-//     sits in the sibling's sub-topic, and a teamleader<->person message (topic E-xxxxxxxx/all) is never
-//     in a STORY's threads. A task with no bus.jsonl gives `threads: []`.
+//     In --format story a STORY's threads hold only its own sub-topic (E-xxxxxxxx/Pn) and the broadcast
+//     sub-topic (E-xxxxxxxx/all): of the messages bus.mjs lets that STORY read (to or from the STORY, or
+//     to === 'all'), those whose topic is one of the two. A message it sent to a sibling sits in the
+//     sibling's sub-topic and is not shown; a teamleader<->person message (topic E-xxxxxxxx/all) is
+//     never in a STORY's threads. A task with no bus.jsonl gives `threads: []`.
 //
 //   unread: { count, notice }
 //     The person's unread messages are the bus messages with to === 'person' whose ts is greater than the
@@ -81,7 +83,10 @@ export function busMessages(tasksDir, taskId) {
 // The threads array. `story` ('P2') limits it to what that STORY may read (bus.mjs's visibility rule).
 export function threadsOf(messages, taskId, { story } = {}) {
   const self = story ? `E-${task8(taskId)}/${story}` : null;
-  const visible = self ? messages.filter((m) => m.to === self || m.from === self || m.to === 'all') : messages;
+  const all = `E-${task8(taskId)}/all`;
+  const visible = self
+    ? messages.filter((m) => (m.to === self || m.from === self || m.to === 'all') && (m.topic === self || m.topic === all))
+    : messages;
   const by = new Map();
   for (const m of visible) {
     if (!by.has(m.topic)) by.set(m.topic, { topic: m.topic, story: m.topic.slice(m.topic.indexOf('/') + 1), messages: [] });

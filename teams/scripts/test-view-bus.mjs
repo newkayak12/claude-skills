@@ -7,7 +7,7 @@ process.env.TZ = 'UTC';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, readdirSync, statSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, readdirSync, statSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -224,7 +224,7 @@ test('a trailing line with no newline is skipped, a complete line that does not 
   try { assert.deepEqual(busMessages(g.tasks, g.id), []); } finally { g.cleanup(); }
 });
 
-test('--format story: a STORY sees its own sub-topic, the broadcast sub-topic and what it sent, newest last', () => {
+test('--format story: a STORY sees only its own sub-topic and the broadcast sub-topic, newest last', () => {
   const f = fixture({ bus: [...THREE, MESSAGES.broadcast, msg(T[3] + 1000, 'teamleader', P2, P2, 'P2: go')] });
   try {
     const p2 = JSON.parse(story(f, 'P2'));
@@ -233,12 +233,27 @@ test('--format story: a STORY sees its own sub-topic, the broadcast sub-topic an
     assert.deepEqual(p2.threads[0].messages.map((m) => m.body), ['Freeze the public API until the gate']);
     // never the teamleader <-> person message
     assert.ok(!JSON.stringify(p2.threads).includes('Anything you want changed'));
-    // P1 sent one to P2 and one to the teamleader: those sub-topics, plus the broadcast
+    // P1 sent one to P2 (sits in P2's sub-topic, not shown) and one to the teamleader: only P1's own plus the broadcast
     const p1 = JSON.parse(story(f, 'P1'));
-    assert.deepEqual(p1.threads.map((t) => t.topic), [P2, P1, `${E}/all`]);
+    assert.deepEqual(p1.threads.map((t) => t.topic), [P1, `${E}/all`]);
     const text = story(f, 'P2', '--text');
     assert.ok(text.includes(`threads:\n  ${E}/all\n    teamleader -> all  Freeze the public API until the gate  2026-11-20 09:08\n  ${P2}\n    ${P1} -> ${P2}  P2: the parser exports parseLine, use it  2026-11-20 09:05\n`), text);
     assert.ok(!text.includes('Anything you want changed'));
+  } finally { f.cleanup(); }
+});
+
+test('empty bus: story JSON carries threads [] and unread {0, null}; summary omits both; nothing is written', () => {
+  const f = fixture();
+  try {
+    assert.ok(!existsSync(join(f.dir, BUS_FILE)));
+    const before = snapshot(f.root);
+    const p1 = JSON.parse(story(f, 'P1'));
+    assert.deepEqual(p1.threads, []);
+    assert.deepEqual(p1.unread, { count: 0, notice: null });
+    const s = summary(f, '--session', 's-1');
+    assert.ok(!('threads' in s.task) && !('unread' in s.task), 'absent = empty outside the story format');
+    assert.deepEqual(snapshot(f.root), before);
+    assert.ok(!existsSync(join(f.dir, BUS_FILE)));
   } finally { f.cleanup(); }
 });
 
@@ -270,6 +285,6 @@ test('threadsOf and busView: grouping, order and the story scope over plain reco
   ];
   const all = threadsOf(recs.slice().sort((a, b) => a.ts - b.ts), 'aaaaaaaa-0001');
   assert.deepEqual(all.map((t) => [t.topic, t.story, t.messages.map((m) => m.body)]), [[P2, 'P2', ['a', 'b']], [`${E}/all`, 'all', ['c']]]);
-  assert.deepEqual(threadsOf(recs.slice().sort((a, b) => a.ts - b.ts), 'aaaaaaaa-0001', { story: 'P1' }).map((t) => t.topic), [P2, `${E}/all`]);
+  assert.deepEqual(threadsOf(recs.slice().sort((a, b) => a.ts - b.ts), 'aaaaaaaa-0001', { story: 'P1' }).map((t) => t.topic), [`${E}/all`]);
   assert.deepEqual(busView('/nonexistent-tasks-dir', 'aaaaaaaa-0001'), { threads: [], unread: { count: 0, notice: null } });
 });
