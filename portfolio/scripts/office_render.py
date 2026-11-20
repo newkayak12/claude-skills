@@ -787,7 +787,8 @@ def margin_crossers(xml_text, margin=28.0):
                 # the bottom band below the safe area holds page numbers and footnotes by design: a
                 # line wholly inside it that is one of those is where it belongs (2026-11-20: 80 of
                 # 84 hits on a 31-page deck were page numbers and footnote lines)
-                if y0 >= ph - m["bottom"] and re.match(r"\s*(\d+\s*$|\d+\)|\*|※)", text):
+                # (a footnote frame starts a little above the band: its numbered lines count too)
+                if y1 <= ph and y1 > ph - m["bottom"] and re.match(r"\s*(\d+\s*$|\d+\)|\*|※)", text):
                     continue
                 for side, bad in (("left", x0 < m["left"]), ("right", x1 > pw - m["right"]),
                                   ("top", y0 < m["top"]), ("bottom", y1 > ph - m["bottom"])):

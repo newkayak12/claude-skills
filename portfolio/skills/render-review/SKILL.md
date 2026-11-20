@@ -49,7 +49,8 @@ for the next render. Portfolio deck and resume alike. **Not for** content judgem
    쪽 · 원문 · 문제 · 바꿀 문장 rows (`references/lenses.md`). Merge them into `검토.md`, checking
    every 바꿀 문장 against its page text.
 4. **Write the problems** into `template/next-render.md` (created with that table header if it does
-   not exist; an older workspace may still have `다음렌더-지침.md`, renamed by `manage scaffold`)
+   not exist; when an older workspace still has `다음렌더-지침.md`, append a dated section to that file
+   instead and say so — renaming is `manage scaffold`'s, which also adds other missing files)
    (쪽 · 칸 · 증상 · 확인 · 적용), one row each,
    all applied before the next render. A frame the deck cannot move is a template edit, only on the
    user's word (`manage` `references/template-edit.md`).
@@ -62,7 +63,7 @@ for the next render. Portfolio deck and resume alike. **Not for** content judgem
 | Readability | type below the template's body size; figure text the render measured under 7.5pt (`figure text:` lines); a lone last word on a line; text on a fill with contrast under 4.5:1; more than one idea per line |
 | Lenses | a 가독성, 문체, 단어 선정, AI티 or 글 흐름 finding with its quote and replacement (`references/lenses.md`); the user's sentences change only on "고쳐" |
 | AI traces | none may reach a submitted file: `final-check` takes out a disclaimer in alt text, an AI tool or library in the properties and each visible sentence that says AI wrote it, and lists what it took out word for word — tell the user, so the source (`deck.mdx`, `resume-deck.mdx`) is fixed too. `ai-traces --report-only` only lists |
-| Skeleton match | a page's headline, figures or order differ from `portfolio-skeleton.md` / `resume-skeleton.md`; a `[확인 필요]` line reached the page |
+| Skeleton match | a page's headline, figures or order differ from `portfolio-skeleton.md` / `resume-skeleton.md`; a `[확인 필요]` line reached the page — run `manage.mjs verify-build` for the list |
 
 A check that could not run (no poppler, no renderer) is written in `검토.md` as skipped with its
 reason, never as passed.
@@ -76,7 +77,7 @@ reason, never as passed.
 AI 흔적: <보고 n건 (항목) | 없음>
 관점: 가독성 n · 문체 n · 단어 n · AI티 n · 흐름 n (원문 → 바꿀 문장은 검토.md)
 skeleton 일치: <쪽 N 어긋남 | 없음>
-next-render에 적은 것: <n>건 · 정하실 것: <없음 | …>
+next-render에 적은 것: <n>건 · 정하실 것: <없음 | 각 [확인 필요] 행의 쪽과 한 줄>
 ```
 
 ## What Claude Does / What You Do

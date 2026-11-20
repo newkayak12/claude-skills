@@ -148,7 +148,11 @@ Every session in the workspace starts with `manage.mjs scaffold`, unasked: it re
 to these, creates only what is missing, CLAUDE.md included, and never overwrites a file. A CLAUDE.md
 that is already there (a renamed README too) keeps its text and gets the guide appended once.
 
-Nine steps (3.2.12: Step 3b keeps a fact a PDF reader needs on the slide, not in `notes:`; `check`
+Nine steps (3.2.13: render-review runs as written — safe area read from a 여백 table, page numbers
+and footnotes in the bottom band left out (117 margin hits → 3), `office_render.py text` writes each
+page's text, `deck.py render` keeps build/render.txt; `check` takes `slot: !keep` and stops calling
+bottom margin or a two-paragraph frame a defect;
+3.2.12: Step 3b keeps a fact a PDF reader needs on the slide, not in `notes:`; `check`
 warns on a figure label within 1pt of its own box's edge; `facts` counts the slide's bullet lists and
 the other figures on the same slide;
 3.2.11: `deck.py facts` lists every word of a figure's old copy found nowhere in the
