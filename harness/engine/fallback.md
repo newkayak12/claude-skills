@@ -44,7 +44,10 @@ the path instead.
 
 ## The run directory (the team's shared state)
 
-Pick a slug for the request and create `RUN=.harness-run/<slug>/` at the start. Every stage
+Pick a slug for the request and create `RUN=<top>/.harness-run/<slug>/` at the start, where `<top>` is
+`git rev-parse --show-toplevel` of the worktree the work happens in (an absolute path, not relative
+to wherever the shell stands; a run in a linked worktree stays in that worktree, so the main
+checkout's sessions do not show it). Every stage
 writes exactly the artifacts below; the completion check (`fallback-check.mjs`) reads them.
 
 ```
@@ -75,7 +78,7 @@ There is **no sentinel and no edit-gate** in this fallback (an earlier version k
 literal sentinel string; it leaked out of docs/descriptions and false-positived, so it was
 removed). Instead:
 
-1. Create `RUN=.harness-run/<slug>/` and write `manifest.json` with the request, `started_at`
+1. Create `RUN=<top>/.harness-run/<slug>/` (`<top>` as above) and write `manifest.json` with the request, `started_at`
    (current UTC time, ISO 8601, e.g. `date -u +%Y-%m-%dT%H:%M:%SZ`; written once here, never
    changed later), `max_retries` (default 2), `max_critique_rounds` (default 2), empty
    `subgoals`/`stages`, and the declared Agent Team roles/ownership.
