@@ -290,6 +290,31 @@ not a read — each worker's state is one icon and colour (spinner while acting;
 Cards 40–43 and 50 shipped and approved 2026-10-22 (harness, teams, graph, session panes; failure
 toasts).
 
+### session plugin
+
+168. **smart-compact compacts again, keeps the handoff, saves tokens, and measures itself — in E-pending**
+   - Why: 2026-11-20, the 0.10.0 log (50 entries, 2026-11-19 12:54-23:45 UTC, threshold 30%) shows 4 of 4
+     threshold hits ending `compact-not-run`, 0 `compacted:recap`, 0 `auto-compact` entries. Cause
+     (from the 2.1.326 types, unverified live): `session.compact` now has triggers `manual|auto|plugin|precompute`;
+     `handoffFor` takes only `auto` and `manual`+mark, so a plugin-raised compaction is not ours. Also a bare
+     `/smart-compact` printed "recap + compact at 30% (was 30%)" instead of the status. User: "smart-compact
+     효용성 있게 패치해줄래? 기존 이력을 효율적으로 남기면서 세션도 컴팩하고 토큰 사용량도 절감하고";
+     "이거 효율 before, after, 미적용 측정하시져 자연스럽게 다른거 하면서".
+   - Acceptance:
+     - Past the threshold an interactive main session compacts with the handoff: the log shows
+       `compacted:recap+N` with tokens before > after, in one live session on the current Claude Code.
+     - Ours is told apart on any trigger the engine sends for it (`plugin` or `manual`+mark); the outcome is
+       logged only from what the hook saw, never `compact-not-run` after a compaction that ran.
+     - `precompute`: the handoff is made ahead and reused at the compaction, so a compaction costs at most one
+       recap call; a stale precompute (conversation moved) is not used.
+     - The handoff stays kept per project (`/last-recap`, `/lessons` read it).
+     - Bare `/smart-compact` prints the status; `/smart-compact <n>` sets; a threshold off switch exists.
+     - Measurement, passive (in normal use, no dedicated bench): each log entry names its arm — `before`
+       (0.10.0 entries already in the store), `after` (patched), `off` (smart-compact off: engine
+       compactions logged with tokens before/after and summarizer usage). `/smart-compact log` prints per-arm
+       totals: compactions, mean tokens before→after, mean model tokens spent per compaction.
+     - `cd session && claude plugin test .` all pass, counts reported; session bumped (minor) with README/KOR.
+
 ### Repo and rules
 
 132. **A mod or plugin hook skipped by another plugin's hook is known and its loss is covered**
