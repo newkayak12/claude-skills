@@ -56,7 +56,8 @@ text5: !drop
 | `notes:` | speaker notes; reserved, works on any archetype |
 | `place:` + `- slot: x y [w=W] [h=H]` | move (and size) a template shape, in pt from the slide's top-left; reserved |
 | `distribute: 70` | re-space the slide's top-level row groups evenly from y=70pt to the safe area's bottom; reserved |
-| slot omitted | keeps the template's own content |
+| slot omitted | keeps the template's own content; `check` asks whether you meant to |
+| `key: !keep` | keeps the template's own content on purpose (a picture of your own work the template already carries); `check` stops asking |
 
 ## Worked example
 

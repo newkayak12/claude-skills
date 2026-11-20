@@ -1205,6 +1205,7 @@ class SlideSpec:
         self.line = line
         self.comment = comment
         self.values = []  # (slot_id, kind, value, line)
+        self.keep = set()  # slot ids written `!keep`: the template's content stays, on purpose
 
 
 SLIDE_RE = re.compile(r"^##\s*@([A-Za-z0-9_-]+)\s*(.*)$")
@@ -1251,6 +1252,12 @@ def parse_deck(text):
                 i += 1
                 continue
             key, inline = m.group(1), m.group(2).strip()
+            if inline == "!keep":
+                # the template's own content, kept on purpose: build leaves it as an omitted slot
+                # would, and check stops asking (a template cut from the author's own deck)
+                cur.keep.add(key)
+                i += 1
+                continue
             if inline:
                 cur.values.append((key, "scalar", inline, line_no))
                 i += 1
@@ -4494,7 +4501,15 @@ def cmd_check(args):
                 # The template calibrates itself: most slots hold text that already wraps,
                 # so an absolute width is noise. What matters is a slot the designer kept
                 # to one line, or content far longer than the slot was drawn for.
-                one_line = slot.proto_em is not None and 0 < slot.proto_em <= slot.max_em
+                # one line only when the template's content takes one: a frame holding two broken
+                # lines is a two-line frame, its line count `spill` measures (page 19, 2026-11-20)
+                # and only when the deck's lines outnumber the template's: one paragraph wrapping to
+                # two where the template wrote two one-line paragraphs fills the frame the same way
+                # (page 19, 2026-11-20)
+                one_line = slot.proto_em is not None and 0 < slot.proto_em <= slot.max_em \
+                    and all(wrapped_lines(slot, segs) <= 1 for segs in (slot.segments or [])) \
+                    and (slot.proto_lines is None or wrapped_lines(
+                        slot, [t for _, t in seen_items(kind, value)]) > slot.proto_lines)
                 basis[slot.estimated].add("%s.%s" % (spec.archetype, slot.id))
                 if slot.estimated and slot.face:
                     no_font.add(slot.face)
@@ -4516,7 +4531,9 @@ def cmd_check(args):
                                      "onto a second: %r"
                                      % (line, tag, slot_id, (wide / slot.max_em - 1) * 100,
                                         truncate(text, 34)))
-                    elif slot.proto_em and wide > slot.proto_em * 1.6:  # noqa: E501
+                    # width against the template's widest line, only where `spill` cannot count lines
+                    elif slot.proto_em and wide > slot.proto_em * 1.6 and (
+                            not slot.box or not slot.line_h or not slot.max_em or slot.proto_lines is None):
                         warns.append("line %d: %s.%s — %.0f%% longer than the longest line "
                                      "the template puts here, so it takes more lines than "
                                      "the design allows for: %r"
@@ -4541,8 +4558,16 @@ def cmd_check(args):
             # no hole where the room is taken: a `panel_margin:` deck moves the picture under the
             # text up to it, and a footnote band at the slide's bottom is short by nature (2026-11-20:
             # pages 11 and 19 warned, both rendered full)
+            # nor where nothing sits under the slot: short text there leaves bottom margin, not a gap
+            # between it and the next shape (pages 9 and 14, 2026-11-20: the last bullets of 배운 점)
+            # — as long as the text still fills half the frame's height
+            last = slot.box and slot.line_h and slot.type in ("text", "list") and not any(
+                o is not slot and o.box and o.box[1] >= slot.box[1] + slot.box[3]
+                and o.box[0] < slot.box[0] + slot.box[2] and slot.box[0] < o.box[0] + o.box[2]
+                for o in live) and wrapped_lines(
+                    slot, [t for _, t in seen_items(kind, value)]) * slot.line_h >= 0.5 * slot.box[3]
             filled = slot.box and (
-                pt(slot.box[1] + slot.box[3]) >= safe_bottom
+                last or pt(slot.box[1] + slot.box[3]) >= safe_bottom
                 or (front.get("panel_margin", "").strip() and any(
                     o.type == "picture" and o.box and o.id not in dropped
                     and any(v[0] == o.id for v in spec.values)
@@ -4608,9 +4633,15 @@ def cmd_check(args):
         placed_ids = {p[0] for sid, kind, value, _ in spec.values if sid == "place"
                       for p in parse_place(kind, value)[0]}
         untouched = [s.id for s in slots if s.id not in seen and s.type != "chart" and s.id not in placed_ids
+                     and s.id not in spec.keep
                      and (s.type == "picture" or ((spec.archetype, s.id) in own_values and not label(s)))]
         if untouched:
-            warns.append("%s: keeps template content for %s" % (tag, ", ".join(untouched)))
+            warns.append("%s: keeps template content for %s — fill it, `!drop` it, or write `%s: !keep` "
+                         "when the template's own content belongs on this slide"
+                         % (tag, ", ".join(untouched), untouched[0]))
+        bad_keep = sorted(k for k in spec.keep if k not in {s.id for s in slots})
+        if bad_keep:
+            errs.append("%s: `!keep` names no slot of %s: %s" % (tag, spec.archetype, ", ".join(bad_keep)))
         charts = [s.id for s in slots if s.id not in seen and s.type == "chart"]
         if charts:
             warns.append("%s: chart %s keeps the template's sample numbers — replace or delete "

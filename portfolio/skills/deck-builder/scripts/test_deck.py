@@ -647,6 +647,15 @@ def facts(tmp):
           "words kept without their particles count as kept")
 
 
+def keep(tmp):
+    """`key: !keep` keeps the template's content on purpose; check stops asking."""
+    print("keep")
+    _, specs, errs = deck.parse_deck("## @s1\npic1: !keep\ntext1: 제목\n")
+    check(not errs and specs[0].keep == {"pic1"} and [v[0] for v in specs[0].values] == ["text1"],
+          "`!keep` is recorded apart from the values, so build leaves the slot as it is: %s %s"
+          % (specs[0].keep, specs[0].values))
+
+
 def tight(tmp):
     """A label pressed to its own box's edge reads clipped (page 19, 2026-11-20)."""
     print("tight labels")
@@ -1141,11 +1150,15 @@ def one_line_slots(tmp):
     src = (tmp / "o.mdx")
     long_ko = "가" * int(body.max_em * 1.4)
     src.write_text("---\ntemplate: o.pptx\noutput: o.pptx\n---\n\n## @s2\n"
-                   "text1: %s\n" % long_ko, encoding="utf-8")
+                   "text1:\n  - %s\n  - 둘\n  - 셋\n" % long_ko, encoding="utf-8")
     out = run_cmd(["check", "--deck", str(src)])
     check("one line" in out and "too wide" in out,
-          "a Hangul line 40%% past the frame is reported: %s"
+          "a Hangul line 40%% past the frame, among as many items as the template has, is reported: %s"
           % next((l.strip() for l in out.splitlines() if "one line" in l), out[:90]))
+    src.write_text("---\ntemplate: o.pptx\noutput: o.pptx\n---\n\n## @s2\n"
+                   "text1: %s\n" % long_ko, encoding="utf-8")
+    check("one line" not in run_cmd(["check", "--deck", str(src)]),
+          "one paragraph wrapping to two where the template wrote three one-line ones fits the frame")
     src.write_text("---\ntemplate: o.pptx\noutput: o.pptx\n---\n\n## @s2\ntext1: 짧다\n",
                    encoding="utf-8")
     check("one line" not in run_cmd(["check", "--deck", str(src)]),
@@ -1555,7 +1568,7 @@ def fidelity(tmp):
     print("warnings the template itself raises")
     out = run_cmd(["check", "--deck", str(tmp / "fx.mdx")])
     deck_warns = [l.strip() for l in out.splitlines() if l.startswith("  warn")
-                  and not re.search(r"keeps template content for (pic\d+(, )?)+$", l)]
+                  and not re.search(r"keeps template content for (pic\d+(, )?)+ —", l)]
     check("0 error(s)" in out and not deck_warns,
           "the template's own content raises no deck warning (picture reminders aside): %s"
           % deck_warns)
@@ -2251,6 +2264,7 @@ def main():
         color(tmp)
         facts(tmp)
         tight(tmp)
+        keep(tmp)
         widths(tmp)
         vector_invariant(tmp)
         one_line_slots(tmp)
