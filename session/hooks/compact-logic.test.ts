@@ -110,7 +110,7 @@ test('parseSmartCompactArgs: words and a whole number from 10 to 95, with an opt
 })
 
 test('parseSmartCompactArgs: out of range, fractions and anything else are invalid', () => {
-  for (const bad of ['5', '9', '96', '0', '-30', '60.5', '0x20', '6e1', '%', '60%%', 'abc', 'off now', 'ON', '1 0'])
+  for (const bad of ['5', '9', '96', '0', '-30', '60.5', '6.5', '0x20', '6e1', '%', '60%%', 'abc', 'off now', 'ON', '1 0'])
     expect(parseSmartCompactArgs(bad)).toEqual({ kind: 'invalid' })
 })
 
