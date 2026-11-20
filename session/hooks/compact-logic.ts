@@ -14,8 +14,9 @@ export const shouldCompactNow = (percent: number, threshold: number, state: Comp
 export const firstLine = (err: unknown): string =>
   (err instanceof Error ? err.message : String(err)).split('\n')[0]!
 
-// smart-compact runs `/compact <COMPACT_MARK>`: a /compact the engine raises reaches this plugin's own
-// session.compact hook, where a $.session.compact call from the plugin would skip it.
+// smart-compact runs `/compact <COMPACT_MARK>`. Live check on 2.1.329 (2026-11-20): on an account where a
+// Team-org policy hook bypasses dispatch, that compaction ran ('Compacted') but never reached this plugin's
+// session.compact hook, so no trigger or instructions were seen there.
 export const COMPACT_MARK = 'smart-compact handoff'
 
 // Which compactions get a handoff: the engine's auto-compact, smart-compact's own /compact (the engine sends it
