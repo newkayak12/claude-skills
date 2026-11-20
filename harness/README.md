@@ -307,6 +307,7 @@ The gate hook denying an Edit to a gated path before the harness is engaged.
 The mod also publishes each fallback run's outcome (`pass` on a report with no failure, `reject` on a failed goal gate after the report, `fail` on a failed subgoal; no ids) as the state value `harness.outcome`, for the `trophy` plugin's opt-in counts.
 
 ## Status
+- v1.38.4 — a fallback run's directory is `<git toplevel of the worktree the work happens in>/.harness-run/<slug>/`, an absolute path: a run in a linked worktree stays there, and the main checkout's sessions no longer show it in their band.
 - v1.38.3 — hook commands quote the plugin root, so a path with a space (Orca: `~/Library/Application Support/...`) no longer fails with `Cannot find module` and leaves the gate off.
 - v1.38.2 — `/harness-status` draws on terminal, desktop, mobile and vscode; the key input shows only where the surface carries one (mobile keeps the buttons).
 - v1.38.1 — the `harness` skill page gains an Output Template and a Related Skills section; no engine change.

@@ -1,4 +1,5 @@
 // Pure decisions of smart-compact; compact.tsx renders and acts on what these return.
+import { RECAP_PROMPT } from './recap.ts'
 
 export type CompactState = { isRunning: boolean; agentId?: string; surfaces: number }
 export type CompactDecision = 'below' | 'run' | 'skipped:running' | 'skipped:agent' | 'skipped:headless'
@@ -19,6 +20,23 @@ export const firstLine = (err: unknown): string =>
 // session.compact hook, so no trigger or instructions were seen there.
 export const COMPACT_MARK = 'smart-compact handoff'
 
+// What smart-compact's /compact carries: the mark, then the handoff sections for the engine's summarizer. Where the
+// session.compact hook is bypassed, the summarizer still writes the handoff, in the one call it makes anyway.
+export const HANDOFF_INSTRUCTIONS = `${COMPACT_MARK}: ${RECAP_PROMPT.replace(/\s*\n\s*/g, ' ')}`
+const isOwn = (instructions?: string) => (instructions ?? '').trim().startsWith(COMPACT_MARK)
+
+// A compaction ran when the conversation got shorter: fewer rows than before it.
+export const compactionSeen = (rowsBefore?: number, rowsAfter?: number): boolean =>
+  typeof rowsBefore === 'number' && typeof rowsAfter === 'number' && rowsAfter < rowsBefore
+
+// The summary a compaction left: the first user row of the compacted conversation.
+export const summaryOf = (rows: readonly { role: string; text: string }[]): string | null =>
+  rows.find(r => r.role === 'user' && r.text.trim())?.text.trim() ?? null
+
+// An engine compaction seen from the outside: context tokens fell below 60% of the last turn's.
+export const tokensDropped = (last?: number, now?: number): boolean =>
+  typeof last === 'number' && typeof now === 'number' && last > 0 && now < last * 0.6
+
 // Which compactions get a handoff: the engine's auto-compact, smart-compact's own /compact (the engine sends it
 // as trigger 'plugin', or as 'manual' carrying the mark) and a precompute, which the caller answers by making
 // the recap ahead. A person's /compact and a subagent's compaction stay the engine's.
@@ -29,8 +47,8 @@ export const handoffFor = (e: { trigger?: string; instructions?: string; agentId
   if (e.trigger === 'auto') return 'auto'
   if (e.trigger === 'precompute') return 'precompute'
   const instructions = e.instructions?.trim()
-  if (e.trigger === 'plugin') return !instructions || instructions === COMPACT_MARK ? 'own' : null
-  return e.trigger === 'manual' && instructions === COMPACT_MARK ? 'own' : null
+  if (e.trigger === 'plugin') return !instructions || isOwn(instructions) ? 'own' : null
+  return e.trigger === 'manual' && isOwn(instructions) ? 'own' : null
 }
 
 // What the session.compact hook saw of one compaction; nothing is a hook that never ran.

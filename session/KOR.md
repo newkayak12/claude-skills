@@ -1,6 +1,6 @@
 # session
 
-Claude Code 세션이 남긴 것(변경한 파일, 커밋, 거부된 호출, 도구 호출 사이 가장 긴 간격)을 보여 주고, 다음 시작 때 밴드로 다시 보여 주며, 남아 있는 `claude -p` 자식 프로세스를 나열하고 안전하게 중지하며, 위험한 명령과 비밀 파일 쓰기를 가드하고, `/memo` 메모를 보관하고, 정한 %에서 recap 뒤 compact하며, 그 recap을 `/handoff`·`/last-recap`·`/lessons`에 쓰고, 작업 시간과 비용을 보여 주고, 열린 세션 전부를 `/board` 한 화면에(각 세션의 harness·graph·teams 실행과 함께) 보여 주며, main이 바뀌면 같은 저장소의 다른 세션에 알리고, 모델 없이 Agent를 호출하면 경고하며, 끝나지 않은 에이전트를 `/reap`으로 중지합니다. 버전 `0.5.6`. Claude Code 2.1.292 이상(hooks 모듈)이 필요합니다. 이 마켓플레이스의 다른 것은 필요 없습니다.
+Claude Code 세션이 남긴 것(변경한 파일, 커밋, 거부된 호출, 도구 호출 사이 가장 긴 간격)을 보여 주고, 다음 시작 때 밴드로 다시 보여 주며, 남아 있는 `claude -p` 자식 프로세스를 나열하고 안전하게 중지하며, 위험한 명령과 비밀 파일 쓰기를 가드하고, `/memo` 메모를 보관하고, 정한 %에서 recap 뒤 compact하며, 그 recap을 `/handoff`·`/last-recap`·`/lessons`에 쓰고, 작업 시간과 비용을 보여 주고, 열린 세션 전부를 `/board` 한 화면에(각 세션의 harness·graph·teams 실행과 함께) 보여 주며, main이 바뀌면 같은 저장소의 다른 세션에 알리고, 모델 없이 Agent를 호출하면 경고하며, 끝나지 않은 에이전트를 `/reap`으로 중지합니다. 버전 `0.11.0`. Claude Code 2.1.292 이상(hooks 모듈)이 필요합니다. 이 마켓플레이스의 다른 것은 필요 없습니다.
 
 ## 설치
 ```
@@ -100,15 +100,20 @@ CLAUDE.md도 자동 메모리도 아닙니다. 메모는 파일이 아니고, �
 ## 스마트 compact
 정한 컨텍스트 %에 닿으면 smart-compact가 `/compact`를 실행하고 그 compact에 직접 답합니다. compact되는 대화를 놓고 다음 단계에 맞춘 handoff(목표, 다음 방향, 하던 작업과 파일:줄, 결정, 남은 일, 교정)를 쓰고, 새 컨텍스트는 그 handoff 다음에 창의 min(20, 임계치/2)% 안에 드는 가장 최근 원문 턴을 그대로 이은 것입니다. 모델 호출은 한 번이고 엔진 요약기는 돌지 않습니다. 내장 auto-compact도 같은 handoff를 받습니다. 직접 친 `/compact`, 서브에이전트의 compact, handoff를 만들지 못한 compact는 엔진에 맡깁니다.
 
+먼저 도는 정책 플러그인이 이 플러그인의 `session.compact` 훅을 건너뛰게 하는 환경(화면에 `its session.compact hook was skipped`가 뜸)에서는, smart-compact의 `/compact`가 handoff 항목을 지시문으로 함께 보냅니다. 그래서 엔진 요약기가 원래 하는 한 번의 호출로 handoff를 씁니다. 이 compact는 `compacted:guided`로 기록되고, 그 요약이 프로젝트의 recap으로 보관됩니다. 훅이 알리지 못한 compact는 다음 턴 끝에 컨텍스트 토큰이 줄어든 것으로 알아봅니다.
+
 | 명령 | 하는 일 |
 | --- | --- |
 | `/smart-compact` | 현재 임계치(기본 70%), 마지막 점검, 이 프로세스의 집계 출력 |
 | `/smart-compact <10-95>` | 임계치 설정. `60`, `60%` 둘 다 됩니다 |
-| `/smart-compact log` | 최근 점검 10개를 최신순으로: `23% vs 10% → recapping → compacted:recap+4 · tokens recap 41200 in/900 out` |
+| `/smart-compact log` | 최근 점검 10개를 최신순으로: `23% vs 10% → recapping → compacted:recap+4 · tokens recap 41200 in/900 out`, 그 뒤에 arm별 합계 |
+| `/smart-compact off` / `on` | off: 엔진 혼자 compact하고, 그 compact는 `off` arm으로 계속 기록됩니다(`/config`의 **Smart compact** 항목) |
 
 같은 값이 `/config`의 **Smart compact threshold (%)** 항목입니다. 메인 루프 턴이 답변으로 끝난 뒤에 돌고, 긴 턴 안에서는 툴 호출 사이에도 사용량을 확인합니다. 턴 도중 임계치를 넘으면 턴이 끝날 때 compact합니다. 인터랙티브 세션에서만 동작하고 서브에이전트에서는 동작하지 않습니다. handoff가 실패하면 엔진이 평소처럼 요약합니다. auto-compact 지점보다 낮게 잡으세요. 높으면 auto-compact가 먼저 돕니다. %는 상태줄과 같은 모델 전체 창 기준이라, 1M 창에서 70%는 700k 토큰입니다.
 
 인터랙티브 메인 루프 턴을 점검할 때마다 50개짜리 로그(원래 %, 임계치, 판단, 결과)에 남고, `/smart-compact log`가 보여 줍니다. auto-compact도 항목으로 남습니다(`auto-compact`). `compacted:recap+N`은 handoff에 원문 메시지 N개를 이었다는 뜻이고, `compacted`나 `recap-failed:<이유>`는 엔진 요약기가 돌았다는 뜻입니다. `tokens` 뒤에는 handoff의 입력/출력 토큰이, 엔진 경로면 요약기 토큰과 compact 전후 컨텍스트가 찍힙니다. 서브에이전트와 헤드리스 턴은 프로세스 안에서 집계만 하며, `/smart-compact`가 그 집계와 로그 쓰기 오류를 함께 보여 줍니다.
+
+모든 compact는 arm별 200개짜리 목록에도 남습니다. `before`(0.10.0 기록), `after`(이 버전, 켜짐), `off`입니다. `/smart-compact`와 `/smart-compact log` 끝에 arm마다 한 줄씩 compact 횟수, compact 전→후 평균 컨텍스트 토큰, compact 한 번에 쓴 평균 모델 토큰이 나와서, 평소 쓰면서 셋을 비교할 수 있습니다.
 
 ## Recap, handoff, lessons
 smart-compact나 `/handoff`가 만든 recap은 프로젝트별로 마지막 하나가 보관됩니다. 다른 세션의 recap은 시작할 때 밴드로 한 번만 보여 줍니다. Recap이나 dismiss를 누르면 다시 보여 주지 않고, 세션이 직접 쓴 recap(smart-compact의 recap)으로는 밴드를 띄우지 않습니다.
@@ -160,6 +165,7 @@ headless 실행(`claude -p`)에서는 이 명령들이 텍스트를 출력합니
 한 세션에서 `main`으로의 `git push`가 성공하면(`origin main`, `HEAD:main`, `x:main`, main 브랜치에서의 그냥 push), 같은 저장소에서 최근 30분 안에 움직인 다른 열린 세션마다 `main moved to <sha> … Fetch before editing or bumping versions.` 메시지가 갑니다. 세션당 2분에 한 번까지이고, 이 세션에는 `main moved: told N of M` toast가 뜹니다. headless 실행은 보내지 않습니다.
 
 ## 상태
+- `0.11.0`: 정책 플러그인이 `session.compact` 훅을 건너뛰게 하는 환경에서도 smart-compact가 다시 compact합니다. handoff를 `/compact` 지시문으로 함께 보내고(`compacted:guided`, 엔진 호출 한 번, 요약은 recap으로 보관), `/smart-compact off|on`이 생겼습니다. compact마다 arm(before/after/off)과 전후 컨텍스트 토큰이 기록되고 `/smart-compact log`에서 arm별로 비교됩니다. 표식을 단 플러그인 compact를 알아보고, 더는 `compact-not-run`을 남기지 않습니다.
 - `0.10.0`: smart-compact가 자기 `/compact`를 직접 처리합니다. recap에 최근 턴 원문을 그대로 붙여 모델 호출 한 번으로 끝내고, 엔진 요약기가 다시 돌지 않습니다. auto-compact도 같은 handoff를 받고, `/smart-compact log`에 쓴 토큰 수가 남습니다.
 - `0.9.3`: 모든 패널, 밴드, 토스트가 터미널·데스크톱·모바일·vscode에서 그려집니다. 패널을 그릴 수 없는 곳에서는 `/session`이 글로 답합니다. memo와 hint 토스트는 화면이 있을 때만 뜹니다.
 - `0.9.2`: smart-compact가 토큰 수와 컨텍스트 창 크기로 %를 계산합니다. 상태 줄의 `used_percentage`와 같은 식입니다. `/smart-compact`가 지금 %, 기준, 그 뒤의 토큰 수를 보여 줍니다.

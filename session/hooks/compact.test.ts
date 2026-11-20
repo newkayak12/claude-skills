@@ -1,7 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 
-import { THRESHOLD_FIELD } from './compact.tsx'
-import { COMPACT_MARK, RECAP_HEADER } from './compact-logic.ts'
+import { ENABLED_FIELD, THRESHOLD_FIELD } from './compact.tsx'
+import { COMPACT_MARK, HANDOFF_INSTRUCTIONS, RECAP_HEADER } from './compact-logic.ts'
 import { guardWorld } from './testkit.ts'
 import { clockAt, memoryStore } from './testkit.ts'
 
@@ -63,7 +63,7 @@ test('at the default 70% it runs /compact with its mark; the handoff and the new
   const w = world(on, 75, { $ })
   await $.turn.complete(TURN)
   const done = await w.compacted
-  expect(w.args.args).toEqual([COMPACT_MARK])
+  expect(w.args.args).toEqual([HANDOFF_INSTRUCTIONS])
   expect(done.messages[0]).toEqual({ role: 'user', text: RECAP_HEADER + 'GOAL: ship smart-compact', toolUses: [] })
   expect(done.messages.slice(1)).toEqual(SMALL)
   expect(w.forks()).toBe(1)
@@ -257,11 +257,73 @@ test('a /compact that throws ends error:<first line>', async ($, on) => {
   expect(w.log()[0].outcome).toMatch(/^error:[^\n]+$/)
 })
 
-test('a /compact no hook reported on ends compact-not-run', async ($, on) => {
+test('a /compact no hook reported on, with no shorter conversation after, ends unobserved', async ($, on) => {
   const w = logWorld(on, { percent: 75 })
   on('command.run', { command: 'compact' }, () => ({ value: undefined }) as never)
   await $.turn.complete(TURN)
-  await until(() => w.log()[0]?.outcome === 'compact-not-run', 'compact-not-run')
+  await until(() => w.log()[0]?.outcome === 'unobserved', 'unobserved')
+  expect(w.log()[0].arm).toBe('after')
+})
+
+// A policy plugin that runs first can keep session.compact from this plugin: the engine compacts with the handoff
+// instructions, the conversation gets shorter, and its summary is kept as the project's recap. No fork.
+test('a compaction the hook never saw: compacted:guided, the summary kept as the recap, after-tokens at the next turn', async ($, on) => {
+  let tokens = 75
+  const w = logWorld(on, { usage: () => ({ value: { startedAt: 0, context: { window: 100, tokens, percent: tokens }, rateLimits: [] } }) })
+  let rows: { role: string; text: string; toolUses: never[] }[] = Array.from({ length: 8 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', text: `r${i}`, toolUses: [] }))
+  const args: string[] = []
+  on('session.messages', () => ({ value: rows }) as never)
+  on('command.run', { command: 'compact' }, (_$: any, e: any) => {
+    args.push(e.args)
+    rows = [{ role: 'user', text: '1. Goal: ship\n6. Corrections:\n- use sonnet', toolUses: [] }]
+    tokens = 10
+    return { value: undefined } as never
+  })
+  await $.turn.complete(TURN)
+  await until(() => w.log()[0]?.outcome === 'compacted:guided', 'guided')
+  expect(args).toEqual([HANDOFF_INSTRUCTIONS])
+  expect(w.forks()).toBe(0)
+  expect(w.log()[0]).toMatchObject({ arm: 'after', tokensBefore: 75, recapCalls: 0 })
+  await until(() => (w.store.get('recap.project:/proj') as any)?.text?.startsWith('1. Goal: ship'), 'recap kept')
+  expect(w.store.get('lessons.project:/proj')).toEqual(['use sonnet'])
+  await $.turn.complete(TURN)
+  await until(() => w.log()[0]?.tokensAfter === 10, 'after-tokens')
+  expect((w.store.get('smart-compact.compactions') as any[])[0]).toMatchObject({ outcome: 'compacted:guided', tokensBefore: 75, tokensAfter: 10 })
+})
+
+test('an unobserved compaction is decided at the next turn end from the token drop: compacted:guided', async ($, on) => {
+  let tokens = 75
+  const w = logWorld(on, { usage: () => ({ value: { startedAt: 0, context: { window: 100, tokens, percent: tokens }, rateLimits: [] } }) })
+  on('command.run', { command: 'compact' }, () => ((tokens = 8), { value: undefined }) as never)
+  await $.turn.complete(TURN)
+  await until(() => w.log()[0]?.outcome === 'unobserved', 'unobserved first')
+  await $.turn.complete(TURN)
+  await until(() => w.log()[0]?.outcome === 'compacted:guided', 'guided later')
+  expect(w.log()[0]).toMatchObject({ tokensBefore: 75, tokensAfter: 8 })
+})
+
+test('off: no compaction from smart-compact; an engine compaction seen by the token drop is logged in the off arm', { options: { [ENABLED_FIELD]: false } }, async ($, on) => {
+  let tokens = 90
+  const w = logWorld(on, { usage: () => ({ value: { startedAt: 0, context: { window: 100, tokens, percent: tokens }, rateLimits: [] } }) })
+  let compacts = 0
+  on('command.run', { command: 'compact' }, () => (compacts++, { value: undefined }) as never)
+  await $.turn.complete(TURN)
+  tokens = 20
+  await $.turn.complete(TURN)
+  await until(() => w.log().some(e => e.outcome === 'compacted:engine'), 'engine compaction')
+  expect(compacts).toBe(0)
+  expect(w.log().find(e => e.outcome === 'compacted:engine')).toMatchObject({ arm: 'off', decision: 'auto-compact', tokensBefore: 90, tokensAfter: 20 })
+  expect((await run($, 'log')).text).toContain('off: 1 compaction · context 90→20')
+})
+
+test('/smart-compact off and on write the enabled field', async ($, on) => {
+  const sets: { key: string; value: unknown }[] = []
+  logWorld(on)
+  on('config.set', (_$: any, e: any) => (sets.push({ key: e.key, value: e.value }), { value: e.value }))
+  expect((await run($, 'off')).text).toContain('off')
+  expect((await run($, 'on')).text).toContain('on')
+  expect(sets.map(s => s.value)).toEqual([false, true])
+  expect(sets[0]!.key).toMatch(/smart_compact_enabled$/)
 })
 
 const TOOL = { tool: 'Read', file_path: '/x' } as never
@@ -322,8 +384,10 @@ test('/smart-compact log lists entries newest first; /smart-compact shows the la
   await $.turn.complete(TURN)
   await until(() => w.log().length === 1, 'entry')
   w.store.set(LOG, [...w.log(), { ...w.log()[0], id: 'x', percent: 33, decision: 'recapping', outcome: 'compacted' }])
-  const log = (await run($, 'log')).text!.split('\n')
+  const [head, totals] = (await run($, 'log')).text!.split('\n\n')
+  const log = head!.split('\n')
   expect(log).toHaveLength(2)
+  expect(totals!.split('\n')[1]).toMatch(/^after: 1 compaction ·/)
   expect(log[0]).toBe('0m ago: 33% vs 70% → recapping → compacted (session sess-123)')
   expect(log[1]).toBe('0m ago: 20% vs 70% → below (session sess-123)')
   const status = (await run($, '')).text!.split('\n')
@@ -334,7 +398,7 @@ test('/smart-compact log lists entries newest first; /smart-compact shows the la
 
 test('/smart-compact log with nothing logged says so', async ($, on) => {
   logWorld(on)
-  expect((await run($, 'log')).text).toBe('no check logged yet')
+  expect((await run($, 'log')).text!.split('\n\n')[0]).toBe('no check logged yet')
   expect((await run($, '')).text).toContain('\nno check logged yet\n')
 })
 
@@ -394,6 +458,13 @@ test('a tool_result is never left without its tool_use', async ($, on) => {
   expect(done.messages.map((m: any) => m.handle)).toEqual([undefined, 'h4'])
 })
 
+test('a plugin-triggered compaction carrying the mark gets the handoff', async ($, on) => {
+  const w = logWorld(on, { usage: WINDOW_1000, fork: answered })
+  const done = await compactWith($, { trigger: 'plugin', instructions: HANDOFF_INSTRUCTIONS, messages: ROWS })
+  expect(w.compacts()).toBe(0)
+  expect(done.messages[0].text).toBe(RECAP_HEADER + 'GOAL: ship')
+})
+
 test('our own /compact gets the handoff too', async ($, on) => {
   const w = logWorld(on, { usage: WINDOW_1000, fork: answered })
   const done = await compactWith($, { trigger: 'manual', instructions: COMPACT_MARK, messages: ROWS })
@@ -405,7 +476,6 @@ const theEngines: [string, object][] = [
   ['a person’s /compact', { trigger: 'manual', instructions: 'keep the code', messages: ROWS }],
   ['a bare /compact', { trigger: 'manual', messages: ROWS }],
   ['a subagent’s auto-compact', { trigger: 'auto', agentId: 'a1', messages: ROWS }],
-  ['a plugin’s $.session.compact', { trigger: 'plugin', instructions: COMPACT_MARK, messages: ROWS }],
   ['a precompute', { trigger: 'precompute', messages: ROWS }],
 ]
 for (const [why, input] of theEngines) {

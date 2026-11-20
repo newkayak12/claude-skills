@@ -1,6 +1,6 @@
 # session
 
-Shows what a Claude Code session left behind (files changed, commits, denied calls, longest gap between tool calls), shows it again as a band on your next start, lists stray `claude -p` children and stops one safely, guards dangerous commands and secret writes, keeps `/memo` notes, recaps before compacting at a % you set, keeps that recap for `/handoff`, `/last-recap` and `/lessons`, times tasks and shows the cost, shows every open session on one `/board` (with its harness, graph and teams runs), tells the other sessions of a repo when main moves, warns when an Agent call names no model, and stops unfinished agents with `/reap`. Version `0.5.6`. Requires Claude Code 2.1.292+ (hooks module). It needs nothing else from this marketplace.
+Shows what a Claude Code session left behind (files changed, commits, denied calls, longest gap between tool calls), shows it again as a band on your next start, lists stray `claude -p` children and stops one safely, guards dangerous commands and secret writes, keeps `/memo` notes, recaps before compacting at a % you set, keeps that recap for `/handoff`, `/last-recap` and `/lessons`, times tasks and shows the cost, shows every open session on one `/board` (with its harness, graph and teams runs), tells the other sessions of a repo when main moves, warns when an Agent call names no model, and stops unfinished agents with `/reap`. Version `0.11.0`. Requires Claude Code 2.1.292+ (hooks module). It needs nothing else from this marketplace.
 
 ## Install
 ```
@@ -100,15 +100,20 @@ Not CLAUDE.md, not auto-memory: notes are not files, are never written to your r
 ## Smart compact
 At a context % you choose, smart-compact runs `/compact` and answers that compaction itself. It writes a handoff of the conversation being compacted, built around the next steps: goal, direction, what was in progress with its file:line, decisions, open items, corrections. The new context is that handoff followed by the newest raw turns that fit in min(20, threshold/2)% of the window, kept verbatim. That is one model call, and the engine's summarizer does not run. The built-in auto-compact gets the same handoff. Your own `/compact` and a subagent's compaction are left to the engine, and so is a compaction whose handoff cannot be made.
 
+Where a policy plugin that runs first keeps the `session.compact` hook from this plugin (the screen says `its session.compact hook was skipped`), smart-compact's `/compact` carries the handoff sections as its instructions, so the engine's summarizer writes the handoff in the one call it makes anyway; that compaction is logged `compacted:guided` and its summary is kept as the project's recap. A compaction no hook reported is told from the drop in context tokens at the next turn end.
+
 | Command | What it does |
 | --- | --- |
 | `/smart-compact` | print the current threshold (default 70%), the last check, and this process's counts |
 | `/smart-compact <10-95>` | set it; `60` and `60%` both work |
-| `/smart-compact log` | the last 10 checks, newest first: `23% vs 10% → recapping → compacted:recap+4 · tokens recap 41200 in/900 out` |
+| `/smart-compact log` | the last 10 checks, newest first: `23% vs 10% → recapping → compacted:recap+4 · tokens recap 41200 in/900 out`, then per-arm totals |
+| `/smart-compact off` / `on` | off: the engine compacts alone, its compactions still logged as the `off` arm (the **Smart compact** row in `/config`) |
 
 The same value is the **Smart compact threshold (%)** row in `/config`. It runs after a main-loop turn that ended with an answer, and usage is also checked between tool calls inside a long turn; crossed mid-turn, it compacts when the turn ends. Interactive sessions only; never for subagents. If the handoff fails, the engine summarizes as usual. Set it below the auto-compact point, or auto-compact fires first: the % is of the model's whole window as the status line shows it, so on a 1M window 70% is 700k tokens.
 
 Each check of an interactive main-loop turn is kept in a 50-entry log (raw %, threshold, decision, outcome) that `/smart-compact log` prints. An auto-compact gets an entry too (`auto-compact`). `compacted:recap+N` means the handoff plus N raw messages; `compacted` or `recap-failed:<why>` means the engine's summarizer ran. A `tokens` suffix shows the handoff's input/output or, on the engine path, the summarizer's and the context before and after. Subagent and headless turns are only counted in the process, shown on `/smart-compact`, which also shows log write errors.
+
+Every compaction is also kept in a 200-entry list under its arm: `before` (entries from 0.10.0), `after` (this version, on) and `off`. `/smart-compact` and `/smart-compact log` end with one line per arm: compactions, mean context tokens before→after, and mean model tokens spent per compaction, so the three can be compared in normal use.
 
 ## Recap, handoff, lessons
 Every recap (from smart-compact or `/handoff`) is kept for this project, the last one only. A start offers another session's recap in a band once: after Recap or dismiss it is not offered again, and a session never gets a band for the recap it wrote itself (a smart-compact's own recap).
@@ -160,6 +165,7 @@ One row per `git worktree list --porcelain` entry of this repo: branch (or detac
 When a `git push` to `main` goes through in one session (`origin main`, `HEAD:main`, `x:main`, or a plain push while on main), every other open session of the same repository that was active in the last 30 minutes gets a message: `main moved to <sha> … Fetch before editing or bumping versions.` At most one message per session every 2 minutes; this session gets a toast `main moved: told N of M`. Headless runs send nothing.
 
 ## Status
+- `0.11.0`: smart-compact compacts again where a policy plugin skips its `session.compact` hook: the handoff rides along as the `/compact` instructions (`compacted:guided`, one engine call, the summary kept as the recap). `/smart-compact off|on`; each compaction logged under an arm (before/after/off) with context tokens before and after, compared per arm in `/smart-compact log`. A plugin-triggered compaction carrying the mark is recognized; nothing logs `compact-not-run` any more.
 - `0.10.0`: smart-compact answers its own `/compact`: the recap plus the latest turns kept verbatim, in one model call (the engine's summarizer no longer runs over it again); auto-compact gets the same handoff; `/smart-compact log` records the tokens used.
 - `0.9.3`: every pane, band and toast draws on terminal, desktop, mobile and vscode; `/session` answers in text where no pane draws; memo and hint toasts only when a surface exists.
 - `0.9.2`: smart-compact computes its % from the tokens and the context window, the formula behind the status line's `used_percentage`; `/smart-compact` shows the current %, the threshold and the token count.

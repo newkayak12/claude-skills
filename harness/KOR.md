@@ -300,6 +300,7 @@ Claude Code 2.1.293 대화형 터미널 세션에서 실제로 캡처했습니�
 모드는 폴백 실행의 결과(실패 없이 보고서가 나오면 `pass`, 보고서 뒤 목표 게이트 실패면 `reject`, 하위 목표 실패면 `fail`, id 없음)를 상태 값 `harness.outcome`으로도 발행합니다. `trophy` 플러그인의 옵트인 집계용입니다.
 
 ## 상태
+- v1.38.4 — fallback run 폴더가 `<작업하는 worktree의 git 최상위>/.harness-run/<slug>/` 절대 경로에 생깁니다. linked worktree의 run은 그 worktree에 남고, main 체크아웃 세션의 밴드에 더는 보이지 않습니다.
 - v1.38.3 — 훅 명령이 플러그인 경로를 따옴표로 감쌉니다. 경로에 공백이 있어도(Orca의 `~/Library/Application Support/...`) `Cannot find module`로 실패해 게이트가 꺼지는 일이 없습니다.
 - v1.38.2 — `/harness-status`가 터미널·데스크톱·모바일·vscode 모두에서 그려집니다. 키 입력란은 그 화면이 지원할 때만 보이고, 모바일에서는 버튼만 남습니다.
 - v1.38.1 — `harness` 스킬 문서에 Output Template과 Related Skills 절을 더했습니다. 엔진 변화는 없습니다.

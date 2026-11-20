@@ -1,10 +1,16 @@
 import { atom, update } from 'claude-code'
 import type { On, PluginOptions } from 'claude-code'
 
-import { COMPACT_MARK, firstLine, handoffFor, RECAP_HEADER, shouldCompactNow, tailBudget, tailStart } from './compact-logic.ts'
+import {
+  compactionSeen, firstLine, HANDOFF_INSTRUCTIONS, handoffFor, parseSmartCompactArgs, RECAP_HEADER, shouldCompactNow, summaryOf,
+  tailBudget, tailStart, tokensDropped,
+} from './compact-logic.ts'
 import type { HandoffFor } from './compact-logic.ts'
-import { appendLog, asLog, fmtLastCheck, fmtLog, fmtStats, LOG_KEY, patchLog } from './compact-log.ts'
-import type { LogEntry, LogStats, LogTokens, TokenUse } from './compact-log.ts'
+import {
+  appendLog, armTotals, asCompactions, asLog, COMPACTIONS_KEY, fmtArmTotals, fmtLastCheck, fmtLog, fmtStats, LOG_KEY, recordCompaction,
+  seedCompactions,
+} from './compact-log.ts'
+import type { Arm, LogEntry, LogStats, LogTokens, TokenUse } from './compact-log.ts'
 import { corrections, fmtAgo, isFresh, lessonsKey, makeRecap, mergeLessons, RECAP_PROMPT, recapKey } from './recap.ts'
 import type { Recap } from './recap.ts'
 import { fmtContext, statusLinePercent } from '../scripts/context-logic.mjs'
@@ -17,6 +23,8 @@ import type { BoardTab } from './board.ts'
 // /smart-compact <n> writes the same field.
 // Every recap (here or /handoff) is kept per project: the next start shows it, /lessons collects its Corrections.
 export const THRESHOLD_FIELD = 'smart_compact_threshold'
+// false: smart-compact never compacts; engine compactions are still logged, as the 'off' arm.
+export const ENABLED_FIELD = 'smart_compact_enabled'
 // the board pane's tab; mod.tsx draws it
 const boardTab = atom({ plugin: 'session', key: 'boardTab' } as const, 'sessions' as BoardTab)
 const DEFAULT_THRESHOLD = 70
@@ -24,6 +32,15 @@ const MIN = 10
 const MAX = 95
 
 const thresholdOf = (options: PluginOptions) => Number(options[THRESHOLD_FIELD] ?? DEFAULT_THRESHOLD)
+const enabledOf = (options: PluginOptions) => options[ENABLED_FIELD] !== false
+// the options register was given; read live, so /config and /smart-compact on|off take effect from the next turn
+let liveOptions: PluginOptions = {}
+const armNow = (): Arm => (enabledOf(liveOptions) ? 'after' : 'off')
+
+// Context tokens at the last main-loop turn end, to see an engine compaction no hook reported (tokensDropped).
+let lastTokens: number | undefined
+// A compaction logged before its after-tokens were known: the next turn end fills them in.
+let pendingAfter: { id: string; outcome: string; tokensBefore?: number } | undefined
 
 // The context the status line shows (window and tokens through context-logic.mjs), not usage().context.percent.
 async function readContext($: any) {
@@ -72,7 +89,7 @@ function logDecision($: any, percent: number | null | undefined, threshold: numb
     try {
       session = String(await $.session.id())
     } catch {}
-    return appendLog(list, { id, ts, session, percent: percent ?? null, threshold, decision, outcome })
+    return appendLog(list, { id, ts, session, percent: percent ?? null, threshold, decision, outcome, arm: armNow() })
   })
   return id
 }
@@ -85,8 +102,50 @@ const readLog = async ($: any) => {
   }
 }
 
-function logOutcome($: any, id: string, outcome: string, tokens?: LogTokens) {
-  writeLog($, async list => patchLog(list, id, outcome, tokens))
+// Patches the ring entry; a compaction is also kept in the compaction list the per-arm totals read.
+function logOutcome($: any, id: string, outcome: string, tokens?: LogTokens, extra: Partial<LogEntry> = {}) {
+  writeLog($, async list => {
+    const patched = list.map(e => (e.id === id ? { ...e, outcome, ...(tokens ? { tokens } : {}), ...extra } : e))
+    const entry = patched.find(e => e.id === id)
+    if (entry) await $.store.set(COMPACTIONS_KEY, recordCompaction(asCompactions(await $.store.get(COMPACTIONS_KEY)), entry))
+    return patched
+  })
+}
+
+async function readCompactions($: any) {
+  try {
+    return seedCompactions(await readLog($), asCompactions(await $.store.get(COMPACTIONS_KEY)))
+  } catch {
+    return []
+  }
+}
+
+// The handoff kept for this project; its Corrections join the lessons.
+async function keepRecap($: any, text: string) {
+  try {
+    const root = await $.session.root()
+    const now = (await $.clock.now()) as number
+    await $.store.set(recapKey(root), makeRecap(text, now, await $.session.id()))
+    const kept = ((await $.store.get(lessonsKey(root))) as string[] | undefined) ?? []
+    const fresh = corrections(text)
+    if (fresh.length > 0) await $.store.set(lessonsKey(root), mergeLessons(kept, fresh))
+  } catch {}
+}
+
+// The conversation as the model is sent it (as: 'api'): after a compaction it opens on the summary.
+async function apiRows($: any): Promise<{ role: string; text: string }[] | undefined> {
+  try {
+    const rows = (await $.session.messages({ as: 'api' })) as { role: string; text?: string; content?: unknown }[]
+    return rows.map(r => ({ role: r.role, text: typeof r.text === 'string' ? r.text : apiText(r.content) }))
+  } catch {
+    return undefined
+  }
+}
+
+function apiText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content.map((b: any) => (b && b.type === 'text' && typeof b.text === 'string' ? b.text : '')).filter(Boolean).join('\n')
 }
 
 // A model's usage as the log shows it: input counts input + cache_read + cache_creation. A bad field reads as 0.
@@ -115,6 +174,8 @@ async function settle($: any, kind: HandoffFor, threshold: number, outcome: stri
     ownResult = { outcome, tokens }
     return
   }
+  // the hook saw this one: the next turn end is not an unreported compaction
+  lastTokens = undefined
   let percent: number | null = null
   try {
     percent = (await readContext($)).percent ?? null
@@ -126,14 +187,7 @@ async function settle($: any, kind: HandoffFor, threshold: number, outcome: stri
 async function recapNow($: any): Promise<{ text: string; usage?: Usage } | { reason: string }> {
   const r = await $.model.fork({ prompt: RECAP_PROMPT })
   if (!r.isAnswered) return { reason: String(r.reason) }
-  try {
-    const root = await $.session.root()
-    const now = (await $.clock.now()) as number
-    await $.store.set(recapKey(root), makeRecap(r.text, now, await $.session.id()))
-    const kept = ((await $.store.get(lessonsKey(root))) as string[] | undefined) ?? []
-    const fresh = corrections(r.text)
-    if (fresh.length > 0) await $.store.set(lessonsKey(root), mergeLessons(kept, fresh))
-  } catch {}
+  await keepRecap($, r.text)
   return { text: r.text, usage: r.usage }
 }
 
@@ -154,32 +208,57 @@ async function onBoard($: any, to: BoardTab): Promise<boolean> {
   return true
 }
 
+async function keepGuidedRecap($: any) {
+  const text = summaryOf((await apiRows($)) ?? [])
+  if (text) await keepRecap($, text)
+}
+
+// At each main-loop turn end: fills in the after-tokens of the last compaction, and logs a compaction no hook
+// reported (the engine's, where the session.compact hook is bypassed) from the drop in context tokens.
+function noteTurnTokens($: any, percent: number | undefined, threshold: number, tokens: number | undefined) {
+  if (pendingAfter && tokens !== undefined) {
+    const p = pendingAfter
+    pendingAfter = undefined
+    // an unobserved one that dropped the context did compact: the guided path, its summary kept now
+    const seen = p.outcome === 'unobserved' && tokensDropped(p.tokensBefore, tokens)
+    logOutcome($, p.id, seen ? 'compacted:guided' : p.outcome, undefined, { tokensAfter: tokens })
+    if (seen) void keepGuidedRecap($)
+  } else if (tokensDropped(lastTokens, tokens)) {
+    const id = logDecision($, percent ?? null, threshold, 'auto-compact', 'pending')
+    logOutcome($, id, 'compacted:engine', undefined, { tokensBefore: lastTokens, tokensAfter: tokens, recapCalls: 0 })
+  }
+  lastTokens = tokens
+}
+
 export const register = (on: On, options: PluginOptions) => {
+  liveOptions = options
   on('command.run', { command: 'smart-compact' }, async ($, e) => {
     const current = thresholdOf(options)
-    const arg = e.args.trim().replace(/%$/, '')
-    if (arg === 'log') return { text: fmtLog(await readLog($), (await $.clock.now()) as number) }
-    if (!arg) {
+    const parsed = parseSmartCompactArgs(e.args)
+    const now = (await $.clock.now()) as number
+    const totals = async () => fmtArmTotals(armTotals(await readCompactions($)))
+    if (parsed.kind === 'log') return { text: [fmtLog(await readLog($), now), '', await totals()].join('\n') }
+    if (parsed.kind === 'status') {
       let context = 'context unknown'
       try {
         context = fmtContext(await readContext($), current)
       } catch {}
-      const lines = [
-        `recap + compact at ${current}%. Change it with /smart-compact <${MIN}-${MAX}>; /smart-compact log lists the checks.`,
-        fmtLastCheck(await readLog($), (await $.clock.now()) as number),
-        fmtStats(stats),
-        context,
-      ]
-      return { text: lines.join('\n') }
+      const head = enabledOf(options)
+        ? `handoff + compact at ${current}%. /smart-compact <${MIN}-${MAX}> sets it, off stops it, log lists the checks.`
+        : `off: the engine compacts alone (logged as the off arm). /smart-compact on turns it back on at ${current}%.`
+      return { text: [head, fmtLastCheck(await readLog($), now), fmtStats(stats), context, await totals()].join('\n') }
     }
-
-    const value = Number(arg)
-    if (!Number.isInteger(value) || value < MIN || value > MAX) {
-      return { text: `"${e.args.trim()}" is not a whole number from ${MIN} to ${MAX}; still ${current}%.` }
+    if (parsed.kind === 'off' || parsed.kind === 'on') {
+      const set = await $.config.set({ key: `${$.plugin.name}.${ENABLED_FIELD}`, value: parsed.kind === 'on' })
+      if (set.deny !== undefined) return { text: `not changed: ${set.deny}` }
+      return { text: parsed.kind === 'on' ? `on: handoff + compact at ${current}%.` : 'off: the engine compacts alone; its compactions are still logged.' }
     }
-    const set = await $.config.set({ key: `${$.plugin.name}.${THRESHOLD_FIELD}`, value })
+    if (parsed.kind === 'invalid') {
+      return { text: `"${e.args.trim()}" is not a whole number from ${MIN} to ${MAX}, log, on or off; still ${current}%.` }
+    }
+    const set = await $.config.set({ key: `${$.plugin.name}.${THRESHOLD_FIELD}`, value: parsed.value })
     if (set.deny !== undefined) return { text: `not changed: ${set.deny}` }
-    return { text: `recap + compact at ${value}% (was ${current}%).` }
+    return { text: `handoff + compact at ${parsed.value}% (was ${current}%).` }
   }).catch(($, e, next) => next(e))
 
   // /handoff [to]: a recap now, kept for the next start; with a session name or id, sent there too.
@@ -230,12 +309,17 @@ export const register = (on: On, options: PluginOptions) => {
     if ((await $.session.surfaces()).length === 0) return count('skipped:headless'), result
 
     let raw: number | undefined
+    let tokens: number | undefined
     try {
-      raw = (await readContext($)).percent ?? undefined
+      const ctx = await readContext($)
+      raw = ctx.percent ?? undefined
+      tokens = ctx.tokens
     } catch (err) {
       logDecision($, null, threshold, `usage-failed:${firstLine(err)}`)
       throw err
     }
+    noteTurnTokens($, raw, threshold, tokens)
+    if (!enabledOf(options)) return count('skipped:off'), result
     const percent = raw ?? 0
     if (percent < threshold) return logDecision($, raw, threshold, 'below'), result
 
@@ -248,7 +332,9 @@ export const register = (on: On, options: PluginOptions) => {
   // the compact, so no row arrives between the two. A person's /compact and a subagent's go on to the engine, as
   // does a handoff that cannot be made; our mark never reaches the summarizer as instructions.
   on('session.compact', async ($, e, next) => {
-    const kind = handoffFor(e)
+    const found = handoffFor(e)
+    // a precompute keeps the engine's own; off, the engine compacts alone
+    const kind = found === 'precompute' || !enabledOf(options) ? null : found
     const rows = e.messages ?? []
     if (!kind || !rows.length) return next(e)
     const engine = async (outcome: string) => {
@@ -299,12 +385,40 @@ function startRecapThenCompact($: any, raw: number | null | undefined, percent: 
     $.ui.status(`smart-compact: ${percent}% ≥ ${threshold}%, handing off`)
     // no compaction under a running turn: mid-turn, wait for it to end
     while (!turnEnded) await $.clock.sleep(500)
+    let tokensBefore: number | undefined
+    try {
+      tokensBefore = (await readContext($)).tokens
+    } catch {}
+    const rowsBefore = (await apiRows($))?.length
     ownResult = undefined
-    await $.command.run({ command: 'compact', args: COMPACT_MARK })
+    // The handoff sections ride along as instructions: where the session.compact hook is bypassed (a policy
+    // plugin that runs first), the engine's summarizer writes the handoff in its one call.
+    await $.command.run({ command: 'compact', args: HANDOFF_INSTRUCTIONS })
     // the hook set it during the await; read past the narrowing of the assignment above
-    const r: { outcome: string; tokens?: LogTokens } = (ownResult as typeof ownResult) ?? { outcome: 'compact-not-run' }
-    $.ui.toast(r.outcome.startsWith('compacted:recap') ? 'smart-compact: handed off and compacted' : `smart-compact: ${r.outcome}`)
-    logOutcome($, id, r.outcome, r.tokens)
+    const own = ownResult as typeof ownResult
+    let outcome: string
+    let extra: Partial<LogEntry>
+    if (own) {
+      outcome = own.outcome
+      extra = { tokensBefore: own.tokens?.before ?? tokensBefore, tokensAfter: own.tokens?.after, recapCalls: outcome.startsWith('compacted:recap') ? 1 : 0 }
+    } else {
+      const after = await apiRows($)
+      if (compactionSeen(rowsBefore, after?.length)) {
+        outcome = 'compacted:guided'
+        const text = summaryOf(after ?? [])
+        if (text) await keepRecap($, text)
+        extra = { tokensBefore, recapCalls: 0 }
+      } else {
+        // not seen yet: the next turn end decides it from the drop in context tokens
+        outcome = 'unobserved'
+        extra = { tokensBefore, recapCalls: 0 }
+      }
+    }
+    // the context after a compaction shows at the next turn end; until then this one waits for it
+    lastTokens = undefined
+    pendingAfter = extra.tokensAfter === undefined ? { id, outcome, tokensBefore } : undefined
+    $.ui.toast(outcome.startsWith('compacted') ? 'smart-compact: handed off and compacted' : `smart-compact: ${outcome}`)
+    logOutcome($, id, outcome, own?.tokens, extra)
   }
   void run().catch(err => logOutcome($, id, `error:${firstLine(err)}`)).finally(() => {
     $.ui.status(statusLine({}))
