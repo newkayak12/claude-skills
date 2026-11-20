@@ -169,6 +169,17 @@ def check_plugin(plugin_entry):
             if "modules" in codex_hooks:
                 err(f"{prefix} hooks/codex.json must not contain Claude-only modules")
 
+    # A hook command is a shell string: an unquoted plugin root splits at a space in the path
+    # (Orca's ~/Library/Application Support) and node is handed the wrong script.
+    for name in ("hooks.json", "codex.json"):
+        path = os.path.join(plugin_dir, "hooks", name)
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as f:
+            for lineno, line in enumerate(f, 1):
+                if re.search(r'"command":.*[^"\\]\$\{(CLAUDE_)?PLUGIN_ROOT\}', line):
+                    err(f"{prefix} hooks/{name}:{lineno} quote the plugin root in a hook command")
+
     # 3a. README title version (only when README embeds one, e.g. "# portfolio (v1.1.8)")
     readme_path = os.path.join(plugin_dir, "README.md")
     if plugin_version and os.path.exists(readme_path):
