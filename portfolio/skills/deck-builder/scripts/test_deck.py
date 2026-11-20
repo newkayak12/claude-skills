@@ -628,6 +628,25 @@ def sizing(tmp):
           "effective dpi is measured against the frame, not the file")
 
 
+def facts(tmp):
+    """A redraw keeps every word of the old figure somewhere: the figure, the slide's text or notes."""
+    print("figure facts")
+    old = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50">'
+           '<text x="1" y="10">① 별도 망에서 DB에 따로 접근</text>'
+           '<text x="1" y="20">· 콜백·재시도 몰림이 애플리케이션에 바로 닿음</text></svg>').encode()
+    lines = deck.svg_text_lines(old)
+    check(lines == ["① 별도 망에서 DB에 따로 접근", "· 콜백·재시도 몰림이 애플리케이션에 바로 닿음"],
+          "each <text> is one line of what the figure says: %s" % lines)
+    words = [w for w, _ in deck.fact_words(lines[1])]
+    check("재시도" in words and "닿음" not in words,
+          "재시도 keeps its last syllable; a predicate (닿음) is no fact word: %s" % words)
+    gone = deck.missing_facts(lines, "① 별도 망에서 DB 따로 접근\n③ 동기 호출로 몰림 전달 애플리케이션 콜백")
+    check(len(gone) == 1 and gone[0][1] == ["재시도", "바로"],
+          "a merged bullet that kept 콜백 but not 재시도 is reported: %s" % gone)
+    check(deck.missing_facts(lines, "① 별도 망 DB 따로 접근 콜백 재시도 몰림 애플리케이션 바로") == [],
+          "words kept without their particles count as kept")
+
+
 def color(tmp):
     """Two ways a picture clashes: off-palette, or a pasted box."""
     print("image color")
@@ -1192,6 +1211,15 @@ def spilling(tmp):
           % deck.pt(lots[0]))
     check(deck.SPILL_SLACK >= 1,
           "the slack is stated in the engine, not hidden in a comparison")
+    top = lots[0]
+    body.anchor = "ctr"
+    mid = deck.spill(body, list(body.sample) + ["다다"] * 5)
+    body.anchor = "b"
+    up = deck.spill(body, list(body.sample) + ["다다"] * 5)
+    body.anchor = None
+    check(abs(mid[0] - top // 2) <= 1 and up[0] == 0,
+          "a centre-anchored frame runs half its extra lines lower, a bottom-anchored one none: %s %s %s"
+          % (top, mid[0], up[0]))
 
     print("what the overrun runs into")
     hit = deck.shapes_below(body, slots, 2000000)
@@ -2206,6 +2234,7 @@ def main():
         geometry(tmp)
         sizing(tmp)
         color(tmp)
+        facts(tmp)
         widths(tmp)
         vector_invariant(tmp)
         one_line_slots(tmp)

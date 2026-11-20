@@ -148,7 +148,11 @@ Every session in the workspace starts with `manage.mjs scaffold`, unasked: it re
 to these, creates only what is missing, CLAUDE.md included, and never overwrites a file. A CLAUDE.md
 that is already there (a renamed README too) keeps its text and gets the guide appended once.
 
-Nine steps (3.2.10: generated art takes the template's colours as it uses them — catalog lists
+Nine steps (3.2.11: `deck.py facts` lists every word of a figure's old copy found nowhere in the
+redraw or its slide's text and notes, and Step 3b redraws until it prints none; `check` reads each
+frame as the template sets it (no-wrap slots, centre/bottom anchors, the footnote band, template
+labels, placed pictures), 46 false warnings to 11 on a finished deck;
+3.2.10: generated art takes the template's colours as it uses them — catalog lists
 lighter 40/60/80% tints, boxes are filled with a tint, emphasis uses the slides' own accent or bold,
 and `check` warns on text, lines or boxes painted in a loud colour the slides barely use;
 3.2.9: deck-builder Step 3b redraws generated art until `check` shows no figure-text

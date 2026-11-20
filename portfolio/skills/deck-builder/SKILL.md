@@ -119,6 +119,11 @@ output, so that warning is not a judgment call. Redraw the figure until `check` 
 "스킬을 갈고 닦는 건데"). Shorten words, never facts: before redrawing, list what the figure says —
 each step, number, name, lane, column, warning and its marks (①②③) — and after, tick each one off
 in the new figure; a fact with no room moves into the slide's text or `notes:`, it is not dropped.
+Keep a copy of each figure before redrawing it, and after, run `deck.py facts --deck deck.mdx
+--before <copy> --after <assets/x.svg>`: it lists every word of the old figure found nowhere in the
+new one or its slide's text and notes. Put each back, or move it to text or `notes:`, until it
+prints none, or report why a listed word was no fact (blind bench 2026-11-20: a merged bullet lost
+"콜백·재시도" though the redraw's own list called it kept).
 Then look at the rendered page: no label may touch or cross its box's edge (blind bench 2026-11-19:
 the first redraw read better on 32 of 36 judgments but every loss was a dropped step, lane or
 warning, and one label clipped). `render` raising text in the raster copy only saves what was missed; its `!`

@@ -955,6 +955,7 @@ class Slot:
         self.box = None          # (x, y, cx, cy) in EMU, when the shape carries one
         self.z = 0               # document order: later shapes paint over earlier ones
         self.color_ref = None    # ("srgb", hex) | ("scheme", name) for the first run
+        self.anchor = None       # bodyPr anchor: None/"t" grows down, "ctr" both ways, "b" up
         self.font = None         # Font for Latin text, when the file was found
         self.ea_font = None      # Font for East Asian text
         self.face = ""           # the typeface the slide asks for, as written
@@ -1146,7 +1147,19 @@ def analyze_slide(root, slide_cy=None):
             if off:
                 slot.off_y = off[1]
                 if slide_cy:
-                    slot.fits = max(1, (slide_cy - slot.off_y) // slot.line_h)
+                    # where extra lines go: down from the top (anchor t), both ways from the middle
+                    # (ctr), or up from the bottom (b) — a centre-anchored footnote's third line is
+                    # not cut off (page 8, 2026-11-20: check said "only 2 clear", all 3 showed)
+                    body = txBody.find(q("a:bodyPr"))
+                    how = slot.anchor = body.get("anchor") if body is not None else None
+                    cy = slot.box[3] if slot.box else 0
+                    if how == "ctr" and cy:
+                        room = 2 * (slide_cy - slot.off_y - cy // 2)
+                    elif how == "b" and cy:
+                        room = slot.off_y + cy
+                    else:
+                        room = slide_cy - slot.off_y
+                    slot.fits = max(1, room // slot.line_h)
             slots.append(slot)
         elif el.tag == q("p:pic"):
             slot = Slot(next_id("pic"), "picture", path, name)
@@ -2203,7 +2216,10 @@ def spill(slot, items):
         return None
     lines = wrapped_lines(slot, items)
     extra = lines - slot.proto_lines - (SPILL_SLACK if slot.estimated else 0)
-    return (max(0, extra) * slot.line_h, lines, slot.proto_lines)
+    # a centre-anchored frame puts half its extra lines above, a bottom-anchored one all of them;
+    # what grows up is render's critical-zone measure (fit_zones "up"), not a spill below
+    down = {"ctr": 0.5, "b": 0.0}.get(slot.anchor, 1.0)
+    return (int(max(0, extra) * slot.line_h * down), lines, slot.proto_lines)
 
 
 def shapes_below(slot, slots, over_emu):
@@ -4265,6 +4281,9 @@ def cmd_check(args):
     catalog = {"s%d" % i: analyze_slide(ET.fromstring(pkg.parts[n]), slide_cy)
                for i, n in enumerate(protos, 1)}
     zones = template_zones(pkg, protos, slide_cy)
+    safe_bottom = safe_bottom_pt(md_path, slide_cy)
+    area = safe_area(md_path.resolve().parent) or safe_area(md_path.resolve().parent.parent)
+    safe_right = slide_size(pkg)[0] / EMU_PER_PT - (area["right"] if area else 28.0)
     # A slot holding exactly the template's own content: what it warns is the template's.
     own_values, own_lines = template_values(pkg, protos, slide_cy), set()
 
@@ -4428,7 +4447,17 @@ def cmd_check(args):
                     no_font.add(slot.face)
                 for lvl, text in seen_items(kind, value):
                     wide = slot_em(slot, text)
-                    if one_line and wide > slot.max_em * 1.05:
+                    if slot.wrap == "none":
+                        # never wraps: the frame grows sideways (spAutoFit), so the only failure is
+                        # running past the safe area's right edge (2026-11-20: 6 of 7 "drops onto a
+                        # second" warnings were such slots, every one rendered on one line)
+                        if slot.box and slot.size_pt:
+                            end = pt(slot.box[0]) + wide * slot.size_pt
+                            if end > safe_right:
+                                warns.append("line %d: %s.%s — this slot does not wrap, and the line "
+                                             "runs %.0fpt past the safe area's right edge: %r"
+                                             % (line, tag, slot_id, end - safe_right, truncate(text, 34)))
+                    elif one_line and wide > slot.max_em * 1.05:
                         warns.append("line %d: %s.%s — the template keeps this slot to one "
                                      "line and this is %.0f%% too wide for it, so it drops "
                                      "onto a second: %r"
@@ -4456,7 +4485,18 @@ def cmd_check(args):
                                  "clear the bottom of the slide; the rest is cut off unless "
                                  "the shape shrinks text to fit"
                                  % (line, tag, slot_id, nlines, slot.fits))
-            if slot.type in ("text", "list") and (slot.proto_vol or 0) >= UNDERFILL_FLOOR:
+            # no hole where the room is taken: a `panel_margin:` deck moves the picture under the
+            # text up to it, and a footnote band at the slide's bottom is short by nature (2026-11-20:
+            # pages 11 and 19 warned, both rendered full)
+            filled = slot.box and (
+                pt(slot.box[1] + slot.box[3]) >= safe_bottom
+                or (front.get("panel_margin", "").strip() and any(
+                    o.type == "picture" and o.box and o.id not in dropped
+                    and any(v[0] == o.id for v in spec.values)
+                    and o.box[1] >= slot.box[1] + slot.box[3]
+                    and o.box[0] < slot.box[0] + slot.box[2] and slot.box[0] < o.box[0] + o.box[2]
+                    for o in slots)))
+            if slot.type in ("text", "list") and (slot.proto_vol or 0) >= UNDERFILL_FLOOR and not filled:
                 mine = sum(slot_em(slot, t) for _, t in seen_items(kind, value))
                 if mine < slot.proto_vol * UNDERFILL_RATIO:
                     warns.append("line %d: %s.%s — %.0f%% of the text the template puts "
@@ -4472,6 +4512,12 @@ def cmd_check(args):
                     where = (" straight into %s" % ", ".join(o.id for o in into[:2])
                              if into else " into the space below it")
                     say = errs if into else warns
+                    # the bottom band (a footnote whose own frame already sits past the safe area,
+                    # nothing under it): more lines there still clear the slide — the fits check
+                    # says when they do not; not a spill (pages 7·8·16, 2026-11-20)
+                    if not into and slot.box and slot.fits and lines <= slot.fits \
+                            and pt(slot.box[1] + slot.box[3]) >= safe_bottom:
+                        say = []
                     if isinstance(was, float):   # a `place:` h= frame, measured on its own height
                         say.append("line %d: %s.%s — %d lines where the placed frame holds %.1f, "
                                    "so it runs %.0fpt past the frame%s. Cut a line, or give `place:` "
@@ -4498,8 +4544,18 @@ def cmd_check(args):
                              "are cloned and may run past the frame"
                              % (line, tag, slot_id, len(value), slot.max_items))
         # Text the template itself leaves empty is not content a deck forgot to set.
-        untouched = [s.id for s in slots if s.id not in seen and s.type != "chart"
-                     and (s.type == "picture" or (spec.archetype, s.id) in own_values)]
+        # A short label the template prints (문제, 해결, 참여 인원) is its design, kept on purpose; a
+        # sentence, a number or a date left behind is sample content (2026-11-20: 22 warnings on a
+        # finished deck, every one a label)
+        def label(s):
+            if s.type not in ("text", "title", "subtitle") or len(s.sample or []) > 1:
+                return False
+            txt = " ".join(x for x in (s.sample or []) if isinstance(x, str))
+            return len(txt.strip()) <= 12 and not re.search(r"\d", txt)
+        placed_ids = {p[0] for sid, kind, value, _ in spec.values if sid == "place"
+                      for p in parse_place(kind, value)[0]}
+        untouched = [s.id for s in slots if s.id not in seen and s.type != "chart" and s.id not in placed_ids
+                     and (s.type == "picture" or ((spec.archetype, s.id) in own_values and not label(s)))]
         if untouched:
             warns.append("%s: keeps template content for %s" % (tag, ", ".join(untouched)))
         charts = [s.id for s in slots if s.id not in seen and s.type == "chart"]
@@ -5031,6 +5087,85 @@ def panel_floors(xml_text, pptx, gap_pt=TEXT_GAP_PT):
     return out
 
 
+FACT_PARTICLES = ("에서", "으로", "까지", "부터", "에게", "이", "가", "을", "를", "은", "는", "에",
+                  "의", "로", "와", "과", "도", "만")
+
+
+def svg_text_lines(data):
+    """Each <text> element's words, in order: what a figure says."""
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError:
+        return []
+    out = []
+    for t in root.iter("{http://www.w3.org/2000/svg}text"):
+        s = " ".join("".join(t.itertext()).split())
+        if s:
+            out.append(s)
+    return out
+
+
+# a Hangul word ending so is a predicate (있음, 정함, 나눈다, 쥐고): rewording changes it, so its loss
+# alone is no lost fact
+PREDICATE_END = re.compile(r"[가-힣]*(다|음|함|됨|짐|김|님|고|며|면|요|임)$")
+
+
+def fact_words(line):
+    """[(word, stem)] a reader would miss: runs of Hangul, Latin or digits of 2+ characters with a
+    trailing particle taken off for the stem (몰림이 → 몰림), circled step marks (①) kept, predicates
+    left out."""
+    words = []
+    for w in re.findall(r"[0-9A-Za-z가-힣%.]+|[①-⑳]", line):
+        w = w.strip(".")
+        if len(w) < 2 and not re.fullmatch(r"[①-⑳]", w):
+            continue
+        if re.fullmatch(r"[가-힣]+", w) and PREDICATE_END.fullmatch(w):
+            continue
+        stem = w
+        for p in FACT_PARTICLES:
+            if len(w) > len(p) and w.endswith(p):      # DB에, 애플리케이션에
+                stem = w[:-len(p)]
+                break
+        words.append((w, stem))
+    return words
+
+
+def missing_facts(before_lines, after_text):
+    """[(line, [missing words])] — every word of the old figure found in neither the new figure nor
+    the slide's own text and notes (as written or without its particle). A paraphrase that keeps no
+    word of a fact shows up here; whether a listed word is truly lost is for the redraw to settle."""
+    hay = re.sub(r"\s+", "", after_text)
+    out = []
+    for line in before_lines:
+        gone = [w for w, stem in fact_words(line) if w not in hay and stem not in hay]
+        if gone:
+            out.append((line, gone))
+    return out
+
+
+def cmd_facts(args):
+    """Old figure vs redrawn figure: the words that survive nowhere (card: Step 3b facts kept)."""
+    md_path = require_deck(args.deck)
+    _, specs, _ = parse_deck(md_path.read_text(encoding="utf-8"))
+    after = Path(args.after)
+    before_lines = svg_text_lines(Path(args.before).read_bytes())
+    texts = svg_text_lines(after.read_bytes())
+    for spec in specs:
+        vals = [v for _, _, v, _ in spec.values]
+        flat = [x for v in vals for x in (v if isinstance(v, list) else [v]) if isinstance(x, str)]
+        if any(after.name in x for x in flat):
+            texts += flat
+    gone = missing_facts(before_lines, "\n".join(texts))
+    if not gone:
+        print("facts: every word of %s is in %s or its slide's text and notes" % (Path(args.before).name, after.name))
+        return 0
+    print("facts: %d line(s) of %s lost words — put each back in the figure, or in the slide's text or "
+          "notes:, or say why it was not a fact" % (len(gone), Path(args.before).name))
+    for line, words in gone:
+        print("  %s  ← missing: %s" % (line, ", ".join(words)))
+    return 1
+
+
 def cmd_shapes(args):
     """deck.mdx -> JSON: each page's template shape names and the slot each one is.
 
@@ -5102,6 +5237,12 @@ def main(argv=None):
     s.add_argument("--template", help="overrides the front matter; one is always required")
     s.add_argument("--pages", help="comma-separated deck pages, default all")
     s.set_defaults(func=cmd_shapes)
+
+    f = sub.add_parser("facts", help="old figure vs redrawn one: words that survive nowhere")
+    f.add_argument("--deck", required=True, metavar="deck" + DECK_EXT)
+    f.add_argument("--before", required=True, help="the figure as it was (a copy kept before the redraw)")
+    f.add_argument("--after", required=True, help="the redrawn figure, as deck.mdx names it")
+    f.set_defaults(func=cmd_facts)
 
     args = ap.parse_args(argv)
     return args.func(args)

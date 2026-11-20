@@ -113,6 +113,13 @@ real deck lone commas 316 → 0, engine version printed).
       Colour (3.2.10, user 2026-11-20 "도식내 빨간글자 존나 조화롭지 못하네"): catalog tints, check warns
       on loud text/lines/boxes; a skill-only run took 27 colour warnings to 0; blind 16 pages vs the
       pick 32 better, 0 worse (colour notes all low, P judged harsher).
+      Facts and check (3.2.11): `deck.py facts` old-vs-new word check in Step 3b; check reads anchors,
+      no-wrap slots, footnote band, labels, placed pictures (46 → 11 warnings, render clean). Skill-only
+      run from the original copy: 105 → 11 warnings, facts clean on all 40 figures; blind 18 pages vs
+      the pick 35 better, 1 worse (19: right flow text squeezed), 0 same.
+    - Left: facts moved to `notes:` do not show on the page — judges still read page 7's step
+      sub-lines and metric note as dropped (medium). Acceptance: Step 3b prefers slide text over
+      `notes:` for a fact a reader of the PDF needs, and a blind re-run of page 7 shows no dropped fact.
 
 153. **The deck render is checked against PowerPoint, and the 3.2.0 audits catch what they missed**
     - Why: after portfolio 3.2.0 (2026-11-14) the deck renderer is checked only against Word's saved

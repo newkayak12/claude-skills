@@ -53,6 +53,14 @@ neighbours share at least half of the smaller cross extent. Gaps are grouped by 
 Shapes that overlap or share a group are one unit — the outermost outline around them
 (`외곽선(n개 도형: …)`) — since their own gaps say nothing.
 
+`check` reads each text frame as the template sets it: a `wrap="none"` slot never wraps (its frame
+grows sideways), so it warns only when a line would pass the safe area's right edge; extra lines
+of a centre-anchored frame go half up and half down, of a bottom-anchored one all up; a footnote
+band already past the safe bottom with nothing under it is not a spill; a short label the template
+prints (문제, 참여 인원) and a `place:`d picture are not "template content"; and a short slot whose room a
+`panel_margin:` picture takes is no hole. On a finished 31-page deck this took 46 warnings to 11
+with render clean, and the unfinished copy still shows its 40 figure-text warnings (2026-11-20).
+
 `check` warns `임계 침범` when a slot's extra lines leave less than the zone before the shape
 below. A `| fit` picture shrinks inside its frame and so never enters a zone.
 `render` reads the rendered lines: `zone` when a frame's text runs past it (either way — a
