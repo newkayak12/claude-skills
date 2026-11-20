@@ -124,7 +124,13 @@ Keep a copy of each figure before redrawing it, and after, run `deck.py facts --
 new one or its slide's text and notes. Put each back, or move it to text or `notes:`, until it
 prints none, or report why a listed word was no fact (blind bench 2026-11-20: a merged bullet lost
 "콜백·재시도" though the redraw's own list called it kept).
-Then look at the rendered page: no label may touch or cross its box's edge (blind bench 2026-11-19:
+`notes:` never reach the page. A fact a reader of the PDF needs — a step's sub-line, a metric to
+watch, a state the figure shows ("송신·수신 모두 운영 중") — stays on the slide: in the figure at a
+smaller weight, a caption line, or the panel's text. `notes:` take only what a presenter would say
+aloud on top (blind bench 2026-11-20: page 7's step sub-lines and metric line moved to notes read
+as dropped to both judges).
+Then look at the rendered page: no label may touch or cross its box's edge (`check` warns on one
+within 1pt of it) (blind bench 2026-11-19:
 the first redraw read better on 32 of 36 judgments but every loss was a dropped step, lane or
 warning, and one label clipped). `render` raising text in the raster copy only saves what was missed; its `!`
 lines (`labels fit their boxes only up to`) send the figure back here.

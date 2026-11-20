@@ -117,9 +117,10 @@ real deck lone commas 316 → 0, engine version printed).
       no-wrap slots, footnote band, labels, placed pictures (46 → 11 warnings, render clean). Skill-only
       run from the original copy: 105 → 11 warnings, facts clean on all 40 figures; blind 18 pages vs
       the pick 35 better, 1 worse (19: right flow text squeezed), 0 same.
-    - Left: facts moved to `notes:` do not show on the page — judges still read page 7's step
-      sub-lines and metric note as dropped (medium). Acceptance: Step 3b prefers slide text over
-      `notes:` for a fact a reader of the PDF needs, and a blind re-run of page 7 shows no dropped fact.
+      Page facts (3.2.12): reader-needed facts stay on the slide, not `notes:`; check warns on a label
+      within 1pt of its box; facts counts bullet lists and sibling figures. Skill-only run: 105 → 11,
+      1 fact to notes (was 9 slides); blind 18 pages vs the pick 36 better, 0 worse — pages 7 and 19
+      no dropped fact or clipped label.
 
 153. **The deck render is checked against PowerPoint, and the 3.2.0 audits catch what they missed**
     - Why: after portfolio 3.2.0 (2026-11-14) the deck renderer is checked only against Word's saved

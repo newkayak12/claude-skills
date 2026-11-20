@@ -4166,6 +4166,53 @@ def _check_picture_color(path, tag, slot_id, line, warns, palette, background,
                      "match it." % (line, tag, slot_id, path.name, border, background))
 
 
+TIGHT_UNITS = 1.0   # SVG units; figures are drawn at frame pt, so this is about 1pt on the page
+
+
+def svg_tight_labels(data):
+    """Texts of the labels whose estimated box ends within TIGHT_UNITS of their own box's edge.
+
+    The box is the smallest <rect> holding the label's centre, background-sized rects aside — the
+    same reading enlarge_svg_text uses. A label sitting on its arrow or with no box is left out
+    (2026-11-20, page 19: four lines in a 40-unit box, the last 0.9 above its edge, judged clipped)."""
+    ns = "{http://www.w3.org/2000/svg}"
+    try:
+        root = ET.fromstring(data)
+        vw, vh = (float(v) for v in re.split(r"[,\s]+", (root.get("viewBox") or "").strip())[2:4])
+    except (ET.ParseError, ValueError):
+        return []
+
+    def num(el, k, d=None):
+        try:
+            return float(el.get(k))
+        except (TypeError, ValueError):
+            return d
+    rects = []
+    for r in root.iter(ns + "rect"):
+        x, y, w, h = num(r, "x", 0.0), num(r, "y", 0.0), num(r, "width"), num(r, "height")
+        if w and h and w * h < 0.8 * vw * vh:
+            rects.append((x, y, w, h))
+    out = []
+    for t in root.iter(ns + "text"):
+        s, x, y = num(t, "font-size"), num(t, "x"), num(t, "y")
+        body = " ".join("".join(t.itertext()).split())
+        if s is None or x is None or y is None or not body or t.get("transform"):
+            continue
+        w = _text_em(body) * s
+        x0 = {"middle": x - w / 2, "end": x - w}.get(t.get("text-anchor") or "start", x)
+        box = (x0, y - 0.8 * s, x0 + w, y + 0.2 * s)
+        cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+        holder = min((r for r in rects if r[0] <= cx <= r[0] + r[2] and r[1] <= cy <= r[1] + r[3]),
+                     key=lambda r: r[2] * r[3], default=None)
+        if not holder:
+            continue
+        gaps = (box[0] - holder[0], holder[0] + holder[2] - box[2],
+                box[1] - holder[1], holder[1] + holder[3] - box[3])
+        if min(gaps) < TIGHT_UNITS:
+            out.append(body)
+    return out
+
+
 def _check_figure_text(path, slot, tag, slot_id, line, warns, mode="fill"):
     """An SVG's smallest text, at the size the frame shows it, under SVG_MIN_PT is a warning."""
     if path.suffix.lower() != ".svg" or not slot.frame_pt:
@@ -4175,6 +4222,12 @@ def _check_figure_text(path, slot, tag, slot_id, line, warns, mode="fill"):
         warns.append("line %d: %s.%s — figure text ~%.1fpt at this size (under %gpt) — enlarge "
                      "the picture, cut the figure's text, or redraw it larger"
                      % (line, tag, slot_id, small, SVG_MIN_PT))
+    tight = svg_tight_labels(path.read_bytes())
+    if tight:
+        warns.append("line %d: %s.%s — %s: %d label(s) end within %gpt of their own box's edge, so they "
+                     "read squeezed or clipped (%s) — fewer lines, a wider or taller box, or a smaller "
+                     "sub-line" % (line, tag, slot_id, path.name, len(tight), TIGHT_UNITS,
+                                   "; ".join(repr(t) for t in tight[:3])))
 
 
 def _check_picture_size(path, slot, tag, slot_id, line, warns, mode="fill"):
@@ -5151,10 +5204,24 @@ def cmd_facts(args):
     before_lines = svg_text_lines(Path(args.before).read_bytes())
     texts = svg_text_lines(after.read_bytes())
     for spec in specs:
-        vals = [v for _, _, v, _ in spec.values]
-        flat = [x for v in vals for x in (v if isinstance(v, list) else [v]) if isinstance(x, str)]
-        if any(after.name in x for x in flat):
+        # the slide's text as a reader sees it (bullet lists included), plus the other figures on
+        # the same slide (2026-11-20: a bullet holding '배치' and a sibling figure holding a moved
+        # sentence were not counted)
+        flat, figs = [], []
+        for _, kind, v, _ in spec.values:
+            if isinstance(v, str) and v.strip().lower().split("|")[0].strip().endswith(".svg"):
+                figs.append(v.split("|")[0].strip())
+                continue
+            try:
+                flat += [t for _, t in seen_items(kind, v)]
+            except Exception:
+                flat += [v] if isinstance(v, str) else []
+        if any(Path(f).name == after.name for f in figs):
             texts += flat
+            for f in figs:
+                p = Path(f) if Path(f).is_absolute() else md_path.parent / f
+                if p.name != after.name and p.is_file():
+                    texts += svg_text_lines(p.read_bytes())
     gone = missing_facts(before_lines, "\n".join(texts))
     if not gone:
         print("facts: every word of %s is in %s or its slide's text and notes" % (Path(args.before).name, after.name))

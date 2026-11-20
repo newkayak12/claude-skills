@@ -148,7 +148,10 @@ Every session in the workspace starts with `manage.mjs scaffold`, unasked: it re
 to these, creates only what is missing, CLAUDE.md included, and never overwrites a file. A CLAUDE.md
 that is already there (a renamed README too) keeps its text and gets the guide appended once.
 
-Nine steps (3.2.11: `deck.py facts` lists every word of a figure's old copy found nowhere in the
+Nine steps (3.2.12: Step 3b keeps a fact a PDF reader needs on the slide, not in `notes:`; `check`
+warns on a figure label within 1pt of its own box's edge; `facts` counts the slide's bullet lists and
+the other figures on the same slide;
+3.2.11: `deck.py facts` lists every word of a figure's old copy found nowhere in the
 redraw or its slide's text and notes, and Step 3b redraws until it prints none; `check` reads each
 frame as the template sets it (no-wrap slots, centre/bottom anchors, the footnote band, template
 labels, placed pictures), 46 false warnings to 11 on a finished deck;

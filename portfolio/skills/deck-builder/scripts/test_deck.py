@@ -647,6 +647,21 @@ def facts(tmp):
           "words kept without their particles count as kept")
 
 
+def tight(tmp):
+    """A label pressed to its own box's edge reads clipped (page 19, 2026-11-20)."""
+    print("tight labels")
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 80">'
+           '<rect x="0" y="0" width="200" height="80" fill="#FFFFFF"/>'
+           '<rect x="10" y="10" width="66" height="40"/>'
+           '<text x="43" y="19" font-size="8.5" text-anchor="middle">순서 잠금</text>'
+           '<text x="43" y="48.4" font-size="8.5" text-anchor="middle">넘김</text>'
+           '<rect x="100" y="10" width="66" height="40"/>'
+           '<text x="133" y="33" font-size="8.5" text-anchor="middle">재고 확인</text>'
+           '<text x="5" y="70" font-size="8.5">상자 밖 캡션</text></svg>').encode()
+    got = deck.svg_tight_labels(svg)
+    check(got == ["넘김"], "only the line within 1 unit of its box's bottom is tight: %s" % got)
+
+
 def color(tmp):
     """Two ways a picture clashes: off-palette, or a pasted box."""
     print("image color")
@@ -2235,6 +2250,7 @@ def main():
         sizing(tmp)
         color(tmp)
         facts(tmp)
+        tight(tmp)
         widths(tmp)
         vector_invariant(tmp)
         one_line_slots(tmp)
