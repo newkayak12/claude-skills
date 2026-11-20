@@ -452,6 +452,9 @@ export type PhaseEntry = SummaryTaskEntry & { phase_handoffs?: Record<string, Ha
 export type DecisionX = Decision & { phase?: string; actor_key?: string; text_key?: string; text_vars?: Vars; reason_key?: string; reason_vars?: Vars }
 export type LogRow = { ts: number; time: string; node: string | null; state: string; what_key: string; numbers: Record<string, string | number | null>; note: string | null }
 type FlowCell = { state: Mark; score?: number; threshold?: number | null; reason?: string }
+// the bus as view-bus.mjs hands it over (card 126): one thread per sub-topic, messages newest last; a payload without the key has none
+export type ThreadMessage = { from: string; to: string; body: string; ts: number; time: string }
+export type StoryThread = { topic: string; story: string; messages: ThreadMessage[] }
 // `view.mjs --once --format story` (lib/view-story.mjs): states are the four marks, labels keys and numbers
 export type StoryPayload = {
   task_id: string; story: string; missing?: boolean; state: string; attempt: number | null
@@ -460,6 +463,7 @@ export type StoryPayload = {
   grid: { stages: string[]; attempts: { attempt: number; cells: Record<string, FlowCell | null> }[] }
   participants: { source: string; total: { kind: string; model?: string | null; n: number }[]; live: { kind: string; model?: string | null; n: number }[] }
   workers: SummaryWorker[]; log: LogRow[]
+  threads?: StoryThread[]
 }
 // `--format story-report`: sections are [{ key: result|verdict|files|decisions|left|seeLog, lines }], `text` the engine's file
 // `verdict` is the engine's numbers (null where it has none) so the pane parses no key=value line
@@ -636,6 +640,31 @@ export function storyNow(p: StoryPayload | null, o: PageOpts, inner: number): Li
   if (p === null || p.missing === true) return []
   const running = runningRows(p.workers, o)
   return running.length === 0 ? [] : [head(o.say('f2StoryNow')), ...table(running.map(r => r.cells), running.map(r => r.tints), inner, [3])]
+}
+
+// a bus key as a person reads it: `E-xxxxxxxx/P2` is P2, the person is `you` (the same word the asks use), the rest as stored
+const busName = (key: string, say: Say) => (/^E-[^/]+\/(.+)$/.exec(key)?.[1] ?? (key === 'person' ? say('wordYou') : key === 'teamleader' ? 'TeamLeader' : key))
+
+// the bus threads of a STORY: a heading, then per thread its sub-topic (`P2`, `all`) and one message per line, from · -> · to · body ·
+// time, newest last. The columns are measured over every thread so they align across them; only the body gives way, cut with …
+export function storyThreads(p: StoryPayload | null, say: Say, inner: number): Line[] {
+  const threads = p === null || p.missing === true ? [] : (p.threads ?? []).filter(t => t.messages.length > 0)
+  if (threads.length === 0) return []
+  // a narrow pane keeps the clock and drops the date before the body is left with a few cells
+  const rowsOf = (short: boolean) => threads.map(t => t.messages.map(m => [busName(m.from, say), '->', busName(m.to, say), oneLine(m.body), short ? m.time.replace(/^\S+ /, '') : m.time]))
+  const room = inner - INDENT.t.length
+  let rows = rowsOf(false)
+  let widths = columnWidths(rows.flat(), room, 2, [3], 4)
+  if (widths[3]! < Math.min(16, Math.max(...rows.flat().map(r => width(r[3]!))))) {
+    rows = rowsOf(true)
+    widths = columnWidths(rows.flat(), room, 2, [3], 4)
+  }
+  const out: Line[] = [head(say('storyThreads'))]
+  threads.forEach((t, i) => {
+    out.push([INDENT, { t: t.story, dim: true }])
+    for (const r of rows[i]!) out.push([INDENT, ...rowLine(r, widths, 2, ['claude', 'dim', undefined, undefined, 'dim'])])
+  })
+  return out
 }
 
 // STORY detail's selectable rows: the ask the person can answer, the Log, the Report

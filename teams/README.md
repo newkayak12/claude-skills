@@ -410,6 +410,12 @@ A question forwarded to the person waits until someone answers it; with nobody a
 ![status-band-ask](docs/images/status-band-ask.png)
 The band when a running STORY's question is forwarded to you (live capture, fixture repo): the question leads the row with a `⚑` and the EPIC key until you answer it with `tm_submit`, and the STORY's driver is parked, at no cost, until then.
 
+![status-band-message](docs/images/status-band-message.png)
+The band when a message to you is unread (live capture, fictional repo): a `✉ <who> -> you: <text>` row sits under the run row, cut with `…` when long. It stays until you post or submit later than the message; opening the pane does not clear it.
+
+![pane-threads](docs/images/pane-threads.png)
+A STORY page's Messages section (live capture, fictional repo): one line per message — from, `->`, to, text, time — columns aligned, newest last, the STORY's own thread first and `all` (broadcasts) as its own thread. A long text ends in `…`; in a narrow pane the date drops and the clock stays. It reads `node teams/scripts/view.mjs --once`, which prints the same threads.
+
 ![pane-epics](docs/images/pane-epics.png)
 The EPIC list at the top of the pane: one row per open EPIC — key, title, state, progress and age, columns aligned for Korean and English titles; at a narrow width the age and count drop before the title is cut.
 

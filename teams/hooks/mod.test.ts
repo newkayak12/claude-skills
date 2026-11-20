@@ -4484,3 +4484,104 @@ test('card 125 leftovers demo renders', () => {
   for (const name of last.keys()) expect(name).toMatch(/^demo-[a-z]+-\d+$/)
   for (const [name, lines] of last) console.log(`=== ${name} ===\n${lines.join('\n')}\n=== end ===`)
 })
+
+// ---- card 126 (F1-US-6): the bus threads on the STORY page and the person's unread notice in the band. Fictional data. ----
+const THREAD_LONG = 'Use the fixtures on the integration branch and do not copy them into the package, because the schema freeze starts after the gate passes and a copy would drift'
+const THREADS_S2 = [
+  { topic: 'E-3f9a2c11/S2', story: 'S2', messages: [
+    { from: 'E-3f9a2c11/S2', to: 'teamleader', body: 'Which branch holds the shared fixtures?', ts: 1, time: '2026-05-04 14:02' },
+    { from: 'teamleader', to: 'E-3f9a2c11/S2', body: THREAD_LONG, ts: 2, time: '2026-05-04 14:05' },
+  ] },
+  { topic: 'E-3f9a2c11/all', story: 'all', messages: [
+    { from: 'teamleader', to: 'all', body: 'Schema freeze after the gate', ts: 3, time: '2026-05-04 14:09' },
+  ] },
+]
+const THREADS_FIXTURE = (threads?: unknown): Data => PAGES_FIXTURE({ stories: { S2: threads === undefined ? S2_PAYLOAD : { ...S2_PAYLOAD, threads } } })
+const NOTICE = { task_id: '3f9a2c11-0001', kind: 'message', from: 'E-3f9a2c11/P2', who: 'P2', body: 'Which branch holds the shared fixtures?', ts: 5, text: '✉ P2 -> you: Which branch holds the shared fixtures?' }
+
+for (const surface of SURFACES) {
+  for (const cols of [190, 110]) {
+    test(`card 126 ${surface} at ${cols}: STORY page draws one line per message (from -> to, body, time), the broadcast thread apart, newest last, a long body ends in …`, async ($, on) => {
+      const { lines } = await homeLines($, on, cols, THREADS_FIXTURE(THREADS_S2), surface, undefined, { page: STORY_S2 })
+      sound(lines, cols)
+      if (surface === 'terminal') console.log(`=== card126-${cols} ===\n${lines.join('\n')}\n=== end ===`) // demo render, the capture source for tmp/card126
+      const at = at$(lines, 'Messages')
+      expect(at).toBeGreaterThan(-1)
+      const q = lines.findIndex(l => /S2 +-> +TeamLeader/.test(l) && l.includes('Which branch holds the shared fixtures?') && l.includes('2026-05-04 14:02'))
+      const a = lines.findIndex(l => /TeamLeader +-> +S2/.test(l) && l.includes('Use the fixtures') && l.includes('2026-05-04 14:05'))
+      const all = lines.findIndex(l => /TeamLeader +-> +all/.test(l) && l.includes('Schema freeze after the gate') && l.includes('2026-05-04 14:09'))
+      // from, ->, to, body and time share one line; the order is the thread's: the question, the answer, then the broadcast thread
+      expect([q, a, all].every(i => i > at)).toBe(true)
+      expect(q).toBeLessThan(a)
+      expect(a).toBeLessThan(all)
+      // each thread has its sub-topic on a line of its own: S2, then all
+      const subS2 = lines.findIndex((l, i) => i > at && l.trim() === 'S2')
+      const subAll = lines.findIndex((l, i) => i > at && l.trim() === 'all')
+      expect(subS2).toBeGreaterThan(at)
+      expect(subS2).toBeLessThan(q)
+      expect(subAll).toBeGreaterThan(a)
+      expect(subAll).toBeLessThan(all)
+      // columns line up across the rows and the threads: ->, the body and the time start at the same character
+      expect(lines[q]!.indexOf(' -> ')).toBe(lines[a]!.indexOf(' -> '))
+      expect(lines[q]!.indexOf(' -> ')).toBe(lines[all]!.indexOf(' -> '))
+      expect(lines[q]!.indexOf('Which')).toBe(lines[a]!.indexOf('Use'))
+      expect(lines[q]!.indexOf('2026-05-04')).toBe(lines[a]!.indexOf('2026-05-04'))
+      expect(lines[q]!.indexOf('2026-05-04')).toBe(lines[all]!.indexOf('2026-05-04'))
+      // the long body is cut with …, its time stays on the line; a short body is whole
+      expect(lines[a]).toMatch(/Use the fixtures[^…]*… +2026-05-04 14:05$/)
+      expect(lines[q]).not.toContain('…')
+    })
+  }
+
+  for (const [what, threads] of [['absent', undefined], ['empty', []], ['no message', [{ topic: 'E-3f9a2c11/S2', story: 'S2', messages: [] }]]] as const) {
+    test(`card 126 ${surface}: threads ${what} draw no Messages section and throw nothing`, async ($, on) => {
+      const { lines } = await homeLines($, on, 190, THREADS_FIXTURE(threads), surface, undefined, { page: STORY_S2 })
+      sound(lines, 190)
+      expect(lines.some(l => l.trim() === 'Messages')).toBe(false)
+      expect(lines.some(l => l.includes(' -> '))).toBe(false)
+    })
+  }
+
+  test(`card 126 ${surface}: band names the unread message to the person, the engine's text whole`, async ($, on) => {
+    await seeded($, on, { status: stat({ waiting: 0, latest: null, notices: [NOTICE] }), task: null }, surface)
+    const alone = await band($, surface, false, 200)
+    expect(await alone.find({ type: 'Text', text: NOTICE.text })).toBeDefined()
+    expect((await allTexts(alone))[0]).toBe('⚑')
+    expect(await labels(alone)).toEqual(['board'])
+    expect((await shown(alone))).not.toContain('asks you')
+  })
+
+  test(`card 126 ${surface}: band shows the message row beside the asks row of a running task, +1 for a second notice`, async ($, on) => {
+    await seeded($, on, { status: stat({ waiting: 1, asks: [ASK], notices: [NOTICE, { ...NOTICE, task_id: '5b5b5b5b-0002', who: 'P3', text: '✉ P3 -> you: Drop the cache?' }] }), task: demo() }, surface)
+    const ui = await band($, surface, false, 200)
+    expect(await ui.find({ type: 'Text', text: NOTICE.text })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'P2 asks you: Keep the legacy PDF route?' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '+1' })).toBeDefined()
+    expect(await labels(ui)).toContain('needs you: 1 ask')
+    // the band does not clip the engine's text again: it is the whole text, cut only by the host's end-truncation
+    expect((await ui.find({ type: 'Text', text: NOTICE.text }))?.props.wrap).toBe('truncate-end')
+  })
+
+  for (const [what, notices] of [['absent', undefined], ['empty', []]] as const) {
+    test(`card 126 ${surface}: notices ${what} draw no message row`, async ($, on) => {
+      await seeded($, on, { status: stat({ waiting: 1, ...(notices === undefined ? {} : { notices }) }), task: demo() }, surface)
+      const ui = await band($, surface)
+      expect((await shown(ui))).not.toContain('✉')
+      expect(await labels(ui)).toContain('needs you: 1 ask')
+    })
+  }
+}
+
+test('card 126: a narrow pane keeps the clock of each message and drops the date, the body ends in …', async ($, on) => {
+  const { lines } = await homeLines($, on, 60, THREADS_FIXTURE(THREADS_S2), 'terminal', undefined, { page: STORY_S2 })
+  sound(lines, 60)
+  const a = lines.find(l => /TeamLeader +-> +S2/.test(l))!
+  expect(a).toMatch(/…\s+14:05$/)
+  expect(a).not.toContain('2026-05-04')
+})
+
+test('card 126: the Messages heading is in Korean', async ($, on) => {
+  const { lines } = await homeLines($, on, 190, THREADS_FIXTURE(THREADS_S2), 'terminal', 'korean', { page: STORY_S2 })
+  expect(lines.some(l => l.trim() === '메시지')).toBe(true)
+  expect(lines.some(l => l.trim() === 'Messages')).toBe(false)
+})

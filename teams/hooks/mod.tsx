@@ -4,8 +4,13 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Dash, DecisionsPayload, ReportPayload, StatusInfo, SummaryTask, SummaryTaskEntry, TeamsEvent, TeamsView } from '../types'
 import { HOME, askBandShown, carriesInput, fallbackSelection, levelOf, pageEsc, pageKey, pageStep, paneSlash, reconcileEpic, selectedOf, statusAnswer } from './pane'
 import type { Page, PageKey, PageNav, RowRef, StepCtx, StepResult } from './pane'
-import { HOME_PLANS, PAGE_ROWS, PHASE_KEYS, clipText, clipWords, crumbFit, costText, epicElapsed, floorRows, footerPlan, KEYS_CHROME, homeHeader, homeRows, isEnded, logLines, needsOf, pageLines, phaseLines, renderLines, rowIdsOf, since, storyGrid, storyLabel, storyNow, storyReportLines, storyRows, storyTop, width, windowOf } from './teams-draw'
+import { HOME_PLANS, PAGE_ROWS, PHASE_KEYS, clipText, clipWords, crumbFit, costText, epicElapsed, floorRows, footerPlan, KEYS_CHROME, homeHeader, homeRows, isEnded, logLines, needsOf, pageLines, phaseLines, renderLines, rowIdsOf, since, storyGrid, storyLabel, storyNow, storyReportLines, storyRows, storyThreads, storyTop, width, windowOf } from './teams-draw'
 import type { DecisionX, Line, PageOpts, PageRow, PhaseEntry, StoryPayload, StoryReport } from './teams-draw'
+
+// the person's unread message rows (view-bus.mjs `unread.notice`, listed as status `notices`): `text` is the band row, already clipped by the
+// engine. Absent = none. Widened here because ../types is not this package's to edit.
+type MsgNotice = { task_id: string; kind: 'message'; from: string; who: string; body: string; ts: number; text: string }
+const noticesOf = (info: StatusInfo | null): MsgNotice[] => (info as (StatusInfo & { notices?: MsgNotice[] }) | null)?.notices ?? []
 
 const cursor = atom({ plugin: 'teams', key: 'cursor' } as const, 0)
 const status = atom({ plugin: 'teams', key: 'status' } as const, null as StatusInfo | null)
@@ -117,7 +122,7 @@ const en = {
   f2FoldEnded: 'ended {ago} ago · STORY {done}/{total}', f2FoldHasReport: 'report ready', f2FoldUnfold: 'd unfold', f2FoldRefold: 'a fold',
   f2RowRejected: 'last {score}/{threshold} · {reason}', f2RowRetrying: 'try {n}/{max}', f2RowStalledMinutes: '⏸ {m}m', f2RowAgents: '{n} ag',
   f2PhaseRunning: 'Running', f2PhaseHandoffs: 'Handed over', f2PhaseDecisions: 'Decisions (this Phase)', f2PhaseAccept: 'accept {score}', f2PhaseReject: 'reject {score}',
-  f2StoryFlow: 'FLOW', f2StoryProgress: 'Progress', f2StoryParticipants: 'Participants', f2StoryGrid: 'Attempts', f2StoryNow: 'Now',
+  f2StoryFlow: 'FLOW', f2StoryProgress: 'Progress', f2StoryParticipants: 'Participants', f2StoryGrid: 'Attempts', f2StoryNow: 'Now', storyThreads: 'Messages',
   f2StoryTryLine: 'this try {n}/{m} nodes · total {t}/{u} (based on {k} tries)', f2StoryAgents: 'subagent: {total} total · {live} live',
   f2StoryLogRow: 'Log {n} · last {ago} ago', f2StoryReportRow: 'Report: appears after the gate passes', f2StoryAnswerRow: '⏎ answer',
   f2LogCount: '{n} entries', f2LogAttemptStart: 'attempt {n} started', f2LogAttemptCommits: 'attempt {n} commits {c}',
@@ -198,7 +203,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     f2FoldEnded: '끝남 {ago} 전 · STORY {done}/{total}', f2FoldHasReport: '보고서 있음', f2FoldUnfold: 'd 펼치기', f2FoldRefold: 'a 접기',
     f2RowRejected: '직전 {score}/{threshold} · {reason}', f2RowRetrying: 'try {n}/{max}', f2RowStalledMinutes: '⏸ {m}분', f2RowAgents: '{n} ag',
     f2PhaseRunning: '돌고 있음', f2PhaseHandoffs: '넘겨준 일', f2PhaseDecisions: '결정 (이 Phase)', f2PhaseAccept: 'accept {score}', f2PhaseReject: 'reject {score}',
-    f2StoryFlow: 'FLOW', f2StoryProgress: '진행', f2StoryParticipants: '참가', f2StoryGrid: '시도', f2StoryNow: '지금',
+    f2StoryFlow: 'FLOW', f2StoryProgress: '진행', f2StoryParticipants: '참가', f2StoryGrid: '시도', f2StoryNow: '지금', storyThreads: '메시지',
     f2StoryTryLine: '이번 시도 {n}/{m} 노드 · 전체 {t}/{u} (시도 {k}회 기준)', f2StoryAgents: 'subagent 누적 {total} · 지금 {live}',
     f2StoryLogRow: 'Log {n}건 · 마지막 {ago} 전', f2StoryReportRow: 'Report: gate 통과 후 생김', f2StoryAnswerRow: '⏎ 답하기',
     f2LogCount: '{n}건', f2LogAttemptStart: '시도 {n} 시작', f2LogAttemptCommits: '시도 {n} 커밋 {c}건',
@@ -1053,11 +1058,13 @@ export const register: Register = on => {
         const top = storyTop(sd, say)
         const grid = storyGrid(sd, item?.max ?? null, say, inner)
         const working = storyNow(sd, opts, inner)
+        const threads = storyThreads(sd, say, inner)
         page$ = (
           <Box flexDirection="column">
             {sd === null ? <Text dimColor>{s('loading')}</Text> : renderLines(ui, top, 'a')}
             {grid.length > 0 && <Box flexDirection="column">{rule('r2')}{renderLines(ui, grid, 'b')}</Box>}
             {working.length > 0 && <Box flexDirection="column">{rule('r3')}{renderLines(ui, working, 'c')}</Box>}
+            {threads.length > 0 && <Box flexDirection="column">{rule('r5')}{renderLines(ui, threads, 'm')}</Box>}
             {rule('r4')}
             {renderLines(ui, pageLines(rows, sel, inner, HOME_PLANS), 'd')}
           </Box>
@@ -1218,7 +1225,8 @@ export const register: Register = on => {
 
     // a card waits on a person: ⚑ leads the row, with or without a running task
     // status.asks is not cwd-scoped like waiting: a card from another repo's task can address this session
-    const flagged = (info?.waiting ?? 0) > 0 || (task?.you.count ?? 0) > 0 || (info?.asks?.length ?? 0) > 0
+    const notices = noticesOf(info)
+    const flagged = (info?.waiting ?? 0) > 0 || (task?.you.count ?? 0) > 0 || (info?.asks?.length ?? 0) > 0 || notices.length > 0
     const isRunning = info?.latest != null && task?.state === 'running'
     if (e.props.hasSurvey || (!flagged && !isRunning)) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
@@ -1234,14 +1242,23 @@ export const register: Register = on => {
         {asks.length > 1 && <Box flexShrink={0} marginLeft={1}><Text dimColor>{`+${asks.length - 1}`}</Text></Box>}
       </Box>
     )
+    // an unread message to the person (card 126): the engine's own row, ✉ <who> -> you: <body>, under the main row; its clipping is the engine's
+    const mailed = notices[0] === undefined ? null : (
+      <Box flexDirection="row">
+        <Box flexShrink={1}><Text color="claude" wrap="truncate-end">{notices[0].text}</Text></Box>
+        {notices.length > 1 && <Box flexShrink={0} marginLeft={1}><Text dimColor>{`+${notices.length - 1}`}</Text></Box>}
+      </Box>
+    )
     if (task === null || !isRunning) {
+      const waitN = Math.max(info?.waiting ?? 0, task?.you.count ?? 0, asks.length)
       return (
         <Box flexDirection="column">
           <Box>
             {flag}
             {asked}
-            <Box flexShrink={0}><Button key="inbox" label={inboxLabel(Math.max(info?.waiting ?? 0, task?.you.count ?? 0, asks.length))} onPress={open} /></Box>
+            <Box flexShrink={0}>{waitN > 0 ? <Button key="inbox" label={inboxLabel(waitN)} onPress={open} /> : <Button key="board" label={s('board')} onPress={openHome} />}</Box>
           </Box>
+          {mailed}
           {await next(e)}
         </Box>
       )
@@ -1316,6 +1333,7 @@ export const register: Register = on => {
             ? <Box flexShrink={0} marginLeft={1}><Button key="inbox" label={bandLabel(bandTier)} onPress={open} /></Box>
             : <Box flexShrink={0} marginLeft={1}><Button key="board" label={s('board')} onPress={openHome} /></Box>}
         </Box>
+        {mailed}
         {await next(e)}
       </Box>
     )
