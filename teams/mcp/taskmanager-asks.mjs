@@ -3,7 +3,8 @@ import { applySuspends, driverAlive, record, suspendedSince } from './taskstate.
 import { getNode, loadRun, openAsk, peekHumanActions, queueHumanAction } from './graph.mjs';
 import { latestBySubgoal } from './tickets.mjs';
 import { finish } from './taskmanager-finish.mjs';
-import { nextSpawnAttempt, spawnChildDriver } from './taskmanager-drivers.mjs';
+import { busUnread, nextSpawnAttempt, spawnChildDriver } from './taskmanager-drivers.mjs';
+import { BODY_MAX, post } from './bus.mjs';
 import { noDriver } from './taskmanager-worktree.mjs';
 import { respawnDriver, spawning } from './taskmanager-claims.mjs';
 import { withTask } from './taskmanager-stages.mjs';
@@ -17,7 +18,11 @@ import { answeredEvent, askedEvent, newAskId, validateAsk } from './storyask.mjs
 // design: _repo/docs/plans/mod/2026-10-17-subagent-communication.md §6; the ledger events are
 // storyask.mjs's. task.story_asks keeps one entry per tm_ask for the life of the task - no cap, no
 // de-dupe, no timeout:
-//   {ask_id, key, pkg, node_id (the STORY's dispatch node), question, state, at, ...}
+//   {ask_id, key, pkg, node_id (the STORY's dispatch node), question, question_ts, state, at, ...}
+// tm_ask is one kind of message on the EPIC bus (bus.mjs, card 126): the question is a line
+// {from: <STORY key>, to: 'teamleader', reply_to: null} whose ts is `question_ts`, and the answer a
+// line {from: 'teamleader'|'person', to: <STORY key>, reply_to: question_ts} (`answer_ts`). The
+// bus copy is clipped to BODY_MAX with a marker; the ledger events keep the full text.
 //   pending    asked; no answer node holds it
 //   answering  the daemon's answer node holds it ({pid, token}); the marker that keeps it from
 //              being run twice
@@ -47,15 +52,32 @@ function deliverStoryAnswers(task, nodeId, child) {
   if (noDriver() || driverAlive(child.driver) || spawning(child)) return false;
   const asks = open.map((a) => ({ ask_id: a.ask_id, question: a.question, answer: a.answer, by: a.by }));
   const ids = asks.map((a) => a.ask_id);
+  // Unread bus messages ride in the same respawn; the answer lines it inlines are not counted (and
+  // are covered by bus_woken_ts, so they never wake the STORY again).
+  const answerTs = open.map((a) => a.answer_ts).filter(Number.isFinite);
+  const bus = busUnread(task, open[0].key, answerTs);
+  const unread = bus.count;
+  const wokenTs = Math.max(bus.max_ts, ...answerTs);
   const attempt = nextSpawnAttempt(child);
   return respawnDriver(task, nodeId, child, {
     attempt, reason: 'story_answered', restarts: (child.driver && child.driver.restarts) || [],
-    spawn: (t, c) => spawnChildDriver(t, nodeId, c, { resume: true, attempt, asks }),
+    spawn: (t, c) => spawnChildDriver(t, nodeId, c, { resume: true, attempt, asks, unread }),
     event: (t, fresh) => {
-      if (fresh.pid) for (const a of t.story_asks || []) if (ids.includes(a.ask_id)) a.state = 'delivered';
+      if (fresh.pid) {
+        for (const a of t.story_asks || []) if (ids.includes(a.ask_id)) a.state = 'delivered';
+        const live = getNode(t, nodeId);
+        if (live && live.child && wokenTs > 0) live.child.bus_woken_ts = wokenTs;
+      }
       return { event: 'child_driver_restarted', task_id: t.run_id, node_id: nodeId, pid: fresh.pid, reason: 'story_answered', asks: ids };
     },
   });
+}
+
+// A bus body is at most BODY_MAX characters: longer text is clipped with a marker (bus copy only).
+const CLIP = '... [clipped: full text in the ledger]';
+function busBody(text) {
+  const s = String(text);
+  return s.length > BODY_MAX ? s.slice(0, BODY_MAX - CLIP.length) + CLIP : s;
 }
 
 // The answer is the text the person chose; an answer with no text is not one.
@@ -75,7 +97,11 @@ function toolAsk(a) {
     if (!v.ok) throw new Error(`tm_ask refused: ${v.reason}`);
     const dispatch = latestBySubgoal(task, v.pkgId, 'dispatch');
     const ask_id = newAskId();
-    (task.story_asks || (task.story_asks = [])).push({ ask_id, key: v.key, pkg: v.pkgId, node_id: dispatch.node_id, question: a.question, state: 'pending', at: Date.now() });
+    // The question is a bus line first; its ts is the id the answer replies to. A post that cannot
+    // be made (it cannot fail on a question validateAsk accepted) never refuses the ask.
+    let question_ts = null;
+    try { question_ts = post(task, { from: v.key, to: 'teamleader', body: busBody(a.question), reply_to: null }, {}).ts; } catch { /* the ask still parks */ }
+    (task.story_asks || (task.story_asks = [])).push({ ask_id, key: v.key, pkg: v.pkgId, node_id: dispatch.node_id, question: a.question, question_ts, state: 'pending', at: Date.now() });
     record(task, askedEvent({ task_id: task.run_id, key: v.key, node_id: dispatch.node_id, question: a.question, ask_id }));
     return { task_id: task.run_id, key: v.key, ask_id, state: 'parked', next: 'End your turn now. You are resumed, at no cost while you wait, with the answer in your prompt.' };
   });
@@ -116,6 +142,10 @@ function storyAskAnswered(task, a, { answer, by, route }) {
   a.route = route;
   record(task, answeredEvent({ task_id: task.run_id, key: a.key, node_id: a.node_id, answer, by, route, ask_id: a.ask_id }));
   const n = getNode(task, a.node_id);
+  // The answer is a bus line replying to the question; skipped when the STORY is no longer running.
+  if (n && n.state === 'running') {
+    try { a.answer_ts = post(task, { from: by, to: a.key, body: busBody(answer), reply_to: a.question_ts ?? null }, {}).ts; } catch { /* the ledger and the respawn carry the answer */ }
+  }
   deliverStoryAnswers(task, a.node_id, n && n.child);
 }
 

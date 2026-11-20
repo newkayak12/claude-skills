@@ -14,6 +14,10 @@
 //             route 'answer'  - the answer node answered from the plan and wiki
 //                   'forward' - the question went to the person; the answer is theirs
 //
+// Bus (card 126, bus.mjs): the question is also a bus line {from: key, to: 'teamleader'} and the answer
+// a line {from: by, to: key, reply_to: <question ts>}. The ledger events above are unchanged; the
+// task.story_asks entry records the ts of both lines as `question_ts` and `answer_ts`.
+//
 // parseVerdict() is how a question is never dropped (D7): anything but a well-formed answer
 // verdict is a forward.
 import { randomUUID } from 'node:crypto';

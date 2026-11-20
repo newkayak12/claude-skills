@@ -18,6 +18,7 @@ import { pendingRejudgeAt } from './taskmanager-repair.mjs';
 import { parkCapacity } from './capacity-reset.mjs';
 import { recordFailureKind } from './failure-kind.mjs';
 import { stopNotice } from './resume.mjs';
+import { readMessages, unreadFor } from './bus.mjs';
 
 // ---------- child driver processes ----------
 
@@ -96,6 +97,26 @@ export function driverArgv(task = null, o = {}) {
 // opts.resume marks a driver spawned in place of one that died before the run finished: the
 // run and its worktree already carry whatever that attempt completed, so the new session is
 // told to read team_status first rather than redo work.
+// Unread bus messages addressed to STORY `key` (bus.mjs unreadFor: a broadcast to `all` never
+// counts): {count, max_ts}, max_ts the newest ts among them. `skip` lists ts not to count (the
+// answer lines a prompt inlines, which an open transaction may not have flushed to bus.jsonl yet).
+// Never throws.
+export function busUnread(task, key, skip = []) {
+  try {
+    if (!skip.length && !unreadFor(task, key)) return { count: 0, max_ts: 0 };
+    let cursor = (task.bus_reads && task.bus_reads[key]) || 0;
+    let count = 0;
+    let max = 0;
+    for (;;) {
+      const r = readMessages(task, { reader: key, cursor });
+      for (const m of r.messages) if (m.to === key && !skip.includes(m.ts)) { count += 1; max = Math.max(max, m.ts); }
+      if (!r.more) break;
+      cursor = r.cursor;
+    }
+    return { count, max_ts: max };
+  } catch { return { count: 0, max_ts: 0 }; }
+}
+
 function driverPrompt(task, child, opts = {}) {
   const o = task.child_opts || {};
   const routing = [
@@ -112,6 +133,8 @@ function driverPrompt(task, child, opts = {}) {
     `run_id ${child.run_id} at cwd ${child.cwd}. Do not call team_open or tm_open.`,
     answers.length
       ? `A previous driver for this exact run parked on a question and is replaced by you; call team_status({run_id, cwd}) first, then continue from there - do not redo a node that is already done.\n${answers.join('\n')}`
+      : opts.unread > 0
+        ? `The previous driver for this exact run ended its turn and you replace it because messages arrived for you; call team_status({run_id, cwd}) first, then continue from there - do not redo a node that is already done.`
       : opts.nextNode
         ? `The previous driver for this exact run finished its node and ended its turn; call team_status({run_id, cwd}) first, then drive the next ready node - do not redo a node that is already done.`
         : opts.resume
@@ -119,6 +142,12 @@ function driverPrompt(task, child, opts = {}) {
           : '',
     story && story.subgoal_id
       ? `If a question blocks you that neither your briefing nor the plan settles, call tm_ask({task_id: "${task.run_id}", key: "${storyKey(task.run_id, story.subgoal_id)}", question}) once with the whole question, then end your turn at once: you are parked at no cost and resumed with the answer. Do not guess and do not poll.`
+      : '',
+    story && story.subgoal_id && opts.unread > 0
+      ? `${opts.unread} unread, call tm_read({task_id: "${task.run_id}", key: "${storyKey(task.run_id, story.subgoal_id)}"}) now; its messages are not repeated here.`
+      : '',
+    story && story.subgoal_id
+      ? `The bus: tm_post({task_id: "${task.run_id}", from: "${storyKey(task.run_id, story.subgoal_id)}", to, body}) sends a note to your TeamLeader ("teamleader") or a sibling package (its STORY key); tm_read({task_id: "${task.run_id}", key: "${storyKey(task.run_id, story.subgoal_id)}"}) reads what was posted to you (cursor: the last ts you saw). They are for notes and facts a sibling or the TeamLeader needs; a question you need answered still goes through tm_ask, never tm_post.`
       : '',
     // One driver process per node (card 130: a session ends when its node ends). The manager
     // starts the next driver when this one exits with the run moved on (serviceDeadDriver).
@@ -325,6 +354,27 @@ export function serviceDeadDriver(task, child, nodeId) {
   }
   const budget = restartBudget(task);
   const priorRestarts = driver.restarts || [];
+  // A parked STORY (its driver exited, its run is still going, no tm_ask open) with unread bus
+  // messages is woken like an answer wakes it: a free respawn, no restart spent, the prompt naming
+  // the count only. Counted as delivered (bus_woken_ts) once a process started; until then each
+  // tick retries. A done or blocked run never gets here (cs.state), nor a dispatch no longer running.
+  const dispatch = task.nodes.find((x) => x.node_id === nodeId);
+  if (cs.state === 'running' && dispatch && dispatch.state === 'running' && dispatch.subgoal_id) {
+    const bus = busUnread(task, storyKey(task.run_id, dispatch.subgoal_id));
+    if (bus.count > 0 && bus.max_ts > (child.bus_woken_ts || 0)) {
+      if (noDriver()) return false;
+      const attempt = nextSpawnAttempt(child);
+      return respawnDriver(task, nodeId, child, {
+        attempt, reason: 'bus_unread', restarts: priorRestarts,
+        spawn: (t, c) => spawnChildDriver(t, nodeId, c, { resume: true, attempt, unread: bus.count }),
+        event: (t, fresh) => {
+          const live = t.nodes.find((x) => x.node_id === nodeId);
+          if (fresh.pid && live && live.child) live.child.bus_woken_ts = bus.max_ts;
+          return { event: 'child_driver_restarted', task_id: t.run_id, node_id: nodeId, pid: fresh.pid, reason: 'bus_unread', unread: bus.count };
+        },
+      });
+    }
+  }
   // A driver drives one node and ends its turn: it exited cleanly with the run moved on since it
   // started. The next node gets a fresh driver; that is the plan, not a death, so no restart is spent.
   const exit = entry.exit;
