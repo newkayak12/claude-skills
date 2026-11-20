@@ -5,6 +5,7 @@ import { mustFindTask, withTask } from './taskmanager-stages.mjs';
 import { serviceDaemon } from './taskmanager-drivers.mjs';
 import { syncTickets, toolAssign, toolBoard, toolCancel, toolClean, toolDocs, toolEvents, toolFile, toolInbox, toolLog, toolOpen, toolRetry, toolRun, toolStatus, toolTicket, toolWait } from './taskmanager-handlers.mjs';
 import { toolNext, toolSubmit } from './taskmanager-claims.mjs';
+import { post, readMarked } from './bus.mjs';
 
 // ---------- tools ----------
 
@@ -304,6 +305,36 @@ const TOOLS = [
     },
     outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, key: { type: 'string' }, ask_id: { type: 'string' }, state: { type: 'string' }, next: { type: 'string' } }, required: ['task_id', 'key', 'ask_id', 'state'] },
   },
+  {
+    name: 'tm_post',
+    description: 'Post one message on the task\'s bus (bus.jsonl under the task dir, written only by the engine). `from` is your own identity: a running STORY\'s key (E-xxxxxxxx/Pn), or `teamleader` / `person` for the EPIC manager and the person (a driver may not post as those two). `to` is a STORY key, `teamleader`, `person` or `all`. Allowed: a STORY to a sibling STORY or to the teamleader; the teamleader and the person to anyone, `all` included. Refused with a reason: a STORY to the person (ask with tm_ask), a STORY to `all`, a message to oneself, a STORY key of another EPIC or one that is done or failed, an empty body or one over 8192 characters, a reply_to that is not the ts of a message on this bus, a cancelled task. Every refusal reads `tm_post refused: <reason>` and changes nothing. A STORY not yet dispatched receives the message at its first tm_read. Returns the message id (`ts`, strictly increasing) and the topic (E-xxxxxxxx/Pn or E-xxxxxxxx/all).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string' },
+        from: { type: 'string', description: 'your own STORY key (E-xxxxxxxx/Pn), or teamleader, or person' },
+        to: { type: 'string', description: 'a STORY key, teamleader, person or all' },
+        body: { type: 'string', description: 'the message, 1 to 8192 characters' },
+        reply_to: { type: 'number', description: 'the ts of the message this answers, when it answers one' },
+      },
+      required: ['task_id', 'from', 'to', 'body'],
+    },
+    outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, ts: { type: 'number' }, topic: { type: 'string' } }, required: ['task_id', 'ts', 'topic'] },
+  },
+  {
+    name: 'tm_read',
+    description: 'Read the task\'s bus as `key`: a STORY key sees the messages to it, from it and to `all` (those posted before it was dispatched too); `teamleader` and `person` see every message. Pass the previous reply\'s `cursor` (the last ts seen; 0 or none starts from the beginning) to get only what came after it. At most 50 messages per call, oldest first; `more: true` means call again with the returned cursor. Records the highest ts returned as this key\'s read mark (the unread count). A driver may not read as teamleader or person. Refused as `tm_read refused: <reason>`.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string' },
+        key: { type: 'string', description: 'your own STORY key (E-xxxxxxxx/Pn), or teamleader, or person' },
+        cursor: { type: 'number', description: 'the cursor of your previous tm_read; default 0' },
+      },
+      required: ['task_id', 'key'],
+    },
+    outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, key: { type: 'string' }, messages: { type: 'array', items: { type: 'object', properties: { ts: { type: 'number' }, from: { type: 'string' }, to: { type: 'string' }, topic: { type: 'string' }, body: { type: 'string' }, reply_to: { type: ['number', 'null'] } } } }, cursor: { type: 'number' }, more: { type: 'boolean' } }, required: ['task_id', 'key', 'messages', 'cursor', 'more'] },
+  },
 ];
 
 // board.jsonl - ticket TRANSITIONS only, append-only, never read as ground truth. tickets.mjs's
@@ -336,6 +367,8 @@ function dispatch(name, a, signal) {
     case 'tm_clean': return toolClean(a, signal);
     case 'tm_cancel': return toolCancel(a);
     case 'tm_ask': return toolAsk(a);
+    case 'tm_post': return withTask(a, (task) => post(task, a, process.env));
+    case 'tm_read': return withTask(a, (task) => ({ task_id: task.run_id, key: a.key, ...readMarked(task, { reader: a.key, cursor: a.cursor }) }));
     default: throw new Error('unknown tool: ' + name);
   }
 }
