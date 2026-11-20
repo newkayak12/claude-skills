@@ -46,14 +46,20 @@ test('TOOLS deep-equals the golden fixture\'s tm_* entries', () => {
     assert.equal(t.description.split(frag[0]).length, 2, `${t.name}: the fixture holds the anchor once`);
     return { ...t, description: t.description.replace(frag[0], () => frag[1]) };
   });
+  // tm_post and tm_read (card 126, the message bus) postdate the fixture: pinned by name here,
+  // their schemas are exercised by test-bus.mjs.
+  const BUS_TOOLS = ['tm_post', 'tm_read'];
+  const added = JSON.parse(JSON.stringify(mod.TOOLS)).filter((t) => BUS_TOOLS.includes(t.name));
+  assert.deepEqual(added.map((t) => t.name).sort(), BUS_TOOLS);
+  expected.push(...added);
   assert.deepEqual(JSON.parse(JSON.stringify(mod.TOOLS)).sort(byName), expected.sort(byName));
 });
 
-test('every TOOLS name has a dispatch case and every dispatch case has a TOOLS entry (18 tm_*)', () => {
+test('every TOOLS name has a dispatch case and every dispatch case has a TOOLS entry (20 tm_*)', () => {
   const text = readFileSync(join(HERE, '..', 'mcp', 'taskmanager-tools.mjs'), 'utf8');
   const fn = text.slice(text.indexOf('function dispatch('), text.indexOf('export async function callTool') >= 0 ? text.indexOf('export async function callTool') : undefined);
   const cases = [...fn.matchAll(/case '(tm_[a-z_]+)'/g)].map((m) => m[1]).sort();
   const names = mod.TOOLS.map((t) => t.name).sort();
-  assert.equal(names.length, 18);
+  assert.equal(names.length, 20);
   assert.deepEqual(cases, names);
 });

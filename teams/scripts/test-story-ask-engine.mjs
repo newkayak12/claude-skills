@@ -313,8 +313,8 @@ test('answerArgv: read tools only (Read, Grep, Glob, wiki_search, wiki_get), eve
   const deniedList = denied.split(/[ ,]/);
   const { ALL_TOOLS } = await import(join(HERE, '..', 'mcp', 'server-tools.mjs'));
   const expected = ALL_TOOLS.map((t) => t.name).filter((n) => n !== 'wiki_search' && n !== 'wiki_get').map((n) => `mcp__plugin_teams_teams__${n}`);
-  assert.equal(expected.length, 31);
-  assert.deepEqual(deniedList, expected, 'all 31 non-read tools are denied by name');
+  assert.equal(expected.length, 33);
+  assert.deepEqual(deniedList, expected, 'all 33 non-read tools are denied by name');
   for (const d of ['mcp__plugin_teams_teams__tm_open', 'mcp__plugin_teams_teams__team_open', 'mcp__plugin_teams_teams__wiki_write', 'mcp__plugin_teams_teams__wiki_propose', 'mcp__plugin_teams_teams__wiki_accept']) {
     assert.ok(deniedList.includes(d), `${d} is denied`);
   }

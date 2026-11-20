@@ -136,7 +136,7 @@ test('serves the MCP handshake and the graph tool surface', async () => {
   try {
     const r = await c.send('tools/list', {});
     const all = r.result.tools.map((t) => t.name);
-    assert.equal(all.length, 33, 'the one teams server lists every tool');
+    assert.equal(all.length, 35,'the one teams server lists every tool');
     const names = all.filter((n) => n.startsWith('team_')).sort();
     assert.deepEqual(names, [
       'team_next', 'team_open', 'team_retry', 'team_run', 'team_status', 'team_submit',

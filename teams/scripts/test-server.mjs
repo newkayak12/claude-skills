@@ -148,7 +148,7 @@ test('initialize answers teams/1.0.0 with the 2025-06-18 default protocol', asyn
   } finally { c.close(); }
 });
 
-test('full mode lists the 33 tools of the golden fixture, same names, descriptions and schemas', async () => {
+test('full mode lists the 33 tools of the golden fixture plus tm_post and tm_read, same names, descriptions and schemas', async () => {
   await withClient(['--root', mk('server-wiki-')], baseEnv(), async (c) => {
     const listed = (await c.tools()).map((t) => normalize({
       name: t.name, description: t.description, inputSchema: t.inputSchema, outputSchema: t.outputSchema === undefined ? null : t.outputSchema,
@@ -171,18 +171,21 @@ test('full mode lists the 33 tools of the golden fixture, same names, descriptio
       assert.equal(rest.description.split(frag[0]).length, 2, `${rest.name}: the fixture holds the anchor once`);
       return { ...rest, description: rest.description.replace(frag[0], () => frag[1]) };
     }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    // tm_post and tm_read (card 126) postdate the fixture; test-bus.mjs holds their schemas.
     assert.equal(golden.length, 33);
-    assert.equal(listed.length, 33);
-    assert.deepEqual(listed, golden);
+    assert.deepEqual(listed.filter((t) => t.name === 'tm_post' || t.name === 'tm_read').map((t) => t.name), ['tm_post', 'tm_read']);
+    const listedOld = listed.filter((t) => t.name !== 'tm_post' && t.name !== 'tm_read');
+    assert.equal(listed.length, 35);
+    assert.deepEqual(listedOld, golden);
   });
 });
 
-test('TEAMS_WIKI_OFF=1 in full mode lists 24 tools (team_ + tm_) and a wiki_* call is an error with the exact text', async () => {
+test('TEAMS_WIKI_OFF=1 in full mode lists 26 tools (team_ + tm_) and a wiki_* call is an error with the exact text', async () => {
   await withClient(['--root', mk('server-wiki-')], baseEnv({ TEAMS_WIKI_OFF: '1' }), async (c) => {
     const tools = await c.tools();
-    assert.equal(tools.length, 24);
+    assert.equal(tools.length, 26);
     assert.equal(withPrefix(tools, 'team_').length, 6);
-    assert.equal(withPrefix(tools, 'tm_').length, 18);
+    assert.equal(withPrefix(tools, 'tm_').length, 20);
     assert.equal(withPrefix(tools, 'wiki_').length, 0);
     const r = await c.call('wiki_status', {});
     assert.equal(r.isError, true);

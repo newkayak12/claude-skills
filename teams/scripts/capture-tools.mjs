@@ -13,7 +13,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const MCP = resolve(HERE, '..', 'mcp');
 export const DEFAULT_OUT = join(HERE, 'fixtures', 'tools-before.json');
 const TIMEOUT_MS = 30000;
-const EXPECTED_PREFIXES = { team_: 6, tm_: 18, wiki_: 9 };
+const EXPECTED_PREFIXES = { team_: 6, tm_: 20, wiki_: 9 };
 
 // Recursively sorts object keys; arrays keep their order; primitives and null pass through.
 export function normalize(value) {

@@ -271,8 +271,8 @@ test('serves the MCP handshake and the seventeen manager tools', async () => {
   try {
     const r = await c.send('tools/list', {});
     const names = r.result.tools.map((t) => t.name);
-    assert.equal(names.length, 33, 'the one teams server lists every tool');
-    assert.deepEqual(names.filter((n) => n.startsWith('tm_')).sort(), ['tm_ask', 'tm_assign', 'tm_board', 'tm_cancel', 'tm_clean', 'tm_docs', 'tm_events', 'tm_file', 'tm_inbox', 'tm_log', 'tm_next', 'tm_open', 'tm_retry', 'tm_run', 'tm_status', 'tm_submit', 'tm_ticket', 'tm_wait']);
+    assert.equal(names.length, 35, 'the one teams server lists every tool');
+    assert.deepEqual(names.filter((n) => n.startsWith('tm_')).sort(), ['tm_ask', 'tm_assign', 'tm_board', 'tm_cancel', 'tm_clean', 'tm_docs', 'tm_events', 'tm_file', 'tm_inbox', 'tm_log', 'tm_next', 'tm_open', 'tm_post', 'tm_read', 'tm_retry', 'tm_run', 'tm_status', 'tm_submit', 'tm_ticket', 'tm_wait']);
   } finally {
     c.close();
   }
