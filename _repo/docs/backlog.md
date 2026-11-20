@@ -292,7 +292,7 @@ toasts).
 
 ### session plugin
 
-168. **smart-compact compacts again, keeps the handoff, saves tokens, and measures itself — in E-pending**
+168. **smart-compact compacts again, keeps the handoff, saves tokens, and measures itself — in E-89c4c835**
    - Why: 2026-11-20, the 0.10.0 log (50 entries, 2026-11-19 12:54-23:45 UTC, threshold 30%) shows 4 of 4
      threshold hits ending `compact-not-run`, 0 `compacted:recap`, 0 `auto-compact` entries. Cause
      (from the 2.1.326 types, unverified live): `session.compact` now has triggers `manual|auto|plugin|precompute`;
