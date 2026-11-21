@@ -340,6 +340,18 @@ toasts).
 
 Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 128's leftovers.
 
+169. **teams reaches an installed Codex from inside a driver, or says why not**
+   - Why: 2026-11-21, E-f8f880f9 (PLAN-F1 worktree, `.teams_output/broker/probe-codex-read-only.json`):
+     with `vendor: "auto"` the probe found `codex-cli 0.170.0` but its smoke printed
+     `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted` and no ready token, so it was
+     judged "codex unreachable" and every node ran on Claude. The same "Codex unreachable" is in the
+     E-0ad41780 and E-6ff25a30 rows (2026-11-04). User: "하는게 맞을거야 그 환경에는 codex가
+     있을거거든". Cause: Codex's bubblewrap sandbox cannot set up loopback in the driver's
+     environment; which layer denies the netlink call is unverified.
+   - Acceptance: in a teams driver the probe reaches Codex and a size-S run shows a node on the codex
+     vendor; where the environment truly forbids it, `tm_status` names the cause (the bwrap line), not
+     only "unreachable". `node --test teams/scripts/test-*.mjs` with counts.
+
 125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality** — E-8faf33b9 blocked on a PRD merge bug (fixed `899dba47`); E-701e2856 (2026-11-07, $35.82) planned
    it again (5 cards 88–94, plan-integrate accepted) and stopped partial at shape:3 (see card 129). Now one
    size-S task per feature area, in order F1 → F5 → F3 → F4 → F2, each from its section of that PRD (kept
