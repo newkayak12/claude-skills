@@ -7,6 +7,12 @@ never retire them as duplicates, and never reference superpowers.
 
 ## Ready
 
+### Codex plugin compatibility
+
+168. **Identify the failing Codex hooks and verify installed-client behavior**
+   - Why: On 2026-11-21 the user reported “plugin contents changed; hook approval required” twice and “hook exited with code 127” once. The [English maintainer handoff](2026-11-21-codex-hook-handoff.md) preserves the sequence, source evidence and open questions.
+   - Acceptance: Attribute each message, capture the cause of exit 127, and verify the affected hooks in a fresh Codex session after approval. Record the corresponding Claude regression results.
+
 Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — the UI cards below come first.
 Card 101 comes before them (user, 2026-10-29: "최우선").
 The portfolio flow comes before everything (user, 2026-10-30: "전체적으로 계획 한거 백로그로 넣고
