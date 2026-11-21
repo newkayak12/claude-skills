@@ -4336,6 +4336,50 @@ CLAUSE_JOIN = re.compile(r"(했고|하고|했으며|하며|었고|었으며|였�
 BOILERPLATE_PAGES = 3
 
 
+def term_table(workspace):
+    """[(use, [avoid…])] from style/표기규칙.md's `## 용어` table (| 쓰는 말 | 쓰지 않는 말 |, the avoided
+    forms split on `,` or `·`), or []. The author names the pairs; check only finds them."""
+    for form in ("NFC", "NFD"):
+        p = Path(workspace) / unicodedata.normalize(form, "style/표기규칙.md")
+        if not p.is_file():
+            continue
+        out, inside = [], False
+        for line in p.read_text(encoding="utf-8").splitlines():
+            if line.startswith("## "):
+                inside = line[3:].strip() == "용어"
+                continue
+            cells = [c.strip() for c in line.strip().strip("|").split("|")] if inside and line.strip().startswith("|") else []
+            if len(cells) >= 2 and cells[0] and not set(cells[0]) <= set("-: ") and cells[0] != "쓰는 말":
+                avoid = [a.strip().strip("`") for a in re.split(r"[,·]", cells[1]) if a.strip()]
+                if avoid:
+                    out.append((cells[0].strip("`"), avoid))
+        return out
+    return []
+
+
+def term_warnings(specs, table):
+    """A word the author's term table says not to use, by page (2026-11-21: the lenses found 쉐도우
+    트래픽/병행 대조 and 연동사/협업사/연동처 drifting; no list, no check — so the list lives with the author)."""
+    out = []
+    for use, avoid in table:
+        for a in avoid:
+            pages = []
+            for page, spec in enumerate(specs, 1):
+                for sid, kind, value, line in spec.values:
+                    if sid == "place":
+                        continue
+                    try:
+                        text = " ".join(t for _, t in seen_items(kind, value))
+                    except Exception:
+                        continue
+                    if a in text:
+                        pages.append((page, line))
+            if pages:
+                out.append("line %d: '%s' on page(s) %s — the term table says '%s'"
+                           % (pages[0][1], a, ", ".join(sorted({str(p) for p, _ in pages}, key=int)), use))
+    return out
+
+
 def sentence_warnings(specs):
     """What the render-review lenses found and nothing before render caught (2026-11-21, measured
     on a 31-page deck against the lens rows): a bullet joining 3+ clauses (6 of 7 hits were lens
@@ -4689,6 +4733,7 @@ def cmd_check(args):
                          "it in PowerPoint" % (tag, ", ".join(charts)))
 
     warns += sentence_warnings(specs)
+    warns += term_warnings(specs, term_table(md_path.resolve().parent) or term_table(md_path.resolve().parent.parent))
 
     def own(w):
         m = re.match(r"line (\d+):", w)

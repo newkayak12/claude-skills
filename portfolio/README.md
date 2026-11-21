@@ -148,7 +148,10 @@ Every session in the workspace starts with `manage.mjs scaffold`, unasked: it re
 to these, creates only what is missing, CLAUDE.md included, and never overwrites a file. A CLAUDE.md
 that is already there (a renamed README too) keeps its text and gets the guide appended once.
 
-Nine steps (3.2.13: render-review runs as written — safe area read from a 여백 table, page numbers
+Nine steps (3.2.14: `check` points out before render what only render-review's lenses found — a
+bullet joining several clauses, one sentence repeated on 3+ pages (passive ones named), and any
+word `style/표기규칙.md`'s new `## 용어` table says not to use; render-review proposes the table rows;
+3.2.13: render-review runs as written — safe area read from a 여백 table, page numbers
 and footnotes in the bottom band left out (117 margin hits → 3), `office_render.py text` writes each
 page's text, `deck.py render` keeps build/render.txt; `check` takes `slot: !keep` and stops calling
 bottom margin or a two-paragraph frame a defect;

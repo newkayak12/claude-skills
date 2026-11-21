@@ -51,7 +51,9 @@ for the next render. Portfolio deck and resume alike. **Not for** content judgem
 4. **Write the problems** into `template/next-render.md` (created with that table header if it does
    not exist; when an older workspace still has `다음렌더-지침.md`, append a dated section to that file
    instead and say so — renaming is `manage scaffold`'s, which also adds other missing files)
-   (쪽 · 칸 · 증상 · 확인 · 적용), one row each,
+   (쪽 · 칸 · 증상 · 확인 · 적용), one row each. A 단어 선정 finding that one thing goes by several
+   names also becomes a proposed row for `style/표기규칙.md`'s `## 용어` table (쓰는 말 | 쓰지 않는 말),
+   the author picking the name; once there, deck-builder `check` finds the other forms before render,
    all applied before the next render. A frame the deck cannot move is a template edit, only on the
    user's word (`manage` `references/template-edit.md`).
 

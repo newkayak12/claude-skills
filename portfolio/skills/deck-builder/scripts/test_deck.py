@@ -663,6 +663,23 @@ def sentences(tmp):
           "repeated sentences are named, the passive one as passive; the repeated header is not: %s" % same)
 
 
+def terms(tmp):
+    """The author's term table names the forms not to use; check finds them by page."""
+    print("terms")
+    ws = tmp / "terms"
+    (ws / "style").mkdir(parents=True, exist_ok=True)
+    (ws / "style" / "표기규칙.md").write_text(
+        "# 표기규칙\n\n## 용어\n\n| 쓰는 말 | 쓰지 않는 말 |\n|---|---|\n| 쉐도우 트래픽 | 병행 대조 |\n"
+        "| 연동사 | 협업사, 연동처 |\n\n## 캡션\n\n| a | b |\n", encoding="utf-8")
+    table = deck.term_table(ws)
+    check(table == [("쉐도우 트래픽", ["병행 대조"]), ("연동사", ["협업사", "연동처"])],
+          "the 용어 table only, avoided forms split: %s" % table)
+    _, specs, _ = deck.parse_deck("## @s1\ntext1: 병행 대조로 확인\n## @s1\ntext1:\n  - 연동처 세 곳\n## @s1\ntext1: 연동사\n")
+    got = deck.term_warnings(specs, table)
+    check(len(got) == 2 and "page(s) 1" in got[0] and "'연동처' on page(s) 2" in got[1],
+          "each avoided form is named with its pages and the word to use: %s" % got)
+
+
 def keep(tmp):
     """`key: !keep` keeps the template's content on purpose; check stops asking."""
     print("keep")
@@ -2282,6 +2299,7 @@ def main():
         tight(tmp)
         keep(tmp)
         sentences(tmp)
+        terms(tmp)
         widths(tmp)
         vector_invariant(tmp)
         one_line_slots(tmp)
