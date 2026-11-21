@@ -663,6 +663,29 @@ def sentences(tmp):
           "repeated sentences are named, the passive one as passive; the repeated header is not: %s" % same)
 
 
+def edges(tmp):
+    """A shape drawn past the safe area on the page, and not on the template's page, is named."""
+    print("edge ink")
+    W, H = 100, 60
+    white, ink = (255, 255, 255, 255), (40, 60, 160, 255)
+
+    def page(paint):
+        rows = [[white] * W for _ in range(H)]
+        for x0, y0, x1, y1 in paint:
+            for y in range(y0, y1):
+                for x in range(x0, x1):
+                    rows[y][x] = ink
+        return rows
+    m = {"left": 10, "right": 10, "top": 5, "bottom": 10}
+    deck.write_png(tmp / "e-t.png", W, H, page([(80, 52, 95, 58)]))            # the template's own mark
+    deck.write_png(tmp / "e-p.png", W, H, page([(80, 52, 95, 58),              # same mark, kept
+                                                 (85, 20, 97, 35),             # a figure past the right edge
+                                                 (30, 52, 50, 56)]))           # text, set aside by its box
+    got = deck.edge_ink(tmp / "e-p.png", tmp / "e-t.png", [(29, 51, 51, 57)], m, (W, H))
+    check(got == {"right": 7 * 15},
+          "only the figure's 7 columns past the right edge count; the template's mark and the text do not: %s" % got)
+
+
 def terms(tmp):
     """The author's term table names the forms not to use; check finds them by page."""
     print("terms")
@@ -2300,6 +2323,7 @@ def main():
         keep(tmp)
         sentences(tmp)
         terms(tmp)
+        edges(tmp)
         widths(tmp)
         vector_invariant(tmp)
         one_line_slots(tmp)

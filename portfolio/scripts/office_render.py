@@ -776,6 +776,36 @@ def safe_area_table(text):
     return v if len(v) == 4 else None
 
 
+BULLET_MARK = re.compile(r"^\s*[-•▪◦‣·∙●○■□–]\s")
+BULLET_MAX_LINES = 2
+
+
+def long_bullets(xml_text, max_lines=BULLET_MAX_LINES):
+    """[(page, "long", detail)] for each bullet the render set on more than `max_lines` lines.
+
+    Measured, not estimated: a line opening with a bullet mark starts a bullet, and the lines just
+    under it at its hanging indent continue it. 2026-11-21 on the 31-page bench deck: 12 bullets of
+    3+ lines on 9 pages — 8 of them pages the render-review lenses called one bullet holding several
+    ideas, the 9th one the blind judges called crowded; the clause count before render missed 2."""
+    out = []
+    for n, (_, _, blocks) in enumerate(bbox_pages(xml_text), 1):
+        live = []   # [x0, last y1, lines, text]
+        for lines in blocks:
+            for (x0, y0, x1, y1), text in lines:
+                if BULLET_MARK.match(text):
+                    live.append([x0, y1, 1, text])
+                    continue
+                for b in live:
+                    if b[0] + 3 <= x0 <= b[0] + 20 and 0 <= y0 - b[1] <= 8:
+                        b[1], b[2], b[3] = y1, b[2] + 1, b[3] + text
+                        break
+        for x0, _, k, text in live:
+            if k > max_lines:
+                out.append((n, "long", "a bullet runs %d lines — one idea per bullet: split it or cut "
+                                       "to the one this page is about: %r" % (k, text.strip()[:40])))
+    return out
+
+
 def margin_crossers(xml_text, margin=28.0):
     """[(page, side, text)] for every text line whose box leaves the page inset by `margin` pt
     (one number, or {top, bottom, left, right})."""

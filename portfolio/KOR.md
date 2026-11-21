@@ -141,7 +141,8 @@ snapshot/  sources/  docs/확정사실.md               버전, 글감, 확정�
 바꾸고, CLAUDE.md를 포함해 없는 것만 만들며, 있는 파일은 덮지 않습니다. 이미 있는 CLAUDE.md(이름을 바꾼
 README 포함)는 내용을 그대로 두고 안내문을 한 번만 뒤에 덧붙입니다.
 
-9단계(3.2.14: 관점 검토에서만 잡히던 것을 `check`가 render 전에 짚음 — 절을 여럿 이은 글머리표, 3쪽 넘게 되풀이된
+9단계(3.2.15: `render`가 렌더한 결과로 검수 — PDF에서 3줄 넘게 나온 글머리표(`long`), 미리보기 이미지에서 템플릿 원본 쪽은
+비어 있는데 안전 영역 밖에 그려진 그림·도형(`edge`); 둘 다 build/render.txt로 render-review에 넘어감; 3.2.14: 관점 검토에서만 잡히던 것을 `check`가 render 전에 짚음 — 절을 여럿 이은 글머리표, 3쪽 넘게 되풀이된
 문장(수동태는 따로 표시), `style/표기규칙.md`의 새 `## 용어` 표가 쓰지 말라는 말; 표의 행은 render-review가 제안; 3.2.13: render-review가 적힌 대로 돎 — 안전 영역을 여백 표에서도 읽고, 아래 띠의 쪽 번호·각주는 제외(여백 위반
 117 → 3), `office_render.py text`가 쪽별 글을 쓰고, `deck.py render`가 build/render.txt를 남김; `check`가 `slot: !keep`을
 받고 아래 여백이나 두 문단 칸을 결함으로 보지 않음; 3.2.12: Step 3b가 PDF 독자에게 필요한 사실은 `notes:`가 아니라 슬라이드에 남김; 자기 상자 끝 1pt 안에 닿은

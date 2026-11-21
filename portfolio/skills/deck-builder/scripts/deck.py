@@ -41,7 +41,7 @@ from pathlib import Path
 
 # the renderer is shared with resume-builder: portfolio/scripts/office_render.py
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
-from office_render import Renderer, NO_RENDERER, bbox_pages, ai_traces, final_check, final_lines, safe_area, wraps  # noqa: E402
+from office_render import Renderer, NO_RENDERER, bbox_pages, ai_traces, final_check, final_lines, safe_area, wraps, long_bullets  # noqa: E402
 
 # ── Namespaces ───────────────────────────────────────────────────────────────
 
@@ -5107,7 +5107,14 @@ def _cmd_render(args):
             print("  rebuilt and rendered again with these")
             if box is None:
                 return rc
-    hits = collisions(box) + wraps(box)
+    hits = collisions(box) + wraps(box) + long_bullets(box)
+    if rbox is not None:
+        tp = work / "template-pages"
+        shutil.rmtree(str(tp), ignore_errors=True)
+        tp.mkdir()
+        for f in r.previews(work, ref.with_suffix(".pdf").name, prefix="t"):
+            shutil.move(str(f), str(tp / f.name))
+        hits += edge_hits(work, box, archs, md_path, (W, pt(slide_size(tpl)[1])))
     hits += zone_audit(box, archs, zones, W,
                        page_zones=built_page_zones(tpl, tparts, Package(out), specs, zones,
                                                    slide_size(tpl)[1]))
@@ -5129,6 +5136,71 @@ def _cmd_render(args):
     if rbox is None:
         print("  ! 템플릿 원본을 렌더하지 못해 템플릿 자체 문제와 구분하지 못했습니다")
     return 1 if (hits and args.strict) else rc
+
+
+INK_DIFF = 90      # summed RGB distance from the band's own background that counts as drawn
+EDGE_MIN_PX = 30   # fewer drawn pixels than this past an edge is anti-aliasing, not a shape
+
+
+def edge_ink(page_png, tpl_png, text_boxes, margin, page_pt):
+    """{side: pixels} drawn in a margin band of the rendered page that the template's own page of the
+    same archetype leaves empty, text lines aside (`margins` measures those).
+
+    The PDF's text coordinates see no picture or shape, so this reads the preview image. 2026-11-21
+    on the 31-page bench deck: one page hit (27, a figure 6pt past the right edge, already in the
+    workspace's own known-exceptions list), no false hit once the template's ink was set aside."""
+    a, b = read_png(page_png), read_png(tpl_png)
+    if not a or not b or (a[0], a[1]) != (b[0], b[1]):
+        return {}
+    w, h, d = a
+    t = b[2]
+    sx, sy = w / page_pt[0], h / page_pt[1]
+    boxes = [(x0 * sx - 2, y0 * sy - 2, x1 * sx + 2, y1 * sy + 2) for x0, y0, x1, y1 in text_boxes]
+    lim = {"left": int(margin["left"] * sx), "right": w - int(margin["right"] * sx),
+           "top": int(margin["top"] * sy), "bottom": h - int(margin["bottom"] * sy)}
+    bands = {"left": (range(h), range(0, lim["left"])), "right": (range(h), range(lim["right"], w)),
+             "top": (range(0, lim["top"]), range(lim["left"], lim["right"])),
+             "bottom": (range(lim["bottom"], h), range(lim["left"], lim["right"]))}
+    out = {}
+    for side, (ys, xs) in bands.items():
+        n = 0
+        for y in ys:
+            row, trow = d[y], t[y]
+            bg = row[0] if side != "left" else row[w - 1]
+            for x in xs:
+                p, q = row[x], trow[x]
+                if sum(abs(p[i] - bg[i]) for i in range(3)) < INK_DIFF:
+                    continue
+                if sum(abs(q[i] - bg[i]) for i in range(3)) >= INK_DIFF:
+                    continue
+                if any(x0 <= x <= x1 and y0 <= y <= y1 for x0, y0, x1, y1 in boxes):
+                    continue
+                n += 1
+        if n >= EDGE_MIN_PX:
+            out[side] = n
+    return out
+
+
+def edge_hits(work, box, archs, md_path, slide_pt):
+    """[(page, "edge", detail)] from the previews in <work>/pages and the template's in
+    <work>/template-pages, for every page whose drawing crosses the safe area."""
+    area = safe_area(Path(md_path).resolve().parent) or safe_area(Path(md_path).resolve().parent.parent)
+    margin = area or dict.fromkeys(("top", "bottom", "left", "right"), 28.0)
+    mine = sorted((Path(work) / "pages").glob("p-*.png"))
+    tpls = sorted((Path(work) / "template-pages").glob("t-*.png"))
+    out = []
+    for page, (png, (pw, ph, blocks)) in enumerate(zip(mine, bbox_pages(box)), 1):
+        if page > len(archs):
+            break
+        k = int(archs[page - 1][1:]) if re.fullmatch(r"s\d+", archs[page - 1]) else 0
+        if not 1 <= k <= len(tpls):
+            continue
+        sides = edge_ink(png, tpls[k - 1], [bx for lines in blocks for bx, _ in lines], margin, (pw, ph))
+        for side, n in sorted(sides.items()):
+            out.append((page, "edge", "a picture or shape is drawn past the safe area's %s edge (%d px "
+                                      "the template's own page leaves empty) — move it in, or give `place:` "
+                                      "a smaller w=" % (side, n)))
+    return out
 
 
 def built_page_zones(tpl, tparts, built, specs, zones, slide_cy):

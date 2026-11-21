@@ -61,8 +61,8 @@ for the next render. Portfolio deck and resume alike. **Not for** content judgem
 
 | Check | Fails when |
 |---|---|
-| Safe area | a line or box crosses the template's margins, touches another box, or the photo touches text |
-| Readability | type below the template's body size; figure text the render measured under 7.5pt (`figure text:` lines); a lone last word on a line; text on a fill with contrast under 4.5:1; more than one idea per line |
+| Safe area | a line or box crosses the template's margins (`margins` for text, `edge` lines in `build/render.txt` for pictures and shapes), touches another box, or the photo touches text |
+| Readability | type below the template's body size; figure text the render measured under 7.5pt (`figure text:` lines); a lone last word on a line; text on a fill with contrast under 4.5:1; more than one idea per line, or a bullet set on 3+ lines (`long` lines in `build/render.txt`) |
 | Lenses | a 가독성, 문체, 단어 선정, AI티 or 글 흐름 finding with its quote and replacement (`references/lenses.md`); the user's sentences change only on "고쳐" |
 | AI traces | none may reach a submitted file: `final-check` takes out a disclaimer in alt text, an AI tool or library in the properties and each visible sentence that says AI wrote it, and lists what it took out word for word — tell the user, so the source (`deck.mdx`, `resume-deck.mdx`) is fixed too. `ai-traces --report-only` only lists |
 | Skeleton match | a page's headline, figures or order differ from `portfolio-skeleton.md` / `resume-skeleton.md`; a `[확인 필요]` line reached the page — run `manage.mjs verify-build` for the list |

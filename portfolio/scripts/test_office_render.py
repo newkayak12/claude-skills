@@ -663,6 +663,16 @@ def main():
                 '</block><block>'
                 '<line xMin="40" yMin="760" xMax="300" yMax="790"><word xMin="40" yMin="760" xMax="300" yMax="790">본문</word></line>'
                 '</block></flow></page></doc></body></html>')
+        bl = ('<html xmlns="http://www.w3.org/1999/xhtml"><body><doc><page width="600" height="800"><flow><block>'
+              '<line xMin="70" yMin="100" xMax="400" yMax="110"><word xMin="70" yMin="100" xMax="400" yMax="110">- 첫 글머리표</word></line>'
+              '<line xMin="77" yMin="113" xMax="400" yMax="123"><word xMin="77" yMin="113" xMax="400" yMax="123">둘째 줄</word></line>'
+              '<line xMin="77" yMin="126" xMax="300" yMax="136"><word xMin="77" yMin="126" xMax="300" yMax="136">셋째 줄</word></line>'
+              '<line xMin="70" yMin="146" xMax="400" yMax="156"><word xMin="70" yMin="146" xMax="400" yMax="156">- 짧은 것</word></line>'
+              '<line xMin="77" yMin="159" xMax="300" yMax="169"><word xMin="77" yMin="159" xMax="300" yMax="169">둘째 줄</word></line>'
+              '</block></flow></page></doc></body></html>')
+        got = o.long_bullets(bl)
+        check(len(got) == 1 and got[0][0] == 1 and "3 lines" in got[0][2] and "첫 글머리표" in got[0][2],
+              "a bullet the render set on 3 lines is named; one on 2 is not — %s" % got)
         hits = o.margin_crossers(band, area)
         check([h[2] for h in hits] == ["본문"],
               "a page number and a footnote wholly in the bottom band are where they belong; other text is not — %s" % hits)
