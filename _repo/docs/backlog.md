@@ -339,6 +339,8 @@ toasts).
 ### teams plugin bugs
 
 Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 128's leftovers.
+Next follow-up after E-f8f880f9 (user, 2026-11-21: "171 -> 170 -> 169 순으로 다음 FU"): 171 → 170 → 169,
+ahead of the order above.
 
 169. **teams reaches an installed Codex from inside a driver, or says why not**
    - Why: 2026-11-21, E-f8f880f9 (PLAN-F1 worktree, `.teams_output/broker/probe-codex-read-only.json`):
