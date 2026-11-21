@@ -352,6 +352,26 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
      vendor; where the environment truly forbids it, `tm_status` names the cause (the bwrap line), not
      only "unreachable". `node --test teams/scripts/test-*.mjs` with counts.
 
+170. **plan node accepts a JSON reply that a sentence of prose precedes**
+   - Why: 2026-11-21, E-f8f880f9 `dispatch:PLAN-F2:1` failed ("child run ended blocked … plan: adapter
+     exit 1"). The plan node's `result.json` has `verification_error` equal to its `last_message`:
+     "I've read the overlays, hooks and tests in the tree, and I'm returning the plan JSON now.\n\n{\"plan\": …".
+     The JSON was there; one lead-in sentence failed the parse and cost a whole second dispatch.
+     User: "실패한 것도 backlog로 올려라 말도 안된다".
+   - Acceptance: a test where a node's last message is prose + a valid JSON object passes verification
+     (or the node's prompt/output schema forbids the lead-in and a retry within the node fixes it, not a
+     new dispatch); `node --test teams/scripts/test-*.mjs` with counts.
+
+171. **A PLAN dispatch driver is respawned past `driver_restarts`**
+   - Why: 2026-11-21, E-f8f880f9 with `driver_restarts: 2`: `dispatch_PLAN-F1_1`, `PLAN-F2_2` and
+     `PLAN-F3_1` each have `.restart1` … `.restart7` driver files, every `exit.json` `{"code":0}`, about
+     40–110 s apart; the daemon log has no "respawn" line. Either a clean exit is respawned without
+     counting, or the counter does not hold. Planning alone reached $17.8 of the $40 budget in 12 min.
+     Cause unverified. User: "실패한 것도 backlog로 올려라 말도 안된다".
+   - Acceptance: the cause named from the daemon code; a driver that exits 0 with its child run not
+     finished is either counted against `driver_restarts` or the reason it is not is logged in the
+     ledger; a test reproduces the 7-respawn sequence; teams tests with counts.
+
 125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality** — E-8faf33b9 blocked on a PRD merge bug (fixed `899dba47`); E-701e2856 (2026-11-07, $35.82) planned
    it again (5 cards 88–94, plan-integrate accepted) and stopped partial at shape:3 (see card 129). Now one
    size-S task per feature area, in order F1 → F5 → F3 → F4 → F2, each from its section of that PRD (kept
