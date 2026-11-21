@@ -647,6 +647,22 @@ def facts(tmp):
           "words kept without their particles count as kept")
 
 
+def sentences(tmp):
+    """A bullet of three clauses and a sentence on three pages are pointed out; a header is not."""
+    print("sentences")
+    page = ("## @s1\ntext1: 배송 추적 연동 처리의 이관\ntext2:\n  - 레거시를 분석했고, 새 경로를 만들었으며, 대조했습니다.\n"
+            "  - 한 가지만 했습니다.\ntext3: * 실제 문서를 바탕으로 재구성됐습니다.\n")
+    _, specs, _ = deck.parse_deck(page * 3)
+    got = deck.sentence_warnings(specs)
+    clauses = [w for w in got if "clauses" in w]
+    same = [w for w in got if "same sentence" in w]
+    check(len(clauses) == 3 and all("3 ideas" in w for w in clauses),
+          "a bullet joining 2 clauses is named on each page; a one-clause bullet is not: %s" % clauses)
+    passive = [w for w in same if "passive" in w]
+    check(len(same) == 2 and len(passive) == 1 and "1, 2, 3" in passive[0] and not any("이관" in w for w in same),
+          "repeated sentences are named, the passive one as passive; the repeated header is not: %s" % same)
+
+
 def keep(tmp):
     """`key: !keep` keeps the template's content on purpose; check stops asking."""
     print("keep")
@@ -2265,6 +2281,7 @@ def main():
         facts(tmp)
         tight(tmp)
         keep(tmp)
+        sentences(tmp)
         widths(tmp)
         vector_invariant(tmp)
         one_line_slots(tmp)

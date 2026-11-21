@@ -4331,6 +4331,47 @@ def _check_picture_legibility(path, slot, slots, tag, slot_id, line, warns, errs
                             "inherited", bad * 100, threshold, text_hex, mean))
 
 
+# a clause joined to the next: 했고, 하며, 했으며, 됐지만 … — two of these in one bullet carry three ideas
+CLAUSE_JOIN = re.compile(r"(했고|하고|했으며|하며|었고|었으며|였고|였으며|되고|됐고|됐으며|되며|지만|으나|는데)[ ,]")
+BOILERPLATE_PAGES = 3
+
+
+def sentence_warnings(specs):
+    """What the render-review lenses found and nothing before render caught (2026-11-21, measured
+    on a 31-page deck against the lens rows): a bullet joining 3+ clauses (6 of 7 hits were lens
+    findings, 6 of their 9 pages caught) and one sentence repeated on 3+ slides (the passive
+    "…재구성됐습니다." footnote on 8 pages, all caught). Wording is the author's: these only point."""
+    out, seen = [], {}
+    for page, spec in enumerate(specs, 1):
+        for sid, kind, value, line in spec.values:
+            if sid in ("notes", "place") or kind == "table":
+                continue
+            try:
+                items = [t for _, t in seen_items(kind, value)]
+            except Exception:
+                continue
+            for t in items:
+                s = " ".join(t.split())
+                if kind == "list" and len(CLAUSE_JOIN.findall(s + " ")) >= 2:
+                    out.append("line %d: @%s.%s (page %d) — one bullet joins %d clauses, so it carries "
+                               "%d ideas; split it or cut to the one this page is about: %r"
+                               % (line, spec.archetype, sid, page, len(CLAUSE_JOIN.findall(s + " ")),
+                                  len(CLAUSE_JOIN.findall(s + " ")) + 1, truncate(s, 34)))
+                # a sentence, not a running header (a section name repeats on its pages by design)
+                if len(s) >= 12 and re.search(r"다\.?$", s):
+                    seen.setdefault(s, []).append((page, line))
+    for s, at in seen.items():
+        pages = sorted({p for p, _ in at})
+        if len(pages) >= BOILERPLATE_PAGES:
+            passive = re.search(r"(됐|되었|되어)\S*\.?$", s)
+            out.append("line %d: the same sentence on %d pages (%s)%s — say it once (the first such "
+                       "page, or the section divider), or give each page its own: %r"
+                       % (at[0][1], len(pages), ", ".join(map(str, pages)),
+                          "; it is passive with no subject — name who did it" if passive else "",
+                          truncate(s, 34)))
+    return out
+
+
 def cmd_check(args):
     md_path = require_deck(args.deck)
     front, specs, errors = parse_deck(md_path.read_text(encoding="utf-8"))
@@ -4646,6 +4687,8 @@ def cmd_check(args):
         if charts:
             warns.append("%s: chart %s keeps the template's sample numbers — replace or delete "
                          "it in PowerPoint" % (tag, ", ".join(charts)))
+
+    warns += sentence_warnings(specs)
 
     def own(w):
         m = re.match(r"line (\d+):", w)

@@ -144,7 +144,10 @@ python3 /abs/path/scripts/deck.py check --deck deck.mdx
 ```
 
 Errors must be fixed. Warnings are judgment calls — surface every one, including the ones
-you decide to ignore.
+you decide to ignore. Two point at the author's own wording and are never rewritten here: a bullet
+joining several clauses, and one sentence repeated on three or more pages (passive ones named). List
+them for the author with a suggested split or a single placement, change them only on their word,
+and carry the rest into `manage`'s next feedback round.
 
 What it measures (table, and how font widths are resolved): `references/render-and-check.md`.
 
