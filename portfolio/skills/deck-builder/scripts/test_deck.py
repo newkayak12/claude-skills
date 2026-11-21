@@ -663,6 +663,50 @@ def sentences(tmp):
           "repeated sentences are named, the passive one as passive; the repeated header is not: %s" % same)
 
 
+def autonum(tmp):
+    """A typed `1) ` in a slot the template numbers itself is dropped; a scalar `- x` is the bullet x."""
+    print("auto-numbered footnotes, one-item lists")
+    sp = _sp("Foot", None, [(0, "각주")]).replace("<a:pPr lvl=\"0\"/>",
+                                               '<a:pPr lvl="0"><a:buAutoNum type="arabicParenR"/></a:pPr>')
+    root = ET.fromstring(_slide([sp, _sp("Body", None, [(0, "본문")], y=900000)]))
+    tree = root.find(deck.q("p:cSld") + "/" + deck.q("p:spTree"))
+    slots = {s.id: s for s in deck.analyze_slide(root)}
+
+    def texts(sid):
+        el = deck.resolve_path(tree, slots[sid].path)
+        return ["".join(t.text or "" for t in p.iter(deck.q("a:t"))) for p in el.iter(deck.q("a:p"))]
+    deck.apply_value(tree, slots["text1"], "list", [(0, "1) 롤링: 순서대로 교체"), (0, "2) APM: 추적 도구")], {}, [], "t")
+    deck.apply_value(tree, slots["text2"], "scalar", "- 한 가지만", {}, [], "t")
+    check(texts("text1") == ["롤링: 순서대로 교체", "APM: 추적 도구"] and texts("text2") == ["한 가지만"],
+          "the template's own numbering stays alone and a lone bullet loses its dash: %s %s"
+          % (texts("text1"), texts("text2")))
+
+
+def svgblip(tmp):
+    """A template picture's own SVG extension goes when the picture is replaced."""
+    print("svgBlip")
+    make_png(tmp / "s.png", 40, 40)
+    make_template(tmp / "s.pptx", tmp / "s.png")
+    pkg = deck.Package(tmp / "s.pptx")
+    part = next(p for p in deck.slide_order(pkg) if b"a:blip" in pkg.parts[p])
+    x = pkg.parts[part].decode()
+    x = re.sub(r'(<a:blip [^>]*?)/>',
+               r'\1><a:extLst><a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}">'
+               r'<asvg:svgBlip xmlns:asvg="http://schemas.microsoft.com/office/drawing/2016/SVG/main" r:embed="rId99"/>'
+               r'</a:ext></a:extLst></a:blip>', x, count=1)
+    pkg.parts[part] = x.encode()
+    pkg.write(tmp / "s.pptx")
+    n = deck.slide_order(pkg).index(part) + 1
+    pic = next(s for s in deck.analyze_slide(ET.fromstring(x)) if s.type == "picture").id
+    make_png(tmp / "new.png", 40, 40)
+    (tmp / "s.mdx").write_text("---\ntemplate: s.pptx\noutput: s-out.pptx\n---\n\n## @s%d\n%s: new.png\n"
+                               % (n, pic), encoding="utf-8")
+    run_cmd(["build", "--deck", str(tmp / "s.mdx")])
+    out = deck.Package(tmp / "s-out.pptx")
+    built = b"".join(out.parts[p] for p in deck.slide_order(out))
+    check(b"svgBlip" not in built, "the replaced picture keeps no svgBlip pointing at the template's art")
+
+
 def edges(tmp):
     """A shape drawn past the safe area on the page, and not on the template's page, is named."""
     print("edge ink")
@@ -2324,6 +2368,8 @@ def main():
         sentences(tmp)
         terms(tmp)
         edges(tmp)
+        autonum(tmp)
+        svgblip(tmp)
         widths(tmp)
         vector_invariant(tmp)
         one_line_slots(tmp)

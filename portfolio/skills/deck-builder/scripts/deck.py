@@ -3373,7 +3373,15 @@ def apply_value(spTree, slot, kind, value, imgctx, problems, where):
 
     if slot.type in ("text", "list"):
         txBody = el.find(q("p:txBody"))
-        _write_paragraphs(txBody, as_items(kind, value))
+        items = as_items(kind, value)
+        # the template numbers these paragraphs itself (buAutoNum): a typed `1) ` would print twice
+        # ("1) 1) …", 16 footnote slots on a bench deck, 2026-11-21), so the typed number goes
+        if txBody.find(".//" + q("a:buAutoNum")) is not None:
+            items = [(lvl, re.sub(r"^\s*(?:\d+\)|[①-⑳])\s*", "", t)) for lvl, t in items]
+        # one bullet written as a scalar (`key: - x`) is that bullet, not the text "- x"
+        if kind == "scalar" and len(items) == 1 and re.match(r"^\s*[-·•]\s+", items[0][1]):
+            items = [(items[0][0], re.sub(r"^\s*[-·•]\s+", "", items[0][1]))]
+        _write_paragraphs(txBody, items)
     elif slot.type == "table":
         if kind != "table":
             problems.append("%s: slot '%s' is a table — use `| a | b |` rows" % (where, slot.id))
@@ -3671,6 +3679,15 @@ def _swap_picture(el, raw_value, imgctx, problems, where, slot):
         problems.append("%s: slot '%s' has no image fill to replace" % (where, slot.id))
         return
     blip.set(q("r:embed"), rid)
+    # a template picture may carry its own SVG as a blip extension (asvg:svgBlip); renderers draw
+    # that SVG over the raster, so the new picture never shows (2026-11-21: @s10 pic2, @s31 pic1
+    # kept the template's art, silently) — the extension goes with the old art
+    for lst in blip.findall(q("a:extLst")):
+        for ext_el in list(lst):
+            if any(c.tag.endswith("}svgBlip") for c in ext_el):
+                lst.remove(ext_el)
+        if not len(lst):
+            blip.remove(lst)
     fill = el.find(q("p:blipFill"))
     if fill is None:
         return
