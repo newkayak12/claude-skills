@@ -9,7 +9,7 @@ never retire them as duplicates, and never reference superpowers.
 
 ### Codex plugin compatibility
 
-168. **Identify the failing Codex hooks and verify installed-client behavior**
+168. **Identify the failing Codex hooks and verify installed-client behavior** — in E-f8f880f9
    - Why: On 2026-11-21 the user reported “plugin contents changed; hook approval required” twice and “hook exited with code 127” once. The [English maintainer handoff](2026-11-21-codex-hook-handoff.md) preserves the sequence, source evidence and open questions.
    - Acceptance: Attribute each message, capture the cause of exit 127, and verify the affected hooks in a fresh Codex session after approval. Record the corresponding Claude regression results.
 
