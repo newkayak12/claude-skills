@@ -444,7 +444,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
      Same for a size-S task (seen 2026-11-05 on E-1140cdb9: 17% while SG1 was implemented and under
      test): progress comes from the harness run's `now.json` and subgoals (`SG1 test · 1/2`), with a test.
 
-126. **teams agents talk over a per-task message bus (topic = the task key), the pane draws it as threads**
+126. **teams agents talk over a per-task message bus (topic = the task key), the pane draws it as threads** — P1–P4 merged `04535b47` from E-674a7d90 (2026-11-20, L, partial: $62.78, gate 85; teams 2568/0/1, plugin test 982/982 after merge). Left: QA of the merged bus, and the real L task where two packages exchange a message that changes what one builds.
    - Why: user, 2026-11-04: "agent 간 대화는? teams 내에서", then "지금은 mod로 가능하지 않나? 가능하더라도
      별도 bus가 필요할거 같고(message queue 같이 topic은 task 번호로하면 될거 같고)". Today the only
      agent-to-agent path is a STORY's `tm_ask` to the TeamLeader (card 49), parked until answered or
