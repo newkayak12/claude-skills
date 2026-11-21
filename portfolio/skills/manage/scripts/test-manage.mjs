@@ -488,6 +488,14 @@ test('claims: the other way, results no page carries and items no page cites are
   assert.deepEqual(r.settled, ['진행 중인 장은 완료했을 때 기준으로 쓴다', '서로 다른 일은 한 블록에 섞지 않는다'])
 })
 
+test('claims: a page citing results but carrying none of their figures is a problem, results offered first', () => {
+  const root = claimsWorkspace()
+  const r = claims('## 1 검색\n글감: retro--검색-지연\n전체 스캔 때문에 목록 조회가 느렸다.\n', readMaterial(root))
+  const p = r.problems.find(x => x.kind === 'no_figure')
+  assert.ok(p && p.page === 1, JSON.stringify(r.problems))
+  assert.match(p.text, /820ms|210ms|12만건/)
+})
+
 test('claims: a sentence already marked [확인 필요] is not raised again, and a clean skeleton is ok', () => {
   const root = claimsWorkspace()
   const clean = '## 1 검색\n글감: retro--검색-지연\n응답 시간 820ms → 210ms.\n카나리 배포를 도입했다 위해 [확인 필요: 이유].\n'
@@ -574,7 +582,10 @@ test('claims: a template label (`해결:`) is not read as a reason sentence', ()
   const r = claims('## 1 검색\n글감: retro--검색-지연\n해결: 카나리 배포 도입\n', readMaterial(root))
   assert.deepEqual(r.problems.filter(p => p.kind === 'to_confirm'), [])
   const why = claims('## 1 검색\n글감: retro--검색-지연\n해결: 장애가 잦았기 때문에 카나리 배포 도입\n', readMaterial(root))
-  assert.deepEqual(why.problems.map(p => p.kind), ['to_confirm'])
+  assert.deepEqual(why.problems.map(p => p.kind).filter(k => k !== 'no_figure'), ['to_confirm'])
+  // a bare slot name on its own line, or one inside an HTML comment, is no sentence either (2026-11-21)
+  const bare = claims('## 1 검색\n글감: retro--검색-지연\n해결\n<!-- 문제: 원인이 무엇이었기 때문에 -->\n응답 시간 820ms → 210ms.\n', readMaterial(root))
+  assert.deepEqual(bare.problems, [])
 })
 
 test('claims and settle CLI say so when docs/확정사실.md has no 서술 기준 or 구조 section', () => {

@@ -965,8 +965,11 @@ export function claims(text, items, settledLines = [], sel = null, confirmed = [
     if (/^#{1,2}\s/.test(l)) { cur = null; continue }
     if (!cur || CHANGE_LINE.test(l)) continue
     const c = l.match(CITE)
+    // an HTML comment is a note to the writer, and a bare slot name (`해결`, `문제`) is no sentence:
+    // both were read as unsupported reasons on 10 pages of a sandbox build (2026-11-21)
+    const text = l.replace(/<!--.*?-->/g, '').trim()
     if (c) cur.ids.push(...c[1].split(/[,;]/).map(s => s.trim()).filter(Boolean))
-    else if (l.trim()) cur.body.push(l.trim())
+    else if (text && !/^<!--/.test(text) && !/^[^\s\d:：]{1,6}[:：]?$/.test(text)) cur.body.push(text)
   }
   for (const p of pages) {
     const known = p.ids.filter(id => items.has(id))
@@ -974,6 +977,16 @@ export function claims(text, items, settledLines = [], sel = null, confirmed = [
     for (const id of known) items.get(id).cited = true
     for (const id of known.filter(id => use.get(id) === '제외')) problems.push({ page: p.page, kind: 'excluded', text: id })
     const ground = known.map(id => items.get(id))
+    // a page citing items that state results, yet carrying none of their figures, reads as a claim
+    // without evidence (blind bench 2026-11-21: the skill's deck lost pages 06, 12, 13, 14, 16, 18, 23
+    // for leaving out 491/19,500, 98.1%, 4~10분, 357건/초 — all in the cited items)
+    // results first: a share, a rate, a large count, then a duration — a team size or a count of 4 last
+    const weight = f => (/%|\/|배/.test(f) ? 4 : 0) + (Number(f.replace(/[^\d.]/g, '')) >= 100 ? 2 : 0) + (/초|분|ms/.test(f) ? 1 : 0)
+    const offer = ground.flatMap(it => it.rows.filter(r => !/근거 없음/.test(r.evidence)).flatMap(r => r.figs.map(f => ({ f, s: `${f} (${it.id})` }))))
+      .sort((a, b) => weight(b.f) - weight(a.f)).map(x => x.s)
+    const pageFigs = p.body.flatMap(figs)
+    if (offer.length && !pageFigs.length)
+      problems.push({ page: p.page, kind: 'no_figure', text: `cites ${known.join(', ')} but carries none of their figures — put one on the page: ${[...new Set(offer)].slice(0, 4).join(', ')}` })
     for (const line of p.body) {
       for (const t of TONE) if (line.includes(t)) listed.tone.push({ page: p.page, phrase: t.trim(), text: line })
       const fs = figs(line)
