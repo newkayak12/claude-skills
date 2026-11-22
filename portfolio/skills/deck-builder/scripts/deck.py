@@ -4737,6 +4737,31 @@ def cmd_check(args):
         untouched = [s.id for s in slots if s.id not in seen and s.type != "chart" and s.id not in placed_ids
                      and s.id not in spec.keep
                      and (s.type == "picture" or ((spec.archetype, s.id) in own_values and not label(s)))]
+        # two filled frames the template draws in the same place are alternatives, not neighbours
+        # (2026-11-22: the profile's 자격증 and 보유 역량 headings share one spot; both filled, the
+        # render printed them over each other and both blind judges marked page 3 high)
+        gone = {sid for sid, kind, value, _ in spec.values
+                if kind == "scalar" and isinstance(value, str) and value.strip() == "!drop"}
+        shown = [s for s in slots if s.box and s.type in ("text", "list", "title", "subtitle")
+                 and s.id not in gone and s.id not in placed_ids and (s.id in seen or (spec.archetype, s.id) in own_values)]
+        mine = {sid: " ".join(t for _, t in seen_items(kind, value)).split()
+                for sid, kind, value, _ in spec.values if kind != "table" and sid not in ("place", "notes")}
+
+        def changed(s):   # the deck writes something other than the template's own words there
+            return s.id in mine and mine[s.id] != " ".join(x for x in (s.sample or []) if isinstance(x, str)).split()
+        for i, a in enumerate(shown):
+            for b in shown[i + 1:]:
+                # same parent only: a group's children carry the group's own coordinates
+                # a slide written exactly as the template (an extract) is the template's own design
+                if not any(changed(s) for s in slots) or a.path[:-1] != b.path[:-1]:
+                    continue
+                ix = max(0, min(a.box[0] + a.box[2], b.box[0] + b.box[2]) - max(a.box[0], b.box[0]))
+                iy = max(0, min(a.box[1] + a.box[3], b.box[1] + b.box[3]) - max(a.box[1], b.box[1]))
+                small = min(a.box[2] * a.box[3], b.box[2] * b.box[3]) or 1
+                if ix * iy / small > 0.5:
+                    errs.append("%s: %s and %s sit in the same place on the template (%d%% of the smaller) — "
+                                "it offers them as alternatives: keep one, `!drop` the other, or `place:` one elsewhere"
+                                % (tag, a.id, b.id, round(100 * ix * iy / small)))
         if untouched:
             warns.append("%s: keeps template content for %s — fill it, `!drop` it, or write `%s: !keep` "
                          "when the template's own content belongs on this slide"

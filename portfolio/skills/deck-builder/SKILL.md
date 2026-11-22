@@ -177,7 +177,9 @@ What `render` does: `references/render-and-check.md` — read before running it.
 relative. Its layout list is measured on the render, not estimated: `long` is a bullet the PDF
 sets on 3+ lines (the author's wording — list it, change it only on their word), `edge` a picture or
 shape the preview draws past the safe area where the template's own page leaves it empty (move it
-in or narrow its `place:`). After every render, not only on a warning, run `render-review` on the PDF and previews. With no renderer, ask the person once, then run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/office_render.py install-renderer --yes` (a pinned LibreOffice into `~/.cache`, no root).
+in or narrow its `place:`). An `overlap`, `edge` or `clip` line the render lists as this deck's (not
+under 템플릿 자체) means the deck is not done: fix it and render again until none is left — a blind
+bench lost on one overlapped profile page that render had listed and the build passed by (2026-11-22). After every render, not only on a warning, run `render-review` on the PDF and previews. With no renderer, ask the person once, then run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/office_render.py install-renderer --yes` (a pinned LibreOffice into `~/.cache`, no root).
 
 ## Output Template
 

@@ -129,7 +129,8 @@ the snapshot. A round always builds (the user's standing word: "결과물도 검
    sample) and `claims --file portfolio-deck.mdx` (each slide cites in its comment: `## @s3 2쪽 · 글감: <id>`). Fine style changes go through the template's run formats, never by hand in the pptx.
    `snapshot --kind deck --level … --note` only when asked (the note names its skeleton).
 7. **Build, render, review.** Every round builds, then `verify-build` (each skeleton slot's text is in
-   build/deck.pptx, footnote marks and picture files exist). `render` only when the user says. After a render run
+   build/deck.pptx, footnote marks and picture files exist). `render` only when the user says; a render that
+   lists this deck's `overlap`, `edge` or `clip` is not a finished round — layout is fixed and rendered again. After a render run
    `render-review` (deck and resume alike): `keep-render`, then every page against safe area,
    readability, AI traces and the skeleton, one `검토.md` row per page. A problem seen there or in
    PowerPoint goes into `template/next-render.md` (쪽 · 칸 · 증상 · 확인 · 적용), all applied before

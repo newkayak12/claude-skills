@@ -123,13 +123,13 @@ def _chart(name):
 def make_template(path, media, extra2=()):
     slide1 = _slide([
         _sp("Title 1", "ctrTitle", [(0, "Template Title")], cx=6000000),
-        _sp("Subtitle 2", "subTitle", [(0, "Template subtitle")]),
-        _sp("Slide Number", None, [(0, "")]),
+        _sp("Subtitle 2", "subTitle", [(0, "Template subtitle")], y=700000),
+        _sp("Slide Number", None, [(0, "")], y=4000000),
     ])
     slide2 = _slide([
         _pic("Picture 4", "rId9", 3000000, 2000000),   # behind the text, as a design does
         _sp("Title 1", "title", [(0, "Agenda")]),
-        _sp("Body 2", "body", [(0, "one"), (0, "two"), (1, "nested")]),
+        _sp("Body 2", "body", [(0, "one"), (0, "two"), (1, "nested")], y=700000),
         _tbl("Table 3", 3, 2),
         *extra2,
     ])
@@ -661,6 +661,27 @@ def sentences(tmp):
     passive = [w for w in same if "passive" in w]
     check(len(same) == 2 and len(passive) == 1 and "1, 2, 3" in passive[0] and not any("이관" in w for w in same),
           "repeated sentences are named, the passive one as passive; the repeated header is not: %s" % same)
+
+
+def alternatives(tmp):
+    """Two frames the template draws in one place are alternatives: filling both is an error."""
+    print("alternative frames")
+    make_png(tmp / "al.png", 40, 40)
+    make_template(tmp / "al.pptx", tmp / "al.png")
+    pkg = deck.Package(tmp / "al.pptx")
+    part = deck.slide_order(pkg)[1]
+    pkg.parts[part] = _slide([_sp("A", None, [(0, "자격증")], x=100000, y=100000),
+                              _sp("B", None, [(0, "보유 역량")], x=100000, y=100000),
+                              _sp("C", None, [(0, "다른 칸")], x=100000, y=2000000)]).encode("utf-8")
+    pkg.write(tmp / "al.pptx")
+    head = "---\ntemplate: al.pptx\noutput: al-out.pptx\n---\n\n## @s2\n"
+    src = tmp / "al.mdx"
+    src.write_text(head + "text1: 자격증\ntext2: 보유 역량\ntext3: 셋\n", encoding="utf-8")
+    out = run_cmd(["check", "--deck", str(src)])
+    check("same place" in out and "text1 and text2" in out, "both alternatives filled is an error: %s"
+          % next((l.strip() for l in out.splitlines() if "same place" in l), out[:120]))
+    src.write_text(head + "text1: 자격증\ntext2: !drop\ntext3: 셋\n", encoding="utf-8")
+    check("same place" not in run_cmd(["check", "--deck", str(src)]), "one dropped says nothing")
 
 
 def autonum(tmp):
@@ -2370,6 +2391,7 @@ def main():
         edges(tmp)
         autonum(tmp)
         svgblip(tmp)
+        alternatives(tmp)
         widths(tmp)
         vector_invariant(tmp)
         one_line_slots(tmp)
