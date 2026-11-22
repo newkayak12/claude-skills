@@ -585,6 +585,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" migrate --root . --wor
   --psql "docker exec -i <pg-container> psql -U postgres"   # or PG* env and plain psql; --sql-out file.sql to only write the script
 ```
 
+- v1.24.0 — MCP: `knowledge_get` pages a long note and reads the store's index and rules files; sources are listed and read inside `sources/`; an existing note can be replaced and re-indexed (writes outside the store, into protected dirs, through a symlink or by a case variant are refused). LLM graph build: with no ontology a default relation-type list applies (`unknown-type`), and an entity name that is too long or a sentence is refused (`name-too-long`, `name-is-sentence`).
 - v1.23.3 — Codex: the `knowledge-local` MCP server starts (Codex does not expand `${PLUGIN_ROOT}` in MCP args; a relative path with `cwd` the plugin folder does) and works on the session's project, read per call from Codex's workspace metadata unless `--root` or `CLAUDE_PROJECT_DIR` sets it.
 - v1.23.2 — Codex: the knowledge delta check runs on Codex `apply_patch` edits (`hooks/codex.json`, targets read from the patch); the Claude-only trophy startup hook no longer runs in Codex (it exited 127).
 - v1.23.1 — hook commands quote the plugin root, so a path with a space (Orca: `~/Library/Application Support/...`) no longer fails with `Cannot find module` and leaves the gate off.

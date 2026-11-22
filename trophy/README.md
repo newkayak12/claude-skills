@@ -137,6 +137,7 @@ view (most hit, most missed, never fired).
 
 ## Status log
 
+- v0.10.1 — no hook on an event an organization policy skips (`skill.prompt`, `UserPromptExpansion`, `PostToolUseFailure`): skill uses come from the Skill tool call and the typed command, skill and MCP failures from the tool call result, so failures are recorded under that policy too and no "hook was skipped" line shows.
 - v0.10.0 — the Failures tab names what failed (the run and its failed gate or subgoal) and folds identical rows into one with a count and the last date; the Achievements pane opens only when you ask for it (`/achievements` or a Failures button, never after `/trophy:list`), and in a narrow column shows unlocked and nearest-to-unlock first with readable titles, locked ones folded into a count.
 - v0.9.2 — the pane, consent card, bands and toasts draw on terminal, desktop, mobile and vscode; trophy starts only when a surface exists, not on every interactive start.
 - v0.9.1 — local failure records `subgoal_failed` and `goal_failed` come only from the outcome the harness mod publishes; trophy no longer reads harness files or gate output (records no longer carry the run slug).

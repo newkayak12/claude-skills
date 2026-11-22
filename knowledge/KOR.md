@@ -563,6 +563,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" migrate --root . --wor
   --psql "docker exec -i <pg-container> psql -U postgres"   # 또는 PG* 환경변수와 psql; 스크립트만 쓰려면 --sql-out file.sql
 ```
 
+- v1.24.0 — MCP: `knowledge_get`이 긴 노트를 페이지로 나눠 주고 저장소의 색인·규칙 파일을 읽음. `sources/` 안의 원본 목록과 내용을 읽음. 기존 노트를 바꾸고 다시 색인함(저장소 밖, 보호 폴더, 심볼릭 링크 경유, 대소문자만 다른 경로로의 쓰기는 거부). LLM 그래프 빌드: 온톨로지가 없으면 기본 관계 종류 목록을 쓰고(`unknown-type`), 너무 길거나 문장인 엔티티 이름은 거부(`name-too-long`, `name-is-sentence`).
 - v1.23.3 — Codex: `knowledge-local` MCP 서버가 뜸(Codex는 MCP 인자의 `${PLUGIN_ROOT}`를 펼치지 않아 상대 경로와 플러그인 폴더 `cwd`로 바꿈). 프로젝트는 `--root`나 `CLAUDE_PROJECT_DIR`가 없으면 Codex가 호출마다 보내는 작업 폴더를 씀.
 - v1.23.2 — Codex: knowledge delta 검사가 Codex `apply_patch` 편집에서도 돎(`hooks/codex.json`, 대상은 패치에서 읽음); Claude 전용 trophy 시작 훅이 Codex에서 더 이상 돌지 않음(exit 127로 끝났음).
 - v1.23.1 — 훅 명령이 플러그인 경로를 따옴표로 감쌉니다. 경로에 공백이 있어도(Orca의 `~/Library/Application Support/...`) `Cannot find module`로 실패해 게이트가 꺼지는 일이 없습니다.

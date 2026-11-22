@@ -336,17 +336,6 @@ toasts).
 
 ### Repo and rules
 
-132. **A mod or plugin hook skipped by another plugin's hook is known and its loss is covered**
-   - Why: seen 2026-11-10 in a live session: "session: its classic.SessionStart hook was skipped.
-     "cc-plugin-sec-default" runs first and sent the event on past it", and the same for trophy's `skill.prompt`, after
-     a skill was invoked, and later for trophy's `classic.UserPromptExpansion` (`trophy/hooks/mod.tsx:546`) on a
-     typed `/backlog`, and 2026-11-11 for trophy's `classic.PostToolUseFailure` after a refused tm_open. The session one is `session/hooks/ensure-trophy.sh`. `trophy/hooks/mod.tsx:440` already
-     expects the `skill.prompt` skip and `:565` covers only a typed skill. What is lost for a skill the model invokes,
-     and for `ensure-trophy.sh`, is unverified.
-   - Acceptance: one live session under that policy states, per skipped hook, what stops working; a model-invoked skill
-     is either recorded by trophy (a `plugin test` case on the path that sees it) or the gap is stated in trophy's
-     README/KOR; `ensure-trophy.sh`'s job has a path that does not depend on the skipped event, or is retired.
-
 ### Subagents and parallel runs — use and clean up (user, 2026-10-17)
 
 ### teams plugin bugs
@@ -413,7 +402,7 @@ ahead of the order above.
    at 190/110 en/ko in `tmp/card125/renders-fix/` (52) approved (user, 2026-11-11: "고").
    KR header, one waiting-on-you wording, EPIC report result/gate and FLOOR counts shipped `ea091543`
    (E-ef381b6b, gate 91; renders in `tmp/card125/renders-leftovers/` approved, user 2026-11-18: "3다 완료").
-   Still to do: the close command answering `pane opened` (did not reproduce live in
+   Still to do: with every task done or cleaned the HOME page says "Loading..." forever instead of "no run" (`teams/hooks/mod.tsx` ~1031, `listed` empty while `id` is set; seen 2026-11-22); the close command answering `pane opened` (did not reproduce live in
    E-bcc5a0fe, two-copies cause ruled out under `--plugin-dir`; cause unknown, watch for it on the installed
    build); the host still draws a bare ⏎ after the keys Input outside answer mode (host behaviour, room kept
    for it); a look in the Claude app or Desktop; README/KOR shots with the batch bump.
@@ -489,7 +478,7 @@ ahead of the order above.
      Same for a size-S task (seen 2026-11-05 on E-1140cdb9: 17% while SG1 was implemented and under
      test): progress comes from the harness run's `now.json` and subgoals (`SG1 test · 1/2`), with a test.
 
-126. **teams agents talk over a per-task message bus (topic = the task key), the pane draws it as threads** — P1–P4 merged `04535b47` from E-674a7d90 (2026-11-20, L, partial: $62.78, gate 85; teams 2568/0/1, plugin test 982/982 after merge). Left: QA of the merged bus, and the real L task where two packages exchange a message that changes what one builds.
+126. **teams agents talk over a per-task message bus (topic = the task key), the pane draws it as threads** — QA of the merged bus passed 2026-11-22 (E-9239a325, gate 91, no defect; bus tests 59/59, live tm_post/tm_read over the real server). P1–P4 merged `04535b47` from E-674a7d90 (2026-11-20, L, partial: $62.78, gate 85; teams 2568/0/1, plugin test 982/982 after merge). Left: QA of the merged bus, and the real L task where two packages exchange a message that changes what one builds.
    - Why: user, 2026-11-04: "agent 간 대화는? teams 내에서", then "지금은 mod로 가능하지 않나? 가능하더라도
      별도 bus가 필요할거 같고(message queue 같이 topic은 task 번호로하면 될거 같고)". Today the only
      agent-to-agent path is a STORY's `tm_ask` to the TeamLeader (card 49), parked until answered or
@@ -612,7 +601,7 @@ ahead of the order above.
         and its findings are written to the node, not only to the ask;
      then one real L task where a fix wave and a QA pass complete with no hand merge.
 
-130. **teams spends less per task: model per stage, lean driver sessions, a default budget** — shipped `a37c7f33` by E-e9e7a45b (2026-11-13, L, $56.07 of $80; see Sprints). Left:
+130. **teams spends less per task: model per stage, lean driver sessions, a default budget** — QA rerun 2026-11-22 (E-67ce8b70, gate 92): model per stage, the models override and the node-start model are all under tests (73/73); a fresh driver starts at 50,427 tokens, target 20k missed (12 plugins and 95 skills still load). Shipped `a37c7f33` by E-e9e7a45b (2026-11-13, L, $56.07 of $80; see Sprints). Left:
    - QA-F1 (model per stage) never finished: the disk filled, its run file was lost (card 129 item 7).
      D1 (tm_open `models` override dropped on the broker adapter path) shipped `0160b5bf` by E-fadb773c
      (2026-11-17). D2, D3 medium and D4-D6 low were lost with the run file. Acceptance: QA-F1 rerun on main.
@@ -704,7 +693,7 @@ ontology and link policy are config, nothing in the engine names one instance. O
 (lesson les-knowledge-no-external-runtime-deps); a real run uses a copy in `tmp/`, never a live vault.
 Design: `_repo/docs/plans/2026-11-19-knowledge-*` (PRDs F1–F4, shipped in knowledge 1.22.0).
 
-164. **noah and genna run on the knowledge engine instead of their own servers: the cut-over and the engine gaps it needs**
+164. **noah and genna run on the knowledge engine instead of their own servers: the cut-over and the engine gaps it needs** — engine gaps shipped `e85f540b` (E-b2cd58cb, gate 93: knowledge_get paging, index/rules read, source list/read, note replace; symlink and case-variant writes refused); left: the cut-over, on the user's approval
    - Why: user, 2026-11-19: "noah, genna '/home/newkayak12' 보면 있을 텐데 이쪽 교체를 해야할거야".
      Plan, tool map and tmp-copy proof shipped (E-df46dbb4, `_repo/docs/plans/2026-11-19-knowledge-noah-genna-on-engine.md`):
      on a noah copy knowledge scored recall@10 0.792 through TEI vs noah-server 0.762 (query embedded) /
@@ -719,7 +708,7 @@ Design: `_repo/docs/plans/2026-11-19-knowledge-*` (PRDs F1–F4, shipped in know
      under `~/docker/mcps` changes; after each move a fresh copy re-measures recall@10 at or above the
      plan's table; one shared TEI with its 3 GB limit and the two nightly re-index jobs staggered.
 
-167. **LLM graph build: refuse the wrong edges a 7b model gets past the validator**
+167. **LLM graph build: refuse the wrong edges a 7b model gets past the validator** — rules shipped `6c5ce2d7` (E-1778b379, gate 91: default relation types `unknown-type`, `name-too-long`, `name-is-sentence`; knowledge 157/157); left: the medium rerun (qwen2.5:7b not pulled on this machine) and the recall cost of the 22-type default list
    - Why: E-df46dbb4 real run, 2026-11-19, 34-note noah copy, CPU only. `small` (qwen2.5:3b, 1939 s):
      83 nodes, 2 edges, 43 refused (vague-type 31, missing evidence 25, self-loop 10), 4 notes failed.
      `medium` (qwen2.5:7b, 5170 s): 127 nodes, 56 edges, 38 refused (evidence not in source 35), none
