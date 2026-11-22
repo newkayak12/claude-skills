@@ -547,10 +547,12 @@ export function snapshot(root, { kind, level, note, by, date }) {
   const dir = join(root, 'snapshot', kind, `${kind}-${curS}`)
   for (const p of [dir, skelPath, readme]) assertInside(root, p)
   if (existsSync(dir)) throw new Error(`${dir} exists: snapshot of ${curS} already taken`)
+  // every argument is checked before anything is written: a bad --level once left the copy behind
+  // and the corrected call then refused as "already taken" (2026-11-22)
+  const next = `v${bump(cur, level).join('.')}`
   mkdirSync(dir, { recursive: true })
   copyFileSync(skelPath, join(dir, basename(skelPath)))
 
-  const next = `v${bump(cur, level).join('.')}`
   // the history line follows the file's own form: quoted `> vX.Y.Z(날짜, 누가): …` when it already uses it
   const quoted = /^>\s*v\d+\.\d+\.\d+\(/m.test(skel)
   // `--by` names who decided; without it the line names no one (never a 본인 결정 the user did not make)
@@ -1396,9 +1398,42 @@ const plain = s => s.trim().replace(/\s*\[확인 필요[^\]]*\]/g, '').replace(/
 // skeleton -> deck source: each skeleton slot absent from, or different in, the deck's same slide.
 // Writes only with `write`: a different slot is replaced, an absent one appended to its slide; a slide
 // the deck lacks is reported and never created (structure is the user's).
+// The first deck source, from the skeleton: deck.catalog.md's front matter (template, template_hash)
+// and one `## @sN N쪽 · title · 글감: ids` heading per skeleton slide, in order; sync then fills the
+// slots. (2026-11-22: two sandbox builds failed on ENOENT and wrote 33 headings by hand.)
+export function starterDeck(root, skel) {
+  let cat = ''
+  try { cat = readFileSync(join(root, 'deck.catalog.md'), 'utf8') } catch {
+    throw new Error('no deck source and no deck.catalog.md: run deck-builder `deck.py catalog` on the template first')
+  }
+  const fm = cat.match(/^---\n([\s\S]*?)\n---$/m)
+  if (!fm) throw new Error('deck.catalog.md names no front matter block to start the deck from')
+  const out = [`---\n${fm[1]}\noutput: build/deck.pptx\n---`, '']
+  let cite = null
+  const lines = skel.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const h = lines[i].match(/^##\s+(.*?)\s*@(s\d+)\b/)
+    if (!h) continue
+    cite = null
+    for (let j = i + 1; j < lines.length && !/^#{1,2}\s/.test(lines[j]); j++) {
+      const c = lines[j].match(CITE)
+      if (c) { cite = c[1].trim(); break }
+    }
+    const title = h[1].replace(/\s*·\s*$/, '')
+    out.push(`## @${h[2]} ${title}${cite ? ` · 글감: ${cite}` : ''}`, '')
+  }
+  return out.join('\n')
+}
+
 export function sync(root, { write = false } = {}) {
   const skelPath = wsFile(root, SKELETON)
   const deckPath = wsFile(root, DECK)
+  if (!existsSync(deckPath)) {
+    if (!write) return { skeleton: basename(skelPath), deck: basename(deckPath), deck_missing: true,
+      next: 'sync --write creates it from deck.catalog.md and the skeleton headings, then fills the slots' }
+    assertInside(root, deckPath)
+    writeFileSync(deckPath, starterDeck(root, readFileSync(skelPath, 'utf8')))
+  }
   const skel = slotsOf(readFileSync(skelPath, 'utf8'))
   const deckText = readFileSync(deckPath, 'utf8')
   const deck = slotsOf(deckText)

@@ -69,6 +69,28 @@ test('verify flags order and dangling references', () => {
   assert.ok(verify(SKEL.replace('3쪽, ', '9쪽, ')).problems.includes('9쪽 points at no heading'))
 })
 
+test('sync with no deck source: a dry run says so, --write starts it from the catalog and fills it', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-sync-'))
+  writeFileSync(join(root, 'portfolio-skeleton.md'), 'version: v1.0.0\n\n## 1쪽 · 표지 @s1\ntext1: 이름\n\n## 2쪽 · 검색 @s3\n글감: retro--검색-지연\ntext2: 820ms → 210ms\n')
+  assert.equal(sync(root).deck_missing, true)
+  assert.throws(() => sync(root, { write: true }), /deck\.catalog\.md/)
+  writeFileSync(join(root, 'deck.catalog.md'), '# Deck catalog\n\n```\n---\ntemplate: template/t.pptx\ntemplate_hash: abc123\n---\n```\n')
+  sync(root, { write: true })
+  const deck = readFileSync(join(root, 'portfolio-deck.mdx'), 'utf8')
+  assert.match(deck, /^---\ntemplate: template\/t\.pptx\ntemplate_hash: abc123\noutput: build\/deck\.pptx\n---/)
+  assert.match(deck, /## @s3 2쪽 · 검색 · 글감: retro--검색-지연\ntext2: 820ms → 210ms/)
+  const again = sync(root)
+  assert.deepEqual([again.missing.length, again.different.length, again.slide_missing.length], [0, 0, 0])
+})
+
+test('snapshot with a bad --level writes nothing, so the corrected call still works', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-'))
+  writeFileSync(join(root, 'portfolio-skeleton.md'), SKEL)
+  assert.throws(() => snapshot(root, { kind: 'skeleton', note: 'x' }), /level must be/)
+  assert.equal(existsSync(join(root, 'snapshot/skeleton/skeleton-v4.0.0')), false)
+  assert.equal(snapshot(root, { kind: 'skeleton', level: 'patch', note: 'x' }).to, 'v4.0.1')
+})
+
 test('snapshot copies the current skeleton, bumps and logs once', () => {
   const root = mkdtempSync(join(tmpdir(), 'manage-'))
   writeFileSync(join(root, 'portfolio-skeleton.md'), SKEL)
