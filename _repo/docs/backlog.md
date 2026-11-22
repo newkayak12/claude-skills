@@ -706,40 +706,6 @@ ontology and link policy are config, nothing in the engine names one instance. O
 (lesson les-knowledge-no-external-runtime-deps); a real run uses a copy in `tmp/`, never a live vault.
 Design: `_repo/docs/plans/2026-11-19-knowledge-*` (PRDs F1–F4, shipped in knowledge 1.22.0).
 
-164. **noah and genna run on the knowledge engine instead of their own servers: the cut-over and the engine gaps it needs** — engine gaps shipped `e85f540b` (E-b2cd58cb, gate 93: knowledge_get paging, index/rules read, source list/read, note replace; symlink and case-variant writes refused); left: the cut-over, on the user's approval
-   - Why: user, 2026-11-19: "noah, genna '/home/newkayak12' 보면 있을 텐데 이쪽 교체를 해야할거야".
-     Plan, tool map and tmp-copy proof shipped (E-df46dbb4, `_repo/docs/plans/2026-11-19-knowledge-noah-genna-on-engine.md`):
-     on a noah copy knowledge scored recall@10 0.792 through TEI vs noah-server 0.762 (query embedded) /
-     0.683 (daytime, embed server down); lexical fallback 0.644. Decided (user, 2026-11-19): one resident
-     embedding sidecar shared by genna and noah ("임베딩 사이드카는 하나만 띄워서 써야겠는걸? genna,
-     noah를 쓸거면?"); measured 2.3 GiB resident, ~1.2 % idle CPU, query p50 23 ms / p95 27 ms.
-     Left: engine gaps the tool map names — `knowledge_get` paging and the store's `index`/`rules`
-     files, read access to `sources/` (`*_source`, `*_source_list`), replacing an existing note
-     (`*_note_write`); then the cut-over.
-   - Acceptance: the three gaps close with node tests and stay instance-free (the no-instance-name test
-     green); the user approves the cut-over (genna first, it is empty, then noah) before any container
-     under `~/docker/mcps` changes; after each move a fresh copy re-measures recall@10 at or above the
-     plan's table; one shared TEI with its 3 GB limit and the two nightly re-index jobs staggered.
-
-167. **LLM graph build: refuse the wrong edges a 7b model gets past the validator** — rules shipped `6c5ce2d7` (E-1778b379, gate 91: default relation types `unknown-type`, `name-too-long`, `name-is-sentence`; knowledge 157/157); left: the medium rerun (qwen2.5:7b not pulled on this machine) and the recall cost of the 22-type default list
-   - Why: E-df46dbb4 real run, 2026-11-19, 34-note noah copy, CPU only. `small` (qwen2.5:3b, 1939 s):
-     83 nodes, 2 edges, 43 refused (vague-type 31, missing evidence 25, self-loop 10), 4 notes failed.
-     `medium` (qwen2.5:7b, 5170 s): 127 nodes, 56 edges, 38 refused (evidence not in source 35), none
-     failed; g1/g2 unreachable on both. Many accepted medium edges are wrong: reversed (`intellij OWNS
-     jetbrains`), invented types with no ontology (`PREFERS_FORMAL_LANGUAGE`), whole sentences as nodes
-     (`n-비관락-잡고-했고-외부-요청-없고-…`). Incremental rerun of one note: 232 s; empty queue: 0 s.
-   - Acceptance: with no ontology a default relation-type list applies (an unknown type refused with
-     its reason); a node name past a length or clause limit is refused; a node test per rule, red first;
-     one medium rerun on a copy reports accepted edges before and after and how many of a hand-checked
-     sample are right.
-
-162. **pgvector backend replaces sqlite when the store is large** — deferred (user, 2026-11-19: "pgvector는 일단 딜레이")
-   - Why: user, 2026-11-19: "이후 pgvector로 넘어갈 수 있게", "이후 sqlite를 대체하는 방향으로 사이즈가
-     크다면". 1.22.0 has the seam (`storage.backend`), `migrate` into `kn_*` mirror tables (counts checked
-     live) and the advisory (20000 documents / 256 MB, from a p95 400 ms budget the user has not confirmed).
-   - Acceptance: MCP search/get/neighbors run on pgvector with the same results shape; eval on one
-     instance scores within the sqlite run's recall@10/MRR; the threshold from 161 picks the backend.
-
 ### portfolio plugin
 
 (cards 102, 103 and 54 moved to the top, 2026-10-30)
