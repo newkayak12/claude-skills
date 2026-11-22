@@ -29,6 +29,9 @@
 //     start context and no flag drops it alone (nodelaunch.mjs header), so no test claims it.
 
 process.env.TEAMS_RUNS_DIR ??= 'off';
+// A node's env may carry TEAMS_WIKI_OFF / HARNESS_NODE; tool counts and wiki argv asserted here are for a clean env.
+delete process.env.TEAMS_WIKI_OFF;
+delete process.env.HARNESS_NODE;
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';

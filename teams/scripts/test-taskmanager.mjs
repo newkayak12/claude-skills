@@ -9,6 +9,9 @@
 
 // A test task must not land in the real run archive (mcp/runlog.mjs); spawned daemons inherit this.
 process.env.TEAMS_RUNS_DIR ??= 'off';
+// A node's env may carry TEAMS_WIKI_OFF / HARNESS_NODE; tool counts and wiki argv asserted here are for a clean env.
+delete process.env.TEAMS_WIKI_OFF;
+delete process.env.HARNESS_NODE;
 // Fixture daemons are detached and outlive a SIGKILLed or timed-out runner; with this set, daemon.mjs
 // watches the pid and exits once it is gone. Inherited by every fixture spawn.
 process.env.HARNESS_TEST_RUNNER_PID = String(process.pid);
