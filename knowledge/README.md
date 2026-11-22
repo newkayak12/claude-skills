@@ -357,9 +357,38 @@ The `knowledge-local` MCP server exposes:
 | `knowledge_status` | Index presence, freshness, counts, embedding config |
 | `knowledge_index` | Rebuild the index from Markdown and JSONL |
 | `knowledge_search` | Hybrid retrieval with source references and diagnostics |
-| `knowledge_get` | Full record by stable id |
+| `knowledge_get` | Full record by stable id (`id`), or the store's index or rules file (`file`: `index` or `rules`); `offset` and `max_chars` page long text |
 | `knowledge_neighbors` | Direct graph relationships of a node |
+| `knowledge_source_list` | List files under the store's `sources/` (`prefix`, `limit`), read-only |
+| `knowledge_source` | Read one file under `sources/` by path, paged with `offset` and `max_chars`, read-only |
 | `knowledge_capture` | Save content as a linked Markdown note in the store |
+| `knowledge_note_replace` | Replace the whole Markdown of an existing note, by catalog `id` or store-relative `path` |
+
+### Reading files
+
+`knowledge_get` takes exactly one of `id` or `file`. With `file: "index"` or `"rules"` it returns the
+store's index or rules file; the names come from `files.index` (default `index.md`) and `files.rules`
+(default `vault-plan.md`) in `_knowledge/config.json`. A missing file is an error that names the
+path and the key. `offset` and `max_chars` page the text; the reply carries `offset`,
+`returned_chars`, `total_chars` and `next_offset`, so a long note is read in pieces. Without them an
+`id` lookup answers as before.
+
+`knowledge_source_list` and `knowledge_source` read the raw files beside the vault under
+`sources/`. A path that leaves `sources/` (`..`, an absolute path, a symlink out) is refused, and so
+is anything outside it such as `_knowledge/`. A binary file returns its size and no text; a
+directory is an error.
+
+### Replace a note
+
+`knowledge_note_replace` overwrites the full file of a note that exists; it never creates one (use
+`knowledge_capture`). Give exactly one of `id` or `path`, and `content`, the whole new file with its
+frontmatter. It writes only a `.md` file that is in the catalog, or inside `notes_dir`; every path is
+resolved to its real location, so a symlink or hard link out, `sources/`, `_knowledge/`, `_rag/`,
+`_graph/`, the index and rules files are refused. A catalogued note keeps its frontmatter `id`.
+The catalog row's title and summary are updated, delta jobs are queued, and the index is rebuilt
+incrementally with the settings the existing index was built with (provider, model, dimensions,
+embedding window), so the note is searchable at once. The catalog's other rows are left as they were.
+Like capture it writes, so Codex asks before it runs (below).
 
 ### Capture
 
@@ -373,9 +402,10 @@ creates nothing and returns `merged_into`. A capture that names no note is liste
 `mocs/captures.md`, so no capture is an orphan. The reply names `linked_to`, `backlinked_from`,
 `merged_into` and `skipped_candidates`; catalog, graph and embed jobs are queued, and the next
 `knowledge_index` makes it searchable. `link` in `_knowledge/config.json` sets `min_term_length`,
-`max_links`, `moc` and `fallback_moc`.
+`max_links`, `moc` and `fallback_moc`. `files` in the same file names two store files for
+`knowledge_get`: `files.index` and `files.rules`.
 
-**Codex.** `knowledge_capture` writes, so Codex asks before it runs. A non-interactive
+**Codex.** `knowledge_capture` and `knowledge_note_replace` write, so Codex asks before they run. A non-interactive
 `codex exec` (approval policy `never`) refuses it with `MCP tool call requires approval, but
 approval policy is never`. Approve that one tool instead of bypassing approvals:
 

@@ -14,8 +14,9 @@ import {
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { backendFor, registerBackend, sizeAdvice } from './knowledge-backend.mjs';
-import { CAPTURE_TOOL, KOREAN_PARTICLES, captureNote } from './knowledge-capture.mjs';
+import { CAPTURE_TOOL, KOREAN_PARTICLES, REPLACE_TOOL, captureNote, replaceNote } from './knowledge-capture.mjs';
 import { loadEmbedConfig } from './knowledge-config.mjs';
+import { listSources, pageText, readSource, readStoreFile } from './knowledge-files.mjs';
 import { countSql, countsOf, migrateSql, migrateTarget, readSqliteStore, runPsql } from './knowledge-migrate.mjs';
 import {
   ARTIFACT_PATHS,
@@ -2102,13 +2103,41 @@ const MCP_TOOLS = [
   },
   {
     name: 'knowledge_get',
-    description: 'Fetch complete indexed content and metadata by stable note, chunk, or node ID.',
+    description: 'Fetch indexed content and metadata by stable note, chunk, or node ID, or read the store index or rules file. Give exactly one of id or file. offset and max_chars page the text by characters.',
     inputSchema: {
       type: 'object',
-      required: ['id'],
       properties: {
         id: { type: 'string' },
         kind: { type: 'string', enum: ['note', 'chunk', 'node'] },
+        file: { type: 'string', enum: ['index', 'rules'], description: 'Store index or rules file (config files.index / files.rules); works without a built index.' },
+        offset: { type: 'integer', minimum: 0, description: 'First character to return.' },
+        max_chars: { type: 'integer', minimum: 1, description: 'Maximum characters to return.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'knowledge_source_list',
+    description: "List the files under the store's sources/ folder (read-only). Confined to sources/: '..', absolute paths and symlinks that resolve outside it are refused.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        prefix: { type: 'string', description: 'Only paths under this prefix, relative to sources/.' },
+        limit: { type: 'integer', minimum: 1, maximum: 1000, description: 'Maximum files to return (default 200).' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'knowledge_source',
+    description: "Read one file from the store's sources/ folder (read-only). Confined to sources/: '..', absolute paths and symlinks that resolve outside it are refused. offset and max_chars page the text by characters.",
+    inputSchema: {
+      type: 'object',
+      required: ['path'],
+      properties: {
+        path: { type: 'string', description: 'File path relative to sources/.' },
+        offset: { type: 'integer', minimum: 0, description: 'First character to return.' },
+        max_chars: { type: 'integer', minimum: 1, description: 'Maximum characters to return.' },
       },
       additionalProperties: false,
     },
@@ -2134,7 +2163,32 @@ const MCP_TOOLS = [
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   CAPTURE_TOOL,
+  REPLACE_TOOL,
 ];
+
+// Re-index with the settings the existing index was built with, so a replace
+// never changes provider, model, dimensions or window size. No index: nothing built.
+async function reindexLikeExisting(root, dbPath) {
+  const database = resolveDbPath(root, dbPath);
+  if (!existsSync(database)) return null;
+  const db = openSqlite(database, { readOnly: true });
+  let metadata;
+  try {
+    metadata = readMetadata(db);
+  } finally {
+    db.close();
+  }
+  if (!metadata.embedding_provider) return null;
+  const chars = metadata.embedding_context_chars;
+  return buildIndex(root, {
+    db: dbPath,
+    ollamaUrl: process.env.OLLAMA_HOST || DEFAULT_OLLAMA_URL,
+    provider: metadata.embedding_provider,
+    model: metadata.embedding_model,
+    dimensions: Number(metadata.embedding_dimensions),
+    embedChars: chars === undefined ? null : (chars === 'unbounded' ? 0 : Number(chars)),
+  });
+}
 
 async function callMcpTool(root, dbPath, name, args = {}) {
   if (name === 'knowledge_index') {
@@ -2147,13 +2201,32 @@ async function callMcpTool(root, dbPath, name, args = {}) {
     });
   }
   if (name === 'knowledge_search') return searchIndex(root, args.query, { ...args, db: dbPath });
-  if (name === 'knowledge_get') return getDocument(root, args.id, { ...args, db: dbPath });
+  if (name === 'knowledge_get') {
+    const hasId = args.id !== undefined;
+    const hasFile = args.file !== undefined;
+    if (hasId === hasFile) throw new Error('knowledge_get needs exactly one of id or file');
+    if (hasFile) return readStoreFile(findKnowledgeRoot(root), args.file, args);
+    const found = getDocument(root, args.id, { ...args, db: dbPath });
+    if (args.offset === undefined && args.max_chars === undefined) return found;
+    return {
+      ...found,
+      results: found.results.map((item) => {
+        const { text, ...page } = pageText(item.text ?? '', args);
+        return { ...item, text, page };
+      }),
+    };
+  }
+  if (name === 'knowledge_source_list') return listSources(findKnowledgeRoot(root), args);
+  if (name === 'knowledge_source') return readSource(findKnowledgeRoot(root), args.path, args);
   if (name === 'knowledge_neighbors') return graphNeighbors(root, args.query, { ...args, db: dbPath });
   if (name === 'knowledge_status') return indexStatus(root, { db: dbPath });
   if (name === 'knowledge_capture') {
     return captureNote(root, args, {
       search: (storeRoot, query, options) => searchIndex(storeRoot, query, { ...options, db: dbPath }),
     });
+  }
+  if (name === 'knowledge_note_replace') {
+    return replaceNote(root, args, { index: (storeRoot) => reindexLikeExisting(storeRoot, dbPath) });
   }
   throw new Error(`Unknown tool: ${name}`);
 }

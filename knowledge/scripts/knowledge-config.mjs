@@ -33,11 +33,23 @@ export const STORE_CONFIG_SCHEMA = {
         search_candidates: { type: 'integer', minimum: 0, maximum: 50, default: 8, description: 'Index hits read for candidates the text does not name (reported, never linked).' },
       },
     },
+    files: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        index: { type: 'string', default: 'index.md', description: "The store's entry-point note, relative to the store; knowledge_get {file:'index'} reads it." },
+        rules: { type: 'string', default: 'vault-plan.md', description: "The store's rules file, relative to the store; knowledge_get {file:'rules'} reads it." },
+      },
+    },
   },
 };
 
 const LINK_DEFAULTS = Object.fromEntries(
   Object.entries(STORE_CONFIG_SCHEMA.properties.link.properties).map(([key, spec]) => [key, spec.default]),
+);
+
+const FILES_DEFAULTS = Object.fromEntries(
+  Object.entries(STORE_CONFIG_SCHEMA.properties.files.properties).map(([key, spec]) => [key, spec.default]),
 );
 
 // Embedding settings, highest first: an explicit option, KNOWLEDGE_EMBED_{PROVIDER,
@@ -58,6 +70,7 @@ export function loadEmbedConfig(root, options = {}, env = process.env) {
 export function loadStoreConfig(root, env = process.env) {
   const file = readStoreConfig(root);
   const link = { ...LINK_DEFAULTS, ...(file.link && typeof file.link === 'object' ? file.link : {}) };
+  const files = { ...FILES_DEFAULTS, ...(file.files && typeof file.files === 'object' ? file.files : {}) };
   if (env.KNOWLEDGE_LINK_MOC) link.moc = env.KNOWLEDGE_LINK_MOC;
   if (env.KNOWLEDGE_LINK_MAX && Number.isInteger(Number(env.KNOWLEDGE_LINK_MAX))) link.max_links = Number(env.KNOWLEDGE_LINK_MAX);
   return {
@@ -65,5 +78,6 @@ export function loadStoreConfig(root, env = process.env) {
     notes_dir: env.KNOWLEDGE_NOTES_DIR || file.notes_dir || STORE_CONFIG_SCHEMA.properties.notes_dir.default,
     ontology: file.ontology ?? null,
     link,
+    files,
   };
 }

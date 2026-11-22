@@ -348,9 +348,36 @@ Missing knowledge:
 | `knowledge_status` | 인덱스 존재·신선도·건수·임베딩 설정 |
 | `knowledge_index` | Markdown·JSONL에서 인덱스 재빌드 |
 | `knowledge_search` | 소스 참조·진단 필드가 붙은 하이브리드 검색 |
-| `knowledge_get` | 안정 id로 전체 레코드 조회 |
+| `knowledge_get` | 안정 id(`id`)로 전체 레코드 조회, 또는 저장소의 index·rules 파일(`file`: `index` 또는 `rules`) 조회. `offset`·`max_chars`로 긴 텍스트를 나눠 읽음 |
 | `knowledge_neighbors` | 노드의 직접 관계 조회 |
+| `knowledge_source_list` | 저장소 `sources/` 아래 파일 목록(`prefix`, `limit`), 읽기 전용 |
+| `knowledge_source` | `sources/` 아래 파일 하나를 경로로 읽기, `offset`·`max_chars`로 나눠 읽음, 읽기 전용 |
 | `knowledge_capture` | 받은 내용을 링크된 Markdown 노트로 저장소에 저장 |
+| `knowledge_note_replace` | 이미 있는 노트의 Markdown 전체를 카탈로그 `id` 또는 저장소 상대 `path`로 교체 |
+
+### 파일 읽기
+
+`knowledge_get`은 `id`와 `file` 중 정확히 하나를 받습니다. `file: "index"` 또는 `"rules"`이면
+저장소의 index 또는 rules 파일을 돌려주고, 파일 이름은 `_knowledge/config.json`의 `files.index`
+(기본 `index.md`)와 `files.rules`(기본 `vault-plan.md`)에서 옵니다. 파일이 없으면 경로와 키를 밝힌
+오류가 납니다. `offset`과 `max_chars`로 텍스트를 나눠 읽으며, 응답에 `offset`, `returned_chars`,
+`total_chars`, `next_offset`이 담겨 긴 노트도 조각으로 읽을 수 있습니다. 이 둘이 없으면 `id`
+조회는 예전과 같이 답합니다.
+
+`knowledge_source_list`와 `knowledge_source`는 볼트 옆의 원본 파일을 `sources/` 아래에서 읽습니다.
+`sources/`를 벗어나는 경로(`..`, 절대 경로, 밖으로 나가는 심볼릭 링크)는 거부하고, `_knowledge/`처럼
+그 밖의 것도 읽지 않습니다. 바이너리 파일은 크기만 돌려주고 텍스트는 없으며, 디렉터리는 오류입니다.
+
+### 노트 교체
+
+`knowledge_note_replace`는 이미 있는 노트의 파일 전체를 덮어쓰며, 새 노트는 만들지 않습니다
+(그건 `knowledge_capture`). `id` 또는 `path` 중 정확히 하나와, frontmatter까지 담은 새 파일 전체
+`content`를 줍니다. 카탈로그에 있거나 `notes_dir` 안에 있는 `.md` 파일만 씁니다. 모든 경로는 실제
+위치로 풀어 확인하므로 밖으로 나가는 심볼릭·하드 링크, `sources/`, `_knowledge/`, `_rag/`,
+`_graph/`, index·rules 파일은 거부합니다. 카탈로그에 있는 노트는 frontmatter `id`를 유지해야 합니다.
+카탈로그 행의 제목과 요약이 갱신되고, delta 작업이 큐에 들어가며, 인덱스는 기존 인덱스를 만든
+설정(provider, model, dimensions, 임베딩 창)으로 증분 재빌드되어 바로 검색됩니다. 카탈로그의 다른
+행은 그대로 둡니다. capture처럼 파일을 쓰므로 Codex가 실행 전에 승인을 묻습니다(아래).
 
 ### Capture
 
@@ -364,8 +391,9 @@ Missing knowledge:
 합니다. 응답에는 `linked_to`, `backlinked_from`, `merged_into`, `skipped_candidates`가 담기고,
 카탈로그·그래프·임베딩 작업이 큐에 들어가며, 다음 `knowledge_index`부터 검색됩니다.
 `_knowledge/config.json`의 `link`로 `min_term_length`, `max_links`, `moc`, `fallback_moc`를 정합니다.
+같은 파일의 `files`는 `knowledge_get`이 읽을 저장소 파일 둘, `files.index`와 `files.rules`를 정합니다.
 
-**Codex.** `knowledge_capture`는 파일을 쓰므로 Codex가 실행 전에 승인을 묻습니다. 비대화형
+**Codex.** `knowledge_capture`와 `knowledge_note_replace`는 파일을 쓰므로 Codex가 실행 전에 승인을 묻습니다. 비대화형
 `codex exec`(승인 정책 `never`)는 `MCP tool call requires approval, but approval policy is never`로
 거부합니다. 승인 전체를 건너뛰지 말고 이 도구 하나만 승인하세요:
 
