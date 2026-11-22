@@ -9,9 +9,35 @@ never retire them as duplicates, and never reference superpowers.
 
 ### Codex plugin compatibility
 
-168. **Identify the failing Codex hooks and verify installed-client behavior** — in E-f8f880f9
+172. **Identify the failing Codex hooks and verify installed-client behavior** (was numbered 168, a duplicate of the smart-compact card)
    - Why: On 2026-11-21 the user reported “plugin contents changed; hook approval required” twice and “hook exited with code 127” once. The [English maintainer handoff](2026-11-21-codex-hook-handoff.md) preserves the sequence, source evidence and open questions.
    - Acceptance: Attribute each message, capture the cause of exit 127, and verify the affected hooks in a fresh Codex session after approval. Record the corresponding Claude regression results.
+   - E-f8f880f9 (2026-11-21 → 22) ended PARTIAL, $44.64 of $40, nothing on main: PRDs accepted
+     (`.teams_output/team/E-f8f880f9/10-prd.md`, stories F1-US-1..4, F2-US-1..3, F3-US-1), every build
+     package blocked by card 173. Left in task worktrees, unverified, to salvage before `tm_clean`:
+     P2 branch `teams/identify-failing-codex-hooks/P2-codex-overlays-trophy` (16 untracked files:
+     `.codex-plugin/plugin.json` + `hooks/codex.json` `{"hooks":{}}` for agents, cognition, completion,
+     develop, planning, portfolio, skill, write); P3 branch `…/P3-knowledge-codex-hook-map`
+     (`knowledge-delta-check.mjs` apply_patch targets + 4 tests, `knowledge/hooks/codex.json`, manifest
+     `hooks` key). P1's report is all-unknown and must not be used. P4 (teams allow/deny under Codex)
+     never ran. The knowledge test glob is `knowledge/scripts/*.test.mjs knowledge/hooks/*.test.mjs`
+     (`test-*.mjs` matches 0). After it lands: README `teams/README.md:103` ("unproven against a real
+     Codex run") and the batch patch bump.
+
+173. **teams build nodes can run the commands their stories need (codex, node, python3, reads under ~/.codex)**
+   - Why: E-f8f880f9 report, 2026-11-22: every draft/implement/test node got "This command requires
+     approval" for `codex`, `python3`, `node`, reads under `~/.codex`, once `git`, while review and shape
+     nodes ran `codex --version` fine. No package could verify anything; retries spent the budget
+     ($44.64 / $40). User: "실패한 것도 backlog로 올려라 말도 안된다". Cause: the headless driver's
+     permission mode per node kind (unverified which setting differs between review and implement).
+   - Acceptance: a size-S run whose implement node runs `node --version`, `python3 --version` and
+     `codex --version` succeeds; a refused command fails the node at once with the refusal named,
+     instead of retries; teams tests with counts.
+
+174. **aws and database get a Codex overlay for their mcpServers**
+   - Why: E-f8f880f9 critique, 2026-11-22: both have Claude `mcpServers` and no `.codex-plugin/`.
+   - Acceptance: `.codex-plugin/plugin.json` with mcpServers on `${PLUGIN_ROOT}`; validator passes; one
+     Codex session lists the servers.
 
 Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — the UI cards below come first.
 Card 101 comes before them (user, 2026-10-29: "최우선").
@@ -339,7 +365,7 @@ toasts).
 ### teams plugin bugs
 
 Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 128's leftovers.
-Next follow-up after E-f8f880f9 (user, 2026-11-21: "171 -> 170 -> 169 순으로 다음 FU"): 171 → 170 → 169,
+Next follow-up after E-f8f880f9 (user, 2026-11-21: "171 -> 170 -> 169 순으로 다음 FU"): 171 → 170 → 169 (173 belongs with them: it blocked E-f8f880f9; then 172),
 ahead of the order above.
 
 169. **teams reaches an installed Codex from inside a driver, or says why not**
