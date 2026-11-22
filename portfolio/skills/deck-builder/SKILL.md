@@ -125,6 +125,10 @@ output, so that warning is not a judgment call. Redraw the figure until `check` 
 "스킬을 갈고 닦는 건데"). Shorten words, never facts: before redrawing, list what the figure says —
 each step, number, name, lane, column, warning and its marks (①②③) — and after, tick each one off
 in the new figure; a fact with no room moves into the slide's text or `notes:`, it is not dropped.
+A new figure has no old copy to compare: in a `manage` workspace run `manage.mjs claims --file
+portfolio-deck.mdx` after drawing — it reads each slide's .svg text with its cited items, and every
+`not_in_material` figure is fixed to the material's number or taken out (a sandbox build drew Jira 14
+for 15 and 3 tables for 11, 2026-11-22).
 Keep a copy of each figure before redrawing it, and after, run `deck.py facts --deck deck.mdx
 --before <copy> --after <assets/x.svg>`: it lists every word of the old figure found nowhere in the
 new one or its slide's text and notes. Put each back, or move it to text or `notes:`, until it

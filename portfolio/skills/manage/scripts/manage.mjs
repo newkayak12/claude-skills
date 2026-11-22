@@ -857,7 +857,18 @@ export function readMaterial(root) {
 // deck.mdx read as pages for `claims`: each `## @sN <comment>` slide is the next page (or the `N쪽`
 // its comment names), its `글감: <id>, …` cites from the comment, and every slot value is a body line
 // (`notes:`, pictures and `!drop` are not claims).
-export function deckPages(text) {
+// The words an SVG figure shows, one line per <text> (tspans joined, tags and entities out).
+export function svgLines(svg) {
+  const ent = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
+  return [...svg.matchAll(/<text\b[^>]*>([\s\S]*?)<\/text>/g)]
+    .map(m => m[1].replace(/<[^>]+>/g, ' ').replace(/&(amp|lt|gt|quot|apos);/g, (_, e) => ent[e]).replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+}
+
+// `readSvg(path)` returns a figure's source or null: with it, a slide's .svg figures are read as body
+// lines too, so their figures are checked against the cited material like the slide's own text
+// (2026-11-22: redrawn figures carried Jira 14 where the material says 15, and 3 tables for 11).
+export function deckPages(text, readSvg = null) {
   const out = []
   let page = 0
   for (const l of text.replace(/^---\n[\s\S]*?\n---\n/, '').split('\n')) {
@@ -873,6 +884,12 @@ export function deckPages(text) {
     if (!out.length) continue
     const kv = l.match(/^([A-Za-z_][\w]*):\s*(.*)$/)
     if (kv) {
+      const fig = readSvg && kv[2].match(/^(\S+\.svg)(\s*\|.*)?$/i)
+      if (fig) {
+        const src = readSvg(fig[1])
+        if (src) out.push(...svgLines(src))
+        continue
+      }
       if (kv[1] === 'notes' || /^!drop$|\.(png|jpe?g|svg|gif)(\s*\|.*)?$/i.test(kv[2])) continue
       if (kv[2]) out.push(kv[2])
     } else if (l.trim()) out.push(l.trim().replace(/^[-|]\s*/, ''))
@@ -1763,7 +1780,8 @@ function main() {
     out = compare(load(args.before), load(args.after), both ? load(args['claims-before']) : undefined, both ? load(args['claims-after']) : undefined)
   } else if (cmd === 'claims') {
     const text = readFileSync(file, 'utf8')
-    const pages = /^##\s+@s\d+/m.test(text) ? deckPages(text) : /(resume\.md|resume-deck\.mdx)$/.test(file) ? resumePages(text) : text
+    const readSvg = p => { try { return readFileSync(resolve(dirname(file), p), 'utf8') } catch { return null } }
+    const pages = /^##\s+@s\d+/m.test(text) ? deckPages(text, readSvg) :/(resume\.md|resume-deck\.mdx)$/.test(file) ? resumePages(text) : text
     out = claims(pages, readMaterial(root), settled(root), selection(root), confirmedFacts(root))
     const note = settledNote(root)
     if (note) out.settled_note = note

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
-import { bannedFigs, addQuestion, readQuestions, roundCheck, freezeStable, enginePathWarnings, safeArea, bump, claims, compare, confirmedFacts, deckPages, figs, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, readRounds, renumber, round, scaffold, selection, settle, settled, settledNote, snapshot, step, sync, verify, verifyBuild } from './manage.mjs'
+import { svgLines, bannedFigs,addQuestion, readQuestions, roundCheck, freezeStable, enginePathWarnings, safeArea, bump, claims, compare, confirmedFacts, deckPages, figs, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, readRounds, renumber, round, scaffold, selection, settle, settled, settledNote, snapshot, step, sync, verify, verifyBuild } from './manage.mjs'
 import { deflateRawSync } from 'node:zlib'
 
 const SKEL = `# 가상 포트폴리오
@@ -67,6 +67,17 @@ test('verify flags order and dangling references', () => {
   assert.deepEqual(verify(SKEL).problems, [])
   assert.ok(verify('## 2 a\n## 1 b').problems.includes('heading 1 after 2'))
   assert.ok(verify(SKEL.replace('3쪽, ', '9쪽, ')).problems.includes('9쪽 points at no heading'))
+})
+
+test('claims on a deck reads its SVG figures: a figure number the cited item lacks is not_in_material', () => {
+  const root = claimsWorkspace()
+  const deckText = '---\ntemplate: t.pptx\n---\n\n## @s3 1쪽 · 글감: retro--검색-지연\ntext1: 응답 시간 820ms → 210ms\npic1: f.svg | fit\n'
+  const svg = '<svg><text x="1">조회 <tspan>820ms</tspan></text><text>재시도 7회</text></svg>'
+  assert.deepEqual(svgLines(svg), ['조회 820ms', '재시도 7회'])
+  const r = claims(deckPages(deckText, p => (p === 'f.svg' ? svg : null)), readMaterial(root))
+  assert.deepEqual(r.problems.map(p => p.kind), ['not_in_material'])
+  assert.match(r.problems[0].text, /^7회/)
+  assert.deepEqual(claims(deckPages(deckText), readMaterial(root)).problems, [], 'without a reader, figures are skipped as before')
 })
 
 test('sync with no deck source: a dry run says so, --write starts it from the catalog and fills it', () => {
