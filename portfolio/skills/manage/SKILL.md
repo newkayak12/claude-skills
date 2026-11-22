@@ -98,8 +98,12 @@ the snapshot. A round always builds (the user's standing word: "결과물도 검
    `[확인 필요: …]`.
 2. **Select.** Before any page is written, one row per item in `sources/선정.md`: 글감 · 쓰임
    (`본문` | `부록` | `제외`) · 쪽 · 이유 · 대표 (the one problem, decision or result the item leads
-   with, in the material's words). Picked by signal (`references/principles.md` § Composition);
-   propose the table (structure: asked). Mark each item `material log --id <id> --note
+   with, in the material's words). Picked by signal (`references/principles.md` § Composition),
+   each item scored on four questions in its 이유: does it help this person (a number that reads
+   badly — 149 routine on-call requests — is context, never a 대표), what strength does it show, what
+   is measured, what earns qualitative credit (a decision, a trade-off, a lesson). An item that only
+   looks impressive and answers none is `제외` (user, 2026-11-22: "AI가 하는 전형적인 '좋아보이는거
+   가져오기'"); 부록 items pass the same bar. Propose the table (structure: asked). Mark each item `material log --id <id> --note
    "선정: <쓰임>" --status selected|excluded --later-step manage`. An exclusion lives only here, not
    in `확정사실.md`. `selection` reads the table back; a 쓰임 outside the three is a problem.
 3. **Draft.** No skeleton yet, or a new project → write it from the `본문`/`부록` items only: one

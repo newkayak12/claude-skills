@@ -119,6 +119,15 @@ Write a picture slot's art as an `.svg`, in the template's colors and at the fra
 pt size — both printed by `catalog`. It becomes source like the rest of the deck and is
 rasterized to PNG at build time.
 
+Pick each figure's form from what it has to show, not from habit: a before/after → paired bars or a
+two-column contrast; a sequence over time → a timeline or sequence diagram; a distribution or a
+count → a chart; a choice among options → a comparison table with the chosen row marked; a
+structure → boxes and arrows. List every figure's form before drawing; when more than half of a
+deck's figures are box-and-arrow, redraw the ones another form says better (user, 2026-11-22:
+"도식화가 천편일률적이다 (다른 방향으로 표현할 수 있었을텐데)").
+
+A tech-stack table names technologies, not settings or features (`AWS ALB`, never `ALB 헬스체크`).
+
 Then run `check` and read every `figure text ~Npt` warning: generated art is this skill's own
 output, so that warning is not a judgment call. Redraw the figure until `check` shows it no more
 — fewer words per label, wider boxes, or the figure split in two (user, 2026-11-19:
