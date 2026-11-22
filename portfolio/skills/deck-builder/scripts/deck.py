@@ -4193,6 +4193,113 @@ def _check_picture_color(path, tag, slot_id, line, warns, palette, background,
 TIGHT_UNITS = 1.0   # SVG units; figures are drawn at frame pt, so this is about 1pt on the page
 
 
+def _svg_labels(root):
+    """[(body, (x0, y0, x1, y1))] for each <text>, its font-size and text-anchor inherited from the
+    groups above it (attribute or `style`), a group's translate(x y) applied; a rotated or scaled
+    label is left out. (2026-11-22: labels relying on a group's font-size were read as having none,
+    and ones centred by a group's text-anchor were read as left-aligned — false tight warnings.)"""
+    ns = "{http://www.w3.org/2000/svg}"
+    out = []
+
+    def own(el, k):
+        v = el.get(k)
+        if v is None:
+            m = re.search(r"(?:^|;)\s*%s\s*:\s*([^;]+)" % k, el.get("style") or "")
+            v = m.group(1).strip() if m else None
+        return v
+
+    def walk(el, size, anchor, dx, dy):
+        tr = el.get("transform")
+        if tr:
+            m = re.fullmatch(r"\s*translate\(\s*([-\d.]+)[\s,]*([-\d.]*)\s*\)\s*", tr)
+            if not m:
+                return
+            dx, dy = dx + float(m.group(1)), dy + float(m.group(2) or 0)
+        size = own(el, "font-size") or size
+        anchor = own(el, "text-anchor") or anchor
+        if el.tag == ns + "text":
+            body = " ".join("".join(el.itertext()).split())
+            try:
+                s = float(re.sub(r"px$", "", size)) if size else None
+                x, y = float(el.get("x")), float(el.get("y"))
+            except (TypeError, ValueError):
+                return
+            if s and body:
+                w = _text_em(body) * s
+                x0 = {"middle": x - w / 2, "end": x - w}.get(anchor or "start", x) + dx
+                out.append((body, (x0, y + dy - 0.8 * s, x0 + w, y + dy + 0.2 * s)))
+            return
+        for ch in el:
+            walk(ch, size, anchor, dx, dy)
+    walk(root, None, None, 0.0, 0.0)
+    return out
+
+
+def _svg_segments(root):
+    """Straight segments drawn by <line>, <polyline> and absolute M/L/H/V paths."""
+    ns = "{http://www.w3.org/2000/svg}"
+    segs = []
+    for el in root.iter(ns + "line"):
+        try:
+            segs.append(tuple(float(el.get(k)) for k in ("x1", "y1", "x2", "y2")))
+        except (TypeError, ValueError):
+            pass
+    for el in root.iter(ns + "polyline"):
+        pts = [float(v) for v in re.findall(r"-?\d+(?:\.\d+)?", el.get("points") or "")]
+        p = list(zip(pts[0::2], pts[1::2]))
+        segs += [(a[0], a[1], b[0], b[1]) for a, b in zip(p, p[1:])]
+    for el in root.iter(ns + "path"):
+        d = el.get("d") or ""
+        if re.search(r"[a-zCSQTAZ]", d.replace("e-", "")):
+            continue   # relative or curved: not read
+        cur = None
+        for cmd, args in re.findall(r"([MLHV])([^MLHV]*)", d):
+            v = [float(x) for x in re.findall(r"-?\d+(?:\.\d+)?", args)]
+            pts = {"M": list(zip(v[0::2], v[1::2])), "L": list(zip(v[0::2], v[1::2])),
+                   "H": [(x, cur[1]) for x in v] if cur else [], "V": [(cur[0], y) for y in v] if cur else []}[cmd]
+            for i, p in enumerate(pts):
+                if cur and not (cmd == "M" and i == 0):
+                    segs.append((cur[0], cur[1], p[0], p[1]))
+                cur = p
+    return segs
+
+
+def _seg_hits_box(s, b):
+    """Liang-Barsky: does segment s pass through box b's interior?"""
+    x1, y1, x2, y2 = s
+    dx, dy = x2 - x1, y2 - y1
+    lo, hi = 0.0, 1.0
+    for p, q in ((-dx, x1 - b[0]), (dx, b[2] - x1), (-dy, y1 - b[1]), (dy, b[3] - y1)):
+        if p == 0:
+            if q < 0:
+                return False
+        else:
+            t = q / p
+            if p < 0:
+                lo = max(lo, t)
+            else:
+                hi = min(hi, t)
+    return lo < hi
+
+
+def svg_crossed_labels(data):
+    """Texts of the labels a drawn line runs through (2026-11-22: a connector drawn through
+    "OAuth 2.1" on two sandbox decks; both blind judges marked it). The label's box is shrunk by a
+    fifth on each side so a line ending at, or grazing, a label is not counted."""
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError:
+        return []
+    segs = _svg_segments(root)
+    out = []
+    for body, (x0, y0, x1, y1) in _svg_labels(root):
+        ix, iy = (x1 - x0) * 0.2, (y1 - y0) * 0.2
+        core = (x0 + ix, y0 + iy, x1 - ix, y1 - iy)
+        if any(_seg_hits_box(s, core) for s in segs):
+            out.append(body)
+    return out
+
+
 def svg_tight_labels(data):
     """Texts of the labels whose estimated box ends within TIGHT_UNITS of their own box's edge.
 
@@ -4217,14 +4324,7 @@ def svg_tight_labels(data):
         if w and h and w * h < 0.8 * vw * vh:
             rects.append((x, y, w, h))
     out = []
-    for t in root.iter(ns + "text"):
-        s, x, y = num(t, "font-size"), num(t, "x"), num(t, "y")
-        body = " ".join("".join(t.itertext()).split())
-        if s is None or x is None or y is None or not body or t.get("transform"):
-            continue
-        w = _text_em(body) * s
-        x0 = {"middle": x - w / 2, "end": x - w}.get(t.get("text-anchor") or "start", x)
-        box = (x0, y - 0.8 * s, x0 + w, y + 0.2 * s)
+    for body, box in _svg_labels(root):
         cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
         holder = min((r for r in rects if r[0] <= cx <= r[0] + r[2] and r[1] <= cy <= r[1] + r[3]),
                      key=lambda r: r[2] * r[3], default=None)
@@ -4252,6 +4352,11 @@ def _check_figure_text(path, slot, tag, slot_id, line, warns, mode="fill"):
                      "read squeezed or clipped (%s) — fewer lines, a wider or taller box, or a smaller "
                      "sub-line" % (line, tag, slot_id, path.name, len(tight), TIGHT_UNITS,
                                    "; ".join(repr(t) for t in tight[:3])))
+    crossed = svg_crossed_labels(path.read_bytes())
+    if crossed:
+        warns.append("line %d: %s.%s — %s: a drawn line runs through %d label(s) (%s) — route the line "
+                     "around the label, or move the label off it"
+                     % (line, tag, slot_id, path.name, len(crossed), "; ".join(repr(t) for t in crossed[:3])))
 
 
 def _check_picture_size(path, slot, tag, slot_id, line, warns, mode="fill"):

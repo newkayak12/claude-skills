@@ -663,6 +663,21 @@ def sentences(tmp):
           "repeated sentences are named, the passive one as passive; the repeated header is not: %s" % same)
 
 
+def crossings(tmp):
+    """A line through a label is named; inherited font-size and text-anchor are read."""
+    print("svg crossings and inherited text attributes")
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200">'
+           '<g font-size="12" text-anchor="middle"><text x="100" y="50">OAuth 2.1</text>'
+           '<text x="300" y="50">옆 라벨</text></g>'
+           '<line x1="100" y1="10" x2="100" y2="190"/>'          # straight through the first label
+           '<path d="M 250 80 L 350 80"/>'                       # under the second, touching nothing
+           '</svg>').encode()
+    check(deck.svg_crossed_labels(svg) == ["OAuth 2.1"], "only the label a line runs through: %s" % deck.svg_crossed_labels(svg))
+    labels = deck._svg_labels(ET.fromstring(svg))
+    x0, x1 = labels[0][1][0], labels[0][1][2]
+    check(abs((x0 + x1) / 2 - 100) < 0.01, "a group's text-anchor centres the label: %s" % (labels[0][1],))
+
+
 def alternatives(tmp):
     """Two frames the template draws in one place are alternatives: filling both is an error."""
     print("alternative frames")
@@ -2392,6 +2407,7 @@ def main():
         autonum(tmp)
         svgblip(tmp)
         alternatives(tmp)
+        crossings(tmp)
         widths(tmp)
         vector_invariant(tmp)
         one_line_slots(tmp)
