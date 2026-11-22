@@ -1,3 +1,8 @@
+---
+paths:
+  - "*/skills/**"
+---
+
 # Skill — what it is
 
 A skill is a procedure the model follows inside a conversation: the steps, the judgment at each

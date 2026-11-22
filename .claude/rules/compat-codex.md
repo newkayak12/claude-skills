@@ -1,3 +1,10 @@
+---
+paths:
+  - "*/.codex-plugin/**"
+  - "*/hooks/codex.json"
+  - "harness/engine/**"
+---
+
 # Codex
 
 Claude Code is the reference implementation; supported Codex overlays preserve the same

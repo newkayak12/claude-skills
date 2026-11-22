@@ -1,3 +1,9 @@
+---
+paths:
+  - "*/hooks/**"
+  - "*/.claude-plugin/**"
+---
+
 # Older Claude Code builds
 
 Mods need Claude Code 2.1.292+ (early-access hooks module API). Everything else in a plugin —

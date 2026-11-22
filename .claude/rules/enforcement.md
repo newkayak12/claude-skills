@@ -1,3 +1,11 @@
+---
+paths:
+  - ".claude/rules/**"
+  - ".claude/hooks/**"
+  - "_repo/hooks/**"
+  - "_repo/scripts/**"
+---
+
 # Enforcement — who checks each rule
 
 | Rule | Anchor | Enforcement |

@@ -1,3 +1,8 @@
+---
+paths:
+  - "*/hooks/**"
+---
+
 # Mod — what it is
 
 A mod is a plugin hooks module (`<plugin>/hooks/*.tsx`, named under `modules` in
