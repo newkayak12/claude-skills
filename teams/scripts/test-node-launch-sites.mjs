@@ -703,6 +703,33 @@ test('A2.2: a driver drives one node and ends its turn; the manager starts a fre
   assert.equal(ledger.filter((e) => e.event === 'child_driver_restarted').length, 0);
 }));
 
+test('card 171: N clean-exit hand-offs each write child_driver_next_node with the reason and settled counts, and driver.restarts stays empty', () => withNodeDrivers(async ({ task, node, child, exited, settled }) => {
+  const { spawnChildDriver, serviceDeadDriver } = await import('../mcp/taskmanager-drivers.mjs');
+  const graph = await import('../mcp/graph.mjs');
+  const runFile = join(child.cwd, '.teams_output', 'broker', 'runs', 'c1.json');
+  const run = JSON.parse(readFileSync(runFile, 'utf8'));
+  run.nodes.push(graph.node('review:U1:1', 'review', ['test:U1:1'], { state: 'pending', subgoal_id: 'U1' }));
+  writeFileSync(runFile, JSON.stringify(run));
+  child.driver = spawnChildDriver(task, node.node_id, child);
+  await exited(child.driver);
+  for (let k = 1; k <= 2; k++) {
+    assert.equal(serviceDeadDriver(task, child, node.node_id), true, `hand-off ${k}`);
+    assert.deepEqual(child.driver.restarts, [], `no restart spent after hand-off ${k}`);
+    await exited(child.driver);
+  }
+  assert.equal(settled().length, 3);
+  const ledger = readFileSync(join(process.env.HARNESS_TASKS_DIR, task.run_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const handoffs = ledger.filter((e) => e.event === 'child_driver_next_node');
+  assert.equal(handoffs.length, 2);
+  handoffs.forEach((e, i) => {
+    assert.equal(e.reason, 'next_node');
+    assert.equal(e.restart_spent, false);
+    assert.equal(e.settled_before, i);
+    assert.equal(e.settled_after, i + 1);
+  });
+  assert.equal(ledger.filter((e) => e.event === 'child_driver_restarted').length, 0);
+}));
+
 test('A2.2: a driver that exits with its run unmoved is still a death - the restart is counted', () => withNodeDrivers(async ({ task, node, child, calls, exited, settled }) => {
   const { spawnChildDriver, serviceDeadDriver } = await import('../mcp/taskmanager-drivers.mjs');
   process.env.STUB_NOOP = '1';
@@ -713,6 +740,9 @@ test('A2.2: a driver that exits with its run unmoved is still a death - the rest
   assert.equal(child.driver.restarts.length, 1, 'no node finished, so this is a restart and spends the budget');
   await exited(child.driver);
   assert.equal(calls().length, 2);
+  const ledger = readFileSync(join(process.env.HARNESS_TASKS_DIR, task.run_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(ledger.filter((e) => e.event === 'child_driver_restarted').length, 1);
+  assert.equal(ledger.filter((e) => e.event === 'child_driver_next_node').length, 0);
 }));
 
 // ---------- a node that asks its leader parks, and runs again with the answer ----------

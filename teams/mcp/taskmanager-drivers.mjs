@@ -378,12 +378,13 @@ export function serviceDeadDriver(task, child, nodeId) {
   // A driver drives one node and ends its turn: it exited cleanly with the run moved on since it
   // started. The next node gets a fresh driver; that is the plan, not a death, so no restart is spent.
   const exit = entry.exit;
-  if (Number.isInteger(driver.settled) && settledNodes(child) > driver.settled && (!exit || (exit.code === 0 && !exit.signal))) {
+  const settledNow = settledNodes(child);
+  if (Number.isInteger(driver.settled) && settledNow > driver.settled && (!exit || (exit.code === 0 && !exit.signal))) {
     const attempt = nextSpawnAttempt(child);
     return respawnDriver(task, nodeId, child, {
       attempt, reason: 'next_node', restarts: priorRestarts,
       spawn: (t, c) => spawnChildDriver(t, nodeId, c, { resume: true, nextNode: true, attempt }),
-      event: (t, fresh) => ({ event: 'child_driver_next_node', task_id: t.run_id, node_id: nodeId, pid: fresh.pid, previous_pid: driver.pid }),
+      event: (t, fresh) => ({ event: 'child_driver_next_node', task_id: t.run_id, node_id: nodeId, pid: fresh.pid, previous_pid: driver.pid, reason: 'next_node', settled_before: driver.settled, settled_after: settledNow, restart_spent: false }),
     });
   }
   const countedRestarts = countedDriverRestarts(task, driver);
