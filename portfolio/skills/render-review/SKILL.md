@@ -46,8 +46,11 @@ for the next render. Portfolio deck and resume alike. **Not for** content judgem
    **Then read it through five lenses at once** — 가독성 · 문체 · 단어 선정 · AI티 · 글 흐름: one opus
    subagent per lens, all five in one message, each given `build/pages/p-NN.txt`, `build/render.txt`
    (the render's measures, deck only) and `docs/확정사실.md` when it exists, and returning
-   쪽 · 원문 · 문제 · 바꿀 문장 rows (`references/lenses.md`). Merge them into `검토.md`, checking
-   every 바꿀 문장 against its page text.
+   쪽 · 원문 · 문제 · 바꿀 문장 rows (`references/lenses.md`). Each lens writes its rows to
+   `snapshot/render/<version>/lens-<가독성|문체|단어|AI티|흐름>.md` itself (a lens with nothing to say
+   writes `없음`); the review is not done until all five files exist — a lens that did not return is run
+   again, never skipped (two bench runs kept 3 of 5 and 0 of 5 lenses, only in an agent's context).
+   Merge them into `검토.md`, checking every 바꿀 문장 against its page text.
 4. **Write the problems** into `template/next-render.md` (created with that table header if it does
    not exist; when an older workspace still has `다음렌더-지침.md`, append a dated section to that file
    instead and say so — renaming is `manage scaffold`'s, which also adds other missing files)

@@ -107,6 +107,12 @@ Full syntax — slot forms, `!drop`, `notes:`, inline emphasis, outline levels, 
 `template_hash` protects against — is in `references/mdx-syntax.md`. Read it before
 writing the first slide.
 
+A results page (성과, 결과, 배운 점) is never words alone: its headline result goes in the frame the
+template gives it as a figure or stat card — the number, its unit, and what it was before or what it
+is out of (`491 / 19,500건`, `p95 21.5초 → 1.7초`). A `check` hole warning on such a page is filled
+this way, not left. Blind judges marked every text-only results page down against the user's own
+deck with KPI cards (2026-11-22).
+
 ### Step 3b · Generate the art the deck needs
 
 Write a picture slot's art as an `.svg`, in the template's colors and at the frame's exact
