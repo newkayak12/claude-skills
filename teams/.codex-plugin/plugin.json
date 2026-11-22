@@ -13,8 +13,9 @@
     "teams": {
       "command": "node",
       "args": [
-        "${PLUGIN_ROOT}/mcp/server.mjs"
-      ]
+        "./mcp/server.mjs"
+      ],
+      "cwd": "."
     }
   }
 }

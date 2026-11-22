@@ -453,6 +453,25 @@ test('exposes index and retrieval through MCP tool calls', async () => fixture(a
   assert.equal(searched.result.structuredContent.results[0].id, 'shipping');
 }));
 
+test('without a fixed root, a tool call uses the Codex workspace from _meta', async () => fixture(async (root) => {
+  seed(root);
+  const pluginDir = join(root, 'plugin-cache-dir');
+  const meta = { 'x-codex-turn-metadata': { workspaces: { [root]: { has_changes: false } } } };
+  const call = (context, _meta) => handleMcpMessage({
+    jsonrpc: '2.0', id: 1, method: 'tools/call',
+    params: { name: 'knowledge_status', arguments: {}, ...(_meta ? { _meta } : {}) },
+  }, context);
+
+  const codex = await call({ root: pluginDir, rootFixed: false, db: null }, meta);
+  assert.equal(codex.result.structuredContent.root, root);
+
+  const fixed = await call({ root: pluginDir, rootFixed: true, db: null }, meta);
+  assert.equal(fixed.result.structuredContent.root, pluginDir);
+
+  const noMeta = await call({ root: pluginDir, rootFixed: false, db: null });
+  assert.equal(noMeta.result.structuredContent.root, pluginDir);
+}));
+
 test('ranks an exact title match above unrelated notes and bodyless graph nodes', async () => fixture(async (root) => {
   // Reproduces the 583-note vault failure: the note whose title matched the
   // query verbatim was pushed past rank 50 by graph-node records with no body.

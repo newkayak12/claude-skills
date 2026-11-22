@@ -9,20 +9,19 @@ never retire them as duplicates, and never reference superpowers.
 
 ### Codex plugin compatibility
 
-172. **teams `apply_patch` write recording and dispatch-gate deny proven under real Codex** (rest of the Codex hook card, was 168)
-   - Why: the 127 and approval messages (user, 2026-11-21) are diagnosed and fixed by hand on 2026-11-22
-     after E-f8f880f9 stopped partial: [evidence](2026-11-22-codex-hook-evidence.md) (bare `sh` gets the
-     hook JSON on stdin → 127; overlays for 9 plugins; knowledge delta check live under Codex). Left: F3-US-1.
-   - Acceptance: in a disposable fixture under a temporary `CODEX_HOME`, an allowed `apply_patch` edit is
-     recorded by `own-writes.mjs` and a gate-denied edit leaves the file unchanged; then
-     `teams/README.md:103` ("unproven against a real Codex run") updated; teams tests with counts.
+176. **graph-engineering MCP starts in Codex** (graph is frozen: needs the user to reopen it)
+   - Why: 2026-11-22, temporary `CODEX_HOME`: graph-engineering UNAVAILABLE in Codex. Codex passes MCP
+     args literally, so `${PLUGIN_ROOT}/mcp/broker.mjs` is not found ([evidence](2026-11-22-codex-hook-evidence.md)).
+     teams, knowledge, aws, database were fixed the same day with a relative path and `"cwd": "."`.
+   - Acceptance: the same change in `graph/.codex-plugin/plugin.json`, and the broker's own cwd default
+     (`broker.mjs:1735` `process.cwd()`) checked; a Codex session lists the graph tools.
 
-175. **knowledge-local MCP starts in Codex**
-   - Why: 2026-11-22, temporary `CODEX_HOME` with knowledge 1.23.1 installed: startup warning "MCP client
-     for `knowledge-local` failed to start: … initialize response: connection closed", while
-     `node --no-warnings servers/knowledge-mcp.mjs` answers `initialize` by hand. Cause unverified
-     (`${PLUGIN_ROOT}` expansion in Codex MCP args, or cwd).
-   - Acceptance: a Codex session lists `knowledge-local` tools with no startup warning.
+177. **teams wiki takes its root from Codex's per-call workspace**
+   - Why: 2026-11-22, the teams MCP now starts in Codex with `"cwd": "."` (the plugin folder); `wiki.mjs`
+     roots at `process.cwd()`, so under Codex the wiki would live in the plugin cache. Codex gives the
+     session folder only per call in `_meta["x-codex-turn-metadata"].workspaces` (knowledge reads it the same way).
+   - Acceptance: with no `--root`/`TEAMS_WIKI_ROOT`, a `wiki_*` call under Codex uses that workspace; a test
+     red before the fix; teams tests with counts.
 
 173. **teams build nodes can run the commands their stories need (codex, node, python3, reads under ~/.codex)**
    - Why: E-f8f880f9 report, 2026-11-22: every draft/implement/test node got "This command requires
@@ -33,11 +32,6 @@ never retire them as duplicates, and never reference superpowers.
    - Acceptance: a size-S run whose implement node runs `node --version`, `python3 --version` and
      `codex --version` succeeds; a refused command fails the node at once with the refusal named,
      instead of retries; teams tests with counts.
-
-174. **aws and database get a Codex overlay for their mcpServers**
-   - Why: E-f8f880f9 critique, 2026-11-22: both have Claude `mcpServers` and no `.codex-plugin/`.
-   - Acceptance: `.codex-plugin/plugin.json` with mcpServers on `${PLUGIN_ROOT}`; validator passes; one
-     Codex session lists the servers.
 
 Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — the UI cards below come first.
 Card 101 comes before them (user, 2026-10-29: "최우선").

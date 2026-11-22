@@ -1,0 +1,37 @@
+{
+  "name": "database",
+  "version": "0.9.1",
+  "description": "Read-only database access for MySQL, MariaDB, PostgreSQL and Oracle: one MCP server per vendor (readonly-mysql/-mariadb/-postgres/-oracle, own profiles; read-only transactions the database enforces, statement whitelist, row cap, timeout) and skills login (macOS password dialog into Keychain, 1Password op:// optional), logout, profile (local/dev/stage/prod; no confirmation, read-only) and query (personal-data columns hidden, prod capped at 200 rows / 10 s, local query log without values). Bundled: no npm install.",
+  "author": {
+    "name": "newkayak12"
+  },
+  "repository": "https://github.com/newkayak12/claude-skills",
+  "license": "MIT",
+  "skills": "./skills/",
+  "mcpServers": {
+    "readonly-mysql": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["./mcp/readonly/dist/database-readonly.mjs", "--vendor", "mysql"],
+      "cwd": "."
+    },
+    "readonly-mariadb": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["./mcp/readonly/dist/database-readonly.mjs", "--vendor", "mariadb"],
+      "cwd": "."
+    },
+    "readonly-postgres": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["./mcp/readonly/dist/database-readonly.mjs", "--vendor", "postgres"],
+      "cwd": "."
+    },
+    "readonly-oracle": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["./mcp/readonly/dist/database-readonly.mjs", "--vendor", "oracle"],
+      "cwd": "."
+    }
+  }
+}

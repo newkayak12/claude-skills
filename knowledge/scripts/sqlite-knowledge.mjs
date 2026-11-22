@@ -2162,6 +2162,14 @@ function writeMessage(message, output = process.stdout) {
   output.write(`${JSON.stringify(message)}\n`);
 }
 
+// Codex starts a plugin MCP server in the plugin's own folder and sends the session's
+// folder only per call, in _meta (no roots, no env).
+function codexWorkspace(meta) {
+  const workspaces = meta?.['x-codex-turn-metadata']?.workspaces;
+  const first = workspaces && typeof workspaces === 'object' ? Object.keys(workspaces)[0] : null;
+  return first ? resolve(first) : null;
+}
+
 async function handleMcpMessage(message, context) {
   if (!message || message.jsonrpc !== '2.0') return null;
   if (message.method === 'notifications/initialized' || message.method?.startsWith('notifications/')) return null;
@@ -2184,7 +2192,7 @@ async function handleMcpMessage(message, context) {
   if (message.method === 'tools/call') {
     try {
       const result = await callMcpTool(
-        context.root,
+        (!context.rootFixed && codexWorkspace(message.params?._meta)) || context.root,
         context.db,
         message.params?.name,
         message.params?.arguments || {},

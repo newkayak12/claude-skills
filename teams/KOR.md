@@ -100,7 +100,7 @@ flowchart TD
 
 | 단계 | 하는 일 | 스위치 |
 |---|---|---|
-| `size` | 심사자가 S(런 하나로 충분)인지 L(쪼개야 함)인지 정합니다. `size` 인자로 고정할 수도 있습니다. 크기 S 태스크는 teams에서 여기서 멈추고 개발 하네스(graph MCP, 없으면 harness 스킬의 Agent Team 폴백)로 넘어갑니다. claude와 codex가 참여하고, 하네스가 자기 단계로 계획·목표 설정·검토·구현·테스트·심사를 합니다. 기획 카드, 분할, shape, worktree, QA 카드는 없습니다. 런에는 태스크 id 태그가 붙고, 런 자신의 goal gate가 `complete`/`partial`을 정하며, 그 리포트가 전달됩니다. 알려진 한계: teams 0.62.0 이전에 시작한 세션에서 연 태스크는 자기 쓰기를 기록하지 않아 `scope_verdict`에 `own_record:false`가 나옵니다(세션을 다시 시작하세요). Codex `apply_patch` 기록은 등록되어 있고 파서 테스트도 있지만 실제 Codex 실행으로는 확인되지 않았습니다. | — |
+| `size` | 심사자가 S(런 하나로 충분)인지 L(쪼개야 함)인지 정합니다. `size` 인자로 고정할 수도 있습니다. 크기 S 태스크는 teams에서 여기서 멈추고 개발 하네스(graph MCP, 없으면 harness 스킬의 Agent Team 폴백)로 넘어갑니다. claude와 codex가 참여하고, 하네스가 자기 단계로 계획·목표 설정·검토·구현·테스트·심사를 합니다. 기획 카드, 분할, shape, worktree, QA 카드는 없습니다. 런에는 태스크 id 태그가 붙고, 런 자신의 goal gate가 `complete`/`partial`을 정하며, 그 리포트가 전달됩니다. 알려진 한계: teams 0.62.0 이전에 시작한 세션에서 연 태스크는 자기 쓰기를 기록하지 않아 `scope_verdict`에 `own_record:false`가 나옵니다(세션을 다시 시작하세요). 실제 Codex(0.170.0, 2026-11-22)에서 `apply_patch` 쓰기는 기록되고, gate 대상 쓰기는 거부되어 파일이 써지지 않습니다. | — |
 | `brainstorm` | 의도, 범위, 접근을 다시 정리합니다. `interactive`일 때만 사람에게 묻습니다. 세션에서 이미 `decisions`를 넘겼다면 건너뜁니다. | `brainstorm` |
 | `areas` | EPIC의 plan 단계가 요청을 **기능** 기준으로 나눕니다. 사용자가 무엇을 할 수 있어야 하는지를 기능 영역으로 묶고, 영역마다 기획 카드가 하나씩 생깁니다. | — |
 | `areas-critique` | **신규.** 카드가 돌기 전에 심사자가 분할을 공격합니다: 어느 영역에도 없는 기능, 같은 기능을 두 영역이 기획하는 경우, 사용자 기능이 아니라 모듈·계층으로 자른 영역, 부풀리거나 억지로 합친 영역. 반려되면 결함을 피드백으로 다시 나눕니다. | `max_retries`, `human_gates` |

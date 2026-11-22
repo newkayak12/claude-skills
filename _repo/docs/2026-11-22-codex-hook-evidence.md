@@ -47,8 +47,29 @@ develop, agents, completion and knowledge installed from the working tree:
   `_knowledge/reports/delta-checks.jsonl` (`"file":"notes/a.md"`, `missing_frontmatter:["sources"]`).
 - Fresh `codex exec`, same bytes: no review prompt, `hook: PostToolUse Completed`, a second delta line.
 
-## Not done here
+## Plugin MCP servers: `${PLUGIN_ROOT}` is not expanded
 
-- teams `apply_patch` allow/deny under real Codex (F3-US-1): not run.
-- `knowledge-local` MCP fails to start in Codex ("initialize response: connection closed"), while the
-  server answers `initialize` when run by hand: separate card.
+Codex passes MCP `args` literally: a logging `node` first on `PATH` saw
+`argv=[--no-warnings ${PLUGIN_ROOT}/servers/knowledge-mcp.mjs]`, cwd the session folder, no
+`PLUGIN_ROOT` in env → `MODULE_NOT_FOUND`. teams and graph-engineering were UNAVAILABLE the same way.
+The docs (developers.openai.com plugins build page) document `${PLUGIN_ROOT}` for hooks only.
+
+What works: a relative script path plus `"cwd": "."`, which Codex resolves against the plugin root.
+The server then runs in the plugin folder, and Codex gives it the session folder neither as env nor as
+MCP roots (the client's initialize declares no `roots`); only each `tools/call` carries it, in
+`params._meta["x-codex-turn-metadata"].workspaces` (keys are folder paths).
+
+- knowledge: `knowledge-mcp.mjs` uses that per-call workspace unless `--root` or `CLAUDE_PROJECT_DIR`
+  fixes the root (test red before the fix). Live: `knowledge_status` reports `<session>/knowledge-system`.
+- teams: relative path + `cwd`; live `tm_status` answers. Its wiki root is still `process.cwd()` (card).
+- aws, database (no Codex manifest before): live, all 5 servers list their tools.
+- graph: same defect; graph is frozen, so not changed (card).
+
+## teams `apply_patch` under real Codex
+
+Fixture with `.claude/teams-dispatch.json` `{"paths":["src/**"],"min_chars":10}`, teams hooks trusted via `/hooks`:
+
+- Deny: `apply_patch` adding `src/app.js` → `hook: PreToolUse Blocked`, "teams: src/app.js is under
+  dispatch control, and no task is open for this project."; `src/` stays empty.
+- Allow + record: with `TEAMS_OWN_WRITES`/`TEAMS_OWN_RUN` set, `apply_patch` adding `docs/notes.txt` →
+  `PostToolUse Completed`, and the writes file holds `{"run_id":"t1","node_id":"S","path":"docs/notes.txt"}`.

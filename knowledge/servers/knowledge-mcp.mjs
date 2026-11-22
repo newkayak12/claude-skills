@@ -15,5 +15,7 @@ function dbFromArgs(argv) {
 
 await serveMcp({
   root: rootFromArgs(process.argv.slice(2)),
+  // A root given by --root or Claude's CLAUDE_PROJECT_DIR wins; otherwise Codex's per-call workspace does.
+  rootFixed: process.argv.includes('--root') || Boolean(process.env.CLAUDE_PROJECT_DIR),
   db: dbFromArgs(process.argv.slice(2)),
 });

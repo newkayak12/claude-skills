@@ -15,8 +15,9 @@
       "command": "node",
       "args": [
         "--no-warnings",
-        "${PLUGIN_ROOT}/servers/knowledge-mcp.mjs"
-      ]
+        "./servers/knowledge-mcp.mjs"
+      ],
+      "cwd": "."
     }
   }
 }
