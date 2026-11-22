@@ -10,7 +10,8 @@ import type { Surface } from './testkit.ts'
 const BAND = { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: 80 } as any
 const MARKETPLACE = JSON.stringify({ plugins: [{ name: 'develop', source: './develop' }] })
 const UNLOCKED = { 'trophy.installId': 'install-1', 'trophy.unlocked': { 'first-blood': '2026-10-06' } }
-const FAIL = { tool_name: 'Skill', tool_input: { skill: 'develop:clean-code' }, tool_use_id: 't1', error: 'boom' } as never
+const FAIL = { tool: 'Skill', skill: 'develop:clean-code' } as never
+const BOOM = { ref: 1, result: 'Error: boom', text: 'boom', isError: true }
 
 const texts = (node: any): string[] =>
   Array.isArray(node)
@@ -54,12 +55,12 @@ const world = async ($: any, on: On, surface: Surface | null, seed: Record<strin
   on('fs.write', () => ({ value: undefined }))
   on('session.usage', () => ({ deny: 'no usage' }))
   on('session.version', () => ({ value: { version: '2.1.293', base: '2.1.293' } }) as never)
-  on('tool.call', { tool: 'Skill' }, () => ({ result: { success: true, commandName: 'x' } }) as never)
-  on('classic.PostToolUseFailure', () => ({}))
+  const answer = { fail: false }
+  on('tool.call', { tool: 'Skill' }, () => (answer.fail ? BOOM : { result: { success: true, commandName: 'x' } }) as never)
   // The event claims an interactive session: only the surfaces the engine reports (rule 2) may decide.
   await $.session.start({ cwd: '/work', surface: surface ?? 'terminal', isInteractive: true })
   const mount = (s: Surface) => $.ui.mount({ plugin: 'trophy', surface: s, component: 'AbovePrompt', props: BAND })
-  return { toasts, opened, fetches, mount }
+  return { toasts, opened, fetches, mount, answer }
 }
 
 for (const surface of SURFACES) {
@@ -73,7 +74,8 @@ for (const surface of SURFACES) {
 
   test(`${surface}: fail band draws the count and the 보기 button from shared elements`, async ($, on) => {
     const w = await world($, on, surface, { 'trophy.consent': 'no', 'trophy.consentVersion': CONSENT_VERSION })
-    await $.classic.PostToolUseFailure(FAIL)
+    w.answer.fail = true
+    await $.tool.call(FAIL)
     const ui = await w.mount(surface)
     const tree = await ui.drawn()
 
@@ -107,7 +109,8 @@ for (const surface of SURFACES) {
 test('no surface attached (event says interactive): no card, no band, no fetch, no toast, nothing opens', async ($, on) => {
   const w = await world($, on, null, UNLOCKED)
   await $.tool.call({ tool: 'Skill', skill: 'develop:clean-code' })
-  await $.classic.PostToolUseFailure(FAIL)
+  w.answer.fail = true
+  await $.tool.call(FAIL)
   const ui = await w.mount('terminal')
 
   expect(await ui.find({ key: 'send' })).toBeUndefined()

@@ -6,7 +6,7 @@ import { memoryStore, sessionAt } from './testkit.ts'
 const bottom = (on: On) => {
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
-  on('skill.prompt', (_$, e) => ({ text: e.text }))
+  on('tool.call', { tool: 'Skill' }, () => ({ result: 'ran' }) as never)
   on('ui.toast', () => ({ value: undefined }))
 }
 
@@ -22,7 +22,7 @@ test('one unlock writes profile.json with that id and no uses', async ($, on) =>
   })
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
 
-  await $.skill.prompt({ skill: 'think:grill', text: 'x' })
+  await $.tool.call({ tool: 'Skill', skill: 'think:grill' })
 
   const profile = writes.at(-1)!
   expect(profile.path).toBe('/home/kim/.claude/trophy/profile.json')
@@ -41,5 +41,5 @@ test('a failing profile write does not break the prompt', async ($, on) => {
   on('fs.write', () => ({ deny: 'read-only' }))
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
 
-  expect(await $.skill.prompt({ skill: 'think:grill', text: 'x' })).toEqual({ text: 'x' })
+  expect(await $.tool.call({ tool: 'Skill', skill: 'think:grill' })).toEqual({ result: 'ran' })
 })

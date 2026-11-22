@@ -20,19 +20,22 @@ test('a note is added to context once per conversation', async ($, on) => {
 })
 
 for (const source of ['compact', 'clear'] as const) {
-  test(`SessionStart ${source} re-arms the block`, async ($, on) => {
-    memoWorld(on, { store: { [KEY]: [NOTE] } })
+  test(`a shorter conversation (${source}) re-arms the block`, async ($, on) => {
+    const seen = memoWorld(on, { store: { [KEY]: [NOTE] } })
+    seen.rows = 40
     await submit($)
-    if (source === 'compact') await $.classic.SessionStart({ source: 'compact' })
-    else await $.classic.SessionStart({ source: 'clear' })
+    seen.rows = source === 'compact' ? 3 : 0
     expect((await submit($)).context).toEqual([BLOCK])
+    seen.rows = 4
+    expect((await submit($)).context).toBeUndefined()
   })
 }
 
-test('SessionStart resume does not re-arm', async ($, on) => {
-  memoWorld(on, { store: { [KEY]: [NOTE] } })
+test('a conversation that did not shrink (resume) does not re-arm', async ($, on) => {
+  const seen = memoWorld(on, { store: { [KEY]: [NOTE] } })
+  seen.rows = 10
   await submit($)
-  await $.classic.SessionStart({ source: 'resume' })
+  seen.rows = 12
   expect((await submit($)).context).toBeUndefined()
 })
 
@@ -54,13 +57,13 @@ test('a corrupt or unreadable store leaves the input unchanged', async ($, on) =
 })
 
 const SENT_NOW = Date.parse('2026-10-08T09:00:00Z')
-const cell = (seen: ReturnType<typeof memoWorld>) => seen.cells.get('session.memo') as { armed: boolean; sentAt?: number } | undefined
+const cell = (seen: ReturnType<typeof memoWorld>) => seen.cells.get('session.memo') as { armed: boolean; sentAt?: number; rows?: number } | undefined
 
 test('sentAt is unset before the first send and set from the clock at injection', async ($, on) => {
   const seen = memoWorld(on, { store: { [KEY]: [NOTE] } })
   expect(cell(seen)?.sentAt ?? 0).toBe(0)
   await submit($)
-  expect(cell(seen)).toEqual({ armed: false, sentAt: SENT_NOW })
+  expect(cell(seen)).toEqual({ armed: false, sentAt: SENT_NOW, rows: 0 })
 })
 
 test('a prompt with no block to send leaves sentAt unset', async ($, on) => {
@@ -72,10 +75,8 @@ test('a prompt with no block to send leaves sentAt unset', async ($, on) => {
 test('toggling armed and saving a note keep sentAt', async ($, on) => {
   const seen = memoWorld(on, { store: { [KEY]: [NOTE] } })
   await submit($)
-  await $.classic.SessionStart({ source: 'compact' })
-  expect(cell(seen)).toEqual({ armed: true, sentAt: SENT_NOW })
   await $.command.run({ command: 'memo', args: 'add second' } as never)
-  expect(cell(seen)).toEqual({ armed: true, sentAt: SENT_NOW })
+  expect(cell(seen)).toEqual({ armed: true, sentAt: SENT_NOW, rows: 0 })
   await submit($)
   await $.command.run({ command: 'memo', args: 'rm 1' } as never)
   expect(cell(seen)?.sentAt).toBe(SENT_NOW)

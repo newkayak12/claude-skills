@@ -34,7 +34,7 @@ import {
 } from './logic.ts'
 import type { Achievement, Activity, BatchStore, DayCounts, McpCalls, Os, Outcomes, System, Use, Versions } from './logic.ts'
 import {
-  appendEntry, copyBody, foldRows, marketplaceCandidates, outcomeFailure, ownedMcpTool, ownedSkill,
+  appendEntry, copyBody, foldRows, marketplaceCandidates, outcomeFailure, ownedSkill,
   rowDetail, rowMeta, rowTitle, targetOf,
 } from './failures.ts'
 import type { Entry } from './failures.ts'
@@ -210,6 +210,10 @@ const safe = async (work: () => Promise<unknown>) => {
 }
 
 const cut = (v: unknown) => String(v ?? '').slice(0, TEXT_MAX)
+
+// A failed tool call's answer: text for the person to read, kept local. An interrupt is the person's, not a bug.
+const errorText = (r: unknown) => cut((r as { text?: unknown; result?: unknown } | undefined)?.text ?? (r as { result?: unknown } | undefined)?.result)
+const isInterrupt = (r: unknown) => /doesn't want to proceed|\[Request interrupted/i.test(errorText(r))
 
 // The one place the Achievements pane opens: it records that this session asked for it.
 const openPane = async ($: EngineInterface) => {
@@ -474,14 +478,10 @@ export const register: Register = on => {
     return next(e)
   }).catch(failOpen)
 
-  // skill.prompt is skipped for user-tier hooks under some organizations' policy (00-spike-findings),
-  // so the Skill tool and the typed command report the same uses.
-  on('skill.prompt', async ($, e, next) => {
-    await note($, e.skill)
-    return next(e)
-  }).catch(failOpen)
-
-  // Also: the Skill tool answered but the skill did not succeed; remembers the last owned skill.
+  // Organization policy can skip user-tier skill.prompt, classic.PostToolUseFailure and classic.UserPromptExpansion
+  // hooks (00-spike-findings), so this plugin hooks none of them: the Skill tool call, MCP results and the typed
+  // command (prompt.submit) report the uses and the failures.
+  // The Skill tool call: one use, plus the skill did not succeed; remembers the last owned skill.
   on('tool.call', { tool: 'Skill' }, async ($, e, next) => {
     const unlocked = await note($, e.skill)
     const result = await next(e)
@@ -491,8 +491,13 @@ export const register: Register = on => {
       if (!hit) return
       if (!unlocked) $.ui.toast(`◆ ${hit.plugin}:${hit.skill}`)
       await update($, lastSkill, () => `${hit.plugin}:${hit.skill}`)
-      const r = result as { deny?: string; isError?: boolean; result?: any }
-      if (r.deny !== undefined || r.isError || !r.result || r.result.success !== false) return
+      const r = result as { deny?: string; isError?: boolean; result?: any; text?: unknown }
+      if (r.deny !== undefined) return
+      if (r.isError) {
+        if (!isInterrupt(r)) await record($, { kind: 'bug', reason: 'is_error', plugin: hit.plugin, skill: hit.skill, local: { text: errorText(r) } })
+        return
+      }
+      if (!r.result || r.result.success !== false) return
       const forked = r.result.status === 'forked'
       await record($, {
         kind: 'bug',
@@ -513,7 +518,11 @@ export const register: Register = on => {
     await safe(async () => {
       const hit = ownedMcpByName(tool, owned.servers)
       if (!hit) return
-      const kind = (result as { isError?: unknown } | undefined)?.isError === true ? 'error' : 'ok'
+      const r = result as { isError?: unknown } | undefined
+      const kind = r?.isError === true ? 'error' : 'ok'
+      if (kind === 'error' && !isInterrupt(r)) {
+        await record($, { kind: 'bug', reason: 'mcp_error', plugin: hit.plugin, tool: hit.tool, local: { text: errorText(r) } })
+      }
       const calls = ((await $.store.get('trophy.mcpCalls')) ?? {}) as McpCalls
       await $.store.set('trophy.mcpCalls', addMcp(calls, dayOf(await $.clock.now()), hit.plugin, hit.tool, kind))
     })
@@ -545,22 +554,6 @@ export const register: Register = on => {
     return result
   }).catch(failOpen)
 
-  // An owned skill failed to load, or an owned MCP tool failed. An interrupt is the person's, not a bug.
-  on('classic.PostToolUseFailure', async ($, e, next) => {
-    if (!(await read($, active)) || e.is_interrupt === true) return next(e)
-    await safe(async () => {
-      const text = cut(e.error)
-      if (e.tool_name === 'Skill') {
-        const hit = ownedSkill((e.tool_input as { skill?: unknown } | undefined)?.skill, owned.skills)
-        if (hit) await record($, { kind: 'bug', reason: 'is_error', plugin: hit.plugin, skill: hit.skill, local: { text } })
-        return
-      }
-      const mcp = ownedMcpTool(e.tool_name, e.mcp_server, owned.servers)
-      if (mcp) await record($, { kind: 'bug', reason: 'mcp_error', plugin: mcp.plugin, tool: mcp.tool, local: { text } })
-    })
-    return next(e)
-  }).catch(failOpen)
-
   // `/trophy-bug <note>`: the note stays local; only the code `user_report` can be sent.
   on('command.run', { command: 'trophy-bug' }, async ($, e) => {
     const note = e.args.trim()
@@ -579,11 +572,6 @@ export const register: Register = on => {
     }
   }).catch(failOpen)
 
-  on('classic.UserPromptExpansion', async ($, e, next) => {
-    if (e.expansion_type === 'slash_command') await note($, e.command_name)
-    return next(e)
-  }).catch(failOpen)
-
   // A prompt's trigger phrases are matched on the way in and judged against the skills that fired when the turn ends.
   on('prompt.submit', async ($, e, next) => {
     if (await read($, active)) {
@@ -598,7 +586,7 @@ export const register: Register = on => {
       await update($, turnFired, () => [])
       const typed = typedCommand(e.text)
       await update($, turnTyped, () => typed !== undefined)
-      // The one path that still sees a typed skill when skill.prompt and UserPromptExpansion are skipped.
+      // The one path that sees a typed skill.
       if (typed) await note($, typed)
       // Only a name this marketplace ships becomes the last skill; whatever else was typed is never stored.
       const hit = ownedSkill(typed, owned.skills)

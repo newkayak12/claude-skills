@@ -39,7 +39,7 @@ export function resolveSkill(name: string, index: readonly TriggerEntry[]): { sk
   return { skill: name, plugin: '' }
 }
 
-// The Skill tool, skill.prompt and the typed command all report one use: same skill, same session, within 5 s is one.
+// The Skill tool call and the typed command both report one use: same skill, same session, within 5 s is one.
 // The command a prompt typed, raw (`/think:grill …`) or as the engine expands it (`<command-name>/think:grill</command-name>`).
 export function typedCommand(text: string): string | undefined {
   return (/^\s*\/(\S+)/.exec(text) ?? /<command-name>\/([^<\s]+)<\/command-name>/.exec(text))?.[1]

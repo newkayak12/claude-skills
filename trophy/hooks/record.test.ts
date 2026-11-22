@@ -9,9 +9,7 @@ const SKILL = 'think:brainstorming'
 const bottom = (on: On) => {
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
-  on('skill.prompt', (_$, e) => ({ text: e.text }))
   on('tool.call', { tool: 'Skill' }, () => ({ result: 'ran' }))
-  on('classic.UserPromptExpansion', () => ({}))
 }
 const start = (isInteractive: boolean) => ({
   cwd: '/work',
@@ -21,15 +19,15 @@ const start = (isInteractive: boolean) => ({
 const PROMPT = { wait: false, origin: { kind: 'composer' } } as any
 const uses = (store: Map<string, unknown>) => (store.get('trophy.uses') ?? []) as { skill: string; plugin: string }[]
 
-test('a skill.prompt of this marketplace is stored and the text passes through', async ($, on) => {
+test('a Skill tool call of this marketplace is stored and the result passes through', async ($, on) => {
   const store = memoryStore(on)
   const clock = sessionAt(on)
   bottom(on)
   await $.session.start(start(true))
 
-  const out = await $.skill.prompt({ skill: SKILL, text: 'the prompt' })
+  const out = await $.tool.call({ tool: 'Skill', skill: SKILL })
 
-  expect(out).toEqual({ text: 'the prompt' })
+  expect(out).toEqual({ result: 'ran' })
   expect(uses(store).map(u => [u.skill, u.plugin])).toEqual([[SKILL, 'think']])
 })
 
@@ -39,7 +37,7 @@ test('a skill of another marketplace is not stored', async ($, on) => {
   bottom(on)
   await $.session.start(start(true))
 
-  await $.skill.prompt({ skill: 'superpowers:brainstorming', text: 'x' })
+  await $.tool.call({ tool: 'Skill', skill: 'superpowers:brainstorming' })
 
   expect(uses(store)).toEqual([])
 })
@@ -51,7 +49,7 @@ test('an idle (non-interactive) session stores nothing', async ($, on) => {
   bottom(on)
   await $.session.start(start(false))
 
-  await $.skill.prompt({ skill: SKILL, text: 'x' })
+  await $.tool.call({ tool: 'Skill', skill: SKILL })
 
   expect(uses(store)).toEqual([])
 })
@@ -62,32 +60,28 @@ test('a bare name maps to the plugin-prefixed skill through the index', async ($
   bottom(on)
   await $.session.start(start(true))
 
-  await $.skill.prompt({ skill: 'brainstorming', text: 'x' })
+  await $.tool.call({ tool: 'Skill', skill: 'brainstorming' })
 
   expect(uses(store).map(u => u.skill)).toEqual([SKILL])
 })
 
-test('the Skill tool and the typed command record too, once per use', async ($, on) => {
+test('the Skill tool and the typed command record, once per use', async ($, on) => {
   const store = memoryStore(on)
   const clock = sessionAt(on)
   bottom(on)
+  on('prompt.submit', (_$, e) => ({ text: e.text }))
   await $.session.start(start(true))
 
   await $.tool.call({ tool: 'Skill', skill: SKILL })
   await clock.advance(1000)
-  await $.skill.prompt({ skill: SKILL, text: 'x' })
-  await $.classic.UserPromptExpansion({
-    expansion_type: 'slash_command',
-    command_name: 'think:grill',
-    command_args: '',
-    prompt: '/think:grill',
-  })
+  await $.tool.call({ tool: 'Skill', skill: SKILL })
+  await $.prompt.submit({ text: '/think:grill', ...PROMPT })
 
   expect(uses(store).map(u => u.skill)).toEqual([SKILL, 'think:grill'])
 })
 
 // Under a team organization skill.prompt and UserPromptExpansion are skipped for user-tier hooks
-// (debug: "bypassed by cc-plugin-sec-default (tier user)"); prompt.submit is the one that still runs.
+// (debug: "bypassed by cc-plugin-sec-default (tier user)"); this plugin hooks neither, prompt.submit reads the command.
 test('a typed /command is recorded from prompt.submit alone, raw or expanded', async ($, on) => {
   const store = memoryStore(on)
   sessionAt(on)
@@ -103,15 +97,15 @@ test('a typed /command is recorded from prompt.submit alone, raw or expanded', a
   expect(uses(store).map(u => u.skill)).toEqual(['think:grill', 'trophy:list'])
 })
 
-test('a throwing store still returns the prompt text', async ($, on) => {
+test('a throwing store still returns the tool result', async ($, on) => {
   const store = memoryStore(on)
   const clock = sessionAt(on)
   bottom(on)
   await $.session.start(start(true))
   store.broken = true
 
-  const out = await $.skill.prompt({ skill: SKILL, text: 'the prompt' })
+  const out = await $.tool.call({ tool: 'Skill', skill: SKILL })
 
-  expect(out).toEqual({ text: 'the prompt' })
+  expect(out).toEqual({ result: 'ran' })
   expect(uses(store)).toEqual([])
 })

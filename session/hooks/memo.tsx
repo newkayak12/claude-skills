@@ -10,9 +10,19 @@ const PANE = 'memo'
 const GLOBAL = 'memo.global'
 const projectKey = (root: string) => `memo.project:${root}`
 
-// armed: true until the block went to the model in this conversation; /compact, /clear and every write set it again.
+// armed: true until the block went to the model in this conversation; every write sets it again, and so does a
+// conversation that got shorter than at the send (/compact, /clear).
 // sentAt: epoch ms of that send, 0 before the first one.
-const armed = atom({ plugin: 'session', key: 'memo' } as const, { armed: true, sentAt: 0 })
+// rows: the conversation's row count at that send, 0 when it could not be read.
+const armed = atom({ plugin: 'session', key: 'memo' } as const, { armed: true, sentAt: 0, rows: 0 })
+
+const rowCount = async ($: any): Promise<number> => {
+  try {
+    return ((await $.session.messages({ as: 'api' })) as unknown[]).length
+  } catch {
+    return 0
+  }
+}
 
 async function load($: any): Promise<{ g: Note[]; p: Note[]; root: string }> {
   const root = (await $.session.root()) as string
@@ -84,22 +94,18 @@ export const register: Register = (on, _options) => {
   // The block rides once per conversation; a bad store leaves the prompt untouched.
   on('prompt.submit', async ($, e, next) => {
     try {
-      if (!(await read($, armed)).armed) return next(e)
+      const state = await read($, armed)
+      if (!state.armed && !((state.rows ?? 0) > 0 && (await rowCount($)) < state.rows!)) return next(e)
       const { g, p } = await load($)
       const block = render(g, p)
       if (!block) return next(e)
       const sentAt = (await $.clock.now()) as number
-      await update($, armed, prev => ({ ...prev, armed: false, sentAt }))
+      const rows = await rowCount($)
+      await update($, armed, prev => ({ ...prev, armed: false, sentAt, rows }))
       return next({ ...e, context: [...(e.context ?? []), block] })
     } catch {
       return next(e)
     }
-  }).catch(($, e, next) => next(e))
-
-  // A new context window (after /compact or /clear) has lost the block; resume and startup have not.
-  on('classic.SessionStart', async ($, e, next) => {
-    if (e.source === 'compact' || e.source === 'clear') await update($, armed, prev => ({ ...prev, armed: true }))
-    return next(e)
   }).catch(($, e, next) => next(e))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {

@@ -10,7 +10,6 @@ const TURN = { answer: '', durationMs: 1, isAborted: false, turnId: 't', reason:
 const bottom = (on: On) => {
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
-  on('skill.prompt', (_$, e) => ({ text: e.text }))
   on('prompt.submit', (_$, e) => ({ text: e.text }))
   on('turn.complete', () => ({ text: 'done' }))
   on('tool.call', { tool: 'Skill' }, () => ({ result: 'ran' }))
@@ -26,7 +25,6 @@ test('with a broken store every hook still returns what the chain below returned
   await $.session.start(START)
   store.broken = true
 
-  expect(await $.skill.prompt({ skill: 'think:grill', text: 'a' })).toEqual({ text: 'a' })
   expect(await $.prompt.submit({ text: 'b', ...PROMPT })).toEqual({ text: 'b' })
   expect(await $.turn.complete(TURN)).toEqual({ text: 'done' })
   expect(await $.tool.call({ tool: 'Skill', skill: 'think:grill' })).toEqual({ result: 'ran' })
@@ -59,7 +57,7 @@ test('a non-interactive session never fetches, writes a profile or stores', asyn
   const before = JSON.stringify([...store])
 
   await $.session.start({ ...START, surface: null, isInteractive: false })
-  await $.skill.prompt({ skill: 'think:grill', text: 'x' })
+  await $.tool.call({ tool: 'Skill', skill: 'think:grill' })
   await $.prompt.submit({ text: 'x', ...PROMPT })
   await $.turn.complete(TURN)
 

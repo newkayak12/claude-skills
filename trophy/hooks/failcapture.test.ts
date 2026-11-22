@@ -19,7 +19,10 @@ const start = (isInteractive: boolean) => ({
   isInteractive,
 })
 
-type World = { skill?: unknown; bash?: unknown; write?: unknown }
+type World = { skill?: unknown; bash?: unknown; write?: unknown; mcp?: unknown }
+const BOOM = { ref: 1, result: 'Error: boom', text: 'boom', isError: true }
+const KMCP = 'mcp__plugin_knowledge_knowledge-local__knowledge_get'
+const OMCP = 'mcp__plugin_teams_other__x'
 
 // The engine's own answers beneath the plugin; `w` picks what the tools answer.
 const bottom = (on: On, w: World = {}) => {
@@ -38,7 +41,8 @@ const bottom = (on: On, w: World = {}) => {
   on('session.version', () => ({ value: { version: '2.1.293', base: '2.1.293' } }) as never)
   on('ui.toast', () => ({ value: undefined }))
   on('fs.write', () => ({ value: undefined }))
-  on('classic.PostToolUseFailure', () => ({}))
+  on('tool.call', { tool: KMCP }, () => (w.mcp ?? { result: 'ok', text: 'ok' }) as never)
+  on('tool.call', { tool: OMCP }, () => (w.mcp ?? { result: 'ok', text: 'ok' }) as never)
   on('prompt.submit', (_$, e) => ({ text: e.text }))
   on('tool.call', { tool: 'Skill' }, () => (w.skill ?? { result: { success: true, commandName: 'x' } }) as never)
   on('tool.call', { tool: 'Write' }, () => (w.write ?? { result: { type: 'create' } }) as never)
@@ -59,14 +63,10 @@ const boot = async ($: any, on: On, interactive = true, w: World = {}) => {
   return store
 }
 
-const fail = (o: object) => ({
-  tool_name: 'Skill', tool_input: { skill: 'develop:clean-code' }, tool_use_id: 't1', error: 'boom', ...o,
-}) as never
-
 test('S1a owned skill failure is recorded once, with the plugin and Claude Code versions', async ($, on) => {
-  const store = await boot($, on)
-  await $.classic.PostToolUseFailure(fail({}))
-  await $.classic.PostToolUseFailure(fail({}))
+  const store = await boot($, on, true, { skill: BOOM })
+  await $.tool.call({ tool: 'Skill', skill: 'develop:clean-code' })
+  await $.tool.call({ tool: 'Skill', skill: 'develop:clean-code' })
   expect(log(store).map(e => [e.kind, e.reason, e.plugin, e.skill, e.version, e.cc, e.local])).toEqual([
     ['bug', 'is_error', 'develop', 'clean-code', '1.10.3', '2.1.293', { text: 'boom' }],
   ])
@@ -85,13 +85,8 @@ test('S1b unsuccessful and forked unsuccessful skill are recorded', async ($, on
 })
 
 test('S5 owned mcp failure is recorded with raw text only under local', async ($, on) => {
-  const store = await boot($, on)
-  await $.classic.PostToolUseFailure(fail({
-    tool_name: 'mcp__plugin_knowledge_knowledge-local__knowledge_get',
-    tool_input: { q: SECRET },
-    error: 'mcp down ' + SECRET,
-    mcp_server: { name: 'knowledge-local', source: 'plugin' },
-  }))
+  const store = await boot($, on, true, { mcp: { ref: 1, result: 'Error: mcp down ' + SECRET, text: 'mcp down ' + SECRET, isError: true } })
+  await $.tool.call({ tool: KMCP, q: SECRET } as any)
   const e = log(store)[0]!
   expect([e.kind, e.reason, e.plugin, e.tool]).toEqual(['bug', 'mcp_error', 'knowledge', 'knowledge_get'])
   expect(e.local.text).toBe('mcp down ' + SECRET)
@@ -123,30 +118,23 @@ test('typed /plugin:free text never becomes the last skill or any sent field', a
 })
 
 test('interrupted call records nothing', async ($, on) => {
-  const store = await boot($, on)
-  await $.classic.PostToolUseFailure(fail({ is_interrupt: true, error: 'The user doesn\'t want to proceed' }))
-  await $.classic.PostToolUseFailure(fail({
-    tool_name: 'mcp__plugin_knowledge_knowledge-local__knowledge_get',
-    is_interrupt: true,
-    mcp_server: { name: 'knowledge-local', source: 'plugin' },
-  }))
+  const stop = { ref: 1, result: 'The user doesn\'t want to proceed with this tool use.', text: 'The user doesn\'t want to proceed with this tool use.', isError: true }
+  const w: World = { skill: stop, mcp: stop }
+  const store = await boot($, on, true, w)
+  await $.tool.call({ tool: 'Skill', skill: 'develop:clean-code' })
+  await $.tool.call({ tool: KMCP } as any)
   expect(log(store)).toEqual([])
 })
 
 test('non-owned, foreign, successful and denied calls record nothing', async ($, on) => {
-  const w: World = {}
+  const w: World = { skill: BOOM, mcp: BOOM }
   const store = await boot($, on, true, w)
-  await $.classic.PostToolUseFailure(fail({ tool_input: { skill: 'clean-code' } }))
-  await $.classic.PostToolUseFailure(fail({ tool_input: { skill: 'superpowers:brainstorming' } }))
-  await $.classic.PostToolUseFailure(fail({ tool_input: { skill: `develop:${SECRET}` } }))
-  await $.classic.PostToolUseFailure(fail({
-    tool_name: 'mcp__plugin_knowledge_knowledge-local__knowledge_get',
-    mcp_server: { name: 'knowledge-local', source: 'user' },
-  }))
-  await $.classic.PostToolUseFailure(fail({
-    tool_name: 'mcp__plugin_teams_other__x',
-    mcp_server: { name: 'other', source: 'plugin' },
-  }))
+  await $.tool.call({ tool: 'Skill', skill: 'clean-code' })
+  await $.tool.call({ tool: 'Skill', skill: 'superpowers:brainstorming' })
+  await $.tool.call({ tool: 'Skill', skill: `develop:${SECRET}` })
+  await $.tool.call({ tool: OMCP } as any)
+  w.skill = undefined
+  w.mcp = undefined
   await $.tool.call({ tool: 'Skill', skill: 'develop:clean-code' }) // success
   w.skill = { result: { success: false, commandName: 'x' } }
   await $.tool.call({ tool: 'Skill', skill: 'superpowers:brainstorming' }) // foreign
@@ -159,7 +147,7 @@ test('non-owned, foreign, successful and denied calls record nothing', async ($,
 test('non-interactive session records nothing', async ($, on) => {
   const w: World = { skill: { result: { success: false, commandName: 'x' } } }
   const store = await boot($, on, false, w)
-  await $.classic.PostToolUseFailure(fail({}))
+  await $.tool.call({ tool: KMCP } as any)
   await $.tool.call({ tool: 'Skill', skill: 'develop:clean-code' })
   expect([...store.keys()]).toEqual([])
 })
@@ -177,8 +165,6 @@ test('result is returned unchanged by reference', async ($, on) => {
   const out = await $.tool.call({ tool: 'Skill', skill: 'develop:clean-code' })
   expect(log(store).length).toBe(1)
   expect(out).toEqual(failed)
-  const back = await $.classic.PostToolUseFailure(fail({}))
-  expect(back).toEqual({})
 })
 
 test('a throwing store does not change the result', async ($, on) => {
@@ -187,5 +173,4 @@ test('a throwing store does not change the result', async ($, on) => {
   store.broken = true
   const out = await $.tool.call({ tool: 'Skill', skill: 'develop:clean-code' })
   expect(out).toEqual(failed)
-  await $.classic.PostToolUseFailure(fail({}))
 })

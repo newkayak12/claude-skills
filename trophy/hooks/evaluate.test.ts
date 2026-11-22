@@ -58,7 +58,7 @@ test('an unlocked id is never returned again', () => {
 const bottom = (on: On) => {
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
-  on('skill.prompt', (_$, e) => ({ text: e.text }))
+  on('tool.call', { tool: 'Skill' }, () => ({ result: 'ran' }) as never)
 }
 
 test('each new unlock stores its date and raises one toast; none the second time', async ($, on) => {
@@ -72,8 +72,8 @@ test('each new unlock stores its date and raises one toast; none the second time
   })
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
 
-  await $.skill.prompt({ skill: 'think:grill', text: 'x' })
-  await $.skill.prompt({ skill: 'think:grill', text: 'x' })
+  await $.tool.call({ tool: 'Skill', skill: 'think:grill' })
+  await $.tool.call({ tool: 'Skill', skill: 'think:grill' })
 
   expect(toasts).toHaveLength(2)
   expect(toasts[0]).toMatch(/^🏆 /)
@@ -96,7 +96,7 @@ test('an unlock draws a celebration card above the prompt that the timer clears'
   })
   expect(await ui.find({ text: /업적 해금/ })).toBeUndefined()
 
-  await $.skill.prompt({ skill: 'think:grill', text: 'x' })
+  await $.tool.call({ tool: 'Skill', skill: 'think:grill' })
 
   expect(await ui.find({ text: /업적 해금/ })).toBeDefined()
   expect(await ui.find({ text: /생각의 시작/ })).toBeDefined()
@@ -118,7 +118,7 @@ test('by default the celebration card is in English', async ($, on) => {
     props: { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: 80 } as any,
   })
 
-  await $.skill.prompt({ skill: 'think:grill', text: 'x' })
+  await $.tool.call({ tool: 'Skill', skill: 'think:grill' })
 
   expect(await ui.find({ text: /Achievement unlocked/ })).toBeDefined()
   expect(await ui.find({ text: /Thinking Cap On/ })).toBeDefined()

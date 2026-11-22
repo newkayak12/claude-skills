@@ -30,7 +30,7 @@ const fixture = (on: On, consent: string | undefined, status = 200) => {
   })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
-  on('skill.prompt', (_$, e) => ({ text: e.text }))
+  on('tool.call', { tool: 'Skill' }, () => ({ result: 'ran' }) as never)
   on('ui.toast', () => ({ value: undefined }))
   on('fs.write', () => ({ value: undefined }))
   on('session.usage', () => ({
@@ -122,7 +122,7 @@ test('no prompt text, cwd, session id or absolute path reaches the body, even fr
   await $.session.start(START)
   f.fetches.length = 0
   f.clock.denyId = 'boom at /Users/kim/proj/x.ts:3:4 and C:\\Users\\kim\\proj\\y.ts'
-  await $.skill.prompt({ skill: 'think:grill', text: 'SECRET-PROMPT-TEXT' })
+  await $.tool.call({ tool: 'Skill', skill: 'think:grill' })
   await f.clock.advance(DAY)
 
   await $.session.start(START)

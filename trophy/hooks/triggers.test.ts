@@ -6,7 +6,7 @@ import { memoryStore, sessionAt } from './testkit.ts'
 const bottom = (on: On) => {
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
-  on('skill.prompt', (_$, e) => ({ text: e.text }))
+  on('tool.call', { tool: 'Skill' }, () => ({ result: 'ran' }) as never)
   on('prompt.submit', (_$, e) => ({ text: e.text }))
   on('turn.complete', () => ({ text: '' }))
   on('ui.toast', () => ({ value: undefined }))
@@ -16,7 +16,7 @@ const TURN = { answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason
 
 const run = async ($: any, store: Map<string, unknown>, text: string, fired: string[]) => {
   const out = await $.prompt.submit({ text, ...PROMPT })
-  for (const skill of fired) await $.skill.prompt({ skill, text: 'x' })
+  for (const skill of fired) await $.tool.call({ tool: 'Skill', skill })
   await $.turn.complete(TURN)
   return { out, counts: store.get('trophy.triggers') as Record<string, Record<string, Record<string, number>>> }
 }

@@ -127,13 +127,12 @@ view (most hit, most missed, never fired).
 
 ## Limits
 
-- Organizations whose policy skips user-level `skill.prompt` hooks still record: the plugin also
-  listens to the Skill tool call and to the typed-command expansion; one use is counted once.
+- The plugin no longer hooks the events an organization policy can skip (`skill.prompt`, `PostToolUseFailure`,
+  `UserPromptExpansion`). It records from the Skill tool call, MCP results and the typed command (`prompt.submit`);
+  one use is counted once.
 - Achievements are counted from the day you install; there is no backfill.
-- Under an organization policy that skips user-level classic hooks, the failure capture on `PostToolUseFailure` never
-  runs, so no `diag_mcp_error` or skill `is_error` code is recorded there. MCP counts use `tool.call`, which still runs.
-- `mcp_tool_result.error` counts every `isError` result; `diag_mcp_error` counts only where `PostToolUseFailure` runs.
-  The two can disagree and neither is derived from the other.
+- Failure records (`diag_mcp_error`, skill `is_error`) also come from the `isError` result of the `tool.call`; an
+  interrupt is not recorded.
 - Parallel MCP calls (and near-simultaneous outcome writes) can drop a count: an undercount, as with the other counters.
 
 ## Status log

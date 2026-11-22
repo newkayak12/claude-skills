@@ -15,7 +15,7 @@ const texts = (node: any): string[] =>
         : []
 
 const boot = async ($: any, on: On) => {
-  memoryStore(on, { 'trophy.consent': 'no', 'trophy.consentVersion': 2 })
+  memoryStore(on, { 'trophy.consent': 'no', 'trophy.consentVersion': 2, 'trophy.unlocked': { 'first-blood': '2026-10-06', 'first-develop': '2026-10-06' } })
   sessionAt(on)
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
@@ -31,20 +31,19 @@ const boot = async ($: any, on: On) => {
     throw new Error('ENOENT')
   })
   on('fs.list', () => ({ value: [{ name: 'clean-code', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }) as never)
-  on('classic.PostToolUseFailure', () => ({}))
+  on('ui.toast', () => ({ value: undefined }))
+  on('tool.call', { tool: 'Skill' }, () => ({ ref: 1, result: 'Error: boom', text: 'boom', isError: true }) as never)
   await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
   return () => $.ui.mount({ plugin: 'trophy', surface: 'terminal', component: 'AbovePrompt', props: BAND })
 }
 
-const fail = () => ({
-  tool_name: 'Skill', tool_input: { skill: 'develop:clean-code' }, tool_use_id: 't1', error: 'boom',
-}) as never
+const fail = () => ({ tool: 'Skill', skill: 'develop:clean-code' }) as never
 
 test('band is absent until an owned failure, then shows the count and last title', async ($, on) => {
   const mount = await boot($, on)
   expect(texts(await (await mount()).drawn())).toEqual([])
 
-  await $.classic.PostToolUseFailure(fail())
+  await $.tool.call(fail())
   const lines = texts(await (await mount()).drawn())
 
   expect(lines).toContain('✘ 1')
@@ -59,7 +58,7 @@ test('/trophy-bug does not raise the badge', async ($, on) => {
 
 test('the 보기 button opens the failures tab and clears the badge', async ($, on) => {
   const mount = await boot($, on)
-  await $.classic.PostToolUseFailure(fail())
+  await $.tool.call(fail())
   const ui = await mount()
 
   await ui.press({ key: 'see' })

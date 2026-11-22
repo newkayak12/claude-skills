@@ -28,7 +28,7 @@ const texts = (node: any): string[] =>
 const bottom = (on: On) => {
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
-  on('skill.prompt', (_$, e) => ({ text: e.text }))
+  on('tool.call', { tool: 'Skill' }, () => ({ result: 'ran' }) as never)
   on('ui.toast', () => ({ value: undefined }))
 }
 
@@ -93,7 +93,7 @@ test('only the /achievements command opens the pane', async ($, on) => {
     return { value: { isPlaced: true } as any }
   })
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
-  await $.skill.prompt({ skill: 'think:grill', text: 'x' })
+  await $.tool.call({ tool: 'Skill', skill: 'think:grill' })
   expect(opened).toEqual([])
 
   const out = await $.command.run({ command: 'achievements' } as any)
@@ -262,11 +262,9 @@ const world150 = async ($: any, on: On, stale: string[] = [], seed: Record<strin
   })
   on('session.attach', (_$, e) => ({ clientId: e.clientId }))
   on('session.measure', (_$, e) => ({ changed: e.changed }))
-  on('classic.UserPromptExpansion', () => ({}) as never)
-  on('classic.PostToolUseFailure', () => ({}) as never)
   on('prompt.submit', (_$, e) => ({ text: e.text }))
   on('turn.complete', () => ({ text: 'done' }))
-  on('tool.call', () => ({ result: { success: true } }) as never)
+  on('tool.call', (_$, e) => ((e as { skill?: string }).skill === 'develop:clean-code' ? { isError: true, text: 'boom', result: 'Error: boom' } : { result: { success: true } }) as never)
   return w
 }
 const START150 = { cwd: '/w', surface: 'terminal', isInteractive: true } as const
@@ -277,11 +275,8 @@ const run150 = ($: any, origin?: { kind: string }) =>
 test('150a: no automatic path opens the pane (start, skill, prompt, turn, failure, unlock, attach, measure)', async ($, on) => {
   const w = await world150($, on)
   await $.session.start(START150)
-  await $.skill.prompt({ skill: 'trophy:list', text: '/trophy:list' } as any)
   await $.tool.call({ tool: 'Skill', skill: 'trophy:list' } as any)
-  await $.classic.UserPromptExpansion({ expansion_type: 'slash_command', command_name: 'trophy:list', command_args: '', command_source: 'plugin', prompt: '/trophy:list' } as any)
   await $.prompt.submit({ text: '/trophy:list', origin: { kind: 'composer' } } as any)
-  await $.classic.PostToolUseFailure({ tool_name: 'Skill', tool_input: { skill: 'develop:clean-code' }, tool_use_id: 't1', error: 'boom' } as never)
   await $.tool.call({ tool: 'Skill', skill: 'develop:clean-code' })
   await $.turn.complete({} as any)
   await $.session.attach({ surface: 'mobile', clientId: 'mobile:default' } as any)

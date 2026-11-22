@@ -208,9 +208,9 @@ export const passes = (id: string, call: Call, w: GuardWorld = {}) =>
 
 // guardWorld plus the bottom of prompt.submit, for the note tests. `root` and the store seed come from `w`.
 export const memoWorld = (on: On, w: GuardWorld = {}) => {
-  const seen = guardWorld(on, w)
+  const seen = { ...guardWorld(on, w), rows: 0 }
   on('prompt.submit', (_$, e) => ({ text: e.text, context: e.context }))
-  on('classic.SessionStart', () => ({}))
+  on('session.messages', () => ({ value: Array.from({ length: seen.rows }, () => ({ role: 'user' })) }) as never)
   return seen
 }
 

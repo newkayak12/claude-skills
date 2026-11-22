@@ -66,12 +66,12 @@ test('a start with nothing unlocked asks nothing; the first unlock brings the qu
   sessionAt(on)
   bottom(on)
   on('ui.toast', () => ({ value: undefined }))
-  on('skill.prompt', (_$, e) => ({ text: e.text }))
+  on('tool.call', { tool: 'Skill' }, () => ({ result: 'ran' }) as never)
   await $.session.start(start)
   const ui = await $.ui.mount({ plugin: 'trophy', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   expect(await ui.find({ key: 'send' })).toBeUndefined()
 
-  await $.skill.prompt({ skill: 'think:grill', text: 'x' })
+  await $.tool.call({ tool: 'Skill', skill: 'think:grill' })
 
   expect(await ui.find({ key: 'send' })).toBeDefined()
 })

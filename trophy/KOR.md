@@ -121,13 +121,10 @@ Claude Code 2.1.293 터미널에서 실제로 캡처한 화면입니다 (영어 
 
 ## 한계
 
-- 조직 정책이 사용자 수준 `skill.prompt` 훅을 건너뛰는 경우에도 기록됩니다. 이 플러그인은 Skill 도구 호출과
-  입력한 명령의 확장도 함께 듣고, 한 번의 사용은 한 번만 셉니다.
+- 조직 정책이 건너뛰는 훅(`skill.prompt`, `PostToolUseFailure`, `UserPromptExpansion`)을 이 플러그인은 더 이상 쓰지 않습니다.
+  Skill 도구 호출, MCP 결과, 입력한 명령(`prompt.submit`)에서 기록하고, 한 번의 사용은 한 번만 셉니다.
 - 업적은 설치한 날부터 집계하며 소급하지 않습니다.
-- 사용자 수준 classic 훅을 건너뛰는 조직 정책에서는 `PostToolUseFailure` 실패 기록이 실행되지 않아 그 경로의
-  `diag_mcp_error`와 스킬 `is_error` 코드가 남지 않습니다. MCP 횟수는 계속 실행되는 `tool.call`로 셉니다.
-- `mcp_tool_result.error`는 모든 `isError` 결과를, `diag_mcp_error`는 `PostToolUseFailure`가 실행되는 곳만 셉니다.
-  둘은 어긋날 수 있고 서로에서 유도되지 않습니다.
+- 실패 기록(`diag_mcp_error`, 스킬 `is_error`)도 `tool.call`의 `isError` 결과에서 남기며, 중단(interrupt)은 기록하지 않습니다.
 - 병렬 MCP 호출(과 거의 동시에 일어난 결과 기록)은 횟수를 놓칠 수 있습니다: 다른 카운터처럼 과소 집계입니다.
 
 ## 상태 로그
