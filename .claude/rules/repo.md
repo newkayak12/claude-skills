@@ -32,6 +32,8 @@ report is where the person checks the result.
 Never remove a stage, a gate, or a principle for cost or simplicity without the user's approval.
 `harness/` and `graph/` are stable: no change to either plugin, fixes included, unless the user
 reopens one (user, 2026-11-02: "harness, graph 는 stable로 더이상 수정 금지"). Work goes to teams.
+Maintenance of the stable plugins (a fix such as client compatibility) is allowed without asking (user,
+2026-11-22: "harness, graph는 수정해도 되니까 … 이건 stable인녀석에 대한 유지보수니까").
 teams principles: `_repo/docs/plans/2026-09-28-teams-cards-everywhere.md`.
 
 ## Layout — keep it flat

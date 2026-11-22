@@ -9,12 +9,12 @@ never retire them as duplicates, and never reference superpowers.
 
 ### Codex plugin compatibility
 
-176. **graph-engineering MCP starts in Codex** (graph is frozen: needs the user to reopen it)
-   - Why: 2026-11-22, temporary `CODEX_HOME`: graph-engineering UNAVAILABLE in Codex. Codex passes MCP
-     args literally, so `${PLUGIN_ROOT}/mcp/broker.mjs` is not found ([evidence](2026-11-22-codex-hook-evidence.md)).
-     teams, knowledge, aws, database were fixed the same day with a relative path and `"cwd": "."`.
-   - Acceptance: the same change in `graph/.codex-plugin/plugin.json`, and the broker's own cwd default
-     (`broker.mjs:1735` `process.cwd()`) checked; a Codex session lists the graph tools.
+176. **graph-engineering MCP: one live Codex look** (fix shipped in graph 1.17.3)
+   - Why: 2026-11-22 graph-engineering was UNAVAILABLE in Codex (`${PLUGIN_ROOT}` not expanded in MCP args).
+     Fixed with a relative path and `"cwd": "."`; the server answers `tools/list` (6 graph tools) when started
+     that way by hand; `broker.mjs:1735` `process.cwd()` is the `runs` CLI only, the server takes `cwd` per call.
+     The live Codex check was cut by Codex's usage limit.
+   - Acceptance: a Codex session under a temporary `CODEX_HOME` lists the graph tools.
 
 177. **teams wiki takes its root from Codex's per-call workspace**
    - Why: 2026-11-22, the teams MCP now starts in Codex with `"cwd": "."` (the plugin folder); `wiki.mjs`

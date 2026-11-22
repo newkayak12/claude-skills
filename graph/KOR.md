@@ -51,6 +51,7 @@
 선택: `graph:install`이 `develop:like-my-code`를 실행해 `.claude/conventions/`를 만들 수 있다. 이후 broker가 모든 plan, setgoal, implement, test 노드(벤더 무관)에 관련 파일을 읽고 따르라는 지시를 넣는다.
 
 ## 상태
+- v1.17.3 — Codex: `graph-engineering` MCP 서버가 뜸(Codex는 MCP 인자의 `${PLUGIN_ROOT}`를 펼치지 않아 상대 경로와 플러그인 폴더 `cwd`로 바꿈).
 - v1.17.2 — 훅 명령이 플러그인 경로를 따옴표로 감쌉니다. 경로에 공백이 있어도(Orca의 `~/Library/Application Support/...`) `Cannot find module`로 실패해 게이트가 꺼지는 일이 없습니다.
 - v1.17.1 — `/graph-status`가 터미널·데스크톱·모바일·vscode 모두에서 그려집니다. 키 입력란은 그 화면이 지원할 때만 보이고, 모바일에서는 버튼만 남습니다.
 - v1.17.0 — harness 작업이 graph로 들어왔습니다(카드 48): broker가 critique 라운드를 돌리고, 실행마다 자기 now 기록을 남기며, `node-gate.mjs`가 실행 밖에서 게이트된 경로(`.claude/harness-gate.json`)에 쓰는 것을 막습니다. 게이트 함수는 복사본(`hooks/vendor/goal-gate.mjs`)으로 들어 있어, 설치된 graph가 harness 플러그인 폴더를 참조하지 않습니다.
