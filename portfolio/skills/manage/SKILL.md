@@ -116,7 +116,9 @@ the snapshot. A round always builds (the user's standing word: "결과물도 검
    offered result, not a count of parts; a figure 확정사실 rules out is replaced by another measured
    one, never by a vaguer sentence. Every project cover uses the same cover archetype, so each carries
    period, team, role and contribution, and its subtitle names the concrete problem (`502 응답`, not
-   `일부 요청이 실패`) — a bench lost the side project's cover for dropping them (2026-11-22). Structure (blocks, order, body vs appendix) is asked; wording is not. A written
+   `일부 요청이 실패`) — a bench lost the side project's cover for dropping them (2026-11-22). A cover
+   cites its chapter's items too, and its tech-stack table names only technologies those items name
+   (bench17 listed AWS ECS and Datadog on an uncited cover). Structure (blocks, order, body vs appendix) is asked; wording is not. A written
    item is marked `material log --id <id> --note "skeleton <N>쪽" --status written --later-step manage`;
    in a ledger workspace (`material ledger` lists items) `material ledger-log --item <NN_프로젝트/A1>`
    with the same flags. The ledger is never moved or rewritten.
