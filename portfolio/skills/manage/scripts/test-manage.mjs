@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
-import { addQuestion, readQuestions, roundCheck, freezeStable, enginePathWarnings, safeArea, bump, claims, compare, confirmedFacts, deckPages, figs, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, readRounds, renumber, round, scaffold, selection, settle, settled, settledNote, snapshot, step, sync, verify, verifyBuild } from './manage.mjs'
+import { bannedFigs, addQuestion, readQuestions, roundCheck, freezeStable, enginePathWarnings, safeArea, bump, claims, compare, confirmedFacts, deckPages, figs, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, readRounds, renumber, round, scaffold, selection, settle, settled, settledNote, snapshot, step, sync, verify, verifyBuild } from './manage.mjs'
 import { deflateRawSync } from 'node:zlib'
 
 const SKEL = `# 가상 포트폴리오
@@ -494,6 +494,16 @@ test('claims: a page citing results but carrying none of their figures is a prob
   const p = r.problems.find(x => x.kind === 'no_figure')
   assert.ok(p && p.page === 1, JSON.stringify(r.problems))
   assert.match(p.text, /820ms|210ms|12만건/)
+})
+
+test('claims: a figure 확정사실 rules out (struck, or in a clause saying not to use it) is never offered', () => {
+  assert.deepEqual(bannedFigs('| ~~`2.7초`~~ → `0.33초 이내` | 0.33초는 최댓값. 4~10분과 전후 비교 금지 |').includes('0.33초'), false)
+  assert.ok(bannedFigs('| ~~`2.7초`~~ → `0.33초 이내` | 0.33초는 최댓값. 4~10분과 전후 비교 금지 |').includes('2.7초'))
+  const root = claimsWorkspace()
+  const r = claims('## 1 검색\n글감: retro--검색-지연\n전체 스캔 때문에 목록 조회가 느렸다.\n', readMaterial(root), [], null,
+    [{ figs: ['820ms'], banned: ['820ms'], text: '820ms는 쓰지 않는다' }])
+  const p = r.problems.find(x => x.kind === 'no_figure')
+  assert.ok(p && !p.text.includes('820ms'), p && p.text)
 })
 
 test('claims: a sentence already marked [확인 필요] is not raised again, and a clean skeleton is ok', () => {

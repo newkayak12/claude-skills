@@ -922,7 +922,17 @@ export function settledNote(root) {
 export function confirmedFacts(root) {
   let text = ''
   try { text = readFileSync(at(root, 'docs', '확정사실.md'), 'utf8') } catch { return [] }
-  return text.split('\n').filter(l => figs(l).length).map(l => ({ figs: figs(l), text: l.trim() }))
+  return text.split('\n').filter(l => figs(l).length).map(l => ({ figs: figs(l), banned: bannedFigs(l), text: l.trim() }))
+}
+
+// Figures a 확정사실 line rules out: struck through (~~2.7초~~), or in a clause that says not to use
+// it ("2.7초는 쓰지 않는다", "4~10분과 … 금지"). A clause ends at . ; — or a bracket.
+const BAN = /쓰지 않|쓰지 말|금지|말 것|빼고|빼라|안 쓴/
+export function bannedFigs(line) {
+  const out = new Set()
+  for (const m of line.matchAll(/~~([^~]+)~~/g)) figs(m[1]).forEach(f => out.add(f))
+  for (const clause of line.split(/[.;—(（)）]|\s-\s/)) if (BAN.test(clause)) figs(clause).forEach(f => out.add(f))
+  return [...out]
 }
 
 // A finding re-raises a settled line when it shares >= SETTLE_MIN word stems with it and at least half
@@ -982,7 +992,9 @@ export function claims(text, items, settledLines = [], sel = null, confirmed = [
     // for leaving out 491/19,500, 98.1%, 4~10분, 357건/초 — all in the cited items)
     // results first: a share, a rate, a large count, then a duration — a team size or a count of 4 last
     const weight = f => (/%|\/|배/.test(f) ? 4 : 0) + (Number(f.replace(/[^\d.]/g, '')) >= 100 ? 2 : 0) + (/초|분|ms/.test(f) ? 1 : 0)
-    const offer = ground.flatMap(it => it.rows.filter(r => !/근거 없음/.test(r.evidence)).flatMap(r => r.figs.map(f => ({ f, s: `${f} (${it.id})` }))))
+    // never offer a figure 확정사실 rules out (2026-11-22: "4~10분" went on a page the facts ban it from)
+    const banned = new Set(confirmed.flatMap(c => c.banned || []))
+    const offer = ground.flatMap(it => it.rows.filter(r => !/근거 없음/.test(r.evidence)).flatMap(r => r.figs.filter(f => !banned.has(f)).map(f => ({ f, s: `${f} (${it.id})` }))))
       .sort((a, b) => weight(b.f) - weight(a.f)).map(x => x.s)
     const pageFigs = p.body.flatMap(figs)
     if (offer.length && !pageFigs.length)
