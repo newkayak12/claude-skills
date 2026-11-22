@@ -542,6 +542,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/sqlite-knowledge.mjs" migrate --root . --wor
   --psql "docker exec -i <pg-container> psql -U postgres"   # or PG* env and plain psql; --sql-out file.sql to only write the script
 ```
 
+- v1.23.3 — Codex: the `knowledge-local` MCP server starts (Codex does not expand `${PLUGIN_ROOT}` in MCP args; a relative path with `cwd` the plugin folder does) and works on the session's project, read per call from Codex's workspace metadata unless `--root` or `CLAUDE_PROJECT_DIR` sets it.
 - v1.23.2 — Codex: the knowledge delta check runs on Codex `apply_patch` edits (`hooks/codex.json`, targets read from the patch); the Claude-only trophy startup hook no longer runs in Codex (it exited 127).
 - v1.23.1 — hook commands quote the plugin root, so a path with a space (Orca: `~/Library/Application Support/...`) no longer fails with `Cannot find module` and leaves the gate off.
 - v1.23.0 — the LLM graph build is incremental (only notes in the update queue go back to the model; `--full` for all); embeddings from any OpenAI-compatible endpoint (TEI, vLLM, OpenAI) with E5 prompts and windows; search stays lexical and says so when the query cannot be embedded; capture's Korean particles are one explicit list (`결제 승인서` no longer links to `결제 승인`); compose's index runs without `KNOWLEDGE_LLM_URL`; the uid rule for bind mounts and Codex approval of `knowledge_capture` are documented.

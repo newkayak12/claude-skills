@@ -83,3 +83,5 @@ MFA 일련번호, 1Password `vault`/`item`/`otp_item`을 넘깁니다. 프로필
 설치: `aws` CLI가 PATH에 있어야 하며, 없으면 서버가 'aws CLI not installed → aws:login installs it'라고 답하고 `aws:login`이 AWS CLI v2를 설치합니다(brew, 없으면 공식 pkg; 비밀번호를 물을 수 있음). `op`는 1Password 로그인에만
 필요합니다. 플러그인이 묶인 파일 하나로 `plugin:aws:readonly-aws`를 띄우므로 설치에 npm도 네트워크도
 필요 없습니다.
+
+0.2.2: Codex에서도 같은 서버와 스킬을 씁니다(`.codex-plugin/plugin.json`).

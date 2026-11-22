@@ -36,3 +36,5 @@ dev로 로그인하고 최근 주문 10건 보여줘.
 띄우므로 설치나 업데이트에 npm도 네트워크도 필요 없습니다(Oracle은 Thin 모드라 Instant Client도 필요 없음).
 0.9.0 전에 저장한 MySQL 로그인은 `readonly-mysql`이 그대로 씁니다. 0.6.0 이하에서 남은 사용자 범위 `database-readonly`는
 지웁니다(`claude mcp remove database-readonly -s user`). 자세한 내용: [`mcp/readonly/README.md`](mcp/readonly/README.md).
+
+0.9.2: Codex에서도 같은 서버 네 개와 스킬을 씁니다(`.codex-plugin/plugin.json`).

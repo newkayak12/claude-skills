@@ -39,3 +39,5 @@ Setup: none. The plugin starts the four servers (`plugin:database:readonly-<vend
 file with the drivers inside (Oracle in Thin mode: no Instant Client), so an install or update needs
 no npm and no network. MySQL logins saved before 0.9.0 stay with `readonly-mysql`. A user-scope
 `database-readonly` left from 0.6.0 or older should be removed (`claude mcp remove database-readonly -s user`). Details: [`mcp/readonly/README.md`](mcp/readonly/README.md).
+
+0.9.2: Codex gets the same four servers and skills (`.codex-plugin/plugin.json`).
