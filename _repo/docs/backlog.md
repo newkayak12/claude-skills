@@ -333,6 +333,14 @@ toasts).
        compactions logged with tokens before/after and summarizer usage). `/smart-compact log` prints per-arm
        totals: compactions, mean tokens before→after, mean model tokens spent per compaction.
      - `cd session && claude plugin test .` all pass, counts reported; session bumped (minor) with README/KOR.
+   - Under an org policy (cc-plugin-sec-default) the user-tier `session.compact` hook is skipped, so smart-compact
+     never runs there and the engine's own compaction runs instead (2026-11-23; `session/hooks/compact.tsx:334` is the
+     only hook left on a policy-skipped event; memo and trophy moved off theirs in card 132). User: "세션 훅은 방법이 없나?"
+     Unverified paths: a plain `PreCompact` command hook in `hooks.json` (does the policy skip plugin command hooks
+     too? it can add instructions, not replace the summary), or the handoff written ahead on `turn.complete` near
+     the threshold and handed to the engine's compaction as its instructions.
+     Acceptance: one live session under the policy shows which path runs (no "session.compact hook was skipped"
+     line, or the handoff present after compaction), or the card records that no path exists.
 
 ### Repo and rules
 
