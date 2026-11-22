@@ -1555,9 +1555,32 @@ export function verifyBuild(root) {
   const built = flat(pptxText(pptx))
   const absent = []
   let checked = 0
+  // a slot the deck keeps as the template's (`!keep`) or drops, or a caption `captions: into-picture`
+  // moved into the figure, has no text of its own to find (bench17: 75, then 20 false absents)
+  const deckSlots = slotsOf(deckText)
+  // slotsOf leaves `!drop` slots out: read them from the deck text, slide by slide
+  const dropped = new Set()
+  {
+    let cur = null
+    for (const l of deckText.split('\n')) {
+      const h = l.match(/^##\s.*@(s\d+)\b/)
+      if (h) { const p = l.match(/(\d+)\s*쪽/); cur = p ? `${h[1]} ${p[1]}쪽` : h[1]; continue }
+      const m = cur && l.match(/^([a-z][a-z0-9_]*):\s*!drop\s*$/)
+      if (m) dropped.add(`${cur}|${m[1]}`)
+    }
+  }
+  const intoPicture = /^captions:\s*into-picture\s*$/m.test(deckText.match(/^---\n[\s\S]*?\n---/)?.[0] ?? '')
+  const skip = (sid, key, v) => {
+    if (/^!(keep|drop)$/.test(v.trim())) return true
+    const d = deckSlots.get(sid)?.slots.get(key)
+    if (d && /^!(keep|drop)$/.test(d.join(' ').trim())) return true
+    if (dropped.has(`${sid}|${key}`)) return true
+    return intoPicture && /^\\?\[.*\\?\]$/.test(v.trim())
+  }
   for (const [sid, s] of slotsOf(readFileSync(wsFile(root, SKELETON), 'utf8'))) {
     for (const key of s.order) {
       for (const v of s.slots.get(key)) {
+        if (skip(sid, key, v)) continue
         // a footnote mark is checked on its own: the text matches with the mark or without it
         // (a table row's cell bars are not text: `| a | b |` is checked as `ab`)
         const want = flat(plain(v.replace(/\[[^\]]*\]\{[^}]*\bsup\b[^}]*\}/g, '')).replace(/\|/g, ''))

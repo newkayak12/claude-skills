@@ -1497,6 +1497,16 @@ test('verify-build: skeleton slot text, footnote marks and picture files against
   assert.equal(bad.ok, false)
 })
 
+test('verify-build: a slot the deck keeps or drops, and a caption moved into the picture, are not absent', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-vb-')); copies.push(root)
+  writeFileSync(join(root, 'portfolio-skeleton.md'), 'version: v1.0.0\n\n## 1쪽 · 표지 @s1\ntext1: 이름\ntext2: 템플릿 라벨\ntext3: \\[ 그림 설명 \\]\ntext4: 빼는 칸\n')
+  writeFileSync(join(root, 'portfolio-deck.mdx'), '---\ntemplate: t.pptx\ncaptions: into-picture\n---\n\n## @s1 1쪽\ntext1: 이름\ntext2: !keep\ntext4: !drop\n')
+  mkdirSync(join(root, 'build'))
+  writeFileSync(join(root, 'build', 'deck.pptx'), zipOf({ 'ppt/slides/slide1.xml': slideXml('이름') }))
+  const r = verifyBuild(root)
+  assert.deepEqual([r.checked, r.absent], [1, []])
+})
+
 test('layout: optional folders are present or absent, a stray deck conflict copy warns', () => {
   const root = mkdtempSync(join(tmpdir(), 'manage-opt-')); copies.push(root)
   mkdirSync(join(root, 'style')); mkdirSync(join(root, 'decisions'))
