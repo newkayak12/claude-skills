@@ -8,6 +8,7 @@
   "repository": "https://github.com/newkayak12/claude-skills",
   "license": "MIT",
   "skills": "./skills/",
+  "hooks": "./hooks/codex.json",
   "mcpServers": {
     "knowledge-local": {
       "type": "stdio",

@@ -1,0 +1,12 @@
+{
+  "name": "planning",
+  "version": "1.4.0",
+  "description": "Planning skills: pre-flight plan gating (review a plan, set a QualityGate pass-bar per step, route to the right executor). Its Claude trophy startup hook (SessionStart ensure-trophy.sh) is Claude-only and disabled in Codex.",
+  "author": {
+    "name": "newkayak12"
+  },
+  "repository": "https://github.com/newkayak12/claude-skills",
+  "license": "MIT",
+  "skills": "./skills/",
+  "hooks": "./hooks/codex.json"
+}

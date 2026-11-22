@@ -1,0 +1,12 @@
+{
+  "name": "completion",
+  "version": "1.1.7",
+  "description": "Verification before completion: evidence-based workflow to confirm work is done before claiming success. Its Claude trophy startup hook (SessionStart ensure-trophy.sh) is Claude-only and disabled in Codex.",
+  "author": {
+    "name": "newkayak12"
+  },
+  "repository": "https://github.com/newkayak12/claude-skills",
+  "license": "MIT",
+  "skills": "./skills/",
+  "hooks": "./hooks/codex.json"
+}

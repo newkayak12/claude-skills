@@ -180,6 +180,75 @@ test('does not enqueue improvement memory as a catalog note', () => {
   });
 });
 
+function deltaLines(root) {
+  const p = join(root, '_knowledge', 'reports', 'delta-checks.jsonl');
+  return existsSync(p)
+    ? readFileSync(p, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
+    : [];
+}
+
+test('apply_patch Add/Update/Move-to targets write the delta report', () => {
+  withFixture((fixture) => {
+    const root = join(fixture, 'knowledge-system');
+    write(join(root, 'notes', 'added.md'), noteBody());
+    write(join(root, 'notes', 'updated.md'), noteBody());
+    write(join(root, 'notes', 'moved.md'), noteBody());
+    const command = [
+      '*** Begin Patch',
+      '*** Add File: knowledge-system/notes/added.md',
+      '+x',
+      '*** Update File: knowledge-system/notes/updated.md',
+      '@@',
+      '-a',
+      '+b',
+      '*** Update File: knowledge-system/notes/old.md',
+      '*** Move to: knowledge-system/notes/moved.md',
+      '*** End Patch',
+    ].join('\n');
+
+    main({ cwd: fixture, tool_name: 'apply_patch', tool_input: { command } });
+
+    const files = deltaLines(root).map((l) => l.file).sort();
+    assert.deepEqual(files, ['notes/added.md', 'notes/moved.md', 'notes/updated.md']);
+  });
+});
+
+test('apply_patch with only Delete File writes nothing', () => {
+  withFixture((fixture) => {
+    const root = join(fixture, 'knowledge-system');
+    write(join(root, 'notes', 'gone.md'), noteBody());
+    const command = '*** Begin Patch\n*** Delete File: knowledge-system/notes/gone.md\n*** End Patch';
+
+    main({ cwd: fixture, tool_name: 'apply_patch', tool_input: { command } });
+
+    assert.equal(existsSync(join(root, '_knowledge')), false);
+  });
+});
+
+test('apply_patch touching only non-.md files writes nothing', () => {
+  withFixture((fixture) => {
+    const root = join(fixture, 'knowledge-system');
+    write(join(root, 'notes', 'data.txt'), 'x');
+    const command = '*** Begin Patch\n*** Update File: knowledge-system/notes/data.txt\n@@\n-x\n+y\n*** End Patch';
+
+    main({ cwd: fixture, tool_name: 'apply_patch', tool_input: { command } });
+
+    assert.equal(existsSync(join(root, '_knowledge')), false);
+  });
+});
+
+test('input without tool_name ignores tool_input.command', () => {
+  withFixture((fixture) => {
+    const root = join(fixture, 'knowledge-system');
+    write(join(root, 'notes', 'a.md'), noteBody());
+    const command = '*** Update File: knowledge-system/notes/a.md';
+
+    main({ cwd: fixture, tool_input: { command } });
+
+    assert.equal(existsSync(join(root, '_knowledge')), false);
+  });
+});
+
 test('fails open for invalid input and ignores files outside cwd', () => {
   withFixture((fixture) => {
     const outside = join(tmpdir(), 'outside-knowledge-note.md');

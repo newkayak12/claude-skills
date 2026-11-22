@@ -31,9 +31,15 @@ function asArray(value) {
   return Array.isArray(value) ? value : value ? [value] : [];
 }
 
+// Codex apply_patch: targets are in the patch text. Delete is excluded on purpose.
+function patchTargets(command) {
+  return [...String(command || '').matchAll(/^\*\*\* (?:(?:Add|Update) File|Move to): (.+)$/gm)].map((m) => m[1].trim());
+}
+
 function candidateFiles(input) {
   const ti = input.tool_input || {};
   const raw = [
+    ...(input.tool_name === 'apply_patch' ? patchTargets(ti.command) : []),
     ti.file_path,
     ti.notebook_path,
     ...asArray(ti.file_paths),

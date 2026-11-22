@@ -9,20 +9,20 @@ never retire them as duplicates, and never reference superpowers.
 
 ### Codex plugin compatibility
 
-172. **Identify the failing Codex hooks and verify installed-client behavior** (was numbered 168, a duplicate of the smart-compact card)
-   - Why: On 2026-11-21 the user reported “plugin contents changed; hook approval required” twice and “hook exited with code 127” once. The [English maintainer handoff](2026-11-21-codex-hook-handoff.md) preserves the sequence, source evidence and open questions.
-   - Acceptance: Attribute each message, capture the cause of exit 127, and verify the affected hooks in a fresh Codex session after approval. Record the corresponding Claude regression results.
-   - E-f8f880f9 (2026-11-21 → 22) ended PARTIAL, $44.64 of $40, nothing on main: PRDs accepted
-     (`.teams_output/team/E-f8f880f9/10-prd.md`, stories F1-US-1..4, F2-US-1..3, F3-US-1), every build
-     package blocked by card 173. Left in task worktrees, unverified, to salvage before `tm_clean`:
-     P2 branch `teams/identify-failing-codex-hooks/P2-codex-overlays-trophy` (16 untracked files:
-     `.codex-plugin/plugin.json` + `hooks/codex.json` `{"hooks":{}}` for agents, cognition, completion,
-     develop, planning, portfolio, skill, write); P3 branch `…/P3-knowledge-codex-hook-map`
-     (`knowledge-delta-check.mjs` apply_patch targets + 4 tests, `knowledge/hooks/codex.json`, manifest
-     `hooks` key). P1's report is all-unknown and must not be used. P4 (teams allow/deny under Codex)
-     never ran. The knowledge test glob is `knowledge/scripts/*.test.mjs knowledge/hooks/*.test.mjs`
-     (`test-*.mjs` matches 0). After it lands: README `teams/README.md:103` ("unproven against a real
-     Codex run") and the batch patch bump.
+172. **teams `apply_patch` write recording and dispatch-gate deny proven under real Codex** (rest of the Codex hook card, was 168)
+   - Why: the 127 and approval messages (user, 2026-11-21) are diagnosed and fixed by hand on 2026-11-22
+     after E-f8f880f9 stopped partial: [evidence](2026-11-22-codex-hook-evidence.md) (bare `sh` gets the
+     hook JSON on stdin → 127; overlays for 9 plugins; knowledge delta check live under Codex). Left: F3-US-1.
+   - Acceptance: in a disposable fixture under a temporary `CODEX_HOME`, an allowed `apply_patch` edit is
+     recorded by `own-writes.mjs` and a gate-denied edit leaves the file unchanged; then
+     `teams/README.md:103` ("unproven against a real Codex run") updated; teams tests with counts.
+
+175. **knowledge-local MCP starts in Codex**
+   - Why: 2026-11-22, temporary `CODEX_HOME` with knowledge 1.23.1 installed: startup warning "MCP client
+     for `knowledge-local` failed to start: … initialize response: connection closed", while
+     `node --no-warnings servers/knowledge-mcp.mjs` answers `initialize` by hand. Cause unverified
+     (`${PLUGIN_ROOT}` expansion in Codex MCP args, or cwd).
+   - Acceptance: a Codex session lists `knowledge-local` tools with no startup warning.
 
 173. **teams build nodes can run the commands their stories need (codex, node, python3, reads under ~/.codex)**
    - Why: E-f8f880f9 report, 2026-11-22: every draft/implement/test node got "This command requires
