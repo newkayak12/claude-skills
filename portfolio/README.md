@@ -148,7 +148,7 @@ Every session in the workspace starts with `manage.mjs scaffold`, unasked: it re
 to these, creates only what is missing, CLAUDE.md included, and never overwrites a file. A CLAUDE.md
 that is already there (a renamed README too) keeps its text and gets the guide appended once.
 
-Nine steps (3.2.15: `render` inspects what it rendered — `long`, a bullet the PDF sets on 3+ lines,
+Nine steps (3.2.16: Codex — the Claude-only trophy startup hook no longer runs in Codex (Codex dropped its args and ran bare `sh` on the hook JSON, exit 127); the plugin now ships a Codex overlay (`.codex-plugin/`, `hooks/codex.json`); 3.2.15: `render` inspects what it rendered — `long`, a bullet the PDF sets on 3+ lines,
 and `edge`, a picture or shape the preview draws past the safe area where the template's own page
 is empty; both go to build/render.txt for render-review;
 3.2.14: `check` points out before render what only render-review's lenses found — a

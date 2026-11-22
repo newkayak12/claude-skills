@@ -141,4 +141,8 @@ files written before approval.
 
 - `write:writing-skills` — the authoring guide these two check the output of.
 
+## Status
+
+- 1.5.3 — Codex: the Claude-only trophy startup hook no longer runs in Codex (Codex dropped its args and ran bare `sh` on the hook JSON, exit 127); the plugin now ships a Codex overlay (`.codex-plugin/`, `hooks/codex.json`).
+
 ---

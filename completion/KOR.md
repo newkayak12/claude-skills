@@ -67,3 +67,7 @@
 이건 하네스의 *judge ≠ actor* 규칙을 한 세션으로 내린 것입니다. 6단계 엔진이 돌 때 Test 단계가
 정확히 이 일을 자동으로 하고, 그때 이 스킬을 정적으로 마운트합니다. 단독으로 쓸 땐 이 스킬이 곧
 그 단계입니다.
+
+## 상태
+
+- 1.1.8 — Codex: Claude 전용 trophy 시작 훅이 Codex에서 더 이상 돌지 않음(Codex가 args를 버리고 맨 `sh`에 훅 JSON을 넘겨 exit 127); Codex overlay(`.codex-plugin/`, `hooks/codex.json`)를 함께 배포.

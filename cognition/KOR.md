@@ -214,3 +214,7 @@ Overthinking Detector는 루프 패턴에 이름을 붙이고 차단기를 겁�
 ```
 
 모든 실행은 한 시간 안에 할 수 있는 구체적 다음 한 걸음으로 끝납니다.
+
+## 상태
+
+- 1.1.9 — Codex: Claude 전용 trophy 시작 훅이 Codex에서 더 이상 돌지 않음(Codex가 args를 버리고 맨 `sh`에 훅 JSON을 넘겨 exit 127); Codex overlay(`.codex-plugin/`, `hooks/codex.json`)를 함께 배포.

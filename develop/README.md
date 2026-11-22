@@ -723,3 +723,7 @@ If the tools are not connected, add the remote SSE endpoints under Claude 설정
 skills work without them; the judgment steps are just less structured.
 
 ---
+
+## Status
+
+- 2.2.1 — Codex: the Claude-only trophy startup hook no longer runs in Codex (Codex dropped its args and ran bare `sh` on the hook JSON, exit 127); the plugin now ships a Codex overlay (`.codex-plugin/`, `hooks/codex.json`).

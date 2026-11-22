@@ -134,3 +134,7 @@ Use when [상황/의도]. Triggers on: "[한국어 구어체]", "[English phrase
 ## 관련 플러그인
 
 - `write:writing-skills` — 이 둘이 검사하는 결과물을 만드는 저작 가이드.
+
+## 상태
+
+- 1.5.3 — Codex: Claude 전용 trophy 시작 훅이 Codex에서 더 이상 돌지 않음(Codex가 args를 버리고 맨 `sh`에 훅 JSON을 넘겨 exit 127); Codex overlay(`.codex-plugin/`, `hooks/codex.json`)를 함께 배포.

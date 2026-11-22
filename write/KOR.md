@@ -382,7 +382,7 @@ edge 라벨은 자기 선과 겹치지 않는 자리를 고릅니다. grid 유�
 주장, 흐린 맥락 같은 의미 역할이 모두 테마에 매핑되고, 대비 4.5:1을 못 맞추는 테마는 어느 짝인지 밝히며
 거부합니다. 테마가 없으면 기본 색 그대로입니다.
 테마를 주면 어떤 역할도 기본 색을 쓰지 않습니다. 레인은 강조색보다 테마의 `hues`를 먼저 써서 레인과
-주장 상자가 같은 색이 되지 않고, 색이 모자라면 stderr로 알리되 종료 코드는 그대로입니다(write 1.17.0).
+주장 상자가 같은 색이 되지 않고, 색이 모자라면 stderr로 알리되 종료 코드는 그대로입니다(write 1.17.0). 1.17.1 — Codex: Claude 전용 trophy 시작 훅이 Codex에서 더 이상 돌지 않음(Codex가 args를 버리고 맨 `sh`에 훅 JSON을 넘겨 exit 127); Codex overlay(`.codex-plugin/`, `hooks/codex.json`)를 함께 배포.
 
 스킬에 NanumGothic Regular + Bold(SIL OFL 1.1, 라이선스는 tech-book의 `assets/fonts/`, 공유)가 들어 있어 플러그인이 약
 4 MB 커집니다. 브라우저가 아닌 SVG 렌더러(librsvg, Inkscape, QuickLook)는 `@font-face`를 무시할 수

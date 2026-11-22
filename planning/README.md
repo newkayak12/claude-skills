@@ -65,3 +65,9 @@ without the other.
 - `completion:verification-before-completion` — closes out each step against its bar.
 
 ---
+
+## Status
+
+- 1.4.1 — Codex: the Claude-only trophy startup hook no longer runs in Codex (Codex dropped its args and ran bare `sh` on the hook JSON, exit 127); the plugin now ships a Codex overlay (`.codex-plugin/`, `hooks/codex.json`).
+
+---

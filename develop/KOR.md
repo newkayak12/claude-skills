@@ -694,3 +694,7 @@ optional로 붙습니다.
 
 연결되어 있지 않다면 Claude 설정 → MCP Servers에서 remote SSE 엔드포인트를 추가하세요. 없어도
 스킬은 동작하고, 판단 단계의 구조화 정도만 달라집니다.
+
+## 상태
+
+- 2.2.1 — Codex: Claude 전용 trophy 시작 훅이 Codex에서 더 이상 돌지 않음(Codex가 args를 버리고 맨 `sh`에 훅 JSON을 넘겨 exit 127); Codex overlay(`.codex-plugin/`, `hooks/codex.json`)를 함께 배포.

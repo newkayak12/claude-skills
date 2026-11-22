@@ -62,3 +62,9 @@ integrations"). 스스로를 하네스의 *SetGoal + QualityGate* 를 한 세션
 - `write:plans` — `executing-plans`가 게이트할 계획을 만드는 쪽.
 - `agents:*` — `executing-plans`가 넘기는 실행자들.
 - `completion:verification-before-completion` — 각 단계를 기준에 대고 닫는 쪽.
+
+---
+
+## 상태
+
+- 1.4.1 — Codex: Claude 전용 trophy 시작 훅이 Codex에서 더 이상 돌지 않음(Codex가 args를 버리고 맨 `sh`에 훅 JSON을 넘겨 exit 127); Codex overlay(`.codex-plugin/`, `hooks/codex.json`)를 함께 배포.

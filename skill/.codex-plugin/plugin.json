@@ -1,6 +1,6 @@
 {
   "name": "skill",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "description": "Skill management: create new skills, improve existing ones, validate skill quality, audit trigger coverage, audit a workspace for what it already has before installing, and retro (a session's repeated mistakes turned into checks). Its Claude trophy startup hook (SessionStart ensure-trophy.sh) is Claude-only and disabled in Codex.",
   "author": {
     "name": "newkayak12"
