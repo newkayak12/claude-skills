@@ -9,14 +9,14 @@ never retire them as duplicates, and never reference superpowers.
 
 ### Codex plugin compatibility
 
-177. **teams wiki takes its root from Codex's per-call workspace**
+177. **teams wiki takes its root from Codex's per-call workspace** — in E-66cb76c8
    - Why: 2026-11-22, the teams MCP now starts in Codex with `"cwd": "."` (the plugin folder); `wiki.mjs`
      roots at `process.cwd()`, so under Codex the wiki would live in the plugin cache. Codex gives the
      session folder only per call in `_meta["x-codex-turn-metadata"].workspaces` (knowledge reads it the same way).
    - Acceptance: with no `--root`/`TEAMS_WIKI_ROOT`, a `wiki_*` call under Codex uses that workspace; a test
      red before the fix; teams tests with counts.
 
-173. **teams build nodes can run the commands their stories need (codex, node, python3, reads under ~/.codex)**
+173. **teams build nodes can run the commands their stories need (codex, node, python3, reads under ~/.codex)** — in E-66cb76c8 (cause found 2026-11-22: `claude-exec-adapter.mjs` runs workspace-write nodes under `acceptEdits` with no `--allowedTools Bash`, and the project settings have no allow rule)
    - Why: E-f8f880f9 report, 2026-11-22: every draft/implement/test node got "This command requires
      approval" for `codex`, `python3`, `node`, reads under `~/.codex`, once `git`, while review and shape
      nodes ran `codex --version` fine. No package could verify anything; retries spent the budget
@@ -344,7 +344,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
 Next follow-up after E-f8f880f9 (user, 2026-11-21: "171 -> 170 -> 169 순으로 다음 FU"): 171 → 170 → 169 (173 belongs with them: it blocked E-f8f880f9; then 172),
 ahead of the order above.
 
-169. **teams reaches an installed Codex from inside a driver, or says why not**
+169. **teams reaches an installed Codex from inside a driver, or says why not** — in E-66cb76c8
    - Why: 2026-11-21, E-f8f880f9 (PLAN-F1 worktree, `.teams_output/broker/probe-codex-read-only.json`):
      with `vendor: "auto"` the probe found `codex-cli 0.170.0` but its smoke printed
      `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted` and no ready token, so it was
@@ -358,7 +358,7 @@ ahead of the order above.
      vendor; where the environment truly forbids it, `tm_status` names the cause (the bwrap line), not
      only "unreachable". `node --test teams/scripts/test-*.mjs` with counts.
 
-170. **plan node accepts a JSON reply that a sentence of prose precedes**
+170. **plan node accepts a JSON reply that a sentence of prose precedes** — in E-66cb76c8
    - Why: 2026-11-21, E-f8f880f9 `dispatch:PLAN-F2:1` failed ("child run ended blocked … plan: adapter
      exit 1"). The plan node's `result.json` has `verification_error` equal to its `last_message`:
      "I've read the overlays, hooks and tests in the tree, and I'm returning the plan JSON now.\n\n{\"plan\": …".
@@ -368,7 +368,7 @@ ahead of the order above.
      (or the node's prompt/output schema forbids the lead-in and a retry within the node fixes it, not a
      new dispatch); `node --test teams/scripts/test-*.mjs` with counts.
 
-171. **A PLAN dispatch driver is respawned past `driver_restarts`**
+171. **A PLAN dispatch driver is respawned past `driver_restarts`** — in E-66cb76c8
    - Why: 2026-11-21, E-f8f880f9 with `driver_restarts: 2`: `dispatch_PLAN-F1_1`, `PLAN-F2_2` and
      `PLAN-F3_1` each have `.restart1` … `.restart7` driver files, every `exit.json` `{"code":0}`, about
      40–110 s apart; the daemon log has no "respawn" line. Either a clean exit is respawned without
