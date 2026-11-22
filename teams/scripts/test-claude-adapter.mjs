@@ -166,12 +166,13 @@ test('TEAMS_WIKI_ROOT set: one teams server (--only wiki) rooted there, its six 
     assert.deepEqual(JSON.parse(args[args.indexOf('--mcp-config') + 1]), {
       mcpServers: { teams: { command: process.execPath, args: [WIKI_SERVER, '--only', 'wiki', '--root', '/proj/main'] } },
     });
+    // card 173: a workspace-write node also gets Bash, so the exact list is Bash plus the six wiki tools
     assert.equal(args[args.indexOf('--allowedTools') + 1],
-      'mcp__teams__wiki_search,mcp__teams__wiki_get,mcp__teams__wiki_resume,mcp__teams__wiki_list,mcp__teams__wiki_status,mcp__teams__wiki_write');
+      'Bash,mcp__teams__wiki_search,mcp__teams__wiki_get,mcp__teams__wiki_resume,mcp__teams__wiki_list,mcp__teams__wiki_status,mcp__teams__wiki_write');
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
 
-test('--no-wiki (a judging stage) or an unset TEAMS_WIKI_ROOT: the old empty config exactly, no allowed tools', () => {
+test('--no-wiki (a judging stage) or an unset TEAMS_WIKI_ROOT: the old empty config exactly; workspace-write allows only Bash', () => {
   const f = fixture();
   try {
     for (const [extra, env] of [[['--no-wiki'], { TEAMS_WIKI_ROOT: '/proj/main' }], [[], withoutRoot]]) {
@@ -180,7 +181,87 @@ test('--no-wiki (a judging stage) or an unset TEAMS_WIKI_ROOT: the old empty con
       const args = argvOf(f);
       assert.equal(args[args.indexOf('--mcp-config') + 1], '{"mcpServers":{}}');
       assert.ok(args.includes('--strict-mcp-config'));
-      assert.equal(args.includes('--allowedTools'), false);
+      // card 173: no wiki tools, but a workspace-write node may run Bash
+      assert.equal(args[args.indexOf('--allowedTools') + 1], 'Bash');
+    }
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('read-only with --no-wiki: the old empty config and no --allowedTools at all', () => {
+  const f = fixture();
+  try {
+    const r = f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'review', '--sandbox', 'read-only', '--no-wiki'], { TEAMS_WIKI_ROOT: '/proj/main' });
+    assert.equal(r.status, 0, r.stderr);
+    const args = argvOf(f);
+    assert.equal(args[args.indexOf('--mcp-config') + 1], '{"mcpServers":{}}');
+    assert.equal(args.includes('--allowedTools'), false);
+    assert.equal(args.includes('--disallowedTools'), false);
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+// card 173: acceptEdits plus Bash on --tools never ran a command headless (the project settings carry no
+// allow rule), so implement/test/draft nodes could not run node or git. Bash is now allowed by name.
+test('a workspace-write implement node gets acceptEdits and Bash on --allowedTools, with no --disallowedTools', () => {
+  const f = fixture();
+  try {
+    const r = f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'implement', '--sandbox', 'workspace-write'], withoutRoot);
+    assert.equal(r.status, 0, r.stderr);
+    const args = argvOf(f);
+    assert.equal(args[args.indexOf('--permission-mode') + 1], 'acceptEdits');
+    assert.ok(args[args.indexOf('--allowedTools') + 1].split(',').includes('Bash'));
+    assert.equal(args.includes('--disallowedTools'), false);
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('a workspace-write test node (lean mcp config, wiki on) allows Bash, tm_ask and the wiki tools', () => {
+  const f = fixture();
+  try {
+    const r = f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'test', '--sandbox', 'workspace-write', '--mcp-config', '{"mcpServers":{}}'], { TEAMS_WIKI_ROOT: '/proj/main' });
+    assert.equal(r.status, 0, r.stderr);
+    const allowed = argvOf(f);
+    const list = allowed[allowed.indexOf('--allowedTools') + 1].split(',');
+    assert.equal(list[0], 'Bash');
+    assert.ok(list.includes('mcp__teams__tm_ask'));
+    assert.ok(list.includes('mcp__teams__wiki_write'));
+    assert.equal(allowed[allowed.indexOf('--permission-mode') + 1], 'acceptEdits');
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('read-only --verify argv is exactly what it was before card 173', () => {
+  const f = fixture();
+  try {
+    f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'gate', '--sandbox', 'read-only', '--verify'], withoutRoot);
+    const args = argvOf(f);
+    const i = args.indexOf('--tools');
+    assert.deepEqual(args.slice(i), ['--tools', 'Read,Glob,Grep,Bash', '--permission-mode', 'dontAsk',
+      '--disallowedTools', 'Bash(git commit:*),Bash(git push:*),Bash(git add:*),Bash(git rm:*),Bash(git reset:*),Bash(git checkout:*),Bash(git merge:*),Bash(git stash:*),Bash(git apply:*),Bash(rm:*),Bash(mv:*),Bash(cp:*),Bash(chmod:*),Bash(sed -i:*)',
+      '--allowedTools', 'Bash']);
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+// card 170: a node often says one line of prose and then the object.
+test('prose followed by a valid JSON object verifies: exit 0, result set, verification_error empty', () => {
+  const f = fixture();
+  try {
+    const obj = { stage_ok: true, verified: true, checks: ['c -> ok'], evidence: 'e' };
+    const r = f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'implement'],
+      { ...withoutRoot, MOCK_RESULT: `I'm returning the plan JSON now.\n\n${JSON.stringify(obj)}` });
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(r.report.result, obj);
+    assert.equal(r.report.stage_ok, true);
+    assert.equal(r.report.verification_error, '');
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('a message with no valid JSON object still fails with a verification_error', () => {
+  const f = fixture();
+  try {
+    for (const reply of ['all good', 'text {not json} more', '[1,2]', 'see [1, 2] and done']) {
+      const r = f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'implement'], { ...withoutRoot, MOCK_RESULT: reply });
+      assert.equal(r.status, 1, reply);
+      assert.equal(r.report.result, undefined, reply);
+      assert.equal(r.report.stage_ok, false, reply);
+      assert.equal(r.report.verification_error, reply, reply);
     }
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });

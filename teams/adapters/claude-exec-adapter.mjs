@@ -8,6 +8,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
 import { DISALLOWED_BASH, neededDenials, writeDenials } from '../mcp/denials.mjs';
+import { parseVendorResult } from '../mcp/broker-normalize.mjs';
 
 const args = process.argv.slice(2);
 const opts = { sandbox: 'workspace-write', addDirs: [], pluginDirs: [] };
@@ -97,7 +98,9 @@ async function invoke(prompt) {
   // every --verify gate read 'tool denied' (E-64cda2b0, E-910c1de2). Allowing Bash here is
   // safe because --disallowedTools wins over an allow rule (live probe 2026-10-21: `node --test`
   // ran, `rm` stayed denied).
-  const allowed = [...(verifyTools ? ['Bash'] : []), ...(withWiki ? WIKI_TOOLS : []), ...(leanMcp ? ['mcp__teams__tm_ask'] : [])];
+  // card 173: acceptEdits does not approve Bash, and the project settings carry no allow rule, so a
+  // workspace-write node (implement/test/draft) could never run a command headless. Allow it by name.
+  const allowed = [...(verifyTools || opts.sandbox === 'workspace-write' ? ['Bash'] : []), ...(withWiki ? WIKI_TOOLS : []), ...(leanMcp ? ['mcp__teams__tm_ask'] : [])];
   if (allowed.length) cli.push('--allowedTools', allowed.join(','));
   if (opts['setting-sources']) cli.push('--setting-sources', opts['setting-sources']);
   for (const dir of opts.pluginDirs) cli.push('--plugin-dir', dir);
@@ -166,7 +169,11 @@ try {
     report = { vendor: { reachable, ready, reason: (opts.sandbox === 'read-only' ? reachable : ready) ? '' : proc.stderr || (reachable ? 'Claude answered but could not run a command in this profile (Bash needs approval under the project permission settings)' : 'Claude readiness probe failed') } };
     process.exitCode = (opts.sandbox === 'read-only' ? reachable : ready) ? 0 : 1;
   } else {
-    const result = envelope?.structured_output || parse(message) || parse(message.match(/```(?:json)?\s*([\s\S]*?)```/)?.[1] || '');
+    // card 170: when the three structured forms fail, take the first-'{'-to-last-'}' slice through
+    // the broker's own parser, so prose before the object still verifies. _unparsed is no object.
+    const sliced = parseVendorResult({ last_message: message });
+    const result = envelope?.structured_output || parse(message) || parse(message.match(/```(?:json)?\s*([\s\S]*?)```/)?.[1] || '')
+      || (sliced && !sliced._unparsed ? sliced : null);
     const usable = result && typeof result === 'object' && !Array.isArray(result);
     report = { stage_ok: Boolean(ok && usable && result.stage_ok === true), result: usable ? result : undefined,
       last_message: message, error: envelope?.error, errors: envelope?.errors, stderr: proc.stderr, usage: envelope?.usage, model_usage: envelope?.modelUsage,
