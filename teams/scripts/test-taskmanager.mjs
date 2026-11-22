@@ -10675,6 +10675,41 @@ test('m1: a planning card that wrote no PRD, or a story with no acceptance crite
   }
 });
 
+test('card 165: the fold finds the committed PRD whatever prd_paths the judge named; a PRD missing a section still rejects', async () => {
+  const { mkdirSync, writeFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const OOS = '# Notes\n## Out of scope\nnothing\n';
+  for (const [label, opts, extra, want] of [
+    ['a: judge names a notes file', { prdPaths: ['docs/notes.md'] }, { 'docs/notes.md': '# Notes\n## Open questions\nq\n' }, 'done'],
+    ['b: judge names no prd_paths', { prdPaths: null }, {}, 'done'],
+    ['c: PRD lacks Out of scope', { omit: 'Out of scope' }, {}, /missing required sections: Out of scope/],
+    ['d: findings file does not mask', { omit: 'Out of scope' }, { 'docs/notes-findings.md': OOS }, /missing required sections: Out of scope/],
+    ['e: sibling doc does not mask', { omit: 'Out of scope', prdPaths: null }, { 'docs/notes.md': OOS }, /missing required sections: Out of scope/],
+  ]) {
+    await withTask(async ({ tm, g, root, task_id }) => {
+      await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['x'] }) });
+      await tm.call('tm_submit', { task_id, node_id: 'areas', payload: ok({ areas: [{ title: 'sign-in', brief: 'a user signs in' }] }) });
+      const nx = await tm.call('tm_next', { task_id });
+      const child = nx.children[0];
+      await completePlanningChild(g, child, ['F1-US-1'], opts);
+      for (const [rel, text] of Object.entries(extra)) {
+        mkdirSync(join(child.cwd, 'docs'), { recursive: true });
+        writeFileSync(join(child.cwd, rel), text);
+      }
+      const v = await tm.call('tm_submit', { task_id, node_id: child.node_id });
+      if (want === 'done') {
+        assert.equal(v.state, 'done', `${label}: ${v.reason}`);
+        assert.doesNotMatch(String(v.reason || ''), /missing required sections/, label);
+      } else {
+        assert.equal(v.state, 'failed', `${label}: ${v.reason}`);
+        assert.match(v.reason, want, label);
+      }
+      // The package-diff source is what finds the PRD when no path names it (AC-2).
+      assert.ok(readTask(root, task_id).nodes.some((n) => n.stage === 'dispatch' && n.base_commit), `${label}: dispatch node has a base_commit`);
+    });
+  }
+});
+
 test('C2: a plan stage that returns no feature areas fails, and is split again with its problems as feedback', async () => {
   const { autoReshape } = await import('../mcp/taskmanager.mjs');
   await withTask(async ({ tm, root, task_id }) => {

@@ -479,9 +479,21 @@ export function foldChild(task, n) {
   // says "(none)". goal-code-beta-R1 (2026-09-18) accepted exactly that at 93% and the run went
   // on to build from the request alone. The child's own gate cannot see this - it judges its
   // document, not what the manager needs from it - so the fold is where it has to be caught.
-  const prdPaths = () => ((Array.isArray(g.prd_paths) ? g.prd_paths : []).length
-    ? g.prd_paths
-    : [...new Set((child.nodes || []).flatMap((x) => (x.result && x.result.changed_files) || []).map(String))]);
+  // The candidates are every .md file the judge named, a node reported, or the package branch
+  // changed (card 165): the judge's list alone missed a PRD it did not name. -findings.md files
+  // never stand in for the PRD. Computed once; a git error leaves the first two sources.
+  let prdCandidates = null;
+  const prdPaths = () => {
+    if (prdCandidates) return prdCandidates;
+    let diff = [];
+    try { diff = packageDiffFiles(task, n.child ? n.child.cwd : task.cwd, n.subgoal_id, 'HEAD'); } catch { /* fail to the named files */ }
+    prdCandidates = [...new Set([
+      ...(Array.isArray(g.prd_paths) ? g.prd_paths : []),
+      ...(child.nodes || []).flatMap((x) => (x.result && x.result.changed_files) || []),
+      ...diff,
+    ].map(String))].filter((f) => f.endsWith('.md') && !f.endsWith('-findings.md'));
+    return prdCandidates;
+  };
   let planningStories = pkg && pkg.phase === 'planning'
     ? (Array.isArray(g.user_stories) ? g.user_stories : []).filter((u) => storyId(u))
     : null;
@@ -496,7 +508,10 @@ export function foldChild(task, n) {
   // Same principle as the story check: a structural requirement the contract states in words is
   // verified here rather than trusted to a judge that accepted a PRD missing three of them.
   if (planningStories && g.accept === true && planningStories.length) {
-    const missing = missingPrdSections(n.child ? n.child.cwd : task.cwd, prdPaths(), pkg.planning_mode === 'light' ? 'light' : 'full');
+    // One file must carry every section: headings from different files are never combined.
+    const mode = pkg.planning_mode === 'light' ? 'light' : 'full';
+    const perFile = prdPaths().map((f) => missingPrdSections(n.child ? n.child.cwd : task.cwd, [f], mode));
+    const missing = perFile.length ? perFile.reduce((best, m) => (m.length < best.length ? m : best)) : missingPrdSections(n.child ? n.child.cwd : task.cwd, [], mode);
     if (missing.length) {
       return {
         ...base, stage_ok: true, accept: false, match_pct: g.match_pct, user_stories: planningStories,
