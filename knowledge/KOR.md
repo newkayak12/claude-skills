@@ -237,7 +237,20 @@ KNOWLEDGE_LLM_URL=http://127.0.0.1:11434 node "${CLAUDE_PLUGIN_ROOT}/scripts/kno
 노트를 다시 추출합니다.
 
 노드 타입, 허용 관계 타입, 대칭 타입은 `_knowledge/config.json`의 `graph`(`relation_types`,
-`symmetric`, `weak_types`, `max_hops`)에서 오므로, 엔진 하나가 온톨로지가 다른 저장소들을 섬깁니다.
+`symmetric`, `weak_types`, `max_hops`, `max_name_chars`)에서 오므로, 엔진 하나가 온톨로지가 다른
+저장소들을 섬깁니다.
+
+`graph.relation_types`가 없거나 비어 있으면 능동태 타입 기본 목록이 적용됩니다: `DEPENDS_ON`,
+`CALLS`, `READS`, `WRITES`, `STORES`, `RETURNS`, `PRODUCES`, `CONSUMES`, `IMPLEMENTS`, `EXTENDS`,
+`CONFIGURES`, `CONTAINS`, `PART_OF`, `INSTANCE_OF`, `ALIAS_OF`, `OWNS`, `MEMBER_OF`, `WORKS_ON`,
+`SUPERSEDES`, `REPLACES`, `CAUSES`, `PREFERS`. 기본 목록 밖의 타입은 `unknown-type`으로, 직접 설정한
+목록 밖의 타입은 `not-in-ontology`로 거부합니다.
+
+엔티티 이름도 검사합니다(`graph.max_name_chars`, 기본 40). 그보다 긴 이름은 `name-too-long`, 절이나
+문장은 `name-is-sentence`로 거부합니다: `!`, `?`, `。`로 끝나거나, 세 단어를 넘는 이름이 `.`로 끝나거나(`Acme Inc.`는 통과), `, ` 또는 `; `를 포함하거나(그래서
+`Smith, John`도 문장으로 셉니다), 여섯 단어를 넘거나, 동사구처럼 읽히는 이름입니다. 거부한 이름은
+노드를 만들지 않고, 그 이름을 쓴 엣지는 이름 사유와 함께 `rejected-edges.jsonl`에 들어갑니다. 어떤
+엣지도 쓰지 않은 거부 이름은 명령 출력의 `rejected_nodes_by_reason`에 개수로만 나타납니다.
 
 ### `render-graph-view`
 

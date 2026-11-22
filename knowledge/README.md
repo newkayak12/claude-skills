@@ -243,8 +243,21 @@ edges with no model call, and everything else stays byte for byte. Queue entries
 (`status: up-to-date`). `--full` re-extracts every note.
 
 Node types, allowed relation types and symmetric types come from `graph` in
-`_knowledge/config.json` (`relation_types`, `symmetric`, `weak_types`, `max_hops`), so one engine
-serves stores with different ontologies.
+`_knowledge/config.json` (`relation_types`, `symmetric`, `weak_types`, `max_hops`, `max_name_chars`),
+so one engine serves stores with different ontologies.
+
+With no `graph.relation_types` (or an empty list) a default list of active-voice types applies:
+`DEPENDS_ON`, `CALLS`, `READS`, `WRITES`, `STORES`, `RETURNS`, `PRODUCES`, `CONSUMES`, `IMPLEMENTS`,
+`EXTENDS`, `CONFIGURES`, `CONTAINS`, `PART_OF`, `INSTANCE_OF`, `ALIAS_OF`, `OWNS`, `MEMBER_OF`,
+`WORKS_ON`, `SUPERSEDES`, `REPLACES`, `CAUSES`, `PREFERS`. An edge whose type is outside the default
+list is refused `unknown-type`; outside a list you configured, `not-in-ontology`.
+
+Entity names are checked too (`graph.max_name_chars`, default 40). A name longer than that is
+refused `name-too-long`; a clause is refused `name-is-sentence`: it ends in `!`, `?` or `。`, ends in `.` with more than three words (`Acme Inc.` passes), holds
+`, ` or `; ` (so `Smith, John` counts as a sentence), runs past six words, or reads as a verb phrase.
+A refused name makes no node, and an edge that uses it lands in `rejected-edges.jsonl` with the name
+reason. A refused name no edge touches appears only as a count in `rejected_nodes_by_reason` of the
+command output.
 
 ### `render-graph-view`
 

@@ -36,15 +36,47 @@ function jsonl(records) {
 
 const squash = (text) => String(text || '').normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim();
 
+// Active voice only: one direction per fact, so a passive inverse cannot double an edge.
+export const DEFAULT_RELATION_TYPES = [
+  'DEPENDS_ON', 'CALLS', 'READS', 'WRITES', 'STORES', 'RETURNS', 'PRODUCES', 'CONSUMES',
+  'IMPLEMENTS', 'EXTENDS', 'CONFIGURES', 'CONTAINS', 'PART_OF', 'INSTANCE_OF', 'ALIAS_OF', 'OWNS',
+  'MEMBER_OF', 'WORKS_ON', 'SUPERSEDES', 'REPLACES', 'CAUSES', 'PREFERS',
+];
+
 export function graphConfig(storeConfig) {
   const graph = storeConfig.graph && typeof storeConfig.graph === 'object' ? storeConfig.graph : {};
+  const configured = Array.isArray(graph.relation_types) ? graph.relation_types.map(String) : [];
   return {
-    relation_types: Array.isArray(graph.relation_types) ? graph.relation_types.map(String) : [],
+    ontology: configured.length > 0,
+    relation_types: configured.length ? configured : DEFAULT_RELATION_TYPES,
+    max_name_chars: Number.isInteger(graph.max_name_chars) && graph.max_name_chars > 0 ? graph.max_name_chars : 40,
     symmetric: Array.isArray(graph.symmetric) ? graph.symmetric.map(String) : [],
     weak_types: Array.isArray(graph.weak_types) ? graph.weak_types.map(String) : DEFAULT_WEAK_TYPES,
     max_hops: Number.isInteger(graph.max_hops) ? graph.max_hops : 3,
     max_note_chars: Number.isInteger(graph.max_note_chars) ? graph.max_note_chars : 6000,
   };
+}
+
+const KO_VERBAL = /(고|며|면서|는데|지만|었다|했다|한다|이다|니다|어요|아요|해요)$/;
+const KO_FINAL = /(했다|한다|었다|이다|니다|어요|아요|해요)$/;
+const EN_AUX = /\b(is|are|was|were|has|have|had|does|did|will|should|must|can)\b/i;
+
+// Reasons a node name is refused: a clause or a sentence is not an entity.
+export function nameProblems(name, config) {
+  const text = typeof name === 'string' ? name.trim() : '';
+  if (!text) return [];
+  const problems = [];
+  if ([...text].length > config.max_name_chars) problems.push('name-too-long');
+  const words = text.split(/\s+/);
+  const sentence = /[!?。]$/.test(text)
+    || (/\.$/.test(text) && words.length > 3)
+    || /[,;] /.test(text)
+    || words.length > 6
+    || (words.length >= 3 && words.filter((w) => KO_VERBAL.test(w)).length >= 2)
+    || (words.length >= 2 && KO_FINAL.test(words[words.length - 1]))
+    || (words.length >= 5 && EN_AUX.test(text));
+  if (sentence) problems.push('name-is-sentence');
+  return problems;
 }
 
 export function normalizeType(value) {
@@ -60,7 +92,8 @@ export function normalizeType(value) {
 export function validateEdges(edges, { nodeIds, sourceText, config }) {
   const weak = new Set(config.weak_types.map(normalizeType));
   weak.add('RELATED_TO');
-  const allowed = config.relation_types.length ? new Set(config.relation_types.map(normalizeType)) : null;
+  const allowed = new Set(config.relation_types.map(normalizeType));
+  const typeReason = config.ontology ? 'not-in-ontology' : 'unknown-type';
   const symmetric = new Set(config.symmetric.map(normalizeType));
   const accepted = [];
   const rejected = [];
@@ -69,12 +102,15 @@ export function validateEdges(edges, { nodeIds, sourceText, config }) {
     const edge = { ...raw, type: normalizeType(raw.type) };
     const reasons = [];
     const refs = Array.isArray(edge.source_refs) ? edge.source_refs.filter(Boolean) : [];
-    if (!edge.source || !nodeIds.has(edge.source)) reasons.push('unknown-source-node');
-    if (!edge.target || !nodeIds.has(edge.target)) reasons.push('unknown-target-node');
+    for (const end of ['source', 'target']) {
+      if (edge[end] && nodeIds.has(edge[end])) continue;
+      const bad = nameProblems(edge.proposed?.[end], config);
+      for (const reason of bad.length ? bad : [`unknown-${end}-node`]) if (!reasons.includes(reason)) reasons.push(reason);
+    }
     if (edge.source && edge.source === edge.target) reasons.push('self-loop');
     if (!TYPE_FORMAT.test(edge.type)) reasons.push('bad-type-format');
     else if (weak.has(edge.type)) reasons.push('vague-type');
-    else if (allowed && !allowed.has(edge.type)) reasons.push('not-in-ontology');
+    else if (!allowed.has(edge.type)) reasons.push(typeReason);
     if (!refs.length) reasons.push('missing-source-refs');
     if (!String(edge.evidence || '').trim()) reasons.push('missing-evidence');
     else if (refs.length && !refs.some((ref) => squash(sourceText(ref)).includes(squash(edge.evidence)))) {
@@ -201,14 +237,18 @@ export function openAiCompatibleChat({ url, model, apiKey, timeoutMs = 300000, f
   };
 }
 
-const SYSTEM_PROMPT = [
-  'You extract a knowledge graph from one note. Reply with one JSON object and nothing else:',
-  '{"entities":[{"name":"...","type":"PascalCaseClass","aliases":["..."]}],',
-  ' "relations":[{"source":"entity name","target":"entity name","type":"UPPER_SNAKE_VERB","evidence":"a sentence copied exactly from the note"}]}',
-  'Rules: every relation needs evidence copied word for word from the note. Use specific directional verbs',
-  '(DEPENDS_ON, OWNS, CALLS, STORES, SUPERSEDES, PART_OF), never RELATED_TO, USES or HAS.',
-  'Prefer the known entity names given below when the note means the same thing. Skip anything the note does not state.',
-].join('\n');
+// The prompt names the rules validateEdges and nameProblems hold the reply to.
+export function systemPrompt(config) {
+  return [
+    'You extract a knowledge graph from one note. Reply with one JSON object and nothing else:',
+    '{"entities":[{"name":"...","type":"PascalCaseClass","aliases":["..."]}],',
+    ' "relations":[{"source":"entity name","target":"entity name","type":"UPPER_SNAKE_VERB","evidence":"a sentence copied exactly from the note"}]}',
+    'Rules: every relation needs evidence copied word for word from the note. Use only these relation types:',
+    `${config.relation_types.join(', ')}; never RELATED_TO, USES or HAS.`,
+    `Entity names are short noun phrases, at most ${config.max_name_chars} characters, never a clause or a sentence.`,
+    'Prefer the known entity names given below when the note means the same thing. Skip anything the note does not state.',
+  ].join('\n');
+}
 
 function notePrompt(entry, text, knownNames, maxChars) {
   const clipped = text.length > maxChars ? `${text.slice(0, maxChars)}\n[...]` : text;
@@ -229,6 +269,11 @@ function cleanLabel(value) {
 export async function extractGraph(root, { chat, config, log = () => {}, limit = Infinity, only = null, deleted = new Set(), base = null }) {
   const catalog = readJsonl(join(root, '_knowledge', 'catalog.jsonl')).filter((entry) => entry.id && entry.path);
   const nameToId = new Map();
+  // Model-given names refused by nameProblems; catalog and base-graph names never come here.
+  const refusedNames = new Map();
+  const refuse = (key, reasons) => {
+    if (!refusedNames.has(key)) refusedNames.set(key, reasons);
+  };
   const nodes = new Map();
   for (const entry of catalog) {
     for (const term of [entry.id, entry.title, ...(entry.aliases || [])]) if (term) nameToId.set(normalizeTerm(term), entry.id);
@@ -263,7 +308,7 @@ export async function extractGraph(root, { chat, config, log = () => {}, limit =
     let reply;
     try {
       reply = parseModelJson(await chat([
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: systemPrompt(config) },
         { role: 'user', content: notePrompt(entry, text, knownNames, config.max_note_chars) },
       ]));
     } catch (error) {
@@ -282,6 +327,11 @@ export async function extractGraph(root, { chat, config, log = () => {}, limit =
       const key = normalizeTerm(name);
       let id = nameToId.get(key);
       if (!id) {
+        const problems = nameProblems(name, config);
+        if (problems.length) {
+          refuse(key, problems);
+          continue;
+        }
         id = `n-${slugify(name)}`;
         nameToId.set(key, id);
       }
@@ -301,7 +351,13 @@ export async function extractGraph(root, { chat, config, log = () => {}, limit =
         const key = normalizeTerm(name);
         const known = localIds.get(key) || nameToId.get(key);
         if (known) touch(known);
-        if (known || !key || !normalizeTerm(text).includes(key)) return known || null;
+        if (known || !key) return known || null;
+        const problems = nameProblems(String(name), config);
+        if (problems.length) {
+          refuse(key, problems);
+          return null;
+        }
+        if (!normalizeTerm(text).includes(key)) return null;
         const id = `n-${slugify(String(name).trim())}`;
         nameToId.set(key, id);
         localIds.set(key, id);
@@ -325,8 +381,11 @@ export async function extractGraph(root, { chat, config, log = () => {}, limit =
     return inside(root, abs) && existsSync(abs) ? readFileSync(abs, 'utf8') : null;
   };
   const { accepted, rejected } = validateEdges(candidates, { nodeIds: new Set(nodes.keys()), sourceText, config });
-  if (!base) return { nodes: [...nodes.values()], edges: accepted, rejected, failed, processed, done: [...done] };
-  return { ...mergeIncremental({ base, nodes, accepted, rejected, touched, replaced: new Set([...done, ...deleted]) }), failed, processed, done: [...done] };
+  const rejectedNodes = {};
+  for (const reasons of refusedNames.values()) for (const reason of reasons) rejectedNodes[reason] = (rejectedNodes[reason] || 0) + 1;
+  const counts = { rejected_nodes: refusedNames.size, rejected_nodes_by_reason: rejectedNodes };
+  if (!base) return { nodes: [...nodes.values()], edges: accepted, rejected, failed, processed, done: [...done], ...counts };
+  return { ...mergeIncremental({ base, nodes, accepted, rejected, touched, replaced: new Set([...done, ...deleted]) }), failed, processed, done: [...done], ...counts };
 }
 
 // Replace what the re-extracted (and deleted) notes contributed: their edges,
@@ -512,6 +571,8 @@ export async function buildGraph(inputRoot, options = {}) {
     edges: extracted.edges.length,
     rejected_edges: extracted.rejected.length,
     rejected_by_reason: rejectedByReason,
+    rejected_nodes: extracted.rejected_nodes,
+    rejected_nodes_by_reason: extracted.rejected_nodes_by_reason,
     reachability: reachability.map((r) => ({ question_id: r.question_id, reachable: r.reachable, ...(r.missing_nodes ? { missing_nodes: r.missing_nodes } : {}) })),
     written,
     seconds: Math.round((Date.now() - started) / 1000),

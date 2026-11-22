@@ -5,8 +5,10 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
+  DEFAULT_RELATION_TYPES,
   buildGraph,
   graphConfig,
+  nameProblems,
   openAiCompatibleChat,
   parseModelJson,
   questionReachability,
@@ -117,6 +119,99 @@ test('edges: an ontology allow-list rejects other types; a symmetric type may go
   assert.equal(accepted.length, 2);
 });
 
+test('edges: with no relation_types a default list applies; an unknown type is refused unknown-type', () => {
+  const want = 'DEPENDS_ON,CALLS,READS,WRITES,STORES,RETURNS,PRODUCES,CONSUMES,IMPLEMENTS,EXTENDS,CONFIGURES,CONTAINS,PART_OF,INSTANCE_OF,ALIAS_OF,OWNS,MEMBER_OF,WORKS_ON,SUPERSEDES,REPLACES,CAUSES,PREFERS'.split(',').sort();
+  assert.deepEqual([...DEFAULT_RELATION_TYPES].sort(), want);
+  for (const config of [graphConfig({}), graphConfig({ graph: { relation_types: [] } })]) {
+    assert.deepEqual([...config.relation_types].sort(), want);
+    assert.equal(config.ontology, false);
+    assert.equal(config.max_name_chars, 40);
+  }
+  assert.equal(graphConfig({ graph: { relation_types: ['PEER_OF'] } }).ontology, true);
+  const base = { source: 'a', target: 'b', evidence: 'x', source_refs: ['n.md'] };
+  const { accepted, rejected } = validateEdges([
+    { ...base, type: 'PREFERS_FORMAL_LANGUAGE' },
+    { ...base, type: 'DEPENDS_ON' },
+    { ...base, type: 'PREFERS', target: 'c' },
+  ], { nodeIds: new Set(['a', 'b', 'c']), sourceText: () => 'x', config: graphConfig({}) });
+  assert.deepEqual(rejected.map((r) => r.reasons), [['unknown-type']]);
+  assert.deepEqual(accepted.map((e) => e.type), ['DEPENDS_ON', 'PREFERS']);
+});
+
+test('nodes: a name past max_name_chars is refused name-too-long', async (t) => {
+  const config = graphConfig({});
+  assert.deepEqual(nameProblems('x'.repeat(41), config), ['name-too-long']);
+  assert.deepEqual(nameProblems('x'.repeat(40), config), []);
+  assert.deepEqual(nameProblems(` ${'x'.repeat(40)} `, config), []);
+  assert.deepEqual(nameProblems('x'.repeat(11), graphConfig({ graph: { max_name_chars: 10 } })), ['name-too-long']);
+  for (const bad of [0, -5, '12', 1.5, null]) assert.equal(graphConfig({ graph: { max_name_chars: bad } }).max_name_chars, 40);
+  const { project, root } = vault(t);
+  const long = 'x'.repeat(41);
+  const note = join(root, 'notes', 'order-service.md');
+  put(note, `${readFileSync(note, 'utf8')}\nThe Order Service calls ${long} daily.\n`);
+  const chat = async (messages) => (/Note "Order Service"/.test(messages[1].content)
+    ? JSON.stringify({ entities: [{ name: long, type: 'thing' }], relations: [
+      { source: 'Order Service', target: long, type: 'CALLS', evidence: `The Order Service calls ${long} daily.` },
+    ] })
+    : JSON.stringify({ entities: [], relations: [] }));
+  const result = await buildGraph(project, { chat, env: {}, index: false, probeSources: { nvidiaSmi: () => null, totalMem: GB, freeMem: GB, cores: 1 } });
+  const lines = (name) => readFileSync(join(root, '_graph', name), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.ok(!lines('nodes.jsonl').some((n) => n.canonical_name === long));
+  assert.equal(result.edges, 0);
+  assert.deepEqual(lines('rejected-edges.jsonl').map((r) => r.reasons), [['name-too-long']]);
+  assert.ok(result.rejected_nodes_by_reason['name-too-long'] >= 1);
+  assert.ok(result.rejected_nodes >= 1);
+});
+
+test('nodes: a name holding a clause is refused name-is-sentence', () => {
+  const config = graphConfig({});
+  for (const name of ['비관락 잡고 했고 외부 요청 없고', 'The cache stores sessions.', '캐시가 세션을 저장한다']) {
+    assert.deepEqual(nameProblems(name, config), ['name-is-sentence'], name);
+  }
+  for (const name of ['Order Service', 'Spring Boot 3.x', '최고 관리자', '재고 창고', '광고 보고', 'Acme Inc.', '바다', '수요', '푸른 바다']) {
+    assert.deepEqual(nameProblems(name, config), [], name);
+  }
+  const { rejected } = validateEdges([
+    { source: 'a', target: null, type: 'DEPENDS_ON', evidence: 'x', source_refs: ['n.md'], proposed: { source: 'a', target: '비관락 잡고 했고 외부 요청 없고' } },
+  ], { nodeIds: new Set(['a']), sourceText: () => 'x', config });
+  assert.deepEqual(rejected.map((r) => r.reasons), [['name-is-sentence']]);
+});
+
+test('prompt: the system prompt names the relation types and at most max_name_chars', async (t) => {
+  const systems = [];
+  const chat = async (messages) => {
+    systems.push(messages[0].content);
+    return JSON.stringify({ entities: [], relations: [] });
+  };
+  const probeSources = { nvidiaSmi: () => null, totalMem: GB, freeMem: GB, cores: 1 };
+  const first = vault(t);
+  await buildGraph(first.project, { chat, env: {}, index: false, probeSources });
+  assert.ok(systems.length > 0);
+  assert.ok(systems[0].includes('DEPENDS_ON'));
+  assert.ok(systems[0].includes('at most 40'));
+  const second = vault(t);
+  put(join(second.root, '_knowledge', 'config.json'), JSON.stringify({ graph: { max_name_chars: 10 } }));
+  systems.length = 0;
+  await buildGraph(second.project, { chat, env: {}, index: false, probeSources });
+  assert.ok(systems.length > 0);
+  assert.ok(systems[0].includes('at most 10'));
+  assert.ok(!systems[0].includes('at most 40'));
+});
+
+test('nodes: a relation endpoint that fails the name rules and is absent from the note is still counted', async (t) => {
+  const { project } = vault(t);
+  const clause = '비관락 잡고 했고 외부 요청 없고';
+  const chat = async (messages) => (/Note "Order Service"/.test(messages[1].content)
+    ? JSON.stringify({ entities: [], relations: [
+      { source: 'Order Service', target: clause, type: 'CALLS', evidence: 'The Order Service depends on the Payments DB.' },
+    ] })
+    : JSON.stringify({ entities: [], relations: [] }));
+  const result = await buildGraph(project, { chat, env: {}, index: false, probeSources: { nvidiaSmi: () => null, totalMem: GB, freeMem: GB, cores: 1 } });
+  assert.equal(result.edges, 0);
+  assert.deepEqual(result.rejected_by_reason, { 'name-is-sentence': 1 });
+  assert.deepEqual(result.rejected_nodes_by_reason, { 'name-is-sentence': 1 });
+});
+
 test('reachability: bounded directed paths in the shape validate-knowledge reads', () => {
   const nodes = ['a', 'b', 'c', 'd'].map((id) => ({ id }));
   const edges = [
@@ -198,7 +293,7 @@ test('build: extraction to _graph, rejected edges with reasons, reachability, sq
   });
   assert.equal(result.status, 'built');
   assert.deepEqual([result.nodes, result.edges, result.rejected_edges], [3, 2, 2]);
-  assert.deepEqual(result.rejected_by_reason, { 'vague-type': 1, 'evidence-not-in-source': 1 });
+  assert.deepEqual(result.rejected_by_reason, { 'vague-type': 1, 'evidence-not-in-source': 1, 'unknown-type': 1 });
   assert.equal(result.model.tier, 'small');
   assert.equal(JSON.parse(readFileSync(join(root, '.knowledge', 'hardware-probe.json'), 'utf8')).source, 'probe');
   // Billing Team -OWNS-> Payments DB and Order Service -DEPENDS_ON-> Payments DB do not chain

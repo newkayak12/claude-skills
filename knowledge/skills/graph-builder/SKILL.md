@@ -36,7 +36,7 @@ If the user answers roughly, proceed with a small provisional schema and mark un
 
 ## LLM Build Option
 
-When the person has an OpenAI-compatible chat endpoint (ollama, llama.cpp, vLLM) or asks for the Docker build, steps 4-8 run as one command instead of by hand: `KNOWLEDGE_LLM_URL=<url> node "${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-graph.mjs" build --root <project>` (or the compose `graph` profile, README). It enforces the Evidence Rules below in code and writes `_graph/rejected-edges.jsonl` with reasons. Read that file and `_graph/question-reachability.jsonl` before reporting: a reason that dominates (`evidence-not-in-source`, `vague-type`) is a prompt or ontology problem, and an unreachable question is still a graph defect. Allowed relation types go in `graph.relation_types` of `_knowledge/config.json`. No endpoint (exit 2): extract by hand as below.
+When the person has an OpenAI-compatible chat endpoint (ollama, llama.cpp, vLLM) or asks for the Docker build, steps 4-8 run as one command instead of by hand: `KNOWLEDGE_LLM_URL=<url> node "${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-graph.mjs" build --root <project>` (or the compose `graph` profile, README). It enforces the Evidence Rules below in code and writes `_graph/rejected-edges.jsonl` with reasons. Read that file and `_graph/question-reachability.jsonl` before reporting: a reason that dominates (`evidence-not-in-source`, `vague-type`) is a prompt or ontology problem, and an unreachable question is still a graph defect. Allowed relation types go in `graph.relation_types` of `_knowledge/config.json`; with none set a default list applies, and a dominant `unknown-type` or `name-is-sentence` points at the prompt or the ontology. No endpoint (exit 2): extract by hand as below.
 
 ## Process
 
