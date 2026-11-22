@@ -375,7 +375,9 @@ ahead of the order above.
      judged "codex unreachable" and every node ran on Claude. The same "Codex unreachable" is in the
      E-0ad41780 and E-6ff25a30 rows (2026-11-04). User: "하는게 맞을거야 그 환경에는 codex가
      있을거거든". Cause: Codex's bubblewrap sandbox cannot set up loopback in the driver's
-     environment; which layer denies the netlink call is unverified.
+     environment; which layer denies the netlink call is unverified. Known since 2026-09: this host has
+     `kernel.apparmor_restrict_unprivileged_userns = 1`, so bwrap cannot create a namespace and only
+     `danger-full-access` runs (a per-run `policy` opt-in); a host fix needs sudo (the user's call).
    - Acceptance: in a teams driver the probe reaches Codex and a size-S run shows a node on the codex
      vendor; where the environment truly forbids it, `tm_status` names the cause (the bwrap line), not
      only "unreachable". `node --test teams/scripts/test-*.mjs` with counts.
