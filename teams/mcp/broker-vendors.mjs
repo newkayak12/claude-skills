@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { capacityFailure, capacityNotice } from './routing.mjs';
-import { leanLaunchArgs, resolveStageModel } from './nodelaunch.mjs';
+import { leanEnv, leanLaunchArgs, resolveStageModel } from './nodelaunch.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -159,7 +159,8 @@ export function runAdapter(vendor, extraArgs, cwd, opts = {}) {
   if (opts.stage) {
     if (!args.includes('--model')) args = [...args, '--model', resolveStageModel(opts.stage, { models: opts.models })];
     // The adapter is strict by itself, so --strict-mcp-config is not passed to it: its own claude argv carries it.
-    if (opts.lean && isClaudeAdapter(vendor) && !args.includes('--mcp-config')) args = [...args, ...leanLaunchArgs(opts.stage, opts.lean).filter((a) => a !== '--strict-mcp-config')];
+    // Nor --tools=: the adapter sets its own read-only-aware --tools and rejects unknown flags.
+    if (opts.lean && isClaudeAdapter(vendor) && !args.includes('--mcp-config')) args = [...args, ...leanLaunchArgs(opts.stage, opts.lean).filter((a) => a !== '--strict-mcp-config' && !a.startsWith('--tools='))];
   }
   return new Promise((resolve) => {
     let child;
@@ -167,7 +168,7 @@ export function runAdapter(vendor, extraArgs, cwd, opts = {}) {
       child = (opts.spawn || spawn)(vendor.command, [...(vendor.args || []), ...args], {
         cwd,
         // a node does a stage's work; it must not open a run (the gates read HARNESS_NODE)
-        env: { ...process.env, HARNESS_NODE: '1' },
+        env: { ...leanEnv(process.env), HARNESS_NODE: '1' },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } catch (error) {

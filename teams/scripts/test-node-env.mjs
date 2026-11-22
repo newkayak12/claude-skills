@@ -7,8 +7,10 @@ import { fileURLToPath } from 'node:url';
 const src = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
 test('workers are marked: the broker adapter spawn and the judge spawn', () => {
-  assert.match(src('../mcp/broker-vendors.mjs'), /env: \{ \.\.\.process\.env, HARNESS_NODE: '1' \}/);
+  assert.match(src('../mcp/broker-vendors.mjs'), /env: \{ \.\.\.leanEnv\(process\.env\), HARNESS_NODE: '1' \}/);
   assert.match(src('../mcp/daemon.mjs'), /HARNESS_NODE: '1' \}, stdio/);
+  assert.match(src('../mcp/daemon.mjs'), /env: \{ \.\.\.leanEnv\(process\.env\), TEAMS_WIKI_OFF: '1', HARNESS_NODE: '1' \}/);
+  assert.match(src('../mcp/daemon.mjs'), /const env = \{ \.\.\.leanEnv\(process\.env\), TEAMS_WIKI_ROOT: task\.cwd, HARNESS_NODE: '1' \}/);
 });
 
 test('drivers are not marked: the child driver and the daemon itself legitimately run entry skills and tm_*', () => {

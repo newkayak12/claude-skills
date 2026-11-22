@@ -121,12 +121,24 @@ test('a child driver and a judge are both spawned with the skill plugins, not ju
   delete process.env.HARNESS_JUDGE_DRIVER;
   process.env.CLAUDE_PLUGIN_ROOT = join(root, 'teams');
   try {
-    for (const argv of [driverArgv(null), judgeArgv(null)]) {
-      const dirs = argv.filter((a, i) => argv[i - 1] === '--plugin-dir');
-      assert.ok(dirs.includes(join(root, 'teams')), 'the teams plugin itself is still passed');
-      assert.ok(dirs.includes(join(root, 'develop')), `a named skill's plugin must be mounted: ${dirs}`);
-      assert.ok(dirs.includes(join(root, 'think')), `a named skill's plugin must be mounted: ${dirs}`);
-    }
+    const dirsOf = (argv) => argv.filter((a, i) => argv[i - 1] === '--plugin-dir');
+    // judge: unchanged, still carries develop and think
+    const judge = dirsOf(judgeArgv(null));
+    assert.ok(judge.includes(join(root, 'teams')), 'the teams plugin itself is still passed');
+    assert.ok(judge.includes(join(root, 'develop')), `a named skill's plugin must be mounted: ${judge}`);
+    assert.ok(judge.includes(join(root, 'think')), `a named skill's plugin must be mounted: ${judge}`);
+    // driver: the bare driver keeps think but no longer carries develop; a named develop skill
+    // or a develop flow mounts it
+    const bare = dirsOf(driverArgv(null));
+    assert.ok(bare.includes(join(root, 'teams')), 'the teams plugin itself is still passed');
+    assert.ok(bare.includes(join(root, 'think')), `think stays for the bare driver: ${bare}`);
+    assert.ok(!bare.includes(join(root, 'develop')), `a bare driver names no develop skill: ${bare}`);
+    const named = dirsOf(driverArgv({ stage_skills: { implement: ['develop:clean-code'] } }));
+    assert.ok(named.includes(join(root, 'develop')), `a named develop skill mounts develop: ${named}`);
+    assert.ok(named.includes(join(root, 'think')));
+    const flow = dirsOf(driverArgv(null, { flow: 'develop' }));
+    assert.ok(flow.includes(join(root, 'develop')), `flow develop mounts develop: ${flow}`);
+    assert.ok(flow.includes(join(root, 'think')));
     const withExtra = driverArgv({ team: { opts: { plugin_dirs: [join(root, 'think')] } } });
     assert.equal(withExtra.filter((a) => a === join(root, 'think')).length, 1, 'team.json plugin_dirs does not duplicate a found plugin');
   } finally {

@@ -11,8 +11,9 @@
 //   'manager' -> STAGE_SKILLS (stagecontract.mjs): daemon judge, manager stages, goal_gate.
 //   'graph'   -> GRAPH_STAGE_SKILLS (mounts.mjs): broker-adapter graph nodes and child drivers.
 // A stage that sits in both maps (critique, gate) defaults to 'graph'; a manager spawn of it
-// passes scope: 'manager'. The 'driver' stage runs a whole graph run, so it gets the union of
-// every GRAPH_STAGE_SKILLS list.
+// passes scope: 'manager'. The 'driver' stage runs a whole graph run, so it gets its stage skills
+// (the caller's list, else GRAPH_STAGE_SKILLS) plus the plugins of its flow's kind, not every
+// plugin any kind could name.
 //
 // --mcp-config is an inline JSON string: teams has no config file (the precedent is
 // adapters/claude-exec-adapter.mjs). It declares the single 'teams' server (plugin.json), which
@@ -112,8 +113,18 @@ function probeHelp() {
 // A flag is emitted only when the help text lists it; an unreadable help (null) fails open.
 const listed = (help, flag) => help == null || new RegExp(`(?<![\\w-])${flag}(?![\\w-])`).test(help);
 
+// Built-in tools a lean session keeps; MCP tools are not built-ins and stay. `--tools` drops
+// unknown names silently, so Glob/Grep are listed even for a binary without them. Both Agent and
+// Task are listed because the subagent tool is named Task in older builds and Agent in newer ones.
+export const LEAN_TOOLS = Object.freeze(['Agent', 'Task', 'Bash', 'Edit', 'Read', 'Write', 'Skill', 'ToolSearch', 'Workflow', 'TaskStop', 'Glob', 'Grep']);
+
+// Env for a lean session: auto-memory off (its index loads into the start context). base is not mutated.
+export const leanEnv = (base = process.env) => ({ ...base, CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' });
+
 // Argv fragment for a lean session of `stage`: the teams MCP server alone, the teams root plus
-// only that stage's skill plugins (and task.plugin_dirs), project settings only.
+// only that stage's skill plugins (and task.plugin_dirs), project settings only, built-in tools
+// limited to LEAN_TOOLS. `--tools` is variadic and would swallow the prompt appended last, so it
+// is emitted as the single token `--tools=<list>`.
 // task: { scope, stage_skills, plugin_dirs, root }; opts.helpText bypasses the probe.
 export function leanLaunchArgs(stage, task = {}, opts = {}) {
   const t = task || {};
@@ -124,6 +135,7 @@ export function leanLaunchArgs(stage, task = {}, opts = {}) {
   if (listed(help, '--strict-mcp-config')) args.push('--strict-mcp-config');
   if (listed(help, '--mcp-config')) args.push('--mcp-config', JSON.stringify({ mcpServers: { teams: server } }));
   if (listed(help, '--setting-sources')) args.push('--setting-sources', 'project');
+  if (listed(help, '--tools')) args.push(`--tools=${LEAN_TOOLS.join(',')}`);
   for (const dir of [root, ...stagePluginDirs(stage, t, root)]) args.push('--plugin-dir', dir);
   return args;
 }

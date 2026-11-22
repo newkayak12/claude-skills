@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  STAGE_KEYS, DEFAULT_MODELS, normalizeStage, resolveStageModel, stageSkillList, leanLaunchArgs,
+  STAGE_KEYS, DEFAULT_MODELS, normalizeStage, resolveStageModel, stageSkillList, leanLaunchArgs, LEAN_TOOLS, leanEnv,
   nodeStartEntry, nodeEndEntry, usageFromStream, REGION_THRESHOLD_LINES, regionPointer,
 } from '../mcp/nodelaunch.mjs';
 import { resolveTeamOptions, TEAM_DEFAULTS } from '../mcp/teamconfig.mjs';
@@ -160,6 +160,37 @@ test('AC-5: a flag the help text does not list is not emitted; an unreadable hel
   assert.ok(open.includes('--strict-mcp-config') && open.includes('--mcp-config') && open.includes('--setting-sources'));
   // no flag that merely hides CLAUDE.md at the cost of auth or MCP is ever emitted
   for (const a of [leanLaunchArgs('plan', {}, { helpText: HELP }), open]) assert.ok(!a.includes('--bare') && !a.includes('--safe-mode'));
+});
+
+const HELP_TOOLS = HELP + '  --tools <tools...>   Specify the list of available tools\n  --disallowed-tools <tools...>  Deny\n  --allowedTools <tools...>  Allow\n';
+const toolTokens = (args) => args.filter((a) => a === '--tools' || a.startsWith('--tools='));
+
+test('card 130: --tools is one `--tools=<list>` token naming the lean set, Agent and Task both', () => {
+  const tokens = toolTokens(leanLaunchArgs('implement', {}, { helpText: HELP_TOOLS }));
+  assert.deepEqual(tokens, ['--tools=Agent,Task,Bash,Edit,Read,Write,Skill,ToolSearch,Workflow,TaskStop,Glob,Grep']);
+  const list = tokens[0].slice('--tools='.length).split(',');
+  assert.ok(list.includes('Agent') && list.includes('Task'), 'both subagent names across Claude Code builds');
+  assert.equal(list.length, 12);
+  assert.ok(!leanLaunchArgs('plan', {}, { helpText: HELP_TOOLS }).includes('--tools'), 'never the bare variadic form');
+  assert.deepEqual(LEAN_TOOLS, list);
+});
+
+test('card 130: --tools is absent when help lists only --disallowed-tools/--allowedTools, present when help is unreadable', () => {
+  assert.deepEqual(toolTokens(leanLaunchArgs('implement', {}, { helpText: HELP })), []);
+  assert.deepEqual(toolTokens(leanLaunchArgs('implement', {}, { helpText: '  --disallowed-tools <t>\n  --allowedTools <t>\n' })), []);
+  assert.equal(toolTokens(leanLaunchArgs('implement', {}, { helpText: null })).length, 1, 'fails open');
+});
+
+test('card 130: leanEnv adds CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 to a copy and leaves its input untouched', () => {
+  const base = { PATH: '/bin', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0' };
+  const out = leanEnv(base);
+  assert.equal(out.CLAUDE_CODE_DISABLE_AUTO_MEMORY, '1');
+  assert.equal(out.PATH, '/bin');
+  assert.deepEqual(base, { PATH: '/bin', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0' });
+  assert.notEqual(out, base);
+  const before = process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY;
+  assert.equal(leanEnv().CLAUDE_CODE_DISABLE_AUTO_MEMORY, '1');
+  assert.equal(process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, before, 'process.env is not mutated');
 });
 
 test('AC-6: node_start and node_end entries have exactly these fields and are null-safe', () => {

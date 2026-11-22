@@ -27,7 +27,7 @@ writeFileSync(join(STUB_DIR, 'driver.mjs'), [
   "import { writeFileSync } from 'node:fs';",
   "import { join } from 'node:path';",
   "const [dir, tag, prompt] = process.argv.slice(2);",
-  "writeFileSync(join(dir, tag + '.json'), JSON.stringify({ env: process.env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS ?? null, prompt, own: [process.env.TEAMS_OWN_WRITES ?? null, process.env.TEAMS_OWN_RUN ?? null] }));",
+  "writeFileSync(join(dir, tag + '.json'), JSON.stringify({ env: process.env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS ?? null, prompt, mem: process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY ?? null, own: [process.env.TEAMS_OWN_WRITES ?? null, process.env.TEAMS_OWN_RUN ?? null] }));",
 ].join('\n') + '\n');
 
 const tm = await import(join(HERE, '..', 'mcp', 'taskmanager.mjs'));
@@ -91,6 +91,7 @@ test('a package child driver gets the wait ceiling 0 and the never-end-a-turn se
   tm.advanceDispatches(id);
   const got = await seen('package');
   assert.equal(got.env, '0');
+  assert.equal(got.mem, '1', 'a package driver starts without auto-memory');
   assert.match(got.prompt, SENTENCE);
 });
 
@@ -102,6 +103,7 @@ test('a size-S harness driver gets the wait ceiling 0 and the never-end-a-turn s
   assert.equal(r.task_state, 'harness', JSON.stringify(r));
   const got = await seen('harness');
   assert.equal(got.env, '0');
+  assert.equal(got.mem, '1', 'a size-S harness driver starts without auto-memory');
   assert.match(got.prompt, SENTENCE);
 });
 

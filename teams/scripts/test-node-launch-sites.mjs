@@ -48,6 +48,7 @@ import { BROKER_TOOLS, callBrokerTool } from '../mcp/broker-tools.mjs';
 import { composePrompt } from '../mcp/prompts.mjs';
 import { REGION_THRESHOLD_LINES, regionPointer } from '../mcp/nodelaunch.mjs';
 import { referencedPlugins } from '../mcp/pluginroots.mjs';
+import { FLOWS, KINDS } from '../mcp/graph-kinds.mjs';
 
 const ADAPTER = fileURLToPath(new URL('../adapters/claude-exec-adapter.mjs', import.meta.url));
 const ADAPTER_FLAGS = new Set(['--detect', '--isolated', '--verify', '--no-wiki', '--add-dir', '--cwd', '--output', '--prompt-file', '--events-output', '--stage', '--sandbox', '--model', '--setting-sources', '--plugin-dir', '--mcp-config']);
@@ -159,10 +160,44 @@ test('driverArgv is lean: strict MCP with the teams server only, project setting
     assert.ok(dirs.includes('teams'), 'the teams plugin itself');
     assert.ok(dirs.every((d) => d === 'teams' || referencedPlugins().includes(d) || ['graph', 'harness'].includes(d)), `only plugins the graph's method tables name: ${dirs}`);
   }
-  assert.deepEqual(dirsOf(driverArgv(null)).sort(), ['teams', ...referencedPlugins()].sort(), 'the driver runs every graph stage: exactly their plugins, no installed extras');
   const harness = dirsOf(driverArgv(taskWith({}), { harness: true }));
   assert.ok(harness.includes('graph') && harness.includes('harness'), `the size-S harness driver keeps its own plugins: ${harness}`);
   assert.ok(!dirsOf(driverArgv(null)).includes('harness'));
+}));
+
+test('card 130: a driver mounts the plugins of its own stage skills plus its flow\'s kind, not every flow\'s', () => withoutOverrides(() => {
+  const set = (argv) => dirsOf(argv).sort();
+  assert.deepEqual(set(driverArgv(null)), ['agents', 'completion', 'teams', 'think'], 'package driver, no flow: no develop, write or cognition');
+  assert.deepEqual(set(driverArgv(taskWith({}), { harness: true })), ['agents', 'completion', 'graph', 'harness', 'teams', 'think'], 'size S, no flow');
+  assert.deepEqual(set(driverArgv(null, { flow: 'develop' })), ['agents', 'completion', 'develop', 'teams', 'think']);
+  assert.deepEqual(set(driverArgv(null, { flow: 'document' })), ['agents', 'completion', 'develop', 'teams', 'think', 'write'], 'document kind references develop skills and write');
+  const auto = set(driverArgv(null, { flow: 'auto' }));
+  for (const p of ['teams', ...referencedPlugins()]) assert.ok(auto.includes(p), `auto is a superset of referencedPlugins: missing ${p}`);
+  // the flow-pinned drivers are strictly smaller than auto
+  assert.ok(set(driverArgv(null, { flow: 'develop' })).length < auto.length);
+  assert.ok(!set(driverArgv(null, { flow: 'develop' })).some((d) => d === 'write' || d === 'cognition'));
+}));
+
+test('card 130: every skill a FLOWS kind names resolves to a plugin the flow\'s driver mounts, with its SKILL.md on disk', () => withoutOverrides(() => {
+  for (const [flow, def] of Object.entries(FLOWS)) {
+    const mounted = valuesOf(driverArgv(null, { flow }), '--plugin-dir');
+    const skills = Object.values((KINDS[def.kind] && KINDS[def.kind].skills) || {}).flat();
+    for (const sk of skills) {
+      const [plugin, name] = sk.split(':');
+      const dir = mounted.find((d) => basename(d) === plugin);
+      assert.ok(dir, `flow ${flow}: ${sk} needs ${plugin} mounted, got ${mounted.map((d) => basename(d))}`);
+      assert.ok(existsSync(join(dir, 'skills', name, 'SKILL.md')), `flow ${flow}: ${dir}/skills/${name}/SKILL.md`);
+    }
+  }
+}));
+
+test('card 130: a named skill keeps its plugin, and team.json plugin_dirs are mounted', () => withoutOverrides(() => {
+  const named = dirsOf(driverArgv({ stage_skills: { implement: ['write:prd'] }, child_opts: { skills: ['cognition:critical-thinking-workflow'] } }));
+  assert.ok(named.includes('write') && named.includes('cognition'), `named skills' plugins: ${named}`);
+  const extra = join(dirname(ADAPTER), '..', '..', 'develop');
+  const withDir = valuesOf(driverArgv({ team: { opts: { plugin_dirs: [extra] } } }), '--plugin-dir');
+  assert.ok(withDir.some((d) => d === extra || basename(d) === 'develop'), `team.json plugin_dirs mounted: ${withDir}`);
+  assert.ok(!dirsOf(driverArgv(null)).includes('develop'), 'without it the bare driver has no develop');
 }));
 
 test('judgeArgv is lean and mounts only the plugins of the stage it judges', () => withoutOverrides(() => {
@@ -173,7 +208,11 @@ test('judgeArgv is lean and mounts only the plugins of the stage it judges', () 
   assertLean(goal, 'judge gate:goal');
   assert.deepEqual(dirsOf(goal).sort(), ['cognition', 'teams']);
   const any = dirsOf(judgeArgv(null));
-  assert.ok(any.includes('develop') && any.includes('think'), `no node: every manager stage's plugins, as before: ${any}`);
+  assert.ok(any.includes('develop') && any.includes('think') && any.includes('cognition'), `no node: every manager stage's plugins, as before: ${any}`);
+  // the lean tool list comes from launchArgs: one token, Agent and Task both named
+  const tokens = shape.filter((a) => a === '--tools' || a.startsWith('--tools='));
+  assert.equal(tokens.length, 1, 'one --tools token on the judge');
+  assert.ok(tokens[0].startsWith('--tools=') && /(^|=|,)Agent(,|$)/.test(tokens[0]) && /,Task,/.test(tokens[0]), tokens[0]);
 }));
 
 // ---------- AC-13: the overrides still replace the whole command line ----------
@@ -504,6 +543,9 @@ test('runAdapter forwards the lean flags next to the model for the builtin claud
   assert.deepEqual(valuesOf(args, '--setting-sources'), ['project']);
   assert.deepEqual(dirsOf(args).sort(), ['develop', 'teams']);
   assert.deepEqual(Object.keys(JSON.parse(valuesOf(args, '--mcp-config')[0]).mcpServers), ['teams']);
+  assert.ok(!args.some((a) => a === '--tools' || a.startsWith('--tools=')), 'the adapter sets its own --tools and rejects unknown flags: no lean --tools token reaches it');
+  assert.equal(s.calls[0].options.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, '1', 'a lean node starts without auto-memory');
+  assert.equal(s.calls[0].options.env.HARNESS_NODE, '1');
 
   await runAdapter(claude, ['--cwd', '/w', '--mcp-config', '{}'], '/w', { stage: 'implement', lean: {}, spawn: s.spawn });
   assert.deepEqual(valuesOf(s.calls[1].args, '--mcp-config'), ['{}'], 'already carried: not added twice');

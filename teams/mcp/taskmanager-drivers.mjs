@@ -2,8 +2,8 @@
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { skillPluginDirs } from './pluginroots.mjs';
-import { leanLaunchArgs, resolveStageModel, stageSkillList } from './nodelaunch.mjs';
+import { FLOWS, KINDS } from './graph-kinds.mjs';
+import { leanEnv, leanLaunchArgs, resolveStageModel, stageSkillList } from './nodelaunch.mjs';
 import { storyKey } from './tickets.mjs';
 import { __clock, countedDriverRestarts, driverAlive, harnessState, record, restartBudget, stampAfterWake, taskDir, tasksRoot, unfinishedWork } from './taskstate.mjs';
 import { spawn } from 'node:child_process';
@@ -76,18 +76,23 @@ export function driverArgv(task = null, o = {}) {
   const argv = ['claude', '-p', '--output-format', 'stream-json', '--verbose',
     '--dangerously-skip-permissions', '--setting-sources', 'project'];
   // This server is launched with CLAUDE_PLUGIN_ROOT when it runs from a --plugin-dir; the child
-  // needs the same directory to see the same plugin. Without it the plugin is installed. And
-  // every plugin the graph's method tables name (pluginroots.mjs): --setting-sources project
-  // hides the user's installed plugins, so without these the child's nodes never see a single
-  // skill they are told to load - which is how every bench run before 0.18.0 ran (skills_used
-  // none). A driver runs graph nodes, never a manager judge, so STAGE_SKILLS' plugins stay out.
+  // needs the same directory to see the same plugin. Without it the plugin is installed.
+  // --setting-sources project hides the user's installed plugins, so the child mounts exactly
+  // the plugins of the skills named below (launchArgs resolves each skill to its plugin) plus
+  // team.json plugin_dirs: its own stage skills, any skill a caller names (stage_skills,
+  // child_opts.skills, HARNESS_SKILLS for size S), and the skills of the KINDS entry its flow
+  // runs. A node the driver executes itself (vendor self, or auto degraded to self) loads its
+  // kind's skills, so those plugins stay: develop flow keeps develop/completion/think,
+  // document keeps write too. The kind is per subgoal, not per flow, so where the flow cannot
+  // be pinned ('auto') every KINDS skill stays (today's union); no flow given adds none.
+  // A pinned flow drops the other flows' plugins (write, cognition for develop).
   const team = (task && task.team && task.team.opts) || {};
+  const kindSkills = (k) => Object.values((KINDS[k] && KINDS[k].skills) || {}).flat();
+  const flowSkills = o.flow === 'auto' ? Object.keys(KINDS).flatMap(kindSkills)
+    : FLOWS[o.flow] ? kindSkills(FLOWS[o.flow].kind) : [];
   argv.push(...launchArgs('driver', task, {
-    skills: { driver: [...stageSkillList('driver', {}), ...skillsIn(task && task.child_opts && task.child_opts.skills), ...skillsIn(task && task.stage_skills), ...(o.harness ? HARNESS_SKILLS : [])] },
-    plugin_dirs: skillPluginDirs({
-      skills: [task && task.child_opts && task.child_opts.skills, task && task.stage_skills, o.harness ? HARNESS_SKILLS : null].filter(Boolean),
-      extraDirs: team.plugin_dirs || [],
-    }),
+    skills: { driver: [...stageSkillList('driver', {}), ...skillsIn(task && task.child_opts && task.child_opts.skills), ...skillsIn(task && task.stage_skills), ...(o.harness ? HARNESS_SKILLS : []), ...flowSkills] },
+    plugin_dirs: team.plugin_dirs || [],
   }));
   return argv;
 }
@@ -184,7 +189,7 @@ function spawnChildDriver(task, nodeIdLabel, child, opts = {}) {
   const log = join(dir, `${base}${suffix}.stream.jsonl`);
   const stderr = join(dir, `${base}${suffix}.stderr.txt`);
   const exitFile = join(dir, `${base}${suffix}.exit.json`);
-  const argv = driverArgv(task, { harness: opts.harness === true });
+  const argv = driverArgv(task, { harness: opts.harness === true, flow: child.flow || (task.flow !== 'auto' ? task.flow : task.flow_chosen) || 'auto' });
   const command = argv.join(' ');
   let out = null;
   let err = null;
@@ -192,7 +197,7 @@ function spawnChildDriver(task, nodeIdLabel, child, opts = {}) {
     mkdirSync(dir, { recursive: true });
     out = openSync(log, 'a');
     err = openSync(stderr, 'a');
-    const env = { ...process.env };
+    const env = leanEnv(process.env);
     // A nested claude refuses to start inside a claude session, and resolving the tasks dir
     // keeps a relative HARNESS_TASKS_DIR pointing at the same place from the child's cwd.
     delete env.CLAUDECODE;

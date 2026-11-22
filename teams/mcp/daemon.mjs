@@ -47,7 +47,7 @@ import { harvestTask } from './runlog.mjs';
 import { taskFigure, costByStage } from './drivercost.mjs';
 import { writeDocs } from './docs.mjs';
 import { isEntryPoint, teamsPluginRoot } from './pluginroots.mjs';
-import { resolveStageModel } from './nodelaunch.mjs';
+import { resolveStageModel, leanEnv } from './nodelaunch.mjs';
 import { launchArgs } from './taskmanager-drivers.mjs';
 import { stopNotice } from './resume.mjs';
 import { reserveSlot, noteWaiting, clearWaiting } from './livecap.mjs';
@@ -249,7 +249,7 @@ async function judge(task, n, { slot = null } = {}) {
     let err = '';
     let proc;
     try {
-      proc = spawn(argv[0], [...argv.slice(1), prompt], { cwd: task.cwd, env: { ...process.env, TEAMS_WIKI_OFF: '1', HARNESS_NODE: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
+      proc = spawn(argv[0], [...argv.slice(1), prompt], { cwd: task.cwd, env: { ...leanEnv(process.env), TEAMS_WIKI_OFF: '1', HARNESS_NODE: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (e) {
       resolve({ stage_ok: false, judge_failed: true, reason: `judge process for ${n.node_id} could not start: ${String((e && e.message) || e)}` });
       return;
@@ -365,7 +365,7 @@ export function answerNode(task, ask, { slot = null } = {}) {
     wikiHint: `the project wiki of ${task.cwd}: wiki_search by the words of the question, then wiki_get the page`,
   });
   const argv = answerArgv(task);
-  const env = { ...process.env, TEAMS_WIKI_ROOT: task.cwd, HARNESS_NODE: '1' };
+  const env = { ...leanEnv(process.env), TEAMS_WIKI_ROOT: task.cwd, HARNESS_NODE: '1' };
   delete env.TEAMS_WIKI_OFF;
   return new Promise((resolve) => {
     let out = '';

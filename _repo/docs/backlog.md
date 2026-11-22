@@ -585,8 +585,33 @@ ahead of the order above.
    - QA-F1 (model per stage) never finished: the disk filled, its run file was lost (card 129 item 7).
      D1 (tm_open `models` override dropped on the broker adapter path) shipped `0160b5bf` by E-fadb773c
      (2026-11-17). D2, D3 medium and D4-D6 low were lost with the run file. Acceptance: QA-F1 rerun on main.
-   - The start context of a fresh driver, before and after, measured on one real headless run (target
-     under 20k tokens); and the real-L cost compared to E-258fa3e5 (with the card 129 Sprint).
+   - The start context of a fresh driver (target under 20k tokens): measured 2026-11-22 on one real
+     headless run each (cwd = repo, haiku, "say ok"): before 40,888 (S) / 40,789 (package); after, per
+     flow of the real spawn: develop 33,770 (S) / 33,349 (package), saving ~7.1k / ~7.4k; auto (the
+     default for unpinned runs) 34,784 (S) / 34,363 (package), saving ~6.1k / ~6.4k, from tools and
+     auto-memory only (auto keeps every plugin); 20k still missed. Run-to-run noise ~3.4k. The earlier
+     30,108 / 29,532 were a no-flow argv, not a real spawn path (spawnChildDriver always passes a
+     flow, 'auto' at the least), so they overstate the saving. Done: the driver argv names only the plugins it
+     uses, `--tools=` keeps 11 built-ins (Task, Bash, Edit, Read, Write, Skill, ToolSearch, Workflow,
+     TaskStop, Glob, Grep; the mcp__teams__* tools stay), and `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` is set
+     (-2,550 on the S run). Plugin dirs left per driver: agents, completion, teams, think (package);
+     S adds graph and harness (S pass invokes harness, codex-control, agent-task-decomposer,
+     devils-advocate, verification-before-completion, graph:orchestrate); develop adds develop; document
+     adds develop and write; `auto` keeps the full union of plugins. Trade-offs: the plugin set is
+     per flow, so a mixed run loses write for a develop driver; size pinned S on `auto` keeps the union.
+     What keeps it above 20k (teams dir alone, same run: 27,749): about 7k of global + project CLAUDE.md
+     and the three always-loaded rules, 46 tool schemas (35 are mcp__teams__*), five user plugins
+     (orca-agent-view, cc-plugin-*) and Claude Code's own prompt. Ours to trim, next candidates: the
+     teams MCP schemas (~35 mcp__teams__*; a driver may not need wiki_* / team_*) and the repo
+     CLAUDE.md + rules (~7k). Not ours without `--bare`: Claude Code's base prompt and the user
+     plugins. The ~20k teams-only floor is only partly split (tool schemas / user plugins / CC prompt
+     unmeasured; the one run meant to split it, Read-only tools, came out 3.4k higher than the full
+     run). Run-to-run noise is about 3.4k; the develop and auto drops are above it. Suite: before
+     2569 pass / 0 fail / 1 skip; after 2575 pass / 0 fail / 1 skip in the last full run (one earlier
+     run showed 1 load flake, 'S1: one harness driver...', passing alone; test-taskmanager.mjs
+     437/437). The graph MCP is not visible under strict MCP (mcp_servers: teams only). AC-8's files are the 10
+     including test-node-env.mjs; no version bump. The real-L cost compared to E-258fa3e5 (with the
+     card 129 Sprint) stays open.
    - The original card follows for reference.
    - Why: E-258fa3e5 (cards 128 + 125 leftovers, opened 2026-11-05 09:25) cost $14.4 over 28 sessions
      before shape started (planning only). Again 2026-11-05: E-066abb46 (size S, Sonnet) spent $48.39 of a
