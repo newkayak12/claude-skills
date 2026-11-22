@@ -529,6 +529,16 @@ test('claims: a page citing results but carrying none of their figures is a prob
   assert.match(p.text, /820ms|210ms|12만건/)
 })
 
+test('claims: a figure under a draft or plan heading, or on a plan line, is never offered as a result', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-plan-'))
+  mkdirSync(join(root, 'sources', '01_이관'), { recursive: true })
+  writeFileSync(join(root, 'sources', '01_이관', 'A1_이관.md'),
+    '# 이관안을 바꿨다\n## 사실\n### 최초안 — RFC\n- 단계마다 25% 이관, 총 4주\n## 결과\n- 초안에는 50% 단계도 있었다\n- 운영 대조 2,138행 일치(98.1%)\n')
+  const r = claims('## 1 이관\n글감: 01_이관/A1\n병행 대조로 바꿨다.\n', readMaterial(root))
+  const p = r.problems.find(x => x.kind === 'no_figure')
+  assert.ok(p && /98\.1%/.test(p.text) && !/25%|50%|4주/.test(p.text), p && p.text)
+})
+
 test('claims: a figure 확정사실 rules out (struck, or in a clause saying not to use it) is never offered', () => {
   assert.deepEqual(bannedFigs('| ~~`2.7초`~~ → `0.33초 이내` | 0.33초는 최댓값. 4~10분과 전후 비교 금지 |').includes('0.33초'), false)
   assert.ok(bannedFigs('| ~~`2.7초`~~ → `0.33초 이내` | 0.33초는 최댓값. 4~10분과 전후 비교 금지 |').includes('2.7초'))

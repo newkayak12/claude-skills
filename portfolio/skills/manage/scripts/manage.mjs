@@ -845,8 +845,15 @@ export function readMaterial(root) {
     for (const f of ls(join(root, 'sources', p.name)).filter(e => e.isFile() && /^[ABC]\d+.*\.md$/.test(e.name))) {
       const text = read(join(root, 'sources', p.name, f.name))
       // a ledger has no result table: each line holding a figure is its row, `근거 없음` on that line marks it
-      const rows = text.split('\n').filter(l => figs(l).length)
-        .map(l => ({ figs: figs(l), evidence: /근거 없음/.test(l) ? '근거 없음' : l, label: /본인 확인/.test(l) ? '본인 확인' : '' }))
+      // each row keeps the heading it sits under: a figure under a draft, plan or rejected-option
+      // heading is the plan's, not an outcome (claims never offers it as a result)
+      let head = ''
+      const rows = []
+      for (const l of text.split('\n')) {
+        if (/^#{1,4}\s/.test(l)) { head = l; continue }
+        if (!figs(l).length) continue
+        rows.push({ figs: figs(l), evidence: /근거 없음/.test(l) ? '근거 없음' : l, label: /본인 확인/.test(l) ? '본인 확인' : '', head })
+      }
       const id = `${p.name.normalize('NFC')}/${f.name.match(/^[A-Z]\d+/)[0]}`
       items.set(id, { id, text, rows, cited: false })
     }
@@ -1013,7 +1020,10 @@ export function claims(text, items, settledLines = [], sel = null, confirmed = [
     const weight = f => (/%|\/|배/.test(f) ? 4 : 0) + (Number(f.replace(/[^\d.]/g, '')) >= 100 ? 2 : 0) + (/초|분|ms/.test(f) ? 1 : 0)
     // never offer a figure 확정사실 rules out (2026-11-22: "4~10분" went on a page the facts ban it from)
     const banned = new Set(confirmed.flatMap(c => c.banned || []))
-    const offer = ground.flatMap(it => it.rows.filter(r => !/근거 없음/.test(r.evidence)).flatMap(r => r.figs.filter(f => !banned.has(f)).map(f => ({ f, s: `${f} (${it.id})` }))))
+    // a plan, draft or proposal line states no outcome (bench17 was offered a rejected rollout plan's
+    // 25/50/75% and a test loop's 10000회 as results, 2026-11-22)
+    const PLAN = /초안|최초안|계획|예정|목표|제안|후보|가정|대안|Draft|DRAFT|RFC|반복 횟수|회 반복|테스트 케이스|~~/
+    const offer = ground.flatMap(it => it.rows.filter(r => !/근거 없음/.test(r.evidence) && !PLAN.test(r.evidence) && !PLAN.test(r.head || '')).flatMap(r => r.figs.filter(f => !banned.has(f)).map(f => ({ f, s: `${f} (${it.id})` }))))
       .sort((a, b) => weight(b.f) - weight(a.f)).map(x => x.s)
     const pageFigs = p.body.flatMap(figs)
     if (offer.length && !pageFigs.length)
