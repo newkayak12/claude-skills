@@ -130,8 +130,9 @@ function ledgerItems() {
       out.push({
         id: `${p.name.normalize('NFC')}/${f.name.match(/^[ABC]\d+/)[0]}`,
         grade: f.name[0],
-        // the file opens with `> 등급 · 프로젝트 · 원자료: <path>`
-        header: /^>[^\n]*·[^\n]*·\s*원자료:\s*\S/.test(text.replace(/^\s+/, '')),
+        // the file opens with `> 등급 · 프로젝트 · 원자료: <path>`, under its `# title` when it has one
+        // (bench17: all 109 items carried it on line 3 and every one was listed noHeader)
+        header: /^>[^\n]*·[^\n]*·\s*원자료:\s*\S/.test(text.replace(/^\s+/, '').replace(/^#[ \t][^\n]*\n\s*/, '')),
         file,
         title: (text.match(/^#[ \t]+(.+)$/m) || [, f.name.normalize('NFC').replace(/\.md$/, '')])[1].trim(),
         written: /^- \d{4}-\d{2}-\d{2} .*\(status: written\b/m.test(text),

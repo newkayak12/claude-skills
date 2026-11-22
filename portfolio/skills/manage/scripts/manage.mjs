@@ -898,7 +898,9 @@ export function deckPages(text, readSvg = null) {
         continue
       }
       if (kv[1] === 'notes' || /^!drop$|\.(png|jpe?g|svg|gif)(\s*\|.*)?$/i.test(kv[2])) continue
-      if (kv[2]) out.push(kv[2])
+      // a slot whose whole value is a short label (`text6: 해결`, `text1: 문제`) is no sentence
+      // (bench17: a `해결` label slot raised to_confirm; only bare lines were filtered)
+      if (kv[2] && !/^[^\s\d:：.]{1,6}$/.test(kv[2].trim())) out.push(kv[2])
     } else if (l.trim()) out.push(l.trim().replace(/^[-|]\s*/, ''))
   }
   return out.join('\n')

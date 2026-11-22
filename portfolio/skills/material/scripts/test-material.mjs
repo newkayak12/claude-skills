@@ -547,13 +547,15 @@ test('ledger reports grade letters other than A/B/C, a missing header, X_ files 
   const d = path.join(cwd, 'sources', '01_가상검색');
   fs.writeFileSync(path.join(d, 'A1_검색개편.md'), '> A · 가상검색 · 원자료: analysis/01/retro.md\n\n# 검색 개편\n');
   fs.writeFileSync(path.join(d, 'D1_잘못.md'), '# 잘못된 등급\n');
+  // the header under the title line counts too
+  fs.writeFileSync(path.join(cwd, 'sources', '02_가상알림', 'B1_제목아래.md'), '# 알림 개편\n\n> 등급: B · 가상알림 · 원자료: analysis/02/a.md\n');
   fs.writeFileSync(path.join(d, 'X_쓰지않을것.md'), '# 쓰지 않을 것\n');
   fs.mkdirSync(path.join(cwd, 'analysis'));
   const before = snap(path.join(cwd, 'sources'));
   const r = run(cwd, ['ledger']).json;
   assert.deepEqual(snap(path.join(cwd, 'sources')), before);
-  assert.deepEqual(r.items.map((i) => i.id), ['01_가상검색/A1', '01_가상검색/A2', '02_가상알림/A1']);
-  assert.deepEqual(r.items.map((i) => [i.grade, i.header]), [['A', true], ['A', false], ['A', false]]);
+  assert.deepEqual(r.items.map((i) => i.id), ['01_가상검색/A1', '01_가상검색/A2', '02_가상알림/A1', '02_가상알림/B1']);
+  assert.deepEqual(r.items.map((i) => [i.grade, i.header]), [['A', true], ['A', false], ['A', false], ['B', true]]);
   assert.deepEqual(r.excluded, ['01_가상검색/X_쓰지않을것.md']);
   assert.equal(r.analysis, true);
   assert.deepEqual(r.problems.invalidGrade, ['01_가상검색/D1_잘못.md']);

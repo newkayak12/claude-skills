@@ -529,6 +529,12 @@ test('claims: a page citing results but carrying none of their figures is a prob
   assert.match(p.text, /820ms|210ms|12만건/)
 })
 
+test('claims on a deck: a slot holding only a short label (`text6: 해결`) is not read as a reason', () => {
+  const root = claimsWorkspace()
+  const deck = '---\ntemplate: t.pptx\n---\n\n## @s3 1쪽 · 글감: retro--검색-지연\ntext6: 해결\ntext7: 응답 시간 820ms → 210ms\n'
+  assert.deepEqual(claims(deckPages(deck), readMaterial(root)).problems, [])
+})
+
 test('claims: a figure under a draft or plan heading, or on a plan line, is never offered as a result', () => {
   const root = mkdtempSync(join(tmpdir(), 'manage-plan-'))
   mkdirSync(join(root, 'sources', '01_이관'), { recursive: true })
