@@ -9,14 +9,14 @@ never retire them as duplicates, and never reference superpowers.
 
 ### Codex plugin compatibility
 
-177. **teams wiki takes its root from Codex's per-call workspace** — in E-66cb76c8
+177. **teams wiki takes its root from Codex's per-call workspace** — E-66cb76c8 skipped it (budget); plan in that EPIC's PLAN-F4 PRD (open: does Codex send `_meta` on every call?)
    - Why: 2026-11-22, the teams MCP now starts in Codex with `"cwd": "."` (the plugin folder); `wiki.mjs`
      roots at `process.cwd()`, so under Codex the wiki would live in the plugin cache. Codex gives the
      session folder only per call in `_meta["x-codex-turn-metadata"].workspaces` (knowledge reads it the same way).
    - Acceptance: with no `--root`/`TEAMS_WIKI_ROOT`, a `wiki_*` call under Codex uses that workspace; a test
      red before the fix; teams tests with counts.
 
-173. **teams build nodes can run the commands their stories need (codex, node, python3, reads under ~/.codex)** — in E-66cb76c8 (cause found 2026-11-22: `claude-exec-adapter.mjs` runs workspace-write nodes under `acceptEdits` with no `--allowedTools Bash`, and the project settings have no allow rule)
+173. **teams build nodes can run the commands their stories need (codex, node, python3, reads under ~/.codex)** — fix shipped in E-66cb76c8 (workspace-write nodes get `--allowedTools Bash`; a project deny rule still wins). Left: the live size-S run below, and QA for E-66cb76c8 F1–F3 (none ran).
    - Why: E-f8f880f9 report, 2026-11-22: every draft/implement/test node got "This command requires
      approval" for `codex`, `python3`, `node`, reads under `~/.codex`, once `git`, while review and shape
      nodes ran `codex --version` fine. No package could verify anything; retries spent the budget
@@ -344,7 +344,7 @@ Order (user, 2026-11-06: "125, 130, 129 128순으로"): 125 → 130 → 129 → 
 Next follow-up after E-f8f880f9 (user, 2026-11-21: "171 -> 170 -> 169 순으로 다음 FU"): 171 → 170 → 169 (173 belongs with them: it blocked E-f8f880f9; then 172),
 ahead of the order above.
 
-169. **teams reaches an installed Codex from inside a driver, or says why not** — in E-66cb76c8
+169. **teams reaches an installed Codex from inside a driver, or says why not** — E-66cb76c8 skipped it (budget); plan in that EPIC's PLAN-F2 PRD (`.teams_output/team/E-66cb76c8/10-prd.md`)
    - Why: 2026-11-21, E-f8f880f9 (PLAN-F1 worktree, `.teams_output/broker/probe-codex-read-only.json`):
      with `vendor: "auto"` the probe found `codex-cli 0.170.0` but its smoke printed
      `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted` and no ready token, so it was
@@ -357,26 +357,6 @@ ahead of the order above.
    - Acceptance: in a teams driver the probe reaches Codex and a size-S run shows a node on the codex
      vendor; where the environment truly forbids it, `tm_status` names the cause (the bwrap line), not
      only "unreachable". `node --test teams/scripts/test-*.mjs` with counts.
-
-170. **plan node accepts a JSON reply that a sentence of prose precedes** — in E-66cb76c8
-   - Why: 2026-11-21, E-f8f880f9 `dispatch:PLAN-F2:1` failed ("child run ended blocked … plan: adapter
-     exit 1"). The plan node's `result.json` has `verification_error` equal to its `last_message`:
-     "I've read the overlays, hooks and tests in the tree, and I'm returning the plan JSON now.\n\n{\"plan\": …".
-     The JSON was there; one lead-in sentence failed the parse and cost a whole second dispatch.
-     User: "실패한 것도 backlog로 올려라 말도 안된다".
-   - Acceptance: a test where a node's last message is prose + a valid JSON object passes verification
-     (or the node's prompt/output schema forbids the lead-in and a retry within the node fixes it, not a
-     new dispatch); `node --test teams/scripts/test-*.mjs` with counts.
-
-171. **A PLAN dispatch driver is respawned past `driver_restarts`** — in E-66cb76c8
-   - Why: 2026-11-21, E-f8f880f9 with `driver_restarts: 2`: `dispatch_PLAN-F1_1`, `PLAN-F2_2` and
-     `PLAN-F3_1` each have `.restart1` … `.restart7` driver files, every `exit.json` `{"code":0}`, about
-     40–110 s apart; the daemon log has no "respawn" line. Either a clean exit is respawned without
-     counting, or the counter does not hold. Planning alone reached $17.8 of the $40 budget in 12 min.
-     Cause unverified. User: "실패한 것도 backlog로 올려라 말도 안된다".
-   - Acceptance: the cause named from the daemon code; a driver that exits 0 with its child run not
-     finished is either counted against `driver_restarts` or the reason it is not is logged in the
-     ledger; a test reproduces the 7-respawn sequence; teams tests with counts.
 
 125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality** — E-8faf33b9 blocked on a PRD merge bug (fixed `899dba47`); E-701e2856 (2026-11-07, $35.82) planned
    it again (5 cards 88–94, plan-integrate accepted) and stopped partial at shape:3 (see card 129). Now one
