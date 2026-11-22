@@ -382,7 +382,7 @@ ahead of the order above.
    at 190/110 en/ko in `tmp/card125/renders-fix/` (52) approved (user, 2026-11-11: "고").
    KR header, one waiting-on-you wording, EPIC report result/gate and FLOOR counts shipped `ea091543`
    (E-ef381b6b, gate 91; renders in `tmp/card125/renders-leftovers/` approved, user 2026-11-18: "3다 완료").
-   Still to do: with every task done or cleaned the HOME page says "Loading..." forever instead of "no run" (`teams/hooks/mod.tsx` ~1031, `listed` empty while `id` is set; seen 2026-11-22); the close command answering `pane opened` (did not reproduce live in
+   Still to do: the close command answering `pane opened` (did not reproduce live in
    E-bcc5a0fe, two-copies cause ruled out under `--plugin-dir`; cause unknown, watch for it on the installed
    build); the host still draws a bare ⏎ after the keys Input outside answer mode (host behaviour, room kept
    for it); a look in the Claude app or Desktop; README/KOR shots with the batch bump.

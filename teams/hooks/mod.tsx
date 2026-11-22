@@ -18,8 +18,9 @@ const summary = atom({ plugin: 'teams', key: 'summary' } as const, null as Summa
 const teams = atom({ plugin: 'teams', key: 'teams' } as const, null as TeamsView | null)
 const dash = atom({ plugin: 'teams', key: 'dash' } as const, null as Dash | null)
 const watch = atom({ plugin: 'teams', key: 'watch' } as const, [] as string[])
-// every listed EPIC (live first, then stalled), the ids of the tick before, and the one the data call is for
-const tasks = atom({ plugin: 'teams', key: 'tasks' } as const, [] as SummaryTaskEntry[])
+// every listed EPIC (live first, then stalled), the ids of the tick before, and the one the data call is for;
+// null until the first listing call answers (an empty array is a listing with no EPIC)
+const tasks = atom({ plugin: 'teams', key: 'tasks' } as const, null as SummaryTaskEntry[] | null)
 const taskIds = atom({ plugin: 'teams', key: 'taskIds' } as const, [] as string[])
 const epic = atom({ plugin: 'teams', key: 'epic' } as const, null as string | null)
 // the page stack (pane.ts PageNav): the page, the page ANSWER came from, the row id and scroll offset per level, the ended EPICs
@@ -618,7 +619,7 @@ export const register: Register = on => {
       if ((await $.session.surfaces()).length === 0) return false
       if (!(await $.ui.panes()).some(p => p.id === PANE)) return false
       const id = await paneTask($)
-      return (await read($, tasks)).find(t => t.task_id === id)?.workers.some(w => w.state === 'acting') ?? false
+      return ((await read($, tasks)) ?? []).find(t => t.task_id === id)?.workers.some(w => w.state === 'acting') ?? false
     }
     async function syncSpinner() {
       const go = await wantsSpin()
@@ -844,7 +845,8 @@ export const register: Register = on => {
     const fixedWord = (key: string) => wo(`word${cap(key)}`, key)
     const say = (key: string, vars?: Record<string, string | number>) => s(key as keyof typeof en, vars)
     const id = await paneTask($)
-    const listed = await read($, tasks)
+    const fetched = await read($, tasks)
+    const listed = fetched ?? []
     const inner = Math.max(20, (e.props.bodyColumns ?? 80) - 4)
     const compact = !carriesInput(e.surface)
     // the Input draws what it holds: every edit is stored, and a handled key stores '' so the host drops the whole
@@ -1028,7 +1030,7 @@ export const register: Register = on => {
       const room = inner - width('teams') - width(hd.right) - 4
       const left = compact ? '' : width([hd.epics, hd.drivers].filter(Boolean).join(' · ')) <= room ? [hd.epics, hd.drivers].filter(Boolean).join(' · ') : hd.epics
       const flagPicked = sel !== null && home.flags.some(f => f.id === sel)
-      body = listed.length === 0 ? <Text>{id === undefined ? s('noRun') : s('loading')}</Text> : (
+      body = listed.length === 0 ? <Text>{id !== undefined && fetched === null ? s('loading') : s('noRun')}</Text> : (
         <Box flexDirection="column">
           <Box>
             <Box flexShrink={0}><Text bold>teams</Text></Box>

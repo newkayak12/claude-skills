@@ -1553,6 +1553,33 @@ test('pane fallback: a task id with no summary yet draws Loading (regression gua
   expect(await shown(await pane($, 'terminal'))).toContain('Loading...')
 })
 
+test('pane fallback: a task id with no summary yet draws Loading (ko)', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  startWorld(on, 'korean')
+  uiWorld(on, { watch: ['abc'], status: stat() })
+  await start($)
+  const text = await shown(await pane($, 'terminal'))
+  expect(text).toContain(STRINGS.ko.loading)
+  expect(text).not.toContain(STRINGS.ko.noRun)
+})
+
+test('pane HOME: a fetched empty listing with a task id draws no run, not Loading (en, ko)', async ($, on) => {
+  const { seen } = await seeded($, on, { status: stat(), tasks: [], task: null }, 'terminal', undefined, { watch: ['abc'] })
+  let ui = await pane($, 'terminal')
+  expect(seen.store.get('tasks')).toEqual([])
+  for (const lang of ['en', 'ko'] as const) {
+    if (lang === 'ko') {
+      await ui.press({ key: 'lang' })
+      await ui.unmount()
+      ui = await pane($, 'terminal')
+    }
+    expect(seen.store.get('lang')).toBe(lang)
+    const text = visible(await ui.drawn())
+    expect(text).toContain(STRINGS[lang].noRun)
+    expect(text).not.toContain(STRINGS[lang].loading)
+  }
+})
+
 // ---- layout: what shrinks and what never gets cut ----
 const LONG = 'x'.repeat(200)
 
