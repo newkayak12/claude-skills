@@ -141,7 +141,11 @@ snapshot/  sources/  docs/확정사실.md               버전, 글감, 확정�
 바꾸고, CLAUDE.md를 포함해 없는 것만 만들며, 있는 파일은 덮지 않습니다. 이미 있는 CLAUDE.md(이름을 바꾼
 README 포함)는 내용을 그대로 두고 안내문을 한 번만 뒤에 덧붙입니다.
 
-9단계(3.2.16: Codex — Claude 전용 trophy 시작 훅이 Codex에서 더 이상 돌지 않음(Codex가 args를 버리고 맨 `sh`에 훅 JSON을 넘겨 exit 127); Codex overlay(`.codex-plugin/`, `hooks/codex.json`)를 함께 배포; 3.2.15: `render`가 렌더한 결과로 검수 — PDF에서 3줄 넘게 나온 글머리표(`long`), 미리보기 이미지에서 템플릿 원본 쪽은
+9단계(3.2.17: 사용자 덱·사용자 리뷰 기준의 전체 sandbox 빌드 반영 — 글감은 항목마다 네 질문(본인에게 이득·보이는 강점·
+측정값·정성 평가)으로 고르고, 본문 장은 측정된 결과가 있어야 하며 결과 없는 프로젝트·설계 문서는 부록(지난 덱 분량 유지)으로;
+claims는 결과 수치만 제안(금지·계획·초안 수치 제외)하고 그림 SVG 글자도 원자료와 대조하며 결과를 인용하고 숫자가 없는 쪽을 잡음;
+check는 템플릿의 대안 칸 둘을 다 채우면 오류, 선이 라벨을 지나면 경고; 도식 형태는 내용에 맞게; 기술 스택은 기술만;
+sync가 deck 원본을 만듦; build가 각주 번호 중복·한 항목 대시·새 그림을 가리던 템플릿 SVG를 고침; 3.2.16: Codex — Claude 전용 trophy 시작 훅이 Codex에서 더 이상 돌지 않음(Codex가 args를 버리고 맨 `sh`에 훅 JSON을 넘겨 exit 127); Codex overlay(`.codex-plugin/`, `hooks/codex.json`)를 함께 배포; 3.2.15: `render`가 렌더한 결과로 검수 — PDF에서 3줄 넘게 나온 글머리표(`long`), 미리보기 이미지에서 템플릿 원본 쪽은
 비어 있는데 안전 영역 밖에 그려진 그림·도형(`edge`); 둘 다 build/render.txt로 render-review에 넘어감; 3.2.14: 관점 검토에서만 잡히던 것을 `check`가 render 전에 짚음 — 절을 여럿 이은 글머리표, 3쪽 넘게 되풀이된
 문장(수동태는 따로 표시), `style/표기규칙.md`의 새 `## 용어` 표가 쓰지 말라는 말; 표의 행은 render-review가 제안; 3.2.13: render-review가 적힌 대로 돎 — 안전 영역을 여백 표에서도 읽고, 아래 띠의 쪽 번호·각주는 제외(여백 위반
 117 → 3), `office_render.py text`가 쪽별 글을 쓰고, `deck.py render`가 build/render.txt를 남김; `check`가 `slot: !keep`을
