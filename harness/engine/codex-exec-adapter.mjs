@@ -294,6 +294,26 @@ function probeWrite() {
   };
 }
 
+// The one line that says why a failed smoke failed: skips the echoed prompt, banners and hook
+// chatter; a usage-limit line wins (same pattern as capacityNotice in mcp/routing.mjs, inlined
+// so the adapter stays import-free), then an ERROR/refusal line. Never empty.
+export function smokeCause(probe) {
+  const lines = `${probe.stderr || ''}\n${probe.stdout || ''}`.split('\n').map(l => l.trim()).filter(Boolean);
+  const noise = l => /^(sandbox|hook|workdir|model|provider|approval|reasoning[ a-z]*|session id):/i.test(l)
+    || /^(user|codex|exec|-{4,}|OpenAI Codex\b.*)$/i.test(l) || /Reading additional input|Run the shell command|could not find bubblewrap/i.test(l);
+  const pool = lines.filter(l => !noise(l));
+  const usage = /(?:hit your (?:usage )?limit|usage_limit_reached|insufficient_quota|quota (?:exceeded|exhausted)|(?:usage|rate|token|credit) limit (?:has been )?(?:reached|exceeded)|out of (?:credits|tokens)|exceeded your current quota)/i;
+  const sandbox = /bwrap:|seatbelt|sandbox-exec|not permitted|permission denied|denied|sandbox (?:failure|error|failed)/i;
+  const auth = /\b40[13]\b|unauthorized|not logged in|login/i;
+  const line = pool.find(l => usage.test(l)) || pool.find(l => sandbox.test(l)) || pool.find(l => auth.test(l))
+    || pool.findLast(l => /^error\b/i.test(l));
+  if (line) return line.replace(/^\s*ERROR:\s*/i, '').slice(0, 300);
+  if (probe.error) return String(probe.error.message || probe.error).slice(0, 300);
+  if (probe.signal) return `killed by ${probe.signal}`;
+  if (probe.status) return `exit ${probe.status}`;
+  return 'exit 0 but the read token never came back';
+}
+
 function detectCodex() {
   const binary = codexVersion();
   if (!binary.ok) {
@@ -331,7 +351,8 @@ function detectCodex() {
   // The read-only smoke proves the CLI answers; it does NOT prove Codex can write.
   // Implement nodes are useless without writes, and a sandbox that cannot start still
   // exits 0, so probe an actual write under the sandbox Implement will really use.
-  const write = reachable ? probeWrite() : { ok: false, reason: 'codex unreachable', sandbox: opts.sandbox };
+  const cause = reachable ? '' : smokeCause(probe);
+  const write = reachable ? probeWrite() : { ok: false, reason: `codex unreachable: ${cause}`, sandbox: opts.sandbox };
   const ready = reachable && write.ok;
 
   writeReport({
@@ -354,6 +375,7 @@ function detectCodex() {
         stdout: probe.stdout || '',
         stderr: probe.stderr || '',
         error: probe.error ? String(probe.error.message || probe.error) : '',
+        cause,
       },
     },
   });

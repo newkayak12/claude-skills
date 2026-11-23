@@ -366,6 +366,7 @@ ahead of the order above.
    - Acceptance: in a teams driver the probe reaches Codex and a size-S run shows a node on the codex
      vendor; where the environment truly forbids it, `tm_status` names the cause (the bwrap line), not
      only "unreachable". `node --test teams/scripts/test-*.mjs` with counts.
+   - 2026-11-23 probe (driver-like env, CLAUDECODE=1 + HARNESS_CHILD_DRIVER=1, macOS seatbelt, codex-cli 0.166.0): read-only: codex unreachable: You’ve hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus), or try again at Dec 3rd, 2026 2:46 PM.; workspace-write: codex unreachable: You’ve hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus), or try again at Dec 3rd, 2026 2:46 PM. Cause naming shipped by run card-169-codex-reach. Codex-vendor-node half: partial, blocked by the usage limit until 2026-12-03 14:46.
 
 125. **teams retires the web viewer; `/teams-status` is the one live view, raised in quality** — E-8faf33b9 blocked on a PRD merge bug (fixed `899dba47`); E-701e2856 (2026-11-07, $35.82) planned
    it again (5 cards 88–94, plan-integrate accepted) and stopped partial at shape:3 (see card 129). Now one

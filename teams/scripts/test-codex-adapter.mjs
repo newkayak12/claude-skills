@@ -211,3 +211,92 @@ test('codex exec argv is unchanged without TEAMS_WIKI_ROOT or with --no-wiki; th
     assert.equal(JSON.parse(seen).includes('-c'), false);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+// Card 169: a failed Codex probe names its cause line, on both the teams and the harness adapter.
+// Fake `codex` under a tmp dir only; the real Codex is never touched.
+const HARNESS_ADAPTER = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'harness', 'engine', 'codex-exec-adapter.mjs');
+const SMOKE_PROMPT = 'Run the shell command `cat .codex-read-probe-x` and reply with exactly the text it prints. Do not guess.';
+
+// A codex whose `exec` prints `stderr` / `stdout` and exits `status`; `--version` answers.
+function fakeFailingCodex(dir, { stderr = '', stdout = '', status = 1 }) {
+  const bin = join(dir, 'bin');
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, 'codex'), `#!/usr/bin/env node
+const a = process.argv.slice(2);
+if (a.includes('--version')) { console.log('codex-cli 0.0.0'); process.exit(0); }
+process.stderr.write(${JSON.stringify(stderr)});
+process.stdout.write(${JSON.stringify(stdout)});
+process.exit(${status});
+`);
+  chmodSync(join(bin, 'codex'), 0o755);
+  return bin;
+}
+
+function detectWith(adapter, spec) {
+  const dir = mkdtempSync(join(tmpdir(), 'card169-'));
+  const savedPath = process.env.PATH;
+  try {
+    const bin = fakeFailingCodex(dir, spec);
+    process.env.PATH = `${bin}:${savedPath}`;
+    const out = join(dir, 'report.json');
+    spawnSync(process.execPath, [adapter, '--detect', '--cwd', dir, '--output', out],
+      { cwd: dir, encoding: 'utf8', env: process.env });
+    return JSON.parse(readFileSync(out, 'utf8'));
+  } finally { process.env.PATH = savedPath; rmSync(dir, { recursive: true, force: true }); }
+}
+
+const BANNER = `OpenAI Codex v0.0.0 (research preview)\n--------\nworkdir: /x\nmodel: gpt\nprovider: openai\napproval: never\nsandbox: read-only\nreasoning effort: none\nsession id: abc\n--------\nuser\n${SMOKE_PROMPT}\n`;
+
+for (const [name, adapter] of [['teams', ADAPTER], ['harness', HARNESS_ADAPTER]]) {
+  test(`card169: ${name} adapter names the bwrap line, not the banner, when the sandbox cannot start`, () => {
+    const report = detectWith(adapter, { stderr: `${BANNER}Reading additional input from stdin...\nbwrap: loopback: Failed RTM_NEWADDR: Operation not permitted\n` });
+    assert.equal(report.codex.reachable, false);
+    assert.match(report.codex.reason, /^codex unreachable: bwrap: loopback: Failed RTM_NEWADDR/);
+    assert.equal(report.codex.smoke.cause, report.codex.reason.replace(/^codex unreachable: /, ''));
+  });
+
+  test(`card169: ${name} adapter names the usage-limit line without ERROR: (curly apostrophe)`, () => {
+    const report = detectWith(adapter, { stderr: `${BANNER}ERROR: You’ve hit your usage limit. Upgrade to Pro or try again at Dec 3rd, 2026 2:46 PM.\n` });
+    assert.match(report.codex.reason, /hit your usage limit/);
+    assert.match(report.codex.reason, /Dec 3rd/);
+    assert.doesNotMatch(report.codex.reason, /ERROR:/);
+  });
+
+  test(`card169: ${name} adapter with no output and exit 1 says exactly "exit 1"`, () => {
+    const report = detectWith(adapter, { status: 1 });
+    assert.equal(report.codex.reason, 'codex unreachable: exit 1');
+  });
+
+  test(`card169: ${name} adapter skips the echoed prompt, banner and hook line to the 401 line`, () => {
+    const report = detectWith(adapter, { stderr: `${BANNER}hook: PostToolUse denied\nERROR: unexpected status 401 Unauthorized: bad key\n` });
+    assert.match(report.codex.smoke.cause, /^unexpected status 401 Unauthorized/);
+    assert.equal(report.codex.reason, `codex unreachable: ${report.codex.smoke.cause}`);
+  });
+
+  test(`card169: ${name} adapter caps a 500-char ERROR line at 300 chars`, () => {
+    const report = detectWith(adapter, { stderr: `ERROR: ${'x'.repeat(500)}\n` });
+    const n = (report.codex.smoke.cause || '').length;
+    assert.ok(n > 0 && n <= 300, String(n));
+  });
+
+  test(`card169: ${name} adapter names the missing read token when exit 0 prints nothing`, () => {
+    const report = detectWith(adapter, { status: 0 });
+    assert.equal(report.codex.reachable, false);
+    assert.match(report.codex.reason, /^codex unreachable: .*token/);
+  });
+
+  test(`card169: ${name} adapter prefers the bwrap line over an earlier 401 line`, () => {
+    const report = detectWith(adapter, { stderr: 'ERROR: unexpected status 401 Unauthorized\nbwrap: loopback: Failed RTM_NEWADDR: Operation not permitted\n' });
+    assert.match(report.codex.reason, /^codex unreachable: bwrap: loopback/);
+  });
+
+  test(`card169: ${name} adapter takes the last ERROR line of two`, () => {
+    const report = detectWith(adapter, { stderr: 'ERROR: first failure\nERROR: second failure\n' });
+    assert.equal(report.codex.reason, 'codex unreachable: second failure');
+  });
+
+  test(`card169: ${name} adapter names "Not logged in. Run codex login"`, () => {
+    const report = detectWith(adapter, { stderr: `${BANNER}Not logged in. Run codex login\n` });
+    assert.match(report.codex.reason, /^codex unreachable: Not logged in\. Run codex login/);
+  });
+}

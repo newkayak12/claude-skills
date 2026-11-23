@@ -286,10 +286,21 @@ export function serviceHarnessRun(task) {
   });
 }
 
+function fallbackProviders(run) {
+  if (run?.route !== 'fallback' || !run.run_dir) return null;
+  try {
+    const c = JSON.parse(readFileSync(join(run.run_dir, 'providers.json'), 'utf8')).codex;
+    if (!c || typeof c !== 'object') return null;
+    return { codex: { ready: c.ready, reachable: c.reachable, reason: String(c.reason ?? '').slice(0, 300) } };
+  } catch { return null; }
+}
+
 function harnessInfo(task) {
   const h = task.harness_run;
+  const providers = fallbackProviders(h.run);
   return {
     route: h.route || null, run: h.run || null, report_path: h.report_path, pointer: h.pointer,
+    ...(providers ? { providers } : {}),
     ...(h.driver ? { driver: { ...h.driver, alive: driverAlive(h.driver) } } : {}),
     ...(h.waiting_capacity ? { waiting_capacity: h.waiting_capacity } : {}),
     ...(h.refused_pointer ? { refused_pointer: h.refused_pointer } : {}),

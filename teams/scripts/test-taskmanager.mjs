@@ -12382,3 +12382,24 @@ test('card 127: tm_board and tm_status still list every EPIC when one task.json 
     assert.deepStrictEqual(rowOf(status.tasks, odd.task_id).name, 'untitled work');
   });
 });
+
+// Card 169: tm_status shows why the Codex vendor was not used, from the fallback run's providers.json.
+test('card169: a size-S fallback run with providers.json shows harness.providers.codex with the usage-limit reason', async () => {
+  await withSizeS(async ({ tm, cwd, root, task_id }) => {
+    const run = fallbackRunFixture(cwd, task_id);
+    writeFileSync(join(run.run_dir, 'providers.json'), JSON.stringify({ codex: { reachable: false, ready: false, reason: 'codex unreachable: You’ve hit your usage limit. Try again at Dec 3rd, 2026 2:46 PM.' } }));
+    writePointer(root, task_id, run);
+    const st = await tm.call('tm_status', { task_id });
+    assert.equal(st.harness.providers.codex.reachable, false);
+    assert.match(st.harness.providers.codex.reason, /usage limit/);
+  });
+});
+
+test('card169 guard: a size-S fallback run without providers.json has no harness.providers', async () => {
+  await withSizeS(async ({ tm, cwd, root, task_id }) => {
+    writePointer(root, task_id, fallbackRunFixture(cwd, task_id));
+    const st = await tm.call('tm_status', { task_id });
+    assert.equal(st.harness.route, 'fallback');
+    assert.equal('providers' in st.harness, false, JSON.stringify(st.harness));
+  });
+});

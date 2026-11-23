@@ -207,3 +207,44 @@ test('probe: an adapter that exits non-zero and writes nothing is not ready, wit
   assert.equal(r.ready, false);
   assert.match(r.reason, /adapter exit 2: boom/);
 }));
+
+// Card 169: probe() runs the real teams adapter against a fake `codex` (tmp dir, PATH restored).
+async function probeFakeCodex(stderr) {
+  const d = mkdtempSync(join(tmpdir(), 'card169-broker-'));
+  const savedPath = process.env.PATH;
+  const savedVendors = process.env.BROKER_VENDORS;
+  delete process.env.BROKER_VENDORS;
+  try {
+    const bin = join(d, 'bin');
+    mkdirSync(bin);
+    writeFileSync(join(bin, 'codex'), `#!/usr/bin/env node
+if (process.argv.includes('--version')) { console.log('codex-cli 0.0.0'); process.exit(0); }
+process.stderr.write(${JSON.stringify(stderr)});
+process.exit(1);
+`, { mode: 0o755 });
+    const cwd = join(d, 'proj');
+    mkdirSync(cwd);
+    process.env.PATH = `${bin}:${savedPath}`;
+    probeCache.clear();
+    return await probe('codex', loadVendors(cwd).codex, cwd, 'read-only');
+  } finally {
+    process.env.PATH = savedPath;
+    if (savedVendors === undefined) delete process.env.BROKER_VENDORS; else process.env.BROKER_VENDORS = savedVendors;
+    probeCache.clear();
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+
+test('card169: probe() names the bwrap cause for a codex whose sandbox cannot start', async () => {
+  const r = await probeFakeCodex('sandbox: read-only\nReading additional input from stdin...\nbwrap: loopback: Failed RTM_NEWADDR: Operation not permitted\n');
+  assert.equal(r.reachable, false);
+  assert.ok(!r.quota, JSON.stringify(r));
+  assert.match(r.reason, /^codex unreachable: bwrap: loopback/);
+});
+
+test('card169 guard: probe() reports a usage-limit refusal as quota with the limit line', async () => {
+  const r = await probeFakeCodex('ERROR: You’ve hit your usage limit. Try again at Dec 3rd, 2026 2:46 PM.\n');
+  assert.equal(r.reachable, false);
+  assert.equal(r.quota, true);
+  assert.match(r.reason, /^usage capacity exhausted at probe: .*hit your usage limit/);
+});
