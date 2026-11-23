@@ -230,6 +230,7 @@ function harnessTicketState(task) {
   const v = h.run ? harnessVerdict(h.run, task.goal_threshold) : null;
   if (v && v.finished) return v.accept ? 'DONE' : 'SETTLED';
   if ((!v || v.readable === false) && h.finished_at) return h.accepted === false ? 'SETTLED' : 'DONE';
+  if (task.budget_stopped && task.budget_stopped.harness_killed) return 'SETTLED';
   if (h.exhausted) return 'BLOCKED';
   return h.run ? 'IN_PROGRESS' : 'READY';
 }

@@ -278,6 +278,12 @@ export function harnessState(task) {
     if (h.accepted !== false && !scopeWhy) return { state: 'complete', counts: {} };
     return { state: 'partial', partial: true, partial_reasons: [...(h.accepted !== false ? [] : ['the harness goal gate did not accept']), ...(scopeWhy ? [scopeWhy] : [])], counts: {} };
   }
+  // budget_usd/timebox ended the run before its goal gate: settled, not blocked and not running.
+  const bs = task.budget_stopped;
+  if (bs && bs.harness_killed && !(h.driver && driverAlive(h.driver))) {
+    const cap = [bs.budget_usd != null ? `budget $${bs.budget_usd}` : null, bs.timebox_minutes != null ? `timebox ${bs.timebox_minutes}m` : null].filter(Boolean).join(', ');
+    return { state: 'partial', partial: true, partial_reasons: [`budget_usd/timebox stopped the run at $${Number(bs.spend || 0).toFixed(2)} (${cap}); its driver was stopped before the goal gate finished`], counts: {} };
+  }
   if (h.stuck && !(h.driver && driverAlive(h.driver))) {
     return { state: 'blocked', counts: {}, reason: `${h.stuck.node} node failed (${h.stuck.reason}); retry it with tm_retry or graph_retry node_id=${h.stuck.node}` };
   }

@@ -249,13 +249,14 @@ function settleHarnessDriverAtStop(task, status) {
   const elapsedMinutes = (Date.now() - task.budget_stopped.at) / 60000;
   const spendSinceStop = Math.max(0, (status.spend || 0) - (task.budget_stopped.spend || 0));
   if (elapsedMinutes < graceMinutes && (graceUsd == null || spendSinceStop < graceUsd)) return false;
-  if (!h.driver || !h.driver.pid || !killDriver(h.driver)) return false;
+  // A driver already dead or never spawned is settled too: a stopped box never respawns it, so
+  // leaving it unmarked would read "running" forever. harness_killed is the one marker the
+  // state, report and board read.
+  const killed = !!(h.driver && h.driver.pid && killDriver(h.driver));
   task.budget_stopped.harness_killed = true;
-  h.exhausted = true;
-  h.stuck = { node: 'harness_run', reason: 'budget grace exhausted', at: Date.now() };
   record(task, {
     event: 'budget_killed', task_id: task.run_id, node_id: 'S', reason: `skipped: budget grace exhausted (${Math.round(elapsedMinutes)}m / ${graceMinutes}m, $${spendSinceStop.toFixed(2)}${graceUsd != null ? ` / $${graceUsd.toFixed(2)}` : ''} since budget_stopped)`,
-    spend_at_kill: status.spend, killed_driver: true, pid: h.driver.pid,
+    spend_at_kill: status.spend, killed_driver: killed, pid: (h.driver && h.driver.pid) || null,
   });
   return true;
 }

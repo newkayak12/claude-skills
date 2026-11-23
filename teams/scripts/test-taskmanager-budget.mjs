@@ -10,6 +10,7 @@ import * as facade from '../mcp/taskmanager.mjs';
 import * as mod from '../mcp/taskmanager-budget.mjs';
 import { renderHarnessReport } from '../mcp/docs.mjs';
 import { unfinishedWork } from '../mcp/taskstate.mjs';
+import { epicTicketState } from '../mcp/tickets.mjs';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -281,6 +282,134 @@ test('daemon tick: a size-S run inside grace is not killed', async () => {
   const r = await daemonTickCase({ agoMin: 0, graceUsd: 1e9 });
   assert.equal(r.alive, true);
   assert.equal(r.killed, 0);
+});
+
+// ---------- a budget-stopped size-S run ends partial, not blocked, running or complete ----------
+
+// withTask for a body that awaits (the driver's death is a signal, not a return value).
+async function withTaskAsync(fn, { stream, opts = {} } = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'budget-s-end-'));
+  const was = process.env.HARNESS_TASKS_DIR;
+  process.env.HARNESS_TASKS_DIR = root;
+  try {
+    const dir = join(root, 'T1');
+    mkdirSync(join(dir, 'drivers'), { recursive: true });
+    if (stream) writeFileSync(join(dir, 'drivers', 'S.stream.jsonl'), stream);
+    writeFileSync(join(dir, 'ledger.jsonl'), '');
+    const task = { run_id: 'T1', cwd: root, nodes: [], created_at: Date.now() - 600000, team: { opts } };
+    return await fn({ task, dir });
+  } finally {
+    if (was === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = was;
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+const until = async (cond, ms = 5000) => {
+  for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 50))) if (cond()) return true;
+  return cond();
+};
+const gone = (pid) => { try { process.kill(pid, 0); return false; } catch { return true; } };
+const over = JSON.stringify({ type: 'result', total_cost_usd: 2, num_turns: 1, duration_ms: 1 }) + '\n';
+const killedEvents = (dir) => ledgerOf(dir).filter((e) => e.event === 'budget_killed' && e.node_id === 'S');
+
+test('size-S spend crossing budget_usd: driver killed, task partial with a budget reason, report and ticket say so', async () => {
+  await withTaskAsync(async ({ dir, task }) => {
+    const driver = liveDriver();
+    task.harness_run = { driver, cwd: dir, opened_at: Date.now() - 600000, run: null, report_path: join(dir, 'none.md') };
+    try {
+      mod.enforceBudget(task);
+      const evs = ledgerOf(dir);
+      assert.ok(evs.some((e) => e.event === 'budget_stopped' && e.spend === 2));
+      const k = killedEvents(dir);
+      assert.equal(k.length, 1);
+      assert.equal(k[0].pid, driver.pid);
+      assert.equal(k[0].killed_driver, true);
+      assert.ok(k[0].reason && k[0].spend_at_kill === 2);
+      assert.ok(await until(() => gone(driver.pid)), 'driver still alive');
+      const st = facade.taskState(task);
+      assert.equal(st.state, 'partial');
+      assert.match(st.partial_reasons.join('\n'), /budget/);
+      const report = renderHarnessReport(task);
+      assert.match(report, /budget stopped/);
+      assert.match(report, /PARTIAL/);
+      assert.doesNotMatch(report, /restart budget|tm_retry/);
+      assert.equal(epicTicketState(task), 'SETTLED');
+    } finally {
+      try { process.kill(-driver.pid, 'SIGKILL'); } catch {}
+    }
+  }, { stream: over, opts: { budget_usd: 1, budget_grace_minutes: 0 } });
+});
+
+test('size-S past grace with an exited pid, no driver, or a parked run: settled partial, one budget_killed killed_driver:false', async () => {
+  const exited = spawn('true', [], { stdio: 'ignore' });
+  await new Promise((r) => exited.on('exit', r));
+  const cases = [
+    { driver: { pid: exited.pid } },
+    { driver: null },
+    { driver: null, waiting_capacity: { reason: 'usage limit' } },
+  ];
+  for (const c of cases) {
+    await withTaskAsync(async ({ dir, task }) => {
+      task.harness_run = { ...c, cwd: dir, opened_at: Date.now() - 600000, run: null };
+      mod.enforceBudget(task);
+      mod.enforceBudget(task);
+      assert.equal(task.budget_stopped.harness_killed, true);
+      const k = killedEvents(dir);
+      assert.equal(k.length, 1);
+      assert.equal(k[0].killed_driver, false);
+      assert.equal(k[0].pid, c.driver ? exited.pid : null);
+      assert.equal(facade.taskState(task).state, 'partial');
+    }, { stream: over, opts: { budget_usd: 1, budget_grace_minutes: 0 } });
+  }
+});
+
+test('size-S run finished and accepted while harness_killed is set: still complete / DONE, report notes the stop', async () => {
+  await withTaskAsync(async ({ dir, task }) => {
+    const reportPath = join(dir, 'harness-report.md');
+    writeFileSync(reportPath, '# harness report\n');
+    const runDir = join(dir, 'run');
+    mkdirSync(runDir);
+    writeFileSync(join(runDir, 'manifest.json'), JSON.stringify({ teams_task: 'T1' }));
+    writeFileSync(join(runDir, '04-goal-gate.json'), JSON.stringify({ pass: true, match_pct: 95 }));
+    writeFileSync(join(runDir, '05-report.md'), '# done\n');
+    task.harness_run = { driver: null, cwd: dir, opened_at: Date.now() - 600000, run: { route: 'fallback', run_dir: runDir }, report_path: reportPath };
+    task.budget_stopped = { at: Date.now() - 600000, spend: 2, budget_usd: 1, harness_killed: true };
+    assert.equal(facade.taskState(task).state, 'complete');
+    assert.equal(epicTicketState(task), 'DONE');
+    assert.match(renderHarnessReport(task), /budget_stopped fired at \$2\.00/);
+  }, { opts: { budget_usd: 1 } });
+});
+
+// The daemon tick path past grace, polled instead of slept on (see daemonTickCase for the setup).
+test('daemon tick: a size-S run past grace ends partial, with budget_killed in the ledger', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'budget-s-tick-'));
+  const was = process.env.HARNESS_TASKS_DIR;
+  process.env.HARNESS_TASKS_DIR = root;
+  process.env.TEAMS_RUNS_DIR ??= 'off';
+  process.env.HARNESS_TEST_NO_DAEMON = '1';
+  const driver = liveDriver();
+  try {
+    const daemon = await import('../mcp/daemon.mjs');
+    const store = await import('../mcp/taskstate.mjs');
+    const id = '0000aaaa-eeee-ffff-0000-333333333333';
+    const dir = store.taskDir(id);
+    mkdirSync(join(dir, 'drivers'), { recursive: true });
+    writeFileSync(join(dir, 'drivers', 'S.stream.jsonl'), over);
+    writeFileSync(store.taskPath(id), JSON.stringify({
+      run_id: id, kind: 'task', store_path: store.taskPath(id), cwd: root, request: 'r', created_at: Date.now() - 3600000,
+      flow: 'develop', size: 'S', max_retries: 2, driver_restarts: 2, base_ref: null, nodes: [],
+      team: { opts: { budget_usd: 1, budget_grace_minutes: 5, budget_grace_usd: 1e9 } },
+      harness_run: { cwd: root, opened_at: Date.now() - 3600000, report_path: join(dir, 'none.md'), driver, run: null },
+      budget_stopped: { at: Date.now() - 10 * 60000, spend: 1.5, budget_usd: 1, skipped_packages: [] },
+    }));
+    for (let i = 0; i < 3; i++) await daemon.stepOnce(id);
+    assert.ok(await until(() => gone(driver.pid)), 'driver still alive');
+    assert.equal(killedEvents(dir).length, 1);
+    assert.equal(facade.taskState(JSON.parse(readFileSync(store.taskPath(id), 'utf8'))).state, 'partial');
+  } finally {
+    try { process.kill(-driver.pid, 'SIGKILL'); } catch {}
+    if (was === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = was;
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 // ---------- closeFailedPlanning: the deciding attempt (card 129, E-89982ed5) ----------

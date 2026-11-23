@@ -783,14 +783,19 @@ export function renderHarnessReport(task) {
   const h = task.harness_run;
   const v = harnessOutcome(task);
   const finished = !!(v && v.finished);
-  if (!finished && !h.exhausted) return null;
-  const st = finished ? (v.accept ? 'complete' : 'partial') : 'blocked';
-  const L = [frontmatter(epicKey(task.run_id), st === 'complete' ? 'DONE' : st.toUpperCase(), task), `# Report — size S on the development harness (${st})`, ''];
+  const bs = task.budget_stopped;
+  const killed = !!(bs && bs.harness_killed);
+  if (!finished && !h.exhausted && !killed) return null;
+  const st = finished ? (v.accept ? 'complete' : 'partial') : killed ? 'partial' : 'blocked';
+  const L = [frontmatter(epicKey(task.run_id), st === 'complete' ? 'DONE' : st.toUpperCase(), task), `# Report — size S on the development harness (${st}${!finished && killed ? ' — budget stopped' : ''})`, ''];
   let text = '';
   try { text = readFileSync(h.report_path, 'utf8').trim(); } catch { /* the driver did not copy it */ }
   if (!text && v) text = String(v.report_text || '').trim();
+  const stopAt = bs ? `$${Number(bs.spend || 0).toFixed(2)} (budget ${bs.budget_usd != null ? `$${bs.budget_usd}` : `timebox ${bs.timebox_minutes}m`})` : '';
   if (finished) L.push(text || '(the harness run wrote no report text)', '');
+  else if (killed) L.push(`budget_usd/timebox stopped this run at ${stopAt} before its goal gate finished; its driver was stopped. What it wrote is in ${h.cwd}, uncommitted; carry the rest to the next Sprint.`, '', ...(text ? [text, ''] : []));
   else L.push('The harness driver died past its restart budget before the run finished. tm_retry({task_id}) gives it a fresh driver on the same run.', '');
+  if (finished && bs) L.push(`budget_stopped fired at ${stopAt}; the run finished inside the grace.`, '');
   if (v && v.readable) {
     L.push('## Goal gate', '', `${v.accept ? 'accepted' : 'not accepted'}${v.match_pct != null ? ` at ${v.match_pct}` : ''}`);
     if ((v.gaps || []).length) L.push('', 'Gaps:', bullets(v.gaps));

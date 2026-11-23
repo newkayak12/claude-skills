@@ -601,6 +601,10 @@ ahead of the order above.
      437/437). The graph MCP is not visible under strict MCP (mcp_servers: teams only). AC-8's files are the 10
      including test-node-env.mjs; no version bump. The real-L cost compared to E-258fa3e5 (with the
      card 129 Sprint) stays open.
+   - Budget stop on a size-S run (E-7a639e5c): the S driver is stopped at the budget after the package
+     grace (D1-b); the task ends partial with a budget reason and a report saying so; a run finishing
+     inside the grace still reads complete, its report noting the stop. E-641429ea's $1.62 overshoot
+     was the 10%/5-min grace.
    - The original card follows for reference.
    - Why: E-258fa3e5 (cards 128 + 125 leftovers, opened 2026-11-05 09:25) cost $14.4 over 28 sessions
      before shape started (planning only). Again 2026-11-05: E-066abb46 (size S, Sonnet) spent $48.39 of a
@@ -625,9 +629,6 @@ ahead of the order above.
      - confirm `roles.planning: "auto"` ran the light PLAN chain when every request declared acceptance
        (E-258fa3e5 did); if not, fix and test;
      - a default `budget_usd` in this repo's `.claude/team.json` (today `null`);
-     - `budget_usd` also bounds a size-S run: E-1140cdb9 (S, budget $20, on Sonnet) spent $40.94 and
-       `budget_stopped` fired only at the end, since the stop only holds back new packages and S has
-       none; the S driver is stopped at the budget like a package, with a test;
      - node prompts point at file regions (line ranges, symbols) instead of whole large files where the
        stage allows;
      - one real L task's cost compared to E-258fa3e5's per-stage cost, numbers in the report.
