@@ -414,7 +414,25 @@ export function homeHeader(listed: readonly SummaryTaskEntry[], now: number, say
 
 // FLOOR: the six Phases of one EPIC, one row each: mark · number and name · elapsed · cost · who works · decisions · ⚑ and ⏸ counts.
 // Elapsed and cost are the ledger's per-Phase numbers (metrics.stages), counts come from the engine's phases[]; absent, blank.
+const STEP_ID = { plan: 'p:1', implement: 'p:2', test: 'p:2t', gate: 'p:5', report: 'p:6' } as const
 export function floorRows(t: SummaryTaskEntry, say: Say): PageRow[] {
+  // a size-S entry: its five steps (engine's `steps`), the running one reads `<stage> · k/n` from progress
+  if (t.steps !== undefined) {
+    const p = t.progress
+    return t.steps.map((st): PageRow => {
+      const name = say(`sgStage${cap(st.key)}`)
+      const label = st.state === 'running' && p?.key === 'sg' ? say('f2FloorStepOf', { stage: name, k: p.k, n: p.n }) : name
+      return {
+        id: STEP_ID[st.key], block: 'phase', ref: { type: 'phase', epic: t.task_id, phase: st.phase },
+        cells: [
+          ' ', MARK_ICON[st.state], label, st.state === 'pending' ? '–' : '', '',
+          st.key === 'report' ? say('f2FloorReportHint') : st.acting > 0 ? `${st.acting} ${say('wordActing')}` : '',
+          '', st.you > 0 ? `⚑ ${st.you}` : '', st.stalled > 0 ? `${ICON.stalled} ${st.stalled}` : '',
+        ],
+        tints: [undefined, MARK_TINT[st.state], undefined, 'dim', 'dim', 'dim', undefined, 'warning', 'error'],
+      }
+    })
+  }
   // role counts and `STORY n / subagent n` only where a Phase has package desks (stories > 0); the two cells exist on every row or none
   const desks = (t.phases ?? []).some(p => (p.stories ?? 0) > 0)
   return PHASE_KEYS.map((key, i): PageRow => {

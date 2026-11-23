@@ -72,7 +72,7 @@ const NUMBERS = ['attempt', 'max_attempts', 'judge', 'cost_usd', 'retry_cost_usd
 const numbersOf = (s) => (s ? Object.fromEntries(NUMBERS.map((k) => [k, s[k] ?? null])) : null);
 
 // `metrics` (summarize(model).metrics) is passed by a caller that already has it; else it is computed here.
-export function floorOf(model, facts = {}, { now = Date.now(), metrics: given = null, stage = null } = {}) {
+export function floorOf(model, facts = {}, { now = Date.now(), metrics: given = null, stage = null, steps = null } = {}) {
   const m = model;
   const numbers = new Map(((given || metrics(m, { now })).stories || []).map((s) => [s.id, s]));
   const stalled = m.state === 'stalled' || (m.ticket && m.ticket.state === 'stalled');
@@ -100,6 +100,8 @@ export function floorOf(model, facts = {}, { now = Date.now(), metrics: given = 
     });
   };
 
+  // a harness run's S desk works in the Phase of its running (else failed) step
+  const sStep = m.harness && Array.isArray(steps) ? (steps.find((s) => s.state === 'running') || steps.find((s) => s.state === 'failed')) : null;
   if (m.s_run || m.harness) {
     const id = 'S';
     const f = story(id);
@@ -108,7 +110,7 @@ export function floorOf(model, facts = {}, { now = Date.now(), metrics: given = 
     add(id, {
       key: epic, title: (m.ticket && m.ticket.title) || '', last_verdict: null, try: null, max: null,
       elapsed_ms: m.elapsed_ms ?? null, owner_key: epic,
-    }, f, mark, waiting, stage ?? 'build');
+    }, f, mark, waiting, sStep ? PHASES[sStep.phase - 1] : (stage ?? 'build'));
   } else {
     let plans = 0;
     for (const { c, state: mark, stage } of cardsOf(m)) {
@@ -131,7 +133,14 @@ export function floorOf(model, facts = {}, { now = Date.now(), metrics: given = 
   const judgeDoing = judge.live ? (judge.doing || '') : '';
   workers.push({ id: 'judge', phase: 'gate', state: judgeState, doing: judgeDoing, ...markOf(judgeState, judgeDoing) });
   const pkgIds = cardsOf(m).map((x) => String(x.c.id).split(':')[0]);
-  return { items, workers, handoffs: handoffs(facts.ledger, { limit: 5 }), phases: phaseCounts(workers), phase_handoffs: phaseHandoffs(facts.ledger, { pkgIds, limit: 5 }) };
+  // steps: the S worker's counts ride on the step it works in, 0 elsewhere
+  const sw = workers.find((w) => w.id === 'S');
+  const stepsOut = m.harness && Array.isArray(steps)
+    ? steps.map((s) => (s === sStep && sw
+      ? { ...s, acting: sw.state === 'acting' ? 1 : 0, you: sw.state === 'you' ? 1 : 0, stalled: sw.state === 'stalled' && Number.isInteger(sw.minutes) ? 1 : 0 }
+      : { ...s, acting: 0, you: 0, stalled: 0 }))
+    : null;
+  return { items, workers, ...(stepsOut ? { steps: stepsOut } : {}), handoffs: handoffs(facts.ledger, { limit: 5 }), phases: phaseCounts(workers), phase_handoffs: phaseHandoffs(facts.ledger, { pkgIds, limit: 5 }) };
 }
 
 // Per-Phase counts of the workers[] floorOf built, and nothing else: a stalled worker counts only with its

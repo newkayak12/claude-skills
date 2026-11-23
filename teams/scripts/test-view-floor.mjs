@@ -905,6 +905,95 @@ test('F2: a Phase counts its STORYs, their roles and open subagents; the judge a
   } finally { w.cleanup(); }
 });
 
+// A size-S task whose harness run is a fallback run dir: 5 subgoals, `passed` of them done, now.json
+// (stage) written last so it is live; `gate` ('pass'|'fail'|null) and `report` add 04-/05- files.
+function sFallback(w, { stage = 'test', passed = 2, gate = null, report = false, now = true } = {}) {
+  const s = sTask(w);
+  const dir = join(w.root, 'fb-run');
+  const taskPath = join(s.dir, 'task.json');
+  write(join(dir, 'manifest.json'), JSON.stringify({ teams_task: s.id }));
+  write(join(dir, '01-plan.md'), 'plan');
+  write(join(dir, '02-goal-spec.json'), JSON.stringify({ subgoals: [1, 2, 3, 4, 5].map((id) => ({ id: String(id) })) }));
+  for (let i = 1; i <= 5; i += 1) write(join(dir, 'subgoals', String(i), 'result.json'), JSON.stringify({ passed: i <= passed }));
+  if (gate) write(join(dir, '04-goal-gate.json'), JSON.stringify({ pass: gate === 'pass' }));
+  if (report) write(join(dir, '05-report.md'), 'report');
+  if (now) write(join(dir, 'now.json'), JSON.stringify({ stage, at: new Date(Date.now() + 60000).toISOString() }));
+  const task = JSON.parse(readFileSync(taskPath, 'utf8'));
+  task.harness_run.run = { route: 'fallback', run_dir: dir };
+  writeFileSync(taskPath, JSON.stringify(task));
+  return s;
+}
+const stepStates = (t) => t.steps.map((x) => `${x.key}:${x.state}`);
+
+test('S steps: a fallback run at stage test reads Test running, no Integrate/QA step, S worker in build', () => {
+  const w = world();
+  try {
+    sFallback(w, { stage: 'test' });
+    const t = summary(w).tasks[0];
+    assert.deepEqual(stepStates(t), ['plan:done', 'implement:done', 'test:running', 'gate:pending', 'report:pending']);
+    assert.deepEqual(t.progress, { key: 'sg', k: 3, n: 5, stage_key: 'test' });
+    assert.deepEqual(t.steps.map((x) => x.phase), [1, 2, 2, 5, 6]);
+    assert.deepEqual(t.steps.map((x) => x.acting), [0, 0, 1, 0, 0]);
+    assert.ok(t.steps.every((x) => x.you === 0 && x.stalled === 0));
+    assert.ok(!t.steps.some((x) => /integrate|qa/.test(x.key)));
+    assert.equal(t.workers.find((x) => x.id === 'S').phase, 'build');
+    assert.equal(t.phases.find((p) => p.key === 'build').acting, 1);
+  } finally { w.cleanup(); }
+});
+
+test('S steps: critique folds into plan; a passing gate is done; a failed gate is failed', () => {
+  const w = world();
+  try {
+    sFallback(w, { stage: 'critique', passed: 0 });
+    const t = summary(w).tasks[0];
+    assert.deepEqual(stepStates(t), ['plan:running', 'implement:pending', 'test:pending', 'gate:pending', 'report:pending']);
+    assert.equal(t.workers.find((x) => x.id === 'S').phase, 'plan');
+  } finally { w.cleanup(); }
+  const w2 = world();
+  try {
+    sFallback(w2, { stage: 'report', passed: 5, gate: 'pass' });
+    assert.deepEqual(stepStates(summary(w2).tasks[0]), ['plan:done', 'implement:done', 'test:done', 'gate:done', 'report:running']);
+  } finally { w2.cleanup(); }
+  const w3 = world();
+  try {
+    sFallback(w3, { passed: 5, gate: 'fail', now: false });
+    assert.deepEqual(stepStates(summary(w3).tasks[0]), ['plan:done', 'implement:done', 'test:done', 'gate:failed', 'report:pending']);
+  } finally { w3.cleanup(); }
+});
+
+test('S steps: a stale now.json puts the first step not done on running', () => {
+  const w = world();
+  try {
+    sFallback(w, { now: false });
+    assert.deepEqual(stepStates(summary(w).tasks[0]), ['plan:done', 'implement:running', 'test:pending', 'gate:pending', 'report:pending']);
+  } finally { w.cleanup(); }
+});
+
+test('S step_head: Test with k/n mid-run; Plan alone with no goal spec; Report when the task is complete', () => {
+  const w = world();
+  try {
+    sFallback(w, { stage: 'test' });
+    assert.deepEqual(summary(w).tasks[0].step_head, { key: 'test', k: 3, n: 5 });
+  } finally { w.cleanup(); }
+  const w2 = world();
+  try {
+    sFallback(w2, { stage: 'plan', passed: 0 });
+    rmSync(join(w2.root, 'fb-run', '02-goal-spec.json'));
+    const t = summary(w2).tasks[0];
+    assert.equal(t.progress, undefined);
+    assert.deepEqual(t.step_head, { key: 'plan' });
+  } finally { w2.cleanup(); }
+});
+
+test('S steps: an L task entry has no steps key', () => {
+  const w = world();
+  try {
+    lTask(w, { pkgs: [{ id: 'P1', streamAgeMs: 1000 }] });
+    const t = summary(w).tasks[0];
+    assert.equal('steps' in t, false);
+  } finally { w.cleanup(); }
+});
+
 test('floor source: no use of metrics.drivers.stalled or taskStalled', () => {
   const src = readFileSync(join(dirname(VIEW), 'lib', 'view-floor.mjs'), 'utf8');
   assert.ok(!/metrics\.drivers\.stalled|taskStalled/.test(src));

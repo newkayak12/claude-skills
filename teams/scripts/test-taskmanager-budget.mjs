@@ -15,7 +15,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
-import { FALLBACK_RATES, fallbackRate, collectTaskCosts, taskFigure, spendFigure, latestCostEvent } from '../mcp/drivercost.mjs';
+import { PRICES, priceOf, collectTaskCosts, taskFigure, spendFigure, latestCostEvent } from '../mcp/drivercost.mjs';
 
 const OWNED = [
   'taskSpend', 'taskElapsedMinutes', 'budgetStatus', 'closeFailedPlanning', 'enforceBudget',
@@ -44,11 +44,13 @@ test('budgetStatus: neither budget_usd nor timebox_minutes set is unlimited, nev
 // ---- card 125 F3-US-8: per-model pricing, one spend figure, durable cost events ----
 
 // A result-less session (the E-066abb46 shape): one Sonnet and one Opus message of equal size.
-const OUT = 100000; // output tokens per message = 5 * OUT input-token units
+// No finished session to calibrate from, so the default S uplift applies.
+const OUT = 100000; // output tokens per message: $2.00 on Opus, $1.00 on Sonnet
+const S_UPLIFT = 1.32;
 const assistant = (id, model) => JSON.stringify({ type: 'assistant', message: { id, model, usage: { output_tokens: OUT } } });
 const resultless = () => [JSON.stringify({ type: 'system', model: 'claude-opus-5-5' }), assistant('m1', 'claude-sonnet-5-5'), assistant('m2', 'claude-opus-5-5')].join('\n') + '\n';
-const opusOnly = 5 * OUT * 2 * FALLBACK_RATES['claude-opus-5-5'];
-const mixed = 5 * OUT * (FALLBACK_RATES['claude-opus-5-5'] + FALLBACK_RATES['claude-sonnet-5-5']);
+const opusOnly = OUT * (PRICES.opus.out / 1e6) * 2 * S_UPLIFT;
+const mixed = OUT * ((PRICES.opus.out + PRICES.sonnet.out) / 1e6) * S_UPLIFT;
 
 function withTask(fn, { stream = resultless(), opts = {}, ledger = [] } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'budget-f3-'));
@@ -202,15 +204,15 @@ test('spendFigure: an exact larger durable event wins; an estimated one never ra
   assert.equal(spendFigure({ cost_usd: 5, estimated_sessions: 1 }, null).estimated, true);
 });
 
-test('fallbackRate prices a dated or suffixed model id by its family; an unknown claude model takes the Opus rate', () => {
-  const opus = FALLBACK_RATES['claude-opus-5-5'];
-  const sonnet = FALLBACK_RATES['claude-sonnet-5-5'];
-  assert.equal(fallbackRate('claude-sonnet-5-5'), sonnet);
-  assert.equal(fallbackRate('claude-sonnet-5-5-20261001'), sonnet);
-  assert.equal(fallbackRate('claude-opus-5-5[1m]'), opus);
-  assert.equal(fallbackRate('claude-haiku-5-5'), opus);
-  assert.equal(fallbackRate('gpt-5'), null);
-  assert.equal(fallbackRate(undefined), null);
+test('priceOf prices a dated or suffixed model id by its family; an unknown claude model takes the Opus prices', () => {
+  const opus = PRICES.opus;
+  const sonnet = PRICES.sonnet;
+  assert.equal(priceOf('claude-sonnet-5-5'), sonnet);
+  assert.equal(priceOf('claude-sonnet-5-5-20261001'), sonnet);
+  assert.equal(priceOf('claude-opus-5-5[1m]'), opus);
+  assert.equal(priceOf('claude-haiku-5-5'), opus);
+  assert.equal(priceOf('gpt-5'), null);
+  assert.equal(priceOf(undefined), null);
   // end to end: a suffixed-id stream is priced like its plain-id twin, not 0
   const dated = [JSON.stringify({ type: 'system', model: 'claude-opus-5-5' }), assistant('m1', 'claude-sonnet-5-5-20261001'), assistant('m2', 'claude-opus-5-5[1m]')].join('\n') + '\n';
   withTask(({ dir, task }) => {

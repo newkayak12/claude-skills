@@ -42,7 +42,7 @@ function liveCount(root) {
   liveCounts.set(root, { at: Date.now(), n });
   return n;
 }
-import { STAGE_KEYS, stageOfNode, nodeState, mergeStates } from './view-stages.mjs';
+import { STAGE_KEYS, STEP_KEYS, stageOfNode, stepOfNode, nodeState, mergeStates } from './view-stages.mjs';
 // listTasks()'s card model speaks tickets.mjs's own vocabulary (EPIC key, ticket state, phase,
 // STORY rows) rather than inventing a second one - the same words tm_board and tm_ticket already
 // use, so a person moving between the index and those MCP tools never has to re-learn what
@@ -614,6 +614,35 @@ function harnessStages(run, loadRun = loadRunAt) {
   return STAGE_KEYS.map((key) => ({ key, state: mergeStates(by[key]) || 'pending' }));
 }
 
+// The size-S steps of one harness run (view-stages STEP_KEYS), beside harnessStages: a graph run's
+// nodes through stepOfNode; a fallback run's 01-plan.md / 02-* (plan), 04-goal-gate.json (gate),
+// 05-report.md (report) and the live now.json stage (sg.stage_key, setgoal/critique folded into
+// plan) as the running step. A step before one that has moved (done, running, failed) is done.
+function harnessSteps(run, sg, loadRun = loadRunAt) {
+  const by = Object.fromEntries(STEP_KEYS.map((k) => [k, []]));
+  if (run && run.route === 'graph') {
+    const g = loadRun(graphRunPath(run.cwd, run.run_id));
+    for (const n of (g && Array.isArray(g.nodes) ? g.nodes : [])) {
+      if (!n || n.state === 'skipped') continue;
+      const k = stepOfNode(n.node_id);
+      if (k) by[k].push(nodeState(n.state));
+    }
+  } else if (run && run.route === 'fallback') {
+    let names = [];
+    try { names = readdirSync(run.run_dir); } catch { /* run dir gone */ }
+    // plan is done once the goal spec exists (setgoal is part of plan); 01-plan.md alone is still plan
+    if (names.includes('02-goal-spec.json')) by.plan.push('done');
+    const gate = readJsonFile(join(run.run_dir, '04-goal-gate.json'));
+    if (gate) by.gate.push(gate.pass === true ? 'done' : 'failed');
+    if (names.includes('05-report.md')) by.report.push('done');
+    const live = sg && sg.stage_key ? stepOfNode(sg.stage_key) : null;
+    if (live) by[live] = ['running'];
+  }
+  const merged = STEP_KEYS.map((key) => mergeStates(by[key]) || 'pending');
+  const last = merged.findLastIndex((m) => m !== 'pending');
+  return STEP_KEYS.map((key, i) => ({ key, state: i < last && merged[i] === 'pending' ? 'done' : merged[i] }));
+}
+
 // A fallback run's own position, read-only: n subgoals in 02-goal-spec.json, k the 1-based place of
 // the first one without result.json passed:true (n when all passed), stage_key from now.json only
 // while it is live. The liveness rule is a copy of harness/engine/fallback-check.mjs (liveNow +
@@ -660,6 +689,7 @@ function collectHarness(task, taskId, tasksDir, loadRun = loadRunAt) {
   else if (!(h.waiting_capacity || !h.driver || (driver && driver.alive) || moving)
     && countedDriverRestarts(task, h.driver).length >= restartBudget(task)) state = 'blocked';
   const stages = harnessStages(run, loadRun);
+  const sg = fallbackProgress(run);
   const counts = { pending: 0, running: 0, done: 0, failed: 0 };
   for (const s of stages) counts[s.state] += 1;
   return {
@@ -667,7 +697,9 @@ function collectHarness(task, taskId, tasksDir, loadRun = loadRunAt) {
     harness: {
       slug: run ? (run.route === 'fallback' ? basename(run.run_dir) : run.run_id) : null, moving, driver, stages,
       // fallback route only: {k, n, stage_key?} from the run dir; null on the graph route or before a goal spec exists
-      sg: fallbackProgress(run),
+      sg,
+      // the size-S steps (plan/implement/test/gate/report) as [{key, state}]; view-summary applies the task's state to them
+      steps: harnessSteps(run, sg, loadRun),
       // the graph-route run's own file location (run_file in the floor summary); null on the fallback route
       graph: run && run.route === 'graph' ? { run_id: run.run_id, cwd: run.cwd } : null,
       // graph-route nodes parked on a person (the stage bar folds waiting into running)

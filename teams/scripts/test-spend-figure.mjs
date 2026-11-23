@@ -12,7 +12,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { collectTaskCosts, taskFigure } from '../mcp/drivercost.mjs';
+import { collectDriverCosts, collectTaskCosts, taskFigure } from '../mcp/drivercost.mjs';
 import { budgetStatus } from '../mcp/taskmanager-budget.mjs';
 import { toolBoard, toolStatus } from '../mcp/taskmanager-handlers.mjs';
 import { composeTaskPrompt } from '../mcp/taskmanager-prompts.mjs';
@@ -81,6 +81,57 @@ test('the pane model (state server cache -> view-collect) spends taskFigure spen
     assert.equal(m.cost.usd, budgetStatus(task).spend);
     assert.ok(m.cost.usd > LIVE);
   });
+});
+
+// The recorded two-model S stream of E-2c7e6a24 (opus and sonnet, main and subagent messages,
+// 14 result events: 11 at $5.5835, then 3 at $6.7512).
+const FIXTURE = readFileSync(fileURLToPath(new URL('./fixtures/s-stream-two-models.jsonl', import.meta.url)), 'utf8').trim().split('\n');
+const isResult = (l) => JSON.parse(l).type === 'result';
+const firstResult = FIXTURE.findIndex(isResult);
+const lastResults = FIXTURE.map((l, i) => (isResult(l) ? i : -1)).filter((i) => i >= 0).slice(-3);
+
+function priceStream(lines) {
+  const root = mkdtempSync(join(tmpdir(), 'spend-fixture-'));
+  try {
+    mkdirSync(join(root, 'T1', 'drivers'), { recursive: true });
+    writeFileSync(join(root, 'T1', 'drivers', 'S.stream.jsonl'), lines.join('\n') + '\n');
+    const c = collectDriverCosts(root);
+    return { usd: c.cost_usd, estimated: c.streams[0].estimated === true };
+  } finally { rmSync(root, { recursive: true, force: true }); }
+}
+const within = (got, want, pct) => assert.ok(Math.abs(got - want) / want <= pct, `${got} is not within ${pct * 100}% of ${want}`);
+
+test('recorded S stream: a stream cut after a mid-stream result reads the exact result plus a priced tail, within 5% of the next exact total', () => {
+  const r = priceStream(FIXTURE.slice(0, lastResults[0]));
+  assert.equal(r.estimated, true);
+  within(r.usd, 6.7512, 0.05);
+  assert.ok(r.usd > 5.5835, 'the tail is added to the exact result');
+});
+
+test('recorded S stream: with every result removed the default S uplift lands within 5% of the final total', () => {
+  const r = priceStream(FIXTURE.filter((l) => !isResult(l)));
+  assert.equal(r.estimated, true);
+  within(r.usd, 6.7512, 0.05);
+});
+
+test('recorded S stream: the lines before the first result land within 5% of that result', () => {
+  const r = priceStream(FIXTURE.slice(0, firstResult));
+  assert.equal(r.estimated, true);
+  within(r.usd, 5.5835, 0.05);
+});
+
+test('recorded S stream: subagent messages are counted, each message id once', () => {
+  const noResults = FIXTURE.filter((l) => !isResult(l));
+  const main = noResults.filter((l) => !JSON.parse(l).parent_tool_use_id);
+  assert.ok(priceStream(main).usd < priceStream(noResults).usd / 2);
+  const doubled = noResults.concat(noResults.filter((l) => JSON.parse(l).type === 'assistant'));
+  assert.equal(priceStream(doubled).usd, priceStream(noResults).usd);
+});
+
+test('recorded S stream: the full stream reads the exact total, not estimated', () => {
+  const r = priceStream(FIXTURE);
+  assert.equal(r.usd, 6.7512);
+  assert.equal(r.estimated, false);
 });
 
 test('no pane or status source reads collectTaskCosts directly', () => {

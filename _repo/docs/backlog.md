@@ -375,6 +375,14 @@ ahead of the order above.
    E-bcc5a0fe, two-copies cause ruled out under `--plugin-dir`; cause unknown, watch for it on the installed
    build); the host still draws a bare ⏎ after the keys Input outside answer mode (host behaviour, room kept
    for it); a look in the Claude app or Desktop; README/KOR shots with the batch bump.
+   Seen 2026-11-23 on E-2c7e6a24 (size S, harness fallback route): FLOOR showed Phase 2/6 Build with
+   Integrate/QA pending while the stage was test (user: "음.. 표기가 다른듯?", "표기가 다른것도 산출식도
+   잘못된것도 문제야"). Shipped here, unbumped: S steps and subgoal k/n labels (en/ko) on FLOOR, and a
+   per-message cost estimate. Correction history: the old estimate was +22% high on the recorded stream and
+   froze at a mid-stream result for -17% at the end (not underpriced, as the report guessed); the new
+   uplift 1.32 is unverified beyond that fixture (about ±8% spread on other S runs). Named leftovers: the
+   Phase page and HOME rail still draw six phases for an S task; graph-route steps have no fixture; the
+   demo renders (`tmp/card125/renders-S-floor/`) await the user's approval.
    - Why: user, 2026-11-04, after the 190/110 captures of card 105: "만약 된다면 view.mjs(web으로 보여주는 것)
      은 퇴역시켜도 될거 같아", "저 *-stats view만 더 퀄리티 높히면 될거 같고". Condition ("만약 된다면"): the
      pane handles several EPICs at once (`]`/`[` step EPIC, `j`/`k` STORY row, `g` open) — seen live with

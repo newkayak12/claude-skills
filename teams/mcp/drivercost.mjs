@@ -52,113 +52,139 @@ export function driverKey(root, p) {
   return m ? `${m[1]}/${m[2]}` : rel;
 }
 
-// A session's token use in input-token units (cache write 1.25x, cache read 0.1x, output 5x -
-// the ratios Claude pricing holds across models), summed over its assistant messages, each
-// message counted once at its last usage reading.
-export function usageUnitsByModel(streamPath) {
-  const out = new Map();
+// $/MTok per model family: in, out, cache read, cache write 5m, cache write 1h.
+// Source: fitted 2026-11-23 from modelUsage of 615 finished streams, max error 0.
+export const PRICES = {
+  opus: { in: 4, out: 20, cr: 0.2, cw5: 5, cw1h: 8 },
+  sonnet: { in: 2, out: 10, cr: 0.1, cw5: 2.5, cw1h: 4 },
+};
+
+// A dated or suffixed id (claude-sonnet-5-5-20261001, claude-opus-5-5[1m]) is priced by its family;
+// an unknown claude model takes the Opus prices; anything else has no price.
+export function priceOf(model) {
+  const m = String(model || '').toLowerCase();
+  if (m.includes('sonnet')) return PRICES.sonnet;
+  if (m.includes('opus') || m.includes('claude')) return PRICES.opus;
+  return null;
+}
+
+// usd(msg) = (in*p_in + out*p_out + cache_read*p_cr + cw_5m*p_cw5 + cw_1h*p_cw1h) / 1e6
+const usdOf = (u, p) => {
+  const cw1h = (u.cache_creation && u.cache_creation.ephemeral_1h_input_tokens) || 0;
+  const cw5 = (u.cache_creation && u.cache_creation.ephemeral_5m_input_tokens) ?? Math.max(0, (u.cache_creation_input_tokens || 0) - cw1h);
+  return ((u.input_tokens || 0) * p.in + (u.output_tokens || 0) * p.out + (u.cache_read_input_tokens || 0) * p.cr + cw5 * p.cw5 + cw1h * p.cw1h) / 1e6;
+};
+
+// One read of a stream: each assistant message.id once, at its last usage reading, with the line
+// where it first appeared (a message that started after the last result is in the tail), and the
+// result events with their lines. Subagent messages (parent_tool_use_id set) are counted.
+function readStream(streamPath) {
   const txt = read(streamPath);
-  if (!txt) return out;
-  const byMsg = new Map();
+  if (!txt) return null;
+  const msgs = new Map();
+  const results = [];
   let sysModel = null;
+  let n = 0;
   for (const line of txt.split('\n')) {
     if (!line.trim()) continue;
     let ev;
     try { ev = JSON.parse(line); } catch { continue; }
+    n += 1;
     if (ev.type === 'system' && ev.model && !sysModel) sysModel = ev.model;
-    if (ev.type === 'assistant' && ev.message && ev.message.id && ev.message.usage) byMsg.set(ev.message.id, { usage: ev.message.usage, model: ev.message.model || null });
+    if (ev.type === 'result') results.push({ ev, at: n });
+    if (ev.type === 'assistant' && ev.message && ev.message.id && ev.message.usage) {
+      const prev = msgs.get(ev.message.id);
+      msgs.set(ev.message.id, { usage: ev.message.usage, model: ev.message.model || sysModel || 'unknown', first: prev ? prev.first : n });
+    }
   }
-  for (const { usage: u, model } of byMsg.values()) {
-    const m = model || sysModel || 'unknown';
-    out.set(m, (out.get(m) || 0) + (u.input_tokens || 0) + 1.25 * (u.cache_creation_input_tokens || 0) + 0.1 * (u.cache_read_input_tokens || 0) + 5 * (u.output_tokens || 0));
+  return { msgs: [...msgs.values()], results, last: results.length ? results[results.length - 1] : null };
+}
+
+// Σ usd over messages, per model. `lenient` prices a model with no table price at the Opus prices
+// (calibration reads finished streams that way); strict leaves such a model uncounted.
+function usdByModel(msgs, lenient) {
+  const out = new Map();
+  for (const m of msgs) {
+    const p = priceOf(m.model) || (lenient ? PRICES.opus : null);
+    if (p) out.set(m.model, (out.get(m.model) || 0) + usdOf(m.usage, p));
   }
   return out;
 }
-
-export function usageUnits(streamPath) {
-  let units = 0;
-  for (const v of usageUnitsByModel(streamPath).values()) units += v;
-  return units;
-}
-
-// Used only when this task has no finished session to calibrate from yet (a PLAN team's first
-// session is often the only one for 40+ minutes). Measured 2026-09-26: dispatch sessions on
-// claude-opus-5-5 ran 5.2-5.7e-6 per unit across two runs. Keyed by model; any other model has
-// no fallback and stays uncounted until something finishes.
-// Per model, each assistant message priced at its own message.model. Sonnet entry: measured
-// 2026-11-07 from finished single-model sessions under ~/.harness/tasks (result event with
-// total_cost_usd / usageUnits): claude-sonnet-5-5 n=37, median 3.02e-6 (range 2.6e-6..5.8e-6);
-// the same pass over claude-opus-5-5 gave n=58, median 5.73e-6, so the 5.5e-6 entry stays.
-export const FALLBACK_RATES = { 'claude-opus-5-5': 5.5e-6, 'claude-sonnet-5-5': 3.0e-6 };
-
-// A dated or suffixed id (claude-sonnet-5-5-20261001, claude-opus-5-5[1m]) is priced by its family;
-// an unknown claude model takes the Opus rate; anything else stays uncounted.
-export function fallbackRate(model) {
-  const m = String(model || '').toLowerCase();
-  if (FALLBACK_RATES[model] != null) return FALLBACK_RATES[model];
-  for (const family of ['sonnet', 'opus']) {
-    if (m.includes(family)) return FALLBACK_RATES[`claude-${family}-5-5`];
-  }
-  return m.includes('claude') ? FALLBACK_RATES['claude-opus-5-5'] : null;
-}
-
-// Table price of a stream's units, per model; models absent from the table stay uncounted.
-function tablePrice(streamPath) {
-  let usd = 0; let units = 0;
-  for (const [m, u] of usageUnitsByModel(streamPath)) {
-    const r = fallbackRate(m);
-    if (r != null) { usd += u * r; units += u; }
-  }
-  return units > 0 ? usd : null;
-}
+const sum = (map) => { let t = 0; for (const v of map.values()) t += v; return t; };
 
 const median = (xs) => { const a = [...xs].sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : null; };
-const streamClass = (p) => (String(p).split(/[\\/]/).pop() || '').split('_')[0];
+const streamClass = (p) => (String(p).split(/[\\/]/).pop() || '').replace(/\.stream\.jsonl$/, '').split(/[_.]/)[0];
+
+// Medians of exact total_cost_usd / Σ usd(msg) over finished sessions, measured 2026-11-23 on
+// finished streams under ~/.harness/tasks: S 1.32 (n=34), dispatch 1.12 (n=404), judge 1.12 (n=144).
+// The stream's usage.output_tokens is a partial reading (thinking tokens are not in it), so a
+// stream priced at the table prices reads low by about this factor.
+const DEFAULT_UPLIFT = { S: 1.32, dispatch: 1.12, judge: 1.12, other: 1.2 };
 
 // The full account for everything under `root`: every driver stream, deduped, summed.
-// A session still running has no result event, so its cost used to read 0 until it ended - and
-// with execute stages running inside the package driver (vendor self), one package session is
-// most of a Sprint's spend: budget_usd could not see it until it was over. Such a session is now
-// ESTIMATED: its token units times the cost-per-unit of this task's own finished sessions of the
-// same kind (dispatch_/judge_; measured 5.2-5.7e-6 across dispatch sessions of two runs), marked
-// estimated. No finished session yet means no rate, and the running one stays uncounted.
+// A finished session (no assistant message after its last result event) reads exactly the
+// result's total_cost_usd. Any other session is ESTIMATED, so budget_usd sees it while it runs:
+//   no result yet:  sum over messages of usd(msg) * uplift(class)
+//   after a result: R.total_cost_usd + sum over the messages after R of usd(msg) * k_model,
+//                   k_model = R.modelUsage[model].costUSD / sum of usd(msg) up to R (else uplift(class))
+// uplift(class) = median of this task's finished sessions of the same class, else of all classes,
+// else DEFAULT_UPLIFT. On the recorded S stream (teams/scripts/fixtures/s-stream-two-models.jsonl)
+// the estimate is within 5% of the next exact total; that bar is shown on that stream only (the
+// default S uplift is a median that includes it).
 export function collectDriverCosts(root) {
   const paths = findDriverStreams(root).sort();
   const byKey = new Map();
   const running = [];
-  const rates = new Map();
+  const uplifts = new Map();
   for (const p of paths) {
-    const last = lastResultEvent(p);
-    if (!last) { running.push(p); continue; }
-    if (last.total_cost_usd > 0) {
-      const u = usageUnits(p);
-      if (u > 0) { const c = streamClass(p); rates.set(c, [...(rates.get(c) || []), last.total_cost_usd / u]); }
-    }
+    const s = readStream(p);
+    const last = s && s.last;
+    if (!last || s.msgs.some((m) => m.first > last.at)) { running.push({ p, s }); continue; }
+    const usd = sum(usdByModel(s.msgs, true));
+    if (last.ev.total_cost_usd > 0 && usd > 0) { const c = streamClass(p); uplifts.set(c, [...(uplifts.get(c) || []), last.ev.total_cost_usd / usd]); }
     const key = driverKey(root, p);
-    const cost = last.total_cost_usd || 0;
+    const cost = last.ev.total_cost_usd || 0;
     const prev = byKey.get(key);
     if (prev && prev.cost_usd >= cost) continue;
     byKey.set(key, {
       stream: p.startsWith(root) ? p.slice(root.length + 1) : p,
       path: p,
       cost_usd: cost,
-      turns: last.num_turns || 0,
-      duration_ms: last.duration_ms || 0,
-      is_error: !!last.is_error,
+      turns: last.ev.num_turns || 0,
+      duration_ms: last.ev.duration_ms || 0,
+      is_error: !!last.ev.is_error,
     });
   }
-  const allRates = [...rates.values()].flat();
-  for (const p of running) {
+  const allUplifts = [...uplifts.values()].flat();
+  for (const { p, s } of running) {
     const key = driverKey(root, p);
-    if (byKey.has(key)) continue;
-    const calibrated = median(rates.get(streamClass(p)) || []) ?? median(allRates);
-    const units = usageUnits(p);
-    const usd = calibrated != null ? units * calibrated : tablePrice(p);
-    if (usd == null || !units) continue;
+    if (!s || byKey.has(key)) continue;
+    const cls = streamClass(p);
+    const measured = median(uplifts.get(cls) || []) ?? median(allUplifts);
+    const uplift = measured ?? DEFAULT_UPLIFT[cls] ?? DEFAULT_UPLIFT.other;
+    const lenient = measured != null;
+    let base = 0;
+    const r = s.last && s.last.ev;
+    if (r) {
+      base = r.total_cost_usd || 0;
+      const upTo = usdByModel(s.msgs.filter((m) => m.first < s.last.at), lenient);
+      const tail = s.msgs.filter((m) => m.first > s.last.at);
+      const tailBy = usdByModel(tail, lenient);
+      let usd = 0;
+      for (const [model, v] of tailBy) {
+        const exact = r.modelUsage && r.modelUsage[model] && r.modelUsage[model].costUSD;
+        const k = exact > 0 && upTo.get(model) > 0 ? exact / upTo.get(model) : uplift;
+        usd += v * k;
+      }
+      base += usd;
+    } else {
+      base = sum(usdByModel(s.msgs, lenient)) * uplift;
+    }
+    if (!(base > 0)) continue;
     byKey.set(key, {
       stream: p.startsWith(root) ? p.slice(root.length + 1) : p,
-      path: p, cost_usd: +usd.toFixed(4), turns: 0, duration_ms: 0, is_error: false, estimated: true,
-      ...(calibrated == null ? { uncalibrated: true } : {}),
+      path: p, cost_usd: +base.toFixed(4), turns: r ? r.num_turns || 0 : 0, duration_ms: r ? r.duration_ms || 0 : 0, is_error: false, estimated: true,
+      ...(measured == null ? { uncalibrated: true } : {}),
     });
   }
   const sessions = [...byKey.values()];

@@ -4512,6 +4512,63 @@ test('card 125 leftovers demo renders', () => {
   for (const [name, lines] of last) console.log(`=== ${name} ===\n${lines.join('\n')}\n=== end ===`)
 })
 
+// ---- card 125: FLOOR of a size-S entry draws its five steps and a `Test · 3/5` header; a size-L entry keeps the six Phases. Fictional data. ----
+const S_STEPS = [
+  { key: 'plan', state: 'done', phase: 1 }, { key: 'implement', state: 'done', phase: 2 }, { key: 'test', state: 'running', phase: 2, acting: 1 },
+  { key: 'gate', state: 'pending', phase: 5 }, { key: 'report', state: 'pending', phase: 6 },
+].map(s => ({ acting: 0, you: 0, stalled: 0, ...s }))
+const S_FLOOR = (): Data => P_FIXTURE({
+  tasks: [epicOf('tA', 'E-5c1d7e20', [], {
+    title: 'Add export button', created_at: ago(14), cost: { usd: 1.2, turns: 12 }, harness: { slug: 'export', moving: true },
+    stages: P_STAGES.map(g => stage(g.key, 'pending')), steps: S_STEPS, progress: { key: 'sg', k: 3, n: 5, stage_key: 'test' }, step_head: { key: 'test', k: 3, n: 5 },
+  })],
+})
+const SFLOOR_SHOTS: { name: string; lines: string[] }[] = []
+for (const lang of [undefined, 'korean'] as const) {
+  for (const surface of SURFACES) {
+    for (const cols of [190, 110]) {
+      test(`S FLOOR ${lang ?? 'English'} on ${surface} at ${cols}: five step rows, Test 3/5 in the header, no Integrate or QA row`, async ($, on) => {
+        const ko = lang !== undefined
+        const { lines } = await homeLines($, on, cols, S_FLOOR(), surface, lang, { page: FLOOR_PAGE })
+        sound(lines, cols)
+        const text = lines.slice(0, -1).join('\n') // the footer's "Phase detail" key hint is not a row
+        const test_ =lines.find(l => l.includes(ko ? '테스트' : 'Test'))!
+        expect(test_).toContain('3/5')
+        expect(lines[0]).toContain(ko ? '테스트 · 3/5' : 'Test · 3/5')
+        expect(text).not.toMatch(/Integrate|QA|Build|Phase/)
+        for (const w of ko ? ['계획', '구현', '게이트', '보고'] : ['Plan', 'Implement', 'Gate', 'Report']) expect(text).toContain(w)
+        if (surface === 'terminal') SFLOOR_SHOTS.push({ name: `demo-sfloor${ko ? 'ko' : 'en'}-${cols}`, lines })
+      })
+    }
+  }
+  for (const [label, steps, head, en, kr] of [
+    ['plan stage, no goal spec', ['running', 'pending', 'pending', 'pending', 'pending'], { key: 'plan' }, 'Plan', '계획'],
+    ['finished run', ['done', 'done', 'done', 'done', 'done'], { key: 'report' }, 'Report', '보고'],
+  ] as const) {
+    test(`S FLOOR ${lang ?? 'English'}: ${label} heads with the step, never Phase n/6`, async ($, on) => {
+      const ko = lang !== undefined
+      const data = P_FIXTURE({ tasks: [epicOf('tA', 'E-5c1d7e20', [], {
+        title: 'Add export button', created_at: ago(14), cost: { usd: 1.2, turns: 12 }, harness: { slug: 'export', moving: true },
+        stages: P_STAGES.map(g => stage(g.key, 'pending')), step_head: head,
+        steps: S_STEPS.map((s, i) => ({ ...s, state: steps[i], acting: 0 })),
+      })] })
+      const { lines } = await homeLines($, on, 190, data, 'terminal', lang, { page: FLOOR_PAGE })
+      expect(lines[0]).toContain(ko ? kr : en)
+      expect(lines[0]).not.toMatch(/Phase|\d\/\d/)
+    })
+  }
+  test(`size-L FLOOR ${lang ?? 'English'} keeps Phase 2/6`, async ($, on) => {
+    const { lines } = await homeLines($, on, 190, P_FIXTURE(), 'terminal', lang, { page: FLOOR_PAGE })
+    expect(lines.join('\n')).toContain('Phase 2/6')
+  })
+}
+
+test('card 125 S floor demo renders', () => {
+  const last = new Map(SFLOOR_SHOTS.map(s => [s.name, s.lines]))
+  expect(last.size).toBe(4)
+  for (const [name, lines] of last) console.log(`=== ${name} ===\n${lines.join('\n')}\n=== end ===`)
+})
+
 // ---- card 126 (F1-US-6): the bus threads on the STORY page and the person's unread notice in the band. Fictional data. ----
 const THREAD_LONG = 'Use the fixtures on the integration branch and do not copy them into the package, because the schema freeze starts after the gate passes and a copy would drift'
 const THREADS_S2 = [

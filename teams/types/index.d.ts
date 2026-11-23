@@ -84,6 +84,12 @@ export type SummaryTaskEntry = SummaryTask & {
   items: SummaryItem[]; workers: SummaryWorker[]; handoffs: Handoff[]; phases?: PhaseCount[]
   // an S task's harness run (slug, moved lately); null for a package EPIC
   harness: { slug: string | null; moving: boolean } | null
+  // a size-S task's five steps in order (harness entries only; absent on a package EPIC); phase is the EPIC Phase the step sits in
+  steps?: { key: 'plan' | 'implement' | 'test' | 'gate' | 'report'; state: Mark; phase: 1 | 2 | 5 | 6; acting: number; you: number; stalled: number }[]
+  // the FLOOR header of a steps entry: running step (else last done, else plan), k/n only while running with a goal spec
+  step_head?: { key: 'plan' | 'implement' | 'test' | 'gate' | 'report'; k?: number; n?: number }
+  // the FLOOR header of a steps entry: running step (else last done, else plan), k/n only while running with a goal spec
+  step_head?: { key: 'plan' | 'implement' | 'test' | 'gate' | 'report'; k?: number; n?: number }
 }
 // `task` (the running task, or --task) stays as before; `tasks` is live newest-created first, then stalled
 export type SummaryOutput = { status: StatusInfo; tasks: SummaryTaskEntry[]; task: SummaryTask | null }

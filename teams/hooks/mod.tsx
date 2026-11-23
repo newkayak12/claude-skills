@@ -139,7 +139,7 @@ const en = {
   f2FootHome: 'w s move · d ⏎ open (EPIC → Floor · STORY → detail) · n next ⚑ · q close', f2FootFloor: 'w s move · d ⏎ Phase detail · a back · n next ⚑ · q close',
   f2FootStory: 'w s move · d ⏎ open · a back · n next ⚑ · q close', f2FootScroll: 'w s scroll · a back · n next ⚑ · q close',
   f2FootAnswer: 'Input mode: letters go in as typed · empty ⏎ cancel',
-  f2FloorPhaseOf: 'Phase {n}/6', f2FloorDecisionsN: 'decisions {n}', f2FloorReportHint: 'EPIC report opens here',
+  f2FloorPhaseOf: 'Phase {n}/6', f2FloorStepOf: '{stage} · {k}/{n}', f2FloorDecisionsN: 'decisions {n}', f2FloorReportHint: 'EPIC report opens here',
   f2FloorStoriesAgents: 'STORY {s} / subagent {a}', f2EpicVerdict: 'Verdict', f2EpicRunning: 'running', f2EpicStories: 'STORY {accepted}/{total}', f2EpicGate: 'gate {score}/{threshold}',
   // keys the engine sends beside its English (view-status decisions, docs.mjs unaccepted_packages); the English stays beside each
   actorHuman: 'human', proposalSize: 'size {size}', proposalSizeFlow: 'size {size} · {flow}',
@@ -220,7 +220,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     f2FootHome: 'w s 이동 · d ⏎ 열기 (EPIC → FLOOR · STORY → 상세) · n 다음 ⚑ · q 닫기', f2FootFloor: 'w s 이동 · d ⏎ Phase 상세 · a 뒤로 · n 다음 ⚑ · q 닫기',
     f2FootStory: 'w s 이동 · d ⏎ 열기 · a 뒤로 · n 다음 ⚑ · q 닫기', f2FootScroll: 'w s 스크롤 · a 뒤로 · n 다음 ⚑ · q 닫기',
     f2FootAnswer: '입력 모드: 글자가 그대로 들어감 · 빈 ⏎ 취소',
-    f2FloorPhaseOf: 'Phase {n}/6', f2FloorDecisionsN: '결정 {n}', f2FloorReportHint: 'EPIC 보고서는 여기서 열림',
+    f2FloorPhaseOf: 'Phase {n}/6', f2FloorStepOf: '{stage} · {k}/{n}', f2FloorDecisionsN: '결정 {n}', f2FloorReportHint: 'EPIC 보고서는 여기서 열림',
     f2FloorStoriesAgents: 'STORY {s} / 서브에이전트 {a}', f2EpicVerdict: '판정', f2EpicRunning: '진행 중', f2EpicStories: 'STORY {accepted}/{total}', f2EpicGate: 'gate {score}/{threshold}',
     actorHuman: '사람', proposalSize: '규모 {size}', proposalSizeFlow: '규모 {size} · {flow}',
     resplitAreas: '재분할 → 영역:{n}', resplit: '재분할', replanIds: '재계획 {ids}',
@@ -1004,7 +1004,9 @@ export const register: Register = on => {
     const epicVerdictWord = epicP === null ? '' : s(epicP.verdict === 'finished' ? 'cardFinished' : epicP.verdict === 'blocked' ? 'cardBlocked' : 'f2EpicRunning')
     const rightWide = entry === undefined ? ''
       : pg.name === 'FLOOR'
-        ? [`${s('f2FloorPhaseOf', { n: phaseAt + 1 })} ${say(`f2PhaseName${cap(PHASE_KEYS[Math.min(phaseAt, 5)]!)}`)}`, since(epicElapsed(entry, now)), entry.cost.usd > 0 ? costText(entry.cost.usd, entry.cost.estimated === true) : ''].filter(Boolean).join(' · ')
+        ? [entry.step_head !== undefined
+          ? entry.step_head.k === undefined ? say(`sgStage${cap(entry.step_head.key)}`) : s('f2FloorStepOf', { stage: say(`sgStage${cap(entry.step_head.key)}`), k: entry.step_head.k, n: entry.step_head.n ?? 0 })
+          : `${s('f2FloorPhaseOf', { n: phaseAt + 1 })} ${say(`f2PhaseName${cap(PHASE_KEYS[Math.min(phaseAt, 5)]!)}`)}`, since(epicElapsed(entry, now)), entry.cost.usd > 0 ? costText(entry.cost.usd, entry.cost.estimated === true) : ''].filter(Boolean).join(' · ')
         : pg.name === 'PHASE' ? [ledger !== undefined && ledger.wall_ms > 0 ? since(ledger.wall_ms) : '', ledgerUsd > 0 ? costText(ledgerUsd, false) : ''].filter(Boolean).join(' · ')
           : pg.name === 'STORY' && item !== undefined
             ? [sd?.flow.find(f => f.state === 'running')?.key ?? '', item.try === null ? '' : s('f2RowRetrying', { n: item.try, max: item.max ?? '-' }), costText(item.cost_usd ?? item.metrics?.cost_usd ?? null, item.cost_estimated), since(storyMs)].filter(Boolean).join(' · ')

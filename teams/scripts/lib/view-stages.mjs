@@ -14,6 +14,21 @@ export function stageOfNode(id) {
   return null;
 }
 
+// A size-S harness run's own steps (FLOOR draws these instead of the six-phase frame). setgoal and
+// critique are part of plan. STEP_PHASE is the EPIC phase a step sits in, used only for the row's ref.
+export const STEP_KEYS = ['plan', 'implement', 'test', 'gate', 'report'];
+export const STEP_PHASE = { plan: 1, implement: 2, test: 2, gate: 5, report: 6 };
+
+export function stepOfNode(id) {
+  const base = String(id).split(':')[0];
+  if (/^(size|shape|plan|setgoal|critique)$/.test(base)) return 'plan';
+  if (base === 'implement') return 'implement';
+  if (/^(test|cases|execute)$/.test(base)) return 'test';
+  if (base === 'gate') return 'gate';
+  if (base === 'report') return 'report';
+  return null;
+}
+
 export const nodeState = (s) => (s === 'done' ? 'done' : s === 'failed' || s === 'blocked' ? 'failed'
   : s === 'running' || s === 'waiting_human' ? 'running' : 'pending');
 

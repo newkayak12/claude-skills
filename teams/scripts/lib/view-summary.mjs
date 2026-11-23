@@ -2,7 +2,7 @@
 // collectTask() model and returns a small plain-JSON object a person can read: what is it doing,
 // who is it waiting on, how much is left. No fs; no node ids or paths leave here, and the only verdict is judge.verdict (accept|reject|null).
 
-import { STAGE_KEYS, stageOfNode, nodeState, mergeStates } from './view-stages.mjs';
+import { STAGE_KEYS, STEP_KEYS, STEP_PHASE, stageOfNode, nodeState, mergeStates } from './view-stages.mjs';
 import { hhmm } from './view-events.mjs';
 
 const DAY_MS = 86400000;
@@ -120,6 +120,32 @@ function stagesOf(m, cards) {
     if (first) first.state = 'running';
   }
   return stages;
+}
+
+// A harness_run task's steps (view-collect's harnessSteps) under the same rules as stagesOf: complete
+// reads all done, a cancelled task's running step idles, a running task with nothing running puts the
+// first step not done on running. Keys and numbers only; floorOf fills acting/you/stalled from the S worker.
+function stepsOf(m) {
+  if (!m.harness) return null;
+  const steps = STEP_KEYS.map((key) => {
+    const s = (m.harness.steps || []).find((x) => x.key === key);
+    const state = m.state === 'complete' ? 'done' : idleIfCancelled(m, (s && s.state) || 'pending');
+    return { key, state, phase: STEP_PHASE[key], acting: 0, you: 0, stalled: 0 };
+  });
+  if (m.state === 'running' && !steps.some((s) => s.state === 'running' || s.state === 'failed')) {
+    const first = steps.find((s) => s.state !== 'done');
+    if (first) first.state = 'running';
+  }
+  return steps;
+}
+
+// The FLOOR header of a steps entry: the running step, else the last done one, else plan. k/n (the
+// subgoal count) rides only on a running step and only when the run has a goal spec.
+function stepHeadOf(steps, progress) {
+  const run = steps.find((s) => s.state === 'running');
+  const last = steps.reduce((a, s, i) => (s.state === 'done' ? i : a), -1);
+  const key = run ? run.key : last >= 0 ? steps[last].key : 'plan';
+  return run && progress && progress.key === 'sg' ? { key, k: progress.k, n: progress.n } : { key };
 }
 
 function waitingOf(m, cards) {
@@ -329,6 +355,7 @@ export function summarize(model, { now = Date.now() } = {}) {
   const m = model;
   const cards = cardsOf(m);
   const stages = stagesOf(m, cards);
+  const steps = stepsOf(m);
   const waiting = waitingOf(m, cards);
   const titleOf = {};
   for (const { c } of cards) titleOf[String(c.id).split(':')[0]] = c.title || 'a card';
@@ -375,6 +402,7 @@ export function summarize(model, { now = Date.now() } = {}) {
     now: nowStep,
     you: { count: waiting.length, items: waiting, cards: waitingCards(m, cards) },
     stages, work,
+    ...(steps ? { steps, step_head: stepHeadOf(steps, progress) } : {}),
     ...(progress ? { progress } : {}),
     cost: {
       usd: (m.cost && m.cost.usd) || 0, turns: (m.cost && m.cost.turns) || 0,

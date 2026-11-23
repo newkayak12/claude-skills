@@ -645,6 +645,36 @@ const fb = (dir) => ({ route: 'fallback', run_dir: dir });
 const withRun = (opts, fn) => { const d = runDir(opts); try { return fn(d); } finally { rmSync(d, { recursive: true, force: true }); } };
 const sgModel = (sg) => harnessModel({ plan: 'done' }, { harness: { slug: 'r', moving: false, driver: { alive: true }, sg, stages: STAGE_KEYS.map((key) => ({ key, state: key === 'plan' ? 'done' : 'pending' })) } });
 
+const stepsModel = (state, steps, over = {}) => harnessModel({ plan: 'done' }, { state, harness: { slug: 'r', moving: false, driver: { alive: true }, sg: null, stages: STAGE_KEYS.map((key) => ({ key, state: 'pending' })), steps: steps.map(([key, s]) => ({ key, state: s })) }, ...over });
+const FIVE = (...s) => ['plan', 'implement', 'test', 'gate', 'report'].map((k, i) => [k, s[i]]);
+const stepStates = (m) => summarize(m, { now: NOW }).steps.map((x) => `${x.key}:${x.state}`);
+
+test('steps: a harness task carries the five steps; the six-phase stages stay; a non-harness task has none', () => {
+  const out = summarize(stepsModel('running', FIVE('done', 'done', 'running', 'pending', 'pending')), { now: NOW });
+  assert.deepEqual(out.steps.map((x) => [x.key, x.phase]), [['plan', 1], ['implement', 2], ['test', 2], ['gate', 5], ['report', 6]]);
+  assert.deepEqual(out.stages.map((s) => s.key), STAGE_KEYS);
+  assert.equal('steps' in summarize(demo(), { now: NOW }), false);
+});
+
+test('steps: complete reads all done; cancelled idles the running step; nothing running puts the first not-done step on running', () => {
+  const run = FIVE('done', 'done', 'running', 'pending', 'pending');
+  assert.deepEqual(stepStates(stepsModel('complete', run)), ['plan:done', 'implement:done', 'test:done', 'gate:done', 'report:done']);
+  assert.deepEqual(stepStates(stepsModel('cancelled', run)), ['plan:done', 'implement:done', 'test:pending', 'gate:pending', 'report:pending']);
+  assert.deepEqual(stepStates(stepsModel('running', FIVE('done', 'pending', 'pending', 'pending', 'pending'))), ['plan:done', 'implement:running', 'test:pending', 'gate:pending', 'report:pending']);
+  assert.deepEqual(stepStates(stepsModel('running', FIVE('done', 'done', 'done', 'failed', 'pending')))[3], 'gate:failed');
+});
+
+test('step_head: running step with k/n only when sg exists; complete -> report; cancelled -> last done; fresh -> plan', () => {
+  const run = FIVE('done', 'done', 'running', 'pending', 'pending');
+  const head = (m) => summarize(m, { now: NOW }).step_head;
+  assert.deepEqual(head(stepsModel('running', run)), { key: 'test' });
+  assert.deepEqual(head(stepsModel('running', run, { harness: { slug: 'r', moving: false, driver: { alive: true }, sg: { k: 3, n: 5 }, stages: STAGE_KEYS.map((key) => ({ key, state: 'pending' })), steps: run.map(([key, state]) => ({ key, state })) } })), { key: 'test', k: 3, n: 5 });
+  assert.deepEqual(head(stepsModel('complete', run)), { key: 'report' });
+  assert.deepEqual(head(stepsModel('cancelled', run)), { key: 'implement' });
+  assert.deepEqual(head(stepsModel('cancelled', FIVE('pending', 'pending', 'pending', 'pending', 'pending'))), { key: 'plan' });
+  assert.equal('step_head' in summarize(demo(), { now: NOW }), false);
+});
+
 test('progress sg (F3-AC-19): 2 subgoals, none passed, fresh now.json stage test', () => {
   withRun({ at: NOW }, (d) => {
     assert.deepEqual(fallbackProgress(fb(d)), { k: 1, n: 2, stage_key: 'test' });
