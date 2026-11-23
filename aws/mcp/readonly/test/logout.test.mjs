@@ -85,7 +85,7 @@ test('forget:true also deletes the keys and keeps the profile entry', async () =
   const r = await logoutTool.handler({ profile: 'dev', forget: true }, s.ctx);
   assert.deepEqual(s.deletes(), ['dev:session', 'dev']);
   assert.equal(await s.keychain.get('dev'), null);
-  assert.match(text(r), /keys? deleted/);
+  assert.match(text(r), /stored username and password deleted; the profile entry stays\./);
   assert.equal(readFileSync(join(s.dir, 'profiles.json'), 'utf8'), before);
   assert.deepEqual(s.profiles.get('dev'), { name: 'dev', region: 'us-east-1', label: 'Acme', account: '123456789012', mfa_serial: MFA, op: false });
 });

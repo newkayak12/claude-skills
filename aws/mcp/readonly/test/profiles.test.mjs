@@ -128,8 +128,8 @@ test('profile with no name lists each profile: name, label, account, region, key
   assert.equal(lines.length, 3);
   const dev = lines.slice(1).find((l) => l.includes('dev ·'));
   const prod = lines.slice(1).find((l) => l.includes('prod ·'));
-  assert.match(dev, /^ {2}dev · Acme dev · 123456789012 · us-east-1 · keys none · expiry none$/);
-  assert.match(prod, /^\* prod · Acme prod · 999999999999 · eu-west-1 · keys none · expiry 2026-11-18T12:00:00\+00:00 · active$/);
+  assert.match(dev, /^ {2}dev · Acme dev · 123456789012 · us-east-1 · password none · expiry none$/);
+  assert.match(prod, /^\* prod · Acme prod · 999999999999 · eu-west-1 · password none · expiry 2026-11-18T12:00:00\+00:00 · active$/);
 });
 
 test('profile with no profiles saved says so', async () => {
@@ -415,9 +415,9 @@ test('list rows: account, keys source and masked ref, expiry, active marker; no 
   const out = text(await profileTool.handler({}, ctx));
   const rows = out.split('\n').slice(1);
   assert.deepEqual(rows, [
-    '  a · Acme · 111122223333 · us-east-1 · keys none · expiry none',
-    '* b · - · - · eu-west-1 · keys 1password op://****/**** · expiry none · active',
-    `  c · - · 444455556666 · ap-northeast-2 · keys keychain · expiry ${FUTURE}`,
+    '  a · Acme · 111122223333 · us-east-1 · password none · expiry none',
+    '* b · - · - · eu-west-1 · password 1password op://****/**** · expiry none · active',
+    `  c · - · 444455556666 · ap-northeast-2 · password keychain · expiry ${FUTURE}`,
   ]);
   for (const s of ['SecretVault', 'SecretItem', 'SecretOtp', 'AKIA', 'SECRET']) assert.equal(out.includes(s), false, s);
 });
@@ -450,11 +450,11 @@ test('profile_save creates, updates, keeps and removes; its answer masks the ref
   ctx.exec = () => assert.fail('profile_save must not call AWS');
   const r = await profileSaveTool.handler({ name: 'stage', account: '111122223333', region: 'ap-northeast-2', vault: 'HiddenVault', item: 'HiddenItem' }, ctx);
   assert.equal(r.isError, undefined);
-  assert.equal(text(r), ['profile stage · account 111122223333 · region ap-northeast-2', 'created profile stage', 'keys 1password op://****/****', 'active profile: stage'].join('\n'));
+  assert.equal(text(r), ['profile stage · account 111122223333 · region ap-northeast-2', 'created profile stage', 'password 1password op://****/****', 'active profile: stage'].join('\n'));
   assert.equal(text(r).includes('Hidden'), false);
   assert.deepEqual(profiles.get('stage').op, { vault: 'HiddenVault', item: 'HiddenItem' });
   const u = await profileSaveTool.handler({ name: 'stage', label: 'Stage', item: null }, ctx);
-  assert.match(text(u), /^profile stage · account 111122223333 · region ap-northeast-2\nupdated profile stage\nkeys none\n/);
+  assert.match(text(u), /^profile stage · account 111122223333 · region ap-northeast-2\nupdated profile stage\npassword none\n/);
   assert.equal(profiles.get('stage').label, 'Stage');
   assert.doesNotMatch(raw(dir), /key|secret|token/i);
   assert.ok(sec.calls.every((c) => c.args[0] === 'find-generic-password'));

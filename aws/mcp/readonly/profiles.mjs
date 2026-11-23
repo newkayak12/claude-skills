@@ -220,14 +220,14 @@ export const unknownProfile = (profiles, name) => `unknown profile "${name}"; kn
 
 const rowOf = async (profiles, p, active) => {
   const src = await profiles.keySource(p.name);
-  const parts = [p.name, p.label ?? '-', p.account ?? '-', p.region, `keys ${src}${src === '1password' ? ` ${maskRef()}` : ''}`, `expiry ${await profiles.sessionStatus(p.name)}`];
+  const parts = [p.name, p.label ?? '-', p.account ?? '-', p.region, `password ${src}${src === '1password' ? ` ${maskRef()}` : ''}`, `expiry ${await profiles.sessionStatus(p.name)}`];
   if (p.name === active) parts.push('active');
   return `${p.name === active ? '*' : ' '} ${parts.join(' · ')}`;
 };
 
 export const profileTool = defineTool({
   name: 'profile',
-  description: 'List the saved AWS profiles (name, label, account, region, key source, session expiry, active marker), or switch the active profile by name. Never calls AWS.',
+  description: 'List the saved AWS profiles (name, label, account, region, password source, session expiry, active marker), or switch the active profile by name. Never calls AWS.',
   inputSchema: {
     type: 'object',
     properties: { name: { type: 'string', description: 'Profile to make active; omit to list.' } },
@@ -265,7 +265,7 @@ const field = (description) => ({ type: ['string', 'null'], description });
 export const profileSaveTool = defineTool({
   name: 'profile_save',
   description:
-    'Create or update a saved AWS profile (name, label, 12-digit account, region, MFA serial, 1Password vault/item/otp_item). Writes the local profile file only; never stores keys and never calls AWS. A field left out stays as saved, null removes it. region is required for a new profile. The first saved profile becomes active.',
+    'Create or update a saved AWS profile (name, label, 12-digit account, region, MFA serial, 1Password vault/item/otp_item). Writes the local profile file only; never stores a username or password and never calls AWS. A field left out stays as saved, null removes it. region is required for a new profile. The first saved profile becomes active.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -275,7 +275,7 @@ export const profileSaveTool = defineTool({
       region: { type: 'string', description: 'Region such as ap-northeast-2; required for a new profile.' },
       mfa_serial: field('MFA device ARN (arn:aws:iam::<account>:mfa/<name>).'),
       vault: field('1Password vault name; with item.'),
-      item: field('1Password item holding the AWS access key; with vault.'),
+      item: field('1Password item holding the AWS username and password; with vault.'),
       otp_item: field('1Password item (same vault) holding the one-time password; needs item.'),
     },
     required: ['name'],
@@ -286,7 +286,7 @@ export const profileSaveTool = defineTool({
     const { profiles } = ctx;
     try {
       const extra = Object.keys(args ?? {}).filter((k) => k !== 'name' && !SAVE_FIELDS.includes(k));
-      if (extra.length) return err(`profile_save takes name, ${SAVE_FIELDS.join(', ')} only; refused: ${extra.join(', ')}. Keys are never saved here.`);
+      if (extra.length) return err(`profile_save takes name, ${SAVE_FIELDS.join(', ')} only; refused: ${extra.join(', ')}. A username or password is never saved here.`);
       for (const k of SAVE_FIELDS) {
         const v = args?.[k];
         if (v !== undefined && v !== null && typeof v !== 'string') return err(`${k} must be a string or null`);
@@ -295,7 +295,7 @@ export const profileSaveTool = defineTool({
       const existed = Boolean(profiles.get(name));
       const e = profiles.upsert(name, Object.fromEntries(SAVE_FIELDS.filter((k) => args[k] !== undefined).map((k) => [k, args[k]])));
       const src = await profiles.keySource(name);
-      return ok([header({ profile: name, account: e.account, region: e.region }), `${existed ? 'updated' : 'created'} profile ${name}`, `keys ${src}${src === '1password' ? ` ${maskRef()}` : ''}`, `active profile: ${profiles.active() ?? '-'}`].join('\n'));
+      return ok([header({ profile: name, account: e.account, region: e.region }), `${existed ? 'updated' : 'created'} profile ${name}`, `password ${src}${src === '1password' ? ` ${maskRef()}` : ''}`, `active profile: ${profiles.active() ?? '-'}`].join('\n'));
     } catch (e) {
       return err(e.message);
     }

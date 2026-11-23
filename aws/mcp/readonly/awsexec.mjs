@@ -18,7 +18,7 @@ export function childEnv(creds, region, baseEnv = process.env) {
   const id = creds?.AccessKeyId ?? creds?.accessKeyId;
   const secret = creds?.SecretAccessKey ?? creds?.secretAccessKey;
   const token = creds?.SessionToken ?? creds?.sessionToken;
-  if (!id || !secret) throw new Error('credentials need an access key id and a secret access key');
+  if (!id || !secret) throw new Error('credentials need a username and a password');
   if (!region || typeof region !== 'string') throw new Error('a region is required');
   const dir = configDir(baseEnv);
   const env = {

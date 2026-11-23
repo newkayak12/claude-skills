@@ -1,6 +1,6 @@
 {
   "name": "aws",
-  "description": "Read-only AWS access through the aws CLI: one MCP server (readonly-aws, own profiles; IAM user keys only, optional MFA session) and skills login (macOS key dialog into Keychain, 1Password optional), logout, profile and query (describe-/list-/get-/lookup-/search-* only; secret reads, credential minting, writes and global flags refused by the server; 1 MiB / 60 s caps, local query log without values). macOS only. Bundled: no npm install.",
+  "description": "Read-only AWS access through the aws CLI: one MCP server (readonly-aws, own profiles; IAM user name and password, optional MFA session) and skills login (username and password from 1Password, else a macOS hidden dialog into Keychain), logout, profile and query (describe-/list-/get-/lookup-/search-* only; secret reads, credential minting, writes and global flags refused by the server; 1 MiB / 60 s caps, local query log without values). macOS only. Bundled: no npm install.",
   "version": "0.2.2",
   "mcpServers": {
     "readonly-aws": {

@@ -20,6 +20,9 @@ const MFA_REJECTED = /MultiFactorAuthentication failed|invalid MFA one time pass
 
 class Fail extends Error {}
 
+const CANCELED = 'login canceled; nothing stored. To read the username and password from 1Password instead, save its vault and item with aws:profile.';
+const DIALOG_FAILED_NEXT = 'Save a 1Password vault and item with aws:profile and log in again, or retry and type the username and password in the dialog.';
+
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64');
 const unb64 = (raw) => {
   try {
@@ -69,7 +72,7 @@ async function aws(d, argv, creds, region) {
 async function whoami(d, creds, region) {
   const r = await aws(d, ['sts', 'get-caller-identity', '--output', 'json'], creds, region);
   if (r.timedOut) throw new Fail('aws sts get-caller-identity timed out');
-  if (r.code !== 0) throw new Fail(`AWS rejected the keys (${awsCode(r.stderr) ?? `exit ${r.code}`})`);
+  if (r.code !== 0) throw new Fail(`AWS rejected the username and password (${awsCode(r.stderr) ?? `exit ${r.code}`})`);
   const id = safeJson(r.stdout);
   if (!/^\d{12}$/.test(String(id?.Account ?? ''))) throw new Fail('sts get-caller-identity returned no account id');
   return id;
@@ -148,18 +151,18 @@ const sessionCreds = (session) => ({ AccessKeyId: session.AccessKeyId, SecretAcc
 export const login = defineTool({
   name: 'login',
   description:
-    'Log in a named AWS profile with an IAM user access key pair, kept in macOS Keychain (typed once into a hidden dialog) or read from a 1Password item (vault + item). Fields the profile already holds (region, account, MFA serial, 1Password reference) are reused; an argument wins and is saved. Verifies the keys with sts get-caller-identity and refuses when the saved account is another one. With mfa_serial it asks for the MFA code and caches a session token (up to 36 h); without, the keys are used directly. No key or code is ever a tool argument.',
+    'Log in a named AWS profile with an IAM user name and password, kept in macOS Keychain (typed once into a hidden dialog) or read from a 1Password item (vault + item). Fields the profile already holds (region, account, MFA serial, 1Password reference) are reused; an argument wins and is saved. Verifies the username and password with sts get-caller-identity and refuses when the saved account is another one. With mfa_serial it asks for the MFA code and caches a session token (up to 36 h); without, the username and password are used directly. No username, password or code is ever a tool argument.',
   inputSchema: {
     type: 'object',
     properties: {
       profile: { type: 'string', description: 'Profile name, [a-z0-9_-]{1,32}.' },
       region: { type: 'string', description: 'AWS region the profile queries, for example us-east-1. Optional when the profile has one saved.' },
-      account: { type: 'string', description: 'Optional 12-digit AWS account id; the keys must belong to it. Saved with the profile.' },
+      account: { type: 'string', description: 'Optional 12-digit AWS account id; the username and password must belong to it. Saved with the profile.' },
       label: { type: 'string', description: 'Optional display label; defaults to the account id.' },
       mfa_serial: { type: 'string', description: 'Optional MFA device ARN; saved with the profile.' },
-      vault: { type: 'string', description: 'Optional 1Password vault holding the key item (with item).' },
-      item: { type: 'string', description: 'Optional 1Password item with the key pair: fields "username" and "password" (and its one-time code).' },
-      otp_item: { type: 'string', description: 'Optional 1Password item (same vault) holding the one-time password, when it is not in the key item. Used only with an MFA serial.' },
+      vault: { type: 'string', description: 'Optional 1Password vault holding the login item (with item).' },
+      item: { type: 'string', description: 'Optional 1Password item with the username and password: fields "username" and "password" (and its one-time code).' },
+      otp_item: { type: 'string', description: 'Optional 1Password item (same vault) holding the one-time password, when it is not in the login item. Used only with an MFA serial.' },
     },
     required: ['profile'],
     additionalProperties: false,
@@ -202,10 +205,14 @@ export const login = defineTool({
       } else {
         keys = parseKeys(await keychain.get(keyAccount(profile)));
         if (!keys) {
-          const id = await d.dialog(`AWS Access Key ID for profile ${profile}`);
-          if (id === null) throw new Fail('login canceled; nothing stored');
-          const secret = await d.dialog(`AWS Secret Access Key for profile ${profile}`);
-          if (secret === null) throw new Fail('login canceled; nothing stored');
+          const ask = (prompt) =>
+            d.dialog(prompt).catch((e) => {
+              throw new Fail(`${e?.message ?? 'Hidden-answer dialog failed'}. ${DIALOG_FAILED_NEXT}`);
+            });
+          const id = await ask(`AWS username for profile ${profile}`);
+          if (id === null) throw new Fail(CANCELED);
+          const secret = await ask(`AWS password for profile ${profile}`);
+          if (secret === null) throw new Fail(CANCELED);
           keys = { AccessKeyId: String(id).trim(), SecretAccessKey: String(secret).trim() };
           if (!keys.AccessKeyId || !keys.SecretAccessKey) throw new Fail('an empty answer was given; nothing stored');
           d.secrets.push(keys.AccessKeyId, keys.SecretAccessKey);
@@ -227,7 +234,7 @@ export const login = defineTool({
       const expected = args?.account ?? old?.account;
       if (expected && expected !== identity.Account) {
         if (written) await keychain.del(keyAccount(profile)).catch(() => {});
-        throw new Fail(`account mismatch: profile ${profile} is for account ${expected}, these keys belong to account ${identity.Account}; nothing saved`);
+        throw new Fail(`account mismatch: profile ${profile} is for account ${expected}, this username and password belong to account ${identity.Account}; nothing saved`);
       }
       account = identity.Account;
       if (args?.account !== undefined && args.account !== old?.account) profiles.upsert(profile, { account: args.account, region });
@@ -245,7 +252,7 @@ export const login = defineTool({
         await profiles.setSession(profile, session);
         expiry = session.Expiration;
       }
-      return ok([head(), `logged in: profile ${profile}, label ${entry.label}`, `keys: ${ref ? maskRef() : 'stored in Keychain'}`, `session expiry: ${expiry}`].join('\n'));
+      return ok([head(), `logged in: profile ${profile}, label ${entry.label}`, `password: ${ref ? maskRef() : 'stored in Keychain'}`, `session expiry: ${expiry}`].join('\n'));
     } catch (e) {
       return err(`${head()}\n${scrub(e?.message ?? 'login failed', d.secrets)}`);
     }
@@ -295,7 +302,7 @@ async function ensure(profile, ctx) {
     }
     if (!e.mfa_serial) {
       const keys = parseKeys(await keychain.get(keyAccount(profile)));
-      return keys ? { creds: keys, region: e.region } : notLoggedIn('no stored keys');
+      return keys ? { creds: keys, region: e.region } : notLoggedIn('no stored username and password');
     }
     return notLoggedIn(status === 'expired' ? 'the session has expired or was never created' : 'no session');
   } catch (x) {

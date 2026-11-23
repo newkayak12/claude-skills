@@ -47,7 +47,8 @@ function setup() {
   const osaRun = (file, args, cb) => {
     calls.osascript.push({ file, args });
     const a = s.answers.shift();
-    if (a === null) return cb(Object.assign(new Error('canceled'), { code: -128, stderr: 'execution error: User canceled. (-128)' }), '', '');
+    // Cancel the way execFile delivers it: exit code 1, no err.stderr, the text in the 3rd argument.
+    if (a === null) return cb(Object.assign(new Error('Command failed: osascript'), { code: 1 }), '', 'execution error: User canceled. (-128)');
     if (a === undefined) return cb(Object.assign(new Error('no answer queued'), { code: 1 }), '', '');
     cb(null, `${a}\n`, '');
   };
@@ -144,8 +145,8 @@ test('A3.1/A3.5/A3.6/A4.5: no stored keys -> two hidden dialogs, one Keychain it
     assert.equal(c.file, 'osascript');
     assert.match(c.args[1], /with hidden answer/);
   }
-  assert.match(s.calls.osascript[0].args[1], /Access Key ID/);
-  assert.match(s.calls.osascript[1].args[1], /Secret Access Key/);
+  assert.match(s.calls.osascript[0].args[1], /"AWS username for profile dev"/);
+  assert.match(s.calls.osascript[1].args[1], /"AWS password for profile dev"/);
   const w = s.writes();
   assert.equal(w.length, 1);
   assert.match(w[0].stdin, /^add-generic-password -U -s readonly-aws -a "dev" -w "[A-Za-z0-9+/=]+"\n$/);
@@ -172,13 +173,24 @@ test('A3.1: Cancel on the first or the second dialog stores nothing and calls no
     s.answers.push(...answers);
     const r = await s.run();
     assert.equal(r.isError, true);
-    assert.match(text(r), /canceled; nothing stored/);
+    assert.match(text(r), /login canceled; nothing stored\. To read the username and password from 1Password instead, save its vault and item with aws:profile\./);
+    assert.doesNotMatch(text(r), /Hidden-answer dialog failed/);
     assert.equal(s.writes().length, 0);
     assert.equal(s.store.size, 0);
     assert.equal(s.calls.aws.length, 0);
     assert.equal(s.profiles.get('dev'), null);
     sweep(s, [r]);
   }
+});
+
+test('a dialog that fails (not Cancel) names the osascript error number and the aws:profile next step', async () => {
+  const s = setup(); // no answer queued: the osascript stub fails with exit code 1 and no error number
+  const r = await s.run();
+  assert.equal(r.isError, true);
+  assert.match(text(r), /Hidden-answer dialog failed\. Save a 1Password vault and item with aws:profile and log in again, or retry and type the username and password in the dialog\./);
+  assert.equal(s.writes().length, 0);
+  assert.equal(s.calls.aws.length, 0);
+  sweep(s, [r]);
 });
 
 test('A3.3: a secret over the Keychain limit is refused, nothing is stored or truncated, no aws call', async () => {
@@ -214,7 +226,7 @@ test('A3.5: failed verification deletes the keys just written; the error is fixe
   s.awsHandler = () => fail('InvalidClientTokenId', 'The security token included in the request is invalid.');
   const r = await s.run();
   assert.equal(r.isError, true);
-  assert.match(text(r), /AWS rejected the keys \(InvalidClientTokenId\)/);
+  assert.match(text(r), /AWS rejected the username and password \(InvalidClientTokenId\)/);
   assert.deepEqual(s.deletes(), ['dev']);
   assert.equal(s.store.size, 0);
   assert.equal(s.profiles.get('dev'), null);

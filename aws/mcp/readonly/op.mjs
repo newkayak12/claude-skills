@@ -4,7 +4,7 @@
 // stdout or stderr, so no value or item content can leak through a message.
 import { execFile } from 'node:child_process';
 
-// One key layout: a login item's username (access key id) and password (secret access key). No other field is read.
+// One layout: a login item's username (AccessKeyId) and password (SecretAccessKey). No other field is read.
 const LAYOUT = { AccessKeyId: 'username', SecretAccessKey: 'password' };
 const TIMEOUT_MS = 60000;
 const NOT_INSTALLED = '1Password CLI (op) is not installed';
@@ -52,7 +52,7 @@ export async function readItem(vault, item, { run = execFile } = {}) {
   const id = valueOf(LAYOUT.AccessKeyId);
   const secret = valueOf(LAYOUT.SecretAccessKey);
   if (id && secret) return { AccessKeyId: id, SecretAccessKey: secret };
-  throw new Error(`1Password item has no key pair: it needs '${LAYOUT.AccessKeyId}' + '${LAYOUT.SecretAccessKey}'`);
+  throw new Error(`1Password item has no username and password: it needs '${LAYOUT.AccessKeyId}' + '${LAYOUT.SecretAccessKey}'`);
 }
 
 // Resolves the first 6-digit token on op's stdout, read from otp_item (same vault) when given, else

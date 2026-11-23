@@ -7,12 +7,12 @@ import { assertName, unknownProfile } from './profiles.mjs';
 export const logoutTool = defineTool({
   name: 'logout',
   description:
-    'Delete the cached session of a profile (default: the active one) and report its expiry. STS tokens cannot be revoked and stay valid until then. forget:true also deletes the stored keys; a 1Password reference stays in the profile entry, as does the entry.',
+    'Delete the cached session of a profile (default: the active one) and report its expiry. STS tokens cannot be revoked and stay valid until then. forget:true also deletes the stored username and password; a 1Password reference stays in the profile entry, as does the entry.',
   inputSchema: {
     type: 'object',
     properties: {
       profile: { type: 'string', description: 'Profile name; default is the active profile.' },
-      forget: { type: 'boolean', description: 'Also delete the stored access keys (a 1Password reference stays in the profile entry).' },
+      forget: { type: 'boolean', description: 'Also delete the stored username and password (a 1Password reference stays in the profile entry).' },
     },
     additionalProperties: false,
   },
@@ -41,7 +41,7 @@ export const logoutTool = defineTool({
           lines.push('1Password reference stays in the profile entry (profile_save with vault and item null removes it); nothing else to delete.');
         } else {
           await keychain.del(keyAccount(name));
-          lines.push('stored keys deleted; the profile entry stays.');
+          lines.push('stored username and password deleted; the profile entry stays.');
         }
       } else if (ref) {
         lines.push('the next query will log in again silently.');

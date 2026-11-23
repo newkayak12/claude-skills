@@ -20,10 +20,10 @@ compatibility:
 ## Anchors
 
 - **Forbidden reflex.** Running `aws` straight from Bash with whatever is in `~/.aws`; asking the
-  person to paste keys in chat; putting a key, secret or token in any `profile_save` argument;
+  person to paste a username or password in chat; putting a username, password or token in any `profile_save` argument;
   rephrasing a call to get around `rejected`.
 - **Boundary.** Writes local profile files only (name, label, account, region, MFA serial, 1Password
-  reference), never keys, never infra. Keys come in at `aws:login`. Data inside a database goes to
+  reference), never a username or password, never infra. They come in at `aws:login`. Data inside a database goes to
   `database:query`.
 - **Done.** Every answer names the profile, account and region it came from; a `rejected [rule]`
   or error line is quoted verbatim.
@@ -36,11 +36,11 @@ compatibility:
    - A field left out stays as saved; `null` removes it. Never invent a value the person did not give.
    - The account is 12 digits; the MFA serial is an ARN; `vault` and `item` go together, `otp_item`
      (same vault) only with `item`. A refusal line is quoted and nothing is saved.
-   - The first saved profile becomes active; an update never switches. No keys are stored here:
+   - The first saved profile becomes active; an update never switches. No username or password is stored here:
      offer `aws:login <profile>` next.
 2. **List** (no name given: "show my profiles", "which account am I on") → `profile` with no
-   arguments: one row per profile with label, account, region, key source (`keychain`, `1password`,
-   `none`) and session expiry (`none` = long-term keys, no MFA session). `*` and `active` mark the
+   arguments: one row per profile with label, account, region, password source (`keychain`, `1password`,
+   `none`) and session expiry (`none` = long-term credentials, no MFA session). `*` and `active` mark the
    active one. A 1Password reference shows as `op://****/****`.
 3. **Switch** (a name to become active) → `profile` with `name`. No dialog: the call is read-only
    and the switch persists in a local state file until switched again.
@@ -52,19 +52,19 @@ compatibility:
 ## Output Template
 
 ```
-active: stage · 111122223333 · ap-northeast-2 · keys none · session none
-| profile | label | account | region | keys | session |
+active: stage · 111122223333 · ap-northeast-2 · password none · session none
+| profile | label | account | region | password | session |
 ```
 
 ## What Claude Does / What You Do
 
 | Claude | You |
 |---|---|
-| Saves a profile from the fields you give (never a key), lists every profile with account, key source and expiry, switches to the one you named | Name the profile and give its region and account; log in with `aws:login` to add keys |
+| Saves a profile from the fields you give (never a username or password), lists every profile with account, password source and expiry, switches to the one you named | Name the profile and give its region and account; log in with `aws:login` to add the username and password |
 
 ## Related Skills
 
-- `aws:login` — add keys to a profile and open a session, first time or after expiry.
-- `aws:logout` — drop a session or forget keys.
+- `aws:login` — add a username and password to a profile and open a session, first time or after expiry.
+- `aws:logout` — drop a session or forget the username and password.
 - `aws:query` — read AWS resources on the active profile.
 - `database:query` — rows inside a database, not AWS APIs.

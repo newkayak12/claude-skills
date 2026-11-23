@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // readonly-aws MCP server, bundled by build.mjs — do not edit; edit the sources and run npm run build.
-// sources: 5eb9141807dacf1f
+// sources: 1babaf85b98a441f
 import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -17322,13 +17322,13 @@ function createProfiles({ dir = configDir(), keychain, now = () => Date.now() } 
 var unknownProfile = (profiles, name) => `unknown profile "${name}"; known: ${profiles.names().join(", ") || "(none)"}`;
 var rowOf = async (profiles, p, active) => {
   const src = await profiles.keySource(p.name);
-  const parts = [p.name, p.label ?? "-", p.account ?? "-", p.region, `keys ${src}${src === "1password" ? ` ${maskRef()}` : ""}`, `expiry ${await profiles.sessionStatus(p.name)}`];
+  const parts = [p.name, p.label ?? "-", p.account ?? "-", p.region, `password ${src}${src === "1password" ? ` ${maskRef()}` : ""}`, `expiry ${await profiles.sessionStatus(p.name)}`];
   if (p.name === active) parts.push("active");
   return `${p.name === active ? "*" : " "} ${parts.join(" \xB7 ")}`;
 };
 var profileTool = defineTool({
   name: "profile",
-  description: "List the saved AWS profiles (name, label, account, region, key source, session expiry, active marker), or switch the active profile by name. Never calls AWS.",
+  description: "List the saved AWS profiles (name, label, account, region, password source, session expiry, active marker), or switch the active profile by name. Never calls AWS.",
   inputSchema: {
     type: "object",
     properties: { name: { type: "string", description: "Profile to make active; omit to list." } },
@@ -17364,7 +17364,7 @@ var SAVE_FIELDS = ["label", "account", "region", "mfa_serial", "vault", "item", 
 var field = (description) => ({ type: ["string", "null"], description });
 var profileSaveTool = defineTool({
   name: "profile_save",
-  description: "Create or update a saved AWS profile (name, label, 12-digit account, region, MFA serial, 1Password vault/item/otp_item). Writes the local profile file only; never stores keys and never calls AWS. A field left out stays as saved, null removes it. region is required for a new profile. The first saved profile becomes active.",
+  description: "Create or update a saved AWS profile (name, label, 12-digit account, region, MFA serial, 1Password vault/item/otp_item). Writes the local profile file only; never stores a username or password and never calls AWS. A field left out stays as saved, null removes it. region is required for a new profile. The first saved profile becomes active.",
   inputSchema: {
     type: "object",
     properties: {
@@ -17374,7 +17374,7 @@ var profileSaveTool = defineTool({
       region: { type: "string", description: "Region such as ap-northeast-2; required for a new profile." },
       mfa_serial: field("MFA device ARN (arn:aws:iam::<account>:mfa/<name>)."),
       vault: field("1Password vault name; with item."),
-      item: field("1Password item holding the AWS access key; with vault."),
+      item: field("1Password item holding the AWS username and password; with vault."),
       otp_item: field("1Password item (same vault) holding the one-time password; needs item.")
     },
     required: ["name"],
@@ -17385,7 +17385,7 @@ var profileSaveTool = defineTool({
     const { profiles } = ctx;
     try {
       const extra = Object.keys(args ?? {}).filter((k) => k !== "name" && !SAVE_FIELDS.includes(k));
-      if (extra.length) return err(`profile_save takes name, ${SAVE_FIELDS.join(", ")} only; refused: ${extra.join(", ")}. Keys are never saved here.`);
+      if (extra.length) return err(`profile_save takes name, ${SAVE_FIELDS.join(", ")} only; refused: ${extra.join(", ")}. A username or password is never saved here.`);
       for (const k of SAVE_FIELDS) {
         const v = args?.[k];
         if (v !== void 0 && v !== null && typeof v !== "string") return err(`${k} must be a string or null`);
@@ -17394,7 +17394,7 @@ var profileSaveTool = defineTool({
       const existed = Boolean(profiles.get(name));
       const e = profiles.upsert(name, Object.fromEntries(SAVE_FIELDS.filter((k) => args[k] !== void 0).map((k) => [k, args[k]])));
       const src = await profiles.keySource(name);
-      return ok([header({ profile: name, account: e.account, region: e.region }), `${existed ? "updated" : "created"} profile ${name}`, `keys ${src}${src === "1password" ? ` ${maskRef()}` : ""}`, `active profile: ${profiles.active() ?? "-"}`].join("\n"));
+      return ok([header({ profile: name, account: e.account, region: e.region }), `${existed ? "updated" : "created"} profile ${name}`, `password ${src}${src === "1password" ? ` ${maskRef()}` : ""}`, `active profile: ${profiles.active() ?? "-"}`].join("\n"));
     } catch (e) {
       return err(e.message);
     }
@@ -17415,7 +17415,7 @@ function childEnv(creds, region, baseEnv = process.env) {
   const id = creds?.AccessKeyId ?? creds?.accessKeyId;
   const secret = creds?.SecretAccessKey ?? creds?.secretAccessKey;
   const token2 = creds?.SessionToken ?? creds?.sessionToken;
-  if (!id || !secret) throw new Error("credentials need an access key id and a secret access key");
+  if (!id || !secret) throw new Error("credentials need a username and a password");
   if (!region || typeof region !== "string") throw new Error("a region is required");
   const dir = configDir(baseEnv);
   const env = {
@@ -17474,15 +17474,21 @@ function execAws(argv, env, { timeoutMs = 6e4, capBytes = 1048576, execFile: exe
 import { execFile } from "node:child_process";
 var TITLE = "readonly-aws";
 var asString = (s) => `"${String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/[\r\n]+/g, " ")}"`;
-var canceled = (err2) => err2.code === -128 || /User canceled|\(-128\)/i.test(String(err2.stderr ?? ""));
+var stderrOf = (err2, stderr) => String(stderr || err2.stderr || err2.message || "");
+var canceled = (err2, text) => err2.code === -128 || /User canceled|\(-128\)/i.test(text);
+var failure2 = (text) => {
+  const n = /\((-?\d+)\)/.exec(text)?.[1];
+  return new Error(n ? `Hidden-answer dialog failed (osascript error ${n})` : "Hidden-answer dialog failed");
+};
 function hiddenDialog(prompt, { run = execFile } = {}) {
   const script = `display dialog ${asString(prompt)} default answer "" with hidden answer with title ${asString(TITLE)}`;
   return new Promise((resolve, reject2) => {
-    run("osascript", ["-e", script, "-e", "text returned of result"], (err2, stdout) => {
+    run("osascript", ["-e", script, "-e", "text returned of result"], (err2, stdout, stderr) => {
       if (!err2) return resolve(String(stdout).trim());
-      if (canceled(err2)) return resolve(null);
+      const text = stderrOf(err2, stderr);
+      if (canceled(err2, text)) return resolve(null);
       if (err2.code === "ENOENT") return reject2(new Error("Hidden-answer dialog is not available: the `osascript` command was not found (macOS is required)"));
-      reject2(new Error("Hidden-answer dialog failed"));
+      reject2(failure2(text));
     });
   });
 }
@@ -17534,7 +17540,7 @@ async function readItem(vault, item, { run = execFile2 } = {}) {
   const id = valueOf(LAYOUT.AccessKeyId);
   const secret = valueOf(LAYOUT.SecretAccessKey);
   if (id && secret) return { AccessKeyId: id, SecretAccessKey: secret };
-  throw new Error(`1Password item has no key pair: it needs '${LAYOUT.AccessKeyId}' + '${LAYOUT.SecretAccessKey}'`);
+  throw new Error(`1Password item has no username and password: it needs '${LAYOUT.AccessKeyId}' + '${LAYOUT.SecretAccessKey}'`);
 }
 async function otp(vault, item, { otp_item, run = execFile2 } = {}) {
   assertRef(vault, item, otp_item);
@@ -17551,6 +17557,8 @@ var SERIAL_RE2 = /^arn:aws[a-z-]*:iam::\d{12}:(mfa|sms-mfa)\/\S+$/;
 var MFA_REJECTED = /MultiFactorAuthentication failed|invalid MFA one time pass code/i;
 var Fail = class extends Error {
 };
+var CANCELED = "login canceled; nothing stored. To read the username and password from 1Password instead, save its vault and item with aws:profile.";
+var DIALOG_FAILED_NEXT = "Save a 1Password vault and item with aws:profile and log in again, or retry and type the username and password in the dialog.";
 var b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64");
 var unb64 = (raw) => {
   try {
@@ -17596,7 +17604,7 @@ async function aws(d, argv, creds, region) {
 async function whoami(d, creds, region) {
   const r = await aws(d, ["sts", "get-caller-identity", "--output", "json"], creds, region);
   if (r.timedOut) throw new Fail("aws sts get-caller-identity timed out");
-  if (r.code !== 0) throw new Fail(`AWS rejected the keys (${awsCode(r.stderr) ?? `exit ${r.code}`})`);
+  if (r.code !== 0) throw new Fail(`AWS rejected the username and password (${awsCode(r.stderr) ?? `exit ${r.code}`})`);
   const id = safeJson(r.stdout);
   if (!/^\d{12}$/.test(String(id?.Account ?? ""))) throw new Fail("sts get-caller-identity returned no account id");
   return id;
@@ -17664,18 +17672,18 @@ var dialogCode = (d, profile) => async () => {
 var sessionCreds = (session) => ({ AccessKeyId: session.AccessKeyId, SecretAccessKey: session.SecretAccessKey, SessionToken: session.SessionToken });
 var login = defineTool({
   name: "login",
-  description: "Log in a named AWS profile with an IAM user access key pair, kept in macOS Keychain (typed once into a hidden dialog) or read from a 1Password item (vault + item). Fields the profile already holds (region, account, MFA serial, 1Password reference) are reused; an argument wins and is saved. Verifies the keys with sts get-caller-identity and refuses when the saved account is another one. With mfa_serial it asks for the MFA code and caches a session token (up to 36 h); without, the keys are used directly. No key or code is ever a tool argument.",
+  description: "Log in a named AWS profile with an IAM user name and password, kept in macOS Keychain (typed once into a hidden dialog) or read from a 1Password item (vault + item). Fields the profile already holds (region, account, MFA serial, 1Password reference) are reused; an argument wins and is saved. Verifies the username and password with sts get-caller-identity and refuses when the saved account is another one. With mfa_serial it asks for the MFA code and caches a session token (up to 36 h); without, the username and password are used directly. No username, password or code is ever a tool argument.",
   inputSchema: {
     type: "object",
     properties: {
       profile: { type: "string", description: "Profile name, [a-z0-9_-]{1,32}." },
       region: { type: "string", description: "AWS region the profile queries, for example us-east-1. Optional when the profile has one saved." },
-      account: { type: "string", description: "Optional 12-digit AWS account id; the keys must belong to it. Saved with the profile." },
+      account: { type: "string", description: "Optional 12-digit AWS account id; the username and password must belong to it. Saved with the profile." },
       label: { type: "string", description: "Optional display label; defaults to the account id." },
       mfa_serial: { type: "string", description: "Optional MFA device ARN; saved with the profile." },
-      vault: { type: "string", description: "Optional 1Password vault holding the key item (with item)." },
-      item: { type: "string", description: 'Optional 1Password item with the key pair: fields "username" and "password" (and its one-time code).' },
-      otp_item: { type: "string", description: "Optional 1Password item (same vault) holding the one-time password, when it is not in the key item. Used only with an MFA serial." }
+      vault: { type: "string", description: "Optional 1Password vault holding the login item (with item)." },
+      item: { type: "string", description: 'Optional 1Password item with the username and password: fields "username" and "password" (and its one-time code).' },
+      otp_item: { type: "string", description: "Optional 1Password item (same vault) holding the one-time password, when it is not in the login item. Used only with an MFA serial." }
     },
     required: ["profile"],
     additionalProperties: false
@@ -17714,10 +17722,13 @@ var login = defineTool({
       } else {
         keys = parseKeys(await keychain.get(keyAccount(profile)));
         if (!keys) {
-          const id = await d.dialog(`AWS Access Key ID for profile ${profile}`);
-          if (id === null) throw new Fail("login canceled; nothing stored");
-          const secret = await d.dialog(`AWS Secret Access Key for profile ${profile}`);
-          if (secret === null) throw new Fail("login canceled; nothing stored");
+          const ask = (prompt) => d.dialog(prompt).catch((e) => {
+            throw new Fail(`${e?.message ?? "Hidden-answer dialog failed"}. ${DIALOG_FAILED_NEXT}`);
+          });
+          const id = await ask(`AWS username for profile ${profile}`);
+          if (id === null) throw new Fail(CANCELED);
+          const secret = await ask(`AWS password for profile ${profile}`);
+          if (secret === null) throw new Fail(CANCELED);
           keys = { AccessKeyId: String(id).trim(), SecretAccessKey: String(secret).trim() };
           if (!keys.AccessKeyId || !keys.SecretAccessKey) throw new Fail("an empty answer was given; nothing stored");
           d.secrets.push(keys.AccessKeyId, keys.SecretAccessKey);
@@ -17738,7 +17749,7 @@ var login = defineTool({
       if (expected && expected !== identity.Account) {
         if (written) await keychain.del(keyAccount(profile)).catch(() => {
         });
-        throw new Fail(`account mismatch: profile ${profile} is for account ${expected}, these keys belong to account ${identity.Account}; nothing saved`);
+        throw new Fail(`account mismatch: profile ${profile} is for account ${expected}, this username and password belong to account ${identity.Account}; nothing saved`);
       }
       account = identity.Account;
       if (args?.account !== void 0 && args.account !== old?.account) profiles.upsert(profile, { account: args.account, region });
@@ -17755,7 +17766,7 @@ var login = defineTool({
         await profiles.setSession(profile, session);
         expiry = session.Expiration;
       }
-      return ok([head(), `logged in: profile ${profile}, label ${entry.label}`, `keys: ${ref ? maskRef() : "stored in Keychain"}`, `session expiry: ${expiry}`].join("\n"));
+      return ok([head(), `logged in: profile ${profile}, label ${entry.label}`, `password: ${ref ? maskRef() : "stored in Keychain"}`, `session expiry: ${expiry}`].join("\n"));
     } catch (e) {
       return err(`${head()}
 ${scrub(e?.message ?? "login failed", d.secrets)}`);
@@ -17800,7 +17811,7 @@ async function ensure(profile, ctx) {
     }
     if (!e.mfa_serial) {
       const keys = parseKeys(await keychain.get(keyAccount(profile)));
-      return keys ? { creds: keys, region: e.region } : notLoggedIn("no stored keys");
+      return keys ? { creds: keys, region: e.region } : notLoggedIn("no stored username and password");
     }
     return notLoggedIn(status === "expired" ? "the session has expired or was never created" : "no session");
   } catch (x) {
@@ -17811,12 +17822,12 @@ async function ensure(profile, ctx) {
 // logout.mjs
 var logoutTool = defineTool({
   name: "logout",
-  description: "Delete the cached session of a profile (default: the active one) and report its expiry. STS tokens cannot be revoked and stay valid until then. forget:true also deletes the stored keys; a 1Password reference stays in the profile entry, as does the entry.",
+  description: "Delete the cached session of a profile (default: the active one) and report its expiry. STS tokens cannot be revoked and stay valid until then. forget:true also deletes the stored username and password; a 1Password reference stays in the profile entry, as does the entry.",
   inputSchema: {
     type: "object",
     properties: {
       profile: { type: "string", description: "Profile name; default is the active profile." },
-      forget: { type: "boolean", description: "Also delete the stored access keys (a 1Password reference stays in the profile entry)." }
+      forget: { type: "boolean", description: "Also delete the stored username and password (a 1Password reference stays in the profile entry)." }
     },
     additionalProperties: false
   },
@@ -17843,7 +17854,7 @@ var logoutTool = defineTool({
           lines.push("1Password reference stays in the profile entry (profile_save with vault and item null removes it); nothing else to delete.");
         } else {
           await keychain.del(keyAccount(name));
-          lines.push("stored keys deleted; the profile entry stays.");
+          lines.push("stored username and password deleted; the profile entry stays.");
         }
       } else if (ref) {
         lines.push("the next query will log in again silently.");

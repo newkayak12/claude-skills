@@ -19,7 +19,7 @@ compatibility:
 ## Anchors
 
 - **Forbidden reflex.** Running `aws` straight from Bash with whatever is in `~/.aws`; asking the
-  person to paste keys in chat; rephrasing, re-quoting or re-ordering a call to get around `rejected`.
+  person to paste a username or password in chat; rephrasing, re-quoting or re-ordering a call to get around `rejected`.
 - **Boundary.** Not for writes or infra changes. Data inside a database goes to `database:query`.
 - **Done.** Every answer names the profile, account and region it came from (`dev · 123456789012 · ap-northeast-2`);
   a `rejected [rule]` line is quoted verbatim, not paraphrased.
@@ -37,7 +37,7 @@ compatibility:
      `/reload-plugins` or restart Claude Code, then stop; no retry loop.
 3. **Data-plane reads.** `get-*` that return content are allowed: `lambda get-function-configuration`
    (environment variables), `dynamodb get-item`, `logs get-log-events`, `athena get-query-results`. The IAM
-   ReadOnlyAccess policy on the keys is the real limit, not this skill; recommend attaching it. Rows of a
+   ReadOnlyAccess policy on the IAM user is the real limit, not this skill; recommend attaching it. Rows of a
    relational database go to `database:query`.
 4. **Rejected.** `rejected [rule]` is the server's read-only guard. Quote the line verbatim, say which part of
    the ask it blocks, and answer the rest. Never rephrase around it and never offer a Bash `aws` call instead.
