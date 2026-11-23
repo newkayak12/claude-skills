@@ -103,7 +103,12 @@ the snapshot. A round always builds (the user's standing word: "결과물도 검
    badly — 149 routine on-call requests — is context, never a 대표), what strength does it show, what
    is measured, what earns qualitative credit (a decision, a trade-off, a lesson). An item that only
    looks impressive and answers none is `제외` (user, 2026-11-22: "AI가 하는 전형적인 '좋아보이는거
-   가져오기'"); 부록 items pass the same bar. Propose the table (structure: asked). Mark each item `material log --id <id> --note
+   가져오기'"); 부록 items pass the same bar. The body is for chapters with a measured result; a
+   project with no result yet (in QA, not measured) and design documents, scope analyses or systems
+   built without use go to 부록, where the document itself is the evidence — never dropped for
+   lacking a result. Keep the 부록 at least as many pages as the workspace's last deck (the user,
+   2026-11-23, on a build that put 27 items in the body and cut the 부록 from 8 attachments to 4:
+   "첨부 양이 줄었네"). Propose the table (structure: asked). Mark each item `material log --id <id> --note
    "선정: <쓰임>" --status selected|excluded --later-step manage`. An exclusion lives only here, not
    in `확정사실.md`. `selection` reads the table back; a 쓰임 outside the three is a problem.
 3. **Draft.** No skeleton yet, or a new project → write it from the `본문`/`부록` items only: one
