@@ -630,3 +630,67 @@ test('Node 18: the scan path uses no ES2023+ APIs and getBuiltinModule only thro
   assert.match(src, /getBuiltinModule\?\.\(/);
   assert.doesNotMatch(src, /import\(['"]node:sqlite|from ['"]node:sqlite/);
 });
+
+// ---------- card 177: unpinned root follows the Codex per-call workspace ----------
+
+// Spawns server.mjs in a tmp cwd with no --root; extraArgs ['--only','wiki'] picks wiki-only mode, [] is full mode.
+function rpcNoRoot(cwd, requests, extraArgs = [], env = {}) {
+  const r = spawnSync(process.execPath, [SERVER, ...extraArgs], {
+    cwd, env: { ...BASE_ENV, TEAMS_WIKI_ROOT: '', ...env }, input: requests.map((q) => JSON.stringify(q)).join('\n') + '\n', encoding: 'utf8', timeout: 30000,
+  });
+  return r.stdout.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+}
+const codexMeta = (ws) => ({ 'x-codex-turn-metadata': { workspaces: { [ws]: {} } } });
+const metaWrite = (slug, ws) => {
+  const q = call1('wiki_write', { space: 's', slug, title: 't', body: 'b' });
+  if (ws) q.params._meta = codexMeta(ws);
+  return q;
+};
+const ONLY_WIKI = ['--only', 'wiki'];
+
+test('card177 a: --only wiki, no root, _meta workspace -> page under the workspace, not the spawn cwd', () => {
+  const cwd = fresh(), ws = fresh();
+  assert.equal(rpcNoRoot(cwd, [metaWrite('x', ws)], ONLY_WIKI)[0].result.isError, false);
+  assert.ok(existsSync(join(wd(ws), 's', 'x.md')));
+  assert.ok(!existsSync(wd(cwd)));
+});
+
+test('card177 b: full mode, no root, _meta workspace -> page under the workspace', () => {
+  const cwd = fresh(), ws = fresh(), home = fresh();
+  const env = { HOME: home, HARNESS_TASKS_DIR: join(home, 'tasks'), TEAMS_RUNS_DIR: join(home, 'runs'), TEAMS_SESSIONS_DIR: join(home, 'sessions') };
+  const out = rpcNoRoot(cwd, [{ jsonrpc: '2.0', id: 0, method: 'initialize', params: {} }, { ...metaWrite('x', ws), id: 1 }], [], env);
+  assert.equal(out.find((m) => m.id === 1).result.isError, false);
+  assert.ok(existsSync(join(wd(ws), 's', 'x.md')));
+  assert.ok(!existsSync(wd(cwd)));
+});
+
+test('card177 c: --root pin wins over a _meta workspace', () => {
+  const cwd = fresh(), argRoot = fresh(), ws = fresh();
+  assert.equal(rpcNoRoot(cwd, [metaWrite('x', ws)], [...ONLY_WIKI, '--root', argRoot])[0].result.isError, false);
+  assert.ok(existsSync(join(wd(argRoot), 's', 'x.md')));
+  assert.ok(!existsSync(wd(ws)));
+});
+
+test('card177 d: TEAMS_WIKI_ROOT pin wins over a _meta workspace', () => {
+  const cwd = fresh(), envRoot = fresh(), ws = fresh();
+  assert.equal(rpcNoRoot(cwd, [metaWrite('x', ws)], ONLY_WIKI, { TEAMS_WIKI_ROOT: envRoot })[0].result.isError, false);
+  assert.ok(existsSync(join(wd(envRoot), 's', 'x.md')));
+  assert.ok(!existsSync(wd(ws)));
+});
+
+test('card177 e1: no pin and no _meta -> the spawn cwd', () => {
+  const cwd = fresh();
+  assert.equal(rpcNoRoot(cwd, [metaWrite('x')], ONLY_WIKI)[0].result.isError, false);
+  assert.ok(existsSync(join(wd(cwd), 's', 'x.md')));
+});
+
+test('card177 e2: one session, _meta call then plain call -> workspace first, spawn cwd second (per call, not sticky)', () => {
+  const cwd = fresh(), ws = fresh();
+  const out = rpcNoRoot(cwd, [{ ...metaWrite('first', ws), id: 1 }, { ...metaWrite('second'), id: 2 }], ONLY_WIKI);
+  assert.equal(out[0].result.isError, false);
+  assert.equal(out[1].result.isError, false);
+  assert.ok(existsSync(join(wd(ws), 's', 'first.md')));
+  assert.ok(!existsSync(join(wd(cwd), 's', 'first.md')));
+  assert.ok(existsSync(join(wd(cwd), 's', 'second.md')));
+  assert.ok(!existsSync(join(wd(ws), 's', 'second.md')));
+});

@@ -98,6 +98,7 @@ export function serve({ serverInfo, protocolVersion, tools, call }) {
           signal: controller.signal,
           progress: (fn) => { progressState.message = fn; },
           registerChild: (child) => { if (tracked) children.push(child); },
+          meta: (params && params._meta) || undefined,
         };
         const stopProgress = startProgress(token, `${name}${params && params.arguments && params.arguments.node_id ? ' ' + params.arguments.node_id : ''}`, progressState);
         try {

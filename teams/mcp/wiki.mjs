@@ -35,12 +35,23 @@ const RRF_K = 60;
 const HOLD_MS = Number(process.env.WIKI_TEST_HOLD_MS) || 0; // tests only: widens the INDEX.md read-to-write window
 const NAME = /^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u;
 
-let root = process.cwd();
+const DEFAULT_ROOT = process.cwd();
+let root = DEFAULT_ROOT;
+let pinned = false; // --root / TEAMS_WIKI_ROOT: the caller's workspace never moves it
 let lockTimeoutMs = Number(process.env.WIKI_LOCK_TIMEOUT_MS) || 10000;
 let db = null;
 let sqlite; // undefined = not probed yet; then { mode: 'fts5', DatabaseSync } or { mode: 'scan', error? }
 
 export function setRoot(dir) { close(); root = resolve(dir); }
+export function pinRoot(dir) { setRoot(dir); pinned = true; }
+// Per call, unpinned only: root = first workspace Codex sends in _meta, else the default root.
+export function useWorkspace(meta) {
+  if (pinned) return;
+  const ws = meta && meta['x-codex-turn-metadata'] && meta['x-codex-turn-metadata'].workspaces;
+  const first = ws && typeof ws === 'object' ? Object.keys(ws)[0] : undefined;
+  const target = first ? resolve(first) : DEFAULT_ROOT;
+  if (target !== root) setRoot(target);
+}
 export function setLockTimeout(ms) { lockTimeoutMs = ms; }
 export function close() { if (db) { try { db.close(); } catch { /* already closed */ } db = null; } }
 

@@ -6,12 +6,13 @@
 //   wiki_*  wiki.mjs           the same queue (one SQLite handle, one lock)
 //
 // tm_wait is a long poll: it runs outside the serial queue, with ctx.signal, so a cancel stops it
-// and it never holds back another call. Every other tm_* and wiki_* ignores ctx. Progress is
+// and it never holds back another call. Every other tm_* ignores ctx; wiki_* reads only ctx.meta
+// (the Codex workspace, applied inside the queue). Progress is
 // still sent by stdio.mjs for any call that carries a progressToken.
 
 import { BROKER_TOOLS, callBrokerTool } from './broker-tools.mjs';
 import { TOOLS as TM_TOOLS, callTool as callTmTool } from './taskmanager-tools.mjs';
-import { TOOLS as WIKI_TOOLS, callTool as callWikiTool } from './wiki.mjs';
+import { TOOLS as WIKI_TOOLS, callTool as callWikiTool, useWorkspace } from './wiki.mjs';
 
 export const WIKI_OFF_MESSAGE = 'teams-wiki is off (TEAMS_WIKI_OFF=1)';
 
@@ -38,7 +39,7 @@ export function makeCall({ wikiOff = false } = {}) {
       if (name.startsWith('tm_')) return serial(() => callTmTool(name, args));
       if (name.startsWith('wiki_')) {
         if (wikiOff) return Promise.reject(new Error(WIKI_OFF_MESSAGE));
-        return serial(() => callWikiTool(name, args));
+        return serial(() => { useWorkspace(ctx && ctx.meta); return callWikiTool(name, args); });
       }
     }
     return Promise.reject(new Error(`unknown tool: ${name}`));

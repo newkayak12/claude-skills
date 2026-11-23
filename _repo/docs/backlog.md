@@ -9,13 +9,6 @@ never retire them as duplicates, and never reference superpowers.
 
 ### Codex plugin compatibility
 
-177. **teams wiki takes its root from Codex's per-call workspace** — E-66cb76c8 skipped it (budget); plan in that EPIC's PLAN-F4 PRD (open: does Codex send `_meta` on every call?)
-   - Why: 2026-11-22, the teams MCP now starts in Codex with `"cwd": "."` (the plugin folder); `wiki.mjs`
-     roots at `process.cwd()`, so under Codex the wiki would live in the plugin cache. Codex gives the
-     session folder only per call in `_meta["x-codex-turn-metadata"].workspaces` (knowledge reads it the same way).
-   - Acceptance: with no `--root`/`TEAMS_WIKI_ROOT`, a `wiki_*` call under Codex uses that workspace; a test
-     red before the fix; teams tests with counts.
-
 173. **teams build nodes can run the commands their stories need (codex, node, python3, reads under ~/.codex)** — fix shipped in E-66cb76c8 (workspace-write nodes get `--allowedTools Bash`; a project deny rule still wins). Left: the live size-S run below, and QA for E-66cb76c8 F1–F3 (none ran).
    - Why: E-f8f880f9 report, 2026-11-22: every draft/implement/test node got "This command requires
      approval" for `codex`, `python3`, `node`, reads under `~/.codex`, once `git`, while review and shape
