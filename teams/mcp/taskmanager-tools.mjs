@@ -52,7 +52,7 @@ const VERDICT_SCHEMA = {
 const TOOLS = [
   {
     name: 'tm_open',
-    description: 'Open a task for a request that may be too large for one graph run. Builds size -> shape -> critique on disk under ~/.harness/tasks/<task_id>/ and spawns a daemon process that drives the whole task to completion by itself - size, shape, critique, every package dispatch and fold, integrate, the goal gate, the report. The caller never drives a node: watch with tm_status/tm_board/tm_events, or block for a bounded stretch with tm_wait. Routing arguments are passed through to every child run. Prefer tm_run for a caller that does not also want tm_next\'s node-by-node reply.',
+    description: 'Open a task for a request that may be too large for one graph run. Spawns a daemon that drives the whole task (size, shape, critique, package dispatch, integrate, goal gate, report) under ~/.harness/tasks/<task_id>/. The caller never drives a node: watch with tm_status/tm_board/tm_events, or block briefly with tm_wait. Prefer tm_run unless you also want tm_next\'s node-by-node reply.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -95,7 +95,7 @@ const TOOLS = [
   },
   {
     name: 'tm_run',
-    description: 'Open a task exactly like tm_open, and spawn the same daemon to drive it - but never self-drive and never return a node table: just {task_id, run_id, docs_dir}. This is the entry point for a caller that wants to hand off a whole request and walk away (§4-B of the design doc); follow up with tm_wait for a bounded look at progress, or tm_status/tm_board any time, or nothing at all if only the final docs matter.',
+    description: 'Open a task exactly like tm_open and spawn the same daemon, but never self-drive and never return a node table: just {task_id, run_id, docs_dir}. For a caller that hands off a whole request and walks away; follow up with tm_wait, or tm_status/tm_board any time.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -127,13 +127,13 @@ const TOOLS = [
   },
   {
     name: 'tm_next',
-    description: 'Which manager nodes are ready, each with a briefing_path for a fresh agent, plus every running child as {cwd, run_id, driver}. A ready dispatch node is executed here and now: its worktree is created, its child graph run opened, and a headless driver process spawned to run that child to the end. Also where a dead driver is serviced: respawned on the same run_id (driver.restarts) if the budget allows, or parked on waiting_capacity after a usage-limit death - neither needs you to do anything but poll again. A size-S task under s_driver "process" has no manager nodes at all; tm_next instead returns {run_id, cwd, driver, nodes, report} for the one run it is driving, ready for the entry skill\'s output template once state is complete or blocked. Poll tm_next while a driver is alive; do not drive that child yourself. tm_submit the dispatch node once the child is no longer running. A task opened with a daemon in play (tm_open/tm_run when not under a test seam) is normally left to the daemon - call tm_next only to drive by hand or to inspect a node\'s briefing_path.',
+    description: 'Which manager nodes are ready (each with a briefing_path) plus every running child as {cwd, run_id, driver}. Executes a ready dispatch node here (worktree, child run, headless driver) and services dead drivers: just poll again. Never drive a child yourself; tm_submit the dispatch node once its child stops. A daemon-driven task is left to the daemon.',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' } }, required: ['task_id'] },
     outputSchema: NEXT_SCHEMA,
   },
   {
     name: 'tm_wait',
-    description: 'Bounded long-poll on a task the daemon is driving: blocks up to max_ms, returning the node transitions (finished nodes, newest last) recorded since `cursor`, or an empty list on timeout - never the full state. Pass the previous reply\'s `cursor` back in to continue watching without re-reading anything already seen; omit it (or pass 0) to start from the beginning. This is the way to watch a tm_run/tm_open task without accumulating its payload in your own context: call again with the returned `cursor` while `state` is "running", stop when it is "complete" or "blocked".',
+    description: 'Bounded long-poll on a daemon-driven task: blocks up to max_ms and returns the node transitions (finished nodes, newest last) since `cursor`, or an empty list on timeout - never the full state. Pass the previous reply\'s `cursor` back to continue (omit or 0 starts from the beginning). Call again while `state` is "running"; stop when it is "complete" or "blocked".',
     inputSchema: { type: 'object', properties: {
       task_id: { type: 'string' },
       cursor: { type: 'number', description: 'a ts from a previous tm_wait reply; 0 or omitted to start from the beginning' },
@@ -150,7 +150,7 @@ const TOOLS = [
   },
   {
     name: 'tm_submit',
-    description: 'Record a manager node. For size/shape/critique/accept/integrate/gate/report pass the payload the fresh agent returned. For a dispatch node pass no payload: the manager reads the child run file and folds its goal-gate verdict and report into the node. Refused while the child is still running and its driver alive, or waiting_capacity (a usage-limit death; use tm_retry({reset_capacity:true})); a child whose driver died mid-run and spent its whole restart budget folds as blocked, with every attempt\'s stderr. Pass `key` (a TASK ticket key from tm_inbox) instead of node_id to submit a human\'s own answer for a waiting_human card - the flow continues exactly as if a driver had submitted it (its child run\'s driver resumes automatically); a later gate rejection sends the next attempt back to waiting_human for the same human, never to a model. Idempotent per {task_id, node_id, attempt}: node_id already carries the round for every retryable stage (dispatch:P1:2, shape:2), so a duplicate submit of a node that already finished is a no-op returning the stored verdict (`idempotent: true`) - it does not re-fold a dispatch (no second git commit) or re-run finish()\'s side effects. Pass `attempt` for a stricter check.',
+    description: 'Record a manager node: pass the payload the fresh agent returned; a dispatch node takes none, the manager folds the child run\'s verdict. Refused while the child runs with a live driver, or is waiting_capacity (tm_retry({reset_capacity:true})). Pass `key` (a TASK key from tm_inbox) instead of node_id to answer a waiting_human card. Idempotent per {task_id, node_id, attempt}.',
     inputSchema: {
       type: 'object',
       properties: { task_id: { type: 'string' }, node_id: { type: 'string' }, key: { type: 'string', description: 'a TASK key (E-xxxxxxxx/Pn/subgoalId) naming a waiting_human card, in place of node_id' }, attempt: { type: 'integer', description: 'this node\'s attempt number, for the idempotency check above. Optional - node_id already disambiguates attempts for every retryable stage.' }, payload: { type: 'object' } },
@@ -160,13 +160,13 @@ const TOOLS = [
   },
   {
     name: 'tm_retry',
-    description: 'Open a fresh attempt. With package_id: a new dispatch in the same worktree, carrying the rejection forward into the child request. With repackage: [ids] after an integration conflict, reshape with those packages told to become one or to depend on each other. With repair: true after an integrate came back verified=false with no conflicts: a repair package whose worktree IS the integration tree, for a seam no package can reproduce alone. With reset_capacity: true, clears every child (or just package_id\'s, or the size-S run) parked waiting_capacity after a usage-limit death and respawns its driver - this spends no restart. A blocked size-S task whose run stopped on a failed report node is retried with this call alone: only that report is re-pended (with its failure as feedback; avoid_executors / different_vendor route it away from the executor that failed it) and a fresh driver continues the same run. Without any of them: continue from the node that stopped the graph (a failed package gets its next attempt, a failed integrate a repair, a failed shape/critique a reshape), or, on a running graph whose daemon died, resume the daemon; every retry starts the daemon again. When the budget is gone the failure is settled and the report is released over the unreachable set.',
+    description: 'Open a fresh attempt. package_id: a new dispatch in the same worktree, carrying the rejection forward. repackage: [ids] after an integration conflict. repair: true after integrate came back verified=false with no conflicts. reset_capacity: true respawns drivers parked waiting_capacity after a usage-limit death. With none, continues from the node that stopped the graph or resumes a dead daemon.',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, package_id: { type: 'string' }, repackage: { type: 'array', items: { type: 'string' }, description: 'the conflicting_packages an integrate or dispatch failure named' }, repair: { type: 'boolean', description: 'the last integrate failed with verified=false and no conflicts: open a package that runs IN the integration worktree, where every package branch is merged and the defect is visible. package_id: "integration" is an alias for it.' }, reset_capacity: { type: 'boolean', description: 'a driver is parked on waiting_capacity after a usage-limit death (see tm_next\'s children[].waiting_capacity, or the top-level one for a size-S task). Clears it and respawns a driver on the same run_id, spending no restart. Combine with package_id to target just that package.' }, avoid_executors: { type: 'array', items: { type: 'string' }, description: 'a blocked size-S task whose run stopped on a failed report node (tm_next names it): executors (vendors) the report rerun is routed away from - tried last, never dropped. A bare tm_retry({task_id}) already retries that report.' }, different_vendor: { type: 'boolean', description: 'same blocked size-S failed-report case: avoid the executor that ran the failed report (shorthand for naming it in avoid_executors).' } }, required: ['task_id'] },
     outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, retried: { type: 'boolean' }, attempt: { type: 'number' }, resumed: { type: 'array', items: { type: 'string' } }, reason: { type: 'string' }, unreachable: { type: 'array', items: { type: 'string' } } }, required: ['task_id', 'retried'] },
   },
   {
     name: 'tm_file',
-    description: 'File one or more develop STORYs directly against a task that has already reached goal level (a gate:goal node exists) - the same path a QA-found defect takes (§5b: a fresh package per story, its own dispatch/accept chain, a fresh integrate opened behind it, gate:goal - and a fresh QA round if roles.qa is on - rerouted there), but reporter: "user" / origin: "tm_file" on the board instead of reporter: "qa" / origin: "qa". Never checked against qa_rounds: a user filing a STORY is not a QA round, so this always proceeds regardless of how many QA rounds this task has already run.',
+    description: 'File one or more develop STORYs against a task that has already reached goal level (a gate:goal node exists): the path a QA-found defect takes (a fresh package per story, its own dispatch/accept chain, a fresh integrate and goal gate behind it), but filed with reporter "user" / origin "tm_file". Never counted against qa_rounds, so it always proceeds.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -197,19 +197,19 @@ const TOOLS = [
   },
   {
     name: 'tm_board',
-    description: 'Ticket-shaped board (§4/§8 of the design doc). Omit task_id for every EPIC this manager knows (key, name - a short natural-language name, state, phase) - grouped by `initiative` (a `groups: [{initiative, key: "I-<slug>", epics}]` array, an initiative-less `null` group included) whenever at least one task has one set; with none set anywhere, exactly the flat `{epics}` list this always returned. With task_id: the EPIC header plus its STORY kanban - one row per package, its state derived from task.json the same way tm_status is, never a second source of truth - and a doc_path to the human-readable INDEX.md (which may not exist on disk yet; see tm_docs). task_id accepts a full run id or the ticket key E-xxxxxxxx (the same 8-hex-prefix resolution tm_ticket uses). Read-only.',
+    description: 'Ticket-shaped board. Omit task_id for every EPIC (key, name, state, phase), grouped by `initiative` as `groups: [{initiative, key: "I-<slug>", epics}]` when any task has one, else a flat `{epics}` list. With task_id: the EPIC header plus its STORY kanban (one row per package) and a doc_path to INDEX.md (may not exist yet; see tm_docs). task_id accepts a run id or the key E-xxxxxxxx. Read-only.',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' } } },
     outputSchema: { type: 'object' },
   },
   {
     name: 'tm_ticket',
-    description: 'One ticket by key: I-<slug> for an initiative (every EPIC under it, with state and cost - see tm_open({initiative})), E-xxxxxxxx for the EPIC (with its short natural-language `name`), E-xxxxxxxx/Pn for a STORY. State, worktree/branch, task progress (x/y) and the last accept verdict, plus a doc_path (EPIC/STORY only) and reporter/origin/link (STORY only - reporter is the issuing team, origin the stage that filed it, link only set for an upstream fix). Read-only; a doc_path is always returned for an EPIC/STORY, even before tm_docs has written anything there.',
+    description: 'One ticket by key: I-<slug> for an initiative (every EPIC under it, with state and cost), E-xxxxxxxx for an EPIC (with its `name`), E-xxxxxxxx/Pn for a STORY. Returns state, worktree/branch, task progress (x/y) and the last accept verdict, plus doc_path (EPIC/STORY) and reporter/origin/link (STORY). Read-only.',
     inputSchema: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] },
     outputSchema: { type: 'object' },
   },
   {
     name: 'tm_log',
-    description: 'Follow one ticket\'s own log as readable lines, newest last (design §8). key E-xxxxxxxx/Pn: the STORY\'s latest dispatch driver stream (child.driver.log - drivers/<node>.stream.jsonl; E-xxxxxxxx/S for a size-S task\'s single run), one line per stream event (init, assistant text, -> tool call, <- tool result, result with turns/cost). key E-xxxxxxxx: the task ledger (the same records tm_events returns as JSON), one "HH:MM:SS event k=v" line each. Only the last `tail` lines are read (default 50, max 500) - the file is read from its end, never whole. since: pass the previous reply\'s `cursor` (a byte offset) to get only lines appended after it. raw:true returns the exact log lines instead. Read-only; safe from any session.',
+    description: 'Follow one ticket\'s log as readable lines, newest last. key E-xxxxxxxx/Pn: the STORY\'s latest driver stream, one line per event (E-xxxxxxxx/S for a size-S task\'s single run). key E-xxxxxxxx: the task ledger (as tm_events). Reads only the last `tail` lines (default 50, max 500). Pass the previous reply\'s `cursor` as `since` for only newer lines; raw:true returns exact lines. Read-only.',
     inputSchema: { type: 'object', properties: {
       key: { type: 'string', description: 'E-xxxxxxxx (EPIC ledger) or E-xxxxxxxx/Pn (STORY driver log)' },
       tail: { type: 'integer', description: 'default 50, max 500' },
@@ -224,7 +224,7 @@ const TOOLS = [
   },
   {
     name: 'tm_assign',
-    description: 'Pin a card to a human, or release it back to auto. `key` is a STORY (E-xxxxxxxx/Pn, every subgoal in that package\'s child run) or TASK (E-xxxxxxxx/Pn/subgoalId, just that one) ticket key. `to: "human"` (optionally `who`, or `to: {executor: "human", who}`) pins the subgoal\'s AUTHOR stage only (implement/draft/cases - see graph.mjs\'s authorStage) - a judging stage (test/review/gate/critique) is never assigned to the human who did the work. `to: "auto"` releases it: a card already parked waiting_human goes back to pending and dispatches normally on the next team_next. The pin lives on the child run\'s own spec (the same `assignee` field setgoal itself may write), so a rejected human-authored subgoal\'s next attempt is pinned again automatically. Called here, by the user, the pin always parks the node in waiting_human regardless of the run\'s interactive setting - the user is present by definition. The SAME field, written by a shape/setgoal instead, only parks when the run is interactive; otherwise it is auto-decided (dispatched to an AI, recorded, listed in tm_inbox\'s `decided`) - see graph.mjs\'s applyHumanPin. A STORY may be taken before it dispatches: the pin rides on the package and reaches its child run when it opens. A TASK key needs the child run to exist.',
+    description: 'Pin a card to a human, or release it back to auto. `key` is a STORY (E-xxxxxxxx/Pn, every subgoal in it) or TASK (E-xxxxxxxx/Pn/subgoalId) key; a TASK key needs its child run to exist. `to: "human"` (optionally `who`) pins the AUTHOR stage only (implement/draft/cases), never a judging stage, and parks it in waiting_human. `to: "auto"` releases it back to pending.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -242,7 +242,7 @@ const TOOLS = [
   },
   {
     name: 'tm_inbox',
-    description: 'Two sections (design §7): `cards` is every waiting_human card, across every task (or one, with task_id) - a headless driver cannot reach a human, so this is how the main session finds work a human pinned to themselves (tm_assign, always honoured) or that this run is interactive about. For each: its TASK ticket key, title, what is asked (acceptance criteria and a briefing_path with the full brief), who it is assigned to, and since when. Complete one with tm_submit({task_id, key, payload}). `decided` is every card a MODEL tried to pin (a shape package or setgoal subgoal writing its own assignee) that this run auto-decided instead of parking, because the run is not interactive - dispatched to an AI as normal, with why recorded; object to one by tm_assign-ing it to a human yourself. Read-only; safe from any session.',
+    description: 'Two sections. `cards` is every waiting_human card across every task (or one, with task_id): TASK ticket key, title, what is asked (acceptance criteria, briefing_path), assignee and since when. Complete one with tm_submit({task_id, key, payload}). `decided` is every card a MODEL tried to pin that a non-interactive run sent to an AI instead; object with tm_assign. Read-only.',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' } } },
     outputSchema: { type: 'object', properties: {
       cards: { type: 'array', items: { type: 'object', properties: {
@@ -258,13 +258,13 @@ const TOOLS = [
   },
   {
     name: 'tm_docs',
-    description: '(Re)render the phase markdown under <docs_dir>/E-<task8>/ from task.json - INDEX, request, shape, critique, one page per STORY, integrate, goal gate and report, whichever already have data (§7c). rebuild:true DELETES THE ENTIRE EPIC DOCS DIRECTORY FIRST, then writes every file fresh; without it (the default), existing files are simply overwritten and a stale file from a dropped package survives. The engine never reads these back - md is a rendered view, not a second source of truth.',
+    description: '(Re)render the phase markdown under <docs_dir>/E-<task8>/ from task.json (INDEX, request, shape, critique, one page per STORY, integrate, goal gate, report), whichever have data. rebuild:true DELETES THE ENTIRE EPIC DOCS DIRECTORY FIRST, then writes every file fresh; by default files are overwritten and a stale one from a dropped package survives. The md is a view; the engine never reads it back.',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, rebuild: { type: 'boolean', description: 'default false. true deletes <docs_dir>/E-<task8>/ recursively before re-rendering - destructive, use to clear stale files left by a dropped package.' } }, required: ['task_id'] },
     outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, rebuild: { type: 'boolean' }, written: { type: 'array', items: { type: 'string' } } } },
   },
   {
     name: 'tm_clean',
-    description: 'EPIC teardown (§14 C-11): removes the git worktrees and local branches a task\'s packages created, once the task is done. With task_id: refused (throws) while the task is still running - a live daemon or dispatch means there is nothing settled yet to clean, call tm_wait first, or pass wait: true to wait (up to max_ms, default 60000, cap 300000; abortable) for a terminal state and then clean - a task still running when the wait ends is refused with how long was waited. wait is ignored without task_id. dry_run defaults false here - naming one task is already the decision to act. Without task_id: sweeps every task under the tasks root, silently skipping any still running rather than refusing the whole call; dry_run defaults true (list what each terminal task would lose, change nothing) since no single task was chosen. Never touches the integration worktree/branch - teams never merges it into the project\'s own branch, so it is the only place a task\'s accepted work survives once package branches are gone; a repair/qa/audit package\'s "worktree" already IS that tree and is filtered out the same way. A package branch is deleted only once every commit on it is reachable from an integration branch or the project\'s own HEAD (git merge-base --is-ancestor, actually checked, never assumed) - one that is not is reported under kept_branches with why, and only its worktree directory is removed (the branch ref alone still holds every commit). task.json, docs and driver logs are left alone; a `clean` event is appended to the task\'s own ledger. Idempotent: a worktree or branch already gone from an earlier call reads as already_clean.',
+    description: 'EPIC teardown: removes the worktrees and local branches a finished task\'s packages created. With task_id: refused while the task runs (tm_wait first, or wait: true); dry_run defaults false. Without task_id: sweeps every terminal task; dry_run defaults true. Never touches the integration worktree/branch; a package branch is deleted only once merged into it or HEAD, else listed in kept_branches.',
     inputSchema: { type: 'object', properties: {
       task_id: { type: 'string' },
       wait: { type: 'boolean', description: 'default false. true with task_id waits (bounded by max_ms, abortable, like tm_wait) for a terminal state, then cleans; ignored by a sweep.' },
@@ -283,7 +283,7 @@ const TOOLS = [
   },
   {
     name: 'tm_cancel',
-    description: 'Stop a running, blocked or partial task for good. In order: saves a cancel marker on task.json in the same commit that clears spawning reservations and in-flight open claims; kills the task\'s daemon, drivers and judges and confirms every pid dead before anything is appended; retires the task\'s own child graph runs; writes a report stub at <docs_dir>/E-<task8>/80-report.md; appends daemon_done {state:"cancelled"} and then `clean` as the last ledger event (which releases the repo push hold). The task then reads `cancelled` (terminal); tm_status, tm_clean, tm_wait and tm_next spawn nothing on it, and tm_retry and tm_submit refuse it. Worktrees and branches are left for a later tm_clean. On a complete, cancelled or already-cleaned task it is a no-op that reports the current state.',
+    description: 'Stop a running, blocked or partial task for good: marks it cancelled, kills its daemon, drivers and judges (confirming every pid dead), retires its child runs, writes a report stub (80-report.md) and appends daemon_done then `clean`. The task reads `cancelled` (terminal); tm_retry and tm_submit refuse it. Worktrees and branches stay for tm_clean. A no-op on a finished task.',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' } }, required: ['task_id'] },
     outputSchema: { type: 'object', properties: {
       task_id: { type: 'string' }, state: { type: 'string' }, noop: { type: 'boolean' }, reason: { type: 'string' }, was: { type: 'string' },
@@ -293,7 +293,7 @@ const TOOLS = [
   },
   {
     name: 'tm_ask',
-    description: 'For a running STORY\'s own driver: ask the TeamLeader a question the briefing and the plan do not settle. Records `asked` on the task\'s ledger and parks the driver - end your turn right after the call; you are resumed, at no cost while you wait, with the answer in your prompt. A fresh answer node reads the plan and the wiki and either answers, or forwards the question to the person as an ask card (tm_inbox) that tm_submit answers. There is no timeout, no cap on questions and no de-dupe. Refused for an empty question, a key that is not a STORY of this task, or a STORY that is not running.',
+    description: 'For a running STORY\'s own driver: ask the TeamLeader a question the briefing and the plan do not settle. It parks the driver - end your turn right after the call; you are resumed at no cost with the answer in your prompt. The TeamLeader answers from the plan and wiki, or forwards to the person. Refused for an empty question, a key that is not a STORY of this task, or a STORY that is not running.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -307,7 +307,7 @@ const TOOLS = [
   },
   {
     name: 'tm_post',
-    description: 'Post one message on the task\'s bus (bus.jsonl under the task dir, written only by the engine). `from` is your own identity: a running STORY\'s key (E-xxxxxxxx/Pn), or `teamleader` / `person` for the EPIC manager and the person (a driver may not post as those two). `to` is a STORY key, `teamleader`, `person` or `all`. Allowed: a STORY to a sibling STORY or to the teamleader; the teamleader and the person to anyone, `all` included. Refused with a reason: a STORY to the person (ask with tm_ask), a STORY to `all`, a message to oneself, a STORY key of another EPIC or one that is done or failed, an empty body or one over 8192 characters, a reply_to that is not the ts of a message on this bus, a cancelled task. Every refusal reads `tm_post refused: <reason>` and changes nothing. A STORY not yet dispatched receives the message at its first tm_read. Returns the message id (`ts`, strictly increasing) and the topic (E-xxxxxxxx/Pn or E-xxxxxxxx/all).',
+    description: 'Post one message on the task\'s bus. `from` is your own STORY key (E-xxxxxxxx/Pn), never `teamleader` or `person`. `to` is a STORY key, `teamleader`, `person` or `all`. A STORY may post only to a sibling STORY or the teamleader: never the person (use tm_ask), `all`, itself or a finished STORY. Body 1-8192 chars. Refusals read `tm_post refused: <reason>`. Returns `ts` and topic.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -323,7 +323,7 @@ const TOOLS = [
   },
   {
     name: 'tm_read',
-    description: 'Read the task\'s bus as `key`: a STORY key sees the messages to it, from it and to `all` (those posted before it was dispatched too); `teamleader` and `person` see every message. Pass the previous reply\'s `cursor` (the last ts seen; 0 or none starts from the beginning) to get only what came after it. At most 50 messages per call, oldest first; `more: true` means call again with the returned cursor. Records the highest ts returned as this key\'s read mark (the unread count). A driver may not read as teamleader or person. Refused as `tm_read refused: <reason>`.',
+    description: 'Read the task\'s bus as `key`: a STORY key sees messages to it, from it and to `all`; `teamleader` and `person` see every message (a driver may not read as those). Pass the previous reply\'s `cursor` (last ts seen; 0 or none starts at the beginning) for only newer ones. At most 50 per call, oldest first; `more: true` means call again with the returned cursor. Refused as `tm_read refused: <reason>`.',
     inputSchema: {
       type: 'object',
       properties: {

@@ -631,6 +631,7 @@ ahead of the order above.
      437/437). The graph MCP is not visible under strict MCP (mcp_servers: teams only). AC-8's files are the 10
      including test-node-env.mjs; no version bump. The real-L cost compared to E-258fa3e5 (with the
      card 129 Sprint) stays open.
+     2026-11-23 (stage tool sets, real headless runs, haiku, "say ok", cwd repo, each arm on its own tree; start context = first assistant event, run 1 / run 2): auto before 35,516 / 35,516, after 35,289 / 35,289; develop before 33,496 / 33,496, after 33,269 / 33,269; mcp__teams__* in init 35 -> 17 (tools 46 -> 28), 20 descriptions shortened; the saving is only ~227 tokens per flow, inside the ~3.4k noise (the tool names are deferred behind ToolSearch, so schemas barely load), load average was 54 on 8 cores; 20k still missed.
    - Budget stop on a size-S run (E-7a639e5c): the S driver is stopped at the budget after the package
      grace (D1-b); the task ends partial with a budget reason and a report saying so; a run finishing
      inside the grace still reads complete, its report noting the stop. E-641429ea's $1.62 overshoot

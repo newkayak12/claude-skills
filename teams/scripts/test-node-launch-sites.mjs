@@ -504,6 +504,8 @@ test('AC-X1: a graph node\'s final claude argv is lean - strict MCP, the teams s
   assert.deepEqual(invocations.map((i) => i.stage), ['plan', 'setgoal', 'critique', 'implement']);
   for (const { stage, args } of invocations) {
     assertLean(args, `node ${stage}`);
+    const sargs = JSON.parse(valuesOf(args, '--mcp-config')[0]).mcpServers.teams.args;
+    assert.deepEqual(sargs.slice(1, 3), ['--stage', 'node'], `${stage}: the node's teams server names the node set`);
     for (const f of args.filter((a) => a.startsWith('--'))) assert.ok(ADAPTER_FLAGS.has(f) || ['-p', '--output-format', '--verbose', '--no-session-persistence', '--strict-mcp-config', '--tools', '--permission-mode', '--allowedTools'].includes(f), `${stage}: unexpected claude flag ${f}`);
     assert.deepEqual(valuesOf(args, '--allowedTools').join(',').split(',').filter((t) => t === 'mcp__teams__tm_ask'), ['mcp__teams__tm_ask'], `${stage}: tm_ask is allowed`);
   }
@@ -566,7 +568,9 @@ test('tm_ask is reachable from an adapter node: the lean --mcp-config declares t
     input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) + '\n', encoding: 'utf8', env: { ...process.env },
   });
   const names = JSON.parse(r.stdout.trim().split('\n')[0]).result.tools.map((t) => t.name);
-  assert.ok(names.includes('tm_ask') && names.includes('team_next') && names.includes('team_run'), 'the one teams server serves both');
+  assert.deepEqual(server.args.slice(1, 3), ['--stage', 'node'], 'the lean launch names the node set');
+  assert.ok(names.includes('tm_ask'), 'the node set lists tm_ask');
+  assert.ok(!names.includes('team_next') && !names.includes('team_run'), 'a node never lists the driver\'s team_next/team_run (intended change: was listed before --stage node)');
 }));
 
 test('a package child\'s prompt carries the exact tm_ask call (task_id and key); with no task known it states the generic rule', () => withStubClaude(async (cwd) => {

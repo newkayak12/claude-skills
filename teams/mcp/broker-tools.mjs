@@ -226,7 +226,7 @@ const TOOLS = [
   {
     name: 'team_submit',
     description:
-      'Record a node you executed yourself. Same adjudication a vendor result gets: claimed changed_files are cross-checked against the worktree, and stage_ok comes back adjudicated, never raised. Idempotent per {run_id, node_id, attempt}: a node_id already carries its attempt number in most stages (implement:U1:2), so a duplicate call for a node that has already finished - the same request arriving twice, a retried MCP call - is a no-op that returns the stored verdict (`idempotent: true`) instead of erroring or re-adjudicating. Pass `attempt` when you have it for a stricter check (rejected if it does not match the node\'s own attempt).',
+      'Record a node you executed yourself. Claimed changed_files are cross-checked against the worktree; stage_ok comes back adjudicated, never raised. Idempotent per {run_id, node_id, attempt}: a duplicate call for a finished node is a no-op that returns the stored verdict (`idempotent: true`). Pass `attempt` for a stricter check (rejected on mismatch).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -247,7 +247,7 @@ const TOOLS = [
   {
     name: 'team_retry',
     description:
-      'Open a fresh attempt, carrying the rejection feedback forward. With subgoal_id, retries that subgoal. With node_id naming a failed report node, reruns just that report (optionally away from avoid_executors). Without it, retries the spec itself (setgoal + critique) and discards the subgoal graph the rejected spec produced. The failed attempt stays in the graph as evidence. When the retry budget is gone the failure is settled instead: every node that needed its output becomes `unreachable`, and the report - which only waits for the goal gate to finish, not to pass - becomes ready to write the partial account.',
+      'Open a fresh attempt, carrying the rejection feedback forward. With subgoal_id, retries that subgoal. With node_id naming a failed report node, reruns just that report (optionally away from avoid_executors). With neither, retries the spec (setgoal + critique). When the retry budget is gone the failure is settled: every node that needed its output becomes `unreachable` and the report becomes ready.',
     inputSchema: {
       type: 'object',
       properties: {

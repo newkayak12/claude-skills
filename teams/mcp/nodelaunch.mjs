@@ -17,7 +17,10 @@
 //
 // --mcp-config is an inline JSON string: teams has no config file (the precedent is
 // adapters/claude-exec-adapter.mjs). It declares the single 'teams' server (plugin.json), which
-// serves both the tm_* tools (tm_ask) and the team_* tools.
+// serves both the tm_* tools (tm_ask) and the team_* tools. The server args name the stage's tool
+// set (`--stage driver` for the driver, `--stage node` for a graph node), which the server lists
+// instead of all of them; a manager-scope stage (judge, goal_gate, ...) passes no `--stage` and
+// lists everything. `--stage` precedes `--root`.
 //
 // Keeping the user's global CLAUDE.md out: `claude --help` (2.1.322) lists no flag that does only
 // that. --bare skips CLAUDE.md discovery but also OAuth/keychain (a headless run answers "Not
@@ -130,7 +133,8 @@ export function leanLaunchArgs(stage, task = {}, opts = {}) {
   const t = task || {};
   const help = opts && opts.helpText !== undefined ? opts.helpText : probeHelp();
   const root = teamsPluginRoot();
-  const server = { command: process.execPath, args: [`${root}/mcp/server.mjs`, ...(t.root ? ['--root', String(t.root)] : [])] };
+  const set = normalizeStage(stage) === 'driver' ? 'driver' : ((t.scope || defaultScope(stage)) === 'manager' ? null : 'node');
+  const server = { command: process.execPath, args: [`${root}/mcp/server.mjs`, ...(set ? ['--stage', set] : []), ...(t.root ? ['--root', String(t.root)] : [])] };
   const args = [];
   if (listed(help, '--strict-mcp-config')) args.push('--strict-mcp-config');
   if (listed(help, '--mcp-config')) args.push('--mcp-config', JSON.stringify({ mcpServers: { teams: server } }));

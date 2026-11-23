@@ -39,8 +39,12 @@ test('TOOLS deep-equals the golden fixture\'s tm_* entries', () => {
     tm_open: { type: 'string', description: 'Optional short name for this EPIC, a few words in the request\'s language. Pass it only when the request\'s first clause does not read as a title (a chat sentence, not a card title). Stored once in task.json and shown beside the key; derived from the request when omitted.' },
     tm_run: { type: 'string', description: 'Same meaning as tm_open({name}): a few words in the request\'s language, passed only when the request\'s first clause does not read as a title. Stored once in task.json and shown beside the key; derived from the request when omitted.' },
   };
+  // Descriptions over 400 chars were shortened (card 130): for a name in tools-short.json the expected
+  // description is that exact string; the fixture keeps the old text.
+  const SHORT = JSON.parse(readFileSync(join(HERE, 'fixtures', 'tools-short.json'), 'utf8'));
   const expected = listed.map((t0) => {
     const t = NAME_PROP[t0.name] ? { ...t0, inputSchema: { ...t0.inputSchema, properties: { ...t0.inputSchema.properties, name: NAME_PROP[t0.name] } } } : t0;
+    if (SHORT[t.name] !== undefined) return { ...t, description: SHORT[t.name] };
     const frag = NAME_FRAGMENT[t.name];
     if (!frag) return t;
     assert.equal(t.description.split(frag[0]).length, 2, `${t.name}: the fixture holds the anchor once`);
@@ -51,6 +55,7 @@ test('TOOLS deep-equals the golden fixture\'s tm_* entries', () => {
   const BUS_TOOLS = ['tm_post', 'tm_read'];
   const added = JSON.parse(JSON.stringify(mod.TOOLS)).filter((t) => BUS_TOOLS.includes(t.name));
   assert.deepEqual(added.map((t) => t.name).sort(), BUS_TOOLS);
+  for (const t of added) assert.equal(SHORT[t.name], t.description, `${t.name}: tools-short.json holds its exact description`);
   expected.push(...added);
   assert.deepEqual(JSON.parse(JSON.stringify(mod.TOOLS)).sort(byName), expected.sort(byName));
 });

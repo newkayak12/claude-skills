@@ -18,9 +18,20 @@ export const WIKI_OFF_MESSAGE = 'teams-wiki is off (TEAMS_WIKI_OFF=1)';
 
 export const ALL_TOOLS = [...BROKER_TOOLS, ...TM_TOOLS, ...WIKI_TOOLS];
 
+const WIKI_NAMES = WIKI_TOOLS.map((t) => t.name);
+
+// --stage <name>: the tools a lean stage lists. Listing only; makeCall still routes every name.
+export const STAGE_TOOLS = {
+  driver: ['team_next', 'team_run', 'team_submit', 'team_retry', 'team_status', 'tm_ask', 'tm_post', 'tm_read', ...WIKI_NAMES],
+  node: ['tm_ask', ...WIKI_NAMES],
+};
+
 // wikiOff hides wiki_* from the list (a judge must not read or write pages); a call still answers.
-export function toolsFor({ wikiOff = false } = {}) {
-  return wikiOff ? [...BROKER_TOOLS, ...TM_TOOLS] : ALL_TOOLS;
+// A stage that is a STAGE_TOOLS key narrows the list to its set; any other value lists everything.
+export function toolsFor({ wikiOff = false, stage } = {}) {
+  const base = wikiOff ? [...BROKER_TOOLS, ...TM_TOOLS] : ALL_TOOLS;
+  const set = typeof stage === 'string' && Object.hasOwn(STAGE_TOOLS, stage) ? STAGE_TOOLS[stage] : null;
+  return set ? base.filter((t) => set.includes(t.name)) : base;
 }
 
 export function makeCall({ wikiOff = false } = {}) {

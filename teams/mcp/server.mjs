@@ -3,6 +3,8 @@
 //
 //   server.mjs [--root <dir>]            every tool
 //   server.mjs --only wiki [--root <dir>]  wiki_* only; loads no engine module (workers' wiki server)
+//   server.mjs --stage <driver|node> ...   full mode, lists only that stage's tools (server-tools.mjs
+//                                          STAGE_TOOLS); calls still route; unknown name or --only wiki: ignored
 //
 // --root is the wiki root; a non-empty TEAMS_WIKI_ROOT beats it. Either one pins the root; with
 // neither, each wiki_* call follows the Codex `_meta` workspace (else the start cwd). TEAMS_WIKI_OFF=1 hides wiki_*
@@ -39,7 +41,8 @@ if (isEntryPoint(import.meta.url)) {
     };
   } else {
     const all = await import('./server-tools.mjs');
-    tools = all.toolsFor({ wikiOff });
+    const st = argv.indexOf('--stage');
+    tools = all.toolsFor({ wikiOff, stage: st >= 0 ? argv[st + 1] : undefined });
     call = all.makeCall({ wikiOff });
   }
   serve({ serverInfo: SERVER, protocolVersion: DEFAULT_PROTOCOL, tools, call });

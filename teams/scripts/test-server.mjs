@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalize } from './capture-tools.mjs';
+import { ALL_TOOLS } from '../mcp/server-tools.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER = join(HERE, '..', 'mcp', 'server.mjs');
@@ -164,8 +165,12 @@ test('full mode lists the 33 tools of the golden fixture plus tm_post and tm_rea
       tm_open: { type: 'string', description: 'Optional short name for this EPIC, a few words in the request\'s language. Pass it only when the request\'s first clause does not read as a title (a chat sentence, not a card title). Stored once in task.json and shown beside the key; derived from the request when omitted.' },
       tm_run: { type: 'string', description: 'Same meaning as tm_open({name}): a few words in the request\'s language, passed only when the request\'s first clause does not read as a title. Stored once in task.json and shown beside the key; derived from the request when omitted.' },
     };
+    // Descriptions over 400 chars were shortened (card 130): for a name in tools-short.json the expected
+    // description is that exact string; the fixture keeps the old text.
+    const SHORT = JSON.parse(readFileSync(join(HERE, 'fixtures', 'tools-short.json'), 'utf8'));
     const golden = FIXTURE.map(({ server, ...rest0 }) => {
       const rest = NAME_PROP[rest0.name] ? { ...rest0, inputSchema: { ...rest0.inputSchema, properties: { ...rest0.inputSchema.properties, name: NAME_PROP[rest0.name] } } } : rest0;
+      if (SHORT[rest.name] !== undefined) return { ...rest, description: SHORT[rest.name] };
       const frag = NAME_FRAGMENT[rest.name];
       if (!frag) return rest;
       assert.equal(rest.description.split(frag[0]).length, 2, `${rest.name}: the fixture holds the anchor once`);
@@ -178,6 +183,25 @@ test('full mode lists the 33 tools of the golden fixture plus tm_post and tm_rea
     assert.equal(listed.length, 35);
     assert.deepEqual(listedOld, golden);
   });
+});
+
+test('every tool description is at most 400 characters', () => {
+  const bad = ALL_TOOLS.filter((t) => t.description.length > 400).map((t) => `${t.name} ${t.description.length}`);
+  assert.deepEqual(bad, []);
+});
+
+test('driver-visible tool descriptions keep the rules the driver prompt relies on', () => {
+  const KEY = {
+    team_submit: [/changed_files/, /idempot/i, /no-op|stored verdict/i],
+    team_retry: [/subgoal_id/, /node_id/, /budget/i, /unreachable/],
+    tm_ask: [/park/i, /end your turn/i, /TeamLeader/i],
+    tm_post: [/tm_ask/, /teamleader/, /refused/i],
+    tm_read: [/cursor/, /more/, /refused/i],
+  };
+  for (const [name, res] of Object.entries(KEY)) {
+    const d = ALL_TOOLS.find((t) => t.name === name).description;
+    for (const re of res) assert.match(d, re, `${name} keeps ${re}`);
+  }
 });
 
 test('TEAMS_WIKI_OFF=1 in full mode lists 26 tools (team_ + tm_) and a wiki_* call is an error with the exact text', async () => {
@@ -382,4 +406,45 @@ test('stdin closed at once: every reply is written before the exit (drain), exit
   const replies = r.stdout.split('\n').filter(Boolean).map((l) => JSON.parse(l));
   assert.deepEqual(replies.map((m) => m.id).sort(), [1, 2, 3, 4]);
   assert.equal(replies.find((m) => m.id === 3).result.isError, false);
+});
+
+const DRIVER_SET = ['team_next', 'team_run', 'team_submit', 'team_retry', 'team_status', 'tm_ask', 'tm_post', 'tm_read'];
+
+test('--stage driver lists exactly the 8 driver tools and the 9 wiki_* tools', async () => {
+  await withClient(['--stage', 'driver', '--root', mk('server-wiki-')], baseEnv(), async (c) => {
+    const tools = await c.tools();
+    const got = names(tools);
+    assert.equal(got.length, 17);
+    assert.deepEqual(got.filter((n) => !n.startsWith('wiki_')).sort(), [...DRIVER_SET].sort());
+    assert.equal(withPrefix(tools, 'wiki_').length, 9);
+  });
+});
+
+test('--stage node lists 10 tools (tm_ask + 9 wiki_*), 1 with TEAMS_WIKI_OFF=1', async () => {
+  await withClient(['--stage', 'node', '--root', mk('server-wiki-')], baseEnv(), async (c) => {
+    const tools = await c.tools();
+    assert.equal(tools.length, 10);
+    assert.equal(tools.filter((t) => !t.name.startsWith('wiki_')).map((t) => t.name).join(), 'tm_ask');
+  });
+  await withClient(['--stage', 'node', '--root', mk('server-wiki-')], baseEnv({ TEAMS_WIKI_OFF: '1' }), async (c) => {
+    assert.deepEqual(names(await c.tools()), ['tm_ask']);
+  });
+});
+
+test('no --stage and --stage bogus both list all 35 tools', async () => {
+  for (const args of [[], ['--stage', 'bogus']]) {
+    await withClient([...args, '--root', mk('server-wiki-')], baseEnv(), async (c) => {
+      assert.equal((await c.tools()).length, 35, args.join(' '));
+    });
+  }
+});
+
+test('a --stage node server still answers a call to an unlisted tool (stage node, unlisted tm_status and team_status)', async () => {
+  await withClient(['--stage', 'node', '--root', mk('server-wiki-')], baseEnv(), async (c) => {
+    for (const n of ['tm_status', 'team_status']) {
+      const r = await c.call(n, {});
+      const text = r.isError ? r.content[0].text : '';
+      assert.ok(!/unknown tool/.test(text), `${n}: ${text}`);
+    }
+  });
 });

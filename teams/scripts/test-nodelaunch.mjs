@@ -110,6 +110,28 @@ test('leanLaunchArgs: strict MCP, the teams server, project settings only', () =
   assert.deepEqual(JSON.parse(leanLaunchArgs('test', { root: '/tmp/wiki' }, { helpText: HELP })[2]).mcpServers.teams.args.slice(-2), ['--root', '/tmp/wiki']);
 });
 
+test('leanLaunchArgs: the server args name the stage set; --stage precedes --root', () => {
+  const sa = (stage, task = {}) => JSON.parse(leanLaunchArgs(stage, task, { helpText: HELP })[2]).mcpServers.teams.args;
+  const stageOf = (a) => (a.includes('--stage') ? a[a.indexOf('--stage') + 1] : null);
+  assert.equal(stageOf(sa('driver')), 'driver');
+  assert.equal(stageOf(sa('implement')), 'node');
+  assert.equal(stageOf(sa('judge')), null);
+  assert.equal(stageOf(sa('implement', { scope: 'manager' })), null);
+  const both = sa('implement', { root: '/tmp/wiki' });
+  assert.ok(both.indexOf('--stage') < both.indexOf('--root'));
+});
+
+test('driverArgv(null) carries --stage driver, judgeArgv(null) no --stage', async () => {
+  const { driverArgv } = await import('../mcp/taskmanager-drivers.mjs');
+  const { judgeArgv } = await import('../mcp/daemon.mjs');
+  const cfg = (argv) => { const i = argv.indexOf('--mcp-config'); return i < 0 ? null : JSON.parse(argv[i + 1]).mcpServers.teams.args; };
+  const d = cfg(driverArgv(null));
+  const j = cfg(judgeArgv(null));
+  if (!d || !j) return; // claude --help lists no --mcp-config here: nothing to read
+  assert.ok(d.join(' ').includes('--stage driver'));
+  assert.ok(!j.includes('--stage'));
+});
+
 test('leanLaunchArgs: plugin dirs are the teams root plus that stage\'s skills plus task.plugin_dirs, nothing else', () => {
   const root = teamsPluginRoot();
   // implement has no graph skills: the teams root alone
