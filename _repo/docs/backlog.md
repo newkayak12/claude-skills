@@ -7,18 +7,6 @@ never retire them as duplicates, and never reference superpowers.
 
 ## Ready
 
-### Codex plugin compatibility
-
-173. **teams build nodes can run the commands their stories need (codex, node, python3, reads under ~/.codex)** — fix shipped in E-66cb76c8 (workspace-write nodes get `--allowedTools Bash`; a project deny rule still wins). Left: the live size-S run below, and QA for E-66cb76c8 F1–F3 (none ran).
-   - Why: E-f8f880f9 report, 2026-11-22: every draft/implement/test node got "This command requires
-     approval" for `codex`, `python3`, `node`, reads under `~/.codex`, once `git`, while review and shape
-     nodes ran `codex --version` fine. No package could verify anything; retries spent the budget
-     ($44.64 / $40). User: "실패한 것도 backlog로 올려라 말도 안된다". Cause: the headless driver's
-     permission mode per node kind (unverified which setting differs between review and implement).
-   - Acceptance: a size-S run whose implement node runs `node --version`, `python3 --version` and
-     `codex --version` succeeds; a refused command fails the node at once with the refusal named,
-     instead of retries; teams tests with counts.
-
 Priority (user, 2026-10-17): "사용자 UI친화가 우선순위가 높아" — the UI cards below come first.
 Card 101 comes before them (user, 2026-10-29: "최우선").
 The portfolio flow comes before everything (user, 2026-10-30: "전체적으로 계획 한거 백로그로 넣고

@@ -227,6 +227,97 @@ test('a workspace-write test node (lean mcp config, wiki on) allows Bash, tm_ask
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
 
+test('card173 draft workspace-write: acceptEdits, Bash on --tools and --allowedTools, no --disallowedTools', () => {
+  const f = fixture();
+  try {
+    for (const stage of ['draft', 'test']) {
+      const r = f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', stage, '--sandbox', 'workspace-write'], withoutRoot);
+      assert.equal(r.status, 0, r.stderr);
+      const args = argvOf(f);
+      assert.equal(args[args.indexOf('--permission-mode') + 1], 'acceptEdits', stage);
+      assert.ok(args[args.indexOf('--tools') + 1].split(',').includes('Bash'), stage);
+      assert.ok(args[args.indexOf('--allowedTools') + 1].split(',').includes('Bash'), stage);
+      assert.equal(args.includes('--disallowedTools'), false, stage);
+    }
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('card173 review read-only: no --allowedTools, --tools Read,Glob,Grep (no --verify)', () => {
+  const f = fixture();
+  try {
+    const r = f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'review', '--sandbox', 'read-only'], withoutRoot);
+    assert.equal(r.status, 0, r.stderr);
+    const args = argvOf(f);
+    assert.equal(args.includes('--allowedTools'), false);
+    assert.equal(args[args.indexOf('--tools') + 1], 'Read,Glob,Grep');
+    assert.equal(args[args.indexOf('--permission-mode') + 1], 'dontAsk');
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+// card 173: an execution node refused a command retried identically, because a denial next to a
+// usable stage_ok:false result (or prose with no permission_denials entry) never reached the
+// engine's `blocked: tool denied` -> environment path. The prose fixture is speculative: no
+// captured E-f8f880f9 stream exists, so it is modelled on the code-sprint-S3 report text.
+const REFUSAL = 'This command requires approval';
+const implementRun = (f, denials, env = {}) => f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'implement', '--sandbox', 'workspace-write'],
+  { ...withoutRoot, ...(denials === undefined ? {} : { MOCK_DENIALS: JSON.stringify(denials) }), ...env });
+
+test('card173 refusal (a): implement + needed denial + usable stage_ok:false with a reason -> blocked: tool denied, command named, exit 0', async () => {
+  const { classifyFailure } = await import('../mcp/failure-kind.mjs');
+  const f = fixture();
+  try {
+    const r = implementRun(f, denials1, { MOCK_RESULT: JSON.stringify({ stage_ok: false, reason: 'the build is red' }) });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.report.stage_ok, false);
+    assert.equal(r.report.result.blocked, 'tool denied');
+    assert.deepEqual(r.report.result.denied, DENIED);
+    assert.match(r.report.result.reason, /^blocked: tool denied/);
+    assert.ok(r.report.result.reason.includes(DENIED[0]));
+    assert.equal(r.report.verification_error, 'blocked: tool denied');
+    assert.equal(classifyFailure({}, {}, r.report.result), 'environment');
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('card173 refusal (b, speculative): implement + no permission_denials + "This command requires approval" -> blocked, refusal named, exit 0', async () => {
+  const { classifyFailure } = await import('../mcp/failure-kind.mjs');
+  const f = fixture();
+  try {
+    for (const reply of [`${REFUSAL}.`, JSON.stringify({ stage_ok: false, reason: `${REFUSAL} for node --test` })]) {
+      const r = implementRun(f, undefined, { MOCK_RESULT: reply });
+      assert.equal(r.status, 0, r.stderr);
+      assert.equal(r.report.stage_ok, false);
+      assert.equal(r.report.result.blocked, 'tool denied');
+      assert.match(r.report.result.refusal, /requires approval/);
+      assert.match(r.report.result.reason, /^blocked: tool denied.*requires approval/);
+      assert.equal(r.report.verification_error, 'blocked: tool denied');
+      assert.equal(classifyFailure({}, {}, r.report.result), 'environment');
+    }
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('card173 refusal (c): a read-only judging node with the same input as (a) keeps its result with denied', () => {
+  const f = fixture();
+  try {
+    const failed = { stage_ok: false, reason: 'the build is red' };
+    settled(gateRun(f, denials1, { MOCK_RESULT: JSON.stringify(failed) }), failed, false);
+    const said = { stage_ok: false, reason: REFUSAL };
+    const r = gateRun(f, undefined, { MOCK_RESULT: JSON.stringify(said) });
+    assert.equal(r.report.result.blocked, undefined);
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('card173 refusal (d): implement + denial + stage_ok:true stands with denied', () => {
+  const f = fixture();
+  try {
+    const ok = { stage_ok: true, verified: true, checks: ['check -> passed'], evidence: 'e' };
+    settled(implementRun(f, denials1, { MOCK_RESULT: JSON.stringify(ok) }), ok, true);
+    const quoted = { ...ok, evidence: REFUSAL };
+    const r = implementRun(f, undefined, { MOCK_RESULT: JSON.stringify(quoted) });
+    assert.equal(r.report.stage_ok, true);
+    assert.deepEqual(r.report.result, quoted);
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
 test('read-only --verify argv is exactly what it was before card 173', () => {
   const f = fixture();
   try {

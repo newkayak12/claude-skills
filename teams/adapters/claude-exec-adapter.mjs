@@ -185,6 +185,7 @@ try {
     // and the exit code stay as computed (E-57170ac9: a denied optional command blocked a node that
     // had answered). With no usable result it judged nothing: not a reject. Exit 0, because the
     // broker drops the report of a non-zero exit (transportOk) and with it the blocked marker.
+    const readOnlySandbox = opts.sandbox === 'read-only';
     const denied = neededDenials(envelope, opts.cwd);
     if (denied.length && proc.status === 0 && !proc.stopped) {
       if (ok && usable && !unexplainedRefusal(result)) {
@@ -192,6 +193,22 @@ try {
       } else {
         report.stage_ok = false;
         report.result = { stage_ok: false, blocked: 'tool denied', reason: 'blocked: tool denied', denied };
+        report.verification_error = 'blocked: tool denied';
+        process.exitCode = 0;
+      }
+    }
+    // card 173: an execution node (sandbox not read-only) refused a command and not finished
+    // (result not stage_ok:true) failed on its environment, and a retry is refused the same way: a
+    // denial next to a usable stage_ok:false result, or the prose "This command requires approval"
+    // with no permission_denials entry. Fail it at once, refusal named. A read-only judging node
+    // keeps its verdict (E-57170ac9) and a node that finished (stage_ok:true) keeps its result.
+    if (!readOnlySandbox && proc.status === 0 && !proc.stopped && report.result?.stage_ok !== true) {
+      const strings = [message, ...Object.values(report.result && typeof report.result === 'object' ? report.result : {}).filter(v => typeof v === 'string')];
+      const refusal = strings.flatMap(s => s.split('\n')).find(line => /requires approval/i.test(line))?.trim();
+      if (denied.length || refusal) {
+        report.stage_ok = false;
+        report.result = { stage_ok: false, blocked: 'tool denied', reason: `blocked: tool denied: ${denied.length ? denied.join('; ') : refusal}`,
+          ...(denied.length ? { denied } : {}), ...(refusal ? { refusal } : {}) };
         report.verification_error = 'blocked: tool denied';
         process.exitCode = 0;
       }
