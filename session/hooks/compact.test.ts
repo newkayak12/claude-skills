@@ -510,6 +510,33 @@ test('auto-compact whose handoff fails goes to the engine, logged recap-failed',
   await until(() => w.log()[0]?.outcome === 'recap-failed:too long', 'auto entry')
 })
 
+// A PreCompact command hook (scripts/precompact.mjs) appends the handoff sections to an auto-compact's
+// instructions. The mod, when it runs, replaces the summary itself; when it hands on, the engine gets them as they came.
+const HOOK_INSTRUCTIONS = 'Write a recap of this session: Goal, Direction, In progress, Decisions, Open, Corrections'
+
+test('auto-compact with hook instructions: the handoff replaces the summary, the instructions are unused', async ($, on) => {
+  const w = logWorld(on, { usage: WINDOW_1000, fork: answered })
+  const done = await compactWith($, { trigger: 'auto', instructions: HOOK_INSTRUCTIONS, messages: ROWS })
+  expect(w.forks()).toBe(1)
+  expect(w.compacts()).toBe(0)
+  expect(done.messages[0].text).toBe(RECAP_HEADER + 'GOAL: ship')
+  expect(done.messages.some((m: any) => String(m.text).includes(HOOK_INSTRUCTIONS))).toBe(false)
+})
+
+test('recap-failed with hook instructions: the engine receives them unchanged', async ($, on) => {
+  const w = logWorld(on, { usage: WINDOW_1000, fork: UNANSWERED })
+  expect(await compactWith($, { trigger: 'auto', instructions: HOOK_INSTRUCTIONS, messages: ROWS })).toEqual(SUMMARY)
+  expect(w.compacts()).toBe(1)
+  expect(w.reached().instructions).toBe(HOOK_INSTRUCTIONS)
+})
+
+test('no context window with hook instructions: the engine receives them unchanged', async ($, on) => {
+  const w = logWorld(on, { percent: null, fork: answered })
+  expect(await compactWith($, { trigger: 'auto', instructions: HOOK_INSTRUCTIONS, messages: ROWS })).toEqual(SUMMARY)
+  expect(w.forks()).toBe(0)
+  expect(w.reached().instructions).toBe(HOOK_INSTRUCTIONS)
+})
+
 test('a failing usage() fails open to the engine', async ($, on) => {
   const w = logWorld(on, {
     fork: answered,

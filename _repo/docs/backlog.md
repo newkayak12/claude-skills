@@ -317,11 +317,31 @@ toasts).
    - Under an org policy (cc-plugin-sec-default) the user-tier `session.compact` hook is skipped, so smart-compact
      never runs there and the engine's own compaction runs instead (2026-11-23; `session/hooks/compact.tsx:334` is the
      only hook left on a policy-skipped event; memo and trophy moved off theirs in card 132). User: "세션 훅은 방법이 없나?"
-     Unverified paths: a plain `PreCompact` command hook in `hooks.json` (does the policy skip plugin command hooks
-     too? it can add instructions, not replace the summary), or the handoff written ahead on `turn.complete` near
-     the threshold and handed to the engine's compaction as its instructions.
-     Acceptance: one live session under the policy shows which path runs (no "session.compact hook was skipped"
-     line, or the handoff present after compaction), or the card records that no path exists.
+     Shipped 2026-11-23 (no bump; E-943c979a): a plain `PreCompact` command hook (`session/hooks/hooks.json` →
+     `scripts/precompact.mjs`, logic in `precompact-logic.mjs`) prints the handoff sections (a copy of `RECAP_PROMPT`)
+     on stdout, which the engine appends to the compaction's custom instructions. It prints only for `trigger:
+     "auto"`, when `custom_instructions` does not start with the smart-compact mark, and when the plugin option
+     `smart_compact_enabled` is not `false`; otherwise nothing, always exit 0. A person's `/compact` stays the engine's;
+     smart-compact's own `/compact` already carries the sections (no doubling); where the mod runs it replaces the
+     summary, so the appended text is unused. Tests: `session/scripts/test-precompact.mjs` (output shape, every
+     no-op, drift against `recap.ts` / `compact-logic.ts`), 3 in `compact.test.ts` (mod path with the text present).
+     Real headless check (Claude Code 2.1.330, `--plugin-dir` copy, installed session plugin disabled, auto-compact
+     forced by `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=1`, session.compact `bypassed by cc-plugin-sec-default` in the
+     log): hook fired on `PreCompact:auto`, stdout 766 bytes (the sections), auto summary headings Goal / Direction /
+     In progress / Decisions / Open / Corrections; the control arm without the hook got the engine's nine default
+     headings; `/compact` (manual) fired the hook with 0 bytes out and got the default shape. So the policy did
+     not skip the command hook here, and its instructions reached the compaction.
+     Decision for the user [확인 필요]: the card also named "the handoff written ahead on `turn.complete`"; this
+     ships the minimal form instead (static instructions, the engine summarizer writes the handoff in the call it
+     makes anyway). Consequences: that summary is not kept as the project recap (`/last-recap`, `/lessons` do not
+     see it), and its quality depends on the summarizer following appended instructions. Also: when the mod runs
+     but its handoff fails for `auto`, the engine now gets the sections too.
+     Not shown: the mark path against a live compaction (unit-tested only); the mod's own handoff path with the
+     hook present (policy bypass applied even with the mod loaded; `compact.test.ts`); the PreCompact trigger of a
+     precompute or plugin-raised compaction (only `manual` and `auto` arrived).
+     Acceptance left: one session under the real org policy install, as opposed to this build's builtin bypass.
+     Session plugin test: 752 pass / 4 fail — the 4 ("start band, retro and recap rows" on 4 surfaces) fail the
+     same at clean HEAD (749 pass / 4 fail), so they are not from this change.
 
 ### Repo and rules
 

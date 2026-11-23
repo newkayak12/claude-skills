@@ -100,7 +100,7 @@ CLAUDE.md도 자동 메모리도 아닙니다. 메모는 파일이 아니고, �
 ## 스마트 compact
 정한 컨텍스트 %에 닿으면 smart-compact가 `/compact`를 실행하고 그 compact에 직접 답합니다. compact되는 대화를 놓고 다음 단계에 맞춘 handoff(목표, 다음 방향, 하던 작업과 파일:줄, 결정, 남은 일, 교정)를 쓰고, 새 컨텍스트는 그 handoff 다음에 창의 min(20, 임계치/2)% 안에 드는 가장 최근 원문 턴을 그대로 이은 것입니다. 모델 호출은 한 번이고 엔진 요약기는 돌지 않습니다. 내장 auto-compact도 같은 handoff를 받습니다. 직접 친 `/compact`, 서브에이전트의 compact, handoff를 만들지 못한 compact는 엔진에 맡깁니다.
 
-먼저 도는 정책 플러그인이 이 플러그인의 `session.compact` 훅을 건너뛰게 하는 환경(화면에 `its session.compact hook was skipped`가 뜸)에서는, smart-compact의 `/compact`가 handoff 항목을 지시문으로 함께 보냅니다. 그래서 엔진 요약기가 원래 하는 한 번의 호출로 handoff를 씁니다. 이 compact는 `compacted:guided`로 기록되고, 그 요약이 프로젝트의 recap으로 보관됩니다. 훅이 알리지 못한 compact는 다음 턴 끝에 컨텍스트 토큰이 줄어든 것으로 알아봅니다.
+먼저 도는 정책 플러그인이 이 플러그인의 `session.compact` 훅을 건너뛰게 하는 환경(화면에 `its session.compact hook was skipped`가 뜸)에서는, smart-compact의 `/compact`가 handoff 항목을 지시문으로 함께 보냅니다. 그래서 엔진 요약기가 원래 하는 한 번의 호출로 handoff를 씁니다. 이 compact는 `compacted:guided`로 기록되고, 그 요약이 프로젝트의 recap으로 보관됩니다. 그 환경에서 엔진 자체의 auto-compact도 `PreCompact` 명령 훅(`scripts/precompact.mjs`)을 통해 같은 handoff 항목을 받습니다. 직접 친 `/compact`, smart-compact의 compact, smart-compact가 꺼진 경우에는 아무것도 더하지 않습니다. 훅이 알리지 못한 compact는 다음 턴 끝에 컨텍스트 토큰이 줄어든 것으로 알아봅니다.
 
 | 명령 | 하는 일 |
 | --- | --- |
