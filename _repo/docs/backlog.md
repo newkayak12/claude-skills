@@ -717,6 +717,7 @@ ahead of the order above.
      2. **Graph engine** (`graph-*.mjs`, `graph.mjs`): node scheduling, retry and repair loops, wall time per stage on one recorded L run.
      3. **Broker + adapters + node launch** (`broker-*.mjs`, `adapters/`, `nodelaunch.mjs`): start context per node, permissions (bus tools), vendor probe time.
      4. **Harness size-S path** (`taskmanager-harness.mjs`, `harnessrun.mjs`): driver stays alive until its run ends (no exit while a background subagent runs), goal gate always recorded.
+        It also runs in its own worktree and merges back, not in the main checkout (user, 2026-11-24: "왜 메인에서 하는거야?"; today every size-S task writes straight into the shared main working tree, where other sessions commit too).
      5. **State server + view** (`stateserver.mjs`, `scripts/view*.mjs`): poll cost, `--once` latency on the real root.
      6. **Bus + wiki** (`bus.mjs`, `wiki.mjs`, `wikibridge.mjs`): read/append cost, Codex roots.
      7. **Cost, budget, capacity** (`drivercost.mjs`, `taskmanager-budget.mjs`, `capacity-reset.mjs`, `livecap.mjs`): estimate vs final within 5%, stop at budget, park on limits.
