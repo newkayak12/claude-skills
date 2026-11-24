@@ -21,6 +21,10 @@ const EVENTS = {
   daemon_done: { text: (e, id) => `${id} finished: ${e.state}` },
   daemon_exhausted: { text: (e, id) => `${id} stopped: daemon restarts used up` },
   upstream_fix_rounds_exhausted: { text: (e, id) => `${id} ${e.package_id}: fix rounds used up` },
+  // stopNotice's line (teams/mcp/resume.mjs) is kind 'task_blocked'; any other notify is silent
+  notify: { text: (e, id) => (e.kind === 'task_blocked' ? `${id} blocked: ${typeof e.reason === 'string' && e.reason.trim() ? clip(e.reason, 120) : 'no reason recorded'}` : null) },
+  // classifyFailure's line (teams/mcp/failure-kind.mjs): the mod filters which kinds toast or push
+  failure_classified: { text: (e, id) => `${id} ${e.node_id}: ${e.failure_kind}` },
   verdict: { hand: (e) => ({ from: e.actor || 'judge', what: `verdict ${e.verdict}`, what_key: 'handVerdict', what_vars: { v: e.verdict }, to: cardLabel(e) }) },
   integrated: { hand: (e) => ({ from: 'integrate', what: `integrated ${e.merged ?? 0}`, what_key: 'handIntegrated', what_vars: { n: e.merged ?? 0 }, to: 'EPIC' }) },
   defects_filed: { hand: (e) => ({ from: e.reporter || 'qa', what: `filed ${(e.filed || []).length} defect(s)`, what_key: 'handFiled', what_vars: { n: (e.filed || []).length }, to: (e.filed || []).join(', ') || 'EPIC' }) },
@@ -144,7 +148,9 @@ export function notableFromEvents(evs, sinceTs, ctx) {
     // the daemon's final state rides on daemon_done, so a consumer maps a field and never the text
     const state = e.event === 'daemon_done' && typeof e.state === 'string' ? { state: e.state } : {};
     const node = e.event === 'waiting_human' && e.node_id != null ? { node: e.node_id } : {};
-    out.push({ ts, task_id: e.task_id, kind: e.event, text, ...state, ...node, ...(pkg != null ? { package: String(pkg) } : {}), ...(typeof e.attempt === 'number' ? { attempt: e.attempt } : {}), ...(e.task_id != null || e.event === 'node_finish' ? { run: id8(e.task_id) } : {}), ...story });
+    const blocked = e.event === 'notify' ? { reason: typeof e.reason === 'string' ? e.reason : null, ...(e.node_id != null ? { node_id: e.node_id } : {}) } : {};
+    const classified = e.event === 'failure_classified' ? { node_id: e.node_id ?? null, failure_kind: e.failure_kind, via: e.via ?? null } : {};
+    out.push({ ts, task_id: e.task_id, kind: e.event === 'notify' ? e.kind : e.event, text, ...state, ...node, ...blocked, ...classified, ...(pkg != null ? { package: String(pkg) } : {}), ...(typeof e.attempt === 'number' ? { attempt: e.attempt } : {}), ...(e.task_id != null || e.event === 'node_finish' ? { run: id8(e.task_id) } : {}), ...story });
   });
   return out.sort((a, b) => a.ts - b.ts);
 }

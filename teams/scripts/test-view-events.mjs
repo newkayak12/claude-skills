@@ -635,3 +635,37 @@ test('F2-AC-45: storyLog rows are { time, node, state, what_key, numbers, note }
   assert.equal(storyLog(lines, 'P2').length, 1);
   assert.deepEqual(storyLog([], 'P1'), []);
 });
+
+test('notify task_blocked maps to a task_blocked view event with reason and node_id', () => {
+  const out = notableEvents([L({ ts: 20, event: 'notify', kind: 'task_blocked', task_id: ID, reason: 'tests red', node_id: 'n1' })], 0);
+  assert.deepEqual(out, [{ ts: 20, task_id: ID, kind: 'task_blocked', text: 'E-1a2b3c4d blocked: tests red', reason: 'tests red', node_id: 'n1', run: 'E-1a2b3c4d' }]);
+});
+
+test('notify task_blocked, old shape: reason null or absent, no node_id, still emitted', () => {
+  const out = notableEvents([
+    L({ ts: 21, event: 'notify', kind: 'task_blocked', task_id: ID, reason: null }),
+    L({ ts: 22, event: 'notify', kind: 'task_blocked', task_id: ID }),
+  ], 0);
+  const want = (ts) => ({ ts, task_id: ID, kind: 'task_blocked', text: 'E-1a2b3c4d blocked: no reason recorded', reason: null, run: 'E-1a2b3c4d' });
+  assert.deepEqual(out, [want(21), want(22)]);
+  assert.ok(out.every((e) => !('node_id' in e)));
+});
+
+test('a notify of another kind, or none, emits nothing (never kind notify)', () => {
+  const out = notableEvents([
+    L({ ts: 23, event: 'notify', kind: 'other', task_id: ID }),
+    L({ ts: 24, event: 'notify', task_id: ID }),
+  ], 0);
+  assert.deepEqual(out, []);
+});
+
+test('failure_classified maps to a failure_classified view event; via null when absent', () => {
+  const out = notableEvents([
+    L({ ts: 30, event: 'failure_classified', task_id: ID, node_id: 'dispatch:P1:1', failure_kind: 'capacity', via: 'ledger' }),
+    L({ ts: 31, event: 'failure_classified', task_id: ID, node_id: 'gate:P2:1', failure_kind: 'below-threshold' }),
+  ], 0);
+  assert.deepEqual(out, [
+    { ts: 30, task_id: ID, kind: 'failure_classified', text: 'E-1a2b3c4d dispatch:P1:1: capacity', node_id: 'dispatch:P1:1', failure_kind: 'capacity', via: 'ledger', run: 'E-1a2b3c4d' },
+    { ts: 31, task_id: ID, kind: 'failure_classified', text: 'E-1a2b3c4d gate:P2:1: below-threshold', node_id: 'gate:P2:1', failure_kind: 'below-threshold', via: null, run: 'E-1a2b3c4d' },
+  ]);
+});
