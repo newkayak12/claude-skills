@@ -5,7 +5,9 @@ import {
   armTotals,
   asCompactions,
   asLog,
+  chargePending,
   COMPACTIONS_CAP,
+  isPrewriteOutcome,
   fmtArmTotals,
   fmtEntry,
   fmtLog,
@@ -229,4 +231,90 @@ test('fmtArmTotals prints n/a for every arm when nothing is logged', () => {
   const lines = fmtArmTotals(armTotals([])).split('\n')
   expect(lines.map(l => l.split(':')[0])).toEqual(['before', 'after', 'off'])
   expect(lines.every(l => l.includes('n/a'))).toBe(true)
+})
+
+const pre = (id: string, o: Partial<LogEntry> = {}): LogEntry => ({
+  id, ts: 1, session: 's', percent: 45, threshold: 50, decision: 'prewrite', outcome: 'prewritten', arm: 'after',
+  recapTokens: 100, recapCalls: 1, project: 'p', ...o,
+})
+const comp = (id: string, o: Partial<NewLogEntry> = {}): NewLogEntry => ({
+  id, ts: 2, session: 's', percent: 50, threshold: 50, decision: 'compact', outcome: 'compacted:recap+tail', arm: 'after', project: 'p', ...o,
+})
+
+test('prewrite outcomes are ring entries, not compactions', () => {
+  expect(isPrewriteOutcome('prewritten')).toBe(true)
+  expect(isPrewriteOutcome('prewrite-failed:timeout')).toBe(true)
+  expect(isPrewriteOutcome('compacted')).toBe(false)
+  expect(isCompactionOutcome('prewritten')).toBe(false)
+  expect(isCompactionOutcome('prewrite-failed:timeout')).toBe(false)
+  const list = [comp('c0') as LogEntry]
+  expect(recordCompaction(list, pre('a'))).toEqual(list)
+  expect(recordCompaction(list, pre('b', { outcome: 'prewrite-failed:timeout' }))).toEqual(list)
+  expect(armTotals([pre('a'), pre('b', { outcome: 'prewrite-failed:x' })]).after.compactions).toBe(0)
+})
+
+test('chargePending charges one pre-write once, under the compaction arm', () => {
+  const ring = [pre('a')]
+  const r = chargePending(ring, comp('c1', { arm: 'off' }))
+  expect(r.entry.recapTokens).toBe(100)
+  expect(r.entry.recapCalls).toBe(1)
+  expect(r.entry.discardedPrecomputes).toBe(1)
+  expect(r.entry.arm).toBe('off')
+  expect(r.charged).toEqual(['a'])
+  expect(r.ring[0].chargedTo).toBe('c1')
+  expect(ring[0].chargedTo).toBeUndefined()
+})
+
+test('chargePending sums two entries and adds to the entry own values', () => {
+  const r = chargePending([pre('a'), pre('b', { recapTokens: 50 })], comp('c1', { recapTokens: 10, recapCalls: 1, discardedPrecomputes: 1 }))
+  expect(r.entry.recapTokens).toBe(160)
+  expect(r.entry.recapCalls).toBe(3)
+  expect(r.entry.discardedPrecomputes).toBe(3)
+  expect(r.charged).toEqual(['a', 'b'])
+})
+
+test('a second compaction does not charge the same entry again', () => {
+  const first = chargePending([pre('a')], comp('c1'))
+  const second = chargePending(first.ring, comp('c2'))
+  expect(second.charged).toEqual([])
+  expect(second.entry.recapTokens).toBeUndefined()
+  expect(second.entry.discardedPrecomputes).toBeUndefined()
+})
+
+test('chargePending: reusedId gives no discard; failed gives no discard', () => {
+  const r = chargePending([pre('a'), pre('f', { outcome: 'prewrite-failed:timeout', recapTokens: 7, recapCalls: 1 })], comp('c1'), 'a')
+  expect(r.entry.discardedPrecomputes ?? 0).toBe(0)
+  expect(r.entry.recapTokens).toBe(107)
+  expect(r.entry.recapCalls).toBe(2)
+  expect(r.charged).toEqual(['a', 'f'])
+})
+
+test('chargePending: other project not charged; both undefined match', () => {
+  const r = chargePending([pre('a', { project: 'q' })], comp('c1'))
+  expect(r.charged).toEqual([])
+  const u = chargePending([pre('a', { project: undefined })], comp('c1', { project: undefined }))
+  expect(u.charged).toEqual(['a'])
+})
+
+test('chargePending: compacted:engine is charged; non-compaction entry passes unchanged', () => {
+  const r = chargePending([pre('a')], comp('c1', { outcome: 'compacted:engine' }))
+  expect(r.entry.recapTokens).toBe(100)
+  expect(r.charged).toEqual(['a'])
+  const ring = [pre('a')]
+  const n = chargePending(ring, comp('c2', { outcome: 'below' }))
+  expect(n.charged).toEqual([])
+  expect(n.ring).toEqual(ring)
+  expect(n.ring).not.toBe(ring)
+})
+
+test('with no compaction the figures stay on the ring entry only', () => {
+  const ring = [pre('a')]
+  expect(ring[0].recapTokens).toBe(100)
+  expect(recordCompaction([], ring[0])).toEqual([])
+})
+
+test('an off-arm entry counts under off and prints an off line', () => {
+  const t = armTotals([comp('c1', { arm: 'off', outcome: 'compacted' }) as LogEntry])
+  expect(t.off.compactions).toBe(1)
+  expect(fmtArmTotals(t).split('\n').some(l => l.startsWith('off: 1 compaction'))).toBe(true)
 })

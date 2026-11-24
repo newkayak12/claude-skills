@@ -37,6 +37,8 @@ export type LogEntry = {
   recapTokens?: number
   summarizerTokens?: number
   discardedPrecomputes?: number
+  project?: string
+  chargedTo?: string
 }
 
 // As stored: a 0.10.0 entry has no arm. Every new write names one.
@@ -61,7 +63,33 @@ export const appendLog = (list: readonly LogEntry[], entry: NewLogEntry): LogEnt
 // below, skipped:* and the in-flight `recapping` are checks, not compactions.
 export const isCompactionOutcome = (outcome: string): boolean => /^(compacted|recap-failed|unobserved|fallback|failed)(:|$)/.test(outcome)
 
-export const asCompactions = (v: unknown): LogEntry[] => asLog(v)
+// A pre-write is a ring entry whose cost waits for the next compaction in its project.
+export const PREWRITE_OUTCOME = 'prewritten'
+export const isPrewriteOutcome = (o: string): boolean => o === PREWRITE_OUTCOME || /^prewrite-failed(:|$)/.test(o)
+
+export type Charged = { entry: NewLogEntry; ring: LogEntry[]; charged: string[] }
+
+// Adds the uncharged pre-writes of the entry's project to a compaction entry once; marks them chargedTo it.
+export const chargePending = (ring: readonly LogEntry[], entry: NewLogEntry, reusedId?: string): Charged => {
+  if (!isCompactionOutcome(entry.outcome)) return { entry, ring: [...ring], charged: [] }
+  const pending = ring.filter(e => isPrewriteOutcome(e.outcome) && !e.chargedTo && e.project === entry.project)
+  if (!pending.length) return { entry, ring: [...ring], charged: [] }
+  const ids = new Set(pending.map(e => e.id))
+  const add = (f: (e: LogEntry) => number) => pending.reduce((a, e) => a + f(e), 0)
+  const discards = pending.filter(e => e.outcome === PREWRITE_OUTCOME && e.id !== reusedId).length
+  return {
+    entry: {
+      ...entry,
+      recapTokens: (entry.recapTokens ?? 0) + add(e => e.recapTokens ?? 0),
+      recapCalls: (entry.recapCalls ?? 0) + add(e => e.recapCalls ?? 0),
+      discardedPrecomputes: (entry.discardedPrecomputes ?? 0) + discards,
+    },
+    ring: ring.map(e => (ids.has(e.id) ? { ...e, chargedTo: entry.id } : e)),
+    charged: pending.map(e => e.id),
+  }
+}
+
+export const asCompactions =(v: unknown): LogEntry[] => asLog(v)
 
 const capCompactions = (list: readonly LogEntry[]): LogEntry[] => (list.length > COMPACTIONS_CAP ? list.slice(list.length - COMPACTIONS_CAP) : [...list])
 
@@ -131,7 +159,7 @@ const defined = (xs: (number | undefined)[]) => xs.filter((x): x is number => x 
 // Entries are compactions (the COMPACTIONS_KEY list); every one is counted, only those with a value enter its mean.
 export const armTotals = (entries: readonly LogEntry[]): ArmTotals => {
   const one = (arm: Arm): ArmTotal => {
-    const es = entries.filter(e => e.arm === arm)
+    const es = entries.filter(e => e.arm === arm && !isPrewriteOutcome(e.outcome))
     return {
       compactions: es.length,
       tokensBefore: meanOf(defined(es.map(e => e.tokensBefore ?? e.tokens?.before))),

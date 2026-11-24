@@ -4,7 +4,12 @@ import {
   COMPACT_MARK,
   compactOutcome,
   firstLine,
+  FRESH_TAIL_ROWS,
   handoffFor,
+  handoffFresh,
+  PREWRITE_MARGIN,
+  prewriteAllowed,
+  type PrewriteInput,
   parseSmartCompactArgs,
   precomputeKey,
   reusablePrecompute,
@@ -174,4 +179,65 @@ test('tailStart over budget on the last row alone gives an empty tail', () => {
   const rows = [say('user', 3), say('assistant', 300)]
   expect(tailStart(rows, 50)).toBe(2)
   expect(tailStart([], 50)).toBe(0)
+})
+
+const pw = (o: Partial<PrewriteInput> = {}): PrewriteInput => ({
+  enabled: true,
+  surfaces: 1,
+  inFlight: false,
+  percent: 45,
+  threshold: 50,
+  key: '10:a',
+  attempted: new Set<string>(),
+  ...o,
+})
+
+test('prewrite constants', () => {
+  expect(PREWRITE_MARGIN).toBe(5)
+  expect(FRESH_TAIL_ROWS).toBe(4)
+})
+
+test('prewriteAllowed: boundary threshold-5 runs, threshold-6 does not', () => {
+  expect(prewriteAllowed(pw({ percent: 45 }))).toBe(true)
+  expect(prewriteAllowed(pw({ percent: 44 }))).toBe(false)
+  expect(prewriteAllowed(pw({ percent: 80 }))).toBe(true)
+})
+
+test('prewriteAllowed: every false branch', () => {
+  expect(prewriteAllowed(pw({ enabled: false }))).toBe(false)
+  expect(prewriteAllowed(pw({ agentId: 'sub-1' }))).toBe(false)
+  expect(prewriteAllowed(pw({ surfaces: 0 }))).toBe(false)
+  expect(prewriteAllowed(pw({ inFlight: true }))).toBe(false)
+  expect(prewriteAllowed(pw({ percent: null }))).toBe(false)
+  expect(prewriteAllowed(pw({ attempted: new Set(['10:a']) }))).toBe(false)
+  expect(prewriteAllowed(pw({ attempted: ['10:a'] }))).toBe(false)
+  expect(prewriteAllowed(pw({ attempted: ['9:a'] }))).toBe(true)
+})
+
+const krows = (n: number): KeyRow[] => Array.from({ length: n }, (_, i) => ({ handle: `h${i}` }))
+
+test('handoffFresh: equal, 1 and 3 newer rows are fresh; 4 newer is stale', () => {
+  const stored = { key: precomputeKey(krows(10)) }
+  expect(handoffFresh(stored, krows(10))).toBe(true)
+  expect(handoffFresh(stored, krows(11))).toBe(true)
+  expect(handoffFresh(stored, krows(13))).toBe(true)
+  expect(handoffFresh(stored, krows(14))).toBe(false)
+})
+
+test('handoffFresh: changed row, fewer rows, missing or bad key are stale', () => {
+  const stored = { key: precomputeKey(krows(10)) }
+  const changed = krows(11)
+  changed[9] = { handle: 'other' }
+  expect(handoffFresh(stored, changed)).toBe(false)
+  expect(handoffFresh(stored, krows(9))).toBe(false)
+  expect(handoffFresh(null, krows(10))).toBe(false)
+  expect(handoffFresh(undefined, krows(10))).toBe(false)
+  expect(handoffFresh({ key: 'garbage' }, krows(10))).toBe(false)
+  expect(handoffFresh({ key: '0:' }, krows(10))).toBe(false)
+})
+
+test('handoffFresh: rows with only a uuid', () => {
+  const rows: KeyRow[] = [{ uuid: 'u1' }, { uuid: 'u2' }, { uuid: 'u3' }]
+  expect(handoffFresh({ key: precomputeKey(rows.slice(0, 2)) }, rows)).toBe(true)
+  expect(handoffFresh({ key: '2:zzz' }, rows)).toBe(false)
 })

@@ -84,6 +84,42 @@ export const precomputeKey = (rows: readonly KeyRow[]): string => {
 export const reusablePrecompute = <T>(stored: { key: string; handoff: T } | null | undefined, rows: readonly KeyRow[]): T | null =>
   stored && stored.key === precomputeKey(rows) ? stored.handoff : null
 
+// A handoff is written this many points below the threshold, once per conversation key.
+export const PREWRITE_MARGIN = 5
+// A stored handoff stays usable while fewer than this many rows follow what it covered.
+export const FRESH_TAIL_ROWS = 4
+
+export type PrewriteInput = {
+  enabled: boolean
+  agentId?: string
+  surfaces: number
+  inFlight: boolean
+  percent: number | null
+  threshold: number
+  key: string
+  attempted: ReadonlySet<string> | readonly string[]
+}
+
+export const prewriteAllowed = (i: PrewriteInput): boolean =>
+  i.enabled &&
+  !i.agentId &&
+  i.surfaces > 0 &&
+  !i.inFlight &&
+  i.percent !== null &&
+  i.percent >= i.threshold - PREWRITE_MARGIN &&
+  !(Array.isArray(i.attempted) ? i.attempted.includes(i.key) : (i.attempted as ReadonlySet<string>).has(i.key))
+
+// stored.key is a precomputeKey (`${n}:${last}`): fresh while the stored rows are a prefix of rows and fewer than FRESH_TAIL_ROWS follow.
+export const handoffFresh = (stored: { key: string } | null | undefined, rows: readonly KeyRow[]): boolean => {
+  if (!stored) return false
+  const at = stored.key.indexOf(':')
+  if (at < 1) return false
+  const n = Number(stored.key.slice(0, at))
+  if (!Number.isInteger(n) || n < 1 || n > rows.length) return false
+  const row = rows[n - 1]
+  return (row?.handle ?? row?.uuid ?? '') === stored.key.slice(at + 1) && rows.length - n < FRESH_TAIL_ROWS
+}
+
 export type SmartCompactArgs =
   | { kind: 'status' }
   | { kind: 'log' }
