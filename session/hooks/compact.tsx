@@ -50,8 +50,10 @@ async function readContext($: any) {
 }
 let isRunning = false
 
-// One pre-write per conversation key: the key is added before the fork and never removed, so a failure is not retried.
+// One pre-write per compaction epoch of a session (arm key `${sessionId}#${compactionEpoch}`): the key is added before
+// the fork and never removed, so a failure is not retried in the epoch. The epoch moves wherever a compaction is seen.
 const attempted = new Set<string>()
+let compactionEpoch = 0
 let prewriting = false
 
 // The decision log: writes run one after another on one chain, so a pending→outcome patch and the next
@@ -184,6 +186,7 @@ function logTokens(recap?: Usage, done?: { usage?: Usage; tokensBefore?: number;
 
 // smart-compact's own result goes to its runner; an auto-compact gets a log entry of its own.
 async function settle($: any, kind: HandoffFor, threshold: number, outcome: string, tokens?: LogTokens, reusedId?: string) {
+  if (!outcome.startsWith('skip:')) compactionEpoch++
   if (kind === 'own') {
     ownResult = { outcome, tokens, reusedId }
     return
@@ -231,12 +234,17 @@ async function keepGuidedRecap($: any) {
 
 // The bridge file the PreCompact command hook reads. Written only when HOME, the session id and the last row's uuid are
 // there and that uuid is found on a line of the session's transcript (lineCount is that line's 1-based number);
-// anything unproven writes nothing. Never throws.
-async function writeBridge($: any, key: string, text: string, sessionId: string, rows: readonly { uuid?: string }[]) {
+// anything unproven writes nothing. Returns why: written, no-home, no-session, no-uuid, transcript-unreadable,
+// uuid-not-found or write-failed. Never throws.
+async function writeBridge($: any, key: string, text: string, sessionId: string, rows: readonly { uuid?: string }[]): Promise<string> {
+  let step = 'no-home'
   try {
     const home = (await $.env.get('HOME')) as string | undefined
+    if (!home) return 'no-home'
+    if (!sessionId) return 'no-session'
     const lastUuid = rows[rows.length - 1]?.uuid
-    if (!home || !sessionId || typeof lastUuid !== 'string' || !lastUuid) return
+    if (typeof lastUuid !== 'string' || !lastUuid) return 'no-uuid'
+    step = 'transcript-unreadable'
     const root = String(await $.session.root())
     const lines = String(await $.fs.read(`${home}/.claude/projects/${root.replace(/[^A-Za-z0-9]/g, '-')}/${sessionId}.jsonl`)).split('\n')
     let at = -1
@@ -245,10 +253,14 @@ async function writeBridge($: any, key: string, text: string, sessionId: string,
         if (JSON.parse(lines[i]!)?.uuid === lastUuid) at = i
       } catch {}
     }
-    if (at < 0) return
+    if (at < 0) return 'uuid-not-found'
+    step = 'write-failed'
     const ts = (await $.clock.now()) as number
     await $.fs.write(handoffBridgePath(home, root), JSON.stringify(makeBridgeRecord({ key, sessionId, ts, text, lastUuid, lineCount: at + 1 })))
-  } catch {}
+    return 'written'
+  } catch {
+    return step
+  }
 }
 
 // One fork over the conversation as it stands, ahead of the threshold. Success: ring entry `prewritten`, the recap kept
@@ -272,7 +284,9 @@ async function prewriteNow($: any, raw: number | null, threshold: number, key: s
       sessionId = String(await $.session.id())
     } catch {}
     await keepRecap($, r.text, { key, sessionId: sessionId || undefined, prewriteId: id })
-    await writeBridge($, key, r.text, sessionId, rows)
+    const bridge = await writeBridge($, key, r.text, sessionId, rows)
+    // a plain patch of the ring entry, not logOutcome: the charge and the compaction counts are untouched
+    writeLog($, async list => list.map(e => (e.id === id ? { ...e, bridge } : e)))
   } catch (err) {
     logDecision($, raw, threshold, 'prewrite', `prewrite-failed:${firstLine(err)}`, { recapCalls: 1, recapTokens: 0, discardedPrecomputes: 0 })
   } finally {
@@ -288,9 +302,11 @@ function noteTurnTokens($: any, percent: number | undefined, threshold: number, 
     pendingAfter = undefined
     // an unobserved one that dropped the context did compact: the guided path, its summary kept now
     const seen = p.outcome === 'unobserved' && tokensDropped(p.tokensBefore, tokens)
+    if (seen) compactionEpoch++
     logOutcome($, p.id, seen ? 'compacted:guided' : p.outcome, undefined, { tokensAfter: tokens })
     if (seen) void keepGuidedRecap($)
   } else if (tokensDropped(lastTokens, tokens)) {
+    compactionEpoch++
     const id = logDecision($, percent ?? null, threshold, 'auto-compact', 'pending')
     logOutcome($, id, 'compacted:engine', undefined, { tokensBefore: lastTokens, tokensAfter: tokens, recapCalls: 0 })
     // the engine's summary is what the model sees now; unreadable, the stored pre-written handoff stays
@@ -304,6 +320,8 @@ async function startPrewrite($: any, e: { agentId?: string }, raw: number, thres
   try {
     const rows = (await $.session.messages()) as { handle?: string; uuid?: string }[]
     const key = precomputeKey(rows)
+    // armed per compaction epoch of the session, not per key (the key changes every turn)
+    const arm = `${String(await $.session.id())}#${compactionEpoch}`
     const allowed = prewriteAllowed({
       enabled: enabledOf(liveOptions),
       agentId: e.agentId,
@@ -311,11 +329,11 @@ async function startPrewrite($: any, e: { agentId?: string }, raw: number, thres
       inFlight: isRunning || prewriting,
       percent: raw,
       threshold,
-      key,
+      key: arm,
       attempted,
     })
     if (!rows.length || !allowed) return
-    attempted.add(key)
+    attempted.add(arm)
     void prewriteNow($, raw, threshold, key, rows)
   } catch {}
 }
@@ -508,6 +526,7 @@ function startRecapThenCompact($: any, raw: number | null | undefined, percent: 
       const after = await apiRows($)
       if (compactionSeen(rowsBefore, after?.length)) {
         outcome = 'compacted:guided'
+        compactionEpoch++
         const text = summaryOf(after ?? [])
         if (text) await keepRecap($, text)
         extra = { tokensBefore, recapCalls: 0 }

@@ -125,7 +125,9 @@ type LogOpts = {
   home?: string
   transcript?: string
   write?: (path: string, text: string) => void
+  session?: string
 }
+let worldSeq = 0
 const logWorld = (on: any, o: LogOpts = {}) => {
   const store = memoryStore(on, o.store)
   const clock = clockAt(on)
@@ -156,7 +158,10 @@ const logWorld = (on: any, o: LogOpts = {}) => {
     'session.usage',
     o.usage ?? (() => ({ value: { startedAt: 0, context: { window: o.percent == null ? 0 : 100, tokens: o.percent ?? 0, percent: o.percent ?? undefined }, rateLimits: [] } })),
   )
-  on('session.id', () => ({ value: 'sess-1234abcd' }))
+  // the pre-write arms per session and compaction epoch, which live as long as the module: a world with a convo
+  // gets a session id of its own unless the test names one
+  const sid = o.session ?? (o.convo ? `sess-w${++worldSeq}` : 'sess-1234abcd')
+  on('session.id', () => ({ value: sid }))
   on('model.fork', () => {
     forks++
     return (o.fork ?? (() => ({ value: { isAnswered: true, text: 'GOAL: ship smart-compact', usage: USAGE } })))()
@@ -171,7 +176,7 @@ const logWorld = (on: any, o: LogOpts = {}) => {
   if (o.$) engineCompact(on, o.$, () => o.rows ?? [], seen)
   const log = () => (store.get(LOG) ?? []) as any[]
   return {
-    store, clock, log, writes, reads, goHeadless: () => (headless = true),
+    sid, store, clock, log, writes, reads, goHeadless: () => (headless = true),
     forks: () => forks, compacts: () => compacts, reached: () => reached, commands: () => seen.args.length,
   }
 }
@@ -621,7 +626,7 @@ test('F1-AC-6 a pre-write at threshold-5 forks once, keeps the recap with its ke
   await $.turn.complete(TURN)
   await settled(w)
   expect(w.forks()).toBe(1)
-  expect(w.store.get(RECAP)).toMatchObject({ text: 'GOAL: ship smart-compact', key: '4:a4', sessionId: 'sess-1234abcd' })
+  expect(w.store.get(RECAP)).toMatchObject({ text: 'GOAL: ship smart-compact', key: '4:a4', sessionId: w.sid })
   w.goHeadless()
   expect((await lastRecap($)).text).toContain('GOAL: ship smart-compact')
 })
@@ -696,27 +701,99 @@ test('F1-AC-8 a proven bridge is written at the hashed path and passes bridgeFre
   await $.turn.complete(TURN)
   await until(() => w.writes.length === 1, 'bridge write')
   expect(w.writes[0]!.path).toBe(`/home/me/.claude/session/handoff/${hashRoot('/proj')}.json`)
-  expect(w.reads[0]).toMatch(/sess-1234abcd\.jsonl$/)
+  expect(w.reads[0]).toMatch(new RegExp(`${w.sid}\\.jsonl$`))
   const record = JSON.parse(w.writes[0]!.text)
-  expect(record).toMatchObject({ key: '4:h4', sessionId: 'sess-1234abcd', text: 'GOAL: ship smart-compact', lastUuid: 'h-u4', lineCount: 5 })
-  expect(bridgeFresh(record, { session_id: 'sess-1234abcd', transcript_path: '/t' }, transcript, NOW)).toBe(true)
+  expect(record).toMatchObject({ key: '4:h4', sessionId: w.sid, text: 'GOAL: ship smart-compact', lastUuid: 'h-u4', lineCount: 5 })
+  expect(bridgeFresh(record, { session_id: w.sid, transcript_path: '/t' }, transcript, NOW)).toBe(true)
+  await until(() => w.log().some(l => l.bridge === 'written'), 'bridge reason')
 })
 
-const unproven: [string, LogOpts][] = [
-  ['no HOME', { transcript: lines('i1').join('\n'), convo: () => convo('i1') }],
-  ['no transcript', { home: '/home/me', convo: () => convo('i2') }],
-  ['the last uuid is not on the transcript', { home: '/home/me', transcript: lines('zz').join('\n'), convo: () => convo('i3') }],
-  ['rows with no uuid', { home: '/home/me', transcript: lines('i4').join('\n'), convo: () => convo('i4').map(({ uuid: _u, ...r }) => r) }],
+const unproven: [string, string, LogOpts][] = [
+  ['no HOME', 'no-home', { transcript: lines('i1').join('\n'), convo: () => convo('i1') }],
+  ['no transcript', 'transcript-unreadable', { home: '/home/me', convo: () => convo('i2') }],
+  ['the last uuid is not on the transcript', 'uuid-not-found', { home: '/home/me', transcript: lines('zz').join('\n'), convo: () => convo('i3') }],
+  ['rows with no uuid', 'no-uuid', { home: '/home/me', transcript: lines('i4').join('\n'), convo: () => convo('i4').map(({ uuid: _u, ...r }) => r) }],
+  ['no session id', 'no-session', { home: '/home/me', transcript: lines('i5').join('\n'), convo: () => convo('i5'), session: '' }],
+  ['a throwing bridge write', 'write-failed', {
+    home: '/home/me',
+    transcript: lines('i6').join('\n'),
+    convo: () => convo('i6'),
+    write: () => {
+      throw new Error('read-only')
+    },
+  }],
 ]
-for (const [why, o] of unproven) {
-  test(`F1-AC-9 ${why}: no bridge, the recap is still stored`, async ($, on) => {
+for (const [why, reason, o] of unproven) {
+  test(`F1-AC-9 ${why}: no bridge, the recap is still stored, the ring entry says ${reason}`, async ($, on) => {
     const w = logWorld(on, { usage: at(67), ...o })
     await $.turn.complete(TURN)
     await settled(w)
+    await until(() => w.log().some(l => l.bridge === reason), `bridge ${reason}`)
+    // nothing lands at the bridge path (the write-failed mock throws before it records)
     expect(w.writes).toEqual([])
     expect((w.store.get(RECAP) as any).text).toBe('GOAL: ship smart-compact')
   })
 }
+
+// ── armed once per compaction epoch of a session ──
+const bandTurns = async ($: any, w: any, tags: string[], rowsOf: (t: string) => unknown[]) => {
+  for (const t of tags) {
+    cur = rowsOf(t)
+    await $.turn.complete(TURN)
+  }
+  await quiet()
+}
+let cur: unknown[] = []
+
+test('D1 several in-band turns with changing rows give one fork and one prewritten entry', async ($, on) => {
+  const w = logWorld(on, { usage: at(67), convo: () => cur })
+  await bandTurns($, w, ['k1', 'k2', 'k3'], t => convo(t))
+  await settled(w)
+  expect(w.forks()).toBe(1)
+  expect(w.log().filter(l => l.outcome === 'prewritten')).toHaveLength(1)
+})
+
+test('D1 a failed pre-write is not retried in the same epoch', async ($, on) => {
+  const w = logWorld(on, { usage: at(67), convo: () => cur, fork: UNANSWERED })
+  await bandTurns($, w, ['l1', 'l2', 'l3'], t => convo(t))
+  expect(w.forks()).toBe(1)
+})
+
+test('D1 the next epoch after a session.compact settle pre-writes once more', async ($, on) => {
+  const w = logWorld(on, { usage: at(67), convo: () => cur, fork: answered })
+  await bandTurns($, w, ['m1'], t => convo(t))
+  expect(w.forks()).toBe(1)
+  await compactWith($, { trigger: 'auto', messages: ROWS })
+  await until(() => w.log().some(l => l.decision === 'auto-compact' && l.outcome.startsWith('compacted')), 'compaction')
+  const before = w.forks()
+  await bandTurns($, w, ['m2', 'm3'], t => convo(t))
+  expect(w.forks() - before).toBe(1) // the compaction's own recap fork is in `before`; one pre-write after
+})
+
+test('D1 an engine compaction seen from the token drop opens the next epoch', async ($, on) => {
+  let tokens = 67
+  const w = logWorld(on, { usage: () => ({ value: { startedAt: 0, context: { window: 100, tokens, percent: tokens }, rateLimits: [] } }), convo: () => cur })
+  await bandTurns($, w, ['n1'], t => convo(t))
+  expect(w.forks()).toBe(1)
+  tokens = 10
+  await bandTurns($, w, ['n2'], t => convo(t))
+  await until(() => w.log().some(l => l.outcome === 'compacted:engine'), 'engine entry')
+  tokens = 67
+  await bandTurns($, w, ['n3', 'n4'], t => convo(t))
+  expect(w.forks()).toBe(2)
+})
+
+test('D1 one pre-write followed by two compactions counts its discard once', async ($, on) => {
+  const w = logWorld(on, { usage: WINDOW_1000, fork: answered, convo: () => cur })
+  const pw = { ...PW, id: 'pw1' }
+  w.store.set(LOG, [pw])
+  await compactWith($, { trigger: 'auto', messages: ROWS })
+  await compactWith($, { trigger: 'auto', messages: ROWS })
+  await until(() => w.log().filter(l => l.decision === 'auto-compact' && l.outcome.startsWith('compacted')).length === 2, 'two compactions')
+  const done = w.log().filter(l => l.decision === 'auto-compact')
+  expect(done.reduce((n, l) => n + (l.discardedPrecomputes ?? 0), 0)).toBe(1)
+  expect(w.log().find(l => l.id === 'pw1').chargedTo).toBeDefined()
+})
 
 test('F1-AC-10 a throwing bridge write or a broken store does not throw out of the turn', async ($, on) => {
   const w = logWorld(on, {
