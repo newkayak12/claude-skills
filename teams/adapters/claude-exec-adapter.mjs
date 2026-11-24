@@ -59,9 +59,12 @@ function unexplainedRefusal(result) {
 const WIKI_TOOLS = ['wiki_search', 'wiki_get', 'wiki_resume', 'wiki_list', 'wiki_status', 'wiki_write'].map(t => `mcp__teams__${t}`);
 const wikiRoot = process.env.TEAMS_WIKI_ROOT;
 const withWiki = Boolean(wikiRoot) && !opts['no-wiki'] && !opts.detect;
-// A lean launch (card 130) passes its own --mcp-config: the one teams server, which serves tm_ask
-// and team_* next to wiki_*. It replaces the wiki-only config below; the node's wiki access is
-// still decided by withWiki (TEAMS_WIKI_OFF hides wiki_* from that server), and tm_ask is allowed.
+const BUS_TOOLS = ['tm_ask', 'tm_post', 'tm_read'].map(t => `mcp__teams__${t}`);
+// A lean launch (card 130) passes its own --mcp-config: the one teams server, which serves the bus
+// tools (tm_ask, tm_post, tm_read) and team_* next to wiki_*. It replaces the wiki-only config below;
+// the node's wiki access is still decided by withWiki (TEAMS_WIKI_OFF hides wiki_* from that server),
+// and the bus tools are allowed: under -p, acceptEdits and dontAsk refuse an MCP tool no allow rule
+// names (E-92c82150).
 const leanMcp = !opts.detect && Boolean(opts['mcp-config']);
 const mcpConfig = leanMcp
   ? opts['mcp-config']
@@ -100,7 +103,7 @@ async function invoke(prompt) {
   // ran, `rm` stayed denied).
   // card 173: acceptEdits does not approve Bash, and the project settings carry no allow rule, so a
   // workspace-write node (implement/test/draft) could never run a command headless. Allow it by name.
-  const allowed = [...(verifyTools || opts.sandbox === 'workspace-write' ? ['Bash'] : []), ...(withWiki ? WIKI_TOOLS : []), ...(leanMcp ? ['mcp__teams__tm_ask'] : [])];
+  const allowed = [...(verifyTools || opts.sandbox === 'workspace-write' ? ['Bash'] : []), ...(withWiki ? WIKI_TOOLS : []), ...(leanMcp ? BUS_TOOLS : [])];
   if (allowed.length) cli.push('--allowedTools', allowed.join(','));
   if (opts['setting-sources']) cli.push('--setting-sources', opts['setting-sources']);
   for (const dir of opts.pluginDirs) cli.push('--plugin-dir', dir);

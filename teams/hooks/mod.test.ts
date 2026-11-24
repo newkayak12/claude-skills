@@ -4186,6 +4186,12 @@ test('size S in Plan: FLOOR counts 1 working on Plan and none on Build', async (
   expect(build).not.toContain('working')
 })
 
+test('card 126: size-L FLOOR keeps the EPIC Report hint in Korean', async ($, on) => {
+  const { lines } = await homeLines($, on, 190, P_FIXTURE(), 'terminal', 'korean', { page: FLOOR_PAGE })
+  const report = lines.find(l => /여기서 열림/.test(l))!
+  expect(report).toContain('EPIC 보고서는 여기서 열림')
+})
+
 test('size S in Plan: Phase 1 Running lists the S driver, not a dash', async ($, on) => {
   const { lines } = await homeLines($, on, 190, sizeSData('plan'), 'terminal', undefined, { epic: 'tS', page: SIZE_S_PLAN })
   const running = at$(lines, 'Running')
@@ -4560,6 +4566,14 @@ for (const lang of [undefined, 'korean'] as const) {
   test(`size-L FLOOR ${lang ?? 'English'} keeps Phase 2/6`, async ($, on) => {
     const { lines } = await homeLines($, on, 190, P_FIXTURE(), 'terminal', lang, { page: FLOOR_PAGE })
     expect(lines.join('\n')).toContain('Phase 2/6')
+  })
+  test(`card 126: size-S FLOOR Report row says its hint without EPIC (${lang ?? 'English'})`, async ($, on) => {
+    const ko = lang !== undefined
+    const { lines } = await homeLines($, on, 190, S_FLOOR(), 'terminal', lang, { page: FLOOR_PAGE })
+    const report = lines.find(l => /opens here|여기서 열림/.test(l))!
+    expect(report).toContain(ko ? '보고' : 'Report')
+    expect(report).toContain(ko ? '보고서는 여기서 열림' : 'report opens here')
+    expect(report).not.toContain('EPIC')
   })
 }
 

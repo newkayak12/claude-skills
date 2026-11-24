@@ -439,14 +439,15 @@ test('claude adapter: with none of the lean flags its claude argv is what it alw
   assert.equal(wikiOff, null);
 });
 
-test('claude adapter: --mcp-config replaces the MCP config once (still strict), --setting-sources and each --plugin-dir are passed on, tm_ask is allowed', () => {
+test('claude adapter: --mcp-config replaces the MCP config once (still strict), --setting-sources and each --plugin-dir are passed on, the bus tools are allowed', () => {
   const cfg = JSON.stringify({ mcpServers: { teams: { command: 'node', args: ['/teams/mcp/server.mjs'] } } });
   const { args, wikiOff } = adapterThroughStub(['--sandbox', 'read-only', '--no-wiki', '--model', 'opus', '--setting-sources', 'project', '--plugin-dir', '/p/teams', '--plugin-dir', '/p/develop', '--mcp-config', cfg]);
   assert.ok(args.includes('--strict-mcp-config'));
   assert.deepEqual(valuesOf(args, '--mcp-config'), [cfg]);
   assert.deepEqual(valuesOf(args, '--setting-sources'), ['project']);
   assert.deepEqual(valuesOf(args, '--plugin-dir'), ['/p/teams', '/p/develop']);
-  assert.deepEqual(valuesOf(args, '--allowedTools'), ['mcp__teams__tm_ask']);
+  assert.deepEqual(valuesOf(args, '--allowedTools'), ['mcp__teams__tm_ask,mcp__teams__tm_post,mcp__teams__tm_read']);
+  assert.deepEqual(valuesOf(args, '--permission-mode'), ['dontAsk']);
   assert.equal(wikiOff, '1', 'a judging stage (--no-wiki) never sees wiki_* on the lean teams server');
 });
 
@@ -507,7 +508,8 @@ test('AC-X1: a graph node\'s final claude argv is lean - strict MCP, the teams s
     const sargs = JSON.parse(valuesOf(args, '--mcp-config')[0]).mcpServers.teams.args;
     assert.deepEqual(sargs.slice(1, 3), ['--stage', 'node'], `${stage}: the node's teams server names the node set`);
     for (const f of args.filter((a) => a.startsWith('--'))) assert.ok(ADAPTER_FLAGS.has(f) || ['-p', '--output-format', '--verbose', '--no-session-persistence', '--strict-mcp-config', '--tools', '--permission-mode', '--allowedTools'].includes(f), `${stage}: unexpected claude flag ${f}`);
-    assert.deepEqual(valuesOf(args, '--allowedTools').join(',').split(',').filter((t) => t === 'mcp__teams__tm_ask'), ['mcp__teams__tm_ask'], `${stage}: tm_ask is allowed`);
+    const allowedTools = valuesOf(args, '--allowedTools').join(',').split(',');
+    for (const t of ['tm_ask', 'tm_post', 'tm_read']) assert.deepEqual(allowedTools.filter((a) => a === `mcp__teams__${t}`), [`mcp__teams__${t}`], `${stage}: ${t} is allowed`);
   }
   // the plugin dirs follow each node's own Method, never every installed plugin
   const dirs = Object.fromEntries(invocations.map((i) => [i.stage, dirsOf(i.args).sort()]));

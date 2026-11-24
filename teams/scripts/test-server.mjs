@@ -420,14 +420,14 @@ test('--stage driver lists exactly the 8 driver tools and the 9 wiki_* tools', a
   });
 });
 
-test('--stage node lists 10 tools (tm_ask + 9 wiki_*), 1 with TEAMS_WIKI_OFF=1', async () => {
+test('--stage node lists 12 tools (tm_ask, tm_post, tm_read + 9 wiki_*), 3 with TEAMS_WIKI_OFF=1', async () => {
   await withClient(['--stage', 'node', '--root', mk('server-wiki-')], baseEnv(), async (c) => {
     const tools = await c.tools();
-    assert.equal(tools.length, 10);
-    assert.equal(tools.filter((t) => !t.name.startsWith('wiki_')).map((t) => t.name).join(), 'tm_ask');
+    assert.equal(tools.length, 12);
+    assert.deepEqual(tools.filter((t) => !t.name.startsWith('wiki_')).map((t) => t.name).sort(), ['tm_ask', 'tm_post', 'tm_read']);
   });
   await withClient(['--stage', 'node', '--root', mk('server-wiki-')], baseEnv({ TEAMS_WIKI_OFF: '1' }), async (c) => {
-    assert.deepEqual(names(await c.tools()), ['tm_ask']);
+    assert.deepEqual(names(await c.tools()).sort(), ['tm_ask', 'tm_post', 'tm_read']);
   });
 });
 

@@ -426,7 +426,7 @@ export function floorRows(t: SummaryTaskEntry, say: Say): PageRow[] {
         id: STEP_ID[st.key], block: 'phase', ref: { type: 'phase', epic: t.task_id, phase: st.phase },
         cells: [
           ' ', MARK_ICON[st.state], label, st.state === 'pending' ? '–' : '', '',
-          st.key === 'report' ? say('f2FloorReportHint') : st.acting > 0 ? `${st.acting} ${say('wordActing')}` : '',
+          st.key === 'report' ? say('f2FloorReportHintS') : st.acting > 0 ? `${st.acting} ${say('wordActing')}` : '',
           '', st.you > 0 ? `⚑ ${st.you}` : '', st.stalled > 0 ? `${ICON.stalled} ${st.stalled}` : '',
         ],
         tints: [undefined, MARK_TINT[st.state], undefined, 'dim', 'dim', 'dim', undefined, 'warning', 'error'],

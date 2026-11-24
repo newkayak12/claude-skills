@@ -213,7 +213,7 @@ test('a workspace-write implement node gets acceptEdits and Bash on --allowedToo
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
 
-test('a workspace-write test node (lean mcp config, wiki on) allows Bash, tm_ask and the wiki tools', () => {
+test('a workspace-write test node (lean mcp config, wiki on) allows Bash, the bus tools and the wiki tools', () => {
   const f = fixture();
   try {
     const r = f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'test', '--sandbox', 'workspace-write', '--mcp-config', '{"mcpServers":{}}'], { TEAMS_WIKI_ROOT: '/proj/main' });
@@ -222,6 +222,8 @@ test('a workspace-write test node (lean mcp config, wiki on) allows Bash, tm_ask
     const list = allowed[allowed.indexOf('--allowedTools') + 1].split(',');
     assert.equal(list[0], 'Bash');
     assert.ok(list.includes('mcp__teams__tm_ask'));
+    assert.ok(list.includes('mcp__teams__tm_post'));
+    assert.ok(list.includes('mcp__teams__tm_read'));
     assert.ok(list.includes('mcp__teams__wiki_write'));
     assert.equal(allowed[allowed.indexOf('--permission-mode') + 1], 'acceptEdits');
   } finally { rmSync(f.dir, { recursive: true, force: true }); }

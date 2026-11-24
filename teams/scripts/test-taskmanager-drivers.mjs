@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as facade from '../mcp/taskmanager.mjs';
 import * as mod from '../mcp/taskmanager-drivers.mjs';
+import { STAGE_TOOLS } from '../mcp/server-tools.mjs';
 
 const OWNED = [
   'openerEnv', 'driverArgv', 'driverStderrTail', 'driverRestartsSpent', 'serviceDeadDriver',
@@ -35,6 +36,21 @@ test('driverArgv: HARNESS_CHILD_DRIVER replaces the command line; otherwise it i
     assert.deepEqual(mod.driverArgv(null, {}).slice(0, 8), [
       'claude', '-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions', '--setting-sources', 'project',
     ]);
+  } finally {
+    if (was === undefined) delete process.env.HARNESS_CHILD_DRIVER; else process.env.HARNESS_CHILD_DRIVER = was;
+  }
+});
+
+test('card 126: the package driver skips permissions, runs --stage driver, and that set lists the bus tools', () => {
+  const was = process.env.HARNESS_CHILD_DRIVER;
+  try {
+    delete process.env.HARNESS_CHILD_DRIVER;
+    const argv = mod.driverArgv(null, { flow: 'develop' });
+    assert.ok(argv.includes('--dangerously-skip-permissions'), 'every tool, MCP included, is granted');
+    const cfg = JSON.parse(argv[argv.indexOf('--mcp-config') + 1]);
+    const args = cfg.mcpServers.teams.args;
+    assert.equal(args[args.indexOf('--stage') + 1], 'driver');
+    for (const t of ['tm_ask', 'tm_post', 'tm_read']) assert.ok(STAGE_TOOLS.driver.includes(t), `${t} missing from the driver set`);
   } finally {
     if (was === undefined) delete process.env.HARNESS_CHILD_DRIVER; else process.env.HARNESS_CHILD_DRIVER = was;
   }
