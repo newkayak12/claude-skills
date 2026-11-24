@@ -710,6 +710,19 @@ ahead of the order above.
       `node -e '[1,2].map(x => x*2)'` runs, not refused (the earlier refusal not reproduced).
     - Acceptance (left): the user approves the 190/110 captures.
 
+178. **teams engines get faster, cheaper and steadier — one EPIC, one Task per engine** — before card 120
+   - Why: user, 2026-11-24: "백로그 [전체 스킬 점검] 전에 Teams 각 엔진 성능, 효율성 개선 및 동작 향상(엔진 당 Epic아래 Task 하나씩으로 배정". Seen in the 2026-11-22/23 runs: a fresh driver still starts at ~33.5k tokens (card 130); size-S tasks run 40–150 min under load; the S engine ended two finished runs `blocked` (E-943c979a, E-c15ff128); a real L run lost its bus exchange to a permission gap (E-92c82150); the full teams suite takes 10–20 min and flakes under load (bus-wake, S1 harness driver, view-once perf).
+   - Shape: one size-L EPIC; one Task (STORY) per engine, each with its own measured before/after:
+     1. **Task manager + daemon** (`taskmanager-*.mjs`, `daemon.mjs`, `taskstate.mjs`): restart/park/finish decisions, ledger reads per tick, daemon CPU idle.
+     2. **Graph engine** (`graph-*.mjs`, `graph.mjs`): node scheduling, retry and repair loops, wall time per stage on one recorded L run.
+     3. **Broker + adapters + node launch** (`broker-*.mjs`, `adapters/`, `nodelaunch.mjs`): start context per node, permissions (bus tools), vendor probe time.
+     4. **Harness size-S path** (`taskmanager-harness.mjs`, `harnessrun.mjs`): driver stays alive until its run ends (no exit while a background subagent runs), goal gate always recorded.
+     5. **State server + view** (`stateserver.mjs`, `scripts/view*.mjs`): poll cost, `--once` latency on the real root.
+     6. **Bus + wiki** (`bus.mjs`, `wiki.mjs`, `wikibridge.mjs`): read/append cost, Codex roots.
+     7. **Cost, budget, capacity** (`drivercost.mjs`, `taskmanager-budget.mjs`, `capacity-reset.mjs`, `livecap.mjs`): estimate vs final within 5%, stop at budget, park on limits.
+     Plus the test suite itself: wall time and the load flakes above.
+   - Acceptance: per Task, a number before and after on the same input (time, tokens, CPU or cost) and no behaviour lost (`node --test teams/scripts/test-*.mjs`, `cd teams && claude plugin test .` counts); the EPIC report lists every engine's delta; a Task with no gain says so.
+
 ### write plugin
 
 ### knowledge plugin
